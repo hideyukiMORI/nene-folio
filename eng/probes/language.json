@@ -1,0 +1,739 @@
+[
+ {
+  "id": "M1-w4",
+  "tool": "msvc",
+  "flags": [],
+  "compiles": true,
+  "source": "enum mode { MODE_VIEW, MODE_EDIT };\nint select_mode(enum mode m) { switch (m) { case MODE_VIEW: return 1; } return 0; }\n"
+ },
+ {
+  "id": "M1-exhaustive",
+  "tool": "msvc",
+  "flags": [
+   "/we4061",
+   "/we4062"
+  ],
+  "compiles": false,
+  "source": "enum mode { MODE_VIEW, MODE_EDIT };\nint select_mode(enum mode m) { switch (m) { case MODE_VIEW: return 1; } return 0; }\n"
+ },
+ {
+  "id": "M1-default",
+  "tool": "msvc",
+  "flags": [
+   "/we4061",
+   "/we4062"
+  ],
+  "compiles": false,
+  "source": "enum mode { MODE_VIEW, MODE_EDIT };\nint select_mode(enum mode m) { switch (m) { case MODE_VIEW: return 1; default: return 0; } }\n"
+ },
+ {
+  "id": "M1-valid",
+  "tool": "msvc",
+  "flags": [
+   "/we4061",
+   "/we4062"
+  ],
+  "compiles": true,
+  "source": "enum mode { MODE_VIEW, MODE_EDIT };\nint select_mode(enum mode m) { switch (m) { case MODE_VIEW: return 1; case MODE_EDIT: return 2; } return 0; }\n"
+ },
+ {
+  "id": "M1-out-of-range",
+  "tool": "msvc",
+  "flags": [
+   "/we4061",
+   "/we4062"
+  ],
+  "compiles": true,
+  "source": "enum mode { MODE_VIEW, MODE_EDIT };\nenum mode make_mode(void) { return (enum mode)7; }\n"
+ },
+ {
+  "id": "M1-clang-switch-enum",
+  "tool": "clangcl",
+  "flags": [
+   "-Wswitch-enum"
+  ],
+  "compiles": false,
+  "source": "enum mode { MODE_VIEW, MODE_EDIT };\nint select_mode(enum mode m) { switch (m) { case MODE_VIEW: return 1; default: return 0; } }\n"
+ },
+ {
+  "id": "M2-public",
+  "tool": "msvc",
+  "flags": [],
+  "compiles": true,
+  "source": "struct note { int width; const char *title; };\nvoid touch(struct note *n) { n->width = 1; }\n"
+ },
+ {
+  "id": "M2-opaque",
+  "tool": "msvc",
+  "flags": [],
+  "compiles": false,
+  "source": "struct note;\nstruct note *note_create(void);\nvoid touch(struct note *n) { n->width = 1; }\n"
+ },
+ {
+  "id": "M2-const-cast",
+  "tool": "msvc",
+  "flags": [],
+  "compiles": true,
+  "source": "struct note { int width; const char *title; };\nvoid touch(const struct note *n) { ((struct note *)n)->width = 1; }\n"
+ },
+ {
+  "id": "M2-const-cast-clang",
+  "tool": "clangcl",
+  "flags": [
+   "-Wcast-qual"
+  ],
+  "compiles": false,
+  "source": "struct note { int width; const char *title; };\nvoid touch(const struct note *n) { ((struct note *)n)->width = 1; }\n"
+ },
+ {
+  "id": "M2-const-implicit",
+  "tool": "msvc",
+  "flags": [],
+  "compiles": false,
+  "source": "int *alias(void) { static const int c = 1; int *p = &c; return p; }\n"
+ },
+ {
+  "id": "M2-const-launder",
+  "tool": "clangcl",
+  "flags": [
+   "-Wcast-qual"
+  ],
+  "compiles": true,
+  "source": "#include <stdint.h>\nstruct note { int width; const char *title; };\nvoid touch(const struct note *n) { ((struct note *)(uintptr_t)n)->width = 1; }\n"
+ },
+ {
+  "id": "M3-null",
+  "tool": "msvc",
+  "flags": [],
+  "compiles": true,
+  "source": "int read(void) { int *p = 0; return *p; }\n"
+ },
+ {
+  "id": "M3-null-analyze",
+  "tool": "msvc",
+  "flags": [
+   "/analyze"
+  ],
+  "compiles": false,
+  "source": "int read(void) { int *p = 0; return *p; }\n"
+ },
+ {
+  "id": "M3-uninitialized",
+  "tool": "msvc",
+  "flags": [],
+  "compiles": false,
+  "source": "int read(void) { int x; return x; }\n"
+ },
+ {
+  "id": "M3-zero-value",
+  "tool": "msvc",
+  "flags": [],
+  "compiles": true,
+  "source": "struct note_id { int value; };\nint use(struct note_id id);\nint call(void) { struct note_id id = {0}; return use(id); }\n"
+ },
+ {
+  "id": "M3-nullability-clang",
+  "tool": "clangcl",
+  "flags": [
+   "-Wnullable-to-nonnull-conversion",
+   "-Wnullability-completeness"
+  ],
+  "compiles": false,
+  "source": "int take(int *_Nonnull p) { return *p; }\nint give(int *_Nullable q) { return take(q); }\n"
+ },
+ {
+  "id": "M4-private",
+  "tool": "msvc",
+  "flags": [],
+  "compiles": false,
+  "source": "struct note;\nstruct note *note_create(void);\nint make(void) { struct note n; (void)n; return 0; }\n"
+ },
+ {
+  "id": "M4-copy",
+  "tool": "msvc",
+  "flags": [],
+  "compiles": false,
+  "source": "struct note;\nstruct note *note_create(void);\nint copy(void) { struct note *a = note_create(); struct note b = *a; (void)b; return 0; }\n"
+ },
+ {
+  "id": "M4-forge",
+  "tool": "msvc",
+  "flags": [],
+  "compiles": true,
+  "source": "#include <stdlib.h>\nstruct note;\nstruct note *note_create(void);\nstruct note *forge(void) { return (struct note *)malloc(64); }\n"
+ },
+ {
+  "id": "M5-time",
+  "tool": "msvc",
+  "flags": [],
+  "compiles": true,
+  "source": "#include <time.h>\nlong read_now(void) { return (long)time(0); }\n"
+ },
+ {
+  "id": "M6-win32",
+  "tool": "msvc",
+  "flags": [],
+  "compiles": true,
+  "source": "#include <windows.h>\nunsigned long tick(void) { return GetTickCount(); }\n"
+ },
+ {
+  "id": "M7-suppression",
+  "tool": "msvc",
+  "flags": [
+   "/we4062"
+  ],
+  "compiles": true,
+  "source": "#pragma warning(disable: 4062)\nenum mode { MODE_VIEW, MODE_EDIT };\nint select_mode(enum mode m) { switch (m) { case MODE_VIEW: return 1; } return 0; }\n"
+ },
+ {
+  "id": "M8-push-zero",
+  "tool": "msvc",
+  "flags": [
+   "/we4062"
+  ],
+  "compiles": false,
+  "source": "#pragma warning(push, 0)\nenum mode { MODE_VIEW, MODE_EDIT };\nint select_mode(enum mode m) { switch (m) { case MODE_VIEW: return 1; } return 0; }\n#pragma warning(pop)\n"
+ },
+ {
+  "id": "M8-file-suppression",
+  "tool": "msvc",
+  "flags": [
+   "/we4061",
+   "/we4062"
+  ],
+  "compiles": true,
+  "source": "#pragma warning(disable: 4061 4062 4101 4700)\nenum mode { MODE_VIEW, MODE_EDIT };\nint select_mode(enum mode m) { switch (m) { case MODE_VIEW: return 1; } return 0; }\n"
+ },
+ {
+  "id": "C1-implicit-decl",
+  "tool": "msvc",
+  "flags": [],
+  "compiles": false,
+  "source": "int call(void) { return undeclared(1); }\n"
+ },
+ {
+  "id": "C2-narrowing",
+  "tool": "msvc",
+  "flags": [],
+  "compiles": false,
+  "source": "int narrow(long long v) { return v; }\n"
+ },
+ {
+  "id": "C3-sign-compare",
+  "tool": "msvc",
+  "flags": [],
+  "compiles": false,
+  "source": "int cmp(int a, unsigned b) { return a < b; }\n"
+ },
+ {
+  "id": "C4-vla",
+  "tool": "msvc",
+  "flags": [],
+  "compiles": false,
+  "source": "int sum(int n) { int a[n]; a[0] = 1; return a[0]; }\n"
+ },
+ {
+  "id": "C5-unsafe-strcpy",
+  "tool": "msvc",
+  "flags": [],
+  "compiles": false,
+  "source": "#include <string.h>\nvoid fill(char *d, const char *s) { strcpy(d, s); }\n"
+ },
+ {
+  "id": "C6-unused-param",
+  "tool": "msvc",
+  "flags": [],
+  "compiles": false,
+  "source": "int f(int a) { return 0; }\n"
+ },
+ {
+  "id": "C7-shadow",
+  "tool": "msvc",
+  "flags": [],
+  "compiles": false,
+  "source": "int f(int a) { int a2 = a; { int a2 = 2; return a2; } }\n"
+ },
+ {
+  "id": "C8-fallthrough",
+  "tool": "msvc",
+  "flags": [],
+  "compiles": true,
+  "source": "enum mode { MODE_VIEW, MODE_EDIT };\nint f(enum mode m, int x) { switch (m) { case MODE_VIEW: x += 1; case MODE_EDIT: x += 2; } return x; }\n"
+ },
+ {
+  "id": "C8-fallthrough-clang",
+  "tool": "clangcl",
+  "flags": [
+   "-Wimplicit-fallthrough"
+  ],
+  "compiles": false,
+  "source": "enum mode { MODE_VIEW, MODE_EDIT };\nint f(enum mode m, int x) { switch (m) { case MODE_VIEW: x += 1; case MODE_EDIT: x += 2; } return x; }\n"
+ },
+ {
+  "id": "C9-const-overflow",
+  "tool": "msvc",
+  "flags": [],
+  "compiles": false,
+  "source": "int big(void) { return 2147483647 + 1; }\n"
+ },
+ {
+  "id": "C10-c23-nullptr-msvc-hole",
+  "tool": "msvc",
+  "flags": [
+   "/std:clatest"
+  ],
+  "compiles": false,
+  "source": "int *none(void) { return nullptr; }\n"
+ },
+ {
+  "id": "C10-c23-bool-typeof-msvc-hole",
+  "tool": "msvc",
+  "flags": [
+   "/std:clatest"
+  ],
+  "compiles": false,
+  "source": "bool ok(void) { int v = 1; typeof(v) w = v; return w == 1; }\n"
+ },
+ {
+  "id": "C11-void-star-assign",
+  "tool": "msvc",
+  "flags": [],
+  "compiles": true,
+  "source": "struct note { int width; const char *title; };\nstruct note *from_any(void *p) { return p; }\n"
+ },
+ {
+  "id": "C12-conversion-clang",
+  "tool": "clangcl",
+  "flags": [
+   "-Wconversion",
+   "-Wsign-conversion"
+  ],
+  "compiles": false,
+  "source": "unsigned u(int v) { return v; }\n"
+ },
+ {
+  "id": "K1-c23-nullptr",
+  "tool": "clangcl",
+  "flags": [
+   "/clang:-std=c23"
+  ],
+  "compiles": true,
+  "source": "int *none(void);\nint *none(void) { return nullptr; }\n"
+ },
+ {
+  "id": "K1-c23-bool-typeof",
+  "tool": "clangcl",
+  "flags": [
+   "/clang:-std=c23"
+  ],
+  "compiles": true,
+  "source": "bool ok(void);\nbool ok(void) { int v = 1; typeof(v) w = v; return w == 1; }\n"
+ },
+ {
+  "id": "K1-c23-constexpr-enum-fixed",
+  "tool": "clangcl",
+  "flags": [
+   "/clang:-std=c23"
+  ],
+  "compiles": true,
+  "source": "enum mode : unsigned char { MODE_VIEW, MODE_EDIT };\nconstexpr int limit = 3;\nint get(void);\nint get(void) { return limit + (int)MODE_EDIT; }\n"
+ },
+ {
+  "id": "K1-c23-nodiscard",
+  "tool": "clangcl",
+  "flags": [
+   "/clang:-std=c23",
+   "-Wextra",
+   "-Wpedantic",
+   "-Wno-switch-default",
+   "-Wno-pre-c23-compat",
+   "-Wswitch-enum",
+   "-Wcovered-switch-default",
+   "-Wcast-qual",
+   "-Wconversion",
+   "-Wsign-conversion",
+   "-Wshadow",
+   "-Wimplicit-fallthrough",
+   "-Wnullability-completeness",
+   "-Werror=vla",
+   "-Wstrict-prototypes",
+   "-Wmissing-prototypes",
+   "-Wdouble-promotion",
+   "-Wformat=2",
+   "-Wundef",
+   "-Wunused-result"
+  ],
+  "compiles": false,
+  "source": "[[nodiscard]] int must(void);\nint must(void) { return 1; }\nint call(void);\nint call(void) { must(); return 0; }\n"
+ },
+ {
+  "id": "K1-c23-embed",
+  "tool": "clangcl",
+  "flags": [
+   "/clang:-std=c23"
+  ],
+  "compiles": true,
+  "source": "static const unsigned char blob[] = {\n#embed __FILE__\n};\nunsigned char first(void);\nunsigned char first(void) { return blob[0]; }\n"
+ },
+ {
+  "id": "K2-vla-werror",
+  "tool": "clangcl",
+  "flags": [
+   "/clang:-std=c23",
+   "-Werror=vla"
+  ],
+  "compiles": false,
+  "source": "int sum(int n);\nint sum(int n) { int a[n]; a[0] = 1; return a[0]; }\n"
+ },
+ {
+  "id": "K2-vla-plain-hole",
+  "tool": "clangcl",
+  "flags": [
+   "/clang:-std=c23",
+   "-Wvla"
+  ],
+  "compiles": true,
+  "source": "int sum(int n);\nint sum(int n) { int a[n]; a[0] = 1; return a[0]; }\n"
+ },
+ {
+  "id": "K3-strict-clean",
+  "tool": "clangcl",
+  "flags": [
+   "/clang:-std=c23",
+   "-Wextra",
+   "-Wpedantic",
+   "-Wno-switch-default",
+   "-Wno-pre-c23-compat",
+   "-Wswitch-enum",
+   "-Wcovered-switch-default",
+   "-Wcast-qual",
+   "-Wconversion",
+   "-Wsign-conversion",
+   "-Wshadow",
+   "-Wimplicit-fallthrough",
+   "-Wnullability-completeness",
+   "-Werror=vla",
+   "-Wstrict-prototypes",
+   "-Wmissing-prototypes",
+   "-Wdouble-promotion",
+   "-Wformat=2",
+   "-Wundef",
+   "-Wunused-result"
+  ],
+  "compiles": true,
+  "source": "#include <stddef.h>\nenum mode { MODE_VIEW, MODE_EDIT };\nint select_mode(enum mode m);\nint select_mode(enum mode m) { switch (m) { case MODE_VIEW: return 1; case MODE_EDIT: return 2; } return 0; }\n"
+ },
+ {
+  "id": "K3-strict-covered-default",
+  "tool": "clangcl",
+  "flags": [
+   "/clang:-std=c23",
+   "-Wextra",
+   "-Wpedantic",
+   "-Wno-switch-default",
+   "-Wno-pre-c23-compat",
+   "-Wswitch-enum",
+   "-Wcovered-switch-default",
+   "-Wcast-qual",
+   "-Wconversion",
+   "-Wsign-conversion",
+   "-Wshadow",
+   "-Wimplicit-fallthrough",
+   "-Wnullability-completeness",
+   "-Werror=vla",
+   "-Wstrict-prototypes",
+   "-Wmissing-prototypes",
+   "-Wdouble-promotion",
+   "-Wformat=2",
+   "-Wundef",
+   "-Wunused-result"
+  ],
+  "compiles": false,
+  "source": "enum mode { MODE_VIEW, MODE_EDIT };\nint select_mode(enum mode m);\nint select_mode(enum mode m) { switch (m) { case MODE_VIEW: return 1; case MODE_EDIT: return 2; default: return 0; } }\n"
+ },
+ {
+  "id": "K3-strict-missing-case",
+  "tool": "clangcl",
+  "flags": [
+   "/clang:-std=c23",
+   "-Wextra",
+   "-Wpedantic",
+   "-Wno-switch-default",
+   "-Wno-pre-c23-compat",
+   "-Wswitch-enum",
+   "-Wcovered-switch-default",
+   "-Wcast-qual",
+   "-Wconversion",
+   "-Wsign-conversion",
+   "-Wshadow",
+   "-Wimplicit-fallthrough",
+   "-Wnullability-completeness",
+   "-Werror=vla",
+   "-Wstrict-prototypes",
+   "-Wmissing-prototypes",
+   "-Wdouble-promotion",
+   "-Wformat=2",
+   "-Wundef",
+   "-Wunused-result"
+  ],
+  "compiles": false,
+  "source": "enum mode { MODE_VIEW, MODE_EDIT };\nint select_mode(enum mode m);\nint select_mode(enum mode m) { switch (m) { case MODE_VIEW: return 1; } return 0; }\n"
+ },
+ {
+  "id": "K3-strict-missing-proto",
+  "tool": "clangcl",
+  "flags": [
+   "/clang:-std=c23",
+   "-Wextra",
+   "-Wpedantic",
+   "-Wno-switch-default",
+   "-Wno-pre-c23-compat",
+   "-Wswitch-enum",
+   "-Wcovered-switch-default",
+   "-Wcast-qual",
+   "-Wconversion",
+   "-Wsign-conversion",
+   "-Wshadow",
+   "-Wimplicit-fallthrough",
+   "-Wnullability-completeness",
+   "-Werror=vla",
+   "-Wstrict-prototypes",
+   "-Wmissing-prototypes",
+   "-Wdouble-promotion",
+   "-Wformat=2",
+   "-Wundef",
+   "-Wunused-result"
+  ],
+  "compiles": false,
+  "source": "int lonely(void) { return 1; }\n"
+ },
+ {
+  "id": "K4-pragma-bypass-hole",
+  "tool": "clangcl",
+  "flags": [
+   "/clang:-std=c23",
+   "-Wextra",
+   "-Wpedantic",
+   "-Wno-switch-default",
+   "-Wno-pre-c23-compat",
+   "-Wswitch-enum",
+   "-Wcovered-switch-default",
+   "-Wcast-qual",
+   "-Wconversion",
+   "-Wsign-conversion",
+   "-Wshadow",
+   "-Wimplicit-fallthrough",
+   "-Wnullability-completeness",
+   "-Werror=vla",
+   "-Wstrict-prototypes",
+   "-Wmissing-prototypes",
+   "-Wdouble-promotion",
+   "-Wformat=2",
+   "-Wundef",
+   "-Wunused-result"
+  ],
+  "compiles": true,
+  "source": "#pragma clang diagnostic ignored \"-Wswitch-enum\"\nenum mode { MODE_VIEW, MODE_EDIT };\nint select_mode(enum mode m);\nint select_mode(enum mode m) { switch (m) { case MODE_VIEW: return 1; default: return 0; } }\n"
+ },
+ {
+  "id": "K5-null-deref-compiles-hole",
+  "tool": "clangcl",
+  "flags": [
+   "/clang:-std=c23",
+   "-Wextra",
+   "-Wpedantic",
+   "-Wno-switch-default",
+   "-Wno-pre-c23-compat",
+   "-Wswitch-enum",
+   "-Wcovered-switch-default",
+   "-Wcast-qual",
+   "-Wconversion",
+   "-Wsign-conversion",
+   "-Wshadow",
+   "-Wimplicit-fallthrough",
+   "-Wnullability-completeness",
+   "-Werror=vla",
+   "-Wstrict-prototypes",
+   "-Wmissing-prototypes",
+   "-Wdouble-promotion",
+   "-Wformat=2",
+   "-Wundef",
+   "-Wunused-result"
+  ],
+  "compiles": true,
+  "source": "int read(void);\nint read(void) { int *p = nullptr; return *p; }\n"
+ },
+ {
+  "id": "K6-implicit-decl",
+  "tool": "clangcl",
+  "flags": [
+   "/clang:-std=c23"
+  ],
+  "compiles": false,
+  "source": "int call(void);\nint call(void) { return undeclared(1); }\n"
+ },
+ {
+  "id": "K7-uninitialized",
+  "tool": "clangcl",
+  "flags": [
+   "/clang:-std=c23",
+   "-Wextra",
+   "-Wpedantic",
+   "-Wno-switch-default",
+   "-Wno-pre-c23-compat",
+   "-Wswitch-enum",
+   "-Wcovered-switch-default",
+   "-Wcast-qual",
+   "-Wconversion",
+   "-Wsign-conversion",
+   "-Wshadow",
+   "-Wimplicit-fallthrough",
+   "-Wnullability-completeness",
+   "-Werror=vla",
+   "-Wstrict-prototypes",
+   "-Wmissing-prototypes",
+   "-Wdouble-promotion",
+   "-Wformat=2",
+   "-Wundef",
+   "-Wunused-result"
+  ],
+  "compiles": false,
+  "source": "int read(void);\nint read(void) { int x; return x; }\n"
+ },
+ {
+  "id": "K12-out-of-range-enum-hole",
+  "tool": "clangcl",
+  "flags": [
+   "/clang:-std=c23",
+   "-Wextra",
+   "-Wpedantic",
+   "-Wno-switch-default",
+   "-Wno-pre-c23-compat",
+   "-Wswitch-enum",
+   "-Wcovered-switch-default",
+   "-Wcast-qual",
+   "-Wconversion",
+   "-Wsign-conversion",
+   "-Wshadow",
+   "-Wimplicit-fallthrough",
+   "-Wnullability-completeness",
+   "-Werror=vla",
+   "-Wstrict-prototypes",
+   "-Wmissing-prototypes",
+   "-Wdouble-promotion",
+   "-Wformat=2",
+   "-Wundef",
+   "-Wunused-result"
+  ],
+  "compiles": true,
+  "source": "enum mode { MODE_VIEW, MODE_EDIT };\nenum mode make_mode(void);\nenum mode make_mode(void) { return (enum mode)7; }\n"
+ },
+ {
+  "id": "K13-const-cast",
+  "tool": "clangcl",
+  "flags": [
+   "/clang:-std=c23",
+   "-Wextra",
+   "-Wpedantic",
+   "-Wno-switch-default",
+   "-Wno-pre-c23-compat",
+   "-Wswitch-enum",
+   "-Wcovered-switch-default",
+   "-Wcast-qual",
+   "-Wconversion",
+   "-Wsign-conversion",
+   "-Wshadow",
+   "-Wimplicit-fallthrough",
+   "-Wnullability-completeness",
+   "-Werror=vla",
+   "-Wstrict-prototypes",
+   "-Wmissing-prototypes",
+   "-Wdouble-promotion",
+   "-Wformat=2",
+   "-Wundef",
+   "-Wunused-result"
+  ],
+  "compiles": false,
+  "source": "struct note { int width; };\nvoid touch(const struct note *n);\nvoid touch(const struct note *n) { ((struct note *)n)->width = 1; }\n"
+ },
+ {
+  "id": "K14-opaque-forge-hole",
+  "tool": "clangcl",
+  "flags": [
+   "/clang:-std=c23",
+   "-Wextra",
+   "-Wpedantic",
+   "-Wno-switch-default",
+   "-Wno-pre-c23-compat",
+   "-Wswitch-enum",
+   "-Wcovered-switch-default",
+   "-Wcast-qual",
+   "-Wconversion",
+   "-Wsign-conversion",
+   "-Wshadow",
+   "-Wimplicit-fallthrough",
+   "-Wnullability-completeness",
+   "-Werror=vla",
+   "-Wstrict-prototypes",
+   "-Wmissing-prototypes",
+   "-Wdouble-promotion",
+   "-Wformat=2",
+   "-Wundef",
+   "-Wunused-result"
+  ],
+  "compiles": true,
+  "source": "#include <stdlib.h>\nstruct note;\nstruct note *forge(void);\nstruct note *forge(void) { return (struct note *)malloc(64); }\n"
+ },
+ {
+  "id": "K15-zero-value-hole",
+  "tool": "clangcl",
+  "flags": [
+   "/clang:-std=c23",
+   "-Wextra",
+   "-Wpedantic",
+   "-Wno-switch-default",
+   "-Wno-pre-c23-compat",
+   "-Wswitch-enum",
+   "-Wcovered-switch-default",
+   "-Wcast-qual",
+   "-Wconversion",
+   "-Wsign-conversion",
+   "-Wshadow",
+   "-Wimplicit-fallthrough",
+   "-Wnullability-completeness",
+   "-Werror=vla",
+   "-Wstrict-prototypes",
+   "-Wmissing-prototypes",
+   "-Wdouble-promotion",
+   "-Wformat=2",
+   "-Wundef",
+   "-Wunused-result"
+  ],
+  "compiles": true,
+  "source": "struct note_id { int value; };\nint use(struct note_id id);\nint call(void);\nint call(void) { struct note_id id = {0}; return use(id); }\n"
+ },
+ {
+  "id": "K16-clang-cl-Wall-is-Weverything-hole",
+  "tool": "clangcl",
+  "flags": [
+   "/clang:-std=c23",
+   "-Wall"
+  ],
+  "compiles": false,
+  "source": "constexpr int limit = 3;\nint get(void);\nint get(void) { return limit; }\n"
+ },
+ {
+  "id": "K16-constexpr-strict",
+  "tool": "clangcl",
+  "flags": [
+   "/clang:-std=c23",
+   "/W4",
+   "-Wextra",
+   "-Wpedantic",
+   "-Wno-switch-default",
+   "-Wno-pre-c23-compat"
+  ],
+  "compiles": true,
+  "source": "constexpr int limit = 3;\nint get(void);\nint get(void) { return limit; }\n"
+ }
+]

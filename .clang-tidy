@@ -1,0 +1,8 @@
+Checks: '-*,clang-analyzer-core.CallAndMessage,clang-analyzer-core.NullDereference,clang-analyzer-core.uninitialized.Assign,clang-analyzer-core.uninitialized.Branch,clang-analyzer-core.uninitialized.UndefReturn,clang-analyzer-unix.Malloc,clang-analyzer-security.insecureAPI.strcpy,bugprone-sizeof-expression,bugprone-suspicious-memset-usage,readability-function-cognitive-complexity,readability-function-size'
+WarningsAsErrors: '*'
+HeaderFilterRegex: '.*'
+CheckOptions:
+  readability-function-cognitive-complexity.Threshold: 10
+  readability-function-size.LineThreshold: 60
+  readability-function-size.NestingThreshold: 3
+  readability-function-size.ParameterThreshold: 4
