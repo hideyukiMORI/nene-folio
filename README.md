@@ -2,8 +2,9 @@
 
 A frameless Markdown notebook for Windows with a category drawer. Plain C (C23), Win32, no UI library.
 
-> **Status (2026-09-09):** foundation only. The language was measured (69 probes), the strict-policy
-> documents and the single gate exist, and there is no product code yet. Nothing to download.
+> **Status (2026-09-09):** first vertical slice. The app starts, scans `data/` next to the executable,
+> reconciles it with `categories.json` / `index.json`, and draws the index in the drawer of a frameless
+> window. No viewer, no editing, no reordering yet. Nothing to download yet (Phase 4).
 
 ## What it will be
 

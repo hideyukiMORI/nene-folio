@@ -38,7 +38,7 @@
 
 `null` 相当が意味してよいのは「省略可能な値が無い」だけ。無効・未読込・失敗・未知・削除済みを表さない。公開 API は `null` を返さない。
 
-- 機械強制: **planned** → 未初期化の読み出しは `-Wuninitialized`（K7）。`nullptr` の逆参照はコンパイルが通り（K5）、clang-tidy の `clang-analyzer-core.NullDereference` が拒否する（T2）。`_Nonnull` / `_Nullable` の注釈は `-Wnullability-completeness` で強制し、注釈の無い公開ポインタ引数を拒否する。`{0}` によるゼロ値の構築（K15）は C-007 で扱う
+- 機械強制: **planned** → 未初期化の読み出しは `-Wuninitialized`（K7）。`nullptr` の逆参照はコンパイルが通り（K5）、clang-tidy の `clang-analyzer-core.NullDereference` が拒否する（T2）。`_Nonnull` / `_Nullable` の注釈は `-Wnullability-completeness` で強制し、注釈の無い公開ポインタ引数を拒否する（注釈は clang 拡張なので `-Wpedantic` との併用には名指しの `-Wno-nullability-extension` が要る・ADR 0004）。`-fsanitize=nullability` が `_Nonnull` への `nullptr` を単体テストで検出する。`{0}` によるゼロ値の構築（K15）は C-007 で扱う
 
 ### C-005 — 期待される失敗は例外で表さない
 
@@ -49,7 +49,7 @@ C に例外は無い。検証エラー・見つからない・拒否・非互換
 
 ### C-006 — 汎用データバッグを禁じる
 
-`void *` / 文字列キーの連想配列 / 意味を持つ値の裸の配列で型を代用しない。名前付きの `struct` を作る。`void *` を許すのは Win32 のコールバック引数を境界で受ける 1 か所だけである。
+`void *` / 文字列キーの連想配列 / 意味を持つ値の裸の配列で型を代用しない。名前付きの `struct` を作る。`void *` を許すのは Win32 のコールバック引数を境界で受ける 1 か所だけである。ポートの文脈は不完全型（`struct persistence_adapter;`）で受ける（ADR 0004）。
 
 - 機械強制: **planned**（`void *` から具体型への暗黙変換は C が許す（C11-void-star-assign）。CNF の字句検査で core / application の `void *` を拒否する予定）
 
@@ -154,7 +154,7 @@ C はメモリ安全を言語で保証しない。本リポジトリでは次を
 - 単体テストは常に AddressSanitizer と UndefinedBehaviorSanitizer 付きでビルドし、`-fno-sanitize-recover` で必ず落とす
 - JSON と Markdown の読み取りは境界で長さを受け取り、`strcpy` / `sprintf` 系の長さを持たない関数を呼ばない
 
-- 機械強制: **planned** → VLA は `-Werror=vla`（K2-vla-werror。`-Wvla` だけでは C23 で通る＝K2-vla-plain-hole）。`strcpy` 等は clang-tidy `clang-analyzer-security.insecureAPI.*`。ASan / UBSan は単体テスト target が生まれてから結線（A1 / A2 で発火を実測済み）
+- 機械強制: **planned** → VLA は `-Werror=vla`（K2-vla-werror。`-Wvla` だけでは C23 で通る＝K2-vla-plain-hole）。`strcpy` 等は clang-tidy `clang-analyzer-security.insecureAPI.*`。ASan / UBSan / nullability は Debug 構成の全 target と単体テストに結線済みで、確保失敗の経路は測定ビルドの注入で全部走る（2026-09-09・ADR 0004）。「確保と解放の対」はレビュー事項なので全体としては planned
 
 ### C-017 — ウィンドウ手続きは意図を渡し、描画は表示値を写す
 

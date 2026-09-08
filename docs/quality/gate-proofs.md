@@ -1,6 +1,6 @@
 # ゲート発火の証明 — NeNe Folio
 
-> Status: 記録 / 最終実測 2026-09-09（Issue #1・Phase 1 の足場に対するフルゲート。製品コードは 0 行）
+> Status: 記録 / 最終実測 2026-09-09（Issue #3・最初の縦切り。core / application の静的ライブラリと単体テストが生まれ、ARC-002 / ARC-003 / ARC-007 / QLT-009 を結線した）
 > 根拠となる規則: QLT-007（カスタムゲートには negative proof が要る）
 
 **検査は「落ちること」を見るまで信用しない。** 各ゲートについて、最小の違反を仕込んだ状態で
@@ -22,8 +22,12 @@ CI: GitHub Actions `windows-2022`（PR の ready_for_review で起動。ロー�
 
 | 規則 | 最小の違反 | 検証経路 | 実測 2026-09-09 |
 | --- | --- | --- | --- |
+| ARC-002 | 宣言外の依存と OS ライブラリを CMake で結ぶ・宣言外モジュールへの相対 include・ビルドに無い翻訳単位 | eng/prove-gates.py（configure）/ tests/conformance の architecture_checks | configure が `ARC-002: forbidden dependency` / `forbidden platform library` で非 0（P2）。相対 include と File API の実グラフは tests/conformance で ARC-002。実 target 6 つ（core / application / adapters_win32 / ui_win32 / app / unit_tests）に対し `--build-dir build` が 0 件 |
+| ARC-003 | 中核相当のオブジェクトで `CreateFileW` を呼ぶ・未定義の外部シンボル・必須モジュールの欠落 | eng/prove-gates.py（`eng/symbols.py --object` / `--require`）/ tests/conformance の test_symbols | `ARC-003: core: undeclared external symbol __imp_CreateFileW` で非 0（P17）。`--require application` を単一オブジェクトに対して要求すると `required module application has no static library` で非 0（P18）。実ライブラリは `2 libraries checked, 0 violation(s)` |
+| ARC-007 | 中核相当のオブジェクトで `time()` / `GetTickCount()` を呼ぶ | eng/prove-gates.py（`eng/symbols.py --object`） | `ARC-007: core: non-deterministic input symbol _time64` / `__imp_GetTickCount` で非 0（P1）。`memcmp` だけの probe は 0 |
 | QLT-002 | 未使用変数・プロトタイプ無し・lint 違反・整形違反 | eng/prove-gates.py / 実 CMake ビルド・clang-tidy・clang-format | `-Wunused-variable` / `-Wmissing-prototypes` / `readability-function-size` / `clang-format-violations` で非 0。各復帰は 0 |
 | QLT-004 | 一行に詰めた main | eng/prove-gates.py / clang-format --dry-run --Werror | `clang-format-violations` で非 0。元の整形は 0 |
+| QLT-009 | 台帳・配置・状態のテストを省いて実行（`--coverage-negative`） | eng/coverage.py / 同一 exe の別プロファイル | 21.51% で `QLT-009: branch coverage 21.51% < 90%`。全テストへ復帰すると 707/744 分岐＝95.03% で成功（P19） |
 | CNF-006 | 未定義 ID・重複定義・状態不一致・証明行欠落・未置換値 | tests/conformance の document_checks 正例・反例 | 正例は指摘 0、反例は CNF-006。本文書を書いた直後に「active の証明行が無い」を 4 件検出し、この表を書かせた |
 | CNF-008 | Issue 番号の無いタスクコメント | tests/conformance の configuration_checks 正例・反例 | 番号付きは指摘 0、番号なしは CNF-008 |
 
@@ -50,14 +54,18 @@ CI: GitHub Actions `windows-2022`（PR の ready_for_review で起動。ロー�
 | P15 | C-012 | 5 引数の関数 | `eng/prove-gates.py`（clang-tidy） | clang-tidy `readability-function-size` で非 0。元のソースは 0 |
 | P16 | C-016 | 可変長配列 | `eng/prove-gates.py`（`-Werror=vla`） | clang-tidy `clang-diagnostic-vla`（コンパイルでは `-Werror=vla`）で非 0。元のソースは 0 |
 | P17 | ARC-003 | 中核相当で `CreateFileW` を呼ぶ | `eng/prove-gates.py`（`eng/symbols.py`） | `eng/symbols.py` が `ARC-003: core: undeclared external symbol __imp_CreateFileW` で非 0 |
+| P18 | ARC-003 | 必須モジュールの静的ライブラリが無い | `eng/prove-gates.py`（`eng/symbols.py --object … --require application`） | `required module application has no static library in the build` で非 0 |
+| P19 | QLT-009 | テストを省いた実行で分岐を測る | `eng/coverage.py`（測定ビルド・`--coverage-negative`） | 21.51% で非 0。全テストで 707/744（95.03%）が 0。確保失敗の注入を切ると 86.29% で落ちることも 2026-09-09 に実測した（切った状態は残していない） |
+| P20 | ARC-003 | 中核が自分のアーカイブ内・宣言済み依存の関数を呼ぶ | `tests/conformance/test_symbols.py` | アーカイブ内（`note_id_parse`）と application → core（`category_ledger_count`）は解決されて指摘 0。宣言外の core → application（`folio_state_create`）と `nenefolio_*` の接頭辞だけの外部シンボルは ARC-003 |
 
-**復帰の確認**: 2026-09-09。P1〜P4・P8・P13〜P17 は `eng/prove-gates.py` が各反例の直後に元へ戻して build / configure / clang-format / symbols を再実行し、終了コード 0 を確かめた（13 件）。P5〜P7・P9〜P12 は正例テストが同じ suite にある（58 テスト）。最後にフルゲート全体が終了コード 0 で `NeNe Folio full gate passed` を出した。
+**復帰の確認**: 2026-09-09。P1〜P4・P8・P13〜P18 は `eng/prove-gates.py` が各反例の直後に元へ戻して build / configure / clang-format / symbols を再実行し、終了コード 0 を確かめた。P5〜P7・P9〜P12・P20 は正例テストが同じ suite にある（63 テスト）。P19 は `eng/coverage.py` が反例のあとに全テストの計測で 0 を確かめる。最後にフルゲート全体が終了コード 0 で `NeNe Folio full gate passed` を出した。
 
 **除外側の確認**: 例外区画について「禁止が効いていること」と「唯一の窓口が通ること」の両方を見る。
 
 | 区画 | 適用しない禁止 | 呼んでいる禁止 API | 結果 |
 | --- | --- | --- | --- |
-| `src/adapters/win32` | 決定性 | （中核も adapters もまだ無い） | 未実測。`eng/symbols.py` は 0 ライブラリで通っており、**いまは何も守っていない**（ADR 0003） |
+| `src/adapters/win32` | 決定性・OS import | `__imp_GetModuleFileNameW` / `__imp_FindFirstFileExW` / `__imp_CreateFileW` / `__imp_ReadFile`（`persistence_adapter.c` / `file_bytes.c`） | 2026-09-09: `eng/symbols.py --build-dir build --require core application` は core / application の 2 ライブラリだけを検査して `0 violation(s)`。adapters_win32 のライブラリは対象外なので上の import を持ったまま通る（唯一の窓口が通ること） |
+| `src/ui/win32` / `src/app` | OS import | `__imp_CreateWindowExW` / `__imp_GetDpiForWindow` / `__imp_MessageBoxW` | 同上。字句検査（ARC-007 の名前）は ui / app にも適用され、`GetTickCount` 等の名前は書けない |
 
 ---
 
@@ -110,4 +118,18 @@ QLT-004: C:\Users\info\WORKS\NeNeFolio\out\proofs\build-jc2zb9_f\tests\build\too
 
 <!-- 表示・実機・実 OS 資源を伴う確認は、単体テストとは別にここに環境と手順を書く -->
 
-（まだ無い）
+### 5-a. 最初の縦切り（Issue #3・2026-09-09）
+
+環境: Windows 11 Pro 10.0.26200・96 DPI・モニタ 1 枚・`build/NeNeFolio.exe`（Debug 構成＝ASan / UBSan / nullability 付き）。
+
+手順:
+
+1. `build/data/仕事/打ち合わせ.md` と `build/data/categories.json`（版 1・`仕事` を `#3D7EFF`・展開）を置く
+2. `build/NeNeFolio.exe` を起動し、1.5 秒後に主窓の矩形を `GetWindowRect` で取って画面を写す
+3. `categories.json` を `{"version": 2, "categories": []}` に書き換えて起動する
+
+結果:
+
+- 枠もタイトルバーも無い 960×640 の窓が (0, 0) に出た。左 240 px のドロワーに、青の帯付きの太字 `仕事` と、字下げした `打ち合わせ` が描かれた（[first-drawer.png](first-drawer.png)）。右ペインは白
+- 版 2 の台帳では `NeNe Folio` を題にした MessageBox が出て、閉じると終了コード 1 で終わった。既定値へは落ちなかった（FR-015）
+- 見ていないもの: DPI の切り替え・スナップ・縁でのリサイズ・高 DPI のフォント・複数モニタ。単体テストはこれらの証拠にならない
