@@ -28,6 +28,10 @@ void category_ledger_write(const struct category_ledger *_Nonnull ledger,
 category_ledger_reconcile(const struct category_ledger *_Nonnull ledger,
                           const struct name_list *_Nonnull scanned,
                           struct category_ledger *_Nullable *_Nonnull out);
+/* index の展開状態だけを反転した新しい台帳を作る（FR-004）。index は count 未満であること。 */
+[[nodiscard]] enum category_ledger_outcome
+category_ledger_toggled(const struct category_ledger *_Nonnull ledger, size_t index,
+                        struct category_ledger *_Nullable *_Nonnull out);
 [[nodiscard]] size_t category_ledger_count(const struct category_ledger *_Nonnull ledger);
 /* 終端付き。ledger が生きている間だけ有効。index は count 未満であること。 */
 [[nodiscard]] const char *_Nonnull category_ledger_name(

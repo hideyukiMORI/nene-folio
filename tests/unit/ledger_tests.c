@@ -158,6 +158,27 @@ static void verify_category_reconcile(void)
     category_ledger_destroy(ledger);
 }
 
+static void verify_category_toggle(void)
+{
+    struct category_ledger *ledger = parse_categories(category_text);
+    struct category_ledger *toggled = nullptr;
+    require(category_ledger_toggled(ledger, 1, &toggled) == CATEGORY_LEDGER_ACCEPTED, "toggle");
+    require(category_ledger_count(toggled) == 2 && category_ledger_expanded(toggled, 0) &&
+                category_ledger_expanded(toggled, 1),
+            "only the chosen entry flips");
+    require(same_text(category_ledger_name(toggled, 1), "memo") &&
+                category_ledger_color(toggled, 1).red == 0xFF,
+            "names and colors are kept");
+    require(!category_ledger_expanded(ledger, 1), "source is untouched");
+    struct category_ledger *again = nullptr;
+    require(category_ledger_toggled(toggled, 1, &again) == CATEGORY_LEDGER_ACCEPTED &&
+                !category_ledger_expanded(again, 1),
+            "toggle back");
+    category_ledger_destroy(again);
+    category_ledger_destroy(toggled);
+    category_ledger_destroy(ledger);
+}
+
 static struct note_ledger *_Nonnull parse_notes(const char *_Nonnull text)
 {
     struct note_ledger *ledger = nullptr;
@@ -235,6 +256,7 @@ void run_ledger_tests(void)
     verify_category_rejections();
     verify_category_write();
     verify_category_reconcile();
+    verify_category_toggle();
     verify_note_parse();
     verify_note_reconcile();
 }

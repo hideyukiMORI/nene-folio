@@ -22,6 +22,9 @@ drawer_layout_create(const struct category_ledger *_Nonnull categories,
 /* index は row_count 未満であること。 */
 [[nodiscard]] struct drawer_row drawer_layout_row(const struct drawer_layout *_Nonnull layout,
                                                   size_t index);
+/* y 座標にある行の番号。行の外なら false で index は触らない（FR-004 のヒットテスト）。 */
+[[nodiscard]] bool drawer_layout_hit(const struct drawer_layout *_Nonnull layout, int y,
+                                     size_t *_Nonnull index);
 void drawer_layout_destroy(struct drawer_layout *_Nullable layout);
 
 #endif

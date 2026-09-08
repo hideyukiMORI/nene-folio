@@ -61,6 +61,16 @@ static void verify_rows(void)
     require(row.kind == DRAWER_ROW_CATEGORY && row.top == 92 && same_text(row.text, "closed") &&
                 row.color.green == 0xFF,
             "collapsed category row");
+    require(drawer_layout_row(layout, 0).category == 0 &&
+                drawer_layout_row(layout, 2).category == 0 && row.category == 1,
+            "rows know their category");
+    size_t index = 99;
+    require(!drawer_layout_hit(layout, 7, &index) && index == 99, "above first row");
+    require(drawer_layout_hit(layout, 8, &index) && index == 0, "top edge of first row");
+    require(drawer_layout_hit(layout, 35, &index) && index == 0, "bottom edge of first row");
+    require(drawer_layout_hit(layout, 36, &index) && index == 1, "first note row");
+    require(drawer_layout_hit(layout, 119, &index) && index == 3, "last row");
+    require(!drawer_layout_hit(layout, 120, &index), "below last row");
     drawer_layout_destroy(layout);
     drawer_layout_destroy(nullptr);
 }
@@ -73,6 +83,8 @@ static void verify_empty(void)
     require(drawer_layout_create(categories, notes, metrics, &layout) == DRAWER_LAYOUT_CREATED,
             "empty layout");
     require(drawer_layout_row_count(layout) == 0, "no rows");
+    size_t index = 0;
+    require(!drawer_layout_hit(layout, 0, &index), "nothing to hit");
     drawer_layout_destroy(layout);
     category_ledger_destroy(categories);
 }

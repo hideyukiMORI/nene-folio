@@ -133,3 +133,22 @@ QLT-004: C:\Users\info\WORKS\NeNeFolio\out\proofs\build-jc2zb9_f\tests\build\too
 - 枠もタイトルバーも無い 960×640 の窓が (0, 0) に出た。左 240 px のドロワーに、青の帯付きの太字 `仕事` と、字下げした `打ち合わせ` が描かれた（[first-drawer.png](first-drawer.png)）。右ペインは白
 - 版 2 の台帳では `NeNe Folio` を題にした MessageBox が出て、閉じると終了コード 1 で終わった。既定値へは落ちなかった（FR-015）
 - 見ていないもの: DPI の切り替え・スナップ・縁でのリサイズ・高 DPI のフォント・複数モニタ。単体テストはこれらの証拠にならない
+
+### 5-b. カテゴリ行のトグルと `expanded` の書き戻し（Issue #5・2026-09-09）
+
+環境: 5-a と同じ。
+
+手順:
+
+1. 5-a と同じ `data/` で起動し、ドロワーの子ウィンドウ（クラス `NeNeFolioDrawer`）へ `WM_LBUTTONDOWN` / `WM_LBUTTONUP` を (40, 20)（カテゴリ行の中）に送る
+2. 0.7 秒後に画面を写し、`data/categories.json` を読む
+3. 同じ座標へもう一度送り、同様に写して読む
+
+結果:
+
+- 1 回目でノート行 `打ち合わせ` が消え（[category-collapsed.png](category-collapsed.png)）、`categories.json` の `expanded` が `false` になった。名前 `仕事` は UTF-8 のまま（E4 BB 95 E4 BA 8B）
+- 2 回目でノート行が戻り、`expanded` は `true`。`categories.json.tmp` は残っていない
+- 見ていないもの: 読み取り専用の `categories.json` での「書き戻せませんでした」の表示（reducer が状態を変えないことは単体テストで確認）
+
+補足: この縦切りの測定ビルド（ASan 付き）が、テスト補助関数がローカルのアダプタを指すポートを state に写していた寿命の誤り（stack-buffer-underflow）を捕まえた。
+正典ビルドの CTest では到達しない経路（確保失敗の注入下でだけ走るトグル）だったので、測定ビルドにも ASan を付けた判断（ADR 0004）が効いた。

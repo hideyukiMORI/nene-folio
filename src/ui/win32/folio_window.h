@@ -12,7 +12,7 @@ struct folio_window;
 
 /* state は窓より長く生きていなければならない。作った窓はすぐ表示する。 */
 [[nodiscard]] enum folio_window_outcome
-folio_window_create(const struct folio_state *_Nonnull state,
+folio_window_create(struct folio_state *_Nonnull state,
                     struct folio_window *_Nullable *_Nonnull out);
 void folio_window_destroy(struct folio_window *_Nullable window);
 

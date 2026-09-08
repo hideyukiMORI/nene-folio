@@ -88,6 +88,67 @@ enum persistence_outcome file_bytes_read(const wchar_t *_Nonnull path,
     return PERSISTENCE_LOADED;
 }
 
+static const wchar_t temporary_suffix[] = L".tmp";
+
+/* path に temporary_suffix を足した名前を out へ作る。収まらなければ false。 */
+static bool temporary_name(const wchar_t *_Nonnull path, wchar_t *_Nonnull out, size_t capacity)
+{
+    size_t length = 0;
+    while (path[length] != L'\0')
+    {
+        length += 1;
+    }
+    size_t suffix = sizeof temporary_suffix / sizeof temporary_suffix[0];
+    if (length + suffix > capacity)
+    {
+        return false;
+    }
+    memcpy(out, path, length * sizeof *out);
+    memcpy(out + length, temporary_suffix, suffix * sizeof *out);
+    return true;
+}
+
+static bool write_all(HANDLE file, const char *_Nonnull data, size_t length)
+{
+    size_t done = 0;
+    while (done < length)
+    {
+        DWORD chunk = 0;
+        DWORD wanted = (DWORD)(length - done > 0x10000000 ? 0x10000000 : length - done);
+        if (!WriteFile(file, data + done, wanted, &chunk, nullptr) || chunk == 0)
+        {
+            return false;
+        }
+        done += chunk;
+    }
+    return true;
+}
+
+enum persistence_outcome file_bytes_store(const wchar_t *_Nonnull path, const char *_Nonnull data,
+                                          size_t length)
+{
+    wchar_t temporary[MAX_PATH * 4];
+    if (!temporary_name(path, temporary, sizeof temporary / sizeof temporary[0]))
+    {
+        return PERSISTENCE_UNWRITABLE;
+    }
+    HANDLE file = CreateFileW(temporary, GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS,
+                              FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (file == INVALID_HANDLE_VALUE)
+    {
+        return PERSISTENCE_UNWRITABLE;
+    }
+    bool written = write_all(file, data, length) && FlushFileBuffers(file);
+    CloseHandle(file);
+    if (!written ||
+        !MoveFileExW(temporary, path, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
+    {
+        DeleteFileW(temporary);
+        return PERSISTENCE_UNWRITABLE;
+    }
+    return PERSISTENCE_STORED;
+}
+
 const char *_Nonnull file_bytes_data(const struct file_bytes *_Nonnull bytes)
 {
     return bytes->data + bytes->offset;

@@ -8,6 +8,7 @@
 #include "json_writer.h"
 #include "name_list.h"
 #include "note_ledger.h"
+#include "persistence_port.h"
 #include "unit_tests.h"
 #include "utf16_text.h"
 #include "utf8_text.h"
@@ -221,10 +222,12 @@ static bool layout_scenario(void)
     return completed;
 }
 
-static bool state_scenario(void)
+/* state を作り、配置とトグルを 1 回ずつ通す。adapter は state より長く生きる。 */
+static bool state_scenario_with(struct persistence_adapter *_Nonnull adapter)
 {
+    struct persistence_port port = test_adapter_port(adapter);
     struct folio_state *state = nullptr;
-    enum folio_state_outcome outcome = state_from_texts(categories_text, notes_text, &state);
+    enum folio_state_outcome outcome = folio_state_create(&port, &state);
     if (outcome == FOLIO_STATE_OUT_OF_MEMORY)
     {
         return false;
@@ -235,7 +238,21 @@ static bool state_scenario(void)
     struct drawer_layout *layout = nullptr;
     bool completed = folio_state_drawer_layout(state, metrics, &layout) == FOLIO_STATE_READY;
     drawer_layout_destroy(layout);
+    if (completed)
+    {
+        enum folio_state_outcome toggled = folio_state_toggle_category(state, 0);
+        completed = toggled == FOLIO_STATE_READY;
+        require(completed || toggled == FOLIO_STATE_OUT_OF_MEMORY, "toggle under probe");
+    }
     folio_state_destroy(state);
+    return completed;
+}
+
+static bool state_scenario(void)
+{
+    struct persistence_adapter *adapter = test_adapter_create(categories_text, notes_text);
+    bool completed = state_scenario_with(adapter);
+    test_adapter_destroy(adapter);
     return completed;
 }
 

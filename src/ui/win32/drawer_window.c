@@ -5,11 +5,13 @@
 #include "utf16_text.h"
 
 #include <stdlib.h>
+#include <string.h>
+#include <windowsx.h>
 
 struct drawer_window
 {
     HWND _Nullable handle;
-    const struct folio_state *_Nonnull state;
+    struct folio_state *_Nonnull state;
     HFONT _Nullable category_font;
     HFONT _Nullable note_font;
 };
@@ -149,6 +151,45 @@ static void paint(struct drawer_window *_Nonnull self)
     EndPaint(self->handle, &painting);
 }
 
+/* 失敗の 1 行を利用者に見せる。文言は application が作る（ARC-011）。 */
+static void show_failure(HWND window, enum folio_state_outcome outcome)
+{
+    const char *_Nonnull line = folio_state_failure_line(outcome);
+    struct utf16_text *_Nullable text = nullptr;
+    if (utf16_text_create(line, strlen(line), &text) != UTF16_TEXT_CONVERTED)
+    {
+        return;
+    }
+    MessageBoxW(window, utf16_text_units(text), L"NeNe Folio", MB_OK | MB_ICONWARNING);
+    utf16_text_destroy(text);
+}
+
+/* クリックを意図に変える。カテゴリ行ならトグル、それ以外は何もしない。 */
+static void click(struct drawer_window *_Nonnull self, int y)
+{
+    struct drawer_layout *_Nullable layout = nullptr;
+    UINT dpi = GetDpiForWindow(self->handle);
+    if (folio_state_drawer_layout(self->state, metrics_for(dpi), &layout) != FOLIO_STATE_READY)
+    {
+        return;
+    }
+    size_t index = 0;
+    bool hit = drawer_layout_hit(layout, y, &index);
+    struct drawer_row row = hit ? drawer_layout_row(layout, index) : (struct drawer_row){0};
+    drawer_layout_destroy(layout);
+    if (!hit || row.kind != DRAWER_ROW_CATEGORY)
+    {
+        return;
+    }
+    enum folio_state_outcome outcome = folio_state_toggle_category(self->state, row.category);
+    if (outcome == FOLIO_STATE_READY)
+    {
+        InvalidateRect(self->handle, nullptr, FALSE);
+        return;
+    }
+    show_failure(self->handle, outcome);
+}
+
 static struct drawer_window *_Nullable self_of(HWND window)
 {
     return (struct drawer_window *)GetWindowLongPtrW(window, GWLP_USERDATA);
@@ -178,6 +219,9 @@ static LRESULT CALLBACK drawer_procedure(HWND window, UINT message, WPARAM wpara
         return 0;
     case WM_ERASEBKGND:
         return 1;
+    case WM_LBUTTONDOWN:
+        click(self, GET_Y_LPARAM(lparam));
+        return 0;
     case WM_DPICHANGED_AFTERPARENT:
         refresh_fonts(self, GetDpiForWindow(window));
         InvalidateRect(window, nullptr, FALSE);
@@ -210,7 +254,7 @@ static bool ensure_class(HINSTANCE instance)
 }
 
 enum drawer_window_outcome drawer_window_create(HWND _Nonnull parent,
-                                                const struct folio_state *_Nonnull state,
+                                                struct folio_state *_Nonnull state,
                                                 struct drawer_window *_Nullable *_Nonnull out)
 {
     HINSTANCE instance = GetModuleHandleW(nullptr);
