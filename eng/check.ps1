@@ -27,10 +27,12 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'QLT-002: compilation or clang-tidy failed.' }
     & python eng/conformance.py --build-dir build
     if ($LASTEXITCODE -ne 0) { throw 'ARC-002: actual build graph failed.' }
-    & python eng/symbols.py --build-dir build
+    & python eng/symbols.py --build-dir build --require core application
     if ($LASTEXITCODE -ne 0) { throw 'ARC-003 / ARC-007: undefined symbols outside the allowlist.' }
     & ctest --test-dir build --output-on-failure --no-tests=error
     if ($LASTEXITCODE -ne 0) { throw 'C verification failed.' }
+    & python eng/coverage.py
+    if ($LASTEXITCODE -ne 0) { throw 'QLT-009: branch coverage or its negative proof failed.' }
     & python eng/prove-gates.py
     if ($LASTEXITCODE -ne 0) { throw 'QLT-007: gate proofs failed.' }
     & git diff --check
