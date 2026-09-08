@@ -136,6 +136,7 @@ Waivers: none | WVR-NNNN
 - 判断とトレードオフ → ADR
 - 一時的な逸脱 → waiver
 - いまのタスク状態 → Issue / PR（`docs/todo/current.md` は要約）
+- その日の到達点と実測 → `docs/reports/YYYY-MM-DD.md`（日報）。次の人が再開するための状態 → `docs/handoffs/YYYY-MM-DD.md`（引き継ぎ書）
 - コードのコメント → その場の非自明な理由（方針そのものは書かない）
 
 設定ファイルとドキュメントが食い違ったら、**ドキュメントが決定の記録**である。ただし両方がそろうまで merge は止める。
