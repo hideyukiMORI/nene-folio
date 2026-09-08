@@ -5,6 +5,7 @@
 #include "json_writer.h"
 #include "name_list.h"
 #include "note_ledger.h"
+#include "note_text.h"
 #include "utf16_text.h"
 #include "utf8_text.h"
 
@@ -318,6 +319,56 @@ static enum persistence_outcome read_note_ledger(struct persistence_adapter *_No
     return PERSISTENCE_MALFORMED;
 }
 
+/* <note>.md を UTF-16 の葉として組み立てる。名前は name_list の規則で 255 バイト以下。 */
+static bool note_leaf(const char *_Nonnull note, wchar_t *_Nonnull out, size_t capacity)
+{
+    struct utf16_text *_Nullable name = nullptr;
+    if (utf16_text_create(note, strlen(note), &name) != UTF16_TEXT_CONVERTED)
+    {
+        return false;
+    }
+    size_t length = utf16_text_length(name);
+    bool fits = length + note_extension_length + 1 <= capacity;
+    if (fits)
+    {
+        memcpy(out, utf16_text_units(name), length * sizeof *out);
+        memcpy(out + length, note_extension, (note_extension_length + 1) * sizeof *out);
+    }
+    utf16_text_destroy(name);
+    return fits;
+}
+
+static enum persistence_outcome read_note(struct persistence_adapter *_Nonnull adapter,
+                                          const char *_Nonnull category, const char *_Nonnull note,
+                                          struct note_text *_Nullable *_Nonnull out)
+{
+    wchar_t leaf[MAX_PATH];
+    wchar_t path[path_capacity];
+    if (!note_leaf(note, leaf, MAX_PATH) || !compose(adapter, category, leaf, path))
+    {
+        return PERSISTENCE_UNREADABLE;
+    }
+    struct file_bytes *_Nullable bytes = nullptr;
+    enum persistence_outcome outcome = file_bytes_read(path, &bytes);
+    if (outcome != PERSISTENCE_LOADED)
+    {
+        return outcome;
+    }
+    enum note_text_outcome accepted =
+        note_text_create(file_bytes_data(bytes), file_bytes_length(bytes), out);
+    file_bytes_destroy(bytes);
+    switch (accepted)
+    {
+    case NOTE_TEXT_ACCEPTED:
+        return PERSISTENCE_LOADED;
+    case NOTE_TEXT_INVALID_UTF8:
+        return PERSISTENCE_MALFORMED;
+    case NOTE_TEXT_OUT_OF_MEMORY:
+        return PERSISTENCE_OUT_OF_MEMORY;
+    }
+    return PERSISTENCE_MALFORMED;
+}
+
 static enum persistence_outcome write_category_ledger(struct persistence_adapter *_Nonnull adapter,
                                                       const struct category_ledger *_Nonnull ledger)
 {
@@ -350,6 +401,7 @@ struct persistence_port persistence_adapter_port(struct persistence_adapter *_No
         .scan_notes = scan_notes,
         .read_category_ledger = read_category_ledger,
         .write_category_ledger = write_category_ledger,
+        .read_note = read_note,
         .read_note_ledger = read_note_ledger,
     };
     return port;

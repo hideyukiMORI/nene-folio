@@ -3,6 +3,7 @@
 #include "folio_state.h"
 #include "name_list.h"
 #include "note_ledger.h"
+#include "note_text.h"
 #include "persistence_port.h"
 #include "unit_tests.h"
 
@@ -23,6 +24,9 @@ struct persistence_adapter
     const char *_Nonnull const *_Nullable scanned_notes;
     size_t scanned_note_count;
     size_t note_scans; /* scan_notes が呼ばれた回数 */
+    enum persistence_outcome note_outcome;
+    const char *_Nonnull note_body;
+    const char *_Nullable last_note; /* 最後に read_note で求められたノート名 */
     enum persistence_outcome write_outcome;
     size_t writes;            /* write_category_ledger が呼ばれた回数 */
     size_t written_count;     /* 最後に書かれた台帳のカテゴリ数 */
@@ -127,6 +131,26 @@ fake_write_category_ledger(struct persistence_adapter *_Nonnull adapter,
     return PERSISTENCE_STORED;
 }
 
+static enum persistence_outcome fake_read_note(struct persistence_adapter *_Nonnull adapter,
+                                               const char *_Nonnull category,
+                                               const char *_Nonnull note,
+                                               struct note_text *_Nullable *_Nonnull out)
+{
+    (void)category;
+    adapter->last_note = note;
+    if (adapter->note_outcome != PERSISTENCE_LOADED)
+    {
+        return adapter->note_outcome;
+    }
+    enum note_text_outcome accepted =
+        note_text_create(adapter->note_body, strlen(adapter->note_body), out);
+    if (accepted == NOTE_TEXT_ACCEPTED)
+    {
+        return PERSISTENCE_LOADED;
+    }
+    return accepted == NOTE_TEXT_OUT_OF_MEMORY ? PERSISTENCE_OUT_OF_MEMORY : PERSISTENCE_MALFORMED;
+}
+
 static const char *const scanned_categories[] = {"A", "B", "C"};
 static const char *const scanned_notes[] = {"two", "one", "three"};
 
@@ -146,6 +170,9 @@ static struct persistence_adapter healthy_adapter(void)
         .scanned_notes = scanned_notes,
         .scanned_note_count = 3,
         .note_scans = 0,
+        .note_outcome = PERSISTENCE_LOADED,
+        .note_body = "# Hello\n\nbody",
+        .last_note = nullptr,
         .write_outcome = PERSISTENCE_STORED,
         .writes = 0,
         .written_count = 0,
@@ -162,6 +189,7 @@ static struct persistence_port port_for(struct persistence_adapter *_Nonnull ada
         .scan_notes = fake_scan_notes,
         .read_category_ledger = fake_read_category_ledger,
         .write_category_ledger = fake_write_category_ledger,
+        .read_note = fake_read_note,
         .read_note_ledger = fake_read_note_ledger,
     };
     return port;
@@ -259,6 +287,37 @@ static void verify_toggle(void)
     folio_state_destroy(state);
 }
 
+static void verify_select(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct persistence_port port = port_for(&adapter);
+    struct folio_state *state = nullptr;
+    require(folio_state_create(&port, &state) == FOLIO_STATE_READY, "state for select");
+    require(same_text(folio_state_pane_rtf(state), "{\\rtf1\\ansi}") &&
+                folio_state_pane_rtf_length(state) == 12,
+            "empty pane before selection");
+    require(folio_state_select_note(state, 0, 1) == FOLIO_STATE_READY, "select B / two");
+    require(same_text(adapter.last_note, "two"), "asked the port for the note");
+    const char *rtf = folio_state_pane_rtf(state);
+    require(strstr(rtf, "\\b\\fs36 Hello") != nullptr && strstr(rtf, "body\\par") != nullptr &&
+                folio_state_pane_rtf_length(state) == strlen(rtf),
+            "pane shows the rendered note");
+    require(folio_state_select_note(state, 5, 0) == FOLIO_STATE_NO_SUCH_CATEGORY, "bad category");
+    require(folio_state_select_note(state, 0, 3) == FOLIO_STATE_NO_SUCH_NOTE, "bad note");
+    adapter.note_outcome = PERSISTENCE_ABSENT;
+    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_NOTE_UNREADABLE &&
+                folio_state_pane_rtf(state) == rtf,
+            "absent note keeps the pane");
+    adapter.note_outcome = PERSISTENCE_UNREADABLE;
+    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_NOTE_UNREADABLE, "unreadable note");
+    adapter.note_outcome = PERSISTENCE_LOADED;
+    adapter.note_body = "\xC3";
+    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_NOTE_UNREADABLE, "invalid utf8");
+    adapter.note_outcome = PERSISTENCE_OUT_OF_MEMORY;
+    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_OUT_OF_MEMORY, "note oom");
+    folio_state_destroy(state);
+}
+
 static void verify_failure_lines(void)
 {
     require(same_text(folio_state_failure_line(FOLIO_STATE_READY), ""), "ready has no line");
@@ -266,6 +325,8 @@ static void verify_failure_lines(void)
                 strlen(folio_state_failure_line(FOLIO_STATE_LEDGER_MALFORMED)) > 0 &&
                 strlen(folio_state_failure_line(FOLIO_STATE_STORE_FAILED)) > 0 &&
                 strlen(folio_state_failure_line(FOLIO_STATE_NO_SUCH_CATEGORY)) > 0 &&
+                strlen(folio_state_failure_line(FOLIO_STATE_NO_SUCH_NOTE)) > 0 &&
+                strlen(folio_state_failure_line(FOLIO_STATE_NOTE_UNREADABLE)) > 0 &&
                 strlen(folio_state_failure_line(FOLIO_STATE_OUT_OF_MEMORY)) > 0,
             "every failure has a line");
 }
@@ -336,5 +397,6 @@ void run_state_tests(void)
     verify_absent_data();
     verify_failures();
     verify_toggle();
+    verify_select();
     verify_failure_lines();
 }

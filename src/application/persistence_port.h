@@ -11,6 +11,7 @@
 struct category_ledger;
 struct name_list;
 struct note_ledger;
+struct note_text;
 struct persistence_adapter;
 
 struct persistence_port
@@ -31,6 +32,11 @@ struct persistence_port
     enum persistence_outcome (*_Nonnull write_category_ledger)(
         struct persistence_adapter *_Nonnull adapter,
         const struct category_ledger *_Nonnull ledger);
+    /* data/<category>/<note>.md の本文。無ければ ABSENT、UTF-8 でなければ MALFORMED。 */
+    enum persistence_outcome (*_Nonnull read_note)(struct persistence_adapter *_Nonnull adapter,
+                                                   const char *_Nonnull category,
+                                                   const char *_Nonnull note,
+                                                   struct note_text *_Nullable *_Nonnull out);
     /* data/<category>/index.json。無ければ ABSENT。 */
     enum persistence_outcome (*_Nonnull read_note_ledger)(
         struct persistence_adapter *_Nonnull adapter, const char *_Nonnull category,

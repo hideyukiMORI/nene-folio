@@ -21,6 +21,12 @@ folio_state_create(const struct persistence_port *_Nonnull port,
  */
 [[nodiscard]] enum folio_state_outcome
 folio_state_toggle_category(struct folio_state *_Nonnull state, size_t index);
+/* ノートを選び、本文を読んで右ペインの表示値を作る（FR-005）。読めなければ表示は変えない。 */
+[[nodiscard]] enum folio_state_outcome folio_state_select_note(struct folio_state *_Nonnull state,
+                                                               size_t category, size_t note);
+/* 右ペインに写す RTF（終端付き）。何も選んでいなければ空の文書。次の意図まで有効。 */
+[[nodiscard]] const char *_Nonnull folio_state_pane_rtf(const struct folio_state *_Nonnull state);
+[[nodiscard]] size_t folio_state_pane_rtf_length(const struct folio_state *_Nonnull state);
 /* READY 以外の結果を利用者に見せる 1 行（UTF-8・終端付き・静的）。READY は空文字列。 */
 [[nodiscard]] const char *_Nonnull folio_state_failure_line(enum folio_state_outcome outcome);
 /* いまの索引と寸法からドロワーの配置を作る。呼び出し側が drawer_layout_destroy する。 */

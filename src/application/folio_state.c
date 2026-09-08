@@ -2,8 +2,10 @@
 
 #include "category_ledger.h"
 #include "drawer_layout.h"
+#include "markdown_rtf.h"
 #include "name_list.h"
 #include "note_ledger.h"
+#include "note_text.h"
 #include "persistence_port.h"
 
 #include <stdlib.h>
@@ -14,7 +16,10 @@ struct folio_state
     struct category_ledger *_Nullable categories;
     struct note_ledger *_Nonnull *_Nullable notes; /* categories と同じ数・同じ順 */
     size_t notes_count;
+    struct markdown_rtf *_Nullable pane; /* 選択中のノートの表示値。無ければ空の文書 */
 };
+
+static const char empty_pane[] = "{\\rtf1\\ansi}";
 
 static enum folio_state_outcome translate(enum persistence_outcome outcome)
 {
@@ -224,6 +229,59 @@ enum folio_state_outcome folio_state_toggle_category(struct folio_state *_Nonnul
     return FOLIO_STATE_READY;
 }
 
+/* 本文を読んで RTF にする。読めない理由は 1 つに畳む（無い・読めない・UTF-8 でない）。 */
+static enum folio_state_outcome render_note(struct folio_state *_Nonnull state,
+                                            const char *_Nonnull category,
+                                            const char *_Nonnull note)
+{
+    struct note_text *_Nullable body = nullptr;
+    enum persistence_outcome read =
+        state->port.read_note(state->port.adapter, category, note, &body);
+    if (read == PERSISTENCE_OUT_OF_MEMORY)
+    {
+        return FOLIO_STATE_OUT_OF_MEMORY;
+    }
+    if (read != PERSISTENCE_LOADED)
+    {
+        return FOLIO_STATE_NOTE_UNREADABLE;
+    }
+    struct markdown_rtf *_Nullable rendered = nullptr;
+    enum markdown_rtf_outcome converted = markdown_rtf_create(body, &rendered);
+    note_text_destroy(body);
+    if (converted != MARKDOWN_RTF_CONVERTED)
+    {
+        return FOLIO_STATE_OUT_OF_MEMORY;
+    }
+    markdown_rtf_destroy(state->pane);
+    state->pane = rendered;
+    return FOLIO_STATE_READY;
+}
+
+enum folio_state_outcome folio_state_select_note(struct folio_state *_Nonnull state,
+                                                 size_t category, size_t note)
+{
+    if (category >= category_ledger_count(state->categories))
+    {
+        return FOLIO_STATE_NO_SUCH_CATEGORY;
+    }
+    if (note >= note_ledger_count(state->notes[category]))
+    {
+        return FOLIO_STATE_NO_SUCH_NOTE;
+    }
+    return render_note(state, category_ledger_name(state->categories, category),
+                       note_ledger_name(state->notes[category], note));
+}
+
+const char *_Nonnull folio_state_pane_rtf(const struct folio_state *_Nonnull state)
+{
+    return state->pane == nullptr ? empty_pane : markdown_rtf_text(state->pane);
+}
+
+size_t folio_state_pane_rtf_length(const struct folio_state *_Nonnull state)
+{
+    return state->pane == nullptr ? sizeof empty_pane - 1 : markdown_rtf_length(state->pane);
+}
+
 const char *_Nonnull folio_state_failure_line(enum folio_state_outcome outcome)
 {
     switch (outcome)
@@ -238,6 +296,10 @@ const char *_Nonnull folio_state_failure_line(enum folio_state_outcome outcome)
         return "data/categories.json に書き戻せませんでした。表示は変えていません。";
     case FOLIO_STATE_NO_SUCH_CATEGORY:
         return "索引に無いカテゴリが操作されました。";
+    case FOLIO_STATE_NO_SUCH_NOTE:
+        return "索引に無いノートが操作されました。";
+    case FOLIO_STATE_NOTE_UNREADABLE:
+        return "ノートを読めませんでした。表示は変えていません。";
     case FOLIO_STATE_OUT_OF_MEMORY:
         return "記憶域が足りません。";
     }
@@ -256,5 +318,6 @@ void folio_state_destroy(struct folio_state *_Nullable state)
     }
     free(state->notes);
     category_ledger_destroy(state->categories);
+    markdown_rtf_destroy(state->pane);
     free(state);
 }

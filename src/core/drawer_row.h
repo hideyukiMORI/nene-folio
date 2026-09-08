@@ -17,6 +17,7 @@ struct drawer_row
     const char *_Nonnull text;
     struct rgb_color color; /* 行が属するカテゴリの色 */
     size_t category;        /* 行が属するカテゴリの番号（台帳の順） */
+    size_t note;            /* ノート行のときの索引台帳の番号。カテゴリ行では 0 */
 };
 
 #endif
