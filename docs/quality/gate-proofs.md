@@ -94,11 +94,13 @@ QLT-004: C:\Users\info\WORKS\NeNeFolio\out\proofs\build-jc2zb9_f\tests\build\too
 
 | 設定 | 値 | 確認日 |
 | --- | --- | --- |
-| PR 必須 | 未設定 | |
-| 必須 check | 未設定 | |
-| strict up-to-date | 未設定 | |
-| force push / ブランチ削除の禁止 | 未設定 | |
-| squash のみ | 設定済み（`allow_squash_merge` のみ true・`delete_branch_on_merge` true） | 2026-09-09 |
+| PR 必須 | ruleset `main`（id 22558593・active）の `pull_request`。承認 0・スレッド解決必須・`allowed_merge_methods: [squash]` | 2026-09-09 |
+| 必須 check | 同 ruleset の `required_status_checks`: context `check` | 2026-09-09 |
+| strict up-to-date | 同 ruleset `strict_required_status_checks_policy: true` | 2026-09-09 |
+| force push / ブランチ削除の禁止 | 同 ruleset の `non_fast_forward` と `deletion` | 2026-09-09 |
+| squash のみ | リポジトリ設定 `allow_squash_merge` のみ true・`delete_branch_on_merge` true ＋ ruleset の `allowed_merge_methods` | 2026-09-09 |
+
+読み戻し: `gh api repos/hideyukiMORI/nene-folio/rulesets/22558593`（2026-09-09）。必須 check が実際に PR を止めることは Issue #1 の PR で確認する。
 
 🔴 **設定していないものを「必須になっている」と書かない。** 設定したら `gh api` で読み戻して記録する。
 
