@@ -58,6 +58,26 @@ Claude Code / AI エージェントがこのリポジトリで作業するため
 
 `#pragma clang diagnostic` は `-Werror` を黙らせる。だから CNF-003 が pragma を拒否し、行単位の抑制には waiver が要る（C-015）。
 
+### 結果の `enum` は型ごとに別ファイル
+
+CNF-002 は「1 ファイル 1 型定義」を字句で数える。`struct x;` の不完全型と関数は `x.h` に、`enum x_outcome` は `x_outcome.h` に置く。
+実装ファイルの外部関数は `x_` 接頭辞。`nenefolio_` 接頭辞は要らない（`eng/symbols.py` はアーカイブ内と宣言済み依存で解決する・ADR 0004）。
+
+### ポートの文脈は不完全型で受ける
+
+`void *context` は C-006 が禁じる。application が `struct persistence_adapter;` を宣言し、adapters（とテストの偽物）が定義する。
+
+### 確保失敗の経路は測定ビルドでだけ走る
+
+`malloc` が失敗する分岐は正典のビルドでは到達しない。`eng/coverage.py` の測定ビルドが `-Dmalloc=folio_probe_malloc` で
+中核の確保を `tests/unit/allocation_probe.c` へ向け、`allocation_tests.c` が全確保を 1 回ずつ失敗させる。
+製品コードにテスト用の窓口を置かない（C-008）。閾値（90%）と除外は触らない（QLT-009 / QLT-010）。
+
+### OS ライブラリは `nenefolio_system_link` でだけ足す
+
+CMake の既定リンクライブラリは kernel32 だけに絞ってある。user32 / gdi32 を呼ぶ target は `eng/architecture.json` の
+`platformLibraries` にあるものを明示的に結ぶ。無ければ configure が落ちる（ARC-002）。
+
 ---
 
 ## 3. 検証コマンド
@@ -106,4 +126,4 @@ Waivers: none | WVR-NNNN
 
 現在のタスクは [docs/todo/current.md](docs/todo/current.md)。GitHub Issue が正で、そこは要約。
 
-2026-09-09: Phase 0（69 ケース）と Phase 1 の足場。製品コードは 0 行。動くのは C23 のスモークと検査基盤だけ。仕様は [SPECIFICATION.md](SPECIFICATION.md)。
+2026-09-09: Phase 3 の最初の縦切り（Issue #3 / ADR 0004）。起動して `data/` の 1 カテゴリ・1 ノートを枠なし窓のドロワーに描く。5 層すべてに正典の経路があり、ARC-002 / ARC-003 / ARC-007 / QLT-009 が active。右ペイン・トグル・並び替え・保存はまだ無い。仕様は [SPECIFICATION.md](SPECIFICATION.md)。

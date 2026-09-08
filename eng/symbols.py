@@ -1,8 +1,10 @@
 """Linker-level determinism and dependency check (ARC-003 / ARC-007).
 
 A static library compiled from a canonical module may only leave the undefined
-symbols listed in eng/symbol-allowlist.json. Everything else is either a
-non-deterministic input (ARC-007) or an undeclared dependency (ARC-003).
+symbols listed in eng/symbol-allowlist.json after resolving against itself and
+against the libraries of the modules it is allowed to depend on
+(eng/architecture.json). Everything else is either a non-deterministic input
+(ARC-007) or an undeclared dependency (ARC-003).
 Python standard library only; the symbol table comes from llvm-nm.
 """
 
@@ -15,13 +17,44 @@ import subprocess
 from pathlib import Path
 
 
-def undefined_symbols(nm_output: str) -> set[str]:
-    symbols = set()
+def symbol_table(nm_output: str) -> tuple[set[str], set[str]]:
+    """(defined external symbols, undefined symbols) of one object or archive."""
+    defined, undefined = set(), set()
     for line in nm_output.splitlines():
-        match = re.fullmatch(r"\s*(?:[0-9a-fA-F]+\s+)?U\s+(\S+)", line)
-        if match:
-            symbols.add(match[1])
-    return symbols
+        match = re.fullmatch(r"\s*(?:[0-9a-fA-F]+\s+)?([A-Za-z?-])\s+(\S+)", line)
+        if not match:
+            continue
+        kind, symbol = match[1], match[2]
+        if kind == "U":
+            undefined.add(symbol)
+        elif kind.isupper():
+            defined.add(symbol)
+    return defined, undefined
+
+
+def undefined_symbols(nm_output: str) -> set[str]:
+    return symbol_table(nm_output)[1]
+
+
+def dependency_closure(module: str, modules: dict) -> set[str]:
+    closure, pending = set(), list(modules.get(module, {}).get("dependencies", []))
+    while pending:
+        current = pending.pop()
+        if current in closure or current not in modules:
+            continue
+        closure.add(current)
+        pending.extend(modules[current]["dependencies"])
+    return closure
+
+
+def unresolved(module: str, tables: dict[str, tuple[set[str], set[str]]], modules: dict) -> set[str]:
+    """Undefined symbols of a module that neither itself nor its declared dependencies define."""
+    defined, undefined = tables[module]
+    provided = set(defined)
+    for dependency in dependency_closure(module, modules):
+        if dependency in tables:
+            provided |= tables[dependency][0]
+    return undefined - provided
 
 
 def classify(symbols: set[str], module: str, allowlist: dict) -> list[str]:
@@ -38,7 +71,7 @@ def classify(symbols: set[str], module: str, allowlist: dict) -> list[str]:
 
 
 def run_nm(path: Path) -> str:
-    result = subprocess.run(["llvm-nm", "--undefined-only", str(path)], capture_output=True, text=True,
+    result = subprocess.run(["llvm-nm", str(path)], capture_output=True, text=True,
                             encoding="utf-8", errors="replace")
     if result.returncode:
         raise RuntimeError(f"llvm-nm failed for {path}\n{result.stdout}\n{result.stderr}")
@@ -86,12 +119,16 @@ def main() -> int:
         if not args.build_dir:
             raise SystemExit("--build-dir or --object is required")
         targets = [(m, p) for m, p in module_artifacts(root, args.build_dir.resolve(), modules) if m in allowlist["modules"]]
-    findings = []
+    tables: dict[str, tuple[set[str], set[str]]] = {}
     for module, path in targets:
-        findings.extend(classify(undefined_symbols(run_nm(path)), module, allowlist))
-    present = {m for m, _ in targets}
+        defined, undefined = symbol_table(run_nm(path))
+        previous = tables.get(module, (set(), set()))
+        tables[module] = (previous[0] | defined, previous[1] | undefined)
+    findings = []
+    for module in tables:
+        findings.extend(classify(unresolved(module, tables, modules), module, allowlist))
     for module in args.require:
-        if module not in present:
+        if module not in tables:
             findings.append(f"ARC-007: required module {module} has no static library in the build")
     for finding in findings:
         print(finding)

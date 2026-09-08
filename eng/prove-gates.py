@@ -103,6 +103,12 @@ def main() -> None:
         result2 = run(symbols, root, False, "ARC-003")
         evidence.append({"rule": "ARC-003", "negative": result2, "win32Tick": result, "restorationExit": 0})
         print("ARC-007 / ARC-003: llvm-nm symbol check rejected time, GetTickCount and CreateFileW in core; memcmp passed")
+        probe.write_text("#include <string.h>\nint nenefolio_same(const char *a, const char *b);\nint nenefolio_same(const char *a, const char *b) { return memcmp(a, b, strlen(a)) == 0; }\n", encoding="utf-8")
+        run(compile_probe, root, True)
+        result = run(symbols + ["--require", "application"], root, False, "required module application has no static library")
+        restoration = run(symbols + ["--require", "core"], root, True)
+        evidence.append({"rule": "ARC-003", "negative": result, "restorationExit": restoration["exitCode"]})
+        print("ARC-003: a required module without a static library is rejected; the present module passes")
     (output_root / "results.json").write_text(json.dumps(evidence, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(f"Gate proofs passed: {len(evidence)} real-tool proofs")
 

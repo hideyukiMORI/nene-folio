@@ -23,7 +23,9 @@
 | ドロワー（drawer） | 左のペイン。検索窓と索引。自前描画・スクロールバー無し | `src/ui/win32` |
 | ビュー（view）／編集（edit） | 右のペインの 2 つのモード。閉じた enum | `enum pane_mode`（application） |
 | 意図（intent） | UI が発行する操作の値。クリック・ドラッグ・ホイール・入力 | `enum folio_intent`＋引数（application） |
-| 表示値（view model） | application が作り UI が写す値 | `struct *_view`（application） |
+| 表示値（view model） | application が作り UI が写す値 | `struct *_view`（application）・`struct drawer_row`（core） |
+| 測定ビルド（measurement build） | 同じ中核ソースと単体テストを計装コンパイルして分岐を測る検証専用のビルド。第 2 の製品実装ではない | `eng/coverage.py` → `out/coverage/` |
+| 確保失敗の注入（allocation probe） | 測定ビルドでだけ中核の `malloc` / `calloc` / `realloc` をテストへ向け、n 回目の確保を失敗させる仕掛け | `tests/unit/allocation_probe.h` |
 
 ## 使ってはいけない語
 

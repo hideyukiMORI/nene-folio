@@ -1,8 +1,8 @@
 {
-  "comment": "ARC-003 / ARC-007: 中核の静的ライブラリが未定義のまま外へ要求してよいシンボル。正規表現で完全一致。ここに無い外部シンボルは依存の追加であり、ADR と 3 点セットが要る。",
+  "comment": "ARC-003 / ARC-007: 中核の静的ライブラリが、自身と宣言済みの依存モジュールで解決した後に、未定義のまま外へ要求してよいシンボル。正規表現で完全一致。ここに無い外部シンボルは依存の追加であり、ADR と 3 点セットが要る。__asan_ / __ubsan_ / __sanitizer_ は Debug 構成の検出層（C-016）。",
   "modules": {
-    "core": ["memcpy", "memmove", "memset", "memcmp", "strlen", "strncmp", "strcmp", "malloc", "calloc", "realloc", "free", "__chkstk", "_fltused", "__security_cookie", "__security_check_cookie", "__report_rangecheckfailure", "__GSHandlerCheck", "__stack_chk_fail", "__stack_chk_guard", "_RTC_.*", "__asan_.*", "___asan_.*", "__sanitizer_.*", "__ubsan_.*", "nenefolio_.*"],
-    "application": ["memcpy", "memmove", "memset", "memcmp", "strlen", "strncmp", "strcmp", "malloc", "calloc", "realloc", "free", "__chkstk", "_fltused", "__security_cookie", "__security_check_cookie", "__report_rangecheckfailure", "__GSHandlerCheck", "__stack_chk_fail", "__stack_chk_guard", "_RTC_.*", "__asan_.*", "___asan_.*", "__sanitizer_.*", "__ubsan_.*", "nenefolio_.*"]
+    "core": ["memcpy", "memmove", "memset", "memcmp", "strlen", "strncmp", "strcmp", "malloc", "calloc", "realloc", "free", "__chkstk", "_fltused", "__security_cookie", "__security_check_cookie", "__report_rangecheckfailure", "__GSHandlerCheck", "__stack_chk_fail", "__stack_chk_guard", "_RTC_.*", "__asan_.*", "___asan_.*", "__sanitizer_.*", "__ubsan_.*"],
+    "application": ["memcpy", "memmove", "memset", "memcmp", "strlen", "strncmp", "strcmp", "malloc", "calloc", "realloc", "free", "__chkstk", "_fltused", "__security_cookie", "__security_check_cookie", "__report_rangecheckfailure", "__GSHandlerCheck", "__stack_chk_fail", "__stack_chk_guard", "_RTC_.*", "__asan_.*", "___asan_.*", "__sanitizer_.*", "__ubsan_.*"]
   },
   "nondeterministic": ["_?time(32|64)?", "clock", "timespec_get", "rand(_s)?", "srand", "getenv(_s)?", "_wgetenv", "_dupenv_s", "_?w?setlocale", "__imp_GetLocalTime", "__imp_GetSystemTime.*", "__imp_GetTickCount(64)?", "__imp_QueryPerformanceCounter", "__imp_GetEnvironmentVariable[AW]", "__imp_BCryptGenRandom", "__imp_CryptGenRandom", "__imp_GetCursorPos"]
 }

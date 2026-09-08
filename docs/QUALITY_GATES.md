@@ -70,7 +70,7 @@ CI で必要なゲートは、すべてローカルで実行できる。検査�
 中核の分岐カバレッジ下限を 90% とする。閾値は上げてよいが下げてはならない。下げるには ADR が要る。
 **置いていない層は「置いていない」と書く。**
 
-- 機械強制: **planned**（LLVM の計装と `llvm-cov` の分岐計測が C で動くことは実測済み（V1）。中核の静的ライブラリと単体テストが生まれてから `eng/coverage.py` を結線する）
+- 機械強制: **active**（`eng/coverage.py` / `eng/coverage-policy.json`。core / application の全 `.c` を測定ビルドで計装し、LLVM の分岐 90% 下限。対象欠落・空の集計も拒否。テストを省いた反例が落ちることを毎回確かめる。中核の確保失敗の経路は測定ビルドでだけ注入して走らせる。2026-09-09・ADR 0004）
 
 ### QLT-010 — ゲートの弱体化はアーキテクチャ変更
 
@@ -176,12 +176,12 @@ CNF-006 が「本文に定義があるのにここに行が無い」を拒否す
 | 規則 | 状態 | 機械強制の実体 |
 | --- | --- | --- |
 | ARC-001 | planned | レビュー事項（CNF-001 が温床を減らす） |
-| ARC-002 | planned | |
-| ARC-003 | planned | |
+| ARC-002 | active | eng/targets.cmake（configure で宣言外の依存と OS ライブラリを拒否）＋ eng/conformance.py --build-dir（File API の実グラフ・include） |
+| ARC-003 | active | eng/symbols.py --require core application（llvm-nm ＋ eng/symbol-allowlist.json）＋ 字句検査 |
 | ARC-004 | planned | |
 | ARC-005 | planned | |
 | ARC-006 | planned | |
-| ARC-007 | planned | |
+| ARC-007 | active | eng/symbols.py（非決定シンボル。src/adapters/win32 だけ対象外）＋ 字句検査 |
 | ARC-008 | planned | レビュー事項 |
 | ARC-009 | planned | |
 | ARC-010 | planned | |
@@ -216,7 +216,7 @@ CNF-006 が「本文に定義があるのにここに行が無い」を拒否す
 | QLT-006 | planned | |
 | QLT-007 | planned | |
 | QLT-008 | planned | レビュー事項 |
-| QLT-009 | planned | |
+| QLT-009 | active | LLVM 計装・llvm-cov・eng/coverage.py（分岐 90%・確保失敗の注入・反例） |
 | QLT-010 | 不能 | PR の手続き |
 | QLT-011 | planned | |
 | QLT-012 | planned | |
@@ -238,13 +238,13 @@ CNF-006 が「本文に定義があるのにここに行が無い」を拒否す
 | --- | --- | --- |
 | コンパイル | 型安全・網羅性・警告ゼロ | clang-cl（C23）・`eng/targets.cmake` の警告集合 |
 | 整形 | 文字列としての正本 | clang-format / .clang-format |
-| API 禁止 | 時刻・乱数・環境・OS import・宣言外の外部シンボル | `eng/symbols.py`（`llvm-nm` ＋ `eng/symbol-allowlist.json`）。字句検査は補助 |
+| API 禁止 | 時刻・乱数・環境・OS import・宣言外の外部シンボル | `eng/symbols.py --require core application`（`llvm-nm` ＋ `eng/symbol-allowlist.json`。アーカイブ内と宣言済み依存で解決してから照合）。字句検査は補助 |
 | 静的解析 | null 逆参照・複雑度・関数の大きさ・危険な API | clang-tidy / .clang-tidy |
 | アーキテクチャ | 宣言グラフ・実ターゲット・ソース所有 | targets.cmake / architecture.json / CMake File API |
 | 規約検査 | NeNe Folio 固有 | `eng/conformance.py` |
 | 検査自身のテスト | 規約検査・シンボル検査・実ツールの正例・反例 | unittest / eng/prove-gates.py |
-| 単体テスト | 振る舞い | CTest / tests/unit（未作成。ASan / UBSan 付きでビルドする） |
-| カバレッジ | 中核の検証密度 | 未結線（V1 で経路を実測済み。Phase 3 で `eng/coverage.py`） |
+| 単体テスト | 振る舞い | CTest / tests/unit（ASan / UBSan / nullability 付き・`-fno-sanitize-recover=all`。Debug 構成の全 target を計装） |
+| カバレッジ | 中核の検証密度 | `eng/coverage.py` / `eng/coverage-policy.json`。測定ビルド（ASan 付き・確保失敗の注入）で LLVM の実分岐を 90% 以上要求 |
 | 依存 | 道具の版と実行時依存 0 | tool-versions.json / architecture.json / `/MT`（R1） |
 
 ---

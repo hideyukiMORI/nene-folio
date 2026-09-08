@@ -70,7 +70,7 @@
 依存は [PROJECT_LAYOUT.md](PROJECT_LAYOUT.md) のグラフに従う。禁じた依存は「レビューで気をつけること」ではなく
 **import できないこと**でなければならない。循環は許さない。
 
-- 機械強制: **planned** → `eng/targets.cmake`（宣言外の `nenefolio_link` / `nenefolio_system_link` を configure で拒否）＋ `eng/conformance.py --build-dir`（CMake File API の実グラフと include の照合）。実ターゲットが core / application に生まれてから active
+- 機械強制: **active** → `eng/targets.cmake`（宣言外の `nenefolio_link` / `nenefolio_system_link` を configure で拒否。CMake の既定リンクライブラリは kernel32 だけに絞る）＋ `eng/conformance.py --build-dir`（CMake File API の実グラフと include の照合）。2026-09-09 の最初の縦切り（Issue #3 / ADR 0004）で実ターゲットが生まれた
 
 ### ARC-003 — 中核はプラットフォームから独立している
 
@@ -80,7 +80,7 @@
 🔑 標準ライブラリに同梱される枠組み（Swing・`java.util.prefs` 等）は、依存を宣言しなくても import できてしまう。
 その場合はビルドグラフでは塞げず、パッケージ単位の検査層が塞ぐ。
 
-- 機械強制: **planned** → `eng/symbols.py`（core / application の静的ライブラリが `__imp_*` や許可リスト外のシンボルを要求したら落とす）＋ `eng/conformance.py`（`windows.h` / `stdio.h` / `time.h` の include を字句で拒否）。中核の静的ライブラリが生まれ、`--require core application` で結線してから active
+- 機械強制: **active** → `eng/symbols.py --require core application`（core / application の静的ライブラリが、アーカイブ内と宣言済み依存で解決した後も `__imp_*` や許可リスト外のシンボルを要求したら落とす）＋ `eng/conformance.py`（`windows.h` / `stdio.h` / `time.h` の include を字句で拒否）。2026-09-09 に結線（Issue #3 / ADR 0004）
 
 ### ARC-004 — 状態には唯一の所有者がいる
 
@@ -129,7 +129,7 @@
 これらはポートか明示的な引数から入る。読んでよいのは **`adapters/win32` ただ 1 区画**であり、
 そのことは「レビューの約束」ではなく、**その区画だけ禁止を適用しない**というビルド設定の差分として残す。
 
-- 機械強制: **planned** → `eng/symbols.py`（`llvm-nm --undefined-only` の結果に `_time64` / `rand` / `getenv` / `__imp_GetTickCount*` 等が現れたら ARC-007 で落とす。`src/adapters/win32` だけ対象外）＋ 字句検査。ARC-003 と同じ条件で active
+- 機械強制: **active** → `eng/symbols.py`（`llvm-nm` の未定義シンボルに `_time64` / `rand` / `getenv` / `__imp_GetTickCount*` 等が現れたら ARC-007 で落とす。`src/adapters/win32` だけ対象外）＋ 字句検査。2026-09-09 に ARC-003 と同時に結線（Issue #3 / ADR 0004）
 - 補足: テストソースにも同じ禁止を適用する。**テストが実時刻を読むことも決定性の破壊である。**
 
 ### ARC-008 — 境界は一度だけ検証する
