@@ -14,7 +14,6 @@ struct note_pane
 
 static const wchar_t library_name[] = L"Msftedit.dll";
 static const wchar_t class_name[] = L"RICHEDIT50W";
-constexpr COLORREF pane_background = RGB(0xFF, 0xFF, 0xFF);
 
 /* EM_STREAMIN のコールバック。cookie は rtf_stream への DWORD_PTR。 */
 static DWORD CALLBACK stream_in(DWORD_PTR cookie, LPBYTE buffer, LONG wanted, LONG *_Nonnull read)
@@ -32,7 +31,7 @@ static DWORD CALLBACK stream_in(DWORD_PTR cookie, LPBYTE buffer, LONG wanted, LO
     return 0;
 }
 
-enum note_pane_outcome note_pane_create(HWND _Nonnull parent,
+enum note_pane_outcome note_pane_create(HWND _Nonnull parent, COLORREF background,
                                         struct note_pane *_Nullable *_Nonnull out)
 {
     struct note_pane *_Nullable pane = calloc(1, sizeof *pane);
@@ -46,7 +45,8 @@ enum note_pane_outcome note_pane_create(HWND _Nonnull parent,
         note_pane_destroy(pane);
         return NOTE_PANE_NOT_CREATED;
     }
-    DWORD style = WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL;
+    /* スクロールバーは出さない（FR-012 と同じ流儀）。ホイールで動く。 */
+    DWORD style = WS_CHILD | WS_VISIBLE | ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL;
     pane->handle = CreateWindowExW(0, class_name, L"", style, 0, 0, 0, 0, parent, nullptr,
                                    GetModuleHandleW(nullptr), nullptr);
     if (pane->handle == nullptr)
@@ -54,7 +54,7 @@ enum note_pane_outcome note_pane_create(HWND _Nonnull parent,
         note_pane_destroy(pane);
         return NOTE_PANE_NOT_CREATED;
     }
-    SendMessageW(pane->handle, EM_SETBKGNDCOLOR, 0, (LPARAM)pane_background);
+    SendMessageW(pane->handle, EM_SETBKGNDCOLOR, 0, (LPARAM)background);
     *out = pane;
     return NOTE_PANE_CREATED;
 }

@@ -1,5 +1,6 @@
 /* 合成ルート（ARC-006）。ポートに実装を結び、窓を起動し、メッセージループと終了コードを所有する。
  * 出してよいのは起動できなかった理由 1 行だけ（FR-015）。文言は application が作る。 */
+#include "appearance_adapter.h"
 #include "folio_state.h"
 #include "folio_window.h"
 #include "persistence_adapter.h"
@@ -52,11 +53,13 @@ static void run_message_loop(void)
 }
 
 /* 状態と窓を作って走らせる。アダプタは状態より長く生きる。 */
-static int run(struct persistence_adapter *_Nonnull adapter)
+static int run(struct persistence_adapter *_Nonnull persistence,
+               struct appearance_adapter *_Nonnull appearance)
 {
-    struct persistence_port port = persistence_adapter_port(adapter);
+    struct persistence_port files = persistence_adapter_port(persistence);
+    struct appearance_port looks = appearance_adapter_port(appearance);
     struct folio_state *_Nullable state = nullptr;
-    enum folio_state_outcome loaded = folio_state_create(&port, &state);
+    enum folio_state_outcome loaded = folio_state_create(&files, &looks, &state);
     if (loaded != FOLIO_STATE_READY)
     {
         report_utf8(folio_state_failure_line(loaded));
@@ -90,7 +93,15 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE previous, PWSTR arguments, int
         report(adapter_failure(created));
         return 1;
     }
-    int code = run(adapter);
+    struct appearance_adapter *_Nullable appearance = nullptr;
+    if (appearance_adapter_create(&appearance) != APPEARANCE_ADAPTER_CREATED)
+    {
+        report(L"記憶域が足りません。");
+        persistence_adapter_destroy(adapter);
+        return 1;
+    }
+    int code = run(adapter, appearance);
+    appearance_adapter_destroy(appearance);
     persistence_adapter_destroy(adapter);
     return code;
 }

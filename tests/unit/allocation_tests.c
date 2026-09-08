@@ -1,6 +1,7 @@
 /* 中核のすべての確保を 1 回ずつ失敗させ、OUT_OF_MEMORY を返して片付けることを確かめる。
  * 注入が効くのは eng/coverage.py の測定ビルドだけ（allocation_probe.h）。 */
 #include "allocation_probe.h"
+#include "appearance_port.h"
 #include "category_ledger.h"
 #include "drawer_layout.h"
 #include "folio_state.h"
@@ -11,6 +12,7 @@
 #include "note_ledger.h"
 #include "note_text.h"
 #include "persistence_port.h"
+#include "rtf_palette.h"
 #include "unit_tests.h"
 #include "utf16_text.h"
 #include "utf8_text.h"
@@ -212,7 +214,8 @@ static bool markdown_scenario(void)
     }
     require(accepted == NOTE_TEXT_ACCEPTED, "note under probe");
     struct markdown_rtf *rtf = nullptr;
-    enum markdown_rtf_outcome converted = markdown_rtf_create(text, &rtf);
+    enum markdown_rtf_outcome converted =
+        markdown_rtf_create(text, rtf_palette_for(FOLIO_THEME_DARK), &rtf);
     note_text_destroy(text);
     if (converted == MARKDOWN_RTF_OUT_OF_MEMORY)
     {
@@ -234,8 +237,12 @@ static bool layout_scenario(void)
     if (completed)
     {
         const struct note_ledger *const per_category[] = {notes, notes};
-        struct drawer_metrics metrics = {
-            .top_padding = 1, .row_height = 2, .category_indent = 3, .note_indent = 4};
+        struct drawer_metrics metrics = {.top_padding = 1,
+                                         .row_height = 2,
+                                         .category_height = 3,
+                                         .category_gap = 1,
+                                         .category_indent = 3,
+                                         .note_indent = 4};
         struct drawer_layout *layout = nullptr;
         completed = drawer_layout_create(categories, per_category, metrics, &layout) ==
                     DRAWER_LAYOUT_CREATED;
@@ -250,15 +257,20 @@ static bool layout_scenario(void)
 static bool state_scenario_with(struct persistence_adapter *_Nonnull adapter)
 {
     struct persistence_port port = test_adapter_port(adapter);
+    struct appearance_port looks = test_appearance_port();
     struct folio_state *state = nullptr;
-    enum folio_state_outcome outcome = folio_state_create(&port, &state);
+    enum folio_state_outcome outcome = folio_state_create(&port, &looks, &state);
     if (outcome == FOLIO_STATE_OUT_OF_MEMORY)
     {
         return false;
     }
     require(outcome == FOLIO_STATE_READY, "state under probe");
-    struct drawer_metrics metrics = {
-        .top_padding = 1, .row_height = 2, .category_indent = 3, .note_indent = 4};
+    struct drawer_metrics metrics = {.top_padding = 1,
+                                     .row_height = 2,
+                                     .category_height = 3,
+                                     .category_gap = 1,
+                                     .category_indent = 3,
+                                     .note_indent = 4};
     struct drawer_layout *layout = nullptr;
     bool completed = folio_state_drawer_layout(state, metrics, &layout) == FOLIO_STATE_READY;
     drawer_layout_destroy(layout);

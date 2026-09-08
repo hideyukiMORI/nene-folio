@@ -25,6 +25,8 @@
 | 意図（intent） | UI が発行する操作。クリック・ドラッグ・ホイール・入力 | application の reducer 関数 `folio_state_*`（`folio_state_toggle_category` 等）。種類が増えたら `enum folio_intent` に束ねる |
 | 表示値（view model） | application が作り UI が写す値 | `struct *_view`（application）・`struct drawer_row`（core） |
 | 測定ビルド（measurement build） | 同じ中核ソースと単体テストを計装コンパイルして分岐を測る検証専用のビルド。第 2 の製品実装ではない | `eng/coverage.py` → `out/coverage/` |
+| テーマ（theme） | ライト／ダークの閉じた選択肢。OS のアプリのモードから起動時に決まる | `enum folio_theme`（core） |
+| パレット（palette） | テーマごとの色の束。RTF 用と自前描画用の 2 つが正本 | `rtf_palette`（core）・`folio_palette`（ui/win32） |
 | 確保失敗の注入（allocation probe） | 測定ビルドでだけ中核の `malloc` / `calloc` / `realloc` をテストへ向け、n 回目の確保を失敗させる仕掛け | `tests/unit/allocation_probe.h` |
 
 ## 使ってはいけない語

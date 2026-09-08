@@ -5,8 +5,12 @@
 
 #include <string.h>
 
-static const struct drawer_metrics metrics = {
-    .top_padding = 8, .row_height = 28, .category_indent = 12, .note_indent = 32};
+static const struct drawer_metrics metrics = {.top_padding = 8,
+                                              .row_height = 28,
+                                              .category_height = 34,
+                                              .category_gap = 6,
+                                              .category_indent = 12,
+                                              .note_indent = 32};
 
 static struct category_ledger *_Nonnull categories_from(const char *_Nonnull text)
 {
@@ -46,12 +50,12 @@ static struct drawer_layout *_Nonnull build_layout(void)
 static void verify_hits(const struct drawer_layout *_Nonnull layout)
 {
     size_t index = 99;
-    require(!drawer_layout_hit(layout, 7, &index) && index == 99, "above first row");
-    require(drawer_layout_hit(layout, 8, &index) && index == 0, "top edge of first row");
-    require(drawer_layout_hit(layout, 35, &index) && index == 0, "bottom edge of first row");
-    require(drawer_layout_hit(layout, 36, &index) && index == 1, "first note row");
-    require(drawer_layout_hit(layout, 119, &index) && index == 3, "last row");
-    require(!drawer_layout_hit(layout, 120, &index), "below last row");
+    require(!drawer_layout_hit(layout, 13, &index) && index == 99, "above first row");
+    require(drawer_layout_hit(layout, 14, &index) && index == 0, "top edge of first row");
+    require(drawer_layout_hit(layout, 47, &index) && index == 0, "bottom edge of first row");
+    require(drawer_layout_hit(layout, 48, &index) && index == 1, "first note row");
+    require(drawer_layout_hit(layout, 143, &index) && index == 3, "last row");
+    require(!drawer_layout_hit(layout, 144, &index), "below last row");
 }
 
 static void verify_rows(void)
@@ -59,20 +63,27 @@ static void verify_rows(void)
     struct drawer_layout *layout = build_layout();
     require(drawer_layout_row_count(layout) == 4, "collapsed notes make no rows");
     struct drawer_row row = drawer_layout_row(layout, 0);
-    require(row.kind == DRAWER_ROW_CATEGORY && row.top == 8 && row.height == 28 &&
+    require(row.kind == DRAWER_ROW_CATEGORY && row.top == 14 && row.height == 34 &&
                 row.indent == 12 && same_text(row.text, "work") && row.color.blue == 0xFF,
             "category row");
+    require(row.ordinal == 1 && row.expanded && !row.selected, "category row marks");
     row = drawer_layout_row(layout, 1);
-    require(row.kind == DRAWER_ROW_NOTE && row.top == 36 && row.indent == 32 &&
+    require(row.kind == DRAWER_ROW_NOTE && row.top == 48 && row.height == 28 && row.indent == 32 &&
                 same_text(row.text, "alpha") && row.color.blue == 0xFF,
             "first note row");
     row = drawer_layout_row(layout, 2);
-    require(row.kind == DRAWER_ROW_NOTE && row.top == 64 && same_text(row.text, "beta"),
+    require(row.kind == DRAWER_ROW_NOTE && row.top == 76 && same_text(row.text, "beta"),
             "second note row");
     row = drawer_layout_row(layout, 3);
-    require(row.kind == DRAWER_ROW_CATEGORY && row.top == 92 && same_text(row.text, "closed") &&
-                row.color.green == 0xFF,
+    require(row.kind == DRAWER_ROW_CATEGORY && row.top == 110 && same_text(row.text, "closed") &&
+                row.color.green == 0xFF && row.ordinal == 2 && !row.expanded,
             "collapsed category row");
+    drawer_layout_select(layout, 0, 1);
+    require(!drawer_layout_row(layout, 1).selected && drawer_layout_row(layout, 2).selected,
+            "selection marks one note row");
+    drawer_layout_select(layout, 1, 0);
+    require(!drawer_layout_row(layout, 2).selected && !drawer_layout_row(layout, 3).selected,
+            "selection of a hidden note marks nothing");
     require(drawer_layout_row(layout, 0).category == 0 &&
                 drawer_layout_row(layout, 2).category == 0 && row.category == 1,
             "rows know their category");

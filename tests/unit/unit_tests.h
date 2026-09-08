@@ -28,5 +28,8 @@ struct persistence_port;
 [[nodiscard]] struct persistence_port
 test_adapter_port(struct persistence_adapter *_Nonnull adapter);
 void test_adapter_destroy(struct persistence_adapter *_Nullable adapter);
+/* 常にダークを答える外観ポート。 */
+struct appearance_port;
+[[nodiscard]] struct appearance_port test_appearance_port(void);
 
 #endif

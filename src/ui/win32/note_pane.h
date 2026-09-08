@@ -10,7 +10,8 @@
 
 struct note_pane;
 
-[[nodiscard]] enum note_pane_outcome note_pane_create(HWND _Nonnull parent,
+/* background は地の色（テーマの正本 folio_palette から）。 */
+[[nodiscard]] enum note_pane_outcome note_pane_create(HWND _Nonnull parent, COLORREF background,
                                                       struct note_pane *_Nullable *_Nonnull out);
 /* 親が配置に使う。ウィンドウが既に破棄されていれば nullptr。 */
 [[nodiscard]] HWND _Nullable note_pane_handle(const struct note_pane *_Nonnull pane);

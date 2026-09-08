@@ -17,7 +17,7 @@ struct category_ledger
 
 constexpr uint32_t ledger_version = 1;
 /* 走査でだけ見つかったカテゴリに与える色。利用者が右クリックで変えるまでの仮の値（FR-010）。 */
-constexpr struct rgb_color default_color = {0x8A, 0x8A, 0x8A};
+constexpr struct rgb_color default_color = {0x7F, 0x8F, 0xA6};
 
 enum category_ledger_outcome category_ledger_empty(struct category_ledger *_Nullable *_Nonnull out)
 {

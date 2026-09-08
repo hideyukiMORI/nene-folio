@@ -26,7 +26,7 @@ nenefolio_target(nenefolio_core core STATIC
     src/core/rgb_color.c src/core/utf8_text.c src/core/utf16_text.c
     src/core/json_reader.c src/core/json_writer.c src/core/name_list.c
     src/core/category_ledger.c src/core/note_ledger.c src/core/drawer_layout.c
-    src/core/text_buffer.c src/core/note_text.c src/core/markdown_rtf.c)
+    src/core/text_buffer.c src/core/note_text.c src/core/markdown_rtf.c src/core/rtf_palette.c)
 nenefolio_target(nenefolio_application application STATIC src/application/folio_state.c)
 nenefolio_link(nenefolio_application nenefolio_core)
 
@@ -38,24 +38,28 @@ nenefolio_link(folio_tests nenefolio_core)
 nenefolio_link(folio_tests nenefolio_application)
 add_test(NAME folio_unit COMMAND folio_tests)
 
-nenefolio_target(nenefolio_persistence adapters_win32 STATIC
-    src/adapters/win32/file_bytes.c src/adapters/win32/persistence_adapter.c)
-nenefolio_link(nenefolio_persistence nenefolio_core)
-nenefolio_link(nenefolio_persistence nenefolio_application)
-nenefolio_system_link(nenefolio_persistence kernel32)
+nenefolio_target(nenefolio_adapters adapters_win32 STATIC
+    src/adapters/win32/file_bytes.c src/adapters/win32/persistence_adapter.c
+    src/adapters/win32/appearance_adapter.c)
+nenefolio_link(nenefolio_adapters nenefolio_core)
+nenefolio_link(nenefolio_adapters nenefolio_application)
+nenefolio_system_link(nenefolio_adapters kernel32)
+nenefolio_system_link(nenefolio_adapters advapi32)
 
 nenefolio_target(nenefolio_window ui_win32 STATIC
-    src/ui/win32/drawer_window.c src/ui/win32/folio_window.c src/ui/win32/note_pane.c)
+    src/ui/win32/drawer_window.c src/ui/win32/folio_window.c src/ui/win32/note_pane.c
+    src/ui/win32/folio_palette.c)
 nenefolio_link(nenefolio_window nenefolio_core)
 nenefolio_link(nenefolio_window nenefolio_application)
 nenefolio_system_link(nenefolio_window user32)
 nenefolio_system_link(nenefolio_window gdi32)
+nenefolio_system_link(nenefolio_window dwmapi)
 
 nenefolio_target(nenefolio app EXECUTABLE src/app/main.c src/app/NeNeFolio.manifest)
 set_property(TARGET nenefolio PROPERTY WIN32_EXECUTABLE TRUE)
 set_property(TARGET nenefolio PROPERTY OUTPUT_NAME NeNeFolio)
 nenefolio_link(nenefolio nenefolio_core)
 nenefolio_link(nenefolio nenefolio_application)
-nenefolio_link(nenefolio nenefolio_persistence)
+nenefolio_link(nenefolio nenefolio_adapters)
 nenefolio_link(nenefolio nenefolio_window)
 nenefolio_system_link(nenefolio user32)
