@@ -2,6 +2,7 @@
 
 #include "category_ledger.h"
 #include "file_bytes.h"
+#include "json_writer.h"
 #include "name_list.h"
 #include "note_ledger.h"
 #include "utf16_text.h"
@@ -317,6 +318,30 @@ static enum persistence_outcome read_note_ledger(struct persistence_adapter *_No
     return PERSISTENCE_MALFORMED;
 }
 
+static enum persistence_outcome write_category_ledger(struct persistence_adapter *_Nonnull adapter,
+                                                      const struct category_ledger *_Nonnull ledger)
+{
+    wchar_t path[path_capacity];
+    if (!compose(adapter, nullptr, L"categories.json", path))
+    {
+        return PERSISTENCE_UNWRITABLE;
+    }
+    struct json_writer *_Nullable writer = nullptr;
+    if (json_writer_create(&writer) != JSON_WRITER_ACCEPTED)
+    {
+        return PERSISTENCE_OUT_OF_MEMORY;
+    }
+    category_ledger_write(ledger, writer);
+    enum json_writer_outcome finished = json_writer_finish(writer);
+    enum persistence_outcome outcome = PERSISTENCE_OUT_OF_MEMORY;
+    if (finished == JSON_WRITER_ACCEPTED)
+    {
+        outcome = file_bytes_store(path, json_writer_text(writer), json_writer_length(writer));
+    }
+    json_writer_destroy(writer);
+    return outcome;
+}
+
 struct persistence_port persistence_adapter_port(struct persistence_adapter *_Nonnull adapter)
 {
     struct persistence_port port = {
@@ -324,6 +349,7 @@ struct persistence_port persistence_adapter_port(struct persistence_adapter *_No
         .scan_categories = scan_categories,
         .scan_notes = scan_notes,
         .read_category_ledger = read_category_ledger,
+        .write_category_ledger = write_category_ledger,
         .read_note_ledger = read_note_ledger,
     };
     return port;

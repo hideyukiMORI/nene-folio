@@ -6,6 +6,8 @@
 #include "drawer_row_kind.h"
 #include "rgb_color.h"
 
+#include <stddef.h>
+
 struct drawer_row
 {
     enum drawer_row_kind kind;
@@ -14,6 +16,7 @@ struct drawer_row
     int indent; /* 文字の左端の x 座標 */
     const char *_Nonnull text;
     struct rgb_color color; /* 行が属するカテゴリの色 */
+    size_t category;        /* 行が属するカテゴリの番号（台帳の順） */
 };
 
 #endif

@@ -57,6 +57,7 @@ static struct drawer_row row_at(struct drawer_metrics metrics, size_t index,
         .indent = kind == DRAWER_ROW_CATEGORY ? metrics.category_indent : metrics.note_indent,
         .text = text,
         .color = {0, 0, 0},
+        .category = 0,
     };
     return row;
 }
@@ -74,6 +75,7 @@ static void fill(struct drawer_layout *_Nonnull layout,
         struct drawer_row row = row_at(metrics, layout->count, DRAWER_ROW_CATEGORY,
                                        category_ledger_name(categories, category));
         row.color = color;
+        row.category = category;
         offset = place(layout, offset, row);
         if (!category_ledger_expanded(categories, category))
         {
@@ -85,6 +87,7 @@ static void fill(struct drawer_layout *_Nonnull layout,
             row = row_at(metrics, layout->count, DRAWER_ROW_NOTE,
                          note_ledger_name(notes[category], note));
             row.color = color;
+            row.category = category;
             offset = place(layout, offset, row);
         }
     }
@@ -124,6 +127,20 @@ size_t drawer_layout_row_count(const struct drawer_layout *_Nonnull layout)
 struct drawer_row drawer_layout_row(const struct drawer_layout *_Nonnull layout, size_t index)
 {
     return layout->rows[index];
+}
+
+bool drawer_layout_hit(const struct drawer_layout *_Nonnull layout, int y, size_t *_Nonnull index)
+{
+    for (size_t row = 0; row < layout->count; ++row)
+    {
+        const struct drawer_row *_Nonnull candidate = &layout->rows[row];
+        if (y >= candidate->top && y < candidate->top + candidate->height)
+        {
+            *index = row;
+            return true;
+        }
+    }
+    return false;
 }
 
 void drawer_layout_destroy(struct drawer_layout *_Nullable layout)

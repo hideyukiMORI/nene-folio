@@ -10,6 +10,7 @@
 
 struct folio_state
 {
+    struct persistence_port port;
     struct category_ledger *_Nullable categories;
     struct note_ledger *_Nonnull *_Nullable notes; /* categories と同じ数・同じ順 */
     size_t notes_count;
@@ -26,6 +27,10 @@ static enum folio_state_outcome translate(enum persistence_outcome outcome)
         return FOLIO_STATE_DATA_UNREADABLE;
     case PERSISTENCE_MALFORMED:
         return FOLIO_STATE_LEDGER_MALFORMED;
+    case PERSISTENCE_STORED:
+        return FOLIO_STATE_READY;
+    case PERSISTENCE_UNWRITABLE:
+        return FOLIO_STATE_STORE_FAILED;
     case PERSISTENCE_OUT_OF_MEMORY:
         return FOLIO_STATE_OUT_OF_MEMORY;
     }
@@ -164,6 +169,7 @@ enum folio_state_outcome folio_state_create(const struct persistence_port *_Nonn
     {
         return FOLIO_STATE_OUT_OF_MEMORY;
     }
+    state->port = *port;
     enum folio_state_outcome outcome = load_categories(state, port);
     if (outcome == FOLIO_STATE_READY)
     {
@@ -189,6 +195,53 @@ enum folio_state_outcome folio_state_drawer_layout(const struct folio_state *_No
         return FOLIO_STATE_OUT_OF_MEMORY;
     }
     return FOLIO_STATE_READY;
+}
+
+enum folio_state_outcome folio_state_toggle_category(struct folio_state *_Nonnull state,
+                                                     size_t index)
+{
+    if (index >= category_ledger_count(state->categories))
+    {
+        return FOLIO_STATE_NO_SUCH_CATEGORY;
+    }
+    struct category_ledger *_Nullable toggled = nullptr;
+    enum folio_state_outcome outcome =
+        from_category_ledger(category_ledger_toggled(state->categories, index, &toggled));
+    if (outcome != FOLIO_STATE_READY)
+    {
+        return outcome;
+    }
+    enum persistence_outcome stored =
+        state->port.write_category_ledger(state->port.adapter, toggled);
+    if (stored != PERSISTENCE_STORED)
+    {
+        category_ledger_destroy(toggled);
+        return stored == PERSISTENCE_OUT_OF_MEMORY ? FOLIO_STATE_OUT_OF_MEMORY
+                                                   : FOLIO_STATE_STORE_FAILED;
+    }
+    category_ledger_destroy(state->categories);
+    state->categories = toggled;
+    return FOLIO_STATE_READY;
+}
+
+const char *_Nonnull folio_state_failure_line(enum folio_state_outcome outcome)
+{
+    switch (outcome)
+    {
+    case FOLIO_STATE_READY:
+        return "";
+    case FOLIO_STATE_DATA_UNREADABLE:
+        return "data/ を読めませんでした。";
+    case FOLIO_STATE_LEDGER_MALFORMED:
+        return "data/ の台帳（categories.json / index.json）が版 1 の形ではありません。";
+    case FOLIO_STATE_STORE_FAILED:
+        return "data/categories.json に書き戻せませんでした。表示は変えていません。";
+    case FOLIO_STATE_NO_SUCH_CATEGORY:
+        return "索引に無いカテゴリが操作されました。";
+    case FOLIO_STATE_OUT_OF_MEMORY:
+        return "記憶域が足りません。";
+    }
+    return "data/ を読めませんでした。";
 }
 
 void folio_state_destroy(struct folio_state *_Nullable state)

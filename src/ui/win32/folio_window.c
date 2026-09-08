@@ -9,7 +9,7 @@
 struct folio_window
 {
     HWND _Nullable handle;
-    const struct folio_state *_Nonnull state;
+    struct folio_state *_Nonnull state;
     struct drawer_window *_Nullable drawer;
 };
 
@@ -182,7 +182,7 @@ static bool ensure_class(HINSTANCE instance)
     return RegisterClassExW(&description) != 0;
 }
 
-enum folio_window_outcome folio_window_create(const struct folio_state *_Nonnull state,
+enum folio_window_outcome folio_window_create(struct folio_state *_Nonnull state,
                                               struct folio_window *_Nullable *_Nonnull out)
 {
     HINSTANCE instance = GetModuleHandleW(nullptr);

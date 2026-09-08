@@ -126,4 +126,4 @@ Waivers: none | WVR-NNNN
 
 現在のタスクは [docs/todo/current.md](docs/todo/current.md)。GitHub Issue が正で、そこは要約。
 
-2026-09-09: Phase 3 の最初の縦切り（Issue #3 / ADR 0004）。起動して `data/` の 1 カテゴリ・1 ノートを枠なし窓のドロワーに描く。5 層すべてに正典の経路があり、ARC-002 / ARC-003 / ARC-007 / QLT-009 が active。右ペイン・トグル・並び替え・保存はまだ無い。仕様は [SPECIFICATION.md](SPECIFICATION.md)。
+2026-09-09: Phase 3 の縦切り 2 本（Issue #3 / ADR 0004、Issue #5）。起動して `data/` の索引を枠なし窓のドロワーに描き、カテゴリ行のクリックでトグルして `expanded` を書き戻す。5 層すべてに正典の経路があり、ARC-002 / ARC-003 / ARC-007 / QLT-009 が active。右ペイン・並び替え・色変更・検索はまだ無い。仕様は [SPECIFICATION.md](SPECIFICATION.md)。

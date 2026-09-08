@@ -17,11 +17,15 @@ void run_layout_tests(void);
 void run_state_tests(void);
 void run_allocation_tests(void);
 
-/* state_tests のポート実装で、台帳の文書から folio_state を作る。記憶不足はそのまま返す。 */
-struct folio_state;
-enum folio_state_outcome : unsigned char;
-[[nodiscard]] enum folio_state_outcome
-state_from_texts(const char *_Nonnull categories_text, const char *_Nonnull notes_text,
-                 struct folio_state *_Nullable *_Nonnull out);
+/* state_tests のポート実装（偽のアダプタ）。台帳の文書を返し、書き戻しは受け入れる。
+ * folio_state はポートの adapter を借りるので、state より長く生かしてから test_adapter_destroy
+ * する。 */
+struct persistence_adapter;
+struct persistence_port;
+[[nodiscard]] struct persistence_adapter *_Nonnull test_adapter_create(
+    const char *_Nonnull categories_text, const char *_Nonnull notes_text);
+[[nodiscard]] struct persistence_port
+test_adapter_port(struct persistence_adapter *_Nonnull adapter);
+void test_adapter_destroy(struct persistence_adapter *_Nullable adapter);
 
 #endif

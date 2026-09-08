@@ -6,6 +6,7 @@
 #include "persistence_port.h"
 #include "unit_tests.h"
 
+#include <stdlib.h>
 #include <string.h>
 
 /* テスト用のポート実装。application が不完全型として知る persistence_adapter をここで定義する。 */
@@ -22,6 +23,10 @@ struct persistence_adapter
     const char *_Nonnull const *_Nullable scanned_notes;
     size_t scanned_note_count;
     size_t note_scans; /* scan_notes が呼ばれた回数 */
+    enum persistence_outcome write_outcome;
+    size_t writes;            /* write_category_ledger が呼ばれた回数 */
+    size_t written_count;     /* 最後に書かれた台帳のカテゴリ数 */
+    bool written_expanded[8]; /* 最後に書かれた台帳の展開状態 */
 };
 
 static enum persistence_outcome list_names(const char *_Nonnull const *_Nullable items,
@@ -105,6 +110,23 @@ static enum persistence_outcome fake_read_note_ledger(struct persistence_adapter
     return parsed == NOTE_LEDGER_OUT_OF_MEMORY ? PERSISTENCE_OUT_OF_MEMORY : PERSISTENCE_MALFORMED;
 }
 
+static enum persistence_outcome
+fake_write_category_ledger(struct persistence_adapter *_Nonnull adapter,
+                           const struct category_ledger *_Nonnull ledger)
+{
+    adapter->writes += 1;
+    if (adapter->write_outcome != PERSISTENCE_STORED)
+    {
+        return adapter->write_outcome;
+    }
+    adapter->written_count = category_ledger_count(ledger);
+    for (size_t index = 0; index < adapter->written_count && index < 8; ++index)
+    {
+        adapter->written_expanded[index] = category_ledger_expanded(ledger, index);
+    }
+    return PERSISTENCE_STORED;
+}
+
 static const char *const scanned_categories[] = {"A", "B", "C"};
 static const char *const scanned_notes[] = {"two", "one", "three"};
 
@@ -124,6 +146,10 @@ static struct persistence_adapter healthy_adapter(void)
         .scanned_notes = scanned_notes,
         .scanned_note_count = 3,
         .note_scans = 0,
+        .write_outcome = PERSISTENCE_STORED,
+        .writes = 0,
+        .written_count = 0,
+        .written_expanded = {false},
     };
     return adapter;
 }
@@ -135,6 +161,7 @@ static struct persistence_port port_for(struct persistence_adapter *_Nonnull ada
         .scan_categories = fake_scan_categories,
         .scan_notes = fake_scan_notes,
         .read_category_ledger = fake_read_category_ledger,
+        .write_category_ledger = fake_write_category_ledger,
         .read_note_ledger = fake_read_note_ledger,
     };
     return port;
@@ -196,6 +223,53 @@ static void verify_absent_data(void)
     folio_state_destroy(state);
 }
 
+static size_t row_count(const struct folio_state *_Nonnull state)
+{
+    struct drawer_layout *layout = nullptr;
+    require(folio_state_drawer_layout(state, metrics, &layout) == FOLIO_STATE_READY, "layout");
+    size_t count = drawer_layout_row_count(layout);
+    drawer_layout_destroy(layout);
+    return count;
+}
+
+static void verify_toggle(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct persistence_port port = port_for(&adapter);
+    struct folio_state *state = nullptr;
+    require(folio_state_create(&port, &state) == FOLIO_STATE_READY, "state for toggle");
+    require(row_count(state) == 9, "rows before toggle");
+    require(folio_state_toggle_category(state, 0) == FOLIO_STATE_READY, "collapse B");
+    require(row_count(state) == 6, "B's notes are hidden");
+    require(adapter.writes == 1 && adapter.written_count == 3 && !adapter.written_expanded[0] &&
+                !adapter.written_expanded[1] && adapter.written_expanded[2],
+            "toggled ledger was written");
+    require(folio_state_toggle_category(state, 1) == FOLIO_STATE_READY, "expand A");
+    require(row_count(state) == 9 && adapter.writes == 2 && adapter.written_expanded[1],
+            "A's notes appear and the write follows");
+    require(folio_state_toggle_category(state, 3) == FOLIO_STATE_NO_SUCH_CATEGORY &&
+                adapter.writes == 2,
+            "out of range is refused without writing");
+    adapter.write_outcome = PERSISTENCE_UNWRITABLE;
+    require(folio_state_toggle_category(state, 0) == FOLIO_STATE_STORE_FAILED, "store failed");
+    require(row_count(state) == 9, "state is unchanged when the write fails");
+    adapter.write_outcome = PERSISTENCE_OUT_OF_MEMORY;
+    require(folio_state_toggle_category(state, 0) == FOLIO_STATE_OUT_OF_MEMORY,
+            "write out of memory");
+    folio_state_destroy(state);
+}
+
+static void verify_failure_lines(void)
+{
+    require(same_text(folio_state_failure_line(FOLIO_STATE_READY), ""), "ready has no line");
+    require(strlen(folio_state_failure_line(FOLIO_STATE_DATA_UNREADABLE)) > 0 &&
+                strlen(folio_state_failure_line(FOLIO_STATE_LEDGER_MALFORMED)) > 0 &&
+                strlen(folio_state_failure_line(FOLIO_STATE_STORE_FAILED)) > 0 &&
+                strlen(folio_state_failure_line(FOLIO_STATE_NO_SUCH_CATEGORY)) > 0 &&
+                strlen(folio_state_failure_line(FOLIO_STATE_OUT_OF_MEMORY)) > 0,
+            "every failure has a line");
+}
+
 static void expect_failure(struct persistence_adapter adapter, enum folio_state_outcome expected,
                            const char *_Nonnull description)
 {
@@ -232,15 +306,28 @@ static void verify_failures(void)
     expect_failure(adapter, FOLIO_STATE_OUT_OF_MEMORY, "out of memory note scan");
 }
 
-enum folio_state_outcome state_from_texts(const char *_Nonnull categories_text,
-                                          const char *_Nonnull notes_text,
-                                          struct folio_state *_Nullable *_Nonnull out)
+struct persistence_adapter *_Nonnull test_adapter_create(const char *_Nonnull categories_text,
+                                                         const char *_Nonnull notes_text)
 {
-    struct persistence_adapter adapter = healthy_adapter();
-    adapter.categories_text = categories_text;
-    adapter.notes_text = notes_text;
-    struct persistence_port port = port_for(&adapter);
-    return folio_state_create(&port, out);
+    struct persistence_adapter *adapter = malloc(sizeof *adapter);
+    if (adapter == nullptr)
+    {
+        exit(1);
+    }
+    *adapter = healthy_adapter();
+    adapter->categories_text = categories_text;
+    adapter->notes_text = notes_text;
+    return adapter;
+}
+
+struct persistence_port test_adapter_port(struct persistence_adapter *_Nonnull adapter)
+{
+    return port_for(adapter);
+}
+
+void test_adapter_destroy(struct persistence_adapter *_Nullable adapter)
+{
+    free(adapter);
 }
 
 void run_state_tests(void)
@@ -248,4 +335,6 @@ void run_state_tests(void)
     verify_ready_state();
     verify_absent_data();
     verify_failures();
+    verify_toggle();
+    verify_failure_lines();
 }

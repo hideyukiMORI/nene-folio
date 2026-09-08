@@ -322,6 +322,27 @@ category_ledger_reconcile(const struct category_ledger *_Nonnull ledger,
     return CATEGORY_LEDGER_ACCEPTED;
 }
 
+enum category_ledger_outcome
+category_ledger_toggled(const struct category_ledger *_Nonnull ledger, size_t index,
+                        struct category_ledger *_Nullable *_Nonnull out)
+{
+    struct category_ledger *_Nullable target = nullptr;
+    enum category_ledger_outcome outcome = category_ledger_empty(&target);
+    size_t count = name_list_count(ledger->names);
+    for (size_t entry = 0; outcome == CATEGORY_LEDGER_ACCEPTED && entry < count; ++entry)
+    {
+        outcome = copy_entry(target, ledger, entry);
+    }
+    if (outcome != CATEGORY_LEDGER_ACCEPTED)
+    {
+        category_ledger_destroy(target);
+        return outcome;
+    }
+    target->expanded[index] = !target->expanded[index];
+    *out = target;
+    return CATEGORY_LEDGER_ACCEPTED;
+}
+
 size_t category_ledger_count(const struct category_ledger *_Nonnull ledger)
 {
     return name_list_count(ledger->names);
