@@ -42,6 +42,18 @@ static struct drawer_layout *_Nonnull build_layout(void)
     return layout;
 }
 
+/* 行の上端は含み、下端は含まない。行の外では index を触らない。 */
+static void verify_hits(const struct drawer_layout *_Nonnull layout)
+{
+    size_t index = 99;
+    require(!drawer_layout_hit(layout, 7, &index) && index == 99, "above first row");
+    require(drawer_layout_hit(layout, 8, &index) && index == 0, "top edge of first row");
+    require(drawer_layout_hit(layout, 35, &index) && index == 0, "bottom edge of first row");
+    require(drawer_layout_hit(layout, 36, &index) && index == 1, "first note row");
+    require(drawer_layout_hit(layout, 119, &index) && index == 3, "last row");
+    require(!drawer_layout_hit(layout, 120, &index), "below last row");
+}
+
 static void verify_rows(void)
 {
     struct drawer_layout *layout = build_layout();
@@ -64,13 +76,9 @@ static void verify_rows(void)
     require(drawer_layout_row(layout, 0).category == 0 &&
                 drawer_layout_row(layout, 2).category == 0 && row.category == 1,
             "rows know their category");
-    size_t index = 99;
-    require(!drawer_layout_hit(layout, 7, &index) && index == 99, "above first row");
-    require(drawer_layout_hit(layout, 8, &index) && index == 0, "top edge of first row");
-    require(drawer_layout_hit(layout, 35, &index) && index == 0, "bottom edge of first row");
-    require(drawer_layout_hit(layout, 36, &index) && index == 1, "first note row");
-    require(drawer_layout_hit(layout, 119, &index) && index == 3, "last row");
-    require(!drawer_layout_hit(layout, 120, &index), "below last row");
+    require(drawer_layout_row(layout, 1).note == 0 && drawer_layout_row(layout, 2).note == 1,
+            "note rows know their note");
+    verify_hits(layout);
     drawer_layout_destroy(layout);
     drawer_layout_destroy(nullptr);
 }

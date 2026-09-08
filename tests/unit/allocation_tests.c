@@ -6,8 +6,10 @@
 #include "folio_state.h"
 #include "json_reader.h"
 #include "json_writer.h"
+#include "markdown_rtf.h"
 #include "name_list.h"
 #include "note_ledger.h"
+#include "note_text.h"
 #include "persistence_port.h"
 #include "unit_tests.h"
 #include "utf16_text.h"
@@ -199,6 +201,28 @@ static bool notes_scenario(void)
     return completed;
 }
 
+static bool markdown_scenario(void)
+{
+    const char *source = "# T\n\n**b** `c` [l](u) \xE6\x97\xA5\n- i\n> q\n```\nx\n```\n";
+    struct note_text *text = nullptr;
+    enum note_text_outcome accepted = note_text_create(source, strlen(source), &text);
+    if (accepted == NOTE_TEXT_OUT_OF_MEMORY)
+    {
+        return false;
+    }
+    require(accepted == NOTE_TEXT_ACCEPTED, "note under probe");
+    struct markdown_rtf *rtf = nullptr;
+    enum markdown_rtf_outcome converted = markdown_rtf_create(text, &rtf);
+    note_text_destroy(text);
+    if (converted == MARKDOWN_RTF_OUT_OF_MEMORY)
+    {
+        return false;
+    }
+    require(converted == MARKDOWN_RTF_CONVERTED, "markdown under probe");
+    markdown_rtf_destroy(rtf);
+    return true;
+}
+
 static bool layout_scenario(void)
 {
     struct category_ledger *categories = nullptr;
@@ -243,6 +267,12 @@ static bool state_scenario_with(struct persistence_adapter *_Nonnull adapter)
         enum folio_state_outcome toggled = folio_state_toggle_category(state, 0);
         completed = toggled == FOLIO_STATE_READY;
         require(completed || toggled == FOLIO_STATE_OUT_OF_MEMORY, "toggle under probe");
+    }
+    if (completed)
+    {
+        enum folio_state_outcome selected = folio_state_select_note(state, 0, 0);
+        completed = selected == FOLIO_STATE_READY;
+        require(completed || selected == FOLIO_STATE_OUT_OF_MEMORY, "select under probe");
     }
     folio_state_destroy(state);
     return completed;
@@ -296,6 +326,7 @@ void run_allocation_tests(void)
     exhaust(names_scenario, "names scenario never completed");
     exhaust(categories_scenario, "categories scenario never completed");
     exhaust(notes_scenario, "notes scenario never completed");
+    exhaust(markdown_scenario, "markdown scenario never completed");
     exhaust(layout_scenario, "layout scenario never completed");
     exhaust(state_scenario, "state scenario never completed");
 }

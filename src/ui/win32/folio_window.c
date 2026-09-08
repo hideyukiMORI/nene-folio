@@ -1,6 +1,9 @@
 #include "folio_window.h"
 
 #include "drawer_window.h"
+#include "folio_message.h"
+#include "folio_state.h"
+#include "note_pane.h"
 
 #include <stdlib.h>
 #include <windows.h>
@@ -11,6 +14,7 @@ struct folio_window
     HWND _Nullable handle;
     struct folio_state *_Nonnull state;
     struct drawer_window *_Nullable drawer;
+    struct note_pane *_Nullable pane;
 };
 
 static const wchar_t class_name[] = L"NeNeFolioWindow";
@@ -23,6 +27,7 @@ constexpr int base_width = 960;
 constexpr int base_height = 640;
 constexpr int base_drawer_width = 240;
 constexpr int base_caption_height = 36; /* 右ペイン上部の、窓を掴んで動かせる帯 */
+constexpr int base_pane_margin = 24;    /* 右ペインの本文の余白 */
 
 static int scale(int value, UINT dpi)
 {
@@ -37,14 +42,31 @@ static struct folio_window *_Nullable self_of(HWND window)
 static void arrange(const struct folio_window *_Nonnull self)
 {
     HWND drawer = self->drawer == nullptr ? nullptr : drawer_window_handle(self->drawer);
-    if (drawer == nullptr)
-    {
-        return;
-    }
+    HWND pane = self->pane == nullptr ? nullptr : note_pane_handle(self->pane);
     RECT client;
     GetClientRect(self->handle, &client);
-    MoveWindow(drawer, 0, 0, scale(base_drawer_width, GetDpiForWindow(self->handle)), client.bottom,
-               TRUE);
+    UINT dpi = GetDpiForWindow(self->handle);
+    int drawer_width = scale(base_drawer_width, dpi);
+    int caption = scale(base_caption_height, dpi);
+    int margin = scale(base_pane_margin, dpi);
+    if (drawer != nullptr)
+    {
+        MoveWindow(drawer, 0, 0, drawer_width, client.bottom, TRUE);
+    }
+    if (pane != nullptr)
+    {
+        MoveWindow(pane, drawer_width + margin, caption, client.right - drawer_width - 2 * margin,
+                   client.bottom - caption - margin, TRUE);
+    }
+}
+
+static void render_pane(const struct folio_window *_Nonnull self)
+{
+    if (self->pane != nullptr)
+    {
+        note_pane_render(self->pane, folio_state_pane_rtf(self->state),
+                         folio_state_pane_rtf_length(self->state));
+    }
 }
 
 /* value が low 未満なら 0、high 以上なら 2、間なら 1。 */
@@ -103,10 +125,12 @@ static LRESULT on_create(HWND window, LPARAM lparam)
     struct folio_window *_Nonnull self = creation->lpCreateParams;
     SetWindowLongPtrW(window, GWLP_USERDATA, (LONG_PTR)self);
     self->handle = window;
-    if (drawer_window_create(window, self->state, &self->drawer) != DRAWER_WINDOW_CREATED)
+    if (drawer_window_create(window, self->state, &self->drawer) != DRAWER_WINDOW_CREATED ||
+        note_pane_create(window, &self->pane) != NOTE_PANE_CREATED)
     {
         return -1;
     }
+    render_pane(self);
     return 0;
 }
 
@@ -135,6 +159,9 @@ static LRESULT on_message(struct folio_window *_Nonnull self, UINT message, WPAR
         return 0;
     case WM_ERASEBKGND:
         return 1;
+    case folio_message_selection_changed:
+        render_pane(self);
+        return 0;
     case WM_KEYDOWN:
         if (wparam == VK_ESCAPE)
         {
@@ -221,6 +248,7 @@ void folio_window_destroy(struct folio_window *_Nullable window)
     {
         DestroyWindow(window->handle);
     }
+    note_pane_destroy(window->pane);
     drawer_window_destroy(window->drawer);
     free(window);
 }

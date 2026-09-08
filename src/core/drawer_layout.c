@@ -58,6 +58,7 @@ static struct drawer_row row_at(struct drawer_metrics metrics, size_t index,
         .text = text,
         .color = {0, 0, 0},
         .category = 0,
+        .note = 0,
     };
     return row;
 }
@@ -88,6 +89,7 @@ static void fill(struct drawer_layout *_Nonnull layout,
                          note_ledger_name(notes[category], note));
             row.color = color;
             row.category = category;
+            row.note = note;
             offset = place(layout, offset, row);
         }
     }

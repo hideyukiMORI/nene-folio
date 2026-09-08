@@ -1,6 +1,7 @@
 #include "drawer_window.h"
 
 #include "drawer_layout.h"
+#include "folio_message.h"
 #include "folio_state.h"
 #include "utf16_text.h"
 
@@ -164,7 +165,34 @@ static void show_failure(HWND window, enum folio_state_outcome outcome)
     utf16_text_destroy(text);
 }
 
-/* クリックを意図に変える。カテゴリ行ならトグル、それ以外は何もしない。 */
+/* 行への意図を application へ渡し、結果を写す。 */
+static void act_on_row(struct drawer_window *_Nonnull self, struct drawer_row row)
+{
+    enum folio_state_outcome outcome = FOLIO_STATE_READY;
+    switch (row.kind)
+    {
+    case DRAWER_ROW_CATEGORY:
+        outcome = folio_state_toggle_category(self->state, row.category);
+        if (outcome == FOLIO_STATE_READY)
+        {
+            InvalidateRect(self->handle, nullptr, FALSE);
+        }
+        break;
+    case DRAWER_ROW_NOTE:
+        outcome = folio_state_select_note(self->state, row.category, row.note);
+        if (outcome == FOLIO_STATE_READY)
+        {
+            SendMessageW(GetParent(self->handle), folio_message_selection_changed, 0, 0);
+        }
+        break;
+    }
+    if (outcome != FOLIO_STATE_READY)
+    {
+        show_failure(self->handle, outcome);
+    }
+}
+
+/* クリックを行に写して意図にする。行の外なら何もしない。 */
 static void click(struct drawer_window *_Nonnull self, int y)
 {
     struct drawer_layout *_Nullable layout = nullptr;
@@ -177,17 +205,10 @@ static void click(struct drawer_window *_Nonnull self, int y)
     bool hit = drawer_layout_hit(layout, y, &index);
     struct drawer_row row = hit ? drawer_layout_row(layout, index) : (struct drawer_row){0};
     drawer_layout_destroy(layout);
-    if (!hit || row.kind != DRAWER_ROW_CATEGORY)
+    if (hit)
     {
-        return;
+        act_on_row(self, row);
     }
-    enum folio_state_outcome outcome = folio_state_toggle_category(self->state, row.category);
-    if (outcome == FOLIO_STATE_READY)
-    {
-        InvalidateRect(self->handle, nullptr, FALSE);
-        return;
-    }
-    show_failure(self->handle, outcome);
 }
 
 static struct drawer_window *_Nullable self_of(HWND window)
