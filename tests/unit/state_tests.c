@@ -1,0 +1,251 @@
+#include "category_ledger.h"
+#include "drawer_layout.h"
+#include "folio_state.h"
+#include "name_list.h"
+#include "note_ledger.h"
+#include "persistence_port.h"
+#include "unit_tests.h"
+
+#include <string.h>
+
+/* テスト用のポート実装。application が不完全型として知る persistence_adapter をここで定義する。 */
+struct persistence_adapter
+{
+    enum persistence_outcome categories_outcome;
+    const char *_Nonnull categories_text;
+    enum persistence_outcome scan_outcome;
+    const char *_Nonnull const *_Nullable scanned_categories;
+    size_t scanned_category_count;
+    enum persistence_outcome notes_outcome;
+    const char *_Nonnull notes_text;
+    enum persistence_outcome notes_scan_outcome;
+    const char *_Nonnull const *_Nullable scanned_notes;
+    size_t scanned_note_count;
+    size_t note_scans; /* scan_notes が呼ばれた回数 */
+};
+
+static enum persistence_outcome list_names(const char *_Nonnull const *_Nullable items,
+                                           size_t count, struct name_list *_Nullable *_Nonnull out)
+{
+    struct name_list *list = nullptr;
+    if (name_list_create(&list) != NAME_LIST_ACCEPTED)
+    {
+        return PERSISTENCE_OUT_OF_MEMORY;
+    }
+    for (size_t index = 0; index < count; ++index)
+    {
+        enum name_list_outcome outcome = name_list_append(list, items[index], strlen(items[index]));
+        if (outcome != NAME_LIST_ACCEPTED)
+        {
+            name_list_destroy(list);
+            return outcome == NAME_LIST_OUT_OF_MEMORY ? PERSISTENCE_OUT_OF_MEMORY
+                                                      : PERSISTENCE_MALFORMED;
+        }
+    }
+    *out = list;
+    return PERSISTENCE_LOADED;
+}
+
+static enum persistence_outcome fake_scan_categories(struct persistence_adapter *_Nonnull adapter,
+                                                     struct name_list *_Nullable *_Nonnull out)
+{
+    if (adapter->scan_outcome != PERSISTENCE_LOADED)
+    {
+        return adapter->scan_outcome;
+    }
+    return list_names(adapter->scanned_categories, adapter->scanned_category_count, out);
+}
+
+static enum persistence_outcome fake_scan_notes(struct persistence_adapter *_Nonnull adapter,
+                                                const char *_Nonnull category,
+                                                struct name_list *_Nullable *_Nonnull out)
+{
+    (void)category;
+    adapter->note_scans += 1;
+    if (adapter->notes_scan_outcome != PERSISTENCE_LOADED)
+    {
+        return adapter->notes_scan_outcome;
+    }
+    return list_names(adapter->scanned_notes, adapter->scanned_note_count, out);
+}
+
+static enum persistence_outcome
+fake_read_category_ledger(struct persistence_adapter *_Nonnull adapter,
+                          struct category_ledger *_Nullable *_Nonnull out)
+{
+    if (adapter->categories_outcome != PERSISTENCE_LOADED)
+    {
+        return adapter->categories_outcome;
+    }
+    enum category_ledger_outcome parsed =
+        category_ledger_parse(adapter->categories_text, strlen(adapter->categories_text), out);
+    if (parsed == CATEGORY_LEDGER_ACCEPTED)
+    {
+        return PERSISTENCE_LOADED;
+    }
+    return parsed == CATEGORY_LEDGER_OUT_OF_MEMORY ? PERSISTENCE_OUT_OF_MEMORY
+                                                   : PERSISTENCE_MALFORMED;
+}
+
+static enum persistence_outcome fake_read_note_ledger(struct persistence_adapter *_Nonnull adapter,
+                                                      const char *_Nonnull category,
+                                                      struct note_ledger *_Nullable *_Nonnull out)
+{
+    (void)category;
+    if (adapter->notes_outcome != PERSISTENCE_LOADED)
+    {
+        return adapter->notes_outcome;
+    }
+    enum note_ledger_outcome parsed =
+        note_ledger_parse(adapter->notes_text, strlen(adapter->notes_text), out);
+    if (parsed == NOTE_LEDGER_ACCEPTED)
+    {
+        return PERSISTENCE_LOADED;
+    }
+    return parsed == NOTE_LEDGER_OUT_OF_MEMORY ? PERSISTENCE_OUT_OF_MEMORY : PERSISTENCE_MALFORMED;
+}
+
+static const char *const scanned_categories[] = {"A", "B", "C"};
+static const char *const scanned_notes[] = {"two", "one", "three"};
+
+static struct persistence_adapter healthy_adapter(void)
+{
+    struct persistence_adapter adapter = {
+        .categories_outcome = PERSISTENCE_LOADED,
+        .categories_text = "{\"version\": 1, \"categories\": ["
+                           "{\"name\": \"B\", \"color\": \"#111111\", \"expanded\": true},"
+                           "{\"name\": \"A\", \"color\": \"#222222\", \"expanded\": false}]}",
+        .scan_outcome = PERSISTENCE_LOADED,
+        .scanned_categories = scanned_categories,
+        .scanned_category_count = 3,
+        .notes_outcome = PERSISTENCE_LOADED,
+        .notes_text = "{\"version\": 1, \"notes\": [\"one\", \"two\"]}",
+        .notes_scan_outcome = PERSISTENCE_LOADED,
+        .scanned_notes = scanned_notes,
+        .scanned_note_count = 3,
+        .note_scans = 0,
+    };
+    return adapter;
+}
+
+static struct persistence_port port_for(struct persistence_adapter *_Nonnull adapter)
+{
+    struct persistence_port port = {
+        .adapter = adapter,
+        .scan_categories = fake_scan_categories,
+        .scan_notes = fake_scan_notes,
+        .read_category_ledger = fake_read_category_ledger,
+        .read_note_ledger = fake_read_note_ledger,
+    };
+    return port;
+}
+
+static const struct drawer_metrics metrics = {
+    .top_padding = 0, .row_height = 10, .category_indent = 1, .note_indent = 2};
+
+static void verify_ready_state(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct persistence_port port = port_for(&adapter);
+    struct folio_state *state = nullptr;
+    require(folio_state_create(&port, &state) == FOLIO_STATE_READY, "state ready");
+    require(adapter.note_scans == 3, "one note scan per category");
+    struct drawer_layout *layout = nullptr;
+    require(folio_state_drawer_layout(state, metrics, &layout) == FOLIO_STATE_READY, "layout");
+    /* B（展開: one, two, three）・A（畳んだまま）・C（既定で展開: one, two, three） */
+    require(drawer_layout_row_count(layout) == 9, "row count");
+    require(same_text(drawer_layout_row(layout, 0).text, "B") &&
+                same_text(drawer_layout_row(layout, 1).text, "one") &&
+                same_text(drawer_layout_row(layout, 2).text, "two") &&
+                same_text(drawer_layout_row(layout, 3).text, "three") &&
+                same_text(drawer_layout_row(layout, 4).text, "A") &&
+                same_text(drawer_layout_row(layout, 5).text, "C") &&
+                same_text(drawer_layout_row(layout, 8).text, "three"),
+            "row order follows ledgers then scan");
+    require(drawer_layout_row(layout, 0).color.red == 0x11 &&
+                drawer_layout_row(layout, 5).color.red == 0x8A,
+            "row colors");
+    drawer_layout_destroy(layout);
+    folio_state_destroy(state);
+    folio_state_destroy(nullptr);
+}
+
+static void verify_absent_data(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    adapter.categories_outcome = PERSISTENCE_ABSENT;
+    adapter.scan_outcome = PERSISTENCE_ABSENT;
+    struct persistence_port port = port_for(&adapter);
+    struct folio_state *state = nullptr;
+    require(folio_state_create(&port, &state) == FOLIO_STATE_READY, "absent data is empty");
+    struct drawer_layout *layout = nullptr;
+    require(folio_state_drawer_layout(state, metrics, &layout) == FOLIO_STATE_READY &&
+                drawer_layout_row_count(layout) == 0,
+            "no rows without data");
+    drawer_layout_destroy(layout);
+    folio_state_destroy(state);
+    adapter = healthy_adapter();
+    adapter.notes_outcome = PERSISTENCE_ABSENT;
+    adapter.notes_scan_outcome = PERSISTENCE_ABSENT;
+    port = port_for(&adapter);
+    require(folio_state_create(&port, &state) == FOLIO_STATE_READY, "absent notes");
+    require(folio_state_drawer_layout(state, metrics, &layout) == FOLIO_STATE_READY &&
+                drawer_layout_row_count(layout) == 3,
+            "only category rows");
+    drawer_layout_destroy(layout);
+    folio_state_destroy(state);
+}
+
+static void expect_failure(struct persistence_adapter adapter, enum folio_state_outcome expected,
+                           const char *_Nonnull description)
+{
+    struct persistence_port port = port_for(&adapter);
+    struct folio_state *state = nullptr;
+    require(folio_state_create(&port, &state) == expected, description);
+}
+
+static void verify_failures(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    adapter.categories_outcome = PERSISTENCE_UNREADABLE;
+    expect_failure(adapter, FOLIO_STATE_DATA_UNREADABLE, "unreadable categories");
+    adapter = healthy_adapter();
+    adapter.categories_outcome = PERSISTENCE_MALFORMED;
+    expect_failure(adapter, FOLIO_STATE_LEDGER_MALFORMED, "malformed categories");
+    adapter = healthy_adapter();
+    adapter.categories_outcome = PERSISTENCE_OUT_OF_MEMORY;
+    expect_failure(adapter, FOLIO_STATE_OUT_OF_MEMORY, "out of memory categories");
+    adapter = healthy_adapter();
+    adapter.scan_outcome = PERSISTENCE_UNREADABLE;
+    expect_failure(adapter, FOLIO_STATE_DATA_UNREADABLE, "unreadable scan");
+    adapter = healthy_adapter();
+    adapter.notes_outcome = PERSISTENCE_MALFORMED;
+    expect_failure(adapter, FOLIO_STATE_LEDGER_MALFORMED, "malformed notes");
+    adapter = healthy_adapter();
+    adapter.notes_outcome = PERSISTENCE_UNREADABLE;
+    expect_failure(adapter, FOLIO_STATE_DATA_UNREADABLE, "unreadable notes");
+    adapter = healthy_adapter();
+    adapter.notes_scan_outcome = PERSISTENCE_UNREADABLE;
+    expect_failure(adapter, FOLIO_STATE_DATA_UNREADABLE, "unreadable note scan");
+    adapter = healthy_adapter();
+    adapter.notes_scan_outcome = PERSISTENCE_OUT_OF_MEMORY;
+    expect_failure(adapter, FOLIO_STATE_OUT_OF_MEMORY, "out of memory note scan");
+}
+
+enum folio_state_outcome state_from_texts(const char *_Nonnull categories_text,
+                                          const char *_Nonnull notes_text,
+                                          struct folio_state *_Nullable *_Nonnull out)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    adapter.categories_text = categories_text;
+    adapter.notes_text = notes_text;
+    struct persistence_port port = port_for(&adapter);
+    return folio_state_create(&port, out);
+}
+
+void run_state_tests(void)
+{
+    verify_ready_state();
+    verify_absent_data();
+    verify_failures();
+}
