@@ -1,0 +1,16 @@
+{
+  "typeSuffixes": ["manager", "helper", "util", "utils", "common"],
+  "moduleNames": ["utils", "helpers", "managers", "misc", "common"],
+  "suppressionPragmaPattern": "#\\s*pragma\\s+(warning|clang\\s+diagnostic|GCC\\s+diagnostic)|\\b(?:__pragma|_Pragma)\\s*\\(",
+  "broadSuppressionPattern": "\\bNOLINT(?:BEGIN|END)?\\b",
+  "lineSuppressionToken": "NOLINTNEXTLINE",
+  "lineSuppressionPattern": "NOLINTNEXTLINE\\([a-z0-9,.-]+\\)",
+  "taskMarkerPattern": "\\b(?:TODO|FIXME)\\b",
+  "forbiddenFileWords": ["baseline", "suppressions"],
+  "disabledGatePatterns": ["(?i)/W[0-3](?![0-9])", "(?i)/WX-", "(?i)/wd[0-9]+", "(?<![\\w-])-Wno-error(?:=|\\b)", "(?<![\\w-])-w(?![\\w-])", "(?i)\\bignoreFailures\\s*[:=]\\s*true", "(?i)continue-on-error\\s*:\\s*true", "(?i)--exit-zero\\b", "(?i)--line-filter", "(?i)--exclude-header-filter", "(?i)WarningsAsErrors:\\s*['\"]{2}"],
+  "nondeterministicNames": ["time", "_time64", "_time32", "clock", "timespec_get", "rand", "srand", "rand_s", "getenv", "getenv_s", "_wgetenv", "_dupenv_s", "setlocale", "_wsetlocale", "GetLocalTime", "GetSystemTime", "GetSystemTimeAsFileTime", "GetSystemTimePreciseAsFileTime", "GetTickCount", "GetTickCount64", "QueryPerformanceCounter", "GetEnvironmentVariableA", "GetEnvironmentVariableW", "BCryptGenRandom", "CryptGenRandom", "GetCursorPos"],
+  "platformHeaders": ["windows.h", "Windows.h", "winuser.h", "wingdi.h", "fileapi.h", "processthreadsapi.h", "winsock2.h", "shlobj.h", "stdio.h", "io.h", "direct.h", "time.h", "locale.h"],
+  "cExtensions": [".c", ".h"],
+  "configurationExtensions": [".ps1", ".cmake", ".yml", ".yaml"],
+  "normativeFiles": ["docs/ARCHITECTURE_CONSTITUTION.md", "docs/CODING_RULES.md", "docs/COMMIT_CONVENTIONS.md", "docs/QUALITY_GATES.md"]
+}

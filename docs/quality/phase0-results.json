@@ -1,0 +1,866 @@
+[
+  {
+    "expectedCompiles": true,
+    "output": "M1-w4.c",
+    "exitCode": 0,
+    "id": "M1-w4",
+    "tool": "msvc",
+    "flags": []
+  },
+  {
+    "expectedCompiles": false,
+    "output": "M1-exhaustive.c\r\n<probe>\\M1-exhaustive.c(2): error C4062: 列挙型 'mode' の switch 中の列挙子 'MODE_EDIT' はハンドルされません\r\n<probe>\\M1-exhaustive.c(1): note: 'mode' の宣言を確認してください",
+    "exitCode": 2,
+    "id": "M1-exhaustive",
+    "tool": "msvc",
+    "flags": [
+      "/we4061",
+      "/we4062"
+    ]
+  },
+  {
+    "expectedCompiles": false,
+    "output": "M1-default.c\r\n<probe>\\M1-default.c(2): error C4061: 列挙型 'mode' の switch 中の列挙子 'MODE_EDIT' は case ラベルによって明示的にハンドルされません。\r\n<probe>\\M1-default.c(1): note: 'mode' の宣言を確認してください",
+    "exitCode": 2,
+    "id": "M1-default",
+    "tool": "msvc",
+    "flags": [
+      "/we4061",
+      "/we4062"
+    ]
+  },
+  {
+    "expectedCompiles": true,
+    "output": "M1-valid.c",
+    "exitCode": 0,
+    "id": "M1-valid",
+    "tool": "msvc",
+    "flags": [
+      "/we4061",
+      "/we4062"
+    ]
+  },
+  {
+    "expectedCompiles": true,
+    "output": "M1-out-of-range.c",
+    "exitCode": 0,
+    "id": "M1-out-of-range",
+    "tool": "msvc",
+    "flags": [
+      "/we4061",
+      "/we4062"
+    ]
+  },
+  {
+    "expectedCompiles": false,
+    "output": "<probe>\\M1-clang-switch-enum.c(2,40): error: enumeration value 'MODE_EDIT' not explicitly handled in switch [-Werror,-Wswitch-enum]\r\n    2 | int select_mode(enum mode m) { switch (m) { case MODE_VIEW: return 1; default: return 0; } }\r\n      |                                        ^\r\n1 error generated.",
+    "exitCode": 1,
+    "id": "M1-clang-switch-enum",
+    "tool": "clangcl",
+    "flags": [
+      "-Wswitch-enum"
+    ]
+  },
+  {
+    "expectedCompiles": true,
+    "output": "M2-public.c",
+    "exitCode": 0,
+    "id": "M2-public",
+    "tool": "msvc",
+    "flags": []
+  },
+  {
+    "expectedCompiles": false,
+    "output": "M2-opaque.c\r\n<probe>\\M2-opaque.c(3): error C2037: 'width' の左側に未定義の構造体か共有体 'note' が指定されています。",
+    "exitCode": 2,
+    "id": "M2-opaque",
+    "tool": "msvc",
+    "flags": []
+  },
+  {
+    "expectedCompiles": true,
+    "output": "M2-const-cast.c",
+    "exitCode": 0,
+    "id": "M2-const-cast",
+    "tool": "msvc",
+    "flags": []
+  },
+  {
+    "expectedCompiles": false,
+    "output": "<probe>\\M2-const-cast-clang.c(2,52): error: cast from 'const struct note *' to 'struct note *' drops const qualifier [-Werror,-Wcast-qual]\r\n    2 | void touch(const struct note *n) { ((struct note *)n)->width = 1; }\r\n      |                                                    ^\r\n1 error generated.",
+    "exitCode": 1,
+    "id": "M2-const-cast-clang",
+    "tool": "clangcl",
+    "flags": [
+      "-Wcast-qual"
+    ]
+  },
+  {
+    "expectedCompiles": false,
+    "output": "M2-const-implicit.c\r\n<probe>\\M2-const-implicit.c(1): error C2220: 次の警告はエラーとして処理されます\r\n<probe>\\M2-const-implicit.c(1): warning C4090: '初期化中': 異なる 'const' 修飾子",
+    "exitCode": 2,
+    "id": "M2-const-implicit",
+    "tool": "msvc",
+    "flags": []
+  },
+  {
+    "expectedCompiles": true,
+    "output": "",
+    "exitCode": 0,
+    "id": "M2-const-launder",
+    "tool": "clangcl",
+    "flags": [
+      "-Wcast-qual"
+    ]
+  },
+  {
+    "expectedCompiles": true,
+    "output": "M3-null.c",
+    "exitCode": 0,
+    "id": "M3-null",
+    "tool": "msvc",
+    "flags": []
+  },
+  {
+    "expectedCompiles": false,
+    "output": "M3-null-analyze.c\r\n<probe>\\M3-null-analyze.c(1): error C2220: 次の警告はエラーとして処理されます\r\n<probe>\\M3-null-analyze.c(1) : warning C6011: NULL ポインター 'p' を逆参照しています。: Lines: 1",
+    "exitCode": 2,
+    "id": "M3-null-analyze",
+    "tool": "msvc",
+    "flags": [
+      "/analyze"
+    ]
+  },
+  {
+    "expectedCompiles": false,
+    "output": "M3-uninitialized.c\r\n<probe>\\M3-uninitialized.c(1) : error C2220: 次の警告はエラーとして処理されます\r\n<probe>\\M3-uninitialized.c(1) : warning C4700: 初期化されていないローカル変数 'x' が使用されます",
+    "exitCode": 2,
+    "id": "M3-uninitialized",
+    "tool": "msvc",
+    "flags": []
+  },
+  {
+    "expectedCompiles": true,
+    "output": "M3-zero-value.c",
+    "exitCode": 0,
+    "id": "M3-zero-value",
+    "tool": "msvc",
+    "flags": []
+  },
+  {
+    "expectedCompiles": false,
+    "output": "<probe>\\M3-nullability-clang.c(2,42): error: implicit conversion from nullable pointer 'int * _Nullable' to non-nullable pointer type 'int * _Nonnull' [-Werror,-Wnullable-to-nonnull-conversion]\r\n    2 | int give(int *_Nullable q) { return take(q); }\r\n      |                                          ^\r\n1 error generated.",
+    "exitCode": 1,
+    "id": "M3-nullability-clang",
+    "tool": "clangcl",
+    "flags": [
+      "-Wnullable-to-nonnull-conversion",
+      "-Wnullability-completeness"
+    ]
+  },
+  {
+    "expectedCompiles": false,
+    "output": "M4-private.c\r\n<probe>\\M4-private.c(3): error C2079: 'n' が 未定義の struct 'note' で使用しています。",
+    "exitCode": 2,
+    "id": "M4-private",
+    "tool": "msvc",
+    "flags": []
+  },
+  {
+    "expectedCompiles": false,
+    "output": "M4-copy.c\r\n<probe>\\M4-copy.c(3): error C2079: 'b' が 未定義の struct 'note' で使用しています。\r\n<probe>\\M4-copy.c(3): error C2440: '初期化中': 'note' から 'int' に変換できません。",
+    "exitCode": 2,
+    "id": "M4-copy",
+    "tool": "msvc",
+    "flags": []
+  },
+  {
+    "expectedCompiles": true,
+    "output": "M4-forge.c",
+    "exitCode": 0,
+    "id": "M4-forge",
+    "tool": "msvc",
+    "flags": []
+  },
+  {
+    "expectedCompiles": true,
+    "output": "M5-time.c",
+    "exitCode": 0,
+    "id": "M5-time",
+    "tool": "msvc",
+    "flags": []
+  },
+  {
+    "expectedCompiles": true,
+    "output": "M6-win32.c",
+    "exitCode": 0,
+    "id": "M6-win32",
+    "tool": "msvc",
+    "flags": []
+  },
+  {
+    "expectedCompiles": true,
+    "output": "M7-suppression.c",
+    "exitCode": 0,
+    "id": "M7-suppression",
+    "tool": "msvc",
+    "flags": [
+      "/we4062"
+    ]
+  },
+  {
+    "expectedCompiles": false,
+    "output": "M8-push-zero.c\r\n<probe>\\M8-push-zero.c(3): error C4062: 列挙型 'mode' の switch 中の列挙子 'MODE_EDIT' はハンドルされません\r\n<probe>\\M8-push-zero.c(2): note: 'mode' の宣言を確認してください",
+    "exitCode": 2,
+    "id": "M8-push-zero",
+    "tool": "msvc",
+    "flags": [
+      "/we4062"
+    ]
+  },
+  {
+    "expectedCompiles": true,
+    "output": "M8-file-suppression.c",
+    "exitCode": 0,
+    "id": "M8-file-suppression",
+    "tool": "msvc",
+    "flags": [
+      "/we4061",
+      "/we4062"
+    ]
+  },
+  {
+    "expectedCompiles": false,
+    "output": "C1-implicit-decl.c\r\n<probe>\\C1-implicit-decl.c(1): error C2220: 次の警告はエラーとして処理されます\r\n<probe>\\C1-implicit-decl.c(1): warning C4013: 関数 'undeclared' は定義されていません。int 型の値を返す外部関数と見なします。",
+    "exitCode": 2,
+    "id": "C1-implicit-decl",
+    "tool": "msvc",
+    "flags": []
+  },
+  {
+    "expectedCompiles": false,
+    "output": "C2-narrowing.c\r\n<probe>\\C2-narrowing.c(1): error C2220: 次の警告はエラーとして処理されます\r\n<probe>\\C2-narrowing.c(1): warning C4244: 'return': '__int64' から 'int' への変換です。データが失われる可能性があります。",
+    "exitCode": 2,
+    "id": "C2-narrowing",
+    "tool": "msvc",
+    "flags": []
+  },
+  {
+    "expectedCompiles": false,
+    "output": "C3-sign-compare.c\r\n<probe>\\C3-sign-compare.c(1): error C2220: 次の警告はエラーとして処理されます\r\n<probe>\\C3-sign-compare.c(1): warning C4018: '<': signed と unsigned の数値を比較しようとしました。",
+    "exitCode": 2,
+    "id": "C3-sign-compare",
+    "tool": "msvc",
+    "flags": []
+  },
+  {
+    "expectedCompiles": false,
+    "output": "C4-vla.c\r\n<probe>\\C4-vla.c(1): error C2057: 定数式が必要です。\r\n<probe>\\C4-vla.c(1): error C2466: サイズが 0 の配列を割り当てまたは宣言しようとしました。\r\n<probe>\\C4-vla.c(1): error C2133: 'a': サイズが不明です。",
+    "exitCode": 2,
+    "id": "C4-vla",
+    "tool": "msvc",
+    "flags": []
+  },
+  {
+    "expectedCompiles": false,
+    "output": "C5-unsafe-strcpy.c\r\n<probe>\\C5-unsafe-strcpy.c(2): error C2220: 次の警告はエラーとして処理されます\r\n<probe>\\C5-unsafe-strcpy.c(2): warning C4996: 'strcpy': This function or variable may be unsafe. Consider using strcpy_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.",
+    "exitCode": 2,
+    "id": "C5-unsafe-strcpy",
+    "tool": "msvc",
+    "flags": []
+  },
+  {
+    "expectedCompiles": false,
+    "output": "C6-unused-param.c\r\n<probe>\\C6-unused-param.c(1): error C2220: 次の警告はエラーとして処理されます\r\n<probe>\\C6-unused-param.c(1): warning C4100: 'a': 参照されないパラメーター",
+    "exitCode": 2,
+    "id": "C6-unused-param",
+    "tool": "msvc",
+    "flags": []
+  },
+  {
+    "expectedCompiles": false,
+    "output": "C7-shadow.c\r\n<probe>\\C7-shadow.c(1): error C2220: 次の警告はエラーとして処理されます\r\n<probe>\\C7-shadow.c(1): warning C4456: 'a2' を宣言すると、以前のローカル宣言が隠蔽されます\r\n<probe>\\C7-shadow.c(1): note: 'a2' の宣言を確認してください\r\n<probe>\\C7-shadow.c(1): warning C4189: 'a2': ローカル変数が初期化されましたが、参照されていません",
+    "exitCode": 2,
+    "id": "C7-shadow",
+    "tool": "msvc",
+    "flags": []
+  },
+  {
+    "expectedCompiles": true,
+    "output": "C8-fallthrough.c",
+    "exitCode": 0,
+    "id": "C8-fallthrough",
+    "tool": "msvc",
+    "flags": []
+  },
+  {
+    "expectedCompiles": false,
+    "output": "<probe>\\C8-fallthrough-clang.c(2,66): error: unannotated fall-through between switch labels [-Werror,-Wimplicit-fallthrough]\r\n    2 | int f(enum mode m, int x) { switch (m) { case MODE_VIEW: x += 1; case MODE_EDIT: x += 2; } return x; }\r\n      |                                                                  ^\r\n<probe>\\C8-fallthrough-clang.c(2,66): note: insert '__attribute__((fallthrough));' to silence this warning\r\n    2 | int f(enum mode m, int x) { switch (m) { case MODE_VIEW: x += 1; case MODE_EDIT: x += 2; } return x; }\r\n      |                                                                  ^\r\n      |                                                                  __attribute__((fallthrough)); \r\n<probe>\\C8-fallthrough-clang.c(2,66): note: insert 'break;' to avoid fall-through\r\n    2 | int f(enum mode m, int x) { switch (m) { case MODE_VIEW: x += 1; case MODE_EDIT: x += 2; } return x; }\r\n      |                                                                  ^\r\n      |                                                                  break; \r\n1 error generated.",
+    "exitCode": 1,
+    "id": "C8-fallthrough-clang",
+    "tool": "clangcl",
+    "flags": [
+      "-Wimplicit-fallthrough"
+    ]
+  },
+  {
+    "expectedCompiles": false,
+    "output": "C9-const-overflow.c\r\n<probe>\\C9-const-overflow.c(1): error C2220: 次の警告はエラーとして処理されます\r\n<probe>\\C9-const-overflow.c(1): warning C4307: '+': 署名された整数定数のオーバーフロー",
+    "exitCode": 2,
+    "id": "C9-const-overflow",
+    "tool": "msvc",
+    "flags": []
+  },
+  {
+    "expectedCompiles": false,
+    "output": "C10-c23-nullptr-msvc-hole.c\r\n<probe>\\C10-c23-nullptr-msvc-hole.c(1): error C2065: 'nullptr': 定義されていない識別子です。\r\n<probe>\\C10-c23-nullptr-msvc-hole.c(1): warning C4047: 'return': 間接参照のレベルが 'int *' と 'int' で異なっています。",
+    "exitCode": 2,
+    "id": "C10-c23-nullptr-msvc-hole",
+    "tool": "msvc",
+    "flags": [
+      "/std:clatest"
+    ]
+  },
+  {
+    "expectedCompiles": false,
+    "output": "C10-c23-bool-typeof-msvc-hole.c\r\n<probe>\\C10-c23-bool-typeof-msvc-hole.c(1): error C2061: 構文エラー: 識別子 'ok'\r\n<probe>\\C10-c23-bool-typeof-msvc-hole.c(1): error C2059: 構文エラー: ';'\r\n<probe>\\C10-c23-bool-typeof-msvc-hole.c(1): error C2059: 構文エラー: '<parameter-list>'",
+    "exitCode": 2,
+    "id": "C10-c23-bool-typeof-msvc-hole",
+    "tool": "msvc",
+    "flags": [
+      "/std:clatest"
+    ]
+  },
+  {
+    "expectedCompiles": true,
+    "output": "C11-void-star-assign.c",
+    "exitCode": 0,
+    "id": "C11-void-star-assign",
+    "tool": "msvc",
+    "flags": []
+  },
+  {
+    "expectedCompiles": false,
+    "output": "<probe>\\C12-conversion-clang.c(1,28): error: implicit conversion changes signedness: 'int' to 'unsigned int' [-Werror,-Wsign-conversion]\r\n    1 | unsigned u(int v) { return v; }\r\n      |                     ~~~~~~ ^\r\n1 error generated.",
+    "exitCode": 1,
+    "id": "C12-conversion-clang",
+    "tool": "clangcl",
+    "flags": [
+      "-Wconversion",
+      "-Wsign-conversion"
+    ]
+  },
+  {
+    "expectedCompiles": true,
+    "output": "",
+    "exitCode": 0,
+    "id": "K1-c23-nullptr",
+    "tool": "clangcl",
+    "flags": [
+      "/clang:-std=c23"
+    ]
+  },
+  {
+    "expectedCompiles": true,
+    "output": "",
+    "exitCode": 0,
+    "id": "K1-c23-bool-typeof",
+    "tool": "clangcl",
+    "flags": [
+      "/clang:-std=c23"
+    ]
+  },
+  {
+    "expectedCompiles": true,
+    "output": "",
+    "exitCode": 0,
+    "id": "K1-c23-constexpr-enum-fixed",
+    "tool": "clangcl",
+    "flags": [
+      "/clang:-std=c23"
+    ]
+  },
+  {
+    "expectedCompiles": false,
+    "output": "<probe>\\K1-c23-nodiscard.c(4,18): error: ignoring return value of function declared with 'nodiscard' attribute [-Werror,-Wunused-result]\r\n    4 | int call(void) { must(); return 0; }\r\n      |                  ^~~~\r\n1 error generated.",
+    "exitCode": 1,
+    "id": "K1-c23-nodiscard",
+    "tool": "clangcl",
+    "flags": [
+      "/clang:-std=c23",
+      "-Wextra",
+      "-Wpedantic",
+      "-Wno-switch-default",
+      "-Wno-pre-c23-compat",
+      "-Wswitch-enum",
+      "-Wcovered-switch-default",
+      "-Wcast-qual",
+      "-Wconversion",
+      "-Wsign-conversion",
+      "-Wshadow",
+      "-Wimplicit-fallthrough",
+      "-Wnullability-completeness",
+      "-Werror=vla",
+      "-Wstrict-prototypes",
+      "-Wmissing-prototypes",
+      "-Wdouble-promotion",
+      "-Wformat=2",
+      "-Wundef",
+      "-Wunused-result"
+    ]
+  },
+  {
+    "expectedCompiles": true,
+    "output": "",
+    "exitCode": 0,
+    "id": "K1-c23-embed",
+    "tool": "clangcl",
+    "flags": [
+      "/clang:-std=c23"
+    ]
+  },
+  {
+    "expectedCompiles": false,
+    "output": "<probe>\\K2-vla-werror.c(2,24): error: variable length array used [-Werror,-Wvla]\r\n    2 | int sum(int n) { int a[n]; a[0] = 1; return a[0]; }\r\n      |                        ^\r\n1 error generated.",
+    "exitCode": 1,
+    "id": "K2-vla-werror",
+    "tool": "clangcl",
+    "flags": [
+      "/clang:-std=c23",
+      "-Werror=vla"
+    ]
+  },
+  {
+    "expectedCompiles": true,
+    "output": "",
+    "exitCode": 0,
+    "id": "K2-vla-plain-hole",
+    "tool": "clangcl",
+    "flags": [
+      "/clang:-std=c23",
+      "-Wvla"
+    ]
+  },
+  {
+    "expectedCompiles": true,
+    "output": "",
+    "exitCode": 0,
+    "id": "K3-strict-clean",
+    "tool": "clangcl",
+    "flags": [
+      "/clang:-std=c23",
+      "-Wextra",
+      "-Wpedantic",
+      "-Wno-switch-default",
+      "-Wno-pre-c23-compat",
+      "-Wswitch-enum",
+      "-Wcovered-switch-default",
+      "-Wcast-qual",
+      "-Wconversion",
+      "-Wsign-conversion",
+      "-Wshadow",
+      "-Wimplicit-fallthrough",
+      "-Wnullability-completeness",
+      "-Werror=vla",
+      "-Wstrict-prototypes",
+      "-Wmissing-prototypes",
+      "-Wdouble-promotion",
+      "-Wformat=2",
+      "-Wundef",
+      "-Wunused-result"
+    ]
+  },
+  {
+    "expectedCompiles": false,
+    "output": "<probe>\\K3-strict-covered-default.c(3,97): error: default label in switch which covers all enumeration values [-Werror,-Wcovered-switch-default]\r\n    3 | int select_mode(enum mode m) { switch (m) { case MODE_VIEW: return 1; case MODE_EDIT: return 2; default: return 0; } }\r\n      |                                                                                                 ^\r\n1 error generated.",
+    "exitCode": 1,
+    "id": "K3-strict-covered-default",
+    "tool": "clangcl",
+    "flags": [
+      "/clang:-std=c23",
+      "-Wextra",
+      "-Wpedantic",
+      "-Wno-switch-default",
+      "-Wno-pre-c23-compat",
+      "-Wswitch-enum",
+      "-Wcovered-switch-default",
+      "-Wcast-qual",
+      "-Wconversion",
+      "-Wsign-conversion",
+      "-Wshadow",
+      "-Wimplicit-fallthrough",
+      "-Wnullability-completeness",
+      "-Werror=vla",
+      "-Wstrict-prototypes",
+      "-Wmissing-prototypes",
+      "-Wdouble-promotion",
+      "-Wformat=2",
+      "-Wundef",
+      "-Wunused-result"
+    ]
+  },
+  {
+    "expectedCompiles": false,
+    "output": "<probe>\\K3-strict-missing-case.c(3,40): error: enumeration value 'MODE_EDIT' not handled in switch [-Werror,-Wswitch]\r\n    3 | int select_mode(enum mode m) { switch (m) { case MODE_VIEW: return 1; } return 0; }\r\n      |                                        ^\r\n1 error generated.",
+    "exitCode": 1,
+    "id": "K3-strict-missing-case",
+    "tool": "clangcl",
+    "flags": [
+      "/clang:-std=c23",
+      "-Wextra",
+      "-Wpedantic",
+      "-Wno-switch-default",
+      "-Wno-pre-c23-compat",
+      "-Wswitch-enum",
+      "-Wcovered-switch-default",
+      "-Wcast-qual",
+      "-Wconversion",
+      "-Wsign-conversion",
+      "-Wshadow",
+      "-Wimplicit-fallthrough",
+      "-Wnullability-completeness",
+      "-Werror=vla",
+      "-Wstrict-prototypes",
+      "-Wmissing-prototypes",
+      "-Wdouble-promotion",
+      "-Wformat=2",
+      "-Wundef",
+      "-Wunused-result"
+    ]
+  },
+  {
+    "expectedCompiles": false,
+    "output": "<probe>\\K3-strict-missing-proto.c(1,5): error: no previous prototype for function 'lonely' [-Werror,-Wmissing-prototypes]\r\n    1 | int lonely(void) { return 1; }\r\n      |     ^\r\n<probe>\\K3-strict-missing-proto.c(1,1): note: declare 'static' if the function is not intended to be used outside of this translation unit\r\n    1 | int lonely(void) { return 1; }\r\n      | ^\r\n      | static \r\n1 error generated.",
+    "exitCode": 1,
+    "id": "K3-strict-missing-proto",
+    "tool": "clangcl",
+    "flags": [
+      "/clang:-std=c23",
+      "-Wextra",
+      "-Wpedantic",
+      "-Wno-switch-default",
+      "-Wno-pre-c23-compat",
+      "-Wswitch-enum",
+      "-Wcovered-switch-default",
+      "-Wcast-qual",
+      "-Wconversion",
+      "-Wsign-conversion",
+      "-Wshadow",
+      "-Wimplicit-fallthrough",
+      "-Wnullability-completeness",
+      "-Werror=vla",
+      "-Wstrict-prototypes",
+      "-Wmissing-prototypes",
+      "-Wdouble-promotion",
+      "-Wformat=2",
+      "-Wundef",
+      "-Wunused-result"
+    ]
+  },
+  {
+    "expectedCompiles": true,
+    "output": "",
+    "exitCode": 0,
+    "id": "K4-pragma-bypass-hole",
+    "tool": "clangcl",
+    "flags": [
+      "/clang:-std=c23",
+      "-Wextra",
+      "-Wpedantic",
+      "-Wno-switch-default",
+      "-Wno-pre-c23-compat",
+      "-Wswitch-enum",
+      "-Wcovered-switch-default",
+      "-Wcast-qual",
+      "-Wconversion",
+      "-Wsign-conversion",
+      "-Wshadow",
+      "-Wimplicit-fallthrough",
+      "-Wnullability-completeness",
+      "-Werror=vla",
+      "-Wstrict-prototypes",
+      "-Wmissing-prototypes",
+      "-Wdouble-promotion",
+      "-Wformat=2",
+      "-Wundef",
+      "-Wunused-result"
+    ]
+  },
+  {
+    "expectedCompiles": true,
+    "output": "",
+    "exitCode": 0,
+    "id": "K5-null-deref-compiles-hole",
+    "tool": "clangcl",
+    "flags": [
+      "/clang:-std=c23",
+      "-Wextra",
+      "-Wpedantic",
+      "-Wno-switch-default",
+      "-Wno-pre-c23-compat",
+      "-Wswitch-enum",
+      "-Wcovered-switch-default",
+      "-Wcast-qual",
+      "-Wconversion",
+      "-Wsign-conversion",
+      "-Wshadow",
+      "-Wimplicit-fallthrough",
+      "-Wnullability-completeness",
+      "-Werror=vla",
+      "-Wstrict-prototypes",
+      "-Wmissing-prototypes",
+      "-Wdouble-promotion",
+      "-Wformat=2",
+      "-Wundef",
+      "-Wunused-result"
+    ]
+  },
+  {
+    "expectedCompiles": false,
+    "output": "<probe>\\K6-implicit-decl.c(2,25): error: use of undeclared identifier 'undeclared'\r\n    2 | int call(void) { return undeclared(1); }\r\n      |                         ^\r\n1 error generated.",
+    "exitCode": 1,
+    "id": "K6-implicit-decl",
+    "tool": "clangcl",
+    "flags": [
+      "/clang:-std=c23"
+    ]
+  },
+  {
+    "expectedCompiles": false,
+    "output": "<probe>\\K7-uninitialized.c(2,32): error: variable 'x' is uninitialized when used here [-Werror,-Wuninitialized]\r\n    2 | int read(void) { int x; return x; }\r\n      |                                ^\r\n<probe>\\K7-uninitialized.c(2,23): note: initialize the variable 'x' to silence this warning\r\n    2 | int read(void) { int x; return x; }\r\n      |                       ^\r\n      |                        = 0\r\n1 error generated.",
+    "exitCode": 1,
+    "id": "K7-uninitialized",
+    "tool": "clangcl",
+    "flags": [
+      "/clang:-std=c23",
+      "-Wextra",
+      "-Wpedantic",
+      "-Wno-switch-default",
+      "-Wno-pre-c23-compat",
+      "-Wswitch-enum",
+      "-Wcovered-switch-default",
+      "-Wcast-qual",
+      "-Wconversion",
+      "-Wsign-conversion",
+      "-Wshadow",
+      "-Wimplicit-fallthrough",
+      "-Wnullability-completeness",
+      "-Werror=vla",
+      "-Wstrict-prototypes",
+      "-Wmissing-prototypes",
+      "-Wdouble-promotion",
+      "-Wformat=2",
+      "-Wundef",
+      "-Wunused-result"
+    ]
+  },
+  {
+    "expectedCompiles": true,
+    "output": "",
+    "exitCode": 0,
+    "id": "K12-out-of-range-enum-hole",
+    "tool": "clangcl",
+    "flags": [
+      "/clang:-std=c23",
+      "-Wextra",
+      "-Wpedantic",
+      "-Wno-switch-default",
+      "-Wno-pre-c23-compat",
+      "-Wswitch-enum",
+      "-Wcovered-switch-default",
+      "-Wcast-qual",
+      "-Wconversion",
+      "-Wsign-conversion",
+      "-Wshadow",
+      "-Wimplicit-fallthrough",
+      "-Wnullability-completeness",
+      "-Werror=vla",
+      "-Wstrict-prototypes",
+      "-Wmissing-prototypes",
+      "-Wdouble-promotion",
+      "-Wformat=2",
+      "-Wundef",
+      "-Wunused-result"
+    ]
+  },
+  {
+    "expectedCompiles": false,
+    "output": "<probe>\\K13-const-cast.c(3,52): error: cast from 'const struct note *' to 'struct note *' drops const qualifier [-Werror,-Wcast-qual]\r\n    3 | void touch(const struct note *n) { ((struct note *)n)->width = 1; }\r\n      |                                                    ^\r\n1 error generated.",
+    "exitCode": 1,
+    "id": "K13-const-cast",
+    "tool": "clangcl",
+    "flags": [
+      "/clang:-std=c23",
+      "-Wextra",
+      "-Wpedantic",
+      "-Wno-switch-default",
+      "-Wno-pre-c23-compat",
+      "-Wswitch-enum",
+      "-Wcovered-switch-default",
+      "-Wcast-qual",
+      "-Wconversion",
+      "-Wsign-conversion",
+      "-Wshadow",
+      "-Wimplicit-fallthrough",
+      "-Wnullability-completeness",
+      "-Werror=vla",
+      "-Wstrict-prototypes",
+      "-Wmissing-prototypes",
+      "-Wdouble-promotion",
+      "-Wformat=2",
+      "-Wundef",
+      "-Wunused-result"
+    ]
+  },
+  {
+    "expectedCompiles": true,
+    "output": "",
+    "exitCode": 0,
+    "id": "K14-opaque-forge-hole",
+    "tool": "clangcl",
+    "flags": [
+      "/clang:-std=c23",
+      "-Wextra",
+      "-Wpedantic",
+      "-Wno-switch-default",
+      "-Wno-pre-c23-compat",
+      "-Wswitch-enum",
+      "-Wcovered-switch-default",
+      "-Wcast-qual",
+      "-Wconversion",
+      "-Wsign-conversion",
+      "-Wshadow",
+      "-Wimplicit-fallthrough",
+      "-Wnullability-completeness",
+      "-Werror=vla",
+      "-Wstrict-prototypes",
+      "-Wmissing-prototypes",
+      "-Wdouble-promotion",
+      "-Wformat=2",
+      "-Wundef",
+      "-Wunused-result"
+    ]
+  },
+  {
+    "expectedCompiles": true,
+    "output": "",
+    "exitCode": 0,
+    "id": "K15-zero-value-hole",
+    "tool": "clangcl",
+    "flags": [
+      "/clang:-std=c23",
+      "-Wextra",
+      "-Wpedantic",
+      "-Wno-switch-default",
+      "-Wno-pre-c23-compat",
+      "-Wswitch-enum",
+      "-Wcovered-switch-default",
+      "-Wcast-qual",
+      "-Wconversion",
+      "-Wsign-conversion",
+      "-Wshadow",
+      "-Wimplicit-fallthrough",
+      "-Wnullability-completeness",
+      "-Werror=vla",
+      "-Wstrict-prototypes",
+      "-Wmissing-prototypes",
+      "-Wdouble-promotion",
+      "-Wformat=2",
+      "-Wundef",
+      "-Wunused-result"
+    ]
+  },
+  {
+    "expectedCompiles": false,
+    "output": "<probe>\\K16-clang-cl-Wall-is-Weverything-hole.c(1,1): error: 'constexpr' is incompatible with C standards before C23 [-Werror,-Wpre-c23-compat]\r\n    1 | constexpr int limit = 3;\r\n      | ^\r\n<probe>\\K16-clang-cl-Wall-is-Weverything-hole.c(1,1): error: 'constexpr' specifier is incompatible with C++98 [-Werror,-Wc++98-compat]\r\n2 errors generated.",
+    "exitCode": 1,
+    "id": "K16-clang-cl-Wall-is-Weverything-hole",
+    "tool": "clangcl",
+    "flags": [
+      "/clang:-std=c23",
+      "-Wall"
+    ]
+  },
+  {
+    "expectedCompiles": true,
+    "output": "",
+    "exitCode": 0,
+    "id": "K16-constexpr-strict",
+    "tool": "clangcl",
+    "flags": [
+      "/clang:-std=c23",
+      "/W4",
+      "-Wextra",
+      "-Wpedantic",
+      "-Wno-switch-default",
+      "-Wno-pre-c23-compat"
+    ]
+  },
+  {
+    "tool": "llvm-nm",
+    "output": "U _time64",
+    "id": "L1-llvm-nm-undefined-time",
+    "exitCode": 0
+  },
+  {
+    "tool": "llvm-nm",
+    "output": "U __imp_GetTickCount",
+    "id": "L2-llvm-nm-undefined-win32",
+    "exitCode": 0
+  },
+  {
+    "tool": "dumpbin",
+    "output": "grep for the source name \"time\" finds nothing; the undefined symbol is _time64",
+    "matched": true,
+    "id": "L1-dumpbin-grep-time-misses",
+    "exitCode": 0
+  },
+  {
+    "tool": "cl+asan",
+    "output": "A1-asan.c\r\r\n=================================================================\r\r\n==31284==ERROR: AddressSanitizer: heap-buffer-overflow on address 0x11cc757a01a0 at pc 0x7ff73f6a1095 bp 0x0036196ffc00 sp 0x0036196ffc08\r\r\nWRITE of size 4 at 0x11cc757a01a0 thread T0\r\r\n    #0 0x7ff73f6a1094 in main <probe>\\A1-asan.c:2\r\r\n    #1 0x7ff73f6a32db in invoke_main D:\\a\\_work\\1\\s\\src\\vctools\\crt\\vcstartup\\src\\startup\\exe_common.inl:78",
+    "id": "A1-asan-heap-overflow-cl",
+    "exitCode": 1
+  },
+  {
+    "tool": "clang-cl+asan",
+    "output": "ライブラリ <probe>\\A1-clang-cl.lib とオブジェクト <probe>\\A1-clang-cl.exp を作成中\r\r\n==39304==interception_win: unhandled instruction at 0x7ff706981f64: 0f 29 74 24 30 0f 28 f0\r\r\n=================================================================\r\r\n==39304==ERROR: AddressSanitizer: heap-buffer-overflow on address 0x11e4cb1a0180 at pc 0x7ff7068f106a bp 0x0036c3eff790 sp 0x0036c3eff7d8\r\r\nWRITE of size 4 at 0x11e4cb1a0180 thread T0\r\r\n    #0 0x7ff7068f1069 in main <probe>\\A1-asan.c:2",
+    "id": "A1-asan-heap-overflow-clang-cl",
+    "exitCode": 1
+  },
+  {
+    "tool": "clang-cl+ubsan",
+    "output": "<probe>\\A2-ubsan.c:1:69: runtime error: signed integer overflow: 2147483647 + 1 cannot be represented in type 'int'\r\nSUMMARY: UndefinedBehaviorSanitizer: undefined-behavior <probe>\\A2-ubsan.c:1:69",
+    "id": "A2-ubsan-signed-overflow",
+    "exitCode": 1
+  },
+  {
+    "tool": "clang-tidy",
+    "output": "1 warning generated.\r\r\n<probe>\\T1-complexity.c:2:5: error: function 'deep' has cognitive complexity of 48 (threshold 10) [readability-function-cognitive-complexity,-warnings-as-errors]\r\r\n    2 | int deep(int a, int b) {",
+    "id": "T1-tidy-cognitive-complexity",
+    "exitCode": 1
+  },
+  {
+    "tool": "clang-tidy",
+    "output": "1 warning generated.\r\r\n<probe>\\K5-null-deref-compiles-hole.c:2:43: error: Dereference of null pointer (loaded from variable 'p') [clang-analyzer-core.NullDereference,-warnings-as-errors]\r\r\n    2 | int read(void) { int *p = nullptr; return *p; }",
+    "id": "T2-tidy-analyzer-null-dereference",
+    "exitCode": 1
+  },
+  {
+    "tool": "clang-format",
+    "output": "<probe>\\M1-w4.c:1:10: error: code should be clang-formatted [-Wclang-format-violations]\r\r\nenum mode { MODE_VIEW, MODE_EDIT };",
+    "id": "F1-clang-format-rejects",
+    "exitCode": 1
+  },
+  {
+    "tool": "clang-cl+llvm-cov",
+    "output": "-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------\r\r\nTOTAL                                                       8                 2    75.00%           2                 0   100.00%           2                 0   100.00%           4                 2    50.00%",
+    "id": "V1-llvm-cov-branches",
+    "exitCode": 0
+  },
+  {
+    "tool": "llvm-readobj",
+    "output": "Name: KERNEL32.dll",
+    "id": "R1-static-crt-imports",
+    "exitCode": 0
+  }
+]
