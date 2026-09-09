@@ -351,6 +351,65 @@ static void verify_note_moved(void)
     verify_note_round_trip();
 }
 
+/* "a"/"b"/"c" の index に name を挿し、名前を並べた文字列を返す。 */
+static void inserted_notes(size_t index, const char *_Nonnull name, char *_Nonnull out)
+{
+    struct note_ledger *ledger = parse_notes("{\"version\": 1, \"notes\": [\"a\", \"b\", \"c\"]}");
+    struct note_ledger *grown = nullptr;
+    require(note_ledger_inserted(ledger, index, name, &grown) == NOTE_LEDGER_ACCEPTED,
+            "note inserted");
+    require(note_ledger_count(grown) == 4, "inserted grows by one");
+    for (size_t position = 0; position < 4; ++position)
+    {
+        out[position] = note_ledger_name(grown, position)[0];
+    }
+    out[4] = '\0';
+    require(note_ledger_count(ledger) == 3, "the source ledger is untouched");
+    note_ledger_destroy(grown);
+    note_ledger_destroy(ledger);
+}
+
+/* "a"/"b"/"c" から index を除き、名前を並べた文字列を返す。 */
+static void removed_notes(size_t index, char *_Nonnull out)
+{
+    struct note_ledger *ledger = parse_notes("{\"version\": 1, \"notes\": [\"a\", \"b\", \"c\"]}");
+    struct note_ledger *shrunk = nullptr;
+    require(note_ledger_removed(ledger, index, &shrunk) == NOTE_LEDGER_ACCEPTED, "note removed");
+    require(note_ledger_count(shrunk) == 2, "removed shrinks by one");
+    for (size_t position = 0; position < 2; ++position)
+    {
+        out[position] = note_ledger_name(shrunk, position)[0];
+    }
+    out[2] = '\0';
+    require(note_ledger_count(ledger) == 3, "the source ledger is untouched");
+    note_ledger_destroy(shrunk);
+    note_ledger_destroy(ledger);
+}
+
+static void verify_note_transfer(void)
+{
+    char order[8] = {0};
+    inserted_notes(0, "d", order);
+    require(same_text(order, "dabc"), "inserted at the front");
+    inserted_notes(1, "d", order);
+    require(same_text(order, "adbc"), "inserted in the middle");
+    inserted_notes(3, "d", order);
+    require(same_text(order, "abcd"), "the count inserts at the end");
+    removed_notes(0, order);
+    require(same_text(order, "bc"), "removed the first");
+    removed_notes(1, order);
+    require(same_text(order, "ac"), "removed the middle");
+    removed_notes(2, order);
+    require(same_text(order, "ab"), "removed the last");
+    struct note_ledger *ledger = parse_notes("{\"version\": 1, \"notes\": [\"a\", \"b\", \"c\"]}");
+    struct note_ledger *grown = nullptr;
+    require(note_ledger_inserted(ledger, 0, "b", &grown) == NOTE_LEDGER_MALFORMED,
+            "a duplicate name is refused");
+    require(note_ledger_inserted(ledger, 0, "a/b", &grown) == NOTE_LEDGER_MALFORMED,
+            "an invalid name is refused");
+    note_ledger_destroy(ledger);
+}
+
 void run_ledger_tests(void)
 {
     verify_category_parse();
@@ -362,4 +421,5 @@ void run_ledger_tests(void)
     verify_note_parse();
     verify_note_reconcile();
     verify_note_moved();
+    verify_note_transfer();
 }

@@ -152,8 +152,8 @@ static void verify_note_drops(const struct drawer_layout *_Nonnull layout)
     target = drawer_layout_drop(layout, 1, 91);
     require(target.index == 1 && target.line_y == 104, "past the second midpoint it moves down");
     target = drawer_layout_drop(layout, 1, 500);
-    require(target.index == 1 && target.line_y == 104,
-            "over another category it goes to its own end");
+    require(target.category == 1 && target.index == 1 && target.line_y == 144,
+            "below everything it lands at the end of the collapsed category");
     target = drawer_layout_drop(layout, 2, 0);
     require(target.category == 0 && target.index == 0 && target.line_y == 48,
             "the second note moves to the front");
@@ -163,11 +163,90 @@ static void verify_note_drops(const struct drawer_layout *_Nonnull layout)
     require(target.index == 1 && target.line_y == 104, "past its own midpoint it stays");
 }
 
+/* 4 つの塊: work(展開・alpha, beta)・spare(展開・gamma, delta)・empty(展開・ノート 0)・
+ * closed(折り畳み・台帳は 2 本)。行は work 14..48 / alpha 48..76 / beta 76..104 /
+ * spare 110..144 / gamma 144..172 / delta 172..200 / empty 206..240 / closed 246..280。
+ * 塊の境界（間の中ほど）は 11・107・203・243。 */
+static struct drawer_layout *_Nonnull build_wide_layout(void)
+{
+    struct category_ledger *categories =
+        categories_from("{\"version\": 1, \"categories\": ["
+                        "{\"name\": \"work\", \"color\": \"#3D7EFF\", \"expanded\": true},"
+                        "{\"name\": \"spare\", \"color\": \"#00FF00\", \"expanded\": true},"
+                        "{\"name\": \"empty\", \"color\": \"#FF0000\", \"expanded\": true},"
+                        "{\"name\": \"closed\", \"color\": \"#FFFFFF\", \"expanded\": false}]}");
+    struct note_ledger *first = notes_from("{\"version\": 1, \"notes\": [\"alpha\", \"beta\"]}");
+    struct note_ledger *second = notes_from("{\"version\": 1, \"notes\": [\"gamma\", \"delta\"]}");
+    struct note_ledger *third = notes_from("{\"version\": 1, \"notes\": []}");
+    struct note_ledger *fourth = notes_from("{\"version\": 1, \"notes\": [\"one\", \"two\"]}");
+    const struct note_ledger *const notes[] = {first, second, third, fourth};
+    struct drawer_layout *layout = nullptr;
+    require(drawer_layout_create(categories, notes, metrics, &layout) == DRAWER_LAYOUT_CREATED,
+            "wide layout create");
+    note_ledger_destroy(fourth);
+    note_ledger_destroy(third);
+    note_ledger_destroy(second);
+    note_ledger_destroy(first);
+    category_ledger_destroy(categories);
+    return layout;
+}
+
+/* 別カテゴリの塊へ落とす（ADR 0008 の決定 1）。補正が入るのは自分のカテゴリだけ。 */
+static void verify_cross_drops(const struct drawer_layout *_Nonnull layout)
+{
+    struct drop_target target = drawer_layout_drop(layout, 1, 107);
+    require(target.kind == DROP_NOTE && target.category == 1 && target.index == 0 &&
+                target.line_y == 144,
+            "the boundary itself belongs to the next chunk and inserts before its first note");
+    target = drawer_layout_drop(layout, 1, 106);
+    require(target.category == 0 && target.index == 1 && target.line_y == 104,
+            "just above the boundary it is still its own chunk");
+    target = drawer_layout_drop(layout, 1, 159);
+    require(target.category == 1 && target.index == 1 && target.line_y == 172,
+            "past the first note of another category there is no correction");
+    target = drawer_layout_drop(layout, 1, 187);
+    require(target.category == 1 && target.index == 2 && target.line_y == 200,
+            "past every note of another category it lands at its end");
+    target = drawer_layout_drop(layout, 1, 203);
+    require(target.category == 2 && target.index == 0 && target.line_y == 240,
+            "an expanded category without notes takes 0 and draws under its category row");
+    target = drawer_layout_drop(layout, 1, 243);
+    require(target.category == 3 && target.index == 2 && target.line_y == 280,
+            "a collapsed category takes the count of its ledger");
+    target = drawer_layout_drop(layout, 1, 1000);
+    require(target.category == 3 && target.index == 2 && target.line_y == 280,
+            "below everything it stays in the last chunk");
+    target = drawer_layout_drop(layout, 1, 0);
+    require(target.category == 0 && target.index == 0 && target.line_y == 48,
+            "above everything it stays in the first chunk");
+}
+
+/* 2 つ目のカテゴリのノートを掴む。自分のカテゴリでは ADR 0007 のまま詰まる。 */
+static void verify_cross_source(const struct drawer_layout *_Nonnull layout)
+{
+    struct drop_target target = drawer_layout_drop(layout, 4, 159);
+    require(target.category == 1 && target.index == 0 && target.line_y == 172,
+            "its own row is where it already is");
+    target = drawer_layout_drop(layout, 4, 187);
+    require(target.category == 1 && target.index == 1 && target.line_y == 200,
+            "one step down inside its own category");
+    target = drawer_layout_drop(layout, 4, 0);
+    require(target.category == 0 && target.index == 0 && target.line_y == 48,
+            "the front of another category");
+    target = drawer_layout_drop(layout, 4, 91);
+    require(target.category == 0 && target.index == 2 && target.line_y == 104,
+            "the end of another category is its note count");
+}
+
 static void verify_drops(void)
 {
     struct drawer_layout *layout = build_layout();
     verify_category_drops(layout);
     verify_note_drops(layout);
+    drawer_layout_destroy(layout);
+    layout = build_wide_layout();
+    verify_cross_drops(layout);
+    verify_cross_source(layout);
     drawer_layout_destroy(layout);
 }
 

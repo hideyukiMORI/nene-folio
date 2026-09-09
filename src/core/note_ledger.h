@@ -32,6 +32,16 @@ note_ledger_reconcile(const struct note_ledger *_Nonnull ledger,
 [[nodiscard]] enum note_ledger_outcome
 note_ledger_moved(const struct note_ledger *_Nonnull ledger, size_t from, size_t to,
                   struct note_ledger *_Nullable *_Nonnull out);
+/* index の位置に name（終端付き）を挿した新しい台帳を作る（ADR 0008 の決定 3）。
+ * index は count 以下で、count なら末尾に付く。
+ * name が名前の規則に反する、または既にあるなら MALFORMED。 */
+[[nodiscard]] enum note_ledger_outcome
+note_ledger_inserted(const struct note_ledger *_Nonnull ledger, size_t index,
+                     const char *_Nonnull name, struct note_ledger *_Nullable *_Nonnull out);
+/* index 番目を除いた新しい台帳を作る（ADR 0008 の決定 3）。index は count 未満であること。 */
+[[nodiscard]] enum note_ledger_outcome
+note_ledger_removed(const struct note_ledger *_Nonnull ledger, size_t index,
+                    struct note_ledger *_Nullable *_Nonnull out);
 [[nodiscard]] size_t note_ledger_count(const struct note_ledger *_Nonnull ledger);
 /* 終端付き。ledger が生きている間だけ有効。index は count 未満であること。 */
 [[nodiscard]] const char *_Nonnull note_ledger_name(const struct note_ledger *_Nonnull ledger,
