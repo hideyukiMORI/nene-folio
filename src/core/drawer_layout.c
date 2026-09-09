@@ -11,6 +11,7 @@ struct drawer_layout
     struct drawer_row *_Nullable rows;
     size_t count;
     char *_Nullable texts; /* 全行の名前を終端付きで並べた所有領域 */
+    int bottom;            /* 最後に置いた行の下端 */
 };
 
 /* 行数と名前の総バイト数（終端込み）を数える。 */
@@ -44,22 +45,44 @@ static size_t place(struct drawer_layout *_Nonnull layout, size_t offset, struct
     row.text = layout->texts + offset;
     layout->rows[layout->count] = row;
     layout->count += 1;
+    layout->bottom = row.top + row.height;
     return offset + length;
 }
 
-static struct drawer_row row_at(struct drawer_metrics metrics, size_t index,
-                                enum drawer_row_kind kind, const char *_Nonnull text)
+/* カテゴリ行を、直前の行の下端から間を空けて置く。 */
+static struct drawer_row category_row(const struct drawer_layout *_Nonnull layout,
+                                      struct drawer_metrics metrics,
+                                      const struct category_ledger *_Nonnull categories,
+                                      size_t category)
 {
     struct drawer_row row = {
-        .kind = kind,
-        .top = metrics.top_padding + (int)index * metrics.row_height,
-        .height = metrics.row_height,
-        .indent = kind == DRAWER_ROW_CATEGORY ? metrics.category_indent : metrics.note_indent,
-        .text = text,
-        .color = {0, 0, 0},
-        .category = 0,
+        .kind = DRAWER_ROW_CATEGORY,
+        .top = layout->bottom + metrics.category_gap,
+        .height = metrics.category_height,
+        .indent = metrics.category_indent,
+        .text = category_ledger_name(categories, category),
+        .color = category_ledger_color(categories, category),
+        .category = category,
         .note = 0,
+        .ordinal = category + 1,
+        .expanded = category_ledger_expanded(categories, category),
+        .selected = false,
     };
+    return row;
+}
+
+/* ノート行を、直前の行の直下に置く。カテゴリ行の色と番号を引き継ぐ。 */
+static struct drawer_row note_row(const struct drawer_layout *_Nonnull layout,
+                                  struct drawer_metrics metrics, struct drawer_row category,
+                                  size_t note)
+{
+    struct drawer_row row = category;
+    row.kind = DRAWER_ROW_NOTE;
+    row.top = layout->bottom;
+    row.height = metrics.row_height;
+    row.indent = metrics.note_indent;
+    row.note = note;
+    row.expanded = true;
     return row;
 }
 
@@ -69,28 +92,22 @@ static void fill(struct drawer_layout *_Nonnull layout,
                  struct drawer_metrics metrics)
 {
     size_t offset = 0;
+    layout->bottom = metrics.top_padding;
     size_t categories_count = category_ledger_count(categories);
     for (size_t category = 0; category < categories_count; ++category)
     {
-        struct rgb_color color = category_ledger_color(categories, category);
-        struct drawer_row row = row_at(metrics, layout->count, DRAWER_ROW_CATEGORY,
-                                       category_ledger_name(categories, category));
-        row.color = color;
-        row.category = category;
+        struct drawer_row row = category_row(layout, metrics, categories, category);
         offset = place(layout, offset, row);
-        if (!category_ledger_expanded(categories, category))
+        if (!row.expanded)
         {
             continue;
         }
         size_t notes_count = note_ledger_count(notes[category]);
         for (size_t note = 0; note < notes_count; ++note)
         {
-            row = row_at(metrics, layout->count, DRAWER_ROW_NOTE,
-                         note_ledger_name(notes[category], note));
-            row.color = color;
-            row.category = category;
-            row.note = note;
-            offset = place(layout, offset, row);
+            struct drawer_row line = note_row(layout, metrics, row, note);
+            line.text = note_ledger_name(notes[category], note);
+            offset = place(layout, offset, line);
         }
     }
 }
@@ -119,6 +136,16 @@ drawer_layout_create(const struct category_ledger *_Nonnull categories,
     fill(layout, categories, notes, metrics);
     *out = layout;
     return DRAWER_LAYOUT_CREATED;
+}
+
+void drawer_layout_select(struct drawer_layout *_Nonnull layout, size_t category, size_t note)
+{
+    for (size_t index = 0; index < layout->count; ++index)
+    {
+        struct drawer_row *_Nonnull row = &layout->rows[index];
+        row->selected =
+            row->kind == DRAWER_ROW_NOTE && row->category == category && row->note == note;
+    }
 }
 
 size_t drawer_layout_row_count(const struct drawer_layout *_Nonnull layout)

@@ -143,7 +143,7 @@ static void verify_category_reconcile(void)
             "ledger order then scanned order");
     require(category_ledger_color(merged, 1).red == 0xFF && !category_ledger_expanded(merged, 1),
             "kept settings");
-    require(category_ledger_color(merged, 2).red == 0x8A && category_ledger_expanded(merged, 2),
+    require(category_ledger_color(merged, 2).red == 0x7F && category_ledger_expanded(merged, 2),
             "default settings");
     category_ledger_destroy(merged);
     name_list_destroy(scanned);

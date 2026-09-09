@@ -4,9 +4,11 @@
 
 struct drawer_metrics
 {
-    int top_padding;     /* 最初の行の上の余白 */
-    int row_height;      /* 1 行の高さ */
-    int category_indent; /* カテゴリ行の文字の左端 */
+    int top_padding;     /* 最初の行の上の余白（頭の帯を含む） */
+    int row_height;      /* ノート行の高さ */
+    int category_height; /* カテゴリ行の高さ */
+    int category_gap;    /* カテゴリ行の上に空ける間 */
+    int category_indent; /* カテゴリ行の番号の左端 */
     int note_indent;     /* ノート行の文字の左端 */
 };
 

@@ -1,5 +1,6 @@
 /* ドロワーの索引の配置（FR-003 / FR-004）。台帳と寸法から行の y 座標を決める純関数で、
- * UI は行を描くだけ（ARC-011 / ADR 0002）。展開していないカテゴリのノートは行にならない。 */
+ * UI は行を描くだけ（ARC-011 / ADR 0002）。展開していないカテゴリのノートは行にならない。
+ * カテゴリ行の上には category_gap を空け、行は上から詰めて置く。 */
 #ifndef NENEFOLIO_DRAWER_LAYOUT_H
 #define NENEFOLIO_DRAWER_LAYOUT_H
 
@@ -18,6 +19,8 @@ struct note_ledger;
 drawer_layout_create(const struct category_ledger *_Nonnull categories,
                      const struct note_ledger *_Nonnull const *_Nonnull notes,
                      struct drawer_metrics metrics, struct drawer_layout *_Nullable *_Nonnull out);
+/* 選択中のノートの行に印を付ける。該当する行が無ければ何にも付かない。 */
+void drawer_layout_select(struct drawer_layout *_Nonnull layout, size_t category, size_t note);
 [[nodiscard]] size_t drawer_layout_row_count(const struct drawer_layout *_Nonnull layout);
 /* index は row_count 未満であること。 */
 [[nodiscard]] struct drawer_row drawer_layout_row(const struct drawer_layout *_Nonnull layout,

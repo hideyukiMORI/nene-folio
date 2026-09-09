@@ -14,11 +14,14 @@ struct markdown_rtf
     struct text_buffer *_Nonnull buffer;
 };
 
-/* フォント 0 が本文、1 がコード。単位は半ポイント。 */
+/* フォント 0 が本文、1 がコード。色は 1 本文・2 見出し・3 薄字・4 リンク（インラインコードも）・
+ * 5 コード文字・6 コード地（rtf_palette の順）。単位は半ポイント。 */
 static const char document_header[] =
-    "{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0\\fnil Yu Gothic UI;}{\\f1\\fmodern Consolas;}}\\f0\\fs20";
+    "{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0\\fnil Yu Gothic UI;}{\\f1\\fmodern Consolas;}}";
+static const char document_body_start[] = "\\f0\\fs22\\cf1";
 static const char document_footer[] = "}";
-static const int heading_sizes[] = {36, 30, 26, 22, 20, 20};
+static const char paragraph_start[] = "\\pard\\sa160\\sl300\\slmult1\\cf1 ";
+static const int heading_sizes[] = {44, 34, 28, 24, 22, 22};
 constexpr size_t heading_max = 6;
 
 static bool is_digit(char character)
@@ -178,7 +181,7 @@ static size_t render_code_span(struct text_buffer *_Nonnull out, const char *_No
     {
         if (text[end] == '`')
         {
-            text_buffer_append_text(out, "{\\f1 ");
+            text_buffer_append_text(out, "{\\f1\\fs20\\cf4 ");
             append_plain(out, text + 1, end - 1);
             text_buffer_append_text(out, "}");
             return end + 1;
@@ -209,9 +212,9 @@ static size_t render_link(struct text_buffer *_Nonnull out, const char *_Nonnull
     {
         return 0;
     }
-    text_buffer_append_text(out, "{\\ul ");
+    text_buffer_append_text(out, "{\\cf4\\ul ");
     append_plain(out, text + 1, close - 1);
-    text_buffer_append_text(out, "}");
+    text_buffer_append_text(out, "\\ul0}");
     return end + 1;
 }
 
@@ -312,11 +315,11 @@ static void render_heading(struct text_buffer *_Nonnull out, const char *_Nonnul
     size[0] = (char)('0' + value / 10);
     size[1] = (char)('0' + value % 10);
     size[2] = '\0';
-    text_buffer_append_text(out, "\\pard\\sb240\\sa120\\b\\fs");
+    text_buffer_append_text(out, "\\pard\\sb280\\sa120\\b\\cf2\\fs");
     text_buffer_append_text(out, size);
     text_buffer_append_text(out, " ");
     render_inline(out, line + level + 1, length - level - 1);
-    text_buffer_append_text(out, "\\b0\\fs20\\par\n");
+    text_buffer_append_text(out, "\\b0\\cf1\\fs22\\par\n");
 }
 
 static void render_block(struct text_buffer *_Nonnull out, enum markdown_line_kind kind,
@@ -330,20 +333,21 @@ static void render_block(struct text_buffer *_Nonnull out, enum markdown_line_ki
     case MARKDOWN_LINE_QUOTE:
     {
         size_t skip = length >= 2 && line[1] == ' ' ? 2 : 1;
-        text_buffer_append_text(out, "\\pard\\li600\\sa60\\i ");
+        text_buffer_append_text(out, "\\pard\\li480\\sa100\\sl300\\slmult1\\cf3 ");
         render_inline(out, line + skip, length - skip);
-        text_buffer_append_text(out, "\\i0\\par\n");
+        text_buffer_append_text(out, "\\cf1\\par\n");
         return;
     }
     case MARKDOWN_LINE_BULLET:
-        text_buffer_append_text(out, "\\pard\\li500\\fi-250\\sa60\\bullet\\tab ");
+        text_buffer_append_text(out,
+                                "\\pard\\li440\\fi-220\\sa80\\sl300\\slmult1\\cf1\\bullet\\tab ");
         render_inline(out, line + 2, length - 2);
         text_buffer_append_text(out, "\\par\n");
         return;
     case MARKDOWN_LINE_ORDERED:
     {
         size_t marker = ordered_marker(line, length);
-        text_buffer_append_text(out, "\\pard\\li500\\fi-250\\sa60 ");
+        text_buffer_append_text(out, "\\pard\\li440\\fi-220\\sa80\\sl300\\slmult1\\cf1 ");
         append_plain(out, line, marker - 1);
         text_buffer_append_text(out, "\\tab ");
         render_inline(out, line + marker, length - marker);
@@ -381,14 +385,14 @@ static void render_line(struct text_buffer *_Nonnull out, const char *_Nonnull l
             *in_code = false;
             return;
         }
-        text_buffer_append_text(out, "\\pard\\li300\\f1\\fs18 ");
+        text_buffer_append_text(out, "\\pard\\li240\\sa40\\f1\\fs20\\cf5\\highlight6 ");
         append_plain(out, line, length);
-        text_buffer_append_text(out, "\\f0\\fs20\\par\n");
+        text_buffer_append_text(out, "\\highlight0\\f0\\fs22\\cf1\\par\n");
         return;
     }
     if (kind == MARKDOWN_LINE_TEXT)
     {
-        text_buffer_append_text(out, *paragraph_open ? " " : "\\pard\\sa120 ");
+        text_buffer_append_text(out, *paragraph_open ? " " : paragraph_start);
         render_inline(out, line, length);
         *paragraph_open = true;
         return;
@@ -402,10 +406,47 @@ static void render_line(struct text_buffer *_Nonnull out, const char *_Nonnull l
     render_block(out, kind, line, length);
 }
 
+/* 色表の 1 色を \\redN\\greenN\\blueN; で書く。 */
+static void append_color(struct text_buffer *_Nonnull out, struct rgb_color color)
+{
+    static const char *const names[] = {"\\red", "\\green", "\\blue"};
+    const unsigned char parts[] = {color.red, color.green, color.blue};
+    for (size_t part = 0; part < 3; ++part)
+    {
+        text_buffer_append_text(out, names[part]);
+        char digits[4];
+        size_t count = 0;
+        unsigned value = parts[part];
+        do
+        {
+            digits[count++] = (char)('0' + value % 10);
+            value /= 10;
+        } while (value > 0);
+        while (count > 0)
+        {
+            text_buffer_append(out, &digits[--count], 1);
+        }
+    }
+    text_buffer_append_text(out, ";");
+}
+
+static void append_header(struct text_buffer *_Nonnull out, struct rtf_palette palette)
+{
+    const struct rgb_color colors[] = {palette.text, palette.heading,   palette.muted,
+                                       palette.link, palette.code_text, palette.code_background};
+    text_buffer_append_text(out, document_header);
+    text_buffer_append_text(out, "{\\colortbl;");
+    for (size_t index = 0; index < sizeof colors / sizeof colors[0]; ++index)
+    {
+        append_color(out, colors[index]);
+    }
+    text_buffer_append_text(out, "}");
+    text_buffer_append_text(out, document_body_start);
+}
+
 static void render_document(struct text_buffer *_Nonnull out, const char *_Nonnull text,
                             size_t length)
 {
-    text_buffer_append_text(out, document_header);
     bool state[2] = {false, false};
     size_t start = 0;
     for (size_t index = 0; index <= length; ++index)
@@ -431,7 +472,8 @@ static void render_document(struct text_buffer *_Nonnull out, const char *_Nonnu
 }
 
 static enum markdown_rtf_outcome build(struct markdown_rtf *_Nullable *_Nonnull out,
-                                       const char *_Nonnull text, size_t length)
+                                       struct rtf_palette palette, const char *_Nonnull text,
+                                       size_t length)
 {
     struct markdown_rtf *_Nullable rtf = calloc(1, sizeof *rtf);
     if (rtf == nullptr)
@@ -443,6 +485,7 @@ static enum markdown_rtf_outcome build(struct markdown_rtf *_Nullable *_Nonnull 
         free(rtf);
         return MARKDOWN_RTF_OUT_OF_MEMORY;
     }
+    append_header(rtf->buffer, palette);
     render_document(rtf->buffer, text, length);
     if (text_buffer_finish(rtf->buffer) != TEXT_BUFFER_ACCEPTED)
     {
@@ -454,14 +497,16 @@ static enum markdown_rtf_outcome build(struct markdown_rtf *_Nullable *_Nonnull 
 }
 
 enum markdown_rtf_outcome markdown_rtf_create(const struct note_text *_Nonnull text,
+                                              struct rtf_palette palette,
                                               struct markdown_rtf *_Nullable *_Nonnull out)
 {
-    return build(out, note_text_bytes(text), note_text_length(text));
+    return build(out, palette, note_text_bytes(text), note_text_length(text));
 }
 
-enum markdown_rtf_outcome markdown_rtf_empty(struct markdown_rtf *_Nullable *_Nonnull out)
+enum markdown_rtf_outcome markdown_rtf_empty(struct rtf_palette palette,
+                                             struct markdown_rtf *_Nullable *_Nonnull out)
 {
-    return build(out, "", 0);
+    return build(out, palette, "", 0);
 }
 
 const char *_Nonnull markdown_rtf_text(const struct markdown_rtf *_Nonnull rtf)

@@ -1,5 +1,6 @@
 #include "folio_state.h"
 
+#include "appearance_port.h"
 #include "category_ledger.h"
 #include "drawer_layout.h"
 #include "markdown_rtf.h"
@@ -7,19 +8,23 @@
 #include "note_ledger.h"
 #include "note_text.h"
 #include "persistence_port.h"
+#include "rtf_palette.h"
 
 #include <stdlib.h>
 
 struct folio_state
 {
     struct persistence_port port;
+    enum folio_theme theme;
+    struct rtf_palette palette;
     struct category_ledger *_Nullable categories;
     struct note_ledger *_Nonnull *_Nullable notes; /* categories と同じ数・同じ順 */
     size_t notes_count;
     struct markdown_rtf *_Nullable pane; /* 選択中のノートの表示値。無ければ空の文書 */
+    bool selected;                       /* ノートを選んでいるか */
+    size_t selected_category;
+    size_t selected_note;
 };
-
-static const char empty_pane[] = "{\\rtf1\\ansi}";
 
 static enum folio_state_outcome translate(enum persistence_outcome outcome)
 {
@@ -166,7 +171,8 @@ static enum folio_state_outcome load_all_notes(struct folio_state *_Nonnull stat
     return FOLIO_STATE_READY;
 }
 
-enum folio_state_outcome folio_state_create(const struct persistence_port *_Nonnull port,
+enum folio_state_outcome folio_state_create(const struct persistence_port *_Nonnull persistence,
+                                            const struct appearance_port *_Nonnull appearance,
                                             struct folio_state *_Nullable *_Nonnull out)
 {
     struct folio_state *_Nullable state = calloc(1, sizeof *state);
@@ -174,11 +180,18 @@ enum folio_state_outcome folio_state_create(const struct persistence_port *_Nonn
     {
         return FOLIO_STATE_OUT_OF_MEMORY;
     }
-    state->port = *port;
-    enum folio_state_outcome outcome = load_categories(state, port);
+    state->port = *persistence;
+    state->theme = appearance->read_theme(appearance->adapter);
+    state->palette = rtf_palette_for(state->theme);
+    if (markdown_rtf_empty(state->palette, &state->pane) != MARKDOWN_RTF_CONVERTED)
+    {
+        folio_state_destroy(state);
+        return FOLIO_STATE_OUT_OF_MEMORY;
+    }
+    enum folio_state_outcome outcome = load_categories(state, persistence);
     if (outcome == FOLIO_STATE_READY)
     {
-        outcome = load_all_notes(state, port);
+        outcome = load_all_notes(state, persistence);
     }
     if (outcome != FOLIO_STATE_READY)
     {
@@ -199,7 +212,26 @@ enum folio_state_outcome folio_state_drawer_layout(const struct folio_state *_No
     {
         return FOLIO_STATE_OUT_OF_MEMORY;
     }
+    if (state->selected)
+    {
+        drawer_layout_select(*out, state->selected_category, state->selected_note);
+    }
     return FOLIO_STATE_READY;
+}
+
+enum folio_theme folio_state_theme(const struct folio_state *_Nonnull state)
+{
+    return state->theme;
+}
+
+size_t folio_state_note_count(const struct folio_state *_Nonnull state)
+{
+    size_t total = 0;
+    for (size_t index = 0; index < state->notes_count; ++index)
+    {
+        total += note_ledger_count(state->notes[index]);
+    }
+    return total;
 }
 
 enum folio_state_outcome folio_state_toggle_category(struct folio_state *_Nonnull state,
@@ -246,7 +278,7 @@ static enum folio_state_outcome render_note(struct folio_state *_Nonnull state,
         return FOLIO_STATE_NOTE_UNREADABLE;
     }
     struct markdown_rtf *_Nullable rendered = nullptr;
-    enum markdown_rtf_outcome converted = markdown_rtf_create(body, &rendered);
+    enum markdown_rtf_outcome converted = markdown_rtf_create(body, state->palette, &rendered);
     note_text_destroy(body);
     if (converted != MARKDOWN_RTF_CONVERTED)
     {
@@ -268,18 +300,42 @@ enum folio_state_outcome folio_state_select_note(struct folio_state *_Nonnull st
     {
         return FOLIO_STATE_NO_SUCH_NOTE;
     }
-    return render_note(state, category_ledger_name(state->categories, category),
-                       note_ledger_name(state->notes[category], note));
+    enum folio_state_outcome outcome =
+        render_note(state, category_ledger_name(state->categories, category),
+                    note_ledger_name(state->notes[category], note));
+    if (outcome == FOLIO_STATE_READY)
+    {
+        state->selected = true;
+        state->selected_category = category;
+        state->selected_note = note;
+    }
+    return outcome;
+}
+
+struct pane_title_view folio_state_pane_title(const struct folio_state *_Nonnull state)
+{
+    struct pane_title_view title = {
+        .any = false, .ordinal = 0, .category = "", .note = "", .color = {0, 0, 0}};
+    if (!state->selected)
+    {
+        return title;
+    }
+    title.any = true;
+    title.ordinal = state->selected_category + 1;
+    title.category = category_ledger_name(state->categories, state->selected_category);
+    title.note = note_ledger_name(state->notes[state->selected_category], state->selected_note);
+    title.color = category_ledger_color(state->categories, state->selected_category);
+    return title;
 }
 
 const char *_Nonnull folio_state_pane_rtf(const struct folio_state *_Nonnull state)
 {
-    return state->pane == nullptr ? empty_pane : markdown_rtf_text(state->pane);
+    return markdown_rtf_text(state->pane);
 }
 
 size_t folio_state_pane_rtf_length(const struct folio_state *_Nonnull state)
 {
-    return state->pane == nullptr ? sizeof empty_pane - 1 : markdown_rtf_length(state->pane);
+    return markdown_rtf_length(state->pane);
 }
 
 const char *_Nonnull folio_state_failure_line(enum folio_state_outcome outcome)
