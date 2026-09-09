@@ -369,6 +369,20 @@ static enum persistence_outcome read_note(struct persistence_adapter *_Nonnull a
     return PERSISTENCE_MALFORMED;
 }
 
+/* 本文を同じ md へ原子的に書き戻す（FR-006）。改行の形は core が既に揃えている。 */
+static enum persistence_outcome write_note(struct persistence_adapter *_Nonnull adapter,
+                                           const char *_Nonnull category, const char *_Nonnull note,
+                                           const struct note_text *_Nonnull body)
+{
+    wchar_t leaf[MAX_PATH];
+    wchar_t path[path_capacity];
+    if (!note_leaf(note, leaf, MAX_PATH) || !compose(adapter, category, leaf, path))
+    {
+        return PERSISTENCE_UNWRITABLE;
+    }
+    return file_bytes_store(path, note_text_bytes(body), note_text_length(body));
+}
+
 static enum persistence_outcome write_category_ledger(struct persistence_adapter *_Nonnull adapter,
                                                       const struct category_ledger *_Nonnull ledger)
 {
@@ -402,6 +416,7 @@ struct persistence_port persistence_adapter_port(struct persistence_adapter *_No
         .read_category_ledger = read_category_ledger,
         .write_category_ledger = write_category_ledger,
         .read_note = read_note,
+        .write_note = write_note,
         .read_note_ledger = read_note_ledger,
     };
     return port;
