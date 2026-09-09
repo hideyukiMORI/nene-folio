@@ -5,6 +5,7 @@
 #include "folio_message.h"
 #include "folio_palette.h"
 #include "folio_state.h"
+#include "note_ref.h"
 #include "utf16_text.h"
 
 #include <stdlib.h>
@@ -317,7 +318,8 @@ static void act_on_row(struct drawer_window *_Nonnull self, struct drawer_row ro
     failure_box_show(self->handle, outcome);
 }
 
-/* 落とし先を意図にする。並び替えは選択の番号も動かすので、親にも描き直しを頼む。 */
+/* 落とし先を意図にする（ノートは別カテゴリへの移動も同じ 1 本・ADR 0008 の決定 2 / 6）。
+ * 並び替えも移動も選択の番号を動かすので、親にも描き直しを頼む。 */
 static void apply_drop(struct drawer_window *_Nonnull self, struct drawer_row source,
                        struct drop_target target)
 {
@@ -328,7 +330,9 @@ static void apply_drop(struct drawer_window *_Nonnull self, struct drawer_row so
         outcome = folio_state_move_category(self->state, target.category, target.index);
         break;
     case DROP_NOTE:
-        outcome = folio_state_move_note(self->state, target.category, source.note, target.index);
+        outcome = folio_state_move_note(
+            self->state, (struct note_ref){.category = source.category, .note = source.note},
+            (struct note_ref){.category = target.category, .note = target.index});
         break;
     }
     if (outcome != FOLIO_STATE_READY)
