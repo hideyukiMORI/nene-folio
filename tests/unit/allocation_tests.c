@@ -169,6 +169,10 @@ static bool categories_scenario(void)
     struct category_ledger *merged = nullptr;
     completed = completed && scanned_names(items, 3, &scanned) &&
                 category_ledger_reconcile(ledger, scanned, &merged) == CATEGORY_LEDGER_ACCEPTED;
+    struct category_ledger *moved = nullptr;
+    completed =
+        completed && category_ledger_moved(ledger, 1, 0, &moved) == CATEGORY_LEDGER_ACCEPTED;
+    category_ledger_destroy(moved);
     category_ledger_destroy(merged);
     name_list_destroy(scanned);
     category_ledger_destroy(ledger);
@@ -197,6 +201,9 @@ static bool notes_scenario(void)
     struct note_ledger *merged = nullptr;
     completed = completed && scanned_names(items, 3, &scanned) &&
                 note_ledger_reconcile(ledger, scanned, &merged) == NOTE_LEDGER_ACCEPTED;
+    struct note_ledger *moved = nullptr;
+    completed = completed && note_ledger_moved(ledger, 0, 2, &moved) == NOTE_LEDGER_ACCEPTED;
+    note_ledger_destroy(moved);
     note_ledger_destroy(merged);
     name_list_destroy(scanned);
     note_ledger_destroy(ledger);
@@ -253,6 +260,32 @@ static bool layout_scenario(void)
     return completed;
 }
 
+/* 並び替えが作り直す台帳の確保を通す（FR-009）。書き戻しの経路は偽物なので確保しない。 */
+static bool reorder_under_probe(struct folio_state *_Nonnull state)
+{
+    enum folio_state_outcome ordered = folio_state_move_note(state, 0, 0, 2);
+    require(ordered == FOLIO_STATE_READY || ordered == FOLIO_STATE_OUT_OF_MEMORY,
+            "move note under probe");
+    if (ordered != FOLIO_STATE_READY)
+    {
+        return false;
+    }
+    ordered = folio_state_move_category(state, 0, 1);
+    require(ordered == FOLIO_STATE_READY || ordered == FOLIO_STATE_OUT_OF_MEMORY,
+            "move category under probe");
+    return ordered == FOLIO_STATE_READY;
+}
+
+/* 変換・畳み込み・書き戻し・表示値の作り直しの確保をすべて通す（FR-006）。 */
+static bool edit_under_probe(struct folio_state *_Nonnull state)
+{
+    require(folio_state_begin_edit(state) == FOLIO_STATE_READY, "begin edit under probe");
+    enum folio_state_outcome saved = folio_state_end_edit(state, u"# T\r\nchanged", 12);
+    require(saved == FOLIO_STATE_READY || saved == FOLIO_STATE_OUT_OF_MEMORY,
+            "end edit under probe");
+    return saved == FOLIO_STATE_READY;
+}
+
 /* state を作り、配置とトグルを 1 回ずつ通す。adapter は state より長く生きる。 */
 static bool state_scenario_with(struct persistence_adapter *_Nonnull adapter)
 {
@@ -286,14 +319,7 @@ static bool state_scenario_with(struct persistence_adapter *_Nonnull adapter)
         completed = selected == FOLIO_STATE_READY;
         require(completed || selected == FOLIO_STATE_OUT_OF_MEMORY, "select under probe");
     }
-    if (completed)
-    {
-        require(folio_state_begin_edit(state) == FOLIO_STATE_READY, "begin edit under probe");
-        /* 変換・畳み込み・書き戻し・表示値の作り直しの確保をすべて通す（FR-006）。 */
-        enum folio_state_outcome saved = folio_state_end_edit(state, u"# T\r\nchanged", 12);
-        completed = saved == FOLIO_STATE_READY;
-        require(completed || saved == FOLIO_STATE_OUT_OF_MEMORY, "end edit under probe");
-    }
+    completed = completed && reorder_under_probe(state) && edit_under_probe(state);
     folio_state_destroy(state);
     return completed;
 }

@@ -46,6 +46,10 @@ struct persistence_port
     enum persistence_outcome (*_Nonnull read_note_ledger)(
         struct persistence_adapter *_Nonnull adapter, const char *_Nonnull category,
         struct note_ledger *_Nullable *_Nonnull out);
+    /* data/<category>/index.json を置き換える。途中で落ちても壊れた台帳を残さない（FR-008）。 */
+    enum persistence_outcome (*_Nonnull write_note_ledger)(
+        struct persistence_adapter *_Nonnull adapter, const char *_Nonnull category,
+        const struct note_ledger *_Nonnull ledger);
 };
 
 #endif

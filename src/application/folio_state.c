@@ -80,6 +80,13 @@ static enum folio_state_outcome from_note_ledger(enum note_ledger_outcome outcom
     return FOLIO_STATE_LEDGER_MALFORMED;
 }
 
+/* 台帳の書き戻しの結果を意図の結果に写す。記憶不足だけは書けなかったことと区別する。 */
+static enum folio_state_outcome from_store(enum persistence_outcome stored)
+{
+    return stored == PERSISTENCE_OUT_OF_MEMORY ? FOLIO_STATE_OUT_OF_MEMORY
+                                               : FOLIO_STATE_STORE_FAILED;
+}
+
 /* 台帳（無ければ空）と走査結果（無ければ空）を照合して categories を確定する。 */
 static enum folio_state_outcome load_categories(struct folio_state *_Nonnull state,
                                                 const struct persistence_port *_Nonnull port)
@@ -257,12 +264,123 @@ enum folio_state_outcome folio_state_toggle_category(struct folio_state *_Nonnul
     if (stored != PERSISTENCE_STORED)
     {
         category_ledger_destroy(toggled);
-        return stored == PERSISTENCE_OUT_OF_MEMORY ? FOLIO_STATE_OUT_OF_MEMORY
-                                                   : FOLIO_STATE_STORE_FAILED;
+        return from_store(stored);
     }
     category_ledger_destroy(state->categories);
     state->categories = toggled;
     return FOLIO_STATE_READY;
+}
+
+/* 並び替えたあとに、元の index 番目が来る位置。 */
+static size_t moved_index(size_t from, size_t to, size_t index)
+{
+    if (index == from)
+    {
+        return to;
+    }
+    if (from < to)
+    {
+        return index > from && index <= to ? index - 1 : index;
+    }
+    return index >= to && index < from ? index + 1 : index;
+}
+
+/* 索引台帳の配列を台帳と同じ順に並べ替える。確保はしない。 */
+static void move_notes(struct note_ledger *_Nonnull *_Nonnull items, size_t from, size_t to)
+{
+    struct note_ledger *_Nonnull moved = items[from];
+    while (from < to)
+    {
+        items[from] = items[from + 1];
+        from += 1;
+    }
+    while (from > to)
+    {
+        items[from] = items[from - 1];
+        from -= 1;
+    }
+    items[to] = moved;
+}
+
+enum folio_state_outcome folio_state_move_category(struct folio_state *_Nonnull state, size_t from,
+                                                   size_t to)
+{
+    size_t count = category_ledger_count(state->categories);
+    if (from >= count || to >= count)
+    {
+        return FOLIO_STATE_NO_SUCH_CATEGORY;
+    }
+    if (from == to)
+    {
+        return FOLIO_STATE_READY;
+    }
+    struct category_ledger *_Nullable moved = nullptr;
+    enum folio_state_outcome outcome =
+        from_category_ledger(category_ledger_moved(state->categories, from, to, &moved));
+    if (outcome != FOLIO_STATE_READY)
+    {
+        return outcome;
+    }
+    enum persistence_outcome stored = state->port.write_category_ledger(state->port.adapter, moved);
+    if (stored != PERSISTENCE_STORED)
+    {
+        category_ledger_destroy(moved);
+        return from_store(stored);
+    }
+    category_ledger_destroy(state->categories);
+    state->categories = moved;
+    move_notes(state->notes, from, to);
+    if (state->selected)
+    {
+        state->selected_category = moved_index(from, to, state->selected_category);
+    }
+    return FOLIO_STATE_READY;
+}
+
+/* 並び替えた索引台帳を書き戻し、書けたときだけ差し替える。 */
+static enum folio_state_outcome store_notes(struct folio_state *_Nonnull state, size_t category,
+                                            size_t from, size_t to)
+{
+    struct note_ledger *_Nullable moved = nullptr;
+    enum folio_state_outcome outcome =
+        from_note_ledger(note_ledger_moved(state->notes[category], from, to, &moved));
+    if (outcome != FOLIO_STATE_READY)
+    {
+        return outcome;
+    }
+    enum persistence_outcome stored = state->port.write_note_ledger(
+        state->port.adapter, category_ledger_name(state->categories, category), moved);
+    if (stored != PERSISTENCE_STORED)
+    {
+        note_ledger_destroy(moved);
+        return from_store(stored);
+    }
+    note_ledger_destroy(state->notes[category]);
+    state->notes[category] = moved;
+    if (state->selected && state->selected_category == category)
+    {
+        state->selected_note = moved_index(from, to, state->selected_note);
+    }
+    return FOLIO_STATE_READY;
+}
+
+enum folio_state_outcome folio_state_move_note(struct folio_state *_Nonnull state, size_t category,
+                                               size_t from, size_t to)
+{
+    if (category >= category_ledger_count(state->categories))
+    {
+        return FOLIO_STATE_NO_SUCH_CATEGORY;
+    }
+    size_t count = note_ledger_count(state->notes[category]);
+    if (from >= count || to >= count)
+    {
+        return FOLIO_STATE_NO_SUCH_NOTE;
+    }
+    if (from == to)
+    {
+        return FOLIO_STATE_READY;
+    }
+    return store_notes(state, category, from, to);
 }
 
 /* 本文を読んで RTF にする。読めない理由は 1 つに畳む（無い・読めない・UTF-8 でない）。 */
@@ -458,7 +576,8 @@ const char *_Nonnull folio_state_failure_line(enum folio_state_outcome outcome)
     case FOLIO_STATE_LEDGER_MALFORMED:
         return "data/ の台帳（categories.json / index.json）が版 1 の形ではありません。";
     case FOLIO_STATE_STORE_FAILED:
-        return "data/categories.json に書き戻せませんでした。表示は変えていません。";
+        return "data/ の台帳（categories.json / index.json）に書き戻せませんでした。表示は変えて"
+               "いません。";
     case FOLIO_STATE_NO_SUCH_CATEGORY:
         return "索引に無いカテゴリが操作されました。";
     case FOLIO_STATE_NO_SUCH_NOTE:
