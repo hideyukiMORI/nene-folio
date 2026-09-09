@@ -48,7 +48,7 @@ nenefolio_system_link(nenefolio_adapters advapi32)
 
 nenefolio_target(nenefolio_window ui_win32 STATIC
     src/ui/win32/drawer_window.c src/ui/win32/folio_window.c src/ui/win32/note_pane.c
-    src/ui/win32/folio_palette.c)
+    src/ui/win32/folio_palette.c src/ui/win32/failure_box.c)
 nenefolio_link(nenefolio_window nenefolio_core)
 nenefolio_link(nenefolio_window nenefolio_application)
 nenefolio_system_link(nenefolio_window user32)

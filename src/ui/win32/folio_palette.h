@@ -17,8 +17,9 @@ struct folio_palette
     COLORREF selected_background; /* 選択中のノート行の面 */
     COLORREF selected_text;       /* 選択中のノート名 */
     COLORREF current_text;        /* 右ペインの頭の、いま見ているノート名 */
-    COLORREF chip_background;     /* 「閲覧」の札の地 */
-    COLORREF chip_text;           /* 「閲覧」の札の文字 */
+    COLORREF editor_text;         /* 編集モードの本文 */
+    COLORREF chip_background;     /* 有効な側の札の地 */
+    COLORREF chip_text;           /* 有効な側の札の文字 */
     COLORREF border;              /* 窓の縁と区切り記号 */
 };
 
