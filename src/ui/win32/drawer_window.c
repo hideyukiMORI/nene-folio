@@ -1,6 +1,7 @@
 #include "drawer_window.h"
 
 #include "drawer_layout.h"
+#include "failure_box.h"
 #include "folio_message.h"
 #include "folio_palette.h"
 #include "folio_state.h"
@@ -252,17 +253,24 @@ static void paint(struct drawer_window *_Nonnull self)
     EndPaint(self->handle, &painting);
 }
 
-/* 失敗の 1 行を利用者に見せる。文言は application が作る（ARC-011）。 */
-static void show_failure(HWND window, enum folio_state_outcome outcome)
+/* 別のノートを選ぶ前に、主窓へ「編集中なら先に保存」を頼む（ADR 0006 の決定 5）。 */
+static enum folio_state_outcome select_note(struct drawer_window *_Nonnull self,
+                                            struct drawer_row row)
 {
-    const char *_Nonnull line = folio_state_failure_line(outcome);
-    struct utf16_text *_Nullable text = nullptr;
-    if (utf16_text_create(line, strlen(line), &text) != UTF16_TEXT_CONVERTED)
+    HWND parent = GetParent(self->handle);
+    /* LRESULT で返る値は主窓が入れた enum folio_state_outcome（Win32 の境界）。 */
+    enum folio_state_outcome outcome =
+        (enum folio_state_outcome)SendMessageW(parent, folio_message_edit_flush, 0, 0);
+    if (outcome != FOLIO_STATE_READY)
     {
-        return;
+        return outcome;
     }
-    MessageBoxW(window, utf16_text_units(text), L"NeNe Folio", MB_OK | MB_ICONWARNING);
-    utf16_text_destroy(text);
+    outcome = folio_state_select_note(self->state, row.category, row.note);
+    if (outcome == FOLIO_STATE_READY)
+    {
+        SendMessageW(parent, folio_message_selection_changed, 0, 0);
+    }
+    return outcome;
 }
 
 /* 行への意図を application へ渡し、結果を写す。 */
@@ -275,11 +283,7 @@ static void act_on_row(struct drawer_window *_Nonnull self, struct drawer_row ro
         outcome = folio_state_toggle_category(self->state, row.category);
         break;
     case DRAWER_ROW_NOTE:
-        outcome = folio_state_select_note(self->state, row.category, row.note);
-        if (outcome == FOLIO_STATE_READY)
-        {
-            SendMessageW(GetParent(self->handle), folio_message_selection_changed, 0, 0);
-        }
+        outcome = select_note(self, row);
         break;
     }
     if (outcome == FOLIO_STATE_READY)
@@ -287,7 +291,7 @@ static void act_on_row(struct drawer_window *_Nonnull self, struct drawer_row ro
         InvalidateRect(self->handle, nullptr, FALSE);
         return;
     }
-    show_failure(self->handle, outcome);
+    failure_box_show(self->handle, outcome);
 }
 
 /* クリックを行に写して意図にする。行の外なら何もしない。 */

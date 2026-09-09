@@ -286,6 +286,14 @@ static bool state_scenario_with(struct persistence_adapter *_Nonnull adapter)
         completed = selected == FOLIO_STATE_READY;
         require(completed || selected == FOLIO_STATE_OUT_OF_MEMORY, "select under probe");
     }
+    if (completed)
+    {
+        require(folio_state_begin_edit(state) == FOLIO_STATE_READY, "begin edit under probe");
+        /* 変換・畳み込み・書き戻し・表示値の作り直しの確保をすべて通す（FR-006）。 */
+        enum folio_state_outcome saved = folio_state_end_edit(state, u"# T\r\nchanged", 12);
+        completed = saved == FOLIO_STATE_READY;
+        require(completed || saved == FOLIO_STATE_OUT_OF_MEMORY, "end edit under probe");
+    }
     folio_state_destroy(state);
     return completed;
 }

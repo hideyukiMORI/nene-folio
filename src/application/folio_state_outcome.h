@@ -5,12 +5,16 @@
 enum folio_state_outcome : unsigned char
 {
     FOLIO_STATE_READY,
-    FOLIO_STATE_DATA_UNREADABLE,  /* data/ の走査や台帳の読み込みが失敗した */
-    FOLIO_STATE_LEDGER_MALFORMED, /* 台帳が版 1 の形ではない。既定値へは落とさない（FR-015） */
-    FOLIO_STATE_STORE_FAILED,     /* 台帳を書き戻せなかった。表示上の状態は変えていない */
-    FOLIO_STATE_NO_SUCH_CATEGORY, /* 索引に無いカテゴリへの意図 */
-    FOLIO_STATE_NO_SUCH_NOTE,     /* 索引に無いノートへの意図 */
-    FOLIO_STATE_NOTE_UNREADABLE,  /* ノートが無い・読めない・UTF-8 ではない。表示は変えていない */
+    FOLIO_STATE_DATA_UNREADABLE,   /* data/ の走査や台帳の読み込みが失敗した */
+    FOLIO_STATE_LEDGER_MALFORMED,  /* 台帳が版 1 の形ではない。既定値へは落とさない（FR-015） */
+    FOLIO_STATE_STORE_FAILED,      /* 台帳を書き戻せなかった。表示上の状態は変えていない */
+    FOLIO_STATE_NO_SUCH_CATEGORY,  /* 索引に無いカテゴリへの意図 */
+    FOLIO_STATE_NO_SUCH_NOTE,      /* 索引に無いノートへの意図 */
+    FOLIO_STATE_NOTE_UNREADABLE,   /* ノートが無い・読めない・UTF-8 ではない。表示は変えていない */
+    FOLIO_STATE_NOTHING_SELECTED,  /* ノートを選ばずに編集へ入ろうとした */
+    FOLIO_STATE_NOT_EDITING,       /* 閲覧中に保存の意図が来た */
+    FOLIO_STATE_NOTE_MALFORMED,    /* 編集中の本文が UTF-16 として壊れている。保存していない */
+    FOLIO_STATE_NOTE_STORE_FAILED, /* md を書き戻せなかった。モードも読んだ本文も変えていない */
     FOLIO_STATE_OUT_OF_MEMORY
 };
 

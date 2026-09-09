@@ -1,6 +1,7 @@
 #include "folio_window.h"
 
 #include "drawer_window.h"
+#include "failure_box.h"
 #include "folio_message.h"
 #include "folio_palette.h"
 #include "folio_state.h"
@@ -8,6 +9,7 @@
 #include "utf16_text.h"
 
 #include <dwmapi.h>
+#include <richedit.h>
 #include <stdlib.h>
 #include <string.h>
 #include <windows.h>
@@ -26,6 +28,10 @@ struct folio_window
 static const wchar_t class_name[] = L"NeNeFolioWindow";
 static const wchar_t mono_face[] = L"Consolas";
 static const wchar_t view_label[] = L"閲覧";
+static const wchar_t edit_label[] = L"編集";
+
+/* Ctrl+S が WM_CHAR で届く制御文字（GetKeyState を読まない・ARC-007）。 */
+constexpr WPARAM store_character = 0x13;
 
 /* 96 DPI での寸法（デザイン「案2 堅」）。 */
 constexpr int base_dpi = 96;
@@ -42,6 +48,7 @@ constexpr int base_pane_bottom = 32;
 constexpr int base_chip_padding = 12;
 constexpr int base_chip_height = 24;
 constexpr int base_chip_inset = 16;
+constexpr int base_chip_gap = 8;
 constexpr int base_chip_radius = 3;
 constexpr int base_mono_font = 11;
 constexpr int base_tracking = 1;
@@ -124,24 +131,6 @@ static LRESULT edge_hit(POINT point, RECT window, int border)
     return hits[row][column];
 }
 
-static LRESULT hit_test(const struct folio_window *_Nonnull self, LPARAM lparam)
-{
-    POINT point = {GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
-    RECT window;
-    GetWindowRect(self->handle, &window);
-    UINT dpi = GetDpiForWindow(self->handle);
-    int border = GetSystemMetricsForDpi(SM_CXSIZEFRAME, dpi) +
-                 GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi);
-    LRESULT edge = edge_hit(point, window, border);
-    if (edge != HTNOWHERE)
-    {
-        return edge;
-    }
-    bool in_caption = point.x >= window.left + scale(base_drawer_width, dpi) &&
-                      point.y < window.top + scale(base_caption_height, dpi);
-    return in_caption ? HTCAPTION : HTCLIENT;
-}
-
 /* UTF-8 を 1 行で描き、描いた幅を返す。 */
 static int draw_utf8(HDC device, const char *_Nonnull text, RECT bounds)
 {
@@ -157,6 +146,17 @@ static int draw_utf8(HDC device, const char *_Nonnull text, RECT bounds)
               DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
     utf16_text_destroy(wide);
     return measured.right - measured.left;
+}
+
+/* 右ペインの頭の帯（窓を掴んで動かせる帯）。 */
+static RECT caption_rect(const struct folio_window *_Nonnull self)
+{
+    RECT client;
+    GetClientRect(self->handle, &client);
+    UINT dpi = GetDpiForWindow(self->handle);
+    RECT caption = {scale(base_drawer_width, dpi) + scale(base_caption_indent, dpi), 0,
+                    client.right, scale(base_caption_height, dpi)};
+    return caption;
 }
 
 /* 頭のパンくず: 番号（カテゴリ色）・カテゴリ・/・ノート。選択が無ければ何も描かない。 */
@@ -186,29 +186,119 @@ static void draw_breadcrumb(const struct folio_window *_Nonnull self, HDC device
     draw_utf8(device, title.note, cursor);
 }
 
-/* 右端の「閲覧」の札。編集は機能が入るまで描かない。 */
-static void draw_chip(const struct folio_window *_Nonnull self, HDC device, RECT caption)
+static const wchar_t *_Nonnull chip_label(enum pane_mode chip)
 {
+    switch (chip)
+    {
+    case PANE_MODE_VIEW:
+        return view_label;
+    case PANE_MODE_EDIT:
+        return edit_label;
+    }
+    return view_label;
+}
+
+/* 札 1 つの幅（左右の余白込み）。等幅フォントを選んだ device で測る。 */
+static int chip_width(const struct folio_window *_Nonnull self, HDC device, enum pane_mode chip)
+{
+    RECT measured = caption_rect(self);
+    DrawTextW(device, chip_label(chip), -1, &measured, DT_SINGLELINE | DT_NOPREFIX | DT_CALCRECT);
+    return measured.right - measured.left +
+           scale(base_chip_padding, GetDpiForWindow(self->handle)) * 2;
+}
+
+/* 札の矩形。右端が「編集」、その左が「閲覧」。描画と当たり判定はこの 1 か所を共有する。 */
+static RECT chip_rect(const struct folio_window *_Nonnull self, HDC device, enum pane_mode chip)
+{
+    RECT caption = caption_rect(self);
     UINT dpi = GetDpiForWindow(self->handle);
-    RECT measured = caption;
-    DrawTextW(device, view_label, -1, &measured, DT_SINGLELINE | DT_NOPREFIX | DT_CALCRECT);
-    int width = measured.right - measured.left + scale(base_chip_padding, dpi) * 2;
     int height = scale(base_chip_height, dpi);
     int middle = (caption.top + caption.bottom) / 2;
-    RECT chip = {caption.right - scale(base_chip_inset, dpi) - width, middle - height / 2,
-                 caption.right - scale(base_chip_inset, dpi), middle - height / 2 + height};
-    HBRUSH brush = CreateSolidBrush(self->palette.chip_background);
-    HPEN pen = CreatePen(PS_NULL, 0, 0);
-    HGDIOBJ old_brush = SelectObject(device, brush);
-    HGDIOBJ old_pen = SelectObject(device, pen);
-    int radius = scale(base_chip_radius, dpi) * 2;
-    RoundRect(device, chip.left, chip.top, chip.right, chip.bottom, radius, radius);
-    SelectObject(device, old_pen);
-    SelectObject(device, old_brush);
-    DeleteObject(pen);
-    DeleteObject(brush);
-    SetTextColor(device, self->palette.chip_text);
-    DrawTextW(device, view_label, -1, &chip, DT_SINGLELINE | DT_VCENTER | DT_CENTER | DT_NOPREFIX);
+    int right = caption.right - scale(base_chip_inset, dpi);
+    switch (chip)
+    {
+    case PANE_MODE_VIEW:
+        right -= chip_width(self, device, PANE_MODE_EDIT) + scale(base_chip_gap, dpi);
+        break;
+    case PANE_MODE_EDIT:
+        break;
+    }
+    RECT bounds = {right - chip_width(self, device, chip), middle - height / 2, right,
+                   middle - height / 2 + height};
+    return bounds;
+}
+
+/* 有効な側だけ面を塗り、無効な側は頭の文字色で描く（ADR 0006 の決定 7）。 */
+static void draw_chip(const struct folio_window *_Nonnull self, HDC device, enum pane_mode chip)
+{
+    RECT bounds = chip_rect(self, device, chip);
+    UINT dpi = GetDpiForWindow(self->handle);
+    if (chip == folio_state_pane_mode(self->state))
+    {
+        HBRUSH brush = CreateSolidBrush(self->palette.chip_background);
+        HPEN pen = CreatePen(PS_NULL, 0, 0);
+        HGDIOBJ old_brush = SelectObject(device, brush);
+        HGDIOBJ old_pen = SelectObject(device, pen);
+        int radius = scale(base_chip_radius, dpi) * 2;
+        RoundRect(device, bounds.left, bounds.top, bounds.right, bounds.bottom, radius, radius);
+        SelectObject(device, old_pen);
+        SelectObject(device, old_brush);
+        DeleteObject(pen);
+        DeleteObject(brush);
+        SetTextColor(device, self->palette.chip_text);
+    }
+    else
+    {
+        SetTextColor(device, self->palette.header_text);
+    }
+    DrawTextW(device, chip_label(chip), -1, &bounds,
+              DT_SINGLELINE | DT_VCENTER | DT_CENTER | DT_NOPREFIX);
+}
+
+/* 点が札の上なら true。当たり判定は描画と同じ chip_rect を使う（ADR 0006 の決定 7）。 */
+static bool chip_at(const struct folio_window *_Nonnull self, POINT point,
+                    enum pane_mode *_Nonnull chip)
+{
+    HDC device = GetDC(self->handle);
+    if (device == nullptr)
+    {
+        return false;
+    }
+    HGDIOBJ previous = SelectObject(device, self->mono_font);
+    SetTextCharacterExtra(device, scale(base_tracking, GetDpiForWindow(self->handle)));
+    RECT view = chip_rect(self, device, PANE_MODE_VIEW);
+    RECT edit = chip_rect(self, device, PANE_MODE_EDIT);
+    SetTextCharacterExtra(device, 0);
+    SelectObject(device, previous);
+    ReleaseDC(self->handle, device);
+    *chip = PtInRect(&view, point) ? PANE_MODE_VIEW : PANE_MODE_EDIT;
+    return PtInRect(&view, point) || PtInRect(&edit, point);
+}
+
+/* 縁と札を先に見て、残りの頭の帯を掴んで動かせるようにする。 */
+static LRESULT hit_test(const struct folio_window *_Nonnull self, LPARAM lparam)
+{
+    POINT point = {GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
+    RECT window;
+    GetWindowRect(self->handle, &window);
+    UINT dpi = GetDpiForWindow(self->handle);
+    int border = GetSystemMetricsForDpi(SM_CXSIZEFRAME, dpi) +
+                 GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi);
+    LRESULT edge = edge_hit(point, window, border);
+    if (edge != HTNOWHERE)
+    {
+        return edge;
+    }
+    POINT client = point;
+    ScreenToClient(self->handle, &client);
+    enum pane_mode chip = PANE_MODE_VIEW;
+    if (chip_at(self, client, &chip))
+    {
+        return HTCLIENT;
+    }
+    bool in_caption = point.x >= window.left + scale(base_drawer_width, dpi) &&
+                      point.y < window.top + scale(base_caption_height, dpi);
+    return in_caption ? HTCAPTION : HTCLIENT;
 }
 
 /* 右ペインの地と頭を描く。本文は note_pane が持つ。 */
@@ -223,15 +313,146 @@ static void paint_pane(struct folio_window *_Nonnull self)
     HBRUSH brush = CreateSolidBrush(self->palette.pane);
     FillRect(device, &pane, brush);
     DeleteObject(brush);
-    RECT caption = {pane.left + scale(base_caption_indent, dpi), 0, client.right,
-                    scale(base_caption_height, dpi)};
     SetBkMode(device, TRANSPARENT);
     SelectObject(device, self->mono_font);
     SetTextCharacterExtra(device, scale(base_tracking, dpi));
-    draw_breadcrumb(self, device, caption);
-    draw_chip(self, device, caption);
+    draw_breadcrumb(self, device, caption_rect(self));
+    draw_chip(self, device, PANE_MODE_VIEW);
+    draw_chip(self, device, PANE_MODE_EDIT);
     SetTextCharacterExtra(device, 0);
     EndPaint(self->handle, &painting);
+}
+
+/* 編集中の本文を UI から取り出す。取り出せない理由は 1 つに畳む。 */
+static enum folio_state_outcome take_text(const struct folio_window *_Nonnull self,
+                                          const char16_t *_Nonnull *_Nonnull units,
+                                          size_t *_Nonnull count)
+{
+    if (self->pane == nullptr)
+    {
+        return FOLIO_STATE_OUT_OF_MEMORY;
+    }
+    switch (note_pane_text(self->pane, units, count))
+    {
+    case NOTE_PANE_TEXT_TAKEN:
+        return FOLIO_STATE_READY;
+    case NOTE_PANE_TEXT_UNAVAILABLE:
+    case NOTE_PANE_TEXT_OUT_OF_MEMORY:
+        return FOLIO_STATE_OUT_OF_MEMORY;
+    }
+    return FOLIO_STATE_OUT_OF_MEMORY;
+}
+
+/* 「編集」の札。application の本文を平文で流し込んでから意図を出す。 */
+static void enter_edit(struct folio_window *_Nonnull self)
+{
+    struct utf16_text *_Nullable wide = nullptr;
+    if (self->pane == nullptr ||
+        utf16_text_create(folio_state_pane_text(self->state),
+                          folio_state_pane_text_length(self->state), &wide) != UTF16_TEXT_CONVERTED)
+    {
+        failure_box_show(self->handle, FOLIO_STATE_OUT_OF_MEMORY);
+        return;
+    }
+    enum folio_state_outcome outcome = folio_state_begin_edit(self->state);
+    if (outcome == FOLIO_STATE_READY)
+    {
+        note_pane_edit(self->pane, utf16_text_units(wide), utf16_text_length(wide));
+        InvalidateRect(self->handle, nullptr, FALSE);
+    }
+    else
+    {
+        failure_box_show(self->handle, outcome);
+    }
+    utf16_text_destroy(wide);
+}
+
+/* 編集中なら保存して閲覧へ戻す。閲覧中なら何もしない（ADR 0006 の決定 1 / 5）。 */
+static enum folio_state_outcome flush_edit(struct folio_window *_Nonnull self)
+{
+    if (folio_state_pane_mode(self->state) == PANE_MODE_VIEW)
+    {
+        return FOLIO_STATE_READY;
+    }
+    const char16_t *units = u"";
+    size_t count = 0;
+    enum folio_state_outcome outcome = take_text(self, &units, &count);
+    if (outcome == FOLIO_STATE_READY)
+    {
+        outcome = folio_state_end_edit(self->state, units, count);
+    }
+    if (outcome == FOLIO_STATE_READY)
+    {
+        render_pane(self);
+    }
+    return outcome;
+}
+
+/* Ctrl+S。保存して編集モードのまま残る。 */
+static void store_edit(struct folio_window *_Nonnull self)
+{
+    const char16_t *units = u"";
+    size_t count = 0;
+    enum folio_state_outcome outcome = take_text(self, &units, &count);
+    if (outcome == FOLIO_STATE_READY)
+    {
+        outcome = folio_state_store_note(self->state, units, count);
+    }
+    if (outcome != FOLIO_STATE_READY)
+    {
+        failure_box_show(self->handle, outcome);
+        return;
+    }
+    InvalidateRect(self->handle, nullptr, FALSE);
+}
+
+/* 「閲覧」の札・別ノートの選択・窓を閉じる操作の共通の出口。保存できなければ 1 行を出す。 */
+static bool leave_edit(struct folio_window *_Nonnull self)
+{
+    enum folio_state_outcome outcome = flush_edit(self);
+    if (outcome == FOLIO_STATE_READY)
+    {
+        return true;
+    }
+    failure_box_show(self->handle, outcome);
+    return false;
+}
+
+/* 無効な側の札のクリックだけが意図になる。 */
+static void click_caption(struct folio_window *_Nonnull self, LPARAM lparam)
+{
+    POINT point = {GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
+    enum pane_mode chip = PANE_MODE_VIEW;
+    if (!chip_at(self, point, &chip) || chip == folio_state_pane_mode(self->state))
+    {
+        return;
+    }
+    switch (chip)
+    {
+    case PANE_MODE_VIEW:
+        leave_edit(self);
+        break;
+    case PANE_MODE_EDIT:
+        enter_edit(self);
+        break;
+    }
+}
+
+/* RichEdit の鍵の通知（EN_MSGFILTER）。Ctrl+S だけを意図にして既定処理を止める。 */
+static LRESULT on_notify(struct folio_window *_Nonnull self, LPARAM lparam)
+{
+    const NMHDR *_Nonnull header = (const NMHDR *)lparam;
+    if (header->code != EN_MSGFILTER)
+    {
+        return 0;
+    }
+    const MSGFILTER *_Nonnull filter = (const MSGFILTER *)lparam;
+    if (filter->msg != WM_CHAR || filter->wParam != store_character)
+    {
+        return 0;
+    }
+    store_edit(self);
+    return 1;
 }
 
 static LRESULT on_create(HWND window, LPARAM lparam)
@@ -243,12 +464,23 @@ static LRESULT on_create(HWND window, LPARAM lparam)
     self->handle = window;
     refresh_font(self, GetDpiForWindow(window));
     if (drawer_window_create(window, self->state, &self->drawer) != DRAWER_WINDOW_CREATED ||
-        note_pane_create(window, self->palette.pane, &self->pane) != NOTE_PANE_CREATED)
+        note_pane_create(window, self->palette.pane, self->palette.editor_text, &self->pane) !=
+            NOTE_PANE_CREATED)
     {
         return -1;
     }
     render_pane(self);
     return 0;
+}
+
+/* OS が勧める矩形へ移し、字の大きさを取り直す（FR-013）。 */
+static void apply_dpi(struct folio_window *_Nonnull self, LPARAM lparam)
+{
+    const RECT *_Nonnull suggested = (const RECT *)lparam;
+    refresh_font(self, GetDpiForWindow(self->handle));
+    SetWindowPos(self->handle, nullptr, suggested->left, suggested->top,
+                 suggested->right - suggested->left, suggested->bottom - suggested->top,
+                 SWP_NOZORDER | SWP_NOACTIVATE);
 }
 
 static LRESULT on_message(struct folio_window *_Nonnull self, UINT message, WPARAM wparam,
@@ -264,24 +496,32 @@ static LRESULT on_message(struct folio_window *_Nonnull self, UINT message, WPAR
         arrange(self);
         return 0;
     case WM_DPICHANGED:
-    {
-        const RECT *_Nonnull suggested = (const RECT *)lparam;
-        refresh_font(self, GetDpiForWindow(self->handle));
-        SetWindowPos(self->handle, nullptr, suggested->left, suggested->top,
-                     suggested->right - suggested->left, suggested->bottom - suggested->top,
-                     SWP_NOZORDER | SWP_NOACTIVATE);
+        apply_dpi(self, lparam);
         return 0;
-    }
     case WM_PAINT:
         paint_pane(self);
         return 0;
     case WM_ERASEBKGND:
         return 1;
+    case WM_LBUTTONDOWN:
+        click_caption(self, lparam);
+        return 0;
+    case WM_NOTIFY:
+        return on_notify(self, lparam);
     case folio_message_selection_changed:
         render_pane(self);
         return 0;
+    case folio_message_edit_flush:
+        return (LRESULT)flush_edit(self);
     case WM_KEYDOWN:
-        if (wparam == VK_ESCAPE)
+        /* 編集中の Escape には意味を与えない（ADR 0006 の決定 1）。 */
+        if (wparam == VK_ESCAPE && folio_state_pane_mode(self->state) == PANE_MODE_VIEW)
+        {
+            SendMessageW(self->handle, WM_CLOSE, 0, 0);
+        }
+        return 0;
+    case WM_CLOSE:
+        if (leave_edit(self))
         {
             DestroyWindow(self->handle);
         }

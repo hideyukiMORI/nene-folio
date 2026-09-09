@@ -21,3 +21,4 @@ ADR は「なぜそう決めたか」「何を却下したか」を書く。
 | [0003](0003-c23-clang-cl-foundation-and-measured-limits.md) | C23 / clang-cl の検査基盤と実測できた限界を固定する | 受理 |
 | [0004](0004-first-drawer-slice.md) | 最初の縦切りで中核を生み、リンカ段と分岐の検査を結線する | 受理 |
 | [0005](0005-rigid-design-and-os-theme.md) | 画面の見た目は「案2 堅」を採り、テーマは OS のアプリのモードに従う | 受理 |
+| [0006](0006-edit-mode-and-save-path.md) | 編集中の本文は RichEdit だけが持ち、編集モードを抜けるときと Ctrl+S で元の形に揃えて書き戻す | 受理 |

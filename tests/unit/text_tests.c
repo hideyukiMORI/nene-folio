@@ -1,4 +1,5 @@
 #include "name_list.h"
+#include "note_text.h"
 #include "rgb_color.h"
 #include "unit_tests.h"
 #include "utf16_text.h"
@@ -87,6 +88,81 @@ static void verify_utf8_from_utf16(void)
     utf8_text_destroy(nullptr);
 }
 
+/* 本文を作って改行の形を読む。 */
+static enum line_ending ending_of(const char *_Nonnull source)
+{
+    struct note_text *text = nullptr;
+    require(note_text_create(source, strlen(source), &text) == NOTE_TEXT_ACCEPTED, "note create");
+    enum line_ending ending = note_text_line_ending(text);
+    note_text_destroy(text);
+    return ending;
+}
+
+static void verify_line_ending(void)
+{
+    require(ending_of("a\nb") == LINE_ENDING_LF, "lf body");
+    require(ending_of("a\r\nb") == LINE_ENDING_CRLF, "crlf body");
+    require(ending_of("no break at all") == LINE_ENDING_LF, "no break is lf");
+    require(ending_of("") == LINE_ENDING_LF, "empty is lf");
+    require(ending_of("a\r\nb\nc") == LINE_ENDING_CRLF, "the first break decides");
+    require(ending_of("a\nb\r\nc") == LINE_ENDING_LF, "the first break decides both ways");
+}
+
+/* 編集後の本文を ending に揃え、できたバイト列を確かめる。 */
+static void expect_folded(const char *_Nonnull edited, enum line_ending ending,
+                          const char *_Nonnull expected)
+{
+    struct note_text *text = nullptr;
+    require(note_text_from_editor(edited, strlen(edited), ending, &text) == NOTE_TEXT_ACCEPTED,
+            "from editor");
+    require(same_text(note_text_bytes(text), expected), "folded body");
+    require(note_text_length(text) == strlen(expected), "folded length");
+    note_text_destroy(text);
+}
+
+static void verify_from_editor(void)
+{
+    expect_folded("a\r\nb\rc\nd", LINE_ENDING_LF, "a\nb\nc\nd");
+    expect_folded("a\r\nb\rc\nd", LINE_ENDING_CRLF, "a\r\nb\r\nc\r\nd");
+    expect_folded("x\r\n", LINE_ENDING_LF, "x\n");
+    expect_folded("x\n", LINE_ENDING_CRLF, "x\r\n");
+    expect_folded("x", LINE_ENDING_LF, "x");
+    expect_folded("x", LINE_ENDING_CRLF, "x");
+    expect_folded("", LINE_ENDING_CRLF, "");
+    expect_folded("\r", LINE_ENDING_LF, "\n");
+    expect_folded("a\r", LINE_ENDING_CRLF, "a\r\n");
+    expect_folded("\xEF\xBB\xBF"
+                  "a\nb",
+                  LINE_ENDING_LF, "a\nb");
+    expect_folded("\xE6\x97\xA5\r\n\xE6\x9C\xAC", LINE_ENDING_LF, "\xE6\x97\xA5\n\xE6\x9C\xAC");
+    struct note_text *text = nullptr;
+    require(note_text_from_editor("\xC3", 1, LINE_ENDING_LF, &text) == NOTE_TEXT_INVALID_UTF8,
+            "invalid utf8 from the editor");
+    require(note_text_from_editor("a\xED\xA0\x80", 4, LINE_ENDING_LF, &text) ==
+                NOTE_TEXT_INVALID_UTF8,
+            "surrogate from the editor");
+}
+
+static void verify_note_equals(void)
+{
+    struct note_text *one = nullptr;
+    struct note_text *same = nullptr;
+    struct note_text *other = nullptr;
+    struct note_text *longer = nullptr;
+    require(note_text_create("a\nb", 3, &one) == NOTE_TEXT_ACCEPTED, "one");
+    require(note_text_create("a\nb", 3, &same) == NOTE_TEXT_ACCEPTED, "same");
+    require(note_text_create("a\nc", 3, &other) == NOTE_TEXT_ACCEPTED, "other");
+    require(note_text_create("a\nbb", 4, &longer) == NOTE_TEXT_ACCEPTED, "longer");
+    require(note_text_equals(one, same), "equal bodies");
+    require(!note_text_equals(one, other), "different bytes");
+    require(!note_text_equals(one, longer), "different lengths");
+    note_text_destroy(longer);
+    note_text_destroy(other);
+    note_text_destroy(same);
+    note_text_destroy(one);
+    note_text_destroy(nullptr);
+}
+
 static void verify_colors(void)
 {
     struct rgb_color color = {0, 0, 0};
@@ -161,6 +237,9 @@ void run_text_tests(void)
     verify_utf8_encode();
     verify_utf16_from_utf8();
     verify_utf8_from_utf16();
+    verify_line_ending();
+    verify_from_editor();
+    verify_note_equals();
     verify_colors();
     verify_name_list();
 }
