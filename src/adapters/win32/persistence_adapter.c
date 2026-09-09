@@ -383,6 +383,26 @@ static enum persistence_outcome write_note(struct persistence_adapter *_Nonnull 
     return file_bytes_store(path, note_text_bytes(body), note_text_length(body));
 }
 
+/* md を別のカテゴリのディレクトリへ移す（ADR 0008 の決定 4）。同じボリューム内なので rename で、
+ * MOVEFILE_REPLACE_EXISTING は付けない。移動先に同名（大文字小文字だけ違うものを含む）があれば
+ * OS が拒み、利用者のノートは上書きされない。 */
+static enum persistence_outcome move_note(struct persistence_adapter *_Nonnull adapter,
+                                          const char *_Nonnull from_category,
+                                          const char *_Nonnull note,
+                                          const char *_Nonnull to_category)
+{
+    wchar_t leaf[MAX_PATH];
+    wchar_t from[path_capacity];
+    wchar_t to[path_capacity];
+    if (!note_leaf(note, leaf, MAX_PATH) || !compose(adapter, from_category, leaf, from) ||
+        !compose(adapter, to_category, leaf, to))
+    {
+        return PERSISTENCE_UNWRITABLE;
+    }
+    return MoveFileExW(from, to, MOVEFILE_WRITE_THROUGH) ? PERSISTENCE_STORED
+                                                         : PERSISTENCE_UNWRITABLE;
+}
+
 /* 組み立て終えた文書を path へ原子的に置き換え、writer を片付ける。 */
 static enum persistence_outcome store_document(const wchar_t *_Nonnull path,
                                                struct json_writer *_Nonnull writer)
@@ -443,6 +463,7 @@ struct persistence_port persistence_adapter_port(struct persistence_adapter *_No
         .write_category_ledger = write_category_ledger,
         .read_note = read_note,
         .write_note = write_note,
+        .move_note = move_note,
         .read_note_ledger = read_note_ledger,
         .write_note_ledger = write_note_ledger,
     };
