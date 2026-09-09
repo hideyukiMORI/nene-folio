@@ -383,6 +383,20 @@ static enum persistence_outcome write_note(struct persistence_adapter *_Nonnull 
     return file_bytes_store(path, note_text_bytes(body), note_text_length(body));
 }
 
+/* 組み立て終えた文書を path へ原子的に置き換え、writer を片付ける。 */
+static enum persistence_outcome store_document(const wchar_t *_Nonnull path,
+                                               struct json_writer *_Nonnull writer)
+{
+    enum json_writer_outcome finished = json_writer_finish(writer);
+    enum persistence_outcome outcome = PERSISTENCE_OUT_OF_MEMORY;
+    if (finished == JSON_WRITER_ACCEPTED)
+    {
+        outcome = file_bytes_store(path, json_writer_text(writer), json_writer_length(writer));
+    }
+    json_writer_destroy(writer);
+    return outcome;
+}
+
 static enum persistence_outcome write_category_ledger(struct persistence_adapter *_Nonnull adapter,
                                                       const struct category_ledger *_Nonnull ledger)
 {
@@ -397,14 +411,26 @@ static enum persistence_outcome write_category_ledger(struct persistence_adapter
         return PERSISTENCE_OUT_OF_MEMORY;
     }
     category_ledger_write(ledger, writer);
-    enum json_writer_outcome finished = json_writer_finish(writer);
-    enum persistence_outcome outcome = PERSISTENCE_OUT_OF_MEMORY;
-    if (finished == JSON_WRITER_ACCEPTED)
+    return store_document(path, writer);
+}
+
+/* 索引を同じカテゴリの index.json へ書き戻す（FR-008 / ADR 0007 の決定 5）。 */
+static enum persistence_outcome write_note_ledger(struct persistence_adapter *_Nonnull adapter,
+                                                  const char *_Nonnull category,
+                                                  const struct note_ledger *_Nonnull ledger)
+{
+    wchar_t path[path_capacity];
+    if (!compose(adapter, category, L"index.json", path))
     {
-        outcome = file_bytes_store(path, json_writer_text(writer), json_writer_length(writer));
+        return PERSISTENCE_UNWRITABLE;
     }
-    json_writer_destroy(writer);
-    return outcome;
+    struct json_writer *_Nullable writer = nullptr;
+    if (json_writer_create(&writer) != JSON_WRITER_ACCEPTED)
+    {
+        return PERSISTENCE_OUT_OF_MEMORY;
+    }
+    note_ledger_write(ledger, writer);
+    return store_document(path, writer);
 }
 
 struct persistence_port persistence_adapter_port(struct persistence_adapter *_Nonnull adapter)
@@ -418,6 +444,7 @@ struct persistence_port persistence_adapter_port(struct persistence_adapter *_No
         .read_note = read_note,
         .write_note = write_note,
         .read_note_ledger = read_note_ledger,
+        .write_note_ledger = write_note_ledger,
     };
     return port;
 }
