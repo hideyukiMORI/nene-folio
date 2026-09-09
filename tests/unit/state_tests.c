@@ -42,6 +42,17 @@ struct persistence_adapter
     size_t ledger_writes;                  /* write_note_ledger が呼ばれた回数 */
     const char *_Nullable ledger_category; /* 最後に索引を書かれたカテゴリ名 */
     char ledger_order[64];                 /* 最後に書かれた索引の名前（'/' 区切り） */
+    enum persistence_outcome move_outcome;
+    size_t moves;                    /* move_note が呼ばれた回数 */
+    const char *_Nullable move_from; /* 最後の移動元のカテゴリ名 */
+    /* 最後に移されたノート名。名前は移動元の台帳が持っており、意図の中で捨てられるので複製する。 */
+    char moved_note[64];
+    const char *_Nullable move_to; /* 最後の移動先のカテゴリ名 */
+    char calls[128];               /* 呼び出しの順（'/' 区切り。move・<カテゴリ>・書いた名前） */
+    size_t ledger_fail_at; /* この番号（1 始まり）の索引の書き戻しだけ失敗させる。0 なら使わない */
+    const char *_Nullable alt_category; /* この名前のカテゴリだけ別の索引と md を返す */
+    const char *_Nonnull alt_notes_text;
+    const char *_Nonnull const *_Nullable alt_scanned; /* nullptr で終わる名前の並び */
 };
 
 /* 名前を '/' でつないで out（終端付き）へ書き足す。 */
@@ -58,6 +69,13 @@ static void append_name(char *_Nonnull out, size_t capacity, size_t *_Nonnull po
     memcpy(out + *position, name, length);
     *position += length;
     out[*position] = '\0';
+}
+
+/* 呼び出しの順を 1 つ記録する（ADR 0008 の決定 3 の順序の検証に使う）。 */
+static void record_call(struct persistence_adapter *_Nonnull adapter, const char *_Nonnull name)
+{
+    size_t position = strlen(adapter->calls);
+    append_name(adapter->calls, sizeof adapter->calls, &position, name);
 }
 
 static enum persistence_outcome list_names(const char *_Nonnull const *_Nullable items,
@@ -92,17 +110,33 @@ static enum persistence_outcome fake_scan_categories(struct persistence_adapter 
     return list_names(adapter->scanned_categories, adapter->scanned_category_count, out);
 }
 
+/* 別の索引を持たせたカテゴリか（別カテゴリへの移動を試すために要る）。 */
+static bool is_alt(const struct persistence_adapter *_Nonnull adapter,
+                   const char *_Nonnull category)
+{
+    return adapter->alt_category != nullptr && strcmp(adapter->alt_category, category) == 0;
+}
+
 static enum persistence_outcome fake_scan_notes(struct persistence_adapter *_Nonnull adapter,
                                                 const char *_Nonnull category,
                                                 struct name_list *_Nullable *_Nonnull out)
 {
-    (void)category;
     adapter->note_scans += 1;
     if (adapter->notes_scan_outcome != PERSISTENCE_LOADED)
     {
         return adapter->notes_scan_outcome;
     }
-    return list_names(adapter->scanned_notes, adapter->scanned_note_count, out);
+    if (!is_alt(adapter, category))
+    {
+        return list_names(adapter->scanned_notes, adapter->scanned_note_count, out);
+    }
+    const char *_Nonnull const *_Nullable names = adapter->alt_scanned;
+    size_t count = 0;
+    while (names != nullptr && names[count] != nullptr)
+    {
+        count += 1;
+    }
+    return list_names(names, count, out);
 }
 
 static enum persistence_outcome
@@ -127,13 +161,13 @@ static enum persistence_outcome fake_read_note_ledger(struct persistence_adapter
                                                       const char *_Nonnull category,
                                                       struct note_ledger *_Nullable *_Nonnull out)
 {
-    (void)category;
     if (adapter->notes_outcome != PERSISTENCE_LOADED)
     {
         return adapter->notes_outcome;
     }
-    enum note_ledger_outcome parsed =
-        note_ledger_parse(adapter->notes_text, strlen(adapter->notes_text), out);
+    const char *_Nonnull text =
+        is_alt(adapter, category) ? adapter->alt_notes_text : adapter->notes_text;
+    enum note_ledger_outcome parsed = note_ledger_parse(text, strlen(text), out);
     if (parsed == NOTE_LEDGER_ACCEPTED)
     {
         return PERSISTENCE_LOADED;
@@ -206,6 +240,11 @@ static enum persistence_outcome fake_write_note_ledger(struct persistence_adapte
 {
     adapter->ledger_writes += 1;
     adapter->ledger_category = category;
+    record_call(adapter, category);
+    if (adapter->ledger_fail_at == adapter->ledger_writes)
+    {
+        return PERSISTENCE_UNWRITABLE;
+    }
     if (adapter->ledger_write_outcome != PERSISTENCE_STORED)
     {
         return adapter->ledger_write_outcome;
@@ -217,8 +256,25 @@ static enum persistence_outcome fake_write_note_ledger(struct persistence_adapte
     {
         append_name(adapter->ledger_order, sizeof adapter->ledger_order, &position,
                     note_ledger_name(ledger, index));
+        record_call(adapter, note_ledger_name(ledger, index));
     }
     return PERSISTENCE_STORED;
+}
+
+/* md の移動。指定された結果を返し、呼び出しの順を記録する（rename が先であることの証拠）。 */
+static enum persistence_outcome fake_move_note(struct persistence_adapter *_Nonnull adapter,
+                                               const char *_Nonnull from_category,
+                                               const char *_Nonnull note,
+                                               const char *_Nonnull to_category)
+{
+    adapter->moves += 1;
+    adapter->move_from = from_category;
+    size_t length = strlen(note);
+    require(length + 1 < sizeof adapter->moved_note, "the moved name fits the fake");
+    memcpy(adapter->moved_note, note, length + 1);
+    adapter->move_to = to_category;
+    record_call(adapter, "move");
+    return adapter->move_outcome;
 }
 
 /* テスト用の外観ポート。application が不完全型として知る appearance_adapter をここで定義する。 */
@@ -276,6 +332,16 @@ static struct persistence_adapter healthy_adapter(void)
         .ledger_writes = 0,
         .ledger_category = nullptr,
         .ledger_order = {'\0'},
+        .move_outcome = PERSISTENCE_STORED,
+        .moves = 0,
+        .move_from = nullptr,
+        .moved_note = {'\0'},
+        .move_to = nullptr,
+        .calls = {'\0'},
+        .ledger_fail_at = 0,
+        .alt_category = nullptr,
+        .alt_notes_text = "{\"version\": 1, \"notes\": []}",
+        .alt_scanned = nullptr,
     };
     return adapter;
 }
@@ -290,6 +356,7 @@ static struct persistence_port port_for(struct persistence_adapter *_Nonnull ada
         .write_category_ledger = fake_write_category_ledger,
         .read_note = fake_read_note,
         .write_note = fake_write_note,
+        .move_note = fake_move_note,
         .read_note_ledger = fake_read_note_ledger,
         .write_note_ledger = fake_write_note_ledger,
     };
@@ -302,6 +369,13 @@ static const struct drawer_metrics metrics = {.top_padding = 0,
                                               .category_gap = 0,
                                               .category_indent = 1,
                                               .note_indent = 2};
+
+/* ノートの居場所を 1 つ作る。 */
+static struct note_ref at(size_t category, size_t note)
+{
+    struct note_ref ref = {.category = category, .note = note};
+    return ref;
+}
 
 static void verify_ready_state(void)
 {
@@ -431,7 +505,8 @@ static void verify_move_category(void)
     struct folio_state *state = ready_state(&adapter);
     row_order(state, order, sizeof order);
     require(same_text(order, "B/one/two/three/A/C/one/two/three"), "the order before the move");
-    require(folio_state_move_note(state, 0, 2, 0) == FOLIO_STATE_READY, "reorder B's notes");
+    require(folio_state_move_note(state, at(0, 2), at(0, 0)) == FOLIO_STATE_READY,
+            "reorder B's notes");
     require(folio_state_move_category(state, 0, 2) == FOLIO_STATE_READY, "B moves to the end");
     row_order(state, order, sizeof order);
     require(same_text(order, "A/C/one/two/three/B/three/one/two"),
@@ -466,31 +541,34 @@ static void verify_move_note(void)
     char order[128] = {0};
     struct persistence_adapter adapter = healthy_adapter();
     struct folio_state *state = ready_state(&adapter);
-    require(folio_state_move_note(state, 0, 2, 0) == FOLIO_STATE_READY, "three moves to the front");
+    require(folio_state_move_note(state, at(0, 2), at(0, 0)) == FOLIO_STATE_READY,
+            "three moves to the front");
     row_order(state, order, sizeof order);
     require(same_text(order, "B/three/one/two/A/C/one/two/three"), "only B's notes moved");
     require(adapter.ledger_writes == 1 && same_text(adapter.ledger_category, "B") &&
                 same_text(adapter.ledger_order, "three/one/two"),
             "the index of the right category was written once");
-    require(folio_state_move_note(state, 0, 0, 2) == FOLIO_STATE_READY, "and back");
+    require(folio_state_move_note(state, at(0, 0), at(0, 2)) == FOLIO_STATE_READY, "and back");
     require(adapter.ledger_writes == 2 && same_text(adapter.ledger_order, "one/two/three"),
             "moving down restores the order");
-    require(folio_state_move_note(state, 0, 1, 1) == FOLIO_STATE_READY &&
+    require(folio_state_move_note(state, at(0, 1), at(0, 1)) == FOLIO_STATE_READY &&
                 adapter.ledger_writes == 2,
             "the same position writes nothing");
-    require(folio_state_move_note(state, 3, 0, 1) == FOLIO_STATE_NO_SUCH_CATEGORY,
+    require(folio_state_move_note(state, at(3, 0), at(3, 1)) == FOLIO_STATE_NO_SUCH_CATEGORY,
             "no such category");
-    require(folio_state_move_note(state, 0, 3, 0) == FOLIO_STATE_NO_SUCH_NOTE &&
-                folio_state_move_note(state, 0, 0, 3) == FOLIO_STATE_NO_SUCH_NOTE &&
+    require(folio_state_move_note(state, at(0, 3), at(0, 0)) == FOLIO_STATE_NO_SUCH_NOTE &&
+                folio_state_move_note(state, at(0, 0), at(0, 3)) == FOLIO_STATE_NO_SUCH_NOTE &&
                 adapter.ledger_writes == 2,
             "out of range is refused without writing");
     adapter.ledger_write_outcome = PERSISTENCE_UNWRITABLE;
-    require(folio_state_move_note(state, 0, 0, 2) == FOLIO_STATE_STORE_FAILED, "index not written");
+    require(folio_state_move_note(state, at(0, 0), at(0, 2)) == FOLIO_STATE_STORE_FAILED,
+            "index not written");
     row_order(state, order, sizeof order);
     require(same_text(order, "B/one/two/three/A/C/one/two/three"),
             "the failed write leaves the notes alone");
     adapter.ledger_write_outcome = PERSISTENCE_OUT_OF_MEMORY;
-    require(folio_state_move_note(state, 0, 0, 2) == FOLIO_STATE_OUT_OF_MEMORY, "index oom");
+    require(folio_state_move_note(state, at(0, 0), at(0, 2)) == FOLIO_STATE_OUT_OF_MEMORY,
+            "index oom");
     folio_state_destroy(state);
 }
 
@@ -500,13 +578,16 @@ static void verify_move_selection(void)
     struct persistence_adapter adapter = healthy_adapter();
     struct folio_state *state = ready_state(&adapter);
     require(folio_state_select_note(state, 0, 1) == FOLIO_STATE_READY, "select B / two");
-    require(folio_state_move_note(state, 0, 2, 0) == FOLIO_STATE_READY, "three moves up");
+    require(folio_state_move_note(state, at(0, 2), at(0, 0)) == FOLIO_STATE_READY,
+            "three moves up");
     struct pane_title_view title = folio_state_pane_title(state);
     require(title.ordinal == 1 && same_text(title.category, "B") && same_text(title.note, "two"),
             "the selection follows the note when its neighbour moves");
-    require(folio_state_move_note(state, 0, 0, 2) == FOLIO_STATE_READY, "three moves back");
+    require(folio_state_move_note(state, at(0, 0), at(0, 2)) == FOLIO_STATE_READY,
+            "three moves back");
     require(same_text(folio_state_pane_title(state).note, "two"), "and back again");
-    require(folio_state_move_note(state, 1, 0, 2) == FOLIO_STATE_READY, "another category moves");
+    require(folio_state_move_note(state, at(1, 0), at(1, 2)) == FOLIO_STATE_READY,
+            "another category moves");
     require(same_text(adapter.ledger_category, "A") &&
                 same_text(folio_state_pane_title(state).note, "two"),
             "a move in another category leaves the selection alone");
@@ -514,6 +595,159 @@ static void verify_move_selection(void)
     title = folio_state_pane_title(state);
     require(title.ordinal == 3 && same_text(title.category, "B") && same_text(title.note, "two"),
             "the selected note keeps its category through the move");
+    folio_state_destroy(state);
+}
+
+/* A だけ別の索引（four / five）にして、別カテゴリへの移動を試せる状態を作る。
+ * カテゴリは B（展開・one/two/three）・A（折り畳み・four/five）・C（展開・one/two/three）。 */
+static struct folio_state *_Nonnull transfer_state(struct persistence_adapter *_Nonnull adapter)
+{
+    static const char *const alt_scanned[] = {"four", "five", nullptr};
+    test_adapter_second_notes(adapter, "A", "{\"version\": 1, \"notes\": [\"four\", \"five\"]}",
+                              alt_scanned);
+    return ready_state(adapter);
+}
+
+/* B の two を A の 1 番目へ移す（ADR 0008 の決定 3 の (a)〜(e)）。 */
+static void verify_transfer_note(void)
+{
+    char order[160] = {0};
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = transfer_state(&adapter);
+    require(folio_state_move_note(state, at(0, 1), at(1, 1)) == FOLIO_STATE_READY,
+            "two moves into A");
+    require(adapter.moves == 1 && same_text(adapter.move_from, "B") &&
+                same_text(adapter.moved_note, "two") && same_text(adapter.move_to, "A"),
+            "the md was renamed once, from B to A");
+    require(same_text(adapter.calls, "move/A/four/two/five/B/one/three"),
+            "the rename comes first, then the destination ledger, then the source");
+    require(adapter.ledger_writes == 2 && same_text(adapter.ledger_order, "one/three"),
+            "the source ledger is the last write");
+    require(folio_state_toggle_category(state, 1) == FOLIO_STATE_READY, "expand A");
+    row_order(state, order, sizeof order);
+    require(same_text(order, "B/one/three/A/four/two/five/C/one/two/three"),
+            "both indexes follow the file");
+    folio_state_destroy(state);
+}
+
+/* 折り畳んだカテゴリの末尾（ノート数と同じ番号）へ落とす。 */
+static void verify_transfer_to_end(void)
+{
+    char order[160] = {0};
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = transfer_state(&adapter);
+    require(folio_state_move_note(state, at(0, 0), at(1, 2)) == FOLIO_STATE_READY,
+            "one moves to the end of A");
+    require(same_text(adapter.calls, "move/A/four/five/one/B/two/three"),
+            "the destination ledger gained the note at its end");
+    require(folio_state_toggle_category(state, 1) == FOLIO_STATE_READY, "expand A");
+    row_order(state, order, sizeof order);
+    require(same_text(order, "B/two/three/A/four/five/one/C/one/two/three"), "the new order");
+    folio_state_destroy(state);
+}
+
+/* 選択中で編集中のノートを移しても、本文とモードはそのままで note_ref だけ付け替わる。 */
+static void verify_transfer_selection(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    adapter.note_body = "# Hello\r\n\r\nbody";
+    struct folio_state *state = transfer_state(&adapter);
+    require(folio_state_select_note(state, 0, 1) == FOLIO_STATE_READY, "select B / two");
+    require(folio_state_begin_edit(state) == FOLIO_STATE_READY, "begin edit");
+    require(folio_state_move_note(state, at(0, 1), at(1, 0)) == FOLIO_STATE_READY,
+            "move the selected note");
+    struct pane_title_view title = folio_state_pane_title(state);
+    require(title.ordinal == 2 && same_text(title.category, "A") && same_text(title.note, "two"),
+            "the title follows the note into its new category");
+    require(folio_state_pane_mode(state) == PANE_MODE_EDIT &&
+                same_text(folio_state_pane_text(state), "# Hello\r\n\r\nbody") &&
+                adapter.note_writes == 0,
+            "the body and the mode are untouched and nothing was saved");
+    folio_state_destroy(state);
+}
+
+/* 移動元で後ろにあったノートは 1 つ詰み、移動先で挿入位置以降のノートは 1 つ進む。 */
+static void verify_transfer_renumbering(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = transfer_state(&adapter);
+    require(folio_state_select_note(state, 0, 2) == FOLIO_STATE_READY, "select B / three");
+    require(folio_state_move_note(state, at(0, 1), at(1, 0)) == FOLIO_STATE_READY, "two leaves B");
+    require(same_text(folio_state_pane_title(state).note, "three"),
+            "the note behind the moved one closes up");
+    require(folio_state_select_note(state, 1, 2) == FOLIO_STATE_READY, "select A / five");
+    require(folio_state_move_note(state, at(0, 0), at(1, 0)) == FOLIO_STATE_READY, "one joins A");
+    struct pane_title_view title = folio_state_pane_title(state);
+    require(title.ordinal == 2 && same_text(title.category, "A") && same_text(title.note, "five"),
+            "the notes at and after the insertion move down");
+    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY, "select B / three again");
+    require(folio_state_move_note(state, at(0, 0), at(1, 3)) == FOLIO_STATE_READY,
+            "the selected note itself moves to the end of A");
+    require(same_text(folio_state_pane_title(state).category, "A") &&
+                same_text(folio_state_pane_title(state).note, "three"),
+            "the selection travels with it");
+    folio_state_destroy(state);
+}
+
+/* 同名・範囲外・ファイルを移せないときは何も変えない（ADR 0008 の決定 3 の (a) / (c)）。 */
+static void verify_transfer_refusals(void)
+{
+    char order[160] = {0};
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = transfer_state(&adapter);
+    require(folio_state_move_note(state, at(0, 0), at(2, 0)) == FOLIO_STATE_NAME_TAKEN,
+            "C already holds a note called one");
+    require(adapter.moves == 0 && adapter.ledger_writes == 0, "a refused move never touches data/");
+    require(folio_state_move_note(state, at(0, 0), at(3, 0)) == FOLIO_STATE_NO_SUCH_CATEGORY,
+            "no such destination category");
+    require(folio_state_move_note(state, at(0, 3), at(1, 0)) == FOLIO_STATE_NO_SUCH_NOTE,
+            "no such note");
+    require(folio_state_move_note(state, at(0, 0), at(1, 3)) == FOLIO_STATE_NO_SUCH_NOTE,
+            "the destination position is past the end");
+    adapter.move_outcome = PERSISTENCE_UNWRITABLE;
+    require(folio_state_move_note(state, at(0, 0), at(1, 0)) == FOLIO_STATE_STORE_FAILED,
+            "the file could not be moved");
+    require(adapter.moves == 1 && adapter.ledger_writes == 0 && same_text(adapter.calls, "move"),
+            "no ledger is written when the rename fails");
+    adapter.move_outcome = PERSISTENCE_OUT_OF_MEMORY;
+    require(folio_state_move_note(state, at(0, 0), at(1, 0)) == FOLIO_STATE_OUT_OF_MEMORY,
+            "the rename reports out of memory");
+    row_order(state, order, sizeof order);
+    require(same_text(order, "B/one/two/three/A/C/one/two/three"),
+            "the refused moves changed nothing");
+    folio_state_destroy(state);
+}
+
+/* 台帳だけ書けないときは、索引はファイルに追随したまま LEDGER_STALE（決定 3 の (e)）。 */
+static void verify_transfer_stale_ledger(void)
+{
+    char order[160] = {0};
+    struct persistence_adapter adapter = healthy_adapter();
+    adapter.ledger_fail_at = 1;
+    struct folio_state *state = transfer_state(&adapter);
+    require(folio_state_move_note(state, at(0, 1), at(1, 1)) == FOLIO_STATE_LEDGER_STALE,
+            "the destination ledger could not be written");
+    require(adapter.moves == 1 && adapter.ledger_writes == 2 &&
+                same_text(adapter.calls, "move/A/B/one/three"),
+            "both ledgers were attempted, the destination first");
+    require(folio_state_toggle_category(state, 1) == FOLIO_STATE_READY, "expand A");
+    row_order(state, order, sizeof order);
+    require(same_text(order, "B/one/three/A/four/two/five/C/one/two/three"),
+            "the index follows the file even when a ledger is stale");
+    folio_state_destroy(state);
+    adapter = healthy_adapter();
+    adapter.ledger_fail_at = 2;
+    state = transfer_state(&adapter);
+    require(folio_state_move_note(state, at(0, 1), at(1, 1)) == FOLIO_STATE_LEDGER_STALE,
+            "the source ledger could not be written either");
+    require(same_text(adapter.calls, "move/A/four/two/five/B"),
+            "the destination was still written");
+    folio_state_destroy(state);
+    adapter = healthy_adapter();
+    adapter.ledger_write_outcome = PERSISTENCE_OUT_OF_MEMORY;
+    state = transfer_state(&adapter);
+    require(folio_state_move_note(state, at(0, 1), at(1, 1)) == FOLIO_STATE_OUT_OF_MEMORY,
+            "out of memory is not folded into stale");
     folio_state_destroy(state);
 }
 
@@ -686,6 +920,8 @@ static void verify_failure_lines(void)
                 strlen(folio_state_failure_line(FOLIO_STATE_NOT_EDITING)) > 0 &&
                 strlen(folio_state_failure_line(FOLIO_STATE_NOTE_MALFORMED)) > 0 &&
                 strlen(folio_state_failure_line(FOLIO_STATE_NOTE_STORE_FAILED)) > 0 &&
+                strlen(folio_state_failure_line(FOLIO_STATE_NAME_TAKEN)) > 0 &&
+                strlen(folio_state_failure_line(FOLIO_STATE_LEDGER_STALE)) > 0 &&
                 strlen(folio_state_failure_line(FOLIO_STATE_OUT_OF_MEMORY)) > 0,
             "every failure has a line");
 }
@@ -746,6 +982,15 @@ struct persistence_port test_adapter_port(struct persistence_adapter *_Nonnull a
     return port_for(adapter);
 }
 
+void test_adapter_second_notes(struct persistence_adapter *_Nonnull adapter,
+                               const char *_Nonnull category, const char *_Nonnull notes_text,
+                               const char *_Nonnull const *_Nonnull scanned)
+{
+    adapter->alt_category = category;
+    adapter->alt_notes_text = notes_text;
+    adapter->alt_scanned = scanned;
+}
+
 void test_adapter_destroy(struct persistence_adapter *_Nullable adapter)
 {
     free(adapter);
@@ -765,6 +1010,12 @@ void run_state_tests(void)
     verify_move_category();
     verify_move_note();
     verify_move_selection();
+    verify_transfer_note();
+    verify_transfer_to_end();
+    verify_transfer_selection();
+    verify_transfer_renumbering();
+    verify_transfer_refusals();
+    verify_transfer_stale_ledger();
     verify_select();
     verify_edit_guards();
     verify_edit_unchanged();

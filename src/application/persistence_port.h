@@ -42,6 +42,12 @@ struct persistence_port
                                                     const char *_Nonnull category,
                                                     const char *_Nonnull note,
                                                     const struct note_text *_Nonnull body);
+    /* data/<from_category>/<note>.md を data/<to_category>/ へ移す（ADR 0008 の決定 4）。
+     * 移動先に同じ名前の md があれば置き換えずに UNWRITABLE。 */
+    enum persistence_outcome (*_Nonnull move_note)(struct persistence_adapter *_Nonnull adapter,
+                                                   const char *_Nonnull from_category,
+                                                   const char *_Nonnull note,
+                                                   const char *_Nonnull to_category);
     /* data/<category>/index.json。無ければ ABSENT。 */
     enum persistence_outcome (*_Nonnull read_note_ledger)(
         struct persistence_adapter *_Nonnull adapter, const char *_Nonnull category,

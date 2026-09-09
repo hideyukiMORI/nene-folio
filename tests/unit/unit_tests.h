@@ -27,6 +27,11 @@ struct persistence_port;
     const char *_Nonnull categories_text, const char *_Nonnull notes_text);
 [[nodiscard]] struct persistence_port
 test_adapter_port(struct persistence_adapter *_Nonnull adapter);
+/* 名前の付いたカテゴリだけ別の索引と md を持たせる（別カテゴリへの移動を通すため）。
+ * scanned は nullptr で終わる名前の並びで、adapter より長く生きること。 */
+void test_adapter_second_notes(struct persistence_adapter *_Nonnull adapter,
+                               const char *_Nonnull category, const char *_Nonnull notes_text,
+                               const char *_Nonnull const *_Nonnull scanned);
 void test_adapter_destroy(struct persistence_adapter *_Nullable adapter);
 /* 常にダークを答える外観ポート。 */
 struct appearance_port;
