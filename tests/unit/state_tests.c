@@ -32,6 +32,11 @@ struct persistence_adapter
     size_t writes;            /* write_category_ledger が呼ばれた回数 */
     size_t written_count;     /* 最後に書かれた台帳のカテゴリ数 */
     bool written_expanded[8]; /* 最後に書かれた台帳の展開状態 */
+    enum persistence_outcome note_write_outcome;
+    size_t note_writes;                 /* write_note が呼ばれた回数 */
+    char written_body[256];             /* 最後に書かれた本文（終端付き） */
+    const char *_Nullable written_note; /* 最後に書かれたノート名 */
+    const char *_Nullable written_category;
 };
 
 static enum persistence_outcome list_names(const char *_Nonnull const *_Nullable items,
@@ -152,6 +157,24 @@ static enum persistence_outcome fake_read_note(struct persistence_adapter *_Nonn
     return accepted == NOTE_TEXT_OUT_OF_MEMORY ? PERSISTENCE_OUT_OF_MEMORY : PERSISTENCE_MALFORMED;
 }
 
+static enum persistence_outcome fake_write_note(struct persistence_adapter *_Nonnull adapter,
+                                                const char *_Nonnull category,
+                                                const char *_Nonnull note,
+                                                const struct note_text *_Nonnull body)
+{
+    adapter->note_writes += 1;
+    adapter->written_category = category;
+    adapter->written_note = note;
+    if (adapter->note_write_outcome != PERSISTENCE_STORED)
+    {
+        return adapter->note_write_outcome;
+    }
+    size_t length = note_text_length(body);
+    require(length + 1 < sizeof adapter->written_body, "written body fits the fake");
+    memcpy(adapter->written_body, note_text_bytes(body), length + 1);
+    return PERSISTENCE_STORED;
+}
+
 /* テスト用の外観ポート。application が不完全型として知る appearance_adapter をここで定義する。 */
 struct appearance_adapter
 {
@@ -197,6 +220,11 @@ static struct persistence_adapter healthy_adapter(void)
         .writes = 0,
         .written_count = 0,
         .written_expanded = {false},
+        .note_write_outcome = PERSISTENCE_STORED,
+        .note_writes = 0,
+        .written_body = {'\0'},
+        .written_note = nullptr,
+        .written_category = nullptr,
     };
     return adapter;
 }
@@ -210,6 +238,7 @@ static struct persistence_port port_for(struct persistence_adapter *_Nonnull ada
         .read_category_ledger = fake_read_category_ledger,
         .write_category_ledger = fake_write_category_ledger,
         .read_note = fake_read_note,
+        .write_note = fake_write_note,
         .read_note_ledger = fake_read_note_ledger,
     };
     return port;
@@ -360,6 +389,104 @@ static void verify_select(void)
     folio_state_destroy(state);
 }
 
+/* CRLF のノートを 1 つ選び、編集モードに入った状態を作る。 */
+static struct folio_state *_Nonnull edited_state(struct persistence_adapter *_Nonnull adapter)
+{
+    struct persistence_port port = port_for(adapter);
+    struct appearance_port looks = looks_for(&dark_adapter);
+    struct folio_state *state = nullptr;
+    require(folio_state_create(&port, &looks, &state) == FOLIO_STATE_READY, "state for edit");
+    require(folio_state_select_note(state, 0, 1) == FOLIO_STATE_READY, "select B / two");
+    require(same_text(folio_state_pane_text(state), "# Hello\r\n\r\nbody"),
+            "pane text is the body");
+    require(folio_state_pane_text_length(state) == 15, "pane text length");
+    require(folio_state_begin_edit(state) == FOLIO_STATE_READY &&
+                folio_state_pane_mode(state) == PANE_MODE_EDIT,
+            "begin edit");
+    return state;
+}
+
+static void verify_edit_guards(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct persistence_port port = port_for(&adapter);
+    struct appearance_port looks = looks_for(&dark_adapter);
+    struct folio_state *state = nullptr;
+    require(folio_state_create(&port, &looks, &state) == FOLIO_STATE_READY, "state for guards");
+    require(folio_state_pane_mode(state) == PANE_MODE_VIEW, "view before any intent");
+    require(same_text(folio_state_pane_text(state), "") && folio_state_pane_text_length(state) == 0,
+            "no body before selection");
+    require(folio_state_begin_edit(state) == FOLIO_STATE_NOTHING_SELECTED, "nothing selected");
+    require(folio_state_pane_mode(state) == PANE_MODE_VIEW, "the refused intent keeps view");
+    require(folio_state_store_note(state, u"x", 1) == FOLIO_STATE_NOT_EDITING, "store while view");
+    require(folio_state_end_edit(state, u"x", 1) == FOLIO_STATE_NOT_EDITING, "end while view");
+    require(adapter.note_writes == 0, "refused intents never write");
+    folio_state_destroy(state);
+}
+
+static void verify_edit_unchanged(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    adapter.note_body = "# Hello\r\n\r\nbody";
+    struct folio_state *state = edited_state(&adapter);
+    require(folio_state_store_note(state, u"# Hello\r\n\r\nbody", 15) == FOLIO_STATE_READY &&
+                adapter.note_writes == 0 && folio_state_pane_mode(state) == PANE_MODE_EDIT,
+            "the same body is not written and the mode stays");
+    require(folio_state_end_edit(state, u"# Hello\r\n\r\nbody", 15) == FOLIO_STATE_READY &&
+                adapter.note_writes == 0 && folio_state_pane_mode(state) == PANE_MODE_VIEW,
+            "leaving without a change writes nothing");
+    folio_state_destroy(state);
+}
+
+static void verify_edit_saves(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    adapter.note_body = "# Hello\r\n\r\nbody";
+    struct folio_state *state = edited_state(&adapter);
+    /* RichEdit は CRLF を返すが、LF が混ざっても元の形（CRLF）へ畳む。 */
+    require(folio_state_store_note(state, u"# Hello\r\n\r\nbody\nmore", 20) == FOLIO_STATE_READY,
+            "store a changed body");
+    require(adapter.note_writes == 1 &&
+                same_text(adapter.written_body, "# Hello\r\n\r\nbody\r\nmore"),
+            "the written bytes keep the original line ending");
+    require(same_text(adapter.written_category, "B") && same_text(adapter.written_note, "two"),
+            "written to the selected note");
+    require(same_text(folio_state_pane_text(state), "# Hello\r\n\r\nbody\r\nmore") &&
+                strstr(folio_state_pane_rtf(state), "more") != nullptr,
+            "the read body and the pane follow the save");
+    require(folio_state_pane_mode(state) == PANE_MODE_EDIT, "Ctrl+S stays in edit");
+    require(folio_state_end_edit(state, u"# Hello\r\n\r\nbody\r\nmore\r\nlast", 27) ==
+                FOLIO_STATE_READY,
+            "end edit saves");
+    require(adapter.note_writes == 2 && folio_state_pane_mode(state) == PANE_MODE_VIEW,
+            "leaving with a change writes once and returns to view");
+    folio_state_destroy(state);
+}
+
+static void verify_edit_failures(void)
+{
+    static const char16_t lone_surrogate[] = {u'a', 0xD83D, u'b'};
+    struct persistence_adapter adapter = healthy_adapter();
+    adapter.note_body = "# Hello\r\n\r\nbody";
+    struct folio_state *state = edited_state(&adapter);
+    require(folio_state_store_note(state, lone_surrogate, 3) == FOLIO_STATE_NOTE_MALFORMED &&
+                adapter.note_writes == 0,
+            "a lone surrogate is refused without writing");
+    adapter.note_write_outcome = PERSISTENCE_UNWRITABLE;
+    require(folio_state_store_note(state, u"changed", 7) == FOLIO_STATE_NOTE_STORE_FAILED,
+            "the store failure is reported");
+    require(adapter.note_writes == 1 && folio_state_pane_mode(state) == PANE_MODE_EDIT &&
+                same_text(folio_state_pane_text(state), "# Hello\r\n\r\nbody"),
+            "the failed store changes neither the mode nor the read body");
+    require(folio_state_end_edit(state, u"changed", 7) == FOLIO_STATE_NOTE_STORE_FAILED &&
+                folio_state_pane_mode(state) == PANE_MODE_EDIT,
+            "leaving is refused while the store fails");
+    adapter.note_write_outcome = PERSISTENCE_OUT_OF_MEMORY;
+    require(folio_state_store_note(state, u"changed", 7) == FOLIO_STATE_OUT_OF_MEMORY,
+            "the write reports out of memory");
+    folio_state_destroy(state);
+}
+
 static void verify_failure_lines(void)
 {
     require(same_text(folio_state_failure_line(FOLIO_STATE_READY), ""), "ready has no line");
@@ -369,6 +496,10 @@ static void verify_failure_lines(void)
                 strlen(folio_state_failure_line(FOLIO_STATE_NO_SUCH_CATEGORY)) > 0 &&
                 strlen(folio_state_failure_line(FOLIO_STATE_NO_SUCH_NOTE)) > 0 &&
                 strlen(folio_state_failure_line(FOLIO_STATE_NOTE_UNREADABLE)) > 0 &&
+                strlen(folio_state_failure_line(FOLIO_STATE_NOTHING_SELECTED)) > 0 &&
+                strlen(folio_state_failure_line(FOLIO_STATE_NOT_EDITING)) > 0 &&
+                strlen(folio_state_failure_line(FOLIO_STATE_NOTE_MALFORMED)) > 0 &&
+                strlen(folio_state_failure_line(FOLIO_STATE_NOTE_STORE_FAILED)) > 0 &&
                 strlen(folio_state_failure_line(FOLIO_STATE_OUT_OF_MEMORY)) > 0,
             "every failure has a line");
 }
@@ -446,5 +577,9 @@ void run_state_tests(void)
     verify_failures();
     verify_toggle();
     verify_select();
+    verify_edit_guards();
+    verify_edit_unchanged();
+    verify_edit_saves();
+    verify_edit_failures();
     verify_failure_lines();
 }

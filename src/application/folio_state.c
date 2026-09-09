@@ -9,6 +9,7 @@
 #include "note_text.h"
 #include "persistence_port.h"
 #include "rtf_palette.h"
+#include "utf8_text.h"
 
 #include <stdlib.h>
 
@@ -21,7 +22,9 @@ struct folio_state
     struct note_ledger *_Nonnull *_Nullable notes; /* categories と同じ数・同じ順 */
     size_t notes_count;
     struct markdown_rtf *_Nullable pane; /* 選択中のノートの表示値。無ければ空の文書 */
-    bool selected;                       /* ノートを選んでいるか */
+    struct note_text *_Nullable body;    /* 最後に読んだ本文。何も選んでいなければ空 */
+    enum pane_mode mode;
+    bool selected; /* ノートを選んでいるか */
     size_t selected_category;
     size_t selected_note;
 };
@@ -183,7 +186,8 @@ enum folio_state_outcome folio_state_create(const struct persistence_port *_Nonn
     state->port = *persistence;
     state->theme = appearance->read_theme(appearance->adapter);
     state->palette = rtf_palette_for(state->theme);
-    if (markdown_rtf_empty(state->palette, &state->pane) != MARKDOWN_RTF_CONVERTED)
+    if (markdown_rtf_empty(state->palette, &state->pane) != MARKDOWN_RTF_CONVERTED ||
+        note_text_create("", 0, &state->body) != NOTE_TEXT_ACCEPTED)
     {
         folio_state_destroy(state);
         return FOLIO_STATE_OUT_OF_MEMORY;
@@ -279,13 +283,15 @@ static enum folio_state_outcome render_note(struct folio_state *_Nonnull state,
     }
     struct markdown_rtf *_Nullable rendered = nullptr;
     enum markdown_rtf_outcome converted = markdown_rtf_create(body, state->palette, &rendered);
-    note_text_destroy(body);
     if (converted != MARKDOWN_RTF_CONVERTED)
     {
+        note_text_destroy(body);
         return FOLIO_STATE_OUT_OF_MEMORY;
     }
     markdown_rtf_destroy(state->pane);
     state->pane = rendered;
+    note_text_destroy(state->body);
+    state->body = body;
     return FOLIO_STATE_READY;
 }
 
@@ -310,6 +316,109 @@ enum folio_state_outcome folio_state_select_note(struct folio_state *_Nonnull st
         state->selected_note = note;
     }
     return outcome;
+}
+
+enum folio_state_outcome folio_state_begin_edit(struct folio_state *_Nonnull state)
+{
+    if (!state->selected)
+    {
+        return FOLIO_STATE_NOTHING_SELECTED;
+    }
+    state->mode = PANE_MODE_EDIT;
+    return FOLIO_STATE_READY;
+}
+
+/* 正規化済みの本文を書き戻し、表示値も作り直す。書けなければ何も変えない（ADR 0006 の決定 6）。 */
+static enum folio_state_outcome store_edited(struct folio_state *_Nonnull state,
+                                             struct note_text *_Nonnull edited)
+{
+    if (note_text_equals(state->body, edited))
+    {
+        note_text_destroy(edited);
+        return FOLIO_STATE_READY;
+    }
+    struct markdown_rtf *_Nullable rendered = nullptr;
+    if (markdown_rtf_create(edited, state->palette, &rendered) != MARKDOWN_RTF_CONVERTED)
+    {
+        note_text_destroy(edited);
+        return FOLIO_STATE_OUT_OF_MEMORY;
+    }
+    enum persistence_outcome stored = state->port.write_note(
+        state->port.adapter, category_ledger_name(state->categories, state->selected_category),
+        note_ledger_name(state->notes[state->selected_category], state->selected_note), edited);
+    if (stored != PERSISTENCE_STORED)
+    {
+        markdown_rtf_destroy(rendered);
+        note_text_destroy(edited);
+        return stored == PERSISTENCE_OUT_OF_MEMORY ? FOLIO_STATE_OUT_OF_MEMORY
+                                                   : FOLIO_STATE_NOTE_STORE_FAILED;
+    }
+    markdown_rtf_destroy(state->pane);
+    state->pane = rendered;
+    note_text_destroy(state->body);
+    state->body = edited;
+    return FOLIO_STATE_READY;
+}
+
+/* UI が持つ編集中の本文（UTF-16）を core で検証・変換し、読んだ本文の改行の形へ揃える。
+ * application が UTF-16 を受けるのはこの 1 本だけ（C-014 の例外・ADR 0006 の決定 4）。 */
+static enum folio_state_outcome save_note(struct folio_state *_Nonnull state,
+                                          const char16_t *_Nonnull units, size_t count)
+{
+    if (state->mode != PANE_MODE_EDIT)
+    {
+        return FOLIO_STATE_NOT_EDITING;
+    }
+    struct utf8_text *_Nullable narrow = nullptr;
+    enum utf8_text_outcome converted = utf8_text_create(units, count, &narrow);
+    if (converted != UTF8_TEXT_CONVERTED)
+    {
+        return converted == UTF8_TEXT_OUT_OF_MEMORY ? FOLIO_STATE_OUT_OF_MEMORY
+                                                    : FOLIO_STATE_NOTE_MALFORMED;
+    }
+    struct note_text *_Nullable edited = nullptr;
+    enum note_text_outcome accepted =
+        note_text_from_editor(utf8_text_bytes(narrow), utf8_text_length(narrow),
+                              note_text_line_ending(state->body), &edited);
+    utf8_text_destroy(narrow);
+    if (accepted != NOTE_TEXT_ACCEPTED)
+    {
+        return accepted == NOTE_TEXT_OUT_OF_MEMORY ? FOLIO_STATE_OUT_OF_MEMORY
+                                                   : FOLIO_STATE_NOTE_MALFORMED;
+    }
+    return store_edited(state, edited);
+}
+
+enum folio_state_outcome folio_state_store_note(struct folio_state *_Nonnull state,
+                                                const char16_t *_Nonnull units, size_t count)
+{
+    return save_note(state, units, count);
+}
+
+enum folio_state_outcome folio_state_end_edit(struct folio_state *_Nonnull state,
+                                              const char16_t *_Nonnull units, size_t count)
+{
+    enum folio_state_outcome outcome = save_note(state, units, count);
+    if (outcome == FOLIO_STATE_READY)
+    {
+        state->mode = PANE_MODE_VIEW;
+    }
+    return outcome;
+}
+
+enum pane_mode folio_state_pane_mode(const struct folio_state *_Nonnull state)
+{
+    return state->mode;
+}
+
+const char *_Nonnull folio_state_pane_text(const struct folio_state *_Nonnull state)
+{
+    return note_text_bytes(state->body);
+}
+
+size_t folio_state_pane_text_length(const struct folio_state *_Nonnull state)
+{
+    return note_text_length(state->body);
 }
 
 struct pane_title_view folio_state_pane_title(const struct folio_state *_Nonnull state)
@@ -356,6 +465,14 @@ const char *_Nonnull folio_state_failure_line(enum folio_state_outcome outcome)
         return "索引に無いノートが操作されました。";
     case FOLIO_STATE_NOTE_UNREADABLE:
         return "ノートを読めませんでした。表示は変えていません。";
+    case FOLIO_STATE_NOTHING_SELECTED:
+        return "ノートを選んでから編集してください。";
+    case FOLIO_STATE_NOT_EDITING:
+        return "編集モードではありません。";
+    case FOLIO_STATE_NOTE_MALFORMED:
+        return "編集中の本文に壊れた文字があります。保存していません。";
+    case FOLIO_STATE_NOTE_STORE_FAILED:
+        return "ノートを書き戻せませんでした。編集中の本文はそのままです。";
     case FOLIO_STATE_OUT_OF_MEMORY:
         return "記憶域が足りません。";
     }
@@ -375,5 +492,6 @@ void folio_state_destroy(struct folio_state *_Nullable state)
     free(state->notes);
     category_ledger_destroy(state->categories);
     markdown_rtf_destroy(state->pane);
+    note_text_destroy(state->body);
     free(state);
 }

@@ -7,9 +7,11 @@
 #include "drawer_metrics.h"
 #include "folio_state_outcome.h"
 #include "folio_theme.h"
+#include "pane_mode.h"
 #include "pane_title_view.h"
 
 #include <stddef.h>
+#include <uchar.h>
 
 struct appearance_port;
 struct drawer_layout;
@@ -36,6 +38,22 @@ folio_state_toggle_category(struct folio_state *_Nonnull state, size_t index);
 /* ノートを選び、本文を読んで右ペインの表示値を作る（FR-005）。読めなければ表示は変えない。 */
 [[nodiscard]] enum folio_state_outcome folio_state_select_note(struct folio_state *_Nonnull state,
                                                                size_t category, size_t note);
+/* 編集モードへ入る（FR-006）。ノートを選んでいなければ NOTHING_SELECTED。 */
+[[nodiscard]] enum folio_state_outcome folio_state_begin_edit(struct folio_state *_Nonnull state);
+/* 編集中の本文（UTF-16 の単位列）を保存し、編集モードのまま残る（Ctrl+S）。
+ * 読んだ本文と同じなら書かない。書き戻せなければ状態は変えない（ADR 0006）。 */
+[[nodiscard]] enum folio_state_outcome folio_state_store_note(struct folio_state *_Nonnull state,
+                                                              const char16_t *_Nonnull units,
+                                                              size_t count);
+/* 編集中の本文を保存して閲覧へ戻る。保存できなければ編集モードのまま。 */
+[[nodiscard]] enum folio_state_outcome folio_state_end_edit(struct folio_state *_Nonnull state,
+                                                            const char16_t *_Nonnull units,
+                                                            size_t count);
+/* いまの表示モード。 */
+[[nodiscard]] enum pane_mode folio_state_pane_mode(const struct folio_state *_Nonnull state);
+/* 選択中のノートの本文（UTF-8・終端付き）。何も選んでいなければ空文字列。次の意図まで有効。 */
+[[nodiscard]] const char *_Nonnull folio_state_pane_text(const struct folio_state *_Nonnull state);
+[[nodiscard]] size_t folio_state_pane_text_length(const struct folio_state *_Nonnull state);
 /* 右ペインの頭の表示値。 */
 [[nodiscard]] struct pane_title_view
 folio_state_pane_title(const struct folio_state *_Nonnull state);

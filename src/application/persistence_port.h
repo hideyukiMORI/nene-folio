@@ -37,6 +37,11 @@ struct persistence_port
                                                    const char *_Nonnull category,
                                                    const char *_Nonnull note,
                                                    struct note_text *_Nullable *_Nonnull out);
+    /* data/<category>/<note>.md を置き換える。途中で落ちても壊れた本文を残さない（FR-006）。 */
+    enum persistence_outcome (*_Nonnull write_note)(struct persistence_adapter *_Nonnull adapter,
+                                                    const char *_Nonnull category,
+                                                    const char *_Nonnull note,
+                                                    const struct note_text *_Nonnull body);
     /* data/<category>/index.json。無ければ ABSENT。 */
     enum persistence_outcome (*_Nonnull read_note_ledger)(
         struct persistence_adapter *_Nonnull adapter, const char *_Nonnull category,
