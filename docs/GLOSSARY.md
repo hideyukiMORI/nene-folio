@@ -24,6 +24,9 @@
 | ビュー（view）／編集（edit） | 右のペインの 2 つのモード。閉じた enum | `enum pane_mode`（application） |
 | 札（chip） | 右ペインの頭の右端に並ぶ「閲覧」「編集」の切替。有効な側だけ面を塗る | `folio_window` の `chip_rect`・`chip_*` の色（`folio_palette`） |
 | 改行の形（line ending） | 本文の改行が LF か CRLF か。読んだ本文の最初の改行で決まり、書き戻すときに揃える | `enum line_ending`（core） |
+| ドロップ先（drop target） | ドラッグを離したときに落ちる場所。種類・掴んだ行のカテゴリ・**移動後の番号**・挿入線の y を持つ | `struct drop_target` / `enum drop_kind`（core）・`drawer_layout_drop` |
+| 塊（chunk） | カテゴリ行と、展開中ならそのノート行をひとまとめにした範囲。カテゴリの並び替えの候補はこの境界 | `drawer_layout_drop`（core） |
+| 挿入線（drop line） | ドラッグ中に落ちる位置を示す 1 本の線。掴んだ行のカテゴリ色で、その字下げから右の余白まで | `drawer_window` の `draw_drop_line`（ui/win32）。y は core が返す |
 | 意図（intent） | UI が発行する操作。クリック・ドラッグ・ホイール・入力 | application の reducer 関数 `folio_state_*`（`folio_state_toggle_category` 等）。種類が増えたら `enum folio_intent` に束ねる |
 | 表示値（view model） | application が作り UI が写す値 | `struct *_view`（application）・`struct drawer_row`（core） |
 | 測定ビルド（measurement build） | 同じ中核ソースと単体テストを計装コンパイルして分岐を測る検証専用のビルド。第 2 の製品実装ではない | `eng/coverage.py` → `out/coverage/` |

@@ -10,8 +10,9 @@ struct drawer_layout
 {
     struct drawer_row *_Nullable rows;
     size_t count;
-    char *_Nullable texts; /* 全行の名前を終端付きで並べた所有領域 */
-    int bottom;            /* 最後に置いた行の下端 */
+    char *_Nullable texts;         /* 全行の名前を終端付きで並べた所有領域 */
+    int bottom;                    /* 最後に置いた行の下端 */
+    struct drawer_metrics metrics; /* 挿入線の位置に要る（drawer_layout_drop） */
 };
 
 /* 行数と名前の総バイト数（終端込み）を数える。 */
@@ -133,6 +134,7 @@ drawer_layout_create(const struct category_ledger *_Nonnull categories,
         drawer_layout_destroy(layout);
         return DRAWER_LAYOUT_OUT_OF_MEMORY;
     }
+    layout->metrics = metrics;
     fill(layout, categories, notes, metrics);
     *out = layout;
     return DRAWER_LAYOUT_CREATED;
@@ -170,6 +172,106 @@ bool drawer_layout_hit(const struct drawer_layout *_Nonnull layout, int y, size_
         }
     }
     return false;
+}
+
+/* start のカテゴリ行に続くノート行を飛ばし、次の塊の先頭の番号を返す。 */
+static size_t chunk_end(const struct drawer_layout *_Nonnull layout, size_t start)
+{
+    size_t end = start + 1;
+    while (end < layout->count && layout->rows[end].kind == DRAWER_ROW_NOTE)
+    {
+        end += 1;
+    }
+    return end;
+}
+
+/* 塊（カテゴリ行と展開中のノート行）の上端と下端の中点。 */
+static int chunk_middle(const struct drawer_layout *_Nonnull layout, size_t start, size_t end)
+{
+    const struct drawer_row *_Nonnull last = &layout->rows[end - 1];
+    return (layout->rows[start].top + last->top + last->height) / 2;
+}
+
+/* 掴んだ行と挿入位置から移動後の番号を出す。掴んだ行より後ろへ入れるときは 1 つ詰まる。 */
+static size_t moved_to(size_t position, size_t source)
+{
+    return position > source ? position - 1 : position;
+}
+
+/* カテゴリの塊の中点で数え、線は次の塊のカテゴリ行の間の中ほどに引く。 */
+static struct drop_target category_drop(const struct drawer_layout *_Nonnull layout,
+                                        struct drawer_row source, int y)
+{
+    struct drop_target target = {
+        .kind = DROP_CATEGORY, .category = source.category, .index = 0, .line_y = layout->bottom};
+    size_t position = 0;
+    bool settled = false;
+    size_t start = 0;
+    while (start < layout->count)
+    {
+        size_t end = chunk_end(layout, start);
+        if (chunk_middle(layout, start, end) < y)
+        {
+            position += 1;
+        }
+        else if (!settled)
+        {
+            settled = true;
+            target.line_y = layout->rows[start].top - layout->metrics.category_gap / 2;
+        }
+        start = end;
+    }
+    target.index = moved_to(position, source.category);
+    return target;
+}
+
+/* 同じカテゴリのノート行の中点だけで数える。別カテゴリの上で離しても端に寄る（ADR 0007）。 */
+static struct drop_target note_drop(const struct drawer_layout *_Nonnull layout,
+                                    struct drawer_row source, int y)
+{
+    struct drop_target target = {
+        .kind = DROP_NOTE, .category = source.category, .index = 0, .line_y = 0};
+    size_t position = 0;
+    bool settled = false;
+    int bottom = 0;
+    for (size_t index = 0; index < layout->count; ++index)
+    {
+        const struct drawer_row *_Nonnull row = &layout->rows[index];
+        if (row->kind != DRAWER_ROW_NOTE || row->category != source.category)
+        {
+            continue;
+        }
+        bottom = row->top + row->height;
+        if (row->top + row->height / 2 < y)
+        {
+            position += 1;
+        }
+        else if (!settled)
+        {
+            settled = true;
+            target.line_y = row->top;
+        }
+    }
+    if (!settled)
+    {
+        target.line_y = bottom;
+    }
+    target.index = moved_to(position, source.note);
+    return target;
+}
+
+struct drop_target drawer_layout_drop(const struct drawer_layout *_Nonnull layout,
+                                      size_t source_row, int y)
+{
+    struct drawer_row source = layout->rows[source_row];
+    switch (source.kind)
+    {
+    case DRAWER_ROW_CATEGORY:
+        return category_drop(layout, source, y);
+    case DRAWER_ROW_NOTE:
+        return note_drop(layout, source, y);
+    }
+    return category_drop(layout, source, y);
 }
 
 void drawer_layout_destroy(struct drawer_layout *_Nullable layout)

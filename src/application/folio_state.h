@@ -35,6 +35,14 @@ folio_state_drawer_layout(const struct folio_state *_Nonnull state, struct drawe
  */
 [[nodiscard]] enum folio_state_outcome
 folio_state_toggle_category(struct folio_state *_Nonnull state, size_t index);
+/* カテゴリの表示順を変え、categories.json を書き戻す（FR-009）。from == to は書かずに READY。
+ * 書き戻せなければ状態は変えない。選択中のノートは移動後も同じノートを指す。 */
+[[nodiscard]] enum folio_state_outcome folio_state_move_category(struct folio_state *_Nonnull state,
+                                                                 size_t from, size_t to);
+/* 同じカテゴリ内でノートの表示順を変え、index.json を書き戻す（FR-008 / FR-009）。
+ * from == to は書かずに READY。書き戻せなければ状態は変えない。 */
+[[nodiscard]] enum folio_state_outcome
+folio_state_move_note(struct folio_state *_Nonnull state, size_t category, size_t from, size_t to);
 /* ノートを選び、本文を読んで右ペインの表示値を作る（FR-005）。読めなければ表示は変えない。 */
 [[nodiscard]] enum folio_state_outcome folio_state_select_note(struct folio_state *_Nonnull state,
                                                                size_t category, size_t note);

@@ -11,6 +11,7 @@
 #include <string.h>
 #include <windowsx.h>
 
+/* ドラッグ中の一時状態はここだけが持つ（ARC-004 / ARC-005 の許可区画）。 */
 struct drawer_window
 {
     HWND _Nullable handle;
@@ -19,6 +20,11 @@ struct drawer_window
     HFONT _Nullable category_font;
     HFONT _Nullable note_font;
     HFONT _Nullable mono_font;
+    bool pressed; /* 左ボタンを押した行を覚えているか */
+    size_t pressed_row;
+    int pressed_y;             /* 押したときの y。しきい値の判定に使う */
+    bool dragging;             /* しきい値を超えて動かしているか */
+    struct drop_target target; /* dragging のときの落とし先 */
 };
 
 static const wchar_t class_name[] = L"NeNeFolioDrawer";
@@ -38,6 +44,7 @@ constexpr int base_name_offset = 26; /* 番号の左端から名前の左端ま�
 constexpr int base_note_indent = 40;
 constexpr int base_right_inset = 16;
 constexpr int base_mark_size = 6;
+constexpr int base_line_thickness = 2; /* ドラッグ中の挿入線の太さ */
 constexpr int base_category_font = 12;
 constexpr int base_note_font = 14;
 constexpr int base_mono_font = 11;
@@ -198,6 +205,21 @@ static void draw_note(const struct drawer_window *_Nonnull self, HDC device, str
     draw_utf8(device, row.text, bounds, DT_END_ELLIPSIS);
 }
 
+/* ドラッグ中の挿入線。掴んだ行の色で、その字下げから右の余白まで引く（ADR 0007 の決定 6）。 */
+static void draw_drop_line(const struct drawer_window *_Nonnull self, HDC device,
+                           const struct drawer_layout *_Nonnull layout, int width)
+{
+    if (!self->dragging || self->pressed_row >= drawer_layout_row_count(layout))
+    {
+        return;
+    }
+    UINT dpi = GetDpiForWindow(self->handle);
+    struct drawer_row row = drawer_layout_row(layout, self->pressed_row);
+    RECT line = {row.indent, self->target.line_y, width - scale(base_right_inset, dpi),
+                 self->target.line_y + scale(base_line_thickness, dpi)};
+    fill_rect(device, line, to_colorref(row.color));
+}
+
 static void draw_rows(const struct drawer_window *_Nonnull self, HDC device, RECT client)
 {
     struct drawer_layout *_Nullable layout = nullptr;
@@ -220,6 +242,7 @@ static void draw_rows(const struct drawer_window *_Nonnull self, HDC device, REC
             break;
         }
     }
+    draw_drop_line(self, device, layout, client.right);
     drawer_layout_destroy(layout);
 }
 
@@ -294,23 +317,121 @@ static void act_on_row(struct drawer_window *_Nonnull self, struct drawer_row ro
     failure_box_show(self->handle, outcome);
 }
 
-/* クリックを行に写して意図にする。行の外なら何もしない。 */
-static void click(struct drawer_window *_Nonnull self, int y)
+/* 落とし先を意図にする。並び替えは選択の番号も動かすので、親にも描き直しを頼む。 */
+static void apply_drop(struct drawer_window *_Nonnull self, struct drawer_row source,
+                       struct drop_target target)
+{
+    enum folio_state_outcome outcome = FOLIO_STATE_READY;
+    switch (target.kind)
+    {
+    case DROP_CATEGORY:
+        outcome = folio_state_move_category(self->state, target.category, target.index);
+        break;
+    case DROP_NOTE:
+        outcome = folio_state_move_note(self->state, target.category, source.note, target.index);
+        break;
+    }
+    if (outcome != FOLIO_STATE_READY)
+    {
+        failure_box_show(self->handle, outcome);
+        return;
+    }
+    InvalidateRect(self->handle, nullptr, FALSE);
+    /* 右ペインの頭のカテゴリ番号が変わりうる。本文は編集中でも触らない（ADR 0007 の決定 7）。 */
+    InvalidateRect(GetParent(self->handle), nullptr, FALSE);
+}
+
+/* いまの配置を作る。作れなければ false（描き直しの機会に回復する）。 */
+static bool current_layout(const struct drawer_window *_Nonnull self,
+                           struct drawer_layout *_Nullable *_Nonnull out)
+{
+    UINT dpi = GetDpiForWindow(self->handle);
+    return folio_state_drawer_layout(self->state, metrics_for(dpi), out) == FOLIO_STATE_READY;
+}
+
+/* 押した行を覚えて捕捉する。クリックの確定は離すときに行う（ADR 0007 の決定 6）。 */
+static void press(struct drawer_window *_Nonnull self, int y)
 {
     struct drawer_layout *_Nullable layout = nullptr;
-    UINT dpi = GetDpiForWindow(self->handle);
-    if (folio_state_drawer_layout(self->state, metrics_for(dpi), &layout) != FOLIO_STATE_READY)
+    if (!current_layout(self, &layout))
     {
         return;
     }
     size_t index = 0;
-    bool hit = drawer_layout_hit(layout, y, &index);
-    struct drawer_row row = hit ? drawer_layout_row(layout, index) : (struct drawer_row){0};
-    drawer_layout_destroy(layout);
-    if (hit)
+    if (drawer_layout_hit(layout, y, &index))
     {
-        act_on_row(self, row);
+        self->pressed = true;
+        self->pressed_row = index;
+        self->pressed_y = y;
+        self->dragging = false;
+        SetCapture(self->handle);
     }
+    drawer_layout_destroy(layout);
+}
+
+/* 捕捉中の移動。しきい値を超えたらドラッグに入り、落とし先を core に決めさせる。 */
+static void drag(struct drawer_window *_Nonnull self, int y)
+{
+    if (!self->pressed)
+    {
+        return;
+    }
+    int travel = y - self->pressed_y;
+    int threshold = GetSystemMetricsForDpi(SM_CYDRAG, GetDpiForWindow(self->handle));
+    if (!self->dragging && travel > -threshold && travel < threshold)
+    {
+        return;
+    }
+    struct drawer_layout *_Nullable layout = nullptr;
+    if (!current_layout(self, &layout))
+    {
+        return;
+    }
+    if (self->pressed_row < drawer_layout_row_count(layout))
+    {
+        self->dragging = true;
+        self->target = drawer_layout_drop(layout, self->pressed_row, y);
+        InvalidateRect(self->handle, nullptr, FALSE);
+    }
+    drawer_layout_destroy(layout);
+}
+
+/* 捕捉を解いて、ドラッグなら並び替え、動かしていなければ今までどおりのクリック。 */
+static void release(struct drawer_window *_Nonnull self)
+{
+    bool pressed = self->pressed;
+    bool dragging = self->dragging;
+    size_t index = self->pressed_row;
+    struct drop_target target = self->target;
+    self->pressed = false;
+    self->dragging = false;
+    ReleaseCapture();
+    struct drawer_layout *_Nullable layout = nullptr;
+    if (!pressed || !current_layout(self, &layout))
+    {
+        return;
+    }
+    bool valid = index < drawer_layout_row_count(layout);
+    struct drawer_row row = valid ? drawer_layout_row(layout, index) : (struct drawer_row){0};
+    drawer_layout_destroy(layout);
+    if (!valid)
+    {
+        return;
+    }
+    if (dragging)
+    {
+        apply_drop(self, row, target);
+        return;
+    }
+    act_on_row(self, row);
+}
+
+/* 捕捉を取り上げられたら、線も覚えた行も捨てる。 */
+static void cancel(struct drawer_window *_Nonnull self)
+{
+    self->pressed = false;
+    self->dragging = false;
+    InvalidateRect(self->handle, nullptr, FALSE);
 }
 
 static struct drawer_window *_Nullable self_of(HWND window)
@@ -343,7 +464,16 @@ static LRESULT CALLBACK drawer_procedure(HWND window, UINT message, WPARAM wpara
     case WM_ERASEBKGND:
         return 1;
     case WM_LBUTTONDOWN:
-        click(self, GET_Y_LPARAM(lparam));
+        press(self, GET_Y_LPARAM(lparam));
+        return 0;
+    case WM_MOUSEMOVE:
+        drag(self, GET_Y_LPARAM(lparam));
+        return 0;
+    case WM_LBUTTONUP:
+        release(self);
+        return 0;
+    case WM_CAPTURECHANGED:
+        cancel(self);
         return 0;
     case WM_DPICHANGED_AFTERPARENT:
         refresh_fonts(self, GetDpiForWindow(window));

@@ -108,8 +108,72 @@ static void verify_empty(void)
     category_ledger_destroy(categories);
 }
 
+/* build_layout の配置は 塊 0 = work(14..48) + alpha(48..76) + beta(76..104)、
+ * 塊 1 = closed(110..144)。塊の中点は 59 と 127、ノート行の中点は 62 と 90。
+ * カテゴリ行を掴むと候補は塊の境界で、掴んだ塊の前後では番号が変わらない。 */
+static void verify_category_drops(const struct drawer_layout *_Nonnull layout)
+{
+    struct drop_target target = drawer_layout_drop(layout, 0, 0);
+    require(target.kind == DROP_CATEGORY && target.category == 0 && target.index == 0 &&
+                target.line_y == 11,
+            "above everything keeps the first category and draws over its gap");
+    target = drawer_layout_drop(layout, 0, 59);
+    require(target.index == 0 && target.line_y == 11, "the midpoint itself is still above");
+    target = drawer_layout_drop(layout, 0, 60);
+    require(target.index == 0 && target.line_y == 107,
+            "just past its own midpoint the number does not change");
+    target = drawer_layout_drop(layout, 0, 127);
+    require(target.index == 0 && target.line_y == 107, "the second midpoint is still above");
+    target = drawer_layout_drop(layout, 0, 128);
+    require(target.index == 1 && target.line_y == 144,
+            "past the second midpoint the category moves to the end");
+    target = drawer_layout_drop(layout, 3, 10);
+    require(target.kind == DROP_CATEGORY && target.category == 1 && target.index == 0 &&
+                target.line_y == 11,
+            "the collapsed category moves to the front");
+    target = drawer_layout_drop(layout, 3, 60);
+    require(target.index == 1 && target.line_y == 107, "just after the first chunk it stays");
+    target = drawer_layout_drop(layout, 3, 500);
+    require(target.index == 1 && target.line_y == 144, "below everything it stays last");
+}
+
+/* ノート行を掴む。候補は同じカテゴリのノート行だけで、外は端に寄る。 */
+static void verify_note_drops(const struct drawer_layout *_Nonnull layout)
+{
+    struct drop_target target = drawer_layout_drop(layout, 1, 0);
+    require(target.kind == DROP_NOTE && target.category == 0 && target.index == 0 &&
+                target.line_y == 48,
+            "the first note stays first above everything");
+    target = drawer_layout_drop(layout, 1, 62);
+    require(target.index == 0 && target.line_y == 48, "the midpoint itself is still above");
+    target = drawer_layout_drop(layout, 1, 63);
+    require(target.index == 0 && target.line_y == 76,
+            "just past its own midpoint the number does not change");
+    target = drawer_layout_drop(layout, 1, 91);
+    require(target.index == 1 && target.line_y == 104, "past the second midpoint it moves down");
+    target = drawer_layout_drop(layout, 1, 500);
+    require(target.index == 1 && target.line_y == 104,
+            "over another category it goes to its own end");
+    target = drawer_layout_drop(layout, 2, 0);
+    require(target.category == 0 && target.index == 0 && target.line_y == 48,
+            "the second note moves to the front");
+    target = drawer_layout_drop(layout, 2, 63);
+    require(target.index == 1 && target.line_y == 76, "before its own row it stays");
+    target = drawer_layout_drop(layout, 2, 91);
+    require(target.index == 1 && target.line_y == 104, "past its own midpoint it stays");
+}
+
+static void verify_drops(void)
+{
+    struct drawer_layout *layout = build_layout();
+    verify_category_drops(layout);
+    verify_note_drops(layout);
+    drawer_layout_destroy(layout);
+}
+
 void run_layout_tests(void)
 {
     verify_rows();
     verify_empty();
+    verify_drops();
 }
