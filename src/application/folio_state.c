@@ -12,6 +12,7 @@
 #include "utf8_text.h"
 
 #include <stdlib.h>
+#include <string.h>
 
 struct folio_state
 {
@@ -364,13 +365,10 @@ static enum folio_state_outcome store_notes(struct folio_state *_Nonnull state, 
     return FOLIO_STATE_READY;
 }
 
-enum folio_state_outcome folio_state_move_note(struct folio_state *_Nonnull state, size_t category,
-                                               size_t from, size_t to)
+/* 同じカテゴリ内の並び替え（ADR 0007 の決定 3）。 */
+static enum folio_state_outcome reorder_note(struct folio_state *_Nonnull state, size_t category,
+                                             size_t from, size_t to)
 {
-    if (category >= category_ledger_count(state->categories))
-    {
-        return FOLIO_STATE_NO_SUCH_CATEGORY;
-    }
     size_t count = note_ledger_count(state->notes[category]);
     if (from >= count || to >= count)
     {
@@ -381,6 +379,144 @@ enum folio_state_outcome folio_state_move_note(struct folio_state *_Nonnull stat
         return FOLIO_STATE_READY;
     }
     return store_notes(state, category, from, to);
+}
+
+/* 台帳に同じ名前があるか。判定はバイト単位（name_list と同じ・ADR 0008 の文脈）。 */
+static bool holds_name(const struct note_ledger *_Nonnull ledger, const char *_Nonnull name)
+{
+    size_t count = note_ledger_count(ledger);
+    for (size_t index = 0; index < count; ++index)
+    {
+        if (strcmp(note_ledger_name(ledger, index), name) == 0)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+/* (a) 範囲と移動先の同名を確かめる。to.note は移動先のノート数と等しければ末尾。 */
+static enum folio_state_outcome transfer_allowed(const struct folio_state *_Nonnull state,
+                                                 struct note_ref from, struct note_ref to)
+{
+    if (from.note >= note_ledger_count(state->notes[from.category]) ||
+        to.note > note_ledger_count(state->notes[to.category]))
+    {
+        return FOLIO_STATE_NO_SUCH_NOTE;
+    }
+    const char *_Nonnull name = note_ledger_name(state->notes[from.category], from.note);
+    return holds_name(state->notes[to.category], name) ? FOLIO_STATE_NAME_TAKEN : FOLIO_STATE_READY;
+}
+
+/* (d) 選択中の番号を移動後の索引へ付け替える。別のカテゴリなので 2 つの補正は同時に起きない。 */
+static void renumber_selection(struct folio_state *_Nonnull state, struct note_ref from,
+                               struct note_ref to)
+{
+    if (!state->selected)
+    {
+        return;
+    }
+    if (state->selected_category == from.category && state->selected_note == from.note)
+    {
+        state->selected_category = to.category;
+        state->selected_note = to.note;
+        return;
+    }
+    if (state->selected_category == from.category && state->selected_note > from.note)
+    {
+        state->selected_note -= 1;
+    }
+    if (state->selected_category == to.category && state->selected_note >= to.note)
+    {
+        state->selected_note += 1;
+    }
+}
+
+/* (e) 移動先 → 移動元 の順に書き戻す。どちらかが書けなければ索引は移動後のまま LEDGER_STALE。 */
+static enum folio_state_outcome store_both(struct folio_state *_Nonnull state, size_t to,
+                                           size_t from)
+{
+    enum persistence_outcome grown = state->port.write_note_ledger(
+        state->port.adapter, category_ledger_name(state->categories, to), state->notes[to]);
+    enum persistence_outcome shrunk = state->port.write_note_ledger(
+        state->port.adapter, category_ledger_name(state->categories, from), state->notes[from]);
+    if (grown == PERSISTENCE_OUT_OF_MEMORY || shrunk == PERSISTENCE_OUT_OF_MEMORY)
+    {
+        return FOLIO_STATE_OUT_OF_MEMORY;
+    }
+    if (grown != PERSISTENCE_STORED || shrunk != PERSISTENCE_STORED)
+    {
+        return FOLIO_STATE_LEDGER_STALE;
+    }
+    return FOLIO_STATE_READY;
+}
+
+/* (b) 移動後の 2 つの台帳を作る。どちらかが作れなければ両方捨てる。 */
+static enum folio_state_outcome transfer_ledgers(const struct folio_state *_Nonnull state,
+                                                 struct note_ref from, struct note_ref to,
+                                                 struct note_ledger *_Nullable *_Nonnull pair)
+{
+    enum folio_state_outcome outcome =
+        from_note_ledger(note_ledger_removed(state->notes[from.category], from.note, &pair[0]));
+    if (outcome == FOLIO_STATE_READY)
+    {
+        outcome = from_note_ledger(note_ledger_inserted(
+            state->notes[to.category], to.note,
+            note_ledger_name(state->notes[from.category], from.note), &pair[1]));
+    }
+    if (outcome != FOLIO_STATE_READY)
+    {
+        note_ledger_destroy(pair[0]);
+    }
+    return outcome;
+}
+
+/* 別のカテゴリへ移す（ADR 0008 の決定 3 の (a)〜(e)）。md の rename が先で、台帳が追随する。 */
+static enum folio_state_outcome transfer_note(struct folio_state *_Nonnull state,
+                                              struct note_ref from, struct note_ref to)
+{
+    enum folio_state_outcome outcome = transfer_allowed(state, from, to);
+    if (outcome != FOLIO_STATE_READY)
+    {
+        return outcome;
+    }
+    struct note_ledger *_Nullable pair[2] = {nullptr, nullptr};
+    outcome = transfer_ledgers(state, from, to, pair);
+    if (outcome != FOLIO_STATE_READY)
+    {
+        return outcome;
+    }
+    enum persistence_outcome moved = state->port.move_note(
+        state->port.adapter, category_ledger_name(state->categories, from.category),
+        note_ledger_name(state->notes[from.category], from.note),
+        category_ledger_name(state->categories, to.category));
+    if (moved != PERSISTENCE_STORED)
+    {
+        note_ledger_destroy(pair[1]);
+        note_ledger_destroy(pair[0]);
+        return from_store(moved);
+    }
+    note_ledger_destroy(state->notes[from.category]);
+    state->notes[from.category] = pair[0];
+    note_ledger_destroy(state->notes[to.category]);
+    state->notes[to.category] = pair[1];
+    renumber_selection(state, from, to);
+    return store_both(state, to.category, from.category);
+}
+
+enum folio_state_outcome folio_state_move_note(struct folio_state *_Nonnull state,
+                                               struct note_ref from, struct note_ref to)
+{
+    size_t count = category_ledger_count(state->categories);
+    if (from.category >= count || to.category >= count)
+    {
+        return FOLIO_STATE_NO_SUCH_CATEGORY;
+    }
+    if (from.category == to.category)
+    {
+        return reorder_note(state, from.category, from.note, to.note);
+    }
+    return transfer_note(state, from, to);
 }
 
 /* 本文を読んで RTF にする。読めない理由は 1 つに畳む（無い・読めない・UTF-8 でない）。 */
@@ -592,6 +728,11 @@ const char *_Nonnull folio_state_failure_line(enum folio_state_outcome outcome)
         return "編集中の本文に壊れた文字があります。保存していません。";
     case FOLIO_STATE_NOTE_STORE_FAILED:
         return "ノートを書き戻せませんでした。編集中の本文はそのままです。";
+    case FOLIO_STATE_NAME_TAKEN:
+        return "移動先に同じ名前のノートがあります。移していません。";
+    case FOLIO_STATE_LEDGER_STALE:
+        return "ノートは移しましたが、台帳（index.json）を書き戻せませんでした。次回の起動で揃い"
+               "ます。";
     case FOLIO_STATE_OUT_OF_MEMORY:
         return "記憶域が足りません。";
     }

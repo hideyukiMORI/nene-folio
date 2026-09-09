@@ -7,6 +7,7 @@
 #include "drawer_metrics.h"
 #include "folio_state_outcome.h"
 #include "folio_theme.h"
+#include "note_ref.h"
 #include "pane_mode.h"
 #include "pane_title_view.h"
 
@@ -39,10 +40,12 @@ folio_state_toggle_category(struct folio_state *_Nonnull state, size_t index);
  * 書き戻せなければ状態は変えない。選択中のノートは移動後も同じノートを指す。 */
 [[nodiscard]] enum folio_state_outcome folio_state_move_category(struct folio_state *_Nonnull state,
                                                                  size_t from, size_t to);
-/* 同じカテゴリ内でノートの表示順を変え、index.json を書き戻す（FR-008 / FR-009）。
- * from == to は書かずに READY。書き戻せなければ状態は変えない。 */
+/* ノートを from から to へ動かす（FR-008 / FR-009）。同じカテゴリなら表示順を変えて index.json を
+ * 書き戻し（from == to は書かずに READY・書き戻せなければ状態は変えない）、別のカテゴリなら md を
+ * 移してから移動先・移動元の index.json を書き戻す（ADR 0008 の決定 3）。to.note は移動先の
+ * ノート数と等しければ末尾。移動先に同じ名前があれば NAME_TAKEN で何もしない。 */
 [[nodiscard]] enum folio_state_outcome
-folio_state_move_note(struct folio_state *_Nonnull state, size_t category, size_t from, size_t to);
+folio_state_move_note(struct folio_state *_Nonnull state, struct note_ref from, struct note_ref to);
 /* ノートを選び、本文を読んで右ペインの表示値を作る（FR-005）。読めなければ表示は変えない。 */
 [[nodiscard]] enum folio_state_outcome folio_state_select_note(struct folio_state *_Nonnull state,
                                                                size_t category, size_t note);

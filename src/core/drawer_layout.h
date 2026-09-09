@@ -29,9 +29,10 @@ void drawer_layout_select(struct drawer_layout *_Nonnull layout, size_t category
 /* y 座標にある行の番号。行の外なら false で index は触らない（FR-004 のヒットテスト）。 */
 [[nodiscard]] bool drawer_layout_hit(const struct drawer_layout *_Nonnull layout, int y,
                                      size_t *_Nonnull index);
-/* source_row を掴んで y まで運んだときの落とし先（FR-009 / ADR 0007 の決定 1）。
- * カテゴリ行なら候補はカテゴリの塊（カテゴリ行と展開中のノート行）の境界、ノート行なら
- * 同じカテゴリのノート行の境界で、どちらも中点で数え、範囲の外は端に寄せる。
+/* source_row を掴んで y まで運んだときの落とし先（FR-009 / ADR 0007 の決定 1・ADR 0008 の決定 1）。
+ * カテゴリ行なら候補はカテゴリの塊（カテゴリ行と展開中のノート行）の境界で、塊の中点で数える。
+ * ノート行なら y のある塊（境界は隣り合う塊の間の中ほど）のカテゴリが移動先で、その塊が展開中なら
+ * ノート行の中点で数え、折り畳んでいれば台帳のノート数（末尾）になる。
  * source_row は row_count 未満であること。 */
 [[nodiscard]] struct drop_target drawer_layout_drop(const struct drawer_layout *_Nonnull layout,
                                                     size_t source_row, int y);

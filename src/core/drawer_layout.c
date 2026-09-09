@@ -11,6 +11,7 @@ struct drawer_layout
     struct drawer_row *_Nullable rows;
     size_t count;
     char *_Nullable texts;         /* 全行の名前を終端付きで並べた所有領域 */
+    size_t *_Nullable notes;       /* カテゴリごとの台帳のノート数（折り畳んでいても持つ） */
     int bottom;                    /* 最後に置いた行の下端 */
     struct drawer_metrics metrics; /* 挿入線の位置に要る（drawer_layout_drop） */
 };
@@ -98,6 +99,7 @@ static void fill(struct drawer_layout *_Nonnull layout,
     for (size_t category = 0; category < categories_count; ++category)
     {
         struct drawer_row row = category_row(layout, metrics, categories, category);
+        layout->notes[category] = note_ledger_count(notes[category]);
         offset = place(layout, offset, row);
         if (!row.expanded)
         {
@@ -129,7 +131,8 @@ drawer_layout_create(const struct category_ledger *_Nonnull categories,
     /* 行が 0 でも 1 要素ぶん確保し、確保の失敗と空の区別を残す。 */
     layout->rows = malloc((rows + 1) * sizeof *layout->rows);
     layout->texts = malloc(bytes + 1);
-    if (layout->rows == nullptr || layout->texts == nullptr)
+    layout->notes = malloc((category_ledger_count(categories) + 1) * sizeof *layout->notes);
+    if (layout->rows == nullptr || layout->texts == nullptr || layout->notes == nullptr)
     {
         drawer_layout_destroy(layout);
         return DRAWER_LAYOUT_OUT_OF_MEMORY;
@@ -225,23 +228,43 @@ static struct drop_target category_drop(const struct drawer_layout *_Nonnull lay
     return target;
 }
 
-/* 同じカテゴリのノート行の中点だけで数える。別カテゴリの上で離しても端に寄る（ADR 0007）。 */
+/* y のある塊の先頭の行番号。境界は隣り合う塊の間の中ほどで、上端より上は最初の塊、
+ * 下端より下は最後の塊になる（ADR 0008 の決定 1）。 */
+static size_t chunk_at(const struct drawer_layout *_Nonnull layout, int y)
+{
+    size_t found = 0;
+    size_t start = 0;
+    while (start < layout->count)
+    {
+        if (layout->rows[start].top - layout->metrics.category_gap / 2 <= y)
+        {
+            found = start;
+        }
+        start = chunk_end(layout, start);
+    }
+    return found;
+}
+
+/* 移動先の塊のノート行の中点で数える。自分のカテゴリなら掴んだ行のぶんだけ詰まる（ADR 0007）。 */
 static struct drop_target note_drop(const struct drawer_layout *_Nonnull layout,
                                     struct drawer_row source, int y)
 {
+    size_t start = chunk_at(layout, y);
+    size_t end = chunk_end(layout, start);
+    struct drawer_row head = layout->rows[start];
     struct drop_target target = {
-        .kind = DROP_NOTE, .category = source.category, .index = 0, .line_y = 0};
+        .kind = DROP_NOTE, .category = head.category, .index = 0, .line_y = head.top + head.height};
+    if (end == start + 1)
+    {
+        /* 折り畳んだカテゴリは台帳のノート数（末尾）。展開していてノートが無ければ同じ値の 0。 */
+        target.index = layout->notes[head.category];
+        return target;
+    }
     size_t position = 0;
     bool settled = false;
-    int bottom = 0;
-    for (size_t index = 0; index < layout->count; ++index)
+    for (size_t index = start + 1; index < end; ++index)
     {
         const struct drawer_row *_Nonnull row = &layout->rows[index];
-        if (row->kind != DRAWER_ROW_NOTE || row->category != source.category)
-        {
-            continue;
-        }
-        bottom = row->top + row->height;
         if (row->top + row->height / 2 < y)
         {
             position += 1;
@@ -254,9 +277,9 @@ static struct drop_target note_drop(const struct drawer_layout *_Nonnull layout,
     }
     if (!settled)
     {
-        target.line_y = bottom;
+        target.line_y = layout->rows[end - 1].top + layout->rows[end - 1].height;
     }
-    target.index = moved_to(position, source.note);
+    target.index = head.category == source.category ? moved_to(position, source.note) : position;
     return target;
 }
 
@@ -282,5 +305,6 @@ void drawer_layout_destroy(struct drawer_layout *_Nullable layout)
     }
     free(layout->rows);
     free(layout->texts);
+    free(layout->notes);
     free(layout);
 }

@@ -260,10 +260,17 @@ static bool layout_scenario(void)
     return completed;
 }
 
+/* ノートの居場所を 1 つ作る。 */
+static struct note_ref at(size_t category, size_t note)
+{
+    struct note_ref ref = {.category = category, .note = note};
+    return ref;
+}
+
 /* 並び替えが作り直す台帳の確保を通す（FR-009）。書き戻しの経路は偽物なので確保しない。 */
 static bool reorder_under_probe(struct folio_state *_Nonnull state)
 {
-    enum folio_state_outcome ordered = folio_state_move_note(state, 0, 0, 2);
+    enum folio_state_outcome ordered = folio_state_move_note(state, at(0, 0), at(0, 2));
     require(ordered == FOLIO_STATE_READY || ordered == FOLIO_STATE_OUT_OF_MEMORY,
             "move note under probe");
     if (ordered != FOLIO_STATE_READY)
@@ -274,6 +281,15 @@ static bool reorder_under_probe(struct folio_state *_Nonnull state)
     require(ordered == FOLIO_STATE_READY || ordered == FOLIO_STATE_OUT_OF_MEMORY,
             "move category under probe");
     return ordered == FOLIO_STATE_READY;
+}
+
+/* 別カテゴリへの移動が作り直す 2 つの台帳（removed / inserted）の確保を通す（ADR 0008）。 */
+static bool transfer_under_probe(struct folio_state *_Nonnull state)
+{
+    enum folio_state_outcome moved = folio_state_move_note(state, at(1, 0), at(0, 1));
+    require(moved == FOLIO_STATE_READY || moved == FOLIO_STATE_OUT_OF_MEMORY,
+            "transfer note under probe");
+    return moved == FOLIO_STATE_READY;
 }
 
 /* 変換・畳み込み・書き戻し・表示値の作り直しの確保をすべて通す（FR-006）。 */
@@ -319,14 +335,20 @@ static bool state_scenario_with(struct persistence_adapter *_Nonnull adapter)
         completed = selected == FOLIO_STATE_READY;
         require(completed || selected == FOLIO_STATE_OUT_OF_MEMORY, "select under probe");
     }
-    completed = completed && reorder_under_probe(state) && edit_under_probe(state);
+    completed = completed && reorder_under_probe(state) && edit_under_probe(state) &&
+                transfer_under_probe(state);
     folio_state_destroy(state);
     return completed;
 }
 
+static const char *const second_notes[] = {"four", nullptr};
+
 static bool state_scenario(void)
 {
     struct persistence_adapter *adapter = test_adapter_create(categories_text, notes_text);
+    /* カテゴリは走査結果（A / B / C）に照合されるので、B だけ別の索引にする。 */
+    test_adapter_second_notes(adapter, "B", "{\"version\": 1, \"notes\": [\"four\"]}",
+                              second_notes);
     bool completed = state_scenario_with(adapter);
     test_adapter_destroy(adapter);
     return completed;

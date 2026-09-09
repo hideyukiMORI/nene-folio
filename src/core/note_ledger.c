@@ -237,6 +237,63 @@ enum note_ledger_outcome note_ledger_moved(const struct note_ledger *_Nonnull le
     return NOTE_LEDGER_ACCEPTED;
 }
 
+/* index に name を挿した台帳の position 番目に来る名前。 */
+static const char *_Nonnull inserted_name(const struct note_ledger *_Nonnull ledger, size_t index,
+                                          const char *_Nonnull name, size_t position)
+{
+    if (position == index)
+    {
+        return name;
+    }
+    return name_list_at(ledger->names, position < index ? position : position - 1);
+}
+
+enum note_ledger_outcome note_ledger_inserted(const struct note_ledger *_Nonnull ledger,
+                                              size_t index, const char *_Nonnull name,
+                                              struct note_ledger *_Nullable *_Nonnull out)
+{
+    struct note_ledger *_Nullable target = nullptr;
+    enum note_ledger_outcome outcome = note_ledger_empty(&target);
+    size_t count = name_list_count(ledger->names) + 1;
+    for (size_t position = 0; outcome == NOTE_LEDGER_ACCEPTED && position < count; ++position)
+    {
+        const char *_Nonnull text = inserted_name(ledger, index, name, position);
+        outcome = translate(name_list_append(target->names, text, strlen(text)));
+    }
+    if (outcome != NOTE_LEDGER_ACCEPTED)
+    {
+        note_ledger_destroy(target);
+        return outcome;
+    }
+    *out = target;
+    return NOTE_LEDGER_ACCEPTED;
+}
+
+enum note_ledger_outcome note_ledger_removed(const struct note_ledger *_Nonnull ledger,
+                                             size_t index,
+                                             struct note_ledger *_Nullable *_Nonnull out)
+{
+    struct note_ledger *_Nullable target = nullptr;
+    enum note_ledger_outcome outcome = note_ledger_empty(&target);
+    size_t count = name_list_count(ledger->names);
+    for (size_t position = 0; outcome == NOTE_LEDGER_ACCEPTED && position < count; ++position)
+    {
+        if (position == index)
+        {
+            continue;
+        }
+        const char *_Nonnull name = name_list_at(ledger->names, position);
+        outcome = translate(name_list_append(target->names, name, strlen(name)));
+    }
+    if (outcome != NOTE_LEDGER_ACCEPTED)
+    {
+        note_ledger_destroy(target);
+        return outcome;
+    }
+    *out = target;
+    return NOTE_LEDGER_ACCEPTED;
+}
+
 size_t note_ledger_count(const struct note_ledger *_Nonnull ledger)
 {
     return name_list_count(ledger->names);
