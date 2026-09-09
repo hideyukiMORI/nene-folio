@@ -22,3 +22,4 @@ ADR は「なぜそう決めたか」「何を却下したか」を書く。
 | [0004](0004-first-drawer-slice.md) | 最初の縦切りで中核を生み、リンカ段と分岐の検査を結線する | 受理 |
 | [0005](0005-rigid-design-and-os-theme.md) | 画面の見た目は「案2 堅」を採り、テーマは OS のアプリのモードに従う | 受理 |
 | [0006](0006-edit-mode-and-save-path.md) | 編集中の本文は RichEdit だけが持ち、編集モードを抜けるときと Ctrl+S で元の形に揃えて書き戻す | 受理 |
+| [0007](0007-drag-reorder-and-index-write-back.md) | ドロップ先は core が決め、並び替えの意図で台帳を作り直して categories.json / index.json を書き戻す | 受理 |
