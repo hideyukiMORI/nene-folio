@@ -203,6 +203,40 @@ enum note_ledger_outcome note_ledger_reconcile(const struct note_ledger *_Nonnul
     return NOTE_LEDGER_ACCEPTED;
 }
 
+/* from を to へ移したあと、index 番目に来るのは元の何番目か。 */
+static size_t source_index(size_t from, size_t to, size_t index)
+{
+    if (index == to)
+    {
+        return from;
+    }
+    if (from < to)
+    {
+        return index >= from && index < to ? index + 1 : index;
+    }
+    return index > to && index <= from ? index - 1 : index;
+}
+
+enum note_ledger_outcome note_ledger_moved(const struct note_ledger *_Nonnull ledger, size_t from,
+                                           size_t to, struct note_ledger *_Nullable *_Nonnull out)
+{
+    struct note_ledger *_Nullable target = nullptr;
+    enum note_ledger_outcome outcome = note_ledger_empty(&target);
+    size_t count = name_list_count(ledger->names);
+    for (size_t index = 0; outcome == NOTE_LEDGER_ACCEPTED && index < count; ++index)
+    {
+        const char *_Nonnull name = name_list_at(ledger->names, source_index(from, to, index));
+        outcome = translate(name_list_append(target->names, name, strlen(name)));
+    }
+    if (outcome != NOTE_LEDGER_ACCEPTED)
+    {
+        note_ledger_destroy(target);
+        return outcome;
+    }
+    *out = target;
+    return NOTE_LEDGER_ACCEPTED;
+}
+
 size_t note_ledger_count(const struct note_ledger *_Nonnull ledger)
 {
     return name_list_count(ledger->names);

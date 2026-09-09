@@ -343,6 +343,40 @@ category_ledger_toggled(const struct category_ledger *_Nonnull ledger, size_t in
     return CATEGORY_LEDGER_ACCEPTED;
 }
 
+/* from を to へ移したあと、index 番目に来るのは元の何番目か。 */
+static size_t source_index(size_t from, size_t to, size_t index)
+{
+    if (index == to)
+    {
+        return from;
+    }
+    if (from < to)
+    {
+        return index >= from && index < to ? index + 1 : index;
+    }
+    return index > to && index <= from ? index - 1 : index;
+}
+
+enum category_ledger_outcome category_ledger_moved(const struct category_ledger *_Nonnull ledger,
+                                                   size_t from, size_t to,
+                                                   struct category_ledger *_Nullable *_Nonnull out)
+{
+    struct category_ledger *_Nullable target = nullptr;
+    enum category_ledger_outcome outcome = category_ledger_empty(&target);
+    size_t count = name_list_count(ledger->names);
+    for (size_t index = 0; outcome == CATEGORY_LEDGER_ACCEPTED && index < count; ++index)
+    {
+        outcome = copy_entry(target, ledger, source_index(from, to, index));
+    }
+    if (outcome != CATEGORY_LEDGER_ACCEPTED)
+    {
+        category_ledger_destroy(target);
+        return outcome;
+    }
+    *out = target;
+    return CATEGORY_LEDGER_ACCEPTED;
+}
+
 size_t category_ledger_count(const struct category_ledger *_Nonnull ledger)
 {
     return name_list_count(ledger->names);

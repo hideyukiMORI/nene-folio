@@ -27,6 +27,11 @@ void note_ledger_write(const struct note_ledger *_Nonnull ledger,
 note_ledger_reconcile(const struct note_ledger *_Nonnull ledger,
                       const struct name_list *_Nonnull scanned,
                       struct note_ledger *_Nullable *_Nonnull out);
+/* from 番目を to 番目へ移した、順序だけが違う新しい台帳を作る（FR-009）。
+ * from と to は count 未満であること。from == to でも複製を返す。 */
+[[nodiscard]] enum note_ledger_outcome
+note_ledger_moved(const struct note_ledger *_Nonnull ledger, size_t from, size_t to,
+                  struct note_ledger *_Nullable *_Nonnull out);
 [[nodiscard]] size_t note_ledger_count(const struct note_ledger *_Nonnull ledger);
 /* 終端付き。ledger が生きている間だけ有効。index は count 未満であること。 */
 [[nodiscard]] const char *_Nonnull note_ledger_name(const struct note_ledger *_Nonnull ledger,

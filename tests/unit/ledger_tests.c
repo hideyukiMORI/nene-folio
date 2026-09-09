@@ -179,6 +179,46 @@ static void verify_category_toggle(void)
     category_ledger_destroy(ledger);
 }
 
+/* 3 つのカテゴリを from から to へ動かし、名前を並べた 3 文字を返す。 */
+static void moved_categories(size_t from, size_t to, char *_Nonnull out)
+{
+    struct category_ledger *ledger =
+        parse_categories("{\"version\": 1, \"categories\": ["
+                         "{\"name\": \"a\", \"color\": \"#010101\", \"expanded\": true},"
+                         "{\"name\": \"b\", \"color\": \"#020202\", \"expanded\": false},"
+                         "{\"name\": \"c\", \"color\": \"#030303\", \"expanded\": true}]}");
+    struct category_ledger *moved = nullptr;
+    require(category_ledger_moved(ledger, from, to, &moved) == CATEGORY_LEDGER_ACCEPTED, "moved");
+    require(category_ledger_count(moved) == 3, "moved keeps the count");
+    for (size_t index = 0; index < 3; ++index)
+    {
+        out[index] = category_ledger_name(moved, index)[0];
+        /* 色と展開は名前と一緒に移る。 */
+        require(category_ledger_color(moved, index).red == (unsigned char)(out[index] - 'a' + 1) &&
+                    category_ledger_expanded(moved, index) == (out[index] != 'b'),
+                "colors and expansion travel with the name");
+    }
+    out[3] = '\0';
+    require(same_text(category_ledger_name(ledger, 0), "a"), "the source ledger is untouched");
+    category_ledger_destroy(moved);
+    category_ledger_destroy(ledger);
+}
+
+static void verify_category_moved(void)
+{
+    char order[4] = {0};
+    moved_categories(0, 2, order);
+    require(same_text(order, "bca"), "the first entry moves to the end");
+    moved_categories(2, 0, order);
+    require(same_text(order, "cab"), "the last entry moves to the front");
+    moved_categories(0, 1, order);
+    require(same_text(order, "bac"), "one step down");
+    moved_categories(2, 1, order);
+    require(same_text(order, "acb"), "one step up");
+    moved_categories(1, 1, order);
+    require(same_text(order, "abc"), "the same position is a copy");
+}
+
 static struct note_ledger *_Nonnull parse_notes(const char *_Nonnull text)
 {
     struct note_ledger *ledger = nullptr;
@@ -250,6 +290,67 @@ static void verify_note_reconcile(void)
     note_ledger_destroy(ledger);
 }
 
+/* 3 つのノートを from から to へ動かし、名前を並べた 3 文字を返す。 */
+static void moved_notes(size_t from, size_t to, char *_Nonnull out)
+{
+    struct note_ledger *ledger = parse_notes("{\"version\": 1, \"notes\": [\"a\", \"b\", \"c\"]}");
+    struct note_ledger *moved = nullptr;
+    require(note_ledger_moved(ledger, from, to, &moved) == NOTE_LEDGER_ACCEPTED, "note moved");
+    require(note_ledger_count(moved) == 3, "note moved keeps the count");
+    for (size_t index = 0; index < 3; ++index)
+    {
+        out[index] = note_ledger_name(moved, index)[0];
+    }
+    out[3] = '\0';
+    require(same_text(note_ledger_name(ledger, 0), "a"), "the source note ledger is untouched");
+    note_ledger_destroy(moved);
+    note_ledger_destroy(ledger);
+}
+
+/* 並び替えた台帳を書いて読み直すと、同じ順序に戻る（FR-008 の往復）。 */
+static void verify_note_round_trip(void)
+{
+    struct note_ledger *ledger = parse_notes("{\"version\": 1, \"notes\": [\"a\", \"b\", \"c\"]}");
+    struct note_ledger *moved = nullptr;
+    require(note_ledger_moved(ledger, 2, 0, &moved) == NOTE_LEDGER_ACCEPTED, "round trip moved");
+    struct json_writer *writer = nullptr;
+    require(json_writer_create(&writer) == JSON_WRITER_ACCEPTED, "round trip writer");
+    note_ledger_write(moved, writer);
+    require(json_writer_finish(writer) == JSON_WRITER_ACCEPTED, "round trip finish");
+    require(same_text(json_writer_text(writer),
+                      "{\n  \"version\": 1,\n  \"notes\": [\n    \"c\",\n    \"a\",\n    \"b\"\n  "
+                      "]\n}"),
+            "the written document holds the new order");
+    struct note_ledger *again = nullptr;
+    require(note_ledger_parse(json_writer_text(writer), json_writer_length(writer), &again) ==
+                NOTE_LEDGER_ACCEPTED,
+            "round trip parse");
+    require(same_text(note_ledger_name(again, 0), "c") &&
+                same_text(note_ledger_name(again, 1), "a") &&
+                same_text(note_ledger_name(again, 2), "b"),
+            "parsing the written document gives the same order");
+    note_ledger_destroy(again);
+    json_writer_destroy(writer);
+    note_ledger_destroy(moved);
+    note_ledger_destroy(ledger);
+}
+
+static void verify_note_moved(void)
+{
+    char order[4] = {0};
+    moved_notes(0, 2, order);
+    require(same_text(order, "bca"), "the first note moves to the end");
+    moved_notes(2, 0, order);
+    require(same_text(order, "cab"), "the last note moves to the front");
+    moved_notes(1, 0, order);
+    require(same_text(order, "bac"), "one step up");
+    moved_notes(1, 2, order);
+    require(same_text(order, "acb"), "one step down");
+    moved_notes(0, 0, order);
+    require(same_text(order, "abc"), "the same position is a copy");
+    verify_note_round_trip();
+}
+
 void run_ledger_tests(void)
 {
     verify_category_parse();
@@ -257,6 +358,8 @@ void run_ledger_tests(void)
     verify_category_write();
     verify_category_reconcile();
     verify_category_toggle();
+    verify_category_moved();
     verify_note_parse();
     verify_note_reconcile();
+    verify_note_moved();
 }
