@@ -183,3 +183,37 @@ QLT-004: C:\Users\info\WORKS\NeNeFolio\out\proofs\build-jc2zb9_f\tests\build\too
 
 補足: 2 本目の縦切りの測定ビルド（ASan 付き）が、テスト補助関数がローカルのアダプタを指すポートを state に写していた寿命の誤り（stack-buffer-underflow）を捕まえた。
 正典ビルドの CTest では到達しない経路（確保失敗の注入下でだけ走るトグル）だったので、測定ビルドにも ASan を付けた判断（ADR 0004）が効いた。
+
+### 5-e. 編集モードと md の保存（Issue #11・2026-09-10）
+
+環境: Windows 11 Pro 10.0.26200・`build/NeNeFolio.exe`（Debug 構成＝ASan / UBSan / nullability 付き）・
+**主モニタ 150%（DPI 144）ではなく DPI 120 の側**で測った。窓は `SetWindowPos` で主モニタの (200, 120) へ寄せ、
+`GetDpiForWindow` = **120**（client 1200×800）で座標を計算した。
+🔴 補助スクリプトを DPI 非対応のまま走らせると `GetWindowRect` が 960×640 を返し、`PrintWindow` が窓の左上だけを写して
+**右端の札が写真から消える**。撮影する側も Per-Monitor v2 にする（今回 1 度これで誤診した）。
+
+手順（`FindWindowExW` で子を取り、`SendMessageW` / `PostMessageW` で操作。失敗の窓が出る操作だけ `PostMessageW`）:
+
+1. `data/仕事/打ち合わせ.md` を **CRLF**（232 バイト・CR 15 / LF 15）に、`data/個人/買い物.md` を **LF** のままにする
+2. ノート行をクリック → 右端の「編集」の札をクリック → `RICHEDIT50W` の `GWL_STYLE` から `ES_READONLY` を読む
+3. `EM_SETSEL` で末尾へ移り、`WM_KEYDOWN`(VK_RETURN) → `WM_CHAR`(0x0D) と `WM_CHAR` で `ABC ` と U+65E5 U+672C U+8A9E を打つ
+4. `WM_CHAR` の **0x13**（Ctrl+S の制御文字）を送り、md のバイト列を読む
+5. 「閲覧」の札をクリックして写す
+6. md に読み取り専用属性を付けて 3〜4 を繰り返し、`FindWindowW("#32770", "NeNe Folio")` を探す。属性は戻す
+7. 編集中に別カテゴリのノート行をクリックする／編集中に `WM_CLOSE` を送る
+8. `AppsUseLightTheme` を 1 にして 2 を繰り返し、**値を 0 に戻す**
+
+結果:
+
+- 「編集」の札で `ES_READONLY` が落ち、RichEdit に **md の原文**が平文（Yu Gothic UI 11pt・`editor_text`）で出た（[edit-mode.png](edit-mode.png)）。札は有効な側だけ面塗り
+- Ctrl+S で md が **247 バイト・CR 16 / LF 16・孤立した LF は 0・先頭 3 バイトは `23 20 E6`（BOM 無し）**。
+  末尾は `0A 0D 0A 41 42 43 20 E6 97 A5 E6 9C AC E8 AA 9E` = 改行 + `ABC 日本語`。**CRLF のファイルは CRLF のまま**
+- LF の `買い物.md` に同じ操作をすると **CR 0 / LF 4**。RichEdit から出てくるのは常に CRLF だが、core が元の形へ畳んでいる
+- Ctrl+S のあとも `ES_READONLY` は落ちたまま（編集モードのまま）。「閲覧」の札で読み取り専用に戻り、RTF で描き直された（[edit-saved.png](edit-saved.png)）
+- 読み取り専用の md では「ノートを書き戻せませんでした。編集中の本文はそのままです。」の窓が出て、ファイルは 247 バイトのまま、
+  RichEdit の本文（打った `XYZ`）も残った。その状態で「閲覧」の札を押しても同じ窓が出て**閲覧へ戻らない**（FR-015 / ADR 0006 の決定 6）
+- 編集中に別ノートを選ぶと、先に保存されてから選択が切り替わった。編集中の `WM_CLOSE` も保存してから終了し、**終了コード 0**。`data/` に `.tmp` は残らない
+- ライトでも札は同じ配置で、有効な側が #E9EBEF の面（[edit-mode-light.png](edit-mode-light.png)）。撮影後に `AppsUseLightTheme` は 0 へ戻した
+- 見ていないもの: **IME（かな漢字変換の未確定文字列と Ctrl+S の競合）は無人では測れない。施主の実機確認事項**。
+  ほかに 32767 文字を超える md での入力（`EM_EXLIMITTEXT` は流し込みで縮まないことだけ確かめた: 作成直後 32767 → 2147483647 のまま）、
+  外部で書き換えられた md の上書き（仕様の非要件）、キャレット位置の往復での保存

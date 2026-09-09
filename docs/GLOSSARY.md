@@ -22,6 +22,8 @@
 | 台帳（ledger） | 順序と色を永続化する json。`data/categories.json` と `data/<カテゴリ>/index.json` | adapters/win32 が読み書き・core が解釈 |
 | ドロワー（drawer） | 左のペイン。検索窓と索引。自前描画・スクロールバー無し | `src/ui/win32` |
 | ビュー（view）／編集（edit） | 右のペインの 2 つのモード。閉じた enum | `enum pane_mode`（application） |
+| 札（chip） | 右ペインの頭の右端に並ぶ「閲覧」「編集」の切替。有効な側だけ面を塗る | `folio_window` の `chip_rect`・`chip_*` の色（`folio_palette`） |
+| 改行の形（line ending） | 本文の改行が LF か CRLF か。読んだ本文の最初の改行で決まり、書き戻すときに揃える | `enum line_ending`（core） |
 | 意図（intent） | UI が発行する操作。クリック・ドラッグ・ホイール・入力 | application の reducer 関数 `folio_state_*`（`folio_state_toggle_category` 等）。種類が増えたら `enum folio_intent` に束ねる |
 | 表示値（view model） | application が作り UI が写す値 | `struct *_view`（application）・`struct drawer_row`（core） |
 | 測定ビルド（measurement build） | 同じ中核ソースと単体テストを計装コンパイルして分岐を測る検証専用のビルド。第 2 の製品実装ではない | `eng/coverage.py` → `out/coverage/` |
