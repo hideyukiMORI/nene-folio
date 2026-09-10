@@ -238,6 +238,13 @@ static bool markdown_scenario(void)
     return true;
 }
 
+static const struct drawer_metrics probe_metrics = {.top_padding = 1,
+                                                    .row_height = 2,
+                                                    .category_height = 3,
+                                                    .category_gap = 1,
+                                                    .category_indent = 3,
+                                                    .note_indent = 4};
+
 static bool layout_scenario(void)
 {
     struct category_ledger *categories = nullptr;
@@ -249,14 +256,8 @@ static bool layout_scenario(void)
     if (completed)
     {
         const struct note_ledger *const per_category[] = {notes, notes};
-        struct drawer_metrics metrics = {.top_padding = 1,
-                                         .row_height = 2,
-                                         .category_height = 3,
-                                         .category_gap = 1,
-                                         .category_indent = 3,
-                                         .note_indent = 4};
         struct drawer_layout *layout = nullptr;
-        completed = drawer_layout_create(categories, per_category, metrics, &layout) ==
+        completed = drawer_layout_create(categories, per_category, probe_metrics, &layout) ==
                     DRAWER_LAYOUT_CREATED;
         drawer_layout_destroy(layout);
     }
@@ -307,7 +308,63 @@ static bool edit_under_probe(struct folio_state *_Nonnull state)
     return saved == FOLIO_STATE_READY;
 }
 
-/* state を作り、配置とトグルを 1 回ずつ通す。adapter は state より長く生きる。 */
+/* 配置とスクロールの意図が作る配置の確保を通す（ADR 0009 の決定 3）。 */
+static bool layout_intent_under_probe(struct folio_state *_Nonnull state)
+{
+    struct drawer_layout *layout = nullptr;
+    bool completed = folio_state_drawer_layout(state, probe_metrics, &layout) == FOLIO_STATE_READY;
+    drawer_layout_destroy(layout);
+    if (!completed)
+    {
+        return false;
+    }
+    enum folio_state_outcome scrolled = folio_state_scroll_drawer(state, probe_metrics, 5);
+    require(scrolled == FOLIO_STATE_READY || scrolled == FOLIO_STATE_OUT_OF_MEMORY,
+            "scroll under probe");
+    return scrolled == FOLIO_STATE_READY;
+}
+
+/* トグルと色の変更が複製する台帳の確保を通す（FR-004 / ADR 0010 の決定 1）。 */
+static bool ledger_under_probe(struct folio_state *_Nonnull state)
+{
+    enum folio_state_outcome toggled = folio_state_toggle_category(state, 0);
+    require(toggled == FOLIO_STATE_READY || toggled == FOLIO_STATE_OUT_OF_MEMORY,
+            "toggle under probe");
+    if (toggled != FOLIO_STATE_READY)
+    {
+        return false;
+    }
+    struct rgb_color chosen = {.red = 0x10, .green = 0x20, .blue = 0x30};
+    enum folio_state_outcome recolored = folio_state_recolor_category(state, 0, chosen);
+    require(recolored == FOLIO_STATE_READY || recolored == FOLIO_STATE_OUT_OF_MEMORY,
+            "recolor under probe");
+    return recolored == FOLIO_STATE_READY;
+}
+
+/* 選択・歩み・見える位置へ寄せるの確保を通す（FR-005 / FR-018・ADR 0013 の決定 5 / 6）。 */
+static bool selection_under_probe(struct folio_state *_Nonnull state)
+{
+    enum folio_state_outcome selected = folio_state_select_note(state, 0, 0);
+    require(selected == FOLIO_STATE_READY || selected == FOLIO_STATE_OUT_OF_MEMORY,
+            "select under probe");
+    if (selected != FOLIO_STATE_READY)
+    {
+        return false;
+    }
+    enum folio_state_outcome stepped = folio_state_select_adjacent(state, FOLIO_STEP_LAST);
+    require(stepped == FOLIO_STATE_READY || stepped == FOLIO_STATE_OUT_OF_MEMORY,
+            "step under probe");
+    if (stepped != FOLIO_STATE_READY)
+    {
+        return false;
+    }
+    enum folio_state_outcome revealed = folio_state_reveal_selection(state, probe_metrics);
+    require(revealed == FOLIO_STATE_READY || revealed == FOLIO_STATE_OUT_OF_MEMORY,
+            "reveal under probe");
+    return revealed == FOLIO_STATE_READY;
+}
+
+/* state を作り、意図を 1 回ずつ通す。adapter は state より長く生きる。 */
 static bool state_scenario_with(struct persistence_adapter *_Nonnull adapter)
 {
     struct persistence_port port = test_adapter_port(adapter);
@@ -319,44 +376,9 @@ static bool state_scenario_with(struct persistence_adapter *_Nonnull adapter)
         return false;
     }
     require(outcome == FOLIO_STATE_READY, "state under probe");
-    struct drawer_metrics metrics = {.top_padding = 1,
-                                     .row_height = 2,
-                                     .category_height = 3,
-                                     .category_gap = 1,
-                                     .category_indent = 3,
-                                     .note_indent = 4};
-    struct drawer_layout *layout = nullptr;
-    bool completed = folio_state_drawer_layout(state, metrics, &layout) == FOLIO_STATE_READY;
-    drawer_layout_destroy(layout);
-    if (completed)
-    {
-        /* スクロールの意図も配置を 1 つ作る（ADR 0009 の決定 3）。 */
-        enum folio_state_outcome scrolled = folio_state_scroll_drawer(state, metrics, 5);
-        completed = scrolled == FOLIO_STATE_READY;
-        require(completed || scrolled == FOLIO_STATE_OUT_OF_MEMORY, "scroll under probe");
-    }
-    if (completed)
-    {
-        enum folio_state_outcome toggled = folio_state_toggle_category(state, 0);
-        completed = toggled == FOLIO_STATE_READY;
-        require(completed || toggled == FOLIO_STATE_OUT_OF_MEMORY, "toggle under probe");
-    }
-    if (completed)
-    {
-        /* 色の変更も台帳を 1 つ複製する（ADR 0010 の決定 1）。 */
-        struct rgb_color chosen = {.red = 0x10, .green = 0x20, .blue = 0x30};
-        enum folio_state_outcome recolored = folio_state_recolor_category(state, 0, chosen);
-        completed = recolored == FOLIO_STATE_READY;
-        require(completed || recolored == FOLIO_STATE_OUT_OF_MEMORY, "recolor under probe");
-    }
-    if (completed)
-    {
-        enum folio_state_outcome selected = folio_state_select_note(state, 0, 0);
-        completed = selected == FOLIO_STATE_READY;
-        require(completed || selected == FOLIO_STATE_OUT_OF_MEMORY, "select under probe");
-    }
-    completed = completed && reorder_under_probe(state) && edit_under_probe(state) &&
-                transfer_under_probe(state);
+    bool completed = layout_intent_under_probe(state) && ledger_under_probe(state) &&
+                     selection_under_probe(state) && reorder_under_probe(state) &&
+                     edit_under_probe(state) && transfer_under_probe(state);
     folio_state_destroy(state);
     return completed;
 }

@@ -6,6 +6,7 @@
 
 #include "drawer_metrics.h"
 #include "folio_state_outcome.h"
+#include "folio_step.h"
 #include "folio_theme.h"
 #include "note_ref.h"
 #include "pane_mode.h"
@@ -41,10 +42,20 @@ folio_state_drawer_layout(const struct folio_state *_Nonnull state, struct drawe
                                                                  int delta);
 /* 索引にあるノートの総数。 */
 [[nodiscard]] size_t folio_state_note_count(const struct folio_state *_Nonnull state);
+/* ドロワーのスクロール量を、選択中のノートの行が見える位置に来る最小の量にする
+ * （FR-018 / ADR 0013 の決定 6）。何も選んでいなければ READY で何も変えない。
+ * 配置が作れなければ OUT_OF_MEMORY で状態は変えない。鍵で選択を動かしたときだけ使う。 */
+[[nodiscard]] enum folio_state_outcome
+folio_state_reveal_selection(struct folio_state *_Nonnull state, struct drawer_metrics metrics);
 /* カテゴリの展開状態を反転し、台帳を書き戻す（FR-004 / FR-007）。書き戻せなければ状態は変えない。
  */
 [[nodiscard]] enum folio_state_outcome
 folio_state_toggle_category(struct folio_state *_Nonnull state, size_t index);
+/* カテゴリの展開状態を expanded にする（FR-018 の h / l・ADR 0013 の決定 2）。
+ * index が範囲外なら NO_SUCH_CATEGORY。既にそうなら書かずに READY。
+ * 変わるときは folio_state_toggle_category と同じ経路で書き戻す。 */
+[[nodiscard]] enum folio_state_outcome
+folio_state_set_category_expanded(struct folio_state *_Nonnull state, size_t index, bool expanded);
 /* カテゴリの色を変え、categories.json を書き戻す（FR-010 / ADR 0010 の決定 2）。
  * index が範囲外なら NO_SUCH_CATEGORY。いまと同じ色なら書かずに READY。
  * 書き戻せなければ状態は変えない。選択・編集モード・スクロール量は触らない。 */
@@ -61,9 +72,20 @@ folio_state_recolor_category(struct folio_state *_Nonnull state, size_t index,
  * ノート数と等しければ末尾。移動先に同じ名前があれば NAME_TAKEN で何もしない。 */
 [[nodiscard]] enum folio_state_outcome
 folio_state_move_note(struct folio_state *_Nonnull state, struct note_ref from, struct note_ref to);
-/* ノートを選び、本文を読んで右ペインの表示値を作る（FR-005）。読めなければ表示は変えない。 */
+/* ノートを選び、本文を読んで右ペインの表示値を作る（FR-005）。読めなければ表示は変えない。
+ * 表示モードは変えない（ADR 0013 の決定 4）。 */
 [[nodiscard]] enum folio_state_outcome folio_state_select_note(struct folio_state *_Nonnull state,
                                                                size_t category, size_t note);
+/* 選択を歩みのぶんだけ動かす（FR-018 / ADR 0013 の決定 5）。
+ * 展開中のカテゴリのノートだけを台帳の順に辿り、折り畳んだカテゴリの中は飛ばす。
+ * 何も選んでいなければ NEXT / FIRST は最初の見えるノート、PREVIOUS / LAST は最後。
+ * 端では動かず READY。見えるノートが 1 つも無ければ NO_SUCH_NOTE。
+ * 動くときは folio_state_select_note と同じ読み込み経路で、表示モードは変わらない。 */
+[[nodiscard]] enum folio_state_outcome
+folio_state_select_adjacent(struct folio_state *_Nonnull state, enum folio_step step);
+/* 選択中のノートの居場所。何も選んでいなければ false で out は触らない。 */
+[[nodiscard]] bool folio_state_selection(const struct folio_state *_Nonnull state,
+                                         struct note_ref *_Nonnull out);
 /* 編集モードへ入る（FR-006）。ノートを選んでいなければ NOTHING_SELECTED。 */
 [[nodiscard]] enum folio_state_outcome folio_state_begin_edit(struct folio_state *_Nonnull state);
 /* 編集中の本文（UTF-16 の単位列）を保存し、編集モードのまま残る（Ctrl+S）。
@@ -71,7 +93,9 @@ folio_state_move_note(struct folio_state *_Nonnull state, struct note_ref from, 
 [[nodiscard]] enum folio_state_outcome folio_state_store_note(struct folio_state *_Nonnull state,
                                                               const char16_t *_Nonnull units,
                                                               size_t count);
-/* 編集中の本文を保存して閲覧へ戻る。保存できなければ編集モードのまま。 */
+/* 編集中の本文を保存して閲覧へ戻る。保存できなければ編集モードのまま。
+ * 使うのは「閲覧」の札と窓を閉じる操作だけ。
+ * ノートの切り替えではモードを保つ（ADR 0013 の決定 4）。 */
 [[nodiscard]] enum folio_state_outcome folio_state_end_edit(struct folio_state *_Nonnull state,
                                                             const char16_t *_Nonnull units,
                                                             size_t count);
