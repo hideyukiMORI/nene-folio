@@ -572,22 +572,29 @@ static void apply_dpi(struct folio_window *_Nonnull self, LPARAM lparam)
                  SWP_NOZORDER | SWP_NOACTIVATE);
 }
 
-/* 枠なし窓の client は窓の矩形そのもの（ADR 0011 の決定 1）。窓の構造体を要らないので、
- * GWLP_USERDATA を結ぶ前（WM_NCCREATE の直後）に届く最初の計算にも自分で答える。 */
-static LRESULT calculate_client(HWND window, WPARAM wparam, LPARAM lparam)
+/* 最大化中の窓の矩形は枠ぶん画面より大きいので、client をモニタの作業領域に収める。 */
+static void fit_work_area(HWND window, RECT *_Nonnull client)
 {
-    if (!wparam)
-    {
-        return DefWindowProcW(window, WM_NCCALCSIZE, wparam, lparam);
-    }
     MONITORINFO monitor = {.cbSize = sizeof monitor};
     if (IsZoomed(window) &&
         GetMonitorInfoW(MonitorFromWindow(window, MONITOR_DEFAULTTONEAREST), &monitor))
     {
-        /* 最大化中の窓の矩形は枠ぶん画面より大きいので、client を作業領域に収める。 */
-        NCCALCSIZE_PARAMS *_Nonnull calculation = (NCCALCSIZE_PARAMS *)lparam;
-        calculation->rgrc[0] = monitor.rcWork;
+        *client = monitor.rcWork;
     }
+}
+
+/* 枠なし窓の client は窓の矩形そのもの（ADR 0011 の決定 1）。TRUE でも FALSE でも 0 を返し、
+ * 既定処理には一度も渡さない（FALSE の lParam は RECT * で、触らなければ窓の矩形のまま）。
+ * 窓の構造体を要らないので、GWLP_USERDATA を結ぶ前に届く計算にも自分で答える。 */
+static LRESULT calculate_client(HWND window, WPARAM wparam, LPARAM lparam)
+{
+    if (wparam)
+    {
+        NCCALCSIZE_PARAMS *_Nonnull calculation = (NCCALCSIZE_PARAMS *)lparam;
+        fit_work_area(window, &calculation->rgrc[0]);
+        return 0;
+    }
+    fit_work_area(window, (RECT *)lparam);
     return 0;
 }
 
