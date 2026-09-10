@@ -473,6 +473,87 @@ static void verify_toggle(void)
     folio_state_destroy(state);
 }
 
+/* 50 px の窓で同じ索引を見る。B / A / C が展開なら下端は 90 で上限は 40、
+ * B を折り畳めば下端は 60 で上限は 10（ADR 0009 の決定 2）。 */
+static const struct drawer_metrics scroll_metrics = {.top_padding = 0,
+                                                     .row_height = 10,
+                                                     .category_height = 10,
+                                                     .category_gap = 0,
+                                                     .category_indent = 1,
+                                                     .note_indent = 2,
+                                                     .viewport_height = 50,
+                                                     .bottom_padding = 0};
+
+/* いまの有効なスクロール量を、最初の行の表示座標（0 か負の値）で読む。 */
+static int scrolled_top(const struct folio_state *_Nonnull state)
+{
+    struct drawer_layout *layout = nullptr;
+    require(folio_state_drawer_layout(state, scroll_metrics, &layout) == FOLIO_STATE_READY,
+            "layout for scroll");
+    int top = drawer_layout_row(layout, 0).top;
+    drawer_layout_destroy(layout);
+    return top;
+}
+
+/* 丸めと、端での不変。要求量は配置より長く残る（ADR 0009 の「失う・残る」）。 */
+static void verify_scroll_rounding(struct folio_state *_Nonnull state)
+{
+    require(scrolled_top(state) == 0, "a fresh state is at the top");
+    require(folio_state_scroll_drawer(state, scroll_metrics, 15) == FOLIO_STATE_READY,
+            "scrolling down is accepted");
+    require(scrolled_top(state) == -15, "the drawer moved by the delta");
+    require(folio_state_scroll_drawer(state, scroll_metrics, 0) == FOLIO_STATE_READY &&
+                scrolled_top(state) == -15,
+            "a zero delta changes nothing");
+    require(folio_state_scroll_drawer(state, scroll_metrics, 100) == FOLIO_STATE_READY &&
+                scrolled_top(state) == -40,
+            "past the reach it stops at the reach");
+    require(folio_state_scroll_drawer(state, scroll_metrics, 10) == FOLIO_STATE_READY &&
+                scrolled_top(state) == -40,
+            "at the end another step does not move");
+    require(folio_state_scroll_drawer(state, scroll_metrics, -1000) == FOLIO_STATE_READY &&
+                scrolled_top(state) == 0,
+            "a large negative delta lands at the top");
+}
+
+/* 折り畳みで上限が縮んでも、有効量から数え直すので 1 回で必ず動く（ADR 0009 の決定 3）。 */
+static void verify_scroll_recount(struct folio_state *_Nonnull state)
+{
+    require(folio_state_scroll_drawer(state, scroll_metrics, 40) == FOLIO_STATE_READY,
+            "go to the end");
+    require(folio_state_toggle_category(state, 0) == FOLIO_STATE_READY, "collapse B");
+    require(scrolled_top(state) == -10, "a smaller reach rounds the display, not the request");
+    require(folio_state_toggle_category(state, 0) == FOLIO_STATE_READY &&
+                scrolled_top(state) == -40,
+            "expanding again brings the request back");
+    require(folio_state_toggle_category(state, 0) == FOLIO_STATE_READY &&
+                scrolled_top(state) == -10,
+            "collapsed once more");
+    require(folio_state_scroll_drawer(state, scroll_metrics, -10) == FOLIO_STATE_READY &&
+                scrolled_top(state) == 0,
+            "one step counts from the effective amount, not the request");
+}
+
+/* 他の意図はスクロール量を触らない（見える位置へ寄せない）。 */
+static void verify_scroll(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct persistence_port port = port_for(&adapter);
+    struct appearance_port looks = looks_for(&dark_adapter);
+    struct folio_state *state = nullptr;
+    require(folio_state_create(&port, &looks, &state) == FOLIO_STATE_READY, "state for scroll");
+    verify_scroll_rounding(state);
+    verify_scroll_recount(state);
+    require(folio_state_scroll_drawer(state, scroll_metrics, 5) == FOLIO_STATE_READY,
+            "scroll a little");
+    require(folio_state_select_note(state, 1, 0) == FOLIO_STATE_READY && scrolled_top(state) == -5,
+            "selecting a note leaves the amount alone");
+    require(folio_state_move_note(state, at(1, 0), at(1, 2)) == FOLIO_STATE_READY &&
+                scrolled_top(state) == -5,
+            "reordering leaves the amount alone");
+    folio_state_destroy(state);
+}
+
 /* 配置の行の名前を '/' でつないだ 1 行にする。折り畳んだカテゴリのノートは出ない。 */
 static void row_order(const struct folio_state *_Nonnull state, char *_Nonnull out, size_t capacity)
 {
@@ -1007,6 +1088,7 @@ void run_state_tests(void)
     verify_absent_data();
     verify_failures();
     verify_toggle();
+    verify_scroll();
     verify_move_category();
     verify_move_note();
     verify_move_selection();

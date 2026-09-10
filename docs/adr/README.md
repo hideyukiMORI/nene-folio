@@ -24,3 +24,4 @@ ADR は「なぜそう決めたか」「何を却下したか」を書く。
 | [0006](0006-edit-mode-and-save-path.md) | 編集中の本文は RichEdit だけが持ち、編集モードを抜けるときと Ctrl+S で元の形に揃えて書き戻す | 受理 |
 | [0007](0007-drag-reorder-and-index-write-back.md) | ドロップ先は core が決め、並び替えの意図で台帳を作り直して categories.json / index.json を書き戻す | 受理 |
 | [0008](0008-cross-category-note-move.md) | 別カテゴリへの移動は md の rename が先で、両方の index.json はそれに追随し、同名は拒む | 受理 |
+| [0009](0009-drawer-scroll-and-overflow-fade.md) | スクロール量は application が要求量で持ち、上限と表示座標は core が決め、UI はあふれをフェードで示す | 受理 |

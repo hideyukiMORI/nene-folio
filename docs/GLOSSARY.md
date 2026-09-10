@@ -28,8 +28,10 @@
 | 塊（chunk） | カテゴリ行と、展開中ならそのノート行をひとまとめにした範囲。カテゴリの並び替えの候補はこの境界で、ノートの移動先はポインタのある塊（境界は隣り合う塊の間の中ほど） | `drawer_layout_drop`（core） |
 | ノートの居場所（note ref） | カテゴリ番号とノート番号の組。移動の意図はこれを 2 つ受ける | `struct note_ref`（core） |
 | 台帳が古い（ledger stale） | md は移ったが `index.json` を書き戻せなかった状態。表示はファイルに従い、次回の起動の照合（FR-008）で揃う | `FOLIO_STATE_LEDGER_STALE`（application）・ADR 0008 |
+| スクロール量（scroll offset） | ドロワーを下へずらした画素。**要求量**は application が持つ値で、**有効量**はいまの配置の上限（0〜`bottom + bottom_padding − viewport_height`）へ丸めた量。表示座標は内部の座標から有効量を引いたもの | `folio_state_scroll_drawer`（application）・`drawer_layout_scroll` / `drawer_layout_scroll_limit`（core）・ADR 0009 |
+| フェード（fade） | あふれている側の端に置く短い帯。端で地の色 100%・内側で 0% になるよう画素ごとに混ぜ、隠れた行があることを示す。要否は core の `drawer_layout_overflow_above` / `_below` が答える | `drawer_window` の `draw_fade`（ui/win32）・ADR 0009 |
 | 挿入線（drop line） | ドラッグ中に落ちる位置を示す 1 本の線。掴んだ行のカテゴリ色で、その字下げから右の余白まで | `drawer_window` の `draw_drop_line`（ui/win32）。y は core が返す |
-| 意図（intent） | UI が発行する操作。クリック・ドラッグ・ホイール・入力 | application の reducer 関数 `folio_state_*`（`folio_state_toggle_category` 等）。種類が増えたら `enum folio_intent` に束ねる |
+| 意図（intent） | UI が発行する操作。クリック・ドラッグ・ホイール・鍵・入力 | application の reducer 関数 `folio_state_*`（`folio_state_toggle_category` 等）。種類が増えたら `enum folio_intent` に束ねる |
 | 表示値（view model） | application が作り UI が写す値 | `struct *_view`（application）・`struct drawer_row`（core） |
 | 測定ビルド（measurement build） | 同じ中核ソースと単体テストを計装コンパイルして分岐を測る検証専用のビルド。第 2 の製品実装ではない | `eng/coverage.py` → `out/coverage/` |
 | テーマ（theme） | ライト／ダークの閉じた選択肢。OS のアプリのモードから起動時に決まる | `enum folio_theme`（core） |

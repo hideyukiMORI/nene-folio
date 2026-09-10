@@ -94,6 +94,106 @@ static void verify_rows(void)
     drawer_layout_destroy(nullptr);
 }
 
+/* build_layout と同じ行（work 14..48 / alpha 48..76 / beta 76..104 / closed 110..144）を、
+ * 100 px の窓と 10 px の下余白で見る。上限は 144 + 10 − 100 = 54。 */
+static const struct drawer_metrics scrolled_metrics = {.top_padding = 8,
+                                                       .row_height = 28,
+                                                       .category_height = 34,
+                                                       .category_gap = 6,
+                                                       .category_indent = 12,
+                                                       .note_indent = 32,
+                                                       .viewport_height = 100,
+                                                       .bottom_padding = 10};
+
+static struct drawer_layout *_Nonnull build_scrolled_layout(struct drawer_metrics used)
+{
+    struct category_ledger *categories =
+        categories_from("{\"version\": 1, \"categories\": ["
+                        "{\"name\": \"work\", \"color\": \"#3D7EFF\", \"expanded\": true},"
+                        "{\"name\": \"closed\", \"color\": \"#00FF00\", \"expanded\": false}]}");
+    struct note_ledger *first = notes_from("{\"version\": 1, \"notes\": [\"alpha\", \"beta\"]}");
+    struct note_ledger *second = notes_from("{\"version\": 1, \"notes\": [\"hidden\"]}");
+    const struct note_ledger *const notes[] = {first, second};
+    struct drawer_layout *layout = nullptr;
+    require(drawer_layout_create(categories, notes, used, &layout) == DRAWER_LAYOUT_CREATED,
+            "scrolled layout create");
+    note_ledger_destroy(second);
+    note_ledger_destroy(first);
+    category_ledger_destroy(categories);
+    return layout;
+}
+
+/* 収まっているときは上限 0 で、どんな量を渡しても表示座標は動かず、フェードもどちらも要らない。 */
+static void verify_scroll_fits(void)
+{
+    struct drawer_metrics roomy = scrolled_metrics;
+    roomy.viewport_height = 200;
+    struct drawer_layout *layout = build_scrolled_layout(roomy);
+    require(drawer_layout_scroll_limit(layout) == 0, "a layout that fits has no reach");
+    require(!drawer_layout_overflow_above(layout) && !drawer_layout_overflow_below(layout),
+            "nothing overflows when everything fits");
+    drawer_layout_scroll(layout, 50);
+    require(drawer_layout_row(layout, 0).top == 14, "scrolling a layout that fits does nothing");
+    require(!drawer_layout_overflow_above(layout) && !drawer_layout_overflow_below(layout),
+            "still nothing overflows");
+    drawer_layout_destroy(layout);
+}
+
+/* ヒットテストも表示座標で受ける（丸めた量が 20 のとき、行はすべて 20 px 上）。
+ * work の行は 14..48 から -6..28 へ動き、上半分が頭の帯（top_padding = 8）の下へ潜る。 */
+static void verify_scrolled_hits(const struct drawer_layout *_Nonnull layout)
+{
+    size_t index = 99;
+    require(!drawer_layout_hit(layout, -7, &index) && index == 99,
+            "nothing above the drawer, scrolled or not");
+    require(!drawer_layout_hit(layout, 7, &index) && index == 99,
+            "the header band is not a row, even with a row scrolled under it");
+    require(drawer_layout_hit(layout, 8, &index) && index == 0,
+            "the band's lower edge belongs to the row drawn there");
+    require(drawer_layout_hit(layout, 27, &index) && index == 0, "the rest of that row");
+    require(drawer_layout_hit(layout, 28, &index) && index == 1, "the first note row moved up");
+    require(drawer_layout_hit(layout, 123, &index) && index == 3, "the last row moved up");
+    require(!drawer_layout_hit(layout, 124, &index), "below the last row moved up");
+}
+
+/* 落とし先の y も挿入線も表示座標。番号は動かない（同じ内部の位置を指している）。 */
+static void verify_scrolled_drops(const struct drawer_layout *_Nonnull layout)
+{
+    struct drop_target target = drawer_layout_drop(layout, 0, -20);
+    require(target.index == 0 && target.line_y == -9, "the drop line is in display coordinates");
+    target = drawer_layout_drop(layout, 0, 108);
+    require(target.index == 1 && target.line_y == 124, "the same midpoint, moved up");
+    target = drawer_layout_drop(layout, 1, 43);
+    require(target.kind == DROP_NOTE && target.index == 0 && target.line_y == 56,
+            "a note drop counts on the moved rows too");
+}
+
+/* 丸め（負 → 0・超過 → 上限）と、表示座標へ写った row / hit / drop / line_y。 */
+static void verify_scroll(void)
+{
+    verify_scroll_fits();
+    struct drawer_layout *layout = build_scrolled_layout(scrolled_metrics);
+    require(drawer_layout_scroll_limit(layout) == 54,
+            "reach is bottom plus padding minus viewport");
+    require(!drawer_layout_overflow_above(layout) && drawer_layout_overflow_below(layout),
+            "at the top only the lower edge overflows");
+    drawer_layout_scroll(layout, -5);
+    require(drawer_layout_row(layout, 0).top == 14 && !drawer_layout_overflow_above(layout),
+            "a negative amount rounds to zero");
+    drawer_layout_scroll(layout, 20);
+    require(drawer_layout_row(layout, 0).top == -6 && drawer_layout_row(layout, 1).top == 28,
+            "rows move up by the rounded amount");
+    require(drawer_layout_overflow_above(layout) && drawer_layout_overflow_below(layout),
+            "in the middle both edges overflow");
+    verify_scrolled_hits(layout);
+    verify_scrolled_drops(layout);
+    drawer_layout_scroll(layout, 999);
+    require(drawer_layout_row(layout, 0).top == -40, "too much rounds to the reach");
+    require(drawer_layout_overflow_above(layout) && !drawer_layout_overflow_below(layout),
+            "at the bottom only the upper edge overflows");
+    drawer_layout_destroy(layout);
+}
+
 static void verify_empty(void)
 {
     struct category_ledger *categories = categories_from("{\"version\": 1, \"categories\": []}");
@@ -255,4 +355,5 @@ void run_layout_tests(void)
     verify_rows();
     verify_empty();
     verify_drops();
+    verify_scroll();
 }

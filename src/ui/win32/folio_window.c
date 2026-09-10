@@ -384,6 +384,10 @@ static enum folio_state_outcome flush_edit(struct folio_window *_Nonnull self)
     if (outcome == FOLIO_STATE_READY)
     {
         render_pane(self);
+        /* 閲覧へ戻ったので、Escape と ↑↓ / PgUp / PgDn が効くように鍵を主窓へ（ADR 0009 の決定
+         * 5）。
+         */
+        SetFocus(self->handle);
     }
     return outcome;
 }
@@ -455,6 +459,42 @@ static LRESULT on_notify(struct folio_window *_Nonnull self, LPARAM lparam)
     return 1;
 }
 
+/* ポインタの下がドロワーならホイールをそこへ渡す（ADR 0009 の決定 5）。
+ * lparam はスクリーン座標なので、位置を読むために OS へ問い合わせない（ARC-007）。 */
+static void forward_wheel(const struct folio_window *_Nonnull self, WPARAM wparam, LPARAM lparam)
+{
+    HWND drawer = self->drawer == nullptr ? nullptr : drawer_window_handle(self->drawer);
+    if (drawer == nullptr)
+    {
+        return;
+    }
+    RECT bounds = {0, 0, 0, 0};
+    GetWindowRect(drawer, &bounds);
+    POINT point = {GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
+    if (PtInRect(&bounds, point))
+    {
+        SendMessageW(drawer, WM_MOUSEWHEEL, wparam, lparam);
+    }
+}
+
+/* 閲覧中の Escape だけが窓を閉じる（ADR 0006 の決定 1）。
+ * ↑↓ / PgUp / PgDn はドロワーのスクロールへ渡す（ADR 0009 の決定 5）。 */
+static void press_key(struct folio_window *_Nonnull self, WPARAM key)
+{
+    if (key == VK_ESCAPE)
+    {
+        if (folio_state_pane_mode(self->state) == PANE_MODE_VIEW)
+        {
+            SendMessageW(self->handle, WM_CLOSE, 0, 0);
+        }
+        return;
+    }
+    if (self->drawer != nullptr)
+    {
+        drawer_window_scroll_key(self->drawer, key);
+    }
+}
+
 static LRESULT on_create(HWND window, LPARAM lparam)
 {
     /* Win32 のコールバック引数を境界で受ける唯一の void *（C-006）。 */
@@ -514,11 +554,10 @@ static LRESULT on_message(struct folio_window *_Nonnull self, UINT message, WPAR
     case folio_message_edit_flush:
         return (LRESULT)flush_edit(self);
     case WM_KEYDOWN:
-        /* 編集中の Escape には意味を与えない（ADR 0006 の決定 1）。 */
-        if (wparam == VK_ESCAPE && folio_state_pane_mode(self->state) == PANE_MODE_VIEW)
-        {
-            SendMessageW(self->handle, WM_CLOSE, 0, 0);
-        }
+        press_key(self, wparam);
+        return 0;
+    case WM_MOUSEWHEEL:
+        forward_wheel(self, wparam, lparam);
         return 0;
     case WM_CLOSE:
         if (leave_edit(self))
