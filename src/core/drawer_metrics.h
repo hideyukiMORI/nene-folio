@@ -10,6 +10,8 @@ struct drawer_metrics
     int category_gap;    /* カテゴリ行の上に空ける間 */
     int category_indent; /* カテゴリ行の番号の左端 */
     int note_indent;     /* ノート行の文字の左端 */
+    int viewport_height; /* ドロワーの client の高さ。スクロール上限はここから決まる（FR-012） */
+    int bottom_padding;  /* 最後の行の下に空ける余白。上限に含める */
 };
 
 #endif

@@ -26,10 +26,18 @@ folio_state_create(const struct persistence_port *_Nonnull persistence,
                    struct folio_state *_Nullable *_Nonnull out);
 /* 起動時に読んだテーマ。 */
 [[nodiscard]] enum folio_theme folio_state_theme(const struct folio_state *_Nonnull state);
-/* いまの索引と寸法からドロワーの配置を作り、選択中のノートに印を付ける。呼び出し側が破棄する。 */
+/* いまの索引と寸法からドロワーの配置を作り、選択中のノートといまのスクロール量に印を付ける。
+ * 呼び出し側が破棄する。問い合わせなので状態は変えない（要求量の丸めは配置の中だけ・ADR 0009）。 */
 [[nodiscard]] enum folio_state_outcome
 folio_state_drawer_layout(const struct folio_state *_Nonnull state, struct drawer_metrics metrics,
                           struct drawer_layout *_Nullable *_Nonnull out);
+/* ドロワーを delta 画素ぶんスクロールする意図（FR-012 / ADR 0009 の決定 3）。
+ * いまの寸法での有効量（要求量を上限で丸めた量）から数え直し、0〜上限に丸めて要求量にする。
+ * 折り畳みで上限が縮んでいても 1 回で必ず動く。配置が作れなければ OUT_OF_MEMORY で状態は変えない。
+ * 選択・トグル・並び替え・移動・編集はスクロール量を触らない。 */
+[[nodiscard]] enum folio_state_outcome folio_state_scroll_drawer(struct folio_state *_Nonnull state,
+                                                                 struct drawer_metrics metrics,
+                                                                 int delta);
 /* 索引にあるノートの総数。 */
 [[nodiscard]] size_t folio_state_note_count(const struct folio_state *_Nonnull state);
 /* カテゴリの展開状態を反転し、台帳を書き戻す（FR-004 / FR-007）。書き戻せなければ状態は変えない。

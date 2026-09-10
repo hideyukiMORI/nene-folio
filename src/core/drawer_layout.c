@@ -12,8 +12,9 @@ struct drawer_layout
     size_t count;
     char *_Nullable texts;         /* 全行の名前を終端付きで並べた所有領域 */
     size_t *_Nullable notes;       /* カテゴリごとの台帳のノート数（折り畳んでいても持つ） */
-    int bottom;                    /* 最後に置いた行の下端 */
-    struct drawer_metrics metrics; /* 挿入線の位置に要る（drawer_layout_drop） */
+    int bottom;                    /* 最後に置いた行の下端（内部の座標） */
+    int scroll;                    /* 丸めたスクロール量。表示座標は内部の座標からこれを引く */
+    struct drawer_metrics metrics; /* 挿入線の位置と上限に要る */
 };
 
 /* 行数と名前の総バイト数（終端込み）を数える。 */
@@ -153,6 +154,32 @@ void drawer_layout_select(struct drawer_layout *_Nonnull layout, size_t category
     }
 }
 
+int drawer_layout_scroll_limit(const struct drawer_layout *_Nonnull layout)
+{
+    int reach = layout->bottom + layout->metrics.bottom_padding - layout->metrics.viewport_height;
+    return reach > 0 ? reach : 0;
+}
+
+void drawer_layout_scroll(struct drawer_layout *_Nonnull layout, int offset)
+{
+    int limit = drawer_layout_scroll_limit(layout);
+    if (offset < 0)
+    {
+        offset = 0;
+    }
+    layout->scroll = offset > limit ? limit : offset;
+}
+
+bool drawer_layout_overflow_above(const struct drawer_layout *_Nonnull layout)
+{
+    return layout->scroll > 0;
+}
+
+bool drawer_layout_overflow_below(const struct drawer_layout *_Nonnull layout)
+{
+    return layout->scroll < drawer_layout_scroll_limit(layout);
+}
+
 size_t drawer_layout_row_count(const struct drawer_layout *_Nonnull layout)
 {
     return layout->count;
@@ -160,15 +187,18 @@ size_t drawer_layout_row_count(const struct drawer_layout *_Nonnull layout)
 
 struct drawer_row drawer_layout_row(const struct drawer_layout *_Nonnull layout, size_t index)
 {
-    return layout->rows[index];
+    struct drawer_row row = layout->rows[index];
+    row.top -= layout->scroll;
+    return row;
 }
 
 bool drawer_layout_hit(const struct drawer_layout *_Nonnull layout, int y, size_t *_Nonnull index)
 {
+    int inner = y + layout->scroll;
     for (size_t row = 0; row < layout->count; ++row)
     {
         const struct drawer_row *_Nonnull candidate = &layout->rows[row];
-        if (y >= candidate->top && y < candidate->top + candidate->height)
+        if (inner >= candidate->top && inner < candidate->top + candidate->height)
         {
             *index = row;
             return true;
@@ -283,10 +313,10 @@ static struct drop_target note_drop(const struct drawer_layout *_Nonnull layout,
     return target;
 }
 
-struct drop_target drawer_layout_drop(const struct drawer_layout *_Nonnull layout,
-                                      size_t source_row, int y)
+/* 内部の座標で落とし先を決める。表示座標との往復は drawer_layout_drop 1 か所で行う。 */
+static struct drop_target inner_drop(const struct drawer_layout *_Nonnull layout,
+                                     struct drawer_row source, int y)
 {
-    struct drawer_row source = layout->rows[source_row];
     switch (source.kind)
     {
     case DRAWER_ROW_CATEGORY:
@@ -295,6 +325,14 @@ struct drop_target drawer_layout_drop(const struct drawer_layout *_Nonnull layou
         return note_drop(layout, source, y);
     }
     return category_drop(layout, source, y);
+}
+
+struct drop_target drawer_layout_drop(const struct drawer_layout *_Nonnull layout,
+                                      size_t source_row, int y)
+{
+    struct drop_target target = inner_drop(layout, layout->rows[source_row], y + layout->scroll);
+    target.line_y -= layout->scroll;
+    return target;
 }
 
 void drawer_layout_destroy(struct drawer_layout *_Nullable layout)

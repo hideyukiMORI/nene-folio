@@ -325,6 +325,13 @@ static bool state_scenario_with(struct persistence_adapter *_Nonnull adapter)
     drawer_layout_destroy(layout);
     if (completed)
     {
+        /* スクロールの意図も配置を 1 つ作る（ADR 0009 の決定 3）。 */
+        enum folio_state_outcome scrolled = folio_state_scroll_drawer(state, metrics, 5);
+        completed = scrolled == FOLIO_STATE_READY;
+        require(completed || scrolled == FOLIO_STATE_OUT_OF_MEMORY, "scroll under probe");
+    }
+    if (completed)
+    {
         enum folio_state_outcome toggled = folio_state_toggle_category(state, 0);
         completed = toggled == FOLIO_STATE_READY;
         require(completed || toggled == FOLIO_STATE_OUT_OF_MEMORY, "toggle under probe");

@@ -25,6 +25,7 @@ struct folio_state
     struct markdown_rtf *_Nullable pane; /* 選択中のノートの表示値。無ければ空の文書 */
     struct note_text *_Nullable body;    /* 最後に読んだ本文。何も選んでいなければ空 */
     enum pane_mode mode;
+    int scroll;    /* ドロワーのスクロール量（要求量・画素・0 以上）。上限は core が決める */
     bool selected; /* ノートを選んでいるか */
     size_t selected_category;
     size_t selected_note;
@@ -228,6 +229,32 @@ enum folio_state_outcome folio_state_drawer_layout(const struct folio_state *_No
     {
         drawer_layout_select(*out, state->selected_category, state->selected_note);
     }
+    drawer_layout_scroll(*out, state->scroll);
+    return FOLIO_STATE_READY;
+}
+
+/* 0 と上限の間へ丸める（core の drawer_layout_scroll と同じ規則）。 */
+static int clamped(int value, int limit)
+{
+    if (value < 0)
+    {
+        return 0;
+    }
+    return value > limit ? limit : value;
+}
+
+enum folio_state_outcome folio_state_scroll_drawer(struct folio_state *_Nonnull state,
+                                                   struct drawer_metrics metrics, int delta)
+{
+    struct drawer_layout *_Nullable layout = nullptr;
+    enum folio_state_outcome outcome = folio_state_drawer_layout(state, metrics, &layout);
+    if (outcome != FOLIO_STATE_READY)
+    {
+        return outcome;
+    }
+    int limit = drawer_layout_scroll_limit(layout);
+    drawer_layout_destroy(layout);
+    state->scroll = clamped(clamped(state->scroll, limit) + delta, limit);
     return FOLIO_STATE_READY;
 }
 
