@@ -430,6 +430,8 @@ static bool compose_version(const wchar_t *_Nonnull directory, size_t length, si
 }
 
 /* 最古の版を消し、残りを 1 つずつ後ろへずらす（ADR 0012 の決定 3）。無い版は飛ばす。
+ * 改名に MOVEFILE_REPLACE_EXISTING を付けるので、最古の削除が効かなくても改名が相手を上書きし、
+ * 連鎖が止まって 1.md だけが失われることにならない（改名そのものを拒まれる場合は救えない）。
  * 原子的ではないので、途中で落ちれば番号が欠けた履歴が残りうる。md はまだ無傷。 */
 static void rotate_history(const wchar_t *_Nonnull directory, size_t length)
 {
@@ -444,7 +446,7 @@ static void rotate_history(const wchar_t *_Nonnull directory, size_t length)
         if (compose_version(directory, length, version, older) &&
             compose_version(directory, length, version - 1, newer))
         {
-            (void)MoveFileExW(newer, older, MOVEFILE_WRITE_THROUGH);
+            (void)MoveFileExW(newer, older, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH);
         }
     }
 }
