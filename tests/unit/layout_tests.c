@@ -12,6 +12,21 @@ static const struct drawer_metrics metrics = {.top_padding = 8,
                                               .category_indent = 12,
                                               .note_indent = 32};
 
+/* ノート行とカテゴリ行のカーソルを 1 つ作る。 */
+static struct drawer_cursor at_note(size_t category, size_t note)
+{
+    struct drawer_cursor cursor = {.kind = DRAWER_ROW_NOTE,
+                                   .ref = {.category = category, .note = note}};
+    return cursor;
+}
+
+static struct drawer_cursor at_category(size_t category)
+{
+    struct drawer_cursor cursor = {.kind = DRAWER_ROW_CATEGORY,
+                                   .ref = {.category = category, .note = 0}};
+    return cursor;
+}
+
 static struct category_ledger *_Nonnull categories_from(const char *_Nonnull text)
 {
     struct category_ledger *ledger = nullptr;
@@ -58,6 +73,33 @@ static void verify_hits(const struct drawer_layout *_Nonnull layout)
     require(!drawer_layout_hit(layout, 144, &index), "below last row");
 }
 
+/* 面は選択・角はカーソル。どちらも無ければ何にも付かない（ADR 0015 の決定 8）。 */
+static void verify_marks(struct drawer_layout *_Nonnull layout)
+{
+    struct note_ref chosen = {.category = 0, .note = 1};
+    struct drawer_cursor cursor = at_note(0, 1);
+    drawer_layout_mark(layout, &chosen, &cursor);
+    require(!drawer_layout_row(layout, 1).selected && drawer_layout_row(layout, 2).selected,
+            "the selection marks one note row");
+    require(drawer_layout_row(layout, 2).cursor && !drawer_layout_row(layout, 1).cursor,
+            "and the cursor marks the same row");
+    struct note_ref hidden = {.category = 1, .note = 0};
+    cursor = at_category(1);
+    drawer_layout_mark(layout, &hidden, &cursor);
+    require(!drawer_layout_row(layout, 2).selected && !drawer_layout_row(layout, 3).selected,
+            "selection of a hidden note marks nothing");
+    require(drawer_layout_row(layout, 3).cursor && !drawer_layout_row(layout, 2).cursor,
+            "a category cursor marks the collapsed category row");
+    cursor = at_note(1, 0);
+    drawer_layout_mark(layout, &hidden, &cursor);
+    require(!drawer_layout_row(layout, 3).cursor,
+            "a note cursor never marks the category row of its hidden note");
+    drawer_layout_mark(layout, nullptr, nullptr);
+    require(!drawer_layout_row(layout, 2).selected && !drawer_layout_row(layout, 2).cursor,
+            "without a selection nothing is marked");
+    require(!drawer_layout_row(layout, 3).cursor, "and without a cursor no corner is marked");
+}
+
 static void verify_rows(void)
 {
     struct drawer_layout *layout = build_layout();
@@ -78,12 +120,7 @@ static void verify_rows(void)
     require(row.kind == DRAWER_ROW_CATEGORY && row.top == 110 && same_text(row.text, "closed") &&
                 row.color.green == 0xFF && row.ordinal == 2 && !row.expanded,
             "collapsed category row");
-    drawer_layout_select(layout, 0, 1);
-    require(!drawer_layout_row(layout, 1).selected && drawer_layout_row(layout, 2).selected,
-            "selection marks one note row");
-    drawer_layout_select(layout, 1, 0);
-    require(!drawer_layout_row(layout, 2).selected && !drawer_layout_row(layout, 3).selected,
-            "selection of a hidden note marks nothing");
+    verify_marks(layout);
     require(drawer_layout_row(layout, 0).category == 0 &&
                 drawer_layout_row(layout, 2).category == 0 && row.category == 1,
             "rows know their category");
@@ -194,24 +231,36 @@ static void verify_scroll(void)
     drawer_layout_destroy(layout);
 }
 
-/* 選択の行を見える位置へ寄せる最小の量（ADR 0013 の決定 6）。行は work 14..48 / alpha 48..76 /
- * beta 76..104 / closed 110..144（hidden は折り畳みで行にならない）。帯は 8・窓は 100・上限は 54。
- */
+/* カーソルの行を見える位置へ寄せる最小の量（ADR 0013 の決定 6・ADR 0015 の決定 6）。
+ * 行は work 14..48 / alpha 48..76 / beta 76..104 / closed 110..144（hidden
+ * は折り畳みで行にならない）。 帯は 8・窓は 100・上限は 54。 */
 static void verify_reveal(void)
 {
     struct drawer_layout *layout = build_scrolled_layout(scrolled_metrics);
-    require(drawer_layout_reveal(layout, 0, 0) == 0, "a row already in view keeps the amount");
-    require(drawer_layout_reveal(layout, 0, 1) == 4,
+    require(drawer_layout_reveal(layout, at_note(0, 0)) == 0,
+            "a row already in view keeps the amount");
+    require(drawer_layout_reveal(layout, at_note(0, 1)) == 4,
             "a row hidden below rises until its bottom edge reaches the viewport");
-    require(drawer_layout_reveal(layout, 1, 0) == 0,
+    require(drawer_layout_reveal(layout, at_note(1, 0)) == 0,
             "a note inside a collapsed category has no row, so the amount stays");
-    require(drawer_layout_reveal(layout, 0, 9) == 0, "a note that is not there keeps the amount");
+    require(drawer_layout_reveal(layout, at_note(0, 9)) == 0,
+            "a note that is not there keeps the amount");
+    require(drawer_layout_reveal(layout, at_category(1)) == 44,
+            "a collapsed category row is revealed like a note row");
+    require(drawer_layout_reveal(layout, at_category(0)) == 0,
+            "a category row already in view keeps the amount");
     drawer_layout_scroll(layout, 54);
-    require(drawer_layout_reveal(layout, 0, 1) == 54, "at the end that row is still in view");
-    require(drawer_layout_reveal(layout, 1, 0) == 54, "a missing row keeps the scrolled amount");
-    require(drawer_layout_reveal(layout, 0, 0) == 40,
+    require(drawer_layout_reveal(layout, at_note(0, 1)) == 54,
+            "at the end that row is still in view");
+    require(drawer_layout_reveal(layout, at_note(1, 0)) == 54,
+            "a missing row keeps the scrolled amount");
+    require(drawer_layout_reveal(layout, at_category(2)) == 54,
+            "a category that is not there keeps the amount");
+    require(drawer_layout_reveal(layout, at_category(0)) == 6,
+            "a category row hidden above sinks until its top edge reaches the band");
+    require(drawer_layout_reveal(layout, at_note(0, 0)) == 40,
             "a row hidden above sinks until its top edge reaches the band");
-    drawer_layout_scroll(layout, drawer_layout_reveal(layout, 0, 0));
+    drawer_layout_scroll(layout, drawer_layout_reveal(layout, at_note(0, 0)));
     require(drawer_layout_row(layout, 1).top == 8, "the revealed row sits at the band");
     drawer_layout_destroy(layout);
 }

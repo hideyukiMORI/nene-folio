@@ -341,7 +341,8 @@ static bool ledger_under_probe(struct folio_state *_Nonnull state)
     return recolored == FOLIO_STATE_READY;
 }
 
-/* 選択・歩み・見える位置へ寄せるの確保を通す（FR-005 / FR-018・ADR 0013 の決定 5 / 6）。 */
+/* 選択・歩み・開閉でのカーソルの移り先・見える位置へ寄せるの確保を通す
+ * （FR-005 / FR-018・ADR 0013 の決定 5 / 6・ADR 0015 の決定 2 / 3）。 */
 static bool selection_under_probe(struct folio_state *_Nonnull state)
 {
     enum folio_state_outcome selected = folio_state_select_note(state, 0, 0);
@@ -358,7 +359,14 @@ static bool selection_under_probe(struct folio_state *_Nonnull state)
     {
         return false;
     }
-    enum folio_state_outcome revealed = folio_state_reveal_selection(state, probe_metrics);
+    enum folio_state_outcome expanded = folio_state_set_category_expanded(state, 0, true);
+    require(expanded == FOLIO_STATE_READY || expanded == FOLIO_STATE_OUT_OF_MEMORY,
+            "expand under probe");
+    if (expanded != FOLIO_STATE_READY)
+    {
+        return false;
+    }
+    enum folio_state_outcome revealed = folio_state_reveal_cursor(state, probe_metrics);
     require(revealed == FOLIO_STATE_READY || revealed == FOLIO_STATE_OUT_OF_MEMORY,
             "reveal under probe");
     return revealed == FOLIO_STATE_READY;

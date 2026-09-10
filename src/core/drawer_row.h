@@ -20,7 +20,8 @@ struct drawer_row
     size_t note;            /* ノート行のときの索引台帳の番号。カテゴリ行では 0 */
     size_t ordinal;         /* カテゴリの 1 始まりの番号（表示用） */
     bool expanded;          /* カテゴリ行が展開しているか。ノート行では true */
-    bool selected;          /* 選択中のノートの行か */
+    bool selected;          /* 選択中のノートの行か（面を敷く） */
+    bool cursor;            /* 索引のカーソルの行か（角の印を置く・ADR 0015 の決定 8） */
 };
 
 #endif

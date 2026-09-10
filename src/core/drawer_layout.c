@@ -70,6 +70,7 @@ static struct drawer_row category_row(const struct drawer_layout *_Nonnull layou
         .ordinal = category + 1,
         .expanded = category_ledger_expanded(categories, category),
         .selected = false,
+        .cursor = false,
     };
     return row;
 }
@@ -144,13 +145,34 @@ drawer_layout_create(const struct category_ledger *_Nonnull categories,
     return DRAWER_LAYOUT_CREATED;
 }
 
-void drawer_layout_select(struct drawer_layout *_Nonnull layout, size_t category, size_t note)
+/* 行がカーソルの行か。カテゴリ行のカーソルはノート行に付かず、その逆も付かない。 */
+static bool holds_cursor(const struct drawer_row *_Nonnull row,
+                         const struct drawer_cursor *_Nullable cursor)
+{
+    if (cursor == nullptr || row->kind != cursor->kind || row->category != cursor->ref.category)
+    {
+        return false;
+    }
+    switch (row->kind)
+    {
+    case DRAWER_ROW_CATEGORY:
+        return true;
+    case DRAWER_ROW_NOTE:
+        return row->note == cursor->ref.note;
+    }
+    return false;
+}
+
+void drawer_layout_mark(struct drawer_layout *_Nonnull layout,
+                        const struct note_ref *_Nullable selection,
+                        const struct drawer_cursor *_Nullable cursor)
 {
     for (size_t index = 0; index < layout->count; ++index)
     {
         struct drawer_row *_Nonnull row = &layout->rows[index];
-        row->selected =
-            row->kind == DRAWER_ROW_NOTE && row->category == category && row->note == note;
+        row->selected = selection != nullptr && row->kind == DRAWER_ROW_NOTE &&
+                        row->category == selection->category && row->note == selection->note;
+        row->cursor = holds_cursor(row, cursor);
     }
 }
 
@@ -170,13 +192,13 @@ void drawer_layout_scroll(struct drawer_layout *_Nonnull layout, int offset)
     layout->scroll = offset > limit ? limit : offset;
 }
 
-/* 選択の行を探す。無ければ count（＝見つからなかった印）。 */
-static size_t note_row_of(const struct drawer_layout *_Nonnull layout, size_t category, size_t note)
+/* カーソルの行を探す。無ければ count（＝見つからなかった印）。 */
+static size_t cursor_row_of(const struct drawer_layout *_Nonnull layout,
+                            struct drawer_cursor cursor)
 {
     for (size_t index = 0; index < layout->count; ++index)
     {
-        const struct drawer_row *_Nonnull row = &layout->rows[index];
-        if (row->kind == DRAWER_ROW_NOTE && row->category == category && row->note == note)
+        if (holds_cursor(&layout->rows[index], &cursor))
         {
             return index;
         }
@@ -184,9 +206,9 @@ static size_t note_row_of(const struct drawer_layout *_Nonnull layout, size_t ca
     return layout->count;
 }
 
-int drawer_layout_reveal(const struct drawer_layout *_Nonnull layout, size_t category, size_t note)
+int drawer_layout_reveal(const struct drawer_layout *_Nonnull layout, struct drawer_cursor cursor)
 {
-    size_t index = note_row_of(layout, category, note);
+    size_t index = cursor_row_of(layout, cursor);
     if (index == layout->count)
     {
         return layout->scroll;

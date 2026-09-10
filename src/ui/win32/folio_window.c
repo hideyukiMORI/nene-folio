@@ -535,13 +535,30 @@ static enum folio_state_outcome switch_note(struct folio_window *_Nonnull self, 
     return opened(self, folio_state_select_note(self->state, category, note));
 }
 
-/* 索引の鍵で選択を動かし、動いた行を見える位置へ寄せる（ADR 0013 の決定 2 / 6）。 */
+/* 歩みの行き先がノート行か（ADR 0015 の決定 2）。カテゴリ行と端では保存も開き直しも要らない。 */
+static bool steps_to_note(const struct folio_window *_Nonnull self, enum folio_step step)
+{
+    enum folio_cursor_kind kind = FOLIO_CURSOR_NOTE;
+    return folio_state_step_kind(self->state, step, &kind) && kind == FOLIO_CURSOR_NOTE;
+}
+
+/* 索引の鍵でカーソルを動かし、動いた行を見える位置へ寄せる（ADR 0015 の決定 2 / 6）。
+ * カテゴリ行に止まるときは保存も開き直しもせず、描き直して寄せるだけ。 */
 static void switch_adjacent(struct folio_window *_Nonnull self, enum folio_step step)
 {
-    enum folio_state_outcome outcome = save_edit(self);
-    if (outcome == FOLIO_STATE_READY)
+    enum folio_state_outcome outcome = FOLIO_STATE_READY;
+    if (steps_to_note(self, step))
     {
-        outcome = opened(self, folio_state_select_adjacent(self->state, step));
+        outcome = save_edit(self);
+        if (outcome == FOLIO_STATE_READY)
+        {
+            outcome = opened(self, folio_state_select_adjacent(self->state, step));
+        }
+    }
+    else
+    {
+        outcome = folio_state_select_adjacent(self->state, step);
+        redraw_drawer(self);
     }
     if (outcome != FOLIO_STATE_READY)
     {
@@ -550,26 +567,55 @@ static void switch_adjacent(struct folio_window *_Nonnull self, enum folio_step 
     }
     if (self->drawer != nullptr)
     {
-        drawer_window_reveal_selection(self->drawer);
+        drawer_window_reveal_cursor(self->drawer);
     }
 }
 
-/* h / l。選択中のノートのカテゴリだけを折り畳む／展開する（ADR 0013 の決定 2）。 */
-static void expand_selected(struct folio_window *_Nonnull self, bool expanded)
+/* 展開で別のノートが選ばれたときだけ本文を開き直す（ADR 0015 の決定 3）。
+ * 同じノートのままなら、編集中の本文を上書きしないために流し込まない。 */
+static enum folio_state_outcome reopen_if_moved(struct folio_window *_Nonnull self, bool had,
+                                                struct note_ref before)
 {
-    struct note_ref selected = {.category = 0, .note = 0};
-    if (!folio_state_selection(self->state, &selected))
+    struct note_ref after = {.category = 0, .note = 0};
+    if (!folio_state_selection(self->state, &after))
+    {
+        return FOLIO_STATE_READY;
+    }
+    if (had && after.category == before.category && after.note == before.note)
+    {
+        return FOLIO_STATE_READY;
+    }
+    return show_note(self);
+}
+
+/* h / l。カーソルの行のカテゴリを折り畳む／展開する（ADR 0015 の決定 3）。
+ * カーソルがカテゴリ行のときの展開は中のノートを選び直すことがあるので、先に保存する
+ * （ADR 0013 の決定 4 の (i)）。 */
+static void expand_cursor(struct folio_window *_Nonnull self, bool expanded)
+{
+    enum folio_cursor_kind kind = FOLIO_CURSOR_NOTE;
+    struct note_ref cursor = {.category = 0, .note = 0};
+    if (!folio_state_cursor(self->state, &kind, &cursor))
     {
         return;
     }
+    struct note_ref before = {.category = 0, .note = 0};
+    bool had = folio_state_selection(self->state, &before);
     enum folio_state_outcome outcome =
-        folio_state_set_category_expanded(self->state, selected.category, expanded);
+        expanded && kind == FOLIO_CURSOR_CATEGORY ? save_edit(self) : FOLIO_STATE_READY;
+    if (outcome == FOLIO_STATE_READY)
+    {
+        outcome = folio_state_set_category_expanded(self->state, cursor.category, expanded);
+    }
+    if (outcome == FOLIO_STATE_READY)
+    {
+        outcome = reopen_if_moved(self, had, before);
+    }
+    redraw_drawer(self);
     if (outcome != FOLIO_STATE_READY)
     {
         failure_box_show(self->handle, outcome);
-        return;
     }
-    redraw_drawer(self);
 }
 
 /* 「閲覧」の札・別ノートの選択・窓を閉じる操作の共通の出口。保存できなければ 1 行を出す。 */
@@ -656,8 +702,17 @@ static void forward_wheel(const struct folio_window *_Nonnull self, WPARAM wpara
     }
 }
 
-/* 索引の鍵（ADR 0013 の決定 2）。Enter で本文へ、↑↓ / PgUp / PgDn はドロワーのスクロールへ渡す
- * （ADR 0009 の決定 5）。Escape はここでは何もしない（窓を閉じるのは Alt+F4 と閉じる操作だけ）。 */
+/* カーソルが折り畳んだ／空のカテゴリ行にあるか（ADR 0015 の決定 4）。 */
+static bool cursor_on_category(const struct folio_window *_Nonnull self)
+{
+    enum folio_cursor_kind kind = FOLIO_CURSOR_NOTE;
+    struct note_ref cursor = {.category = 0, .note = 0};
+    return folio_state_cursor(self->state, &kind, &cursor) && kind == FOLIO_CURSOR_CATEGORY;
+}
+
+/* 索引の鍵（ADR 0013 の決定 2）。Enter で本文へ（カーソルがカテゴリ行なら何もしない・
+ * ADR 0015 の決定 4）、↑↓ / PgUp / PgDn はドロワーのスクロールへ渡す（ADR 0009 の決定 5）。
+ * Escape はここでは何もしない（窓を閉じるのは Alt+F4 と閉じる操作だけ）。 */
 static void press_key(struct folio_window *_Nonnull self, WPARAM key)
 {
     if (key != 'G')
@@ -667,7 +722,10 @@ static void press_key(struct folio_window *_Nonnull self, WPARAM key)
     }
     if (key == VK_RETURN)
     {
-        focus_pane(self);
+        if (!cursor_on_category(self))
+        {
+            focus_pane(self);
+        }
         return;
     }
     if (self->drawer != nullptr)
@@ -701,10 +759,10 @@ static void type_key(struct folio_window *_Nonnull self, WPARAM character)
         }
         break;
     case 'h':
-        expand_selected(self, false);
+        expand_cursor(self, false);
         break;
     case 'l':
-        expand_selected(self, true);
+        expand_cursor(self, true);
         break;
     case store_character:
         /* Ctrl+S は索引の区画でも効く（本文の EN_MSGFILTER と同じ保存）。閲覧中は何もしない。 */

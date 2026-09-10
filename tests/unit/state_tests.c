@@ -932,8 +932,9 @@ static void verify_select(void)
             "title follows the selection");
     struct drawer_layout *marked = nullptr;
     require(folio_state_drawer_layout(state, metrics, &marked) == FOLIO_STATE_READY &&
-                drawer_layout_row(marked, 2).selected && !drawer_layout_row(marked, 1).selected,
-            "layout marks the selected note");
+                drawer_layout_row(marked, 2).selected && drawer_layout_row(marked, 2).cursor &&
+                !drawer_layout_row(marked, 1).selected && !drawer_layout_row(marked, 1).cursor,
+            "layout marks the selected note and the cursor");
     drawer_layout_destroy(marked);
     require(folio_state_select_note(state, 5, 0) == FOLIO_STATE_NO_SUCH_CATEGORY, "bad category");
     require(folio_state_select_note(state, 0, 3) == FOLIO_STATE_NO_SUCH_NOTE, "bad note");
@@ -977,23 +978,76 @@ static void expect_selection(const struct folio_state *_Nonnull state,
     require(same_text(name, expected), description);
 }
 
-/* 索引は B（展開・one/two/three）・A（折り畳み・one/two/three）・C（展開・one/two/three）。
- * 折り畳んだ A のノートは行にならないので飛ばす（ADR 0013 の決定 5）。 */
-static void verify_step_order(struct folio_state *_Nonnull state)
+/* カーソルを "-"（無し）・"c<カテゴリ>"（カテゴリ行）・"n<カテゴリ>.<ノート>"（ノート行）で読む。
+ * 番号は 1 桁の索引でだけ使う。 */
+static void cursor_name(const struct folio_state *_Nonnull state, char *_Nonnull out,
+                        size_t capacity)
 {
+    require(capacity > 5, "cursor name fits");
+    enum folio_cursor_kind kind = FOLIO_CURSOR_NOTE;
+    struct note_ref cursor = {.category = 0, .note = 0};
+    out[0] = '-';
+    out[1] = '\0';
+    if (!folio_state_cursor(state, &kind, &cursor))
+    {
+        return;
+    }
+    require(cursor.category < 10 && cursor.note < 10, "cursor numbers are single digits");
+    out[1] = (char)('0' + cursor.category);
+    out[2] = '\0';
+    switch (kind)
+    {
+    case FOLIO_CURSOR_CATEGORY:
+        out[0] = 'c';
+        break;
+    case FOLIO_CURSOR_NOTE:
+        out[0] = 'n';
+        out[2] = '.';
+        out[3] = (char)('0' + cursor.note);
+        out[4] = '\0';
+        break;
+    }
+}
+
+static void expect_cursor(const struct folio_state *_Nonnull state, const char *_Nonnull expected,
+                          const char *_Nonnull description)
+{
+    char name[8] = {0};
+    cursor_name(state, name, sizeof name);
+    require(same_text(name, expected), description);
+}
+
+/* 索引は B（展開・one/two/three）・A（折り畳み・one/two/three）・C（展開・one/two/three）。
+ * 止まる行は n0.0 / n0.1 / n0.2 / c1（折り畳んだ A）/ n2.0 / n2.1 / n2.2（ADR 0015 の決定 2）。 */
+static void verify_step_order(struct folio_state *_Nonnull state,
+                              struct persistence_adapter *_Nonnull adapter)
+{
+    expect_cursor(state, "-", "no cursor before the first step");
     require(folio_state_select_adjacent(state, FOLIO_STEP_NEXT) == FOLIO_STATE_READY,
-            "the first step selects the first visible note");
+            "the first step stops at the first stop row");
     expect_selection(state, "B/one", "nothing selected means the first note");
+    expect_cursor(state, "n0.0", "the cursor is the selected note");
     require(folio_state_select_adjacent(state, FOLIO_STEP_NEXT) == FOLIO_STATE_READY &&
                 folio_state_select_adjacent(state, FOLIO_STEP_NEXT) == FOLIO_STATE_READY,
             "two more steps");
     expect_selection(state, "B/three", "the last note of the first category");
+    adapter->last_note = nullptr;
     require(folio_state_select_adjacent(state, FOLIO_STEP_NEXT) == FOLIO_STATE_READY,
-            "step over A");
-    expect_selection(state, "C/one", "a collapsed category is skipped");
+            "the next stop is the collapsed category row");
+    expect_cursor(state, "c1", "the cursor stops on the collapsed category");
+    expect_selection(state, "B/three", "a category row leaves the selection alone");
+    require(adapter->last_note == nullptr, "a category row never reads a note");
+    require(folio_state_select_adjacent(state, FOLIO_STEP_NEXT) == FOLIO_STATE_READY,
+            "past the collapsed category");
+    expect_selection(state, "C/one", "the next note is in the following category");
+    expect_cursor(state, "n2.0", "and the cursor follows it");
     require(folio_state_select_adjacent(state, FOLIO_STEP_PREVIOUS) == FOLIO_STATE_READY,
-            "and back");
-    expect_selection(state, "B/three", "backwards skips the collapsed category too");
+            "backwards onto the category row");
+    expect_cursor(state, "c1", "the collapsed category is a stop backwards too");
+    expect_selection(state, "C/one", "the right pane is still the note it was");
+    require(folio_state_select_adjacent(state, FOLIO_STEP_PREVIOUS) == FOLIO_STATE_READY, "back");
+    expect_selection(state, "B/three", "backwards past the category row selects again");
+    expect_cursor(state, "n0.2", "and the cursor is that note");
 }
 
 /* 端では動かず、READY のまま読み直しもしない。 */
@@ -1001,26 +1055,27 @@ static void verify_step_edges(struct folio_state *_Nonnull state,
                               struct persistence_adapter *_Nonnull adapter)
 {
     require(folio_state_select_adjacent(state, FOLIO_STEP_FIRST) == FOLIO_STATE_READY, "gg");
-    expect_selection(state, "B/one", "the first visible note");
+    expect_selection(state, "B/one", "the first stop row");
     adapter->last_note = nullptr;
     require(folio_state_select_adjacent(state, FOLIO_STEP_PREVIOUS) == FOLIO_STATE_READY,
             "at the top it stops");
-    expect_selection(state, "B/one", "the selection did not move");
+    expect_cursor(state, "n0.0", "the cursor did not move");
     require(folio_state_select_adjacent(state, FOLIO_STEP_FIRST) == FOLIO_STATE_READY &&
                 adapter->last_note == nullptr,
             "the same note is never read again");
     require(folio_state_select_adjacent(state, FOLIO_STEP_LAST) == FOLIO_STATE_READY, "G");
-    expect_selection(state, "C/three", "the last visible note");
+    expect_selection(state, "C/three", "the last stop row");
     require(folio_state_select_adjacent(state, FOLIO_STEP_NEXT) == FOLIO_STATE_READY,
             "at the end it stops");
-    expect_selection(state, "C/three", "the selection did not move");
+    expect_cursor(state, "n2.2", "the cursor did not move");
 }
 
-/* 折り畳んだカテゴリの中に選択があるときは、その位置から次／前の見えるノートへ。 */
+/* 折り畳んだカテゴリの中に選択があるときは、その位置から次／前の止まる行へ
+ * （自分のカテゴリ行へは戻らない）。 */
 static void verify_step_from_hidden(struct folio_state *_Nonnull state)
 {
     require(folio_state_select_note(state, 1, 1) == FOLIO_STATE_READY, "select A / two");
-    require(folio_state_set_category_expanded(state, 1, false) == FOLIO_STATE_READY, "collapse A");
+    expect_cursor(state, "n1.1", "the cursor is the hidden note");
     require(folio_state_select_adjacent(state, FOLIO_STEP_NEXT) == FOLIO_STATE_READY,
             "step out of the collapsed category");
     expect_selection(state, "C/one", "forward from a hidden note");
@@ -1030,29 +1085,126 @@ static void verify_step_from_hidden(struct folio_state *_Nonnull state)
     expect_selection(state, "B/three", "backwards from a hidden note");
 }
 
-/* 見えるノートが 1 つも無ければ NO_SUCH_NOTE。選択もモードも触らない。 */
-static void verify_step_without_notes(struct folio_state *_Nonnull state)
+/* 全部畳んでもカテゴリ行が止まる行として残る。右ペインは動かない（ADR 0015 の決定 2）。 */
+static void verify_step_all_collapsed(struct folio_state *_Nonnull state,
+                                      struct persistence_adapter *_Nonnull adapter)
 {
     for (size_t index = 0; index < 3; ++index)
     {
         require(folio_state_set_category_expanded(state, index, false) == FOLIO_STATE_READY,
                 "collapse everything");
     }
+    adapter->last_note = nullptr;
+    require(folio_state_select_adjacent(state, FOLIO_STEP_FIRST) == FOLIO_STATE_READY, "gg");
+    expect_cursor(state, "c0", "the first stop is the first category row");
+    require(folio_state_select_adjacent(state, FOLIO_STEP_NEXT) == FOLIO_STATE_READY &&
+                folio_state_select_adjacent(state, FOLIO_STEP_NEXT) == FOLIO_STATE_READY,
+            "two steps down the category rows");
+    expect_cursor(state, "c2", "every category row is a stop");
+    require(folio_state_select_adjacent(state, FOLIO_STEP_NEXT) == FOLIO_STATE_READY,
+            "at the end it stops");
+    expect_cursor(state, "c2", "the cursor did not move");
+    require(folio_state_select_adjacent(state, FOLIO_STEP_PREVIOUS) == FOLIO_STATE_READY,
+            "backwards");
+    expect_cursor(state, "c1", "and back up the category rows");
+    require(folio_state_select_adjacent(state, FOLIO_STEP_LAST) == FOLIO_STATE_READY, "G");
+    expect_cursor(state, "c2", "the last stop is the last category row");
+    expect_selection(state, "B/three", "the selection never moved");
+    require(adapter->last_note == nullptr && adapter->note_writes == 0,
+            "walking the category rows reads and writes no note");
+}
+
+/* 止まる行の種類は意図の前に問い合わせられ、状態は変わらない（決定 2）。 */
+static void verify_step_kind(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    enum folio_cursor_kind kind = FOLIO_CURSOR_CATEGORY;
+    require(folio_state_step_kind(state, FOLIO_STEP_NEXT, &kind) && kind == FOLIO_CURSOR_NOTE,
+            "the first stop is a note row");
+    expect_cursor(state, "-", "asking never moves the cursor");
+    require(folio_state_select_note(state, 0, 2) == FOLIO_STATE_READY, "select B / three");
+    require(folio_state_step_kind(state, FOLIO_STEP_NEXT, &kind) && kind == FOLIO_CURSOR_CATEGORY,
+            "the next stop is the collapsed category row");
+    expect_cursor(state, "n0.2", "and the cursor is still the note");
+    require(folio_state_select_adjacent(state, FOLIO_STEP_LAST) == FOLIO_STATE_READY, "G");
+    kind = FOLIO_CURSOR_CATEGORY;
+    require(!folio_state_step_kind(state, FOLIO_STEP_NEXT, &kind) && kind == FOLIO_CURSOR_CATEGORY,
+            "at the end there is no target and kind is untouched");
+    folio_state_destroy(state);
+}
+
+/* カテゴリが 1 つも無ければ止まる行も無い（NO_SUCH_NOTE）。 */
+static void verify_step_without_categories(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    adapter.categories_outcome = PERSISTENCE_ABSENT;
+    adapter.scan_outcome = PERSISTENCE_ABSENT;
+    struct folio_state *state = ready_state(&adapter);
     require(folio_state_select_adjacent(state, FOLIO_STEP_NEXT) == FOLIO_STATE_NO_SUCH_NOTE &&
                 folio_state_select_adjacent(state, FOLIO_STEP_LAST) == FOLIO_STATE_NO_SUCH_NOTE,
-            "no visible note at all");
-    expect_selection(state, "B/three", "the refused step keeps the selection");
+            "no stop row at all");
+    expect_cursor(state, "-", "the refused step leaves no cursor");
+    enum folio_cursor_kind kind = FOLIO_CURSOR_NOTE;
+    require(!folio_state_step_kind(state, FOLIO_STEP_FIRST, &kind), "and no target to ask about");
+    folio_state_destroy(state);
+}
+
+/* 展開していてノートが 0 本のカテゴリ行にも止まる（決定 2）。A だけ空の索引にする。 */
+static void verify_step_empty_category(void)
+{
+    static const char *const nothing[] = {nullptr};
+    struct persistence_adapter adapter = healthy_adapter();
+    test_adapter_second_notes(&adapter, "A", "{\"version\": 1, \"notes\": []}", nothing);
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_select_note(state, 0, 2) == FOLIO_STATE_READY, "select B / three");
+    require(folio_state_select_adjacent(state, FOLIO_STEP_NEXT) == FOLIO_STATE_READY, "j onto A");
+    expect_cursor(state, "c1", "the collapsed empty category is a stop");
+    require(folio_state_set_category_expanded(state, 1, true) == FOLIO_STATE_READY &&
+                adapter.writes == 1,
+            "expanding an empty category writes the ledger");
+    expect_cursor(state, "c1", "with no note to move to, the cursor stays on the row");
+    expect_selection(state, "B/three", "and the right pane is untouched");
+    require(row_count(state) == 9, "an expanded empty category adds no row");
+    require(folio_state_set_category_expanded(state, 1, true) == FOLIO_STATE_READY &&
+                adapter.writes == 1,
+            "expanding it again writes nothing");
+    require(folio_state_select_adjacent(state, FOLIO_STEP_NEXT) == FOLIO_STATE_READY, "j past it");
+    expect_selection(state, "C/one", "the next stop is the following category's first note");
+    require(folio_state_select_adjacent(state, FOLIO_STEP_PREVIOUS) == FOLIO_STATE_READY, "k back");
+    expect_cursor(state, "c1", "an expanded category without notes is a stop backwards too");
+    require(folio_state_set_category_expanded(state, 1, false) == FOLIO_STATE_READY,
+            "h collapses it again");
+    expect_cursor(state, "c1", "and the cursor stays on the row");
+    folio_state_destroy(state);
+}
+
+/* 末尾が折り畳んだカテゴリなら G はそこに止まる（決定 2）。 */
+static void verify_step_to_collapsed_end(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY, "select B / one");
+    require(folio_state_set_category_expanded(state, 2, false) == FOLIO_STATE_READY, "collapse C");
+    require(folio_state_select_adjacent(state, FOLIO_STEP_LAST) == FOLIO_STATE_READY, "G");
+    expect_cursor(state, "c2", "the last stop is the collapsed last category");
+    expect_selection(state, "B/one", "and the right pane is untouched");
+    folio_state_destroy(state);
 }
 
 static void verify_select_adjacent(void)
 {
     struct persistence_adapter adapter = healthy_adapter();
     struct folio_state *state = ready_state(&adapter);
-    verify_step_order(state);
+    verify_step_order(state, &adapter);
     verify_step_edges(state, &adapter);
     verify_step_from_hidden(state);
-    verify_step_without_notes(state);
+    verify_step_all_collapsed(state, &adapter);
     folio_state_destroy(state);
+    verify_step_kind();
+    verify_step_without_categories();
+    verify_step_empty_category();
+    verify_step_to_collapsed_end();
 }
 
 /* h / l は同じなら書かず、違えば expanded の経路で書き戻す（ADR 0013 の決定 5）。 */
@@ -1084,32 +1236,105 @@ static void verify_set_expanded(void)
     folio_state_destroy(state);
 }
 
-/* 選択の行が見える位置へ来る量を要求量にする（ADR 0013 の決定 6）。50 px の窓・行 10 px で、
- * 行は B 0..10 / one 10..20 / two 20..30 / three 30..40 / A 40..50（折り畳み）/ C 50..60 /
- * one 60..70 / two 70..80 / three 80..90。上限は 40。 */
-static void verify_reveal_selection(void)
+/* h でカーソルがカテゴリ行へ移り、l で中のノートへ戻る（ADR 0015 の決定 3）。 */
+static void verify_cursor_collapse(struct folio_state *_Nonnull state,
+                                   struct persistence_adapter *_Nonnull adapter)
+{
+    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY, "select B / one");
+    adapter->last_note = nullptr;
+    require(folio_state_set_category_expanded(state, 0, false) == FOLIO_STATE_READY,
+            "h collapses B");
+    expect_cursor(state, "c0", "the cursor moves onto the collapsed category row");
+    expect_selection(state, "B/one", "the selection and the right pane stay");
+    require(folio_state_select_adjacent(state, FOLIO_STEP_NEXT) == FOLIO_STATE_READY, "j");
+    expect_cursor(state, "c1", "on to the next collapsed category");
+    require(folio_state_select_adjacent(state, FOLIO_STEP_PREVIOUS) == FOLIO_STATE_READY, "k");
+    expect_cursor(state, "c0", "and back to the category we collapsed");
+    expect_selection(state, "B/one", "the right pane never changed");
+    require(adapter->last_note == nullptr, "and no note was read");
+    require(folio_state_set_category_expanded(state, 0, true) == FOLIO_STATE_READY, "l expands B");
+    expect_cursor(state, "n0.0", "the selected note inside takes the cursor");
+    require(adapter->last_note == nullptr, "the selected note is not read again");
+}
+
+/* 選択が中に無ければ、l は最初のノートを選んで右ペインを変える（決定 3）。 */
+static void verify_cursor_expand_elsewhere(struct folio_state *_Nonnull state,
+                                           struct persistence_adapter *_Nonnull adapter)
+{
+    require(folio_state_select_note(state, 2, 1) == FOLIO_STATE_READY, "select C / two");
+    require(folio_state_select_adjacent(state, FOLIO_STEP_PREVIOUS) == FOLIO_STATE_READY &&
+                folio_state_select_adjacent(state, FOLIO_STEP_PREVIOUS) == FOLIO_STATE_READY,
+            "k twice onto the collapsed A");
+    expect_cursor(state, "c1", "the cursor is on A");
+    adapter->last_note = nullptr;
+    require(folio_state_set_category_expanded(state, 1, true) == FOLIO_STATE_READY, "l expands A");
+    expect_cursor(state, "n1.0", "the first note of A takes the cursor");
+    expect_selection(state, "A/one", "and the right pane follows it");
+    require(same_text(adapter->last_note, "one"), "that note was read");
+    require(folio_state_set_category_expanded(state, 1, false) == FOLIO_STATE_READY,
+            "h collapses A again");
+    expect_cursor(state, "c1", "the cursor is back on the category row");
+    expect_selection(state, "A/one", "with the selection left inside");
+    require(folio_state_set_category_expanded(state, 1, false) == FOLIO_STATE_READY,
+            "h on a collapsed category does nothing");
+    expect_cursor(state, "c1", "and the cursor stays");
+}
+
+/* カーソルが別のカテゴリにあるときは、開閉でカーソルは動かない。 */
+static void verify_cursor_elsewhere(struct folio_state *_Nonnull state)
+{
+    require(folio_state_select_note(state, 0, 1) == FOLIO_STATE_READY, "select B / two");
+    require(folio_state_set_category_expanded(state, 2, false) == FOLIO_STATE_READY, "collapse C");
+    expect_cursor(state, "n0.1", "collapsing another category leaves the cursor alone");
+    require(folio_state_set_category_expanded(state, 2, true) == FOLIO_STATE_READY, "expand C");
+    expect_cursor(state, "n0.1", "expanding another category leaves it alone too");
+}
+
+static void verify_cursor_expanded(void)
 {
     struct persistence_adapter adapter = healthy_adapter();
     struct folio_state *state = ready_state(&adapter);
-    require(folio_state_reveal_selection(state, scroll_metrics) == FOLIO_STATE_READY &&
+    verify_cursor_collapse(state, &adapter);
+    verify_cursor_expand_elsewhere(state, &adapter);
+    verify_cursor_elsewhere(state);
+    folio_state_destroy(state);
+}
+
+/* 選択の行が見える位置へ来る量を要求量にする（ADR 0013 の決定 6）。50 px の窓・行 10 px で、
+ * 行は B 0..10 / one 10..20 / two 20..30 / three 30..40 / A 40..50（折り畳み）/ C 50..60 /
+ * one 60..70 / two 70..80 / three 80..90。上限は 40。 */
+static void verify_reveal_cursor(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_reveal_cursor(state, scroll_metrics) == FOLIO_STATE_READY &&
                 scrolled_top(state) == 0,
-            "nothing selected moves nothing");
+            "without a cursor nothing moves");
     require(folio_state_select_note(state, 2, 0) == FOLIO_STATE_READY, "select C / one");
-    require(folio_state_reveal_selection(state, scroll_metrics) == FOLIO_STATE_READY &&
+    require(folio_state_reveal_cursor(state, scroll_metrics) == FOLIO_STATE_READY &&
                 scrolled_top(state) == -20,
             "a row hidden below rises until its bottom edge is in view");
-    require(folio_state_reveal_selection(state, scroll_metrics) == FOLIO_STATE_READY &&
+    require(folio_state_reveal_cursor(state, scroll_metrics) == FOLIO_STATE_READY &&
                 scrolled_top(state) == -20,
             "a row already in view does not move again");
     require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY, "select B / one");
-    require(folio_state_reveal_selection(state, scroll_metrics) == FOLIO_STATE_READY &&
+    require(folio_state_reveal_cursor(state, scroll_metrics) == FOLIO_STATE_READY &&
                 scrolled_top(state) == -10,
             "a row hidden above sinks until its top edge reaches the band");
     require(folio_state_select_adjacent(state, FOLIO_STEP_LAST) == FOLIO_STATE_READY, "G");
     require(scrolled_top(state) == -10, "the step alone does not scroll");
-    require(folio_state_reveal_selection(state, scroll_metrics) == FOLIO_STATE_READY &&
+    require(folio_state_reveal_cursor(state, scroll_metrics) == FOLIO_STATE_READY &&
                 scrolled_top(state) == -40,
             "the last note lands at the reach");
+    /* 行は B 0..10 / A 10..20 / C 20..30 / one 30..40 / two 40..50 / three 50..60・上限 10。 */
+    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY, "select B / one again");
+    require(folio_state_set_category_expanded(state, 0, false) == FOLIO_STATE_READY,
+            "h collapses B");
+    expect_cursor(state, "c0", "the cursor is on the collapsed category row");
+    require(scrolled_top(state) == -10, "the request is still past the smaller reach");
+    require(folio_state_reveal_cursor(state, scroll_metrics) == FOLIO_STATE_READY &&
+                scrolled_top(state) == 0,
+            "a category row is revealed like a note row");
     folio_state_destroy(state);
 }
 
@@ -1410,7 +1635,8 @@ void run_state_tests(void)
     verify_select();
     verify_select_adjacent();
     verify_set_expanded();
-    verify_reveal_selection();
+    verify_cursor_expanded();
+    verify_reveal_cursor();
     verify_mode_survives_selection();
     verify_edit_guards();
     verify_edit_unchanged();

@@ -24,10 +24,10 @@ drawer_window_create(HWND _Nonnull parent, struct folio_state *_Nonnull state,
  * VK_UP / VK_DOWN（ノート行 1 つ）と VK_PRIOR / VK_NEXT（1 画面から 1 行を引いた量）だけで、
  * ほかの鍵では何も起きない。 */
 void drawer_window_scroll_key(struct drawer_window *_Nonnull drawer, WPARAM key);
-/* 選択中のノートの行を見える位置へ寄せる意図を出す（FR-018 / ADR 0013 の決定 6）。
- * 寸法を測れるのがドロワーなので、主窓は鍵で選択を動かしたあとここを呼ぶ。
- * 何も選んでいなければ何も動かない。 */
-void drawer_window_reveal_selection(struct drawer_window *_Nonnull drawer);
+/* カーソルの行を見える位置へ寄せる意図を出す（FR-018 / ADR 0013 の決定 6・ADR 0015 の決定 6）。
+ * 寸法を測れるのがドロワーなので、主窓は鍵でカーソルを動かしたあとここを呼ぶ。
+ * カーソルが無ければ何も動かない（カテゴリ行のカーソルにも効く）。 */
+void drawer_window_reveal_cursor(struct drawer_window *_Nonnull drawer);
 void drawer_window_destroy(struct drawer_window *_Nullable drawer);
 
 #endif

@@ -52,6 +52,7 @@ constexpr int base_right_inset = 16;
 constexpr int base_bottom_padding = 16; /* 最後の行の下に空ける余白（左右の余白と同じ） */
 constexpr int base_fade_height = 24;    /* あふれを示すフェードの高さ（ADR 0009 の決定 7） */
 constexpr int base_mark_size = 6;
+constexpr int base_mark_gap = 6;       /* カテゴリ行で − / + とカーソルの角の間に空ける幅 */
 constexpr int base_line_thickness = 2; /* ドラッグ中の挿入線の太さ */
 constexpr int base_category_font = 12;
 constexpr int base_note_font = 14;
@@ -189,7 +190,35 @@ static void draw_header(const struct drawer_window *_Nonnull self, HDC device, i
     DrawTextW(device, count, written, &bounds, DT_SINGLELINE | DT_VCENTER | DT_RIGHT | DT_NOPREFIX);
 }
 
-/* カテゴリ行: 番号（カテゴリ色・等幅）、名前（太字・字間広め）、右端に − / +。 */
+/* カーソルの行の右端に置く角（カテゴリ色の四角）。right はその右端の x。
+ * 索引に区画があるとき塗り、本文にあるとき枠だけ（ADR 0013 の決定 8・ADR 0015 の決定 7）。 */
+static void draw_cursor_mark(const struct drawer_window *_Nonnull self, HDC device,
+                             struct drawer_row row, int right)
+{
+    int mark = scale(base_mark_size, GetDpiForWindow(self->handle));
+    int top = row.top + row.height / 2 - mark / 2;
+    RECT square = {right - mark, top, right, top + mark};
+    if (index_focused(self))
+    {
+        fill_rect(device, square, to_colorref(row.color));
+    }
+    else
+    {
+        frame_rect(device, square, to_colorref(row.color));
+    }
+}
+
+/* − / + の印が要る幅（いま選んでいる等幅の字と間）。
+ * カーソルの角はこのぶんだけ左に置いて重なりを避ける（ADR 0015 の決定 7）。 */
+static int toggle_room(HDC device, UINT dpi)
+{
+    SIZE glyph = {0, 0};
+    GetTextExtentPoint32W(device, L"\x2212", 1, &glyph);
+    return glyph.cx + scale(base_mark_gap, dpi);
+}
+
+/* カテゴリ行: 番号（カテゴリ色・等幅）、名前（太字・字間広め）、右端に − / +。
+ * カーソルがこの行にあるときは − / + の左に角を置く（ADR 0015 の決定 7）。 */
 static void draw_category(const struct drawer_window *_Nonnull self, HDC device,
                           struct drawer_row row, int width)
 {
@@ -212,10 +241,14 @@ static void draw_category(const struct drawer_window *_Nonnull self, HDC device,
     SetTextColor(device, self->palette.header_text);
     DrawTextW(device, row.expanded ? L"\x2212" : L"+", 1, &mark,
               DT_SINGLELINE | DT_VCENTER | DT_RIGHT | DT_NOPREFIX);
+    if (row.cursor)
+    {
+        draw_cursor_mark(self, device, row, mark.right - toggle_room(device, dpi));
+    }
 }
 
-/* ノート行: 選択中なら面を敷き、右端にカテゴリ色の角を置く。
- * 角は索引にフォーカスがあるとき塗り、本文にあるとき枠だけ（ADR 0013 の決定 8）。 */
+/* ノート行: 選択中なら面を敷き、カーソルの行なら右端にカテゴリ色の角を置く
+ * （面は選択・角はカーソル・ADR 0015 の決定 8）。 */
 static void draw_note(const struct drawer_window *_Nonnull self, HDC device, struct drawer_row row,
                       int width)
 {
@@ -225,18 +258,10 @@ static void draw_note(const struct drawer_window *_Nonnull self, HDC device, str
     {
         RECT face = {0, row.top, width, row.top + row.height};
         fill_rect(device, face, self->palette.selected_background);
-        int mark = scale(base_mark_size, dpi);
-        int middle = row.top + row.height / 2;
-        RECT square = {width - inset - mark, middle - mark / 2, width - inset,
-                       middle - mark / 2 + mark};
-        if (index_focused(self))
-        {
-            fill_rect(device, square, to_colorref(row.color));
-        }
-        else
-        {
-            frame_rect(device, square, to_colorref(row.color));
-        }
+    }
+    if (row.cursor)
+    {
+        draw_cursor_mark(self, device, row, width - inset);
     }
     RECT bounds = {row.indent, row.top, width - inset * 2, row.top + row.height};
     SelectObject(device, self->note_font);
@@ -797,14 +822,14 @@ void drawer_window_scroll_key(struct drawer_window *_Nonnull drawer, WPARAM key)
     }
 }
 
-void drawer_window_reveal_selection(struct drawer_window *_Nonnull drawer)
+void drawer_window_reveal_cursor(struct drawer_window *_Nonnull drawer)
 {
     if (drawer->handle == nullptr)
     {
         return;
     }
     enum folio_state_outcome outcome =
-        folio_state_reveal_selection(drawer->state, metrics_for(drawer));
+        folio_state_reveal_cursor(drawer->state, metrics_for(drawer));
     if (outcome != FOLIO_STATE_READY)
     {
         failure_box_show(drawer->handle, outcome);
