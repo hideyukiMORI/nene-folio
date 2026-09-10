@@ -322,9 +322,9 @@ category_ledger_reconcile(const struct category_ledger *_Nonnull ledger,
     return CATEGORY_LEDGER_ACCEPTED;
 }
 
-enum category_ledger_outcome
-category_ledger_toggled(const struct category_ledger *_Nonnull ledger, size_t index,
-                        struct category_ledger *_Nullable *_Nonnull out)
+/* 同じ順序・同じ値の新しい台帳を作る。1 か所だけ変える操作の土台（ARC-005）。 */
+static enum category_ledger_outcome duplicate(const struct category_ledger *_Nonnull ledger,
+                                              struct category_ledger *_Nullable *_Nonnull out)
 {
     struct category_ledger *_Nullable target = nullptr;
     enum category_ledger_outcome outcome = category_ledger_empty(&target);
@@ -338,7 +338,36 @@ category_ledger_toggled(const struct category_ledger *_Nonnull ledger, size_t in
         category_ledger_destroy(target);
         return outcome;
     }
+    *out = target;
+    return CATEGORY_LEDGER_ACCEPTED;
+}
+
+enum category_ledger_outcome
+category_ledger_toggled(const struct category_ledger *_Nonnull ledger, size_t index,
+                        struct category_ledger *_Nullable *_Nonnull out)
+{
+    struct category_ledger *_Nullable target = nullptr;
+    enum category_ledger_outcome outcome = duplicate(ledger, &target);
+    if (outcome != CATEGORY_LEDGER_ACCEPTED)
+    {
+        return outcome;
+    }
     target->expanded[index] = !target->expanded[index];
+    *out = target;
+    return CATEGORY_LEDGER_ACCEPTED;
+}
+
+enum category_ledger_outcome
+category_ledger_recolored(const struct category_ledger *_Nonnull ledger, size_t index,
+                          struct rgb_color color, struct category_ledger *_Nullable *_Nonnull out)
+{
+    struct category_ledger *_Nullable target = nullptr;
+    enum category_ledger_outcome outcome = duplicate(ledger, &target);
+    if (outcome != CATEGORY_LEDGER_ACCEPTED)
+    {
+        return outcome;
+    }
+    target->colors[index] = color;
     *out = target;
     return CATEGORY_LEDGER_ACCEPTED;
 }

@@ -10,6 +10,7 @@
 #include "note_ref.h"
 #include "pane_mode.h"
 #include "pane_title_view.h"
+#include "rgb_color.h"
 
 #include <stddef.h>
 #include <uchar.h>
@@ -44,6 +45,12 @@ folio_state_drawer_layout(const struct folio_state *_Nonnull state, struct drawe
  */
 [[nodiscard]] enum folio_state_outcome
 folio_state_toggle_category(struct folio_state *_Nonnull state, size_t index);
+/* カテゴリの色を変え、categories.json を書き戻す（FR-010 / ADR 0010 の決定 2）。
+ * index が範囲外なら NO_SUCH_CATEGORY。いまと同じ色なら書かずに READY。
+ * 書き戻せなければ状態は変えない。選択・編集モード・スクロール量は触らない。 */
+[[nodiscard]] enum folio_state_outcome
+folio_state_recolor_category(struct folio_state *_Nonnull state, size_t index,
+                             struct rgb_color color);
 /* カテゴリの表示順を変え、categories.json を書き戻す（FR-009）。from == to は書かずに READY。
  * 書き戻せなければ状態は変えない。選択中のノートは移動後も同じノートを指す。 */
 [[nodiscard]] enum folio_state_outcome folio_state_move_category(struct folio_state *_Nonnull state,

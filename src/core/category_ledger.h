@@ -32,6 +32,11 @@ category_ledger_reconcile(const struct category_ledger *_Nonnull ledger,
 [[nodiscard]] enum category_ledger_outcome
 category_ledger_toggled(const struct category_ledger *_Nonnull ledger, size_t index,
                         struct category_ledger *_Nullable *_Nonnull out);
+/* index の色だけを変えた新しい台帳を作る（FR-010）。index は count 未満であること。
+ * 元の色と同じ色でも複製を返す。「変える意味があるか」は application が決める（ARC-011）。 */
+[[nodiscard]] enum category_ledger_outcome
+category_ledger_recolored(const struct category_ledger *_Nonnull ledger, size_t index,
+                          struct rgb_color color, struct category_ledger *_Nullable *_Nonnull out);
 /* from 番目を to 番目へ移した、順序だけが違う新しい台帳を作る（FR-009）。
  * from と to は count 未満であること。from == to でも複製を返す。 */
 [[nodiscard]] enum category_ledger_outcome

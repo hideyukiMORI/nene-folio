@@ -8,6 +8,7 @@
 #include "note_ref.h"
 #include "utf16_text.h"
 
+#include <commdlg.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -28,6 +29,8 @@ struct drawer_window
     int pointer_y;             /* 最後に見たポインタの y。スクロール中に落とし先を引き直す */
     bool dragging;             /* しきい値を超えて動かしているか */
     struct drop_target target; /* dragging のときの落とし先 */
+    /* 色の選択のカスタム色。実行中だけ持ち、保存しない（ADR 0010 の決定 4）。 */
+    COLORREF custom_colors[16];
 };
 
 static const wchar_t class_name[] = L"NeNeFolioDrawer";
@@ -449,6 +452,74 @@ static void apply_drop(struct drawer_window *_Nonnull self, struct drawer_row so
     InvalidateRect(GetParent(self->handle), nullptr, FALSE);
 }
 
+/* OS の色の選択が返す COLORREF を core の色にする。逆向きは to_colorref（C-014）。 */
+static struct rgb_color to_rgb_color(COLORREF color)
+{
+    struct rgb_color converted = {
+        .red = GetRValue(color), .green = GetGValue(color), .blue = GetBValue(color)};
+    return converted;
+}
+
+/* いまの色を初期値に OS の色の選択を出し、選ばれたら意図にする（ADR 0010 の決定 4〜6）。
+ * 色が妥当かも変わったかも UI は判断しない（ARC-011）。 */
+static void choose_color(struct drawer_window *_Nonnull self, struct drawer_row row)
+{
+    CHOOSECOLORW choice = {
+        .lStructSize = sizeof choice,
+        .hwndOwner = GetParent(self->handle),
+        .rgbResult = to_colorref(row.color),
+        .lpCustColors = self->custom_colors,
+        .Flags = CC_RGBINIT | CC_FULLOPEN,
+    };
+    if (!ChooseColorW(&choice))
+    {
+        /* キャンセルは何もしない（決定 4）。 */
+        return;
+    }
+    enum folio_state_outcome outcome =
+        folio_state_recolor_category(self->state, row.category, to_rgb_color(choice.rgbResult));
+    if (outcome != FOLIO_STATE_READY)
+    {
+        failure_box_show(self->handle, outcome);
+        return;
+    }
+    InvalidateRect(self->handle, nullptr, FALSE);
+    /* 右ペインの頭の色も台帳から引く。本文は触らない（決定 6）。 */
+    InvalidateRect(GetParent(self->handle), nullptr, FALSE);
+}
+
+/* 右ボタンを離した位置がカテゴリ行なら色を選ばせる（ADR 0010 の決定 3）。
+ * 頭の帯・行の外では何もしない。左ボタンを押している間は捕捉中の再入を避けて無視する。 */
+static void recolor(struct drawer_window *_Nonnull self, int y)
+{
+    if (self->pressed)
+    {
+        return;
+    }
+    struct drawer_layout *_Nullable layout = nullptr;
+    if (!current_layout(self, &layout))
+    {
+        return;
+    }
+    size_t index = 0;
+    bool found = drawer_layout_hit(layout, y, &index);
+    struct drawer_row row = found ? drawer_layout_row(layout, index) : (struct drawer_row){0};
+    drawer_layout_destroy(layout);
+    if (!found)
+    {
+        return;
+    }
+    switch (row.kind)
+    {
+    case DRAWER_ROW_CATEGORY:
+        choose_color(self, row);
+        break;
+    case DRAWER_ROW_NOTE:
+        /* ノート行の右クリックは初版では何もしない（FR-010）。 */
+        break;
+    }
+}
+
 /* 押した行を覚えて捕捉する。クリックの確定は離すときに行う（ADR 0007 の決定 6）。 */
 static void press(struct drawer_window *_Nonnull self, int y)
 {
@@ -618,6 +689,9 @@ static LRESULT CALLBACK drawer_procedure(HWND window, UINT message, WPARAM wpara
         return 0;
     case WM_LBUTTONUP:
         release(self);
+        return 0;
+    case WM_RBUTTONUP:
+        recolor(self, GET_Y_LPARAM(lparam));
         return 0;
     case WM_MOUSEWHEEL:
         wheel(self, wparam);
