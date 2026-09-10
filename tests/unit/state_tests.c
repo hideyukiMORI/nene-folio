@@ -33,6 +33,10 @@ struct persistence_adapter
     size_t written_count;               /* 最後に書かれた台帳のカテゴリ数 */
     bool written_expanded[8];           /* 最後に書かれた台帳の展開状態 */
     struct rgb_color written_colors[8]; /* 最後に書かれた台帳の色 */
+    enum persistence_outcome archive_outcome;
+    size_t archives;                         /* archive_note が呼ばれた回数 */
+    const char *_Nullable archived_category; /* 最後に履歴を求められたカテゴリ名 */
+    const char *_Nullable archived_note;     /* 最後に履歴を求められたノート名 */
     enum persistence_outcome note_write_outcome;
     size_t note_writes;                 /* write_note が呼ばれた回数 */
     char written_body[256];             /* 最後に書かれた本文（終端付き） */
@@ -218,12 +222,26 @@ static enum persistence_outcome fake_read_note(struct persistence_adapter *_Nonn
     return accepted == NOTE_TEXT_OUT_OF_MEMORY ? PERSISTENCE_OUT_OF_MEMORY : PERSISTENCE_MALFORMED;
 }
 
+/* 履歴への写し。呼び出しの順を記録する（archive が write より先である証拠・ADR 0012 の決定 2）。
+ */
+static enum persistence_outcome fake_archive_note(struct persistence_adapter *_Nonnull adapter,
+                                                  const char *_Nonnull category,
+                                                  const char *_Nonnull note)
+{
+    adapter->archives += 1;
+    adapter->archived_category = category;
+    adapter->archived_note = note;
+    record_call(adapter, "archive");
+    return adapter->archive_outcome;
+}
+
 static enum persistence_outcome fake_write_note(struct persistence_adapter *_Nonnull adapter,
                                                 const char *_Nonnull category,
                                                 const char *_Nonnull note,
                                                 const struct note_text *_Nonnull body)
 {
     adapter->note_writes += 1;
+    record_call(adapter, "write");
     adapter->written_category = category;
     adapter->written_note = note;
     if (adapter->note_write_outcome != PERSISTENCE_STORED)
@@ -325,6 +343,10 @@ static struct persistence_adapter healthy_adapter(void)
         .written_count = 0,
         .written_expanded = {false},
         .written_colors = {{0, 0, 0}},
+        .archive_outcome = PERSISTENCE_STORED,
+        .archives = 0,
+        .archived_category = nullptr,
+        .archived_note = nullptr,
         .note_write_outcome = PERSISTENCE_STORED,
         .note_writes = 0,
         .written_body = {'\0'},
@@ -358,6 +380,7 @@ static struct persistence_port port_for(struct persistence_adapter *_Nonnull ada
         .read_category_ledger = fake_read_category_ledger,
         .write_category_ledger = fake_write_category_ledger,
         .read_note = fake_read_note,
+        .archive_note = fake_archive_note,
         .write_note = fake_write_note,
         .move_note = fake_move_note,
         .read_note_ledger = fake_read_note_ledger,
@@ -974,6 +997,53 @@ static void verify_edit_unchanged(void)
     require(folio_state_end_edit(state, u"# Hello\r\n\r\nbody", 15) == FOLIO_STATE_READY &&
                 adapter.note_writes == 0 && folio_state_pane_mode(state) == PANE_MODE_VIEW,
             "leaving without a change writes nothing");
+    require(adapter.archives == 0 && same_text(adapter.calls, ""),
+            "the same body leaves no history either (ADR 0012)");
+    folio_state_destroy(state);
+}
+
+/* 保存は履歴が先で、写せたときだけ md を書く（ADR 0012 の決定 2）。 */
+static void verify_history_order(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    adapter.note_body = "# Hello\r\n\r\nbody";
+    struct folio_state *state = edited_state(&adapter);
+    require(folio_state_store_note(state, u"changed", 7) == FOLIO_STATE_READY, "store a change");
+    require(adapter.archives == 1 && adapter.note_writes == 1 &&
+                same_text(adapter.calls, "archive/write"),
+            "the history is written before the md");
+    require(same_text(adapter.archived_category, "B") && same_text(adapter.archived_note, "two"),
+            "the archive names the selected note");
+    folio_state_destroy(state);
+}
+
+/* 履歴を書けなければ保存もしない。md も表示も編集モードもそのまま（ADR 0012 の決定 2）。 */
+static void verify_history_failures(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    adapter.note_body = "# Hello\r\n\r\nbody";
+    struct folio_state *state = edited_state(&adapter);
+    adapter.archive_outcome = PERSISTENCE_UNWRITABLE;
+    require(folio_state_store_note(state, u"changed", 7) == FOLIO_STATE_HISTORY_FAILED,
+            "an unwritable history is reported");
+    require(adapter.archives == 1 && adapter.note_writes == 0 &&
+                same_text(adapter.calls, "archive"),
+            "the md is never written when the history fails");
+    require(folio_state_pane_mode(state) == PANE_MODE_EDIT &&
+                same_text(folio_state_pane_text(state), "# Hello\r\n\r\nbody") &&
+                strstr(folio_state_pane_rtf(state), "changed") == nullptr,
+            "neither the mode nor the read body nor the pane changed");
+    require(folio_state_end_edit(state, u"changed", 7) == FOLIO_STATE_HISTORY_FAILED &&
+                folio_state_pane_mode(state) == PANE_MODE_EDIT,
+            "leaving is refused while the history fails");
+    adapter.archive_outcome = PERSISTENCE_OUT_OF_MEMORY;
+    require(folio_state_store_note(state, u"changed", 7) == FOLIO_STATE_OUT_OF_MEMORY &&
+                adapter.note_writes == 0,
+            "the archive reports out of memory");
+    adapter.archive_outcome = PERSISTENCE_ABSENT;
+    require(folio_state_store_note(state, u"changed", 7) == FOLIO_STATE_READY &&
+                adapter.note_writes == 1,
+            "a missing md has nothing to archive, so the save goes on");
     folio_state_destroy(state);
 }
 
@@ -999,6 +1069,8 @@ static void verify_edit_saves(void)
             "end edit saves");
     require(adapter.note_writes == 2 && folio_state_pane_mode(state) == PANE_MODE_VIEW,
             "leaving with a change writes once and returns to view");
+    require(adapter.archives == 2 && same_text(adapter.calls, "archive/write/archive/write"),
+            "every save archives first (ADR 0012)");
     folio_state_destroy(state);
 }
 
@@ -1055,6 +1127,7 @@ static void verify_failure_lines(void)
                 strlen(folio_state_failure_line(FOLIO_STATE_NOT_EDITING)) > 0 &&
                 strlen(folio_state_failure_line(FOLIO_STATE_NOTE_MALFORMED)) > 0 &&
                 strlen(folio_state_failure_line(FOLIO_STATE_NOTE_STORE_FAILED)) > 0 &&
+                strlen(folio_state_failure_line(FOLIO_STATE_HISTORY_FAILED)) > 0 &&
                 strlen(folio_state_failure_line(FOLIO_STATE_NAME_TAKEN)) > 0 &&
                 strlen(folio_state_failure_line(FOLIO_STATE_LEDGER_STALE)) > 0 &&
                 strlen(folio_state_failure_line(FOLIO_STATE_OUT_OF_MEMORY)) > 0,
@@ -1156,6 +1229,8 @@ void run_state_tests(void)
     verify_select();
     verify_edit_guards();
     verify_edit_unchanged();
+    verify_history_order();
+    verify_history_failures();
     verify_edit_saves();
     verify_edit_failures();
     verify_move_while_editing();

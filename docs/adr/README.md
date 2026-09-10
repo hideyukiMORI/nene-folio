@@ -27,3 +27,4 @@ ADR は「なぜそう決めたか」「何を却下したか」を書く。
 | [0009](0009-drawer-scroll-and-overflow-fade.md) | スクロール量は application が要求量で持ち、上限と表示座標は core が決め、UI はあふれをフェードで示す | 受理 |
 | [0010](0010-category-color-via-choose-color.md) | カテゴリの色は右クリックで OS の色の選択から選び、expanded と同じ経路で categories.json へ書き戻す | 受理 |
 | [0011](0011-frameless-client-min-size-and-breadcrumb-ellipsis.md) | 枠なし窓の client は自分で決め、最小サイズを持ち、パンくずはノート名 → カテゴリ名の順に省略する | 受理 |
+| [0012](0012-note-history-before-save.md) | md を書き戻す直前の本文を data/.history に連番で 5 版まで残し、残せなければ保存しない | 受理 |

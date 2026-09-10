@@ -4,6 +4,7 @@
 #include "file_bytes.h"
 #include "json_writer.h"
 #include "name_list.h"
+#include "note_history.h"
 #include "note_ledger.h"
 #include "note_text.h"
 #include "utf16_text.h"
@@ -25,6 +26,15 @@ struct persistence_adapter
 static const wchar_t data_folder[] = L"data";
 static const wchar_t note_extension[] = L".md";
 constexpr size_t note_extension_length = 3;
+/* 履歴の置き場所（ADR 0012 の決定 1）。`.` で始まるのでカテゴリの走査には出ない（決定 4）。 */
+static const wchar_t history_folder[] = L".history";
+constexpr size_t history_folder_length = 8;
+/* 版の葉は `\<番号>.md` の 5 単位（終端を除く）。番号が 1 桁で足りることを言語で確かめる。 */
+constexpr size_t history_leaf_length = 5;
+/* 書き切ってから 1.md へ改名する控えの葉 `\1.md.tmp`（9 単位・ADR 0012 の決定 3）。 */
+constexpr size_t history_pending_length = 9;
+static_assert(note_history_depth >= 1 && note_history_depth <= 9,
+              "ADR 0012: the history depth must fit one digit");
 
 enum persistence_adapter_outcome
 persistence_adapter_create(struct persistence_adapter *_Nullable *_Nonnull out)
@@ -71,6 +81,32 @@ static bool append_units(wchar_t *_Nonnull out, size_t *_Nonnull position,
     return true;
 }
 
+/* 終端付きの UTF-16 の長さ（組み立てた道の上限まで）。 */
+static size_t wide_length(const wchar_t *_Nonnull units)
+{
+    size_t length = 0;
+    while (length < path_capacity && units[length] != L'\0')
+    {
+        length += 1;
+    }
+    return length;
+}
+
+/* UTF-8 の名前を `\<名前>` として out の position から書き足す（C-014 の変換の境界）。 */
+static bool append_utf8_name(wchar_t *_Nonnull out, size_t *_Nonnull position,
+                             const char *_Nonnull name)
+{
+    struct utf16_text *_Nullable units = nullptr;
+    if (utf16_text_create(name, strlen(name), &units) != UTF16_TEXT_CONVERTED)
+    {
+        return false;
+    }
+    bool fits = append_units(out, position, L"\\", 1) &&
+                append_units(out, position, utf16_text_units(units), utf16_text_length(units));
+    utf16_text_destroy(units);
+    return fits;
+}
+
 /* root[\category][\leaf] を out（path_capacity 単位）へ組み立てる。 */
 static bool compose(const struct persistence_adapter *_Nonnull adapter,
                     const char *_Nullable category, const wchar_t *_Nullable leaf,
@@ -80,22 +116,11 @@ static bool compose(const struct persistence_adapter *_Nonnull adapter,
     bool fits = append_units(out, &position, adapter->root, adapter->root_length);
     if (fits && category != nullptr)
     {
-        struct utf16_text *_Nullable name = nullptr;
-        if (utf16_text_create(category, strlen(category), &name) != UTF16_TEXT_CONVERTED)
-        {
-            return false;
-        }
-        fits = append_units(out, &position, L"\\", 1) &&
-               append_units(out, &position, utf16_text_units(name), utf16_text_length(name));
-        utf16_text_destroy(name);
+        fits = append_utf8_name(out, &position, category);
     }
     if (fits && leaf != nullptr)
     {
-        size_t leaf_length = 0;
-        while (leaf[leaf_length] != L'\0')
-        {
-            leaf_length += 1;
-        }
+        size_t leaf_length = wide_length(leaf);
         fits = append_units(out, &position, L"\\", 1) &&
                append_units(out, &position, leaf, leaf_length);
     }
@@ -151,8 +176,9 @@ static enum persistence_outcome accept_entry(const WIN32_FIND_DATAW *_Nonnull en
 {
     bool is_directory = (entry->dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
     size_t length = name_length(entry->cFileName);
-    if (is_directory != directories || (length == 1 && entry->cFileName[0] == L'.') ||
-        (length == 2 && entry->cFileName[0] == L'.' && entry->cFileName[1] == L'.'))
+    /* `.` で始まるディレクトリはカテゴリにしない（ADR 0012 の決定 4）。`.` / `..` のほか
+     * `.history` や `.git` もここで落ちる。ファイル（ノート）の規則は変えない。 */
+    if (is_directory != directories || (is_directory && entry->cFileName[0] == L'.'))
     {
         return PERSISTENCE_LOADED;
     }
@@ -369,6 +395,133 @@ static enum persistence_outcome read_note(struct persistence_adapter *_Nonnull a
     return PERSISTENCE_MALFORMED;
 }
 
+/* 無ければ作る。既にあれば作れたものとして扱う。 */
+static bool ensure_directory(const wchar_t *_Nonnull path)
+{
+    return CreateDirectoryW(path, nullptr) || GetLastError() == ERROR_ALREADY_EXISTS;
+}
+
+/* data\.history\<category>\<note> を段階的に作りながら out へ組み立てる。 */
+static bool ensure_history_directory(const struct persistence_adapter *_Nonnull adapter,
+                                     const char *_Nonnull category, const char *_Nonnull note,
+                                     wchar_t *_Nonnull out)
+{
+    size_t length = 0;
+    if (!append_units(out, &length, adapter->root, adapter->root_length) ||
+        !append_units(out, &length, L"\\", 1) ||
+        !append_units(out, &length, history_folder, history_folder_length) ||
+        !ensure_directory(out))
+    {
+        return false;
+    }
+    if (!append_utf8_name(out, &length, category) || !ensure_directory(out))
+    {
+        return false;
+    }
+    return append_utf8_name(out, &length, note) && ensure_directory(out);
+}
+
+/* <履歴のディレクトリ>\<version>.md を out へ組み立てる。version は 1〜note_history_depth。 */
+static bool compose_version(const wchar_t *_Nonnull directory, size_t length, size_t version,
+                            wchar_t *_Nonnull out)
+{
+    const wchar_t leaf[] = {L'\\', (wchar_t)(L'0' + version), L'.', L'm', L'd', L'\0'};
+    size_t position = 0;
+    return append_units(out, &position, directory, length) &&
+           append_units(out, &position, leaf, history_leaf_length);
+}
+
+/* <履歴のディレクトリ>\1.md.tmp を out へ組み立てる。新しい版はここへ書き切ってから 1.md にする。
+ */
+static bool compose_pending(const wchar_t *_Nonnull directory, size_t length, wchar_t *_Nonnull out)
+{
+    size_t position = 0;
+    return append_units(out, &position, directory, length) &&
+           append_units(out, &position, L"\\1.md.tmp", history_pending_length);
+}
+
+/* 最古の版を消し、残りを 1 つずつ後ろへずらす（ADR 0012 の決定 3）。無い版は飛ばす。
+ * 改名に MOVEFILE_REPLACE_EXISTING を付けるので、最古の削除が効かなくても改名が相手を上書きし、
+ * 連鎖が止まって 1.md だけが失われることにならない。
+ * 原子的ではないので、途中で落ちれば番号が欠けた履歴が残りうる。md はまだ無傷。 */
+static void rotate_history(const wchar_t *_Nonnull directory, size_t length)
+{
+    wchar_t older[path_capacity];
+    wchar_t newer[path_capacity];
+    if (compose_version(directory, length, note_history_depth, older))
+    {
+        (void)DeleteFileW(older);
+    }
+    for (size_t version = note_history_depth; version > 1; --version)
+    {
+        if (compose_version(directory, length, version, older) &&
+            compose_version(directory, length, version - 1, newer))
+        {
+            (void)MoveFileExW(newer, older, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH);
+        }
+    }
+}
+
+/* 履歴のディレクトリを用意し、**先に新しい版を 1.md.tmp へ書き切ってから**番号をずらし、
+ * 最後に 1.md.tmp を 1.md へ改名する（ADR 0012 の決定 3）。
+ * 書き切れなければ履歴も md も 1 つも動かない。最後の改名が落ちると 2.md〜5.md だけが残りうる。 */
+static enum persistence_outcome store_history(const struct persistence_adapter *_Nonnull adapter,
+                                              const char *_Nonnull category,
+                                              const char *_Nonnull note,
+                                              const struct file_bytes *_Nonnull bytes)
+{
+    wchar_t directory[path_capacity];
+    wchar_t pending[path_capacity];
+    wchar_t newest[path_capacity];
+    if (!ensure_history_directory(adapter, category, note, directory))
+    {
+        return PERSISTENCE_UNWRITABLE;
+    }
+    size_t length = wide_length(directory);
+    if (!compose_pending(directory, length, pending) ||
+        !compose_version(directory, length, 1, newest))
+    {
+        return PERSISTENCE_UNWRITABLE;
+    }
+    enum persistence_outcome written =
+        file_bytes_store(pending, file_bytes_data(bytes), file_bytes_length(bytes));
+    if (written != PERSISTENCE_STORED)
+    {
+        return written;
+    }
+    rotate_history(directory, length);
+    return MoveFileExW(pending, newest, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)
+               ? PERSISTENCE_STORED
+               : PERSISTENCE_UNWRITABLE;
+}
+
+/* いま md にある本文を履歴へ写す（FR-017 / ADR 0012）。バイト列はそのまま写すので、
+ * 改行の形も BOM の無さも元のままになる。md が無ければ写すものが無い（ABSENT）。 */
+static enum persistence_outcome archive_note(struct persistence_adapter *_Nonnull adapter,
+                                             const char *_Nonnull category,
+                                             const char *_Nonnull note)
+{
+    wchar_t leaf[MAX_PATH];
+    wchar_t source[path_capacity];
+    if (!note_leaf(note, leaf, MAX_PATH) || !compose(adapter, category, leaf, source))
+    {
+        return PERSISTENCE_UNWRITABLE;
+    }
+    struct file_bytes *_Nullable bytes = nullptr;
+    enum persistence_outcome read = file_bytes_read(source, &bytes);
+    if (read == PERSISTENCE_ABSENT || read == PERSISTENCE_OUT_OF_MEMORY)
+    {
+        return read;
+    }
+    if (read != PERSISTENCE_LOADED)
+    {
+        return PERSISTENCE_UNWRITABLE;
+    }
+    enum persistence_outcome outcome = store_history(adapter, category, note, bytes);
+    file_bytes_destroy(bytes);
+    return outcome;
+}
+
 /* 本文を同じ md へ原子的に書き戻す（FR-006）。改行の形は core が既に揃えている。 */
 static enum persistence_outcome write_note(struct persistence_adapter *_Nonnull adapter,
                                            const char *_Nonnull category, const char *_Nonnull note,
@@ -462,6 +615,7 @@ struct persistence_port persistence_adapter_port(struct persistence_adapter *_No
         .read_category_ledger = read_category_ledger,
         .write_category_ledger = write_category_ledger,
         .read_note = read_note,
+        .archive_note = archive_note,
         .write_note = write_note,
         .move_note = move_note,
         .read_note_ledger = read_note_ledger,

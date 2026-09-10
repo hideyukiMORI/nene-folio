@@ -645,7 +645,23 @@ enum folio_state_outcome folio_state_begin_edit(struct folio_state *_Nonnull sta
     return FOLIO_STATE_READY;
 }
 
-/* 正規化済みの本文を書き戻し、表示値も作り直す。書けなければ何も変えない（ADR 0006 の決定 6）。 */
+/* 書き戻す直前に、いまファイルにある本文を履歴へ写させる（ADR 0012 の決定 2）。
+ * 元の md が無ければ写すものが無いので、そのまま書き戻しへ進む。 */
+static enum folio_state_outcome archive_before_store(struct folio_state *_Nonnull state)
+{
+    enum persistence_outcome archived = state->port.archive_note(
+        state->port.adapter, category_ledger_name(state->categories, state->selected_category),
+        note_ledger_name(state->notes[state->selected_category], state->selected_note));
+    if (archived == PERSISTENCE_STORED || archived == PERSISTENCE_ABSENT)
+    {
+        return FOLIO_STATE_READY;
+    }
+    return archived == PERSISTENCE_OUT_OF_MEMORY ? FOLIO_STATE_OUT_OF_MEMORY
+                                                 : FOLIO_STATE_HISTORY_FAILED;
+}
+
+/* 正規化済みの本文を書き戻し、表示値も作り直す。書けなければ何も変えない（ADR 0006 の決定 6）。
+ * 履歴を残せなければ書き戻しにも進まない（ADR 0012 の決定 2）。 */
 static enum folio_state_outcome store_edited(struct folio_state *_Nonnull state,
                                              struct note_text *_Nonnull edited)
 {
@@ -653,6 +669,12 @@ static enum folio_state_outcome store_edited(struct folio_state *_Nonnull state,
     {
         note_text_destroy(edited);
         return FOLIO_STATE_READY;
+    }
+    enum folio_state_outcome archived = archive_before_store(state);
+    if (archived != FOLIO_STATE_READY)
+    {
+        note_text_destroy(edited);
+        return archived;
     }
     struct markdown_rtf *_Nullable rendered = nullptr;
     if (markdown_rtf_create(edited, state->palette, &rendered) != MARKDOWN_RTF_CONVERTED)
@@ -791,6 +813,8 @@ const char *_Nonnull folio_state_failure_line(enum folio_state_outcome outcome)
         return "編集中の本文に壊れた文字があります。保存していません。";
     case FOLIO_STATE_NOTE_STORE_FAILED:
         return "ノートを書き戻せませんでした。編集中の本文はそのままです。";
+    case FOLIO_STATE_HISTORY_FAILED:
+        return "履歴を書けなかったので保存していません。編集中の本文は残っています。";
     case FOLIO_STATE_NAME_TAKEN:
         return "移動先に同じ名前のノートがあります。移していません。";
     case FOLIO_STATE_LEDGER_STALE:

@@ -37,6 +37,12 @@ struct persistence_port
                                                    const char *_Nonnull category,
                                                    const char *_Nonnull note,
                                                    struct note_text *_Nullable *_Nonnull out);
+    /* いま data/<category>/<note>.md にある本文を data/.history/<category>/<note>/1.md へ写し、
+     * 前の版を 1 つずつ後ろへずらす（FR-017 / ADR 0012 の決定 3）。写せたら STORED、
+     * 元の md が無ければ ABSENT（写すものが無い）、履歴を書けなければ UNWRITABLE。 */
+    enum persistence_outcome (*_Nonnull archive_note)(struct persistence_adapter *_Nonnull adapter,
+                                                      const char *_Nonnull category,
+                                                      const char *_Nonnull note);
     /* data/<category>/<note>.md を置き換える。途中で落ちても壊れた本文を残さない（FR-006）。 */
     enum persistence_outcome (*_Nonnull write_note)(struct persistence_adapter *_Nonnull adapter,
                                                     const char *_Nonnull category,
