@@ -746,6 +746,12 @@ enum drawer_window_outcome drawer_window_create(HWND _Nonnull parent,
     }
     self->state = state;
     self->palette = folio_palette_for(folio_state_theme(state));
+    /* 未設定のカスタム色は白で始める（Windows の慣例。黒だと設定済みに見える）。
+     * 実行中だけ持ち、保存しない（ADR 0010 の決定 4）。 */
+    for (size_t slot = 0; slot < sizeof self->custom_colors / sizeof self->custom_colors[0]; ++slot)
+    {
+        self->custom_colors[slot] = RGB(255, 255, 255);
+    }
     HWND handle = CreateWindowExW(0, class_name, L"", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, parent,
                                   nullptr, instance, self);
     if (handle == nullptr)
