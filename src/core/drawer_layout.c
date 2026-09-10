@@ -170,6 +170,38 @@ void drawer_layout_scroll(struct drawer_layout *_Nonnull layout, int offset)
     layout->scroll = offset > limit ? limit : offset;
 }
 
+/* 選択の行を探す。無ければ count（＝見つからなかった印）。 */
+static size_t note_row_of(const struct drawer_layout *_Nonnull layout, size_t category, size_t note)
+{
+    for (size_t index = 0; index < layout->count; ++index)
+    {
+        const struct drawer_row *_Nonnull row = &layout->rows[index];
+        if (row->kind == DRAWER_ROW_NOTE && row->category == category && row->note == note)
+        {
+            return index;
+        }
+    }
+    return layout->count;
+}
+
+int drawer_layout_reveal(const struct drawer_layout *_Nonnull layout, size_t category, size_t note)
+{
+    size_t index = note_row_of(layout, category, note);
+    if (index == layout->count)
+    {
+        return layout->scroll;
+    }
+    const struct drawer_row *_Nonnull row = &layout->rows[index];
+    /* 上端が帯の下に来る量が上限、下端が viewport に収まる量が下限。いまの量が間なら動かさない。 */
+    int highest = row->top - layout->metrics.top_padding;
+    int lowest = row->top + row->height - layout->metrics.viewport_height;
+    if (layout->scroll > highest)
+    {
+        return highest;
+    }
+    return layout->scroll < lowest ? lowest : layout->scroll;
+}
+
 bool drawer_layout_overflow_above(const struct drawer_layout *_Nonnull layout)
 {
     return layout->scroll > 0;

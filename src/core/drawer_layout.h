@@ -31,6 +31,11 @@ void drawer_layout_select(struct drawer_layout *_Nonnull layout, size_t category
 /* スクロール量（画素）を 0〜上限に丸めて配置に印として記憶する（drawer_layout_select と同じ流儀）。
  * 以後の row / hit / drop / line_y はこの丸めた量を引いた表示座標になる。 */
 void drawer_layout_scroll(struct drawer_layout *_Nonnull layout, int offset);
+/* 選択の行が頭の帯（top_padding）から下端（viewport_height）までに収まる最小のスクロール量
+ * （FR-018 / ADR 0013 の決定 6）。既に収まっていれば、いま印として持っている量をそのまま返す。
+ * その行が無ければ（折り畳んだカテゴリの中・索引に無い）も同じで、量は動かない。 */
+[[nodiscard]] int drawer_layout_reveal(const struct drawer_layout *_Nonnull layout, size_t category,
+                                       size_t note);
 /* 上に隠れている行があるか（丸めた量 > 0）。UI はこの側にだけフェードを描く。 */
 [[nodiscard]] bool drawer_layout_overflow_above(const struct drawer_layout *_Nonnull layout);
 /* 下に隠れている行があるか（丸めた量 < 上限）。 */
