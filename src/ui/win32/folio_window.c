@@ -677,6 +677,7 @@ static void press_key(struct folio_window *_Nonnull self, WPARAM key)
 }
 
 /* 索引の文字の鍵（ADR 0013 の決定 2）。扱わない文字では何も起きない。
+ * Ctrl+S は両方の区画で効くように、ここでも本文と同じ保存を行う。
  * IME が ON のときは未確定文字になってここへ届かない（ADR 0013 の「失う・残る」）。 */
 static void type_key(struct folio_window *_Nonnull self, WPARAM character)
 {
@@ -704,6 +705,13 @@ static void type_key(struct folio_window *_Nonnull self, WPARAM character)
         break;
     case 'l':
         expand_selected(self, true);
+        break;
+    case store_character:
+        /* Ctrl+S は索引の区画でも効く（本文の EN_MSGFILTER と同じ保存）。閲覧中は何もしない。 */
+        if (folio_state_pane_mode(self->state) == PANE_MODE_EDIT)
+        {
+            (void)store_edit(self);
+        }
         break;
     default:
         /* WM_CHAR の文字は開いた集合（C-017）。 */
