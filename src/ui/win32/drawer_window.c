@@ -452,12 +452,6 @@ static void apply_drop(struct drawer_window *_Nonnull self, struct drawer_row so
 /* 押した行を覚えて捕捉する。クリックの確定は離すときに行う（ADR 0007 の決定 6）。 */
 static void press(struct drawer_window *_Nonnull self, int y)
 {
-    /* 頭の帯はドロワーの装飾であって行ではない。スクロールで帯の下へ潜った行を掴ませない
-     * （描画も同じ境界でクリップしている・ADR 0009 の決定 7）。 */
-    if (y < scale(base_header_height, GetDpiForWindow(self->handle)))
-    {
-        return;
-    }
     struct drawer_layout *_Nullable layout = nullptr;
     if (!current_layout(self, &layout))
     {

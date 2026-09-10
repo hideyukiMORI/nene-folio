@@ -194,6 +194,12 @@ struct drawer_row drawer_layout_row(const struct drawer_layout *_Nonnull layout,
 
 bool drawer_layout_hit(const struct drawer_layout *_Nonnull layout, int y, size_t *_Nonnull index)
 {
+    /* 頭の帯（top_padding より上）は行ではない。内部の座標では行がそこへ来ることは無いが、
+     * スクロールすると潜るので、表示座標で先に落とす（ADR 0009）。 */
+    if (y < layout->metrics.top_padding)
+    {
+        return false;
+    }
     int inner = y + layout->scroll;
     for (size_t row = 0; row < layout->count; ++row)
     {

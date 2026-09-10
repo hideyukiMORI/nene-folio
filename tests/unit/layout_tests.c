@@ -139,12 +139,18 @@ static void verify_scroll_fits(void)
     drawer_layout_destroy(layout);
 }
 
-/* ヒットテストも表示座標で受ける（丸めた量が 20 のとき、行はすべて 20 px 上）。 */
+/* ヒットテストも表示座標で受ける（丸めた量が 20 のとき、行はすべて 20 px 上）。
+ * work の行は 14..48 から -6..28 へ動き、上半分が頭の帯（top_padding = 8）の下へ潜る。 */
 static void verify_scrolled_hits(const struct drawer_layout *_Nonnull layout)
 {
     size_t index = 99;
-    require(!drawer_layout_hit(layout, -7, &index) && index == 99, "above the first row moves too");
-    require(drawer_layout_hit(layout, -6, &index) && index == 0, "the top edge moved up");
+    require(!drawer_layout_hit(layout, -7, &index) && index == 99,
+            "nothing above the drawer, scrolled or not");
+    require(!drawer_layout_hit(layout, 7, &index) && index == 99,
+            "the header band is not a row, even with a row scrolled under it");
+    require(drawer_layout_hit(layout, 8, &index) && index == 0,
+            "the band's lower edge belongs to the row drawn there");
+    require(drawer_layout_hit(layout, 27, &index) && index == 0, "the rest of that row");
     require(drawer_layout_hit(layout, 28, &index) && index == 1, "the first note row moved up");
     require(drawer_layout_hit(layout, 123, &index) && index == 3, "the last row moved up");
     require(!drawer_layout_hit(layout, 124, &index), "below the last row moved up");

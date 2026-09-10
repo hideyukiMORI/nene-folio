@@ -39,7 +39,9 @@ void drawer_layout_scroll(struct drawer_layout *_Nonnull layout, int offset);
 /* index は row_count 未満であること。 */
 [[nodiscard]] struct drawer_row drawer_layout_row(const struct drawer_layout *_Nonnull layout,
                                                   size_t index);
-/* y 座標にある行の番号。行の外なら false で index は触らない（FR-004 のヒットテスト）。 */
+/* y 座標にある行の番号。行の外なら false で index は触らない（FR-004 のヒットテスト）。
+ * 頭の帯（top_padding より上）は行ではなく、スクロールでそこへ潜った行にも当たらない（ADR 0009）。
+ */
 [[nodiscard]] bool drawer_layout_hit(const struct drawer_layout *_Nonnull layout, int y,
                                      size_t *_Nonnull index);
 /* source_row を掴んで y まで運んだときの落とし先（FR-009 / ADR 0007 の決定 1・ADR 0008 の決定 1）。
