@@ -108,7 +108,7 @@ enum note_pane_outcome note_pane_create(HWND _Nonnull parent, COLORREF backgroun
                            .crTextColor = text};
     memcpy(format.szFaceName, editor_face, sizeof editor_face);
     SendMessageW(pane->handle, EM_SETCHARFORMAT, SCF_DEFAULT, (LPARAM)&format);
-    /* 鍵の通知を親の WM_NOTIFY へ上げる（Ctrl+S）。 */
+    /* 鍵の通知を親の WM_NOTIFY へ上げる（Ctrl+S と Esc）。 */
     SendMessageW(pane->handle, EM_SETEVENTMASK, 0, ENM_KEYEVENTS);
     *out = pane;
     return NOTE_PANE_CREATED;
@@ -144,7 +144,6 @@ void note_pane_edit(struct note_pane *_Nonnull pane, const char16_t *_Nonnull un
     EDITSTREAM editing = {.dwCookie = (DWORD_PTR)&stream, .dwError = 0, .pfnCallback = stream_in};
     SendMessageW(pane->handle, EM_STREAMIN, SF_TEXT | SF_UNICODE, (LPARAM)&editing);
     SendMessageW(pane->handle, EM_SETMODIFY, FALSE, 0);
-    SetFocus(pane->handle);
 }
 
 enum note_pane_text_outcome note_pane_text(struct note_pane *_Nonnull pane,

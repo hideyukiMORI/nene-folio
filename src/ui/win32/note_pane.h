@@ -21,7 +21,8 @@ struct note_pane;
 [[nodiscard]] HWND _Nullable note_pane_handle(const struct note_pane *_Nonnull pane);
 /* RTF を流し込んで表示を置き換え、読み取り専用に戻す（閲覧）。 */
 void note_pane_render(struct note_pane *_Nonnull pane, const char *_Nonnull rtf, size_t length);
-/* 本文を平文で流し込み、入力を受け付ける（編集）。 */
+/* 本文を平文で流し込み、入力を受け付ける（編集）。フォーカスは動かさない
+ * （区画を移すのは主窓の仕事・ADR 0013 の決定 1）。 */
 void note_pane_edit(struct note_pane *_Nonnull pane, const char16_t *_Nonnull units, size_t count);
 /* 編集中の本文を UTF-16 で取り出す。pane が所有し、次の note_pane の呼び出しまで有効。 */
 [[nodiscard]] enum note_pane_text_outcome note_pane_text(struct note_pane *_Nonnull pane,

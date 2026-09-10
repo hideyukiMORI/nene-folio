@@ -140,6 +140,21 @@ static void fill_rect(HDC device, RECT bounds, COLORREF color)
     DeleteObject(brush);
 }
 
+/* 1 px の枠だけを描く（フォーカスが本文にあるときの印・ADR 0013 の決定 8）。 */
+static void frame_rect(HDC device, RECT bounds, COLORREF color)
+{
+    HBRUSH brush = CreateSolidBrush(color);
+    FrameRect(device, &bounds, brush);
+    DeleteObject(brush);
+}
+
+/* 索引の区画にフォーカスがあるか。Win32 のフォーカスがそのまま区画である（ADR 0013 の決定 1）。
+ * ドロワーはフォーカスを取らないので、見るのは主窓（ADR 0009 の決定 5）。 */
+static bool index_focused(const struct drawer_window *_Nonnull self)
+{
+    return GetFocus() == GetParent(self->handle);
+}
+
 /* 10 進の文字列にする。反転して並べ直す。 */
 static int format_count(size_t value, wchar_t *_Nonnull out)
 {
@@ -199,7 +214,8 @@ static void draw_category(const struct drawer_window *_Nonnull self, HDC device,
               DT_SINGLELINE | DT_VCENTER | DT_RIGHT | DT_NOPREFIX);
 }
 
-/* ノート行: 選択中なら面を敷き、右端にカテゴリ色の角を置く。 */
+/* ノート行: 選択中なら面を敷き、右端にカテゴリ色の角を置く。
+ * 角は索引にフォーカスがあるとき塗り、本文にあるとき枠だけ（ADR 0013 の決定 8）。 */
 static void draw_note(const struct drawer_window *_Nonnull self, HDC device, struct drawer_row row,
                       int width)
 {
@@ -213,7 +229,14 @@ static void draw_note(const struct drawer_window *_Nonnull self, HDC device, str
         int middle = row.top + row.height / 2;
         RECT square = {width - inset - mark, middle - mark / 2, width - inset,
                        middle - mark / 2 + mark};
-        fill_rect(device, square, to_colorref(row.color));
+        if (index_focused(self))
+        {
+            fill_rect(device, square, to_colorref(row.color));
+        }
+        else
+        {
+            frame_rect(device, square, to_colorref(row.color));
+        }
     }
     RECT bounds = {row.indent, row.top, width - inset * 2, row.top + row.height};
     SelectObject(device, self->note_font);
@@ -384,24 +407,14 @@ static void paint(struct drawer_window *_Nonnull self)
     EndPaint(self->handle, &painting);
 }
 
-/* 別のノートを選ぶ前に、主窓へ「編集中なら先に保存」を頼む（ADR 0006 の決定 5）。 */
+/* ノート行のクリックは主窓へ渡す。「編集中なら保存 → 選択 → 同じモードで開く」の順は
+ * 主窓の 1 か所が持つ（ADR 0013 の決定 4 / 7）。 */
 static enum folio_state_outcome select_note(struct drawer_window *_Nonnull self,
                                             struct drawer_row row)
 {
-    HWND parent = GetParent(self->handle);
     /* LRESULT で返る値は主窓が入れた enum folio_state_outcome（Win32 の境界）。 */
-    enum folio_state_outcome outcome =
-        (enum folio_state_outcome)SendMessageW(parent, folio_message_edit_flush, 0, 0);
-    if (outcome != FOLIO_STATE_READY)
-    {
-        return outcome;
-    }
-    outcome = folio_state_select_note(self->state, row.category, row.note);
-    if (outcome == FOLIO_STATE_READY)
-    {
-        SendMessageW(parent, folio_message_selection_changed, 0, 0);
-    }
-    return outcome;
+    return (enum folio_state_outcome)SendMessageW(
+        GetParent(self->handle), folio_message_select_note, (WPARAM)row.category, (LPARAM)row.note);
 }
 
 /* 行への意図を application へ渡し、結果を写す。 */
@@ -520,9 +533,12 @@ static void recolor(struct drawer_window *_Nonnull self, int y)
     }
 }
 
-/* 押した行を覚えて捕捉する。クリックの確定は離すときに行う（ADR 0007 の決定 6）。 */
+/* 押した行を覚えて捕捉する。クリックの確定は離すときに行う（ADR 0007 の決定 6）。
+ * 押した側が区画を取るので、フォーカスは主窓へ渡す（ドロワー自身は取らない・ADR 0013 の決定 1）。
+ */
 static void press(struct drawer_window *_Nonnull self, int y)
 {
+    SetFocus(GetParent(self->handle));
     struct drawer_layout *_Nullable layout = nullptr;
     if (!current_layout(self, &layout))
     {
@@ -779,6 +795,22 @@ void drawer_window_scroll_key(struct drawer_window *_Nonnull drawer, WPARAM key)
     {
         scroll_by(drawer, step);
     }
+}
+
+void drawer_window_reveal_selection(struct drawer_window *_Nonnull drawer)
+{
+    if (drawer->handle == nullptr)
+    {
+        return;
+    }
+    enum folio_state_outcome outcome =
+        folio_state_reveal_selection(drawer->state, metrics_for(drawer));
+    if (outcome != FOLIO_STATE_READY)
+    {
+        failure_box_show(drawer->handle, outcome);
+        return;
+    }
+    InvalidateRect(drawer->handle, nullptr, FALSE);
 }
 
 void drawer_window_destroy(struct drawer_window *_Nullable drawer)
