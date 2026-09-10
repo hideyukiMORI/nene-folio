@@ -194,6 +194,28 @@ static void verify_scroll(void)
     drawer_layout_destroy(layout);
 }
 
+/* 選択の行を見える位置へ寄せる最小の量（ADR 0013 の決定 6）。行は work 14..48 / alpha 48..76 /
+ * beta 76..104 / closed 110..144（hidden は折り畳みで行にならない）。帯は 8・窓は 100・上限は 54。
+ */
+static void verify_reveal(void)
+{
+    struct drawer_layout *layout = build_scrolled_layout(scrolled_metrics);
+    require(drawer_layout_reveal(layout, 0, 0) == 0, "a row already in view keeps the amount");
+    require(drawer_layout_reveal(layout, 0, 1) == 4,
+            "a row hidden below rises until its bottom edge reaches the viewport");
+    require(drawer_layout_reveal(layout, 1, 0) == 0,
+            "a note inside a collapsed category has no row, so the amount stays");
+    require(drawer_layout_reveal(layout, 0, 9) == 0, "a note that is not there keeps the amount");
+    drawer_layout_scroll(layout, 54);
+    require(drawer_layout_reveal(layout, 0, 1) == 54, "at the end that row is still in view");
+    require(drawer_layout_reveal(layout, 1, 0) == 54, "a missing row keeps the scrolled amount");
+    require(drawer_layout_reveal(layout, 0, 0) == 40,
+            "a row hidden above sinks until its top edge reaches the band");
+    drawer_layout_scroll(layout, drawer_layout_reveal(layout, 0, 0));
+    require(drawer_layout_row(layout, 1).top == 8, "the revealed row sits at the band");
+    drawer_layout_destroy(layout);
+}
+
 static void verify_empty(void)
 {
     struct category_ledger *categories = categories_from("{\"version\": 1, \"categories\": []}");
@@ -356,4 +378,5 @@ void run_layout_tests(void)
     verify_empty();
     verify_drops();
     verify_scroll();
+    verify_reveal();
 }

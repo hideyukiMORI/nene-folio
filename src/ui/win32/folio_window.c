@@ -5,7 +5,9 @@
 #include "folio_message.h"
 #include "folio_palette.h"
 #include "folio_state.h"
+#include "folio_step.h"
 #include "note_pane.h"
+#include "note_ref.h"
 #include "utf16_text.h"
 
 #include <dwmapi.h>
@@ -23,6 +25,7 @@ struct folio_window
     struct drawer_window *_Nullable drawer;
     struct note_pane *_Nullable pane;
     HFONT _Nullable mono_font;
+    bool pending_g; /* 直前の文字の鍵が g だった（gg の 2 打・ADR 0013 の決定 2） */
 };
 
 static const wchar_t class_name[] = L"NeNeFolioWindow";
@@ -392,31 +395,66 @@ static enum folio_state_outcome take_text(const struct folio_window *_Nonnull se
     return FOLIO_STATE_OUT_OF_MEMORY;
 }
 
-/* 「編集」の札。application の本文を平文で流し込んでから意図を出す。 */
-static void enter_edit(struct folio_window *_Nonnull self)
+/* ドロワーへ描き直しを頼む。選択の印もフォーカスの印もドロワーが描く（ADR 0013 の決定 8）。 */
+static void redraw_drawer(const struct folio_window *_Nonnull self)
 {
+    HWND drawer = self->drawer == nullptr ? nullptr : drawer_window_handle(self->drawer);
+    if (drawer != nullptr)
+    {
+        InvalidateRect(drawer, nullptr, FALSE);
+    }
+}
+
+/* フォーカスを本文の区画へ移す（「編集」の札と Enter・ADR 0013 の決定 1 / 2）。 */
+static void focus_pane(const struct folio_window *_Nonnull self)
+{
+    HWND pane = self->pane == nullptr ? nullptr : note_pane_handle(self->pane);
+    if (pane != nullptr)
+    {
+        SetFocus(pane);
+    }
+}
+
+/* 選択中のノートを、いまのモードのまま右ペインへ写す（ADR 0013 の決定 4 の (iii)）。
+ * 編集中は本文を平文で流し込むだけで、フォーカスは動かさない。 */
+static enum folio_state_outcome show_note(struct folio_window *_Nonnull self)
+{
+    if (folio_state_pane_mode(self->state) == PANE_MODE_VIEW)
+    {
+        render_pane(self);
+        return FOLIO_STATE_READY;
+    }
     struct utf16_text *_Nullable wide = nullptr;
     if (self->pane == nullptr ||
         utf16_text_create(folio_state_pane_text(self->state),
                           folio_state_pane_text_length(self->state), &wide) != UTF16_TEXT_CONVERTED)
     {
-        failure_box_show(self->handle, FOLIO_STATE_OUT_OF_MEMORY);
-        return;
+        return FOLIO_STATE_OUT_OF_MEMORY;
     }
+    note_pane_edit(self->pane, utf16_text_units(wide), utf16_text_length(wide));
+    utf16_text_destroy(wide);
+    InvalidateRect(self->handle, nullptr, FALSE);
+    return FOLIO_STATE_READY;
+}
+
+/* 「編集」の札。編集モードへ入り、本文を平文で流してからフォーカスを本文へ渡す。 */
+static void enter_edit(struct folio_window *_Nonnull self)
+{
     enum folio_state_outcome outcome = folio_state_begin_edit(self->state);
     if (outcome == FOLIO_STATE_READY)
     {
-        note_pane_edit(self->pane, utf16_text_units(wide), utf16_text_length(wide));
-        InvalidateRect(self->handle, nullptr, FALSE);
+        outcome = show_note(self);
     }
-    else
+    if (outcome != FOLIO_STATE_READY)
     {
         failure_box_show(self->handle, outcome);
+        return;
     }
-    utf16_text_destroy(wide);
+    focus_pane(self);
 }
 
-/* 編集中なら保存して閲覧へ戻す。閲覧中なら何もしない（ADR 0006 の決定 1 / 5）。 */
+/* 編集中なら保存して閲覧へ戻す。閲覧中なら何もしない（ADR 0006 の決定 1・「閲覧」の札と WM_CLOSE
+ * だけが使う・ADR 0013 の決定 4）。 */
 static enum folio_state_outcome flush_edit(struct folio_window *_Nonnull self)
 {
     if (folio_state_pane_mode(self->state) == PANE_MODE_VIEW)
@@ -433,16 +471,14 @@ static enum folio_state_outcome flush_edit(struct folio_window *_Nonnull self)
     if (outcome == FOLIO_STATE_READY)
     {
         render_pane(self);
-        /* 閲覧へ戻ったので、Escape と ↑↓ / PgUp / PgDn が効くように鍵を主窓へ（ADR 0009 の決定
-         * 5）。
-         */
+        /* 閲覧へ戻ったので、鍵が索引へ返るようにフォーカスを主窓へ（ADR 0013 の決定 1）。 */
         SetFocus(self->handle);
     }
     return outcome;
 }
 
-/* Ctrl+S。保存して編集モードのまま残る。 */
-static void store_edit(struct folio_window *_Nonnull self)
+/* 編集中の本文を取り出して保存する。取り出せない理由も保存の失敗も 1 つの結果に写す。 */
+static enum folio_state_outcome store_body(const struct folio_window *_Nonnull self)
 {
     const char16_t *units = u"";
     size_t count = 0;
@@ -451,12 +487,89 @@ static void store_edit(struct folio_window *_Nonnull self)
     {
         outcome = folio_state_store_note(self->state, units, count);
     }
+    return outcome;
+}
+
+/* Ctrl+S と本文の Esc。保存して編集モードのまま残る。失敗なら 1 行を出して false。 */
+static bool store_edit(struct folio_window *_Nonnull self)
+{
+    enum folio_state_outcome outcome = store_body(self);
+    if (outcome != FOLIO_STATE_READY)
+    {
+        failure_box_show(self->handle, outcome);
+        return false;
+    }
+    InvalidateRect(self->handle, nullptr, FALSE);
+    return true;
+}
+
+/* ノートを切り替える前の保存。閲覧中なら何もしない（ADR 0013 の決定 4 の (i)）。 */
+static enum folio_state_outcome save_edit(const struct folio_window *_Nonnull self)
+{
+    return folio_state_pane_mode(self->state) == PANE_MODE_VIEW ? FOLIO_STATE_READY
+                                                                : store_body(self);
+}
+
+/* 選択の意図が通ったら、同じモードで開き直して索引も描き直す（決定 4 の (iii) / (iv)）。 */
+static enum folio_state_outcome opened(struct folio_window *_Nonnull self,
+                                       enum folio_state_outcome selected)
+{
+    if (selected != FOLIO_STATE_READY)
+    {
+        return selected;
+    }
+    enum folio_state_outcome outcome = show_note(self);
+    redraw_drawer(self);
+    return outcome;
+}
+
+/* ノートを切り替える唯一の経路（ADR 0013 の決定 4）。保存できなければ選択は動かない。 */
+static enum folio_state_outcome switch_note(struct folio_window *_Nonnull self, size_t category,
+                                            size_t note)
+{
+    enum folio_state_outcome outcome = save_edit(self);
+    if (outcome != FOLIO_STATE_READY)
+    {
+        return outcome;
+    }
+    return opened(self, folio_state_select_note(self->state, category, note));
+}
+
+/* 索引の鍵で選択を動かし、動いた行を見える位置へ寄せる（ADR 0013 の決定 2 / 6）。 */
+static void switch_adjacent(struct folio_window *_Nonnull self, enum folio_step step)
+{
+    enum folio_state_outcome outcome = save_edit(self);
+    if (outcome == FOLIO_STATE_READY)
+    {
+        outcome = opened(self, folio_state_select_adjacent(self->state, step));
+    }
     if (outcome != FOLIO_STATE_READY)
     {
         failure_box_show(self->handle, outcome);
         return;
     }
-    InvalidateRect(self->handle, nullptr, FALSE);
+    if (self->drawer != nullptr)
+    {
+        drawer_window_reveal_selection(self->drawer);
+    }
+}
+
+/* h / l。選択中のノートのカテゴリだけを折り畳む／展開する（ADR 0013 の決定 2）。 */
+static void expand_selected(struct folio_window *_Nonnull self, bool expanded)
+{
+    struct note_ref selected = {.category = 0, .note = 0};
+    if (!folio_state_selection(self->state, &selected))
+    {
+        return;
+    }
+    enum folio_state_outcome outcome =
+        folio_state_set_category_expanded(self->state, selected.category, expanded);
+    if (outcome != FOLIO_STATE_READY)
+    {
+        failure_box_show(self->handle, outcome);
+        return;
+    }
+    redraw_drawer(self);
 }
 
 /* 「閲覧」の札・別ノートの選択・窓を閉じる操作の共通の出口。保存できなければ 1 行を出す。 */
@@ -491,7 +604,18 @@ static void click_caption(struct folio_window *_Nonnull self, LPARAM lparam)
     }
 }
 
-/* RichEdit の鍵の通知（EN_MSGFILTER）。Ctrl+S だけを意図にして既定処理を止める。 */
+/* 本文の Esc。編集中なら保存してから、フォーカスを索引へ返す（ADR 0013 の決定 3）。
+ * 保存できなければ 1 行が出て、区画も本文もそのまま。 */
+static void leave_pane(struct folio_window *_Nonnull self)
+{
+    if (folio_state_pane_mode(self->state) == PANE_MODE_EDIT && !store_edit(self))
+    {
+        return;
+    }
+    SetFocus(self->handle);
+}
+
+/* RichEdit の鍵の通知（EN_MSGFILTER）。Ctrl+S と Esc だけを意図にして既定処理を止める。 */
 static LRESULT on_notify(struct folio_window *_Nonnull self, LPARAM lparam)
 {
     const NMHDR *_Nonnull header = (const NMHDR *)lparam;
@@ -500,12 +624,18 @@ static LRESULT on_notify(struct folio_window *_Nonnull self, LPARAM lparam)
         return 0;
     }
     const MSGFILTER *_Nonnull filter = (const MSGFILTER *)lparam;
-    if (filter->msg != WM_CHAR || filter->wParam != store_character)
+    if (filter->msg == WM_CHAR && filter->wParam == store_character)
     {
-        return 0;
+        /* 失敗しても既定処理へは渡さない（1 行は store_edit が出す）。 */
+        (void)store_edit(self);
+        return 1;
     }
-    store_edit(self);
-    return 1;
+    if (filter->msg == WM_KEYDOWN && filter->wParam == VK_ESCAPE)
+    {
+        leave_pane(self);
+        return 1;
+    }
+    return 0;
 }
 
 /* ポインタの下がドロワーならホイールをそこへ渡す（ADR 0009 の決定 5）。
@@ -526,21 +656,66 @@ static void forward_wheel(const struct folio_window *_Nonnull self, WPARAM wpara
     }
 }
 
-/* 閲覧中の Escape だけが窓を閉じる（ADR 0006 の決定 1）。
- * ↑↓ / PgUp / PgDn はドロワーのスクロールへ渡す（ADR 0009 の決定 5）。 */
+/* 索引の鍵（ADR 0013 の決定 2）。Enter で本文へ、↑↓ / PgUp / PgDn はドロワーのスクロールへ渡す
+ * （ADR 0009 の決定 5）。Escape はここでは何もしない（窓を閉じるのは Alt+F4 と閉じる操作だけ）。 */
 static void press_key(struct folio_window *_Nonnull self, WPARAM key)
 {
-    if (key == VK_ESCAPE)
+    if (key != 'G')
     {
-        if (folio_state_pane_mode(self->state) == PANE_MODE_VIEW)
-        {
-            SendMessageW(self->handle, WM_CLOSE, 0, 0);
-        }
+        /* 'G' は g / G の仮想キー。ほかの鍵が挟まれば gg の 1 打目は忘れる。 */
+        self->pending_g = false;
+    }
+    if (key == VK_RETURN)
+    {
+        focus_pane(self);
         return;
     }
     if (self->drawer != nullptr)
     {
         drawer_window_scroll_key(self->drawer, key);
+    }
+}
+
+/* 索引の文字の鍵（ADR 0013 の決定 2）。扱わない文字では何も起きない。
+ * Ctrl+S は両方の区画で効くように、ここでも本文と同じ保存を行う。
+ * IME が ON のときは未確定文字になってここへ届かない（ADR 0013 の「失う・残る」）。 */
+static void type_key(struct folio_window *_Nonnull self, WPARAM character)
+{
+    bool twice = self->pending_g && character == 'g';
+    self->pending_g = character == 'g' && !twice;
+    switch (character)
+    {
+    case 'j':
+        switch_adjacent(self, FOLIO_STEP_NEXT);
+        break;
+    case 'k':
+        switch_adjacent(self, FOLIO_STEP_PREVIOUS);
+        break;
+    case 'G':
+        switch_adjacent(self, FOLIO_STEP_LAST);
+        break;
+    case 'g':
+        if (twice)
+        {
+            switch_adjacent(self, FOLIO_STEP_FIRST);
+        }
+        break;
+    case 'h':
+        expand_selected(self, false);
+        break;
+    case 'l':
+        expand_selected(self, true);
+        break;
+    case store_character:
+        /* Ctrl+S は索引の区画でも効く（本文の EN_MSGFILTER と同じ保存）。閲覧中は何もしない。 */
+        if (folio_state_pane_mode(self->state) == PANE_MODE_EDIT)
+        {
+            (void)store_edit(self);
+        }
+        break;
+    default:
+        /* WM_CHAR の文字は開いた集合（C-017）。 */
+        break;
     }
 }
 
@@ -633,13 +808,19 @@ static LRESULT on_message(struct folio_window *_Nonnull self, UINT message, WPAR
         return 0;
     case WM_NOTIFY:
         return on_notify(self, lparam);
-    case folio_message_selection_changed:
-        render_pane(self);
-        return 0;
-    case folio_message_edit_flush:
-        return (LRESULT)flush_edit(self);
+    case folio_message_select_note:
+        /* ドロワーからのノート行のクリック。結果は enum folio_state_outcome で返す。 */
+        return (LRESULT)switch_note(self, (size_t)wparam, (size_t)lparam);
     case WM_KEYDOWN:
         press_key(self, wparam);
+        return 0;
+    case WM_CHAR:
+        type_key(self, wparam);
+        return 0;
+    case WM_SETFOCUS:
+    case WM_KILLFOCUS:
+        /* フォーカスの印は索引の選択行に描く（ADR 0013 の決定 8）。 */
+        redraw_drawer(self);
         return 0;
     case WM_MOUSEWHEEL:
         forward_wheel(self, wparam, lparam);

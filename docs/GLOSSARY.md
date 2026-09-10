@@ -21,7 +21,10 @@
 | 索引（index） | ドロワーに並ぶ「カテゴリ → ノート」の一覧。台帳の順序で並ぶ | `struct drawer_layout`（core） |
 | 台帳（ledger） | 順序と色を永続化する json。`data/categories.json` と `data/<カテゴリ>/index.json` | adapters/win32 が読み書き・core が解釈 |
 | ドロワー（drawer） | 左のペイン。検索窓と索引。自前描画・スクロールバー無し | `src/ui/win32` |
-| ビュー（view）／編集（edit） | 右のペインの 2 つのモード。閉じた enum | `enum pane_mode`（application） |
+| ビュー（view）／編集（edit） | 右のペインの 2 つのモード。閉じた enum。ノートを切り替えても保たれ、閲覧へ戻すのは「閲覧」の札と窓を閉じる操作だけ | `enum pane_mode`（application）・ADR 0013 |
+| 区画（focus zone） | 鍵を受け取る側。**索引**（主窓）と**本文**（RichEdit）の 2 つで、Win32 のフォーカスそのものが正本。application は区画の状態を持たない | `GetFocus()`（ui/win32）・ADR 0013 の決定 1 |
+| 歩み（step） | 索引の選択を動かす向きと行き先。次・前・最初・最後の閉じた集合で、辿り方（折り畳みを飛ばす・端で止まる）は application が持つ | `enum folio_step`（application）・`folio_state_select_adjacent` |
+| 寄せる（reveal） | 選択の行が頭の帯から下端までに収まる最小のスクロール量にすること。鍵で選択を動かしたときだけ行い、クリックでは行わない | `drawer_layout_reveal`（core）・`folio_state_reveal_selection`（application）・ADR 0013 の決定 6 |
 | 札（chip） | 右ペインの頭の右端に並ぶ「閲覧」「編集」の切替。有効な側だけ面を塗る | `folio_window` の `chip_rect`・`chip_*` の色（`folio_palette`） |
 | 改行の形（line ending） | 本文の改行が LF か CRLF か。読んだ本文の最初の改行で決まり、書き戻すときに揃える | `enum line_ending`（core） |
 | ドロップ先（drop target） | ドラッグを離したときに落ちる場所。種類・**移動先の**カテゴリ・**移動後の番号**・挿入線の y を持つ | `struct drop_target` / `enum drop_kind`（core）・`drawer_layout_drop` |

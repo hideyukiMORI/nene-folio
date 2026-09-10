@@ -4,10 +4,9 @@
 
 #include <windows.h>
 
-/* ドロワーで選択中のノートが変わった。親は右ペインを application の表示値で描き直す。 */
-constexpr UINT folio_message_selection_changed = WM_APP + 1;
-/* 編集中なら先に保存して閲覧へ戻してほしい（ADR 0006 の決定 5）。同期で送り、
- * 結果の enum folio_state_outcome を LRESULT で受ける。閲覧中なら READY。 */
-constexpr UINT folio_message_edit_flush = WM_APP + 2;
+/* ドロワーのノート行が押された。主窓が「編集中なら保存 → 選択 → 同じモードで開く」の順を
+ * 1 か所で行う（ADR 0013 の決定 4 / 7）。wParam = カテゴリ・lParam = ノート。同期で送り、
+ * 結果の enum folio_state_outcome を LRESULT で受ける。 */
+constexpr UINT folio_message_select_note = WM_APP + 1;
 
 #endif

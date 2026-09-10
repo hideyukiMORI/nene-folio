@@ -258,6 +258,24 @@ enum folio_state_outcome folio_state_scroll_drawer(struct folio_state *_Nonnull 
     return FOLIO_STATE_READY;
 }
 
+enum folio_state_outcome folio_state_reveal_selection(struct folio_state *_Nonnull state,
+                                                      struct drawer_metrics metrics)
+{
+    if (!state->selected)
+    {
+        return FOLIO_STATE_READY;
+    }
+    struct drawer_layout *_Nullable layout = nullptr;
+    enum folio_state_outcome outcome = folio_state_drawer_layout(state, metrics, &layout);
+    if (outcome != FOLIO_STATE_READY)
+    {
+        return outcome;
+    }
+    state->scroll = drawer_layout_reveal(layout, state->selected_category, state->selected_note);
+    drawer_layout_destroy(layout);
+    return FOLIO_STATE_READY;
+}
+
 enum folio_theme folio_state_theme(const struct folio_state *_Nonnull state)
 {
     return state->theme;
@@ -297,6 +315,21 @@ enum folio_state_outcome folio_state_toggle_category(struct folio_state *_Nonnul
     category_ledger_destroy(state->categories);
     state->categories = toggled;
     return FOLIO_STATE_READY;
+}
+
+enum folio_state_outcome folio_state_set_category_expanded(struct folio_state *_Nonnull state,
+                                                           size_t index, bool expanded)
+{
+    if (index >= category_ledger_count(state->categories))
+    {
+        return FOLIO_STATE_NO_SUCH_CATEGORY;
+    }
+    if (category_ledger_expanded(state->categories, index) == expanded)
+    {
+        /* 変わらないなら書く理由が無い（ADR 0013 の決定 5）。 */
+        return FOLIO_STATE_READY;
+    }
+    return folio_state_toggle_category(state, index);
 }
 
 static bool same_color(struct rgb_color left, struct rgb_color right)
@@ -633,6 +666,140 @@ enum folio_state_outcome folio_state_select_note(struct folio_state *_Nonnull st
         state->selected_note = note;
     }
     return outcome;
+}
+
+/* 行になるノートの数。折り畳んだカテゴリは 0（drawer_layout と同じ規則）。 */
+static size_t visible_count(const struct folio_state *_Nonnull state, size_t category)
+{
+    return category_ledger_expanded(state->categories, category)
+               ? note_ledger_count(state->notes[category])
+               : 0;
+}
+
+static struct note_ref located(size_t category, size_t note)
+{
+    struct note_ref ref = {.category = category, .note = note};
+    return ref;
+}
+
+/* 台帳の順で最初の見えるノート。1 つも無ければ false。 */
+static bool first_visible(const struct folio_state *_Nonnull state, struct note_ref *_Nonnull out)
+{
+    size_t count = category_ledger_count(state->categories);
+    for (size_t category = 0; category < count; ++category)
+    {
+        if (visible_count(state, category) > 0)
+        {
+            *out = located(category, 0);
+            return true;
+        }
+    }
+    return false;
+}
+
+/* 台帳の順で最後の見えるノート。1 つも無ければ false。 */
+static bool last_visible(const struct folio_state *_Nonnull state, struct note_ref *_Nonnull out)
+{
+    bool found = false;
+    size_t count = category_ledger_count(state->categories);
+    for (size_t category = 0; category < count; ++category)
+    {
+        size_t notes = visible_count(state, category);
+        if (notes > 0)
+        {
+            *out = located(category, notes - 1);
+            found = true;
+        }
+    }
+    return found;
+}
+
+/* from より後ろにある最初の見えるノート。端なら false。from が折り畳んだカテゴリの中にあっても、
+ * その位置から数え直す（ADR 0013 の決定 5）。 */
+static bool next_visible(const struct folio_state *_Nonnull state, struct note_ref from,
+                         struct note_ref *_Nonnull out)
+{
+    size_t count = category_ledger_count(state->categories);
+    for (size_t category = from.category; category < count; ++category)
+    {
+        size_t start = category == from.category ? from.note + 1 : 0;
+        if (start < visible_count(state, category))
+        {
+            *out = located(category, start);
+            return true;
+        }
+    }
+    return false;
+}
+
+/* from より前にある最後の見えるノート。端なら false。 */
+static bool previous_visible(const struct folio_state *_Nonnull state, struct note_ref from,
+                             struct note_ref *_Nonnull out)
+{
+    size_t category = from.category + 1;
+    while (category > 0)
+    {
+        category -= 1;
+        size_t notes = visible_count(state, category);
+        size_t reach = category == from.category && from.note < notes ? from.note : notes;
+        if (reach > 0)
+        {
+            *out = located(category, reach - 1);
+            return true;
+        }
+    }
+    return false;
+}
+
+/* 歩みの行き先。端なら false。 */
+static bool stepped_to(const struct folio_state *_Nonnull state, enum folio_step step,
+                       struct note_ref *_Nonnull out)
+{
+    struct note_ref from = located(state->selected_category, state->selected_note);
+    switch (step)
+    {
+    case FOLIO_STEP_NEXT:
+        return state->selected ? next_visible(state, from, out) : first_visible(state, out);
+    case FOLIO_STEP_PREVIOUS:
+        return state->selected ? previous_visible(state, from, out) : last_visible(state, out);
+    case FOLIO_STEP_FIRST:
+        return first_visible(state, out);
+    case FOLIO_STEP_LAST:
+        return last_visible(state, out);
+    }
+    return false;
+}
+
+enum folio_state_outcome folio_state_select_adjacent(struct folio_state *_Nonnull state,
+                                                     enum folio_step step)
+{
+    struct note_ref target = located(0, 0);
+    if (!first_visible(state, &target))
+    {
+        return FOLIO_STATE_NO_SUCH_NOTE;
+    }
+    if (!stepped_to(state, step, &target))
+    {
+        /* 端では動かない（ADR 0013 の決定 5）。 */
+        return FOLIO_STATE_READY;
+    }
+    if (state->selected && state->selected_category == target.category &&
+        state->selected_note == target.note)
+    {
+        /* 同じノートなら読み直さない。 */
+        return FOLIO_STATE_READY;
+    }
+    return folio_state_select_note(state, target.category, target.note);
+}
+
+bool folio_state_selection(const struct folio_state *_Nonnull state, struct note_ref *_Nonnull out)
+{
+    if (!state->selected)
+    {
+        return false;
+    }
+    *out = located(state->selected_category, state->selected_note);
+    return true;
 }
 
 enum folio_state_outcome folio_state_begin_edit(struct folio_state *_Nonnull state)
