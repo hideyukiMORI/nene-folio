@@ -37,6 +37,9 @@ constexpr WPARAM store_character = 0x13;
 constexpr int base_dpi = 96;
 constexpr int base_width = 960;
 constexpr int base_height = 640;
+/* 最小の大きさ。ドロワー・番号・パンくず・札 2 つが収まる（ADR 0011 の決定 3）。 */
+constexpr int base_min_width = 560;
+constexpr int base_min_height = 360;
 constexpr int base_drawer_width = 240;
 constexpr int base_caption_height = 44; /* 右ペインの頭。窓を掴んで動かせる帯 */
 constexpr int base_caption_indent = 36;
@@ -52,6 +55,8 @@ constexpr int base_chip_gap = 8;
 constexpr int base_chip_radius = 3;
 constexpr int base_mono_font = 11;
 constexpr int base_tracking = 1;
+/* 省略しても残すノート名の幅（ADR 0011 の決定 4）。 */
+constexpr int base_breadcrumb_note = 48;
 
 /* DWM の窓の角と縁（Windows 11）。dwmapi.h の版によっては未定義なので数値で持つ。 */
 constexpr DWORD attribute_corner_preference = 33;
@@ -131,21 +136,32 @@ static LRESULT edge_hit(POINT point, RECT window, int border)
     return hits[row][column];
 }
 
-/* UTF-8 を 1 行で描き、描いた幅を返す。 */
-static int draw_utf8(HDC device, const char *_Nonnull text, RECT bounds)
+/* UTF-8 の 1 行を測る。測れなければ 0。 */
+static int measure_utf8(HDC device, const char *_Nonnull text)
 {
     struct utf16_text *_Nullable wide = nullptr;
     if (utf16_text_create(text, strlen(text), &wide) != UTF16_TEXT_CONVERTED)
     {
         return 0;
     }
-    RECT measured = bounds;
+    RECT measured = {0, 0, 0, 0};
     DrawTextW(device, utf16_text_units(wide), (int)utf16_text_length(wide), &measured,
-              DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX | DT_CALCRECT);
-    DrawTextW(device, utf16_text_units(wide), (int)utf16_text_length(wide), &bounds,
-              DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
+              DT_SINGLELINE | DT_NOPREFIX | DT_CALCRECT);
     utf16_text_destroy(wide);
     return measured.right - measured.left;
+}
+
+/* UTF-8 を 1 行で描く。bounds に収まらなければ末尾を省略記号にする（ADR 0011 の決定 4）。 */
+static void draw_utf8(HDC device, const char *_Nonnull text, RECT bounds)
+{
+    struct utf16_text *_Nullable wide = nullptr;
+    if (utf16_text_create(text, strlen(text), &wide) != UTF16_TEXT_CONVERTED)
+    {
+        return;
+    }
+    DrawTextW(device, utf16_text_units(wide), (int)utf16_text_length(wide), &bounds,
+              DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX | DT_END_ELLIPSIS);
+    utf16_text_destroy(wide);
 }
 
 /* 右ペインの頭の帯（窓を掴んで動かせる帯）。 */
@@ -159,31 +175,33 @@ static RECT caption_rect(const struct folio_window *_Nonnull self)
     return caption;
 }
 
-/* 頭のパンくず: 番号（カテゴリ色）・カテゴリ・/・ノート。選択が無ければ何も描かない。 */
-static void draw_breadcrumb(const struct folio_window *_Nonnull self, HDC device, RECT caption)
+/* 番号（2 桁・カテゴリ色）を描き、描いた幅を返す。番号は縮めない（ADR 0011 の決定 4）。 */
+static int draw_ordinal(HDC device, size_t ordinal, struct rgb_color color, RECT bounds)
 {
-    struct pane_title_view title = folio_state_pane_title(self->state);
-    if (!title.any)
+    wchar_t digits[3] = {(wchar_t)(L'0' + (ordinal / 10) % 10), (wchar_t)(L'0' + ordinal % 10),
+                         L'\0'};
+    SetTextColor(device, RGB(color.red, color.green, color.blue));
+    RECT measured = bounds;
+    DrawTextW(device, digits, 2, &measured, DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX | DT_CALCRECT);
+    DrawTextW(device, digits, 2, &bounds, DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
+    return measured.right - measured.left;
+}
+
+/* カテゴリ名とノート名の幅を budget に収める。ノート名から先に削り、それでも足りなければ
+ * カテゴリ名も削る（ADR 0011 の決定 4）。入る値は自然な幅、出る値は割り当てた幅。 */
+static void breadcrumb_room(int budget, int minimum, int *_Nonnull category, int *_Nonnull note)
+{
+    if (*category + *note <= budget)
     {
         return;
     }
-    UINT dpi = GetDpiForWindow(self->handle);
-    int gap = scale(base_caption_gap, dpi);
-    RECT cursor = caption;
-    wchar_t ordinal[3] = {(wchar_t)(L'0' + (title.ordinal / 10) % 10),
-                          (wchar_t)(L'0' + title.ordinal % 10), L'\0'};
-    SetTextColor(device, RGB(title.color.red, title.color.green, title.color.blue));
-    RECT measured = cursor;
-    DrawTextW(device, ordinal, 2, &measured,
-              DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX | DT_CALCRECT);
-    DrawTextW(device, ordinal, 2, &cursor, DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
-    cursor.left += measured.right - measured.left + gap;
-    SetTextColor(device, self->palette.header_text);
-    cursor.left += draw_utf8(device, title.category, cursor) + gap;
-    SetTextColor(device, self->palette.border);
-    cursor.left += draw_utf8(device, "/", cursor) + gap;
-    SetTextColor(device, self->palette.current_text);
-    draw_utf8(device, title.note, cursor);
+    if (budget - *category >= minimum)
+    {
+        *note = budget - *category;
+        return;
+    }
+    *note = minimum < budget ? minimum : budget;
+    *category = budget - *note;
 }
 
 static const wchar_t *_Nonnull chip_label(enum pane_mode chip)
@@ -226,6 +244,37 @@ static RECT chip_rect(const struct folio_window *_Nonnull self, HDC device, enum
     RECT bounds = {right - chip_width(self, device, chip), middle - height / 2, right,
                    middle - height / 2 + height};
     return bounds;
+}
+
+/* 頭のパンくず: 番号（カテゴリ色）・カテゴリ・/・ノート。選択が無ければ何も描かない。
+ * 右端は札 2 つの手前で、残りをカテゴリ名とノート名に割り当てる（ADR 0011 の決定 4）。 */
+static void draw_breadcrumb(const struct folio_window *_Nonnull self, HDC device, RECT caption)
+{
+    struct pane_title_view title = folio_state_pane_title(self->state);
+    if (!title.any)
+    {
+        return;
+    }
+    UINT dpi = GetDpiForWindow(self->handle);
+    int gap = scale(base_caption_gap, dpi);
+    RECT cursor = caption;
+    cursor.left += draw_ordinal(device, title.ordinal, title.color, cursor) + gap;
+    int separator = measure_utf8(device, "/");
+    int category = measure_utf8(device, title.category);
+    int note = measure_utf8(device, title.note);
+    int budget = chip_rect(self, device, PANE_MODE_VIEW).left - gap * 3 - cursor.left - separator;
+    breadcrumb_room(budget < 0 ? 0 : budget, scale(base_breadcrumb_note, dpi), &category, &note);
+    SetTextColor(device, self->palette.header_text);
+    cursor.right = cursor.left + category;
+    draw_utf8(device, title.category, cursor);
+    cursor.left += category + gap;
+    SetTextColor(device, self->palette.border);
+    cursor.right = cursor.left + separator;
+    draw_utf8(device, "/", cursor);
+    cursor.left += separator + gap;
+    SetTextColor(device, self->palette.current_text);
+    cursor.right = cursor.left + note;
+    draw_utf8(device, title.note, cursor);
 }
 
 /* 有効な側だけ面を塗り、無効な側は頭の文字色で描く（ADR 0006 の決定 7）。 */
@@ -523,17 +572,53 @@ static void apply_dpi(struct folio_window *_Nonnull self, LPARAM lparam)
                  SWP_NOZORDER | SWP_NOACTIVATE);
 }
 
+/* 最大化中の窓の矩形は枠ぶん画面より大きいので、client をモニタの作業領域に収める。 */
+static void fit_work_area(HWND window, RECT *_Nonnull client)
+{
+    MONITORINFO monitor = {.cbSize = sizeof monitor};
+    if (IsZoomed(window) &&
+        GetMonitorInfoW(MonitorFromWindow(window, MONITOR_DEFAULTTONEAREST), &monitor))
+    {
+        *client = monitor.rcWork;
+    }
+}
+
+/* 枠なし窓の client は窓の矩形そのもの（ADR 0011 の決定 1）。TRUE でも FALSE でも 0 を返し、
+ * 既定処理には一度も渡さない（FALSE の lParam は RECT * で、触らなければ窓の矩形のまま）。
+ * 窓の構造体を要らないので、GWLP_USERDATA を結ぶ前に届く計算にも自分で答える。 */
+static LRESULT calculate_client(HWND window, WPARAM wparam, LPARAM lparam)
+{
+    if (wparam)
+    {
+        NCCALCSIZE_PARAMS *_Nonnull calculation = (NCCALCSIZE_PARAMS *)lparam;
+        fit_work_area(window, &calculation->rgrc[0]);
+        return 0;
+    }
+    fit_work_area(window, (RECT *)lparam);
+    return 0;
+}
+
+/* 窓の最小の大きさ（ADR 0011 の決定 3）。これも窓の構造体を要らないので作成中にも答える。 */
+static LRESULT limit_size(HWND window, LPARAM lparam)
+{
+    MINMAXINFO *_Nonnull limits = (MINMAXINFO *)lparam;
+    UINT dpi = GetDpiForWindow(window);
+    limits->ptMinTrackSize.x = scale(base_min_width, dpi);
+    limits->ptMinTrackSize.y = scale(base_min_height, dpi);
+    return 0;
+}
+
 static LRESULT on_message(struct folio_window *_Nonnull self, UINT message, WPARAM wparam,
                           LPARAM lparam)
 {
     switch (message)
     {
-    case WM_NCCALCSIZE:
-        return wparam ? 0 : DefWindowProcW(self->handle, message, wparam, lparam);
     case WM_NCHITTEST:
         return hit_test(self, lparam);
     case WM_SIZE:
         arrange(self);
+        /* 頭のパンくずと札は幅に依存する位置に描く（ADR 0011 の決定 2）。 */
+        InvalidateRect(self->handle, nullptr, FALSE);
         return 0;
     case WM_DPICHANGED:
         apply_dpi(self, lparam);
@@ -582,9 +667,18 @@ static LRESULT on_message(struct folio_window *_Nonnull self, UINT message, WPAR
 
 static LRESULT CALLBACK window_procedure(HWND window, UINT message, WPARAM wparam, LPARAM lparam)
 {
-    if (message == WM_CREATE)
+    /* 窓の構造体を要らない 3 つは、結び付けの前に届いても自分で答える（ADR 0011 の決定 1 / 3）。 */
+    switch (message)
     {
+    case WM_CREATE:
         return on_create(window, lparam);
+    case WM_NCCALCSIZE:
+        return calculate_client(window, wparam, lparam);
+    case WM_GETMINMAXINFO:
+        return limit_size(window, lparam);
+    default:
+        /* Win32 のメッセージは開いた集合（C-017）。 */
+        break;
     }
     struct folio_window *_Nullable self = self_of(window);
     if (self == nullptr)
