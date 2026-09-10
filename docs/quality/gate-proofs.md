@@ -526,6 +526,30 @@ OS のアプリのモードはダーク（`AppsUseLightTheme` = 0・施主の設
   ライトのアプリのモードでの見え方（`AppsUseLightTheme` は 0 のまま触っていない）。
   作業領域が 560×360 より狭い画面。複数のモニタにまたがる最大化とスナップの半画面
 
+**追補（2026-09-11・Issue #22 の再開・ADR 0014）**: 施主の実機で放置後に白い帯が再発した（索引側には出ず右ペイン側だけ）。
+触らずに測ると、窓の矩形・client・`DWMWA_EXTENDED_FRAME_BOUNDS` は 4 辺とも一致（差 0）のまま、帯は窓の矩形の**内側** 7 px で、色は
+`GetSysColor` の `COLOR_3DHIGHLIGHT` / `COLOR_INACTIVEBORDER`（`#F4F7FC`）/ `COLOR_BTNSHADOW` と一致した。帯は x=500（ドロワー子窓の
+右端）から右にだけ出る＝子窓が上に描く所だけ消えて見える。放置中の OS のイベントは 0 件で、変わったのは前面の窓だけ。
+同じ形の窓で再現すると、非アクティブ化の `WM_NCACTIVATE(wParam=0)` の既定処理がその場で枠を描き、`WM_NCPAINT` も `WM_PAINT` も届かない。
+`WM_NCACTIVATE` → TRUE だけで帯は出ない（必要十分。`WM_NCPAINT` → 0 だけでは直らない）。
+
+証拠（DPI 120・窓を PID で選び、`SetWindowPos` で (2000, 120) の最前面へ寄せ、自分の探針の窓を前面に出して非アクティブにし、
+画面の画素を窓の矩形の外周から内側へ 12 px 読む。`PrintWindow` は使わない）:
+
+| 版 | 状態 | 上辺 / 右辺 / 下辺（x = 3/4） | 左辺（ドロワー） |
+| --- | --- | --- | --- |
+| 修正前（main `20a03cb`） | アクティブ | `#24272C` `#FFFFFF`/`#A0A0A0` `#B4B4B4`×6 `#101214`… | `#24272C` `#FFFFFF` `#B4B4B4`×6 `#0A0B0D`… |
+| 修正前 | 非アクティブ | `#24272C` `#FFFFFF`/`#A0A0A0` **`#F4F7FC`×6** `#101214`… | `#24272C` `#FFFFFF` **`#F4F7FC`×6** `#0A0B0D`… |
+| 修正前 | 再アクティブ | `#B4B4B4`×6 に戻るだけで帯は消えない | 同じ |
+| **修正後** | アクティブ | `#24272C` `#101214`×11 | `#24272C` `#0A0B0D`×11 |
+| **修正後** | 非アクティブ | `#24272C` `#101214`×11 | `#24272C` `#0A0B0D`×11 |
+| **修正後** | 再アクティブ | `#24272C` `#101214`×11 | `#24272C` `#0A0B0D`×11 |
+
+修正前は**アクティブ化でも**帯が出る（`COLOR_ACTIVEBORDER` の `#B4B4B4`）。修正後は 3 状態とも地の色と DWM の縁だけ
+（[frame-inactive-before.png](frame-inactive-before.png) / [frame-inactive-after.png](frame-inactive-after.png) /
+[frame-reactivated-after.png](frame-reactivated-after.png)）。左辺の帯はこの測定では出ている（ドロワー子窓の**外**の縁）が、施主の実機では
+子窓が縁まで届いているので見えなかった。角丸と縁の色 `#24272C` は修正後も生きている。
+
 ### 5-k. 保存の直前の本文を `data/.history` に 5 版まで残す（Issue #23・2026-09-10）
 
 環境: Windows 11 Pro 10.0.26200・`build/NeNeFolio.exe`（Debug 構成＝ASan / UBSan / nullability 付き）・
