@@ -590,7 +590,7 @@ static enum folio_state_outcome reopen_if_moved(struct folio_window *_Nonnull se
 
 /* h / l。カーソルの行のカテゴリを折り畳む／展開する（ADR 0015 の決定 3）。
  * カーソルがカテゴリ行のときの展開は中のノートを選び直すことがあるので、先に保存する
- * （ADR 0013 の決定 4 の (i)）。 */
+ * （ADR 0013 の決定 4 の (i)）。カーソルが移るので、最後は歩みと同じように見える位置へ寄せる。 */
 static void expand_cursor(struct folio_window *_Nonnull self, bool expanded)
 {
     enum folio_cursor_kind kind = FOLIO_CURSOR_NOTE;
@@ -615,6 +615,12 @@ static void expand_cursor(struct folio_window *_Nonnull self, bool expanded)
     if (outcome != FOLIO_STATE_READY)
     {
         failure_box_show(self->handle, outcome);
+        return;
+    }
+    if (self->drawer != nullptr)
+    {
+        /* 開閉でもカーソルは移るので、歩みと同じように見える位置へ寄せる（ADR 0013 の決定 6）。 */
+        drawer_window_reveal_cursor(self->drawer);
     }
 }
 
