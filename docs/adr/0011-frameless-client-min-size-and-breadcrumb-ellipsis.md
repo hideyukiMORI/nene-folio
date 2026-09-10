@@ -12,11 +12,12 @@
 
 コードで確かめた原因:
 
-- (1) `folio_window.c` の `window_procedure` は `GWLP_USERDATA` が結ばれる前のメッセージをすべて `DefWindowProcW` に流す。
-  `WM_NCCALCSIZE`（`wParam == TRUE`）は `WM_NCCREATE` の直後・`WM_CREATE` より前に届くので、最初の client の計算は OS の既定になり、
-  `WS_THICKFRAME` の枠ぶん client が縮む。その帯を OS が既定の枠で描く。大きさが変わる操作があれば自分の処理（0 を返す）を通って
-  消えるが、動かすだけ・アクティブ化の切り替えでは再計算されない。施主の観察（起動時に出ていることが多い・動かすと消えたり
-  消えなかったり）と一致する
+- (1) `folio_window.c` の `WM_NCCALCSIZE` は `wParam == TRUE` にだけ 0 を返し、**`wParam == FALSE` は `DefWindowProcW` に流している**。
+  FALSE は作成時に必ず届き（実測: 窓が現れてから約 37 ms のあいだ client が四方 8 px 小さい・DPI 120）、OS の都合で後からも届きうる。
+  そのたびに `WS_THICKFRAME` の枠ぶん client が縮み、OS がその帯を既定の枠の色（実測: `#E3E3E3` / `#FFFFFF` / `#F4F7FC`）で描く。
+  次に TRUE の計算（大きさの変更・スナップ・DPI 変更）が来れば client が全体に戻って消えるが、動かすだけでは戻らない。
+  施主の観察（起動時に出ていることが多い・動かすと消えたり消えなかったり・窓の切り替えは関係ない）と一致する。
+  なお当初は「`GWLP_USERDATA` が結ばれる前の TRUE が既定に流れる」と見立てたが、実測で TRUE は結び付けの後にしか届かないと分かり、この見立ては退けた
 - (2) `WM_SIZE` は `arrange`（子の移動）だけで `InvalidateRect` を呼ばず、クラスに `CS_HREDRAW | CS_VREDRAW` も無い。
   右ペインの頭（パンくず・札）は幅に依存する位置に描くので古い描画が残る
 - (3) `WM_GETMINMAXINFO` を扱っておらず、`caption_rect` は幅から札のぶんを引くだけで、はみ出しの規則が無い
@@ -31,10 +32,10 @@ SPECIFICATION 第 2 節は「窓の初期サイズとドロワー幅 | 960×640�
 
 具体的には:
 
-1. **client の計算。** `window_procedure` は `WM_NCCALCSIZE` を `WM_CREATE` と同じく `self` の有無に関わらず処理する
-   （`wParam == TRUE` なら 0 を返し、client を窓の矩形全体にする）。最大化中は枠ぶん画面からはみ出るので、
-   `wParam == TRUE` かつ最大化（`IsZoomed`）なら `NCCALCSIZE_PARAMS.rgrc[0]` をモニタの作業領域（`MonitorFromWindow` +
-   `GetMonitorInfoW`）に収める
+1. **client の計算。** `window_procedure` は `WM_NCCALCSIZE` を `WM_CREATE` と同じく `self` の有無に関わらず処理し、
+   **`wParam` が TRUE でも FALSE でも 0 を返して client を窓の矩形全体にする**（FALSE のときの `lParam` は `RECT *` で、
+   触らなければ窓の矩形のまま）。既定処理には一度も渡さない。最大化中は枠ぶん画面からはみ出るので、最大化（`IsZoomed`）なら
+   その矩形（TRUE なら `NCCALCSIZE_PARAMS.rgrc[0]`・FALSE なら `RECT`）をモニタの作業領域（`MonitorFromWindow` + `GetMonitorInfoW`）に収める
 2. **描き直し。** `WM_SIZE` で `arrange` のあとに主窓を `InvalidateRect`（子は `MoveWindow` の再描画で足りる）。
    クラスの `CS_HREDRAW | CS_VREDRAW` は使わない（描き直しの理由を 1 か所に見せる）
 3. **最小サイズ。** `WM_GETMINMAXINFO` の `ptMinTrackSize` を 96 DPI で **幅 560・高さ 360**（DPI で拡大）にする。
@@ -54,10 +55,13 @@ SPECIFICATION 第 2 節は「窓の初期サイズとドロワー幅 | 960×640�
 
 ## 結果
 
-得る: 枠なし窓の client が起動直後から自分の計算になり、白い帯の発生条件そのものが無くなる。大きさを変えても表示が追随し、
-小さくしても頭が崩れない。
+得る: 枠なし窓の client が作成の瞬間から自分の計算になり、OS が枠を描ける領域そのものが無くなる。機械で取れる証拠は
+「作成直後の窓の矩形と client の差が四方 0 px」（修正前は約 37 ms のあいだ 8 px）。大きさを変えても表示が追随し、小さくしても頭が崩れない。
 
 失う・残る:
+
+- 白い帯は施主の機械でしか長く残らず、開発機では一瞬（37 ms）しか出なかった。「差が 0」で条件を潰したと言えるが、施主の実機で再現しないことの確認は施主に頼む
+- パンくずの幅の割り当てで、番号と札を確保した残りが 0 になるとカテゴリ名は描かれない。最小サイズがその状態を防ぐ（規則として明示する）
 
 - 最小サイズより小さい窓は作れない。狭い画面（作業領域が 560×360 未満）では最小サイズが作業領域を超える
 - 省略記号はノート名とカテゴリ名だけ。番号と札が収まらない幅は最小サイズで防ぐ
