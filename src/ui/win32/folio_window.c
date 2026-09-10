@@ -667,7 +667,7 @@ static LRESULT on_message(struct folio_window *_Nonnull self, UINT message, WPAR
 
 static LRESULT CALLBACK window_procedure(HWND window, UINT message, WPARAM wparam, LPARAM lparam)
 {
-    /* 窓の構造体を要らない 3 つは、結び付けの前に届いても自分で答える（ADR 0011 の決定 1 / 3）。 */
+    /* 窓の構造体を要らないものは、結び付けの前に届いても自分で答える（ADR 0011 の決定 1 / 3）。 */
     switch (message)
     {
     case WM_CREATE:
@@ -676,6 +676,13 @@ static LRESULT CALLBACK window_procedure(HWND window, UINT message, WPARAM wpara
         return calculate_client(window, wparam, lparam);
     case WM_GETMINMAXINFO:
         return limit_size(window, lparam);
+    /* `DefWindowProcW` は client の計算ではなく `WS_THICKFRAME` の有無で枠を描き、その描画は
+     * `WM_NCPAINT` を経由しない。非アクティブ化で枠の色の帯が出るので、どちらも自分で答えて
+     * 既定処理へ渡さない（ADR 0014）。 */
+    case WM_NCACTIVATE:
+        return TRUE;
+    case WM_NCPAINT:
+        return 0;
     default:
         /* Win32 のメッセージは開いた集合（C-017）。 */
         break;
