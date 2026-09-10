@@ -54,6 +54,7 @@ nenefolio_link(nenefolio_window nenefolio_application)
 nenefolio_system_link(nenefolio_window user32)
 nenefolio_system_link(nenefolio_window gdi32)
 nenefolio_system_link(nenefolio_window dwmapi)
+nenefolio_system_link(nenefolio_window comdlg32)
 
 nenefolio_target(nenefolio app EXECUTABLE src/app/main.c src/app/NeNeFolio.manifest)
 set_property(TARGET nenefolio PROPERTY WIN32_EXECUTABLE TRUE)

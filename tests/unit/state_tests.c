@@ -29,9 +29,10 @@ struct persistence_adapter
     const char *_Nonnull note_body;
     const char *_Nullable last_note; /* 最後に read_note で求められたノート名 */
     enum persistence_outcome write_outcome;
-    size_t writes;            /* write_category_ledger が呼ばれた回数 */
-    size_t written_count;     /* 最後に書かれた台帳のカテゴリ数 */
-    bool written_expanded[8]; /* 最後に書かれた台帳の展開状態 */
+    size_t writes;                      /* write_category_ledger が呼ばれた回数 */
+    size_t written_count;               /* 最後に書かれた台帳のカテゴリ数 */
+    bool written_expanded[8];           /* 最後に書かれた台帳の展開状態 */
+    struct rgb_color written_colors[8]; /* 最後に書かれた台帳の色 */
     enum persistence_outcome note_write_outcome;
     size_t note_writes;                 /* write_note が呼ばれた回数 */
     char written_body[256];             /* 最後に書かれた本文（終端付き） */
@@ -190,6 +191,7 @@ fake_write_category_ledger(struct persistence_adapter *_Nonnull adapter,
     for (size_t index = 0; index < adapter->written_count && index < 8; ++index)
     {
         adapter->written_expanded[index] = category_ledger_expanded(ledger, index);
+        adapter->written_colors[index] = category_ledger_color(ledger, index);
         append_name(adapter->written_names, sizeof adapter->written_names, &position,
                     category_ledger_name(ledger, index));
     }
@@ -322,6 +324,7 @@ static struct persistence_adapter healthy_adapter(void)
         .writes = 0,
         .written_count = 0,
         .written_expanded = {false},
+        .written_colors = {{0, 0, 0}},
         .note_write_outcome = PERSISTENCE_STORED,
         .note_writes = 0,
         .written_body = {'\0'},
@@ -469,6 +472,57 @@ static void verify_toggle(void)
     require(row_count(state) == 9, "state is unchanged when the write fails");
     adapter.write_outcome = PERSISTENCE_OUT_OF_MEMORY;
     require(folio_state_toggle_category(state, 0) == FOLIO_STATE_OUT_OF_MEMORY,
+            "write out of memory");
+    folio_state_destroy(state);
+}
+
+static bool has_color(struct rgb_color color, unsigned char red, unsigned char green,
+                      unsigned char blue)
+{
+    return color.red == red && color.green == green && color.blue == blue;
+}
+
+static void verify_recolor(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct persistence_port port = port_for(&adapter);
+    struct appearance_port looks = looks_for(&dark_adapter);
+    struct folio_state *state = nullptr;
+    require(folio_state_create(&port, &looks, &state) == FOLIO_STATE_READY, "state for recolor");
+    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY, "select in B");
+    require(has_color(folio_state_pane_title(state).color, 0x11, 0x11, 0x11),
+            "the title starts with B's color");
+    struct rgb_color chosen = {.red = 0xAB, .green = 0xCD, .blue = 0xEF};
+    require(folio_state_recolor_category(state, 0, chosen) == FOLIO_STATE_READY, "recolor B");
+    require(adapter.writes == 1 && adapter.written_count == 3 &&
+                has_color(adapter.written_colors[0], 0xAB, 0xCD, 0xEF) &&
+                has_color(adapter.written_colors[1], 0x22, 0x22, 0x22),
+            "only B's color was written");
+    require(has_color(folio_state_pane_title(state).color, 0xAB, 0xCD, 0xEF),
+            "the title follows the ledger");
+    require(adapter.written_expanded[0] && !adapter.written_expanded[1],
+            "expansion is kept across a recolor");
+    require(folio_state_recolor_category(state, 0, chosen) == FOLIO_STATE_READY &&
+                adapter.writes == 1,
+            "the same color is not written");
+    require(folio_state_recolor_category(state, 3, chosen) == FOLIO_STATE_NO_SUCH_CATEGORY &&
+                adapter.writes == 1,
+            "out of range is refused without writing");
+    require(folio_state_begin_edit(state) == FOLIO_STATE_READY, "enter edit");
+    struct rgb_color other = {.red = 0x01, .green = 0x02, .blue = 0x03};
+    require(folio_state_recolor_category(state, 1, other) == FOLIO_STATE_READY, "recolor A");
+    require(folio_state_pane_mode(state) == PANE_MODE_EDIT, "edit mode survives a recolor");
+    require(same_text(folio_state_pane_text(state), "# Hello\n\nbody"),
+            "the body survives a recolor");
+    require(adapter.writes == 2 && has_color(adapter.written_colors[1], 0x01, 0x02, 0x03),
+            "A's color was written");
+    adapter.write_outcome = PERSISTENCE_UNWRITABLE;
+    require(folio_state_recolor_category(state, 0, other) == FOLIO_STATE_STORE_FAILED,
+            "store failed");
+    require(has_color(folio_state_pane_title(state).color, 0xAB, 0xCD, 0xEF),
+            "the color is unchanged when the write fails");
+    adapter.write_outcome = PERSISTENCE_OUT_OF_MEMORY;
+    require(folio_state_recolor_category(state, 0, other) == FOLIO_STATE_OUT_OF_MEMORY,
             "write out of memory");
     folio_state_destroy(state);
 }
@@ -1088,6 +1142,7 @@ void run_state_tests(void)
     verify_absent_data();
     verify_failures();
     verify_toggle();
+    verify_recolor();
     verify_scroll();
     verify_move_category();
     verify_move_note();

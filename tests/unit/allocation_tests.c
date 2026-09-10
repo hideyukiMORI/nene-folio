@@ -172,6 +172,11 @@ static bool categories_scenario(void)
     struct category_ledger *moved = nullptr;
     completed =
         completed && category_ledger_moved(ledger, 1, 0, &moved) == CATEGORY_LEDGER_ACCEPTED;
+    struct rgb_color chosen = {.red = 0x10, .green = 0x20, .blue = 0x30};
+    struct category_ledger *recolored = nullptr;
+    completed = completed && category_ledger_recolored(ledger, 0, chosen, &recolored) ==
+                                 CATEGORY_LEDGER_ACCEPTED;
+    category_ledger_destroy(recolored);
     category_ledger_destroy(moved);
     category_ledger_destroy(merged);
     name_list_destroy(scanned);
@@ -335,6 +340,14 @@ static bool state_scenario_with(struct persistence_adapter *_Nonnull adapter)
         enum folio_state_outcome toggled = folio_state_toggle_category(state, 0);
         completed = toggled == FOLIO_STATE_READY;
         require(completed || toggled == FOLIO_STATE_OUT_OF_MEMORY, "toggle under probe");
+    }
+    if (completed)
+    {
+        /* 色の変更も台帳を 1 つ複製する（ADR 0010 の決定 1）。 */
+        struct rgb_color chosen = {.red = 0x10, .green = 0x20, .blue = 0x30};
+        enum folio_state_outcome recolored = folio_state_recolor_category(state, 0, chosen);
+        completed = recolored == FOLIO_STATE_READY;
+        require(completed || recolored == FOLIO_STATE_OUT_OF_MEMORY, "recolor under probe");
     }
     if (completed)
     {

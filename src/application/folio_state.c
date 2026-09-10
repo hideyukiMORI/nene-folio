@@ -299,6 +299,42 @@ enum folio_state_outcome folio_state_toggle_category(struct folio_state *_Nonnul
     return FOLIO_STATE_READY;
 }
 
+static bool same_color(struct rgb_color left, struct rgb_color right)
+{
+    return left.red == right.red && left.green == right.green && left.blue == right.blue;
+}
+
+enum folio_state_outcome folio_state_recolor_category(struct folio_state *_Nonnull state,
+                                                      size_t index, struct rgb_color color)
+{
+    if (index >= category_ledger_count(state->categories))
+    {
+        return FOLIO_STATE_NO_SUCH_CATEGORY;
+    }
+    if (same_color(category_ledger_color(state->categories, index), color))
+    {
+        /* 変わらないなら書く理由が無い（ADR 0010 の決定 2）。 */
+        return FOLIO_STATE_READY;
+    }
+    struct category_ledger *_Nullable recolored = nullptr;
+    enum folio_state_outcome outcome = from_category_ledger(
+        category_ledger_recolored(state->categories, index, color, &recolored));
+    if (outcome != FOLIO_STATE_READY)
+    {
+        return outcome;
+    }
+    enum persistence_outcome stored =
+        state->port.write_category_ledger(state->port.adapter, recolored);
+    if (stored != PERSISTENCE_STORED)
+    {
+        category_ledger_destroy(recolored);
+        return from_store(stored);
+    }
+    category_ledger_destroy(state->categories);
+    state->categories = recolored;
+    return FOLIO_STATE_READY;
+}
+
 /* 並び替えたあとに、元の index 番目が来る位置。 */
 static size_t moved_index(size_t from, size_t to, size_t index)
 {

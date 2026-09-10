@@ -179,6 +179,35 @@ static void verify_category_toggle(void)
     category_ledger_destroy(ledger);
 }
 
+static void verify_category_recolor(void)
+{
+    struct category_ledger *ledger = parse_categories(category_text);
+    struct category_ledger *recolored = nullptr;
+    struct rgb_color chosen = {.red = 0x12, .green = 0x34, .blue = 0x56};
+    require(category_ledger_recolored(ledger, 1, chosen, &recolored) == CATEGORY_LEDGER_ACCEPTED,
+            "recolor");
+    require(category_ledger_color(recolored, 1).red == 0x12 &&
+                category_ledger_color(recolored, 1).green == 0x34 &&
+                category_ledger_color(recolored, 1).blue == 0x56,
+            "the chosen entry takes the new color");
+    require(category_ledger_count(recolored) == 2 &&
+                same_text(category_ledger_name(recolored, 1), "memo") &&
+                !category_ledger_expanded(recolored, 1),
+            "names and expansion are kept");
+    require(category_ledger_color(recolored, 0).red == 0x3D &&
+                category_ledger_color(recolored, 0).green == 0x7E &&
+                category_ledger_expanded(recolored, 0),
+            "the other entries are untouched");
+    require(category_ledger_color(ledger, 1).red == 0xFF, "source is untouched");
+    struct category_ledger *again = nullptr;
+    require(category_ledger_recolored(recolored, 1, chosen, &again) == CATEGORY_LEDGER_ACCEPTED &&
+                category_ledger_color(again, 1).blue == 0x56,
+            "the same color is still a copy");
+    category_ledger_destroy(again);
+    category_ledger_destroy(recolored);
+    category_ledger_destroy(ledger);
+}
+
 /* 3 つのカテゴリを from から to へ動かし、名前を並べた 3 文字を返す。 */
 static void moved_categories(size_t from, size_t to, char *_Nonnull out)
 {
@@ -417,6 +446,7 @@ void run_ledger_tests(void)
     verify_category_write();
     verify_category_reconcile();
     verify_category_toggle();
+    verify_category_recolor();
     verify_category_moved();
     verify_note_parse();
     verify_note_reconcile();
