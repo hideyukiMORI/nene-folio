@@ -31,6 +31,8 @@ static const wchar_t history_folder[] = L".history";
 constexpr size_t history_folder_length = 8;
 /* 版の葉は `\<番号>.md` の 5 単位（終端を除く）。番号が 1 桁で足りることを言語で確かめる。 */
 constexpr size_t history_leaf_length = 5;
+/* 書き切ってから 1.md へ改名する控えの葉 `\1.md.tmp`（9 単位・ADR 0012 の決定 3）。 */
+constexpr size_t history_pending_length = 9;
 static_assert(note_history_depth >= 1 && note_history_depth <= 9,
               "ADR 0012: the history depth must fit one digit");
 
@@ -429,9 +431,18 @@ static bool compose_version(const wchar_t *_Nonnull directory, size_t length, si
            append_units(out, &position, leaf, history_leaf_length);
 }
 
+/* <履歴のディレクトリ>\1.md.tmp を out へ組み立てる。新しい版はここへ書き切ってから 1.md にする。
+ */
+static bool compose_pending(const wchar_t *_Nonnull directory, size_t length, wchar_t *_Nonnull out)
+{
+    size_t position = 0;
+    return append_units(out, &position, directory, length) &&
+           append_units(out, &position, L"\\1.md.tmp", history_pending_length);
+}
+
 /* 最古の版を消し、残りを 1 つずつ後ろへずらす（ADR 0012 の決定 3）。無い版は飛ばす。
  * 改名に MOVEFILE_REPLACE_EXISTING を付けるので、最古の削除が効かなくても改名が相手を上書きし、
- * 連鎖が止まって 1.md だけが失われることにならない（改名そのものを拒まれる場合は救えない）。
+ * 連鎖が止まって 1.md だけが失われることにならない。
  * 原子的ではないので、途中で落ちれば番号が欠けた履歴が残りうる。md はまだ無傷。 */
 static void rotate_history(const wchar_t *_Nonnull directory, size_t length)
 {
@@ -451,25 +462,37 @@ static void rotate_history(const wchar_t *_Nonnull directory, size_t length)
     }
 }
 
-/* 履歴のディレクトリを用意し、番号をずらして、渡された中身を 1.md へ原子的に書く。 */
+/* 履歴のディレクトリを用意し、**先に新しい版を 1.md.tmp へ書き切ってから**番号をずらし、
+ * 最後に 1.md.tmp を 1.md へ改名する（ADR 0012 の決定 3）。
+ * 書き切れなければ履歴も md も 1 つも動かない。最後の改名が落ちると 2.md〜5.md だけが残りうる。 */
 static enum persistence_outcome store_history(const struct persistence_adapter *_Nonnull adapter,
                                               const char *_Nonnull category,
                                               const char *_Nonnull note,
                                               const struct file_bytes *_Nonnull bytes)
 {
     wchar_t directory[path_capacity];
+    wchar_t pending[path_capacity];
     wchar_t newest[path_capacity];
     if (!ensure_history_directory(adapter, category, note, directory))
     {
         return PERSISTENCE_UNWRITABLE;
     }
     size_t length = wide_length(directory);
-    if (!compose_version(directory, length, 1, newest))
+    if (!compose_pending(directory, length, pending) ||
+        !compose_version(directory, length, 1, newest))
     {
         return PERSISTENCE_UNWRITABLE;
     }
+    enum persistence_outcome written =
+        file_bytes_store(pending, file_bytes_data(bytes), file_bytes_length(bytes));
+    if (written != PERSISTENCE_STORED)
+    {
+        return written;
+    }
     rotate_history(directory, length);
-    return file_bytes_store(newest, file_bytes_data(bytes), file_bytes_length(bytes));
+    return MoveFileExW(pending, newest, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)
+               ? PERSISTENCE_STORED
+               : PERSISTENCE_UNWRITABLE;
 }
 
 /* いま md にある本文を履歴へ写す（FR-017 / ADR 0012）。バイト列はそのまま写すので、
