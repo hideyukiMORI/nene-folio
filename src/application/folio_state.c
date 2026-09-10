@@ -29,6 +29,9 @@ struct folio_state
     bool selected; /* ノートを選んでいるか */
     size_t selected_category;
     size_t selected_note;
+    bool cursor_any; /* 索引のカーソルがあるか（ADR 0015 の決定 1） */
+    enum folio_cursor_kind cursor_kind;
+    size_t cursor_category; /* FOLIO_CURSOR_CATEGORY のときのカテゴリ番号 */
 };
 
 static enum folio_state_outcome translate(enum persistence_outcome outcome)
@@ -215,6 +218,71 @@ enum folio_state_outcome folio_state_create(const struct persistence_port *_Nonn
     return FOLIO_STATE_READY;
 }
 
+static struct note_ref located(size_t category, size_t note)
+{
+    struct note_ref ref = {.category = category, .note = note};
+    return ref;
+}
+
+static struct drawer_cursor on_note(size_t category, size_t note)
+{
+    struct drawer_cursor cursor = {.kind = DRAWER_ROW_NOTE, .ref = located(category, note)};
+    return cursor;
+}
+
+static struct drawer_cursor on_category(size_t category)
+{
+    struct drawer_cursor cursor = {.kind = DRAWER_ROW_CATEGORY, .ref = located(category, 0)};
+    return cursor;
+}
+
+/* いまのカーソル。無ければ false。ノートのカーソルは選択そのもの（ADR 0015 の決定 1）。 */
+static bool current_cursor(const struct folio_state *_Nonnull state,
+                           struct drawer_cursor *_Nonnull out)
+{
+    if (!state->cursor_any)
+    {
+        return false;
+    }
+    switch (state->cursor_kind)
+    {
+    case FOLIO_CURSOR_NOTE:
+        *out = on_note(state->selected_category, state->selected_note);
+        return true;
+    case FOLIO_CURSOR_CATEGORY:
+        *out = on_category(state->cursor_category);
+        return true;
+    }
+    return false;
+}
+
+/* カーソルを選択中のノートへ置く（選択が動いたとき）。 */
+static void cursor_to_selection(struct folio_state *_Nonnull state)
+{
+    state->cursor_any = true;
+    state->cursor_kind = FOLIO_CURSOR_NOTE;
+}
+
+/* カーソルをカテゴリ行へ置く。選択と右ペインは触らない（決定 2 / 3）。 */
+static void cursor_to_category(struct folio_state *_Nonnull state, size_t category)
+{
+    state->cursor_any = true;
+    state->cursor_kind = FOLIO_CURSOR_CATEGORY;
+    state->cursor_category = category;
+}
+
+static enum folio_cursor_kind kind_of(struct drawer_cursor cursor)
+{
+    switch (cursor.kind)
+    {
+    case DRAWER_ROW_CATEGORY:
+        return FOLIO_CURSOR_CATEGORY;
+    case DRAWER_ROW_NOTE:
+        return FOLIO_CURSOR_NOTE;
+    }
+    return FOLIO_CURSOR_NOTE;
+}
+
 enum folio_state_outcome folio_state_drawer_layout(const struct folio_state *_Nonnull state,
                                                    struct drawer_metrics metrics,
                                                    struct drawer_layout *_Nullable *_Nonnull out)
@@ -225,10 +293,10 @@ enum folio_state_outcome folio_state_drawer_layout(const struct folio_state *_No
     {
         return FOLIO_STATE_OUT_OF_MEMORY;
     }
-    if (state->selected)
-    {
-        drawer_layout_select(*out, state->selected_category, state->selected_note);
-    }
+    struct note_ref selection = located(state->selected_category, state->selected_note);
+    struct drawer_cursor cursor = on_note(0, 0);
+    bool any = current_cursor(state, &cursor);
+    drawer_layout_mark(*out, state->selected ? &selection : nullptr, any ? &cursor : nullptr);
     drawer_layout_scroll(*out, state->scroll);
     return FOLIO_STATE_READY;
 }
@@ -258,10 +326,11 @@ enum folio_state_outcome folio_state_scroll_drawer(struct folio_state *_Nonnull 
     return FOLIO_STATE_READY;
 }
 
-enum folio_state_outcome folio_state_reveal_selection(struct folio_state *_Nonnull state,
-                                                      struct drawer_metrics metrics)
+enum folio_state_outcome folio_state_reveal_cursor(struct folio_state *_Nonnull state,
+                                                   struct drawer_metrics metrics)
 {
-    if (!state->selected)
+    struct drawer_cursor cursor = on_note(0, 0);
+    if (!current_cursor(state, &cursor))
     {
         return FOLIO_STATE_READY;
     }
@@ -271,7 +340,7 @@ enum folio_state_outcome folio_state_reveal_selection(struct folio_state *_Nonnu
     {
         return outcome;
     }
-    state->scroll = drawer_layout_reveal(layout, state->selected_category, state->selected_note);
+    state->scroll = drawer_layout_reveal(layout, cursor);
     drawer_layout_destroy(layout);
     return FOLIO_STATE_READY;
 }
@@ -317,6 +386,39 @@ enum folio_state_outcome folio_state_toggle_category(struct folio_state *_Nonnul
     return FOLIO_STATE_READY;
 }
 
+/* 展開したあとのカーソル（ADR 0015 の決定 3）。選択がその中にあればそのノート、
+ * 無ければ最初のノート（右ペインが変わる）、ノートが 0 本なら行に留まる。 */
+static enum folio_state_outcome cursor_into(struct folio_state *_Nonnull state, size_t index)
+{
+    if (state->selected && state->selected_category == index)
+    {
+        cursor_to_selection(state);
+        return FOLIO_STATE_READY;
+    }
+    if (note_ledger_count(state->notes[index]) == 0)
+    {
+        return FOLIO_STATE_READY;
+    }
+    return folio_state_select_note(state, index, 0);
+}
+
+/* 開閉のあとにカーソルを移す。カーソルがそのカテゴリに無ければ動かさない（決定 3）。 */
+static enum folio_state_outcome cursor_after_expanded(struct folio_state *_Nonnull state,
+                                                      size_t index, bool expanded)
+{
+    struct drawer_cursor cursor = on_note(0, 0);
+    if (!current_cursor(state, &cursor) || cursor.ref.category != index)
+    {
+        return FOLIO_STATE_READY;
+    }
+    if (!expanded)
+    {
+        cursor_to_category(state, index);
+        return FOLIO_STATE_READY;
+    }
+    return cursor_into(state, index);
+}
+
 enum folio_state_outcome folio_state_set_category_expanded(struct folio_state *_Nonnull state,
                                                            size_t index, bool expanded)
 {
@@ -326,10 +428,15 @@ enum folio_state_outcome folio_state_set_category_expanded(struct folio_state *_
     }
     if (category_ledger_expanded(state->categories, index) == expanded)
     {
-        /* 変わらないなら書く理由が無い（ADR 0013 の決定 5）。 */
+        /* 変わらないなら書く理由が無い（ADR 0013 の決定 5）。カーソルもそのまま。 */
         return FOLIO_STATE_READY;
     }
-    return folio_state_toggle_category(state, index);
+    enum folio_state_outcome outcome = folio_state_toggle_category(state, index);
+    if (outcome != FOLIO_STATE_READY)
+    {
+        return outcome;
+    }
+    return cursor_after_expanded(state, index, expanded);
 }
 
 static bool same_color(struct rgb_color left, struct rgb_color right)
@@ -430,6 +537,11 @@ enum folio_state_outcome folio_state_move_category(struct folio_state *_Nonnull 
     if (state->selected)
     {
         state->selected_category = moved_index(from, to, state->selected_category);
+    }
+    if (state->cursor_any && state->cursor_kind == FOLIO_CURSOR_CATEGORY)
+    {
+        /* カテゴリ行のカーソルも同じカテゴリを指したまま移る。 */
+        state->cursor_category = moved_index(from, to, state->cursor_category);
     }
     return FOLIO_STATE_READY;
 }
@@ -664,6 +776,7 @@ enum folio_state_outcome folio_state_select_note(struct folio_state *_Nonnull st
         state->selected = true;
         state->selected_category = category;
         state->selected_note = note;
+        cursor_to_selection(state);
     }
     return outcome;
 }
@@ -676,120 +789,198 @@ static size_t visible_count(const struct folio_state *_Nonnull state, size_t cat
                : 0;
 }
 
-static struct note_ref located(size_t category, size_t note)
+/* カテゴリの最初の止まる行。見えるノートがあればその 1 本目、無ければカテゴリ行（決定 2）。 */
+static struct drawer_cursor first_stop_in(const struct folio_state *_Nonnull state, size_t category)
 {
-    struct note_ref ref = {.category = category, .note = note};
-    return ref;
+    return visible_count(state, category) > 0 ? on_note(category, 0) : on_category(category);
 }
 
-/* 台帳の順で最初の見えるノート。1 つも無ければ false。 */
-static bool first_visible(const struct folio_state *_Nonnull state, struct note_ref *_Nonnull out)
+/* カテゴリの最後の止まる行。 */
+static struct drawer_cursor last_stop_in(const struct folio_state *_Nonnull state, size_t category)
+{
+    size_t notes = visible_count(state, category);
+    return notes > 0 ? on_note(category, notes - 1) : on_category(category);
+}
+
+/* 台帳の順で最初の止まる行。カテゴリが 1 つも無ければ false。 */
+static bool first_stop(const struct folio_state *_Nonnull state, struct drawer_cursor *_Nonnull out)
+{
+    if (category_ledger_count(state->categories) == 0)
+    {
+        return false;
+    }
+    *out = first_stop_in(state, 0);
+    return true;
+}
+
+/* 台帳の順で最後の止まる行。カテゴリが 1 つも無ければ false。 */
+static bool last_stop(const struct folio_state *_Nonnull state, struct drawer_cursor *_Nonnull out)
 {
     size_t count = category_ledger_count(state->categories);
-    for (size_t category = 0; category < count; ++category)
+    if (count == 0)
     {
-        if (visible_count(state, category) > 0)
+        return false;
+    }
+    *out = last_stop_in(state, count - 1);
+    return true;
+}
+
+/* from と同じカテゴリで、from の次に来るノート行の番号（見えるノート数以上なら次は無い）。
+ * カテゴリ行のカーソルの次は、そのカテゴリの中の 1 本目になる。 */
+static size_t after_in(struct drawer_cursor from)
+{
+    switch (from.kind)
+    {
+    case DRAWER_ROW_CATEGORY:
+        return 0;
+    case DRAWER_ROW_NOTE:
+        return from.ref.note + 1;
+    }
+    return 0;
+}
+
+/* from と同じカテゴリで、from より前にあるノート行の数（0 なら前に無い）。 */
+static size_t before_in(const struct folio_state *_Nonnull state, struct drawer_cursor from)
+{
+    size_t notes = visible_count(state, from.ref.category);
+    switch (from.kind)
+    {
+    case DRAWER_ROW_CATEGORY:
+        return 0;
+    case DRAWER_ROW_NOTE:
+        return from.ref.note < notes ? from.ref.note : notes;
+    }
+    return 0;
+}
+
+/* from より後ろにある最初の止まる行。端なら false。from が折り畳んだカテゴリの中のノートでも、
+ * その位置から数え直す（自分のカテゴリ行へは戻らない）。 */
+static bool next_stop(const struct folio_state *_Nonnull state, struct drawer_cursor from,
+                      struct drawer_cursor *_Nonnull out)
+{
+    size_t count = category_ledger_count(state->categories);
+    size_t start = after_in(from);
+    for (size_t category = from.ref.category; category < count; ++category)
+    {
+        if (category != from.ref.category)
         {
-            *out = located(category, 0);
+            *out = first_stop_in(state, category);
             return true;
         }
-    }
-    return false;
-}
-
-/* 台帳の順で最後の見えるノート。1 つも無ければ false。 */
-static bool last_visible(const struct folio_state *_Nonnull state, struct note_ref *_Nonnull out)
-{
-    bool found = false;
-    size_t count = category_ledger_count(state->categories);
-    for (size_t category = 0; category < count; ++category)
-    {
-        size_t notes = visible_count(state, category);
-        if (notes > 0)
-        {
-            *out = located(category, notes - 1);
-            found = true;
-        }
-    }
-    return found;
-}
-
-/* from より後ろにある最初の見えるノート。端なら false。from が折り畳んだカテゴリの中にあっても、
- * その位置から数え直す（ADR 0013 の決定 5）。 */
-static bool next_visible(const struct folio_state *_Nonnull state, struct note_ref from,
-                         struct note_ref *_Nonnull out)
-{
-    size_t count = category_ledger_count(state->categories);
-    for (size_t category = from.category; category < count; ++category)
-    {
-        size_t start = category == from.category ? from.note + 1 : 0;
         if (start < visible_count(state, category))
         {
-            *out = located(category, start);
+            *out = on_note(category, start);
             return true;
         }
     }
     return false;
 }
 
-/* from より前にある最後の見えるノート。端なら false。 */
-static bool previous_visible(const struct folio_state *_Nonnull state, struct note_ref from,
-                             struct note_ref *_Nonnull out)
+/* from より前にある最後の止まる行。端なら false。 */
+static bool previous_stop(const struct folio_state *_Nonnull state, struct drawer_cursor from,
+                          struct drawer_cursor *_Nonnull out)
 {
-    size_t category = from.category + 1;
+    size_t reach = before_in(state, from);
+    size_t category = from.ref.category + 1;
     while (category > 0)
     {
         category -= 1;
-        size_t notes = visible_count(state, category);
-        size_t reach = category == from.category && from.note < notes ? from.note : notes;
+        if (category != from.ref.category)
+        {
+            *out = last_stop_in(state, category);
+            return true;
+        }
         if (reach > 0)
         {
-            *out = located(category, reach - 1);
+            *out = on_note(category, reach - 1);
             return true;
         }
     }
     return false;
 }
 
-/* 歩みの行き先。端なら false。 */
+/* 歩みの行き先。端なら false（ADR 0015 の決定 2）。 */
 static bool stepped_to(const struct folio_state *_Nonnull state, enum folio_step step,
-                       struct note_ref *_Nonnull out)
+                       struct drawer_cursor *_Nonnull out)
 {
-    struct note_ref from = located(state->selected_category, state->selected_note);
+    struct drawer_cursor from = on_note(0, 0);
+    bool any = current_cursor(state, &from);
     switch (step)
     {
     case FOLIO_STEP_NEXT:
-        return state->selected ? next_visible(state, from, out) : first_visible(state, out);
+        return any ? next_stop(state, from, out) : first_stop(state, out);
     case FOLIO_STEP_PREVIOUS:
-        return state->selected ? previous_visible(state, from, out) : last_visible(state, out);
+        return any ? previous_stop(state, from, out) : last_stop(state, out);
     case FOLIO_STEP_FIRST:
-        return first_visible(state, out);
+        return first_stop(state, out);
     case FOLIO_STEP_LAST:
-        return last_visible(state, out);
+        return last_stop(state, out);
     }
     return false;
+}
+
+/* 行き先のノートへ移る。同じノートなら読み直さず、カーソルだけをそのノートへ戻す。 */
+static enum folio_state_outcome stepped_to_note(struct folio_state *_Nonnull state,
+                                                struct note_ref target)
+{
+    if (state->selected && state->selected_category == target.category &&
+        state->selected_note == target.note)
+    {
+        cursor_to_selection(state);
+        return FOLIO_STATE_READY;
+    }
+    return folio_state_select_note(state, target.category, target.note);
 }
 
 enum folio_state_outcome folio_state_select_adjacent(struct folio_state *_Nonnull state,
                                                      enum folio_step step)
 {
-    struct note_ref target = located(0, 0);
-    if (!first_visible(state, &target))
+    struct drawer_cursor target = on_note(0, 0);
+    if (!first_stop(state, &target))
     {
+        /* 止まる行が 1 つも無い（カテゴリが無い）。 */
         return FOLIO_STATE_NO_SUCH_NOTE;
     }
     if (!stepped_to(state, step, &target))
     {
-        /* 端では動かない（ADR 0013 の決定 5）。 */
+        /* 端では動かない（ADR 0015 の決定 2）。 */
         return FOLIO_STATE_READY;
     }
-    if (state->selected && state->selected_category == target.category &&
-        state->selected_note == target.note)
+    switch (target.kind)
     {
-        /* 同じノートなら読み直さない。 */
+    case DRAWER_ROW_CATEGORY:
+        /* カテゴリ行ではカーソルだけが動く。選択も右ペインも変えない（決定 2）。 */
+        cursor_to_category(state, target.ref.category);
         return FOLIO_STATE_READY;
+    case DRAWER_ROW_NOTE:
+        return stepped_to_note(state, target.ref);
     }
-    return folio_state_select_note(state, target.category, target.note);
+    return FOLIO_STATE_READY;
+}
+
+bool folio_state_step_kind(const struct folio_state *_Nonnull state, enum folio_step step,
+                           enum folio_cursor_kind *_Nonnull kind)
+{
+    struct drawer_cursor target = on_note(0, 0);
+    if (!stepped_to(state, step, &target))
+    {
+        return false;
+    }
+    *kind = kind_of(target);
+    return true;
+}
+
+bool folio_state_cursor(const struct folio_state *_Nonnull state,
+                        enum folio_cursor_kind *_Nonnull kind, struct note_ref *_Nonnull out)
+{
+    struct drawer_cursor cursor = on_note(0, 0);
+    if (!current_cursor(state, &cursor))
+    {
+        return false;
+    }
+    *kind = kind_of(cursor);
+    *out = cursor.ref;
+    return true;
 }
 
 bool folio_state_selection(const struct folio_state *_Nonnull state, struct note_ref *_Nonnull out)

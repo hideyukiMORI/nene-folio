@@ -30,3 +30,4 @@ ADR は「なぜそう決めたか」「何を却下したか」を書く。
 | [0012](0012-note-history-before-save.md) | md を書き戻す直前の本文を data/.history に連番で 5 版まで残し、残せなければ保存しない | 受理 |
 | [0013](0013-index-focus-vim-keys-and-persistent-mode.md) | フォーカスは索引と本文の 2 区画、vim の鍵で選択を動かし、モードを保ったまま保存して次のノートを開く | 受理 |
 | [0014](0014-frameless-window-answers-ncactivate.md) | 枠なし窓は WM_NCACTIVATE と WM_NCPAINT も自分で答え、非アクティブ化で OS に枠を描かせない | 受理 |
+| [0015](0015-cursor-stops-on-collapsed-categories.md) | 索引のカーソルは、ノート行と「見えるノート行を持たないカテゴリ行」に止まる | 受理 |

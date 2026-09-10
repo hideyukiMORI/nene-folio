@@ -7,6 +7,7 @@
 #ifndef NENEFOLIO_DRAWER_LAYOUT_H
 #define NENEFOLIO_DRAWER_LAYOUT_H
 
+#include "drawer_cursor.h"
 #include "drawer_layout_outcome.h"
 #include "drawer_metrics.h"
 #include "drawer_row.h"
@@ -23,19 +24,25 @@ struct note_ledger;
 drawer_layout_create(const struct category_ledger *_Nonnull categories,
                      const struct note_ledger *_Nonnull const *_Nonnull notes,
                      struct drawer_metrics metrics, struct drawer_layout *_Nullable *_Nonnull out);
-/* 選択中のノートの行に印を付ける。該当する行が無ければ何にも付かない。 */
-void drawer_layout_select(struct drawer_layout *_Nonnull layout, size_t category, size_t note);
+/* 選択とカーソルの印を付け直す（ADR 0015 の決定 8）。selection が無ければ（nullptr）面の印は
+ * どの行にも付かず、cursor が無ければ角の印はどの行にも付かない。カーソルがカテゴリ行なら
+ * そのカテゴリ行に付く。該当する行が無ければ（折り畳んだカテゴリの中・索引に無い）何にも付かない。
+ */
+void drawer_layout_mark(struct drawer_layout *_Nonnull layout,
+                        const struct note_ref *_Nullable selection,
+                        const struct drawer_cursor *_Nullable cursor);
 /* スクロールできる最大の画素数（FR-012）。収まっていれば 0。
  * = max(0, 最後の行の下端 + bottom_padding − viewport_height)。 */
 [[nodiscard]] int drawer_layout_scroll_limit(const struct drawer_layout *_Nonnull layout);
-/* スクロール量（画素）を 0〜上限に丸めて配置に印として記憶する（drawer_layout_select と同じ流儀）。
+/* スクロール量（画素）を 0〜上限に丸めて配置に印として記憶する（drawer_layout_mark と同じ流儀）。
  * 以後の row / hit / drop / line_y はこの丸めた量を引いた表示座標になる。 */
 void drawer_layout_scroll(struct drawer_layout *_Nonnull layout, int offset);
-/* 選択の行が頭の帯（top_padding）から下端（viewport_height）までに収まる最小のスクロール量
- * （FR-018 / ADR 0013 の決定 6）。既に収まっていれば、いま印として持っている量をそのまま返す。
+/* カーソルの行が頭の帯（top_padding）から下端（viewport_height）までに収まる最小のスクロール量
+ * （FR-018 / ADR 0013 の決定 6・ADR 0015 の決定 6）。カテゴリ行のカーソルにも同じように効く。
+ * 既に収まっていれば、いま印として持っている量をそのまま返す。
  * その行が無ければ（折り畳んだカテゴリの中・索引に無い）も同じで、量は動かない。 */
-[[nodiscard]] int drawer_layout_reveal(const struct drawer_layout *_Nonnull layout, size_t category,
-                                       size_t note);
+[[nodiscard]] int drawer_layout_reveal(const struct drawer_layout *_Nonnull layout,
+                                       struct drawer_cursor cursor);
 /* 上に隠れている行があるか（丸めた量 > 0）。UI はこの側にだけフェードを描く。 */
 [[nodiscard]] bool drawer_layout_overflow_above(const struct drawer_layout *_Nonnull layout);
 /* 下に隠れている行があるか（丸めた量 < 上限）。 */
