@@ -19,6 +19,11 @@ drawer_window_create(HWND _Nonnull parent, struct folio_state *_Nonnull state,
                      struct drawer_window *_Nullable *_Nonnull out);
 /* 親が配置に使う。ウィンドウが既に破棄されていれば nullptr。 */
 [[nodiscard]] HWND _Nullable drawer_window_handle(const struct drawer_window *_Nonnull drawer);
+/* 主窓が受けた鍵をスクロールの意図に変える（FR-012 / ADR 0009 の決定 5）。
+ * ドロワーはフォーカスを取らないので、鍵は主窓からここへ渡す。動くのは
+ * VK_UP / VK_DOWN（ノート行 1 つ）と VK_PRIOR / VK_NEXT（1 画面から 1 行を引いた量）だけで、
+ * ほかの鍵では何も起きない。 */
+void drawer_window_scroll_key(struct drawer_window *_Nonnull drawer, WPARAM key);
 void drawer_window_destroy(struct drawer_window *_Nullable drawer);
 
 #endif

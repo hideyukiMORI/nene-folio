@@ -8,6 +8,7 @@
 #include "note_ref.h"
 #include "utf16_text.h"
 
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <windowsx.h>
@@ -24,6 +25,7 @@ struct drawer_window
     bool pressed; /* 左ボタンを押した行を覚えているか */
     size_t pressed_row;
     int pressed_y;             /* 押したときの y。しきい値の判定に使う */
+    int pointer_y;             /* 最後に見たポインタの y。スクロール中に落とし先を引き直す */
     bool dragging;             /* しきい値を超えて動かしているか */
     struct drop_target target; /* dragging のときの落とし先 */
 };
@@ -44,12 +46,16 @@ constexpr int base_category_indent = 16;
 constexpr int base_name_offset = 26; /* 番号の左端から名前の左端まで */
 constexpr int base_note_indent = 40;
 constexpr int base_right_inset = 16;
+constexpr int base_bottom_padding = 16; /* 最後の行の下に空ける余白（左右の余白と同じ） */
+constexpr int base_fade_height = 24;    /* あふれを示すフェードの高さ（ADR 0009 の決定 7） */
 constexpr int base_mark_size = 6;
 constexpr int base_line_thickness = 2; /* ドラッグ中の挿入線の太さ */
 constexpr int base_category_font = 12;
 constexpr int base_note_font = 14;
 constexpr int base_mono_font = 11;
 constexpr int base_tracking = 2; /* カテゴリ名と頭の文字の字間 */
+constexpr int wheel_rows = 3;    /* ホイール 1 刻みで動くノート行の数（ADR 0009 の決定 4） */
+constexpr int fade_full = 256;   /* フェードの端で地の色に寄せる重み（256 分の 1） */
 
 static int scale(int value, UINT dpi)
 {
@@ -87,8 +93,12 @@ static void refresh_fonts(struct drawer_window *_Nonnull self, UINT dpi)
     self->mono_font = create_font(dpi, base_mono_font, FW_NORMAL, mono_face);
 }
 
-static struct drawer_metrics metrics_for(UINT dpi)
+/* いまの DPI と client の高さで寸法を測る。スクロール上限は core がここから決める（FR-012）。 */
+static struct drawer_metrics metrics_for(const struct drawer_window *_Nonnull self)
 {
+    UINT dpi = GetDpiForWindow(self->handle);
+    RECT client = {0, 0, 0, 0};
+    GetClientRect(self->handle, &client);
     struct drawer_metrics metrics = {
         .top_padding = scale(base_header_height, dpi),
         .row_height = scale(base_row_height, dpi),
@@ -96,6 +106,8 @@ static struct drawer_metrics metrics_for(UINT dpi)
         .category_gap = scale(base_category_gap, dpi),
         .category_indent = scale(base_category_indent, dpi),
         .note_indent = scale(base_note_indent, dpi),
+        .viewport_height = client.bottom,
+        .bottom_padding = scale(base_bottom_padding, dpi),
     };
     return metrics;
 }
@@ -221,14 +233,9 @@ static void draw_drop_line(const struct drawer_window *_Nonnull self, HDC device
     fill_rect(device, line, to_colorref(row.color));
 }
 
-static void draw_rows(const struct drawer_window *_Nonnull self, HDC device, RECT client)
+static void draw_rows(const struct drawer_window *_Nonnull self, HDC device,
+                      const struct drawer_layout *_Nonnull layout, int width)
 {
-    struct drawer_layout *_Nullable layout = nullptr;
-    UINT dpi = GetDpiForWindow(self->handle);
-    if (folio_state_drawer_layout(self->state, metrics_for(dpi), &layout) != FOLIO_STATE_READY)
-    {
-        return;
-    }
     size_t count = drawer_layout_row_count(layout);
     for (size_t index = 0; index < count; ++index)
     {
@@ -236,33 +243,130 @@ static void draw_rows(const struct drawer_window *_Nonnull self, HDC device, REC
         switch (row.kind)
         {
         case DRAWER_ROW_CATEGORY:
-            draw_category(self, device, row, client.right);
+            draw_category(self, device, row, width);
             break;
         case DRAWER_ROW_NOTE:
-            draw_note(self, device, row, client.right);
+            draw_note(self, device, row, width);
             break;
         }
     }
-    draw_drop_line(self, device, layout, client.right);
+    draw_drop_line(self, device, layout, width);
+}
+
+/* いまの配置を作る。作れなければ false（描き直しの機会に回復する）。 */
+static bool current_layout(const struct drawer_window *_Nonnull self,
+                           struct drawer_layout *_Nullable *_Nonnull out)
+{
+    return folio_state_drawer_layout(self->state, metrics_for(self), out) == FOLIO_STATE_READY;
+}
+
+/* COLORREF（0x00BBGGRR）を 32 bit の DIB の 1 画素（0x00RRGGBB）にする。 */
+static uint32_t to_pixel(COLORREF color)
+{
+    return ((uint32_t)GetRValue(color) << 16) | ((uint32_t)GetGValue(color) << 8) |
+           (uint32_t)GetBValue(color);
+}
+
+/* 画素の 1 成分を地の色へ weight / fade_full だけ寄せる。 */
+static uint32_t mix_channel(uint32_t pixel, uint32_t ground, int shift, int weight)
+{
+    int value = (int)((pixel >> shift) & 0xFFu);
+    int base = (int)((ground >> shift) & 0xFFu);
+    return (uint32_t)(value + (base - value) * weight / fade_full) << shift;
+}
+
+static uint32_t mix(uint32_t pixel, uint32_t ground, int weight)
+{
+    return mix_channel(pixel, ground, 16, weight) | mix_channel(pixel, ground, 8, weight) |
+           mix_channel(pixel, ground, 0, weight);
+}
+
+/* あふれを示すフェードを 1 本、画素ごとに混ぜる（ADR 0009 の決定 7）。
+ * above なら頭の帯の直下から下へ、そうでなければ client の下端から上へ、端で地の色 100%。 */
+static void draw_fade(const struct drawer_window *_Nonnull self, uint32_t *_Nonnull pixels,
+                      RECT client, bool above)
+{
+    UINT dpi = GetDpiForWindow(self->handle);
+    int height = scale(base_fade_height, dpi);
+    int start = above ? scale(base_header_height, dpi) : client.bottom - height;
+    uint32_t ground = to_pixel(self->palette.window);
+    for (int row = 0; row < height; ++row)
+    {
+        int y = start + row;
+        int weight = fade_full - fade_full * (above ? row : height - 1 - row) / height;
+        if (y < 0 || y >= client.bottom)
+        {
+            continue;
+        }
+        for (int x = 0; x < client.right; ++x)
+        {
+            uint32_t *_Nonnull pixel = &pixels[(size_t)y * (size_t)client.right + (size_t)x];
+            *pixel = mix(*pixel, ground, weight);
+        }
+    }
+}
+
+/* 32 bit・top-down の DIB セクション。画素は 0x00RRGGBB で並ぶ（ADR 0009 の決定 7）。 */
+static HBITMAP _Nullable create_surface(HDC device, RECT client,
+                                        uint32_t *_Nullable *_Nonnull pixels)
+{
+    BITMAPINFO info = {.bmiHeader = {.biSize = sizeof info.bmiHeader,
+                                     .biWidth = client.right,
+                                     .biHeight = -client.bottom,
+                                     .biPlanes = 1,
+                                     .biBitCount = 32,
+                                     .biCompression = BI_RGB}};
+    /* CreateDIBSection の出力引数は void ** でしか受けられない（Win32 の境界・C-006）。 */
+    void *bits = nullptr;
+    HBITMAP surface = CreateDIBSection(device, &info, DIB_RGB_COLORS, &bits, nullptr, 0);
+    *pixels = bits;
+    return surface;
+}
+
+/* 面を 1 枚仕上げる。行は頭の帯の下から client の下端までにクリップして描く（決定 7）。 */
+static void paint_surface(const struct drawer_window *_Nonnull self, HDC device,
+                          uint32_t *_Nonnull pixels, RECT client)
+{
+    fill_rect(device, client, self->palette.window);
+    SetBkMode(device, TRANSPARENT);
+    struct drawer_layout *_Nullable layout = nullptr;
+    if (!current_layout(self, &layout))
+    {
+        draw_header(self, device, client.right);
+        return;
+    }
+    int header = scale(base_header_height, GetDpiForWindow(self->handle));
+    IntersectClipRect(device, 0, header, client.right, client.bottom);
+    draw_rows(self, device, layout, client.right);
+    SelectClipRgn(device, nullptr);
+    draw_header(self, device, client.right);
+    /* 画素へ触る前に GDI の溜めを吐き出す。 */
+    GdiFlush();
+    if (drawer_layout_overflow_above(layout))
+    {
+        draw_fade(self, pixels, client, true);
+    }
+    if (drawer_layout_overflow_below(layout))
+    {
+        draw_fade(self, pixels, client, false);
+    }
     drawer_layout_destroy(layout);
 }
 
-/* メモリ DC で完成させてから転送する（C-017）。 */
+/* DIB セクションで完成させてから転送する（C-017）。 */
 static void paint(struct drawer_window *_Nonnull self)
 {
     PAINTSTRUCT painting;
     HDC target = BeginPaint(self->handle, &painting);
-    RECT client;
+    RECT client = {0, 0, 0, 0};
     GetClientRect(self->handle, &client);
     HDC memory = CreateCompatibleDC(target);
-    HBITMAP surface = CreateCompatibleBitmap(target, client.right, client.bottom);
-    if (memory != nullptr && surface != nullptr)
+    uint32_t *_Nullable pixels = nullptr;
+    HBITMAP surface = memory == nullptr ? nullptr : create_surface(memory, client, &pixels);
+    if (surface != nullptr && pixels != nullptr)
     {
         HGDIOBJ previous = SelectObject(memory, surface);
-        fill_rect(memory, client, self->palette.window);
-        SetBkMode(memory, TRANSPARENT);
-        draw_header(self, memory, client.right);
-        draw_rows(self, memory, client);
+        paint_surface(self, memory, pixels, client);
         BitBlt(target, 0, 0, client.right, client.bottom, memory, 0, 0, SRCCOPY);
         SelectObject(memory, previous);
     }
@@ -345,17 +449,15 @@ static void apply_drop(struct drawer_window *_Nonnull self, struct drawer_row so
     InvalidateRect(GetParent(self->handle), nullptr, FALSE);
 }
 
-/* いまの配置を作る。作れなければ false（描き直しの機会に回復する）。 */
-static bool current_layout(const struct drawer_window *_Nonnull self,
-                           struct drawer_layout *_Nullable *_Nonnull out)
-{
-    UINT dpi = GetDpiForWindow(self->handle);
-    return folio_state_drawer_layout(self->state, metrics_for(dpi), out) == FOLIO_STATE_READY;
-}
-
 /* 押した行を覚えて捕捉する。クリックの確定は離すときに行う（ADR 0007 の決定 6）。 */
 static void press(struct drawer_window *_Nonnull self, int y)
 {
+    /* 頭の帯はドロワーの装飾であって行ではない。スクロールで帯の下へ潜った行を掴ませない
+     * （描画も同じ境界でクリップしている・ADR 0009 の決定 7）。 */
+    if (y < scale(base_header_height, GetDpiForWindow(self->handle)))
+    {
+        return;
+    }
     struct drawer_layout *_Nullable layout = nullptr;
     if (!current_layout(self, &layout))
     {
@@ -380,6 +482,7 @@ static void drag(struct drawer_window *_Nonnull self, int y)
     {
         return;
     }
+    self->pointer_y = y;
     int travel = y - self->pressed_y;
     int threshold = GetSystemMetricsForDpi(SM_CYDRAG, GetDpiForWindow(self->handle));
     if (!self->dragging && travel > -threshold && travel < threshold)
@@ -430,6 +533,52 @@ static void release(struct drawer_window *_Nonnull self)
     act_on_row(self, row);
 }
 
+/* スクロールの意図を出し、結果を写す（ADR 0009 の決定 8）。
+ * ドラッグ中は行が動いたので、同じポインタ位置で落とし先を引き直す（決定 6）。 */
+static void scroll_by(struct drawer_window *_Nonnull self, int delta)
+{
+    enum folio_state_outcome outcome =
+        folio_state_scroll_drawer(self->state, metrics_for(self), delta);
+    if (outcome != FOLIO_STATE_READY)
+    {
+        failure_box_show(self->handle, outcome);
+        return;
+    }
+    if (self->dragging)
+    {
+        drag(self, self->pointer_y);
+    }
+    InvalidateRect(self->handle, nullptr, FALSE);
+}
+
+/* ホイール 1 メッセージぶんの画素。上へ回す（正の delta）と内容が下がる＝量は減る（決定 4）。 */
+static void wheel(struct drawer_window *_Nonnull self, WPARAM wparam)
+{
+    struct drawer_metrics metrics = metrics_for(self);
+    scroll_by(self, -MulDiv(GET_WHEEL_DELTA_WPARAM(wparam), wheel_rows * metrics.row_height,
+                            WHEEL_DELTA));
+}
+
+/* 鍵 1 つぶんの画素。扱わない鍵は 0（決定 4）。 */
+static int key_step(const struct drawer_window *_Nonnull self, WPARAM key)
+{
+    struct drawer_metrics metrics = metrics_for(self);
+    switch (key)
+    {
+    case VK_UP:
+        return -metrics.row_height;
+    case VK_DOWN:
+        return metrics.row_height;
+    case VK_PRIOR:
+        return -(metrics.viewport_height - metrics.row_height);
+    case VK_NEXT:
+        return metrics.viewport_height - metrics.row_height;
+    default:
+        /* Win32 の仮想キーは開いた OS の集合（C-017）。 */
+        return 0;
+    }
+}
+
 /* 捕捉を取り上げられたら、線も覚えた行も捨てる。 */
 static void cancel(struct drawer_window *_Nonnull self)
 {
@@ -475,6 +624,9 @@ static LRESULT CALLBACK drawer_procedure(HWND window, UINT message, WPARAM wpara
         return 0;
     case WM_LBUTTONUP:
         release(self);
+        return 0;
+    case WM_MOUSEWHEEL:
+        wheel(self, wparam);
         return 0;
     case WM_CAPTURECHANGED:
         cancel(self);
@@ -540,6 +692,19 @@ enum drawer_window_outcome drawer_window_create(HWND _Nonnull parent,
 HWND _Nullable drawer_window_handle(const struct drawer_window *_Nonnull drawer)
 {
     return drawer->handle;
+}
+
+void drawer_window_scroll_key(struct drawer_window *_Nonnull drawer, WPARAM key)
+{
+    if (drawer->handle == nullptr)
+    {
+        return;
+    }
+    int step = key_step(drawer, key);
+    if (step != 0)
+    {
+        scroll_by(drawer, step);
+    }
 }
 
 void drawer_window_destroy(struct drawer_window *_Nullable drawer)
