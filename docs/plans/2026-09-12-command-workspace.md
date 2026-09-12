@@ -6,6 +6,9 @@
 - 設計担当: NeNe Folioサナ（Astra）。実装・調査・テストは SOL / LUNA の実装サナへ範囲を指定して依頼する
 - デザイン相談: ClaudeCode の NeNe Folioデザインリナ。Fable の利用上限により Opus 5 へ切替え、`/design` の呼び出し成功を確認
 
+配置・配色と相談の採否は [デザイン判断](../design/2026-09-12-command-workspace.md) が正本。
+共有キャンバスの公開は自動承認に拒否されhideへ確認中であり、Chrome目視は未実施。
+
 ## 1. 実装順
 
 | 順 | Issue | 成果 | 前提 |
