@@ -9,20 +9,24 @@
 
 struct folio_palette
 {
-    COLORREF window;              /* 窓とドロワーの地 */
-    COLORREF pane;                /* 右ペインの地 */
-    COLORREF header_text;         /* ドロワーの頭・右ペインの頭の薄い文字 */
-    COLORREF category_text;       /* カテゴリ名 */
-    COLORREF note_text;           /* ノート名 */
-    COLORREF selected_background; /* 選択中のノート行の面 */
-    COLORREF selected_text;       /* 選択中のノート名 */
-    COLORREF current_text;        /* 右ペインの頭の、いま見ているノート名 */
-    COLORREF editor_text;         /* 編集モードの本文 */
-    COLORREF chip_background;     /* 有効な側の札の地 */
-    COLORREF chip_text;           /* 有効な側の札の文字 */
-    COLORREF border;              /* 窓の縁と区切り記号 */
+    COLORREF window;                /* 窓とドロワーの地 */
+    COLORREF pane;                  /* 右ペインの地 */
+    COLORREF header_text;           /* ドロワーの頭・右ペインの頭の薄い文字 */
+    COLORREF category_text;         /* カテゴリ名 */
+    COLORREF note_text;             /* ノート名 */
+    COLORREF selected_background;   /* 選択中のノート行の面 */
+    COLORREF selected_text;         /* 選択中のノート名 */
+    COLORREF current_text;          /* 右ペインの頭の、いま見ているノート名 */
+    COLORREF editor_text;           /* 編集モードの本文 */
+    COLORREF chip_background;       /* 有効な側の札の地 */
+    COLORREF chip_text;             /* 有効な側の札の文字 */
+    COLORREF border;                /* 窓の縁と区切り記号 */
+    COLORREF breadcrumb_background; /* Powerlineのカテゴリ面 */
+    COLORREF breadcrumb_text;       /* カテゴリ面の文字 */
 };
 
 [[nodiscard]] struct folio_palette folio_palette_for(enum folio_theme theme);
+/* カテゴリ色に対し、相対輝度のコントラスト比が高い白か黒を返す（ADR 0017）。 */
+[[nodiscard]] COLORREF folio_palette_ink(COLORREF background);
 
 #endif
