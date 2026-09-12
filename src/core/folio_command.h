@@ -1,5 +1,6 @@
 /* Ex・操作パレット・既存ショートカットが共有する安定した操作 ID と登録表（ADR 0016）。
- * 表示名と Ex 別名は同じ静的な登録表から読み、UI は ID だけを実行する。 */
+ * 表示名と Ex 別名は同じ静的な登録表から読み、UI は ID だけを実行する。
+ * command 引数にはこの列挙型の値だけを渡す。文字入力は parse で検証し、整数から作らない。 */
 #ifndef NENEFOLIO_FOLIO_COMMAND_H
 #define NENEFOLIO_FOLIO_COMMAND_H
 

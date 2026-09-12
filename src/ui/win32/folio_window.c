@@ -855,6 +855,10 @@ static void command_failure(struct folio_window *_Nonnull self, enum folio_state
     if (!inline_failure)
     {
         failure_box_show(self->handle, outcome);
+        if (self->command_surface != COMMAND_SURFACE_CLOSED && self->command_input != nullptr)
+        {
+            SetFocus(self->command_input);
+        }
         return;
     }
     self->command_failure = outcome;

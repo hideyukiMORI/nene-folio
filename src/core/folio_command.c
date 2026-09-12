@@ -1,6 +1,5 @@
 #include "folio_command.h"
 
-#include <stdlib.h>
 #include <string.h>
 
 constexpr size_t alias_limit = 2;
@@ -12,11 +11,14 @@ static const struct
     size_t aliases;
     const char *_Nonnull names[alias_limit];
 } catalog[] = {
-    {FOLIO_COMMAND_SAVE, "保存", 2, {"w", "write"}},
-    {FOLIO_COMMAND_QUIT, "終了", 2, {"q", "quit"}},
-    {FOLIO_COMMAND_SAVE_QUIT, "保存して終了", 2, {"wq", "x"}},
-    {FOLIO_COMMAND_FORCE_QUIT, "未保存変更を破棄して終了", 1, {"q!", ""}},
-    {FOLIO_COMMAND_HELP, "ヘルプ", 1, {"help", ""}},
+    [FOLIO_COMMAND_SAVE] = {FOLIO_COMMAND_SAVE, "保存", 2, {"w", "write"}},
+    [FOLIO_COMMAND_QUIT] = {FOLIO_COMMAND_QUIT, "終了", 2, {"q", "quit"}},
+    [FOLIO_COMMAND_SAVE_QUIT] = {FOLIO_COMMAND_SAVE_QUIT, "保存して終了", 2, {"wq", "x"}},
+    [FOLIO_COMMAND_FORCE_QUIT] = {FOLIO_COMMAND_FORCE_QUIT,
+                                  "未保存変更を破棄して終了",
+                                  1,
+                                  {"q!", ""}},
+    [FOLIO_COMMAND_HELP] = {FOLIO_COMMAND_HELP, "ヘルプ", 1, {"help", ""}},
 };
 
 static bool ascii_space(char value)
@@ -101,24 +103,6 @@ static bool contains_span(const char *_Nonnull text, size_t length, const char *
     return false;
 }
 
-static size_t record_of(enum folio_command command)
-{
-    switch (command)
-    {
-    case FOLIO_COMMAND_SAVE:
-        return 0;
-    case FOLIO_COMMAND_QUIT:
-        return 1;
-    case FOLIO_COMMAND_SAVE_QUIT:
-        return 2;
-    case FOLIO_COMMAND_FORCE_QUIT:
-        return 3;
-    case FOLIO_COMMAND_HELP:
-        return 4;
-    }
-    abort();
-}
-
 size_t folio_command_count(void)
 {
     return sizeof catalog / sizeof catalog[0];
@@ -131,17 +115,17 @@ enum folio_command folio_command_at(size_t index)
 
 const char *_Nonnull folio_command_label(enum folio_command command)
 {
-    return catalog[record_of(command)].label;
+    return catalog[command].label;
 }
 
 size_t folio_command_alias_count(enum folio_command command)
 {
-    return catalog[record_of(command)].aliases;
+    return catalog[command].aliases;
 }
 
 const char *_Nonnull folio_command_alias(enum folio_command command, size_t index)
 {
-    return catalog[record_of(command)].names[index];
+    return catalog[command].names[index];
 }
 
 bool folio_command_parse(const char *_Nonnull text, size_t length, enum folio_command *_Nonnull out)
@@ -158,7 +142,7 @@ bool folio_command_parse(const char *_Nonnull text, size_t length, enum folio_co
 
 bool folio_command_matches(enum folio_command command, const char *_Nonnull text, size_t length)
 {
-    size_t item = record_of(command);
+    size_t item = command;
     if (contains_span(catalog[item].label, strlen(catalog[item].label), text, length))
     {
         return true;
