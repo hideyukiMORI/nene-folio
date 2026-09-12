@@ -98,7 +98,12 @@
 
 ## 次の 1 手
 
-次は**検索（FR-011）**。Issue #32（FR-018 の改定）は ADR 0015 のとおり実装した（枝 `feat/32-cursor-collapsed-categories`）。
+2026-09-12 の hide の追加要望により、次は **共通コマンド・INDEX の `:`・Ctrl+P（Issue #37）**。
+検索（FR-011）は Issue #40 として継続する。全体の優先順は [計画 #36](../plans/2026-09-12-command-workspace.md)。
+設定・Ubuntu 風テーマ・日本語／English／简体中文は #38、行番号は #39、現在 md の正規表現置換は #41、
+Google Fonts の同梱は #42。これらは計画であり、まだ「動くもの」には含めない。
+
+Issue #32（FR-018 の改定）は ADR 0015 のとおり実装した（枝 `feat/32-cursor-collapsed-categories`）。
 Issue #24（FR-018）は ADR 0013 のとおり実装した（枝 `feat/24-index-focus-vim`）。
 Issue #23（FR-017）は ADR 0012 のとおり（枝 `feat/23-note-history`）。
 Issue #22（枠の白い線・リサイズ後の再描画・最小サイズとパンくずのはみ出し）は ADR 0011 と ADR 0014 のとおり実装した
