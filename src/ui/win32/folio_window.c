@@ -48,6 +48,15 @@ static const wchar_t mono_face[] = L"Consolas";
 static const wchar_t view_label[] = L"閲覧";
 static const wchar_t edit_label[] = L"編集";
 static const wchar_t edit_class[] = L"EDIT";
+static const char *_Nonnull const command_shortcuts[] = {
+    "一覧  ↑↓ 選択 / Enter 実行 / Esc 戻る",
+    "INDEX・本文  Ctrl+P 一覧 / Ctrl+S 保存",
+    "INDEX  ? ヘルプ / : コマンド入力",
+    "INDEX  j/k 次/前 / gg/G 先頭/末尾",
+    "INDEX  h/l 折畳/展開 / Enter 本文",
+    "INDEX  ↑↓ / PgUp/PgDn スクロール",
+    "本文  Esc INDEXへ（編集中は保存・モード維持）",
+};
 
 /* Ctrl+S が WM_CHAR で届く制御文字（GetKeyState を読まない・ARC-007）。 */
 constexpr WPARAM store_character = 0x13;
@@ -90,6 +99,8 @@ constexpr int base_command_palette_compact_top = 40;
 constexpr int base_command_palette_padding = 16;
 constexpr int base_command_row_height = 32;
 constexpr int base_command_status_height = 24;
+constexpr int base_command_help_row_height = 14;
+constexpr int base_command_palette_edge = 4;
 constexpr int base_ex_height = 32;
 constexpr int base_command_row_padding = 12;
 constexpr int base_command_alias_room = 96;
@@ -151,9 +162,16 @@ static RECT command_palette_rect(const struct folio_window *_Nonnull self)
         scale(base_command_palette_padding * 2 + base_command_input_height + base_command_gap +
                   base_command_row_height * rows + base_command_status_height,
               dpi);
+    height += scale(base_command_help_row_height, dpi) *
+              (int)(sizeof command_shortcuts / sizeof command_shortcuts[0]);
     int top = scale(client.bottom < scale(480, dpi) ? base_command_palette_compact_top
                                                     : base_command_palette_top,
                     dpi);
+    int latest_top = client.bottom - height - scale(base_command_palette_edge, dpi);
+    if (top > latest_top)
+    {
+        top = latest_top;
+    }
     RECT bounds = {(client.right - width) / 2, top, (client.right + width) / 2, top + height};
     return bounds;
 }
@@ -561,6 +579,25 @@ static void draw_command_status(const struct folio_window *_Nonnull self, HDC de
     draw_utf8(device, line, bounds);
 }
 
+static void draw_command_shortcuts(const struct folio_window *_Nonnull self, HDC device,
+                                   RECT bounds)
+{
+    UINT dpi = GetDpiForWindow(self->handle);
+    int row_height = scale(base_command_help_row_height, dpi);
+    int rows = (int)(sizeof command_shortcuts / sizeof command_shortcuts[0]);
+    bounds.bottom -= scale(base_command_status_height + base_command_palette_padding, dpi);
+    bounds.top = bounds.bottom - row_height * rows;
+    bounds.left += scale(base_command_palette_padding, dpi);
+    bounds.right -= scale(base_command_palette_padding, dpi);
+    SetTextColor(device, self->palette.current_text);
+    for (int index = 0; index < rows; ++index)
+    {
+        RECT row = {bounds.left, bounds.top, bounds.right, bounds.top + row_height};
+        draw_utf8(device, command_shortcuts[index], row);
+        bounds.top = row.bottom;
+    }
+}
+
 static void draw_palette_rows(const struct folio_window *_Nonnull self, HDC device, RECT bounds)
 {
     struct utf8_text *_Nullable query = nullptr;
@@ -589,6 +626,7 @@ static void draw_palette_rows(const struct folio_window *_Nonnull self, HDC devi
     RECT status = {bounds.left + padding, bounds.bottom - scale(base_command_status_height, dpi),
                    bounds.right - padding, bounds.bottom};
     draw_command_status(self, device, status);
+    draw_command_shortcuts(self, device, bounds);
     utf8_text_destroy(query);
 }
 
@@ -925,6 +963,11 @@ static void dismiss_command_surface(struct folio_window *_Nonnull self)
 
 static void show_command_palette(struct folio_window *_Nonnull self)
 {
+    if (self->command_surface == COMMAND_SURFACE_CLOSED)
+    {
+        open_command_surface(self, COMMAND_SURFACE_PALETTE);
+        return;
+    }
     self->command_surface = COMMAND_SURFACE_PALETTE;
     self->command_selection = 0;
     self->command_unknown = false;
@@ -1325,6 +1368,9 @@ static void type_key(struct folio_window *_Nonnull self, WPARAM character)
     {
     case ':':
         open_command_surface(self, COMMAND_SURFACE_EX);
+        break;
+    case '?':
+        execute_command(self, FOLIO_COMMAND_HELP);
         break;
     case palette_character:
         open_command_surface(self, COMMAND_SURFACE_PALETTE);

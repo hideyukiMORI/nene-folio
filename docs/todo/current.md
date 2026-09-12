@@ -100,6 +100,7 @@
 
 2026-09-12 の hide の追加要望により、**共通コマンド・INDEX の `:`・Ctrl+P（Issue #37、ADR 0016）を実装中**。
 保存・未保存なら拒否する終了・保存して終了・明示的な破棄・ヘルプと閉じるアイコンを追加した。
+2026-09-13にINDEXの `?` と区画別キーバインド表示・[操作表](../KEY_BINDINGS.md)を追加。パンくずのPowerline案は#45で別途扱う。
 core/applicationの単体・確保失敗テストとレビューは通過し、GUI実機確認を残してDraftで扱う。
 Computer Useのnative pipeに接続できず、打鍵・IME・Undo/キャレット・DPIは未確認。最終ゲートの結果はPRに記録する。
 検索（FR-011）は Issue #40 として継続する。全体の優先順は [計画 #36](../plans/2026-09-12-command-workspace.md)。

@@ -126,6 +126,9 @@ Waivers: none | WVR-NNNN
 
 現在のタスクは [docs/todo/current.md](docs/todo/current.md)。GitHub Issue が正で、そこは要約。
 
+2026-09-13: #37へINDEXの `?` とキーバインド説明を追加。パンくずのPowerline案は#45。
+最新は [日報](docs/reports/2026-09-13.md) / [引き継ぎ](docs/handoffs/2026-09-13.md)。
+
 2026-09-12: hide の追加要望を [コマンド・検索・設定の計画](docs/plans/2026-09-12-command-workspace.md)（Issue #36、統合済みPR #43）へ記録した。
 コマンドの初版は [Draft PR #44](https://github.com/hideyukiMORI/nene-folio/pull/44) に実装。フルゲートは成功、Win32実機確認は未完了。
 現状・確認条件は [日報](docs/reports/2026-09-12.md) と [引き継ぎ](docs/handoffs/2026-09-12.md)。画面案はhideの承認後にArtifact公開・Chrome確認済み。
