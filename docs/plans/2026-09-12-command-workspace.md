@@ -7,7 +7,7 @@
 - デザイン相談: ClaudeCode の NeNe Folioデザインリナ。Fable の利用上限により Opus 5 へ切替え、`/design` の呼び出し成功を確認
 
 配置・配色と相談の採否は [デザイン判断](../design/2026-09-12-command-workspace.md) が正本。
-共有キャンバスの公開は自動承認に拒否されhideへ確認中であり、Chrome目視は未実施。
+共有キャンバスはhideの明示承認後にArtifactへ公開し、Chromeで目視確認した。Win32の実機確認は未完了。
 
 ## 1. 実装順
 
