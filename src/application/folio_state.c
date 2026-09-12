@@ -1058,9 +1058,10 @@ static enum folio_state_outcome store_edited(struct folio_state *_Nonnull state,
 }
 
 /* UI が持つ編集中の本文（UTF-16）を core で検証・変換し、読んだ本文の改行の形へ揃える。
- * application が UTF-16 を受けるのはこの 1 本だけ（C-014 の例外・ADR 0006 の決定 4）。 */
-static enum folio_state_outcome save_note(struct folio_state *_Nonnull state,
-                                          const char16_t *_Nonnull units, size_t count)
+ * 保存と読み取り専用の変更問い合わせがこの 1 本を共有する（C-014・ADR 0016 の決定 10）。 */
+static enum folio_state_outcome edited_text(const struct folio_state *_Nonnull state,
+                                            const char16_t *_Nonnull units, size_t count,
+                                            struct note_text *_Nullable *_Nonnull out)
 {
     if (state->mode != PANE_MODE_EDIT)
     {
@@ -1073,15 +1074,25 @@ static enum folio_state_outcome save_note(struct folio_state *_Nonnull state,
         return converted == UTF8_TEXT_OUT_OF_MEMORY ? FOLIO_STATE_OUT_OF_MEMORY
                                                     : FOLIO_STATE_NOTE_MALFORMED;
     }
-    struct note_text *_Nullable edited = nullptr;
-    enum note_text_outcome accepted =
-        note_text_from_editor(utf8_text_bytes(narrow), utf8_text_length(narrow),
-                              note_text_line_ending(state->body), &edited);
+    enum note_text_outcome accepted = note_text_from_editor(
+        utf8_text_bytes(narrow), utf8_text_length(narrow), note_text_line_ending(state->body), out);
     utf8_text_destroy(narrow);
     if (accepted != NOTE_TEXT_ACCEPTED)
     {
         return accepted == NOTE_TEXT_OUT_OF_MEMORY ? FOLIO_STATE_OUT_OF_MEMORY
                                                    : FOLIO_STATE_NOTE_MALFORMED;
+    }
+    return FOLIO_STATE_READY;
+}
+
+static enum folio_state_outcome save_note(struct folio_state *_Nonnull state,
+                                          const char16_t *_Nonnull units, size_t count)
+{
+    struct note_text *_Nullable edited = nullptr;
+    enum folio_state_outcome outcome = edited_text(state, units, count, &edited);
+    if (outcome != FOLIO_STATE_READY)
+    {
+        return outcome;
     }
     return store_edited(state, edited);
 }
@@ -1090,6 +1101,21 @@ enum folio_state_outcome folio_state_store_note(struct folio_state *_Nonnull sta
                                                 const char16_t *_Nonnull units, size_t count)
 {
     return save_note(state, units, count);
+}
+
+enum folio_state_outcome folio_state_note_changed(const struct folio_state *_Nonnull state,
+                                                  const char16_t *_Nonnull units, size_t count,
+                                                  enum folio_note_change *_Nonnull out)
+{
+    struct note_text *_Nullable edited = nullptr;
+    enum folio_state_outcome outcome = edited_text(state, units, count, &edited);
+    if (outcome != FOLIO_STATE_READY)
+    {
+        return outcome;
+    }
+    *out = note_text_equals(state->body, edited) ? FOLIO_NOTE_SAME : FOLIO_NOTE_CHANGED;
+    note_text_destroy(edited);
+    return FOLIO_STATE_READY;
 }
 
 enum folio_state_outcome folio_state_end_edit(struct folio_state *_Nonnull state,
@@ -1173,6 +1199,8 @@ const char *_Nonnull folio_state_failure_line(enum folio_state_outcome outcome)
         return "ノートを書き戻せませんでした。編集中の本文はそのままです。";
     case FOLIO_STATE_HISTORY_FAILED:
         return "履歴を書けなかったので保存していません。編集中の本文は残っています。";
+    case FOLIO_STATE_UNSAVED_CHANGES:
+        return "未保存の変更があります。保存するか、未保存変更を破棄して終了してください。";
     case FOLIO_STATE_NAME_TAKEN:
         return "移動先に同じ名前のノートがあります。移していません。";
     case FOLIO_STATE_LEDGER_STALE:

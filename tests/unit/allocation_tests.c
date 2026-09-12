@@ -302,6 +302,16 @@ static bool transfer_under_probe(struct folio_state *_Nonnull state)
 static bool edit_under_probe(struct folio_state *_Nonnull state)
 {
     require(folio_state_begin_edit(state) == FOLIO_STATE_READY, "begin edit under probe");
+    enum folio_note_change change = FOLIO_NOTE_SAME;
+    enum folio_state_outcome compared =
+        folio_state_note_changed(state, u"# T\r\nchanged", 12, &change);
+    require(compared == FOLIO_STATE_READY || compared == FOLIO_STATE_OUT_OF_MEMORY,
+            "compare edit under probe");
+    if (compared != FOLIO_STATE_READY)
+    {
+        return false;
+    }
+    require(change == FOLIO_NOTE_CHANGED, "changed edit under probe");
     enum folio_state_outcome saved = folio_state_end_edit(state, u"# T\r\nchanged", 12);
     require(saved == FOLIO_STATE_READY || saved == FOLIO_STATE_OUT_OF_MEMORY,
             "end edit under probe");

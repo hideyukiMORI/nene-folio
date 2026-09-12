@@ -16,6 +16,7 @@ enum folio_state_outcome : unsigned char
     FOLIO_STATE_NOTE_MALFORMED,    /* 編集中の本文が UTF-16 として壊れている。保存していない */
     FOLIO_STATE_NOTE_STORE_FAILED, /* md を書き戻せなかった。モードも読んだ本文も変えていない */
     FOLIO_STATE_HISTORY_FAILED,    /* 履歴を書けなかったので md も書いていない（ADR 0012） */
+    FOLIO_STATE_UNSAVED_CHANGES,   /* :q は未保存の変更を破棄せず、終了を拒否した（ADR 0016） */
     FOLIO_STATE_NAME_TAKEN,   /* 移動先に同じ名前のノートがある。ファイルも索引も変えていない */
     FOLIO_STATE_LEDGER_STALE, /* md は移したが index.json を書けなかった。次回の起動で揃う */
     FOLIO_STATE_OUT_OF_MEMORY

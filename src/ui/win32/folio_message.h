@@ -8,5 +8,7 @@
  * 1 か所で行う（ADR 0013 の決定 4 / 7）。wParam = カテゴリ・lParam = ノート。同期で送り、
  * 結果の enum folio_state_outcome を LRESULT で受ける。 */
 constexpr UINT folio_message_select_note = WM_APP + 1;
+/* 操作入力から別の区画へ移ったあとに、主窓が実フォーカスを確認して入力面を閉じる。 */
+constexpr UINT folio_message_command_focus_lost = WM_APP + 2;
 
 #endif
