@@ -45,6 +45,7 @@
 | 操作パレット（command palette） | Ctrl+P で開き、登録済みの操作を表示名または Ex 別名で絞り込んで実行する一時的な入力面 | `folio_command`（core）の登録表・`folio_window`（ui/win32）の入力面 |
 | 履歴（history） | md を書き戻す**直前**にファイルにあった本文の写し。`data/.history/<カテゴリ>/<ノート>/1.md`（最新）〜 `5.md`（最古）の連番で、6 つ目は捨てる。時刻は名前にも中身にも使わない。残せなければ保存しない | `note_history_depth`（core）・`archive_note`（persistence_port）・ADR 0012 |
 | 確保失敗の注入（allocation probe） | 測定ビルドでだけ中核の `malloc` / `calloc` / `realloc` をテストへ向け、n 回目の確保を失敗させる仕掛け | `tests/unit/allocation_probe.h` |
+| キャレット（caret） | 本文の挿入位置と選択範囲。索引のカーソルとは別で、RichEdit自身が唯一の所有者。Ctrl＋hjklも部品の移動機能を呼ぶ | `note_pane`（ui/win32）・`ITextSelection`・ADR0019 |
 
 ## 使ってはいけない語
 

@@ -42,13 +42,16 @@ static const wchar_t *_Nonnull adapter_failure(enum persistence_adapter_outcome 
     return L"実行ファイルの場所が取得できません。";
 }
 
-static void run_message_loop(void)
+static void run_message_loop(const struct folio_window *_Nonnull window)
 {
     MSG message;
     while (GetMessageW(&message, nullptr, 0, 0) > 0)
     {
-        TranslateMessage(&message);
-        DispatchMessageW(&message);
+        if (!folio_window_translate(window, &message))
+        {
+            TranslateMessage(&message);
+            DispatchMessageW(&message);
+        }
     }
 }
 
@@ -72,7 +75,7 @@ static int run(struct persistence_adapter *_Nonnull persistence,
         folio_state_destroy(state);
         return 1;
     }
-    run_message_loop();
+    run_message_loop(window);
     folio_window_destroy(window);
     folio_state_destroy(state);
     return 0;
