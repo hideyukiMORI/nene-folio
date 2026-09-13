@@ -1228,6 +1228,10 @@ static enum folio_state_outcome save_note(struct folio_state *_Nonnull state,
     {
         return synced;
     }
+    if (state->mode == PANE_MODE_VIEW)
+    {
+        return FOLIO_STATE_READY;
+    }
     struct note_text *_Nullable edited = nullptr;
     enum folio_state_outcome outcome = edited_text(state, units, count, &edited);
     if (outcome != FOLIO_STATE_READY)
@@ -1288,6 +1292,25 @@ static enum folio_state_outcome create_edited(struct folio_state *_Nonnull state
     return synchronize_index(state);
 }
 
+/* 閲覧はMarkdown原文、編集は未保存の入力を使う。RTF表示の文字は保存しない。 */
+static enum folio_state_outcome copied_text(const struct folio_state *_Nonnull state,
+                                            const char16_t *_Nonnull units, size_t count,
+                                            struct note_text *_Nullable *_Nonnull out)
+{
+    if (state->mode == PANE_MODE_EDIT)
+    {
+        return edited_text(state, units, count, out);
+    }
+    enum note_text_outcome copied =
+        note_text_create(note_text_bytes(state->body), note_text_length(state->body), out);
+    if (copied != NOTE_TEXT_ACCEPTED)
+    {
+        return copied == NOTE_TEXT_OUT_OF_MEMORY ? FOLIO_STATE_OUT_OF_MEMORY
+                                                 : FOLIO_STATE_NOTE_MALFORMED;
+    }
+    return FOLIO_STATE_READY;
+}
+
 enum folio_state_outcome folio_state_store_new(struct folio_state *_Nonnull state,
                                                const struct note_destination *_Nonnull destination,
                                                const char16_t *_Nonnull units, size_t count)
@@ -1296,9 +1319,10 @@ enum folio_state_outcome folio_state_store_new(struct folio_state *_Nonnull stat
     {
         return FOLIO_STATE_NOTHING_SELECTED;
     }
-    if (state->document == FOLIO_DOCUMENT_NAMED)
+    enum folio_state_outcome synced = synchronize_index(state);
+    if (synced != FOLIO_STATE_READY)
     {
-        return FOLIO_STATE_ALREADY_NAMED;
+        return synced;
     }
     if (destination->category >= folio_state_category_count(state))
     {
@@ -1309,7 +1333,7 @@ enum folio_state_outcome folio_state_store_new(struct folio_state *_Nonnull stat
         return FOLIO_STATE_NAME_TAKEN;
     }
     struct note_text *_Nullable edited = nullptr;
-    enum folio_state_outcome converted = edited_text(state, units, count, &edited);
+    enum folio_state_outcome converted = copied_text(state, units, count, &edited);
     if (converted != FOLIO_STATE_READY)
     {
         return converted;
@@ -1334,6 +1358,11 @@ enum folio_state_outcome folio_state_note_changed(const struct folio_state *_Non
     if (state->document == FOLIO_DOCUMENT_UNTITLED)
     {
         *out = FOLIO_NOTE_CHANGED;
+        return FOLIO_STATE_READY;
+    }
+    if (state->mode == PANE_MODE_VIEW)
+    {
+        *out = FOLIO_NOTE_SAME;
         return FOLIO_STATE_READY;
     }
     struct note_text *_Nullable edited = nullptr;

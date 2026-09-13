@@ -31,6 +31,7 @@ struct folio_window
     struct folio_palette palette;
     struct drawer_window *_Nullable drawer;
     struct note_pane *_Nullable pane;
+    HACCEL _Nullable commands;
     HFONT _Nullable mono_font;
     HWND _Nullable command_layer;
     HWND _Nullable command_input;
@@ -57,7 +58,7 @@ static const char *_Nonnull const command_shortcuts[] = {
     "一覧  ↑↓ 選択 / Enter 実行 / Esc 戻る / Tab 説明",
     "編集本文  Ctrl+h/j/k/l ←/↓/↑/→",
     "全区画  F1 ヘルプ / Ctrl+P 一覧",
-    "Ctrl+N 新しいノート / Ctrl+S 保存",
+    "Ctrl+N 新規 / Ctrl+S 保存 / Ctrl+Shift+S 別名保存",
     "索引・閲覧本文  : コマンド / i 編集",
     "索引  ? ヘルプ（検索の追加まで）",
     "索引  j/k 次/前 / gg/G 先頭/末尾",
@@ -71,6 +72,7 @@ constexpr WPARAM store_character = 0x13;
 constexpr WPARAM palette_character = 0x10;
 constexpr WPARAM new_character = 0x0E;
 constexpr int command_control_id = 1;
+constexpr WORD save_as_accelerator = 100;
 constexpr size_t command_input_capacity = 256;
 
 /* 96 DPI での寸法（デザイン「案2 堅」）。 */
@@ -131,6 +133,8 @@ constexpr DWORD corner_round_small = 3;
 static void execute_command(struct folio_window *_Nonnull self, enum folio_command command,
                             const char *_Nonnull argument);
 static enum folio_state_outcome store_body(const struct folio_window *_Nonnull self);
+static enum folio_state_outcome command_save_as(const struct folio_window *_Nonnull self,
+                                                const char *_Nonnull argument);
 static void close_command_surface(struct folio_window *_Nonnull self);
 static void show_command_palette(struct folio_window *_Nonnull self);
 static void move_command_selection(struct folio_window *_Nonnull self, WPARAM key);
@@ -1053,7 +1057,7 @@ static enum folio_state_outcome flush_edit(struct folio_window *_Nonnull self)
 {
     if (folio_state_pane_mode(self->state) == PANE_MODE_VIEW)
     {
-        return FOLIO_STATE_READY;
+        return store_body(self);
     }
     if (folio_state_document_kind(self->state) == FOLIO_DOCUMENT_UNTITLED)
     {
@@ -1082,18 +1086,19 @@ static enum folio_state_outcome flush_edit(struct folio_window *_Nonnull self)
 /* 編集中の本文を取り出して保存する。取り出せない理由も保存の失敗も 1 つの結果に写す。 */
 static enum folio_state_outcome store_body(const struct folio_window *_Nonnull self)
 {
+    if (folio_state_pane_mode(self->state) == PANE_MODE_VIEW)
+    {
+        return folio_state_store_note(self->state, u"", 0);
+    }
+    if (folio_state_document_kind(self->state) == FOLIO_DOCUMENT_UNTITLED)
+    {
+        return command_save_as(self, "");
+    }
     const char16_t *units = u"";
     size_t count = 0;
     enum folio_state_outcome outcome = take_text(self, &units, &count);
-    if (outcome == FOLIO_STATE_READY)
-    {
-        outcome = folio_state_document_kind(self->state) == FOLIO_DOCUMENT_UNTITLED
-                      ? name_prompt_show(self->handle, self->state, units, count)
-                      : folio_state_store_note(self->state, units, count);
-        redraw_drawer(self);
-        InvalidateRect(self->handle, nullptr, FALSE);
-    }
-    return outcome;
+    return outcome == FOLIO_STATE_READY ? folio_state_store_note(self->state, units, count)
+                                        : outcome;
 }
 
 static enum folio_state_outcome command_save(struct folio_window *_Nonnull self)
@@ -1102,19 +1107,16 @@ static enum folio_state_outcome command_save(struct folio_window *_Nonnull self)
     {
         return FOLIO_STATE_NOTHING_SELECTED;
     }
-    return folio_state_pane_mode(self->state) == PANE_MODE_VIEW ? FOLIO_STATE_READY
-                                                                : store_body(self);
+    return store_body(self);
 }
 
 static enum folio_state_outcome command_quit(struct folio_window *_Nonnull self)
 {
-    if (folio_state_pane_mode(self->state) == PANE_MODE_VIEW)
-    {
-        return FOLIO_STATE_READY;
-    }
     const char16_t *units = u"";
     size_t count = 0;
-    enum folio_state_outcome outcome = take_text(self, &units, &count);
+    enum folio_state_outcome outcome = folio_state_pane_mode(self->state) == PANE_MODE_VIEW
+                                           ? FOLIO_STATE_READY
+                                           : take_text(self, &units, &count);
     enum folio_note_change changed = FOLIO_NOTE_SAME;
     if (outcome == FOLIO_STATE_READY)
     {
@@ -1242,16 +1244,14 @@ static void show_command_palette(struct folio_window *_Nonnull self)
     redraw_command_layer(self);
 }
 
-static enum folio_state_outcome save_named_body(struct folio_window *_Nonnull self,
-                                                const char *_Nonnull argument)
+/* 初回/別名の名前を同じ入力面またはExから受け、同じ作成へ渡す。 */
+static enum folio_state_outcome save_destination(const struct folio_window *_Nonnull self,
+                                                 const char *_Nonnull argument,
+                                                 const char16_t *_Nonnull units, size_t count)
 {
-    if (folio_state_document_kind(self->state) == FOLIO_DOCUMENT_NONE)
+    if (argument[0] == '\0')
     {
-        return FOLIO_STATE_NOTHING_SELECTED;
-    }
-    if (folio_state_document_kind(self->state) != FOLIO_DOCUMENT_UNTITLED)
-    {
-        return FOLIO_STATE_ALREADY_NAMED;
+        return name_prompt_show(self->handle, self->state, units, count);
     }
     struct note_name *_Nullable name = nullptr;
     enum note_name_outcome accepted = note_name_create(argument, strlen(argument), &name);
@@ -1260,25 +1260,38 @@ static enum folio_state_outcome save_named_body(struct folio_window *_Nonnull se
         return accepted == NOTE_NAME_OUT_OF_MEMORY ? FOLIO_STATE_OUT_OF_MEMORY
                                                    : FOLIO_STATE_INVALID_NAME;
     }
+    struct note_destination destination = {.category = folio_state_document_category(self->state),
+                                           .name = name};
+    enum folio_state_outcome outcome =
+        folio_state_store_new(self->state, &destination, units, count);
+    note_name_destroy(name);
+    return outcome;
+}
+
+static enum folio_state_outcome command_save_as(const struct folio_window *_Nonnull self,
+                                                const char *_Nonnull argument)
+{
+    if (folio_state_document_kind(self->state) == FOLIO_DOCUMENT_NONE)
+    {
+        return FOLIO_STATE_NOTHING_SELECTED;
+    }
     const char16_t *units = u"";
     size_t count = 0;
-    enum folio_state_outcome outcome = take_text(self, &units, &count);
+    enum folio_state_outcome outcome = folio_state_pane_mode(self->state) == PANE_MODE_VIEW
+                                           ? FOLIO_STATE_READY
+                                           : take_text(self, &units, &count);
     if (outcome == FOLIO_STATE_READY)
     {
-        struct note_destination destination = {
-            .category = folio_state_document_category(self->state), .name = name};
-        outcome = folio_state_store_new(self->state, &destination, units, count);
+        outcome = save_destination(self, argument, units, count);
     }
-    note_name_destroy(name);
     redraw_drawer(self);
     InvalidateRect(self->handle, nullptr, FALSE);
     return outcome;
 }
 
-static void execute_save_command(struct folio_window *_Nonnull self, const char *_Nonnull argument)
+static void finish_save_command(struct folio_window *_Nonnull self,
+                                enum folio_state_outcome outcome)
 {
-    enum folio_state_outcome outcome =
-        argument[0] == '\0' ? command_save(self) : save_named_body(self, argument);
     if (outcome != FOLIO_STATE_READY)
     {
         command_failure(self, outcome);
@@ -1289,6 +1302,20 @@ static void execute_save_command(struct folio_window *_Nonnull self, const char 
     {
         close_command_surface(self);
     }
+}
+
+static void execute_save_command(struct folio_window *_Nonnull self, const char *_Nonnull argument)
+{
+    enum folio_state_outcome outcome = FOLIO_STATE_ALREADY_NAMED;
+    if (argument[0] == '\0')
+    {
+        outcome = command_save(self);
+    }
+    else if (folio_state_document_kind(self->state) != FOLIO_DOCUMENT_NAMED)
+    {
+        outcome = command_save_as(self, argument);
+    }
+    finish_save_command(self, outcome);
 }
 
 static void execute_quit_command(struct folio_window *_Nonnull self)
@@ -1304,8 +1331,7 @@ static void execute_quit_command(struct folio_window *_Nonnull self)
 
 static void execute_save_quit_command(struct folio_window *_Nonnull self)
 {
-    enum folio_state_outcome outcome =
-        folio_state_pane_mode(self->state) == PANE_MODE_VIEW ? FOLIO_STATE_READY : store_body(self);
+    enum folio_state_outcome outcome = store_body(self);
     if (outcome != FOLIO_STATE_READY)
     {
         command_failure(self, outcome);
@@ -1347,8 +1373,7 @@ static void execute_mode_command(struct folio_window *_Nonnull self, enum pane_m
 static void execute_new_command(struct folio_window *_Nonnull self)
 {
     size_t category = folio_state_current_category(self->state);
-    enum folio_state_outcome saved =
-        folio_state_pane_mode(self->state) == PANE_MODE_VIEW ? FOLIO_STATE_READY : store_body(self);
+    enum folio_state_outcome saved = store_body(self);
     if (saved == FOLIO_STATE_READY)
     {
         saved = folio_state_new_note(self->state, category);
@@ -1373,6 +1398,9 @@ static void execute_command(struct folio_window *_Nonnull self, enum folio_comma
     {
     case FOLIO_COMMAND_SAVE:
         execute_save_command(self, argument);
+        return;
+    case FOLIO_COMMAND_SAVE_AS:
+        finish_save_command(self, command_save_as(self, argument));
         return;
     case FOLIO_COMMAND_QUIT:
         execute_quit_command(self);
@@ -2314,6 +2342,12 @@ static LRESULT on_message(struct folio_window *_Nonnull self, UINT message, WPAR
     case folio_message_select_note:
         /* ドロワーからのノート行のクリック。結果は enum folio_state_outcome で返す。 */
         return (LRESULT)switch_note(self, (size_t)wparam, (size_t)lparam);
+    case WM_COMMAND:
+        if (HIWORD(wparam) == 1 && LOWORD(wparam) == save_as_accelerator)
+        {
+            execute_command(self, FOLIO_COMMAND_SAVE_AS, "");
+        }
+        return 0;
     case WM_KEYDOWN:
         press_key(self, wparam);
         return 0;
@@ -2416,6 +2450,13 @@ enum folio_window_outcome folio_window_create(struct folio_state *_Nonnull state
     {
         return FOLIO_WINDOW_OUT_OF_MEMORY;
     }
+    ACCEL save_as = {.fVirt = FVIRTKEY | FCONTROL | FSHIFT, .key = 'S', .cmd = save_as_accelerator};
+    self->commands = CreateAcceleratorTableW(&save_as, 1);
+    if (self->commands == nullptr)
+    {
+        folio_window_destroy(self);
+        return FOLIO_WINDOW_NOT_CREATED;
+    }
     self->state = state;
     self->palette = folio_palette_for(folio_state_theme(state));
     UINT dpi = GetDpiForSystem();
@@ -2435,8 +2476,30 @@ enum folio_window_outcome folio_window_create(struct folio_state *_Nonnull state
     return FOLIO_WINDOW_CREATED;
 }
 
+/* 名前入力など別のモーダルへ主窓のキーを漏らさない。compositionも各所有者へ確認する。 */
+static bool command_target(const struct folio_window *_Nonnull window, HWND target)
+{
+    if (target == window->command_input)
+    {
+        return !window->command_composing;
+    }
+    if (window->pane != nullptr && target == note_pane_handle(window->pane))
+    {
+        return !note_pane_composing(window->pane);
+    }
+    return target == window->handle;
+}
+
 bool folio_window_translate(const struct folio_window *_Nonnull window, const MSG *_Nonnull message)
 {
+    if (command_target(window, message->hwnd))
+    {
+        MSG translated = *message;
+        if (TranslateAcceleratorW(window->handle, window->commands, &translated) != 0)
+        {
+            return true;
+        }
+    }
     if (window->pane == nullptr || folio_state_pane_mode(window->state) != PANE_MODE_EDIT)
     {
         return false;
@@ -2453,6 +2516,10 @@ void folio_window_destroy(struct folio_window *_Nullable window)
     if (window->handle != nullptr)
     {
         DestroyWindow(window->handle);
+    }
+    if (window->commands != nullptr)
+    {
+        DestroyAcceleratorTable(window->commands);
     }
     note_pane_destroy(window->pane);
     drawer_window_destroy(window->drawer);

@@ -1424,8 +1424,10 @@ static void verify_edit_guards(void)
             "no body before selection");
     require(folio_state_begin_edit(state) == FOLIO_STATE_NOTHING_SELECTED, "nothing selected");
     require(folio_state_pane_mode(state) == PANE_MODE_VIEW, "the refused intent keeps view");
-    require(folio_state_store_note(state, u"x", 1) == FOLIO_STATE_NOT_EDITING, "store while view");
-    require(folio_state_end_edit(state, u"x", 1) == FOLIO_STATE_NOT_EDITING, "end while view");
+    require(folio_state_store_note(state, u"x", 1) == FOLIO_STATE_READY,
+            "view save only synchronizes");
+    require(folio_state_end_edit(state, u"x", 1) == FOLIO_STATE_READY,
+            "already viewing is idempotent");
     require(adapter.note_writes == 0, "refused intents never write");
     folio_state_destroy(state);
 }
@@ -1475,8 +1477,9 @@ static void verify_note_changed(void)
             "the comparison changes neither persistence nor state");
     require(folio_state_end_edit(state, u"# Hello\r\n\r\nbody", 15) == FOLIO_STATE_READY,
             "leave edit after comparison");
-    require(folio_state_note_changed(state, u"", 0, &change) == FOLIO_STATE_NOT_EDITING,
-            "comparison is only valid while editing");
+    require(folio_state_note_changed(state, u"", 0, &change) == FOLIO_STATE_READY &&
+                change == FOLIO_NOTE_SAME,
+            "a synchronized view has no unsaved change");
     folio_state_destroy(state);
 }
 
@@ -1741,8 +1744,8 @@ static void verify_first_save(void)
     struct note_destination destination = {.category = 1, .name = name};
     require(folio_state_store_new(state, &destination, u"日本語\r\n本文", 7) == FOLIO_STATE_READY,
             "first save to chosen category");
-    require(folio_state_store_new(state, &destination, u"x", 1) == FOLIO_STATE_ALREADY_NAMED,
-            "named notes do not use the initial-save operation");
+    require(folio_state_store_new(state, &destination, u"x", 1) == FOLIO_STATE_NAME_TAKEN,
+            "another create cannot overwrite the just-created note");
     note_name_destroy(name);
     require(adapter.creates == 1 && adapter.note_writes == 0 && adapter.archives == 0 &&
                 adapter.ledger_writes == 1,
@@ -1863,6 +1866,108 @@ static void verify_first_save_keeps_category_cursor(void)
     folio_state_destroy(state);
 }
 
+/* 別名保存は元のwrite/archiveを呼ばず、編集中の本文だけを新しいmdへ保存する。 */
+static void verify_save_as_edit(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    adapter.note_body = "# Original\r\n";
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY &&
+                folio_state_begin_edit(state) == FOLIO_STATE_READY,
+            "edit source for save as");
+    struct note_name *name = accepted_note_name("別の 名前.md");
+    struct note_destination destination = {.category = 1, .name = name};
+    require(folio_state_store_new(state, &destination, u"# Draft\n日本語", 11) == FOLIO_STATE_READY,
+            "save unsaved input under a different name");
+    require(adapter.creates == 1 && adapter.archives == 0 && adapter.note_writes == 0 &&
+                same_text(adapter.written_body, "# Draft\r\n日本語") &&
+                same_text(adapter.note_body, "# Original\r\n"),
+            "original file and history are not written; CRLF is retained");
+    require(folio_state_pane_mode(state) == PANE_MODE_EDIT &&
+                same_text(folio_state_pane_title(state).note, "別の 名前") &&
+                folio_state_document_category(state) == 1,
+            "new note is open in the same mode and chosen category");
+    require(folio_state_store_note(state, u"later", 5) == FOLIO_STATE_READY &&
+                adapter.archives == 1 && adapter.note_writes == 1 &&
+                same_text(adapter.written_note, "別の 名前"),
+            "subsequent save uses the new note history and name");
+    note_name_destroy(name);
+    folio_state_destroy(state);
+}
+
+static void verify_save_as_view(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    adapter.note_body = "# 原文\r\n**強調** [link](url)\n";
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY, "select view");
+    struct note_name *name = accepted_note_name("view-copy");
+    struct note_destination destination = {.category = 0, .name = name};
+    require(folio_state_store_new(state, &destination, u"Rendered text", 13) == FOLIO_STATE_READY,
+            "save as while viewing");
+    require(same_text(adapter.written_body, adapter.note_body) && adapter.creates == 1 &&
+                adapter.archives == 0 && adapter.note_writes == 0 &&
+                folio_state_pane_mode(state) == PANE_MODE_VIEW,
+            "view copies markdown syntax and original mixed line endings, ignoring UI text");
+    note_name_destroy(name);
+    folio_state_destroy(state);
+}
+
+static void verify_save_as_refusals(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    adapter.note_body = "saved";
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY &&
+                folio_state_begin_edit(state) == FOLIO_STATE_READY,
+            "edit source for save as");
+    struct note_name *name = accepted_note_name("copy");
+    struct note_destination destination = {.category = 0, .name = name};
+    adapter.create_outcome = PERSISTENCE_NAME_TAKEN;
+    require(folio_state_store_new(state, &destination, u"draft", 5) == FOLIO_STATE_NAME_TAKEN,
+            "disk collision is not overwritten");
+    adapter.create_outcome = PERSISTENCE_UNWRITABLE;
+    require(folio_state_store_new(state, &destination, u"draft", 5) ==
+                FOLIO_STATE_NOTE_STORE_FAILED,
+            "unwritable new name is refused");
+    require(same_text(folio_state_pane_text(state), "saved") &&
+                same_text(folio_state_pane_title(state).note, "one") &&
+                folio_state_pane_mode(state) == PANE_MODE_EDIT &&
+                folio_state_note_count(state) == 9 && adapter.archives == 0 &&
+                adapter.note_writes == 0,
+            "failure retains original selection and never autosaves the input");
+    note_name_destroy(name);
+    folio_state_destroy(state);
+}
+
+static void verify_save_as_view_stale(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY, "select view");
+    struct note_name *name = accepted_note_name("copy");
+    struct note_destination destination = {.category = 0, .name = name};
+    adapter.ledger_write_outcome = PERSISTENCE_UNWRITABLE;
+    require(folio_state_store_new(state, &destination, u"", 0) == FOLIO_STATE_LEDGER_STALE &&
+                folio_state_pane_mode(state) == PANE_MODE_VIEW &&
+                same_text(folio_state_pane_title(state).note, "copy"),
+            "a published copy is adopted even when its index is stale");
+    enum folio_note_change change = FOLIO_NOTE_SAME;
+    require(folio_state_note_changed(state, u"", 0, &change) == FOLIO_STATE_LEDGER_STALE &&
+                folio_state_store_note(state, u"", 0) == FOLIO_STATE_LEDGER_STALE &&
+                folio_state_store_new(state, &destination, u"", 0) == FOLIO_STATE_LEDGER_STALE &&
+                adapter.creates == 1,
+            "view quit, save and another create cannot bypass pending index");
+    adapter.ledger_write_outcome = PERSISTENCE_STORED;
+    require(folio_state_store_note(state, u"", 0) == FOLIO_STATE_READY && adapter.creates == 1 &&
+                adapter.archives == 0 && adapter.note_writes == 0 &&
+                folio_state_note_changed(state, u"", 0, &change) == FOLIO_STATE_READY &&
+                change == FOLIO_NOTE_SAME,
+            "save repairs the index without rewriting the viewing copy");
+    note_name_destroy(name);
+    folio_state_destroy(state);
+}
+
 void run_state_tests(void)
 {
     verify_ready_state();
@@ -1900,4 +2005,8 @@ void run_state_tests(void)
     verify_first_save_refusals();
     verify_created_stale_index();
     verify_first_save_keeps_category_cursor();
+    verify_save_as_edit();
+    verify_save_as_view();
+    verify_save_as_refusals();
+    verify_save_as_view_stale();
 }

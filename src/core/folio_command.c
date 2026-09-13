@@ -22,6 +22,7 @@ static const struct
     [FOLIO_COMMAND_EDIT] = {FOLIO_COMMAND_EDIT, "編集", 1, {"startinsert", ""}},
     [FOLIO_COMMAND_VIEW] = {FOLIO_COMMAND_VIEW, "保存して閲覧", 0, {"", ""}},
     [FOLIO_COMMAND_NEW] = {FOLIO_COMMAND_NEW, "新しいノート", 1, {"enew", ""}},
+    [FOLIO_COMMAND_SAVE_AS] = {FOLIO_COMMAND_SAVE_AS, "別名で保存", 1, {"saveas", ""}},
 };
 
 static bool ascii_space(char value)
@@ -152,7 +153,7 @@ bool folio_command_parse(const char *_Nonnull text, size_t length, enum folio_co
         return false;
     }
     size_t name = skip_spaces(text, token_end, length);
-    if (name < length && command != FOLIO_COMMAND_SAVE)
+    if (name < length && command != FOLIO_COMMAND_SAVE && command != FOLIO_COMMAND_SAVE_AS)
     {
         return false;
     }
