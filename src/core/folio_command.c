@@ -12,13 +12,15 @@ static const struct
     const char *_Nonnull names[alias_limit];
 } catalog[] = {
     [FOLIO_COMMAND_SAVE] = {FOLIO_COMMAND_SAVE, "保存", 2, {"w", "write"}},
-    [FOLIO_COMMAND_QUIT] = {FOLIO_COMMAND_QUIT, "終了", 2, {"q", "quit"}},
+    [FOLIO_COMMAND_QUIT] = {FOLIO_COMMAND_QUIT, "保存済みなら終了", 2, {"q", "quit"}},
     [FOLIO_COMMAND_SAVE_QUIT] = {FOLIO_COMMAND_SAVE_QUIT, "保存して終了", 2, {"wq", "x"}},
     [FOLIO_COMMAND_FORCE_QUIT] = {FOLIO_COMMAND_FORCE_QUIT,
                                   "未保存変更を破棄して終了",
                                   1,
                                   {"q!", ""}},
-    [FOLIO_COMMAND_HELP] = {FOLIO_COMMAND_HELP, "ヘルプ", 1, {"help", ""}},
+    [FOLIO_COMMAND_HELP] = {FOLIO_COMMAND_HELP, "ヘルプ", 2, {"help", "h"}},
+    [FOLIO_COMMAND_EDIT] = {FOLIO_COMMAND_EDIT, "編集", 1, {"startinsert", ""}},
+    [FOLIO_COMMAND_VIEW] = {FOLIO_COMMAND_VIEW, "保存して閲覧", 0, {"", ""}},
 };
 
 static bool ascii_space(char value)

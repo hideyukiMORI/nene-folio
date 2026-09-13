@@ -10,6 +10,8 @@ struct note_pane
 {
     HMODULE _Nullable library; /* Msftedit.dll。窓より長く生かす */
     HWND _Nullable handle;
+    WNDPROC _Nullable original;
+    bool composing;
     char16_t *_Nullable taken; /* 最後に取り出した本文（終端付き） */
     size_t capacity;           /* taken のバイト数 */
     size_t used;               /* 取り出したバイト数（終端を含まない） */
@@ -76,6 +78,32 @@ static bool reserve(struct note_pane *_Nonnull pane, size_t bytes)
     return true;
 }
 
+static LRESULT CALLBACK pane_procedure(HWND window, UINT message, WPARAM wparam, LPARAM lparam)
+{
+    struct note_pane *_Nullable pane = (struct note_pane *)GetWindowLongPtrW(window, GWLP_USERDATA);
+    if (pane == nullptr || pane->original == nullptr)
+    {
+        return DefWindowProcW(window, message, wparam, lparam);
+    }
+    if (message == WM_IME_STARTCOMPOSITION)
+    {
+        pane->composing = true;
+    }
+    if (message == WM_IME_ENDCOMPOSITION)
+    {
+        pane->composing = false;
+    }
+    return CallWindowProcW(pane->original, window, message, wparam, lparam);
+}
+
+static bool subclass_pane(struct note_pane *_Nonnull pane)
+{
+    SetWindowLongPtrW(pane->handle, GWLP_USERDATA, (LONG_PTR)pane);
+    pane->original =
+        (WNDPROC)SetWindowLongPtrW(pane->handle, GWLP_WNDPROC, (LONG_PTR)pane_procedure);
+    return pane->original != nullptr;
+}
+
 enum note_pane_outcome note_pane_create(HWND _Nonnull parent, COLORREF background, COLORREF text,
                                         struct note_pane *_Nullable *_Nonnull out)
 {
@@ -95,7 +123,7 @@ enum note_pane_outcome note_pane_create(HWND _Nonnull parent, COLORREF backgroun
         WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL;
     pane->handle = CreateWindowExW(0, class_name, L"", style, 0, 0, 0, 0, parent, nullptr,
                                    GetModuleHandleW(nullptr), nullptr);
-    if (pane->handle == nullptr)
+    if (pane->handle == nullptr || !subclass_pane(pane))
     {
         note_pane_destroy(pane);
         return NOTE_PANE_NOT_CREATED;
@@ -118,6 +146,11 @@ enum note_pane_outcome note_pane_create(HWND _Nonnull parent, COLORREF backgroun
 HWND _Nullable note_pane_handle(const struct note_pane *_Nonnull pane)
 {
     return pane->handle;
+}
+
+bool note_pane_composing(const struct note_pane *_Nonnull pane)
+{
+    return pane->composing;
 }
 
 void note_pane_render(struct note_pane *_Nonnull pane, const char *_Nonnull rtf, size_t length)

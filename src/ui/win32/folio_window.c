@@ -37,6 +37,8 @@ struct folio_window
     HBRUSH _Nullable command_brush;
     enum command_surface_mode command_surface;
     size_t command_selection;
+    size_t command_first;
+    bool command_keys_visible;
     bool command_composing;
     bool command_unknown;
     enum folio_state_outcome command_failure;
@@ -50,13 +52,11 @@ static const wchar_t view_label[] = L"閲覧";
 static const wchar_t edit_label[] = L"編集";
 static const wchar_t edit_class[] = L"EDIT";
 static const char *_Nonnull const command_shortcuts[] = {
-    "一覧  ↑↓ 選択 / Enter 実行 / Esc 戻る",
-    "INDEX・本文  Ctrl+P 一覧 / Ctrl+S 保存",
-    "INDEX  ? ヘルプ / : コマンド入力",
-    "INDEX  j/k 次/前 / gg/G 先頭/末尾",
-    "INDEX  h/l 折畳/展開 / Enter 本文",
-    "INDEX  ↑↓ / PgUp/PgDn スクロール",
-    "本文  Esc INDEXへ（編集中は保存・モード維持）",
+    "一覧  ↑↓ 選択 / Enter 実行 / Esc 戻る", "一覧  Tab キー説明を開く・閉じる",
+    "全区画  F1 ヘルプ / Ctrl+P 一覧",       "索引・本文  Ctrl+S 保存",
+    "索引・閲覧本文  : コマンド / i 編集",   "索引  ? ヘルプ（検索の追加まで）",
+    "索引  j/k 次/前 / gg/G 先頭/末尾",      "索引  h/l 折畳/展開 / Enter 本文",
+    "索引  ↑↓ / PgUp/PgDn スクロール",       "本文  Esc 保存して索引へ（編集は維持）",
 };
 
 /* Ctrl+S が WM_CHAR で届く制御文字（GetKeyState を読まない・ARC-007）。 */
@@ -74,6 +74,8 @@ constexpr int base_min_width = 560;
 constexpr int base_min_height = 360;
 constexpr int base_drawer_width = 240;
 constexpr int base_caption_height = 44; /* 右ペインの頭。窓を掴んで動かせる帯 */
+constexpr int base_action_height = 36;
+constexpr int base_action_width = 64;
 constexpr int base_caption_indent = 36;
 constexpr int base_caption_gap = 14;
 constexpr int base_pane_left = 36;
@@ -122,6 +124,7 @@ constexpr DWORD corner_round_small = 3;
 static void execute_command(struct folio_window *_Nonnull self, enum folio_command command);
 static void close_command_surface(struct folio_window *_Nonnull self);
 static void show_command_palette(struct folio_window *_Nonnull self);
+static void move_command_selection(struct folio_window *_Nonnull self, WPARAM key);
 static LRESULT CALLBACK command_input_procedure(HWND window, UINT message, WPARAM wparam,
                                                 LPARAM lparam);
 static LRESULT CALLBACK command_layer_procedure(HWND window, UINT message, WPARAM wparam,
@@ -130,6 +133,14 @@ static LRESULT CALLBACK command_layer_procedure(HWND window, UINT message, WPARA
 static int scale(int value, UINT dpi)
 {
     return MulDiv(value, (int)dpi, base_dpi);
+}
+
+static int command_explanation_height(const struct folio_window *_Nonnull self)
+{
+    int rows = self->command_keys_visible
+                   ? (int)(sizeof command_shortcuts / sizeof command_shortcuts[0])
+                   : 0;
+    return base_command_help_row_height * (rows + 2) + base_command_status_height;
 }
 
 static struct folio_window *_Nullable self_of(HWND window)
@@ -169,15 +180,14 @@ static RECT command_palette_rect(const struct folio_window *_Nonnull self)
         scale(base_command_palette_padding * 2 + base_command_input_height + base_command_gap +
                   base_command_row_height * rows + base_command_status_height,
               dpi);
-    height += scale(base_command_help_row_height, dpi) *
-              (int)(sizeof command_shortcuts / sizeof command_shortcuts[0]);
+    height += scale(command_explanation_height(self), dpi);
     int top = scale(client.bottom < scale(480, dpi) ? base_command_palette_compact_top
                                                     : base_command_palette_top,
                     dpi);
-    int latest_top = client.bottom - height - scale(base_command_palette_edge, dpi);
-    if (top > latest_top)
+    int available_height = client.bottom - top - scale(base_command_palette_edge, dpi);
+    if (height > available_height)
     {
-        top = latest_top;
+        height = available_height;
     }
     RECT bounds = {(client.right - width) / 2, top, (client.right + width) / 2, top + height};
     return bounds;
@@ -210,12 +220,62 @@ static RECT command_input_rect(const struct folio_window *_Nonnull self)
         return input;
     }
     int inset = scale(base_command_palette_padding, dpi);
-    RECT input = {inset, inset, bounds.right - inset,
-                  inset + scale(base_command_input_height, dpi)};
+    int top = inset + scale(base_command_help_row_height * 2, dpi);
+    RECT input = {inset, top, bounds.right - inset, top + scale(base_command_input_height, dpi)};
     return input;
 }
 
-static void arrange_command_input(const struct folio_window *_Nonnull self)
+static RECT command_toggle_rect(const struct folio_window *_Nonnull self)
+{
+    RECT bounds;
+    GetClientRect(self->command_layer, &bounds);
+    UINT dpi = GetDpiForWindow(self->handle);
+    int bottom = bounds.bottom - scale(base_command_status_height + base_command_gap, dpi);
+    int keys = self->command_keys_visible
+                   ? scale(base_command_help_row_height, dpi) *
+                         (int)(sizeof command_shortcuts / sizeof command_shortcuts[0])
+                   : 0;
+    int inset = scale(base_command_palette_padding, dpi);
+    return (RECT){inset, bottom - keys - scale(base_command_status_height, dpi),
+                  bounds.right - inset, bottom - keys};
+}
+
+static RECT command_rows_rect(const struct folio_window *_Nonnull self)
+{
+    RECT bounds = command_input_rect(self);
+    UINT dpi = GetDpiForWindow(self->handle);
+    bounds.top = bounds.bottom + scale(base_command_gap, dpi);
+    bounds.bottom = command_toggle_rect(self).top;
+    int row = scale(base_command_row_height, dpi);
+    if (bounds.bottom < bounds.top)
+    {
+        bounds.bottom = bounds.top;
+    }
+    bounds.bottom = bounds.top + (bounds.bottom - bounds.top) / row * row;
+    return bounds;
+}
+
+static size_t command_visible_rows(const struct folio_window *_Nonnull self)
+{
+    RECT rows = command_rows_rect(self);
+    return (size_t)((rows.bottom - rows.top) /
+                    scale(base_command_row_height, GetDpiForWindow(self->handle)));
+}
+
+static void reveal_command_selection(struct folio_window *_Nonnull self)
+{
+    size_t rows = command_visible_rows(self);
+    if (self->command_selection < self->command_first)
+    {
+        self->command_first = self->command_selection;
+    }
+    if (rows > 0 && self->command_selection >= self->command_first + rows)
+    {
+        self->command_first = self->command_selection - rows + 1;
+    }
+}
+
+static void arrange_command_input(struct folio_window *_Nonnull self)
 {
     if (self->command_layer == nullptr || self->command_input == nullptr)
     {
@@ -235,12 +295,17 @@ static void arrange_command_input(const struct folio_window *_Nonnull self)
     RECT bounds = command_input_rect(self);
     MoveWindow(self->command_input, bounds.left, bounds.top, bounds.right - bounds.left,
                bounds.bottom - bounds.top, TRUE);
+    if (self->command_surface == COMMAND_SURFACE_PALETTE)
+    {
+        self->command_first = 0;
+        reveal_command_selection(self);
+    }
     ShowWindow(self->command_input, SW_SHOW);
     ShowWindow(self->command_layer, SW_SHOW);
     BringWindowToTop(self->command_layer);
 }
 
-static void arrange(const struct folio_window *_Nonnull self)
+static void arrange(struct folio_window *_Nonnull self)
 {
     HWND drawer = self->drawer == nullptr ? nullptr : drawer_window_handle(self->drawer);
     HWND pane = self->pane == nullptr ? nullptr : note_pane_handle(self->pane);
@@ -248,7 +313,7 @@ static void arrange(const struct folio_window *_Nonnull self)
     GetClientRect(self->handle, &client);
     UINT dpi = GetDpiForWindow(self->handle);
     int drawer_width = scale(base_drawer_width, dpi);
-    int top = scale(base_caption_height, dpi) + scale(base_pane_top, dpi);
+    int top = scale(base_caption_height + base_action_height + base_pane_top, dpi);
     int left = drawer_width + scale(base_pane_left, dpi);
     if (drawer != nullptr)
     {
@@ -642,10 +707,14 @@ static void draw_command_status(const struct folio_window *_Nonnull self, HDC de
 static void draw_command_shortcuts(const struct folio_window *_Nonnull self, HDC device,
                                    RECT bounds)
 {
+    if (!self->command_keys_visible)
+    {
+        return;
+    }
     UINT dpi = GetDpiForWindow(self->handle);
     int row_height = scale(base_command_help_row_height, dpi);
     int rows = (int)(sizeof command_shortcuts / sizeof command_shortcuts[0]);
-    bounds.bottom -= scale(base_command_status_height + base_command_palette_padding, dpi);
+    bounds.bottom -= scale(base_command_status_height + base_command_gap, dpi);
     bounds.top = bounds.bottom - row_height * rows;
     bounds.left += scale(base_command_palette_padding, dpi);
     bounds.right -= scale(base_command_palette_padding, dpi);
@@ -658,6 +727,40 @@ static void draw_command_shortcuts(const struct folio_window *_Nonnull self, HDC
     }
 }
 
+static RECT command_previous_rect(const struct folio_window *_Nonnull self)
+{
+    RECT bounds = command_toggle_rect(self);
+    bounds.left = bounds.right - scale(88, GetDpiForWindow(self->handle));
+    bounds.right -= scale(44, GetDpiForWindow(self->handle));
+    return bounds;
+}
+
+static RECT command_next_rect(const struct folio_window *_Nonnull self)
+{
+    RECT bounds = command_toggle_rect(self);
+    bounds.left = bounds.right - scale(44, GetDpiForWindow(self->handle));
+    return bounds;
+}
+
+static void draw_command_guidance(const struct folio_window *_Nonnull self, HDC device)
+{
+    UINT dpi = GetDpiForWindow(self->handle);
+    RECT line = command_input_rect(self);
+    int row = scale(base_command_help_row_height, dpi);
+    line.bottom = line.top - row;
+    line.top -= row * 2;
+    SetTextColor(device, self->palette.current_text);
+    draw_utf8(device, "操作をクリックすると実行します。", line);
+    OffsetRect(&line, 0, row);
+    draw_utf8(device, "下の欄に名前を入力すると絞り込めます。", line);
+    RECT toggle = command_toggle_rect(self);
+    toggle.right = command_previous_rect(self).left;
+    SetTextColor(device, self->palette.selected_text);
+    draw_utf8(device, self->command_keys_visible ? "キー操作を閉じる" : "キー操作を表示", toggle);
+    draw_utf8(device, "↑ 前", command_previous_rect(self));
+    draw_utf8(device, "↓ 次", command_next_rect(self));
+}
+
 static void draw_palette_rows(const struct folio_window *_Nonnull self, HDC device, RECT bounds)
 {
     struct utf8_text *_Nullable query = nullptr;
@@ -667,26 +770,27 @@ static void draw_palette_rows(const struct folio_window *_Nonnull self, HDC devi
     }
     UINT dpi = GetDpiForWindow(self->handle);
     int padding = scale(base_command_palette_padding, dpi);
-    int top = bounds.top + padding + scale(base_command_input_height + base_command_gap, dpi);
-    size_t visible = 0;
-    for (size_t index = 0; index < folio_command_count(); ++index)
+    RECT rows = command_rows_rect(self);
+    int top = rows.top;
+    size_t count = command_visible_rows(self);
+    for (size_t visible = 0; visible < count; ++visible)
     {
-        enum folio_command command = folio_command_at(index);
-        if (!folio_command_matches(command, utf8_text_bytes(query), utf8_text_length(query)))
+        enum folio_command command = FOLIO_COMMAND_SAVE;
+        size_t index = self->command_first + visible;
+        if (!command_at_query(query, index, &command))
         {
-            continue;
+            break;
         }
-        RECT row = {bounds.left + padding, top, bounds.right - padding,
-                    top + scale(base_command_row_height, dpi)};
+        RECT row = {rows.left, top, rows.right, top + scale(base_command_row_height, dpi)};
         draw_command_row(self, device,
-                         (struct command_row){row, command, visible == self->command_selection});
+                         (struct command_row){row, command, index == self->command_selection});
         top = row.bottom;
-        visible += 1;
     }
     RECT status = {bounds.left + padding, bounds.bottom - scale(base_command_status_height, dpi),
                    bounds.right - padding, bounds.bottom};
     draw_command_status(self, device, status);
     draw_command_shortcuts(self, device, bounds);
+    draw_command_guidance(self, device);
     utf8_text_destroy(query);
 }
 
@@ -768,6 +872,40 @@ static LRESULT hit_test(const struct folio_window *_Nonnull self, LPARAM lparam)
     return in_caption ? HTCAPTION : HTCLIENT;
 }
 
+static RECT action_button_rect(const struct folio_window *_Nonnull self, size_t index)
+{
+    RECT client;
+    GetClientRect(self->handle, &client);
+    UINT dpi = GetDpiForWindow(self->handle);
+    int left = scale(base_drawer_width + 16, dpi) + (int)index * scale(base_action_width + 8, dpi);
+    if (index == 2)
+    {
+        left = client.right - scale(16 + base_action_width, dpi);
+    }
+    int top = scale(base_caption_height + 4, dpi);
+    return (RECT){left, top, left + scale(base_action_width, dpi), top + scale(28, dpi)};
+}
+
+static void draw_action_button(const struct folio_window *_Nonnull self, HDC device, RECT bounds,
+                               const char *_Nonnull label)
+{
+    HBRUSH brush = CreateSolidBrush(self->palette.window);
+    FillRect(device, &bounds, brush);
+    DeleteObject(brush);
+    SetTextColor(device, self->palette.current_text);
+    bounds.left += scale(8, GetDpiForWindow(self->handle));
+    draw_utf8(device, label, bounds);
+}
+
+static void draw_actions(const struct folio_window *_Nonnull self, HDC device)
+{
+    draw_action_button(self, device, action_button_rect(self, 0),
+                       folio_command_label(FOLIO_COMMAND_SAVE));
+    draw_action_button(self, device, action_button_rect(self, 1), "操作 ▾");
+    draw_action_button(self, device, action_button_rect(self, 2),
+                       folio_command_label(FOLIO_COMMAND_HELP));
+}
+
 /* 右ペインの地と頭。本文は note_pane が持つ。 */
 static void draw_pane(const struct folio_window *_Nonnull self, HDC device, RECT client)
 {
@@ -783,6 +921,7 @@ static void draw_pane(const struct folio_window *_Nonnull self, HDC device, RECT
     draw_chip(self, device, PANE_MODE_VIEW);
     draw_chip(self, device, PANE_MODE_EDIT);
     draw_close(self, device);
+    draw_actions(self, device);
     SetTextCharacterExtra(device, 0);
 }
 
@@ -873,20 +1012,33 @@ static enum folio_state_outcome show_note(struct folio_window *_Nonnull self)
     return FOLIO_STATE_READY;
 }
 
-/* 「編集」の札。編集モードへ入り、本文を平文で流してからフォーカスを本文へ渡す。 */
-static void enter_edit(struct folio_window *_Nonnull self)
+/* 初回だけ本文を用意して編集へ入る。同じmodeへの操作は未保存本文とUndoを保つ。 */
+static enum folio_state_outcome enter_edit(struct folio_window *_Nonnull self)
 {
+    if (folio_state_pane_mode(self->state) == PANE_MODE_EDIT)
+    {
+        return FOLIO_STATE_READY;
+    }
+    struct note_ref selected = {.category = 0, .note = 0};
+    if (!folio_state_selection(self->state, &selected))
+    {
+        return FOLIO_STATE_NOTHING_SELECTED;
+    }
+    struct utf16_text *_Nullable wide = nullptr;
+    if (self->pane == nullptr ||
+        utf16_text_create(folio_state_pane_text(self->state),
+                          folio_state_pane_text_length(self->state), &wide) != UTF16_TEXT_CONVERTED)
+    {
+        return FOLIO_STATE_OUT_OF_MEMORY;
+    }
     enum folio_state_outcome outcome = folio_state_begin_edit(self->state);
     if (outcome == FOLIO_STATE_READY)
     {
-        outcome = show_note(self);
+        note_pane_edit(self->pane, utf16_text_units(wide), utf16_text_length(wide));
+        InvalidateRect(self->handle, nullptr, FALSE);
     }
-    if (outcome != FOLIO_STATE_READY)
-    {
-        failure_box_show(self->handle, outcome);
-        return;
-    }
-    focus_pane(self);
+    utf16_text_destroy(wide);
+    return outcome;
 }
 
 /* 編集中なら保存して閲覧へ戻す。閲覧中なら何もしない（「閲覧」の札だけが使う）。 */
@@ -1009,6 +1161,8 @@ static void open_command_surface(struct folio_window *_Nonnull self,
     self->command_return_focus = GetFocus();
     self->command_surface = surface;
     self->command_selection = 0;
+    self->command_first = 0;
+    self->command_keys_visible = false;
     self->command_unknown = false;
     self->command_failure = FOLIO_STATE_READY;
     SetWindowTextW(self->command_input, surface == COMMAND_SURFACE_EX ? L":" : L"");
@@ -1050,6 +1204,8 @@ static void show_command_palette(struct folio_window *_Nonnull self)
     }
     self->command_surface = COMMAND_SURFACE_PALETTE;
     self->command_selection = 0;
+    self->command_first = 0;
+    self->command_keys_visible = false;
     self->command_unknown = false;
     self->command_failure = FOLIO_STATE_READY;
     if (self->command_input != nullptr)
@@ -1102,6 +1258,35 @@ static void execute_save_quit_command(struct folio_window *_Nonnull self)
     DestroyWindow(self->handle);
 }
 
+static void execute_mode_command(struct folio_window *_Nonnull self, enum pane_mode mode)
+{
+    enum folio_state_outcome outcome = FOLIO_STATE_READY;
+    switch (mode)
+    {
+    case PANE_MODE_EDIT:
+        outcome = enter_edit(self);
+        break;
+    case PANE_MODE_VIEW:
+        outcome = flush_edit(self);
+        break;
+    }
+    if (outcome != FOLIO_STATE_READY)
+    {
+        command_failure(self, outcome);
+        return;
+    }
+    hide_command_surface(self);
+    switch (mode)
+    {
+    case PANE_MODE_EDIT:
+        focus_pane(self);
+        return;
+    case PANE_MODE_VIEW:
+        SetFocus(self->handle);
+        return;
+    }
+}
+
 /* Ex・パレット・既存入口が共有する唯一の HWND 操作 dispatcher（ADR 0016 の決定 2）。 */
 static void execute_command(struct folio_window *_Nonnull self, enum folio_command command)
 {
@@ -1121,6 +1306,12 @@ static void execute_command(struct folio_window *_Nonnull self, enum folio_comma
         return;
     case FOLIO_COMMAND_HELP:
         show_command_palette(self);
+        return;
+    case FOLIO_COMMAND_EDIT:
+        execute_mode_command(self, PANE_MODE_EDIT);
+        return;
+    case FOLIO_COMMAND_VIEW:
+        execute_mode_command(self, PANE_MODE_VIEW);
         return;
     }
 }
@@ -1259,41 +1450,48 @@ static void expand_cursor(struct folio_window *_Nonnull self, bool expanded)
     }
 }
 
-/* 「閲覧」の札の出口。別ノートの選択は save_edit、終了は操作 dispatcher を使う。 */
-static bool leave_edit(struct folio_window *_Nonnull self)
+static void toggle_command_keys(struct folio_window *_Nonnull self)
 {
-    enum folio_state_outcome outcome = flush_edit(self);
-    if (outcome == FOLIO_STATE_READY)
+    self->command_keys_visible = !self->command_keys_visible;
+    arrange_command_input(self);
+    redraw_command_layer(self);
+}
+
+static bool click_command_footer(struct folio_window *_Nonnull self, POINT point)
+{
+    RECT toggle = command_toggle_rect(self);
+    RECT previous = command_previous_rect(self);
+    RECT next = command_next_rect(self);
+    if (PtInRect(&toggle, point))
     {
+        if (PtInRect(&previous, point) || PtInRect(&next, point))
+        {
+            move_command_selection(self, PtInRect(&previous, point) ? VK_UP : VK_DOWN);
+        }
+        else
+        {
+            toggle_command_keys(self);
+        }
         return true;
     }
-    failure_box_show(self->handle, outcome);
     return false;
 }
 
 static void click_command_surface(struct folio_window *_Nonnull self, POINT point)
 {
-    RECT bounds;
-    GetClientRect(self->command_layer, &bounds);
     if (self->command_surface != COMMAND_SURFACE_PALETTE)
     {
-        if (self->command_input != nullptr)
-        {
-            SetFocus(self->command_input);
-        }
+        SetFocus(self->command_input);
         return;
     }
-    UINT dpi = GetDpiForWindow(self->handle);
-    int top =
-        bounds.top +
-        scale(base_command_palette_padding + base_command_input_height + base_command_gap, dpi);
-    int row_height = scale(base_command_row_height, dpi);
-    if (point.y < top || point.y >= top + row_height * (int)folio_command_count())
+    if (click_command_footer(self, point))
     {
-        if (self->command_input != nullptr)
-        {
-            SetFocus(self->command_input);
-        }
+        return;
+    }
+    RECT rows = command_rows_rect(self);
+    if (!PtInRect(&rows, point))
+    {
+        SetFocus(self->command_input);
         return;
     }
     struct utf8_text *_Nullable query = nullptr;
@@ -1303,7 +1501,9 @@ static void click_command_surface(struct folio_window *_Nonnull self, POINT poin
         return;
     }
     enum folio_command command = FOLIO_COMMAND_SAVE;
-    bool found = command_at_query(query, (size_t)((point.y - top) / row_height), &command);
+    int row_height = scale(base_command_row_height, GetDpiForWindow(self->handle));
+    size_t index = self->command_first + (size_t)((point.y - rows.top) / row_height);
+    bool found = command_at_query(query, index, &command);
     utf8_text_destroy(query);
     if (found)
     {
@@ -1311,10 +1511,80 @@ static void click_command_surface(struct folio_window *_Nonnull self, POINT poin
     }
 }
 
+static bool append_operation(HMENU menu, size_t index)
+{
+    enum folio_command command = folio_command_at(index);
+    const char *_Nonnull label = folio_command_label(command);
+    struct utf16_text *_Nullable wide = nullptr;
+    if (utf16_text_create(label, strlen(label), &wide) != UTF16_TEXT_CONVERTED)
+    {
+        return false;
+    }
+    bool appended = AppendMenuW(menu, MF_STRING, index + 1, utf16_text_units(wide)) != 0;
+    utf16_text_destroy(wide);
+    return appended;
+}
+
+static void show_operations(struct folio_window *_Nonnull self)
+{
+    HMENU menu = CreatePopupMenu();
+    if (menu == nullptr)
+    {
+        command_failure(self, FOLIO_STATE_OUT_OF_MEMORY);
+        return;
+    }
+    for (size_t index = 0; index < folio_command_count(); ++index)
+    {
+        if (!append_operation(menu, index))
+        {
+            DestroyMenu(menu);
+            command_failure(self, FOLIO_STATE_OUT_OF_MEMORY);
+            return;
+        }
+    }
+    RECT button = action_button_rect(self, 1);
+    POINT point = {button.left, button.bottom};
+    ClientToScreen(self->handle, &point);
+    int chosen = TrackPopupMenuEx(menu, TPM_RETURNCMD | TPM_NONOTIFY, point.x, point.y,
+                                  self->handle, nullptr);
+    DestroyMenu(menu);
+    if (chosen > 0 && (size_t)chosen <= folio_command_count())
+    {
+        execute_command(self, folio_command_at((size_t)chosen - 1));
+    }
+}
+
+static bool click_actions(struct folio_window *_Nonnull self, POINT point)
+{
+    RECT save = action_button_rect(self, 0);
+    RECT operations = action_button_rect(self, 1);
+    RECT help = action_button_rect(self, 2);
+    if (PtInRect(&save, point))
+    {
+        execute_command(self, FOLIO_COMMAND_SAVE);
+        return true;
+    }
+    if (PtInRect(&operations, point))
+    {
+        show_operations(self);
+        return true;
+    }
+    if (PtInRect(&help, point))
+    {
+        execute_command(self, FOLIO_COMMAND_HELP);
+        return true;
+    }
+    return false;
+}
+
 /* 無効な側の札のクリックだけが意図になる。 */
 static void click_caption(struct folio_window *_Nonnull self, LPARAM lparam)
 {
     POINT point = {GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
+    if (click_actions(self, point))
+    {
+        return;
+    }
     RECT close = close_rect(self);
     if (PtInRect(&close, point))
     {
@@ -1329,10 +1599,10 @@ static void click_caption(struct folio_window *_Nonnull self, LPARAM lparam)
     switch (chip)
     {
     case PANE_MODE_VIEW:
-        leave_edit(self);
+        execute_command(self, FOLIO_COMMAND_VIEW);
         break;
     case PANE_MODE_EDIT:
-        enter_edit(self);
+        execute_command(self, FOLIO_COMMAND_EDIT);
         break;
     }
 }
@@ -1348,29 +1618,71 @@ static void leave_pane(struct folio_window *_Nonnull self)
     SetFocus(self->handle);
 }
 
-/* RichEdit の鍵の通知。保存とパレットは操作 ID へ変換し、Esc は既存の本文出口を使う。 */
-static LRESULT on_notify(struct folio_window *_Nonnull self, LPARAM lparam)
+static bool view_character(struct folio_window *_Nonnull self, WPARAM character)
 {
-    const NMHDR *_Nonnull header = (const NMHDR *)lparam;
-    if (header->code != EN_MSGFILTER)
+    if (folio_state_pane_mode(self->state) != PANE_MODE_VIEW)
     {
-        return 0;
+        return false;
     }
-    const MSGFILTER *_Nonnull filter = (const MSGFILTER *)lparam;
-    if (filter->msg == WM_CHAR && filter->wParam == store_character)
+    if (character == ':')
+    {
+        open_command_surface(self, COMMAND_SURFACE_EX);
+        return true;
+    }
+    if (character == 'i')
+    {
+        execute_command(self, FOLIO_COMMAND_EDIT);
+        return true;
+    }
+    return false;
+}
+
+static LRESULT pane_character(struct folio_window *_Nonnull self, WPARAM character)
+{
+    if (character == store_character)
     {
         execute_command(self, FOLIO_COMMAND_SAVE);
         return 1;
     }
-    if (filter->msg == WM_CHAR && filter->wParam == palette_character)
+    if (character == palette_character)
     {
         open_command_surface(self, COMMAND_SURFACE_PALETTE);
         return 1;
     }
-    if (filter->msg == WM_KEYDOWN && filter->wParam == VK_ESCAPE)
+    return view_character(self, character) ? 1 : 0;
+}
+
+static LRESULT pane_key(struct folio_window *_Nonnull self, WPARAM key)
+{
+    if (key == VK_F1)
+    {
+        execute_command(self, FOLIO_COMMAND_HELP);
+        return 1;
+    }
+    if (key == VK_ESCAPE)
     {
         leave_pane(self);
         return 1;
+    }
+    return 0;
+}
+
+/* RichEdit の鍵の通知。IME変換中は親の操作に変換しない。 */
+static LRESULT on_notify(struct folio_window *_Nonnull self, LPARAM lparam)
+{
+    const NMHDR *_Nonnull header = (const NMHDR *)lparam;
+    if (header->code != EN_MSGFILTER || self->pane == nullptr || note_pane_composing(self->pane))
+    {
+        return 0;
+    }
+    const MSGFILTER *_Nonnull filter = (const MSGFILTER *)lparam;
+    if (filter->msg == WM_CHAR)
+    {
+        return pane_character(self, filter->wParam);
+    }
+    if (filter->msg == WM_KEYDOWN)
+    {
+        return pane_key(self, filter->wParam);
     }
     return 0;
 }
@@ -1406,6 +1718,11 @@ static bool cursor_on_category(const struct folio_window *_Nonnull self)
  * Escape はここでは何もしない（窓を閉じるのは Alt+F4 と閉じる操作だけ）。 */
 static void press_key(struct folio_window *_Nonnull self, WPARAM key)
 {
+    if (key == VK_F1)
+    {
+        execute_command(self, FOLIO_COMMAND_HELP);
+        return;
+    }
     if (self->command_surface != COMMAND_SURFACE_CLOSED)
     {
         if (key == VK_ESCAPE)
@@ -1451,6 +1768,9 @@ static void type_key(struct folio_window *_Nonnull self, WPARAM character)
         break;
     case '?':
         execute_command(self, FOLIO_COMMAND_HELP);
+        break;
+    case 'i':
+        execute_command(self, FOLIO_COMMAND_EDIT);
         break;
     case palette_character:
         open_command_surface(self, COMMAND_SURFACE_PALETTE);
@@ -1556,6 +1876,7 @@ static void move_command_selection(struct folio_window *_Nonnull self, WPARAM ke
         self->command_selection =
             self->command_selection + 1 == count ? 0 : self->command_selection + 1;
     }
+    reveal_command_selection(self);
     redraw_command_layer(self);
 }
 
@@ -1576,6 +1897,16 @@ static bool command_key_down(struct folio_window *_Nonnull self, WPARAM key)
     if (self->command_composing)
     {
         return false;
+    }
+    if (key == VK_F1)
+    {
+        execute_command(self, FOLIO_COMMAND_HELP);
+        return true;
+    }
+    if (key == VK_TAB && self->command_surface == COMMAND_SURFACE_PALETTE)
+    {
+        toggle_command_keys(self);
+        return true;
     }
     if (key == VK_ESCAPE)
     {
@@ -1607,7 +1938,21 @@ static bool command_character(struct folio_window *_Nonnull self, WPARAM charact
         show_command_palette(self);
         return true;
     }
-    return character == '\r';
+    return character == '\r' || character == '\t';
+}
+
+static bool command_wheel(struct folio_window *_Nonnull self, WPARAM wparam)
+{
+    if (self->command_surface != COMMAND_SURFACE_PALETTE || self->command_composing)
+    {
+        return false;
+    }
+    int delta = GET_WHEEL_DELTA_WPARAM(wparam);
+    if (delta != 0)
+    {
+        move_command_selection(self, delta > 0 ? VK_UP : VK_DOWN);
+    }
+    return true;
 }
 
 static LRESULT CALLBACK command_input_procedure(HWND window, UINT message, WPARAM wparam,
@@ -1627,6 +1972,10 @@ static LRESULT CALLBACK command_input_procedure(HWND window, UINT message, WPARA
     {
         return 0;
     }
+    if (message == WM_MOUSEWHEEL && command_wheel(self, wparam))
+    {
+        return 0;
+    }
     if (message == WM_KILLFOCUS)
     {
         PostMessageW(self->handle, folio_message_command_focus_lost, 0, 0);
@@ -1639,6 +1988,7 @@ static LRESULT on_command(struct folio_window *_Nonnull self, WPARAM wparam, LPA
     if ((HWND)lparam == self->command_input && HIWORD(wparam) == EN_CHANGE)
     {
         self->command_selection = 0;
+        self->command_first = 0;
         self->command_unknown = false;
         self->command_failure = FOLIO_STATE_READY;
         arrange_command_input(self);
@@ -1801,6 +2151,9 @@ static LRESULT CALLBACK command_layer_procedure(HWND window, UINT message, WPARA
         return 1;
     case WM_LBUTTONDOWN:
         click_command_surface(self, (POINT){GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)});
+        return 0;
+    case WM_MOUSEWHEEL:
+        command_wheel(self, wparam);
         return 0;
     case WM_COMMAND:
         return on_command(self, wparam, lparam);

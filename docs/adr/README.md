@@ -33,3 +33,4 @@ ADR は「なぜそう決めたか」「何を却下したか」を書く。
 | [0015](0015-cursor-stops-on-collapsed-categories.md) | 索引のカーソルは、ノート行と「見えるノート行を持たないカテゴリ行」に止まる | 受理 |
 | [0016](0016-command-catalog-and-shared-execution.md) | Ex・操作パレット・既存ショートカットは共通の操作へ変換し、一つの経路で実行する | 受理 |
 | [0017](0017-powerline-breadcrumb.md) | パンくずをPowerline風の連続した色面で描く | 受理 |
+| [0018](0018-japanese-operation-entry-points.md) | 日本語GUI・ヘルプ・閲覧からの編集開始を共通操作へ接続する | 受理 |
