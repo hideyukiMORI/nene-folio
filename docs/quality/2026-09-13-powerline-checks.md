@@ -16,3 +16,13 @@ Issue #45 / ADR 0017。対象は `out/worktrees/45-powerline/build/NeNeFolio.exe
 | 操作 | パンくずで窓を掴める。閲覧・編集・×の当たり判定と動作は従来どおり |
 
 実行した場合はexeのSHA-256、DPI、窓寸法、各条件の結果を追記する。Chromeの画面案を実機合格に読み替えない。
+
+## 2026-09-13 14:08 JSTのビルド記録（GUI未実施）
+
+#37のIMEガード修正`f3a0800`を取り込んだコードを固定toolchainでビルドした。
+整形検査・規約検査・ビルドがexit 0、CTestは2/2成功。最新修正後の正規フルゲートは未実施。
+
+- 対象: `out/worktrees/45-powerline/build/NeNeFolio.exe`
+- SHA-256: `C8AC62E9AAE1E351938255EE6BBBDC432DD1D3B69A18E1D750DE58A56ABD451C`
+- [コマンドの実機確認](2026-09-12-command-checks.md)にある入力面と本文のIME試験も、このexeで確認する。
+- DPI・窓寸法・上表の結果は未測定。上記のビルドと自動テストはGUIの合格を示さない。
