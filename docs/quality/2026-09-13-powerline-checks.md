@@ -1,7 +1,7 @@
-# Powerline風パンくずの実機確認 — 未実施
+# Powerline風パンくずの実機確認の手順と結果
 
 Issue #45 / ADR 0017。対象は `out/worktrees/45-powerline/build/NeNeFolio.exe` と架空の検証データ。
-2026-09-13にもComputer Use接続がnative pipe unavailable / os error 2で失敗したため、以下は結果ではなく確認項目。
+Computer Use接続はnative pipe unavailable / os error 2。以下の表は確認項目で、hideによる手動確認の結果を末尾に記録する。
 
 | 条件 | 確認すること |
 | --- | --- |
@@ -26,3 +26,16 @@ Issue #45 / ADR 0017。対象は `out/worktrees/45-powerline/build/NeNeFolio.exe
 - SHA-256: `C8AC62E9AAE1E351938255EE6BBBDC432DD1D3B69A18E1D750DE58A56ABD451C`
 - [コマンドの実機確認](2026-09-12-command-checks.md)にある入力面と本文のIME試験も、このexeで確認する。
 - DPI・窓寸法・上表の結果は未測定。上記のビルドと自動テストはGUIの合格を示さない。
+
+## 2026-09-13 14:22 JSTの手動確認
+
+上記SHA-256のexe（#45の`d01a623`、#37の`f3a0800`を含む）を通常起動し、hideが画面を操作した。
+架空データのカテゴリ「長いカテゴリ名の省略を確認するサンプル」と、
+「ノート名を先に省略して右側の操作ボタンを守るための長い確認用ノート」を用意した。
+
+番号4として「長い名前のノートを開き、窓の横幅を縮める。上の文字が右側のボタンに重ならず、
+ノート名から先に省略されるか」を案内し、hideから「オッケー」と報告された。
+[コマンドの入力保持・保存・IME確認](2026-09-12-command-checks.md)も同じexeで実施された。
+
+サナの画面観察ではなくhideの報告。DPI・窓寸法・OSテーマは未記録であり、
+560×360ぴったりの寸法、dark/light両方、色変更、120/144 DPI、ちらつき・全当たり判定まで確認済みとは扱わない。
