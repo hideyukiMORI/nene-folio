@@ -91,7 +91,8 @@ enum note_pane_outcome note_pane_create(HWND _Nonnull parent, COLORREF backgroun
         return NOTE_PANE_NOT_CREATED;
     }
     /* スクロールバーは出さない（FR-012 と同じ流儀）。ホイールで動く。 */
-    DWORD style = WS_CHILD | WS_VISIBLE | ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL;
+    DWORD style =
+        WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL;
     pane->handle = CreateWindowExW(0, class_name, L"", style, 0, 0, 0, 0, parent, nullptr,
                                    GetModuleHandleW(nullptr), nullptr);
     if (pane->handle == nullptr)

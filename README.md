@@ -15,6 +15,7 @@ A frameless Markdown notebook for Windows with a category drawer. Plain C (C23),
 - Colours and orders live in `data/categories.json` and `data/<category>/index.json`.
 
 The requirements are in [SPECIFICATION.md](SPECIFICATION.md).
+The current keyboard commands are described in [キーバインドとコマンド](docs/KEY_BINDINGS.md) (Japanese; draft additions are marked).
 
 ## How it is built
 

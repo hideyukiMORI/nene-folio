@@ -126,10 +126,16 @@ Waivers: none | WVR-NNNN
 
 現在のタスクは [docs/todo/current.md](docs/todo/current.md)。GitHub Issue が正で、そこは要約。
 
-2026-09-12: hide の追加要望を [コマンド・検索・設定の計画](docs/plans/2026-09-12-command-workspace.md)（Issue #36）へ記録した。
-次は共通コマンドと `:` / Ctrl+P / 閉じる（#37）。設定・Ubuntu 風テーマ・日本語／English／简体中文（#38）、
+2026-09-13: #37へINDEXの `?` とキーバインド説明を追加。パンくずのPowerline案は#45。
+#45 / ADR 0017は `out/worktrees/45-powerline` に実装し、#37の上に積むDraft。通常dark/light・最小窓の画面案をChromeで確認、Win32は未確認。
+最新は [日報](docs/reports/2026-09-13.md) / [引き継ぎ](docs/handoffs/2026-09-13.md)。
+
+2026-09-12: hide の追加要望を [コマンド・検索・設定の計画](docs/plans/2026-09-12-command-workspace.md)（Issue #36、統合済みPR #43）へ記録した。
+コマンドの初版は [Draft PR #44](https://github.com/hideyukiMORI/nene-folio/pull/44) に実装。フルゲートは成功、Win32実機確認は未完了。
+現状・確認条件は [日報](docs/reports/2026-09-12.md) と [引き継ぎ](docs/handoffs/2026-09-12.md)。画面案はhideの承認後にArtifact公開・Chrome確認済み。
+#37の実機確認後、設定・Ubuntu 風テーマ・日本語／English／简体中文（#38）、
 同梱 Google Fonts（#42）、原文行番号（#39）、`/` からの本文検索（#40）、現在 md の正規表現置換（#41）へ進む。
-これらは計画で、下記の 2026-09-11 時点の実装済み機能とは区別する。今回の役割分担は設計サナ（Astra）が設計と判断、
+#38〜42は計画で、下記の 2026-09-11 時点の実装済み機能とは区別する。今回の役割分担は設計サナ（Astra）が設計と判断、
 SOL / LUNA の実装サナが指定範囲の調査・実装・テスト、ClaudeCode のデザインリナが `/design` と Chrome によるデザイン相談。
 
 2026-09-11: Phase 3 の縦切り 11 本と窓の修正（Issue #3 / ADR 0004、#5、#7、#9 / ADR 0005、#11 / ADR 0006、#13 / ADR 0007、#15 / ADR 0008、#19 / ADR 0009、#21 / ADR 0010、#22 / ADR 0011 と 0014、#23 / ADR 0012、#24 / ADR 0013）。起動して `data/` の索引を枠なし窓のドロワーに描き、カテゴリ行のクリックでトグルして `expanded` を書き戻し、ノート行のクリックで右ペインに md を表示し、頭の「編集」の札で同じ RichEdit を平文の編集にして Ctrl+S と編集を抜ける操作で同じ md へ原子的に書き戻す。改行の形は元のまま・BOM は書かない・同じなら書かない。行をドラッグすると挿入線が出て、離すと表示順が変わり `categories.json` / `index.json` へ書き戻る（ドロップ先は core の `drawer_layout_drop` が決める・ADR 0007）。ノートは別のカテゴリへも移せて、md の rename が先に走り、移動先 → 移動元の順に両方の `index.json` が追随する（同名は拒み、台帳だけ書けなければ次回の起動の照合で揃う・ADR 0008）。索引が窓に収まらなければホイール（1 刻み = ノート行 3 つ）と ↑↓ / PgUp / PgDn でスクロールし、あふれている側の端に 24px のフェードが出る。スクロール量は application が要求量で持ち、上限と表示座標は core が決める（ADR 0009）。カテゴリ行の右クリックで OS の色の選択が出て、選んだ色を `categories.json` へ `expanded` と同じ経路で書き戻す（ADR 0010）。見た目はデザイン「案2 堅」（ADR 0005）で、OS のライト／ダークに従う。5 層すべてに正典の経路があり、ARC-002 / ARC-003 / ARC-007 / QLT-009 が active。枠なし窓の client は `WM_NCCALCSIZE` の TRUE / FALSE とも自分で答えて作成の瞬間から窓の矩形全体で、最小サイズは 560×360（96 DPI）、右ペインの頭のパンくずはノート名 → カテゴリ名の順に末尾を省略する（ADR 0011）。md を書き戻す直前の本文は `data/.history/<カテゴリ>/<ノート>/1.md`〜`5.md` に連番で残り、履歴を書けなければ保存しない（FR-017・ADR 0012。`.` で始まるディレクトリは走査しない）。白い帯の再発（非アクティブ化の `WM_NCACTIVATE` の既定処理が `WS_THICKFRAME` の縁を描く）は `WM_NCACTIVATE` → TRUE / `WM_NCPAINT` → 0 で根治した（ADR 0014）。フォーカスの区画は Win32 のフォーカスそのもの（主窓 = 索引・RichEdit = 本文）で、索引の `j` / `k` / `gg` / `G` / `h` / `l` / `Enter`、本文の `Esc` が効き、切り替えのたびに編集中なら保存してモードは保つ。カーソルはノート行と「見えるノート行を持たないカテゴリ行」（折り畳み・空）に止まり、カテゴリ行では右ペインを変えず `l` で中へ入る（ADR 0015）。Ctrl+S は両区画で効き、Escape で窓は閉じない（FR-018・ADR 0013）。検索・破棄（保存せずに抜ける）・改名・Undo・履歴を戻す UI・ドラッグ中の自動スクロールはまだ無い。次は FR-011（検索。検索窓が 3 つ目の区画になるので ADR 0013 の区画の扱いを先に決める）。仕様は [SPECIFICATION.md](SPECIFICATION.md)。

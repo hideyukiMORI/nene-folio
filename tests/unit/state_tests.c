@@ -1408,6 +1408,40 @@ static void verify_edit_unchanged(void)
     folio_state_destroy(state);
 }
 
+/* :q の問い合わせは保存と同じ改行正規化で比較し、状態も永続化も変えない（ADR 0016）。 */
+static void verify_note_changed(void)
+{
+    static const char16_t lone_surrogate[] = {u'a', 0xD83D, u'b'};
+    struct persistence_adapter adapter = healthy_adapter();
+    adapter.note_body = "# Hello\r\n\r\nbody";
+    struct folio_state *state = edited_state(&adapter);
+    enum folio_note_change change = FOLIO_NOTE_CHANGED;
+    const char16_t same[] = u"# Hello\n\nbody";
+    require(folio_state_note_changed(state, same, sizeof same / sizeof same[0] - 1, &change) ==
+                    FOLIO_STATE_READY &&
+                change == FOLIO_NOTE_SAME,
+            "line ending normalization finds the saved body");
+    const char16_t changed[] = u"# Hello\n\nchanged";
+    require(folio_state_note_changed(state, changed, sizeof changed / sizeof changed[0] - 1,
+                                     &change) == FOLIO_STATE_READY &&
+                change == FOLIO_NOTE_CHANGED,
+            "changed editor text is reported");
+    change = FOLIO_NOTE_SAME;
+    require(folio_state_note_changed(state, lone_surrogate, 3, &change) ==
+                    FOLIO_STATE_NOTE_MALFORMED &&
+                change == FOLIO_NOTE_SAME,
+            "malformed editor text does not touch the answer");
+    require(adapter.archives == 0 && adapter.note_writes == 0 &&
+                folio_state_pane_mode(state) == PANE_MODE_EDIT &&
+                same_text(folio_state_pane_text(state), "# Hello\r\n\r\nbody"),
+            "the comparison changes neither persistence nor state");
+    require(folio_state_end_edit(state, u"# Hello\r\n\r\nbody", 15) == FOLIO_STATE_READY,
+            "leave edit after comparison");
+    require(folio_state_note_changed(state, u"", 0, &change) == FOLIO_STATE_NOT_EDITING,
+            "comparison is only valid while editing");
+    folio_state_destroy(state);
+}
+
 /* 保存は履歴が先で、写せたときだけ md を書く（ADR 0012 の決定 2）。 */
 static void verify_history_order(void)
 {
@@ -1534,6 +1568,7 @@ static void verify_failure_lines(void)
                 strlen(folio_state_failure_line(FOLIO_STATE_NOTE_MALFORMED)) > 0 &&
                 strlen(folio_state_failure_line(FOLIO_STATE_NOTE_STORE_FAILED)) > 0 &&
                 strlen(folio_state_failure_line(FOLIO_STATE_HISTORY_FAILED)) > 0 &&
+                strlen(folio_state_failure_line(FOLIO_STATE_UNSAVED_CHANGES)) > 0 &&
                 strlen(folio_state_failure_line(FOLIO_STATE_NAME_TAKEN)) > 0 &&
                 strlen(folio_state_failure_line(FOLIO_STATE_LEDGER_STALE)) > 0 &&
                 strlen(folio_state_failure_line(FOLIO_STATE_OUT_OF_MEMORY)) > 0,
@@ -1640,6 +1675,7 @@ void run_state_tests(void)
     verify_mode_survives_selection();
     verify_edit_guards();
     verify_edit_unchanged();
+    verify_note_changed();
     verify_history_order();
     verify_history_failures();
     verify_edit_saves();

@@ -6,6 +6,7 @@
 
 #include "drawer_metrics.h"
 #include "folio_cursor_kind.h"
+#include "folio_note_change.h"
 #include "folio_state_outcome.h"
 #include "folio_step.h"
 #include "folio_theme.h"
@@ -110,8 +111,13 @@ folio_state_select_adjacent(struct folio_state *_Nonnull state, enum folio_step 
 [[nodiscard]] enum folio_state_outcome folio_state_store_note(struct folio_state *_Nonnull state,
                                                               const char16_t *_Nonnull units,
                                                               size_t count);
+/* 編集中の本文を保存時と同じ形へ正規化し、保存済み本文との差を答える。
+ * 問い合わせなので mode・本文・履歴・ファイルを変えない（ADR 0016）。 */
+[[nodiscard]] enum folio_state_outcome
+folio_state_note_changed(const struct folio_state *_Nonnull state, const char16_t *_Nonnull units,
+                         size_t count, enum folio_note_change *_Nonnull out);
 /* 編集中の本文を保存して閲覧へ戻る。保存できなければ編集モードのまま。
- * 使うのは「閲覧」の札と窓を閉じる操作だけ。
+ * 使うのは「閲覧」の札。終了操作は編集モードを変えず store_note で保存する（ADR 0016）。
  * ノートの切り替えではモードを保つ（ADR 0013 の決定 4）。 */
 [[nodiscard]] enum folio_state_outcome folio_state_end_edit(struct folio_state *_Nonnull state,
                                                             const char16_t *_Nonnull units,
