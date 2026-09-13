@@ -793,8 +793,8 @@ enum drawer_window_outcome drawer_window_create(HWND _Nonnull parent,
     {
         self->custom_colors[slot] = RGB(255, 255, 255);
     }
-    HWND handle = CreateWindowExW(0, class_name, L"", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, parent,
-                                  nullptr, instance, self);
+    HWND handle = CreateWindowExW(0, class_name, L"", WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS, 0, 0,
+                                  0, 0, parent, nullptr, instance, self);
     if (handle == nullptr)
     {
         drawer_window_destroy(self);
