@@ -11,8 +11,10 @@
 #include "name_list.h"
 #include "note_ledger.h"
 #include "note_name.h"
+#include "note_rename.h"
 #include "note_text.h"
 #include "persistence_port.h"
+#include "rename_journal.h"
 #include "rtf_palette.h"
 #include "unit_tests.h"
 #include "utf16_text.h"
@@ -440,6 +442,52 @@ static bool state_scenario(void)
     return completed;
 }
 
+static bool journal_under_probe(const struct note_rename *_Nonnull rename)
+{
+    struct json_writer *writer = nullptr;
+    if (json_writer_create(&writer) != JSON_WRITER_ACCEPTED)
+    {
+        return false;
+    }
+    const char *identity = "0123456789abcdef0123456789abcdef0123456789abcdef";
+    enum rename_journal_outcome outcome = rename_journal_write(rename, identity, identity, writer);
+    struct rename_journal *journal = nullptr;
+    if (outcome == RENAME_JOURNAL_ACCEPTED)
+    {
+        outcome =
+            rename_journal_parse(json_writer_text(writer), json_writer_length(writer), &journal);
+    }
+    require(outcome == RENAME_JOURNAL_ACCEPTED || outcome == RENAME_JOURNAL_OUT_OF_MEMORY,
+            "journal allocation failure remains typed");
+    rename_journal_destroy(journal);
+    json_writer_destroy(writer);
+    return outcome == RENAME_JOURNAL_ACCEPTED;
+}
+
+static bool rename_scenario(void)
+{
+    struct note_ledger *ledger = nullptr;
+    struct note_name *name = nullptr;
+    bool prepared =
+        note_ledger_parse(notes_text, strlen(notes_text), &ledger) == NOTE_LEDGER_ACCEPTED &&
+        note_name_create("日本語 保存名.md", strlen("日本語 保存名.md"), &name) ==
+            NOTE_NAME_ACCEPTED;
+    struct note_rename *rename = nullptr;
+    bool completed = false;
+    if (prepared)
+    {
+        struct note_rename_target target = {.index = 1, .name = name};
+        enum note_rename_outcome outcome = note_rename_create("カテゴリ", ledger, &target, &rename);
+        require(outcome == NOTE_RENAME_ACCEPTED || outcome == NOTE_RENAME_OUT_OF_MEMORY,
+                "rename allocation failure remains typed");
+        completed = outcome == NOTE_RENAME_ACCEPTED && journal_under_probe(rename);
+    }
+    note_rename_destroy(rename);
+    note_name_destroy(name);
+    note_ledger_destroy(ledger);
+    return completed;
+}
+
 /* 1 回目・2 回目・… の確保を順に失敗させ、シナリオが完了するまで続ける。 */
 static void exhaust(bool (*_Nonnull scenario)(void), const char *_Nonnull description)
 {
@@ -483,4 +531,5 @@ void run_allocation_tests(void)
     exhaust(markdown_scenario, "markdown scenario never completed");
     exhaust(layout_scenario, "layout scenario never completed");
     exhaust(state_scenario, "state scenario never completed");
+    exhaust(rename_scenario, "rename scenario never completed");
 }

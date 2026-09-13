@@ -47,7 +47,9 @@ static enum note_ledger_outcome translate(enum name_list_outcome outcome)
 
 static bool expect_key(struct json_reader *_Nonnull reader, const char *_Nonnull key)
 {
-    return json_reader_next(reader) == JSON_TOKEN_KEY && strcmp(json_reader_text(reader), key) == 0;
+    return json_reader_next(reader) == JSON_TOKEN_KEY &&
+           json_reader_text_length(reader) == strlen(key) &&
+           strcmp(json_reader_text(reader), key) == 0;
 }
 
 /* 期待しない字句を結果に写す。記憶不足だけは不正と区別する。 */
@@ -104,16 +106,15 @@ static enum note_ledger_outcome parse_document(struct json_reader *_Nonnull read
     {
         return outcome;
     }
-    if (json_reader_next(reader) != JSON_TOKEN_OBJECT_END ||
-        json_reader_next(reader) != JSON_TOKEN_END)
+    if (json_reader_next(reader) != JSON_TOKEN_OBJECT_END)
     {
         return NOTE_LEDGER_MALFORMED;
     }
     return NOTE_LEDGER_ACCEPTED;
 }
 
-enum note_ledger_outcome note_ledger_parse(const char *_Nonnull text, size_t length,
-                                           struct note_ledger *_Nullable *_Nonnull out)
+enum note_ledger_outcome note_ledger_read(struct json_reader *_Nonnull reader,
+                                          struct note_ledger *_Nullable *_Nonnull out)
 {
     struct note_ledger *_Nullable ledger = nullptr;
     enum note_ledger_outcome outcome = note_ledger_empty(&ledger);
@@ -121,13 +122,30 @@ enum note_ledger_outcome note_ledger_parse(const char *_Nonnull text, size_t len
     {
         return outcome;
     }
+    outcome = parse_document(reader, ledger);
+    if (outcome != NOTE_LEDGER_ACCEPTED)
+    {
+        note_ledger_destroy(ledger);
+        return outcome;
+    }
+    *out = ledger;
+    return NOTE_LEDGER_ACCEPTED;
+}
+
+enum note_ledger_outcome note_ledger_parse(const char *_Nonnull text, size_t length,
+                                           struct note_ledger *_Nullable *_Nonnull out)
+{
     struct json_reader *_Nullable reader = nullptr;
     if (json_reader_create(text, length, &reader) != JSON_READER_CREATED)
     {
-        note_ledger_destroy(ledger);
         return NOTE_LEDGER_OUT_OF_MEMORY;
     }
-    outcome = parse_document(reader, ledger);
+    struct note_ledger *_Nullable ledger = nullptr;
+    enum note_ledger_outcome outcome = note_ledger_read(reader, &ledger);
+    if (outcome == NOTE_LEDGER_ACCEPTED && json_reader_next(reader) != JSON_TOKEN_END)
+    {
+        outcome = NOTE_LEDGER_MALFORMED;
+    }
     json_reader_destroy(reader);
     if (outcome != NOTE_LEDGER_ACCEPTED)
     {
@@ -292,6 +310,20 @@ enum note_ledger_outcome note_ledger_removed(const struct note_ledger *_Nonnull 
     }
     *out = target;
     return NOTE_LEDGER_ACCEPTED;
+}
+
+enum note_ledger_outcome note_ledger_renamed(const struct note_ledger *_Nonnull ledger,
+                                             size_t index, const char *_Nonnull name,
+                                             struct note_ledger *_Nullable *_Nonnull out)
+{
+    struct note_ledger *_Nullable removed = nullptr;
+    enum note_ledger_outcome outcome = note_ledger_removed(ledger, index, &removed);
+    if (outcome == NOTE_LEDGER_ACCEPTED)
+    {
+        outcome = note_ledger_inserted(removed, index, name, out);
+    }
+    note_ledger_destroy(removed);
+    return outcome;
 }
 
 size_t note_ledger_count(const struct note_ledger *_Nonnull ledger)
