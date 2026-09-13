@@ -1518,12 +1518,16 @@ static bool command_key_down(struct folio_window *_Nonnull self, WPARAM key)
 
 static bool command_character(struct folio_window *_Nonnull self, WPARAM character)
 {
+    if (self->command_composing)
+    {
+        return false;
+    }
     if (character == palette_character)
     {
         show_command_palette(self);
         return true;
     }
-    return !self->command_composing && character == '\r';
+    return character == '\r';
 }
 
 static LRESULT CALLBACK command_input_procedure(HWND window, UINT message, WPARAM wparam,
