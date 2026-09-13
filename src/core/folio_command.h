@@ -12,7 +12,9 @@ enum folio_command : unsigned char
     FOLIO_COMMAND_QUIT,
     FOLIO_COMMAND_SAVE_QUIT,
     FOLIO_COMMAND_FORCE_QUIT,
-    FOLIO_COMMAND_HELP
+    FOLIO_COMMAND_HELP,
+    FOLIO_COMMAND_EDIT,
+    FOLIO_COMMAND_VIEW
 };
 
 [[nodiscard]] size_t folio_command_count(void);
@@ -20,6 +22,7 @@ enum folio_command : unsigned char
 [[nodiscard]] enum folio_command folio_command_at(size_t index);
 /* 日本語の表示名。#38 で同じ ID の翻訳表へ移す。 */
 [[nodiscard]] const char *_Nonnull folio_command_label(enum folio_command command);
+/* GUI専用操作は0個。未実装という意味ではない（ADR 0018）。 */
 [[nodiscard]] size_t folio_command_alias_count(enum folio_command command);
 /* index は 0 <= index < folio_command_alias_count(command)。 */
 [[nodiscard]] const char *_Nonnull folio_command_alias(enum folio_command command, size_t index);

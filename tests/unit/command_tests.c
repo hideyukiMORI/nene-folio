@@ -20,11 +20,23 @@ static void verify_aliases(void)
     expect_command(":x", FOLIO_COMMAND_SAVE_QUIT, ":x");
     expect_command("q!", FOLIO_COMMAND_FORCE_QUIT, "q!");
     expect_command(":help", FOLIO_COMMAND_HELP, ":help");
+    expect_command(":h", FOLIO_COMMAND_HELP, ":h uses the same help command");
+    expect_command(":startinsert", FOLIO_COMMAND_EDIT, "startinsert begins editing");
 }
 
 static void verify_rejections(void)
 {
-    static const char *const rejected[] = {"", ":", "W", "quit!", "w now", "unknown"};
+    static const char *const rejected[] = {"",
+                                           ":",
+                                           "W",
+                                           "quit!",
+                                           "w now",
+                                           "unknown",
+                                           ":e",
+                                           ":edit",
+                                           ":view",
+                                           ":startinsert file",
+                                           "保存して閲覧"};
     for (size_t index = 0; index < sizeof rejected / sizeof rejected[0]; ++index)
     {
         enum folio_command command = FOLIO_COMMAND_HELP;
@@ -35,16 +47,15 @@ static void verify_rejections(void)
 
 static void verify_catalog(void)
 {
-    require(folio_command_count() == 5, "only implemented commands are registered");
-    const enum folio_command expected[] = {FOLIO_COMMAND_SAVE, FOLIO_COMMAND_QUIT,
-                                           FOLIO_COMMAND_SAVE_QUIT, FOLIO_COMMAND_FORCE_QUIT,
-                                           FOLIO_COMMAND_HELP};
+    require(folio_command_count() == 7, "only implemented commands are registered");
+    const enum folio_command expected[] = {
+        FOLIO_COMMAND_SAVE, FOLIO_COMMAND_QUIT, FOLIO_COMMAND_SAVE_QUIT, FOLIO_COMMAND_FORCE_QUIT,
+        FOLIO_COMMAND_HELP, FOLIO_COMMAND_EDIT, FOLIO_COMMAND_VIEW};
     for (size_t index = 0; index < folio_command_count(); ++index)
     {
         enum folio_command command = folio_command_at(index);
         require(command == expected[index], "catalog order is stable");
         require(strlen(folio_command_label(command)) > 0, "palette label comes from catalog");
-        require(folio_command_alias_count(command) > 0, "help aliases come from catalog");
         for (size_t alias = 0; alias < folio_command_alias_count(command); ++alias)
         {
             enum folio_command parsed = FOLIO_COMMAND_HELP;
@@ -58,6 +69,10 @@ static void verify_catalog(void)
     require(folio_command_matches(FOLIO_COMMAND_FORCE_QUIT, "破棄", strlen("破棄")),
             "palette finds a display label");
     require(!folio_command_matches(FOLIO_COMMAND_HELP, "quit", 4), "palette excludes a mismatch");
+    require(folio_command_alias_count(FOLIO_COMMAND_VIEW) == 0,
+            "GUI view has no misleading Vim alias");
+    require(folio_command_matches(FOLIO_COMMAND_VIEW, "閲覧", strlen("閲覧")),
+            "GUI-only command can be found by Japanese label");
 }
 
 void run_command_tests(void)

@@ -19,6 +19,8 @@ struct note_pane;
                                                       struct note_pane *_Nullable *_Nonnull out);
 /* 親が配置に使う。ウィンドウが既に破棄されていれば nullptr。 */
 [[nodiscard]] HWND _Nullable note_pane_handle(const struct note_pane *_Nonnull pane);
+/* 未確定入力中は親がキーを操作へ変換せず、RichEdit/IMEへ渡す（ADR 0018）。 */
+[[nodiscard]] bool note_pane_composing(const struct note_pane *_Nonnull pane);
 /* RTF を流し込んで表示を置き換え、読み取り専用に戻す（閲覧）。 */
 void note_pane_render(struct note_pane *_Nonnull pane, const char *_Nonnull rtf, size_t length);
 /* 本文を平文で流し込み、入力を受け付ける（編集）。フォーカスは動かさない
