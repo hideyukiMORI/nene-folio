@@ -127,6 +127,7 @@ Waivers: none | WVR-NNNN
 現在のタスクは [docs/todo/current.md](docs/todo/current.md)。GitHub Issue が正で、そこは要約。
 
 2026-09-13: #37へINDEXの `?` とキーバインド説明を追加。パンくずのPowerline案は#45。
+#45 / ADR 0017は `out/worktrees/45-powerline` に実装し、#37の上に積むDraft。通常dark/light・最小窓の画面案をChromeで確認、Win32は未確認。
 最新は [日報](docs/reports/2026-09-13.md) / [引き継ぎ](docs/handoffs/2026-09-13.md)。
 
 2026-09-12: hide の追加要望を [コマンド・検索・設定の計画](docs/plans/2026-09-12-command-workspace.md)（Issue #36、統合済みPR #43）へ記録した。

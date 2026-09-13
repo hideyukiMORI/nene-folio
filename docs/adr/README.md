@@ -32,3 +32,4 @@ ADR は「なぜそう決めたか」「何を却下したか」を書く。
 | [0014](0014-frameless-window-answers-ncactivate.md) | 枠なし窓は WM_NCACTIVATE と WM_NCPAINT も自分で答え、非アクティブ化で OS に枠を描かせない | 受理 |
 | [0015](0015-cursor-stops-on-collapsed-categories.md) | 索引のカーソルは、ノート行と「見えるノート行を持たないカテゴリ行」に止まる | 受理 |
 | [0016](0016-command-catalog-and-shared-execution.md) | Ex・操作パレット・既存ショートカットは共通の操作へ変換し、一つの経路で実行する | 受理 |
+| [0017](0017-powerline-breadcrumb.md) | パンくずをPowerline風の連続した色面で描く | 受理 |

@@ -1,5 +1,6 @@
 #include "folio_window.h"
 
+#include "breadcrumb_layout.h"
 #include "command_row.h"
 #include "command_surface_mode.h"
 #include "drawer_window.h"
@@ -87,6 +88,12 @@ constexpr int base_mono_font = 11;
 constexpr int base_tracking = 1;
 /* 省略しても残すノート名の幅（ADR 0011 の決定 4）。 */
 constexpr int base_breadcrumb_note = 48;
+constexpr int base_breadcrumb_height = 24;
+constexpr int base_breadcrumb_padding = 8;
+constexpr int base_breadcrumb_tip = 10;
+constexpr int base_breadcrumb_compact_width = 320;
+constexpr int base_breadcrumb_compact_padding = 4;
+constexpr int base_breadcrumb_compact_tip = 6;
 constexpr int base_close_size = 24;
 constexpr int base_close_margin = 16;
 constexpr int base_close_glyph_inset = 4;
@@ -337,16 +344,12 @@ static RECT close_rect(const struct folio_window *_Nonnull self)
     return bounds;
 }
 
-/* 番号（2 桁・カテゴリ色）を描き、描いた幅を返す。番号は縮めない（ADR 0011 の決定 4）。 */
-static int draw_ordinal(HDC device, size_t ordinal, struct rgb_color color, RECT bounds)
+/* 2桁の番号。幅測定と描画で同じ文字列を使う。 */
+static void ordinal_label(size_t ordinal, char *_Nonnull label)
 {
-    wchar_t digits[3] = {(wchar_t)(L'0' + (ordinal / 10) % 10), (wchar_t)(L'0' + ordinal % 10),
-                         L'\0'};
-    SetTextColor(device, RGB(color.red, color.green, color.blue));
-    RECT measured = bounds;
-    DrawTextW(device, digits, 2, &measured, DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX | DT_CALCRECT);
-    DrawTextW(device, digits, 2, &bounds, DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
-    return measured.right - measured.left;
+    label[0] = (char)('0' + (ordinal / 10) % 10);
+    label[1] = (char)('0' + ordinal % 10);
+    label[2] = '\0';
 }
 
 /* カテゴリ名とノート名の幅を budget に収める。ノート名から先に削り、それでも足りなければ
@@ -408,8 +411,60 @@ static RECT chip_rect(const struct folio_window *_Nonnull self, HDC device, enum
     return bounds;
 }
 
-/* 頭のパンくず: 番号（カテゴリ色）・カテゴリ・/・ノート。選択が無ければ何も描かない。
- * 右端は札 2 つの手前で、残りをカテゴリ名とノート名に割り当てる（ADR 0011 の決定 4）。 */
+static struct breadcrumb_layout breadcrumb_cells(const struct folio_window *_Nonnull self,
+                                                 HDC device, struct pane_title_view title,
+                                                 RECT caption)
+{
+    UINT dpi = GetDpiForWindow(self->handle);
+    int right = chip_rect(self, device, PANE_MODE_VIEW).left - scale(base_caption_gap, dpi);
+    int available = right - caption.left;
+    bool compact = available < scale(base_breadcrumb_compact_width, dpi);
+    int padding = scale(compact ? base_breadcrumb_compact_padding : base_breadcrumb_padding, dpi);
+    int tip = scale(compact ? base_breadcrumb_compact_tip : base_breadcrumb_tip, dpi);
+    char digits[3];
+    ordinal_label(title.ordinal, digits);
+    int ordinal = measure_utf8(device, digits) + padding * 2;
+    int category = measure_utf8(device, title.category);
+    int note = measure_utf8(device, title.note);
+    int budget = available - ordinal - padding * 4 - tip * 2;
+    breadcrumb_room(budget < 0 ? 0 : budget, scale(base_breadcrumb_note, dpi), &category, &note);
+    int category_width = category > 0 ? category + padding * 2 + tip : 0;
+    if (category_width == 0)
+    {
+        int remaining = available - ordinal - padding * 2 - tip;
+        note = remaining > 0 ? remaining : 0;
+    }
+    int height = scale(base_breadcrumb_height, dpi);
+    int top = (caption.top + caption.bottom - height) / 2;
+    RECT number = {caption.left, top, caption.left + ordinal, top + height};
+    RECT group = {number.right, top, number.right + category_width, top + height};
+    RECT name = {group.right, top, group.right + note + padding * 2 + tip, top + height};
+    return (struct breadcrumb_layout){number, group, name, padding, tip};
+}
+
+/* 右へ矢じりを延ばす同じ多角形。左の区画を後から重ね、右の区画へつなぐ。 */
+static void draw_breadcrumb_segment(HDC device, RECT bounds, int tip, COLORREF background)
+{
+    POINT points[] = {{bounds.left, bounds.top},
+                      {bounds.right, bounds.top},
+                      {bounds.right + tip, (bounds.top + bounds.bottom) / 2},
+                      {bounds.right, bounds.bottom},
+                      {bounds.left, bounds.bottom}};
+    HGDIOBJ brush = SelectObject(device, GetStockObject(DC_BRUSH));
+    HGDIOBJ pen = SelectObject(device, GetStockObject(NULL_PEN));
+    SetDCBrushColor(device, background);
+    Polygon(device, points, (int)(sizeof points / sizeof points[0]));
+    SelectObject(device, pen);
+    SelectObject(device, brush);
+}
+
+static void draw_breadcrumb_label(HDC device, const char *_Nonnull text, RECT bounds, int inset)
+{
+    bounds.left += inset;
+    draw_utf8(device, text, bounds);
+}
+
+/* 色面と文字は既存の幅割当を共有し、右の操作領域へ出さない（ADR 0017）。 */
 static void draw_breadcrumb(const struct folio_window *_Nonnull self, HDC device, RECT caption)
 {
     struct pane_title_view title = folio_state_pane_title(self->state);
@@ -417,26 +472,31 @@ static void draw_breadcrumb(const struct folio_window *_Nonnull self, HDC device
     {
         return;
     }
-    UINT dpi = GetDpiForWindow(self->handle);
-    int gap = scale(base_caption_gap, dpi);
-    RECT cursor = caption;
-    cursor.left += draw_ordinal(device, title.ordinal, title.color, cursor) + gap;
-    int separator = measure_utf8(device, "/");
-    int category = measure_utf8(device, title.category);
-    int note = measure_utf8(device, title.note);
-    int budget = chip_rect(self, device, PANE_MODE_VIEW).left - gap * 3 - cursor.left - separator;
-    breadcrumb_room(budget < 0 ? 0 : budget, scale(base_breadcrumb_note, dpi), &category, &note);
-    SetTextColor(device, self->palette.header_text);
-    cursor.right = cursor.left + category;
-    draw_utf8(device, title.category, cursor);
-    cursor.left += category + gap;
-    SetTextColor(device, self->palette.border);
-    cursor.right = cursor.left + separator;
-    draw_utf8(device, "/", cursor);
-    cursor.left += separator + gap;
+    int saved = SaveDC(device);
+    if (saved == 0)
+    {
+        return;
+    }
+    struct breadcrumb_layout cells = breadcrumb_cells(self, device, title, caption);
+    int right = chip_rect(self, device, PANE_MODE_VIEW).left -
+                scale(base_caption_gap, GetDpiForWindow(self->handle));
+    IntersectClipRect(device, caption.left, caption.top, right, caption.bottom);
+    if (cells.category.right > cells.category.left)
+    {
+        draw_breadcrumb_segment(device, cells.category, cells.tip,
+                                self->palette.breadcrumb_background);
+        SetTextColor(device, self->palette.breadcrumb_text);
+        draw_breadcrumb_label(device, title.category, cells.category, cells.padding + cells.tip);
+    }
+    COLORREF color = RGB(title.color.red, title.color.green, title.color.blue);
+    draw_breadcrumb_segment(device, cells.ordinal, cells.tip, color);
+    SetTextColor(device, folio_palette_ink(color));
+    char digits[3];
+    ordinal_label(title.ordinal, digits);
+    draw_breadcrumb_label(device, digits, cells.ordinal, cells.padding);
     SetTextColor(device, self->palette.current_text);
-    cursor.right = cursor.left + note;
-    draw_utf8(device, title.note, cursor);
+    draw_breadcrumb_label(device, title.note, cells.note, cells.padding + cells.tip);
+    RestoreDC(device, saved);
 }
 
 /* 有効な側だけ面を塗り、無効な側は頭の文字色で描く（ADR 0006 の決定 7）。 */
@@ -708,13 +768,9 @@ static LRESULT hit_test(const struct folio_window *_Nonnull self, LPARAM lparam)
     return in_caption ? HTCAPTION : HTCLIENT;
 }
 
-/* 右ペインの地と頭を描く。本文は note_pane が持つ。 */
-static void paint_pane(struct folio_window *_Nonnull self)
+/* 右ペインの地と頭。本文は note_pane が持つ。 */
+static void draw_pane(const struct folio_window *_Nonnull self, HDC device, RECT client)
 {
-    PAINTSTRUCT painting;
-    HDC device = BeginPaint(self->handle, &painting);
-    RECT client;
-    GetClientRect(self->handle, &client);
     UINT dpi = GetDpiForWindow(self->handle);
     RECT pane = {scale(base_drawer_width, dpi), 0, client.right, client.bottom};
     HBRUSH brush = CreateSolidBrush(self->palette.pane);
@@ -728,6 +784,30 @@ static void paint_pane(struct folio_window *_Nonnull self)
     draw_chip(self, device, PANE_MODE_EDIT);
     draw_close(self, device);
     SetTextCharacterExtra(device, 0);
+}
+
+static void paint_pane(struct folio_window *_Nonnull self)
+{
+    PAINTSTRUCT painting;
+    HDC target = BeginPaint(self->handle, &painting);
+    RECT client;
+    GetClientRect(self->handle, &client);
+    HDC memory = CreateCompatibleDC(target);
+    HBITMAP surface =
+        memory == nullptr ? nullptr : CreateCompatibleBitmap(target, client.right, client.bottom);
+    if (surface != nullptr)
+    {
+        HGDIOBJ previous = SelectObject(memory, surface);
+        draw_pane(self, memory, client);
+        int left = scale(base_drawer_width, GetDpiForWindow(self->handle));
+        BitBlt(target, left, 0, client.right - left, client.bottom, memory, left, 0, SRCCOPY);
+        SelectObject(memory, previous);
+        DeleteObject(surface);
+    }
+    if (memory != nullptr)
+    {
+        DeleteDC(memory);
+    }
     EndPaint(self->handle, &painting);
 }
 

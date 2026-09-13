@@ -14,6 +14,7 @@
 | 順 | Issue | 成果 | 前提 |
 | --- | --- | --- | --- |
 | 1 | [#37](https://github.com/hideyukiMORI/nene-folio/issues/37) | 共通コマンド、INDEX の `:`、Ctrl+P、保存・安全な終了、閉じるアイコン | コマンド・フォーカス・保存の新 ADR |
+| 1 | [#45](https://github.com/hideyukiMORI/nene-folio/issues/45) | Powerline風パンくず（2026-09-13追加希望） | #37の上に積む。ADR 0017。色面と省略を同じ描画経路へ |
 | 2 | [#38](https://github.com/hideyukiMORI/nene-folio/issues/38) | 設定アイコンと画面、版付き設定、手動ライト／ダーク／OS、Ubuntu 風配色、日本語／English／简体中文 | #37。設定・翻訳・テーマ適用の新 ADR |
 | 2 | [#42](https://github.com/hideyukiMORI/nene-folio/issues/42) | Noto Sans JP / SC と欧文 sans の同梱・登録・表示・ライセンス | #38 と表示値・資産契約を共有。取得と資産検査は独立に進められる |
 | 3 | [#39](https://github.com/hideyukiMORI/nene-folio/issues/39) | 編集時の原文行番号、`:set number` / `:set nonumber`、パレットと設定の同一操作 | #37 / #38。論理行番号と折り返しを定義する ADR |

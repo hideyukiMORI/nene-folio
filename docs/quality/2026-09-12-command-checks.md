@@ -1,8 +1,8 @@
-# #37 実機確認の手順 — 未実施
+# #37 実機確認の手順と結果
 
 対象: `out/worktrees/37-commands/build/NeNeFolio.exe` と、その隣の `data/command-test/` の架空ノート2本だけ。`out/hide/` と実際のmdを検証に使わない。
 
-Computer Useのnative pipeが接続できないため、以下は確認手順であり結果ではない。実行時のexeのSHA-256、DPI、ウィンドウ寸法、各結果を記録する。
+以下の表は確認手順。実施した範囲は末尾の結果に分けて記録する。実行時のexeのSHA-256、DPI、ウィンドウ寸法、各結果を記録する。
 
 2026-09-13 13:44 JSTの再試行も、JavaScriptセッションのリセットと再初期化の前後とも
 `native pipe unavailable / os error 2` で失敗した。接続の復旧はhideへ依頼中。
@@ -28,3 +28,20 @@ Computer Useのnative pipeが接続できないため、以下は確認手順で
 | 寸法 | 最小560×360（96 DPI相当）と120/144 DPI以上で、×・札・パンくず・入力・候補・拒否文言が収まる |
 
 現在の自動テストが示すのはcore/applicationの動作とゲートの成功範囲。GUIの結果をそれらから推定して合格にしない。
+
+## 2026-09-13 hideによる手動確認
+
+Computer Use接続とは別に、通常のプロセス起動で`out/worktrees/45-powerline/build/NeNeFolio.exe`を開き、
+hideが操作した。#37の`f3a0800`を含む#45の`d01a623`のビルドで、共通コマンドの修正も含む。
+SHA-256: `C8AC62E9AAE1E351938255EE6BBBDC432DD1D3B69A18E1D750DE58A56ABD451C`。
+対象は新しく作った`build/data/command-test/dirty-check.md`と`save-check.md`の架空ノート。
+サナが画面を観察した結果ではなく、案内した以下の手順に対するhideの報告を記録する。
+
+| 番号 | 案内した操作 | hideの報告 |
+| --- | --- | --- |
+| 1 | 編集して追記し、Ctrl+P→Esc後も追記が残る | 14:18 JST「大丈夫そう」 |
+| 2 | 未保存でパレットの「終了」を選んで拒否を確認。Esc→Ctrl+S後、別ノートへ移って戻っても追記が残る | 14:18 JST「大丈夫そう」。その後終了したため同じexeを再起動 |
+| 3 | パレット入力欄で日本語の変換中にCtrl+Pを押しても入力が消えず、Enterで変換確定できる | 14:22 JST「オッケー」 |
+
+DPI、窓寸法、IME名・設定は未記録。上表以外の本文IME、Undo、未選択、未知コマンド、保存失敗、
+各終了入口の個別確認、高DPIを合格に読み替えない。パンくずの確認は[同日の結果](2026-09-13-powerline-checks.md)へ記録した。
