@@ -124,6 +124,11 @@ Waivers: none | WVR-NNNN
 
 ## 6. いまの状況
 
+2026-09-13 18:18 JST: hideの指示で日報/引き継ぎを保存して停止。#53はmain35d86afへ統合済み。
+#55の別名保存は7708802で全体ゲート成功、PR57はReadyだがGitHub障害でCI開始未確認・未統合。
+#56はout/worktrees/56-renameで設計/純粋中核のみ実装、2baa0d1で全体ゲート成功。実ファイル改名/GUIは未実装。
+最新の停止点はこの作業枝の[引き継ぎ](docs/handoffs/2026-09-13.md)と[日報](docs/reports/2026-09-13.md)。明示的な再開指示まで続行しない。
+
 現在のタスクは [docs/todo/current.md](docs/todo/current.md)。GitHub Issue が正で、そこは要約。
 
 2026-09-13: #37へINDEXの `?` とキーバインド説明を追加。パンくずのPowerline案は#45。
