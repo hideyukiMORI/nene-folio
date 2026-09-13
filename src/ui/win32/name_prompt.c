@@ -162,10 +162,13 @@ static bool initialize(struct name_prompt *_Nonnull prompt, HWND dialog)
     int height = bounds.bottom - bounds.top;
     MoveWindow(dialog, (owner.left + owner.right - width) / 2,
                (owner.top + owner.bottom - height) / 2, width, height, FALSE);
-    SetWindowTextW(dialog, L"名前をつけて保存");
+    bool named = folio_state_document_kind(prompt->state) == FOLIO_DOCUMENT_NAMED;
+    SetWindowTextW(dialog, named ? L"別名で保存" : L"名前をつけて保存");
+    const wchar_t *_Nonnull hint =
+        named ? L"元の保存内容を保ち、別の .md を作ります。" : L"名前の末尾に .md を補います。";
     return inputs(prompt) && label(prompt, L"ノートの名前", (RECT){20, 20, 380, 42}) &&
            label(prompt, L"保存先カテゴリ", (RECT){20, 82, 380, 104}) &&
-           label(prompt, L"名前の末尾に .md を補います。", (RECT){20, 144, 380, 166}) &&
+           label(prompt, hint, (RECT){20, 144, 380, 166}) &&
            button(prompt, L"保存", IDOK, (RECT){192, 230, 280, 258}) &&
            button(prompt, L"キャンセル", IDCANCEL, (RECT){288, 230, 380, 258});
 }

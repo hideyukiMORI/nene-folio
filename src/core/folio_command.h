@@ -15,7 +15,8 @@ enum folio_command : unsigned char
     FOLIO_COMMAND_HELP,
     FOLIO_COMMAND_EDIT,
     FOLIO_COMMAND_VIEW,
-    FOLIO_COMMAND_NEW
+    FOLIO_COMMAND_NEW,
+    FOLIO_COMMAND_SAVE_AS
 };
 
 [[nodiscard]] size_t folio_command_count(void);
@@ -27,7 +28,7 @@ enum folio_command : unsigned char
 [[nodiscard]] size_t folio_command_alias_count(enum folio_command command);
 /* index は 0 <= index < folio_command_alias_count(command)。 */
 [[nodiscard]] const char *_Nonnull folio_command_alias(enum folio_command command, size_t index);
-/* 登録表の別名を解釈。SAVEだけ名前引数を許し、その開始位置を返す。無しならlength。
+/* 登録表の別名を解釈。SAVE/SAVE_ASだけ名前引数を許し、その開始位置を返す。無しならlength。
  * 名前の途中/末尾の空白は保持し、名前型で検証する（ADR0020）。 */
 [[nodiscard]] bool folio_command_parse(const char *_Nonnull text, size_t length,
                                        enum folio_command *_Nonnull out, size_t *_Nonnull argument);
