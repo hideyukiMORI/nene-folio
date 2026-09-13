@@ -7,7 +7,9 @@ static void expect_command(const char *_Nonnull text, enum folio_command expecte
                            const char *_Nonnull description)
 {
     enum folio_command command = FOLIO_COMMAND_HELP;
-    require(folio_command_parse(text, strlen(text), &command) && command == expected, description);
+    size_t argument = 0;
+    require(folio_command_parse(text, strlen(text), &command, &argument) && command == expected,
+            description);
 }
 
 static void verify_aliases(void)
@@ -22,6 +24,7 @@ static void verify_aliases(void)
     expect_command(":help", FOLIO_COMMAND_HELP, ":help");
     expect_command(":h", FOLIO_COMMAND_HELP, ":h uses the same help command");
     expect_command(":startinsert", FOLIO_COMMAND_EDIT, "startinsert begins editing");
+    expect_command(":enew", FOLIO_COMMAND_NEW, "enew creates an untitled note");
 }
 
 static void verify_rejections(void)
@@ -30,7 +33,7 @@ static void verify_rejections(void)
                                            ":",
                                            "W",
                                            "quit!",
-                                           "w now",
+                                           "enew now",
                                            "unknown",
                                            ":e",
                                            ":edit",
@@ -40,17 +43,18 @@ static void verify_rejections(void)
     for (size_t index = 0; index < sizeof rejected / sizeof rejected[0]; ++index)
     {
         enum folio_command command = FOLIO_COMMAND_HELP;
-        require(!folio_command_parse(rejected[index], strlen(rejected[index]), &command),
+        size_t argument = 0;
+        require(!folio_command_parse(rejected[index], strlen(rejected[index]), &command, &argument),
                 "invalid Ex input is rejected");
     }
 }
 
 static void verify_catalog(void)
 {
-    require(folio_command_count() == 7, "only implemented commands are registered");
+    require(folio_command_count() == 8, "only implemented commands are registered");
     const enum folio_command expected[] = {
         FOLIO_COMMAND_SAVE, FOLIO_COMMAND_QUIT, FOLIO_COMMAND_SAVE_QUIT, FOLIO_COMMAND_FORCE_QUIT,
-        FOLIO_COMMAND_HELP, FOLIO_COMMAND_EDIT, FOLIO_COMMAND_VIEW};
+        FOLIO_COMMAND_HELP, FOLIO_COMMAND_EDIT, FOLIO_COMMAND_VIEW,      FOLIO_COMMAND_NEW};
     for (size_t index = 0; index < folio_command_count(); ++index)
     {
         enum folio_command command = folio_command_at(index);
@@ -59,8 +63,10 @@ static void verify_catalog(void)
         for (size_t alias = 0; alias < folio_command_alias_count(command); ++alias)
         {
             enum folio_command parsed = FOLIO_COMMAND_HELP;
+            size_t argument = 0;
             const char *_Nonnull name = folio_command_alias(command, alias);
-            require(folio_command_parse(name, strlen(name), &parsed) && parsed == command,
+            require(folio_command_parse(name, strlen(name), &parsed, &argument) &&
+                        parsed == command,
                     "every catalog alias parses to its command");
         }
     }

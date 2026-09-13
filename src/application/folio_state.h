@@ -6,10 +6,12 @@
 
 #include "drawer_metrics.h"
 #include "folio_cursor_kind.h"
+#include "folio_document_kind.h"
 #include "folio_note_change.h"
 #include "folio_state_outcome.h"
 #include "folio_step.h"
 #include "folio_theme.h"
+#include "note_destination.h"
 #include "note_ref.h"
 #include "pane_mode.h"
 #include "pane_title_view.h"
@@ -92,10 +94,11 @@ folio_state_move_note(struct folio_state *_Nonnull state, struct note_ref from, 
 [[nodiscard]] enum folio_state_outcome
 folio_state_select_adjacent(struct folio_state *_Nonnull state, enum folio_step step);
 /* 歩みの行き先の種類（ADR 0015 の決定 2）。行き先が無ければ（端・止まる行が無い）false で
- * kind は触らない。状態は変えないので、UI は保存の要否をこれで決められる。 */
+ * kindとoutは触らない。UIは保存前に行き先を写し、保存でカーソルが動いても同じ対象へ進む。 */
 [[nodiscard]] bool folio_state_step_kind(const struct folio_state *_Nonnull state,
                                          enum folio_step step,
-                                         enum folio_cursor_kind *_Nonnull kind);
+                                         enum folio_cursor_kind *_Nonnull kind,
+                                         struct note_ref *_Nonnull out);
 /* 索引のカーソル。無ければ false で kind も out も触らない。
  * FOLIO_CURSOR_CATEGORY のとき out->note は使わない（カテゴリ行に止まっている）。 */
 [[nodiscard]] bool folio_state_cursor(const struct folio_state *_Nonnull state,
@@ -106,6 +109,23 @@ folio_state_select_adjacent(struct folio_state *_Nonnull state, enum folio_step 
                                          struct note_ref *_Nonnull out);
 /* 編集モードへ入る（FR-006）。ノートを選んでいなければ NOTHING_SELECTED。 */
 [[nodiscard]] enum folio_state_outcome folio_state_begin_edit(struct folio_state *_Nonnull state);
+/* 現在文書の種類。無題は索引に存在しない（ADR0020）。 */
+[[nodiscard]] enum folio_document_kind
+folio_state_document_kind(const struct folio_state *_Nonnull state);
+[[nodiscard]] size_t folio_state_category_count(const struct folio_state *_Nonnull state);
+[[nodiscard]] const char *_Nonnull folio_state_category_name(
+    const struct folio_state *_Nonnull state, size_t category);
+/* カーソル→現在文書→最初のカテゴリ。カテゴリ0件なら0で、new_noteが拒否する。 */
+[[nodiscard]] size_t folio_state_current_category(const struct folio_state *_Nonnull state);
+/* 現在文書の保存先。NONEのときは呼ばない。 */
+[[nodiscard]] size_t folio_state_document_category(const struct folio_state *_Nonnull state);
+/* 現在本文の保存後にUIが呼ぶ。既に無題ならNAME_REQUIREDで本文を保護する。 */
+[[nodiscard]] enum folio_state_outcome folio_state_new_note(struct folio_state *_Nonnull state,
+                                                            size_t category);
+[[nodiscard]] enum folio_state_outcome
+folio_state_store_new(struct folio_state *_Nonnull state,
+                      const struct note_destination *_Nonnull destination,
+                      const char16_t *_Nonnull units, size_t count);
 /* 編集中の本文（UTF-16 の単位列）を保存し、編集モードのまま残る（Ctrl+S）。
  * 読んだ本文と同じなら書かない。書き戻せなければ状態は変えない（ADR 0006）。 */
 [[nodiscard]] enum folio_state_outcome folio_state_store_note(struct folio_state *_Nonnull state,

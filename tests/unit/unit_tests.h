@@ -18,6 +18,7 @@ void run_state_tests(void);
 void run_allocation_tests(void);
 void run_markdown_tests(void);
 void run_command_tests(void);
+void run_note_name_tests(void);
 
 /* state_tests のポート実装（偽のアダプタ）。台帳の文書を返し、書き戻しは受け入れる。
  * folio_state はポートの adapter を借りるので、state より長く生かしてから test_adapter_destroy

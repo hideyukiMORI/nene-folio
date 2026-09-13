@@ -19,7 +19,11 @@ enum folio_state_outcome : unsigned char
     FOLIO_STATE_UNSAVED_CHANGES,   /* :q は未保存の変更を破棄せず、終了を拒否した（ADR 0016） */
     FOLIO_STATE_NAME_TAKEN,   /* 移動先に同じ名前のノートがある。ファイルも索引も変えていない */
     FOLIO_STATE_LEDGER_STALE, /* md は移したが index.json を書けなかった。次回の起動で揃う */
-    FOLIO_STATE_OUT_OF_MEMORY
+    FOLIO_STATE_OUT_OF_MEMORY,
+    FOLIO_STATE_NAME_REQUIRED,
+    FOLIO_STATE_INVALID_NAME,
+    FOLIO_STATE_ALREADY_NAMED,
+    FOLIO_STATE_CANCELLED
 };
 
 #endif

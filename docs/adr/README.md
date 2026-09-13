@@ -35,3 +35,4 @@ ADR は「なぜそう決めたか」「何を却下したか」を書く。
 | [0017](0017-powerline-breadcrumb.md) | パンくずをPowerline風の連続した色面で描く | 受理 |
 | [0018](0018-japanese-operation-entry-points.md) | 日本語GUI・ヘルプ・閲覧からの編集開始を共通操作へ接続する | 受理 |
 | [0019](0019-editor-caret-accelerators.md) | 編集本文のCtrl＋hjklをRichEdit自身の移動へ結ぶ | 受理 |
+| [0020](0020-untitled-note-and-first-save.md) | 無題の本文を保持し、初回保存だけ新しいmdを公開する | 受理 |

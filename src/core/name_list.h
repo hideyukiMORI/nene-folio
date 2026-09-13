@@ -1,6 +1,7 @@
 /* カテゴリ名・ノート名の順序付き集合。名前の規則はここで 1 度だけ検証する（ARC-008 / C-007）。
  * 規則: 1〜name_list_max_length バイトの妥当な UTF-8、制御文字と \ / : * ? " < > | を含まず、
  * "." と ".." ではなく、末尾が空白や "." ではない（Windows のファイル名として成立する範囲）。
+ * Windows予約デバイス名（拡張子付きとCOM/LPTの上付き数字も含む）を拒否する。
  * 同じ名前は 2 度入らない。 */
 #ifndef NENEFOLIO_NAME_LIST_H
 #define NENEFOLIO_NAME_LIST_H

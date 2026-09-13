@@ -6,6 +6,7 @@
 #include "markdown_rtf.h"
 #include "name_list.h"
 #include "note_ledger.h"
+#include "note_name.h"
 #include "note_text.h"
 #include "persistence_port.h"
 #include "rtf_palette.h"
@@ -25,10 +26,12 @@ struct folio_state
     struct markdown_rtf *_Nullable pane; /* 選択中のノートの表示値。無ければ空の文書 */
     struct note_text *_Nullable body;    /* 最後に読んだ本文。何も選んでいなければ空 */
     enum pane_mode mode;
-    int scroll;    /* ドロワーのスクロール量（要求量・画素・0 以上）。上限は core が決める */
-    bool selected; /* ノートを選んでいるか */
+    int scroll; /* ドロワーのスクロール量（要求量・画素・0 以上）。上限は core が決める */
+    enum folio_document_kind document;
     size_t selected_category;
     size_t selected_note;
+    bool index_pending; /* 初回作成後に同期できなかった台帳。次の保存・変更前に再試行 */
+    size_t pending_category;
     bool cursor_any; /* 索引のカーソルがあるか（ADR 0015 の決定 1） */
     enum folio_cursor_kind cursor_kind;
     size_t cursor_category; /* FOLIO_CURSOR_CATEGORY のときのカテゴリ番号 */
@@ -51,8 +54,27 @@ static enum folio_state_outcome translate(enum persistence_outcome outcome)
         return FOLIO_STATE_STORE_FAILED;
     case PERSISTENCE_OUT_OF_MEMORY:
         return FOLIO_STATE_OUT_OF_MEMORY;
+    case PERSISTENCE_NAME_TAKEN:
+        return FOLIO_STATE_NAME_TAKEN;
     }
     return FOLIO_STATE_DATA_UNREADABLE;
+}
+
+static enum folio_state_outcome synchronize_index(struct folio_state *_Nonnull state)
+{
+    if (!state->index_pending)
+    {
+        return FOLIO_STATE_READY;
+    }
+    enum persistence_outcome stored = state->port.write_note_ledger(
+        state->port.adapter, category_ledger_name(state->categories, state->pending_category),
+        state->notes[state->pending_category]);
+    if (stored != PERSISTENCE_STORED)
+    {
+        return FOLIO_STATE_LEDGER_STALE;
+    }
+    state->index_pending = false;
+    return FOLIO_STATE_READY;
 }
 
 static enum folio_state_outcome from_category_ledger(enum category_ledger_outcome outcome)
@@ -296,7 +318,8 @@ enum folio_state_outcome folio_state_drawer_layout(const struct folio_state *_No
     struct note_ref selection = located(state->selected_category, state->selected_note);
     struct drawer_cursor cursor = on_note(0, 0);
     bool any = current_cursor(state, &cursor);
-    drawer_layout_mark(*out, state->selected ? &selection : nullptr, any ? &cursor : nullptr);
+    drawer_layout_mark(*out, state->document == FOLIO_DOCUMENT_NAMED ? &selection : nullptr,
+                       any ? &cursor : nullptr);
     drawer_layout_scroll(*out, state->scroll);
     return FOLIO_STATE_READY;
 }
@@ -363,6 +386,12 @@ size_t folio_state_note_count(const struct folio_state *_Nonnull state)
 enum folio_state_outcome folio_state_toggle_category(struct folio_state *_Nonnull state,
                                                      size_t index)
 {
+    enum folio_state_outcome synced = synchronize_index(state);
+    if (synced != FOLIO_STATE_READY)
+    {
+        return synced;
+    }
+
     if (index >= category_ledger_count(state->categories))
     {
         return FOLIO_STATE_NO_SUCH_CATEGORY;
@@ -390,7 +419,7 @@ enum folio_state_outcome folio_state_toggle_category(struct folio_state *_Nonnul
  * 無ければ最初のノート（右ペインが変わる）、ノートが 0 本なら行に留まる。 */
 static enum folio_state_outcome cursor_into(struct folio_state *_Nonnull state, size_t index)
 {
-    if (state->selected && state->selected_category == index)
+    if (state->document == FOLIO_DOCUMENT_NAMED && state->selected_category == index)
     {
         cursor_to_selection(state);
         return FOLIO_STATE_READY;
@@ -422,6 +451,12 @@ static enum folio_state_outcome cursor_after_expanded(struct folio_state *_Nonnu
 enum folio_state_outcome folio_state_set_category_expanded(struct folio_state *_Nonnull state,
                                                            size_t index, bool expanded)
 {
+    enum folio_state_outcome synced = synchronize_index(state);
+    if (synced != FOLIO_STATE_READY)
+    {
+        return synced;
+    }
+
     if (index >= category_ledger_count(state->categories))
     {
         return FOLIO_STATE_NO_SUCH_CATEGORY;
@@ -447,6 +482,12 @@ static bool same_color(struct rgb_color left, struct rgb_color right)
 enum folio_state_outcome folio_state_recolor_category(struct folio_state *_Nonnull state,
                                                       size_t index, struct rgb_color color)
 {
+    enum folio_state_outcome synced = synchronize_index(state);
+    if (synced != FOLIO_STATE_READY)
+    {
+        return synced;
+    }
+
     if (index >= category_ledger_count(state->categories))
     {
         return FOLIO_STATE_NO_SUCH_CATEGORY;
@@ -509,6 +550,12 @@ static void move_notes(struct note_ledger *_Nonnull *_Nonnull items, size_t from
 enum folio_state_outcome folio_state_move_category(struct folio_state *_Nonnull state, size_t from,
                                                    size_t to)
 {
+    enum folio_state_outcome synced = synchronize_index(state);
+    if (synced != FOLIO_STATE_READY)
+    {
+        return synced;
+    }
+
     size_t count = category_ledger_count(state->categories);
     if (from >= count || to >= count)
     {
@@ -534,7 +581,7 @@ enum folio_state_outcome folio_state_move_category(struct folio_state *_Nonnull 
     category_ledger_destroy(state->categories);
     state->categories = moved;
     move_notes(state->notes, from, to);
-    if (state->selected)
+    if (state->document != FOLIO_DOCUMENT_NONE)
     {
         state->selected_category = moved_index(from, to, state->selected_category);
     }
@@ -566,7 +613,7 @@ static enum folio_state_outcome store_notes(struct folio_state *_Nonnull state, 
     }
     note_ledger_destroy(state->notes[category]);
     state->notes[category] = moved;
-    if (state->selected && state->selected_category == category)
+    if (state->document == FOLIO_DOCUMENT_NAMED && state->selected_category == category)
     {
         state->selected_note = moved_index(from, to, state->selected_note);
     }
@@ -620,7 +667,7 @@ static enum folio_state_outcome transfer_allowed(const struct folio_state *_Nonn
 static void renumber_selection(struct folio_state *_Nonnull state, struct note_ref from,
                                struct note_ref to)
 {
-    if (!state->selected)
+    if (state->document != FOLIO_DOCUMENT_NAMED)
     {
         return;
     }
@@ -715,6 +762,12 @@ static enum folio_state_outcome transfer_note(struct folio_state *_Nonnull state
 enum folio_state_outcome folio_state_move_note(struct folio_state *_Nonnull state,
                                                struct note_ref from, struct note_ref to)
 {
+    enum folio_state_outcome synced = synchronize_index(state);
+    if (synced != FOLIO_STATE_READY)
+    {
+        return synced;
+    }
+
     size_t count = category_ledger_count(state->categories);
     if (from.category >= count || to.category >= count)
     {
@@ -760,6 +813,17 @@ static enum folio_state_outcome render_note(struct folio_state *_Nonnull state,
 enum folio_state_outcome folio_state_select_note(struct folio_state *_Nonnull state,
                                                  size_t category, size_t note)
 {
+    if (state->document == FOLIO_DOCUMENT_UNTITLED)
+    {
+        return FOLIO_STATE_NAME_REQUIRED;
+    }
+
+    enum folio_state_outcome synced = synchronize_index(state);
+    if (synced != FOLIO_STATE_READY)
+    {
+        return synced;
+    }
+
     if (category >= category_ledger_count(state->categories))
     {
         return FOLIO_STATE_NO_SUCH_CATEGORY;
@@ -773,7 +837,7 @@ enum folio_state_outcome folio_state_select_note(struct folio_state *_Nonnull st
                     note_ledger_name(state->notes[category], note));
     if (outcome == FOLIO_STATE_READY)
     {
-        state->selected = true;
+        state->document = FOLIO_DOCUMENT_NAMED;
         state->selected_category = category;
         state->selected_note = note;
         cursor_to_selection(state);
@@ -923,7 +987,7 @@ static bool stepped_to(const struct folio_state *_Nonnull state, enum folio_step
 static enum folio_state_outcome stepped_to_note(struct folio_state *_Nonnull state,
                                                 struct note_ref target)
 {
-    if (state->selected && state->selected_category == target.category &&
+    if (state->document == FOLIO_DOCUMENT_NAMED && state->selected_category == target.category &&
         state->selected_note == target.note)
     {
         cursor_to_selection(state);
@@ -959,7 +1023,7 @@ enum folio_state_outcome folio_state_select_adjacent(struct folio_state *_Nonnul
 }
 
 bool folio_state_step_kind(const struct folio_state *_Nonnull state, enum folio_step step,
-                           enum folio_cursor_kind *_Nonnull kind)
+                           enum folio_cursor_kind *_Nonnull kind, struct note_ref *_Nonnull out)
 {
     struct drawer_cursor target = on_note(0, 0);
     if (!stepped_to(state, step, &target))
@@ -967,6 +1031,7 @@ bool folio_state_step_kind(const struct folio_state *_Nonnull state, enum folio_
         return false;
     }
     *kind = kind_of(target);
+    *out = target.ref;
     return true;
 }
 
@@ -985,7 +1050,7 @@ bool folio_state_cursor(const struct folio_state *_Nonnull state,
 
 bool folio_state_selection(const struct folio_state *_Nonnull state, struct note_ref *_Nonnull out)
 {
-    if (!state->selected)
+    if (state->document != FOLIO_DOCUMENT_NAMED)
     {
         return false;
     }
@@ -995,11 +1060,77 @@ bool folio_state_selection(const struct folio_state *_Nonnull state, struct note
 
 enum folio_state_outcome folio_state_begin_edit(struct folio_state *_Nonnull state)
 {
-    if (!state->selected)
+    if (state->document == FOLIO_DOCUMENT_NONE)
     {
         return FOLIO_STATE_NOTHING_SELECTED;
     }
     state->mode = PANE_MODE_EDIT;
+    return FOLIO_STATE_READY;
+}
+
+enum folio_document_kind folio_state_document_kind(const struct folio_state *_Nonnull state)
+{
+    return state->document;
+}
+
+size_t folio_state_category_count(const struct folio_state *_Nonnull state)
+{
+    return category_ledger_count(state->categories);
+}
+
+size_t folio_state_document_category(const struct folio_state *_Nonnull state)
+{
+    return state->selected_category;
+}
+
+const char *_Nonnull folio_state_category_name(const struct folio_state *_Nonnull state,
+                                               size_t category)
+{
+    return category_ledger_name(state->categories, category);
+}
+
+size_t folio_state_current_category(const struct folio_state *_Nonnull state)
+{
+    struct drawer_cursor cursor = {0};
+    if (current_cursor(state, &cursor))
+    {
+        return cursor.ref.category;
+    }
+    return state->document == FOLIO_DOCUMENT_NONE ? 0 : state->selected_category;
+}
+
+enum folio_state_outcome folio_state_new_note(struct folio_state *_Nonnull state, size_t category)
+{
+    if (state->document == FOLIO_DOCUMENT_UNTITLED)
+    {
+        return FOLIO_STATE_NAME_REQUIRED;
+    }
+    enum folio_state_outcome synced = synchronize_index(state);
+    if (synced != FOLIO_STATE_READY)
+    {
+        return synced;
+    }
+    if (category >= folio_state_category_count(state))
+    {
+        return FOLIO_STATE_NO_SUCH_CATEGORY;
+    }
+    struct note_text *_Nullable body = nullptr;
+    struct markdown_rtf *_Nullable pane = nullptr;
+    if (note_text_create("", 0, &body) != NOTE_TEXT_ACCEPTED ||
+        markdown_rtf_empty(state->palette, &pane) != MARKDOWN_RTF_CONVERTED)
+    {
+        note_text_destroy(body);
+        markdown_rtf_destroy(pane);
+        return FOLIO_STATE_OUT_OF_MEMORY;
+    }
+    note_text_destroy(state->body);
+    markdown_rtf_destroy(state->pane);
+    state->body = body;
+    state->pane = pane;
+    state->document = FOLIO_DOCUMENT_UNTITLED;
+    state->selected_category = category;
+    state->mode = PANE_MODE_EDIT;
+    state->cursor_any = false;
     return FOLIO_STATE_READY;
 }
 
@@ -1088,6 +1219,15 @@ static enum folio_state_outcome edited_text(const struct folio_state *_Nonnull s
 static enum folio_state_outcome save_note(struct folio_state *_Nonnull state,
                                           const char16_t *_Nonnull units, size_t count)
 {
+    if (state->document == FOLIO_DOCUMENT_UNTITLED)
+    {
+        return FOLIO_STATE_NAME_REQUIRED;
+    }
+    enum folio_state_outcome synced = synchronize_index(state);
+    if (synced != FOLIO_STATE_READY)
+    {
+        return synced;
+    }
     struct note_text *_Nullable edited = nullptr;
     enum folio_state_outcome outcome = edited_text(state, units, count, &edited);
     if (outcome != FOLIO_STATE_READY)
@@ -1095,6 +1235,86 @@ static enum folio_state_outcome save_note(struct folio_state *_Nonnull state,
         return outcome;
     }
     return store_edited(state, edited);
+}
+
+/* 副作用より先にすべてを確保。mdが公開された後は確保せず、表示をファイルへ揃える。 */
+static enum folio_state_outcome create_edited(struct folio_state *_Nonnull state,
+                                              const struct note_destination *_Nonnull destination,
+                                              struct note_text *_Nonnull edited)
+{
+    size_t category = destination->category;
+    const char *_Nonnull name = note_name_stem(destination->name);
+    struct note_ledger *_Nullable ledger = nullptr;
+    struct markdown_rtf *_Nullable rendered = nullptr;
+    size_t index = note_ledger_count(state->notes[category]);
+    enum folio_state_outcome prepared =
+        from_note_ledger(note_ledger_inserted(state->notes[category], index, name, &ledger));
+    if (prepared == FOLIO_STATE_READY &&
+        markdown_rtf_create(edited, state->palette, &rendered) != MARKDOWN_RTF_CONVERTED)
+    {
+        prepared = FOLIO_STATE_OUT_OF_MEMORY;
+    }
+    enum persistence_outcome stored = PERSISTENCE_UNWRITABLE;
+    if (prepared == FOLIO_STATE_READY)
+    {
+        stored = state->port.create_note(
+            state->port.adapter, category_ledger_name(state->categories, category), name, edited);
+    }
+    if (stored != PERSISTENCE_STORED)
+    {
+        note_ledger_destroy(ledger);
+        markdown_rtf_destroy(rendered);
+        note_text_destroy(edited);
+        return prepared != FOLIO_STATE_READY
+                   ? prepared
+                   : (stored == PERSISTENCE_UNWRITABLE ? FOLIO_STATE_NOTE_STORE_FAILED
+                                                       : translate(stored));
+    }
+    note_ledger_destroy(state->notes[category]);
+    state->notes[category] = ledger;
+    markdown_rtf_destroy(state->pane);
+    state->pane = rendered;
+    note_text_destroy(state->body);
+    state->body = edited;
+    state->document = FOLIO_DOCUMENT_NAMED;
+    state->selected_category = category;
+    state->selected_note = index;
+    if (!state->cursor_any)
+    {
+        cursor_to_selection(state);
+    }
+    state->index_pending = true;
+    state->pending_category = category;
+    return synchronize_index(state);
+}
+
+enum folio_state_outcome folio_state_store_new(struct folio_state *_Nonnull state,
+                                               const struct note_destination *_Nonnull destination,
+                                               const char16_t *_Nonnull units, size_t count)
+{
+    if (state->document == FOLIO_DOCUMENT_NONE)
+    {
+        return FOLIO_STATE_NOTHING_SELECTED;
+    }
+    if (state->document == FOLIO_DOCUMENT_NAMED)
+    {
+        return FOLIO_STATE_ALREADY_NAMED;
+    }
+    if (destination->category >= folio_state_category_count(state))
+    {
+        return FOLIO_STATE_NO_SUCH_CATEGORY;
+    }
+    if (holds_name(state->notes[destination->category], note_name_stem(destination->name)))
+    {
+        return FOLIO_STATE_NAME_TAKEN;
+    }
+    struct note_text *_Nullable edited = nullptr;
+    enum folio_state_outcome converted = edited_text(state, units, count, &edited);
+    if (converted != FOLIO_STATE_READY)
+    {
+        return converted;
+    }
+    return create_edited(state, destination, edited);
 }
 
 enum folio_state_outcome folio_state_store_note(struct folio_state *_Nonnull state,
@@ -1107,6 +1327,15 @@ enum folio_state_outcome folio_state_note_changed(const struct folio_state *_Non
                                                   const char16_t *_Nonnull units, size_t count,
                                                   enum folio_note_change *_Nonnull out)
 {
+    if (state->index_pending)
+    {
+        return FOLIO_STATE_LEDGER_STALE;
+    }
+    if (state->document == FOLIO_DOCUMENT_UNTITLED)
+    {
+        *out = FOLIO_NOTE_CHANGED;
+        return FOLIO_STATE_READY;
+    }
     struct note_text *_Nullable edited = nullptr;
     enum folio_state_outcome outcome = edited_text(state, units, count, &edited);
     if (outcome != FOLIO_STATE_READY)
@@ -1148,14 +1377,17 @@ struct pane_title_view folio_state_pane_title(const struct folio_state *_Nonnull
 {
     struct pane_title_view title = {
         .any = false, .ordinal = 0, .category = "", .note = "", .color = {0, 0, 0}};
-    if (!state->selected)
+    if (state->document == FOLIO_DOCUMENT_NONE)
     {
         return title;
     }
     title.any = true;
     title.ordinal = state->selected_category + 1;
     title.category = category_ledger_name(state->categories, state->selected_category);
-    title.note = note_ledger_name(state->notes[state->selected_category], state->selected_note);
+    title.note =
+        state->document == FOLIO_DOCUMENT_UNTITLED
+            ? "無題（未保存）"
+            : note_ledger_name(state->notes[state->selected_category], state->selected_note);
     title.color = category_ledger_color(state->categories, state->selected_category);
     return title;
 }
@@ -1202,12 +1434,23 @@ const char *_Nonnull folio_state_failure_line(enum folio_state_outcome outcome)
     case FOLIO_STATE_UNSAVED_CHANGES:
         return "未保存の変更があります。保存するか、未保存変更を破棄して終了してください。";
     case FOLIO_STATE_NAME_TAKEN:
-        return "移動先に同じ名前のノートがあります。移していません。";
+        return "同じ名前のノートがあります。別の名前を指定してください。既存ファイルは変更していま"
+               "せん。";
     case FOLIO_STATE_LEDGER_STALE:
-        return "ノートは移しましたが、台帳（index.json）を書き戻せませんでした。次回の起動で揃い"
-               "ます。";
+        return "mdは反映しましたが、台帳（index."
+               "json）を書き戻せませんでした。保存を再試行するか、次回の起動で揃います。";
     case FOLIO_STATE_OUT_OF_MEMORY:
         return "記憶域が足りません。";
+    case FOLIO_STATE_NAME_REQUIRED:
+        return "無題のノートに名前をつけて保存してください。本文は残っています。";
+    case FOLIO_STATE_INVALID_NAME:
+        return "使えない名前です。予約名・末尾の空白やピリオド・区切りを避け、."
+               "mdを含め255バイト以内で指定してください。";
+    case FOLIO_STATE_ALREADY_NAMED:
+        return "このノートには名前があります。別名保存（:saveas）または名前変更（:"
+               "rename）を使ってください。";
+    case FOLIO_STATE_CANCELLED:
+        return "";
     }
     return "data/ を読めませんでした。";
 }

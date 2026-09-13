@@ -10,6 +10,8 @@
 #include "folio_palette.h"
 #include "folio_state.h"
 #include "folio_step.h"
+#include "name_prompt.h"
+#include "note_name.h"
 #include "note_pane.h"
 #include "note_ref.h"
 #include "utf16_text.h"
@@ -55,7 +57,7 @@ static const char *_Nonnull const command_shortcuts[] = {
     "一覧  ↑↓ 選択 / Enter 実行 / Esc 戻る / Tab 説明",
     "編集本文  Ctrl+h/j/k/l ←/↓/↑/→",
     "全区画  F1 ヘルプ / Ctrl+P 一覧",
-    "索引・本文  Ctrl+S 保存",
+    "Ctrl+N 新しいノート / Ctrl+S 保存",
     "索引・閲覧本文  : コマンド / i 編集",
     "索引  ? ヘルプ（検索の追加まで）",
     "索引  j/k 次/前 / gg/G 先頭/末尾",
@@ -67,6 +69,7 @@ static const char *_Nonnull const command_shortcuts[] = {
 /* Ctrl+S が WM_CHAR で届く制御文字（GetKeyState を読まない・ARC-007）。 */
 constexpr WPARAM store_character = 0x13;
 constexpr WPARAM palette_character = 0x10;
+constexpr WPARAM new_character = 0x0E;
 constexpr int command_control_id = 1;
 constexpr size_t command_input_capacity = 256;
 
@@ -80,7 +83,6 @@ constexpr int base_min_height = 360;
 constexpr int base_drawer_width = 240;
 constexpr int base_caption_height = 44; /* 右ペインの頭。窓を掴んで動かせる帯 */
 constexpr int base_action_height = 36;
-constexpr int base_action_width = 64;
 constexpr int base_caption_indent = 36;
 constexpr int base_caption_gap = 14;
 constexpr int base_pane_left = 36;
@@ -126,7 +128,9 @@ constexpr DWORD attribute_corner_preference = 33;
 constexpr DWORD attribute_border_color = 34;
 constexpr DWORD corner_round_small = 3;
 
-static void execute_command(struct folio_window *_Nonnull self, enum folio_command command);
+static void execute_command(struct folio_window *_Nonnull self, enum folio_command command,
+                            const char *_Nonnull argument);
+static enum folio_state_outcome store_body(const struct folio_window *_Nonnull self);
 static void close_command_surface(struct folio_window *_Nonnull self);
 static void show_command_palette(struct folio_window *_Nonnull self);
 static void move_command_selection(struct folio_window *_Nonnull self, WPARAM key);
@@ -879,16 +883,12 @@ static LRESULT hit_test(const struct folio_window *_Nonnull self, LPARAM lparam)
 
 static RECT action_button_rect(const struct folio_window *_Nonnull self, size_t index)
 {
-    RECT client;
-    GetClientRect(self->handle, &client);
     UINT dpi = GetDpiForWindow(self->handle);
-    int left = scale(base_drawer_width + 16, dpi) + (int)index * scale(base_action_width + 8, dpi);
-    if (index == 2)
-    {
-        left = client.right - scale(16 + base_action_width, dpi);
-    }
+    const int offsets[] = {0, 110, 168, 226};
+    const int widths[] = {104, 52, 52, 70};
+    int left = scale(base_drawer_width + 8 + offsets[index], dpi);
     int top = scale(base_caption_height + 4, dpi);
-    return (RECT){left, top, left + scale(base_action_width, dpi), top + scale(28, dpi)};
+    return (RECT){left, top, left + scale(widths[index], dpi), top + scale(28, dpi)};
 }
 
 static void draw_action_button(const struct folio_window *_Nonnull self, HDC device, RECT bounds,
@@ -905,9 +905,11 @@ static void draw_action_button(const struct folio_window *_Nonnull self, HDC dev
 static void draw_actions(const struct folio_window *_Nonnull self, HDC device)
 {
     draw_action_button(self, device, action_button_rect(self, 0),
+                       folio_command_label(FOLIO_COMMAND_NEW));
+    draw_action_button(self, device, action_button_rect(self, 1),
                        folio_command_label(FOLIO_COMMAND_SAVE));
-    draw_action_button(self, device, action_button_rect(self, 1), "操作 ▾");
-    draw_action_button(self, device, action_button_rect(self, 2),
+    draw_action_button(self, device, action_button_rect(self, 2), "操作 ▾");
+    draw_action_button(self, device, action_button_rect(self, 3),
                        folio_command_label(FOLIO_COMMAND_HELP));
 }
 
@@ -1053,6 +1055,14 @@ static enum folio_state_outcome flush_edit(struct folio_window *_Nonnull self)
     {
         return FOLIO_STATE_READY;
     }
+    if (folio_state_document_kind(self->state) == FOLIO_DOCUMENT_UNTITLED)
+    {
+        enum folio_state_outcome saved = store_body(self);
+        if (saved != FOLIO_STATE_READY)
+        {
+            return saved;
+        }
+    }
     const char16_t *units = u"";
     size_t count = 0;
     enum folio_state_outcome outcome = take_text(self, &units, &count);
@@ -1077,15 +1087,18 @@ static enum folio_state_outcome store_body(const struct folio_window *_Nonnull s
     enum folio_state_outcome outcome = take_text(self, &units, &count);
     if (outcome == FOLIO_STATE_READY)
     {
-        outcome = folio_state_store_note(self->state, units, count);
+        outcome = folio_state_document_kind(self->state) == FOLIO_DOCUMENT_UNTITLED
+                      ? name_prompt_show(self->handle, self->state, units, count)
+                      : folio_state_store_note(self->state, units, count);
+        redraw_drawer(self);
+        InvalidateRect(self->handle, nullptr, FALSE);
     }
     return outcome;
 }
 
 static enum folio_state_outcome command_save(struct folio_window *_Nonnull self)
 {
-    struct note_ref selected = {.category = 0, .note = 0};
-    if (!folio_state_selection(self->state, &selected))
+    if (folio_state_document_kind(self->state) == FOLIO_DOCUMENT_NONE)
     {
         return FOLIO_STATE_NOTHING_SELECTED;
     }
@@ -1124,6 +1137,10 @@ static void redraw_command_layer(const struct folio_window *_Nonnull self)
 
 static void command_failure(struct folio_window *_Nonnull self, enum folio_state_outcome outcome)
 {
+    if (outcome == FOLIO_STATE_CANCELLED)
+    {
+        return;
+    }
     bool inline_failure =
         self->command_surface != COMMAND_SURFACE_CLOSED &&
         (outcome == FOLIO_STATE_NOTHING_SELECTED || outcome == FOLIO_STATE_UNSAVED_CHANGES);
@@ -1225,9 +1242,43 @@ static void show_command_palette(struct folio_window *_Nonnull self)
     redraw_command_layer(self);
 }
 
-static void execute_save_command(struct folio_window *_Nonnull self)
+static enum folio_state_outcome save_named_body(struct folio_window *_Nonnull self,
+                                                const char *_Nonnull argument)
 {
-    enum folio_state_outcome outcome = command_save(self);
+    if (folio_state_document_kind(self->state) == FOLIO_DOCUMENT_NONE)
+    {
+        return FOLIO_STATE_NOTHING_SELECTED;
+    }
+    if (folio_state_document_kind(self->state) != FOLIO_DOCUMENT_UNTITLED)
+    {
+        return FOLIO_STATE_ALREADY_NAMED;
+    }
+    struct note_name *_Nullable name = nullptr;
+    enum note_name_outcome accepted = note_name_create(argument, strlen(argument), &name);
+    if (accepted != NOTE_NAME_ACCEPTED)
+    {
+        return accepted == NOTE_NAME_OUT_OF_MEMORY ? FOLIO_STATE_OUT_OF_MEMORY
+                                                   : FOLIO_STATE_INVALID_NAME;
+    }
+    const char16_t *units = u"";
+    size_t count = 0;
+    enum folio_state_outcome outcome = take_text(self, &units, &count);
+    if (outcome == FOLIO_STATE_READY)
+    {
+        struct note_destination destination = {
+            .category = folio_state_document_category(self->state), .name = name};
+        outcome = folio_state_store_new(self->state, &destination, units, count);
+    }
+    note_name_destroy(name);
+    redraw_drawer(self);
+    InvalidateRect(self->handle, nullptr, FALSE);
+    return outcome;
+}
+
+static void execute_save_command(struct folio_window *_Nonnull self, const char *_Nonnull argument)
+{
+    enum folio_state_outcome outcome =
+        argument[0] == '\0' ? command_save(self) : save_named_body(self, argument);
     if (outcome != FOLIO_STATE_READY)
     {
         command_failure(self, outcome);
@@ -1293,12 +1344,35 @@ static void execute_mode_command(struct folio_window *_Nonnull self, enum pane_m
 }
 
 /* Ex・パレット・既存入口が共有する唯一の HWND 操作 dispatcher（ADR 0016 の決定 2）。 */
-static void execute_command(struct folio_window *_Nonnull self, enum folio_command command)
+static void execute_new_command(struct folio_window *_Nonnull self)
+{
+    size_t category = folio_state_current_category(self->state);
+    enum folio_state_outcome saved =
+        folio_state_pane_mode(self->state) == PANE_MODE_VIEW ? FOLIO_STATE_READY : store_body(self);
+    if (saved == FOLIO_STATE_READY)
+    {
+        saved = folio_state_new_note(self->state, category);
+    }
+    if (saved != FOLIO_STATE_READY)
+    {
+        command_failure(self, saved);
+        return;
+    }
+    hide_command_surface(self);
+    note_pane_edit(self->pane, u"", 0);
+    redraw_drawer(self);
+    InvalidateRect(self->handle, nullptr, FALSE);
+    focus_pane(self);
+}
+
+/* GUI・キー・Exで同じ操作と引数を実行する（ADR0020）。 */
+static void execute_command(struct folio_window *_Nonnull self, enum folio_command command,
+                            const char *_Nonnull argument)
 {
     switch (command)
     {
     case FOLIO_COMMAND_SAVE:
-        execute_save_command(self);
+        execute_save_command(self, argument);
         return;
     case FOLIO_COMMAND_QUIT:
         execute_quit_command(self);
@@ -1317,6 +1391,9 @@ static void execute_command(struct folio_window *_Nonnull self, enum folio_comma
         return;
     case FOLIO_COMMAND_VIEW:
         execute_mode_command(self, PANE_MODE_VIEW);
+        return;
+    case FOLIO_COMMAND_NEW:
+        execute_new_command(self);
         return;
     }
 }
@@ -1367,24 +1444,16 @@ static enum folio_state_outcome switch_note(struct folio_window *_Nonnull self, 
 }
 
 /* 歩みの行き先がノート行か（ADR 0015 の決定 2）。カテゴリ行と端では保存も開き直しも要らない。 */
-static bool steps_to_note(const struct folio_window *_Nonnull self, enum folio_step step)
-{
-    enum folio_cursor_kind kind = FOLIO_CURSOR_NOTE;
-    return folio_state_step_kind(self->state, step, &kind) && kind == FOLIO_CURSOR_NOTE;
-}
-
 /* 索引の鍵でカーソルを動かし、動いた行を見える位置へ寄せる（ADR 0015 の決定 2 / 6）。
  * カテゴリ行に止まるときは保存も開き直しもせず、描き直して寄せるだけ。 */
 static void switch_adjacent(struct folio_window *_Nonnull self, enum folio_step step)
 {
     enum folio_state_outcome outcome = FOLIO_STATE_READY;
-    if (steps_to_note(self, step))
+    struct note_ref target = {.category = 0, .note = 0};
+    enum folio_cursor_kind kind = FOLIO_CURSOR_CATEGORY;
+    if (folio_state_step_kind(self->state, step, &kind, &target) && kind == FOLIO_CURSOR_NOTE)
     {
-        outcome = save_edit(self);
-        if (outcome == FOLIO_STATE_READY)
-        {
-            outcome = opened(self, folio_state_select_adjacent(self->state, step));
-        }
+        outcome = switch_note(self, target.category, target.note);
     }
     else
     {
@@ -1430,10 +1499,11 @@ static void expand_cursor(struct folio_window *_Nonnull self, bool expanded)
     {
         return;
     }
-    struct note_ref before = {.category = 0, .note = 0};
-    bool had = folio_state_selection(self->state, &before);
     enum folio_state_outcome outcome =
         expanded && kind == FOLIO_CURSOR_CATEGORY ? save_edit(self) : FOLIO_STATE_READY;
+    /* 初回保存で名前が付いても、本文自体は同じRichEdit。保存後から比較する。 */
+    struct note_ref before = {.category = 0, .note = 0};
+    bool had = folio_state_selection(self->state, &before);
     if (outcome == FOLIO_STATE_READY)
     {
         outcome = folio_state_set_category_expanded(self->state, cursor.category, expanded);
@@ -1512,7 +1582,7 @@ static void click_command_surface(struct folio_window *_Nonnull self, POINT poin
     utf8_text_destroy(query);
     if (found)
     {
-        execute_command(self, command);
+        execute_command(self, command, "");
     }
 }
 
@@ -1547,7 +1617,7 @@ static void show_operations(struct folio_window *_Nonnull self)
             return;
         }
     }
-    RECT button = action_button_rect(self, 1);
+    RECT button = action_button_rect(self, 2);
     POINT point = {button.left, button.bottom};
     ClientToScreen(self->handle, &point);
     int chosen = TrackPopupMenuEx(menu, TPM_RETURNCMD | TPM_NONOTIFY, point.x, point.y,
@@ -1555,18 +1625,24 @@ static void show_operations(struct folio_window *_Nonnull self)
     DestroyMenu(menu);
     if (chosen > 0 && (size_t)chosen <= folio_command_count())
     {
-        execute_command(self, folio_command_at((size_t)chosen - 1));
+        execute_command(self, folio_command_at((size_t)chosen - 1), "");
     }
 }
 
 static bool click_actions(struct folio_window *_Nonnull self, POINT point)
 {
-    RECT save = action_button_rect(self, 0);
-    RECT operations = action_button_rect(self, 1);
-    RECT help = action_button_rect(self, 2);
+    RECT fresh = action_button_rect(self, 0);
+    RECT save = action_button_rect(self, 1);
+    RECT operations = action_button_rect(self, 2);
+    RECT help = action_button_rect(self, 3);
+    if (PtInRect(&fresh, point))
+    {
+        execute_command(self, FOLIO_COMMAND_NEW, "");
+        return true;
+    }
     if (PtInRect(&save, point))
     {
-        execute_command(self, FOLIO_COMMAND_SAVE);
+        execute_command(self, FOLIO_COMMAND_SAVE, "");
         return true;
     }
     if (PtInRect(&operations, point))
@@ -1576,7 +1652,7 @@ static bool click_actions(struct folio_window *_Nonnull self, POINT point)
     }
     if (PtInRect(&help, point))
     {
-        execute_command(self, FOLIO_COMMAND_HELP);
+        execute_command(self, FOLIO_COMMAND_HELP, "");
         return true;
     }
     return false;
@@ -1593,7 +1669,7 @@ static void click_caption(struct folio_window *_Nonnull self, LPARAM lparam)
     RECT close = close_rect(self);
     if (PtInRect(&close, point))
     {
-        execute_command(self, FOLIO_COMMAND_SAVE_QUIT);
+        execute_command(self, FOLIO_COMMAND_SAVE_QUIT, "");
         return;
     }
     enum pane_mode chip = PANE_MODE_VIEW;
@@ -1604,10 +1680,10 @@ static void click_caption(struct folio_window *_Nonnull self, LPARAM lparam)
     switch (chip)
     {
     case PANE_MODE_VIEW:
-        execute_command(self, FOLIO_COMMAND_VIEW);
+        execute_command(self, FOLIO_COMMAND_VIEW, "");
         break;
     case PANE_MODE_EDIT:
-        execute_command(self, FOLIO_COMMAND_EDIT);
+        execute_command(self, FOLIO_COMMAND_EDIT, "");
         break;
     }
 }
@@ -1636,7 +1712,7 @@ static bool view_character(struct folio_window *_Nonnull self, WPARAM character)
     }
     if (character == 'i')
     {
-        execute_command(self, FOLIO_COMMAND_EDIT);
+        execute_command(self, FOLIO_COMMAND_EDIT, "");
         return true;
     }
     return false;
@@ -1644,9 +1720,14 @@ static bool view_character(struct folio_window *_Nonnull self, WPARAM character)
 
 static LRESULT pane_character(struct folio_window *_Nonnull self, WPARAM character)
 {
+    if (character == new_character)
+    {
+        execute_command(self, FOLIO_COMMAND_NEW, "");
+        return 1;
+    }
     if (character == store_character)
     {
-        execute_command(self, FOLIO_COMMAND_SAVE);
+        execute_command(self, FOLIO_COMMAND_SAVE, "");
         return 1;
     }
     if (character == palette_character)
@@ -1661,7 +1742,7 @@ static LRESULT pane_key(struct folio_window *_Nonnull self, WPARAM key)
 {
     if (key == VK_F1)
     {
-        execute_command(self, FOLIO_COMMAND_HELP);
+        execute_command(self, FOLIO_COMMAND_HELP, "");
         return 1;
     }
     if (key == VK_ESCAPE)
@@ -1725,7 +1806,7 @@ static void press_key(struct folio_window *_Nonnull self, WPARAM key)
 {
     if (key == VK_F1)
     {
-        execute_command(self, FOLIO_COMMAND_HELP);
+        execute_command(self, FOLIO_COMMAND_HELP, "");
         return;
     }
     if (self->command_surface != COMMAND_SURFACE_CLOSED)
@@ -1772,10 +1853,13 @@ static void type_key(struct folio_window *_Nonnull self, WPARAM character)
         open_command_surface(self, COMMAND_SURFACE_EX);
         break;
     case '?':
-        execute_command(self, FOLIO_COMMAND_HELP);
+        execute_command(self, FOLIO_COMMAND_HELP, "");
         break;
     case 'i':
-        execute_command(self, FOLIO_COMMAND_EDIT);
+        execute_command(self, FOLIO_COMMAND_EDIT, "");
+        break;
+    case new_character:
+        execute_command(self, FOLIO_COMMAND_NEW, "");
         break;
     case palette_character:
         open_command_surface(self, COMMAND_SURFACE_PALETTE);
@@ -1802,7 +1886,7 @@ static void type_key(struct folio_window *_Nonnull self, WPARAM character)
         expand_cursor(self, true);
         break;
     case store_character:
-        execute_command(self, FOLIO_COMMAND_SAVE);
+        execute_command(self, FOLIO_COMMAND_SAVE, "");
         break;
     default:
         /* WM_CHAR の文字は開いた集合（C-017）。 */
@@ -1830,6 +1914,7 @@ static void execute_command_input(struct folio_window *_Nonnull self)
     const char *_Nonnull bytes = utf8_text_bytes(query);
     enum folio_command command = FOLIO_COMMAND_SAVE;
     bool found = false;
+    size_t argument = length;
     switch (self->command_surface)
     {
     case COMMAND_SURFACE_CLOSED:
@@ -1842,19 +1927,20 @@ static void execute_command_input(struct folio_window *_Nonnull self)
             close_command_surface(self);
             return;
         }
-        found = folio_command_parse(bytes, length, &command);
+        found = folio_command_parse(bytes, length, &command, &argument);
         break;
     case COMMAND_SURFACE_PALETTE:
         found = command_at_query(query, self->command_selection, &command);
         break;
     }
-    utf8_text_destroy(query);
     if (!found)
     {
+        utf8_text_destroy(query);
         command_not_found(self);
         return;
     }
-    execute_command(self, command);
+    execute_command(self, command, bytes + argument);
+    utf8_text_destroy(query);
 }
 
 static void move_command_selection(struct folio_window *_Nonnull self, WPARAM key)
@@ -1905,7 +1991,7 @@ static bool command_key_down(struct folio_window *_Nonnull self, WPARAM key)
     }
     if (key == VK_F1)
     {
-        execute_command(self, FOLIO_COMMAND_HELP);
+        execute_command(self, FOLIO_COMMAND_HELP, "");
         return true;
     }
     if (key == VK_TAB && self->command_surface == COMMAND_SURFACE_PALETTE)
@@ -1937,6 +2023,11 @@ static bool command_character(struct folio_window *_Nonnull self, WPARAM charact
     if (self->command_composing)
     {
         return false;
+    }
+    if (character == new_character)
+    {
+        execute_command(self, FOLIO_COMMAND_NEW, "");
+        return true;
     }
     if (character == palette_character)
     {
@@ -2238,7 +2329,7 @@ static LRESULT on_message(struct folio_window *_Nonnull self, UINT message, WPAR
         forward_wheel(self, wparam, lparam);
         return 0;
     case WM_CLOSE:
-        execute_command(self, FOLIO_COMMAND_SAVE_QUIT);
+        execute_command(self, FOLIO_COMMAND_SAVE_QUIT, "");
         return 0;
     case WM_DESTROY:
         window_destroyed(self);

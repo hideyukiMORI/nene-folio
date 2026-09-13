@@ -17,6 +17,8 @@ struct file_bytes;
  * 途中で落ちても元のファイルは残る。書けなければ UNWRITABLE。 */
 [[nodiscard]] enum persistence_outcome file_bytes_store(const wchar_t *_Nonnull path,
                                                         const char *_Nonnull data, size_t length);
+[[nodiscard]] enum persistence_outcome file_bytes_create(const wchar_t *_Nonnull path,
+                                                         const char *_Nonnull data, size_t length);
 [[nodiscard]] const char *_Nonnull file_bytes_data(const struct file_bytes *_Nonnull bytes);
 [[nodiscard]] size_t file_bytes_length(const struct file_bytes *_Nonnull bytes);
 void file_bytes_destroy(struct file_bytes *_Nullable bytes);

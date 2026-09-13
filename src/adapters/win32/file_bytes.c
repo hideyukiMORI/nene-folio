@@ -1,5 +1,7 @@
 #include "file_bytes.h"
+#include "file_write_kind.h"
 
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <windows.h>
@@ -90,22 +92,68 @@ enum persistence_outcome file_bytes_read(const wchar_t *_Nonnull path,
 
 static const wchar_t temporary_suffix[] = L".tmp";
 
-/* path に temporary_suffix を足した名前を out へ作る。収まらなければ false。 */
-static bool temporary_name(const wchar_t *_Nonnull path, wchar_t *_Nonnull out, size_t capacity)
+/* mdが最大長でも、一時名の葉は固定長。存在する候補は奪わず別の番号で試す。 */
+static bool temporary_name(const wchar_t *_Nonnull path, wchar_t *_Nonnull out, size_t capacity,
+                           size_t attempt)
 {
-    size_t length = 0;
-    while (path[length] != L'\0')
+    size_t directory = 0;
+    for (size_t index = 0; path[index] != L'\0'; ++index)
     {
-        length += 1;
+        if (path[index] == L'\\' || path[index] == L'/')
+        {
+            directory = index + 1;
+        }
     }
-    size_t suffix = sizeof temporary_suffix / sizeof temporary_suffix[0];
-    if (length + suffix > capacity)
+    uint64_t hash = UINT64_C(14695981039346656037);
+    for (size_t index = directory; path[index] != L'\0'; ++index)
+    {
+        hash ^= (uint16_t)path[index];
+        hash *= UINT64_C(1099511628211);
+    }
+    static const wchar_t prefix[] = L".nenefolio-write-";
+    static const wchar_t digits[] = L"0123456789abcdef";
+    constexpr size_t prefix_length = sizeof prefix / sizeof prefix[0] - 1;
+    constexpr size_t suffix_length = sizeof temporary_suffix / sizeof temporary_suffix[0];
+    if (directory + prefix_length + 19 + suffix_length > capacity)
     {
         return false;
     }
-    memcpy(out, path, length * sizeof *out);
-    memcpy(out + length, temporary_suffix, suffix * sizeof *out);
+    memcpy(out, path, directory * sizeof *out);
+    memcpy(out + directory, prefix, prefix_length * sizeof *out);
+    size_t position = directory + prefix_length;
+    for (size_t index = 0; index < 16; ++index)
+    {
+        out[position + index] = digits[(hash >> ((15 - index) * 4)) & 15];
+    }
+    out[position + 16] = L'-';
+    out[position + 17] = digits[attempt / 16];
+    out[position + 18] = digits[attempt % 16];
+    memcpy(out + position + 19, temporary_suffix, suffix_length * sizeof *out);
     return true;
+}
+
+static HANDLE temporary_file(const wchar_t *_Nonnull path, wchar_t *_Nonnull temporary,
+                             size_t capacity)
+{
+    for (size_t attempt = 0; attempt < 256; ++attempt)
+    {
+        if (!temporary_name(path, temporary, capacity, attempt))
+        {
+            return INVALID_HANDLE_VALUE;
+        }
+        HANDLE file = CreateFileW(temporary, GENERIC_WRITE, 0, nullptr, CREATE_NEW,
+                                  FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (file != INVALID_HANDLE_VALUE)
+        {
+            return file;
+        }
+        DWORD error = GetLastError();
+        if (error != ERROR_FILE_EXISTS && error != ERROR_ALREADY_EXISTS)
+        {
+            return INVALID_HANDLE_VALUE;
+        }
+    }
+    return INVALID_HANDLE_VALUE;
 }
 
 static bool write_all(HANDLE file, const char *_Nonnull data, size_t length)
@@ -124,29 +172,62 @@ static bool write_all(HANDLE file, const char *_Nonnull data, size_t length)
     return true;
 }
 
-enum persistence_outcome file_bytes_store(const wchar_t *_Nonnull path, const char *_Nonnull data,
-                                          size_t length)
+static DWORD publish_flags(enum file_write_kind kind)
+{
+    switch (kind)
+    {
+    case FILE_WRITE_REPLACE:
+        return MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH;
+    case FILE_WRITE_CREATE:
+        return MOVEFILE_WRITE_THROUGH;
+    }
+    return MOVEFILE_WRITE_THROUGH;
+}
+
+static enum persistence_outcome publish(const wchar_t *_Nonnull temporary,
+                                        const wchar_t *_Nonnull path, enum file_write_kind kind)
+{
+    if (MoveFileExW(temporary, path, publish_flags(kind)))
+    {
+        return PERSISTENCE_STORED;
+    }
+    DWORD error = GetLastError();
+    DeleteFileW(temporary);
+    return kind == FILE_WRITE_CREATE &&
+                   (error == ERROR_FILE_EXISTS || error == ERROR_ALREADY_EXISTS)
+               ? PERSISTENCE_NAME_TAKEN
+               : PERSISTENCE_UNWRITABLE;
+}
+
+static enum persistence_outcome store(const wchar_t *_Nonnull path, const char *_Nonnull data,
+                                      size_t length, enum file_write_kind kind)
 {
     wchar_t temporary[MAX_PATH * 4];
-    if (!temporary_name(path, temporary, sizeof temporary / sizeof temporary[0]))
-    {
-        return PERSISTENCE_UNWRITABLE;
-    }
-    HANDLE file = CreateFileW(temporary, GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS,
-                              FILE_ATTRIBUTE_NORMAL, nullptr);
+    HANDLE file = temporary_file(path, temporary, sizeof temporary / sizeof temporary[0]);
     if (file == INVALID_HANDLE_VALUE)
     {
         return PERSISTENCE_UNWRITABLE;
     }
     bool written = write_all(file, data, length) && FlushFileBuffers(file);
     CloseHandle(file);
-    if (!written ||
-        !MoveFileExW(temporary, path, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
+    if (!written)
     {
         DeleteFileW(temporary);
         return PERSISTENCE_UNWRITABLE;
     }
-    return PERSISTENCE_STORED;
+    return publish(temporary, path, kind);
+}
+
+enum persistence_outcome file_bytes_store(const wchar_t *_Nonnull path, const char *_Nonnull data,
+                                          size_t length)
+{
+    return store(path, data, length, FILE_WRITE_REPLACE);
+}
+
+enum persistence_outcome file_bytes_create(const wchar_t *_Nonnull path, const char *_Nonnull data,
+                                           size_t length)
+{
+    return store(path, data, length, FILE_WRITE_CREATE);
 }
 
 const char *_Nonnull file_bytes_data(const struct file_bytes *_Nonnull bytes)

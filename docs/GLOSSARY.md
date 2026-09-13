@@ -32,7 +32,9 @@
 | ドロップ先（drop target） | ドラッグを離したときに落ちる場所。種類・**移動先の**カテゴリ・**移動後の番号**・挿入線の y を持つ | `struct drop_target` / `enum drop_kind`（core）・`drawer_layout_drop` |
 | 塊（chunk） | カテゴリ行と、展開中ならそのノート行をひとまとめにした範囲。カテゴリの並び替えの候補はこの境界で、ノートの移動先はポインタのある塊（境界は隣り合う塊の間の中ほど） | `drawer_layout_drop`（core） |
 | ノートの居場所（note ref） | カテゴリ番号とノート番号の組。移動の意図はこれを 2 つ受ける | `struct note_ref`（core） |
-| 台帳が古い（ledger stale） | md は移ったが `index.json` を書き戻せなかった状態。表示はファイルに従い、次回の起動の照合（FR-008）で揃う | `FOLIO_STATE_LEDGER_STALE`（application）・ADR 0008 |
+| 台帳が古い（ledger stale） | mdの作成・移動は済んだがindex.jsonを保存できない状態。表示はファイルに従い、再起動の照合で揃う。初回保存では次の保存・変更前に再試行し、未同期の終了を拒否する | `FOLIO_STATE_LEDGER_STALE`（application）・ADR0008/0020 |
+| 無題（untitled） | まだファイル名を持たない編集中の文書。空でも未保存。本文とUndoはRichEdit、種類と文書カテゴリはapplicationが持つ | `folio_document_kind`・ADR0020 |
+| 初回保存（first save） | 無題の本文を名前とカテゴリに結び、新しいmdを既存ファイルの置換なしで公開する。初回の履歴は作らない | `note_name`（core）・`folio_state_store_new`（application）・`create_note`ポート |
 | スクロール量（scroll offset） | ドロワーを下へずらした画素。**要求量**は application が持つ値で、**有効量**はいまの配置の上限（0〜`bottom + bottom_padding − viewport_height`）へ丸めた量。表示座標は内部の座標から有効量を引いたもの | `folio_state_scroll_drawer`（application）・`drawer_layout_scroll` / `drawer_layout_scroll_limit`（core）・ADR 0009 |
 | フェード（fade） | あふれている側の端に置く短い帯。端で地の色 100%・内側で 0% になるよう画素ごとに混ぜ、隠れた行があることを示す。要否は core の `drawer_layout_overflow_above` / `_below` が答える | `drawer_window` の `draw_fade`（ui/win32）・ADR 0009 |
 | 挿入線（drop line） | ドラッグ中に落ちる位置を示す 1 本の線。掴んだ行のカテゴリ色で、その字下げから右の余白まで | `drawer_window` の `draw_drop_line`（ui/win32）。y は core が返す |
