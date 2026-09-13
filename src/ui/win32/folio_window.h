@@ -7,6 +7,8 @@
 
 #include "folio_window_outcome.h"
 
+#include <windows.h>
+
 struct folio_state;
 struct folio_window;
 
@@ -14,6 +16,9 @@ struct folio_window;
 [[nodiscard]] enum folio_window_outcome
 folio_window_create(struct folio_state *_Nonnull state,
                     struct folio_window *_Nullable *_Nonnull out);
+/* メッセージループのTranslateMessageより前。処理済みの鍵は再dispatchしない。 */
+[[nodiscard]] bool folio_window_translate(const struct folio_window *_Nonnull window,
+                                          const MSG *_Nonnull message);
 void folio_window_destroy(struct folio_window *_Nullable window);
 
 #endif

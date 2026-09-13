@@ -128,7 +128,8 @@ Waivers: none | WVR-NNNN
 
 2026-09-13: #37へINDEXの `?` とキーバインド説明を追加。パンくずのPowerline案は#45。
 #37 / PR #44、#45 / PR #46、採用済みGUI計画#47 / PR #48は最終フルゲート・CI成功後にmain統合済み。
-#49 / ADR0018は `out/worktrees/49-gui-entry`。日本語の操作入口・共通ヘルプと閲覧からの編集開始を実装中。
+#49 / PR #50はmain b3a6b49へ統合済み。日本語の操作入口・共通ヘルプと閲覧からの編集開始を追加した。
+#51 / ADR0019は `out/worktrees/51-caret`。HHKB向けのCtrl＋hjklをRichEditの矢印相当の移動へ結び、検証中。
 新規・別名保存・改名・ノート内検索は後続単位。`?`の後方検索への移行は実際の検索と同時に行う。
 最新は [日報](docs/reports/2026-09-13.md) / [引き継ぎ](docs/handoffs/2026-09-13.md)。
 

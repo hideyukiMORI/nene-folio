@@ -1,10 +1,12 @@
 #include "note_pane.h"
 
+#include "caret_command.h"
 #include "rtf_stream.h"
 
 #include <richedit.h>
 #include <stdlib.h>
 #include <string.h>
+#include <tom.h>
 
 struct note_pane
 {
@@ -12,6 +14,8 @@ struct note_pane
     HWND _Nullable handle;
     WNDPROC _Nullable original;
     bool composing;
+    HACCEL _Nullable navigation;
+    ITextSelection *_Nullable selection;
     char16_t *_Nullable taken; /* 最後に取り出した本文（終端付き） */
     size_t capacity;           /* taken のバイト数 */
     size_t used;               /* 取り出したバイト数（終端を含まない） */
@@ -21,6 +25,18 @@ struct note_pane
 static const wchar_t library_name[] = L"Msftedit.dll";
 static const wchar_t class_name[] = L"RICHEDIT50W";
 static const wchar_t editor_face[] = L"Yu Gothic UI";
+/* TOMのGUIDはSDKのtom.hとMicrosoftのUse TOM GUIDsに従う（ADR 0019）。 */
+static const IID text_document_id = {
+    0x8CC497C0, 0xA1DF, 0x11CE, {0x80, 0x98, 0x00, 0xAA, 0x00, 0x47, 0xBE, 0x5D}};
+
+static const struct
+{
+    WORD key;
+    enum caret_command command;
+} navigation_bindings[] = {{'H', CARET_COMMAND_LEFT},
+                           {'J', CARET_COMMAND_DOWN},
+                           {'K', CARET_COMMAND_UP},
+                           {'L', CARET_COMMAND_RIGHT}};
 
 constexpr LONG editor_height = 220; /* 11pt（twips）。RTF 側の \fs22 と同じ */
 constexpr UINT unicode_codepage = 1200;
@@ -78,12 +94,54 @@ static bool reserve(struct note_pane *_Nonnull pane, size_t bytes)
     return true;
 }
 
+static HRESULT move_caret(ITextSelection *_Nonnull selection, enum caret_command command)
+{
+    switch (command)
+    {
+    case CARET_COMMAND_LEFT:
+        return selection->lpVtbl->MoveLeft(selection, tomCharacter, 1, tomMove, nullptr);
+    case CARET_COMMAND_DOWN:
+        return selection->lpVtbl->MoveDown(selection, tomLine, 1, tomMove, nullptr);
+    case CARET_COMMAND_UP:
+        return selection->lpVtbl->MoveUp(selection, tomLine, 1, tomMove, nullptr);
+    case CARET_COMMAND_RIGHT:
+        return selection->lpVtbl->MoveRight(selection, tomCharacter, 1, tomMove, nullptr);
+    }
+    return E_INVALIDARG;
+}
+
+static bool navigation_command(const struct note_pane *_Nonnull pane, WPARAM command)
+{
+    if (HIWORD(command) != 1 || pane->selection == nullptr)
+    {
+        return false;
+    }
+    for (size_t index = 0; index < sizeof navigation_bindings / sizeof navigation_bindings[0];
+         ++index)
+    {
+        if (LOWORD(command) != navigation_bindings[index].command)
+        {
+            continue;
+        }
+        if (FAILED(move_caret(pane->selection, navigation_bindings[index].command)))
+        {
+            MessageBeep(MB_ICONWARNING);
+        }
+        return true;
+    }
+    return false;
+}
+
 static LRESULT CALLBACK pane_procedure(HWND window, UINT message, WPARAM wparam, LPARAM lparam)
 {
     struct note_pane *_Nullable pane = (struct note_pane *)GetWindowLongPtrW(window, GWLP_USERDATA);
     if (pane == nullptr || pane->original == nullptr)
     {
         return DefWindowProcW(window, message, wparam, lparam);
+    }
+    if (message == WM_COMMAND && lparam == 0 && navigation_command(pane, wparam))
+    {
+        return 0;
     }
     if (message == WM_IME_STARTCOMPOSITION)
     {
@@ -102,6 +160,42 @@ static bool subclass_pane(struct note_pane *_Nonnull pane)
     pane->original =
         (WNDPROC)SetWindowLongPtrW(pane->handle, GWLP_WNDPROC, (LONG_PTR)pane_procedure);
     return pane->original != nullptr;
+}
+
+static bool prepare_selection(struct note_pane *_Nonnull pane)
+{
+    IUnknown *_Nullable unknown = nullptr;
+    SendMessageW(pane->handle, EM_GETOLEINTERFACE, 0, (LPARAM)&unknown);
+    if (unknown == nullptr)
+    {
+        return false;
+    }
+    /* QueryInterfaceの出力はvoid**で受け、SDKの型へ直ちに写すWin32境界（C-006）。 */
+    void *_Nullable result = nullptr;
+    HRESULT queried = unknown->lpVtbl->QueryInterface(unknown, &text_document_id, &result);
+    unknown->lpVtbl->Release(unknown);
+    if (FAILED(queried) || result == nullptr)
+    {
+        return false;
+    }
+    ITextDocument *_Nonnull document = result;
+    HRESULT selected = document->lpVtbl->GetSelection(document, &pane->selection);
+    document->lpVtbl->Release(document);
+    return SUCCEEDED(selected) && pane->selection != nullptr;
+}
+
+static bool prepare_navigation(struct note_pane *_Nonnull pane)
+{
+    constexpr size_t count = sizeof navigation_bindings / sizeof navigation_bindings[0];
+    ACCEL accelerators[count];
+    for (size_t index = 0; index < count; ++index)
+    {
+        accelerators[index] = (ACCEL){.fVirt = FVIRTKEY | FCONTROL,
+                                      .key = navigation_bindings[index].key,
+                                      .cmd = navigation_bindings[index].command};
+    }
+    pane->navigation = CreateAcceleratorTableW(accelerators, (int)count);
+    return pane->navigation != nullptr && prepare_selection(pane);
 }
 
 enum note_pane_outcome note_pane_create(HWND _Nonnull parent, COLORREF background, COLORREF text,
@@ -123,7 +217,7 @@ enum note_pane_outcome note_pane_create(HWND _Nonnull parent, COLORREF backgroun
         WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL;
     pane->handle = CreateWindowExW(0, class_name, L"", style, 0, 0, 0, 0, parent, nullptr,
                                    GetModuleHandleW(nullptr), nullptr);
-    if (pane->handle == nullptr || !subclass_pane(pane))
+    if (pane->handle == nullptr || !subclass_pane(pane) || !prepare_navigation(pane))
     {
         note_pane_destroy(pane);
         return NOTE_PANE_NOT_CREATED;
@@ -151,6 +245,16 @@ HWND _Nullable note_pane_handle(const struct note_pane *_Nonnull pane)
 bool note_pane_composing(const struct note_pane *_Nonnull pane)
 {
     return pane->composing;
+}
+
+bool note_pane_translate(const struct note_pane *_Nonnull pane, const MSG *_Nonnull message)
+{
+    if (pane->navigation == nullptr || pane->composing || message->hwnd != pane->handle)
+    {
+        return false;
+    }
+    MSG translated = *message;
+    return TranslateAcceleratorW(pane->handle, pane->navigation, &translated) != 0;
 }
 
 void note_pane_render(struct note_pane *_Nonnull pane, const char *_Nonnull rtf, size_t length)
@@ -215,6 +319,14 @@ void note_pane_destroy(struct note_pane *_Nullable pane)
     if (pane == nullptr)
     {
         return;
+    }
+    if (pane->selection != nullptr)
+    {
+        pane->selection->lpVtbl->Release(pane->selection);
+    }
+    if (pane->navigation != nullptr)
+    {
+        DestroyAcceleratorTable(pane->navigation);
     }
     if (pane->handle != nullptr && IsWindow(pane->handle))
     {

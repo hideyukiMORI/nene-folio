@@ -52,11 +52,16 @@ static const wchar_t view_label[] = L"閲覧";
 static const wchar_t edit_label[] = L"編集";
 static const wchar_t edit_class[] = L"EDIT";
 static const char *_Nonnull const command_shortcuts[] = {
-    "一覧  ↑↓ 選択 / Enter 実行 / Esc 戻る", "一覧  Tab キー説明を開く・閉じる",
-    "全区画  F1 ヘルプ / Ctrl+P 一覧",       "索引・本文  Ctrl+S 保存",
-    "索引・閲覧本文  : コマンド / i 編集",   "索引  ? ヘルプ（検索の追加まで）",
-    "索引  j/k 次/前 / gg/G 先頭/末尾",      "索引  h/l 折畳/展開 / Enter 本文",
-    "索引  ↑↓ / PgUp/PgDn スクロール",       "本文  Esc 保存して索引へ（編集は維持）",
+    "一覧  ↑↓ 選択 / Enter 実行 / Esc 戻る / Tab 説明",
+    "編集本文  Ctrl+h/j/k/l ←/↓/↑/→",
+    "全区画  F1 ヘルプ / Ctrl+P 一覧",
+    "索引・本文  Ctrl+S 保存",
+    "索引・閲覧本文  : コマンド / i 編集",
+    "索引  ? ヘルプ（検索の追加まで）",
+    "索引  j/k 次/前 / gg/G 先頭/末尾",
+    "索引  h/l 折畳/展開 / Enter 本文",
+    "索引  ↑↓ / PgUp/PgDn スクロール",
+    "本文  Esc 保存して索引へ（編集は維持）",
 };
 
 /* Ctrl+S が WM_CHAR で届く制御文字（GetKeyState を読まない・ARC-007）。 */
@@ -2337,6 +2342,15 @@ enum folio_window_outcome folio_window_create(struct folio_state *_Nonnull state
     ShowWindow(handle, SW_SHOW);
     *out = self;
     return FOLIO_WINDOW_CREATED;
+}
+
+bool folio_window_translate(const struct folio_window *_Nonnull window, const MSG *_Nonnull message)
+{
+    if (window->pane == nullptr || folio_state_pane_mode(window->state) != PANE_MODE_EDIT)
+    {
+        return false;
+    }
+    return note_pane_translate(window->pane, message);
 }
 
 void folio_window_destroy(struct folio_window *_Nullable window)
