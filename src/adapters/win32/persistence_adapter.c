@@ -36,6 +36,38 @@ constexpr size_t history_pending_length = 9;
 static_assert(note_history_depth >= 1 && note_history_depth <= 9,
               "ADR 0012: the history depth must fit one digit");
 
+/* すべての走査・保存・履歴が共有するrootだけを長い絶対パスへ揃える（ADR0020）。 */
+static bool module_path(wchar_t *_Nonnull out, size_t *_Nonnull length)
+{
+    wchar_t module[path_capacity];
+    DWORD count = GetModuleFileNameW(nullptr, module, (DWORD)path_capacity);
+    if (count == 0 || count >= path_capacity)
+    {
+        return false;
+    }
+    const wchar_t *_Nonnull prefix = L"\\\\?\\";
+    size_t prefix_length = 4;
+    size_t offset = 0;
+    if (count >= 4 && memcmp(module, L"\\\\?\\", 4 * sizeof *module) == 0)
+    {
+        prefix_length = 0;
+    }
+    else if (count >= 2 && module[0] == L'\\' && module[1] == L'\\')
+    {
+        prefix = L"\\\\?\\UNC\\";
+        prefix_length = 8;
+        offset = 2;
+    }
+    *length = prefix_length + count - offset;
+    if (*length >= path_capacity)
+    {
+        return false;
+    }
+    memcpy(out, prefix, prefix_length * sizeof *out);
+    memcpy(out + prefix_length, module + offset, (count - offset + 1) * sizeof *out);
+    return true;
+}
+
 enum persistence_adapter_outcome
 persistence_adapter_create(struct persistence_adapter *_Nullable *_Nonnull out)
 {
@@ -44,8 +76,8 @@ persistence_adapter_create(struct persistence_adapter *_Nullable *_Nonnull out)
     {
         return PERSISTENCE_ADAPTER_OUT_OF_MEMORY;
     }
-    DWORD length = GetModuleFileNameW(nullptr, adapter->root, (DWORD)path_capacity);
-    if (length == 0 || length >= path_capacity)
+    size_t length = 0;
+    if (!module_path(adapter->root, &length))
     {
         free(adapter);
         return PERSISTENCE_ADAPTER_NO_MODULE_PATH;
@@ -536,6 +568,21 @@ static enum persistence_outcome write_note(struct persistence_adapter *_Nonnull 
     return file_bytes_store(path, note_text_bytes(body), note_text_length(body));
 }
 
+/* 初回保存は同じパス生成と原子的書込を使い、既存mdの置換を許さない（ADR 0020）。 */
+static enum persistence_outcome create_note(struct persistence_adapter *_Nonnull adapter,
+                                            const char *_Nonnull category,
+                                            const char *_Nonnull note,
+                                            const struct note_text *_Nonnull body)
+{
+    wchar_t leaf[MAX_PATH];
+    wchar_t path[path_capacity];
+    if (!note_leaf(note, leaf, MAX_PATH) || !compose(adapter, category, leaf, path))
+    {
+        return PERSISTENCE_UNWRITABLE;
+    }
+    return file_bytes_create(path, note_text_bytes(body), note_text_length(body));
+}
+
 /* md を別のカテゴリのディレクトリへ移す（ADR 0008 の決定 4）。同じボリューム内なので rename で、
  * MOVEFILE_REPLACE_EXISTING は付けない。移動先に同名（大文字小文字だけ違うものを含む）があれば
  * OS が拒み、利用者のノートは上書きされない。 */
@@ -617,6 +664,7 @@ struct persistence_port persistence_adapter_port(struct persistence_adapter *_No
         .read_note = read_note,
         .archive_note = archive_note,
         .write_note = write_note,
+        .create_note = create_note,
         .move_note = move_note,
         .read_note_ledger = read_note_ledger,
         .write_note_ledger = write_note_ledger,

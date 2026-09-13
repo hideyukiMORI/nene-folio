@@ -34,9 +34,44 @@ static bool dot_only(const char *_Nonnull text, size_t length)
     return (length == 1 && text[0] == '.') || (length == 2 && text[0] == '.' && text[1] == '.');
 }
 
+static char upper_ascii(char value)
+{
+    return value >= 'a' && value <= 'z' ? (char)(value - 'a' + 'A') : value;
+}
+
+static bool device_digit(const char *_Nonnull text, size_t length)
+{
+    return (length == 1 && text[0] >= '1' && text[0] <= '9') ||
+           (length == 2 && (unsigned char)text[0] == 0xC2 &&
+            ((unsigned char)text[1] == 0xB9 || (unsigned char)text[1] == 0xB2 ||
+             (unsigned char)text[1] == 0xB3));
+}
+
+static bool reserved_device(const char *_Nonnull text, size_t length)
+{
+    size_t base = 0;
+    while (base < length && text[base] != '.')
+    {
+        base += 1;
+    }
+    if (base < 3)
+    {
+        return false;
+    }
+    char prefix[] = {upper_ascii(text[0]), upper_ascii(text[1]), upper_ascii(text[2]), '\0'};
+    if (base == 3)
+    {
+        return strcmp(prefix, "CON") == 0 || strcmp(prefix, "PRN") == 0 ||
+               strcmp(prefix, "AUX") == 0 || strcmp(prefix, "NUL") == 0;
+    }
+    return (strcmp(prefix, "COM") == 0 || strcmp(prefix, "LPT") == 0) &&
+           device_digit(text + 3, base - 3);
+}
+
 static bool acceptable(const char *_Nonnull text, size_t length)
 {
-    if (length == 0 || length > name_list_max_length || dot_only(text, length))
+    if (length == 0 || length > name_list_max_length || dot_only(text, length) ||
+        reserved_device(text, length))
     {
         return false;
     }

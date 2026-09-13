@@ -10,6 +10,7 @@
 #include "markdown_rtf.h"
 #include "name_list.h"
 #include "note_ledger.h"
+#include "note_name.h"
 #include "note_text.h"
 #include "persistence_port.h"
 #include "rtf_palette.h"
@@ -383,6 +384,30 @@ static bool selection_under_probe(struct folio_state *_Nonnull state)
 }
 
 /* state を作り、意図を 1 回ずつ通す。adapter は state より長く生きる。 */
+static bool new_note_under_probe(struct folio_state *_Nonnull state)
+{
+    struct note_name *name = nullptr;
+    enum note_name_outcome named = note_name_create("draft.md", 8, &name);
+    if (named == NOTE_NAME_OUT_OF_MEMORY)
+    {
+        return false;
+    }
+    require(named == NOTE_NAME_ACCEPTED, "name under probe");
+    enum folio_state_outcome created = folio_state_new_note(state, 0);
+    require(created == FOLIO_STATE_READY || created == FOLIO_STATE_OUT_OF_MEMORY,
+            "new under probe");
+    if (created == FOLIO_STATE_READY)
+    {
+        struct note_destination destination = {.category = 0, .name = name};
+        created = folio_state_store_new(state, &destination, u"draft\r\n", 7);
+        require(created == FOLIO_STATE_READY || created == FOLIO_STATE_OUT_OF_MEMORY,
+                "first save under probe");
+    }
+    note_name_destroy(name);
+    return created == FOLIO_STATE_READY;
+}
+
+/* state を作り、意図を 1 回ずつ通す。adapter は state より長く生きる。 */
 static bool state_scenario_with(struct persistence_adapter *_Nonnull adapter)
 {
     struct persistence_port port = test_adapter_port(adapter);
@@ -396,7 +421,8 @@ static bool state_scenario_with(struct persistence_adapter *_Nonnull adapter)
     require(outcome == FOLIO_STATE_READY, "state under probe");
     bool completed = layout_intent_under_probe(state) && ledger_under_probe(state) &&
                      selection_under_probe(state) && reorder_under_probe(state) &&
-                     edit_under_probe(state) && transfer_under_probe(state);
+                     edit_under_probe(state) && transfer_under_probe(state) &&
+                     new_note_under_probe(state);
     folio_state_destroy(state);
     return completed;
 }

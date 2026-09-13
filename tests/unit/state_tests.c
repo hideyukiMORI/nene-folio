@@ -4,6 +4,7 @@
 #include "folio_state.h"
 #include "name_list.h"
 #include "note_ledger.h"
+#include "note_name.h"
 #include "note_text.h"
 #include "persistence_port.h"
 #include "unit_tests.h"
@@ -38,7 +39,10 @@ struct persistence_adapter
     const char *_Nullable archived_category; /* 最後に履歴を求められたカテゴリ名 */
     const char *_Nullable archived_note;     /* 最後に履歴を求められたノート名 */
     enum persistence_outcome note_write_outcome;
-    size_t note_writes;                 /* write_note が呼ばれた回数 */
+    size_t note_writes; /* write_note が呼ばれた回数 */
+    enum persistence_outcome create_outcome;
+    size_t creates;
+    char created_note[256];
     char written_body[256];             /* 最後に書かれた本文（終端付き） */
     const char *_Nullable written_note; /* 最後に書かれたノート名 */
     const char *_Nullable written_category;
@@ -256,6 +260,29 @@ static enum persistence_outcome fake_write_note(struct persistence_adapter *_Non
 
 static enum persistence_outcome fake_write_note_ledger(struct persistence_adapter *_Nonnull adapter,
                                                        const char *_Nonnull category,
+                                                       const struct note_ledger *_Nonnull ledger);
+
+static enum persistence_outcome fake_create_note(struct persistence_adapter *_Nonnull adapter,
+                                                 const char *_Nonnull category,
+                                                 const char *_Nonnull note,
+                                                 const struct note_text *_Nonnull body)
+{
+    adapter->creates += 1;
+    record_call(adapter, "create");
+    adapter->written_category = category;
+    require(strlen(note) < sizeof adapter->created_note, "created name fits");
+    memcpy(adapter->created_note, note, strlen(note) + 1);
+    if (adapter->create_outcome != PERSISTENCE_STORED)
+    {
+        return adapter->create_outcome;
+    }
+    require(note_text_length(body) < sizeof adapter->written_body, "created body fits");
+    memcpy(adapter->written_body, note_text_bytes(body), note_text_length(body) + 1);
+    return PERSISTENCE_STORED;
+}
+
+static enum persistence_outcome fake_write_note_ledger(struct persistence_adapter *_Nonnull adapter,
+                                                       const char *_Nonnull category,
                                                        const struct note_ledger *_Nonnull ledger)
 {
     adapter->ledger_writes += 1;
@@ -349,6 +376,7 @@ static struct persistence_adapter healthy_adapter(void)
         .archived_note = nullptr,
         .note_write_outcome = PERSISTENCE_STORED,
         .note_writes = 0,
+        .create_outcome = PERSISTENCE_STORED,
         .written_body = {'\0'},
         .written_note = nullptr,
         .written_category = nullptr,
@@ -382,6 +410,7 @@ static struct persistence_port port_for(struct persistence_adapter *_Nonnull ada
         .read_note = fake_read_note,
         .archive_note = fake_archive_note,
         .write_note = fake_write_note,
+        .create_note = fake_create_note,
         .move_note = fake_move_note,
         .read_note_ledger = fake_read_note_ledger,
         .write_note_ledger = fake_write_note_ledger,
@@ -1119,17 +1148,21 @@ static void verify_step_kind(void)
 {
     struct persistence_adapter adapter = healthy_adapter();
     struct folio_state *state = ready_state(&adapter);
+    struct note_ref target = {.category = 0, .note = 0};
     enum folio_cursor_kind kind = FOLIO_CURSOR_CATEGORY;
-    require(folio_state_step_kind(state, FOLIO_STEP_NEXT, &kind) && kind == FOLIO_CURSOR_NOTE,
+    require(folio_state_step_kind(state, FOLIO_STEP_NEXT, &kind, &target) &&
+                kind == FOLIO_CURSOR_NOTE,
             "the first stop is a note row");
     expect_cursor(state, "-", "asking never moves the cursor");
     require(folio_state_select_note(state, 0, 2) == FOLIO_STATE_READY, "select B / three");
-    require(folio_state_step_kind(state, FOLIO_STEP_NEXT, &kind) && kind == FOLIO_CURSOR_CATEGORY,
+    require(folio_state_step_kind(state, FOLIO_STEP_NEXT, &kind, &target) &&
+                kind == FOLIO_CURSOR_CATEGORY,
             "the next stop is the collapsed category row");
     expect_cursor(state, "n0.2", "and the cursor is still the note");
     require(folio_state_select_adjacent(state, FOLIO_STEP_LAST) == FOLIO_STATE_READY, "G");
     kind = FOLIO_CURSOR_CATEGORY;
-    require(!folio_state_step_kind(state, FOLIO_STEP_NEXT, &kind) && kind == FOLIO_CURSOR_CATEGORY,
+    require(!folio_state_step_kind(state, FOLIO_STEP_NEXT, &kind, &target) &&
+                kind == FOLIO_CURSOR_CATEGORY,
             "at the end there is no target and kind is untouched");
     folio_state_destroy(state);
 }
@@ -1145,8 +1178,13 @@ static void verify_step_without_categories(void)
                 folio_state_select_adjacent(state, FOLIO_STEP_LAST) == FOLIO_STATE_NO_SUCH_NOTE,
             "no stop row at all");
     expect_cursor(state, "-", "the refused step leaves no cursor");
+    struct note_ref target = {.category = 0, .note = 0};
     enum folio_cursor_kind kind = FOLIO_CURSOR_NOTE;
-    require(!folio_state_step_kind(state, FOLIO_STEP_FIRST, &kind), "and no target to ask about");
+    require(!folio_state_step_kind(state, FOLIO_STEP_FIRST, &kind, &target),
+            "and no target to ask about");
+    require(folio_state_new_note(state, 0) == FOLIO_STATE_NO_SUCH_CATEGORY &&
+                folio_state_document_kind(state) == FOLIO_DOCUMENT_NONE,
+            "new does not invent an initial category");
     folio_state_destroy(state);
 }
 
@@ -1650,6 +1688,181 @@ struct appearance_port test_appearance_port(void)
     return looks_for(&dark_adapter);
 }
 
+static struct note_name *_Nonnull accepted_note_name(const char *_Nonnull text)
+{
+    struct note_name *name = nullptr;
+    require(note_name_create(text, strlen(text), &name) == NOTE_NAME_ACCEPTED, "name prepared");
+    return name;
+}
+
+static void verify_untitled(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_document_kind(state) == FOLIO_DOCUMENT_NONE &&
+                folio_state_category_count(state) == 3 && folio_state_current_category(state) == 0,
+            "empty pane default category");
+    require(folio_state_new_note(state, 99) == FOLIO_STATE_NO_SUCH_CATEGORY,
+            "no invented category");
+    require(folio_state_new_note(state, 1) == FOLIO_STATE_READY, "new in A");
+    require(folio_state_document_kind(state) == FOLIO_DOCUMENT_UNTITLED &&
+                folio_state_pane_mode(state) == PANE_MODE_EDIT &&
+                folio_state_document_category(state) == 1,
+            "untitled edit state");
+    require(same_text(folio_state_pane_title(state).note, "無題（未保存）") &&
+                same_text(folio_state_category_name(state, 1), "A"),
+            "untitled title and category");
+    struct note_ref selection = {.category = 0, .note = 0};
+    require(!folio_state_selection(state, &selection) && folio_state_note_count(state) == 9,
+            "untitled has no fictitious index row");
+    require(folio_state_new_note(state, 0) == FOLIO_STATE_NAME_REQUIRED &&
+                folio_state_select_note(state, 0, 0) == FOLIO_STATE_NAME_REQUIRED,
+            "untitled cannot be displaced");
+    require(folio_state_store_note(state, u"x", 1) == FOLIO_STATE_NAME_REQUIRED &&
+                folio_state_end_edit(state, u"x", 1) == FOLIO_STATE_NAME_REQUIRED,
+            "unnamed saves require name");
+    enum folio_note_change changed = FOLIO_NOTE_SAME;
+    require(folio_state_note_changed(state, u"", 0, &changed) == FOLIO_STATE_READY &&
+                changed == FOLIO_NOTE_CHANGED,
+            "even blank untitled requires explicit save or discard");
+    require(folio_state_begin_edit(state) == FOLIO_STATE_READY &&
+                folio_state_move_category(state, 1, 0) == FOLIO_STATE_READY &&
+                folio_state_document_category(state) == 0,
+            "untitled follows category ordering");
+    folio_state_destroy(state);
+}
+
+static void verify_first_save(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_new_note(state, 0) == FOLIO_STATE_READY, "new note");
+    struct note_name *name = accepted_note_name("日報 名前.MD");
+    struct note_destination destination = {.category = 1, .name = name};
+    require(folio_state_store_new(state, &destination, u"日本語\r\n本文", 7) == FOLIO_STATE_READY,
+            "first save to chosen category");
+    require(folio_state_store_new(state, &destination, u"x", 1) == FOLIO_STATE_ALREADY_NAMED,
+            "named notes do not use the initial-save operation");
+    note_name_destroy(name);
+    require(adapter.creates == 1 && adapter.note_writes == 0 && adapter.archives == 0 &&
+                adapter.ledger_writes == 1,
+            "create then ledger, with no archive or replace");
+    require(same_text(adapter.created_note, "日報 名前") &&
+                same_text(adapter.written_category, "A") &&
+                same_text(adapter.written_body, "日本語\n本文"),
+            "named utf8 LF creation");
+    struct note_ref selected = {.category = 0, .note = 0};
+    require(folio_state_selection(state, &selected) && selected.category == 1 &&
+                selected.note == 3 && folio_state_note_count(state) == 10 &&
+                folio_state_document_kind(state) == FOLIO_DOCUMENT_NAMED,
+            "creation selects the appended note");
+    require(same_text(folio_state_pane_title(state).note, "日報 名前"),
+            "ledger owns the name after input is gone");
+    require(folio_state_store_note(state, u"changed", 7) == FOLIO_STATE_READY &&
+                adapter.note_writes == 1 && adapter.archives == 1,
+            "later save uses the existing history path");
+    folio_state_destroy(state);
+}
+
+static void verify_first_save_refusals(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    struct note_name *name = accepted_note_name("draft");
+    struct note_destination destination = {.category = 0, .name = name};
+    require(folio_state_store_new(state, &destination, u"x", 1) == FOLIO_STATE_NOTHING_SELECTED,
+            "not an untitled document");
+    require(folio_state_new_note(state, 0) == FOLIO_STATE_READY, "untitled");
+    destination.category = 99;
+    require(folio_state_store_new(state, &destination, u"x", 1) == FOLIO_STATE_NO_SUCH_CATEGORY,
+            "invalid destination");
+    destination.category = 0;
+    const char16_t broken[] = {0xD800};
+    require(folio_state_store_new(state, &destination, broken, 1) == FOLIO_STATE_NOTE_MALFORMED,
+            "invalid UTF16 stays unsaved");
+    adapter.create_outcome = PERSISTENCE_UNWRITABLE;
+    require(folio_state_store_new(state, &destination, u"x", 1) == FOLIO_STATE_NOTE_STORE_FAILED,
+            "create failure");
+    adapter.create_outcome = PERSISTENCE_NAME_TAKEN;
+    require(folio_state_store_new(state, &destination, u"x", 1) == FOLIO_STATE_NAME_TAKEN,
+            "disk collision");
+    adapter.create_outcome = PERSISTENCE_OUT_OF_MEMORY;
+    require(folio_state_store_new(state, &destination, u"x", 1) == FOLIO_STATE_OUT_OF_MEMORY,
+            "adapter allocation failure");
+    note_name_destroy(name);
+    name = accepted_note_name("one");
+    destination.name = name;
+    require(folio_state_store_new(state, &destination, u"x", 1) == FOLIO_STATE_NAME_TAKEN &&
+                adapter.creates == 3 && adapter.ledger_writes == 0 && adapter.archives == 0,
+            "index collision is rejected without I/O");
+    require(folio_state_document_kind(state) == FOLIO_DOCUMENT_UNTITLED &&
+                folio_state_note_count(state) == 9,
+            "failures retain the untitled document and index");
+    note_name_destroy(name);
+    folio_state_destroy(state);
+}
+
+static void verify_created_stale_index(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_new_note(state, 0) == FOLIO_STATE_READY, "untitled");
+    struct note_name *name = accepted_note_name("draft");
+    struct note_destination destination = {.category = 0, .name = name};
+    adapter.ledger_write_outcome = PERSISTENCE_UNWRITABLE;
+    require(folio_state_store_new(state, &destination, u"draft text", 10) ==
+                FOLIO_STATE_LEDGER_STALE,
+            "report partial completion");
+    note_name_destroy(name);
+    require(folio_state_document_kind(state) == FOLIO_DOCUMENT_NAMED &&
+                same_text(folio_state_pane_text(state), "draft text") &&
+                same_text(folio_state_pane_title(state).note, "draft"),
+            "state agrees with the durable md");
+    enum folio_note_change changed = FOLIO_NOTE_SAME;
+    require(folio_state_note_changed(state, u"draft text", 10, &changed) ==
+                FOLIO_STATE_LEDGER_STALE,
+            "q cannot ignore a pending index");
+    require(folio_state_new_note(state, 1) == FOLIO_STATE_LEDGER_STALE &&
+                folio_state_select_note(state, 0, 0) == FOLIO_STATE_LEDGER_STALE &&
+                folio_state_move_category(state, 0, 1) == FOLIO_STATE_LEDGER_STALE &&
+                folio_state_store_note(state, u"draft text", 10) == FOLIO_STATE_LEDGER_STALE,
+            "pending index prevents follow-up operations");
+    adapter.ledger_write_outcome = PERSISTENCE_STORED;
+    require(folio_state_store_note(state, u"draft text", 10) == FOLIO_STATE_READY &&
+                adapter.creates == 1 && adapter.note_writes == 0 && adapter.archives == 0,
+            "retry repairs only the index");
+    require(folio_state_new_note(state, 1) == FOLIO_STATE_READY, "continue after repair");
+    folio_state_destroy(state);
+}
+
+static void verify_first_save_keeps_category_cursor(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_set_category_expanded(state, 2, false) == FOLIO_STATE_READY,
+            "last category is collapsed in this scenario");
+    require(folio_state_new_note(state, 0) == FOLIO_STATE_READY, "untitled in B");
+    require(folio_state_select_adjacent(state, FOLIO_STEP_LAST) == FOLIO_STATE_READY,
+            "cursor to last collapsed category");
+    enum folio_cursor_kind kind = FOLIO_CURSOR_NOTE;
+    struct note_ref cursor = {.category = 0, .note = 0};
+    require(folio_state_cursor(state, &kind, &cursor) && kind == FOLIO_CURSOR_CATEGORY,
+            "category cursor exists");
+    size_t category = cursor.category;
+    struct note_name *name = accepted_note_name("draft");
+    struct note_destination destination = {.category = 0, .name = name};
+    require(folio_state_store_new(state, &destination, u"draft", 5) == FOLIO_STATE_READY,
+            "save in another category");
+    require(folio_state_cursor(state, &kind, &cursor) && kind == FOLIO_CURSOR_CATEGORY &&
+                cursor.category == category,
+            "first save does not steal the category cursor");
+    require(folio_state_set_category_expanded(state, category, true) == FOLIO_STATE_READY &&
+                folio_state_document_category(state) == category,
+            "l still enters the intended category");
+    note_name_destroy(name);
+    folio_state_destroy(state);
+}
+
 void run_state_tests(void)
 {
     verify_ready_state();
@@ -1682,4 +1895,9 @@ void run_state_tests(void)
     verify_edit_failures();
     verify_move_while_editing();
     verify_failure_lines();
+    verify_untitled();
+    verify_first_save();
+    verify_first_save_refusals();
+    verify_created_stale_index();
+    verify_first_save_keeps_category_cursor();
 }

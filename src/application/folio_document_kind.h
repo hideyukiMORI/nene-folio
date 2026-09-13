@@ -1,0 +1,9 @@
+#ifndef NENEFOLIO_FOLIO_DOCUMENT_KIND_H
+#define NENEFOLIO_FOLIO_DOCUMENT_KIND_H
+enum folio_document_kind : unsigned char
+{
+    FOLIO_DOCUMENT_NONE,
+    FOLIO_DOCUMENT_NAMED,
+    FOLIO_DOCUMENT_UNTITLED
+};
+#endif

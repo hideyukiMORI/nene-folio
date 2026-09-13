@@ -21,6 +21,7 @@ static const struct
     [FOLIO_COMMAND_HELP] = {FOLIO_COMMAND_HELP, "ヘルプ", 2, {"help", "h"}},
     [FOLIO_COMMAND_EDIT] = {FOLIO_COMMAND_EDIT, "編集", 1, {"startinsert", ""}},
     [FOLIO_COMMAND_VIEW] = {FOLIO_COMMAND_VIEW, "保存して閲覧", 0, {"", ""}},
+    [FOLIO_COMMAND_NEW] = {FOLIO_COMMAND_NEW, "新しいノート", 1, {"enew", ""}},
 };
 
 static bool ascii_space(char value)
@@ -130,7 +131,8 @@ const char *_Nonnull folio_command_alias(enum folio_command command, size_t inde
     return catalog[command].names[index];
 }
 
-bool folio_command_parse(const char *_Nonnull text, size_t length, enum folio_command *_Nonnull out)
+bool folio_command_parse(const char *_Nonnull text, size_t length, enum folio_command *_Nonnull out,
+                         size_t *_Nonnull argument)
 {
     size_t begin = 0;
     size_t end = 0;
@@ -139,7 +141,24 @@ bool folio_command_parse(const char *_Nonnull text, size_t length, enum folio_co
     {
         begin = skip_spaces(text, begin + 1, end);
     }
-    return find_alias(text + begin, end - begin, out);
+    size_t token_end = begin;
+    while (token_end < end && !ascii_space(text[token_end]))
+    {
+        token_end += 1;
+    }
+    enum folio_command command = FOLIO_COMMAND_SAVE;
+    if (!find_alias(text + begin, token_end - begin, &command))
+    {
+        return false;
+    }
+    size_t name = skip_spaces(text, token_end, length);
+    if (name < length && command != FOLIO_COMMAND_SAVE)
+    {
+        return false;
+    }
+    *out = command;
+    *argument = name;
+    return true;
 }
 
 bool folio_command_matches(enum folio_command command, const char *_Nonnull text, size_t length)
