@@ -131,7 +131,10 @@ Waivers: none | WVR-NNNN
 段落区切りをCR 1つのまま取り出してEM_EXSETSELの位置と1対1にする。判断はcoreの `note_search`（前方／後方・巡回・
 anchor・件数。ASCIIの英字だけ大小無視）、語と方向はapplication、選択はRichEditが持つ。
 **INDEXの `?` はこの単位で後方検索へ移し、ヘルプはGUI「ヘルプ」・F1・`:h`・Ctrl+Pに残した。**
-単体2/2とWindows部品27項目が成功（[確認記録](docs/quality/2026-09-17-search-checks.md)）。
+レビュー対応でADR 0023へ補正節を足した。前方はanchorの**開始の次**から見て重なる一致を飛ばさず、
+反転したanchorは `NOTE_SEARCH_BAD_SPAN` で拒む。F3／Shift+F3は向きを名指しして進み、覚えている向きを変えない
+（変えるのは `/` と `?` だけ）。壊れた語は欄の中の1行で、表示本文を取り出せない事象は `PANE_UNAVAILABLE` で区別する。
+単体2/2とWindows部品30項目が成功（[確認記録](docs/quality/2026-09-17-search-checks.md)）。
 最終フルゲート・CIは#58のPRを参照する。次は**全ノート検索（FR-032 / #40）**で、語も状態もノート内検索とは別に持つ。
 
 2026-09-16: #55の別名保存はmain f35870dへ統合済み。#56 / ADR0022の名前変更を `out/worktrees/56-rename` で

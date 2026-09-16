@@ -6,7 +6,9 @@ GUI「このノート内を検索」・Ctrl+F・索引と閲覧本文の `/`（�
 `n` / `N` は欄が閉じていても効き、編集中の本文と各入力欄では文字入力のまま。
 対象は RichEdit が今表示している平文で、判断は core の `note_search`、語と方向は application、選択は RichEdit。
 **INDEX の `?` はこの単位で後方検索へ移し、ヘルプは GUI「ヘルプ」・F1・`:h`・Ctrl+P に残した。**
-単体 2/2・Windows 部品 27 項目が成功（[確認記録](../quality/2026-09-17-search-checks.md)）。
+独立レビューの所見はすべて同じ単位で直した（前方 anchor は開始の次・反転 anchor は `BAD_SPAN`・
+F3 / Shift+F3 の追加・壊れた語は欄の中の 1 行・表示本文を取り出せない事象を `PANE_UNAVAILABLE` で区別）。
+単体 2/2・Windows 部品 30 項目が成功（[確認記録](../quality/2026-09-17-search-checks.md)）。
 最終フルゲートと CI は #58 の PR を参照する。件数表示の目視・物理キー・IME 候補窓・高 DPI は未確認。
 次は**全ノート検索（FR-032 / #40・Ctrl+Shift+F）**で、ノート内検索とは語も状態も別に持つ。
 

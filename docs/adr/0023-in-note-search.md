@@ -50,3 +50,25 @@ ADR 0013 は区画を Win32 のフォーカスそのもの、ADR 0016 は入力�
 core: ASCII 大小・巡回・前方／後方・anchor の扱い・サロゲート対を跨がない・空語・不正 UTF-16・確保失敗。
 application: 語と方向の所有・#40 の語と独立。UI は独立 Win32 部品で `/` `?` `n` `N`・Ctrl+F・Enter／Shift+Enter・Esc の復帰・
 composition 中の不干渉・0 件表示を測る。物理キー・IME 候補窓・高 DPI は実機で別記。Waivers: none。
+
+## 2026-09-17 の補正（実装と独立レビューの後・決定本文は書き換えない）
+
+受理した決定のうち、実装で誤りが分かった点と落ちていた点をここに追記する。正典はこの節を含めた全文である。
+
+1. **決定 2 の「前方なら `anchor.end` 以降」を「前方なら anchor の開始の次から」に訂正する。**
+   終わりから探すと重なった一致を飛ばし、`aaaa` の中の `aa`（候補 0 / 1 / 2）を前方に辿ると
+   0 → 2 → 0 となって、`note_search_count` が数える 3 件と食い違った（表示が 1/3 の次に 3/3）。
+   `from = anchor.start + (anchor.end > anchor.start ? 1 : 0)` とし、anchor が空（caret）ならその位置から。
+   後方は決定どおり `anchor.start` より前のまま。これで前後どちらに辿っても数えた一致を全部通る。
+2. 反転した anchor（`start > end`）は公開契約の違反として、閉じた値 `NOTE_SEARCH_BAD_SPAN` で拒む。
+   黙って入れ替えない。
+3. `note_search_count` の `ordinal` は「`position` 以下から始まる一致の数」を契約とする。
+   `position` が一致の開始ならその 1 始まりの順番で、開始でない位置でもそこまでの一致の数を返す。
+4. **F3＝次の一致（前方）・Shift+F3＝前の一致（後方）を主窓の加速表に足す**（採用済み計画 #47 の表にあり、
+   本 ADR が落としていた）。欄の「前へ」「次へ」と同じ処理で、**覚えている向きは変えない**。
+   向きを変えるのは `/` と `?` だけで、`n` / `N` と Enter / Shift+Enter は覚えた向きに対して相対である。
+   抑止条件は Ctrl+F と同じ表（composition 中・名前入力面・他のモーダルでは効かない）。
+5. 語の `MALFORMED` は打つたびのモーダルにせず、0 件と同じ欄の中の 1 行で伝える（表示の経路を 1 つにする）。
+   表示中の平文を取り出せない事象は `OUT_OF_MEMORY` に潰さず `FOLIO_STATE_PANE_UNAVAILABLE` として区別する。
+6. 決定 3 の「UTF-16 を受ける入口」の列挙を訂正する。ADR 0021 / 0022 で増えた分を含め、
+   `store_new` / `rename_note` / `store_note` / `note_changed` / `end_edit` / `set_search_term` の 6 本である。
