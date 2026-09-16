@@ -153,3 +153,17 @@ hideの再開指示を受け、設計リナが決定3の「書けないdataの�
 - 決定1の名前面は、文書の実名（`folio_state_document_name`）を初期値にする。`pane_title_view`は実名と
   `recovering`だけを持ち、「名前変更の復旧待ち」の文言はUIのパンくず1か所が持つ。未完了の意図があるときは
   面を最初から固定状態（旧名→新名の表示・入力不可・「再試行」「閉じる」）で開く。
+
+## 2026-09-17の補正（決定4の範囲・Issue #61）
+
+hideの「同期フォルダのreparse pointは一般にどう処理されるか」を受け、設計リナが決定4の「reparse pointを拒否」を次へ改める。他の決定は変えない。
+
+- OneDriveのFiles On-DemandとDropboxのSmart SyncはWindowsのCloud Files APIで同期フォルダ内の全ファイルを
+  プレースホルダ（`IO_REPARSE_TAG_CLOUD`系）にする。一律の拒否では同期フォルダに置いた`data/`の改名が常に拒否される。
+- 決定4の目的はシンボリックリンク／junctionを辿って`data/`の外を動かさないことである。その目的に必要なのは
+  **name surrogate のタグ**（`IsReparseTagNameSurrogate`、0x20000000ビット。シンボリックリンク0xA000000C・マウントポイント0xA0000003）の拒否だけで、
+  他のエディタもリンクの区別にはこの判定を使い、rename自体はタグを見ない。
+- 親と対象は引き続き`FILE_FLAG_OPEN_REPARSE_POINT`で開き、`GetFileInformationByHandleEx(FileAttributeTagInfo)`のReparseTagが
+  name surrogateのときだけ拒否する。クラウドのプレースホルダ・重複除去・WOFなどは通常のファイルとして扱う。
+  NTFS判定・ファイルID・置換なしrename・記録と再開の契約は変えない。
+- 同期サービスの競合コピーとオンラインのみファイルの取得はエディタを問わず起きる事象で、残るリスクとして記す。

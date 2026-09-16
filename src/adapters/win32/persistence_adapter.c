@@ -746,11 +746,22 @@ static HANDLE open_entry(const wchar_t *_Nonnull path, DWORD access, bool direct
     return CreateFileW(path, access, FILE_SHARE_READ, nullptr, OPEN_EXISTING, flags, nullptr);
 }
 
-static bool plain_entry(HANDLE handle)
+/* 拒むのは data/ の外へ辿らせる name surrogate のタグだけ。
+ * シンボリックリンクとマウントポイント（junction）が該当し、
+ * クラウドのプレースホルダ・重複除去・WOF は通常の実体として扱う。
+ * 決定 4 の 2026-09-17 の補正。タグを読めなければ安全側で拒む。 */
+static bool not_link(HANDLE handle)
 {
-    BY_HANDLE_FILE_INFORMATION information;
-    return GetFileInformationByHandle(handle, &information) &&
-           (information.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) == 0;
+    FILE_ATTRIBUTE_TAG_INFO info;
+    if (!GetFileInformationByHandleEx(handle, FileAttributeTagInfo, &info, (DWORD)sizeof info))
+    {
+        return false;
+    }
+    if ((info.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) == 0)
+    {
+        return true;
+    }
+    return !IsReparseTagNameSurrogate(info.ReparseTag);
 }
 
 /* 初版はローカル NTFS だけを対象にする（決定 4）。照会できなければ対象にしない。 */
@@ -783,10 +794,10 @@ static void format_identity(const FILE_ID_INFO *_Nonnull info, char *_Nonnull ou
     out[rename_journal_id_length] = '\0';
 }
 
-/* 開いたハンドルで reparse point と NTFS を確かめ、識別子を読む。 */
+/* 開いたハンドルがリンクでないことと NTFS を確かめ、識別子を読む。 */
 static enum rename_outcome identity_of(HANDLE handle, char *_Nonnull out)
 {
-    if (!plain_entry(handle) || !ntfs_volume(handle))
+    if (!not_link(handle) || !ntfs_volume(handle))
     {
         return RENAME_UNSUPPORTED;
     }
@@ -901,7 +912,7 @@ static enum rename_outcome guard_parent(struct rename_guards *_Nonnull guards,
     }
     guards->items[guards->count] = handle;
     guards->count += 1;
-    return plain_entry(handle) ? RENAME_COMPLETED : RENAME_UNSUPPORTED;
+    return not_link(handle) ? RENAME_COMPLETED : RENAME_UNSUPPORTED;
 }
 
 static void release_guards(struct rename_guards *_Nonnull guards)

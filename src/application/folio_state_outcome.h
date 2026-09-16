@@ -29,7 +29,8 @@ enum folio_state_outcome : unsigned char
     /* data/ に書けないので改名できない。記録は公開しておらず、意図も残っていない（決定 3 の補正）
      */
     FOLIO_STATE_RENAME_UNLOCKED,
-    /* ローカル NTFS でない・照会できない・reparse point。何も動かしていない（決定 4） */
+    /* ローカル NTFS でない・照会できない・シンボリックリンク／junction。
+     * 何も動かしていない（決定 4 と 2026-09-17 の補正） */
     FOLIO_STATE_RENAME_UNSUPPORTED,
     /* 元の md や履歴の識別子を取れないので、再開できる記録を作れない（決定 4） */
     FOLIO_STATE_RENAME_IDENTITY_FAILED,

@@ -124,6 +124,11 @@ Waivers: none | WVR-NNNN
 
 ## 6. いまの状況
 
+2026-09-17: #58はmain ab01654へ統合済み。#61は `out/worktrees/61-reparse`。改名の再解析ポイントの判定を
+`GetFileInformationByHandleEx(FileAttributeTagInfo)` のタグへ変え、`IsReparseTagNameSurrogate`（シンボリックリンク・
+junction）だけを拒むようにした（ADR 0022の決定4の補正）。同期フォルダのプレースホルダに置いた `data/` でも改名できる。
+実アダプタprobeは17/17成功（[確認記録](docs/quality/2026-09-17-reparse-checks.md)）。次は**全ノート検索（FR-032 / #40）**。
+
 2026-09-17: #56の名前変更はmain 69431cbへ統合済み。#58 / ADR 0023の現在ノートの検索を `out/worktrees/58-search` で
 3層に実装した。GUI「このノート内を検索」・Ctrl+F・索引と閲覧本文の `/`（前方）・`?`（後方）がADR 0016の同じ入力面を開き、
 元のフォーカスを覚えてEscで返す。Exと違いEnterでは閉じず、Enterは直前の方向・Shift+Enterは逆方向へ進む。

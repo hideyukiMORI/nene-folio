@@ -48,6 +48,8 @@
 - 別ファイルの識別子を書いた記録は `RENAME_HALTED` で停止し、記録を消さず何も動かさない。
   版2の記録は `RENAME_JOURNAL_BROKEN` で、やはり消さない。
 - junction 経由のカテゴリは `RENAME_UNSUPPORTED` で、記録を公開しない。
+  **#61 で判定をタグへ変更**した（一律の reparse point 拒否 → name surrogate のタグだけ拒否）。
+  junction とシンボリックリンクの拒否は変わらない。[2026-09-17 の確認記録](2026-09-17-reparse-checks.md)。
 - 同じ `data/` の二重起動は `PERSISTENCE_ADAPTER_DATA_IN_USE`。別プロセスが錠を持つあいだも同じで、
   そのプロセスが終われば取れる。錠ファイルは残ってよい。
 - 錠ファイルを読み取り専用にした「書けない `data/`」は起動でき、改名は `RENAME_UNLOCKED` で記録を作らない。
