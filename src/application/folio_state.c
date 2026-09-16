@@ -1730,8 +1730,8 @@ static const char *_Nonnull unfinished_failure_line(enum folio_state_outcome out
     case FOLIO_STATE_RENAME_UNLOCKED:
         return "data/ に書けないため名前を変更できません。何も変えていません。";
     case FOLIO_STATE_RENAME_UNSUPPORTED:
-        return "この data/ ではノート名を変更できません（ローカルの NTFS 以外、または再解析ポイン"
-               "ト）。";
+        return "この data/ ではノート名を変更できません（ローカルの NTFS 以外、またはシンボリック"
+               "リンク／junction）。";
     case FOLIO_STATE_RENAME_IDENTITY_FAILED:
         return "元のファイルを確かめられないので名前を変更できません。何も変えていません。";
     case FOLIO_STATE_RENAME_JOURNAL_FAILED:
