@@ -135,10 +135,11 @@ folio_state_store_new(struct folio_state *_Nonnull state,
                                                               const char16_t *_Nonnull units,
                                                               size_t count);
 /* 編集中の本文を保存時と同じ形へ正規化し、保存済み本文との差を答える。
- * VIEWでは台帳が同期済みならSAME。問い合わせなので mode・本文・履歴・ファイルを変えない（ADR
- * 0016）。 */
+ * VIEWでは台帳が同期済みならSAME。未同期なら保存系と同じ修復を先に試み、
+ * 失敗ならLEDGER_UNSYNCED。この修復のほかは mode・本文・履歴・md を
+ * 変えない問い合わせである（ADR 0016・ADR 0021 の決定 3）。 */
 [[nodiscard]] enum folio_state_outcome
-folio_state_note_changed(const struct folio_state *_Nonnull state, const char16_t *_Nonnull units,
+folio_state_note_changed(struct folio_state *_Nonnull state, const char16_t *_Nonnull units,
                          size_t count, enum folio_note_change *_Nonnull out);
 /* 編集中の本文を保存して閲覧へ戻る。保存できなければ編集モードのまま。
  * 使うのは「閲覧」の札。終了操作は編集モードを変えず store_note で保存する（ADR 0016）。

@@ -8,6 +8,14 @@
 初回の新しい単体シナリオは、固定本文を前提とする既存edited_state fixtureを異なる本文で使って失敗した。
 新シナリオはready_state→選択→編集開始で明示的に準備するよう修正し、製品の振る舞いは変えていない。
 
+## 2026-09-16 の補正の単体
+
+台帳未同期のままの別名保存が `FOLIO_STATE_LEDGER_UNSYNCED` を返し、mdを作らず（creates据え置き）
+開いている文書・本文・modeを変えないこと、`:q` の変更確認が同じ修復を試み、回復後は保存を挟まずに
+CHANGED/SAMEを判定することをEDITモードで追加確認した。固定toolchainの `cmake --build build`、
+`ctest --test-dir build --output-on-failure --no-tests=error` は成功（2/2）。
+`python eng/coverage.py` は1642/1746分岐（94.0435%）、negative proof13.17%で期待どおり拒否。
+
 ## Windowsの独立部品測定
 
 ルート `out/design/2026-09-13/save-as-window-probe.c` と `save-as-window-probe.log` が原本と結果。

@@ -199,6 +199,8 @@ static enum folio_state_outcome save(struct name_prompt *_Nonnull prompt)
     return result;
 }
 
+/* 新しいmdを公開できたときだけ閉じる。LEDGER_STALE は公開後の台帳の失敗。
+ * LEDGER_UNSYNCED は何も作れていないので、NAME_TAKEN と同じく入力を残して理由を見せる。 */
 static void submit(struct name_prompt *_Nonnull prompt)
 {
     enum folio_state_outcome saved = save(prompt);

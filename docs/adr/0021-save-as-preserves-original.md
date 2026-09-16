@@ -43,3 +43,12 @@ Ctrl+SのWM_CHARではShift併用を区別できない。製品は修飾キー�
 元のwrite/archiveが呼ばれないこと、閲覧原文と改行の保持、取消・衝突・部分失敗・確保失敗を測る。
 主窓のアクセラレータ・IME guard・本文とUndoは独立部品で測り、物理キーと目視は区別する。
 この判断を実装前に記録した。Waivers: none。
+
+## 2026-09-16 の補正
+
+- 結果型に `FOLIO_STATE_LEDGER_UNSYNCED` を足す。「前回の index.json の修復に失敗し、今回の意図は
+  何も実行していない」の意味で、`synchronize_index` の失敗はすべてこれになる。
+- `FOLIO_STATE_LEDGER_STALE` は「今回 md を移した／公開したが index.json を書けなかった」だけに絞る
+  （move_note の (e) と create_edited の公開後）。名前入力面は STALE だけ閉じ、UNSYNCED は入力を残す。
+- `note_changed`（`:q`）も他の保存系と同じ修復を先に試み、失敗だけ UNSYNCED を返す。書込が回復すれば
+  一度保存しなくても通常の変更判定へ進む。副作用はこの修復だけで、md・履歴・mode は変えない。
