@@ -24,6 +24,8 @@ static const struct
     [FOLIO_COMMAND_NEW] = {FOLIO_COMMAND_NEW, "新しいノート", 1, {"enew", ""}},
     [FOLIO_COMMAND_SAVE_AS] = {FOLIO_COMMAND_SAVE_AS, "別名で保存", 1, {"saveas", ""}},
     [FOLIO_COMMAND_RENAME] = {FOLIO_COMMAND_RENAME, "名前を変更", 1, {"rename", ""}},
+    /* GUI 専用操作（ADR 0018）。`/` `?` `n` `N` と Ctrl+F が同じ ID を実行する（ADR 0023）。 */
+    [FOLIO_COMMAND_FIND] = {FOLIO_COMMAND_FIND, "このノート内を検索", 0, {"", ""}},
 };
 
 /* 名前引数を許す操作（ADR0020 / ADR0022）。閉じた集合なので増えたらここで落ちる。 */
@@ -42,6 +44,7 @@ static bool takes_name(enum folio_command command)
     case FOLIO_COMMAND_EDIT:
     case FOLIO_COMMAND_VIEW:
     case FOLIO_COMMAND_NEW:
+    case FOLIO_COMMAND_FIND:
         return false;
     }
     return false;

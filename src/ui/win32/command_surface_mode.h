@@ -6,7 +6,9 @@ enum command_surface_mode : unsigned char
 {
     COMMAND_SURFACE_CLOSED,
     COMMAND_SURFACE_EX,
-    COMMAND_SURFACE_PALETTE
+    COMMAND_SURFACE_PALETTE,
+    /* ノート内検索。Ex と違い Enter で閉じない（ADR 0023 の決定 4） */
+    COMMAND_SURFACE_SEARCH
 };
 
 #endif

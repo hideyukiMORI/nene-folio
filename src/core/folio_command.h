@@ -17,7 +17,8 @@ enum folio_command : unsigned char
     FOLIO_COMMAND_VIEW,
     FOLIO_COMMAND_NEW,
     FOLIO_COMMAND_SAVE_AS,
-    FOLIO_COMMAND_RENAME
+    FOLIO_COMMAND_RENAME,
+    FOLIO_COMMAND_FIND
 };
 
 [[nodiscard]] size_t folio_command_count(void);

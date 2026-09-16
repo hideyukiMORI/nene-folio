@@ -14,6 +14,7 @@
 #include "note_name.h"
 #include "note_pane.h"
 #include "note_ref.h"
+#include "note_search.h"
 #include "utf16_text.h"
 #include "utf8_text.h"
 
@@ -32,6 +33,8 @@ struct folio_window
     struct drawer_window *_Nullable drawer;
     struct note_pane *_Nullable pane;
     HACCEL _Nullable commands;
+    /* 検索欄にいるあいだだけ使う Enter / Shift+Enter（ADR 0023 の決定 4） */
+    HACCEL _Nullable search_keys;
     HFONT _Nullable mono_font;
     HWND _Nullable command_layer;
     HWND _Nullable command_input;
@@ -45,6 +48,10 @@ struct folio_window
     bool command_composing;
     bool command_unknown;
     enum folio_state_outcome command_failure;
+    /* 直近の検索の結果と「k / n 件」。判断は core が持ち、ここは表示値だけ（ADR 0023 の決定 4） */
+    enum note_search_outcome search_outcome;
+    size_t search_total;
+    size_t search_ordinal;
     bool pending_g; /* 直前の文字の鍵が g だった（gg の 2 打・ADR 0013 の決定 2） */
 };
 
@@ -59,10 +66,11 @@ static const wchar_t edit_class[] = L"EDIT";
 static const char *_Nonnull const command_shortcuts[] = {
     "一覧  ↑↓ 選択 / Enter 実行 / Esc 戻る / Tab 説明",
     "編集本文  Ctrl+h/j/k/l ←/↓/↑/→",
-    "全区画  F1 ヘルプ / Ctrl+P 一覧",
+    "全区画  F1 ヘルプ / Ctrl+P 一覧 / Ctrl+F このノート内を検索",
     "Ctrl+N 新規 / Ctrl+S 保存 / Ctrl+Shift+S 別名保存 / F2 名前変更",
     "索引・閲覧本文  : コマンド / i 編集",
-    "索引  ? ヘルプ（検索の追加まで）",
+    "索引・閲覧本文  / 次を検索 / ? 前を検索 / n・N 繰り返し",
+    "検索欄  Enter 次 / Shift+Enter 逆 / Esc 閉じる（選択は残る）",
     "索引  j/k 次/前 / gg/G 先頭/末尾",
     "索引  h/l 折畳/展開 / Enter 本文",
     "索引  ↑↓ / PgUp/PgDn スクロール",
@@ -76,7 +84,12 @@ constexpr WPARAM new_character = 0x0E;
 constexpr int command_control_id = 1;
 constexpr WORD save_as_accelerator = 100;
 constexpr WORD rename_accelerator = 101;
+constexpr WORD find_accelerator = 102;
+constexpr WORD search_next_accelerator = 103;
+constexpr WORD search_previous_accelerator = 104;
 constexpr size_t command_input_capacity = 256;
+/* 「k / n 件」と向きの言い換えを 1 行に組む領域（UTF-8）。 */
+constexpr size_t search_status_capacity = 128;
 
 /* 96 DPI での寸法（デザイン「案2 堅」）。 */
 constexpr int base_dpi = 96;
@@ -127,6 +140,9 @@ constexpr int base_command_row_padding = 12;
 constexpr int base_command_alias_room = 96;
 constexpr int base_command_alias_gap = 12;
 constexpr int base_command_input_vertical_inset = 2;
+constexpr int base_search_button_width = 64;
+/* 操作行の常設ボタンを出せる最小の余白（これより狭ければ「操作 ▾」のメニューへ移る）。 */
+constexpr int base_action_margin = 8;
 
 /* DWM の窓の角と縁（Windows 11）。dwmapi.h の版によっては未定義なので数値で持つ。 */
 constexpr DWORD attribute_corner_preference = 33;
@@ -141,6 +157,7 @@ static enum folio_state_outcome command_save_as(const struct folio_window *_Nonn
 static void close_command_surface(struct folio_window *_Nonnull self);
 static void show_command_palette(struct folio_window *_Nonnull self);
 static void move_command_selection(struct folio_window *_Nonnull self, WPARAM key);
+static void search_input_changed(struct folio_window *_Nonnull self);
 static LRESULT CALLBACK command_input_procedure(HWND window, UINT message, WPARAM wparam,
                                                 LPARAM lparam);
 static LRESULT CALLBACK command_layer_procedure(HWND window, UINT message, WPARAM wparam,
@@ -222,23 +239,66 @@ static RECT command_ex_rect(const struct folio_window *_Nonnull self)
     return bounds;
 }
 
+/* 検索欄は Ex と同じ下端の帯で、件数の行を常に持ち、右端に「前へ」「次へ」を置く。 */
+static RECT command_search_rect(const struct folio_window *_Nonnull self)
+{
+    RECT client;
+    GetClientRect(self->handle, &client);
+    UINT dpi = GetDpiForWindow(self->handle);
+    RECT bounds = {0, client.bottom - scale(base_ex_height + base_command_status_height, dpi),
+                   client.right, client.bottom};
+    return bounds;
+}
+
+static RECT command_surface_rect(const struct folio_window *_Nonnull self)
+{
+    switch (self->command_surface)
+    {
+    case COMMAND_SURFACE_EX:
+        return command_ex_rect(self);
+    case COMMAND_SURFACE_SEARCH:
+        return command_search_rect(self);
+    case COMMAND_SURFACE_CLOSED:
+    case COMMAND_SURFACE_PALETTE:
+        return command_palette_rect(self);
+    }
+    return command_palette_rect(self);
+}
+
 static RECT command_input_rect(const struct folio_window *_Nonnull self)
 {
     UINT dpi = GetDpiForWindow(self->handle);
     RECT bounds;
     GetClientRect(self->command_layer, &bounds);
-    if (self->command_surface == COMMAND_SURFACE_EX)
+    if (self->command_surface == COMMAND_SURFACE_PALETTE)
     {
-        int inset = scale(base_command_gap, dpi);
-        int vertical = scale(base_command_input_vertical_inset, dpi);
-        RECT input = {bounds.left + inset, bounds.bottom - scale(base_ex_height, dpi) + vertical,
-                      bounds.right - inset, bounds.bottom - vertical};
-        return input;
+        int padding = scale(base_command_palette_padding, dpi);
+        int top = padding + scale(base_command_help_row_height * 2, dpi);
+        RECT rows = {padding, top, bounds.right - padding,
+                     top + scale(base_command_input_height, dpi)};
+        return rows;
     }
-    int inset = scale(base_command_palette_padding, dpi);
-    int top = inset + scale(base_command_help_row_height * 2, dpi);
-    RECT input = {inset, top, bounds.right - inset, top + scale(base_command_input_height, dpi)};
+    int inset = scale(base_command_gap, dpi);
+    int vertical = scale(base_command_input_vertical_inset, dpi);
+    int room = self->command_surface == COMMAND_SURFACE_SEARCH
+                   ? scale((base_search_button_width + base_command_gap) * 2, dpi)
+                   : 0;
+    RECT input = {bounds.left + inset, bounds.bottom - scale(base_ex_height, dpi) + vertical,
+                  bounds.right - inset - room, bounds.bottom - vertical};
     return input;
+}
+
+/* 欄の右端の「前へ」（index 0）と「次へ」（index 1）。描画と当たり判定はここを共有する。 */
+static RECT search_button_rect(const struct folio_window *_Nonnull self, size_t index)
+{
+    UINT dpi = GetDpiForWindow(self->handle);
+    RECT bounds;
+    GetClientRect(self->command_layer, &bounds);
+    int width = scale(base_search_button_width, dpi);
+    int gap = scale(base_command_gap, dpi);
+    int right = bounds.right - gap - (index == 0 ? width + gap : 0);
+    RECT button = {right - width, bounds.bottom - scale(base_ex_height, dpi), right, bounds.bottom};
+    return button;
 }
 
 static RECT command_toggle_rect(const struct folio_window *_Nonnull self)
@@ -297,15 +357,12 @@ static void arrange_command_input(struct folio_window *_Nonnull self)
     {
         return;
     }
-    bool visible = self->command_surface == COMMAND_SURFACE_EX ||
-                   self->command_surface == COMMAND_SURFACE_PALETTE;
-    if (!visible)
+    if (self->command_surface == COMMAND_SURFACE_CLOSED)
     {
         ShowWindow(self->command_layer, SW_HIDE);
         return;
     }
-    RECT layer = self->command_surface == COMMAND_SURFACE_EX ? command_ex_rect(self)
-                                                             : command_palette_rect(self);
+    RECT layer = command_surface_rect(self);
     MoveWindow(self->command_layer, layer.left, layer.top, layer.right - layer.left,
                layer.bottom - layer.top, TRUE);
     RECT bounds = command_input_rect(self);
@@ -709,6 +766,83 @@ static void draw_command_row(const struct folio_window *_Nonnull self, HDC devic
     draw_aliases(self, device, row.command, aliases);
 }
 
+static size_t append_text(char *_Nonnull out, size_t at, const char *_Nonnull text)
+{
+    size_t length = strlen(text);
+    memcpy(out + at, text, length);
+    return at + length;
+}
+
+/* 10 進で書く。件数は本文の長さを超えないので 20 桁で足りる。 */
+static size_t append_number(char *_Nonnull out, size_t at, size_t value)
+{
+    char digits[20];
+    size_t count = 0;
+    do
+    {
+        digits[count] = (char)('0' + value % 10);
+        count += 1;
+        value /= 10;
+    } while (value > 0 && count < sizeof digits);
+    for (size_t index = 0; index < count; ++index)
+    {
+        out[at + index] = digits[count - 1 - index];
+    }
+    return at + count;
+}
+
+/* いまの向きを欄に示す（`/` で開けば次へ、`?` で開けば前へ・ADR 0023 の決定 4）。 */
+static const char *_Nonnull search_direction_label(const struct folio_window *_Nonnull self)
+{
+    switch (folio_state_search_direction(self->state))
+    {
+    case SEARCH_DIRECTION_FORWARD:
+        return "このノート内を検索 ／ 次へ  ";
+    case SEARCH_DIRECTION_BACKWARD:
+        return "このノート内を検索 ／ 前へ  ";
+    }
+    return "このノート内を検索  ";
+}
+
+/* 向きと「k / n 件」。0 件も壊れた語も同じ場所に出し、選択は変えない。 */
+static void search_status(const struct folio_window *_Nonnull self, char *_Nonnull out)
+{
+    size_t at = append_text(out, 0, search_direction_label(self));
+    switch (self->search_outcome)
+    {
+    case NOTE_SEARCH_NO_TERM:
+        break;
+    case NOTE_SEARCH_MALFORMED:
+        at = append_text(out, at, "検索できない文字があります");
+        break;
+    case NOTE_SEARCH_NOT_FOUND:
+        at = append_text(out, at, "見つかりません");
+        break;
+    case NOTE_SEARCH_FOUND:
+        at = append_number(out, at, self->search_ordinal);
+        at = append_text(out, at, " / ");
+        at = append_number(out, at, self->search_total);
+        at = append_text(out, at, " 件");
+        break;
+    }
+    out[at] = '\0';
+}
+
+static void draw_search_surface(const struct folio_window *_Nonnull self, HDC device, RECT bounds)
+{
+    UINT dpi = GetDpiForWindow(self->handle);
+    int gap = scale(base_command_gap, dpi);
+    RECT status = {bounds.left + gap, bounds.top, bounds.right - gap,
+                   bounds.top + scale(base_command_status_height, dpi)};
+    char line[search_status_capacity];
+    search_status(self, line);
+    SetTextColor(device, self->palette.current_text);
+    draw_utf8(device, line, status);
+    SetTextColor(device, self->palette.selected_text);
+    draw_utf8(device, "◀ 前へ", search_button_rect(self, 0));
+    draw_utf8(device, "次へ ▶", search_button_rect(self, 1));
+}
+
 static void draw_command_status(const struct folio_window *_Nonnull self, HDC device, RECT bounds)
 {
     const char *_Nonnull line = "";
@@ -842,6 +976,10 @@ static void draw_command_surface(const struct folio_window *_Nonnull self, HDC d
         FillRect(device, &bounds, self->command_brush);
         draw_palette_rows(self, device, bounds);
         return;
+    case COMMAND_SURFACE_SEARCH:
+        FillRect(device, &bounds, self->command_brush);
+        draw_search_surface(self, device, bounds);
+        return;
     }
 }
 
@@ -899,11 +1037,22 @@ static LRESULT hit_test(const struct folio_window *_Nonnull self, LPARAM lparam)
 static RECT action_button_rect(const struct folio_window *_Nonnull self, size_t index)
 {
     UINT dpi = GetDpiForWindow(self->handle);
-    const int offsets[] = {0, 110, 168, 226};
-    const int widths[] = {104, 52, 52, 70};
+    const int offsets[] = {0, 110, 168, 226, 302};
+    const int widths[] = {104, 52, 52, 70, 160};
     int left = scale(base_drawer_width + 8 + offsets[index], dpi);
     int top = scale(base_caption_height + 4, dpi);
     return (RECT){left, top, left + scale(widths[index], dpi), top + scale(28, dpi)};
+}
+
+/* 幅が足りない窓（560px など）では常設ボタンを出さず、「操作 ▾」のメニューへ委ねる
+ * （登録表に載っている操作はメニューに必ず出る・ADR 0018 / ADR 0023 の決定 4）。 */
+static bool action_button_fits(const struct folio_window *_Nonnull self, size_t index)
+{
+    RECT client;
+    GetClientRect(self->handle, &client);
+    return action_button_rect(self, index).right +
+               scale(base_action_margin, GetDpiForWindow(self->handle)) <=
+           client.right;
 }
 
 static void draw_action_button(const struct folio_window *_Nonnull self, HDC device, RECT bounds,
@@ -926,6 +1075,11 @@ static void draw_actions(const struct folio_window *_Nonnull self, HDC device)
     draw_action_button(self, device, action_button_rect(self, 2), "操作 ▾");
     draw_action_button(self, device, action_button_rect(self, 3),
                        folio_command_label(FOLIO_COMMAND_HELP));
+    if (action_button_fits(self, 4))
+    {
+        draw_action_button(self, device, action_button_rect(self, 4),
+                           folio_command_label(FOLIO_COMMAND_FIND));
+    }
 }
 
 /* 右ペインの地と頭。本文は note_pane が持つ。 */
@@ -1176,6 +1330,132 @@ static void command_failure(struct folio_window *_Nonnull self, enum folio_state
     }
 }
 
+static enum search_direction reversed_direction(enum search_direction direction)
+{
+    switch (direction)
+    {
+    case SEARCH_DIRECTION_FORWARD:
+        return SEARCH_DIRECTION_BACKWARD;
+    case SEARCH_DIRECTION_BACKWARD:
+        return SEARCH_DIRECTION_FORWARD;
+    }
+    return direction;
+}
+
+/* 探し始める位置。選択の正本は RichEdit で、application も core も持たない（ADR 0023 の決定 1）。
+ * advance なら選択の外側（前方は終わり・後方は始まり）から、入力中（インクリメンタル）は
+ * いまの一致の頭（後方なら末尾）から数え直して、打つたびに同じ場所で伸びるようにする。 */
+static struct note_search_span search_anchor(const struct folio_window *_Nonnull self,
+                                             enum search_direction direction, bool advance)
+{
+    size_t start = 0;
+    size_t end = 0;
+    if (self->pane == nullptr || !note_pane_selection(self->pane, &start, &end))
+    {
+        start = 0;
+        end = 0;
+    }
+    if (advance)
+    {
+        return (struct note_search_span){.start = start, .end = end};
+    }
+    size_t at = direction == SEARCH_DIRECTION_FORWARD ? start : end;
+    return (struct note_search_span){.start = at, .end = at};
+}
+
+/* core が決めた範囲を RichEdit の選択 1 つにする。着色もしないし、本文も Undo も触らない。 */
+static void apply_search(struct folio_window *_Nonnull self,
+                         const struct note_search_query *_Nonnull query,
+                         enum search_direction direction, bool advance)
+{
+    struct note_search_span found = {.start = 0, .end = 0};
+    self->search_outcome =
+        note_search_next(query, search_anchor(self, direction, advance), direction, &found);
+    if (self->search_outcome != NOTE_SEARCH_FOUND || self->pane == nullptr)
+    {
+        return;
+    }
+    note_pane_select(self->pane, found.start, found.end);
+    size_t total = 0;
+    size_t ordinal = 0;
+    if (note_search_count(query, found.start, &total, &ordinal) == NOTE_SEARCH_FOUND)
+    {
+        self->search_total = total;
+        self->search_ordinal = ordinal;
+    }
+}
+
+/* 表示中の平文と覚えている語を core へ渡す。本文は UI が貸すだけで、判断は core が持つ。 */
+static void update_search(struct folio_window *_Nonnull self, enum search_direction direction,
+                          bool advance)
+{
+    self->search_outcome = NOTE_SEARCH_NO_TERM;
+    self->search_total = 0;
+    self->search_ordinal = 0;
+    const char16_t *_Nonnull text = u"";
+    size_t length = 0;
+    struct utf16_text *_Nullable term = nullptr;
+    if (self->pane == nullptr ||
+        note_pane_display_text(self->pane, &text, &length) != NOTE_PANE_TEXT_TAKEN ||
+        utf16_text_create(folio_state_search_term(self->state),
+                          folio_state_search_term_length(self->state),
+                          &term) != UTF16_TEXT_CONVERTED)
+    {
+        failure_box_show(self->handle, FOLIO_STATE_OUT_OF_MEMORY);
+        return;
+    }
+    struct note_search_query query = {.text = text,
+                                      .length = length,
+                                      .term = utf16_text_units(term),
+                                      .term_length = utf16_text_length(term)};
+    apply_search(self, &query, direction, advance);
+    utf16_text_destroy(term);
+}
+
+/* 欄が開いていれば件数を描き直し、閉じているときの不成立は音だけで知らせる。 */
+static void report_search(struct folio_window *_Nonnull self)
+{
+    if (self->command_surface == COMMAND_SURFACE_SEARCH)
+    {
+        redraw_command_layer(self);
+        return;
+    }
+    if (self->search_outcome != NOTE_SEARCH_FOUND)
+    {
+        MessageBeep(MB_ICONWARNING);
+    }
+}
+
+/* 覚えている向きで次の一致へ。語が空なら何もしない（ADR 0023 の決定 5）。 */
+static void advance_search(struct folio_window *_Nonnull self)
+{
+    if (folio_state_search_term_length(self->state) == 0)
+    {
+        return;
+    }
+    update_search(self, folio_state_search_direction(self->state), true);
+    report_search(self);
+}
+
+/* 「前へ」「次へ」。向きを決め直してから 1 つ進む。 */
+static void step_search(struct folio_window *_Nonnull self, enum search_direction direction)
+{
+    folio_state_set_search_direction(self->state, direction);
+    advance_search(self);
+}
+
+/* n / N。N は逆向きに 1 回進むだけで、覚えている向きは変えない。 */
+static void repeat_search(struct folio_window *_Nonnull self, bool reverse)
+{
+    if (folio_state_search_term_length(self->state) == 0)
+    {
+        return;
+    }
+    enum search_direction direction = folio_state_search_direction(self->state);
+    update_search(self, reverse ? reversed_direction(direction) : direction, true);
+    report_search(self);
+}
+
 static void open_command_surface(struct folio_window *_Nonnull self,
                                  enum command_surface_mode surface)
 {
@@ -1253,6 +1533,58 @@ static void show_command_palette(struct folio_window *_Nonnull self)
         SetFocus(self->command_input);
     }
     redraw_command_layer(self);
+}
+
+/* 検索欄は ADR 0016 の入力面そのもの。元のフォーカスは open_command_surface が覚え、
+ * Esc の close_command_surface が返す。覚えている語を初期値にして全選択する
+ * （語は欄を空にする EN_CHANGE より先に写しておく）。 */
+static void show_search_surface(struct folio_window *_Nonnull self)
+{
+    struct utf16_text *_Nullable term = nullptr;
+    if (utf16_text_create(folio_state_search_term(self->state),
+                          folio_state_search_term_length(self->state),
+                          &term) != UTF16_TEXT_CONVERTED)
+    {
+        command_failure(self, FOLIO_STATE_OUT_OF_MEMORY);
+        return;
+    }
+    if (self->command_surface == COMMAND_SURFACE_CLOSED)
+    {
+        open_command_surface(self, COMMAND_SURFACE_SEARCH);
+    }
+    else
+    {
+        self->command_surface = COMMAND_SURFACE_SEARCH;
+        self->command_unknown = false;
+        self->command_failure = FOLIO_STATE_READY;
+        arrange_command_input(self);
+    }
+    if (self->command_input != nullptr)
+    {
+        SetWindowTextW(self->command_input, utf16_text_units(term));
+        SendMessageW(self->command_input, EM_SETSEL, 0, (LPARAM)-1);
+        SetFocus(self->command_input);
+    }
+    utf16_text_destroy(term);
+    redraw_command_layer(self);
+}
+
+/* 表示中のノートが無ければ欄を開かず、選択を案内する（採用済み計画 #47 の第 2 節）。 */
+static void begin_search(struct folio_window *_Nonnull self)
+{
+    if (folio_state_document_kind(self->state) == FOLIO_DOCUMENT_NONE)
+    {
+        command_failure(self, FOLIO_STATE_NOTHING_SELECTED);
+        return;
+    }
+    show_search_surface(self);
+}
+
+/* `/` と `?` は向きを決めてから同じ欄を開く（ADR 0023 の決定 4）。 */
+static void open_search(struct folio_window *_Nonnull self, enum search_direction direction)
+{
+    folio_state_set_search_direction(self->state, direction);
+    begin_search(self);
 }
 
 /* 初回/別名の名前を同じ入力面またはExから受け、同じ作成へ渡す。 */
@@ -1485,6 +1817,9 @@ static void execute_command(struct folio_window *_Nonnull self, enum folio_comma
     case FOLIO_COMMAND_RENAME:
         finish_save_command(self, command_rename(self, argument));
         return;
+    case FOLIO_COMMAND_FIND:
+        begin_search(self);
+        return;
     }
 }
 
@@ -1642,8 +1977,34 @@ static bool click_command_footer(struct folio_window *_Nonnull self, POINT point
     return false;
 }
 
+/* 欄の中の「前へ」「次へ」。押した向きを覚えてから 1 つ進む（ADR 0023 の決定 4）。 */
+static bool click_search_buttons(struct folio_window *_Nonnull self, POINT point)
+{
+    RECT previous = search_button_rect(self, 0);
+    RECT next = search_button_rect(self, 1);
+    if (PtInRect(&previous, point))
+    {
+        step_search(self, SEARCH_DIRECTION_BACKWARD);
+        return true;
+    }
+    if (PtInRect(&next, point))
+    {
+        step_search(self, SEARCH_DIRECTION_FORWARD);
+        return true;
+    }
+    return false;
+}
+
 static void click_command_surface(struct folio_window *_Nonnull self, POINT point)
 {
+    if (self->command_surface == COMMAND_SURFACE_SEARCH)
+    {
+        if (!click_search_buttons(self, point))
+        {
+            SetFocus(self->command_input);
+        }
+        return;
+    }
     if (self->command_surface != COMMAND_SURFACE_PALETTE)
     {
         SetFocus(self->command_input);
@@ -1745,6 +2106,12 @@ static bool click_actions(struct folio_window *_Nonnull self, POINT point)
         execute_command(self, FOLIO_COMMAND_HELP, "");
         return true;
     }
+    RECT find = action_button_rect(self, 4);
+    if (action_button_fits(self, 4) && PtInRect(&find, point))
+    {
+        execute_command(self, FOLIO_COMMAND_FIND, "");
+        return true;
+    }
     return false;
 }
 
@@ -1789,6 +2156,30 @@ static void leave_pane(struct folio_window *_Nonnull self)
     SetFocus(self->handle);
 }
 
+/* 索引と閲覧本文で共有する検索の 4 打（ADR 0023 の決定 4 / 5）。
+ * 編集中の本文と各入力欄では呼ばないので、そこでは普通の文字入力のまま。 */
+static bool search_character(struct folio_window *_Nonnull self, WPARAM character)
+{
+    switch (character)
+    {
+    case '/':
+        open_search(self, SEARCH_DIRECTION_FORWARD);
+        return true;
+    case '?':
+        open_search(self, SEARCH_DIRECTION_BACKWARD);
+        return true;
+    case 'n':
+        repeat_search(self, false);
+        return true;
+    case 'N':
+        repeat_search(self, true);
+        return true;
+    default:
+        /* WM_CHAR の文字は開いた集合（C-017）。 */
+        return false;
+    }
+}
+
 static bool view_character(struct folio_window *_Nonnull self, WPARAM character)
 {
     if (folio_state_pane_mode(self->state) != PANE_MODE_VIEW)
@@ -1805,7 +2196,7 @@ static bool view_character(struct folio_window *_Nonnull self, WPARAM character)
         execute_command(self, FOLIO_COMMAND_EDIT, "");
         return true;
     }
-    return false;
+    return search_character(self, character);
 }
 
 static LRESULT pane_character(struct folio_window *_Nonnull self, WPARAM character)
@@ -1942,8 +2333,12 @@ static void type_key(struct folio_window *_Nonnull self, WPARAM character)
     case ':':
         open_command_surface(self, COMMAND_SURFACE_EX);
         break;
+    case '/':
     case '?':
-        execute_command(self, FOLIO_COMMAND_HELP, "");
+    case 'n':
+    case 'N':
+        /* `?` はヘルプではなく後方検索（ADR 0023 の決定 6）。ヘルプは F1 / `:h` / Ctrl+P。 */
+        (void)search_character(self, character);
         break;
     case 'i':
         execute_command(self, FOLIO_COMMAND_EDIT, "");
@@ -1994,6 +2389,12 @@ static void command_not_found(struct folio_window *_Nonnull self)
 
 static void execute_command_input(struct folio_window *_Nonnull self)
 {
+    /* 検索欄の Enter は欄を閉じず、覚えている向きで次の一致へ進む（ADR 0023 の決定 4）。 */
+    if (self->command_surface == COMMAND_SURFACE_SEARCH)
+    {
+        advance_search(self);
+        return;
+    }
     struct utf8_text *_Nullable query = nullptr;
     if (command_query(self, &query) != UTF8_TEXT_CONVERTED)
     {
@@ -2008,6 +2409,7 @@ static void execute_command_input(struct folio_window *_Nonnull self)
     switch (self->command_surface)
     {
     case COMMAND_SURFACE_CLOSED:
+    case COMMAND_SURFACE_SEARCH:
         utf8_text_destroy(query);
         return;
     case COMMAND_SURFACE_EX:
@@ -2141,6 +2543,24 @@ static bool command_wheel(struct folio_window *_Nonnull self, WPARAM wparam)
     return true;
 }
 
+/* 入力面が自分で受け止める鍵。受け止めたら元の手続きへ渡さない。 */
+static bool command_input_handled(struct folio_window *_Nonnull self, UINT message, WPARAM wparam)
+{
+    if (message == WM_KEYDOWN)
+    {
+        return command_key_down(self, wparam);
+    }
+    if (message == WM_CHAR)
+    {
+        return command_character(self, wparam);
+    }
+    if (message == WM_MOUSEWHEEL)
+    {
+        return command_wheel(self, wparam);
+    }
+    return false;
+}
+
 static LRESULT CALLBACK command_input_procedure(HWND window, UINT message, WPARAM wparam,
                                                 LPARAM lparam)
 {
@@ -2150,15 +2570,7 @@ static LRESULT CALLBACK command_input_procedure(HWND window, UINT message, WPARA
         return DefWindowProcW(window, message, wparam, lparam);
     }
     update_command_composition(self, message);
-    if (message == WM_KEYDOWN && command_key_down(self, wparam))
-    {
-        return 0;
-    }
-    if (message == WM_CHAR && command_character(self, wparam))
-    {
-        return 0;
-    }
-    if (message == WM_MOUSEWHEEL && command_wheel(self, wparam))
+    if (command_input_handled(self, message, wparam))
     {
         return 0;
     }
@@ -2166,20 +2578,53 @@ static LRESULT CALLBACK command_input_procedure(HWND window, UINT message, WPARA
     {
         PostMessageW(self->handle, folio_message_command_focus_lost, 0, 0);
     }
-    return CallWindowProcW(self->command_input_original, window, message, wparam, lparam);
+    LRESULT result = CallWindowProcW(self->command_input_original, window, message, wparam, lparam);
+    /* 確定した文字は composition を抜けたあとに届くので、抜けてから 1 回だけ探し直す。 */
+    if (message == WM_IME_ENDCOMPOSITION && self->command_surface == COMMAND_SURFACE_SEARCH)
+    {
+        search_input_changed(self);
+    }
+    return result;
+}
+
+/* 打つたびに語を覚え直し、いまの向きで最初の一致へ進める（インクリメンタル）。
+ * IME の未確定入力のあいだは動かさず、確定の WM_IME_ENDCOMPOSITION のあとで 1 回だけ進む。 */
+static void search_input_changed(struct folio_window *_Nonnull self)
+{
+    if (self->command_composing || self->command_input == nullptr)
+    {
+        return;
+    }
+    wchar_t units[command_input_capacity];
+    int count = GetWindowTextW(self->command_input, units, (int)command_input_capacity);
+    enum folio_state_outcome kept = folio_state_set_search_term(
+        self->state, (const char16_t *)units, count > 0 ? (size_t)count : 0);
+    if (kept != FOLIO_STATE_READY)
+    {
+        command_failure(self, kept);
+        return;
+    }
+    update_search(self, folio_state_search_direction(self->state), false);
+    redraw_command_layer(self);
 }
 
 static LRESULT on_command(struct folio_window *_Nonnull self, WPARAM wparam, LPARAM lparam)
 {
-    if ((HWND)lparam == self->command_input && HIWORD(wparam) == EN_CHANGE)
+    if ((HWND)lparam != self->command_input || HIWORD(wparam) != EN_CHANGE)
     {
-        self->command_selection = 0;
-        self->command_first = 0;
-        self->command_unknown = false;
-        self->command_failure = FOLIO_STATE_READY;
-        arrange_command_input(self);
-        redraw_command_layer(self);
+        return 0;
     }
+    if (self->command_surface == COMMAND_SURFACE_SEARCH)
+    {
+        search_input_changed(self);
+        return 0;
+    }
+    self->command_selection = 0;
+    self->command_first = 0;
+    self->command_unknown = false;
+    self->command_failure = FOLIO_STATE_READY;
+    arrange_command_input(self);
+    redraw_command_layer(self);
     return 0;
 }
 
@@ -2388,6 +2833,18 @@ static void execute_accelerator(struct folio_window *_Nonnull self, WPARAM wpara
     {
         execute_command(self, FOLIO_COMMAND_RENAME, "");
     }
+    if (LOWORD(wparam) == find_accelerator)
+    {
+        execute_command(self, FOLIO_COMMAND_FIND, "");
+    }
+    if (LOWORD(wparam) == search_next_accelerator)
+    {
+        repeat_search(self, false);
+    }
+    if (LOWORD(wparam) == search_previous_accelerator)
+    {
+        repeat_search(self, true);
+    }
 }
 
 static LRESULT on_message(struct folio_window *_Nonnull self, UINT message, WPARAM wparam,
@@ -2528,10 +2985,18 @@ enum folio_window_outcome folio_window_create(struct folio_state *_Nonnull state
     }
     ACCEL shortcuts[] = {
         {.fVirt = FVIRTKEY | FCONTROL | FSHIFT, .key = 'S', .cmd = save_as_accelerator},
-        {.fVirt = FVIRTKEY, .key = VK_F2, .cmd = rename_accelerator}};
+        {.fVirt = FVIRTKEY, .key = VK_F2, .cmd = rename_accelerator},
+        {.fVirt = FVIRTKEY | FCONTROL, .key = 'F', .cmd = find_accelerator}};
     self->commands =
         CreateAcceleratorTableW(shortcuts, (int)(sizeof shortcuts / sizeof shortcuts[0]));
-    if (self->commands == nullptr)
+    /* Enter と Shift+Enter は検索欄にいるあいだだけ。鍵の修飾は OS の表に読ませ、
+     * こちらから鍵の状態を問い合わせない（ARC-007）。 */
+    ACCEL stepping[] = {
+        {.fVirt = FVIRTKEY, .key = VK_RETURN, .cmd = search_next_accelerator},
+        {.fVirt = FVIRTKEY | FSHIFT, .key = VK_RETURN, .cmd = search_previous_accelerator}};
+    self->search_keys =
+        CreateAcceleratorTableW(stepping, (int)(sizeof stepping / sizeof stepping[0]));
+    if (self->commands == nullptr || self->search_keys == nullptr)
     {
         folio_window_destroy(self);
         return FOLIO_WINDOW_NOT_CREATED;
@@ -2569,8 +3034,23 @@ static bool command_target(const struct folio_window *_Nonnull window, HWND targ
     return target == window->handle;
 }
 
+/* 検索欄にいて未確定入力でないときだけ、Enter / Shift+Enter を OS の表に読ませる。 */
+static bool search_target(const struct folio_window *_Nonnull window, HWND target)
+{
+    return window->command_surface == COMMAND_SURFACE_SEARCH && target == window->command_input &&
+           !window->command_composing && window->search_keys != nullptr;
+}
+
 bool folio_window_translate(const struct folio_window *_Nonnull window, const MSG *_Nonnull message)
 {
+    if (search_target(window, message->hwnd))
+    {
+        MSG stepping = *message;
+        if (TranslateAcceleratorW(window->handle, window->search_keys, &stepping) != 0)
+        {
+            return true;
+        }
+    }
     if (command_target(window, message->hwnd))
     {
         MSG translated = *message;
@@ -2599,6 +3079,10 @@ void folio_window_destroy(struct folio_window *_Nullable window)
     if (window->commands != nullptr)
     {
         DestroyAcceleratorTable(window->commands);
+    }
+    if (window->search_keys != nullptr)
+    {
+        DestroyAcceleratorTable(window->search_keys);
     }
     note_pane_destroy(window->pane);
     drawer_window_destroy(window->drawer);

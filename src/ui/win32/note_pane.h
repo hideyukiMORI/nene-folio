@@ -33,6 +33,18 @@ void note_pane_edit(struct note_pane *_Nonnull pane, const char16_t *_Nonnull un
 [[nodiscard]] enum note_pane_text_outcome note_pane_text(struct note_pane *_Nonnull pane,
                                                          const char16_t *_Nonnull *_Nonnull units,
                                                          size_t *_Nonnull count);
+/* いま表示している平文を UTF-16 で取り出す（閲覧なら描画後の文字・編集なら未保存本文）。
+ * 段落区切りは CR 1 つで、位置は note_pane_select / note_pane_selection と 1 対 1
+ * （保存用の note_pane_text は CRLF なので別物・ADR 0023 の決定 1）。
+ * pane が所有し、次の note_pane の呼び出しまで有効。 */
+[[nodiscard]] enum note_pane_text_outcome
+note_pane_display_text(struct note_pane *_Nonnull pane, const char16_t *_Nonnull *_Nonnull units,
+                       size_t *_Nonnull count);
+/* 一致 1 つを選択して見える位置へ寄せる。フォーカスも本文も Undo も触らない。 */
+void note_pane_select(struct note_pane *_Nonnull pane, size_t start, size_t end);
+/* いまの選択範囲（表示中の平文の位置）。窓が無ければ false で start も end も触らない。 */
+[[nodiscard]] bool note_pane_selection(const struct note_pane *_Nonnull pane,
+                                       size_t *_Nonnull start, size_t *_Nonnull end);
 void note_pane_destroy(struct note_pane *_Nullable pane);
 
 #endif
