@@ -7,10 +7,13 @@
 #define NENEFOLIO_PERSISTENCE_PORT_H
 
 #include "persistence_outcome.h"
+#include "rename_attempt.h"
+#include "rename_outcome.h"
 
 struct category_ledger;
 struct name_list;
 struct note_ledger;
+struct note_rename;
 struct note_text;
 struct persistence_adapter;
 
@@ -60,6 +63,17 @@ struct persistence_port
                                                    const char *_Nonnull from_category,
                                                    const char *_Nonnull note,
                                                    const char *_Nonnull to_category);
+    /* 意図のとおりに data/.rename.json を公開してから履歴 → md → index.json を移し、
+     * 記録を消して完了とする（ADR 0022 の決定 4〜6）。同じ意図をもう一度渡すと、記録と
+     * 実体から段階を確定して続きだけを行う。記録の公開前に断った理由と、公開した後の
+     * PENDING / HALTED を値で区別する。plan は呼び出しの間だけ借りる。
+     * attempt が RESUME のとき記録が無ければ、同一性を確かめられないので新規開始へは落とさない。 */
+    enum rename_outcome (*_Nonnull rename_note)(struct persistence_adapter *_Nonnull adapter,
+                                                const struct note_rename *_Nonnull plan,
+                                                enum rename_attempt attempt);
+    /* 起動時に data/.rename.json を読み、あれば同じ処理で終わらせる（ADR 0022 の決定 6）。
+     * 記録が無ければ NONE。記録が読めない・形が違う・実体と合わないなら消さずに理由を返す。 */
+    enum rename_outcome (*_Nonnull recover_rename)(struct persistence_adapter *_Nonnull adapter);
     /* data/<category>/index.json。無ければ ABSENT。 */
     enum persistence_outcome (*_Nonnull read_note_ledger)(
         struct persistence_adapter *_Nonnull adapter, const char *_Nonnull category,

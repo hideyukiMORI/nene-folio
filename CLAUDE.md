@@ -124,6 +124,24 @@ Waivers: none | WVR-NNNN
 
 ## 6. いまの状況
 
+2026-09-16: #55の別名保存はmain f35870dへ統合済み。#56 / ADR0022の名前変更を `out/worktrees/56-rename` で
+5層に実装した。GUI「名前を変更」・F2・`:rename 名前`が同じ登録表を通り、mdと `data/.history` の履歴を新しい名前へ移す。
+順は「編集中なら保存 → `data/.rename.json` を版1で新規公開 → 履歴 → md → `index.json` → 記録の削除」で、
+移動は `SetFileInformationByHandle(FileRenameInfo, ReplaceIfExists=FALSE)`。再開は旧/新の存在と128bit識別子だけで
+段階を決め、合わなければ記録を消さずに止める。同じ `data/` の二重起動は `data/.nenefolio.lock` で断り、
+書けない `data/` は閲覧のために起動を許して各操作の失敗にする。未完了の改名があるあいだ、保存・切替・並替・色・新規・
+別名保存・終了確認は先に同じ改名を再試行し、`:q!` でも意図は残って次回の起動が続ける。
+記録を公開した後の失敗は `RENAME_PENDING` と `RENAME_HALTED` の 2 値で、どちらも意図を保持する。
+単体・実アダプタ41項目・Windows部品19項目が成功（[確認記録](docs/quality/2026-09-16-rename-checks.md)）。
+最終フルゲートとCIは#56のPRを参照する。次は**#58（現在ノートの検索・ADR 0023 草案あり）**。
+`/` の全ノート検索（FR-011 / #40）はその後の別単位。
+最新は [日報](docs/reports/2026-09-16.md) / [引き継ぎ](docs/handoffs/2026-09-16.md)。
+
+2026-09-13 18:18 JST: hideの指示で日報/引き継ぎを保存して停止。#53はmain35d86afへ統合済み。
+#55の別名保存は7708802で全体ゲート成功、PR57はReadyだがGitHub障害でCI開始未確認・未統合。
+#56はout/worktrees/56-renameで設計/純粋中核のみ実装、2baa0d1で全体ゲート成功。実ファイル改名/GUIは未実装。
+最新の停止点はこの作業枝の[引き継ぎ](docs/handoffs/2026-09-13.md)と[日報](docs/reports/2026-09-13.md)。
+
 現在のタスクは [docs/todo/current.md](docs/todo/current.md)。GitHub Issue が正で、そこは要約。
 
 2026-09-13: #37へINDEXの `?` とキーバインド説明を追加。パンくずのPowerline案は#45。

@@ -36,6 +36,11 @@ static const wchar_t *_Nonnull adapter_failure(enum persistence_adapter_outcome 
         return L"";
     case PERSISTENCE_ADAPTER_NO_MODULE_PATH:
         return L"実行ファイルの場所が長すぎるか、取得できません。";
+    case PERSISTENCE_ADAPTER_DATA_IN_USE:
+        return L"同じ data/ を別の NeNe Folio が使っています。先に閉じてください。";
+    case PERSISTENCE_ADAPTER_RECOVERY_LOCKED:
+        return L"名前変更の復旧記録（data/.rename.json）がありますが、data/ "
+               L"を占有できないので復旧できません。";
     case PERSISTENCE_ADAPTER_OUT_OF_MEMORY:
         return L"記憶域が足りません。";
     }

@@ -51,6 +51,8 @@ struct folio_window
 static const wchar_t class_name[] = L"NeNeFolioWindow";
 static const wchar_t command_layer_class[] = L"NeNeFolioCommandLayer";
 static const wchar_t mono_face[] = L"Consolas";
+/* 未完了の改名があるあいだ、パンくずが実ファイル名の代わりに出す文字（ADR 0022 の決定 2）。 */
+static const char recovering_label[] = "名前変更の復旧待ち";
 static const wchar_t view_label[] = L"閲覧";
 static const wchar_t edit_label[] = L"編集";
 static const wchar_t edit_class[] = L"EDIT";
@@ -58,7 +60,7 @@ static const char *_Nonnull const command_shortcuts[] = {
     "一覧  ↑↓ 選択 / Enter 実行 / Esc 戻る / Tab 説明",
     "編集本文  Ctrl+h/j/k/l ←/↓/↑/→",
     "全区画  F1 ヘルプ / Ctrl+P 一覧",
-    "Ctrl+N 新規 / Ctrl+S 保存 / Ctrl+Shift+S 別名保存",
+    "Ctrl+N 新規 / Ctrl+S 保存 / Ctrl+Shift+S 別名保存 / F2 名前変更",
     "索引・閲覧本文  : コマンド / i 編集",
     "索引  ? ヘルプ（検索の追加まで）",
     "索引  j/k 次/前 / gg/G 先頭/末尾",
@@ -73,6 +75,7 @@ constexpr WPARAM palette_character = 0x10;
 constexpr WPARAM new_character = 0x0E;
 constexpr int command_control_id = 1;
 constexpr WORD save_as_accelerator = 100;
+constexpr WORD rename_accelerator = 101;
 constexpr size_t command_input_capacity = 256;
 
 /* 96 DPI での寸法（デザイン「案2 堅」）。 */
@@ -489,6 +492,12 @@ static RECT chip_rect(const struct folio_window *_Nonnull self, HDC device, enum
     return bounds;
 }
 
+/* パンくずのノート区画に実際に描く文字。幅の見積りも描画もこの 1 本を使う（ADR 0022 の決定 2）。 */
+static const char *_Nonnull breadcrumb_note(struct pane_title_view title)
+{
+    return title.recovering ? recovering_label : title.note;
+}
+
 static struct breadcrumb_layout breadcrumb_cells(const struct folio_window *_Nonnull self,
                                                  HDC device, struct pane_title_view title,
                                                  RECT caption)
@@ -503,7 +512,7 @@ static struct breadcrumb_layout breadcrumb_cells(const struct folio_window *_Non
     ordinal_label(title.ordinal, digits);
     int ordinal = measure_utf8(device, digits) + padding * 2;
     int category = measure_utf8(device, title.category);
-    int note = measure_utf8(device, title.note);
+    int note = measure_utf8(device, breadcrumb_note(title));
     int budget = available - ordinal - padding * 4 - tip * 2;
     breadcrumb_room(budget < 0 ? 0 : budget, scale(base_breadcrumb_note, dpi), &category, &note);
     int category_width = category > 0 ? category + padding * 2 + tip : 0;
@@ -572,8 +581,10 @@ static void draw_breadcrumb(const struct folio_window *_Nonnull self, HDC device
     char digits[3];
     ordinal_label(title.ordinal, digits);
     draw_breadcrumb_label(device, digits, cells.ordinal, cells.padding);
-    SetTextColor(device, self->palette.current_text);
-    draw_breadcrumb_label(device, title.note, cells.note, cells.padding + cells.tip);
+    /* 復旧待ちの言い換えはここ 1 か所だけが持つ。application は実名を返す（ADR 0022 の決定 2）。 */
+    SetTextColor(device,
+                 title.recovering ? self->palette.selected_text : self->palette.current_text);
+    draw_breadcrumb_label(device, breadcrumb_note(title), cells.note, cells.padding + cells.tip);
     RestoreDC(device, saved);
 }
 
@@ -1251,7 +1262,14 @@ static enum folio_state_outcome save_destination(const struct folio_window *_Non
 {
     if (argument[0] == '\0')
     {
-        return name_prompt_show(self->handle, self->state, units, count);
+        struct name_prompt_request request = {.state = self->state,
+                                              .kind = folio_state_document_kind(self->state) ==
+                                                              FOLIO_DOCUMENT_NAMED
+                                                          ? NAME_PROMPT_SAVE_AS
+                                                          : NAME_PROMPT_FIRST_SAVE,
+                                              .units = units,
+                                              .count = count};
+        return name_prompt_show(self->handle, &request);
     }
     struct note_name *_Nullable name = nullptr;
     enum note_name_outcome accepted = note_name_create(argument, strlen(argument), &name);
@@ -1283,6 +1301,47 @@ static enum folio_state_outcome command_save_as(const struct folio_window *_Nonn
     if (outcome == FOLIO_STATE_READY)
     {
         outcome = save_destination(self, argument, units, count);
+    }
+    redraw_drawer(self);
+    InvalidateRect(self->handle, nullptr, FALSE);
+    return outcome;
+}
+
+/* 改名の名前も同じ入力面または Ex から受け、同じ意図へ渡す（ADR 0022 の決定 1）。 */
+static enum folio_state_outcome rename_destination(const struct folio_window *_Nonnull self,
+                                                   const char *_Nonnull argument,
+                                                   const char16_t *_Nonnull units, size_t count)
+{
+    if (argument[0] == '\0')
+    {
+        struct name_prompt_request request = {
+            .state = self->state, .kind = NAME_PROMPT_RENAME, .units = units, .count = count};
+        return name_prompt_show(self->handle, &request);
+    }
+    struct note_name *_Nullable name = nullptr;
+    enum note_name_outcome accepted = note_name_create(argument, strlen(argument), &name);
+    if (accepted != NOTE_NAME_ACCEPTED)
+    {
+        return accepted == NOTE_NAME_OUT_OF_MEMORY ? FOLIO_STATE_OUT_OF_MEMORY
+                                                   : FOLIO_STATE_INVALID_NAME;
+    }
+    enum folio_state_outcome outcome = folio_state_rename_note(self->state, name, units, count);
+    note_name_destroy(name);
+    return outcome;
+}
+
+/* 本文・モード・Undo は触らない。未保存の本文は application が同じ保存経路で先に確定する。 */
+static enum folio_state_outcome command_rename(const struct folio_window *_Nonnull self,
+                                               const char *_Nonnull argument)
+{
+    const char16_t *units = u"";
+    size_t count = 0;
+    enum folio_state_outcome outcome = folio_state_pane_mode(self->state) == PANE_MODE_VIEW
+                                           ? FOLIO_STATE_READY
+                                           : take_text(self, &units, &count);
+    if (outcome == FOLIO_STATE_READY)
+    {
+        outcome = rename_destination(self, argument, units, count);
     }
     redraw_drawer(self);
     InvalidateRect(self->handle, nullptr, FALSE);
@@ -1422,6 +1481,9 @@ static void execute_command(struct folio_window *_Nonnull self, enum folio_comma
         return;
     case FOLIO_COMMAND_NEW:
         execute_new_command(self);
+        return;
+    case FOLIO_COMMAND_RENAME:
+        finish_save_command(self, command_rename(self, argument));
         return;
     }
 }
@@ -2311,6 +2373,23 @@ static void dismiss_command_if_focus_moved(struct folio_window *_Nonnull self)
     }
 }
 
+/* HACCEL が届けた WM_COMMAND を同じ dispatcher へ渡す（ADR 0016 の決定 2）。 */
+static void execute_accelerator(struct folio_window *_Nonnull self, WPARAM wparam)
+{
+    if (HIWORD(wparam) != 1)
+    {
+        return;
+    }
+    if (LOWORD(wparam) == save_as_accelerator)
+    {
+        execute_command(self, FOLIO_COMMAND_SAVE_AS, "");
+    }
+    if (LOWORD(wparam) == rename_accelerator)
+    {
+        execute_command(self, FOLIO_COMMAND_RENAME, "");
+    }
+}
+
 static LRESULT on_message(struct folio_window *_Nonnull self, UINT message, WPARAM wparam,
                           LPARAM lparam)
 {
@@ -2343,10 +2422,7 @@ static LRESULT on_message(struct folio_window *_Nonnull self, UINT message, WPAR
         /* ドロワーからのノート行のクリック。結果は enum folio_state_outcome で返す。 */
         return (LRESULT)switch_note(self, (size_t)wparam, (size_t)lparam);
     case WM_COMMAND:
-        if (HIWORD(wparam) == 1 && LOWORD(wparam) == save_as_accelerator)
-        {
-            execute_command(self, FOLIO_COMMAND_SAVE_AS, "");
-        }
+        execute_accelerator(self, wparam);
         return 0;
     case WM_KEYDOWN:
         press_key(self, wparam);
@@ -2450,8 +2526,11 @@ enum folio_window_outcome folio_window_create(struct folio_state *_Nonnull state
     {
         return FOLIO_WINDOW_OUT_OF_MEMORY;
     }
-    ACCEL save_as = {.fVirt = FVIRTKEY | FCONTROL | FSHIFT, .key = 'S', .cmd = save_as_accelerator};
-    self->commands = CreateAcceleratorTableW(&save_as, 1);
+    ACCEL shortcuts[] = {
+        {.fVirt = FVIRTKEY | FCONTROL | FSHIFT, .key = 'S', .cmd = save_as_accelerator},
+        {.fVirt = FVIRTKEY, .key = VK_F2, .cmd = rename_accelerator}};
+    self->commands =
+        CreateAcceleratorTableW(shortcuts, (int)(sizeof shortcuts / sizeof shortcuts[0]));
     if (self->commands == nullptr)
     {
         folio_window_destroy(self);

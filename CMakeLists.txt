@@ -27,7 +27,7 @@ nenefolio_target(nenefolio_core core STATIC
     src/core/json_reader.c src/core/json_writer.c src/core/name_list.c
     src/core/category_ledger.c src/core/note_ledger.c src/core/drawer_layout.c
     src/core/text_buffer.c src/core/note_text.c src/core/markdown_rtf.c src/core/rtf_palette.c
-    src/core/folio_command.c src/core/note_name.c)
+    src/core/folio_command.c src/core/note_name.c src/core/note_rename.c src/core/rename_journal.c)
 nenefolio_target(nenefolio_application application STATIC src/application/folio_state.c)
 nenefolio_link(nenefolio_application nenefolio_core)
 
@@ -35,7 +35,7 @@ nenefolio_target(folio_tests unit_tests EXECUTABLE
     tests/unit/folio_tests.c tests/unit/text_tests.c tests/unit/json_tests.c
     tests/unit/ledger_tests.c tests/unit/layout_tests.c tests/unit/state_tests.c
     tests/unit/allocation_probe.c tests/unit/allocation_tests.c tests/unit/markdown_tests.c
-    tests/unit/command_tests.c tests/unit/note_name_tests.c)
+    tests/unit/command_tests.c tests/unit/note_name_tests.c tests/unit/rename_tests.c)
 nenefolio_link(folio_tests nenefolio_core)
 nenefolio_link(folio_tests nenefolio_application)
 add_test(NAME folio_unit COMMAND folio_tests)

@@ -23,7 +23,29 @@ static const struct
     [FOLIO_COMMAND_VIEW] = {FOLIO_COMMAND_VIEW, "保存して閲覧", 0, {"", ""}},
     [FOLIO_COMMAND_NEW] = {FOLIO_COMMAND_NEW, "新しいノート", 1, {"enew", ""}},
     [FOLIO_COMMAND_SAVE_AS] = {FOLIO_COMMAND_SAVE_AS, "別名で保存", 1, {"saveas", ""}},
+    [FOLIO_COMMAND_RENAME] = {FOLIO_COMMAND_RENAME, "名前を変更", 1, {"rename", ""}},
 };
+
+/* 名前引数を許す操作（ADR0020 / ADR0022）。閉じた集合なので増えたらここで落ちる。 */
+static bool takes_name(enum folio_command command)
+{
+    switch (command)
+    {
+    case FOLIO_COMMAND_SAVE:
+    case FOLIO_COMMAND_SAVE_AS:
+    case FOLIO_COMMAND_RENAME:
+        return true;
+    case FOLIO_COMMAND_QUIT:
+    case FOLIO_COMMAND_SAVE_QUIT:
+    case FOLIO_COMMAND_FORCE_QUIT:
+    case FOLIO_COMMAND_HELP:
+    case FOLIO_COMMAND_EDIT:
+    case FOLIO_COMMAND_VIEW:
+    case FOLIO_COMMAND_NEW:
+        return false;
+    }
+    return false;
+}
 
 static bool ascii_space(char value)
 {
@@ -153,7 +175,7 @@ bool folio_command_parse(const char *_Nonnull text, size_t length, enum folio_co
         return false;
     }
     size_t name = skip_spaces(text, token_end, length);
-    if (name < length && command != FOLIO_COMMAND_SAVE && command != FOLIO_COMMAND_SAVE_AS)
+    if (name < length && !takes_name(command))
     {
         return false;
     }

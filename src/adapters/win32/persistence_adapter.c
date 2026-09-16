@@ -6,10 +6,15 @@
 #include "name_list.h"
 #include "note_history.h"
 #include "note_ledger.h"
+#include "note_rename.h"
 #include "note_text.h"
+#include "rename_guards.h"
+#include "rename_journal.h"
+#include "rename_paths.h"
 #include "utf16_text.h"
 #include "utf8_text.h"
 
+#include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
 #include <windows.h>
@@ -21,9 +26,16 @@ struct persistence_adapter
 {
     wchar_t root[path_capacity]; /* <実行ファイルの場所>\data。終端付き */
     size_t root_length;
+    /* data/.nenefolio.lock を共有なしで開いた寿命中のハンドル（ADR 0022 の決定 3）。
+     * 取れなかった（読み取り専用・アクセス拒否）ときは nullptr のままで、書込だけが失敗する。 */
+    HANDLE lock;
 };
 
 static const wchar_t data_folder[] = L"data";
+/* 同じ data/ を使うプロセスを 1 つに直列化する錠（ADR 0022 の決定 3）。異常終了で残ってよい。 */
+static const wchar_t lock_leaf[] = L".nenefolio.lock";
+/* 改名の復旧記録（ADR 0022 の決定 5）。`.` 始まりなのでカテゴリの走査には出ない。 */
+static const wchar_t journal_leaf[] = L".rename.json";
 static const wchar_t note_extension[] = L".md";
 constexpr size_t note_extension_length = 3;
 /* 履歴の置き場所（ADR 0012 の決定 1）。`.` で始まるのでカテゴリの走査には出ない（決定 4）。 */
@@ -37,6 +49,8 @@ static_assert(note_history_depth >= 1 && note_history_depth <= 9,
               "ADR 0012: the history depth must fit one digit");
 
 /* すべての走査・保存・履歴が共有するrootだけを長い絶対パスへ揃える（ADR0020）。 */
+static enum persistence_adapter_outcome acquire_lock(struct persistence_adapter *_Nonnull adapter);
+
 static bool module_path(wchar_t *_Nonnull out, size_t *_Nonnull length)
 {
     wchar_t module[path_capacity];
@@ -95,6 +109,12 @@ persistence_adapter_create(struct persistence_adapter *_Nullable *_Nonnull out)
     }
     memcpy(adapter->root + directory, data_folder, sizeof data_folder);
     adapter->root_length = directory + folder_length;
+    enum persistence_adapter_outcome locked = acquire_lock(adapter);
+    if (locked != PERSISTENCE_ADAPTER_CREATED)
+    {
+        free(adapter);
+        return locked;
+    }
     *out = adapter;
     return PERSISTENCE_ADAPTER_CREATED;
 }
@@ -653,6 +673,580 @@ static enum persistence_outcome write_note_ledger(struct persistence_adapter *_N
     return store_document(path, writer);
 }
 
+/* ここから下は改名と復旧（ADR 0022 の決定 3〜6）。
+ * 内部の段階の判定は enum rename_outcome を借り、RENAME_COMPLETED を「この段は満たされた」に使う。
+ * 実際に完了を答えるのは rename_note / recover_rename の戻り値だけである。 */
+
+static_assert(rename_path_capacity == path_capacity,
+              "ADR 0022: the rename paths share the adapter's path limit");
+
+static bool compose_note_path(const struct persistence_adapter *_Nonnull adapter,
+                              const char *_Nonnull category, const char *_Nonnull note,
+                              wchar_t *_Nonnull out)
+{
+    wchar_t leaf[MAX_PATH];
+    return note_leaf(note, leaf, MAX_PATH) && compose(adapter, category, leaf, out);
+}
+
+static bool compose_history_root(const struct persistence_adapter *_Nonnull adapter,
+                                 wchar_t *_Nonnull out, size_t *_Nonnull length)
+{
+    *length = 0;
+    return append_units(out, length, adapter->root, adapter->root_length) &&
+           append_units(out, length, L"\\", 1) &&
+           append_units(out, length, history_folder, history_folder_length);
+}
+
+static bool compose_history_category(const struct persistence_adapter *_Nonnull adapter,
+                                     const char *_Nonnull category, wchar_t *_Nonnull out)
+{
+    size_t length = 0;
+    return compose_history_root(adapter, out, &length) && append_utf8_name(out, &length, category);
+}
+
+static bool compose_history_note(const struct persistence_adapter *_Nonnull adapter,
+                                 const char *_Nonnull category, const char *_Nonnull note,
+                                 wchar_t *_Nonnull out)
+{
+    size_t length = 0;
+    return compose_history_root(adapter, out, &length) &&
+           append_utf8_name(out, &length, category) && append_utf8_name(out, &length, note);
+}
+
+static bool compose_rename_paths(const struct persistence_adapter *_Nonnull adapter,
+                                 const struct note_rename *_Nonnull plan,
+                                 struct rename_paths *_Nonnull out)
+{
+    const char *_Nonnull category = note_rename_category(plan);
+    const char *_Nonnull from = note_rename_from(plan);
+    const char *_Nonnull to = note_rename_to(plan);
+    return compose_note_path(adapter, category, from, out->note_from) &&
+           compose_note_path(adapter, category, to, out->note_to) &&
+           compose_history_note(adapter, category, from, out->history_from) &&
+           compose_history_note(adapter, category, to, out->history_to);
+}
+
+/* 無ければ present を偽にして true。照会そのものができなければ false。 */
+static bool entry_exists(const wchar_t *_Nonnull path, bool *_Nonnull present)
+{
+    DWORD attributes = GetFileAttributesW(path);
+    *present = attributes != INVALID_FILE_ATTRIBUTES;
+    if (*present)
+    {
+        return true;
+    }
+    DWORD error = GetLastError();
+    return error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND;
+}
+
+/* 対象そのもの（リンクの先ではない）を開く。共有は読みだけで、書込と削除は許さない。 */
+static HANDLE open_entry(const wchar_t *_Nonnull path, DWORD access, bool directory)
+{
+    DWORD flags = FILE_FLAG_OPEN_REPARSE_POINT | (directory ? FILE_FLAG_BACKUP_SEMANTICS : 0U);
+    return CreateFileW(path, access, FILE_SHARE_READ, nullptr, OPEN_EXISTING, flags, nullptr);
+}
+
+static bool plain_entry(HANDLE handle)
+{
+    BY_HANDLE_FILE_INFORMATION information;
+    return GetFileInformationByHandle(handle, &information) &&
+           (information.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) == 0;
+}
+
+/* 初版はローカル NTFS だけを対象にする（決定 4）。照会できなければ対象にしない。 */
+static bool ntfs_volume(HANDLE handle)
+{
+    wchar_t name[16];
+    DWORD capacity = (DWORD)(sizeof name / sizeof name[0]);
+    if (!GetVolumeInformationByHandleW(handle, nullptr, 0, nullptr, nullptr, nullptr, name,
+                                       capacity))
+    {
+        return false;
+    }
+    return memcmp(name, L"NTFS", 5 * sizeof *name) == 0;
+}
+
+/* volume64 の 16 桁と FILE_ID_128 の 32 桁を小文字 hex でつないだ 48 桁（決定 5）。 */
+static void format_identity(const FILE_ID_INFO *_Nonnull info, char *_Nonnull out)
+{
+    static const char digits[] = "0123456789abcdef";
+    for (size_t index = 0; index < 16; ++index)
+    {
+        out[index] = digits[(info->VolumeSerialNumber >> ((15 - index) * 4)) & 15];
+    }
+    for (size_t index = 0; index < 16; ++index)
+    {
+        unsigned char value = info->FileId.Identifier[index];
+        out[16 + index * 2] = digits[value >> 4];
+        out[17 + index * 2] = digits[value & 15];
+    }
+    out[rename_journal_id_length] = '\0';
+}
+
+/* 開いたハンドルで reparse point と NTFS を確かめ、識別子を読む。 */
+static enum rename_outcome identity_of(HANDLE handle, char *_Nonnull out)
+{
+    if (!plain_entry(handle) || !ntfs_volume(handle))
+    {
+        return RENAME_UNSUPPORTED;
+    }
+    FILE_ID_INFO info;
+    if (!GetFileInformationByHandleEx(handle, FileIdInfo, &info, (DWORD)sizeof info))
+    {
+        return RENAME_IDENTITY_FAILED;
+    }
+    format_identity(&info, out);
+    return RENAME_COMPLETED;
+}
+
+static enum rename_outcome read_identity(const wchar_t *_Nonnull path, bool directory,
+                                         char *_Nonnull out)
+{
+    HANDLE handle = open_entry(path, FILE_READ_ATTRIBUTES, directory);
+    if (handle == INVALID_HANDLE_VALUE)
+    {
+        return RENAME_IDENTITY_FAILED;
+    }
+    enum rename_outcome outcome = identity_of(handle, out);
+    CloseHandle(handle);
+    return outcome;
+}
+
+/* 既に移り終えた側が記録と同じ実体か確かめる（決定 5）。 */
+static enum rename_outcome verify_entry(const wchar_t *_Nonnull path, bool directory,
+                                        const char *_Nonnull identity)
+{
+    char actual[rename_journal_id_length + 1];
+    enum rename_outcome read = read_identity(path, directory, actual);
+    if (read != RENAME_COMPLETED)
+    {
+        return read;
+    }
+    return strcmp(actual, identity) == 0 ? RENAME_COMPLETED : RENAME_HALTED;
+}
+
+/* 置換なしの rename。事前確認の後に同名が現れても OS が拒む（決定 4）。 */
+static enum rename_outcome rename_by_handle(HANDLE handle, const wchar_t *_Nonnull target)
+{
+    size_t units = wide_length(target);
+    size_t bytes = offsetof(FILE_RENAME_INFO, FileName) + (units + 1) * sizeof(wchar_t);
+    FILE_RENAME_INFO *_Nullable info = calloc(1, bytes);
+    if (info == nullptr)
+    {
+        return RENAME_OUT_OF_MEMORY;
+    }
+    info->ReplaceIfExists = FALSE;
+    info->RootDirectory = nullptr;
+    info->FileNameLength = (DWORD)(units * sizeof(wchar_t));
+    memcpy(info->FileName, target, (units + 1) * sizeof(wchar_t));
+    bool renamed = SetFileInformationByHandle(handle, FileRenameInfo, info, (DWORD)bytes) != 0;
+    free(info);
+    return renamed ? RENAME_COMPLETED : RENAME_PENDING;
+}
+
+/* DELETE を持つハンドルで開き、識別子が一致した実体だけを動かす（決定 4）。 */
+static enum rename_outcome move_entry(const wchar_t *_Nonnull from, const wchar_t *_Nonnull to,
+                                      bool directory, const char *_Nonnull identity)
+{
+    HANDLE handle = open_entry(from, DELETE | FILE_READ_ATTRIBUTES, directory);
+    if (handle == INVALID_HANDLE_VALUE)
+    {
+        return RENAME_PENDING;
+    }
+    char actual[rename_journal_id_length + 1];
+    enum rename_outcome outcome = identity_of(handle, actual);
+    if (outcome == RENAME_COMPLETED)
+    {
+        outcome = strcmp(actual, identity) == 0 ? rename_by_handle(handle, to) : RENAME_HALTED;
+    }
+    CloseHandle(handle);
+    return outcome;
+}
+
+/* 旧と新の存在と保存済み識別子で段階を確定する（決定 5 の表）。 */
+static enum rename_outcome advance_entry(const wchar_t *_Nonnull from, const wchar_t *_Nonnull to,
+                                         bool directory, const char *_Nonnull identity)
+{
+    bool from_present = false;
+    bool to_present = false;
+    if (!entry_exists(from, &from_present) || !entry_exists(to, &to_present))
+    {
+        return RENAME_UNSUPPORTED;
+    }
+    if (identity[0] == '\0')
+    {
+        /* 履歴を持たない意図は、旧・新の両側不在だけを受理する（決定 5）。 */
+        return from_present || to_present ? RENAME_HALTED : RENAME_COMPLETED;
+    }
+    if (from_present && !to_present)
+    {
+        return move_entry(from, to, directory, identity);
+    }
+    if (!from_present && to_present)
+    {
+        return verify_entry(to, directory, identity);
+    }
+    return RENAME_HALTED;
+}
+
+static enum rename_outcome guard_parent(struct rename_guards *_Nonnull guards,
+                                        const wchar_t *_Nonnull path, bool optional)
+{
+    HANDLE handle = open_entry(path, FILE_READ_ATTRIBUTES, true);
+    if (handle == INVALID_HANDLE_VALUE)
+    {
+        DWORD error = GetLastError();
+        bool absent = error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND;
+        return optional && absent ? RENAME_COMPLETED : RENAME_UNSUPPORTED;
+    }
+    guards->items[guards->count] = handle;
+    guards->count += 1;
+    return plain_entry(handle) ? RENAME_COMPLETED : RENAME_UNSUPPORTED;
+}
+
+static void release_guards(struct rename_guards *_Nonnull guards)
+{
+    for (size_t index = 0; index < guards->count; ++index)
+    {
+        CloseHandle(guards->items[index]);
+    }
+    guards->count = 0;
+}
+
+/* data / data\<カテゴリ> / data\.history / data\.history\<カテゴリ> を開いたまま持つ。
+ * 履歴側はまだ無くてよい。exe の置き場までの祖先は対象にしない（決定 4）。 */
+static enum rename_outcome guard_parents(const struct persistence_adapter *_Nonnull adapter,
+                                         const struct note_rename *_Nonnull plan,
+                                         struct rename_guards *_Nonnull guards)
+{
+    const char *_Nonnull category = note_rename_category(plan);
+    wchar_t paths[rename_guard_capacity][path_capacity];
+    size_t length = 0;
+    size_t nested = 0;
+    if (!append_units(paths[0], &length, adapter->root, adapter->root_length) ||
+        !compose(adapter, category, nullptr, paths[1]) ||
+        !compose_history_root(adapter, paths[2], &nested) ||
+        !compose_history_category(adapter, category, paths[3]))
+    {
+        return RENAME_UNSUPPORTED;
+    }
+    for (size_t index = 0; index < rename_guard_capacity; ++index)
+    {
+        enum rename_outcome outcome = guard_parent(guards, paths[index], index >= 2);
+        if (outcome != RENAME_COMPLETED)
+        {
+            return outcome;
+        }
+    }
+    return RENAME_COMPLETED;
+}
+
+/* 移動先の md と履歴ディレクトリの両不在を先に確かめる（決定 4）。 */
+static enum rename_outcome targets_absent(const struct rename_paths *_Nonnull paths)
+{
+    bool note_present = false;
+    bool history_present = false;
+    if (!entry_exists(paths->note_to, &note_present) ||
+        !entry_exists(paths->history_to, &history_present))
+    {
+        return RENAME_UNSUPPORTED;
+    }
+    return note_present || history_present ? RENAME_NAME_TAKEN : RENAME_COMPLETED;
+}
+
+/* 元 md の識別子と、あれば元履歴の識別子。履歴が無ければ空を記録する（決定 5）。 */
+static enum rename_outcome source_identities(const struct rename_paths *_Nonnull paths,
+                                             char *_Nonnull file_id, char *_Nonnull history_id)
+{
+    enum rename_outcome outcome = read_identity(paths->note_from, false, file_id);
+    if (outcome != RENAME_COMPLETED)
+    {
+        return outcome;
+    }
+    bool history_present = false;
+    if (!entry_exists(paths->history_from, &history_present))
+    {
+        return RENAME_UNSUPPORTED;
+    }
+    if (!history_present)
+    {
+        history_id[0] = '\0';
+        return RENAME_COMPLETED;
+    }
+    return read_identity(paths->history_from, true, history_id);
+}
+
+/* 版 1 の記録を新規公開し、flush が終わってからだけ実体を動かす（決定 5）。 */
+static enum rename_outcome publish_journal(const struct persistence_adapter *_Nonnull adapter,
+                                           const struct note_rename *_Nonnull plan,
+                                           const char *_Nonnull file_id,
+                                           const char *_Nonnull history_id)
+{
+    wchar_t path[path_capacity];
+    if (!compose(adapter, nullptr, journal_leaf, path))
+    {
+        return RENAME_JOURNAL_FAILED;
+    }
+    struct json_writer *_Nullable writer = nullptr;
+    if (json_writer_create(&writer) != JSON_WRITER_ACCEPTED)
+    {
+        return RENAME_OUT_OF_MEMORY;
+    }
+    enum rename_journal_outcome written = rename_journal_write(plan, file_id, history_id, writer);
+    enum rename_outcome outcome = RENAME_JOURNAL_FAILED;
+    if (written == RENAME_JOURNAL_OUT_OF_MEMORY)
+    {
+        outcome = RENAME_OUT_OF_MEMORY;
+    }
+    else if (written == RENAME_JOURNAL_ACCEPTED &&
+             file_bytes_create(path, json_writer_text(writer), json_writer_length(writer)) ==
+                 PERSISTENCE_STORED)
+    {
+        outcome = RENAME_COMPLETED;
+    }
+    json_writer_destroy(writer);
+    return outcome;
+}
+
+/* index.json が書けた後にだけ記録を消して完了とする（決定 6）。削除失敗も未完了。 */
+static enum rename_outcome finish_rename(struct persistence_adapter *_Nonnull adapter,
+                                         const struct note_rename *_Nonnull plan)
+{
+    if (write_note_ledger(adapter, note_rename_category(plan), note_rename_ledger(plan)) !=
+        PERSISTENCE_STORED)
+    {
+        return RENAME_PENDING;
+    }
+    wchar_t path[path_capacity];
+    if (!compose(adapter, nullptr, journal_leaf, path))
+    {
+        return RENAME_PENDING;
+    }
+    if (DeleteFileW(path))
+    {
+        return RENAME_COMPLETED;
+    }
+    /* 外から先に消されていたら、消し終えたのと同じこと。ここで止めると再開先を失う（決定 6）。 */
+    DWORD error = GetLastError();
+    return error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND ? RENAME_COMPLETED
+                                                                          : RENAME_PENDING;
+}
+
+/* 記録を公開した後の失敗は、再試行で進み得る PENDING と、data/ を直すまで進まない HALTED の
+ * 2 値だけにする（決定 2）。公開前の値をそのまま外へ返さない。 */
+static enum rename_outcome after_publication(enum rename_outcome outcome)
+{
+    switch (outcome)
+    {
+    case RENAME_COMPLETED:
+        return RENAME_COMPLETED;
+    case RENAME_PENDING:
+    case RENAME_JOURNAL_FAILED:
+    case RENAME_OUT_OF_MEMORY:
+        return RENAME_PENDING;
+    case RENAME_HALTED:
+    case RENAME_NONE:
+    case RENAME_UNLOCKED:
+    case RENAME_NAME_TAKEN:
+    case RENAME_UNSUPPORTED:
+    case RENAME_IDENTITY_FAILED:
+    case RENAME_JOURNAL_BROKEN:
+        return RENAME_HALTED;
+    }
+    return RENAME_HALTED;
+}
+
+/* 記録の公開後の段。履歴 → md → index.json → 記録の削除の順にだけ進む（決定 5 / 6）。 */
+static enum rename_outcome advance_rename(struct persistence_adapter *_Nonnull adapter,
+                                          const struct note_rename *_Nonnull plan,
+                                          const char *_Nonnull file_id,
+                                          const char *_Nonnull history_id)
+{
+    struct rename_paths paths;
+    if (!compose_rename_paths(adapter, plan, &paths))
+    {
+        return RENAME_UNSUPPORTED;
+    }
+    enum rename_outcome outcome =
+        advance_entry(paths.history_from, paths.history_to, true, history_id);
+    if (outcome == RENAME_COMPLETED)
+    {
+        outcome = advance_entry(paths.note_from, paths.note_to, false, file_id);
+    }
+    return outcome == RENAME_COMPLETED ? finish_rename(adapter, plan) : outcome;
+}
+
+/* 記録を読んで型のある値にする。無ければ NONE、読めない・形が違うなら消さずに BROKEN。 */
+static enum rename_outcome read_journal(const struct persistence_adapter *_Nonnull adapter,
+                                        struct rename_journal *_Nullable *_Nonnull out)
+{
+    wchar_t path[path_capacity];
+    if (!compose(adapter, nullptr, journal_leaf, path))
+    {
+        return RENAME_JOURNAL_BROKEN;
+    }
+    struct file_bytes *_Nullable bytes = nullptr;
+    enum persistence_outcome read = file_bytes_read(path, &bytes);
+    if (read == PERSISTENCE_ABSENT)
+    {
+        return RENAME_NONE;
+    }
+    if (read != PERSISTENCE_LOADED)
+    {
+        return read == PERSISTENCE_OUT_OF_MEMORY ? RENAME_OUT_OF_MEMORY : RENAME_JOURNAL_BROKEN;
+    }
+    enum rename_journal_outcome parsed =
+        rename_journal_parse(file_bytes_data(bytes), file_bytes_length(bytes), out);
+    file_bytes_destroy(bytes);
+    switch (parsed)
+    {
+    case RENAME_JOURNAL_ACCEPTED:
+        return RENAME_COMPLETED;
+    case RENAME_JOURNAL_INVALID:
+    case RENAME_JOURNAL_UNSUPPORTED_VERSION:
+        return RENAME_JOURNAL_BROKEN;
+    case RENAME_JOURNAL_OUT_OF_MEMORY:
+        return RENAME_OUT_OF_MEMORY;
+    }
+    return RENAME_JOURNAL_BROKEN;
+}
+
+/* 既に公開された記録の続きだけを行う。親は同じように守る。 */
+static enum rename_outcome resume_journal(struct persistence_adapter *_Nonnull adapter,
+                                          const struct rename_journal *_Nonnull journal)
+{
+    const struct note_rename *_Nonnull plan = rename_journal_rename(journal);
+    struct rename_guards guards = {.items = {nullptr}, .count = 0};
+    enum rename_outcome outcome = guard_parents(adapter, plan, &guards);
+    if (outcome == RENAME_COMPLETED)
+    {
+        outcome = advance_rename(adapter, plan, rename_journal_file_id(journal),
+                                 rename_journal_history_id(journal));
+    }
+    release_guards(&guards);
+    /* 記録がある時点で公開後なので、親の確認の失敗も 2 値に写す。 */
+    return after_publication(outcome);
+}
+
+/* 新しい意図。移動先の不在・親と対象の健全さ・識別子を確かめてから記録を公開する（決定 4 / 5）。 */
+static enum rename_outcome start_rename(struct persistence_adapter *_Nonnull adapter,
+                                        const struct note_rename *_Nonnull plan)
+{
+    struct rename_paths paths;
+    if (!compose_rename_paths(adapter, plan, &paths))
+    {
+        return RENAME_UNSUPPORTED;
+    }
+    struct rename_guards guards = {.items = {nullptr}, .count = 0};
+    char file_id[rename_journal_id_length + 1] = {'\0'};
+    char history_id[rename_journal_id_length + 1] = {'\0'};
+    enum rename_outcome outcome = targets_absent(&paths);
+    if (outcome == RENAME_COMPLETED)
+    {
+        outcome = guard_parents(adapter, plan, &guards);
+    }
+    if (outcome == RENAME_COMPLETED)
+    {
+        outcome = source_identities(&paths, file_id, history_id);
+    }
+    if (outcome == RENAME_COMPLETED)
+    {
+        outcome = publish_journal(adapter, plan, file_id, history_id);
+    }
+    if (outcome == RENAME_COMPLETED)
+    {
+        /* ここから先は記録が公開されている。以後のどの失敗も 2 値で返す（決定 2）。 */
+        outcome = after_publication(advance_rename(adapter, plan, file_id, history_id));
+    }
+    release_guards(&guards);
+    return outcome;
+}
+
+static bool resuming(enum rename_attempt attempt)
+{
+    switch (attempt)
+    {
+    case RENAME_START:
+        return false;
+    case RENAME_RESUME:
+        return true;
+    }
+    return true;
+}
+
+static enum rename_outcome rename_note(struct persistence_adapter *_Nonnull adapter,
+                                       const struct note_rename *_Nonnull plan,
+                                       enum rename_attempt attempt)
+{
+    if (adapter->lock == nullptr)
+    {
+        /* 書けない data/ では記録を公開する前に断る（決定 3 の補正）。意図は残らない。 */
+        return RENAME_UNLOCKED;
+    }
+    struct rename_journal *_Nullable journal = nullptr;
+    enum rename_outcome read = read_journal(adapter, &journal);
+    if (read == RENAME_NONE)
+    {
+        /* 保持中の意図の続きで記録が無いなら、名前だけで移動済みと推測しない（決定 5）。 */
+        return resuming(attempt) ? RENAME_HALTED : start_rename(adapter, plan);
+    }
+    if (read != RENAME_COMPLETED)
+    {
+        return read;
+    }
+    enum rename_outcome outcome = note_rename_equals(plan, rename_journal_rename(journal))
+                                      ? resume_journal(adapter, journal)
+                                      : RENAME_HALTED;
+    rename_journal_destroy(journal);
+    return outcome;
+}
+
+static enum rename_outcome recover_rename(struct persistence_adapter *_Nonnull adapter)
+{
+    struct rename_journal *_Nullable journal = nullptr;
+    enum rename_outcome read = read_journal(adapter, &journal);
+    if (read != RENAME_COMPLETED)
+    {
+        return read;
+    }
+    /* 記録があって錠が無ければ生成の時点で断っているので、ここは持っている（決定 3 の補正）。 */
+    enum rename_outcome outcome =
+        adapter->lock == nullptr ? RENAME_UNLOCKED : resume_journal(adapter, journal);
+    rename_journal_destroy(journal);
+    return outcome;
+}
+
+/* 同じ data/ を使うプロセスを 1 つに直列化する（決定 3 と 2026-09-16 の補正）。
+ * 共有違反だけが起動の拒否で、アクセス拒否・読み取り専用・data/ の不在は錠無しの起動を許す。
+ * ただし復旧すべき記録があるのに錠を取れないなら、復旧できないので起動しない。 */
+static enum persistence_adapter_outcome acquire_lock(struct persistence_adapter *_Nonnull adapter)
+{
+    wchar_t path[path_capacity];
+    if (!compose(adapter, nullptr, lock_leaf, path))
+    {
+        return PERSISTENCE_ADAPTER_NO_MODULE_PATH;
+    }
+    HANDLE lock = CreateFileW(path, GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_ALWAYS,
+                              FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (lock != INVALID_HANDLE_VALUE)
+    {
+        adapter->lock = lock;
+        return PERSISTENCE_ADAPTER_CREATED;
+    }
+    if (GetLastError() == ERROR_SHARING_VIOLATION)
+    {
+        return PERSISTENCE_ADAPTER_DATA_IN_USE;
+    }
+    wchar_t journal[path_capacity];
+    bool present = false;
+    if (compose(adapter, nullptr, journal_leaf, journal) && entry_exists(journal, &present) &&
+        !present)
+    {
+        return PERSISTENCE_ADAPTER_CREATED;
+    }
+    return PERSISTENCE_ADAPTER_RECOVERY_LOCKED;
+}
+
 struct persistence_port persistence_adapter_port(struct persistence_adapter *_Nonnull adapter)
 {
     struct persistence_port port = {
@@ -666,6 +1260,8 @@ struct persistence_port persistence_adapter_port(struct persistence_adapter *_No
         .write_note = write_note,
         .create_note = create_note,
         .move_note = move_note,
+        .rename_note = rename_note,
+        .recover_rename = recover_rename,
         .read_note_ledger = read_note_ledger,
         .write_note_ledger = write_note_ledger,
     };
@@ -674,5 +1270,10 @@ struct persistence_port persistence_adapter_port(struct persistence_adapter *_No
 
 void persistence_adapter_destroy(struct persistence_adapter *_Nullable adapter)
 {
+    if (adapter != nullptr && adapter->lock != nullptr)
+    {
+        /* 錠のファイルは残してよい。所有は OS のハンドルで判定する（ADR 0022 の決定 3）。 */
+        CloseHandle(adapter->lock);
+    }
     free(adapter);
 }

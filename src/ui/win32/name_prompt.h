@@ -1,13 +1,10 @@
-/* 日本語の初回/別名保存面。親を無効にする同期モーダルで、本文は呼出し中だけ借りる（ADR0020）。 */
+/* 日本語の初回保存・別名保存・名前変更の面。親を無効にする同期モーダルで、
+ * 本文は呼出し中だけ借りる（ADR0020 / ADR 0022 の決定 1）。 */
 #ifndef NENEFOLIO_NAME_PROMPT_H
 #define NENEFOLIO_NAME_PROMPT_H
 #include "folio_state_outcome.h"
-#include <stddef.h>
-#include <uchar.h>
+#include "name_prompt_request.h"
 #include <windows.h>
-struct folio_state;
-[[nodiscard]] enum folio_state_outcome name_prompt_show(HWND _Nonnull owner,
-                                                        struct folio_state *_Nonnull state,
-                                                        const char16_t *_Nonnull units,
-                                                        size_t count);
+[[nodiscard]] enum folio_state_outcome
+name_prompt_show(HWND _Nonnull owner, const struct name_prompt_request *_Nonnull request);
 #endif

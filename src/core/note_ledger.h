@@ -12,12 +12,16 @@
 struct note_ledger;
 struct json_writer;
 struct name_list;
+struct json_reader;
 
 [[nodiscard]] enum note_ledger_outcome
 note_ledger_empty(struct note_ledger *_Nullable *_Nonnull out);
 [[nodiscard]] enum note_ledger_outcome
 note_ledger_parse(const char *_Nonnull text, size_t length,
                   struct note_ledger *_Nullable *_Nonnull out);
+/* 同じcodecを外側の版付き文書へ合成する。次のobjectからその終端までを読む。 */
+[[nodiscard]] enum note_ledger_outcome
+note_ledger_read(struct json_reader *_Nonnull reader, struct note_ledger *_Nullable *_Nonnull out);
 /* writer へ版 1 の文書を 1 つ書く。完了の判定は json_writer_finish で行う。 */
 void note_ledger_write(const struct note_ledger *_Nonnull ledger,
                        struct json_writer *_Nonnull writer);
@@ -42,6 +46,10 @@ note_ledger_inserted(const struct note_ledger *_Nonnull ledger, size_t index,
 [[nodiscard]] enum note_ledger_outcome
 note_ledger_removed(const struct note_ledger *_Nonnull ledger, size_t index,
                     struct note_ledger *_Nullable *_Nonnull out);
+/* indexの位置を保って名前だけ変える。indexはcount未満。重複/不正はMALFORMED。 */
+[[nodiscard]] enum note_ledger_outcome
+note_ledger_renamed(const struct note_ledger *_Nonnull ledger, size_t index,
+                    const char *_Nonnull name, struct note_ledger *_Nullable *_Nonnull out);
 [[nodiscard]] size_t note_ledger_count(const struct note_ledger *_Nonnull ledger);
 /* 終端付き。ledger が生きている間だけ有効。index は count 未満であること。 */
 [[nodiscard]] const char *_Nonnull note_ledger_name(const struct note_ledger *_Nonnull ledger,
