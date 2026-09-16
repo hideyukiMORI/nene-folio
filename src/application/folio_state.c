@@ -36,6 +36,9 @@ struct folio_state
     /* 記録を公開したまま完了していない改名の意図。1 つだけ持つ（ADR 0022 の決定 2 / 7） */
     struct note_rename *_Nullable rename;
     size_t rename_category;
+    /* ノート内検索の語（UTF-8）と直前の方向。#40 の絞り込み語とは別（ADR 0023 の決定 3） */
+    struct utf8_text *_Nullable search_term;
+    enum search_direction search_direction;
     bool cursor_any; /* 索引のカーソルがあるか（ADR 0015 の決定 1） */
     enum folio_cursor_kind cursor_kind;
     size_t cursor_category; /* FOLIO_CURSOR_CATEGORY のときのカテゴリ番号 */
@@ -1598,6 +1601,47 @@ enum pane_mode folio_state_pane_mode(const struct folio_state *_Nonnull state)
     return state->mode;
 }
 
+/* 語は UI から UTF-16 で届くので、ここで内部の UTF-8 へ写して所有する（C-014 の例外・ADR 0023）。
+ * 本文も選択も持たない。探すのは core で、選択を動かすのは RichEdit である。 */
+enum folio_state_outcome folio_state_set_search_term(struct folio_state *_Nonnull state,
+                                                     const char16_t *_Nonnull units, size_t count)
+{
+    struct utf8_text *_Nullable term = nullptr;
+    if (count > 0)
+    {
+        enum utf8_text_outcome converted = utf8_text_create(units, count, &term);
+        if (converted != UTF8_TEXT_CONVERTED)
+        {
+            return converted == UTF8_TEXT_OUT_OF_MEMORY ? FOLIO_STATE_OUT_OF_MEMORY
+                                                        : FOLIO_STATE_SEARCH_MALFORMED;
+        }
+    }
+    utf8_text_destroy(state->search_term);
+    state->search_term = term;
+    return FOLIO_STATE_READY;
+}
+
+const char *_Nonnull folio_state_search_term(const struct folio_state *_Nonnull state)
+{
+    return state->search_term == nullptr ? "" : utf8_text_bytes(state->search_term);
+}
+
+size_t folio_state_search_term_length(const struct folio_state *_Nonnull state)
+{
+    return state->search_term == nullptr ? 0 : utf8_text_length(state->search_term);
+}
+
+enum search_direction folio_state_search_direction(const struct folio_state *_Nonnull state)
+{
+    return state->search_direction;
+}
+
+void folio_state_set_search_direction(struct folio_state *_Nonnull state,
+                                      enum search_direction direction)
+{
+    state->search_direction = direction;
+}
+
 const char *_Nonnull folio_state_pane_text(const struct folio_state *_Nonnull state)
 {
     return note_text_bytes(state->body);
@@ -1664,7 +1708,8 @@ size_t folio_state_pane_rtf_length(const struct folio_state *_Nonnull state)
     return markdown_rtf_length(state->pane);
 }
 
-/* 「途中で止まったまま残っている処理」の 1 行（ADR 0021 / ADR 0022）。
+/* 「途中で止まったまま残っている処理」と、探せなかった理由の 1 行（ADR 0021 / 0022 / 0023）。
+ * 1 つ目の switch が C-012 の行数上限に収まらないので、続きをここに置く。
  * 網羅は folio_state_failure_line 側の switch と同じ列挙で守る。 */
 static const char *_Nonnull unfinished_failure_line(enum folio_state_outcome outcome)
 {
@@ -1693,6 +1738,10 @@ static const char *_Nonnull unfinished_failure_line(enum folio_state_outcome out
         return "名前変更の記録（data/.rename.json）を書けませんでした。何も変えていません。";
     case FOLIO_STATE_RENAME_JOURNAL_BROKEN:
         return "名前変更の記録（data/.rename.json）が版 1 の形ではありません。消していません。";
+    case FOLIO_STATE_SEARCH_MALFORMED:
+        return "検索する語に壊れた文字があります。語は前のままです。";
+    case FOLIO_STATE_PANE_UNAVAILABLE:
+        return "表示中の本文を取り出せませんでした。探していません。";
     case FOLIO_STATE_READY:
     case FOLIO_STATE_DATA_UNREADABLE:
     case FOLIO_STATE_LEDGER_MALFORMED:
@@ -1761,6 +1810,9 @@ const char *_Nonnull folio_state_failure_line(enum folio_state_outcome outcome)
     case FOLIO_STATE_RENAME_JOURNAL_FAILED:
     case FOLIO_STATE_RENAME_JOURNAL_BROKEN:
         return unfinished_failure_line(outcome);
+    case FOLIO_STATE_SEARCH_MALFORMED:
+    case FOLIO_STATE_PANE_UNAVAILABLE:
+        return unfinished_failure_line(outcome);
     case FOLIO_STATE_OUT_OF_MEMORY:
         return "記憶域が足りません。";
     case FOLIO_STATE_NAME_REQUIRED:
@@ -1793,5 +1845,6 @@ void folio_state_destroy(struct folio_state *_Nullable state)
     category_ledger_destroy(state->categories);
     markdown_rtf_destroy(state->pane);
     note_text_destroy(state->body);
+    utf8_text_destroy(state->search_term);
     free(state);
 }

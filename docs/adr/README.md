@@ -38,3 +38,4 @@ ADR は「なぜそう決めたか」「何を却下したか」を書く。
 | [0020](0020-untitled-note-and-first-save.md) | 無題の本文を保持し、初回保存だけ新しいmdを公開する | 受理 |
 | [0021](0021-save-as-preserves-original.md) | 別名保存は元を保存せず新しいmdを作る | 受理 |
 | [0022](0022-note-rename-and-recovery.md) | 改名の意図を記録し履歴・md・索引を再開可能に移す | 受理 |
+| [0023](0023-in-note-search.md) | 現在ノートの検索は表示中の本文を対象にし、判断はcore・語と方向はapplication | 受理 |

@@ -55,12 +55,12 @@ static void verify_rejections(void)
 
 static void verify_catalog(void)
 {
-    require(folio_command_count() == 10, "only implemented commands are registered");
-    const enum folio_command expected[] = {FOLIO_COMMAND_SAVE,      FOLIO_COMMAND_QUIT,
-                                           FOLIO_COMMAND_SAVE_QUIT, FOLIO_COMMAND_FORCE_QUIT,
-                                           FOLIO_COMMAND_HELP,      FOLIO_COMMAND_EDIT,
-                                           FOLIO_COMMAND_VIEW,      FOLIO_COMMAND_NEW,
-                                           FOLIO_COMMAND_SAVE_AS,   FOLIO_COMMAND_RENAME};
+    require(folio_command_count() == 11, "only implemented commands are registered");
+    const enum folio_command expected[] = {
+        FOLIO_COMMAND_SAVE,       FOLIO_COMMAND_QUIT, FOLIO_COMMAND_SAVE_QUIT,
+        FOLIO_COMMAND_FORCE_QUIT, FOLIO_COMMAND_HELP, FOLIO_COMMAND_EDIT,
+        FOLIO_COMMAND_VIEW,       FOLIO_COMMAND_NEW,  FOLIO_COMMAND_SAVE_AS,
+        FOLIO_COMMAND_RENAME,     FOLIO_COMMAND_FIND};
     for (size_t index = 0; index < folio_command_count(); ++index)
     {
         enum folio_command command = folio_command_at(index);
@@ -87,6 +87,12 @@ static void verify_catalog(void)
             "GUI-only command can be found by Japanese label");
     require(folio_command_matches(FOLIO_COMMAND_RENAME, "名前", strlen("名前")),
             "rename is found by its Japanese label");
+    /* `?` はヘルプではなく後方検索になった（ADR 0023 の決定 6）。ヘルプは F1 / :h / Ctrl+P。 */
+    require(folio_command_alias_count(FOLIO_COMMAND_FIND) == 0 &&
+                same_text(folio_command_label(FOLIO_COMMAND_FIND), "このノート内を検索"),
+            "in-note search is a GUI-only operation with a Japanese label");
+    require(folio_command_matches(FOLIO_COMMAND_FIND, "検索", strlen("検索")),
+            "the operations menu finds it by label");
 }
 
 void run_command_tests(void)

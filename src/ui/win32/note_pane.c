@@ -212,9 +212,10 @@ enum note_pane_outcome note_pane_create(HWND _Nonnull parent, COLORREF backgroun
         note_pane_destroy(pane);
         return NOTE_PANE_NOT_CREATED;
     }
-    /* スクロールバーは出さない（FR-012 と同じ流儀）。ホイールで動く。 */
-    DWORD style =
-        WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL;
+    /* スクロールバーは出さない（FR-012 と同じ流儀）。ホイールで動く。
+     * ES_NOHIDESEL は、検索欄に鍵があるあいだも一致の選択を見せるため（ADR 0023 の決定 4）。 */
+    DWORD style = WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | ES_MULTILINE | ES_READONLY |
+                  ES_AUTOVSCROLL | ES_NOHIDESEL;
     pane->handle = CreateWindowExW(0, class_name, L"", style, 0, 0, 0, 0, parent, nullptr,
                                    GetModuleHandleW(nullptr), nullptr);
     if (pane->handle == nullptr || !subclass_pane(pane) || !prepare_navigation(pane))
@@ -312,6 +313,60 @@ enum note_pane_text_outcome note_pane_text(struct note_pane *_Nonnull pane,
     *units = pane->taken;
     *count = pane->used / sizeof(char16_t);
     return NOTE_PANE_TEXT_TAKEN;
+}
+
+/* 表示中の平文。段落区切りを CR 1 つのまま受け取るので、EM_EXSETSEL の位置とそのまま合う。
+ * GETTEXTEX の cb の単位（バイトか文字か）は版で揺れるので、どちらでも溢れない大きさを確保する
+ * （2026-09-17 の Win32 部品測定で実際の文字数を確かめている）。 */
+enum note_pane_text_outcome note_pane_display_text(struct note_pane *_Nonnull pane,
+                                                   const char16_t *_Nonnull *_Nonnull units,
+                                                   size_t *_Nonnull count)
+{
+    if (pane->handle == nullptr)
+    {
+        return NOTE_PANE_TEXT_UNAVAILABLE;
+    }
+    GETTEXTLENGTHEX request = {.flags = GTL_NUMCHARS, .codepage = unicode_codepage};
+    LRESULT length = SendMessageW(pane->handle, EM_GETTEXTLENGTHEX, (WPARAM)&request, 0);
+    size_t limit = length > 0 ? (size_t)length : 0;
+    if (!reserve(pane, (limit + 1) * 2 * sizeof(char16_t)))
+    {
+        return NOTE_PANE_TEXT_OUT_OF_MEMORY;
+    }
+    GETTEXTEX taking = {.cb = (DWORD)((limit + 1) * sizeof(char16_t)),
+                        .flags = GT_DEFAULT,
+                        .codepage = unicode_codepage};
+    LRESULT taken = SendMessageW(pane->handle, EM_GETTEXTEX, (WPARAM)&taking, (LPARAM)pane->taken);
+    pane->used = (taken > 0 ? (size_t)taken : 0) * sizeof(char16_t);
+    pane->taken[pane->used / sizeof(char16_t)] = u'\0';
+    *units = pane->taken;
+    *count = pane->used / sizeof(char16_t);
+    return NOTE_PANE_TEXT_TAKEN;
+}
+
+void note_pane_select(struct note_pane *_Nonnull pane, size_t start, size_t end)
+{
+    if (pane->handle == nullptr)
+    {
+        return;
+    }
+    CHARRANGE range = {.cpMin = (LONG)start, .cpMax = (LONG)end};
+    SendMessageW(pane->handle, EM_EXSETSEL, 0, (LPARAM)&range);
+    SendMessageW(pane->handle, EM_SCROLLCARET, 0, 0);
+}
+
+bool note_pane_selection(const struct note_pane *_Nonnull pane, size_t *_Nonnull start,
+                         size_t *_Nonnull end)
+{
+    if (pane->handle == nullptr)
+    {
+        return false;
+    }
+    CHARRANGE range = {.cpMin = 0, .cpMax = 0};
+    SendMessageW(pane->handle, EM_EXGETSEL, 0, (LPARAM)&range);
+    *start = range.cpMin > 0 ? (size_t)range.cpMin : 0;
+    *end = range.cpMax > 0 ? (size_t)range.cpMax : 0;
+    return true;
 }
 
 void note_pane_destroy(struct note_pane *_Nullable pane)

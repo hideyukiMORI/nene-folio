@@ -124,6 +124,19 @@ Waivers: none | WVR-NNNN
 
 ## 6. いまの状況
 
+2026-09-17: #56の名前変更はmain 69431cbへ統合済み。#58 / ADR 0023の現在ノートの検索を `out/worktrees/58-search` で
+3層に実装した。GUI「このノート内を検索」・Ctrl+F・索引と閲覧本文の `/`（前方）・`?`（後方）がADR 0016の同じ入力面を開き、
+元のフォーカスを覚えてEscで返す。Exと違いEnterでは閉じず、Enterは直前の方向・Shift+Enterは逆方向へ進む。
+`n` / `N` は欄が閉じていても効き、編集中の本文と各入力欄では文字入力のまま。対象はRichEditが今表示している平文で、
+段落区切りをCR 1つのまま取り出してEM_EXSETSELの位置と1対1にする。判断はcoreの `note_search`（前方／後方・巡回・
+anchor・件数。ASCIIの英字だけ大小無視）、語と方向はapplication、選択はRichEditが持つ。
+**INDEXの `?` はこの単位で後方検索へ移し、ヘルプはGUI「ヘルプ」・F1・`:h`・Ctrl+Pに残した。**
+レビュー対応でADR 0023へ補正節を足した。前方はanchorの**開始の次**から見て重なる一致を飛ばさず、
+反転したanchorは `NOTE_SEARCH_BAD_SPAN` で拒む。F3／Shift+F3は向きを名指しして進み、覚えている向きを変えない
+（変えるのは `/` と `?` だけ）。壊れた語は欄の中の1行で、表示本文を取り出せない事象は `PANE_UNAVAILABLE` で区別する。
+単体2/2とWindows部品30項目が成功（[確認記録](docs/quality/2026-09-17-search-checks.md)）。
+最終フルゲート・CIは#58のPRを参照する。次は**全ノート検索（FR-032 / #40）**で、語も状態もノート内検索とは別に持つ。
+
 2026-09-16: #55の別名保存はmain f35870dへ統合済み。#56 / ADR0022の名前変更を `out/worktrees/56-rename` で
 5層に実装した。GUI「名前を変更」・F2・`:rename 名前`が同じ登録表を通り、mdと `data/.history` の履歴を新しい名前へ移す。
 順は「編集中なら保存 → `data/.rename.json` を版1で新規公開 → 履歴 → md → `index.json` → 記録の削除」で、
@@ -135,7 +148,7 @@ Waivers: none | WVR-NNNN
 単体・実アダプタ41項目・Windows部品19項目が成功（[確認記録](docs/quality/2026-09-16-rename-checks.md)）。
 最終フルゲートとCIは#56のPRを参照する。次は**#58（現在ノートの検索・ADR 0023 草案あり）**。
 `/` の全ノート検索（FR-011 / #40）はその後の別単位。
-最新は [日報](docs/reports/2026-09-16.md) / [引き継ぎ](docs/handoffs/2026-09-16.md)。
+最新は [日報](docs/reports/2026-09-17.md) / [引き継ぎ](docs/handoffs/2026-09-17.md)。
 
 2026-09-13 18:18 JST: hideの指示で日報/引き継ぎを保存して停止。#53はmain35d86afへ統合済み。
 #55の別名保存は7708802で全体ゲート成功、PR57はReadyだがGitHub障害でCI開始未確認・未統合。
