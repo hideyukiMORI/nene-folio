@@ -34,7 +34,8 @@ static bool matches_at(const char *_Nonnull text, const char *_Nonnull term, siz
     return true;
 }
 
-/* text のどこかに語があるか。語が本文より長ければ無い。 */
+/* text のどこかに語があるか。語が本文より長ければ無い。
+ * 打鍵ごとに全本文を走るので、頭の 1 バイトが合う位置だけを比べに行く。 */
 static bool contains(const char *_Nonnull text, size_t length, const char *_Nonnull term,
                      size_t term_length)
 {
@@ -42,10 +43,11 @@ static bool contains(const char *_Nonnull text, size_t length, const char *_Nonn
     {
         return false;
     }
+    char head = folded(term[0]);
     size_t limit = length - term_length + 1;
     for (size_t at = 0; at < limit; ++at)
     {
-        if (matches_at(text, term, term_length, at))
+        if (folded(text[at]) == head && matches_at(text, term, term_length, at))
         {
             return true;
         }
