@@ -95,6 +95,77 @@ static void verify_wrapping(void)
             "an anchor past the end is clamped");
 }
 
+/* いまの一致を選んだ状態から次を探す（欄の Enter と同じ anchor）。 */
+static size_t stepped(const struct note_search_query *_Nonnull query, size_t at,
+                      enum search_direction direction)
+{
+    return found_at(query, span_of(at, at + query->term_length), direction);
+}
+
+/* 重なった一致も飛ばさず、note_search_count が数える一致を全部通る（2026-09-17 の補正）。 */
+static void verify_overlapping_steps(void)
+{
+    struct note_search_query query = query_of(u"aaaa", u"aa"); /* 候補は 0 / 1 / 2 */
+    size_t total = 0;
+    size_t ordinal = 0;
+    require(note_search_count(&query, 0, &total, &ordinal) == NOTE_SEARCH_FOUND && total == 3,
+            "three overlapping matches are counted");
+    size_t at = found_at(&query, span_of(0, 0), SEARCH_DIRECTION_FORWARD);
+    require(at == 0, "the first match is at the beginning");
+    at = stepped(&query, at, SEARCH_DIRECTION_FORWARD);
+    require(at == 1, "forward reaches the overlapping match");
+    at = stepped(&query, at, SEARCH_DIRECTION_FORWARD);
+    require(at == 2, "forward reaches the last match");
+    at = stepped(&query, at, SEARCH_DIRECTION_FORWARD);
+    require(at == 0, "forward wraps to the first match");
+    at = stepped(&query, 2, SEARCH_DIRECTION_BACKWARD);
+    require(at == 1, "backward reaches the overlapping match");
+    at = stepped(&query, at, SEARCH_DIRECTION_BACKWARD);
+    require(at == 0, "backward reaches the first match");
+    at = stepped(&query, at, SEARCH_DIRECTION_BACKWARD);
+    require(at == 2, "backward wraps to the last match");
+    for (size_t index = 0; index < 3; ++index)
+    {
+        require(note_search_count(&query, index, &total, &ordinal) == NOTE_SEARCH_FOUND &&
+                    ordinal == index + 1,
+                "every reachable match has its own ordinal");
+    }
+}
+
+/* 折り畳むのは A-Z だけ。前後の記号（[ \ ] ^ _ ` { | } ~）は畳まない。 */
+static void verify_folding_boundary(void)
+{
+    struct note_search_query symbols = query_of(u"[\\]^_`{|}~", u"{|}");
+    require(found_at(&symbols, span_of(0, 0), SEARCH_DIRECTION_FORWARD) == 6,
+            "symbols match themselves");
+    const char16_t *_Nonnull const pairs[] = {u"[", u"{", u"\\", u"|", u"]",
+                                              u"}", u"^", u"~",  u"_", u"`"};
+    for (size_t index = 0; index < sizeof pairs / sizeof pairs[0]; index += 2)
+    {
+        struct note_search_query query = query_of(pairs[index], pairs[index + 1]);
+        require(found_at(&query, span_of(0, 0), SEARCH_DIRECTION_FORWARD) == query.length,
+                "the neighbours of A-Z and a-z are not folded into each other");
+    }
+    struct note_search_query edges = query_of(u"AZaz", u"az");
+    require(found_at(&edges, span_of(0, 0), SEARCH_DIRECTION_FORWARD) == 0,
+            "A and Z are the ends of the folded range");
+}
+
+/* 語が本文と同じ長さ・1 文字の語の巡回。 */
+static void verify_short_texts(void)
+{
+    struct note_search_query whole = query_of(u"日報", u"日報");
+    require(found_at(&whole, span_of(0, 0), SEARCH_DIRECTION_FORWARD) == 0 &&
+                found_at(&whole, span_of(0, 2), SEARCH_DIRECTION_FORWARD) == 0 &&
+                found_at(&whole, span_of(0, 2), SEARCH_DIRECTION_BACKWARD) == 0,
+            "a term as long as the text is reached from either direction");
+    struct note_search_query single = query_of(u"aba", u"a");
+    require(found_at(&single, span_of(0, 1), SEARCH_DIRECTION_FORWARD) == 2 &&
+                found_at(&single, span_of(2, 3), SEARCH_DIRECTION_FORWARD) == 0 &&
+                found_at(&single, span_of(0, 1), SEARCH_DIRECTION_BACKWARD) == 2,
+            "a one unit term wraps at both ends");
+}
+
 static void verify_counting(void)
 {
     struct note_search_query query = query_of(u"ab ab ab", u"ab");
@@ -115,6 +186,11 @@ static void verify_counting(void)
     require(note_search_count(&missing, 0, &total, &ordinal) == NOTE_SEARCH_NOT_FOUND &&
                 total == 0 && ordinal == 0,
             "no match counts as zero of zero");
+    /* 一致の開始でない位置は「そこまでに現れた一致の数」。丸めも推測もしない契約。 */
+    require(note_search_count(&query, 1, &total, &ordinal) == NOTE_SEARCH_FOUND && ordinal == 1,
+            "a position inside the first match counts the matches up to it");
+    require(note_search_count(&query, 5, &total, &ordinal) == NOTE_SEARCH_FOUND && ordinal == 2,
+            "a position between matches counts the ones before it");
 }
 
 static void verify_surrogates(void)
@@ -163,6 +239,14 @@ static void verify_refusals(void)
             "a surrogate pair cut off by the end of the text is refused");
     require(match.start == 9 && match.end == 9 && total == 9 && ordinal == 9,
             "a refusal never writes an output");
+    /* 反転した anchor は公開契約の違反。黙って直さず拒む。 */
+    struct note_search_query sane = query_of(u"ab ab", u"ab");
+    require(note_search_next(&sane, span_of(3, 1), SEARCH_DIRECTION_FORWARD, &match) ==
+                    NOTE_SEARCH_BAD_SPAN &&
+                note_search_next(&sane, span_of(3, 1), SEARCH_DIRECTION_BACKWARD, &match) ==
+                    NOTE_SEARCH_BAD_SPAN,
+            "an inverted anchor is refused in both directions");
+    require(match.start == 9 && match.end == 9, "a refused anchor never writes an output");
     struct note_search_query longer = query_of(u"ab", u"abc");
     struct note_search_query blank = query_of(u"", u"a");
     require(note_search_next(&longer, span_of(0, 0), SEARCH_DIRECTION_FORWARD, &match) ==
@@ -178,6 +262,9 @@ void run_search_tests(void)
     verify_non_ascii();
     verify_directions();
     verify_wrapping();
+    verify_overlapping_steps();
+    verify_folding_boundary();
+    verify_short_texts();
     verify_counting();
     verify_surrogates();
     verify_refusals();

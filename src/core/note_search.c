@@ -112,6 +112,14 @@ static bool scan_backward(const struct note_search_query *_Nonnull query, size_t
     return false;
 }
 
+/* 前方の探し始め。**一致の開始の次**から見るので、重なった候補も飛ばさない
+ * （2026-09-17 の補正。anchor が空＝caret ならその位置から）。 */
+static size_t forward_start(struct note_search_span anchor, size_t limit)
+{
+    size_t from = anchor.start + (anchor.end > anchor.start ? 1 : 0);
+    return from < limit ? from : limit;
+}
+
 /* anchor から始めて、端まで行ったら反対の端から続ける（巡回）。候補はちょうど 1 回ずつ見る。 */
 static bool seek(const struct note_search_query *_Nonnull query, struct note_search_span anchor,
                  enum search_direction direction, size_t *_Nonnull found)
@@ -121,7 +129,7 @@ static bool seek(const struct note_search_query *_Nonnull query, struct note_sea
     {
     case SEARCH_DIRECTION_FORWARD:
     {
-        size_t from = anchor.end < limit ? anchor.end : limit;
+        size_t from = forward_start(anchor, limit);
         return scan_forward(query, from, limit, found) || scan_forward(query, 0, from, found);
     }
     case SEARCH_DIRECTION_BACKWARD:
@@ -138,6 +146,10 @@ enum note_search_outcome note_search_next(const struct note_search_query *_Nonnu
                                           enum search_direction direction,
                                           struct note_search_span *_Nonnull out)
 {
+    if (anchor.start > anchor.end)
+    {
+        return NOTE_SEARCH_BAD_SPAN;
+    }
     enum note_search_outcome rejected = NOTE_SEARCH_NO_TERM;
     if (!searchable(query, &rejected))
     {
