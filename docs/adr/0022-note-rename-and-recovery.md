@@ -82,7 +82,7 @@ codec/台帳/意図と確保失敗は中核単体。OS側はタスク専用のmd
 GUIの取消/再開/Undo/IME/F2は別に測定し、物理入力と目視は区別する。
 実装前にこの判断を記録した。Waivers: none。
 
-## 18:15 JSTの実装境界
+## 18:15 JSTの実装境界（2026-09-13。次節が現在の範囲）
 
 現在はnote_ledgerの同じ位置での改名と合成可能なread codec、note_rename、rename_journalの純粋中核だけを実装した。
 application/adapter/UIの改名、dataロック、NTFS判定、実ファイルの移動/復旧は未実装。F2/:renameはまだ登録しない。
@@ -114,3 +114,27 @@ hideの再開指示を受け、設計リナが決定3の「書けないdataの�
 
 理由: 実行ファイルと同じ場所の`data/`を読み取り専用の場所に置いて閲覧だけ行う使い方を、改名の実装で失わせない。
 決定4（ローカルNTFS・reparse point拒否）は据え置く。hideの実際の置き場が同期フォルダなら別途判断する。
+
+## 2026-09-16の実装境界
+
+決定1〜8と上の補正を、5層すべてに実装した。受理済みの決定本文は変えていない。
+
+- application: `folio_state_rename_note` が未選択/無題/同名/大小文字だけの別名/既存名を先に断り、
+  編集中なら既存の保存経路で確定してから `note_rename_create` で意図を確保する。
+  `synchronize_index` と改名の再開は一つの同期入口に束ね、保存・切替・並替・色・新規・別名保存・
+  終了確認がそこを通る。未完了は `FOLIO_STATE_RENAME_PENDING` で、意図は一つだけ保持する。
+  `folio_state_create` はカテゴリ走査より先に `recover_rename` を呼び、終わらなければ起動しない。
+  `pane_title_view.recovering` が「名前変更の復旧待ち」を表す。
+- adapters/win32: `data/.nenefolio.lock` を共有なしで寿命中保持する。共有違反は起動拒否
+  （`PERSISTENCE_ADAPTER_DATA_IN_USE`）、アクセス拒否・読み取り専用・data/不在は錠なしの起動を許し、
+  記録があって錠を取れないときだけ `PERSISTENCE_ADAPTER_RECOVERY_LOCKED` で起動しない。
+  改名は移動先の両不在 → 親と対象の `FILE_FLAG_OPEN_REPARSE_POINT` と `GetVolumeInformationByHandleW`
+  → `GetFileInformationByHandleEx(FileIdInfo)` → `.rename.json` の新規公開 → 履歴 → md →
+  index.json → 記録削除の順で、移動は `SetFileInformationByHandle(FileRenameInfo, ReplaceIfExists=FALSE)`。
+  再開は旧/新の存在と保存済み識別子だけで段階を決め、合わなければ記録を消さずに止める。
+- ui/win32: 共通操作 `FOLIO_COMMAND_RENAME`（表示名「名前を変更」・Ex別名 `rename`）、
+  主窓のF2、既存の名前入力面の第3の操作種別。名前引数を許す操作は閉じた集合になった。
+
+まだ無いもの: カテゴリを変える改名（移動はドラッグのまま）、記録が壊れたときの画面からの修復、
+`.rename.json` の版2。決定4のとおり初版はローカルNTFSだけで、同期フォルダ上の`data/`は未判断。
+電源断/OSクラッシュ時の名前空間更新の耐久性は決定どおり未証明。
