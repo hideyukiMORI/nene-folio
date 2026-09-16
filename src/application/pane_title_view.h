@@ -8,7 +8,9 @@
 
 struct pane_title_view
 {
-    bool any;                      /* ノートを選んでいるか。偽なら他のメンバーは空 */
+    bool any; /* ノートを選んでいるか。偽なら他のメンバーは空 */
+    /* 改名の復旧待ち（ADR 0022 の決定 2）。真のとき note は実ファイル名ではなくその説明。 */
+    bool recovering;
     size_t ordinal;                /* カテゴリの 1 始まりの番号 */
     const char *_Nonnull category; /* 終端付き UTF-8 */
     const char *_Nonnull note;     /* 終端付き UTF-8 */

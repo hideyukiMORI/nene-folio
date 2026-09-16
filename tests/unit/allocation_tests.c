@@ -423,6 +423,21 @@ static bool save_as_under_probe(struct folio_state *_Nonnull state)
     return completed;
 }
 
+/* 改名は名前・意図・台帳の確保をまとめて通す（ADR 0022）。偽のポートは完了を返す。 */
+static bool rename_under_probe(struct folio_state *_Nonnull state)
+{
+    struct note_name *name = nullptr;
+    if (note_name_create("改名した名前.md", strlen("改名した名前.md"), &name) != NOTE_NAME_ACCEPTED)
+    {
+        return false;
+    }
+    enum folio_state_outcome renamed = folio_state_rename_note(state, name, u"", 0);
+    require(renamed == FOLIO_STATE_READY || renamed == FOLIO_STATE_OUT_OF_MEMORY,
+            "rename under probe");
+    note_name_destroy(name);
+    return renamed == FOLIO_STATE_READY;
+}
+
 /* state を作り、意図を 1 回ずつ通す。adapter は state より長く生きる。 */
 static bool state_scenario_with(struct persistence_adapter *_Nonnull adapter)
 {
@@ -438,7 +453,8 @@ static bool state_scenario_with(struct persistence_adapter *_Nonnull adapter)
     bool completed = layout_intent_under_probe(state) && ledger_under_probe(state) &&
                      selection_under_probe(state) && reorder_under_probe(state) &&
                      edit_under_probe(state) && transfer_under_probe(state) &&
-                     new_note_under_probe(state) && save_as_under_probe(state);
+                     new_note_under_probe(state) && save_as_under_probe(state) &&
+                     rename_under_probe(state);
     folio_state_destroy(state);
     return completed;
 }

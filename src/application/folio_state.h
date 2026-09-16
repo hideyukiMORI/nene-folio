@@ -23,6 +23,7 @@
 struct appearance_port;
 struct drawer_layout;
 struct folio_state;
+struct note_name;
 struct persistence_port;
 
 /* ポートは複製して持つ。両ポートの adapter は state より長く生きていなければならない。 */
@@ -128,6 +129,16 @@ folio_state_document_kind(const struct folio_state *_Nonnull state);
 folio_state_store_new(struct folio_state *_Nonnull state,
                       const struct note_destination *_Nonnull destination,
                       const char16_t *_Nonnull units, size_t count);
+/* 現在のノートの md と履歴を同じカテゴリの新しい名前へ移す（FR-031 / ADR 0022）。
+ * units / count は編集中の本文で、未保存なら同じ保存経路で先に確定してから改名する
+ * （VIEW では使わない）。未選択は NOTHING_SELECTED、無題は NAME_REQUIRED（初回保存が先）、
+ * 同じ名前は何もせず READY、大小文字だけ違う名前を含む同名は NAME_TAKEN。
+ * 記録を公開する前の拒否では意図が残らない。公開後に止まったら RENAME_PENDING を返し、
+ * 意図を 1 つだけ保持して、次の意図より先に同じ改名を再試行する（決定 7）。
+ * 成功しても本文・モード・選択位置は変えない。name は呼び出しの間だけ借りる。 */
+[[nodiscard]] enum folio_state_outcome
+folio_state_rename_note(struct folio_state *_Nonnull state, const struct note_name *_Nonnull name,
+                        const char16_t *_Nonnull units, size_t count);
 /* 編集中の本文（UTF-16 の単位列）を保存し、編集モードのまま残る（Ctrl+S）。
  * VIEWでは台帳だけ同期し本文は書かない。読んだ本文と同じなら書かない。書き戻せなければ状態は変えない（ADR
  * 0006）。 */

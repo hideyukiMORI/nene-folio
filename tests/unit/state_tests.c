@@ -5,6 +5,7 @@
 #include "name_list.h"
 #include "note_ledger.h"
 #include "note_name.h"
+#include "note_rename.h"
 #include "note_text.h"
 #include "persistence_port.h"
 #include "unit_tests.h"
@@ -58,7 +59,16 @@ struct persistence_adapter
     char moved_note[64];
     const char *_Nullable move_to; /* 最後の移動先のカテゴリ名 */
     char calls[128];               /* 呼び出しの順（'/' 区切り。move・<カテゴリ>・書いた名前） */
-    size_t ledger_fail_at; /* この番号（1 始まり）の索引の書き戻しだけ失敗させる。0 なら使わない */
+    enum rename_outcome rename_outcome;  /* rename_note が返す結果 */
+    enum rename_outcome recover_outcome; /* 起動時の recover_rename が返す結果 */
+    size_t renames;                      /* rename_note が呼ばれた回数 */
+    size_t recovers;                     /* recover_rename が呼ばれた回数 */
+    /* 最後の意図の名前。意図は呼び出しの間だけ借りるので複製して持つ。 */
+    char renamed_category[64];
+    char renamed_from[64];
+    char renamed_to[64];
+    bool journal_published; /* 記録を公開したまま終わっているか（:q! で残る意図の証拠） */
+    size_t ledger_fail_at;  /* この番号（1 始まり）の索引の書き戻しだけ失敗させる。0 なら使わない */
     const char *_Nullable alt_category; /* この名前のカテゴリだけ別の索引と md を返す */
     const char *_Nonnull alt_notes_text;
     const char *_Nonnull const *_Nullable alt_scanned; /* nullptr で終わる名前の並び */
@@ -324,6 +334,41 @@ static enum persistence_outcome fake_move_note(struct persistence_adapter *_Nonn
     return adapter->move_outcome;
 }
 
+static void copy_name(char *_Nonnull out, size_t capacity, const char *_Nonnull name)
+{
+    size_t length = strlen(name);
+    require(length + 1 < capacity, "the renamed name fits the fake");
+    memcpy(out, name, length + 1);
+}
+
+/* 偽の改名。どの段階で止めるかは rename_outcome が決める（ADR 0022）。
+ * 記録の公開後に止めた PENDING だけが journal_published を真にし、完了で消える。 */
+static enum rename_outcome fake_rename_note(struct persistence_adapter *_Nonnull adapter,
+                                            const struct note_rename *_Nonnull plan)
+{
+    adapter->renames += 1;
+    record_call(adapter, "rename");
+    copy_name(adapter->renamed_category, sizeof adapter->renamed_category,
+              note_rename_category(plan));
+    copy_name(adapter->renamed_from, sizeof adapter->renamed_from, note_rename_from(plan));
+    copy_name(adapter->renamed_to, sizeof adapter->renamed_to, note_rename_to(plan));
+    if (adapter->rename_outcome == RENAME_PENDING)
+    {
+        adapter->journal_published = true;
+    }
+    if (adapter->rename_outcome == RENAME_COMPLETED)
+    {
+        adapter->journal_published = false;
+    }
+    return adapter->rename_outcome;
+}
+
+static enum rename_outcome fake_recover_rename(struct persistence_adapter *_Nonnull adapter)
+{
+    adapter->recovers += 1;
+    return adapter->recover_outcome;
+}
+
 /* テスト用の外観ポート。application が不完全型として知る appearance_adapter をここで定義する。 */
 struct appearance_adapter
 {
@@ -391,6 +436,14 @@ static struct persistence_adapter healthy_adapter(void)
         .moved_note = {'\0'},
         .move_to = nullptr,
         .calls = {'\0'},
+        .rename_outcome = RENAME_COMPLETED,
+        .recover_outcome = RENAME_NONE,
+        .renames = 0,
+        .recovers = 0,
+        .renamed_category = {'\0'},
+        .renamed_from = {'\0'},
+        .renamed_to = {'\0'},
+        .journal_published = false,
         .ledger_fail_at = 0,
         .alt_category = nullptr,
         .alt_notes_text = "{\"version\": 1, \"notes\": []}",
@@ -412,6 +465,8 @@ static struct persistence_port port_for(struct persistence_adapter *_Nonnull ada
         .write_note = fake_write_note,
         .create_note = fake_create_note,
         .move_note = fake_move_note,
+        .rename_note = fake_rename_note,
+        .recover_rename = fake_recover_rename,
         .read_note_ledger = fake_read_note_ledger,
         .write_note_ledger = fake_write_note_ledger,
     };
@@ -1613,6 +1668,13 @@ static void verify_failure_lines(void)
                 strlen(folio_state_failure_line(FOLIO_STATE_NAME_TAKEN)) > 0 &&
                 strlen(folio_state_failure_line(FOLIO_STATE_LEDGER_STALE)) > 0 &&
                 strlen(folio_state_failure_line(FOLIO_STATE_LEDGER_UNSYNCED)) > 0 &&
+                strlen(folio_state_failure_line(FOLIO_STATE_RENAME_PENDING)) > 0 &&
+                strlen(folio_state_failure_line(FOLIO_STATE_RENAME_UNLOCKED)) > 0 &&
+                strlen(folio_state_failure_line(FOLIO_STATE_RENAME_UNSUPPORTED)) > 0 &&
+                strlen(folio_state_failure_line(FOLIO_STATE_RENAME_IDENTITY_FAILED)) > 0 &&
+                strlen(folio_state_failure_line(FOLIO_STATE_RENAME_JOURNAL_FAILED)) > 0 &&
+                strlen(folio_state_failure_line(FOLIO_STATE_RENAME_JOURNAL_BROKEN)) > 0 &&
+                strlen(folio_state_failure_line(FOLIO_STATE_RENAME_MISMATCHED)) > 0 &&
                 strlen(folio_state_failure_line(FOLIO_STATE_OUT_OF_MEMORY)) > 0,
             "every failure has a line");
 }
@@ -2014,6 +2076,246 @@ static void verify_save_as_edit_unsynced(void)
     folio_state_destroy(state);
 }
 
+/* 改名は未選択・無題・同名・大小文字だけの別名を、記録を公開する前に断る（ADR 0022 の決定 1）。 */
+static void verify_rename_refusals(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    struct note_name *other = accepted_note_name("次の名前");
+    require(folio_state_rename_note(state, other, u"", 0) == FOLIO_STATE_NOTHING_SELECTED,
+            "nothing selected cannot be renamed");
+    require(folio_state_new_note(state, 0) == FOLIO_STATE_READY, "untitled draft");
+    require(folio_state_rename_note(state, other, u"draft", 5) == FOLIO_STATE_NAME_REQUIRED,
+            "an untitled note must be saved first");
+    require(adapter.renames == 0 && adapter.creates == 0, "no refusal touched data/");
+    note_name_destroy(other);
+    folio_state_destroy(state);
+
+    adapter = healthy_adapter();
+    state = ready_state(&adapter);
+    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY, "select B / one");
+    struct note_name *same = accepted_note_name("one.md");
+    require(folio_state_rename_note(state, same, u"", 0) == FOLIO_STATE_READY &&
+                adapter.renames == 0,
+            "the same name changes nothing");
+    note_name_destroy(same);
+    struct note_name *folded = accepted_note_name("ONE");
+    require(folio_state_rename_note(state, folded, u"", 0) == FOLIO_STATE_NAME_TAKEN &&
+                adapter.renames == 0,
+            "a name differing only in case is a collision on Windows");
+    note_name_destroy(folded);
+    struct note_name *taken = accepted_note_name("Two.md");
+    require(folio_state_rename_note(state, taken, u"", 0) == FOLIO_STATE_NAME_TAKEN &&
+                adapter.renames == 0,
+            "another note in the category is never renamed over");
+    note_name_destroy(taken);
+    require(same_text(folio_state_pane_title(state).note, "one") &&
+                !folio_state_pane_title(state).recovering,
+            "the refused rename keeps the current name");
+    folio_state_destroy(state);
+}
+
+/* 編集中の未保存本文は改名より先に同じ保存経路で確定する（決定 1）。 */
+static void verify_rename_saves_first(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    adapter.note_body = "saved";
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY &&
+                folio_state_begin_edit(state) == FOLIO_STATE_READY,
+            "edit the note to rename");
+    struct note_name *name = accepted_note_name("日本語 新しい名前.md");
+    require(folio_state_rename_note(state, name, u"draft", 5) == FOLIO_STATE_READY,
+            "the rename completes after the save");
+    require(same_text(adapter.calls, "archive/write/rename") && adapter.archives == 1 &&
+                adapter.note_writes == 1 && adapter.renames == 1,
+            "the body is archived and written under the old name before the move");
+    require(same_text(adapter.renamed_from, "one") &&
+                same_text(adapter.renamed_to, "日本語 新しい名前") &&
+                same_text(adapter.renamed_category, "B"),
+            "the intent carries the category and both names");
+    struct note_ref selection = {.category = 0, .note = 0};
+    require(folio_state_selection(state, &selection) && selection.category == 0 &&
+                selection.note == 0,
+            "the note keeps its position in the index");
+    require(same_text(folio_state_pane_title(state).note, "日本語 新しい名前") &&
+                !folio_state_pane_title(state).recovering &&
+                folio_state_pane_mode(state) == PANE_MODE_EDIT &&
+                same_text(folio_state_pane_text(state), "draft"),
+            "the breadcrumb follows the new name without resetting body or mode");
+    note_name_destroy(name);
+    folio_state_destroy(state);
+}
+
+/* 先行する保存や台帳の修復が失敗したら、改名の意図を確保すらしない。 */
+static void verify_rename_blocked_by_save(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    adapter.note_body = "saved";
+    adapter.note_write_outcome = PERSISTENCE_UNWRITABLE;
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY &&
+                folio_state_begin_edit(state) == FOLIO_STATE_READY,
+            "edit the note to rename");
+    struct note_name *name = accepted_note_name("新しい名前");
+    require(folio_state_rename_note(state, name, u"draft", 5) == FOLIO_STATE_NOTE_STORE_FAILED &&
+                adapter.renames == 0,
+            "an unwritable body stops the rename before the intent");
+    note_name_destroy(name);
+    folio_state_destroy(state);
+
+    adapter = healthy_adapter();
+    state = ready_state(&adapter);
+    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY, "select to copy");
+    struct note_name *copy = accepted_note_name("copy");
+    struct note_destination destination = {.category = 0, .name = copy};
+    adapter.ledger_write_outcome = PERSISTENCE_UNWRITABLE;
+    require(folio_state_store_new(state, &destination, u"", 0) == FOLIO_STATE_LEDGER_STALE,
+            "the copy is published while its index stays pending");
+    struct note_name *renamed = accepted_note_name("copy2");
+    require(folio_state_rename_note(state, renamed, u"", 0) == FOLIO_STATE_LEDGER_UNSYNCED &&
+                adapter.renames == 0,
+            "an unrepaired index refuses the rename without acting");
+    adapter.ledger_write_outcome = PERSISTENCE_STORED;
+    require(folio_state_rename_note(state, renamed, u"", 0) == FOLIO_STATE_READY &&
+                adapter.renames == 1 && same_text(adapter.renamed_from, "copy"),
+            "the repaired index lets the same rename through");
+    note_name_destroy(renamed);
+    note_name_destroy(copy);
+    folio_state_destroy(state);
+}
+
+/* 記録の公開前に断られた改名は意図を残さず、次の操作を妨げない（決定 2）。 */
+static void verify_rename_refused_before_journal(void)
+{
+    static const enum rename_outcome refusals[] = {RENAME_UNLOCKED, RENAME_NAME_TAKEN,
+                                                   RENAME_UNSUPPORTED, RENAME_IDENTITY_FAILED,
+                                                   RENAME_JOURNAL_FAILED};
+    static const enum folio_state_outcome expected[] = {
+        FOLIO_STATE_RENAME_UNLOCKED, FOLIO_STATE_NAME_TAKEN, FOLIO_STATE_RENAME_UNSUPPORTED,
+        FOLIO_STATE_RENAME_IDENTITY_FAILED, FOLIO_STATE_RENAME_JOURNAL_FAILED};
+    for (size_t index = 0; index < sizeof refusals / sizeof refusals[0]; ++index)
+    {
+        struct persistence_adapter adapter = healthy_adapter();
+        struct folio_state *state = ready_state(&adapter);
+        require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY, "select to rename");
+        struct note_name *name = accepted_note_name("新しい名前");
+        adapter.rename_outcome = refusals[index];
+        require(folio_state_rename_note(state, name, u"", 0) == expected[index],
+                "each refusal keeps its own reason");
+        require(!adapter.journal_published &&
+                    same_text(folio_state_pane_title(state).note, "one") &&
+                    !folio_state_pane_title(state).recovering,
+                "a refusal before the journal leaves no intent");
+        require(folio_state_select_note(state, 0, 1) == FOLIO_STATE_READY &&
+                    folio_state_toggle_category(state, 0) == FOLIO_STATE_READY &&
+                    adapter.renames == 1,
+                "the next intents run without a retry");
+        note_name_destroy(name);
+        folio_state_destroy(state);
+    }
+}
+
+/* 未完了の意図があるあいだ、すべての意図が先に同じ改名を再試行する（決定 7）。 */
+static void verify_rename_pending_blocks(struct folio_state *_Nonnull state,
+                                         struct persistence_adapter *_Nonnull adapter)
+{
+    enum folio_note_change change = FOLIO_NOTE_SAME;
+    require(folio_state_store_note(state, u"", 0) == FOLIO_STATE_RENAME_PENDING &&
+                folio_state_select_note(state, 0, 1) == FOLIO_STATE_RENAME_PENDING &&
+                folio_state_toggle_category(state, 0) == FOLIO_STATE_RENAME_PENDING &&
+                folio_state_move_category(state, 0, 1) == FOLIO_STATE_RENAME_PENDING &&
+                folio_state_new_note(state, 0) == FOLIO_STATE_RENAME_PENDING &&
+                folio_state_note_changed(state, u"", 0, &change) == FOLIO_STATE_RENAME_PENDING,
+            "every intent retries the same rename and refuses to proceed");
+    require(adapter->renames == 7 && adapter->note_writes == 0 && adapter->writes == 0 &&
+                adapter->creates == 0,
+            "the retries are the only calls the refused intents make");
+}
+
+static void verify_rename_pending(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    adapter.note_body = "saved";
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY, "select to rename");
+    struct note_name *name = accepted_note_name("新しい名前");
+    adapter.rename_outcome = RENAME_PENDING;
+    require(folio_state_rename_note(state, name, u"", 0) == FOLIO_STATE_RENAME_PENDING &&
+                adapter.renames == 1 && adapter.journal_published,
+            "the published journal becomes the single retained intent");
+    struct pane_title_view title = folio_state_pane_title(state);
+    require(title.recovering && same_text(title.note, "名前変更の復旧待ち") &&
+                same_text(title.category, "B"),
+            "the breadcrumb never shows the stale name as the real file");
+    verify_rename_pending_blocks(state, &adapter);
+    struct note_name *other_name = accepted_note_name("別の名前");
+    require(folio_state_rename_note(state, other_name, u"", 0) == FOLIO_STATE_RENAME_PENDING &&
+                same_text(adapter.renamed_to, "新しい名前"),
+            "a different rename cannot start while one is unfinished");
+    note_name_destroy(other_name);
+    adapter.rename_outcome = RENAME_COMPLETED;
+    require(folio_state_store_note(state, u"", 0) == FOLIO_STATE_READY && adapter.renames == 9 &&
+                !adapter.journal_published,
+            "the next intent finishes the rename before doing its own work");
+    title = folio_state_pane_title(state);
+    require(!title.recovering && same_text(title.note, "新しい名前"),
+            "the completed intent hands over the prepared ledger");
+    require(folio_state_rename_note(state, name, u"", 0) == FOLIO_STATE_READY &&
+                adapter.renames == 9,
+            "asking for the finished name again changes nothing");
+    note_name_destroy(name);
+    folio_state_destroy(state);
+}
+
+/* :q! は意図を捨てずに終わる。永続的な記録は次回の起動が続きを行う（決定 7）。 */
+static void verify_rename_force_quit_keeps_intent(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY, "select to rename");
+    struct note_name *name = accepted_note_name("新しい名前");
+    adapter.rename_outcome = RENAME_PENDING;
+    require(folio_state_rename_note(state, name, u"", 0) == FOLIO_STATE_RENAME_PENDING,
+            "an unfinished rename");
+    note_name_destroy(name);
+    folio_state_destroy(state);
+    require(adapter.journal_published && adapter.renames == 1,
+            "closing the application never discards the published intent");
+}
+
+/* 起動はカテゴリの走査より先に復旧を終える。終わらなければ起動しない（決定 6）。 */
+static void verify_rename_recovery(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    require(adapter.recovers == 1 && adapter.note_scans > 0, "recovery runs at startup");
+    folio_state_destroy(state);
+
+    adapter = healthy_adapter();
+    adapter.recover_outcome = RENAME_COMPLETED;
+    state = ready_state(&adapter);
+    require(adapter.recovers == 1, "a finished recovery lets the scan proceed");
+    folio_state_destroy(state);
+
+    static const enum rename_outcome refusals[] = {RENAME_PENDING, RENAME_JOURNAL_BROKEN,
+                                                   RENAME_MISMATCHED, RENAME_UNLOCKED};
+    static const enum folio_state_outcome expected[] = {
+        FOLIO_STATE_RENAME_PENDING, FOLIO_STATE_RENAME_JOURNAL_BROKEN,
+        FOLIO_STATE_RENAME_MISMATCHED, FOLIO_STATE_RENAME_UNLOCKED};
+    for (size_t index = 0; index < sizeof refusals / sizeof refusals[0]; ++index)
+    {
+        struct persistence_adapter refused = healthy_adapter();
+        refused.recover_outcome = refusals[index];
+        struct persistence_port port = port_for(&refused);
+        struct appearance_port looks = looks_for(&dark_adapter);
+        struct folio_state *blocked = nullptr;
+        require(folio_state_create(&port, &looks, &blocked) == expected[index] &&
+                    blocked == nullptr && refused.note_scans == 0,
+                "an unfinished recovery stops the startup before the scan");
+    }
+}
+
 void run_state_tests(void)
 {
     verify_ready_state();
@@ -2056,4 +2358,11 @@ void run_state_tests(void)
     verify_save_as_refusals();
     verify_save_as_view_stale();
     verify_save_as_edit_unsynced();
+    verify_rename_refusals();
+    verify_rename_saves_first();
+    verify_rename_blocked_by_save();
+    verify_rename_refused_before_journal();
+    verify_rename_pending();
+    verify_rename_force_quit_keeps_intent();
+    verify_rename_recovery();
 }

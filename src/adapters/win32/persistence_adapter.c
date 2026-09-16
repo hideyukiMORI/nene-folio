@@ -603,6 +603,23 @@ static enum persistence_outcome move_note(struct persistence_adapter *_Nonnull a
                                                          : PERSISTENCE_UNWRITABLE;
 }
 
+/* data/ のロックも記録の公開もまだ無い段（ADR 0022 の決定 3 / 4 はこの次の単位で足す）。
+ * ロックを持たないので改名は記録を公開する前に断り、data/ には何も残さない。 */
+static enum rename_outcome rename_note(struct persistence_adapter *_Nonnull adapter,
+                                       const struct note_rename *_Nonnull plan)
+{
+    (void)adapter;
+    (void)plan;
+    return RENAME_UNLOCKED;
+}
+
+/* 記録を公開する経路がまだ無いので、復旧する記録も無い。 */
+static enum rename_outcome recover_rename(struct persistence_adapter *_Nonnull adapter)
+{
+    (void)adapter;
+    return RENAME_NONE;
+}
+
 /* 組み立て終えた文書を path へ原子的に置き換え、writer を片付ける。 */
 static enum persistence_outcome store_document(const wchar_t *_Nonnull path,
                                                struct json_writer *_Nonnull writer)
@@ -666,6 +683,8 @@ struct persistence_port persistence_adapter_port(struct persistence_adapter *_No
         .write_note = write_note,
         .create_note = create_note,
         .move_note = move_note,
+        .rename_note = rename_note,
+        .recover_rename = recover_rename,
         .read_note_ledger = read_note_ledger,
         .write_note_ledger = write_note_ledger,
     };
