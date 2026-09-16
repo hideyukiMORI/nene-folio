@@ -28,6 +28,7 @@ hideが採用した日本語GUIの設計に従い、ADR0016の操作登録表と
    本文はnote_paneのsubclassでWM_IME_STARTCOMPOSITION／ENDCOMPOSITIONを記録し、読み取り問い合わせを親へ提供する。
    変換中の本文キー通知は既存の保存・終了キーも含めてRichEdit／IMEへ渡す。本文の所有者は増やさない。
    旧INDEXの`?`ヘルプは、実際に動く後方検索を追加する単位で同時に置き換える。
+   → ADR 0023（#58）で後方検索へ移した。ヘルプはGUI「ヘルプ」・F1・`:h`・Ctrl+Pに残る。
 
 ## 強制と検証
 

@@ -53,6 +53,9 @@
 | 改名の意図（rename intent） | カテゴリ・旧名・新名・完成後の台帳を持つ不透明な値。副作用の前に確保し、未完了なら application が 1 つだけ保持する | `struct note_rename`（core）・ADR0022 の決定 2 |
 | 復旧記録（rename journal） | `data/.rename.json`。版 1 の改名の意図と、元 md・元履歴の 128bit 識別子を持つ。これがあるあいだ改名は未完了 | `struct rename_journal`（core）・ADR0022 の決定 5 |
 | 錠（data lock） | `data/.nenefolio.lock` を共有なしで開いたまま持つハンドル。同じ `data/` を使うプロセスを 1 つに直列化する。ファイルは残ってよく、所有は OS のハンドルが決める | `persistence_adapter`（adapters/win32）・ADR0022 の決定 3 |
+| ノート内検索（in-note search） | 現在表示中のノートの中だけを探し、一致を RichEdit の選択 1 つで示すこと。全ノートの本文で索引を絞り込む検索（FR-032 / #40）とは対象も語も別 | `note_search`（core）・`folio_state_search_term`（application）・ADR 0023 |
+| 検索の向き（search direction） | 前方（`/`・「次へ」）か後方（`?`・「前へ」）の閉じた選択肢。application が「直前の方向」を 1 つ覚え、`N` の一回きりの逆向きでは変わらない | `enum search_direction`（core）・`folio_state_search_direction`（application） |
+| anchor（探し始める位置） | いまの選択範囲。次へは選択の外側から、入力中は同じ一致の頭から数え直す。選択の正本は RichEdit で、core も application も持たない | `struct note_search_span`（core）・ADR 0023 の決定 1 |
 | 復旧待ち（recovering） | 記録を公開したまま完了していない状態。パンくずは古い名前を実ファイル名として示さず、次の意図が先に同じ改名を再試行する | `pane_title_view.recovering`・`FOLIO_STATE_RENAME_PENDING`（application） |
 
 ## 使ってはいけない語

@@ -1,5 +1,15 @@
 # いまのタスク — NeNe Folio
 
+2026-09-17: #58 / ADR 0023 の現在ノートの検索を `out/worktrees/58-search` で 3 層に実装した。
+GUI「このノート内を検索」・Ctrl+F・索引と閲覧本文の `/`（前方）・`?`（後方）が ADR 0016 の同じ入力面を開き、
+元のフォーカスを覚えて Esc で返す。Ex と違い Enter では閉じず、Enter は直前の方向・Shift+Enter は逆方向へ進む。
+`n` / `N` は欄が閉じていても効き、編集中の本文と各入力欄では文字入力のまま。
+対象は RichEdit が今表示している平文で、判断は core の `note_search`、語と方向は application、選択は RichEdit。
+**INDEX の `?` はこの単位で後方検索へ移し、ヘルプは GUI「ヘルプ」・F1・`:h`・Ctrl+P に残した。**
+単体 2/2・Windows 部品 27 項目が成功（[確認記録](../quality/2026-09-17-search-checks.md)）。
+最終フルゲートと CI は #58 の PR を参照する。件数表示の目視・物理キー・IME 候補窓・高 DPI は未確認。
+次は**全ノート検索（FR-032 / #40・Ctrl+Shift+F）**で、ノート内検索とは語も状態も別に持つ。
+
 2026-09-16: #55はmain f35870dへ統合済み。#56 / ADR0022の名前変更を `out/worktrees/56-rename` で5層に実装した。
 GUI「名前を変更」・F2・`:rename 名前`が同じ登録表とdispatcherを通り、mdと履歴を新しい名前へ移す。
 `data/.nenefolio.lock`で同じ `data/` の二重起動を断り、書けない `data/` は閲覧のために起動を許す。
