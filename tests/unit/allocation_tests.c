@@ -407,6 +407,20 @@ static bool new_note_under_probe(struct folio_state *_Nonnull state)
     return created == FOLIO_STATE_READY;
 }
 
+static bool save_as_under_probe(struct folio_state *_Nonnull state)
+{
+    struct note_name *name = nullptr;
+    if (note_name_create("view-copy", 9, &name) != NOTE_NAME_ACCEPTED)
+    {
+        return false;
+    }
+    struct note_destination destination = {.category = 0, .name = name};
+    bool completed = folio_state_end_edit(state, u"draft\r\n", 7) == FOLIO_STATE_READY &&
+                     folio_state_store_new(state, &destination, u"", 0) == FOLIO_STATE_READY;
+    note_name_destroy(name);
+    return completed;
+}
+
 /* state を作り、意図を 1 回ずつ通す。adapter は state より長く生きる。 */
 static bool state_scenario_with(struct persistence_adapter *_Nonnull adapter)
 {
@@ -422,7 +436,7 @@ static bool state_scenario_with(struct persistence_adapter *_Nonnull adapter)
     bool completed = layout_intent_under_probe(state) && ledger_under_probe(state) &&
                      selection_under_probe(state) && reorder_under_probe(state) &&
                      edit_under_probe(state) && transfer_under_probe(state) &&
-                     new_note_under_probe(state);
+                     new_note_under_probe(state) && save_as_under_probe(state);
     folio_state_destroy(state);
     return completed;
 }

@@ -60,6 +60,8 @@ static enum folio_state_outcome translate(enum persistence_outcome outcome)
     return FOLIO_STATE_DATA_UNREADABLE;
 }
 
+/* 前回書けなかった index.json を、次の意図より先に修復する。
+ * 失敗は LEDGER_UNSYNCED。呼び出し側はまだ何も実行していないので、意図ごと拒む。 */
 static enum folio_state_outcome synchronize_index(struct folio_state *_Nonnull state)
 {
     if (!state->index_pending)
@@ -71,10 +73,16 @@ static enum folio_state_outcome synchronize_index(struct folio_state *_Nonnull s
         state->notes[state->pending_category]);
     if (stored != PERSISTENCE_STORED)
     {
-        return FOLIO_STATE_LEDGER_STALE;
+        return FOLIO_STATE_LEDGER_UNSYNCED;
     }
     state->index_pending = false;
     return FOLIO_STATE_READY;
+}
+
+/* md を公開した直後の同期の結果。ここの失敗は「何もしていない」修復失敗ではなく LEDGER_STALE。 */
+static enum folio_state_outcome published_index(enum folio_state_outcome synced)
+{
+    return synced == FOLIO_STATE_LEDGER_UNSYNCED ? FOLIO_STATE_LEDGER_STALE : synced;
 }
 
 static enum folio_state_outcome from_category_ledger(enum category_ledger_outcome outcome)
@@ -1228,6 +1236,10 @@ static enum folio_state_outcome save_note(struct folio_state *_Nonnull state,
     {
         return synced;
     }
+    if (state->mode == PANE_MODE_VIEW)
+    {
+        return FOLIO_STATE_READY;
+    }
     struct note_text *_Nullable edited = nullptr;
     enum folio_state_outcome outcome = edited_text(state, units, count, &edited);
     if (outcome != FOLIO_STATE_READY)
@@ -1285,7 +1297,26 @@ static enum folio_state_outcome create_edited(struct folio_state *_Nonnull state
     }
     state->index_pending = true;
     state->pending_category = category;
-    return synchronize_index(state);
+    return published_index(synchronize_index(state));
+}
+
+/* 閲覧はMarkdown原文、編集は未保存の入力を使う。RTF表示の文字は保存しない。 */
+static enum folio_state_outcome copied_text(const struct folio_state *_Nonnull state,
+                                            const char16_t *_Nonnull units, size_t count,
+                                            struct note_text *_Nullable *_Nonnull out)
+{
+    if (state->mode == PANE_MODE_EDIT)
+    {
+        return edited_text(state, units, count, out);
+    }
+    enum note_text_outcome copied =
+        note_text_create(note_text_bytes(state->body), note_text_length(state->body), out);
+    if (copied != NOTE_TEXT_ACCEPTED)
+    {
+        return copied == NOTE_TEXT_OUT_OF_MEMORY ? FOLIO_STATE_OUT_OF_MEMORY
+                                                 : FOLIO_STATE_NOTE_MALFORMED;
+    }
+    return FOLIO_STATE_READY;
 }
 
 enum folio_state_outcome folio_state_store_new(struct folio_state *_Nonnull state,
@@ -1296,9 +1327,10 @@ enum folio_state_outcome folio_state_store_new(struct folio_state *_Nonnull stat
     {
         return FOLIO_STATE_NOTHING_SELECTED;
     }
-    if (state->document == FOLIO_DOCUMENT_NAMED)
+    enum folio_state_outcome synced = synchronize_index(state);
+    if (synced != FOLIO_STATE_READY)
     {
-        return FOLIO_STATE_ALREADY_NAMED;
+        return synced;
     }
     if (destination->category >= folio_state_category_count(state))
     {
@@ -1309,7 +1341,7 @@ enum folio_state_outcome folio_state_store_new(struct folio_state *_Nonnull stat
         return FOLIO_STATE_NAME_TAKEN;
     }
     struct note_text *_Nullable edited = nullptr;
-    enum folio_state_outcome converted = edited_text(state, units, count, &edited);
+    enum folio_state_outcome converted = copied_text(state, units, count, &edited);
     if (converted != FOLIO_STATE_READY)
     {
         return converted;
@@ -1323,17 +1355,24 @@ enum folio_state_outcome folio_state_store_note(struct folio_state *_Nonnull sta
     return save_note(state, units, count);
 }
 
-enum folio_state_outcome folio_state_note_changed(const struct folio_state *_Nonnull state,
+enum folio_state_outcome folio_state_note_changed(struct folio_state *_Nonnull state,
                                                   const char16_t *_Nonnull units, size_t count,
                                                   enum folio_note_change *_Nonnull out)
 {
-    if (state->index_pending)
+    /* 他の保存系と同じく未同期の台帳を先に修復する。副作用はこの修復だけ（ADR 0021 の決定 3）。 */
+    enum folio_state_outcome synced = synchronize_index(state);
+    if (synced != FOLIO_STATE_READY)
     {
-        return FOLIO_STATE_LEDGER_STALE;
+        return synced;
     }
     if (state->document == FOLIO_DOCUMENT_UNTITLED)
     {
         *out = FOLIO_NOTE_CHANGED;
+        return FOLIO_STATE_READY;
+    }
+    if (state->mode == PANE_MODE_VIEW)
+    {
+        *out = FOLIO_NOTE_SAME;
         return FOLIO_STATE_READY;
     }
     struct note_text *_Nullable edited = nullptr;
@@ -1439,6 +1478,10 @@ const char *_Nonnull folio_state_failure_line(enum folio_state_outcome outcome)
     case FOLIO_STATE_LEDGER_STALE:
         return "mdは反映しましたが、台帳（index."
                "json）を書き戻せませんでした。保存を再試行するか、次回の起動で揃います。";
+    case FOLIO_STATE_LEDGER_UNSYNCED:
+        return "前回の台帳（index.json）をまだ書き戻せていません。"
+               "今回の操作は行っていないので、"
+               "保存を再試行してください。";
     case FOLIO_STATE_OUT_OF_MEMORY:
         return "記憶域が足りません。";
     case FOLIO_STATE_NAME_REQUIRED:

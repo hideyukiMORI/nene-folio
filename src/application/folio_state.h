@@ -122,19 +122,24 @@ folio_state_document_kind(const struct folio_state *_Nonnull state);
 /* 現在本文の保存後にUIが呼ぶ。既に無題ならNAME_REQUIREDで本文を保護する。 */
 [[nodiscard]] enum folio_state_outcome folio_state_new_note(struct folio_state *_Nonnull state,
                                                             size_t category);
+/* 初回/別名保存の共通作成。VIEWではunits/countを使わず所有する原文を複製する。
+ * EDITでは入力を正規化。元ノートのwrite/archiveは呼ばず、成功時は新ノートを選択する。 */
 [[nodiscard]] enum folio_state_outcome
 folio_state_store_new(struct folio_state *_Nonnull state,
                       const struct note_destination *_Nonnull destination,
                       const char16_t *_Nonnull units, size_t count);
 /* 編集中の本文（UTF-16 の単位列）を保存し、編集モードのまま残る（Ctrl+S）。
- * 読んだ本文と同じなら書かない。書き戻せなければ状態は変えない（ADR 0006）。 */
+ * VIEWでは台帳だけ同期し本文は書かない。読んだ本文と同じなら書かない。書き戻せなければ状態は変えない（ADR
+ * 0006）。 */
 [[nodiscard]] enum folio_state_outcome folio_state_store_note(struct folio_state *_Nonnull state,
                                                               const char16_t *_Nonnull units,
                                                               size_t count);
 /* 編集中の本文を保存時と同じ形へ正規化し、保存済み本文との差を答える。
- * 問い合わせなので mode・本文・履歴・ファイルを変えない（ADR 0016）。 */
+ * VIEWでは台帳が同期済みならSAME。未同期なら保存系と同じ修復を先に試み、
+ * 失敗ならLEDGER_UNSYNCED。この修復のほかは mode・本文・履歴・md を
+ * 変えない問い合わせである（ADR 0016・ADR 0021 の決定 3）。 */
 [[nodiscard]] enum folio_state_outcome
-folio_state_note_changed(const struct folio_state *_Nonnull state, const char16_t *_Nonnull units,
+folio_state_note_changed(struct folio_state *_Nonnull state, const char16_t *_Nonnull units,
                          size_t count, enum folio_note_change *_Nonnull out);
 /* 編集中の本文を保存して閲覧へ戻る。保存できなければ編集モードのまま。
  * 使うのは「閲覧」の札。終了操作は編集モードを変えず store_note で保存する（ADR 0016）。
