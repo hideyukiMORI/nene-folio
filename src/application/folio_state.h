@@ -171,7 +171,7 @@ folio_state_note_changed(struct folio_state *_Nonnull state, const char16_t *_No
                                                             const char16_t *_Nonnull units,
                                                             size_t count);
 /* ノート内検索の語を覚える（FR-011 / ADR 0023 の決定 3）。UTF-16 の単位列を受ける
- * C-014 の例外で、store_note / end_edit / store_new に次ぐ 4 本目。
+ * C-014 の例外で、store_new / rename_note / store_note / note_changed / end_edit に次ぐ 6 本目。
  * count が 0 なら語を捨てる。語が UTF-16 として壊れていれば SEARCH_MALFORMED で前の語を保つ。
  * #40 の絞り込み語とは別の語で、同期しない。本文も選択もフォーカスも持たず、永続化もしない。 */
 [[nodiscard]] enum folio_state_outcome

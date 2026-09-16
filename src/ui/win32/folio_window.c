@@ -70,6 +70,7 @@ static const char *_Nonnull const command_shortcuts[] = {
     "Ctrl+N 新規 / Ctrl+S 保存 / Ctrl+Shift+S 別名保存 / F2 名前変更",
     "索引・閲覧本文  : コマンド / i 編集",
     "索引・閲覧本文  / 次を検索 / ? 前を検索 / n・N 繰り返し",
+    "全区画  F3 次の一致 / Shift+F3 前の一致（向きは変えない）",
     "検索欄  Enter 次 / Shift+Enter 逆 / Esc 閉じる（選択は残る）",
     "索引  j/k 次/前 / gg/G 先頭/末尾",
     "索引  h/l 折畳/展開 / Enter 本文",
@@ -87,6 +88,8 @@ constexpr WORD rename_accelerator = 101;
 constexpr WORD find_accelerator = 102;
 constexpr WORD search_next_accelerator = 103;
 constexpr WORD search_previous_accelerator = 104;
+constexpr WORD search_forward_accelerator = 105;
+constexpr WORD search_backward_accelerator = 106;
 constexpr size_t command_input_capacity = 256;
 /* 「k / n 件」と向きの言い換えを 1 行に組む領域（UTF-8）。 */
 constexpr size_t search_status_capacity = 128;
@@ -815,6 +818,9 @@ static void search_status(const struct folio_window *_Nonnull self, char *_Nonnu
     case NOTE_SEARCH_MALFORMED:
         at = append_text(out, at, "検索できない文字があります");
         break;
+    case NOTE_SEARCH_BAD_SPAN:
+        at = append_text(out, at, "選択の範囲を読めません");
+        break;
     case NOTE_SEARCH_NOT_FOUND:
         at = append_text(out, at, "見つかりません");
         break;
@@ -1363,7 +1369,9 @@ static struct note_search_span search_anchor(const struct folio_window *_Nonnull
     return (struct note_search_span){.start = at, .end = at};
 }
 
-/* core が決めた範囲を RichEdit の選択 1 つにする。着色もしないし、本文も Undo も触らない。 */
+/* core が決めた範囲を RichEdit の選択 1 つにする。着色もしないし、本文も Undo も触らない。
+ * 件数は選択を動かす前に数える。query が借りている本文は note_pane が持つ領域なので、
+ * SendMessage を挟んだ後まで指したままにしない。 */
 static void apply_search(struct folio_window *_Nonnull self,
                          const struct note_search_query *_Nonnull query,
                          enum search_direction direction, bool advance)
@@ -1375,7 +1383,6 @@ static void apply_search(struct folio_window *_Nonnull self,
     {
         return;
     }
-    note_pane_select(self->pane, found.start, found.end);
     size_t total = 0;
     size_t ordinal = 0;
     if (note_search_count(query, found.start, &total, &ordinal) == NOTE_SEARCH_FOUND)
@@ -1383,6 +1390,47 @@ static void apply_search(struct folio_window *_Nonnull self,
         self->search_total = total;
         self->search_ordinal = ordinal;
     }
+    note_pane_select(self->pane, found.start, found.end);
+}
+
+/* 表示中の本文を取り出せない理由を、見せる 1 行へ写す（C-002 で網羅）。 */
+static enum folio_state_outcome from_pane_text(enum note_pane_text_outcome outcome)
+{
+    switch (outcome)
+    {
+    case NOTE_PANE_TEXT_TAKEN:
+        return FOLIO_STATE_READY;
+    case NOTE_PANE_TEXT_UNAVAILABLE:
+        return FOLIO_STATE_PANE_UNAVAILABLE;
+    case NOTE_PANE_TEXT_OUT_OF_MEMORY:
+        return FOLIO_STATE_OUT_OF_MEMORY;
+    }
+    return FOLIO_STATE_PANE_UNAVAILABLE;
+}
+
+static enum folio_state_outcome from_utf16(enum utf16_text_outcome outcome)
+{
+    switch (outcome)
+    {
+    case UTF16_TEXT_CONVERTED:
+        return FOLIO_STATE_READY;
+    case UTF16_TEXT_INVALID_UTF8:
+        return FOLIO_STATE_SEARCH_MALFORMED;
+    case UTF16_TEXT_OUT_OF_MEMORY:
+        return FOLIO_STATE_OUT_OF_MEMORY;
+    }
+    return FOLIO_STATE_OUT_OF_MEMORY;
+}
+
+static enum folio_state_outcome take_display_text(const struct folio_window *_Nonnull self,
+                                                  const char16_t *_Nonnull *_Nonnull units,
+                                                  size_t *_Nonnull count)
+{
+    if (self->pane == nullptr)
+    {
+        return FOLIO_STATE_PANE_UNAVAILABLE;
+    }
+    return from_pane_text(note_pane_display_text(self->pane, units, count));
 }
 
 /* 表示中の平文と覚えている語を core へ渡す。本文は UI が貸すだけで、判断は core が持つ。 */
@@ -1395,13 +1443,15 @@ static void update_search(struct folio_window *_Nonnull self, enum search_direct
     const char16_t *_Nonnull text = u"";
     size_t length = 0;
     struct utf16_text *_Nullable term = nullptr;
-    if (self->pane == nullptr ||
-        note_pane_display_text(self->pane, &text, &length) != NOTE_PANE_TEXT_TAKEN ||
-        utf16_text_create(folio_state_search_term(self->state),
-                          folio_state_search_term_length(self->state),
-                          &term) != UTF16_TEXT_CONVERTED)
+    enum folio_state_outcome taken = take_display_text(self, &text, &length);
+    if (taken == FOLIO_STATE_READY)
     {
-        failure_box_show(self->handle, FOLIO_STATE_OUT_OF_MEMORY);
+        taken = from_utf16(utf16_text_create(folio_state_search_term(self->state),
+                                             folio_state_search_term_length(self->state), &term));
+    }
+    if (taken != FOLIO_STATE_READY)
+    {
+        failure_box_show(self->handle, taken);
         return;
     }
     struct note_search_query query = {.text = text,
@@ -1426,34 +1476,23 @@ static void report_search(struct folio_window *_Nonnull self)
     }
 }
 
-/* 覚えている向きで次の一致へ。語が空なら何もしない（ADR 0023 の決定 5）。 */
-static void advance_search(struct folio_window *_Nonnull self)
-{
-    if (folio_state_search_term_length(self->state) == 0)
-    {
-        return;
-    }
-    update_search(self, folio_state_search_direction(self->state), true);
-    report_search(self);
-}
-
-/* 「前へ」「次へ」。向きを決め直してから 1 つ進む。 */
+/* 向きを名指しして 1 つ進む（「前へ」「次へ」と F3 / Shift+F3）。語が空なら何もしない。
+ * 覚えている向きは変えない。向きを変えるのは `/` と `?` だけ（2026-09-17 の補正）。 */
 static void step_search(struct folio_window *_Nonnull self, enum search_direction direction)
 {
-    folio_state_set_search_direction(self->state, direction);
-    advance_search(self);
-}
-
-/* n / N。N は逆向きに 1 回進むだけで、覚えている向きは変えない。 */
-static void repeat_search(struct folio_window *_Nonnull self, bool reverse)
-{
     if (folio_state_search_term_length(self->state) == 0)
     {
         return;
     }
-    enum search_direction direction = folio_state_search_direction(self->state);
-    update_search(self, reverse ? reversed_direction(direction) : direction, true);
+    update_search(self, direction, true);
     report_search(self);
+}
+
+/* n / Enter は覚えている向き、N / Shift+Enter はその逆向きへ 1 回だけ進む（ADR 0023 の決定 5）。 */
+static void repeat_search(struct folio_window *_Nonnull self, bool reverse)
+{
+    enum search_direction direction = folio_state_search_direction(self->state);
+    step_search(self, reverse ? reversed_direction(direction) : direction);
 }
 
 static void open_command_surface(struct folio_window *_Nonnull self,
@@ -2392,7 +2431,7 @@ static void execute_command_input(struct folio_window *_Nonnull self)
     /* 検索欄の Enter は欄を閉じず、覚えている向きで次の一致へ進む（ADR 0023 の決定 4）。 */
     if (self->command_surface == COMMAND_SURFACE_SEARCH)
     {
-        advance_search(self);
+        repeat_search(self, false);
         return;
     }
     struct utf8_text *_Nullable query = nullptr;
@@ -2599,6 +2638,15 @@ static void search_input_changed(struct folio_window *_Nonnull self)
     int count = GetWindowTextW(self->command_input, units, (int)command_input_capacity);
     enum folio_state_outcome kept = folio_state_set_search_term(
         self->state, (const char16_t *)units, count > 0 ? (size_t)count : 0);
+    /* 壊れた語は 0 件と同じ欄の中の 1 行で伝える。打つたびにモーダルを出さない。 */
+    if (kept == FOLIO_STATE_SEARCH_MALFORMED)
+    {
+        self->search_outcome = NOTE_SEARCH_MALFORMED;
+        self->search_total = 0;
+        self->search_ordinal = 0;
+        redraw_command_layer(self);
+        return;
+    }
     if (kept != FOLIO_STATE_READY)
     {
         command_failure(self, kept);
@@ -2845,6 +2893,14 @@ static void execute_accelerator(struct folio_window *_Nonnull self, WPARAM wpara
     {
         repeat_search(self, true);
     }
+    if (LOWORD(wparam) == search_forward_accelerator)
+    {
+        step_search(self, SEARCH_DIRECTION_FORWARD);
+    }
+    if (LOWORD(wparam) == search_backward_accelerator)
+    {
+        step_search(self, SEARCH_DIRECTION_BACKWARD);
+    }
 }
 
 static LRESULT on_message(struct folio_window *_Nonnull self, UINT message, WPARAM wparam,
@@ -2986,7 +3042,10 @@ enum folio_window_outcome folio_window_create(struct folio_state *_Nonnull state
     ACCEL shortcuts[] = {
         {.fVirt = FVIRTKEY | FCONTROL | FSHIFT, .key = 'S', .cmd = save_as_accelerator},
         {.fVirt = FVIRTKEY, .key = VK_F2, .cmd = rename_accelerator},
-        {.fVirt = FVIRTKEY | FCONTROL, .key = 'F', .cmd = find_accelerator}};
+        {.fVirt = FVIRTKEY | FCONTROL, .key = 'F', .cmd = find_accelerator},
+        /* F3 は前方・Shift+F3 は後方を名指しする。覚えている向きは変えない（採用済み計画 #47）。 */
+        {.fVirt = FVIRTKEY, .key = VK_F3, .cmd = search_forward_accelerator},
+        {.fVirt = FVIRTKEY | FSHIFT, .key = VK_F3, .cmd = search_backward_accelerator}};
     self->commands =
         CreateAcceleratorTableW(shortcuts, (int)(sizeof shortcuts / sizeof shortcuts[0]));
     /* Enter と Shift+Enter は検索欄にいるあいだだけ。鍵の修飾は OS の表に読ませ、

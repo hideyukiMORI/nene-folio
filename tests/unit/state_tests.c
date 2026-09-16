@@ -1681,6 +1681,7 @@ static void verify_failure_lines(void)
                 strlen(folio_state_failure_line(FOLIO_STATE_RENAME_JOURNAL_BROKEN)) > 0 &&
                 strlen(folio_state_failure_line(FOLIO_STATE_RENAME_HALTED)) > 0 &&
                 strlen(folio_state_failure_line(FOLIO_STATE_SEARCH_MALFORMED)) > 0 &&
+                strlen(folio_state_failure_line(FOLIO_STATE_PANE_UNAVAILABLE)) > 0 &&
                 strlen(folio_state_failure_line(FOLIO_STATE_OUT_OF_MEMORY)) > 0,
             "every failure has a line");
 }

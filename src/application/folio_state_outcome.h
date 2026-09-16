@@ -41,6 +41,8 @@ enum folio_state_outcome : unsigned char
     FOLIO_STATE_RENAME_HALTED,
     /* ノート内検索の語が UTF-16 として壊れている。語は前のまま（ADR 0023 の決定 3） */
     FOLIO_STATE_SEARCH_MALFORMED,
+    /* 右ペインが表示している平文を取り出せない。探していないし、表示も選択も変えていない */
+    FOLIO_STATE_PANE_UNAVAILABLE,
     FOLIO_STATE_OUT_OF_MEMORY,
     FOLIO_STATE_NAME_REQUIRED,
     FOLIO_STATE_INVALID_NAME,

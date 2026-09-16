@@ -1708,7 +1708,8 @@ size_t folio_state_pane_rtf_length(const struct folio_state *_Nonnull state)
     return markdown_rtf_length(state->pane);
 }
 
-/* 「途中で止まったまま残っている処理」の 1 行（ADR 0021 / ADR 0022）。
+/* 「途中で止まったまま残っている処理」と、探せなかった理由の 1 行（ADR 0021 / 0022 / 0023）。
+ * 1 つ目の switch が C-012 の行数上限に収まらないので、続きをここに置く。
  * 網羅は folio_state_failure_line 側の switch と同じ列挙で守る。 */
 static const char *_Nonnull unfinished_failure_line(enum folio_state_outcome outcome)
 {
@@ -1737,6 +1738,10 @@ static const char *_Nonnull unfinished_failure_line(enum folio_state_outcome out
         return "名前変更の記録（data/.rename.json）を書けませんでした。何も変えていません。";
     case FOLIO_STATE_RENAME_JOURNAL_BROKEN:
         return "名前変更の記録（data/.rename.json）が版 1 の形ではありません。消していません。";
+    case FOLIO_STATE_SEARCH_MALFORMED:
+        return "検索する語に壊れた文字があります。語は前のままです。";
+    case FOLIO_STATE_PANE_UNAVAILABLE:
+        return "表示中の本文を取り出せませんでした。探していません。";
     case FOLIO_STATE_READY:
     case FOLIO_STATE_DATA_UNREADABLE:
     case FOLIO_STATE_LEDGER_MALFORMED:
@@ -1751,7 +1756,6 @@ static const char *_Nonnull unfinished_failure_line(enum folio_state_outcome out
     case FOLIO_STATE_HISTORY_FAILED:
     case FOLIO_STATE_UNSAVED_CHANGES:
     case FOLIO_STATE_NAME_TAKEN:
-    case FOLIO_STATE_SEARCH_MALFORMED:
     case FOLIO_STATE_OUT_OF_MEMORY:
     case FOLIO_STATE_NAME_REQUIRED:
     case FOLIO_STATE_INVALID_NAME:
@@ -1807,7 +1811,8 @@ const char *_Nonnull folio_state_failure_line(enum folio_state_outcome outcome)
     case FOLIO_STATE_RENAME_JOURNAL_BROKEN:
         return unfinished_failure_line(outcome);
     case FOLIO_STATE_SEARCH_MALFORMED:
-        return "検索する語に壊れた文字があります。語は前のままです。";
+    case FOLIO_STATE_PANE_UNAVAILABLE:
+        return unfinished_failure_line(outcome);
     case FOLIO_STATE_OUT_OF_MEMORY:
         return "記憶域が足りません。";
     case FOLIO_STATE_NAME_REQUIRED:
