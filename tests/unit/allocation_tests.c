@@ -433,6 +433,28 @@ static bool search_under_probe(struct folio_state *_Nonnull state)
     return kept == FOLIO_STATE_READY;
 }
 
+/* 絞り込みは語・本文の写し・一致集合・判定へ渡す列の確保をまとめて通す（ADR 0024 の決定 1 / 2）。
+ * 絞り込んだまま保存して、写しの差し替えと一致集合の作り直しも通す（決定 4）。 */
+static bool filter_under_probe(struct folio_state *_Nonnull state)
+{
+    enum folio_state_outcome filtered = folio_state_set_index_filter(state, u"one", 3);
+    require(filtered == FOLIO_STATE_READY || filtered == FOLIO_STATE_OUT_OF_MEMORY,
+            "index filter under probe");
+    if (filtered != FOLIO_STATE_READY)
+    {
+        return false;
+    }
+    require(folio_state_begin_edit(state) == FOLIO_STATE_READY, "edit while filtering");
+    enum folio_state_outcome saved = folio_state_store_note(state, u"one more", 8);
+    require(saved == FOLIO_STATE_READY || saved == FOLIO_STATE_OUT_OF_MEMORY,
+            "save while filtering under probe");
+    if (saved != FOLIO_STATE_READY)
+    {
+        return false;
+    }
+    return folio_state_set_index_filter(state, u"", 0) == FOLIO_STATE_READY;
+}
+
 /* 改名は名前・意図・台帳の確保をまとめて通す（ADR 0022）。偽のポートは完了を返す。 */
 static bool rename_under_probe(struct folio_state *_Nonnull state)
 {
@@ -460,11 +482,11 @@ static bool state_scenario_with(struct persistence_adapter *_Nonnull adapter)
         return false;
     }
     require(outcome == FOLIO_STATE_READY, "state under probe");
-    bool completed = layout_intent_under_probe(state) && ledger_under_probe(state) &&
-                     selection_under_probe(state) && reorder_under_probe(state) &&
-                     edit_under_probe(state) && transfer_under_probe(state) &&
-                     new_note_under_probe(state) && save_as_under_probe(state) &&
-                     rename_under_probe(state) && search_under_probe(state);
+    bool completed =
+        layout_intent_under_probe(state) && ledger_under_probe(state) &&
+        selection_under_probe(state) && filter_under_probe(state) && reorder_under_probe(state) &&
+        edit_under_probe(state) && transfer_under_probe(state) && new_note_under_probe(state) &&
+        save_as_under_probe(state) && rename_under_probe(state) && search_under_probe(state);
     folio_state_destroy(state);
     return completed;
 }

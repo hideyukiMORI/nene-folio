@@ -30,6 +30,10 @@ struct persistence_adapter
     enum persistence_outcome note_outcome;
     const char *_Nonnull note_body;
     const char *_Nullable last_note; /* 最後に read_note で求められたノート名 */
+    size_t note_reads;               /* read_note が呼ばれた回数（遅延読み込みの証拠） */
+    const char *_Nullable rare_note; /* この名前のノートだけ別の本文を返す */
+    const char *_Nullable rare_body;
+    const char *_Nullable missing_note; /* この名前のノートだけ読めない（写しを持たない） */
     enum persistence_outcome write_outcome;
     size_t writes;                      /* write_category_ledger が呼ばれた回数 */
     size_t written_count;               /* 最後に書かれた台帳のカテゴリ数 */
@@ -58,7 +62,7 @@ struct persistence_adapter
     /* 最後に移されたノート名。名前は移動元の台帳が持っており、意図の中で捨てられるので複製する。 */
     char moved_note[64];
     const char *_Nullable move_to; /* 最後の移動先のカテゴリ名 */
-    char calls[128];               /* 呼び出しの順（'/' 区切り。move・<カテゴリ>・書いた名前） */
+    char calls[256];               /* 呼び出しの順（'/' 区切り。move・<カテゴリ>・書いた名前） */
     enum rename_outcome rename_outcome;  /* rename_note が返す結果 */
     enum rename_outcome recover_outcome; /* 起動時の recover_rename が返す結果 */
     size_t renames;                      /* rename_note が呼ばれた回数 */
@@ -224,12 +228,19 @@ static enum persistence_outcome fake_read_note(struct persistence_adapter *_Nonn
 {
     (void)category;
     adapter->last_note = note;
+    adapter->note_reads += 1;
+    if (adapter->missing_note != nullptr && strcmp(adapter->missing_note, note) == 0)
+    {
+        return PERSISTENCE_ABSENT;
+    }
     if (adapter->note_outcome != PERSISTENCE_LOADED)
     {
         return adapter->note_outcome;
     }
-    enum note_text_outcome accepted =
-        note_text_create(adapter->note_body, strlen(adapter->note_body), out);
+    bool rare = adapter->rare_note != nullptr && adapter->rare_body != nullptr &&
+                strcmp(adapter->rare_note, note) == 0;
+    const char *_Nonnull body = rare ? adapter->rare_body : adapter->note_body;
+    enum note_text_outcome accepted = note_text_create(body, strlen(body), out);
     if (accepted == NOTE_TEXT_ACCEPTED)
     {
         return PERSISTENCE_LOADED;
@@ -2425,6 +2436,193 @@ static void verify_search_term(void)
     folio_state_destroy(state);
 }
 
+/* 面の印が付いた行があるか（絞り込みで現在の文書の行が消えた証拠に使う）。 */
+static bool any_selected_row(const struct folio_state *_Nonnull state)
+{
+    struct drawer_layout *layout = nullptr;
+    require(folio_state_drawer_layout(state, metrics, &layout) == FOLIO_STATE_READY, "layout");
+    bool found = false;
+    size_t count = drawer_layout_row_count(layout);
+    for (size_t index = 0; index < count; ++index)
+    {
+        found = found || drawer_layout_row(layout, index).selected;
+    }
+    drawer_layout_destroy(layout);
+    return found;
+}
+
+/* 本文は最初の空でない語で 1 回だけ読み、名前でも本文でも一致し、空語で元へ戻る
+ * （FR-032 / ADR 0024 の決定 1〜3）。 */
+static void verify_index_filter(void)
+{
+    static const char *const alt_scanned[] = {"four", "five", nullptr};
+    struct persistence_adapter adapter = healthy_adapter();
+    adapter.rare_note = "four";
+    adapter.rare_body = "the needle is here";
+    test_adapter_second_notes(&adapter, "A", "{\"version\": 1, \"notes\": [\"four\", \"five\"]}",
+                              alt_scanned);
+    struct folio_state *state = ready_state(&adapter);
+    require(!folio_state_filtering(state) && adapter.note_reads == 0,
+            "no note is read before the first term");
+    require(row_count(state) == 9, "the whole index is placed");
+    require(folio_state_set_index_filter(state, u"needle", 6) == FOLIO_STATE_READY,
+            "a term filters the index");
+    require(adapter.note_reads == 8, "every note was read exactly once");
+    require(folio_state_filtering(state) && folio_state_index_filter_count(state) == 1,
+            "one note matches the body");
+    char order[128] = {0};
+    row_order(state, order, sizeof order);
+    require(same_text(order, "A/four"), "a collapsed category is opened for its match");
+    require(folio_state_set_index_filter(state, u"NEEDLE", 6) == FOLIO_STATE_READY &&
+                adapter.note_reads == 8,
+            "a second term reads nothing again");
+    require(folio_state_index_filter_count(state) == 1, "and ASCII case is ignored");
+    require(folio_state_set_index_filter(state, u"three", 5) == FOLIO_STATE_READY, "a name term");
+    row_order(state, order, sizeof order);
+    require(same_text(order, "B/three/C/three"), "the name is matched too");
+    require(same_text(folio_state_index_filter_term(state), "three"), "the term is kept as UTF-8");
+    require(folio_state_set_index_filter(state, u"", 0) == FOLIO_STATE_READY &&
+                !folio_state_filtering(state) && row_count(state) == 9,
+            "an empty term restores the whole index");
+    require(folio_state_index_filter_count(state) == 8, "and every note is visible again");
+    folio_state_destroy(state);
+}
+
+/* 読めないノートは写しを持たないので一致しない。壊れた語は前の絞り込みを保つ（決定 1 / 2）。 */
+static void verify_index_filter_refusals(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    adapter.missing_note = "two";
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_set_index_filter(state, u"Hello", 5) == FOLIO_STATE_READY,
+            "every readable body is searched");
+    char order[128] = {0};
+    row_order(state, order, sizeof order);
+    require(same_text(order, "B/one/three/A/one/three/C/one/three"),
+            "a note that could not be read never matches");
+    const char16_t lone[] = {u'a', 0xD800, u'\0'};
+    require(folio_state_set_index_filter(state, lone, 2) == FOLIO_STATE_SEARCH_MALFORMED,
+            "a broken term is refused");
+    row_order(state, order, sizeof order);
+    require(same_text(order, "B/one/three/A/one/three/C/one/three"),
+            "and the previous filter is kept");
+    require(same_text(folio_state_index_filter_term(state), "Hello"), "with the previous term");
+    folio_state_destroy(state);
+}
+
+/* 絞り込み中は台帳を書く 4 つの意図を断り、色・閲覧・編集は許す（決定 4）。 */
+static void verify_filtered_refusals(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_set_index_filter(state, u"one", 3) == FOLIO_STATE_READY, "filter on");
+    size_t writes = adapter.writes;
+    size_t ledger_writes = adapter.ledger_writes;
+    require(folio_state_toggle_category(state, 0) == FOLIO_STATE_FILTERED, "no toggle");
+    require(folio_state_set_category_expanded(state, 0, false) == FOLIO_STATE_FILTERED, "no h/l");
+    require(folio_state_move_category(state, 0, 1) == FOLIO_STATE_FILTERED, "no reorder");
+    require(folio_state_move_note(state, at(0, 0), at(0, 1)) == FOLIO_STATE_FILTERED, "no move");
+    require(adapter.writes == writes && adapter.ledger_writes == ledger_writes,
+            "and nothing was written");
+    struct rgb_color chosen = {.red = 1, .green = 2, .blue = 3};
+    require(folio_state_recolor_category(state, 0, chosen) == FOLIO_STATE_READY,
+            "the colour still changes while filtering");
+    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY, "a note can still be read");
+    require(folio_state_begin_edit(state) == FOLIO_STATE_READY, "and edited");
+    require(same_text(folio_state_failure_line(FOLIO_STATE_FILTERED),
+                      "絞り込み中は並び替えと開閉ができません。"),
+            "the refusal has one line");
+    folio_state_destroy(state);
+}
+
+/* 現在の文書は一致しなくても閉じず、カーソルだけが最初に見える行へ移る（決定 5）。 */
+static void verify_filter_keeps_document(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    adapter.rare_note = "three";
+    adapter.rare_body = "the needle is here";
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY, "select B / one");
+    require(folio_state_begin_edit(state) == FOLIO_STATE_READY, "and edit it");
+    require(folio_state_scroll_drawer(state, scroll_metrics, 20) == FOLIO_STATE_READY, "scroll");
+    require(folio_state_set_index_filter(state, u"needle", 6) == FOLIO_STATE_READY, "filter");
+    expect_selection(state, "B/one", "the current note is not closed when it stops matching");
+    require(folio_state_pane_mode(state) == PANE_MODE_EDIT, "and the mode stays");
+    require(!any_selected_row(state), "no row carries the selection while its row is gone");
+    require(scrolled_top(state) == 0, "the amount is reset on every change of the term");
+    expect_cursor(state, "c0", "the cursor moves to the first visible row");
+    /* 止まる行は B/three・A/three・C/three だけになる。 */
+    require(folio_state_select_adjacent(state, FOLIO_STEP_NEXT) == FOLIO_STATE_READY, "j");
+    expect_cursor(state, "n0.2", "the first stop is the match inside the first category");
+    require(folio_state_select_adjacent(state, FOLIO_STEP_NEXT) == FOLIO_STATE_READY, "j again");
+    expect_cursor(state, "n1.2", "the next stop skips the notes that do not match");
+    require(folio_state_select_adjacent(state, FOLIO_STEP_NEXT) == FOLIO_STATE_READY, "j again");
+    expect_cursor(state, "n2.2", "and lands in the last category");
+    require(folio_state_select_adjacent(state, FOLIO_STEP_NEXT) == FOLIO_STATE_READY,
+            "j at the end");
+    expect_cursor(state, "n2.2", "the end does not move");
+    require(folio_state_select_adjacent(state, FOLIO_STEP_PREVIOUS) == FOLIO_STATE_READY, "k");
+    expect_cursor(state, "n1.2", "backwards walks the same visible rows");
+    require(folio_state_select_adjacent(state, FOLIO_STEP_FIRST) == FOLIO_STATE_READY, "gg");
+    expect_cursor(state, "n0.2", "gg is the first visible row");
+    require(folio_state_select_adjacent(state, FOLIO_STEP_LAST) == FOLIO_STATE_READY, "G");
+    expect_cursor(state, "n2.2", "G is the last visible row");
+    folio_state_destroy(state);
+}
+
+/* 保存と改名は写しと一致集合を更新し、絞り込みを保つ。語はノート内検索とは別（決定 4 / 7）。 */
+static void verify_filter_follows_content(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY, "select B / one");
+    require(folio_state_begin_edit(state) == FOLIO_STATE_READY, "edit");
+    require(folio_state_set_index_filter(state, u"needle", 6) == FOLIO_STATE_READY, "filter");
+    require(folio_state_index_filter_count(state) == 0, "nothing matches yet");
+    require(folio_state_store_note(state, u"a needle appears", 16) == FOLIO_STATE_READY, "save");
+    require(folio_state_index_filter_count(state) == 1, "the saved body now matches");
+    char order[128] = {0};
+    row_order(state, order, sizeof order);
+    require(same_text(order, "B/one"), "and it is the note that was saved");
+    require(folio_state_set_index_filter(state, u"renamed", 7) == FOLIO_STATE_READY, "a new term");
+    require(folio_state_index_filter_count(state) == 0, "no name holds it");
+    struct note_name *name = accepted_note_name("renamed");
+    require(folio_state_rename_note(state, name, u"a needle appears", 16) == FOLIO_STATE_READY,
+            "rename the note");
+    note_name_destroy(name);
+    require(folio_state_index_filter_count(state) == 1, "the new name matches");
+    row_order(state, order, sizeof order);
+    require(same_text(order, "B/renamed"), "and the copy travelled with the name");
+    require(folio_state_set_search_term(state, u"zzz", 3) == FOLIO_STATE_READY, "an in-note term");
+    require(folio_state_index_filter_count(state) == 1 &&
+                same_text(folio_state_index_filter_term(state), "renamed"),
+            "does not touch the filter");
+    require(folio_state_set_index_filter(state, u"one", 3) == FOLIO_STATE_READY, "a filter term");
+    require(same_text(folio_state_search_term(state), "zzz"),
+            "and the filter does not touch the in-note term");
+    folio_state_destroy(state);
+}
+
+/* 新しく公開したノートも写しと一致集合に入る（決定 4）。 */
+static void verify_filter_follows_new_note(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_set_index_filter(state, u"needle", 6) == FOLIO_STATE_READY, "filter");
+    require(folio_state_index_filter_count(state) == 0, "nothing matches yet");
+    require(folio_state_new_note(state, 0) == FOLIO_STATE_READY, "a new untitled note");
+    struct note_name *name = accepted_note_name("fresh");
+    struct note_destination destination = {.category = 0, .name = name};
+    require(folio_state_store_new(state, &destination, u"a needle here", 13) == FOLIO_STATE_READY,
+            "the first save publishes it");
+    note_name_destroy(name);
+    require(folio_state_index_filter_count(state) == 1, "the published note matches");
+    char order[128] = {0};
+    row_order(state, order, sizeof order);
+    require(same_text(order, "B/fresh"), "and it is the one that was created");
+    folio_state_destroy(state);
+}
+
 void run_state_tests(void)
 {
     verify_ready_state();
@@ -2476,4 +2674,10 @@ void run_state_tests(void)
     verify_rename_force_quit_keeps_intent();
     verify_rename_recovery();
     verify_search_term();
+    verify_index_filter();
+    verify_index_filter_refusals();
+    verify_filtered_refusals();
+    verify_filter_keeps_document();
+    verify_filter_follows_content();
+    verify_filter_follows_new_note();
 }

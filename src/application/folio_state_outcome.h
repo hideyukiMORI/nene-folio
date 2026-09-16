@@ -40,8 +40,10 @@ enum folio_state_outcome : unsigned char
     FOLIO_STATE_RENAME_JOURNAL_BROKEN,
     /* 改名の記録と data/ の実体が合わない。意図は保持したまま、手当てするまで進めない（決定 5） */
     FOLIO_STATE_RENAME_HALTED,
-    /* ノート内検索の語が UTF-16 として壊れている。語は前のまま（ADR 0023 の決定 3） */
+    /* 検索の語が壊れている。語も絞り込みも前のまま（ADR 0023 の決定 3・ADR 0024 の決定 2） */
     FOLIO_STATE_SEARCH_MALFORMED,
+    /* 絞り込み中に並び替え・開閉が来た。台帳もファイルも表示も変えていない（ADR 0024 の決定 4） */
+    FOLIO_STATE_FILTERED,
     /* 右ペインが表示している平文を取り出せない。探していないし、表示も選択も変えていない */
     FOLIO_STATE_PANE_UNAVAILABLE,
     FOLIO_STATE_OUT_OF_MEMORY,
