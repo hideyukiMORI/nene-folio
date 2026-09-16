@@ -42,6 +42,11 @@ static const wchar_t header_label[] = L"NENE FOLIO";
 constexpr int base_dpi = 96;
 constexpr int base_header_height = 44;
 constexpr int base_header_indent = 16;
+/* 常設の「すべてのノートを検索」の欄が占める帯（ADR 0024 の決定 6）。欄そのものは主窓の子で、
+ * ここは行を置かない余白として数える。 */
+constexpr int base_filter_height = 36;
+constexpr int base_filter_inset = 12; /* 欄の左右の余白 */
+constexpr int base_filter_margin = 4; /* 欄の上下に空ける間 */
 constexpr int base_row_height = 30;
 constexpr int base_category_height = 34;
 constexpr int base_category_gap = 6;
@@ -97,6 +102,12 @@ static void refresh_fonts(struct drawer_window *_Nonnull self, UINT dpi)
     self->mono_font = create_font(dpi, base_mono_font, FW_NORMAL, mono_face);
 }
 
+/* 頭の帯（見出しと常設の絞り込みの欄）の高さ。行はこの下にだけ置く（ADR 0024 の決定 6）。 */
+static int band_height(const struct drawer_window *_Nonnull self)
+{
+    return scale(base_header_height + base_filter_height, GetDpiForWindow(self->handle));
+}
+
 /* いまの DPI と client の高さで寸法を測る。スクロール上限は core がここから決める（FR-012）。 */
 static struct drawer_metrics metrics_for(const struct drawer_window *_Nonnull self)
 {
@@ -104,7 +115,7 @@ static struct drawer_metrics metrics_for(const struct drawer_window *_Nonnull se
     RECT client = {0, 0, 0, 0};
     GetClientRect(self->handle, &client);
     struct drawer_metrics metrics = {
-        .top_padding = scale(base_header_height, dpi),
+        .top_padding = band_height(self),
         .row_height = scale(base_row_height, dpi),
         .category_height = scale(base_category_height, dpi),
         .category_gap = scale(base_category_gap, dpi),
@@ -339,7 +350,7 @@ static void draw_fade(const struct drawer_window *_Nonnull self, uint32_t *_Nonn
 {
     UINT dpi = GetDpiForWindow(self->handle);
     int height = scale(base_fade_height, dpi);
-    int start = above ? scale(base_header_height, dpi) : client.bottom - height;
+    int start = above ? band_height(self) : client.bottom - height;
     uint32_t ground = to_pixel(self->palette.window);
     for (int row = 0; row < height; ++row)
     {
@@ -386,7 +397,7 @@ static void paint_surface(const struct drawer_window *_Nonnull self, HDC device,
         draw_header(self, device, client.right);
         return;
     }
-    int header = scale(base_header_height, GetDpiForWindow(self->handle));
+    int header = band_height(self);
     IntersectClipRect(device, 0, header, client.right, client.bottom);
     draw_rows(self, device, layout, client.right);
     SelectClipRgn(device, nullptr);
@@ -584,8 +595,9 @@ static void press(struct drawer_window *_Nonnull self, int y)
 /* 捕捉中の移動。しきい値を超えたらドラッグに入り、落とし先を core に決めさせる。 */
 static void drag(struct drawer_window *_Nonnull self, int y)
 {
-    if (!self->pressed)
+    if (!self->pressed || folio_state_filtering(self->state))
     {
+        /* 絞り込み中は並び替えができないので、挿入線も出さない（ADR 0024 の決定 4）。 */
         return;
     }
     self->pointer_y = y;
@@ -807,6 +819,25 @@ enum drawer_window_outcome drawer_window_create(HWND _Nonnull parent,
 HWND _Nullable drawer_window_handle(const struct drawer_window *_Nonnull drawer)
 {
     return drawer->handle;
+}
+
+RECT drawer_window_filter_rect(const struct drawer_window *_Nonnull drawer)
+{
+    RECT bounds = {0, 0, 0, 0};
+    if (drawer->handle == nullptr)
+    {
+        return bounds;
+    }
+    UINT dpi = GetDpiForWindow(drawer->handle);
+    RECT client = {0, 0, 0, 0};
+    GetClientRect(drawer->handle, &client);
+    int inset = scale(base_filter_inset, dpi);
+    int margin = scale(base_filter_margin, dpi);
+    bounds.left = inset;
+    bounds.top = scale(base_header_height, dpi) + margin;
+    bounds.right = client.right - inset;
+    bounds.bottom = scale(base_header_height + base_filter_height, dpi) - margin;
+    return bounds;
 }
 
 void drawer_window_scroll_key(struct drawer_window *_Nonnull drawer, WPARAM key)

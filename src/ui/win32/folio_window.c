@@ -39,6 +39,10 @@ struct folio_window
     HWND _Nullable command_layer;
     HWND _Nullable command_input;
     WNDPROC _Nullable command_input_original;
+    /* ドロワーの頭に常設する「すべてのノートを検索」の欄（ADR 0024 の決定 6）。主窓の子。 */
+    HWND _Nullable filter_input;
+    WNDPROC _Nullable filter_original;
+    bool filter_composing;
     HWND _Nullable command_return_focus;
     HBRUSH _Nullable command_brush;
     enum command_surface_mode command_surface;
@@ -63,10 +67,15 @@ static const char recovering_label[] = "名前変更の復旧待ち";
 static const wchar_t view_label[] = L"閲覧";
 static const wchar_t edit_label[] = L"編集";
 static const wchar_t edit_class[] = L"EDIT";
+/* 欄が空のあいだに薄い文字で出す用途（ADR 0024 の決定 6）。 */
+static const wchar_t filter_placeholder[] = L"すべてのノートを検索";
 static const char *_Nonnull const command_shortcuts[] = {
     "一覧  ↑↓ 選択 / Enter 実行 / Esc 戻る / Tab 説明",
     "編集本文  Ctrl+h/j/k/l ←/↓/↑/→",
     "全区画  F1 ヘルプ / Ctrl+P 一覧 / Ctrl+F このノート内を検索",
+    "全区画  Ctrl+Shift+F すべてのノートを検索（索引を絞り込む）",
+    "絞り込み欄  Esc・Enter 索引へ戻る（絞り込みは残る）/ 空にすると解除",
+    "絞り込み中  並び替えと折畳/展開はできない（色・保存・編集は可）",
     "Ctrl+N 新規 / Ctrl+S 保存 / Ctrl+Shift+S 別名保存 / F2 名前変更",
     "索引・閲覧本文  : コマンド / i 編集",
     "索引・閲覧本文  / 次を検索 / ? 前を検索 / n・N 繰り返し",
@@ -90,6 +99,10 @@ constexpr WORD search_next_accelerator = 103;
 constexpr WORD search_previous_accelerator = 104;
 constexpr WORD search_forward_accelerator = 105;
 constexpr WORD search_backward_accelerator = 106;
+constexpr WORD filter_accelerator = 107;
+constexpr int filter_control_id = 2;
+constexpr size_t filter_input_capacity = 128;
+constexpr int base_filter_text_inset = 4;
 constexpr size_t command_input_capacity = 256;
 /* 「k / n 件」と向きの言い換えを 1 行に組む領域（UTF-8）。 */
 constexpr size_t search_status_capacity = 128;
@@ -163,6 +176,9 @@ static void move_command_selection(struct folio_window *_Nonnull self, WPARAM ke
 static void search_input_changed(struct folio_window *_Nonnull self);
 static LRESULT CALLBACK command_input_procedure(HWND window, UINT message, WPARAM wparam,
                                                 LPARAM lparam);
+static void filter_input_changed(struct folio_window *_Nonnull self);
+static LRESULT CALLBACK filter_input_procedure(HWND window, UINT message, WPARAM wparam,
+                                               LPARAM lparam);
 static LRESULT CALLBACK command_layer_procedure(HWND window, UINT message, WPARAM wparam,
                                                 LPARAM lparam);
 
@@ -381,6 +397,18 @@ static void arrange_command_input(struct folio_window *_Nonnull self)
     BringWindowToTop(self->command_layer);
 }
 
+/* 常設の欄はドロワーの頭の帯に重ねる。寸法はドロワーが答える（ADR 0024 の決定 6）。 */
+static void arrange_filter_input(struct folio_window *_Nonnull self)
+{
+    if (self->filter_input == nullptr || self->drawer == nullptr)
+    {
+        return;
+    }
+    RECT bounds = drawer_window_filter_rect(self->drawer);
+    MoveWindow(self->filter_input, bounds.left, bounds.top, bounds.right - bounds.left,
+               bounds.bottom - bounds.top, TRUE);
+}
+
 static void arrange(struct folio_window *_Nonnull self)
 {
     HWND drawer = self->drawer == nullptr ? nullptr : drawer_window_handle(self->drawer);
@@ -394,6 +422,7 @@ static void arrange(struct folio_window *_Nonnull self)
     if (drawer != nullptr)
     {
         MoveWindow(drawer, 0, 0, drawer_width, client.bottom, TRUE);
+        arrange_filter_input(self);
     }
     if (pane != nullptr)
     {
@@ -2656,6 +2685,126 @@ static void search_input_changed(struct folio_window *_Nonnull self)
     redraw_command_layer(self);
 }
 
+static void update_filter_composition(struct folio_window *_Nonnull self, UINT message)
+{
+    if (message == WM_IME_STARTCOMPOSITION)
+    {
+        self->filter_composing = true;
+    }
+    if (message == WM_IME_ENDCOMPOSITION)
+    {
+        self->filter_composing = false;
+    }
+}
+
+/* 欄が自分で受け止める鍵。**Esc と Enter は INDEX（主窓）へ戻し、絞り込みは保つ**。
+ * 欄の中の Ctrl+S は共通の SAVE へ渡す。`/` `?` `n` `N` `:` は文字のまま（ADR 0024 の決定 6）。 */
+static bool filter_input_handled(struct folio_window *_Nonnull self, UINT message, WPARAM wparam)
+{
+    if (self->filter_composing)
+    {
+        return false;
+    }
+    if (message == WM_KEYDOWN && (wparam == VK_ESCAPE || wparam == VK_RETURN))
+    {
+        SetFocus(self->handle);
+        return true;
+    }
+    if (message == WM_CHAR && wparam == store_character)
+    {
+        execute_command(self, FOLIO_COMMAND_SAVE, "");
+        return true;
+    }
+    /* Enter と Esc の WM_CHAR は既定処理がビープを出すので飲む。 */
+    return message == WM_CHAR && (wparam == '\r' || wparam == '\x1b');
+}
+
+/* 空のあいだは用途を薄い文字で重ねる（EM_SETCUEBANNER は comctl32 を要るので使わない）。 */
+static void paint_filter_placeholder(const struct folio_window *_Nonnull self, HWND window)
+{
+    if (GetWindowTextLengthW(window) != 0)
+    {
+        return;
+    }
+    HDC device = GetDC(window);
+    if (device == nullptr)
+    {
+        return;
+    }
+    RECT bounds;
+    GetClientRect(window, &bounds);
+    bounds.left += scale(base_filter_text_inset, GetDpiForWindow(self->handle));
+    HGDIOBJ previous = SelectObject(device, self->mono_font);
+    SetBkMode(device, TRANSPARENT);
+    SetTextColor(device, self->palette.header_text);
+    DrawTextW(device, filter_placeholder, -1, &bounds, DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
+    SelectObject(device, previous);
+    ReleaseDC(window, device);
+}
+
+static LRESULT CALLBACK filter_input_procedure(HWND window, UINT message, WPARAM wparam,
+                                               LPARAM lparam)
+{
+    struct folio_window *_Nullable self = self_of(window);
+    if (self == nullptr || self->filter_original == nullptr)
+    {
+        return DefWindowProcW(window, message, wparam, lparam);
+    }
+    update_filter_composition(self, message);
+    if (filter_input_handled(self, message, wparam))
+    {
+        return 0;
+    }
+    LRESULT result = CallWindowProcW(self->filter_original, window, message, wparam, lparam);
+    /* 確定した文字は composition を抜けたあとに届くので、抜けてから 1 回だけ絞り直す。 */
+    if (message == WM_IME_ENDCOMPOSITION)
+    {
+        filter_input_changed(self);
+    }
+    if (message == WM_PAINT)
+    {
+        paint_filter_placeholder(self, window);
+    }
+    return result;
+}
+
+/* 打つたびに語を覚え直し、索引を作り直す（ADR 0024 の決定 6）。
+ * IME の未確定入力のあいだは動かさず、確定の WM_IME_ENDCOMPOSITION のあとで 1 回だけ動く。
+ * 壊れた語は前の絞り込みを保つだけで、打つたびにモーダルを出さない。 */
+static void filter_input_changed(struct folio_window *_Nonnull self)
+{
+    if (self->filter_composing || self->filter_input == nullptr)
+    {
+        return;
+    }
+    wchar_t units[filter_input_capacity];
+    int count = GetWindowTextW(self->filter_input, units, (int)filter_input_capacity);
+    enum folio_state_outcome filtered = folio_state_set_index_filter(
+        self->state, (const char16_t *)units, count > 0 ? (size_t)count : 0);
+    if (filtered == FOLIO_STATE_OUT_OF_MEMORY)
+    {
+        command_failure(self, filtered);
+        return;
+    }
+    if (self->drawer != nullptr)
+    {
+        drawer_window_reveal_cursor(self->drawer);
+    }
+    redraw_drawer(self);
+    InvalidateRect(self->handle, nullptr, FALSE);
+}
+
+/* Ctrl+Shift+F は常設の欄へフォーカスを移し、いまの語を全選択する（ADR 0024 の決定 6）。 */
+static void focus_filter_input(struct folio_window *_Nonnull self)
+{
+    if (self->filter_input == nullptr)
+    {
+        return;
+    }
+    SetFocus(self->filter_input);
+    SendMessageW(self->filter_input, EM_SETSEL, 0, (LPARAM)-1);
+}
+
 static LRESULT on_command(struct folio_window *_Nonnull self, WPARAM wparam, LPARAM lparam)
 {
     if ((HWND)lparam != self->command_input || HIWORD(wparam) != EN_CHANGE)
@@ -2676,6 +2825,28 @@ static LRESULT on_command(struct folio_window *_Nonnull self, WPARAM wparam, LPA
     return 0;
 }
 
+/* 常設の絞り込みの欄を主窓の子として作る。ドロワーより後に作るので前面に重なる。 */
+static bool create_filter_input(struct folio_window *_Nonnull self, HWND window)
+{
+    self->filter_input = CreateWindowExW(0, edit_class, L"", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
+                                         0, 0, 0, 0, window, (HMENU)(INT_PTR)filter_control_id,
+                                         GetModuleHandleW(nullptr), nullptr);
+    if (self->filter_input == nullptr)
+    {
+        return false;
+    }
+    SetWindowLongPtrW(self->filter_input, GWLP_USERDATA, (LONG_PTR)self);
+    self->filter_original = (WNDPROC)SetWindowLongPtrW(self->filter_input, GWLP_WNDPROC,
+                                                       (LONG_PTR)filter_input_procedure);
+    if (self->filter_original == nullptr)
+    {
+        return false;
+    }
+    SendMessageW(self->filter_input, EM_LIMITTEXT, filter_input_capacity - 1, 0);
+    SendMessageW(self->filter_input, WM_SETFONT, (WPARAM)self->mono_font, TRUE);
+    return true;
+}
+
 static LRESULT on_create(HWND window, LPARAM lparam)
 {
     /* Win32 のコールバック引数を境界で受ける唯一の void *（C-006）。 */
@@ -2687,6 +2858,10 @@ static LRESULT on_create(HWND window, LPARAM lparam)
     if (drawer_window_create(window, self->state, &self->drawer) != DRAWER_WINDOW_CREATED ||
         note_pane_create(window, self->palette.pane, self->palette.editor_text, &self->pane) !=
             NOTE_PANE_CREATED)
+    {
+        return -1;
+    }
+    if (!create_filter_input(self, window))
     {
         return -1;
     }
@@ -2770,7 +2945,8 @@ static LRESULT limit_size(HWND window, LPARAM lparam)
 
 static LRESULT color_command_input(struct folio_window *_Nonnull self, WPARAM wparam, LPARAM lparam)
 {
-    if ((HWND)lparam != self->command_input || self->command_brush == nullptr)
+    bool ours = (HWND)lparam == self->command_input || (HWND)lparam == self->filter_input;
+    if (!ours || self->command_brush == nullptr)
     {
         return DefWindowProcW(self->handle, WM_CTLCOLOREDIT, wparam, lparam);
     }
@@ -2885,6 +3061,10 @@ static void execute_accelerator(struct folio_window *_Nonnull self, WPARAM wpara
     {
         execute_command(self, FOLIO_COMMAND_FIND, "");
     }
+    if (LOWORD(wparam) == filter_accelerator)
+    {
+        focus_filter_input(self);
+    }
     if (LOWORD(wparam) == search_next_accelerator)
     {
         repeat_search(self, false);
@@ -2901,6 +3081,18 @@ static void execute_accelerator(struct folio_window *_Nonnull self, WPARAM wpara
     {
         step_search(self, SEARCH_DIRECTION_BACKWARD);
     }
+}
+
+/* 主窓の WM_COMMAND には HACCEL と、常設の欄の EN_CHANGE の 2 つが届く。 */
+static LRESULT on_window_command(struct folio_window *_Nonnull self, WPARAM wparam, LPARAM lparam)
+{
+    if ((HWND)lparam == self->filter_input && HIWORD(wparam) == EN_CHANGE)
+    {
+        filter_input_changed(self);
+        return 0;
+    }
+    execute_accelerator(self, wparam);
+    return 0;
 }
 
 static LRESULT on_message(struct folio_window *_Nonnull self, UINT message, WPARAM wparam,
@@ -2935,8 +3127,7 @@ static LRESULT on_message(struct folio_window *_Nonnull self, UINT message, WPAR
         /* ドロワーからのノート行のクリック。結果は enum folio_state_outcome で返す。 */
         return (LRESULT)switch_note(self, (size_t)wparam, (size_t)lparam);
     case WM_COMMAND:
-        execute_accelerator(self, wparam);
-        return 0;
+        return on_window_command(self, wparam, lparam);
     case WM_KEYDOWN:
         press_key(self, wparam);
         return 0;
@@ -3043,6 +3234,8 @@ enum folio_window_outcome folio_window_create(struct folio_state *_Nonnull state
         {.fVirt = FVIRTKEY | FCONTROL | FSHIFT, .key = 'S', .cmd = save_as_accelerator},
         {.fVirt = FVIRTKEY, .key = VK_F2, .cmd = rename_accelerator},
         {.fVirt = FVIRTKEY | FCONTROL, .key = 'F', .cmd = find_accelerator},
+        /* Ctrl+Shift+F は常設の絞り込みの欄へ（ADR 0024 の決定 6）。 */
+        {.fVirt = FVIRTKEY | FCONTROL | FSHIFT, .key = 'F', .cmd = filter_accelerator},
         /* F3 は前方・Shift+F3 は後方を名指しする。覚えている向きは変えない（採用済み計画 #47）。 */
         {.fVirt = FVIRTKEY, .key = VK_F3, .cmd = search_forward_accelerator},
         {.fVirt = FVIRTKEY | FSHIFT, .key = VK_F3, .cmd = search_backward_accelerator}};
@@ -3085,6 +3278,10 @@ static bool command_target(const struct folio_window *_Nonnull window, HWND targ
     if (target == window->command_input)
     {
         return !window->command_composing;
+    }
+    if (target == window->filter_input)
+    {
+        return !window->filter_composing;
     }
     if (window->pane != nullptr && target == note_pane_handle(window->pane))
     {
