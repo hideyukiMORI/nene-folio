@@ -98,6 +98,8 @@ static enum folio_state_outcome from_rename(enum rename_outcome outcome)
         return FOLIO_STATE_READY;
     case RENAME_PENDING:
         return FOLIO_STATE_RENAME_PENDING;
+    case RENAME_HALTED:
+        return FOLIO_STATE_RENAME_HALTED;
     case RENAME_UNLOCKED:
         return FOLIO_STATE_RENAME_UNLOCKED;
     case RENAME_NAME_TAKEN:
@@ -110,8 +112,6 @@ static enum folio_state_outcome from_rename(enum rename_outcome outcome)
         return FOLIO_STATE_RENAME_JOURNAL_FAILED;
     case RENAME_JOURNAL_BROKEN:
         return FOLIO_STATE_RENAME_JOURNAL_BROKEN;
-    case RENAME_MISMATCHED:
-        return FOLIO_STATE_RENAME_MISMATCHED;
     case RENAME_OUT_OF_MEMORY:
         return FOLIO_STATE_OUT_OF_MEMORY;
     }
@@ -137,9 +137,12 @@ static enum folio_state_outcome resume_rename(struct folio_state *_Nonnull state
     {
         return FOLIO_STATE_READY;
     }
-    enum rename_outcome moved = state->port.rename_note(state->port.adapter, state->rename);
+    /* 保持している意図の続きなので RESUME。記録が無ければ adapter が推測せずに止める（決定 5）。 */
+    enum rename_outcome moved =
+        state->port.rename_note(state->port.adapter, state->rename, RENAME_RESUME);
     if (moved != RENAME_COMPLETED)
     {
+        /* どの理由でも意図は捨てない。捨てられるのは完了したときだけ。 */
         return from_rename(moved);
     }
     adopt_rename(state);
@@ -1485,22 +1488,24 @@ static enum folio_state_outcome rename_selected(struct folio_state *_Nonnull sta
     {
         return prepared;
     }
-    enum rename_outcome moved = state->port.rename_note(state->port.adapter, intent);
-    if (moved == RENAME_PENDING)
+    enum rename_outcome moved = state->port.rename_note(state->port.adapter, intent, RENAME_START);
+    if (moved == RENAME_COMPLETED)
     {
         state->rename = intent;
         state->rename_category = category;
-        return FOLIO_STATE_RENAME_PENDING;
+        adopt_rename(state);
+        return FOLIO_STATE_READY;
     }
-    if (moved != RENAME_COMPLETED)
+    if (moved == RENAME_PENDING || moved == RENAME_HALTED)
     {
-        note_rename_destroy(intent);
+        /* 記録を公開した後の失敗はどちらも意図を保持する（決定 2 / 決定 7）。 */
+        state->rename = intent;
+        state->rename_category = category;
         return from_rename(moved);
     }
-    state->rename = intent;
-    state->rename_category = category;
-    adopt_rename(state);
-    return FOLIO_STATE_READY;
+    /* 記録を公開する前の拒否。data/ は何も変わっていないので意図は残さない。 */
+    note_rename_destroy(intent);
+    return from_rename(moved);
 }
 
 enum folio_state_outcome folio_state_rename_note(struct folio_state *_Nonnull state,
@@ -1603,6 +1608,27 @@ size_t folio_state_pane_text_length(const struct folio_state *_Nonnull state)
     return note_text_length(state->body);
 }
 
+const char *_Nonnull folio_state_document_name(const struct folio_state *_Nonnull state)
+{
+    if (state->document != FOLIO_DOCUMENT_NAMED)
+    {
+        return "";
+    }
+    return note_ledger_name(state->notes[state->selected_category], state->selected_note);
+}
+
+bool folio_state_rename_pending(const struct folio_state *_Nonnull state,
+                                struct rename_view *_Nonnull out)
+{
+    if (state->rename == nullptr)
+    {
+        return false;
+    }
+    out->from = note_rename_from(state->rename);
+    out->to = note_rename_to(state->rename);
+    return true;
+}
+
 struct pane_title_view folio_state_pane_title(const struct folio_state *_Nonnull state)
 {
     struct pane_title_view title = {.any = false,
@@ -1616,17 +1642,10 @@ struct pane_title_view folio_state_pane_title(const struct folio_state *_Nonnull
         return title;
     }
     title.any = true;
-    /* 未完了の改名があるあいだ、古い名前を現在の実ファイル名として示さない（ADR 0022 の決定 2）。
-     */
+    /* 未完了の改名があることだけを伝える。言い換えの文言は UI が持つ（ADR 0022 の決定 2）。 */
     title.recovering = state->rename != nullptr;
     title.ordinal = state->selected_category + 1;
     title.category = category_ledger_name(state->categories, state->selected_category);
-    if (title.recovering)
-    {
-        title.note = "名前変更の復旧待ち";
-        title.color = category_ledger_color(state->categories, state->selected_category);
-        return title;
-    }
     title.note =
         state->document == FOLIO_DOCUMENT_UNTITLED
             ? "無題（未保存）"
@@ -1660,6 +1679,9 @@ static const char *_Nonnull unfinished_failure_line(enum folio_state_outcome out
                "保存を再試行してください。";
     case FOLIO_STATE_RENAME_PENDING:
         return "名前の変更が途中で止まっています。同じ名前変更をやり直してください。";
+    case FOLIO_STATE_RENAME_HALTED:
+        return "名前変更の記録と実ファイルが一致しません。data/.rename.json と data/<カテゴリ>/ "
+               "を確認してください。";
     case FOLIO_STATE_RENAME_UNLOCKED:
         return "data/ に書けないため名前を変更できません。何も変えていません。";
     case FOLIO_STATE_RENAME_UNSUPPORTED:
@@ -1671,8 +1693,6 @@ static const char *_Nonnull unfinished_failure_line(enum folio_state_outcome out
         return "名前変更の記録（data/.rename.json）を書けませんでした。何も変えていません。";
     case FOLIO_STATE_RENAME_JOURNAL_BROKEN:
         return "名前変更の記録（data/.rename.json）が版 1 の形ではありません。消していません。";
-    case FOLIO_STATE_RENAME_MISMATCHED:
-        return "名前変更の記録と data/ の中身が一致しません。記録は消していません。";
     case FOLIO_STATE_READY:
     case FOLIO_STATE_DATA_UNREADABLE:
     case FOLIO_STATE_LEDGER_MALFORMED:
@@ -1734,12 +1754,12 @@ const char *_Nonnull folio_state_failure_line(enum folio_state_outcome outcome)
     case FOLIO_STATE_LEDGER_STALE:
     case FOLIO_STATE_LEDGER_UNSYNCED:
     case FOLIO_STATE_RENAME_PENDING:
+    case FOLIO_STATE_RENAME_HALTED:
     case FOLIO_STATE_RENAME_UNLOCKED:
     case FOLIO_STATE_RENAME_UNSUPPORTED:
     case FOLIO_STATE_RENAME_IDENTITY_FAILED:
     case FOLIO_STATE_RENAME_JOURNAL_FAILED:
     case FOLIO_STATE_RENAME_JOURNAL_BROKEN:
-    case FOLIO_STATE_RENAME_MISMATCHED:
         return unfinished_failure_line(outcome);
     case FOLIO_STATE_OUT_OF_MEMORY:
         return "記憶域が足りません。";

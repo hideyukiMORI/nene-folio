@@ -67,8 +67,9 @@ struct persistence_adapter
     char renamed_category[64];
     char renamed_from[64];
     char renamed_to[64];
-    bool journal_published; /* 記録を公開したまま終わっているか（:q! で残る意図の証拠） */
-    size_t ledger_fail_at;  /* この番号（1 始まり）の索引の書き戻しだけ失敗させる。0 なら使わない */
+    bool journal_published;           /* 記録を公開したまま終わっているか（:q! で残る意図の証拠） */
+    enum rename_attempt last_attempt; /* 最後の rename_note が START か RESUME か */
+    size_t ledger_fail_at; /* この番号（1 始まり）の索引の書き戻しだけ失敗させる。0 なら使わない */
     const char *_Nullable alt_category; /* この名前のカテゴリだけ別の索引と md を返す */
     const char *_Nonnull alt_notes_text;
     const char *_Nonnull const *_Nullable alt_scanned; /* nullptr で終わる名前の並び */
@@ -344,15 +345,18 @@ static void copy_name(char *_Nonnull out, size_t capacity, const char *_Nonnull 
 /* 偽の改名。どの段階で止めるかは rename_outcome が決める（ADR 0022）。
  * 記録の公開後に止めた PENDING だけが journal_published を真にし、完了で消える。 */
 static enum rename_outcome fake_rename_note(struct persistence_adapter *_Nonnull adapter,
-                                            const struct note_rename *_Nonnull plan)
+                                            const struct note_rename *_Nonnull plan,
+                                            enum rename_attempt attempt)
 {
     adapter->renames += 1;
+    adapter->last_attempt = attempt;
     record_call(adapter, "rename");
     copy_name(adapter->renamed_category, sizeof adapter->renamed_category,
               note_rename_category(plan));
     copy_name(adapter->renamed_from, sizeof adapter->renamed_from, note_rename_from(plan));
     copy_name(adapter->renamed_to, sizeof adapter->renamed_to, note_rename_to(plan));
-    if (adapter->rename_outcome == RENAME_PENDING)
+    /* 公開後の 2 値だけが記録を残し、完了で消える。公開前の拒否は data/ を変えない。 */
+    if (adapter->rename_outcome == RENAME_PENDING || adapter->rename_outcome == RENAME_HALTED)
     {
         adapter->journal_published = true;
     }
@@ -444,6 +448,7 @@ static struct persistence_adapter healthy_adapter(void)
         .renamed_from = {'\0'},
         .renamed_to = {'\0'},
         .journal_published = false,
+        .last_attempt = RENAME_START,
         .ledger_fail_at = 0,
         .alt_category = nullptr,
         .alt_notes_text = "{\"version\": 1, \"notes\": []}",
@@ -1674,7 +1679,7 @@ static void verify_failure_lines(void)
                 strlen(folio_state_failure_line(FOLIO_STATE_RENAME_IDENTITY_FAILED)) > 0 &&
                 strlen(folio_state_failure_line(FOLIO_STATE_RENAME_JOURNAL_FAILED)) > 0 &&
                 strlen(folio_state_failure_line(FOLIO_STATE_RENAME_JOURNAL_BROKEN)) > 0 &&
-                strlen(folio_state_failure_line(FOLIO_STATE_RENAME_MISMATCHED)) > 0 &&
+                strlen(folio_state_failure_line(FOLIO_STATE_RENAME_HALTED)) > 0 &&
                 strlen(folio_state_failure_line(FOLIO_STATE_OUT_OF_MEMORY)) > 0,
             "every failure has a line");
 }
@@ -2217,20 +2222,36 @@ static void verify_rename_refused_before_journal(void)
 }
 
 /* 未完了の意図があるあいだ、すべての意図が先に同じ改名を再試行する（決定 7）。 */
+static void verify_rename_blocked_intents(struct folio_state *_Nonnull state,
+                                          enum folio_state_outcome expected)
+{
+    enum folio_note_change change = FOLIO_NOTE_SAME;
+    struct note_name *copy = accepted_note_name("別名の写し");
+    struct note_destination destination = {.category = 0, .name = copy};
+    struct note_ref from = {.category = 0, .note = 0};
+    struct note_ref to = {.category = 0, .note = 2};
+    struct rgb_color color = {.red = 1, .green = 2, .blue = 3};
+    require(folio_state_store_note(state, u"", 0) == expected &&
+                folio_state_select_note(state, 0, 1) == expected &&
+                folio_state_toggle_category(state, 0) == expected &&
+                folio_state_recolor_category(state, 0, color) == expected &&
+                folio_state_move_category(state, 0, 1) == expected &&
+                folio_state_move_note(state, from, to) == expected &&
+                folio_state_new_note(state, 0) == expected &&
+                folio_state_store_new(state, &destination, u"", 0) == expected &&
+                folio_state_note_changed(state, u"", 0, &change) == expected,
+            "every intent retries the same rename and refuses to proceed");
+    note_name_destroy(copy);
+}
+
 static void verify_rename_pending_blocks(struct folio_state *_Nonnull state,
                                          struct persistence_adapter *_Nonnull adapter)
 {
-    enum folio_note_change change = FOLIO_NOTE_SAME;
-    require(folio_state_store_note(state, u"", 0) == FOLIO_STATE_RENAME_PENDING &&
-                folio_state_select_note(state, 0, 1) == FOLIO_STATE_RENAME_PENDING &&
-                folio_state_toggle_category(state, 0) == FOLIO_STATE_RENAME_PENDING &&
-                folio_state_move_category(state, 0, 1) == FOLIO_STATE_RENAME_PENDING &&
-                folio_state_new_note(state, 0) == FOLIO_STATE_RENAME_PENDING &&
-                folio_state_note_changed(state, u"", 0, &change) == FOLIO_STATE_RENAME_PENDING,
-            "every intent retries the same rename and refuses to proceed");
-    require(adapter->renames == 7 && adapter->note_writes == 0 && adapter->writes == 0 &&
-                adapter->creates == 0,
-            "the retries are the only calls the refused intents make");
+    verify_rename_blocked_intents(state, FOLIO_STATE_RENAME_PENDING);
+    require(adapter->renames == 10 && adapter->last_attempt == RENAME_RESUME &&
+                adapter->note_writes == 0 && adapter->writes == 0 && adapter->creates == 0 &&
+                adapter->moves == 0,
+            "the retries are the only calls the refused intents make, and they all resume");
 }
 
 static void verify_rename_pending(void)
@@ -2242,12 +2263,17 @@ static void verify_rename_pending(void)
     struct note_name *name = accepted_note_name("新しい名前");
     adapter.rename_outcome = RENAME_PENDING;
     require(folio_state_rename_note(state, name, u"", 0) == FOLIO_STATE_RENAME_PENDING &&
-                adapter.renames == 1 && adapter.journal_published,
+                adapter.renames == 1 && adapter.last_attempt == RENAME_START &&
+                adapter.journal_published,
             "the published journal becomes the single retained intent");
     struct pane_title_view title = folio_state_pane_title(state);
-    require(title.recovering && same_text(title.note, "名前変更の復旧待ち") &&
-                same_text(title.category, "B"),
-            "the breadcrumb never shows the stale name as the real file");
+    struct rename_view pending = {.from = "", .to = ""};
+    require(title.recovering && same_text(title.note, "one") && same_text(title.category, "B") &&
+                same_text(folio_state_document_name(state), "one"),
+            "the view keeps the real name and only flags the recovery");
+    require(folio_state_rename_pending(state, &pending) && same_text(pending.from, "one") &&
+                same_text(pending.to, "新しい名前"),
+            "the held intent is readable as a closed pair of names");
     verify_rename_pending_blocks(state, &adapter);
     struct note_name *other_name = accepted_note_name("別の名前");
     require(folio_state_rename_note(state, other_name, u"", 0) == FOLIO_STATE_RENAME_PENDING &&
@@ -2255,17 +2281,62 @@ static void verify_rename_pending(void)
             "a different rename cannot start while one is unfinished");
     note_name_destroy(other_name);
     adapter.rename_outcome = RENAME_COMPLETED;
-    require(folio_state_store_note(state, u"", 0) == FOLIO_STATE_READY && adapter.renames == 9 &&
+    require(folio_state_store_note(state, u"", 0) == FOLIO_STATE_READY && adapter.renames == 12 &&
                 !adapter.journal_published,
             "the next intent finishes the rename before doing its own work");
     title = folio_state_pane_title(state);
-    require(!title.recovering && same_text(title.note, "新しい名前"),
-            "the completed intent hands over the prepared ledger");
+    require(!title.recovering && same_text(title.note, "新しい名前") &&
+                same_text(folio_state_document_name(state), "新しい名前") &&
+                !folio_state_rename_pending(state, &pending),
+            "the completed intent hands over the prepared ledger and drops the pending pair");
     require(folio_state_rename_note(state, name, u"", 0) == FOLIO_STATE_READY &&
-                adapter.renames == 9,
+                adapter.renames == 12,
             "asking for the finished name again changes nothing");
     note_name_destroy(name);
     folio_state_destroy(state);
+}
+
+/* 記録を公開した後の HALTED も意図を捨てない。理由は PENDING と別の 1 行になる（決定 2）。 */
+static void verify_rename_halted(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY, "select to rename");
+    struct note_name *name = accepted_note_name("新しい名前");
+    adapter.rename_outcome = RENAME_HALTED;
+    require(folio_state_rename_note(state, name, u"", 0) == FOLIO_STATE_RENAME_HALTED &&
+                adapter.renames == 1 && adapter.journal_published,
+            "a halted rename keeps the published intent instead of dropping it");
+    struct rename_view pending = {.from = "", .to = ""};
+    require(folio_state_pane_title(state).recovering &&
+                folio_state_rename_pending(state, &pending) && same_text(pending.from, "one") &&
+                same_text(pending.to, "新しい名前"),
+            "the halted intent is the one that is retried");
+    verify_rename_blocked_intents(state, FOLIO_STATE_RENAME_HALTED);
+    require(adapter.renames == 10 && adapter.last_attempt == RENAME_RESUME &&
+                adapter.note_writes == 0 && adapter.creates == 0 && adapter.moves == 0,
+            "a halted intent blocks the same operations and only re-evaluates");
+    require(strcmp(folio_state_failure_line(FOLIO_STATE_RENAME_HALTED),
+                   folio_state_failure_line(FOLIO_STATE_RENAME_PENDING)) != 0,
+            "the two post-publication reasons read differently");
+    adapter.rename_outcome = RENAME_COMPLETED;
+    require(folio_state_store_note(state, u"", 0) == FOLIO_STATE_READY &&
+                same_text(folio_state_document_name(state), "新しい名前"),
+            "repairing data/ lets the same intent finish");
+    note_name_destroy(name);
+    folio_state_destroy(state);
+
+    /* HALTED のまま閉じても記録は残る（:q! と同じ）。 */
+    adapter = healthy_adapter();
+    state = ready_state(&adapter);
+    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY, "select to rename");
+    struct note_name *again = accepted_note_name("新しい名前");
+    adapter.rename_outcome = RENAME_HALTED;
+    require(folio_state_rename_note(state, again, u"", 0) == FOLIO_STATE_RENAME_HALTED,
+            "a halted rename");
+    note_name_destroy(again);
+    folio_state_destroy(state);
+    require(adapter.journal_published, "closing never discards a halted intent either");
 }
 
 /* :q! は意図を捨てずに終わる。永続的な記録は次回の起動が続きを行う（決定 7）。 */
@@ -2299,10 +2370,10 @@ static void verify_rename_recovery(void)
     folio_state_destroy(state);
 
     static const enum rename_outcome refusals[] = {RENAME_PENDING, RENAME_JOURNAL_BROKEN,
-                                                   RENAME_MISMATCHED, RENAME_UNLOCKED};
+                                                   RENAME_HALTED, RENAME_UNLOCKED};
     static const enum folio_state_outcome expected[] = {
-        FOLIO_STATE_RENAME_PENDING, FOLIO_STATE_RENAME_JOURNAL_BROKEN,
-        FOLIO_STATE_RENAME_MISMATCHED, FOLIO_STATE_RENAME_UNLOCKED};
+        FOLIO_STATE_RENAME_PENDING, FOLIO_STATE_RENAME_JOURNAL_BROKEN, FOLIO_STATE_RENAME_HALTED,
+        FOLIO_STATE_RENAME_UNLOCKED};
     for (size_t index = 0; index < sizeof refusals / sizeof refusals[0]; ++index)
     {
         struct persistence_adapter refused = healthy_adapter();
@@ -2363,6 +2434,7 @@ void run_state_tests(void)
     verify_rename_blocked_by_save();
     verify_rename_refused_before_journal();
     verify_rename_pending();
+    verify_rename_halted();
     verify_rename_force_quit_keeps_intent();
     verify_rename_recovery();
 }

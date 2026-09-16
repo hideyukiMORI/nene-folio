@@ -51,6 +51,8 @@ struct folio_window
 static const wchar_t class_name[] = L"NeNeFolioWindow";
 static const wchar_t command_layer_class[] = L"NeNeFolioCommandLayer";
 static const wchar_t mono_face[] = L"Consolas";
+/* 未完了の改名があるあいだ、パンくずが実ファイル名の代わりに出す文字（ADR 0022 の決定 2）。 */
+static const char recovering_label[] = "名前変更の復旧待ち";
 static const wchar_t view_label[] = L"閲覧";
 static const wchar_t edit_label[] = L"編集";
 static const wchar_t edit_class[] = L"EDIT";
@@ -490,6 +492,12 @@ static RECT chip_rect(const struct folio_window *_Nonnull self, HDC device, enum
     return bounds;
 }
 
+/* パンくずのノート区画に実際に描く文字。幅の見積りも描画もこの 1 本を使う（ADR 0022 の決定 2）。 */
+static const char *_Nonnull breadcrumb_note(struct pane_title_view title)
+{
+    return title.recovering ? recovering_label : title.note;
+}
+
 static struct breadcrumb_layout breadcrumb_cells(const struct folio_window *_Nonnull self,
                                                  HDC device, struct pane_title_view title,
                                                  RECT caption)
@@ -504,7 +512,7 @@ static struct breadcrumb_layout breadcrumb_cells(const struct folio_window *_Non
     ordinal_label(title.ordinal, digits);
     int ordinal = measure_utf8(device, digits) + padding * 2;
     int category = measure_utf8(device, title.category);
-    int note = measure_utf8(device, title.note);
+    int note = measure_utf8(device, breadcrumb_note(title));
     int budget = available - ordinal - padding * 4 - tip * 2;
     breadcrumb_room(budget < 0 ? 0 : budget, scale(base_breadcrumb_note, dpi), &category, &note);
     int category_width = category > 0 ? category + padding * 2 + tip : 0;
@@ -573,10 +581,10 @@ static void draw_breadcrumb(const struct folio_window *_Nonnull self, HDC device
     char digits[3];
     ordinal_label(title.ordinal, digits);
     draw_breadcrumb_label(device, digits, cells.ordinal, cells.padding);
-    /* 復旧待ちの札は application が作る文字をそのまま描き、色だけ変える（ADR 0022 の決定 2）。 */
+    /* 復旧待ちの言い換えはここ 1 か所だけが持つ。application は実名を返す（ADR 0022 の決定 2）。 */
     SetTextColor(device,
                  title.recovering ? self->palette.selected_text : self->palette.current_text);
-    draw_breadcrumb_label(device, title.note, cells.note, cells.padding + cells.tip);
+    draw_breadcrumb_label(device, breadcrumb_note(title), cells.note, cells.padding + cells.tip);
     RestoreDC(device, saved);
 }
 

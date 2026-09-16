@@ -822,7 +822,7 @@ static enum rename_outcome verify_entry(const wchar_t *_Nonnull path, bool direc
     {
         return read;
     }
-    return strcmp(actual, identity) == 0 ? RENAME_COMPLETED : RENAME_MISMATCHED;
+    return strcmp(actual, identity) == 0 ? RENAME_COMPLETED : RENAME_HALTED;
 }
 
 /* 置換なしの rename。事前確認の後に同名が現れても OS が拒む（決定 4）。 */
@@ -857,7 +857,7 @@ static enum rename_outcome move_entry(const wchar_t *_Nonnull from, const wchar_
     enum rename_outcome outcome = identity_of(handle, actual);
     if (outcome == RENAME_COMPLETED)
     {
-        outcome = strcmp(actual, identity) == 0 ? rename_by_handle(handle, to) : RENAME_MISMATCHED;
+        outcome = strcmp(actual, identity) == 0 ? rename_by_handle(handle, to) : RENAME_HALTED;
     }
     CloseHandle(handle);
     return outcome;
@@ -876,7 +876,7 @@ static enum rename_outcome advance_entry(const wchar_t *_Nonnull from, const wch
     if (identity[0] == '\0')
     {
         /* 履歴を持たない意図は、旧・新の両側不在だけを受理する（決定 5）。 */
-        return from_present || to_present ? RENAME_MISMATCHED : RENAME_COMPLETED;
+        return from_present || to_present ? RENAME_HALTED : RENAME_COMPLETED;
     }
     if (from_present && !to_present)
     {
@@ -886,7 +886,7 @@ static enum rename_outcome advance_entry(const wchar_t *_Nonnull from, const wch
     {
         return verify_entry(to, directory, identity);
     }
-    return RENAME_MISMATCHED;
+    return RENAME_HALTED;
 }
 
 static enum rename_outcome guard_parent(struct rename_guards *_Nonnull guards,
@@ -1018,11 +1018,42 @@ static enum rename_outcome finish_rename(struct persistence_adapter *_Nonnull ad
         return RENAME_PENDING;
     }
     wchar_t path[path_capacity];
-    if (!compose(adapter, nullptr, journal_leaf, path) || !DeleteFileW(path))
+    if (!compose(adapter, nullptr, journal_leaf, path))
     {
         return RENAME_PENDING;
     }
-    return RENAME_COMPLETED;
+    if (DeleteFileW(path))
+    {
+        return RENAME_COMPLETED;
+    }
+    /* 外から先に消されていたら、消し終えたのと同じこと。ここで止めると再開先を失う（決定 6）。 */
+    DWORD error = GetLastError();
+    return error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND ? RENAME_COMPLETED
+                                                                          : RENAME_PENDING;
+}
+
+/* 記録を公開した後の失敗は、再試行で進み得る PENDING と、data/ を直すまで進まない HALTED の
+ * 2 値だけにする（決定 2）。公開前の値をそのまま外へ返さない。 */
+static enum rename_outcome after_publication(enum rename_outcome outcome)
+{
+    switch (outcome)
+    {
+    case RENAME_COMPLETED:
+        return RENAME_COMPLETED;
+    case RENAME_PENDING:
+    case RENAME_JOURNAL_FAILED:
+    case RENAME_OUT_OF_MEMORY:
+        return RENAME_PENDING;
+    case RENAME_HALTED:
+    case RENAME_NONE:
+    case RENAME_UNLOCKED:
+    case RENAME_NAME_TAKEN:
+    case RENAME_UNSUPPORTED:
+    case RENAME_IDENTITY_FAILED:
+    case RENAME_JOURNAL_BROKEN:
+        return RENAME_HALTED;
+    }
+    return RENAME_HALTED;
 }
 
 /* 記録の公開後の段。履歴 → md → index.json → 記録の削除の順にだけ進む（決定 5 / 6）。 */
@@ -1093,7 +1124,8 @@ static enum rename_outcome resume_journal(struct persistence_adapter *_Nonnull a
                                  rename_journal_history_id(journal));
     }
     release_guards(&guards);
-    return outcome;
+    /* 記録がある時点で公開後なので、親の確認の失敗も 2 値に写す。 */
+    return after_publication(outcome);
 }
 
 /* 新しい意図。移動先の不在・親と対象の健全さ・識別子を確かめてから記録を公開する（決定 4 / 5）。 */
@@ -1123,14 +1155,28 @@ static enum rename_outcome start_rename(struct persistence_adapter *_Nonnull ada
     }
     if (outcome == RENAME_COMPLETED)
     {
-        outcome = advance_rename(adapter, plan, file_id, history_id);
+        /* ここから先は記録が公開されている。以後のどの失敗も 2 値で返す（決定 2）。 */
+        outcome = after_publication(advance_rename(adapter, plan, file_id, history_id));
     }
     release_guards(&guards);
     return outcome;
 }
 
+static bool resuming(enum rename_attempt attempt)
+{
+    switch (attempt)
+    {
+    case RENAME_START:
+        return false;
+    case RENAME_RESUME:
+        return true;
+    }
+    return true;
+}
+
 static enum rename_outcome rename_note(struct persistence_adapter *_Nonnull adapter,
-                                       const struct note_rename *_Nonnull plan)
+                                       const struct note_rename *_Nonnull plan,
+                                       enum rename_attempt attempt)
 {
     if (adapter->lock == nullptr)
     {
@@ -1141,7 +1187,8 @@ static enum rename_outcome rename_note(struct persistence_adapter *_Nonnull adap
     enum rename_outcome read = read_journal(adapter, &journal);
     if (read == RENAME_NONE)
     {
-        return start_rename(adapter, plan);
+        /* 保持中の意図の続きで記録が無いなら、名前だけで移動済みと推測しない（決定 5）。 */
+        return resuming(attempt) ? RENAME_HALTED : start_rename(adapter, plan);
     }
     if (read != RENAME_COMPLETED)
     {
@@ -1149,7 +1196,7 @@ static enum rename_outcome rename_note(struct persistence_adapter *_Nonnull adap
     }
     enum rename_outcome outcome = note_rename_equals(plan, rename_journal_rename(journal))
                                       ? resume_journal(adapter, journal)
-                                      : RENAME_MISMATCHED;
+                                      : RENAME_HALTED;
     rename_journal_destroy(journal);
     return outcome;
 }
