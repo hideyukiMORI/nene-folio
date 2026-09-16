@@ -36,4 +36,5 @@ ADR は「なぜそう決めたか」「何を却下したか」を書く。
 | [0018](0018-japanese-operation-entry-points.md) | 日本語GUI・ヘルプ・閲覧からの編集開始を共通操作へ接続する | 受理 |
 | [0019](0019-editor-caret-accelerators.md) | 編集本文のCtrl＋hjklをRichEdit自身の移動へ結ぶ | 受理 |
 | [0020](0020-untitled-note-and-first-save.md) | 無題の本文を保持し、初回保存だけ新しいmdを公開する | 受理 |
+| [0021](0021-save-as-preserves-original.md) | 別名保存は元を保存せず新しいmdを作る | 受理 |
 | [0022](0022-note-rename-and-recovery.md) | 改名の意図を記録し履歴・md・索引を再開可能に移す（中核のみ実装） | 受理 |

@@ -48,6 +48,7 @@
 | 履歴（history） | md を書き戻す**直前**にファイルにあった本文の写し。`data/.history/<カテゴリ>/<ノート>/1.md`（最新）〜 `5.md`（最古）の連番で、6 つ目は捨てる。時刻は名前にも中身にも使わない。残せなければ保存しない | `note_history_depth`（core）・`archive_note`（persistence_port）・ADR 0012 |
 | 確保失敗の注入（allocation probe） | 測定ビルドでだけ中核の `malloc` / `calloc` / `realloc` をテストへ向け、n 回目の確保を失敗させる仕掛け | `tests/unit/allocation_probe.h` |
 | キャレット（caret） | 本文の挿入位置と選択範囲。索引のカーソルとは別で、RichEdit自身が唯一の所有者。Ctrl＋hjklも部品の移動機能を呼ぶ | `note_pane`（ui/win32）・`ITextSelection`・ADR0019 |
+| 別名保存（save as） | 現在の本文を新しいmdへ保存してそちらを開く。元のmd/履歴は保存済みの状態を保つ。閲覧では表示文字ではなくMarkdown原文を使う | `FOLIO_COMMAND_SAVE_AS`→`folio_state_store_new`・ADR0021 |
 
 ## 使ってはいけない語
 

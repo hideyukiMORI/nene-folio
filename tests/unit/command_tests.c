@@ -24,6 +24,8 @@ static void verify_aliases(void)
     expect_command(":help", FOLIO_COMMAND_HELP, ":help");
     expect_command(":h", FOLIO_COMMAND_HELP, ":h uses the same help command");
     expect_command(":startinsert", FOLIO_COMMAND_EDIT, "startinsert begins editing");
+    expect_command(":saveas 別の 名前.md", FOLIO_COMMAND_SAVE_AS, "saveas with Japanese name");
+    expect_command(":saveas", FOLIO_COMMAND_SAVE_AS, "saveas opens the common name form");
     expect_command(":enew", FOLIO_COMMAND_NEW, "enew creates an untitled note");
 }
 
@@ -51,10 +53,11 @@ static void verify_rejections(void)
 
 static void verify_catalog(void)
 {
-    require(folio_command_count() == 8, "only implemented commands are registered");
+    require(folio_command_count() == 9, "only implemented commands are registered");
     const enum folio_command expected[] = {
-        FOLIO_COMMAND_SAVE, FOLIO_COMMAND_QUIT, FOLIO_COMMAND_SAVE_QUIT, FOLIO_COMMAND_FORCE_QUIT,
-        FOLIO_COMMAND_HELP, FOLIO_COMMAND_EDIT, FOLIO_COMMAND_VIEW,      FOLIO_COMMAND_NEW};
+        FOLIO_COMMAND_SAVE,       FOLIO_COMMAND_QUIT, FOLIO_COMMAND_SAVE_QUIT,
+        FOLIO_COMMAND_FORCE_QUIT, FOLIO_COMMAND_HELP, FOLIO_COMMAND_EDIT,
+        FOLIO_COMMAND_VIEW,       FOLIO_COMMAND_NEW,  FOLIO_COMMAND_SAVE_AS};
     for (size_t index = 0; index < folio_command_count(); ++index)
     {
         enum folio_command command = folio_command_at(index);
