@@ -17,6 +17,7 @@
 #include "pane_title_view.h"
 #include "rename_view.h"
 #include "rgb_color.h"
+#include "search_direction.h"
 
 #include <stddef.h>
 #include <uchar.h>
@@ -169,6 +170,23 @@ folio_state_note_changed(struct folio_state *_Nonnull state, const char16_t *_No
 [[nodiscard]] enum folio_state_outcome folio_state_end_edit(struct folio_state *_Nonnull state,
                                                             const char16_t *_Nonnull units,
                                                             size_t count);
+/* ノート内検索の語を覚える（FR-011 / ADR 0023 の決定 3）。UTF-16 の単位列を受ける
+ * C-014 の例外で、store_note / end_edit / store_new に次ぐ 4 本目。
+ * count が 0 なら語を捨てる。語が UTF-16 として壊れていれば SEARCH_MALFORMED で前の語を保つ。
+ * #40 の絞り込み語とは別の語で、同期しない。本文も選択もフォーカスも持たず、永続化もしない。 */
+[[nodiscard]] enum folio_state_outcome
+folio_state_set_search_term(struct folio_state *_Nonnull state, const char16_t *_Nonnull units,
+                            size_t count);
+/* 覚えている語（UTF-8・終端付き）。無ければ空文字列。次の set まで有効。 */
+[[nodiscard]] const char *_Nonnull folio_state_search_term(
+    const struct folio_state *_Nonnull state);
+[[nodiscard]] size_t folio_state_search_term_length(const struct folio_state *_Nonnull state);
+/* 直前の方向（`/` と「次へ」なら前方、`?` と「前へ」なら後方）。初期値は前方。
+ * n / N の N は逆向きに 1 回進むだけで、覚えている方向は変えない。 */
+[[nodiscard]] enum search_direction
+folio_state_search_direction(const struct folio_state *_Nonnull state);
+void folio_state_set_search_direction(struct folio_state *_Nonnull state,
+                                      enum search_direction direction);
 /* いまの表示モード。 */
 [[nodiscard]] enum pane_mode folio_state_pane_mode(const struct folio_state *_Nonnull state);
 /* 選択中のノートの本文（UTF-8・終端付き）。何も選んでいなければ空文字列。次の意図まで有効。 */

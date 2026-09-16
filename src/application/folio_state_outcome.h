@@ -39,6 +39,8 @@ enum folio_state_outcome : unsigned char
     FOLIO_STATE_RENAME_JOURNAL_BROKEN,
     /* 改名の記録と data/ の実体が合わない。意図は保持したまま、手当てするまで進めない（決定 5） */
     FOLIO_STATE_RENAME_HALTED,
+    /* ノート内検索の語が UTF-16 として壊れている。語は前のまま（ADR 0023 の決定 3） */
+    FOLIO_STATE_SEARCH_MALFORMED,
     FOLIO_STATE_OUT_OF_MEMORY,
     FOLIO_STATE_NAME_REQUIRED,
     FOLIO_STATE_INVALID_NAME,

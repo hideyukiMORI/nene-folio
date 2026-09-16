@@ -423,6 +423,15 @@ static bool save_as_under_probe(struct folio_state *_Nonnull state)
     return completed;
 }
 
+/* ノート内検索の語は UTF-16 を UTF-8 へ写して所有する（ADR 0023 の決定 3）。 */
+static bool search_under_probe(struct folio_state *_Nonnull state)
+{
+    enum folio_state_outcome kept = folio_state_set_search_term(state, u"日報", 2);
+    require(kept == FOLIO_STATE_READY || kept == FOLIO_STATE_OUT_OF_MEMORY,
+            "search term allocation failure remains typed");
+    return kept == FOLIO_STATE_READY;
+}
+
 /* 改名は名前・意図・台帳の確保をまとめて通す（ADR 0022）。偽のポートは完了を返す。 */
 static bool rename_under_probe(struct folio_state *_Nonnull state)
 {
@@ -454,7 +463,7 @@ static bool state_scenario_with(struct persistence_adapter *_Nonnull adapter)
                      selection_under_probe(state) && reorder_under_probe(state) &&
                      edit_under_probe(state) && transfer_under_probe(state) &&
                      new_note_under_probe(state) && save_as_under_probe(state) &&
-                     rename_under_probe(state);
+                     rename_under_probe(state) && search_under_probe(state);
     folio_state_destroy(state);
     return completed;
 }

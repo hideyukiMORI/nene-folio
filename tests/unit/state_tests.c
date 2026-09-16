@@ -1680,6 +1680,7 @@ static void verify_failure_lines(void)
                 strlen(folio_state_failure_line(FOLIO_STATE_RENAME_JOURNAL_FAILED)) > 0 &&
                 strlen(folio_state_failure_line(FOLIO_STATE_RENAME_JOURNAL_BROKEN)) > 0 &&
                 strlen(folio_state_failure_line(FOLIO_STATE_RENAME_HALTED)) > 0 &&
+                strlen(folio_state_failure_line(FOLIO_STATE_SEARCH_MALFORMED)) > 0 &&
                 strlen(folio_state_failure_line(FOLIO_STATE_OUT_OF_MEMORY)) > 0,
             "every failure has a line");
 }
@@ -2387,6 +2388,42 @@ static void verify_rename_recovery(void)
     }
 }
 
+/* 語と方向だけを持ち、本文も選択も持たない（ADR 0023 の決定 3）。 */
+static void verify_search_term(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    require(same_text(folio_state_search_term(state), "") &&
+                folio_state_search_term_length(state) == 0 &&
+                folio_state_search_direction(state) == SEARCH_DIRECTION_FORWARD,
+            "a fresh state remembers no term and searches forward");
+    require(folio_state_set_search_term(state, u"日報", 2) == FOLIO_STATE_READY &&
+                same_text(folio_state_search_term(state), "日報") &&
+                folio_state_search_term_length(state) == 6,
+            "the term is kept as UTF-8");
+    folio_state_set_search_direction(state, SEARCH_DIRECTION_BACKWARD);
+    require(folio_state_search_direction(state) == SEARCH_DIRECTION_BACKWARD,
+            "the direction is remembered");
+    const char16_t lone[] = {u'a', 0xD800, u'\0'};
+    require(folio_state_set_search_term(state, lone, 2) == FOLIO_STATE_SEARCH_MALFORMED &&
+                same_text(folio_state_search_term(state), "日報"),
+            "a broken term keeps the previous one");
+    require(folio_state_set_search_term(state, u"", 0) == FOLIO_STATE_READY &&
+                same_text(folio_state_search_term(state), "") &&
+                folio_state_search_term_length(state) == 0,
+            "an empty term is dropped");
+    require(folio_state_set_search_term(state, u"ab", 2) == FOLIO_STATE_READY, "a second term");
+    /* 語は 1 つだけ。#40 の絞り込み語は別の所有者で、ここには存在しない。 */
+    require(folio_state_set_search_term(state, u"cd", 2) == FOLIO_STATE_READY &&
+                same_text(folio_state_search_term(state), "cd"),
+            "only one in-note term exists at a time");
+    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY &&
+                same_text(folio_state_search_term(state), "cd") &&
+                folio_state_search_direction(state) == SEARCH_DIRECTION_BACKWARD,
+            "selecting a note touches neither the term nor the direction");
+    folio_state_destroy(state);
+}
+
 void run_state_tests(void)
 {
     verify_ready_state();
@@ -2437,4 +2474,5 @@ void run_state_tests(void)
     verify_rename_halted();
     verify_rename_force_quit_keeps_intent();
     verify_rename_recovery();
+    verify_search_term();
 }
