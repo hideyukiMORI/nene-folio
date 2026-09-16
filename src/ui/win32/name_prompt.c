@@ -8,6 +8,7 @@
 struct name_prompt
 {
     struct folio_state *_Nonnull state;
+    enum name_prompt_kind kind;
     const char16_t *_Nonnull units;
     size_t count;
     HWND _Nullable dialog;
@@ -18,6 +19,8 @@ struct name_prompt
     HFONT _Nullable font;
     UINT dpi;
     bool composing;
+    /* 記録を公開した後は名前を固定し、同じ改名の再開だけを受ける（ADR 0022 の決定 7）。 */
+    bool pending;
     enum folio_state_outcome outcome;
 };
 
@@ -119,7 +122,72 @@ static bool fill_categories(struct name_prompt *_Nonnull prompt)
         }
     }
     SendMessageW(prompt->category, CB_SETCURSEL, folio_state_document_category(prompt->state), 0);
+    if (prompt->kind == NAME_PROMPT_RENAME)
+    {
+        /* 改名はカテゴリを変えない（ADR 0022 の決定 1）。表示だけ残して選べなくする。 */
+        EnableWindow(prompt->category, FALSE);
+    }
     return true;
+}
+
+/* 改名は元の名前を選択状態で出す。初回・別名保存は空のまま（決定 1）。 */
+static bool fill_name(struct name_prompt *_Nonnull prompt)
+{
+    if (prompt->kind != NAME_PROMPT_RENAME)
+    {
+        return true;
+    }
+    const char *_Nonnull current = folio_state_pane_title(prompt->state).note;
+    struct utf16_text *_Nullable wide = nullptr;
+    if (utf16_text_create(current, strlen(current), &wide) != UTF16_TEXT_CONVERTED)
+    {
+        return false;
+    }
+    SetWindowTextW(prompt->name, utf16_text_units(wide));
+    utf16_text_destroy(wide);
+    SendMessageW(prompt->name, EM_SETSEL, 0, -1);
+    return true;
+}
+
+static const wchar_t *_Nonnull prompt_title(enum name_prompt_kind kind)
+{
+    switch (kind)
+    {
+    case NAME_PROMPT_FIRST_SAVE:
+        return L"名前をつけて保存";
+    case NAME_PROMPT_SAVE_AS:
+        return L"別名で保存";
+    case NAME_PROMPT_RENAME:
+        return L"名前を変更";
+    }
+    return L"名前をつけて保存";
+}
+
+static const wchar_t *_Nonnull prompt_hint(enum name_prompt_kind kind)
+{
+    switch (kind)
+    {
+    case NAME_PROMPT_FIRST_SAVE:
+        return L"名前の末尾に .md を補います。";
+    case NAME_PROMPT_SAVE_AS:
+        return L"元の保存内容を保ち、別の .md を作ります。";
+    case NAME_PROMPT_RENAME:
+        return L"md と履歴を新しい名前へ移します。";
+    }
+    return L"名前の末尾に .md を補います。";
+}
+
+static const wchar_t *_Nonnull prompt_accept(enum name_prompt_kind kind)
+{
+    switch (kind)
+    {
+    case NAME_PROMPT_FIRST_SAVE:
+    case NAME_PROMPT_SAVE_AS:
+        return L"保存";
+    case NAME_PROMPT_RENAME:
+        return L"変更";
+    }
+    return L"保存";
 }
 
 static bool inputs(struct name_prompt *_Nonnull prompt)
@@ -162,15 +230,32 @@ static bool initialize(struct name_prompt *_Nonnull prompt, HWND dialog)
     int height = bounds.bottom - bounds.top;
     MoveWindow(dialog, (owner.left + owner.right - width) / 2,
                (owner.top + owner.bottom - height) / 2, width, height, FALSE);
-    bool named = folio_state_document_kind(prompt->state) == FOLIO_DOCUMENT_NAMED;
-    SetWindowTextW(dialog, named ? L"別名で保存" : L"名前をつけて保存");
-    const wchar_t *_Nonnull hint =
-        named ? L"元の保存内容を保ち、別の .md を作ります。" : L"名前の末尾に .md を補います。";
-    return inputs(prompt) && label(prompt, L"ノートの名前", (RECT){20, 20, 380, 42}) &&
+    SetWindowTextW(dialog, prompt_title(prompt->kind));
+    return inputs(prompt) && fill_name(prompt) &&
+           label(prompt, L"ノートの名前", (RECT){20, 20, 380, 42}) &&
            label(prompt, L"保存先カテゴリ", (RECT){20, 82, 380, 104}) &&
-           label(prompt, hint, (RECT){20, 144, 380, 166}) &&
-           button(prompt, L"保存", IDOK, (RECT){192, 230, 280, 258}) &&
+           label(prompt, prompt_hint(prompt->kind), (RECT){20, 144, 380, 166}) &&
+           button(prompt, prompt_accept(prompt->kind), IDOK, (RECT){192, 230, 280, 258}) &&
            button(prompt, L"キャンセル", IDCANCEL, (RECT){288, 230, 380, 258});
+}
+
+/* 同じ名前型を使い、種類ごとの意図へ渡す（ADR 0022 の決定 1）。 */
+static enum folio_state_outcome apply_name(struct name_prompt *_Nonnull prompt,
+                                           const struct note_name *_Nonnull name)
+{
+    switch (prompt->kind)
+    {
+    case NAME_PROMPT_FIRST_SAVE:
+    case NAME_PROMPT_SAVE_AS:
+    {
+        LRESULT category = SendMessageW(prompt->category, CB_GETCURSEL, 0, 0);
+        struct note_destination destination = {.category = (size_t)category, .name = name};
+        return folio_state_store_new(prompt->state, &destination, prompt->units, prompt->count);
+    }
+    case NAME_PROMPT_RENAME:
+        return folio_state_rename_note(prompt->state, name, prompt->units, prompt->count);
+    }
+    return FOLIO_STATE_CANCELLED;
 }
 
 static enum folio_state_outcome save(struct name_prompt *_Nonnull prompt)
@@ -191,12 +276,20 @@ static enum folio_state_outcome save(struct name_prompt *_Nonnull prompt)
         return accepted == NOTE_NAME_OUT_OF_MEMORY ? FOLIO_STATE_OUT_OF_MEMORY
                                                    : FOLIO_STATE_INVALID_NAME;
     }
-    LRESULT category = SendMessageW(prompt->category, CB_GETCURSEL, 0, 0);
-    struct note_destination destination = {.category = (size_t)category, .name = name};
-    enum folio_state_outcome result =
-        folio_state_store_new(prompt->state, &destination, prompt->units, prompt->count);
+    enum folio_state_outcome result = apply_name(prompt, name);
     note_name_destroy(name);
     return result;
+}
+
+/* 記録を公開した改名は、名前を固定して同じ意図の再開だけを受ける（ADR 0022 の決定 7）。
+ * 「キャンセル」は意図の取り消しではないので、そのことを面の中で言う。 */
+static void hold_pending(struct name_prompt *_Nonnull prompt)
+{
+    prompt->pending = true;
+    EnableWindow(prompt->name, FALSE);
+    SetWindowTextW(prompt->failure,
+                   L"名前の変更が途中で止まりました。「変更」でやり直してください。"
+                   L"キャンセルや閉じるでは取り消せません。");
 }
 
 /* 新しいmdを公開できたときだけ閉じる。LEDGER_STALE は公開後の台帳の失敗。
@@ -208,6 +301,13 @@ static void submit(struct name_prompt *_Nonnull prompt)
     {
         prompt->outcome = saved;
         EndDialog(prompt->dialog, IDOK);
+        return;
+    }
+    if (saved == FOLIO_STATE_RENAME_PENDING)
+    {
+        prompt->outcome = saved;
+        hold_pending(prompt);
+        SetFocus(prompt->dialog);
         return;
     }
     const char *_Nonnull reason = folio_state_failure_line(saved);
@@ -258,11 +358,14 @@ static INT_PTR CALLBACK procedure(HWND dialog, UINT message, WPARAM wparam, LPAR
     return FALSE;
 }
 
-enum folio_state_outcome name_prompt_show(HWND _Nonnull owner, struct folio_state *_Nonnull state,
-                                          const char16_t *_Nonnull units, size_t count)
+enum folio_state_outcome name_prompt_show(HWND _Nonnull owner,
+                                          const struct name_prompt_request *_Nonnull request)
 {
-    struct name_prompt prompt = {
-        .state = state, .units = units, .count = count, .outcome = FOLIO_STATE_CANCELLED};
+    struct name_prompt prompt = {.state = request->state,
+                                 .kind = request->kind,
+                                 .units = request->units,
+                                 .count = request->count,
+                                 .outcome = FOLIO_STATE_CANCELLED};
     INT_PTR result = DialogBoxIndirectParamW(GetModuleHandleW(nullptr), &template.dialog, owner,
                                              procedure, (LPARAM)&prompt);
     if (prompt.font != nullptr)
