@@ -8,7 +8,9 @@
 #include "note_ledger.h"
 #include "note_rename.h"
 #include "note_text.h"
+#include "rename_guards.h"
 #include "rename_journal.h"
+#include "rename_paths.h"
 #include "utf16_text.h"
 #include "utf8_text.h"
 
@@ -675,23 +677,8 @@ static enum persistence_outcome write_note_ledger(struct persistence_adapter *_N
  * 内部の段階の判定は enum rename_outcome を借り、RENAME_COMPLETED を「この段は満たされた」に使う。
  * 実際に完了を答えるのは rename_note / recover_rename の戻り値だけである。 */
 
-constexpr size_t rename_guard_capacity = 4;
-
-/* 改名が触る 4 つの道。組み立てだけを行い、存在は問わない。 */
-struct rename_paths
-{
-    wchar_t note_from[path_capacity];
-    wchar_t note_to[path_capacity];
-    wchar_t history_from[path_capacity];
-    wchar_t history_to[path_capacity];
-};
-
-/* 処理中ずっと開いたまま持つ親のハンドル（決定 4）。差し替えと削除を許さない。 */
-struct rename_guards
-{
-    HANDLE items[rename_guard_capacity];
-    size_t count;
-};
+static_assert(rename_path_capacity == path_capacity,
+              "ADR 0022: the rename paths share the adapter's path limit");
 
 static bool compose_note_path(const struct persistence_adapter *_Nonnull adapter,
                               const char *_Nonnull category, const char *_Nonnull note,
