@@ -1,6 +1,7 @@
 #include "drawer_layout.h"
 
 #include "category_ledger.h"
+#include "index_filter.h"
 #include "note_ledger.h"
 
 #include <stdlib.h>
@@ -17,25 +18,56 @@ struct drawer_layout
     struct drawer_metrics metrics; /* 挿入線の位置と上限に要る */
 };
 
-/* 行数と名前の総バイト数（終端込み）を数える。 */
-static void measure(const struct category_ledger *_Nonnull categories,
-                    const struct note_ledger *_Nonnull const *_Nonnull notes, size_t *_Nonnull rows,
-                    size_t *_Nonnull bytes)
+/* 絞り込んでいるあいだは、見えるノートを持つカテゴリだけが行になる（ADR 0024 の決定 3）。 */
+static bool shown_category(const struct drawer_source *_Nonnull source, size_t category)
 {
-    size_t categories_count = category_ledger_count(categories);
-    for (size_t category = 0; category < categories_count; ++category)
+    return source->filter == nullptr || index_filter_category(source->filter, category);
+}
+
+/* 絞り込んでいるあいだは、一致したノートだけが行になる。 */
+static bool shown_note(const struct drawer_source *_Nonnull source, size_t category, size_t note)
+{
+    struct note_ref ref = {.category = category, .note = note};
+    return source->filter == nullptr || index_filter_note(source->filter, ref);
+}
+
+/* 絞り込んでいるあいだは台帳の expanded に関わらず展開して並べる。 */
+static bool shown_expanded(const struct drawer_source *_Nonnull source, size_t category)
+{
+    return source->filter != nullptr || category_ledger_expanded(source->categories, category);
+}
+
+/* 1 カテゴリぶんの行数と名前のバイト数（終端込み）を足す。 */
+static void measure_category(const struct drawer_source *_Nonnull source, size_t category,
+                             size_t *_Nonnull rows, size_t *_Nonnull bytes)
+{
+    *rows += 1;
+    *bytes += strlen(category_ledger_name(source->categories, category)) + 1;
+    if (!shown_expanded(source, category))
     {
-        *rows += 1;
-        *bytes += strlen(category_ledger_name(categories, category)) + 1;
-        if (!category_ledger_expanded(categories, category))
-        {
-            continue;
-        }
-        size_t notes_count = note_ledger_count(notes[category]);
-        for (size_t note = 0; note < notes_count; ++note)
+        return;
+    }
+    size_t notes_count = note_ledger_count(source->notes[category]);
+    for (size_t note = 0; note < notes_count; ++note)
+    {
+        if (shown_note(source, category, note))
         {
             *rows += 1;
-            *bytes += strlen(note_ledger_name(notes[category], note)) + 1;
+            *bytes += strlen(note_ledger_name(source->notes[category], note)) + 1;
+        }
+    }
+}
+
+/* 行数と名前の総バイト数（終端込み）を数える。 */
+static void measure(const struct drawer_source *_Nonnull source, size_t *_Nonnull rows,
+                    size_t *_Nonnull bytes)
+{
+    size_t categories_count = category_ledger_count(source->categories);
+    for (size_t category = 0; category < categories_count; ++category)
+    {
+        if (shown_category(source, category))
+        {
+            measure_category(source, category, rows, bytes);
         }
     }
 }
@@ -55,20 +87,19 @@ static size_t place(struct drawer_layout *_Nonnull layout, size_t offset, struct
 /* カテゴリ行を、直前の行の下端から間を空けて置く。 */
 static struct drawer_row category_row(const struct drawer_layout *_Nonnull layout,
                                       struct drawer_metrics metrics,
-                                      const struct category_ledger *_Nonnull categories,
-                                      size_t category)
+                                      const struct drawer_source *_Nonnull source, size_t category)
 {
     struct drawer_row row = {
         .kind = DRAWER_ROW_CATEGORY,
         .top = layout->bottom + metrics.category_gap,
         .height = metrics.category_height,
         .indent = metrics.category_indent,
-        .text = category_ledger_name(categories, category),
-        .color = category_ledger_color(categories, category),
+        .text = category_ledger_name(source->categories, category),
+        .color = category_ledger_color(source->categories, category),
         .category = category,
         .note = 0,
         .ordinal = category + 1,
-        .expanded = category_ledger_expanded(categories, category),
+        .expanded = shown_expanded(source, category),
         .selected = false,
         .cursor = false,
     };
@@ -90,41 +121,53 @@ static struct drawer_row note_row(const struct drawer_layout *_Nonnull layout,
     return row;
 }
 
-static void fill(struct drawer_layout *_Nonnull layout,
-                 const struct category_ledger *_Nonnull categories,
-                 const struct note_ledger *_Nonnull const *_Nonnull notes,
-                 struct drawer_metrics metrics)
+/* 1 カテゴリぶんの行を置く。寸法は layout が既に持っている。次の書き込み位置を返す。 */
+static size_t fill_category(struct drawer_layout *_Nonnull layout,
+                            const struct drawer_source *_Nonnull source, size_t category,
+                            size_t offset)
 {
-    size_t offset = 0;
-    layout->bottom = metrics.top_padding;
-    size_t categories_count = category_ledger_count(categories);
-    for (size_t category = 0; category < categories_count; ++category)
+    struct drawer_row row = category_row(layout, layout->metrics, source, category);
+    offset = place(layout, offset, row);
+    if (!row.expanded)
     {
-        struct drawer_row row = category_row(layout, metrics, categories, category);
-        layout->notes[category] = note_ledger_count(notes[category]);
-        offset = place(layout, offset, row);
-        if (!row.expanded)
+        return offset;
+    }
+    size_t notes_count = note_ledger_count(source->notes[category]);
+    for (size_t note = 0; note < notes_count; ++note)
+    {
+        if (!shown_note(source, category, note))
         {
             continue;
         }
-        size_t notes_count = note_ledger_count(notes[category]);
-        for (size_t note = 0; note < notes_count; ++note)
+        struct drawer_row line = note_row(layout, layout->metrics, row, note);
+        line.text = note_ledger_name(source->notes[category], note);
+        offset = place(layout, offset, line);
+    }
+    return offset;
+}
+
+static void fill(struct drawer_layout *_Nonnull layout, const struct drawer_source *_Nonnull source)
+{
+    size_t offset = 0;
+    layout->bottom = layout->metrics.top_padding;
+    size_t categories_count = category_ledger_count(source->categories);
+    for (size_t category = 0; category < categories_count; ++category)
+    {
+        layout->notes[category] = note_ledger_count(source->notes[category]);
+        if (shown_category(source, category))
         {
-            struct drawer_row line = note_row(layout, metrics, row, note);
-            line.text = note_ledger_name(notes[category], note);
-            offset = place(layout, offset, line);
+            offset = fill_category(layout, source, category, offset);
         }
     }
 }
 
-enum drawer_layout_outcome
-drawer_layout_create(const struct category_ledger *_Nonnull categories,
-                     const struct note_ledger *_Nonnull const *_Nonnull notes,
-                     struct drawer_metrics metrics, struct drawer_layout *_Nullable *_Nonnull out)
+enum drawer_layout_outcome drawer_layout_create(const struct drawer_source *_Nonnull source,
+                                                struct drawer_metrics metrics,
+                                                struct drawer_layout *_Nullable *_Nonnull out)
 {
     size_t rows = 0;
     size_t bytes = 0;
-    measure(categories, notes, &rows, &bytes);
+    measure(source, &rows, &bytes);
     struct drawer_layout *_Nullable layout = calloc(1, sizeof *layout);
     if (layout == nullptr)
     {
@@ -133,14 +176,14 @@ drawer_layout_create(const struct category_ledger *_Nonnull categories,
     /* 行が 0 でも 1 要素ぶん確保し、確保の失敗と空の区別を残す。 */
     layout->rows = malloc((rows + 1) * sizeof *layout->rows);
     layout->texts = malloc(bytes + 1);
-    layout->notes = malloc((category_ledger_count(categories) + 1) * sizeof *layout->notes);
+    layout->notes = malloc((category_ledger_count(source->categories) + 1) * sizeof *layout->notes);
     if (layout->rows == nullptr || layout->texts == nullptr || layout->notes == nullptr)
     {
         drawer_layout_destroy(layout);
         return DRAWER_LAYOUT_OUT_OF_MEMORY;
     }
     layout->metrics = metrics;
-    fill(layout, categories, notes, metrics);
+    fill(layout, source);
     *out = layout;
     return DRAWER_LAYOUT_CREATED;
 }

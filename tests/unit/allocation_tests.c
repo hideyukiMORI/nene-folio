@@ -260,8 +260,9 @@ static bool layout_scenario(void)
     {
         const struct note_ledger *const per_category[] = {notes, notes};
         struct drawer_layout *layout = nullptr;
-        completed = drawer_layout_create(categories, per_category, probe_metrics, &layout) ==
-                    DRAWER_LAYOUT_CREATED;
+        struct drawer_source source = {
+            .categories = categories, .notes = per_category, .filter = nullptr};
+        completed = drawer_layout_create(&source, probe_metrics, &layout) == DRAWER_LAYOUT_CREATED;
         drawer_layout_destroy(layout);
     }
     note_ledger_destroy(notes);

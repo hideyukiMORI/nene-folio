@@ -11,19 +11,19 @@
 #include "drawer_layout_outcome.h"
 #include "drawer_metrics.h"
 #include "drawer_row.h"
+#include "drawer_source.h"
 #include "drop_target.h"
 
 #include <stddef.h>
 
-struct category_ledger;
 struct drawer_layout;
-struct note_ledger;
 
-/* notes はカテゴリと同じ数・同じ順の索引台帳。名前は layout へ複製され、台帳より長く生きてよい。 */
+/* source の絞り込みがあれば、見えるノートを持つカテゴリだけを、その expanded に関わらず展開して
+ * 並べ、一致しないノート行は置かない。行の category / note / ordinal / color は元の台帳の番号の
+ * ままなので、クリック・選択・寄せる量は絞り込みの有無で変わらない（ADR 0024 の決定 3）。 */
 [[nodiscard]] enum drawer_layout_outcome
-drawer_layout_create(const struct category_ledger *_Nonnull categories,
-                     const struct note_ledger *_Nonnull const *_Nonnull notes,
-                     struct drawer_metrics metrics, struct drawer_layout *_Nullable *_Nonnull out);
+drawer_layout_create(const struct drawer_source *_Nonnull source, struct drawer_metrics metrics,
+                     struct drawer_layout *_Nullable *_Nonnull out);
 /* 選択とカーソルの印を付け直す（ADR 0015 の決定 8）。selection が無ければ（nullptr）面の印は
  * どの行にも付かず、cursor が無ければ角の印はどの行にも付かない。カーソルがカテゴリ行なら
  * そのカテゴリ行に付く。該当する行が無ければ（折り畳んだカテゴリの中・索引に無い）何にも付かない。
