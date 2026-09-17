@@ -120,6 +120,63 @@ static void verify_rejections(void)
     index_filter_destroy(filter);
 }
 
+/* 語と名前と本文の長さの境目。写しが空でも名前では一致し、名前より長い語は本文で一致する。 */
+static void verify_lengths(void)
+{
+    const struct index_filter_entry entries[] = {
+        entry_of(at(0, 0), "report", ""),
+        entry_of(at(0, 1), "ab", "0123456789"),
+    };
+    struct index_filter *_Nullable filter = filter_of("report", entries, 2);
+    require(filter != nullptr && index_filter_count(filter) == 1 &&
+                index_filter_note(filter, at(0, 0)),
+            "a note whose copy is empty still matches by name");
+    index_filter_destroy(filter);
+
+    filter = filter_of("01234", entries, 2);
+    require(filter != nullptr && index_filter_count(filter) == 1 &&
+                index_filter_note(filter, at(0, 1)),
+            "a term longer than the name and shorter than the body matches the body");
+    index_filter_destroy(filter);
+
+    filter = filter_of("abc", entries, 2);
+    require(filter != nullptr && index_filter_count(filter) == 0,
+            "a term longer than the name it starts is not a name match");
+    index_filter_destroy(filter);
+}
+
+/* 一致集合は台帳の順（カテゴリ番号・ノート番号の昇順）で作られ、所属はその順に依る二分探索で
+ * 答える（ADR 0024 の補正 6）。生成の順が崩れれば、この問い合わせのどれかが外れる。 */
+static void verify_order(void)
+{
+    /* 4 カテゴリ・11 ノート。一致するのは 0/1・1/0・1/3・3/0・3/2 の 5 本。 */
+    const struct index_filter_entry entries[] = {
+        entry_of(at(0, 0), "a", "plain"),    entry_of(at(0, 1), "b", "needle"),
+        entry_of(at(1, 0), "needle", "one"), entry_of(at(1, 1), "d", "plain"),
+        entry_of(at(1, 2), "e", "plain"),    entry_of(at(1, 3), "f", "a needle here"),
+        entry_of(at(2, 0), "g", "plain"),    entry_of(at(2, 1), "h", "plain"),
+        entry_of(at(3, 0), "i", "needle"),   entry_of(at(3, 1), "j", "plain"),
+        entry_of(at(3, 2), "k", "needle"),
+    };
+    struct index_filter *_Nullable filter = filter_of("needle", entries, 11);
+    require(filter != nullptr && index_filter_count(filter) == 5, "five notes match");
+    const bool expected[] = {false, true,  true, false, false, true,
+                             false, false, true, false, true};
+    for (size_t index = 0; index < 11; ++index)
+    {
+        require(index_filter_note(filter, entries[index].ref) == expected[index],
+                "every note in the ledger order answers for itself");
+    }
+    require(!index_filter_note(filter, at(1, 9)) && !index_filter_note(filter, at(4, 0)) &&
+                !index_filter_note(filter, at(3, 1)),
+            "a note beyond the end of a category, an unknown category and a gap are all absent");
+    require(index_filter_category(filter, 0) && index_filter_category(filter, 1) &&
+                !index_filter_category(filter, 2) && index_filter_category(filter, 3) &&
+                !index_filter_category(filter, 4),
+            "the categories in the middle and at the ends are told apart");
+    index_filter_destroy(filter);
+}
+
 static struct category_ledger *_Nonnull categories_from(const char *_Nonnull text)
 {
     struct category_ledger *ledger = nullptr;
@@ -267,6 +324,8 @@ void run_filter_tests(void)
     verify_folding();
     verify_sources();
     verify_rejections();
+    verify_lengths();
+    verify_order();
     verify_layout();
     verify_corpus();
 }

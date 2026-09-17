@@ -9,10 +9,12 @@
 
 struct index_filter_query
 {
-    const char *_Nonnull term;                         /* 語（UTF-8・終端は要らない） */
-    size_t term_length;                                /* 語のバイト数。0 なら絞り込みなし */
-    const struct index_filter_entry *_Nonnull entries; /* 索引にある全ノート（台帳の順） */
-    size_t count;                                      /* entries の数 */
+    const char *_Nonnull term; /* 語（UTF-8・終端は要らない） */
+    size_t term_length;        /* 語のバイト数。0 なら絞り込みなし */
+    /* 索引にある全ノート。**台帳の順（カテゴリ番号・ノート番号の昇順）で並べて渡すこと**。
+     * 一致集合はこの順を引き継ぎ、所属の判定が二分探索になる（ADR 0024 の補正 6）。 */
+    const struct index_filter_entry *_Nonnull entries;
+    size_t count; /* entries の数 */
 };
 
 #endif

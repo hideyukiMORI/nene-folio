@@ -5,6 +5,9 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* 不変条件: (categories[i], notes[i]) は i の昇順に厳密に増える（ADR 0024 の補正 6）。
+ * 入力の列が台帳の順（カテゴリ番号・ノート番号の昇順）で来るので、作るときに並べ替えは要らない。
+ * 所属の判定はこの順序に依る二分探索で、配置を作り直すたびの走査を対数にする。 */
 struct index_filter
 {
     size_t *_Nullable categories; /* 見えるノートのカテゴリ番号 */
@@ -126,28 +129,34 @@ enum index_filter_outcome index_filter_create(const struct index_filter_query *_
     return INDEX_FILTER_ACCEPTED;
 }
 
+/* (category, note) 以上の最初の位置（無ければ count）。並びは昇順という不変条件に依る。 */
+static size_t lower_bound(const struct index_filter *_Nonnull filter, size_t category, size_t note)
+{
+    size_t low = 0;
+    size_t high = filter->count;
+    while (low < high)
+    {
+        size_t middle = low + (high - low) / 2;
+        bool earlier = filter->categories[middle] < category ||
+                       (filter->categories[middle] == category && filter->notes[middle] < note);
+        low = earlier ? middle + 1 : low;
+        high = earlier ? high : middle;
+    }
+    return low;
+}
+
 bool index_filter_note(const struct index_filter *_Nonnull filter, struct note_ref ref)
 {
-    for (size_t index = 0; index < filter->count; ++index)
-    {
-        if (filter->categories[index] == ref.category && filter->notes[index] == ref.note)
-        {
-            return true;
-        }
-    }
-    return false;
+    size_t at = lower_bound(filter, ref.category, ref.note);
+    return at < filter->count && filter->categories[at] == ref.category &&
+           filter->notes[at] == ref.note;
 }
 
 bool index_filter_category(const struct index_filter *_Nonnull filter, size_t category)
 {
-    for (size_t index = 0; index < filter->count; ++index)
-    {
-        if (filter->categories[index] == category)
-        {
-            return true;
-        }
-    }
-    return false;
+    /* そのカテゴリの最初のノートが来る位置。そこがまだ同じカテゴリなら見えるノートがある。 */
+    size_t at = lower_bound(filter, category, 0);
+    return at < filter->count && filter->categories[at] == category;
 }
 
 size_t index_filter_count(const struct index_filter *_Nonnull filter)
