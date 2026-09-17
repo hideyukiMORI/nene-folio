@@ -55,7 +55,7 @@
 
 ### 分岐網羅
 
-`python eng/coverage.py` は **92.99%（2331 / 2507 分岐）**、閾値 90%（QLT-009）。
+`python eng/coverage.py` は **92.99%（2442 / 2626 分岐）**、閾値 90%（QLT-009）。
 `src/core/folio_settings.c` は 100%。閾値・除外・`eng/*.json` は触っていない。
 
 ## ゲート外の測定 1: 実アダプタの `data/settings.json`
