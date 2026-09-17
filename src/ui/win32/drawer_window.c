@@ -25,8 +25,11 @@ struct drawer_window
     HFONT _Nullable mono_font;
     bool pressed; /* 左ボタンを押した行を覚えているか */
     size_t pressed_row;
-    int pressed_y;             /* 押したときの y。しきい値の判定に使う */
-    int pointer_y;             /* 最後に見たポインタの y。スクロール中に落とし先を引き直す */
+    int pressed_y; /* 押したときの y。しきい値の判定に使う */
+    int pointer_y; /* 最後に見たポインタの y。スクロール中に落とし先を引き直す */
+    /* しきい値を超えて動かしたか。絞り込み中で並び替えに入れなくても立つので、
+     * 離したときにクリックへ落とさない（ADR 0024 の補正 2）。 */
+    bool moved;
     bool dragging;             /* しきい値を超えて動かしているか */
     struct drop_target target; /* dragging のときの落とし先 */
     /* 色の選択のカスタム色。実行中だけ持ち、保存しない（ADR 0010 の決定 4）。 */
@@ -453,13 +456,19 @@ static enum folio_state_outcome select_note(struct drawer_window *_Nonnull self,
         GetParent(self->handle), folio_message_select_note, (WPARAM)row.category, (LPARAM)row.note);
 }
 
-/* 行への意図を application へ渡し、結果を写す。 */
+/* 行への意図を application へ渡し、結果を写す。
+ * 絞り込み中の開閉は application が `FOLIO_STATE_FILTERED` で断るが、クリックのたびに
+ * モーダルの失敗箱を出さず、ここで静かに戻る（ADR 0024 の補正 1）。 */
 static void act_on_row(struct drawer_window *_Nonnull self, struct drawer_row row)
 {
     enum folio_state_outcome outcome = FOLIO_STATE_READY;
     switch (row.kind)
     {
     case DRAWER_ROW_CATEGORY:
+        if (folio_state_filtering(self->state))
+        {
+            return;
+        }
         outcome = folio_state_toggle_category(self->state, row.category);
         break;
     case DRAWER_ROW_NOTE:
@@ -586,6 +595,7 @@ static void press(struct drawer_window *_Nonnull self, int y)
         self->pressed = true;
         self->pressed_row = index;
         self->pressed_y = y;
+        self->moved = false;
         self->dragging = false;
         SetCapture(self->handle);
     }
@@ -595,16 +605,22 @@ static void press(struct drawer_window *_Nonnull self, int y)
 /* 捕捉中の移動。しきい値を超えたらドラッグに入り、落とし先を core に決めさせる。 */
 static void drag(struct drawer_window *_Nonnull self, int y)
 {
-    if (!self->pressed || folio_state_filtering(self->state))
+    if (!self->pressed)
     {
-        /* 絞り込み中は並び替えができないので、挿入線も出さない（ADR 0024 の決定 4）。 */
         return;
     }
     self->pointer_y = y;
     int travel = y - self->pressed_y;
     int threshold = GetSystemMetricsForDpi(SM_CYDRAG, GetDpiForWindow(self->handle));
-    if (!self->dragging && travel > -threshold && travel < threshold)
+    if (!self->moved && travel > -threshold && travel < threshold)
     {
+        return;
+    }
+    self->moved = true;
+    if (folio_state_filtering(self->state))
+    {
+        /* 絞り込み中は並び替えができないので、挿入線も出さない（ADR 0024 の決定 4）。
+         * 動いたことだけを覚えて、離してもクリックにしない（補正 2）。 */
         return;
     }
     struct drawer_layout *_Nullable layout = nullptr;
@@ -621,14 +637,17 @@ static void drag(struct drawer_window *_Nonnull self, int y)
     drawer_layout_destroy(layout);
 }
 
-/* 捕捉を解いて、ドラッグなら並び替え、動かしていなければ今までどおりのクリック。 */
+/* 捕捉を解いて、ドラッグなら並び替え、動かしていなければ今までどおりのクリック。
+ * 閾値を超えて動かした操作は、並び替えに入れなかったときもクリックにしない（補正 2）。 */
 static void release(struct drawer_window *_Nonnull self)
 {
     bool pressed = self->pressed;
+    bool moved = self->moved;
     bool dragging = self->dragging;
     size_t index = self->pressed_row;
     struct drop_target target = self->target;
     self->pressed = false;
+    self->moved = false;
     self->dragging = false;
     ReleaseCapture();
     struct drawer_layout *_Nullable layout = nullptr;
@@ -646,6 +665,10 @@ static void release(struct drawer_window *_Nonnull self)
     if (dragging)
     {
         apply_drop(self, row, target);
+        return;
+    }
+    if (moved)
+    {
         return;
     }
     act_on_row(self, row);
@@ -701,6 +724,7 @@ static int key_step(const struct drawer_window *_Nonnull self, WPARAM key)
 static void cancel(struct drawer_window *_Nonnull self)
 {
     self->pressed = false;
+    self->moved = false;
     self->dragging = false;
     InvalidateRect(self->handle, nullptr, FALSE);
 }

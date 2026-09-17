@@ -1983,12 +1983,18 @@ static enum folio_state_outcome reopen_if_moved(struct folio_window *_Nonnull se
 
 /* h / l。カーソルの行のカテゴリを折り畳む／展開する（ADR 0015 の決定 3）。
  * カーソルがカテゴリ行のときの展開は中のノートを選び直すことがあるので、先に保存する
- * （ADR 0013 の決定 4 の (i)）。カーソルが移るので、最後は歩みと同じように見える位置へ寄せる。 */
+ * （ADR 0013 の決定 4 の (i)）。カーソルが移るので、最後は歩みと同じように見える位置へ寄せる。
+ * 絞り込み中は開閉できない。`h` は絞り込み無しでは日常の移動なので、打鍵のたびに失敗箱を出さず
+ * 静かに戻る（ADR 0024 の補正 1。断りの値そのものは application が持つ）。 */
 static void expand_cursor(struct folio_window *_Nonnull self, bool expanded)
 {
     enum folio_cursor_kind kind = FOLIO_CURSOR_NOTE;
     struct note_ref cursor = {.category = 0, .note = 0};
     if (!folio_state_cursor(self->state, &kind, &cursor))
+    {
+        return;
+    }
+    if (folio_state_filtering(self->state))
     {
         return;
     }
