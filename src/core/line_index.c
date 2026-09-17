@@ -10,8 +10,6 @@ struct line_index
     size_t length; /* 本文の長さ（UTF-16 単位）。位置の範囲の上限 */
 };
 
-/* 番号の帯が最初から動かないよう、9 行の本文でも 3 桁ぶんを取る（決定 2 の (d)）。 */
-constexpr size_t minimum_digits = 3;
 constexpr char16_t paragraph_break = u'\r';
 
 static bool reserve(struct line_index *_Nonnull index)
@@ -114,7 +112,7 @@ size_t line_index_digits(const struct line_index *_Nonnull index)
     {
         digits += 1;
     }
-    return digits < minimum_digits ? minimum_digits : digits;
+    return digits < line_index_minimum_digits ? line_index_minimum_digits : digits;
 }
 
 void line_index_destroy(struct line_index *_Nullable index)

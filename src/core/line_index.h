@@ -14,6 +14,9 @@
 
 struct line_index;
 
+/* 番号の帯が最初から動かないよう、9 行の本文でも取る桁数（決定 2 の (d)）。 */
+constexpr size_t line_index_minimum_digits = 3;
+
 /* 本文から CR の位置の昇順の表を作る。空の本文は 1 行、末尾が CR なら空の最終行も 1 行と数える。
  * units は呼び出しの間だけ借り、表は複製しない。 */
 [[nodiscard]] enum line_index_outcome line_index_create(const char16_t *_Nonnull units,
