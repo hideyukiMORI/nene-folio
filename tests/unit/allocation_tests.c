@@ -425,6 +425,15 @@ static bool save_as_under_probe(struct folio_state *_Nonnull state)
     return completed;
 }
 
+/* 設定の変更は複製・書き出し・読み直しの確保を通る（ADR 0025 の決定 5）。 */
+static bool set_number_under_probe(struct folio_state *_Nonnull state)
+{
+    enum folio_state_outcome changed = folio_state_set_number(state, true);
+    require(changed == FOLIO_STATE_READY || changed == FOLIO_STATE_OUT_OF_MEMORY,
+            "set number under probe");
+    return changed == FOLIO_STATE_READY;
+}
+
 /* ノート内検索の語は UTF-16 を UTF-8 へ写して所有する（ADR 0023 の決定 3）。 */
 static bool search_under_probe(struct folio_state *_Nonnull state)
 {
@@ -483,11 +492,12 @@ static bool state_scenario_with(struct persistence_adapter *_Nonnull adapter)
         return false;
     }
     require(outcome == FOLIO_STATE_READY, "state under probe");
-    bool completed =
-        layout_intent_under_probe(state) && ledger_under_probe(state) &&
-        selection_under_probe(state) && filter_under_probe(state) && reorder_under_probe(state) &&
-        edit_under_probe(state) && transfer_under_probe(state) && new_note_under_probe(state) &&
-        save_as_under_probe(state) && rename_under_probe(state) && search_under_probe(state);
+    bool completed = layout_intent_under_probe(state) && ledger_under_probe(state) &&
+                     selection_under_probe(state) && filter_under_probe(state) &&
+                     reorder_under_probe(state) && edit_under_probe(state) &&
+                     transfer_under_probe(state) && new_note_under_probe(state) &&
+                     save_as_under_probe(state) && rename_under_probe(state) &&
+                     search_under_probe(state) && set_number_under_probe(state);
     folio_state_destroy(state);
     return completed;
 }

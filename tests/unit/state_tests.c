@@ -1,6 +1,7 @@
 #include "appearance_port.h"
 #include "category_ledger.h"
 #include "drawer_layout.h"
+#include "folio_settings.h"
 #include "folio_state.h"
 #include "name_list.h"
 #include "note_ledger.h"
@@ -74,6 +75,13 @@ struct persistence_adapter
     bool journal_published;           /* 記録を公開したまま終わっているか（:q! で残る意図の証拠） */
     enum rename_attempt last_attempt; /* 最後の rename_note が START か RESUME か */
     size_t ledger_fail_at; /* この番号（1 始まり）の索引の書き戻しだけ失敗させる。0 なら使わない */
+    /* data/settings.json（ADR 0025）。既定は「ファイルが無い」 */
+    enum persistence_outcome settings_outcome;
+    const char *_Nonnull settings_text;
+    size_t settings_reads;
+    enum persistence_outcome settings_write_outcome;
+    size_t settings_writes;             /* write_settings が呼ばれた回数 */
+    bool written_number;                /* 最後に書かれた設定の number */
     const char *_Nullable alt_category; /* この名前のカテゴリだけ別の索引と md を返す */
     const char *_Nonnull alt_notes_text;
     const char *_Nonnull const *_Nullable alt_scanned; /* nullptr で終わる名前の並び */
@@ -406,6 +414,52 @@ static struct appearance_port looks_for(struct appearance_adapter *_Nonnull adap
 static const char *const scanned_categories[] = {"A", "B", "C"};
 static const char *const scanned_notes[] = {"two", "one", "three"};
 
+/* 偽のポートも実際に core の folio_settings を通す（確保点を踏ませるため）。 */
+static enum persistence_outcome fake_read_settings(struct persistence_adapter *_Nonnull adapter,
+                                                   struct folio_settings *_Nullable *_Nonnull out)
+{
+    adapter->settings_reads += 1;
+    if (adapter->settings_outcome != PERSISTENCE_LOADED)
+    {
+        return adapter->settings_outcome;
+    }
+    switch (folio_settings_parse(adapter->settings_text, strlen(adapter->settings_text), out))
+    {
+    case FOLIO_SETTINGS_READY:
+        return PERSISTENCE_LOADED;
+    case FOLIO_SETTINGS_MALFORMED:
+    case FOLIO_SETTINGS_UNSUPPORTED_VERSION:
+        return PERSISTENCE_MALFORMED;
+    case FOLIO_SETTINGS_OUT_OF_MEMORY:
+        return PERSISTENCE_OUT_OF_MEMORY;
+    }
+    return PERSISTENCE_MALFORMED;
+}
+
+static enum persistence_outcome fake_write_settings(struct persistence_adapter *_Nonnull adapter,
+                                                    const struct folio_settings *_Nonnull settings)
+{
+    adapter->settings_writes += 1;
+    if (adapter->settings_write_outcome != PERSISTENCE_STORED)
+    {
+        return adapter->settings_write_outcome;
+    }
+    adapter->written_number = folio_settings_number(settings);
+    return PERSISTENCE_STORED;
+}
+
+/* data/settings.json の既定（ファイルは無く、書けば成功する）。healthy_adapter を
+ * C-012 の行数に収めるために分けてある（ADR 0025）。 */
+static void healthy_settings(struct persistence_adapter *_Nonnull adapter)
+{
+    adapter->settings_outcome = PERSISTENCE_ABSENT;
+    adapter->settings_text = "{\"version\": 1, \"number\": true}";
+    adapter->settings_reads = 0;
+    adapter->settings_write_outcome = PERSISTENCE_STORED;
+    adapter->settings_writes = 0;
+    adapter->written_number = false;
+}
+
 static struct persistence_adapter healthy_adapter(void)
 {
     struct persistence_adapter adapter = {
@@ -465,6 +519,7 @@ static struct persistence_adapter healthy_adapter(void)
         .alt_notes_text = "{\"version\": 1, \"notes\": []}",
         .alt_scanned = nullptr,
     };
+    healthy_settings(&adapter);
     return adapter;
 }
 
@@ -485,6 +540,8 @@ static struct persistence_port port_for(struct persistence_adapter *_Nonnull ada
         .recover_rename = fake_recover_rename,
         .read_note_ledger = fake_read_note_ledger,
         .write_note_ledger = fake_write_note_ledger,
+        .read_settings = fake_read_settings,
+        .write_settings = fake_write_settings,
     };
     return port;
 }
@@ -1693,6 +1750,8 @@ static void verify_failure_lines(void)
                 strlen(folio_state_failure_line(FOLIO_STATE_RENAME_HALTED)) > 0 &&
                 strlen(folio_state_failure_line(FOLIO_STATE_SEARCH_MALFORMED)) > 0 &&
                 strlen(folio_state_failure_line(FOLIO_STATE_PANE_UNAVAILABLE)) > 0 &&
+                strlen(folio_state_failure_line(FOLIO_STATE_SETTINGS_UNREADABLE)) > 0 &&
+                strlen(folio_state_failure_line(FOLIO_STATE_SETTINGS_STORE_FAILED)) > 0 &&
                 strlen(folio_state_failure_line(FOLIO_STATE_OUT_OF_MEMORY)) > 0,
             "every failure has a line");
 }
@@ -2707,6 +2766,136 @@ static void verify_filter_follows_move(void)
     folio_state_destroy(state);
 }
 
+/* 設定の値の所有（ADR 0025 の決定 5）。無いファイルでは既定値で、起動時には書かない。 */
+static void verify_settings_absent(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct persistence_port port = port_for(&adapter);
+    struct appearance_port looks = looks_for(&dark_adapter);
+    struct folio_state *state = nullptr;
+    require(folio_state_create(&port, &looks, &state) == FOLIO_STATE_READY,
+            "absent settings start");
+    require(adapter.settings_reads == 1, "the settings are read exactly once at startup");
+    require(adapter.settings_writes == 0, "an absent settings file is not created at startup");
+    require(!folio_state_number(state), "the default hides the line numbers");
+    require(folio_state_settings_notice(state) == FOLIO_STATE_READY, "an absent file is no notice");
+    folio_state_destroy(state);
+}
+
+static void verify_settings_loaded(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    adapter.settings_outcome = PERSISTENCE_LOADED;
+    struct persistence_port port = port_for(&adapter);
+    struct appearance_port looks = looks_for(&dark_adapter);
+    struct folio_state *state = nullptr;
+    require(folio_state_create(&port, &looks, &state) == FOLIO_STATE_READY,
+            "stored settings start");
+    require(folio_state_number(state), "the stored value is adopted");
+    require(adapter.settings_writes == 0, "reading the settings never writes them");
+    folio_state_destroy(state);
+}
+
+/* 変更は先に書いてから採用し、同じ値では書かない。 */
+static void verify_set_number(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct persistence_port port = port_for(&adapter);
+    struct appearance_port looks = looks_for(&dark_adapter);
+    struct folio_state *state = nullptr;
+    require(folio_state_create(&port, &looks, &state) == FOLIO_STATE_READY, "state");
+    require(folio_state_set_number(state, false) == FOLIO_STATE_READY,
+            "the same value is accepted");
+    require(adapter.settings_writes == 0, "the same value is not written");
+    require(folio_state_set_number(state, true) == FOLIO_STATE_READY, "showing is accepted");
+    require(adapter.settings_writes == 1 && adapter.written_number, "the change is written once");
+    require(folio_state_number(state), "the written value is adopted");
+    require(folio_state_set_number(state, true) == FOLIO_STATE_READY, "showing twice");
+    require(adapter.settings_writes == 1, "the same value is still not written");
+    require(folio_state_set_number(state, false) == FOLIO_STATE_READY, "hiding is accepted");
+    require(adapter.settings_writes == 2 && !adapter.written_number, "hiding is written");
+    require(!folio_state_number(state), "hiding is adopted");
+    folio_state_destroy(state);
+}
+
+static void verify_set_number_unwritable(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    adapter.settings_write_outcome = PERSISTENCE_UNWRITABLE;
+    struct persistence_port port = port_for(&adapter);
+    struct appearance_port looks = looks_for(&dark_adapter);
+    struct folio_state *state = nullptr;
+    require(folio_state_create(&port, &looks, &state) == FOLIO_STATE_READY, "state");
+    require(folio_state_set_number(state, true) == FOLIO_STATE_SETTINGS_STORE_FAILED,
+            "an unwritable data/ refuses the change");
+    require(adapter.settings_writes == 1, "the write was attempted");
+    require(!folio_state_number(state), "the value did not change");
+    folio_state_destroy(state);
+}
+
+/* 読めない設定では既定値で起動し、知らせを 1 つ持ち、変更を断って上書きしない（決定 6）。 */
+static void verify_settings_unreadable(enum persistence_outcome read,
+                                       const char *_Nonnull description)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    adapter.settings_outcome = read;
+    struct persistence_port port = port_for(&adapter);
+    struct appearance_port looks = looks_for(&dark_adapter);
+    struct folio_state *state = nullptr;
+    require(folio_state_create(&port, &looks, &state) == FOLIO_STATE_READY, description);
+    require(folio_state_settings_notice(state) == FOLIO_STATE_SETTINGS_UNREADABLE,
+            "the notice is kept for the composition root");
+    require(!folio_state_number(state), "an unreadable settings file starts from the default");
+    require(folio_state_set_number(state, true) == FOLIO_STATE_SETTINGS_UNREADABLE,
+            "the session refuses to change the settings");
+    require(adapter.settings_writes == 0, "a file nobody could read is never overwritten");
+    require(!folio_state_number(state), "the refused change left the value alone");
+    /* ノートの閲覧・編集・保存は妨げない。 */
+    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY, "viewing still works");
+    require(folio_state_begin_edit(state) == FOLIO_STATE_READY, "editing still works");
+    require(folio_state_store_note(state, u"changed", 7) == FOLIO_STATE_READY,
+            "saving still works");
+    folio_state_destroy(state);
+}
+
+/* 壊れた文書と未知の版は、偽のポートでも core の parse を通って MALFORMED になる。 */
+static void verify_settings_shapes(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    adapter.settings_outcome = PERSISTENCE_LOADED;
+    adapter.settings_text = "{\"version\": 2, \"number\": true}";
+    struct persistence_port port = port_for(&adapter);
+    struct appearance_port looks = looks_for(&dark_adapter);
+    struct folio_state *state = nullptr;
+    require(folio_state_create(&port, &looks, &state) == FOLIO_STATE_READY, "unknown version");
+    require(folio_state_settings_notice(state) == FOLIO_STATE_SETTINGS_UNREADABLE,
+            "an unknown version is a notice, not a startup failure");
+    folio_state_destroy(state);
+    adapter = healthy_adapter();
+    adapter.settings_outcome = PERSISTENCE_LOADED;
+    adapter.settings_text = "{\"version\": 1, \"theme\": \"dark\"}";
+    port = port_for(&adapter);
+    state = nullptr;
+    require(folio_state_create(&port, &looks, &state) == FOLIO_STATE_READY, "unknown key");
+    require(folio_state_settings_notice(state) == FOLIO_STATE_SETTINGS_UNREADABLE,
+            "an unknown key is a notice too");
+    folio_state_destroy(state);
+    adapter = healthy_adapter();
+    adapter.settings_outcome = PERSISTENCE_OUT_OF_MEMORY;
+    expect_failure(adapter, FOLIO_STATE_OUT_OF_MEMORY, "out of memory settings fail the startup");
+}
+
+static void verify_settings(void)
+{
+    verify_settings_absent();
+    verify_settings_loaded();
+    verify_set_number();
+    verify_set_number_unwritable();
+    verify_settings_unreadable(PERSISTENCE_MALFORMED, "malformed settings still start");
+    verify_settings_unreadable(PERSISTENCE_UNREADABLE, "unreadable settings still start");
+    verify_settings_shapes();
+}
+
 void run_state_tests(void)
 {
     verify_ready_state();
@@ -2767,4 +2956,5 @@ void run_state_tests(void)
     verify_filter_cursor_lands_near();
     verify_filter_follows_resumed_rename();
     verify_filter_follows_move();
+    verify_settings();
 }
