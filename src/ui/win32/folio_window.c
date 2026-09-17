@@ -1142,27 +1142,43 @@ static void draw_pane(const struct folio_window *_Nonnull self, HDC device, RECT
     SetTextCharacterExtra(device, 0);
 }
 
-static void paint_pane(struct folio_window *_Nonnull self)
+/* 更新矩形と右ペインの重なりへ、client 座標のまま 1 枚だけ描き写す。
+ * memory の原点をずらしてあるので draw_pane は今までどおり client 座標で描ける。 */
+static void blit_pane(struct folio_window *_Nonnull self, HDC target, RECT client, RECT damage)
 {
-    PAINTSTRUCT painting;
-    HDC target = BeginPaint(self->handle, &painting);
-    RECT client;
-    GetClientRect(self->handle, &client);
     HDC memory = CreateCompatibleDC(target);
-    HBITMAP surface =
-        memory == nullptr ? nullptr : CreateCompatibleBitmap(target, client.right, client.bottom);
+    int width = damage.right - damage.left;
+    int height = damage.bottom - damage.top;
+    HBITMAP surface = memory == nullptr ? nullptr : CreateCompatibleBitmap(target, width, height);
     if (surface != nullptr)
     {
         HGDIOBJ previous = SelectObject(memory, surface);
+        SetViewportOrgEx(memory, -damage.left, -damage.top, nullptr);
         draw_pane(self, memory, client);
-        int left = scale(base_drawer_width, GetDpiForWindow(self->handle));
-        BitBlt(target, left, 0, client.right - left, client.bottom, memory, left, 0, SRCCOPY);
+        BitBlt(target, damage.left, damage.top, width, height, memory, damage.left, damage.top,
+               SRCCOPY);
         SelectObject(memory, previous);
         DeleteObject(surface);
     }
     if (memory != nullptr)
     {
         DeleteDC(memory);
+    }
+}
+
+/* 毎回 client 全体を作り直さず、OS が壊れたと言う矩形だけを描く（ADR 0026 の決定 1）。 */
+static void paint_pane(struct folio_window *_Nonnull self)
+{
+    PAINTSTRUCT painting;
+    HDC target = BeginPaint(self->handle, &painting);
+    RECT client;
+    GetClientRect(self->handle, &client);
+    RECT pane = {scale(base_drawer_width, GetDpiForWindow(self->handle)), 0, client.right,
+                 client.bottom};
+    RECT damage = {0, 0, 0, 0};
+    if (IntersectRect(&damage, &pane, &painting.rcPaint))
+    {
+        blit_pane(self, target, client, damage);
     }
     EndPaint(self->handle, &painting);
 }
