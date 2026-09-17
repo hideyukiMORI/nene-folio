@@ -4,6 +4,9 @@
 #ifndef NENEFOLIO_FOLIO_COMMAND_H
 #define NENEFOLIO_FOLIO_COMMAND_H
 
+#include "folio_argument_kind.h"
+#include "folio_option.h"
+
 #include <stddef.h>
 
 enum folio_command : unsigned char
@@ -18,7 +21,9 @@ enum folio_command : unsigned char
     FOLIO_COMMAND_NEW,
     FOLIO_COMMAND_SAVE_AS,
     FOLIO_COMMAND_RENAME,
-    FOLIO_COMMAND_FIND
+    FOLIO_COMMAND_FIND,
+    FOLIO_COMMAND_SET,
+    FOLIO_COMMAND_TOGGLE_NUMBER
 };
 
 [[nodiscard]] size_t folio_command_count(void);
@@ -37,5 +42,13 @@ enum folio_command : unsigned char
 /* パレットの絞り込み。空なら全件。表示名または Ex 別名の部分一致。 */
 [[nodiscard]] bool folio_command_matches(enum folio_command command, const char *_Nonnull text,
                                          size_t length);
+/* 操作パレットと「操作」メニューに出す操作か（ADR 0016 の決定 1 / ADR 0018 の決定 2 の補正）。
+ * 引数を渡せない面なので、語を要る Ex の文法（`:set`）だけが偽になる。
+ * 新しい操作を足すたびに閉じた switch が決めさせる。 */
+[[nodiscard]] bool folio_command_listed(enum folio_command command);
+/* `:set` の語を解く（ADR 0026 の決定 8）。空白で切った 1 語の完全一致だけを受ける。
+ * 語なし・未知の語・余計な語があれば false で out は触らない。 */
+[[nodiscard]] bool folio_command_parse_option(const char *_Nonnull text, size_t length,
+                                              enum folio_option *_Nonnull out);
 
 #endif

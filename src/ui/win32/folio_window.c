@@ -78,6 +78,7 @@ static const char *_Nonnull const command_shortcuts[] = {
     "絞り込み中  並び替えと折畳/展開はできない（色・保存・編集は可）",
     "Ctrl+N 新規 / Ctrl+S 保存 / Ctrl+Shift+S 別名保存 / F2 名前変更",
     "索引・閲覧本文  : コマンド / i 編集",
+    "Ex  :set number / :set nonumber / :set nu!（編集中の原文の行番号）",
     "索引・閲覧本文  / 次を検索 / ? 前を検索 / n・N 繰り返し",
     "全区画  F3 次の一致 / Shift+F3 前の一致（向きは変えない）",
     "検索欄  Enter 次 / Shift+Enter 逆 / Esc 閉じる（選択は残る）",
@@ -171,6 +172,7 @@ static enum folio_state_outcome store_body(const struct folio_window *_Nonnull s
 static enum folio_state_outcome command_save_as(const struct folio_window *_Nonnull self,
                                                 const char *_Nonnull argument);
 static void close_command_surface(struct folio_window *_Nonnull self);
+static void command_not_found(struct folio_window *_Nonnull self);
 static void show_command_palette(struct folio_window *_Nonnull self);
 static void move_command_selection(struct folio_window *_Nonnull self, WPARAM key);
 static void search_input_changed(struct folio_window *_Nonnull self);
@@ -742,7 +744,9 @@ static bool command_at_query(const struct utf8_text *_Nonnull query, size_t want
     for (size_t index = 0; index < folio_command_count(); ++index)
     {
         enum folio_command command = folio_command_at(index);
-        if (!folio_command_matches(command, utf8_text_bytes(query), utf8_text_length(query)))
+        /* 引数を渡せない面なので、語を要る Ex の文法は出さない（ADR 0026 の決定 8 の補正）。 */
+        if (!folio_command_listed(command) ||
+            !folio_command_matches(command, utf8_text_bytes(query), utf8_text_length(query)))
         {
             continue;
         }
@@ -762,8 +766,10 @@ static size_t command_matches_count(const struct utf8_text *_Nonnull query)
     for (size_t index = 0; index < folio_command_count(); ++index)
     {
         enum folio_command command = folio_command_at(index);
-        count +=
-            folio_command_matches(command, utf8_text_bytes(query), utf8_text_length(query)) ? 1 : 0;
+        bool shown =
+            folio_command_listed(command) &&
+            folio_command_matches(command, utf8_text_bytes(query), utf8_text_length(query));
+        count += shown ? 1 : 0;
     }
     return count;
 }
@@ -1871,6 +1877,47 @@ static void execute_new_command(struct folio_window *_Nonnull self)
     focus_pane(self);
 }
 
+/* 語ごとの行き先（ADR 0026 の決定 8）。切替はいまの値から導き、UI に第 2 の真偽を持たない。 */
+static bool wanted_number(const struct folio_window *_Nonnull self, enum folio_option option)
+{
+    switch (option)
+    {
+    case FOLIO_OPTION_NUMBER_SHOW:
+        return true;
+    case FOLIO_OPTION_NUMBER_HIDE:
+        return false;
+    case FOLIO_OPTION_NUMBER_TOGGLE:
+        return !folio_state_number(self->state);
+    }
+    return folio_state_number(self->state);
+}
+
+/* 3 つの入口（`:set` の語・パレット／メニューの切替・#38 の設定画面）が通る唯一の意図。 */
+static void apply_number(struct folio_window *_Nonnull self, bool number)
+{
+    enum folio_state_outcome outcome = folio_state_set_number(self->state, number);
+    if (outcome != FOLIO_STATE_READY)
+    {
+        command_failure(self, outcome);
+        return;
+    }
+    hide_command_surface(self);
+    arrange(self);
+    InvalidateRect(self->handle, nullptr, FALSE);
+}
+
+/* 未知の語・語なし・余計な語は、未知のコマンドと同じ 1 行で、入力を消さない（決定 8）。 */
+static void execute_set_command(struct folio_window *_Nonnull self, const char *_Nonnull argument)
+{
+    enum folio_option option = FOLIO_OPTION_NUMBER_SHOW;
+    if (!folio_command_parse_option(argument, strlen(argument), &option))
+    {
+        command_not_found(self);
+        return;
+    }
+    apply_number(self, wanted_number(self, option));
+}
+
 /* GUI・キー・Exで同じ操作と引数を実行する（ADR0020）。 */
 static void execute_command(struct folio_window *_Nonnull self, enum folio_command command,
                             const char *_Nonnull argument)
@@ -1909,6 +1956,12 @@ static void execute_command(struct folio_window *_Nonnull self, enum folio_comma
         return;
     case FOLIO_COMMAND_FIND:
         begin_search(self);
+        return;
+    case FOLIO_COMMAND_SET:
+        execute_set_command(self, argument);
+        return;
+    case FOLIO_COMMAND_TOGGLE_NUMBER:
+        apply_number(self, !folio_state_number(self->state));
         return;
     }
 }
@@ -2157,6 +2210,11 @@ static void show_operations(struct folio_window *_Nonnull self)
     }
     for (size_t index = 0; index < folio_command_count(); ++index)
     {
+        /* メニュー ID は添字 + 1 なので、飛ばしても対応は壊れない（決定 8 の補正）。 */
+        if (!folio_command_listed(folio_command_at(index)))
+        {
+            continue;
+        }
         if (!append_operation(menu, index))
         {
             DestroyMenu(menu);
