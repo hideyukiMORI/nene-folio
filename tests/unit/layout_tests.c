@@ -27,6 +27,14 @@ static struct drawer_cursor at_category(size_t category)
     return cursor;
 }
 
+/* 台帳の列を配置の入力に束ねる。絞り込みを渡さなければ今までどおりの索引になる（ADR 0024）。 */
+static struct drawer_source plain_source(const struct category_ledger *_Nonnull categories,
+                                         const struct note_ledger *_Nonnull const *_Nonnull notes)
+{
+    struct drawer_source source = {.categories = categories, .notes = notes, .filter = nullptr};
+    return source;
+}
+
 static struct category_ledger *_Nonnull categories_from(const char *_Nonnull text)
 {
     struct category_ledger *ledger = nullptr;
@@ -53,7 +61,8 @@ static struct drawer_layout *_Nonnull build_layout(void)
     struct note_ledger *second = notes_from("{\"version\": 1, \"notes\": [\"hidden\"]}");
     const struct note_ledger *const notes[] = {first, second};
     struct drawer_layout *layout = nullptr;
-    require(drawer_layout_create(categories, notes, metrics, &layout) == DRAWER_LAYOUT_CREATED,
+    struct drawer_source source = plain_source(categories, notes);
+    require(drawer_layout_create(&source, metrics, &layout) == DRAWER_LAYOUT_CREATED,
             "layout create");
     note_ledger_destroy(second);
     note_ledger_destroy(first);
@@ -152,7 +161,8 @@ static struct drawer_layout *_Nonnull build_scrolled_layout(struct drawer_metric
     struct note_ledger *second = notes_from("{\"version\": 1, \"notes\": [\"hidden\"]}");
     const struct note_ledger *const notes[] = {first, second};
     struct drawer_layout *layout = nullptr;
-    require(drawer_layout_create(categories, notes, used, &layout) == DRAWER_LAYOUT_CREATED,
+    struct drawer_source source = plain_source(categories, notes);
+    require(drawer_layout_create(&source, used, &layout) == DRAWER_LAYOUT_CREATED,
             "scrolled layout create");
     note_ledger_destroy(second);
     note_ledger_destroy(first);
@@ -270,7 +280,8 @@ static void verify_empty(void)
     struct category_ledger *categories = categories_from("{\"version\": 1, \"categories\": []}");
     const struct note_ledger *const notes[] = {nullptr};
     struct drawer_layout *layout = nullptr;
-    require(drawer_layout_create(categories, notes, metrics, &layout) == DRAWER_LAYOUT_CREATED,
+    struct drawer_source source = plain_source(categories, notes);
+    require(drawer_layout_create(&source, metrics, &layout) == DRAWER_LAYOUT_CREATED,
             "empty layout");
     require(drawer_layout_row_count(layout) == 0, "no rows");
     size_t index = 0;
@@ -352,7 +363,8 @@ static struct drawer_layout *_Nonnull build_wide_layout(void)
     struct note_ledger *fourth = notes_from("{\"version\": 1, \"notes\": [\"one\", \"two\"]}");
     const struct note_ledger *const notes[] = {first, second, third, fourth};
     struct drawer_layout *layout = nullptr;
-    require(drawer_layout_create(categories, notes, metrics, &layout) == DRAWER_LAYOUT_CREATED,
+    struct drawer_source source = plain_source(categories, notes);
+    require(drawer_layout_create(&source, metrics, &layout) == DRAWER_LAYOUT_CREATED,
             "wide layout create");
     note_ledger_destroy(fourth);
     note_ledger_destroy(third);

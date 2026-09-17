@@ -25,8 +25,11 @@ struct drawer_window
     HFONT _Nullable mono_font;
     bool pressed; /* 左ボタンを押した行を覚えているか */
     size_t pressed_row;
-    int pressed_y;             /* 押したときの y。しきい値の判定に使う */
-    int pointer_y;             /* 最後に見たポインタの y。スクロール中に落とし先を引き直す */
+    int pressed_y; /* 押したときの y。しきい値の判定に使う */
+    int pointer_y; /* 最後に見たポインタの y。スクロール中に落とし先を引き直す */
+    /* しきい値を超えて動かしたか。絞り込み中で並び替えに入れなくても立つので、
+     * 離したときにクリックへ落とさない（ADR 0024 の補正 2）。 */
+    bool moved;
     bool dragging;             /* しきい値を超えて動かしているか */
     struct drop_target target; /* dragging のときの落とし先 */
     /* 色の選択のカスタム色。実行中だけ持ち、保存しない（ADR 0010 の決定 4）。 */
@@ -42,6 +45,11 @@ static const wchar_t header_label[] = L"NENE FOLIO";
 constexpr int base_dpi = 96;
 constexpr int base_header_height = 44;
 constexpr int base_header_indent = 16;
+/* 常設の「すべてのノートを検索」の欄が占める帯（ADR 0024 の決定 6）。欄そのものは主窓の子で、
+ * ここは行を置かない余白として数える。 */
+constexpr int base_filter_height = 36;
+constexpr int base_filter_inset = 12; /* 欄の左右の余白 */
+constexpr int base_filter_margin = 4; /* 欄の上下に空ける間 */
 constexpr int base_row_height = 30;
 constexpr int base_category_height = 34;
 constexpr int base_category_gap = 6;
@@ -97,6 +105,12 @@ static void refresh_fonts(struct drawer_window *_Nonnull self, UINT dpi)
     self->mono_font = create_font(dpi, base_mono_font, FW_NORMAL, mono_face);
 }
 
+/* 頭の帯（見出しと常設の絞り込みの欄）の高さ。行はこの下にだけ置く（ADR 0024 の決定 6）。 */
+static int band_height(const struct drawer_window *_Nonnull self)
+{
+    return scale(base_header_height + base_filter_height, GetDpiForWindow(self->handle));
+}
+
 /* いまの DPI と client の高さで寸法を測る。スクロール上限は core がここから決める（FR-012）。 */
 static struct drawer_metrics metrics_for(const struct drawer_window *_Nonnull self)
 {
@@ -104,7 +118,7 @@ static struct drawer_metrics metrics_for(const struct drawer_window *_Nonnull se
     RECT client = {0, 0, 0, 0};
     GetClientRect(self->handle, &client);
     struct drawer_metrics metrics = {
-        .top_padding = scale(base_header_height, dpi),
+        .top_padding = band_height(self),
         .row_height = scale(base_row_height, dpi),
         .category_height = scale(base_category_height, dpi),
         .category_gap = scale(base_category_gap, dpi),
@@ -339,7 +353,7 @@ static void draw_fade(const struct drawer_window *_Nonnull self, uint32_t *_Nonn
 {
     UINT dpi = GetDpiForWindow(self->handle);
     int height = scale(base_fade_height, dpi);
-    int start = above ? scale(base_header_height, dpi) : client.bottom - height;
+    int start = above ? band_height(self) : client.bottom - height;
     uint32_t ground = to_pixel(self->palette.window);
     for (int row = 0; row < height; ++row)
     {
@@ -386,7 +400,7 @@ static void paint_surface(const struct drawer_window *_Nonnull self, HDC device,
         draw_header(self, device, client.right);
         return;
     }
-    int header = scale(base_header_height, GetDpiForWindow(self->handle));
+    int header = band_height(self);
     IntersectClipRect(device, 0, header, client.right, client.bottom);
     draw_rows(self, device, layout, client.right);
     SelectClipRgn(device, nullptr);
@@ -442,13 +456,19 @@ static enum folio_state_outcome select_note(struct drawer_window *_Nonnull self,
         GetParent(self->handle), folio_message_select_note, (WPARAM)row.category, (LPARAM)row.note);
 }
 
-/* 行への意図を application へ渡し、結果を写す。 */
+/* 行への意図を application へ渡し、結果を写す。
+ * 絞り込み中の開閉は application が `FOLIO_STATE_FILTERED` で断るが、クリックのたびに
+ * モーダルの失敗箱を出さず、ここで静かに戻る（ADR 0024 の補正 1）。 */
 static void act_on_row(struct drawer_window *_Nonnull self, struct drawer_row row)
 {
     enum folio_state_outcome outcome = FOLIO_STATE_READY;
     switch (row.kind)
     {
     case DRAWER_ROW_CATEGORY:
+        if (folio_state_filtering(self->state))
+        {
+            return;
+        }
         outcome = folio_state_toggle_category(self->state, row.category);
         break;
     case DRAWER_ROW_NOTE:
@@ -575,6 +595,7 @@ static void press(struct drawer_window *_Nonnull self, int y)
         self->pressed = true;
         self->pressed_row = index;
         self->pressed_y = y;
+        self->moved = false;
         self->dragging = false;
         SetCapture(self->handle);
     }
@@ -591,8 +612,15 @@ static void drag(struct drawer_window *_Nonnull self, int y)
     self->pointer_y = y;
     int travel = y - self->pressed_y;
     int threshold = GetSystemMetricsForDpi(SM_CYDRAG, GetDpiForWindow(self->handle));
-    if (!self->dragging && travel > -threshold && travel < threshold)
+    if (!self->moved && travel > -threshold && travel < threshold)
     {
+        return;
+    }
+    self->moved = true;
+    if (folio_state_filtering(self->state))
+    {
+        /* 絞り込み中は並び替えができないので、挿入線も出さない（ADR 0024 の決定 4）。
+         * 動いたことだけを覚えて、離してもクリックにしない（補正 2）。 */
         return;
     }
     struct drawer_layout *_Nullable layout = nullptr;
@@ -609,14 +637,17 @@ static void drag(struct drawer_window *_Nonnull self, int y)
     drawer_layout_destroy(layout);
 }
 
-/* 捕捉を解いて、ドラッグなら並び替え、動かしていなければ今までどおりのクリック。 */
+/* 捕捉を解いて、ドラッグなら並び替え、動かしていなければ今までどおりのクリック。
+ * 閾値を超えて動かした操作は、並び替えに入れなかったときもクリックにしない（補正 2）。 */
 static void release(struct drawer_window *_Nonnull self)
 {
     bool pressed = self->pressed;
+    bool moved = self->moved;
     bool dragging = self->dragging;
     size_t index = self->pressed_row;
     struct drop_target target = self->target;
     self->pressed = false;
+    self->moved = false;
     self->dragging = false;
     ReleaseCapture();
     struct drawer_layout *_Nullable layout = nullptr;
@@ -634,6 +665,10 @@ static void release(struct drawer_window *_Nonnull self)
     if (dragging)
     {
         apply_drop(self, row, target);
+        return;
+    }
+    if (moved)
+    {
         return;
     }
     act_on_row(self, row);
@@ -689,6 +724,7 @@ static int key_step(const struct drawer_window *_Nonnull self, WPARAM key)
 static void cancel(struct drawer_window *_Nonnull self)
 {
     self->pressed = false;
+    self->moved = false;
     self->dragging = false;
     InvalidateRect(self->handle, nullptr, FALSE);
 }
@@ -807,6 +843,25 @@ enum drawer_window_outcome drawer_window_create(HWND _Nonnull parent,
 HWND _Nullable drawer_window_handle(const struct drawer_window *_Nonnull drawer)
 {
     return drawer->handle;
+}
+
+RECT drawer_window_filter_rect(const struct drawer_window *_Nonnull drawer)
+{
+    RECT bounds = {0, 0, 0, 0};
+    if (drawer->handle == nullptr)
+    {
+        return bounds;
+    }
+    UINT dpi = GetDpiForWindow(drawer->handle);
+    RECT client = {0, 0, 0, 0};
+    GetClientRect(drawer->handle, &client);
+    int inset = scale(base_filter_inset, dpi);
+    int margin = scale(base_filter_margin, dpi);
+    bounds.left = inset;
+    bounds.top = scale(base_header_height, dpi) + margin;
+    bounds.right = client.right - inset;
+    bounds.bottom = scale(base_header_height + base_filter_height, dpi) - margin;
+    return bounds;
 }
 
 void drawer_window_scroll_key(struct drawer_window *_Nonnull drawer, WPARAM key)

@@ -170,6 +170,26 @@ folio_state_note_changed(struct folio_state *_Nonnull state, const char16_t *_No
 [[nodiscard]] enum folio_state_outcome folio_state_end_edit(struct folio_state *_Nonnull state,
                                                             const char16_t *_Nonnull units,
                                                             size_t count);
+/* 索引の絞り込みの語を覚え、一致集合を作り直す（FR-032 / ADR 0024 の決定 7）。
+ * UTF-16 の単位列を受ける C-014 の例外の 7 本目。ノート内検索の語（set_search_term）とは別で、
+ * 同期しない。永続化もしない。
+ * count が 0 なら絞り込みを解き、索引は台帳のとおりに戻る。語が壊れていれば SEARCH_MALFORMED で
+ * 前の語と絞り込みを保つ。空でない語が**初めて**来たときだけ、ポートの read_note で全ノートの
+ * 本文を 1 回読んで写しにする（起動時には読まない・決定 1）。読めないノートは写しを持たず、
+ * 一致しない（理由は出さない）。
+ * 変えたあとはスクロール量を 0 に戻し、カーソルの行が消えていれば最初に見える行へ移す。
+ * 選択・右ペイン・モードは変えない（決定 5）。寄せる量は UI が folio_state_reveal_cursor で決める。
+ */
+[[nodiscard]] enum folio_state_outcome
+folio_state_set_index_filter(struct folio_state *_Nonnull state, const char16_t *_Nonnull units,
+                             size_t count);
+/* いま絞り込んでいるか。UI はこれを見てドラッグを始めない（ADR 0024 の決定 4）。 */
+[[nodiscard]] bool folio_state_filtering(const struct folio_state *_Nonnull state);
+/* 覚えている絞り込みの語（UTF-8・終端付き）。無ければ空文字列。次の set まで有効。 */
+[[nodiscard]] const char *_Nonnull folio_state_index_filter_term(
+    const struct folio_state *_Nonnull state);
+/* いま索引に見えているノートの数。絞り込んでいなければ索引の総数。 */
+[[nodiscard]] size_t folio_state_index_filter_count(const struct folio_state *_Nonnull state);
 /* ノート内検索の語を覚える（FR-011 / ADR 0023 の決定 3）。UTF-16 の単位列を受ける
  * C-014 の例外で、store_new / rename_note / store_note / note_changed / end_edit に次ぐ 6 本目。
  * count が 0 なら語を捨てる。語が UTF-16 として壊れていれば SEARCH_MALFORMED で前の語を保つ。
