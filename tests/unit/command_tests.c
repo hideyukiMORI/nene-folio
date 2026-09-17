@@ -29,6 +29,64 @@ static void verify_aliases(void)
     expect_command(":enew", FOLIO_COMMAND_NEW, "enew creates an untitled note");
     expect_command(":rename 新しい 名前.md", FOLIO_COMMAND_RENAME, "rename with a Japanese name");
     expect_command("rename", FOLIO_COMMAND_RENAME, "rename opens the common name form");
+    expect_command(":set number", FOLIO_COMMAND_SET, ":set takes an option word");
+    expect_command(":se nu!", FOLIO_COMMAND_SET, ":se is the same command");
+    expect_command(":set", FOLIO_COMMAND_SET, ":set alone parses; the word is refused later");
+}
+
+/* `:set` の語（ADR 0026 の決定 8）。引数の開始位置は folio_command_parse が答える。 */
+static void expect_option(const char *_Nonnull line, enum folio_option expected,
+                          const char *_Nonnull description)
+{
+    enum folio_command command = FOLIO_COMMAND_HELP;
+    size_t argument = 0;
+    require(folio_command_parse(line, strlen(line), &command, &argument) &&
+                command == FOLIO_COMMAND_SET,
+            description);
+    enum folio_option option = FOLIO_OPTION_NUMBER_HIDE;
+    require(folio_command_parse_option(line + argument, strlen(line) - argument, &option) &&
+                option == expected,
+            description);
+}
+
+static void verify_options(void)
+{
+    expect_option(":set number", FOLIO_OPTION_NUMBER_SHOW, "number shows");
+    expect_option(":set nu", FOLIO_OPTION_NUMBER_SHOW, "nu shows");
+    expect_option(":se nonumber", FOLIO_OPTION_NUMBER_HIDE, "nonumber hides");
+    expect_option(":set nonu", FOLIO_OPTION_NUMBER_HIDE, "nonu hides");
+    expect_option(":set number!", FOLIO_OPTION_NUMBER_TOGGLE, "number! toggles");
+    expect_option(":set nu!", FOLIO_OPTION_NUMBER_TOGGLE, "nu! toggles");
+    expect_option(":set invnumber", FOLIO_OPTION_NUMBER_TOGGLE, "invnumber toggles");
+    expect_option(":set invnu ", FOLIO_OPTION_NUMBER_TOGGLE, "invnu toggles and is trimmed");
+    static const char *const refused[] = {"",          " ",     "numbers", "NUMBER",   "no",
+                                          "number no", "nu nu", "!number", "invisible"};
+    for (size_t index = 0; index < sizeof refused / sizeof refused[0]; ++index)
+    {
+        enum folio_option option = FOLIO_OPTION_NUMBER_SHOW;
+        require(!folio_command_parse_option(refused[index], strlen(refused[index]), &option),
+                "an unknown, missing or extra option word is refused");
+        require(option == FOLIO_OPTION_NUMBER_SHOW, "a refused word leaves the option alone");
+    }
+}
+
+/* パレットと「操作」メニューに出るのは、語を渡せる面で意味のある操作だけ（決定 8 の補正）。 */
+static void verify_listed(void)
+{
+    require(!folio_command_listed(FOLIO_COMMAND_SET),
+            "the Ex grammar that needs a word is not listed");
+    for (size_t index = 0; index < folio_command_count(); ++index)
+    {
+        enum folio_command command = folio_command_at(index);
+        require(folio_command_listed(command) == (command != FOLIO_COMMAND_SET),
+                "every other operation stays listed");
+    }
+    require(
+        folio_command_alias_count(FOLIO_COMMAND_TOGGLE_NUMBER) == 0 &&
+            same_text(folio_command_label(FOLIO_COMMAND_TOGGLE_NUMBER), "行番号の表示を切り替える"),
+        "the toggle is a listed operation with a Japanese label and no alias");
+    require(folio_command_matches(FOLIO_COMMAND_TOGGLE_NUMBER, "行番号", strlen("行番号")),
+            "the palette finds the toggle by label");
 }
 
 static void verify_rejections(void)
@@ -55,12 +113,13 @@ static void verify_rejections(void)
 
 static void verify_catalog(void)
 {
-    require(folio_command_count() == 11, "only implemented commands are registered");
+    require(folio_command_count() == 13, "only implemented commands are registered");
     const enum folio_command expected[] = {
-        FOLIO_COMMAND_SAVE,       FOLIO_COMMAND_QUIT, FOLIO_COMMAND_SAVE_QUIT,
-        FOLIO_COMMAND_FORCE_QUIT, FOLIO_COMMAND_HELP, FOLIO_COMMAND_EDIT,
-        FOLIO_COMMAND_VIEW,       FOLIO_COMMAND_NEW,  FOLIO_COMMAND_SAVE_AS,
-        FOLIO_COMMAND_RENAME,     FOLIO_COMMAND_FIND};
+        FOLIO_COMMAND_SAVE,         FOLIO_COMMAND_QUIT, FOLIO_COMMAND_SAVE_QUIT,
+        FOLIO_COMMAND_FORCE_QUIT,   FOLIO_COMMAND_HELP, FOLIO_COMMAND_EDIT,
+        FOLIO_COMMAND_VIEW,         FOLIO_COMMAND_NEW,  FOLIO_COMMAND_SAVE_AS,
+        FOLIO_COMMAND_RENAME,       FOLIO_COMMAND_FIND, FOLIO_COMMAND_SET,
+        FOLIO_COMMAND_TOGGLE_NUMBER};
     for (size_t index = 0; index < folio_command_count(); ++index)
     {
         enum folio_command command = folio_command_at(index);
@@ -100,4 +159,6 @@ void run_command_tests(void)
     verify_aliases();
     verify_rejections();
     verify_catalog();
+    verify_options();
+    verify_listed();
 }

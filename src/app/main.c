@@ -1,5 +1,6 @@
 /* 合成ルート（ARC-006）。ポートに実装を結び、窓を起動し、メッセージループと終了コードを所有する。
- * 出してよいのは起動できなかった理由 1 行だけ（FR-015）。文言は application が作る。 */
+ * 出してよいのは「起動できなかった理由」と「起動は続けるが設定を読めなかった知らせ」の 1 行だけ
+ * （FR-015 / ADR 0025 の決定 6）。どちらも文言は application が作る。 */
 #include "appearance_adapter.h"
 #include "folio_state.h"
 #include "folio_window.h"
@@ -72,6 +73,13 @@ static int run(struct persistence_adapter *_Nonnull persistence,
     {
         report_utf8(folio_state_failure_line(loaded));
         return 1;
+    }
+    /* 起動は続けるが、設定を読めなかった理由は窓を作る前に 1 回だけ見せる（ADR 0025 の決定 6）。
+     * main は 1 回しか走らないので「見せたか」の真偽はどこにも持たない。 */
+    enum folio_state_outcome settings = folio_state_settings_notice(state);
+    if (settings != FOLIO_STATE_READY)
+    {
+        report_utf8(folio_state_failure_line(settings));
     }
     struct folio_window *_Nullable window = nullptr;
     if (folio_window_create(state, &window) != FOLIO_WINDOW_CREATED)

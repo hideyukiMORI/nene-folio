@@ -35,6 +35,20 @@ folio_state_create(const struct persistence_port *_Nonnull persistence,
                    struct folio_state *_Nullable *_Nonnull out);
 /* 起動時に読んだテーマ。 */
 [[nodiscard]] enum folio_theme folio_state_theme(const struct folio_state *_Nonnull state);
+/* 起動時に読んだ設定の知らせ（ADR 0025 の決定 6）。読めていれば READY、
+ * 壊れている・未知の版・読めないなら SETTINGS_UNREADABLE。合成ルートが窓を作る前に 1 回だけ
+ * 尋ね、READY でなければ既存の 1 行で見せて起動を続ける（「見せたか」はどこにも持たない）。 */
+[[nodiscard]] enum folio_state_outcome
+folio_state_settings_notice(const struct folio_state *_Nonnull state);
+/* 編集中の本文の左に原文の行番号を出すか（FR-021 / ADR 0026 の決定 5）。
+ * 値の所有者はここ 1 つで、UI は第 2 の真偽を持たない（ARC-004）。 */
+[[nodiscard]] bool folio_state_number(const struct folio_state *_Nonnull state);
+/* 行番号の表示を変える意図（ADR 0025 の決定 5）。**先に data/settings.json へ書いてから採用する**
+ * ので、表示と保存が食い違わない。いまと同じ値なら書かずに READY。
+ * 書けなければ値を変えず SETTINGS_STORE_FAILED、設定が読めていなければ SETTINGS_UNREADABLE
+ * （上書きしない）。設定は md・台帳・.rename.json と独立なので、未完了の改名の再開は通さない。 */
+[[nodiscard]] enum folio_state_outcome folio_state_set_number(struct folio_state *_Nonnull state,
+                                                              bool number);
 /* いまの索引と寸法からドロワーの配置を作り、選択中のノート・カーソル・いまのスクロール量に印を付ける。
  * 呼び出し側が破棄する。問い合わせなので状態は変えない（要求量の丸めは配置の中だけ・ADR 0009）。 */
 [[nodiscard]] enum folio_state_outcome

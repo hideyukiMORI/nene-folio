@@ -10,5 +10,10 @@
 constexpr UINT folio_message_select_note = WM_APP + 1;
 /* 操作入力から別の区画へ移ったあとに、主窓が実フォーカスを確認して入力面を閉じる。 */
 constexpr UINT folio_message_command_focus_lost = WM_APP + 2;
+/* 本文がホイールで動いた。EN_VSCROLL が来ない経路なので、番号の帯を主窓が描き直す
+ * （ADR 0026 の決定 4）。 */
+constexpr UINT folio_message_pane_scrolled = WM_APP + 3;
+/* 番号の桁数が変わったので、帯の幅と本文の矩形を配り直す（決定 6）。描画の途中では動かさない。 */
+constexpr UINT folio_message_gutter_resized = WM_APP + 4;
 
 #endif

@@ -4,9 +4,11 @@
 #include "appearance_port.h"
 #include "category_ledger.h"
 #include "drawer_layout.h"
+#include "folio_settings.h"
 #include "folio_state.h"
 #include "json_reader.h"
 #include "json_writer.h"
+#include "line_index.h"
 #include "markdown_rtf.h"
 #include "name_list.h"
 #include "note_ledger.h"
@@ -424,6 +426,15 @@ static bool save_as_under_probe(struct folio_state *_Nonnull state)
     return completed;
 }
 
+/* 設定の変更は複製・書き出し・読み直しの確保を通る（ADR 0025 の決定 5）。 */
+static bool set_number_under_probe(struct folio_state *_Nonnull state)
+{
+    enum folio_state_outcome changed = folio_state_set_number(state, true);
+    require(changed == FOLIO_STATE_READY || changed == FOLIO_STATE_OUT_OF_MEMORY,
+            "set number under probe");
+    return changed == FOLIO_STATE_READY;
+}
+
 /* ノート内検索の語は UTF-16 を UTF-8 へ写して所有する（ADR 0023 の決定 3）。 */
 static bool search_under_probe(struct folio_state *_Nonnull state)
 {
@@ -482,11 +493,12 @@ static bool state_scenario_with(struct persistence_adapter *_Nonnull adapter)
         return false;
     }
     require(outcome == FOLIO_STATE_READY, "state under probe");
-    bool completed =
-        layout_intent_under_probe(state) && ledger_under_probe(state) &&
-        selection_under_probe(state) && filter_under_probe(state) && reorder_under_probe(state) &&
-        edit_under_probe(state) && transfer_under_probe(state) && new_note_under_probe(state) &&
-        save_as_under_probe(state) && rename_under_probe(state) && search_under_probe(state);
+    bool completed = layout_intent_under_probe(state) && ledger_under_probe(state) &&
+                     selection_under_probe(state) && filter_under_probe(state) &&
+                     reorder_under_probe(state) && edit_under_probe(state) &&
+                     transfer_under_probe(state) && new_note_under_probe(state) &&
+                     save_as_under_probe(state) && rename_under_probe(state) &&
+                     search_under_probe(state) && set_number_under_probe(state);
     folio_state_destroy(state);
     return completed;
 }
@@ -524,6 +536,67 @@ static bool journal_under_probe(const struct note_rename *_Nonnull rename)
     rename_journal_destroy(journal);
     json_writer_destroy(writer);
     return outcome == RENAME_JOURNAL_ACCEPTED;
+}
+
+/* 行番号の表は構造体と CR の位置の列（伸長を含む）を確保する（ADR 0026 の決定 2）。 */
+static bool line_index_scenario(void)
+{
+    static char16_t body[64];
+    for (size_t at = 0; at + 1 < sizeof body / sizeof body[0]; ++at)
+    {
+        body[at] = at % 2 == 0 ? u'x' : u'\r';
+    }
+    body[sizeof body / sizeof body[0] - 1] = u'\0';
+    struct line_index *index = nullptr;
+    enum line_index_outcome built = line_index_create(body, 63, &index);
+    require(built == LINE_INDEX_READY || built == LINE_INDEX_OUT_OF_MEMORY,
+            "line index allocation failure remains typed");
+    if (built != LINE_INDEX_READY)
+    {
+        return false;
+    }
+    require(line_index_count(index) == 32 && line_index_digits(index) == 3,
+            "line index under probe");
+    line_index_destroy(index);
+    return true;
+}
+
+/* 設定は既定値・複製・書き出し・読み直しのすべてが確保を通る（ADR 0025 の検証）。 */
+static bool settings_scenario(void)
+{
+    struct folio_settings *settings = nullptr;
+    if (folio_settings_default(&settings) == FOLIO_SETTINGS_OUT_OF_MEMORY)
+    {
+        return false;
+    }
+    struct folio_settings *changed = nullptr;
+    enum folio_settings_outcome derived = folio_settings_with_number(settings, true, &changed);
+    folio_settings_destroy(settings);
+    if (derived == FOLIO_SETTINGS_OUT_OF_MEMORY)
+    {
+        return false;
+    }
+    require(derived == FOLIO_SETTINGS_READY, "settings copy under probe");
+    struct json_writer *writer = nullptr;
+    if (json_writer_create(&writer) != JSON_WRITER_ACCEPTED)
+    {
+        folio_settings_destroy(changed);
+        return false;
+    }
+    folio_settings_write(changed, writer);
+    folio_settings_destroy(changed);
+    struct folio_settings *reread = nullptr;
+    enum folio_settings_outcome parsed = FOLIO_SETTINGS_OUT_OF_MEMORY;
+    if (json_writer_finish(writer) == JSON_WRITER_ACCEPTED)
+    {
+        parsed =
+            folio_settings_parse(json_writer_text(writer), json_writer_length(writer), &reread);
+    }
+    json_writer_destroy(writer);
+    folio_settings_destroy(reread);
+    require(parsed == FOLIO_SETTINGS_READY || parsed == FOLIO_SETTINGS_OUT_OF_MEMORY,
+            "settings allocation failure remains typed");
+    return parsed == FOLIO_SETTINGS_READY;
 }
 
 static bool rename_scenario(void)
@@ -593,5 +666,7 @@ void run_allocation_tests(void)
     exhaust(markdown_scenario, "markdown scenario never completed");
     exhaust(layout_scenario, "layout scenario never completed");
     exhaust(state_scenario, "state scenario never completed");
+    exhaust(line_index_scenario, "line index scenario never completed");
+    exhaust(settings_scenario, "settings scenario never completed");
     exhaust(rename_scenario, "rename scenario never completed");
 }

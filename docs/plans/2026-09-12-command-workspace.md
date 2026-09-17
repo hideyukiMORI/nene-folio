@@ -67,6 +67,8 @@ Win32 の実フォーカスを正本にする（ADR 0013）。application に HW
 
 設定の保存候補は `data/settings.json` の版 1。`theme`（system / light / dark）、`language`（ja / en / zh-Hans）、
 `number`（初期値 false）を application が一つの値として所有する。最終スキーマと移行は #38 の ADR で固定する。
+（2026-09-17 追補: [ADR 0025](../adr/0025-settings-file.md) が、版 1 は `number` だけ・キーを足すたびに版を上げる、と決めた。
+`theme` / `language` は #38 が版 2 で足す。#39 は #38 の全体を待たずに、設定の経路と行番号だけを先に通す。）
 ファイル未存在だけを初期値として扱い、破損・未知版・不正値・書き込み失敗を黙って既定値へ落とさない（ARC-009）。
 初期言語は日本語、初期テーマは OS に従う。OS のロケールを中核から読む処理は増やさない。
 
