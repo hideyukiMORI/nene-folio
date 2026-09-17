@@ -60,7 +60,10 @@ void drawer_layout_scroll(struct drawer_layout *_Nonnull layout, int offset);
  * カテゴリ行なら候補はカテゴリの塊（カテゴリ行と展開中のノート行）の境界で、塊の中点で数える。
  * ノート行なら y のある塊（境界は隣り合う塊の間の中ほど）のカテゴリが移動先で、その塊が展開中なら
  * ノート行の中点で数え、折り畳んでいれば台帳のノート数（末尾）になる。
- * source_row は row_count 未満であること。 */
+ * source_row は row_count 未満であること。
+ * **落とし先の番号は表示されている行を数えて決めるので、絞り込み下の配置では台帳の番号と合わない。**
+ * いまは絞り込み中の並び替えを UI と application の二重で拒むので到達しない。解禁するときは
+ * 先にここを台帳の番号で答えるように直す（ADR 0024 の補正 8）。 */
 [[nodiscard]] struct drop_target drawer_layout_drop(const struct drawer_layout *_Nonnull layout,
                                                     size_t source_row, int y);
 void drawer_layout_destroy(struct drawer_layout *_Nullable layout);
