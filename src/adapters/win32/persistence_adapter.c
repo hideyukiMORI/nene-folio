@@ -2,6 +2,7 @@
 
 #include "category_ledger.h"
 #include "file_bytes.h"
+#include "folio_settings.h"
 #include "json_writer.h"
 #include "name_list.h"
 #include "note_history.h"
@@ -36,6 +37,8 @@ static const wchar_t data_folder[] = L"data";
 static const wchar_t lock_leaf[] = L".nenefolio.lock";
 /* 改名の復旧記録（ADR 0022 の決定 5）。`.` 始まりなのでカテゴリの走査には出ない。 */
 static const wchar_t journal_leaf[] = L".rename.json";
+/* 設定（ADR 0025 の決定 1）。data/ の直下で、無ければ既定値で始める。 */
+static const wchar_t settings_leaf[] = L"settings.json";
 static const wchar_t note_extension[] = L".md";
 constexpr size_t note_extension_length = 3;
 /* 履歴の置き場所（ADR 0012 の決定 1）。`.` で始まるのでカテゴリの走査には出ない（決定 4）。 */
@@ -654,6 +657,55 @@ static enum persistence_outcome write_category_ledger(struct persistence_adapter
     return store_document(path, writer);
 }
 
+/* data/settings.json を台帳と同じ経路で読む（ADR 0025 の決定 4）。無ければ ABSENT。 */
+static enum persistence_outcome read_settings(struct persistence_adapter *_Nonnull adapter,
+                                              struct folio_settings *_Nullable *_Nonnull out)
+{
+    wchar_t path[path_capacity];
+    if (!compose(adapter, nullptr, settings_leaf, path))
+    {
+        return PERSISTENCE_UNREADABLE;
+    }
+    struct file_bytes *_Nullable bytes = nullptr;
+    enum persistence_outcome outcome = file_bytes_read(path, &bytes);
+    if (outcome != PERSISTENCE_LOADED)
+    {
+        return outcome;
+    }
+    enum folio_settings_outcome parsed =
+        folio_settings_parse(file_bytes_data(bytes), file_bytes_length(bytes), out);
+    file_bytes_destroy(bytes);
+    switch (parsed)
+    {
+    case FOLIO_SETTINGS_READY:
+        return PERSISTENCE_LOADED;
+    case FOLIO_SETTINGS_MALFORMED:
+    case FOLIO_SETTINGS_UNSUPPORTED_VERSION:
+        return PERSISTENCE_MALFORMED;
+    case FOLIO_SETTINGS_OUT_OF_MEMORY:
+        return PERSISTENCE_OUT_OF_MEMORY;
+    }
+    return PERSISTENCE_MALFORMED;
+}
+
+/* 台帳と同じ原子的な置き換えで data/settings.json を公開する（決定 4）。 */
+static enum persistence_outcome write_settings(struct persistence_adapter *_Nonnull adapter,
+                                               const struct folio_settings *_Nonnull settings)
+{
+    wchar_t path[path_capacity];
+    if (!compose(adapter, nullptr, settings_leaf, path))
+    {
+        return PERSISTENCE_UNWRITABLE;
+    }
+    struct json_writer *_Nullable writer = nullptr;
+    if (json_writer_create(&writer) != JSON_WRITER_ACCEPTED)
+    {
+        return PERSISTENCE_OUT_OF_MEMORY;
+    }
+    folio_settings_write(settings, writer);
+    return store_document(path, writer);
+}
+
 /* 索引を同じカテゴリの index.json へ書き戻す（FR-008 / ADR 0007 の決定 5）。 */
 static enum persistence_outcome write_note_ledger(struct persistence_adapter *_Nonnull adapter,
                                                   const char *_Nonnull category,
@@ -1266,6 +1318,8 @@ struct persistence_port persistence_adapter_port(struct persistence_adapter *_No
         .scan_notes = scan_notes,
         .read_category_ledger = read_category_ledger,
         .write_category_ledger = write_category_ledger,
+        .read_settings = read_settings,
+        .write_settings = write_settings,
         .read_note = read_note,
         .archive_note = archive_note,
         .write_note = write_note,
