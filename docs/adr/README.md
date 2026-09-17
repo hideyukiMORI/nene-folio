@@ -40,3 +40,5 @@ ADR は「なぜそう決めたか」「何を却下したか」を書く。
 | [0022](0022-note-rename-and-recovery.md) | 改名の意図を記録し履歴・md・索引を再開可能に移す | 受理 |
 | [0023](0023-in-note-search.md) | 現在ノートの検索は表示中の本文を対象にし、判断はcore・語と方向はapplication | 受理 |
 | [0024](0024-index-filter.md) | 全ノートの絞り込みは遅延して載せた本文をcoreで判定し、配置は同じdrawer_layoutに絞り込みを渡す | 受理 |
+| [0025](0025-settings-file.md) | 設定はdata/settings.jsonの版1をnumberだけで始め、キーを足すたびに版を上げる | 受理 |
+| [0026](0026-line-numbers.md) | 原文の行番号はcoreが論理行を数え、主窓が本文の左の空きに描く | 受理 |
