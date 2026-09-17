@@ -8,6 +8,7 @@
 #include "folio_state.h"
 #include "json_reader.h"
 #include "json_writer.h"
+#include "line_index.h"
 #include "markdown_rtf.h"
 #include "name_list.h"
 #include "note_ledger.h"
@@ -537,6 +538,29 @@ static bool journal_under_probe(const struct note_rename *_Nonnull rename)
     return outcome == RENAME_JOURNAL_ACCEPTED;
 }
 
+/* 行番号の表は構造体と CR の位置の列（伸長を含む）を確保する（ADR 0026 の決定 2）。 */
+static bool line_index_scenario(void)
+{
+    static char16_t body[64];
+    for (size_t at = 0; at + 1 < sizeof body / sizeof body[0]; ++at)
+    {
+        body[at] = at % 2 == 0 ? u'x' : u'\r';
+    }
+    body[sizeof body / sizeof body[0] - 1] = u'\0';
+    struct line_index *index = nullptr;
+    enum line_index_outcome built = line_index_create(body, 63, &index);
+    require(built == LINE_INDEX_READY || built == LINE_INDEX_OUT_OF_MEMORY,
+            "line index allocation failure remains typed");
+    if (built != LINE_INDEX_READY)
+    {
+        return false;
+    }
+    require(line_index_count(index) == 32 && line_index_digits(index) == 3,
+            "line index under probe");
+    line_index_destroy(index);
+    return true;
+}
+
 /* 設定は既定値・複製・書き出し・読み直しのすべてが確保を通る（ADR 0025 の検証）。 */
 static bool settings_scenario(void)
 {
@@ -642,6 +666,7 @@ void run_allocation_tests(void)
     exhaust(markdown_scenario, "markdown scenario never completed");
     exhaust(layout_scenario, "layout scenario never completed");
     exhaust(state_scenario, "state scenario never completed");
+    exhaust(line_index_scenario, "line index scenario never completed");
     exhaust(settings_scenario, "settings scenario never completed");
     exhaust(rename_scenario, "rename scenario never completed");
 }
