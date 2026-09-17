@@ -4,6 +4,7 @@
 #include "appearance_port.h"
 #include "category_ledger.h"
 #include "drawer_layout.h"
+#include "folio_settings.h"
 #include "folio_state.h"
 #include "json_reader.h"
 #include "json_writer.h"
@@ -526,6 +527,44 @@ static bool journal_under_probe(const struct note_rename *_Nonnull rename)
     return outcome == RENAME_JOURNAL_ACCEPTED;
 }
 
+/* 設定は既定値・複製・書き出し・読み直しのすべてが確保を通る（ADR 0025 の検証）。 */
+static bool settings_scenario(void)
+{
+    struct folio_settings *settings = nullptr;
+    if (folio_settings_default(&settings) == FOLIO_SETTINGS_OUT_OF_MEMORY)
+    {
+        return false;
+    }
+    struct folio_settings *changed = nullptr;
+    enum folio_settings_outcome derived = folio_settings_with_number(settings, true, &changed);
+    folio_settings_destroy(settings);
+    if (derived == FOLIO_SETTINGS_OUT_OF_MEMORY)
+    {
+        return false;
+    }
+    require(derived == FOLIO_SETTINGS_READY, "settings copy under probe");
+    struct json_writer *writer = nullptr;
+    if (json_writer_create(&writer) != JSON_WRITER_ACCEPTED)
+    {
+        folio_settings_destroy(changed);
+        return false;
+    }
+    folio_settings_write(changed, writer);
+    folio_settings_destroy(changed);
+    struct folio_settings *reread = nullptr;
+    enum folio_settings_outcome parsed = FOLIO_SETTINGS_OUT_OF_MEMORY;
+    if (json_writer_finish(writer) == JSON_WRITER_ACCEPTED)
+    {
+        parsed =
+            folio_settings_parse(json_writer_text(writer), json_writer_length(writer), &reread);
+    }
+    json_writer_destroy(writer);
+    folio_settings_destroy(reread);
+    require(parsed == FOLIO_SETTINGS_READY || parsed == FOLIO_SETTINGS_OUT_OF_MEMORY,
+            "settings allocation failure remains typed");
+    return parsed == FOLIO_SETTINGS_READY;
+}
+
 static bool rename_scenario(void)
 {
     struct note_ledger *ledger = nullptr;
@@ -593,5 +632,6 @@ void run_allocation_tests(void)
     exhaust(markdown_scenario, "markdown scenario never completed");
     exhaust(layout_scenario, "layout scenario never completed");
     exhaust(state_scenario, "state scenario never completed");
+    exhaust(settings_scenario, "settings scenario never completed");
     exhaust(rename_scenario, "rename scenario never completed");
 }
