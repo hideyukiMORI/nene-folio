@@ -51,6 +51,13 @@ struct folio_state
     size_t cursor_category; /* FOLIO_CURSOR_CATEGORY のときのカテゴリ番号 */
 };
 
+/* 絞り込みの作り直しとカーソルの着地は、写しを付け替える経路（改名）より後に書いてあるので
+ * ここで名前だけ先に出す。定義は 1 つずつで、経路は増やさない（ARC-001）。 */
+static enum folio_state_outcome refresh_filter(struct folio_state *_Nonnull state);
+static bool holds_category(const struct folio_state *_Nonnull state, size_t category);
+static struct drawer_cursor first_stop_in(const struct folio_state *_Nonnull state,
+                                          size_t category);
+
 static enum folio_state_outcome translate(enum persistence_outcome outcome)
 {
     switch (outcome)
@@ -150,6 +157,9 @@ static enum folio_state_outcome recopy_rename(struct folio_state *_Nonnull state
     return FOLIO_STATE_READY;
 }
 
+/* 名前も判定の対象なので、写しを付け替えたら一致集合も作り直す。どの意図が改名を完了させても
+ * （`rename_note` でも `resume_rename` でも）同じ結果になるよう、ここ 1 か所で行う
+ * （ADR 0024 の補正 3）。絞り込んでいなければ `refresh_filter` は何もしない。 */
 static enum folio_state_outcome adopt_rename(struct folio_state *_Nonnull state)
 {
     enum folio_state_outcome copied = recopy_rename(state);
@@ -159,7 +169,7 @@ static enum folio_state_outcome adopt_rename(struct folio_state *_Nonnull state)
     state->notes[state->rename_category] = renamed;
     state->rename = nullptr;
     note_rename_destroy(intent);
-    return copied;
+    return copied != FOLIO_STATE_READY ? copied : refresh_filter(state);
 }
 
 /* 未完了の改名を、次の意図より先に同じ意図で再開する（ADR 0022 の決定 7）。 */
@@ -599,13 +609,21 @@ static bool cursor_row_present(const struct folio_state *_Nonnull state,
     return false;
 }
 
-/* カーソルの行が消えていれば最初に見える行（＝最初に見えるカテゴリ行）へ移す（決定 5）。
+/* カーソルの行が消えたときの移し先（決定 5・ADR 0024 の補正 4）。
+ * その行のカテゴリ行が「見えていてカーソルが止まれる行」（＝見えるノート行を持たない・
+ * ADR 0015 の決定 2）ならそこへ、そうでなければ最初に見える行（＝最初に見えるカテゴリ行）へ移す。
  * 選択・右ペイン・モードは変えない。見える行が 1 つも無ければカーソルを持たない。 */
 static void settle_cursor(struct folio_state *_Nonnull state)
 {
     struct drawer_cursor cursor = on_note(0, 0);
     if (!current_cursor(state, &cursor) || cursor_row_present(state, cursor))
     {
+        return;
+    }
+    if (holds_category(state, cursor.ref.category) &&
+        first_stop_in(state, cursor.ref.category).kind == DRAWER_ROW_CATEGORY)
+    {
+        cursor_to_category(state, cursor.ref.category);
         return;
     }
     size_t category = 0;
@@ -1910,9 +1928,8 @@ enum folio_state_outcome folio_state_rename_note(struct folio_state *_Nonnull st
     {
         return saved;
     }
-    enum folio_state_outcome renamed = rename_selected(state, name);
-    /* 名前も判定の対象なので、改名のあとは一致集合を作り直す（ADR 0024 の決定 4）。 */
-    return renamed != FOLIO_STATE_READY ? renamed : refresh_filter(state);
+    /* 一致集合の作り直しは完了した改名を受け取る `adopt_rename` が行う（補正 3）。 */
+    return rename_selected(state, name);
 }
 
 enum folio_state_outcome folio_state_store_note(struct folio_state *_Nonnull state,

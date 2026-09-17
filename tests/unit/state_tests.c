@@ -2527,6 +2527,11 @@ static void verify_filtered_refusals(void)
     struct rgb_color chosen = {.red = 1, .green = 2, .blue = 3};
     require(folio_state_recolor_category(state, 0, chosen) == FOLIO_STATE_READY,
             "the colour still changes while filtering");
+    /* 絞り込みは台帳の expanded を触らない。色と同じ経路で書き戻される値が元のままであること
+     * （絞り込み中に全カテゴリが展開して見えることは、書き戻す値ではない・決定 3 / 4）。 */
+    require(adapter.writes == writes + 1 && adapter.written_expanded[0] &&
+                !adapter.written_expanded[1] && adapter.written_expanded[2],
+            "and the expansion written with it is the ledger's own, not the filtered view");
     require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY, "a note can still be read");
     require(folio_state_begin_edit(state) == FOLIO_STATE_READY, "and edited");
     require(same_text(folio_state_failure_line(FOLIO_STATE_FILTERED),
@@ -2623,6 +2628,85 @@ static void verify_filter_follows_new_note(void)
     folio_state_destroy(state);
 }
 
+/* カーソルの行が消えたとき、その行のカテゴリ行が「見えていて止まれる行」ならそこへ残り、
+ * そうでなければ最初に見える行へ移る（ADR 0024 の補正 4・ADR 0015 の決定 2）。 */
+static void verify_filter_cursor_lands_near(void)
+{
+    static const char *const alt_scanned[] = {"four", "five", nullptr};
+    struct persistence_adapter adapter = healthy_adapter();
+    /* C を four / five にして、C にだけ一致する語を作る。A は折り畳んだままの one / two / three。
+     */
+    test_adapter_second_notes(&adapter, "C", "{\"version\": 1, \"notes\": [\"four\", \"five\"]}",
+                              alt_scanned);
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_select_note(state, 1, 0) == FOLIO_STATE_READY, "select A / one");
+    expect_cursor(state, "n1.0", "the cursor follows the selection into the collapsed category");
+    require(folio_state_set_index_filter(state, u"Hello", 5) == FOLIO_STATE_READY,
+            "a term that every body holds");
+    expect_cursor(state, "n1.0", "filtering opens A, so the cursor keeps its own row");
+    require(folio_state_set_index_filter(state, u"", 0) == FOLIO_STATE_READY, "clear the term");
+    expect_cursor(state, "c1", "A closes again and the cursor stops on A's own row");
+    expect_selection(state, "A/one", "the selection and the right pane never moved");
+    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY, "select B / one");
+    require(folio_state_set_index_filter(state, u"four", 4) == FOLIO_STATE_READY,
+            "a term only C holds");
+    expect_cursor(state, "c2", "a cursor whose category is gone falls back to the first shown row");
+    folio_state_destroy(state);
+}
+
+/* 改名を完了させたのが別の意図（再開）でも、写しと一致集合は新しい名前で作り直される
+ * （ADR 0024 の補正 3。作り直しは adopt_rename の 1 か所）。 */
+static void verify_filter_follows_resumed_rename(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY, "select B / one");
+    require(folio_state_set_index_filter(state, u"renamed", 7) == FOLIO_STATE_READY, "filter");
+    require(folio_state_index_filter_count(state) == 0, "no name and no body holds the term");
+    struct note_name *name = accepted_note_name("renamed");
+    adapter.rename_outcome = RENAME_PENDING;
+    require(folio_state_rename_note(state, name, u"", 0) == FOLIO_STATE_RENAME_PENDING,
+            "the rename stops after publishing its journal");
+    note_name_destroy(name);
+    require(folio_state_index_filter_count(state) == 0,
+            "an unfinished rename changes neither the copy nor the set");
+    adapter.rename_outcome = RENAME_COMPLETED;
+    require(folio_state_select_note(state, 0, 1) == FOLIO_STATE_READY,
+            "another intent resumes and finishes the same rename");
+    require(folio_state_index_filter_count(state) == 1, "the resumed rename rebuilds the set");
+    char order[128] = {0};
+    row_order(state, order, sizeof order);
+    require(same_text(order, "B/renamed"), "with the copy travelling to the new name");
+    folio_state_destroy(state);
+}
+
+/* 絞り込みを解いてから移した写しは、次の絞り込みで新しいカテゴリの下に現れる（決定 1）。 */
+static void verify_filter_follows_move(void)
+{
+    static const char *const alt_scanned[] = {"four", "five", nullptr};
+    struct persistence_adapter adapter = healthy_adapter();
+    /* A は four / five にして、そこへ B の two を受け入れられるようにする（同名は移せない）。 */
+    test_adapter_second_notes(&adapter, "A", "{\"version\": 1, \"notes\": [\"four\", \"five\"]}",
+                              alt_scanned);
+    adapter.rare_note = "two";
+    adapter.rare_body = "the needle is here";
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_set_index_filter(state, u"needle", 6) == FOLIO_STATE_READY, "filter");
+    require(adapter.note_reads == 8, "every note is read once at the first term");
+    char order[160] = {0};
+    row_order(state, order, sizeof order);
+    require(same_text(order, "B/two/C/two"), "the two bodies that hold the term");
+    require(folio_state_set_index_filter(state, u"", 0) == FOLIO_STATE_READY, "clear the term");
+    require(folio_state_move_note(state, at(0, 1), at(1, 0)) == FOLIO_STATE_READY,
+            "B / two moves into A while nothing is filtered");
+    require(folio_state_set_index_filter(state, u"needle", 6) == FOLIO_STATE_READY, "filter again");
+    require(adapter.note_reads == 8, "the copies are still the ones read at the first term");
+    row_order(state, order, sizeof order);
+    require(same_text(order, "A/two/C/two"),
+            "the moved copy matches under its new category, and B has no match left");
+    folio_state_destroy(state);
+}
+
 void run_state_tests(void)
 {
     verify_ready_state();
@@ -2680,4 +2764,7 @@ void run_state_tests(void)
     verify_filter_keeps_document();
     verify_filter_follows_content();
     verify_filter_follows_new_note();
+    verify_filter_cursor_lands_near();
+    verify_filter_follows_resumed_rename();
+    verify_filter_follows_move();
 }
