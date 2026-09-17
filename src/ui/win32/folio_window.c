@@ -213,6 +213,12 @@ static void refresh_font(struct folio_window *_Nonnull self, UINT dpi)
     {
         SendMessageW(self->command_input, WM_SETFONT, (WPARAM)self->mono_font, TRUE);
     }
+    /* 常設の絞り込みの欄も同じ等幅を使う。作り直した書体をここで付け直さないと、
+     * DPI が変わった欄が破棄済みの HFONT を持ったままになる（ADR 0024 の補正 5）。 */
+    if (self->filter_input != nullptr)
+    {
+        SendMessageW(self->filter_input, WM_SETFONT, (WPARAM)self->mono_font, TRUE);
+    }
 }
 
 static RECT command_palette_rect(const struct folio_window *_Nonnull self)
@@ -2703,6 +2709,32 @@ static void update_filter_composition(struct folio_window *_Nonnull self, UINT m
     }
 }
 
+/* 欄の中でも「どこにいても」効く操作（F1・Ctrl+P・Ctrl+N）。区画の pane_character / pane_key と
+ * 同じ形で共通の操作へ渡す（ADR 0024 の補正 5）。受け止めたら true。 */
+static bool filter_input_anywhere(struct folio_window *_Nonnull self, UINT message, WPARAM wparam)
+{
+    if (message == WM_KEYDOWN && wparam == VK_F1)
+    {
+        execute_command(self, FOLIO_COMMAND_HELP, "");
+        return true;
+    }
+    if (message != WM_CHAR)
+    {
+        return false;
+    }
+    if (wparam == new_character)
+    {
+        execute_command(self, FOLIO_COMMAND_NEW, "");
+        return true;
+    }
+    if (wparam == palette_character)
+    {
+        open_command_surface(self, COMMAND_SURFACE_PALETTE);
+        return true;
+    }
+    return false;
+}
+
 /* 欄が自分で受け止める鍵。**Esc と Enter は INDEX（主窓）へ戻し、絞り込みは保つ**。
  * 欄の中の Ctrl+S は共通の SAVE へ渡す。`/` `?` `n` `N` `:` は文字のまま（ADR 0024 の決定 6）。 */
 static bool filter_input_handled(struct folio_window *_Nonnull self, UINT message, WPARAM wparam)
@@ -2710,6 +2742,10 @@ static bool filter_input_handled(struct folio_window *_Nonnull self, UINT messag
     if (self->filter_composing)
     {
         return false;
+    }
+    if (filter_input_anywhere(self, message, wparam))
+    {
+        return true;
     }
     if (message == WM_KEYDOWN && (wparam == VK_ESCAPE || wparam == VK_RETURN))
     {
