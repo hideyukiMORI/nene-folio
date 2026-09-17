@@ -124,6 +124,10 @@ Waivers: none | WVR-NNNN
 
 ## 6. いまの状況
 
+2026-09-17 停止: hideの指示で日報/引き継ぎを保存して停止。mainは`3ab187d`（#40まで統合済み）。
+#39は`out/worktrees/39-number`のDraft PR（実装の最終`4a58fbf`・フルゲートexit 0）で、独立レビュー・Ready・統合は未実施。
+最新の停止点は[引き継ぎ](docs/handoffs/2026-09-17.md)の先頭節と[日報](docs/reports/2026-09-17.md)の「再開後」。明示的な再開指示まで続行しない。
+
 2026-09-17: **原文の行番号（FR-021 / #39 / ADR 0025・ADR 0026）**を `out/worktrees/39-number` で 5 層に実装した。
 `:set number` / `nonumber` / `nu!`（別名 `nu` / `nonu` / `invnumber` / `invnu`）と、パレット・「操作」メニューの
 「行番号の表示を切り替える」が application の同じ意図（`folio_state_set_number`）へ渡る。値は
