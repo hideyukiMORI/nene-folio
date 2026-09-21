@@ -2261,132 +2261,74 @@ size_t folio_state_pane_rtf_length(const struct folio_state *_Nonnull state)
     return markdown_rtf_length(state->pane);
 }
 
-/* folio_state_failure_line の続き。1 つ目の switch が C-012 の行数上限に収まらないので分けてある。
- * 網羅は 1 つ目の switch と同じ列挙で守る（新しい switch は増やさない）。 */
-static const char *_Nonnull unfinished_failure_line(enum folio_state_outcome outcome)
-{
-    switch (outcome)
-    {
-    case FOLIO_STATE_LEDGER_STALE:
-        return "mdは反映しましたが、台帳（index."
-               "json）を書き戻せませんでした。保存を再試行するか、次回の起動で揃います。";
-    case FOLIO_STATE_LEDGER_UNSYNCED:
-        return "前回の台帳（index.json）をまだ書き戻せていません。今回の操作は行っていないので、"
-               "保存を再試行してください。";
-    case FOLIO_STATE_RENAME_PENDING:
-        return "名前の変更が途中で止まっています。同じ名前変更をやり直してください。";
-    case FOLIO_STATE_RENAME_HALTED:
-        return "名前変更の記録と実ファイルが一致しません。data/.rename.json と data/<カテゴリ>/ "
-               "を確認してください。";
-    case FOLIO_STATE_RENAME_UNLOCKED:
-        return "data/ に書けないため名前を変更できません。何も変えていません。";
-    case FOLIO_STATE_RENAME_UNSUPPORTED:
-        return "この data/ ではノート名を変更できません（ローカルの NTFS 以外、またはシンボリック"
-               "リンク／junction）。";
-    case FOLIO_STATE_RENAME_IDENTITY_FAILED:
-        return "元のファイルを確かめられないので名前を変更できません。何も変えていません。";
-    case FOLIO_STATE_RENAME_JOURNAL_FAILED:
-        return "名前変更の記録（data/.rename.json）を書けませんでした。何も変えていません。";
-    case FOLIO_STATE_RENAME_JOURNAL_BROKEN:
-        return "名前変更の記録（data/.rename.json）が版 1 の形ではありません。消していません。";
-    case FOLIO_STATE_SEARCH_MALFORMED:
-        return "検索する語に壊れた文字があります。語は前のままです。";
-    case FOLIO_STATE_PANE_UNAVAILABLE:
-        return "表示中の本文を取り出せませんでした。探していません。";
-    case FOLIO_STATE_FILTERED:
-        return "絞り込み中は並び替えと開閉ができません。";
-    case FOLIO_STATE_SETTINGS_UNREADABLE:
-        return "設定（data/settings.json）を読めません。既定値で始め、直すまで上書きしません。";
-    case FOLIO_STATE_UNSAVED_CHANGES:
-        return "未保存の変更があります。保存するか、未保存変更を破棄して終了してください。";
-    case FOLIO_STATE_NAME_TAKEN:
-        return "同じ名前のノートがあります。別の名前を指定してください。既存ファイルは変更していま"
-               "せん。";
-    case FOLIO_STATE_READY:
-    case FOLIO_STATE_DATA_UNREADABLE:
-    case FOLIO_STATE_LEDGER_MALFORMED:
-    case FOLIO_STATE_STORE_FAILED:
-    case FOLIO_STATE_NO_SUCH_CATEGORY:
-    case FOLIO_STATE_NO_SUCH_NOTE:
-    case FOLIO_STATE_NOTE_UNREADABLE:
-    case FOLIO_STATE_NOTHING_SELECTED:
-    case FOLIO_STATE_NOT_EDITING:
-    case FOLIO_STATE_NOTE_MALFORMED:
-    case FOLIO_STATE_NOTE_STORE_FAILED:
-    case FOLIO_STATE_HISTORY_FAILED:
-    case FOLIO_STATE_SETTINGS_STORE_FAILED:
-    case FOLIO_STATE_OUT_OF_MEMORY:
-    case FOLIO_STATE_NAME_REQUIRED:
-    case FOLIO_STATE_INVALID_NAME:
-    case FOLIO_STATE_ALREADY_NAMED:
-    case FOLIO_STATE_CANCELLED:
-        return "";
-    }
-    return "";
-}
+/* 値ごとの失敗の 1 行（ADR 0027 の決定 1）。列挙の全値がちょうど 1 度ずつ並ぶことは CNF-009 が
+ * 字句で守るので、添字の範囲検査は書かない（決定 3）。 */
+static const char *_Nonnull const failure_lines[] = {
+    [FOLIO_STATE_READY] = "",
+    [FOLIO_STATE_DATA_UNREADABLE] = "data/ を読めませんでした。",
+    [FOLIO_STATE_LEDGER_MALFORMED] =
+        "data/ の台帳（categories.json / index.json）が版 1 の形ではありません。",
+    [FOLIO_STATE_STORE_FAILED] =
+        "data/ の台帳（categories.json / index.json）に書き戻せませんでした。表示は変えて"
+        "いません。",
+    [FOLIO_STATE_NO_SUCH_CATEGORY] = "索引に無いカテゴリが操作されました。",
+    [FOLIO_STATE_NO_SUCH_NOTE] = "索引に無いノートが操作されました。",
+    [FOLIO_STATE_NOTE_UNREADABLE] = "ノートを読めませんでした。表示は変えていません。",
+    [FOLIO_STATE_NOTHING_SELECTED] = "ノートを選んでから編集してください。",
+    [FOLIO_STATE_NOT_EDITING] = "編集モードではありません。",
+    [FOLIO_STATE_NOTE_MALFORMED] = "編集中の本文に壊れた文字があります。保存していません。",
+    [FOLIO_STATE_NOTE_STORE_FAILED] = "ノートを書き戻せませんでした。編集中の本文はそのままです。",
+    [FOLIO_STATE_HISTORY_FAILED] =
+        "履歴を書けなかったので保存していません。編集中の本文は残っています。",
+    [FOLIO_STATE_UNSAVED_CHANGES] =
+        "未保存の変更があります。保存するか、未保存変更を破棄して終了してください。",
+    [FOLIO_STATE_NAME_TAKEN] =
+        "同じ名前のノートがあります。別の名前を指定してください。既存ファイルは変更していま"
+        "せん。",
+    [FOLIO_STATE_LEDGER_STALE] =
+        "mdは反映しましたが、台帳（index."
+        "json）を書き戻せませんでした。保存を再試行するか、次回の起動で揃います。",
+    [FOLIO_STATE_LEDGER_UNSYNCED] =
+        "前回の台帳（index.json）をまだ書き戻せていません。今回の操作は行っていないので、"
+        "保存を再試行してください。",
+    [FOLIO_STATE_RENAME_PENDING] =
+        "名前の変更が途中で止まっています。同じ名前変更をやり直してください。",
+    [FOLIO_STATE_RENAME_UNLOCKED] =
+        "data/ に書けないため名前を変更できません。何も変えていません。",
+    [FOLIO_STATE_RENAME_UNSUPPORTED] =
+        "この data/ ではノート名を変更できません（ローカルの NTFS 以外、またはシンボリック"
+        "リンク／junction）。",
+    [FOLIO_STATE_RENAME_IDENTITY_FAILED] =
+        "元のファイルを確かめられないので名前を変更できません。何も変えていません。",
+    [FOLIO_STATE_RENAME_JOURNAL_FAILED] =
+        "名前変更の記録（data/.rename.json）を書けませんでした。何も変えていません。",
+    [FOLIO_STATE_RENAME_JOURNAL_BROKEN] =
+        "名前変更の記録（data/.rename.json）が版 1 の形ではありません。消していません。",
+    [FOLIO_STATE_RENAME_HALTED] =
+        "名前変更の記録と実ファイルが一致しません。data/.rename.json と data/<カテゴリ>/ "
+        "を確認してください。",
+    [FOLIO_STATE_SEARCH_MALFORMED] = "検索する語に壊れた文字があります。語は前のままです。",
+    [FOLIO_STATE_FILTERED] = "絞り込み中は並び替えと開閉ができません。",
+    [FOLIO_STATE_SETTINGS_UNREADABLE] =
+        "設定（data/settings.json）を読めません。既定値で始め、直すまで上書きしません。",
+    [FOLIO_STATE_SETTINGS_STORE_FAILED] =
+        "設定（data/settings.json）を書けませんでした。設定は変えていません。",
+    [FOLIO_STATE_PANE_UNAVAILABLE] = "表示中の本文を取り出せませんでした。探していません。",
+    [FOLIO_STATE_OUT_OF_MEMORY] = "記憶域が足りません。",
+    [FOLIO_STATE_NAME_REQUIRED] =
+        "無題のノートに名前をつけて保存してください。本文は残っています。",
+    [FOLIO_STATE_INVALID_NAME] = "使えない名前です。予約名・末尾の空白やピリオド・区切りを避け、."
+                                 "mdを含め255バイト以内で指定してください。",
+    [FOLIO_STATE_ALREADY_NAMED] =
+        "このノートには名前があります。別名保存（:saveas）または名前変更（:"
+        "rename）を使ってください。",
+    [FOLIO_STATE_CANCELLED] = "",
+};
 
 const char *_Nonnull folio_state_failure_line(enum folio_state_outcome outcome)
 {
-    switch (outcome)
-    {
-    case FOLIO_STATE_READY:
-    case FOLIO_STATE_CANCELLED:
-        return "";
-    case FOLIO_STATE_DATA_UNREADABLE:
-        return "data/ を読めませんでした。";
-    case FOLIO_STATE_LEDGER_MALFORMED:
-        return "data/ の台帳（categories.json / index.json）が版 1 の形ではありません。";
-    case FOLIO_STATE_STORE_FAILED:
-        return "data/ の台帳（categories.json / index.json）に書き戻せませんでした。表示は変えて"
-               "いません。";
-    case FOLIO_STATE_NO_SUCH_CATEGORY:
-        return "索引に無いカテゴリが操作されました。";
-    case FOLIO_STATE_NO_SUCH_NOTE:
-        return "索引に無いノートが操作されました。";
-    case FOLIO_STATE_NOTE_UNREADABLE:
-        return "ノートを読めませんでした。表示は変えていません。";
-    case FOLIO_STATE_NOTHING_SELECTED:
-        return "ノートを選んでから編集してください。";
-    case FOLIO_STATE_NOT_EDITING:
-        return "編集モードではありません。";
-    case FOLIO_STATE_NOTE_MALFORMED:
-        return "編集中の本文に壊れた文字があります。保存していません。";
-    case FOLIO_STATE_NOTE_STORE_FAILED:
-        return "ノートを書き戻せませんでした。編集中の本文はそのままです。";
-    case FOLIO_STATE_HISTORY_FAILED:
-        return "履歴を書けなかったので保存していません。編集中の本文は残っています。";
-    case FOLIO_STATE_SETTINGS_STORE_FAILED:
-        return "設定（data/settings.json）を書けませんでした。設定は変えていません。";
-    case FOLIO_STATE_UNSAVED_CHANGES:
-    case FOLIO_STATE_NAME_TAKEN:
-    case FOLIO_STATE_LEDGER_STALE:
-    case FOLIO_STATE_LEDGER_UNSYNCED:
-    case FOLIO_STATE_RENAME_PENDING:
-    case FOLIO_STATE_RENAME_HALTED:
-    case FOLIO_STATE_RENAME_UNLOCKED:
-    case FOLIO_STATE_RENAME_UNSUPPORTED:
-    case FOLIO_STATE_RENAME_IDENTITY_FAILED:
-    case FOLIO_STATE_RENAME_JOURNAL_FAILED:
-    case FOLIO_STATE_RENAME_JOURNAL_BROKEN:
-    case FOLIO_STATE_SEARCH_MALFORMED:
-    case FOLIO_STATE_PANE_UNAVAILABLE:
-    case FOLIO_STATE_FILTERED:
-    case FOLIO_STATE_SETTINGS_UNREADABLE:
-        return unfinished_failure_line(outcome);
-    case FOLIO_STATE_OUT_OF_MEMORY:
-        return "記憶域が足りません。";
-    case FOLIO_STATE_NAME_REQUIRED:
-        return "無題のノートに名前をつけて保存してください。本文は残っています。";
-    case FOLIO_STATE_INVALID_NAME:
-        return "使えない名前です。予約名・末尾の空白やピリオド・区切りを避け、."
-               "mdを含め255バイト以内で指定してください。";
-    case FOLIO_STATE_ALREADY_NAMED:
-        return "このノートには名前があります。別名保存（:saveas）または名前変更（:"
-               "rename）を使ってください。";
-    }
-    return "data/ を読めませんでした。";
+    return failure_lines[outcome];
 }
-
 void folio_state_destroy(struct folio_state *_Nullable state)
 {
     if (state == nullptr)
