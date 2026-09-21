@@ -1,6 +1,8 @@
 #include "note_pane.h"
 
 #include "caret_command.h"
+#include "folio_message.h"
+#include "line_index.h"
 #include "rtf_stream.h"
 
 #include <richedit.h>
@@ -20,6 +22,13 @@ struct note_pane
     size_t capacity;           /* taken のバイト数 */
     size_t used;               /* 取り出したバイト数（終端を含まない） */
     bool overflowed;           /* 取り出しに足りなかった */
+    /* 番号専用のバッファ。保存と検索が借りる taken を描画が無効化しない（ADR 0026 の決定 3） */
+    char16_t *_Nullable numbered;
+    size_t numbered_capacity;
+    struct line_index *_Nullable lines; /* 本文の派生物の写し。所有者はここ */
+    bool lines_stale;                   /* 次に番号を描くときに作り直す */
+    /* EM_STREAMIN を挟むあいだだけ真。途中の本文から表を作らせない（ADR 0026 の補正 5） */
+    bool streaming;
 };
 
 static const wchar_t library_name[] = L"Msftedit.dll";
@@ -77,21 +86,27 @@ static DWORD CALLBACK stream_out(DWORD_PTR cookie, LPBYTE buffer, LONG offered,
     return 0;
 }
 
-/* 取り出し用の領域を bytes まで広げる。 */
-static bool reserve(struct note_pane *_Nonnull pane, size_t bytes)
+/* 取り出し用の領域を bytes まで広げる。保存用と番号用が同じ形で別の領域を持つ。 */
+static bool reserve_into(char16_t *_Nullable *_Nonnull slot, size_t *_Nonnull capacity,
+                         size_t bytes)
 {
-    if (pane->taken != nullptr && bytes <= pane->capacity)
+    if (*slot != nullptr && bytes <= *capacity)
     {
         return true;
     }
-    char16_t *_Nullable grown = realloc(pane->taken, bytes);
+    char16_t *_Nullable grown = realloc(*slot, bytes);
     if (grown == nullptr)
     {
         return false;
     }
-    pane->taken = grown;
-    pane->capacity = bytes;
+    *slot = grown;
+    *capacity = bytes;
     return true;
+}
+
+static bool reserve(struct note_pane *_Nonnull pane, size_t bytes)
+{
+    return reserve_into(&pane->taken, &pane->capacity, bytes);
 }
 
 static HRESULT move_caret(ITextSelection *_Nonnull selection, enum caret_command command)
@@ -151,7 +166,13 @@ static LRESULT CALLBACK pane_procedure(HWND window, UINT message, WPARAM wparam,
     {
         pane->composing = false;
     }
-    return CallWindowProcW(pane->original, window, message, wparam, lparam);
+    LRESULT answer = CallWindowProcW(pane->original, window, message, wparam, lparam);
+    if (message == WM_MOUSEWHEEL)
+    {
+        /* ホイールは EN_VSCROLL を出さないので、動かしたあとで親へ知らせる（決定 4）。 */
+        SendMessageW(GetParent(window), folio_message_pane_scrolled, 0, 0);
+    }
+    return answer;
 }
 
 static bool subclass_pane(struct note_pane *_Nonnull pane)
@@ -216,8 +237,9 @@ enum note_pane_outcome note_pane_create(HWND _Nonnull parent, COLORREF backgroun
      * ES_NOHIDESEL は、検索欄に鍵があるあいだも一致の選択を見せるため（ADR 0023 の決定 4）。 */
     DWORD style = WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | ES_MULTILINE | ES_READONLY |
                   ES_AUTOVSCROLL | ES_NOHIDESEL;
-    pane->handle = CreateWindowExW(0, class_name, L"", style, 0, 0, 0, 0, parent, nullptr,
-                                   GetModuleHandleW(nullptr), nullptr);
+    pane->handle =
+        CreateWindowExW(0, class_name, L"", style, 0, 0, 0, 0, parent,
+                        (HMENU)(INT_PTR)note_pane_control_id, GetModuleHandleW(nullptr), nullptr);
     if (pane->handle == nullptr || !subclass_pane(pane) || !prepare_navigation(pane))
     {
         note_pane_destroy(pane);
@@ -232,8 +254,9 @@ enum note_pane_outcome note_pane_create(HWND _Nonnull parent, COLORREF backgroun
                            .crTextColor = text};
     memcpy(format.szFaceName, editor_face, sizeof editor_face);
     SendMessageW(pane->handle, EM_SETCHARFORMAT, SCF_DEFAULT, (LPARAM)&format);
-    /* 鍵の通知を親の WM_NOTIFY へ上げる（Ctrl+S と Esc）。 */
-    SendMessageW(pane->handle, EM_SETEVENTMASK, 0, ENM_KEYEVENTS);
+    /* 鍵の通知を親の WM_NOTIFY へ上げる（Ctrl+S と Esc）。ENM_KEYEVENTS は消さない。
+     * スクロールと本文の増減は番号の帯の契機なので足す（ADR 0026 の決定 4）。 */
+    SendMessageW(pane->handle, EM_SETEVENTMASK, 0, ENM_KEYEVENTS | ENM_SCROLL | ENM_CHANGE);
     *out = pane;
     return NOTE_PANE_CREATED;
 }
@@ -264,10 +287,16 @@ void note_pane_render(struct note_pane *_Nonnull pane, const char *_Nonnull rtf,
     {
         return;
     }
+    /* 差し替えの中で印を付ける（外の呼び出し元は 4 経路あり、呼び忘れを構造で防ぐ・決定 3）。 */
+    pane->lines_stale = true;
     SendMessageW(pane->handle, EM_SETREADONLY, TRUE, 0);
     struct rtf_stream stream = {.bytes = rtf, .remaining = length};
     EDITSTREAM editing = {.dwCookie = (DWORD_PTR)&stream, .dwError = 0, .pfnCallback = stream_in};
+    /* 流し込みの途中で EN_VSCROLL が届いても、そこから表を作って印を落とさない（補正 5）。
+     * 印を落とすのは流し込みが終わったあとの、最初の描き直しである。 */
+    pane->streaming = true;
     SendMessageW(pane->handle, EM_STREAMIN, SF_RTF, (LPARAM)&editing);
+    pane->streaming = false;
 }
 
 void note_pane_edit(struct note_pane *_Nonnull pane, const char16_t *_Nonnull units, size_t count)
@@ -276,12 +305,15 @@ void note_pane_edit(struct note_pane *_Nonnull pane, const char16_t *_Nonnull un
     {
         return;
     }
+    pane->lines_stale = true;
     SendMessageW(pane->handle, EM_EXLIMITTEXT, 0, editor_limit);
     SendMessageW(pane->handle, EM_SETREADONLY, FALSE, 0);
     /* BOM は付けない（付けると本文の U+FEFF になる・2026-09-09 実測）。 */
     struct rtf_stream stream = {.bytes = (const char *)units, .remaining = count * sizeof *units};
     EDITSTREAM editing = {.dwCookie = (DWORD_PTR)&stream, .dwError = 0, .pfnCallback = stream_in};
+    pane->streaming = true;
     SendMessageW(pane->handle, EM_STREAMIN, SF_TEXT | SF_UNICODE, (LPARAM)&editing);
+    pane->streaming = false;
     SendMessageW(pane->handle, EM_SETMODIFY, FALSE, 0);
 }
 
@@ -315,9 +347,29 @@ enum note_pane_text_outcome note_pane_text(struct note_pane *_Nonnull pane,
     return NOTE_PANE_TEXT_TAKEN;
 }
 
-/* 表示中の平文。段落区切りを CR 1 つのまま受け取るので、EM_EXSETSEL の位置とそのまま合う。
- * GETTEXTEX の cb の単位（バイトか文字か）は版で揺れるので、どちらでも溢れない大きさを確保する
- * （2026-09-17 の Win32 部品測定で実際の文字数を確かめている）。 */
+/* 表示中の平文を slot へ取り出す。段落区切りを CR 1 つのまま受け取るので、EM_EXSETSEL の位置と
+ * そのまま合う。GETTEXTEX の cb の単位（バイトか文字か）は版で揺れるので、どちらでも溢れない
+ * 大きさを確保する（2026-09-17 の Win32 部品測定で実際の文字数を確かめている）。 */
+static enum note_pane_text_outcome take_display(struct note_pane *_Nonnull pane,
+                                                char16_t *_Nullable *_Nonnull slot,
+                                                size_t *_Nonnull capacity, size_t *_Nonnull count)
+{
+    GETTEXTLENGTHEX request = {.flags = GTL_NUMCHARS, .codepage = unicode_codepage};
+    LRESULT length = SendMessageW(pane->handle, EM_GETTEXTLENGTHEX, (WPARAM)&request, 0);
+    size_t limit = length > 0 ? (size_t)length : 0;
+    if (!reserve_into(slot, capacity, (limit + 1) * 2 * sizeof(char16_t)))
+    {
+        return NOTE_PANE_TEXT_OUT_OF_MEMORY;
+    }
+    GETTEXTEX taking = {.cb = (DWORD)((limit + 1) * sizeof(char16_t)),
+                        .flags = GT_DEFAULT,
+                        .codepage = unicode_codepage};
+    LRESULT taken = SendMessageW(pane->handle, EM_GETTEXTEX, (WPARAM)&taking, (LPARAM)*slot);
+    *count = taken > 0 ? (size_t)taken : 0;
+    (*slot)[*count] = u'\0';
+    return NOTE_PANE_TEXT_TAKEN;
+}
+
 enum note_pane_text_outcome note_pane_display_text(struct note_pane *_Nonnull pane,
                                                    const char16_t *_Nonnull *_Nonnull units,
                                                    size_t *_Nonnull count)
@@ -326,22 +378,184 @@ enum note_pane_text_outcome note_pane_display_text(struct note_pane *_Nonnull pa
     {
         return NOTE_PANE_TEXT_UNAVAILABLE;
     }
-    GETTEXTLENGTHEX request = {.flags = GTL_NUMCHARS, .codepage = unicode_codepage};
-    LRESULT length = SendMessageW(pane->handle, EM_GETTEXTLENGTHEX, (WPARAM)&request, 0);
-    size_t limit = length > 0 ? (size_t)length : 0;
-    if (!reserve(pane, (limit + 1) * 2 * sizeof(char16_t)))
+    size_t taken = 0;
+    enum note_pane_text_outcome outcome = take_display(pane, &pane->taken, &pane->capacity, &taken);
+    if (outcome != NOTE_PANE_TEXT_TAKEN)
     {
-        return NOTE_PANE_TEXT_OUT_OF_MEMORY;
+        return outcome;
     }
-    GETTEXTEX taking = {.cb = (DWORD)((limit + 1) * sizeof(char16_t)),
-                        .flags = GT_DEFAULT,
-                        .codepage = unicode_codepage};
-    LRESULT taken = SendMessageW(pane->handle, EM_GETTEXTEX, (WPARAM)&taking, (LPARAM)pane->taken);
-    pane->used = (taken > 0 ? (size_t)taken : 0) * sizeof(char16_t);
-    pane->taken[pane->used / sizeof(char16_t)] = u'\0';
+    pane->used = taken * sizeof(char16_t);
     *units = pane->taken;
-    *count = pane->used / sizeof(char16_t);
+    *count = taken;
     return NOTE_PANE_TEXT_TAKEN;
+}
+
+void note_pane_invalidate_lines(struct note_pane *_Nonnull pane)
+{
+    pane->lines_stale = true;
+}
+
+/* 番号の表を、必要なときだけ作り直す（描画の合流が打鍵の連続をまとめる・決定 3）。 */
+static bool refresh_lines(struct note_pane *_Nonnull pane)
+{
+    if (pane->streaming)
+    {
+        /* 流し込みの途中の本文は原文ではない。表を作らず「古い」の印も残す（補正 5）。 */
+        return false;
+    }
+    if (pane->lines != nullptr && !pane->lines_stale)
+    {
+        return true;
+    }
+    size_t count = 0;
+    if (take_display(pane, &pane->numbered, &pane->numbered_capacity, &count) !=
+        NOTE_PANE_TEXT_TAKEN)
+    {
+        return false;
+    }
+    struct line_index *_Nullable built = nullptr;
+    if (line_index_create(pane->numbered, count, &built) != LINE_INDEX_READY)
+    {
+        return false;
+    }
+    line_index_destroy(pane->lines);
+    pane->lines = built;
+    pane->lines_stale = false;
+    return true;
+}
+
+/* 表示行の先頭の文字位置と、その y（RichEdit の client 座標）。行高は一定でないので 1 行ずつ問う。
+ */
+static bool display_line_top(const struct note_pane *_Nonnull pane, LRESULT display,
+                             size_t *_Nonnull position, LONG *_Nonnull top)
+{
+    LRESULT at = SendMessageW(pane->handle, EM_LINEINDEX, (WPARAM)display, 0);
+    if (at < 0)
+    {
+        return false;
+    }
+    POINTL point = {.x = 0, .y = 0};
+    SendMessageW(pane->handle, EM_POSFROMCHAR, (WPARAM)&point, (LPARAM)at);
+    *position = (size_t)at;
+    *top = point.y;
+    return true;
+}
+
+/* その位置が論理行の先頭なら番号を、継続行なら 0 を答える（継続行には番号を出さない）。 */
+static size_t number_at(const struct note_pane *_Nonnull pane, size_t position)
+{
+    struct line_mark mark = {.number = 0, .first = false};
+    if (pane->lines == nullptr || line_index_at(pane->lines, position, &mark) != LINE_INDEX_READY ||
+        !mark.first)
+    {
+        return 0;
+    }
+    return mark.number;
+}
+
+/* 直前に置いた行の高さを、次の表示行の y で確定する。opened が負なら待っている行は無い。 */
+static void close_row(struct gutter_row *_Nonnull rows, size_t count, LONG *_Nonnull opened,
+                      LONG top)
+{
+    if (*opened < 0)
+    {
+        return;
+    }
+    rows[count - 1].height = (int)(top - *opened);
+    *opened = -1;
+}
+
+static void collect_rows(struct note_pane *_Nonnull pane, struct gutter_row *_Nonnull rows,
+                         size_t capacity, size_t *_Nonnull count)
+{
+    RECT bounds = {0, 0, 0, 0};
+    GetClientRect(pane->handle, &bounds);
+    POINT origin = {.x = 0, .y = 0};
+    MapWindowPoints(pane->handle, GetParent(pane->handle), &origin, 1);
+    LRESULT total = SendMessageW(pane->handle, EM_GETLINECOUNT, 0, 0);
+    LONG opened = -1; /* 高さがまだ決まっていない行の y。無ければ -1 */
+    for (LRESULT display = SendMessageW(pane->handle, EM_GETFIRSTVISIBLELINE, 0, 0);
+         display < total; ++display)
+    {
+        size_t position = 0;
+        LONG top = 0;
+        if (!display_line_top(pane, display, &position, &top))
+        {
+            break;
+        }
+        close_row(rows, *count, &opened, top);
+        if (top >= bounds.bottom || *count == capacity)
+        {
+            break;
+        }
+        size_t number = number_at(pane, position);
+        if (number == 0)
+        {
+            continue;
+        }
+        rows[*count] = (struct gutter_row){
+            .top = origin.y + top, .height = (int)(bounds.bottom - top), .number = number};
+        *count += 1;
+        opened = top;
+    }
+}
+
+bool note_pane_visible_rows(struct note_pane *_Nonnull pane, struct gutter_row *_Nonnull rows,
+                            size_t capacity, size_t *_Nonnull count)
+{
+    *count = 0;
+    if (pane->handle == nullptr || !refresh_lines(pane))
+    {
+        return false;
+    }
+    collect_rows(pane, rows, capacity, count);
+    return true;
+}
+
+size_t note_pane_line_digits(struct note_pane *_Nonnull pane)
+{
+    /* 作り直せなかった（確保失敗・流し込み中）ときも、古い表があればその桁数を答える。
+     * 番号が描けないのに帯の幅だけ縮んで本文が動く、を作らない（ADR 0026 の補正 8）。 */
+    bool rebuilt = pane->handle != nullptr && refresh_lines(pane);
+    if (!rebuilt && pane->lines == nullptr)
+    {
+        return line_index_minimum_digits;
+    }
+    return line_index_digits(pane->lines);
+}
+
+size_t note_pane_first_visible_line(struct note_pane *_Nonnull pane)
+{
+    if (pane->handle == nullptr || !refresh_lines(pane))
+    {
+        return 0;
+    }
+    LRESULT display = SendMessageW(pane->handle, EM_GETFIRSTVISIBLELINE, 0, 0);
+    size_t position = 0;
+    LONG top = 0;
+    if (!display_line_top(pane, display, &position, &top))
+    {
+        return 0;
+    }
+    struct line_mark mark = {.number = 0, .first = false};
+    if (line_index_at(pane->lines, position, &mark) != LINE_INDEX_READY)
+    {
+        return 0;
+    }
+    return mark.number;
+}
+
+void note_pane_scroll_to_line(struct note_pane *_Nonnull pane, size_t number)
+{
+    size_t position = 0;
+    if (pane->handle == nullptr || !refresh_lines(pane) ||
+        line_index_start(pane->lines, number, &position) != LINE_INDEX_READY)
+    {
+        return;
+    }
+    LRESULT wanted = SendMessageW(pane->handle, EM_EXLINEFROMCHAR, 0, (LPARAM)position);
+    LRESULT now = SendMessageW(pane->handle, EM_GETFIRSTVISIBLELINE, 0, 0);
+    SendMessageW(pane->handle, EM_LINESCROLL, 0, (LPARAM)(wanted - now));
 }
 
 void note_pane_select(struct note_pane *_Nonnull pane, size_t start, size_t end)
@@ -391,6 +605,8 @@ void note_pane_destroy(struct note_pane *_Nullable pane)
     {
         FreeLibrary(pane->library);
     }
+    line_index_destroy(pane->lines);
+    free(pane->numbered);
     free(pane->taken);
     free(pane);
 }

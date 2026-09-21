@@ -58,6 +58,9 @@
 | anchor（探し始める位置） | いまの選択範囲。次へは選択の外側から、入力中は同じ一致の頭から数え直す。選択の正本は RichEdit で、core も application も持たない | `struct note_search_span`（core）・ADR 0023 の決定 1 |
 | 復旧待ち（recovering） | 記録を公開したまま完了していない状態。パンくずは古い名前を実ファイル名として示さず、次の意図が先に同じ改名を再試行する | `pane_title_view.recovering`・`FOLIO_STATE_RENAME_PENDING`（application） |
 | 絞り込み（index filter） | 全ノートの名前と本文に語が含まれるノートだけを索引に残すこと。一致を持つカテゴリは折り畳んでいても展開して並ぶ。ノート内検索（FR-011）とは対象も語も別 | `index_filter`（core）・`folio_state_set_index_filter`（application）・ADR 0024 |
+| 論理行（logical line） | md 原文の改行で区切られた 1 行。RichEdit が折り返して作る**表示行**とは別で、折り返しの継続行には番号を出さない。表示中の平文では段落区切りが CR 1 つに揃っている | `line_index`（core）・`struct line_mark`・ADR 0026 の決定 2 |
+| 番号の帯（gutter） | 編集中の本文の左の空きに、主窓が自前で描く論理行番号の列。RichEdit の中には置かない（スクロールで一緒に動いてしまうため） | `struct gutter_row`（ui/win32）・`note_pane_visible_rows`・ADR 0026 の決定 1 / 3 |
+| 設定（settings） | `data/settings.json` の版 1。効果を実装したキーだけが入り、キーを足すたびに版を上げる。無いときだけ既定値で始め、読めなければ既定値で起動して**上書きしない** | `folio_settings`（core）・`folio_state_set_number`（application）・ADR 0025 |
 | 本文の写し（note corpus） | 絞り込みが読む、ノートの本文の複製。**空でない語が初めて来たときに 1 回だけ**ポートから読み、以後は保存・新規・改名・移動で該当の写しだけ差し替える。宛先はカテゴリ名とノート名（並び替えでは動かない）。写しが無いノートは一致しない | `note_corpus`（core）・ADR 0024 の決定 1 |
 | 配置の入力（drawer source） | ドロワーの配置が読む、カテゴリ台帳・索引台帳の列・nullable の絞り込みの束。絞り込みの有無で配置の関数を分けないための 1 つの型 | `struct drawer_source`（core）・ADR 0024 の決定 3 |
 

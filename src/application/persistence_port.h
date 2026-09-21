@@ -11,6 +11,7 @@
 #include "rename_outcome.h"
 
 struct category_ledger;
+struct folio_settings;
 struct name_list;
 struct note_ledger;
 struct note_rename;
@@ -82,6 +83,14 @@ struct persistence_port
     enum persistence_outcome (*_Nonnull write_note_ledger)(
         struct persistence_adapter *_Nonnull adapter, const char *_Nonnull category,
         const struct note_ledger *_Nonnull ledger);
+    /* data/settings.json。無ければ ABSENT で、そのときだけ既定値で始める（ADR 0025 の決定 4）。 */
+    enum persistence_outcome (*_Nonnull read_settings)(
+        struct persistence_adapter *_Nonnull adapter,
+        struct folio_settings *_Nullable *_Nonnull out);
+    /* data/settings.json を台帳と同じ原子的な置き換えで書く。最初の変更で初めて作られる。 */
+    enum persistence_outcome (*_Nonnull write_settings)(
+        struct persistence_adapter *_Nonnull adapter,
+        const struct folio_settings *_Nonnull settings);
 };
 
 #endif

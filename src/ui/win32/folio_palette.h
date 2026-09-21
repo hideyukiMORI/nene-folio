@@ -23,6 +23,7 @@ struct folio_palette
     COLORREF border;                /* 窓の縁と区切り記号 */
     COLORREF breadcrumb_background; /* Powerlineのカテゴリ面 */
     COLORREF breadcrumb_text;       /* カテゴリ面の文字 */
+    COLORREF gutter_text;           /* 編集中の本文の左に出す原文の行番号（ADR 0026 の決定 7） */
 };
 
 [[nodiscard]] struct folio_palette folio_palette_for(enum folio_theme theme);

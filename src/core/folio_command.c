@@ -26,17 +26,37 @@ static const struct
     [FOLIO_COMMAND_RENAME] = {FOLIO_COMMAND_RENAME, "名前を変更", 1, {"rename", ""}},
     /* GUI 専用操作（ADR 0018）。`/` `?` `n` `N` と Ctrl+F が同じ ID を実行する（ADR 0023）。 */
     [FOLIO_COMMAND_FIND] = {FOLIO_COMMAND_FIND, "このノート内を検索", 0, {"", ""}},
+    /* 語を要る Ex の文法（ADR 0026 の決定 8）。パレットとメニューには出ない。 */
+    [FOLIO_COMMAND_SET] = {FOLIO_COMMAND_SET, "設定を変える（:set number）", 2, {"set", "se"}},
+    [FOLIO_COMMAND_TOGGLE_NUMBER] = {FOLIO_COMMAND_TOGGLE_NUMBER,
+                                     "行番号の表示を切り替える",
+                                     0,
+                                     {"", ""}},
 };
 
-/* 名前引数を許す操作（ADR0020 / ADR0022）。閉じた集合なので増えたらここで落ちる。 */
-static bool takes_name(enum folio_command command)
+/* 設定の語（ADR 0026 の決定 8）。効果を実装した語だけを並べる。 */
+static const struct
+{
+    const char *_Nonnull name;
+    enum folio_option option;
+} options[] = {
+    {"number", FOLIO_OPTION_NUMBER_SHOW},      {"nu", FOLIO_OPTION_NUMBER_SHOW},
+    {"nonumber", FOLIO_OPTION_NUMBER_HIDE},    {"nonu", FOLIO_OPTION_NUMBER_HIDE},
+    {"number!", FOLIO_OPTION_NUMBER_TOGGLE},   {"nu!", FOLIO_OPTION_NUMBER_TOGGLE},
+    {"invnumber", FOLIO_OPTION_NUMBER_TOGGLE}, {"invnu", FOLIO_OPTION_NUMBER_TOGGLE},
+};
+
+/* 引数の種類（ADR0020 / ADR0022 / ADR 0026）。閉じた集合なので増えたらここで落ちる。 */
+static enum folio_argument_kind argument_kind(enum folio_command command)
 {
     switch (command)
     {
     case FOLIO_COMMAND_SAVE:
     case FOLIO_COMMAND_SAVE_AS:
     case FOLIO_COMMAND_RENAME:
-        return true;
+        return FOLIO_ARGUMENT_NAME;
+    case FOLIO_COMMAND_SET:
+        return FOLIO_ARGUMENT_OPTION;
     case FOLIO_COMMAND_QUIT:
     case FOLIO_COMMAND_SAVE_QUIT:
     case FOLIO_COMMAND_FORCE_QUIT:
@@ -45,9 +65,46 @@ static bool takes_name(enum folio_command command)
     case FOLIO_COMMAND_VIEW:
     case FOLIO_COMMAND_NEW:
     case FOLIO_COMMAND_FIND:
-        return false;
+    case FOLIO_COMMAND_TOGGLE_NUMBER:
+        return FOLIO_ARGUMENT_NONE;
     }
-    return false;
+    return FOLIO_ARGUMENT_NONE;
+}
+
+bool folio_command_listed(enum folio_command command)
+{
+    switch (command)
+    {
+    case FOLIO_COMMAND_SET:
+        return false;
+    case FOLIO_COMMAND_SAVE:
+    case FOLIO_COMMAND_QUIT:
+    case FOLIO_COMMAND_SAVE_QUIT:
+    case FOLIO_COMMAND_FORCE_QUIT:
+    case FOLIO_COMMAND_HELP:
+    case FOLIO_COMMAND_EDIT:
+    case FOLIO_COMMAND_VIEW:
+    case FOLIO_COMMAND_NEW:
+    case FOLIO_COMMAND_SAVE_AS:
+    case FOLIO_COMMAND_RENAME:
+    case FOLIO_COMMAND_FIND:
+    case FOLIO_COMMAND_TOGGLE_NUMBER:
+        return true;
+    }
+    return true;
+}
+
+size_t folio_command_listed_count(void)
+{
+    size_t listed = 0;
+    for (size_t item = 0; item < folio_command_count(); ++item)
+    {
+        if (folio_command_listed(catalog[item].command))
+        {
+            listed += 1;
+        }
+    }
+    return listed;
 }
 
 static bool ascii_space(char value)
@@ -178,13 +235,37 @@ bool folio_command_parse(const char *_Nonnull text, size_t length, enum folio_co
         return false;
     }
     size_t name = skip_spaces(text, token_end, length);
-    if (name < length && !takes_name(command))
+    if (name < length && argument_kind(command) == FOLIO_ARGUMENT_NONE)
     {
         return false;
     }
     *out = command;
     *argument = name;
     return true;
+}
+
+bool folio_command_parse_option(const char *_Nonnull text, size_t length,
+                                enum folio_option *_Nonnull out)
+{
+    size_t begin = 0;
+    size_t end = 0;
+    trim(text, length, &begin, &end);
+    for (size_t at = begin; at < end; ++at)
+    {
+        if (ascii_space(text[at]))
+        {
+            return false; /* 余計な語。語は 1 つだけ（ADR 0026 の決定 8） */
+        }
+    }
+    for (size_t item = 0; item < sizeof options / sizeof options[0]; ++item)
+    {
+        if (same_span(text + begin, end - begin, options[item].name))
+        {
+            *out = options[item].option;
+            return true;
+        }
+    }
+    return false;
 }
 
 bool folio_command_matches(enum folio_command command, const char *_Nonnull text, size_t length)

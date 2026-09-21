@@ -18,6 +18,8 @@ static const struct folio_palette dark_palette = {
     .border = RGB(0x24, 0x27, 0x2C),
     .breadcrumb_background = RGB(0x2C, 0x20, 0x26),
     .breadcrumb_text = RGB(0xD6, 0xCF, 0xCC),
+    /* 地 #101214 に対し 4.91:1。本文より薄く、頭の薄い文字より濃い（ADR 0026 の決定 7）。 */
+    .gutter_text = RGB(0x7C, 0x83, 0x8D),
 };
 
 static const struct folio_palette light_palette = {
@@ -35,6 +37,8 @@ static const struct folio_palette light_palette = {
     .border = RGB(0xD9, 0xDD, 0xE3),
     .breadcrumb_background = RGB(0xE6, 0xDF, 0xDB),
     .breadcrumb_text = RGB(0x45, 0x3A, 0x3D),
+    /* 地 #FFFFFF に対し 4.86:1（ADR 0026 の決定 7）。 */
+    .gutter_text = RGB(0x6B, 0x72, 0x7C),
 };
 
 struct folio_palette folio_palette_for(enum folio_theme theme)

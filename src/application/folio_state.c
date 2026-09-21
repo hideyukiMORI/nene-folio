@@ -3,6 +3,7 @@
 #include "appearance_port.h"
 #include "category_ledger.h"
 #include "drawer_layout.h"
+#include "folio_settings.h"
 #include "index_filter.h"
 #include "markdown_rtf.h"
 #include "name_list.h"
@@ -22,6 +23,10 @@ struct folio_state
 {
     struct persistence_port port;
     enum folio_theme theme;
+    /* data/settings.json の値の所有者（ADR 0025 の決定 5）。読めなければ既定値のまま */
+    struct folio_settings *_Nullable settings;
+    /* READY か SETTINGS_UNREADABLE。後者のあいだ設定の変更を断り、上書きもしない（決定 6） */
+    enum folio_state_outcome settings_notice;
     struct rtf_palette palette;
     struct category_ledger *_Nullable categories;
     struct note_ledger *_Nonnull *_Nullable notes; /* categories と同じ数・同じ順 */
@@ -329,6 +334,48 @@ static enum folio_state_outcome load_all_notes(struct folio_state *_Nonnull stat
     return FOLIO_STATE_READY;
 }
 
+/* 無ければ既定値のまま、壊れていれば既定値＋知らせ、記憶不足だけが起動の失敗（決定 4 / 6）。
+ * 読みでは返らない書き込み側の値も「読めない」に畳んで、閉じた列挙のまま扱う。 */
+static enum folio_state_outcome adopt_settings(struct folio_state *_Nonnull state,
+                                               enum persistence_outcome read,
+                                               struct folio_settings *_Nullable loaded)
+{
+    switch (read)
+    {
+    case PERSISTENCE_LOADED:
+        /* LOADED なのに出力を触らなかったポートは契約違反である。既定値を捨てて null を
+         * 採用するより、確保失敗と同じ起動の失敗に畳む（ADR 0026 の補正 10）。 */
+        if (loaded == nullptr)
+        {
+            return FOLIO_STATE_OUT_OF_MEMORY;
+        }
+        folio_settings_destroy(state->settings);
+        state->settings = loaded;
+        return FOLIO_STATE_READY;
+    case PERSISTENCE_ABSENT:
+        return FOLIO_STATE_READY;
+    case PERSISTENCE_OUT_OF_MEMORY:
+        return FOLIO_STATE_OUT_OF_MEMORY;
+    case PERSISTENCE_UNREADABLE:
+    case PERSISTENCE_MALFORMED:
+    case PERSISTENCE_STORED:
+    case PERSISTENCE_UNWRITABLE:
+    case PERSISTENCE_NAME_TAKEN:
+        state->settings_notice = FOLIO_STATE_SETTINGS_UNREADABLE;
+        return FOLIO_STATE_READY;
+    }
+    return FOLIO_STATE_READY;
+}
+
+static enum folio_state_outcome load_settings(struct folio_state *_Nonnull state,
+                                              const struct persistence_port *_Nonnull port)
+{
+    struct folio_settings *_Nullable loaded = nullptr;
+    /* 読みを先に済ませてから渡す（引数の評価順は決まっていない）。 */
+    enum persistence_outcome read = port->read_settings(port->adapter, &loaded);
+    return adopt_settings(state, read, loaded);
+}
+
 enum folio_state_outcome folio_state_create(const struct persistence_port *_Nonnull persistence,
                                             const struct appearance_port *_Nonnull appearance,
                                             struct folio_state *_Nullable *_Nonnull out)
@@ -343,7 +390,8 @@ enum folio_state_outcome folio_state_create(const struct persistence_port *_Nonn
     state->palette = rtf_palette_for(state->theme);
     if (markdown_rtf_empty(state->palette, &state->pane) != MARKDOWN_RTF_CONVERTED ||
         note_text_create("", 0, &state->body) != NOTE_TEXT_ACCEPTED ||
-        note_corpus_create(&state->corpus) != NOTE_CORPUS_ACCEPTED)
+        note_corpus_create(&state->corpus) != NOTE_CORPUS_ACCEPTED ||
+        folio_settings_default(&state->settings) != FOLIO_SETTINGS_READY)
     {
         folio_state_destroy(state);
         return FOLIO_STATE_OUT_OF_MEMORY;
@@ -358,6 +406,10 @@ enum folio_state_outcome folio_state_create(const struct persistence_port *_Nonn
     if (outcome == FOLIO_STATE_READY)
     {
         outcome = load_all_notes(state, persistence);
+    }
+    if (outcome == FOLIO_STATE_READY)
+    {
+        outcome = load_settings(state, persistence);
     }
     if (outcome != FOLIO_STATE_READY)
     {
@@ -730,6 +782,55 @@ enum folio_state_outcome folio_state_reveal_cursor(struct folio_state *_Nonnull 
 enum folio_theme folio_state_theme(const struct folio_state *_Nonnull state)
 {
     return state->theme;
+}
+
+enum folio_state_outcome folio_state_settings_notice(const struct folio_state *_Nonnull state)
+{
+    return state->settings_notice;
+}
+
+bool folio_state_number(const struct folio_state *_Nonnull state)
+{
+    return folio_settings_number(state->settings);
+}
+
+/* 書けたときの結果。書けない理由は場所の違う 1 行に写す（台帳の STORE_FAILED とは別）。 */
+static enum folio_state_outcome from_settings_store(enum persistence_outcome stored)
+{
+    if (stored == PERSISTENCE_STORED)
+    {
+        return FOLIO_STATE_READY;
+    }
+    return stored == PERSISTENCE_OUT_OF_MEMORY ? FOLIO_STATE_OUT_OF_MEMORY
+                                               : FOLIO_STATE_SETTINGS_STORE_FAILED;
+}
+
+enum folio_state_outcome folio_state_set_number(struct folio_state *_Nonnull state, bool number)
+{
+    if (state->settings_notice != FOLIO_STATE_READY)
+    {
+        return state->settings_notice;
+    }
+    if (folio_settings_number(state->settings) == number)
+    {
+        return FOLIO_STATE_READY;
+    }
+    struct folio_settings *_Nullable changed = nullptr;
+    if (folio_settings_with_number(state->settings, number, &changed) != FOLIO_SETTINGS_READY)
+    {
+        return FOLIO_STATE_OUT_OF_MEMORY;
+    }
+    /* 先に書いてから採用する。書けなければ値を変えない（ADR 0025 の決定 5）。 */
+    enum folio_state_outcome stored =
+        from_settings_store(state->port.write_settings(state->port.adapter, changed));
+    if (stored != FOLIO_STATE_READY)
+    {
+        folio_settings_destroy(changed);
+        return stored;
+    }
+    folio_settings_destroy(state->settings);
+    state->settings = changed;
+    return FOLIO_STATE_READY;
 }
 
 size_t folio_state_note_count(const struct folio_state *_Nonnull state)
@@ -2160,9 +2261,8 @@ size_t folio_state_pane_rtf_length(const struct folio_state *_Nonnull state)
     return markdown_rtf_length(state->pane);
 }
 
-/* 「途中で止まったまま残っている処理」と、探せなかった理由の 1 行（ADR 0021 / 0022 / 0023）。
- * 1 つ目の switch が C-012 の行数上限に収まらないので、続きをここに置く。
- * 網羅は folio_state_failure_line 側の switch と同じ列挙で守る。 */
+/* folio_state_failure_line の続き。1 つ目の switch が C-012 の行数上限に収まらないので分けてある。
+ * 網羅は 1 つ目の switch と同じ列挙で守る（新しい switch は増やさない）。 */
 static const char *_Nonnull unfinished_failure_line(enum folio_state_outcome outcome)
 {
     switch (outcome)
@@ -2171,8 +2271,7 @@ static const char *_Nonnull unfinished_failure_line(enum folio_state_outcome out
         return "mdは反映しましたが、台帳（index."
                "json）を書き戻せませんでした。保存を再試行するか、次回の起動で揃います。";
     case FOLIO_STATE_LEDGER_UNSYNCED:
-        return "前回の台帳（index.json）をまだ書き戻せていません。"
-               "今回の操作は行っていないので、"
+        return "前回の台帳（index.json）をまだ書き戻せていません。今回の操作は行っていないので、"
                "保存を再試行してください。";
     case FOLIO_STATE_RENAME_PENDING:
         return "名前の変更が途中で止まっています。同じ名前変更をやり直してください。";
@@ -2196,6 +2295,13 @@ static const char *_Nonnull unfinished_failure_line(enum folio_state_outcome out
         return "表示中の本文を取り出せませんでした。探していません。";
     case FOLIO_STATE_FILTERED:
         return "絞り込み中は並び替えと開閉ができません。";
+    case FOLIO_STATE_SETTINGS_UNREADABLE:
+        return "設定（data/settings.json）を読めません。既定値で始め、直すまで上書きしません。";
+    case FOLIO_STATE_UNSAVED_CHANGES:
+        return "未保存の変更があります。保存するか、未保存変更を破棄して終了してください。";
+    case FOLIO_STATE_NAME_TAKEN:
+        return "同じ名前のノートがあります。別の名前を指定してください。既存ファイルは変更していま"
+               "せん。";
     case FOLIO_STATE_READY:
     case FOLIO_STATE_DATA_UNREADABLE:
     case FOLIO_STATE_LEDGER_MALFORMED:
@@ -2208,8 +2314,7 @@ static const char *_Nonnull unfinished_failure_line(enum folio_state_outcome out
     case FOLIO_STATE_NOTE_MALFORMED:
     case FOLIO_STATE_NOTE_STORE_FAILED:
     case FOLIO_STATE_HISTORY_FAILED:
-    case FOLIO_STATE_UNSAVED_CHANGES:
-    case FOLIO_STATE_NAME_TAKEN:
+    case FOLIO_STATE_SETTINGS_STORE_FAILED:
     case FOLIO_STATE_OUT_OF_MEMORY:
     case FOLIO_STATE_NAME_REQUIRED:
     case FOLIO_STATE_INVALID_NAME:
@@ -2225,6 +2330,7 @@ const char *_Nonnull folio_state_failure_line(enum folio_state_outcome outcome)
     switch (outcome)
     {
     case FOLIO_STATE_READY:
+    case FOLIO_STATE_CANCELLED:
         return "";
     case FOLIO_STATE_DATA_UNREADABLE:
         return "data/ を読めませんでした。";
@@ -2249,11 +2355,10 @@ const char *_Nonnull folio_state_failure_line(enum folio_state_outcome outcome)
         return "ノートを書き戻せませんでした。編集中の本文はそのままです。";
     case FOLIO_STATE_HISTORY_FAILED:
         return "履歴を書けなかったので保存していません。編集中の本文は残っています。";
+    case FOLIO_STATE_SETTINGS_STORE_FAILED:
+        return "設定（data/settings.json）を書けませんでした。設定は変えていません。";
     case FOLIO_STATE_UNSAVED_CHANGES:
-        return "未保存の変更があります。保存するか、未保存変更を破棄して終了してください。";
     case FOLIO_STATE_NAME_TAKEN:
-        return "同じ名前のノートがあります。別の名前を指定してください。既存ファイルは変更していま"
-               "せん。";
     case FOLIO_STATE_LEDGER_STALE:
     case FOLIO_STATE_LEDGER_UNSYNCED:
     case FOLIO_STATE_RENAME_PENDING:
@@ -2266,6 +2371,7 @@ const char *_Nonnull folio_state_failure_line(enum folio_state_outcome outcome)
     case FOLIO_STATE_SEARCH_MALFORMED:
     case FOLIO_STATE_PANE_UNAVAILABLE:
     case FOLIO_STATE_FILTERED:
+    case FOLIO_STATE_SETTINGS_UNREADABLE:
         return unfinished_failure_line(outcome);
     case FOLIO_STATE_OUT_OF_MEMORY:
         return "記憶域が足りません。";
@@ -2277,8 +2383,6 @@ const char *_Nonnull folio_state_failure_line(enum folio_state_outcome outcome)
     case FOLIO_STATE_ALREADY_NAMED:
         return "このノートには名前があります。別名保存（:saveas）または名前変更（:"
                "rename）を使ってください。";
-    case FOLIO_STATE_CANCELLED:
-        return "";
     }
     return "data/ を読めませんでした。";
 }
@@ -2303,5 +2407,6 @@ void folio_state_destroy(struct folio_state *_Nullable state)
     utf8_text_destroy(state->index_term);
     index_filter_destroy(state->filter);
     note_corpus_destroy(state->corpus);
+    folio_settings_destroy(state->settings);
     free(state);
 }

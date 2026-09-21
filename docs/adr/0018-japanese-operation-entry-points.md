@@ -36,3 +36,9 @@ hideが採用した日本語GUIの設計に従い、ADR0016の操作登録表と
 Win32の描画・IME・フォーカス・Undoは実機で別記する。既存ゲート・依存・保存スキーマの変更はない。Waivers: none。
 
 メニュー選択の契約は[TrackPopupMenuEx](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-trackpopupmenuex)のTPM_RETURNCMD／TPM_NONOTIFY、登録は[AppendMenuW](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-appendmenuw)を使う。
+
+## 2026-09-17 の補正（ADR 0026・決定本文は書き換えない）
+
+「登録表の操作はパレットと『操作』メニューに必ず出る」を、core の閉じた述語 `folio_command_listed(command)` が真の操作に限る、へ改める。
+語を要る Ex の文法（`FOLIO_COMMAND_SET`）は、パレットとメニューが引数を渡せないので偽。ほかの操作はすべて真で、
+新しい操作を足すたびに閉じた switch が出すかどうかを決めさせる。理由と範囲は [ADR 0026](0026-line-numbers.md) の決定 8。

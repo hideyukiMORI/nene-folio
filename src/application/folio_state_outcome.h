@@ -44,6 +44,11 @@ enum folio_state_outcome : unsigned char
     FOLIO_STATE_SEARCH_MALFORMED,
     /* 絞り込み中に並び替え・開閉が来た。台帳もファイルも表示も変えていない（ADR 0024 の決定 4） */
     FOLIO_STATE_FILTERED,
+    /* 設定が版 1 の形ではない・読めない。既定値で起動し、このセッションは設定を変えず、
+     * 人が直すか消すまで上書きもしない（ADR 0025 の決定 6） */
+    FOLIO_STATE_SETTINGS_UNREADABLE,
+    /* 設定を書けなかった。値は変えていない（決定 5）。台帳の STORE_FAILED とは場所が違う */
+    FOLIO_STATE_SETTINGS_STORE_FAILED,
     /* 右ペインが表示している平文を取り出せない。探していないし、表示も選択も変えていない */
     FOLIO_STATE_PANE_UNAVAILABLE,
     FOLIO_STATE_OUT_OF_MEMORY,
