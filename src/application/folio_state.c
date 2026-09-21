@@ -343,6 +343,12 @@ static enum folio_state_outcome adopt_settings(struct folio_state *_Nonnull stat
     switch (read)
     {
     case PERSISTENCE_LOADED:
+        /* LOADED なのに出力を触らなかったポートは契約違反である。既定値を捨てて null を
+         * 採用するより、確保失敗と同じ起動の失敗に畳む（ADR 0026 の補正 10）。 */
+        if (loaded == nullptr)
+        {
+            return FOLIO_STATE_OUT_OF_MEMORY;
+        }
         folio_settings_destroy(state->settings);
         state->settings = loaded;
         return FOLIO_STATE_READY;
