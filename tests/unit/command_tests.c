@@ -87,6 +87,10 @@ static void verify_listed(void)
         "the toggle is a listed operation with a Japanese label and no alias");
     require(folio_command_matches(FOLIO_COMMAND_TOGGLE_NUMBER, "行番号", strlen("行番号")),
             "the palette finds the toggle by label");
+    /* パレットの箱の高さはこの数で決まる。総数（13）で取ると 1 行ぶん余る（補正 9）。 */
+    require(folio_command_listed_count() == 12, "twelve operations are offered on a surface");
+    require(folio_command_listed_count() == folio_command_count() - 1,
+            "exactly the one unlisted Ex grammar is left out");
 }
 
 static void verify_rejections(void)

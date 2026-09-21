@@ -102,6 +102,19 @@ static void verify_trailing_break(void)
     line_index_destroy(index);
 }
 
+/* 段落区切りは CR 1 つだけで、LF は普通の文字である（ADR 0023 の決定 1）。
+ * CRLF の入力が来ても行を 2 度数えず、LF は次の行の 1 文字目になる。 */
+static void verify_line_feed_is_ordinary(void)
+{
+    struct line_index *index = indexed(u"a\r\nb");
+    require(line_index_count(index) == 2, "CR LF makes one break, not two");
+    expect_mark(index, 1, inside(1), "the CR still belongs to line 1");
+    expect_mark(index, 2, starting(2), "the LF is the first character of line 2");
+    expect_mark(index, 3, inside(2), "the character after the LF is inside the same line");
+    expect_start(index, 2, 2, "line 2 starts at the LF, not after it");
+    line_index_destroy(index);
+}
+
 static void verify_out_of_range(void)
 {
     struct line_index *index = indexed(u"a\rb");
@@ -158,6 +171,7 @@ void run_line_index_tests(void)
     verify_single_line();
     verify_lines_and_starts();
     verify_trailing_break();
+    verify_line_feed_is_ordinary();
     verify_out_of_range();
     verify_long_line();
     verify_digits(9, 3);

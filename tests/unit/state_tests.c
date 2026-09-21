@@ -2833,6 +2833,32 @@ static void verify_set_number_unwritable(void)
     folio_state_destroy(state);
 }
 
+/* 設定の変更は data/ のノートを動かさないので、未完了の改名を再試行しない
+ * （保存・切替・並替・色・新規・別名保存だけが再試行する・ADR 0022 の決定 6）。 */
+static void verify_set_number_ignores_resumed_rename(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY, "select to rename");
+    struct note_name *name = accepted_note_name("新しい名前");
+    adapter.rename_outcome = RENAME_PENDING;
+    require(folio_state_rename_note(state, name, u"", 0) == FOLIO_STATE_RENAME_PENDING,
+            "the rename stops after publishing its journal");
+    note_name_destroy(name);
+    size_t renames = adapter.renames;
+    adapter.rename_outcome = RENAME_COMPLETED;
+    require(folio_state_set_number(state, true) == FOLIO_STATE_READY,
+            "the settings change is accepted while a rename is unfinished");
+    require(adapter.renames == renames, "it never calls rename_note, not even to resume");
+    require(adapter.settings_writes == 1 && adapter.written_number,
+            "and the settings are written exactly once");
+    require(folio_state_number(state), "the written value is adopted");
+    struct rename_view pending = {.from = "", .to = ""};
+    require(folio_state_rename_pending(state, &pending) && same_text(pending.to, "新しい名前"),
+            "the held intent is still waiting for an intent that touches data/");
+    folio_state_destroy(state);
+}
+
 /* 読めない設定では既定値で起動し、知らせを 1 つ持ち、変更を断って上書きしない（決定 6）。 */
 static void verify_settings_unreadable(enum persistence_outcome read,
                                        const char *_Nonnull description)
@@ -2891,6 +2917,7 @@ static void verify_settings(void)
     verify_settings_loaded();
     verify_set_number();
     verify_set_number_unwritable();
+    verify_set_number_ignores_resumed_rename();
     verify_settings_unreadable(PERSISTENCE_MALFORMED, "malformed settings still start");
     verify_settings_unreadable(PERSISTENCE_UNREADABLE, "unreadable settings still start");
     verify_settings_shapes();

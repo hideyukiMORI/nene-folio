@@ -72,6 +72,10 @@ static void verify_refusals(void)
                    FOLIO_SETTINGS_MALFORMED, "a duplicated key is refused");
     expect_refusal("{\"version\": 1, \"number\": 1}", FOLIO_SETTINGS_MALFORMED,
                    "a number where a boolean belongs is refused");
+    expect_refusal("{\"version\": 1, \"number\": null}", FOLIO_SETTINGS_MALFORMED,
+                   "null is not a boolean, and it does not fall back to the default");
+    expect_refusal("{\"version\": 1, \"number\": {\"value\": true}}", FOLIO_SETTINGS_MALFORMED,
+                   "a nested object where a boolean belongs is refused");
     expect_refusal("{\"version\": \"1\", \"number\": true}", FOLIO_SETTINGS_MALFORMED,
                    "a string version is refused");
     expect_refusal("{\"number\": true, \"version\": 1}", FOLIO_SETTINGS_MALFORMED,
