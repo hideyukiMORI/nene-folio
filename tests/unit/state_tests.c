@@ -1723,37 +1723,79 @@ static void verify_move_while_editing(void)
     folio_state_destroy(state);
 }
 
+/* 表引きへ移す前（ADR 0027）の文言そのもの。1 字でも変わったら落ちる。
+ * 列挙の全値がちょうど 1 度ずつ並ぶことは CNF-009 が字句で守る。 */
+static const char *_Nonnull const expected_failure_lines[] = {
+    [FOLIO_STATE_READY] = "",
+    [FOLIO_STATE_DATA_UNREADABLE] = "data/ を読めませんでした。",
+    [FOLIO_STATE_LEDGER_MALFORMED] =
+        "data/ の台帳（categories.json / index.json）が版 1 の形ではありません。",
+    [FOLIO_STATE_STORE_FAILED] =
+        "data/ の台帳（categories.json / index.json）に書き戻せませんでした。表示は変えて"
+        "いません。",
+    [FOLIO_STATE_NO_SUCH_CATEGORY] = "索引に無いカテゴリが操作されました。",
+    [FOLIO_STATE_NO_SUCH_NOTE] = "索引に無いノートが操作されました。",
+    [FOLIO_STATE_NOTE_UNREADABLE] = "ノートを読めませんでした。表示は変えていません。",
+    [FOLIO_STATE_NOTHING_SELECTED] = "ノートを選んでから編集してください。",
+    [FOLIO_STATE_NOT_EDITING] = "編集モードではありません。",
+    [FOLIO_STATE_NOTE_MALFORMED] = "編集中の本文に壊れた文字があります。保存していません。",
+    [FOLIO_STATE_NOTE_STORE_FAILED] = "ノートを書き戻せませんでした。編集中の本文はそのままです。",
+    [FOLIO_STATE_HISTORY_FAILED] =
+        "履歴を書けなかったので保存していません。編集中の本文は残っています。",
+    [FOLIO_STATE_UNSAVED_CHANGES] =
+        "未保存の変更があります。保存するか、未保存変更を破棄して終了してください。",
+    [FOLIO_STATE_NAME_TAKEN] =
+        "同じ名前のノートがあります。別の名前を指定してください。既存ファイルは変更していま"
+        "せん。",
+    [FOLIO_STATE_LEDGER_STALE] =
+        "mdは反映しましたが、台帳（index."
+        "json）を書き戻せませんでした。保存を再試行するか、次回の起動で揃います。",
+    [FOLIO_STATE_LEDGER_UNSYNCED] =
+        "前回の台帳（index.json）をまだ書き戻せていません。今回の操作は行っていないので、"
+        "保存を再試行してください。",
+    [FOLIO_STATE_RENAME_PENDING] =
+        "名前の変更が途中で止まっています。同じ名前変更をやり直してください。",
+    [FOLIO_STATE_RENAME_UNLOCKED] =
+        "data/ に書けないため名前を変更できません。何も変えていません。",
+    [FOLIO_STATE_RENAME_UNSUPPORTED] =
+        "この data/ ではノート名を変更できません（ローカルの NTFS 以外、またはシンボリック"
+        "リンク／junction）。",
+    [FOLIO_STATE_RENAME_IDENTITY_FAILED] =
+        "元のファイルを確かめられないので名前を変更できません。何も変えていません。",
+    [FOLIO_STATE_RENAME_JOURNAL_FAILED] =
+        "名前変更の記録（data/.rename.json）を書けませんでした。何も変えていません。",
+    [FOLIO_STATE_RENAME_JOURNAL_BROKEN] =
+        "名前変更の記録（data/.rename.json）が版 1 の形ではありません。消していません。",
+    [FOLIO_STATE_RENAME_HALTED] =
+        "名前変更の記録と実ファイルが一致しません。data/.rename.json と data/<カテゴリ>/ "
+        "を確認してください。",
+    [FOLIO_STATE_SEARCH_MALFORMED] = "検索する語に壊れた文字があります。語は前のままです。",
+    [FOLIO_STATE_FILTERED] = "絞り込み中は並び替えと開閉ができません。",
+    [FOLIO_STATE_SETTINGS_UNREADABLE] =
+        "設定（data/settings.json）を読めません。既定値で始め、直すまで上書きしません。",
+    [FOLIO_STATE_SETTINGS_STORE_FAILED] =
+        "設定（data/settings.json）を書けませんでした。設定は変えていません。",
+    [FOLIO_STATE_PANE_UNAVAILABLE] = "表示中の本文を取り出せませんでした。探していません。",
+    [FOLIO_STATE_OUT_OF_MEMORY] = "記憶域が足りません。",
+    [FOLIO_STATE_NAME_REQUIRED] =
+        "無題のノートに名前をつけて保存してください。本文は残っています。",
+    [FOLIO_STATE_INVALID_NAME] = "使えない名前です。予約名・末尾の空白やピリオド・区切りを避け、."
+                                 "mdを含め255バイト以内で指定してください。",
+    [FOLIO_STATE_ALREADY_NAMED] =
+        "このノートには名前があります。別名保存（:saveas）または名前変更（:"
+        "rename）を使ってください。",
+    [FOLIO_STATE_CANCELLED] = "",
+};
+
 static void verify_failure_lines(void)
 {
-    require(same_text(folio_state_failure_line(FOLIO_STATE_READY), ""), "ready has no line");
-    require(strlen(folio_state_failure_line(FOLIO_STATE_DATA_UNREADABLE)) > 0 &&
-                strlen(folio_state_failure_line(FOLIO_STATE_LEDGER_MALFORMED)) > 0 &&
-                strlen(folio_state_failure_line(FOLIO_STATE_STORE_FAILED)) > 0 &&
-                strlen(folio_state_failure_line(FOLIO_STATE_NO_SUCH_CATEGORY)) > 0 &&
-                strlen(folio_state_failure_line(FOLIO_STATE_NO_SUCH_NOTE)) > 0 &&
-                strlen(folio_state_failure_line(FOLIO_STATE_NOTE_UNREADABLE)) > 0 &&
-                strlen(folio_state_failure_line(FOLIO_STATE_NOTHING_SELECTED)) > 0 &&
-                strlen(folio_state_failure_line(FOLIO_STATE_NOT_EDITING)) > 0 &&
-                strlen(folio_state_failure_line(FOLIO_STATE_NOTE_MALFORMED)) > 0 &&
-                strlen(folio_state_failure_line(FOLIO_STATE_NOTE_STORE_FAILED)) > 0 &&
-                strlen(folio_state_failure_line(FOLIO_STATE_HISTORY_FAILED)) > 0 &&
-                strlen(folio_state_failure_line(FOLIO_STATE_UNSAVED_CHANGES)) > 0 &&
-                strlen(folio_state_failure_line(FOLIO_STATE_NAME_TAKEN)) > 0 &&
-                strlen(folio_state_failure_line(FOLIO_STATE_LEDGER_STALE)) > 0 &&
-                strlen(folio_state_failure_line(FOLIO_STATE_LEDGER_UNSYNCED)) > 0 &&
-                strlen(folio_state_failure_line(FOLIO_STATE_RENAME_PENDING)) > 0 &&
-                strlen(folio_state_failure_line(FOLIO_STATE_RENAME_UNLOCKED)) > 0 &&
-                strlen(folio_state_failure_line(FOLIO_STATE_RENAME_UNSUPPORTED)) > 0 &&
-                strlen(folio_state_failure_line(FOLIO_STATE_RENAME_IDENTITY_FAILED)) > 0 &&
-                strlen(folio_state_failure_line(FOLIO_STATE_RENAME_JOURNAL_FAILED)) > 0 &&
-                strlen(folio_state_failure_line(FOLIO_STATE_RENAME_JOURNAL_BROKEN)) > 0 &&
-                strlen(folio_state_failure_line(FOLIO_STATE_RENAME_HALTED)) > 0 &&
-                strlen(folio_state_failure_line(FOLIO_STATE_SEARCH_MALFORMED)) > 0 &&
-                strlen(folio_state_failure_line(FOLIO_STATE_PANE_UNAVAILABLE)) > 0 &&
-                strlen(folio_state_failure_line(FOLIO_STATE_SETTINGS_UNREADABLE)) > 0 &&
-                strlen(folio_state_failure_line(FOLIO_STATE_SETTINGS_STORE_FAILED)) > 0 &&
-                strlen(folio_state_failure_line(FOLIO_STATE_OUT_OF_MEMORY)) > 0,
-            "every failure has a line");
+    const size_t count = sizeof expected_failure_lines / sizeof expected_failure_lines[0];
+    for (size_t index = 0; index < count; ++index)
+    {
+        require(same_text(folio_state_failure_line((enum folio_state_outcome)index),
+                          expected_failure_lines[index]),
+                "every failure line still reads exactly as before");
+    }
 }
 
 static void expect_failure(struct persistence_adapter adapter, enum folio_state_outcome expected,
