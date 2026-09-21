@@ -1,5 +1,11 @@
 # いまのタスク — NeNe Folio
 
+2026-09-22（停止時）: **#41 / ADR 0028 の正規表現置換**を `out/worktrees/41-replace` で実装中。core（置換文字列の文法・組み立て・`:%s`の分解）、
+adapters（OS同梱のICUを `regex_adapter` に閉じる）、application（下見を宛先と本文で照合し1件と全部を当てる）の3層が済み、
+HEAD `802e2de` でフルゲートexit 0（分岐93.21%）。**ui層（`note_pane_replace`・置換の欄・メニュー／パレット／`:%s`の実行）と docs層、
+実アダプタ／Win32部品probeの実行が未着手。** `execute_command()` の `REPLACE` / `SUBSTITUTE` は仮の分岐。詳細は[引き継ぎ](../handoffs/2026-09-22.md)。
+#39（行番号）は `39099c5`、#65（失敗文言の表引き・CNF-009）は `4101196` でmainへ統合済み。
+
 2026-09-22: #65 / ADR 0027 の**失敗の文言の表引き**を `out/worktrees/65-failure-lines` で実装した。
 `folio_state_failure_line` と `unfinished_failure_line` の full-enum の `switch` 2 つ（どちらも C-012 の
 60 行に飽和していた）を、`static const char *_Nonnull const failure_lines[]` の指示付き初期化子

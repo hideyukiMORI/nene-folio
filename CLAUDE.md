@@ -124,6 +124,11 @@ Waivers: none | WVR-NNNN
 
 ## 6. いまの状況
 
+2026-09-22 停止: hideの指示で日報/引き継ぎを保存して停止。mainは`4101196`（#39 / #65まで統合済み・Issueは閉じた）。
+#41（正規表現置換・ADR 0028）は`out/worktrees/41-replace` / `feat/41-regex-replace`のHEAD `802e2de`でcore・adapters・applicationの3層が済み
+（フルゲートexit 0・分岐93.21%）、**ui層・docs層・probeの実行は未着手。Draft PRは無い。** `execute_command()`の`REPLACE` / `SUBSTITUTE`は仮の分岐で、
+パレットの「置換」は出るが何も起きない。最新の停止点は[引き継ぎ](docs/handoffs/2026-09-22.md)の先頭節と[日報](docs/reports/2026-09-22.md)。明示的な再開指示まで続行しない。
+
 2026-09-22: #39（原文の行番号）はPR #64でmain `39099c5`へ統合済み。**失敗の文言の表引き（#65 / ADR 0027）**を
 `out/worktrees/65-failure-lines` で実装した。`folio_state_failure_line` と `unfinished_failure_line` の
 full-enumのswitch 2つ（どちらもC-012の60行に飽和）を、`failure_lines[]` の指示付き初期化子
