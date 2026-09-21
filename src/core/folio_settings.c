@@ -36,10 +36,17 @@ enum folio_settings_outcome
 folio_settings_with_number(const struct folio_settings *_Nonnull settings, bool number,
                            struct folio_settings *_Nullable *_Nonnull out)
 {
-    /* 版 1 の設定は number だけなので、写す値は無い（二重に初期化しない）。
-     * #38 が版 2 で theme / language を足したら、ここが settings から写す唯一の場所になる。 */
-    (void)settings;
-    return create(number, out);
+    /* 元の設定を写してから number だけを変える。版 1 では number しか無いので写す値は
+     * 実質 1 つだが、#38 が版 2 で theme / language を足しても、ここが写す唯一の場所である。 */
+    struct folio_settings *_Nullable copy = nullptr;
+    enum folio_settings_outcome outcome = create(settings->number, &copy);
+    if (outcome != FOLIO_SETTINGS_READY)
+    {
+        return outcome;
+    }
+    copy->number = number;
+    *out = copy;
+    return FOLIO_SETTINGS_READY;
 }
 
 static bool expect_key(struct json_reader *_Nonnull reader, const char *_Nonnull key)
