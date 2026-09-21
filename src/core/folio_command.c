@@ -32,6 +32,13 @@ static const struct
                                      "行番号の表示を切り替える",
                                      0,
                                      {"", ""}},
+    /* GUI 専用操作（ADR 0028 の決定 8(a)）。置換の欄を開くだけで、モードは変えない。 */
+    [FOLIO_COMMAND_REPLACE] = {FOLIO_COMMAND_REPLACE, "置換", 0, {"", ""}},
+    /* 区切りで引数を取る Ex の文法（決定 8(b)）。別名の照合ではなく parse の特例で解ける。 */
+    [FOLIO_COMMAND_SUBSTITUTE] = {FOLIO_COMMAND_SUBSTITUTE,
+                                  "正規表現で置換（:%s/前/後/g）",
+                                  0,
+                                  {"", ""}},
 };
 
 /* 設定の語（ADR 0026 の決定 8）。効果を実装した語だけを並べる。 */
@@ -57,6 +64,8 @@ static enum folio_argument_kind argument_kind(enum folio_command command)
         return FOLIO_ARGUMENT_NAME;
     case FOLIO_COMMAND_SET:
         return FOLIO_ARGUMENT_OPTION;
+    case FOLIO_COMMAND_SUBSTITUTE:
+        return FOLIO_ARGUMENT_SUBSTITUTE;
     case FOLIO_COMMAND_QUIT:
     case FOLIO_COMMAND_SAVE_QUIT:
     case FOLIO_COMMAND_FORCE_QUIT:
@@ -66,6 +75,7 @@ static enum folio_argument_kind argument_kind(enum folio_command command)
     case FOLIO_COMMAND_NEW:
     case FOLIO_COMMAND_FIND:
     case FOLIO_COMMAND_TOGGLE_NUMBER:
+    case FOLIO_COMMAND_REPLACE:
         return FOLIO_ARGUMENT_NONE;
     }
     return FOLIO_ARGUMENT_NONE;
@@ -76,6 +86,7 @@ bool folio_command_listed(enum folio_command command)
     switch (command)
     {
     case FOLIO_COMMAND_SET:
+    case FOLIO_COMMAND_SUBSTITUTE:
         return false;
     case FOLIO_COMMAND_SAVE:
     case FOLIO_COMMAND_QUIT:
@@ -89,6 +100,7 @@ bool folio_command_listed(enum folio_command command)
     case FOLIO_COMMAND_RENAME:
     case FOLIO_COMMAND_FIND:
     case FOLIO_COMMAND_TOGGLE_NUMBER:
+    case FOLIO_COMMAND_REPLACE:
         return true;
     }
     return true;
@@ -153,6 +165,24 @@ static bool item_has_alias(size_t item, const char *_Nonnull text, size_t length
         }
     }
     return false;
+}
+
+static bool ascii_alnum(char value)
+{
+    return (value >= '0' && value <= '9') || (value >= 'A' && value <= 'Z') ||
+           (value >= 'a' && value <= 'z');
+}
+
+/* `%s` で始まり、その直後が英数字でないトークンだけを `:%s` と見る（ADR 0028 の決定 8(b)）。
+ * 別名の照合より**前**に判定するが、他の別名の照合規則は何も変えない。
+ * `:s`（`%` なし・行の範囲）はこの単位では意図して未対応で、別名に無いので解けない。 */
+static bool substitute_token(const char *_Nonnull text, size_t begin, size_t token_end)
+{
+    if (token_end - begin < 2 || text[begin] != '%' || text[begin + 1] != 's')
+    {
+        return false;
+    }
+    return token_end - begin == 2 || !ascii_alnum(text[begin + 2]);
 }
 
 static bool find_alias(const char *_Nonnull text, size_t length, enum folio_command *_Nonnull out)
@@ -229,6 +259,12 @@ bool folio_command_parse(const char *_Nonnull text, size_t length, enum folio_co
     {
         token_end += 1;
     }
+    if (substitute_token(text, begin, token_end))
+    {
+        *out = FOLIO_COMMAND_SUBSTITUTE;
+        *argument = begin + 2; /* 区切り文字の位置。分けるのは parse_substitute */
+        return true;
+    }
     enum folio_command command = FOLIO_COMMAND_SAVE;
     if (!find_alias(text + begin, token_end - begin, &command))
     {
@@ -266,6 +302,75 @@ bool folio_command_parse_option(const char *_Nonnull text, size_t length,
         }
     }
     return false;
+}
+
+/* エスケープされていない次の区切り。`\` の次の 1 文字は区切りにならない。無ければ length。
+ * UTF-8 の後続バイトは最上位ビットが立っているので、多バイト文字を誤って切らない。 */
+static size_t next_delimiter(const char *_Nonnull text, size_t at, size_t length)
+{
+    while (at < length)
+    {
+        if (text[at] == '\\')
+        {
+            at += 2;
+            continue;
+        }
+        if (text[at] == '/')
+        {
+            return at;
+        }
+        at += 1;
+    }
+    return length;
+}
+
+/* 旗は `g` だけ（ADR 0028 の決定 8(b)）。前後の空白は `:set` と同じ流儀で落とす。 */
+static bool substitute_flags(const char *_Nonnull text, size_t length, bool *_Nonnull global)
+{
+    size_t begin = 0;
+    size_t end = 0;
+    trim(text, length, &begin, &end);
+    if (begin == end)
+    {
+        *global = false;
+        return true;
+    }
+    if (end - begin != 1 || text[begin] != 'g')
+    {
+        return false;
+    }
+    *global = true;
+    return true;
+}
+
+bool folio_command_parse_substitute(const char *_Nonnull text, size_t length,
+                                    struct ex_substitute *_Nonnull out)
+{
+    if (length == 0 || text[0] != '/')
+    {
+        return false;
+    }
+    size_t first = next_delimiter(text, 1, length);
+    if (first == length || first == 1)
+    {
+        return false; /* 区切りが足りない、または空のパターン */
+    }
+    size_t second = next_delimiter(text, first + 1, length);
+    if (second == length)
+    {
+        return false;
+    }
+    bool global = false;
+    if (!substitute_flags(text + second + 1, length - second - 1, &global))
+    {
+        return false;
+    }
+    out->pattern = 1;
+    out->pattern_length = first - 1;
+    out->replacement = first + 1;
+    out->replacement_length = second - first - 1;
+    out->global = global;
+    return true;
 }
 
 bool folio_command_matches(enum folio_command command, const char *_Nonnull text, size_t length)

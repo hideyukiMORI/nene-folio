@@ -14,9 +14,13 @@
 #include "note_ledger.h"
 #include "note_name.h"
 #include "note_rename.h"
+#include "note_replace.h"
 #include "note_text.h"
 #include "persistence_port.h"
+#include "regex_matches.h"
 #include "rename_journal.h"
+#include "replace_edit.h"
+#include "replace_template.h"
 #include "rtf_palette.h"
 #include "unit_tests.h"
 #include "utf16_text.h"
@@ -599,6 +603,35 @@ static bool settings_scenario(void)
     return parsed == FOLIO_SETTINGS_READY;
 }
 
+/* 置換文字列の解析と、組み立てた本文の入れ物（ADR 0028 の決定 10）。 */
+static bool replace_scenario(void)
+{
+    struct replace_template *replacement = nullptr;
+    if (replace_template_create(u"<&>", 3, &replacement) == REPLACE_TEMPLATE_OUT_OF_MEMORY)
+    {
+        return false;
+    }
+    require(replacement != nullptr, "template under probe");
+    struct regex_match items[2] = {};
+    items[0].whole.end = 1;
+    items[1].whole.start = 2;
+    items[1].whole.end = 3;
+    struct regex_matches list = {.items = items, .capacity = 2, .count = 2};
+    struct note_replace_plan plan = {.text = u"a-a",
+                                     .length = 3,
+                                     .matches = &list,
+                                     .replacement = replacement,
+                                     .scope = REPLACE_ALL,
+                                     .anchor = {.start = 0, .end = 0}};
+    struct replace_edit *edit = nullptr;
+    enum note_replace_outcome built = note_replace_build(&plan, &edit);
+    replace_template_destroy(replacement);
+    replace_edit_destroy(edit);
+    require(built == NOTE_REPLACE_READY || built == NOTE_REPLACE_OUT_OF_MEMORY,
+            "replacement allocation failure remains typed");
+    return built == NOTE_REPLACE_READY;
+}
+
 static bool rename_scenario(void)
 {
     struct note_ledger *ledger = nullptr;
@@ -668,5 +701,6 @@ void run_allocation_tests(void)
     exhaust(state_scenario, "state scenario never completed");
     exhaust(line_index_scenario, "line index scenario never completed");
     exhaust(settings_scenario, "settings scenario never completed");
+    exhaust(replace_scenario, "replace scenario never completed");
     exhaust(rename_scenario, "rename scenario never completed");
 }

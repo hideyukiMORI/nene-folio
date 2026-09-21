@@ -2145,6 +2145,10 @@ static void execute_command(struct folio_window *_Nonnull self, enum folio_comma
     case FOLIO_COMMAND_TOGGLE_NUMBER:
         apply_number(self, !folio_state_number(self->state));
         return;
+    case FOLIO_COMMAND_REPLACE:
+    case FOLIO_COMMAND_SUBSTITUTE:
+        /* 欄と適用は ui の単位で結ぶ（ADR 0028 の決定 8）。登録表だけが先にある。 */
+        return;
     }
 }
 

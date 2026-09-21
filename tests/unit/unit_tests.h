@@ -24,6 +24,7 @@ void run_search_tests(void);
 void run_filter_tests(void);
 void run_settings_tests(void);
 void run_line_index_tests(void);
+void run_replace_tests(void);
 
 /* state_tests のポート実装（偽のアダプタ）。台帳の文書を返し、書き戻しは受け入れる。
  * folio_state はポートの adapter を借りるので、state より長く生かしてから test_adapter_destroy
