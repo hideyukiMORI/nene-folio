@@ -2,6 +2,7 @@
 
 import json
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import tempfile
@@ -28,6 +29,40 @@ def copy_repository_files(root: Path) -> None:
         destination = root / path
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(ROOT / path, destination)
+
+
+def copy_tracked_files(root: Path) -> None:
+    """Every file git knows about, so the conformance checker sees a whole repository."""
+    listing = subprocess.run(["git", "ls-files", "-z"], cwd=ROOT, check=True, capture_output=True)
+    for name in listing.stdout.decode("utf-8").split("\0"):
+        if not name:
+            continue
+        destination = root / name
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(ROOT / name, destination)
+    run(["git", "init", "-q"], root, True)
+
+
+def remove_table_entry(text: str, value: str) -> str:
+    """Delete one designated initializer, tracking string literals so the closing comma is the real one."""
+    match = re.search(r"[ \t]*\[" + re.escape(value) + r"\][ \t]*=", text)
+    if not match:
+        raise RuntimeError(f"{value} has no table entry to remove")
+    index, inside = match.end(), False
+    while index < len(text):
+        character = text[index]
+        if inside:
+            inside = character != '"'
+            index += 2 if character == "\\" else 1
+            continue
+        if character == '"':
+            inside = True
+        elif character == ",":
+            break
+        index += 1
+    start = text.rfind("\n", 0, match.start()) + 1
+    end = index + 2 if text[index:index + 2] == ",\n" else index + 1
+    return text[:start] + text[end:]
 
 
 COMPILER_PROBES = [
@@ -109,6 +144,23 @@ def main() -> None:
         restoration = run(symbols + ["--require", "core"], root, True)
         evidence.append({"rule": "ARC-003", "negative": result, "restorationExit": restoration["exitCode"]})
         print("ARC-003: a required module without a static library is rejected; the present module passes")
+    with tempfile.TemporaryDirectory(prefix="conformance-", dir=output_root) as temporary:
+        root = Path(temporary).resolve()
+        if not root.is_relative_to(output_root):
+            raise RuntimeError("Proof workspace escaped the intended output directory")
+        copy_tracked_files(root)
+        conformance = ["python", "eng/conformance.py", "--root", "."]
+        run(conformance, root, True)
+        declaration = json.loads((root / "eng/conformance-rules.json").read_text(encoding="utf-8"))["lineTables"][0]
+        table = root / declaration["table"]
+        original = table.read_text(encoding="utf-8")
+        value = re.findall(r"\[(" + re.escape(declaration["prefix"]) + r"\w+)\]\s*=", original)[-1]
+        table.write_text(remove_table_entry(original, value), encoding="utf-8", newline="\n")
+        result = run(conformance, root, False, "CNF-009")
+        table.write_text(original, encoding="utf-8", newline="\n")
+        restoration = run(conformance, root, True)
+        evidence.append({"rule": "CNF-009", "negative": result, "restorationExit": restoration["exitCode"]})
+        print(f"CNF-009: dropping {value} from the table was rejected; restoration passed")
     (output_root / "results.json").write_text(json.dumps(evidence, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(f"Gate proofs passed: {len(evidence)} real-tool proofs")
 

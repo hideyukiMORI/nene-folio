@@ -241,6 +241,40 @@ class RepositoryChecks(unittest.TestCase):
         path.write_text(path.read_text(encoding="utf-8").replace("**active**", "**planned**"), encoding="utf-8")
         self.assertTrue(any("mismatch" in f.detail for f in self.doc_errors()))
 
+    def seed_line_table(self, table):
+        self.write("src/application/folio_state_outcome.h", "enum folio_state_outcome : unsigned char\n{\n    FOLIO_STATE_READY,\n    /* FOLIO_STATE_COMMENTED は注記なので数えない */\n    FOLIO_STATE_FILTERED\n};\n")
+        self.write("src/application/folio_state.c", table)
+
+    def line_table_findings(self):
+        rules = {"lineTables": [{"enum": "src/application/folio_state_outcome.h", "table": "src/application/folio_state.c", "prefix": "FOLIO_STATE_"}]}
+        return cnf.line_table_checks(self.root, rules)
+
+    def test_cnf009_positive(self):
+        self.seed_line_table('static const char *const lines[] = {\n    [FOLIO_STATE_READY] = "",\n    [FOLIO_STATE_FILTERED] = "絞り込み中",\n};\n')
+        self.assertEqual([], self.line_table_findings())
+
+    def test_cnf009_missing_value(self):
+        self.seed_line_table('static const char *const lines[] = {\n    [FOLIO_STATE_READY] = "",\n};\n')
+        findings = self.line_table_findings()
+        self.assertTrue(any(f.rule == "CNF-009" and "FOLIO_STATE_FILTERED has 0" in f.detail for f in findings))
+
+    def test_cnf009_duplicate_value(self):
+        self.seed_line_table('static const char *const lines[] = {\n    [FOLIO_STATE_READY] = "",\n    [FOLIO_STATE_FILTERED] = "a",\n    [FOLIO_STATE_FILTERED] = "b",\n};\n')
+        findings = self.line_table_findings()
+        self.assertTrue(any(f.rule == "CNF-009" and "FOLIO_STATE_FILTERED has 2" in f.detail for f in findings))
+
+    def test_cnf009_commented_entry_does_not_count(self):
+        self.seed_line_table('static const char *const lines[] = {\n    [FOLIO_STATE_READY] = "",\n    /* [FOLIO_STATE_FILTERED] = "絞り込み中" */\n};\n')
+        self.assertTrue(any(f.rule == "CNF-009" for f in self.line_table_findings()))
+
+    def test_cnf009_missing_file(self):
+        self.write("src/application/folio_state_outcome.h", "enum folio_state_outcome { FOLIO_STATE_READY };\n")
+        self.assertTrue(any("missing" in f.detail for f in self.line_table_findings()))
+
+    def test_cnf009_repository_table_is_complete(self):
+        rules = json.loads((ROOT / "eng/conformance-rules.json").read_text(encoding="utf-8"))
+        self.assertEqual([], cnf.line_table_checks(ROOT, rules))
+
     def test_arc002_graph_cycle(self):
         self.write("eng/architecture.json", json.dumps({"modules": {"core": {"path": "src/core", "dependencies": ["core"]}}, "runtimeDependencies": []}))
         self.assertIn("ARC-002", {f.rule for f in cnf.architecture_checks(self.root, self.paths(), None)})

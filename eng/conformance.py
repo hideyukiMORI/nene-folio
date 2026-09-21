@@ -139,6 +139,34 @@ def source_checks(path: str, text: str, rules: dict, waivers: dict) -> list[Find
     return findings
 
 
+def enumeration_values(code: str, prefix: str) -> list[str]:
+    """Names declared inside the first enumeration body, in order and without repeats."""
+    body = re.search(r"\benum\s+\w+[^{;]*\{(.*?)\}", code, re.S)
+    if not body:
+        return []
+    return list(dict.fromkeys(re.findall(r"\b" + re.escape(prefix) + r"\w+\b", body[1])))
+
+
+def line_table_checks(root: Path, rules: dict) -> list[Finding]:
+    """Every value of a declared enumeration appears exactly once in its per-value table (CNF-009)."""
+    findings = []
+    for table in rules["lineTables"]:
+        header, source, prefix = Path(table["enum"]), Path(table["table"]), table["prefix"]
+        if not (root / header).is_file() or not (root / source).is_file():
+            findings.append(Finding("CNF-009", header.as_posix(), "declared enumeration or table file is missing"))
+            continue
+        values = enumeration_values(c_code((root / header).read_text(encoding="utf-8")), prefix)
+        if not values:
+            findings.append(Finding("CNF-009", header.as_posix(), f"no {prefix} values in the enumeration body"))
+            continue
+        code = c_code((root / source).read_text(encoding="utf-8"))
+        for value in values:
+            entries = len(re.findall(r"\[\s*" + re.escape(value) + r"\s*\]\s*=", code))
+            if entries != 1:
+                findings.append(Finding("CNF-009", source.as_posix(), f"{value} has {entries} table entries, expected 1"))
+    return findings
+
+
 def waiver_checks(root: Path, paths: list[Path], today: datetime.date) -> tuple[list[Finding], dict]:
     findings, valid = [], {}
     index = root / "docs/waivers/README.md"
@@ -346,6 +374,7 @@ def check(root: Path, today: datetime.date, build_dir: Path | None = None) -> li
     findings.extend(document_checks(root, paths, rules))
     findings.extend(configuration_checks(root, paths, rules))
     findings.extend(architecture_checks(root, paths, build_dir))
+    findings.extend(line_table_checks(root, rules))
     for path in paths:
         if path.suffix in rules["cExtensions"]:
             findings.extend(source_checks(path.as_posix(), (root / path).read_text(encoding="utf-8"), rules, waivers))

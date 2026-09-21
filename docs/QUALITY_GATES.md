@@ -163,6 +163,16 @@ head が動いたら Draft に戻して再度 Ready にする。古い成功 SHA
 - 対応する規則: QLT-008
 - 機械強制: **active**（`eng/conformance.py`）
 
+### CNF-009 — 値ごとの表の網羅
+
+閉じた `enum` の値ごとに 1 行を持つ表（`eng/conformance-rules.json` の `lineTables` で列挙のヘッダと表のファイルを名指しする）について、
+列挙の本体にある値が表のファイルに `[値] =` としてちょうど 1 回現れることを字句で検査する。無い値と重複した値はどちらも違反。
+`switch` を離れた表は `-Wswitch-enum` の網羅性（C-002）を失うので、この検査がその代わりを務める（ADR 0027）。
+注記とコメントは対象から外れるので、行を消してコメントに残しても通らない。
+
+- 対応する規則: C-002
+- 機械強制: **active**（`eng/conformance.py` ＋ `eng/prove-gates.py` の実ツール反例）
+
 🔴 **検出語は検査器のソースに直書きしない**（検査器が自分自身を違反として報告する。前例: xi-tools 初版で 7 件の自己検出）。
 🔴 **テストソースは検査対象から外す**（テストは意図的な違反を書く場所）。
 
@@ -229,6 +239,7 @@ CNF-006 が「本文に定義があるのにここに行が無い」を拒否す
 | CNF-006 | active | eng/conformance.py / tests/conformance |
 | CNF-007 | planned | eng/conformance.py / tests/conformance |
 | CNF-008 | active | eng/conformance.py / tests/conformance |
+| CNF-009 | active | eng/conformance.py / tests/conformance / eng/prove-gates.py |
 
 ---
 

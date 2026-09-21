@@ -30,6 +30,7 @@ CI: GitHub Actions `windows-2022`（PR の ready_for_review で起動。ロー�
 | QLT-009 | 台帳・配置・状態のテストを省いて実行（`--coverage-negative`） | eng/coverage.py / 同一 exe の別プロファイル | 21.51% で `QLT-009: branch coverage 21.51% < 90%`。全テストへ復帰すると 707/744 分岐＝95.03% で成功（P19） |
 | CNF-006 | 未定義 ID・重複定義・状態不一致・証明行欠落・未置換値 | tests/conformance の document_checks 正例・反例 | 正例は指摘 0、反例は CNF-006。本文書を書いた直後に「active の証明行が無い」を 4 件検出し、この表を書かせた |
 | CNF-008 | Issue 番号の無いタスクコメント | tests/conformance の configuration_checks 正例・反例 | 番号付きは指摘 0、番号なしは CNF-008 |
+| CNF-009 | 失敗の文言の表から 1 値を消す・同じ値を 2 度書く | eng/prove-gates.py（実 `eng/conformance.py`）/ tests/conformance の line_table_checks 正例・反例 | 2026-09-22: 全ファイルを写した木で `CNF-009: src/application/folio_state.c: FOLIO_STATE_CANCELLED has 0 table entries, expected 1` として非 0（P21）。戻すと `Conformance: 0 violation(s)` で 0。欠落・重複・コメントだけの行・ファイル欠落は tests/conformance で CNF-009、正例は指摘 0 |
 
 ### 1-b. 反例の一覧（planned の部分証明を含む）
 
@@ -58,7 +59,13 @@ CI: GitHub Actions `windows-2022`（PR の ready_for_review で起動。ロー�
 | P19 | QLT-009 | テストを省いた実行で分岐を測る | `eng/coverage.py`（測定ビルド・`--coverage-negative`） | 21.51% で非 0。全テストで 707/744（95.03%）が 0。確保失敗の注入を切ると 86.29% で落ちることも 2026-09-09 に実測した（切った状態は残していない） |
 | P20 | ARC-003 | 中核が自分のアーカイブ内・宣言済み依存の関数を呼ぶ | `tests/conformance/test_symbols.py` | アーカイブ内（`note_id_parse`）と application → core（`category_ledger_count`）は解決されて指摘 0。宣言外の core → application（`folio_state_create`）と `nenefolio_*` の接頭辞だけの外部シンボルは ARC-003 |
 
+| P21 | CNF-009 | 失敗の文言の表から 1 値を消す | `eng/prove-gates.py`（git が知る全ファイルを写した木で実 `eng/conformance.py`） | 2026-09-22: `CNF-009: src/application/folio_state.c: FOLIO_STATE_CANCELLED has 0 table entries, expected 1` で非 0。戻すと 0。消す値は `lineTables` の接頭辞から導くので、検出語を証明側にも直書きしない |
+
 **復帰の確認**: 2026-09-09。P1〜P4・P8・P13〜P18 は `eng/prove-gates.py` が各反例の直後に元へ戻して build / configure / clang-format / symbols を再実行し、終了コード 0 を確かめた。P5〜P7・P9〜P12・P20 は正例テストが同じ suite にある（63 テスト）。P19 は `eng/coverage.py` が反例のあとに全テストの計測で 0 を確かめる。最後にフルゲート全体が終了コード 0 で `NeNe Folio full gate passed` を出した。
+
+**2026-09-22 の追加（#65 / ADR 0027）**: P21 を足して実ツール反例は 15 本になった。`eng/prove-gates.py` は
+反例の直後に表を戻して `eng/conformance.py` を再実行し、終了コード 0 を確かめる。正例側は同じ suite の
+69 テストにある（`python eng/test-conformance.py`）。この日のフルゲートは終了コード 0、ctest 2/2、分岐網羅 93.55%。
 
 **除外側の確認**: 例外区画について「禁止が効いていること」と「唯一の窓口が通ること」の両方を見る。
 
