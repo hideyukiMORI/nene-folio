@@ -46,6 +46,9 @@ enum folio_command : unsigned char
  * 引数を渡せない面なので、語を要る Ex の文法（`:set`）だけが偽になる。
  * 新しい操作を足すたびに閉じた switch が決めさせる。 */
 [[nodiscard]] bool folio_command_listed(enum folio_command command);
+/* パレットの箱の高さを決める、出す操作の数（ADR 0026 の補正 9）。
+ * 登録表の総数ではないので、出さない操作を足しても箱に空の行が増えない。 */
+[[nodiscard]] size_t folio_command_listed_count(void);
 /* `:set` の語を解く（ADR 0026 の決定 8）。空白で切った 1 語の完全一致だけを受ける。
  * 語なし・未知の語・余計な語があれば false で out は触らない。 */
 [[nodiscard]] bool folio_command_parse_option(const char *_Nonnull text, size_t length,

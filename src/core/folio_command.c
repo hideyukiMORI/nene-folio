@@ -94,6 +94,19 @@ bool folio_command_listed(enum folio_command command)
     return true;
 }
 
+size_t folio_command_listed_count(void)
+{
+    size_t listed = 0;
+    for (size_t item = 0; item < folio_command_count(); ++item)
+    {
+        if (folio_command_listed(catalog[item].command))
+        {
+            listed += 1;
+        }
+    }
+    return listed;
+}
+
 static bool ascii_space(char value)
 {
     return value == ' ' || value == '\t' || value == '\r' || value == '\n' || value == '\f' ||
