@@ -1,5 +1,17 @@
 # いまのタスク — NeNe Folio
 
+2026-09-22: #65 / ADR 0027 の**失敗の文言の表引き**を `out/worktrees/65-failure-lines` で実装した。
+`folio_state_failure_line` と `unfinished_failure_line` の full-enum の `switch` 2 つ（どちらも C-012 の
+60 行に飽和していた）を、`static const char *_Nonnull const failure_lines[]` の指示付き初期化子
+（`[FOLIO_STATE_X] = "…"`）を 1 回引くだけの関数に置き換えた。**文言は 1 字も変えていない**（33 値すべてを
+変更前の本文から機械的に写し、`tests/unit/state_tests.c` の同じ形の表で 1 字ずつ固定した）。
+表の外の値へは落ちないので添字の範囲検査は書かない（決定 3）。`switch` を離れて失った `-Wswitch-enum` の
+網羅性（C-002）は、新しい **CNF-009**（`eng/conformance.py`）が代わりに守る。設定は
+`eng/conformance-rules.json` の `lineTables`（列挙のヘッダと表のファイルの対・接頭辞）で、検出語は
+検査器のソースに直書きしない。`eng/prove-gates.py` は git が知る全ファイルを写した木で実 `conformance.py` を
+走らせ、表から 1 値を消すと CNF-009 で落ち、戻すと通ることを確かめる（P21・実ツール反例は 14 → 15 本）。
+これで #41（置換）と #38（設定・テーマ・言語）が結果の値を足しても、文言の追加が行数で詰まらない。
+
 2026-09-17: #39 / ADR 0025・ADR 0026 の**原文の行番号**を `out/worktrees/39-number` で 5 層に実装した。
 `:set number` / `nonumber` / `nu!`（別名 `nu` / `nonu` / `invnumber` / `invnu`）と、操作パレット・
 「操作」メニューの「行番号の表示を切り替える」が application の同じ意図（`folio_state_set_number`）へ渡る。

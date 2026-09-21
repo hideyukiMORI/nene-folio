@@ -124,6 +124,17 @@ Waivers: none | WVR-NNNN
 
 ## 6. いまの状況
 
+2026-09-22: #39（原文の行番号）はPR #64でmain `39099c5`へ統合済み。**失敗の文言の表引き（#65 / ADR 0027）**を
+`out/worktrees/65-failure-lines` で実装した。`folio_state_failure_line` と `unfinished_failure_line` の
+full-enumのswitch 2つ（どちらもC-012の60行に飽和）を、`failure_lines[]` の指示付き初期化子
+（`[FOLIO_STATE_X] = "…"`）を1回引く関数に置き換えた。**文言は1字も変えていない**（33値を変更前の本文から
+機械的に写し、単体の同じ形の表で固定した）。表の外の値へは落ちないので添字の範囲検査は書かない。
+switchを離れて失った `-Wswitch-enum` の網羅性（C-002）は新しい**CNF-009**（`eng/conformance.py`）が守り、
+設定は `eng/conformance-rules.json` の `lineTables`（列挙のヘッダと表のファイルの対）に置く（検出語は
+検査器のソースに直書きしない）。`eng/prove-gates.py` は全ファイルを写した木で実 `conformance.py` を走らせ、
+表から1値を消すと落ち戻すと通ることを確かめる（実ツール反例14→15本）。**結果の値を足すときは表へ1行足す**。
+最終フルゲート・CIは#65のPRを参照する。次は#41（置換）か#38（設定・テーマ・言語）。
+
 2026-09-17 停止: hideの指示で日報/引き継ぎを保存して停止。mainは`3ab187d`（#40まで統合済み）。
 #39は`out/worktrees/39-number`のDraft PR（実装の最終`4a58fbf`・フルゲートexit 0）で、独立レビュー・Ready・統合は未実施。
 最新の停止点は[引き継ぎ](docs/handoffs/2026-09-17.md)の先頭節と[日報](docs/reports/2026-09-17.md)の「再開後」。明示的な再開指示まで続行しない。
