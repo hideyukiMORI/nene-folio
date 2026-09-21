@@ -16,6 +16,8 @@
 #include "pane_mode.h"
 #include "pane_title_view.h"
 #include "rename_view.h"
+#include "replace_apply.h"
+#include "replace_request.h"
 #include "rgb_color.h"
 #include "search_direction.h"
 
@@ -27,11 +29,15 @@ struct drawer_layout;
 struct folio_state;
 struct note_name;
 struct persistence_port;
+struct regex_port;
+struct replace_edit;
 
-/* ポートは複製して持つ。両ポートの adapter は state より長く生きていなければならない。 */
+/* ポートは複製して持つ。3 つのポートの adapter は state より長く生きていなければならない。
+ * 引数は C-012 の 4 つで飽和したので、次にポートを足す単位は束ねる（ADR 0028 の決定 2）。 */
 [[nodiscard]] enum folio_state_outcome
 folio_state_create(const struct persistence_port *_Nonnull persistence,
                    const struct appearance_port *_Nonnull appearance,
+                   const struct regex_port *_Nonnull regex,
                    struct folio_state *_Nullable *_Nonnull out);
 /* 起動時に読んだテーマ。 */
 [[nodiscard]] enum folio_theme folio_state_theme(const struct folio_state *_Nonnull state);
@@ -204,6 +210,31 @@ folio_state_set_index_filter(struct folio_state *_Nonnull state, const char16_t 
     const struct folio_state *_Nonnull state);
 /* いま索引に見えているノートの数。絞り込んでいなければ索引の総数。 */
 [[nodiscard]] size_t folio_state_index_filter_count(const struct folio_state *_Nonnull state);
+/* 置換の下見を取り直す（FR-023 / ADR 0028 の決定 6）。UTF-16 の入口の**8 本目**で、
+ * 位置が EM_EXSETSEL と 1 対 1 でなければならないので本文は UTF-8 へ写さない（C-014 の例外）。
+ * 編集中でなければ NOT_EDITING、パターンが空なら REPLACE_NO_PATTERN。
+ * 走査と置換文字列の失敗は REPLACE_BAD_PATTERN / REPLACE_BAD_TEMPLATE / REPLACE_TIMED_OUT /
+ * REPLACE_TOO_COMPLEX / REPLACE_TOO_MANY へ写し、そのときは前の下見をそのまま保つ。
+ * 成功すると古い下見を捨てて新しい下見を持つ。件数はゼロ幅の一致も 1 件。
+ * 本文も選択も RichEdit が持ち、ここは触らない（ADR 0023 の決定 3 と同じ境界）。 */
+[[nodiscard]] enum folio_state_outcome
+folio_state_preview_replace(struct folio_state *_Nonnull state,
+                            const struct replace_request *_Nonnull request);
+/* 直前の下見の一致の件数。下見が無ければ 0。 */
+[[nodiscard]] size_t folio_state_replace_count(const struct folio_state *_Nonnull state);
+/* 直前の下見が REPLACE_BAD_PATTERN だったときの位置（1 起算のコード単位）。
+ * それ以外は 0 で、UI は位置を添えない（決定 9）。 */
+[[nodiscard]] size_t folio_state_replace_error_offset(const struct folio_state *_Nonnull state);
+/* 下見を本文へ当てる（決定 6）。UTF-16 の入口の**9 本目**。
+ * 渡された本文が下見の写しと違う、宛先が今の文書と違う、下見が無いなら REPLACE_STALE で
+ * 何も変えない。反転した anchor は REPLACE_BAD_SPAN。
+ * 成功しても md は書かず、RichEdit へ当てるのは UI である。適用する一致が無ければ READY で
+ * out は nullptr になる。out は失敗のときも nullptr で、成功時だけ呼び出し側が
+ * replace_edit_destroy する。 */
+[[nodiscard]] enum folio_state_outcome
+folio_state_apply_replace(struct folio_state *_Nonnull state,
+                          const struct replace_apply *_Nonnull apply,
+                          struct replace_edit *_Nullable *_Nonnull out);
 /* ノート内検索の語を覚える（FR-011 / ADR 0023 の決定 3）。UTF-16 の単位列を受ける
  * C-014 の例外で、store_new / rename_note / store_note / note_changed / end_edit に次ぐ 6 本目。
  * count が 0 なら語を捨てる。語が UTF-16 として壊れていれば SEARCH_MALFORMED で前の語を保つ。

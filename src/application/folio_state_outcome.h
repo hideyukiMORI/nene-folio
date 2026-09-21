@@ -51,6 +51,24 @@ enum folio_state_outcome : unsigned char
     FOLIO_STATE_SETTINGS_STORE_FAILED,
     /* 右ペインが表示している平文を取り出せない。探していないし、表示も選択も変えていない */
     FOLIO_STATE_PANE_UNAVAILABLE,
+    /* 置換のパターンが空。下見も本文も変えていない（ADR 0028 の決定 6） */
+    FOLIO_STATE_REPLACE_NO_PATTERN,
+    /* パターンが正規表現の文法に合わない。位置は folio_state_replace_error_offset が持つ */
+    FOLIO_STATE_REPLACE_BAD_PATTERN,
+    /* 置換文字列が文法に合わない（未知の `\x`・末尾の単独の `\`・決定 5） */
+    FOLIO_STATE_REPLACE_BAD_TEMPLATE,
+    /* 1 回の一致操作が上限の steps を超えた。時計は誰も読んでいない（決定 4(a)） */
+    FOLIO_STATE_REPLACE_TIMED_OUT,
+    /* 後戻りが深すぎてパターンを当てられなかった（決定 4(a)） */
+    FOLIO_STATE_REPLACE_TOO_COMPLEX,
+    /* 一致が多すぎる。走査を打ち切ったので下見も作っていない（決定 4(b)） */
+    FOLIO_STATE_REPLACE_TOO_MANY,
+    /* 置き換えた本文が上限を超える。確保の前に断ったので何も変えていない（決定 4(c)） */
+    FOLIO_STATE_REPLACE_TOO_LARGE,
+    /* 下見が無い、または下見を取ったときと本文か宛先が違う。何も変えていない（決定 6） */
+    FOLIO_STATE_REPLACE_STALE,
+    /* 置換の anchor の start が end より後ろ。公開契約の違反なので黙って直さず拒む */
+    FOLIO_STATE_REPLACE_BAD_SPAN,
     FOLIO_STATE_OUT_OF_MEMORY,
     FOLIO_STATE_NAME_REQUIRED,
     FOLIO_STATE_INVALID_NAME,

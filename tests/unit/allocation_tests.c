@@ -18,6 +18,7 @@
 #include "note_text.h"
 #include "persistence_port.h"
 #include "regex_matches.h"
+#include "regex_port.h"
 #include "rename_journal.h"
 #include "replace_edit.h"
 #include "replace_template.h"
@@ -470,6 +471,34 @@ static bool filter_under_probe(struct folio_state *_Nonnull state)
     return folio_state_set_index_filter(state, u"", 0) == FOLIO_STATE_READY;
 }
 
+/* 置換は本文の写し・一致の列・置換文字列・組み立ての出力の確保をまとめて通す
+ * （ADR 0028 の決定 10）。偽のポートは走査だけを答え、ICU は現れない。 */
+static bool replace_under_probe(struct folio_state *_Nonnull state)
+{
+    require(folio_state_begin_edit(state) == FOLIO_STATE_READY, "edit before replacing");
+    struct replace_request request = {.text = u"a-a",
+                                      .length = 3,
+                                      .pattern = u"a",
+                                      .pattern_length = 1,
+                                      .replacement = u"[&]",
+                                      .replacement_length = 3};
+    enum folio_state_outcome previewed = folio_state_preview_replace(state, &request);
+    require(previewed == FOLIO_STATE_READY || previewed == FOLIO_STATE_OUT_OF_MEMORY,
+            "replace preview under probe");
+    if (previewed != FOLIO_STATE_READY)
+    {
+        return false;
+    }
+    struct replace_apply apply = {
+        .text = u"a-a", .length = 3, .anchor = {.start = 0, .end = 0}, .scope = REPLACE_ALL};
+    struct replace_edit *edit = nullptr;
+    enum folio_state_outcome applied = folio_state_apply_replace(state, &apply, &edit);
+    replace_edit_destroy(edit);
+    require(applied == FOLIO_STATE_READY || applied == FOLIO_STATE_OUT_OF_MEMORY,
+            "replace apply under probe");
+    return applied == FOLIO_STATE_READY;
+}
+
 /* 改名は名前・意図・台帳の確保をまとめて通す（ADR 0022）。偽のポートは完了を返す。 */
 static bool rename_under_probe(struct folio_state *_Nonnull state)
 {
@@ -490,19 +519,20 @@ static bool state_scenario_with(struct persistence_adapter *_Nonnull adapter)
 {
     struct persistence_port port = test_adapter_port(adapter);
     struct appearance_port looks = test_appearance_port();
+    struct regex_port finder = test_regex_port();
     struct folio_state *state = nullptr;
-    enum folio_state_outcome outcome = folio_state_create(&port, &looks, &state);
+    enum folio_state_outcome outcome = folio_state_create(&port, &looks, &finder, &state);
     if (outcome == FOLIO_STATE_OUT_OF_MEMORY)
     {
         return false;
     }
     require(outcome == FOLIO_STATE_READY, "state under probe");
-    bool completed = layout_intent_under_probe(state) && ledger_under_probe(state) &&
-                     selection_under_probe(state) && filter_under_probe(state) &&
-                     reorder_under_probe(state) && edit_under_probe(state) &&
-                     transfer_under_probe(state) && new_note_under_probe(state) &&
-                     save_as_under_probe(state) && rename_under_probe(state) &&
-                     search_under_probe(state) && set_number_under_probe(state);
+    bool completed =
+        layout_intent_under_probe(state) && ledger_under_probe(state) &&
+        selection_under_probe(state) && filter_under_probe(state) && reorder_under_probe(state) &&
+        edit_under_probe(state) && transfer_under_probe(state) && new_note_under_probe(state) &&
+        save_as_under_probe(state) && replace_under_probe(state) && rename_under_probe(state) &&
+        search_under_probe(state) && set_number_under_probe(state);
     folio_state_destroy(state);
     return completed;
 }
