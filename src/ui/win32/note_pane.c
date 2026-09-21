@@ -27,6 +27,8 @@ struct note_pane
     size_t numbered_capacity;
     struct line_index *_Nullable lines; /* 本文の派生物の写し。所有者はここ */
     bool lines_stale;                   /* 次に番号を描くときに作り直す */
+    /* EM_STREAMIN を挟むあいだだけ真。途中の本文から表を作らせない（ADR 0026 の補正 5） */
+    bool streaming;
 };
 
 static const wchar_t library_name[] = L"Msftedit.dll";
@@ -290,7 +292,11 @@ void note_pane_render(struct note_pane *_Nonnull pane, const char *_Nonnull rtf,
     SendMessageW(pane->handle, EM_SETREADONLY, TRUE, 0);
     struct rtf_stream stream = {.bytes = rtf, .remaining = length};
     EDITSTREAM editing = {.dwCookie = (DWORD_PTR)&stream, .dwError = 0, .pfnCallback = stream_in};
+    /* 流し込みの途中で EN_VSCROLL が届いても、そこから表を作って印を落とさない（補正 5）。
+     * 印を落とすのは流し込みが終わったあとの、最初の描き直しである。 */
+    pane->streaming = true;
     SendMessageW(pane->handle, EM_STREAMIN, SF_RTF, (LPARAM)&editing);
+    pane->streaming = false;
 }
 
 void note_pane_edit(struct note_pane *_Nonnull pane, const char16_t *_Nonnull units, size_t count)
@@ -305,7 +311,9 @@ void note_pane_edit(struct note_pane *_Nonnull pane, const char16_t *_Nonnull un
     /* BOM は付けない（付けると本文の U+FEFF になる・2026-09-09 実測）。 */
     struct rtf_stream stream = {.bytes = (const char *)units, .remaining = count * sizeof *units};
     EDITSTREAM editing = {.dwCookie = (DWORD_PTR)&stream, .dwError = 0, .pfnCallback = stream_in};
+    pane->streaming = true;
     SendMessageW(pane->handle, EM_STREAMIN, SF_TEXT | SF_UNICODE, (LPARAM)&editing);
+    pane->streaming = false;
     SendMessageW(pane->handle, EM_SETMODIFY, FALSE, 0);
 }
 
@@ -390,6 +398,11 @@ void note_pane_invalidate_lines(struct note_pane *_Nonnull pane)
 /* 番号の表を、必要なときだけ作り直す（描画の合流が打鍵の連続をまとめる・決定 3）。 */
 static bool refresh_lines(struct note_pane *_Nonnull pane)
 {
+    if (pane->streaming)
+    {
+        /* 流し込みの途中の本文は原文ではない。表を作らず「古い」の印も残す（補正 5）。 */
+        return false;
+    }
     if (pane->lines != nullptr && !pane->lines_stale)
     {
         return true;
@@ -501,7 +514,10 @@ bool note_pane_visible_rows(struct note_pane *_Nonnull pane, struct gutter_row *
 
 size_t note_pane_line_digits(struct note_pane *_Nonnull pane)
 {
-    if (pane->handle == nullptr || !refresh_lines(pane))
+    /* 作り直せなかった（確保失敗・流し込み中）ときも、古い表があればその桁数を答える。
+     * 番号が描けないのに帯の幅だけ縮んで本文が動く、を作らない（ADR 0026 の補正 8）。 */
+    bool rebuilt = pane->handle != nullptr && refresh_lines(pane);
+    if (!rebuilt && pane->lines == nullptr)
     {
         return line_index_minimum_digits;
     }

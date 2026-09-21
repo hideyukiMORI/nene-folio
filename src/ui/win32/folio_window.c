@@ -57,6 +57,8 @@ struct folio_window
     size_t search_total;
     size_t search_ordinal;
     bool pending_g; /* 直前の文字の鍵が g だった（gg の 2 打・ADR 0013 の決定 2） */
+    /* 等幅書体の数字 1 文字の幅。書体を作り直すときだけ測る（ADR 0026 の補正 7） */
+    int digit_width;
 };
 
 static const wchar_t class_name[] = L"NeNeFolioWindow";
@@ -208,6 +210,24 @@ static struct folio_window *_Nullable self_of(HWND window)
     return (struct folio_window *)GetWindowLongPtrW(window, GWLP_USERDATA);
 }
 
+/* 等幅書体の数字 1 文字の幅（字間 0・決定 1）。測れなければ DPI 換算の目安を使う。
+ * 呼ぶのは書体を作り直す refresh_font だけで、毎回の WM_PAINT では測らない（補正 7）。 */
+static int measure_digit(const struct folio_window *_Nonnull self, UINT dpi)
+{
+    HDC device = GetDC(self->handle);
+    if (device == nullptr)
+    {
+        return scale(base_digit_fallback, dpi);
+    }
+    HGDIOBJ previous = SelectObject(device, self->mono_font);
+    SetTextCharacterExtra(device, 0);
+    SIZE measured = {.cx = 0, .cy = 0};
+    bool measurable = GetTextExtentPoint32W(device, L"0", 1, &measured) != 0;
+    SelectObject(device, previous);
+    ReleaseDC(self->handle, device);
+    return measurable ? (int)measured.cx : scale(base_digit_fallback, dpi);
+}
+
 static void refresh_font(struct folio_window *_Nonnull self, UINT dpi)
 {
     if (self->mono_font != nullptr)
@@ -227,6 +247,8 @@ static void refresh_font(struct folio_window *_Nonnull self, UINT dpi)
     {
         SendMessageW(self->filter_input, WM_SETFONT, (WPARAM)self->mono_font, TRUE);
     }
+    /* 帯の幅の材料はここで 1 回だけ測る。DPI の変更でもこの関数が走るので測り直る（補正 7）。 */
+    self->digit_width = measure_digit(self, dpi);
 }
 
 static RECT command_palette_rect(const struct folio_window *_Nonnull self)
@@ -241,7 +263,8 @@ static RECT command_palette_rect(const struct folio_window *_Nonnull self)
     {
         width = available;
     }
-    int rows = (int)folio_command_count();
+    /* 箱の高さは「出す操作の数」で決める。登録表の総数で取ると 1 行ぶん余る（補正 9）。 */
+    int rows = (int)folio_command_listed_count();
     int height =
         scale(base_command_palette_padding * 2 + base_command_input_height + base_command_gap +
                   base_command_row_height * rows + base_command_status_height,
@@ -432,23 +455,6 @@ static bool gutter_visible(const struct folio_window *_Nonnull self)
            folio_state_document_kind(self->state) != FOLIO_DOCUMENT_NONE;
 }
 
-/* 等幅書体の数字 1 文字の幅（字間 0・決定 1）。測れなければ DPI 換算の目安を使う。 */
-static int digit_width(const struct folio_window *_Nonnull self, UINT dpi)
-{
-    HDC device = GetDC(self->handle);
-    if (device == nullptr)
-    {
-        return scale(base_digit_fallback, dpi);
-    }
-    HGDIOBJ previous = SelectObject(device, self->mono_font);
-    SetTextCharacterExtra(device, 0);
-    SIZE measured = {.cx = 0, .cy = 0};
-    bool measurable = GetTextExtentPoint32W(device, L"0", 1, &measured) != 0;
-    SelectObject(device, previous);
-    ReleaseDC(self->handle, device);
-    return measurable ? (int)measured.cx : scale(base_digit_fallback, dpi);
-}
-
 /* ドロワーの右端から本文の左端までの空き。既存の 36px に収まるあいだ本文は動かない（決定 6）。 */
 static int pane_inset(const struct folio_window *_Nonnull self, UINT dpi)
 {
@@ -457,8 +463,8 @@ static int pane_inset(const struct folio_window *_Nonnull self, UINT dpi)
     {
         return base;
     }
-    int needed = digit_width(self, dpi) * (int)note_pane_line_digits(self->pane) +
-                 scale(base_gutter_gap, dpi);
+    int needed =
+        self->digit_width * (int)note_pane_line_digits(self->pane) + scale(base_gutter_gap, dpi);
     return needed > base ? needed : base;
 }
 
@@ -1235,10 +1241,14 @@ static int number_units(size_t value, wchar_t *_Nonnull out, int capacity)
 }
 
 /* 本文の左の空きに、見えている論理行の番号を右寄せで描く（ADR 0026 の決定 1 / 3）。
- * y は note_pane が主窓の client 座標へ直して返す。 */
-static void draw_gutter(const struct folio_window *_Nonnull self, HDC device)
+ * y は note_pane が主窓の client 座標へ直して返す。
+ * 帯に掛からない更新矩形では番号の一巡（EM_LINEINDEX / EM_POSFROMCHAR）ごと飛ばし、
+ * 升目は帯でクリップして上の操作行へはみ出させない（ADR 0026 の補正 7）。 */
+static void draw_gutter(const struct folio_window *_Nonnull self, HDC device, RECT damage)
 {
-    if (!gutter_visible(self))
+    RECT band = gutter_rect(self);
+    RECT touched = {0, 0, 0, 0};
+    if (!gutter_visible(self) || !IntersectRect(&touched, &band, &damage))
     {
         return;
     }
@@ -1248,7 +1258,12 @@ static void draw_gutter(const struct folio_window *_Nonnull self, HDC device)
     {
         return;
     }
-    RECT band = gutter_rect(self);
+    int saved = SaveDC(device);
+    if (saved == 0)
+    {
+        return;
+    }
+    IntersectClipRect(device, band.left, band.top, band.right, band.bottom);
     SetTextColor(device, self->palette.gutter_text);
     SelectObject(device, self->mono_font);
     SetTextCharacterExtra(device, 0);
@@ -1259,10 +1274,12 @@ static void draw_gutter(const struct folio_window *_Nonnull self, HDC device)
         RECT cell = {band.left, rows[at].top, band.right, rows[at].top + rows[at].height};
         DrawTextW(device, label, length, &cell, DT_SINGLELINE | DT_RIGHT | DT_TOP | DT_NOPREFIX);
     }
+    RestoreDC(device, saved);
 }
 
 /* 右ペインの地と頭。本文は note_pane が持つ。 */
-static void draw_pane(const struct folio_window *_Nonnull self, HDC device, RECT client)
+static void draw_pane(const struct folio_window *_Nonnull self, HDC device, RECT client,
+                      RECT damage)
 {
     UINT dpi = GetDpiForWindow(self->handle);
     RECT pane = {scale(base_drawer_width, dpi), 0, client.right, client.bottom};
@@ -1278,7 +1295,7 @@ static void draw_pane(const struct folio_window *_Nonnull self, HDC device, RECT
     draw_close(self, device);
     draw_actions(self, device);
     SetTextCharacterExtra(device, 0);
-    draw_gutter(self, device);
+    draw_gutter(self, device, damage);
 }
 
 /* 更新矩形と右ペインの重なりへ、client 座標のまま 1 枚だけ描き写す。
@@ -1293,7 +1310,7 @@ static void blit_pane(struct folio_window *_Nonnull self, HDC target, RECT clien
     {
         HGDIOBJ previous = SelectObject(memory, surface);
         SetViewportOrgEx(memory, -damage.left, -damage.top, nullptr);
-        draw_pane(self, memory, client);
+        draw_pane(self, memory, client, damage);
         BitBlt(target, damage.left, damage.top, width, height, memory, damage.left, damage.top,
                SRCCOPY);
         SelectObject(memory, previous);
@@ -2043,12 +2060,15 @@ static bool wanted_number(const struct folio_window *_Nonnull self, enum folio_o
 }
 
 /* 本文の矩形が変わる操作の前後で、最初に見える論理行を保つ（ADR 0026 の決定 6）。
- * 本文・Undo・選択には触らない。折り返しの途中から見えていた場合は行の先頭へ寄る。 */
+ * 本文・Undo・選択には触らない。折り返しの途中から見えていた場合は行の先頭へ寄る。
+ * 戻すのは arrange() が実際に本文の左端を動かしたときだけで、3〜4 桁の切替や
+ * 帯の出ない閲覧では読んでいる位置に触れない（ADR 0026 の補正 6）。 */
 static void rearrange_keeping_line(struct folio_window *_Nonnull self)
 {
+    LONG before = pane_bounds(self).left;
     size_t line = self->pane == nullptr ? 0 : note_pane_first_visible_line(self->pane);
     arrange(self);
-    if (line > 0 && self->pane != nullptr)
+    if (line > 0 && self->pane != nullptr && pane_bounds(self).left != before)
     {
         note_pane_scroll_to_line(self->pane, line);
     }
