@@ -29,8 +29,8 @@
 | 保存 | Save | 保存 |
 | 別名で保存 | Save as | 另存为 |
 | 名前を変更 | Rename | 重命名 |
-| 検索（ノート内） | Find | 查找 |
-| 検索（全ノート） | Search | 搜索 |
+| ノート内検索（`Ctrl+F` の欄・`/` `?` `n` `N`） | **Find** | **查找** |
+| 全ノート検索（ドロワーの `Ctrl+Shift+F` の欄） | **Search** | **搜索** |
 | 絞り込み | filter | 筛选 |
 | 置換 | Replace | 替换 |
 | パターン | pattern | 模式 |
@@ -46,6 +46,11 @@
 | 記憶域が足りません | Out of memory | 内存不足 |
 | 全区画 | Anywhere | 所有区域 |
 | 並列の区切り `・` | `,` | `、` |
+
+**この 2 つは必ず訳し分ける。** ノート内検索の欄は Find / 查找、ドロワーの全ノート検索の欄は
+Search / 搜索で、`UI_TEXT_HELP_SEARCH_FIELD`（ノート内検索の欄）と
+`UI_TEXT_PLACEHOLDER_FILTER`（全ノート検索の欄）が別の語になる。
+中国語の引用符は `“”`（`「」` は使わない）。
 
 言語の名前（`日本語` / `English` / `简体中文`）は**各言語の自称**なので 3 列とも同じ文字列である。
 製品名 `NeNe Folio` と `NENE FOLIO`、`{k}` などの置換子、`data/…` のパス、`.md` は翻訳しない。
@@ -64,7 +69,11 @@ ADR 0032 の決定 3 のとおり、**構文の見本だけを ASCII に揃え�
 表は 131 → 136 値になった。
 
 測りながら英訳を 1 件短くした: `UI_TEXT_HELP_EX_SET_NUMBER` の en を
-`(line numbers while editing)` → `(line numbers in edit)`（426px → 384px。箱は 428px）。
+`(line numbers while editing)`（426px・箱 428px）から詰め、独立レビューの指摘で
+`(line numbers in edit mode)`（414px）に落ち着いた。
+
+独立レビューで**訳を 14 件直した**（用語の揺れ・中国語の引用符・語の選び直し・英語の
+`shape` → `format`）。日本語の列は 1 字も触っていない。直した ID は帯幅を測り直している。
 
 ## 3. 帯幅（Win32 部品 probe・96 DPI）
 
@@ -93,6 +102,8 @@ ADR 0032 の決定 3 のとおり、**構文の見本だけを ASCII に揃え�
 | 折り返しが本当に変わる対（Consolas 181 行 → Yu Gothic UI 121 行） | **RichEdit 自身が先頭の内容を保ち**、論理行は 11 のまま。復元は空振り |
 | 再着色（`SCF_ALL` + `SCF_DEFAULT`）でキャレットが画面の外 | 論理行が **16 → 1 へ飛び**、同じ包みで **16 に戻った** |
 | 閲覧（新しい fonttbl の RTF を流し直す） | 論理行 26 → 26・選択 40..48 が戻る |
+| **作成直後の既定書式**（`note_pane_create` は face を当てない） | RichEdit の既定は `Segoe UI`。窓が直後に当てて `Yu Gothic UI` になる |
+| **閲覧のまま言語を変えてから編集へ入る**（S1 の回帰） | 既定書式が `Microsoft YaHei UI` になり、流し込んだ平文もその face |
 | EDIT の `WM_SETFONT` | 本文・選択・Undo・変更印が不変 |
 | face の実在（`EnumFontFamiliesExW`） | `Yu Gothic UI` / `Microsoft YaHei UI` はあり、無い face は 0 件で返る |
 
@@ -110,7 +121,7 @@ ADR 0031 の 2026-09-23 の補正 2 はこの実測にもとづく。
 `reveal_command_selection` は 6 つの選択肢のどれでも箱の中へ送り出し（行 7 で `first=3`）、
 `settings_next_choice` は言語の見出し（行 4）を飛ばす（3 → 5・5 → 3）。端では動かない。
 
-**probe は 69 項目すべて成功**（width 15・reface 16・geometry 38。`failures=0`）。
+**probe は 73 項目すべて成功**（width 15・reface 20・geometry 38。`failures=0`）。
 
 ## 6. 機械が守るもの
 
@@ -131,5 +142,5 @@ ADR 0031 の 2026-09-23 の補正 2 はこの実測にもとづく。
 | `ctest`（単体） | 2/2 成功 |
 | `eng/conformance.py` / `eng/test-conformance.py` | 0 件 / 89 テスト成功 |
 | `eng/prove-gates.py` | 17 本（CNF-011 の反例を含む） |
-| Win32 部品 probe | 69 項目成功 |
+| Win32 部品 probe | 73 項目成功 |
 | 実機の目視 | **未実施**（統合チェックリスト） |

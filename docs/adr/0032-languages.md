@@ -120,7 +120,7 @@ Win32 部品 probe（`out/design/2026-09-23/language-ui-probe/`）: 3 言語 × 
    最初に見える論理行は動かなかった（復元は空振り）。一方、**キャレットが画面の外にある再着色**では
    論理行が 16 → 1 へ飛び、同じ包みで 16 に戻った。包みは両方に付けたまま（face 側は安全網）で、
    ADR 0031 の 2026-09-23 の補正 2 はこの実測にもとづく。
-8. **`failure_box_show` の呼び出しは 8 か所ではなく 11 か所だった**（ドロワー 5・主窓 6）。
+8. **`failure_box_show` の呼び出しは 8 か所ではなく 13 か所だった**（ドロワー 5・主窓 8）。
    全部が `folio_state_language` を渡す。
 9. **英訳を 1 件だけ短くした。** probe が `UI_TEXT_HELP_EX_SET_NUMBER` の en を 426px（箱 428px）と
    測ったので `(line numbers while editing)` → `(line numbers in edit)` にした。
