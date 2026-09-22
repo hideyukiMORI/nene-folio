@@ -2920,15 +2920,17 @@ static void reface_pane(const struct folio_window *_Nonnull self)
         return;
     }
     size_t line = note_pane_first_visible_line(self->pane);
+    /* **既定書式の face はモードによらず当てる。** `SCF_DEFAULT` は既存の run を塗らないので、
+     * RTF が face を明示している閲覧の見た目は変わらない。当てないと、起動直後（閲覧）や
+     * 閲覧のまま言語を変えたあとに `i` で編集へ入った本文が RichEdit の既定 face になる
+     * （平文の流し込みは既定書式で描かれる）。`note_pane_recolor` が閲覧でも `SCF_DEFAULT` を
+     * 無条件に当てているのと同じ理屈である（ADR 0031 の補正 9・ADR 0032 の補正 4）。 */
+    wchar_t face[LF_FACESIZE];
+    ui_face_for(folio_state_language(self->state), face);
+    note_pane_reface(self->pane, face);
     if (folio_state_pane_mode(self->state) == PANE_MODE_VIEW)
     {
         restream_pane(self);
-    }
-    else
-    {
-        wchar_t face[LF_FACESIZE];
-        ui_face_for(folio_state_language(self->state), face);
-        note_pane_reface(self->pane, face);
     }
     if (line > 0)
     {

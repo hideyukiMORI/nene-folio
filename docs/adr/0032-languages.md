@@ -125,3 +125,15 @@ Win32 部品 probe（`out/design/2026-09-23/language-ui-probe/`）: 3 言語 × 
 9. **英訳を 1 件だけ短くした。** probe が `UI_TEXT_HELP_EX_SET_NUMBER` の en を 426px（箱 428px）と
    測ったので `(line numbers while editing)` → `(line numbers in edit)` にした。
    決定 3 の「欄の中は収まるように書く」の適用で、閉じた語彙は変えていない。
+
+### 独立レビュー（設計リナ）で直した所
+
+10. **S1: 既定書式の face はモードによらず当てる。** 決定 6 は「編集は `note_pane_reface`・
+    閲覧は流し直し」と書き、補正 4 は「作った直後に `note_pane_reface` を 1 回呼ぶ」と書いたが、
+    実装の `reface_pane` がモードで分岐していたため、**起動直後（閲覧）と閲覧中の言語切替では
+    一度も当たらなかった**。`note_pane_create` から `CFM_FACE` を外してあるので、そのまま
+    `i` で編集へ入った本文は RichEdit の既定 face（実測で `Segoe UI`）で描かれる（補正 4 の不履行）。
+    `reface_pane` を「**常に** `note_pane_reface` → 閲覧ならそのあと `restream_pane`」へ直した。
+    `SCF_DEFAULT` は既存の run を塗らないので閲覧の見た目は変わらない（`note_pane_recolor` が
+    閲覧でも `SCF_DEFAULT` を無条件に当てているのと同じ理屈・ADR 0031 の補正 9）。
+    probe に「作成 → reface → RTF → 閲覧のまま言語切替 → `i` で編集」の配線を並べた 4 項目を足した。
