@@ -48,6 +48,7 @@ Conventional Commits を、この正確な形で書く。
 
 PR には目的・変更の要約・使った正典経路・規則 ID・検証結果・waiver・残るリスク・`Closes #N` を書く（DEVELOPMENT_WORKFLOW 第 7 節）。
 1 つの PR に 1 つの作業単位。マージは squash のみ。マージ後はローカル `main` を綺麗に同期する。
+統合の手順は `tools/merge-pr.ps1 -Number N -Subject "…"` の 1 本で行う（字面検査 → Ready → CI 待ち → squash merge → main の ff）。
 
 実装中とレビュー中は draft。Draft → Ready がフルゲートの要求である。
 
