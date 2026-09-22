@@ -14,17 +14,20 @@ probe はすべて画面外の窓で値だけを測っている（各単位の�
 
 ## 手順
 
-1. **起動中の `NeNeFolio.exe` を先に閉じる。** 開いたままだとリンクが落ちる。
+1〜3 は `tools/prepare-real-machine.ps1` の 1 本で行う（#101）。**起動は別の 1 行**で、スクリプトは起動しない。
+
+1. **起動中の `NeNeFolio.exe` を先に閉じる。** 開いたままだとリンクが落ちる（スクリプトが名前で探して閉じる）。
 2. **`main` の最新**が clean であることを確かめ、**その SHA でビルドし直す**
    （この行を書いた時点では **`4e57483`**。下の表の `f4e7bcf` は 2026-09-22 にこの表を作ったときのもので、
-   以後 #39〜#96 の変更が入っている。**古い exe で見ない。**）
+   以後 #39〜#96 の変更が入っている。**古い exe で見ない。**）。スクリプトは clean でなければ非 0 で止まり、
+   `git pull --ff-only` で進める。
 3. ビルドする。**`nenefolio` を名指しする**（`nenefolio_window` / `folio_tests` だけでは
-   exe が再リンクされず、古い exe で誤診する。2026-09-11 の引き継ぎ）。
+   exe が再リンクされず、古い exe で誤診する。2026-09-11 の引き継ぎ）。スクリプトは `eng/toolchain.ps1` を読んだ同じ呼び出しで
+   configure と `cmake --build build --target nenefolio` を行い、ビルドした SHA・件名・exe のパス・大きさ・時刻を
+   標準出力に JSON 1 つで返す。失敗はすべて非 0 で止まる。
 
    ```powershell
-   . ./eng/toolchain.ps1
-   cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug
-   cmake --build build --target nenefolio
+   pwsh -NoProfile -File ./tools/prepare-real-machine.ps1
    ```
 
 4. できた exe を起動する。
