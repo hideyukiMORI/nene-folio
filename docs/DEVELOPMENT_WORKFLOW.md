@@ -167,3 +167,17 @@ Waivers: none | WVR-NNNN
 
 参照実装: nene-loupe `eng/package-release.ps1`（2026-09-07 還流）。実行ファイルは `/MT` で静的に結び、`llvm-readobj --coff-imports` に
 `VCRUNTIME` / `UCRTBASE` / `MSVCP` が無いことを検査する（Phase 0 の R1 で実測済み）。
+
+---
+
+## 10. 背景席（Agent）の運用
+
+設計席（対話席）が裁定・受理・仕様の文言を持ち、背景席は仕事の種類でモデルを選ぶ（[ADR 0034](adr/0034-agent-seats-by-job.md)）。
+
+- 実装と差し戻し対応 = `opus`、下ごしらえ（調査メモ・棚卸し・比較・撮影・checkout 準備・ペルソナ）= `sonnet`、機械作業（照合・差分の列挙）= `haiku`。
+  基準は「間違えたとき誰が直すか」。
+- **Opus の実装席は 1 席 1 仕事。** probe → 実装 → 差し戻しはそれぞれ新しい席にし、引き継ぎは `out/agents/<issue>-<仕事>/report.md` で渡す。
+  同じ席の使い回し（SendMessage）と `fork` は使わない。道具出力は小さく（対象テストだけ・失敗行だけ・ログはファイルへ）、最終報告は 30 行以内。
+  指示書は[実装席の指示書テンプレート](IMPL_SEAT_BRIEF_TEMPLATE.md)の穴を埋める形でしか書かない。
+- 同じ下ごしらえを 2 回モデルに踏ませたら、3 回目は `tools/` のスクリプトにする chore を出す。スクリプトは設計席が直接実行し、受理は実出力を読む。
+- 立てた席は日報の「運用」節に「Issue・仕事・model・報告ファイル」の 1 行ずつで残す。枠の減りを疑ったら transcript の usage を席ごとに集計してから手を選ぶ。
