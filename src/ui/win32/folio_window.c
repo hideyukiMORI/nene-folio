@@ -2611,7 +2611,7 @@ static enum folio_state_outcome save_destination(const struct folio_window *_Non
                                                           : NAME_PROMPT_FIRST_SAVE,
                                               .units = units,
                                               .count = count};
-        return name_prompt_show(self->handle, &request);
+        return name_prompt_show(self->handle, &request, &self->palette);
     }
     struct note_name *_Nullable name = nullptr;
     enum note_name_outcome accepted = note_name_create(argument, strlen(argument), &name);
@@ -2658,7 +2658,7 @@ static enum folio_state_outcome rename_destination(const struct folio_window *_N
     {
         struct name_prompt_request request = {
             .state = self->state, .kind = NAME_PROMPT_RENAME, .units = units, .count = count};
-        return name_prompt_show(self->handle, &request);
+        return name_prompt_show(self->handle, &request, &self->palette);
     }
     struct note_name *_Nullable name = nullptr;
     enum note_name_outcome accepted = note_name_create(argument, strlen(argument), &name);
