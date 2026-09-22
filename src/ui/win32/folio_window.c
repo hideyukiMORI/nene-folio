@@ -16,6 +16,8 @@
 #include "note_ref.h"
 #include "note_search.h"
 #include "replace_edit.h"
+#include "ui_text.h"
+#include "ui_text_request.h"
 #include "utf16_text.h"
 #include "utf8_text.h"
 
@@ -76,32 +78,16 @@ struct folio_window
 static const wchar_t class_name[] = L"NeNeFolioWindow";
 static const wchar_t command_layer_class[] = L"NeNeFolioCommandLayer";
 static const wchar_t mono_face[] = L"Consolas";
-/* 未完了の改名があるあいだ、パンくずが実ファイル名の代わりに出す文字（ADR 0022 の決定 2）。 */
-static const char recovering_label[] = "名前変更の復旧待ち";
-static const wchar_t view_label[] = L"閲覧";
-static const wchar_t edit_label[] = L"編集";
 static const wchar_t edit_class[] = L"EDIT";
-/* 欄が空のあいだに薄い文字で出す用途（ADR 0024 の決定 6）。 */
-static const wchar_t filter_placeholder[] = L"すべてのノートを検索";
-static const char *_Nonnull const command_shortcuts[] = {
-    "一覧  ↑↓ 選択 / Enter 実行 / Esc 戻る / Tab 説明",
-    "編集本文  Ctrl+h/j/k/l ←/↓/↑/→",
-    "全区画  F1 ヘルプ / Ctrl+P 一覧 / Ctrl+F このノート内を検索",
-    "全区画  Ctrl+Shift+F すべてのノートを検索（索引を絞り込む）",
-    "絞り込み欄  Esc・Enter 索引へ戻る（絞り込みは残る）/ 空にすると解除",
-    "絞り込み中  並び替えと折畳/展開はできない（色・保存・編集は可）",
-    "入力欄でも  Ctrl+N 新規 / Ctrl+S 保存 / Ctrl+Shift+S 別名保存 / F2 名前変更",
-    "索引・閲覧本文  : コマンド / i 編集",
-    "Ex  :set number / :set nonumber / :set nu!（編集中の原文の行番号）",
-    "置換欄  Tab 欄を移動 / Enter 1 件 / Ctrl+Enter すべて / Esc 閉じる",
-    "Ex  :%s/パターン/置換/[g]（g なしは各行の最初の一致・正規表現）",
-    "索引・閲覧本文  / 次を検索 / ? 前を検索 / n・N 繰り返し",
-    "全区画  F3 次の一致 / Shift+F3 前の一致（向きは変えない）",
-    "検索欄  Enter 次 / Shift+Enter 逆 / Esc 閉じる（選択は残る）",
-    "索引  j/k 次/前 / gg/G 先頭/末尾",
-    "索引  h/l 折畳/展開 / Enter 本文",
-    "索引  ↑↓ / PgUp/PgDn スクロール",
-    "本文  Esc 保存して索引へ（編集は維持）",
+/* 一覧に出すキー操作の行（ADR 0030 の決定 4）。文言は core の ui_text が持ち、
+ * ここは並びだけを持つ。1 行 1 ID で、欄分けは単位 C（ADR 0032）。 */
+static const enum ui_text command_shortcuts[] = {
+    UI_TEXT_HELP_PALETTE,       UI_TEXT_HELP_EDITOR_MOTION, UI_TEXT_HELP_GLOBAL_KEYS,
+    UI_TEXT_HELP_GLOBAL_FILTER, UI_TEXT_HELP_FILTER_FIELD,  UI_TEXT_HELP_FILTER_LIMITS,
+    UI_TEXT_HELP_FILE_KEYS,     UI_TEXT_HELP_INDEX_COMMAND, UI_TEXT_HELP_EX_SET_NUMBER,
+    UI_TEXT_HELP_REPLACE_FIELD, UI_TEXT_HELP_EX_SUBSTITUTE, UI_TEXT_HELP_SEARCH_KEYS,
+    UI_TEXT_HELP_SEARCH_STEP,   UI_TEXT_HELP_SEARCH_FIELD,  UI_TEXT_HELP_INDEX_MOTION,
+    UI_TEXT_HELP_INDEX_FOLD,    UI_TEXT_HELP_INDEX_SCROLL,  UI_TEXT_HELP_EDITOR_ESCAPE,
 };
 
 /* Ctrl+S が WM_CHAR で届く制御文字（GetKeyState を読まない・ARC-007）。 */
@@ -129,6 +115,10 @@ constexpr int replace_replacement_control_id = 5;
 constexpr size_t search_status_capacity = 128;
 /* 「対象名 / k 件」と失敗の 1 行（＋「 位置 N」）を組む領域。ノート名は 255 バイトまで。 */
 constexpr size_t replace_status_capacity = 512;
+/* 1 回の描画・測定で UTF-16 へ写せる単位数（ADR 0030 の決定 5）。表の 1 行（ui_text_unit_limit）・
+ * 状態の 1 行（replace_status_capacity）・ノート名（255 バイト）のどれもここに収まる。
+ * 収まらなければ何も描かない（描画のたびの確保をやめる代わりの上限）。 */
+constexpr size_t draw_unit_limit = 1024;
 
 /* 96 DPI での寸法（デザイン「案2 堅」）。 */
 constexpr int base_dpi = 96;
@@ -686,32 +676,43 @@ static LRESULT edge_hit(POINT point, RECT window, int border)
     return hits[row][column];
 }
 
+/* UTF-8 を確保せずに呼び出し側の入れ物へ写す（ADR 0030 の決定 5）。
+ * 収まらない・壊れている場合は 0 を返し、呼び出し側は何も出さない。 */
+static int wide_units(const char *_Nonnull text, char16_t *_Nonnull out)
+{
+    size_t written = 0;
+    if (utf16_text_fill(text, out, draw_unit_limit, &written) != UTF16_TEXT_FILL_READY)
+    {
+        return 0;
+    }
+    return (int)written;
+}
+
 /* UTF-8 の 1 行を測る。測れなければ 0。 */
 static int measure_utf8(HDC device, const char *_Nonnull text)
 {
-    struct utf16_text *_Nullable wide = nullptr;
-    if (utf16_text_create(text, strlen(text), &wide) != UTF16_TEXT_CONVERTED)
+    char16_t units[draw_unit_limit];
+    int count = wide_units(text, units);
+    if (count == 0)
     {
         return 0;
     }
     RECT measured = {0, 0, 0, 0};
-    DrawTextW(device, utf16_text_units(wide), (int)utf16_text_length(wide), &measured,
-              DT_SINGLELINE | DT_NOPREFIX | DT_CALCRECT);
-    utf16_text_destroy(wide);
+    DrawTextW(device, units, count, &measured, DT_SINGLELINE | DT_NOPREFIX | DT_CALCRECT);
     return measured.right - measured.left;
 }
 
 /* UTF-8 を 1 行で描く。bounds に収まらなければ末尾を省略記号にする（ADR 0011 の決定 4）。 */
 static void draw_utf8(HDC device, const char *_Nonnull text, RECT bounds)
 {
-    struct utf16_text *_Nullable wide = nullptr;
-    if (utf16_text_create(text, strlen(text), &wide) != UTF16_TEXT_CONVERTED)
+    char16_t units[draw_unit_limit];
+    int count = wide_units(text, units);
+    if (count == 0)
     {
         return;
     }
-    DrawTextW(device, utf16_text_units(wide), (int)utf16_text_length(wide), &bounds,
+    DrawTextW(device, units, count, &bounds,
               DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX | DT_END_ELLIPSIS);
-    utf16_text_destroy(wide);
 }
 
 /* 右ペインの頭の帯（窓を掴んで動かせる帯）。 */
@@ -762,24 +763,28 @@ static void breadcrumb_room(int budget, int minimum, int *_Nonnull category, int
     *category = budget - *note;
 }
 
-static const wchar_t *_Nonnull chip_label(enum pane_mode chip)
+static enum ui_text chip_label(enum pane_mode chip)
 {
     switch (chip)
     {
     case PANE_MODE_VIEW:
-        return view_label;
+        return UI_TEXT_CHIP_VIEW;
     case PANE_MODE_EDIT:
-        return edit_label;
+        return UI_TEXT_CHIP_EDIT;
     }
-    return view_label;
+    return UI_TEXT_CHIP_VIEW;
+}
+
+/* 札に描く 1 行。札の幅も当たり判定もこの 1 本を通る。 */
+static const char *_Nonnull chip_text(const struct folio_window *_Nonnull self, enum pane_mode chip)
+{
+    return ui_text_line(chip_label(chip), folio_state_language(self->state));
 }
 
 /* 札 1 つの幅（左右の余白込み）。等幅フォントを選んだ device で測る。 */
 static int chip_width(const struct folio_window *_Nonnull self, HDC device, enum pane_mode chip)
 {
-    RECT measured = caption_rect(self);
-    DrawTextW(device, chip_label(chip), -1, &measured, DT_SINGLELINE | DT_NOPREFIX | DT_CALCRECT);
-    return measured.right - measured.left +
+    return measure_utf8(device, chip_text(self, chip)) +
            scale(base_chip_padding, GetDpiForWindow(self->handle)) * 2;
 }
 
@@ -805,9 +810,10 @@ static RECT chip_rect(const struct folio_window *_Nonnull self, HDC device, enum
 }
 
 /* パンくずのノート区画に実際に描く文字。幅の見積りも描画もこの 1 本を使う（ADR 0022 の決定 2）。 */
-static const char *_Nonnull breadcrumb_note(struct pane_title_view title)
+static const char *_Nonnull breadcrumb_note(struct pane_title_view title,
+                                            enum folio_language language)
 {
-    return title.recovering ? recovering_label : title.note;
+    return title.recovering ? ui_text_line(UI_TEXT_TITLE_RECOVERING, language) : title.note;
 }
 
 static struct breadcrumb_layout breadcrumb_cells(const struct folio_window *_Nonnull self,
@@ -824,7 +830,7 @@ static struct breadcrumb_layout breadcrumb_cells(const struct folio_window *_Non
     ordinal_label(title.ordinal, digits);
     int ordinal = measure_utf8(device, digits) + padding * 2;
     int category = measure_utf8(device, title.category);
-    int note = measure_utf8(device, breadcrumb_note(title));
+    int note = measure_utf8(device, breadcrumb_note(title, folio_state_language(self->state)));
     int budget = available - ordinal - padding * 4 - tip * 2;
     breadcrumb_room(budget < 0 ? 0 : budget, scale(base_breadcrumb_note, dpi), &category, &note);
     int category_width = category > 0 ? category + padding * 2 + tip : 0;
@@ -896,7 +902,8 @@ static void draw_breadcrumb(const struct folio_window *_Nonnull self, HDC device
     /* 復旧待ちの言い換えはここ 1 か所だけが持つ。application は実名を返す（ADR 0022 の決定 2）。 */
     SetTextColor(device,
                  title.recovering ? self->palette.selected_text : self->palette.current_text);
-    draw_breadcrumb_label(device, breadcrumb_note(title), cells.note, cells.padding + cells.tip);
+    draw_breadcrumb_label(device, breadcrumb_note(title, folio_state_language(self->state)),
+                          cells.note, cells.padding + cells.tip);
     RestoreDC(device, saved);
 }
 
@@ -923,8 +930,9 @@ static void draw_chip(const struct folio_window *_Nonnull self, HDC device, enum
     {
         SetTextColor(device, self->palette.header_text);
     }
-    DrawTextW(device, chip_label(chip), -1, &bounds,
-              DT_SINGLELINE | DT_VCENTER | DT_CENTER | DT_NOPREFIX);
+    char16_t units[draw_unit_limit];
+    int count = wide_units(chip_text(self, chip), units);
+    DrawTextW(device, units, count, &bounds, DT_SINGLELINE | DT_VCENTER | DT_CENTER | DT_NOPREFIX);
 }
 
 static void draw_close(const struct folio_window *_Nonnull self, HDC device)
@@ -1034,62 +1042,53 @@ static size_t append_text(char *_Nonnull out, size_t at, const char *_Nonnull te
     return at + length;
 }
 
-/* 10 進で書く。件数は本文の長さを超えないので 20 桁で足りる。 */
-static size_t append_number(char *_Nonnull out, size_t at, size_t value)
-{
-    char digits[20];
-    size_t count = 0;
-    do
-    {
-        digits[count] = (char)('0' + value % 10);
-        count += 1;
-        value /= 10;
-    } while (value > 0 && count < sizeof digits);
-    for (size_t index = 0; index < count; ++index)
-    {
-        out[at + index] = digits[count - 1 - index];
-    }
-    return at + count;
-}
-
 /* いまの向きを欄に示す（`/` で開けば次へ、`?` で開けば前へ・ADR 0023 の決定 4）。 */
-static const char *_Nonnull search_direction_label(const struct folio_window *_Nonnull self)
+static enum ui_text search_direction_label(const struct folio_window *_Nonnull self)
 {
     switch (folio_state_search_direction(self->state))
     {
     case SEARCH_DIRECTION_FORWARD:
-        return "このノート内を検索 ／ 次へ  ";
+        return UI_TEXT_STATUS_SEARCH_FORWARD;
     case SEARCH_DIRECTION_BACKWARD:
-        return "このノート内を検索 ／ 前へ  ";
+        return UI_TEXT_STATUS_SEARCH_BACKWARD;
     }
-    return "このノート内を検索  ";
+    return UI_TEXT_STATUS_SEARCH_FORWARD;
 }
 
-/* 向きと「k / n 件」。0 件も壊れた語も同じ場所に出し、選択は変えない。 */
-static void search_status(const struct folio_window *_Nonnull self, char *_Nonnull out)
+/* 向きの札のうしろに並べる句。語がまだ無いあいだは何も添えない。 */
+static enum ui_text search_result_line(enum note_search_outcome outcome)
 {
-    size_t at = append_text(out, 0, search_direction_label(self));
-    switch (self->search_outcome)
+    switch (outcome)
     {
     case NOTE_SEARCH_NO_TERM:
-        break;
+        return UI_TEXT_EMPTY;
     case NOTE_SEARCH_MALFORMED:
-        at = append_text(out, at, "検索できない文字があります");
-        break;
+        return UI_TEXT_STATUS_SEARCH_MALFORMED;
     case NOTE_SEARCH_BAD_SPAN:
-        at = append_text(out, at, "選択の範囲を読めません");
-        break;
+        return UI_TEXT_STATUS_SEARCH_BAD_SPAN;
     case NOTE_SEARCH_NOT_FOUND:
-        at = append_text(out, at, "見つかりません");
-        break;
+        return UI_TEXT_STATUS_SEARCH_NOT_FOUND;
     case NOTE_SEARCH_FOUND:
-        at = append_number(out, at, self->search_ordinal);
-        at = append_text(out, at, " / ");
-        at = append_number(out, at, self->search_total);
-        at = append_text(out, at, " 件");
-        break;
+        return UI_TEXT_STATUS_SEARCH_FOUND;
     }
-    out[at] = '\0';
+    return UI_TEXT_EMPTY;
+}
+
+/* 向きと「k / n 件」。0 件も壊れた語も同じ場所に出し、選択は変えない。
+ * 句どうしは並置し、句の中の数は置換子で埋める（ADR 0030 の決定 3）。 */
+static void search_status(const struct folio_window *_Nonnull self, char *_Nonnull out)
+{
+    enum folio_language language = folio_state_language(self->state);
+    size_t at = append_text(out, 0, ui_text_line(search_direction_label(self), language));
+    struct ui_text_request request = {.id = search_result_line(self->search_outcome),
+                                      .language = language,
+                                      .k = self->search_ordinal,
+                                      .n = self->search_total};
+    if (ui_text_format(&request, out + at, search_status_capacity - at) != UI_TEXT_FORMAT_READY)
+    {
+        /* 表の値は単体で収まりが固定されるので、ここへは来ない。来たら札だけを残す。 */
+        out[at] = '\0';
+    }
 }
 
 static void draw_search_surface(const struct folio_window *_Nonnull self, HDC device, RECT bounds)
@@ -1103,34 +1102,47 @@ static void draw_search_surface(const struct folio_window *_Nonnull self, HDC de
     SetTextColor(device, self->palette.current_text);
     draw_utf8(device, line, status);
     SetTextColor(device, self->palette.selected_text);
-    draw_utf8(device, "◀ 前へ", surface_button_rect(self, 0));
-    draw_utf8(device, "次へ ▶", surface_button_rect(self, 1));
+    enum folio_language language = folio_state_language(self->state);
+    draw_utf8(device, ui_text_line(UI_TEXT_ACTION_SEARCH_PREVIOUS, language),
+              surface_button_rect(self, 0));
+    draw_utf8(device, ui_text_line(UI_TEXT_ACTION_SEARCH_NEXT, language),
+              surface_button_rect(self, 1));
 }
 
-/* 失敗の 1 行。REPLACE_BAD_PATTERN のときだけ末尾に位置を添える（ADR 0028 の決定 9）。 */
+/* 失敗の 1 行。REPLACE_BAD_PATTERN のときだけ末尾に位置を添える（ADR 0028 の決定 9）。
+ * out は replace_status_capacity の入れ物（呼び出し側が持つ大きさ）。 */
 static void failure_status(const struct folio_window *_Nonnull self,
                            enum folio_state_outcome outcome, char *_Nonnull out)
 {
-    size_t at =
-        append_text(out, 0, folio_state_failure_line(outcome, folio_state_language(self->state)));
-    size_t offset = folio_state_replace_error_offset(self->state);
-    if (outcome == FOLIO_STATE_REPLACE_BAD_PATTERN && offset > 0)
-    {
-        at = append_text(out, at, " 位置 ");
-        at = append_number(out, at, offset);
-    }
+    enum folio_language language = folio_state_language(self->state);
+    size_t at = append_text(out, 0, folio_state_failure_line(outcome, language));
     out[at] = '\0';
+    size_t offset = folio_state_replace_error_offset(self->state);
+    if (outcome != FOLIO_STATE_REPLACE_BAD_PATTERN || offset == 0)
+    {
+        return;
+    }
+    struct ui_text_request request = {
+        .id = UI_TEXT_STATUS_REPLACE_POSITION, .language = language, .offset = offset};
+    if (ui_text_format(&request, out + at, replace_status_capacity - at) != UI_TEXT_FORMAT_READY)
+    {
+        out[at] = '\0';
+    }
 }
 
 /* 置換の対象名と件数。対象名はパンくずと同じ実名で、無題は「無題（未保存）」になる。 */
 static void replace_status(const struct folio_window *_Nonnull self, char *_Nonnull out)
 {
     struct pane_title_view title = folio_state_pane_title(self->state);
-    size_t at = append_text(out, 0, title.any ? title.note : "");
-    at = append_text(out, at, " / ");
-    at = append_number(out, at, folio_state_replace_count(self->state));
-    at = append_text(out, at, " 件");
-    out[at] = '\0';
+    struct ui_text_request request = {.id = UI_TEXT_STATUS_REPLACE_COUNT,
+                                      .language = folio_state_language(self->state),
+                                      .k = folio_state_replace_count(self->state),
+                                      .name = title.any ? title.note : nullptr};
+    if (ui_text_format(&request, out, replace_status_capacity) != UI_TEXT_FORMAT_READY)
+    {
+        /* ノート名が長すぎて収まらない。現行どおり何も出さない（決定 3）。 */
+        out[0] = '\0';
+    }
 }
 
 /* 欄の状態の 1 行。失敗の 1 行が「対象名 / k 件」より優先する（決定 8(a)）。 */
@@ -1155,8 +1167,11 @@ static void draw_replace_surface(const struct folio_window *_Nonnull self, HDC d
     SetTextColor(device, self->palette.current_text);
     draw_utf8(device, line, status);
     SetTextColor(device, self->palette.selected_text);
-    draw_utf8(device, "1 件", surface_button_rect(self, 0));
-    draw_utf8(device, "すべて", surface_button_rect(self, 1));
+    enum folio_language language = folio_state_language(self->state);
+    draw_utf8(device, ui_text_line(UI_TEXT_ACTION_REPLACE_ONE, language),
+              surface_button_rect(self, 0));
+    draw_utf8(device, ui_text_line(UI_TEXT_ACTION_REPLACE_ALL, language),
+              surface_button_rect(self, 1));
 }
 
 static void draw_command_status(const struct folio_window *_Nonnull self, HDC device, RECT bounds)
@@ -1170,7 +1185,7 @@ static void draw_command_status(const struct folio_window *_Nonnull self, HDC de
     }
     else if (self->command_unknown)
     {
-        line = "一致する操作がありません。";
+        line = ui_text_line(UI_TEXT_STATUS_COMMAND_NOT_FOUND, folio_state_language(self->state));
     }
     else if (self->command_no_match)
     {
@@ -1201,10 +1216,11 @@ static void draw_command_shortcuts(const struct folio_window *_Nonnull self, HDC
     bounds.left += scale(base_command_palette_padding, dpi);
     bounds.right -= scale(base_command_palette_padding, dpi);
     SetTextColor(device, self->palette.current_text);
+    enum folio_language language = folio_state_language(self->state);
     for (int index = 0; index < rows; ++index)
     {
         RECT row = {bounds.left, bounds.top, bounds.right, bounds.top + row_height};
-        draw_utf8(device, command_shortcuts[index], row);
+        draw_utf8(device, ui_text_line(command_shortcuts[index], language), row);
         bounds.top = row.bottom;
     }
 }
@@ -1231,16 +1247,22 @@ static void draw_command_guidance(const struct folio_window *_Nonnull self, HDC 
     int row = scale(base_command_help_row_height, dpi);
     line.bottom = line.top - row;
     line.top -= row * 2;
+    enum folio_language language = folio_state_language(self->state);
     SetTextColor(device, self->palette.current_text);
-    draw_utf8(device, "操作をクリックすると実行します。", line);
+    draw_utf8(device, ui_text_line(UI_TEXT_STATUS_PALETTE_CLICK, language), line);
     OffsetRect(&line, 0, row);
-    draw_utf8(device, "下の欄に名前を入力すると絞り込めます。", line);
+    draw_utf8(device, ui_text_line(UI_TEXT_STATUS_PALETTE_FILTER, language), line);
     RECT toggle = command_toggle_rect(self);
     toggle.right = command_previous_rect(self).left;
     SetTextColor(device, self->palette.selected_text);
-    draw_utf8(device, self->command_keys_visible ? "キー操作を閉じる" : "キー操作を表示", toggle);
-    draw_utf8(device, "↑ 前", command_previous_rect(self));
-    draw_utf8(device, "↓ 次", command_next_rect(self));
+    draw_utf8(device,
+              ui_text_line(self->command_keys_visible ? UI_TEXT_ACTION_KEYS_HIDE
+                                                      : UI_TEXT_ACTION_KEYS_SHOW,
+                           language),
+              toggle);
+    draw_utf8(device, ui_text_line(UI_TEXT_ACTION_PALETTE_PREVIOUS, language),
+              command_previous_rect(self));
+    draw_utf8(device, ui_text_line(UI_TEXT_ACTION_PALETTE_NEXT, language), command_next_rect(self));
 }
 
 static void draw_palette_rows(const struct folio_window *_Nonnull self, HDC device, RECT bounds)
@@ -1400,7 +1422,8 @@ static void draw_actions(const struct folio_window *_Nonnull self, HDC device)
                        folio_command_label(FOLIO_COMMAND_NEW, folio_state_language(self->state)));
     draw_action_button(self, device, action_button_rect(self, 1),
                        folio_command_label(FOLIO_COMMAND_SAVE, folio_state_language(self->state)));
-    draw_action_button(self, device, action_button_rect(self, 2), "操作 ▾");
+    draw_action_button(self, device, action_button_rect(self, 2),
+                       ui_text_line(UI_TEXT_ACTION_OPERATIONS, folio_state_language(self->state)));
     draw_action_button(self, device, action_button_rect(self, 3),
                        folio_command_label(FOLIO_COMMAND_HELP, folio_state_language(self->state)));
     if (action_button_fits(self, 4))
@@ -2903,15 +2926,12 @@ static void click_command_surface(struct folio_window *_Nonnull self, POINT poin
 static bool append_operation(HMENU menu, size_t index, enum folio_language language)
 {
     enum folio_command command = folio_command_at(index);
-    const char *_Nonnull label = folio_command_label(command, language);
-    struct utf16_text *_Nullable wide = nullptr;
-    if (utf16_text_create(label, strlen(label), &wide) != UTF16_TEXT_CONVERTED)
+    char16_t units[draw_unit_limit];
+    if (wide_units(folio_command_label(command, language), units) == 0)
     {
         return false;
     }
-    bool appended = AppendMenuW(menu, MF_STRING, index + 1, utf16_text_units(wide)) != 0;
-    utf16_text_destroy(wide);
-    return appended;
+    return AppendMenuW(menu, MF_STRING, index + 1, units) != 0;
 }
 
 static void show_operations(struct folio_window *_Nonnull self)
@@ -3640,7 +3660,10 @@ static void paint_filter_placeholder(const struct folio_window *_Nonnull self, H
     HGDIOBJ previous = SelectObject(device, self->mono_font);
     SetBkMode(device, TRANSPARENT);
     SetTextColor(device, self->palette.header_text);
-    DrawTextW(device, filter_placeholder, -1, &bounds, DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
+    char16_t units[draw_unit_limit];
+    int count = wide_units(
+        ui_text_line(UI_TEXT_PLACEHOLDER_FILTER, folio_state_language(self->state)), units);
+    DrawTextW(device, units, count, &bounds, DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
     SelectObject(device, previous);
     ReleaseDC(window, device);
 }
