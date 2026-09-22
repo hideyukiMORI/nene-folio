@@ -18,7 +18,7 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
                                          "无法读取 data/。"},
     [UI_TEXT_FAILURE_LEDGER_MALFORMED] =
         {"data/ の台帳（categories.json / index.json）が版 1 の形ではありません。",
-         "The ledgers in data/ (categories.json / index.json) are not in the version 1 shape.",
+         "The ledgers in data/ (categories.json / index.json) are not in the version 1 format.",
          "data/ 的台账（categories.json / index.json）不是版本 1 的形式。"},
     [UI_TEXT_FAILURE_STORE_FAILED] =
         {"data/ の台帳（categories.json / "
@@ -64,7 +64,7 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
          "json）を書き戻せませんでした。保存を再試行するか、次回の起動で揃います。",
          "The md was written, but the ledger (index.json) could not be written back. "
          "Retry the save, or the next start will align them.",
-         "md 已写入，但无法写回台账（index.json）。请重试保存，或在下次启动时对齐。"},
+         "md 已写入，但无法写回台账（index.json）。请重试保存；否则将在下次启动时自动对齐。"},
     [UI_TEXT_FAILURE_LEDGER_UNSYNCED] =
         {"前回の台帳（index."
          "json）をまだ書き戻せていません。今回の操作は行っていないので、保存を再試行してください。",
@@ -95,7 +95,8 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
          "无法写入重命名记录（data/.rename.json）。未做任何改变。"},
     [UI_TEXT_FAILURE_RENAME_JOURNAL_BROKEN] =
         {"名前変更の記録（data/.rename.json）が版 1 の形ではありません。消していません。",
-         "The rename record (data/.rename.json) is not in the version 1 shape. It was not removed.",
+         "The rename record (data/.rename.json) is not in the version 1 format. It was not "
+         "removed.",
          "重命名记录（data/.rename.json）不是版本 1 的形式。未删除。"},
     [UI_TEXT_FAILURE_RENAME_HALTED] =
         {"名前変更の記録と実ファイルが一致しません。data/.rename.json "
@@ -119,7 +120,7 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
          "Could not write data/settings.json. The settings are unchanged.",
          "无法写入设置（data/settings.json）。设置未改变。"},
     [UI_TEXT_FAILURE_PANE_UNAVAILABLE] = {"表示中の本文を取り出せませんでした。探していません。",
-                                          "Could not take the displayed body. "
+                                          "Could not read the displayed body. "
                                           "Nothing was searched.",
                                           "无法取出正在显示的正文。未进行查找。"},
     [UI_TEXT_FAILURE_REPLACE_NO_PATTERN] = {"置換するパターンを入れてください。",
@@ -164,7 +165,8 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
          "、.mdを含め255バイト以内で指定してください。",
          "That name cannot be used. Avoid reserved names, trailing spaces or periods, "
          "and separators; keep it within 255 bytes including .md.",
-         "该名称不可用。请避开保留名、末尾的空格或句点以及分隔符，并在包含 .md 的 255 字节以内。"},
+         "该名称不可用。请避开保留名、末尾的空格或句点以及分隔符，并将名称控制在包含 .md 的 255 "
+         "字节以内。"},
     [UI_TEXT_FAILURE_ALREADY_NAMED] =
         {"このノートには名前があります。別名保存（:"
          "saveas）または名前変更（:rename）を使ってください。",
@@ -194,7 +196,7 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
     [UI_TEXT_COMMAND_SETTINGS] = {"設定", "Settings", "设置"},
     [UI_TEXT_HELP_PALETTE] = {"一覧  ↑↓ 選択 / Enter 実行 / Esc 戻る / Tab 説明",
                               "List  ↑↓ Select / Enter Run / Esc Back / Tab Keys",
-                              "列表  ↑↓ 选择 / Enter 执行 / Esc 返回 / Tab 说明"},
+                              "列表  ↑↓ 选择 / Enter 执行 / Esc 返回 / Tab 按键"},
     [UI_TEXT_HELP_EDITOR_MOTION] = {"編集本文  Ctrl+h/j/k/l ←/↓/↑/→",
                                     "Editor  Ctrl+h/j/k/l ←/↓/↑/→",
                                     "编辑正文  Ctrl+h/j/k/l ←/↓/↑/→"},
@@ -221,7 +223,7 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
                                     "索引、查看正文  : 命令 / i 编辑"},
     [UI_TEXT_HELP_EX_SET_NUMBER] =
         {"Ex  :set number / :set nonumber / :set nu!（編集中の原文の行番号）",
-         "Ex  :set number / :set nonumber / :set nu! (line numbers in edit)",
+         "Ex  :set number / :set nonumber / :set nu! (line numbers in edit mode)",
          "Ex  :set number / :set nonumber / :set nu!（编辑时的原文行号）"},
     [UI_TEXT_HELP_EX_SET_THEME] = {"Ex  :set theme=system / :set theme=light / :set theme=dark",
                                    "Ex  :set theme=system / :set theme=light / :set theme=dark",
@@ -233,7 +235,7 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
     [UI_TEXT_HELP_REPLACE_FIELD] =
         {"置換欄  Tab 欄を移動 / Enter 1 件 / Ctrl+Enter すべて / Esc 閉じる",
          "Replace box  Tab Move / Enter One / Ctrl+Enter All / Esc Close",
-         "替换栏  Tab 移动栏 / Enter 1 处 / Ctrl+Enter 全部 / Esc 关闭"},
+         "替换栏  Tab 切换栏 / Enter 1 处 / Ctrl+Enter 全部 / Esc 关闭"},
     [UI_TEXT_HELP_EX_SUBSTITUTE] =
         {"Ex  :%s/pattern/replacement/[g]（g なしは各行の最初の一致・正規表現）",
          "Ex  :%s/pattern/replacement/[g] (no g = first match per line, regex)",
@@ -247,9 +249,9 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
                                   "所有区域  F3 下一处 / Shift+F3 上一处（不改变方向）"},
     [UI_TEXT_HELP_SEARCH_FIELD] =
         {"検索欄  Enter 次 / Shift+Enter 逆 / Esc 閉じる（選択は残る）",
-         "Search  Enter Next / Shift+Enter Back / Esc Close "
+         "Find  Enter Next / Shift+Enter Back / Esc Close "
          "(selection stays)",
-         "搜索栏  Enter 下一个 / Shift+Enter 反向 / Esc 关闭（保留选择）"},
+         "查找栏  Enter 下一个 / Shift+Enter 反向 / Esc 关闭（保留选择）"},
     [UI_TEXT_HELP_INDEX_MOTION] = {"索引  j/k 次/前 / gg/G 先頭/末尾",
                                    "Index  j/k Next/Previous / gg/G First/Last",
                                    "索引  j/k 下一个/上一个 / gg/G 开头/末尾"},
@@ -274,7 +276,7 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
                                         "在本笔记中查找 ／ 上一个  "},
     [UI_TEXT_STATUS_SEARCH_MALFORMED] = {"検索できない文字があります",
                                          "The term has characters that cannot be searched",
-                                         "查找词中有无法搜索的字符"},
+                                         "查找词中有无法查找的字符"},
     [UI_TEXT_STATUS_SEARCH_BAD_SPAN] = {"選択の範囲を読めません", "Cannot read the selection range",
                                         "无法读取选择范围"},
     [UI_TEXT_STATUS_SEARCH_NOT_FOUND] = {"見つかりません", "Not found", "未找到"},
@@ -309,14 +311,14 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
     [UI_TEXT_SETTINGS_LANGUAGE_ZH_HANS] = {"简体中文", "简体中文", "简体中文"},
     [UI_TEXT_SETTINGS_GUIDANCE] = {"↑↓ 選択 / Enter 採用 / Esc 戻る",
                                    "↑↓ Select / Enter Apply / Esc Back",
-                                   "↑↓ 选择 / Enter 采用 / Esc 返回"},
+                                   "↑↓ 选择 / Enter 应用 / Esc 返回"},
     [UI_TEXT_APP_LOGO] = {"NENE FOLIO", "NENE FOLIO", "NENE FOLIO"},
     [UI_TEXT_GLYPH_MINUS] = {"−", "−", "−"},
     [UI_TEXT_GLYPH_PLUS] = {"+", "+", "+"},
     [UI_TEXT_PROMPT_PENDING_EXPLANATION] =
         {"「再試行」で同じ名前変更を続けます。「閉じる」は取り消しではありません。",
          "Retry continues the same rename. Close does not cancel it.",
-         "「重试」继续同一次重命名。「关闭」不是取消。"},
+         "“重试”继续同一次重命名。“关闭”不是取消。"},
     [UI_TEXT_PROMPT_PENDING_RENAME] = {"{from} → {to}", "{from} → {to}", "{from} → {to}"},
     [UI_TEXT_PROMPT_TITLE_FIRST_SAVE] = {"名前をつけて保存", "Name and save", "命名并保存"},
     [UI_TEXT_PROMPT_TITLE_SAVE_AS] = {"別名で保存", "Save as", "另存为"},
@@ -325,7 +327,8 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
                                      "No other action can run until this rename finishes.",
                                      "在这次重命名完成之前，无法进行其他操作。"},
     [UI_TEXT_PROMPT_HINT_FIRST_SAVE] = {"名前の末尾に .md を補います。",
-                                        "The name gets .md at the end.", "名称末尾会补上 .md。"},
+                                        ".md is added to the end of the name.",
+                                        "名称末尾会补上 .md。"},
     [UI_TEXT_PROMPT_HINT_SAVE_AS] = {"元の保存内容を保ち、別の .md を作ります。",
                                      "Keeps the saved note and creates another .md.",
                                      "保留原有保存内容，另建一个 .md。"},
@@ -334,11 +337,11 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
                                     "将 md 与历史移到新名称。"},
     [UI_TEXT_PROMPT_ACCEPT_RETRY] = {"再試行", "Retry", "重试"},
     [UI_TEXT_PROMPT_ACCEPT_SAVE] = {"保存", "Save", "保存"},
-    [UI_TEXT_PROMPT_ACCEPT_RENAME] = {"変更", "Rename", "更改"},
+    [UI_TEXT_PROMPT_ACCEPT_RENAME] = {"変更", "Rename", "重命名"},
     [UI_TEXT_PROMPT_CLOSE_PENDING] = {"閉じる", "Close", "关闭"},
     [UI_TEXT_PROMPT_CLOSE_CANCEL] = {"キャンセル", "Cancel", "取消"},
     [UI_TEXT_PROMPT_LABEL_NAME] = {"ノートの名前", "Note name", "笔记名称"},
-    [UI_TEXT_PROMPT_LABEL_CATEGORY] = {"保存先カテゴリ", "Destination category", "保存到的分类"},
+    [UI_TEXT_PROMPT_LABEL_CATEGORY] = {"保存先カテゴリ", "Destination category", "目标分类"},
     [UI_TEXT_APP_NO_MODULE_PATH] = {"実行ファイルの場所が長すぎるか、取得できません。",
                                     "The program path is too long or cannot be read.",
                                     "可执行文件的路径过长或无法获取。"},

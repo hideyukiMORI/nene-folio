@@ -137,3 +137,8 @@ Win32 部品 probe（`out/design/2026-09-23/language-ui-probe/`）: 3 言語 × 
     `SCF_DEFAULT` は既存の run を塗らないので閲覧の見た目は変わらない（`note_pane_recolor` が
     閲覧でも `SCF_DEFAULT` を無条件に当てているのと同じ理屈・ADR 0031 の補正 9）。
     probe に「作成 → reface → RTF → 閲覧のまま言語切替 → `i` で編集」の配線を並べた 4 項目を足した。
+11. **訳を 14 件直した**（独立レビュー）。用語の揺れ・中国語の引用符・語の選び直し・
+    英語の `shape` → `format` の 2 件。とくに**ノート内検索は Find / 查找、全ノート検索は
+    Search / 搜索**で、`UI_TEXT_HELP_SEARCH_FIELD` だけがこの規則から外れていた。
+    確認記録 §1 の用語表を正本とする。訳を変えた ID は帯幅の probe を流し直し、
+    3 言語ともあふれ 0 のままであることを確かめた。
