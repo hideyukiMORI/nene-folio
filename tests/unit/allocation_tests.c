@@ -473,11 +473,20 @@ static bool filter_under_probe(struct folio_state *_Nonnull state)
 
 /* 置換は本文の写し・一致の列・置換文字列・組み立ての出力の確保をまとめて通す
  * （ADR 0028 の決定 10）。偽のポートは走査だけを答え、ICU は現れない。 */
+/* 一致の列の入れ物は初期 64 件なので、それを超える本文にして `reserve_matches()` の
+ * realloc（2 周目のための伸長）も注入の対象にする（レビュー D1）。 */
+constexpr size_t replace_probe_units = 200;
+static char16_t replace_probe_body[replace_probe_units + 1];
+
 static bool replace_under_probe(struct folio_state *_Nonnull state)
 {
     require(folio_state_begin_edit(state) == FOLIO_STATE_READY, "edit before replacing");
-    struct replace_request request = {.text = u"a-a",
-                                      .length = 3,
+    for (size_t index = 0; index < replace_probe_units; ++index)
+    {
+        replace_probe_body[index] = u'a';
+    }
+    struct replace_request request = {.text = replace_probe_body,
+                                      .length = replace_probe_units,
                                       .pattern = u"a",
                                       .pattern_length = 1,
                                       .replacement = u"[&]",
@@ -489,8 +498,12 @@ static bool replace_under_probe(struct folio_state *_Nonnull state)
     {
         return false;
     }
-    struct replace_apply apply = {
-        .text = u"a-a", .length = 3, .anchor = {.start = 0, .end = 0}, .scope = REPLACE_ALL};
+    require(folio_state_replace_count(state) == replace_probe_units,
+            "every unit matched, so the slots had to grow");
+    struct replace_apply apply = {.text = replace_probe_body,
+                                  .length = replace_probe_units,
+                                  .anchor = {.start = 0, .end = 0},
+                                  .scope = REPLACE_ALL};
     struct replace_edit *edit = nullptr;
     enum folio_state_outcome applied = folio_state_apply_replace(state, &apply, &edit);
     replace_edit_destroy(edit);
