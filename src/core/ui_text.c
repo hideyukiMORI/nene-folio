@@ -221,7 +221,7 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
                                     "索引、查看正文  : 命令 / i 编辑"},
     [UI_TEXT_HELP_EX_SET_NUMBER] =
         {"Ex  :set number / :set nonumber / :set nu!（編集中の原文の行番号）",
-         "Ex  :set number / :set nonumber / :set nu! (line numbers while editing)",
+         "Ex  :set number / :set nonumber / :set nu! (line numbers in edit)",
          "Ex  :set number / :set nonumber / :set nu!（编辑时的原文行号）"},
     [UI_TEXT_HELP_EX_SET_THEME] = {"Ex  :set theme=system / :set theme=light / :set theme=dark",
                                    "Ex  :set theme=system / :set theme=light / :set theme=dark",
