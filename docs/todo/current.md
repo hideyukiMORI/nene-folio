@@ -1,5 +1,19 @@
 # いまのタスク — NeNe Folio
 
+2026-09-22: **#74 / ADR 0030 の文言の表引き**を `out/worktrees/74-ui-text` で実装した。
+利用者に見える文言（123 値）を core の `ui_text` の表 1 か所へ集め、`ui_text_line(id, language)` で引く。
+言語は最初から引数で、値は application の `folio_state_language` が答える（core は「いまの言語」を持たない・ARC-005）。
+句の中の語と数は置換子（`{k}` `{n}` `{offset}` `{name}` `{from}` `{to}`）を `ui_text_format` が埋め、
+**語や数を連結して句を作らない**。W 系 API へ渡す経路は確保しない `utf16_text_fill` のスタックバッファに変えたので、
+**描画のたびの確保が無くなり**、確保失敗のときだけ出ていた退避の文言と分岐も経路ごと消えた。
+**字面は 1 字も変えていない**（表は変更前のソースから機械的に写し、同一性を 2 方向から挟んだ）。
+消えるのは到達しない既定 2 つと OOM の退避 1 つの計 3 つだけ。
+新しい **CNF-010**（`eng/conformance.py` の字句走査）が `src/` の表示文言のリテラルを `src/core/ui_text.c` の外に
+置けなくし、**C-018** と対にして active にした（実ツール反例 15 → 16 本・conformance 69 → 79 テスト）。
+`lineTables` に `ui_text.h` → `ui_text.c` と `persistence_adapter_outcome.h` → `main.c` の 2 行を足した。
+Win32 部品 probe 58 項目が成功（[確認記録](../quality/2026-09-22-ui-text-checks.md)）。
+次は **#38（設定・テーマ・言語）の単位 B / C**で、表を 2 次元にして翻訳と切り替えを入れる。
+
 2026-09-22 再開後: **#41（正規表現置換）はPR #68 → main `f4e7bcf` へ統合済み**（Issue #41は閉じた）。
 停止時点で未着手だったui層・docs層・probeを足し、独立レビューの止める所見B1（失敗した下見のまま古い置換が当たる）を
 **applicationが失敗で下見を捨てる**形で直した（下見が無ければ`REPLACE_STALE`。UIの早期returnは表示の都合）。
