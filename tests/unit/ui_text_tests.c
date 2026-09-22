@@ -144,6 +144,9 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_STATUS_COMMAND_NOT_FOUND] = "一致する操作がありません。",
     [UI_TEXT_STATUS_PALETTE_CLICK] = "操作をクリックすると実行します。",
     [UI_TEXT_STATUS_PALETTE_FILTER] = "下の欄に名前を入力すると絞り込めます。",
+    /* #69（main）が足したヘルプのページ送りの札。変更前の #74 の木には無く、
+     * 連結で作っていた「1/2」を置換子に移した（取り込みのときの 1 件）。 */
+    [UI_TEXT_STATUS_PALETTE_PAGES] = "{k}/{n}",
     [UI_TEXT_ACTION_KEYS_HIDE] = "キー操作を閉じる",
     [UI_TEXT_ACTION_KEYS_SHOW] = "キー操作を表示",
     [UI_TEXT_ACTION_PALETTE_PREVIOUS] = "↑ 前",
