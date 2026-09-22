@@ -1721,17 +1721,60 @@ static void redraw_command_layer(const struct folio_window *_Nonnull self)
     }
 }
 
-/* 欄の中の 1 行で済ませる失敗。打ち間違いにモーダルを出さない（ADR 0028 の決定 8(b)）。
- * 記憶域と本文を取り出せない事象は従来どおり箱で知らせる。 */
+/* 欄の中の 1 行で済ませる失敗と、モーダルの箱で知らせる事象を分ける
+ * （ADR 0028 の決定 8(b) と 2026-09-22 の補正 8）。打ち間違いに箱を出さず、
+ * 記憶域と「本文を取り出せない」は従来どおり箱にする。
+ * 値を足すと -Wswitch-enum がここを落とすので、分け方を必ず決めさせる（C-002）。 */
 static bool inline_outcome(enum folio_state_outcome outcome)
 {
-    return outcome == FOLIO_STATE_NOTHING_SELECTED || outcome == FOLIO_STATE_UNSAVED_CHANGES ||
-           outcome == FOLIO_STATE_NOT_EDITING || outcome == FOLIO_STATE_REPLACE_NO_PATTERN ||
-           outcome == FOLIO_STATE_REPLACE_BAD_PATTERN ||
-           outcome == FOLIO_STATE_REPLACE_BAD_TEMPLATE ||
-           outcome == FOLIO_STATE_REPLACE_TIMED_OUT || outcome == FOLIO_STATE_REPLACE_TOO_COMPLEX ||
-           outcome == FOLIO_STATE_REPLACE_TOO_MANY || outcome == FOLIO_STATE_REPLACE_TOO_LARGE ||
-           outcome == FOLIO_STATE_REPLACE_STALE || outcome == FOLIO_STATE_REPLACE_BAD_SPAN;
+    switch (outcome)
+    {
+    case FOLIO_STATE_NOTHING_SELECTED:
+    case FOLIO_STATE_NOT_EDITING:
+    case FOLIO_STATE_UNSAVED_CHANGES:
+    case FOLIO_STATE_REPLACE_NO_PATTERN:
+    case FOLIO_STATE_REPLACE_BAD_PATTERN:
+    case FOLIO_STATE_REPLACE_BAD_TEMPLATE:
+    case FOLIO_STATE_REPLACE_TIMED_OUT:
+    case FOLIO_STATE_REPLACE_TOO_COMPLEX:
+    case FOLIO_STATE_REPLACE_TOO_MANY:
+    case FOLIO_STATE_REPLACE_TOO_LARGE:
+    case FOLIO_STATE_REPLACE_STALE:
+    case FOLIO_STATE_REPLACE_BAD_SPAN:
+        return true;
+    case FOLIO_STATE_READY:
+    case FOLIO_STATE_DATA_UNREADABLE:
+    case FOLIO_STATE_LEDGER_MALFORMED:
+    case FOLIO_STATE_STORE_FAILED:
+    case FOLIO_STATE_NO_SUCH_CATEGORY:
+    case FOLIO_STATE_NO_SUCH_NOTE:
+    case FOLIO_STATE_NOTE_UNREADABLE:
+    case FOLIO_STATE_NOTE_MALFORMED:
+    case FOLIO_STATE_NOTE_STORE_FAILED:
+    case FOLIO_STATE_HISTORY_FAILED:
+    case FOLIO_STATE_NAME_TAKEN:
+    case FOLIO_STATE_LEDGER_STALE:
+    case FOLIO_STATE_LEDGER_UNSYNCED:
+    case FOLIO_STATE_RENAME_PENDING:
+    case FOLIO_STATE_RENAME_UNLOCKED:
+    case FOLIO_STATE_RENAME_UNSUPPORTED:
+    case FOLIO_STATE_RENAME_IDENTITY_FAILED:
+    case FOLIO_STATE_RENAME_JOURNAL_FAILED:
+    case FOLIO_STATE_RENAME_JOURNAL_BROKEN:
+    case FOLIO_STATE_RENAME_HALTED:
+    case FOLIO_STATE_SEARCH_MALFORMED:
+    case FOLIO_STATE_FILTERED:
+    case FOLIO_STATE_SETTINGS_UNREADABLE:
+    case FOLIO_STATE_SETTINGS_STORE_FAILED:
+    case FOLIO_STATE_PANE_UNAVAILABLE:
+    case FOLIO_STATE_OUT_OF_MEMORY:
+    case FOLIO_STATE_NAME_REQUIRED:
+    case FOLIO_STATE_INVALID_NAME:
+    case FOLIO_STATE_ALREADY_NAMED:
+    case FOLIO_STATE_CANCELLED:
+        return false;
+    }
+    return false;
 }
 
 static void command_failure(struct folio_window *_Nonnull self, enum folio_state_outcome outcome)
