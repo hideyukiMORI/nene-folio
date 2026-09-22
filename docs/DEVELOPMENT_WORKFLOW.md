@@ -34,7 +34,7 @@ production コード・ビルド・依存・方針・利用者向けドキュメ
 9. PR を **draft** で出す
 10. 影響した規則 ID を 1 つずつ自己レビューする
 11. **Ready にする直前に `pwsh -NoProfile -File ./eng/check.ps1` を完全に回す**。CI の必須 check が同じコマンドで走る
-12. 必須ゲートが通ってから squash merge する
+12. 必須ゲートが通ってから squash merge する。統合の手順は `tools/merge-pr.ps1 -Number N -Subject "…"` の 1 本で行う（字面検査 → Ready → CI 待ち → squash merge → main の ff）
 13. 作業木を畳み、ローカル枝を消す（remote 枝はマージで自動的に消える）
 
 ---
