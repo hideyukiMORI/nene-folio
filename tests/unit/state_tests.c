@@ -1801,7 +1801,7 @@ static const char *_Nonnull const expected_failure_lines[] = {
     [FOLIO_STATE_REPLACE_TOO_MANY] = "一致が多すぎます。パターンを狭めてください。",
     [FOLIO_STATE_REPLACE_TOO_LARGE] = "置き換えた本文が大きすぎます。本文は変えていません。",
     [FOLIO_STATE_REPLACE_STALE] =
-        "本文が変わったので、この置換は当てられません。もう一度検索してください。",
+        "本文か入力が変わったので、この置換は当てられません。もう一度入力してください。",
     [FOLIO_STATE_REPLACE_BAD_SPAN] = "選択範囲が正しくありません。本文は変えていません。",
     [FOLIO_STATE_OUT_OF_MEMORY] = "記憶域が足りません。",
     [FOLIO_STATE_NAME_REQUIRED] =

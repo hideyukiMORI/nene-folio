@@ -173,7 +173,8 @@ static void verify_guards(void)
     test_adapter_destroy(adapter);
 }
 
-/* 走査の失敗はすべて閉じた値へ写り、前の下見をそのまま保つ（決定 6）。 */
+/* 走査の失敗はすべて閉じた値へ写り、**前の下見を捨てる**（決定 6 の補足・レビュー B1）。
+ * 下見は常に「最後の入力の結果」か「無い」で、無ければ適用は STALE になる。 */
 static void verify_failures(void)
 {
     static const struct
@@ -187,19 +188,25 @@ static void verify_failures(void)
         {REGEX_SCAN_TOO_MANY, FOLIO_STATE_REPLACE_TOO_MANY},
         {REGEX_SCAN_OUT_OF_MEMORY, FOLIO_STATE_OUT_OF_MEMORY},
     };
-    reset_script();
     struct persistence_adapter *adapter = test_adapter_create(categories_text, notes_text);
     struct folio_state *state = edited_state(adapter);
     struct replace_request request = request_for(u"a-a", u"a", u"X");
-    require(folio_state_preview_replace(state, &request) == FOLIO_STATE_READY, "a good preview");
-    require(folio_state_replace_count(state) == 2, "two matches, zero width counted alike");
+    struct replace_apply all = apply_for(u"a-a", REPLACE_ALL, 0);
     for (size_t index = 0; index < sizeof table / sizeof table[0]; ++index)
     {
+        reset_script();
+        require(folio_state_preview_replace(state, &request) == FOLIO_STATE_READY,
+                "a good preview");
+        require(folio_state_replace_count(state) == 2, "two matches, zero width counted alike");
         script.outcome = table[index].scanned;
         script.offset = 7;
         require(folio_state_preview_replace(state, &request) == table[index].expected,
                 "every scan failure maps to one closed value");
-        require(folio_state_replace_count(state) == 2, "a failed preview keeps the previous one");
+        struct replace_edit *dropped = nullptr;
+        require(folio_state_replace_count(state) == 0 &&
+                    folio_state_apply_replace(state, &all, &dropped) == FOLIO_STATE_REPLACE_STALE &&
+                    dropped == nullptr,
+                "a failed preview drops the previous one; apply then returns STALE");
     }
     require(folio_state_replace_error_offset(state) == 0,
             "only a bad pattern leaves a position behind");

@@ -2218,9 +2218,8 @@ static struct replace_source source_for(const struct folio_state *_Nonnull state
         .length = length,
         .replacement = u"",
         .replacement_length = 0,
-        .category = state->document == FOLIO_DOCUMENT_NONE
-                        ? ""
-                        : category_ledger_name(state->categories, state->selected_category),
+        /* 呼び出し元は下見も適用も editing_document() を先に通るので、文書は必ずある。 */
+        .category = category_ledger_name(state->categories, state->selected_category),
         .note = folio_state_document_name(state)};
     return source;
 }
@@ -2251,8 +2250,9 @@ static enum folio_state_outcome adopt_preview(struct folio_state *_Nonnull state
     return FOLIO_STATE_READY;
 }
 
-enum folio_state_outcome folio_state_preview_replace(struct folio_state *_Nonnull state,
-                                                     const struct replace_request *_Nonnull request)
+/* 下見を取り直す本体。入れ替えは adopt_preview が行い、ここは失敗の値を決めるだけ。 */
+static enum folio_state_outcome preview_matches(struct folio_state *_Nonnull state,
+                                                const struct replace_request *_Nonnull request)
 {
     if (!editing_document(state))
     {
@@ -2275,6 +2275,20 @@ enum folio_state_outcome folio_state_preview_replace(struct folio_state *_Nonnul
         return scanned;
     }
     return adopt_preview(state, request, &matches);
+}
+
+enum folio_state_outcome folio_state_preview_replace(struct folio_state *_Nonnull state,
+                                                     const struct replace_request *_Nonnull request)
+{
+    enum folio_state_outcome previewed = preview_matches(state, request);
+    if (previewed != FOLIO_STATE_READY)
+    {
+        /* 下見は常に「最後の入力の結果」か「無い」。失敗した入力のまま当てさせない
+         * （決定 6 の補足・2026-09-22 の独立レビュー B1）。下見が無ければ適用は STALE。 */
+        replace_preview_destroy(state->preview);
+        state->preview = nullptr;
+    }
+    return previewed;
 }
 
 size_t folio_state_replace_count(const struct folio_state *_Nonnull state)
@@ -2548,7 +2562,7 @@ static const char *_Nonnull const failure_lines[] = {
     [FOLIO_STATE_REPLACE_TOO_MANY] = "一致が多すぎます。パターンを狭めてください。",
     [FOLIO_STATE_REPLACE_TOO_LARGE] = "置き換えた本文が大きすぎます。本文は変えていません。",
     [FOLIO_STATE_REPLACE_STALE] =
-        "本文が変わったので、この置換は当てられません。もう一度検索してください。",
+        "本文か入力が変わったので、この置換は当てられません。もう一度入力してください。",
     [FOLIO_STATE_REPLACE_BAD_SPAN] = "選択範囲が正しくありません。本文は変えていません。",
     [FOLIO_STATE_OUT_OF_MEMORY] = "記憶域が足りません。",
     [FOLIO_STATE_NAME_REQUIRED] =
