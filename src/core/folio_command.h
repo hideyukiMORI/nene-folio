@@ -6,6 +6,7 @@
 
 #include "ex_substitute.h"
 #include "folio_argument_kind.h"
+#include "folio_language.h"
 #include "folio_option.h"
 
 #include <stddef.h>
@@ -33,7 +34,8 @@ enum folio_command : unsigned char
 /* index は 0 <= index < folio_command_count()。 */
 [[nodiscard]] enum folio_command folio_command_at(size_t index);
 /* 日本語の表示名。#38 で同じ ID の翻訳表へ移す。 */
-[[nodiscard]] const char *_Nonnull folio_command_label(enum folio_command command);
+[[nodiscard]] const char *_Nonnull folio_command_label(enum folio_command command,
+                                                       enum folio_language language);
 /* GUI専用操作は0個。未実装という意味ではない（ADR 0018）。 */
 [[nodiscard]] size_t folio_command_alias_count(enum folio_command command);
 /* index は 0 <= index < folio_command_alias_count(command)。 */
@@ -44,7 +46,7 @@ enum folio_command : unsigned char
                                        enum folio_command *_Nonnull out, size_t *_Nonnull argument);
 /* パレットの絞り込み。空なら全件。表示名または Ex 別名の部分一致。 */
 [[nodiscard]] bool folio_command_matches(enum folio_command command, const char *_Nonnull text,
-                                         size_t length);
+                                         size_t length, enum folio_language language);
 /* 操作パレットと「操作」メニューに出す操作か（ADR 0016 の決定 1 / ADR 0018 の決定 2 の補正）。
  * 引数を渡せない面なので、語を要る Ex の文法（`:set`）だけが偽になる。
  * 新しい操作を足すたびに閉じた switch が決めさせる。 */

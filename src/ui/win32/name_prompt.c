@@ -372,7 +372,7 @@ static enum folio_state_outcome retry_pending(struct name_prompt *_Nonnull promp
 static void show_pending_reason(struct name_prompt *_Nonnull prompt,
                                 enum folio_state_outcome outcome)
 {
-    const char *_Nonnull reason = folio_state_failure_line(outcome);
+    const char *_Nonnull reason = folio_state_failure_line(outcome, FOLIO_LANGUAGE_JA);
     struct utf16_text *_Nullable wide = nullptr;
     if (utf16_text_create(reason, strlen(reason), &wide) != UTF16_TEXT_CONVERTED)
     {
@@ -428,7 +428,8 @@ static void submit(struct name_prompt *_Nonnull prompt)
         SetFocus(prompt->accept);
         return;
     }
-    const char *_Nonnull reason = folio_state_failure_line(saved);
+    const char *_Nonnull reason =
+        folio_state_failure_line(saved, folio_state_language(prompt->state));
     struct utf16_text *_Nullable wide = nullptr;
     if (utf16_text_create(reason, strlen(reason), &wide) == UTF16_TEXT_CONVERTED)
     {

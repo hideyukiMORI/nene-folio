@@ -7,6 +7,7 @@
 #include "drawer_metrics.h"
 #include "folio_cursor_kind.h"
 #include "folio_document_kind.h"
+#include "folio_language.h"
 #include "folio_note_change.h"
 #include "folio_ports.h"
 #include "folio_state_outcome.h"
@@ -260,7 +261,11 @@ folio_state_pane_title(const struct folio_state *_Nonnull state);
 [[nodiscard]] const char *_Nonnull folio_state_pane_rtf(const struct folio_state *_Nonnull state);
 [[nodiscard]] size_t folio_state_pane_rtf_length(const struct folio_state *_Nonnull state);
 /* READY 以外の結果を利用者に見せる 1 行（UTF-8・終端付き・静的）。READY は空文字列。 */
-[[nodiscard]] const char *_Nonnull folio_state_failure_line(enum folio_state_outcome outcome);
+[[nodiscard]] const char *_Nonnull folio_state_failure_line(enum folio_state_outcome outcome,
+                                                            enum folio_language language);
+/* 表示に使う言語（ADR 0030 の決定 1）。UI はこれを ui_text_line / ui_text_format へ渡す。
+ * 単位 C（ADR 0029）で settings の値を返すようになる。 */
+[[nodiscard]] enum folio_language folio_state_language(const struct folio_state *_Nonnull state);
 void folio_state_destroy(struct folio_state *_Nullable state);
 
 #endif

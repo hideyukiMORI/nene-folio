@@ -1,5 +1,7 @@
 #include "folio_state.h"
 
+#include "ui_text.h"
+
 #include "appearance_port.h"
 #include "category_ledger.h"
 #include "drawer_layout.h"
@@ -2500,84 +2502,65 @@ size_t folio_state_pane_rtf_length(const struct folio_state *_Nonnull state)
 
 /* 値ごとの失敗の 1 行（ADR 0027 の決定 1）。列挙の全値がちょうど 1 度ずつ並ぶことは CNF-009 が
  * 字句で守るので、添字の範囲検査は書かない（決定 3）。 */
-static const char *_Nonnull const failure_lines[] = {
-    [FOLIO_STATE_READY] = "",
-    [FOLIO_STATE_DATA_UNREADABLE] = "data/ を読めませんでした。",
-    [FOLIO_STATE_LEDGER_MALFORMED] =
-        "data/ の台帳（categories.json / index.json）が版 1 の形ではありません。",
-    [FOLIO_STATE_STORE_FAILED] =
-        "data/ の台帳（categories.json / index.json）に書き戻せませんでした。表示は変えて"
-        "いません。",
-    [FOLIO_STATE_NO_SUCH_CATEGORY] = "索引に無いカテゴリが操作されました。",
-    [FOLIO_STATE_NO_SUCH_NOTE] = "索引に無いノートが操作されました。",
-    [FOLIO_STATE_NOTE_UNREADABLE] = "ノートを読めませんでした。表示は変えていません。",
-    [FOLIO_STATE_NOTHING_SELECTED] = "ノートを選んでから編集してください。",
-    [FOLIO_STATE_NOT_EDITING] = "編集モードではありません。",
-    [FOLIO_STATE_NOTE_MALFORMED] = "編集中の本文に壊れた文字があります。保存していません。",
-    [FOLIO_STATE_NOTE_STORE_FAILED] = "ノートを書き戻せませんでした。編集中の本文はそのままです。",
-    [FOLIO_STATE_HISTORY_FAILED] =
-        "履歴を書けなかったので保存していません。編集中の本文は残っています。",
-    [FOLIO_STATE_UNSAVED_CHANGES] =
-        "未保存の変更があります。保存するか、未保存変更を破棄して終了してください。",
-    [FOLIO_STATE_NAME_TAKEN] =
-        "同じ名前のノートがあります。別の名前を指定してください。既存ファイルは変更していま"
-        "せん。",
-    [FOLIO_STATE_LEDGER_STALE] =
-        "mdは反映しましたが、台帳（index."
-        "json）を書き戻せませんでした。保存を再試行するか、次回の起動で揃います。",
-    [FOLIO_STATE_LEDGER_UNSYNCED] =
-        "前回の台帳（index.json）をまだ書き戻せていません。今回の操作は行っていないので、"
-        "保存を再試行してください。",
-    [FOLIO_STATE_RENAME_PENDING] =
-        "名前の変更が途中で止まっています。同じ名前変更をやり直してください。",
-    [FOLIO_STATE_RENAME_UNLOCKED] =
-        "data/ に書けないため名前を変更できません。何も変えていません。",
-    [FOLIO_STATE_RENAME_UNSUPPORTED] =
-        "この data/ ではノート名を変更できません（ローカルの NTFS 以外、またはシンボリック"
-        "リンク／junction）。",
-    [FOLIO_STATE_RENAME_IDENTITY_FAILED] =
-        "元のファイルを確かめられないので名前を変更できません。何も変えていません。",
-    [FOLIO_STATE_RENAME_JOURNAL_FAILED] =
-        "名前変更の記録（data/.rename.json）を書けませんでした。何も変えていません。",
-    [FOLIO_STATE_RENAME_JOURNAL_BROKEN] =
-        "名前変更の記録（data/.rename.json）が版 1 の形ではありません。消していません。",
-    [FOLIO_STATE_RENAME_HALTED] =
-        "名前変更の記録と実ファイルが一致しません。data/.rename.json と data/<カテゴリ>/ "
-        "を確認してください。",
-    [FOLIO_STATE_SEARCH_MALFORMED] = "検索する語に壊れた文字があります。語は前のままです。",
-    [FOLIO_STATE_FILTERED] = "絞り込み中は並び替えと開閉ができません。",
-    [FOLIO_STATE_SETTINGS_UNREADABLE] =
-        "設定（data/settings.json）を読めません。既定値で始め、直すまで上書きしません。",
-    [FOLIO_STATE_SETTINGS_STORE_FAILED] =
-        "設定（data/settings.json）を書けませんでした。設定は変えていません。",
-    [FOLIO_STATE_PANE_UNAVAILABLE] = "表示中の本文を取り出せませんでした。探していません。",
-    [FOLIO_STATE_REPLACE_NO_PATTERN] = "置換するパターンを入れてください。",
-    [FOLIO_STATE_REPLACE_BAD_PATTERN] = "正規表現の書き方が違います。",
-    [FOLIO_STATE_REPLACE_BAD_TEMPLATE] =
-        "置換後の文字列の書き方が違います。使えるのは & \\0〜\\9 \\r \\n \\\\ \\& \\/ です。",
-    [FOLIO_STATE_REPLACE_TIMED_OUT] =
-        "このパターンは時間がかかりすぎるので止めました。本文は変えていません。",
-    [FOLIO_STATE_REPLACE_TOO_COMPLEX] =
-        "このパターンは複雑すぎて当てられません。本文は変えていません。",
-    [FOLIO_STATE_REPLACE_TOO_MANY] = "一致が多すぎます。パターンを狭めてください。",
-    [FOLIO_STATE_REPLACE_TOO_LARGE] = "置き換えた本文が大きすぎます。本文は変えていません。",
-    [FOLIO_STATE_REPLACE_STALE] =
-        "本文か入力が変わったので、この置換は当てられません。もう一度入力してください。",
-    [FOLIO_STATE_REPLACE_BAD_SPAN] = "選択範囲が正しくありません。本文は変えていません。",
-    [FOLIO_STATE_OUT_OF_MEMORY] = "記憶域が足りません。",
-    [FOLIO_STATE_NAME_REQUIRED] =
-        "無題のノートに名前をつけて保存してください。本文は残っています。",
-    [FOLIO_STATE_INVALID_NAME] = "使えない名前です。予約名・末尾の空白やピリオド・区切りを避け、."
-                                 "mdを含め255バイト以内で指定してください。",
-    [FOLIO_STATE_ALREADY_NAMED] =
-        "このノートには名前があります。別名保存（:saveas）または名前変更（:"
-        "rename）を使ってください。",
-    [FOLIO_STATE_CANCELLED] = "",
+/* 結果の値ごとの文言の ID（ADR 0030 の決定 2）。文言そのものは core の ui_text が持ち、
+ * ここは outcome と ID の対応だけを持つ。網羅は CNF-009 が守る（ADR 0027 の経路のまま）。
+ * READY と CANCELLED は見せる 1 行が無いので UI_TEXT_EMPTY を共有する。 */
+static const enum ui_text failure_lines[] = {
+    [FOLIO_STATE_READY] = UI_TEXT_EMPTY,
+    [FOLIO_STATE_DATA_UNREADABLE] = UI_TEXT_FAILURE_DATA_UNREADABLE,
+    [FOLIO_STATE_LEDGER_MALFORMED] = UI_TEXT_FAILURE_LEDGER_MALFORMED,
+    [FOLIO_STATE_STORE_FAILED] = UI_TEXT_FAILURE_STORE_FAILED,
+    [FOLIO_STATE_NO_SUCH_CATEGORY] = UI_TEXT_FAILURE_NO_SUCH_CATEGORY,
+    [FOLIO_STATE_NO_SUCH_NOTE] = UI_TEXT_FAILURE_NO_SUCH_NOTE,
+    [FOLIO_STATE_NOTE_UNREADABLE] = UI_TEXT_FAILURE_NOTE_UNREADABLE,
+    [FOLIO_STATE_NOTHING_SELECTED] = UI_TEXT_FAILURE_NOTHING_SELECTED,
+    [FOLIO_STATE_NOT_EDITING] = UI_TEXT_FAILURE_NOT_EDITING,
+    [FOLIO_STATE_NOTE_MALFORMED] = UI_TEXT_FAILURE_NOTE_MALFORMED,
+    [FOLIO_STATE_NOTE_STORE_FAILED] = UI_TEXT_FAILURE_NOTE_STORE_FAILED,
+    [FOLIO_STATE_HISTORY_FAILED] = UI_TEXT_FAILURE_HISTORY_FAILED,
+    [FOLIO_STATE_UNSAVED_CHANGES] = UI_TEXT_FAILURE_UNSAVED_CHANGES,
+    [FOLIO_STATE_NAME_TAKEN] = UI_TEXT_FAILURE_NAME_TAKEN,
+    [FOLIO_STATE_LEDGER_STALE] = UI_TEXT_FAILURE_LEDGER_STALE,
+    [FOLIO_STATE_LEDGER_UNSYNCED] = UI_TEXT_FAILURE_LEDGER_UNSYNCED,
+    [FOLIO_STATE_RENAME_PENDING] = UI_TEXT_FAILURE_RENAME_PENDING,
+    [FOLIO_STATE_RENAME_UNLOCKED] = UI_TEXT_FAILURE_RENAME_UNLOCKED,
+    [FOLIO_STATE_RENAME_UNSUPPORTED] = UI_TEXT_FAILURE_RENAME_UNSUPPORTED,
+    [FOLIO_STATE_RENAME_IDENTITY_FAILED] = UI_TEXT_FAILURE_RENAME_IDENTITY_FAILED,
+    [FOLIO_STATE_RENAME_JOURNAL_FAILED] = UI_TEXT_FAILURE_RENAME_JOURNAL_FAILED,
+    [FOLIO_STATE_RENAME_JOURNAL_BROKEN] = UI_TEXT_FAILURE_RENAME_JOURNAL_BROKEN,
+    [FOLIO_STATE_RENAME_HALTED] = UI_TEXT_FAILURE_RENAME_HALTED,
+    [FOLIO_STATE_SEARCH_MALFORMED] = UI_TEXT_FAILURE_SEARCH_MALFORMED,
+    [FOLIO_STATE_FILTERED] = UI_TEXT_FAILURE_FILTERED,
+    [FOLIO_STATE_SETTINGS_UNREADABLE] = UI_TEXT_FAILURE_SETTINGS_UNREADABLE,
+    [FOLIO_STATE_SETTINGS_STORE_FAILED] = UI_TEXT_FAILURE_SETTINGS_STORE_FAILED,
+    [FOLIO_STATE_PANE_UNAVAILABLE] = UI_TEXT_FAILURE_PANE_UNAVAILABLE,
+    [FOLIO_STATE_REPLACE_NO_PATTERN] = UI_TEXT_FAILURE_REPLACE_NO_PATTERN,
+    [FOLIO_STATE_REPLACE_BAD_PATTERN] = UI_TEXT_FAILURE_REPLACE_BAD_PATTERN,
+    [FOLIO_STATE_REPLACE_BAD_TEMPLATE] = UI_TEXT_FAILURE_REPLACE_BAD_TEMPLATE,
+    [FOLIO_STATE_REPLACE_TIMED_OUT] = UI_TEXT_FAILURE_REPLACE_TIMED_OUT,
+    [FOLIO_STATE_REPLACE_TOO_COMPLEX] = UI_TEXT_FAILURE_REPLACE_TOO_COMPLEX,
+    [FOLIO_STATE_REPLACE_TOO_MANY] = UI_TEXT_FAILURE_REPLACE_TOO_MANY,
+    [FOLIO_STATE_REPLACE_TOO_LARGE] = UI_TEXT_FAILURE_REPLACE_TOO_LARGE,
+    [FOLIO_STATE_REPLACE_STALE] = UI_TEXT_FAILURE_REPLACE_STALE,
+    [FOLIO_STATE_REPLACE_BAD_SPAN] = UI_TEXT_FAILURE_REPLACE_BAD_SPAN,
+    [FOLIO_STATE_OUT_OF_MEMORY] = UI_TEXT_FAILURE_OUT_OF_MEMORY,
+    [FOLIO_STATE_NAME_REQUIRED] = UI_TEXT_FAILURE_NAME_REQUIRED,
+    [FOLIO_STATE_INVALID_NAME] = UI_TEXT_FAILURE_INVALID_NAME,
+    [FOLIO_STATE_ALREADY_NAMED] = UI_TEXT_FAILURE_ALREADY_NAMED,
+    [FOLIO_STATE_CANCELLED] = UI_TEXT_EMPTY,
 };
 
-const char *_Nonnull folio_state_failure_line(enum folio_state_outcome outcome)
+const char *_Nonnull folio_state_failure_line(enum folio_state_outcome outcome,
+                                              enum folio_language language)
 {
-    return failure_lines[outcome];
+    return ui_text_line(failure_lines[outcome], language);
+}
+
+enum folio_language folio_state_language(const struct folio_state *_Nonnull state)
+{
+    /* 単位 C（ADR 0029）が settings から返すようにする。いまは 1 値しかない。 */
+    (void)state;
+    return FOLIO_LANGUAGE_JA;
 }
 void folio_state_destroy(struct folio_state *_Nullable state)
 {

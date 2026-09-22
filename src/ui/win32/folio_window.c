@@ -953,7 +953,7 @@ static enum utf8_text_outcome command_query(const struct folio_window *_Nonnull 
 }
 
 static bool command_at_query(const struct utf8_text *_Nonnull query, size_t wanted,
-                             enum folio_command *_Nonnull out)
+                             enum folio_language language, enum folio_command *_Nonnull out)
 {
     size_t visible = 0;
     for (size_t index = 0; index < folio_command_count(); ++index)
@@ -961,7 +961,8 @@ static bool command_at_query(const struct utf8_text *_Nonnull query, size_t want
         enum folio_command command = folio_command_at(index);
         /* 引数を渡せない面なので、語を要る Ex の文法は出さない（ADR 0026 の決定 8 の補正）。 */
         if (!folio_command_listed(command) ||
-            !folio_command_matches(command, utf8_text_bytes(query), utf8_text_length(query)))
+            !folio_command_matches(command, utf8_text_bytes(query), utf8_text_length(query),
+                                   language))
         {
             continue;
         }
@@ -975,15 +976,16 @@ static bool command_at_query(const struct utf8_text *_Nonnull query, size_t want
     return false;
 }
 
-static size_t command_matches_count(const struct utf8_text *_Nonnull query)
+static size_t command_matches_count(const struct utf8_text *_Nonnull query,
+                                    enum folio_language language)
 {
     size_t count = 0;
     for (size_t index = 0; index < folio_command_count(); ++index)
     {
         enum folio_command command = folio_command_at(index);
-        bool shown =
-            folio_command_listed(command) &&
-            folio_command_matches(command, utf8_text_bytes(query), utf8_text_length(query));
+        bool shown = folio_command_listed(command) &&
+                     folio_command_matches(command, utf8_text_bytes(query), utf8_text_length(query),
+                                           language);
         count += shown ? 1 : 0;
     }
     return count;
@@ -1018,7 +1020,7 @@ static void draw_command_row(const struct folio_window *_Nonnull self, HDC devic
     label.left += scale(base_command_row_padding, dpi);
     label.right -= scale(base_command_alias_room, dpi);
     SetTextColor(device, row.selected ? self->palette.selected_text : self->palette.current_text);
-    draw_utf8(device, folio_command_label(row.command), label);
+    draw_utf8(device, folio_command_label(row.command, folio_state_language(self->state)), label);
     RECT aliases = row.bounds;
     aliases.right -= scale(base_command_row_padding, dpi);
     aliases.left = aliases.right;
@@ -1109,7 +1111,8 @@ static void draw_search_surface(const struct folio_window *_Nonnull self, HDC de
 static void failure_status(const struct folio_window *_Nonnull self,
                            enum folio_state_outcome outcome, char *_Nonnull out)
 {
-    size_t at = append_text(out, 0, folio_state_failure_line(outcome));
+    size_t at =
+        append_text(out, 0, folio_state_failure_line(outcome, folio_state_language(self->state)));
     size_t offset = folio_state_replace_error_offset(self->state);
     if (outcome == FOLIO_STATE_REPLACE_BAD_PATTERN && offset > 0)
     {
@@ -1256,7 +1259,7 @@ static void draw_palette_rows(const struct folio_window *_Nonnull self, HDC devi
     {
         enum folio_command command = FOLIO_COMMAND_SAVE;
         size_t index = self->command_first + visible;
-        if (!command_at_query(query, index, &command))
+        if (!command_at_query(query, index, folio_state_language(self->state), &command))
         {
             break;
         }
@@ -1394,16 +1397,17 @@ static void draw_action_button(const struct folio_window *_Nonnull self, HDC dev
 static void draw_actions(const struct folio_window *_Nonnull self, HDC device)
 {
     draw_action_button(self, device, action_button_rect(self, 0),
-                       folio_command_label(FOLIO_COMMAND_NEW));
+                       folio_command_label(FOLIO_COMMAND_NEW, folio_state_language(self->state)));
     draw_action_button(self, device, action_button_rect(self, 1),
-                       folio_command_label(FOLIO_COMMAND_SAVE));
+                       folio_command_label(FOLIO_COMMAND_SAVE, folio_state_language(self->state)));
     draw_action_button(self, device, action_button_rect(self, 2), "操作 ▾");
     draw_action_button(self, device, action_button_rect(self, 3),
-                       folio_command_label(FOLIO_COMMAND_HELP));
+                       folio_command_label(FOLIO_COMMAND_HELP, folio_state_language(self->state)));
     if (action_button_fits(self, 4))
     {
-        draw_action_button(self, device, action_button_rect(self, 4),
-                           folio_command_label(FOLIO_COMMAND_FIND));
+        draw_action_button(
+            self, device, action_button_rect(self, 4),
+            folio_command_label(FOLIO_COMMAND_FIND, folio_state_language(self->state)));
     }
 }
 
@@ -2888,7 +2892,7 @@ static void click_command_surface(struct folio_window *_Nonnull self, POINT poin
     enum folio_command command = FOLIO_COMMAND_SAVE;
     int row_height = scale(base_command_row_height, GetDpiForWindow(self->handle));
     size_t index = self->command_first + (size_t)((point.y - rows.top) / row_height);
-    bool found = command_at_query(query, index, &command);
+    bool found = command_at_query(query, index, folio_state_language(self->state), &command);
     utf8_text_destroy(query);
     if (found)
     {
@@ -2896,10 +2900,10 @@ static void click_command_surface(struct folio_window *_Nonnull self, POINT poin
     }
 }
 
-static bool append_operation(HMENU menu, size_t index)
+static bool append_operation(HMENU menu, size_t index, enum folio_language language)
 {
     enum folio_command command = folio_command_at(index);
-    const char *_Nonnull label = folio_command_label(command);
+    const char *_Nonnull label = folio_command_label(command, language);
     struct utf16_text *_Nullable wide = nullptr;
     if (utf16_text_create(label, strlen(label), &wide) != UTF16_TEXT_CONVERTED)
     {
@@ -2925,7 +2929,7 @@ static void show_operations(struct folio_window *_Nonnull self)
         {
             continue;
         }
-        if (!append_operation(menu, index))
+        if (!append_operation(menu, index, folio_state_language(self->state)))
         {
             DestroyMenu(menu);
             command_failure(self, FOLIO_STATE_OUT_OF_MEMORY);
@@ -3287,7 +3291,8 @@ static void execute_command_input(struct folio_window *_Nonnull self)
         found = folio_command_parse(bytes, length, &command, &argument);
         break;
     case COMMAND_SURFACE_PALETTE:
-        found = command_at_query(query, self->command_selection, &command);
+        found = command_at_query(query, self->command_selection, folio_state_language(self->state),
+                                 &command);
         break;
     }
     if (!found)
@@ -3308,7 +3313,7 @@ static void move_command_selection(struct folio_window *_Nonnull self, WPARAM ke
         failure_box_show(self->handle, FOLIO_STATE_OUT_OF_MEMORY);
         return;
     }
-    size_t count = command_matches_count(query);
+    size_t count = command_matches_count(query, folio_state_language(self->state));
     utf8_text_destroy(query);
     if (count == 0)
     {

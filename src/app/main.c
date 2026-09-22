@@ -74,7 +74,7 @@ static int run(struct persistence_adapter *_Nonnull persistence,
     enum folio_state_outcome loaded = folio_state_create(&ports, &state);
     if (loaded != FOLIO_STATE_READY)
     {
-        report_utf8(folio_state_failure_line(loaded));
+        report_utf8(folio_state_failure_line(loaded, folio_state_language(state)));
         return 1;
     }
     /* 起動は続けるが、設定を読めなかった理由は窓を作る前に 1 回だけ見せる（ADR 0025 の決定 6）。
@@ -82,7 +82,7 @@ static int run(struct persistence_adapter *_Nonnull persistence,
     enum folio_state_outcome settings = folio_state_settings_notice(state);
     if (settings != FOLIO_STATE_READY)
     {
-        report_utf8(folio_state_failure_line(settings));
+        report_utf8(folio_state_failure_line(settings, folio_state_language(state)));
     }
     struct folio_window *_Nullable window = nullptr;
     if (folio_window_create(state, &window) != FOLIO_WINDOW_CREATED)
