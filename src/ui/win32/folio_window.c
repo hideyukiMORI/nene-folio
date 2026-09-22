@@ -2421,7 +2421,10 @@ static void open_command_surface(struct folio_window *_Nonnull self,
     SetWindowTextW(self->command_input, surface == COMMAND_SURFACE_EX ? L":" : L"");
     arrange_command_input(self);
     focus_command_input(self);
-    SendMessageW(self->command_input, EM_SETSEL, (WPARAM)-1, (LPARAM)-1);
+    /* WM_SETTEXT はキャレットを先頭へ置き、EM_SETSEL(-1, -1) は選択を解くだけで動かさない。
+     * 打った字が `:` の前に入らないよう、末尾（Ex は 1・他の面は 0）へ明示的に置く（#85）。 */
+    LRESULT caret = (LRESULT)GetWindowTextLengthW(self->command_input);
+    SendMessageW(self->command_input, EM_SETSEL, (WPARAM)caret, (LPARAM)caret);
     redraw_command_layer(self);
 }
 
