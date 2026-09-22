@@ -312,6 +312,58 @@ class RepositoryChecks(unittest.TestCase):
     def test_cnf010_repository_has_no_second_catalog(self):
         self.assertEqual([], cnf.text_catalog_checks(ROOT, cnf.inventory(ROOT), RULES))
 
+    def column_rules(self):
+        rules = json.loads(json.dumps(RULES))
+        rules["textCatalog"]["files"] = ["src/core/ui_text.c"]
+        rules["textCatalog"]["languages"] = {"enum": "src/core/folio_language.h", "prefix": "FOLIO_LANGUAGE_"}
+        return rules
+
+    def seed_columns(self, catalog, languages="enum folio_language : unsigned char\n{\n    FOLIO_LANGUAGE_JA,\n    FOLIO_LANGUAGE_EN,\n    FOLIO_LANGUAGE_ZH_HANS\n};\n"):
+        self.write("src/core/folio_language.h", languages)
+        self.write("src/core/ui_text.c", catalog)
+        return cnf.text_column_checks(self.root, self.column_rules())
+
+    def test_cnf011_positive(self):
+        self.assertEqual([], self.seed_columns('static const char *const c[][3] = {\n    [UI_TEXT_EMPTY] = {"", "", ""},\n    [UI_TEXT_SAVE] = {"保存", "Save", "保存"},\n};\n'))
+
+    def test_cnf011_adjacent_literals_are_one_column(self):
+        """clang-format splits a long entry in two; the commas of depth 0 still count three."""
+        self.assertEqual([], self.seed_columns('static const char *const c[][3] = {\n    [UI_TEXT_EMPTY] = {"", "", ""},\n    [UI_TEXT_LONG] = {"日本語の"\n         "続き",\n        "English "\n        "continued",\n        "中文"},\n};\n'))
+
+    def test_cnf011_missing_column(self):
+        findings = self.seed_columns('static const char *const c[][3] = {\n    [UI_TEXT_EMPTY] = {"", "", ""},\n    [UI_TEXT_SAVE] = {"保存", "Save"},\n};\n')
+        self.assertTrue(any(f.rule == "CNF-011" and "UI_TEXT_SAVE has 2 columns, expected 3" in f.detail for f in findings))
+
+    def test_cnf011_empty_column(self):
+        findings = self.seed_columns('static const char *const c[][3] = {\n    [UI_TEXT_EMPTY] = {"", "", ""},\n    [UI_TEXT_SAVE] = {"保存", "", "保存"},\n};\n')
+        self.assertTrue(any(f.rule == "CNF-011" and "UI_TEXT_SAVE column 1 is empty" in f.detail for f in findings))
+
+    def test_cnf011_only_the_declared_id_may_be_empty(self):
+        self.assertEqual([], self.seed_columns('static const char *const c[][3] = {\n    [UI_TEXT_EMPTY] = {"", "", ""},\n};\n'))
+
+    def test_cnf011_plain_entry_is_not_a_row_of_columns(self):
+        findings = self.seed_columns('static const char *const c[] = {\n    [UI_TEXT_EMPTY] = "",\n};\n')
+        self.assertTrue(any("no braced initializer" in f.detail for f in findings))
+
+    def test_cnf011_commented_entry_does_not_count(self):
+        findings = self.seed_columns('static const char *const c[][3] = {\n    [UI_TEXT_EMPTY] = {"", "", ""},\n    /* [UI_TEXT_SAVE] = {"保存"} */\n};\n')
+        self.assertEqual([], findings)
+
+    def test_cnf011_follows_the_language_enumeration(self):
+        """A fourth language makes every three-column entry incomplete."""
+        findings = self.seed_columns(
+            'static const char *const c[][4] = {\n    [UI_TEXT_EMPTY] = {"", "", ""},\n};\n',
+            "enum folio_language : unsigned char\n{\n    FOLIO_LANGUAGE_JA,\n    FOLIO_LANGUAGE_EN,\n    FOLIO_LANGUAGE_ZH_HANS,\n    FOLIO_LANGUAGE_KO\n};\n")
+        self.assertTrue(any("expected 4" in f.detail for f in findings))
+
+    def test_cnf011_empty_catalog_is_refused(self):
+        findings = self.seed_columns("static const char *const c[][3] = {};\n")
+        self.assertTrue(any("no UI_TEXT_ entries" in f.detail for f in findings))
+
+    def test_cnf011_repository_catalog_is_complete(self):
+        rules = json.loads((ROOT / "eng/conformance-rules.json").read_text(encoding="utf-8"))
+        self.assertEqual([], cnf.text_column_checks(ROOT, rules))
+
     def test_arc002_graph_cycle(self):
         self.write("eng/architecture.json", json.dumps({"modules": {"core": {"path": "src/core", "dependencies": ["core"]}}, "runtimeDependencies": []}))
         self.assertIn("ARC-002", {f.rule for f in cnf.architecture_checks(self.root, self.paths(), None)})

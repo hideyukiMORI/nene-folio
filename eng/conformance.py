@@ -190,6 +190,88 @@ def text_catalog_checks(root: Path, paths: list[Path], rules: dict) -> list[Find
     return findings
 
 
+def without_comments(text: str) -> str:
+    """The text with comments and character literals blanked out; string literals are kept.
+
+    c_code() blanks strings too, so the column check needs its own pass: the comment and
+    character alternatives come first, so only real strings survive.
+    """
+    pattern = r'//[^\n]*|/\*.*?\*/|\'(?:\\.|[^\'\\])*\'|((?:u8|u|U|L)?"(?:\\.|[^"\\])*")'
+    return re.sub(pattern, lambda m: m[1] or re.sub(r"[^\n]", " ", m.group()), text, flags=re.S)
+
+
+def initializer_elements(text: str, at: int) -> tuple[list[str], int]:
+    """The depth 0 elements of the braced initializer that starts at text[at] == '{'.
+
+    clang-format splits a long entry into adjacent string literals, so the elements are what
+    the commas of depth 0 separate, never the literals themselves.
+    """
+    elements, start, depth, index, inside = [], at + 1, 1, at + 1, False
+    while index < len(text):
+        character = text[index]
+        if inside:
+            inside = character != '"'
+            index += 2 if character == "\\" else 1
+            continue
+        if character == '"':
+            inside = True
+        elif character in "{[(":
+            depth += 1
+        elif character in "}])":
+            depth -= 1
+            if depth == 0:
+                elements.append(text[start:index])
+                return elements, index + 1
+        elif character == "," and depth == 1:
+            elements.append(text[start:index])
+            start = index + 1
+        index += 1
+    return elements, len(text)
+
+
+def catalog_entries(text: str, prefix: str):
+    """(value, columns) for every `[VALUE] = { ... }` entry; columns are the joined literals."""
+    code = without_comments(text.replace("\\\n", ""))
+    literal = re.compile(r'(?:u8|u|U|L)?"((?:\\.|[^"\\])*)"')
+    for match in re.finditer(r"\[\s*(" + re.escape(prefix) + r"\w+)\s*\]\s*=\s*", code):
+        at = match.end()
+        if at >= len(code) or code[at] != "{":
+            yield match[1], None
+            continue
+        elements, _ = initializer_elements(code, at)
+        yield match[1], ["".join(literal.findall(element)) for element in elements]
+
+
+def text_column_checks(root: Path, rules: dict) -> list[Finding]:
+    """Every id of the display catalog carries one non-empty line per language (CNF-011)."""
+    settings = rules["textCatalog"]
+    languages = settings["languages"]
+    header, allowed = Path(languages["enum"]), set(settings["emptyAllowed"])
+    findings = []
+    if not (root / header).is_file():
+        return [Finding("CNF-011", header.as_posix(), "declared language enumeration is missing")]
+    values = enumeration_values(c_code((root / header).read_text(encoding="utf-8")), languages["prefix"])
+    if not values:
+        return [Finding("CNF-011", header.as_posix(), f"no {languages['prefix']} values in the enumeration body")]
+    for name in settings["files"]:
+        path = root / name
+        if not path.is_file():
+            findings.append(Finding("CNF-011", name, "declared catalog file is missing"))
+            continue
+        entries = list(catalog_entries(path.read_text(encoding="utf-8"), settings["entryPrefix"]))
+        if not entries:
+            findings.append(Finding("CNF-011", name, f"no {settings['entryPrefix']} entries in the catalog"))
+        for value, columns in entries:
+            if columns is None or len(columns) != len(values):
+                found = "no braced initializer" if columns is None else f"{len(columns)} columns"
+                findings.append(Finding("CNF-011", name, f"{value} has {found}, expected {len(values)}"))
+                continue
+            for column, line in enumerate(columns):
+                if not line and value not in allowed:
+                    findings.append(Finding("CNF-011", name, f"{value} column {column} is empty"))
+    return findings
+
+
 def line_table_checks(root: Path, rules: dict) -> list[Finding]:
     """Every value of a declared enumeration appears exactly once in its per-value table (CNF-009)."""
     findings = []
@@ -419,6 +501,7 @@ def check(root: Path, today: datetime.date, build_dir: Path | None = None) -> li
     findings.extend(architecture_checks(root, paths, build_dir))
     findings.extend(line_table_checks(root, rules))
     findings.extend(text_catalog_checks(root, paths, rules))
+    findings.extend(text_column_checks(root, rules))
     for path in paths:
         if path.suffix in rules["cExtensions"]:
             findings.extend(source_checks(path.as_posix(), (root / path).read_text(encoding="utf-8"), rules, waivers))

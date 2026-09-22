@@ -25,7 +25,10 @@
     "roots": ["src/"],
     "extensions": [".c", ".h"],
     "escapePrefixes": ["L", "u", "U"],
-    "escapeLetters": ["x", "u", "U"]
+    "escapeLetters": ["x", "u", "U"],
+    "entryPrefix": "UI_TEXT_",
+    "languages": {"enum": "src/core/folio_language.h", "prefix": "FOLIO_LANGUAGE_"},
+    "emptyAllowed": ["UI_TEXT_EMPTY"]
   },
   "cExtensions": [".c", ".h"],
   "configurationExtensions": [".ps1", ".cmake", ".yml", ".yaml"],

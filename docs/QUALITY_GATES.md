@@ -198,7 +198,7 @@ head が動いたら Draft に戻して再度 Ready にする。古い成功 SHA
 要素の数を数えるのは、`clang-format` が長い行を隣接リテラルに割るため（リテラルの数では列を数えない）。
 
 - 対応する規則: C-018
-- 機械強制: **planned**（この単位で `eng/conformance.py` に実装し、`tests/conformance` の正例・反例と `eng/prove-gates.py` の実ツール反例を足す）
+- 機械強制: **active**（`eng/conformance.py` の `text_column_checks` ＋ `tests/conformance` の 10 件 ＋ `eng/prove-gates.py` の実ツール反例 P23）
 
 🔴 **検出語は検査器のソースに直書きしない**（検査器が自分自身を違反として報告する。前例: xi-tools 初版で 7 件の自己検出）。
 🔴 **テストソースは検査対象から外す**（テストは意図的な違反を書く場所）。
@@ -269,7 +269,7 @@ CNF-006 が「本文に定義があるのにここに行が無い」を拒否す
 | CNF-008 | active | eng/conformance.py / tests/conformance |
 | CNF-009 | active | eng/conformance.py / tests/conformance / eng/prove-gates.py |
 | CNF-010 | active | eng/conformance.py / tests/conformance / eng/prove-gates.py |
-| CNF-011 | planned | eng/conformance.py / tests/conformance / eng/prove-gates.py |
+| CNF-011 | active | eng/conformance.py / tests/conformance / eng/prove-gates.py |
 
 ---
 
