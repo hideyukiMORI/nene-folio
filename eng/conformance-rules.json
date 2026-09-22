@@ -15,6 +15,7 @@
     {"enum": "src/application/folio_state_outcome.h", "table": "tests/unit/state_tests.c", "prefix": "FOLIO_STATE_"},
     {"enum": "src/core/ui_text.h", "table": "src/core/ui_text.c", "prefix": "UI_TEXT_"},
     {"enum": "src/core/folio_theme_choice.h", "table": "src/core/folio_settings.c", "prefix": "FOLIO_THEME_CHOICE_"},
+    {"enum": "src/core/folio_command.h", "table": "src/core/folio_command.c", "prefix": "FOLIO_COMMAND_"},
     {"enum": "src/adapters/win32/persistence_adapter_outcome.h", "table": "src/app/main.c", "prefix": "PERSISTENCE_ADAPTER_"}
   ],
   "textCatalog": {

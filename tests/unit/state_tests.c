@@ -81,9 +81,10 @@ struct persistence_adapter
     const char *_Nonnull settings_text;
     size_t settings_reads;
     enum persistence_outcome settings_write_outcome;
-    size_t settings_writes;             /* write_settings が呼ばれた回数 */
-    bool written_number;                /* 最後に書かれた設定の number */
-    const char *_Nullable alt_category; /* この名前のカテゴリだけ別の索引と md を返す */
+    size_t settings_writes;                /* write_settings が呼ばれた回数 */
+    bool written_number;                   /* 最後に書かれた設定の number */
+    enum folio_theme_choice written_theme; /* 最後に書かれた設定の theme */
+    const char *_Nullable alt_category;    /* この名前のカテゴリだけ別の索引と md を返す */
     const char *_Nonnull alt_notes_text;
     const char *_Nonnull const *_Nullable alt_scanned; /* nullptr で終わる名前の並び */
 };
@@ -450,6 +451,7 @@ static enum persistence_outcome fake_write_settings(struct persistence_adapter *
         return adapter->settings_write_outcome;
     }
     adapter->written_number = folio_settings_number(settings);
+    adapter->written_theme = folio_settings_theme(settings);
     return PERSISTENCE_STORED;
 }
 
@@ -463,6 +465,7 @@ static void healthy_settings(struct persistence_adapter *_Nonnull adapter)
     adapter->settings_write_outcome = PERSISTENCE_STORED;
     adapter->settings_writes = 0;
     adapter->written_number = false;
+    adapter->written_theme = FOLIO_THEME_CHOICE_SYSTEM;
 }
 
 static struct persistence_adapter healthy_adapter(void)
@@ -2937,9 +2940,12 @@ static void verify_set_number_ignores_resumed_rename(void)
     adapter.rename_outcome = RENAME_COMPLETED;
     require(folio_state_set_number(state, true) == FOLIO_STATE_READY,
             "the settings change is accepted while a rename is unfinished");
+    require(folio_state_set_theme(state, FOLIO_THEME_CHOICE_LIGHT) == FOLIO_STATE_READY,
+            "and so is the theme (it never goes through synchronize either)");
     require(adapter.renames == renames, "it never calls rename_note, not even to resume");
-    require(adapter.settings_writes == 1 && adapter.written_number,
-            "and the settings are written exactly once");
+    require(adapter.settings_writes == 2 && adapter.written_number &&
+                adapter.written_theme == FOLIO_THEME_CHOICE_LIGHT,
+            "and the settings are written once per change");
     require(folio_state_number(state), "the written value is adopted");
     struct rename_view pending = {.from = "", .to = ""};
     require(folio_state_rename_pending(state, &pending) && same_text(pending.to, "新しい名前"),
@@ -2963,8 +2969,13 @@ static void verify_settings_unreadable(enum persistence_outcome read,
     require(!folio_state_number(state), "an unreadable settings file starts from the default");
     require(folio_state_set_number(state, true) == FOLIO_STATE_SETTINGS_UNREADABLE,
             "the session refuses to change the settings");
+    require(folio_state_set_theme(state, FOLIO_THEME_CHOICE_LIGHT) ==
+                FOLIO_STATE_SETTINGS_UNREADABLE,
+            "the theme is refused with the same value as the line numbers");
     require(adapter.settings_writes == 0, "a file nobody could read is never overwritten");
     require(!folio_state_number(state), "the refused change left the value alone");
+    require(folio_state_theme_choice(state) == FOLIO_THEME_CHOICE_SYSTEM,
+            "and the theme starts from the default too");
     /* ノートの閲覧・編集・保存は妨げない。 */
     require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY, "viewing still works");
     require(folio_state_begin_edit(state) == FOLIO_STATE_READY, "editing still works");
@@ -2978,7 +2989,7 @@ static void verify_settings_shapes(void)
 {
     struct persistence_adapter adapter = healthy_adapter();
     adapter.settings_outcome = PERSISTENCE_LOADED;
-    adapter.settings_text = "{\"version\": 2, \"number\": true}";
+    adapter.settings_text = "{\"version\": 3, \"number\": true, \"theme\": \"dark\"}";
     struct persistence_port port = port_for(&adapter);
     struct appearance_port looks = looks_for(&dark_adapter);
     struct folio_state *state = nullptr;
@@ -3002,10 +3013,119 @@ static void verify_settings_shapes(void)
     expect_failure(adapter, FOLIO_STATE_OUT_OF_MEMORY, "out of memory settings fail the startup");
 }
 
+/* ダークの本文の色。閲覧文書が新しい palette で作り直されたかを RTF の色表で見る。 */
+static const char *const dark_body_color = "\\red239\\green228\\blue234;";
+static const char *const light_body_color = "\\red36\\green19\\blue24;";
+
+/* 選択は設定から来て、解決値は OS の値と合わせて決まる（ADR 0031 の決定 2 / 3）。 */
+static void verify_theme_resolution(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    adapter.settings_outcome = PERSISTENCE_LOADED;
+    adapter.settings_text = "{\"version\": 2, \"number\": false, \"theme\": \"light\"}";
+    struct persistence_port port = port_for(&adapter);
+    struct appearance_port looks = looks_for(&dark_adapter);
+    struct folio_state *state = nullptr;
+    require(folio_state_create(test_ports(&port, &looks, &finder), &state) == FOLIO_STATE_READY,
+            "stored theme starts");
+    require(folio_state_theme_choice(state) == FOLIO_THEME_CHOICE_LIGHT, "the choice is adopted");
+    require(folio_state_theme(state) == FOLIO_THEME_LIGHT,
+            "an explicit choice ignores the dark operating system");
+    require(strstr(folio_state_pane_rtf(state), light_body_color) != nullptr,
+            "the empty pane already carries the chosen colours");
+    folio_state_destroy(state);
+    adapter = healthy_adapter();
+    port = port_for(&adapter);
+    state = nullptr;
+    require(folio_state_create(test_ports(&port, &looks, &finder), &state) == FOLIO_STATE_READY,
+            "default theme starts");
+    require(folio_state_theme_choice(state) == FOLIO_THEME_CHOICE_SYSTEM, "the default is system");
+    require(folio_state_theme(state) == FOLIO_THEME_DARK, "system follows the operating system");
+    require(strstr(folio_state_pane_rtf(state), dark_body_color) != nullptr,
+            "the pane follows the resolved theme");
+    folio_state_destroy(state);
+}
+
+/* 変更は先に書いてから採用し、同じ値では書かない。閲覧文書は新しい色で作り直す。 */
+static void verify_set_theme(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY, "a named document");
+    require(folio_state_set_theme(state, FOLIO_THEME_CHOICE_SYSTEM) == FOLIO_STATE_READY,
+            "the same choice is accepted");
+    require(adapter.settings_writes == 0, "the same choice is not written");
+    require(folio_state_set_theme(state, FOLIO_THEME_CHOICE_LIGHT) == FOLIO_STATE_READY,
+            "a new choice is accepted");
+    require(adapter.settings_writes == 1 && adapter.written_theme == FOLIO_THEME_CHOICE_LIGHT,
+            "the change is written once");
+    require(folio_state_theme(state) == FOLIO_THEME_LIGHT, "the written choice is adopted");
+    require(strstr(folio_state_pane_rtf(state), light_body_color) != nullptr,
+            "the note is re-rendered with the new palette");
+    require(folio_state_begin_edit(state) == FOLIO_STATE_READY, "editing");
+    require(folio_state_set_theme(state, FOLIO_THEME_CHOICE_DARK) == FOLIO_STATE_READY,
+            "the choice can change while editing");
+    require(strstr(folio_state_pane_rtf(state), dark_body_color) != nullptr,
+            "the view document is rebuilt even in edit mode");
+    require(folio_state_pane_mode(state) == PANE_MODE_EDIT, "the mode is unchanged");
+    folio_state_destroy(state);
+}
+
+static void verify_set_theme_unwritable(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    adapter.settings_write_outcome = PERSISTENCE_UNWRITABLE;
+    struct persistence_port port = port_for(&adapter);
+    struct appearance_port looks = looks_for(&dark_adapter);
+    struct folio_state *state = nullptr;
+    require(folio_state_create(test_ports(&port, &looks, &finder), &state) == FOLIO_STATE_READY,
+            "state");
+    require(folio_state_set_theme(state, FOLIO_THEME_CHOICE_LIGHT) ==
+                FOLIO_STATE_SETTINGS_STORE_FAILED,
+            "an unwritable data/ refuses the change");
+    require(adapter.settings_writes == 1, "the write was attempted");
+    require(folio_state_theme_choice(state) == FOLIO_THEME_CHOICE_SYSTEM, "the choice is kept");
+    require(strstr(folio_state_pane_rtf(state), dark_body_color) != nullptr,
+            "and the pane keeps the old colours");
+    folio_state_destroy(state);
+}
+
+/* OS の値を読み直す意図（決定 3 / 4）。設定は書かず、SYSTEM のときだけ解決値が動く。 */
+static void verify_refresh_theme(void)
+{
+    struct appearance_adapter looks_adapter = {.theme = FOLIO_THEME_DARK};
+    struct persistence_adapter adapter = healthy_adapter();
+    struct persistence_port port = port_for(&adapter);
+    struct appearance_port looks = looks_for(&looks_adapter);
+    struct folio_state *state = nullptr;
+    require(folio_state_create(test_ports(&port, &looks, &finder), &state) == FOLIO_STATE_READY,
+            "state");
+    require(folio_state_theme(state) == FOLIO_THEME_DARK, "it starts dark");
+    looks_adapter.theme = FOLIO_THEME_LIGHT;
+    require(folio_state_refresh_theme(state) == FOLIO_STATE_READY, "the port is read again");
+    require(folio_state_theme(state) == FOLIO_THEME_LIGHT, "system follows the new value");
+    require(adapter.settings_writes == 0, "following the operating system writes nothing");
+    require(strstr(folio_state_pane_rtf(state), light_body_color) != nullptr,
+            "the pane follows too");
+    require(folio_state_set_theme(state, FOLIO_THEME_CHOICE_DARK) == FOLIO_STATE_READY, "dark");
+    looks_adapter.theme = FOLIO_THEME_DARK;
+    require(folio_state_refresh_theme(state) == FOLIO_STATE_READY, "reading again is harmless");
+    require(folio_state_theme(state) == FOLIO_THEME_DARK, "an explicit choice does not move");
+    looks_adapter.theme = FOLIO_THEME_LIGHT;
+    require(folio_state_refresh_theme(state) == FOLIO_STATE_READY, "and again");
+    require(folio_state_theme(state) == FOLIO_THEME_DARK, "still the explicit choice");
+    require(adapter.settings_writes == 1, "refreshing never writes the settings");
+    folio_state_destroy(state);
+}
+
 static void verify_settings(void)
 {
     verify_settings_absent();
     verify_settings_loaded();
+    verify_theme_resolution();
+    verify_set_theme();
+    verify_set_theme_unwritable();
+    verify_refresh_theme();
     verify_set_number();
     verify_set_number_unwritable();
     verify_set_number_ignores_resumed_rename();

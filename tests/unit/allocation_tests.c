@@ -440,6 +440,23 @@ static bool set_number_under_probe(struct folio_state *_Nonnull state)
     return changed == FOLIO_STATE_READY;
 }
 
+/* テーマの 2 つの意図（ADR 0031 の決定 3）。どちらも設定の複製と
+ * 閲覧文書の作り直しで確保する。read_theme は確保しないので refresh は文書だけ。 */
+static bool set_theme_under_probe(struct folio_state *_Nonnull state)
+{
+    enum folio_state_outcome changed = folio_state_set_theme(state, FOLIO_THEME_CHOICE_LIGHT);
+    require(changed == FOLIO_STATE_READY || changed == FOLIO_STATE_OUT_OF_MEMORY,
+            "set theme under probe");
+    if (changed != FOLIO_STATE_READY)
+    {
+        return false;
+    }
+    enum folio_state_outcome refreshed = folio_state_refresh_theme(state);
+    require(refreshed == FOLIO_STATE_READY || refreshed == FOLIO_STATE_OUT_OF_MEMORY,
+            "refresh theme under probe");
+    return refreshed == FOLIO_STATE_READY;
+}
+
 /* ノート内検索の語は UTF-16 を UTF-8 へ写して所有する（ADR 0023 の決定 3）。 */
 static bool search_under_probe(struct folio_state *_Nonnull state)
 {
@@ -546,7 +563,7 @@ static bool state_scenario_with(struct persistence_adapter *_Nonnull adapter)
         selection_under_probe(state) && filter_under_probe(state) && reorder_under_probe(state) &&
         edit_under_probe(state) && transfer_under_probe(state) && new_note_under_probe(state) &&
         save_as_under_probe(state) && replace_under_probe(state) && rename_under_probe(state) &&
-        search_under_probe(state) && set_number_under_probe(state);
+        search_under_probe(state) && set_number_under_probe(state) && set_theme_under_probe(state);
     folio_state_destroy(state);
     return completed;
 }

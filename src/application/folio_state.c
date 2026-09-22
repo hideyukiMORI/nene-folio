@@ -40,7 +40,10 @@ struct folio_state
     size_t found_capacity;
     struct replace_preview *_Nullable preview; /* 直前の下見。1 つだけ持つ（決定 6） */
     size_t replace_offset; /* 直前の下見が BAD_PATTERN だったときの位置（1 起算） */
-    enum folio_theme theme;
+    /* 外観ポート（ADR 0031 の決定 3）。OS の変更で読み直すので値で写して持つ */
+    struct appearance_port appearance;
+    enum folio_theme os_theme;            /* 直近に port から読んだ OS の値 */
+    enum folio_theme_choice theme_choice; /* 設定の選択。解決値は folio_theme_resolve */
     /* data/settings.json の値の所有者（ADR 0025 の決定 5）。読めなければ既定値のまま */
     struct folio_settings *_Nullable settings;
     /* READY か SETTINGS_UNREADABLE。後者のあいだ設定の変更を断り、上書きもしない（決定 6） */
@@ -394,6 +397,37 @@ static enum folio_state_outcome load_settings(struct folio_state *_Nonnull state
     return adopt_settings(state, read, loaded);
 }
 
+/* いまの文書と同じ作り方で閲覧の RTF を 1 つ作る（差し替えはしない・ADR 0031 の決定 3）。
+ * 名前のある文書だけが本文を持ち、無題と何も選んでいない状態は空の文書である。 */
+static bool render_pane_document(const struct folio_state *_Nonnull state,
+                                 struct rtf_palette palette,
+                                 struct markdown_rtf *_Nullable *_Nonnull out)
+{
+    if (state->document == FOLIO_DOCUMENT_NAMED)
+    {
+        return markdown_rtf_create(state->body, palette, out) == MARKDOWN_RTF_CONVERTED;
+    }
+    return markdown_rtf_empty(palette, out) == MARKDOWN_RTF_CONVERTED;
+}
+
+/* 設定を読んだ後に選択を採り、palette と閲覧文書を解決したテーマの色で作り直す（決定 3）。
+ * 先に新しい文書を作ってから差し替えるので、確保に失敗しても状態は変わらない。 */
+static enum folio_state_outcome adopt_theme_choice(struct folio_state *_Nonnull state)
+{
+    enum folio_theme_choice choice = folio_settings_theme(state->settings);
+    struct rtf_palette palette = rtf_palette_for(folio_theme_resolve(choice, state->os_theme));
+    struct markdown_rtf *_Nullable pane = nullptr;
+    if (!render_pane_document(state, palette, &pane))
+    {
+        return FOLIO_STATE_OUT_OF_MEMORY;
+    }
+    markdown_rtf_destroy(state->pane);
+    state->pane = pane;
+    state->palette = palette;
+    state->theme_choice = choice;
+    return FOLIO_STATE_READY;
+}
+
 enum folio_state_outcome folio_state_create(const struct folio_ports *_Nonnull ports,
                                             struct folio_state *_Nullable *_Nonnull out)
 {
@@ -406,8 +440,11 @@ enum folio_state_outcome folio_state_create(const struct folio_ports *_Nonnull p
     }
     state->port = *persistence;
     state->regex = *ports->regex;
-    state->theme = appearance->read_theme(appearance->adapter);
-    state->palette = rtf_palette_for(state->theme);
+    /* 外観ポートも値で写して持つ（ADR 0031 の決定 3）。adapter の寿命は合成ルートが保証する。 */
+    state->appearance = *appearance;
+    state->os_theme = appearance->read_theme(appearance->adapter);
+    state->theme_choice = FOLIO_THEME_CHOICE_SYSTEM;
+    state->palette = rtf_palette_for(folio_theme_resolve(state->theme_choice, state->os_theme));
     state->found = calloc(initial_matches, sizeof *state->found);
     state->found_capacity = initial_matches;
     if (state->found == nullptr ||
@@ -433,6 +470,10 @@ enum folio_state_outcome folio_state_create(const struct folio_ports *_Nonnull p
     if (outcome == FOLIO_STATE_READY)
     {
         outcome = load_settings(state, persistence);
+    }
+    if (outcome == FOLIO_STATE_READY)
+    {
+        outcome = adopt_theme_choice(state);
     }
     if (outcome != FOLIO_STATE_READY)
     {
@@ -804,7 +845,12 @@ enum folio_state_outcome folio_state_reveal_cursor(struct folio_state *_Nonnull 
 
 enum folio_theme folio_state_theme(const struct folio_state *_Nonnull state)
 {
-    return state->theme;
+    return folio_theme_resolve(state->theme_choice, state->os_theme);
+}
+
+enum folio_theme_choice folio_state_theme_choice(const struct folio_state *_Nonnull state)
+{
+    return state->theme_choice;
 }
 
 enum folio_state_outcome folio_state_settings_notice(const struct folio_state *_Nonnull state)
@@ -853,6 +899,70 @@ enum folio_state_outcome folio_state_set_number(struct folio_state *_Nonnull sta
     }
     folio_settings_destroy(state->settings);
     state->settings = changed;
+    return FOLIO_STATE_READY;
+}
+
+enum folio_state_outcome folio_state_set_theme(struct folio_state *_Nonnull state,
+                                               enum folio_theme_choice choice)
+{
+    if (state->settings_notice != FOLIO_STATE_READY)
+    {
+        return state->settings_notice;
+    }
+    if (folio_settings_theme(state->settings) == choice)
+    {
+        return FOLIO_STATE_READY;
+    }
+    struct folio_settings *_Nullable changed = nullptr;
+    if (folio_settings_with_theme(state->settings, choice, &changed) != FOLIO_SETTINGS_READY)
+    {
+        return FOLIO_STATE_OUT_OF_MEMORY;
+    }
+    /* 設定と閲覧文書を両方先に作ってから書く。どちらかが作れなければファイルも状態も変えない
+     * （ADR 0031 の決定 3）。 */
+    struct rtf_palette palette = rtf_palette_for(folio_theme_resolve(choice, state->os_theme));
+    struct markdown_rtf *_Nullable pane = nullptr;
+    if (!render_pane_document(state, palette, &pane))
+    {
+        folio_settings_destroy(changed);
+        return FOLIO_STATE_OUT_OF_MEMORY;
+    }
+    enum folio_state_outcome stored =
+        from_settings_store(state->port.write_settings(state->port.adapter, changed));
+    if (stored != FOLIO_STATE_READY)
+    {
+        folio_settings_destroy(changed);
+        markdown_rtf_destroy(pane);
+        return stored;
+    }
+    folio_settings_destroy(state->settings);
+    state->settings = changed;
+    markdown_rtf_destroy(state->pane);
+    state->pane = pane;
+    state->palette = palette;
+    state->theme_choice = choice;
+    return FOLIO_STATE_READY;
+}
+
+enum folio_state_outcome folio_state_refresh_theme(struct folio_state *_Nonnull state)
+{
+    enum folio_theme os_theme = state->appearance.read_theme(state->appearance.adapter);
+    struct rtf_palette palette =
+        rtf_palette_for(folio_theme_resolve(state->theme_choice, os_theme));
+    if (folio_theme_resolve(state->theme_choice, os_theme) == folio_state_theme(state))
+    {
+        state->os_theme = os_theme;
+        return FOLIO_STATE_READY;
+    }
+    struct markdown_rtf *_Nullable pane = nullptr;
+    if (!render_pane_document(state, palette, &pane))
+    {
+        return FOLIO_STATE_OUT_OF_MEMORY;
+    }
+    markdown_rtf_destroy(state->pane);
+    state->pane = pane;
+    state->palette = palette;
+    state->os_theme = os_theme;
     return FOLIO_STATE_READY;
 }
 

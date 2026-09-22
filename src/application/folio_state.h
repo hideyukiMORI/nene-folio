@@ -36,8 +36,25 @@ struct replace_edit;
 [[nodiscard]] enum folio_state_outcome
 folio_state_create(const struct folio_ports *_Nonnull ports,
                    struct folio_state *_Nullable *_Nonnull out);
-/* 起動時に読んだテーマ。 */
+/* 描画に使うテーマ（ADR 0031 の決定 3）。選択が SYSTEM なら直近に読んだ OS の値を通す。 */
 [[nodiscard]] enum folio_theme folio_state_theme(const struct folio_state *_Nonnull state);
+/* 利用者が選んでいるテーマ。設定画面の印はこの値に付く（解決値ではない）。 */
+[[nodiscard]] enum folio_theme_choice
+folio_state_theme_choice(const struct folio_state *_Nonnull state);
+/* テーマの選択を変える意図（ADR 0031 の決定 3）。**新しい設定と新しい閲覧文書を先に作り、
+ * data/settings.json へ書けてから採用する**ので、表示と保存が食い違わない。
+ * いまと同じ選択なら書かずに READY。作れなければ OUT_OF_MEMORY、書けなければ
+ * SETTINGS_STORE_FAILED で、どちらもファイルも状態も変えない。設定が読めていなければ
+ * SETTINGS_UNREADABLE（folio_state_set_number と同じ値で断り、上書きもしない）。
+ * 設定は md・台帳・.rename.json と独立なので、未完了の改名の再開は通さない。 */
+[[nodiscard]] enum folio_state_outcome folio_state_set_theme(struct folio_state *_Nonnull state,
+                                                             enum folio_theme_choice choice);
+/* OS の「アプリのモード」を読み直す意図（ADR 0031 の決定 3 / 4）。主窓が WM_SETTINGCHANGE
+ * （ImmersiveColorSet）で呼ぶ。解決値が変わったときだけ閲覧文書を作り直す。設定は書かない。
+ * 作れなければ OUT_OF_MEMORY で状態は変わらない。変わったかは UI が folio_state_theme を
+ * 前後で比べて決める。 */
+[[nodiscard]] enum folio_state_outcome
+folio_state_refresh_theme(struct folio_state *_Nonnull state);
 /* 起動時に読んだ設定の知らせ（ADR 0025 の決定 6）。読めていれば READY、
  * 壊れている・未知の版・読めないなら SETTINGS_UNREADABLE。合成ルートが窓を作る前に 1 回だけ
  * 尋ね、READY でなければ既存の 1 行で見せて起動を続ける（「見せたか」はどこにも持たない）。 */
