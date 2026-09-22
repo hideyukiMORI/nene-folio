@@ -1,15 +1,11 @@
 #include "note_search.h"
 
+#include "ascii_fold.h"
+
 constexpr char16_t high_surrogate_first = 0xD800;
 constexpr char16_t high_surrogate_last = 0xDBFF;
 constexpr char16_t low_surrogate_first = 0xDC00;
 constexpr char16_t low_surrogate_last = 0xDFFF;
-
-/* ASCII の英字だけ大小を無視する（ADR 0023 の決定 2）。他の文字は触らない。 */
-static char16_t folded(char16_t unit)
-{
-    return unit >= u'A' && unit <= u'Z' ? (char16_t)(unit + (u'a' - u'A')) : unit;
-}
 
 static bool high_surrogate(char16_t unit)
 {
@@ -74,7 +70,7 @@ static bool matches_at(const struct note_search_query *_Nonnull query, size_t at
 {
     for (size_t index = 0; index < query->term_length; ++index)
     {
-        if (folded(query->text[at + index]) != folded(query->term[index]))
+        if (ascii_fold_unit(query->text[at + index]) != ascii_fold_unit(query->term[index]))
         {
             return false;
         }

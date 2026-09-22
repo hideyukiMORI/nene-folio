@@ -4,6 +4,7 @@
 #include "appearance_port.h"
 #include "category_ledger.h"
 #include "drawer_layout.h"
+#include "folio_language.h"
 #include "folio_settings.h"
 #include "folio_state.h"
 #include "json_reader.h"
@@ -23,6 +24,7 @@
 #include "replace_edit.h"
 #include "replace_template.h"
 #include "rtf_palette.h"
+#include "ui_font.h"
 #include "unit_tests.h"
 #include "utf16_text.h"
 #include "utf8_text.h"
@@ -236,8 +238,8 @@ static bool markdown_scenario(void)
     }
     require(accepted == NOTE_TEXT_ACCEPTED, "note under probe");
     struct markdown_rtf *rtf = nullptr;
-    enum markdown_rtf_outcome converted =
-        markdown_rtf_create(text, rtf_palette_for(FOLIO_THEME_DARK), &rtf);
+    enum markdown_rtf_outcome converted = markdown_rtf_create(
+        text, rtf_palette_for(FOLIO_THEME_DARK), ui_font_face(FOLIO_LANGUAGE_JA), &rtf);
     note_text_destroy(text);
     if (converted == MARKDOWN_RTF_OUT_OF_MEMORY)
     {
@@ -657,6 +659,16 @@ static bool settings_scenario(void)
         return false;
     }
     require(themed == FOLIO_SETTINGS_READY, "settings theme copy under probe");
+    struct folio_settings *spoken = nullptr;
+    enum folio_settings_outcome languaged =
+        folio_settings_with_language(changed, FOLIO_LANGUAGE_ZH_HANS, &spoken);
+    folio_settings_destroy(changed);
+    if (languaged == FOLIO_SETTINGS_OUT_OF_MEMORY)
+    {
+        return false;
+    }
+    require(languaged == FOLIO_SETTINGS_READY, "settings language copy under probe");
+    changed = spoken;
     struct json_writer *writer = nullptr;
     if (json_writer_create(&writer) != JSON_WRITER_ACCEPTED)
     {

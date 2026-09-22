@@ -22,6 +22,7 @@
 #include "replace_edit.h"
 #include "replace_preview.h"
 #include "rtf_palette.h"
+#include "ui_font.h"
 #include "utf8_text.h"
 
 #include <stdlib.h>
@@ -398,16 +399,19 @@ static enum folio_state_outcome load_settings(struct folio_state *_Nonnull state
 }
 
 /* いまの文書と同じ作り方で閲覧の RTF を 1 つ作る（差し替えはしない・ADR 0031 の決定 3）。
- * 名前のある文書だけが本文を持ち、無題と何も選んでいない状態は空の文書である。 */
+ * 名前のある文書だけが本文を持ち、無題と何も選んでいない状態は空の文書である。
+ * **言語は引数で受ける**（ADR 0032 の決定 5）。採用前の新しい言語でも作れるようにするため、
+ * state からは引かない。 */
 static bool render_pane_document(const struct folio_state *_Nonnull state,
-                                 struct rtf_palette palette,
+                                 struct rtf_palette palette, enum folio_language language,
                                  struct markdown_rtf *_Nullable *_Nonnull out)
 {
+    const char *_Nonnull face = ui_font_face(language);
     if (state->document == FOLIO_DOCUMENT_NAMED)
     {
-        return markdown_rtf_create(state->body, palette, out) == MARKDOWN_RTF_CONVERTED;
+        return markdown_rtf_create(state->body, palette, face, out) == MARKDOWN_RTF_CONVERTED;
     }
-    return markdown_rtf_empty(palette, out) == MARKDOWN_RTF_CONVERTED;
+    return markdown_rtf_empty(palette, face, out) == MARKDOWN_RTF_CONVERTED;
 }
 
 /* 設定を読んだ後に選択を採り、palette と閲覧文書を解決したテーマの色で作り直す（決定 3）。
@@ -417,7 +421,7 @@ static enum folio_state_outcome adopt_theme_choice(struct folio_state *_Nonnull 
     enum folio_theme_choice choice = folio_settings_theme(state->settings);
     struct rtf_palette palette = rtf_palette_for(folio_theme_resolve(choice, state->os_theme));
     struct markdown_rtf *_Nullable pane = nullptr;
-    if (!render_pane_document(state, palette, &pane))
+    if (!render_pane_document(state, palette, folio_state_language(state), &pane))
     {
         return FOLIO_STATE_OUT_OF_MEMORY;
     }
@@ -448,7 +452,8 @@ enum folio_state_outcome folio_state_create(const struct folio_ports *_Nonnull p
     state->found = calloc(initial_matches, sizeof *state->found);
     state->found_capacity = initial_matches;
     if (state->found == nullptr ||
-        markdown_rtf_empty(state->palette, &state->pane) != MARKDOWN_RTF_CONVERTED ||
+        markdown_rtf_empty(state->palette, ui_font_face(FOLIO_LANGUAGE_JA), &state->pane) !=
+            MARKDOWN_RTF_CONVERTED ||
         note_text_create("", 0, &state->body) != NOTE_TEXT_ACCEPTED ||
         note_corpus_create(&state->corpus) != NOTE_CORPUS_ACCEPTED ||
         folio_settings_default(&state->settings) != FOLIO_SETTINGS_READY)
@@ -922,7 +927,7 @@ enum folio_state_outcome folio_state_set_theme(struct folio_state *_Nonnull stat
      * （ADR 0031 の決定 3）。 */
     struct rtf_palette palette = rtf_palette_for(folio_theme_resolve(choice, state->os_theme));
     struct markdown_rtf *_Nullable pane = nullptr;
-    if (!render_pane_document(state, palette, &pane))
+    if (!render_pane_document(state, palette, folio_state_language(state), &pane))
     {
         folio_settings_destroy(changed);
         return FOLIO_STATE_OUT_OF_MEMORY;
@@ -955,7 +960,7 @@ enum folio_state_outcome folio_state_refresh_theme(struct folio_state *_Nonnull 
         return FOLIO_STATE_READY;
     }
     struct markdown_rtf *_Nullable pane = nullptr;
-    if (!render_pane_document(state, palette, &pane))
+    if (!render_pane_document(state, palette, folio_state_language(state), &pane))
     {
         return FOLIO_STATE_OUT_OF_MEMORY;
     }
@@ -1423,7 +1428,8 @@ static enum folio_state_outcome render_note(struct folio_state *_Nonnull state,
         return FOLIO_STATE_NOTE_UNREADABLE;
     }
     struct markdown_rtf *_Nullable rendered = nullptr;
-    enum markdown_rtf_outcome converted = markdown_rtf_create(body, state->palette, &rendered);
+    enum markdown_rtf_outcome converted = markdown_rtf_create(
+        body, state->palette, ui_font_face(folio_state_language(state)), &rendered);
     if (converted != MARKDOWN_RTF_CONVERTED)
     {
         note_text_destroy(body);
@@ -1794,7 +1800,8 @@ enum folio_state_outcome folio_state_new_note(struct folio_state *_Nonnull state
     struct note_text *_Nullable body = nullptr;
     struct markdown_rtf *_Nullable pane = nullptr;
     if (note_text_create("", 0, &body) != NOTE_TEXT_ACCEPTED ||
-        markdown_rtf_empty(state->palette, &pane) != MARKDOWN_RTF_CONVERTED)
+        markdown_rtf_empty(state->palette, ui_font_face(folio_state_language(state)), &pane) !=
+            MARKDOWN_RTF_CONVERTED)
     {
         note_text_destroy(body);
         markdown_rtf_destroy(pane);
@@ -1862,7 +1869,8 @@ static enum folio_state_outcome store_edited(struct folio_state *_Nonnull state,
         return archived;
     }
     struct markdown_rtf *_Nullable rendered = nullptr;
-    if (markdown_rtf_create(edited, state->palette, &rendered) != MARKDOWN_RTF_CONVERTED)
+    if (markdown_rtf_create(edited, state->palette, ui_font_face(folio_state_language(state)),
+                            &rendered) != MARKDOWN_RTF_CONVERTED)
     {
         note_text_destroy(edited);
         return FOLIO_STATE_OUT_OF_MEMORY;
@@ -1961,7 +1969,8 @@ static enum folio_state_outcome create_edited(struct folio_state *_Nonnull state
     enum folio_state_outcome prepared =
         from_note_ledger(note_ledger_inserted(state->notes[category], index, name, &ledger));
     if (prepared == FOLIO_STATE_READY &&
-        markdown_rtf_create(edited, state->palette, &rendered) != MARKDOWN_RTF_CONVERTED)
+        markdown_rtf_create(edited, state->palette, ui_font_face(folio_state_language(state)),
+                            &rendered) != MARKDOWN_RTF_CONVERTED)
     {
         prepared = FOLIO_STATE_OUT_OF_MEMORY;
     }

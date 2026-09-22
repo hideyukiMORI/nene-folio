@@ -1,7 +1,9 @@
+#include "folio_language.h"
 #include "markdown_rtf.h"
 #include "note_text.h"
 #include "rtf_palette.h"
 #include "text_buffer.h"
+#include "ui_font.h"
 #include "unit_tests.h"
 
 #include <stdio.h>
@@ -19,8 +21,8 @@ static void expect_body(const char *_Nonnull markdown, const char *_Nonnull expe
     struct note_text *text = nullptr;
     require(note_text_create(markdown, strlen(markdown), &text) == NOTE_TEXT_ACCEPTED, markdown);
     struct markdown_rtf *rtf = nullptr;
-    require(markdown_rtf_create(text, rtf_palette_for(FOLIO_THEME_LIGHT), &rtf) ==
-                MARKDOWN_RTF_CONVERTED,
+    require(markdown_rtf_create(text, rtf_palette_for(FOLIO_THEME_LIGHT),
+                                ui_font_face(FOLIO_LANGUAGE_JA), &rtf) == MARKDOWN_RTF_CONVERTED,
             "convert");
     const char *whole = markdown_rtf_text(rtf);
     size_t length = markdown_rtf_length(rtf);
@@ -148,13 +150,14 @@ static void verify_note_text(void)
     note_text_destroy(text);
     note_text_destroy(nullptr);
     struct markdown_rtf *rtf = nullptr;
-    require(markdown_rtf_empty(rtf_palette_for(FOLIO_THEME_LIGHT), &rtf) ==
-                    MARKDOWN_RTF_CONVERTED &&
+    require(markdown_rtf_empty(rtf_palette_for(FOLIO_THEME_LIGHT), ui_font_face(FOLIO_LANGUAGE_JA),
+                               &rtf) == MARKDOWN_RTF_CONVERTED &&
                 markdown_rtf_length(rtf) == strlen(header) + 1 &&
                 same_text(markdown_rtf_text(rtf) + strlen(header), "}"),
             "empty document");
     markdown_rtf_destroy(rtf);
-    require(markdown_rtf_empty(rtf_palette_for(FOLIO_THEME_DARK), &rtf) == MARKDOWN_RTF_CONVERTED &&
+    require(markdown_rtf_empty(rtf_palette_for(FOLIO_THEME_DARK), ui_font_face(FOLIO_LANGUAGE_JA),
+                               &rtf) == MARKDOWN_RTF_CONVERTED &&
                 strstr(markdown_rtf_text(rtf), "\\red239\\green228\\blue234;") != nullptr,
             "dark palette in the color table");
     markdown_rtf_destroy(rtf);
@@ -183,9 +186,47 @@ static void verify_text_buffer(void)
     text_buffer_destroy(nullptr);
 }
 
+/* fonttbl の \\f0 は引数で受けた face で、コードの \\f1 は Consolas のまま（ADR 0032 の決定 5）。
+ */
+static void expect_face(enum folio_language language)
+{
+    const char *face = ui_font_face(language);
+    char wanted[64];
+    int written = snprintf(wanted, sizeof wanted, "{\\f0\\fnil %s;}", face);
+    require(written > 0 && (size_t)written < sizeof wanted, "the fonttbl entry fits");
+    struct markdown_rtf *rtf = nullptr;
+    require(markdown_rtf_empty(rtf_palette_for(FOLIO_THEME_LIGHT), face, &rtf) ==
+                MARKDOWN_RTF_CONVERTED,
+            "the empty document is built with the face");
+    require(strstr(markdown_rtf_text(rtf), wanted) != nullptr, "the face is in the fonttbl");
+    require(strstr(markdown_rtf_text(rtf), "{\\f1\\fmodern Consolas;}") != nullptr,
+            "the code font stays Consolas");
+    markdown_rtf_destroy(rtf);
+}
+
+static void verify_fonttbl(void)
+{
+    for (size_t index = 0; index < folio_language_count; ++index)
+    {
+        expect_face((enum folio_language)index);
+    }
+    struct note_text *text = nullptr;
+    require(note_text_create("abc", 3, &text) == NOTE_TEXT_ACCEPTED, "note");
+    struct markdown_rtf *rtf = nullptr;
+    require(markdown_rtf_create(text, rtf_palette_for(FOLIO_THEME_DARK),
+                                ui_font_face(FOLIO_LANGUAGE_ZH_HANS),
+                                &rtf) == MARKDOWN_RTF_CONVERTED,
+            "a document with a body is built with the face too");
+    note_text_destroy(text);
+    require(strstr(markdown_rtf_text(rtf), "Microsoft YaHei UI;") != nullptr,
+            "the simplified Chinese face reaches the fonttbl");
+    markdown_rtf_destroy(rtf);
+}
+
 void run_markdown_tests(void)
 {
     verify_paragraphs();
+    verify_fonttbl();
     verify_unicode();
     verify_headings();
     verify_emphasis();

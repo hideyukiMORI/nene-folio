@@ -1,5 +1,6 @@
 #include "folio_command.h"
 
+#include "ascii_fold.h"
 #include "ui_text.h"
 
 #include <string.h>
@@ -209,6 +210,22 @@ static bool find_alias(const char *_Nonnull text, size_t length, enum folio_comm
     return false;
 }
 
+/* at の位置から query が始まるか。ASCII の英字だけ大小を無視する（ADR 0032 の決定 8）。 */
+static bool folded_at(const char *_Nonnull text, const char *_Nonnull query, size_t query_length,
+                      size_t at)
+{
+    for (size_t index = 0; index < query_length; ++index)
+    {
+        if (ascii_fold_byte(text[at + index]) != ascii_fold_byte(query[index]))
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+/* パレットの部分一致（label と別名）。空の語は全件。Ex の完全一致は大小を区別したままで、
+ * ここは通らない（ADR 0016 の 2026-09-23 の補正 3）。 */
 static bool contains_span(const char *_Nonnull text, size_t length, const char *_Nonnull query,
                           size_t query_length)
 {
@@ -222,7 +239,7 @@ static bool contains_span(const char *_Nonnull text, size_t length, const char *
     }
     for (size_t index = 0; index <= length - query_length; ++index)
     {
-        if (memcmp(text + index, query, query_length) == 0)
+        if (folded_at(text, query, query_length, index))
         {
             return true;
         }

@@ -1,3 +1,4 @@
+#include "ascii_fold.h"
 #include "folio_command.h"
 #include "folio_language.h"
 #include "unit_tests.h"
@@ -244,6 +245,41 @@ static void verify_catalog(void)
             "the operations menu finds it by label");
 }
 
+/* ASCII の英字だけ大小を無視する（ADR 0032 の決定 8）。3 か所が引く唯一の規則である。 */
+static void verify_ascii_fold(void)
+{
+    require(ascii_fold_byte('A') == 'a' && ascii_fold_byte('Z') == 'z', "upper folds to lower");
+    require(ascii_fold_byte('a') == 'a' && ascii_fold_byte('0') == '0' &&
+                ascii_fold_byte('@') == '@' && ascii_fold_byte('[') == '[',
+            "the neighbours of the letters are untouched");
+    require(ascii_fold_byte((char)0xE6) == (char)0xE6,
+            "a byte of a multi-byte sequence is untouched");
+    require(ascii_fold_unit(u'A') == u'a' && ascii_fold_unit(u'z') == u'z' &&
+                ascii_fold_unit(u'0') == u'0',
+            "the UTF-16 unit folds the same way");
+    require(ascii_fold_unit(0x00C0) == 0x00C0, "a non-ASCII unit is untouched");
+}
+
+/* パレットの部分一致は ASCII の英字だけ大小を無視する。Ex の完全一致は区別したまま
+ * （ADR 0016 の 2026-09-23 の補正 3）。 */
+static void verify_case_insensitive_palette(void)
+{
+    require(
+        folio_command_matches(FOLIO_COMMAND_SAVE_AS, "SAVEAS", strlen("SAVEAS"), FOLIO_LANGUAGE_JA),
+        "an alias matches whatever the case");
+    require(folio_command_matches(FOLIO_COMMAND_SAVE, "save", strlen("save"), FOLIO_LANGUAGE_EN),
+            "the English label matches a lower case query");
+    require(folio_command_matches(FOLIO_COMMAND_SAVE, "SAVE", strlen("SAVE"), FOLIO_LANGUAGE_EN),
+            "and an upper case query");
+    require(!folio_command_matches(FOLIO_COMMAND_SAVE, "zz", strlen("zz"), FOLIO_LANGUAGE_EN),
+            "a mismatch is still a mismatch");
+    /* 完全一致は区別する: `W` は別名ではない（verify_rejections も同じ行を持つ）。 */
+    enum folio_command command = FOLIO_COMMAND_HELP;
+    size_t argument = 0;
+    require(!folio_command_parse("W", 1, &command, &argument),
+            "the Ex parser still tells the case apart");
+}
+
 void run_command_tests(void)
 {
     verify_aliases();
@@ -252,4 +288,6 @@ void run_command_tests(void)
     verify_options();
     verify_substitute();
     verify_listed();
+    verify_ascii_fold();
+    verify_case_insensitive_palette();
 }

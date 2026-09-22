@@ -1,6 +1,7 @@
 /* 利用者に見える文言の ID（ADR 0030 の決定 1）。閉じた列挙で、文言そのものは ui_text.c の
  * 表 1 か所だけが持つ。表の網羅は CNF-009（eng/conformance-rules.json の lineTables）が守り、
  * 直書きの再発は CNF-010 が拒む（C-018）。
+ * 表は言語ごとの列を持ち（ADR 0032 の決定 2）、列の網羅は CNF-011 が字句で守る。
  * 群: FAILURE（folio_state_outcome と 1 対 1）・COMMAND（folio_command と 1 対 1）・HELP・
  * STATUS・ACTION・CHIP・PROMPT・APP・GLYPH・PLACEHOLDER・TITLE・EMPTY。
  * 置換子（{k} {n} {offset} {name} {from} {to}）を持つ文言は ui_text_format が埋める。 */
@@ -89,6 +90,7 @@ enum ui_text : unsigned char
     UI_TEXT_HELP_INDEX_COMMAND,
     UI_TEXT_HELP_EX_SET_NUMBER,
     UI_TEXT_HELP_EX_SET_THEME,
+    UI_TEXT_HELP_EX_SET_LANGUAGE,
     UI_TEXT_HELP_REPLACE_FIELD,
     UI_TEXT_HELP_EX_SUBSTITUTE,
     UI_TEXT_HELP_SEARCH_KEYS,
@@ -128,6 +130,10 @@ enum ui_text : unsigned char
     UI_TEXT_SETTINGS_THEME_SYSTEM,
     UI_TEXT_SETTINGS_THEME_LIGHT,
     UI_TEXT_SETTINGS_THEME_DARK,
+    UI_TEXT_SETTINGS_LANGUAGE,
+    UI_TEXT_SETTINGS_LANGUAGE_JA,
+    UI_TEXT_SETTINGS_LANGUAGE_EN,
+    UI_TEXT_SETTINGS_LANGUAGE_ZH_HANS,
     UI_TEXT_SETTINGS_GUIDANCE,
     UI_TEXT_APP_LOGO,
     UI_TEXT_GLYPH_MINUS,
@@ -156,7 +162,7 @@ enum ui_text : unsigned char
 };
 
 /* 表を 1 回引く。UTF-8 の終端付きで、長さは strlen で取る。表の外の値へは落ちない
- * （ADR 0027 の決定 3 と同じ）。language はこの単位では JA の 1 値だけ。 */
+ * （ADR 0027 の決定 3 と同じ）。id が行・language が列で、列の網羅は CNF-011 が守る。 */
 [[nodiscard]] const char *_Nonnull ui_text_line(enum ui_text id, enum folio_language language);
 /* 表の文言を写しながら `{k}` `{n}` `{offset}` `{name}` `{from}` `{to}` を埋める（決定 3）。
  * **埋めた内容は再走査しない**（`{k}` という名前のノートが壊れない）。
