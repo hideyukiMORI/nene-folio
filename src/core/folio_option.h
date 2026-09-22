@@ -11,7 +11,11 @@ enum folio_option : unsigned char
     /* 表示のテーマ（ADR 0031 の決定 8(c)）。語を足すだけで parser は変えない */
     FOLIO_OPTION_THEME_SYSTEM, /* theme=system */
     FOLIO_OPTION_THEME_LIGHT,  /* theme=light */
-    FOLIO_OPTION_THEME_DARK    /* theme=dark */
+    FOLIO_OPTION_THEME_DARK,   /* theme=dark */
+    /* 表示言語（ADR 0032 の決定 7）。語を足すだけで parser は変えない */
+    FOLIO_OPTION_LANGUAGE_JA,     /* language=ja */
+    FOLIO_OPTION_LANGUAGE_EN,     /* language=en */
+    FOLIO_OPTION_LANGUAGE_ZH_HANS /* language=zh-Hans */
 };
 
 #endif

@@ -7,7 +7,13 @@
  *   - "このノート内を検索  "（folio_window.c の search_direction_label）
  *   - "実行ファイルの場所が取得できません。"（main.c の adapter_failure）
  * 確保に失敗したときの退避の文言（name_prompt.c の「エラー表示の記憶域が不足しています。…」）も、
- * 確保そのものが無くなるので消える（決定 5）。 */
+ * 確保そのものが無くなるので消える（決定 5）。
+ *
+ * #76（ADR 0032）で期待表が動いたのは次の 2 種類だけである:
+ *   - 構文の見本を ASCII に揃えた 2 件（HELP_EX_SUBSTITUTE と COMMAND_SUBSTITUTE の
+ *     「パターン／置換」→ `pattern` / `replacement`。決定 3）
+ *   - この単位で新しく足した 5 つの ID（HELP_EX_SET_LANGUAGE・SETTINGS_LANGUAGE と 3 つの自称） */
+#include "folio_command.h"
 #include "folio_language.h"
 #include "ui_text.h"
 #include "ui_text_request.h"
@@ -99,7 +105,8 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_COMMAND_SET] = "設定を変える（:set number）",
     [UI_TEXT_COMMAND_TOGGLE_NUMBER] = "行番号の表示を切り替える",
     [UI_TEXT_COMMAND_REPLACE] = "置換",
-    [UI_TEXT_COMMAND_SUBSTITUTE] = "正規表現で置換（:%s/前/後/g）",
+    /* #76 で構文の見本だけ ASCII に揃えた（括弧の外の日本語はそのまま・決定 3）。 */
+    [UI_TEXT_COMMAND_SUBSTITUTE] = "正規表現で置換（:%s/pattern/replacement/g）",
     [UI_TEXT_COMMAND_SETTINGS] = "設定",
     [UI_TEXT_HELP_PALETTE] = "一覧  ↑↓ 選択 / Enter 実行 / Esc 戻る / Tab 説明",
     [UI_TEXT_HELP_EDITOR_MOTION] = "編集本文  Ctrl+h/j/k/l ←/↓/↑/→",
@@ -115,10 +122,12 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_HELP_EX_SET_NUMBER] =
         "Ex  :set number / :set nonumber / :set nu!（編集中の原文の行番号）",
     [UI_TEXT_HELP_EX_SET_THEME] = "Ex  :set theme=system / :set theme=light / :set theme=dark",
+    [UI_TEXT_HELP_EX_SET_LANGUAGE] =
+        "Ex  :set language=ja / :set language=en / :set language=zh-Hans",
     [UI_TEXT_HELP_REPLACE_FIELD] =
         "置換欄  Tab 欄を移動 / Enter 1 件 / Ctrl+Enter すべて / Esc 閉じる",
     [UI_TEXT_HELP_EX_SUBSTITUTE] =
-        "Ex  :%s/パターン/置換/[g]（g なしは各行の最初の一致・正規表現）",
+        "Ex  :%s/pattern/replacement/[g]（g なしは各行の最初の一致・正規表現）",
     [UI_TEXT_HELP_SEARCH_KEYS] = "索引・閲覧本文  / 次を検索 / ? 前を検索 / n・N 繰り返し",
     [UI_TEXT_HELP_SEARCH_STEP] = "全区画  F3 次の一致 / Shift+F3 前の一致（向きは変えない）",
     [UI_TEXT_HELP_SEARCH_FIELD] = "検索欄  Enter 次 / Shift+Enter 逆 / Esc 閉じる（選択は残る）",
@@ -160,6 +169,10 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_SETTINGS_THEME_SYSTEM] = "OS に従う",
     [UI_TEXT_SETTINGS_THEME_LIGHT] = "ライト",
     [UI_TEXT_SETTINGS_THEME_DARK] = "ダーク",
+    [UI_TEXT_SETTINGS_LANGUAGE] = "言語",
+    [UI_TEXT_SETTINGS_LANGUAGE_JA] = "日本語",
+    [UI_TEXT_SETTINGS_LANGUAGE_EN] = "English",
+    [UI_TEXT_SETTINGS_LANGUAGE_ZH_HANS] = "简体中文",
     [UI_TEXT_SETTINGS_GUIDANCE] = "↑↓ 選択 / Enter 採用 / Esc 戻る",
     [UI_TEXT_APP_LOGO] = "NENE FOLIO",
     [UI_TEXT_GLYPH_MINUS] = "−",
@@ -215,15 +228,19 @@ static void verify_identity(void)
     }
 }
 
-/* 空なのは UI_TEXT_EMPTY だけ。全 ID が上限に収まる。 */
+/* 空なのは UI_TEXT_EMPTY だけ。全 ID × 全言語が上限に収まる（ADR 0032 の検証）。 */
 static void verify_lines(void)
 {
     for (size_t index = 0; index < expected_count; ++index)
     {
-        const char *_Nonnull line = ui_text_line((enum ui_text)index, FOLIO_LANGUAGE_JA);
-        require((index == UI_TEXT_EMPTY) == (line[0] == '\0'),
-                "only UI_TEXT_EMPTY is the empty string");
-        require(utf16_units_of(line) <= ui_text_unit_limit, "the line fits in UTF-16");
+        for (size_t column = 0; column < folio_language_count; ++column)
+        {
+            const char *_Nonnull line =
+                ui_text_line((enum ui_text)index, (enum folio_language)column);
+            require((index == UI_TEXT_EMPTY) == (line[0] == '\0'),
+                    "only UI_TEXT_EMPTY is the empty string, in every column");
+            require(utf16_units_of(line) <= ui_text_unit_limit, "the line fits in UTF-16");
+        }
     }
 }
 
@@ -242,16 +259,23 @@ static bool known_at(const char *_Nonnull line, size_t at)
     return false;
 }
 
+static void verify_braces_of(const char *_Nonnull line)
+{
+    for (size_t at = 0; line[at] != '\0'; ++at)
+    {
+        require(line[at] != '}' || at > 0, "a closing brace never starts a line");
+        require(line[at] != '{' || known_at(line, at),
+                "every brace in the catalog starts one of the six placeholders");
+    }
+}
+
 static void verify_placeholders(void)
 {
     for (size_t index = 0; index < expected_count; ++index)
     {
-        const char *_Nonnull line = ui_text_line((enum ui_text)index, FOLIO_LANGUAGE_JA);
-        for (size_t at = 0; line[at] != '\0'; ++at)
+        for (size_t column = 0; column < folio_language_count; ++column)
         {
-            require(line[at] != '}' || at > 0, "a closing brace never starts a line");
-            require(line[at] != '{' || known_at(line, at),
-                    "every brace in the catalog starts one of the six placeholders");
+            verify_braces_of(ui_text_line((enum ui_text)index, (enum folio_language)column));
         }
     }
 }
@@ -368,12 +392,127 @@ static void verify_fill(void)
     require(written == 99, "a malformed fill does not touch written");
 }
 
+/* 訳してはいけない鍵の名前（ADR 0032 の決定 3 の一覧）。語順や区切りは訳してよいが、
+ * この綴りが ja の行にあれば en と zh-Hans の同じ行にも無ければならない。 */
+static const char *_Nonnull const key_names[] = {
+    "Ctrl+h/j/k/l",
+    "Ctrl+P",
+    "Ctrl+F",
+    "Ctrl+Shift+F",
+    "Ctrl+N",
+    "Ctrl+S",
+    "Ctrl+Shift+S",
+    "Ctrl+Enter",
+    "F1",
+    "F2",
+    "F3",
+    "Shift+F3",
+    "Shift+Enter",
+    "PgUp",
+    "PgDn",
+    "Esc",
+    "Enter",
+    "Tab",
+    "gg",
+    "G",
+    "j",
+    "k",
+    "h",
+    "l",
+    "n",
+    "N",
+    "i",
+    ":",
+    "/",
+    "?",
+    "↑",
+    "↓",
+    "←",
+    "→",
+    "↑↓",
+};
+
+/* `:set` の語。folio_command.c の options[] が正本なので、綴りは parse で確かめてから使う
+ * （表から語を消すとこの単体が先に落ちる）。 */
+static const char *_Nonnull const option_words[] = {
+    "number",       "nu",
+    "nonumber",     "nonu",
+    "number!",      "nu!",
+    "invnumber",    "invnu",
+    "theme=system", "theme=light",
+    "theme=dark",   "language=ja",
+    "language=en",  "language=zh-Hans",
+};
+
+static bool holds(const char *_Nonnull line, const char *_Nonnull word)
+{
+    return strstr(line, word) != nullptr;
+}
+
+/* ja の行にある語彙は、同じ行の en と zh-Hans にも現れる（決定 3）。 */
+static void expect_vocabulary(enum ui_text id, const char *_Nonnull word)
+{
+    if (!holds(ui_text_line(id, FOLIO_LANGUAGE_JA), word))
+    {
+        return;
+    }
+    require(holds(ui_text_line(id, FOLIO_LANGUAGE_EN), word),
+            "a word of the closed vocabulary survives into English");
+    require(holds(ui_text_line(id, FOLIO_LANGUAGE_ZH_HANS), word),
+            "a word of the closed vocabulary survives into simplified Chinese");
+}
+
+static void verify_vocabulary_of(enum ui_text id)
+{
+    for (size_t index = 0; index < sizeof key_names / sizeof key_names[0]; ++index)
+    {
+        expect_vocabulary(id, key_names[index]);
+    }
+    for (size_t index = 0; index < sizeof option_words / sizeof option_words[0]; ++index)
+    {
+        expect_vocabulary(id, option_words[index]);
+    }
+    for (size_t item = 0; item < folio_command_count(); ++item)
+    {
+        enum folio_command command = folio_command_at(item);
+        for (size_t alias = 0; alias < folio_command_alias_count(command); ++alias)
+        {
+            expect_vocabulary(id, folio_command_alias(command, alias));
+        }
+    }
+}
+
+/* 表は言語ごとの列を持ち、閉じた語彙は訳さない（ADR 0032 の決定 2・3）。 */
 static void verify_language(void)
 {
-    /* この単位では 1 値だけ。単位 C が値を足したら表が 2 次元になる（ADR 0029 の決定 4）。 */
-    require(ui_text_line(UI_TEXT_COMMAND_SAVE, FOLIO_LANGUAGE_JA) ==
-                ui_text_line(UI_TEXT_COMMAND_SAVE, FOLIO_LANGUAGE_JA),
-            "the same id and language give the same line");
+    require(folio_language_count == 3, "the catalog has three columns");
+    require(strcmp(ui_text_line(UI_TEXT_COMMAND_SAVE, FOLIO_LANGUAGE_EN),
+                   ui_text_line(UI_TEXT_COMMAND_SAVE, FOLIO_LANGUAGE_JA)) != 0,
+            "the English column is a different line");
+    /* 言語の名前は各言語の自称なので 3 列とも同じである（決定 7）。 */
+    for (size_t column = 0; column < folio_language_count; ++column)
+    {
+        require(same_text(ui_text_line(UI_TEXT_SETTINGS_LANGUAGE_JA, (enum folio_language)column),
+                          ui_text_line(UI_TEXT_SETTINGS_LANGUAGE_JA, FOLIO_LANGUAGE_JA)),
+                "the endonym does not change with the column");
+    }
+    /* `:set` の語は folio_command が解けるものだけを語彙に置く。 */
+    for (size_t index = 0; index < sizeof option_words / sizeof option_words[0]; ++index)
+    {
+        enum folio_option option = FOLIO_OPTION_NUMBER_SHOW;
+        require(
+            folio_command_parse_option(option_words[index], strlen(option_words[index]), &option),
+            "every word of the vocabulary is a word folio_command knows");
+    }
+    for (size_t id = UI_TEXT_COMMAND_SAVE; id <= UI_TEXT_COMMAND_SETTINGS; ++id)
+    {
+        verify_vocabulary_of((enum ui_text)id);
+    }
+    for (size_t id = UI_TEXT_HELP_PALETTE; id <= UI_TEXT_HELP_EDITOR_ESCAPE; ++id)
+    {
+        verify_vocabulary_of((enum ui_text)id);
+    }
+    verify_vocabulary_of(UI_TEXT_SETTINGS_GUIDANCE);
 }
 
 void run_ui_text_tests(void)

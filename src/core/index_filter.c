@@ -1,5 +1,6 @@
 #include "index_filter.h"
 
+#include "ascii_fold.h"
 #include "utf8_text.h"
 
 #include <stdlib.h>
@@ -15,21 +16,13 @@ struct index_filter
     size_t count;
 };
 
-/* ASCII の英字だけ大小を無視する（ADR 0024 の決定 2）。多バイト列のバイトは 0x80
- * 以上なので触らない。
- */
-static char folded(char value)
-{
-    return value >= 'A' && value <= 'Z' ? (char)(value + ('a' - 'A')) : value;
-}
-
 /* text の at から語が始まるか。 */
 static bool matches_at(const char *_Nonnull text, const char *_Nonnull term, size_t term_length,
                        size_t at)
 {
     for (size_t index = 0; index < term_length; ++index)
     {
-        if (folded(text[at + index]) != folded(term[index]))
+        if (ascii_fold_byte(text[at + index]) != ascii_fold_byte(term[index]))
         {
             return false;
         }
@@ -46,11 +39,11 @@ static bool contains(const char *_Nonnull text, size_t length, const char *_Nonn
     {
         return false;
     }
-    char head = folded(term[0]);
+    char head = ascii_fold_byte(term[0]);
     size_t limit = length - term_length + 1;
     for (size_t at = 0; at < limit; ++at)
     {
-        if (folded(text[at]) == head && matches_at(text, term, term_length, at))
+        if (ascii_fold_byte(text[at]) == head && matches_at(text, term, term_length, at))
         {
             return true;
         }

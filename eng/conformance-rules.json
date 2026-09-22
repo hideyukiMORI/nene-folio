@@ -15,6 +15,8 @@
     {"enum": "src/application/folio_state_outcome.h", "table": "tests/unit/state_tests.c", "prefix": "FOLIO_STATE_"},
     {"enum": "src/core/ui_text.h", "table": "src/core/ui_text.c", "prefix": "UI_TEXT_"},
     {"enum": "src/core/folio_theme_choice.h", "table": "src/core/folio_settings.c", "prefix": "FOLIO_THEME_CHOICE_"},
+    {"enum": "src/core/folio_language.h", "table": "src/core/folio_settings.c", "prefix": "FOLIO_LANGUAGE_"},
+    {"enum": "src/core/folio_language.h", "table": "src/core/ui_font.c", "prefix": "FOLIO_LANGUAGE_"},
     {"enum": "src/core/folio_command.h", "table": "src/core/folio_command.c", "prefix": "FOLIO_COMMAND_"},
     {"enum": "src/adapters/win32/persistence_adapter_outcome.h", "table": "src/app/main.c", "prefix": "PERSISTENCE_ADAPTER_"}
   ],
@@ -23,7 +25,10 @@
     "roots": ["src/"],
     "extensions": [".c", ".h"],
     "escapePrefixes": ["L", "u", "U"],
-    "escapeLetters": ["x", "u", "U"]
+    "escapeLetters": ["x", "u", "U"],
+    "entryPrefix": "UI_TEXT_",
+    "languages": {"enum": "src/core/folio_language.h", "prefix": "FOLIO_LANGUAGE_"},
+    "emptyAllowed": ["UI_TEXT_EMPTY"]
   },
   "cExtensions": [".c", ".h"],
   "configurationExtensions": [".ps1", ".cmake", ".yml", ".yaml"],

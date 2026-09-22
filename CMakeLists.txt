@@ -32,6 +32,7 @@ nenefolio_target(nenefolio_core core STATIC
     src/core/folio_settings.c src/core/folio_theme.c src/core/line_index.c
     src/core/replace_template.c src/core/replace_edit.c src/core/note_replace.c
     src/core/replace_preview.c
+    src/core/ascii_fold.c src/core/ui_font.c
     src/core/ui_text.c)
 nenefolio_target(nenefolio_application application STATIC src/application/folio_state.c)
 nenefolio_link(nenefolio_application nenefolio_core)
@@ -60,7 +61,8 @@ nenefolio_system_link(nenefolio_adapters icu)
 
 nenefolio_target(nenefolio_window ui_win32 STATIC
     src/ui/win32/drawer_window.c src/ui/win32/folio_window.c src/ui/win32/note_pane.c
-    src/ui/win32/folio_palette.c src/ui/win32/failure_box.c src/ui/win32/name_prompt.c)
+    src/ui/win32/folio_palette.c src/ui/win32/failure_box.c src/ui/win32/name_prompt.c
+    src/ui/win32/ui_face.c)
 nenefolio_link(nenefolio_window nenefolio_core)
 nenefolio_link(nenefolio_window nenefolio_application)
 nenefolio_system_link(nenefolio_window user32)

@@ -34,7 +34,6 @@ struct note_pane
 
 static const wchar_t library_name[] = L"Msftedit.dll";
 static const wchar_t class_name[] = L"RICHEDIT50W";
-static const wchar_t editor_face[] = L"Yu Gothic UI";
 /* TOMのGUIDはSDKのtom.hとMicrosoftのUse TOM GUIDsに従う（ADR 0019）。 */
 static const IID text_document_id = {
     0x8CC497C0, 0xA1DF, 0x11CE, {0x80, 0x98, 0x00, 0xAA, 0x00, 0x47, 0xBE, 0x5D}};
@@ -259,12 +258,12 @@ enum note_pane_outcome note_pane_create(HWND _Nonnull parent, COLORREF backgroun
     }
     SendMessageW(pane->handle, EM_SETBKGNDCOLOR, 0, (LPARAM)background);
     /* 平文の流し込みはこの既定書式で描かれる（RTF の流し込みは既定を壊さない・2026-09-09 実測）。
-     */
+     * **face はここでは決めない**（言語ごとの値の正本は core の ui_font で、
+     * 主窓が作った直後と言語の切り替えで note_pane_reface が当てる・ADR 0032 の決定 4）。 */
     CHARFORMAT2W format = {.cbSize = sizeof format,
-                           .dwMask = CFM_FACE | CFM_SIZE | CFM_COLOR,
+                           .dwMask = CFM_SIZE | CFM_COLOR,
                            .yHeight = editor_height,
                            .crTextColor = text};
-    memcpy(format.szFaceName, editor_face, sizeof editor_face);
     SendMessageW(pane->handle, EM_SETCHARFORMAT, SCF_DEFAULT, (LPARAM)&format);
     /* 鍵の通知を親の WM_NOTIFY へ上げる（Ctrl+S と Esc）。ENM_KEYEVENTS は消さない。
      * スクロールと本文の増減は番号の帯の契機なので足す（ADR 0026 の決定 4）。 */
@@ -637,6 +636,43 @@ void note_pane_recolor(struct note_pane *_Nonnull pane, COLORREF background, COL
         apply_text_color(pane, text, SCF_ALL);
     }
     apply_text_color(pane, text, SCF_DEFAULT);
+    document->lpVtbl->Undo(document, tomResume, nullptr);
+    document->lpVtbl->Release(document);
+    SendMessageW(pane->handle, EM_SETMODIFY, (WPARAM)(modified != 0), 0);
+}
+
+/* 既定書式の face だけを当て直す（ADR 0032 の決定 6）。色（note_pane_recolor）と同じ枠で、
+ * 本文・選択・Undo の段数・変更印は変わらない（実測 (c2)）。SCF_ALL は当てない
+ * （既定書式を継いでいる本文は既定書式の変更に追随する）。
+ * 再折り返しが起きるので、呼び出し側が論理行を退避・復元する。 */
+void note_pane_reface(struct note_pane *_Nonnull pane, const wchar_t *_Nonnull face)
+{
+    if (pane->handle == nullptr)
+    {
+        return;
+    }
+    CHARFORMAT2W format = {.cbSize = sizeof format, .dwMask = CFM_FACE};
+    size_t at = 0;
+    while (face[at] != L'\0')
+    {
+        if (at + 1 >= LF_FACESIZE)
+        {
+            return; /* 収まらない face は当てない（szFaceName は終端を含む） */
+        }
+        format.szFaceName[at] = face[at];
+        at += 1;
+    }
+    format.szFaceName[at] = L'\0';
+    /* 本文の表は face で幅が変わるので、次に番号を描くときに作り直す（ADR 0026 の決定 3）。 */
+    pane->lines_stale = true;
+    ITextDocument *_Nullable document = text_document(pane);
+    if (document == nullptr)
+    {
+        return; /* Undo を汚さない方を取る（note_pane_recolor と同じ判断） */
+    }
+    LRESULT modified = SendMessageW(pane->handle, EM_GETMODIFY, 0, 0);
+    document->lpVtbl->Undo(document, tomSuspend, nullptr);
+    SendMessageW(pane->handle, EM_SETCHARFORMAT, SCF_DEFAULT, (LPARAM)&format);
     document->lpVtbl->Undo(document, tomResume, nullptr);
     document->lpVtbl->Release(document);
     SendMessageW(pane->handle, EM_SETMODIFY, (WPARAM)(modified != 0), 0);

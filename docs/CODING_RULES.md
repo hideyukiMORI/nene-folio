@@ -172,8 +172,9 @@ HWND・HDC・HBITMAP・HFONT の所有者は 1 つで、作った関数と対に
 句の中の語と数は置換子（`{k}` `{n}` `{offset}` `{name}` `{from}` `{to}`）で埋め、語や数を連結しない（ADR 0030）。
 言語は application の `folio_state_language` が答え、core は「現在の言語」を持たない（ARC-005）。
 ファイル名・台帳のキー・`settings.json` のキー・Ex の別名・RTF の制御語・Win32 のクラス名と書体名は文言ではない。
+表は言語ごとの列を持ち、**全 ID の全列が埋まっていること**（訳し忘れと空の列が無いこと）は CNF-011 が守る（ADR 0032）。
 
-- 機械強制: **active**（CNF-010）
+- 機械強制: **active**（CNF-010。列の網羅は CNF-011）
 
 ---
 

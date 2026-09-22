@@ -65,6 +65,35 @@ def remove_table_entry(text: str, value: str) -> str:
     return text[:start] + text[end:]
 
 
+def remove_last_column(text: str, prefix: str) -> tuple[str, str]:
+    """Drop the last column of the final `[VALUE] = { ... }` entry, tracking string literals."""
+    starts = list(re.finditer(r"\[(" + re.escape(prefix) + r"\w+)\][ \t]*=[ \t\r\n]*\{", text))
+    if not starts:
+        raise RuntimeError(f"no {prefix} entry to strip")
+    match = starts[-1]
+    index, depth, inside, commas = match.end(), 1, False, []
+    while index < len(text):
+        character = text[index]
+        if inside:
+            inside = character != '"'
+            index += 2 if character == "\\" else 1
+            continue
+        if character == '"':
+            inside = True
+        elif character in "{[(":
+            depth += 1
+        elif character in "}])":
+            depth -= 1
+            if depth == 0:
+                break
+        elif character == "," and depth == 1:
+            commas.append(index)
+        index += 1
+    if not commas or index >= len(text):
+        raise RuntimeError(f"{match[1]} has no column to strip")
+    return text[:commas[-1]] + text[index:], match[1]
+
+
 COMPILER_PROBES = [
     ("QLT-002", "int main(void) { int unused; return 0; }\n", "-Wunused-variable"),
     ("QLT-002", "int lonely(void) { return 1; }\nint main(void) { return lonely() - 1; }\n", "-Wmissing-prototypes"),
@@ -173,6 +202,15 @@ def main() -> None:
         restoration = run(conformance, root, True)
         evidence.append({"rule": "CNF-010", "negative": result, "restorationExit": restoration["exitCode"]})
         print(f"CNF-010: display text outside {catalog['files'][0]} was rejected; restoration passed")
+        table = root / catalog["files"][0]
+        original = table.read_text(encoding="utf-8")
+        stripped, value = remove_last_column(original, catalog["entryPrefix"])
+        table.write_text(stripped, encoding="utf-8", newline="\n")
+        result = run(conformance, root, False, "CNF-011")
+        table.write_text(original, encoding="utf-8", newline="\n")
+        restoration = run(conformance, root, True)
+        evidence.append({"rule": "CNF-011", "negative": result, "restorationExit": restoration["exitCode"]})
+        print(f"CNF-011: dropping one language column from {value} was rejected; restoration passed")
     (output_root / "results.json").write_text(json.dumps(evidence, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(f"Gate proofs passed: {len(evidence)} real-tool proofs")
 

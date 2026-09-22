@@ -16,8 +16,8 @@ struct markdown_rtf
 
 /* フォント 0 が本文、1 がコード。色は 1 本文・2 見出し・3 薄字・4 リンク（インラインコードも）・
  * 5 コード文字・6 コード地（rtf_palette の順）。単位は半ポイント。 */
-static const char document_header[] =
-    "{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0\\fnil Yu Gothic UI;}{\\f1\\fmodern Consolas;}}";
+static const char document_header_open[] = "{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0\\fnil ";
+static const char document_header_close[] = ";}{\\f1\\fmodern Consolas;}}";
 static const char document_body_start[] = "\\f0\\fs22\\cf1";
 static const char document_footer[] = "}";
 static const char paragraph_start[] = "\\pard\\sa160\\sl300\\slmult1\\cf1 ";
@@ -430,11 +430,15 @@ static void append_color(struct text_buffer *_Nonnull out, struct rgb_color colo
     text_buffer_append_text(out, ";");
 }
 
-static void append_header(struct text_buffer *_Nonnull out, struct rtf_palette palette)
+static void append_header(struct text_buffer *_Nonnull out, struct rtf_palette palette,
+                          const char *_Nonnull face)
 {
     const struct rgb_color colors[] = {palette.text, palette.heading,   palette.muted,
                                        palette.link, palette.code_text, palette.code_background};
-    text_buffer_append_text(out, document_header);
+    /* fonttbl の face は実行時に挟む。文言ではないので ui_text には置かない（決定 5）。 */
+    text_buffer_append_text(out, document_header_open);
+    text_buffer_append_text(out, face);
+    text_buffer_append_text(out, document_header_close);
     text_buffer_append_text(out, "{\\colortbl;");
     for (size_t index = 0; index < sizeof colors / sizeof colors[0]; ++index)
     {
@@ -471,10 +475,13 @@ static void render_document(struct text_buffer *_Nonnull out, const char *_Nonnu
     text_buffer_append_text(out, document_footer);
 }
 
+/* text が nullptr なら空の文書。引数を 4 つに収めるため、本文の有無はここで見る（決定 5）。 */
 static enum markdown_rtf_outcome build(struct markdown_rtf *_Nullable *_Nonnull out,
-                                       struct rtf_palette palette, const char *_Nonnull text,
-                                       size_t length)
+                                       struct rtf_palette palette, const char *_Nonnull face,
+                                       const struct note_text *_Nullable text)
 {
+    const char *_Nonnull bytes = text == nullptr ? "" : note_text_bytes(text);
+    size_t length = text == nullptr ? 0 : note_text_length(text);
     struct markdown_rtf *_Nullable rtf = calloc(1, sizeof *rtf);
     if (rtf == nullptr)
     {
@@ -485,8 +492,8 @@ static enum markdown_rtf_outcome build(struct markdown_rtf *_Nullable *_Nonnull 
         free(rtf);
         return MARKDOWN_RTF_OUT_OF_MEMORY;
     }
-    append_header(rtf->buffer, palette);
-    render_document(rtf->buffer, text, length);
+    append_header(rtf->buffer, palette, face);
+    render_document(rtf->buffer, bytes, length);
     if (text_buffer_finish(rtf->buffer) != TEXT_BUFFER_ACCEPTED)
     {
         markdown_rtf_destroy(rtf);
@@ -497,16 +504,16 @@ static enum markdown_rtf_outcome build(struct markdown_rtf *_Nullable *_Nonnull 
 }
 
 enum markdown_rtf_outcome markdown_rtf_create(const struct note_text *_Nonnull text,
-                                              struct rtf_palette palette,
+                                              struct rtf_palette palette, const char *_Nonnull face,
                                               struct markdown_rtf *_Nullable *_Nonnull out)
 {
-    return build(out, palette, note_text_bytes(text), note_text_length(text));
+    return build(out, palette, face, text);
 }
 
-enum markdown_rtf_outcome markdown_rtf_empty(struct rtf_palette palette,
+enum markdown_rtf_outcome markdown_rtf_empty(struct rtf_palette palette, const char *_Nonnull face,
                                              struct markdown_rtf *_Nullable *_Nonnull out)
 {
-    return build(out, palette, "", 0);
+    return build(out, palette, face, nullptr);
 }
 
 const char *_Nonnull markdown_rtf_text(const struct markdown_rtf *_Nonnull rtf)

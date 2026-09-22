@@ -1,5 +1,6 @@
 #include "folio_command.h"
 
+#include "ascii_fold.h"
 #include "ui_text.h"
 
 #include <string.h>
@@ -54,12 +55,20 @@ static const struct
     const char *_Nonnull name;
     enum folio_option option;
 } options[] = {
-    {"number", FOLIO_OPTION_NUMBER_SHOW},        {"nu", FOLIO_OPTION_NUMBER_SHOW},
-    {"nonumber", FOLIO_OPTION_NUMBER_HIDE},      {"nonu", FOLIO_OPTION_NUMBER_HIDE},
-    {"number!", FOLIO_OPTION_NUMBER_TOGGLE},     {"nu!", FOLIO_OPTION_NUMBER_TOGGLE},
-    {"invnumber", FOLIO_OPTION_NUMBER_TOGGLE},   {"invnu", FOLIO_OPTION_NUMBER_TOGGLE},
-    {"theme=system", FOLIO_OPTION_THEME_SYSTEM}, {"theme=light", FOLIO_OPTION_THEME_LIGHT},
+    {"number", FOLIO_OPTION_NUMBER_SHOW},
+    {"nu", FOLIO_OPTION_NUMBER_SHOW},
+    {"nonumber", FOLIO_OPTION_NUMBER_HIDE},
+    {"nonu", FOLIO_OPTION_NUMBER_HIDE},
+    {"number!", FOLIO_OPTION_NUMBER_TOGGLE},
+    {"nu!", FOLIO_OPTION_NUMBER_TOGGLE},
+    {"invnumber", FOLIO_OPTION_NUMBER_TOGGLE},
+    {"invnu", FOLIO_OPTION_NUMBER_TOGGLE},
+    {"theme=system", FOLIO_OPTION_THEME_SYSTEM},
+    {"theme=light", FOLIO_OPTION_THEME_LIGHT},
     {"theme=dark", FOLIO_OPTION_THEME_DARK},
+    {"language=ja", FOLIO_OPTION_LANGUAGE_JA},
+    {"language=en", FOLIO_OPTION_LANGUAGE_EN},
+    {"language=zh-Hans", FOLIO_OPTION_LANGUAGE_ZH_HANS},
 };
 
 /* 引数の種類（ADR0020 / ADR0022 / ADR 0026）。閉じた集合なので増えたらここで落ちる。 */
@@ -209,6 +218,22 @@ static bool find_alias(const char *_Nonnull text, size_t length, enum folio_comm
     return false;
 }
 
+/* at の位置から query が始まるか。ASCII の英字だけ大小を無視する（ADR 0032 の決定 8）。 */
+static bool folded_at(const char *_Nonnull text, const char *_Nonnull query, size_t query_length,
+                      size_t at)
+{
+    for (size_t index = 0; index < query_length; ++index)
+    {
+        if (ascii_fold_byte(text[at + index]) != ascii_fold_byte(query[index]))
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+/* パレットの部分一致（label と別名）。空の語は全件。Ex の完全一致は大小を区別したままで、
+ * ここは通らない（ADR 0016 の 2026-09-23 の補正 3）。 */
 static bool contains_span(const char *_Nonnull text, size_t length, const char *_Nonnull query,
                           size_t query_length)
 {
@@ -222,7 +247,7 @@ static bool contains_span(const char *_Nonnull text, size_t length, const char *
     }
     for (size_t index = 0; index <= length - query_length; ++index)
     {
-        if (memcmp(text + index, query, query_length) == 0)
+        if (folded_at(text, query, query_length, index))
         {
             return true;
         }
