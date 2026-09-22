@@ -1820,9 +1820,10 @@ static void verify_failure_lines(void)
     const size_t count = sizeof expected_failure_lines / sizeof expected_failure_lines[0];
     for (size_t index = 0; index < count; ++index)
     {
-        require(same_text(folio_state_failure_line((enum folio_state_outcome)index),
-                          expected_failure_lines[index]),
-                "every failure line still reads exactly as before");
+        require(
+            same_text(folio_state_failure_line((enum folio_state_outcome)index, FOLIO_LANGUAGE_JA),
+                      expected_failure_lines[index]),
+            "every failure line still reads exactly as before");
     }
 }
 
@@ -2472,8 +2473,8 @@ static void verify_rename_halted(void)
     require(adapter.renames == 10 && adapter.last_attempt == RENAME_RESUME &&
                 adapter.note_writes == 0 && adapter.creates == 0 && adapter.moves == 0,
             "a halted intent blocks the same operations and only re-evaluates");
-    require(strcmp(folio_state_failure_line(FOLIO_STATE_RENAME_HALTED),
-                   folio_state_failure_line(FOLIO_STATE_RENAME_PENDING)) != 0,
+    require(strcmp(folio_state_failure_line(FOLIO_STATE_RENAME_HALTED, FOLIO_LANGUAGE_JA),
+                   folio_state_failure_line(FOLIO_STATE_RENAME_PENDING, FOLIO_LANGUAGE_JA)) != 0,
             "the two post-publication reasons read differently");
     adapter.rename_outcome = RENAME_COMPLETED;
     require(folio_state_store_note(state, u"", 0) == FOLIO_STATE_READY &&
@@ -2678,7 +2679,7 @@ static void verify_filtered_refusals(void)
             "and the expansion written with it is the ledger's own, not the filtered view");
     require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY, "a note can still be read");
     require(folio_state_begin_edit(state) == FOLIO_STATE_READY, "and edited");
-    require(same_text(folio_state_failure_line(FOLIO_STATE_FILTERED),
+    require(same_text(folio_state_failure_line(FOLIO_STATE_FILTERED, FOLIO_LANGUAGE_JA),
                       "絞り込み中は並び替えと開閉ができません。"),
             "the refusal has one line");
     folio_state_destroy(state);

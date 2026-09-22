@@ -3,6 +3,7 @@
 #include "utf8_text.h"
 
 #include <stdlib.h>
+#include <string.h>
 
 struct utf16_text
 {
@@ -78,4 +79,39 @@ void utf16_text_destroy(struct utf16_text *_Nullable text)
     }
     free(text->units);
     free(text);
+}
+
+/* 確保しない写し（決定 5）。まず長さを数え、収まると分かってから書く。
+ * 表の文言は単体が ui_text_unit_limit に収まることを固定するので、TOO_LONG はノート名
+ * のような外から来る文字列でしか起きない。 */
+enum utf16_text_fill_outcome utf16_text_fill(const char *_Nonnull utf8, char16_t *_Nonnull out,
+                                             size_t capacity, size_t *_Nonnull written)
+{
+    size_t length = strlen(utf8);
+    size_t units = 0;
+    for (size_t index = 0; index < length;)
+    {
+        uint32_t code_point = 0;
+        size_t consumed = utf8_text_decode(utf8 + index, length - index, &code_point);
+        if (consumed == 0)
+        {
+            return UTF16_TEXT_FILL_MALFORMED;
+        }
+        index += consumed;
+        units += code_point < supplementary_base ? 1 : 2;
+    }
+    if (units + 1 > capacity)
+    {
+        return UTF16_TEXT_FILL_TOO_LONG;
+    }
+    size_t filled = 0;
+    for (size_t index = 0; index < length;)
+    {
+        uint32_t code_point = 0;
+        index += utf8_text_decode(utf8 + index, length - index, &code_point);
+        filled += encode_utf16(code_point, out + filled);
+    }
+    out[filled] = u'\0';
+    *written = filled;
+    return UTF16_TEXT_FILL_READY;
 }

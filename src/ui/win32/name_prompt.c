@@ -1,6 +1,8 @@
 #include "name_prompt.h"
 #include "folio_state.h"
 #include "note_name.h"
+#include "ui_text.h"
+#include "ui_text_request.h"
 #include "utf16_text.h"
 #include "utf8_text.h"
 #include <string.h>
@@ -36,9 +38,31 @@ static const struct
                          .cx = 250,
                          .cy = 180}};
 
+/* 「旧名 → 新名」と「失敗の 1 行 ＋ 説明」を組む領域（UTF-8 のバイト数）。
+ * ノート名は 255 バイトまでなので、矢印を挟んでも 600 に収まる（ADR 0030 の決定 3）。 */
+constexpr size_t pending_line_capacity = 600;
+constexpr size_t pending_reason_capacity = 512;
+
 static int scaled(const struct name_prompt *_Nonnull prompt, int value)
 {
     return MulDiv(value, (int)prompt->dpi, 96);
+}
+
+/* 表の 1 行を確保せずに UTF-16 へ写す（ADR 0030 の決定 5）。写せなければ空にする
+ * （表の値が上限に収まることは単体が全 ID を回して固定する）。 */
+static void wide_line(enum ui_text id, enum folio_language language, char16_t *_Nonnull out)
+{
+    size_t written = 0;
+    if (utf16_text_fill(ui_text_line(id, language), out, ui_text_unit_limit, &written) !=
+        UTF16_TEXT_FILL_READY)
+    {
+        out[0] = u'\0';
+    }
+}
+
+static enum folio_language prompt_language(const struct name_prompt *_Nonnull prompt)
+{
+    return folio_state_language(prompt->state);
 }
 
 static HWND _Nullable control(struct name_prompt *_Nonnull prompt, const wchar_t *_Nonnull kind,
@@ -60,9 +84,11 @@ static void position(const struct name_prompt *_Nonnull prompt, HWND window, REC
                scaled(prompt, bounds.bottom - bounds.top), TRUE);
 }
 
-static bool label(struct name_prompt *_Nonnull prompt, const wchar_t *_Nonnull text, RECT bounds)
+static bool label(struct name_prompt *_Nonnull prompt, enum ui_text id, RECT bounds)
 {
-    HWND window = control(prompt, L"STATIC", text, SS_LEFT);
+    char16_t units[ui_text_unit_limit];
+    wide_line(id, prompt_language(prompt), units);
+    HWND window = control(prompt, L"STATIC", units, SS_LEFT);
     if (window == nullptr)
     {
         return false;
@@ -71,10 +97,11 @@ static bool label(struct name_prompt *_Nonnull prompt, const wchar_t *_Nonnull t
     return true;
 }
 
-static bool button(struct name_prompt *_Nonnull prompt, const wchar_t *_Nonnull text, int identity,
-                   RECT bounds)
+static bool button(struct name_prompt *_Nonnull prompt, enum ui_text id, int identity, RECT bounds)
 {
-    HWND window = control(prompt, L"BUTTON", text,
+    char16_t units[ui_text_unit_limit];
+    wide_line(id, prompt_language(prompt), units);
+    HWND window = control(prompt, L"BUTTON", units,
                           WS_TABSTOP | (identity == IDOK ? BS_DEFPUSHBUTTON : BS_PUSHBUTTON));
     if (window == nullptr)
     {
@@ -140,45 +167,48 @@ static bool fill_categories(struct name_prompt *_Nonnull prompt)
     return true;
 }
 
+/* 名前欄に出す 1 行。組み立てた「旧名 → 新名」も実名もこの上限に収まる（ADR 0030 の決定 5）。 */
 static bool set_name_text(struct name_prompt *_Nonnull prompt, const char *_Nonnull text)
 {
-    struct utf16_text *_Nullable wide = nullptr;
-    if (utf16_text_create(text, strlen(text), &wide) != UTF16_TEXT_CONVERTED)
+    char16_t units[pending_line_capacity];
+    size_t written = 0;
+    if (utf16_text_fill(text, units, pending_line_capacity, &written) != UTF16_TEXT_FILL_READY)
     {
         return false;
     }
-    SetWindowTextW(prompt->name, utf16_text_units(wide));
-    utf16_text_destroy(wide);
+    SetWindowTextW(prompt->name, units);
     return true;
 }
 
-/* 記録を公開した後に面の中で言うこと。閉じても意図は消えない（決定 7）。 */
-static const wchar_t pending_explanation[] =
-    L"「再試行」で同じ名前変更を続けます。「閉じる」は取り消しではありません。";
+/* 表の 1 行をそのまま欄へ出す。写せなければ何も出さない（ADR 0030 の決定 5）。 */
+static void show_line(HWND _Nullable window, enum ui_text id, enum folio_language language)
+{
+    char16_t units[ui_text_unit_limit];
+    wide_line(id, language, units);
+    SetWindowTextW(window, units);
+}
 
 /* 未完了の意図があるあいだは、名前もカテゴリも変えられない固定状態で開く（決定 7）。
  * 出すのは旧名と新名で、押せるのは「再試行」と「閉じる」だけ。閉じても意図は残る。 */
 static bool fill_pending(struct name_prompt *_Nonnull prompt, struct rename_view pending)
 {
-    static const char arrow[] = " → ";
-    constexpr size_t arrow_length = sizeof arrow - 1;
-    char line[600];
-    size_t from_length = strlen(pending.from);
-    size_t to_length = strlen(pending.to);
-    if (from_length + arrow_length + to_length + 1 > sizeof line)
+    enum folio_language language = prompt_language(prompt);
+    char line[pending_line_capacity];
+    struct ui_text_request request = {.id = UI_TEXT_PROMPT_PENDING_RENAME,
+                                      .language = language,
+                                      .from = pending.from,
+                                      .to = pending.to};
+    if (ui_text_format(&request, line, pending_line_capacity) != UI_TEXT_FORMAT_READY)
     {
         return false;
     }
-    memcpy(line, pending.from, from_length);
-    memcpy(line + from_length, arrow, arrow_length);
-    memcpy(line + from_length + arrow_length, pending.to, to_length + 1);
     if (!set_name_text(prompt, line))
     {
         return false;
     }
     prompt->pending = true;
     EnableWindow(prompt->name, FALSE);
-    SetWindowTextW(prompt->failure, pending_explanation);
+    show_line(prompt->failure, UI_TEXT_PROMPT_PENDING_EXPLANATION, language);
     return true;
 }
 
@@ -202,58 +232,58 @@ static bool fill_name(struct name_prompt *_Nonnull prompt)
     return true;
 }
 
-static const wchar_t *_Nonnull prompt_title(enum name_prompt_kind kind)
+static enum ui_text prompt_title(enum name_prompt_kind kind)
 {
     switch (kind)
     {
     case NAME_PROMPT_FIRST_SAVE:
-        return L"名前をつけて保存";
+        return UI_TEXT_PROMPT_TITLE_FIRST_SAVE;
     case NAME_PROMPT_SAVE_AS:
-        return L"別名で保存";
+        return UI_TEXT_PROMPT_TITLE_SAVE_AS;
     case NAME_PROMPT_RENAME:
-        return L"名前を変更";
+        return UI_TEXT_PROMPT_TITLE_RENAME;
     }
-    return L"名前をつけて保存";
+    return UI_TEXT_PROMPT_TITLE_FIRST_SAVE;
 }
 
-static const wchar_t *_Nonnull prompt_hint(const struct name_prompt *_Nonnull prompt)
+static enum ui_text prompt_hint(const struct name_prompt *_Nonnull prompt)
 {
     if (prompt->pending)
     {
-        return L"この名前変更を最後まで終えるまで、ほかの操作へ進めません。";
+        return UI_TEXT_PROMPT_HINT_PENDING;
     }
     switch (prompt->kind)
     {
     case NAME_PROMPT_FIRST_SAVE:
-        return L"名前の末尾に .md を補います。";
+        return UI_TEXT_PROMPT_HINT_FIRST_SAVE;
     case NAME_PROMPT_SAVE_AS:
-        return L"元の保存内容を保ち、別の .md を作ります。";
+        return UI_TEXT_PROMPT_HINT_SAVE_AS;
     case NAME_PROMPT_RENAME:
-        return L"md と履歴を新しい名前へ移します。";
+        return UI_TEXT_PROMPT_HINT_RENAME;
     }
-    return L"名前の末尾に .md を補います。";
+    return UI_TEXT_PROMPT_HINT_FIRST_SAVE;
 }
 
-static const wchar_t *_Nonnull prompt_accept(const struct name_prompt *_Nonnull prompt)
+static enum ui_text prompt_accept(const struct name_prompt *_Nonnull prompt)
 {
     if (prompt->pending)
     {
-        return L"再試行";
+        return UI_TEXT_PROMPT_ACCEPT_RETRY;
     }
     switch (prompt->kind)
     {
     case NAME_PROMPT_FIRST_SAVE:
     case NAME_PROMPT_SAVE_AS:
-        return L"保存";
+        return UI_TEXT_PROMPT_ACCEPT_SAVE;
     case NAME_PROMPT_RENAME:
-        return L"変更";
+        return UI_TEXT_PROMPT_ACCEPT_RENAME;
     }
-    return L"保存";
+    return UI_TEXT_PROMPT_ACCEPT_SAVE;
 }
 
-static const wchar_t *_Nonnull prompt_close(const struct name_prompt *_Nonnull prompt)
+static enum ui_text prompt_close(const struct name_prompt *_Nonnull prompt)
 {
-    return prompt->pending ? L"閉じる" : L"キャンセル";
+    return prompt->pending ? UI_TEXT_PROMPT_CLOSE_PENDING : UI_TEXT_PROMPT_CLOSE_CANCEL;
 }
 
 static bool inputs(struct name_prompt *_Nonnull prompt)
@@ -296,10 +326,10 @@ static bool initialize(struct name_prompt *_Nonnull prompt, HWND dialog)
     int height = bounds.bottom - bounds.top;
     MoveWindow(dialog, (owner.left + owner.right - width) / 2,
                (owner.top + owner.bottom - height) / 2, width, height, FALSE);
-    SetWindowTextW(dialog, prompt_title(prompt->kind));
+    show_line(dialog, prompt_title(prompt->kind), prompt_language(prompt));
     return inputs(prompt) && fill_name(prompt) &&
-           label(prompt, L"ノートの名前", (RECT){20, 20, 380, 42}) &&
-           label(prompt, L"保存先カテゴリ", (RECT){20, 82, 380, 104}) &&
+           label(prompt, UI_TEXT_PROMPT_LABEL_NAME, (RECT){20, 20, 380, 42}) &&
+           label(prompt, UI_TEXT_PROMPT_LABEL_CATEGORY, (RECT){20, 82, 380, 104}) &&
            label(prompt, prompt_hint(prompt), (RECT){20, 144, 380, 166}) &&
            button(prompt, prompt_accept(prompt), IDOK, (RECT){192, 230, 280, 258}) &&
            button(prompt, prompt_close(prompt), IDCANCEL, (RECT){288, 230, 380, 258});
@@ -372,28 +402,28 @@ static enum folio_state_outcome retry_pending(struct name_prompt *_Nonnull promp
 static void show_pending_reason(struct name_prompt *_Nonnull prompt,
                                 enum folio_state_outcome outcome)
 {
-    const char *_Nonnull reason = folio_state_failure_line(outcome);
-    struct utf16_text *_Nullable wide = nullptr;
-    if (utf16_text_create(reason, strlen(reason), &wide) != UTF16_TEXT_CONVERTED)
+    enum folio_language language = prompt_language(prompt);
+    const char *_Nonnull reason = folio_state_failure_line(outcome, language);
+    const char *_Nonnull explanation = ui_text_line(UI_TEXT_PROMPT_PENDING_EXPLANATION, language);
+    size_t reason_length = strlen(reason);
+    size_t explanation_length = strlen(explanation);
+    char line[pending_reason_capacity];
+    char16_t units[pending_reason_capacity];
+    size_t written = 0;
+    if (reason_length + explanation_length + 2 <= pending_reason_capacity)
     {
-        SetWindowTextW(prompt->failure, pending_explanation);
-        return;
+        memcpy(line, reason, reason_length);
+        line[reason_length] = ' ';
+        memcpy(line + reason_length + 1, explanation, explanation_length + 1);
+        if (utf16_text_fill(line, units, pending_reason_capacity, &written) ==
+            UTF16_TEXT_FILL_READY)
+        {
+            SetWindowTextW(prompt->failure, units);
+            return;
+        }
     }
-    constexpr size_t capacity = 512;
-    constexpr size_t explanation = sizeof pending_explanation / sizeof pending_explanation[0] - 1;
-    wchar_t line[capacity];
-    size_t reason_length = utf16_text_length(wide);
-    if (reason_length + explanation + 2 > capacity)
-    {
-        utf16_text_destroy(wide);
-        SetWindowTextW(prompt->failure, pending_explanation);
-        return;
-    }
-    memcpy(line, utf16_text_units(wide), reason_length * sizeof *line);
-    utf16_text_destroy(wide);
-    line[reason_length] = L' ';
-    memcpy(line + reason_length + 1, pending_explanation, (explanation + 1) * sizeof *line);
-    SetWindowTextW(prompt->failure, line);
+    /* 収まらないときは説明だけを出す（現行と同じ）。 */
+    show_line(prompt->failure, UI_TEXT_PROMPT_PENDING_EXPLANATION, language);
 }
 
 /* 記録を公開した改名は、名前を固定して同じ意図の再開だけを受ける（ADR 0022 の決定 7）。
@@ -404,8 +434,8 @@ static void hold_pending(struct name_prompt *_Nonnull prompt, enum folio_state_o
     if (!prompt->pending && folio_state_rename_pending(prompt->state, &pending))
     {
         (void)fill_pending(prompt, pending);
-        SetWindowTextW(prompt->accept, prompt_accept(prompt));
-        SetWindowTextW(prompt->cancel, prompt_close(prompt));
+        show_line(prompt->accept, prompt_accept(prompt), prompt_language(prompt));
+        show_line(prompt->cancel, prompt_close(prompt), prompt_language(prompt));
     }
     show_pending_reason(prompt, outcome);
 }
@@ -428,17 +458,12 @@ static void submit(struct name_prompt *_Nonnull prompt)
         SetFocus(prompt->accept);
         return;
     }
-    const char *_Nonnull reason = folio_state_failure_line(saved);
-    struct utf16_text *_Nullable wide = nullptr;
-    if (utf16_text_create(reason, strlen(reason), &wide) == UTF16_TEXT_CONVERTED)
+    const char *_Nonnull reason = folio_state_failure_line(saved, prompt_language(prompt));
+    char16_t units[ui_text_unit_limit];
+    size_t written = 0;
+    if (utf16_text_fill(reason, units, ui_text_unit_limit, &written) == UTF16_TEXT_FILL_READY)
     {
-        SetWindowTextW(prompt->failure, utf16_text_units(wide));
-        utf16_text_destroy(wide);
-    }
-    else
-    {
-        SetWindowTextW(prompt->failure,
-                       L"エラー表示の記憶域が不足しています。入力は残っています。");
+        SetWindowTextW(prompt->failure, units);
     }
     SetFocus(prompt->name);
 }

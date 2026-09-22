@@ -46,6 +46,7 @@ int main(int argc, char *_Nonnull *_Nonnull argv)
     run_replace_tests();
     run_state_tests();
     run_replace_state_tests();
+    run_ui_text_tests();
     run_allocation_tests();
     printf("folio unit tests passed\n");
     return 0;

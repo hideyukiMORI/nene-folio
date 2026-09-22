@@ -1,5 +1,7 @@
 #include "folio_command.h"
 
+#include "ui_text.h"
+
 #include <string.h>
 
 constexpr size_t alias_limit = 2;
@@ -7,36 +9,39 @@ constexpr size_t alias_limit = 2;
 static const struct
 {
     enum folio_command command;
-    const char *_Nonnull label;
+    enum ui_text label;
     size_t aliases;
     const char *_Nonnull names[alias_limit];
 } catalog[] = {
-    [FOLIO_COMMAND_SAVE] = {FOLIO_COMMAND_SAVE, "保存", 2, {"w", "write"}},
-    [FOLIO_COMMAND_QUIT] = {FOLIO_COMMAND_QUIT, "保存済みなら終了", 2, {"q", "quit"}},
-    [FOLIO_COMMAND_SAVE_QUIT] = {FOLIO_COMMAND_SAVE_QUIT, "保存して終了", 2, {"wq", "x"}},
+    [FOLIO_COMMAND_SAVE] = {FOLIO_COMMAND_SAVE, UI_TEXT_COMMAND_SAVE, 2, {"w", "write"}},
+    [FOLIO_COMMAND_QUIT] = {FOLIO_COMMAND_QUIT, UI_TEXT_COMMAND_QUIT, 2, {"q", "quit"}},
+    [FOLIO_COMMAND_SAVE_QUIT] = {FOLIO_COMMAND_SAVE_QUIT,
+                                 UI_TEXT_COMMAND_SAVE_QUIT,
+                                 2,
+                                 {"wq", "x"}},
     [FOLIO_COMMAND_FORCE_QUIT] = {FOLIO_COMMAND_FORCE_QUIT,
-                                  "未保存変更を破棄して終了",
+                                  UI_TEXT_COMMAND_FORCE_QUIT,
                                   1,
                                   {"q!", ""}},
-    [FOLIO_COMMAND_HELP] = {FOLIO_COMMAND_HELP, "ヘルプ", 2, {"help", "h"}},
-    [FOLIO_COMMAND_EDIT] = {FOLIO_COMMAND_EDIT, "編集", 1, {"startinsert", ""}},
-    [FOLIO_COMMAND_VIEW] = {FOLIO_COMMAND_VIEW, "保存して閲覧", 0, {"", ""}},
-    [FOLIO_COMMAND_NEW] = {FOLIO_COMMAND_NEW, "新しいノート", 1, {"enew", ""}},
-    [FOLIO_COMMAND_SAVE_AS] = {FOLIO_COMMAND_SAVE_AS, "別名で保存", 1, {"saveas", ""}},
-    [FOLIO_COMMAND_RENAME] = {FOLIO_COMMAND_RENAME, "名前を変更", 1, {"rename", ""}},
+    [FOLIO_COMMAND_HELP] = {FOLIO_COMMAND_HELP, UI_TEXT_COMMAND_HELP, 2, {"help", "h"}},
+    [FOLIO_COMMAND_EDIT] = {FOLIO_COMMAND_EDIT, UI_TEXT_COMMAND_EDIT, 1, {"startinsert", ""}},
+    [FOLIO_COMMAND_VIEW] = {FOLIO_COMMAND_VIEW, UI_TEXT_COMMAND_VIEW, 0, {"", ""}},
+    [FOLIO_COMMAND_NEW] = {FOLIO_COMMAND_NEW, UI_TEXT_COMMAND_NEW, 1, {"enew", ""}},
+    [FOLIO_COMMAND_SAVE_AS] = {FOLIO_COMMAND_SAVE_AS, UI_TEXT_COMMAND_SAVE_AS, 1, {"saveas", ""}},
+    [FOLIO_COMMAND_RENAME] = {FOLIO_COMMAND_RENAME, UI_TEXT_COMMAND_RENAME, 1, {"rename", ""}},
     /* GUI 専用操作（ADR 0018）。`/` `?` `n` `N` と Ctrl+F が同じ ID を実行する（ADR 0023）。 */
-    [FOLIO_COMMAND_FIND] = {FOLIO_COMMAND_FIND, "このノート内を検索", 0, {"", ""}},
+    [FOLIO_COMMAND_FIND] = {FOLIO_COMMAND_FIND, UI_TEXT_COMMAND_FIND, 0, {"", ""}},
     /* 語を要る Ex の文法（ADR 0026 の決定 8）。パレットとメニューには出ない。 */
-    [FOLIO_COMMAND_SET] = {FOLIO_COMMAND_SET, "設定を変える（:set number）", 2, {"set", "se"}},
+    [FOLIO_COMMAND_SET] = {FOLIO_COMMAND_SET, UI_TEXT_COMMAND_SET, 2, {"set", "se"}},
     [FOLIO_COMMAND_TOGGLE_NUMBER] = {FOLIO_COMMAND_TOGGLE_NUMBER,
-                                     "行番号の表示を切り替える",
+                                     UI_TEXT_COMMAND_TOGGLE_NUMBER,
                                      0,
                                      {"", ""}},
     /* GUI 専用操作（ADR 0028 の決定 8(a)）。置換の欄を開くだけで、モードは変えない。 */
-    [FOLIO_COMMAND_REPLACE] = {FOLIO_COMMAND_REPLACE, "置換", 0, {"", ""}},
+    [FOLIO_COMMAND_REPLACE] = {FOLIO_COMMAND_REPLACE, UI_TEXT_COMMAND_REPLACE, 0, {"", ""}},
     /* 区切りで引数を取る Ex の文法（決定 8(b)）。別名の照合ではなく parse の特例で解ける。 */
     [FOLIO_COMMAND_SUBSTITUTE] = {FOLIO_COMMAND_SUBSTITUTE,
-                                  "正規表現で置換（:%s/前/後/g）",
+                                  UI_TEXT_COMMAND_SUBSTITUTE,
                                   0,
                                   {"", ""}},
 };
@@ -229,9 +234,9 @@ enum folio_command folio_command_at(size_t index)
     return catalog[index].command;
 }
 
-const char *_Nonnull folio_command_label(enum folio_command command)
+const char *_Nonnull folio_command_label(enum folio_command command, enum folio_language language)
 {
-    return catalog[command].label;
+    return ui_text_line(catalog[command].label, language);
 }
 
 size_t folio_command_alias_count(enum folio_command command)
@@ -373,10 +378,12 @@ bool folio_command_parse_substitute(const char *_Nonnull text, size_t length,
     return true;
 }
 
-bool folio_command_matches(enum folio_command command, const char *_Nonnull text, size_t length)
+bool folio_command_matches(enum folio_command command, const char *_Nonnull text, size_t length,
+                           enum folio_language language)
 {
     size_t item = command;
-    if (contains_span(catalog[item].label, strlen(catalog[item].label), text, length))
+    const char *_Nonnull label = folio_command_label(command, language);
+    if (contains_span(label, strlen(label), text, length))
     {
         return true;
     }

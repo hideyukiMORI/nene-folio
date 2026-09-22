@@ -6,12 +6,12 @@
 #include "folio_palette.h"
 #include "folio_state.h"
 #include "note_ref.h"
+#include "ui_text.h"
 #include "utf16_text.h"
 
 #include <commdlg.h>
 #include <stdint.h>
 #include <stdlib.h>
-#include <string.h>
 #include <windowsx.h>
 
 /* ドラッグ中の一時状態はここだけが持つ（ARC-004 / ARC-005 の許可区画）。 */
@@ -39,7 +39,9 @@ struct drawer_window
 static const wchar_t class_name[] = L"NeNeFolioDrawer";
 static const wchar_t text_face[] = L"Yu Gothic UI";
 static const wchar_t mono_face[] = L"Consolas";
-static const wchar_t header_label[] = L"NENE FOLIO";
+/* 1 回の描画で UTF-16 へ写せる単位数（ADR 0030 の決定 5）。表の 1 行もカテゴリ名・ノート名
+ * （255 バイト）もここに収まる。収まらなければ何も描かない。 */
+constexpr size_t draw_unit_limit = 1024;
 
 /* 96 DPI での寸法（デザイン「案2 堅」）。描くときに DPI で拡大する（FR-013）。 */
 constexpr int base_dpi = 96;
@@ -135,17 +137,28 @@ static COLORREF to_colorref(struct rgb_color color)
     return RGB(color.red, color.green, color.blue);
 }
 
+/* UTF-8 を確保せずに呼び出し側の入れ物へ写す（ADR 0030 の決定 5）。
+ * 収まらない・壊れている場合は 0 を返し、呼び出し側は何も出さない。 */
+static int wide_units(const char *_Nonnull text, char16_t *_Nonnull out)
+{
+    size_t written = 0;
+    if (utf16_text_fill(text, out, draw_unit_limit, &written) != UTF16_TEXT_FILL_READY)
+    {
+        return 0;
+    }
+    return (int)written;
+}
+
 /* UTF-8 を 1 行で描く。文字の伸びは呼び出し側が SetTextCharacterExtra で決める。 */
 static void draw_utf8(HDC device, const char *_Nonnull text, RECT bounds, UINT format)
 {
-    struct utf16_text *_Nullable wide = nullptr;
-    if (utf16_text_create(text, strlen(text), &wide) != UTF16_TEXT_CONVERTED)
+    char16_t units[draw_unit_limit];
+    int count = wide_units(text, units);
+    if (count == 0)
     {
         return;
     }
-    DrawTextW(device, utf16_text_units(wide), (int)utf16_text_length(wide), &bounds,
-              format | DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
-    utf16_text_destroy(wide);
+    DrawTextW(device, units, count, &bounds, format | DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
 }
 
 static void fill_rect(HDC device, RECT bounds, COLORREF color)
@@ -197,7 +210,10 @@ static void draw_header(const struct drawer_window *_Nonnull self, HDC device, i
     SelectObject(device, self->mono_font);
     SetTextColor(device, self->palette.header_text);
     SetTextCharacterExtra(device, scale(base_tracking, dpi));
-    DrawTextW(device, header_label, -1, &bounds, DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
+    char16_t logo[draw_unit_limit];
+    int logo_units =
+        wide_units(ui_text_line(UI_TEXT_APP_LOGO, folio_state_language(self->state)), logo);
+    DrawTextW(device, logo, logo_units, &bounds, DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
     SetTextCharacterExtra(device, 0);
     wchar_t count[24];
     int written = format_count(folio_state_note_count(self->state), count);
@@ -224,10 +240,12 @@ static void draw_cursor_mark(const struct drawer_window *_Nonnull self, HDC devi
 
 /* − / + の印が要る幅（いま選んでいる等幅の字と間）。
  * カーソルの角はこのぶんだけ左に置いて重なりを避ける（ADR 0015 の決定 7）。 */
-static int toggle_room(HDC device, UINT dpi)
+static int toggle_room(HDC device, UINT dpi, enum folio_language language)
 {
+    char16_t units[draw_unit_limit];
+    int count = wide_units(ui_text_line(UI_TEXT_GLYPH_MINUS, language), units);
     SIZE glyph = {0, 0};
-    GetTextExtentPoint32W(device, L"\x2212", 1, &glyph);
+    GetTextExtentPoint32W(device, units, count, &glyph);
     return glyph.cx + scale(base_mark_gap, dpi);
 }
 
@@ -253,11 +271,15 @@ static void draw_category(const struct drawer_window *_Nonnull self, HDC device,
     RECT mark = {row.indent, row.top, width - scale(base_right_inset, dpi), row.top + row.height};
     SelectObject(device, self->mono_font);
     SetTextColor(device, self->palette.header_text);
-    DrawTextW(device, row.expanded ? L"\x2212" : L"+", 1, &mark,
+    enum folio_language language = folio_state_language(self->state);
+    char16_t glyph[draw_unit_limit];
+    int glyph_units = wide_units(
+        ui_text_line(row.expanded ? UI_TEXT_GLYPH_MINUS : UI_TEXT_GLYPH_PLUS, language), glyph);
+    DrawTextW(device, glyph, glyph_units, &mark,
               DT_SINGLELINE | DT_VCENTER | DT_RIGHT | DT_NOPREFIX);
     if (row.cursor)
     {
-        draw_cursor_mark(self, device, row, mark.right - toggle_room(device, dpi));
+        draw_cursor_mark(self, device, row, mark.right - toggle_room(device, dpi, language));
     }
 }
 

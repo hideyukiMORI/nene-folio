@@ -147,6 +147,49 @@ def enumeration_values(code: str, prefix: str) -> list[str]:
     return list(dict.fromkeys(re.findall(r"\b" + re.escape(prefix) + r"\w+\b", body[1])))
 
 
+def string_literals(text: str):
+    """(line, prefix, body) for every string literal; comments and character literals are skipped.
+
+    c_code() masks strings together with comments, so the catalog check needs its own scan:
+    one pass whose comment and character alternatives come first, leaving only real strings.
+    """
+    pattern = r"//[^\n]*|/\*.*?\*/|'(?:\\.|[^'\\])*'|(u8|u|U|L)?\"((?:\\.|[^\"\\])*)\""
+    for match in re.finditer(pattern, text, re.S):
+        if match[2] is None:
+            continue
+        yield text.count("\n", 0, match.start()) + 1, match[1] or "", match[2]
+
+
+def escaped_letters(body: str) -> set[str]:
+    """The letters that introduce escape sequences, so `\\\\UNC` is a backslash and not \\U."""
+    letters, index = set(), 0
+    while index < len(body):
+        if body[index] == "\\" and index + 1 < len(body):
+            letters.add(body[index + 1])
+            index += 2
+            continue
+        index += 1
+    return letters
+
+
+def text_catalog_checks(root: Path, paths: list[Path], rules: dict) -> list[Finding]:
+    """Display text lives only in the declared catalog file (CNF-010)."""
+    settings = rules["textCatalog"]
+    catalog = set(settings["files"])
+    roots, letters = tuple(settings["roots"]), set(settings["escapeLetters"])
+    findings = []
+    for path in paths:
+        name = path.as_posix()
+        if path.suffix not in settings["extensions"] or not name.startswith(roots) or name in catalog:
+            continue
+        text = (root / path).read_text(encoding="utf-8").replace("\\\n", "")
+        for number, prefix, body in string_literals(text):
+            wide = prefix in settings["escapePrefixes"] and escaped_letters(body) & letters
+            if not body.isascii() or wide:
+                findings.append(Finding("CNF-010", name, f"line {number}: display text belongs in " + ", ".join(sorted(catalog))))
+    return findings
+
+
 def line_table_checks(root: Path, rules: dict) -> list[Finding]:
     """Every value of a declared enumeration appears exactly once in its per-value table (CNF-009)."""
     findings = []
@@ -375,6 +418,7 @@ def check(root: Path, today: datetime.date, build_dir: Path | None = None) -> li
     findings.extend(configuration_checks(root, paths, rules))
     findings.extend(architecture_checks(root, paths, build_dir))
     findings.extend(line_table_checks(root, rules))
+    findings.extend(text_catalog_checks(root, paths, rules))
     for path in paths:
         if path.suffix in rules["cExtensions"]:
             findings.extend(source_checks(path.as_posix(), (root / path).read_text(encoding="utf-8"), rules, waivers))

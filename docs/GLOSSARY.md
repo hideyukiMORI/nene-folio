@@ -70,6 +70,9 @@
 | 置換の編集（replace edit） | 「本文のこの範囲を、この UTF-16 で置き換える」1 つ。1 件なら一致の範囲、すべてなら本文全体。UI は `EM_EXSETSEL` → `EM_REPLACESEL(TRUE)` の 1 回で当てるので Undo も 1 単位 | `replace_edit`（core）・`note_pane_replace`（ui/win32）・ADR 0028 の決定 7 |
 | 古い下見（stale preview） | 渡された本文が下見の写しと違う、または宛先が今の文書と違う状態。下見を捨てる契機を列挙せず、照合だけで「同じ本文の別ノートへ当てる」を構造的に防ぐ | `FOLIO_STATE_REPLACE_STALE`（application）・ADR 0028 の決定 6 |
 | 入力面の欄の集合（command input set） | 入力面が「自分のもの」と見なす EDIT の集合。集合の中でフォーカスが移るあいだは入力面を閉じない。置換の欄だけが 2 つ持つ | `command_owns`（ui/win32）・ADR 0016 の 2026-09-22 の補正 |
+| 文言の表（ui_text） | 利用者に見える語・句・1 行の唯一の置き場所。`enum ui_text` の ID で引き、文言そのものは `src/core/ui_text.c` の指示付き初期化子の表だけが持つ。ファイル名・台帳のキー・Ex の別名・RTF の制御語・Win32 のクラス名と書体名は文言ではない | `ui_text_line`（core）・C-018 / CNF-010・ADR 0030 |
+| 置換子（placeholder） | 句の中に語や数を差し込む綴り。`{k}` `{n}` `{offset}` `{name}` `{from}` `{to}` の 6 つだけで、埋めた内容は再走査しない（`{k}` という名前のノートが壊れない）。語や数を連結して句を作らない | `ui_text_format` / `struct ui_text_request`（core）・ADR 0030 の決定 3 |
+| 表示に使う言語（folio_language） | 文言をどの列から引くかの閉じた選択肢。core は「いまの言語」を可変状態として持たず、呼ぶたびに引数で受ける。値は application が答える | `enum folio_language`（core）・`folio_state_language`（application）・ADR 0030 の決定 1 |
 
 ## 使ってはいけない語
 

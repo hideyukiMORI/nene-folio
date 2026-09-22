@@ -93,6 +93,7 @@
 | 編集中の本文 | 保存前の文字列 | ui/win32（RichEdit が所有） | 保存の意図で application へ渡す |
 | ドロワーのスクロール量 | 画素 | application（レイアウト値の一部） | ホイール・キーの意図。上限は core が計算 |
 | 検索語と一致集合 | 文字列と文書 ID の列 | application | 検索窓の入力 |
+| 利用者に見える文言 | 表示する語・句・1 行 | core（`ui_text` の表 1 か所） | ID で引くだけ。置換子の組み立ても core（`ui_text_format`）で、言語は application （`folio_state_language`）が渡す。ui / app は文言を持たない（C-018 / CNF-010） |
 
 同じ事実を 2 つの区分に独立して持たない。派生値は再計算するか、無効化を明示したキャッシュにする。
 

@@ -165,6 +165,16 @@ HWND・HDC・HBITMAP・HFONT の所有者は 1 つで、作った関数と対に
 
 - 機械強制: **planned**（`src/ui/win32` から adapters への依存は ARC-002 が拒否。意図と表示値の分離はレビュー事項）
 
+### C-018 — 表示文言を直書きしない
+
+利用者に見える文言は core の `ui_text` の表（`src/core/ui_text.c`）だけが持つ。
+新しい文言が要るときは `enum ui_text` に ID を足して表に 1 行足し、呼び出し側は `ui_text_line(id, language)` で引く。
+句の中の語と数は置換子（`{k}` `{n}` `{offset}` `{name}` `{from}` `{to}`）で埋め、語や数を連結しない（ADR 0030）。
+言語は application の `folio_state_language` が答え、core は「現在の言語」を持たない（ARC-005）。
+ファイル名・台帳のキー・`settings.json` のキー・Ex の別名・RTF の制御語・Win32 のクラス名と書体名は文言ではない。
+
+- 機械強制: **active**（CNF-010）
+
 ---
 
 ## 5. 依存の方針

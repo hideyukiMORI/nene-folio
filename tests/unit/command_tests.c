@@ -1,4 +1,5 @@
 #include "folio_command.h"
+#include "folio_language.h"
 #include "unit_tests.h"
 
 #include <string.h>
@@ -142,20 +143,21 @@ static void verify_listed(void)
                     (command != FOLIO_COMMAND_SET && command != FOLIO_COMMAND_SUBSTITUTE),
                 "every other operation stays listed");
     }
-    require(
-        folio_command_alias_count(FOLIO_COMMAND_TOGGLE_NUMBER) == 0 &&
-            same_text(folio_command_label(FOLIO_COMMAND_TOGGLE_NUMBER), "行番号の表示を切り替える"),
-        "the toggle is a listed operation with a Japanese label and no alias");
-    require(folio_command_matches(FOLIO_COMMAND_TOGGLE_NUMBER, "行番号", strlen("行番号")),
+    require(folio_command_alias_count(FOLIO_COMMAND_TOGGLE_NUMBER) == 0 &&
+                same_text(folio_command_label(FOLIO_COMMAND_TOGGLE_NUMBER, FOLIO_LANGUAGE_JA),
+                          "行番号の表示を切り替える"),
+            "the toggle is a listed operation with a Japanese label and no alias");
+    require(folio_command_matches(FOLIO_COMMAND_TOGGLE_NUMBER, "行番号", strlen("行番号"),
+                                  FOLIO_LANGUAGE_JA),
             "the palette finds the toggle by label");
     /* パレットの箱の高さはこの数で決まる。総数（15）で取ると 2 行ぶん余る（補正 9）。 */
     require(folio_command_listed_count() == 13, "thirteen operations are offered on a surface");
     require(folio_command_listed_count() == folio_command_count() - 2,
             "exactly the two unlisted Ex grammars are left out");
     require(folio_command_alias_count(FOLIO_COMMAND_REPLACE) == 0 &&
-                same_text(folio_command_label(FOLIO_COMMAND_REPLACE), "置換"),
+                same_text(folio_command_label(FOLIO_COMMAND_REPLACE, FOLIO_LANGUAGE_JA), "置換"),
             "replace is a listed GUI operation with a Japanese label and no alias");
-    require(folio_command_matches(FOLIO_COMMAND_REPLACE, "置換", strlen("置換")),
+    require(folio_command_matches(FOLIO_COMMAND_REPLACE, "置換", strlen("置換"), FOLIO_LANGUAGE_JA),
             "the palette finds replace by label");
 }
 
@@ -194,7 +196,8 @@ static void verify_catalog(void)
     {
         enum folio_command command = folio_command_at(index);
         require(command == expected[index], "catalog order is stable");
-        require(strlen(folio_command_label(command)) > 0, "palette label comes from catalog");
+        require(strlen(folio_command_label(command, FOLIO_LANGUAGE_JA)) > 0,
+                "palette label comes from catalog");
         for (size_t alias = 0; alias < folio_command_alias_count(command); ++alias)
         {
             enum folio_command parsed = FOLIO_COMMAND_HELP;
@@ -205,22 +208,27 @@ static void verify_catalog(void)
                     "every catalog alias parses to its command");
         }
     }
-    require(folio_command_matches(FOLIO_COMMAND_SAVE, "", 0), "empty palette query shows all");
-    require(folio_command_matches(FOLIO_COMMAND_SAVE_QUIT, "wq", 2), "palette finds an alias");
-    require(folio_command_matches(FOLIO_COMMAND_FORCE_QUIT, "破棄", strlen("破棄")),
-            "palette finds a display label");
-    require(!folio_command_matches(FOLIO_COMMAND_HELP, "quit", 4), "palette excludes a mismatch");
+    require(folio_command_matches(FOLIO_COMMAND_SAVE, "", 0, FOLIO_LANGUAGE_JA),
+            "empty palette query shows all");
+    require(folio_command_matches(FOLIO_COMMAND_SAVE_QUIT, "wq", 2, FOLIO_LANGUAGE_JA),
+            "palette finds an alias");
+    require(
+        folio_command_matches(FOLIO_COMMAND_FORCE_QUIT, "破棄", strlen("破棄"), FOLIO_LANGUAGE_JA),
+        "palette finds a display label");
+    require(!folio_command_matches(FOLIO_COMMAND_HELP, "quit", 4, FOLIO_LANGUAGE_JA),
+            "palette excludes a mismatch");
     require(folio_command_alias_count(FOLIO_COMMAND_VIEW) == 0,
             "GUI view has no misleading Vim alias");
-    require(folio_command_matches(FOLIO_COMMAND_VIEW, "閲覧", strlen("閲覧")),
+    require(folio_command_matches(FOLIO_COMMAND_VIEW, "閲覧", strlen("閲覧"), FOLIO_LANGUAGE_JA),
             "GUI-only command can be found by Japanese label");
-    require(folio_command_matches(FOLIO_COMMAND_RENAME, "名前", strlen("名前")),
+    require(folio_command_matches(FOLIO_COMMAND_RENAME, "名前", strlen("名前"), FOLIO_LANGUAGE_JA),
             "rename is found by its Japanese label");
     /* `?` はヘルプではなく後方検索になった（ADR 0023 の決定 6）。ヘルプは F1 / :h / Ctrl+P。 */
     require(folio_command_alias_count(FOLIO_COMMAND_FIND) == 0 &&
-                same_text(folio_command_label(FOLIO_COMMAND_FIND), "このノート内を検索"),
+                same_text(folio_command_label(FOLIO_COMMAND_FIND, FOLIO_LANGUAGE_JA),
+                          "このノート内を検索"),
             "in-note search is a GUI-only operation with a Japanese label");
-    require(folio_command_matches(FOLIO_COMMAND_FIND, "検索", strlen("検索")),
+    require(folio_command_matches(FOLIO_COMMAND_FIND, "検索", strlen("検索"), FOLIO_LANGUAGE_JA),
             "the operations menu finds it by label");
 }
 
