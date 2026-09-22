@@ -2005,9 +2005,17 @@ static void finish_replace(struct folio_window *_Nonnull self, struct replace_ed
     }
 }
 
-/* 下見を本文へ当てて、件数を取り直す（決定 7）。欄は開いたまま。 */
+/* 下見を本文へ当てて、件数を取り直す（決定 7）。欄は開いたまま。
+ * 直前の入力が失敗しているなら当てない。application も失敗した下見を捨てているので
+ * 当たりはしないが、出ている失敗の 1 行を STALE で上書きしないためにここでも先に返す
+ * （安全の正本は application・レビュー B1）。 */
 static void apply_replace(struct folio_window *_Nonnull self, enum replace_scope scope)
 {
+    if (self->replace_outcome != FOLIO_STATE_READY)
+    {
+        redraw_command_layer(self);
+        return;
+    }
     const char16_t *_Nonnull text = u"";
     size_t length = 0;
     enum folio_state_outcome applied = take_display_text(self, &text, &length);
@@ -2026,7 +2034,8 @@ static void apply_replace(struct folio_window *_Nonnull self, enum replace_scope
     }
     if (edit != nullptr)
     {
-        size_t line = self->pane == nullptr ? 0 : note_pane_first_visible_line(self->pane);
+        /* 本文を取り出せた以上 pane はある（take_display_text が nullptr を弾く）。 */
+        size_t line = note_pane_first_visible_line(self->pane);
         finish_replace(self, edit, scope, line);
         replace_edit_destroy(edit);
     }
@@ -2527,7 +2536,8 @@ static void apply_substitute(struct folio_window *_Nonnull self, bool global)
         report_no_match(self);
         return;
     }
-    size_t line = self->pane == nullptr ? 0 : note_pane_first_visible_line(self->pane);
+    /* 本文を取り出せた以上 pane はある（take_display_text が nullptr を弾く）。 */
+    size_t line = note_pane_first_visible_line(self->pane);
     finish_replace(self, edit, scope, line);
     replace_edit_destroy(edit);
     close_command_surface(self);
