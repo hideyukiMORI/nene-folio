@@ -30,6 +30,7 @@ $script:SubjectPattern = '^(feat|fix|docs|refactor|test|build|ci|chore)(\([a-z0-
 $script:PollSeconds = 30
 $script:WaitLimitSeconds = 20 * 60
 $script:ResendAfterSeconds = 60
+$script:IssueCloseWaitSeconds = 30
 
 function Stop-Merge {
     param([Parameter(Mandatory)][string]$Message)
@@ -157,7 +158,7 @@ if ($WhatIf) {
     $steps.Add('check mergeable / mergeStateStatus (stop on BEHIND / DIRTY / CONFLICTING)')
     $steps.Add("gh pr merge $Number --squash --subject `"$Subject`" --delete-branch")
     $steps.Add('git pull --ff-only (only when the current checkout is main)')
-    $steps.Add("gh issue view <N> --json state for #$($closedIssues -join ', #')")
+    $steps.Add("gh issue view <N> --json state for #$($closedIssues -join ', #') (retry up to 30s)")
     [ordered]@{
         whatIf = $true
         pr = $Number
@@ -205,6 +206,12 @@ if ($LASTEXITCODE -eq 0 -and $branch -eq 'main') {
 # (g) 閉じた Issue の状態
 $issues = foreach ($issue in $closedIssues) {
     $state = (Invoke-Gh @('issue', 'view', "$issue", '--json', 'state', '-q', '.state')).Trim()
+    $waited = 0
+    while ($state -ne 'CLOSED' -and $waited -lt $script:IssueCloseWaitSeconds) {
+        Start-Sleep -Seconds 5
+        $waited += 5
+        $state = (Invoke-Gh @('issue', 'view', "$issue", '--json', 'state', '-q', '.state')).Trim()
+    }
     [ordered]@{ number = $issue; state = $state }
 }
 [ordered]@{
