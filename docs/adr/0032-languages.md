@@ -85,3 +85,43 @@ application: `folio_state_set_language`（`UNREADABLE`・同じ値・先に作�
 ゲート: CNF-011 の正例・反例（隣接リテラルに割れたエントリの正例・列の欠落と空の反例・`tests/conformance`・`prove-gates.py`）・`lineTables` の 2 行・`gate-proofs.md` の行。
 Win32 部品 probe（`out/design/2026-09-23/language-ui-probe/`）: 3 言語 × 欄の中の ID の帯幅であふれ 0・face の差し替えで本文・選択・Undo・変更印が不変で既定書式の face が変わる・再折り返し後に最初に見える論理行が戻る（編集・閲覧）・`recolor_pane` の論理行の復元・EDIT の `WM_SETFONT`・face の存在確認と代替・設定画面 8 行が 560×360 と 150% で 5 行見えて選択行が常に見える・札が en で +8px でもパンくずの最小幅を割らない・`:set language=` の 3 語・名前入力面の説明が 3 言語で 2 行に収まる・失敗の箱の題と本文の言語。
 実機の目視（hide）: 3 言語の見え方（字形の混在・豆腐・幅）・簡体字の訳の妥当性（母語話者の確認は別）・言語切替中の本文と行番号・設定画面のスクロール。統合チェックリストに足す。Waivers: none。
+
+## 2026-09-23 の補正（実装と Win32 部品 probe の後・決定本文は書き換えない）
+
+実装の probe は `out/design/2026-09-23/language-ui-probe/`、
+結果のまとめは[確認記録](../quality/2026-09-23-language-checks.md)。
+
+1. **新しい `ui_text` の ID は単位 3（core）のコミットに置いた。** 決定 7 の
+   `UI_TEXT_SETTINGS_LANGUAGE` と 3 つの自称、`command_shortcuts[]` の
+   `UI_TEXT_HELP_EX_SET_LANGUAGE` はコミットの順では単位 4 / 5 に書いたが、
+   `ui_text.h` と `ui_text.c` は core のファイルで、CNF-009 が列挙と表の対を
+   **同じコミットで**要求する。表を 3 列にするコミットに 5 つとも入れた。
+2. **`folio_option` の 3 語と `options[]` は単位 5（ui）のコミットに置いた。**
+   値を足すと `execute_set_command` の全値 switch が落ちるので、行き先
+   （`apply_language`）が無い段階では仮の分岐を置くことになる。ADR 0031 の補正 2 と同じ理由で、
+   値と UI を同じコミットに置いた。
+3. **`markdown_rtf` の `build` は本文を nullable の `struct note_text *` で受ける。**
+   決定 5 は `create` が 4 引数になることだけを書いているが、内部の `build` は
+   `(out, palette, face, bytes, length)` で 5 引数になる。本文の有無を `build` の中で見て
+   4 引数に収めた（`markdown_rtf_empty` は `nullptr` を渡す）。
+4. **`note_pane_create` は face を受けない。** 決定 4 は「RichEdit の既定書式（`note_pane_create` と
+   決定 6）」と書いているが、`note_pane_create` は既に 4 引数で飽和している。
+   既定書式から `CFM_FACE` を外し（`note_pane.c` から face の直書きが消えた）、
+   主窓が**作った直後に `note_pane_reface` を 1 回呼ぶ**形にした。face の正本は core の表だけになる。
+5. **起動の最初の空文書だけは `FOLIO_LANGUAGE_JA` の face で作る。** `folio_state_create` は
+   設定を読む前に `markdown_rtf_empty` で空の閲覧文書を作る（`state->settings` はまだ無い）。
+   設定を読んだ直後の `adopt_theme_choice` が同じ経路で作り直すので、
+   `settings.json` に `zh-Hans` がある起動でも**見えるのは最初から YaHei の文書**である（決定 5 のとおり）。
+6. **face の実在を確かめる関数は ui の新しいファイル `ui_face` に置いた。** 決定 4 は「ui の 1 関数」
+   としか書いていないが、引くのは主窓・ドロワー・名前入力面の 3 か所なので、
+   CNF-002（実装ファイルの外部関数はファイル名の接頭辞）に合わせて `ui_face_for` の 1 本にした。
+7. **決定 6 の「論理行の復元」が本当に効くのは再着色の側だった。** 実測では、
+   face の差し替えで表示行数が 181 → 121 に変わっても **RichEdit 自身が先頭の内容を保ち**、
+   最初に見える論理行は動かなかった（復元は空振り）。一方、**キャレットが画面の外にある再着色**では
+   論理行が 16 → 1 へ飛び、同じ包みで 16 に戻った。包みは両方に付けたまま（face 側は安全網）で、
+   ADR 0031 の 2026-09-23 の補正 2 はこの実測にもとづく。
+8. **`failure_box_show` の呼び出しは 8 か所ではなく 11 か所だった**（ドロワー 5・主窓 6）。
+   全部が `folio_state_language` を渡す。
+9. **英訳を 1 件だけ短くした。** probe が `UI_TEXT_HELP_EX_SET_NUMBER` の en を 426px（箱 428px）と
+   測ったので `(line numbers while editing)` → `(line numbers in edit)` にした。
+   決定 3 の「欄の中は収まるように書く」の適用で、閉じた語彙は変えていない。

@@ -1,5 +1,27 @@
 # いまのタスク — NeNe Folio
 
+2026-09-23: **#76 / ADR 0032 の表示言語（日本語 / English / 简体中文）**を `out/worktrees/76-language` で 5 層に実装した（#38 の単位 C・最後）。
+`ui_text` の表を**3 列**にして英訳と简体中文訳を書き（**日本語の字面が変わったのは構文の見本を ASCII に揃えた 2 件だけ**）、
+`data/settings.json` を**版 3**（`{"version":3,"number":…,"theme":…,"language":"ja"|"en"|"zh-Hans"}`）へ広げた
+（版 1・版 2 は読めて既定値を埋める・書くのは常に版 3）。前提として `folio_settings` の解析と生成を
+**`struct folio_settings` を直に埋める形**へ整えた（キーが増えても引数が増えない）。
+言語ごとの書体は core の `ui_font` の表 1 か所（ja / en = `Yu Gothic UI`・zh-Hans = `Microsoft YaHei UI`）で、
+ui の `ui_face` が `EnumFontFamiliesExW` で**実在を確かめて**無ければ日本語の face に落とす。
+主窓の自前描画は Consolas のまま（zh の face は 96 DPI のヘルプ行に入らない）。
+入口は設定画面の 2 段目（8 行・最小寸法では 5 行しか見えないのでスクロール）と `:set language=ja|en|zh-Hans`。
+採用は `enum settings_row_kind` の**閉じた switch**で、添字を型へ鋳込む形を無くした。
+切り替えでは、編集は既定書式の face だけを当て（`tomSuspend` と変更印の退避で Undo を汚さない）、
+閲覧は新しい fonttbl の RTF を流し直し、**どちらも最初に見える論理行を退避して戻す**。
+同じ包みを #75 の `recolor_pane` にも足した（キャレットが画面の外だと `EM_SETCHARFORMAT` がスクロールする実測・ADR 0031 の補正 2）。
+パレットの部分一致は **ASCII の英字だけ大小を無視する**ようになり（英語の label は先頭が大文字で当たらなかった）、
+畳み込みは core の `ascii_fold` に 1 本化した（Ex の完全一致は区別したまま・ADR 0016 の補正 3）。
+訳し忘れと空の列は新しい **CNF-011**（`eng/conformance.py`）が守り、設定は `conformance-rules.json` の `textCatalog`。
+単体・conformance 89 件・実ツール反例 17 本・Win32 部品 probe 69 項目が成功（[確認記録](../quality/2026-09-23-language-checks.md)）。
+🔴 **简体中文は母語話者の確認を得ていない**（後日 `ui_text.c` の 1 列だけを直せる）。
+**描いた絵そのものは見ていない**ので、[統合チェックリスト](../quality/2026-09-22-visual-checklist.md)に 76-1〜76-14 を足した。
+最終フルゲート・CI は #76 の PR を参照。**この単位の統合で親の #38 を閉じる**。次は **#82**（名前入力面と失敗の箱のテーマ追随）・
+**#70**（一致の入れ物のメモリ）・**#42**（同梱フォント）。
+
 2026-09-23: **#38 の前提 0 と単位 A・B を統合した**。main は **`72fb136`**（clean）で、
 **#73**（PR #77 → `53acb20`・port の束ね）・**#67**（PR #78 → `ba0e538`・入力面の Ctrl+S）・
 **#69**（PR #79 → `d238c01`・パレットの配分とページ送り）・**#74**（PR #80 → `f881f16`・文言の正本と CNF-010 / C-018）・
