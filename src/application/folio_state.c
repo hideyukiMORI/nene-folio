@@ -2152,6 +2152,9 @@ static enum folio_state_outcome from_replace(enum note_replace_outcome built)
         return FOLIO_STATE_READY;
     case NOTE_REPLACE_BAD_SPAN:
         return FOLIO_STATE_REPLACE_BAD_SPAN;
+    /* 入れ物に収まらなかった一致の列は「多すぎる」と同じ意味になる（レビュー D2）。 */
+    case NOTE_REPLACE_PARTIAL_MATCHES:
+        return FOLIO_STATE_REPLACE_TOO_MANY;
     case NOTE_REPLACE_TOO_LARGE:
         return FOLIO_STATE_REPLACE_TOO_LARGE;
     case NOTE_REPLACE_OUT_OF_MEMORY:

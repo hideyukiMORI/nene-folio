@@ -7,11 +7,11 @@
 /* 本文の段落区切り（ADR 0023 の決定 1 と同じ形）。論理行の境目はこれ 1 つである。 */
 constexpr char16_t paragraph_break = u'\r';
 
-/* 列に実際に入っている一致の数。総数が入れ物より多ければ入っているぶんまで（決定 2）。 */
+/* 列に入っている一致の数。総数が入れ物を超える列は note_replace_build が先に断るので、
+ * ここへ来る列では総数がそのまま入っている数である（レビュー D2）。 */
 static size_t stored_count(const struct note_replace_plan *_Nonnull plan)
 {
-    const struct regex_matches *_Nonnull matches = plan->matches;
-    return matches->count < matches->capacity ? matches->count : matches->capacity;
+    return plan->matches->count;
 }
 
 static const struct regex_match *_Nonnull match_at(const struct note_replace_plan *_Nonnull plan,
@@ -215,6 +215,12 @@ enum note_replace_outcome note_replace_build(const struct note_replace_plan *_No
     if (plan->anchor.start > plan->anchor.end)
     {
         return NOTE_REPLACE_BAD_SPAN;
+    }
+    /* 入れ物に収まらなかった列は「入っているぶんだけ」当てると黙って部分適用になる。
+     * 走査をやり直すのは呼び出し側の仕事なので、ここでは組み立てずに断る（レビュー D2）。 */
+    if (plan->matches->count > plan->matches->capacity)
+    {
+        return NOTE_REPLACE_PARTIAL_MATCHES;
     }
     return plan->scope == REPLACE_ONE ? build_one(plan, out) : build_many(plan, out);
 }

@@ -193,11 +193,17 @@ static void verify_replace_edges(void)
     struct note_replace_plan plan = plan_for(text, &list, dash, REPLACE_ALL);
     expect_edit(&plan, 0, 3, u"-a-b-c-");
     replace_template_destroy(dash);
-    /* 入れ物より多い総数のときは、入っているぶんだけ適用する（決定 2）。 */
+    /* 入れ物より多い総数の列は、入っているぶんだけ当てずに断る（レビュー D2）。 */
     struct regex_matches tail = {.items = items, .capacity = 2, .count = 4};
     struct replace_template *plus = template_for(u"+");
     plan = plan_for(text, &tail, plus, REPLACE_ALL);
-    expect_edit(&plan, 0, 3, u"+a+bc");
+    struct replace_edit *partial = nullptr;
+    require(note_replace_build(&plan, &partial) == NOTE_REPLACE_PARTIAL_MATCHES,
+            "a match list that does not fit its slots is refused, not partly applied");
+    plan.scope = REPLACE_ONE;
+    require(note_replace_build(&plan, &partial) == NOTE_REPLACE_PARTIAL_MATCHES,
+            "one match to replace is refused the same way");
+    require(partial == nullptr, "a refused replacement owns nothing");
     replace_template_destroy(plus);
 }
 
