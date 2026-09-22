@@ -105,7 +105,26 @@ Ex は下端全幅の26pxを初期寸法とし本文の矩形を動かさない�
 
 ## 2026-09-22 の補正（ADR 0028・決定本文は書き換えない）
 
-決定 3 / 4 の「入力面」が持つ EDIT は 1 つ（`command_input`）に限らない。置換の欄（ADR 0028 決定 8）は
-パターンと置換文字列の 2 つの EDIT を持ち、入力面の「自分の欄」は集合になる。フォーカスが集合の中で移るあいだは
-入力面を閉じず（`dismiss_command_if_focus_moved` は集合に属さない子へ移ったときだけ閉じる）、Tab は入力面が自前で
-集合の中を巡らせる。開き方・戻り先 HWND・Esc で元のフォーカスへ戻す規則は変えない。
+**補正 1（ADR 0028 / #41）**: 決定 3 / 4 の「入力面」が持つ EDIT は 1 つ（`command_input`）に限らない。
+置換の欄（ADR 0028 決定 8）はパターンと置換文字列の 2 つの EDIT を持ち、入力面の「自分の欄」は集合になる。
+フォーカスが集合の中で移るあいだは入力面を閉じず（`dismiss_command_if_focus_moved` は集合に属さない子へ
+移ったときだけ閉じる）、Tab は入力面が自前で集合の中を巡らせる。開き方・戻り先 HWND・Esc で元のフォーカスへ
+戻す規則は変えない。
+
+**補正 2（Issue #67・2026-09-22）**: 入力面の中の **Ctrl+S は保存し、欄は開いたまま**にする。
+hide の判断（2026-09-22）。対象は 5 つの欄（Ex・パレット・検索欄・置換の 2 欄・ドロワーの絞り込みの欄）。
+
+- Ctrl+S は各 EDIT に `WM_CHAR 0x13` で届くので、**既存の EDIT のサブクラス手続き**
+  （`command_input_procedure` の `command_character` と `filter_input_procedure` の
+  `filter_input_handled`）が受け止め、文字は EDIT に入れない。`GetKeyState` は読まない（ARC-007）。
+- 保存は**本文の Ctrl+S と同じ 1 本**（`command_save` → `store_body` → 履歴 → 原子的な書き戻し）を通る。
+  第 2 の保存経路は作らない（ARC-001 / ARC-012）。`finish_save_command` を「結果を見せる」`report_save` と
+  「欄を閉じる」に分け、入力面からの `store_from_surface` は前者だけを使う。
+- 保存のあと、**欄のテキスト・キャレット・選択・フォーカス・入力面の種類（`command_surface`）は変わらない**。
+  失敗の箱と無題の名前入力の面はフォーカスを動かすので、`store_from_surface` が押した欄へ返す。
+- 編集中でなければ本文と同じく何もしない。失敗の 1 行は本文の Ctrl+S と同じ経路（`command_failure`）で、
+  欄は閉じない。IME 変換中は既存の `command_composing` / `filter_composing` の番人が先に返す。
+- **ドロワーの絞り込みの欄は主窓の子**（`folio_window.c` が作り `filter_input_procedure` が持つ）なので、
+  窓をまたぐメッセージは要らない。前から Ctrl+S を共通の保存へ渡していたが
+  `execute_command(FOLIO_COMMAND_SAVE)` 経由で**開いている入力面を閉じていた**ので、同じ 1 本へ寄せた。
+- Ctrl+S 以外の鍵（Ctrl+N・Ctrl+Shift+S・F2・F1・Ctrl+P）の入力面での扱いは変えない。
