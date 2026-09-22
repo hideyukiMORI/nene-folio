@@ -128,3 +128,20 @@ hide の判断（2026-09-22）。対象は 5 つの欄（Ex・パレット・検
   窓をまたぐメッセージは要らない。前から Ctrl+S を共通の保存へ渡していたが
   `execute_command(FOLIO_COMMAND_SAVE)` 経由で**開いている入力面を閉じていた**ので、同じ 1 本へ寄せた。
 - Ctrl+S 以外の鍵（Ctrl+N・Ctrl+Shift+S・F2・F1・Ctrl+P）の入力面での扱いは変えない。
+
+## 2026-09-23 の補正（ADR 0032・決定本文は書き換えない）
+
+**補正 3（ADR 0032 決定 8 / #76）**: 決定 1 の「大文字小文字は区別し」を、
+**パレットの部分一致（`folio_command_matches` の label と別名の照合）に限って**補正する。
+`:` の Ex の完全一致（`folio_command_parse` / `folio_command_parse_option` /
+`folio_command_parse_substitute`）は**区別したまま**である。
+
+理由は実測（`out/design/2026-09-23/language-probe/` の §5）。`contains_span` は `memcmp` の
+バイト列比較なので、英語の label（`Save` `Find in this note` …）は先頭が大文字で、
+利用者が自然に打つ小文字では **label に 1 件も当たらない**（ASCII の別名にしか当たらない）。
+日本語では label がラテン文字を含まないので、この食い違いが表に出ていなかった。
+
+大小無視の規則は core の `note_search`（`char16_t`）と `index_filter`（`char`）が既に持つ
+「**ASCII の英字だけ大小を無視する**」と同じもので、実体を `src/core/ascii_fold.{h,c}` の
+`ascii_fold_byte` / `ascii_fold_unit` に 1 本化し、3 か所（`index_filter` / `note_search` /
+`contains_span`）がそれを引く（ARC-001。第 3 の写しを作らない）。

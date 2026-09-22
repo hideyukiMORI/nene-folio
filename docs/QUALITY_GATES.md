@@ -187,6 +187,19 @@ head が動いたら Draft に戻して再度 Ready にする。古い成功 SHA
 - 対応する規則: C-018
 - 機械強制: **active**（`eng/conformance.py` の `text_catalog_checks` ＋ `tests/conformance` の 10 件 ＋ `eng/prove-gates.py` の実ツール反例 P22）
 
+### CNF-011 — 文言の表の列の網羅
+
+`eng/conformance-rules.json` の `textCatalog` が名指しする表のファイル（`src/core/ui_text.c`）の
+指示付き初期化子 `[値] = { … }` について、**`{…}` の中を深さ 0 のカンマで区切った要素の数**が
+`textCatalog.languages` が名指しする列挙（`src/core/folio_language.h`）の値の数と一致し、
+各要素は**隣接する文字列リテラルを連結してから**空でないことを字句で検査する。
+訳し忘れ（列の欠落）と空の列を拒む。`textCatalog.emptyAllowed` に挙げた ID（`UI_TEXT_EMPTY`）だけが
+3 列とも空でよい。列は添字で引くので `switch` が無く、C-002（`-Wswitch-enum`）では守れない（ADR 0032）。
+要素の数を数えるのは、`clang-format` が長い行を隣接リテラルに割るため（リテラルの数では列を数えない）。
+
+- 対応する規則: C-018
+- 機械強制: **planned**（この単位で `eng/conformance.py` に実装し、`tests/conformance` の正例・反例と `eng/prove-gates.py` の実ツール反例を足す）
+
 🔴 **検出語は検査器のソースに直書きしない**（検査器が自分自身を違反として報告する。前例: xi-tools 初版で 7 件の自己検出）。
 🔴 **テストソースは検査対象から外す**（テストは意図的な違反を書く場所）。
 
@@ -228,7 +241,7 @@ CNF-006 が「本文に定義があるのにここに行が無い」を拒否す
 | C-015 | planned | CNF-003 ＋ CNF-004 |
 | C-016 | planned | `-Werror=vla`・clang-tidy insecureAPI・ASan/UBSan |
 | C-017 | planned |  |
-| C-018 | active | eng/conformance.py（CNF-010） |
+| C-018 | active | eng/conformance.py（CNF-010。列の網羅は CNF-011） |
 | GIT-001 | planned | PR テンプレート＋CI（`Closes #N`） |
 | GIT-002 | planned | ruleset＋CI（head ブランチ名） |
 | GIT-003 | planned | `.githooks/commit-msg`＋CI（全コミットと PR タイトル） |
@@ -256,6 +269,7 @@ CNF-006 が「本文に定義があるのにここに行が無い」を拒否す
 | CNF-008 | active | eng/conformance.py / tests/conformance |
 | CNF-009 | active | eng/conformance.py / tests/conformance / eng/prove-gates.py |
 | CNF-010 | active | eng/conformance.py / tests/conformance / eng/prove-gates.py |
+| CNF-011 | planned | eng/conformance.py / tests/conformance / eng/prove-gates.py |
 
 ---
 

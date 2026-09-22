@@ -167,3 +167,19 @@ Win32 部品 probe（`out/design/2026-09-23/theme-ui-probe/`）: 1 つの suspen
     （probe でも 6 件の `WM_CHAR` のうち飲むのは Ctrl+S / Ctrl+P / Enter / Tab の 4 件で、Esc と英字は飲まない。）
 12. **`ImmAssociateContext` が返した元の文脈を保存し、窓を壊す前に戻す**（MSDN の作法）。
     `WM_DESTROY` の時点では子はまだ生きているので、`window_destroyed` で戻してから手放す。
+
+## 2026-09-23 の補正 2（ADR 0032・決定本文は書き換えない）
+
+13. **決定 6 の再着色にも「最初に見える論理行」の退避と復元を足す。**
+    #76 の実測（`out/design/2026-09-23/language-probe/` の §1-3）で、
+    **キャレットが画面の外にあると `EM_SETCHARFORMAT` はキャレットの位置までスクロールする**
+    （`EM_GETFIRSTVISIBLELINE` が 20 → 0）ことが分かった。色でも face でも起きるので、
+    #75 の `recolor_pane` も、利用者が読んでいた位置を失いうる。
+    `recolor_pane` を ADR 0026 決定 6 と同じ包み——**論理行を `note_pane_first_visible_line` で
+    退避 →（編集は `note_pane_recolor`・閲覧は `note_pane_recolor` ＋ 流し直し）→ 選択の復元 →
+    `note_pane_scroll_to_line` で論理行の復元**——にする。
+    色は再折り返しを起こさない（181 → 181 行）ので復元は「キャレットへ寄った分を戻す」だけだが、
+    同じ包みを #76 の言語切り替え（face の差し替えで**再折り返しが起きる**）と共有する。
+    順は編集・閲覧とも「退避 → 当てる → 選択 → 論理行」で、選択の復元（補正 1 の
+    `had && end > start`）は論理行の復元より**先**に置く（`EM_EXSETSEL` が寄せた位置を
+    `note_pane_scroll_to_line` が最終的に決める）。
