@@ -173,6 +173,20 @@ head が動いたら Draft に戻して再度 Ready にする。古い成功 SHA
 - 対応する規則: C-002
 - 機械強制: **active**（`eng/conformance.py` ＋ `eng/prove-gates.py` の実ツール反例）
 
+### CNF-010 — 表示文言の置き場所
+
+`src/` の C ソース（`.c` / `.h`）の**文字列**リテラルのうち、(a) 非 ASCII のバイトを含むもの、
+(b) ワイド・`char16_t`・`char32_t` のリテラル（`L"…"` / `u"…"` / `U"…"`）で `\x` `\u` `\U` のエスケープを含むものは、
+`eng/conformance-rules.json` の `textCatalog` が名指しするファイル（`src/core/ui_text.c`）以外に置けない。
+利用者に見える文言の正本を 1 か所に保ち、第 2 の経路を**見つけやすくする**検査である（ADR 0030）。
+ナローの `"\xEF\xBB\xBF"`（UTF-8 の BOM のバイト列）は (b) に当たらないので掛からず、例外の設定は要らない。
+文字リテラル（`'\x1b'`）は対象外。注記は対象外だが、`c_code()` は文字列も潰すので使わず、
+注記の選択肢を先に置いた 1 本の字句走査で文字列リテラルだけを取り出す。`tests/` / `out/` / `eng/` は対象外。
+結合や `#define` による回避は字句では見えない。
+
+- 対応する規則: C-018
+- 機械強制: **planned**（`eng/conformance.py` ＋ `tests/conformance` ＋ `eng/prove-gates.py` の実ツール反例。#74 で active にする）
+
 🔴 **検出語は検査器のソースに直書きしない**（検査器が自分自身を違反として報告する。前例: xi-tools 初版で 7 件の自己検出）。
 🔴 **テストソースは検査対象から外す**（テストは意図的な違反を書く場所）。
 
@@ -214,6 +228,7 @@ CNF-006 が「本文に定義があるのにここに行が無い」を拒否す
 | C-015 | planned | CNF-003 ＋ CNF-004 |
 | C-016 | planned | `-Werror=vla`・clang-tidy insecureAPI・ASan/UBSan |
 | C-017 | planned |  |
+| C-018 | planned | eng/conformance.py（CNF-010） |
 | GIT-001 | planned | PR テンプレート＋CI（`Closes #N`） |
 | GIT-002 | planned | ruleset＋CI（head ブランチ名） |
 | GIT-003 | planned | `.githooks/commit-msg`＋CI（全コミットと PR タイトル） |
@@ -240,6 +255,7 @@ CNF-006 が「本文に定義があるのにここに行が無い」を拒否す
 | CNF-007 | planned | eng/conformance.py / tests/conformance |
 | CNF-008 | active | eng/conformance.py / tests/conformance |
 | CNF-009 | active | eng/conformance.py / tests/conformance / eng/prove-gates.py |
+| CNF-010 | planned | eng/conformance.py / tests/conformance / eng/prove-gates.py |
 
 ---
 
