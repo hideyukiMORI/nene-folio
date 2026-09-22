@@ -117,3 +117,29 @@ Win32 部品 probe（`out/design/2026-09-23/theme-ui-probe/`）: 1 つの suspen
 設定面の ↑↓ Enter Esc・`WM_CHAR` の Ctrl+S が届く・`WM_KILLFOCUS` で閉じる・IME 文脈が NULL・設定アイコンの矩形と `hit_test`・`chip_rect` が重ならず 560 幅でパンくず 48px を割らない・560×360 と 150% で設定面が収まる（#69 の式）・
 `folio_palette` と `rtf_palette` の 2 組の 3 対が 4.5:1 以上・`:set theme=` の 3 語・`catalog[]` から 1 行消すと `lineTables` で落ちる（`prove-gates.py` には足さない。既存の CNF-009 の反例で足りる）。
 実機の目視（hide）: 2 組の配色の見え方（値は動かしてよい）・テーマ切替で窓の縁の色が変わる・Settings アプリで OS を切り替えたときの追従・IME ON で設定面に組成が始まらない・歯車と印の大きさと縦位置。統合チェックリストに足す。Waivers: none。
+
+## 2026-09-23 の補正（実装と Win32 部品 probe の後・決定本文は書き換えない）
+
+実装の probe は `out/design/2026-09-23/theme-ui-probe/`、
+結果のまとめは[確認記録](../quality/2026-09-23-theme-checks.md)。
+
+1. **決定 6 の「選択を `EM_EXSETSEL` だけで戻す」は、空でない選択のときだけ行う。**
+   実測では **`EM_EXSETSEL` は `EM_SCROLLCARET` を送らなくても選択を見える位置へ寄せる**
+   （`firstVisibleLine` が 40 → 5。空の選択 `[0,0]` を戻すと 45 → 0 で先頭へ飛ぶ）。
+   流し直し**だけ**なら位置が保たれること（40 → 40）は決定のとおりで、動かすのは復元の側だった。
+   `recolor_pane` は `had && end > start` で判定する。検索の一致（ADR 0023）は見せたいので寄るのは望ましく、
+   選んでいないときは流し直しが保った位置がそのまま残る。
+2. **決定 8(b) の `FOLIO_COMMAND_SETTINGS` は単位 3（application）ではなく単位 5（ui）のコミットで足した。**
+   値を足すと `execute_command()` の全値 switch が落ちるので、開く先（`COMMAND_SURFACE_SETTINGS`）が無い段階では
+   仮の分岐を置くことになる。「各コミット単体でビルドが通る」を優先し、値と UI を同じコミットに置いた。
+   `lineTables` の `folio_command.h` → `folio_command.c` は**値を足す前の**単位 3 で入れてある。
+   同じ理由で `folio_option` の `theme=` の 3 語と `execute_set_command` の振り分けも単位 5 にある。
+3. **`folio_theme_choice.h` → `folio_settings.c` を `lineTables` に足した（決定 9 への追加）。**
+   版 2 の `theme` の語は `theme_names[]` の指示付き初期化子で引くので、値を足して行を忘れると null になる。
+   CNF-009 の対を 1 行増やして機械に守らせた（閾値・除外・重大度は触っていない）。
+4. **決定 7 の「案内 2 行」の 2 行目は、`folio_state_settings_notice` を直接引いて `folio_state_failure_line` で出す。**
+   新しい文言は足していない（`UI_TEXT_FAILURE_SETTINGS_UNREADABLE` の 1 行をそのまま使う）。
+5. **`EN_CHANGE` は 1 回ではなく 2 件出る**（`SCF_ALL` と `SCF_DEFAULT` で 1 件ずつ）。
+   受け手は `pane_notification` で番号の表に印を付けるだけなので害は無く、決定 6 のとおり `ENM_CHANGE` は外さない。
+6. **ヘルプの行を 1 行足した（`UI_TEXT_HELP_EX_SET_THEME`）ので、`command_shortcuts[]` は 18 → 19 行になる。**
+   #69 のページ送りは行数を引数で受ける式なので式は変わらないが、最小寸法でのページ数が増える。

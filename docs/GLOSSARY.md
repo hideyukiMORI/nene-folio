@@ -42,7 +42,9 @@
 | 意図（intent） | UI が発行する操作。クリック・ドラッグ・ホイール・鍵・入力 | application の reducer 関数 `folio_state_*`（`folio_state_toggle_category` 等）。種類が増えたら `enum folio_intent` に束ねる |
 | 表示値（view model） | application が作り UI が写す値 | `struct *_view`（application）・`struct drawer_row`（core） |
 | 測定ビルド（measurement build） | 同じ中核ソースと単体テストを計装コンパイルして分岐を測る検証専用のビルド。第 2 の製品実装ではない | `eng/coverage.py` → `out/coverage/` |
-| テーマ（theme） | ライト／ダークの閉じた選択肢。OS のアプリのモードから起動時に決まる | `enum folio_theme`（core） |
+| テーマ（theme） | 描画に使うライト／ダークの閉じた 2 値。選択と OS の値から `folio_theme_resolve` が決める | `enum folio_theme`・`folio_theme_resolve`（core） |
+| テーマの選択（theme choice） | 利用者が設定で選ぶ 3 値（`system` / `light` / `dark`）。`system` だけが OS の値を通す | `enum folio_theme_choice`（core）・`folio_state_theme_choice`（application）・ADR 0031 |
+| 設定画面（settings surface） | 頭の歯車・「操作」メニュー・パレットの「設定」が開く入力面。EDIT を持たずレイヤー自身がフォーカスと鍵を受ける | `COMMAND_SURFACE_SETTINGS`（ui/win32）・ADR 0031 の決定 7 |
 | パレット（palette） | テーマごとの色の束。RTF 用と自前描画用の 2 つが正本 | `rtf_palette`（core）・`folio_palette`（ui/win32） |
 | 操作 ID（command ID） | Ex・操作パレット・既存ショートカットが共通して実行する、表示名から独立した閉じた値 | `enum folio_command`（core） |
 | 操作パレット（command palette） | Ctrl+P で開き、登録済みの操作を表示名または Ex 別名で絞り込んで実行する一時的な入力面 | `folio_command`（core）の登録表・`folio_window`（ui/win32）の入力面 |
@@ -61,7 +63,7 @@
 | 絞り込み（index filter） | 全ノートの名前と本文に語が含まれるノートだけを索引に残すこと。一致を持つカテゴリは折り畳んでいても展開して並ぶ。ノート内検索（FR-011）とは対象も語も別 | `index_filter`（core）・`folio_state_set_index_filter`（application）・ADR 0024 |
 | 論理行（logical line） | md 原文の改行で区切られた 1 行。RichEdit が折り返して作る**表示行**とは別で、折り返しの継続行には番号を出さない。表示中の平文では段落区切りが CR 1 つに揃っている | `line_index`（core）・`struct line_mark`・ADR 0026 の決定 2 |
 | 番号の帯（gutter） | 編集中の本文の左の空きに、主窓が自前で描く論理行番号の列。RichEdit の中には置かない（スクロールで一緒に動いてしまうため） | `struct gutter_row`（ui/win32）・`note_pane_visible_rows`・ADR 0026 の決定 1 / 3 |
-| 設定（settings） | `data/settings.json` の版 1。効果を実装したキーだけが入り、キーを足すたびに版を上げる。無いときだけ既定値で始め、読めなければ既定値で起動して**上書きしない** | `folio_settings`（core）・`folio_state_set_number`（application）・ADR 0025 |
+| 設定（settings） | `data/settings.json` の版 2（`number` と `theme`。版 1 は読めて版 2 へ移行する）。効果を実装したキーだけが入り、キーを足すたびに版を上げる。無いときだけ既定値で始め、読めなければ既定値で起動して**上書きしない** | `folio_settings`（core）・`folio_state_set_number` / `folio_state_set_theme`（application）・ADR 0025・ADR 0031 |
 | 本文の写し（note corpus） | 絞り込みが読む、ノートの本文の複製。**空でない語が初めて来たときに 1 回だけ**ポートから読み、以後は保存・新規・改名・移動で該当の写しだけ差し替える。宛先はカテゴリ名とノート名（並び替えでは動かない）。写しが無いノートは一致しない | `note_corpus`（core）・ADR 0024 の決定 1 |
 | 配置の入力（drawer source） | ドロワーの配置が読む、カテゴリ台帳・索引台帳の列・nullable の絞り込みの束。絞り込みの有無で配置の関数を分けないための 1 つの型 | `struct drawer_source`（core）・ADR 0024 の決定 3 |
 | 置換の下見（replace preview） | 「このパターンで、この本文の、この一致を、この置換文字列で置き換える」を 1 つ持つ値。**UTF-16 の本文の写し**・一致の列・件数・宛先（カテゴリ名とノート名）・解析済みの置換文字列を所有する。位置が `EM_EXSETSEL` と 1 対 1 でなければならないので UTF-8 へ写さない（C-014 の名指しの例外） | `replace_preview`（core）・`folio_state_preview_replace`（application）・ADR 0028 の決定 6 |

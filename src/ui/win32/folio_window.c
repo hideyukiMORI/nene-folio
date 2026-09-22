@@ -2831,7 +2831,10 @@ static void recolor_pane(const struct folio_window *_Nonnull self)
     size_t end = 0;
     bool had = note_pane_selection(self->pane, &start, &end);
     render_pane(self);
-    if (had)
+    /* **実測の補正**: EM_EXSETSEL は EM_SCROLLCARET を送らなくても選択を見える位置へ寄せる。
+     * 空の選択を戻すと先頭へ飛ぶので、選んでいる一致があるときだけ戻す（ADR 0023 の
+     * ハイライトは保ち、選んでいないときは流し直しが保ったスクロール位置をそのまま残す）。 */
+    if (had && end > start)
     {
         note_pane_restore_selection(self->pane, (struct note_search_span){start, end});
     }
