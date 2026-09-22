@@ -92,7 +92,7 @@ static const char *_Nonnull const command_shortcuts[] = {
     "全区画  Ctrl+Shift+F すべてのノートを検索（索引を絞り込む）",
     "絞り込み欄  Esc・Enter 索引へ戻る（絞り込みは残る）/ 空にすると解除",
     "絞り込み中  並び替えと折畳/展開はできない（色・保存・編集は可）",
-    "Ctrl+N 新規 / Ctrl+S 保存 / Ctrl+Shift+S 別名保存 / F2 名前変更",
+    "入力欄でも  Ctrl+N 新規 / Ctrl+S 保存 / Ctrl+Shift+S 別名保存 / F2 名前変更",
     "索引・閲覧本文  : コマンド / i 編集",
     "Ex  :set number / :set nonumber / :set nu!（編集中の原文の行番号）",
     "置換欄  Tab 欄を移動 / Enter 1 件 / Ctrl+Enter すべて / Esc 閉じる",
@@ -2422,18 +2422,38 @@ static enum folio_state_outcome command_rename(const struct folio_window *_Nonnu
     return outcome;
 }
 
-static void finish_save_command(struct folio_window *_Nonnull self,
-                                enum folio_state_outcome outcome)
+/* 保存の結果を見せるだけ。欄にも区画にも触らない。成功したら true。 */
+static bool report_save(struct folio_window *_Nonnull self, enum folio_state_outcome outcome)
 {
     if (outcome != FOLIO_STATE_READY)
     {
         command_failure(self, outcome);
-        return;
+        return false;
     }
     InvalidateRect(self->handle, nullptr, FALSE);
-    if (self->command_surface != COMMAND_SURFACE_CLOSED)
+    return true;
+}
+
+static void finish_save_command(struct folio_window *_Nonnull self,
+                                enum folio_state_outcome outcome)
+{
+    if (report_save(self, outcome) && self->command_surface != COMMAND_SURFACE_CLOSED)
     {
         close_command_surface(self);
+    }
+}
+
+/* 入力面（Ex・パレット・検索欄・置換の 2 欄・ドロワーの絞り込み欄）の中の Ctrl+S
+ * （ADR 0016 の 2026-09-22 の補正 2）。保存は本文の Ctrl+S と同じ command_save を通り、
+ * 違うのは**欄を閉じないこと**だけである。欄の語・キャレット・選択は触らない。
+ * 失敗の箱や名前入力の面はフォーカスを動かすので、押した欄へ返す。 */
+static void store_from_surface(struct folio_window *_Nonnull self)
+{
+    HWND _Nullable focus = GetFocus();
+    (void)report_save(self, command_save(self));
+    if (focus != nullptr && IsWindow(focus))
+    {
+        SetFocus(focus);
     }
 }
 
@@ -3562,6 +3582,12 @@ static bool command_character(struct folio_window *_Nonnull self, WPARAM charact
     {
         return true;
     }
+    if (character == store_character)
+    {
+        /* 保存して欄は開いたまま（ADR 0016 の補正 2）。鍵の状態は読まない（ARC-007）。 */
+        store_from_surface(self);
+        return true;
+    }
     if (character == new_character)
     {
         execute_command(self, FOLIO_COMMAND_NEW, "");
@@ -3733,7 +3759,8 @@ static bool filter_input_handled(struct folio_window *_Nonnull self, UINT messag
     }
     if (message == WM_CHAR && wparam == store_character)
     {
-        execute_command(self, FOLIO_COMMAND_SAVE, "");
+        /* 共通の保存だが、開いている入力面を閉じない（ADR 0016 の補正 2）。 */
+        store_from_surface(self);
         return true;
     }
     /* Enter と Esc の WM_CHAR は既定処理がビープを出すので飲む。 */
