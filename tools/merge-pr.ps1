@@ -93,11 +93,15 @@ function Get-CheckSummary {
     param([Parameter(Mandatory)][AllowEmptyCollection()][object[]]$Checks)
     $failed = @($Checks | Where-Object { $_.bucket -in @('fail', 'cancel') } | ForEach-Object { $_.name })
     $pending = @($Checks | Where-Object { $_.bucket -eq 'pending' } | ForEach-Object { $_.name })
+    # Draft の run では gate が skipping になる。完了とは数えず、Ready のあとの本物の pass を待つ。
+    $skipped = @($Checks | Where-Object { $_.bucket -eq 'skipping' } | ForEach-Object { $_.name })
+    $passed = @($Checks | Where-Object { $_.bucket -eq 'pass' } | ForEach-Object { $_.name })
     return [ordered]@{
         count = $Checks.Count
         failed = $failed
         pending = $pending
-        done = ($Checks.Count -gt 0 -and $pending.Count -eq 0)
+        skipped = $skipped
+        done = ($Checks.Count -gt 0 -and $pending.Count -eq 0 -and $skipped.Count -eq 0 -and $passed.Count -gt 0)
     }
 }
 
