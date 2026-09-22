@@ -23,8 +23,9 @@ static const char *_Nonnull const theme_names[] = {
     [FOLIO_THEME_CHOICE_DARK] = "dark",
 };
 
-/* 決めた値を持つ設定を作る。既定値と複製が共有する唯一の確保点（ARC-001）。 */
-static enum folio_settings_outcome create(bool number, enum folio_theme_choice theme,
+/* 決めた値を持つ設定を作る。既定値と複製が共有する唯一の確保点（ARC-001）。
+ * **値は struct のまま受ける**ので、キーが増えても引数は 2 つのままである（ADR 0032 の決定 1）。 */
+static enum folio_settings_outcome create(const struct folio_settings *_Nonnull values,
                                           struct folio_settings *_Nullable *_Nonnull out)
 {
     struct folio_settings *_Nullable settings = calloc(1, sizeof *settings);
@@ -32,15 +33,22 @@ static enum folio_settings_outcome create(bool number, enum folio_theme_choice t
     {
         return FOLIO_SETTINGS_OUT_OF_MEMORY;
     }
-    settings->number = number;
-    settings->theme = theme;
+    *settings = *values;
     *out = settings;
     return FOLIO_SETTINGS_READY;
 }
 
+/* ファイルが無いときと、解析を始めるときの初期値。既定値を書く場所はここだけである。 */
+static struct folio_settings defaults(void)
+{
+    struct folio_settings values = {.number = false, .theme = FOLIO_THEME_CHOICE_SYSTEM};
+    return values;
+}
+
 enum folio_settings_outcome folio_settings_default(struct folio_settings *_Nullable *_Nonnull out)
 {
-    return create(false, FOLIO_THEME_CHOICE_SYSTEM, out);
+    struct folio_settings values = defaults();
+    return create(&values, out);
 }
 
 enum folio_settings_outcome
@@ -48,15 +56,9 @@ folio_settings_with_number(const struct folio_settings *_Nonnull settings, bool 
                            struct folio_settings *_Nullable *_Nonnull out)
 {
     /* 元の設定を写してから number だけを変える。写す値が増えても写す場所はここだけである。 */
-    struct folio_settings *_Nullable copy = nullptr;
-    enum folio_settings_outcome outcome = create(settings->number, settings->theme, &copy);
-    if (outcome != FOLIO_SETTINGS_READY)
-    {
-        return outcome;
-    }
-    copy->number = number;
-    *out = copy;
-    return FOLIO_SETTINGS_READY;
+    struct folio_settings values = *settings;
+    values.number = number;
+    return create(&values, out);
 }
 
 enum folio_settings_outcome
@@ -64,15 +66,9 @@ folio_settings_with_theme(const struct folio_settings *_Nonnull settings,
                           enum folio_theme_choice theme,
                           struct folio_settings *_Nullable *_Nonnull out)
 {
-    struct folio_settings *_Nullable copy = nullptr;
-    enum folio_settings_outcome outcome = create(settings->number, settings->theme, &copy);
-    if (outcome != FOLIO_SETTINGS_READY)
-    {
-        return outcome;
-    }
-    copy->theme = theme;
-    *out = copy;
-    return FOLIO_SETTINGS_READY;
+    struct folio_settings values = *settings;
+    values.theme = theme;
+    return create(&values, out);
 }
 
 static bool expect_key(struct json_reader *_Nonnull reader, const char *_Nonnull key)
@@ -115,26 +111,25 @@ static bool document_end(struct json_reader *_Nonnull reader)
            json_reader_next(reader) == JSON_TOKEN_END;
 }
 
-/* 版 1 の本体（`"number": <bool>` まで）。theme は既定値を埋めて版 2 へ移す（決定 1）。 */
+/* 版 1 の本体（`"number": <bool>` まで）。theme は既定値のまま版 2 へ移す（決定 1）。 */
 static enum folio_settings_outcome parse_version_1(struct json_reader *_Nonnull reader,
-                                                   bool *_Nonnull number,
-                                                   enum folio_theme_choice *_Nonnull theme)
+                                                   struct folio_settings *_Nonnull values)
 {
-    if (!expect_key(reader, "number") || !read_boolean(reader, number) || !document_end(reader))
+    if (!expect_key(reader, "number") || !read_boolean(reader, &values->number) ||
+        !document_end(reader))
     {
         return FOLIO_SETTINGS_MALFORMED;
     }
-    *theme = FOLIO_THEME_CHOICE_SYSTEM;
     return FOLIO_SETTINGS_READY;
 }
 
 /* 版 2 の本体（`"number": <bool>, "theme": "…"` まで）。順序も形のうち。 */
 static enum folio_settings_outcome parse_version_2(struct json_reader *_Nonnull reader,
-                                                   bool *_Nonnull number,
-                                                   enum folio_theme_choice *_Nonnull theme)
+                                                   struct folio_settings *_Nonnull values)
 {
-    if (!expect_key(reader, "number") || !read_boolean(reader, number) ||
-        !expect_key(reader, "theme") || !read_theme(reader, theme) || !document_end(reader))
+    if (!expect_key(reader, "number") || !read_boolean(reader, &values->number) ||
+        !expect_key(reader, "theme") || !read_theme(reader, &values->theme) ||
+        !document_end(reader))
     {
         return FOLIO_SETTINGS_MALFORMED;
     }
@@ -143,8 +138,7 @@ static enum folio_settings_outcome parse_version_2(struct json_reader *_Nonnull 
 
 /* 先頭の `{"version": <n>` だけを読み、その版の本体の解析へ渡す（決定 1）。 */
 static enum folio_settings_outcome parse_document(struct json_reader *_Nonnull reader,
-                                                  bool *_Nonnull number,
-                                                  enum folio_theme_choice *_Nonnull theme)
+                                                  struct folio_settings *_Nonnull values)
 {
     if (json_reader_next(reader) != JSON_TOKEN_OBJECT_BEGIN || !expect_key(reader, "version") ||
         json_reader_next(reader) != JSON_TOKEN_UNSIGNED)
@@ -154,11 +148,11 @@ static enum folio_settings_outcome parse_document(struct json_reader *_Nonnull r
     uint32_t version = json_reader_unsigned(reader);
     if (version == settings_version_1)
     {
-        return parse_version_1(reader, number, theme);
+        return parse_version_1(reader, values);
     }
     if (version == settings_version)
     {
-        return parse_version_2(reader, number, theme);
+        return parse_version_2(reader, values);
     }
     return FOLIO_SETTINGS_UNSUPPORTED_VERSION;
 }
@@ -171,15 +165,14 @@ enum folio_settings_outcome folio_settings_parse(const char *_Nonnull text, size
     {
         return FOLIO_SETTINGS_OUT_OF_MEMORY;
     }
-    bool number = false;
-    enum folio_theme_choice theme = FOLIO_THEME_CHOICE_SYSTEM;
-    enum folio_settings_outcome outcome = parse_document(reader, &number, &theme);
+    struct folio_settings values = defaults();
+    enum folio_settings_outcome outcome = parse_document(reader, &values);
     json_reader_destroy(reader);
     if (outcome != FOLIO_SETTINGS_READY)
     {
         return outcome;
     }
-    return create(number, theme, out);
+    return create(&values, out);
 }
 
 void folio_settings_write(const struct folio_settings *_Nonnull settings,
