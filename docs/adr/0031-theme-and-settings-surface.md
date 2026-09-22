@@ -143,3 +143,27 @@ Win32 部品 probe（`out/design/2026-09-23/theme-ui-probe/`）: 1 つの suspen
    受け手は `pane_notification` で番号の表に印を付けるだけなので害は無く、決定 6 のとおり `ENM_CHANGE` は外さない。
 6. **ヘルプの行を 1 行足した（`UI_TEXT_HELP_EX_SET_THEME`）ので、`command_shortcuts[]` は 18 → 19 行になる。**
    #69 のページ送りは行数を引数で受ける式なので式は変わらないが、最小寸法でのページ数が増える。
+7. **S1（独立レビューの止める所見）: 設定画面は「行を決めてから配置する」順でなければならない。**
+   `show_settings_surface` が面を開いたままのときに `arrange_command_input` を先に呼ぶと、中の
+   `reveal_command_selection` が**パレットの添字のまま**走る。最小寸法の 4 行で `command_selection = 13` なら
+   `command_first = 10` になり、`draw_settings_rows` のループが 1 度も回らず**行が 1 つも描かれない**
+   （見えないまま Enter でテーマが変わる）。`show_command_palette` と同じ順に直し、`settings_navigate` からも
+   `reveal_command_selection` を呼ぶ（単位 C で行が増えても選択行が箱の外へ出ない）。probe に式そのものを置いた。
+8. **D1: 設定の失敗は箱ではなく欄の中の 1 行にする（決定 7 のとおり）。**
+   `inline_outcome()` の `FOLIO_STATE_SETTINGS_STORE_FAILED` と `FOLIO_STATE_SETTINGS_UNREADABLE` を真の側へ移した。
+   同じ値を返す **`:set number` の失敗の見え方も変わる**（箱 → 欄の 1 行）が、他の Ex の失敗と揃うので意図どおりとする。
+   `docs/KEY_BINDINGS.md` の行番号の節にも 1 句足した。
+9. **D6: 閲覧の再着色から `SCF_ALL` を省く。**
+   直後に RTF を流し直すので、`SCF_ALL` は捨てる書式を 1 度塗るだけでちらつきの元になる。
+   既定書式は `note_pane_edit` の平文の流し込みが使うので閲覧でも更新が要る。`tomSuspend` と変更印の退避復元はそのまま。
+   `note_pane_recolor` が `enum pane_mode` を受ける（C-012 の引数 4 つに収まる）。
+   実測: 閲覧の経路の `EN_CHANGE` は **1 件**で、既定書式は新しい色になる（編集は 2 件のまま）。
+10. **常設の絞り込みの欄（`filter_input`）もテーマに追従するようにした（#75 以前からの欠陥）。**
+    欄は主窓の子なのに主窓の手続きに `WM_CTLCOLOREDIT` の case が無く、`color_command_input` の
+    `|| lparam == filter_input` の分岐が**到達不能**だった。case を足して同じ 1 本へ渡す（第 2 の経路を作らない）。
+    aubergine の地では白い帯が強く目立つのでこの単位で直した。
+11. **D5: 設定画面の Esc の `WM_CHAR`（0x1B）は飲まない。**
+    `WM_KEYDOWN` の段階で `close_command_surface` が走って面はもう閉じており、続く `WM_CHAR` は `DefWindowProcW` が捨てる。
+    （probe でも 6 件の `WM_CHAR` のうち飲むのは Ctrl+S / Ctrl+P / Enter / Tab の 4 件で、Esc と英字は飲まない。）
+12. **`ImmAssociateContext` が返した元の文脈を保存し、窓を壊す前に戻す**（MSDN の作法）。
+    `WM_DESTROY` の時点では子はまだ生きているので、`window_destroyed` で戻してから手放す。

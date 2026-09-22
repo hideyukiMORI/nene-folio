@@ -22,6 +22,7 @@ Win32 部品 probe の道具と全出力は `out/design/2026-09-23/theme-ui-prob
 | `SETTINGS_UNREADABLE` のセッションは `set_number` と同じ値で断り、上書きしない | `verify_settings_unreadable` | OK |
 | `set_theme` は `synchronize` を通さない（未完了の改名を再試行しない） | `verify_set_number_ignores_resumed_rename` | OK |
 | 確保失敗（`folio_settings_with_theme`・`set_theme` と `refresh_theme` の閲覧文書） | `allocation_tests.c` `settings_scenario` / `set_theme_under_probe` | OK |
+| 確保失敗の不変（選択・解決値・閲覧文書のポインタ・書き込み回数が前のまま） | `state_tests.c` `verify_set_theme_out_of_memory`・`allocation_tests.c` `set_theme_under_probe` | OK |
 | `:set theme=` の 3 語と、`theme` / `theme=` / `theme=blue` / `theme = dark` の拒否 | `command_tests.c` `verify_options` | OK |
 | `FOLIO_COMMAND_SETTINGS` が listed・別名なし・日本語の表示名 | `command_tests.c` `verify_listed` | OK |
 | `catalog[]` の網羅（値を足して行を忘れると落ちる） | CNF-009 の `lineTables`（`folio_command.h` → `folio_command.c`） | active |
@@ -29,7 +30,7 @@ Win32 部品 probe の道具と全出力は `out/design/2026-09-23/theme-ui-prob
 
 ## 2. Win32 部品 probe（`out/design/2026-09-23/theme-ui-probe/`）
 
-`recolor_probe` 19 / 19・`layer_probe` 9 / 9・`contrast.py` 26 / 26・`geometry.py` 6 / 6 が成功（**合計 60 項目**・FAIL 0）。
+`recolor_probe` 21 / 21・`layer_probe` 9 / 9・`contrast.py` 26 / 26・`geometry.py` 12 / 12 が成功（**合計 68 項目**・FAIL 0・4 本とも exit 0）。
 
 ### 再着色（ADR 0031 の決定 6 の**未測定だった形**）
 
@@ -44,9 +45,17 @@ Win32 部品 probe の道具と全出力は `out/design/2026-09-23/theme-ui-prob
 | 本文の色 / 既定書式の色 | 両方 `#EFE4EA` へ変わる | 同じ |
 | `EN_CHANGE` | 2 件 | 2 件 |
 
-### 閲覧の流し直し
+### 閲覧の再着色と流し直し
 
+閲覧の経路（`SCF_ALL` を省いて既定書式だけ当てる・補正 D6）の `EN_CHANGE` は **1 件**で、
+既定書式は新しい色になる（編集の経路は 2 件のまま）。
 流し直しだけならスクロール位置は保たれる（`first=40 → 40`）。選択は `[0,0]` に消える。
+
+### パレットから開いたときの行（S1 の回帰防止）
+
+`reveal_command_selection` の式そのものを `geometry.py` に写して確かめた:
+順を逆にすると `command_selection = 13` から **`command_first = 10`** になり**描かれる行が 0**、
+行を先に決めれば `command_first = 0` で **4 行とも描かれる**。↑↓ で移っても 1〜3 行は箱の中に残る。
 
 ### コントラスト比（production の値そのもの）
 
@@ -75,6 +84,17 @@ Ctrl+S / Ctrl+P / Enter / Tab の 4 件を飲む。`ImmAssociateContext(layer, N
 ADR 0031 の決定 6 は「位置は動かない」と読める書き方だったが、空の選択 `[0,0]` を戻すと先頭へ飛ぶ（`45 → 0`）。
 `recolor_pane` を**空でない選択のときだけ戻す**形に直した（検索の一致は見せたいので寄るのは望ましく、
 選んでいないときは流し直しが保った位置がそのまま残る）。ADR 0031 の「2026-09-23 の補正」節 1 に記録した。
+
+## 3-1. 独立レビュー（設計リナ・HEAD `28d714a`）で直した所見
+
+| 所見 | 直した内容 | 固定した場所 |
+| --- | --- | --- |
+| **S1（止める）** パレットから開くと行が 1 つも描かれない | 行を決めてから配置する順へ。`settings_navigate` も `reveal_command_selection` を呼ぶ | `geometry.py` `verify_open_from_palette` |
+| D1 設定の失敗が箱で出る | `inline_outcome()` で欄の 1 行へ（`:set number` の失敗も同じ） | 目視 75-15 / 75-17 |
+| D6 閲覧での `SCF_ALL` が無駄 | 閲覧は既定書式だけ。`note_pane_recolor` が `pane_mode` を受ける | `recolor_probe` の「view recolor」2 項目 |
+| D7 確保失敗時の不変が未固定 | 書き込みの OOM を偎のポートで踏む単体を足した | `verify_set_theme_out_of_memory` |
+| 絞り込みの欄がテーマに追従しない | 主窓に `WM_CTLCOLOREDIT` を足し、到達不能だった分岐を生かした | 目視 75-18 |
+| `ImmAssociateContext` の後始末 | 元の文脈を保存し、窓を壊す前に戻す | 目視不要（MSDN の作法） |
 
 ## 4. 限界（この単位で測っていないこと）
 
