@@ -9,8 +9,8 @@
 
 static const char header[] =
     "{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0\\fnil Yu Gothic UI;}{\\f1\\fmodern Consolas;}}"
-    "{\\colortbl;\\red43\\green49\\blue56;\\red16\\green20\\blue24;\\red107\\green114\\blue128;"
-    "\\red47\\green90\\blue168;\\red213\\green216\\blue220;\\red27\\green31\\blue36;}"
+    "{\\colortbl;\\red36\\green19\\blue24;\\red44\\green0\\blue30;\\red106\\green96\\blue92;"
+    "\\red178\\green60\\blue18;\\red237\\green225\\blue232;\\red44\\green0\\blue30;}"
     "\\f0\\fs22\\cf1";
 
 /* markdown を変換し、文書の頭と末尾を除いた本体が expected と同じか。 */
@@ -155,14 +155,14 @@ static void verify_note_text(void)
             "empty document");
     markdown_rtf_destroy(rtf);
     require(markdown_rtf_empty(rtf_palette_for(FOLIO_THEME_DARK), &rtf) == MARKDOWN_RTF_CONVERTED &&
-                strstr(markdown_rtf_text(rtf), "\\red195\\green200\\blue207;") != nullptr,
+                strstr(markdown_rtf_text(rtf), "\\red239\\green228\\blue234;") != nullptr,
             "dark palette in the color table");
     markdown_rtf_destroy(rtf);
     markdown_rtf_destroy(nullptr);
     struct rtf_palette dark = rtf_palette_for(FOLIO_THEME_DARK);
     struct rtf_palette light = rtf_palette_for(FOLIO_THEME_LIGHT);
-    require(dark.heading.red == 0xFF && light.heading.red == 0x10 &&
-                dark.code_background.red == 0x06 && light.code_background.red == 0x1B,
+    require(dark.heading.red == 0xFF && light.heading.red == 0x2C &&
+                dark.code_background.red == 0x16 && light.code_background.red == 0x2C,
             "palettes differ by theme");
 }
 

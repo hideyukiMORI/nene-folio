@@ -617,14 +617,23 @@ static bool settings_scenario(void)
     {
         return false;
     }
-    struct folio_settings *changed = nullptr;
-    enum folio_settings_outcome derived = folio_settings_with_number(settings, true, &changed);
+    struct folio_settings *numbered = nullptr;
+    enum folio_settings_outcome derived = folio_settings_with_number(settings, true, &numbered);
     folio_settings_destroy(settings);
     if (derived == FOLIO_SETTINGS_OUT_OF_MEMORY)
     {
         return false;
     }
     require(derived == FOLIO_SETTINGS_READY, "settings copy under probe");
+    struct folio_settings *changed = nullptr;
+    enum folio_settings_outcome themed =
+        folio_settings_with_theme(numbered, FOLIO_THEME_CHOICE_DARK, &changed);
+    folio_settings_destroy(numbered);
+    if (themed == FOLIO_SETTINGS_OUT_OF_MEMORY)
+    {
+        return false;
+    }
+    require(themed == FOLIO_SETTINGS_READY, "settings theme copy under probe");
     struct json_writer *writer = nullptr;
     if (json_writer_create(&writer) != JSON_WRITER_ACCEPTED)
     {
