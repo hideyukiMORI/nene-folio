@@ -1,7 +1,9 @@
 #include "failure_box.h"
 
 #include "dialog_theme.h"
+#include "failure_box_outcome.h"
 #include "folio_palette.h"
+#include "folio_state.h"
 #include "ui_face.h"
 #include "ui_text.h"
 #include "utf16_text.h"
@@ -15,6 +17,9 @@ constexpr int box_line_limit = 480;
 constexpr int box_button_width = 88;
 constexpr int box_button_height = 28;
 constexpr int box_font_height = 14;
+/* WM_INITDIALOG で面を組み立てられなかったことを EndDialog で返す値。
+ * IDOK（閉じた）とも DialogBoxIndirectParamW の −1（面を作れなかった）とも重ならない。 */
+constexpr INT_PTR box_not_built = -2;
 
 struct failure_box
 {
@@ -229,10 +234,10 @@ static INT_PTR CALLBACK procedure(HWND dialog, UINT message, WPARAM wparam, LPAR
     {
         struct failure_box *_Nonnull box = (struct failure_box *)lparam;
         SetWindowLongPtrW(dialog, DWLP_USER, (LONG_PTR)box);
-        /* 塗れない・作れない箱は黙って閉じる。知らせられない失敗は MessageBoxW へ落とさない。 */
+        /* 塗れない・作れない箱は閉じて、呼び出し側が OS の箱へ退避する（補正 3）。 */
         if (!initialize(box, dialog))
         {
-            EndDialog(dialog, IDCANCEL);
+            EndDialog(dialog, box_not_built);
         }
         return FALSE;
     }
@@ -256,6 +261,16 @@ static INT_PTR CALLBACK procedure(HWND dialog, UINT message, WPARAM wparam, LPAR
     return FALSE;
 }
 
+/* 自前のモーダルを出す。塗り・書体・DC・子窓のどれかを作れない（box_not_built）か、
+ * 面そのものを作れない（−1）なら FALLBACK。閉じ方の区別は使わない（決定 4）。 */
+[[nodiscard]] static enum failure_box_outcome show_themed(HWND _Nullable owner,
+                                                          struct failure_box *_Nonnull box)
+{
+    INT_PTR ended = DialogBoxIndirectParamW(GetModuleHandleW(nullptr), &template.dialog, owner,
+                                            procedure, (LPARAM)box);
+    return ended == -1 || ended == box_not_built ? FAILURE_BOX_FALLBACK : FAILURE_BOX_SHOWN;
+}
+
 void failure_box_show(HWND _Nullable owner, enum folio_state_outcome outcome,
                       const struct folio_state *_Nonnull state)
 {
@@ -273,14 +288,21 @@ void failure_box_show(HWND _Nullable owner, enum folio_state_outcome outcome,
     struct failure_box box = {.units = utf16_text_units(text),
                               .language = language,
                               .theme_choice = folio_state_theme(state)};
-    /* 戻り値は使わない（決定 4）。警告音は鳴らさない（MessageBeep を呼ばない）。 */
-    DialogBoxIndirectParamW(GetModuleHandleW(nullptr), &template.dialog, owner, procedure,
-                            (LPARAM)&box);
+    enum failure_box_outcome shown = show_themed(owner, &box);
     /* ブラシと書体は面が返った直後に捨てる（ADR 0035 の決定 2）。 */
     dialog_theme_destroy(box.theme);
     if (box.font != nullptr)
     {
         DeleteObject(box.font);
+    }
+    switch (shown)
+    {
+    case FAILURE_BOX_SHOWN:
+        break;
+    case FAILURE_BOX_FALLBACK:
+        /* 正典の箱と同じくアイコンも音も付けない（MB_OK だけ）。題は製品名で翻訳しない。 */
+        MessageBoxW(owner, box.units, L"NeNe Folio", MB_OK);
+        break;
     }
     utf16_text_destroy(text);
 }
