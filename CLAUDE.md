@@ -124,6 +124,28 @@ Waivers: none | WVR-NNNN
 
 ## 6. いまの状況
 
+2026-09-22 再開後: hideの再開指示で**#41（正規表現置換・FR-023 / ADR 0028）を完成させ、PR #68 → main `f4e7bcf` へ統合**した（Issue #41は閉じた）。
+停止時点で未着手だったui層・docs層・probeを足した。置換の欄は下端の入力面（ADR 0016の補正）で、パターンと置換文字列の**2つのEDIT**・
+自前描画の「1 件」「すべて」・状態の1行を持つ。Enterが1件・Ctrl+Enterがすべて・Tabが欄の往復・Escで元の区画へ戻る。
+適用は`note_pane_replace`（`EM_EXSETSEL`→`EM_REPLACESEL(TRUE)`）1回の**Undo 1単位**で、mdは書かない。
+Ex `:%s/パターン/置換/[g]`は欄を開かず直接当て、`g`無しは各論理行の最初の一致。成功なら黙って閉じ、0件なら閉じずに「対象名 / 0 件」。
+**独立レビューで止める所見B1**（失敗した下見のまま当たる）を構造で直した: applicationは`folio_state_preview_replace`がREADY以外を返す
+すべての経路で**下見を捨て**、下見が無い適用は既存の`REPLACE_STALE`になる（結果の値は足さない）。UIが下見の成否を見るのは
+**表示の都合**（出ている失敗の1行をSTALEで上書きしない）で、安全の正本はapplicationである。
+併せてD1（一致の列を広げるreallocの確保失敗を測定ビルドで通す）・D2（`note_replace_build`が`count > capacity`を
+`NOTE_REPLACE_PARTIAL_MATCHES`で断り、黙って部分適用しない）・D3（ゼロ幅の一致を空文字列で置き換える1件は本文も選択も変えない。
+特別規則は足さず操作表に記録）・D4（死に枝3か所）と、`inline_outcome()`を**全42値のswitch**にする修正を入れた。
+最終HEADでフルゲートexit 0（CTest 2/2・分岐2586/2772=**93.29%**・15 proofs・conformance 69件）。
+実アダプタprobe 32項目・Win32部品probe 32項目が成功（[確認記録](docs/quality/2026-09-22-replace-checks.md)。ICU 72.1 / Unicode 15.1）。
+
+hideの判断4点: (1) **入力面のCtrl+Sは「保存して欄は開いたまま」**にする → **Issue #67**（この単位では直していない）。
+(2) 実機の`data/`は**同期フォルダの中ではなくローカルNTFS**。(3) #39〜#41の**実機目視は#41統合後にまとめて**行う
+（[統合チェックリスト](docs/quality/2026-09-22-visual-checklist.md)）。(4) 置換の欄の**画面案（Artifact）は不要**。
+新しいIssue: **#67**（入力面のCtrl+S）・**#69**（最小寸法560×360でパレットの「キー操作を表示」の行が0行。#41以前からの欠陥）・
+**#70**（`struct regex_match`が200バイト超で、`regex_match_limit`直下では`found`と下見の写しに各約200MBを要する。出力上限8MBと釣り合っていない）。
+次の単位は**設定・テーマ・言語 #38**で、`settings.json`を版2にする前に**`struct folio_ports`でportを束ねる**
+（`folio_state_create`は#41で4引数に飽和した・ADR 0028の決定2）。
+
 2026-09-22 停止: hideの指示で日報/引き継ぎを保存して停止。mainは`4101196`（#39 / #65まで統合済み・Issueは閉じた）。
 #41（正規表現置換・ADR 0028）は`out/worktrees/41-replace` / `feat/41-regex-replace`のHEAD `802e2de`でcore・adapters・applicationの3層が済み
 （フルゲートexit 0・分岐93.21%）、**ui層・docs層・probeの実行は未着手。Draft PRは無い。** `execute_command()`の`REPLACE` / `SUBSTITUTE`は仮の分岐で、
