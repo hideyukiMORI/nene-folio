@@ -320,8 +320,12 @@ static bool initialize(struct name_prompt *_Nonnull prompt, HWND dialog)
     prompt->dialog = dialog;
     prompt->dpi = GetDpiForWindow(dialog);
     /* 子を作る前に塗りを用意する。子の WM_CTLCOLOR* は作る途中から来る（ADR 0035 の決定 3）。 */
-    if (!dialog_theme_create(prompt->palette, &prompt->theme))
+    switch (dialog_theme_create(prompt->palette, &prompt->theme))
     {
+    case DIALOG_THEME_READY:
+        break;
+    case DIALOG_THEME_NO_MEMORY:
+    case DIALOG_THEME_NO_BRUSH:
         return false;
     }
     dialog_theme_decorate(prompt->theme, dialog);

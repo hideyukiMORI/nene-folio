@@ -34,14 +34,14 @@ static void delete_brush(HBRUSH _Nullable brush)
     }
 }
 
-bool dialog_theme_create(const struct folio_palette *_Nonnull palette,
-                         struct dialog_theme *_Nullable *_Nonnull out)
+enum dialog_theme_outcome dialog_theme_create(const struct folio_palette *_Nonnull palette,
+                                              struct dialog_theme *_Nullable *_Nonnull out)
 {
     *out = nullptr;
     struct dialog_theme *_Nullable self = calloc(1, sizeof *self);
     if (self == nullptr)
     {
-        return false;
+        return DIALOG_THEME_NO_MEMORY;
     }
     HBRUSH window = CreateSolidBrush(palette->window);
     HBRUSH chip = CreateSolidBrush(palette->chip_background);
@@ -54,7 +54,7 @@ bool dialog_theme_create(const struct folio_palette *_Nonnull palette,
         delete_brush(field);
         delete_brush(list);
         free(self);
-        return false;
+        return DIALOG_THEME_NO_BRUSH;
     }
     self->palette = *palette;
     self->window = window;
@@ -62,7 +62,7 @@ bool dialog_theme_create(const struct folio_palette *_Nonnull palette,
     self->field = field;
     self->list = list;
     *out = self;
-    return true;
+    return DIALOG_THEME_READY;
 }
 
 void dialog_theme_destroy(struct dialog_theme *_Nullable theme)

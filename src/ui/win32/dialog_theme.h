@@ -7,6 +7,7 @@
 #define NENEFOLIO_DIALOG_THEME_H
 
 #include "dialog_theme_button.h"
+#include "dialog_theme_outcome.h"
 #include "dialog_theme_surface.h"
 
 #include <windows.h>
@@ -14,9 +15,10 @@
 struct dialog_theme;
 struct folio_palette;
 
-/* 失敗（確保・ブラシの作成）なら偽を返し、*out は nullptr のまま。 */
-[[nodiscard]] bool dialog_theme_create(const struct folio_palette *_Nonnull palette,
-                                       struct dialog_theme *_Nullable *_Nonnull out);
+/* READY 以外（確保・ブラシの作成の失敗）なら *out は nullptr のまま。 */
+[[nodiscard]] enum dialog_theme_outcome
+dialog_theme_create(const struct folio_palette *_Nonnull palette,
+                    struct dialog_theme *_Nullable *_Nonnull out);
 void dialog_theme_destroy(struct dialog_theme *_Nullable theme);
 /* 役割の字と地の色を device に当て、面が WM_CTLCOLOR* に返すブラシを答える。 */
 [[nodiscard]] HBRUSH _Nonnull dialog_theme_color(const struct dialog_theme *_Nonnull theme,
