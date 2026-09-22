@@ -108,6 +108,57 @@ editor へ Undo できる単位で反映し、保存は既存の履歴 → 原�
     確保失敗は core / application の確保（写し・一致の列・template・組み立ての出力）を `eng/coverage.py` の注入で通す。
     **adapter の中（`uregex_open` と ICU 内部）の確保失敗は測っていない**（`u_setMemoryFunctions` はプロセス全体で `u_init` の前にしか差し替えられない。QLT-009 の「置いていない層」）。
 
+## 2026-09-22 の補正（決定本文は書き換えない）
+
+実装（core `557ceb9` / adapters `cb659f1` / application `802e2de` / ui）で決めたことと、決定の列挙との差を記録する。
+受理してからの追加決定も含む。**決定 1〜10 の本文は書き換えない。**
+
+### 実装で足した・変えた形
+
+1. **`replace_scope` は 3 値**（`REPLACE_ONE` / `REPLACE_ALL` / `REPLACE_LINE_FIRST`）。決定 6 は 2 値で書いたが、
+   決定 8(b) の「`g` が無ければ各論理行の最初の一致」を同じ `note_replace` の経路で通すために 3 値目を足した。選別は core。
+2. **下見は解析済みの置換文字列（`replace_template`）も所有する。** 決定 6 は「本文の写し・一致の列・件数・宛先」だけを挙げていたが、
+   置換文字列も下見の一部でなければ「打った置換文字列とは違うものを当てる」が起こりうる。
+3. **宛先に文書の種類（`folio_document_kind`）は持たない。** core は application の列挙を見られないので、
+   宛先はカテゴリ名とノート名だけ（無題はノート名が空文字列）。同じカテゴリに無題は 1 つしかないので区別は付く。
+4. **`folio_state` が走査の入れ物（`found` / `found_capacity`）を持ち、1〜2 周走査する。** `regex_matches` の `capacity` を
+   超えたら数えるだけ（1 周目）→ 入れ物を広げて書く（2 周目）。決定 2 は入れ物の所有者を書いていなかった。
+5. **`folio_state_replace_count` を足した。** 決定 8(a) の「対象名 / k 件」を UI が読むための値で、決定 9 の
+   `folio_state_replace_error_offset` と対になる。
+6. **`note_pane_replace` は 4 引数ではなく 3 引数。** 決定 7 は `(pane, start, end, text, length)` の 5 引数で書いたが
+   C-012（引数 4 つ）を超える。`struct note_search_span` へ束ね、長さは `EM_REPLACESEL` が終端で決めるので落とした
+   （`(pane, span, units)`）。ADR の署名を書く段階で束ねる型を決める、という運用の注意（引き継ぎ 2026-09-22）の再発である。
+
+### 追加決定（設計リナ・実装時）
+
+7. **Ex `:%s` が 1 件以上置き換えたら、他の Ex と同じく黙って閉じる。0 件なら Ex を閉じず、
+   `draw_command_status` の場所に置換の欄と同じ形の「対象名 / 0 件」を出す。**
+   `folio_state_outcome` に値は足さない（「一致が無い」は失敗ではない）。ui が `command_unknown` と同程度の印
+   （`command_no_match`）を 1 つ持ち、欄に打てば消える。
+8. **置換の失敗と `NOT_EDITING` は `inline_outcome` に入れ、モーダルの箱ではなく欄の中の 1 行にする。**
+   打ち間違いに箱を出さない。記憶域不足と「本文を取り出せない」は従来どおり箱。
+9. **ボタンの字面は「1 件」「すべて」**（検索欄の「◀ 前へ」「次へ ▶」と同じ形・矢印は付けない）。矩形は検索欄と共有する
+   （`surface_button_rect`。下端の行の右端に 2 つ）。
+10. **Ctrl+Enter は `WM_CHAR` の 0x0A、素の Enter は 0x0D で見分ける。** `GetKeyState` を読まない（ARC-007）。
+    `WM_KEYDOWN` の `VK_RETURN` は置換の欄では飲み込むだけにして、判断は `WM_CHAR` に寄せた（部品 probe §5 で実測）。
+11. **対象名はパンくずと同じ `folio_state_pane_title().note`。** 無題では「無題（未保存）」になる（第 2 の文言を作らない・ARC-004）。
+12. **`FOLIO_COMMAND_REPLACE` を文書が無いときに実行すると、欄を開かず「ノートを選んでください。」を出す**
+    （`begin_search` と同じ）。決定 8(c) の「閲覧中は欄を開いて `NOT_EDITING`」はそのまま。
+13. **置換の欄が覚えている文字は欄そのものが持つ**（application も core も持たない）。開き直すと前のパターンが残り、
+    プロセスを終えれば消える。決定 10 の「保存しない」と矛盾しない。
+
+### 実測で分かったこと（確認記録 `docs/quality/2026-09-22-replace-checks.md`）
+
+14. **長さ 0 のパターンは adapter で `BAD_PATTERN` になる。** 設計 probe は `uregex_open(pattern, -1, 旗 0)` で
+    「文字数 + 1 件」だったが、製品の adapter は長さを明示して渡すので ICU が拒む。
+    application が先に `REPLACE_NO_PATTERN` で断るので、この経路は製品では走らない（決定 6 のとおり）。
+15. **`TOO_COMPLEX`（`U_REGEX_STACK_OVERFLOW`）は測っていない。** 既定の 8MB スタックと 2,000 steps では
+    時間の上限が先に効く（決定 4(a) の予測どおり）。写像そのものは偽 adapter の単体で覆っている。
+16. **96 DPI・最小寸法 560×360 では、パレットの「キー操作を表示」を開くと操作の行が 0 行になる。**
+    ヘルプ 16 行の時点で既にそうで、#41 の 2 行（置換の欄・`:%s`）を足しても変わらない
+    （箱は `command_palette_rect` が使える高さへ丸め、ヘルプは下端から上へ積むので箱の外へはみ出さない）。
+    既定（キー操作は閉じている）では最小寸法でも操作の行が 5 行見える。
+
 ## 却下した選択肢
 
 - PCRE2 の同梱: 新しい依存（QLT-011）で、第三者の C ソースが `-Werror` / clang-tidy / CNF-002 / C-002 / 分岐 90% と衝突し、通すには除外か閾値の変更（QLT-010）が要る。

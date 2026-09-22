@@ -177,7 +177,7 @@ HWND・HDC・HBITMAP・HFONT の所有者は 1 つで、作った関数と対に
 
 | 依存 | 用途 | 根拠 |
 | --- | --- | --- |
-| — | — | 現在の実行時依存は 0。C ランタイムは `/MT` で静的に結び、実行ファイルは kernel32 以外の DLL を import しない（R1） |
+| — | — | 現在の実行時依存は 0。C ランタイムは `/MT` で静的に結び、実行ファイルは **kernel32 と `eng/architecture.json` の `platformLibraries` に列挙した OS 同梱 DLL 以外を import しない**（R1）。OS 同梱 DLL（user32 / gdi32 / dwmapi / comdlg32 / shell32 / advapi32 / icu）は配布物を増やさないので、この表ではなく `platformLibraries` が正本であり、版は OS が決めるので QLT-011 の固定は適用できない（ADR 0028 の決定 1） |
 
 版は lock ファイルで固定し、マニフェストに範囲や `*` を書かない。ゲートは lock が更新される状態を拒む。
 
