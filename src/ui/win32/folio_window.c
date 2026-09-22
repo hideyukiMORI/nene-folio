@@ -45,6 +45,8 @@ struct folio_window
     HACCEL _Nullable search_keys;
     HFONT _Nullable mono_font;
     HWND _Nullable command_layer;
+    /* レイヤーから外した IME の文脈。窓を壊す前に戻す（MSDN の作法） */
+    HIMC _Nullable layer_context;
     HWND _Nullable command_input;
     /* 置換の欄の 2 つの EDIT（0 = パターン・1 = 置換文字列）。入力面の「自分の欄」は
      * この 2 つと command_input の集合になる（ADR 0016 の 2026-09-22 の補正）。 */
@@ -2070,6 +2072,10 @@ static bool inline_outcome(enum folio_state_outcome outcome)
     case FOLIO_STATE_REPLACE_TOO_LARGE:
     case FOLIO_STATE_REPLACE_STALE:
     case FOLIO_STATE_REPLACE_BAD_SPAN:
+    /* 設定の失敗は欄の中の 1 行（ADR 0031 の決定 7）。設定画面は閉じずに理由を出す。
+     * `:set number` の失敗も同じ値なので、他の Ex の失敗と同じく欄の 1 行になる。 */
+    case FOLIO_STATE_SETTINGS_UNREADABLE:
+    case FOLIO_STATE_SETTINGS_STORE_FAILED:
         return true;
     case FOLIO_STATE_READY:
     case FOLIO_STATE_DATA_UNREADABLE:
@@ -2093,8 +2099,6 @@ static bool inline_outcome(enum folio_state_outcome outcome)
     case FOLIO_STATE_RENAME_HALTED:
     case FOLIO_STATE_SEARCH_MALFORMED:
     case FOLIO_STATE_FILTERED:
-    case FOLIO_STATE_SETTINGS_UNREADABLE:
-    case FOLIO_STATE_SETTINGS_STORE_FAILED:
     case FOLIO_STATE_PANE_UNAVAILABLE:
     case FOLIO_STATE_OUT_OF_MEMORY:
     case FOLIO_STATE_NAME_REQUIRED:
@@ -2554,11 +2558,14 @@ static void show_settings_surface(struct folio_window *_Nonnull self)
     {
         self->command_surface = COMMAND_SURFACE_SETTINGS;
         clear_command_status(self);
-        arrange_command_input(self);
-        focus_command_input(self);
     }
+    /* **行を決めてから配置する**（show_command_palette と同じ順）。逆にすると
+     * arrange_command_input の reveal_command_selection がパレットの添字のまま走り、
+     * command_first が行数を超えて 1 行も描かれなくなる。 */
     self->command_selection =
         settings_first_choice_row + (size_t)folio_state_theme_choice(self->state);
+    arrange_command_input(self);
+    focus_command_input(self);
     redraw_command_layer(self);
 }
 
@@ -2822,8 +2829,9 @@ static void recolor_pane(const struct folio_window *_Nonnull self)
     {
         return;
     }
-    note_pane_recolor(self->pane, self->palette.pane, self->palette.editor_text);
-    if (folio_state_pane_mode(self->state) != PANE_MODE_VIEW)
+    enum pane_mode mode = folio_state_pane_mode(self->state);
+    note_pane_recolor(self->pane, self->palette.pane, self->palette.editor_text, mode);
+    if (mode != PANE_MODE_VIEW)
     {
         return;
     }
@@ -3904,6 +3912,8 @@ static bool settings_navigate(struct folio_window *_Nonnull self, WPARAM key)
     {
         return false;
     }
+    /* 単位 C で行が増えても選択行が箱の外へ出ない。 */
+    reveal_command_selection(self);
     redraw_command_layer(self);
     return true;
 }
@@ -4399,7 +4409,7 @@ static LRESULT on_create(HWND window, LPARAM lparam)
     }
     /* レイヤーは文字を受けないので IME の文脈を外す（ADR 0031 の決定 7・窓ごとの設定）。
      * 同じプロセスの EDIT の文脈は残る。 */
-    ImmAssociateContext(self->command_layer, nullptr);
+    self->layer_context = ImmAssociateContext(self->command_layer, nullptr);
     if (!create_command_inputs(self))
     {
         return -1;
@@ -4553,6 +4563,12 @@ static LRESULT CALLBACK command_layer_procedure(HWND window, UINT message, WPARA
 
 static void window_destroyed(struct folio_window *_Nonnull self)
 {
+    /* 子はまだ生きているので、外した IME の文脈を戻してから手放す。 */
+    if (self->command_layer != nullptr && self->layer_context != nullptr)
+    {
+        ImmAssociateContext(self->command_layer, self->layer_context);
+        self->layer_context = nullptr;
+    }
     if (self->mono_font != nullptr)
     {
         DeleteObject(self->mono_font);
@@ -4746,6 +4762,10 @@ static LRESULT on_message(struct folio_window *_Nonnull self, UINT message, WPAR
         return 0;
     case WM_NOTIFY:
         return on_notify(self, lparam);
+    /* 常設の絞り込みの欄は主窓の子なので、地と文字の色をここで答える。
+     * 入力面の EDIT と同じ color_command_input を通る（第 2 の経路を作らない）。 */
+    case WM_CTLCOLOREDIT:
+        return color_command_input(self, wparam, lparam);
     case folio_message_command_focus_lost:
         dismiss_command_if_focus_moved(self);
         return 0;

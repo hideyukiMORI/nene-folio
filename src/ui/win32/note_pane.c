@@ -3,6 +3,7 @@
 #include "caret_command.h"
 #include "folio_message.h"
 #include "line_index.h"
+#include "pane_mode.h"
 #include "rtf_stream.h"
 
 #include <richedit.h>
@@ -598,7 +599,23 @@ static void apply_text_color(struct note_pane *_Nonnull pane, COLORREF text, WPA
     SendMessageW(pane->handle, EM_SETCHARFORMAT, scope, (LPARAM)&format);
 }
 
-void note_pane_recolor(struct note_pane *_Nonnull pane, COLORREF background, COLORREF text)
+/* 閲覧は RTF が文字色を持っていて直後に流し直すので、SCF_ALL は捨てる書式を
+ * 1 度塗るだけでちらつきの元になる。既定書式は note_pane_edit の平文が使うので
+ * 閲覧でも更新が要る（ADR 0031 の補正節・D6）。 */
+static bool recolor_body(enum pane_mode mode)
+{
+    switch (mode)
+    {
+    case PANE_MODE_VIEW:
+        return false;
+    case PANE_MODE_EDIT:
+        return true;
+    }
+    return true;
+}
+
+void note_pane_recolor(struct note_pane *_Nonnull pane, COLORREF background, COLORREF text,
+                       enum pane_mode mode)
 {
     if (pane->handle == nullptr)
     {
@@ -615,7 +632,10 @@ void note_pane_recolor(struct note_pane *_Nonnull pane, COLORREF background, COL
      * （ADR 0031 の決定 6。SCF_DEFAULT も Undo を積むので必ず suspend の内側）。 */
     LRESULT modified = SendMessageW(pane->handle, EM_GETMODIFY, 0, 0);
     document->lpVtbl->Undo(document, tomSuspend, nullptr);
-    apply_text_color(pane, text, SCF_ALL);
+    if (recolor_body(mode))
+    {
+        apply_text_color(pane, text, SCF_ALL);
+    }
     apply_text_color(pane, text, SCF_DEFAULT);
     document->lpVtbl->Undo(document, tomResume, nullptr);
     document->lpVtbl->Release(document);
