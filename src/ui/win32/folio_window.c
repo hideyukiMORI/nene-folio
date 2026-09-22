@@ -57,6 +57,8 @@ struct folio_window
     size_t command_selection;
     size_t command_first;
     bool command_keys_visible;
+    /* ヘルプが箱に入りきらないときに送り出す先頭の行（PgUp / PgDn・#69）。 */
+    size_t command_help_first;
     bool command_composing;
     bool command_unknown;
     /* `:%s` が 1 件も一致しなかった。欄は閉じず、置換の欄と同じ 1 行を出す（ADR 0028 の補正） */
@@ -174,6 +176,11 @@ constexpr int base_command_row_height = 32;
 constexpr int base_command_status_height = 24;
 constexpr int base_command_help_row_height = 14;
 constexpr int base_command_palette_edge = 4;
+/* ヘルプを出しても操作の一覧に残す行数。最小寸法（560×360）でここが 0 になっていた（#69）。 */
+constexpr int command_row_floor = 3;
+/* 札の右に出す「n/m」の幅と、それを組む領域（数字と `/` だけ・翻訳の対象を増やさない・#69）。 */
+constexpr int base_command_pages_width = 44;
+constexpr size_t command_pages_capacity = 16;
 constexpr int base_ex_height = 32;
 constexpr int base_command_row_padding = 12;
 constexpr int base_command_alias_room = 96;
@@ -217,12 +224,47 @@ static int scale(int value, UINT dpi)
     return MulDiv(value, (int)dpi, base_dpi);
 }
 
-static int command_explanation_height(const struct folio_window *_Nonnull self)
+/* 面が持つ操作の行数。#75 の設定画面（ADR 0029 の決定 9）はここへ自分の行数を足す。 */
+static int command_surface_rows(const struct folio_window *_Nonnull self)
 {
-    int rows = self->command_keys_visible
+    switch (self->command_surface)
+    {
+    case COMMAND_SURFACE_CLOSED:
+    case COMMAND_SURFACE_PALETTE:
+        return (int)folio_command_listed_count();
+    case COMMAND_SURFACE_EX:
+    case COMMAND_SURFACE_SEARCH:
+    case COMMAND_SURFACE_REPLACE:
+        return 0;
+    }
+    return 0;
+}
+
+/* 面が持つヘルプの行数。command_shortcuts[] を数えるのはここだけ（#69）。 */
+static int command_help_rows(const struct folio_window *_Nonnull self)
+{
+    switch (self->command_surface)
+    {
+    case COMMAND_SURFACE_CLOSED:
+    case COMMAND_SURFACE_PALETTE:
+        return self->command_keys_visible
                    ? (int)(sizeof command_shortcuts / sizeof command_shortcuts[0])
                    : 0;
-    return base_command_help_row_height * (rows + 2) + base_command_status_height;
+    case COMMAND_SURFACE_EX:
+    case COMMAND_SURFACE_SEARCH:
+    case COMMAND_SURFACE_REPLACE:
+        return 0;
+    }
+    return 0;
+}
+
+/* 箱の望む高さ（96 DPI の基準値）。面ごとの行数を受ける唯一の式で、#75 も同じ式を使う（#69）。
+ * 内訳は 余白×2 ＋ 欄 ＋ 間 ＋ 操作 32×r ＋ 札 ＋ 案内 2 行 ＋ ヘルプ 14×h ＋ 状態。 */
+static int command_box_height(int rows, int help_rows)
+{
+    return base_command_palette_padding * 2 + base_command_input_height + base_command_gap +
+           base_command_row_height * rows + base_command_status_height +
+           base_command_help_row_height * (help_rows + 2) + base_command_status_height;
 }
 
 static struct folio_window *_Nullable self_of(HWND window)
@@ -337,13 +379,10 @@ static RECT command_palette_rect(const struct folio_window *_Nonnull self)
     {
         width = available;
     }
-    /* 箱の高さは「出す操作の数」で決める。登録表の総数で取ると 1 行ぶん余る（補正 9）。 */
-    int rows = (int)folio_command_listed_count();
+    /* 箱の高さは「面が出す行の数」で決める。登録表の総数で取ると 1 行ぶん余る（補正 9）。
+     * 望む高さであり、窓に入らなければ下で丸める。入った分の配り方は command_visible_help。 */
     int height =
-        scale(base_command_palette_padding * 2 + base_command_input_height + base_command_gap +
-                  base_command_row_height * rows + base_command_status_height,
-              dpi);
-    height += scale(command_explanation_height(self), dpi);
+        scale(command_box_height(command_surface_rows(self), command_help_rows(self)), dpi);
     int top = scale(client.bottom < scale(480, dpi) ? base_command_palette_compact_top
                                                     : base_command_palette_top,
                     dpi);
@@ -463,26 +502,68 @@ static RECT surface_button_rect(const struct folio_window *_Nonnull self, size_t
     return button;
 }
 
+/* 箱の中で「操作の行」と「ヘルプの行」が分け合う帯。上は欄の下、下はヘルプが 0 行のときの
+ * 札の上端（#69）。札・間・状態の 3 つは下端に固定で、ヘルプはこの帯の下から積む。 */
+static RECT command_body_rect(const struct folio_window *_Nonnull self)
+{
+    RECT bounds;
+    GetClientRect(self->command_layer, &bounds);
+    UINT dpi = GetDpiForWindow(self->handle);
+    RECT body = {bounds.left, command_input_rect(self).bottom + scale(base_command_gap, dpi),
+                 bounds.right,
+                 bounds.bottom - scale(base_command_status_height * 2 + base_command_gap, dpi)};
+    if (body.bottom < body.top)
+    {
+        body.bottom = body.top;
+    }
+    return body;
+}
+
+/* いま出せるヘルプの行数。操作の一覧に command_row_floor 行を残し、余りをヘルプへ回す。
+ * 最小寸法（560×360 と 840×540）では操作 3 行・ヘルプ 6 行になる（#69）。 */
+static int command_visible_help(const struct folio_window *_Nonnull self)
+{
+    int wanted = command_help_rows(self);
+    if (wanted == 0)
+    {
+        return 0;
+    }
+    UINT dpi = GetDpiForWindow(self->handle);
+    RECT body = command_body_rect(self);
+    int room = body.bottom - body.top - scale(base_command_row_height, dpi) * command_row_floor;
+    int fits = room < 0 ? 0 : room / scale(base_command_help_row_height, dpi);
+    return fits < wanted ? fits : wanted;
+}
+
+/* 送り出すヘルプの先頭の行。窓が広がって全部入るようになったら先頭へ戻る（#69）。 */
+static size_t command_help_offset(const struct folio_window *_Nonnull self)
+{
+    size_t visible = (size_t)command_visible_help(self);
+    size_t total = (size_t)command_help_rows(self);
+    if (visible == 0 || visible >= total)
+    {
+        return 0;
+    }
+    size_t last = total - visible;
+    return self->command_help_first > last ? last : self->command_help_first;
+}
+
 static RECT command_toggle_rect(const struct folio_window *_Nonnull self)
 {
     RECT bounds;
     GetClientRect(self->command_layer, &bounds);
     UINT dpi = GetDpiForWindow(self->handle);
-    int bottom = bounds.bottom - scale(base_command_status_height + base_command_gap, dpi);
-    int keys = self->command_keys_visible
-                   ? scale(base_command_help_row_height, dpi) *
-                         (int)(sizeof command_shortcuts / sizeof command_shortcuts[0])
-                   : 0;
+    int keys = scale(base_command_help_row_height, dpi) * command_visible_help(self);
     int inset = scale(base_command_palette_padding, dpi);
-    return (RECT){inset, bottom - keys - scale(base_command_status_height, dpi),
-                  bounds.right - inset, bottom - keys};
+    int top = command_body_rect(self).bottom - keys;
+    return (RECT){inset, top, bounds.right - inset, top + scale(base_command_status_height, dpi)};
 }
 
 static RECT command_rows_rect(const struct folio_window *_Nonnull self)
 {
     RECT bounds = command_input_rect(self);
     UINT dpi = GetDpiForWindow(self->handle);
-    bounds.top = bounds.bottom + scale(base_command_gap, dpi);
+    bounds.top = command_body_rect(self).top;
     bounds.bottom = command_toggle_rect(self).top;
     int row = scale(base_command_row_height, dpi);
     if (bounds.bottom < bounds.top)
@@ -1186,13 +1267,14 @@ static void draw_command_status(const struct folio_window *_Nonnull self, HDC de
 static void draw_command_shortcuts(const struct folio_window *_Nonnull self, HDC device,
                                    RECT bounds)
 {
-    if (!self->command_keys_visible)
+    int rows = command_visible_help(self);
+    if (rows == 0)
     {
         return;
     }
     UINT dpi = GetDpiForWindow(self->handle);
     int row_height = scale(base_command_help_row_height, dpi);
-    int rows = (int)(sizeof command_shortcuts / sizeof command_shortcuts[0]);
+    size_t first = command_help_offset(self);
     bounds.bottom -= scale(base_command_status_height + base_command_gap, dpi);
     bounds.top = bounds.bottom - row_height * rows;
     bounds.left += scale(base_command_palette_padding, dpi);
@@ -1201,7 +1283,7 @@ static void draw_command_shortcuts(const struct folio_window *_Nonnull self, HDC
     for (int index = 0; index < rows; ++index)
     {
         RECT row = {bounds.left, bounds.top, bounds.right, bounds.top + row_height};
-        draw_utf8(device, command_shortcuts[index], row);
+        draw_utf8(device, command_shortcuts[first + (size_t)index], row);
         bounds.top = row.bottom;
     }
 }
@@ -1221,6 +1303,33 @@ static RECT command_next_rect(const struct folio_window *_Nonnull self)
     return bounds;
 }
 
+/* 札の右、「↑ 前」の左に置くページの印の場所（#69）。 */
+static RECT command_pages_rect(const struct folio_window *_Nonnull self)
+{
+    RECT bounds = command_toggle_rect(self);
+    bounds.right = command_previous_rect(self).left;
+    bounds.left = bounds.right - scale(base_command_pages_width, GetDpiForWindow(self->handle));
+    return bounds;
+}
+
+/* ヘルプが 1 枚に入らないときだけ「n/m」を出す。数字と `/` だけなので翻訳する文言は増えない。 */
+static void draw_command_pages(const struct folio_window *_Nonnull self, HDC device)
+{
+    size_t visible = (size_t)command_visible_help(self);
+    size_t total = (size_t)command_help_rows(self);
+    if (visible == 0 || visible >= total)
+    {
+        return;
+    }
+    char line[command_pages_capacity];
+    size_t at = append_number(line, 0, command_help_offset(self) / visible + 1);
+    at = append_text(line, at, "/");
+    at = append_number(line, at, (total + visible - 1) / visible);
+    line[at] = '\0';
+    SetTextColor(device, self->palette.current_text);
+    draw_utf8(device, line, command_pages_rect(self));
+}
+
 static void draw_command_guidance(const struct folio_window *_Nonnull self, HDC device)
 {
     UINT dpi = GetDpiForWindow(self->handle);
@@ -1233,11 +1342,12 @@ static void draw_command_guidance(const struct folio_window *_Nonnull self, HDC 
     OffsetRect(&line, 0, row);
     draw_utf8(device, "下の欄に名前を入力すると絞り込めます。", line);
     RECT toggle = command_toggle_rect(self);
-    toggle.right = command_previous_rect(self).left;
+    toggle.right = command_pages_rect(self).left;
     SetTextColor(device, self->palette.selected_text);
     draw_utf8(device, self->command_keys_visible ? "キー操作を閉じる" : "キー操作を表示", toggle);
     draw_utf8(device, "↑ 前", command_previous_rect(self));
     draw_utf8(device, "↓ 次", command_next_rect(self));
+    draw_command_pages(self, device);
 }
 
 static void draw_palette_rows(const struct folio_window *_Nonnull self, HDC device, RECT bounds)
@@ -2083,6 +2193,7 @@ static void open_command_surface(struct folio_window *_Nonnull self,
     self->command_selection = 0;
     self->command_first = 0;
     self->command_keys_visible = false;
+    self->command_help_first = 0;
     clear_command_status(self);
     SetWindowTextW(self->command_input, surface == COMMAND_SURFACE_EX ? L":" : L"");
     arrange_command_input(self);
@@ -2096,6 +2207,7 @@ static void hide_command_surface(struct folio_window *_Nonnull self)
     self->command_surface = COMMAND_SURFACE_CLOSED;
     self->command_return_focus = nullptr;
     self->command_selection = 0;
+    self->command_help_first = 0;
     clear_command_status(self);
     arrange_command_input(self);
     InvalidateRect(self->handle, nullptr, FALSE);
@@ -2124,6 +2236,7 @@ static void show_command_palette(struct folio_window *_Nonnull self)
     self->command_selection = 0;
     self->command_first = 0;
     self->command_keys_visible = false;
+    self->command_help_first = 0;
     clear_command_status(self);
     if (self->command_input != nullptr)
     {
@@ -2761,6 +2874,7 @@ static void expand_cursor(struct folio_window *_Nonnull self, bool expanded)
 static void toggle_command_keys(struct folio_window *_Nonnull self)
 {
     self->command_keys_visible = !self->command_keys_visible;
+    self->command_help_first = 0;
     arrange_command_input(self);
     redraw_command_layer(self);
 }
@@ -3308,6 +3422,28 @@ static void move_command_selection(struct folio_window *_Nonnull self, WPARAM ke
     redraw_command_layer(self);
 }
 
+/* ヘルプを 1 枚ぶん送る。巡回はせず、先頭と末尾で止まる（#69）。 */
+static void move_command_help(struct folio_window *_Nonnull self, WPARAM key)
+{
+    size_t visible = (size_t)command_visible_help(self);
+    size_t total = (size_t)command_help_rows(self);
+    if (visible == 0 || visible >= total)
+    {
+        return;
+    }
+    size_t first = command_help_offset(self);
+    size_t last = total - visible;
+    if (key == VK_PRIOR)
+    {
+        self->command_help_first = first < visible ? 0 : first - visible;
+    }
+    else
+    {
+        self->command_help_first = first + visible > last ? last : first + visible;
+    }
+    redraw_command_layer(self);
+}
+
 static void update_command_composition(struct folio_window *_Nonnull self, UINT message)
 {
     if (message == WM_IME_STARTCOMPOSITION)
@@ -3353,6 +3489,26 @@ static bool command_return(struct folio_window *_Nonnull self)
     return true;
 }
 
+/* パレットの移動の鍵。↑↓ は操作の選択、PgUp / PgDn はヘルプのページ（#69）。 */
+static bool command_navigate(struct folio_window *_Nonnull self, WPARAM key)
+{
+    if (self->command_surface != COMMAND_SURFACE_PALETTE)
+    {
+        return false;
+    }
+    if (key == VK_UP || key == VK_DOWN)
+    {
+        move_command_selection(self, key);
+        return true;
+    }
+    if (key == VK_PRIOR || key == VK_NEXT)
+    {
+        move_command_help(self, key);
+        return true;
+    }
+    return false;
+}
+
 static bool command_key_down(struct folio_window *_Nonnull self, WPARAM key)
 {
     if (self->command_composing)
@@ -3377,13 +3533,7 @@ static bool command_key_down(struct folio_window *_Nonnull self, WPARAM key)
     {
         return command_return(self);
     }
-    bool moves =
-        self->command_surface == COMMAND_SURFACE_PALETTE && (key == VK_UP || key == VK_DOWN);
-    if (moves)
-    {
-        move_command_selection(self, key);
-    }
-    return moves;
+    return command_navigate(self, key);
 }
 
 /* 置換の欄の Enter。EDIT には素の Enter が 0x0D、Ctrl+Enter が 0x0A で届くので、
