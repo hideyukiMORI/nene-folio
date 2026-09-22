@@ -73,6 +73,18 @@ application は「選択中のノート」（`selected` / `selected_category` / 
 | カテゴリ行に止まったとき右ペインを空にする | 見ていた本文が消える。編集中なら保存の判断まで要る。右ペインは変えない |
 | カーソルを UI の一時状態にする | `h` / `l` の対象と寄せる行が application の判断になるので、application が持つ（ARC-004） |
 
+
+## 2026-09-23 の補正（#88 / ADR 0033・決定本文は書き換えない）
+
+1. **決定 7 の「四角を `+` / `−` の左に置く」規則は変えないが、角の x は約 15px 左へ動く。**
+   折畳の印が等幅フォントの字形から 24 の viewBox の面のパスになったので、
+   `drawer_window.c` の `toggle_room()` は**字形の実測幅を測るのをやめ**、
+   `scale(24, dpi) + base_mark_gap`（96 DPI で 30px）の定数になる。
+   角の x は `mark.right - toggle_room` の式のままなので、
+   字形の幅（96 DPI の Consolas で 7px 前後）との差のぶんだけ左へ寄る。
+   重なりを避けるという決定の意図は満たしたままで、**カテゴリ名の省略幅は `toggle_room` に依存しない**ので変わらない。
+   実際の見え方（板の太さと左右の位置・角との間）は hide の実機目視で確かめる（統合チェックリストの 88-3）。
+
 ## 参考
 
 - [ADR 0013](0013-index-focus-vim-keys-and-persistent-mode.md)（置き換える決定 2）/ [ADR 0004](0004-first-drawer-slice.md)（トグル）

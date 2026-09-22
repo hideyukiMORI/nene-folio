@@ -62,7 +62,7 @@ nenefolio_system_link(nenefolio_adapters icu)
 nenefolio_target(nenefolio_window ui_win32 STATIC
     src/ui/win32/drawer_window.c src/ui/win32/folio_window.c src/ui/win32/note_pane.c
     src/ui/win32/folio_palette.c src/ui/win32/failure_box.c src/ui/win32/name_prompt.c
-    src/ui/win32/ui_face.c)
+    src/ui/win32/ui_face.c src/ui/win32/icon_paint.c)
 nenefolio_link(nenefolio_window nenefolio_core)
 nenefolio_link(nenefolio_window nenefolio_application)
 nenefolio_system_link(nenefolio_window user32)
@@ -71,6 +71,8 @@ nenefolio_system_link(nenefolio_window dwmapi)
 nenefolio_system_link(nenefolio_window comdlg32)
 # 設定画面のレイヤーから IME 文脈を外す（ADR 0031 の決定 7・ARC-002）。
 nenefolio_system_link(nenefolio_window imm32)
+# 閉じる・設定・折畳・選択の印を面のパスで塗る（ADR 0033 の決定 1・ARC-002）。
+nenefolio_system_link(nenefolio_window gdiplus)
 
 nenefolio_target(nenefolio app EXECUTABLE src/app/main.c src/app/NeNeFolio.manifest)
 set_property(TARGET nenefolio PROPERTY WIN32_EXECUTABLE TRUE)

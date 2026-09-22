@@ -183,3 +183,19 @@ Win32 部品 probe（`out/design/2026-09-23/theme-ui-probe/`）: 1 つの suspen
     順は編集・閲覧とも「退避 → 当てる → 選択 → 論理行」で、選択の復元（補正 1 の
     `had && end > start`）は論理行の復元より**先**に置く（`EM_EXSETSEL` が寄せた位置を
     `note_pane_scroll_to_line` が最終的に決める）。
+
+## 2026-09-23 の補正 3（#88 / ADR 0033・決定本文は書き換えない）
+
+14. **決定 7 の「現在の選択の行の左の GDI の塗った小円」は、24 の viewBox の面のパス（角丸の四角）へ移した。**
+    `icon_paint_fill(ICON_PAINT_SELECTION, ...)` が `<rect x="8" y="8" width="8" height="8" rx="2"/>` を塗る。
+    箱は行（32px）の縦中央に置く 24px の正方形 `[row.left + 4, row.left + 28]` で、印の ink は箱の左端から
+    8 単位なので**現行の ink の位置（`row.left + 12`）は変わらない**。選択肢の札は `row.left + 32` から始まるので重ならない。
+    **色は `current_text` から `chip_background` へ変える**（画面案どおり。暗テーマでは `selected_background` の面に橙の印が乗る）。
+    見え方は hide の実機目視で決める（統合チェックリストの 88-4）。
+15. **決定 8(a) の「× と同じく GDI の線で描く歯車」も面のパスになった。**
+    `icon_paint_fill(ICON_PAINT_SETTINGS, ...)` が外周 32 点の多角形と中心の円の穴（`FillModeAlternate`）を塗る。
+    `settings_rect` は `base_close_size = 24` のままなので**箱も当たり判定も変わらない**。色も `header_text` のまま。
+    `base_settings_hub` / `base_settings_tooth` / `settings_teeth[]` は使い道が無くなるので消える。
+16. **却下の選択肢「設定アイコンと選択の印を字形（`⚙` `●`）で描く」は有効のまま、その理由の後半だけが変わる。**
+    「字形は使わない」（CNF-010・フォント依存の大きさとベースラインを caption に持ち込まない）は ADR 0033 でも同じ理由で維持する。
+    覆るのは「× と同じ GDI の線で描く」の部分だけで、線には中間色が 1 画素も出ず（実測）、太さが DPI で 1 → 2 → 2px と飛ぶ。
