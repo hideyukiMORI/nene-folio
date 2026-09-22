@@ -547,7 +547,7 @@ static void act_on_row(struct drawer_window *_Nonnull self, struct drawer_row ro
         InvalidateRect(self->handle, nullptr, FALSE);
         return;
     }
-    failure_box_show(self->handle, outcome, folio_state_language(self->state));
+    failure_box_show(GetAncestor(self->handle, GA_ROOT), outcome, self->state);
 }
 
 /* 落とし先を意図にする（ノートは別カテゴリへの移動も同じ 1 本・ADR 0008 の決定 2 / 6）。
@@ -569,7 +569,7 @@ static void apply_drop(struct drawer_window *_Nonnull self, struct drawer_row so
     }
     if (outcome != FOLIO_STATE_READY)
     {
-        failure_box_show(self->handle, outcome, folio_state_language(self->state));
+        failure_box_show(GetAncestor(self->handle, GA_ROOT), outcome, self->state);
         return;
     }
     InvalidateRect(self->handle, nullptr, FALSE);
@@ -605,7 +605,7 @@ static void choose_color(struct drawer_window *_Nonnull self, struct drawer_row 
         folio_state_recolor_category(self->state, row.category, to_rgb_color(choice.rgbResult));
     if (outcome != FOLIO_STATE_READY)
     {
-        failure_box_show(self->handle, outcome, folio_state_language(self->state));
+        failure_box_show(GetAncestor(self->handle, GA_ROOT), outcome, self->state);
         return;
     }
     InvalidateRect(self->handle, nullptr, FALSE);
@@ -749,7 +749,7 @@ static void scroll_by(struct drawer_window *_Nonnull self, int delta)
         folio_state_scroll_drawer(self->state, metrics_for(self), delta);
     if (outcome != FOLIO_STATE_READY)
     {
-        failure_box_show(self->handle, outcome, folio_state_language(self->state));
+        failure_box_show(GetAncestor(self->handle, GA_ROOT), outcome, self->state);
         return;
     }
     if (self->dragging)
@@ -954,7 +954,7 @@ void drawer_window_reveal_cursor(struct drawer_window *_Nonnull drawer)
         folio_state_reveal_cursor(drawer->state, metrics_for(drawer));
     if (outcome != FOLIO_STATE_READY)
     {
-        failure_box_show(drawer->handle, outcome, folio_state_language(drawer->state));
+        failure_box_show(GetAncestor(drawer->handle, GA_ROOT), outcome, drawer->state);
         return;
     }
     InvalidateRect(drawer->handle, nullptr, FALSE);

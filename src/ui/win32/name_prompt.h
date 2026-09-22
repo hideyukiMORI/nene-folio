@@ -5,6 +5,9 @@
 #include "folio_state_outcome.h"
 #include "name_prompt_request.h"
 #include <windows.h>
+struct folio_palette;
+/* palette は開く瞬間の色で、面はそれを写して塗る（ADR 0035 の決定 3・5）。 */
 [[nodiscard]] enum folio_state_outcome
-name_prompt_show(HWND _Nonnull owner, const struct name_prompt_request *_Nonnull request);
+name_prompt_show(HWND _Nonnull owner, const struct name_prompt_request *_Nonnull request,
+                 const struct folio_palette *_Nonnull palette);
 #endif

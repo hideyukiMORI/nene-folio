@@ -1,4 +1,6 @@
 #include "name_prompt.h"
+#include "dialog_theme.h"
+#include "folio_palette.h"
 #include "folio_state.h"
 #include "note_name.h"
 #include "ui_face.h"
@@ -22,6 +24,8 @@ struct name_prompt
     HWND _Nullable cancel;
     WNDPROC _Nullable original;
     HFONT _Nullable font;
+    /* 開く瞬間の palette を写した塗り。面は追随しない（ADR 0035 の決定 5）。 */
+    struct dialog_theme *_Nullable theme;
     UINT dpi;
     bool composing;
     /* 記録を公開した後は名前を固定し、同じ改名の再開だけを受ける（ADR 0022 の決定 7）。 */
@@ -102,8 +106,9 @@ static bool button(struct name_prompt *_Nonnull prompt, enum ui_text id, int ide
 {
     char16_t units[ui_text_unit_limit];
     wide_line(id, prompt_language(prompt), units);
-    HWND window = control(prompt, L"BUTTON", units,
-                          WS_TABSTOP | (identity == IDOK ? BS_DEFPUSHBUTTON : BS_PUSHBUTTON));
+    /* 押し釦は WM_CTLCOLORBTN では塗れないので owner-draw にする（ADR 0035 の決定 3）。
+     * 既定かどうかは ODS_DEFAULT が立たないので、描くときに id で面が渡す。 */
+    HWND window = control(prompt, L"BUTTON", units, WS_TABSTOP | BS_OWNERDRAW);
     if (window == nullptr)
     {
         return false;
@@ -289,9 +294,11 @@ static enum ui_text prompt_close(const struct name_prompt *_Nonnull prompt)
 
 static bool inputs(struct name_prompt *_Nonnull prompt)
 {
-    prompt->name = control(prompt, L"EDIT", L"", WS_TABSTOP | WS_BORDER | ES_AUTOHSCROLL);
+    /* 塗れない OS の縁を外し、面が札の色の 1px の枠を描く（ADR 0035 の決定 3）。 */
+    prompt->name = control(prompt, L"EDIT", L"", WS_TABSTOP | ES_AUTOHSCROLL);
     prompt->category =
-        control(prompt, L"COMBOBOX", L"", WS_TABSTOP | CBS_DROPDOWNLIST | WS_VSCROLL);
+        control(prompt, L"COMBOBOX", L"",
+                WS_TABSTOP | CBS_DROPDOWNLIST | CBS_OWNERDRAWFIXED | CBS_HASSTRINGS | WS_VSCROLL);
     prompt->failure = control(prompt, L"STATIC", L"", SS_LEFT);
     if (prompt->name == nullptr || prompt->category == nullptr || prompt->failure == nullptr)
     {
@@ -311,6 +318,7 @@ static bool initialize(struct name_prompt *_Nonnull prompt, HWND dialog)
 {
     prompt->dialog = dialog;
     prompt->dpi = GetDpiForWindow(dialog);
+    dialog_theme_decorate(prompt->theme, dialog);
     /* 面はモーダルなので、言語は開く瞬間に決まる（ADR 0032 の決定 4）。 */
     wchar_t face[LF_FACESIZE];
     ui_face_for(prompt_language(prompt), face);
@@ -485,6 +493,146 @@ static void begin_dialog(struct name_prompt *_Nonnull prompt, HWND dialog)
     SetFocus(prompt->pending ? prompt->accept : prompt->name);
 }
 
+/* WM_CTLCOLOR* の相手を役割に変える。無効な EDIT とコンボは WM_CTLCOLORSTATIC で来るが、
+ * 中の面なので FIELD（ADR 0035 の決定 2・3）。 */
+static enum dialog_theme_surface surface_for(const struct name_prompt *_Nonnull prompt,
+                                             UINT message, HWND child)
+{
+    if (message == WM_CTLCOLORDLG)
+    {
+        return DIALOG_THEME_DIALOG;
+    }
+    if (message == WM_CTLCOLORLISTBOX)
+    {
+        return DIALOG_THEME_LIST;
+    }
+    if (message == WM_CTLCOLOREDIT || child == prompt->category || child == prompt->name)
+    {
+        return DIALOG_THEME_FIELD;
+    }
+    return DIALOG_THEME_LABEL;
+}
+
+/* コンボの項目の字を取って描く。閉じた面が空（項目 -1）なら空の字で面だけ塗る。 */
+static void draw_category(const struct name_prompt *_Nonnull prompt,
+                          const DRAWITEMSTRUCT *_Nonnull item)
+{
+    wchar_t units[pending_line_capacity];
+    units[0] = L'\0';
+    LRESULT length = SendMessageW(item->hwndItem, CB_GETLBTEXTLEN, item->itemID, 0);
+    if (item->itemID != (UINT)-1 && length >= 0 && length < (LRESULT)pending_line_capacity &&
+        SendMessageW(item->hwndItem, CB_GETLBTEXT, item->itemID, (LPARAM)units) == CB_ERR)
+    {
+        units[0] = L'\0';
+    }
+    dialog_theme_draw_item(prompt->theme, item, units);
+}
+
+static void draw_owned(const struct name_prompt *_Nonnull prompt,
+                       const DRAWITEMSTRUCT *_Nonnull item)
+{
+    if (item->CtlType == ODT_COMBOBOX)
+    {
+        draw_category(prompt, item);
+        return;
+    }
+    /* 既定は「保存」「変更」「再試行」の側（ADR 0035 の決定 3）。 */
+    dialog_theme_draw_button(prompt->theme, item,
+                             item->CtlID == IDOK ? DIALOG_THEME_BUTTON_PRIMARY
+                                                 : DIALOG_THEME_BUTTON_SECONDARY);
+}
+
+/* コンボの行の高さ。WM_MEASUREITEM は inputs() の作る途中で来るので書体から測る。 */
+static void measure_category(const struct name_prompt *_Nonnull prompt,
+                             MEASUREITEMSTRUCT *_Nonnull item)
+{
+    HDC device = GetDC(prompt->dialog);
+    if (device == nullptr)
+    {
+        item->itemHeight = (UINT)scaled(prompt, 22);
+        return;
+    }
+    HGDIOBJ old_font = SelectObject(device, prompt->font);
+    TEXTMETRICW metrics;
+    if (GetTextMetricsW(device, &metrics))
+    {
+        item->itemHeight = (UINT)(metrics.tmHeight + scaled(prompt, 4));
+    }
+    else
+    {
+        item->itemHeight = (UINT)scaled(prompt, 22);
+    }
+    SelectObject(device, old_font);
+    ReleaseDC(prompt->dialog, device);
+}
+
+/* WS_BORDER を外した名前欄の外側に札の色の 1px の枠を描く（draw_filter_frame と同じ流儀）。 */
+static void paint_frame(const struct name_prompt *_Nonnull prompt)
+{
+    PAINTSTRUCT paint;
+    HDC device = BeginPaint(prompt->dialog, &paint);
+    if (device == nullptr)
+    {
+        return;
+    }
+    RECT bounds;
+    GetWindowRect(prompt->name, &bounds);
+    MapWindowPoints(nullptr, prompt->dialog, (POINT *)&bounds, 2);
+    InflateRect(&bounds, 1, 1);
+    dialog_theme_frame(prompt->theme, device, &bounds);
+    EndPaint(prompt->dialog, &paint);
+}
+
+static void follow_dpi(const struct name_prompt *_Nonnull prompt, const RECT *_Nonnull suggested)
+{
+    SetWindowPos(prompt->dialog, nullptr, suggested->left, suggested->top,
+                 suggested->right - suggested->left, suggested->bottom - suggested->top,
+                 SWP_NOZORDER | SWP_NOACTIVATE);
+}
+
+/* 塗りのメッセージを dialog_theme へ渡す。IME の門より前で答えるので組成中も色が抜けない
+ * （ADR 0035 の決定 3）。扱わないメッセージは FALSE で、扱ったものは 0 でない値を返す。 */
+static INT_PTR paint_message(struct name_prompt *_Nonnull prompt, UINT message, WPARAM wparam,
+                             LPARAM lparam)
+{
+    if (prompt->theme == nullptr || prompt->dialog == nullptr)
+    {
+        return FALSE;
+    }
+    switch (message)
+    {
+    case WM_CTLCOLORDLG:
+    case WM_CTLCOLORSTATIC:
+    case WM_CTLCOLOREDIT:
+    case WM_CTLCOLORLISTBOX:
+        return (INT_PTR)dialog_theme_color(prompt->theme,
+                                           surface_for(prompt, message, (HWND)lparam), (HDC)wparam);
+    case WM_DRAWITEM:
+        draw_owned(prompt, (const DRAWITEMSTRUCT *)lparam);
+        return TRUE;
+    case WM_MEASUREITEM:
+        measure_category(prompt, (MEASUREITEMSTRUCT *)lparam);
+        return TRUE;
+    case WM_PAINT:
+        paint_frame(prompt);
+        return TRUE;
+    case WM_DPICHANGED:
+        follow_dpi(prompt, (const RECT *)lparam);
+        return TRUE;
+    default:
+        return FALSE;
+    }
+}
+
+/* owner-draw の釦は既定釦の鍵を答えないので、取消しの釦にフォーカスがあるときの Enter も
+ * IDOK で来る。そのときは取消しとして読む（ADR 0035 の決定 3・V5）。クリックは WM_COMMAND の前に
+ * フォーカスを押した釦へ移すので、OK のクリックを読み替えることはない。 */
+static bool reads_as_cancel(const struct name_prompt *_Nonnull prompt, WPARAM wparam)
+{
+    return LOWORD(wparam) == IDCANCEL ||
+           (LOWORD(wparam) == IDOK && HIWORD(wparam) == BN_CLICKED && GetFocus() == prompt->cancel);
+}
+
 static INT_PTR CALLBACK procedure(HWND dialog, UINT message, WPARAM wparam, LPARAM lparam)
 {
     if (message == WM_INITDIALOG)
@@ -494,33 +642,51 @@ static INT_PTR CALLBACK procedure(HWND dialog, UINT message, WPARAM wparam, LPAR
     }
     struct name_prompt *_Nullable prompt =
         (struct name_prompt *)GetWindowLongPtrW(dialog, DWLP_USER);
-    if (prompt == nullptr || prompt->composing)
+    if (prompt == nullptr)
     {
         return FALSE;
+    }
+    INT_PTR painted = paint_message(prompt, message, wparam, lparam);
+    if (painted != FALSE || prompt->composing)
+    {
+        return painted;
+    }
+    if (message == WM_CLOSE || (message == WM_COMMAND && reads_as_cancel(prompt, wparam)))
+    {
+        EndDialog(dialog, IDCANCEL);
+        return TRUE;
     }
     if (message == WM_COMMAND && LOWORD(wparam) == IDOK)
     {
         submit(prompt);
         return TRUE;
     }
-    if (message == WM_CLOSE || (message == WM_COMMAND && LOWORD(wparam) == IDCANCEL))
-    {
-        EndDialog(dialog, IDCANCEL);
-        return TRUE;
-    }
     return FALSE;
 }
 
 enum folio_state_outcome name_prompt_show(HWND _Nonnull owner,
-                                          const struct name_prompt_request *_Nonnull request)
+                                          const struct name_prompt_request *_Nonnull request,
+                                          const struct folio_palette *_Nonnull palette)
 {
     struct name_prompt prompt = {.state = request->state,
                                  .kind = request->kind,
                                  .units = request->units,
                                  .count = request->count,
                                  .outcome = FOLIO_STATE_CANCELLED};
+    /* 面を作る前に palette を写す。子の WM_CTLCOLOR* は作る途中から来て、
+     * 開いている間に主窓の palette が変わっても面は追随しない（ADR 0035 の決定 3・5）。 */
+    switch (dialog_theme_create(palette, &prompt.theme))
+    {
+    case DIALOG_THEME_READY:
+        break;
+    case DIALOG_THEME_NO_MEMORY:
+    case DIALOG_THEME_NO_BRUSH:
+        return FOLIO_STATE_OUT_OF_MEMORY;
+    }
     INT_PTR result = DialogBoxIndirectParamW(GetModuleHandleW(nullptr), &template.dialog, owner,
                                              procedure, (LPARAM)&prompt);
+    /* ブラシと書体は面が返った直後に捨てる（ADR 0035 の決定 2）。 */
+    dialog_theme_destroy(prompt.theme);
     if (prompt.font != nullptr)
     {
         DeleteObject(prompt.font);

@@ -2126,7 +2126,7 @@ static void command_failure(struct folio_window *_Nonnull self, enum folio_state
         self->command_surface != COMMAND_SURFACE_CLOSED && inline_outcome(outcome);
     if (!inline_failure)
     {
-        failure_box_show(self->handle, outcome, folio_state_language(self->state));
+        failure_box_show(self->handle, outcome, self->state);
         if (self->command_surface != COMMAND_SURFACE_CLOSED)
         {
             focus_command_input(self);
@@ -2255,7 +2255,7 @@ static void update_search(struct folio_window *_Nonnull self, enum search_direct
     }
     if (taken != FOLIO_STATE_READY)
     {
-        failure_box_show(self->handle, taken, folio_state_language(self->state));
+        failure_box_show(self->handle, taken, self->state);
         return;
     }
     struct note_search_query query = {.text = text,
@@ -2611,7 +2611,7 @@ static enum folio_state_outcome save_destination(const struct folio_window *_Non
                                                           : NAME_PROMPT_FIRST_SAVE,
                                               .units = units,
                                               .count = count};
-        return name_prompt_show(self->handle, &request);
+        return name_prompt_show(self->handle, &request, &self->palette);
     }
     struct note_name *_Nullable name = nullptr;
     enum note_name_outcome accepted = note_name_create(argument, strlen(argument), &name);
@@ -2658,7 +2658,7 @@ static enum folio_state_outcome rename_destination(const struct folio_window *_N
     {
         struct name_prompt_request request = {
             .state = self->state, .kind = NAME_PROMPT_RENAME, .units = units, .count = count};
-        return name_prompt_show(self->handle, &request);
+        return name_prompt_show(self->handle, &request, &self->palette);
     }
     struct note_name *_Nullable name = nullptr;
     enum note_name_outcome accepted = note_name_create(argument, strlen(argument), &name);
@@ -3209,7 +3209,7 @@ static bool store_edit(struct folio_window *_Nonnull self)
     enum folio_state_outcome outcome = store_body(self);
     if (outcome != FOLIO_STATE_READY)
     {
-        failure_box_show(self->handle, outcome, folio_state_language(self->state));
+        failure_box_show(self->handle, outcome, self->state);
         return false;
     }
     InvalidateRect(self->handle, nullptr, FALSE);
@@ -3267,7 +3267,7 @@ static void switch_adjacent(struct folio_window *_Nonnull self, enum folio_step 
     }
     if (outcome != FOLIO_STATE_READY)
     {
-        failure_box_show(self->handle, outcome, folio_state_language(self->state));
+        failure_box_show(self->handle, outcome, self->state);
         return;
     }
     if (self->drawer != nullptr)
@@ -3326,7 +3326,7 @@ static void expand_cursor(struct folio_window *_Nonnull self, bool expanded)
     redraw_drawer(self);
     if (outcome != FOLIO_STATE_READY)
     {
-        failure_box_show(self->handle, outcome, folio_state_language(self->state));
+        failure_box_show(self->handle, outcome, self->state);
         return;
     }
     if (self->drawer != nullptr)
@@ -3488,8 +3488,7 @@ static void click_command_surface(struct folio_window *_Nonnull self, POINT poin
     struct utf8_text *_Nullable query = nullptr;
     if (command_query(self, &query) != UTF8_TEXT_CONVERTED)
     {
-        failure_box_show(self->handle, FOLIO_STATE_OUT_OF_MEMORY,
-                         folio_state_language(self->state));
+        failure_box_show(self->handle, FOLIO_STATE_OUT_OF_MEMORY, self->state);
         return;
     }
     enum folio_command command = FOLIO_COMMAND_SAVE;
@@ -3872,8 +3871,7 @@ static void execute_command_input(struct folio_window *_Nonnull self)
     struct utf8_text *_Nullable query = nullptr;
     if (command_query(self, &query) != UTF8_TEXT_CONVERTED)
     {
-        failure_box_show(self->handle, FOLIO_STATE_OUT_OF_MEMORY,
-                         folio_state_language(self->state));
+        failure_box_show(self->handle, FOLIO_STATE_OUT_OF_MEMORY, self->state);
         return;
     }
     size_t length = utf8_text_length(query);
@@ -3920,8 +3918,7 @@ static void move_command_selection(struct folio_window *_Nonnull self, WPARAM ke
     struct utf8_text *_Nullable query = nullptr;
     if (command_query(self, &query) != UTF8_TEXT_CONVERTED)
     {
-        failure_box_show(self->handle, FOLIO_STATE_OUT_OF_MEMORY,
-                         folio_state_language(self->state));
+        failure_box_show(self->handle, FOLIO_STATE_OUT_OF_MEMORY, self->state);
         return;
     }
     size_t count = command_matches_count(query, folio_state_language(self->state));

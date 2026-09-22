@@ -338,6 +338,7 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
     [UI_TEXT_PROMPT_ACCEPT_RETRY] = {"再試行", "Retry", "重试"},
     [UI_TEXT_PROMPT_ACCEPT_SAVE] = {"保存", "Save", "保存"},
     [UI_TEXT_PROMPT_ACCEPT_RENAME] = {"変更", "Rename", "重命名"},
+    [UI_TEXT_PROMPT_OK] = {"OK", "OK", "确定"},
     [UI_TEXT_PROMPT_CLOSE_PENDING] = {"閉じる", "Close", "关闭"},
     [UI_TEXT_PROMPT_CLOSE_CANCEL] = {"キャンセル", "Cancel", "取消"},
     [UI_TEXT_PROMPT_LABEL_NAME] = {"ノートの名前", "Note name", "笔记名称"},
