@@ -120,3 +120,29 @@ comctl32 v6 / uxtheme / `SetWindowTheme`、釦の subclass、`ChooseColorW` の�
 - 実装の probe（`out/design/2026-09-24/dialog-theme-probe/`・production の `dialog_theme.c` を一緒にコンパイル・画面上に出して `BitBlt`）: 名前入力面の地・STATIC・EDIT の中と枠・コンボの閉じた面（有効・無効）・リストの行と選択の帯・押し釦 2 本（既定と非既定・フォーカスの印）・題の帯が両テーマで palette の色で本文 4.5:1 以上・枠 3:1 以上／失敗の箱の最長 en が 480px で 2 行に収まり高さが合う／Enter（EDIT・OK・Cancel の各フォーカス）・Esc・Space・クリックが現行の押し釦と同じ値／IME 文脈が不変／`MessageBeep` を呼ばない／13 か所の呼び出しが 3 引数で揃う。
 - ゲート: `platformLibraries` 不変・CNF-002 / 009 / 010 / 011・分岐網羅が下がらない。
 - 実機の目視（hide）: 名前入力面と失敗の箱の見え方（両テーマ・コンボの矢印とスクロールバーが OS の色で残ること・アイコンと音が消えること）・DPI 96↔144・IME の候補窓。統合チェックリストに 82-* を足す。Waivers: none。
+
+
+## 2026-09-24 の補正（実装・独立レビュー・Win32 部品 probe の後・決定本文は書き換えない）
+
+実装（席 A / B）・独立レビュー（止める 2・直したい 6）・probe（`out/design/2026-09-24/dialog-theme-probe/`・production の `dialog_theme.c` を一緒にコンパイル・PASS 93 / FAIL 2）で分かったことと、設計リナの判断。
+
+1. **`dialog_theme_create` の署名**は `[[nodiscard]] enum dialog_theme_outcome dialog_theme_create(const struct folio_palette *, struct dialog_theme **out)`
+   で、結果は専用ファイル `dialog_theme_outcome.h` の `READY` / `NO_MEMORY` / `NO_BRUSH`（ARC-010 / C-005。`note_pane_create` と同じ流儀）。
+   決定 2 が戻り値の型を書いていなかったのを補う。移行のファイル一覧に `dialog_theme_outcome.h` を足す。
+2. **名前入力面は塗りを作れなければ開かない**（`NO_MEMORY` / `NO_BRUSH` は書体の失敗と同じ `FOLIO_STATE_OUT_OF_MEMORY` の経路。決定 3 に 1 句補う）。
+3. **失敗の箱は塗り・書体・子窓を作れないときだけ `MessageBoxW` へ落として知らせる**（レビュー S1）。黙って戻れば FR-015「失敗の 1 行を利用者に見せる唯一の場所」が破れる。
+   `MessageBoxW` はこの退避経路にだけ残り（`MB_OK` だけ・アイコンも音も無し）、正典の経路は自前のモーダル 1 本のまま（ARC-001 の「第 2 の経路」ではなく劣化時の退避）。
+   内部の結果は専用ファイル `failure_box_outcome.h` の `SHOWN` / `FALLBACK`（公開の署名は変えない）。退避の経路は GDI や子窓の失敗を起こす手段が無く**一度も走らせていない**。
+4. **面の色はすべて `dialog_theme` の写しから取る**（レビュー S2）。EDIT の枠は新しい `dialog_theme_frame(theme, HDC, RECT)` が描き、
+   `name_prompt` は主窓の palette へのポインタを持たず、`dialog_theme_create` は `name_prompt_show` が `DialogBoxIndirectParamW` の**直前**に呼ぶ（決定 5「開く瞬間に固定」を構造で守る。塗りを作れなければ面を開かず `FOLIO_STATE_OUT_OF_MEMORY`）。
+5. **フォーカスの印は `ODS_FOCUS` かつ `ODS_NOFOCUSRECT` でないときだけ**描く（開いた直後は印が出ない・OS の押し釦と同じ）。
+   **閉じたコンボの面にもフォーカスの印を描く**（決定 2 に無かった追加。付けないとコンボにフォーカスがあることが見えない）。
+6. **無効な EDIT（保留中の名前欄）の `WM_CTLCOLORSTATIC` も `FIELD`**（無効なコンボと同じ。決定 2 の役割の表に補う）。
+7. **題の帯を暗くするかは `folio_palette_ink(window)` が白かで決める**（`dialog_theme_decorate` は palette しか受けない）。
+8. **`failure_box.h` は `struct folio_state;` の前方宣言だけを公開し、`folio_state.h` は .c が読む**（C-003 / C-007。レビュー D5）。
+9. **owner-draw の描画は `item->hDC` へ直接描く**（C-017 のメモリ DC は、ちらつきが目視で出たら直す。レビュー D6・目視項目 82-6）。
+10. probe の実測（DPI 120・OS ダーク）: 画素の色は両テーマ 34 項目のうち **32 が palette と完全一致**、残り 2（ダークの非既定の釦の面・ライトの既定の釦の面）は
+    **釦の字の行だけ R または G が 1 段ずれる**（ClearType の `DrawTextW` の丸めと推定・字の行の外は完全一致）。対比 18 件は全部 4.5:1 / 3:1 以上（最小 5.11:1）。
+    最長の en の箱は本文 600×50（= 480×1.25・**2 行**）で client 650×155、短い文言は下限 160px が効く。鍵とクリック (c)〜(j) はすべて現行の押し釦と同じ値（V5）。
+    **測っていないもの**: `dialog_theme_create` が `READY` 以外を返す経路・production の `name_prompt_show` / `failure_box_show` の実物（probe は同じ形の面）・IME・DPI 96 / 144・OS がライトのとき・v6。
+11. 移行の「補正する文書」は **ADR 0031 決定 10（補正 3）・GLOSSARY「失敗の箱」・統合チェックリスト 82-1〜82-10** に絞る（ADR 0010 / 0020 / 0021 / 0022 は失敗の箱の見た目に触れていない）。
