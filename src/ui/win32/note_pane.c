@@ -569,6 +569,19 @@ void note_pane_select(struct note_pane *_Nonnull pane, size_t start, size_t end)
     SendMessageW(pane->handle, EM_SCROLLCARET, 0, 0);
 }
 
+void note_pane_replace(struct note_pane *_Nonnull pane, struct note_search_span span,
+                       const char16_t *_Nonnull units)
+{
+    if (pane->handle == nullptr)
+    {
+        return;
+    }
+    CHARRANGE range = {.cpMin = (LONG)span.start, .cpMax = (LONG)span.end};
+    SendMessageW(pane->handle, EM_EXSETSEL, 0, (LPARAM)&range);
+    /* fCanUndo = TRUE で 1 回だけ。流し込みではないので streaming の印は付けない（決定 7）。 */
+    SendMessageW(pane->handle, EM_REPLACESEL, TRUE, (LPARAM)units);
+}
+
 bool note_pane_selection(const struct note_pane *_Nonnull pane, size_t *_Nonnull start,
                          size_t *_Nonnull end)
 {

@@ -7,6 +7,7 @@
 #include "gutter_row.h"
 #include "note_pane_outcome.h"
 #include "note_pane_text_outcome.h"
+#include "note_search_span.h"
 
 #include <stddef.h>
 #include <uchar.h>
@@ -47,6 +48,12 @@ note_pane_display_text(struct note_pane *_Nonnull pane, const char16_t *_Nonnull
                        size_t *_Nonnull count);
 /* 一致 1 つを選択して見える位置へ寄せる。フォーカスも本文も Undo も触らない。 */
 void note_pane_select(struct note_pane *_Nonnull pane, size_t start, size_t end);
+/* span の範囲を units で置き換える（ADR 0028 の決定 7）。EM_EXSETSEL → EM_REPLACESEL(TRUE) の
+ * 1 回なので Undo も 1 単位になる。units は終端付きで、長さは EM_REPLACESEL が終端で決める
+ * （ADR 0028 は 5 引数で書いていたが C-012 の上限に収めて span へ束ねた）。
+ * 流し込みの印も EM_SETMODIFY も触らない。EN_CHANGE は既存の経路で 1 回出る。 */
+void note_pane_replace(struct note_pane *_Nonnull pane, struct note_search_span span,
+                       const char16_t *_Nonnull units);
 /* いまの選択範囲（表示中の平文の位置）。窓が無ければ false で start も end も触らない。 */
 [[nodiscard]] bool note_pane_selection(const struct note_pane *_Nonnull pane,
                                        size_t *_Nonnull start, size_t *_Nonnull end);
