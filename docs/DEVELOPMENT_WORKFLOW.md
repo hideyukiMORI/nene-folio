@@ -163,6 +163,8 @@ Waivers: none | WVR-NNNN
 `v<version>` の tag と同名 Release へ配布物と `SHA256SUMS` を添付する。公開後に再ダウンロードして照合する。
 署名・インストーラ・自動更新は別の焦点 Issue とする。
 
+実機で見るときは [`tools/prepare-real-machine.ps1`](../tools/prepare-real-machine.ps1) で main を進めてビルドする（起動は別の 1 行）。
+
 参照実装: nene-loupe `eng/package-release.ps1`（2026-09-07 還流）。実行ファイルは `/MT` で静的に結び、`llvm-readobj --coff-imports` に
 `VCRUNTIME` / `UCRTBASE` / `MSVCP` が無いことを検査する（Phase 0 の R1 で実測済み）。
 
