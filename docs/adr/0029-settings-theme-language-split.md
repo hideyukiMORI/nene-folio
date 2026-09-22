@@ -142,6 +142,15 @@ Issue #38 は「設定画面からテーマ（dark / light / system）と言語�
 - `folio_command_parse_option` を `語=値` の文法に広げる: `options[]` は完全一致の表なので語を足せば足り、parser の変更は不要。
 - フォントの表を ui に置く: `markdown_rtf`（core）が同じ face を要るので core → ui の依存になる（ARC-002）。
 
+## 2026-09-23 の補正（単位 B の実測の後・決定本文は書き換えない）
+
+1. **文脈節の「`EM_SETCHARFORMAT(SCF_DEFAULT)` は以後の文字だけに効く」という読みを訂正する。**
+   単位 B の実測（`out/design/2026-09-22/theme-probe/` の `recolor_probe.c`。案を別々の窓に分けて当て、Undo の段数を数えた）では、
+   **`SCF_DEFAULT` も既定書式を継いでいる既存の本文の色を変え、Undo を 1 つ積み、保存直後から当てると `EM_GETMODIFY` を TRUE にする**。
+   `EM_SETBKGNDCOLOR` 単独は逆に完全に無害で、Undo も変更印も `EN_CHANGE` も動かさないかわりに**本文の文字色は 1 ビットも変わらない**。
+   したがって「地の色と `SCF_DEFAULT` だけなら安全」は成り立たず、再着色は TOM の `Undo(tomSuspend)` と変更印の退避・復元が要る（ADR 0031 決定 6）。
+   決定本文（単位の分け方・port の束ね・版の上げ方）はこの訂正で変わらない。
+
 ## 検証
 
 前提 0: 全テストが同じ期待値で通る・3 引数以上の `folio_state_create` が残らない・分岐網羅が下がらない。

@@ -46,3 +46,4 @@ ADR は「なぜそう決めたか」「何を却下したか」を書く。
 | [0028](0028-regex-replace.md) | 正規表現置換はOS同梱のICUをadaptersに閉じ、置換文字列の文法と組み立てはcoreが持つ | 受理 |
 | [0029](0029-settings-theme-language-split.md) | 設定・テーマ・言語（#38）は4つの単位に分け、portを束ねてから文言の正本を1表に集め、版は効果のあるキーごとに上げる | 受理 |
 | [0030](0030-ui-text-catalog.md) | 利用者に見える文言はcoreのui_textの表1か所からIDと言語で引き、句の中の語と数は置換子で埋め、置き場所を字句検査（CNF-010）で守る | 受理 |
+| [0031](0031-theme-and-settings-surface.md) | テーマは3値の選択をsettings.jsonの版2に置き、OSの変更に主窓が追従し、編集中の再着色はTOMのUndo停止と変更印の退避で守る | 受理 |
