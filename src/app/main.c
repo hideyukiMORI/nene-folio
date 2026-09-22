@@ -69,8 +69,9 @@ static int run(struct persistence_adapter *_Nonnull persistence,
     struct persistence_port files = persistence_adapter_port(persistence);
     struct appearance_port looks = appearance_adapter_port(appearance);
     struct regex_port finder = regex_adapter_port(regex);
+    struct folio_ports ports = {.persistence = &files, .appearance = &looks, .regex = &finder};
     struct folio_state *_Nullable state = nullptr;
-    enum folio_state_outcome loaded = folio_state_create(&files, &looks, &finder, &state);
+    enum folio_state_outcome loaded = folio_state_create(&ports, &state);
     if (loaded != FOLIO_STATE_READY)
     {
         report_utf8(folio_state_failure_line(loaded));

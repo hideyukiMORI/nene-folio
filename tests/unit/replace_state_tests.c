@@ -133,7 +133,7 @@ static struct folio_state *_Nonnull edited_state(struct persistence_adapter *_No
     struct appearance_port looks = test_appearance_port();
     struct regex_port finder = test_regex_port();
     struct folio_state *state = nullptr;
-    require(folio_state_create(&port, &looks, &finder, &state) == FOLIO_STATE_READY,
+    require(folio_state_create(test_ports(&port, &looks, &finder), &state) == FOLIO_STATE_READY,
             "the state takes four ports");
     require(state != nullptr, "the state is owned");
     require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY, "a note is selected");
@@ -149,7 +149,8 @@ static void verify_guards(void)
     struct appearance_port looks = test_appearance_port();
     struct regex_port finder = test_regex_port();
     struct folio_state *state = nullptr;
-    require(folio_state_create(&port, &looks, &finder, &state) == FOLIO_STATE_READY, "state");
+    require(folio_state_create(test_ports(&port, &looks, &finder), &state) == FOLIO_STATE_READY,
+            "state");
     struct replace_request request = request_for(u"a-a", u"a", u"X");
     /* 閲覧中は下見も適用も断る（決定 8(c)）。 */
     require(folio_state_preview_replace(state, &request) == FOLIO_STATE_NOT_EDITING,

@@ -183,7 +183,11 @@ editor へ Undo できる単位で反映し、保存は既存の履歴 → 原�
     探すのとは 1 文字ぶん違う」ことも操作表に書いた（同じ一致をもう一度置き換えられる）。
 21. **置換の直後はフォーカスが欄にあるので Ctrl+Z は欄の取り消しになる。** 本文を戻すには Esc で本文へ
     戻ってから Ctrl+Z（Undo 1 単位という決定 7 はそのまま）。操作表に 1 行書いた。
-22. **記録（未解決）: `struct regex_match` は 200 バイトを超える**（全体の span + 群 9 個の span と present）。
+22. **束ねは #73 で行った（2026-09-22）。** 決定 2 の「次にポートを足す単位（#38）は `struct folio_ports` に束ねる」は、
+    #38 の前提 0（Issue #73 / ADR 0029 の決定 3）として先に行った。`folio_state_create` は
+    `(const struct folio_ports *, struct folio_state **)` の 2 引数で、型は `src/application/folio_ports.h`（完全型・CNF-002）。
+    振る舞い・文言・スキーマは変えていない。
+23. **記録（未解決）: `struct regex_match` は 200 バイトを超える**（全体の span + 群 9 個の span と present）。
     `regex_match_limit = 1,000,000`（決定 4(b)）の直下では、`folio_state` の `found` と下見の写しに
     **それぞれ約 200MB を 1 打鍵ごとに確保する**ことになり、出力の上限 8MB（決定 4(c)）と釣り合っていない。
     この単位では直さない。後続で上限の見直しか、`found` を下見へ move して二重に持たない形にする。

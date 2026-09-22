@@ -534,7 +534,8 @@ static bool state_scenario_with(struct persistence_adapter *_Nonnull adapter)
     struct appearance_port looks = test_appearance_port();
     struct regex_port finder = test_regex_port();
     struct folio_state *state = nullptr;
-    enum folio_state_outcome outcome = folio_state_create(&port, &looks, &finder, &state);
+    enum folio_state_outcome outcome =
+        folio_state_create(test_ports(&port, &looks, &finder), &state);
     if (outcome == FOLIO_STATE_OUT_OF_MEMORY)
     {
         return false;

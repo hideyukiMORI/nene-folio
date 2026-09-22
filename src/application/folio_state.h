@@ -8,6 +8,7 @@
 #include "folio_cursor_kind.h"
 #include "folio_document_kind.h"
 #include "folio_note_change.h"
+#include "folio_ports.h"
 #include "folio_state_outcome.h"
 #include "folio_step.h"
 #include "folio_theme.h"
@@ -24,20 +25,15 @@
 #include <stddef.h>
 #include <uchar.h>
 
-struct appearance_port;
 struct drawer_layout;
 struct folio_state;
 struct note_name;
-struct persistence_port;
-struct regex_port;
 struct replace_edit;
 
 /* ポートは複製して持つ。3 つのポートの adapter は state より長く生きていなければならない。
- * 引数は C-012 の 4 つで飽和したので、次にポートを足す単位は束ねる（ADR 0028 の決定 2）。 */
+ * 束（struct folio_ports）は呼び出しの間だけ借り、返ったあとは参照しない（ADR 0029 の決定 3）。 */
 [[nodiscard]] enum folio_state_outcome
-folio_state_create(const struct persistence_port *_Nonnull persistence,
-                   const struct appearance_port *_Nonnull appearance,
-                   const struct regex_port *_Nonnull regex,
+folio_state_create(const struct folio_ports *_Nonnull ports,
                    struct folio_state *_Nullable *_Nonnull out);
 /* 起動時に読んだテーマ。 */
 [[nodiscard]] enum folio_theme folio_state_theme(const struct folio_state *_Nonnull state);

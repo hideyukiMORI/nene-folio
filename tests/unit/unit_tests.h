@@ -49,5 +49,12 @@ struct appearance_port;
  * 台本が決めた結果をそのまま返す。ICU は単体テストには現れない。 */
 struct regex_port;
 [[nodiscard]] struct regex_port test_regex_port(void);
+/* 3 つのポートを 1 つの束にする（ADR 0029 の決定 3）。folio_state_create は束を借りるだけで
+ * 返ったあとは参照しないので、テストの中だけで生きる 1 つの入れ物を使い回す。
+ * 戻り値は次に呼ぶまで有効。 */
+struct folio_ports;
+[[nodiscard]] const struct folio_ports *_Nonnull test_ports(
+    const struct persistence_port *_Nonnull persistence,
+    const struct appearance_port *_Nonnull appearance, const struct regex_port *_Nonnull regex);
 
 #endif
