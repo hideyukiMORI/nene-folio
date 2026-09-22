@@ -30,6 +30,9 @@ void dialog_theme_draw_button(const struct dialog_theme *_Nonnull theme,
 /* CBS_OWNERDRAWFIXED のコンボの項目（閉じた面とリストの行）を描く。 */
 void dialog_theme_draw_item(const struct dialog_theme *_Nonnull theme,
                             const DRAWITEMSTRUCT *_Nonnull item, const wchar_t *_Nonnull text);
+/* 名前欄などの外側に札の地の色の 1px の枠を描く（面が WS_BORDER の代わりに描く枠）。 */
+void dialog_theme_frame(const struct dialog_theme *_Nonnull theme, HDC _Nonnull dc,
+                        const RECT *_Nonnull rect);
 /* 題の帯を DWM で palette の地と字の色にする。 */
 void dialog_theme_decorate(const struct dialog_theme *_Nonnull theme, HWND _Nonnull dialog);
 

@@ -196,7 +196,7 @@ void dialog_theme_draw_button(const struct dialog_theme *_Nonnull theme,
                         : theme->palette.chip_background;
     round_face(item, face, edge);
     COLORREF text = button_text(theme, item->itemState, kind);
-    if ((item->itemState & ODS_FOCUS) != 0)
+    if ((item->itemState & ODS_FOCUS) != 0 && (item->itemState & ODS_NOFOCUSRECT) == 0)
     {
         RECT focus = bounds;
         InflateRect(&focus, -scale(base_focus_inset, dpi), -scale(base_focus_inset, dpi));
@@ -219,7 +219,7 @@ void dialog_theme_draw_item(const struct dialog_theme *_Nonnull theme,
     RECT bounds = item->rcItem;
     SetDCBrushColor(item->hDC, background);
     FillRect(item->hDC, &bounds, (HBRUSH)GetStockObject(DC_BRUSH));
-    if (closed && (item->itemState & ODS_FOCUS) != 0)
+    if (closed && (item->itemState & ODS_FOCUS) != 0 && (item->itemState & ODS_NOFOCUSRECT) == 0)
     {
         FrameRect(item->hDC, &bounds, theme->chip);
     }
@@ -229,6 +229,12 @@ void dialog_theme_draw_item(const struct dialog_theme *_Nonnull theme,
     SetTextColor(item->hDC, ink);
     DrawTextW(item->hDC, text, -1, &bounds,
               DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX | DT_END_ELLIPSIS);
+}
+
+void dialog_theme_frame(const struct dialog_theme *_Nonnull theme, HDC _Nonnull dc,
+                        const RECT *_Nonnull rect)
+{
+    FrameRect(dc, rect, theme->chip);
 }
 
 void dialog_theme_decorate(const struct dialog_theme *_Nonnull theme, HWND _Nonnull dialog)

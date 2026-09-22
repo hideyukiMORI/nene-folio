@@ -25,7 +25,6 @@ struct name_prompt
     WNDPROC _Nullable original;
     HFONT _Nullable font;
     /* 開く瞬間の palette を写した塗り。面は追随しない（ADR 0035 の決定 5）。 */
-    const struct folio_palette *_Nonnull palette;
     struct dialog_theme *_Nullable theme;
     UINT dpi;
     bool composing;
@@ -319,15 +318,6 @@ static bool initialize(struct name_prompt *_Nonnull prompt, HWND dialog)
 {
     prompt->dialog = dialog;
     prompt->dpi = GetDpiForWindow(dialog);
-    /* 子を作る前に塗りを用意する。子の WM_CTLCOLOR* は作る途中から来る（ADR 0035 の決定 3）。 */
-    switch (dialog_theme_create(prompt->palette, &prompt->theme))
-    {
-    case DIALOG_THEME_READY:
-        break;
-    case DIALOG_THEME_NO_MEMORY:
-    case DIALOG_THEME_NO_BRUSH:
-        return false;
-    }
     dialog_theme_decorate(prompt->theme, dialog);
     /* 面はモーダルなので、言語は開く瞬間に決まる（ADR 0032 の決定 4）。 */
     wchar_t face[LF_FACESIZE];
@@ -589,8 +579,7 @@ static void paint_frame(const struct name_prompt *_Nonnull prompt)
     GetWindowRect(prompt->name, &bounds);
     MapWindowPoints(nullptr, prompt->dialog, (POINT *)&bounds, 2);
     InflateRect(&bounds, 1, 1);
-    SetDCBrushColor(device, prompt->palette->chip_background);
-    FrameRect(device, &bounds, (HBRUSH)GetStockObject(DC_BRUSH));
+    dialog_theme_frame(prompt->theme, device, &bounds);
     EndPaint(prompt->dialog, &paint);
 }
 
@@ -683,8 +672,17 @@ enum folio_state_outcome name_prompt_show(HWND _Nonnull owner,
                                  .kind = request->kind,
                                  .units = request->units,
                                  .count = request->count,
-                                 .palette = palette,
                                  .outcome = FOLIO_STATE_CANCELLED};
+    /* 面を作る前に palette を写す。子の WM_CTLCOLOR* は作る途中から来て、
+     * 開いている間に主窓の palette が変わっても面は追随しない（ADR 0035 の決定 3・5）。 */
+    switch (dialog_theme_create(palette, &prompt.theme))
+    {
+    case DIALOG_THEME_READY:
+        break;
+    case DIALOG_THEME_NO_MEMORY:
+    case DIALOG_THEME_NO_BRUSH:
+        return FOLIO_STATE_OUT_OF_MEMORY;
+    }
     INT_PTR result = DialogBoxIndirectParamW(GetModuleHandleW(nullptr), &template.dialog, owner,
                                              procedure, (LPARAM)&prompt);
     /* ブラシと書体は面が返った直後に捨てる（ADR 0035 の決定 2）。 */
