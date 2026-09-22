@@ -66,7 +66,8 @@ ADR 0032 の決定 3 のとおり、**構文の見本だけを ASCII に揃え�
 
 `tests/unit/ui_text_tests.c` の同一性の期待表もこの 2 件だけ更新した（ほかの 129 行は不変）。
 この単位で新しく足した ID は 5 つ（`HELP_EX_SET_LANGUAGE`・`SETTINGS_LANGUAGE` と 3 つの自称）で、
-表は 131 → 136 値になった。
+表は 131 → 136 値になった。そのあと main の #86（絞り込み中の件数 `UI_TEXT_STATUS_FILTER_COUNT`）を
+取り込んで **137 値**である（数だけなので 3 列とも `{k} / {n}`）。
 
 測りながら英訳を 1 件短くした: `UI_TEXT_HELP_EX_SET_NUMBER` の en を
 `(line numbers while editing)`（426px・箱 428px）から詰め、独立レビューの指摘で
