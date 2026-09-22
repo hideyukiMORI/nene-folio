@@ -269,6 +269,8 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
     [UI_TEXT_CHIP_VIEW] = {"閲覧", "View", "查看"},
     [UI_TEXT_CHIP_EDIT] = {"編集", "Edit", "编辑"},
     [UI_TEXT_PLACEHOLDER_FILTER] = {"すべてのノートを検索", "Search all notes", "搜索全部笔记"},
+    /* 絞り込み中の件数（#86）。数だけなので 3 列とも同じ。 */
+    [UI_TEXT_STATUS_FILTER_COUNT] = {"{k} / {n}", "{k} / {n}", "{k} / {n}"},
     [UI_TEXT_STATUS_SEARCH_FORWARD] = {"このノート内を検索 ／ 次へ  ", "Find in this note / Next  ",
                                        "在本笔记中查找 ／ 下一个  "},
     [UI_TEXT_STATUS_SEARCH_BACKWARD] = {"このノート内を検索 ／ 前へ  ",

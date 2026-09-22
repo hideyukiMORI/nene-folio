@@ -146,6 +146,9 @@ constexpr WORD filter_accelerator = 107;
 constexpr int filter_control_id = 2;
 constexpr size_t filter_input_capacity = 128;
 constexpr int base_filter_text_inset = 4;
+/* 絞り込みが効いているあいだ欄の右端に出す「×」（ADR 0024 の 2026-09-23 の補正 6）。 */
+constexpr int base_filter_clear_size = 20;
+constexpr int base_filter_clear_inset = 6;
 constexpr size_t command_input_capacity = 256;
 /* 置換の欄の 2 つの EDIT の control id（ADR 0028 の決定 8(a)）。1 = Ex/パレット・2 = 絞り込み・
  * 3 = 本文の RichEdit の次に続く。 */
@@ -708,7 +711,9 @@ static void arrange_command_input(struct folio_window *_Nonnull self)
     BringWindowToTop(self->command_layer);
 }
 
-/* 常設の欄はドロワーの頭の帯に重ねる。寸法はドロワーが答える（ADR 0024 の決定 6）。 */
+/* 常設の欄はドロワーの頭の帯に重ねる。寸法はドロワーが答える（ADR 0024 の決定 6）。
+ * 右端は「×」のぶんだけ常に空ける。出るのは絞り込み中だけだが、余白を出し入れすると
+ * 打っている途中で本文が動くので、いつも同じ幅にしておく（補正 6）。 */
 static void arrange_filter_input(struct folio_window *_Nonnull self)
 {
     if (self->filter_input == nullptr || self->drawer == nullptr)
@@ -718,6 +723,8 @@ static void arrange_filter_input(struct folio_window *_Nonnull self)
     RECT bounds = drawer_window_filter_rect(self->drawer);
     MoveWindow(self->filter_input, bounds.left, bounds.top, bounds.right - bounds.left,
                bounds.bottom - bounds.top, TRUE);
+    int room = scale(base_filter_clear_size, GetDpiForWindow(self->handle));
+    SendMessageW(self->filter_input, EM_SETMARGINS, EC_RIGHTMARGIN, MAKELPARAM(0, room));
 }
 
 /* 出すのは「number が真・編集モード・文書がある」のときだけ（ADR 0026 の決定 5）。
@@ -2459,7 +2466,10 @@ static void open_command_surface(struct folio_window *_Nonnull self,
     SetWindowTextW(self->command_input, surface == COMMAND_SURFACE_EX ? L":" : L"");
     arrange_command_input(self);
     focus_command_input(self);
-    SendMessageW(self->command_input, EM_SETSEL, (WPARAM)-1, (LPARAM)-1);
+    /* WM_SETTEXT はキャレットを先頭へ置き、EM_SETSEL(-1, -1) は選択を解くだけで動かさない。
+     * 打った字が `:` の前に入らないよう、末尾（Ex は 1・他の面は 0）へ明示的に置く（#85）。 */
+    LRESULT caret = (LRESULT)GetWindowTextLengthW(self->command_input);
+    SendMessageW(self->command_input, EM_SETSEL, (WPARAM)caret, (LPARAM)caret);
     redraw_command_layer(self);
 }
 
@@ -4375,6 +4385,64 @@ static void paint_filter_placeholder(const struct folio_window *_Nonnull self, H
     ReleaseDC(window, device);
 }
 
+/* 絞り込みが効いているあいだ欄の右端に出す「×」の矩形（欄の client 座標）。
+ * 幅は EM_SETMARGINS で常に空けてあるので、本文と重ならない（補正 6）。 */
+static RECT filter_clear_rect(const struct folio_window *_Nonnull self, HWND window)
+{
+    RECT client;
+    GetClientRect(window, &client);
+    int size = scale(base_filter_clear_size, GetDpiForWindow(self->handle));
+    int middle = (client.top + client.bottom) / 2;
+    RECT bounds = {client.right - size, middle - size / 2, client.right, middle - size / 2 + size};
+    return bounds;
+}
+
+/* 「×」を GDI の線で描く（draw_close と同じ描き方。字形は使わない・CNF-010）。
+ * 絞り込みが効いていないあいだは出さない（出ていれば押せば解けるという意味になる）。 */
+static void paint_filter_clear(const struct folio_window *_Nonnull self, HWND window)
+{
+    if (!folio_state_filtering(self->state))
+    {
+        return;
+    }
+    HDC device = GetDC(window);
+    if (device == nullptr)
+    {
+        return;
+    }
+    RECT bounds = filter_clear_rect(self, window);
+    UINT dpi = GetDpiForWindow(self->handle);
+    int inset = scale(base_filter_clear_inset, dpi);
+    HPEN pen = CreatePen(PS_SOLID, scale(1, dpi), self->palette.header_text);
+    HGDIOBJ previous = SelectObject(device, pen);
+    MoveToEx(device, bounds.left + inset, bounds.top + inset, nullptr);
+    LineTo(device, bounds.right - inset, bounds.bottom - inset);
+    MoveToEx(device, bounds.right - inset, bounds.top + inset, nullptr);
+    LineTo(device, bounds.left + inset, bounds.bottom - inset);
+    SelectObject(device, previous);
+    DeleteObject(pen);
+    ReleaseDC(window, device);
+}
+
+/* 「×」を押したら語を空にする。解くのは欄を手で空にするのと同じ経路で、
+ * 空にした EN_CHANGE が filter_input_changed を通って絞り込みが解ける（補正 6）。 */
+static bool filter_clear_pressed(struct folio_window *_Nonnull self, HWND window, LPARAM lparam)
+{
+    if (!folio_state_filtering(self->state))
+    {
+        return false;
+    }
+    POINT point = {GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
+    RECT bounds = filter_clear_rect(self, window);
+    if (!PtInRect(&bounds, point))
+    {
+        return false;
+    }
+    SetWindowTextW(window, L"");
+    SetFocus(window);
+    return true;
+}
+
 static LRESULT CALLBACK filter_input_procedure(HWND window, UINT message, WPARAM wparam,
                                                LPARAM lparam)
 {
@@ -4388,6 +4456,10 @@ static LRESULT CALLBACK filter_input_procedure(HWND window, UINT message, WPARAM
     {
         return 0;
     }
+    if (message == WM_LBUTTONDOWN && filter_clear_pressed(self, window, lparam))
+    {
+        return 0;
+    }
     LRESULT result = CallWindowProcW(self->filter_original, window, message, wparam, lparam);
     /* 確定した文字は composition を抜けたあとに届くので、抜けてから 1 回だけ絞り直す。 */
     if (message == WM_IME_ENDCOMPOSITION)
@@ -4397,6 +4469,7 @@ static LRESULT CALLBACK filter_input_procedure(HWND window, UINT message, WPARAM
     if (message == WM_PAINT)
     {
         paint_filter_placeholder(self, window);
+        paint_filter_clear(self, window);
     }
     return result;
 }
@@ -4412,12 +4485,19 @@ static void filter_input_changed(struct folio_window *_Nonnull self)
     }
     wchar_t units[filter_input_capacity];
     int count = GetWindowTextW(self->filter_input, units, (int)filter_input_capacity);
+    bool was_filtering = folio_state_filtering(self->state);
     enum folio_state_outcome filtered = folio_state_set_index_filter(
         self->state, (const char16_t *)units, count > 0 ? (size_t)count : 0);
     if (filtered == FOLIO_STATE_OUT_OF_MEMORY)
     {
         command_failure(self, filtered);
         return;
+    }
+    /* 「×」が出入りするのは効き始めと解けたときだけ。打つたびに欄を消して描き直すと
+     * ちらつくので、変わった 1 回だけ欄ごと描き直す（補正 6）。 */
+    if (folio_state_filtering(self->state) != was_filtering)
+    {
+        InvalidateRect(self->filter_input, nullptr, TRUE);
     }
     if (self->drawer != nullptr)
     {
@@ -4466,7 +4546,12 @@ static LRESULT on_command(struct folio_window *_Nonnull self, WPARAM wparam, LPA
     return 0;
 }
 
-/* 常設の絞り込みの欄を主窓の子として作る。ドロワーより後に作るので前面に重なる。 */
+/* 常設の絞り込みの欄を主窓の子として作る。
+ * **あとから作った子は z 順の後ろ（背面）に入る**ので、作っただけではドロワーの奥にいる。
+ * ドロワーの WM_PAINT は client 全域を BitBlt するので、奥にいると索引を描き直すたびに
+ * 欄の画素が塗り潰されて語が消える（#86 / ADR 0024 の 2026-09-23 の補正 1・2）。
+ * 守るのはドロワー側の `WS_CLIPSIBLINGS` と z 順の両方で、欄に `WS_CLIPSIBLINGS` を
+ * 付けても効かない（実測 out/design/2026-09-23/filter-visible-probe/）。 */
 static bool create_filter_input(struct folio_window *_Nonnull self, HWND window)
 {
     self->filter_input = CreateWindowExW(0, edit_class, L"", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
@@ -4485,6 +4570,8 @@ static bool create_filter_input(struct folio_window *_Nonnull self, HWND window)
     }
     SendMessageW(self->filter_input, EM_LIMITTEXT, filter_input_capacity - 1, 0);
     SendMessageW(self->filter_input, WM_SETFONT, (WPARAM)self->mono_font, TRUE);
+    SetWindowPos(self->filter_input, HWND_TOP, 0, 0, 0, 0,
+                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
     return true;
 }
 
