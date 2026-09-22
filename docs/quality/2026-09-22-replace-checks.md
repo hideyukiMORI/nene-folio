@@ -28,12 +28,18 @@ ADR 0028 の決定 1）。Windows の更新で folding や Unicode 属性の挙�
   `TOO_MANY` / `TOO_LARGE`）。失敗のときは**前の下見をそのまま保つ**。
 - 件数（ゼロ幅の一致も 1 件）と `folio_state_replace_error_offset`（`BAD_PATTERN` のときだけ非 0）。
 - `REPLACE_ONE` の anchor からの前進と、無ければ先頭からの巡回。反転した anchor は `REPLACE_BAD_SPAN`。
+- **失敗した下見は前の下見を捨てる**（走査の 5 失敗それぞれで、件数が 0 になり適用が `REPLACE_STALE` に
+  なることを確かめる。2026-09-22 の独立レビュー B1）。
+- **入れ物に収まらない一致の列**（`count > capacity`）は core が `NOTE_REPLACE_PARTIAL_MATCHES` で断り、
+  application が `REPLACE_TOO_MANY` へ写す（黙って部分適用しない・レビュー D2）。
 - `REPLACE_STALE`: 本文が違う場合と、宛先（カテゴリ名・ノート名）が違う場合の両方。
 - 下見の入れ替え（新しい下見が古い下見を捨てる）。
 - `folio_state_create` の 4 引数化（`main.c` と全テストの呼び出しが揃っていること）。
 - `folio_state_outcome` の 9 値を `failure_lines[]` と `state_tests.c` の期待表の 2 か所に足した（CNF-009）。
 - 確保失敗は `allocation_tests` の `replace_scenario` / `replace_under_probe` が、本文の写し・一致の列・
   template・組み立ての出力の確保を 1 回ずつ失敗させて `OUT_OF_MEMORY` で片付くことを確かめる。
+  本文は 200 単位（一致 200 件）なので、初期 64 件の入れ物を広げる `reserve_matches()` の realloc も
+  注入の対象になる（llvm-cov の枝で True: 1 / False: 53。レビュー D1）。
 
 ### ui
 
@@ -122,3 +128,9 @@ probe はすべて画面外の窓で値だけを測っており、**描いた絵
 - **1MB の本文での「打鍵から画面が更新されるまで」は測っていない**（scan の時間だけを測った）。
 - `:s` の行範囲・確認付き置換（`c`）・全ノートへの一括置換は**この単位の範囲外**（後続）。
 - パターンと置換文字列の永続化は無い（起動のたびに空から始まる）。
+- **`struct regex_match` は 200 バイトを超える**（全体の span と群 9 個の span・present）。
+  `regex_match_limit`（1,000,000 件）の直下では `found` と下見の写しに**各約 200MB を 1 打鍵ごとに確保する**
+  ことになり、出力の上限 8MB と釣り合っていない。**この規模は測っていない**（測った最大は 1MB の本文で
+  10 万件）。後続で上限の見直しか `found` を下見へ move する（ADR 0028 の補正 22）。
+- **ゼロ幅の一致を空文字列で置き換える「1 件」は本文も選択も変えない**（Vim の `:s/x*//` と同じ）。
+  特別規則を足していないので、そのときは「すべて」を使う（ADR 0028 の補正 20）。
