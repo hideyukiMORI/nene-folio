@@ -55,12 +55,20 @@ static const struct
     const char *_Nonnull name;
     enum folio_option option;
 } options[] = {
-    {"number", FOLIO_OPTION_NUMBER_SHOW},        {"nu", FOLIO_OPTION_NUMBER_SHOW},
-    {"nonumber", FOLIO_OPTION_NUMBER_HIDE},      {"nonu", FOLIO_OPTION_NUMBER_HIDE},
-    {"number!", FOLIO_OPTION_NUMBER_TOGGLE},     {"nu!", FOLIO_OPTION_NUMBER_TOGGLE},
-    {"invnumber", FOLIO_OPTION_NUMBER_TOGGLE},   {"invnu", FOLIO_OPTION_NUMBER_TOGGLE},
-    {"theme=system", FOLIO_OPTION_THEME_SYSTEM}, {"theme=light", FOLIO_OPTION_THEME_LIGHT},
+    {"number", FOLIO_OPTION_NUMBER_SHOW},
+    {"nu", FOLIO_OPTION_NUMBER_SHOW},
+    {"nonumber", FOLIO_OPTION_NUMBER_HIDE},
+    {"nonu", FOLIO_OPTION_NUMBER_HIDE},
+    {"number!", FOLIO_OPTION_NUMBER_TOGGLE},
+    {"nu!", FOLIO_OPTION_NUMBER_TOGGLE},
+    {"invnumber", FOLIO_OPTION_NUMBER_TOGGLE},
+    {"invnu", FOLIO_OPTION_NUMBER_TOGGLE},
+    {"theme=system", FOLIO_OPTION_THEME_SYSTEM},
+    {"theme=light", FOLIO_OPTION_THEME_LIGHT},
     {"theme=dark", FOLIO_OPTION_THEME_DARK},
+    {"language=ja", FOLIO_OPTION_LANGUAGE_JA},
+    {"language=en", FOLIO_OPTION_LANGUAGE_EN},
+    {"language=zh-Hans", FOLIO_OPTION_LANGUAGE_ZH_HANS},
 };
 
 /* 引数の種類（ADR0020 / ADR0022 / ADR 0026）。閉じた集合なので増えたらここで落ちる。 */

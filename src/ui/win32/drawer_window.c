@@ -6,6 +6,7 @@
 #include "folio_palette.h"
 #include "folio_state.h"
 #include "note_ref.h"
+#include "ui_face.h"
 #include "ui_text.h"
 #include "utf16_text.h"
 
@@ -37,7 +38,6 @@ struct drawer_window
 };
 
 static const wchar_t class_name[] = L"NeNeFolioDrawer";
-static const wchar_t text_face[] = L"Yu Gothic UI";
 static const wchar_t mono_face[] = L"Consolas";
 /* 1 回の描画で UTF-16 へ写せる単位数（ADR 0030 の決定 5）。表の 1 行もカテゴリ名・ノート名
  * （255 バイト）もここに収まる。収まらなければ何も描かない。 */
@@ -99,11 +99,15 @@ static void release_fonts(struct drawer_window *_Nonnull self)
     release_font(&self->mono_font);
 }
 
+/* 文字の書体は言語ごとの face（ADR 0032 の決定 4）。番号の等幅は Consolas のまま。
+ * DPI が変わったときと言語を採り直したときの両方がここを通る（第 2 の経路を作らない）。 */
 static void refresh_fonts(struct drawer_window *_Nonnull self, UINT dpi)
 {
+    wchar_t face[LF_FACESIZE];
+    ui_face_for(folio_state_language(self->state), face);
     release_fonts(self);
-    self->category_font = create_font(dpi, base_category_font, FW_BOLD, text_face);
-    self->note_font = create_font(dpi, base_note_font, FW_NORMAL, text_face);
+    self->category_font = create_font(dpi, base_category_font, FW_BOLD, face);
+    self->note_font = create_font(dpi, base_note_font, FW_NORMAL, face);
     self->mono_font = create_font(dpi, base_mono_font, FW_NORMAL, mono_face);
 }
 
@@ -502,7 +506,7 @@ static void act_on_row(struct drawer_window *_Nonnull self, struct drawer_row ro
         InvalidateRect(self->handle, nullptr, FALSE);
         return;
     }
-    failure_box_show(self->handle, outcome);
+    failure_box_show(self->handle, outcome, folio_state_language(self->state));
 }
 
 /* 落とし先を意図にする（ノートは別カテゴリへの移動も同じ 1 本・ADR 0008 の決定 2 / 6）。
@@ -524,7 +528,7 @@ static void apply_drop(struct drawer_window *_Nonnull self, struct drawer_row so
     }
     if (outcome != FOLIO_STATE_READY)
     {
-        failure_box_show(self->handle, outcome);
+        failure_box_show(self->handle, outcome, folio_state_language(self->state));
         return;
     }
     InvalidateRect(self->handle, nullptr, FALSE);
@@ -560,7 +564,7 @@ static void choose_color(struct drawer_window *_Nonnull self, struct drawer_row 
         folio_state_recolor_category(self->state, row.category, to_rgb_color(choice.rgbResult));
     if (outcome != FOLIO_STATE_READY)
     {
-        failure_box_show(self->handle, outcome);
+        failure_box_show(self->handle, outcome, folio_state_language(self->state));
         return;
     }
     InvalidateRect(self->handle, nullptr, FALSE);
@@ -704,7 +708,7 @@ static void scroll_by(struct drawer_window *_Nonnull self, int delta)
         folio_state_scroll_drawer(self->state, metrics_for(self), delta);
     if (outcome != FOLIO_STATE_READY)
     {
-        failure_box_show(self->handle, outcome);
+        failure_box_show(self->handle, outcome, folio_state_language(self->state));
         return;
     }
     if (self->dragging)
@@ -909,9 +913,21 @@ void drawer_window_reveal_cursor(struct drawer_window *_Nonnull drawer)
         folio_state_reveal_cursor(drawer->state, metrics_for(drawer));
     if (outcome != FOLIO_STATE_READY)
     {
-        failure_box_show(drawer->handle, outcome);
+        failure_box_show(drawer->handle, outcome, folio_state_language(drawer->state));
         return;
     }
+    InvalidateRect(drawer->handle, nullptr, FALSE);
+}
+
+/* 言語の切り替えで書体を作り直して全面を描き直す（ADR 0032 の決定 6(b)）。
+ * 文言そのものは描くたびに ui_text_line を引くので、ここは face だけを配り直す。 */
+void drawer_window_refont(struct drawer_window *_Nonnull drawer)
+{
+    if (drawer->handle == nullptr)
+    {
+        return;
+    }
+    refresh_fonts(drawer, GetDpiForWindow(drawer->handle));
     InvalidateRect(drawer->handle, nullptr, FALSE);
 }
 

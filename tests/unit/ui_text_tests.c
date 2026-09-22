@@ -433,8 +433,13 @@ static const char *_Nonnull const key_names[] = {
 /* `:set` の語。folio_command.c の options[] が正本なので、綴りは parse で確かめてから使う
  * （表から語を消すとこの単体が先に落ちる）。 */
 static const char *_Nonnull const option_words[] = {
-    "number",    "nu",    "nonumber",     "nonu",        "number!",    "nu!",
-    "invnumber", "invnu", "theme=system", "theme=light", "theme=dark",
+    "number",       "nu",
+    "nonumber",     "nonu",
+    "number!",      "nu!",
+    "invnumber",    "invnu",
+    "theme=system", "theme=light",
+    "theme=dark",   "language=ja",
+    "language=en",  "language=zh-Hans",
 };
 
 static bool holds(const char *_Nonnull line, const char *_Nonnull word)

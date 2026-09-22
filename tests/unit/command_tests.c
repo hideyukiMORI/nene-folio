@@ -124,9 +124,29 @@ static void verify_options(void)
     expect_option(":set theme=system", FOLIO_OPTION_THEME_SYSTEM, "theme=system follows the OS");
     expect_option(":se theme=light", FOLIO_OPTION_THEME_LIGHT, "theme=light is explicit");
     expect_option(":set theme=dark ", FOLIO_OPTION_THEME_DARK, "theme=dark is trimmed");
-    static const char *const refused[] = {
-        "",        " ",         "numbers", "NUMBER", "no",         "number no",   "nu nu",
-        "!number", "invisible", "theme",   "theme=", "theme=blue", "theme = dark"};
+    /* 言語の 3 語（ADR 0032 の決定 7）。theme= と同じ完全一致の表である。 */
+    expect_option(":set language=ja", FOLIO_OPTION_LANGUAGE_JA, "language=ja");
+    expect_option(":se language=en", FOLIO_OPTION_LANGUAGE_EN, "language=en");
+    expect_option(":set language=zh-Hans ", FOLIO_OPTION_LANGUAGE_ZH_HANS,
+                  "language=zh-Hans is trimmed");
+    static const char *const refused[] = {"",
+                                          " ",
+                                          "numbers",
+                                          "NUMBER",
+                                          "no",
+                                          "number no",
+                                          "nu nu",
+                                          "!number",
+                                          "invisible",
+                                          "theme",
+                                          "theme=",
+                                          "theme=blue",
+                                          "theme = dark",
+                                          "language",
+                                          "language=",
+                                          "language=fr",
+                                          "language=zh-hans",
+                                          "language = ja"};
     for (size_t index = 0; index < sizeof refused / sizeof refused[0]; ++index)
     {
         enum folio_option option = FOLIO_OPTION_NUMBER_SHOW;

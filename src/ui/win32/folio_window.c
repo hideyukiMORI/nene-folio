@@ -17,6 +17,8 @@
 #include "note_ref.h"
 #include "note_search.h"
 #include "replace_edit.h"
+#include "settings_row_kind.h"
+#include "ui_face.h"
 #include "ui_text.h"
 #include "ui_text_request.h"
 #include "utf16_text.h"
@@ -88,25 +90,45 @@ static const wchar_t edit_class[] = L"EDIT";
 /* 一覧に出すキー操作の行（ADR 0030 の決定 4）。文言は core の ui_text が持ち、
  * ここは並びだけを持つ。1 行 1 ID で、欄分けは単位 C（ADR 0032）。 */
 static const enum ui_text command_shortcuts[] = {
-    UI_TEXT_HELP_PALETTE,       UI_TEXT_HELP_EDITOR_MOTION, UI_TEXT_HELP_GLOBAL_KEYS,
-    UI_TEXT_HELP_GLOBAL_FILTER, UI_TEXT_HELP_FILTER_FIELD,  UI_TEXT_HELP_FILTER_LIMITS,
-    UI_TEXT_HELP_FILE_KEYS,     UI_TEXT_HELP_INDEX_COMMAND, UI_TEXT_HELP_EX_SET_NUMBER,
-    UI_TEXT_HELP_EX_SET_THEME,  UI_TEXT_HELP_REPLACE_FIELD, UI_TEXT_HELP_EX_SUBSTITUTE,
-    UI_TEXT_HELP_SEARCH_KEYS,   UI_TEXT_HELP_SEARCH_STEP,   UI_TEXT_HELP_SEARCH_FIELD,
-    UI_TEXT_HELP_INDEX_MOTION,  UI_TEXT_HELP_INDEX_FOLD,    UI_TEXT_HELP_INDEX_SCROLL,
-    UI_TEXT_HELP_EDITOR_ESCAPE,
+    UI_TEXT_HELP_PALETTE,       UI_TEXT_HELP_EDITOR_MOTION,   UI_TEXT_HELP_GLOBAL_KEYS,
+    UI_TEXT_HELP_GLOBAL_FILTER, UI_TEXT_HELP_FILTER_FIELD,    UI_TEXT_HELP_FILTER_LIMITS,
+    UI_TEXT_HELP_FILE_KEYS,     UI_TEXT_HELP_INDEX_COMMAND,   UI_TEXT_HELP_EX_SET_NUMBER,
+    UI_TEXT_HELP_EX_SET_THEME,  UI_TEXT_HELP_EX_SET_LANGUAGE, UI_TEXT_HELP_REPLACE_FIELD,
+    UI_TEXT_HELP_EX_SUBSTITUTE, UI_TEXT_HELP_SEARCH_KEYS,     UI_TEXT_HELP_SEARCH_STEP,
+    UI_TEXT_HELP_SEARCH_FIELD,  UI_TEXT_HELP_INDEX_MOTION,    UI_TEXT_HELP_INDEX_FOLD,
+    UI_TEXT_HELP_INDEX_SCROLL,  UI_TEXT_HELP_EDITOR_ESCAPE,
 };
 
-/* 設定画面の行（ADR 0031 の決定 7）。0 は見出しで、続く 3 行が enum folio_theme_choice と
- * 同じ順の選択肢である。単位 C は「言語」の見出しと 3 行を同じ形で足す。 */
-static const enum ui_text settings_rows[] = {
-    UI_TEXT_SETTINGS_THEME,
-    UI_TEXT_SETTINGS_THEME_SYSTEM,
-    UI_TEXT_SETTINGS_THEME_LIGHT,
-    UI_TEXT_SETTINGS_THEME_DARK,
+/* 設定画面の行（ADR 0031 の決定 7・ADR 0032 の決定 7）。見出しと選択肢を**種別で**持ち、
+ * value はその種別の列挙の値（THEME なら folio_theme_choice・LANGUAGE なら folio_language）。
+ * 段を足すときはここに行を足し、採用の閉じた switch に枝を足す（添字を型へ鋳込まない）。 */
+static const struct
+{
+    enum ui_text label;
+    enum settings_row_kind kind;
+    unsigned char value;
+} settings_rows[] = {
+    {UI_TEXT_SETTINGS_THEME, SETTINGS_ROW_HEADING, 0},
+    {UI_TEXT_SETTINGS_THEME_SYSTEM, SETTINGS_ROW_THEME, FOLIO_THEME_CHOICE_SYSTEM},
+    {UI_TEXT_SETTINGS_THEME_LIGHT, SETTINGS_ROW_THEME, FOLIO_THEME_CHOICE_LIGHT},
+    {UI_TEXT_SETTINGS_THEME_DARK, SETTINGS_ROW_THEME, FOLIO_THEME_CHOICE_DARK},
+    {UI_TEXT_SETTINGS_LANGUAGE, SETTINGS_ROW_HEADING, 0},
+    {UI_TEXT_SETTINGS_LANGUAGE_JA, SETTINGS_ROW_LANGUAGE, FOLIO_LANGUAGE_JA},
+    {UI_TEXT_SETTINGS_LANGUAGE_EN, SETTINGS_ROW_LANGUAGE, FOLIO_LANGUAGE_EN},
+    {UI_TEXT_SETTINGS_LANGUAGE_ZH_HANS, SETTINGS_ROW_LANGUAGE, FOLIO_LANGUAGE_ZH_HANS},
 };
-/* 選択肢が始まる行（見出しの次）。カーソルはこの行より上へは行かない。 */
+/* 選択肢が始まる行（最初の見出しの次）。カーソルはこの行より上へは行かない。 */
 constexpr size_t settings_first_choice_row = 1;
+
+static size_t settings_row_count(void)
+{
+    return sizeof settings_rows / sizeof settings_rows[0];
+}
+
+static bool settings_row_choice(size_t index)
+{
+    return settings_rows[index].kind != SETTINGS_ROW_HEADING;
+}
 
 /* Ctrl+S が WM_CHAR で届く制御文字（GetKeyState を読まない・ARC-007）。 */
 constexpr WPARAM store_character = 0x13;
@@ -258,7 +280,7 @@ static int command_surface_rows(const struct folio_window *_Nonnull self)
     case COMMAND_SURFACE_PALETTE:
         return (int)folio_command_listed_count();
     case COMMAND_SURFACE_SETTINGS:
-        return (int)(sizeof settings_rows / sizeof settings_rows[0]);
+        return (int)settings_row_count();
     case COMMAND_SURFACE_EX:
     case COMMAND_SURFACE_SEARCH:
     case COMMAND_SURFACE_REPLACE:
@@ -1512,12 +1534,27 @@ static void draw_settings_mark(const struct folio_window *_Nonnull self, HDC dev
     DeleteObject(pen);
 }
 
+/* その行がいまの値か（印を付ける行）。段を足したら枝を足させる（C-002）。 */
+static bool settings_row_current(const struct folio_window *_Nonnull self, size_t index)
+{
+    switch (settings_rows[index].kind)
+    {
+    case SETTINGS_ROW_HEADING:
+        return false;
+    case SETTINGS_ROW_THEME:
+        return (unsigned char)folio_state_theme_choice(self->state) == settings_rows[index].value;
+    case SETTINGS_ROW_LANGUAGE:
+        return (unsigned char)folio_state_language(self->state) == settings_rows[index].value;
+    }
+    return false;
+}
+
 /* 1 行分を描く。見出しは薄い文字で印もカーソルも付かない。 */
 static void draw_settings_row(const struct folio_window *_Nonnull self, HDC device, RECT row,
                               size_t index)
 {
     UINT dpi = GetDpiForWindow(self->handle);
-    bool choice = index >= settings_first_choice_row;
+    bool choice = settings_row_choice(index);
     bool selected = choice && index == self->command_selection;
     if (selected)
     {
@@ -1531,7 +1568,7 @@ static void draw_settings_row(const struct folio_window *_Nonnull self, HDC devi
     if (choice)
     {
         label.left += scale(base_settings_indent, dpi);
-        if ((size_t)folio_state_theme_choice(self->state) + settings_first_choice_row == index)
+        if (settings_row_current(self, index))
         {
             draw_settings_mark(self, device, row);
         }
@@ -1539,7 +1576,8 @@ static void draw_settings_row(const struct folio_window *_Nonnull self, HDC devi
     SetTextColor(device, choice
                              ? (selected ? self->palette.selected_text : self->palette.current_text)
                              : self->palette.header_text);
-    draw_utf8(device, ui_text_line(settings_rows[index], folio_state_language(self->state)), label);
+    draw_utf8(device, ui_text_line(settings_rows[index].label, folio_state_language(self->state)),
+              label);
 }
 
 static void draw_settings_rows(const struct folio_window *_Nonnull self, HDC device, RECT bounds)
@@ -1548,7 +1586,7 @@ static void draw_settings_rows(const struct folio_window *_Nonnull self, HDC dev
     RECT rows = command_rows_rect(self);
     int height = scale(base_command_row_height, dpi);
     size_t count = command_visible_rows(self);
-    size_t total = sizeof settings_rows / sizeof settings_rows[0];
+    size_t total = settings_row_count();
     for (size_t visible = 0; visible < count && self->command_first + visible < total; ++visible)
     {
         size_t index = self->command_first + visible;
@@ -2120,7 +2158,7 @@ static void command_failure(struct folio_window *_Nonnull self, enum folio_state
         self->command_surface != COMMAND_SURFACE_CLOSED && inline_outcome(outcome);
     if (!inline_failure)
     {
-        failure_box_show(self->handle, outcome);
+        failure_box_show(self->handle, outcome, folio_state_language(self->state));
         if (self->command_surface != COMMAND_SURFACE_CLOSED)
         {
             focus_command_input(self);
@@ -2249,7 +2287,7 @@ static void update_search(struct folio_window *_Nonnull self, enum search_direct
     }
     if (taken != FOLIO_STATE_READY)
     {
-        failure_box_show(self->handle, taken);
+        failure_box_show(self->handle, taken, folio_state_language(self->state));
         return;
     }
     struct note_search_query query = {.text = text,
@@ -2545,6 +2583,19 @@ static void begin_replace(struct folio_window *_Nonnull self)
     show_replace_surface(self);
 }
 
+/* 開いたときにカーソルを置く行（いまのテーマの行）。表を引くので添字を鋳込まない。 */
+static size_t settings_initial_row(const struct folio_window *_Nonnull self)
+{
+    for (size_t index = 0; index < settings_row_count(); ++index)
+    {
+        if (settings_rows[index].kind == SETTINGS_ROW_THEME && settings_row_current(self, index))
+        {
+            return index;
+        }
+    }
+    return settings_first_choice_row;
+}
+
 /* 設定画面は EDIT を持たず、レイヤー自身がフォーカスを取る（ADR 0031 の決定 7）。
  * 開いたとき現在の選択の行にカーソルを置く（show_search_surface と同じ形の上書き）。
  * 閲覧中でも文書が無くても開ける。 */
@@ -2562,8 +2613,7 @@ static void show_settings_surface(struct folio_window *_Nonnull self)
     /* **行を決めてから配置する**（show_command_palette と同じ順）。逆にすると
      * arrange_command_input の reveal_command_selection がパレットの添字のまま走り、
      * command_first が行数を超えて 1 行も描かれなくなる。 */
-    self->command_selection =
-        settings_first_choice_row + (size_t)folio_state_theme_choice(self->state);
+    self->command_selection = settings_initial_row(self);
     arrange_command_input(self);
     focus_command_input(self);
     redraw_command_layer(self);
@@ -2820,9 +2870,27 @@ static void apply_number(struct folio_window *_Nonnull self, bool number)
     rearrange_keeping_line(self);
 }
 
+/* 閲覧の本文を新しい RTF で流し直し、選択を戻す（ADR 0031 の決定 6 の補正 1）。
+ * **実測の補正**: EM_EXSETSEL は EM_SCROLLCARET を送らなくても選択を見える位置へ寄せる。
+ * 空の選択を戻すと先頭へ飛ぶので、選んでいる一致があるときだけ戻す（ADR 0023 の
+ * ハイライトは保ち、選んでいないときは流し直しが保ったスクロール位置をそのまま残す）。 */
+static void restream_pane(const struct folio_window *_Nonnull self)
+{
+    size_t start = 0;
+    size_t end = 0;
+    bool had = note_pane_selection(self->pane, &start, &end);
+    render_pane(self);
+    if (had && end > start)
+    {
+        note_pane_restore_selection(self->pane, (struct note_search_span){start, end});
+    }
+}
+
 /* 色を持つものを全部当て直す（ADR 0031 の決定 6）。palette の写しは主窓・ドロワー・
  * command_brush の 3 か所で、縁の色は decorate を呼び直す（何度でも可・実測）。
- * 閲覧は選択を退避して流し直し、編集は色を当て直すだけ（本文・Undo・変更印を守る）。 */
+ * 閲覧は選択を退避して流し直し、編集は色を当て直すだけ（本文・Undo・変更印を守る）。
+ * **最初に見える論理行を退避して戻す**（ADR 0031 の 2026-09-23 の補正 2）。
+ * キャレットが画面の外にあると EM_SETCHARFORMAT がキャレットまでスクロールするため。 */
 static void recolor_pane(const struct folio_window *_Nonnull self)
 {
     if (self->pane == nullptr)
@@ -2830,21 +2898,41 @@ static void recolor_pane(const struct folio_window *_Nonnull self)
         return;
     }
     enum pane_mode mode = folio_state_pane_mode(self->state);
+    size_t line = note_pane_first_visible_line(self->pane);
     note_pane_recolor(self->pane, self->palette.pane, self->palette.editor_text, mode);
-    if (mode != PANE_MODE_VIEW)
+    if (mode == PANE_MODE_VIEW)
+    {
+        restream_pane(self);
+    }
+    if (line > 0)
+    {
+        note_pane_scroll_to_line(self->pane, line);
+    }
+}
+
+/* 言語の切り替えで本文の書体を当て直す（ADR 0032 の決定 6(c)）。
+ * 編集は既定書式の face だけを当て、閲覧は新しい fonttbl の RTF を流し直す（順が違う）。
+ * face は再折り返しを起こすので、最初に見える論理行を退避して最後に戻す。 */
+static void reface_pane(const struct folio_window *_Nonnull self)
+{
+    if (self->pane == nullptr)
     {
         return;
     }
-    size_t start = 0;
-    size_t end = 0;
-    bool had = note_pane_selection(self->pane, &start, &end);
-    render_pane(self);
-    /* **実測の補正**: EM_EXSETSEL は EM_SCROLLCARET を送らなくても選択を見える位置へ寄せる。
-     * 空の選択を戻すと先頭へ飛ぶので、選んでいる一致があるときだけ戻す（ADR 0023 の
-     * ハイライトは保ち、選んでいないときは流し直しが保ったスクロール位置をそのまま残す）。 */
-    if (had && end > start)
+    size_t line = note_pane_first_visible_line(self->pane);
+    if (folio_state_pane_mode(self->state) == PANE_MODE_VIEW)
     {
-        note_pane_restore_selection(self->pane, (struct note_search_span){start, end});
+        restream_pane(self);
+    }
+    else
+    {
+        wchar_t face[LF_FACESIZE];
+        ui_face_for(folio_state_language(self->state), face);
+        note_pane_reface(self->pane, face);
+    }
+    if (line > 0)
+    {
+        note_pane_scroll_to_line(self->pane, line);
     }
 }
 
@@ -2897,6 +2985,47 @@ static void apply_theme(struct folio_window *_Nonnull self, enum folio_theme_cho
     redraw_command_layer(self);
 }
 
+/* 言語を採り直したあとの UI（ADR 0032 の決定 6）。文言は描くたびに表を引き直すので
+ * 全面を描き直すだけでよく、face を持つ部品（ドロワーの書体・本文の既定書式）だけを
+ * 当て直す。メニューは開くたびに作るので触らない。 */
+static void relanguage_window(struct folio_window *_Nonnull self)
+{
+    if (self->drawer != nullptr)
+    {
+        drawer_window_refont(self->drawer);
+    }
+    reface_pane(self);
+    InvalidateRect(self->handle, nullptr, FALSE);
+    redraw_command_layer(self);
+}
+
+/* 2 つの入口（設定画面の Enter と `:set language=`）が通る唯一の意図（ADR 0032 の決定 5）。
+ * 設定画面は採用しても閉じず、印を移したまま残る（apply_theme と同じ流儀）。 */
+static void apply_language(struct folio_window *_Nonnull self, enum folio_language language)
+{
+    enum folio_language before = folio_state_language(self->state);
+    enum folio_state_outcome outcome = folio_state_set_language(self->state, language);
+    if (outcome != FOLIO_STATE_READY)
+    {
+        command_failure(self, outcome);
+        return;
+    }
+    if (self->command_surface == COMMAND_SURFACE_SETTINGS)
+    {
+        clear_command_status(self);
+    }
+    else
+    {
+        hide_command_surface(self);
+    }
+    if (folio_state_language(self->state) != before)
+    {
+        relanguage_window(self);
+        return;
+    }
+    redraw_command_layer(self);
+}
+
 /* 未知の語・語なし・余計な語は、未知のコマンドと同じ 1 行で、入力を消さない（決定 8）。
  * 語は閉じた集合なので、行番号とテーマの 2 つの意図へここで振り分ける（ADR 0031 の決定 8(c)）。 */
 static void execute_set_command(struct folio_window *_Nonnull self, const char *_Nonnull argument)
@@ -2926,6 +3055,15 @@ static void execute_set_command(struct folio_window *_Nonnull self, const char *
         return;
     case FOLIO_OPTION_THEME_DARK:
         apply_theme(self, FOLIO_THEME_CHOICE_DARK);
+        return;
+    case FOLIO_OPTION_LANGUAGE_JA:
+        apply_language(self, FOLIO_LANGUAGE_JA);
+        return;
+    case FOLIO_OPTION_LANGUAGE_EN:
+        apply_language(self, FOLIO_LANGUAGE_EN);
+        return;
+    case FOLIO_OPTION_LANGUAGE_ZH_HANS:
+        apply_language(self, FOLIO_LANGUAGE_ZH_HANS);
         return;
     }
 }
@@ -3098,7 +3236,7 @@ static bool store_edit(struct folio_window *_Nonnull self)
     enum folio_state_outcome outcome = store_body(self);
     if (outcome != FOLIO_STATE_READY)
     {
-        failure_box_show(self->handle, outcome);
+        failure_box_show(self->handle, outcome, folio_state_language(self->state));
         return false;
     }
     InvalidateRect(self->handle, nullptr, FALSE);
@@ -3156,7 +3294,7 @@ static void switch_adjacent(struct folio_window *_Nonnull self, enum folio_step 
     }
     if (outcome != FOLIO_STATE_READY)
     {
-        failure_box_show(self->handle, outcome);
+        failure_box_show(self->handle, outcome, folio_state_language(self->state));
         return;
     }
     if (self->drawer != nullptr)
@@ -3215,7 +3353,7 @@ static void expand_cursor(struct folio_window *_Nonnull self, bool expanded)
     redraw_drawer(self);
     if (outcome != FOLIO_STATE_READY)
     {
-        failure_box_show(self->handle, outcome);
+        failure_box_show(self->handle, outcome, folio_state_language(self->state));
         return;
     }
     if (self->drawer != nullptr)
@@ -3307,15 +3445,26 @@ static bool click_surface_buttons(struct folio_window *_Nonnull self, POINT poin
     return false;
 }
 
-/* カーソルの行を採用する（ADR 0031 の決定 7）。見出しの行では何も起きない。 */
+/* カーソルの行を採用する（ADR 0031 の決定 7・ADR 0032 の決定 7）。
+ * 種別の閉じた switch なので、段を足したらここが落ちる。見出しの行では何も起きない。 */
 static void adopt_settings_row(struct folio_window *_Nonnull self)
 {
-    if (self->command_selection < settings_first_choice_row)
+    size_t index = self->command_selection;
+    if (index >= settings_row_count())
     {
         return;
     }
-    apply_theme(self,
-                (enum folio_theme_choice)(self->command_selection - settings_first_choice_row));
+    switch (settings_rows[index].kind)
+    {
+    case SETTINGS_ROW_HEADING:
+        return;
+    case SETTINGS_ROW_THEME:
+        apply_theme(self, (enum folio_theme_choice)settings_rows[index].value);
+        return;
+    case SETTINGS_ROW_LANGUAGE:
+        apply_language(self, (enum folio_language)settings_rows[index].value);
+        return;
+    }
 }
 
 /* クリックはパレットと同じ。選択肢の行を押すとその場で採用する。
@@ -3329,8 +3478,7 @@ static void click_settings_surface(struct folio_window *_Nonnull self, POINT poi
     }
     int height = scale(base_command_row_height, GetDpiForWindow(self->handle));
     size_t index = self->command_first + (size_t)((point.y - rows.top) / height);
-    if (index < settings_first_choice_row ||
-        index >= sizeof settings_rows / sizeof settings_rows[0])
+    if (index >= settings_row_count() || !settings_row_choice(index))
     {
         return;
     }
@@ -3367,7 +3515,8 @@ static void click_command_surface(struct folio_window *_Nonnull self, POINT poin
     struct utf8_text *_Nullable query = nullptr;
     if (command_query(self, &query) != UTF8_TEXT_CONVERTED)
     {
-        failure_box_show(self->handle, FOLIO_STATE_OUT_OF_MEMORY);
+        failure_box_show(self->handle, FOLIO_STATE_OUT_OF_MEMORY,
+                         folio_state_language(self->state));
         return;
     }
     enum folio_command command = FOLIO_COMMAND_SAVE;
@@ -3750,7 +3899,8 @@ static void execute_command_input(struct folio_window *_Nonnull self)
     struct utf8_text *_Nullable query = nullptr;
     if (command_query(self, &query) != UTF8_TEXT_CONVERTED)
     {
-        failure_box_show(self->handle, FOLIO_STATE_OUT_OF_MEMORY);
+        failure_box_show(self->handle, FOLIO_STATE_OUT_OF_MEMORY,
+                         folio_state_language(self->state));
         return;
     }
     size_t length = utf8_text_length(query);
@@ -3797,7 +3947,8 @@ static void move_command_selection(struct folio_window *_Nonnull self, WPARAM ke
     struct utf8_text *_Nullable query = nullptr;
     if (command_query(self, &query) != UTF8_TEXT_CONVERTED)
     {
-        failure_box_show(self->handle, FOLIO_STATE_OUT_OF_MEMORY);
+        failure_box_show(self->handle, FOLIO_STATE_OUT_OF_MEMORY,
+                         folio_state_language(self->state));
         return;
     }
     size_t count = command_matches_count(query, folio_state_language(self->state));
@@ -3896,23 +4047,31 @@ static bool command_return(struct folio_window *_Nonnull self)
     return true;
 }
 
+/* 見出しを飛ばして次の選択肢の行を返す。端では動かない（ADR 0032 の決定 7）。 */
+static size_t settings_next_choice(size_t from, bool downwards)
+{
+    size_t total = settings_row_count();
+    size_t at = from;
+    while (downwards ? at + 1 < total : at > settings_first_choice_row)
+    {
+        at = downwards ? at + 1 : at - 1;
+        if (settings_row_choice(at))
+        {
+            return at;
+        }
+    }
+    return from;
+}
+
 /* 設定画面の ↑↓。見出しの行は飛ばし、端では動かない（ADR 0031 の決定 7）。 */
 static bool settings_navigate(struct folio_window *_Nonnull self, WPARAM key)
 {
-    size_t total = sizeof settings_rows / sizeof settings_rows[0];
-    if (key == VK_UP && self->command_selection > settings_first_choice_row)
-    {
-        self->command_selection -= 1;
-    }
-    else if (key == VK_DOWN && self->command_selection + 1 < total)
-    {
-        self->command_selection += 1;
-    }
-    else if (key != VK_UP && key != VK_DOWN)
+    if (key != VK_UP && key != VK_DOWN)
     {
         return false;
     }
-    /* 単位 C で行が増えても選択行が箱の外へ出ない。 */
+    self->command_selection = settings_next_choice(self->command_selection, key == VK_DOWN);
+    /* 行が箱に収まらないので、選択行は必ず見える位置へ送り出す（#69 の式）。 */
     reveal_command_selection(self);
     redraw_command_layer(self);
     return true;
@@ -4391,6 +4550,8 @@ static LRESULT on_create(HWND window, LPARAM lparam)
     {
         return -1;
     }
+    /* 既定書式の face は core の表が決める（ADR 0032 の決定 4）。作った直後に 1 回当てる。 */
+    reface_pane(self);
     if (!create_filter_input(self, window))
     {
         return -1;

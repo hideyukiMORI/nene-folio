@@ -1,6 +1,7 @@
 #include "name_prompt.h"
 #include "folio_state.h"
 #include "note_name.h"
+#include "ui_face.h"
 #include "ui_text.h"
 #include "ui_text_request.h"
 #include "utf16_text.h"
@@ -310,9 +311,12 @@ static bool initialize(struct name_prompt *_Nonnull prompt, HWND dialog)
 {
     prompt->dialog = dialog;
     prompt->dpi = GetDpiForWindow(dialog);
+    /* 面はモーダルなので、言語は開く瞬間に決まる（ADR 0032 の決定 4）。 */
+    wchar_t face[LF_FACESIZE];
+    ui_face_for(prompt_language(prompt), face);
     prompt->font = CreateFontW(-scaled(prompt, 14), 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
                                DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-                               CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Yu Gothic UI");
+                               CLEARTYPE_QUALITY, DEFAULT_PITCH, face);
     if (prompt->font == nullptr)
     {
         return false;

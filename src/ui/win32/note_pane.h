@@ -57,6 +57,12 @@ void note_pane_select(struct note_pane *_Nonnull pane, size_t start, size_t end)
  * EN_CHANGE は編集で 2 件・閲覧で 1 件出る（受け手は番号の表に印を付けるだけ）。 */
 void note_pane_recolor(struct note_pane *_Nonnull pane, COLORREF background, COLORREF text,
                        enum pane_mode mode);
+/* 言語の切り替えで既定書式の face を当て直す（ADR 0032 の決定 6）。閲覧では呼ばない
+ * （流し込みが既定書式を捨てるので、新しい fonttbl の RTF を流し直すのが正典）。
+ * 本文・選択・Undo の段数・変更印は変わらないが、**face を変えると再折り返しが起きる**ので、
+ * 呼び出し側が note_pane_first_visible_line で退避して note_pane_scroll_to_line で戻す。
+ * face は終端付きで LF_FACESIZE に収まること。収まらなければ何もしない。 */
+void note_pane_reface(struct note_pane *_Nonnull pane, const wchar_t *_Nonnull face);
 /* 退避しておいた選択を戻す（EM_EXSETSEL だけ。EM_SCROLLCARET を送らない）。
  * 閲覧の RTF を流し直すと選択が消えるので、一致のハイライトを戻すのに使う（ADR 0023）。 */
 void note_pane_restore_selection(struct note_pane *_Nonnull pane, struct note_search_span span);
