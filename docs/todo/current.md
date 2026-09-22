@@ -13,7 +13,7 @@ application が `appearance_port` を**値で保持**して選択と OS の値�
 `WM_SETTINGCHANGE`（`ImmersiveColorSet`）で OS の切替に追従する。配色は Ubuntu 風の 2 組で、必須の 3 対は全部 4.5:1 以上。
 probe が 1 件見つけた：**`EM_EXSETSEL` は `EM_SCROLLCARET` 無しでも選択へ寄る**ので、空の選択を戻すと先頭へ飛ぶ。
 **空でない選択のときだけ戻す**形に直し、ADR 0031 の補正節 1 に記録した。
-単体と Win32 部品 probe 53 項目が成功（[確認記録](../quality/2026-09-23-theme-checks.md)）。
+単体と Win32 部品 probe 60 項目が成功（[確認記録](../quality/2026-09-23-theme-checks.md)）。
 **描いた絵そのものは見ていない**ので、[統合チェックリスト](../quality/2026-09-22-visual-checklist.md)に 75-1〜75-16 を足した。
 最終フルゲート・CI は #75 の PR を参照。次は **#76（単位 C：言語。表を 2 次元にして版 3 へ）**。
 

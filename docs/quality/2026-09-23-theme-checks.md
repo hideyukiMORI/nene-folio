@@ -29,7 +29,7 @@ Win32 部品 probe の道具と全出力は `out/design/2026-09-23/theme-ui-prob
 
 ## 2. Win32 部品 probe（`out/design/2026-09-23/theme-ui-probe/`）
 
-`recolor_probe` 12 / 12・`layer_probe` 9 / 9・`contrast.py` 26 / 26・`geometry.py` 6 / 6 が成功（合計 53 項目）。
+`recolor_probe` 19 / 19・`layer_probe` 9 / 9・`contrast.py` 26 / 26・`geometry.py` 6 / 6 が成功（**合計 60 項目**・FAIL 0）。
 
 ### 再着色（ADR 0031 の決定 6 の**未測定だった形**）
 
