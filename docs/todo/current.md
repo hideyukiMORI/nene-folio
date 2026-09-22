@@ -1,5 +1,27 @@
 # いまのタスク — NeNe Folio
 
+2026-09-23: **#75 / ADR 0031 のテーマと設定画面**を `out/worktrees/75-theme` で 4 層に実装した（#38 の単位 B）。
+`data/settings.json` を**版 2**（`{"version":2,"number":<bool>,"theme":"system"|"light"|"dark"}`）へ広げ、
+**版 1 は読めて `theme` に既定値を埋める**（書くのは常に版 2）。解析は「版を読む」「`parse_version_1`」「`parse_version_2`」の 3 本。
+core に `folio_theme_choice`（SYSTEM / LIGHT / DARK）と純関数 `folio_theme_resolve` を置き、
+application が `appearance_port` を**値で保持**して選択と OS の値を別に持つ。
+`folio_state_set_theme` は**新しい設定と新しい閲覧文書を先に作り → 書けたら差し替える**（どちらの失敗でもファイルも状態も変えない）。
+入口は 3 つ：頭の**歯車**（GDI の線）・「操作」メニューとパレットの「設定」・`:set theme=system|light|dark`。
+設定画面は `command_layer` の自前描画で、**EDIT を持たずレイヤー自身がフォーカスと鍵を受ける**（IME は `ImmAssociateContext(layer, NULL)` で外す）。
+再着色は `EM_SETBKGNDCOLOR` → 変更印の退避 → `Undo(tomSuspend)` → `SCF_ALL` と `SCF_DEFAULT` → `Undo(tomResume)` → 印の復元で、
+**本文・選択・Undo の段数・変更印が不変**であることを probe で測り直した（ADR の未測定の形）。
+`WM_SETTINGCHANGE`（`ImmersiveColorSet`）で OS の切替に追従する。配色は Ubuntu 風の 2 組で、必須の 3 対は全部 4.5:1 以上。
+probe が 1 件見つけた：**`EM_EXSETSEL` は `EM_SCROLLCARET` 無しでも選択へ寄る**ので、空の選択を戻すと先頭へ飛ぶ。
+**空でない選択のときだけ戻す**形に直し、ADR 0031 の補正節 1 に記録した。
+単体と Win32 部品 probe 68 項目が成功（[確認記録](../quality/2026-09-23-theme-checks.md)）。
+**描いた絵そのものは見ていない**ので、[統合チェックリスト](../quality/2026-09-22-visual-checklist.md)に 75-1〜75-16 を足した。
+独立レビュー（設計リナ）で**止める所見 S1**を受けた: パレットから設定画面を開くと
+`reveal_command_selection` がパレットの添字のまま走って`command_first = 10`になり、**行が 1 つも描かれない**。
+「行を決めてから配置する」順へ直し、式そのものを probe に置いた。あわせて D1（設定の失敗を欄の 1 行へ）・
+D6（閲覧は `SCF_ALL` を省いて既定書式だけ）・D7（確保失敗時の不変の単体）・絞り込みの欄のテーマ追従・
+IME 文脈の後始末を同じ PR で直した（ADR 0031 の補正節 7〜12）。
+最終フルゲート・CI は #75 の PR を参照。次は **#76（単位 C：言語。表を 2 次元にして版 3 へ）**。
+
 2026-09-22: **#74 / ADR 0030 の文言の表引き**を `out/worktrees/74-ui-text` で実装した。
 利用者に見える文言（123 値）を core の `ui_text` の表 1 か所へ集め、`ui_text_line(id, language)` で引く。
 言語は最初から引数で、値は application の `folio_state_language` が答える（core は「いまの言語」を持たない・ARC-005）。

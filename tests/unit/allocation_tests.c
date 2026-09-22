@@ -440,6 +440,29 @@ static bool set_number_under_probe(struct folio_state *_Nonnull state)
     return changed == FOLIO_STATE_READY;
 }
 
+/* テーマの 2 つの意図（ADR 0031 の決定 3）。どちらも設定の複製と
+ * 閲覧文書の作り直しで確保する。read_theme は確保しないので refresh は文書だけ。 */
+static bool set_theme_under_probe(struct folio_state *_Nonnull state)
+{
+    enum folio_theme_choice before = folio_state_theme_choice(state);
+    const char *_Nonnull document = folio_state_pane_rtf(state);
+    enum folio_state_outcome changed = folio_state_set_theme(state, FOLIO_THEME_CHOICE_LIGHT);
+    require(changed == FOLIO_STATE_READY || changed == FOLIO_STATE_OUT_OF_MEMORY,
+            "set theme under probe");
+    if (changed != FOLIO_STATE_READY)
+    {
+        /* 確保に失敗したときは選択も閲覧文書も前のまま（ADR 0031 の決定 3）。 */
+        require(folio_state_theme_choice(state) == before &&
+                    folio_state_pane_rtf(state) == document,
+                "a failed set_theme leaves the choice and the view document alone");
+        return false;
+    }
+    enum folio_state_outcome refreshed = folio_state_refresh_theme(state);
+    require(refreshed == FOLIO_STATE_READY || refreshed == FOLIO_STATE_OUT_OF_MEMORY,
+            "refresh theme under probe");
+    return refreshed == FOLIO_STATE_READY;
+}
+
 /* ノート内検索の語は UTF-16 を UTF-8 へ写して所有する（ADR 0023 の決定 3）。 */
 static bool search_under_probe(struct folio_state *_Nonnull state)
 {
@@ -546,7 +569,7 @@ static bool state_scenario_with(struct persistence_adapter *_Nonnull adapter)
         selection_under_probe(state) && filter_under_probe(state) && reorder_under_probe(state) &&
         edit_under_probe(state) && transfer_under_probe(state) && new_note_under_probe(state) &&
         save_as_under_probe(state) && replace_under_probe(state) && rename_under_probe(state) &&
-        search_under_probe(state) && set_number_under_probe(state);
+        search_under_probe(state) && set_number_under_probe(state) && set_theme_under_probe(state);
     folio_state_destroy(state);
     return completed;
 }
@@ -617,14 +640,23 @@ static bool settings_scenario(void)
     {
         return false;
     }
-    struct folio_settings *changed = nullptr;
-    enum folio_settings_outcome derived = folio_settings_with_number(settings, true, &changed);
+    struct folio_settings *numbered = nullptr;
+    enum folio_settings_outcome derived = folio_settings_with_number(settings, true, &numbered);
     folio_settings_destroy(settings);
     if (derived == FOLIO_SETTINGS_OUT_OF_MEMORY)
     {
         return false;
     }
     require(derived == FOLIO_SETTINGS_READY, "settings copy under probe");
+    struct folio_settings *changed = nullptr;
+    enum folio_settings_outcome themed =
+        folio_settings_with_theme(numbered, FOLIO_THEME_CHOICE_DARK, &changed);
+    folio_settings_destroy(numbered);
+    if (themed == FOLIO_SETTINGS_OUT_OF_MEMORY)
+    {
+        return false;
+    }
+    require(themed == FOLIO_SETTINGS_READY, "settings theme copy under probe");
     struct json_writer *writer = nullptr;
     if (json_writer_create(&writer) != JSON_WRITER_ACCEPTED)
     {

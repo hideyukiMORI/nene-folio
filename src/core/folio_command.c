@@ -44,6 +44,8 @@ static const struct
                                   UI_TEXT_COMMAND_SUBSTITUTE,
                                   0,
                                   {"", ""}},
+    /* GUI 専用操作（ADR 0031 の決定 8(b)）。設定画面を開くだけで、モードは変えない。 */
+    [FOLIO_COMMAND_SETTINGS] = {FOLIO_COMMAND_SETTINGS, UI_TEXT_COMMAND_SETTINGS, 0, {"", ""}},
 };
 
 /* 設定の語（ADR 0026 の決定 8）。効果を実装した語だけを並べる。 */
@@ -52,10 +54,12 @@ static const struct
     const char *_Nonnull name;
     enum folio_option option;
 } options[] = {
-    {"number", FOLIO_OPTION_NUMBER_SHOW},      {"nu", FOLIO_OPTION_NUMBER_SHOW},
-    {"nonumber", FOLIO_OPTION_NUMBER_HIDE},    {"nonu", FOLIO_OPTION_NUMBER_HIDE},
-    {"number!", FOLIO_OPTION_NUMBER_TOGGLE},   {"nu!", FOLIO_OPTION_NUMBER_TOGGLE},
-    {"invnumber", FOLIO_OPTION_NUMBER_TOGGLE}, {"invnu", FOLIO_OPTION_NUMBER_TOGGLE},
+    {"number", FOLIO_OPTION_NUMBER_SHOW},        {"nu", FOLIO_OPTION_NUMBER_SHOW},
+    {"nonumber", FOLIO_OPTION_NUMBER_HIDE},      {"nonu", FOLIO_OPTION_NUMBER_HIDE},
+    {"number!", FOLIO_OPTION_NUMBER_TOGGLE},     {"nu!", FOLIO_OPTION_NUMBER_TOGGLE},
+    {"invnumber", FOLIO_OPTION_NUMBER_TOGGLE},   {"invnu", FOLIO_OPTION_NUMBER_TOGGLE},
+    {"theme=system", FOLIO_OPTION_THEME_SYSTEM}, {"theme=light", FOLIO_OPTION_THEME_LIGHT},
+    {"theme=dark", FOLIO_OPTION_THEME_DARK},
 };
 
 /* 引数の種類（ADR0020 / ADR0022 / ADR 0026）。閉じた集合なので増えたらここで落ちる。 */
@@ -81,6 +85,7 @@ static enum folio_argument_kind argument_kind(enum folio_command command)
     case FOLIO_COMMAND_FIND:
     case FOLIO_COMMAND_TOGGLE_NUMBER:
     case FOLIO_COMMAND_REPLACE:
+    case FOLIO_COMMAND_SETTINGS:
         return FOLIO_ARGUMENT_NONE;
     }
     return FOLIO_ARGUMENT_NONE;
@@ -106,6 +111,7 @@ bool folio_command_listed(enum folio_command command)
     case FOLIO_COMMAND_FIND:
     case FOLIO_COMMAND_TOGGLE_NUMBER:
     case FOLIO_COMMAND_REPLACE:
+    case FOLIO_COMMAND_SETTINGS:
         return true;
     }
     return true;

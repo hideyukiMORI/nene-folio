@@ -3,6 +3,7 @@
 #include "caret_command.h"
 #include "folio_message.h"
 #include "line_index.h"
+#include "pane_mode.h"
 #include "rtf_stream.h"
 
 #include <richedit.h>
@@ -183,23 +184,34 @@ static bool subclass_pane(struct note_pane *_Nonnull pane)
     return pane->original != nullptr;
 }
 
-static bool prepare_selection(struct note_pane *_Nonnull pane)
+/* RichEdit から ITextDocument を 1 つ取る唯一の経路（ARC-001）。呼んだ側が Release する。
+ * 取れなければ nullptr（選択の準備も再着色もその場合の振る舞いを自分で決める）。 */
+static ITextDocument *_Nullable text_document(struct note_pane *_Nonnull pane)
 {
     IUnknown *_Nullable unknown = nullptr;
     SendMessageW(pane->handle, EM_GETOLEINTERFACE, 0, (LPARAM)&unknown);
     if (unknown == nullptr)
     {
-        return false;
+        return nullptr;
     }
     /* QueryInterfaceの出力はvoid**で受け、SDKの型へ直ちに写すWin32境界（C-006）。 */
     void *_Nullable result = nullptr;
     HRESULT queried = unknown->lpVtbl->QueryInterface(unknown, &text_document_id, &result);
     unknown->lpVtbl->Release(unknown);
-    if (FAILED(queried) || result == nullptr)
+    if (FAILED(queried))
+    {
+        return nullptr;
+    }
+    return result;
+}
+
+static bool prepare_selection(struct note_pane *_Nonnull pane)
+{
+    ITextDocument *_Nullable document = text_document(pane);
+    if (document == nullptr)
     {
         return false;
     }
-    ITextDocument *_Nonnull document = result;
     HRESULT selected = document->lpVtbl->GetSelection(document, &pane->selection);
     document->lpVtbl->Release(document);
     return SUCCEEDED(selected) && pane->selection != nullptr;
@@ -567,6 +579,67 @@ void note_pane_select(struct note_pane *_Nonnull pane, size_t start, size_t end)
     CHARRANGE range = {.cpMin = (LONG)start, .cpMax = (LONG)end};
     SendMessageW(pane->handle, EM_EXSETSEL, 0, (LPARAM)&range);
     SendMessageW(pane->handle, EM_SCROLLCARET, 0, 0);
+}
+
+void note_pane_restore_selection(struct note_pane *_Nonnull pane, struct note_search_span span)
+{
+    if (pane->handle == nullptr)
+    {
+        return;
+    }
+    /* EM_SCROLLCARET を送らない。流し直しで保たれた位置を動かさない（ADR 0031 の決定 6）。 */
+    CHARRANGE range = {.cpMin = (LONG)span.start, .cpMax = (LONG)span.end};
+    SendMessageW(pane->handle, EM_EXSETSEL, 0, (LPARAM)&range);
+}
+
+/* 文字色だけを scope（SCF_ALL か SCF_DEFAULT）へ当てる。書体と大きさは触らない。 */
+static void apply_text_color(struct note_pane *_Nonnull pane, COLORREF text, WPARAM scope)
+{
+    CHARFORMAT2W format = {.cbSize = sizeof format, .dwMask = CFM_COLOR, .crTextColor = text};
+    SendMessageW(pane->handle, EM_SETCHARFORMAT, scope, (LPARAM)&format);
+}
+
+/* 閲覧は RTF が文字色を持っていて直後に流し直すので、SCF_ALL は捨てる書式を
+ * 1 度塗るだけでちらつきの元になる。既定書式は note_pane_edit の平文が使うので
+ * 閲覧でも更新が要る（ADR 0031 の補正節・D6）。 */
+static bool recolor_body(enum pane_mode mode)
+{
+    switch (mode)
+    {
+    case PANE_MODE_VIEW:
+        return false;
+    case PANE_MODE_EDIT:
+        return true;
+    }
+    return true;
+}
+
+void note_pane_recolor(struct note_pane *_Nonnull pane, COLORREF background, COLORREF text,
+                       enum pane_mode mode)
+{
+    if (pane->handle == nullptr)
+    {
+        return;
+    }
+    /* 地の色は Undo も変更印も EN_CHANGE も動かさない（実測 (a1)）。 */
+    SendMessageW(pane->handle, EM_SETBKGNDCOLOR, 0, (LPARAM)background);
+    ITextDocument *_Nullable document = text_document(pane);
+    if (document == nullptr)
+    {
+        return; /* 地だけ変えて本文の色は次の流し込みまで古いまま（Undo を汚さない） */
+    }
+    /* 変更印を退避し、Undo を止めたまま SCF_ALL と SCF_DEFAULT を続けて当てる
+     * （ADR 0031 の決定 6。SCF_DEFAULT も Undo を積むので必ず suspend の内側）。 */
+    LRESULT modified = SendMessageW(pane->handle, EM_GETMODIFY, 0, 0);
+    document->lpVtbl->Undo(document, tomSuspend, nullptr);
+    if (recolor_body(mode))
+    {
+        apply_text_color(pane, text, SCF_ALL);
+    }
+    apply_text_color(pane, text, SCF_DEFAULT);
+    document->lpVtbl->Undo(document, tomResume, nullptr);
+    document->lpVtbl->Release(document);
+    SendMessageW(pane->handle, EM_SETMODIFY, (WPARAM)(modified != 0), 0);
 }
 
 void note_pane_replace(struct note_pane *_Nonnull pane, struct note_search_span span,

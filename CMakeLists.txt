@@ -29,7 +29,7 @@ nenefolio_target(nenefolio_core core STATIC
     src/core/text_buffer.c src/core/note_text.c src/core/markdown_rtf.c src/core/rtf_palette.c
     src/core/folio_command.c src/core/note_name.c src/core/note_rename.c src/core/rename_journal.c
     src/core/note_search.c src/core/note_corpus.c src/core/index_filter.c
-    src/core/folio_settings.c src/core/line_index.c
+    src/core/folio_settings.c src/core/folio_theme.c src/core/line_index.c
     src/core/replace_template.c src/core/replace_edit.c src/core/note_replace.c
     src/core/replace_preview.c
     src/core/ui_text.c)
@@ -67,6 +67,8 @@ nenefolio_system_link(nenefolio_window user32)
 nenefolio_system_link(nenefolio_window gdi32)
 nenefolio_system_link(nenefolio_window dwmapi)
 nenefolio_system_link(nenefolio_window comdlg32)
+# 設定画面のレイヤーから IME 文脈を外す（ADR 0031 の決定 7・ARC-002）。
+nenefolio_system_link(nenefolio_window imm32)
 
 nenefolio_target(nenefolio app EXECUTABLE src/app/main.c src/app/NeNeFolio.manifest)
 set_property(TARGET nenefolio PROPERTY WIN32_EXECUTABLE TRUE)

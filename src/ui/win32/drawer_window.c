@@ -915,6 +915,16 @@ void drawer_window_reveal_cursor(struct drawer_window *_Nonnull drawer)
     InvalidateRect(drawer->handle, nullptr, FALSE);
 }
 
+/* テーマの切り替えで palette の写しを取り直して全面を描き直す（ADR 0031 の決定 6）。 */
+void drawer_window_recolor(struct drawer_window *_Nonnull drawer)
+{
+    drawer->palette = folio_palette_for(folio_state_theme(drawer->state));
+    if (drawer->handle != nullptr)
+    {
+        InvalidateRect(drawer->handle, nullptr, FALSE);
+    }
+}
+
 void drawer_window_destroy(struct drawer_window *_Nullable drawer)
 {
     if (drawer == nullptr)

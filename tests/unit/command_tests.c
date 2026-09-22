@@ -119,8 +119,13 @@ static void verify_options(void)
     expect_option(":set nu!", FOLIO_OPTION_NUMBER_TOGGLE, "nu! toggles");
     expect_option(":set invnumber", FOLIO_OPTION_NUMBER_TOGGLE, "invnumber toggles");
     expect_option(":set invnu ", FOLIO_OPTION_NUMBER_TOGGLE, "invnu toggles and is trimmed");
-    static const char *const refused[] = {"",          " ",     "numbers", "NUMBER",   "no",
-                                          "number no", "nu nu", "!number", "invisible"};
+    /* テーマの 3 語（ADR 0031 の決定 8(c)）。完全一致の表なので parser は変わっていない。 */
+    expect_option(":set theme=system", FOLIO_OPTION_THEME_SYSTEM, "theme=system follows the OS");
+    expect_option(":se theme=light", FOLIO_OPTION_THEME_LIGHT, "theme=light is explicit");
+    expect_option(":set theme=dark ", FOLIO_OPTION_THEME_DARK, "theme=dark is trimmed");
+    static const char *const refused[] = {
+        "",        " ",         "numbers", "NUMBER", "no",         "number no",   "nu nu",
+        "!number", "invisible", "theme",   "theme=", "theme=blue", "theme = dark"};
     for (size_t index = 0; index < sizeof refused / sizeof refused[0]; ++index)
     {
         enum folio_option option = FOLIO_OPTION_NUMBER_SHOW;
@@ -150,8 +155,8 @@ static void verify_listed(void)
     require(folio_command_matches(FOLIO_COMMAND_TOGGLE_NUMBER, "行番号", strlen("行番号"),
                                   FOLIO_LANGUAGE_JA),
             "the palette finds the toggle by label");
-    /* パレットの箱の高さはこの数で決まる。総数（15）で取ると 2 行ぶん余る（補正 9）。 */
-    require(folio_command_listed_count() == 13, "thirteen operations are offered on a surface");
+    /* パレットの箱の高さはこの数で決まる。総数（16）で取ると 2 行ぶん余る（補正 9）。 */
+    require(folio_command_listed_count() == 14, "fourteen operations are offered on a surface");
     require(folio_command_listed_count() == folio_command_count() - 2,
             "exactly the two unlisted Ex grammars are left out");
     require(folio_command_alias_count(FOLIO_COMMAND_REPLACE) == 0 &&
@@ -159,6 +164,12 @@ static void verify_listed(void)
             "replace is a listed GUI operation with a Japanese label and no alias");
     require(folio_command_matches(FOLIO_COMMAND_REPLACE, "置換", strlen("置換"), FOLIO_LANGUAGE_JA),
             "the palette finds replace by label");
+    require(folio_command_alias_count(FOLIO_COMMAND_SETTINGS) == 0 &&
+                same_text(folio_command_label(FOLIO_COMMAND_SETTINGS, FOLIO_LANGUAGE_JA), "設定"),
+            "settings is a listed GUI operation with a Japanese label and no alias");
+    require(
+        folio_command_matches(FOLIO_COMMAND_SETTINGS, "設定", strlen("設定"), FOLIO_LANGUAGE_JA),
+        "the palette finds settings by label");
 }
 
 static void verify_rejections(void)
@@ -185,13 +196,14 @@ static void verify_rejections(void)
 
 static void verify_catalog(void)
 {
-    require(folio_command_count() == 15, "only implemented commands are registered");
+    require(folio_command_count() == 16, "only implemented commands are registered");
     const enum folio_command expected[] = {
         FOLIO_COMMAND_SAVE,          FOLIO_COMMAND_QUIT,    FOLIO_COMMAND_SAVE_QUIT,
         FOLIO_COMMAND_FORCE_QUIT,    FOLIO_COMMAND_HELP,    FOLIO_COMMAND_EDIT,
         FOLIO_COMMAND_VIEW,          FOLIO_COMMAND_NEW,     FOLIO_COMMAND_SAVE_AS,
         FOLIO_COMMAND_RENAME,        FOLIO_COMMAND_FIND,    FOLIO_COMMAND_SET,
-        FOLIO_COMMAND_TOGGLE_NUMBER, FOLIO_COMMAND_REPLACE, FOLIO_COMMAND_SUBSTITUTE};
+        FOLIO_COMMAND_TOGGLE_NUMBER, FOLIO_COMMAND_REPLACE, FOLIO_COMMAND_SUBSTITUTE,
+        FOLIO_COMMAND_SETTINGS};
     for (size_t index = 0; index < folio_command_count(); ++index)
     {
         enum folio_command command = folio_command_at(index);

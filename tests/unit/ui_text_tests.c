@@ -100,6 +100,7 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_COMMAND_TOGGLE_NUMBER] = "行番号の表示を切り替える",
     [UI_TEXT_COMMAND_REPLACE] = "置換",
     [UI_TEXT_COMMAND_SUBSTITUTE] = "正規表現で置換（:%s/前/後/g）",
+    [UI_TEXT_COMMAND_SETTINGS] = "設定",
     [UI_TEXT_HELP_PALETTE] = "一覧  ↑↓ 選択 / Enter 実行 / Esc 戻る / Tab 説明",
     [UI_TEXT_HELP_EDITOR_MOTION] = "編集本文  Ctrl+h/j/k/l ←/↓/↑/→",
     [UI_TEXT_HELP_GLOBAL_KEYS] = "全区画  F1 ヘルプ / Ctrl+P 一覧 / Ctrl+F このノート内を検索",
@@ -113,6 +114,7 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_HELP_INDEX_COMMAND] = "索引・閲覧本文  : コマンド / i 編集",
     [UI_TEXT_HELP_EX_SET_NUMBER] =
         "Ex  :set number / :set nonumber / :set nu!（編集中の原文の行番号）",
+    [UI_TEXT_HELP_EX_SET_THEME] = "Ex  :set theme=system / :set theme=light / :set theme=dark",
     [UI_TEXT_HELP_REPLACE_FIELD] =
         "置換欄  Tab 欄を移動 / Enter 1 件 / Ctrl+Enter すべて / Esc 閉じる",
     [UI_TEXT_HELP_EX_SUBSTITUTE] =
@@ -152,6 +154,11 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_ACTION_PALETTE_PREVIOUS] = "↑ 前",
     [UI_TEXT_ACTION_PALETTE_NEXT] = "↓ 次",
     [UI_TEXT_ACTION_OPERATIONS] = "操作 ▾",
+    [UI_TEXT_SETTINGS_THEME] = "テーマ",
+    [UI_TEXT_SETTINGS_THEME_SYSTEM] = "OS に従う",
+    [UI_TEXT_SETTINGS_THEME_LIGHT] = "ライト",
+    [UI_TEXT_SETTINGS_THEME_DARK] = "ダーク",
+    [UI_TEXT_SETTINGS_GUIDANCE] = "↑↓ 選択 / Enter 採用 / Esc 戻る",
     [UI_TEXT_APP_LOGO] = "NENE FOLIO",
     [UI_TEXT_GLYPH_MINUS] = "−",
     [UI_TEXT_GLYPH_PLUS] = "+",

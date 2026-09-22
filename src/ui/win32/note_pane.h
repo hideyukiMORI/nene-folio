@@ -8,6 +8,7 @@
 #include "note_pane_outcome.h"
 #include "note_pane_text_outcome.h"
 #include "note_search_span.h"
+#include "pane_mode.h"
 
 #include <stddef.h>
 #include <uchar.h>
@@ -48,6 +49,17 @@ note_pane_display_text(struct note_pane *_Nonnull pane, const char16_t *_Nonnull
                        size_t *_Nonnull count);
 /* 一致 1 つを選択して見える位置へ寄せる。フォーカスも本文も Undo も触らない。 */
 void note_pane_select(struct note_pane *_Nonnull pane, size_t start, size_t end);
+/* テーマの切り替えで地と本文の色を当て直す（ADR 0031 の決定 6）。閲覧・編集の両方で呼ぶ
+ * （地の色は RTF に入らない）。本文・選択・Undo の段数・変更印は変わらない。
+ * ITextDocument が取れなければ地の色だけ変える（Undo を汚さない方を取る）。
+ * **閲覧は既定書式だけ**（直後に RTF を流し直すので SCF_ALL はちらつきの元）、
+ * **編集は本文と既定書式の両方**を塗る。
+ * EN_CHANGE は編集で 2 件・閲覧で 1 件出る（受け手は番号の表に印を付けるだけ）。 */
+void note_pane_recolor(struct note_pane *_Nonnull pane, COLORREF background, COLORREF text,
+                       enum pane_mode mode);
+/* 退避しておいた選択を戻す（EM_EXSETSEL だけ。EM_SCROLLCARET を送らない）。
+ * 閲覧の RTF を流し直すと選択が消えるので、一致のハイライトを戻すのに使う（ADR 0023）。 */
+void note_pane_restore_selection(struct note_pane *_Nonnull pane, struct note_search_span span);
 /* span の範囲を units で置き換える（ADR 0028 の決定 7）。EM_EXSETSEL → EM_REPLACESEL(TRUE) の
  * 1 回なので Undo も 1 単位になる。units は終端付きで、長さは EM_REPLACESEL が終端で決める
  * （ADR 0028 は 5 引数で書いていたが C-012 の上限に収めて span へ束ねた）。
