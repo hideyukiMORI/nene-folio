@@ -5,9 +5,13 @@
 
 enum folio_option : unsigned char
 {
-    FOLIO_OPTION_NUMBER_SHOW,  /* number / nu */
-    FOLIO_OPTION_NUMBER_HIDE,  /* nonumber / nonu */
-    FOLIO_OPTION_NUMBER_TOGGLE /* number! / nu! / invnumber / invnu */
+    FOLIO_OPTION_NUMBER_SHOW,   /* number / nu */
+    FOLIO_OPTION_NUMBER_HIDE,   /* nonumber / nonu */
+    FOLIO_OPTION_NUMBER_TOGGLE, /* number! / nu! / invnumber / invnu */
+    /* 表示のテーマ（ADR 0031 の決定 8(c)）。語を足すだけで parser は変えない */
+    FOLIO_OPTION_THEME_SYSTEM, /* theme=system */
+    FOLIO_OPTION_THEME_LIGHT,  /* theme=light */
+    FOLIO_OPTION_THEME_DARK    /* theme=dark */
 };
 
 #endif

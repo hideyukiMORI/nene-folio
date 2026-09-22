@@ -114,6 +114,7 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_HELP_INDEX_COMMAND] = "索引・閲覧本文  : コマンド / i 編集",
     [UI_TEXT_HELP_EX_SET_NUMBER] =
         "Ex  :set number / :set nonumber / :set nu!（編集中の原文の行番号）",
+    [UI_TEXT_HELP_EX_SET_THEME] = "Ex  :set theme=system / :set theme=light / :set theme=dark",
     [UI_TEXT_HELP_REPLACE_FIELD] =
         "置換欄  Tab 欄を移動 / Enter 1 件 / Ctrl+Enter すべて / Esc 閉じる",
     [UI_TEXT_HELP_EX_SUBSTITUTE] =

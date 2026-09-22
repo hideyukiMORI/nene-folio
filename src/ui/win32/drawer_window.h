@@ -33,6 +33,9 @@ void drawer_window_scroll_key(struct drawer_window *_Nonnull drawer, WPARAM key)
  * 寸法を測れるのがドロワーなので、主窓は鍵でカーソルを動かしたあとここを呼ぶ。
  * カーソルが無ければ何も動かない（カテゴリ行のカーソルにも効く）。 */
 void drawer_window_reveal_cursor(struct drawer_window *_Nonnull drawer);
+/* テーマが変わったときに色を取り直す（ADR 0031 の決定 6）。
+ * 値の正本は folio_palette で、ここは写しを更新して全面を無効にするだけ。 */
+void drawer_window_recolor(struct drawer_window *_Nonnull drawer);
 void drawer_window_destroy(struct drawer_window *_Nullable drawer);
 
 #endif
