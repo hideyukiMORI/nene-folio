@@ -2484,7 +2484,7 @@ struct pane_title_view folio_state_pane_title(const struct folio_state *_Nonnull
     title.category = category_ledger_name(state->categories, state->selected_category);
     title.note =
         state->document == FOLIO_DOCUMENT_UNTITLED
-            ? "無題（未保存）"
+            ? ui_text_line(UI_TEXT_TITLE_UNTITLED, folio_state_language(state))
             : note_ledger_name(state->notes[state->selected_category], state->selected_note);
     title.color = category_ledger_color(state->categories, state->selected_category);
     return title;
