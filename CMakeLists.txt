@@ -67,6 +67,8 @@ nenefolio_system_link(nenefolio_window user32)
 nenefolio_system_link(nenefolio_window gdi32)
 nenefolio_system_link(nenefolio_window dwmapi)
 nenefolio_system_link(nenefolio_window comdlg32)
+# 設定画面のレイヤーから IME 文脈を外す（ADR 0031 の決定 7・ARC-002）。
+nenefolio_system_link(nenefolio_window imm32)
 
 nenefolio_target(nenefolio app EXECUTABLE src/app/main.c src/app/NeNeFolio.manifest)
 set_property(TARGET nenefolio PROPERTY WIN32_EXECUTABLE TRUE)
