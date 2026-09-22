@@ -1,5 +1,25 @@
 # いまのタスク — NeNe Folio
 
+2026-09-23: **#88 / ADR 0033 のベクターアイコン**を `out/worktrees/88-icons` で実装した。
+閉じる × ・設定の歯車・ドロワーの折畳 − / + ・設定画面の選択の印を、画面案 C（面で塗る・角丸の板）の
+**24 の viewBox の点の表**として ui に持ち、OS 同梱の **GDI+** で既存の DC へ直接塗る。
+SDK の `gdiplus*.h` は C++ 専用なので、`windows.h` だけを読む**型定義 0 の自前の宣言**
+（`src/ui/win32/gdiplus_flat.h` の 18 本・不完全型・`constexpr int`）で `gdiplus.lib` に結ぶ（ARC-002）。
+描く 1 本は `icon_paint_fill(HDC, RECT, kind, COLORREF)` で、`AntiAlias` ＋ `PixelOffsetModeHalf`、
+FillMode は `GdipCreatePath` の引数だけ（歯車は Alternate・他は Winding）、失敗したら何も描かない。
+GDI+ の起動は `folio_window_create` の窓を作る前、終了は `folio_window_destroy` の窓を壊した後で、
+**起動に失敗したら窓を作らない**（枠なし窓で × が描けないと閉じる入口が消える）。
+折畳の印が絵になったので **`ui_text` から `GLYPH_MINUS` / `GLYPH_PLUS` を消した**（単独で描く字形は 0）。
+当たり判定の矩形は 1 つも変えていない。選択の印の色は `current_text` → **`chip_background`**。
+`toggle_room` は字形の実測をやめて `scale(24)+scale(6)` の定数になり、**カーソルの角は 96 DPI で 18px 左へ動く**。
+production の `icon_paint.c` を一緒にコンパイルした Win32 部品 probe **43 項目**と幾何の突き合わせ
+（画面案の `d` と 1 点も違わない・面積の差は 3% 以内）が成功（[確認記録](../quality/2026-09-23-icon-checks.md)）。
+ADR が未測定としていた 2 点（**GDI の状態が前後で不変**・**DDB と damage の外のクリップ**）はどちらも測れた。
+`GdiplusStartup` の失敗で窓を作らないことは**偽の失敗を注入できないので測っていない**。
+**描いた絵そのものは見ていない**ので[統合チェックリスト](../quality/2026-09-22-visual-checklist.md)に 88-1〜88-9 を足した。
+残課題: 絞り込みの欄の `×`（`paint_filter_clear`・#86）は GDI の線のままで、**× を描く経路が 2 つ残る**
+（ADR 0033 の補正 8）。最終フルゲート・CI は #88 の PR を参照。
+
 2026-09-23: **#76 / ADR 0032 の表示言語（日本語 / English / 简体中文）**を `out/worktrees/76-language` で 5 層に実装した（#38 の単位 C・最後）。
 `ui_text` の表を**3 列**にして英訳と简体中文訳を書き（**日本語の字面が変わったのは構文の見本を ASCII に揃えた 2 件だけ**）、
 `data/settings.json` を**版 3**（`{"version":3,"number":…,"theme":…,"language":"ja"|"en"|"zh-Hans"}`）へ広げた

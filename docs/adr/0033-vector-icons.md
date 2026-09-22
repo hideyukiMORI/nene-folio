@@ -78,3 +78,47 @@ Win32 部品 probe（`out/design/2026-09-23/icon-ui-probe/`・メモリ DC の�
 `Startup` 失敗時に窓が作られない（偽の失敗を注入できなければ「測っていない」と書く）・`folio_window_destroy` の後に `Gdip*` が `GdiplusNotInitialized`。
 ゲート: `architecture.json` の `gdiplus`・ソース一覧・`lineTables` の整合（`GLYPH_*` を消した後）・`_Nonnull` の TU から include して警告 0・分岐網羅が下がらない（ui は対象外）。
 実機の目視（hide）: 96 DPI の × の濃さ・24px の歯車が読めるか・折畳の板の太さと左右位置・選択の印の位置と色（暗テーマの橙 on 紫）・両テーマ・DPI 96↔144・設定画面の開閉で印が正しい行・絞り込み中のカテゴリ行の折畳印。統合チェックリストに足す。Waivers: none。
+
+## 2026-09-23 の補正（実装と Win32 部品 probe の後・決定本文は書き換えない）
+
+実装の probe は `out/design/2026-09-23/icon-ui-probe/`（43 項目 ＋ 幾何の突き合わせ 0 件差）、
+結果のまとめは[確認記録](../quality/2026-09-23-icon-checks.md)。
+
+1. **決定 2 の「ちょうど 17 本」は数え違いで、列挙されているのは 18 本。** 宣言したのは列挙どおりの
+   18 本（`GdiplusStartup` / `GdiplusShutdown` / `GdipCreateFromHDC` / `GdipDeleteGraphics` /
+   `GdipSetSmoothingMode` / `GdipSetPixelOffsetMode` / `GdipTranslateWorldTransform` /
+   `GdipScaleWorldTransform` / `GdipResetWorldTransform` / `GdipCreatePath` / `GdipDeletePath` /
+   `GdipAddPathLine` / `GdipAddPathArc` / `GdipAddPathEllipse` / `GdipClosePathFigure` /
+   `GdipCreateSolidFill` / `GdipDeleteBrush` / `GdipFillPath`）で、**足しても引いてもいない**。
+   設計 probe が使っていた `GdipStartPathFigure` / `GdipResetPath` / `GdipSetPathFillMode` /
+   `GdipAddPathBezier` は要らない（`GdipClosePathFigure` の次の `Add*` が新しい図形を始める）。
+2. **型の名前は SDK の綴りではなく、CNF-002 が要求する綴りにした。** `struct GdiplusStartupInput` を
+   `gdiplus_startup_input.h` に置くと「filename does not match」で落ちるので、型名は
+   **`struct gdiplus_startup_input`**（メンバーも `version` / `debug_event_callback` /
+   `suppress_background_thread` / `suppress_external_codecs` の snake_case）にした。
+   x64 のレイアウトが SDK の `GdiplusStartupInput` と一致していることが署名の根拠で、
+   `GdiplusStartup` が `Ok` を返すことを probe（1-1）で固定している。
+   第 3 引数の `GdiplusStartupOutput` も同じ理由で **`struct gdiplus_startup_output;`**（不完全型のまま）。
+3. **`GdiplusStartup` は `folio_window_create` の中の `start_gdiplus()` という小さな static に割った。**
+   本体に直に書くと `folio_window_create` が 63 行になり `readability-function-size`（C-012 の 60 行）で落ちる。
+   置き場所（`CreateWindowExW` の前）と失敗の扱いは決定 4 のとおり。
+4. **`add_round_rect` は角丸の表の添字を受ける。** 決定 3 は写しの規則 (2) を 1 本に保てと言うが、
+   `{x, y, width, height, radius}` を引数で渡すと 6 引数になって C-012 の 4 を超える。
+   無名 struct のままでは型名が書けない（名前を付けると CNF-002 が落ちる）ので、
+   `round_rects[]` の 1 表に 3 枚を入れて `constexpr size_t` の添字で選ぶ形にした。
+   点の表（`close_points` / `settings_points`）は決定どおり無名 struct の配列で、
+   ループは形ごとの static 関数がそれぞれ持つ。
+5. **カーソルの角の x は「約 15px」ではなく 18px 左へ動く。** 96 DPI の Consolas 11px で
+   U+2212 の実測幅は **6px** なので、旧 `toggle_room` は 6 + 6 = 12px、新しい定数は 24 + 6 = 30px、
+   差は **18px** である（probe 8-5）。ADR 0015 決定 7 の補正にもこの数で書く。
+6. **未測定だった 2 点はどちらも測れて、どちらも決定のとおりだった。**
+   GDI の状態は 9 つ（フォント・文字色・`GetBkMode`・`GetTextCharacterExtra`・ビューポート原点・
+   ウィンドウ原点・`GetMapMode`・ブラシ・ペン）とも不変（5-1）。
+   DDB のメモリ DC には描けて、damage の外に置いたパスは 1 画素も出ない（6-1）。
+7. **`GdiplusStartup` の失敗で窓を作らないことは測っていない。** 偽の失敗を注入する手立てが無い
+   （`gdiplus.dll` の差し替えか API のフックになる）。コードの形を読んで確かめただけである。
+   代わりに、**GDI+ が落ちている状態で `icon_paint_fill` を呼んでも落ちず何も描かない**ことは測った（9-2）。
+8. **絞り込みの欄の `×`（`paint_filter_clear`・#86）は GDI の線のまま残した。** 決定 6 が挙げる
+   5 種に入っていないので触っていないが、**× を描く経路が 2 つ残る**（ARC-001 / ARC-012 の観点で
+   望ましくない）。箱が 20px で `base_filter_clear_inset` の刻み方も頭の × と別なので、
+   同じ面のパスへ寄せるなら箱の数から決め直す必要がある。設計リナの判断で別 Issue にするか次の単位で扱う。
