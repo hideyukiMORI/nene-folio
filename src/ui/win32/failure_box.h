@@ -3,13 +3,15 @@
 #ifndef NENEFOLIO_FAILURE_BOX_H
 #define NENEFOLIO_FAILURE_BOX_H
 
-#include "folio_language.h"
+#include "folio_state.h"
 #include "folio_state_outcome.h"
 
 #include <windows.h>
 
-/* language は folio_state_language の値。箱の題は製品名なので翻訳しない（ADR 0032 の決定 7）。 */
+/* 箱の中で言語（folio_state_language）と palette（folio_state_theme）を引き、
+ * dialog_theme で塗る自前のモーダルに 1 行を出す（ADR 0035 の決定 4）。state は読むだけ。
+ * 箱の題は製品名なので翻訳しない（ADR 0032 の決定 7）。owner はトップレベルの窓（決定 6）。 */
 void failure_box_show(HWND _Nullable owner, enum folio_state_outcome outcome,
-                      enum folio_language language);
+                      const struct folio_state *_Nonnull state);
 
 #endif

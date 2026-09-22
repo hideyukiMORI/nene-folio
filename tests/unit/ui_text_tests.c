@@ -188,6 +188,7 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_PROMPT_ACCEPT_RETRY] = "再試行",
     [UI_TEXT_PROMPT_ACCEPT_SAVE] = "保存",
     [UI_TEXT_PROMPT_ACCEPT_RENAME] = "変更",
+    [UI_TEXT_PROMPT_OK] = "OK",
     [UI_TEXT_PROMPT_CLOSE_PENDING] = "閉じる",
     [UI_TEXT_PROMPT_CLOSE_CANCEL] = "キャンセル",
     [UI_TEXT_PROMPT_LABEL_NAME] = "ノートの名前",
