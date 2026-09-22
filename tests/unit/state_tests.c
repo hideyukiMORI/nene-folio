@@ -3118,6 +3118,30 @@ static void verify_refresh_theme(void)
     folio_state_destroy(state);
 }
 
+/* 確保に失敗したときの不変（ADR 0031 の決定 3）。書き込みが OUT_OF_MEMORY を返す経路は
+ * 偎のポートだけで踏める（閲覧文書の作り直しの失敗は allocation_tests.c が測定ビルドで踏む）。 */
+static void verify_set_theme_out_of_memory(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    adapter.settings_write_outcome = PERSISTENCE_OUT_OF_MEMORY;
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY, "a named document");
+    const char *before = folio_state_pane_rtf(state);
+    require(folio_state_set_theme(state, FOLIO_THEME_CHOICE_LIGHT) == FOLIO_STATE_OUT_OF_MEMORY,
+            "a failing write is reported as out of memory");
+    require(folio_state_theme_choice(state) == FOLIO_THEME_CHOICE_SYSTEM,
+            "the choice is unchanged");
+    require(folio_state_theme(state) == FOLIO_THEME_DARK, "and so is the resolved theme");
+    require(folio_state_pane_rtf(state) == before &&
+                strstr(folio_state_pane_rtf(state), dark_body_color) != nullptr,
+            "the view document is the very same one, still in the old colours");
+    require(adapter.settings_writes == 1, "the write was attempted exactly once");
+    require(folio_state_set_theme(state, FOLIO_THEME_CHOICE_SYSTEM) == FOLIO_STATE_READY,
+            "the unchanged choice is still accepted without writing");
+    require(adapter.settings_writes == 1, "and it did not write again");
+    folio_state_destroy(state);
+}
+
 static void verify_settings(void)
 {
     verify_settings_absent();
@@ -3125,6 +3149,7 @@ static void verify_settings(void)
     verify_theme_resolution();
     verify_set_theme();
     verify_set_theme_unwritable();
+    verify_set_theme_out_of_memory();
     verify_refresh_theme();
     verify_set_number();
     verify_set_number_unwritable();

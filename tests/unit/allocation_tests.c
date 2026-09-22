@@ -444,11 +444,17 @@ static bool set_number_under_probe(struct folio_state *_Nonnull state)
  * 閲覧文書の作り直しで確保する。read_theme は確保しないので refresh は文書だけ。 */
 static bool set_theme_under_probe(struct folio_state *_Nonnull state)
 {
+    enum folio_theme_choice before = folio_state_theme_choice(state);
+    const char *_Nonnull document = folio_state_pane_rtf(state);
     enum folio_state_outcome changed = folio_state_set_theme(state, FOLIO_THEME_CHOICE_LIGHT);
     require(changed == FOLIO_STATE_READY || changed == FOLIO_STATE_OUT_OF_MEMORY,
             "set theme under probe");
     if (changed != FOLIO_STATE_READY)
     {
+        /* 確保に失敗したときは選択も閲覧文書も前のまま（ADR 0031 の決定 3）。 */
+        require(folio_state_theme_choice(state) == before &&
+                    folio_state_pane_rtf(state) == document,
+                "a failed set_theme leaves the choice and the view document alone");
         return false;
     }
     enum folio_state_outcome refreshed = folio_state_refresh_theme(state);
