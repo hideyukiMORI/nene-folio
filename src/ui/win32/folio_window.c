@@ -151,9 +151,9 @@ constexpr WORD filter_accelerator = 107;
 constexpr int filter_control_id = 2;
 constexpr size_t filter_input_capacity = 128;
 constexpr int base_filter_text_inset = 4;
-/* 絞り込みが効いているあいだ欄の右端に出す「×」（ADR 0024 の 2026-09-23 の補正 6）。 */
+/* 絞り込みが効いているあいだ欄の右端に出す「×」（ADR 0024 の 2026-09-23 の補正 6）。
+ * 箱は欄の高さに収まる 20px の正方形で、24 の viewBox はここへ写る（ADR 0033 の補正 9）。 */
 constexpr int base_filter_clear_size = 20;
-constexpr int base_filter_clear_inset = 6;
 constexpr size_t command_input_capacity = 256;
 /* 置換の欄の 2 つの EDIT の control id（ADR 0028 の決定 8(a)）。1 = Ex/パレット・2 = 絞り込み・
  * 3 = 本文の RichEdit の次に続く。 */
@@ -4358,7 +4358,8 @@ static RECT filter_clear_rect(const struct folio_window *_Nonnull self, HWND win
     return bounds;
 }
 
-/* 「×」を GDI の線で描く（draw_close と同じ描き方。字形は使わない・CNF-010）。
+/* 「×」は頭の draw_close と同じ面のパスで描く（ADR 0033 の決定 3・補正 9）。× を描く経路は 1 本。
+ * 箱は filter_clear_rect の 20px のままで、倍率は icon_paint_fill が bounds から出す。
  * 絞り込みが効いていないあいだは出さない（出ていれば押せば解けるという意味になる）。 */
 static void paint_filter_clear(const struct folio_window *_Nonnull self, HWND window)
 {
@@ -4371,17 +4372,8 @@ static void paint_filter_clear(const struct folio_window *_Nonnull self, HWND wi
     {
         return;
     }
-    RECT bounds = filter_clear_rect(self, window);
-    UINT dpi = GetDpiForWindow(self->handle);
-    int inset = scale(base_filter_clear_inset, dpi);
-    HPEN pen = CreatePen(PS_SOLID, scale(1, dpi), self->palette.header_text);
-    HGDIOBJ previous = SelectObject(device, pen);
-    MoveToEx(device, bounds.left + inset, bounds.top + inset, nullptr);
-    LineTo(device, bounds.right - inset, bounds.bottom - inset);
-    MoveToEx(device, bounds.right - inset, bounds.top + inset, nullptr);
-    LineTo(device, bounds.left + inset, bounds.bottom - inset);
-    SelectObject(device, previous);
-    DeleteObject(pen);
+    icon_paint_fill(device, filter_clear_rect(self, window), ICON_PAINT_CLOSE,
+                    self->palette.header_text);
     ReleaseDC(window, device);
 }
 
