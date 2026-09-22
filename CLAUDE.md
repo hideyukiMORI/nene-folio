@@ -124,6 +124,22 @@ Waivers: none | WVR-NNNN
 
 ## 6. いまの状況
 
+2026-09-24 再開後: hide の再開指示で、引き継ぎの「順番」を**同じセッションで全部**進めた。main は **`9813454`**（clean）。
+(a) **運用 ADR 0034**（PR #108 → `1ae0b91`。手 1 席ごとのモデル・手 2 下ごしらえのスクリプト化・**手 3 Opus の実装席は 1 席 1 仕事で道具出力を小さく**・施主指示の型。
+`docs/DEVELOPMENT_WORKFLOW.md` §10 と [指示書テンプレート](docs/IMPL_SEAT_BRIEF_TEMPLATE.md)から参照）。
+(b) **`tools/` の 3 本**: #101 `prepare-real-machine.ps1`（PR #109 → `ad35359`）・#102 `merge-pr.ps1`（PR #110 → `ba1ea52`。差し戻し 2 回: merge 直後の Issue の状態は最長 30 秒待つ／skipped の check を完了と数えない）・
+#103 `compare-screens.ps1` と `capture-window.ps1`（PR #111 → `e9dc421`）。**以後の統合は root の main で `tools/merge-pr.ps1 -Number N -Subject "…"`**。枝が BEHIND なら `chore(sync): main を取り込む (#N)` の件名で取り込んで push してから再走。
+(c) **#82 / ADR 0035**（PR #113 → `9813454`。草案の 0034 は運用 ADR が番号を取った）: comctl32 v5 のまま新規 `dialog_theme` の 1 本（`WM_CTLCOLOR*` ＋ owner-draw の釦とコンボの項目 ＋ DWM の題の帯 ＋ `dialog_theme_frame`）で名前入力面と失敗の箱を塗り、
+**失敗の箱は `MessageBoxW` をやめて自前のモーダル**（`failure_box_show` は `const struct folio_state *` の 3 引数。作れないときだけ `MessageBoxW` へ退避）。面のテーマは開く瞬間に固定。
+受理前の probe で **owner-draw の釦は `WM_GETDLGCODE` が `DLGC_BUTTON` だけで Cancel にフォーカスして Enter → IDOK** と分かり、subclass（V4）は `BM_SETSTYLE` が型を書き換えて塗りが止まるので却下、
+**面の `WM_COMMAND` で `GetFocus()` を見て読み替える V5** を採った。`ODS_DEFAULT` は立たないので既定は面が渡す。枠の色は `chip_background`（5.47 / 8.80:1）。
+独立レビュー（止める 2・直したい 6）と production の `dialog_theme.c` を一緒にコンパイルした probe（PASS 93 / FAIL 2 = ClearType の丸め・対比 18 件すべて合格・最長 en の箱は 2 行）を経て統合。分岐網羅 93.26%。
+**変わる振る舞い: 失敗の箱の警告アイコンと音が消える。描いた絵そのものと実機の面・箱は見ていない**（チェックリスト 82-1〜82-10・全 95 項目のうち結果は 2 行）。
+この日の背景席は **14 席すべて手 3 の型**（最大 53 回の道具呼び出し・171K tokens・差し戻し 5 回はすべて新しい席。Sonnet / Haiku は 0）。
+新しい Issue **#112**（Draft で skipped の必須 check を GitHub が CLEAN と見なす。hide の判断）。
+**開いている Issue は #70 / #42 / #112 と記録の #114 だけ。** 次は **#70**（一致の入れ物のメモリ）→ **#42**（同梱フォント）。probe と下ごしらえは Sonnet で試す。
+最新は[日報](docs/reports/2026-09-24.md)の「再開後」/ [引き継ぎ](docs/handoffs/2026-09-24.md)の「再開点 2」。
+
 2026-09-24 運用変更（hide・Issue #100）: **次のセッションの最初に**、背景席のモデルを仕事で切り分ける運用（裁定・受理・仕様の文言 = 設計席自身／実装と差し戻し = Opus／
 現物調査・棚卸し・記録・突き合わせ = Sonnet／照合・差分の列挙 = Haiku。判断基準は「間違えたとき誰が直すか」）と施主指示の型を運用 ADR にして配る。
 繰り返しの下ごしらえは `tools/` のスクリプトにして設計席が直接実行する（chore #101 実機用 checkout・#102 PR の統合・#103 画素比較を発行済み）。
