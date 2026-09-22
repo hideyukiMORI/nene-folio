@@ -24,6 +24,8 @@ void run_search_tests(void);
 void run_filter_tests(void);
 void run_settings_tests(void);
 void run_line_index_tests(void);
+void run_replace_tests(void);
+void run_replace_state_tests(void);
 
 /* state_tests のポート実装（偽のアダプタ）。台帳の文書を返し、書き戻しは受け入れる。
  * folio_state はポートの adapter を借りるので、state より長く生かしてから test_adapter_destroy
@@ -43,5 +45,9 @@ void test_adapter_destroy(struct persistence_adapter *_Nullable adapter);
 /* 常にダークを答える外観ポート。 */
 struct appearance_port;
 [[nodiscard]] struct appearance_port test_appearance_port(void);
+/* replace_state_tests の偽の正規表現ポート（ADR 0028 の決定 2）。パターンを素の語として探し、
+ * 台本が決めた結果をそのまま返す。ICU は単体テストには現れない。 */
+struct regex_port;
+[[nodiscard]] struct regex_port test_regex_port(void);
 
 #endif

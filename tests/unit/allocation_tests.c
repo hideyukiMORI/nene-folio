@@ -14,9 +14,14 @@
 #include "note_ledger.h"
 #include "note_name.h"
 #include "note_rename.h"
+#include "note_replace.h"
 #include "note_text.h"
 #include "persistence_port.h"
+#include "regex_matches.h"
+#include "regex_port.h"
 #include "rename_journal.h"
+#include "replace_edit.h"
+#include "replace_template.h"
 #include "rtf_palette.h"
 #include "unit_tests.h"
 #include "utf16_text.h"
@@ -466,6 +471,47 @@ static bool filter_under_probe(struct folio_state *_Nonnull state)
     return folio_state_set_index_filter(state, u"", 0) == FOLIO_STATE_READY;
 }
 
+/* 置換は本文の写し・一致の列・置換文字列・組み立ての出力の確保をまとめて通す
+ * （ADR 0028 の決定 10）。偽のポートは走査だけを答え、ICU は現れない。 */
+/* 一致の列の入れ物は初期 64 件なので、それを超える本文にして `reserve_matches()` の
+ * realloc（2 周目のための伸長）も注入の対象にする（レビュー D1）。 */
+constexpr size_t replace_probe_units = 200;
+static char16_t replace_probe_body[replace_probe_units + 1];
+
+static bool replace_under_probe(struct folio_state *_Nonnull state)
+{
+    require(folio_state_begin_edit(state) == FOLIO_STATE_READY, "edit before replacing");
+    for (size_t index = 0; index < replace_probe_units; ++index)
+    {
+        replace_probe_body[index] = u'a';
+    }
+    struct replace_request request = {.text = replace_probe_body,
+                                      .length = replace_probe_units,
+                                      .pattern = u"a",
+                                      .pattern_length = 1,
+                                      .replacement = u"[&]",
+                                      .replacement_length = 3};
+    enum folio_state_outcome previewed = folio_state_preview_replace(state, &request);
+    require(previewed == FOLIO_STATE_READY || previewed == FOLIO_STATE_OUT_OF_MEMORY,
+            "replace preview under probe");
+    if (previewed != FOLIO_STATE_READY)
+    {
+        return false;
+    }
+    require(folio_state_replace_count(state) == replace_probe_units,
+            "every unit matched, so the slots had to grow");
+    struct replace_apply apply = {.text = replace_probe_body,
+                                  .length = replace_probe_units,
+                                  .anchor = {.start = 0, .end = 0},
+                                  .scope = REPLACE_ALL};
+    struct replace_edit *edit = nullptr;
+    enum folio_state_outcome applied = folio_state_apply_replace(state, &apply, &edit);
+    replace_edit_destroy(edit);
+    require(applied == FOLIO_STATE_READY || applied == FOLIO_STATE_OUT_OF_MEMORY,
+            "replace apply under probe");
+    return applied == FOLIO_STATE_READY;
+}
+
 /* 改名は名前・意図・台帳の確保をまとめて通す（ADR 0022）。偽のポートは完了を返す。 */
 static bool rename_under_probe(struct folio_state *_Nonnull state)
 {
@@ -486,19 +532,20 @@ static bool state_scenario_with(struct persistence_adapter *_Nonnull adapter)
 {
     struct persistence_port port = test_adapter_port(adapter);
     struct appearance_port looks = test_appearance_port();
+    struct regex_port finder = test_regex_port();
     struct folio_state *state = nullptr;
-    enum folio_state_outcome outcome = folio_state_create(&port, &looks, &state);
+    enum folio_state_outcome outcome = folio_state_create(&port, &looks, &finder, &state);
     if (outcome == FOLIO_STATE_OUT_OF_MEMORY)
     {
         return false;
     }
     require(outcome == FOLIO_STATE_READY, "state under probe");
-    bool completed = layout_intent_under_probe(state) && ledger_under_probe(state) &&
-                     selection_under_probe(state) && filter_under_probe(state) &&
-                     reorder_under_probe(state) && edit_under_probe(state) &&
-                     transfer_under_probe(state) && new_note_under_probe(state) &&
-                     save_as_under_probe(state) && rename_under_probe(state) &&
-                     search_under_probe(state) && set_number_under_probe(state);
+    bool completed =
+        layout_intent_under_probe(state) && ledger_under_probe(state) &&
+        selection_under_probe(state) && filter_under_probe(state) && reorder_under_probe(state) &&
+        edit_under_probe(state) && transfer_under_probe(state) && new_note_under_probe(state) &&
+        save_as_under_probe(state) && replace_under_probe(state) && rename_under_probe(state) &&
+        search_under_probe(state) && set_number_under_probe(state);
     folio_state_destroy(state);
     return completed;
 }
@@ -599,6 +646,35 @@ static bool settings_scenario(void)
     return parsed == FOLIO_SETTINGS_READY;
 }
 
+/* 置換文字列の解析と、組み立てた本文の入れ物（ADR 0028 の決定 10）。 */
+static bool replace_scenario(void)
+{
+    struct replace_template *replacement = nullptr;
+    if (replace_template_create(u"<&>", 3, &replacement) == REPLACE_TEMPLATE_OUT_OF_MEMORY)
+    {
+        return false;
+    }
+    require(replacement != nullptr, "template under probe");
+    struct regex_match items[2] = {};
+    items[0].whole.end = 1;
+    items[1].whole.start = 2;
+    items[1].whole.end = 3;
+    struct regex_matches list = {.items = items, .capacity = 2, .count = 2};
+    struct note_replace_plan plan = {.text = u"a-a",
+                                     .length = 3,
+                                     .matches = &list,
+                                     .replacement = replacement,
+                                     .scope = REPLACE_ALL,
+                                     .anchor = {.start = 0, .end = 0}};
+    struct replace_edit *edit = nullptr;
+    enum note_replace_outcome built = note_replace_build(&plan, &edit);
+    replace_template_destroy(replacement);
+    replace_edit_destroy(edit);
+    require(built == NOTE_REPLACE_READY || built == NOTE_REPLACE_OUT_OF_MEMORY,
+            "replacement allocation failure remains typed");
+    return built == NOTE_REPLACE_READY;
+}
+
 static bool rename_scenario(void)
 {
     struct note_ledger *ledger = nullptr;
@@ -668,5 +744,6 @@ void run_allocation_tests(void)
     exhaust(state_scenario, "state scenario never completed");
     exhaust(line_index_scenario, "line index scenario never completed");
     exhaust(settings_scenario, "settings scenario never completed");
+    exhaust(replace_scenario, "replace scenario never completed");
     exhaust(rename_scenario, "rename scenario never completed");
 }

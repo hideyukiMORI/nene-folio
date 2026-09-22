@@ -32,6 +32,65 @@ static void verify_aliases(void)
     expect_command(":set number", FOLIO_COMMAND_SET, ":set takes an option word");
     expect_command(":se nu!", FOLIO_COMMAND_SET, ":se is the same command");
     expect_command(":set", FOLIO_COMMAND_SET, ":set alone parses; the word is refused later");
+    expect_command(":%s/a/b/", FOLIO_COMMAND_SUBSTITUTE, ":%s is read before the alias table");
+    expect_command("%s/a/b/g", FOLIO_COMMAND_SUBSTITUTE, "the leading colon is optional");
+    expect_command(":%s/a b/c d/g", FOLIO_COMMAND_SUBSTITUTE, "spaces inside the arguments");
+    expect_command(":%s", FOLIO_COMMAND_SUBSTITUTE,
+                   ":%s alone parses; the delimiters are refused later");
+}
+
+/* `:%s/パターン/置換/[g]` の分解（ADR 0028 の決定 8(b)）。 */
+static void expect_substitute(const char *_Nonnull line, const char *_Nonnull pattern,
+                              const char *_Nonnull replacement, bool global)
+{
+    enum folio_command command = FOLIO_COMMAND_HELP;
+    size_t argument = 0;
+    require(folio_command_parse(line, strlen(line), &command, &argument) &&
+                command == FOLIO_COMMAND_SUBSTITUTE,
+            "the substitute grammar parses");
+    struct ex_substitute parts = {.pattern = 0,
+                                  .pattern_length = 0,
+                                  .replacement = 0,
+                                  .replacement_length = 0,
+                                  .global = false};
+    const char *_Nonnull tail = line + argument;
+    require(folio_command_parse_substitute(tail, strlen(line) - argument, &parts),
+            "the delimiters split");
+    require(parts.pattern_length == strlen(pattern) &&
+                memcmp(tail + parts.pattern, pattern, parts.pattern_length) == 0,
+            "the pattern is the first field");
+    require(parts.replacement_length == strlen(replacement) &&
+                memcmp(tail + parts.replacement, replacement, parts.replacement_length) == 0,
+            "the replacement is the second field");
+    require(parts.global == global, "the g flag decides whether every match is replaced");
+}
+
+static void verify_substitute(void)
+{
+    expect_substitute(":%s/a/b/", "a", "b", false);
+    expect_substitute(":%s/a/b/g", "a", "b", true);
+    expect_substitute(":%s/a/b/g  ", "a", "b", true);
+    expect_substitute(":%s/a/b/ ", "a", "b", false);
+    expect_substitute(":%s/a//", "a", "", false);
+    /* パターンの `\/` はそのまま渡す（ICU で `/`）。置換の `\/` は replace_template が解く。 */
+    expect_substitute(":%s/a\\/b/c\\/d/g", "a\\/b", "c\\/d", true);
+    expect_substitute(":%s/\\\\/x/", "\\\\", "x", false);
+    expect_substitute(":%s/日本語/にほんご/g", "日本語", "にほんご", true);
+    expect_substitute(":%s/ a / b /g", " a ", " b ", true);
+    /* 区切りの不足・空のパターン・知らない旗は、未知のコマンドと同じ 1 行になる（決定 8(b)）。 */
+    static const char *const refused[] = {"",        "/a/b",   "/a/b/x", "//b/",
+                                          "/a/b/gg", "a/b/c/", "/a\\/b", "/"};
+    for (size_t index = 0; index < sizeof refused / sizeof refused[0]; ++index)
+    {
+        struct ex_substitute parts = {.pattern = 1,
+                                      .pattern_length = 1,
+                                      .replacement = 1,
+                                      .replacement_length = 1,
+                                      .global = true};
+        require(!folio_command_parse_substitute(refused[index], strlen(refused[index]), &parts),
+                "an ill formed substitute is refused");
+        require(parts.pattern == 1 && parts.global, "a refused line leaves the result alone");
+    }
 }
 
 /* `:set` の語（ADR 0026 の決定 8）。引数の開始位置は folio_command_parse が答える。 */
@@ -73,12 +132,14 @@ static void verify_options(void)
 /* パレットと「操作」メニューに出るのは、語を渡せる面で意味のある操作だけ（決定 8 の補正）。 */
 static void verify_listed(void)
 {
-    require(!folio_command_listed(FOLIO_COMMAND_SET),
-            "the Ex grammar that needs a word is not listed");
+    require(!folio_command_listed(FOLIO_COMMAND_SET) &&
+                !folio_command_listed(FOLIO_COMMAND_SUBSTITUTE),
+            "the Ex grammars that need an argument are not listed");
     for (size_t index = 0; index < folio_command_count(); ++index)
     {
         enum folio_command command = folio_command_at(index);
-        require(folio_command_listed(command) == (command != FOLIO_COMMAND_SET),
+        require(folio_command_listed(command) ==
+                    (command != FOLIO_COMMAND_SET && command != FOLIO_COMMAND_SUBSTITUTE),
                 "every other operation stays listed");
     }
     require(
@@ -87,10 +148,15 @@ static void verify_listed(void)
         "the toggle is a listed operation with a Japanese label and no alias");
     require(folio_command_matches(FOLIO_COMMAND_TOGGLE_NUMBER, "行番号", strlen("行番号")),
             "the palette finds the toggle by label");
-    /* パレットの箱の高さはこの数で決まる。総数（13）で取ると 1 行ぶん余る（補正 9）。 */
-    require(folio_command_listed_count() == 12, "twelve operations are offered on a surface");
-    require(folio_command_listed_count() == folio_command_count() - 1,
-            "exactly the one unlisted Ex grammar is left out");
+    /* パレットの箱の高さはこの数で決まる。総数（15）で取ると 2 行ぶん余る（補正 9）。 */
+    require(folio_command_listed_count() == 13, "thirteen operations are offered on a surface");
+    require(folio_command_listed_count() == folio_command_count() - 2,
+            "exactly the two unlisted Ex grammars are left out");
+    require(folio_command_alias_count(FOLIO_COMMAND_REPLACE) == 0 &&
+                same_text(folio_command_label(FOLIO_COMMAND_REPLACE), "置換"),
+            "replace is a listed GUI operation with a Japanese label and no alias");
+    require(folio_command_matches(FOLIO_COMMAND_REPLACE, "置換", strlen("置換")),
+            "the palette finds replace by label");
 }
 
 static void verify_rejections(void)
@@ -117,13 +183,13 @@ static void verify_rejections(void)
 
 static void verify_catalog(void)
 {
-    require(folio_command_count() == 13, "only implemented commands are registered");
+    require(folio_command_count() == 15, "only implemented commands are registered");
     const enum folio_command expected[] = {
-        FOLIO_COMMAND_SAVE,         FOLIO_COMMAND_QUIT, FOLIO_COMMAND_SAVE_QUIT,
-        FOLIO_COMMAND_FORCE_QUIT,   FOLIO_COMMAND_HELP, FOLIO_COMMAND_EDIT,
-        FOLIO_COMMAND_VIEW,         FOLIO_COMMAND_NEW,  FOLIO_COMMAND_SAVE_AS,
-        FOLIO_COMMAND_RENAME,       FOLIO_COMMAND_FIND, FOLIO_COMMAND_SET,
-        FOLIO_COMMAND_TOGGLE_NUMBER};
+        FOLIO_COMMAND_SAVE,          FOLIO_COMMAND_QUIT,    FOLIO_COMMAND_SAVE_QUIT,
+        FOLIO_COMMAND_FORCE_QUIT,    FOLIO_COMMAND_HELP,    FOLIO_COMMAND_EDIT,
+        FOLIO_COMMAND_VIEW,          FOLIO_COMMAND_NEW,     FOLIO_COMMAND_SAVE_AS,
+        FOLIO_COMMAND_RENAME,        FOLIO_COMMAND_FIND,    FOLIO_COMMAND_SET,
+        FOLIO_COMMAND_TOGGLE_NUMBER, FOLIO_COMMAND_REPLACE, FOLIO_COMMAND_SUBSTITUTE};
     for (size_t index = 0; index < folio_command_count(); ++index)
     {
         enum folio_command command = folio_command_at(index);
@@ -164,5 +230,6 @@ void run_command_tests(void)
     verify_rejections();
     verify_catalog();
     verify_options();
+    verify_substitute();
     verify_listed();
 }

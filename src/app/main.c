@@ -5,6 +5,7 @@
 #include "folio_state.h"
 #include "folio_window.h"
 #include "persistence_adapter.h"
+#include "regex_adapter.h"
 #include "utf16_text.h"
 
 #include <string.h>
@@ -63,12 +64,13 @@ static void run_message_loop(const struct folio_window *_Nonnull window)
 
 /* 状態と窓を作って走らせる。アダプタは状態より長く生きる。 */
 static int run(struct persistence_adapter *_Nonnull persistence,
-               struct appearance_adapter *_Nonnull appearance)
+               struct appearance_adapter *_Nonnull appearance, struct regex_adapter *_Nonnull regex)
 {
     struct persistence_port files = persistence_adapter_port(persistence);
     struct appearance_port looks = appearance_adapter_port(appearance);
+    struct regex_port finder = regex_adapter_port(regex);
     struct folio_state *_Nullable state = nullptr;
-    enum folio_state_outcome loaded = folio_state_create(&files, &looks, &state);
+    enum folio_state_outcome loaded = folio_state_create(&files, &looks, &finder, &state);
     if (loaded != FOLIO_STATE_READY)
     {
         report_utf8(folio_state_failure_line(loaded));
@@ -116,7 +118,16 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE previous, PWSTR arguments, int
         persistence_adapter_destroy(adapter);
         return 1;
     }
-    int code = run(adapter, appearance);
+    struct regex_adapter *_Nullable regex = nullptr;
+    if (regex_adapter_create(&regex) != REGEX_ADAPTER_CREATED)
+    {
+        report(L"記憶域が足りません。");
+        appearance_adapter_destroy(appearance);
+        persistence_adapter_destroy(adapter);
+        return 1;
+    }
+    int code = run(adapter, appearance, regex);
+    regex_adapter_destroy(regex);
     appearance_adapter_destroy(appearance);
     persistence_adapter_destroy(adapter);
     return code;

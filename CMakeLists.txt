@@ -29,7 +29,9 @@ nenefolio_target(nenefolio_core core STATIC
     src/core/text_buffer.c src/core/note_text.c src/core/markdown_rtf.c src/core/rtf_palette.c
     src/core/folio_command.c src/core/note_name.c src/core/note_rename.c src/core/rename_journal.c
     src/core/note_search.c src/core/note_corpus.c src/core/index_filter.c
-    src/core/folio_settings.c src/core/line_index.c)
+    src/core/folio_settings.c src/core/line_index.c
+    src/core/replace_template.c src/core/replace_edit.c src/core/note_replace.c
+    src/core/replace_preview.c)
 nenefolio_target(nenefolio_application application STATIC src/application/folio_state.c)
 nenefolio_link(nenefolio_application nenefolio_core)
 
@@ -39,18 +41,21 @@ nenefolio_target(folio_tests unit_tests EXECUTABLE
     tests/unit/allocation_probe.c tests/unit/allocation_tests.c tests/unit/markdown_tests.c
     tests/unit/command_tests.c tests/unit/note_name_tests.c tests/unit/rename_tests.c
     tests/unit/search_tests.c tests/unit/filter_tests.c tests/unit/settings_tests.c
-    tests/unit/line_index_tests.c)
+    tests/unit/line_index_tests.c tests/unit/replace_tests.c
+    tests/unit/replace_state_tests.c)
 nenefolio_link(folio_tests nenefolio_core)
 nenefolio_link(folio_tests nenefolio_application)
 add_test(NAME folio_unit COMMAND folio_tests)
 
 nenefolio_target(nenefolio_adapters adapters_win32 STATIC
     src/adapters/win32/file_bytes.c src/adapters/win32/persistence_adapter.c
-    src/adapters/win32/appearance_adapter.c)
+    src/adapters/win32/appearance_adapter.c src/adapters/win32/regex_adapter.c)
 nenefolio_link(nenefolio_adapters nenefolio_core)
 nenefolio_link(nenefolio_adapters nenefolio_application)
 nenefolio_system_link(nenefolio_adapters kernel32)
 nenefolio_system_link(nenefolio_adapters advapi32)
+# Windows 同梱の ICU（ADR 0028 の決定 1）。配布物は増えず、版は OS が決める。
+nenefolio_system_link(nenefolio_adapters icu)
 
 nenefolio_target(nenefolio_window ui_win32 STATIC
     src/ui/win32/drawer_window.c src/ui/win32/folio_window.c src/ui/win32/note_pane.c

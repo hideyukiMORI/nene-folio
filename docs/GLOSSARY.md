@@ -63,6 +63,12 @@
 | 設定（settings） | `data/settings.json` の版 1。効果を実装したキーだけが入り、キーを足すたびに版を上げる。無いときだけ既定値で始め、読めなければ既定値で起動して**上書きしない** | `folio_settings`（core）・`folio_state_set_number`（application）・ADR 0025 |
 | 本文の写し（note corpus） | 絞り込みが読む、ノートの本文の複製。**空でない語が初めて来たときに 1 回だけ**ポートから読み、以後は保存・新規・改名・移動で該当の写しだけ差し替える。宛先はカテゴリ名とノート名（並び替えでは動かない）。写しが無いノートは一致しない | `note_corpus`（core）・ADR 0024 の決定 1 |
 | 配置の入力（drawer source） | ドロワーの配置が読む、カテゴリ台帳・索引台帳の列・nullable の絞り込みの束。絞り込みの有無で配置の関数を分けないための 1 つの型 | `struct drawer_source`（core）・ADR 0024 の決定 3 |
+| 置換の下見（replace preview） | 「このパターンで、この本文の、この一致を、この置換文字列で置き換える」を 1 つ持つ値。**UTF-16 の本文の写し**・一致の列・件数・宛先（カテゴリ名とノート名）・解析済みの置換文字列を所有する。位置が `EM_EXSETSEL` と 1 対 1 でなければならないので UTF-8 へ写さない（C-014 の名指しの例外） | `replace_preview`（core）・`folio_state_preview_replace`（application）・ADR 0028 の決定 6 |
+| 置換の当て方（replace scope） | 1 件（anchor 以降で最初の一致）・すべて・各論理行の最初の一致（`g` の無い `:%s`）の閉じた 3 値。選別そのものは core が行う | `enum replace_scope`（core）・ADR 0028 の決定 6 / 8(b) |
+| 置換文字列（replace template） | 利用者が打つ置換の書き方を解析した値。`&` と `\0`・`\1`〜`\9`・`\r` / `\n`・`\\` / `\&` / `\/` だけを認め、ICU の `$1` 形式は使わない | `replace_template`（core）・ADR 0028 の決定 5 |
+| 置換の編集（replace edit） | 「本文のこの範囲を、この UTF-16 で置き換える」1 つ。1 件なら一致の範囲、すべてなら本文全体。UI は `EM_EXSETSEL` → `EM_REPLACESEL(TRUE)` の 1 回で当てるので Undo も 1 単位 | `replace_edit`（core）・`note_pane_replace`（ui/win32）・ADR 0028 の決定 7 |
+| 古い下見（stale preview） | 渡された本文が下見の写しと違う、または宛先が今の文書と違う状態。下見を捨てる契機を列挙せず、照合だけで「同じ本文の別ノートへ当てる」を構造的に防ぐ | `FOLIO_STATE_REPLACE_STALE`（application）・ADR 0028 の決定 6 |
+| 入力面の欄の集合（command input set） | 入力面が「自分のもの」と見なす EDIT の集合。集合の中でフォーカスが移るあいだは入力面を閉じない。置換の欄だけが 2 つ持つ | `command_owns`（ui/win32）・ADR 0016 の 2026-09-22 の補正 |
 
 ## 使ってはいけない語
 
