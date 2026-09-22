@@ -185,7 +185,7 @@ head が動いたら Draft に戻して再度 Ready にする。古い成功 SHA
 結合や `#define` による回避は字句では見えない。
 
 - 対応する規則: C-018
-- 機械強制: **planned**（`eng/conformance.py` ＋ `tests/conformance` ＋ `eng/prove-gates.py` の実ツール反例。#74 で active にする）
+- 機械強制: **active**（`eng/conformance.py` の `text_catalog_checks` ＋ `tests/conformance` の 10 件 ＋ `eng/prove-gates.py` の実ツール反例 P22）
 
 🔴 **検出語は検査器のソースに直書きしない**（検査器が自分自身を違反として報告する。前例: xi-tools 初版で 7 件の自己検出）。
 🔴 **テストソースは検査対象から外す**（テストは意図的な違反を書く場所）。
@@ -228,7 +228,7 @@ CNF-006 が「本文に定義があるのにここに行が無い」を拒否す
 | C-015 | planned | CNF-003 ＋ CNF-004 |
 | C-016 | planned | `-Werror=vla`・clang-tidy insecureAPI・ASan/UBSan |
 | C-017 | planned |  |
-| C-018 | planned | eng/conformance.py（CNF-010） |
+| C-018 | active | eng/conformance.py（CNF-010） |
 | GIT-001 | planned | PR テンプレート＋CI（`Closes #N`） |
 | GIT-002 | planned | ruleset＋CI（head ブランチ名） |
 | GIT-003 | planned | `.githooks/commit-msg`＋CI（全コミットと PR タイトル） |
@@ -255,7 +255,7 @@ CNF-006 が「本文に定義があるのにここに行が無い」を拒否す
 | CNF-007 | planned | eng/conformance.py / tests/conformance |
 | CNF-008 | active | eng/conformance.py / tests/conformance |
 | CNF-009 | active | eng/conformance.py / tests/conformance / eng/prove-gates.py |
-| CNF-010 | planned | eng/conformance.py / tests/conformance / eng/prove-gates.py |
+| CNF-010 | active | eng/conformance.py / tests/conformance / eng/prove-gates.py |
 
 ---
 

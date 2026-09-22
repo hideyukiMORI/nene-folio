@@ -161,6 +161,18 @@ def main() -> None:
         restoration = run(conformance, root, True)
         evidence.append({"rule": "CNF-009", "negative": result, "restorationExit": restoration["exitCode"]})
         print(f"CNF-009: dropping {value} from the table was rejected; restoration passed")
+        catalog = json.loads((root / "eng/conformance-rules.json").read_text(encoding="utf-8"))["textCatalog"]
+        source = Path("src/ui/win32/folio_window.c")
+        if source.as_posix() in catalog["files"]:
+            raise RuntimeError("The planted file must not be the declared catalog")
+        window = root / source
+        original = window.read_text(encoding="utf-8")
+        window.write_text(original + '\nstatic const char planted_line[] = "直書き";\n', encoding="utf-8", newline="\n")
+        result = run(conformance, root, False, "CNF-010")
+        window.write_text(original, encoding="utf-8", newline="\n")
+        restoration = run(conformance, root, True)
+        evidence.append({"rule": "CNF-010", "negative": result, "restorationExit": restoration["exitCode"]})
+        print(f"CNF-010: display text outside {catalog['files'][0]} was rejected; restoration passed")
     (output_root / "results.json").write_text(json.dumps(evidence, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(f"Gate proofs passed: {len(evidence)} real-tool proofs")
 

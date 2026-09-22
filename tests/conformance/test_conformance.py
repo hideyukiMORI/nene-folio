@@ -275,6 +275,43 @@ class RepositoryChecks(unittest.TestCase):
         rules = json.loads((ROOT / "eng/conformance-rules.json").read_text(encoding="utf-8"))
         self.assertEqual([], cnf.line_table_checks(ROOT, rules))
 
+    def catalog_findings(self, source, path="src/ui/win32/folio_window.c"):
+        self.write(path, source)
+        return [f for f in cnf.text_catalog_checks(self.root, self.paths(), RULES) if f.rule == "CNF-010"]
+
+    def test_cnf010_positive_ascii(self):
+        self.assertEqual([], self.catalog_findings('static const wchar_t face[] = L"Consolas";\n'))
+
+    def test_cnf010_negative_non_ascii(self):
+        findings = self.catalog_findings('static const char line[] = "保存";\n')
+        self.assertTrue(any("line 1" in f.detail for f in findings))
+
+    def test_cnf010_negative_wide_escape(self):
+        self.assertTrue(self.catalog_findings('static const wchar_t mark[] = L"\\x2212";\n'))
+
+    def test_cnf010_narrow_escape_is_not_display_text(self):
+        """The UTF-8 BOM byte sequence is narrow, so clause (b) leaves it alone."""
+        self.assertEqual([], self.catalog_findings('static const char bom[] = "\\xEF\\xBB\\xBF";\n'))
+
+    def test_cnf010_escaped_backslash_is_not_an_escape(self):
+        """A UNC prefix ends with an escaped backslash before the U; that is not a \\U escape."""
+        self.assertEqual([], self.catalog_findings('static const wchar_t unc[] = L"\\\\\\\\?\\\\UNC\\\\";\n'))
+
+    def test_cnf010_character_literal_is_out_of_scope(self):
+        self.assertEqual([], self.catalog_findings("static const char escape = '\\x1b';\n"))
+
+    def test_cnf010_comment_is_out_of_scope(self):
+        self.assertEqual([], self.catalog_findings('/* 表示文言は ui_text.c だけが持つ */\nstruct folio_window;\n'))
+
+    def test_cnf010_catalog_file_may_hold_the_text(self):
+        self.assertEqual([], self.catalog_findings('static const char *const catalog[] = {"保存"};\n', "src/core/ui_text.c"))
+
+    def test_cnf010_tests_are_out_of_scope(self):
+        self.assertEqual([], self.catalog_findings('static const char expected[] = "保存";\n', "tests/unit/ui_text_tests.c"))
+
+    def test_cnf010_repository_has_no_second_catalog(self):
+        self.assertEqual([], cnf.text_catalog_checks(ROOT, cnf.inventory(ROOT), RULES))
+
     def test_arc002_graph_cycle(self):
         self.write("eng/architecture.json", json.dumps({"modules": {"core": {"path": "src/core", "dependencies": ["core"]}}, "runtimeDependencies": []}))
         self.assertIn("ARC-002", {f.rule for f in cnf.architecture_checks(self.root, self.paths(), None)})
