@@ -7,6 +7,7 @@
 #include "folio_state.h"
 #include "note_ref.h"
 #include "ui_text.h"
+#include "ui_text_request.h"
 #include "utf16_text.h"
 
 #include <commdlg.h>
@@ -52,6 +53,8 @@ constexpr int base_header_indent = 16;
 constexpr int base_filter_height = 36;
 constexpr int base_filter_inset = 12; /* 欄の左右の余白 */
 constexpr int base_filter_margin = 4; /* 欄の上下に空ける間 */
+/* 「一致 / 総数」の 1 行が要る大きさ（20 桁 2 つ ＋ 区切り ＋ 終端で足りる）。 */
+constexpr size_t filter_count_capacity = 48;
 constexpr int base_row_height = 30;
 constexpr int base_category_height = 34;
 constexpr int base_category_gap = 6;
@@ -201,7 +204,45 @@ static int format_count(size_t value, wchar_t *_Nonnull out)
     return written;
 }
 
-/* 頭の帯: 左に NENE FOLIO、右にノートの総数。 */
+/* 頭の帯の右の数。ふだんはノートの総数、**絞り込みが効いているあいだは「一致 / 総数」**
+ * （ADR 0024 の 2026-09-23 の補正 7）。数は application の一致集合から取り、UI は数えない。 */
+static void draw_header_count(const struct drawer_window *_Nonnull self, HDC device, RECT bounds)
+{
+    size_t total = folio_state_note_count(self->state);
+    if (!folio_state_filtering(self->state))
+    {
+        wchar_t count[24];
+        int written = format_count(total, count);
+        DrawTextW(device, count, written, &bounds,
+                  DT_SINGLELINE | DT_VCENTER | DT_RIGHT | DT_NOPREFIX);
+        return;
+    }
+    char line[filter_count_capacity];
+    struct ui_text_request request = {.id = UI_TEXT_STATUS_FILTER_COUNT,
+                                      .language = folio_state_language(self->state),
+                                      .k = folio_state_index_filter_count(self->state),
+                                      .n = total};
+    if (ui_text_format(&request, line, filter_count_capacity) != UI_TEXT_FORMAT_READY)
+    {
+        return;
+    }
+    draw_utf8(device, line, bounds, DT_RIGHT);
+}
+
+/* 絞り込みが効いているあいだ、欄の外周 1px を札の色で囲む（ADR 0024 の 2026-09-23 の補正 5）。
+ * 欄そのものは主窓の子で、ドロワーの DC からは欄の矩形が除かれているので、囲むのは 1px 外側。 */
+static void draw_filter_frame(const struct drawer_window *_Nonnull self, HDC device)
+{
+    if (!folio_state_filtering(self->state))
+    {
+        return;
+    }
+    RECT bounds = drawer_window_filter_rect(self);
+    InflateRect(&bounds, 1, 1);
+    frame_rect(device, bounds, self->palette.chip_background);
+}
+
+/* 頭の帯: 左に NENE FOLIO、右にノートの数、絞り込み中は欄の枠。 */
 static void draw_header(const struct drawer_window *_Nonnull self, HDC device, int width)
 {
     UINT dpi = GetDpiForWindow(self->handle);
@@ -215,9 +256,8 @@ static void draw_header(const struct drawer_window *_Nonnull self, HDC device, i
         wide_units(ui_text_line(UI_TEXT_APP_LOGO, folio_state_language(self->state)), logo);
     DrawTextW(device, logo, logo_units, &bounds, DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
     SetTextCharacterExtra(device, 0);
-    wchar_t count[24];
-    int written = format_count(folio_state_note_count(self->state), count);
-    DrawTextW(device, count, written, &bounds, DT_SINGLELINE | DT_VCENTER | DT_RIGHT | DT_NOPREFIX);
+    draw_header_count(self, device, bounds);
+    draw_filter_frame(self, device);
 }
 
 /* カーソルの行の右端に置く角（カテゴリ色の四角）。right はその右端の x。
