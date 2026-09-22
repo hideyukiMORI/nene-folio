@@ -11,6 +11,8 @@
 #include "folio_state.h"
 #include "folio_step.h"
 #include "folio_theme_choice.h"
+#include "gdiplus_flat.h"
+#include "icon_paint.h"
 #include "name_prompt.h"
 #include "note_name.h"
 #include "note_pane.h"
@@ -81,6 +83,9 @@ struct folio_window
     bool pending_g; /* 直前の文字の鍵が g だった（gg の 2 打・ADR 0013 の決定 2） */
     /* 等幅書体の数字 1 文字の幅。書体を作り直すときだけ測る（ADR 0026 の補正 7） */
     int digit_width;
+    /* GDI+ の寿命の印（ADR 0033 の決定 4）。0 なら起動していない。窓を作る前に起動し、
+     * 窓を壊したあと（子窓の WM_NCDESTROY も済んだあと）に終える。 */
+    ULONG_PTR gdiplus_token;
 };
 
 static const wchar_t class_name[] = L"NeNeFolioWindow";
@@ -195,7 +200,6 @@ constexpr int base_breadcrumb_compact_padding = 4;
 constexpr int base_breadcrumb_compact_tip = 6;
 constexpr int base_close_size = 24;
 constexpr int base_close_margin = 16;
-constexpr int base_close_glyph_inset = 4;
 constexpr int base_command_gap = 8;
 constexpr int base_command_input_height = 28;
 constexpr int base_command_palette_width = 460;
@@ -233,20 +237,15 @@ constexpr DWORD attribute_border_color = 34;
 constexpr DWORD corner_round_small = 3;
 /* OS の「アプリのモード」の変更を知らせる WM_SETTINGCHANGE の lParam（ADR 0031 の決定 4）。 */
 static const wchar_t immersive_color_set[] = L"ImmersiveColorSet";
-/* 設定の歯車と、現在の選択の印の寸法（96 DPI・× と同じく GDI の線で描く）。 */
+/* 設定の歯車と、現在の選択の印の寸法（96 DPI）。歯車は close_rect と同じ 24px の箱へ
+ * 面のパスで塗る（ADR 0033 の決定 6）ので、放射線の長さの定数は要らない。 */
 constexpr int base_settings_gap = 6;
-constexpr int base_settings_hub = 4;
-constexpr int base_settings_tooth = 9;
-constexpr int base_settings_mark = 8;
 constexpr int base_settings_indent = 20;
-constexpr size_t settings_tooth_count = 8;
-/* 歯車の 8 本の放射線の向き。斜めは長さを 3/4 にして見た目を揃える（三角関数を使わない）。 */
-static const struct
-{
-    int horizontal;
-    int vertical;
-} settings_teeth[settings_tooth_count] = {{1, 0},  {1, 1},   {0, 1},  {-1, 1},
-                                          {-1, 0}, {-1, -1}, {0, -1}, {1, -1}};
+/* 選択の印の箱は 24 の viewBox と 1 対 1 の正方形で、行の左端から 4px の所に置く。
+ * 印の ink は箱の左端から 8 単位なので、描かれる位置は線で描いていたとき（row.left + 12）と
+ * 変わらない。選択肢の札は row.left + 32 から始まるので重ならない（ADR 0033 の決定 6）。 */
+constexpr int base_settings_mark_inset = 4;
+constexpr int base_settings_mark_box = 24;
 
 static void execute_command(struct folio_window *_Nonnull self, enum folio_command command,
                             const char *_Nonnull argument);
@@ -1111,47 +1110,16 @@ static void draw_chip(const struct folio_window *_Nonnull self, HDC device, enum
     DrawTextW(device, units, count, &bounds, DT_SINGLELINE | DT_VCENTER | DT_CENTER | DT_NOPREFIX);
 }
 
+/* 「×」は 24 の viewBox の面のパス（ADR 0033 の決定 6）。箱は close_rect のまま。 */
 static void draw_close(const struct folio_window *_Nonnull self, HDC device)
 {
-    RECT bounds = close_rect(self);
-    UINT dpi = GetDpiForWindow(self->handle);
-    int inset = scale(base_close_glyph_inset, dpi);
-    HPEN pen = CreatePen(PS_SOLID, scale(1, dpi), self->palette.header_text);
-    HGDIOBJ previous = SelectObject(device, pen);
-    MoveToEx(device, bounds.left + inset, bounds.top + inset, nullptr);
-    LineTo(device, bounds.right - inset, bounds.bottom - inset);
-    MoveToEx(device, bounds.right - inset, bounds.top + inset, nullptr);
-    LineTo(device, bounds.left + inset, bounds.bottom - inset);
-    SelectObject(device, previous);
-    DeleteObject(pen);
+    icon_paint_fill(device, close_rect(self), ICON_PAINT_CLOSE, self->palette.header_text);
 }
 
-/* 歯車を GDI の線で描く（字形は使わない・CNF-010）。小円と 8 本の短い放射線。 */
+/* 歯車も同じ 1 本で塗る（字形は使わない・CNF-010）。箱は settings_rect のまま。 */
 static void draw_settings_icon(const struct folio_window *_Nonnull self, HDC device)
 {
-    RECT bounds = settings_rect(self);
-    UINT dpi = GetDpiForWindow(self->handle);
-    int hub = scale(base_settings_hub, dpi);
-    int tooth = scale(base_settings_tooth, dpi);
-    int x = (bounds.left + bounds.right) / 2;
-    int y = (bounds.top + bounds.bottom) / 2;
-    HPEN pen = CreatePen(PS_SOLID, scale(1, dpi), self->palette.header_text);
-    HGDIOBJ previous = SelectObject(device, pen);
-    HGDIOBJ brush = SelectObject(device, GetStockObject(NULL_BRUSH));
-    Ellipse(device, x - hub, y - hub, x + hub, y + hub);
-    for (size_t index = 0; index < settings_tooth_count; ++index)
-    {
-        int horizontal = settings_teeth[index].horizontal;
-        int vertical = settings_teeth[index].vertical;
-        bool diagonal = horizontal != 0 && vertical != 0;
-        int inner = diagonal ? hub * 3 / 4 : hub;
-        int outer = diagonal ? tooth * 3 / 4 : tooth;
-        MoveToEx(device, x + horizontal * inner, y + vertical * inner, nullptr);
-        LineTo(device, x + horizontal * outer, y + vertical * outer);
-    }
-    SelectObject(device, brush);
-    SelectObject(device, previous);
-    DeleteObject(pen);
+    icon_paint_fill(device, settings_rect(self), ICON_PAINT_SETTINGS, self->palette.header_text);
 }
 
 static enum utf8_text_outcome command_query(const struct folio_window *_Nonnull self,
@@ -1523,22 +1491,15 @@ static void draw_settings_guidance(const struct folio_window *_Nonnull self, HDC
     }
 }
 
-/* 現在の選択の行の左に出す小円（字形は使わない・CNF-010）。 */
+/* 現在の選択の行の左に出す角丸の印（字形は使わない・CNF-010・ADR 0033 の決定 6）。 */
 static void draw_settings_mark(const struct folio_window *_Nonnull self, HDC device, RECT row)
 {
     UINT dpi = GetDpiForWindow(self->handle);
-    int size = scale(base_settings_mark, dpi);
-    int left = row.left + scale(base_command_row_padding, dpi);
+    int box = scale(base_settings_mark_box, dpi);
+    int left = row.left + scale(base_settings_mark_inset, dpi);
     int middle = (row.top + row.bottom) / 2;
-    HBRUSH fill = CreateSolidBrush(self->palette.current_text);
-    HPEN pen = CreatePen(PS_SOLID, scale(1, dpi), self->palette.current_text);
-    HGDIOBJ previous_pen = SelectObject(device, pen);
-    HGDIOBJ previous_brush = SelectObject(device, fill);
-    Ellipse(device, left, middle - size / 2, left + size, middle - size / 2 + size);
-    SelectObject(device, previous_brush);
-    SelectObject(device, previous_pen);
-    DeleteObject(fill);
-    DeleteObject(pen);
+    RECT bounds = {left, middle - box / 2, left + box, middle - box / 2 + box};
+    icon_paint_fill(device, bounds, ICON_PAINT_SELECTION, self->palette.chip_background);
 }
 
 /* その行がいまの値か（印を付ける行）。段を足したら枝を足させる（C-002）。 */
@@ -5096,6 +5057,22 @@ static void decorate(HWND handle, struct folio_palette palette)
     DwmSetWindowAttribute(handle, attribute_border_color, &border, sizeof border);
 }
 
+/* GDI+ を 1 回だけ起動する（ADR 0033 の決定 4）。背景スレッドは既定のままにするので
+ * GdiplusStartupOutput は渡さない。失敗したら token を 0 のままにして偽を返す。 */
+static bool start_gdiplus(struct folio_window *_Nonnull self)
+{
+    struct gdiplus_startup_input startup = {.version = gdiplus_version_1,
+                                            .debug_event_callback = nullptr,
+                                            .suppress_background_thread = FALSE,
+                                            .suppress_external_codecs = FALSE};
+    if (GdiplusStartup(&self->gdiplus_token, &startup, nullptr) != gdiplus_ok)
+    {
+        self->gdiplus_token = 0;
+        return false;
+    }
+    return true;
+}
+
 enum folio_window_outcome folio_window_create(struct folio_state *_Nonnull state,
                                               struct folio_window *_Nullable *_Nonnull out)
 {
@@ -5134,6 +5111,13 @@ enum folio_window_outcome folio_window_create(struct folio_state *_Nonnull state
     }
     self->state = state;
     self->palette = folio_palette_for(folio_state_theme(state));
+    /* 窓を作る前に GDI+ を起動する。枠なし窓で × が描けないと閉じる入口が見えなくなる
+     * （ADR 0013）ので、起動できなければ窓を作らない（ADR 0033 の決定 4）。 */
+    if (!start_gdiplus(self))
+    {
+        folio_window_destroy(self);
+        return FOLIO_WINDOW_NOT_CREATED;
+    }
     UINT dpi = GetDpiForSystem();
     DWORD style =
         WS_POPUP | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU | WS_CLIPCHILDREN;
@@ -5228,6 +5212,12 @@ void folio_window_destroy(struct folio_window *_Nullable window)
     if (window->command_brush != nullptr)
     {
         DeleteObject(window->command_brush);
+    }
+    /* 子窓の WM_NCDESTROY まで済んだあとに終える（ADR 0033 の決定 4）。
+     * 生成の途中で失敗した経路では token が 0 のままなので 1 対 1 が保たれる。 */
+    if (window->gdiplus_token != 0)
+    {
+        GdiplusShutdown(window->gdiplus_token);
     }
     free(window);
 }

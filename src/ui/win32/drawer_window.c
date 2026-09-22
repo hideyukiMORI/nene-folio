@@ -5,6 +5,7 @@
 #include "folio_message.h"
 #include "folio_palette.h"
 #include "folio_state.h"
+#include "icon_paint.h"
 #include "note_ref.h"
 #include "ui_face.h"
 #include "ui_text.h"
@@ -65,7 +66,10 @@ constexpr int base_right_inset = 16;
 constexpr int base_bottom_padding = 16; /* 最後の行の下に空ける余白（左右の余白と同じ） */
 constexpr int base_fade_height = 24;    /* あふれを示すフェードの高さ（ADR 0009 の決定 7） */
 constexpr int base_mark_size = 6;
-constexpr int base_mark_gap = 6;       /* カテゴリ行で − / + とカーソルの角の間に空ける幅 */
+constexpr int base_mark_gap = 6; /* カテゴリ行で折畳の印とカーソルの角の間に空ける幅 */
+/* 折畳の印の箱（24 の viewBox と 1 対 1）。板は 2 単位なので、箱が 20px 未満だと
+ * 塗りが 50〜75% の灰色になる（ADR 0033 の決定 6・実測）。 */
+constexpr int base_toggle_box = 24;
 constexpr int base_line_thickness = 2; /* ドラッグ中の挿入線の太さ */
 constexpr int base_category_font = 12;
 constexpr int base_note_font = 14;
@@ -282,19 +286,16 @@ static void draw_cursor_mark(const struct drawer_window *_Nonnull self, HDC devi
     }
 }
 
-/* − / + の印が要る幅（いま選んでいる等幅の字と間）。
- * カーソルの角はこのぶんだけ左に置いて重なりを避ける（ADR 0015 の決定 7）。 */
-static int toggle_room(HDC device, UINT dpi, enum folio_language language)
+/* 折畳の印が要る幅（箱と間）。印が字形でなく面のパスになったので、書体の実測ではなく
+ * 定数で決まる（ADR 0033 の決定 6・ADR 0015 の決定 7 の補正）。
+ * カーソルの角はこのぶんだけ左に置いて重なりを避ける。 */
+static int toggle_room(UINT dpi)
 {
-    char16_t units[draw_unit_limit];
-    int count = wide_units(ui_text_line(UI_TEXT_GLYPH_MINUS, language), units);
-    SIZE glyph = {0, 0};
-    GetTextExtentPoint32W(device, units, count, &glyph);
-    return glyph.cx + scale(base_mark_gap, dpi);
+    return scale(base_toggle_box, dpi) + scale(base_mark_gap, dpi);
 }
 
-/* カテゴリ行: 番号（カテゴリ色・等幅）、名前（太字・字間広め）、右端に − / +。
- * カーソルがこの行にあるときは − / + の左に角を置く（ADR 0015 の決定 7）。 */
+/* カテゴリ行: 番号（カテゴリ色・等幅）、名前（太字・字間広め）、右端に折畳の印。
+ * カーソルがこの行にあるときは折畳の印の左に角を置く（ADR 0015 の決定 7）。 */
 static void draw_category(const struct drawer_window *_Nonnull self, HDC device,
                           struct drawer_row row, int width)
 {
@@ -313,17 +314,15 @@ static void draw_category(const struct drawer_window *_Nonnull self, HDC device,
     draw_utf8(device, row.text, name, DT_END_ELLIPSIS);
     SetTextCharacterExtra(device, 0);
     RECT mark = {row.indent, row.top, width - scale(base_right_inset, dpi), row.top + row.height};
-    SelectObject(device, self->mono_font);
-    SetTextColor(device, self->palette.header_text);
-    enum folio_language language = folio_state_language(self->state);
-    char16_t glyph[draw_unit_limit];
-    int glyph_units = wide_units(
-        ui_text_line(row.expanded ? UI_TEXT_GLYPH_MINUS : UI_TEXT_GLYPH_PLUS, language), glyph);
-    DrawTextW(device, glyph, glyph_units, &mark,
-              DT_SINGLELINE | DT_VCENTER | DT_RIGHT | DT_NOPREFIX);
+    int box = scale(base_toggle_box, dpi);
+    int top = row.top + (row.height - box) / 2;
+    RECT toggle = {mark.right - box, top, mark.right, top + box};
+    icon_paint_fill(device, toggle,
+                    row.expanded ? ICON_PAINT_FOLD_COLLAPSE : ICON_PAINT_FOLD_EXPAND,
+                    self->palette.header_text);
     if (row.cursor)
     {
-        draw_cursor_mark(self, device, row, mark.right - toggle_room(device, dpi, language));
+        draw_cursor_mark(self, device, row, mark.right - toggle_room(dpi));
     }
 }
 
@@ -437,7 +436,9 @@ static void draw_fade(const struct drawer_window *_Nonnull self, uint32_t *_Nonn
     }
 }
 
-/* 32 bit・top-down の DIB セクション。画素は 0x00RRGGBB で並ぶ（ADR 0009 の決定 7）。 */
+/* 32 bit・top-down の DIB セクション。画素は 0x00RRGGBB で並ぶ（ADR 0009 の決定 7）。
+ * GDI+ が塗った画素はアルファ欄が 0xFF になるが、mix は RGB だけを組むのでフェード帯では
+ * 0 に戻り、BitBlt(SRCCOPY) はアルファを見ない（ADR 0033 の決定 5）。 */
 static HBITMAP _Nullable create_surface(HDC device, RECT client,
                                         uint32_t *_Nullable *_Nonnull pixels)
 {
