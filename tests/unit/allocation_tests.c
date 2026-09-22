@@ -465,6 +465,24 @@ static bool set_theme_under_probe(struct folio_state *_Nonnull state)
     return refreshed == FOLIO_STATE_READY;
 }
 
+/* 言語の意図（ADR 0032 の決定 5）。設定の複製と、新しい face の閲覧文書で確保する。 */
+static bool set_language_under_probe(struct folio_state *_Nonnull state)
+{
+    enum folio_language before = folio_state_language(state);
+    const char *_Nonnull document = folio_state_pane_rtf(state);
+    enum folio_state_outcome changed = folio_state_set_language(state, FOLIO_LANGUAGE_ZH_HANS);
+    require(changed == FOLIO_STATE_READY || changed == FOLIO_STATE_OUT_OF_MEMORY,
+            "set language under probe");
+    if (changed != FOLIO_STATE_READY)
+    {
+        /* 確保に失敗したときは言語も閲覧文書も前のまま（決定 5）。 */
+        require(folio_state_language(state) == before && folio_state_pane_rtf(state) == document,
+                "a failed set_language leaves the language and the view document alone");
+        return false;
+    }
+    return true;
+}
+
 /* ノート内検索の語は UTF-16 を UTF-8 へ写して所有する（ADR 0023 の決定 3）。 */
 static bool search_under_probe(struct folio_state *_Nonnull state)
 {
@@ -571,7 +589,8 @@ static bool state_scenario_with(struct persistence_adapter *_Nonnull adapter)
         selection_under_probe(state) && filter_under_probe(state) && reorder_under_probe(state) &&
         edit_under_probe(state) && transfer_under_probe(state) && new_note_under_probe(state) &&
         save_as_under_probe(state) && replace_under_probe(state) && rename_under_probe(state) &&
-        search_under_probe(state) && set_number_under_probe(state) && set_theme_under_probe(state);
+        search_under_probe(state) && set_number_under_probe(state) &&
+        set_theme_under_probe(state) && set_language_under_probe(state);
     folio_state_destroy(state);
     return completed;
 }

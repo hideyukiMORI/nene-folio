@@ -10,6 +10,7 @@
 #include "note_text.h"
 #include "persistence_port.h"
 #include "regex_port.h"
+#include "ui_font.h"
 #include "unit_tests.h"
 
 #include <stdlib.h>
@@ -84,6 +85,7 @@ struct persistence_adapter
     size_t settings_writes;                /* write_settings が呼ばれた回数 */
     bool written_number;                   /* 最後に書かれた設定の number */
     enum folio_theme_choice written_theme; /* 最後に書かれた設定の theme */
+    enum folio_language written_language;  /* 最後に書かれた設定の language */
     const char *_Nullable alt_category;    /* この名前のカテゴリだけ別の索引と md を返す */
     const char *_Nonnull alt_notes_text;
     const char *_Nonnull const *_Nullable alt_scanned; /* nullptr で終わる名前の並び */
@@ -452,6 +454,7 @@ static enum persistence_outcome fake_write_settings(struct persistence_adapter *
     }
     adapter->written_number = folio_settings_number(settings);
     adapter->written_theme = folio_settings_theme(settings);
+    adapter->written_language = folio_settings_language(settings);
     return PERSISTENCE_STORED;
 }
 
@@ -466,6 +469,7 @@ static void healthy_settings(struct persistence_adapter *_Nonnull adapter)
     adapter->settings_writes = 0;
     adapter->written_number = false;
     adapter->written_theme = FOLIO_THEME_CHOICE_SYSTEM;
+    adapter->written_language = FOLIO_LANGUAGE_JA;
 }
 
 static struct persistence_adapter healthy_adapter(void)
@@ -3142,6 +3146,114 @@ static void verify_set_theme_out_of_memory(void)
     folio_state_destroy(state);
 }
 
+/* 言語は先に書いてから採用し、同じ値では書かない。閲覧文書は新しい face で作り直す
+ * （ADR 0032 の決定 5）。色は動かない。 */
+static void verify_set_language(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY, "a named document");
+    require(folio_state_language(state) == FOLIO_LANGUAGE_JA, "the default is Japanese");
+    require(folio_state_set_language(state, FOLIO_LANGUAGE_JA) == FOLIO_STATE_READY,
+            "the same language is accepted");
+    require(adapter.settings_writes == 0, "the same language is not written");
+    require(folio_state_set_language(state, FOLIO_LANGUAGE_ZH_HANS) == FOLIO_STATE_READY,
+            "a new language is accepted");
+    require(adapter.settings_writes == 1 && adapter.written_language == FOLIO_LANGUAGE_ZH_HANS,
+            "the change is written once");
+    require(folio_state_language(state) == FOLIO_LANGUAGE_ZH_HANS, "and then adopted");
+    require(strstr(folio_state_pane_rtf(state), ui_font_face(FOLIO_LANGUAGE_ZH_HANS)) != nullptr,
+            "the view document is rebuilt with the new face");
+    require(strstr(folio_state_pane_rtf(state), dark_body_color) != nullptr,
+            "and keeps the colours it had");
+    require(folio_state_begin_edit(state) == FOLIO_STATE_READY, "editing");
+    require(folio_state_set_language(state, FOLIO_LANGUAGE_EN) == FOLIO_STATE_READY,
+            "the language can change while editing");
+    require(folio_state_pane_mode(state) == PANE_MODE_EDIT, "the mode is unchanged");
+    require(strstr(folio_state_pane_rtf(state), ui_font_face(FOLIO_LANGUAGE_EN)) != nullptr,
+            "the view document is rebuilt even in edit mode");
+    /* 文言も言語に従う（表を引くのは core だが、値の所有者は application である）。 */
+    require(
+        same_text(folio_state_failure_line(FOLIO_STATE_NOT_EDITING, folio_state_language(state)),
+                  "Not in edit mode."),
+        "the failure line follows the language the state holds");
+    folio_state_destroy(state);
+}
+
+/* 設定は md・台帳と独立なので synchronize を通さない（未完了の改名を再開しない）。 */
+static void verify_set_language_ignores_resumed_rename(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY, "select to rename");
+    struct note_name *name = accepted_note_name("新しい名前");
+    adapter.rename_outcome = RENAME_PENDING;
+    require(folio_state_rename_note(state, name, u"", 0) == FOLIO_STATE_RENAME_PENDING,
+            "the rename stops after publishing its journal");
+    note_name_destroy(name);
+    size_t renames = adapter.renames;
+    adapter.rename_outcome = RENAME_COMPLETED;
+    require(folio_state_set_language(state, FOLIO_LANGUAGE_EN) == FOLIO_STATE_READY,
+            "the language change is accepted while a rename is unfinished");
+    require(adapter.renames == renames, "it never calls rename_note, not even to resume");
+    folio_state_destroy(state);
+}
+
+static void verify_set_language_unwritable(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    adapter.settings_write_outcome = PERSISTENCE_UNWRITABLE;
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY, "a named document");
+    const char *before = folio_state_pane_rtf(state);
+    require(folio_state_set_language(state, FOLIO_LANGUAGE_EN) == FOLIO_STATE_SETTINGS_STORE_FAILED,
+            "an unwritable data/ refuses the change");
+    require(adapter.settings_writes == 1, "the write was attempted");
+    require(folio_state_language(state) == FOLIO_LANGUAGE_JA, "the language is kept");
+    require(folio_state_pane_rtf(state) == before, "and so is the very view document");
+    adapter.settings_write_outcome = PERSISTENCE_OUT_OF_MEMORY;
+    require(folio_state_set_language(state, FOLIO_LANGUAGE_EN) == FOLIO_STATE_OUT_OF_MEMORY,
+            "a failing write is reported as out of memory");
+    require(folio_state_language(state) == FOLIO_LANGUAGE_JA, "and still changes nothing");
+    folio_state_destroy(state);
+}
+
+/* 読めない設定のセッションは言語も断り、上書きもしない（ADR 0025 の決定 6）。 */
+static void verify_set_language_unreadable(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    adapter.settings_outcome = PERSISTENCE_MALFORMED;
+    struct persistence_port port = port_for(&adapter);
+    struct appearance_port looks = looks_for(&dark_adapter);
+    struct folio_state *state = nullptr;
+    require(folio_state_create(test_ports(&port, &looks, &finder), &state) == FOLIO_STATE_READY,
+            "an unreadable settings file still starts");
+    require(folio_state_set_language(state, FOLIO_LANGUAGE_EN) == FOLIO_STATE_SETTINGS_UNREADABLE,
+            "the session refuses to change the language");
+    require(adapter.settings_writes == 0, "a file nobody could read is never overwritten");
+    require(folio_state_language(state) == FOLIO_LANGUAGE_JA, "the default is kept");
+    folio_state_destroy(state);
+}
+
+/* 起動時に読んだ言語は、最初の閲覧文書の face から効いている（決定 5）。 */
+static void verify_language_at_start(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    adapter.settings_outcome = PERSISTENCE_LOADED;
+    adapter.settings_text = "{\"version\": 3, \"number\": true, \"theme\": \"dark\", "
+                            "\"language\": \"zh-Hans\"}";
+    struct persistence_port port = port_for(&adapter);
+    struct appearance_port looks = looks_for(&dark_adapter);
+    struct folio_state *state = nullptr;
+    require(folio_state_create(test_ports(&port, &looks, &finder), &state) == FOLIO_STATE_READY,
+            "stored settings start");
+    require(folio_state_language(state) == FOLIO_LANGUAGE_ZH_HANS, "the stored language is read");
+    require(strstr(folio_state_pane_rtf(state), ui_font_face(FOLIO_LANGUAGE_ZH_HANS)) != nullptr,
+            "the first view document already carries the face of that language");
+    require(adapter.settings_writes == 0, "reading the settings never writes them");
+    folio_state_destroy(state);
+}
+
 static void verify_settings(void)
 {
     verify_settings_absent();
@@ -3157,6 +3269,11 @@ static void verify_settings(void)
     verify_settings_unreadable(PERSISTENCE_MALFORMED, "malformed settings still start");
     verify_settings_unreadable(PERSISTENCE_UNREADABLE, "unreadable settings still start");
     verify_settings_shapes();
+    verify_set_language();
+    verify_set_language_ignores_resumed_rename();
+    verify_set_language_unwritable();
+    verify_set_language_unreadable();
+    verify_language_at_start();
 }
 
 /* 改名・検索・絞り込み・設定の単位（run_state_tests を C-012 の 60 行に収めるための束ね）。 */

@@ -55,6 +55,16 @@ folio_state_theme_choice(const struct folio_state *_Nonnull state);
  * 前後で比べて決める。 */
 [[nodiscard]] enum folio_state_outcome
 folio_state_refresh_theme(struct folio_state *_Nonnull state);
+/* 利用者が選んでいる表示言語（ADR 0032 の決定 5）。UI は ui_text_line / ui_text_format と
+ * ui_font_face へこの値を渡す。値の所有者はここ 1 つで、UI は第 2 の言語を持たない（ARC-004）。 */
+[[nodiscard]] enum folio_language folio_state_language(const struct folio_state *_Nonnull state);
+/* 表示言語を変える意図（ADR 0032 の決定 5）。folio_state_set_theme と同じ順で、
+ * **新しい設定と新しい閲覧文書（新しい face の fonttbl）を先に作り、書けてから採用する**。
+ * いまと同じ言語なら書かずに READY。作れなければ OUT_OF_MEMORY、書けなければ
+ * SETTINGS_STORE_FAILED で、どちらもファイルも状態も変えない。設定が読めていなければ
+ * SETTINGS_UNREADABLE。未完了の改名の再開は通さない。 */
+[[nodiscard]] enum folio_state_outcome folio_state_set_language(struct folio_state *_Nonnull state,
+                                                                enum folio_language language);
 /* 起動時に読んだ設定の知らせ（ADR 0025 の決定 6）。読めていれば READY、
  * 壊れている・未知の版・読めないなら SETTINGS_UNREADABLE。合成ルートが窓を作る前に 1 回だけ
  * 尋ね、READY でなければ既存の 1 行で見せて起動を続ける（「見せたか」はどこにも持たない）。 */
@@ -280,9 +290,6 @@ folio_state_pane_title(const struct folio_state *_Nonnull state);
 /* READY 以外の結果を利用者に見せる 1 行（UTF-8・終端付き・静的）。READY は空文字列。 */
 [[nodiscard]] const char *_Nonnull folio_state_failure_line(enum folio_state_outcome outcome,
                                                             enum folio_language language);
-/* 表示に使う言語（ADR 0030 の決定 1）。UI はこれを ui_text_line / ui_text_format へ渡す。
- * 単位 C（ADR 0029）で settings の値を返すようになる。 */
-[[nodiscard]] enum folio_language folio_state_language(const struct folio_state *_Nonnull state);
 void folio_state_destroy(struct folio_state *_Nullable state);
 
 #endif

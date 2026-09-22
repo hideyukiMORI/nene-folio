@@ -907,27 +907,16 @@ enum folio_state_outcome folio_state_set_number(struct folio_state *_Nonnull sta
     return FOLIO_STATE_READY;
 }
 
-enum folio_state_outcome folio_state_set_theme(struct folio_state *_Nonnull state,
-                                               enum folio_theme_choice choice)
+/* 設定と閲覧文書を両方先に作ってから書き、書けたときだけ差し替える（ADR 0031 の決定 3）。
+ * テーマと言語の 2 つの意図が共有する唯一の経路で、どちらかが作れなければファイルも状態も
+ * 変えない（ADR 0032 の決定 5）。changed はこの関数が引き取る。 */
+static enum folio_state_outcome adopt_settings_change(struct folio_state *_Nonnull state,
+                                                      struct folio_settings *_Nonnull changed,
+                                                      struct rtf_palette palette,
+                                                      enum folio_language language)
 {
-    if (state->settings_notice != FOLIO_STATE_READY)
-    {
-        return state->settings_notice;
-    }
-    if (folio_settings_theme(state->settings) == choice)
-    {
-        return FOLIO_STATE_READY;
-    }
-    struct folio_settings *_Nullable changed = nullptr;
-    if (folio_settings_with_theme(state->settings, choice, &changed) != FOLIO_SETTINGS_READY)
-    {
-        return FOLIO_STATE_OUT_OF_MEMORY;
-    }
-    /* 設定と閲覧文書を両方先に作ってから書く。どちらかが作れなければファイルも状態も変えない
-     * （ADR 0031 の決定 3）。 */
-    struct rtf_palette palette = rtf_palette_for(folio_theme_resolve(choice, state->os_theme));
     struct markdown_rtf *_Nullable pane = nullptr;
-    if (!render_pane_document(state, palette, folio_state_language(state), &pane))
+    if (!render_pane_document(state, palette, language, &pane))
     {
         folio_settings_destroy(changed);
         return FOLIO_STATE_OUT_OF_MEMORY;
@@ -945,8 +934,53 @@ enum folio_state_outcome folio_state_set_theme(struct folio_state *_Nonnull stat
     markdown_rtf_destroy(state->pane);
     state->pane = pane;
     state->palette = palette;
-    state->theme_choice = choice;
     return FOLIO_STATE_READY;
+}
+
+enum folio_state_outcome folio_state_set_theme(struct folio_state *_Nonnull state,
+                                               enum folio_theme_choice choice)
+{
+    if (state->settings_notice != FOLIO_STATE_READY)
+    {
+        return state->settings_notice;
+    }
+    if (folio_settings_theme(state->settings) == choice)
+    {
+        return FOLIO_STATE_READY;
+    }
+    struct folio_settings *_Nullable changed = nullptr;
+    if (folio_settings_with_theme(state->settings, choice, &changed) != FOLIO_SETTINGS_READY)
+    {
+        return FOLIO_STATE_OUT_OF_MEMORY;
+    }
+    struct rtf_palette palette = rtf_palette_for(folio_theme_resolve(choice, state->os_theme));
+    enum folio_state_outcome adopted =
+        adopt_settings_change(state, changed, palette, folio_state_language(state));
+    if (adopted == FOLIO_STATE_READY)
+    {
+        state->theme_choice = choice;
+    }
+    return adopted;
+}
+
+enum folio_state_outcome folio_state_set_language(struct folio_state *_Nonnull state,
+                                                  enum folio_language language)
+{
+    if (state->settings_notice != FOLIO_STATE_READY)
+    {
+        return state->settings_notice;
+    }
+    if (folio_settings_language(state->settings) == language)
+    {
+        return FOLIO_STATE_READY;
+    }
+    struct folio_settings *_Nullable changed = nullptr;
+    if (folio_settings_with_language(state->settings, language, &changed) != FOLIO_SETTINGS_READY)
+    {
+        return FOLIO_STATE_OUT_OF_MEMORY;
+    }
+    /* 色は変わらないので palette は今のまま。変わるのは fonttbl の face だけである。 */
+    return adopt_settings_change(state, changed, state->palette, language);
 }
 
 enum folio_state_outcome folio_state_refresh_theme(struct folio_state *_Nonnull state)
@@ -2677,9 +2711,7 @@ const char *_Nonnull folio_state_failure_line(enum folio_state_outcome outcome,
 
 enum folio_language folio_state_language(const struct folio_state *_Nonnull state)
 {
-    /* 単位 C（ADR 0029）が settings から返すようにする。いまは 1 値しかない。 */
-    (void)state;
-    return FOLIO_LANGUAGE_JA;
+    return folio_settings_language(state->settings);
 }
 void folio_state_destroy(struct folio_state *_Nullable state)
 {
