@@ -122,6 +122,7 @@ static const char *_Nonnull const catalog[] = {
     [UI_TEXT_CHIP_VIEW] = "閲覧",
     [UI_TEXT_CHIP_EDIT] = "編集",
     [UI_TEXT_PLACEHOLDER_FILTER] = "すべてのノートを検索",
+    [UI_TEXT_STATUS_FILTER_COUNT] = "{k} / {n}",
     [UI_TEXT_STATUS_SEARCH_FORWARD] = "このノート内を検索 ／ 次へ  ",
     [UI_TEXT_STATUS_SEARCH_BACKWARD] = "このノート内を検索 ／ 前へ  ",
     [UI_TEXT_STATUS_SEARCH_MALFORMED] = "検索できない文字があります",
