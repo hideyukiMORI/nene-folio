@@ -4777,8 +4777,24 @@ static void window_destroyed(struct folio_window *_Nonnull self)
         DeleteObject(self->mono_font);
         self->mono_font = nullptr;
     }
-    self->handle = nullptr;
+    /* self->handle はここでは消さない。WM_DESTROY の後も WM_NCDESTROY までメッセージは届き、
+     * 既定処理はその HWND を要る。手放すのは window_finalized 1 か所（ADR 0014 の補正 1）。 */
     PostQuitMessage(0);
+}
+
+/* 窓に届く最後のメッセージ。既定処理には**引数の HWND** を渡し（自分の写しではなく、
+ * 消える前の本物を渡す）、そのあとで窓の構造体との結び付けと HWND の写しを同時に手放す。
+ * ここが self->handle を消す唯一の場所である（ADR 0014 の補正 1）。 */
+static LRESULT window_finalized(HWND window, UINT message, WPARAM wparam, LPARAM lparam)
+{
+    LRESULT result = DefWindowProcW(window, message, wparam, lparam);
+    struct folio_window *_Nullable self = self_of(window);
+    if (self != nullptr)
+    {
+        self->handle = nullptr;
+    }
+    SetWindowLongPtrW(window, GWLP_USERDATA, 0);
+    return result;
 }
 
 static void dismiss_command_if_focus_moved(struct folio_window *_Nonnull self)
@@ -5004,6 +5020,9 @@ static LRESULT CALLBACK window_procedure(HWND window, UINT message, WPARAM wpara
         return TRUE;
     case WM_NCPAINT:
         return 0;
+    /* 最後のメッセージも自分で受ける。窓の構造体が無くても外すものは同じなので、ここで答える。 */
+    case WM_NCDESTROY:
+        return window_finalized(window, message, wparam, lparam);
     default:
         /* Win32 のメッセージは開いた集合（C-017）。 */
         break;
