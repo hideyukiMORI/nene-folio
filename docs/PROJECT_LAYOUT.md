@@ -75,7 +75,7 @@ Win32・永続化・ファイル・ネットワークを知らない。
 ### `src/adapters/win32`
 
 時刻ポートと永続化ポートの実装を持つ。🔑 **決定性の禁止を適用しない唯一のモジュール**であり（ARC-007）、その差分は
-`eng/symbols.py` と `eng/conformance.py` の区画判定に明示されている。保存形式の版と移行（ARC-009）も DTO もここに閉じる。
+`eng/symbols.py` と `eng/conformance.py` の区画判定に明示されている。台帳・md・改名記録のファイル形式の版と移行（ARC-009）も DTO もここに閉じる（設定 `data/settings.json` の解析と版は ADR 0025 の決定 3 に従い core の `folio_settings` が持つ）。
 `data/` の走査・`*.md` と `*.json` の読み書き・UTF-8 と UTF-16 の変換はここだけが行う。OS のテーマ（レジストリ）を読む `appearance_adapter` もここ。
 
 ### `src/ui/win32`

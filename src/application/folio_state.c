@@ -392,18 +392,18 @@ static enum folio_state_outcome load_settings(struct folio_state *_Nonnull state
     return adopt_settings(state, read, loaded);
 }
 
-enum folio_state_outcome folio_state_create(const struct persistence_port *_Nonnull persistence,
-                                            const struct appearance_port *_Nonnull appearance,
-                                            const struct regex_port *_Nonnull regex,
+enum folio_state_outcome folio_state_create(const struct folio_ports *_Nonnull ports,
                                             struct folio_state *_Nullable *_Nonnull out)
 {
+    const struct persistence_port *_Nonnull persistence = ports->persistence;
+    const struct appearance_port *_Nonnull appearance = ports->appearance;
     struct folio_state *_Nullable state = calloc(1, sizeof *state);
     if (state == nullptr)
     {
         return FOLIO_STATE_OUT_OF_MEMORY;
     }
     state->port = *persistence;
-    state->regex = *regex;
+    state->regex = *ports->regex;
     state->theme = appearance->read_theme(appearance->adapter);
     state->palette = rtf_palette_for(state->theme);
     state->found = calloc(initial_matches, sizeof *state->found);

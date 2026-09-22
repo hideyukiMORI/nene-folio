@@ -571,7 +571,8 @@ static void verify_ready_state(void)
     struct persistence_port port = port_for(&adapter);
     struct appearance_port looks = looks_for(&dark_adapter);
     struct folio_state *state = nullptr;
-    require(folio_state_create(&port, &looks, &finder, &state) == FOLIO_STATE_READY, "state ready");
+    require(folio_state_create(test_ports(&port, &looks, &finder), &state) == FOLIO_STATE_READY,
+            "state ready");
     require(adapter.note_scans == 3, "one note scan per category");
     require(folio_state_theme(state) == FOLIO_THEME_DARK, "theme from the port");
     require(folio_state_note_count(state) == 9, "nine notes in three categories");
@@ -604,7 +605,7 @@ static void verify_absent_data(void)
     struct persistence_port port = port_for(&adapter);
     struct appearance_port looks = looks_for(&dark_adapter);
     struct folio_state *state = nullptr;
-    require(folio_state_create(&port, &looks, &finder, &state) == FOLIO_STATE_READY,
+    require(folio_state_create(test_ports(&port, &looks, &finder), &state) == FOLIO_STATE_READY,
             "absent data is empty");
     struct drawer_layout *layout = nullptr;
     require(folio_state_drawer_layout(state, metrics, &layout) == FOLIO_STATE_READY &&
@@ -617,7 +618,7 @@ static void verify_absent_data(void)
     adapter.notes_scan_outcome = PERSISTENCE_ABSENT;
     port = port_for(&adapter);
     looks = looks_for(&dark_adapter);
-    require(folio_state_create(&port, &looks, &finder, &state) == FOLIO_STATE_READY,
+    require(folio_state_create(test_ports(&port, &looks, &finder), &state) == FOLIO_STATE_READY,
             "absent notes");
     require(folio_state_drawer_layout(state, metrics, &layout) == FOLIO_STATE_READY &&
                 drawer_layout_row_count(layout) == 3,
@@ -641,7 +642,7 @@ static void verify_toggle(void)
     struct persistence_port port = port_for(&adapter);
     struct appearance_port looks = looks_for(&dark_adapter);
     struct folio_state *state = nullptr;
-    require(folio_state_create(&port, &looks, &finder, &state) == FOLIO_STATE_READY,
+    require(folio_state_create(test_ports(&port, &looks, &finder), &state) == FOLIO_STATE_READY,
             "state for toggle");
     require(row_count(state) == 9, "rows before toggle");
     require(folio_state_toggle_category(state, 0) == FOLIO_STATE_READY, "collapse B");
@@ -676,7 +677,7 @@ static void verify_recolor(void)
     struct persistence_port port = port_for(&adapter);
     struct appearance_port looks = looks_for(&dark_adapter);
     struct folio_state *state = nullptr;
-    require(folio_state_create(&port, &looks, &finder, &state) == FOLIO_STATE_READY,
+    require(folio_state_create(test_ports(&port, &looks, &finder), &state) == FOLIO_STATE_READY,
             "state for recolor");
     require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY, "select in B");
     require(has_color(folio_state_pane_title(state).color, 0x11, 0x11, 0x11),
@@ -784,7 +785,7 @@ static void verify_scroll(void)
     struct persistence_port port = port_for(&adapter);
     struct appearance_port looks = looks_for(&dark_adapter);
     struct folio_state *state = nullptr;
-    require(folio_state_create(&port, &looks, &finder, &state) == FOLIO_STATE_READY,
+    require(folio_state_create(test_ports(&port, &looks, &finder), &state) == FOLIO_STATE_READY,
             "state for scroll");
     verify_scroll_rounding(state);
     verify_scroll_recount(state);
@@ -818,7 +819,7 @@ static struct folio_state *_Nonnull ready_state(struct persistence_adapter *_Non
     struct persistence_port port = port_for(adapter);
     struct appearance_port looks = looks_for(&dark_adapter);
     struct folio_state *state = nullptr;
-    require(folio_state_create(&port, &looks, &finder, &state) == FOLIO_STATE_READY,
+    require(folio_state_create(test_ports(&port, &looks, &finder), &state) == FOLIO_STATE_READY,
             "state for move");
     return state;
 }
@@ -1083,7 +1084,7 @@ static void verify_select(void)
     struct persistence_port port = port_for(&adapter);
     struct appearance_port looks = looks_for(&dark_adapter);
     struct folio_state *state = nullptr;
-    require(folio_state_create(&port, &looks, &finder, &state) == FOLIO_STATE_READY,
+    require(folio_state_create(test_ports(&port, &looks, &finder), &state) == FOLIO_STATE_READY,
             "state for select");
     require(strstr(folio_state_pane_rtf(state), "\\colortbl;") != nullptr &&
                 strstr(folio_state_pane_rtf(state), "\\par") == nullptr &&
@@ -1541,7 +1542,7 @@ static struct folio_state *_Nonnull edited_state(struct persistence_adapter *_No
     struct persistence_port port = port_for(adapter);
     struct appearance_port looks = looks_for(&dark_adapter);
     struct folio_state *state = nullptr;
-    require(folio_state_create(&port, &looks, &finder, &state) == FOLIO_STATE_READY,
+    require(folio_state_create(test_ports(&port, &looks, &finder), &state) == FOLIO_STATE_READY,
             "state for edit");
     require(folio_state_select_note(state, 0, 1) == FOLIO_STATE_READY, "select B / two");
     require(same_text(folio_state_pane_text(state), "# Hello\r\n\r\nbody"),
@@ -1559,7 +1560,7 @@ static void verify_edit_guards(void)
     struct persistence_port port = port_for(&adapter);
     struct appearance_port looks = looks_for(&dark_adapter);
     struct folio_state *state = nullptr;
-    require(folio_state_create(&port, &looks, &finder, &state) == FOLIO_STATE_READY,
+    require(folio_state_create(test_ports(&port, &looks, &finder), &state) == FOLIO_STATE_READY,
             "state for guards");
     require(folio_state_pane_mode(state) == PANE_MODE_VIEW, "view before any intent");
     require(same_text(folio_state_pane_text(state), "") && folio_state_pane_text_length(state) == 0,
@@ -1831,7 +1832,8 @@ static void expect_failure(struct persistence_adapter adapter, enum folio_state_
     struct persistence_port port = port_for(&adapter);
     struct appearance_port looks = looks_for(&dark_adapter);
     struct folio_state *state = nullptr;
-    require(folio_state_create(&port, &looks, &finder, &state) == expected, description);
+    require(folio_state_create(test_ports(&port, &looks, &finder), &state) == expected,
+            description);
 }
 
 static void verify_failures(void)
@@ -1893,6 +1895,19 @@ void test_adapter_second_notes(struct persistence_adapter *_Nonnull adapter,
 void test_adapter_destroy(struct persistence_adapter *_Nullable adapter)
 {
     free(adapter);
+}
+
+/* 3 つのポートを 1 つの束にする（ADR 0029 の決定 3）。folio_state_create は束を借りるだけで
+ * 返ったあとは参照しないので、テストの中だけで生きる 1 つの入れ物を使い回す。 */
+const struct folio_ports *_Nonnull test_ports(const struct persistence_port *_Nonnull persistence,
+                                              const struct appearance_port *_Nonnull appearance,
+                                              const struct regex_port *_Nonnull regex)
+{
+    static struct folio_ports ports;
+    ports.persistence = persistence;
+    ports.appearance = appearance;
+    ports.regex = regex;
+    return &ports;
 }
 
 struct appearance_port test_appearance_port(void)
@@ -2522,7 +2537,8 @@ static void verify_rename_recovery(void)
         struct persistence_port port = port_for(&refused);
         struct appearance_port looks = looks_for(&dark_adapter);
         struct folio_state *blocked = nullptr;
-        require(folio_state_create(&port, &looks, &finder, &blocked) == expected[index] &&
+        require(folio_state_create(test_ports(&port, &looks, &finder), &blocked) ==
+                        expected[index] &&
                     blocked == nullptr && refused.note_scans == 0,
                 "an unfinished recovery stops the startup before the scan");
     }
@@ -2842,7 +2858,7 @@ static void verify_settings_absent(void)
     struct persistence_port port = port_for(&adapter);
     struct appearance_port looks = looks_for(&dark_adapter);
     struct folio_state *state = nullptr;
-    require(folio_state_create(&port, &looks, &finder, &state) == FOLIO_STATE_READY,
+    require(folio_state_create(test_ports(&port, &looks, &finder), &state) == FOLIO_STATE_READY,
             "absent settings start");
     require(adapter.settings_reads == 1, "the settings are read exactly once at startup");
     require(adapter.settings_writes == 0, "an absent settings file is not created at startup");
@@ -2858,7 +2874,7 @@ static void verify_settings_loaded(void)
     struct persistence_port port = port_for(&adapter);
     struct appearance_port looks = looks_for(&dark_adapter);
     struct folio_state *state = nullptr;
-    require(folio_state_create(&port, &looks, &finder, &state) == FOLIO_STATE_READY,
+    require(folio_state_create(test_ports(&port, &looks, &finder), &state) == FOLIO_STATE_READY,
             "stored settings start");
     require(folio_state_number(state), "the stored value is adopted");
     require(adapter.settings_writes == 0, "reading the settings never writes them");
@@ -2872,7 +2888,8 @@ static void verify_set_number(void)
     struct persistence_port port = port_for(&adapter);
     struct appearance_port looks = looks_for(&dark_adapter);
     struct folio_state *state = nullptr;
-    require(folio_state_create(&port, &looks, &finder, &state) == FOLIO_STATE_READY, "state");
+    require(folio_state_create(test_ports(&port, &looks, &finder), &state) == FOLIO_STATE_READY,
+            "state");
     require(folio_state_set_number(state, false) == FOLIO_STATE_READY,
             "the same value is accepted");
     require(adapter.settings_writes == 0, "the same value is not written");
@@ -2894,7 +2911,8 @@ static void verify_set_number_unwritable(void)
     struct persistence_port port = port_for(&adapter);
     struct appearance_port looks = looks_for(&dark_adapter);
     struct folio_state *state = nullptr;
-    require(folio_state_create(&port, &looks, &finder, &state) == FOLIO_STATE_READY, "state");
+    require(folio_state_create(test_ports(&port, &looks, &finder), &state) == FOLIO_STATE_READY,
+            "state");
     require(folio_state_set_number(state, true) == FOLIO_STATE_SETTINGS_STORE_FAILED,
             "an unwritable data/ refuses the change");
     require(adapter.settings_writes == 1, "the write was attempted");
@@ -2937,7 +2955,8 @@ static void verify_settings_unreadable(enum persistence_outcome read,
     struct persistence_port port = port_for(&adapter);
     struct appearance_port looks = looks_for(&dark_adapter);
     struct folio_state *state = nullptr;
-    require(folio_state_create(&port, &looks, &finder, &state) == FOLIO_STATE_READY, description);
+    require(folio_state_create(test_ports(&port, &looks, &finder), &state) == FOLIO_STATE_READY,
+            description);
     require(folio_state_settings_notice(state) == FOLIO_STATE_SETTINGS_UNREADABLE,
             "the notice is kept for the composition root");
     require(!folio_state_number(state), "an unreadable settings file starts from the default");
@@ -2962,7 +2981,7 @@ static void verify_settings_shapes(void)
     struct persistence_port port = port_for(&adapter);
     struct appearance_port looks = looks_for(&dark_adapter);
     struct folio_state *state = nullptr;
-    require(folio_state_create(&port, &looks, &finder, &state) == FOLIO_STATE_READY,
+    require(folio_state_create(test_ports(&port, &looks, &finder), &state) == FOLIO_STATE_READY,
             "unknown version");
     require(folio_state_settings_notice(state) == FOLIO_STATE_SETTINGS_UNREADABLE,
             "an unknown version is a notice, not a startup failure");
@@ -2972,7 +2991,8 @@ static void verify_settings_shapes(void)
     adapter.settings_text = "{\"version\": 1, \"theme\": \"dark\"}";
     port = port_for(&adapter);
     state = nullptr;
-    require(folio_state_create(&port, &looks, &finder, &state) == FOLIO_STATE_READY, "unknown key");
+    require(folio_state_create(test_ports(&port, &looks, &finder), &state) == FOLIO_STATE_READY,
+            "unknown key");
     require(folio_state_settings_notice(state) == FOLIO_STATE_SETTINGS_UNREADABLE,
             "an unknown key is a notice too");
     folio_state_destroy(state);

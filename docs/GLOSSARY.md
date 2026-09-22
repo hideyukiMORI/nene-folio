@@ -8,6 +8,7 @@
 | 結果（outcome） | 期待される成功・失敗を表す閉じた `enum` | `*_outcome` |
 | 拒否理由（rejection） | 結果に添える閉じた理由の集合 | `*_rejection` |
 | ポート（port） | 中核がプラットフォームを使うための型のある窓口（関数ポインタの束） | `*_port`（application） |
+| ポートの束（folio ports） | `folio_state` を作るときに渡す 3 つのポートの束。引数の数が C-012 の 4 つで飽和したので、ポートが増える側はこの型で、`folio_state_create` の署名は変わらない。借りるだけで、呼び出しの間しか生きなくてよい | `struct folio_ports`（application）・ADR 0029 の決定 3 |
 | アダプタ（adapter） | ポートの実装。プラットフォームに触れてよい唯一の場所 | `*_adapter`（adapters/win32） |
 | 合成ルート | 依存を結ぶ唯一の場所。端末と終了コードを持つ | `src/app` |
 | 反映（render） | 決まった値を UI 部品へ写す操作。UI 状態を変えてよい唯一の場所 | `render*`（UI） |
