@@ -175,8 +175,6 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_SETTINGS_LANGUAGE_ZH_HANS] = "简体中文",
     [UI_TEXT_SETTINGS_GUIDANCE] = "↑↓ 選択 / Enter 採用 / Esc 戻る",
     [UI_TEXT_APP_LOGO] = "NENE FOLIO",
-    [UI_TEXT_GLYPH_MINUS] = "−",
-    [UI_TEXT_GLYPH_PLUS] = "+",
     [UI_TEXT_PROMPT_PENDING_EXPLANATION] =
         "「再試行」で同じ名前変更を続けます。「閉じる」は取り消しではありません。",
     [UI_TEXT_PROMPT_PENDING_RENAME] = "{from} → {to}",

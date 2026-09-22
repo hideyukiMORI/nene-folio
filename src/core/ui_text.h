@@ -3,7 +3,7 @@
  * 直書きの再発は CNF-010 が拒む（C-018）。
  * 表は言語ごとの列を持ち（ADR 0032 の決定 2）、列の網羅は CNF-011 が字句で守る。
  * 群: FAILURE（folio_state_outcome と 1 対 1）・COMMAND（folio_command と 1 対 1）・HELP・
- * STATUS・ACTION・CHIP・PROMPT・APP・GLYPH・PLACEHOLDER・TITLE・EMPTY。
+ * STATUS・ACTION・CHIP・PROMPT・APP・PLACEHOLDER・TITLE・EMPTY。
  * 置換子（{k} {n} {offset} {name} {from} {to}）を持つ文言は ui_text_format が埋める。 */
 #ifndef NENEFOLIO_UI_TEXT_H
 #define NENEFOLIO_UI_TEXT_H
@@ -137,8 +137,6 @@ enum ui_text : unsigned char
     UI_TEXT_SETTINGS_LANGUAGE_ZH_HANS,
     UI_TEXT_SETTINGS_GUIDANCE,
     UI_TEXT_APP_LOGO,
-    UI_TEXT_GLYPH_MINUS,
-    UI_TEXT_GLYPH_PLUS,
     UI_TEXT_PROMPT_PENDING_EXPLANATION,
     UI_TEXT_PROMPT_PENDING_RENAME,
     UI_TEXT_PROMPT_TITLE_FIRST_SAVE,
