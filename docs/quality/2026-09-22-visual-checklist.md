@@ -28,6 +28,12 @@ probe はすべて画面外の窓で値だけを測っている（各単位の�
    ```
 
 4. できた exe を起動する。
+5. **前後の絵を比べる項目**は、操作の前に `pwsh -NoProfile -File ./tools/capture-window.ps1 -Title "NeNe Folio" -Out before.png`、
+   操作の後に同じコマンドで `-Out after.png` を撮り、
+   `pwsh -NoProfile -File ./tools/compare-screens.ps1 -Before before.png -After after.png -Expect "l,t,r,b"` の JSON
+   （`changedPixels`・差分の外接矩形 `bounds`・期待の矩形の内側か `inside`）を結果の欄に写す。
+   矩形は窓の左上を原点とする物理画素で、`r` / `b` を含まない。**合否は JSON を読む人が決める**（スクリプトは判定しない）。
+   `PrintWindow` が失敗する・窓が見つからないときは非 0 で止まるので、その項目は目視で確かめる。
 
 このチェックリストを書いた時点で、上のコマンドを main `f4e7bcf` で実行して
 **exe ができることまでを確かめた**（起動はしていない）。
