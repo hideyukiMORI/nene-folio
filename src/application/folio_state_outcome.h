@@ -75,7 +75,11 @@ enum folio_state_outcome : unsigned char
     FOLIO_STATE_ALREADY_NAMED,
     FOLIO_STATE_CANCELLED,
     /* 同梱の書体を読めなかった。OS の書体で起動は続ける。状態は変えていない（ADR 0036 の決定 5） */
-    FOLIO_STATE_FONT_BUNDLE_UNAVAILABLE
+    FOLIO_STATE_FONT_BUNDLE_UNAVAILABLE,
+    /* 現在のノートの履歴が 1 版も無い。一覧は持っていない（ADR 0038 の決定 7） */
+    FOLIO_STATE_HISTORY_EMPTY,
+    /* 選んだ版は読めない（無い・UTF-8 でない・読めない）。何も変えていない（決定 9） */
+    FOLIO_STATE_HISTORY_UNREADABLE
 };
 
 #endif

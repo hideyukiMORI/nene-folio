@@ -89,6 +89,13 @@ struct persistence_adapter
     const char *_Nullable alt_category;    /* この名前のカテゴリだけ別の索引と md を返す */
     const char *_Nonnull alt_notes_text;
     const char *_Nonnull const *_Nullable alt_scanned; /* nullptr で終わる名前の並び */
+    /* data/.history の版（ADR 0038）。添字が版番号で、本文が nullptr の版は無い（ABSENT）。
+     * history_outcomes が LOADED 以外の版は本文を見ずにその結果を返す */
+    const char *_Nullable history[8];
+    enum persistence_outcome history_outcomes[8];
+    size_t history_reads;                   /* read_history が呼ばれた回数 */
+    const char *_Nullable history_category; /* 最後に版を求められたカテゴリ名 */
+    const char *_Nullable history_note;     /* 最後に版を求められたノート名 */
 };
 
 /* 名前を '/' でつないで out（終端付き）へ書き足す。 */
@@ -271,6 +278,32 @@ static enum persistence_outcome fake_archive_note(struct persistence_adapter *_N
     adapter->archived_note = note;
     record_call(adapter, "archive");
     return adapter->archive_outcome;
+}
+
+/* 履歴の 1 版（ADR 0038 の決定 2）。表にある版だけを返し、範囲の外は MALFORMED。 */
+static enum persistence_outcome fake_read_history(struct persistence_adapter *_Nonnull adapter,
+                                                  const struct history_version *_Nonnull which,
+                                                  struct note_text *_Nullable *_Nonnull out)
+{
+    adapter->history_reads += 1;
+    adapter->history_category = which->category;
+    adapter->history_note = which->note;
+    require(which->version >= 1 && which->version <= 5, "versions stay within the depth");
+    if (adapter->history_outcomes[which->version] != PERSISTENCE_LOADED)
+    {
+        return adapter->history_outcomes[which->version];
+    }
+    const char *_Nullable body = adapter->history[which->version];
+    if (body == nullptr)
+    {
+        return PERSISTENCE_ABSENT;
+    }
+    enum note_text_outcome accepted = note_text_create(body, strlen(body), out);
+    if (accepted == NOTE_TEXT_ACCEPTED)
+    {
+        return PERSISTENCE_LOADED;
+    }
+    return accepted == NOTE_TEXT_OUT_OF_MEMORY ? PERSISTENCE_OUT_OF_MEMORY : PERSISTENCE_MALFORMED;
 }
 
 static enum persistence_outcome fake_write_note(struct persistence_adapter *_Nonnull adapter,
@@ -545,6 +578,7 @@ static struct persistence_port port_for(struct persistence_adapter *_Nonnull ada
         .write_category_ledger = fake_write_category_ledger,
         .read_note = fake_read_note,
         .archive_note = fake_archive_note,
+        .read_history = fake_read_history,
         .write_note = fake_write_note,
         .create_note = fake_create_note,
         .move_note = fake_move_note,
@@ -1869,6 +1903,8 @@ static const char *_Nonnull const expected_failure_lines[] = {
         "rename）を使ってください。",
     [FOLIO_STATE_CANCELLED] = "",
     [FOLIO_STATE_FONT_BUNDLE_UNAVAILABLE] = "同梱の書体を読めなかったので、OS の書体で表示します。",
+    [FOLIO_STATE_HISTORY_EMPTY] = "履歴はありません。",
+    [FOLIO_STATE_HISTORY_UNREADABLE] = "その版は読めません。",
 };
 
 static void verify_failure_lines(void)
@@ -1933,6 +1969,12 @@ struct persistence_adapter *_Nonnull test_adapter_create(const char *_Nonnull ca
     adapter->categories_text = categories_text;
     adapter->notes_text = notes_text;
     return adapter;
+}
+
+void test_adapter_history(struct persistence_adapter *_Nonnull adapter, size_t version,
+                          const char *_Nullable body)
+{
+    adapter->history[version] = body;
 }
 
 struct persistence_port test_adapter_port(struct persistence_adapter *_Nonnull adapter)
@@ -3326,6 +3368,146 @@ static void verify_settings(void)
 }
 
 /* 改名・検索・絞り込み・設定の単位（run_state_tests を C-012 の 60 行に収めるための束ね）。 */
+/* 履歴を持つノート（B / one）を閲覧中の状態。 */
+static struct folio_state *_Nonnull history_state(struct persistence_adapter *_Nonnull adapter)
+{
+    struct persistence_port port = port_for(adapter);
+    struct appearance_port looks = looks_for(&dark_adapter);
+    struct folio_state *state = nullptr;
+    require(folio_state_create(test_ports(&port, &looks, &finder), &state) == FOLIO_STATE_READY,
+            "state for history");
+    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY, "select B / one");
+    return state;
+}
+
+static void expect_history_row(const struct folio_state *_Nonnull state, size_t index,
+                               size_t version, const char *_Nonnull first_line)
+{
+    struct history_row_view row = {};
+    require(folio_state_history_row(state, index, &row), "the row exists");
+    require(row.version == version, "rows keep the version number");
+    require(row.readable, "the row is readable");
+    require(row.first_line_length == strlen(first_line) &&
+                memcmp(row.first_line, first_line, row.first_line_length) == 0,
+            "the row shows the first non-empty line");
+    require(folio_state_history_body(state, index) != nullptr, "a readable row has a body");
+}
+
+/* 5 版すべて・問い合わせ・閲覧中の restore・close（ADR 0038 の検証 1）。 */
+static void verify_history_all(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    const char *const bodies[] = {
+        "", "\n# first\nbody", "second", "\r\n  third  \r\n", "fourth", "fifth"};
+    for (size_t version = 1; version <= 5; ++version)
+    {
+        adapter.history[version] = bodies[version];
+    }
+    struct folio_state *state = history_state(&adapter);
+    require(folio_state_history_count(state) == 0, "no list before opening");
+    require(folio_state_open_history(state) == FOLIO_STATE_READY, "open five versions");
+    require(adapter.history_reads == 5, "every version is read once");
+    require(same_text(adapter.history_category, "B") && same_text(adapter.history_note, "one"),
+            "the current note's history is read");
+    require(folio_state_history_count(state) == 5, "five rows");
+    expect_history_row(state, 0, 1, "# first");
+    expect_history_row(state, 1, 2, "second");
+    expect_history_row(state, 2, 3, "third");
+    expect_history_row(state, 4, 5, "fifth");
+    struct history_row_view row = {};
+    require(!folio_state_history_row(state, 5, &row) &&
+                folio_state_history_body(state, 5) == nullptr,
+            "no row past the end");
+    require(same_text(note_text_bytes(folio_state_history_body(state, 1)), "second"),
+            "the body is the version's text");
+    require(folio_state_pane_mode(state) == PANE_MODE_VIEW, "opening keeps the mode");
+    require(folio_state_restore_history(state, 1) == FOLIO_STATE_READY &&
+                folio_state_pane_mode(state) == PANE_MODE_EDIT,
+            "restoring while viewing enters edit mode");
+    require(folio_state_history_count(state) == 5 && adapter.note_writes == 0 &&
+                adapter.archives == 0,
+            "restoring writes nothing and keeps the list");
+    require(folio_state_restore_history(state, 2) == FOLIO_STATE_READY &&
+                folio_state_pane_mode(state) == PANE_MODE_EDIT,
+            "restoring while editing stays in edit mode");
+    require(folio_state_open_history(state) == FOLIO_STATE_READY &&
+                folio_state_history_count(state) == 5 && adapter.history_reads == 10,
+            "reopening replaces the list");
+    folio_state_close_history(state);
+    require(folio_state_history_count(state) == 0 && folio_state_history_body(state, 0) == nullptr,
+            "closing drops every version");
+    require(folio_state_restore_history(state, 0) == FOLIO_STATE_HISTORY_UNREADABLE,
+            "nothing to restore after closing");
+    require(folio_state_open_history(state) == FOLIO_STATE_READY, "reopen before selecting");
+    require(folio_state_select_note(state, 0, 1) == FOLIO_STATE_READY &&
+                folio_state_history_count(state) == 0,
+            "moving to another note drops the list");
+    require(folio_state_open_history(state) == FOLIO_STATE_READY, "reopen before saving");
+    require(folio_state_store_note(state, u"changed", 7) == FOLIO_STATE_READY &&
+                adapter.note_writes == 1 && folio_state_history_count(state) == 0,
+            "saving drops the list whose numbers moved");
+    require(folio_state_open_history(state) == FOLIO_STATE_READY, "reopen before destroying");
+    folio_state_destroy(state);
+}
+
+/* 歯抜け・0 版・読めない版・確保失敗・未選択と無題（ADR 0038 の検証 1）。 */
+static void verify_history_gaps(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    adapter.history[1] = "one";
+    adapter.history[3] = "three";
+    struct folio_state *state = history_state(&adapter);
+    require(folio_state_open_history(state) == FOLIO_STATE_READY &&
+                folio_state_history_count(state) == 2,
+            "only the present versions");
+    expect_history_row(state, 0, 1, "one");
+    expect_history_row(state, 1, 3, "three");
+
+    adapter.history[1] = nullptr;
+    adapter.history[3] = nullptr;
+    require(folio_state_open_history(state) == FOLIO_STATE_HISTORY_EMPTY &&
+                folio_state_history_count(state) == 0,
+            "no version at all is HISTORY_EMPTY");
+
+    adapter.history[2] = "two";
+    adapter.history_outcomes[3] = PERSISTENCE_MALFORMED;
+    adapter.history_outcomes[4] = PERSISTENCE_UNREADABLE;
+    require(folio_state_open_history(state) == FOLIO_STATE_READY &&
+                folio_state_history_count(state) == 3,
+            "unreadable versions stay as rows");
+    struct history_row_view row = {};
+    require(folio_state_history_row(state, 1, &row) && row.version == 3 && !row.readable &&
+                row.first_line_length == 0 && same_text(row.first_line, ""),
+            "a malformed version has no body");
+    require(folio_state_history_row(state, 2, &row) && row.version == 4 && !row.readable,
+            "an unreadable version has no body");
+    require(folio_state_history_body(state, 2) == nullptr, "no body to restore");
+    require(folio_state_restore_history(state, 2) == FOLIO_STATE_HISTORY_UNREADABLE &&
+                folio_state_pane_mode(state) == PANE_MODE_VIEW,
+            "an unreadable version changes nothing");
+    require(folio_state_restore_history(state, 9) == FOLIO_STATE_HISTORY_UNREADABLE,
+            "past the end is refused the same way");
+
+    adapter.history_outcomes[4] = PERSISTENCE_OUT_OF_MEMORY;
+    require(folio_state_open_history(state) == FOLIO_STATE_OUT_OF_MEMORY &&
+                folio_state_history_count(state) == 0,
+            "out of memory keeps nothing");
+    require(folio_state_new_note(state, 0) == FOLIO_STATE_READY &&
+                folio_state_open_history(state) == FOLIO_STATE_NAME_REQUIRED &&
+                folio_state_history_count(state) == 0,
+            "an untitled note has no history");
+    folio_state_destroy(state);
+
+    struct persistence_port port = port_for(&adapter);
+    struct appearance_port looks = looks_for(&dark_adapter);
+    require(folio_state_create(test_ports(&port, &looks, &finder), &state) == FOLIO_STATE_READY,
+            "state without a selection");
+    require(folio_state_open_history(state) == FOLIO_STATE_NOTHING_SELECTED &&
+                folio_state_history_count(state) == 0,
+            "no document has no history");
+    folio_state_destroy(state);
+}
+
 static void verify_later_units(void)
 {
     verify_rename_refusals();
@@ -3394,5 +3576,7 @@ void run_state_tests(void)
     verify_save_as_refusals();
     verify_save_as_view_stale();
     verify_save_as_edit_unsynced();
+    verify_history_all();
+    verify_history_gaps();
     verify_later_units();
 }

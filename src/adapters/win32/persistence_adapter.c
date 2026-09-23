@@ -419,16 +419,10 @@ static bool note_leaf(const char *_Nonnull note, wchar_t *_Nonnull out, size_t c
     return fits;
 }
 
-static enum persistence_outcome read_note(struct persistence_adapter *_Nonnull adapter,
-                                          const char *_Nonnull category, const char *_Nonnull note,
+/* path の本文を UTF-8 として検証して所有する。ノートと履歴の版が同じ検証を通る。 */
+static enum persistence_outcome read_text(const wchar_t *_Nonnull path,
                                           struct note_text *_Nullable *_Nonnull out)
 {
-    wchar_t leaf[MAX_PATH];
-    wchar_t path[path_capacity];
-    if (!note_leaf(note, leaf, MAX_PATH) || !compose(adapter, category, leaf, path))
-    {
-        return PERSISTENCE_UNREADABLE;
-    }
     struct file_bytes *_Nullable bytes = nullptr;
     enum persistence_outcome outcome = file_bytes_read(path, &bytes);
     if (outcome != PERSISTENCE_LOADED)
@@ -450,30 +444,51 @@ static enum persistence_outcome read_note(struct persistence_adapter *_Nonnull a
     return PERSISTENCE_MALFORMED;
 }
 
+static enum persistence_outcome read_note(struct persistence_adapter *_Nonnull adapter,
+                                          const char *_Nonnull category, const char *_Nonnull note,
+                                          struct note_text *_Nullable *_Nonnull out)
+{
+    wchar_t leaf[MAX_PATH];
+    wchar_t path[path_capacity];
+    if (!note_leaf(note, leaf, MAX_PATH) || !compose(adapter, category, leaf, path))
+    {
+        return PERSISTENCE_UNREADABLE;
+    }
+    return read_text(path, out);
+}
+
 /* 無ければ作る。既にあれば作れたものとして扱う。 */
 static bool ensure_directory(const wchar_t *_Nonnull path)
 {
     return CreateDirectoryW(path, nullptr) || GetLastError() == ERROR_ALREADY_EXISTS;
 }
 
-/* data\.history\<category>\<note> を段階的に作りながら out へ組み立てる。 */
-static bool ensure_history_directory(const struct persistence_adapter *_Nonnull adapter,
-                                     const char *_Nonnull category, const char *_Nonnull note,
-                                     wchar_t *_Nonnull out)
+/* 組み立てた途中の段を、書く側なら作る。読む側（create が偽）は作らずに通す。 */
+static bool prepared(const wchar_t *_Nonnull path, bool create)
+{
+    return !create || ensure_directory(path);
+}
+
+/* data\.history\<category>\<note> を out へ組み立てる。書く側（create）は段階的に作りながら、
+ * 読む側は作らずに組み立てる。パスの組み方は書く側と読む側で 1 か所（ADR 0038 の決定 2）。
+ * which->version はここでは使わない。 */
+static bool history_directory(const struct persistence_adapter *_Nonnull adapter,
+                              const struct history_version *_Nonnull which, bool create,
+                              wchar_t *_Nonnull out)
 {
     size_t length = 0;
     if (!append_units(out, &length, adapter->root, adapter->root_length) ||
         !append_units(out, &length, L"\\", 1) ||
         !append_units(out, &length, history_folder, history_folder_length) ||
-        !ensure_directory(out))
+        !prepared(out, create))
     {
         return false;
     }
-    if (!append_utf8_name(out, &length, category) || !ensure_directory(out))
+    if (!append_utf8_name(out, &length, which->category) || !prepared(out, create))
     {
         return false;
     }
-    return append_utf8_name(out, &length, note) && ensure_directory(out);
+    return append_utf8_name(out, &length, which->note) && prepared(out, create);
 }
 
 /* <履歴のディレクトリ>\<version>.md を out へ組み立てる。version は 1〜note_history_depth。 */
@@ -528,7 +543,8 @@ static enum persistence_outcome store_history(const struct persistence_adapter *
     wchar_t directory[path_capacity];
     wchar_t pending[path_capacity];
     wchar_t newest[path_capacity];
-    if (!ensure_history_directory(adapter, category, note, directory))
+    const struct history_version which = {.category = category, .note = note, .version = 1};
+    if (!history_directory(adapter, &which, true, directory))
     {
         return PERSISTENCE_UNWRITABLE;
     }
@@ -548,6 +564,26 @@ static enum persistence_outcome store_history(const struct persistence_adapter *
     return MoveFileExW(pending, newest, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)
                ? PERSISTENCE_STORED
                : PERSISTENCE_UNWRITABLE;
+}
+
+/* 履歴の 1 版を読む（ADR 0038 の決定 2）。書く側と同じパス組みで、ディレクトリは作らない。
+ * 版の番号が範囲の外なら読みに行かずに MALFORMED。検証は read_note と同じ read_text。 */
+static enum persistence_outcome read_history(struct persistence_adapter *_Nonnull adapter,
+                                             const struct history_version *_Nonnull which,
+                                             struct note_text *_Nullable *_Nonnull out)
+{
+    if (which->version < 1 || which->version > note_history_depth)
+    {
+        return PERSISTENCE_MALFORMED;
+    }
+    wchar_t directory[path_capacity];
+    wchar_t path[path_capacity];
+    if (!history_directory(adapter, which, false, directory) ||
+        !compose_version(directory, wide_length(directory), which->version, path))
+    {
+        return PERSISTENCE_UNREADABLE;
+    }
+    return read_text(path, out);
 }
 
 /* いま md にある本文を履歴へ写す（FR-017 / ADR 0012）。バイト列はそのまま写すので、
@@ -1322,6 +1358,7 @@ struct persistence_port persistence_adapter_port(struct persistence_adapter *_No
         .write_settings = write_settings,
         .read_note = read_note,
         .archive_note = archive_note,
+        .read_history = read_history,
         .write_note = write_note,
         .create_note = create_note,
         .move_note = move_note,

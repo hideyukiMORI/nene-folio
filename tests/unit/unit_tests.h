@@ -43,6 +43,10 @@ test_adapter_port(struct persistence_adapter *_Nonnull adapter);
 void test_adapter_second_notes(struct persistence_adapter *_Nonnull adapter,
                                const char *_Nonnull category, const char *_Nonnull notes_text,
                                const char *_Nonnull const *_Nonnull scanned);
+/* data/.history の version 版の本文を与える（ADR 0038）。nullptr なら無い版。body は adapter より
+ * 長く生きること。 */
+void test_adapter_history(struct persistence_adapter *_Nonnull adapter, size_t version,
+                          const char *_Nullable body);
 void test_adapter_destroy(struct persistence_adapter *_Nullable adapter);
 /* 常にダークを答える外観ポート。 */
 struct appearance_port;
