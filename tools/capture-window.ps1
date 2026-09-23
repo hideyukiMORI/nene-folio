@@ -1,9 +1,11 @@
 # 題名の完全一致で見つけた窓を PrintWindow(PW_RENDERFULLCONTENT) で写し、PNG に保存して JSON 1 つを返す（#103）。
+# -TargetPid を与えると、そのプロセスの可視トップレベル窓の中から題で選ぶ（#156。hide の実機と枝の exe を取り違えない）。
 # 窓が無い・PrintWindow が 0 を返したときは非 0 で止まる。画面取得が写らない環境の回避はしない。
 # 第三者の配布物は使わない（QLT-011: System.Drawing と Win32 の P/Invoke だけ）。
 param(
     [Parameter(Mandatory)][string]$Title,
-    [Parameter(Mandatory)][string]$Out
+    [Parameter(Mandatory)][string]$Out,
+    [Alias('Pid')][int]$TargetPid = 0
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -39,12 +41,24 @@ public static class WindowCapture
     [DllImport("user32.dll")]
     public static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context);
 
-    public static IntPtr Find(string title)
+    [DllImport("user32.dll")]
+    public static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint pid);
+    [DllImport("user32.dll")]
+    public static extern bool IsWindowVisible(IntPtr hwnd);
+
+    // pid が 0 なら題だけで探す（従来）。0 でなければそのプロセスの可視トップレベル窓の中から題で選ぶ（#156）。
+    public static IntPtr Find(string title, uint pid)
     {
-        IntPtr found = FindWindowW(null, title);
+        IntPtr found = pid == 0 ? FindWindowW(null, title) : IntPtr.Zero;
         if (found != IntPtr.Zero) return found;
         EnumWindows((hwnd, lParam) =>
         {
+            if (pid != 0)
+            {
+                uint owner;
+                GetWindowThreadProcessId(hwnd, out owner);
+                if (owner != pid || !IsWindowVisible(hwnd)) return true;
+            }
             int length = GetWindowTextLengthW(hwnd);
             if (length != title.Length) return true;
             var text = new StringBuilder(length + 1);
@@ -60,9 +74,9 @@ public static class WindowCapture
 
 # 物理画素の寸法で測る（DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 = -4）。
 [void][WindowCapture]::SetThreadDpiAwarenessContext([IntPtr]::new(-4))
-$hwnd = [WindowCapture]::Find($Title)
+$hwnd = [WindowCapture]::Find($Title, [uint32]$TargetPid)
 if ($hwnd -eq [IntPtr]::Zero) {
-    [Console]::Error.WriteLine("capture-window: window not found: $Title")
+    [Console]::Error.WriteLine("capture-window: window not found: $Title (pid $TargetPid)")
     exit 2
 }
 $rect = [WindowCapture+Rect]::new()
