@@ -314,7 +314,7 @@ static void verify_replace_limit(void)
             "one match is measured against the same limit");
     require(edit == nullptr, "nothing was built");
     replace_template_destroy(many);
-    require(regex_match_limit == 1000000 && note_replace_limit == 4000000,
+    require(regex_match_limit == 200000 && note_replace_limit == 4000000,
             "the two core limits stay where the ADR put them");
 }
 
