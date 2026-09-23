@@ -2441,6 +2441,30 @@ static void repeat_search(struct folio_window *_Nonnull self, bool reverse)
     step_search(self, reverse ? reversed_direction(direction) : direction);
 }
 
+/* 面を閉じたときの区画: 本文が開いていれば本文、そうでなければ主窓
+ * （ADR 0013 / ADR 0016 の補正 5）。 */
+static HWND surface_focus_region(const struct folio_window *_Nonnull self)
+{
+    HWND pane = self->pane == nullptr ? nullptr : note_pane_handle(self->pane);
+    if (pane != nullptr && folio_state_document_kind(self->state) != FOLIO_DOCUMENT_NONE &&
+        IsWindowVisible(pane))
+    {
+        return pane;
+    }
+    return self->handle;
+}
+
+/* 面の戻り先は可視の窓だけ。非表示・消えた・無い窓は区画へ読み替える
+ * （ADR 0016 の補正 5・#132）。 */
+static HWND surface_return_target(const struct folio_window *_Nonnull self, HWND _Nullable window)
+{
+    if (window != nullptr && IsWindow(window) && IsWindowVisible(window))
+    {
+        return window;
+    }
+    return surface_focus_region(self);
+}
+
 static void open_command_surface(struct folio_window *_Nonnull self,
                                  enum command_surface_mode surface)
 {
@@ -2458,7 +2482,7 @@ static void open_command_surface(struct folio_window *_Nonnull self,
         focus_command_input(self);
         return;
     }
-    self->command_return_focus = GetFocus();
+    self->command_return_focus = surface_return_target(self, GetFocus());
     self->command_surface = surface;
     self->command_selection = 0;
     self->command_first = 0;
@@ -2475,8 +2499,15 @@ static void open_command_surface(struct folio_window *_Nonnull self,
     redraw_command_layer(self);
 }
 
+/* 面を隠す経路はここ 1 か所。面がフォーカスを持っていれば、隠す前に覚えた戻り先
+ * （可視でなければ区画）へ返す。Windows は隠した窓のフォーカスを動かさない
+ * （ADR 0016 の補正 5・#132）。 */
 static void hide_command_surface(struct folio_window *_Nonnull self)
 {
+    HWND _Nullable focus = GetFocus();
+    bool surface_focused = focus != nullptr && self->command_layer != nullptr &&
+                           (focus == self->command_layer || IsChild(self->command_layer, focus));
+    HWND _Nullable remembered = self->command_return_focus;
     self->command_surface = COMMAND_SURFACE_CLOSED;
     self->command_return_focus = nullptr;
     self->command_selection = 0;
@@ -2484,13 +2515,17 @@ static void hide_command_surface(struct folio_window *_Nonnull self)
     clear_command_status(self);
     arrange_command_input(self);
     InvalidateRect(self->handle, nullptr, FALSE);
+    if (surface_focused)
+    {
+        SetFocus(surface_return_target(self, remembered));
+    }
 }
 
 static void close_command_surface(struct folio_window *_Nonnull self)
 {
-    HWND focus = self->command_return_focus;
+    HWND _Nullable focus = self->command_return_focus;
     hide_command_surface(self);
-    SetFocus(focus != nullptr && IsWindow(focus) ? focus : self->handle);
+    SetFocus(surface_return_target(self, focus));
 }
 
 static void dismiss_command_surface(struct folio_window *_Nonnull self)
