@@ -108,3 +108,10 @@ exe への埋め込み（`AddFontMemResourceEx`）、OS へのインストール
 
 - 補正する文書: ARC-004 の所有者の表（`font_bundle` の行）、ARCHITECTURE_CONSTITUTION の「#42 が入ったら `ui_font.c` の表だけを差し替える」の注記、GLOSSARY「書体」、統合チェックリスト（76 番台に「同梱の書体」の観点）。
 - Issue #42 は単位 C の PR で閉じる（A / B は `Refs #42`）。
+
+## 2026-09-25 の補正（単位 B / C の実装の後・決定本文は書き換えない）
+
+1. **`enum font_bundle_outcome` は core（`src/core/font_bundle_outcome.h`）に置く。** ui は adapters を include できず（ARC-002）、単体は core / application にしか依存できない。判定の純関数 `font_bundle_verdict_of`（`src/core/font_bundle_verdict.{h,c}`）も core にあり、adapters の `font_bundle` は列挙と登録だけを持つ。決定 3 の「専用ファイル」はこの置き場で読む。
+2. **起動時の箱は `folio_window_create` が最初の描画（`ShowWindow` / `UpdateWindow`）のあとに出す**（`announce_fonts`）。「読めない設定」の既存の通知は `main.c` の窓を作る前の `MessageBoxW` で、契機が違う。決定 5 の「最初の描画のあと」のとおり。
+3. **退避の表は別ファイル `src/core/ui_font_fallback.c`**（`ui_font_fallback_face`）。CNF-009 の `lineTables` は「列挙 → 表のファイル」の対で網羅を数えるので、同じファイルに 2 つの表を置くと片方の欠けを見逃す。
+4. 実測（単位 B の identity probe・この機械・DPI 120）: 登録後は Noto Sans SC / JP / Arimo の 3 face とも `GetFontData` の `name` テーブルが同梱ファイルと一致し、JP は登録前が OS の `NotoSansJP-VF.ttf`、登録後が同梱の static だった。同名の衝突は「登録後は同梱が選ばれる」と、この機械では言える。

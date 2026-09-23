@@ -17,6 +17,7 @@
     {"enum": "src/core/folio_theme_choice.h", "table": "src/core/folio_settings.c", "prefix": "FOLIO_THEME_CHOICE_"},
     {"enum": "src/core/folio_language.h", "table": "src/core/folio_settings.c", "prefix": "FOLIO_LANGUAGE_"},
     {"enum": "src/core/folio_language.h", "table": "src/core/ui_font.c", "prefix": "FOLIO_LANGUAGE_"},
+    {"enum": "src/core/folio_language.h", "table": "src/core/ui_font_fallback.c", "prefix": "FOLIO_LANGUAGE_"},
     {"enum": "src/core/folio_command.h", "table": "src/core/folio_command.c", "prefix": "FOLIO_COMMAND_"},
     {"enum": "src/adapters/win32/persistence_adapter_outcome.h", "table": "src/app/main.c", "prefix": "PERSISTENCE_ADAPTER_"}
   ],

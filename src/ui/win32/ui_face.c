@@ -47,13 +47,18 @@ static bool installed(const wchar_t *_Nonnull face)
     return found != 0;
 }
 
+/* 同梱 → その言語の退避 → 日本語の退避の 3 段（ADR 0036 の決定 4）。
+ * 順は core の ui_font_pick が決め、ここは実在を確かめて渡すだけ。 */
+static bool present(const char *_Nonnull ascii)
+{
+    wchar_t face[LF_FACESIZE];
+    widen(ascii, face);
+    return installed(face);
+}
+
 void ui_face_for(enum folio_language language, wchar_t *_Nonnull out)
 {
-    widen(ui_font_face(language), out);
-    if (installed(out))
-    {
-        return;
-    }
-    /* 無ければ日本語の face に落とす（簡体字の一部だけがリンク先の字形になる・決定 4）。 */
-    widen(ui_font_face(FOLIO_LANGUAGE_JA), out);
+    bool bundled = present(ui_font_face(language));
+    bool fallback = !bundled && present(ui_font_fallback_face(language));
+    widen(ui_font_pick(language, bundled, fallback), out);
 }

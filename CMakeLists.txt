@@ -32,7 +32,7 @@ nenefolio_target(nenefolio_core core STATIC
     src/core/folio_settings.c src/core/folio_theme.c src/core/line_index.c
     src/core/replace_template.c src/core/replace_edit.c src/core/note_replace.c
     src/core/replace_preview.c
-    src/core/ascii_fold.c src/core/ui_font.c
+    src/core/ascii_fold.c src/core/ui_font.c src/core/ui_font_fallback.c
     src/core/ui_text.c src/core/font_bundle_verdict.c)
 nenefolio_target(nenefolio_application application STATIC src/application/folio_state.c)
 nenefolio_link(nenefolio_application nenefolio_core)

@@ -10,7 +10,7 @@
 #include <string.h>
 
 static const char header[] =
-    "{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0\\fnil Yu Gothic UI;}{\\f1\\fmodern Consolas;}}"
+    "{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0\\fnil Noto Sans JP;}{\\f1\\fmodern Consolas;}}"
     "{\\colortbl;\\red36\\green19\\blue24;\\red44\\green0\\blue30;\\red106\\green96\\blue92;"
     "\\red178\\green60\\blue18;\\red237\\green225\\blue232;\\red44\\green0\\blue30;}"
     "\\f0\\fs22\\cf1";
@@ -218,7 +218,7 @@ static void verify_fonttbl(void)
                                 &rtf) == MARKDOWN_RTF_CONVERTED,
             "a document with a body is built with the face too");
     note_text_destroy(text);
-    require(strstr(markdown_rtf_text(rtf), "Microsoft YaHei UI;") != nullptr,
+    require(strstr(markdown_rtf_text(rtf), "Noto Sans SC;") != nullptr,
             "the simplified Chinese face reaches the fonttbl");
     markdown_rtf_destroy(rtf);
 }
