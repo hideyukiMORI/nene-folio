@@ -1,0 +1,84 @@
+{
+  "schema": 1,
+  "acquired": "2026-09-12",
+  "entries": [
+    {
+      "family": "Noto Sans JP",
+      "style": "regular",
+      "sourceURL": "https://raw.githubusercontent.com/notofonts/noto-cjk/523d033d6cb47f4a80c58a35753646f5c3608a78/Sans/SubsetOTF/JP/NotoSansJP-Regular.otf",
+      "fullrevision": "523d033d6cb47f4a80c58a35753646f5c3608a78",
+      "filename": "NotoSansJP-Regular.otf",
+      "bytes": 4533028,
+      "SHA256": "dff723ba59d57d136764a04b9b2d03205544f7cd785a711442d6d2d085ac5073",
+      "license": "LICENSE-Noto-CJK.txt"
+    },
+    {
+      "family": "Noto Sans JP",
+      "style": "bold",
+      "sourceURL": "https://raw.githubusercontent.com/notofonts/noto-cjk/523d033d6cb47f4a80c58a35753646f5c3608a78/Sans/SubsetOTF/JP/NotoSansJP-Bold.otf",
+      "fullrevision": "523d033d6cb47f4a80c58a35753646f5c3608a78",
+      "filename": "NotoSansJP-Bold.otf",
+      "bytes": 4656448,
+      "SHA256": "1b0edfb500b73a4fa8a4fcaae1bbbd403994e08e73e3e0da37e70d3853f42c5f",
+      "license": "LICENSE-Noto-CJK.txt"
+    },
+    {
+      "family": "Noto Sans SC",
+      "style": "regular",
+      "sourceURL": "https://raw.githubusercontent.com/notofonts/noto-cjk/523d033d6cb47f4a80c58a35753646f5c3608a78/Sans/SubsetOTF/SC/NotoSansSC-Regular.otf",
+      "fullrevision": "523d033d6cb47f4a80c58a35753646f5c3608a78",
+      "filename": "NotoSansSC-Regular.otf",
+      "bytes": 8331336,
+      "SHA256": "faa6c9df652116dde789d351359f3d7e5d2285a2b2a1f04a2d7244df706d5ea9",
+      "license": "LICENSE-Noto-CJK.txt"
+    },
+    {
+      "family": "Noto Sans SC",
+      "style": "bold",
+      "sourceURL": "https://raw.githubusercontent.com/notofonts/noto-cjk/523d033d6cb47f4a80c58a35753646f5c3608a78/Sans/SubsetOTF/SC/NotoSansSC-Bold.otf",
+      "fullrevision": "523d033d6cb47f4a80c58a35753646f5c3608a78",
+      "filename": "NotoSansSC-Bold.otf",
+      "bytes": 8543168,
+      "SHA256": "c6cb5a93abaa9edc8ee7463b7ebb7f42d618d40e6ed2f7a5371c97b0b64767c0",
+      "license": "LICENSE-Noto-CJK.txt"
+    },
+    {
+      "family": "Arimo",
+      "style": "regular",
+      "sourceURL": "https://raw.githubusercontent.com/googlefonts/arimo/4a6255f269916ae7ad3fc2706b0935e7621396b8/fonts/ttf/Arimo-Regular.ttf",
+      "fullrevision": "4a6255f269916ae7ad3fc2706b0935e7621396b8",
+      "filename": "Arimo-Regular.ttf",
+      "bytes": 478712,
+      "SHA256": "41b22bc8f0b51f932825d37bc55b5eb6ba67dfe599a626e4aff2b43b624f9f8c",
+      "license": "OFL-Arimo.txt"
+    },
+    {
+      "family": "Arimo",
+      "style": "bold",
+      "sourceURL": "https://raw.githubusercontent.com/googlefonts/arimo/4a6255f269916ae7ad3fc2706b0935e7621396b8/fonts/ttf/Arimo-Bold.ttf",
+      "fullrevision": "4a6255f269916ae7ad3fc2706b0935e7621396b8",
+      "filename": "Arimo-Bold.ttf",
+      "bytes": 485872,
+      "SHA256": "d7a8b187cf8444d4cfee102e8eae9e3043682fd5106d5d33ed677fe268a0e2ba",
+      "license": "OFL-Arimo.txt"
+    }
+  ],
+  "licenses": [
+    {
+      "filename": "LICENSE-Noto-CJK.txt",
+      "sourceURL": "https://raw.githubusercontent.com/notofonts/noto-cjk/523d033d6cb47f4a80c58a35753646f5c3608a78/LICENSE",
+      "fullrevision": "523d033d6cb47f4a80c58a35753646f5c3608a78",
+      "bytes": 4301,
+      "SHA256": "6a73f9541c2de74158c0e7cf6b0a58ef774f5a780bf191f2d7ec9cc53efe2bf2",
+      "license": "SIL Open Font License 1.1"
+    },
+    {
+      "filename": "OFL-Arimo.txt",
+      "sourceURL": "https://raw.githubusercontent.com/googlefonts/arimo/4a6255f269916ae7ad3fc2706b0935e7621396b8/OFL.txt",
+      "fullrevision": "4a6255f269916ae7ad3fc2706b0935e7621396b8",
+      "bytes": 4383,
+      "SHA256": "c46fda6859efb80c0a3c1faa868908a3d2fcb26eb7fd9602d73bebeec21bca3a",
+      "license": "SIL Open Font License 1.1"
+    }
+  ]
+}

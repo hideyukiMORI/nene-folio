@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import hashlib
 import json
 import re
 import subprocess
@@ -272,6 +273,48 @@ def text_column_checks(root: Path, rules: dict) -> list[Finding]:
     return findings
 
 
+def bundled_asset_checks(root: Path, rules: dict) -> list[Finding]:
+    """Bundled assets match their manifest byte for byte, and nothing unlisted sits beside them (CNF-012)."""
+    settings = rules["bundledAssets"]
+    manifest = Path(settings["manifest"])
+    folder = manifest.parent
+    if not (root / manifest).is_file():
+        return [Finding("CNF-012", manifest.as_posix(), "declared manifest is missing")]
+    try:
+        declared = json.loads((root / manifest).read_text(encoding="utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        return [Finding("CNF-012", manifest.as_posix(), f"manifest is not readable JSON: {error}")]
+    entries, licenses = declared.get("entries", []), declared.get("licenses", [])
+    if not entries:
+        return [Finding("CNF-012", manifest.as_posix(), "manifest lists no entries")]
+    findings, listed = [], set()
+    for item in entries + licenses:
+        name = str(item.get("filename", ""))
+        listed.add(name)
+        label = (folder / name).as_posix()
+        if not name or Path(name).name != name:
+            findings.append(Finding("CNF-012", manifest.as_posix(), f"filename {name!r} is not a plain file name"))
+            continue
+        path = root / folder / name
+        if not path.is_file():
+            findings.append(Finding("CNF-012", label, "listed in the manifest but missing"))
+            continue
+        data = path.read_bytes()
+        if len(data) != item.get("bytes"):
+            findings.append(Finding("CNF-012", label, f"{len(data)} bytes, manifest says {item.get('bytes')}"))
+        if hashlib.sha256(data).hexdigest() != str(item.get("SHA256", "")).lower():
+            findings.append(Finding("CNF-012", label, "SHA-256 differs from the manifest"))
+    license_names = {str(item.get("filename", "")) for item in licenses}
+    for item in entries:
+        if item.get("license") not in license_names:
+            findings.append(Finding("CNF-012", manifest.as_posix(), f"{item.get('filename')} names license {item.get('license')!r} not listed in licenses"))
+    ignored = set(settings["ignore"])
+    for path in sorted((root / folder).iterdir()):
+        if path.name not in listed and path.name not in ignored:
+            findings.append(Finding("CNF-012", (folder / path.name).as_posix(), "not listed in the manifest"))
+    return findings
+
+
 def line_table_checks(root: Path, rules: dict) -> list[Finding]:
     """Every value of a declared enumeration appears exactly once in its per-value table (CNF-009)."""
     findings = []
@@ -502,6 +545,7 @@ def check(root: Path, today: datetime.date, build_dir: Path | None = None) -> li
     findings.extend(line_table_checks(root, rules))
     findings.extend(text_catalog_checks(root, paths, rules))
     findings.extend(text_column_checks(root, rules))
+    findings.extend(bundled_asset_checks(root, rules))
     for path in paths:
         if path.suffix in rules["cExtensions"]:
             findings.extend(source_checks(path.as_posix(), (root / path).read_text(encoding="utf-8"), rules, waivers))
