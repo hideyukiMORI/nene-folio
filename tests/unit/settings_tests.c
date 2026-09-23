@@ -69,7 +69,7 @@ static void verify_font_faces(void)
         expect_face_text(ui_font_fallback_face((enum folio_language)index));
     }
     require(same_text(ui_font_face(FOLIO_LANGUAGE_JA), "Noto Sans JP"), "Japanese is bundled");
-    require(same_text(ui_font_face(FOLIO_LANGUAGE_EN), "Arimo"), "English is bundled");
+    require(same_text(ui_font_face(FOLIO_LANGUAGE_EN), "Noto Sans JP"), "English is bundled");
     require(same_text(ui_font_face(FOLIO_LANGUAGE_ZH_HANS), "Noto Sans SC"),
             "simplified Chinese is bundled");
     require(same_text(ui_font_fallback_face(FOLIO_LANGUAGE_JA),

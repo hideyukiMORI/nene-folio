@@ -5,7 +5,7 @@
  * 資産は fonts/ にあり、manifest との一致は CNF-012 が守る。OS の退避は ui_font_fallback.c。 */
 static const char *_Nonnull const faces[] = {
     [FOLIO_LANGUAGE_JA] = "Noto Sans JP",
-    [FOLIO_LANGUAGE_EN] = "Arimo",
+    [FOLIO_LANGUAGE_EN] = "Noto Sans JP",
     [FOLIO_LANGUAGE_ZH_HANS] = "Noto Sans SC",
 };
 

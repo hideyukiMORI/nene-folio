@@ -213,7 +213,7 @@ def main() -> None:
         print(f"CNF-011: dropping one language column from {value} was rejected; restoration passed")
         assets = json.loads((root / "eng/conformance-rules.json").read_text(encoding="utf-8"))["bundledAssets"]
         folder = root / Path(assets["manifest"]).parent
-        asset = folder / "Arimo-Regular.ttf"
+        asset = folder / "NotoSansJP-Regular.otf"
         original = asset.read_bytes()
         asset.write_bytes(original[:-1] + bytes([original[-1] ^ 0xFF]))
         result = run(conformance, root, False, "CNF-012")

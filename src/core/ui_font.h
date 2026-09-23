@@ -12,7 +12,7 @@
 /* ASCII の終端付き。RTF の fonttbl にも Win32 の LOGFONT にもそのまま入る
  * （`{` `}` `\` `;` を含まないことは単体が固定する）。表の外の値へは落ちない。 */
 
-/* 同梱の face（fonts/ の Noto Sans JP / Arimo / Noto Sans SC）。 */
+/* 同梱の face（fonts/ の Noto Sans JP / Noto Sans SC。English は Noto Sans JP のラテン文字）。 */
 [[nodiscard]] const char *_Nonnull ui_font_face(enum folio_language language);
 
 /* OS の退避の face（同梱が登録できなかったときに使う）。 */

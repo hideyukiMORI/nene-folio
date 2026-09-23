@@ -89,7 +89,7 @@
 | 語 | 意味 |
 | --- | --- |
 | `folio_language` | 表示に使う言語の閉じた列挙（`JA` / `EN` / `ZH_HANS`）。core が持つが「いまの言語」は持たず、値の所有者は application の設定である |
-| `ui_font` | 言語ごとの書体の face 名を持つ core の表。同梱（Noto Sans JP / SC・Arimo）を `ui_font_face(language)` が、OS の退避（Yu Gothic UI / Microsoft YaHei UI）を `ui_font_fallback_face(language)` が引く（ADR 0036 の決定 4） |
+| `ui_font` | 言語ごとの書体の face 名を持つ core の表。同梱（Noto Sans JP / SC。English は Noto Sans JP）を `ui_font_face(language)` が、OS の退避（Yu Gothic UI / Microsoft YaHei UI）を `ui_font_fallback_face(language)` が引く（ADR 0036 の決定 4） |
 | `ui_face` | その face を Win32 へ渡せる UTF-16 にし、`EnumFontFamiliesExW` で**実在を確かめて**無ければ日本語の face に落とす ui の 1 関数 |
 | `ascii_fold` | 「ASCII の英字だけ大小を無視する」畳み込み。索引の絞り込み・ノート内検索・パレットの部分一致の 3 か所が引く core の 1 か所 |
 | 閉じた語彙 | 訳してはいけない語（Ex の別名・`:set` の語・鍵の名前）。ja の行にあれば en と zh-Hans の同じ行にも無ければならない（単体が固定する） |
