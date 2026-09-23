@@ -12,8 +12,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  check:
-    name: check
+  # フルゲート本体。Draft の間は回さない（QLT-012）ので、Draft の push では skipped になる。
+  full-gate:
+    name: full-gate
     if: github.event.pull_request.draft == false
     runs-on: windows-2022
     timeout-minutes: 20
@@ -35,3 +36,25 @@ jobs:
       - name: Full gate
         shell: pwsh
         run: pwsh -NoProfile -File ./eng/check.ps1
+
+  # ruleset の必須 check（context = check）。フルゲートが success で終わった head だけを通す。
+  # GitHub は skipped の必須 check を「満たした」と数えるので、skipped / cancelled / failure は
+  # すべてここで failure に落とす（Issue #112 / ADR 0037）。
+  check:
+    name: check
+    needs: [full-gate]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    env:
+      FULL_GATE_RESULT: ${{ needs.full-gate.result }}
+      PR_DRAFT: ${{ github.event.pull_request.draft }}
+    steps:
+      - name: Require a successful full gate on this head
+        shell: bash
+        run: |
+          echo "full-gate result: ${FULL_GATE_RESULT} (draft: ${PR_DRAFT})"
+          if [ "${FULL_GATE_RESULT}" != "success" ]; then
+            echo "::error::the full gate did not succeed on this head (result: ${FULL_GATE_RESULT}). Draft -> Ready runs it."
+            exit 1
+          fi

@@ -51,6 +51,7 @@ PR には目的・変更の要約・使った正典経路・規則 ID・検証�
 統合の手順は `tools/merge-pr.ps1 -Number N -Subject "…"` の 1 本で行う（字面検査 → Ready → CI 待ち → squash merge → main の ff）。
 
 実装中とレビュー中は draft。Draft → Ready がフルゲートの要求である。
+Draft の head は必須 check `check` が failure（赤）になる。これは「まだ統合しない」の表示で、Ready にすればフルゲートが走って緑になる（ADR 0037）。
 
 - 機械強制: **planned**（PR テンプレート・必須 check・ruleset の squash-only）
 

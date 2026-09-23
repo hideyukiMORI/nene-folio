@@ -52,3 +52,4 @@ ADR は「なぜそう決めたか」「何を却下したか」を書く。
 | [0034](0034-agent-seats-by-job.md) | 背景席は仕事の種類でモデルを選び、Opusの実装席は1席1仕事で道具出力を小さくし、繰り返しの下ごしらえはスクリプトにする（運用） | 受理 |
 | [0035](0035-dialog-theme.md) | 名前入力面と失敗の箱はcomctl32 v5のままdialog_themeの1本の塗りでテーマに従い、失敗の箱はMessageBoxWをやめて同じ塗りの自前のモーダルにする | 受理 |
 | [0036](0036-bundled-fonts.md) | 日本語・简体中文・欧文の書体を固定版でfonts/に同梱し、exeの隣からFR_PRIVATEで登録してui_fontの表で選ぶ | 受理 |
+| [0037](0037-required-check-verdict.md) | 必須checkは判定jobにし、フルゲートが成功していないhead（Draftのskipped・cancelled）をfailureで止める | 受理 |
