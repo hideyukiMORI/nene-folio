@@ -2928,6 +2928,11 @@ static void recolor_window(struct folio_window *_Nonnull self)
     }
     recolor_pane(self);
     InvalidateRect(self->handle, nullptr, FALSE);
+    /* 主窓は WS_CLIPCHILDREN なので、上の無効化は子の EDIT に届かない（#121）。 */
+    if (self->filter_input != nullptr)
+    {
+        InvalidateRect(self->filter_input, nullptr, TRUE);
+    }
     redraw_command_layer(self);
 }
 
