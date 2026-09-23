@@ -1,6 +1,7 @@
 /* core の folio_settings（ADR 0025・ADR 0031 の決定 1・2・ADR 0032 の決定 1）。
  * 版 1・版 2 からの移行・版 3 の往復・既定値・拒む形・未知の版と、folio_theme_resolve の
- * 6 通り・folio_language_count の一致・ui_font_face の 3 値を確かめる。 */
+ * 6 通り・folio_language_count の一致・ui_font_face と ui_font_fallback_face の 3 値・
+ * ui_font_pick の 3 段を確かめる。 */
 #include "folio_language.h"
 #include "folio_settings.h"
 #include "folio_theme.h"
@@ -44,26 +45,57 @@ static void verify_language_count(void)
             "the count follows the last value of the enumeration");
 }
 
-/* face は印字できる ASCII で、RTF の fonttbl にも LOGFONT にもそのまま入る（決定 4）。 */
+/* face は印字できる ASCII で、RTF の fonttbl にも LOGFONT にもそのまま入る
+ * （ADR 0032 の決定 4）。 */
+static void expect_face_text(const char *_Nonnull face)
+{
+    require(face[0] != 0, "every language has a face");
+    for (size_t at = 0; face[at] != 0; ++at)
+    {
+        unsigned char byte = (unsigned char)face[at];
+        require(byte >= 0x20 && byte < 0x7F, "the face name is printable ASCII");
+        require(byte != '{' && byte != '}' && byte != '\\' && byte != ';',
+                "the face name carries no RTF control characters");
+    }
+    require(strlen(face) < 32, "the face name fits LF_FACESIZE");
+}
+
+/* 同梱の face と OS の退避の face の 2 つの表（ADR 0036 の決定 4）。 */
 static void verify_font_faces(void)
 {
     for (size_t index = 0; index < folio_language_count; ++index)
     {
-        const char *face = ui_font_face((enum folio_language)index);
-        require(face[0] != 0, "every language has a face");
-        for (size_t at = 0; face[at] != 0; ++at)
-        {
-            unsigned char byte = (unsigned char)face[at];
-            require(byte >= 0x20 && byte < 0x7F, "the face name is printable ASCII");
-            require(byte != '{' && byte != '}' && byte != '\\' && byte != ';',
-                    "the face name carries no RTF control characters");
-        }
-        require(strlen(face) < 32, "the face name fits LF_FACESIZE");
+        expect_face_text(ui_font_face((enum folio_language)index));
+        expect_face_text(ui_font_fallback_face((enum folio_language)index));
     }
-    require(same_text(ui_font_face(FOLIO_LANGUAGE_JA), ui_font_face(FOLIO_LANGUAGE_EN)),
-            "Japanese and English share a face (Segoe UI carries no CJK)");
-    require(strcmp(ui_font_face(FOLIO_LANGUAGE_ZH_HANS), ui_font_face(FOLIO_LANGUAGE_JA)) != 0,
-            "simplified Chinese has its own face");
+    require(same_text(ui_font_face(FOLIO_LANGUAGE_JA), "Noto Sans JP"), "Japanese is bundled");
+    require(same_text(ui_font_face(FOLIO_LANGUAGE_EN), "Noto Sans JP"), "English is bundled");
+    require(same_text(ui_font_face(FOLIO_LANGUAGE_ZH_HANS), "Noto Sans SC"),
+            "simplified Chinese is bundled");
+    require(same_text(ui_font_fallback_face(FOLIO_LANGUAGE_JA),
+                      ui_font_fallback_face(FOLIO_LANGUAGE_EN)),
+            "Japanese and English share a fallback (Segoe UI carries no CJK)");
+    require(same_text(ui_font_fallback_face(FOLIO_LANGUAGE_JA), "Yu Gothic UI"),
+            "the Japanese fallback is Yu Gothic UI");
+    require(same_text(ui_font_fallback_face(FOLIO_LANGUAGE_ZH_HANS), "Microsoft YaHei UI"),
+            "simplified Chinese has its own fallback");
+}
+
+/* 同梱 → その言語の退避 → 日本語の退避の 3 段（ADR 0036 の決定 4）。 */
+static void verify_font_pick(void)
+{
+    for (size_t index = 0; index < folio_language_count; ++index)
+    {
+        enum folio_language language = (enum folio_language)index;
+        require(ui_font_pick(language, true, true) == ui_font_face(language),
+                "the bundled face comes first");
+        require(ui_font_pick(language, true, false) == ui_font_face(language),
+                "the bundled face does not need the fallback");
+        require(ui_font_pick(language, false, true) == ui_font_fallback_face(language),
+                "without the bundle the fallback of the language is next");
+        require(ui_font_pick(language, false, false) == ui_font_fallback_face(FOLIO_LANGUAGE_JA),
+                "the Japanese fallback is last");
+    }
 }
 
 /* 書いた文書をもう一度読んで同じ値になるか（キーの順序と整形も版 3 の形のまま）。 */
@@ -265,6 +297,7 @@ void run_settings_tests(void)
     verify_default();
     verify_language_count();
     verify_font_faces();
+    verify_font_pick();
     verify_parse();
     verify_migration();
     verify_round_trip(true, FOLIO_THEME_CHOICE_DARK, FOLIO_LANGUAGE_ZH_HANS);
