@@ -4624,12 +4624,14 @@ static LRESULT on_command(struct folio_window *_Nonnull self, WPARAM wparam, LPA
  * ドロワーの WM_PAINT は client 全域を BitBlt するので、奥にいると索引を描き直すたびに
  * 欄の画素が塗り潰されて語が消える（#86 / ADR 0024 の 2026-09-22 の補正 1・2）。
  * 守るのはドロワー側の `WS_CLIPSIBLINGS` と z 順の両方で、欄に `WS_CLIPSIBLINGS` を
- * 付けても効かない（実測 out/design/2026-09-23/filter-visible-probe/）。 */
+ * 付けても効かない（実測 out/design/2026-09-23/filter-visible-probe/）。
+ * 欄の `WS_CLIPSIBLINGS` は別の用で、z 順で欄より前にいる入力面の層を欄が塗らないためにある。
+ * 無いと、窓が低いとき（圧縮配置）に層の案内の行へ欄が重なって描かれる（#155）。 */
 static bool create_filter_input(struct folio_window *_Nonnull self, HWND window)
 {
-    self->filter_input = CreateWindowExW(0, edit_class, L"", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
-                                         0, 0, 0, 0, window, (HMENU)(INT_PTR)filter_control_id,
-                                         GetModuleHandleW(nullptr), nullptr);
+    self->filter_input = CreateWindowExW(
+        0, edit_class, L"", WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | ES_AUTOHSCROLL, 0, 0, 0, 0,
+        window, (HMENU)(INT_PTR)filter_control_id, GetModuleHandleW(nullptr), nullptr);
     if (self->filter_input == nullptr)
     {
         return false;
