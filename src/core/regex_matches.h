@@ -9,8 +9,9 @@
 #include <stddef.h>
 
 /* 一致の総数の上限（決定 4(b)）。これを超えたら走査を打ち切って TOO_MANY で断る。
- * 上限は core が持ち、ICU の steps（adapter の定数）とは別の話である。 */
-constexpr size_t regex_match_limit = 1000000;
+ * 上限は core が持ち、ICU の steps（adapter の定数）とは別の話である。
+ * 1 件 232 バイト × 200,000 = 46.4MB（ADR 0028 補正 24）。 */
+constexpr size_t regex_match_limit = 200000;
 
 struct regex_matches
 {
