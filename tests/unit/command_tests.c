@@ -23,6 +23,8 @@ static void verify_aliases(void)
     expect_command("wq", FOLIO_COMMAND_SAVE_QUIT, "wq");
     expect_command(":x", FOLIO_COMMAND_SAVE_QUIT, ":x");
     expect_command("q!", FOLIO_COMMAND_FORCE_QUIT, "q!");
+    expect_command(":e!", FOLIO_COMMAND_DISCARD_EDITS, ":e! discards the edits");
+    expect_command(" :edit! ", FOLIO_COMMAND_DISCARD_EDITS, ":edit! is the same command");
     expect_command(":help", FOLIO_COMMAND_HELP, ":help");
     expect_command(":h", FOLIO_COMMAND_HELP, ":h uses the same help command");
     expect_command(":startinsert", FOLIO_COMMAND_EDIT, "startinsert begins editing");
@@ -176,8 +178,8 @@ static void verify_listed(void)
     require(folio_command_matches(FOLIO_COMMAND_TOGGLE_NUMBER, "行番号", strlen("行番号"),
                                   FOLIO_LANGUAGE_JA),
             "the palette finds the toggle by label");
-    /* パレットの箱の高さはこの数で決まる。総数（16）で取ると 2 行ぶん余る（補正 9）。 */
-    require(folio_command_listed_count() == 14, "fourteen operations are offered on a surface");
+    /* パレットの箱の高さはこの数で決まる。総数（17）で取ると 2 行ぶん余る（補正 9）。 */
+    require(folio_command_listed_count() == 15, "fifteen operations are offered on a surface");
     require(folio_command_listed_count() == folio_command_count() - 2,
             "exactly the two unlisted Ex grammars are left out");
     require(folio_command_alias_count(FOLIO_COMMAND_REPLACE) == 0 &&
@@ -195,17 +197,9 @@ static void verify_listed(void)
 
 static void verify_rejections(void)
 {
-    static const char *const rejected[] = {"",
-                                           ":",
-                                           "W",
-                                           "quit!",
-                                           "enew now",
-                                           "unknown",
-                                           ":e",
-                                           ":edit",
-                                           ":view",
-                                           ":startinsert file",
-                                           "保存して閲覧"};
+    static const char *const rejected[] = {
+        "",   ":",     "W",       "quit!", "enew now",          "unknown",
+        ":e", ":edit", ":e! now", ":view", ":startinsert file", "保存して閲覧"};
     for (size_t index = 0; index < sizeof rejected / sizeof rejected[0]; ++index)
     {
         enum folio_command command = FOLIO_COMMAND_HELP;
@@ -217,14 +211,14 @@ static void verify_rejections(void)
 
 static void verify_catalog(void)
 {
-    require(folio_command_count() == 16, "only implemented commands are registered");
+    require(folio_command_count() == 17, "only implemented commands are registered");
     const enum folio_command expected[] = {
-        FOLIO_COMMAND_SAVE,          FOLIO_COMMAND_QUIT,    FOLIO_COMMAND_SAVE_QUIT,
-        FOLIO_COMMAND_FORCE_QUIT,    FOLIO_COMMAND_HELP,    FOLIO_COMMAND_EDIT,
-        FOLIO_COMMAND_VIEW,          FOLIO_COMMAND_NEW,     FOLIO_COMMAND_SAVE_AS,
-        FOLIO_COMMAND_RENAME,        FOLIO_COMMAND_FIND,    FOLIO_COMMAND_SET,
-        FOLIO_COMMAND_TOGGLE_NUMBER, FOLIO_COMMAND_REPLACE, FOLIO_COMMAND_SUBSTITUTE,
-        FOLIO_COMMAND_SETTINGS};
+        FOLIO_COMMAND_SAVE,          FOLIO_COMMAND_QUIT,         FOLIO_COMMAND_SAVE_QUIT,
+        FOLIO_COMMAND_FORCE_QUIT,    FOLIO_COMMAND_HELP,         FOLIO_COMMAND_EDIT,
+        FOLIO_COMMAND_VIEW,          FOLIO_COMMAND_NEW,          FOLIO_COMMAND_SAVE_AS,
+        FOLIO_COMMAND_RENAME,        FOLIO_COMMAND_FIND,         FOLIO_COMMAND_SET,
+        FOLIO_COMMAND_TOGGLE_NUMBER, FOLIO_COMMAND_REPLACE,      FOLIO_COMMAND_SUBSTITUTE,
+        FOLIO_COMMAND_SETTINGS,      FOLIO_COMMAND_DISCARD_EDITS};
     for (size_t index = 0; index < folio_command_count(); ++index)
     {
         enum folio_command command = folio_command_at(index);
