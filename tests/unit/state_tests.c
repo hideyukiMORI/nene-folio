@@ -1729,6 +1729,52 @@ static void verify_edit_failures(void)
     folio_state_destroy(state);
 }
 
+/* `:e!` は前提だけを判定する。未選択と閲覧中は断る（ADR 0016 の補正 4）。 */
+static void verify_discard_refusals(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_discard_edits(state) == FOLIO_STATE_NOTHING_SELECTED,
+            "nothing to discard without a document");
+    require(folio_state_select_note(state, 0, 1) == FOLIO_STATE_READY &&
+                folio_state_discard_edits(state) == FOLIO_STATE_NOT_EDITING,
+            "a viewed note has no edits to discard");
+    folio_state_destroy(state);
+}
+
+/* 保存に失敗したあとの `:e!` は保存済みの本文へ戻し、無題は空の無題のまま（補正 4）。 */
+static void verify_discard_edits(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    adapter.note_body = "# Hello\r\n\r\nbody";
+    struct folio_state *state = edited_state(&adapter);
+    adapter.note_write_outcome = PERSISTENCE_UNWRITABLE;
+    require(folio_state_store_note(state, u"changed", 7) == FOLIO_STATE_NOTE_STORE_FAILED,
+            "the note cannot be written");
+    require(folio_state_discard_edits(state) == FOLIO_STATE_READY &&
+                folio_state_pane_mode(state) == PANE_MODE_EDIT && adapter.note_writes == 1,
+            "discarding keeps the edit mode and writes nothing");
+    require(same_text(folio_state_pane_text(state), "# Hello\r\n\r\nbody") &&
+                folio_state_pane_text_length(state) == 15,
+            "the body to reload is the saved one");
+    enum folio_note_change change = FOLIO_NOTE_CHANGED;
+    require(folio_state_note_changed(state, u"# Hello\r\n\r\nbody", 15, &change) ==
+                    FOLIO_STATE_READY &&
+                change == FOLIO_NOTE_SAME,
+            "the reloaded body is no longer a change");
+    folio_state_destroy(state);
+
+    adapter.note_write_outcome = PERSISTENCE_STORED;
+    state = ready_state(&adapter);
+    require(folio_state_new_note(state, 0) == FOLIO_STATE_READY, "an untitled note");
+    require(folio_state_discard_edits(state) == FOLIO_STATE_READY &&
+                folio_state_document_kind(state) == FOLIO_DOCUMENT_UNTITLED &&
+                folio_state_pane_text_length(state) == 0 &&
+                same_text(folio_state_pane_text(state), ""),
+            "an untitled note is emptied and stays untitled");
+    folio_state_destroy(state);
+}
+
 /* 編集中でも並び替えられる。本文は UI が持つので保存を挟まない（ADR 0007 の決定 7）。 */
 static void verify_move_while_editing(void)
 {
@@ -1761,9 +1807,11 @@ static const char *_Nonnull const expected_failure_lines[] = {
     [FOLIO_STATE_NOTHING_SELECTED] = "ノートを選んでから編集してください。",
     [FOLIO_STATE_NOT_EDITING] = "編集モードではありません。",
     [FOLIO_STATE_NOTE_MALFORMED] = "編集中の本文に壊れた文字があります。保存していません。",
-    [FOLIO_STATE_NOTE_STORE_FAILED] = "ノートを書き戻せませんでした。編集中の本文はそのままです。",
+    [FOLIO_STATE_NOTE_STORE_FAILED] = "ノートを書き戻せませんでした。編集中の本文はそのままです。"
+                                      "別名で保存するか、編集を破棄して読み直せます。",
     [FOLIO_STATE_HISTORY_FAILED] =
-        "履歴を書けなかったので保存していません。編集中の本文は残っています。",
+        "履歴を書けなかったので保存していません。編集中の本文は残っています。"
+        "編集を破棄して読み直せます。",
     [FOLIO_STATE_UNSAVED_CHANGES] =
         "未保存の変更があります。保存するか、未保存変更を破棄して終了してください。",
     [FOLIO_STATE_NAME_TAKEN] =
@@ -3331,6 +3379,8 @@ void run_state_tests(void)
     verify_history_failures();
     verify_edit_saves();
     verify_edit_failures();
+    verify_discard_refusals();
+    verify_discard_edits();
     verify_move_while_editing();
     verify_failure_lines();
     verify_untitled();

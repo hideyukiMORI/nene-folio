@@ -44,13 +44,17 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
          "The body being edited has broken characters. It was not saved.",
          "编辑中的正文含有损坏的字符。未保存。"},
     [UI_TEXT_FAILURE_NOTE_STORE_FAILED] =
-        {"ノートを書き戻せませんでした。編集中の本文はそのままです。",
-         "Could not write the note back. The body being edited is kept.",
-         "无法写回笔记。编辑中的正文保持不变。"},
+        {"ノートを書き戻せませんでした。編集中の本文はそのままです。"
+         "別名で保存するか、編集を破棄して読み直せます。",
+         "Could not write the note back. The body being edited is kept. "
+         "Save it under another name, or discard the edits and reload.",
+         "无法写回笔记。编辑中的正文保持不变。可另存为其他名称，或放弃编辑并重新载入。"},
     [UI_TEXT_FAILURE_HISTORY_FAILED] =
-        {"履歴を書けなかったので保存していません。編集中の本文は残っています。",
-         "The history could not be written, so nothing was saved. The body being edited is kept.",
-         "无法写入历史，因此未保存。编辑中的正文仍然保留。"},
+        {"履歴を書けなかったので保存していません。編集中の本文は残っています。"
+         "編集を破棄して読み直せます。",
+         "The history could not be written, so nothing was saved. The body being edited is kept. "
+         "Discard the edits and reload.",
+         "无法写入历史，因此未保存。编辑中的正文仍然保留。可放弃编辑并重新载入。"},
     [UI_TEXT_FAILURE_UNSAVED_CHANGES] =
         {"未保存の変更があります。保存するか、未保存変更を破棄して終了してください。",
          "There are unsaved changes. Save, or discard them and quit.",
@@ -194,6 +198,8 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
                                     "Replace with regex (:%s/pattern/replacement/g)",
                                     "用正则替换（:%s/pattern/replacement/g）"},
     [UI_TEXT_COMMAND_SETTINGS] = {"設定", "Settings", "设置"},
+    [UI_TEXT_COMMAND_DISCARD_EDITS] = {"編集を破棄して読み直す", "Discard edits and reload",
+                                       "放弃编辑并重新载入"},
     [UI_TEXT_HELP_PALETTE] = {"一覧  ↑↓ 選択 / Enter 実行 / Esc 戻る / Tab 説明",
                               "List  ↑↓ Select / Enter Run / Esc Back / Tab Keys",
                               "列表  ↑↓ 选择 / Enter 执行 / Esc 返回 / Tab 按键"},

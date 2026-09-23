@@ -145,3 +145,40 @@ hide の判断（2026-09-22）。対象は 5 つの欄（Ex・パレット・検
 「**ASCII の英字だけ大小を無視する**」と同じもので、実体を `src/core/ascii_fold.{h,c}` の
 `ascii_fold_byte` / `ascii_fold_unit` に 1 本化し、3 か所（`index_filter` / `note_search` /
 `contains_span`）がそれを引く（ARC-001。第 3 の写しを作らない）。
+
+## 2026-09-25 の補正（#120・決定本文は書き換えない）
+
+**補正 4（#120）: 「編集を破棄して保存済みの本文に戻す」を登録表に 1 つ足す。**
+語は Ex の `e!`（別名 `edit!`）、表示名は「編集を破棄して読み直す」（`UI_TEXT_COMMAND_DISCARD_EDITS`・3 言語）。
+`folio_command_listed` は真で、パレットと「操作」メニューにも出る（既存の `:q!` と同じ扱い。確認の箱は出さない）。
+
+根拠は 2026-09-25 の実機目視（hide）。読み取り専用の md を編集して Ctrl+S が失敗したあと、**保存できないノートから抜ける道が画面に無い**。
+切替・新規・終了確認（と Ctrl+S / Esc / `:w` 系）は先に保存を試みるので同じ失敗の箱が繰り返し出る。抜け道は Ctrl+Z で全部戻す・
+別名保存・`:q!` の 3 つだけで、どれも画面からは分からない。**並べ替えと色は本文を触らず保存も試みない**（`drawer_window.c` の
+`apply_drop` / `choose_color`）ので、Issue #120 の「並替・色も先に保存する」という記述はここで訂正する。
+
+決定の細部:
+
+1. **意図は application の 1 本** `folio_state_discard_edits(struct folio_state *)`（`[[nodiscard]]`・結果は既存の `enum folio_state_outcome`）。
+   文書が無ければ `FOLIO_STATE_NOTHING_SELECTED`、閲覧中なら `FOLIO_STATE_NOT_EDITING`、編集中なら `FOLIO_STATE_READY`。
+   application の状態は**変えない**: 「未保存の印」は独立した bool ではなく `folio_state_note_changed` が本文と `state->body`（最後に読んだか保存に成功した本文）を
+   毎回比べる述語であり、`state->body` は保存の失敗では動かない（`verify_edit_failures` が既に固定）。破棄は「本文を `state->body` に揃え直す」ことそのもので、
+   application に新しい状態は要らない。関数を置くのは 3 入口が同じ意図を通るため（ARC-001）と、前提の判定と結果の数え上げを application に閉じるためである。
+2. **UI は `FOLIO_STATE_READY` のとき `folio_state_pane_text` を `note_pane_edit` で流し込み直す**だけである（ノート切替と同じ経路。第 2 の経路を作らない）。
+   モードは編集のまま、無題なら空の本文で無題のまま（`state->body` が最初から空なので分岐は要らない）。行番号の表は `note_pane_edit` が印を付けるので作り直る。
+   `EM_STREAMIN` 後の Undo の段数は **probe で測ってから決める**: RichEdit が空にしないなら `note_pane_edit` の中で `EM_EMPTYUNDOBUFFER` を 1 回呼び、
+   ノート切替にも同じ効き方をさせる（切替後の Ctrl+Z で前のノートの本文が戻る経路を塞ぐ）。空にするなら何も足さない。
+3. **ディスクは読み直さない。** 戻す先はメモリ上の `state->body` である。外部で変わった md の検知は別の未実装の単位で、ここに混ぜない
+   （vim の `:e!` と違う点として GLOSSARY / ヘルプの 1 行に書く）。
+4. **失敗の文言に出口を 1 文足す**（`ui_text` の表・3 言語・CNF-010 / CNF-011 の範囲。`failure_lines[]` の対応は不変）:
+   `FOLIO_STATE_NOTE_STORE_FAILED` は「…編集中の本文はそのままです。**別名で保存するか、編集を破棄して読み直せます。**」、
+   `FOLIO_STATE_HISTORY_FAILED` は「…編集中の本文は残っています。**編集を破棄して読み直せます。**」（履歴の置き場は同じ `data/` なので別名保存を勧めない）。
+   `FOLIO_STATE_NOTE_MALFORMED` は触らない。**箱に選択肢は付けない**（13 か所「知らせて戻る」のまま・ADR 0035）。
+   文言の写しは `tests/unit/ui_text_tests.c` と `tests/unit/state_tests.c` の `expected_failure_lines[]`（CNF-009 の別枠の表）にもある。
+5. 検証は application の単体（保存に失敗する偽の adapter で編集 → 失敗 → 破棄 → `folio_state_pane_text` が保存済みと一致・`note_changed` が `SAME`、
+   閲覧中と未選択の 2 値、無題）と、Win32 部品の probe（Undo の段数・読み取り専用の md で「編集 → Ctrl+S 失敗 → `:e!` → 別のノートへ移れる」）。
+   実アダプタの probe は要らない（失敗の注入は偽の adapter で足りる）。
+
+残るもの: 破棄したあとも同じノートは編集モードのまま残るので、同じノートで Ctrl+S を押せば同じ失敗になる。抜けるには別のノートへ移るか閲覧へ戻る。
+これは意図どおり（保存できない事実は変わらない）で、文言の「破棄して読み直せます」はその範囲を言っている。
+

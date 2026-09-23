@@ -214,6 +214,12 @@ folio_state_note_changed(struct folio_state *_Nonnull state, const char16_t *_No
 [[nodiscard]] enum folio_state_outcome folio_state_end_edit(struct folio_state *_Nonnull state,
                                                             const char16_t *_Nonnull units,
                                                             size_t count);
+/* 編集を破棄して保存済みの本文に戻す（`:e!`・ADR 0016 の補正 4）。前提の判定だけで状態は変えない:
+ * 未選択は NOTHING_SELECTED、閲覧中は NOT_EDITING、編集中は READY。READY なら UI が
+ * folio_state_pane_text（最後に読んだか保存に成功した本文・無題なら空）を本文へ流し込み直す。
+ * ディスクは読み直さない。 */
+[[nodiscard]] enum folio_state_outcome
+folio_state_discard_edits(const struct folio_state *_Nonnull state);
 /* 索引の絞り込みの語を覚え、一致集合を作り直す（FR-032 / ADR 0024 の決定 7）。
  * UTF-16 の単位列を受ける C-014 の例外の 7 本目。ノート内検索の語（set_search_term）とは別で、
  * 同期しない。永続化もしない。
