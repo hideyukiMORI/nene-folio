@@ -108,3 +108,19 @@ FR-017 / ADR 0012 は md を書き戻す直前の本文を `data/.history/<カ�
 ## 移行
 
 無し。`settings.json` も台帳も変えない。単位 A（port・adapters・core・application・tests）→ 単位 B（登録表・面・docs）の 2 つの Draft PR で入れる。
+
+## 2026-09-23 の補正（単位 A / B の実装と設計席の絵の後・決定本文は書き換えない）
+
+1. **port の引数は宛先を束ねた 3 つ**（決定 5 の 5 引数だと C-012 の引数 4 の上限に触れる）: `read_history(adapter, const struct history_version *which, out)`。
+   `history_version`（category・note・version）は全メンバーが独立に妥当なので完全型で公開する（C-003 の例外・#158）。
+2. **無題は既存の `NAME_REQUIRED`、未選択は `NOTHING_SELECTED` を流用**した（決定 7 の「NO_DOCUMENT 相当」）。新しい結果値は `HISTORY_EMPTY` と `HISTORY_UNREADABLE` の 2 つで、
+   どちらも `inline_outcome()` の「欄の 1 行」の群（決定 13）。面が閉じている入口（「操作」メニュー）からの失敗は設定画面と同じく失敗の箱に出る。
+3. 一覧の行の置換子は `{line}` ではなく既存の **`{name}`**（`ui_text_request.h` の置換子の集合は 6 つで閉じており、単体が数を固定している）。行は「`{n}  {name}`」、読めない版は「`{n}  （読めません）`」。
+   最初の行は 255 バイトで UTF-8 の境目に切ってから埋め、はみ出しは描画の省略記号に任せる。
+4. 採用の順は **写しを作る → `restore_history` → 閲覧中なら `note_pane_edit`（保存済みの本文）→ `note_pane_replace`（全文 span）→ カーソル先頭 → 面を閉じる（ここで `close_history`）→ 本文へフォーカス**。
+   `enter_edit` は呼ばない（EDIT のときは何もせず、読めない版でも編集モードへ入ってしまうため）。画面から Ctrl+S で保存して一覧が 0 本になったら面を閉じる。
+5. ヘルプの鍵の行は足していない（設定画面と同じく、面の案内 1 行を鍵の説明とする）。
+6. 実測（設計席の絵・`out/design/2026-09-23/history-restore/shots/`）: 一覧・Ex `:hist`・履歴の無いノートの 1 行・Enter での置き換え・保存後の `1.md` の繰り上がりを確認した。
+   **Ctrl+Z 1 回で戻ること・歯抜けの絵・560×360 は未**（[確認記録](../quality/2026-09-23-history-checks.md)）。
+7. 残る既知の隙: 改名の意図が未完了（`RENAME_PENDING`）のあいだ `open_history` は旧名で読む。別カテゴリへの移動と改名の経路では一覧を捨てないが、面が開いたまま移動する経路は無い。
+   版の本文に U+0000 があると `EM_REPLACESEL` はそこで切れる（`note_pane_replace` の契約どおり）。
