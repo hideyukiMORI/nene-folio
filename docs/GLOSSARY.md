@@ -23,6 +23,7 @@
 | 台帳（ledger） | 順序と色を永続化する json。`data/categories.json` と `data/<カテゴリ>/index.json` | adapters/win32 が読み書き・core が解釈 |
 | ドロワー（drawer） | 左のペイン。検索窓と索引。自前描画・スクロールバー無し | `src/ui/win32` |
 | ビュー（view）／編集（edit） | 右のペインの 2 つのモード。閉じた enum。ノートを切り替えても保たれ、閲覧へ戻すのは「閲覧」の札と窓を閉じる操作だけ | `enum pane_mode`（application）・ADR 0013 |
+| 名前入力面（name prompt） | 初回保存・別名保存・改名で名前と保存先カテゴリを受けるモーダル。`dialog_theme` の塗りで、保存先カテゴリは常時開いた一覧（4 行） | `name_prompt_show`（ui/win32）・ADR 0035（補正 17〜21） |
 | 失敗の箱（failure box） | 「知らせて戻る」だけのモーダル。application の `folio_state_failure_line` の 1 行を、名前入力面と同じ `dialog_theme` の塗りで見せる。警告音と三角の「!」の印（`ICON_PAINT_WARNING`）を持つ。答えで分岐しない。作れないときだけ `MessageBoxW` へ退避 | `failure_box_show`（ui/win32）・ADR 0035（補正 12〜16） |
 | 区画（focus zone） | 鍵を受け取る側。**索引**（主窓）と**本文**（RichEdit）の 2 つで、Win32 のフォーカスそのものが正本。application は区画の状態を持たない | `GetFocus()`（ui/win32）・ADR 0013 の決定 1 |
 | カーソル（cursor） | 索引で鍵が指している行。**ノート行**（そのときは選択そのもの）と、**見えるノート行を持たないカテゴリ行**（折り畳み・ノート 0 本）にだけ止まる。カテゴリ行にあるあいだ選択と右ペインは動かない。印は行の右端の角（カテゴリ行では**折畳の印**の左。印は字形ではなく 24 の viewBox の面のパスなので、空ける幅は定数） | `enum folio_cursor_kind`・`folio_state_cursor`（application）・`struct drawer_cursor`・`drawer_row.cursor`（core）・ADR 0015 |

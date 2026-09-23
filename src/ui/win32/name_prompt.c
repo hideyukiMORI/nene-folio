@@ -27,6 +27,8 @@ struct name_prompt
     /* 開く瞬間の palette を写した塗り。面は追随しない（ADR 0035 の決定 5）。 */
     struct dialog_theme *_Nullable theme;
     UINT dpi;
+    /* 一覧が閉じたコンボより高いぶん、下の欄と面を下げる画素（ADR 0035 の補正 18）。 */
+    int lowered;
     bool composing;
     /* 記録を公開した後は名前を固定し、同じ改名の再開だけを受ける（ADR 0022 の決定 7）。 */
     bool pending;
@@ -82,14 +84,16 @@ static HWND _Nullable control(struct name_prompt *_Nonnull prompt, const wchar_t
     return window;
 }
 
-static void position(const struct name_prompt *_Nonnull prompt, HWND window, RECT bounds)
+/* bounds は 96 DPI の単位、lowered はその下へ足す画素（一覧より下の欄だけが渡す）。 */
+static void position(const struct name_prompt *_Nonnull prompt, HWND window, RECT bounds,
+                     int lowered)
 {
-    MoveWindow(window, scaled(prompt, bounds.left), scaled(prompt, bounds.top),
+    MoveWindow(window, scaled(prompt, bounds.left), scaled(prompt, bounds.top) + lowered,
                scaled(prompt, bounds.right - bounds.left),
                scaled(prompt, bounds.bottom - bounds.top), TRUE);
 }
 
-static bool label(struct name_prompt *_Nonnull prompt, enum ui_text id, RECT bounds)
+static bool label(struct name_prompt *_Nonnull prompt, enum ui_text id, RECT bounds, int lowered)
 {
     char16_t units[ui_text_unit_limit];
     wide_line(id, prompt_language(prompt), units);
@@ -98,7 +102,7 @@ static bool label(struct name_prompt *_Nonnull prompt, enum ui_text id, RECT bou
     {
         return false;
     }
-    position(prompt, window, bounds);
+    position(prompt, window, bounds, lowered);
     return true;
 }
 
@@ -114,7 +118,7 @@ static bool button(struct name_prompt *_Nonnull prompt, enum ui_text id, int ide
         return false;
     }
     SetWindowLongPtrW(window, GWLP_ID, identity);
-    position(prompt, window, bounds);
+    position(prompt, window, bounds, prompt->lowered);
     if (identity == IDOK)
     {
         prompt->accept = window;
@@ -157,14 +161,14 @@ static bool fill_categories(struct name_prompt *_Nonnull prompt)
             return false;
         }
         LRESULT added =
-            SendMessageW(prompt->category, CB_ADDSTRING, 0, (LPARAM)utf16_text_units(wide));
+            SendMessageW(prompt->category, LB_ADDSTRING, 0, (LPARAM)utf16_text_units(wide));
         utf16_text_destroy(wide);
-        if (added == CB_ERR || added == CB_ERRSPACE)
+        if (added == LB_ERR || added == LB_ERRSPACE)
         {
             return false;
         }
     }
-    SendMessageW(prompt->category, CB_SETCURSEL, folio_state_document_category(prompt->state), 0);
+    SendMessageW(prompt->category, LB_SETCURSEL, folio_state_document_category(prompt->state), 0);
     if (prompt->kind == NAME_PROMPT_RENAME)
     {
         /* 改名はカテゴリを変えない（ADR 0022 の決定 1）。表示だけ残して選べなくする。 */
@@ -292,21 +296,47 @@ static enum ui_text prompt_close(const struct name_prompt *_Nonnull prompt)
     return prompt->pending ? UI_TEXT_PROMPT_CLOSE_PENDING : UI_TEXT_PROMPT_CLOSE_CANCEL;
 }
 
+/* 保存先カテゴリの一覧の見える行の数（ADR 0035 の補正 18）。 */
+constexpr int category_rows = 4;
+/* 閉じたコンボが占めていた縦の枠（96 DPI の単位。名前欄と同じ 28）。一覧はこれより高いぶん
+ * 下の欄と面を下げる。 */
+constexpr int category_slot_height = 28;
+
+/* 一覧の 1 行の高さ（画素）。WM_MEASUREITEM と面の配置の両方がこの 1 本から取る。 */
+static int category_row_height(const struct name_prompt *_Nonnull prompt)
+{
+    HDC device = GetDC(prompt->dialog);
+    if (device == nullptr)
+    {
+        return scaled(prompt, 22);
+    }
+    HGDIOBJ old_font = SelectObject(device, prompt->font);
+    TEXTMETRICW metrics;
+    int height = GetTextMetricsW(device, &metrics) ? (int)metrics.tmHeight + scaled(prompt, 4)
+                                                   : scaled(prompt, 22);
+    SelectObject(device, old_font);
+    ReleaseDC(prompt->dialog, device);
+    return height;
+}
+
 static bool inputs(struct name_prompt *_Nonnull prompt)
 {
-    /* 塗れない OS の縁を外し、面が札の色の 1px の枠を描く（ADR 0035 の決定 3）。 */
+    /* 塗れない OS の縁を外し、面が札の色の 1px の枠を描く（ADR 0035 の決定 3）。
+     * 保存先カテゴリは常時開いた owner-draw の一覧で、矢印の釦もドロップダウンも持たない
+     * （ADR 0035 の補正 17）。 */
     prompt->name = control(prompt, L"EDIT", L"", WS_TABSTOP | ES_AUTOHSCROLL);
-    prompt->category =
-        control(prompt, L"COMBOBOX", L"",
-                WS_TABSTOP | CBS_DROPDOWNLIST | CBS_OWNERDRAWFIXED | CBS_HASSTRINGS | WS_VSCROLL);
+    prompt->category = control(prompt, L"LISTBOX", L"",
+                               WS_TABSTOP | LBS_OWNERDRAWFIXED | LBS_HASSTRINGS | LBS_NOTIFY |
+                                   LBS_NOINTEGRALHEIGHT | WS_VSCROLL);
     prompt->failure = control(prompt, L"STATIC", L"", SS_LEFT);
     if (prompt->name == nullptr || prompt->category == nullptr || prompt->failure == nullptr)
     {
         return false;
     }
-    position(prompt, prompt->name, (RECT){20, 46, 380, 74});
-    position(prompt, prompt->category, (RECT){20, 108, 380, 280});
-    position(prompt, prompt->failure, (RECT){20, 166, 380, 226});
+    position(prompt, prompt->name, (RECT){20, 46, 380, 74}, 0);
+    MoveWindow(prompt->category, scaled(prompt, 20), scaled(prompt, 108), scaled(prompt, 360),
+               category_rows * category_row_height(prompt), TRUE);
+    position(prompt, prompt->failure, (RECT){20, 166, 380, 226}, prompt->lowered);
     SendMessageW(prompt->name, EM_SETLIMITTEXT, 255, 0);
     SetWindowLongPtrW(prompt->name, GWLP_USERDATA, (LONG_PTR)prompt);
     prompt->original =
@@ -329,7 +359,9 @@ static bool initialize(struct name_prompt *_Nonnull prompt, HWND dialog)
     {
         return false;
     }
-    RECT bounds = {0, 0, scaled(prompt, 400), scaled(prompt, 270)};
+    prompt->lowered =
+        category_rows * category_row_height(prompt) - scaled(prompt, category_slot_height);
+    RECT bounds = {0, 0, scaled(prompt, 400), scaled(prompt, 270) + prompt->lowered};
     DWORD style = (DWORD)GetWindowLongPtrW(dialog, GWL_STYLE);
     AdjustWindowRectExForDpi(&bounds, style, FALSE, 0, prompt->dpi);
     RECT owner;
@@ -340,9 +372,9 @@ static bool initialize(struct name_prompt *_Nonnull prompt, HWND dialog)
                (owner.top + owner.bottom - height) / 2, width, height, FALSE);
     show_line(dialog, prompt_title(prompt->kind), prompt_language(prompt));
     return inputs(prompt) && fill_name(prompt) &&
-           label(prompt, UI_TEXT_PROMPT_LABEL_NAME, (RECT){20, 20, 380, 42}) &&
-           label(prompt, UI_TEXT_PROMPT_LABEL_CATEGORY, (RECT){20, 82, 380, 104}) &&
-           label(prompt, prompt_hint(prompt), (RECT){20, 144, 380, 166}) &&
+           label(prompt, UI_TEXT_PROMPT_LABEL_NAME, (RECT){20, 20, 380, 42}, 0) &&
+           label(prompt, UI_TEXT_PROMPT_LABEL_CATEGORY, (RECT){20, 82, 380, 104}, 0) &&
+           label(prompt, prompt_hint(prompt), (RECT){20, 144, 380, 166}, prompt->lowered) &&
            button(prompt, prompt_accept(prompt), IDOK, (RECT){192, 230, 280, 258}) &&
            button(prompt, prompt_close(prompt), IDCANCEL, (RECT){288, 230, 380, 258});
 }
@@ -356,7 +388,7 @@ static enum folio_state_outcome apply_name(struct name_prompt *_Nonnull prompt,
     case NAME_PROMPT_FIRST_SAVE:
     case NAME_PROMPT_SAVE_AS:
     {
-        LRESULT category = SendMessageW(prompt->category, CB_GETCURSEL, 0, 0);
+        LRESULT category = SendMessageW(prompt->category, LB_GETCURSEL, 0, 0);
         struct note_destination destination = {.category = (size_t)category, .name = name};
         return folio_state_store_new(prompt->state, &destination, prompt->units, prompt->count);
     }
@@ -493,8 +525,9 @@ static void begin_dialog(struct name_prompt *_Nonnull prompt, HWND dialog)
     SetFocus(prompt->pending ? prompt->accept : prompt->name);
 }
 
-/* WM_CTLCOLOR* の相手を役割に変える。無効な EDIT とコンボは WM_CTLCOLORSTATIC で来るが、
- * 中の面なので FIELD（ADR 0035 の決定 2・3）。 */
+/* WM_CTLCOLOR* の相手を役割に変える。無効な EDIT は WM_CTLCOLORSTATIC で来るが、中の面なので
+ * FIELD（ADR 0035 の決定 2・3）。保存先カテゴリの一覧は無効でも WM_CTLCOLORLISTBOX で来るので
+ * LIST（地は pane・補正 17）。 */
 static enum dialog_theme_surface surface_for(const struct name_prompt *_Nonnull prompt,
                                              UINT message, HWND child)
 {
@@ -506,22 +539,22 @@ static enum dialog_theme_surface surface_for(const struct name_prompt *_Nonnull 
     {
         return DIALOG_THEME_LIST;
     }
-    if (message == WM_CTLCOLOREDIT || child == prompt->category || child == prompt->name)
+    if (message == WM_CTLCOLOREDIT || child == prompt->name)
     {
         return DIALOG_THEME_FIELD;
     }
     return DIALOG_THEME_LABEL;
 }
 
-/* コンボの項目の字を取って描く。閉じた面が空（項目 -1）なら空の字で面だけ塗る。 */
+/* 一覧の行の字を取って描く。空の一覧のフォーカス（項目 -1）なら空の字で地だけ塗る。 */
 static void draw_category(const struct name_prompt *_Nonnull prompt,
                           const DRAWITEMSTRUCT *_Nonnull item)
 {
     wchar_t units[pending_line_capacity];
     units[0] = L'\0';
-    LRESULT length = SendMessageW(item->hwndItem, CB_GETLBTEXTLEN, item->itemID, 0);
+    LRESULT length = SendMessageW(item->hwndItem, LB_GETTEXTLEN, item->itemID, 0);
     if (item->itemID != (UINT)-1 && length >= 0 && length < (LRESULT)pending_line_capacity &&
-        SendMessageW(item->hwndItem, CB_GETLBTEXT, item->itemID, (LPARAM)units) == CB_ERR)
+        SendMessageW(item->hwndItem, LB_GETTEXT, item->itemID, (LPARAM)units) == LB_ERR)
     {
         units[0] = L'\0';
     }
@@ -531,7 +564,7 @@ static void draw_category(const struct name_prompt *_Nonnull prompt,
 static void draw_owned(const struct name_prompt *_Nonnull prompt,
                        const DRAWITEMSTRUCT *_Nonnull item)
 {
-    if (item->CtlType == ODT_COMBOBOX)
+    if (item->CtlType == ODT_LISTBOX)
     {
         draw_category(prompt, item);
         return;
@@ -542,31 +575,24 @@ static void draw_owned(const struct name_prompt *_Nonnull prompt,
                                                  : DIALOG_THEME_BUTTON_SECONDARY);
 }
 
-/* コンボの行の高さ。WM_MEASUREITEM は inputs() の作る途中で来るので書体から測る。 */
+/* 一覧の行の高さ。WM_MEASUREITEM は inputs() の作る途中で来るので書体から測る。 */
 static void measure_category(const struct name_prompt *_Nonnull prompt,
                              MEASUREITEMSTRUCT *_Nonnull item)
 {
-    HDC device = GetDC(prompt->dialog);
-    if (device == nullptr)
-    {
-        item->itemHeight = (UINT)scaled(prompt, 22);
-        return;
-    }
-    HGDIOBJ old_font = SelectObject(device, prompt->font);
-    TEXTMETRICW metrics;
-    if (GetTextMetricsW(device, &metrics))
-    {
-        item->itemHeight = (UINT)(metrics.tmHeight + scaled(prompt, 4));
-    }
-    else
-    {
-        item->itemHeight = (UINT)scaled(prompt, 22);
-    }
-    SelectObject(device, old_font);
-    ReleaseDC(prompt->dialog, device);
+    item->itemHeight = (UINT)category_row_height(prompt);
 }
 
-/* WS_BORDER を外した名前欄の外側に札の色の 1px の枠を描く（draw_filter_frame と同じ流儀）。 */
+static void frame_around(const struct name_prompt *_Nonnull prompt, HDC device, HWND window)
+{
+    RECT bounds;
+    GetWindowRect(window, &bounds);
+    MapWindowPoints(nullptr, prompt->dialog, (POINT *)&bounds, 2);
+    InflateRect(&bounds, 1, 1);
+    dialog_theme_frame(prompt->theme, device, &bounds);
+}
+
+/* WS_BORDER を外した名前欄と一覧の外側に札の色の 1px の枠を描く（draw_filter_frame と同じ流儀・
+ * ADR 0035 の補正 17）。 */
 static void paint_frame(const struct name_prompt *_Nonnull prompt)
 {
     PAINTSTRUCT paint;
@@ -575,11 +601,8 @@ static void paint_frame(const struct name_prompt *_Nonnull prompt)
     {
         return;
     }
-    RECT bounds;
-    GetWindowRect(prompt->name, &bounds);
-    MapWindowPoints(nullptr, prompt->dialog, (POINT *)&bounds, 2);
-    InflateRect(&bounds, 1, 1);
-    dialog_theme_frame(prompt->theme, device, &bounds);
+    frame_around(prompt, device, prompt->name);
+    frame_around(prompt, device, prompt->category);
     EndPaint(prompt->dialog, &paint);
 }
 
@@ -633,6 +656,13 @@ static bool reads_as_cancel(const struct name_prompt *_Nonnull prompt, WPARAM wp
            (LOWORD(wparam) == IDOK && HIWORD(wparam) == BN_CLICKED && GetFocus() == prompt->cancel);
 }
 
+/* 保存先カテゴリの行のダブルクリックは「保存」と同じ経路へ読む（ADR 0035 の補正 19）。 */
+static bool reads_as_accept(const struct name_prompt *_Nonnull prompt, WPARAM wparam, LPARAM lparam)
+{
+    return LOWORD(wparam) == IDOK ||
+           ((HWND)lparam == prompt->category && HIWORD(wparam) == LBN_DBLCLK);
+}
+
 static INT_PTR CALLBACK procedure(HWND dialog, UINT message, WPARAM wparam, LPARAM lparam)
 {
     if (message == WM_INITDIALOG)
@@ -656,7 +686,7 @@ static INT_PTR CALLBACK procedure(HWND dialog, UINT message, WPARAM wparam, LPAR
         EndDialog(dialog, IDCANCEL);
         return TRUE;
     }
-    if (message == WM_COMMAND && LOWORD(wparam) == IDOK)
+    if (message == WM_COMMAND && reads_as_accept(prompt, wparam, lparam))
     {
         submit(prompt);
         return TRUE;
