@@ -12,12 +12,14 @@
 #include "folio_step.h"
 #include "folio_theme_choice.h"
 #include "gdiplus_flat.h"
+#include "history_row_view.h"
 #include "icon_paint.h"
 #include "name_prompt.h"
 #include "note_name.h"
 #include "note_pane.h"
 #include "note_ref.h"
 #include "note_search.h"
+#include "note_text.h"
 #include "replace_edit.h"
 #include "settings_row_kind.h"
 #include "ui_face.h"
@@ -220,6 +222,11 @@ constexpr int command_row_floor = 3;
 /* 札の右に出す「n/m」の幅と、それを組む領域（数字と `/` だけ・翻訳の対象を増やさない・#69）。 */
 constexpr int base_command_pages_width = 44;
 constexpr size_t command_pages_capacity = 16;
+/* 履歴の行（ADR 0038 の決定 12）。最初の行の写しと、置換子を埋めた 1 行（UTF-8・終端込み）。 */
+constexpr size_t history_excerpt_capacity = 256;
+constexpr size_t history_line_capacity = 320;
+constexpr unsigned char utf8_lead_mask = 0xC0;
+constexpr unsigned char utf8_continuation = 0x80;
 constexpr int base_ex_height = 32;
 constexpr int base_command_row_padding = 12;
 constexpr int base_command_alias_room = 96;
@@ -291,6 +298,8 @@ static int command_surface_rows(const struct folio_window *_Nonnull self)
         return (int)folio_command_listed_count();
     case COMMAND_SURFACE_SETTINGS:
         return (int)settings_row_count();
+    case COMMAND_SURFACE_HISTORY:
+        return (int)folio_state_history_count(self->state);
     case COMMAND_SURFACE_EX:
     case COMMAND_SURFACE_SEARCH:
     case COMMAND_SURFACE_REPLACE:
@@ -313,6 +322,7 @@ static int command_help_rows(const struct folio_window *_Nonnull self)
     case COMMAND_SURFACE_SEARCH:
     case COMMAND_SURFACE_REPLACE:
     case COMMAND_SURFACE_SETTINGS:
+    case COMMAND_SURFACE_HISTORY:
         return 0;
     }
     return 0;
@@ -325,6 +335,13 @@ static int command_box_height(int rows, int help_rows)
     return base_command_palette_padding * 2 + base_command_input_height + base_command_gap +
            base_command_row_height * rows + base_command_status_height +
            base_command_help_row_height * (help_rows + 2) + base_command_status_height;
+}
+
+/* EDIT を持たず、レイヤー自身がフォーカスと鍵を受ける一覧の面（設定・履歴。
+ * ADR 0031 の決定 7・ADR 0038 の決定 12）。 */
+static bool command_surface_listing(enum command_surface_mode surface)
+{
+    return surface == COMMAND_SURFACE_SETTINGS || surface == COMMAND_SURFACE_HISTORY;
 }
 
 static struct folio_window *_Nullable self_of(HWND window)
@@ -344,8 +361,8 @@ static bool command_owns(const struct folio_window *_Nonnull self, HWND _Nullabl
     {
         return true;
     }
-    /* 設定画面は EDIT を持たず、レイヤー自身がフォーカスを取る（ADR 0031 の決定 7）。 */
-    if (self->command_surface == COMMAND_SURFACE_SETTINGS && window == self->command_layer)
+    /* 設定画面と履歴は EDIT を持たず、レイヤー自身がフォーカスを取る（ADR 0031 の決定 7）。 */
+    if (command_surface_listing(self->command_surface) && window == self->command_layer)
     {
         return true;
     }
@@ -366,7 +383,7 @@ static HWND _Nullable command_focus_target(const struct folio_window *_Nonnull s
     {
         return self->replace_inputs[0];
     }
-    if (self->command_surface == COMMAND_SURFACE_SETTINGS)
+    if (command_surface_listing(self->command_surface))
     {
         return self->command_layer;
     }
@@ -516,6 +533,7 @@ static RECT command_surface_rect(const struct folio_window *_Nonnull self)
     case COMMAND_SURFACE_CLOSED:
     case COMMAND_SURFACE_PALETTE:
     case COMMAND_SURFACE_SETTINGS:
+    case COMMAND_SURFACE_HISTORY:
         return command_palette_rect(self);
     }
     return command_palette_rect(self);
@@ -527,7 +545,7 @@ static RECT command_input_rect(const struct folio_window *_Nonnull self)
     RECT bounds;
     GetClientRect(self->command_layer, &bounds);
     if (self->command_surface == COMMAND_SURFACE_PALETTE ||
-        self->command_surface == COMMAND_SURFACE_SETTINGS)
+        command_surface_listing(self->command_surface))
     {
         int padding = scale(base_command_palette_padding, dpi);
         int top = padding + scale(base_command_help_row_height * 2, dpi);
@@ -704,15 +722,15 @@ static void arrange_command_input(struct folio_window *_Nonnull self)
     MoveWindow(self->command_input, bounds.left, bounds.top, bounds.right - bounds.left,
                bounds.bottom - bounds.top, TRUE);
     if (self->command_surface == COMMAND_SURFACE_PALETTE ||
-        self->command_surface == COMMAND_SURFACE_SETTINGS)
+        command_surface_listing(self->command_surface))
     {
         self->command_first = 0;
         reveal_command_selection(self);
     }
     arrange_replace_inputs(self);
-    /* 置換は 2 つの欄を使い、設定は欄を持たないのでどちらも隠す。 */
+    /* 置換は 2 つの欄を使い、設定と履歴は欄を持たないのでどれも隠す。 */
     bool hidden = self->command_surface == COMMAND_SURFACE_REPLACE ||
-                  self->command_surface == COMMAND_SURFACE_SETTINGS;
+                  command_surface_listing(self->command_surface);
     ShowWindow(self->command_input, hidden ? SW_HIDE : SW_SHOW);
     ShowWindow(self->command_layer, SW_SHOW);
     BringWindowToTop(self->command_layer);
@@ -1579,6 +1597,100 @@ static void draw_settings_rows(const struct folio_window *_Nonnull self, HDC dev
     draw_settings_guidance(self, device);
 }
 
+/* 履歴の面の案内 1 行（ADR 0038 の決定 12）。設定画面の案内と同じ位置に出す。 */
+static void draw_history_guidance(const struct folio_window *_Nonnull self, HDC device)
+{
+    UINT dpi = GetDpiForWindow(self->handle);
+    RECT line = command_input_rect(self);
+    int row = scale(base_command_help_row_height, dpi);
+    line.bottom = line.top - row;
+    line.top -= row * 2;
+    SetTextColor(device, self->palette.current_text);
+    draw_utf8(device, ui_text_line(UI_TEXT_HISTORY_GUIDANCE, folio_state_language(self->state)),
+              line);
+}
+
+/* 版の行の字面（「{n}  {name}」・読めない版は「{n}  （読めません）」）。最初の行は写しの大きさで
+ * UTF-8 の文字の境目に切り、残りは描画の省略記号に任せる。句は表の置換子で組む（ADR 0030）。 */
+static void history_row_text(const struct folio_window *_Nonnull self,
+                             const struct history_row_view *_Nonnull view, char *_Nonnull out)
+{
+    char excerpt[history_excerpt_capacity];
+    size_t length = view->first_line_length;
+    if (length >= history_excerpt_capacity)
+    {
+        length = history_excerpt_capacity - 1;
+        while (length > 0 &&
+               ((unsigned char)view->first_line[length] & utf8_lead_mask) == utf8_continuation)
+        {
+            length -= 1;
+        }
+    }
+    memcpy(excerpt, view->first_line, length);
+    excerpt[length] = '\0';
+    struct ui_text_request request = {.id = view->readable ? UI_TEXT_HISTORY_ROW
+                                                           : UI_TEXT_HISTORY_ROW_UNREADABLE,
+                                      .language = folio_state_language(self->state),
+                                      .n = view->version,
+                                      .name = excerpt};
+    if (ui_text_format(&request, out, history_line_capacity) != UI_TEXT_FORMAT_READY)
+    {
+        out[0] = '\0';
+    }
+}
+
+/* 1 行分を描く。読めない版は薄い文字で、選べるが Enter は欄の 1 行で断られる（決定 12）。
+ * 行が無ければ false（application が一覧を捨てた後など）。 */
+static bool draw_history_row(const struct folio_window *_Nonnull self, HDC device, RECT row,
+                             size_t index)
+{
+    struct history_row_view view = {
+        .version = 0, .first_line = "", .first_line_length = 0, .readable = false};
+    if (!folio_state_history_row(self->state, index, &view))
+    {
+        return false;
+    }
+    bool selected = index == self->command_selection;
+    if (selected)
+    {
+        HBRUSH brush = CreateSolidBrush(self->palette.selected_background);
+        FillRect(device, &row, brush);
+        DeleteObject(brush);
+    }
+    UINT dpi = GetDpiForWindow(self->handle);
+    RECT label = row;
+    label.left += scale(base_command_row_padding, dpi);
+    label.right -= scale(base_command_row_padding, dpi);
+    char text[history_line_capacity];
+    history_row_text(self, &view, text);
+    COLORREF color = view.readable ? self->palette.current_text : self->palette.header_text;
+    SetTextColor(device, selected ? self->palette.selected_text : color);
+    draw_utf8(device, text, label);
+    return true;
+}
+
+static void draw_history_rows(const struct folio_window *_Nonnull self, HDC device, RECT bounds)
+{
+    UINT dpi = GetDpiForWindow(self->handle);
+    RECT rows = command_rows_rect(self);
+    int height = scale(base_command_row_height, dpi);
+    size_t count = command_visible_rows(self);
+    for (size_t visible = 0; visible < count; ++visible)
+    {
+        RECT row = {rows.left, rows.top + (int)visible * height, rows.right,
+                    rows.top + (int)(visible + 1) * height};
+        if (!draw_history_row(self, device, row, self->command_first + visible))
+        {
+            break;
+        }
+    }
+    int padding = scale(base_command_palette_padding, dpi);
+    RECT status = {bounds.left + padding, bounds.bottom - scale(base_command_status_height, dpi),
+                   bounds.right - padding, bounds.bottom};
+    draw_command_status(self, device, status);
+    draw_history_guidance(self, device);
+}
+
 static void draw_palette_rows(const struct folio_window *_Nonnull self, HDC device, RECT bounds)
 {
     struct utf8_text *_Nullable query = nullptr;
@@ -1647,6 +1759,10 @@ static void draw_command_surface(const struct folio_window *_Nonnull self, HDC d
     case COMMAND_SURFACE_SETTINGS:
         FillRect(device, &bounds, self->command_brush);
         draw_settings_rows(self, device, bounds);
+        return;
+    case COMMAND_SURFACE_HISTORY:
+        FillRect(device, &bounds, self->command_brush);
+        draw_history_rows(self, device, bounds);
         return;
     }
 }
@@ -2509,11 +2625,22 @@ static void open_command_surface(struct folio_window *_Nonnull self,
     redraw_command_layer(self);
 }
 
+/* 履歴の面を離れるときは application が持つ版を捨てる（ADR 0038 の決定 10）。
+ * 面を隠す経路と、開いた面を別の面へ差し替える経路の両方がここを通る。 */
+static void release_history(struct folio_window *_Nonnull self)
+{
+    if (self->command_surface == COMMAND_SURFACE_HISTORY)
+    {
+        folio_state_close_history(self->state);
+    }
+}
+
 /* 面を隠す経路はここ 1 か所。面がフォーカスを持っていれば、隠す前に覚えた戻り先
  * （可視でなければ区画）へ返す。Windows は隠した窓のフォーカスを動かさない
  * （ADR 0016 の補正 5・#132）。 */
 static void hide_command_surface(struct folio_window *_Nonnull self)
 {
+    release_history(self);
     HWND _Nullable focus = GetFocus();
     bool surface_focused = focus != nullptr && self->command_layer != nullptr &&
                            (focus == self->command_layer || IsChild(self->command_layer, focus));
@@ -2550,6 +2677,7 @@ static void show_command_palette(struct folio_window *_Nonnull self)
         open_command_surface(self, COMMAND_SURFACE_PALETTE);
         return;
     }
+    release_history(self);
     self->command_surface = COMMAND_SURFACE_PALETTE;
     self->command_selection = 0;
     self->command_first = 0;
@@ -2584,6 +2712,7 @@ static void show_search_surface(struct folio_window *_Nonnull self)
     }
     else
     {
+        release_history(self);
         self->command_surface = COMMAND_SURFACE_SEARCH;
         clear_command_status(self);
         arrange_command_input(self);
@@ -2620,6 +2749,7 @@ static void show_replace_surface(struct folio_window *_Nonnull self)
     }
     else
     {
+        release_history(self);
         self->command_surface = COMMAND_SURFACE_REPLACE;
         clear_command_status(self);
         arrange_command_input(self);
@@ -2664,6 +2794,7 @@ static void show_settings_surface(struct folio_window *_Nonnull self)
     }
     else
     {
+        release_history(self);
         self->command_surface = COMMAND_SURFACE_SETTINGS;
         clear_command_status(self);
     }
@@ -2674,6 +2805,37 @@ static void show_settings_surface(struct folio_window *_Nonnull self)
     arrange_command_input(self);
     focus_command_input(self);
     redraw_command_layer(self);
+}
+
+/* 履歴の面（ADR 0038 の決定 12・14）。設定画面と同じく EDIT を持たず、レイヤーがフォーカスを取る。
+ * 行を決めてから配置する（show_settings_surface と同じ順）。最初の行（1 = 最新）を選ぶ。 */
+static void show_history_surface(struct folio_window *_Nonnull self)
+{
+    if (self->command_surface == COMMAND_SURFACE_CLOSED)
+    {
+        open_command_surface(self, COMMAND_SURFACE_HISTORY);
+    }
+    else
+    {
+        self->command_surface = COMMAND_SURFACE_HISTORY;
+        clear_command_status(self);
+    }
+    self->command_selection = 0;
+    arrange_command_input(self);
+    focus_command_input(self);
+    redraw_command_layer(self);
+}
+
+/* 履歴の一覧を開く（決定 11・13）。空・無題・未選択は面を開かず、既存の失敗の出し方に任せる。 */
+static void execute_history_command(struct folio_window *_Nonnull self)
+{
+    enum folio_state_outcome outcome = folio_state_open_history(self->state);
+    if (outcome != FOLIO_STATE_READY)
+    {
+        command_failure(self, outcome);
+        return;
+    }
+    show_history_surface(self);
 }
 
 /* `/` と `?` は向きを決めてから同じ欄を開く（ADR 0023 の決定 4）。 */
@@ -2805,6 +2967,13 @@ static void store_from_surface(struct folio_window *_Nonnull self)
 {
     HWND _Nullable focus = GetFocus();
     (void)report_save(self, command_save(self));
+    /* 保存が済むと application は履歴の一覧を捨てる（ADR 0038 の決定 10）。古い行を残さない。 */
+    if (self->command_surface == COMMAND_SURFACE_HISTORY &&
+        folio_state_history_count(self->state) == 0)
+    {
+        close_command_surface(self);
+        return;
+    }
     if (focus != nullptr && IsWindow(focus))
     {
         SetFocus(focus);
@@ -3320,6 +3489,9 @@ static void execute_command(struct folio_window *_Nonnull self, enum folio_comma
     case FOLIO_COMMAND_DISCARD_EDITS:
         execute_discard_command(self);
         return;
+    case FOLIO_COMMAND_HISTORY:
+        execute_history_command(self);
+        return;
     }
 }
 
@@ -3533,6 +3705,7 @@ static bool click_surface_buttons(struct folio_window *_Nonnull self, POINT poin
     case COMMAND_SURFACE_EX:
     case COMMAND_SURFACE_PALETTE:
     case COMMAND_SURFACE_SETTINGS:
+    case COMMAND_SURFACE_HISTORY:
         return false;
     }
     return false;
@@ -3582,11 +3755,116 @@ static void click_settings_surface(struct folio_window *_Nonnull self, POINT poi
     adopt_settings_row(self);
 }
 
+/* 版の本文を編集中の本文へ流し込む（ADR 0038 の決定 1 の 2）。閲覧中だったなら、先に保存済みの
+ * 本文で RichEdit を編集にしてから全文を置き換えるので、Ctrl+Z 1 回で保存済みの本文へ戻る。 */
+static enum folio_state_outcome pour_history(struct folio_window *_Nonnull self,
+                                             const struct utf16_text *_Nonnull restored,
+                                             const struct utf16_text *_Nullable saved)
+{
+    if (saved != nullptr)
+    {
+        note_pane_edit(self->pane, utf16_text_units(saved), utf16_text_length(saved));
+    }
+    const char16_t *_Nonnull text = u"";
+    size_t length = 0;
+    enum folio_state_outcome outcome = take_display_text(self, &text, &length);
+    if (outcome != FOLIO_STATE_READY)
+    {
+        return outcome;
+    }
+    note_pane_replace(self->pane, (struct note_search_span){.start = 0, .end = length},
+                      utf16_text_units(restored));
+    note_pane_select(self->pane, 0, 0);
+    note_pane_scroll_to_line(self->pane, 1);
+    return FOLIO_STATE_READY;
+}
+
+/* 採用の前に作る写し（版の本文と、閲覧中なら保存済みの本文）。確保に失敗しても application は
+ * 何も変えていない。 */
+static bool history_units(const struct folio_window *_Nonnull self,
+                          const struct note_text *_Nonnull body,
+                          struct utf16_text *_Nullable *_Nonnull restored,
+                          struct utf16_text *_Nullable *_Nonnull saved)
+{
+    if (utf16_text_create(note_text_bytes(body), note_text_length(body), restored) !=
+        UTF16_TEXT_CONVERTED)
+    {
+        return false;
+    }
+    if (folio_state_pane_mode(self->state) != PANE_MODE_VIEW)
+    {
+        return true;
+    }
+    return utf16_text_create(folio_state_pane_text(self->state),
+                             folio_state_pane_text_length(self->state),
+                             saved) == UTF16_TEXT_CONVERTED;
+}
+
+/* カーソルの版を採用する（決定 9・14）。写しは restore より先に作る。restore が閲覧から EDIT へ
+ * 移すので enter_edit は呼ばない（enter_edit は EDIT なら何もせず、先に呼ぶと読めない版でも
+ * 編集へ入ってしまう）。RichEdit 側の切り替えは pour_history が note_pane_edit で行う。 */
+static void adopt_history_row(struct folio_window *_Nonnull self)
+{
+    size_t index = self->command_selection;
+    const struct note_text *_Nullable body = folio_state_history_body(self->state, index);
+    if (body == nullptr || self->pane == nullptr)
+    {
+        /* 読めない版・範囲外は application が HISTORY_UNREADABLE で断り、何も変えない。 */
+        command_failure(self, self->pane == nullptr
+                                  ? FOLIO_STATE_PANE_UNAVAILABLE
+                                  : folio_state_restore_history(self->state, index));
+        return;
+    }
+    struct utf16_text *_Nullable restored = nullptr;
+    struct utf16_text *_Nullable saved = nullptr;
+    enum folio_state_outcome outcome = history_units(self, body, &restored, &saved)
+                                           ? folio_state_restore_history(self->state, index)
+                                           : FOLIO_STATE_OUT_OF_MEMORY;
+    if (outcome == FOLIO_STATE_READY && restored != nullptr)
+    {
+        outcome = pour_history(self, restored, saved);
+    }
+    utf16_text_destroy(restored);
+    utf16_text_destroy(saved);
+    if (outcome != FOLIO_STATE_READY)
+    {
+        command_failure(self, outcome);
+        return;
+    }
+    /* 流し込んでから一覧を捨てる（hide_command_surface が close を呼ぶ）。フォーカスは本文へ。 */
+    hide_command_surface(self);
+    InvalidateRect(self->handle, nullptr, FALSE);
+    focus_pane(self);
+}
+
+/* クリックはパレットと同じ行の当たり。行を押すとその場で採用する。 */
+static void click_history_surface(struct folio_window *_Nonnull self, POINT point)
+{
+    RECT rows = command_rows_rect(self);
+    if (!PtInRect(&rows, point))
+    {
+        return;
+    }
+    int height = scale(base_command_row_height, GetDpiForWindow(self->handle));
+    size_t index = self->command_first + (size_t)((point.y - rows.top) / height);
+    if (index >= folio_state_history_count(self->state))
+    {
+        return;
+    }
+    self->command_selection = index;
+    adopt_history_row(self);
+}
+
 static void click_command_surface(struct folio_window *_Nonnull self, POINT point)
 {
     if (self->command_surface == COMMAND_SURFACE_SETTINGS)
     {
         click_settings_surface(self, point);
+        return;
+    }
+    if (self->command_surface == COMMAND_SURFACE_HISTORY)
+    {
+        click_history_surface(self, point);
         return;
     }
     if (self->command_surface != COMMAND_SURFACE_PALETTE)
@@ -4010,6 +4288,7 @@ static void execute_command_input(struct folio_window *_Nonnull self)
     /* 設定画面の Enter は command_return が行を採用するので、ここには来ない（ADR 0031 の決定 7）。
      */
     case COMMAND_SURFACE_SETTINGS:
+    case COMMAND_SURFACE_HISTORY:
         utf8_text_destroy(query);
         return;
     case COMMAND_SURFACE_EX:
@@ -4106,7 +4385,7 @@ static bool command_tab(struct folio_window *_Nonnull self)
         toggle_command_keys(self);
         return true;
     }
-    if (self->command_surface == COMMAND_SURFACE_SETTINGS)
+    if (command_surface_listing(self->command_surface))
     {
         return true; /* 欄が 1 つも無いので行き先が無い。鍵は飲む（パレットと同じく効く） */
     }
@@ -4134,6 +4413,11 @@ static bool command_return(struct folio_window *_Nonnull self)
     if (self->command_surface == COMMAND_SURFACE_SETTINGS)
     {
         adopt_settings_row(self);
+        return true;
+    }
+    if (self->command_surface == COMMAND_SURFACE_HISTORY)
+    {
+        adopt_history_row(self);
         return true;
     }
     execute_command_input(self);
@@ -4170,12 +4454,37 @@ static bool settings_navigate(struct folio_window *_Nonnull self, WPARAM key)
     return true;
 }
 
+/* 履歴の面の ↑↓。巡回はせず、端では動かない（設定画面と同じ）。 */
+static bool history_navigate(struct folio_window *_Nonnull self, WPARAM key)
+{
+    if (key != VK_UP && key != VK_DOWN)
+    {
+        return false;
+    }
+    size_t count = folio_state_history_count(self->state);
+    if (key == VK_UP && self->command_selection > 0)
+    {
+        self->command_selection -= 1;
+    }
+    if (key == VK_DOWN && self->command_selection + 1 < count)
+    {
+        self->command_selection += 1;
+    }
+    reveal_command_selection(self);
+    redraw_command_layer(self);
+    return true;
+}
+
 /* パレットの移動の鍵。↑↓ は操作の選択、PgUp / PgDn はヘルプのページ（#69）。 */
 static bool command_navigate(struct folio_window *_Nonnull self, WPARAM key)
 {
     if (self->command_surface == COMMAND_SURFACE_SETTINGS)
     {
         return settings_navigate(self, key);
+    }
+    if (self->command_surface == COMMAND_SURFACE_HISTORY)
+    {
+        return history_navigate(self, key);
     }
     if (self->command_surface != COMMAND_SURFACE_PALETTE)
     {
@@ -4269,7 +4578,7 @@ static bool command_character(struct folio_window *_Nonnull self, WPARAM charact
 static bool command_wheel(struct folio_window *_Nonnull self, WPARAM wparam)
 {
     bool listed = self->command_surface == COMMAND_SURFACE_PALETTE ||
-                  self->command_surface == COMMAND_SURFACE_SETTINGS;
+                  command_surface_listing(self->command_surface);
     if (!listed || self->command_composing)
     {
         return false;
@@ -4283,6 +4592,10 @@ static bool command_wheel(struct folio_window *_Nonnull self, WPARAM wparam)
     if (self->command_surface == COMMAND_SURFACE_SETTINGS)
     {
         return settings_navigate(self, key);
+    }
+    if (self->command_surface == COMMAND_SURFACE_HISTORY)
+    {
+        return history_navigate(self, key);
     }
     move_command_selection(self, key);
     return true;
