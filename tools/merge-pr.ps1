@@ -31,6 +31,16 @@ $script:PollSeconds = 30
 $script:WaitLimitSeconds = 20 * 60
 $script:ResendAfterSeconds = 60
 $script:IssueCloseWaitSeconds = 30
+# Ready を送った時刻（UTC）。これより前に始まった check-run は Draft 時代の結論（ADR 0037 の failure）なので判定から外す（#163）。
+$script:ReadyAt = $null
+
+function Send-Ready {
+    param([Parameter(Mandatory)][int]$Pr, [switch]$Undo)
+    if ($Undo) { Invoke-Gh @('pr', 'ready', "$Pr", '--undo') | Out-Null }
+    Invoke-Gh @('pr', 'ready', "$Pr") | Out-Null
+    # GitHub の started_at と手元の時計のずれを見込んで 10 秒引く。
+    $script:ReadyAt = [DateTime]::UtcNow.AddSeconds(-10)
+}
 
 function Stop-Merge {
     param([Parameter(Mandatory)][string]$Message)
@@ -90,6 +100,11 @@ function Get-CheckState {
     $runs = @($text -split "`r?`n" | Where-Object { $_.Trim().Length -gt 0 } | ForEach-Object { $_ | ConvertFrom-Json })
     $latest = @{}
     foreach ($run in $runs) {
+        # Ready より前に始まった check-run（Draft 時代の skipped / failure）は見ない（#163）。started_at が無い（queued）ものは新しいとみなす。
+        if ($null -ne $script:ReadyAt -and -not [string]::IsNullOrEmpty("$($run.started)")) {
+            $startedAt = [DateTime]::Parse("$($run.started)", [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::AdjustToUniversal)
+            if ($startedAt -lt $script:ReadyAt) { continue }
+        }
         $current = $latest[$run.name]
         if ($null -eq $current -or $run.suite -gt $current.suite -or ($run.suite -eq $current.suite -and "$($run.started)" -gt "$($current.started)")) {
             $latest[$run.name] = $run
@@ -130,14 +145,22 @@ function Wait-Check {
         $summary = Get-CheckSummary -Checks (Get-CheckState -Pr $Pr)
         # Ready 直後は前の run の failure（Draft の `check`・ADR 0037）だけが残り、新しい run の job はまだ check-run を持たない。
         # pending が 1 つでもあるあいだは落ちたと判断せず、揃ってから failed を見る（#152）。
-        if ($summary.pending.Count -eq 0 -and $summary.failed.Count -gt 0) { Stop-Merge "checks failed: $($summary.failed -join ', ')" }
+        if ($summary.pending.Count -eq 0 -and $summary.failed.Count -gt 0) {
+            # Ready を送っていない（元から Ready の PR）と、見えている failure が Draft 時代のものか本物か区別できない。
+            # 1 回だけ Ready を送り直して新しい run を起こし、それでも failure なら本物として止まる（#163）。
+            if ($resent) { Stop-Merge "checks failed: $($summary.failed -join ', ')" }
+            [Console]::Error.WriteLine("merge-pr: failed check(s) $($summary.failed -join ', ') with nothing pending; resending ready once")
+            Send-Ready -Pr $Pr -Undo
+            $resent = $true
+            Start-Sleep -Seconds $script:PollSeconds
+            continue
+        }
         if ($summary.done) { return $summary }
         $elapsed = $started.Elapsed.TotalSeconds
         if ($summary.count -eq 0 -and -not $resent -and $elapsed -ge $script:ResendAfterSeconds) {
             # ready_for_review で CI が起動しない既知の事象。1 回だけ Ready を送り直す。
             [Console]::Error.WriteLine("merge-pr: no checks after $([int]$elapsed)s; resending ready once")
-            Invoke-Gh @('pr', 'ready', "$Pr", '--undo') | Out-Null
-            Invoke-Gh @('pr', 'ready', "$Pr") | Out-Null
+            Send-Ready -Pr $Pr -Undo
             $resent = $true
         }
         if ($elapsed -ge $script:WaitLimitSeconds) { Stop-Merge "checks did not finish within $($script:WaitLimitSeconds / 60) minutes" }
@@ -201,7 +224,7 @@ if ($WhatIf) {
 }
 
 # (b) Draft なら Ready
-if ($pr.isDraft) { Invoke-Gh @('pr', 'ready', "$Number") | Out-Null }
+if ($pr.isDraft) { Send-Ready -Pr $Number }
 
 # (c) CI 待ち
 Wait-Check -Pr $Number | Out-Null
