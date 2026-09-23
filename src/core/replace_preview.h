@@ -20,12 +20,15 @@
 struct regex_matches;
 struct replace_preview;
 
-/* source と matches を複製して所有する。置換文字列はここで解析するので、文法が壊れていれば
- * BAD_TEMPLATE で何も作らない。matches の count が capacity を超えていれば、入っているぶん
- * だけを写し、件数は総数のまま残す。 */
+/* source は複製して所有し、matches の配列は**写さずに引き取る**（ADR 0028 の補正 25）。
+ * 所有権: READY のときだけ matches->items（malloc 系で確保したもの）は下見のものになり、
+ * matches の capacity と count は 0 に戻る。呼び出し側は自分の手元の同じポインタを捨てる。
+ * READY 以外（BAD_TEMPLATE・OUT_OF_MEMORY）では何も引き取らず、matches はそのまま残る。
+ * 置換文字列はここで解析するので、文法が壊れていれば BAD_TEMPLATE で何も作らない。
+ * count が capacity を超えていても総数のまま残し、組み立て（note_replace_build）が断る。 */
 [[nodiscard]] enum replace_preview_outcome
 replace_preview_create(const struct replace_source *_Nonnull source,
-                       const struct regex_matches *_Nonnull matches,
+                       struct regex_matches *_Nonnull matches,
                        struct replace_preview *_Nullable *_Nonnull out);
 /* 一致の総数（欄に出す「k 件」）。ゼロ幅の一致も 1 件。 */
 [[nodiscard]] size_t replace_preview_count(const struct replace_preview *_Nonnull preview);
