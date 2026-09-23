@@ -105,7 +105,8 @@ static const enum ui_text command_shortcuts[] = {
 };
 
 /* 設定画面の行（ADR 0031 の決定 7・ADR 0032 の決定 7）。見出しと選択肢を**種別で**持ち、
- * value はその種別の列挙の値（THEME なら folio_theme_choice・LANGUAGE なら folio_language）。
+ * value はその種別の列挙の値（THEME なら folio_theme_choice・LANGUAGE なら folio_language・
+ * NUMBER なら表示するかの 1 / 0）。
  * 段を足すときはここに行を足し、採用の閉じた switch に枝を足す（添字を型へ鋳込まない）。 */
 static const struct
 {
@@ -121,6 +122,9 @@ static const struct
     {UI_TEXT_SETTINGS_LANGUAGE_JA, SETTINGS_ROW_LANGUAGE, FOLIO_LANGUAGE_JA},
     {UI_TEXT_SETTINGS_LANGUAGE_EN, SETTINGS_ROW_LANGUAGE, FOLIO_LANGUAGE_EN},
     {UI_TEXT_SETTINGS_LANGUAGE_ZH_HANS, SETTINGS_ROW_LANGUAGE, FOLIO_LANGUAGE_ZH_HANS},
+    {UI_TEXT_SETTINGS_NUMBER, SETTINGS_ROW_HEADING, 0},
+    {UI_TEXT_SETTINGS_NUMBER_ON, SETTINGS_ROW_NUMBER, 1},
+    {UI_TEXT_SETTINGS_NUMBER_OFF, SETTINGS_ROW_NUMBER, 0},
 };
 /* 選択肢が始まる行（最初の見出しの次）。カーソルはこの行より上へは行かない。 */
 constexpr size_t settings_first_choice_row = 1;
@@ -1517,6 +1521,8 @@ static bool settings_row_current(const struct folio_window *_Nonnull self, size_
         return (unsigned char)folio_state_theme_choice(self->state) == settings_rows[index].value;
     case SETTINGS_ROW_LANGUAGE:
         return (unsigned char)folio_state_language(self->state) == settings_rows[index].value;
+    case SETTINGS_ROW_NUMBER:
+        return (unsigned char)folio_state_number(self->state) == settings_rows[index].value;
     }
     return false;
 }
@@ -2915,8 +2921,16 @@ static void apply_number(struct folio_window *_Nonnull self, bool number)
         command_failure(self, outcome);
         return;
     }
-    hide_command_surface(self);
+    if (self->command_surface == COMMAND_SURFACE_SETTINGS)
+    {
+        clear_command_status(self);
+    }
+    else
+    {
+        hide_command_surface(self);
+    }
     rearrange_keeping_line(self);
+    redraw_command_layer(self);
 }
 
 /* 閲覧の本文を新しい RTF で流し直し、選択を戻す（ADR 0031 の決定 6 の補正 1）。
@@ -3540,6 +3554,9 @@ static void adopt_settings_row(struct folio_window *_Nonnull self)
         return;
     case SETTINGS_ROW_LANGUAGE:
         apply_language(self, (enum folio_language)settings_rows[index].value);
+        return;
+    case SETTINGS_ROW_NUMBER:
+        apply_number(self, settings_rows[index].value != 0);
         return;
     }
 }
