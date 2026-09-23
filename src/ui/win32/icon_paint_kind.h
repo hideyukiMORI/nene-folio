@@ -9,7 +9,8 @@ enum icon_paint_kind : unsigned char
     ICON_PAINT_SETTINGS,      /* その左隣の歯車 */
     ICON_PAINT_FOLD_COLLAPSE, /* 展開中のカテゴリ行の − */
     ICON_PAINT_FOLD_EXPAND,   /* 折り畳み中のカテゴリ行の + */
-    ICON_PAINT_SELECTION      /* 設定画面のいまの値の行に付く印 */
+    ICON_PAINT_SELECTION,     /* 設定画面のいまの値の行に付く印 */
+    ICON_PAINT_WARNING        /* 失敗の箱の本文の左の三角の「!」（ADR 0035 の補正 13） */
 };
 
 #endif

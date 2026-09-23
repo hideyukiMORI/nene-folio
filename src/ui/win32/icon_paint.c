@@ -42,6 +42,35 @@ static const struct
 constexpr float settings_hole_origin = 9.0f;
 constexpr float settings_hole_size = 6.0f;
 
+/* 警告の印（ADR 0035 の補正 13）。外周の三角・縦棒の穴・点の穴の 3 図形を同じパスに入れ、
+ * 歯車と同じく Alternate で穴を抜く（穴には箱の地が透ける）。値は補正 13 の目安のまま。 */
+static const struct
+{
+    float x;
+    float y;
+} warning_points[] = {
+    {12.0f, 2.5f},
+    {22.5f, 20.5f},
+    {1.5f, 20.5f},
+};
+
+/* 「!」の縦棒の穴 x 10.9〜13.1 / y 8〜14.5 を時計回りの 4 点で持つ。 */
+static const struct
+{
+    float x;
+    float y;
+} warning_stem_points[] = {
+    {10.9f, 8.0f},
+    {13.1f, 8.0f},
+    {13.1f, 14.5f},
+    {10.9f, 14.5f},
+};
+
+/* 「!」の点の穴は中心 (12, 17.6)・半径 1.35 の円。 */
+constexpr float warning_dot_left = 12.0f - 1.35f;
+constexpr float warning_dot_top = 17.6f - 1.35f;
+constexpr float warning_dot_size = 2.0f * 1.35f;
+
 /* 写しの規則 (2): <rect x y width height rx> の表。引数を 4 つに収めるため（C-012）、
  * 写しは 1 本の関数に保って添字で選ぶ。 */
 constexpr size_t round_rect_fold_bar = 0;
@@ -105,6 +134,31 @@ static int add_settings_path(struct GpPath *_Nonnull path)
                                             settings_hole_size, settings_hole_size));
 }
 
+/* 警告の印は外周の三角・縦棒の穴・点の穴の 3 図形。穴は Alternate で抜ける。 */
+static int add_warning_path(struct GpPath *_Nonnull path)
+{
+    constexpr size_t outline = sizeof warning_points / sizeof warning_points[0];
+    constexpr size_t stem = sizeof warning_stem_points / sizeof warning_stem_points[0];
+    int status = gdiplus_ok;
+    for (size_t index = 0; index + 1 < outline; ++index)
+    {
+        status = first_failure(
+            status, GdipAddPathLine(path, warning_points[index].x, warning_points[index].y,
+                                    warning_points[index + 1].x, warning_points[index + 1].y));
+    }
+    status = first_failure(status, GdipClosePathFigure(path));
+    for (size_t index = 0; index + 1 < stem; ++index)
+    {
+        status = first_failure(status, GdipAddPathLine(path, warning_stem_points[index].x,
+                                                       warning_stem_points[index].y,
+                                                       warning_stem_points[index + 1].x,
+                                                       warning_stem_points[index + 1].y));
+    }
+    status = first_failure(status, GdipClosePathFigure(path));
+    return first_failure(status, GdipAddPathEllipse(path, warning_dot_left, warning_dot_top,
+                                                    warning_dot_size, warning_dot_size));
+}
+
 /* 写しの規則 (2)。h == 2rx の板では縦の直線の長さが 0 になり、両端が半円の板になる。 */
 static int add_round_rect(struct GpPath *_Nonnull path, size_t which)
 {
@@ -152,6 +206,8 @@ static int build_path(struct GpPath *_Nonnull path, enum icon_paint_kind kind)
         return add_fold_expand_path(path);
     case ICON_PAINT_SELECTION:
         return add_round_rect(path, round_rect_selection);
+    case ICON_PAINT_WARNING:
+        return add_warning_path(path);
     }
     return gdiplus_ok;
 }
@@ -167,6 +223,7 @@ static int fill_mode_for(enum icon_paint_kind kind)
     case ICON_PAINT_SELECTION:
         return gdiplus_fill_winding;
     case ICON_PAINT_SETTINGS:
+    case ICON_PAINT_WARNING:
         return gdiplus_fill_alternate;
     }
     return gdiplus_fill_winding;
