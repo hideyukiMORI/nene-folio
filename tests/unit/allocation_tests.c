@@ -552,7 +552,16 @@ static bool replace_under_probe(struct folio_state *_Nonnull state)
     replace_edit_destroy(edit);
     require(applied == FOLIO_STATE_READY || applied == FOLIO_STATE_OUT_OF_MEMORY,
             "replace apply under probe");
-    return applied == FOLIO_STATE_READY;
+    if (applied != FOLIO_STATE_READY)
+    {
+        return false;
+    }
+    /* 下見が一致の配列を引き取ったので、次の下見は空の入れ物を確保し直す（ADR 0028 の補正 25）。
+     * その確保と伸長も注入の対象にする。 */
+    previewed = folio_state_preview_replace(state, &request);
+    require(previewed == FOLIO_STATE_READY || previewed == FOLIO_STATE_OUT_OF_MEMORY,
+            "the next replace preview under probe");
+    return previewed == FOLIO_STATE_READY;
 }
 
 /* 改名は名前・意図・台帳の確保をまとめて通す（ADR 0022）。偽のポートは完了を返す。 */

@@ -37,7 +37,8 @@ struct folio_state
     struct persistence_port port;
     /* 正規表現ポート（ADR 0028 の決定 1 / 2）。ICU を知るのは adapter だけである */
     struct regex_port regex;
-    struct regex_match *_Nonnull found; /* 走査の入れ物。下見へ写したら使い回す */
+    /* 走査の入れ物。下見が引き取ったら空（null・0）に戻り、次の走査で確保し直す（補正 25）。 */
+    struct regex_match *_Nullable found;
     size_t found_capacity;
     struct replace_preview *_Nullable preview; /* 直前の下見。1 つだけ持つ（決定 6） */
     size_t replace_offset; /* 直前の下見が BAD_PATTERN だったときの位置（1 起算） */
@@ -449,10 +450,7 @@ enum folio_state_outcome folio_state_create(const struct folio_ports *_Nonnull p
     state->os_theme = appearance->read_theme(appearance->adapter);
     state->theme_choice = FOLIO_THEME_CHOICE_SYSTEM;
     state->palette = rtf_palette_for(folio_theme_resolve(state->theme_choice, state->os_theme));
-    state->found = calloc(initial_matches, sizeof *state->found);
-    state->found_capacity = initial_matches;
-    if (state->found == nullptr ||
-        markdown_rtf_empty(state->palette, ui_font_face(FOLIO_LANGUAGE_JA), &state->pane) !=
+    if (markdown_rtf_empty(state->palette, ui_font_face(FOLIO_LANGUAGE_JA), &state->pane) !=
             MARKDOWN_RTF_CONVERTED ||
         note_text_create("", 0, &state->body) != NOTE_TEXT_ACCEPTED ||
         note_corpus_create(&state->corpus) != NOTE_CORPUS_ACCEPTED ||
@@ -2331,7 +2329,7 @@ static enum folio_state_outcome from_replace(enum note_replace_outcome built)
     return FOLIO_STATE_REPLACE_TOO_LARGE;
 }
 
-/* 一致の入れ物を capacity 件まで広げる。縮めない。 */
+/* 一致の入れ物を capacity 件まで広げる。縮めない。空（下見が引き取った後）なら新しく確保する。 */
 static bool reserve_matches(struct folio_state *_Nonnull state, size_t capacity)
 {
     if (state->found_capacity >= capacity)
@@ -2356,7 +2354,8 @@ static void aim_matches(const struct folio_state *_Nonnull state,
     matches->count = 0;
 }
 
-/* 総数が入れ物を超えたら広げて、もう 1 度だけ走査する（決定 2）。 */
+/* 総数が入れ物を超えたら広げて、もう 1 度だけ走査する（決定 2）。入れ物は呼び出し側が
+ * reserve_matches で先に用意しておく（空のまま adapter へ渡さない）。 */
 static enum regex_scan_outcome scan_matches(struct folio_state *_Nonnull state,
                                             const struct regex_request *_Nonnull request,
                                             struct regex_matches *_Nonnull matches,
@@ -2398,10 +2397,12 @@ static bool editing_document(const struct folio_state *_Nonnull state)
     return state->mode == PANE_MODE_EDIT && state->document != FOLIO_DOCUMENT_NONE;
 }
 
-/* 新しい下見を作って古いものと入れ替える。作れなければ古い下見をそのまま保つ（決定 6）。 */
+/* 新しい下見を作って古いものと入れ替える。作れなければ古い下見をそのまま保つ（決定 6）。
+ * 下見は一致の配列を引き取るので、作れたら入れ物は空に戻す（補正 25）。作れなければ
+ * 配列は入れ物のまま残り、次の走査で使い回す。 */
 static enum folio_state_outcome adopt_preview(struct folio_state *_Nonnull state,
                                               const struct replace_request *_Nonnull request,
-                                              const struct regex_matches *_Nonnull matches)
+                                              struct regex_matches *_Nonnull matches)
 {
     struct replace_source source = source_for(state, request->text, request->length);
     source.replacement = request->replacement;
@@ -2413,6 +2414,8 @@ static enum folio_state_outcome adopt_preview(struct folio_state *_Nonnull state
     {
         return made;
     }
+    state->found = nullptr;
+    state->found_capacity = 0;
     replace_preview_destroy(state->preview);
     state->preview = preview;
     return FOLIO_STATE_READY;
@@ -2434,6 +2437,10 @@ static enum folio_state_outcome preview_matches(struct folio_state *_Nonnull sta
                                  .length = request->length,
                                  .pattern = request->pattern,
                                  .pattern_length = request->pattern_length};
+    if (!reserve_matches(state, initial_matches))
+    {
+        return FOLIO_STATE_OUT_OF_MEMORY;
+    }
     struct regex_matches matches = {.items = state->found, .capacity = 0, .count = 0};
     struct regex_pattern_error error = {.offset = 0};
     enum folio_state_outcome scanned = from_scan(scan_matches(state, &scan, &matches, &error));
