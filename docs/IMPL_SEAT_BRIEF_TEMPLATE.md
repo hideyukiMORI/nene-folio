@@ -47,7 +47,9 @@
 ## 完了の定義
 - {受け入れ条件 1〜3。数で言えるもの}
 - `pwsh -NoProfile -File ./eng/check.ps1` が exit 0（結果はログのパスと `passed` の行で報告）
-- Draft PR を出す（Ready にするのは設計席）
+- Draft PR を出す（Ready にするのは設計席）。本文は `.github/PULL_REQUEST_TEMPLATE.md` の欄をそのまま使い、**各欄は行頭が欄名で始まる 1 行**
+  （`目的:` / `使った正典経路:` / `規則 ID:` / `振る舞い・スキーマの変更:` / `検証` / `Waivers:` / `残るリスク:` / `Closes #{issue}`。`## ` を付けない。
+  `tools/merge-pr.ps1` が字面で検査する）
 
 ## 報告（最終報告は 30 行以内）
 報告ファイル out/agents/{issue}-{仕事}/report.md に詳細（変えたファイルと理由・実行したコマンドと結果・止めた理由・残るリスク）を書く。
