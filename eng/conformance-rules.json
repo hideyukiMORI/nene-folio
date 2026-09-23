@@ -30,6 +30,7 @@
     "languages": {"enum": "src/core/folio_language.h", "prefix": "FOLIO_LANGUAGE_"},
     "emptyAllowed": ["UI_TEXT_EMPTY"]
   },
+  "bundledAssets": {"manifest": "fonts/manifest.json", "ignore": ["README.md", "manifest.json"]},
   "cExtensions": [".c", ".h"],
   "configurationExtensions": [".ps1", ".cmake", ".yml", ".yaml"],
   "normativeFiles": ["docs/ARCHITECTURE_CONSTITUTION.md", "docs/CODING_RULES.md", "docs/COMMIT_CONVENTIONS.md", "docs/QUALITY_GATES.md"]

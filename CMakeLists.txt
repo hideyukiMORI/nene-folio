@@ -82,3 +82,7 @@ nenefolio_link(nenefolio nenefolio_application)
 nenefolio_link(nenefolio nenefolio_adapters)
 nenefolio_link(nenefolio nenefolio_window)
 nenefolio_system_link(nenefolio user32)
+# ADR 0036 決定 6: 同梱の書体を exe の隣の fonts/ へ複写する（中身の一致は CNF-012 が守る）
+add_custom_command(TARGET nenefolio POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/fonts $<TARGET_FILE_DIR:nenefolio>/fonts
+    VERBATIM)

@@ -82,6 +82,7 @@ CI で必要なゲートは、すべてローカルで実行できる。検査�
 ### QLT-011 — 依存は再現可能
 
 依存の版は 1 か所にだけ書き、lock ファイルのドリフトはビルドを落とす。
+同梱の資産（`fonts/`）は CNF-012 が守る。QLT-011 はライブラリの版の lock を対象にしたままで planned である。
 
 - 機械強制: **planned**
 
@@ -200,6 +201,18 @@ head が動いたら Draft に戻して再度 Ready にする。古い成功 SHA
 - 対応する規則: C-018
 - 機械強制: **active**（`eng/conformance.py` の `text_column_checks` ＋ `tests/conformance` の 10 件 ＋ `eng/prove-gates.py` の実ツール反例 P23）
 
+### CNF-012 — 同梱の資産は manifest と一致する
+
+`eng/conformance-rules.json` の `bundledAssets` が名指しする manifest（`fonts/manifest.json`）について、
+(a) `entries` と `licenses` の各 `filename` が manifest と同じフォルダに在り、**バイト数と SHA-256（小文字 hex）が一致**する、
+(b) そのフォルダに manifest に無いファイルが無い（`bundledAssets.ignore` の `README.md` と `manifest.json` を除く）、
+(c) 各 entry の `license` が `licenses` の `filename` に在る、を検査する（ADR 0036 決定 2）。
+書体を取り違えたり、差し替えて manifest を直し忘れたり、出所の記録が無いファイルを置いたりすることを拒む。
+版を上げるときは manifest とファイルを同じコミットで差し替える。manifest の値そのものが upstream と一致するかは検査しない（取得時に照合した記録を正本とする）。
+
+- 対応する規則: ARC-001
+- 機械強制: **active**（`eng/conformance.py` の `bundled_asset_checks` ＋ `eng/prove-gates.py` の実ツール反例 P24 / P25）
+
 🔴 **検出語は検査器のソースに直書きしない**（検査器が自分自身を違反として報告する。前例: xi-tools 初版で 7 件の自己検出）。
 🔴 **テストソースは検査対象から外す**（テストは意図的な違反を書く場所）。
 
@@ -270,6 +283,7 @@ CNF-006 が「本文に定義があるのにここに行が無い」を拒否す
 | CNF-009 | active | eng/conformance.py / tests/conformance / eng/prove-gates.py |
 | CNF-010 | active | eng/conformance.py / tests/conformance / eng/prove-gates.py |
 | CNF-011 | active | eng/conformance.py / tests/conformance / eng/prove-gates.py |
+| CNF-012 | active | eng/conformance.py / eng/prove-gates.py |
 
 ---
 

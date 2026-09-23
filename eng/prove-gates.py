@@ -211,6 +211,23 @@ def main() -> None:
         restoration = run(conformance, root, True)
         evidence.append({"rule": "CNF-011", "negative": result, "restorationExit": restoration["exitCode"]})
         print(f"CNF-011: dropping one language column from {value} was rejected; restoration passed")
+        assets = json.loads((root / "eng/conformance-rules.json").read_text(encoding="utf-8"))["bundledAssets"]
+        folder = root / Path(assets["manifest"]).parent
+        asset = folder / "Arimo-Regular.ttf"
+        original = asset.read_bytes()
+        asset.write_bytes(original[:-1] + bytes([original[-1] ^ 0xFF]))
+        result = run(conformance, root, False, "CNF-012")
+        asset.write_bytes(original)
+        restoration = run(conformance, root, True)
+        evidence.append({"rule": "CNF-012", "negative": result, "restorationExit": restoration["exitCode"]})
+        print(f"CNF-012: rewriting the last byte of {asset.name} was rejected; restoration passed")
+        planted = folder / "Planted-Regular.ttf"
+        planted.write_bytes(original)
+        result = run(conformance, root, False, "CNF-012")
+        planted.unlink()
+        restoration = run(conformance, root, True)
+        evidence.append({"rule": "CNF-012", "negative": result, "restorationExit": restoration["exitCode"]})
+        print(f"CNF-012: a file absent from the manifest ({planted.name}) was rejected; restoration passed")
     (output_root / "results.json").write_text(json.dumps(evidence, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(f"Gate proofs passed: {len(evidence)} real-tool proofs")
 
