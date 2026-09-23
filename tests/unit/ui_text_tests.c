@@ -145,7 +145,7 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_CHIP_VIEW] = "閲覧",
     [UI_TEXT_CHIP_EDIT] = "編集",
     [UI_TEXT_PLACEHOLDER_FILTER] = "すべてのノートを検索",
-    /* #86 で足した。索引の頭の帯の右に出す「一致 / 総数」（ADR 0024 の 2026-09-23 の補正 7）。 */
+    /* #86 で足した。索引の頭の帯の右に出す「一致 / 総数」（ADR 0024 の 2026-09-22 の補正 7）。 */
     [UI_TEXT_STATUS_FILTER_COUNT] = "{k} / {n}",
     [UI_TEXT_STATUS_SEARCH_FORWARD] = "このノート内を検索 ／ 次へ  ",
     [UI_TEXT_STATUS_SEARCH_BACKWARD] = "このノート内を検索 ／ 前へ  ",

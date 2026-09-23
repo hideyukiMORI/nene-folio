@@ -142,7 +142,7 @@ Issue #38 は「設定画面からテーマ（dark / light / system）と言語�
 - `folio_command_parse_option` を `語=値` の文法に広げる: `options[]` は完全一致の表なので語を足せば足り、parser の変更は不要。
 - フォントの表を ui に置く: `markdown_rtf`（core）が同じ face を要るので core → ui の依存になる（ARC-002）。
 
-## 2026-09-23 の補正（単位 B の実測の後・決定本文は書き換えない）
+## 2026-09-22 の補正（単位 B の実測の後・決定本文は書き換えない）
 
 1. **文脈節の「`EM_SETCHARFORMAT(SCF_DEFAULT)` は以後の文字だけに効く」という読みを訂正する。**
    単位 B の実測（`out/design/2026-09-22/theme-probe/` の `recolor_probe.c`。案を別々の窓に分けて当て、Undo の段数を数えた）では、

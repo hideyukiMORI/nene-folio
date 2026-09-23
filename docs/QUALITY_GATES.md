@@ -95,7 +95,7 @@ head が動いたら Draft に戻して再度 Ready にする。古い成功 SHA
 failure になる。GitHub は skipped の必須 check を「満たした」と数えるので、Draft の head はこの判定で `BLOCKED` になる（ADR 0037）。
 
 - 機械強制: **active**（ruleset の必須 check `check` と strict up-to-date ＋ `.github/workflows/check.yml` の判定 job。
-  実測は [2026-09-26 の確認記録](quality/2026-09-26-required-check-checks.md)）
+  実測は [2026-09-23 の確認記録](quality/2026-09-23-required-check-checks.md)）
 
 ### QLT-013 — 環境依存の主張は正直に名付ける
 
@@ -273,7 +273,7 @@ CNF-006 が「本文に定義があるのにここに行が無い」を拒否す
 | QLT-009 | active | LLVM 計装・llvm-cov・eng/coverage.py（分岐 90%・確保失敗の注入・反例） |
 | QLT-010 | 不能 | PR の手続き |
 | QLT-011 | planned | |
-| QLT-012 | active | ruleset の必須 check `check`（strict）＋ `check.yml` の判定 job（ADR 0037・実測 2026-09-26） |
+| QLT-012 | active | ruleset の必須 check `check`（strict）＋ `check.yml` の判定 job（ADR 0037・実測 2026-09-23） |
 | QLT-013 | planned | |
 | CNF-001 | planned | eng/conformance.py / tests/conformance |
 | CNF-002 | planned | eng/conformance.py / tests/conformance |

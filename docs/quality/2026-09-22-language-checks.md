@@ -1,6 +1,6 @@
 # 表示言語（#76 / ADR 0032）の確認記録
 
-2026-09-23。実装は `out/worktrees/76-language`（枝 `feat/76-language`）。
+2026-09-22。実装は `out/worktrees/76-language`（枝 `feat/76-language`）。
 実測は `out/design/2026-09-23/language-ui-probe/`（`out/` は追跡しないのでリポジトリには入らない）。
 設計の材料になった読み取り専用の調査は `out/design/2026-09-23/language-probe/`。
 
@@ -109,7 +109,7 @@ ADR 0032 の決定 3 のとおり、**構文の見本だけを ASCII に揃え�
 | face の実在（`EnumFontFamiliesExW`） | `Yu Gothic UI` / `Microsoft YaHei UI` はあり、無い face は 0 件で返る |
 
 **論理行の包みが本当に効くのは再着色の側**だった（face の差し替えでは安全網）。
-ADR 0031 の 2026-09-23 の補正 2 はこの実測にもとづく。
+ADR 0031 の 2026-09-22 の補正 2 はこの実測にもとづく。
 
 ## 5. 設定画面 8 行（`geometry.py`）
 

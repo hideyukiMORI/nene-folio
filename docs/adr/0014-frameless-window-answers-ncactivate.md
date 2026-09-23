@@ -62,7 +62,7 @@ ADR 0011 は `WM_NCCALCSIZE` の TRUE / FALSE とも 0 を返して client を�
 | `WM_NCPAINT` だけを止める | 実測で直らない。`DefWindowProcW(WM_NCACTIVATE)` は `WM_NCPAINT` を経由せずに描く |
 | `DWMWA_NCRENDERING_POLICY = DISABLED` | DWM の描画ではないので効かない。角丸と縁の色を失うだけ |
 
-## 2026-09-23 の補正（#91・決定本文は書き換えない）
+## 2026-09-22 の補正（#91・決定本文は書き換えない）
 
 1. **先出しの群に `WM_NCDESTROY` を足し、`self->handle` を消す場所をそこ 1 か所に揃えた。**
    この ADR の決定は `WM_NCACTIVATE` / `WM_NCPAINT` を「窓の構造体を要らないので先に答える」群へ
@@ -78,7 +78,7 @@ ADR 0011 は `WM_NCCALCSIZE` の TRUE / FALSE とも 0 を返して client を�
    既定処理へ `nullptr` を渡す経路そのものが消える）。
    `WM_NCDESTROY` は Win32 の開いた集合の 1 値なので `default` はそのまま残る（C-017）。
    Win32 部品 probe（`out/design/2026-09-23/ncdestroy-probe/`・14 / 14 成功・
-   [確認記録](../quality/2026-09-23-ncdestroy-checks.md)）で、直す前の `nullptr` と 1400 を再現し、
+   [確認記録](../quality/2026-09-22-ncdestroy-checks.md)）で、直す前の `nullptr` と 1400 を再現し、
    直した後は HWND が有効・`GWLP_USERDATA` が外れる・**破棄の順（主窓の `WM_NCDESTROY` が最後）が
    1 つも変わらない**・GDI+ の `Shutdown`（`folio_window_destroy`・ADR 0033 の決定 4）の位置が
    変わらないことを測った。利用者に見える振る舞いの変化は無い。
