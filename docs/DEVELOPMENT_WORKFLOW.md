@@ -166,6 +166,10 @@ Waivers: none | WVR-NNNN
 署名・インストーラ・自動更新は別の焦点 Issue とする。
 
 実機で見るときは [`tools/prepare-real-machine.ps1`](../tools/prepare-real-machine.ps1) で main を進めてビルドする（起動は別の 1 行）。
+設計席が枝の exe を自分で動かして絵を撮るときは、キーは [`tools/post-keys.ps1`](../tools/post-keys.ps1)（`PostMessage`・`-TargetPid`）、
+絵は [`tools/capture-window.ps1`](../tools/capture-window.ps1)（`PrintWindow`・DPI 対応・`-TargetPid`）で、hide の実機とは PID で区別する。
+`SetForegroundWindow` / `SendKeys` と、席が作った DPI 非対応の写し（`out/agents/*/capwin.ps1`）は使わない
+（125% の画面では窓の右と下の 20% が黙って切れる。#151 / #156）。
 
 参照実装: nene-loupe `eng/package-release.ps1`（2026-09-07 還流）。実行ファイルは `/MT` で静的に結び、`llvm-readobj --coff-imports` に
 `VCRUNTIME` / `UCRTBASE` / `MSVCP` が無いことを検査する（Phase 0 の R1 で実測済み）。
