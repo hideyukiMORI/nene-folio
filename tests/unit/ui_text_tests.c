@@ -93,6 +93,8 @@ static const char *_Nonnull const expected[] = {
                                      "、.mdを含め255バイト以内で指定してください。",
     [UI_TEXT_FAILURE_ALREADY_NAMED] = "このノートには名前があります。別名保存（:"
                                       "saveas）または名前変更（:rename）を使ってください。",
+    [UI_TEXT_FAILURE_FONT_BUNDLE_UNAVAILABLE] =
+        "同梱の書体を読めなかったので、OS の書体で表示します。",
     [UI_TEXT_COMMAND_SAVE] = "保存",
     [UI_TEXT_COMMAND_QUIT] = "保存済みなら終了",
     [UI_TEXT_COMMAND_SAVE_QUIT] = "保存して終了",

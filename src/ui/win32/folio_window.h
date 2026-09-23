@@ -6,15 +6,18 @@
 #define NENEFOLIO_FOLIO_WINDOW_H
 
 #include "folio_window_outcome.h"
+#include "font_bundle_outcome.h"
 
 #include <windows.h>
 
 struct folio_state;
 struct folio_window;
 
-/* state は窓より長く生きていなければならない。作った窓はすぐ表示する。 */
+/* state は窓より長く生きていなければならない。作った窓はすぐ表示する。
+ * fonts は入口が窓を作る前に登録した同梱の書体の結果で、READY 以外なら最初の描画のあとに
+ * 失敗の箱を 1 回出す（ADR 0036 の決定 5）。 */
 [[nodiscard]] enum folio_window_outcome
-folio_window_create(struct folio_state *_Nonnull state,
+folio_window_create(struct folio_state *_Nonnull state, enum font_bundle_outcome fonts,
                     struct folio_window *_Nullable *_Nonnull out);
 /* メッセージループのTranslateMessageより前。処理済みの鍵は再dispatchしない。 */
 [[nodiscard]] bool folio_window_translate(const struct folio_window *_Nonnull window,

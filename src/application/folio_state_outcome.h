@@ -73,7 +73,9 @@ enum folio_state_outcome : unsigned char
     FOLIO_STATE_NAME_REQUIRED,
     FOLIO_STATE_INVALID_NAME,
     FOLIO_STATE_ALREADY_NAMED,
-    FOLIO_STATE_CANCELLED
+    FOLIO_STATE_CANCELLED,
+    /* 同梱の書体を読めなかった。OS の書体で起動は続ける。状態は変えていない（ADR 0036 の決定 5） */
+    FOLIO_STATE_FONT_BUNDLE_UNAVAILABLE
 };
 
 #endif

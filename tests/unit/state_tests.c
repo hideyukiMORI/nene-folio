@@ -1868,6 +1868,7 @@ static const char *_Nonnull const expected_failure_lines[] = {
         "このノートには名前があります。別名保存（:saveas）または名前変更（:"
         "rename）を使ってください。",
     [FOLIO_STATE_CANCELLED] = "",
+    [FOLIO_STATE_FONT_BUNDLE_UNAVAILABLE] = "同梱の書体を読めなかったので、OS の書体で表示します。",
 };
 
 static void verify_failure_lines(void)
