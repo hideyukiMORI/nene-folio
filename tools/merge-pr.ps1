@@ -77,16 +77,33 @@ function Invoke-Gh {
     return $output
 }
 
-# gh pr checks は pending や失敗でも非 0 を返し、check が無いと本文の代わりに文言を返す。
+# head の check-run を名前ごとに**最新の 1 つ**へ絞る（Issue #152）。GitHub の merge 判定は名前ごとの最新で行うが、
+# `gh pr checks` と `filter=latest` は同じ head に残る前の run（Draft の run が ADR 0037 で failure にした `check` など）も返す。
+# 最新は check_suite.id（run ごとに増える）で決め、同じ suite なら started_at の遅い方。conclusion → bucket の対応は gh と同じ。
 function Get-CheckState {
     param([Parameter(Mandatory)][int]$Pr)
-    $output = & gh pr checks $Pr --json 'name,bucket' 2>&1 | Out-String
+    $head = (Invoke-Gh @('pr', 'view', "$Pr", '--json', 'headRefOid') | ConvertFrom-Json).headRefOid
+    $output = & gh api "repos/{owner}/{repo}/commits/$head/check-runs?filter=all&per_page=100" --jq '.check_runs[] | {name, status, conclusion, suite: .check_suite.id, started: .started_at}' 2>&1 | Out-String
     $text = $output.Trim()
-    if (-not $text.StartsWith('[')) {
-        if ($text -match 'no checks reported') { return , @() }
-        Stop-Merge "gh pr checks $Pr failed: $text"
+    if ($LASTEXITCODE -ne 0) { Stop-Merge "gh api check-runs for $head failed: $text" }
+    if ($text.Length -eq 0) { return , @() }
+    $runs = @($text -split "`r?`n" | Where-Object { $_.Trim().Length -gt 0 } | ForEach-Object { $_ | ConvertFrom-Json })
+    $latest = @{}
+    foreach ($run in $runs) {
+        $current = $latest[$run.name]
+        if ($null -eq $current -or $run.suite -gt $current.suite -or ($run.suite -eq $current.suite -and "$($run.started)" -gt "$($current.started)")) {
+            $latest[$run.name] = $run
+        }
     }
-    return , @($text | ConvertFrom-Json)
+    $checks = foreach ($run in $latest.Values) {
+        $bucket = if ($run.status -ne 'completed') { 'pending' }
+        elseif ($run.conclusion -in @('success', 'neutral')) { 'pass' }
+        elseif ($run.conclusion -eq 'skipped') { 'skipping' }
+        elseif ($run.conclusion -eq 'cancelled') { 'cancel' }
+        else { 'fail' }
+        [pscustomobject]@{ name = $run.name; bucket = $bucket }
+    }
+    return , @($checks)
 }
 
 function Get-CheckSummary {
@@ -111,7 +128,9 @@ function Wait-Check {
     $resent = $false
     while ($true) {
         $summary = Get-CheckSummary -Checks (Get-CheckState -Pr $Pr)
-        if ($summary.failed.Count -gt 0) { Stop-Merge "checks failed: $($summary.failed -join ', ')" }
+        # Ready 直後は前の run の failure（Draft の `check`・ADR 0037）だけが残り、新しい run の job はまだ check-run を持たない。
+        # pending が 1 つでもあるあいだは落ちたと判断せず、揃ってから failed を見る（#152）。
+        if ($summary.pending.Count -eq 0 -and $summary.failed.Count -gt 0) { Stop-Merge "checks failed: $($summary.failed -join ', ')" }
         if ($summary.done) { return $summary }
         $elapsed = $started.Elapsed.TotalSeconds
         if ($summary.count -eq 0 -and -not $resent -and $elapsed -ge $script:ResendAfterSeconds) {
