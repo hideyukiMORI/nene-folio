@@ -224,6 +224,10 @@ constexpr int base_command_input_vertical_inset = 2;
 constexpr int base_search_button_width = 64;
 /* 操作行の常設ボタンを出せる最小の余白（これより狭ければ「操作 ▾」のメニューへ移る）。 */
 constexpr int base_action_margin = 8;
+/* 頭の釦の字の左の字下げと右の余白、釦と釦の間隔（96 DPI・#122）。 */
+constexpr int base_action_inset = 8;
+constexpr int base_action_trail = 6;
+constexpr int base_action_gap = 6;
 /* 番号の右端と本文の左端のあいだ（96 DPI・ADR 0026 の決定 1）。 */
 constexpr int base_gutter_gap = 8;
 /* 数字を測れなかったときの目安（96 DPI の Consolas 11px の実寸に近い値）。 */
@@ -1693,14 +1697,56 @@ static LRESULT hit_test(const struct folio_window *_Nonnull self, LPARAM lparam)
     return in_caption ? HTCAPTION : HTCLIENT;
 }
 
+/* 頭の釦 index 番に描く 1 行。釦の幅の実測も描画もこの 1 本を通る（#122）。 */
+static const char *_Nonnull action_button_label(const struct folio_window *_Nonnull self,
+                                                size_t index)
+{
+    enum folio_language language = folio_state_language(self->state);
+    if (index == 2)
+    {
+        return ui_text_line(UI_TEXT_ACTION_OPERATIONS, language);
+    }
+    static const enum folio_command commands[] = {
+        [0] = FOLIO_COMMAND_NEW,
+        [1] = FOLIO_COMMAND_SAVE,
+        [3] = FOLIO_COMMAND_HELP,
+        [4] = FOLIO_COMMAND_FIND,
+    };
+    return folio_command_label(commands[index], language);
+}
+
+/* 頭の釦の矩形。描画・当たり判定・「操作 ▾」のメニューの位置がこの 1 本を共有する。
+ * 幅は現在の言語の字面を頭と同じ等幅フォントと字間で測った幅 ＋ 字下げ ＋ 右の余白で、
+ * 日本語の画面案の幅（floors）を下限にする。字がそれより広い言語だけ釦が広がり、
+ * 右の釦はその分だけ右へずれる（#122。English の「Actions ▾」が省略されない）。 */
 static RECT action_button_rect(const struct folio_window *_Nonnull self, size_t index)
 {
     UINT dpi = GetDpiForWindow(self->handle);
-    const int offsets[] = {0, 110, 168, 226, 302};
-    const int widths[] = {104, 52, 52, 70, 160};
-    int left = scale(base_drawer_width + 8 + offsets[index], dpi);
+    const int floors[] = {104, 52, 52, 70, 160};
+    int left = scale(base_drawer_width + 8, dpi);
     int top = scale(base_caption_height + 4, dpi);
-    return (RECT){left, top, left + scale(widths[index], dpi), top + scale(28, dpi)};
+    HDC device = GetDC(self->handle);
+    HGDIOBJ previous = nullptr;
+    if (device != nullptr)
+    {
+        previous = SelectObject(device, self->mono_font);
+        SetTextCharacterExtra(device, scale(base_tracking, dpi));
+    }
+    int width = 0;
+    for (size_t at = 0; at <= index; ++at)
+    {
+        left += at == 0 ? 0 : width + scale(base_action_gap, dpi);
+        int measured = device == nullptr ? 0 : measure_utf8(device, action_button_label(self, at));
+        int needed = scale(base_action_inset, dpi) + measured + scale(base_action_trail, dpi);
+        width = needed > scale(floors[at], dpi) ? needed : scale(floors[at], dpi);
+    }
+    if (device != nullptr)
+    {
+        SetTextCharacterExtra(device, 0);
+        SelectObject(device, previous);
+        ReleaseDC(self->handle, device);
+    }
+    return (RECT){left, top, left + width, top + scale(28, dpi)};
 }
 
 /* 幅が足りない窓（560px など）では常設ボタンを出さず、「操作 ▾」のメニューへ委ねる
@@ -1721,25 +1767,20 @@ static void draw_action_button(const struct folio_window *_Nonnull self, HDC dev
     FillRect(device, &bounds, brush);
     DeleteObject(brush);
     SetTextColor(device, self->palette.current_text);
-    bounds.left += scale(8, GetDpiForWindow(self->handle));
+    bounds.left += scale(base_action_inset, GetDpiForWindow(self->handle));
     draw_utf8(device, label, bounds);
 }
 
 static void draw_actions(const struct folio_window *_Nonnull self, HDC device)
 {
-    draw_action_button(self, device, action_button_rect(self, 0),
-                       folio_command_label(FOLIO_COMMAND_NEW, folio_state_language(self->state)));
-    draw_action_button(self, device, action_button_rect(self, 1),
-                       folio_command_label(FOLIO_COMMAND_SAVE, folio_state_language(self->state)));
-    draw_action_button(self, device, action_button_rect(self, 2),
-                       ui_text_line(UI_TEXT_ACTION_OPERATIONS, folio_state_language(self->state)));
-    draw_action_button(self, device, action_button_rect(self, 3),
-                       folio_command_label(FOLIO_COMMAND_HELP, folio_state_language(self->state)));
+    for (size_t index = 0; index < 4; ++index)
+    {
+        draw_action_button(self, device, action_button_rect(self, index),
+                           action_button_label(self, index));
+    }
     if (action_button_fits(self, 4))
     {
-        draw_action_button(
-            self, device, action_button_rect(self, 4),
-            folio_command_label(FOLIO_COMMAND_FIND, folio_state_language(self->state)));
+        draw_action_button(self, device, action_button_rect(self, 4), action_button_label(self, 4));
     }
 }
 
@@ -2928,6 +2969,11 @@ static void recolor_window(struct folio_window *_Nonnull self)
     }
     recolor_pane(self);
     InvalidateRect(self->handle, nullptr, FALSE);
+    /* 主窓は WS_CLIPCHILDREN なので、上の無効化は子の EDIT に届かない（#121）。 */
+    if (self->filter_input != nullptr)
+    {
+        InvalidateRect(self->filter_input, nullptr, TRUE);
+    }
     redraw_command_layer(self);
 }
 
