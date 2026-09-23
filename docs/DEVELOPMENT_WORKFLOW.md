@@ -136,7 +136,9 @@ Waivers: none | WVR-NNNN
 - 判断とトレードオフ → ADR
 - 一時的な逸脱 → waiver
 - いまのタスク状態 → Issue / PR（`docs/todo/current.md` は要約）
-- その日の到達点と実測 → `docs/reports/YYYY-MM-DD.md`（日報）。次の人が再開するための状態 → `docs/handoffs/YYYY-MM-DD.md`（引き継ぎ書）
+- その日の到達点と実測 → `docs/reports/YYYY-MM-DD.md`（日報）。次の人が再開するための状態 → `docs/handoffs/YYYY-MM-DD.md`（引き継ぎ書）。
+  **日付は実時計から取る**（`Get-Date` か直前のコミットの時刻）。前の文書の日付を 1 日進めて名付けない。同じ日の 2 回目以降のセッションは同じファイルに節を足す
+  （2026-09-22 夜からの 3 日分のずれは Issue #147 で直した。[正誤表](reports/ERRATA.md)）
 - コードのコメント → その場の非自明な理由（方針そのものは書かない）
 
 設定ファイルとドキュメントが食い違ったら、**ドキュメントが決定の記録**である。ただし両方がそろうまで merge は止める。

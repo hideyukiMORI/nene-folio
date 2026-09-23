@@ -1,7 +1,7 @@
 # ADR 0036 — 日本語・简体中文・欧文の書体を固定版で `fonts/` に同梱し、exe の隣から `FR_PRIVATE` で登録して `ui_font` の表で選ぶ
 
-- 状態: 受理（設計リナ 2026-09-25。hide の判断: 資産はリポジトリに入れる・埋め込まず隣のフォルダから読む・書体は 2026-09-12 の選定のまま。現物調査 `out/agents/42-probe/memo.md`、実測 `out/design/2026-09-25/font-bundle-probe/`）
-- 日付: 2026-09-25
+- 状態: 受理（設計リナ 2026-09-23。hide の判断: 資産はリポジトリに入れる・埋め込まず隣のフォルダから読む・書体は 2026-09-12 の選定のまま。現物調査 `out/agents/42-probe/memo.md`、実測 `out/design/2026-09-25/font-bundle-probe/`）
+- 日付: 2026-09-23
 - Issue: #42
 - 影響する規則: ARC-001 / ARC-002 / ARC-003 / ARC-004 / ARC-007 / ARC-010 / ARC-011、C-002 / C-003 / C-005 / C-007 / C-012、CNF-002 / CNF-009 / CNF-011、**新設 CNF-012**、QLT-011（据え置き・注記）
 - 関連: ADR 0005（書体の意図）、ADR 0032（言語ごとの書体 `ui_font` / `ui_face` と RichEdit の既定書式）、ADR 0027（`failure_lines[]` の表）
@@ -16,7 +16,7 @@ Issue #42 は、Noto Sans JP / Noto Sans SC / Arimo を版と SHA-256 を固定�
 手元の事実:
 
 - `out/fonts/2026-09-12/` に 6 ファイル（Noto Sans JP / SC の Regular / Bold・Arimo の Regular / Bold・合計 27,028,564 バイト）、ライセンス本文 2 ファイル（SIL OFL 1.1）、
-  取得元 URL・upstream の revision・バイト数・SHA-256 を記した `manifest.json`（schema 1）がある。**すべて静的フォント**（可変ではない）で、SHA-256 は 2026-09-25 に照合して一致した。
+  取得元 URL・upstream の revision・バイト数・SHA-256 を記した `manifest.json`（schema 1）がある。**すべて静的フォント**（可変ではない）で、SHA-256 は 2026-09-23 に照合して一致した。
 - 実測（DPI 120・この機械）: 6 ファイルの `AddFontResourceExW(FR_PRIVATE)` は合計 **27ms**（中央値）、解除 1ms。登録後は GDI（`CreateFontW` → `GetTextFace`）・RichEdit 5.0（`CHARFORMAT2W`）・別スレッドの窓のいずれからも face 名で引ける。
   欠損のパスは 0 と `ERROR_FILE_NOT_FOUND`。行高は `tmHeight` が現行より 1〜2px 高く、RichEdit の行間は最大 6px 広い（-16 で 51px 対 49px）。JP と SC の字形は「骨・直・海・与」で 1.46% の画素が違う。
 - 実測の限界: **この機械には OS 側に `NotoSansJP-VF.ttf` が入っていて**、同梱前から "Noto Sans JP" が列挙される（同名の衝突込みの実測）。RichEdit で SC と Arimo に漢字を渡した描画が同じ画素で、同梱の SC が選ばれているかは**face 名ではなくファイルの同一性で確かめる必要がある**。
@@ -109,10 +109,10 @@ exe への埋め込み（`AddFontMemResourceEx`）、OS へのインストール
 - 補正する文書: ARC-004 の所有者の表（`font_bundle` の行）、ARCHITECTURE_CONSTITUTION の「#42 が入ったら `ui_font.c` の表だけを差し替える」の注記、GLOSSARY「書体」、統合チェックリスト（76 番台に「同梱の書体」の観点）。
 - Issue #42 は単位 C の PR で閉じる（A / B は `Refs #42`）。
 
-## 2026-09-25 の補正（単位 B / C の実装の後・決定本文は書き換えない）
+## 2026-09-23 の補正（単位 B / C の実装の後・決定本文は書き換えない）
 
 1. **`enum font_bundle_outcome` は core（`src/core/font_bundle_outcome.h`）に置く。** ui は adapters を include できず（ARC-002）、単体は core / application にしか依存できない。判定の純関数 `font_bundle_verdict_of`（`src/core/font_bundle_verdict.{h,c}`）も core にあり、adapters の `font_bundle` は列挙と登録だけを持つ。決定 3 の「専用ファイル」はこの置き場で読む。
 2. **起動時の箱は `folio_window_create` が最初の描画（`ShowWindow` / `UpdateWindow`）のあとに出す**（`announce_fonts`）。「読めない設定」の既存の通知は `main.c` の窓を作る前の `MessageBoxW` で、契機が違う。決定 5 の「最初の描画のあと」のとおり。
 3. **退避の表は別ファイル `src/core/ui_font_fallback.c`**（`ui_font_fallback_face`）。CNF-009 の `lineTables` は「列挙 → 表のファイル」の対で網羅を数えるので、同じファイルに 2 つの表を置くと片方の欠けを見逃す。
 4. 実測（単位 B の identity probe・この機械・DPI 120）: 登録後は Noto Sans SC / JP / Arimo の 3 face とも `GetFontData` の `name` テーブルが同梱ファイルと一致し、JP は登録前が OS の `NotoSansJP-VF.ttf`、登録後が同梱の static だった。同名の衝突は「登録後は同梱が選ばれる」と、この機械では言える。
-5. **English の UI の書体は Noto Sans JP にし、Arimo は同梱から外す**（hide 2026-09-25・案 1）。実機の絵（`shots/c-en-0.png`）で、Arimo に漢字が無いためドロワーの日本語のノート名が別の書体へ束ねられ字間が空いた。Noto Sans JP のラテン文字で英語の UI を描けば、日本語のノート名と字間が揃う。決定 1 の 6 ファイルは 4 ファイル（Noto Sans JP / SC の Regular / Bold・合計 26,063,980 バイト）、ライセンスは 1 本になる。決定 4 の EN の同梱 face は `Noto Sans JP`（退避は `Yu Gothic UI` のまま）。
+5. **English の UI の書体は Noto Sans JP にし、Arimo は同梱から外す**（hide 2026-09-23・案 1）。実機の絵（`shots/c-en-0.png`）で、Arimo に漢字が無いためドロワーの日本語のノート名が別の書体へ束ねられ字間が空いた。Noto Sans JP のラテン文字で英語の UI を描けば、日本語のノート名と字間が揃う。決定 1 の 6 ファイルは 4 ファイル（Noto Sans JP / SC の Regular / Bold・合計 26,063,980 バイト）、ライセンスは 1 本になる。決定 4 の EN の同梱 face は `Noto Sans JP`（退避は `Yu Gothic UI` のまま）。

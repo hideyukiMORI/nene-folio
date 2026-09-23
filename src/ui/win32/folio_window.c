@@ -151,7 +151,7 @@ constexpr WORD filter_accelerator = 107;
 constexpr int filter_control_id = 2;
 constexpr size_t filter_input_capacity = 128;
 constexpr int base_filter_text_inset = 4;
-/* 絞り込みが効いているあいだ欄の右端に出す「×」（ADR 0024 の 2026-09-23 の補正 6）。
+/* 絞り込みが効いているあいだ欄の右端に出す「×」（ADR 0024 の 2026-09-22 の補正 6）。
  * 箱は欄の高さに収まる 20px の正方形で、24 の viewBox はここへ写る（ADR 0033 の補正 9）。 */
 constexpr int base_filter_clear_size = 20;
 constexpr size_t command_input_capacity = 256;
@@ -2938,7 +2938,7 @@ static void restream_pane(const struct folio_window *_Nonnull self)
 /* 色を持つものを全部当て直す（ADR 0031 の決定 6）。palette の写しは主窓・ドロワー・
  * command_brush の 3 か所で、縁の色は decorate を呼び直す（何度でも可・実測）。
  * 閲覧は選択を退避して流し直し、編集は色を当て直すだけ（本文・Undo・変更印を守る）。
- * **最初に見える論理行を退避して戻す**（ADR 0031 の 2026-09-23 の補正 2）。
+ * **最初に見える論理行を退避して戻す**（ADR 0031 の 2026-09-22 の補正 2）。
  * キャレットが画面の外にあると EM_SETCHARFORMAT がキャレットまでスクロールするため。 */
 static void recolor_pane(const struct folio_window *_Nonnull self)
 {
@@ -4603,7 +4603,7 @@ static LRESULT on_command(struct folio_window *_Nonnull self, WPARAM wparam, LPA
 /* 常設の絞り込みの欄を主窓の子として作る。
  * **あとから作った子は z 順の後ろ（背面）に入る**ので、作っただけではドロワーの奥にいる。
  * ドロワーの WM_PAINT は client 全域を BitBlt するので、奥にいると索引を描き直すたびに
- * 欄の画素が塗り潰されて語が消える（#86 / ADR 0024 の 2026-09-23 の補正 1・2）。
+ * 欄の画素が塗り潰されて語が消える（#86 / ADR 0024 の 2026-09-22 の補正 1・2）。
  * 守るのはドロワー側の `WS_CLIPSIBLINGS` と z 順の両方で、欄に `WS_CLIPSIBLINGS` を
  * 付けても効かない（実測 out/design/2026-09-23/filter-visible-probe/）。 */
 static bool create_filter_input(struct folio_window *_Nonnull self, HWND window)

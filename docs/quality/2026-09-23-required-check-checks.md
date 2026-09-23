@@ -1,6 +1,6 @@
 # #112（必須 check の判定 job）の確認記録
 
-2026-09-26・枝 `ci/112-required-check-verdict`。ADR 0037 の「検証」に対する結果。
+2026-09-23・枝 `ci/112-required-check-verdict`。ADR 0037 の「検証」に対する結果。
 CI の YAML は `eng/prove-gates.py` の対象外なので、反例（Draft の head が merge できないこと）はこの PR 自身で実測して写す。
 値は `gh run view` / `gh pr view --json mergeStateStatus,statusCheckRollup` の字面。
 

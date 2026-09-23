@@ -1,7 +1,7 @@
 # ADR 0032 — 表示言語は `ui_text` の表を 3 列にして `settings.json` の版 3 で選び、言語ごとの face は core の表から引き、訳し残しと列の欠落は機械で守る
 
-- 状態: 受理（設計リナ 2026-09-23。ADR 0029 の単位 C。実測 `out/design/2026-09-23/language-probe/` に基づき、現行コード（main `2448987`）に照らした読み取り専用の批評（止める所見 7・直したい所見 12）を経て直した）
-- 日付: 2026-09-23
+- 状態: 受理（設計リナ 2026-09-22。ADR 0029 の単位 C。実測 `out/design/2026-09-23/language-probe/` に基づき、現行コード（main `2448987`）に照らした読み取り専用の批評（止める所見 7・直したい所見 12）を経て直した）
+- 日付: 2026-09-22
 - Issue: #76（親 #38・最後の単位。統合で #38 を閉じる）
 - 規則: ARC-001 / ARC-002 / ARC-003 / ARC-004 / ARC-005 / ARC-007 / ARC-010、C-002 / C-003 / C-005 / C-012 / C-018、CNF-002 / CNF-006 / CNF-009 / CNF-010 / CNF-011（この単位で定義）、QLT-009 / QLT-010
 - 関連: ADR 0016 決定 1（パレットの照合）、ADR 0025（設定の版）、ADR 0026 決定 6（最初に見える論理行の対）、ADR 0029 決定 4〜6・11、ADR 0030（`ui_text_line(id, language)`・`folio_language`・置換子・CNF-010）、ADR 0031（設定画面・`note_pane_recolor`・`note_pane_restore_selection`・`render_pane_document`）、#42（同梱フォント・後続）、#82（名前入力面のテーマ）
@@ -86,10 +86,10 @@ application: `folio_state_set_language`（`UNREADABLE`・同じ値・先に作�
 Win32 部品 probe（`out/design/2026-09-23/language-ui-probe/`）: 3 言語 × 欄の中の ID の帯幅であふれ 0・face の差し替えで本文・選択・Undo・変更印が不変で既定書式の face が変わる・再折り返し後に最初に見える論理行が戻る（編集・閲覧）・`recolor_pane` の論理行の復元・EDIT の `WM_SETFONT`・face の存在確認と代替・設定画面 8 行が 560×360 と 150% で 5 行見えて選択行が常に見える・札が en で +8px でもパンくずの最小幅を割らない・`:set language=` の 3 語・名前入力面の説明が 3 言語で 2 行に収まる・失敗の箱の題と本文の言語。
 実機の目視（hide）: 3 言語の見え方（字形の混在・豆腐・幅）・簡体字の訳の妥当性（母語話者の確認は別）・言語切替中の本文と行番号・設定画面のスクロール。統合チェックリストに足す。Waivers: none。
 
-## 2026-09-23 の補正（実装と Win32 部品 probe の後・決定本文は書き換えない）
+## 2026-09-22 の補正（実装と Win32 部品 probe の後・決定本文は書き換えない）
 
 実装の probe は `out/design/2026-09-23/language-ui-probe/`、
-結果のまとめは[確認記録](../quality/2026-09-23-language-checks.md)。
+結果のまとめは[確認記録](../quality/2026-09-22-language-checks.md)。
 
 1. **新しい `ui_text` の ID は単位 3（core）のコミットに置いた。** 決定 7 の
    `UI_TEXT_SETTINGS_LANGUAGE` と 3 つの自称、`command_shortcuts[]` の
@@ -119,7 +119,7 @@ Win32 部品 probe（`out/design/2026-09-23/language-ui-probe/`）: 3 言語 × 
    face の差し替えで表示行数が 181 → 121 に変わっても **RichEdit 自身が先頭の内容を保ち**、
    最初に見える論理行は動かなかった（復元は空振り）。一方、**キャレットが画面の外にある再着色**では
    論理行が 16 → 1 へ飛び、同じ包みで 16 に戻った。包みは両方に付けたまま（face 側は安全網）で、
-   ADR 0031 の 2026-09-23 の補正 2 はこの実測にもとづく。
+   ADR 0031 の 2026-09-22 の補正 2 はこの実測にもとづく。
 8. **`failure_box_show` の呼び出しは 8 か所ではなく 13 か所だった**（ドロワー 5・主窓 8）。
    全部が `folio_state_language` を渡す。
 9. **英訳を 1 件だけ短くした。** probe が `UI_TEXT_HELP_EX_SET_NUMBER` の en を 426px（箱 428px）と

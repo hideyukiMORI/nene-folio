@@ -240,7 +240,7 @@ static bool folded_at(const char *_Nonnull text, const char *_Nonnull query, siz
 }
 
 /* パレットの部分一致（label と別名）。空の語は全件。Ex の完全一致は大小を区別したままで、
- * ここは通らない（ADR 0016 の 2026-09-23 の補正 3）。 */
+ * ここは通らない（ADR 0016 の 2026-09-22 の補正 3）。 */
 static bool contains_span(const char *_Nonnull text, size_t length, const char *_Nonnull query,
                           size_t query_length)
 {

@@ -9,7 +9,7 @@ NeNe Folio が exe の隣の `fonts\` から読む書体の資産。設計の正
 | `NotoSansJP-Regular.otf` / `NotoSansJP-Bold.otf` | Noto Sans JP（日本語） | `LICENSE-Noto-CJK.txt` |
 | `NotoSansSC-Regular.otf` / `NotoSansSC-Bold.otf` | Noto Sans SC（简体中文） | `LICENSE-Noto-CJK.txt` |
 
-- 欧文は Noto Sans JP のラテン文字で描く（2026-09-25・hide の判断。欧文専用の書体は同梱しない）。
+- 欧文は Noto Sans JP のラテン文字で描く（2026-09-23・hide の判断。欧文専用の書体は同梱しない）。
 - すべて静的フォントで、取得したバイト列をそのまま置いている（変換・改変・family 名の変更はしない）。
 - ライセンスはどれも **SIL Open Font License 1.1**。本文は上の 1 ファイル。
 - 出所（取得元 URL・upstream の revision・バイト数・SHA-256・ライセンスの対応）は [manifest.json](manifest.json) が正本。取得日は 2026-09-12。

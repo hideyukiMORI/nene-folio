@@ -1,7 +1,7 @@
 # ADR 0033 — 閉じる・設定・折畳・選択の印は 24 の viewBox の面のパスとして ui に持ち、OS 同梱の GDI+ を型定義の無い自前の宣言で結んで既存の DC に直接塗る
 
-- 状態: 受理（設計リナ 2026-09-23。Issue #88。hide が画面案 `https://claude.ai/artifact/UiUEYVVnhqUpYNCXxV8Ry3` の流儀 C（面で塗る・角丸の板）を選んだ。実測 `out/design/2026-09-23/icon-probe/`（42 + 5 項目・幾何の突き合わせ 0 件差）と、現行コード（main `4dcd3c7`）に照らした読み取り専用の批評（止める所見 8・直したい所見 12。CNF-002 は検査器を実際に走らせて判定）を経て直した）
-- 日付: 2026-09-23
+- 状態: 受理（設計リナ 2026-09-22。Issue #88。hide が画面案 `https://claude.ai/artifact/UiUEYVVnhqUpYNCXxV8Ry3` の流儀 C（面で塗る・角丸の板）を選んだ。実測 `out/design/2026-09-23/icon-probe/`（42 + 5 項目・幾何の突き合わせ 0 件差）と、現行コード（main `4dcd3c7`）に照らした読み取り専用の批評（止める所見 8・直したい所見 12。CNF-002 は検査器を実際に走らせて判定）を経て直した）
+- 日付: 2026-09-22
 - Issue: #88
 - 規則: ARC-001 / ARC-002 / ARC-003 / ARC-004 / ARC-012、C-002 / C-003 / C-005 / C-006 / C-007 / C-008 / C-012 / C-017、CNF-002 / CNF-009 / CNF-010、QLT-009 / QLT-010
 - 関連: ADR 0005（案2 堅）、ADR 0009（ドロワーの DIB とフェード）、ADR 0011 / 0016 決定 9（閉じる・設定の位置）、ADR 0013（Escape で閉じない）、ADR 0015 決定 7（カーソルの角の位置）、ADR 0030（`ui_text` の `GLYPH_*`）、ADR 0031 決定 7・8(a)（歯車と印は GDI の線）、ADR 0028 / 0031（`platformLibraries` の正典経路）
@@ -79,10 +79,10 @@ Win32 部品 probe（`out/design/2026-09-23/icon-ui-probe/`・メモリ DC の�
 ゲート: `architecture.json` の `gdiplus`・ソース一覧・`lineTables` の整合（`GLYPH_*` を消した後）・`_Nonnull` の TU から include して警告 0・分岐網羅が下がらない（ui は対象外）。
 実機の目視（hide）: 96 DPI の × の濃さ・24px の歯車が読めるか・折畳の板の太さと左右位置・選択の印の位置と色（暗テーマの橙 on 紫）・両テーマ・DPI 96↔144・設定画面の開閉で印が正しい行・絞り込み中のカテゴリ行の折畳印。統合チェックリストに足す。Waivers: none。
 
-## 2026-09-23 の補正（実装と Win32 部品 probe の後・決定本文は書き換えない）
+## 2026-09-22 の補正（実装と Win32 部品 probe の後・決定本文は書き換えない）
 
 実装の probe は `out/design/2026-09-23/icon-ui-probe/`（43 項目 ＋ 幾何の突き合わせ 0 件差）、
-結果のまとめは[確認記録](../quality/2026-09-23-icon-checks.md)。
+結果のまとめは[確認記録](../quality/2026-09-22-icon-checks.md)。
 
 1. **決定 2 の「ちょうど 17 本」は数え違いで、列挙されているのは 18 本。** 宣言したのは列挙どおりの
    18 本（`GdiplusStartup` / `GdiplusShutdown` / `GdipCreateFromHDC` / `GdipDeleteGraphics` /
@@ -123,7 +123,7 @@ Win32 部品 probe（`out/design/2026-09-23/icon-ui-probe/`・メモリ DC の�
    望ましくない）。箱が 20px で `base_filter_clear_inset` の刻み方も頭の × と別なので、
    同じ面のパスへ寄せるなら箱の数から決め直す必要がある。設計リナの判断で別 Issue にするか次の単位で扱う。
 
-## 2026-09-23 の補正（#93・決定本文は書き換えない）
+## 2026-09-22 の補正（#93・決定本文は書き換えない）
 
 9. **補正 8 の「× を描く経路が 2 つ」は Issue #93 で 1 つにした。** `paint_filter_clear` の GDI の線 2 本を
    `icon_paint_fill(device, filter_clear_rect(self, window), ICON_PAINT_CLOSE, header_text)` に置き換え、
@@ -134,7 +134,7 @@ Win32 部品 probe（`out/design/2026-09-23/icon-ui-probe/`・メモリ DC の�
    要らなくなったので消した。決定 6 の一覧はこれで 6 か所になるが、**箱を新たに決める必要はなかった**
    （既にある 20px の正方形をそのまま使う）ので決定 6 の本文は書き換えない。
    **20px でも灰色に潰れない**ことは Win32 部品 probe（`out/design/2026-09-23/filter-close-probe/`・
-   16 / 16 成功・[確認記録](../quality/2026-09-23-filter-close-checks.md)）で測った。
+   16 / 16 成功・[確認記録](../quality/2026-09-22-filter-close-checks.md)）で測った。
    20px の箱の塗りは完全な画素 13・中間色 47 で、24px の箱の塗りを面積比 `(20/24)^2` で写した値の
    **1.017 倍**である。ADR 本文が「20px 未満だと灰色になる」と言っているのは**高さ 2 単位の板と
    8 単位の印**についてで、腕が 1.98 単位ある × には当てはまらなかった。

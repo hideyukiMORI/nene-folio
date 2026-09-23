@@ -213,7 +213,7 @@ static int format_count(size_t value, wchar_t *_Nonnull out)
 }
 
 /* 頭の帯の右の数。ふだんはノートの総数、**絞り込みが効いているあいだは「一致 / 総数」**
- * （ADR 0024 の 2026-09-23 の補正 7）。数は application の一致集合から取り、UI は数えない。 */
+ * （ADR 0024 の 2026-09-22 の補正 7）。数は application の一致集合から取り、UI は数えない。 */
 static void draw_header_count(const struct drawer_window *_Nonnull self, HDC device, RECT bounds)
 {
     size_t total = folio_state_note_count(self->state);
@@ -237,7 +237,7 @@ static void draw_header_count(const struct drawer_window *_Nonnull self, HDC dev
     draw_utf8(device, line, bounds, DT_RIGHT);
 }
 
-/* 絞り込みが効いているあいだ、欄の外周 1px を札の色で囲む（ADR 0024 の 2026-09-23 の補正 5）。
+/* 絞り込みが効いているあいだ、欄の外周 1px を札の色で囲む（ADR 0024 の 2026-09-22 の補正 5）。
  * 欄そのものは主窓の子で、ドロワーの DC からは欄の矩形が除かれているので、囲むのは 1px 外側。 */
 static void draw_filter_frame(const struct drawer_window *_Nonnull self, HDC device)
 {

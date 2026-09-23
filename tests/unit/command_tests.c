@@ -275,7 +275,7 @@ static void verify_ascii_fold(void)
 }
 
 /* パレットの部分一致は ASCII の英字だけ大小を無視する。Ex の完全一致は区別したまま
- * （ADR 0016 の 2026-09-23 の補正 3）。 */
+ * （ADR 0016 の 2026-09-22 の補正 3）。 */
 static void verify_case_insensitive_palette(void)
 {
     require(
