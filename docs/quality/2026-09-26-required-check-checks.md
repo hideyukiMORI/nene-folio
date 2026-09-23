@@ -16,9 +16,12 @@ CI の YAML は `eng/prove-gates.py` の対象外なので、反例（Draft の 
 
 | 項目 | 期待 | 結果 |
 | --- | --- | --- |
-| `full-gate` の結論 | `success` | （実測待ち） |
-| `check` の結論 | `success` | （実測待ち） |
-| `mergeStateStatus` | `CLEAN` | （実測待ち） |
+| `full-gate` の結論 | `success` | `success`（同じ head `3143151`・`gh pr ready 146` → run 35844073589・event `pull_request` / ready_for_review） |
+| `check` の結論 | `success` | `success`（同 run） |
+| `mergeStateStatus` | `CLEAN` | `CLEAN`（`isDraft = false`） |
+
+Draft の実測は 2 度の push（head `fb2725e` = run 35843768164・head `3143151` = run 35843898385）で同じ結論だった。
+同じ head `3143151` が Draft では `BLOCKED`、Ready でフルゲートが通ると `CLEAN` になったので、通す・止めるの差はフルゲートの結論だけである。
 
 ## 3. 測っていないこと
 
