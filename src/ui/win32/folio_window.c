@@ -2152,6 +2152,8 @@ static bool inline_outcome(enum folio_state_outcome outcome)
     case FOLIO_STATE_INVALID_NAME:
     case FOLIO_STATE_ALREADY_NAMED:
     case FOLIO_STATE_CANCELLED:
+    /* 起動時に 1 回だけ箱で知らせる（ADR 0036 の決定 5）。欄から来ることは無い */
+    case FOLIO_STATE_FONT_BUNDLE_UNAVAILABLE:
         return false;
     }
     return false;
@@ -5183,7 +5185,21 @@ static bool start_gdiplus(struct folio_window *_Nonnull self)
     return true;
 }
 
+/* 同梱の書体を読めなかったことは、窓が退避の face で最初に描かれたあとに 1 回だけ知らせる
+ * （ADR 0036 の決定 5）。folio_window_create からだけ呼び、create は 1 回しか走らないので
+ * 「見せたか」の真偽は持たない。 */
+static void announce_fonts(HWND handle, enum font_bundle_outcome fonts,
+                           const struct folio_state *_Nonnull state)
+{
+    if (fonts != FONT_BUNDLE_READY)
+    {
+        UpdateWindow(handle);
+        failure_box_show(handle, FOLIO_STATE_FONT_BUNDLE_UNAVAILABLE, state);
+    }
+}
+
 enum folio_window_outcome folio_window_create(struct folio_state *_Nonnull state,
+                                              enum font_bundle_outcome fonts,
                                               struct folio_window *_Nullable *_Nonnull out)
 {
     HINSTANCE instance = GetModuleHandleW(nullptr);
@@ -5242,6 +5258,7 @@ enum folio_window_outcome folio_window_create(struct folio_state *_Nonnull state
     decorate(handle, self->palette);
     ShowWindow(handle, SW_SHOW);
     *out = self;
+    announce_fonts(handle, fonts, state);
     return FOLIO_WINDOW_CREATED;
 }
 

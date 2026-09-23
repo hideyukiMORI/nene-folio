@@ -4,6 +4,7 @@
 #include "appearance_adapter.h"
 #include "folio_state.h"
 #include "folio_window.h"
+#include "font_bundle.h"
 #include "persistence_adapter.h"
 #include "regex_adapter.h"
 #include "ui_text.h"
@@ -52,7 +53,8 @@ static void run_message_loop(const struct folio_window *_Nonnull window)
 
 /* 状態と窓を作って走らせる。アダプタは状態より長く生きる。 */
 static int run(struct persistence_adapter *_Nonnull persistence,
-               struct appearance_adapter *_Nonnull appearance, struct regex_adapter *_Nonnull regex)
+               struct appearance_adapter *_Nonnull appearance, struct regex_adapter *_Nonnull regex,
+               enum font_bundle_outcome fonts)
 {
     struct persistence_port files = persistence_adapter_port(persistence);
     struct appearance_port looks = appearance_adapter_port(appearance);
@@ -75,7 +77,7 @@ static int run(struct persistence_adapter *_Nonnull persistence,
         report(folio_state_failure_line(settings, folio_state_language(state)));
     }
     struct folio_window *_Nullable window = nullptr;
-    if (folio_window_create(state, &window) != FOLIO_WINDOW_CREATED)
+    if (folio_window_create(state, fonts, &window) != FOLIO_WINDOW_CREATED)
     {
         report(ui_text_line(UI_TEXT_APP_NO_WINDOW, folio_state_language(state)));
         folio_state_destroy(state);
@@ -117,7 +119,13 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE previous, PWSTR arguments, int
         persistence_adapter_destroy(adapter);
         return 1;
     }
-    int code = run(adapter, appearance, regex);
+    /* 同梱の書体は窓を作る前に登録し、メッセージループのあとに解除する（ADR 0036 の決定 3・
+     * ARC-004 の所有者はこの入口）。読めなくても起動は止めず、窓が最初の描画のあとに 1 回知らせる
+     * （決定 5）。 */
+    struct font_bundle *_Nullable fonts = nullptr;
+    enum font_bundle_outcome bundled = font_bundle_register(&fonts);
+    int code = run(adapter, appearance, regex, bundled);
+    font_bundle_destroy(fonts);
     regex_adapter_destroy(regex);
     appearance_adapter_destroy(appearance);
     persistence_adapter_destroy(adapter);

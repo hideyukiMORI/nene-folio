@@ -2721,6 +2721,7 @@ static const enum ui_text failure_lines[] = {
     [FOLIO_STATE_INVALID_NAME] = UI_TEXT_FAILURE_INVALID_NAME,
     [FOLIO_STATE_ALREADY_NAMED] = UI_TEXT_FAILURE_ALREADY_NAMED,
     [FOLIO_STATE_CANCELLED] = UI_TEXT_EMPTY,
+    [FOLIO_STATE_FONT_BUNDLE_UNAVAILABLE] = UI_TEXT_FAILURE_FONT_BUNDLE_UNAVAILABLE,
 };
 
 const char *_Nonnull folio_state_failure_line(enum folio_state_outcome outcome,

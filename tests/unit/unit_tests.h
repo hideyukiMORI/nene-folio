@@ -27,6 +27,7 @@ void run_line_index_tests(void);
 void run_replace_tests(void);
 void run_replace_state_tests(void);
 void run_ui_text_tests(void);
+void run_font_bundle_tests(void);
 
 /* state_tests のポート実装（偽のアダプタ）。台帳の文書を返し、書き戻しは受け入れる。
  * folio_state はポートの adapter を借りるので、state より長く生かしてから test_adapter_destroy

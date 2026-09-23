@@ -177,6 +177,10 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
          "This note already has a name. "
          "Use Save as (:saveas) or Rename (:rename).",
          "此笔记已有名称。请使用另存为（:saveas）或重命名（:rename）。"},
+    [UI_TEXT_FAILURE_FONT_BUNDLE_UNAVAILABLE] =
+        {"同梱の書体を読めなかったので、OS の書体で表示します。",
+         "The bundled fonts could not be loaded, so the OS fonts are used.",
+         "无法载入随附的字体，因此使用系统字体显示。"},
     [UI_TEXT_COMMAND_SAVE] = {"保存", "Save", "保存"},
     [UI_TEXT_COMMAND_QUIT] = {"保存済みなら終了", "Quit if saved", "已保存则退出"},
     [UI_TEXT_COMMAND_SAVE_QUIT] = {"保存して終了", "Save and quit", "保存并退出"},

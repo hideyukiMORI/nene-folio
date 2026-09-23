@@ -95,6 +95,7 @@
 | 検索語と一致集合 | 文字列と文書 ID の列 | application | 検索窓の入力 |
 | 利用者に見える文言 | 表示する語・句・1 行 | core（`ui_text` の表 1 か所） | ID で引くだけ。置換子の組み立ても core（`ui_text_format`）で、言語は application （`folio_state_language`）が渡す。ui / app は文言を持たない（C-018 / CNF-010）。表は言語ごとの列を持ち、列の網羅は CNF-011 が守る |
 | UI の書体の face | 言語ごとのフォント名 | core（`ui_font` の表 1 か所） | `ui_font_face(language)` で引くだけ。ui は実在を確かめて UTF-16 へ広げる（`ui_face`）、core の `markdown_rtf` は fonttbl へ入れる。主窓の自前描画の等幅（Consolas）は言語で変えない（ADR 0032 の決定 4） |
+| 同梱の書体の登録 | exe の隣の `fonts\` の `*.otf` / `*.ttf` を `FR_PRIVATE` で登録した組 | app の入口（`font_bundle`） | 起動と終了の 1 回ずつ。窓を作る前に `font_bundle_register`、メッセージループのあとに `font_bundle_destroy`。結果の判定は core の `font_bundle_verdict`、知らせるのは窓の最初の描画のあとの 1 回（ADR 0036 の決定 3・5） |
 
 同じ事実を 2 つの区分に独立して持たない。派生値は再計算するか、無効化を明示したキャッシュにする。
 
