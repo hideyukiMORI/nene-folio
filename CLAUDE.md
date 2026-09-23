@@ -124,6 +124,19 @@ Waivers: none | WVR-NNNN
 
 ## 6. いまの状況
 
+2026-09-23 夜 2: **hide の「対応を進めて」で、設定画面の行番号（#149）と履歴を戻す UI（#154・FR-033・ADR 0038）を統合した**。
+#149 = PR #150 → `db546da`（3 段目「行番号」。採用は `apply_number` の 1 本・設定画面からは面を閉じない）。
+#154 は現物調査（Sonnet）→ ADR 0038（**戻す＝選んだ版の本文を未保存の編集にする**。md も履歴も書かない・Undo 1 単位・確認の箱なし・時刻なし）→
+単位 A（PR #159 → `0cdc984`・#158。port `read_history`・application 6 本・結果値 2 つ・単体と確保失敗・実アダプタ probe 19/19）→
+単位 B（PR #160 → `120c988`。「履歴から戻す」`:history` / `:hist`・パレット型の面・`note_pane_replace` の全文 span）。
+設計席の絵で一覧・`:hist`・1 行の知らせ・戻した後・保存後の `1.md` を確認。**Ctrl+Z・歯抜け・560×360 は hide の目視**。
+途中で分かったこと: **#151 は撮影の産物**（席製 `capwin.ps1` が DPI 非対応で 125% の画面の右下 20% を切っていた）→ 閉じて #156（PR #157 → `696707b`。
+`tools/capture-window.ps1 -TargetPid` と `tools/post-keys.ps1`）。**ADR 0037 の副作用で `merge-pr.ps1` が Ready 直後に前の Draft の failure を読んで止まる** → #152（PR #153 → `4d633bb`。名前ごとの最新の check-run）、
+それでも残る窓（Ready 直後に新しい run の check-run が無い）→ **#163**（Ready より前の check-run を無視・failure なら ready を 1 回送り直す。統合は #162 のあと）。
+#155（PR #161。低い窓で絞り込み欄がパレットの案内を塗り潰す。`WS_CLIPSIBLINGS` の 1 行）も統合。
+**開いている Issue は #162（この記録）と #163 だけ。次の単位は hide の指示待ち**（残る提案: ノートの削除とカテゴリの作成／削除／改名は仕様に FR を足してから）。
+最新は[日報](docs/reports/2026-09-23.md)の「夜 2」/ [引き継ぎ](docs/handoffs/2026-09-23.md)の「再開点（夜 2）」。
+
 2026-09-23 夜: **#112（必須 check の穴・ADR 0037）を統合し、文書の暦を実日付へ直した（#147）**。
 #112 は PR #146 → main **`7edf030`**。`check.yml` の job を `full-gate`（Draft では skipped）と判定 job `check`（`success` 以外は failure）に分け、
 Draft の push で `BLOCKED`・Ready で `CLEAN` を実測した（[確認記録](docs/quality/2026-09-23-required-check-checks.md)）。QLT-012 は active。
