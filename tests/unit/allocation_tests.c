@@ -604,6 +604,38 @@ static bool state_scenario_with(struct persistence_adapter *_Nonnull adapter)
     return completed;
 }
 
+/* 履歴の一覧は読んだ版の本文を確保して持つ（ADR 0038 の検証 2）。どの確保が落ちても
+ * OUT_OF_MEMORY で一覧を持たない。 */
+static bool history_scenario(void)
+{
+    struct persistence_adapter *adapter = test_adapter_create(categories_text, notes_text);
+    test_adapter_history(adapter, 1, "first\nline");
+    test_adapter_history(adapter, 3, "third");
+    struct persistence_port port = test_adapter_port(adapter);
+    struct appearance_port looks = test_appearance_port();
+    struct regex_port finder = test_regex_port();
+    struct folio_state *state = nullptr;
+    bool completed = false;
+    enum folio_state_outcome outcome =
+        folio_state_create(test_ports(&port, &looks, &finder), &state);
+    if (outcome == FOLIO_STATE_READY)
+    {
+        outcome = folio_state_select_note(state, 0, 0);
+    }
+    if (outcome == FOLIO_STATE_READY)
+    {
+        outcome = folio_state_open_history(state);
+        require(outcome == FOLIO_STATE_READY || folio_state_history_count(state) == 0,
+                "a failed open keeps no version");
+        completed = outcome == FOLIO_STATE_READY && folio_state_history_count(state) == 2;
+    }
+    require(outcome == FOLIO_STATE_READY || outcome == FOLIO_STATE_OUT_OF_MEMORY,
+            "history allocation failure remains typed");
+    folio_state_destroy(state);
+    test_adapter_destroy(adapter);
+    return completed;
+}
+
 static const char *const second_notes[] = {"four", nullptr};
 
 static bool state_scenario(void)
@@ -819,4 +851,5 @@ void run_allocation_tests(void)
     exhaust(settings_scenario, "settings scenario never completed");
     exhaust(replace_scenario, "replace scenario never completed");
     exhaust(rename_scenario, "rename scenario never completed");
+    exhaust(history_scenario, "history scenario never completed");
 }

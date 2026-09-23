@@ -161,6 +161,50 @@ size_t note_text_length(const struct note_text *_Nonnull text)
     return text->length;
 }
 
+static bool blank(char value)
+{
+    return value == ' ' || value == '\t';
+}
+
+/* at から改行（CR / LF）の手前まで進んだ位置。 */
+static size_t line_end(const struct note_text *_Nonnull text, size_t at)
+{
+    while (at < text->length && text->bytes[at] != '\r' && text->bytes[at] != '\n')
+    {
+        at += 1;
+    }
+    return at;
+}
+
+void note_text_first_line(const struct note_text *_Nonnull text, size_t *_Nonnull start,
+                          size_t *_Nonnull length)
+{
+    /* CRLF は CR と LF の間に空の行があるものとして読む。空の行は飛ばすので結果は変わらない。 */
+    for (size_t at = 0; at < text->length;)
+    {
+        size_t end = line_end(text, at);
+        size_t first = at;
+        while (first < end && blank(text->bytes[first]))
+        {
+            first += 1;
+        }
+        size_t last = end;
+        while (last > first && blank(text->bytes[last - 1]))
+        {
+            last -= 1;
+        }
+        if (last > first)
+        {
+            *start = first;
+            *length = last - first;
+            return;
+        }
+        at = end + 1;
+    }
+    *start = text->length;
+    *length = 0;
+}
+
 void note_text_destroy(struct note_text *_Nullable text)
 {
     if (text == nullptr)

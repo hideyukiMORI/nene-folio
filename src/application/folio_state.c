@@ -10,6 +10,7 @@
 #include "markdown_rtf.h"
 #include "name_list.h"
 #include "note_corpus.h"
+#include "note_history.h"
 #include "note_ledger.h"
 #include "note_name.h"
 #include "note_rename.h"
@@ -77,6 +78,11 @@ struct folio_state
     bool cursor_any; /* 索引のカーソルがあるか（ADR 0015 の決定 1） */
     enum folio_cursor_kind cursor_kind;
     size_t cursor_category; /* FOLIO_CURSOR_CATEGORY のときのカテゴリ番号 */
+    /* 開いている履歴の一覧（ADR 0038 の決定 7）。版番号の昇順に history_count 行。
+     * 本文が null の行は読めない版。閉じる・別の文書へ移る・保存するときに捨てる（決定 10） */
+    struct note_text *_Nullable history[note_history_depth];
+    size_t history_versions[note_history_depth];
+    size_t history_count;
 };
 
 /* 絞り込みの作り直しとカーソルの着地は、写しを付け替える経路（改名）より後に書いてあるので
@@ -1505,6 +1511,7 @@ enum folio_state_outcome folio_state_select_note(struct folio_state *_Nonnull st
         state->selected_category = category;
         state->selected_note = note;
         cursor_to_selection(state);
+        folio_state_close_history(state);
     }
     return outcome;
 }
@@ -1847,6 +1854,7 @@ enum folio_state_outcome folio_state_new_note(struct folio_state *_Nonnull state
     state->selected_category = category;
     state->mode = PANE_MODE_EDIT;
     state->cursor_any = false;
+    folio_state_close_history(state);
     return FOLIO_STATE_READY;
 }
 
@@ -1921,6 +1929,8 @@ static enum folio_state_outcome store_edited(struct folio_state *_Nonnull state,
     state->pane = rendered;
     note_text_destroy(state->body);
     state->body = edited;
+    /* 保存で 1.md が積まれ、持っている版の番号がずれた（ADR 0038 の決定 10）。 */
+    folio_state_close_history(state);
     return refresh_copy(state);
 }
 
@@ -2028,6 +2038,7 @@ static enum folio_state_outcome create_edited(struct folio_state *_Nonnull state
     state->document = FOLIO_DOCUMENT_NAMED;
     state->selected_category = category;
     state->selected_note = index;
+    folio_state_close_history(state);
     if (!state->cursor_any)
     {
         cursor_to_selection(state);
@@ -2673,6 +2684,120 @@ size_t folio_state_pane_rtf_length(const struct folio_state *_Nonnull state)
     return markdown_rtf_length(state->pane);
 }
 
+void folio_state_close_history(struct folio_state *_Nonnull state)
+{
+    for (size_t index = 0; index < state->history_count; ++index)
+    {
+        note_text_destroy(state->history[index]);
+        state->history[index] = nullptr;
+    }
+    state->history_count = 0;
+}
+
+/* 1 版を読んで一覧の末尾に足す。無い版は飛ばし、読めない版は本文の無い行として持つ（ARC-009）。
+ * 確保に失敗したら false で、その版は足さない。 */
+static bool read_version(struct folio_state *_Nonnull state,
+                         const struct history_version *_Nonnull which)
+{
+    struct note_text *_Nullable body = nullptr;
+    enum persistence_outcome read = state->port.read_history(state->port.adapter, which, &body);
+    switch (read)
+    {
+    case PERSISTENCE_ABSENT:
+        return true;
+    case PERSISTENCE_OUT_OF_MEMORY:
+        return false;
+    case PERSISTENCE_LOADED:
+    case PERSISTENCE_UNREADABLE:
+    case PERSISTENCE_MALFORMED:
+    case PERSISTENCE_STORED:
+    case PERSISTENCE_UNWRITABLE:
+    case PERSISTENCE_NAME_TAKEN:
+        break;
+    }
+    /* LOADED 以外で本文が返ることは無いが、返っても読めない行として捨てる。 */
+    if (read != PERSISTENCE_LOADED)
+    {
+        note_text_destroy(body);
+        body = nullptr;
+    }
+    state->history[state->history_count] = body;
+    state->history_versions[state->history_count] = which->version;
+    state->history_count += 1;
+    return true;
+}
+
+enum folio_state_outcome folio_state_open_history(struct folio_state *_Nonnull state)
+{
+    folio_state_close_history(state);
+    if (state->document == FOLIO_DOCUMENT_NONE)
+    {
+        return FOLIO_STATE_NOTHING_SELECTED;
+    }
+    if (state->document == FOLIO_DOCUMENT_UNTITLED)
+    {
+        return FOLIO_STATE_NAME_REQUIRED;
+    }
+    struct history_version which = {
+        .category = category_ledger_name(state->categories, state->selected_category),
+        .note = note_ledger_name(state->notes[state->selected_category], state->selected_note),
+        .version = 0,
+    };
+    for (size_t version = 1; version <= note_history_depth; ++version)
+    {
+        which.version = version;
+        if (!read_version(state, &which))
+        {
+            folio_state_close_history(state);
+            return FOLIO_STATE_OUT_OF_MEMORY;
+        }
+    }
+    return state->history_count == 0 ? FOLIO_STATE_HISTORY_EMPTY : FOLIO_STATE_READY;
+}
+
+size_t folio_state_history_count(const struct folio_state *_Nonnull state)
+{
+    return state->history_count;
+}
+
+bool folio_state_history_row(const struct folio_state *_Nonnull state, size_t index,
+                             struct history_row_view *_Nonnull out)
+{
+    if (index >= state->history_count)
+    {
+        return false;
+    }
+    const struct note_text *_Nullable body = state->history[index];
+    out->version = state->history_versions[index];
+    out->readable = body != nullptr;
+    out->first_line = "";
+    out->first_line_length = 0;
+    if (body != nullptr)
+    {
+        size_t start = 0;
+        note_text_first_line(body, &start, &out->first_line_length);
+        out->first_line = note_text_bytes(body) + start;
+    }
+    return true;
+}
+
+const struct note_text *_Nullable folio_state_history_body(const struct folio_state *_Nonnull state,
+                                                           size_t index)
+{
+    return index < state->history_count ? state->history[index] : nullptr;
+}
+
+enum folio_state_outcome folio_state_restore_history(struct folio_state *_Nonnull state,
+                                                     size_t index)
+{
+    if (folio_state_history_body(state, index) == nullptr)
+    {
+        return FOLIO_STATE_HISTORY_UNREADABLE;
+    }
+    /* 一覧は名前のある文書でしか開けないので、begin_edit は READY を返す（決定 9）。 */
+    return folio_state_begin_edit(state);
+}
+
 /* 値ごとの失敗の 1 行（ADR 0027 の決定 1）。列挙の全値がちょうど 1 度ずつ並ぶことは CNF-009 が
  * 字句で守るので、添字の範囲検査は書かない（決定 3）。 */
 /* 結果の値ごとの文言の ID（ADR 0030 の決定 2）。文言そのものは core の ui_text が持ち、
@@ -2722,6 +2847,8 @@ static const enum ui_text failure_lines[] = {
     [FOLIO_STATE_ALREADY_NAMED] = UI_TEXT_FAILURE_ALREADY_NAMED,
     [FOLIO_STATE_CANCELLED] = UI_TEXT_EMPTY,
     [FOLIO_STATE_FONT_BUNDLE_UNAVAILABLE] = UI_TEXT_FAILURE_FONT_BUNDLE_UNAVAILABLE,
+    [FOLIO_STATE_HISTORY_EMPTY] = UI_TEXT_FAILURE_HISTORY_EMPTY,
+    [FOLIO_STATE_HISTORY_UNREADABLE] = UI_TEXT_FAILURE_HISTORY_UNREADABLE,
 };
 
 const char *_Nonnull folio_state_failure_line(enum folio_state_outcome outcome,
@@ -2758,5 +2885,6 @@ void folio_state_destroy(struct folio_state *_Nullable state)
     /* 下見は次の下見か破棄まで残る。捨てる契機は数え上げない（ADR 0028 の決定 6）。 */
     replace_preview_destroy(state->preview);
     free(state->found);
+    folio_state_close_history(state);
     free(state);
 }

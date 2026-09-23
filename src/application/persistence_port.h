@@ -6,6 +6,7 @@
 #ifndef NENEFOLIO_PERSISTENCE_PORT_H
 #define NENEFOLIO_PERSISTENCE_PORT_H
 
+#include "history_version.h"
 #include "persistence_outcome.h"
 #include "rename_attempt.h"
 #include "rename_outcome.h"
@@ -47,6 +48,12 @@ struct persistence_port
     enum persistence_outcome (*_Nonnull archive_note)(struct persistence_adapter *_Nonnull adapter,
                                                       const char *_Nonnull category,
                                                       const char *_Nonnull note);
+    /* data/.history/<category>/<note>/<version>.md の本文（ADR 0038 の決定 2）。which->version は
+     * 1（最新）〜note_history_depth で、範囲の外は MALFORMED。無ければ ABSENT、UTF-8 でなければ
+     * MALFORMED、読めなければ UNREADABLE（read_note と同じ意味論）。書く側と同じパス組みで読む。 */
+    enum persistence_outcome (*_Nonnull read_history)(struct persistence_adapter *_Nonnull adapter,
+                                                      const struct history_version *_Nonnull which,
+                                                      struct note_text *_Nullable *_Nonnull out);
     /* data/<category>/<note>.md を置き換える。途中で落ちても壊れた本文を残さない（FR-006）。 */
     enum persistence_outcome (*_Nonnull write_note)(struct persistence_adapter *_Nonnull adapter,
                                                     const char *_Nonnull category,

@@ -2124,6 +2124,8 @@ static bool inline_outcome(enum folio_state_outcome outcome)
     case FOLIO_STATE_REPLACE_TOO_MANY:
     case FOLIO_STATE_REPLACE_TOO_LARGE:
     case FOLIO_STATE_REPLACE_STALE:
+    case FOLIO_STATE_HISTORY_EMPTY:      /* ADR 0038 の決定 13: 面を開かず欄の 1 行 */
+    case FOLIO_STATE_HISTORY_UNREADABLE: /* 読めない版を選んだ。箱を出すほどではない */
     case FOLIO_STATE_REPLACE_BAD_SPAN:
     /* 設定の失敗は欄の中の 1 行（ADR 0031 の決定 7）。設定画面は閉じずに理由を出す。
      * `:set number` の失敗も同じ値なので、他の Ex の失敗と同じく欄の 1 行になる。 */

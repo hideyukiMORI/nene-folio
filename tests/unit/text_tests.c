@@ -143,6 +143,41 @@ static void verify_from_editor(void)
             "surrogate from the editor");
 }
 
+static void expect_first_line(const char *_Nonnull source, const char *_Nonnull expected,
+                              const char *_Nonnull description)
+{
+    struct note_text *text = nullptr;
+    require(note_text_create(source, strlen(source), &text) == NOTE_TEXT_ACCEPTED, description);
+    size_t start = 99;
+    size_t length = 99;
+    note_text_first_line(text, &start, &length);
+    require(length == strlen(expected), description);
+    require(start + length <= note_text_length(text), description);
+    require(memcmp(note_text_bytes(text) + start, expected, length) == 0, description);
+    if (length == 0)
+    {
+        require(start == note_text_length(text), description);
+    }
+    note_text_destroy(text);
+}
+
+/* 履歴の一覧の見出し（ADR 0038 の決定 8・検証 3）。 */
+static void verify_first_line(void)
+{
+    expect_first_line("", "", "empty body has no first line");
+    expect_first_line("\n\r\n\r", "", "only line breaks");
+    expect_first_line("  \t\n \r\n\t", "", "only blank lines");
+    expect_first_line("single", "single", "one line without a trailing break");
+    expect_first_line("first\nsecond", "first", "LF");
+    expect_first_line("first\r\nsecond", "first", "CRLF");
+    expect_first_line("first\rsecond", "first", "CR");
+    expect_first_line("\n\nthird\n", "third", "leading empty lines (LF)");
+    expect_first_line("\r\n\r\nthird\r\n", "third", "leading empty lines (CRLF)");
+    expect_first_line("\r\rthird", "third", "leading empty lines (CR)");
+    expect_first_line("  \n\t# heading \t\nbody", "# heading", "blank line and trimmed ends");
+    expect_first_line("\xE6\x97\xA5\xE6\x9C\xAC\r\n", "\xE6\x97\xA5\xE6\x9C\xAC", "UTF-8 line");
+}
+
 static void verify_note_equals(void)
 {
     struct note_text *one = nullptr;
@@ -240,6 +275,7 @@ void run_text_tests(void)
     verify_line_ending();
     verify_from_editor();
     verify_note_equals();
+    verify_first_line();
     verify_colors();
     verify_name_list();
 }

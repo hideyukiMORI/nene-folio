@@ -13,6 +13,7 @@
 #include "folio_state_outcome.h"
 #include "folio_step.h"
 #include "folio_theme.h"
+#include "history_row_view.h"
 #include "note_destination.h"
 #include "note_ref.h"
 #include "pane_mode.h"
@@ -29,6 +30,7 @@
 struct drawer_layout;
 struct folio_state;
 struct note_name;
+struct note_text;
 struct replace_edit;
 
 /* ポートは複製して持つ。3 つのポートの adapter は state より長く生きていなければならない。
@@ -293,6 +295,30 @@ folio_state_pane_title(const struct folio_state *_Nonnull state);
 /* 右ペインに写す RTF（終端付き）。何も選んでいなければ空の文書。次の意図まで有効。 */
 [[nodiscard]] const char *_Nonnull folio_state_pane_rtf(const struct folio_state *_Nonnull state);
 [[nodiscard]] size_t folio_state_pane_rtf_length(const struct folio_state *_Nonnull state);
+/* 現在のノートの履歴の一覧を開く（FR-033 / ADR 0038 の決定 7）。前の一覧は先に捨てる。
+ * port の read_history で 1〜note_history_depth を順に読み、無い版は飛ばし、読めない版
+ * （UTF-8 でない・読めない）は本文の無い行として版番号順に持つ。md も履歴も書かない。
+ * 未選択は NOTHING_SELECTED、無題は NAME_REQUIRED、1 版も無ければ HISTORY_EMPTY で、
+ * どれも一覧を持たない。確保に失敗すれば OUT_OF_MEMORY で、途中まで読んだ版も捨てる。 */
+[[nodiscard]] enum folio_state_outcome folio_state_open_history(struct folio_state *_Nonnull state);
+/* 開いている一覧の行数。開いていなければ 0。 */
+[[nodiscard]] size_t folio_state_history_count(const struct folio_state *_Nonnull state);
+/* 一覧の index 行の表示値（決定 8）。範囲の外なら false で out は触らない。
+ * 見出しは本文の最初の空でない論理行（note_text_first_line）で、時刻は持たない。 */
+[[nodiscard]] bool folio_state_history_row(const struct folio_state *_Nonnull state, size_t index,
+                                           struct history_row_view *_Nonnull out);
+/* 一覧の index 行の本文。読めない版と範囲の外は nullptr。次の意図まで有効。 */
+[[nodiscard]] const struct note_text *_Nullable folio_state_history_body(
+    const struct folio_state *_Nonnull state, size_t index);
+/* index 行の版へ戻す意図（決定 1 / 9）。読めない行と範囲の外は HISTORY_UNREADABLE で何も変えない。
+ * 閲覧中なら folio_state_begin_edit と同じ遷移で編集モードへ入り、READY を返す。
+ * 本文は folio_state_history_body で取り、UI が note_pane_replace で流し込む（未保存の変更）。
+ * ファイルは書かず、一覧も捨てない（閉じるのは UI の close）。 */
+[[nodiscard]] enum folio_state_outcome
+folio_state_restore_history(struct folio_state *_Nonnull state, size_t index);
+/* 一覧を捨てる（決定 10）。面を閉じるときに UI が呼ぶ。別の文書へ移る・保存する・破棄の経路でも
+ * application が自分で呼ぶので、古い版を持ち越さない。 */
+void folio_state_close_history(struct folio_state *_Nonnull state);
 /* READY 以外の結果を利用者に見せる 1 行（UTF-8・終端付き・静的）。READY は空文字列。 */
 [[nodiscard]] const char *_Nonnull folio_state_failure_line(enum folio_state_outcome outcome,
                                                             enum folio_language language);

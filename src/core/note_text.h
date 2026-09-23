@@ -26,6 +26,13 @@ note_text_from_editor(const char *_Nonnull bytes, size_t length, enum line_endin
 /* 終端付き。text が生きている間だけ有効。 */
 [[nodiscard]] const char *_Nonnull note_text_bytes(const struct note_text *_Nonnull text);
 [[nodiscard]] size_t note_text_length(const struct note_text *_Nonnull text);
+/* 最初の空でない論理行の範囲（履歴の一覧の見出し・ADR 0038 の決定 8）。CRLF / LF / CR
+ * を区切りとし、
+ * 行の頭と尾の空白（半角の空白とタブ）は範囲に含めない。空白だけの行は空の行と同じに飛ばす。
+ * 本文が空か全行が空なら *start は本文の長さ、*length は 0。範囲は note_text_bytes のバイト位置。
+ */
+void note_text_first_line(const struct note_text *_Nonnull text, size_t *_Nonnull start,
+                          size_t *_Nonnull length);
 void note_text_destroy(struct note_text *_Nullable text);
 
 #endif
