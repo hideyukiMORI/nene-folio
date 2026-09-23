@@ -323,10 +323,49 @@ static void verify_second_pass(void)
     require(folio_state_apply_replace(state, &all, &edit) == FOLIO_STATE_READY, "applied");
     require(edit != nullptr && replace_edit_length(edit) == 199, "all of them were replaced");
     replace_edit_destroy(edit);
-    /* 一度広げた入れ物は次からもう 1 周しない。 */
+    folio_state_destroy(state);
+    test_adapter_destroy(adapter);
+    reset_script();
+}
+
+/* 下見は一致の配列を写さずに引き取り、入れ物は空に戻る（ADR 0028 の補正 25）。
+ * 入れ物の大きさは走査の周回で見える: 空なら初期の 64 件から数え直して 2 周、
+ * 199 件ぶん残っていれば 1 周で済む。 */
+static void verify_preview_owns_matches(void)
+{
+    reset_script();
+    static char16_t text[200];
+    for (size_t index = 0; index < sizeof text / sizeof text[0] - 1; ++index)
+    {
+        text[index] = u'a';
+    }
+    struct persistence_adapter *adapter = test_adapter_create(categories_text, notes_text);
+    struct folio_state *state = edited_state(adapter);
+    struct replace_request request = request_for(text, u"a", u"b");
+    struct replace_apply all = apply_for(text, REPLACE_ALL, 0);
+    require(folio_state_preview_replace(state, &request) == FOLIO_STATE_READY, "first preview");
+    /* 場面 1: 引き取られた入れ物は空なので、次の下見はもう一度数えてから確保する。 */
+    script.scans = 0;
+    require(folio_state_preview_replace(state, &request) == FOLIO_STATE_READY, "next preview");
+    require(script.scans == 2, "the slots went with the preview, so the next scan counts again");
+    require(folio_state_replace_count(state) == 199, "the new preview holds every match");
+    /* 場面 2: 入れ替えで古い下見（とその配列）は捨てられ、新しい下見の配列で当たる。 */
+    struct replace_edit *edit = nullptr;
+    require(folio_state_apply_replace(state, &all, &edit) == FOLIO_STATE_READY && edit != nullptr &&
+                replace_edit_length(edit) == 199,
+            "the adopted array is applied in full");
+    replace_edit_destroy(edit);
+    /* 場面 3: 下見が作れなければ配列は入れ物に残り、次の走査は 1 周で済む。 */
+    struct replace_request broken = request_for(text, u"a", u"\\q");
+    require(folio_state_preview_replace(state, &broken) == FOLIO_STATE_REPLACE_BAD_TEMPLATE,
+            "a bad replacement text makes no preview");
     script.scans = 0;
     require(folio_state_preview_replace(state, &request) == FOLIO_STATE_READY, "preview again");
-    require(script.scans == 1, "the grown buffer holds them all");
+    require(script.scans == 1, "a refused preview left the grown slots behind");
+    require(folio_state_apply_replace(state, &all, &edit) == FOLIO_STATE_READY && edit != nullptr &&
+                replace_edit_length(edit) == 199,
+            "the preview after a refusal applies too");
+    replace_edit_destroy(edit);
     folio_state_destroy(state);
     test_adapter_destroy(adapter);
     reset_script();
@@ -339,4 +378,5 @@ void run_replace_state_tests(void)
     verify_apply();
     verify_stale();
     verify_second_pass();
+    verify_preview_owns_matches();
 }

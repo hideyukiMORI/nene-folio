@@ -10,8 +10,7 @@ struct replace_preview
 {
     char16_t *_Nonnull text;
     size_t length;
-    struct regex_match *_Nonnull items;
-    struct regex_matches list; /* items を指す。count は総数のまま残す */
+    struct regex_matches list; /* items は引き取った配列。count は総数のまま残す */
     struct replace_template *_Nonnull replacement;
     char *_Nonnull category; /* 終端付き UTF-8 */
     char *_Nonnull note;     /* 終端付き UTF-8。無題は空文字列 */
@@ -43,20 +42,14 @@ static bool adopt_source(struct replace_preview *_Nonnull preview,
     return true;
 }
 
-static bool adopt_matches(struct replace_preview *_Nonnull preview,
-                          const struct regex_matches *_Nonnull matches)
+/* 一致の配列は写さずに引き取る（補正 25）。失敗しうる確保をすべて済ませてから呼ぶので、
+ * ここは失敗しない。count は総数のまま残す（capacity を超えていれば組み立てが断る）。 */
+static void adopt_matches(struct replace_preview *_Nonnull preview,
+                          struct regex_matches *_Nonnull matches)
 {
-    size_t stored = matches->count < matches->capacity ? matches->count : matches->capacity;
-    preview->items = calloc(stored + 1, sizeof *preview->items);
-    if (preview->items == nullptr)
-    {
-        return false;
-    }
-    memcpy(preview->items, matches->items, stored * sizeof *preview->items);
-    preview->list.items = preview->items;
-    preview->list.capacity = stored;
-    preview->list.count = matches->count;
-    return true;
+    preview->list = *matches;
+    matches->capacity = 0;
+    matches->count = 0;
 }
 
 static enum replace_preview_outcome from_template(enum replace_template_outcome parsed)
@@ -74,7 +67,7 @@ static enum replace_preview_outcome from_template(enum replace_template_outcome 
 }
 
 enum replace_preview_outcome replace_preview_create(const struct replace_source *_Nonnull source,
-                                                    const struct regex_matches *_Nonnull matches,
+                                                    struct regex_matches *_Nonnull matches,
                                                     struct replace_preview *_Nullable *_Nonnull out)
 {
     struct replace_preview *_Nullable preview = calloc(1, sizeof *preview);
@@ -91,11 +84,12 @@ enum replace_preview_outcome replace_preview_create(const struct replace_source 
         return parsed;
     }
     preview->replacement = replacement;
-    if (!adopt_source(preview, source) || !adopt_matches(preview, matches))
+    if (!adopt_source(preview, source))
     {
         replace_preview_destroy(preview);
         return REPLACE_PREVIEW_OUT_OF_MEMORY;
     }
+    adopt_matches(preview, matches);
     *out = preview;
     return REPLACE_PREVIEW_READY;
 }
@@ -135,7 +129,7 @@ void replace_preview_destroy(struct replace_preview *_Nullable preview)
     }
     replace_template_destroy(preview->replacement);
     free(preview->text);
-    free(preview->items);
+    free(preview->list.items);
     free(preview->category);
     free(preview->note);
     free(preview);
