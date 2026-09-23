@@ -4,6 +4,8 @@
 #include "failure_box_outcome.h"
 #include "folio_palette.h"
 #include "folio_state.h"
+#include "icon_paint.h"
+#include "icon_paint_kind.h"
 #include "ui_face.h"
 #include "ui_text.h"
 #include "utf16_text.h"
@@ -17,6 +19,8 @@ constexpr int box_line_limit = 480;
 constexpr int box_button_width = 88;
 constexpr int box_button_height = 28;
 constexpr int box_font_height = 14;
+/* 警告の印の箱は他の印と同じ 24px の正方形（ADR 0035 の補正 14）。 */
+constexpr int box_mark_size = 24;
 /* WM_INITDIALOG で面を組み立てられなかったことを EndDialog で返す値。
  * IDOK（閉じた）とも DialogBoxIndirectParamW の −1（面を作れなかった）とも重ならない。 */
 constexpr INT_PTR box_not_built = -2;
@@ -31,6 +35,9 @@ struct failure_box
     HFONT _Nullable font;
     HWND _Nullable dialog;
     UINT dpi;
+    /* 警告の印の箱（client 座標）と色。色は開く瞬間の palette の chip_background（補正 13）。 */
+    RECT mark;
+    COLORREF mark_color;
 };
 
 static const struct
@@ -66,9 +73,10 @@ static void position(HWND _Nonnull window, RECT bounds)
                bounds.bottom - bounds.top, TRUE);
 }
 
-/* 本文の矩形（物理画素）。幅は min(480, 1 行で測った幅) に下限（釦 ＋ 余白 2 つ）、
- * 高さはその幅で折り返して測る（ADR 0035 の決定 4）。 */
-static bool measure_body(const struct failure_box *_Nonnull box, SIZE *_Nonnull out)
+/* 本文の矩形（物理画素）。幅は min(480 − 印 − 隙間, 1 行で測った幅) に下限（釦 ＋ 余白 2 つ）、
+ * 高さはその幅で折り返して測る（ADR 0035 の決定 4・補正 14）。line は 1 行の高さ。 */
+static bool measure_body(const struct failure_box *_Nonnull box, SIZE *_Nonnull out,
+                         int *_Nonnull line_height)
 {
     HDC device = GetDC(box->dialog);
     if (device == nullptr)
@@ -79,7 +87,7 @@ static bool measure_body(const struct failure_box *_Nonnull box, SIZE *_Nonnull 
     RECT line = {0, 0, 0, 0};
     DrawTextW(device, box->units, -1, &line, DT_CALCRECT | DT_SINGLELINE | DT_NOPREFIX);
     int floor = scaled(box, box_button_width + 2 * box_margin);
-    int limit = scaled(box, box_line_limit);
+    int limit = scaled(box, box_line_limit - box_mark_size - box_gap);
     int measured = (int)(line.right - line.left);
     int width = measured < limit ? measured : limit;
     width = width < floor ? floor : width;
@@ -91,6 +99,7 @@ static bool measure_body(const struct failure_box *_Nonnull box, SIZE *_Nonnull 
     int spread = (int)(wrapped.right - wrapped.left);
     out->cx = spread > width ? spread : width;
     out->cy = wrapped.bottom - wrapped.top;
+    *line_height = line.bottom - line.top;
     return true;
 }
 
@@ -138,22 +147,30 @@ static bool make_font(struct failure_box *_Nonnull box)
 static bool lay_out(struct failure_box *_Nonnull box)
 {
     SIZE body;
-    if (!measure_body(box, &body))
+    int line_height = 0;
+    if (!measure_body(box, &body, &line_height))
     {
         return false;
     }
     int margin = scaled(box, box_margin);
+    int gap = scaled(box, box_gap);
+    int mark = scaled(box, box_mark_size);
     int button_width = scaled(box, box_button_width);
     int button_height = scaled(box, box_button_height);
-    SIZE client = {body.cx + 2 * margin,
-                   margin + body.cy + scaled(box, box_gap) + button_height + margin};
+    /* 印は本文の左に隙間を空けて置き、本文の 1 行目の高さの中央に揃える（補正 14）。 */
+    int mark_top = margin + (line_height - mark) / 2;
+    box->mark = (RECT){margin, mark_top, margin + mark, mark_top + mark};
+    int text_left = margin + mark + gap;
+    int content_bottom = margin + body.cy;
+    content_bottom = content_bottom < box->mark.bottom ? box->mark.bottom : content_bottom;
+    SIZE client = {text_left + body.cx + margin, content_bottom + gap + button_height + margin};
     place(box, client);
     HWND text = child(box, L"STATIC", box->units, SS_LEFT | SS_NOPREFIX);
     if (text == nullptr)
     {
         return false;
     }
-    position(text, (RECT){margin, margin, margin + body.cx, margin + body.cy});
+    position(text, (RECT){text_left, margin, text_left + body.cx, margin + body.cy});
     char16_t label[ui_text_unit_limit];
     size_t written = 0;
     if (utf16_text_fill(ui_text_line(UI_TEXT_PROMPT_OK, box->language), label, ui_text_unit_limit,
@@ -181,6 +198,7 @@ static bool initialize(struct failure_box *_Nonnull box, HWND dialog)
     box->dpi = GetDpiForWindow(dialog);
     /* 子を作る前に塗りを用意する。子の WM_CTLCOLOR* は作る途中から来る（ADR 0035 の決定 3）。 */
     struct folio_palette palette = folio_palette_for(box->theme_choice);
+    box->mark_color = palette.chip_background;
     switch (dialog_theme_create(&palette, &box->theme))
     {
     case DIALOG_THEME_READY:
@@ -191,7 +209,14 @@ static bool initialize(struct failure_box *_Nonnull box, HWND dialog)
     }
     dialog_theme_decorate(box->theme, dialog);
     SetWindowTextW(dialog, L"NeNe Folio");
-    return make_font(box) && lay_out(box);
+    if (!make_font(box) || !lay_out(box))
+    {
+        return false;
+    }
+    /* 組み上がって見える直前に 1 回だけ鳴らす。鳴らなくても箱の働きは変わらないので戻り値は
+     * 見ない（ADR 0035 の補正 12）。 */
+    MessageBeep(MB_ICONWARNING);
+    return true;
 }
 
 /* 塗りのメッセージを dialog_theme へ渡す。扱ったものは 0 でない値、扱わなければ FALSE。 */
@@ -215,6 +240,18 @@ static INT_PTR paint_message(struct failure_box *_Nonnull box, UINT message, WPA
         /* 釦は 1 本で、それが既定（ADR 0035 の決定 4）。 */
         dialog_theme_draw_button(box->theme, (const DRAWITEMSTRUCT *)lparam,
                                  DIALOG_THEME_BUTTON_PRIMARY);
+        return TRUE;
+    }
+    if (message == WM_PAINT)
+    {
+        /* 地は WM_CTLCOLORDLG のブラシで消えているので、印だけを描く（補正 13・14）。 */
+        PAINTSTRUCT paint;
+        HDC device = BeginPaint(box->dialog, &paint);
+        if (device != nullptr)
+        {
+            icon_paint_fill(device, box->mark, ICON_PAINT_WARNING, box->mark_color);
+        }
+        EndPaint(box->dialog, &paint);
         return TRUE;
     }
     if (message == WM_DPICHANGED)
@@ -300,8 +337,8 @@ void failure_box_show(HWND _Nullable owner, enum folio_state_outcome outcome,
     case FAILURE_BOX_SHOWN:
         break;
     case FAILURE_BOX_FALLBACK:
-        /* 正典の箱と同じくアイコンも音も付けない（MB_OK だけ）。題は製品名で翻訳しない。 */
-        MessageBoxW(owner, box.units, L"NeNe Folio", MB_OK);
+        /* 正典の箱と同じく警告の音と印を付ける（ADR 0035 の補正 12）。題は製品名で翻訳しない。 */
+        MessageBoxW(owner, box.units, L"NeNe Folio", MB_OK | MB_ICONWARNING);
         break;
     }
     utf16_text_destroy(text);
