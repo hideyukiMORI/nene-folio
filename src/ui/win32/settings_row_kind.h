@@ -8,7 +8,8 @@ enum settings_row_kind : unsigned char
 {
     SETTINGS_ROW_HEADING,
     SETTINGS_ROW_THEME,
-    SETTINGS_ROW_LANGUAGE
+    SETTINGS_ROW_LANGUAGE,
+    SETTINGS_ROW_NUMBER
 };
 
 #endif
