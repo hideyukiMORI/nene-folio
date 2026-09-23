@@ -207,6 +207,7 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
     [UI_TEXT_COMMAND_SETTINGS] = {"設定", "Settings", "设置"},
     [UI_TEXT_COMMAND_DISCARD_EDITS] = {"編集を破棄して読み直す", "Discard edits and reload",
                                        "放弃编辑并重新载入"},
+    [UI_TEXT_COMMAND_HISTORY] = {"履歴から戻す", "Restore from history", "从历史恢复"},
     [UI_TEXT_HELP_PALETTE] = {"一覧  ↑↓ 選択 / Enter 実行 / Esc 戻る / Tab 説明",
                               "List  ↑↓ Select / Enter Run / Esc Back / Tab Keys",
                               "列表  ↑↓ 选择 / Enter 执行 / Esc 返回 / Tab 按键"},
@@ -330,6 +331,13 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
     [UI_TEXT_SETTINGS_GUIDANCE] = {"↑↓ 選択 / Enter 採用 / Esc 戻る",
                                    "↑↓ Select / Enter Apply / Esc Back",
                                    "↑↓ 选择 / Enter 应用 / Esc 返回"},
+    [UI_TEXT_HISTORY_GUIDANCE] = {"1 が最新 / ↑↓ 選択 / Enter 戻す / Esc 戻る",
+                                  "1 is newest / ↑↓ Select / Enter Restore / Esc Back",
+                                  "1 为最新 / ↑↓ 选择 / Enter 恢复 / Esc 返回"},
+    /* 履歴の 1 行（ADR 0038 の決定 12）。{n} は版番号・{name} は本文の最初の空でない行。 */
+    [UI_TEXT_HISTORY_ROW] = {"{n}  {name}", "{n}  {name}", "{n}  {name}"},
+    [UI_TEXT_HISTORY_ROW_UNREADABLE] = {"{n}  （読めません）", "{n}  (cannot be read)",
+                                        "{n}  （无法读取）"},
     [UI_TEXT_APP_LOGO] = {"NENE FOLIO", "NENE FOLIO", "NENE FOLIO"},
     [UI_TEXT_PROMPT_PENDING_EXPLANATION] =
         {"「再試行」で同じ名前変更を続けます。「閉じる」は取り消しではありません。",

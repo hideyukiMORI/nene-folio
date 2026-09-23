@@ -52,6 +52,11 @@ static const struct
                                      UI_TEXT_COMMAND_DISCARD_EDITS,
                                      2,
                                      {"e!", "edit!"}},
+    /* 履歴の一覧を開く（ADR 0038 の決定 11）。無題・未選択は application が欄の 1 行で断る。 */
+    [FOLIO_COMMAND_HISTORY] = {FOLIO_COMMAND_HISTORY,
+                               UI_TEXT_COMMAND_HISTORY,
+                               2,
+                               {"history", "hist"}},
 };
 
 /* 設定の語（ADR 0026 の決定 8）。効果を実装した語だけを並べる。 */
@@ -101,6 +106,7 @@ static enum folio_argument_kind argument_kind(enum folio_command command)
     case FOLIO_COMMAND_REPLACE:
     case FOLIO_COMMAND_SETTINGS:
     case FOLIO_COMMAND_DISCARD_EDITS:
+    case FOLIO_COMMAND_HISTORY:
         return FOLIO_ARGUMENT_NONE;
     }
     return FOLIO_ARGUMENT_NONE;
@@ -128,6 +134,7 @@ bool folio_command_listed(enum folio_command command)
     case FOLIO_COMMAND_REPLACE:
     case FOLIO_COMMAND_SETTINGS:
     case FOLIO_COMMAND_DISCARD_EDITS:
+    case FOLIO_COMMAND_HISTORY:
         return true;
     }
     return true;

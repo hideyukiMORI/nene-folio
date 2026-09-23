@@ -115,6 +115,7 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_COMMAND_SUBSTITUTE] = "正規表現で置換（:%s/pattern/replacement/g）",
     [UI_TEXT_COMMAND_SETTINGS] = "設定",
     [UI_TEXT_COMMAND_DISCARD_EDITS] = "編集を破棄して読み直す",
+    [UI_TEXT_COMMAND_HISTORY] = "履歴から戻す",
     [UI_TEXT_HELP_PALETTE] = "一覧  ↑↓ 選択 / Enter 実行 / Esc 戻る / Tab 説明",
     [UI_TEXT_HELP_EDITOR_MOTION] = "編集本文  Ctrl+h/j/k/l ←/↓/↑/→",
     [UI_TEXT_HELP_GLOBAL_KEYS] = "全区画  F1 ヘルプ / Ctrl+P 一覧 / Ctrl+F このノート内を検索",
@@ -184,6 +185,9 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_SETTINGS_NUMBER_ON] = "表示する",
     [UI_TEXT_SETTINGS_NUMBER_OFF] = "表示しない",
     [UI_TEXT_SETTINGS_GUIDANCE] = "↑↓ 選択 / Enter 採用 / Esc 戻る",
+    [UI_TEXT_HISTORY_GUIDANCE] = "1 が最新 / ↑↓ 選択 / Enter 戻す / Esc 戻る",
+    [UI_TEXT_HISTORY_ROW] = "{n}  {name}",
+    [UI_TEXT_HISTORY_ROW_UNREADABLE] = "{n}  （読めません）",
     [UI_TEXT_APP_LOGO] = "NENE FOLIO",
     [UI_TEXT_PROMPT_PENDING_EXPLANATION] =
         "「再試行」で同じ名前変更を続けます。「閉じる」は取り消しではありません。",
