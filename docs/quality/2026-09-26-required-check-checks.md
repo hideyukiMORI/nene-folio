@@ -8,9 +8,9 @@ CI の YAML は `eng/prove-gates.py` の対象外なので、反例（Draft の 
 
 | 項目 | 期待 | 結果 |
 | --- | --- | --- |
-| `full-gate` の結論 | `skipped` | （実測待ち） |
-| `check` の結論 | `failure` | （実測待ち） |
-| `mergeStateStatus` | `CLEAN` でない（`BLOCKED`） | （実測待ち） |
+| `full-gate` の結論 | `skipped` | `SKIPPED`（PR #146・head `fb2725e`・run 35843768164・event `pull_request` / synchronize） |
+| `check` の結論 | `failure` | `FAILURE`（同 run。`full-gate result: skipped (draft: true)` を出して `exit 1`） |
+| `mergeStateStatus` | `CLEAN` でない（`BLOCKED`） | `BLOCKED`（`gh pr view 146 --json mergeStateStatus`・`isDraft = true`） |
 
 ## 2. Ready にした後（フルゲートが走る head）
 
