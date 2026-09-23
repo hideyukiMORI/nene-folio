@@ -26,9 +26,10 @@ enum folio_command : unsigned char
     FOLIO_COMMAND_FIND,
     FOLIO_COMMAND_SET,
     FOLIO_COMMAND_TOGGLE_NUMBER,
-    FOLIO_COMMAND_REPLACE,    /* 置換の欄を開く（ADR 0028 の決定 8(a)） */
-    FOLIO_COMMAND_SUBSTITUTE, /* `:%s/…/…/[g]` を欄を開かず直接適用する（決定 8(b)） */
-    FOLIO_COMMAND_SETTINGS    /* 設定画面を開く（ADR 0031 の決定 7・8(b)） */
+    FOLIO_COMMAND_REPLACE,      /* 置換の欄を開く（ADR 0028 の決定 8(a)） */
+    FOLIO_COMMAND_SUBSTITUTE,   /* `:%s/…/…/[g]` を欄を開かず直接適用する（決定 8(b)） */
+    FOLIO_COMMAND_SETTINGS,     /* 設定画面を開く（ADR 0031 の決定 7・8(b)） */
+    FOLIO_COMMAND_DISCARD_EDITS /* 編集を破棄して保存済みの本文に戻す（ADR 0016 の補正 4） */
 };
 
 [[nodiscard]] size_t folio_command_count(void);

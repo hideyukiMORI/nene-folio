@@ -37,9 +37,11 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_FAILURE_NOT_EDITING] = "編集モードではありません。",
     [UI_TEXT_FAILURE_NOTE_MALFORMED] = "編集中の本文に壊れた文字があります。保存していません。",
     [UI_TEXT_FAILURE_NOTE_STORE_FAILED] =
-        "ノートを書き戻せませんでした。編集中の本文はそのままです。",
+        "ノートを書き戻せませんでした。編集中の本文はそのままです。"
+        "別名で保存するか、編集を破棄して読み直せます。",
     [UI_TEXT_FAILURE_HISTORY_FAILED] =
-        "履歴を書けなかったので保存していません。編集中の本文は残っています。",
+        "履歴を書けなかったので保存していません。編集中の本文は残っています。"
+        "編集を破棄して読み直せます。",
     [UI_TEXT_FAILURE_UNSAVED_CHANGES] =
         "未保存の変更があります。保存するか、未保存変更を破棄して終了してください。",
     [UI_TEXT_FAILURE_NAME_TAKEN] =
@@ -108,6 +110,7 @@ static const char *_Nonnull const expected[] = {
     /* #76 で構文の見本だけ ASCII に揃えた（括弧の外の日本語はそのまま・決定 3）。 */
     [UI_TEXT_COMMAND_SUBSTITUTE] = "正規表現で置換（:%s/pattern/replacement/g）",
     [UI_TEXT_COMMAND_SETTINGS] = "設定",
+    [UI_TEXT_COMMAND_DISCARD_EDITS] = "編集を破棄して読み直す",
     [UI_TEXT_HELP_PALETTE] = "一覧  ↑↓ 選択 / Enter 実行 / Esc 戻る / Tab 説明",
     [UI_TEXT_HELP_EDITOR_MOTION] = "編集本文  Ctrl+h/j/k/l ←/↓/↑/→",
     [UI_TEXT_HELP_GLOBAL_KEYS] = "全区画  F1 ヘルプ / Ctrl+P 一覧 / Ctrl+F このノート内を検索",
@@ -503,7 +506,7 @@ static void verify_language(void)
             folio_command_parse_option(option_words[index], strlen(option_words[index]), &option),
             "every word of the vocabulary is a word folio_command knows");
     }
-    for (size_t id = UI_TEXT_COMMAND_SAVE; id <= UI_TEXT_COMMAND_SETTINGS; ++id)
+    for (size_t id = UI_TEXT_COMMAND_SAVE; id <= UI_TEXT_COMMAND_DISCARD_EDITS; ++id)
     {
         verify_vocabulary_of((enum ui_text)id);
     }

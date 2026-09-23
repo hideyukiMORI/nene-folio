@@ -47,6 +47,11 @@ static const struct
                                   {"", ""}},
     /* GUI 専用操作（ADR 0031 の決定 8(b)）。設定画面を開くだけで、モードは変えない。 */
     [FOLIO_COMMAND_SETTINGS] = {FOLIO_COMMAND_SETTINGS, UI_TEXT_COMMAND_SETTINGS, 0, {"", ""}},
+    /* 保存済みの本文（メモリ上）へ戻す。ディスクは読み直さない（ADR 0016 の補正 4）。 */
+    [FOLIO_COMMAND_DISCARD_EDITS] = {FOLIO_COMMAND_DISCARD_EDITS,
+                                     UI_TEXT_COMMAND_DISCARD_EDITS,
+                                     2,
+                                     {"e!", "edit!"}},
 };
 
 /* 設定の語（ADR 0026 の決定 8）。効果を実装した語だけを並べる。 */
@@ -95,6 +100,7 @@ static enum folio_argument_kind argument_kind(enum folio_command command)
     case FOLIO_COMMAND_TOGGLE_NUMBER:
     case FOLIO_COMMAND_REPLACE:
     case FOLIO_COMMAND_SETTINGS:
+    case FOLIO_COMMAND_DISCARD_EDITS:
         return FOLIO_ARGUMENT_NONE;
     }
     return FOLIO_ARGUMENT_NONE;
@@ -121,6 +127,7 @@ bool folio_command_listed(enum folio_command command)
     case FOLIO_COMMAND_TOGGLE_NUMBER:
     case FOLIO_COMMAND_REPLACE:
     case FOLIO_COMMAND_SETTINGS:
+    case FOLIO_COMMAND_DISCARD_EDITS:
         return true;
     }
     return true;

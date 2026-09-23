@@ -3192,6 +3192,24 @@ static void execute_substitute_command(struct folio_window *_Nonnull self,
     apply_substitute(self, parts.global);
 }
 
+/* `:e!`（ADR 0016 の補正 4）。前提は application が判定し、戻す本文はノート切替と同じ
+ * show_note の経路で流し込む。保存は試みず、ディスクも読み直さない。 */
+static void execute_discard_command(struct folio_window *_Nonnull self)
+{
+    enum folio_state_outcome outcome = folio_state_discard_edits(self->state);
+    if (outcome == FOLIO_STATE_READY)
+    {
+        outcome = show_note(self);
+    }
+    if (outcome != FOLIO_STATE_READY)
+    {
+        command_failure(self, outcome);
+        return;
+    }
+    hide_command_surface(self);
+    focus_pane(self);
+}
+
 /* GUI・キー・Exで同じ操作と引数を実行する（ADR0020）。 */
 static void execute_command(struct folio_window *_Nonnull self, enum folio_command command,
                             const char *_Nonnull argument)
@@ -3245,6 +3263,9 @@ static void execute_command(struct folio_window *_Nonnull self, enum folio_comma
         return;
     case FOLIO_COMMAND_SETTINGS:
         show_settings_surface(self);
+        return;
+    case FOLIO_COMMAND_DISCARD_EDITS:
+        execute_discard_command(self);
         return;
     }
 }

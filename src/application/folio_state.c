@@ -2257,6 +2257,19 @@ enum folio_state_outcome folio_state_end_edit(struct folio_state *_Nonnull state
     return outcome;
 }
 
+enum folio_state_outcome folio_state_discard_edits(const struct folio_state *_Nonnull state)
+{
+    if (state->document == FOLIO_DOCUMENT_NONE)
+    {
+        return FOLIO_STATE_NOTHING_SELECTED;
+    }
+    if (state->mode == PANE_MODE_VIEW)
+    {
+        return FOLIO_STATE_NOT_EDITING;
+    }
+    return FOLIO_STATE_READY;
+}
+
 enum pane_mode folio_state_pane_mode(const struct folio_state *_Nonnull state)
 {
     return state->mode;

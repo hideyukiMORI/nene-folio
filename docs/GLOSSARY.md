@@ -49,6 +49,7 @@
 | パレット（palette） | テーマごとの色の束。RTF 用と自前描画用の 2 つが正本 | `rtf_palette`（core）・`folio_palette`（ui/win32） |
 | 操作 ID（command ID） | Ex・操作パレット・既存ショートカットが共通して実行する、表示名から独立した閉じた値 | `enum folio_command`（core） |
 | 操作パレット（command palette） | Ctrl+P で開き、登録済みの操作を表示名または Ex 別名で絞り込んで実行する一時的な入力面 | `folio_command`（core）の登録表・`folio_window`（ui/win32）の入力面 |
+| 編集の破棄（`:e!`） | 編集を破棄して保存済みの本文に戻す。ディスクは読み直さない（vim と違う）。別名 `:edit!`・パレットと「操作」メニューの「編集を破棄して読み直す」も同じ意図を通る | `folio_state_discard_edits`（application）・ADR 0016 の補正 4 |
 | 履歴（history） | md を書き戻す**直前**にファイルにあった本文の写し。`data/.history/<カテゴリ>/<ノート>/1.md`（最新）〜 `5.md`（最古）の連番で、6 つ目は捨てる。時刻は名前にも中身にも使わない。残せなければ保存しない | `note_history_depth`（core）・`archive_note`（persistence_port）・ADR 0012 |
 | 確保失敗の注入（allocation probe） | 測定ビルドでだけ中核の `malloc` / `calloc` / `realloc` をテストへ向け、n 回目の確保を失敗させる仕掛け | `tests/unit/allocation_probe.h` |
 | キャレット（caret） | 本文の挿入位置と選択範囲。索引のカーソルとは別で、RichEdit自身が唯一の所有者。Ctrl＋hjklも部品の移動機能を呼ぶ | `note_pane`（ui/win32）・`ITextSelection`・ADR0019 |
