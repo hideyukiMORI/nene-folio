@@ -3642,8 +3642,8 @@ static bool holds_document(const struct folio_window *_Nonnull self, struct note
 {
     struct note_ref selected = {.category = 0, .note = 0};
     return folio_state_document_kind(self->state) == FOLIO_DOCUMENT_NAMED &&
-           folio_state_selection(self->state, &selected) &&
-           selected.category == target.category && selected.note == target.note;
+           folio_state_selection(self->state, &selected) && selected.category == target.category &&
+           selected.note == target.note;
 }
 
 /* ノート行のメニューの「名前を変更…」。違う行ならクリックと同じ switch_note で選んでから、

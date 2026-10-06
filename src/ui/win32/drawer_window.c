@@ -674,8 +674,7 @@ static void run_item(struct drawer_window *_Nonnull self, enum drawer_menu_item 
         break;
     }
     struct note_ref target = {.category = row.category, .note = row.note};
-    SendMessageW(GetParent(self->handle), folio_message_drawer_menu, (WPARAM)item,
-                 (LPARAM)&target);
+    SendMessageW(GetParent(self->handle), folio_message_drawer_menu, (WPARAM)item, (LPARAM)&target);
 }
 
 /* 右ボタンを離した位置の行に効く操作のメニューを出す（FR-038・ADR 0039 の決定 11 / 12。
@@ -698,8 +697,7 @@ static void show_menu(struct drawer_window *_Nonnull self, LPARAM position)
     struct drawer_row row = found ? drawer_layout_row(layout, index) : (struct drawer_row){0};
     drawer_layout_destroy(layout);
     HMENU menu = CreatePopupMenu();
-    if (menu == nullptr ||
-        !fill_menu(menu, found, row, folio_state_language(self->state)))
+    if (menu == nullptr || !fill_menu(menu, found, row, folio_state_language(self->state)))
     {
         if (menu != nullptr)
         {

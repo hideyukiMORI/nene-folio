@@ -15,10 +15,10 @@ constexpr UINT folio_message_command_focus_lost = WM_APP + 2;
 constexpr UINT folio_message_pane_scrolled = WM_APP + 3;
 /* 番号の桁数が変わったので、帯の幅と本文の矩形を配り直す（決定 6）。描画の途中では動かさない。 */
 constexpr UINT folio_message_gutter_resized = WM_APP + 4;
-/* ドロワーの右クリックのメニューで選ばれた項目（FR-038・ADR 0039 の決定 11）。主窓が閉じた switch で
- * 既存のコマンドの受け口へ渡す。wParam = enum drawer_menu_item・lParam = 送る側のスタックにある
- * const struct note_ref *（カテゴリ行と行の無い所ではノート番号を使わない）。同期で送り、
- * 失敗は主窓が出すので戻り値は使わない。 */
+/* ドロワーの右クリックのメニューで選ばれた項目（FR-038・ADR 0039 の決定 11）。
+ * 主窓が閉じた switch で既存のコマンドの受け口へ渡す。wParam = enum drawer_menu_item・
+ * lParam = 送る側のスタックにある const struct note_ref *（カテゴリ行と行の無い所では
+ * ノート番号を使わない）。同期で送り、失敗は主窓が出すので戻り値は使わない。 */
 constexpr UINT folio_message_drawer_menu = WM_APP + 5;
 
 #endif
