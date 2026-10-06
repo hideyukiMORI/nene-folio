@@ -42,7 +42,8 @@ enum folio_state_outcome : unsigned char
     FOLIO_STATE_RENAME_HALTED,
     /* 検索の語が壊れている。語も絞り込みも前のまま（ADR 0023 の決定 3・ADR 0024 の決定 2） */
     FOLIO_STATE_SEARCH_MALFORMED,
-    /* 絞り込み中に並び替え・開閉が来た。台帳もファイルも表示も変えていない（ADR 0024 の決定 4） */
+    /* 絞り込み中に断る操作（並び替え・開閉など）が来た。台帳もファイルも表示も変えていない
+     * （ADR 0024 の決定 4・ADR 0039 の決定 6） */
     FOLIO_STATE_FILTERED,
     /* 設定が版 1 の形ではない・読めない。既定値で起動し、このセッションは設定を変えず、
      * 人が直すか消すまで上書きもしない（ADR 0025 の決定 6） */
@@ -79,7 +80,15 @@ enum folio_state_outcome : unsigned char
     /* 現在のノートの履歴が 1 版も無い。一覧は持っていない（ADR 0038 の決定 7） */
     FOLIO_STATE_HISTORY_EMPTY,
     /* 選んだ版は読めない（無い・UTF-8 でない・読めない）。何も変えていない（決定 9） */
-    FOLIO_STATE_HISTORY_UNREADABLE
+    FOLIO_STATE_HISTORY_UNREADABLE,
+    /* カテゴリ名が空か、カテゴリ名の規則に合わない。何も変えていない（ADR 0039 の補正 1） */
+    FOLIO_STATE_CATEGORY_NAME_INVALID,
+    /* 同じ名前のカテゴリがある（大小文字だけ違う名前を含む）。何も変えていない（補正 1） */
+    FOLIO_STATE_CATEGORY_NAME_TAKEN,
+    /* カテゴリのフォルダを作れなかった。台帳も索引も変えていない（補正 1） */
+    FOLIO_STATE_CATEGORY_NOT_CREATED,
+    /* カテゴリの操作はフォルダに反映したが categories.json を書けなかった。次に書くときに揃う */
+    FOLIO_STATE_CATEGORY_LEDGER_STALE
 };
 
 #endif

@@ -2276,6 +2276,11 @@ static const bool inline_outcomes[] = {
     [FOLIO_STATE_CANCELLED] = false,
     /* 起動時に 1 回だけ箱で知らせる（ADR 0036 の決定 5）。欄から来ることは無い */
     [FOLIO_STATE_FONT_BUNDLE_UNAVAILABLE] = false,
+    /* カテゴリの操作の失敗は箱で知らせる（ADR 0039 の補正 1） */
+    [FOLIO_STATE_CATEGORY_NAME_INVALID] = false,
+    [FOLIO_STATE_CATEGORY_NAME_TAKEN] = false,
+    [FOLIO_STATE_CATEGORY_NOT_CREATED] = false,
+    [FOLIO_STATE_CATEGORY_LEDGER_STALE] = false,
 };
 
 static bool inline_outcome(enum folio_state_outcome outcome)

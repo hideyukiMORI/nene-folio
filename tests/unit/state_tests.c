@@ -1888,7 +1888,8 @@ static const char *_Nonnull const expected_failure_lines[] = {
         "名前変更の記録と実ファイルが一致しません。data/.rename.json と data/<カテゴリ>/ "
         "を確認してください。",
     [FOLIO_STATE_SEARCH_MALFORMED] = "検索する語に壊れた文字があります。語は前のままです。",
-    [FOLIO_STATE_FILTERED] = "絞り込み中は並び替えと開閉ができません。",
+    [FOLIO_STATE_FILTERED] =
+        "絞り込み中はこの操作ができません。絞り込みを解いてからやり直してください。",
     [FOLIO_STATE_SETTINGS_UNREADABLE] =
         "設定（data/settings.json）を読めません。既定値で始め、直すまで上書きしません。",
     [FOLIO_STATE_SETTINGS_STORE_FAILED] =
@@ -1919,6 +1920,17 @@ static const char *_Nonnull const expected_failure_lines[] = {
     [FOLIO_STATE_FONT_BUNDLE_UNAVAILABLE] = "同梱の書体を読めなかったので、OS の書体で表示します。",
     [FOLIO_STATE_HISTORY_EMPTY] = "履歴はありません。",
     [FOLIO_STATE_HISTORY_UNREADABLE] = "その版は読めません。",
+    [FOLIO_STATE_CATEGORY_NAME_INVALID] =
+        "使えないカテゴリ名です。先頭のピリオド・予約名・末尾の空白やピリオド・区切りを避け、"
+        "255バイト以内で指定してください。",
+    [FOLIO_STATE_CATEGORY_NAME_TAKEN] =
+        "同じ名前のカテゴリがあります。別の名前を指定してください。何も変えていません。",
+    [FOLIO_STATE_CATEGORY_NOT_CREATED] =
+        "カテゴリのフォルダを作れませんでした。何も変えていません。"
+        "data/ に書き込めるか確かめてください。",
+    [FOLIO_STATE_CATEGORY_LEDGER_STALE] =
+        "カテゴリは反映しましたが、台帳（categories.json）を書き戻せませんでした。"
+        "表示はフォルダに従い、次に台帳を書くときに揃います。",
 };
 
 static void verify_failure_lines(void)
@@ -2792,7 +2804,7 @@ static void verify_filtered_refusals(void)
     require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY, "a note can still be read");
     require(folio_state_begin_edit(state) == FOLIO_STATE_READY, "and edited");
     require(same_text(folio_state_failure_line(FOLIO_STATE_FILTERED, FOLIO_LANGUAGE_JA),
-                      "絞り込み中は並び替えと開閉ができません。"),
+                      "絞り込み中はこの操作ができません。絞り込みを解いてからやり直してください。"),
             "the refusal has one line");
     folio_state_destroy(state);
 }
