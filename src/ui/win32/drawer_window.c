@@ -1,6 +1,7 @@
 #include "drawer_window.h"
 
 #include "drawer_layout.h"
+#include "drawer_menu_item.h"
 #include "failure_box.h"
 #include "folio_message.h"
 #include "folio_palette.h"
@@ -613,11 +614,76 @@ static void choose_color(struct drawer_window *_Nonnull self, struct drawer_row 
     InvalidateRect(GetParent(self->handle), nullptr, FALSE);
 }
 
-/* 右ボタンを離した位置がカテゴリ行なら色を選ばせる（ADR 0010 の決定 3）。
- * 頭の帯・行の外では何もしない。左ボタンを押している間は捕捉中の再入を避けて無視する。 */
-static void recolor(struct drawer_window *_Nonnull self, int y)
+static enum ui_text menu_label(enum drawer_menu_item item)
 {
-    if (self->pressed)
+    switch (item)
+    {
+    case DRAWER_MENU_RECOLOR:
+        return UI_TEXT_MENU_RECOLOR;
+    case DRAWER_MENU_RENAME_NOTE:
+        return UI_TEXT_MENU_RENAME_NOTE;
+    case DRAWER_MENU_NEW_CATEGORY:
+        return UI_TEXT_MENU_NEW_CATEGORY;
+    }
+    return UI_TEXT_MENU_NEW_CATEGORY;
+}
+
+/* 項目を 1 つ足す。メニュー ID は値 + 1（0 は「何も選ばれなかった」）。 */
+static bool append_item(HMENU menu, enum drawer_menu_item item, enum folio_language language)
+{
+    char16_t units[draw_unit_limit];
+    if (wide_units(ui_text_line(menu_label(item), language), units) == 0)
+    {
+        return false;
+    }
+    return AppendMenuW(menu, MF_STRING, (UINT_PTR)item + 1, units) != 0;
+}
+
+/* 押した所に効く項目を並べる（ADR 0039 の決定 11）。on_row が false なら行の無い所。
+ * 項目は灰色にしない。断る理由は実行したときに application が返す（ARC-011）。 */
+static bool fill_menu(HMENU menu, bool on_row, struct drawer_row row, enum folio_language language)
+{
+    if (!on_row)
+    {
+        return append_item(menu, DRAWER_MENU_NEW_CATEGORY, language);
+    }
+    switch (row.kind)
+    {
+    case DRAWER_ROW_CATEGORY:
+        return append_item(menu, DRAWER_MENU_RECOLOR, language) &&
+               AppendMenuW(menu, MF_SEPARATOR, 0, nullptr) != 0 &&
+               append_item(menu, DRAWER_MENU_NEW_CATEGORY, language);
+    case DRAWER_ROW_NOTE:
+        return append_item(menu, DRAWER_MENU_RENAME_NOTE, language);
+    }
+    return false;
+}
+
+/* 選ばれた項目を実行する。色だけはドロワーが今までと同じ色の選択を開き（ADR 0039 の決定 12 の
+ * 例外）、ほかは主窓の既存の受け口へ対象付きで同期に渡す（ARC-001）。 */
+static void run_item(struct drawer_window *_Nonnull self, enum drawer_menu_item item,
+                     struct drawer_row row)
+{
+    switch (item)
+    {
+    case DRAWER_MENU_RECOLOR:
+        choose_color(self, row);
+        return;
+    case DRAWER_MENU_RENAME_NOTE:
+    case DRAWER_MENU_NEW_CATEGORY:
+        break;
+    }
+    struct note_ref target = {.category = row.category, .note = row.note};
+    SendMessageW(GetParent(self->handle), folio_message_drawer_menu, (WPARAM)item, (LPARAM)&target);
+}
+
+/* 右ボタンを離した位置の行に効く操作のメニューを出す（FR-038・ADR 0039 の決定 11 / 12。
+ * ADR 0010 の 2026-10-07 の補正）。頭の帯では出さない。左ボタンを押している間は捕捉中の再入を
+ * 避けて無視する。右クリックは選択もカーソルもフォーカスも動かさない。 */
+static void show_menu(struct drawer_window *_Nonnull self, LPARAM position)
+{
+    POINT point = {GET_X_LPARAM(position), GET_Y_LPARAM(position)};
+    if (self->pressed || point.y < band_height(self))
     {
         return;
     }
@@ -627,21 +693,27 @@ static void recolor(struct drawer_window *_Nonnull self, int y)
         return;
     }
     size_t index = 0;
-    bool found = drawer_layout_hit(layout, y, &index);
+    bool found = drawer_layout_hit(layout, point.y, &index);
     struct drawer_row row = found ? drawer_layout_row(layout, index) : (struct drawer_row){0};
     drawer_layout_destroy(layout);
-    if (!found)
+    HMENU menu = CreatePopupMenu();
+    if (menu == nullptr || !fill_menu(menu, found, row, folio_state_language(self->state)))
     {
+        if (menu != nullptr)
+        {
+            DestroyMenu(menu);
+        }
+        failure_box_show(GetAncestor(self->handle, GA_ROOT), FOLIO_STATE_OUT_OF_MEMORY,
+                         self->state);
         return;
     }
-    switch (row.kind)
+    ClientToScreen(self->handle, &point);
+    int chosen = TrackPopupMenuEx(menu, TPM_RETURNCMD | TPM_NONOTIFY, point.x, point.y,
+                                  GetParent(self->handle), nullptr);
+    DestroyMenu(menu);
+    if (chosen > 0)
     {
-    case DRAWER_ROW_CATEGORY:
-        choose_color(self, row);
-        break;
-    case DRAWER_ROW_NOTE:
-        /* ノート行の右クリックは初版では何もしない（FR-010）。 */
-        break;
+        run_item(self, (enum drawer_menu_item)(chosen - 1), row);
     }
 }
 
@@ -835,7 +907,7 @@ static LRESULT CALLBACK drawer_procedure(HWND window, UINT message, WPARAM wpara
         release(self);
         return 0;
     case WM_RBUTTONUP:
-        recolor(self, GET_Y_LPARAM(lparam));
+        show_menu(self, lparam);
         return 0;
     case WM_MOUSEWHEEL:
         wheel(self, wparam);

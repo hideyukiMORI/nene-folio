@@ -81,3 +81,18 @@ core は色だけを変えた新しい台帳を作り、application は `expande
   [ADR 0007](0007-drag-reorder-and-index-write-back.md)（意図と書き戻しの形）
 - [ChooseColorW](https://learn.microsoft.com/en-us/windows/win32/api/commdlg/nf-commdlg-choosecolorw) /
   [CHOOSECOLORW](https://learn.microsoft.com/en-us/windows/win32/api/commdlg/ns-commdlg-choosecolorw)
+
+## 2026-10-07 の補正（#188・決定本文は書き換えない）
+
+施主の裁定（2026-10-06）と [ADR 0039](0039-note-trash-and-category-operations.md) の決定 11・12 で、右クリックの項目が増えた。
+決定 3 の「カテゴリ行の右クリックで直接 `ChooseColorW` を出す」と、「失う・残る」の「右クリックの『メニュー』は出さない」を次のように改める。
+
+1. **右クリックはメニューを出す。** `drawer_window` が `WM_RBUTTONUP` で core のヒットテストを引き、押した所に効く項目を OS のポップアップ
+   （`TrackPopupMenuEx`・「操作」メニューと同じ作法）で出す。カテゴリ行は「色を変える…」・区切り・「新しいカテゴリ…」、ノート行は「名前を変更…」、
+   行の無い所（頭の帯より下）は「新しいカテゴリ…」。頭の帯では出さない。左ボタンを押している間（`pressed`）は今までどおり無視する。
+   右クリックは選択もカーソルもフォーカスも動かさない
+2. **色はメニューの 1 項目から。** 「色を変える…」はドロワーが今までと同じ色の選択を開く。決定 4〜6（`CC_RGBINIT | CC_FULLOPEN`・初期値は台帳の色・
+   owner は主窓・カスタム色は実行中だけ・キャンセルは何もしない・結果の写し）は変えない。ほかの項目は主窓の既存のコマンドの受け口へ渡す
+   （ADR 0039 の決定 11。ドロワーが application のカテゴリ操作や名前入力面を直接呼ぶ経路は作らない。色だけが例外・決定 12）
+3. **失うもの。** 色の選択が 1 クリック増える。却下した選択肢の「右クリックでメニューを出し、その中の『色を変える』でダイアログへ」は、
+   項目が増えたので採る

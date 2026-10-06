@@ -4,6 +4,7 @@
 #include "category_name.h"
 #include "command_row.h"
 #include "command_surface_mode.h"
+#include "drawer_menu_item.h"
 #include "drawer_window.h"
 #include "failure_box.h"
 #include "folio_command.h"
@@ -3650,6 +3651,51 @@ static enum folio_state_outcome switch_note(struct folio_window *_Nonnull self, 
     return opened(self, folio_state_select_note(self->state, category, note));
 }
 
+/* 押した行が、いま開いている名前付きの文書か。同じノートを選び直すと本文を読み直して
+ * Undo を失うので、開いている文書は選び直さない（FR-038）。 */
+static bool holds_document(const struct folio_window *_Nonnull self, struct note_ref target)
+{
+    struct note_ref selected = {.category = 0, .note = 0};
+    return folio_state_document_kind(self->state) == FOLIO_DOCUMENT_NAMED &&
+           folio_state_selection(self->state, &selected) && selected.category == target.category &&
+           selected.note == target.note;
+}
+
+/* ノート行のメニューの「名前を変更…」。違う行ならクリックと同じ switch_note で選んでから、
+ * コマンドの「名前を変更」と同じ受け口へ渡す。選べなければその失敗を出して止まる。 */
+static void rename_from_drawer(struct folio_window *_Nonnull self, struct note_ref target)
+{
+    if (!holds_document(self, target))
+    {
+        enum folio_state_outcome outcome = switch_note(self, target.category, target.note);
+        if (outcome != FOLIO_STATE_READY)
+        {
+            failure_box_show(self->handle, outcome, self->state);
+            return;
+        }
+    }
+    execute_rename_command(self, "");
+}
+
+/* ドロワーの右クリックのメニューで選ばれた項目（FR-038・ADR 0039 の決定 11）。
+ * 行き先は既存のコマンドの受け口で、ここは対象の行を選ぶことだけを足す（ARC-001）。 */
+static void run_drawer_menu(struct folio_window *_Nonnull self, enum drawer_menu_item item,
+                            const struct note_ref *_Nonnull target)
+{
+    switch (item)
+    {
+    case DRAWER_MENU_RECOLOR:
+        /* 色はドロワーが自分で色の選択を開く（決定 12 の例外）。ここへは来ないので何もしない。 */
+        return;
+    case DRAWER_MENU_RENAME_NOTE:
+        rename_from_drawer(self, *target);
+        return;
+    case DRAWER_MENU_NEW_CATEGORY:
+        execute_new_category_command(self, "");
+        return;
+    }
+}
+
 /* 歩みの行き先がノート行か（ADR 0015 の決定 2）。カテゴリ行と端では保存も開き直しも要らない。 */
 /* 索引の鍵でカーソルを動かし、動いた行を見える位置へ寄せる（ADR 0015 の決定 2 / 6）。
  * カテゴリ行に止まるときは保存も開き直しもせず、描き直して寄せるだけ。 */
@@ -5542,6 +5588,10 @@ static LRESULT on_message(struct folio_window *_Nonnull self, UINT message, WPAR
     case folio_message_select_note:
         /* ドロワーからのノート行のクリック。結果は enum folio_state_outcome で返す。 */
         return (LRESULT)switch_note(self, (size_t)wparam, (size_t)lparam);
+    case folio_message_drawer_menu:
+        /* lParam は送る側のスタックにある対象（同期の SendMessageW なので生きている）。 */
+        run_drawer_menu(self, (enum drawer_menu_item)wparam, (const struct note_ref *)lparam);
+        return 0;
     default:
         return on_input_message(self, message, wparam, lparam);
     }
