@@ -43,3 +43,23 @@ switch は `-Wswitch-enum` で「値が増えたらコンパイルが落ちる�
 
 単体: 全値の文言が変更前と同じ（変更前の値を固定した表との比較。`READY` は空）。
 `python eng/test-conformance.py` の正例・反例、`python eng/prove-gates.py` の実ツール反例、`pwsh -NoProfile -File ./eng/check.ps1`。Waivers: none。
+
+## 2026-10-06 の補正（#168）
+
+決定 5 は「他の switch は変えない」としたが、ui の 2 か所を同じ形の表引きへ広げる。
+
+1. **表引きを ui の 2 か所へ広げる。** `src/ui/win32/folio_window.c` の (a) コマンドの実行 `execute_command` は
+   `[FOLIO_COMMAND_X] = 関数` の関数の表 `command_runs[]` を 1 回引き、(b) 失敗を欄の 1 行にするか箱にするかの
+   `inline_outcome` は `[FOLIO_STATE_X] = true | false` の表 `inline_outcomes[]` を引く。(b) は `false` の値も省かず全値を書く。
+   表の関数はすべて「窓と引数」の同じ形で受け、引数を使わない操作は引数を捨てる。行き先は表へ移す前の switch と 1 対 1 で同じ。
+2. **理由。** `main` の `0a99ea5` で `execute_command` が 59 行・`inline_outcome` が 57 行・`folio_window_create` が 60 行と
+   C-012 の 60 行に飽和しており（#168 の実測）、次の単位（ノートの削除・カテゴリの作成／削除／改名）はコマンドと結果の値を足す。
+   switch は 1 値に 2〜3 行を使うので、文脈の節と同じ理由で伸びない。`folio_window_create` はアクセラレータの表を作る
+   かたまりを関数へ出して空ける（初期化の順と失敗時の後始末は変えない）。
+3. **網羅は CNF-009 が守る。** `eng/conformance-rules.json` の `lineTables` に `src/core/folio_command.h` →
+   `src/ui/win32/folio_window.c`（`FOLIO_COMMAND_`）と `src/application/folio_state_outcome.h` → `src/ui/win32/folio_window.c`
+   （`FOLIO_STATE_`）の 2 行を足す。switch を離れて失う `-Wswitch-enum` の網羅性（C-002）の代わりで、
+   値を足して表の行を書き忘れると落ちる。2 表とも「1 値を消すと CNF-009 で落ち、戻すと通る」を実測した。
+4. **表の外の値には落ちない。** 決定 3 と同じく、添字の範囲検査は書かない。
+5. **振る舞いの変化は 0。** 18 のコマンドの行き先と 45 値の分類（欄の 1 行が 16・箱が 29）は変更前と同じで、
+   文言・スキーマも変えない。閾値・除外・重大度は触らない（QLT-010）。
