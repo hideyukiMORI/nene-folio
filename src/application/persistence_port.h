@@ -64,6 +64,12 @@ struct persistence_port
                                                      const char *_Nonnull category,
                                                      const char *_Nonnull note,
                                                      const struct note_text *_Nonnull body);
+    /* data/<category>/ を新しく作る（ADR 0039 の決定 10）。data/ が無ければ先に作り、錠を
+     * 持っていなければ取り、取った直後に未完了の改名の記録が無いことを確かめる（ADR 0022 の
+     * 決定 3 の予告）。作れたら STORED、その名前が既に在れば NAME_TAKEN、それ以外は UNWRITABLE
+     * （カテゴリは作っていない）。名前は呼ぶ側が検証済み。index.json は作らない。 */
+    enum persistence_outcome (*_Nonnull create_category)(
+        struct persistence_adapter *_Nonnull adapter, const char *_Nonnull category);
     /* data/<from_category>/<note>.md を data/<to_category>/ へ移す（ADR 0008 の決定 4）。
      * 移動先に同じ名前の md があれば置き換えずに UNWRITABLE。
      * 名前の文字列は呼び出しの間だけ有効で、実装は複製せずに使い切る（他の関数と同じ約束）。 */

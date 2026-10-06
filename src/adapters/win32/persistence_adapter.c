@@ -1315,6 +1315,23 @@ static enum rename_outcome recover_rename(struct persistence_adapter *_Nonnull a
     return outcome;
 }
 
+/* 錠の開き方（読み書き・共有なし・無ければ作る）は起動とカテゴリ作成でこの 1 か所（決定 3）。
+ * 開けなければ INVALID_HANDLE_VALUE で、理由は GetLastError に残る。 */
+static HANDLE open_lock(const wchar_t *_Nonnull path)
+{
+    return CreateFileW(path, GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_ALWAYS,
+                       FILE_ATTRIBUTE_NORMAL, nullptr);
+}
+
+/* data/.rename.json が無いと確かめられたら true。在る・照会できない・道を組めないなら false。 */
+static bool journal_absent(const struct persistence_adapter *_Nonnull adapter)
+{
+    wchar_t journal[path_capacity];
+    bool present = false;
+    return compose(adapter, nullptr, journal_leaf, journal) && entry_exists(journal, &present) &&
+           !present;
+}
+
 /* 同じ data/ を使うプロセスを 1 つに直列化する（決定 3 と 2026-09-16 の補正）。
  * 共有違反だけが起動の拒否で、アクセス拒否・読み取り専用・data/ の不在は錠無しの起動を許す。
  * ただし復旧すべき記録があるのに錠を取れないなら、復旧できないので起動しない。 */
@@ -1325,8 +1342,7 @@ static enum persistence_adapter_outcome acquire_lock(struct persistence_adapter 
     {
         return PERSISTENCE_ADAPTER_NO_MODULE_PATH;
     }
-    HANDLE lock = CreateFileW(path, GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_ALWAYS,
-                              FILE_ATTRIBUTE_NORMAL, nullptr);
+    HANDLE lock = open_lock(path);
     if (lock != INVALID_HANDLE_VALUE)
     {
         adapter->lock = lock;
@@ -1336,14 +1352,54 @@ static enum persistence_adapter_outcome acquire_lock(struct persistence_adapter 
     {
         return PERSISTENCE_ADAPTER_DATA_IN_USE;
     }
-    wchar_t journal[path_capacity];
-    bool present = false;
-    if (compose(adapter, nullptr, journal_leaf, journal) && entry_exists(journal, &present) &&
-        !present)
+    return journal_absent(adapter) ? PERSISTENCE_ADAPTER_CREATED
+                                   : PERSISTENCE_ADAPTER_RECOVERY_LOCKED;
+}
+
+/* カテゴリを作る前に、書ける data/ を用意する（ADR 0022 の決定 3 の予告と 2026-10-07 の補正）。
+ * data/ が無ければ作り、錠を持っていなければ取り、いま取ったときだけ記録が無いことを確かめる。
+ * 復旧は起動時にしか走らないので、起動の後に他のプロセスが途中で止めた改名はここで断る。
+ * 錠を取った後で断っても、錠と作った空の data/ はそのまま持つ。 */
+static bool writable_data(struct persistence_adapter *_Nonnull adapter)
+{
+    if (!ensure_directory(adapter->root))
     {
-        return PERSISTENCE_ADAPTER_CREATED;
+        return false;
     }
-    return PERSISTENCE_ADAPTER_RECOVERY_LOCKED;
+    if (adapter->lock != nullptr)
+    {
+        return true;
+    }
+    wchar_t path[path_capacity];
+    if (!compose(adapter, nullptr, lock_leaf, path))
+    {
+        return false;
+    }
+    HANDLE lock = open_lock(path);
+    if (lock == INVALID_HANDLE_VALUE)
+    {
+        return false;
+    }
+    adapter->lock = lock;
+    return journal_absent(adapter);
+}
+
+/* data/<category>/ を作る（ADR 0039 の決定 10）。名前は呼ぶ側が検証済みで、道は compose の
+ * 検査に従う。同名のディレクトリやファイルは OS が ERROR_ALREADY_EXISTS で拒むので上書きしない。
+ * index.json は作らない（無ければ空の台帳として読む既存の経路）。 */
+static enum persistence_outcome create_category(struct persistence_adapter *_Nonnull adapter,
+                                                const char *_Nonnull category)
+{
+    wchar_t path[path_capacity];
+    if (!compose(adapter, category, nullptr, path) || !writable_data(adapter))
+    {
+        return PERSISTENCE_UNWRITABLE;
+    }
+    if (CreateDirectoryW(path, nullptr))
+    {
+        return PERSISTENCE_STORED;
+    }
+    return GetLastError() == ERROR_ALREADY_EXISTS ? PERSISTENCE_NAME_TAKEN : PERSISTENCE_UNWRITABLE;
 }
 
 struct persistence_port persistence_adapter_port(struct persistence_adapter *_Nonnull adapter)
@@ -1361,6 +1417,7 @@ struct persistence_port persistence_adapter_port(struct persistence_adapter *_No
         .read_history = read_history,
         .write_note = write_note,
         .create_note = create_note,
+        .create_category = create_category,
         .move_note = move_note,
         .rename_note = rename_note,
         .recover_rename = recover_rename,
