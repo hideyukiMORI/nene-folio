@@ -48,6 +48,8 @@ void test_adapter_second_notes(struct persistence_adapter *_Nonnull adapter,
  * 長く生きること。 */
 void test_adapter_history(struct persistence_adapter *_Nonnull adapter, size_t version,
                           const char *_Nullable body);
+/* create_category が呼ばれた回数（ADR 0039 の決定 10。確保の失敗が port に届かない証拠）。 */
+[[nodiscard]] size_t test_adapter_category_creates(const struct persistence_adapter *_Nonnull adapter);
 void test_adapter_destroy(struct persistence_adapter *_Nullable adapter);
 /* 常にダークを答える外観ポート。 */
 struct appearance_port;

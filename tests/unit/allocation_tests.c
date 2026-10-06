@@ -676,6 +676,53 @@ static bool state_scenario(void)
     return completed;
 }
 
+/* カテゴリの作成は新しい台帳・伸ばした配列・空の索引台帳をフォルダより先に確保する
+ * （ADR 0039 の決定 3）。どれが落ちても OUT_OF_MEMORY で、数は変わらず port にも届かない。 */
+static bool create_category_under_probe(struct folio_state *_Nonnull state,
+                                        const struct persistence_adapter *_Nonnull adapter)
+{
+    struct category_name *name = nullptr;
+    if (category_name_create("gamma", 5, &name) != CATEGORY_NAME_ACCEPTED)
+    {
+        return false;
+    }
+    size_t count = folio_state_category_count(state);
+    enum folio_state_outcome created = folio_state_create_category(state, name);
+    category_name_destroy(name);
+    if (created == FOLIO_STATE_OUT_OF_MEMORY)
+    {
+        require(folio_state_category_count(state) == count &&
+                    test_adapter_category_creates(adapter) == 0,
+                "a failed reservation keeps the count and never reaches the port");
+        return false;
+    }
+    require(created == FOLIO_STATE_READY && folio_state_category_count(state) == count + 1 &&
+                test_adapter_category_creates(adapter) == 1,
+            "create category under probe");
+    return true;
+}
+
+static bool create_category_scenario(void)
+{
+    struct persistence_adapter *adapter = test_adapter_create(categories_text, notes_text);
+    struct persistence_port port = test_adapter_port(adapter);
+    struct appearance_port looks = test_appearance_port();
+    struct regex_port finder = test_regex_port();
+    struct folio_state *state = nullptr;
+    bool completed = false;
+    enum folio_state_outcome outcome =
+        folio_state_create(test_ports(&port, &looks, &finder), &state);
+    require(outcome == FOLIO_STATE_READY || outcome == FOLIO_STATE_OUT_OF_MEMORY,
+            "state for create category under probe");
+    if (outcome == FOLIO_STATE_READY)
+    {
+        completed = create_category_under_probe(state, adapter);
+    }
+    folio_state_destroy(state);
+    test_adapter_destroy(adapter);
+    return completed;
+}
+
 static bool journal_under_probe(const struct note_rename *_Nonnull rename)
 {
     struct json_writer *writer = nullptr;
@@ -880,4 +927,5 @@ void run_allocation_tests(void)
     exhaust(replace_scenario, "replace scenario never completed");
     exhaust(rename_scenario, "rename scenario never completed");
     exhaust(history_scenario, "history scenario never completed");
+    exhaust(create_category_scenario, "create category scenario never completed");
 }
