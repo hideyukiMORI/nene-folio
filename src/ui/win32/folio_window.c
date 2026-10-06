@@ -2299,8 +2299,15 @@ static bool inline_outcome(enum folio_state_outcome outcome)
 
 static void command_failure(struct folio_window *_Nonnull self, enum folio_state_outcome outcome)
 {
+    /* キャンセルは失敗ではないので何も見せない。ただし名前入力面（モーダル）を閉じた後の
+     * フォーカスは主窓へ落ちるので、失敗の箱の後と同じく開いている入力面へ返す
+     * （ADR 0016 の補正 6・#185）。 */
     if (outcome == FOLIO_STATE_CANCELLED)
     {
+        if (self->command_surface != COMMAND_SURFACE_CLOSED)
+        {
+            focus_command_input(self);
+        }
         return;
     }
     bool inline_failure =
