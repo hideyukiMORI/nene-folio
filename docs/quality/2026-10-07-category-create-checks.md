@@ -9,10 +9,10 @@
 | --- | --- | --- | --- | --- |
 | #172 | #175 | `8f7894d` | `category_name_create` / `_text` / `_destroy`（`tests/unit/category_name_tests.c`: 拒否 20 例・受理 11 例ほか。結果は ACCEPTED / INVALID / OUT_OF_MEMORY・空も INVALID）・`category_ledger_inserted`・確保失敗の場面 | exit 0・分岐 2820/3020（93.38%）・実ツール反例 19 本 |
 | #176 | #178 | `1a38919` | 結果の値 4 つ（`CATEGORY_NAME_INVALID` / `CATEGORY_NAME_TAKEN` / `CATEGORY_NOT_CREATED` / `CATEGORY_LEDGER_STALE`）と文言の 4 か所の表（`failure_lines[]`・`state_tests.c` の期待表・`inline_outcomes[]`・`ui_text` の 3 列。CNF-009 / CNF-011）。`FILTERED` の文言の 3 言語での一般化（`state_tests.c` 2 か所と `ui_text_tests.c` 1 か所を直した） | exit 0（席の HEAD `672140a` と、設計席の 2 回） |
-| #174 | #179 | `03bded5` | 偽ポートの `category_create_outcome` / `category_creates` / `created_category`・adapter の `acquire_lock` と共有する `open_lock` と `journal_absent`（既存の起動時の経路を壊さないこと） | exit 0・分岐 2820/3020（93.38%） |
+| #174 | #179 | `03bded5` | 偽ポートの行（`category_create_outcome` / `category_creates` / `created_category`）だけ。**adapter の `create_category`・`writable_data`・`open_lock`・`journal_absent` は、ゲート内では動かしていない**（コンパイル・規約・リンクの検査だけ。振る舞いは下の実アダプタの測定。起動時の `acquire_lock` が同じ結果を返すことは差分の読み合わせ） | exit 0・分岐 2820/3020（93.38%） |
 | #177 | #181 | `a6b1a0a` | `folio_state_create_category` の単体 5 場面（FILTERED → 同期 → 大小を畳んだ重複 → `reserve_category` → port → 台帳 → `adopt_category`）・確保失敗の場面 | exit 0・分岐 2855/3058（93.36%） |
-| #180 | #183 | `872e340` | 名前入力面の種別 `NAME_PROMPT_NEW_CATEGORY`・閉じた述語 4 つ（`has_category_list` / `prompt_name_label` / `closes_on` / `holds_pending`）の全値 switch・文言 4 本・既存 3 種別の保留経路が現行のままであること | exit 0・分岐 2855/3058（93.36%） |
-| #182 | #184 | `5bc5ac5` | `FOLIO_COMMAND_NEW_CATEGORY` の登録表（`newcategory` / `newcat`・件数 18→19・一覧 16→17）・`execute_new_category_command` | exit 0・分岐 2859/3062（93.37%）・CI は check / full-gate とも成功（full-gate 2 分 5 秒） |
+| #180 | #183 | `872e340` | 文言 4 本の 3 列（`ui_text_tests.c` の期待表・CNF-011）と、種別を足したときに閉じた `switch`（`has_category_list` / `prompt_name_label` / `closes_on` / `holds_pending` ほか）がコンパイルで落ちること。**名前入力面そのもの（配置・確定・保留の経路）は単体では動かしていない**（既存 3 種別の座標と保留の経路が変わらないことは差分の読み合わせ・面の絵は下の設計席の実機確認） | exit 0・分岐 2855/3058（93.36%） |
+| #182 | #184 | `5bc5ac5` | `FOLIO_COMMAND_NEW_CATEGORY` の登録表と解釈（`command_tests.c` の `verify_new_category`: `newcategory` / `newcat`・引数の位置・引数なし・一覧・3 言語のラベル。件数 18→19・一覧 16→17）と、実行の表の行（CNF-009）。**`execute_new_category_command`（ui）は単体では動かしていない**（下の設計席の実機確認） | exit 0・分岐 2859/3062（93.37%）・CI は check / full-gate とも成功（full-gate 2 分 5 秒） |
 
 描画・鍵・流し込みは測定の対象外で、下の「未確認」の項目が残る。English の 2 本の文言は既存の最長（`INVALID_NAME` 131 字）を超えたため 133 字・116 字へ縮めた（ADR 0039 補正 1）。
 
