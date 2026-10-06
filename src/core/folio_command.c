@@ -57,6 +57,11 @@ static const struct
                                UI_TEXT_COMMAND_HISTORY,
                                2,
                                {"history", "hist"}},
+    /* カテゴリを作る（ADR 0039 の決定 10）。引数があれば面を開かずに作る。 */
+    [FOLIO_COMMAND_NEW_CATEGORY] = {FOLIO_COMMAND_NEW_CATEGORY,
+                                    UI_TEXT_COMMAND_NEW_CATEGORY,
+                                    2,
+                                    {"newcategory", "newcat"}},
 };
 
 /* 設定の語（ADR 0026 の決定 8）。効果を実装した語だけを並べる。 */
@@ -89,6 +94,7 @@ static enum folio_argument_kind argument_kind(enum folio_command command)
     case FOLIO_COMMAND_SAVE:
     case FOLIO_COMMAND_SAVE_AS:
     case FOLIO_COMMAND_RENAME:
+    case FOLIO_COMMAND_NEW_CATEGORY:
         return FOLIO_ARGUMENT_NAME;
     case FOLIO_COMMAND_SET:
         return FOLIO_ARGUMENT_OPTION;
@@ -135,6 +141,7 @@ bool folio_command_listed(enum folio_command command)
     case FOLIO_COMMAND_SETTINGS:
     case FOLIO_COMMAND_DISCARD_EDITS:
     case FOLIO_COMMAND_HISTORY:
+    case FOLIO_COMMAND_NEW_CATEGORY:
         return true;
     }
     return true;

@@ -1,6 +1,7 @@
 #include "folio_window.h"
 
 #include "breadcrumb_layout.h"
+#include "category_name.h"
 #include "command_row.h"
 #include "command_surface_mode.h"
 #include "drawer_window.h"
@@ -3486,6 +3487,63 @@ static void execute_rename_command(struct folio_window *_Nonnull self,
     finish_save_command(self, command_rename(self, argument));
 }
 
+/* カテゴリを作る（ADR 0039 の決定 10・補正 2）。名前が無ければ名前入力面を開く。
+ * 面は READY と CATEGORY_LEDGER_STALE でだけ閉じて返り、ほかの失敗は面の中の 1 行で出る。 */
+static enum folio_state_outcome create_category(const struct folio_window *_Nonnull self,
+                                                const char *_Nonnull argument)
+{
+    if (argument[0] == '\0')
+    {
+        struct name_prompt_request request = {
+            .state = self->state, .kind = NAME_PROMPT_NEW_CATEGORY, .units = u"", .count = 0};
+        return name_prompt_show(self->handle, &request, &self->palette);
+    }
+    struct category_name *_Nullable name = nullptr;
+    switch (category_name_create(argument, strlen(argument), &name))
+    {
+    case CATEGORY_NAME_ACCEPTED:
+        break;
+    case CATEGORY_NAME_INVALID:
+        return FOLIO_STATE_CATEGORY_NAME_INVALID;
+    case CATEGORY_NAME_OUT_OF_MEMORY:
+        return FOLIO_STATE_OUT_OF_MEMORY;
+    }
+    enum folio_state_outcome outcome = folio_state_create_category(self->state, name);
+    category_name_destroy(name);
+    return outcome;
+}
+
+/* 作れたら入力面を閉じ、新しい行（カーソル）を見える位置へ寄せ、フォーカスを索引へ返す。
+ * 開いている文書・本文・モード・選択は変えず、保存も走らせない（補正 2 の (c)）。
+ * 台帳だけ書けなかったときは、作れた後で失敗の箱を 1 回出す。 */
+static void finish_new_category(struct folio_window *_Nonnull self,
+                                enum folio_state_outcome outcome)
+{
+    if (outcome != FOLIO_STATE_READY && outcome != FOLIO_STATE_CATEGORY_LEDGER_STALE)
+    {
+        command_failure(self, outcome);
+        return;
+    }
+    hide_command_surface(self);
+    redraw_drawer(self);
+    if (self->drawer != nullptr)
+    {
+        drawer_window_reveal_cursor(self->drawer);
+    }
+    InvalidateRect(self->handle, nullptr, FALSE);
+    SetFocus(self->handle);
+    if (outcome == FOLIO_STATE_CATEGORY_LEDGER_STALE)
+    {
+        failure_box_show(self->handle, outcome, self->state);
+    }
+}
+
+static void execute_new_category_command(struct folio_window *_Nonnull self,
+                                         const char *_Nonnull argument)
+{
+    finish_new_category(self, create_category(self, argument));
+}
+
 static void execute_find_command(struct folio_window *_Nonnull self, const char *_Nonnull argument)
 {
     (void)argument;
@@ -3522,6 +3580,7 @@ static void (*_Nonnull const command_runs[])(struct folio_window *_Nonnull self,
     [FOLIO_COMMAND_SETTINGS] = show_settings_surface,
     [FOLIO_COMMAND_DISCARD_EDITS] = execute_discard_command,
     [FOLIO_COMMAND_HISTORY] = execute_history_command,
+    [FOLIO_COMMAND_NEW_CATEGORY] = execute_new_category_command,
 };
 
 /* GUI・キー・Exで同じ操作と引数を実行する（ADR0020）。 */

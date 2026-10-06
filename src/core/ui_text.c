@@ -233,6 +233,7 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
     [UI_TEXT_COMMAND_DISCARD_EDITS] = {"編集を破棄して読み直す", "Discard edits and reload",
                                        "放弃编辑并重新载入"},
     [UI_TEXT_COMMAND_HISTORY] = {"履歴から戻す", "Restore from history", "从历史恢复"},
+    [UI_TEXT_COMMAND_NEW_CATEGORY] = {"新しいカテゴリ", "New category", "新建分类"},
     [UI_TEXT_HELP_PALETTE] = {"一覧  ↑↓ 選択 / Enter 実行 / Esc 戻る / Tab 説明",
                               "List  ↑↓ Select / Enter Run / Esc Back / Tab Keys",
                               "列表  ↑↓ 选择 / Enter 执行 / Esc 返回 / Tab 按键"},

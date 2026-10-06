@@ -27,6 +27,9 @@ static void verify_aliases(void)
     expect_command(" :edit! ", FOLIO_COMMAND_DISCARD_EDITS, ":edit! is the same command");
     expect_command(":history", FOLIO_COMMAND_HISTORY, ":history opens the history list");
     expect_command(":hist", FOLIO_COMMAND_HISTORY, ":hist is the same command");
+    expect_command(":newcategory", FOLIO_COMMAND_NEW_CATEGORY,
+                   ":newcategory alone opens the name prompt");
+    expect_command(":newcat", FOLIO_COMMAND_NEW_CATEGORY, ":newcat is the same command");
     expect_command(":help", FOLIO_COMMAND_HELP, ":help");
     expect_command(":h", FOLIO_COMMAND_HELP, ":h uses the same help command");
     expect_command(":startinsert", FOLIO_COMMAND_EDIT, "startinsert begins editing");
@@ -180,8 +183,8 @@ static void verify_listed(void)
     require(folio_command_matches(FOLIO_COMMAND_TOGGLE_NUMBER, "行番号", strlen("行番号"),
                                   FOLIO_LANGUAGE_JA),
             "the palette finds the toggle by label");
-    /* パレットの箱の高さはこの数で決まる。総数（18）で取ると 2 行ぶん余る（補正 9）。 */
-    require(folio_command_listed_count() == 16, "sixteen operations are offered on a surface");
+    /* パレットの箱の高さはこの数で決まる。総数（19）で取ると 2 行ぶん余る（補正 9）。 */
+    require(folio_command_listed_count() == 17, "seventeen operations are offered on a surface");
     require(folio_command_listed_count() == folio_command_count() - 2,
             "exactly the two unlisted Ex grammars are left out");
     require(folio_command_alias_count(FOLIO_COMMAND_REPLACE) == 0 &&
@@ -195,6 +198,47 @@ static void verify_listed(void)
     require(
         folio_command_matches(FOLIO_COMMAND_SETTINGS, "設定", strlen("設定"), FOLIO_LANGUAGE_JA),
         "the palette finds settings by label");
+}
+
+/* `:newcategory 名前` と `:newcat 名前`（ADR 0039 の決定 10）。名前の途中と末尾の空白は保つ。 */
+static void expect_category_argument(const char *_Nonnull line, const char *_Nonnull name)
+{
+    enum folio_command command = FOLIO_COMMAND_HELP;
+    size_t argument = 0;
+    require(folio_command_parse(line, strlen(line), &command, &argument) &&
+                command == FOLIO_COMMAND_NEW_CATEGORY,
+            "the new category command parses with a name");
+    require(strlen(line) - argument == strlen(name) &&
+                memcmp(line + argument, name, strlen(name)) == 0,
+            "the argument starts at the category name");
+}
+
+static void verify_new_category(void)
+{
+    expect_category_argument(":newcategory 仕事", "仕事");
+    expect_category_argument(":newcat 仕事", "仕事");
+    expect_category_argument("newcat 日々の メモ ", "日々の メモ ");
+    enum folio_command command = FOLIO_COMMAND_HELP;
+    size_t argument = 0;
+    require(folio_command_parse(":newcat", strlen(":newcat"), &command, &argument) &&
+                command == FOLIO_COMMAND_NEW_CATEGORY && argument == strlen(":newcat"),
+            "without a name the argument is at the end");
+    require(folio_command_listed(FOLIO_COMMAND_NEW_CATEGORY),
+            "new category is offered on the palette and the operations menu");
+    require(folio_command_alias_count(FOLIO_COMMAND_NEW_CATEGORY) == 2 &&
+                same_text(folio_command_alias(FOLIO_COMMAND_NEW_CATEGORY, 0), "newcategory") &&
+                same_text(folio_command_alias(FOLIO_COMMAND_NEW_CATEGORY, 1), "newcat"),
+            "new category has the two Ex aliases");
+    require(same_text(folio_command_label(FOLIO_COMMAND_NEW_CATEGORY, FOLIO_LANGUAGE_JA),
+                      "新しいカテゴリ") &&
+                same_text(folio_command_label(FOLIO_COMMAND_NEW_CATEGORY, FOLIO_LANGUAGE_EN),
+                          "New category") &&
+                same_text(folio_command_label(FOLIO_COMMAND_NEW_CATEGORY, FOLIO_LANGUAGE_ZH_HANS),
+                          "新建分类"),
+            "new category has a label in each language");
+    require(folio_command_matches(FOLIO_COMMAND_NEW_CATEGORY, "カテゴリ", strlen("カテゴリ"),
+                                  FOLIO_LANGUAGE_JA),
+            "the palette finds new category by label");
 }
 
 static void verify_rejections(void)
@@ -213,14 +257,15 @@ static void verify_rejections(void)
 
 static void verify_catalog(void)
 {
-    require(folio_command_count() == 18, "only implemented commands are registered");
+    require(folio_command_count() == 19, "only implemented commands are registered");
     const enum folio_command expected[] = {
         FOLIO_COMMAND_SAVE,          FOLIO_COMMAND_QUIT,          FOLIO_COMMAND_SAVE_QUIT,
         FOLIO_COMMAND_FORCE_QUIT,    FOLIO_COMMAND_HELP,          FOLIO_COMMAND_EDIT,
         FOLIO_COMMAND_VIEW,          FOLIO_COMMAND_NEW,           FOLIO_COMMAND_SAVE_AS,
         FOLIO_COMMAND_RENAME,        FOLIO_COMMAND_FIND,          FOLIO_COMMAND_SET,
         FOLIO_COMMAND_TOGGLE_NUMBER, FOLIO_COMMAND_REPLACE,       FOLIO_COMMAND_SUBSTITUTE,
-        FOLIO_COMMAND_SETTINGS,      FOLIO_COMMAND_DISCARD_EDITS, FOLIO_COMMAND_HISTORY};
+        FOLIO_COMMAND_SETTINGS,      FOLIO_COMMAND_DISCARD_EDITS, FOLIO_COMMAND_HISTORY,
+        FOLIO_COMMAND_NEW_CATEGORY};
     for (size_t index = 0; index < folio_command_count(); ++index)
     {
         enum folio_command command = folio_command_at(index);
@@ -304,6 +349,7 @@ void run_command_tests(void)
     verify_options();
     verify_substitute();
     verify_listed();
+    verify_new_category();
     verify_ascii_fold();
     verify_case_insensitive_palette();
 }
