@@ -27,6 +27,7 @@
 #include <stddef.h>
 #include <uchar.h>
 
+struct category_name;
 struct drawer_layout;
 struct folio_state;
 struct note_name;
@@ -124,6 +125,15 @@ folio_state_recolor_category(struct folio_state *_Nonnull state, size_t index,
  * 書き戻せなければ状態は変えない。選択中のノートは移動後も同じノートを指す。 */
 [[nodiscard]] enum folio_state_outcome folio_state_move_category(struct folio_state *_Nonnull state,
                                                                  size_t from, size_t to);
+/* 空のカテゴリを末尾に作り、categories.json を書き戻す（FR-034 / ADR 0039 の決定 10）。
+ * 絞り込み中は同期より先に FILTERED。大小文字だけ違う名前も含めて既にあれば CATEGORY_NAME_TAKEN。
+ * フォルダを作れなければ CATEGORY_NOT_CREATED で、ここまでの失敗は状態を変えない。
+ * フォルダを作った後で台帳を書けなければ採用して CATEGORY_LEDGER_STALE（決定 3・補正 1）。
+ * 作ったらカーソルを新しいカテゴリ行へ置く。選択・開いている文書・モード・スクロール量は触らない。
+ */
+[[nodiscard]] enum folio_state_outcome
+folio_state_create_category(struct folio_state *_Nonnull state,
+                            const struct category_name *_Nonnull name);
 /* ノートを from から to へ動かす（FR-008 / FR-009）。同じカテゴリなら表示順を変えて index.json を
  * 書き戻し（from == to は書かずに READY・書き戻せなければ状態は変えない）、別のカテゴリなら md を
  * 移してから移動先・移動元の index.json を書き戻す（ADR 0008 の決定 3）。to.note は移動先の

@@ -1,5 +1,6 @@
 #include "appearance_port.h"
 #include "category_ledger.h"
+#include "category_name.h"
 #include "drawer_layout.h"
 #include "folio_settings.h"
 #include "folio_state.h"
@@ -2017,6 +2018,11 @@ void test_adapter_second_notes(struct persistence_adapter *_Nonnull adapter,
     adapter->alt_scanned = scanned;
 }
 
+size_t test_adapter_category_creates(const struct persistence_adapter *_Nonnull adapter)
+{
+    return adapter->category_creates;
+}
+
 void test_adapter_destroy(struct persistence_adapter *_Nullable adapter)
 {
     free(adapter);
@@ -3534,6 +3540,182 @@ static void verify_history_gaps(void)
     folio_state_destroy(state);
 }
 
+static struct category_name *_Nonnull accepted_category_name(const char *_Nonnull text)
+{
+    struct category_name *name = nullptr;
+    require(category_name_create(text, strlen(text), &name) == CATEGORY_NAME_ACCEPTED,
+            "category name prepared");
+    return name;
+}
+
+/* カーソルが category 番目のカテゴリ行にあるか。 */
+static bool cursor_on_category(const struct folio_state *_Nonnull state, size_t category)
+{
+    enum folio_cursor_kind kind = FOLIO_CURSOR_NOTE;
+    struct note_ref ref = {.category = 0, .note = 0};
+    return folio_state_cursor(state, &kind, &ref) && kind == FOLIO_CURSOR_CATEGORY &&
+           ref.category == category;
+}
+
+/* 作成の前後で選択・開いている文書・モードが変わっていないか（ADR 0039 の決定 10）。 */
+static bool keeps_document(const struct folio_state *_Nonnull state, struct note_ref selected,
+                           enum pane_mode mode)
+{
+    struct note_ref now = {.category = 0, .note = 0};
+    return folio_state_selection(state, &now) && now.category == selected.category &&
+           now.note == selected.note && folio_state_document_kind(state) == FOLIO_DOCUMENT_NAMED &&
+           folio_state_pane_mode(state) == mode;
+}
+
+/* data/ が空でも作れる。新しい行は空なので止まる行になり、カーソルが乗る（ADR 0015）。 */
+static void verify_create_first_category(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    adapter.categories_outcome = PERSISTENCE_ABSENT;
+    adapter.scan_outcome = PERSISTENCE_ABSENT;
+    struct folio_state *state = ready_state(&adapter);
+    struct category_name *name = accepted_category_name("仕事");
+    require(folio_state_create_category(state, name) == FOLIO_STATE_READY, "first category");
+    require(adapter.category_creates == 1 && same_text(adapter.created_category, "仕事") &&
+                same_text(adapter.calls, "create_category"),
+            "the folder is asked for by its name");
+    require(adapter.writes == 1 && adapter.written_count == 1 &&
+                same_text(adapter.written_names, "仕事") && adapter.written_expanded[0],
+            "the ledger is written with the new category expanded");
+    require(folio_state_category_count(state) == 1 && row_count(state) == 1 &&
+                same_text(folio_state_category_name(state, 0), "仕事") &&
+                cursor_on_category(state, 0) &&
+                folio_state_document_kind(state) == FOLIO_DOCUMENT_NONE,
+            "the empty row is shown and holds the cursor");
+    require(folio_state_new_note(state, 0) == FOLIO_STATE_READY &&
+                folio_state_document_kind(state) == FOLIO_DOCUMENT_UNTITLED,
+            "a note can be started in the new category at once");
+    struct note_name *note = accepted_note_name("最初");
+    struct note_destination destination = {.category = 0, .name = note};
+    require(folio_state_store_new(state, &destination, u"x", 1) == FOLIO_STATE_READY &&
+                same_text(adapter.created_note, "最初") &&
+                same_text(adapter.written_category, "仕事") && folio_state_note_count(state) == 1,
+            "and saved into it");
+    note_name_destroy(note);
+    category_name_destroy(name);
+    folio_state_destroy(state);
+}
+
+/* 既存の後ろに付き、選択・文書・モードは触らず、カーソルだけが新しい行へ移る。 */
+static void verify_create_category(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_select_note(state, 0, 1) == FOLIO_STATE_READY &&
+                folio_state_begin_edit(state) == FOLIO_STATE_READY,
+            "a document is open for editing");
+    struct category_name *name = accepted_category_name("D");
+    require(folio_state_create_category(state, name) == FOLIO_STATE_READY, "fourth category");
+    require(adapter.writes == 1 && adapter.written_count == 4 &&
+                same_text(adapter.written_names, "B/A/C/D") && adapter.written_expanded[3] &&
+                has_color(adapter.written_colors[3], adapter.written_colors[2].red,
+                          adapter.written_colors[2].green, adapter.written_colors[2].blue),
+            "it goes last with the default colour (C's) and expanded");
+    require(folio_state_category_count(state) == 4 && row_count(state) == 10 &&
+                cursor_on_category(state, 3) && keeps_document(state, at(0, 1), PANE_MODE_EDIT),
+            "the cursor moves to the new row and the open document stays as it was");
+    require(folio_state_toggle_category(state, 3) == FOLIO_STATE_READY &&
+                !adapter.written_expanded[3],
+            "the new index toggles");
+    struct rgb_color chosen = {.red = 1, .green = 2, .blue = 3};
+    require(folio_state_recolor_category(state, 3, chosen) == FOLIO_STATE_READY &&
+                has_color(adapter.written_colors[3], 1, 2, 3),
+            "the new index takes a colour");
+    require(folio_state_move_category(state, 3, 0) == FOLIO_STATE_READY &&
+                same_text(adapter.written_names, "D/B/A/C") &&
+                keeps_document(state, at(1, 1), PANE_MODE_EDIT) && cursor_on_category(state, 0),
+            "the new index moves with its (empty) note ledger");
+    category_name_destroy(name);
+    folio_state_destroy(state);
+}
+
+/* 大小文字だけ違う名前も、絞り込み中も、port に届く前に断る。状態は変わらない。 */
+static void verify_create_category_refusals(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    struct category_name *folded = accepted_category_name("b");
+    require(folio_state_create_category(state, folded) == FOLIO_STATE_CATEGORY_NAME_TAKEN,
+            "a name that differs only in case is taken");
+    require(folio_state_set_index_filter(state, u"one", 3) == FOLIO_STATE_READY, "filter on");
+    struct category_name *name = accepted_category_name("D");
+    require(folio_state_create_category(state, name) == FOLIO_STATE_FILTERED,
+            "filtering refuses the structural change");
+    require(adapter.category_creates == 0 && adapter.writes == 0 && adapter.renames == 0 &&
+                folio_state_category_count(state) == 3 && !cursor_on_category(state, 3),
+            "neither refusal reaches the port or changes the state");
+    require(folio_state_set_index_filter(state, u"", 0) == FOLIO_STATE_READY, "filter off");
+    adapter.category_create_outcome = PERSISTENCE_NAME_TAKEN;
+    require(folio_state_create_category(state, name) == FOLIO_STATE_CATEGORY_NAME_TAKEN,
+            "a folder that appeared meanwhile is taken");
+    adapter.category_create_outcome = PERSISTENCE_UNWRITABLE;
+    require(folio_state_create_category(state, name) == FOLIO_STATE_CATEGORY_NOT_CREATED,
+            "a folder that cannot be made is not created");
+    require(adapter.category_creates == 2 && adapter.writes == 0 &&
+                folio_state_category_count(state) == 3 && row_count(state) == 9 &&
+                !cursor_on_category(state, 3),
+            "after a refused folder the ledger is unwritten and the state unchanged");
+    category_name_destroy(name);
+    category_name_destroy(folded);
+    folio_state_destroy(state);
+}
+
+/* フォルダを作った後で台帳を書けなくても、フォルダに従って採用する（決定 3・補正 1）。 */
+static void verify_create_category_stale_ledger(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    adapter.write_outcome = PERSISTENCE_UNWRITABLE;
+    struct folio_state *state = ready_state(&adapter);
+    struct category_name *name = accepted_category_name("D");
+    require(folio_state_create_category(state, name) == FOLIO_STATE_CATEGORY_LEDGER_STALE,
+            "the ledger lags behind the folder");
+    require(adapter.category_creates == 1 && adapter.writes == 1 &&
+                folio_state_category_count(state) == 4 && cursor_on_category(state, 3),
+            "the new category is adopted in memory anyway");
+    adapter.write_outcome = PERSISTENCE_STORED;
+    require(folio_state_toggle_category(state, 0) == FOLIO_STATE_READY &&
+                adapter.written_count == 4 && same_text(adapter.written_names, "B/A/C/D"),
+            "the next ledger write carries the new category");
+    category_name_destroy(name);
+    folio_state_destroy(state);
+}
+
+/* 未完了の改名があれば同期の値を返し、フォルダを作らない（ADR 0039 の決定 5）。 */
+static void verify_create_category_pending_rename(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY, "select to rename");
+    struct note_name *renamed = accepted_note_name("新しい名前");
+    adapter.rename_outcome = RENAME_PENDING;
+    require(folio_state_rename_note(state, renamed, u"", 0) == FOLIO_STATE_RENAME_PENDING,
+            "a rename is left unfinished");
+    struct category_name *name = accepted_category_name("D");
+    require(folio_state_create_category(state, name) == FOLIO_STATE_RENAME_PENDING &&
+                adapter.renames == 2 && adapter.last_attempt == RENAME_RESUME,
+            "the unfinished rename is retried first and its outcome returned");
+    require(adapter.category_creates == 0 && adapter.writes == 0 &&
+                folio_state_category_count(state) == 3,
+            "and no folder is made");
+    category_name_destroy(name);
+    note_name_destroy(renamed);
+    folio_state_destroy(state);
+}
+
+static void verify_create_categories(void)
+{
+    verify_create_first_category();
+    verify_create_category();
+    verify_create_category_refusals();
+    verify_create_category_stale_ledger();
+    verify_create_category_pending_rename();
+}
+
 static void verify_later_units(void)
 {
     verify_rename_refusals();
@@ -3555,6 +3737,7 @@ static void verify_later_units(void)
     verify_filter_follows_resumed_rename();
     verify_filter_follows_move();
     verify_settings();
+    verify_create_categories();
 }
 
 void run_state_tests(void)

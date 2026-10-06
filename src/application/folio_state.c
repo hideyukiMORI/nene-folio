@@ -4,6 +4,7 @@
 
 #include "appearance_port.h"
 #include "category_ledger.h"
+#include "category_name.h"
 #include "drawer_layout.h"
 #include "folio_settings.h"
 #include "index_filter.h"
@@ -2216,6 +2217,136 @@ enum folio_state_outcome folio_state_rename_note(struct folio_state *_Nonnull st
     }
     /* 一致集合の作り直しは完了した改名を受け取る `adopt_rename` が行う（補正 3）。 */
     return rename_selected(state, name);
+}
+
+/* カテゴリ名もディレクトリ名なので、大小文字だけ違う名前を衝突として断る（ADR 0039 の決定 10）。 */
+static bool holds_folded_category(const struct folio_state *_Nonnull state,
+                                  const char *_Nonnull name)
+{
+    size_t count = category_ledger_count(state->categories);
+    for (size_t index = 0; index < count; ++index)
+    {
+        if (same_folded(category_ledger_name(state->categories, index), name))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+/* 挿した台帳の結果。MALFORMED は完全一致の重複なので名前の衝突として返す。 */
+static enum folio_state_outcome from_inserted(enum category_ledger_outcome outcome)
+{
+    switch (outcome)
+    {
+    case CATEGORY_LEDGER_ACCEPTED:
+        return FOLIO_STATE_READY;
+    case CATEGORY_LEDGER_MALFORMED:
+    case CATEGORY_LEDGER_UNSUPPORTED_VERSION:
+        return FOLIO_STATE_CATEGORY_NAME_TAKEN;
+    case CATEGORY_LEDGER_OUT_OF_MEMORY:
+        return FOLIO_STATE_OUT_OF_MEMORY;
+    }
+    return FOLIO_STATE_CATEGORY_NAME_TAKEN;
+}
+
+/* 確保した台帳と配列を捨てる。配列の count 番目は新しいカテゴリの空の索引台帳で、
+ * それより前は state が持っている借り物なので壊さない。 */
+static void discard_category(struct category_ledger *_Nullable ledger,
+                             struct note_ledger *_Nonnull *_Nullable notes, size_t count)
+{
+    category_ledger_destroy(ledger);
+    if (notes != nullptr)
+    {
+        note_ledger_destroy(notes[count]);
+    }
+    free(notes);
+}
+
+/* 新しい台帳（末尾・既定の色・展開）と、1 つ伸ばした索引台帳の配列を、フォルダを作るより先に
+ * 確保する（ADR 0039 の決定 3）。失敗したら何も残さない。 */
+static enum folio_state_outcome
+reserve_category(const struct folio_state *_Nonnull state,
+                 const struct category_name *_Nonnull name,
+                 struct category_ledger *_Nullable *_Nonnull ledger,
+                 struct note_ledger *_Nonnull *_Nullable *_Nonnull notes)
+{
+    size_t count = category_ledger_count(state->categories);
+    enum folio_state_outcome outcome =
+        from_inserted(category_ledger_inserted(state->categories, count, name, ledger));
+    if (outcome != FOLIO_STATE_READY)
+    {
+        return outcome;
+    }
+    /* 末尾の 1 つは load_all_notes と同じ null の番兵。 */
+    struct note_ledger *_Nonnull *_Nullable grown = calloc(count + 2, sizeof *grown);
+    outcome = grown == nullptr ? FOLIO_STATE_OUT_OF_MEMORY
+                               : from_note_ledger(note_ledger_empty(&grown[count]));
+    if (outcome != FOLIO_STATE_READY)
+    {
+        discard_category(*ledger, grown, count);
+        *ledger = nullptr;
+        return outcome;
+    }
+    for (size_t index = 0; index < count; ++index)
+    {
+        grown[index] = state->notes[index];
+    }
+    *notes = grown;
+    return FOLIO_STATE_READY;
+}
+
+/* フォルダを作った後で台帳と配列を差し替え、カーソルを新しいカテゴリ行へ置く（決定 10）。
+ * 空のカテゴリ行は止まる行（ADR 0015）。選択・文書・モード・写し・スクロール量は触らない。 */
+static void adopt_category(struct folio_state *_Nonnull state,
+                           struct category_ledger *_Nonnull ledger,
+                           struct note_ledger *_Nonnull *_Nonnull notes)
+{
+    size_t category = category_ledger_count(state->categories);
+    category_ledger_destroy(state->categories);
+    state->categories = ledger;
+    free(state->notes);
+    state->notes = notes;
+    state->notes_count = category + 1;
+    cursor_to_category(state, category);
+}
+
+enum folio_state_outcome folio_state_create_category(struct folio_state *_Nonnull state,
+                                                     const struct category_name *_Nonnull name)
+{
+    if (state->filter != nullptr)
+    {
+        return FOLIO_STATE_FILTERED;
+    }
+    enum folio_state_outcome synced = synchronize(state);
+    if (synced != FOLIO_STATE_READY)
+    {
+        return synced;
+    }
+    const char *_Nonnull text = category_name_text(name);
+    if (holds_folded_category(state, text))
+    {
+        return FOLIO_STATE_CATEGORY_NAME_TAKEN;
+    }
+    struct category_ledger *_Nullable ledger = nullptr;
+    struct note_ledger *_Nonnull *_Nullable notes = nullptr;
+    enum folio_state_outcome reserved = reserve_category(state, name, &ledger, &notes);
+    if (reserved != FOLIO_STATE_READY)
+    {
+        return reserved;
+    }
+    enum persistence_outcome created = state->port.create_category(state->port.adapter, text);
+    if (created != PERSISTENCE_STORED)
+    {
+        discard_category(ledger, notes, category_ledger_count(state->categories));
+        return created == PERSISTENCE_NAME_TAKEN ? FOLIO_STATE_CATEGORY_NAME_TAKEN
+                                                 : FOLIO_STATE_CATEGORY_NOT_CREATED;
+    }
+    /* フォルダが真実なので、台帳を書けなくても採用し、次に台帳を書く操作で揃える（決定 3）。 */
+    enum persistence_outcome stored =
+        state->port.write_category_ledger(state->port.adapter, ledger);
+    adopt_category(state, ledger, notes);
+    return stored == PERSISTENCE_STORED ? FOLIO_STATE_READY : FOLIO_STATE_CATEGORY_LEDGER_STALE;
 }
 
 enum folio_state_outcome folio_state_store_note(struct folio_state *_Nonnull state,
