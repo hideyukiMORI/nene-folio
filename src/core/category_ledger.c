@@ -1,5 +1,6 @@
 #include "category_ledger.h"
 
+#include "category_name.h"
 #include "json_reader.h"
 #include "json_writer.h"
 #include "name_list.h"
@@ -368,6 +369,49 @@ category_ledger_recolored(const struct category_ledger *_Nonnull ledger, size_t 
         return outcome;
     }
     target->colors[index] = color;
+    *out = target;
+    return CATEGORY_LEDGER_ACCEPTED;
+}
+
+/* source の [from, to) を色と展開ごと target の末尾へ写す。 */
+static enum category_ledger_outcome copy_range(struct category_ledger *_Nonnull target,
+                                               const struct category_ledger *_Nonnull source,
+                                               size_t from, size_t to)
+{
+    enum category_ledger_outcome outcome = CATEGORY_LEDGER_ACCEPTED;
+    for (size_t index = from; outcome == CATEGORY_LEDGER_ACCEPTED && index < to; ++index)
+    {
+        outcome = copy_entry(target, source, index);
+    }
+    return outcome;
+}
+
+enum category_ledger_outcome
+category_ledger_inserted(const struct category_ledger *_Nonnull ledger, size_t index,
+                         const struct category_name *_Nonnull name,
+                         struct category_ledger *_Nullable *_Nonnull out)
+{
+    struct category_ledger *_Nullable target = nullptr;
+    enum category_ledger_outcome outcome = category_ledger_empty(&target);
+    if (outcome != CATEGORY_LEDGER_ACCEPTED)
+    {
+        return outcome;
+    }
+    const char *_Nonnull text = category_name_text(name);
+    outcome = copy_range(target, ledger, 0, index);
+    if (outcome == CATEGORY_LEDGER_ACCEPTED)
+    {
+        outcome = append(target, text, strlen(text));
+    }
+    if (outcome == CATEGORY_LEDGER_ACCEPTED)
+    {
+        outcome = copy_range(target, ledger, index, name_list_count(ledger->names));
+    }
+    if (outcome != CATEGORY_LEDGER_ACCEPTED)
+    {
+        category_ledger_destroy(target);
+        return outcome;
+    }
     *out = target;
     return CATEGORY_LEDGER_ACCEPTED;
 }

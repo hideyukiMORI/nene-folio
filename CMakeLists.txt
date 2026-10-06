@@ -25,7 +25,7 @@ add_test(NAME toolchain_smoke COMMAND toolchain_smoke)
 nenefolio_target(nenefolio_core core STATIC
     src/core/rgb_color.c src/core/utf8_text.c src/core/utf16_text.c
     src/core/json_reader.c src/core/json_writer.c src/core/name_list.c
-    src/core/category_ledger.c src/core/note_ledger.c src/core/drawer_layout.c
+    src/core/category_ledger.c src/core/category_name.c src/core/note_ledger.c src/core/drawer_layout.c
     src/core/text_buffer.c src/core/note_text.c src/core/markdown_rtf.c src/core/rtf_palette.c
     src/core/folio_command.c src/core/note_name.c src/core/note_rename.c src/core/rename_journal.c
     src/core/note_search.c src/core/note_corpus.c src/core/index_filter.c
@@ -42,6 +42,7 @@ nenefolio_target(folio_tests unit_tests EXECUTABLE
     tests/unit/ledger_tests.c tests/unit/layout_tests.c tests/unit/state_tests.c
     tests/unit/allocation_probe.c tests/unit/allocation_tests.c tests/unit/markdown_tests.c
     tests/unit/command_tests.c tests/unit/note_name_tests.c tests/unit/rename_tests.c
+    tests/unit/category_name_tests.c
     tests/unit/search_tests.c tests/unit/filter_tests.c tests/unit/settings_tests.c
     tests/unit/line_index_tests.c tests/unit/replace_tests.c
     tests/unit/replace_state_tests.c tests/unit/ui_text_tests.c
