@@ -1,5 +1,7 @@
-/* 日本語の初回保存・別名保存・名前変更の面。親を無効にする同期モーダルで、
- * 本文は呼出し中だけ借りる（ADR0020 / ADR 0022 の決定 1）。 */
+/* 初回保存・別名保存・名前変更・新しいカテゴリの面。親を無効にする同期モーダルで、
+ * 本文は呼出し中だけ借りる（ADR0020 / ADR 0022 の決定 1・ADR 0039 の決定 10）。
+ * 新しいカテゴリは READY と CATEGORY_LEDGER_STALE で閉じてその値を返す
+ * （どちらもフォルダは作られている）。 */
 #ifndef NENEFOLIO_NAME_PROMPT_H
 #define NENEFOLIO_NAME_PROMPT_H
 #include "folio_state_outcome.h"

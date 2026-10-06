@@ -1,4 +1,5 @@
 #include "name_prompt.h"
+#include "category_name.h"
 #include "dialog_theme.h"
 #include "folio_palette.h"
 #include "folio_state.h"
@@ -252,8 +253,24 @@ static enum ui_text prompt_title(enum name_prompt_kind kind)
         return UI_TEXT_PROMPT_TITLE_SAVE_AS;
     case NAME_PROMPT_RENAME:
         return UI_TEXT_PROMPT_TITLE_RENAME;
+    case NAME_PROMPT_NEW_CATEGORY:
+        return UI_TEXT_PROMPT_TITLE_NEW_CATEGORY;
     }
     return UI_TEXT_PROMPT_TITLE_FIRST_SAVE;
+}
+
+static enum ui_text prompt_name_label(enum name_prompt_kind kind)
+{
+    switch (kind)
+    {
+    case NAME_PROMPT_FIRST_SAVE:
+    case NAME_PROMPT_SAVE_AS:
+    case NAME_PROMPT_RENAME:
+        return UI_TEXT_PROMPT_LABEL_NAME;
+    case NAME_PROMPT_NEW_CATEGORY:
+        return UI_TEXT_PROMPT_LABEL_CATEGORY_NAME;
+    }
+    return UI_TEXT_PROMPT_LABEL_NAME;
 }
 
 static enum ui_text prompt_hint(const struct name_prompt *_Nonnull prompt)
@@ -270,6 +287,8 @@ static enum ui_text prompt_hint(const struct name_prompt *_Nonnull prompt)
         return UI_TEXT_PROMPT_HINT_SAVE_AS;
     case NAME_PROMPT_RENAME:
         return UI_TEXT_PROMPT_HINT_RENAME;
+    case NAME_PROMPT_NEW_CATEGORY:
+        return UI_TEXT_PROMPT_HINT_NEW_CATEGORY;
     }
     return UI_TEXT_PROMPT_HINT_FIRST_SAVE;
 }
@@ -287,6 +306,8 @@ static enum ui_text prompt_accept(const struct name_prompt *_Nonnull prompt)
         return UI_TEXT_PROMPT_ACCEPT_SAVE;
     case NAME_PROMPT_RENAME:
         return UI_TEXT_PROMPT_ACCEPT_RENAME;
+    case NAME_PROMPT_NEW_CATEGORY:
+        return UI_TEXT_PROMPT_ACCEPT_CREATE;
     }
     return UI_TEXT_PROMPT_ACCEPT_SAVE;
 }
@@ -301,6 +322,25 @@ constexpr int category_rows = 4;
 /* 閉じたコンボが占めていた縦の枠（96 DPI の単位。名前欄と同じ 28）。一覧はこれより高いぶん
  * 下の欄と面を下げる。 */
 constexpr int category_slot_height = 28;
+/* 一覧を持たない面で詰める縦の幅（96 DPI の単位）。カテゴリの見出しの上端 82 から、一覧の下の
+ * 案内の上端 144 まで。案内・失敗・釦・面の高さがこの分だけ上がる（ADR 0039 の決定 10）。 */
+constexpr int category_block_height = 62;
+
+/* 保存先カテゴリの見出しと一覧を置く種別か。置かない種別は一覧の窓を作らない
+ * （ADR 0039 の決定 10）。 */
+static bool has_category_list(enum name_prompt_kind kind)
+{
+    switch (kind)
+    {
+    case NAME_PROMPT_FIRST_SAVE:
+    case NAME_PROMPT_SAVE_AS:
+    case NAME_PROMPT_RENAME:
+        return true;
+    case NAME_PROMPT_NEW_CATEGORY:
+        return false;
+    }
+    return true;
+}
 
 /* 一覧の 1 行の高さ（画素）。WM_MEASUREITEM と面の配置の両方がこの 1 本から取る。 */
 static int category_row_height(const struct name_prompt *_Nonnull prompt)
@@ -324,24 +364,43 @@ static bool inputs(struct name_prompt *_Nonnull prompt)
     /* 塗れない OS の縁を外し、面が札の色の 1px の枠を描く（ADR 0035 の決定 3）。
      * 保存先カテゴリは常時開いた owner-draw の一覧で、矢印の釦もドロップダウンも持たない
      * （ADR 0035 の補正 17）。 */
+    bool listed = has_category_list(prompt->kind);
     prompt->name = control(prompt, L"EDIT", L"", WS_TABSTOP | ES_AUTOHSCROLL);
-    prompt->category = control(prompt, L"LISTBOX", L"",
-                               WS_TABSTOP | LBS_OWNERDRAWFIXED | LBS_HASSTRINGS | LBS_NOTIFY |
-                                   LBS_NOINTEGRALHEIGHT | WS_VSCROLL);
+    if (listed)
+    {
+        prompt->category = control(prompt, L"LISTBOX", L"",
+                                   WS_TABSTOP | LBS_OWNERDRAWFIXED | LBS_HASSTRINGS | LBS_NOTIFY |
+                                       LBS_NOINTEGRALHEIGHT | WS_VSCROLL);
+    }
     prompt->failure = control(prompt, L"STATIC", L"", SS_LEFT);
-    if (prompt->name == nullptr || prompt->category == nullptr || prompt->failure == nullptr)
+    if (prompt->name == nullptr || (listed && prompt->category == nullptr) ||
+        prompt->failure == nullptr)
     {
         return false;
     }
     position(prompt, prompt->name, (RECT){20, 46, 380, 74}, 0);
-    MoveWindow(prompt->category, scaled(prompt, 20), scaled(prompt, 108), scaled(prompt, 360),
-               category_rows * category_row_height(prompt), TRUE);
+    if (listed)
+    {
+        MoveWindow(prompt->category, scaled(prompt, 20), scaled(prompt, 108), scaled(prompt, 360),
+                   category_rows * category_row_height(prompt), TRUE);
+    }
     position(prompt, prompt->failure, (RECT){20, 166, 380, 226}, prompt->lowered);
     SendMessageW(prompt->name, EM_SETLIMITTEXT, 255, 0);
     SetWindowLongPtrW(prompt->name, GWLP_USERDATA, (LONG_PTR)prompt);
     prompt->original =
         (WNDPROC)SetWindowLongPtrW(prompt->name, GWLP_WNDPROC, (LONG_PTR)input_procedure);
-    return prompt->original != nullptr && fill_categories(prompt);
+    return prompt->original != nullptr && (!listed || fill_categories(prompt));
+}
+
+/* 一覧より下の欄と面をずらす画素。一覧を持つ種別は閉じたコンボより高いぶん下げ（補正 18）、
+ * 持たない種別はカテゴリの見出しと一覧の枠のぶん上げる（ADR 0039 の決定 10）。 */
+static int lowered_by(const struct name_prompt *_Nonnull prompt)
+{
+    if (!has_category_list(prompt->kind))
+    {
+        return -scaled(prompt, category_block_height);
+    }
+    return category_rows * category_row_height(prompt) - scaled(prompt, category_slot_height);
 }
 
 static bool initialize(struct name_prompt *_Nonnull prompt, HWND dialog)
@@ -359,8 +418,7 @@ static bool initialize(struct name_prompt *_Nonnull prompt, HWND dialog)
     {
         return false;
     }
-    prompt->lowered =
-        category_rows * category_row_height(prompt) - scaled(prompt, category_slot_height);
+    prompt->lowered = lowered_by(prompt);
     RECT bounds = {0, 0, scaled(prompt, 400), scaled(prompt, 270) + prompt->lowered};
     DWORD style = (DWORD)GetWindowLongPtrW(dialog, GWL_STYLE);
     AdjustWindowRectExForDpi(&bounds, style, FALSE, 0, prompt->dpi);
@@ -372,32 +430,78 @@ static bool initialize(struct name_prompt *_Nonnull prompt, HWND dialog)
                (owner.top + owner.bottom - height) / 2, width, height, FALSE);
     show_line(dialog, prompt_title(prompt->kind), prompt_language(prompt));
     return inputs(prompt) && fill_name(prompt) &&
-           label(prompt, UI_TEXT_PROMPT_LABEL_NAME, (RECT){20, 20, 380, 42}, 0) &&
-           label(prompt, UI_TEXT_PROMPT_LABEL_CATEGORY, (RECT){20, 82, 380, 104}, 0) &&
+           label(prompt, prompt_name_label(prompt->kind), (RECT){20, 20, 380, 42}, 0) &&
+           (!has_category_list(prompt->kind) ||
+            label(prompt, UI_TEXT_PROMPT_LABEL_CATEGORY, (RECT){20, 82, 380, 104}, 0)) &&
            label(prompt, prompt_hint(prompt), (RECT){20, 144, 380, 166}, prompt->lowered) &&
            button(prompt, prompt_accept(prompt), IDOK, (RECT){192, 230, 280, 258}) &&
            button(prompt, prompt_close(prompt), IDCANCEL, (RECT){288, 230, 380, 258});
 }
 
-/* 同じ名前型を使い、種類ごとの意図へ渡す（ADR 0022 の決定 1）。 */
-static enum folio_state_outcome apply_name(struct name_prompt *_Nonnull prompt,
-                                           const struct note_name *_Nonnull name)
+/* ノートの種別は同じ名前型を使う（ADR 0022 の決定 1）。".md" はここで剥がれる。 */
+static enum folio_state_outcome note_name_from(const struct utf8_text *_Nonnull narrow,
+                                               struct note_name *_Nullable *_Nonnull name)
 {
-    switch (prompt->kind)
+    enum note_name_outcome accepted =
+        note_name_create(utf8_text_bytes(narrow), utf8_text_length(narrow), name);
+    if (accepted != NOTE_NAME_ACCEPTED)
     {
-    case NAME_PROMPT_FIRST_SAVE:
-    case NAME_PROMPT_SAVE_AS:
-    {
-        LRESULT category = SendMessageW(prompt->category, LB_GETCURSEL, 0, 0);
-        struct note_destination destination = {.category = (size_t)category, .name = name};
-        return folio_state_store_new(prompt->state, &destination, prompt->units, prompt->count);
+        return accepted == NOTE_NAME_OUT_OF_MEMORY ? FOLIO_STATE_OUT_OF_MEMORY
+                                                   : FOLIO_STATE_INVALID_NAME;
     }
-    case NAME_PROMPT_RENAME:
-        return folio_state_rename_note(prompt->state, name, prompt->units, prompt->count);
-    }
-    return FOLIO_STATE_CANCELLED;
+    return FOLIO_STATE_READY;
 }
 
+static enum folio_state_outcome store_note(struct name_prompt *_Nonnull prompt,
+                                           const struct utf8_text *_Nonnull narrow)
+{
+    struct note_name *_Nullable name = nullptr;
+    enum folio_state_outcome result = note_name_from(narrow, &name);
+    if (result != FOLIO_STATE_READY)
+    {
+        return result;
+    }
+    LRESULT category = SendMessageW(prompt->category, LB_GETCURSEL, 0, 0);
+    struct note_destination destination = {.category = (size_t)category, .name = name};
+    result = folio_state_store_new(prompt->state, &destination, prompt->units, prompt->count);
+    note_name_destroy(name);
+    return result;
+}
+
+static enum folio_state_outcome rename_note(struct name_prompt *_Nonnull prompt,
+                                            const struct utf8_text *_Nonnull narrow)
+{
+    struct note_name *_Nullable name = nullptr;
+    enum folio_state_outcome result = note_name_from(narrow, &name);
+    if (result != FOLIO_STATE_READY)
+    {
+        return result;
+    }
+    result = folio_state_rename_note(prompt->state, name, prompt->units, prompt->count);
+    note_name_destroy(name);
+    return result;
+}
+
+/* カテゴリの種別はカテゴリ名の型を使う。".md" は剥がさない（ADR 0039 の決定 10）。 */
+static enum folio_state_outcome create_category(struct name_prompt *_Nonnull prompt,
+                                                const struct utf8_text *_Nonnull narrow)
+{
+    struct category_name *_Nullable name = nullptr;
+    switch (category_name_create(utf8_text_bytes(narrow), utf8_text_length(narrow), &name))
+    {
+    case CATEGORY_NAME_ACCEPTED:
+        break;
+    case CATEGORY_NAME_INVALID:
+        return FOLIO_STATE_CATEGORY_NAME_INVALID;
+    case CATEGORY_NAME_OUT_OF_MEMORY:
+        return FOLIO_STATE_OUT_OF_MEMORY;
+    }
+    enum folio_state_outcome result = folio_state_create_category(prompt->state, name);
+    category_name_destroy(name);
+    return result;
+}
+
+/* 名前欄の字を UTF-8 にし、種別ごとの名前の型と意図へ渡す。 */
 static enum folio_state_outcome save(struct name_prompt *_Nonnull prompt)
 {
     wchar_t buffer[256];
@@ -407,17 +511,21 @@ static enum folio_state_outcome save(struct name_prompt *_Nonnull prompt)
     {
         return FOLIO_STATE_OUT_OF_MEMORY;
     }
-    struct note_name *_Nullable name = nullptr;
-    enum note_name_outcome accepted =
-        note_name_create(utf8_text_bytes(narrow), utf8_text_length(narrow), &name);
-    utf8_text_destroy(narrow);
-    if (accepted != NOTE_NAME_ACCEPTED)
+    enum folio_state_outcome result = FOLIO_STATE_CANCELLED;
+    switch (prompt->kind)
     {
-        return accepted == NOTE_NAME_OUT_OF_MEMORY ? FOLIO_STATE_OUT_OF_MEMORY
-                                                   : FOLIO_STATE_INVALID_NAME;
+    case NAME_PROMPT_FIRST_SAVE:
+    case NAME_PROMPT_SAVE_AS:
+        result = store_note(prompt, narrow);
+        break;
+    case NAME_PROMPT_RENAME:
+        result = rename_note(prompt, narrow);
+        break;
+    case NAME_PROMPT_NEW_CATEGORY:
+        result = create_category(prompt, narrow);
+        break;
     }
-    enum folio_state_outcome result = apply_name(prompt, name);
-    note_name_destroy(name);
+    utf8_text_destroy(narrow);
     return result;
 }
 
@@ -484,18 +592,53 @@ static void hold_pending(struct name_prompt *_Nonnull prompt, enum folio_state_o
     show_pending_reason(prompt, outcome);
 }
 
-/* 新しいmdを公開できたときだけ閉じる。LEDGER_STALE は公開後の台帳の失敗。
- * LEDGER_UNSYNCED は何も作れていないので、NAME_TAKEN と同じく入力を残して理由を見せる。 */
+/* 面を閉じる結果か。ノートは新しい md を公開できたときで、LEDGER_STALE は公開後の台帳の失敗。
+ * カテゴリはフォルダを作れたときで、CATEGORY_LEDGER_STALE は作った後の台帳の失敗
+ * （ADR 0039 の補正 1）。 */
+static bool closes_on(enum name_prompt_kind kind, enum folio_state_outcome outcome)
+{
+    switch (kind)
+    {
+    case NAME_PROMPT_FIRST_SAVE:
+    case NAME_PROMPT_SAVE_AS:
+    case NAME_PROMPT_RENAME:
+        return outcome == FOLIO_STATE_READY || outcome == FOLIO_STATE_LEDGER_STALE;
+    case NAME_PROMPT_NEW_CATEGORY:
+        return outcome == FOLIO_STATE_READY || outcome == FOLIO_STATE_CATEGORY_LEDGER_STALE;
+    }
+    return false;
+}
+
+/* 未完了の改名を面の中で保留にする種別か。カテゴリの面はノートの改名の再試行に化けず、
+ * 同期の RENAME_PENDING / RENAME_HALTED も失敗の 1 行で見せる（ADR 0039 の決定 10）。
+ * 初回保存・別名保存は現行のまま通す。 */
+static bool holds_pending(enum name_prompt_kind kind)
+{
+    switch (kind)
+    {
+    case NAME_PROMPT_FIRST_SAVE:
+    case NAME_PROMPT_SAVE_AS:
+    case NAME_PROMPT_RENAME:
+        return true;
+    case NAME_PROMPT_NEW_CATEGORY:
+        return false;
+    }
+    return false;
+}
+
+/* 閉じない結果では入力を残して理由を見せる。ノートの LEDGER_UNSYNCED は何も作れていないので、
+ * NAME_TAKEN と同じく残る。 */
 static void submit(struct name_prompt *_Nonnull prompt)
 {
     enum folio_state_outcome saved = prompt->pending ? retry_pending(prompt) : save(prompt);
-    if (saved == FOLIO_STATE_READY || saved == FOLIO_STATE_LEDGER_STALE)
+    if (closes_on(prompt->kind, saved))
     {
         prompt->outcome = saved;
         EndDialog(prompt->dialog, IDOK);
         return;
     }
-    if (saved == FOLIO_STATE_RENAME_PENDING || saved == FOLIO_STATE_RENAME_HALTED)
+    if (holds_pending(prompt->kind) &&
+        (saved == FOLIO_STATE_RENAME_PENDING || saved == FOLIO_STATE_RENAME_HALTED))
     {
         prompt->outcome = saved;
         hold_pending(prompt, saved);
@@ -602,7 +745,10 @@ static void paint_frame(const struct name_prompt *_Nonnull prompt)
         return;
     }
     frame_around(prompt, device, prompt->name);
-    frame_around(prompt, device, prompt->category);
+    if (prompt->category != nullptr)
+    {
+        frame_around(prompt, device, prompt->category);
+    }
     EndPaint(prompt->dialog, &paint);
 }
 
@@ -660,7 +806,8 @@ static bool reads_as_cancel(const struct name_prompt *_Nonnull prompt, WPARAM wp
 static bool reads_as_accept(const struct name_prompt *_Nonnull prompt, WPARAM wparam, LPARAM lparam)
 {
     return LOWORD(wparam) == IDOK ||
-           ((HWND)lparam == prompt->category && HIWORD(wparam) == LBN_DBLCLK);
+           (prompt->category != nullptr && (HWND)lparam == prompt->category &&
+            HIWORD(wparam) == LBN_DBLCLK);
 }
 
 static INT_PTR CALLBACK procedure(HWND dialog, UINT message, WPARAM wparam, LPARAM lparam)
