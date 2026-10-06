@@ -189,7 +189,7 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
         {"使えないカテゴリ名です。先頭のピリオド・予約名・末尾の空白やピリオド・区切りを避け、"
          "255バイト以内で指定してください。",
          "That category name cannot be used. Avoid a leading period, reserved names, trailing "
-         "spaces or periods, and separators, and keep it within 255 bytes.",
+         "spaces or periods, and separators; max 255 bytes.",
          "该分类名不可用。请避开开头的句点、保留名、末尾的空格或句点以及分隔符，并将名称控制在 "
          "255 字节以内。"},
     [UI_TEXT_FAILURE_CATEGORY_NAME_TAKEN] =
@@ -205,8 +205,8 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
     [UI_TEXT_FAILURE_CATEGORY_LEDGER_STALE] =
         {"カテゴリは反映しましたが、台帳（categories.json）を書き戻せませんでした。"
          "表示はフォルダに従い、次に台帳を書くときに揃います。",
-         "The category was applied, but the ledger (categories.json) could not be written back. "
-         "The index follows the folders, and the ledger catches up the next time it is written.",
+         "Category applied, but categories.json could not be written back. "
+         "The index follows the folders until the next write.",
          "分类已应用，但无法写回台账（categories.json）。"
          "显示以文件夹为准，下次写入台账时将自动对齐。"},
     [UI_TEXT_COMMAND_SAVE] = {"保存", "Save", "保存"},
