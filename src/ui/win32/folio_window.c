@@ -4,6 +4,7 @@
 #include "category_name.h"
 #include "command_row.h"
 #include "command_surface_mode.h"
+#include "drawer_menu_item.h"
 #include "drawer_window.h"
 #include "failure_box.h"
 #include "folio_command.h"
@@ -197,6 +198,8 @@ constexpr int base_chip_gap = 8;
 constexpr int base_chip_radius = 3;
 constexpr int base_mono_font = 11;
 constexpr int base_tracking = 1;
+/* SetTextCharacterExtra が失敗したときの戻り値（wingdi.h に名前が無い）。 */
+constexpr int tracking_unavailable = 0x8000000;
 /* 省略しても残すノート名の幅（ADR 0011 の決定 4）。 */
 constexpr int base_breadcrumb_note = 48;
 constexpr int base_breadcrumb_height = 24;
@@ -880,7 +883,10 @@ static int wide_units(const char *_Nonnull text, char16_t *_Nonnull out)
     return (int)written;
 }
 
-/* UTF-8 の 1 行を測る。測れなければ 0。 */
+/* UTF-8 の 1 行を、device に掛かっている字間込みで測る。測れなければ 0。
+ * DT_CALCRECT は字間を、Consolas だけの行では含めず、フォントリンクの行では含める。
+ * 描くときはどちらも 1 字ごとに付くので、字間 0 で測って単位数 × 字間を足す
+ * （ADR 0018 の補正 #186）。 */
 static int measure_utf8(HDC device, const char *_Nonnull text)
 {
     char16_t units[draw_unit_limit];
@@ -889,9 +895,12 @@ static int measure_utf8(HDC device, const char *_Nonnull text)
     {
         return 0;
     }
+    int tracking = SetTextCharacterExtra(device, 0);
+    tracking = tracking == tracking_unavailable ? 0 : tracking;
     RECT measured = {0, 0, 0, 0};
     DrawTextW(device, units, count, &measured, DT_SINGLELINE | DT_NOPREFIX | DT_CALCRECT);
-    return measured.right - measured.left;
+    SetTextCharacterExtra(device, tracking);
+    return measured.right - measured.left + count * tracking;
 }
 
 /* UTF-8 を 1 行で描く。bounds に収まらなければ末尾を省略記号にする（ADR 0011 の決定 4）。 */
@@ -2291,8 +2300,15 @@ static bool inline_outcome(enum folio_state_outcome outcome)
 
 static void command_failure(struct folio_window *_Nonnull self, enum folio_state_outcome outcome)
 {
+    /* キャンセルは失敗ではないので何も見せない。ただし名前入力面（モーダル）を閉じた後の
+     * フォーカスは主窓へ落ちるので、失敗の箱の後と同じく開いている入力面へ返す
+     * （ADR 0016 の補正 6・#185）。 */
     if (outcome == FOLIO_STATE_CANCELLED)
     {
+        if (self->command_surface != COMMAND_SURFACE_CLOSED)
+        {
+            focus_command_input(self);
+        }
         return;
     }
     bool inline_failure =
@@ -3633,6 +3649,51 @@ static enum folio_state_outcome switch_note(struct folio_window *_Nonnull self, 
         return outcome;
     }
     return opened(self, folio_state_select_note(self->state, category, note));
+}
+
+/* 押した行が、いま開いている名前付きの文書か。同じノートを選び直すと本文を読み直して
+ * Undo を失うので、開いている文書は選び直さない（FR-038）。 */
+static bool holds_document(const struct folio_window *_Nonnull self, struct note_ref target)
+{
+    struct note_ref selected = {.category = 0, .note = 0};
+    return folio_state_document_kind(self->state) == FOLIO_DOCUMENT_NAMED &&
+           folio_state_selection(self->state, &selected) && selected.category == target.category &&
+           selected.note == target.note;
+}
+
+/* ノート行のメニューの「名前を変更…」。違う行ならクリックと同じ switch_note で選んでから、
+ * コマンドの「名前を変更」と同じ受け口へ渡す。選べなければその失敗を出して止まる。 */
+static void rename_from_drawer(struct folio_window *_Nonnull self, struct note_ref target)
+{
+    if (!holds_document(self, target))
+    {
+        enum folio_state_outcome outcome = switch_note(self, target.category, target.note);
+        if (outcome != FOLIO_STATE_READY)
+        {
+            failure_box_show(self->handle, outcome, self->state);
+            return;
+        }
+    }
+    execute_rename_command(self, "");
+}
+
+/* ドロワーの右クリックのメニューで選ばれた項目（FR-038・ADR 0039 の決定 11）。
+ * 行き先は既存のコマンドの受け口で、ここは対象の行を選ぶことだけを足す（ARC-001）。 */
+static void run_drawer_menu(struct folio_window *_Nonnull self, enum drawer_menu_item item,
+                            const struct note_ref *_Nonnull target)
+{
+    switch (item)
+    {
+    case DRAWER_MENU_RECOLOR:
+        /* 色はドロワーが自分で色の選択を開く（決定 12 の例外）。ここへは来ないので何もしない。 */
+        return;
+    case DRAWER_MENU_RENAME_NOTE:
+        rename_from_drawer(self, *target);
+        return;
+    case DRAWER_MENU_NEW_CATEGORY:
+        execute_new_category_command(self, "");
+        return;
+    }
 }
 
 /* 歩みの行き先がノート行か（ADR 0015 の決定 2）。カテゴリ行と端では保存も開き直しも要らない。 */
@@ -5527,6 +5588,10 @@ static LRESULT on_message(struct folio_window *_Nonnull self, UINT message, WPAR
     case folio_message_select_note:
         /* ドロワーからのノート行のクリック。結果は enum folio_state_outcome で返す。 */
         return (LRESULT)switch_note(self, (size_t)wparam, (size_t)lparam);
+    case folio_message_drawer_menu:
+        /* lParam は送る側のスタックにある対象（同期の SendMessageW なので生きている）。 */
+        run_drawer_menu(self, (enum drawer_menu_item)wparam, (const struct note_ref *)lparam);
+        return 0;
     default:
         return on_input_message(self, message, wparam, lparam);
     }
