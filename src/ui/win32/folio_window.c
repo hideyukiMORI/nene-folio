@@ -270,7 +270,8 @@ static enum folio_state_outcome command_save_as(const struct folio_window *_Nonn
 static void close_command_surface(struct folio_window *_Nonnull self);
 static void decorate(HWND handle, struct folio_palette palette);
 static void render_pane(const struct folio_window *_Nonnull self);
-static void show_settings_surface(struct folio_window *_Nonnull self);
+static void show_settings_surface(struct folio_window *_Nonnull self,
+                                  const char *_Nonnull argument);
 static void command_not_found(struct folio_window *_Nonnull self);
 static void show_command_palette(struct folio_window *_Nonnull self);
 static void move_command_selection(struct folio_window *_Nonnull self, WPARAM key);
@@ -2224,63 +2225,62 @@ static void redraw_command_layer(const struct folio_window *_Nonnull self)
 /* 欄の中の 1 行で済ませる失敗と、モーダルの箱で知らせる事象を分ける
  * （ADR 0028 の決定 8(b) と 2026-09-22 の補正 8）。打ち間違いに箱を出さず、
  * 記憶域と「本文を取り出せない」は従来どおり箱にする。
- * 値を足すと -Wswitch-enum がここを落とすので、分け方を必ず決めさせる（C-002）。 */
-static bool inline_outcome(enum folio_state_outcome outcome)
-{
-    switch (outcome)
-    {
-    case FOLIO_STATE_NOTHING_SELECTED:
-    case FOLIO_STATE_NOT_EDITING:
-    case FOLIO_STATE_UNSAVED_CHANGES:
-    case FOLIO_STATE_REPLACE_NO_PATTERN:
-    case FOLIO_STATE_REPLACE_BAD_PATTERN:
-    case FOLIO_STATE_REPLACE_BAD_TEMPLATE:
-    case FOLIO_STATE_REPLACE_TIMED_OUT:
-    case FOLIO_STATE_REPLACE_TOO_COMPLEX:
-    case FOLIO_STATE_REPLACE_TOO_MANY:
-    case FOLIO_STATE_REPLACE_TOO_LARGE:
-    case FOLIO_STATE_REPLACE_STALE:
-    case FOLIO_STATE_HISTORY_EMPTY:      /* ADR 0038 の決定 13: 面を開かず欄の 1 行 */
-    case FOLIO_STATE_HISTORY_UNREADABLE: /* 読めない版を選んだ。箱を出すほどではない */
-    case FOLIO_STATE_REPLACE_BAD_SPAN:
+ * 全値を true / false で明示し、値を足して行を書き忘れると CNF-009 が落ちるので、
+ * 分け方を必ず決めさせる（C-002・ADR 0027 の 2026-10-06 の補正）。範囲検査は書かない。 */
+static const bool inline_outcomes[] = {
+    [FOLIO_STATE_NOTHING_SELECTED] = true,
+    [FOLIO_STATE_NOT_EDITING] = true,
+    [FOLIO_STATE_UNSAVED_CHANGES] = true,
+    [FOLIO_STATE_REPLACE_NO_PATTERN] = true,
+    [FOLIO_STATE_REPLACE_BAD_PATTERN] = true,
+    [FOLIO_STATE_REPLACE_BAD_TEMPLATE] = true,
+    [FOLIO_STATE_REPLACE_TIMED_OUT] = true,
+    [FOLIO_STATE_REPLACE_TOO_COMPLEX] = true,
+    [FOLIO_STATE_REPLACE_TOO_MANY] = true,
+    [FOLIO_STATE_REPLACE_TOO_LARGE] = true,
+    [FOLIO_STATE_REPLACE_STALE] = true,
+    [FOLIO_STATE_HISTORY_EMPTY] = true,      /* ADR 0038 の決定 13: 面を開かず欄の 1 行 */
+    [FOLIO_STATE_HISTORY_UNREADABLE] = true, /* 読めない版を選んだ。箱を出すほどではない */
+    [FOLIO_STATE_REPLACE_BAD_SPAN] = true,
     /* 設定の失敗は欄の中の 1 行（ADR 0031 の決定 7）。設定画面は閉じずに理由を出す。
      * `:set number` の失敗も同じ値なので、他の Ex の失敗と同じく欄の 1 行になる。 */
-    case FOLIO_STATE_SETTINGS_UNREADABLE:
-    case FOLIO_STATE_SETTINGS_STORE_FAILED:
-        return true;
-    case FOLIO_STATE_READY:
-    case FOLIO_STATE_DATA_UNREADABLE:
-    case FOLIO_STATE_LEDGER_MALFORMED:
-    case FOLIO_STATE_STORE_FAILED:
-    case FOLIO_STATE_NO_SUCH_CATEGORY:
-    case FOLIO_STATE_NO_SUCH_NOTE:
-    case FOLIO_STATE_NOTE_UNREADABLE:
-    case FOLIO_STATE_NOTE_MALFORMED:
-    case FOLIO_STATE_NOTE_STORE_FAILED:
-    case FOLIO_STATE_HISTORY_FAILED:
-    case FOLIO_STATE_NAME_TAKEN:
-    case FOLIO_STATE_LEDGER_STALE:
-    case FOLIO_STATE_LEDGER_UNSYNCED:
-    case FOLIO_STATE_RENAME_PENDING:
-    case FOLIO_STATE_RENAME_UNLOCKED:
-    case FOLIO_STATE_RENAME_UNSUPPORTED:
-    case FOLIO_STATE_RENAME_IDENTITY_FAILED:
-    case FOLIO_STATE_RENAME_JOURNAL_FAILED:
-    case FOLIO_STATE_RENAME_JOURNAL_BROKEN:
-    case FOLIO_STATE_RENAME_HALTED:
-    case FOLIO_STATE_SEARCH_MALFORMED:
-    case FOLIO_STATE_FILTERED:
-    case FOLIO_STATE_PANE_UNAVAILABLE:
-    case FOLIO_STATE_OUT_OF_MEMORY:
-    case FOLIO_STATE_NAME_REQUIRED:
-    case FOLIO_STATE_INVALID_NAME:
-    case FOLIO_STATE_ALREADY_NAMED:
-    case FOLIO_STATE_CANCELLED:
+    [FOLIO_STATE_SETTINGS_UNREADABLE] = true,
+    [FOLIO_STATE_SETTINGS_STORE_FAILED] = true,
+    [FOLIO_STATE_READY] = false,
+    [FOLIO_STATE_DATA_UNREADABLE] = false,
+    [FOLIO_STATE_LEDGER_MALFORMED] = false,
+    [FOLIO_STATE_STORE_FAILED] = false,
+    [FOLIO_STATE_NO_SUCH_CATEGORY] = false,
+    [FOLIO_STATE_NO_SUCH_NOTE] = false,
+    [FOLIO_STATE_NOTE_UNREADABLE] = false,
+    [FOLIO_STATE_NOTE_MALFORMED] = false,
+    [FOLIO_STATE_NOTE_STORE_FAILED] = false,
+    [FOLIO_STATE_HISTORY_FAILED] = false,
+    [FOLIO_STATE_NAME_TAKEN] = false,
+    [FOLIO_STATE_LEDGER_STALE] = false,
+    [FOLIO_STATE_LEDGER_UNSYNCED] = false,
+    [FOLIO_STATE_RENAME_PENDING] = false,
+    [FOLIO_STATE_RENAME_UNLOCKED] = false,
+    [FOLIO_STATE_RENAME_UNSUPPORTED] = false,
+    [FOLIO_STATE_RENAME_IDENTITY_FAILED] = false,
+    [FOLIO_STATE_RENAME_JOURNAL_FAILED] = false,
+    [FOLIO_STATE_RENAME_JOURNAL_BROKEN] = false,
+    [FOLIO_STATE_RENAME_HALTED] = false,
+    [FOLIO_STATE_SEARCH_MALFORMED] = false,
+    [FOLIO_STATE_FILTERED] = false,
+    [FOLIO_STATE_PANE_UNAVAILABLE] = false,
+    [FOLIO_STATE_OUT_OF_MEMORY] = false,
+    [FOLIO_STATE_NAME_REQUIRED] = false,
+    [FOLIO_STATE_INVALID_NAME] = false,
+    [FOLIO_STATE_ALREADY_NAMED] = false,
+    [FOLIO_STATE_CANCELLED] = false,
     /* 起動時に 1 回だけ箱で知らせる（ADR 0036 の決定 5）。欄から来ることは無い */
-    case FOLIO_STATE_FONT_BUNDLE_UNAVAILABLE:
-        return false;
-    }
-    return false;
+    [FOLIO_STATE_FONT_BUNDLE_UNAVAILABLE] = false,
+};
+
+static bool inline_outcome(enum folio_state_outcome outcome)
+{
+    return inline_outcomes[outcome];
 }
 
 static void command_failure(struct folio_window *_Nonnull self, enum folio_state_outcome outcome)
@@ -2760,8 +2760,9 @@ static void show_replace_surface(struct folio_window *_Nonnull self)
 
 /* 表示中のノートが無ければ欄を開かない（検索と同じ）。閲覧中は開いて NOT_EDITING の 1 行を
  * 出し、本文もモードも変えない（ADR 0028 の決定 8(c)）。 */
-static void begin_replace(struct folio_window *_Nonnull self)
+static void begin_replace(struct folio_window *_Nonnull self, const char *_Nonnull argument)
 {
+    (void)argument;
     if (folio_state_document_kind(self->state) == FOLIO_DOCUMENT_NONE)
     {
         command_failure(self, FOLIO_STATE_NOTHING_SELECTED);
@@ -2786,8 +2787,9 @@ static size_t settings_initial_row(const struct folio_window *_Nonnull self)
 /* 設定画面は EDIT を持たず、レイヤー自身がフォーカスを取る（ADR 0031 の決定 7）。
  * 開いたとき現在の選択の行にカーソルを置く（show_search_surface と同じ形の上書き）。
  * 閲覧中でも文書が無くても開ける。 */
-static void show_settings_surface(struct folio_window *_Nonnull self)
+static void show_settings_surface(struct folio_window *_Nonnull self, const char *_Nonnull argument)
 {
+    (void)argument;
     if (self->command_surface == COMMAND_SURFACE_CLOSED)
     {
         open_command_surface(self, COMMAND_SURFACE_SETTINGS);
@@ -2827,8 +2829,10 @@ static void show_history_surface(struct folio_window *_Nonnull self)
 }
 
 /* 履歴の一覧を開く（決定 11・13）。空・無題・未選択は面を開かず、既存の失敗の出し方に任せる。 */
-static void execute_history_command(struct folio_window *_Nonnull self)
+static void execute_history_command(struct folio_window *_Nonnull self,
+                                    const char *_Nonnull argument)
 {
+    (void)argument;
     enum folio_state_outcome outcome = folio_state_open_history(self->state);
     if (outcome != FOLIO_STATE_READY)
     {
@@ -2994,8 +2998,9 @@ static void execute_save_command(struct folio_window *_Nonnull self, const char 
     finish_save_command(self, outcome);
 }
 
-static void execute_quit_command(struct folio_window *_Nonnull self)
+static void execute_quit_command(struct folio_window *_Nonnull self, const char *_Nonnull argument)
 {
+    (void)argument;
     enum folio_state_outcome outcome = command_quit(self);
     if (outcome != FOLIO_STATE_READY)
     {
@@ -3005,8 +3010,10 @@ static void execute_quit_command(struct folio_window *_Nonnull self)
     DestroyWindow(self->handle);
 }
 
-static void execute_save_quit_command(struct folio_window *_Nonnull self)
+static void execute_save_quit_command(struct folio_window *_Nonnull self,
+                                      const char *_Nonnull argument)
 {
+    (void)argument;
     enum folio_state_outcome outcome = store_body(self);
     if (outcome != FOLIO_STATE_READY)
     {
@@ -3046,8 +3053,9 @@ static void execute_mode_command(struct folio_window *_Nonnull self, enum pane_m
 }
 
 /* Ex・パレット・既存入口が共有する唯一の HWND 操作 dispatcher（ADR 0016 の決定 2）。 */
-static void execute_new_command(struct folio_window *_Nonnull self)
+static void execute_new_command(struct folio_window *_Nonnull self, const char *_Nonnull argument)
 {
+    (void)argument;
     size_t category = folio_state_current_category(self->state);
     enum folio_state_outcome saved = store_body(self);
     if (saved == FOLIO_STATE_READY)
@@ -3416,8 +3424,10 @@ static void execute_substitute_command(struct folio_window *_Nonnull self,
 
 /* `:e!`（ADR 0016 の補正 4）。前提は application が判定し、戻す本文はノート切替と同じ
  * show_note の経路で流し込む。保存は試みず、ディスクも読み直さない。 */
-static void execute_discard_command(struct folio_window *_Nonnull self)
+static void execute_discard_command(struct folio_window *_Nonnull self,
+                                    const char *_Nonnull argument)
 {
+    (void)argument;
     enum folio_state_outcome outcome = folio_state_discard_edits(self->state);
     if (outcome == FOLIO_STATE_READY)
     {
@@ -3432,67 +3442,88 @@ static void execute_discard_command(struct folio_window *_Nonnull self)
     focus_pane(self);
 }
 
+/* 以下は、ほかの呼び出し元を持つ関数をコマンドの表の形（窓と引数）で受ける口。
+ * 引数を使わない操作は引数を捨てるだけで、行き先は表へ移す前の switch と同じ。 */
+static void execute_save_as_command(struct folio_window *_Nonnull self,
+                                    const char *_Nonnull argument)
+{
+    finish_save_command(self, command_save_as(self, argument));
+}
+
+static void execute_force_quit_command(struct folio_window *_Nonnull self,
+                                       const char *_Nonnull argument)
+{
+    (void)argument;
+    DestroyWindow(self->handle);
+}
+
+static void execute_help_command(struct folio_window *_Nonnull self, const char *_Nonnull argument)
+{
+    (void)argument;
+    show_command_palette(self);
+}
+
+static void execute_edit_command(struct folio_window *_Nonnull self, const char *_Nonnull argument)
+{
+    (void)argument;
+    execute_mode_command(self, PANE_MODE_EDIT);
+}
+
+static void execute_view_command(struct folio_window *_Nonnull self, const char *_Nonnull argument)
+{
+    (void)argument;
+    execute_mode_command(self, PANE_MODE_VIEW);
+}
+
+static void execute_rename_command(struct folio_window *_Nonnull self,
+                                   const char *_Nonnull argument)
+{
+    finish_save_command(self, command_rename(self, argument));
+}
+
+static void execute_find_command(struct folio_window *_Nonnull self, const char *_Nonnull argument)
+{
+    (void)argument;
+    begin_search(self);
+}
+
+static void execute_toggle_number_command(struct folio_window *_Nonnull self,
+                                          const char *_Nonnull argument)
+{
+    (void)argument;
+    apply_number(self, !folio_state_number(self->state));
+}
+
+/* コマンドごとの行き先を 1 か所に置く（ADR 0027 の 2026-10-06 の補正）。全値を明示し、
+ * 値を足して行を書き忘れると CNF-009 が落ちる（switch を離れて失う -Wswitch-enum の代わり）。
+ * enum の外の値は作られないので添字の範囲検査は書かない。 */
+static void (*_Nonnull const command_runs[])(struct folio_window *_Nonnull self,
+                                             const char *_Nonnull argument) = {
+    [FOLIO_COMMAND_SAVE] = execute_save_command,
+    [FOLIO_COMMAND_SAVE_AS] = execute_save_as_command,
+    [FOLIO_COMMAND_QUIT] = execute_quit_command,
+    [FOLIO_COMMAND_SAVE_QUIT] = execute_save_quit_command,
+    [FOLIO_COMMAND_FORCE_QUIT] = execute_force_quit_command,
+    [FOLIO_COMMAND_HELP] = execute_help_command,
+    [FOLIO_COMMAND_EDIT] = execute_edit_command,
+    [FOLIO_COMMAND_VIEW] = execute_view_command,
+    [FOLIO_COMMAND_NEW] = execute_new_command,
+    [FOLIO_COMMAND_RENAME] = execute_rename_command,
+    [FOLIO_COMMAND_FIND] = execute_find_command,
+    [FOLIO_COMMAND_SET] = execute_set_command,
+    [FOLIO_COMMAND_TOGGLE_NUMBER] = execute_toggle_number_command,
+    [FOLIO_COMMAND_REPLACE] = begin_replace,
+    [FOLIO_COMMAND_SUBSTITUTE] = execute_substitute_command,
+    [FOLIO_COMMAND_SETTINGS] = show_settings_surface,
+    [FOLIO_COMMAND_DISCARD_EDITS] = execute_discard_command,
+    [FOLIO_COMMAND_HISTORY] = execute_history_command,
+};
+
 /* GUI・キー・Exで同じ操作と引数を実行する（ADR0020）。 */
 static void execute_command(struct folio_window *_Nonnull self, enum folio_command command,
                             const char *_Nonnull argument)
 {
-    switch (command)
-    {
-    case FOLIO_COMMAND_SAVE:
-        execute_save_command(self, argument);
-        return;
-    case FOLIO_COMMAND_SAVE_AS:
-        finish_save_command(self, command_save_as(self, argument));
-        return;
-    case FOLIO_COMMAND_QUIT:
-        execute_quit_command(self);
-        return;
-    case FOLIO_COMMAND_SAVE_QUIT:
-        execute_save_quit_command(self);
-        return;
-    case FOLIO_COMMAND_FORCE_QUIT:
-        DestroyWindow(self->handle);
-        return;
-    case FOLIO_COMMAND_HELP:
-        show_command_palette(self);
-        return;
-    case FOLIO_COMMAND_EDIT:
-        execute_mode_command(self, PANE_MODE_EDIT);
-        return;
-    case FOLIO_COMMAND_VIEW:
-        execute_mode_command(self, PANE_MODE_VIEW);
-        return;
-    case FOLIO_COMMAND_NEW:
-        execute_new_command(self);
-        return;
-    case FOLIO_COMMAND_RENAME:
-        finish_save_command(self, command_rename(self, argument));
-        return;
-    case FOLIO_COMMAND_FIND:
-        begin_search(self);
-        return;
-    case FOLIO_COMMAND_SET:
-        execute_set_command(self, argument);
-        return;
-    case FOLIO_COMMAND_TOGGLE_NUMBER:
-        apply_number(self, !folio_state_number(self->state));
-        return;
-    case FOLIO_COMMAND_REPLACE:
-        begin_replace(self);
-        return;
-    case FOLIO_COMMAND_SUBSTITUTE:
-        execute_substitute_command(self, argument);
-        return;
-    case FOLIO_COMMAND_SETTINGS:
-        show_settings_surface(self);
-        return;
-    case FOLIO_COMMAND_DISCARD_EDITS:
-        execute_discard_command(self);
-        return;
-    case FOLIO_COMMAND_HISTORY:
-        execute_history_command(self);
-        return;
-    }
+    command_runs[command](self, argument);
 }
 
 /* Ctrl+S と本文の Esc。保存して編集モードのまま残る。失敗なら 1 行を出して false。 */
@@ -5532,20 +5563,10 @@ static void announce_fonts(HWND handle, enum font_bundle_outcome fonts,
     }
 }
 
-enum folio_window_outcome folio_window_create(struct folio_state *_Nonnull state,
-                                              enum font_bundle_outcome fonts,
-                                              struct folio_window *_Nullable *_Nonnull out)
+/* 主窓の 2 つのアクセラレータの表を作る。両方を作ってから成否を見る（どちらかが
+ * nullptr なら偽）。作れた側の後始末は呼び出し元の folio_window_destroy が行う。 */
+static bool create_accelerators(struct folio_window *_Nonnull self)
 {
-    HINSTANCE instance = GetModuleHandleW(nullptr);
-    if (!ensure_classes(instance))
-    {
-        return FOLIO_WINDOW_NOT_CREATED;
-    }
-    struct folio_window *_Nullable self = calloc(1, sizeof *self);
-    if (self == nullptr)
-    {
-        return FOLIO_WINDOW_OUT_OF_MEMORY;
-    }
     ACCEL shortcuts[] = {
         {.fVirt = FVIRTKEY | FCONTROL | FSHIFT, .key = 'S', .cmd = save_as_accelerator},
         {.fVirt = FVIRTKEY, .key = VK_F2, .cmd = rename_accelerator},
@@ -5564,7 +5585,24 @@ enum folio_window_outcome folio_window_create(struct folio_state *_Nonnull state
         {.fVirt = FVIRTKEY | FSHIFT, .key = VK_RETURN, .cmd = search_previous_accelerator}};
     self->search_keys =
         CreateAcceleratorTableW(stepping, (int)(sizeof stepping / sizeof stepping[0]));
-    if (self->commands == nullptr || self->search_keys == nullptr)
+    return self->commands != nullptr && self->search_keys != nullptr;
+}
+
+enum folio_window_outcome folio_window_create(struct folio_state *_Nonnull state,
+                                              enum font_bundle_outcome fonts,
+                                              struct folio_window *_Nullable *_Nonnull out)
+{
+    HINSTANCE instance = GetModuleHandleW(nullptr);
+    if (!ensure_classes(instance))
+    {
+        return FOLIO_WINDOW_NOT_CREATED;
+    }
+    struct folio_window *_Nullable self = calloc(1, sizeof *self);
+    if (self == nullptr)
+    {
+        return FOLIO_WINDOW_OUT_OF_MEMORY;
+    }
+    if (!create_accelerators(self))
     {
         folio_window_destroy(self);
         return FOLIO_WINDOW_NOT_CREATED;
