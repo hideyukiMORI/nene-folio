@@ -30,7 +30,8 @@ enum folio_command : unsigned char
     FOLIO_COMMAND_SUBSTITUTE,    /* `:%s/…/…/[g]` を欄を開かず直接適用する（決定 8(b)） */
     FOLIO_COMMAND_SETTINGS,      /* 設定画面を開く（ADR 0031 の決定 7・8(b)） */
     FOLIO_COMMAND_DISCARD_EDITS, /* 編集を破棄して保存済みの本文に戻す（ADR 0016 の補正 4） */
-    FOLIO_COMMAND_HISTORY        /* 履歴の一覧を開き、選んだ版を編集中の本文へ戻す（ADR 0038） */
+    FOLIO_COMMAND_HISTORY,       /* 履歴の一覧を開き、選んだ版を編集中の本文へ戻す（ADR 0038） */
+    FOLIO_COMMAND_NEW_CATEGORY   /* カテゴリを作る。引数が無ければ名前入力面を開く（ADR 0039） */
 };
 
 [[nodiscard]] size_t folio_command_count(void);

@@ -128,6 +128,7 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_COMMAND_SETTINGS] = "設定",
     [UI_TEXT_COMMAND_DISCARD_EDITS] = "編集を破棄して読み直す",
     [UI_TEXT_COMMAND_HISTORY] = "履歴から戻す",
+    [UI_TEXT_COMMAND_NEW_CATEGORY] = "新しいカテゴリ",
     [UI_TEXT_HELP_PALETTE] = "一覧  ↑↓ 選択 / Enter 実行 / Esc 戻る / Tab 説明",
     [UI_TEXT_HELP_EDITOR_MOTION] = "編集本文  Ctrl+h/j/k/l ←/↓/↑/→",
     [UI_TEXT_HELP_GLOBAL_KEYS] = "全区画  F1 ヘルプ / Ctrl+P 一覧 / Ctrl+F このノート内を検索",
