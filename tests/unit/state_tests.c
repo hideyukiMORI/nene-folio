@@ -3584,7 +3584,8 @@ static void verify_create_first_category(void)
             "the ledger is written with the new category expanded");
     require(folio_state_category_count(state) == 1 && row_count(state) == 1 &&
                 same_text(folio_state_category_name(state, 0), "仕事") &&
-                cursor_on_category(state, 0) && folio_state_document_kind(state) == FOLIO_DOCUMENT_NONE,
+                cursor_on_category(state, 0) &&
+                folio_state_document_kind(state) == FOLIO_DOCUMENT_NONE,
             "the empty row is shown and holds the cursor");
     require(folio_state_new_note(state, 0) == FOLIO_STATE_READY &&
                 folio_state_document_kind(state) == FOLIO_DOCUMENT_UNTITLED,

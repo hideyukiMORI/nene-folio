@@ -2266,7 +2266,8 @@ static void discard_category(struct category_ledger *_Nullable ledger,
 /* 新しい台帳（末尾・既定の色・展開）と、1 つ伸ばした索引台帳の配列を、フォルダを作るより先に
  * 確保する（ADR 0039 の決定 3）。失敗したら何も残さない。 */
 static enum folio_state_outcome
-reserve_category(const struct folio_state *_Nonnull state, const struct category_name *_Nonnull name,
+reserve_category(const struct folio_state *_Nonnull state,
+                 const struct category_name *_Nonnull name,
                  struct category_ledger *_Nullable *_Nonnull ledger,
                  struct note_ledger *_Nonnull *_Nullable *_Nonnull notes)
 {
@@ -2342,7 +2343,8 @@ enum folio_state_outcome folio_state_create_category(struct folio_state *_Nonnul
                                                  : FOLIO_STATE_CATEGORY_NOT_CREATED;
     }
     /* フォルダが真実なので、台帳を書けなくても採用し、次に台帳を書く操作で揃える（決定 3）。 */
-    enum persistence_outcome stored = state->port.write_category_ledger(state->port.adapter, ledger);
+    enum persistence_outcome stored =
+        state->port.write_category_ledger(state->port.adapter, ledger);
     adopt_category(state, ledger, notes);
     return stored == PERSISTENCE_STORED ? FOLIO_STATE_READY : FOLIO_STATE_CATEGORY_LEDGER_STALE;
 }

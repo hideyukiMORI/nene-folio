@@ -129,7 +129,8 @@ folio_state_recolor_category(struct folio_state *_Nonnull state, size_t index,
  * 絞り込み中は同期より先に FILTERED。大小文字だけ違う名前も含めて既にあれば CATEGORY_NAME_TAKEN。
  * フォルダを作れなければ CATEGORY_NOT_CREATED で、ここまでの失敗は状態を変えない。
  * フォルダを作った後で台帳を書けなければ採用して CATEGORY_LEDGER_STALE（決定 3・補正 1）。
- * 作ったらカーソルを新しいカテゴリ行へ置く。選択・開いている文書・モード・スクロール量は触らない。 */
+ * 作ったらカーソルを新しいカテゴリ行へ置く。選択・開いている文書・モード・スクロール量は触らない。
+ */
 [[nodiscard]] enum folio_state_outcome
 folio_state_create_category(struct folio_state *_Nonnull state,
                             const struct category_name *_Nonnull name);
