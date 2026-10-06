@@ -112,9 +112,10 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
                                           "The search term has broken characters. "
                                           "The term is unchanged.",
                                           "查找词中有损坏的字符。查找词保持不变。"},
-    [UI_TEXT_FAILURE_FILTERED] = {"絞り込み中は並び替えと開閉ができません。",
-                                  "Reorder and fold cannot run while filtering.",
-                                  "筛选中不能排序与折叠展开。"},
+    [UI_TEXT_FAILURE_FILTERED] =
+        {"絞り込み中はこの操作ができません。絞り込みを解いてからやり直してください。",
+         "This cannot run while filtering. Clear the filter and try again.",
+         "筛选中无法执行此操作。请清除筛选后重试。"},
     [UI_TEXT_FAILURE_SETTINGS_UNREADABLE] =
         {"設定（data/settings.json）を読めません。既定値で始め、直すまで上書きしません。",
          "Cannot read data/settings.json. Using defaults without overwriting it.",
@@ -184,6 +185,30 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
     [UI_TEXT_FAILURE_HISTORY_EMPTY] = {"履歴はありません。", "No history.", "没有历史记录。"},
     [UI_TEXT_FAILURE_HISTORY_UNREADABLE] = {"その版は読めません。", "That version cannot be read.",
                                             "无法读取该版本。"},
+    [UI_TEXT_FAILURE_CATEGORY_NAME_INVALID] =
+        {"使えないカテゴリ名です。先頭のピリオド・予約名・末尾の空白やピリオド・区切りを避け、"
+         "255バイト以内で指定してください。",
+         "That category name cannot be used. Avoid a leading period, reserved names, trailing "
+         "spaces or periods, and separators, and keep it within 255 bytes.",
+         "该分类名不可用。请避开开头的句点、保留名、末尾的空格或句点以及分隔符，并将名称控制在 "
+         "255 字节以内。"},
+    [UI_TEXT_FAILURE_CATEGORY_NAME_TAKEN] =
+        {"同じ名前のカテゴリがあります。別の名前を指定してください。何も変えていません。",
+         "A category with that name exists. Give another name. Nothing was changed.",
+         "已存在同名分类。请指定其他名称。未做任何改变。"},
+    [UI_TEXT_FAILURE_CATEGORY_NOT_CREATED] =
+        {"カテゴリのフォルダを作れませんでした。何も変えていません。"
+         "data/ に書き込めるか確かめてください。",
+         "Could not create the category folder. Nothing was changed. Check that data/ is "
+         "writable.",
+         "无法创建分类文件夹。未做任何改变。请确认 data/ 可以写入。"},
+    [UI_TEXT_FAILURE_CATEGORY_LEDGER_STALE] =
+        {"カテゴリは反映しましたが、台帳（categories.json）を書き戻せませんでした。"
+         "表示はフォルダに従い、次に台帳を書くときに揃います。",
+         "The category was applied, but the ledger (categories.json) could not be written back. "
+         "The index follows the folders, and the ledger catches up the next time it is written.",
+         "分类已应用，但无法写回台账（categories.json）。"
+         "显示以文件夹为准，下次写入台账时将自动对齐。"},
     [UI_TEXT_COMMAND_SAVE] = {"保存", "Save", "保存"},
     [UI_TEXT_COMMAND_QUIT] = {"保存済みなら終了", "Quit if saved", "已保存则退出"},
     [UI_TEXT_COMMAND_SAVE_QUIT] = {"保存して終了", "Save and quit", "保存并退出"},

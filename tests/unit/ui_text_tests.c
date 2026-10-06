@@ -67,7 +67,8 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_FAILURE_RENAME_HALTED] = "名前変更の記録と実ファイルが一致しません。data/.rename.json "
                                       "と data/<カテゴリ>/ を確認してください。",
     [UI_TEXT_FAILURE_SEARCH_MALFORMED] = "検索する語に壊れた文字があります。語は前のままです。",
-    [UI_TEXT_FAILURE_FILTERED] = "絞り込み中は並び替えと開閉ができません。",
+    [UI_TEXT_FAILURE_FILTERED] =
+        "絞り込み中はこの操作ができません。絞り込みを解いてからやり直してください。",
     [UI_TEXT_FAILURE_SETTINGS_UNREADABLE] =
         "設定（data/settings.json）を読めません。既定値で始め、直すまで上書きしません。",
     [UI_TEXT_FAILURE_SETTINGS_STORE_FAILED] =
@@ -95,6 +96,17 @@ static const char *_Nonnull const expected[] = {
                                       "saveas）または名前変更（:rename）を使ってください。",
     [UI_TEXT_FAILURE_HISTORY_EMPTY] = "履歴はありません。",
     [UI_TEXT_FAILURE_HISTORY_UNREADABLE] = "その版は読めません。",
+    [UI_TEXT_FAILURE_CATEGORY_NAME_INVALID] =
+        "使えないカテゴリ名です。先頭のピリオド・予約名・末尾の空白やピリオド・区切りを避け、"
+        "255バイト以内で指定してください。",
+    [UI_TEXT_FAILURE_CATEGORY_NAME_TAKEN] =
+        "同じ名前のカテゴリがあります。別の名前を指定してください。何も変えていません。",
+    [UI_TEXT_FAILURE_CATEGORY_NOT_CREATED] =
+        "カテゴリのフォルダを作れませんでした。何も変えていません。"
+        "data/ に書き込めるか確かめてください。",
+    [UI_TEXT_FAILURE_CATEGORY_LEDGER_STALE] =
+        "カテゴリは反映しましたが、台帳（categories.json）を書き戻せませんでした。"
+        "表示はフォルダに従い、次に台帳を書くときに揃います。",
     [UI_TEXT_FAILURE_FONT_BUNDLE_UNAVAILABLE] =
         "同梱の書体を読めなかったので、OS の書体で表示します。",
     [UI_TEXT_COMMAND_SAVE] = "保存",
