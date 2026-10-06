@@ -38,6 +38,7 @@ int main(int argc, char *_Nonnull *_Nonnull argv)
     run_markdown_tests();
     run_command_tests();
     run_note_name_tests();
+    run_category_name_tests();
     run_rename_tests();
     run_search_tests();
     run_filter_tests();
