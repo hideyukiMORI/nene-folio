@@ -883,8 +883,9 @@ static int wide_units(const char *_Nonnull text, char16_t *_Nonnull out)
 }
 
 /* UTF-8 の 1 行を、device に掛かっている字間込みで測る。測れなければ 0。
- * DT_CALCRECT は字間を、Consolas だけで描ける行では含めず、フォントリンクで描く行では含める。
- * 描くときはどちらも 1 字ごとに字間が付くので、字間 0 で測って単位数 × 字間を足す（ADR 0018 の補正 #186）。 */
+ * DT_CALCRECT は字間を、Consolas だけの行では含めず、フォントリンクの行では含める。
+ * 描くときはどちらも 1 字ごとに付くので、字間 0 で測って単位数 × 字間を足す
+ * （ADR 0018 の補正 #186）。 */
 static int measure_utf8(HDC device, const char *_Nonnull text)
 {
     char16_t units[draw_unit_limit];
