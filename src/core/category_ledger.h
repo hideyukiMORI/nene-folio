@@ -11,6 +11,7 @@
 #include <stddef.h>
 
 struct category_ledger;
+struct category_name;
 struct json_writer;
 struct name_list;
 
@@ -37,6 +38,12 @@ category_ledger_toggled(const struct category_ledger *_Nonnull ledger, size_t in
 [[nodiscard]] enum category_ledger_outcome
 category_ledger_recolored(const struct category_ledger *_Nonnull ledger, size_t index,
                           struct rgb_color color, struct category_ledger *_Nullable *_Nonnull out);
+/* index の位置に name のカテゴリを既定の色・展開で挿した新しい台帳を作る（ADR 0039 決定 10）。
+ * index は count 以下で、count なら末尾に付く。name が既にあれば MALFORMED。 */
+[[nodiscard]] enum category_ledger_outcome
+category_ledger_inserted(const struct category_ledger *_Nonnull ledger, size_t index,
+                         const struct category_name *_Nonnull name,
+                         struct category_ledger *_Nullable *_Nonnull out);
 /* from 番目を to 番目へ移した、順序だけが違う新しい台帳を作る（FR-009）。
  * from と to は count 未満であること。from == to でも複製を返す。 */
 [[nodiscard]] enum category_ledger_outcome

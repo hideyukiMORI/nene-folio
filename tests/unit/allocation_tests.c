@@ -3,6 +3,7 @@
 #include "allocation_probe.h"
 #include "appearance_port.h"
 #include "category_ledger.h"
+#include "category_name.h"
 #include "drawer_layout.h"
 #include "folio_language.h"
 #include "folio_settings.h"
@@ -193,6 +194,32 @@ static bool categories_scenario(void)
     category_ledger_destroy(merged);
     name_list_destroy(scanned);
     category_ledger_destroy(ledger);
+    return completed;
+}
+
+/* カテゴリ名を作り、2 つの台帳の途中へ挿す（ADR 0039 決定 10）。 */
+static bool category_insert_scenario(void)
+{
+    struct category_name *name = nullptr;
+    enum category_name_outcome named = category_name_create("議事.md", strlen("議事.md"), &name);
+    if (named == CATEGORY_NAME_OUT_OF_MEMORY)
+    {
+        return false;
+    }
+    require(named == CATEGORY_NAME_ACCEPTED, "category name under probe");
+    struct category_ledger *ledger = nullptr;
+    bool completed = category_ledger_parse(categories_text, strlen(categories_text), &ledger) ==
+                     CATEGORY_LEDGER_ACCEPTED;
+    struct category_ledger *grown = nullptr;
+    enum category_ledger_outcome inserted = completed
+                                                ? category_ledger_inserted(ledger, 1, name, &grown)
+                                                : CATEGORY_LEDGER_OUT_OF_MEMORY;
+    require(inserted == CATEGORY_LEDGER_ACCEPTED || inserted == CATEGORY_LEDGER_OUT_OF_MEMORY,
+            "category insert under probe");
+    completed = inserted == CATEGORY_LEDGER_ACCEPTED;
+    category_ledger_destroy(grown);
+    category_ledger_destroy(ledger);
+    category_name_destroy(name);
     return completed;
 }
 
@@ -843,6 +870,7 @@ void run_allocation_tests(void)
     exhaust(writer_scenario, "writer scenario never completed");
     exhaust(names_scenario, "names scenario never completed");
     exhaust(categories_scenario, "categories scenario never completed");
+    exhaust(category_insert_scenario, "category insert scenario never completed");
     exhaust(notes_scenario, "notes scenario never completed");
     exhaust(markdown_scenario, "markdown scenario never completed");
     exhaust(layout_scenario, "layout scenario never completed");
