@@ -12,7 +12,8 @@
 | `model` | 実装・差し戻し = `opus`／下ごしらえ・ペルソナ・棚卸し・撮影・checkout 準備 = `sonnet`／照合・差分の列挙 = `haiku` | 手 1・手 3-4。判断は設計席自身 |
 | 大きさ | **S 級**（変更 1 命題・ファイル数が片手・フルゲート 1 回で終わる） | 手 3-3。M 級 1 本より S 級 3 本 |
 | 席の寿命 | **この task の 1 仕事だけ** | 手 3-1 |
-| 報告ファイル | `out/agents/<issue>-<仕事>/report.md`（git の管理外） | 手 3-2 |
+| 報告ファイル | `D:\NeNeFolio\agents\<issue>-<仕事>\report.md`（リポジトリの外） | 手 3-2 |
+| 作業木 | `D:\NeNeFolio\worktrees\<issue>-<名前>`（C ドライブ・`out/worktrees` には作らない） | hide のグローバル指示 2026-09-30・ADR 0034 の 2026-10-07 の補正 |
 
 🔴 **1 task を 1 席で走らせない。** probe → 実装 → 差し戻し対応は、それぞれ**新しい Agent** にする。
 引き継ぎは報告ファイル（と mailbox があればそれ）で渡す。**SendMessage で同じ席を次の仕事に使い回すのは Opus では禁止。**
@@ -39,8 +40,8 @@
 
 ## 道具出力を小さくする（必ず守る）
 - テストは対象だけ実行する: `ctest --test-dir build -R {テスト名} --output-on-failure`。落ちたら失敗行だけを `tail -n 40` で読む。
-- ビルドとフルゲートの出力はファイルへ落とす: `pwsh -NoProfile -File ./eng/check.ps1 > out/agents/{issue}-{仕事}/gate.log 2>&1`。
-  読むのは `grep -n "error\|FAIL\|failed\|passed" out/agents/{issue}-{仕事}/gate.log` の結果だけ。
+- ビルドとフルゲートの出力はファイルへ落とす: `pwsh -NoProfile -File ./eng/check.ps1 > D:\NeNeFolio\agents\{issue}-{仕事}\gate.log 2>&1`。
+  読むのは `grep -n "error\|FAIL\|failed\|passed" D:\NeNeFolio\agents\{issue}-{仕事}\gate.log` の結果だけ。
 - ファイルは必要な範囲だけ読む（`sed -n '{a},{b}p'`／Read の offset・limit）。全文を読んでよいのは 200 行以内のファイルだけ。
 - 同じ出力を 2 度読まない。読んだ結果は報告ファイルに要点だけ書く。
 
@@ -52,18 +53,24 @@
   `tools/merge-pr.ps1` が字面で検査する）
 
 ## 報告（最終報告は 30 行以内）
-報告ファイル out/agents/{issue}-{仕事}/report.md に詳細（変えたファイルと理由・実行したコマンドと結果・止めた理由・残るリスク）を書く。
+報告ファイル D:\NeNeFolio\agents\{issue}-{仕事}\report.md に詳細（変えたファイルと理由・実行したコマンドと結果・止めた理由・残るリスク）を書く。
 親（設計席）への最終メッセージは次の形だけで、30 行を超えない:
   Issue / 規則 ID:
   変更したファイルと振る舞い: {ファイル名と 1 行ずつ}
   実行した検証コマンドと結果: {コマンド → exit code と数字（テスト n/n・分岐 x%）}
-  報告ファイル: out/agents/{issue}-{仕事}/report.md
-  ログ: out/agents/{issue}-{仕事}/gate.log
+  報告ファイル: D:\NeNeFolio\agents\{issue}-{仕事}\report.md
+  ログ: D:\NeNeFolio\agents\{issue}-{仕事}\gate.log
   Draft PR: #{N} / HEAD {sha}
   Waivers: none | WVR-NNNN
   残るリスク: {1〜3 行}
 本文・差分・テストの全文・ログの全文を最終メッセージに貼らない。
-報告ファイルの Write を harness が拒んだら（2026-09-23 に 14 席中 3 席で起きた）、最終メッセージの末尾に「申し送り」として同じ要点を 10 行以内で入れる。
+報告ファイルの Write を harness が拒んだら（2026-09-23 に 14 席中 3 席で起きた。2026-10-06〜07 は Opus の席で毎回拒まれた）、
+最終メッセージの末尾に「申し送り」として同じ要点を 10 行以内で入れる。**拒まれることを前提に、要点は最初から最終メッセージと PR 本文に書く。**
+
+## 作業木と置き場（必ず守る）
+- 作業木は `D:\NeNeFolio\worktrees\<issue>-<名前>`。席の編集・コミットはその作業木の中だけ。報告・ログ・測定の証跡は `D:\NeNeFolio\agents\` / `design\` / `check\`。
+- **ファイルの読み書きは絶対パスだけ。** 相対パスを .NET や PowerShell の IO へ渡さない（2026-10-06 に席が相対パスで root の main の `folio_window.c` に書いた事故）。
+- **root の main（`C:\Users\info\WORKS\NeNeFolio`）と、ほかの作業木は触らない。**（読むのは可）
 
 ## やらないこと
 - 一覧に無いファイルの編集、閾値・除外・重大度の変更（QLT-010）、`planned` を `active` と書くこと（ADR 0001）
