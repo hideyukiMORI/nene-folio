@@ -54,3 +54,5 @@ ADR は「なぜそう決めたか」「何を却下したか」を書く。
 | [0036](0036-bundled-fonts.md) | 日本語・简体中文・欧文の書体を固定版でfonts/に同梱し、exeの隣からFR_PRIVATEで登録してui_fontの表で選ぶ | 受理 |
 | [0037](0037-required-check-verdict.md) | 必須checkは判定jobにし、フルゲートが成功していないhead（Draftのskipped・cancelled）をfailureで止める | 受理 |
 | [0038](0038-history-restore.md) | 現在のノートの履歴（1.md〜5.md）を一覧から選び、選んだ版の本文を編集中の本文へ流し込む（ファイルは触らず、保存は既存の経路） | 受理 |
+| [0039](0039-note-trash-and-category-operations.md) | ノートの削除とカテゴリの作成／削除／改名は単位に分け、対象は行で名指しし、ファイルを真実・台帳を追随とし、消すものはOSのごみ箱へ送る | 受理 |
+| [0040](0040-trash-note-via-recycle-bin.md) | ノートはSHFileOperationWでOSのごみ箱へ送り、送れると確かめられない場所では消さない | 受理 |
