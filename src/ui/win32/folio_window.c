@@ -198,6 +198,8 @@ constexpr int base_chip_gap = 8;
 constexpr int base_chip_radius = 3;
 constexpr int base_mono_font = 11;
 constexpr int base_tracking = 1;
+/* SetTextCharacterExtra が失敗したときの戻り値（wingdi.h に名前が無い）。 */
+constexpr int tracking_unavailable = 0x8000000;
 /* 省略しても残すノート名の幅（ADR 0011 の決定 4）。 */
 constexpr int base_breadcrumb_note = 48;
 constexpr int base_breadcrumb_height = 24;
@@ -881,7 +883,10 @@ static int wide_units(const char *_Nonnull text, char16_t *_Nonnull out)
     return (int)written;
 }
 
-/* UTF-8 の 1 行を測る。測れなければ 0。 */
+/* UTF-8 の 1 行を、device に掛かっている字間込みで測る。測れなければ 0。
+ * DT_CALCRECT は字間を、Consolas だけの行では含めず、フォントリンクの行では含める。
+ * 描くときはどちらも 1 字ごとに付くので、字間 0 で測って単位数 × 字間を足す
+ * （ADR 0018 の補正 #186）。 */
 static int measure_utf8(HDC device, const char *_Nonnull text)
 {
     char16_t units[draw_unit_limit];
@@ -890,9 +895,12 @@ static int measure_utf8(HDC device, const char *_Nonnull text)
     {
         return 0;
     }
+    int tracking = SetTextCharacterExtra(device, 0);
+    tracking = tracking == tracking_unavailable ? 0 : tracking;
     RECT measured = {0, 0, 0, 0};
     DrawTextW(device, units, count, &measured, DT_SINGLELINE | DT_NOPREFIX | DT_CALCRECT);
-    return measured.right - measured.left;
+    SetTextCharacterExtra(device, tracking);
+    return measured.right - measured.left + count * tracking;
 }
 
 /* UTF-8 を 1 行で描く。bounds に収まらなければ末尾を省略記号にする（ADR 0011 の決定 4）。 */
@@ -2292,8 +2300,15 @@ static bool inline_outcome(enum folio_state_outcome outcome)
 
 static void command_failure(struct folio_window *_Nonnull self, enum folio_state_outcome outcome)
 {
+    /* キャンセルは失敗ではないので何も見せない。ただし名前入力面（モーダル）を閉じた後の
+     * フォーカスは主窓へ落ちるので、失敗の箱の後と同じく開いている入力面へ返す
+     * （ADR 0016 の補正 6・#185）。 */
     if (outcome == FOLIO_STATE_CANCELLED)
     {
+        if (self->command_surface != COMMAND_SURFACE_CLOSED)
+        {
+            focus_command_input(self);
+        }
         return;
     }
     bool inline_failure =

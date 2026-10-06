@@ -182,8 +182,12 @@ Waivers: none | WVR-NNNN
 
 - 実装と差し戻し対応 = `opus`、下ごしらえ（調査メモ・棚卸し・比較・撮影・checkout 準備・ペルソナ）= `sonnet`、機械作業（照合・差分の列挙）= `haiku`。
   基準は「間違えたとき誰が直すか」。
-- **Opus の実装席は 1 席 1 仕事。** probe → 実装 → 差し戻しはそれぞれ新しい席にし、引き継ぎは `out/agents/<issue>-<仕事>/report.md` で渡す。
+- **Opus の実装席は 1 席 1 仕事。** probe → 実装 → 差し戻しはそれぞれ新しい席にし、引き継ぎは `D:\NeNeFolio\agents\<issue>-<仕事>\report.md` で渡す。
   同じ席の使い回し（SendMessage）と `fork` は使わない。道具出力は小さく（対象テストだけ・失敗行だけ・ログはファイルへ）、最終報告は 30 行以内。
   指示書は[実装席の指示書テンプレート](IMPL_SEAT_BRIEF_TEMPLATE.md)の穴を埋める形でしか書かない。
+- **置き場は `D:\NeNeFolio\`**（hide のグローバル指示 2026-09-30。リポジトリ本体の外の作業は D ドライブ・C には展開しない）。作業木は `D:\NeNeFolio\worktrees\<issue>-<名前>`、
+  席の報告とログは `D:\NeNeFolio\agents\<issue>-<仕事>\`、測定と設計の絵は `design\`、実機確認の絵は `check\`。ADR 0034 の 2026-10-07 の補正。
+  **席はファイルを絶対パスだけで読み書きし**（相対パスで root の main へ書いた事故 2026-10-06）、root の main と他の作業木は触らない。
+  報告ファイルの Write を harness が拒むことがあるので、要点は最終メッセージと PR 本文にも書く。古い `out/worktrees` `out/agents` `out/design` の中身は歴史として残し、消すかどうかは hide が決める。
 - 同じ下ごしらえを 2 回モデルに踏ませたら、3 回目は `tools/` のスクリプトにする chore を出す。スクリプトは設計席が直接実行し、受理は実出力を読む。
 - 立てた席は日報の「運用」節に「Issue・仕事・model・報告ファイル」の 1 行ずつで残す。枠の減りを疑ったら transcript の usage を席ごとに集計してから手を選ぶ。
