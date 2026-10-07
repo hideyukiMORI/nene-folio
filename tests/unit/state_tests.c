@@ -1979,6 +1979,7 @@ static const char *_Nonnull const expected_failure_lines[] = {
     [FOLIO_STATE_CATEGORY_REMOVE_FAILED] =
         "カテゴリのフォルダの削除を確認できませんでした。フォルダとごみ箱を確認してください。"
         "履歴や索引だけ処理済みの場合があります。",
+    [FOLIO_STATE_CATEGORY_NOT_SELECTED] = "カテゴリを選んでください。",
 };
 
 static void verify_failure_lines(void)

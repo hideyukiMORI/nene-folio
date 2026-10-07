@@ -26,6 +26,8 @@ static void verify_aliases(void)
     expect_command(":e!", FOLIO_COMMAND_DISCARD_EDITS, ":e! discards the edits");
     expect_command(" :edit! ", FOLIO_COMMAND_DISCARD_EDITS, ":edit! is the same command");
     expect_command(":history", FOLIO_COMMAND_HISTORY, ":history opens the history list");
+    expect_command(":deletecategory", FOLIO_COMMAND_DELETE_CATEGORY, "delete the target category");
+    expect_command(" :delcat ", FOLIO_COMMAND_DELETE_CATEGORY, "delcat shares the same ID");
     expect_command(":trashnote", FOLIO_COMMAND_TRASH_NOTE, ":trashnote names the open note");
     expect_command(" :trash ", FOLIO_COMMAND_TRASH_NOTE, ":trash is the same command");
     expect_command(":hist", FOLIO_COMMAND_HISTORY, ":hist is the same command");
@@ -185,8 +187,8 @@ static void verify_listed(void)
     require(folio_command_matches(FOLIO_COMMAND_TOGGLE_NUMBER, "行番号", strlen("行番号"),
                                   FOLIO_LANGUAGE_JA),
             "the palette finds the toggle by label");
-    /* パレットの箱の高さはこの数で決まる。総数（19）で取ると 2 行ぶん余る（補正 9）。 */
-    require(folio_command_listed_count() == 18, "eighteen operations are offered on a surface");
+    /* パレットの箱の高さはこの数で決まる。総数（21）で取ると 2 行ぶん余る（補正 9）。 */
+    require(folio_command_listed_count() == 19, "nineteen operations are offered on a surface");
     require(folio_command_listed_count() == folio_command_count() - 2,
             "exactly the two unlisted Ex grammars are left out");
     require(folio_command_alias_count(FOLIO_COMMAND_REPLACE) == 0 &&
@@ -267,6 +269,31 @@ static void verify_trash_note(void)
             "a refused argument leaves both outputs untouched");
 }
 
+static void verify_delete_category(void)
+{
+    require(folio_command_listed(FOLIO_COMMAND_DELETE_CATEGORY), "delete category is listed");
+    require(
+        folio_command_alias_count(FOLIO_COMMAND_DELETE_CATEGORY) == 2 &&
+            same_text(folio_command_alias(FOLIO_COMMAND_DELETE_CATEGORY, 0), "deletecategory") &&
+            same_text(folio_command_alias(FOLIO_COMMAND_DELETE_CATEGORY, 1), "delcat"),
+        "delete category has exactly two aliases");
+    const char *const labels[] = {"カテゴリを削除", "Delete category", "删除分类"};
+    for (size_t column = 0; column < folio_language_count; ++column)
+    {
+        enum folio_language language = (enum folio_language)column;
+        require(
+            same_text(folio_command_label(FOLIO_COMMAND_DELETE_CATEGORY, language), labels[column]),
+            "delete category label has three translations");
+        require(folio_command_matches(FOLIO_COMMAND_DELETE_CATEGORY, "DELCAT", 6, language),
+                "the palette finds the category deletion alias in each language");
+    }
+    enum folio_command command = FOLIO_COMMAND_HELP;
+    size_t argument = 42;
+    require(!folio_command_parse(":delcat name", 12, &command, &argument) &&
+                command == FOLIO_COMMAND_HELP && argument == 42,
+            "refusing a category deletion argument preserves both outputs");
+}
+
 static void verify_rejections(void)
 {
     static const char *const rejected[] = {"",
@@ -297,7 +324,7 @@ static void verify_rejections(void)
 
 static void verify_catalog(void)
 {
-    require(folio_command_count() == 20, "only implemented commands are registered");
+    require(folio_command_count() == 21, "only implemented commands are registered");
     const enum folio_command expected[] = {
         FOLIO_COMMAND_SAVE,          FOLIO_COMMAND_QUIT,          FOLIO_COMMAND_SAVE_QUIT,
         FOLIO_COMMAND_FORCE_QUIT,    FOLIO_COMMAND_HELP,          FOLIO_COMMAND_EDIT,
@@ -305,7 +332,7 @@ static void verify_catalog(void)
         FOLIO_COMMAND_RENAME,        FOLIO_COMMAND_FIND,          FOLIO_COMMAND_SET,
         FOLIO_COMMAND_TOGGLE_NUMBER, FOLIO_COMMAND_REPLACE,       FOLIO_COMMAND_SUBSTITUTE,
         FOLIO_COMMAND_SETTINGS,      FOLIO_COMMAND_DISCARD_EDITS, FOLIO_COMMAND_HISTORY,
-        FOLIO_COMMAND_NEW_CATEGORY,  FOLIO_COMMAND_TRASH_NOTE};
+        FOLIO_COMMAND_NEW_CATEGORY,  FOLIO_COMMAND_TRASH_NOTE,    FOLIO_COMMAND_DELETE_CATEGORY};
     for (size_t index = 0; index < folio_command_count(); ++index)
     {
         enum folio_command command = folio_command_at(index);
@@ -391,6 +418,7 @@ void run_command_tests(void)
     verify_listed();
     verify_new_category();
     verify_trash_note();
+    verify_delete_category();
     verify_ascii_fold();
     verify_case_insensitive_palette();
 }

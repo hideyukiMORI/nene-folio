@@ -76,7 +76,7 @@ struct folio_window
     bool command_composing;
     bool command_unknown;
     bool trash_completed;
-    bool trash_running;
+    bool removal_running;
     /* `:%s` が 1 件も一致しなかった。欄は閉じず、置換の欄と同じ 1 行を出す（ADR 0028 の補正） */
     bool command_no_match;
     enum folio_state_outcome command_failure;
@@ -101,13 +101,14 @@ static const wchar_t edit_class[] = L"EDIT";
 /* 一覧に出すキー操作の行（ADR 0030 の決定 4）。文言は core の ui_text が持ち、
  * ここは並びだけを持つ。1 行 1 ID で、欄分けは単位 C（ADR 0032）。 */
 static const enum ui_text command_shortcuts[] = {
-    UI_TEXT_HELP_PALETTE,       UI_TEXT_HELP_EDITOR_MOTION,   UI_TEXT_HELP_GLOBAL_KEYS,
-    UI_TEXT_HELP_GLOBAL_FILTER, UI_TEXT_HELP_FILTER_FIELD,    UI_TEXT_HELP_FILTER_LIMITS,
-    UI_TEXT_HELP_FILE_KEYS,     UI_TEXT_HELP_INDEX_COMMAND,   UI_TEXT_HELP_EX_SET_NUMBER,
-    UI_TEXT_HELP_EX_SET_THEME,  UI_TEXT_HELP_EX_SET_LANGUAGE, UI_TEXT_HELP_REPLACE_FIELD,
-    UI_TEXT_HELP_EX_SUBSTITUTE, UI_TEXT_HELP_SEARCH_KEYS,     UI_TEXT_HELP_SEARCH_STEP,
-    UI_TEXT_HELP_SEARCH_FIELD,  UI_TEXT_HELP_INDEX_MOTION,    UI_TEXT_HELP_INDEX_FOLD,
-    UI_TEXT_HELP_INDEX_SCROLL,  UI_TEXT_HELP_EDITOR_ESCAPE,   UI_TEXT_HELP_TRASH_NOTE,
+    UI_TEXT_HELP_PALETTE,         UI_TEXT_HELP_EDITOR_MOTION,   UI_TEXT_HELP_GLOBAL_KEYS,
+    UI_TEXT_HELP_GLOBAL_FILTER,   UI_TEXT_HELP_FILTER_FIELD,    UI_TEXT_HELP_FILTER_LIMITS,
+    UI_TEXT_HELP_FILE_KEYS,       UI_TEXT_HELP_INDEX_COMMAND,   UI_TEXT_HELP_EX_SET_NUMBER,
+    UI_TEXT_HELP_EX_SET_THEME,    UI_TEXT_HELP_EX_SET_LANGUAGE, UI_TEXT_HELP_REPLACE_FIELD,
+    UI_TEXT_HELP_EX_SUBSTITUTE,   UI_TEXT_HELP_SEARCH_KEYS,     UI_TEXT_HELP_SEARCH_STEP,
+    UI_TEXT_HELP_SEARCH_FIELD,    UI_TEXT_HELP_INDEX_MOTION,    UI_TEXT_HELP_INDEX_FOLD,
+    UI_TEXT_HELP_INDEX_SCROLL,    UI_TEXT_HELP_EDITOR_ESCAPE,   UI_TEXT_HELP_TRASH_NOTE,
+    UI_TEXT_HELP_DELETE_CATEGORY,
 };
 
 /* 設定画面の行（ADR 0031 の決定 7・ADR 0032 の決定 7）。見出しと選択肢を**種別で**持ち、
@@ -2346,6 +2347,7 @@ static const bool inline_outcomes[] = {
     [FOLIO_STATE_CATEGORY_HAS_FILES] = false,
     [FOLIO_STATE_CATEGORY_HISTORY_NOT_RECYCLED] = false,
     [FOLIO_STATE_CATEGORY_REMOVE_FAILED] = false,
+    [FOLIO_STATE_CATEGORY_NOT_SELECTED] = false,
 };
 
 static bool inline_outcome(enum folio_state_outcome outcome)
@@ -3616,13 +3618,33 @@ static void execute_new_category_command(struct folio_window *_Nonnull self,
 }
 
 /* 一時的な入力停止と失敗の箱の後で、元の有効な欄だけへ戻す。 */
-static void restore_trash_focus(HWND _Nullable focus)
+static void restore_removal_focus(HWND _Nullable focus)
 {
     if (focus != nullptr && IsWindow(focus) && IsWindowEnabled(focus) && IsWindowVisible(focus) &&
         GetFocus() != focus)
     {
         SetFocus(focus);
     }
+}
+
+/* ごみ箱とカテゴリ削除が通る、同期 Shell 呼出しの入力停止。 */
+static bool block_removal_input(struct folio_window *_Nonnull self)
+{
+    bool enabled = IsWindowEnabled(self->handle) != 0;
+    self->removal_running = true;
+    EnableWindow(self->handle, FALSE);
+    return enabled;
+}
+
+static void release_removal_input(struct folio_window *_Nonnull self, bool enabled,
+                                  HWND _Nullable focus)
+{
+    EnableWindow(self->handle, enabled);
+    if (enabled)
+    {
+        restore_removal_focus(focus);
+    }
+    self->removal_running = false;
 }
 
 /* 同期の Shell 境界で入力を止める。元の面とフォーカスは別文書の操作では保つ。 */
@@ -3640,23 +3662,16 @@ static enum folio_state_outcome run_trash_note(struct folio_window *_Nonnull sel
         }
     }
     HWND focus = GetFocus();
-    bool enabled = IsWindowEnabled(self->handle) != 0;
-    self->trash_running = true;
-    EnableWindow(self->handle, FALSE);
+    bool enabled = block_removal_input(self);
     enum folio_state_outcome outcome = folio_state_trash_note(self->state, target, units, count);
-    EnableWindow(self->handle, enabled);
-    if (enabled)
-    {
-        restore_trash_focus(focus);
-    }
-    self->trash_running = false;
+    release_removal_input(self, enabled, focus);
     return outcome;
 }
 
 /* 入口に依らず押した対象を直接渡す。別文書の本文を流し込み直す経路は持たない。 */
 static void trash_note_at(struct folio_window *_Nonnull self, struct note_ref target)
 {
-    if (self->trash_running)
+    if (self->removal_running)
     {
         return;
     }
@@ -3682,7 +3697,7 @@ static void trash_note_at(struct folio_window *_Nonnull self, struct note_ref ta
         failure_box_show(self->handle, outcome, self->state);
         if (!current)
         {
-            restore_trash_focus(focus);
+            restore_removal_focus(focus);
         }
         return;
     }
@@ -3701,6 +3716,89 @@ static void execute_trash_note_command(struct folio_window *_Nonnull self,
         return;
     }
     trash_note_at(self, target);
+}
+
+/* カテゴリ削除の完了は一覧とパンくずだけへ写す。本文や残す入力面を設定し直さない。 */
+static HWND _Nullable finish_delete_category(struct folio_window *_Nonnull self,
+                                             HWND _Nullable focus)
+{
+    bool close = self->command_surface == COMMAND_SURFACE_EX ||
+                 self->command_surface == COMMAND_SURFACE_PALETTE;
+    bool closed_focus = close && (command_owns(self, focus) || focus == self->command_layer);
+    if (close)
+    {
+        hide_command_surface(self);
+    }
+    redraw_drawer(self);
+    if (self->drawer != nullptr)
+    {
+        drawer_window_reveal_cursor(self->drawer);
+    }
+    InvalidateRect(self->handle, nullptr, FALSE);
+    return closed_focus ? self->handle : focus;
+}
+
+/* 行メニューと共通コマンドの受け口。保存も文書選択もUIには挟まない（ADR 0039 補正 6）。 */
+static void delete_category_at(struct folio_window *_Nonnull self, size_t category)
+{
+    if (self->removal_running)
+    {
+        return;
+    }
+    HWND focus = GetFocus();
+    bool enabled = block_removal_input(self);
+    enum folio_state_outcome outcome = folio_state_delete_category(self->state, category);
+    release_removal_input(self, enabled, focus);
+    if (outcome != FOLIO_STATE_READY && outcome != FOLIO_STATE_CATEGORY_LEDGER_STALE)
+    {
+        command_failure(self, outcome);
+        restore_removal_focus(focus);
+        return;
+    }
+    focus = finish_delete_category(self, focus);
+    if (outcome == FOLIO_STATE_CATEGORY_LEDGER_STALE)
+    {
+        failure_box_show(self->handle, outcome, self->state);
+    }
+    restore_removal_focus(focus);
+}
+
+/* 最初のカテゴリへのfallbackはせず、cursorが無い時だけ現在文書の宛先を使う。 */
+static bool delete_category_target(const struct folio_window *_Nonnull self,
+                                   size_t *_Nonnull category)
+{
+    enum folio_cursor_kind kind = FOLIO_CURSOR_CATEGORY;
+    struct note_ref cursor = {.category = 0, .note = 0};
+    if (folio_state_cursor(self->state, &kind, &cursor))
+    {
+        *category = cursor.category;
+        return true;
+    }
+    switch (folio_state_document_kind(self->state))
+    {
+    case FOLIO_DOCUMENT_NAMED:
+    case FOLIO_DOCUMENT_UNTITLED:
+        *category = folio_state_document_category(self->state);
+        return true;
+    case FOLIO_DOCUMENT_NONE:
+        return false;
+    }
+    return false;
+}
+
+static void execute_delete_category_command(struct folio_window *_Nonnull self,
+                                            const char *_Nonnull argument)
+{
+    (void)argument;
+    size_t category = 0;
+    if (!delete_category_target(self, &category))
+    {
+        HWND focus = GetFocus();
+        command_failure(self, FOLIO_STATE_CATEGORY_NOT_SELECTED);
+        restore_removal_focus(focus);
+        return;
+    }
+    delete_category_at(self, category);
 }
 
 static void execute_find_command(struct folio_window *_Nonnull self, const char *_Nonnull argument)
@@ -3741,13 +3839,14 @@ static void (*_Nonnull const command_runs[])(struct folio_window *_Nonnull self,
     [FOLIO_COMMAND_HISTORY] = execute_history_command,
     [FOLIO_COMMAND_NEW_CATEGORY] = execute_new_category_command,
     [FOLIO_COMMAND_TRASH_NOTE] = execute_trash_note_command,
+    [FOLIO_COMMAND_DELETE_CATEGORY] = execute_delete_category_command,
 };
 
 /* GUI・キー・Exで同じ操作と引数を実行する（ADR0020）。 */
 static void execute_command(struct folio_window *_Nonnull self, enum folio_command command,
                             const char *_Nonnull argument)
 {
-    if (self->trash_running)
+    if (self->removal_running)
     {
         return;
     }
@@ -3792,7 +3891,7 @@ static enum folio_state_outcome opened(struct folio_window *_Nonnull self,
 static enum folio_state_outcome switch_note(struct folio_window *_Nonnull self, size_t category,
                                             size_t note)
 {
-    if (self->trash_running)
+    if (self->removal_running)
     {
         return FOLIO_STATE_CANCELLED;
     }
@@ -3836,13 +3935,16 @@ static void rename_from_drawer(struct folio_window *_Nonnull self, struct note_r
 static void run_drawer_menu(struct folio_window *_Nonnull self, enum drawer_menu_item item,
                             const struct note_ref *_Nonnull target)
 {
-    if (self->trash_running)
+    if (self->removal_running)
     {
         return;
     }
     set_trash_completed(self, false);
     switch (item)
     {
+    case DRAWER_MENU_DELETE_CATEGORY:
+        delete_category_at(self, target->category);
+        return;
     case DRAWER_MENU_TRASH_NOTE:
         trash_note_at(self, *target);
         return;
@@ -4963,7 +5065,7 @@ static LRESULT CALLBACK command_input_procedure(HWND window, UINT message, WPARA
     {
         return 0;
     }
-    if (message == WM_KILLFOCUS && !self->trash_running)
+    if (message == WM_KILLFOCUS && !self->removal_running)
     {
         PostMessageW(self->handle, folio_message_command_focus_lost, 0, 0);
     }
@@ -5493,7 +5595,7 @@ static LRESULT CALLBACK command_layer_procedure(HWND window, UINT message, WPARA
         redraw_command_layer(self);
         return 0;
     case WM_KILLFOCUS:
-        if (!self->trash_running)
+        if (!self->removal_running)
         {
             PostMessageW(self->handle, folio_message_command_focus_lost, 0, 0);
         }
@@ -5555,7 +5657,7 @@ static LRESULT window_finalized(HWND window, UINT message, WPARAM wparam, LPARAM
 
 static void dismiss_command_if_focus_moved(struct folio_window *_Nonnull self)
 {
-    if (self->trash_running)
+    if (self->removal_running)
     {
         return;
     }
@@ -5685,8 +5787,8 @@ static void system_colors_changed(struct folio_window *_Nonnull self, LPARAM lpa
 static LRESULT on_input_message(struct folio_window *_Nonnull self, UINT message, WPARAM wparam,
                                 LPARAM lparam)
 {
-    if (self->trash_running && (message == WM_COMMAND || message == WM_KEYDOWN ||
-                                message == WM_CHAR || message == WM_CLOSE))
+    if (self->removal_running && (message == WM_COMMAND || message == WM_KEYDOWN ||
+                                  message == WM_CHAR || message == WM_CLOSE))
     {
         return 0;
     }
@@ -5742,7 +5844,7 @@ static LRESULT on_message(struct folio_window *_Nonnull self, UINT message, WPAR
     case WM_ERASEBKGND:
         return 1;
     case WM_LBUTTONDOWN:
-        if (!self->trash_running)
+        if (!self->removal_running)
         {
             click_caption(self, lparam);
         }
