@@ -16,30 +16,46 @@ static enum trash_outcome failure(HRESULT result)
     return TRASH_FAILED;
 }
 
+static void release_item(IShellItem *_Nullable item)
+{
+    if (item != nullptr)
+    {
+        item->lpVtbl->Release(item);
+    }
+}
+
+static bool completed(HRESULT result)
+{
+    /* S_FALSE や将来の通知値は完了を証明しない。測定/契約で完了を扱える値だけ受ける。 */
+    return result == S_OK || result == COPYENGINE_S_DONT_PROCESS_CHILDREN;
+}
+
 static enum trash_outcome transfer_item(IShellItem *_Nonnull source, IShellItem *_Nonnull bin)
 {
     IShellItem *parent = nullptr;
     HRESULT result = source->lpVtbl->GetParent(source, &parent);
-    if (FAILED(result))
+    if (FAILED(result) || parent == nullptr)
     {
+        release_item(parent);
         return failure(result);
     }
     ITransferSource *transfer = nullptr;
     result = parent->lpVtbl->BindToHandler(parent, nullptr, &BHID_Transfer, &IID_ITransferSource,
                                            (void **)&transfer);
-    parent->lpVtbl->Release(parent);
-    if (FAILED(result))
+    release_item(parent);
+    if (FAILED(result) || transfer == nullptr)
     {
+        if (transfer != nullptr)
+        {
+            transfer->lpVtbl->Release(transfer);
+        }
         return failure(result);
     }
     IShellItem *destination = nullptr;
     result = transfer->lpVtbl->RecycleItem(transfer, source, bin, TSF_NORMAL, &destination);
     transfer->lpVtbl->Release(transfer);
-    bool moved = SUCCEEDED(result) && result != COPYENGINE_S_NOT_HANDLED && destination != nullptr;
-    if (destination != nullptr)
-    {
-        destination->lpVtbl->Release(destination);
-    }
+    bool moved = completed(result) && destination != nullptr;
+    release_item(destination);
     return moved ? TRASH_TRASHED : failure(result);
 }
 
@@ -48,19 +64,20 @@ static enum trash_outcome send_path(const wchar_t *_Nonnull path)
     IShellItem *bin = nullptr;
     HRESULT result = SHGetKnownFolderItem(&FOLDERID_RecycleBinFolder, KF_FLAG_DEFAULT, nullptr,
                                           &IID_IShellItem, (void **)&bin);
-    if (FAILED(result))
+    if (FAILED(result) || bin == nullptr)
     {
+        release_item(bin);
         return failure(result);
     }
     IShellItem *source = nullptr;
     result = SHCreateItemFromParsingName(path, nullptr, &IID_IShellItem, (void **)&source);
     enum trash_outcome outcome = failure(result);
-    if (SUCCEEDED(result))
+    if (SUCCEEDED(result) && source != nullptr)
     {
         outcome = transfer_item(source, bin);
-        source->lpVtbl->Release(source);
     }
-    bin->lpVtbl->Release(bin);
+    release_item(source);
+    release_item(bin);
     return outcome;
 }
 

@@ -158,7 +158,8 @@ hide の裁定（2026-10-06）は「削除したノートは OS のごみ箱へ�
 4. **履歴の子を推測の固定長では検査しない。** 専用 API にディレクトリの移動だけを依頼し、移せない場合に子を完全削除する処理を呼ばない。
    長い子の内容保持は上記で測った。トップレベルのパス長制限は初版の保守的な境界として残す。
 5. **成功は `SUCCEEDED(hr)` だけでは決めない。** 移動 API が成功し、移動後の Shell item を返したときだけ `TRASHED`。
-   `COPYENGINE_S_NOT_HANDLED` などの処理していない結果や移動後項目なしは成功にせず、元を残して拒否する。
+   `COPYENGINE_S_NOT_HANDLED` などの処理していない結果や移動後項目なしは成功に数えず、通常削除も追加の削除も行わない。元の残存はこの戻り値だけで断言しない。
+   実装は `S_OK` と実測した `COPYENGINE_S_DONT_PROCESS_CHILDREN` だけを完了候補とする。`S_FALSE` と将来の通知値は完了を証明しない。
    明示的なごみ箱非対応の HRESULT は `UNAVAILABLE`、それ以外の失敗は `FAILED`。先の open で確かめた共有違反だけを `BUSY` と呼ぶ。
 6. **COM は adapter に閉じる。** 呼び出し中に STA を初期化し、`S_OK` / `S_FALSE` で成功した分だけ、参照を解放した後に `CoUninitialize` する。
    既存の異なる apartment は `UNAVAILABLE`。自作の COM sink、callback、背景スレッドは足さない。

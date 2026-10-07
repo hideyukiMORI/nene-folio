@@ -566,7 +566,6 @@ static struct persistence_adapter healthy_adapter(void)
         .note_writes = 0,
         .create_outcome = PERSISTENCE_STORED,
         .category_create_outcome = PERSISTENCE_STORED,
-        .trash_outcome = TRASH_TRASHED,
         .written_body = {'\0'},
         .written_note = nullptr,
         .written_category = nullptr,
