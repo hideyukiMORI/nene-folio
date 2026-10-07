@@ -202,7 +202,7 @@ if ($WhatIf) {
     if ($pr.isDraft) { $steps.Add("gh pr ready $Number") }
     $steps.Add("wait for checks (every $($script:PollSeconds)s, up to $($script:WaitLimitSeconds / 60) min; resend ready once if none after $($script:ResendAfterSeconds)s)")
     $steps.Add('check mergeable / mergeStateStatus (stop on BEHIND / DIRTY / CONFLICTING)')
-    $steps.Add("gh pr merge $Number --squash --subject `"$Subject`" --delete-branch")
+    $steps.Add("gh pr merge $Number --squash --subject `"$Subject`"")
     $steps.Add('git pull --ff-only (only when the current checkout is main)')
     $steps.Add("gh issue view <N> --json state for #$($closedIssues -join ', #') (retry up to 30s)")
     [ordered]@{
@@ -233,8 +233,8 @@ Wait-Check -Pr $Number | Out-Null
 $syncProblem = Test-MergeState -State (Get-MergeState -Pr $Number)
 if ($syncProblem) { Stop-Merge $syncProblem }
 
-# (e) squash merge。--delete-branch のローカル枝の削除だけが失敗しても統合は済んでいるので、状態で判断する。
-$mergeOutput = & gh pr merge $Number --squash --subject $Subject --delete-branch 2>&1 | Out-String
+# (e) squash merge。作業木の整理と枝の保持は別に行い、ここでは local / remote の枝を削除しない。
+$mergeOutput = & gh pr merge $Number --squash --subject $Subject 2>&1 | Out-String
 $mergeExit = $LASTEXITCODE
 $merged = Invoke-Gh @('pr', 'view', "$Number", '--json', 'state,mergeCommit') | ConvertFrom-Json
 if ($merged.state -ne 'MERGED') { Stop-Merge "gh pr merge $Number did not merge (exit $mergeExit): $($mergeOutput.Trim())" }
