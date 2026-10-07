@@ -282,3 +282,50 @@ hide の裁定（2026-10-06・4 点）:
    開いている文書が無題のときは、左クリックで別のノートへ切り替えるときと同じ保存の経路を通る。
 4. **入口の現状。** 「新しいカテゴリ」の入口は「操作 ▾」・パレット・Ex・右クリックメニュー（カテゴリ行と行の無い所）の 4 つになった（補正 2 の 5 を置き換える）。
    色の変更の入口は右クリックメニューの 1 つだけで、コマンドにはしていない（決定 12 のまま）。頭の帯では右クリックメニューを出さない。
+
+## 2026-10-08 の補正 5（#202・C1）
+
+空カテゴリの削除を実装する前に、決定 14 の API・結果・失敗境界を次のとおり受理する。
+補正 4 は単位 B3 の別枝で進行中で、統合順は B3 → C1 とする。
+
+1. **検査した実体のハンドルで削除を求める。** カテゴリと既存の `index.json` は `DELETE | FILE_READ_ATTRIBUTES`、
+   `FILE_SHARE_READ`、`FILE_FLAG_OPEN_REPARSE_POINT`（ディレクトリには `FILE_FLAG_BACKUP_SEMANTICS` も）で開き、
+   既存の `open_entry` / `not_link` を使って種類と name surrogate を検査する。カテゴリは列挙から最後の処理まで保持し、
+   index は履歴の処理前に開いて保持する。index の readonly は履歴を動かす前に拒否する。
+   カテゴリの共有を 0 にすると、保持中の `FindFirstFileW` が共有違反になるため採用しない。
+2. **削除の API は `SetFileInformationByHandle(FileDispositionInfo)` だけ。** 履歴の処理が成功した後、
+   index の `DeleteFile=TRUE` を受理させて閉じ、空カテゴリにも同じ要求をして閉じる。
+   `DeleteFileW` / `RemoveDirectoryW` で名前を開き直す経路も、再帰削除も、完全削除への fallback も作らない。
+   disposition の対象は検査済みのアプリの index と空カテゴリに限る。ノート・履歴には使わない。
+3. **列挙と履歴の順。** adapter は錠と改名記録の不在を呼ぶたびに確認し、`data/` は作らない。
+   カテゴリ内に `index.json` 以外の項目があれば、履歴も動かさず拒否する。index は通常のファイルだけを受け入れ、
+   同名ディレクトリや name surrogate は拒否する。孤立履歴は B1 の `recycle_entry` だけに渡し、
+   `TRASH_TRASHED` / `TRASH_ABSENT` 以外なら index とカテゴリに disposition を求めない。
+   カテゴリが既に無い場合も孤立履歴を同じ経路で処理してから不在を返す。
+4. **port に専用結果 `enum category_remove_outcome` を置く。** `CATEGORY_REMOVE_REMOVED`（カテゴリ削除を OS が受理）、
+   `CATEGORY_REMOVE_ABSENT`（カテゴリは既に不在）、`CATEGORY_REMOVE_HAS_FILES`（事前列挙でほかの項目）、
+   `CATEGORY_REMOVE_HISTORY_NOT_RECYCLED`（履歴の移動を確認できない）、`CATEGORY_REMOVE_FAILED`（その他）の 5 値。
+   初めの 2 値だけが application の台帳採用へ進む。ごみ箱とカテゴリ削除を同じ結果型にはしない。
+5. **成功と即時の物理不在は同義ではない。** 削除共有を許す既存 reader があれば、disposition 受理後も最後の reader が閉じるまで削除待ちになる。
+   index が削除待ちだとカテゴリの disposition は `ERROR_DIR_NOT_EMPTY` で失敗し得る。このとき index だけが既に削除を受理され、
+   履歴も移っている可能性がある。列挙後に子が増えた場合もカテゴリ削除は失敗し、増えた子は保持される。
+   後段の失敗を事前の `HAS_FILES` に読み替えず、`FAILED` として返す。巻き戻し・再帰処理はしない。
+   `REMOVED` は OS の削除受理を表し、全 reader の終了や実体の即時不在を保証しない。
+6. **application の追加値は 4 つ。** 台帳にノートがある／無題の宛先なら `FOLIO_STATE_CATEGORY_NOT_EMPTY`、
+   port の後半 3 値は `FOLIO_STATE_CATEGORY_HAS_FILES` / `FOLIO_STATE_CATEGORY_HISTORY_NOT_RECYCLED` /
+   `FOLIO_STATE_CATEGORY_REMOVE_FAILED` に写す。決定 16 の値の見積りを置き換える。
+   文言はカテゴリ用に 3 言語で持ち、履歴失敗では「フォルダを削除していない」、後段失敗では
+   「フォルダの削除を確認できない。フォルダとごみ箱を確認。履歴や索引だけ処理済みの可能性」を伝える。
+   ノートの残存や操作全体の無変更は断言しない。`categories.json` 失敗は既存の `CATEGORY_LEDGER_STALE`。
+   対象なしの UI 結果は C2 で足す。
+7. **確保と状態採用。** `FILTERED` → 範囲 → 既存同期 → 空の確認 → `category_ledger_removed` と
+   null 番兵を持つ縮小 `notes[]` の確保 → port → 台帳書出し → 採用を守る。
+   失敗前の配列は既存の note ledger を借り、成功時だけ除いた空 ledger と旧配列を捨てる。
+   現在の別文書・無題・モード・本文・Undo・履歴・preview は保存も再読込もせず、カテゴリ添字だけ詰める。
+   対象のカーソルは同じ添字の次カテゴリ見出し（残りが無ければ既存の `settle_cursor` による先頭見出し、0 件なら無し）へ移す。
+   「次に止まれる行」はこの見出しへの移動とし、削除後に別ノートを読んだり本文を確保したりする経路は足さない。
+8. **根拠と限界。** Windows 11 / 固定 NTFS の隔離 probe で 18 場面・108 checks、保持確認 20/20 が成功した。
+   記録は `D:/NeNeFolio/agents/202-remove/probe-report.md`、証跡は
+   `D:/NeNeFolio/design/2026-10-08/category-remove-probe/`。
+   別 OS・媒体・ACL・祖先ディレクトリの差替え・全競合・クラッシュを測定済みとはしない。
+   製品 adapter の結線は C1 が別に検証する。保存 schema・依存・ゲートは変えない。Waivers: none。
