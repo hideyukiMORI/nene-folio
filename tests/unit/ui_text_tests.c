@@ -148,6 +148,10 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_MENU_TRASH_NOTE] = "ごみ箱へ移す",
     [UI_TEXT_TRASH_NOTE_COMPLETED] = "一覧から除きました。",
     [UI_TEXT_HELP_TRASH_NOTE] = "Ex  :trashnote / :trash ノートと履歴をごみ箱へ移す（確認なし）",
+    [UI_TEXT_COMMAND_DELETE_CATEGORY] = "カテゴリを削除",
+    [UI_TEXT_MENU_DELETE_CATEGORY] = "カテゴリを削除",
+    [UI_TEXT_FAILURE_CATEGORY_NOT_SELECTED] = "カテゴリを選んでください。",
+    [UI_TEXT_HELP_DELETE_CATEGORY] = "Ex  :deletecategory / :delcat 空カテゴリを削除（確認なし）",
     [UI_TEXT_COMMAND_NEW_CATEGORY] = "新しいカテゴリ",
     [UI_TEXT_MENU_RECOLOR] = "色を変える…",
     [UI_TEXT_MENU_RENAME_NOTE] = "名前を変更…",
@@ -272,7 +276,7 @@ static size_t utf16_units_of(const char *_Nonnull utf8)
 /* 表の全 ID が、変更前と 1 字も違わないこと（同一性）。 */
 static void verify_identity(void)
 {
-    require(expected_count == UI_TEXT_HELP_TRASH_NOTE + 1,
+    require(expected_count == UI_TEXT_HELP_DELETE_CATEGORY + 1,
             "the expected table covers every id in the enumeration");
     for (size_t index = 0; index < expected_count; ++index)
     {
@@ -581,6 +585,20 @@ static void verify_trash_notice(void)
     verify_vocabulary_of(UI_TEXT_HELP_TRASH_NOTE);
 }
 
+static void verify_category_not_selected(void)
+{
+    const char *const lines[] = {"カテゴリを選んでください。", "Select a category.",
+                                 "请选择分类。"};
+    for (size_t column = 0; column < folio_language_count; ++column)
+    {
+        require(same_text(ui_text_line(UI_TEXT_FAILURE_CATEGORY_NOT_SELECTED,
+                                       (enum folio_language)column),
+                          lines[column]),
+                "the targetless category operation asks for a category in each language");
+    }
+    verify_vocabulary_of(UI_TEXT_HELP_DELETE_CATEGORY);
+}
+
 void run_ui_text_tests(void)
 {
     verify_identity();
@@ -591,4 +609,5 @@ void run_ui_text_tests(void)
     verify_fill();
     verify_language();
     verify_trash_notice();
+    verify_category_not_selected();
 }
