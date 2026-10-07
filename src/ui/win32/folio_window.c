@@ -2342,6 +2342,10 @@ static const bool inline_outcomes[] = {
     [FOLIO_STATE_TRASH_UNAVAILABLE] = false,
     [FOLIO_STATE_TRASH_BUSY] = false,
     [FOLIO_STATE_TRASH_FAILED] = false,
+    [FOLIO_STATE_CATEGORY_NOT_EMPTY] = false,
+    [FOLIO_STATE_CATEGORY_HAS_FILES] = false,
+    [FOLIO_STATE_CATEGORY_HISTORY_NOT_RECYCLED] = false,
+    [FOLIO_STATE_CATEGORY_REMOVE_FAILED] = false,
 };
 
 static bool inline_outcome(enum folio_state_outcome outcome)

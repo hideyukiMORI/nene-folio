@@ -416,6 +416,29 @@ category_ledger_inserted(const struct category_ledger *_Nonnull ledger, size_t i
     return CATEGORY_LEDGER_ACCEPTED;
 }
 
+enum category_ledger_outcome
+category_ledger_removed(const struct category_ledger *_Nonnull ledger, size_t index,
+                        struct category_ledger *_Nullable *_Nonnull out)
+{
+    struct category_ledger *_Nullable target = nullptr;
+    enum category_ledger_outcome outcome = category_ledger_empty(&target);
+    if (outcome == CATEGORY_LEDGER_ACCEPTED)
+    {
+        outcome = copy_range(target, ledger, 0, index);
+    }
+    if (outcome == CATEGORY_LEDGER_ACCEPTED)
+    {
+        outcome = copy_range(target, ledger, index + 1, name_list_count(ledger->names));
+    }
+    if (outcome != CATEGORY_LEDGER_ACCEPTED)
+    {
+        category_ledger_destroy(target);
+        return outcome;
+    }
+    *out = target;
+    return CATEGORY_LEDGER_ACCEPTED;
+}
+
 /* from を to へ移したあと、index 番目に来るのは元の何番目か。 */
 static size_t source_index(size_t from, size_t to, size_t index)
 {

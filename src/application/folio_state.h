@@ -134,6 +134,11 @@ folio_state_recolor_category(struct folio_state *_Nonnull state, size_t index,
 [[nodiscard]] enum folio_state_outcome
 folio_state_create_category(struct folio_state *_Nonnull state,
                             const struct category_name *_Nonnull name);
+/* 空のカテゴリだけ削除する（ADR 0039 補正 5）。確保は port より前に完了する。
+ * REMOVED / ABSENT は採用し、台帳を書けなくても CATEGORY_LEDGER_STALE。既存の文書は保存しない。
+ * port の失敗は採用せず、履歴や index が処理済みの場合がある。即時の物理不在は保証しない。 */
+[[nodiscard]] enum folio_state_outcome
+folio_state_delete_category(struct folio_state *_Nonnull state, size_t category);
 /* ノートを from から to へ動かす（FR-008 / FR-009）。同じカテゴリなら表示順を変えて index.json を
  * 書き戻し（from == to は書かずに READY・書き戻せなければ状態は変えない）、別のカテゴリなら md を
  * 移してから移動先・移動元の index.json を書き戻す（ADR 0008 の決定 3）。to.note は移動先の

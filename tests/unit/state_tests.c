@@ -55,6 +55,9 @@ struct persistence_adapter
     char created_note[256];
     enum persistence_outcome category_create_outcome; /* create_category が返す結果 */
     size_t category_creates;                          /* create_category が呼ばれた回数 */
+    enum category_remove_outcome category_remove_outcome;
+    size_t category_removes;
+    char removed_category[64];
     enum trash_outcome trash_outcome;
     size_t trashes;
     char trashed_category[64];
@@ -346,6 +349,16 @@ static enum trash_outcome fake_trash_note(struct persistence_adapter *_Nonnull a
     return adapter->trash_outcome;
 }
 
+static enum category_remove_outcome
+fake_remove_category(struct persistence_adapter *_Nonnull adapter, const char *_Nonnull category)
+{
+    adapter->category_removes += 1;
+    record_call(adapter, "remove_category");
+    require(strlen(category) < sizeof adapter->removed_category, "removed category fits");
+    memcpy(adapter->removed_category, category, strlen(category) + 1);
+    return adapter->category_remove_outcome;
+}
+
 static enum persistence_outcome fake_write_note_ledger(struct persistence_adapter *_Nonnull adapter,
                                                        const char *_Nonnull category,
                                                        const struct note_ledger *_Nonnull ledger);
@@ -613,6 +626,7 @@ static struct persistence_port port_for(struct persistence_adapter *_Nonnull ada
         .write_note = fake_write_note,
         .create_note = fake_create_note,
         .create_category = fake_create_category,
+        .remove_category = fake_remove_category,
         .trash_note = fake_trash_note,
         .move_note = fake_move_note,
         .rename_note = fake_rename_note,
@@ -1955,6 +1969,16 @@ static const char *_Nonnull const expected_failure_lines[] = {
     [FOLIO_STATE_TRASH_FAILED] =
         "ごみ箱への移動を確認できませんでした。ファイルとごみ箱を確認してください。"
         "履歴だけ移っている場合があります。",
+    [FOLIO_STATE_CATEGORY_NOT_EMPTY] =
+        "ノートが残っているカテゴリや、無題のノートの保存先は削除できません。",
+    [FOLIO_STATE_CATEGORY_HAS_FILES] =
+        "フォルダにほかのファイルが残っているので削除していません。フォルダを確認してください。",
+    [FOLIO_STATE_CATEGORY_HISTORY_NOT_RECYCLED] =
+        "履歴のごみ箱への移動を確認できないため、カテゴリのフォルダを削除していません。"
+        "履歴とごみ箱を確認してください。",
+    [FOLIO_STATE_CATEGORY_REMOVE_FAILED] =
+        "カテゴリのフォルダの削除を確認できませんでした。フォルダとごみ箱を確認してください。"
+        "履歴や索引だけ処理済みの場合があります。",
 };
 
 static void verify_failure_lines(void)
@@ -2049,6 +2073,11 @@ size_t test_adapter_category_creates(const struct persistence_adapter *_Nonnull 
 size_t test_adapter_trashes(const struct persistence_adapter *_Nonnull adapter)
 {
     return adapter->trashes;
+}
+
+size_t test_adapter_category_removes(const struct persistence_adapter *_Nonnull adapter)
+{
+    return adapter->category_removes;
 }
 
 void test_adapter_destroy(struct persistence_adapter *_Nullable adapter)
@@ -3744,6 +3773,177 @@ static void verify_create_categories(void)
     verify_create_category_pending_rename();
 }
 
+static struct folio_state *_Nonnull empty_category_state(
+    struct persistence_adapter *_Nonnull adapter, const char *_Nonnull category)
+{
+    static const char *const no_notes[] = {nullptr};
+    test_adapter_second_notes(adapter, category, "{\"version\":1,\"notes\":[]}", no_notes);
+    return ready_state(adapter);
+}
+
+static void verify_remove_category_outcomes(void)
+{
+    const enum category_remove_outcome results[] = {
+        CATEGORY_REMOVE_REMOVED, CATEGORY_REMOVE_ABSENT, CATEGORY_REMOVE_HAS_FILES,
+        CATEGORY_REMOVE_HISTORY_NOT_RECYCLED, CATEGORY_REMOVE_FAILED};
+    const enum folio_state_outcome expected[] = {
+        FOLIO_STATE_READY, FOLIO_STATE_READY, FOLIO_STATE_CATEGORY_HAS_FILES,
+        FOLIO_STATE_CATEGORY_HISTORY_NOT_RECYCLED, FOLIO_STATE_CATEGORY_REMOVE_FAILED};
+    for (size_t index = 0; index < sizeof results / sizeof results[0]; ++index)
+    {
+        struct persistence_adapter adapter = healthy_adapter();
+        adapter.category_remove_outcome = results[index];
+        struct folio_state *state = empty_category_state(&adapter, "B");
+        require(folio_state_select_note(state, 2, 1) == FOLIO_STATE_READY, "select later note");
+        size_t reads = adapter.note_reads;
+        const char *body = folio_state_pane_text(state);
+        require(folio_state_delete_category(state, 0) == expected[index], "typed removal result");
+        bool adopted = index < 2;
+        require(adapter.category_removes == 1 && same_text(adapter.removed_category, "B") &&
+                    adapter.writes == (adopted ? 1 : 0) &&
+                    folio_state_category_count(state) == (adopted ? 2 : 3) &&
+                    keeps_document(state, at(adopted ? 1 : 2, 1), PANE_MODE_VIEW),
+                "only removal acceptance and absence adopt the prepared category ledger");
+        require(folio_state_pane_text(state) == body && adapter.note_reads == reads &&
+                    adapter.archives == 0 && adapter.note_writes == 0 && adapter.ledger_writes == 0,
+                "removal does not save or reread any document or note index");
+        folio_state_destroy(state);
+    }
+}
+
+static void verify_remove_category_refusals(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = empty_category_state(&adapter, "B");
+    require(folio_state_delete_category(state, 1) == FOLIO_STATE_CATEGORY_NOT_EMPTY &&
+                folio_state_delete_category(state, 9) == FOLIO_STATE_NO_SUCH_CATEGORY,
+            "notes and invalid category refuse before the port");
+    require(folio_state_new_note(state, 0) == FOLIO_STATE_READY &&
+                folio_state_delete_category(state, 0) == FOLIO_STATE_CATEGORY_NOT_EMPTY,
+            "an untitled destination is not empty");
+    require(folio_state_set_index_filter(state, u"one", 3) == FOLIO_STATE_READY &&
+                folio_state_delete_category(state, 9) == FOLIO_STATE_FILTERED,
+            "filter rejection precedes range and synchronization");
+    require(adapter.category_removes == 0 && adapter.writes == 0 && adapter.archives == 0 &&
+                adapter.note_writes == 0,
+            "refusals have no destructive port or save calls");
+    folio_state_destroy(state);
+}
+
+static void prepare_trash_preview(struct folio_state *_Nonnull state);
+static void expect_trash_preview_usable(struct folio_state *_Nonnull state);
+
+static void verify_remove_category_preserves_edit(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    adapter.history[1] = "old";
+    struct folio_state *state = empty_category_state(&adapter, "B");
+    require(folio_state_select_note(state, 2, 1) == FOLIO_STATE_READY &&
+                folio_state_open_history(state) == FOLIO_STATE_READY,
+            "keep a later document with loaded history");
+    prepare_trash_preview(state);
+    const char *body = folio_state_pane_text(state);
+    const char *pane = folio_state_pane_rtf(state);
+    const struct note_text *history = folio_state_history_body(state, 0);
+    size_t reads = adapter.note_reads;
+    size_t history_reads = adapter.history_reads;
+    require(folio_state_delete_category(state, 0) == FOLIO_STATE_READY &&
+                keeps_document(state, at(1, 1), PANE_MODE_EDIT),
+            "a preceding empty category only shifts the edited document index");
+    require(folio_state_pane_text(state) == body && folio_state_pane_rtf(state) == pane &&
+                folio_state_replace_count(state) == 1 &&
+                folio_state_history_body(state, 0) == history && adapter.note_reads == reads &&
+                adapter.history_reads == history_reads && adapter.archives == 0 &&
+                adapter.note_writes == 0,
+            "body, rendered pane, preview and history are retained without saving or reloading");
+    expect_trash_preview_usable(state);
+    folio_state_destroy(state);
+}
+
+static void verify_remove_category_cursor(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    struct category_name *name = accepted_category_name("D");
+    require(folio_state_create_category(state, name) == FOLIO_STATE_READY &&
+                folio_state_move_category(state, 3, 1) == FOLIO_STATE_READY,
+            "create a middle empty category heading");
+    adapter.write_outcome = PERSISTENCE_UNWRITABLE;
+    require(folio_state_delete_category(state, 1) == FOLIO_STATE_CATEGORY_LEDGER_STALE &&
+                cursor_on_category(state, 1) && folio_state_category_count(state) == 3 &&
+                same_text(adapter.removed_category, "D"),
+            "accepted removal adopts even if ledger writing fails and keeps the next heading");
+    category_name_destroy(name);
+    folio_state_destroy(state);
+    adapter = healthy_adapter();
+    adapter.scanned_category_count = 0;
+    adapter.categories_outcome = PERSISTENCE_ABSENT;
+    state = ready_state(&adapter);
+    name = accepted_category_name("only");
+    require(folio_state_create_category(state, name) == FOLIO_STATE_READY &&
+                folio_state_delete_category(state, 0) == FOLIO_STATE_READY &&
+                folio_state_category_count(state) == 0,
+            "remove the only empty category");
+    enum folio_cursor_kind kind = FOLIO_CURSOR_NOTE;
+    struct note_ref cursor = at(9, 9);
+    require(!folio_state_cursor(state, &kind, &cursor), "no category leaves no cursor");
+    category_name_destroy(name);
+    folio_state_destroy(state);
+}
+
+static void verify_remove_category_untitled_and_last_cursor(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = empty_category_state(&adapter, "B");
+    require(folio_state_new_note(state, 2) == FOLIO_STATE_READY, "untitled in a later category");
+    const char *body = folio_state_pane_text(state);
+    const char *pane = folio_state_pane_rtf(state);
+    require(folio_state_delete_category(state, 0) == FOLIO_STATE_READY &&
+                folio_state_document_kind(state) == FOLIO_DOCUMENT_UNTITLED &&
+                folio_state_current_category(state) == 1 &&
+                folio_state_pane_mode(state) == PANE_MODE_EDIT &&
+                folio_state_pane_text(state) == body && folio_state_pane_rtf(state) == pane &&
+                adapter.archives == 0 && adapter.note_writes == 0 && adapter.note_reads == 0,
+            "a later untitled destination shifts without saving or recreating its body");
+    folio_state_destroy(state);
+    adapter = healthy_adapter();
+    state = ready_state(&adapter);
+    struct category_name *name = accepted_category_name("last");
+    require(folio_state_create_category(state, name) == FOLIO_STATE_READY &&
+                cursor_on_category(state, 3) &&
+                folio_state_delete_category(state, 3) == FOLIO_STATE_READY &&
+                cursor_on_category(state, 0),
+            "removing the last heading settles on the first remaining category heading");
+    category_name_destroy(name);
+    folio_state_destroy(state);
+}
+
+static void verify_remove_category_pending_rename(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = empty_category_state(&adapter, "B");
+    require(folio_state_select_note(state, 1, 0) == FOLIO_STATE_READY, "select to rename");
+    struct note_name *name = accepted_note_name("renamed");
+    adapter.rename_outcome = RENAME_PENDING;
+    require(folio_state_rename_note(state, name, u"", 0) == FOLIO_STATE_RENAME_PENDING &&
+                folio_state_delete_category(state, 0) == FOLIO_STATE_RENAME_PENDING &&
+                adapter.renames == 2 && adapter.last_attempt == RENAME_RESUME &&
+                adapter.category_removes == 0,
+            "pending rename synchronization prevents the destructive port");
+    note_name_destroy(name);
+    folio_state_destroy(state);
+}
+
+static void verify_remove_categories(void)
+{
+    verify_remove_category_outcomes();
+    verify_remove_category_refusals();
+    verify_remove_category_preserves_edit();
+    verify_remove_category_cursor();
+    verify_remove_category_untitled_and_last_cursor();
+    verify_remove_category_pending_rename();
+}
+
 static void verify_later_units(void)
 {
     verify_rename_refusals();
@@ -4104,4 +4304,5 @@ void run_state_tests(void)
     verify_history_gaps();
     verify_later_units();
     verify_trash_all();
+    verify_remove_categories();
 }
