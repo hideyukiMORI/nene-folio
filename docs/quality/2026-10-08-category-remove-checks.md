@@ -62,7 +62,12 @@ history は B1 の専用 RecycleItem 1 本。index と空 category だけ FileDi
 - probe `build.ps1 / run.ps1 / links.ps1 / preservation.ps1`: 各 exit 0。
 - `D:/NeNeFolio/agents/202-remove/`: build / unit / probe / preservation log、report.md、gate.log。
 - probe 専用領域: C/PS source、各場面 log、results.json、residue.json、manifest.json。
-- 最終 `pwsh -NoProfile -File ./eng/check.ps1`: 実行結果を完了時に追記する。
+- `cleanup.ps1`: exit 0。実体境界・非稼働・保存済み manifest／hash を照合して、
+  自作 sandbox 90 項目と object 1 項目を非再帰の個別操作で整理。source・証跡を残し、
+  自作ごみ箱 4 項目は元パス記録とともに残す。worktree は親が統合と収載の後に整理する。
+- 最終 `pwsh -NoProfile -File ./eng/check.ps1`: exit 0（1 回）。conformance 0、
+  symbols 2 libraries / 0 violations、ctest 2/2、分岐 2994/3198 = 93.6210%、
+  確保失敗注入を含む測定 build と 19 件の実ツール反例が成功。
 
 ## 限界
 
