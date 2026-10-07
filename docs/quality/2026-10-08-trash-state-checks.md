@@ -26,14 +26,14 @@
 | 台帳失敗後の状態採用 → NONE の保存でも再試行 → 他ノートへ書かない | 単体で固定 |
 | 一致/非一致/最後の一致/別カテゴリ、検索語とスクロール、削除済み cache の再出現防止 | 単体で固定 |
 | 最後の一致削除で隠れるカテゴリからカーソルを外す | 単体で固定 |
-| 準備中の全確保失敗で trash 呼出し 0、filter 入力/out 不変 | 測定ビルドで確認する |
+| 準備中の全確保失敗で trash 呼出し 0、filter 入力/out 不変 | 最終ゲートの全確保点注入で成功 |
 
 ## 検証コマンドとログ
 
 - `cmake --build D:/NeNeFolio/worktrees/196-trash-state/build --target folio_tests`: exit 0。
 - `ctest --test-dir D:/NeNeFolio/worktrees/196-trash-state/build -R '^folio_unit$' --output-on-failure`: 1/1、exit 0。
 - `python eng/conformance.py`: exit 0（中間コード）。
-- 最終コードの `pwsh -NoProfile -File ./eng/check.ps1`: 未実行。
+- 最終コード HEAD `2fc246d` の `pwsh -NoProfile -File ./eng/check.ps1`: exit 0、CTest 2/2、分岐 93.4713%（2935/3140）、負例 8.03% で拒否、検査器自身のテスト 89 件、実ツール証明 19 件。
 - ログ: `D:/NeNeFolio/agents/196-state/build.log`、`unit.log`、最終 gate は `gate.log`。
 - 初回対象ビルドは B1 の healthy_adapter 行数制限で失敗し、B1 追補取込で解消。初回 unit は追加 ui_text ID の期待値表未追記で UBSan が拒否し、3 行追加で解消。
 
@@ -45,3 +45,5 @@ QLT-008 / QLT-009 / QLT-010: 変更境界の単体と確保失敗を追加し、
 
 EN / zh-Hans の母語話者による確認は未実施。実 UI の Undo と面の後始末は B3 の責務。FAILED は元残存を保証できないので実体とごみ箱の確認を促す。
 保存形式・スキーマの変更は無い。B1 の成功後にエラーが生じた場合の実体差異は adapter の限界として残る。
+
+最終ゲートの初回は依存取込の既定 merge 件名が GIT-003 に拒否され、製品検証前に停止した。旧 HEAD f81a93f は chore/196-before-history-repair に保持し、B1 fdb746f を親に B2 差分を規約件名へまとめた。修復前後の tree は同一（git diff --quiet、exit 0）。初回ログは D:/NeNeFolio/agents/196-state/gate-history-failure.log、成功ログは gate.log に保持する。
