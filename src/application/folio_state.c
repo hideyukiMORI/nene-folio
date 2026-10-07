@@ -2493,6 +2493,116 @@ enum folio_state_outcome folio_state_create_category(struct folio_state *_Nonnul
     return stored == PERSISTENCE_STORED ? FOLIO_STATE_READY : FOLIO_STATE_CATEGORY_LEDGER_STALE;
 }
 
+static enum folio_state_outcome from_category_removed(enum category_remove_outcome outcome)
+{
+    switch (outcome)
+    {
+    case CATEGORY_REMOVE_REMOVED:
+    case CATEGORY_REMOVE_ABSENT:
+        return FOLIO_STATE_READY;
+    case CATEGORY_REMOVE_HAS_FILES:
+        return FOLIO_STATE_CATEGORY_HAS_FILES;
+    case CATEGORY_REMOVE_HISTORY_NOT_RECYCLED:
+        return FOLIO_STATE_CATEGORY_HISTORY_NOT_RECYCLED;
+    case CATEGORY_REMOVE_FAILED:
+        return FOLIO_STATE_CATEGORY_REMOVE_FAILED;
+    }
+    return FOLIO_STATE_CATEGORY_REMOVE_FAILED;
+}
+
+/* 新しい配列は既存の note_ledger を借り、末尾の null 番兵まで先に確保する。 */
+static enum folio_state_outcome
+reserve_category_removal(const struct folio_state *_Nonnull state, size_t target,
+                         struct category_ledger *_Nullable *_Nonnull ledger,
+                         struct note_ledger *_Nonnull *_Nullable *_Nonnull notes)
+{
+    enum folio_state_outcome outcome =
+        from_category_ledger(category_ledger_removed(state->categories, target, ledger));
+    if (outcome != FOLIO_STATE_READY)
+    {
+        return outcome;
+    }
+    size_t count = category_ledger_count(state->categories);
+    struct note_ledger *_Nonnull *_Nullable shortened = calloc(count, sizeof *shortened);
+    if (shortened == nullptr)
+    {
+        category_ledger_destroy(*ledger);
+        *ledger = nullptr;
+        return FOLIO_STATE_OUT_OF_MEMORY;
+    }
+    for (size_t index = 0; index + 1 < count; ++index)
+    {
+        shortened[index] = state->notes[index < target ? index : index + 1];
+    }
+    *notes = shortened;
+    return FOLIO_STATE_READY;
+}
+
+/* 文書・本文・写しを触らず、削除したカテゴリより後の添字だけ詰める（ADR 0039 補正 5）。 */
+static void adopt_category_removal(struct folio_state *_Nonnull state, size_t target,
+                                   struct category_ledger *_Nonnull ledger,
+                                   struct note_ledger *_Nonnull *_Nonnull notes)
+{
+    note_ledger_destroy(state->notes[target]);
+    category_ledger_destroy(state->categories);
+    state->categories = ledger;
+    free(state->notes);
+    state->notes = notes;
+    state->notes_count -= 1;
+    if (state->document != FOLIO_DOCUMENT_NONE && state->selected_category > target)
+    {
+        state->selected_category -= 1;
+    }
+    if (state->cursor_any && state->cursor_kind == FOLIO_CURSOR_CATEGORY &&
+        state->cursor_category > target)
+    {
+        state->cursor_category -= 1;
+    }
+    settle_cursor(state);
+}
+
+enum folio_state_outcome folio_state_delete_category(struct folio_state *_Nonnull state,
+                                                     size_t category)
+{
+    if (state->filter != nullptr)
+    {
+        return FOLIO_STATE_FILTERED;
+    }
+    if (!holds_category(state, category))
+    {
+        return FOLIO_STATE_NO_SUCH_CATEGORY;
+    }
+    enum folio_state_outcome outcome = synchronize(state);
+    if (outcome != FOLIO_STATE_READY)
+    {
+        return outcome;
+    }
+    if (note_ledger_count(state->notes[category]) != 0 ||
+        (state->document == FOLIO_DOCUMENT_UNTITLED && state->selected_category == category))
+    {
+        return FOLIO_STATE_CATEGORY_NOT_EMPTY;
+    }
+    struct category_ledger *_Nullable ledger = nullptr;
+    struct note_ledger *_Nonnull *_Nullable notes = nullptr;
+    outcome = reserve_category_removal(state, category, &ledger, &notes);
+    if (outcome != FOLIO_STATE_READY)
+    {
+        return outcome;
+    }
+    outcome = from_category_removed(state->port.remove_category(
+        state->port.adapter, category_ledger_name(state->categories, category)));
+    if (outcome != FOLIO_STATE_READY)
+    {
+        category_ledger_destroy(ledger);
+        free(notes);
+        return outcome;
+    }
+    enum persistence_outcome stored =
+        state->port.write_category_ledger(state->port.adapter, ledger);
+    adopt_category_removal(state, category, ledger, notes);
+    return stored == PERSISTENCE_STORED ? FOLIO_STATE_READY : FOLIO_STATE_CATEGORY_LEDGER_STALE;
+}
+
 enum folio_state_outcome folio_state_store_note(struct folio_state *_Nonnull state,
                                                 const char16_t *_Nonnull units, size_t count)
 {
@@ -3131,6 +3241,10 @@ static const enum ui_text failure_lines[] = {
     [FOLIO_STATE_TRASH_UNAVAILABLE] = UI_TEXT_FAILURE_TRASH_UNAVAILABLE,
     [FOLIO_STATE_TRASH_BUSY] = UI_TEXT_FAILURE_TRASH_BUSY,
     [FOLIO_STATE_TRASH_FAILED] = UI_TEXT_FAILURE_TRASH_FAILED,
+    [FOLIO_STATE_CATEGORY_NOT_EMPTY] = UI_TEXT_FAILURE_CATEGORY_NOT_EMPTY,
+    [FOLIO_STATE_CATEGORY_HAS_FILES] = UI_TEXT_FAILURE_CATEGORY_HAS_FILES,
+    [FOLIO_STATE_CATEGORY_HISTORY_NOT_RECYCLED] = UI_TEXT_FAILURE_CATEGORY_HISTORY_NOT_RECYCLED,
+    [FOLIO_STATE_CATEGORY_REMOVE_FAILED] = UI_TEXT_FAILURE_CATEGORY_REMOVE_FAILED,
 };
 
 const char *_Nonnull folio_state_failure_line(enum folio_state_outcome outcome,

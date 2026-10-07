@@ -113,6 +113,16 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_FAILURE_TRASH_FAILED] =
         "ごみ箱への移動を確認できませんでした。ファイルとごみ箱を確認してください。"
         "履歴だけ移っている場合があります。",
+    [UI_TEXT_FAILURE_CATEGORY_NOT_EMPTY] =
+        "ノートが残っているカテゴリや、無題のノートの保存先は削除できません。",
+    [UI_TEXT_FAILURE_CATEGORY_HAS_FILES] =
+        "フォルダにほかのファイルが残っているので削除していません。フォルダを確認してください。",
+    [UI_TEXT_FAILURE_CATEGORY_HISTORY_NOT_RECYCLED] =
+        "履歴のごみ箱への移動を確認できないため、カテゴリのフォルダを削除していません。"
+        "履歴とごみ箱を確認してください。",
+    [UI_TEXT_FAILURE_CATEGORY_REMOVE_FAILED] =
+        "カテゴリのフォルダの削除を確認できませんでした。フォルダとごみ箱を確認してください。"
+        "履歴や索引だけ処理済みの場合があります。",
     [UI_TEXT_FAILURE_FONT_BUNDLE_UNAVAILABLE] =
         "同梱の書体を読めなかったので、OS の書体で表示します。",
     [UI_TEXT_COMMAND_SAVE] = "保存",

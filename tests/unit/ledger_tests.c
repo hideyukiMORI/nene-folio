@@ -439,6 +439,36 @@ static void verify_note_transfer(void)
     note_ledger_destroy(ledger);
 }
 
+static void verify_category_removed(void)
+{
+    struct category_ledger *source = parse_categories(category_text);
+    for (size_t index = 0; index < 2; ++index)
+    {
+        struct category_ledger *removed = nullptr;
+        require(category_ledger_removed(source, index, &removed) == CATEGORY_LEDGER_ACCEPTED &&
+                    category_ledger_count(removed) == 1,
+                "remove the first or last category");
+        size_t kept = 1 - index;
+        struct rgb_color before = category_ledger_color(source, kept);
+        struct rgb_color after = category_ledger_color(removed, 0);
+        require(
+            same_text(category_ledger_name(removed, 0), category_ledger_name(source, kept)) &&
+                category_ledger_expanded(removed, 0) == category_ledger_expanded(source, kept) &&
+                before.red == after.red && before.green == after.green && before.blue == after.blue,
+            "removal retains the name, color and expansion of the survivor");
+        struct category_ledger *empty = nullptr;
+        require(category_ledger_removed(removed, 0, &empty) == CATEGORY_LEDGER_ACCEPTED &&
+                    category_ledger_count(empty) == 0,
+                "remove the only category");
+        category_ledger_destroy(empty);
+        category_ledger_destroy(removed);
+    }
+    require(category_ledger_count(source) == 2 && category_ledger_expanded(source, 0) &&
+                !category_ledger_expanded(source, 1),
+            "the original ledger is unchanged");
+    category_ledger_destroy(source);
+}
+
 void run_ledger_tests(void)
 {
     verify_category_parse();
@@ -448,6 +478,7 @@ void run_ledger_tests(void)
     verify_category_toggle();
     verify_category_recolor();
     verify_category_moved();
+    verify_category_removed();
     verify_note_parse();
     verify_note_reconcile();
     verify_note_moved();

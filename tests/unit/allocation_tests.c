@@ -924,6 +924,47 @@ static bool trash_scenario(void)
     return completed;
 }
 
+static bool remove_category_under_probe(struct folio_state *_Nonnull state,
+                                        const struct persistence_adapter *_Nonnull adapter)
+{
+    const char *body = folio_state_pane_text(state);
+    size_t categories = folio_state_category_count(state);
+    enum folio_state_outcome removed = folio_state_delete_category(state, 1);
+    require(removed == FOLIO_STATE_READY || removed == FOLIO_STATE_OUT_OF_MEMORY,
+            "category removal allocation failure remains typed");
+    if (removed == FOLIO_STATE_OUT_OF_MEMORY)
+    {
+        require(test_adapter_category_removes(adapter) == 0 &&
+                    folio_state_category_count(state) == categories &&
+                    folio_state_pane_text(state) == body,
+                "failed preparation retains borrowed ledgers and never invokes removal");
+        return false;
+    }
+    require(test_adapter_category_removes(adapter) == 1 &&
+                folio_state_category_count(state) == categories - 1 &&
+                folio_state_pane_text(state) == body,
+            "prepared category removal adopts without later allocation");
+    return true;
+}
+
+static bool remove_category_scenario(void)
+{
+    static const char *const no_notes[] = {nullptr};
+    struct persistence_adapter *adapter = test_adapter_create(categories_text, notes_text);
+    test_adapter_second_notes(adapter, "beta", "{\"version\":1,\"notes\":[]}", no_notes);
+    struct persistence_port port = test_adapter_port(adapter);
+    struct appearance_port looks = test_appearance_port();
+    struct regex_port regex = test_regex_port();
+    struct folio_state *state = nullptr;
+    bool prepared =
+        folio_state_create(test_ports(&port, &looks, &regex), &state) == FOLIO_STATE_READY &&
+        folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY;
+    bool completed = prepared && remove_category_under_probe(state, adapter);
+    folio_state_destroy(state);
+    test_adapter_destroy(adapter);
+    return completed;
+}
+
 static bool removed_filter_scenario(void)
 {
     const struct index_filter_entry entry = {
@@ -1004,5 +1045,6 @@ void run_allocation_tests(void)
     exhaust(history_scenario, "history scenario never completed");
     exhaust(create_category_scenario, "create category scenario never completed");
     exhaust(trash_scenario, "trash scenario never completed");
+    exhaust(remove_category_scenario, "remove category scenario never completed");
     exhaust(removed_filter_scenario, "removed filter scenario never completed");
 }

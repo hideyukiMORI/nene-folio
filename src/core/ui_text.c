@@ -222,6 +222,26 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
          "Could not confirm the move to the Recycle Bin. Check the files and Recycle Bin; "
          "history may have moved first.",
          "无法确认是否已移入回收站。请检查文件和回收站，历史记录可能已先行移动。"},
+    [UI_TEXT_FAILURE_CATEGORY_NOT_EMPTY] =
+        {"ノートが残っているカテゴリや、無題のノートの保存先は削除できません。",
+         "Cannot remove a category with notes or the destination of an untitled note.",
+         "无法删除仍有笔记的分类或无标题笔记的保存位置。"},
+    [UI_TEXT_FAILURE_CATEGORY_HAS_FILES] =
+        {"フォルダにほかのファイルが残っているので削除していません。フォルダを確認してください。",
+         "The folder has other files and was not removed. Check the folder.",
+         "文件夹中仍有其他文件，因此未删除。请检查文件夹。"},
+    [UI_TEXT_FAILURE_CATEGORY_HISTORY_NOT_RECYCLED] =
+        {"履歴のごみ箱への移動を確認できないため、カテゴリのフォルダを削除していません。"
+         "履歴とごみ箱を確認してください。",
+         "Could not confirm history recycling, so the category folder was not removed. "
+         "Check the history and Recycle Bin.",
+         "无法确认历史记录是否已移入回收站，因此未删除分类文件夹。请检查历史记录和回收站。"},
+    [UI_TEXT_FAILURE_CATEGORY_REMOVE_FAILED] =
+        {"カテゴリのフォルダの削除を確認できませんでした。フォルダとごみ箱を確認してください。"
+         "履歴や索引だけ処理済みの場合があります。",
+         "Could not confirm category folder removal. Check the folder and Recycle Bin; "
+         "history or the index may already have been processed.",
+         "无法确认分类文件夹是否已删除。请检查文件夹和回收站，历史记录或索引可能已处理。"},
     [UI_TEXT_COMMAND_SAVE] = {"保存", "Save", "保存"},
     [UI_TEXT_COMMAND_QUIT] = {"保存済みなら終了", "Quit if saved", "已保存则退出"},
     [UI_TEXT_COMMAND_SAVE_QUIT] = {"保存して終了", "Save and quit", "保存并退出"},

@@ -6,6 +6,7 @@
 #ifndef NENEFOLIO_PERSISTENCE_PORT_H
 #define NENEFOLIO_PERSISTENCE_PORT_H
 
+#include "category_remove_outcome.h"
 #include "history_version.h"
 #include "persistence_outcome.h"
 #include "rename_attempt.h"
@@ -70,6 +71,10 @@ struct persistence_port
      * 決定 3 の予告）。作れたら STORED、その名前が既に在れば NAME_TAKEN、それ以外は UNWRITABLE
      * （カテゴリは作っていない）。名前は呼ぶ側が検証済み。index.json は作らない。 */
     enum persistence_outcome (*_Nonnull create_category)(
+        struct persistence_adapter *_Nonnull adapter, const char *_Nonnull category);
+    /* 錠と記録不在、index.json だけ又は空を確認。孤立履歴を専用 API で送り、
+     * 保持した index/category handle に削除を求める。部分成功は FAILED（ADR 0039 補正 5）。 */
+    enum category_remove_outcome (*_Nonnull remove_category)(
         struct persistence_adapter *_Nonnull adapter, const char *_Nonnull category);
     /* 錠と記録不在を確認し、md の事前確認 → 履歴 → md の順で OS のごみ箱へ送る。
      * md が不在でも履歴を送って ABSENT。完全削除への代替は無い（ADR 0040）。 */

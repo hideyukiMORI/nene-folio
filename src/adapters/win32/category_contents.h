@@ -1,0 +1,11 @@
+/* 削除前の列挙結果。検査完了を削除成功と名付けない。 */
+#ifndef NENEFOLIO_CATEGORY_CONTENTS_H
+#define NENEFOLIO_CATEGORY_CONTENTS_H
+enum category_contents : unsigned char
+{
+    CATEGORY_CONTENTS_EMPTY,
+    CATEGORY_CONTENTS_INDEX,
+    CATEGORY_CONTENTS_OTHER,
+    CATEGORY_CONTENTS_UNREADABLE
+};
+#endif

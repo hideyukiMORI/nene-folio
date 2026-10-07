@@ -91,7 +91,11 @@ enum folio_state_outcome : unsigned char
     FOLIO_STATE_CATEGORY_LEDGER_STALE,
     FOLIO_STATE_TRASH_UNAVAILABLE, /* この場所ではごみ箱を使えない。ノートは移していない */
     FOLIO_STATE_TRASH_BUSY,        /* ほかのプログラムが使用中。ノートは移していない */
-    FOLIO_STATE_TRASH_FAILED       /* 移動完了を確認できない。実体とごみ箱の確認が必要 */
+    FOLIO_STATE_TRASH_FAILED,      /* 移動完了を確認できない。実体とごみ箱の確認が必要 */
+    FOLIO_STATE_CATEGORY_NOT_EMPTY,
+    FOLIO_STATE_CATEGORY_HAS_FILES,
+    FOLIO_STATE_CATEGORY_HISTORY_NOT_RECYCLED,
+    FOLIO_STATE_CATEGORY_REMOVE_FAILED
 };
 
 #endif

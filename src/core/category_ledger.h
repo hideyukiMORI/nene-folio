@@ -44,6 +44,10 @@ category_ledger_recolored(const struct category_ledger *_Nonnull ledger, size_t 
 category_ledger_inserted(const struct category_ledger *_Nonnull ledger, size_t index,
                          const struct category_name *_Nonnull name,
                          struct category_ledger *_Nullable *_Nonnull out);
+/* index のカテゴリだけを除く。index は count 未満。残る色・展開・順序と元台帳を保持する。 */
+[[nodiscard]] enum category_ledger_outcome
+category_ledger_removed(const struct category_ledger *_Nonnull ledger, size_t index,
+                        struct category_ledger *_Nullable *_Nonnull out);
 /* from 番目を to 番目へ移した、順序だけが違う新しい台帳を作る（FR-009）。
  * from と to は count 未満であること。from == to でも複製を返す。 */
 [[nodiscard]] enum category_ledger_outcome

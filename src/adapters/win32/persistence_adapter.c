@@ -1,5 +1,6 @@
 #include "persistence_adapter.h"
 
+#include "category_contents.h"
 #include "category_ledger.h"
 #include "file_bytes.h"
 #include "folio_settings.h"
@@ -20,6 +21,7 @@
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
+#include <wchar.h>
 #include <windows.h>
 
 /* パスの上限（UTF-16 単位・終端込み）。超える場所に置かれた実行ファイルは読めないとして扱う。 */
@@ -1519,6 +1521,183 @@ static enum trash_outcome trash_note(struct persistence_adapter *_Nonnull adapte
     return sent == TRASH_TRASHED ? TRASH_TRASHED : TRASH_FAILED;
 }
 
+/* 保持した category は READ 共有なので、名前による列挙が成立する。終端エラーも確かめる。 */
+static enum category_contents listed_category_contents(HANDLE find,
+                                                       WIN32_FIND_DATAW *_Nonnull entry)
+{
+    enum category_contents contents = CATEGORY_CONTENTS_EMPTY;
+    do
+    {
+        if (wcscmp(entry->cFileName, L".") == 0 || wcscmp(entry->cFileName, L"..") == 0)
+        {
+            continue;
+        }
+        if (wcscmp(entry->cFileName, L"index.json") != 0)
+        {
+            FindClose(find);
+            return CATEGORY_CONTENTS_OTHER;
+        }
+        contents = CATEGORY_CONTENTS_INDEX;
+    } while (FindNextFileW(find, entry));
+    DWORD error = GetLastError();
+    FindClose(find);
+    return error == ERROR_NO_MORE_FILES ? contents : CATEGORY_CONTENTS_UNREADABLE;
+}
+
+static enum category_contents category_contents_at(const wchar_t *_Nonnull path)
+{
+    wchar_t pattern[path_capacity];
+    size_t length = 0;
+    if (!append_units(pattern, &length, path, wide_length(path)) ||
+        !append_units(pattern, &length, L"\\*", 2))
+    {
+        return CATEGORY_CONTENTS_UNREADABLE;
+    }
+    WIN32_FIND_DATAW entry;
+    HANDLE find = FindFirstFileW(pattern, &entry);
+    if (find == INVALID_HANDLE_VALUE)
+    {
+        return GetLastError() == ERROR_FILE_NOT_FOUND ? CATEGORY_CONTENTS_EMPTY
+                                                      : CATEGORY_CONTENTS_UNREADABLE;
+    }
+    return listed_category_contents(find, &entry);
+}
+
+static bool category_entry_allowed(HANDLE handle, bool directory)
+{
+    FILE_ATTRIBUTE_TAG_INFO info;
+    return GetFileInformationByHandleEx(handle, FileAttributeTagInfo, &info, (DWORD)sizeof info) &&
+           ((info.FileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0) == directory &&
+           (directory || (info.FileAttributes & FILE_ATTRIBUTE_READONLY) == 0) && not_link(handle);
+}
+
+/* index と空 category だけが呼ぶ。再帰処理と名前による再 open は無い。 */
+static bool accept_category_disposition(HANDLE handle)
+{
+    FILE_DISPOSITION_INFO disposition = {.DeleteFile = TRUE};
+    return SetFileInformationByHandle(handle, FileDispositionInfo, &disposition,
+                                      (DWORD)sizeof disposition) != 0;
+}
+
+static enum trash_outcome
+recycle_category_history(const struct persistence_adapter *_Nonnull adapter,
+                         const char *_Nonnull category)
+{
+    wchar_t history[path_capacity];
+    if (!compose_history_category(adapter, category, history))
+    {
+        return TRASH_FAILED;
+    }
+    return recycle_entry(history, true);
+}
+
+static enum category_remove_outcome
+finish_category_removal(const struct persistence_adapter *_Nonnull adapter,
+                        const char *_Nonnull category, HANDLE directory, HANDLE index)
+{
+    enum trash_outcome recycled = recycle_category_history(adapter, category);
+    enum category_remove_outcome outcome = recycled == TRASH_TRASHED || recycled == TRASH_ABSENT
+                                               ? CATEGORY_REMOVE_REMOVED
+                                               : CATEGORY_REMOVE_HISTORY_NOT_RECYCLED;
+    if (outcome == CATEGORY_REMOVE_REMOVED && index != INVALID_HANDLE_VALUE &&
+        !accept_category_disposition(index))
+    {
+        outcome = CATEGORY_REMOVE_FAILED;
+    }
+    if (index != INVALID_HANDLE_VALUE && !CloseHandle(index))
+    {
+        outcome = CATEGORY_REMOVE_FAILED;
+    }
+    if (outcome == CATEGORY_REMOVE_REMOVED && !accept_category_disposition(directory))
+    {
+        outcome = CATEGORY_REMOVE_FAILED;
+    }
+    if (!CloseHandle(directory))
+    {
+        outcome = CATEGORY_REMOVE_FAILED;
+    }
+    return outcome;
+}
+
+static HANDLE inspect_category_index(const struct persistence_adapter *_Nonnull adapter,
+                                     const char *_Nonnull category)
+{
+    wchar_t metadata[path_capacity];
+    if (!compose(adapter, category, L"index.json", metadata))
+    {
+        return INVALID_HANDLE_VALUE;
+    }
+    HANDLE index = open_entry(metadata, DELETE | FILE_READ_ATTRIBUTES, false);
+    if (index == INVALID_HANDLE_VALUE)
+    {
+        return index;
+    }
+    if (!category_entry_allowed(index, false))
+    {
+        CloseHandle(index);
+        return INVALID_HANDLE_VALUE;
+    }
+    return index;
+}
+
+static enum category_remove_outcome
+remove_open_category(const struct persistence_adapter *_Nonnull adapter,
+                     const char *_Nonnull category, const wchar_t *_Nonnull path, HANDLE directory)
+{
+    if (!category_entry_allowed(directory, true))
+    {
+        CloseHandle(directory);
+        return CATEGORY_REMOVE_FAILED;
+    }
+    enum category_contents contents = category_contents_at(path);
+    if (contents == CATEGORY_CONTENTS_UNREADABLE)
+    {
+        CloseHandle(directory);
+        return CATEGORY_REMOVE_FAILED;
+    }
+    if (contents == CATEGORY_CONTENTS_OTHER)
+    {
+        CloseHandle(directory);
+        return CATEGORY_REMOVE_HAS_FILES;
+    }
+    HANDLE index = INVALID_HANDLE_VALUE;
+    if (contents == CATEGORY_CONTENTS_INDEX)
+    {
+        index = inspect_category_index(adapter, category);
+        if (index == INVALID_HANDLE_VALUE)
+        {
+            CloseHandle(directory);
+            return CATEGORY_REMOVE_FAILED;
+        }
+    }
+    return finish_category_removal(adapter, category, directory, index);
+}
+
+static enum category_remove_outcome remove_category(struct persistence_adapter *_Nonnull adapter,
+                                                    const char *_Nonnull category)
+{
+    wchar_t path[path_capacity];
+    if (adapter->lock == nullptr || !journal_absent(adapter) ||
+        !compose(adapter, category, nullptr, path))
+    {
+        return CATEGORY_REMOVE_FAILED;
+    }
+    HANDLE directory = open_entry(path, DELETE | FILE_READ_ATTRIBUTES, true);
+    if (directory != INVALID_HANDLE_VALUE)
+    {
+        return remove_open_category(adapter, category, path, directory);
+    }
+    DWORD error = GetLastError();
+    if (error != ERROR_FILE_NOT_FOUND && error != ERROR_PATH_NOT_FOUND)
+    {
+        return CATEGORY_REMOVE_FAILED;
+    }
+    enum trash_outcome recycled = recycle_category_history(adapter, category);
+    return recycled == TRASH_TRASHED || recycled == TRASH_ABSENT
+               ? CATEGORY_REMOVE_ABSENT
+               : CATEGORY_REMOVE_HISTORY_NOT_RECYCLED;
+}
+
 struct persistence_port persistence_adapter_port(struct persistence_adapter *_Nonnull adapter)
 {
     struct persistence_port port = {
@@ -1535,6 +1714,7 @@ struct persistence_port persistence_adapter_port(struct persistence_adapter *_No
         .write_note = write_note,
         .create_note = create_note,
         .create_category = create_category,
+        .remove_category = remove_category,
         .trash_note = trash_note,
         .move_note = move_note,
         .rename_note = rename_note,
