@@ -25,6 +25,13 @@ bool same_text(const char *_Nonnull actual, const char *_Nonnull expected)
 
 int main(int argc, char *_Nonnull *_Nonnull argv)
 {
+    if (argc == 2 && strcmp(argv[1], "--commands-ui") == 0)
+    {
+        run_command_tests();
+        run_ui_text_tests();
+        printf("command and UI text tests passed\n");
+        return 0;
+    }
     run_text_tests();
     /* eng/coverage.py の反例: 台帳・配置・状態のテストを省いた実行では分岐 90%
      * に届かないことを示す。 */
