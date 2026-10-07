@@ -337,7 +337,7 @@ B3 時点の主窓の入力停止は `trash_running`。C2 で `removal_running` 
 ## 2026-10-08 の補正 5（#202・C1）
 
 空カテゴリの削除を実装する前に、決定 14 の API・結果・失敗境界を次のとおり受理する。
-補正 4 は単位 B3 の別枝で進行中で、統合順は B3 → C1 とする。
+補正 4 は単位 B3 として統合済みで、統合順は B3 → C1 とする。
 
 1. **検査した実体のハンドルで削除を求める。** カテゴリと既存の `index.json` は `DELETE | FILE_READ_ATTRIBUTES`、
    `FILE_SHARE_READ`、`FILE_FLAG_OPEN_REPARSE_POINT`（ディレクトリには `FILE_FLAG_BACKUP_SEMANTICS` も）で開き、

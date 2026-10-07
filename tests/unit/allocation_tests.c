@@ -951,7 +951,7 @@ static bool remove_category_scenario(void)
 {
     static const char *const no_notes[] = {nullptr};
     struct persistence_adapter *adapter = test_adapter_create(categories_text, notes_text);
-    test_adapter_second_notes(adapter, "beta", "{\"version\":1,\"notes\":[]}", no_notes);
+    test_adapter_second_notes(adapter, "B", "{\"version\":1,\"notes\":[]}", no_notes);
     struct persistence_port port = test_adapter_port(adapter);
     struct appearance_port looks = test_appearance_port();
     struct regex_port regex = test_regex_port();

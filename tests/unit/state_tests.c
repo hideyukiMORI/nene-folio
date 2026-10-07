@@ -3832,6 +3832,7 @@ static void verify_remove_category_refusals(void)
 }
 
 static void prepare_trash_preview(struct folio_state *_Nonnull state);
+static void expect_trash_preview_usable(struct folio_state *_Nonnull state);
 
 static void verify_remove_category_preserves_edit(void)
 {
@@ -3856,6 +3857,7 @@ static void verify_remove_category_preserves_edit(void)
                 adapter.history_reads == history_reads && adapter.archives == 0 &&
                 adapter.note_writes == 0,
             "body, rendered pane, preview and history are retained without saving or reloading");
+    expect_trash_preview_usable(state);
     folio_state_destroy(state);
 }
 
@@ -3890,12 +3892,57 @@ static void verify_remove_category_cursor(void)
     folio_state_destroy(state);
 }
 
+static void verify_remove_category_untitled_and_last_cursor(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = empty_category_state(&adapter, "B");
+    require(folio_state_new_note(state, 2) == FOLIO_STATE_READY, "untitled in a later category");
+    const char *body = folio_state_pane_text(state);
+    const char *pane = folio_state_pane_rtf(state);
+    require(folio_state_delete_category(state, 0) == FOLIO_STATE_READY &&
+                folio_state_document_kind(state) == FOLIO_DOCUMENT_UNTITLED &&
+                folio_state_current_category(state) == 1 &&
+                folio_state_pane_mode(state) == PANE_MODE_EDIT &&
+                folio_state_pane_text(state) == body && folio_state_pane_rtf(state) == pane &&
+                adapter.archives == 0 && adapter.note_writes == 0 && adapter.note_reads == 0,
+            "a later untitled destination shifts without saving or recreating its body");
+    folio_state_destroy(state);
+    adapter = healthy_adapter();
+    state = ready_state(&adapter);
+    struct category_name *name = accepted_category_name("last");
+    require(folio_state_create_category(state, name) == FOLIO_STATE_READY &&
+                cursor_on_category(state, 3) &&
+                folio_state_delete_category(state, 3) == FOLIO_STATE_READY &&
+                cursor_on_category(state, 0),
+            "removing the last heading settles on the first remaining category heading");
+    category_name_destroy(name);
+    folio_state_destroy(state);
+}
+
+static void verify_remove_category_pending_rename(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = empty_category_state(&adapter, "B");
+    require(folio_state_select_note(state, 1, 0) == FOLIO_STATE_READY, "select to rename");
+    struct note_name *name = accepted_note_name("renamed");
+    adapter.rename_outcome = RENAME_PENDING;
+    require(folio_state_rename_note(state, name, u"", 0) == FOLIO_STATE_RENAME_PENDING &&
+                folio_state_delete_category(state, 0) == FOLIO_STATE_RENAME_PENDING &&
+                adapter.renames == 2 && adapter.last_attempt == RENAME_RESUME &&
+                adapter.category_removes == 0,
+            "pending rename synchronization prevents the destructive port");
+    note_name_destroy(name);
+    folio_state_destroy(state);
+}
+
 static void verify_remove_categories(void)
 {
     verify_remove_category_outcomes();
     verify_remove_category_refusals();
     verify_remove_category_preserves_edit();
     verify_remove_category_cursor();
+    verify_remove_category_untitled_and_last_cursor();
+    verify_remove_category_pending_rename();
 }
 
 static void verify_later_units(void)
