@@ -43,7 +43,7 @@ Computer Use スキルの全文と `guidance.md` / `api.md` / `confirmations.md`
 | NONEの次 | `current-view` はWM_CLOSE、`current-edit-real-new` は新規、`current-search-switch` は別ノートの選択。明示保存はNOTHING_SELECTED、保存前処理はREADY |
 | 現在文書の台帳失敗 | `current-stale`。後始末済みで失敗の箱1回、通知なし。NONEの保存前処理で台帳を再試行し、拒否中はLEDGER_UNSYNCEDを保つ。書込を許すとREADY、終了可能 |
 | 別ノート | `other-search-small` / `other-replace-small` / `other-history-small` / `other-palette-small` / `other-settings-small` / `other-ex-small`。本文・EDIT・選択・scroll・RichEdit矩形・focus・開いた面・履歴・検索件数・置換下見保持。元の編集をEM_UNDOで戻せる |
-| 入力欄 | 検索・置換・Exは欄の内容、caret、Undo可否も同一。置換は2欄目を対象に確認 |
+| 入力欄 | 検索・Exは欄の内容、caret、Undo可否も同一。置換は第1欄の内容・caret・Undo可否と、第2欄のfocus保持を確認 |
 | 読めない未選択md | `other-unreadable` / `other-unreadable-real`。その行を選ぶ前処理なしでportへ渡り、開いている編集本文を保持 |
 | 無題の本文 | `other-untitled-search-small`。別ノートの操作で無題・未保存本文・Undo・検索欄を保持 |
 | 対象なし・無題コマンド | `none` / `untitled`。portを呼ばず失敗の箱1回。文書の種類とownerのenabledを保持 |
