@@ -54,6 +54,10 @@ struct persistence_adapter
     char created_note[256];
     enum persistence_outcome category_create_outcome; /* create_category が返す結果 */
     size_t category_creates;                          /* create_category が呼ばれた回数 */
+    enum trash_outcome trash_outcome;
+    size_t trashes;
+    char trashed_category[64];
+    char trashed_note[256];
     char created_category[64];          /* 最後に作るよう求められたカテゴリ名（複製） */
     char written_body[256];             /* 最後に書かれた本文（終端付き） */
     const char *_Nullable written_note; /* 最後に書かれたノート名 */
@@ -329,6 +333,18 @@ static enum persistence_outcome fake_write_note(struct persistence_adapter *_Non
     return PERSISTENCE_STORED;
 }
 
+static enum trash_outcome fake_trash_note(struct persistence_adapter *_Nonnull adapter,
+                                          const char *_Nonnull category, const char *_Nonnull note)
+{
+    adapter->trashes += 1;
+    record_call(adapter, "trash_note");
+    require(strlen(category) < sizeof adapter->trashed_category, "trashed category fits");
+    require(strlen(note) < sizeof adapter->trashed_note, "trashed note fits");
+    memcpy(adapter->trashed_category, category, strlen(category) + 1);
+    memcpy(adapter->trashed_note, note, strlen(note) + 1);
+    return adapter->trash_outcome;
+}
+
 static enum persistence_outcome fake_write_note_ledger(struct persistence_adapter *_Nonnull adapter,
                                                        const char *_Nonnull category,
                                                        const struct note_ledger *_Nonnull ledger);
@@ -550,6 +566,7 @@ static struct persistence_adapter healthy_adapter(void)
         .note_writes = 0,
         .create_outcome = PERSISTENCE_STORED,
         .category_create_outcome = PERSISTENCE_STORED,
+        .trash_outcome = TRASH_TRASHED,
         .written_body = {'\0'},
         .written_note = nullptr,
         .written_category = nullptr,
@@ -596,6 +613,7 @@ static struct persistence_port port_for(struct persistence_adapter *_Nonnull ada
         .write_note = fake_write_note,
         .create_note = fake_create_note,
         .create_category = fake_create_category,
+        .trash_note = fake_trash_note,
         .move_note = fake_move_note,
         .rename_note = fake_rename_note,
         .recover_rename = fake_recover_rename,
@@ -2021,6 +2039,11 @@ void test_adapter_second_notes(struct persistence_adapter *_Nonnull adapter,
 size_t test_adapter_category_creates(const struct persistence_adapter *_Nonnull adapter)
 {
     return adapter->category_creates;
+}
+
+size_t test_adapter_trashes(const struct persistence_adapter *_Nonnull adapter)
+{
+    return adapter->trashes;
 }
 
 void test_adapter_destroy(struct persistence_adapter *_Nullable adapter)

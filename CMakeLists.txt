@@ -54,10 +54,13 @@ add_test(NAME folio_unit COMMAND folio_tests)
 nenefolio_target(nenefolio_adapters adapters_win32 STATIC
     src/adapters/win32/file_bytes.c src/adapters/win32/persistence_adapter.c
     src/adapters/win32/appearance_adapter.c src/adapters/win32/regex_adapter.c
-    src/adapters/win32/font_bundle.c)
+    src/adapters/win32/font_bundle.c src/adapters/win32/recycle_item.c)
 nenefolio_link(nenefolio_adapters nenefolio_core)
 nenefolio_link(nenefolio_adapters nenefolio_application)
 nenefolio_system_link(nenefolio_adapters kernel32)
+nenefolio_system_link(nenefolio_adapters shell32)
+nenefolio_system_link(nenefolio_adapters ole32)
+nenefolio_system_link(nenefolio_adapters uuid)
 nenefolio_system_link(nenefolio_adapters advapi32)
 # Windows 同梱の ICU（ADR 0028 の決定 1）。配布物は増えず、版は OS が決める。
 nenefolio_system_link(nenefolio_adapters icu)

@@ -55,4 +55,4 @@ ADR は「なぜそう決めたか」「何を却下したか」を書く。
 | [0037](0037-required-check-verdict.md) | 必須checkは判定jobにし、フルゲートが成功していないhead（Draftのskipped・cancelled）をfailureで止める | 受理 |
 | [0038](0038-history-restore.md) | 現在のノートの履歴（1.md〜5.md）を一覧から選び、選んだ版の本文を編集中の本文へ流し込む（ファイルは触らず、保存は既存の経路） | 受理 |
 | [0039](0039-note-trash-and-category-operations.md) | ノートの削除とカテゴリの作成／削除／改名は単位に分け、対象は行で名指しし、ファイルを真実・台帳を追随とし、消すものはOSのごみ箱へ送る | 受理 |
-| [0040](0040-trash-note-via-recycle-bin.md) | ノートはSHFileOperationWでOSのごみ箱へ送り、送れると確かめられない場所では消さない | 受理 |
+| [0040](0040-trash-note-via-recycle-bin.md) | ノートは専用のITransferSource::RecycleItemでOSのごみ箱へ送り、失敗しても完全削除へ進まない | 受理 |

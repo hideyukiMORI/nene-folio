@@ -9,6 +9,8 @@
 #include "note_ledger.h"
 #include "note_rename.h"
 #include "note_text.h"
+#include "recycle_item.h"
+#include "recycle_readiness.h"
 #include "rename_guards.h"
 #include "rename_journal.h"
 #include "rename_paths.h"
@@ -1402,6 +1404,121 @@ static enum persistence_outcome create_category(struct persistence_adapter *_Non
     return GetLastError() == ERROR_ALREADY_EXISTS ? PERSISTENCE_NAME_TAKEN : PERSISTENCE_UNWRITABLE;
 }
 
+static enum recycle_readiness recycle_open_failure(DWORD error)
+{
+    if (error == ERROR_SHARING_VIOLATION)
+    {
+        return RECYCLE_BUSY;
+    }
+    if (error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND)
+    {
+        return RECYCLE_ABSENT;
+    }
+    return RECYCLE_FAILED;
+}
+
+/* Shell へはハンドルから解いた短い通常 DOS パスだけを渡す。親リンクと subst はここで解ける。 */
+static bool recycle_path(HANDLE handle, wchar_t *_Nonnull out)
+{
+    wchar_t actual[path_capacity];
+    DWORD count = GetFinalPathNameByHandleW(handle, actual, (DWORD)path_capacity,
+                                            FILE_NAME_NORMALIZED | VOLUME_NAME_DOS);
+    if (count < 7 || count >= path_capacity || count - 4 >= MAX_PATH ||
+        memcmp(actual, L"\\\\?\\", 4 * sizeof *actual) != 0 || actual[5] != L':' ||
+        actual[6] != L'\\')
+    {
+        return false;
+    }
+    wchar_t root[] = {actual[4], L':', L'\\', L'\0'};
+    if (GetDriveTypeW(root) != DRIVE_FIXED)
+    {
+        return false;
+    }
+    memcpy(out, actual + 4, (count - 4 + 1) * sizeof *out);
+    return true;
+}
+
+static enum recycle_readiness recycle_prepare(const wchar_t *_Nonnull path, bool directory,
+                                              wchar_t *_Nonnull out)
+{
+    /* BACKUP_SEMANTICS は意図しないディレクトリも開いて種類を明示的に拒むために付ける。 */
+    HANDLE handle = CreateFileW(path, DELETE | FILE_READ_ATTRIBUTES, 0, nullptr, OPEN_EXISTING,
+                                FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+    if (handle == INVALID_HANDLE_VALUE)
+    {
+        return recycle_open_failure(GetLastError());
+    }
+    FILE_ATTRIBUTE_TAG_INFO info;
+    bool supported =
+        GetFileInformationByHandleEx(handle, FileAttributeTagInfo, &info, (DWORD)sizeof info) &&
+        ((info.FileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0) == directory && not_link(handle) &&
+        ntfs_volume(handle) && recycle_path(handle, out);
+    CloseHandle(handle);
+    return supported ? RECYCLE_READY : RECYCLE_UNAVAILABLE;
+}
+
+static enum trash_outcome recycle_refusal(enum recycle_readiness readiness)
+{
+    switch (readiness)
+    {
+    case RECYCLE_READY:
+        return TRASH_FAILED; /* 準備だけで移動成功を返さない。 */
+    case RECYCLE_ABSENT:
+        return TRASH_ABSENT;
+    case RECYCLE_UNAVAILABLE:
+        return TRASH_UNAVAILABLE;
+    case RECYCLE_BUSY:
+        return TRASH_BUSY;
+    case RECYCLE_FAILED:
+        return TRASH_FAILED;
+    }
+}
+
+/* 1 対象を確かめて送る唯一の経路。カテゴリの孤立履歴もこの関数を使う（ADR 0040）。 */
+static enum trash_outcome recycle_entry(const wchar_t *_Nonnull path, bool directory)
+{
+    wchar_t actual[MAX_PATH];
+    enum recycle_readiness readiness = recycle_prepare(path, directory, actual);
+    if (readiness != RECYCLE_READY)
+    {
+        return recycle_refusal(readiness);
+    }
+    return recycle_item_send(actual);
+}
+
+static enum trash_outcome trash_note(struct persistence_adapter *_Nonnull adapter,
+                                     const char *_Nonnull category, const char *_Nonnull note)
+{
+    if (adapter->lock == nullptr || !journal_absent(adapter))
+    {
+        return TRASH_FAILED;
+    }
+    wchar_t md[path_capacity];
+    wchar_t history[path_capacity];
+    wchar_t actual[MAX_PATH];
+    if (!compose_note_path(adapter, category, note, md) ||
+        !compose_history_note(adapter, category, note, history))
+    {
+        return TRASH_UNAVAILABLE;
+    }
+    enum recycle_readiness readiness = recycle_prepare(md, false, actual);
+    if (readiness != RECYCLE_READY && readiness != RECYCLE_ABSENT)
+    {
+        return recycle_refusal(readiness);
+    }
+    enum trash_outcome archived = recycle_entry(history, true);
+    if (archived != TRASH_TRASHED && archived != TRASH_ABSENT)
+    {
+        return archived;
+    }
+    if (readiness == RECYCLE_ABSENT)
+    {
+        return TRASH_ABSENT;
+    }
+    enum trash_outcome sent = recycle_entry(md, false);
+    return sent == TRASH_TRASHED ? TRASH_TRASHED : TRASH_FAILED;
+}
+
 struct persistence_port persistence_adapter_port(struct persistence_adapter *_Nonnull adapter)
 {
     struct persistence_port port = {
@@ -1418,6 +1535,7 @@ struct persistence_port persistence_adapter_port(struct persistence_adapter *_No
         .write_note = write_note,
         .create_note = create_note,
         .create_category = create_category,
+        .trash_note = trash_note,
         .move_note = move_note,
         .rename_note = rename_note,
         .recover_rename = recover_rename,
