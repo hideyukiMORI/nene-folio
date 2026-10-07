@@ -189,6 +189,10 @@ enum ui_text : unsigned char
     UI_TEXT_APP_RECOVERY_LOCKED,
     UI_TEXT_APP_OUT_OF_MEMORY,
     UI_TEXT_APP_NO_WINDOW,
+    UI_TEXT_COMMAND_TRASH_NOTE,
+    UI_TEXT_MENU_TRASH_NOTE,
+    UI_TEXT_TRASH_NOTE_COMPLETED,
+    UI_TEXT_HELP_TRASH_NOTE,
 };
 
 /* 表を 1 回引く。UTF-8 の終端付きで、長さは strlen で取る。表の外の値へは落ちない

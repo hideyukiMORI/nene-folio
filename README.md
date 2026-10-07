@@ -36,6 +36,16 @@ pwsh -NoProfile -File ./eng/check.ps1
 It needs Visual Studio Build Tools with the pinned MSVC toolset and the bundled LLVM 19.1.5, CMake, Ninja and
 Python 3.12 (`eng/tool-versions.json`). Run `pwsh -NoProfile -File ./eng/bootstrap.ps1` once after cloning.
 
+## Move a note to Recycle Bin
+
+Right-click a note row and choose **Move to Recycle Bin** to move that note and its history.
+**Actions**, the command palette, and Ex `:trashnote` / `:trash` target the open named note.
+An edited target is saved first. There is no confirmation dialog.
+
+The bottom line reports **Removed from the list.**, including when the original file was already absent.
+To restore a moved note, restore the note and its history folder separately from Windows Recycle Bin,
+then restart the app.
+
 ## License
 
 MIT. See [LICENSE](LICENSE).

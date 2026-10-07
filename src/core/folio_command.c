@@ -62,6 +62,10 @@ static const struct
                                     UI_TEXT_COMMAND_NEW_CATEGORY,
                                     2,
                                     {"newcategory", "newcat"}},
+    [FOLIO_COMMAND_TRASH_NOTE] = {FOLIO_COMMAND_TRASH_NOTE,
+                                  UI_TEXT_COMMAND_TRASH_NOTE,
+                                  2,
+                                  {"trashnote", "trash"}},
 };
 
 /* 設定の語（ADR 0026 の決定 8）。効果を実装した語だけを並べる。 */
@@ -113,6 +117,7 @@ static enum folio_argument_kind argument_kind(enum folio_command command)
     case FOLIO_COMMAND_SETTINGS:
     case FOLIO_COMMAND_DISCARD_EDITS:
     case FOLIO_COMMAND_HISTORY:
+    case FOLIO_COMMAND_TRASH_NOTE:
         return FOLIO_ARGUMENT_NONE;
     }
     return FOLIO_ARGUMENT_NONE;
@@ -142,6 +147,7 @@ bool folio_command_listed(enum folio_command command)
     case FOLIO_COMMAND_DISCARD_EDITS:
     case FOLIO_COMMAND_HISTORY:
     case FOLIO_COMMAND_NEW_CATEGORY:
+    case FOLIO_COMMAND_TRASH_NOTE:
         return true;
     }
     return true;

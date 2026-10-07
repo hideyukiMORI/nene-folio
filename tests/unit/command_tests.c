@@ -26,6 +26,8 @@ static void verify_aliases(void)
     expect_command(":e!", FOLIO_COMMAND_DISCARD_EDITS, ":e! discards the edits");
     expect_command(" :edit! ", FOLIO_COMMAND_DISCARD_EDITS, ":edit! is the same command");
     expect_command(":history", FOLIO_COMMAND_HISTORY, ":history opens the history list");
+    expect_command(":trashnote", FOLIO_COMMAND_TRASH_NOTE, ":trashnote names the open note");
+    expect_command(" :trash ", FOLIO_COMMAND_TRASH_NOTE, ":trash is the same command");
     expect_command(":hist", FOLIO_COMMAND_HISTORY, ":hist is the same command");
     expect_command(":newcategory", FOLIO_COMMAND_NEW_CATEGORY,
                    ":newcategory alone opens the name prompt");
@@ -184,7 +186,7 @@ static void verify_listed(void)
                                   FOLIO_LANGUAGE_JA),
             "the palette finds the toggle by label");
     /* パレットの箱の高さはこの数で決まる。総数（19）で取ると 2 行ぶん余る（補正 9）。 */
-    require(folio_command_listed_count() == 17, "seventeen operations are offered on a surface");
+    require(folio_command_listed_count() == 18, "eighteen operations are offered on a surface");
     require(folio_command_listed_count() == folio_command_count() - 2,
             "exactly the two unlisted Ex grammars are left out");
     require(folio_command_alias_count(FOLIO_COMMAND_REPLACE) == 0 &&
@@ -241,11 +243,49 @@ static void verify_new_category(void)
             "the palette finds new category by label");
 }
 
+static void verify_trash_note(void)
+{
+    require(folio_command_listed(FOLIO_COMMAND_TRASH_NOTE), "trash is a listed operation");
+    require(folio_command_alias_count(FOLIO_COMMAND_TRASH_NOTE) == 2 &&
+                same_text(folio_command_alias(FOLIO_COMMAND_TRASH_NOTE, 0), "trashnote") &&
+                same_text(folio_command_alias(FOLIO_COMMAND_TRASH_NOTE, 1), "trash"),
+            "the two aliases have one command ID");
+    const char *const labels[] = {"ノートをごみ箱へ移す", "Move note to Recycle Bin",
+                                  "将笔记移到回收站"};
+    for (size_t column = 0; column < folio_language_count; ++column)
+    {
+        enum folio_language language = (enum folio_language)column;
+        require(same_text(folio_command_label(FOLIO_COMMAND_TRASH_NOTE, language), labels[column]),
+                "the command label names its destination in three languages");
+        require(folio_command_matches(FOLIO_COMMAND_TRASH_NOTE, "TRASH", 5, language),
+                "palette filtering finds the alias in every language");
+    }
+    enum folio_command command = FOLIO_COMMAND_HELP;
+    size_t argument = 42;
+    require(!folio_command_parse(":trash file", 11, &command, &argument) &&
+                command == FOLIO_COMMAND_HELP && argument == 42,
+            "a refused argument leaves both outputs untouched");
+}
+
 static void verify_rejections(void)
 {
-    static const char *const rejected[] = {
-        "",   ":",     "W",       "quit!", "enew now",          "unknown",
-        ":e", ":edit", ":e! now", ":view", ":startinsert file", "保存して閲覧"};
+    static const char *const rejected[] = {"",
+                                           ":",
+                                           "W",
+                                           "quit!",
+                                           "enew now",
+                                           "unknown",
+                                           ":e",
+                                           ":edit",
+                                           ":e! now",
+                                           ":view",
+                                           ":startinsert file",
+                                           "保存して閲覧",
+                                           ":trashnote file",
+                                           ":trash file",
+                                           ":trash!",
+                                           ":Trash",
+                                           ":trashnote\tfile"};
     for (size_t index = 0; index < sizeof rejected / sizeof rejected[0]; ++index)
     {
         enum folio_command command = FOLIO_COMMAND_HELP;
@@ -257,7 +297,7 @@ static void verify_rejections(void)
 
 static void verify_catalog(void)
 {
-    require(folio_command_count() == 19, "only implemented commands are registered");
+    require(folio_command_count() == 20, "only implemented commands are registered");
     const enum folio_command expected[] = {
         FOLIO_COMMAND_SAVE,          FOLIO_COMMAND_QUIT,          FOLIO_COMMAND_SAVE_QUIT,
         FOLIO_COMMAND_FORCE_QUIT,    FOLIO_COMMAND_HELP,          FOLIO_COMMAND_EDIT,
@@ -265,7 +305,7 @@ static void verify_catalog(void)
         FOLIO_COMMAND_RENAME,        FOLIO_COMMAND_FIND,          FOLIO_COMMAND_SET,
         FOLIO_COMMAND_TOGGLE_NUMBER, FOLIO_COMMAND_REPLACE,       FOLIO_COMMAND_SUBSTITUTE,
         FOLIO_COMMAND_SETTINGS,      FOLIO_COMMAND_DISCARD_EDITS, FOLIO_COMMAND_HISTORY,
-        FOLIO_COMMAND_NEW_CATEGORY};
+        FOLIO_COMMAND_NEW_CATEGORY,  FOLIO_COMMAND_TRASH_NOTE};
     for (size_t index = 0; index < folio_command_count(); ++index)
     {
         enum folio_command command = folio_command_at(index);
@@ -350,6 +390,7 @@ void run_command_tests(void)
     verify_substitute();
     verify_listed();
     verify_new_category();
+    verify_trash_note();
     verify_ascii_fold();
     verify_case_insensitive_palette();
 }

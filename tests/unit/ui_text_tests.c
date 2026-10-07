@@ -144,6 +144,10 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_COMMAND_SETTINGS] = "設定",
     [UI_TEXT_COMMAND_DISCARD_EDITS] = "編集を破棄して読み直す",
     [UI_TEXT_COMMAND_HISTORY] = "履歴から戻す",
+    [UI_TEXT_COMMAND_TRASH_NOTE] = "ノートをごみ箱へ移す",
+    [UI_TEXT_MENU_TRASH_NOTE] = "ごみ箱へ移す",
+    [UI_TEXT_TRASH_NOTE_COMPLETED] = "一覧から除きました。",
+    [UI_TEXT_HELP_TRASH_NOTE] = "Ex  :trashnote / :trash ノートと履歴をごみ箱へ移す（確認なし）",
     [UI_TEXT_COMMAND_NEW_CATEGORY] = "新しいカテゴリ",
     [UI_TEXT_MENU_RECOLOR] = "色を変える…",
     [UI_TEXT_MENU_RENAME_NOTE] = "名前を変更…",
@@ -268,7 +272,7 @@ static size_t utf16_units_of(const char *_Nonnull utf8)
 /* 表の全 ID が、変更前と 1 字も違わないこと（同一性）。 */
 static void verify_identity(void)
 {
-    require(expected_count == UI_TEXT_APP_NO_WINDOW + 1,
+    require(expected_count == UI_TEXT_HELP_TRASH_NOTE + 1,
             "the expected table covers every id in the enumeration");
     for (size_t index = 0; index < expected_count; ++index)
     {
@@ -564,6 +568,19 @@ static void verify_language(void)
     verify_vocabulary_of(UI_TEXT_SETTINGS_GUIDANCE);
 }
 
+static void verify_trash_notice(void)
+{
+    const char *const lines[] = {"一覧から除きました。", "Removed from the list.",
+                                 "已从列表移除。"};
+    for (size_t column = 0; column < folio_language_count; ++column)
+    {
+        require(same_text(ui_text_line(UI_TEXT_TRASH_NOTE_COMPLETED, (enum folio_language)column),
+                          lines[column]),
+                "the notice reports removal from the list without asserting a move");
+    }
+    verify_vocabulary_of(UI_TEXT_HELP_TRASH_NOTE);
+}
+
 void run_ui_text_tests(void)
 {
     verify_identity();
@@ -573,4 +590,5 @@ void run_ui_text_tests(void)
     verify_format_limits();
     verify_fill();
     verify_language();
+    verify_trash_notice();
 }
