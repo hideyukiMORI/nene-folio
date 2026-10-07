@@ -51,6 +51,8 @@ void test_adapter_history(struct persistence_adapter *_Nonnull adapter, size_t v
 /* create_category が呼ばれた回数（ADR 0039 の決定 10。確保の失敗が port に届かない証拠）。 */
 [[nodiscard]] size_t
 test_adapter_category_creates(const struct persistence_adapter *_Nonnull adapter);
+/* trash_note が呼ばれた回数（ADR 0040。確保失敗が副作用の前で止まる証拠）。 */
+[[nodiscard]] size_t test_adapter_trashes(const struct persistence_adapter *_Nonnull adapter);
 void test_adapter_destroy(struct persistence_adapter *_Nullable adapter);
 /* 常にダークを答える外観ポート。 */
 struct appearance_port;

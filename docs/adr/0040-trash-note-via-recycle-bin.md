@@ -1,9 +1,12 @@
-# ADR 0040 — ノートは `SHFileOperationW` で OS のごみ箱へ送り、送れると確かめられない場所では消さない
+# ADR 0040 — ノートは専用の `ITransferSource::RecycleItem` で OS のごみ箱へ送り、失敗しても完全削除へ進まない
+
+> **現在の正典は末尾の「2026-10-08 の補正（#195）」**。初版の決定 1・2・7・8 と「結果」「却下した選択肢」の API に関する記述を置き換える。
+> 初版の実測と判断は経緯として残す。`SHFileOperationW` を製品へ結ぶ前に、専用 API の実測で判断を改めた。
 
 - 状態: 受理（設計リナ 2026-10-07。実測 `D:\NeNeFolio\design\2026-10-06\recycle-probe\README.md` に基づき、ADR 0039 と同じ読み取り専用の批評
   （`D:\NeNeFolio\agents\169-adr-critique\report.md`）を経て直した。**決定 2 の一部は未測定で、単位 B1 の probe が測ってから実装する**）
 - 日付: 2026-10-07
-- Issue: #169（親）の単位 B（子 Issue は着手時に立てる）
+- Issue: #169（親）、#195（B1: port と adapter）、#196（B2: application）
 - 規則: ARC-001 / ARC-002 / ARC-003 / ARC-007 / ARC-010 / ARC-011、C-002 / C-005 / C-012、CNF-002 / CNF-009 / CNF-011、QLT-009 / QLT-010
 - 関連: ADR 0039（束ね・決定 3〜8・13）、ADR 0008（`LEDGER_STALE`）、ADR 0012（履歴）、ADR 0015（カーソル）、ADR 0020（初回保存の未同期の再試行）、
   ADR 0022（対象を削除と共有しないハンドルで開く・ローカル NTFS・親を守る）、ADR 0038（履歴の面・決定 16 の補正）
@@ -121,3 +124,63 @@ hide の裁定（2026-10-06）は「削除したノートは OS のごみ箱へ�
 | 送れない場所では確認して完全に消す | 分岐する箱を作らない（ADR 0038）。裁定は「ごみ箱へ」 |
 | 消した後に次のノートを開く／次のノートへカーソルだけ置く | 前者は別の md の読み込みの失敗を消す操作の結果に混ぜる。後者はカーソルが選択そのものである今の型で表せない |
 | 編集中の本文を保存せずに送る／UI が先に保存してから意図を呼ぶ | 前者はごみ箱の md が古くなる。後者は「保存が先」を UI の記憶に頼ることになる |
+
+## 2026-10-08 の補正（#195）— 完全削除へ進まない専用 API
+
+設計サナが実物のソース・ログと Microsoft の仕様を照合し、実装の前に受理した。hide の「ごみ箱へ」の裁定と、決定 3〜6 の port・順序・状態遷移は維持する。
+
+### 根拠
+
+- 前回の追加実測（`D:\NeNeFolio\design\2026-10-07\trash-probe-2\`）では、短い履歴フォルダでも長い子があると、
+  `SHFileOperationW` は戻り値 0 のままフォルダごと完全削除した。`SHQueryRecycleBinW` は件数とサイズの照会で、次の削除先を保証しない。
+  固定の葉名 `\1.md.tmp` の長さだけを足す初版の事前判定では、外から加わった長い子を守れない。
+- `IFileOperation` に削除直前の sink を付けると、通常 3 場面はごみ箱へ移り、取消 5 場面（subst・UNC・長いファイル・長い子・常時取消の対照）は元を保持した
+  （`D:\NeNeFolio\design\2026-10-08\trash-callback-probe\report.md`）。ただし固定の COM callback は最大 8 引数で C-012 の例外が必要になる。
+- **専用の `ITransferSource::RecycleItem` は sink を要さない。** 短いファイル、子 2 つのフォルダ、340 文字の子を含む短いフォルダで
+  `COPYENGINE_S_DONT_PROCESS_CHILDREN` と移動後の Shell item を返した。元は無く、ごみ箱の項目と全ての子の本文を確認した。
+  326 文字のファイルは `COPYENGINE_E_RECYCLE_PATH_TOO_LONG`、UNC は `COPYENGINE_E_RECYCLE_BIN_NOT_FOUND` で、元を残して返った
+  （`D:\NeNeFolio\design\2026-10-08\recycleitem-probe\report.md`）。
+- 長いパスの拒否・長い子の成功・UNC の拒否では呼び出し中の隠し窓への WM_APP とタイマー配送は各 0 回だった。Windows 全版で再入しないという保証にはしない。
+
+### 決定 1・2 の置換
+
+1. **呼ぶのは `ITransferSource::RecycleItem` だけ。** 元の Shell item の親から `BHID_Transfer` / `IID_ITransferSource` を得て、
+   `FOLDERID_RecycleBinFolder` の Shell item を宛先に `TSF_NORMAL` で呼ぶ。
+   `SHFileOperationW`・`IFileOperation::DeleteItem`・`ITransferSource::RemoveItem` へのフォールバックは置かない。
+   ごみ箱を使えない設定・場所の拒否を、通常削除へ読み替えない。
+2. **adapter は錠を持ち、未完了の改名記録が無いと確かめてから進む。** 錠なし・記録あり・記録の有無を読めない場合は `FAILED`。
+   `data/` を作る・錠を横取りする経路は足さない。application は既存の同期を先に行う。
+3. **対象の事前確認を残す。** md はファイル、履歴はディレクトリでなければ `UNAVAILABLE`。対象自体を
+   `DELETE | FILE_READ_ATTRIBUTES`・共有なし・`FILE_FLAG_OPEN_REPARSE_POINT`（ディレクトリでは `BACKUP_SEMANTICS` も）で開き、
+   name surrogate を拒む。開けない理由が共有違反なら `BUSY`、ファイル/パス不在なら `ABSENT`、それ以外は `FAILED`。
+   ハンドルの実体パスを取得し、UNC・ローカル NTFS 以外・対象パス自体が 260 文字以上・照会不能を `UNAVAILABLE` にする。
+   `\\?\` を外した実体の絶対パスだけを Shell へ渡す。subst や親のリンクは実体へ解く。
+4. **履歴の子を推測の固定長では検査しない。** 専用 API にディレクトリの移動だけを依頼し、移せない場合に子を完全削除する処理を呼ばない。
+   長い子の内容保持は上記で測った。トップレベルのパス長制限は初版の保守的な境界として残す。
+5. **成功は `SUCCEEDED(hr)` だけでは決めない。** 移動 API が成功し、移動後の Shell item を返したときだけ `TRASHED`。
+   `COPYENGINE_S_NOT_HANDLED` などの処理していない結果や移動後項目なしは成功に数えず、通常削除も追加の削除も行わない。元の残存はこの戻り値だけで断言しない。
+   実装は `S_OK` と実測した `COPYENGINE_S_DONT_PROCESS_CHILDREN` だけを完了候補とする。`S_FALSE` と将来の通知値は完了を証明しない。
+   明示的なごみ箱非対応の HRESULT は `UNAVAILABLE`、それ以外の失敗は `FAILED`。先の open で確かめた共有違反だけを `BUSY` と呼ぶ。
+6. **COM は adapter に閉じる。** 呼び出し中に STA を初期化し、`S_OK` / `S_FALSE` で成功した分だけ、参照を解放した後に `CoUninitialize` する。
+   既存の異なる apartment は `UNAVAILABLE`。自作の COM sink、callback、背景スレッドは足さない。
+   shell32・ole32・uuid（Windows SDK の GUID 定義）を adapters の `nenefolio_system_link` で結ぶ。
+   ole32 / uuid を `platformLibraries.adapters_win32` に追加する。実行時の第三者依存は増えない。
+7. **md 事前確認 → 履歴 → md の順は変えない。** md が事前確認で拒否されたら履歴も動かさない。
+   md 不在でも残った履歴を送り、その後 `ABSENT` を返す。履歴が移った後で md の移動が失敗する可能性は残り、履歴はごみ箱から別に戻せる。
+   「1 対象を確かめて送る」経路を adapter の中で 1 本にし、単位 C もそれを使う。準備完了を `TRASHED` と名付けない。
+
+### 決定 7・8、結果と限界
+
+- UI スレッドの同期呼び出しは維持する。旧 API の「最大 0.7 秒」は新 API の上限ではない。
+  本体を呼び出し中に別の変更意図が入る場合は重ねて実行しない。B1 の実 adapter probe で配送を記録し、B3 が UI の境界を確認する。
+- B1 はこの契約の port・adapter・既存偽 port への結線と、**製品 adapter の実物**を使った隔離 probe を含む。
+  B2 / B3 の分け方は維持する。初版の一般削除 API と新 API を並行して製品へ持ち込まない。
+- OS 設定を変える実測（ごみ箱無効・容量超過）と他の Windows 版は未実施。
+  専用 API の契約に従い、ごみ箱移動以外の API を呼ばないことを構造上の防護とする。実測していない条件を「測定済み」とはしない。
+- 事前確認のハンドルを閉じてから Shell が対象を開くまでの入れ替わり、2 対象の非原子性、別々の復元、トップレベルの長いパスの拒否は残る。
+  初版の「OS 設定による完全削除は利用者の設定に従った結果として扱う」は撤回する。
+- C-012 の引数数に例外を設けない。sink 案は実測成立したが、専用 API で同じ目的をより少ない OS 境界で実現できるため採用しない。
+
+参照: [RecycleItem](https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/nf-shobjidl_core-itransfersource-recycleitem)、
+[ITransferSource](https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/nn-shobjidl_core-itransfersource)、
+[SHQueryRecycleBinW](https://learn.microsoft.com/en-us/windows/win32/api/shellapi/nf-shellapi-shqueryrecyclebinw)。

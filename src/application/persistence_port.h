@@ -10,6 +10,7 @@
 #include "persistence_outcome.h"
 #include "rename_attempt.h"
 #include "rename_outcome.h"
+#include "trash_outcome.h"
 
 struct category_ledger;
 struct folio_settings;
@@ -70,6 +71,11 @@ struct persistence_port
      * （カテゴリは作っていない）。名前は呼ぶ側が検証済み。index.json は作らない。 */
     enum persistence_outcome (*_Nonnull create_category)(
         struct persistence_adapter *_Nonnull adapter, const char *_Nonnull category);
+    /* 錠と記録不在を確認し、md の事前確認 → 履歴 → md の順で OS のごみ箱へ送る。
+     * md が不在でも履歴を送って ABSENT。完全削除への代替は無い（ADR 0040）。 */
+    enum trash_outcome (*_Nonnull trash_note)(struct persistence_adapter *_Nonnull adapter,
+                                              const char *_Nonnull category,
+                                              const char *_Nonnull note);
     /* data/<from_category>/<note>.md を data/<to_category>/ へ移す（ADR 0008 の決定 4）。
      * 移動先に同じ名前の md があれば置き換えずに UNWRITABLE。
      * 名前の文字列は呼び出しの間だけ有効で、実装は複製せずに使い切る（他の関数と同じ約束）。 */
