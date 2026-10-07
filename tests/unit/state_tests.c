@@ -7,10 +7,10 @@
 #include "name_list.h"
 #include "note_ledger.h"
 #include "note_name.h"
-#include "note_rename.h"
 #include "note_text.h"
 #include "persistence_port.h"
 #include "regex_port.h"
+#include "rename_plan.h"
 #include "replace_edit.h"
 #include "ui_font.h"
 #include "unit_tests.h"
@@ -78,16 +78,16 @@ struct persistence_adapter
     char moved_note[64];
     const char *_Nullable move_to; /* 最後の移動先のカテゴリ名 */
     char calls[256];               /* 呼び出しの順（'/' 区切り。move・<カテゴリ>・書いた名前） */
-    enum rename_outcome rename_outcome;  /* rename_note が返す結果 */
+    enum rename_outcome rename_outcome;  /* apply_rename が返す結果 */
     enum rename_outcome recover_outcome; /* 起動時の recover_rename が返す結果 */
-    size_t renames;                      /* rename_note が呼ばれた回数 */
+    size_t renames;                      /* apply_rename が呼ばれた回数 */
     size_t recovers;                     /* recover_rename が呼ばれた回数 */
     /* 最後の意図の名前。意図は呼び出しの間だけ借りるので複製して持つ。 */
     char renamed_category[64];
     char renamed_from[64];
     char renamed_to[64];
     bool journal_published;           /* 記録を公開したまま終わっているか（:q! で残る意図の証拠） */
-    enum rename_attempt last_attempt; /* 最後の rename_note が START か RESUME か */
+    enum rename_attempt last_attempt; /* 最後の apply_rename が START か RESUME か */
     size_t ledger_fail_at; /* この番号（1 始まり）の索引の書き戻しだけ失敗させる。0 なら使わない */
     /* data/settings.json（ADR 0025）。既定は「ファイルが無い」 */
     enum persistence_outcome settings_outcome;
@@ -444,17 +444,24 @@ static void copy_name(char *_Nonnull out, size_t capacity, const char *_Nonnull 
 
 /* 偽の改名。どの段階で止めるかは rename_outcome が決める（ADR 0022）。
  * 記録の公開後に止めた PENDING だけが journal_published を真にし、完了で消える。 */
-static enum rename_outcome fake_rename_note(struct persistence_adapter *_Nonnull adapter,
-                                            const struct note_rename *_Nonnull plan,
-                                            enum rename_attempt attempt)
+static enum rename_outcome fake_apply_rename(struct persistence_adapter *_Nonnull adapter,
+                                             const struct rename_plan *_Nonnull plan,
+                                             enum rename_attempt attempt)
 {
     adapter->renames += 1;
     adapter->last_attempt = attempt;
     record_call(adapter, "rename");
-    copy_name(adapter->renamed_category, sizeof adapter->renamed_category,
-              note_rename_category(plan));
-    copy_name(adapter->renamed_from, sizeof adapter->renamed_from, note_rename_from(plan));
-    copy_name(adapter->renamed_to, sizeof adapter->renamed_to, note_rename_to(plan));
+    switch (rename_plan_kind(plan))
+    {
+    case RENAME_KIND_NOTE:
+        copy_name(adapter->renamed_category, sizeof adapter->renamed_category,
+                  rename_plan_category(plan));
+        break;
+    case RENAME_KIND_CATEGORY:
+        return RENAME_HALTED;
+    }
+    copy_name(adapter->renamed_from, sizeof adapter->renamed_from, rename_plan_from(plan));
+    copy_name(adapter->renamed_to, sizeof adapter->renamed_to, rename_plan_to(plan));
     /* 公開後の 2 値だけが記録を残し、完了で消える。公開前の拒否は data/ を変えない。 */
     if (adapter->rename_outcome == RENAME_PENDING || adapter->rename_outcome == RENAME_HALTED)
     {
@@ -629,7 +636,7 @@ static struct persistence_port port_for(struct persistence_adapter *_Nonnull ada
         .remove_category = fake_remove_category,
         .trash_note = fake_trash_note,
         .move_note = fake_move_note,
-        .rename_note = fake_rename_note,
+        .apply_rename = fake_apply_rename,
         .recover_rename = fake_recover_rename,
         .read_note_ledger = fake_read_note_ledger,
         .write_note_ledger = fake_write_note_ledger,
@@ -3127,7 +3134,7 @@ static void verify_set_number_ignores_resumed_rename(void)
             "the settings change is accepted while a rename is unfinished");
     require(folio_state_set_theme(state, FOLIO_THEME_CHOICE_LIGHT) == FOLIO_STATE_READY,
             "and so is the theme (it never goes through synchronize either)");
-    require(adapter.renames == renames, "it never calls rename_note, not even to resume");
+    require(adapter.renames == renames, "it never calls apply_rename, not even to resume");
     require(adapter.settings_writes == 2 && adapter.written_number &&
                 adapter.written_theme == FOLIO_THEME_CHOICE_LIGHT,
             "and the settings are written once per change");
@@ -3376,7 +3383,7 @@ static void verify_set_language_ignores_resumed_rename(void)
     adapter.rename_outcome = RENAME_COMPLETED;
     require(folio_state_set_language(state, FOLIO_LANGUAGE_EN) == FOLIO_STATE_READY,
             "the language change is accepted while a rename is unfinished");
-    require(adapter.renames == renames, "it never calls rename_note, not even to resume");
+    require(adapter.renames == renames, "it never calls apply_rename, not even to resume");
     folio_state_destroy(state);
 }
 
@@ -3945,7 +3952,7 @@ static void verify_remove_categories(void)
     verify_remove_category_pending_rename();
 }
 
-static void verify_later_units(void)
+void run_rename_state_tests(void)
 {
     verify_rename_refusals();
     verify_rename_saves_first();
@@ -3955,6 +3962,11 @@ static void verify_later_units(void)
     verify_rename_halted();
     verify_rename_force_quit_keeps_intent();
     verify_rename_recovery();
+}
+
+static void verify_later_units(void)
+{
+    run_rename_state_tests();
     verify_search_term();
     verify_index_filter();
     verify_index_filter_refusals();

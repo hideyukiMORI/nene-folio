@@ -56,8 +56,8 @@
 | キャレット（caret） | 本文の挿入位置と選択範囲。索引のカーソルとは別で、RichEdit自身が唯一の所有者。Ctrl＋hjklも部品の移動機能を呼ぶ | `note_pane`（ui/win32）・`ITextSelection`・ADR0019 |
 | 別名保存（save as） | 現在の本文を新しいmdへ保存してそちらを開く。元のmd/履歴は保存済みの状態を保つ。閲覧では表示文字ではなくMarkdown原文を使う | `FOLIO_COMMAND_SAVE_AS`→`folio_state_store_new`・ADR0021 |
 | 名前変更（rename） | 現在のノートのmdと履歴ディレクトリを、同じカテゴリの新しい名前へ移すこと。台帳の位置は変わらない | `FOLIO_COMMAND_RENAME`→`folio_state_rename_note`・ADR0022 |
-| 改名の意図（rename intent） | カテゴリ・旧名・新名・完成後の台帳を持つ不透明な値。副作用の前に確保し、未完了なら application が 1 つだけ保持する | `struct note_rename`（core）・ADR0022 の決定 2 |
-| 復旧記録（rename journal） | `data/.rename.json`。版 1 の改名の意図と、元 md・元履歴の 128bit 識別子を持つ。これがあるあいだ改名は未完了 | `struct rename_journal`（core）・ADR0022 の決定 5 |
+| 改名の意図（rename intent） | NOTE / CATEGORY の閉じた種別・旧名・新名・完成後の専用台帳を持つ不透明な値。NOTEだけ親カテゴリを持ち、副作用の前に確保し、未完了なら application が 1 つだけ保持する | `struct rename_plan`（core）・ADR0041 の決定 1 |
+| 復旧記録（rename journal） | `data/.rename.json`。新規は種別付き版2だけを出力し、版1はNOTEへ正規化して読む。完成後の台帳と、本体・履歴のvolume64＋file128識別子を持つ。記録があるあいだ改名は未完了 | `struct rename_journal`（core）・ADR0041 の決定 2 |
 | 錠（data lock） | `data/.nenefolio.lock` を共有なしで開いたまま持つハンドル。同じ `data/` を使うプロセスを 1 つに直列化する。ファイルは残ってよく、所有は OS のハンドルが決める | `persistence_adapter`（adapters/win32）・ADR0022 の決定 3 |
 | ノート内検索（in-note search） | 現在表示中のノートの中だけを探し、一致を RichEdit の選択 1 つで示すこと。全ノートの本文で索引を絞り込む検索（FR-032 / #40）とは対象も語も別 | `note_search`（core）・`folio_state_search_term`（application）・ADR 0023 |
 | 検索の向き（search direction） | 前方（`/`・「次へ」）か後方（`?`・「前へ」）の閉じた選択肢。application が「直前の方向」を 1 つ覚え、`N` の一回きりの逆向きでは変わらない | `enum search_direction`（core）・`folio_state_search_direction`（application） |

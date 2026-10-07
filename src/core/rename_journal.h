@@ -4,18 +4,19 @@
 #include "rename_journal_outcome.h"
 #include <stddef.h>
 struct rename_journal;
-struct note_rename;
+struct rename_plan;
 struct json_writer;
 /* volume64（16桁）+file128（32桁）の小文字hex。履歴だけ空を許し、元履歴なしを表す。 */
 constexpr size_t rename_journal_id_length = 48;
 [[nodiscard]] enum rename_journal_outcome
 rename_journal_parse(const char *_Nonnull text, size_t length,
                      struct rename_journal *_Nullable *_Nonnull out);
-/* 新しい空のwriterへ完全な版1の文書を出力。planと識別子は呼出し中だけ借りる。 */
+/* 新しい空の writer へ種別付きの版2だけを出力。版1は読取時にNOTEへ正規化する。
+ * plan と識別子は呼出し中だけ借りる。parse 失敗時は out 不変。 */
 [[nodiscard]] enum rename_journal_outcome
-rename_journal_write(const struct note_rename *_Nonnull rename, const char *_Nonnull file_id,
+rename_journal_write(const struct rename_plan *_Nonnull rename, const char *_Nonnull file_id,
                      const char *_Nonnull history_id, struct json_writer *_Nonnull writer);
-[[nodiscard]] const struct note_rename *_Nonnull rename_journal_rename(
+[[nodiscard]] const struct rename_plan *_Nonnull rename_journal_rename(
     const struct rename_journal *_Nonnull journal);
 [[nodiscard]] const char *_Nonnull rename_journal_file_id(
     const struct rename_journal *_Nonnull journal);

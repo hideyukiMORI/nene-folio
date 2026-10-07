@@ -103,7 +103,9 @@ static enum category_ledger_outcome unexpected(enum json_token token)
 
 static bool expect_key(struct json_reader *_Nonnull reader, const char *_Nonnull key)
 {
-    return json_reader_next(reader) == JSON_TOKEN_KEY && strcmp(json_reader_text(reader), key) == 0;
+    return json_reader_next(reader) == JSON_TOKEN_KEY &&
+           json_reader_text_length(reader) == strlen(key) &&
+           strcmp(json_reader_text(reader), key) == 0;
 }
 
 static bool expect_version(struct json_reader *_Nonnull reader, uint32_t *_Nonnull version)
@@ -191,16 +193,15 @@ static enum category_ledger_outcome parse_document(struct json_reader *_Nonnull 
     {
         return outcome;
     }
-    if (json_reader_next(reader) != JSON_TOKEN_OBJECT_END ||
-        json_reader_next(reader) != JSON_TOKEN_END)
+    if (json_reader_next(reader) != JSON_TOKEN_OBJECT_END)
     {
         return CATEGORY_LEDGER_MALFORMED;
     }
     return CATEGORY_LEDGER_ACCEPTED;
 }
 
-enum category_ledger_outcome category_ledger_parse(const char *_Nonnull text, size_t length,
-                                                   struct category_ledger *_Nullable *_Nonnull out)
+enum category_ledger_outcome category_ledger_read(struct json_reader *_Nonnull reader,
+                                                  struct category_ledger *_Nullable *_Nonnull out)
 {
     struct category_ledger *_Nullable ledger = nullptr;
     enum category_ledger_outcome outcome = category_ledger_empty(&ledger);
@@ -208,13 +209,33 @@ enum category_ledger_outcome category_ledger_parse(const char *_Nonnull text, si
     {
         return outcome;
     }
+    outcome = parse_document(reader, ledger);
+    if (outcome != CATEGORY_LEDGER_ACCEPTED)
+    {
+        category_ledger_destroy(ledger);
+        /* 構文検査の途中で起きた reader の OOM は sticky token から拾う。 */
+        return outcome == CATEGORY_LEDGER_MALFORMED ? unexpected(json_reader_next(reader))
+                                                    : outcome;
+    }
+    *out = ledger;
+    return CATEGORY_LEDGER_ACCEPTED;
+}
+
+enum category_ledger_outcome category_ledger_parse(const char *_Nonnull text, size_t length,
+                                                   struct category_ledger *_Nullable *_Nonnull out)
+{
     struct json_reader *_Nullable reader = nullptr;
     if (json_reader_create(text, length, &reader) != JSON_READER_CREATED)
     {
-        category_ledger_destroy(ledger);
         return CATEGORY_LEDGER_OUT_OF_MEMORY;
     }
-    outcome = parse_document(reader, ledger);
+    struct category_ledger *_Nullable ledger = nullptr;
+    enum category_ledger_outcome outcome = category_ledger_read(reader, &ledger);
+    if (outcome == CATEGORY_LEDGER_ACCEPTED)
+    {
+        enum json_token token = json_reader_next(reader);
+        outcome = token == JSON_TOKEN_END ? CATEGORY_LEDGER_ACCEPTED : unexpected(token);
+    }
     json_reader_destroy(reader);
     if (outcome != CATEGORY_LEDGER_ACCEPTED)
     {
@@ -251,21 +272,27 @@ void category_ledger_write(const struct category_ledger *_Nonnull ledger,
     json_writer_object_end(writer);
 }
 
+/* 名前だけを選び直し、元の色と展開を同じ位置へ写す。 */
+static enum category_ledger_outcome copy_named(struct category_ledger *_Nonnull target,
+                                               const struct category_ledger *_Nonnull source,
+                                               size_t index, const char *_Nonnull name)
+{
+    enum category_ledger_outcome outcome = append(target, name, strlen(name));
+    if (outcome == CATEGORY_LEDGER_ACCEPTED)
+    {
+        size_t last = name_list_count(target->names) - 1;
+        target->colors[last] = source->colors[index];
+        target->expanded[last] = source->expanded[index];
+    }
+    return outcome;
+}
+
 /* source の index 番目を色と展開ごと target の末尾へ写す。 */
 static enum category_ledger_outcome copy_entry(struct category_ledger *_Nonnull target,
                                                const struct category_ledger *_Nonnull source,
                                                size_t index)
 {
-    const char *_Nonnull name = name_list_at(source->names, index);
-    enum category_ledger_outcome outcome = append(target, name, strlen(name));
-    if (outcome != CATEGORY_LEDGER_ACCEPTED)
-    {
-        return outcome;
-    }
-    size_t last = name_list_count(target->names) - 1;
-    target->colors[last] = source->colors[index];
-    target->expanded[last] = source->expanded[index];
-    return CATEGORY_LEDGER_ACCEPTED;
+    return copy_named(target, source, index, name_list_at(source->names, index));
 }
 
 static enum category_ledger_outcome merge(struct category_ledger *_Nonnull target,
@@ -429,6 +456,33 @@ category_ledger_removed(const struct category_ledger *_Nonnull ledger, size_t in
     if (outcome == CATEGORY_LEDGER_ACCEPTED)
     {
         outcome = copy_range(target, ledger, index + 1, name_list_count(ledger->names));
+    }
+    if (outcome != CATEGORY_LEDGER_ACCEPTED)
+    {
+        category_ledger_destroy(target);
+        return outcome;
+    }
+    *out = target;
+    return CATEGORY_LEDGER_ACCEPTED;
+}
+
+enum category_ledger_outcome
+category_ledger_renamed(const struct category_ledger *_Nonnull ledger, size_t index,
+                        const struct category_name *_Nonnull name,
+                        struct category_ledger *_Nullable *_Nonnull out)
+{
+    size_t count = name_list_count(ledger->names);
+    if (index >= count)
+    {
+        return CATEGORY_LEDGER_MALFORMED;
+    }
+    struct category_ledger *_Nullable target = nullptr;
+    enum category_ledger_outcome outcome = category_ledger_empty(&target);
+    for (size_t entry = 0; outcome == CATEGORY_LEDGER_ACCEPTED && entry < count; ++entry)
+    {
+        const char *_Nonnull text =
+            entry == index ? category_name_text(name) : name_list_at(ledger->names, entry);
+        outcome = copy_named(target, ledger, entry, text);
     }
     if (outcome != CATEGORY_LEDGER_ACCEPTED)
     {

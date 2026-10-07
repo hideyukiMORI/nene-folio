@@ -9,10 +9,11 @@ constexpr size_t rename_path_capacity = 1024;
 
 struct rename_paths
 {
-    wchar_t note_from[rename_path_capacity];
-    wchar_t note_to[rename_path_capacity];
+    wchar_t body_from[rename_path_capacity];
+    wchar_t body_to[rename_path_capacity];
     wchar_t history_from[rename_path_capacity];
     wchar_t history_to[rename_path_capacity];
+    bool body_directory;
 };
 
 #endif
