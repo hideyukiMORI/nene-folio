@@ -322,3 +322,14 @@ ClaudeCode の NeNe Folioリナが `design:design-critique` / `design:ux-copy` �
    简体中文は母語話者の確認を得ていない。
 
 参照: [EnableWindow](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-enablewindow)。
+
+### B3 実装補足（#197）
+
+完了の印は `trash_completed` だけで、`set_trash_completed` が立て下げと面の配置更新を受け持つ。
+主窓の入力停止には別の `trash_running` を使い、閉じた業務結果とは混ぜない。
+`trash_note_at` は押した行を直接 application へ渡す。別文書では本文を再描画する経路へ入らない。
+
+台帳が古い結果では後始末が済んでから失敗の箱を開く。実UI probeで、別ノートの処理中に
+検索・置換・履歴が開いていると、箱を閉じた後のフォーカスが主窓に戻ることを確認した。
+この操作の受け口で元の有効な HWND へ返す。置換では2欄目を1欄目へ変えず、元の欄へ戻す。
+測定条件と未確認範囲は [B3 の確認記録](../quality/2026-10-08-trash-ui-checks.md) に分けて記録する。

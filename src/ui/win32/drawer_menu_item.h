@@ -9,7 +9,8 @@ enum drawer_menu_item : unsigned char
 {
     DRAWER_MENU_RECOLOR,
     DRAWER_MENU_RENAME_NOTE,
-    DRAWER_MENU_NEW_CATEGORY
+    DRAWER_MENU_NEW_CATEGORY,
+    DRAWER_MENU_TRASH_NOTE
 };
 
 #endif

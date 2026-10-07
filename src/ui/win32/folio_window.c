@@ -75,6 +75,8 @@ struct folio_window
     size_t command_help_first;
     bool command_composing;
     bool command_unknown;
+    bool trash_completed;
+    bool trash_running;
     /* `:%s` が 1 件も一致しなかった。欄は閉じず、置換の欄と同じ 1 行を出す（ADR 0028 の補正） */
     bool command_no_match;
     enum folio_state_outcome command_failure;
@@ -105,7 +107,7 @@ static const enum ui_text command_shortcuts[] = {
     UI_TEXT_HELP_EX_SET_THEME,  UI_TEXT_HELP_EX_SET_LANGUAGE, UI_TEXT_HELP_REPLACE_FIELD,
     UI_TEXT_HELP_EX_SUBSTITUTE, UI_TEXT_HELP_SEARCH_KEYS,     UI_TEXT_HELP_SEARCH_STEP,
     UI_TEXT_HELP_SEARCH_FIELD,  UI_TEXT_HELP_INDEX_MOTION,    UI_TEXT_HELP_INDEX_FOLD,
-    UI_TEXT_HELP_INDEX_SCROLL,  UI_TEXT_HELP_EDITOR_ESCAPE,
+    UI_TEXT_HELP_INDEX_SCROLL,  UI_TEXT_HELP_EDITOR_ESCAPE,   UI_TEXT_HELP_TRASH_NOTE,
 };
 
 /* 設定画面の行（ADR 0031 の決定 7・ADR 0032 の決定 7）。見出しと選択肢を**種別で**持ち、
@@ -272,6 +274,8 @@ static enum folio_state_outcome store_body(const struct folio_window *_Nonnull s
 static enum folio_state_outcome command_save_as(const struct folio_window *_Nonnull self,
                                                 const char *_Nonnull argument);
 static void close_command_surface(struct folio_window *_Nonnull self);
+static void set_trash_completed(struct folio_window *_Nonnull self, bool completed);
+static bool holds_document(const struct folio_window *_Nonnull self, struct note_ref target);
 static void decorate(HWND handle, struct folio_palette palette);
 static void render_pane(const struct folio_window *_Nonnull self);
 static void show_settings_surface(struct folio_window *_Nonnull self,
@@ -407,6 +411,7 @@ static void focus_command_input(struct folio_window *_Nonnull self)
 /* 欄の上の 1 行を消す（失敗・未知の操作・`:%s` の 0 件）。 */
 static void clear_command_status(struct folio_window *_Nonnull self)
 {
+    set_trash_completed(self, false);
     self->command_unknown = false;
     self->command_no_match = false;
     self->command_failure = FOLIO_STATE_READY;
@@ -461,6 +466,13 @@ static void refresh_font(struct folio_window *_Nonnull self, UINT dpi)
     self->digit_width = measure_digit(self, dpi);
 }
 
+/* 完了の 1 行は本文の既存余白だけを使い、面の下端に同じ高さを予約する。 */
+static int trash_notice_height(const struct folio_window *_Nonnull self)
+{
+    return self->trash_completed ? scale(base_command_status_height, GetDpiForWindow(self->handle))
+                                 : 0;
+}
+
 static RECT command_palette_rect(const struct folio_window *_Nonnull self)
 {
     RECT client;
@@ -480,7 +492,8 @@ static RECT command_palette_rect(const struct folio_window *_Nonnull self)
     int top = scale(client.bottom < scale(480, dpi) ? base_command_palette_compact_top
                                                     : base_command_palette_top,
                     dpi);
-    int available_height = client.bottom - top - scale(base_command_palette_edge, dpi);
+    int available_height =
+        client.bottom - trash_notice_height(self) - top - scale(base_command_palette_edge, dpi);
     if (height > available_height)
     {
         height = available_height;
@@ -493,6 +506,7 @@ static RECT command_ex_rect(const struct folio_window *_Nonnull self)
 {
     RECT client;
     GetClientRect(self->handle, &client);
+    client.bottom -= trash_notice_height(self);
     UINT dpi = GetDpiForWindow(self->handle);
     int status = self->command_failure != FOLIO_STATE_READY || self->command_unknown ||
                          self->command_no_match
@@ -508,6 +522,7 @@ static RECT command_search_rect(const struct folio_window *_Nonnull self)
 {
     RECT client;
     GetClientRect(self->handle, &client);
+    client.bottom -= trash_notice_height(self);
     UINT dpi = GetDpiForWindow(self->handle);
     RECT bounds = {0, client.bottom - scale(base_ex_height + base_command_status_height, dpi),
                    client.right, client.bottom};
@@ -519,6 +534,7 @@ static RECT command_replace_rect(const struct folio_window *_Nonnull self)
 {
     RECT client;
     GetClientRect(self->handle, &client);
+    client.bottom -= trash_notice_height(self);
     UINT dpi = GetDpiForWindow(self->handle);
     RECT bounds = {0, client.bottom - scale(base_ex_height * 2 + base_command_status_height, dpi),
                    client.right, client.bottom};
@@ -739,6 +755,18 @@ static void arrange_command_input(struct folio_window *_Nonnull self)
     ShowWindow(self->command_input, hidden ? SW_HIDE : SW_SHOW);
     ShowWindow(self->command_layer, SW_SHOW);
     BringWindowToTop(self->command_layer);
+}
+
+/* 印の立て下げと面の配置更新はここだけ。本文の HWND と矩形には触らない。 */
+static void set_trash_completed(struct folio_window *_Nonnull self, bool completed)
+{
+    if (self->trash_completed == completed)
+    {
+        return;
+    }
+    self->trash_completed = completed;
+    arrange_command_input(self);
+    InvalidateRect(self->handle, nullptr, FALSE);
 }
 
 /* 常設の欄はドロワーの頭の帯に重ねる。寸法はドロワーが答える（ADR 0024 の決定 6）。
@@ -1976,6 +2004,20 @@ static void draw_gutter(const struct folio_window *_Nonnull self, HDC device, RE
     RestoreDC(device, saved);
 }
 
+static void draw_trash_notice(const struct folio_window *_Nonnull self, HDC device, RECT client)
+{
+    if (!self->trash_completed)
+    {
+        return;
+    }
+    UINT dpi = GetDpiForWindow(self->handle);
+    RECT bounds = {pane_bounds(self).left, client.bottom - trash_notice_height(self),
+                   client.right - scale(base_close_margin, dpi), client.bottom};
+    SetTextColor(device, self->palette.header_text);
+    draw_utf8(device, ui_text_line(UI_TEXT_TRASH_NOTE_COMPLETED, folio_state_language(self->state)),
+              bounds);
+}
+
 /* 右ペインの地と頭。本文は note_pane が持つ。 */
 static void draw_pane(const struct folio_window *_Nonnull self, HDC device, RECT client,
                       RECT damage)
@@ -1996,6 +2038,7 @@ static void draw_pane(const struct folio_window *_Nonnull self, HDC device, RECT
     draw_actions(self, device);
     SetTextCharacterExtra(device, 0);
     draw_gutter(self, device, damage);
+    draw_trash_notice(self, device, client);
 }
 
 /* 更新矩形と右ペインの重なりへ、client 座標のまま 1 枚だけ描き写す。
@@ -2100,6 +2143,7 @@ static void focus_pane(const struct folio_window *_Nonnull self)
  * 編集中は本文を平文で流し込むだけで、フォーカスは動かさない。 */
 static enum folio_state_outcome show_note(struct folio_window *_Nonnull self)
 {
+    set_trash_completed(self, false);
     if (folio_state_pane_mode(self->state) == PANE_MODE_VIEW)
     {
         render_pane(self);
@@ -2183,7 +2227,11 @@ static enum folio_state_outcome store_body(const struct folio_window *_Nonnull s
 {
     if (folio_state_pane_mode(self->state) == PANE_MODE_VIEW)
     {
-        return folio_state_store_note(self->state, u"", 0);
+        enum folio_state_outcome outcome = folio_state_store_note(self->state, u"", 0);
+        return outcome == FOLIO_STATE_NOTHING_SELECTED &&
+                       folio_state_document_kind(self->state) == FOLIO_DOCUMENT_NONE
+                   ? FOLIO_STATE_READY
+                   : outcome;
     }
     if (folio_state_document_kind(self->state) == FOLIO_DOCUMENT_UNTITLED)
     {
@@ -3563,6 +3611,94 @@ static void execute_new_category_command(struct folio_window *_Nonnull self,
     finish_new_category(self, create_category(self, argument));
 }
 
+/* 一時的な入力停止と失敗の箱の後で、元の有効な欄だけへ戻す。 */
+static void restore_trash_focus(HWND _Nullable focus)
+{
+    if (focus != nullptr && IsWindow(focus) && IsWindowEnabled(focus) && IsWindowVisible(focus) &&
+        GetFocus() != focus)
+    {
+        SetFocus(focus);
+    }
+}
+
+/* 同期の Shell 境界で入力を止める。元の面とフォーカスは別文書の操作では保つ。 */
+static enum folio_state_outcome run_trash_note(struct folio_window *_Nonnull self,
+                                               struct note_ref target)
+{
+    const char16_t *units = u"";
+    size_t count = 0;
+    if (holds_document(self, target) && folio_state_pane_mode(self->state) == PANE_MODE_EDIT)
+    {
+        enum folio_state_outcome outcome = take_text(self, &units, &count);
+        if (outcome != FOLIO_STATE_READY)
+        {
+            return outcome;
+        }
+    }
+    HWND focus = GetFocus();
+    bool enabled = IsWindowEnabled(self->handle) != 0;
+    self->trash_running = true;
+    EnableWindow(self->handle, FALSE);
+    enum folio_state_outcome outcome = folio_state_trash_note(self->state, target, units, count);
+    EnableWindow(self->handle, enabled);
+    if (enabled)
+    {
+        restore_trash_focus(focus);
+    }
+    self->trash_running = false;
+    return outcome;
+}
+
+/* 入口に依らず押した対象を直接渡す。別文書の本文を流し込み直す経路は持たない。 */
+static void trash_note_at(struct folio_window *_Nonnull self, struct note_ref target)
+{
+    if (self->trash_running)
+    {
+        return;
+    }
+    bool current = holds_document(self, target);
+    HWND focus = GetFocus();
+    enum folio_state_outcome outcome = run_trash_note(self, target);
+    if (outcome != FOLIO_STATE_READY && outcome != FOLIO_STATE_LEDGER_STALE)
+    {
+        command_failure(self, outcome);
+        return;
+    }
+    if (current)
+    {
+        hide_command_surface(self);
+        render_pane(self);
+        arrange(self);
+        SetFocus(self->handle);
+    }
+    redraw_drawer(self);
+    InvalidateRect(self->handle, nullptr, FALSE);
+    if (outcome == FOLIO_STATE_LEDGER_STALE)
+    {
+        failure_box_show(self->handle, outcome, self->state);
+        if (!current)
+        {
+            restore_trash_focus(focus);
+        }
+        return;
+    }
+    set_trash_completed(self, true);
+}
+
+static void execute_trash_note_command(struct folio_window *_Nonnull self,
+                                       const char *_Nonnull argument)
+{
+    (void)argument;
+    struct note_ref target = {.category = 0, .note = 0};
+    if (folio_state_document_kind(self->state) != FOLIO_DOCUMENT_NAMED ||
+        !folio_state_selection(self->state, &target))
+    {
+        command_failure(self, FOLIO_STATE_NOTHING_SELECTED);
+        return;
+    }
+    trash_note_at(self, target);
+}
+
 static void execute_find_command(struct folio_window *_Nonnull self, const char *_Nonnull argument)
 {
     (void)argument;
@@ -3600,12 +3736,18 @@ static void (*_Nonnull const command_runs[])(struct folio_window *_Nonnull self,
     [FOLIO_COMMAND_DISCARD_EDITS] = execute_discard_command,
     [FOLIO_COMMAND_HISTORY] = execute_history_command,
     [FOLIO_COMMAND_NEW_CATEGORY] = execute_new_category_command,
+    [FOLIO_COMMAND_TRASH_NOTE] = execute_trash_note_command,
 };
 
 /* GUI・キー・Exで同じ操作と引数を実行する（ADR0020）。 */
 static void execute_command(struct folio_window *_Nonnull self, enum folio_command command,
                             const char *_Nonnull argument)
 {
+    if (self->trash_running)
+    {
+        return;
+    }
+    set_trash_completed(self, false);
     command_runs[command](self, argument);
 }
 
@@ -3646,6 +3788,11 @@ static enum folio_state_outcome opened(struct folio_window *_Nonnull self,
 static enum folio_state_outcome switch_note(struct folio_window *_Nonnull self, size_t category,
                                             size_t note)
 {
+    if (self->trash_running)
+    {
+        return FOLIO_STATE_CANCELLED;
+    }
+    set_trash_completed(self, false);
     enum folio_state_outcome outcome = save_edit(self);
     if (outcome != FOLIO_STATE_READY)
     {
@@ -3685,8 +3832,16 @@ static void rename_from_drawer(struct folio_window *_Nonnull self, struct note_r
 static void run_drawer_menu(struct folio_window *_Nonnull self, enum drawer_menu_item item,
                             const struct note_ref *_Nonnull target)
 {
+    if (self->trash_running)
+    {
+        return;
+    }
+    set_trash_completed(self, false);
     switch (item)
     {
+    case DRAWER_MENU_TRASH_NOTE:
+        trash_note_at(self, *target);
+        return;
     case DRAWER_MENU_RECOLOR:
         /* 色はドロワーが自分で色の選択を開く（決定 12 の例外）。ここへは来ないので何もしない。 */
         return;
@@ -4804,7 +4959,7 @@ static LRESULT CALLBACK command_input_procedure(HWND window, UINT message, WPARA
     {
         return 0;
     }
-    if (message == WM_KILLFOCUS)
+    if (message == WM_KILLFOCUS && !self->trash_running)
     {
         PostMessageW(self->handle, folio_message_command_focus_lost, 0, 0);
     }
@@ -5334,7 +5489,10 @@ static LRESULT CALLBACK command_layer_procedure(HWND window, UINT message, WPARA
         redraw_command_layer(self);
         return 0;
     case WM_KILLFOCUS:
-        PostMessageW(self->handle, folio_message_command_focus_lost, 0, 0);
+        if (!self->trash_running)
+        {
+            PostMessageW(self->handle, folio_message_command_focus_lost, 0, 0);
+        }
         return 0;
     case WM_KEYDOWN:
         if (command_key_down(self, wparam))
@@ -5393,6 +5551,10 @@ static LRESULT window_finalized(HWND window, UINT message, WPARAM wparam, LPARAM
 
 static void dismiss_command_if_focus_moved(struct folio_window *_Nonnull self)
 {
+    if (self->trash_running)
+    {
+        return;
+    }
     HWND focus = GetFocus();
     bool moved_within_window = focus != nullptr && !command_owns(self, focus) &&
                                GetAncestor(focus, GA_ROOT) == self->handle;
@@ -5519,6 +5681,11 @@ static void system_colors_changed(struct folio_window *_Nonnull self, LPARAM lpa
 static LRESULT on_input_message(struct folio_window *_Nonnull self, UINT message, WPARAM wparam,
                                 LPARAM lparam)
 {
+    if (self->trash_running && (message == WM_COMMAND || message == WM_KEYDOWN ||
+                                message == WM_CHAR || message == WM_CLOSE))
+    {
+        return 0;
+    }
     switch (message)
     {
     case WM_COMMAND:
@@ -5571,7 +5738,10 @@ static LRESULT on_message(struct folio_window *_Nonnull self, UINT message, WPAR
     case WM_ERASEBKGND:
         return 1;
     case WM_LBUTTONDOWN:
-        click_caption(self, lparam);
+        if (!self->trash_running)
+        {
+            click_caption(self, lparam);
+        }
         return 0;
     case WM_NOTIFY:
         return on_notify(self, lparam);
