@@ -206,7 +206,6 @@ hide の裁定（2026-10-06）は「削除したノートは OS のごみ箱へ�
 参照: [RecycleItem](https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/nf-shobjidl_core-itransfersource-recycleitem)、
 [ITransferSource](https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/nn-shobjidl_core-itransfersource)、
 [SHQueryRecycleBinW](https://learn.microsoft.com/en-us/windows/win32/api/shellapi/nf-shellapi-shqueryrecyclebinw)。
-<<<<<<< HEAD
 
 ## 2026-10-08 の補正（#196）— 移動を確認できない結果の文言
 
@@ -214,5 +213,3 @@ hide の裁定（2026-10-06）は「削除したノートは OS のごみ箱へ�
 `FAILED` は移動後のエラーや移動先の Shell item を取得できなかった場合も含み、元ファイルの残存を保証しない。
 3 言語の文言は「ごみ箱への移動を確認できなかった。ファイルとごみ箱を確認してほしい。履歴だけ先に移った場合がある」を伝える。
 application は確認済みの `TRASHED` / `ABSENT` だけを成功として採用し、`FAILED` では既存の選択と表示を保つ。未確認の実体を表示状態から断言しない。
-=======
->>>>>>> main
