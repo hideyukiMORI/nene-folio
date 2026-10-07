@@ -46,6 +46,18 @@ The bottom line reports **Removed from the list.**, including when the original 
 To restore a moved note, restore the note and its history folder separately from Windows Recycle Bin,
 then restart the app.
 
+## Delete an empty category
+
+Right-click a category row and choose **Delete category**. **Actions**, the command palette,
+and Ex `:deletecategory` / `:delcat` use the cursor's category, or the open document's category
+when there is no cursor. Select a category first if neither exists.
+
+A category containing notes or an unsaved document is refused. Other files in its folder and
+active index filtering also prevent deletion. Orphaned history goes to Recycle Bin before the
+empty folder is removed. There is no confirmation dialog or success notice.
+Deleting another category preserves the open document, its edits and Undo, and search or replace fields.
+If the category ledger cannot be saved after deletion, the list updates and an error is shown.
+
 ## License
 
 MIT. See [LICENSE](LICENSE).

@@ -326,7 +326,7 @@ ClaudeCode の NeNe Folioリナが `design:design-critique` / `design:ux-copy` �
 ### B3 実装補足（#197）
 
 完了の印は `trash_completed` だけで、`set_trash_completed` が立て下げと面の配置更新を受け持つ。
-主窓の入力停止には別の `trash_running` を使い、閉じた業務結果とは混ぜない。
+B3 時点の主窓の入力停止は `trash_running`。C2 で `removal_running` に改め、カテゴリ削除と共有する。閉じた業務結果とは混ぜない。
 `trash_note_at` は押した行を直接 application へ渡す。別文書では本文を再描画する経路へ入らない。
 
 台帳が古い結果では後始末が済んでから失敗の箱を開く。実UI probeで、別ノートの処理中に
@@ -407,3 +407,12 @@ C1 の空カテゴリ削除を利用者の入口へ接続する前に、UI の�
    実 UI は C2 の追加境界だけを隔離データで確認する。最後のカテゴリを消した後も、カテゴリ作成から再開できること、
    別カテゴリの編集中本文／無題／Undo／開いた面とフォーカスを保持すること、拒否と台帳失敗を測定する。
    C1 の実体削除と B3 の通知の成功済み測定は繰り返さない。保存 schema・依存・ゲートは変えない。Waivers: none。
+
+### C2 実装補足（#205）
+
+カテゴリ行とコマンドは `delete_category_at` に集めた。対象解決は `delete_category_target` でcursorの有無を問い、
+現在文書が名前付き／無題のときだけ `folio_state_document_category` を使う。対象なしの専用結果は失敗の箱へ分類する。
+`removal_running` と `block_removal_input` / `release_removal_input` がノートとカテゴリ両操作の同期入力停止を受け持つ。
+`restore_removal_focus` は一時停止と箱の後の有効な元HWNDへ戻す。カテゴリ完了はdrawerのrevealとパンくずのinvalidateだけで、
+RichEditをrenderしない。Ex／パレットの面を閉じた場合も、そこにfocusがあったときだけ索引へ戻す。
+測定条件と未確認範囲は [C2 の確認記録](../quality/2026-10-08-category-delete-ui-checks.md) に記録する。
