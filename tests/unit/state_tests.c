@@ -11,6 +11,7 @@
 #include "note_text.h"
 #include "persistence_port.h"
 #include "regex_port.h"
+#include "replace_edit.h"
 #include "ui_font.h"
 #include "unit_tests.h"
 
@@ -1640,10 +1641,10 @@ static void verify_edit_guards(void)
             "no body before selection");
     require(folio_state_begin_edit(state) == FOLIO_STATE_NOTHING_SELECTED, "nothing selected");
     require(folio_state_pane_mode(state) == PANE_MODE_VIEW, "the refused intent keeps view");
-    require(folio_state_store_note(state, u"x", 1) == FOLIO_STATE_READY,
-            "view save only synchronizes");
-    require(folio_state_end_edit(state, u"x", 1) == FOLIO_STATE_READY,
-            "already viewing is idempotent");
+    require(folio_state_store_note(state, u"x", 1) == FOLIO_STATE_NOTHING_SELECTED,
+            "saving NONE synchronizes and then refuses without writing");
+    require(folio_state_end_edit(state, u"x", 1) == FOLIO_STATE_NOTHING_SELECTED,
+            "ending edit with NONE also refuses without writing");
     require(adapter.note_writes == 0, "refused intents never write");
     folio_state_destroy(state);
 }
@@ -1949,6 +1950,11 @@ static const char *_Nonnull const expected_failure_lines[] = {
     [FOLIO_STATE_CATEGORY_LEDGER_STALE] =
         "カテゴリは反映しましたが、台帳（categories.json）を書き戻せませんでした。"
         "表示はフォルダに従い、次に台帳を書くときに揃います。",
+    [FOLIO_STATE_TRASH_UNAVAILABLE] = "この場所ではごみ箱を使えないため、ノートを移していません。",
+    [FOLIO_STATE_TRASH_BUSY] = "ほかのプログラムが使用中のため、ノートを移していません。",
+    [FOLIO_STATE_TRASH_FAILED] =
+        "ごみ箱への移動を確認できませんでした。ファイルとごみ箱を確認してください。"
+        "履歴だけ移っている場合があります。",
 };
 
 static void verify_failure_lines(void)
@@ -3762,6 +3768,293 @@ static void verify_later_units(void)
     verify_create_categories();
 }
 
+static void prepare_trash_preview(struct folio_state *_Nonnull state)
+{
+    require(folio_state_begin_edit(state) == FOLIO_STATE_READY, "edit for trash preview");
+    struct replace_request request = {.text = u"# Hello\n\nbody",
+                                      .length = 13,
+                                      .pattern = u"body",
+                                      .pattern_length = 4,
+                                      .replacement = u"new",
+                                      .replacement_length = 3};
+    require(folio_state_preview_replace(state, &request) == FOLIO_STATE_READY &&
+                folio_state_replace_count(state) == 1,
+            "preview before trash");
+}
+
+static void verify_trash_current(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    adapter.history[1] = "old";
+    struct folio_state *state = history_state(&adapter);
+    require(folio_state_open_history(state) == FOLIO_STATE_READY, "history before trash");
+    size_t reads = adapter.note_reads;
+    require(folio_state_trash_note(state, at(0, 0), u"ignored", 7) == FOLIO_STATE_READY,
+            "trash the viewed current note");
+    require(folio_state_document_kind(state) == FOLIO_DOCUMENT_NONE &&
+                folio_state_pane_mode(state) == PANE_MODE_VIEW &&
+                folio_state_pane_text_length(state) == 0 && folio_state_history_count(state) == 0,
+            "current deletion leaves an empty view without history");
+    expect_cursor(state, "-", "current deletion has no cursor");
+    require(adapter.note_reads == reads && adapter.note_writes == 0 && adapter.trashes == 1,
+            "view deletion neither writes nor reads a next note");
+    require(same_text(adapter.trashed_category, "B") && same_text(adapter.trashed_note, "one") &&
+                same_text(adapter.ledger_order, "two/three"),
+            "explicit target and reduced ledger");
+    require(folio_state_store_note(state, u"must not write", 14) == FOLIO_STATE_NOTHING_SELECTED &&
+                adapter.note_writes == 0,
+            "NONE never writes to the compacted next note");
+    folio_state_destroy(state);
+
+    adapter = healthy_adapter();
+    adapter.history[1] = "old";
+    state = history_state(&adapter);
+    require(folio_state_open_history(state) == FOLIO_STATE_READY, "history before edit trash");
+    prepare_trash_preview(state);
+    require(folio_state_trash_note(state, at(0, 0), u"changed", 7) == FOLIO_STATE_READY,
+            "trash an edited note after saving");
+    require(same_text(adapter.calls, "archive/write/trash_note/B/two/three") &&
+                same_text(adapter.written_body, "changed"),
+            "archive and write precede trash and the reduced ledger");
+    require(folio_state_replace_count(state) == 0 && folio_state_history_count(state) == 0 &&
+                folio_state_document_kind(state) == FOLIO_DOCUMENT_NONE,
+            "current removal discards preview and history");
+    folio_state_destroy(state);
+}
+
+static void expect_trash_preview_usable(struct folio_state *_Nonnull state)
+{
+    struct replace_apply apply = {.text = u"# Hello\n\nbody",
+                                  .length = 13,
+                                  .anchor = {.start = 0, .end = 0},
+                                  .scope = REPLACE_ALL};
+    struct replace_edit *edit = nullptr;
+    require(folio_state_apply_replace(state, &apply, &edit) == FOLIO_STATE_READY,
+            "the kept preview still applies to the same document after index compaction");
+    replace_edit_destroy(edit);
+}
+
+static void verify_trash_other(void)
+{
+    const struct note_ref targets[] = {at(0, 0), at(0, 2), at(1, 0)};
+    for (size_t index = 0; index < 3; ++index)
+    {
+        struct persistence_adapter adapter = healthy_adapter();
+        adapter.history[1] = "old";
+        struct folio_state *state = ready_state(&adapter);
+        require(folio_state_select_note(state, 0, 1) == FOLIO_STATE_READY &&
+                    folio_state_open_history(state) == FOLIO_STATE_READY,
+                "select and history");
+        prepare_trash_preview(state);
+        const char *body = folio_state_pane_text(state);
+        const char *pane = folio_state_pane_rtf(state);
+        const struct note_text *history = folio_state_history_body(state, 0);
+        size_t reads = adapter.note_reads;
+        adapter.missing_note = index == 0 ? "one" : "three";
+        require(folio_state_trash_note(state, targets[index], u"unsaved editor", 14) ==
+                    FOLIO_STATE_READY,
+                "trash a different note, including an unreadable target");
+        require(keeps_document(state, at(0, index == 0 ? 0 : 1), PANE_MODE_EDIT) &&
+                    folio_state_pane_text(state) == body && folio_state_pane_rtf(state) == pane &&
+                    folio_state_history_body(state, 0) == history &&
+                    folio_state_replace_count(state) == 1,
+                "only the selected index is remapped");
+        require(adapter.note_reads == reads && adapter.note_writes == 0 && adapter.archives == 0,
+                "a different target never saves or rereads the current editor");
+        expect_trash_preview_usable(state);
+        folio_state_destroy(state);
+    }
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_new_note(state, 0) == FOLIO_STATE_READY, "untitled editor");
+    const char *body = folio_state_pane_text(state);
+    require(folio_state_trash_note(state, at(0, 0), u"unsaved", 7) == FOLIO_STATE_READY &&
+                folio_state_document_kind(state) == FOLIO_DOCUMENT_UNTITLED &&
+                folio_state_pane_mode(state) == PANE_MODE_EDIT &&
+                folio_state_pane_text(state) == body && adapter.note_writes == 0,
+            "a different target preserves an untitled editor");
+    require(folio_state_store_note(state, u"unsaved", 7) == FOLIO_STATE_NAME_REQUIRED,
+            "untitled saving keeps its existing rejection");
+    folio_state_destroy(state);
+}
+
+static void verify_trash_failures(void)
+{
+    const enum trash_outcome failures[] = {TRASH_UNAVAILABLE, TRASH_BUSY, TRASH_FAILED};
+    const enum folio_state_outcome expected[] = {FOLIO_STATE_TRASH_UNAVAILABLE,
+                                                 FOLIO_STATE_TRASH_BUSY, FOLIO_STATE_TRASH_FAILED};
+    for (size_t index = 0; index < 3; ++index)
+    {
+        struct persistence_adapter adapter = healthy_adapter();
+        adapter.trash_outcome = failures[index];
+        adapter.history[1] = "old";
+        struct folio_state *state = history_state(&adapter);
+        require(folio_state_open_history(state) == FOLIO_STATE_READY, "history before failure");
+        prepare_trash_preview(state);
+        const char *body = folio_state_pane_text(state);
+        const char *pane = folio_state_pane_rtf(state);
+        const struct note_text *history = folio_state_history_body(state, 0);
+        require(folio_state_trash_note(state, at(0, 0), u"# Hello\n\nbody", 13) == expected[index],
+                "trash failures map to their closed application outcomes");
+        require(keeps_document(state, at(0, 0), PANE_MODE_EDIT) &&
+                    folio_state_pane_text(state) == body && folio_state_pane_rtf(state) == pane &&
+                    folio_state_history_body(state, 0) == history &&
+                    folio_state_replace_count(state) == 1 && adapter.ledger_writes == 0,
+                "failed trash preserves the selection, display, history, preview and ledger");
+        folio_state_destroy(state);
+    }
+    struct persistence_adapter adapter = healthy_adapter();
+    adapter.trash_outcome = TRASH_ABSENT;
+    struct folio_state *state = history_state(&adapter);
+    require(folio_state_trash_note(state, at(0, 0), u"", 0) == FOLIO_STATE_READY &&
+                folio_state_document_kind(state) == FOLIO_DOCUMENT_NONE &&
+                same_text(adapter.ledger_order, "two/three"),
+            "ABSENT adopts exactly like TRASHED");
+    folio_state_destroy(state);
+}
+
+static void verify_trash_save_failure(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = history_state(&adapter);
+    require(folio_state_begin_edit(state) == FOLIO_STATE_READY, "edit before failed save");
+    adapter.archive_outcome = PERSISTENCE_UNWRITABLE;
+    require(folio_state_trash_note(state, at(0, 0), u"changed", 7) == FOLIO_STATE_HISTORY_FAILED &&
+                adapter.trashes == 0 && adapter.note_writes == 0,
+            "history failure blocks trash");
+    adapter.archive_outcome = PERSISTENCE_STORED;
+    adapter.note_write_outcome = PERSISTENCE_UNWRITABLE;
+    require(folio_state_trash_note(state, at(0, 0), u"changed", 7) ==
+                    FOLIO_STATE_NOTE_STORE_FAILED &&
+                adapter.trashes == 0 && keeps_document(state, at(0, 0), PANE_MODE_EDIT),
+            "save failure blocks trash and preserves the document");
+    adapter.note_write_outcome = PERSISTENCE_STORED;
+    adapter.trash_outcome = TRASH_FAILED;
+    require(folio_state_trash_note(state, at(0, 0), u"changed", 7) == FOLIO_STATE_TRASH_FAILED &&
+                same_text(folio_state_pane_text(state), "changed") &&
+                keeps_document(state, at(0, 0), PANE_MODE_EDIT),
+            "a successful pre-trash save remains adopted when trash fails");
+    folio_state_destroy(state);
+}
+
+static void verify_trash_ledger_retry(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = history_state(&adapter);
+    adapter.ledger_write_outcome = PERSISTENCE_UNWRITABLE;
+    require(folio_state_trash_note(state, at(0, 0), u"", 0) == FOLIO_STATE_LEDGER_STALE &&
+                folio_state_document_kind(state) == FOLIO_DOCUMENT_NONE && adapter.trashes == 1,
+            "the actual deletion is adopted even when the ledger cannot be written");
+    size_t writes = adapter.ledger_writes;
+    require(folio_state_trash_note(state, at(9, 0), u"", 0) == FOLIO_STATE_NO_SUCH_CATEGORY &&
+                folio_state_trash_note(state, at(0, 9), u"", 0) == FOLIO_STATE_NO_SUCH_NOTE &&
+                adapter.ledger_writes == writes,
+            "range rejection precedes pending synchronization");
+    require(folio_state_store_note(state, u"never write", 11) == FOLIO_STATE_LEDGER_UNSYNCED &&
+                adapter.ledger_writes == writes + 1 && adapter.note_writes == 0,
+            "NONE still retries the pending ledger before rejecting save");
+    adapter.ledger_write_outcome = PERSISTENCE_STORED;
+    require(folio_state_store_note(state, u"never write", 11) == FOLIO_STATE_NOTHING_SELECTED &&
+                same_text(adapter.ledger_order, "two/three") && adapter.note_writes == 0,
+            "retry repairs the reduced ledger and never writes another note");
+    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY &&
+                same_text(folio_state_document_name(state), "two"),
+            "the next note is explicitly selected");
+    folio_state_destroy(state);
+}
+
+static void verify_trash_synchronization(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = history_state(&adapter);
+    struct note_name *name = accepted_note_name("renamed");
+    adapter.rename_outcome = RENAME_PENDING;
+    require(folio_state_rename_note(state, name, u"", 0) == FOLIO_STATE_RENAME_PENDING,
+            "pending rename before trash");
+    size_t renames = adapter.renames;
+    require(folio_state_trash_note(state, at(0, 9), u"", 0) == FOLIO_STATE_NO_SUCH_NOTE &&
+                adapter.renames == renames,
+            "invalid trash does not resume the pending rename");
+    require(folio_state_trash_note(state, at(0, 0), u"", 0) == FOLIO_STATE_RENAME_PENDING &&
+                adapter.renames == renames + 1 && adapter.trashes == 0,
+            "unfinished synchronization blocks trash before preparation and side effects");
+    adapter.rename_outcome = RENAME_COMPLETED;
+    require(folio_state_trash_note(state, at(0, 0), u"", 0) == FOLIO_STATE_READY &&
+                same_text(adapter.trashed_note, "renamed") && adapter.trashes == 1,
+            "successful synchronization supplies the canonical renamed target to trash");
+    note_name_destroy(name);
+    folio_state_destroy(state);
+}
+
+static void verify_trash_filter(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = history_state(&adapter);
+    require(folio_state_set_index_filter(state, u"two", 3) == FOLIO_STATE_READY,
+            "filter a later note");
+    require(folio_state_scroll_drawer(state, scroll_metrics, 10) == FOLIO_STATE_READY,
+            "scroll request");
+    int top = scrolled_top(state);
+    size_t reads = adapter.note_reads;
+    require(folio_state_trash_note(state, at(0, 0), u"", 0) == FOLIO_STATE_READY &&
+                folio_state_index_filter_count(state) == 3 &&
+                same_text(folio_state_index_filter_term(state), "two") &&
+                adapter.note_reads == reads,
+            "nonmatch deletion keeps the term and maps later matches without rereading");
+    require(scrolled_top(state) == top, "trash retains the scroll request");
+    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY &&
+                same_text(folio_state_document_name(state), "two"),
+            "mapped match selects the right note");
+    require(folio_state_trash_note(state, at(0, 0), u"", 0) == FOLIO_STATE_READY &&
+                folio_state_index_filter_count(state) == 2,
+            "last match in this category disappears");
+    require(folio_state_set_index_filter(state, u"one", 3) == FOLIO_STATE_READY &&
+                folio_state_index_filter_count(state) == 2,
+            "removed cache entry cannot reappear on requery");
+    folio_state_destroy(state);
+}
+
+static void verify_trash_hidden_category_cursor(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    static const char *const only_note[] = {"four", nullptr};
+    test_adapter_second_notes(&adapter, "A", "{\"version\": 1, \"notes\": [\"four\"]}", only_note);
+    adapter.rare_note = "four";
+    adapter.rare_body = "needle";
+    struct folio_state *state = history_state(&adapter);
+    for (size_t index = 0; index < 3; ++index)
+    {
+        require(folio_state_select_adjacent(state, FOLIO_STEP_NEXT) == FOLIO_STATE_READY,
+                "step through B notes into collapsed A");
+    }
+    require(cursor_on_category(state, 1), "cursor on collapsed A before filtering");
+    struct note_ref selected = {.category = 0, .note = 0};
+    require(folio_state_selection(state, &selected), "the current B document stays selected");
+    const char *body = folio_state_pane_text(state);
+    require(folio_state_set_index_filter(state, u"needle", 6) == FOLIO_STATE_READY &&
+                folio_state_index_filter_count(state) == 1 && cursor_on_category(state, 1),
+            "only A's note matches, with a category cursor retained");
+    require(folio_state_trash_note(state, at(1, 0), u"", 0) == FOLIO_STATE_READY &&
+                folio_state_index_filter_count(state) == 0 &&
+                keeps_document(state, selected, PANE_MODE_VIEW) &&
+                folio_state_pane_text(state) == body,
+            "removing the category's last match preserves the current document");
+    expect_cursor(state, "-", "the cursor does not remain on the now hidden category");
+    folio_state_destroy(state);
+}
+
+static void verify_trash_all(void)
+{
+    verify_trash_current();
+    verify_trash_other();
+    verify_trash_failures();
+    verify_trash_save_failure();
+    verify_trash_ledger_retry();
+    verify_trash_synchronization();
+    verify_trash_filter();
+    verify_trash_hidden_category_cursor();
+}
+
 void run_state_tests(void)
 {
     finder = test_regex_port();
@@ -3810,4 +4103,5 @@ void run_state_tests(void)
     verify_history_all();
     verify_history_gaps();
     verify_later_units();
+    verify_trash_all();
 }

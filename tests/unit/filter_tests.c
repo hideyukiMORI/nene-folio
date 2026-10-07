@@ -319,6 +319,59 @@ static void verify_corpus(void)
     note_corpus_destroy(corpus);
 }
 
+static void verify_removed_filter(void)
+{
+    const struct index_filter_entry entries[] = {
+        entry_of(at(0, 0), "zero", "needle"), entry_of(at(0, 1), "one", "plain"),
+        entry_of(at(0, 2), "two", "needle"), entry_of(at(1, 0), "other", "needle")};
+    struct index_filter *filter = filter_of("needle", entries, 4);
+    struct index_filter *removed = nullptr;
+    require(index_filter_removed(filter, at(0, 1), &removed) == INDEX_FILTER_ACCEPTED,
+            "remove a nonmatching note");
+    require(index_filter_count(removed) == 3 && index_filter_note(removed, at(0, 0)) &&
+                index_filter_note(removed, at(0, 1)) && !index_filter_note(removed, at(0, 2)) &&
+                index_filter_note(removed, at(1, 0)),
+            "later matches renumber even when the target did not match");
+    require(index_filter_count(filter) == 3 && index_filter_note(filter, at(0, 2)),
+            "the input stays immutable");
+    index_filter_destroy(removed);
+    require(index_filter_removed(filter, at(0, 0), &removed) == INDEX_FILTER_ACCEPTED &&
+                index_filter_count(removed) == 2 && !index_filter_note(removed, at(0, 0)) &&
+                index_filter_note(removed, at(0, 1)) && index_filter_note(removed, at(1, 0)),
+            "remove a matching note and keep the other category");
+    struct index_filter *last = nullptr;
+    require(index_filter_removed(removed, at(0, 1), &last) == INDEX_FILTER_ACCEPTED &&
+                index_filter_count(last) == 1 && !index_filter_category(last, 0) &&
+                index_filter_category(last, 1),
+            "removing the last match hides only that category");
+    index_filter_destroy(last);
+    index_filter_destroy(removed);
+    index_filter_destroy(filter);
+}
+
+static void verify_removed_corpus(void)
+{
+    struct note_corpus *corpus = nullptr;
+    struct note_text *text = text_of("kept body");
+    require(note_corpus_create(&corpus) == NOTE_CORPUS_ACCEPTED, "removal corpus");
+    require(note_corpus_put(corpus, "A", "one", text) == NOTE_CORPUS_ACCEPTED &&
+                note_corpus_put(corpus, "A", "two", text) == NOTE_CORPUS_ACCEPTED &&
+                note_corpus_put(corpus, "B", "one", text) == NOTE_CORPUS_ACCEPTED,
+            "corpus destinations");
+    note_corpus_remove(corpus, "A", "absent");
+    note_corpus_remove(corpus, "A", "one");
+    require(note_corpus_body(corpus, "A", "one") == nullptr &&
+                note_corpus_body(corpus, "A", "two") != nullptr &&
+                note_corpus_body(corpus, "B", "one") != nullptr,
+            "only the removed destination disappears, including the moved last slot");
+    note_corpus_remove(corpus, "A", "one");
+    require(note_corpus_put(corpus, "A", "one", text) == NOTE_CORPUS_ACCEPTED &&
+                same_text(note_text_bytes(note_corpus_body(corpus, "A", "one")), "kept body"),
+            "the removed name can receive a fresh cache entry");
+    note_text_destroy(text);
+    note_corpus_destroy(corpus);
+}
+
 void run_filter_tests(void)
 {
     verify_folding();
@@ -328,4 +381,6 @@ void run_filter_tests(void)
     verify_order();
     verify_layout();
     verify_corpus();
+    verify_removed_filter();
+    verify_removed_corpus();
 }

@@ -99,6 +99,12 @@ static void discard(struct note_corpus *_Nonnull corpus, size_t index)
     corpus->bodies[index] = corpus->bodies[corpus->count];
 }
 
+void note_corpus_remove(struct note_corpus *_Nonnull corpus, const char *_Nonnull category,
+                        const char *_Nonnull note)
+{
+    discard(corpus, locate(corpus, category, note));
+}
+
 /* index の写しの宛先を新しい名前へ差し替える。確保に失敗したら古い名前のまま。 */
 static enum note_corpus_outcome rekey(struct note_corpus *_Nonnull corpus, size_t index,
                                       const char *_Nonnull category, const char *_Nonnull note)

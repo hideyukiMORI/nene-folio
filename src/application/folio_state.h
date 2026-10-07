@@ -140,6 +140,12 @@ folio_state_create_category(struct folio_state *_Nonnull state,
  * ノート数と等しければ末尾。移動先に同じ名前があれば NAME_TAKEN で何もしない。 */
 [[nodiscard]] enum folio_state_outcome
 folio_state_move_note(struct folio_state *_Nonnull state, struct note_ref from, struct note_ref to);
+/* 指定ノートと履歴をごみ箱へ移す（ADR 0040）。現在の編集中の文書だけ先に保存する。
+ * 成功なら現在文書は NONE / VIEW、別ノートなら本文とモードを保つ。 */
+[[nodiscard]] enum folio_state_outcome folio_state_trash_note(struct folio_state *_Nonnull state,
+                                                              struct note_ref target,
+                                                              const char16_t *_Nonnull units,
+                                                              size_t count);
 /* ノートを選び、本文を読んで右ペインの表示値を作る（FR-005）。読めなければ表示は変えない。
  * 表示モードは変えない（ADR 0013 の決定 4）。 */
 [[nodiscard]] enum folio_state_outcome folio_state_select_note(struct folio_state *_Nonnull state,

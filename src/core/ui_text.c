@@ -209,6 +209,19 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
          "The index follows the folders until the next write.",
          "分类已应用，但无法写回台账（categories.json）。"
          "显示以文件夹为准，下次写入台账时将自动对齐。"},
+    [UI_TEXT_FAILURE_TRASH_UNAVAILABLE] =
+        {"この場所ではごみ箱を使えないため、ノートを移していません。",
+         "The Recycle Bin is unavailable here. The note was not moved.",
+         "此位置无法使用回收站。笔记未移动。"},
+    [UI_TEXT_FAILURE_TRASH_BUSY] = {"ほかのプログラムが使用中のため、ノートを移していません。",
+                                    "Another program is using it. The note was not moved.",
+                                    "其他程序正在使用它。笔记未移动。"},
+    [UI_TEXT_FAILURE_TRASH_FAILED] =
+        {"ごみ箱への移動を確認できませんでした。ファイルとごみ箱を確認してください。"
+         "履歴だけ移っている場合があります。",
+         "Could not confirm the move to the Recycle Bin. Check the files and Recycle Bin; "
+         "history may have moved first.",
+         "无法确认是否已移入回收站。请检查文件和回收站，历史记录可能已先行移动。"},
     [UI_TEXT_COMMAND_SAVE] = {"保存", "Save", "保存"},
     [UI_TEXT_COMMAND_QUIT] = {"保存済みなら終了", "Quit if saved", "已保存则退出"},
     [UI_TEXT_COMMAND_SAVE_QUIT] = {"保存して終了", "Save and quit", "保存并退出"},
