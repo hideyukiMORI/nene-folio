@@ -1975,6 +1975,10 @@ static enum folio_state_outcome save_note(struct folio_state *_Nonnull state,
     {
         return synced;
     }
+    if (state->document == FOLIO_DOCUMENT_NONE)
+    {
+        return FOLIO_STATE_NOTHING_SELECTED;
+    }
     if (state->mode == PANE_MODE_VIEW)
     {
         return FOLIO_STATE_READY;
@@ -2217,6 +2221,146 @@ enum folio_state_outcome folio_state_rename_note(struct folio_state *_Nonnull st
     }
     /* 一致集合の作り直しは完了した改名を受け取る `adopt_rename` が行う（補正 3）。 */
     return rename_selected(state, name);
+}
+
+static bool trashing_current(const struct folio_state *_Nonnull state, struct note_ref target)
+{
+    return state->document == FOLIO_DOCUMENT_NAMED && state->selected_category == target.category &&
+           state->selected_note == target.note;
+}
+
+static enum folio_state_outcome from_trash(enum trash_outcome outcome)
+{
+    switch (outcome)
+    {
+    case TRASH_TRASHED:
+    case TRASH_ABSENT:
+        return FOLIO_STATE_READY;
+    case TRASH_UNAVAILABLE:
+        return FOLIO_STATE_TRASH_UNAVAILABLE;
+    case TRASH_BUSY:
+        return FOLIO_STATE_TRASH_BUSY;
+    case TRASH_FAILED:
+        return FOLIO_STATE_TRASH_FAILED;
+    }
+    return FOLIO_STATE_TRASH_FAILED;
+}
+
+/* 名前の借用は旧台帳を破棄するより先に使い切る。採用後の同期は確保を要しない。 */
+static enum folio_state_outcome publish_trash(struct folio_state *_Nonnull state,
+                                              struct note_ref target,
+                                              struct note_ledger *_Nonnull ledger,
+                                              struct index_filter *_Nullable filter)
+{
+    const char *_Nonnull category = category_ledger_name(state->categories, target.category);
+    const char *_Nonnull note = note_ledger_name(state->notes[target.category], target.note);
+    enum folio_state_outcome moved =
+        from_trash(state->port.trash_note(state->port.adapter, category, note));
+    if (moved != FOLIO_STATE_READY)
+    {
+        note_ledger_destroy(ledger);
+        index_filter_destroy(filter);
+        return moved;
+    }
+    note_corpus_remove(state->corpus, category, note);
+    note_ledger_destroy(state->notes[target.category]);
+    state->notes[target.category] = ledger;
+    index_filter_destroy(state->filter);
+    state->filter = filter;
+    if (state->document == FOLIO_DOCUMENT_NAMED && state->selected_category == target.category &&
+        state->selected_note > target.note)
+    {
+        state->selected_note -= 1;
+    }
+    state->index_pending = true;
+    state->pending_category = target.category;
+    return published_index(synchronize_index(state));
+}
+
+/* 現在文書の空の表示も port より先に用意する。失敗なら準備物を捨てるだけである。 */
+static enum folio_state_outcome finish_trash(struct folio_state *_Nonnull state,
+                                             struct note_ref target,
+                                             struct note_ledger *_Nonnull ledger,
+                                             struct index_filter *_Nullable filter)
+{
+    bool current = trashing_current(state, target);
+    struct note_text *_Nullable body = nullptr;
+    struct markdown_rtf *_Nullable pane = nullptr;
+    if (current && (note_text_create("", 0, &body) != NOTE_TEXT_ACCEPTED ||
+                    markdown_rtf_empty(state->palette, ui_font_face(folio_state_language(state)),
+                                       &pane) != MARKDOWN_RTF_CONVERTED))
+    {
+        note_text_destroy(body);
+        markdown_rtf_destroy(pane);
+        note_ledger_destroy(ledger);
+        index_filter_destroy(filter);
+        return FOLIO_STATE_OUT_OF_MEMORY;
+    }
+    enum folio_state_outcome outcome = publish_trash(state, target, ledger, filter);
+    if (current && (outcome == FOLIO_STATE_READY || outcome == FOLIO_STATE_LEDGER_STALE))
+    {
+        note_text_destroy(state->body);
+        markdown_rtf_destroy(state->pane);
+        state->body = body;
+        state->pane = pane;
+        state->document = FOLIO_DOCUMENT_NONE;
+        state->mode = PANE_MODE_VIEW;
+        state->cursor_any = false;
+        replace_preview_destroy(state->preview);
+        state->preview = nullptr;
+        state->replace_offset = 0;
+        folio_state_close_history(state);
+        return outcome;
+    }
+    if (outcome == FOLIO_STATE_READY || outcome == FOLIO_STATE_LEDGER_STALE)
+    {
+        settle_cursor(state);
+    }
+    note_text_destroy(body);
+    markdown_rtf_destroy(pane);
+    return outcome;
+}
+
+enum folio_state_outcome folio_state_trash_note(struct folio_state *_Nonnull state,
+                                                struct note_ref target,
+                                                const char16_t *_Nonnull units, size_t count)
+{
+    if (target.category >= state->notes_count)
+    {
+        return FOLIO_STATE_NO_SUCH_CATEGORY;
+    }
+    if (target.note >= note_ledger_count(state->notes[target.category]))
+    {
+        return FOLIO_STATE_NO_SUCH_NOTE;
+    }
+    enum folio_state_outcome synced = synchronize(state);
+    if (synced != FOLIO_STATE_READY)
+    {
+        return synced;
+    }
+    if (trashing_current(state, target) && state->mode == PANE_MODE_EDIT)
+    {
+        enum folio_state_outcome saved = save_note(state, units, count);
+        if (saved != FOLIO_STATE_READY)
+        {
+            return saved;
+        }
+    }
+    struct note_ledger *_Nullable ledger = nullptr;
+    enum folio_state_outcome reserved =
+        from_note_ledger(note_ledger_removed(state->notes[target.category], target.note, &ledger));
+    if (reserved != FOLIO_STATE_READY)
+    {
+        return reserved;
+    }
+    struct index_filter *_Nullable filter = nullptr;
+    if (state->filter != nullptr &&
+        index_filter_removed(state->filter, target, &filter) != INDEX_FILTER_ACCEPTED)
+    {
+        note_ledger_destroy(ledger);
+        return FOLIO_STATE_OUT_OF_MEMORY;
+    }
+    return finish_trash(state, target, ledger, filter);
 }
 
 /* カテゴリ名もディレクトリ名なので、大小文字だけ違う名前を衝突として断る（ADR 0039 の決定 10）。 */
@@ -2984,6 +3128,9 @@ static const enum ui_text failure_lines[] = {
     [FOLIO_STATE_CATEGORY_NAME_TAKEN] = UI_TEXT_FAILURE_CATEGORY_NAME_TAKEN,
     [FOLIO_STATE_CATEGORY_NOT_CREATED] = UI_TEXT_FAILURE_CATEGORY_NOT_CREATED,
     [FOLIO_STATE_CATEGORY_LEDGER_STALE] = UI_TEXT_FAILURE_CATEGORY_LEDGER_STALE,
+    [FOLIO_STATE_TRASH_UNAVAILABLE] = UI_TEXT_FAILURE_TRASH_UNAVAILABLE,
+    [FOLIO_STATE_TRASH_BUSY] = UI_TEXT_FAILURE_TRASH_BUSY,
+    [FOLIO_STATE_TRASH_FAILED] = UI_TEXT_FAILURE_TRASH_FAILED,
 };
 
 const char *_Nonnull folio_state_failure_line(enum folio_state_outcome outcome,

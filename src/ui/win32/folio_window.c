@@ -2291,6 +2291,9 @@ static const bool inline_outcomes[] = {
     [FOLIO_STATE_CATEGORY_NAME_TAKEN] = false,
     [FOLIO_STATE_CATEGORY_NOT_CREATED] = false,
     [FOLIO_STATE_CATEGORY_LEDGER_STALE] = false,
+    [FOLIO_STATE_TRASH_UNAVAILABLE] = false,
+    [FOLIO_STATE_TRASH_BUSY] = false,
+    [FOLIO_STATE_TRASH_FAILED] = false,
 };
 
 static bool inline_outcome(enum folio_state_outcome outcome)

@@ -107,6 +107,12 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_FAILURE_CATEGORY_LEDGER_STALE] =
         "カテゴリは反映しましたが、台帳（categories.json）を書き戻せませんでした。"
         "表示はフォルダに従い、次に台帳を書くときに揃います。",
+    [UI_TEXT_FAILURE_TRASH_UNAVAILABLE] =
+        "この場所ではごみ箱を使えないため、ノートを移していません。",
+    [UI_TEXT_FAILURE_TRASH_BUSY] = "ほかのプログラムが使用中のため、ノートを移していません。",
+    [UI_TEXT_FAILURE_TRASH_FAILED] =
+        "ごみ箱への移動を確認できませんでした。ファイルとごみ箱を確認してください。"
+        "履歴だけ移っている場合があります。",
     [UI_TEXT_FAILURE_FONT_BUNDLE_UNAVAILABLE] =
         "同梱の書体を読めなかったので、OS の書体で表示します。",
     [UI_TEXT_COMMAND_SAVE] = "保存",

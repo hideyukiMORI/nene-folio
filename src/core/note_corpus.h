@@ -11,6 +11,10 @@
 struct note_corpus;
 struct note_text;
 
+/* その宛先の写しを確保せずに除く。無ければ何もしない。 */
+void note_corpus_remove(struct note_corpus *_Nonnull corpus, const char *_Nonnull category,
+                        const char *_Nonnull note);
+
 [[nodiscard]] enum note_corpus_outcome
 note_corpus_create(struct note_corpus *_Nullable *_Nonnull out);
 /* その宛先の写しを body の複製で置き換える（無ければ足す）。名前は呼び出しの間だけ借りる。 */

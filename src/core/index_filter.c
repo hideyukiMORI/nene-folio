@@ -122,6 +122,39 @@ enum index_filter_outcome index_filter_create(const struct index_filter_query *_
     return INDEX_FILTER_ACCEPTED;
 }
 
+enum index_filter_outcome index_filter_removed(const struct index_filter *_Nonnull filter,
+                                               struct note_ref target,
+                                               struct index_filter *_Nullable *_Nonnull out)
+{
+    struct index_filter *_Nullable removed = calloc(1, sizeof *removed);
+    if (removed == nullptr)
+    {
+        return INDEX_FILTER_OUT_OF_MEMORY;
+    }
+    removed->categories = malloc((filter->count + 1) * sizeof *removed->categories);
+    removed->notes = malloc((filter->count + 1) * sizeof *removed->notes);
+    if (removed->categories == nullptr || removed->notes == nullptr)
+    {
+        index_filter_destroy(removed);
+        return INDEX_FILTER_OUT_OF_MEMORY;
+    }
+    for (size_t index = 0; index < filter->count; ++index)
+    {
+        struct note_ref ref = {.category = filter->categories[index], .note = filter->notes[index]};
+        if (ref.category == target.category && ref.note == target.note)
+        {
+            continue;
+        }
+        if (ref.category == target.category && ref.note > target.note)
+        {
+            ref.note -= 1;
+        }
+        admit(removed, ref);
+    }
+    *out = removed;
+    return INDEX_FILTER_ACCEPTED;
+}
+
 /* (category, note) 以上の最初の位置（無ければ count）。並びは昇順という不変条件に依る。 */
 static size_t lower_bound(const struct index_filter *_Nonnull filter, size_t category, size_t note)
 {

@@ -16,6 +16,11 @@
 
 struct index_filter;
 
+/* 台帳から対象を除いた番号へ写す。入力は不変、確保失敗では out も変えない。 */
+[[nodiscard]] enum index_filter_outcome
+index_filter_removed(const struct index_filter *_Nonnull filter, struct note_ref target,
+                     struct index_filter *_Nullable *_Nonnull out);
+
 /* 語が空なら NO_TERM、整形式の UTF-8 でなければ MALFORMED で、どちらも out は触らない
  * （呼び出し側は前の絞り込みを保つ）。一致が 0 件でも集合は作る（索引が空になる）。 */
 [[nodiscard]] enum index_filter_outcome

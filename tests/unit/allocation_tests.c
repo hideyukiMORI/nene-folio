@@ -8,6 +8,7 @@
 #include "folio_language.h"
 #include "folio_settings.h"
 #include "folio_state.h"
+#include "index_filter.h"
 #include "json_reader.h"
 #include "json_writer.h"
 #include "line_index.h"
@@ -878,6 +879,80 @@ static bool rename_scenario(void)
     return completed;
 }
 
+static bool trash_under_probe(struct folio_state *_Nonnull state,
+                              const struct persistence_adapter *_Nonnull adapter)
+{
+    const char *body = folio_state_pane_text(state);
+    const char *pane = folio_state_pane_rtf(state);
+    size_t notes = folio_state_note_count(state);
+    size_t matches = folio_state_index_filter_count(state);
+    struct note_ref target = {.category = 0, .note = 0};
+    enum folio_state_outcome removed = folio_state_trash_note(state, target, u"", 0);
+    require(removed == FOLIO_STATE_READY || removed == FOLIO_STATE_OUT_OF_MEMORY,
+            "trash allocation failure remains typed");
+    if (removed == FOLIO_STATE_OUT_OF_MEMORY)
+    {
+        struct note_ref selected = {.category = 9, .note = 9};
+        require(test_adapter_trashes(adapter) == 0 && folio_state_pane_text(state) == body &&
+                    folio_state_pane_rtf(state) == pane && folio_state_note_count(state) == notes &&
+                    folio_state_index_filter_count(state) == matches &&
+                    folio_state_selection(state, &selected) && selected.category == 0 &&
+                    selected.note == 0,
+                "preparation failure preserves everything and never invokes trash");
+        return false;
+    }
+    require(test_adapter_trashes(adapter) == 1 && folio_state_note_count(state) == notes - 1 &&
+                folio_state_document_kind(state) == FOLIO_DOCUMENT_NONE,
+            "the prepared deletion is adopted without further allocation");
+    return true;
+}
+
+static bool trash_scenario(void)
+{
+    struct persistence_adapter *adapter = test_adapter_create(categories_text, notes_text);
+    struct persistence_port port = test_adapter_port(adapter);
+    struct appearance_port looks = test_appearance_port();
+    struct regex_port regex = test_regex_port();
+    struct folio_state *state = nullptr;
+    bool prepared =
+        folio_state_create(test_ports(&port, &looks, &regex), &state) == FOLIO_STATE_READY &&
+        folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY &&
+        folio_state_set_index_filter(state, u"Hello", 5) == FOLIO_STATE_READY;
+    bool completed = prepared && trash_under_probe(state, adapter);
+    folio_state_destroy(state);
+    test_adapter_destroy(adapter);
+    return completed;
+}
+
+static bool removed_filter_scenario(void)
+{
+    const struct index_filter_entry entry = {
+        .ref = {.category = 0, .note = 2}, .name = "needle", .body = "", .length = 0};
+    const struct index_filter_query query = {
+        .term = "needle", .term_length = 6, .entries = &entry, .count = 1};
+    struct index_filter *filter = nullptr;
+    if (index_filter_create(&query, &filter) != INDEX_FILTER_ACCEPTED)
+    {
+        return false;
+    }
+    struct index_filter *removed = filter;
+    struct note_ref target = {.category = 0, .note = 0};
+    enum index_filter_outcome outcome = index_filter_removed(filter, target, &removed);
+    require(index_filter_count(filter) == 1 && index_filter_note(filter, entry.ref),
+            "removal never mutates its input, including allocation failure");
+    if (outcome == INDEX_FILTER_OUT_OF_MEMORY)
+    {
+        require(removed == filter, "failed removal leaves a nonnull output untouched");
+        index_filter_destroy(filter);
+        return false;
+    }
+    require(outcome == INDEX_FILTER_ACCEPTED && removed != filter,
+            "removed filter owns a separate immutable set");
+    index_filter_destroy(removed);
+    index_filter_destroy(filter);
+    return true;
+}
+
 /* 1 回目・2 回目・… の確保を順に失敗させ、シナリオが完了するまで続ける。 */
 static void exhaust(bool (*_Nonnull scenario)(void), const char *_Nonnull description)
 {
@@ -928,4 +1003,6 @@ void run_allocation_tests(void)
     exhaust(rename_scenario, "rename scenario never completed");
     exhaust(history_scenario, "history scenario never completed");
     exhaust(create_category_scenario, "create category scenario never completed");
+    exhaust(trash_scenario, "trash scenario never completed");
+    exhaust(removed_filter_scenario, "removed filter scenario never completed");
 }
