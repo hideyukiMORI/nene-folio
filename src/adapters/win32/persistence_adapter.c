@@ -1412,7 +1412,7 @@ static enum rename_outcome recover_rename(struct persistence_adapter *_Nonnull a
     return outcome;
 }
 
-/* 錠の開き方（読み書き・共有なし・無ければ作る）は起動とカテゴリ作成でこの 1 か所（決定 3）。
+/* 錠の開き方（読み書き・共有なし・無ければ作る）は起動と書込でこの 1 か所（決定 3）。
  * 開けなければ INVALID_HANDLE_VALUE で、理由は GetLastError に残る。 */
 static HANDLE open_lock(const wchar_t *_Nonnull path)
 {
