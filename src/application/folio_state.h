@@ -4,6 +4,7 @@
 #ifndef NENEFOLIO_FOLIO_STATE_H
 #define NENEFOLIO_FOLIO_STATE_H
 
+#include "category_rename_target.h"
 #include "drawer_metrics.h"
 #include "folio_cursor_kind.h"
 #include "folio_document_kind.h"
@@ -200,7 +201,7 @@ folio_state_store_new(struct folio_state *_Nonnull state,
                       const char16_t *_Nonnull units, size_t count);
 /* 現在の文書の実名（台帳にある名前・終端付き UTF-8）。無題と未選択では空文字列。
  * 右ペインの頭の表示値とは別で、名前入力面の初期値はこちらを使う（ADR 0022 の決定 1）。
- * 未完了の改名があるあいだも、いま data/ にあるはずの名前（旧名）を返す。次の意図まで有効。 */
+ * 未完了の改名があるあいだも旧名を返すが、その名前の実体の現存は保証しない。次の意図まで有効。 */
 [[nodiscard]] const char *_Nonnull folio_state_document_name(
     const struct folio_state *_Nonnull state);
 /* 未完了の改名の旧名と新名。保持していなければ false で out は触らない（ADR 0022 の決定 2）。
@@ -218,6 +219,17 @@ folio_state_store_new(struct folio_state *_Nonnull state,
 [[nodiscard]] enum folio_state_outcome
 folio_state_rename_note(struct folio_state *_Nonnull state, const struct note_name *_Nonnull name,
                         const char16_t *_Nonnull units, size_t count);
+/* 対象カテゴリの名前だけを変える（ADR0041）。FILTERED・範囲拒否→共通同期→同名no-op→
+ * ASCII-fold衝突→必要な保存→事前準備→port。units/count は対象NAMED+EDITだけ使う。
+ * UNTITLED・VIEW・NONE・別カテゴリの本文は保存せず、台帳採用は添字・本文・modeを保つ。
+ * target/name は呼び出しの間だけ借り、未完了planと空corpusだけをstateが所有する。 */
+[[nodiscard]] enum folio_state_outcome
+folio_state_rename_category(struct folio_state *_Nonnull state,
+                            const struct category_rename_target *_Nonnull target,
+                            const char16_t *_Nonnull units, size_t count);
+/* 保持中の意図を共通同期で再開するだけ。新保存・新改名・文書選択は行わない。
+ * READYは元の要求を実行した意味ではない。借用rename_viewは呼び出し後に取り直す。 */
+[[nodiscard]] enum folio_state_outcome folio_state_retry_rename(struct folio_state *_Nonnull state);
 /* 編集中の本文（UTF-16 の単位列）を保存し、編集モードのまま残る（Ctrl+S）。
  * VIEWでは台帳だけ同期し本文は書かない。読んだ本文と同じなら書かない。書き戻せなければ状態は変えない（ADR
  * 0006）。 */
@@ -245,7 +257,8 @@ folio_state_note_changed(struct folio_state *_Nonnull state, const char16_t *_No
 folio_state_discard_edits(const struct folio_state *_Nonnull state);
 /* 索引の絞り込みの語を覚え、一致集合を作り直す（FR-032 / ADR 0024 の決定 7）。
  * UTF-16 の単位列を受ける C-014 の例外の 7 本目。ノート内検索の語（set_search_term）とは別で、
- * 同期しない。永続化もしない。
+ * 通常は同期しない。CATEGORY保留中の非空語はcache/表示変更前に共通同期する。
+ * 絞り込み自体は永続化しない。
  * count が 0 なら絞り込みを解き、索引は台帳のとおりに戻る。語が壊れていれば SEARCH_MALFORMED で
  * 前の語と絞り込みを保つ。空でない語が**初めて**来たときだけ、ポートの read_note で全ノートの
  * 本文を 1 回読んで写しにする（起動時には読まない・決定 1）。読めないノートは写しを持たず、
@@ -273,6 +286,8 @@ folio_state_set_index_filter(struct folio_state *_Nonnull state, const char16_t 
 [[nodiscard]] enum folio_state_outcome
 folio_state_preview_replace(struct folio_state *_Nonnull state,
                             const struct replace_request *_Nonnull request);
+/* 有効な0件の下見と破棄済みを区別する純粋な問い合わせ（ADR0041）。 */
+[[nodiscard]] bool folio_state_has_replace_preview(const struct folio_state *_Nonnull state);
 /* 直前の下見の一致の件数。下見が無ければ 0。 */
 [[nodiscard]] size_t folio_state_replace_count(const struct folio_state *_Nonnull state);
 /* 直前の下見が REPLACE_BAD_PATTERN だったときの位置（1 起算のコード単位）。

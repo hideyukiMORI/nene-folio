@@ -1,3 +1,4 @@
+#include "allocation_probe.h"
 #include "appearance_port.h"
 #include "category_ledger.h"
 #include "category_name.h"
@@ -15,6 +16,7 @@
 #include "ui_font.h"
 #include "unit_tests.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -36,6 +38,8 @@ struct persistence_adapter
     const char *_Nonnull note_body;
     const char *_Nullable last_note; /* 最後に read_note で求められたノート名 */
     size_t note_reads;               /* read_note が呼ばれた回数（遅延読み込みの証拠） */
+    size_t old_category_reads;
+    char read_category[64];
     const char *_Nullable rare_note; /* この名前のノートだけ別の本文を返す */
     const char *_Nullable rare_body;
     const char *_Nullable missing_note; /* この名前のノートだけ読めない（写しを持たない） */
@@ -257,7 +261,9 @@ static enum persistence_outcome fake_read_note(struct persistence_adapter *_Nonn
                                                const char *_Nonnull note,
                                                struct note_text *_Nullable *_Nonnull out)
 {
-    (void)category;
+    adapter->old_category_reads += strcmp(category, "B") == 0 ? 1 : 0;
+    require(strlen(category) < sizeof adapter->read_category, "read category fits");
+    memcpy(adapter->read_category, category, strlen(category) + 1);
     adapter->last_note = note;
     adapter->note_reads += 1;
     if (adapter->missing_note != nullptr && strcmp(adapter->missing_note, note) == 0)
@@ -458,7 +464,8 @@ static enum rename_outcome fake_apply_rename(struct persistence_adapter *_Nonnul
                   rename_plan_category(plan));
         break;
     case RENAME_KIND_CATEGORY:
-        return RENAME_HALTED;
+        copy_name(adapter->renamed_category, sizeof adapter->renamed_category, "");
+        break;
     }
     copy_name(adapter->renamed_from, sizeof adapter->renamed_from, rename_plan_from(plan));
     copy_name(adapter->renamed_to, sizeof adapter->renamed_to, rename_plan_to(plan));
@@ -1912,18 +1919,17 @@ static const char *_Nonnull const expected_failure_lines[] = {
         "前回の台帳（index.json）をまだ書き戻せていません。今回の操作は行っていないので、"
         "保存を再試行してください。",
     [FOLIO_STATE_RENAME_PENDING] =
-        "名前の変更が途中で止まっています。同じ名前変更をやり直してください。",
+        "名前の変更が途中で止まっています。「名前を変更」から再試行してください。",
     [FOLIO_STATE_RENAME_UNLOCKED] =
-        "data/ に書けないため名前を変更できません。何も変えていません。",
-    [FOLIO_STATE_RENAME_UNSUPPORTED] =
-        "この data/ ではノート名を変更できません（ローカルの NTFS 以外、またはシンボリック"
-        "リンク／junction）。",
+        "data/ に書けないため名前を変更できません。名前は変更していません。",
+    [FOLIO_STATE_RENAME_UNSUPPORTED] = "この data/ では名前を変更できません（ローカルの NTFS "
+                                       "以外、またはシンボリックリンク／junction）。",
     [FOLIO_STATE_RENAME_IDENTITY_FAILED] =
-        "元のファイルを確かめられないので名前を変更できません。何も変えていません。",
+        "元のファイルやカテゴリを確かめられないので名前を変更できません。名前は変更していません。",
     [FOLIO_STATE_RENAME_JOURNAL_FAILED] =
-        "名前変更の記録（data/.rename.json）を書けませんでした。何も変えていません。",
+        "名前変更の記録（data/.rename.json）を書けませんでした。名前は変更していません。",
     [FOLIO_STATE_RENAME_JOURNAL_BROKEN] =
-        "名前変更の記録（data/.rename.json）が版 1 の形ではありません。消していません。",
+        "名前変更の記録（data/.rename.json）の版か形を読めません。記録は残しています。",
     [FOLIO_STATE_RENAME_HALTED] =
         "名前変更の記録と実ファイルが一致しません。data/.rename.json と data/<カテゴリ>/ "
         "を確認してください。",
@@ -1945,8 +1951,7 @@ static const char *_Nonnull const expected_failure_lines[] = {
         "このパターンは複雑すぎて当てられません。本文は変えていません。",
     [FOLIO_STATE_REPLACE_TOO_MANY] = "一致が多すぎます。パターンを狭めてください。",
     [FOLIO_STATE_REPLACE_TOO_LARGE] = "置き換えた本文が大きすぎます。本文は変えていません。",
-    [FOLIO_STATE_REPLACE_STALE] =
-        "本文か入力が変わったので、この置換は当てられません。もう一度入力してください。",
+    [FOLIO_STATE_REPLACE_STALE] = "下見が古くなりました。もう一度入力してください。",
     [FOLIO_STATE_REPLACE_BAD_SPAN] = "選択範囲が正しくありません。本文は変えていません。",
     [FOLIO_STATE_OUT_OF_MEMORY] = "記憶域が足りません。",
     [FOLIO_STATE_NAME_REQUIRED] =
@@ -4318,4 +4323,547 @@ void run_state_tests(void)
     verify_later_units();
     verify_trash_all();
     verify_remove_categories();
+}
+/* ADR0041 D2: カテゴリ改名の保存範囲・単一保留・採用・読込前同期。 */
+static enum folio_state_outcome rename_category_to(struct folio_state *_Nonnull state,
+                                                   size_t category, const char *_Nonnull text)
+{
+    struct category_name *name = accepted_category_name(text);
+    struct category_rename_target target = {.category = category, .name = name};
+    enum folio_state_outcome outcome = folio_state_rename_category(state, &target, u"ignored", 7);
+    category_name_destroy(name);
+    return outcome;
+}
+
+static void verify_category_rename_refusals(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY &&
+                folio_state_begin_edit(state) == FOLIO_STATE_READY,
+            "edit before refusals");
+    require(rename_category_to(state, 0, "B") == FOLIO_STATE_READY &&
+                rename_category_to(state, 0, "b") == FOLIO_STATE_CATEGORY_NAME_TAKEN &&
+                rename_category_to(state, 0, "A") == FOLIO_STATE_CATEGORY_NAME_TAKEN &&
+                rename_category_to(state, 9, "D") == FOLIO_STATE_NO_SUCH_CATEGORY,
+            "same-name is no-op and ASCII-fold collisions/range refuse before saving");
+    require(adapter.renames == 0 && adapter.note_writes == 0 && adapter.archives == 0,
+            "no-op and early refusal have no new side effect");
+    require(folio_state_set_index_filter(state, u"one", 3) == FOLIO_STATE_READY &&
+                rename_category_to(state, 9, "D") == FOLIO_STATE_FILTERED,
+            "filter precedes target range");
+    struct note_name *name = accepted_note_name("new");
+    adapter.rename_outcome = RENAME_PENDING;
+    require(folio_state_rename_note(state, name, u"# Hello\n\nbody", 13) ==
+                FOLIO_STATE_RENAME_PENDING,
+            "existing note intent can be pending in a filter");
+    size_t calls = adapter.renames;
+    require(rename_category_to(state, 0, "D") == FOLIO_STATE_FILTERED && adapter.renames == calls,
+            "filtered category request does not even resume prior intent");
+    require(folio_state_set_index_filter(state, u"", 0) == FOLIO_STATE_READY &&
+                rename_category_to(state, 9, "D") == FOLIO_STATE_NO_SUCH_CATEGORY &&
+                adapter.renames == calls,
+            "range rejection precedes prior synchronization");
+    require(rename_category_to(state, 0, "B") == FOLIO_STATE_RENAME_PENDING &&
+                adapter.renames == calls + 1,
+            "prior synchronization precedes same-name no-op");
+    note_name_destroy(name);
+    folio_state_destroy(state);
+}
+
+static void category_scope_document(struct folio_state *_Nonnull state, size_t scenario)
+{
+    if (scenario == 1 || scenario == 3 || scenario == 4)
+    {
+        require(folio_state_select_note(state, scenario == 1 ? 0 : 2, 1) == FOLIO_STATE_READY,
+                "select current or separate document");
+    }
+    if (scenario == 2 || scenario == 5)
+    {
+        require(folio_state_new_note(state, scenario == 2 ? 0 : 2) == FOLIO_STATE_READY,
+                "untitled current or separate document");
+    }
+    if (scenario == 4)
+    {
+        require(folio_state_begin_edit(state) == FOLIO_STATE_READY, "edit separate document");
+    }
+}
+
+static void verify_category_rename_scope(void)
+{
+    for (size_t scenario = 0; scenario < 6; ++scenario)
+    {
+        struct persistence_adapter adapter = healthy_adapter();
+        struct folio_state *state = ready_state(&adapter);
+        category_scope_document(state, scenario);
+        const char *body = folio_state_pane_text(state);
+        const char *pane = folio_state_pane_rtf(state);
+        enum folio_document_kind kind = folio_state_document_kind(state);
+        enum pane_mode mode = folio_state_pane_mode(state);
+        size_t reads = adapter.note_reads;
+        require(rename_category_to(state, 0, "D") == FOLIO_STATE_READY,
+                "non-saving category rename succeeds");
+        require(same_text(folio_state_category_name(state, 0), "D") &&
+                    folio_state_document_kind(state) == kind &&
+                    folio_state_pane_mode(state) == mode && folio_state_pane_text(state) == body &&
+                    folio_state_pane_rtf(state) == pane && adapter.note_reads == reads &&
+                    adapter.archives == 0 && adapter.note_writes == 0,
+                "NONE/VIEW/UNTITLED/separate edit preserve document and never save/read");
+        struct rename_view pending;
+        require(!folio_state_rename_pending(state, &pending),
+                "complete adopts and releases intent");
+        if (scenario == 2)
+        {
+            struct note_name *name = accepted_note_name("first");
+            struct note_destination target = {.category = 0, .name = name};
+            require(folio_state_store_new(state, &target, u"first body", 10) == FOLIO_STATE_READY &&
+                        same_text(adapter.written_category, "D"),
+                    "first save uses renamed category");
+            note_name_destroy(name);
+        }
+        folio_state_destroy(state);
+    }
+}
+
+static void verify_category_rename_save(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    adapter.history[1] = "old";
+    struct folio_state *state = history_state(&adapter);
+    require(folio_state_open_history(state) == FOLIO_STATE_READY &&
+                folio_state_begin_edit(state) == FOLIO_STATE_READY,
+            "history and edit");
+    struct category_name *name = accepted_category_name("D");
+    struct category_rename_target target = {.category = 0, .name = name};
+    adapter.rename_outcome = RENAME_JOURNAL_FAILED;
+    require(folio_state_rename_category(state, &target, u"changed", 7) ==
+                FOLIO_STATE_RENAME_JOURNAL_FAILED,
+            "rename may fail after successful pre-save");
+    require(adapter.archives == 1 && adapter.note_writes == 1 && adapter.renames == 1 &&
+                same_text(adapter.written_category, "B") &&
+                same_text(folio_state_pane_text(state), "changed") &&
+                folio_state_history_count(state) == 0 &&
+                folio_state_pane_mode(state) == PANE_MODE_EDIT,
+            "successful pre-save is retained, including history close, after rename refusal");
+    adapter.rename_outcome = RENAME_COMPLETED;
+    require(folio_state_rename_category(state, &target, u"changed", 7) == FOLIO_STATE_READY &&
+                adapter.note_writes == 1 && adapter.archives == 1 &&
+                same_text(folio_state_pane_title(state).note, "one"),
+            "same body is not saved again");
+    category_name_destroy(name);
+    folio_state_destroy(state);
+}
+
+static void verify_category_rename_save_failure(void)
+{
+    for (size_t scenario = 0; scenario < 2; ++scenario)
+    {
+        struct persistence_adapter adapter = healthy_adapter();
+        struct folio_state *state = history_state(&adapter);
+        require(folio_state_begin_edit(state) == FOLIO_STATE_READY, "edit to test save failure");
+        if (scenario == 0)
+        {
+            adapter.archive_outcome = PERSISTENCE_UNWRITABLE;
+        }
+        if (scenario == 1)
+        {
+            adapter.note_write_outcome = PERSISTENCE_UNWRITABLE;
+        }
+        struct category_name *name = accepted_category_name("D");
+        struct category_rename_target target = {.category = 0, .name = name};
+        enum folio_state_outcome expected =
+            scenario == 0 ? FOLIO_STATE_HISTORY_FAILED : FOLIO_STATE_NOTE_STORE_FAILED;
+        require(folio_state_rename_category(state, &target, u"changed", 7) == expected &&
+                    adapter.renames == 0 && same_text(folio_state_category_name(state, 0), "B") &&
+                    same_text(folio_state_pane_text(state), "# Hello\n\nbody"),
+                "failed pre-save stops before plan/port and preserves saved document");
+        category_name_destroy(name);
+        folio_state_destroy(state);
+    }
+}
+
+static void verify_category_rename_start_results(void)
+{
+    const enum rename_outcome outcomes[] = {
+        RENAME_COMPLETED,      RENAME_NONE,           RENAME_PENDING,      RENAME_HALTED,
+        RENAME_UNLOCKED,       RENAME_NAME_TAKEN,     RENAME_UNSUPPORTED,  RENAME_IDENTITY_FAILED,
+        RENAME_JOURNAL_FAILED, RENAME_JOURNAL_BROKEN, RENAME_OUT_OF_MEMORY};
+    const enum folio_state_outcome expected[] = {FOLIO_STATE_READY,
+                                                 FOLIO_STATE_READY,
+                                                 FOLIO_STATE_RENAME_PENDING,
+                                                 FOLIO_STATE_RENAME_HALTED,
+                                                 FOLIO_STATE_RENAME_UNLOCKED,
+                                                 FOLIO_STATE_CATEGORY_NAME_TAKEN,
+                                                 FOLIO_STATE_RENAME_UNSUPPORTED,
+                                                 FOLIO_STATE_RENAME_IDENTITY_FAILED,
+                                                 FOLIO_STATE_RENAME_JOURNAL_FAILED,
+                                                 FOLIO_STATE_RENAME_JOURNAL_BROKEN,
+                                                 FOLIO_STATE_OUT_OF_MEMORY};
+    for (size_t index = 0; index < sizeof outcomes / sizeof outcomes[0]; ++index)
+    {
+        struct persistence_adapter adapter = healthy_adapter();
+        struct folio_state *state = ready_state(&adapter);
+        adapter.rename_outcome = outcomes[index];
+        require(rename_category_to(state, 0, "D") == expected[index],
+                "all START results stay typed");
+        struct rename_view pending;
+        bool retained = outcomes[index] == RENAME_PENDING || outcomes[index] == RENAME_HALTED;
+        require(folio_state_rename_pending(state, &pending) == retained && adapter.renames == 1,
+                "only published pending/halted retain one intent");
+        require(same_text(folio_state_category_name(state, 0),
+                          outcomes[index] == RENAME_COMPLETED ? "D" : "B"),
+                "only COMPLETED adopts prepared category ledger");
+        if (retained)
+        {
+            require(pending.kind == RENAME_KIND_CATEGORY && same_text(pending.from, "B") &&
+                        same_text(pending.to, "D"),
+                    "pending view names actual category intent");
+            adapter.rename_outcome = RENAME_COMPLETED;
+            require(folio_state_retry_rename(state) == FOLIO_STATE_READY &&
+                        same_text(folio_state_category_name(state, 0), "D"),
+                    "RESUME adopts same intent");
+        }
+        folio_state_destroy(state);
+    }
+}
+
+static void category_title_document(struct folio_state *_Nonnull state, size_t scenario)
+{
+    if (scenario == 1 || scenario == 3)
+    {
+        require(folio_state_select_note(state, scenario == 1 ? 0 : 2, 0) == FOLIO_STATE_READY,
+                "selected title");
+    }
+    if (scenario == 2)
+    {
+        require(folio_state_new_note(state, 0) == FOLIO_STATE_READY, "untitled title");
+    }
+}
+
+static void verify_category_rename_pending_titles(void)
+{
+    for (size_t scenario = 0; scenario < 4; ++scenario)
+    {
+        struct persistence_adapter adapter = healthy_adapter();
+        struct folio_state *state = ready_state(&adapter);
+        category_title_document(state, scenario);
+        adapter.rename_outcome = RENAME_PENDING;
+        require(rename_category_to(state, 0, "D") == FOLIO_STATE_RENAME_PENDING,
+                "pending for title");
+        struct pane_title_view title = folio_state_pane_title(state);
+        const enum pane_recovery recoveries[] = {PANE_RECOVERY_NONE, PANE_RECOVERY_CATEGORY,
+                                                 PANE_RECOVERY_CATEGORY, PANE_RECOVERY_NONE};
+        enum pane_recovery recovery = recoveries[scenario];
+        require(title.any == (scenario != 0) && title.recovering == recovery,
+                "NONE has no false title; only target category is recovering");
+        require(rename_category_to(state, 2, "E") == FOLIO_STATE_RENAME_PENDING &&
+                    same_text(adapter.renamed_from, "B") && same_text(adapter.renamed_to, "D"),
+                "new request cannot overwrite pending category intent");
+        adapter.rename_outcome = RENAME_COMPLETED;
+        require(folio_state_retry_rename(state) == FOLIO_STATE_READY && adapter.archives == 0 &&
+                    adapter.note_writes == 0 && title.any == folio_state_pane_title(state).any &&
+                    folio_state_pane_title(state).recovering == PANE_RECOVERY_NONE,
+                "generic retry works from NONE/UNTITLED/other document without new saving");
+        folio_state_destroy(state);
+    }
+}
+
+static void verify_category_rename_filter(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_set_index_filter(state, u"body", 4) == FOLIO_STATE_READY &&
+                folio_state_set_index_filter(state, u"", 0) == FOLIO_STATE_READY,
+            "load old corpus then clear filter");
+    require(folio_state_scroll_drawer(state, metrics, 40) == FOLIO_STATE_READY,
+            "scroll before pending");
+    size_t reads = adapter.note_reads;
+    size_t old_reads = adapter.old_category_reads;
+    adapter.rename_outcome = RENAME_PENDING;
+    require(rename_category_to(state, 0, "D") == FOLIO_STATE_RENAME_PENDING &&
+                folio_state_set_index_filter(state, u"body", 4) == FOLIO_STATE_RENAME_PENDING &&
+                adapter.note_reads == reads && !folio_state_filtering(state) &&
+                same_text(folio_state_index_filter_term(state), ""),
+            "pending filter keeps display before read/allocation");
+    struct drawer_layout *layout = nullptr;
+    require(folio_state_drawer_layout(state, metrics, &layout) == FOLIO_STATE_READY &&
+                drawer_layout_row(layout, 0).top == -40,
+            "pending filter preserves scroll");
+    drawer_layout_destroy(layout);
+    require(folio_state_set_index_filter(state, u"", 0) == FOLIO_STATE_READY,
+            "empty filter remains usable");
+    adapter.rename_outcome = RENAME_COMPLETED;
+    require(folio_state_set_index_filter(state, u"body", 4) == FOLIO_STATE_READY &&
+                adapter.note_reads == reads + 9 && adapter.old_category_reads == old_reads &&
+                folio_state_index_filter_count(state) == 9,
+            "completion clears all old-name cache and reloads new paths");
+    folio_state_destroy(state);
+}
+
+static void verify_category_rename_history(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    adapter.history[1] = "old";
+    struct folio_state *state = history_state(&adapter);
+    require(folio_state_open_history(state) == FOLIO_STATE_READY, "history before pending");
+    const struct note_text *row = folio_state_history_body(state, 0);
+    size_t reads = adapter.history_reads;
+    adapter.rename_outcome = RENAME_HALTED;
+    require(rename_category_to(state, 0, "D") == FOLIO_STATE_RENAME_HALTED &&
+                folio_state_open_history(state) == FOLIO_STATE_RENAME_HALTED &&
+                folio_state_history_body(state, 0) == row && adapter.history_reads == reads,
+            "pending target history syncs before discarding rows or reading old path");
+    adapter.rename_outcome = RENAME_COMPLETED;
+    require(folio_state_retry_rename(state) == FOLIO_STATE_READY &&
+                folio_state_history_body(state, 0) == row,
+            "pure category adoption preserves loaded history rows");
+    require(folio_state_open_history(state) == FOLIO_STATE_READY &&
+                same_text(adapter.history_category, "D"),
+            "later history read follows new category path");
+    folio_state_destroy(state);
+    adapter = healthy_adapter();
+    adapter.history[1] = "other";
+    state = ready_state(&adapter);
+    require(folio_state_select_note(state, 2, 0) == FOLIO_STATE_READY, "separate history target");
+    adapter.rename_outcome = RENAME_PENDING;
+    require(rename_category_to(state, 0, "D") == FOLIO_STATE_RENAME_PENDING &&
+                folio_state_open_history(state) == FOLIO_STATE_READY && adapter.renames == 1 &&
+                same_text(adapter.history_category, "C"),
+            "separate history is usable without resuming category intent");
+    folio_state_destroy(state);
+}
+
+static void category_preview(struct folio_state *_Nonnull state, const char16_t *_Nonnull pattern)
+{
+    struct replace_request request = {.text = u"# Hello\n\nbody",
+                                      .length = 13,
+                                      .pattern = pattern,
+                                      .pattern_length = 4,
+                                      .replacement = u"new",
+                                      .replacement_length = 3};
+    require(folio_state_preview_replace(state, &request) == FOLIO_STATE_READY &&
+                folio_state_has_replace_preview(state),
+            "preview is valid even with zero matches");
+}
+
+static void category_rename_preview_case(size_t scenario)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_select_note(state, scenario == 2 ? 2 : 0, 0) == FOLIO_STATE_READY &&
+                folio_state_begin_edit(state) == FOLIO_STATE_READY,
+            "preview document");
+    category_preview(state, u"body");
+    adapter.rename_outcome = RENAME_PENDING;
+    struct category_name *name = accepted_category_name("D");
+    struct category_rename_target target = {.category = 0, .name = name};
+    require(folio_state_rename_category(state, &target, u"# Hello\n\nbody", 13) ==
+                FOLIO_STATE_RENAME_PENDING,
+            "unchanged pre-save retains preview");
+    category_preview(state, scenario == 1 ? u"none" : u"body");
+    require(folio_state_replace_count(state) == (scenario == 1 ? 0 : 1),
+            "new pending preview, including zero");
+    adapter.rename_outcome = RENAME_COMPLETED;
+    require(folio_state_toggle_category(state, 1) == FOLIO_STATE_READY &&
+                folio_state_has_replace_preview(state) == (scenario == 2),
+            "generic synchronization invalidates latest target preview only");
+    if (scenario == 2)
+    {
+        expect_trash_preview_usable(state);
+    }
+    category_name_destroy(name);
+    folio_state_destroy(state);
+}
+
+static void verify_category_rename_preview(void)
+{
+    for (size_t scenario = 0; scenario < 3; ++scenario)
+    {
+        category_rename_preview_case(scenario);
+    }
+}
+
+static void verify_category_rename_layout(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_select_note(state, 2, 1) == FOLIO_STATE_READY, "keep later selection");
+    char cursor[64];
+    cursor_name(state, cursor, sizeof cursor);
+    require(rename_category_to(state, 1, "D") == FOLIO_STATE_READY &&
+                keeps_document(state, at(2, 1), PANE_MODE_VIEW),
+            "all document indices survive");
+    expect_cursor(state, cursor, "cursor index survives category adoption");
+    struct drawer_layout *layout = nullptr;
+    require(folio_state_drawer_layout(state, metrics, &layout) == FOLIO_STATE_READY &&
+                drawer_layout_row_count(layout) == 9,
+            "row count and collapsed state survive");
+    struct drawer_row first = drawer_layout_row(layout, 0);
+    struct drawer_row target = drawer_layout_row(layout, 4);
+    require(same_text(first.text, "B") && first.expanded &&
+                has_color(first.color, 0x11, 0x11, 0x11),
+            "preceding category metadata is untouched");
+    require(same_text(target.text, "D") && target.category == 1 && !target.expanded &&
+                has_color(target.color, 0x22, 0x22, 0x22),
+            "target keeps position/color/collapsed state");
+    require(same_text(drawer_layout_row(layout, 2).text, "two") &&
+                same_text(drawer_layout_row(layout, 3).text, "three") &&
+                same_text(drawer_layout_row(layout, 5).text, "C"),
+            "all note ledgers and order are untouched");
+    drawer_layout_destroy(layout);
+    folio_state_destroy(state);
+}
+
+static void verify_category_rename_store_sync(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = history_state(&adapter);
+    require(folio_state_begin_edit(state) == FOLIO_STATE_READY, "target edit for store retry");
+    struct category_name *name = accepted_category_name("D");
+    struct category_rename_target target = {.category = 0, .name = name};
+    adapter.rename_outcome = RENAME_PENDING;
+    require(folio_state_rename_category(state, &target, u"# Hello\n\nbody", 13) ==
+                FOLIO_STATE_RENAME_PENDING,
+            "unchanged target enters pending");
+    require(folio_state_store_note(state, u"later", 5) == FOLIO_STATE_RENAME_PENDING &&
+                adapter.note_writes == 0 && adapter.archives == 0,
+            "pending blocks old-path saving");
+    adapter.rename_outcome = RENAME_COMPLETED;
+    require(folio_state_store_note(state, u"later", 5) == FOLIO_STATE_READY &&
+                adapter.note_writes == 1 && adapter.archives == 1 &&
+                same_text(adapter.written_category, "D") &&
+                same_text(adapter.archived_category, "D"),
+            "generic save resumes before writing the new path");
+    category_name_destroy(name);
+    folio_state_destroy(state);
+}
+
+void run_category_rename_state_tests(void)
+{
+    finder = test_regex_port();
+    verify_category_rename_refusals();
+    verify_category_rename_scope();
+    verify_category_rename_save();
+    verify_category_rename_save_failure();
+    verify_category_rename_start_results();
+    verify_category_rename_pending_titles();
+    verify_category_rename_filter();
+    verify_category_rename_history();
+    verify_category_rename_preview();
+    verify_category_rename_layout();
+    verify_category_rename_store_sync();
+}
+
+static void category_preparation_failed(struct folio_state *_Nonnull state,
+                                        const struct persistence_adapter *_Nonnull adapter)
+{
+    struct rename_view view;
+    require(adapter->renames == 0 && !folio_state_rename_pending(state, &view) &&
+                same_text(folio_state_category_name(state, 0), "B"),
+            "all preparation OOM points precede START and leak no intent");
+    require(folio_state_history_count(state) == (adapter->note_writes == 0 ? 1 : 0) &&
+                same_text(folio_state_pane_text(state),
+                          adapter->note_writes == 0 ? "# Hello\n\nbody" : "changed"),
+            "pre-save adoption remains true when later preparation fails");
+}
+
+static void category_preparation_completed(struct folio_state *_Nonnull state,
+                                           struct persistence_adapter *_Nonnull adapter)
+{
+    adapter->rename_outcome = RENAME_COMPLETED;
+    size_t reads = adapter->note_reads;
+    allocation_probe_fail_at(1);
+    require(folio_state_retry_rename(state) == FOLIO_STATE_READY,
+            "completed category adoption requires no extra allocation");
+    allocation_probe_fail_at(0);
+    require(adapter->note_reads == reads && same_text(folio_state_category_name(state, 0), "D"),
+            "pending owns prepared corpus and ledger through allocation-free adoption");
+}
+
+static bool category_state_allocation(size_t nth, bool saved, bool cached)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    adapter.history[1] = "old";
+    struct folio_state *state = history_state(&adapter);
+    require(folio_state_open_history(state) == FOLIO_STATE_READY &&
+                folio_state_begin_edit(state) == FOLIO_STATE_READY,
+            "allocation setup without injection");
+    if (cached)
+    {
+        require(folio_state_set_index_filter(state, u"body", 4) == FOLIO_STATE_READY &&
+                    folio_state_set_index_filter(state, u"", 0) == FOLIO_STATE_READY,
+                "pre-save cache allocation boundary");
+    }
+    struct category_name *name = accepted_category_name("D");
+    struct category_rename_target target = {.category = 0, .name = name};
+    adapter.rename_outcome = RENAME_PENDING;
+    allocation_probe_fail_at(nth);
+    enum folio_state_outcome outcome = folio_state_rename_category(
+        state, &target, saved ? u"changed" : u"# Hello\n\nbody", saved ? 7 : 13);
+    allocation_probe_fail_at(0);
+    require(outcome == FOLIO_STATE_OUT_OF_MEMORY || outcome == FOLIO_STATE_RENAME_PENDING,
+            "every preparation allocation failure stays typed");
+    if (outcome == FOLIO_STATE_OUT_OF_MEMORY)
+    {
+        category_preparation_failed(state, &adapter);
+    }
+    if (outcome == FOLIO_STATE_RENAME_PENDING)
+    {
+        category_preparation_completed(state, &adapter);
+    }
+    category_name_destroy(name);
+    folio_state_destroy(state);
+    return outcome == FOLIO_STATE_RENAME_PENDING;
+}
+
+static void verify_note_retry_allocation(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = history_state(&adapter);
+    require(folio_state_set_index_filter(state, u"body", 4) == FOLIO_STATE_READY &&
+                folio_state_set_index_filter(state, u"", 0) == FOLIO_STATE_READY,
+            "NOTE retry has loaded corpus");
+    struct note_name *name = accepted_note_name("new");
+    adapter.rename_outcome = RENAME_PENDING;
+    require(folio_state_rename_note(state, name, u"", 0) == FOLIO_STATE_RENAME_PENDING,
+            "retain original NOTE pending contract");
+    adapter.rename_outcome = RENAME_COMPLETED;
+    allocation_probe_fail_at(1);
+    require(folio_state_retry_rename(state) == FOLIO_STATE_OUT_OF_MEMORY,
+            "NOTE retry can report corpus OOM after disk completion");
+    allocation_probe_fail_at(0);
+    struct rename_view view;
+    require(!folio_state_rename_pending(state, &view) &&
+                same_text(folio_state_document_name(state), "new"),
+            "adopted NOTE has no retry intent after cache OOM; borrowed view must be reacquired");
+    note_name_destroy(name);
+    folio_state_destroy(state);
+}
+
+void run_category_rename_allocation_tests(void)
+{
+    allocation_probe_fail_at(1);
+    struct category_name *check = nullptr;
+    enum category_name_outcome active = category_name_create("D", 1, &check);
+    allocation_probe_fail_at(0);
+    category_name_destroy(check);
+    if (active != CATEGORY_NAME_OUT_OF_MEMORY)
+    {
+        return;
+    }
+    finder = test_regex_port();
+    verify_note_retry_allocation();
+    for (size_t scenario = 0; scenario < 3; ++scenario)
+    {
+        bool completed = false;
+        size_t completed_at = 0;
+        for (size_t nth = 1; nth < 512 && !completed; ++nth)
+        {
+            completed = category_state_allocation(nth, scenario != 0, scenario == 2);
+            completed_at = nth;
+        }
+        require(completed, "category rename allocation scenario completes");
+        printf("category state allocation scenario %zu: %zu failed points, then complete\n",
+               scenario, completed_at - 1);
+    }
 }

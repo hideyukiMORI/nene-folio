@@ -23,8 +23,8 @@ enum folio_state_outcome : unsigned char
     /* 前回書けなかった index.json の修復を先に試みたが失敗した。
      * 今回の意図は何も実行しておらず、ファイルも索引も表示も変えていない。 */
     FOLIO_STATE_LEDGER_UNSYNCED,
-    /* 改名の記録は公開したが、履歴・md・index.json のどこかで止まっている（ADR 0022 の決定 7）。
-     * 今回の意図は何も実行していない。同じ改名を再試行するまで他の操作へ進めない。 */
+    /* 改名の記録は公開したが、本体・履歴・台帳のどこかで止まっている（ADR0041）。
+     * 先行同期の未完了では今回の要求は未実行。保持中の同じ改名を再試行する。 */
     FOLIO_STATE_RENAME_PENDING,
     /* data/ に書けないので改名できない。記録は公開しておらず、意図も残っていない（決定 3 の補正）
      */
@@ -32,11 +32,11 @@ enum folio_state_outcome : unsigned char
     /* ローカル NTFS でない・照会できない・シンボリックリンク／junction。
      * 何も動かしていない（決定 4 と 2026-09-17 の補正） */
     FOLIO_STATE_RENAME_UNSUPPORTED,
-    /* 元の md や履歴の識別子を取れないので、再開できる記録を作れない（決定 4） */
+    /* 元の本体や履歴の識別子を取れないので、再開できる記録を作れない（決定 4） */
     FOLIO_STATE_RENAME_IDENTITY_FAILED,
     /* 改名の記録を公開できなかった。data/ には何も残っていない（決定 5） */
     FOLIO_STATE_RENAME_JOURNAL_FAILED,
-    /* 改名の記録が版 1 の形ではない。既定値へは落とさず、記録も消さない（決定 5） */
+    /* 改名の記録の版や形を読めない。既定値へは落とさず、記録も消さない（ADR0041） */
     FOLIO_STATE_RENAME_JOURNAL_BROKEN,
     /* 改名の記録と data/ の実体が合わない。意図は保持したまま、手当てするまで進めない（決定 5） */
     FOLIO_STATE_RENAME_HALTED,

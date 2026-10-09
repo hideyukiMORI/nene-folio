@@ -53,17 +53,17 @@ static const char *_Nonnull const expected[] = {
         "前回の台帳（index."
         "json）をまだ書き戻せていません。今回の操作は行っていないので、保存を再試行してください。",
     [UI_TEXT_FAILURE_RENAME_PENDING] =
-        "名前の変更が途中で止まっています。同じ名前変更をやり直してください。",
+        "名前の変更が途中で止まっています。「名前を変更」から再試行してください。",
     [UI_TEXT_FAILURE_RENAME_UNLOCKED] =
-        "data/ に書けないため名前を変更できません。何も変えていません。",
-    [UI_TEXT_FAILURE_RENAME_UNSUPPORTED] = "この data/ ではノート名を変更できません（ローカルの "
-                                           "NTFS 以外、またはシンボリックリンク／junction）。",
+        "data/ に書けないため名前を変更できません。名前は変更していません。",
+    [UI_TEXT_FAILURE_RENAME_UNSUPPORTED] = "この data/ では名前を変更できません（ローカルの NTFS "
+                                           "以外、またはシンボリックリンク／junction）。",
     [UI_TEXT_FAILURE_RENAME_IDENTITY_FAILED] =
-        "元のファイルを確かめられないので名前を変更できません。何も変えていません。",
+        "元のファイルやカテゴリを確かめられないので名前を変更できません。名前は変更していません。",
     [UI_TEXT_FAILURE_RENAME_JOURNAL_FAILED] =
-        "名前変更の記録（data/.rename.json）を書けませんでした。何も変えていません。",
+        "名前変更の記録（data/.rename.json）を書けませんでした。名前は変更していません。",
     [UI_TEXT_FAILURE_RENAME_JOURNAL_BROKEN] =
-        "名前変更の記録（data/.rename.json）が版 1 の形ではありません。消していません。",
+        "名前変更の記録（data/.rename.json）の版か形を読めません。記録は残しています。",
     [UI_TEXT_FAILURE_RENAME_HALTED] = "名前変更の記録と実ファイルが一致しません。data/.rename.json "
                                       "と data/<カテゴリ>/ を確認してください。",
     [UI_TEXT_FAILURE_SEARCH_MALFORMED] = "検索する語に壊れた文字があります。語は前のままです。",
@@ -84,8 +84,7 @@ static const char *_Nonnull const expected[] = {
         "このパターンは複雑すぎて当てられません。本文は変えていません。",
     [UI_TEXT_FAILURE_REPLACE_TOO_MANY] = "一致が多すぎます。パターンを狭めてください。",
     [UI_TEXT_FAILURE_REPLACE_TOO_LARGE] = "置き換えた本文が大きすぎます。本文は変えていません。",
-    [UI_TEXT_FAILURE_REPLACE_STALE] =
-        "本文か入力が変わったので、この置換は当てられません。もう一度入力してください。",
+    [UI_TEXT_FAILURE_REPLACE_STALE] = "下見が古くなりました。もう一度入力してください。",
     [UI_TEXT_FAILURE_REPLACE_BAD_SPAN] = "選択範囲が正しくありません。本文は変えていません。",
     [UI_TEXT_FAILURE_OUT_OF_MEMORY] = "記憶域が足りません。",
     [UI_TEXT_FAILURE_NAME_REQUIRED] =
@@ -185,6 +184,7 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_HELP_EDITOR_ESCAPE] = "本文  Esc 保存して索引へ（編集は維持）",
     [UI_TEXT_TITLE_UNTITLED] = "無題（未保存）",
     [UI_TEXT_TITLE_RECOVERING] = "名前変更の復旧待ち",
+    [UI_TEXT_TITLE_CATEGORY_RECOVERING] = "復旧待ち",
     [UI_TEXT_CHIP_VIEW] = "閲覧",
     [UI_TEXT_CHIP_EDIT] = "編集",
     [UI_TEXT_PLACEHOLDER_FILTER] = "すべてのノートを検索",
@@ -599,6 +599,33 @@ static void verify_category_not_selected(void)
     verify_vocabulary_of(UI_TEXT_HELP_DELETE_CATEGORY);
 }
 
+static void verify_rename_vocabulary(void)
+{
+    const enum ui_text ids[] = {UI_TEXT_TITLE_CATEGORY_RECOVERING, UI_TEXT_FAILURE_REPLACE_STALE,
+                                UI_TEXT_FAILURE_RENAME_PENDING,
+                                UI_TEXT_FAILURE_RENAME_JOURNAL_BROKEN};
+    const char *const lines[][folio_language_count] = {
+        {"復旧待ち", "Recovering", "等待恢复"},
+        {"下見が古くなりました。もう一度入力してください。",
+         "The preview is out of date. Type again.", "预览已过期。请重新输入。"},
+        {"名前の変更が途中で止まっています。「名前を変更」から再試行してください。",
+         "A rename stopped halfway. Open Rename to retry.", "重命名中途停止。请打开“重命名”重试。"},
+        {"名前変更の記録（data/.rename.json）の版か形を読めません。記録は残しています。",
+         "The rename record (data/.rename.json) has an unreadable version or format. The record "
+         "was kept.",
+         "无法读取重命名记录（data/.rename.json）的版本或形式。记录已保留。"},
+    };
+    for (size_t row = 0; row < sizeof ids / sizeof ids[0]; ++row)
+    {
+        for (size_t column = 0; column < folio_language_count; ++column)
+        {
+            require(
+                same_text(ui_text_line(ids[row], (enum folio_language)column), lines[row][column]),
+                "rename/STALE wording describes both kinds in all three languages");
+        }
+    }
+}
+
 void run_ui_text_tests(void)
 {
     verify_identity();
@@ -610,4 +637,5 @@ void run_ui_text_tests(void)
     verify_language();
     verify_trash_notice();
     verify_category_not_selected();
+    verify_rename_vocabulary();
 }

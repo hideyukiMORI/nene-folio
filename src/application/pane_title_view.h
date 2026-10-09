@@ -2,6 +2,7 @@
 #ifndef NENEFOLIO_PANE_TITLE_VIEW_H
 #define NENEFOLIO_PANE_TITLE_VIEW_H
 
+#include "pane_recovery.h"
 #include "rgb_color.h"
 
 #include <stddef.h>
@@ -9,9 +10,9 @@
 struct pane_title_view
 {
     bool any; /* ノートを選んでいるか。偽なら他のメンバーは空 */
-    /* 改名の復旧待ち（ADR 0022 の決定 2）。note は実名のままで、
-     * 「実ファイル名として示さない」ための言い換えは UI 側のパンくず 1 か所が持つ。 */
-    bool recovering;
+    /* 改名の復旧待ち（ADR0041）。category/note は実名のまま。
+     * UIのパンくずが種別の区画だけをcore文言へ置き換え、計測と描画で同じ表示名を使う。 */
+    enum pane_recovery recovering;
     size_t ordinal;                /* カテゴリの 1 始まりの番号 */
     const char *_Nonnull category; /* 終端付き UTF-8 */
     const char *_Nonnull note;     /* 終端付き UTF-8 */

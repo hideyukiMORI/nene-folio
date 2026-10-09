@@ -1054,7 +1054,16 @@ static RECT chip_rect(const struct folio_window *_Nonnull self, HDC device, enum
 static const char *_Nonnull breadcrumb_note(struct pane_title_view title,
                                             enum folio_language language)
 {
-    return title.recovering ? ui_text_line(UI_TEXT_TITLE_RECOVERING, language) : title.note;
+    return title.recovering == PANE_RECOVERY_NOTE ? ui_text_line(UI_TEXT_TITLE_RECOVERING, language)
+                                                  : title.note;
+}
+
+static const char *_Nonnull breadcrumb_category(struct pane_title_view title,
+                                                enum folio_language language)
+{
+    return title.recovering == PANE_RECOVERY_CATEGORY
+               ? ui_text_line(UI_TEXT_TITLE_CATEGORY_RECOVERING, language)
+               : title.category;
 }
 
 static struct breadcrumb_layout breadcrumb_cells(const struct folio_window *_Nonnull self,
@@ -1070,7 +1079,8 @@ static struct breadcrumb_layout breadcrumb_cells(const struct folio_window *_Non
     char digits[3];
     ordinal_label(title.ordinal, digits);
     int ordinal = measure_utf8(device, digits) + padding * 2;
-    int category = measure_utf8(device, title.category);
+    int category =
+        measure_utf8(device, breadcrumb_category(title, folio_state_language(self->state)));
     int note = measure_utf8(device, breadcrumb_note(title, folio_state_language(self->state)));
     int budget = available - ordinal - padding * 4 - tip * 2;
     breadcrumb_room(budget < 0 ? 0 : budget, scale(base_breadcrumb_note, dpi), &category, &note);
@@ -1132,7 +1142,8 @@ static void draw_breadcrumb(const struct folio_window *_Nonnull self, HDC device
         draw_breadcrumb_segment(device, cells.category, cells.tip,
                                 self->palette.breadcrumb_background);
         SetTextColor(device, self->palette.breadcrumb_text);
-        draw_breadcrumb_label(device, title.category, cells.category, cells.padding + cells.tip);
+        draw_breadcrumb_label(device, breadcrumb_category(title, folio_state_language(self->state)),
+                              cells.category, cells.padding + cells.tip);
     }
     COLORREF color = RGB(title.color.red, title.color.green, title.color.blue);
     draw_breadcrumb_segment(device, cells.ordinal, cells.tip, color);
@@ -1141,8 +1152,8 @@ static void draw_breadcrumb(const struct folio_window *_Nonnull self, HDC device
     ordinal_label(title.ordinal, digits);
     draw_breadcrumb_label(device, digits, cells.ordinal, cells.padding);
     /* 復旧待ちの言い換えはここ 1 か所だけが持つ。application は実名を返す（ADR 0022 の決定 2）。 */
-    SetTextColor(device,
-                 title.recovering ? self->palette.selected_text : self->palette.current_text);
+    SetTextColor(device, title.recovering == PANE_RECOVERY_NOTE ? self->palette.selected_text
+                                                                : self->palette.current_text);
     draw_breadcrumb_label(device, breadcrumb_note(title, folio_state_language(self->state)),
                           cells.note, cells.padding + cells.tip);
     RestoreDC(device, saved);
@@ -1386,6 +1397,13 @@ static void replace_status(const struct folio_window *_Nonnull self, char *_Nonn
 /* 欄の状態の 1 行。失敗の 1 行が「対象名 / k 件」より優先する（決定 8(a)）。 */
 static void replace_line(const struct folio_window *_Nonnull self, char *_Nonnull out)
 {
+    if (self->replace_outcome == FOLIO_STATE_READY &&
+        GetWindowTextLengthW(self->replace_inputs[0]) > 0 &&
+        !folio_state_has_replace_preview(self->state))
+    {
+        failure_status(self, FOLIO_STATE_REPLACE_STALE, out);
+        return;
+    }
     if (self->replace_outcome == FOLIO_STATE_READY)
     {
         replace_status(self, out);

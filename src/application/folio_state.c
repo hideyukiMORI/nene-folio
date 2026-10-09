@@ -68,6 +68,8 @@ struct folio_state
     /* 記録を公開したまま完了していない改名の意図。1 つだけ持つ（ADR 0022 の決定 2 / 7） */
     struct rename_plan *_Nullable rename;
     size_t rename_category;
+    /* CATEGORY意図に結び付いた空corpus。公開前に確保し、完了時に交換する（ADR0041）。 */
+    struct note_corpus *_Nullable rename_corpus;
     /* ノート内検索の語（UTF-8）と直前の方向。絞り込みの語とは別（ADR 0023 の決定 3） */
     struct utf8_text *_Nullable search_term;
     enum search_direction search_direction;
@@ -207,6 +209,26 @@ static enum folio_state_outcome adopt_note_rename(struct folio_state *_Nonnull s
     return copied != FOLIO_STATE_READY ? copied : refresh_filter(state);
 }
 
+static enum folio_state_outcome adopt_category_rename(struct folio_state *_Nonnull state)
+{
+    struct rename_plan *_Nonnull intent = state->rename;
+    category_ledger_destroy(state->categories);
+    state->categories = rename_plan_take_category_ledger(intent);
+    note_corpus_destroy(state->corpus);
+    state->corpus = state->rename_corpus;
+    state->rename_corpus = nullptr;
+    state->corpus_loaded = false;
+    if (state->document != FOLIO_DOCUMENT_NONE &&
+        state->selected_category == state->rename_category)
+    {
+        replace_preview_destroy(state->preview);
+        state->preview = nullptr;
+    }
+    state->rename = nullptr;
+    rename_plan_destroy(intent);
+    return FOLIO_STATE_READY;
+}
+
 static enum folio_state_outcome adopt_rename(struct folio_state *_Nonnull state)
 {
     switch (rename_plan_kind(state->rename))
@@ -214,8 +236,7 @@ static enum folio_state_outcome adopt_rename(struct folio_state *_Nonnull state)
     case RENAME_KIND_NOTE:
         return adopt_note_rename(state);
     case RENAME_KIND_CATEGORY:
-        /* D1 は CATEGORY を開始しない。採用は D2。異種台帳を NOTE として取得しない。 */
-        return FOLIO_STATE_RENAME_HALTED;
+        return adopt_category_rename(state);
     }
     return FOLIO_STATE_RENAME_HALTED;
 }
@@ -244,6 +265,16 @@ static enum folio_state_outcome synchronize(struct folio_state *_Nonnull state)
 {
     enum folio_state_outcome synced = synchronize_index(state);
     return synced == FOLIO_STATE_READY ? resume_rename(state) : synced;
+}
+
+enum folio_state_outcome folio_state_retry_rename(struct folio_state *_Nonnull state)
+{
+    return synchronize(state);
+}
+
+static bool category_rename_pending(const struct folio_state *_Nonnull state)
+{
+    return state->rename != nullptr && rename_plan_kind(state->rename) == RENAME_KIND_CATEGORY;
 }
 
 static enum folio_state_outcome from_category_ledger(enum category_ledger_outcome outcome)
@@ -2165,20 +2196,11 @@ static enum folio_state_outcome from_note_rename(enum rename_plan_outcome outcom
     return FOLIO_STATE_INVALID_NAME;
 }
 
-/* 副作用の前に意図を確保し、ポートへ渡す。公開前の拒否では意図を残さない（決定 2）。 */
-static enum folio_state_outcome rename_selected(struct folio_state *_Nonnull state,
-                                                const struct note_name *_Nonnull name)
+/* 準備済み意図を唯一のSTART経路へ渡す。公開前拒否では準備を残さない。 */
+static enum folio_state_outcome apply_prepared_rename(struct folio_state *_Nonnull state,
+                                                      struct rename_plan *_Nonnull intent,
+                                                      size_t category)
 {
-    size_t category = state->selected_category;
-    struct note_rename_target target = {.index = state->selected_note, .name = name};
-    struct rename_plan *_Nullable intent = nullptr;
-    enum folio_state_outcome prepared =
-        from_note_rename(rename_plan_create_note(category_ledger_name(state->categories, category),
-                                                 state->notes[category], &target, &intent));
-    if (prepared != FOLIO_STATE_READY)
-    {
-        return prepared;
-    }
     enum rename_outcome moved = state->port.apply_rename(state->port.adapter, intent, RENAME_START);
     if (moved == RENAME_COMPLETED)
     {
@@ -2193,9 +2215,29 @@ static enum folio_state_outcome rename_selected(struct folio_state *_Nonnull sta
         state->rename_category = category;
         return from_rename(moved);
     }
-    /* 記録を公開する前の拒否。data/ は何も変わっていないので意図は残さない。 */
+    enum rename_kind kind = rename_plan_kind(intent);
     rename_plan_destroy(intent);
+    note_corpus_destroy(state->rename_corpus);
+    state->rename_corpus = nullptr;
+    if (kind == RENAME_KIND_CATEGORY && moved == RENAME_NAME_TAKEN)
+    {
+        return FOLIO_STATE_CATEGORY_NAME_TAKEN;
+    }
     return from_rename(moved);
+}
+
+/* 副作用の前に意図を確保し、ポートへ渡す。公開前の拒否では意図を残さない（決定 2）。 */
+static enum folio_state_outcome rename_selected(struct folio_state *_Nonnull state,
+                                                const struct note_name *_Nonnull name)
+{
+    size_t category = state->selected_category;
+    struct note_rename_target target = {.index = state->selected_note, .name = name};
+    struct rename_plan *_Nullable intent = nullptr;
+    enum folio_state_outcome prepared =
+        from_note_rename(rename_plan_create_note(category_ledger_name(state->categories, category),
+                                                 state->notes[category], &target, &intent));
+    return prepared == FOLIO_STATE_READY ? apply_prepared_rename(state, intent, category)
+                                         : prepared;
 }
 
 enum folio_state_outcome folio_state_rename_note(struct folio_state *_Nonnull state,
@@ -2389,6 +2431,78 @@ static bool holds_folded_category(const struct folio_state *_Nonnull state,
         }
     }
     return false;
+}
+
+static enum folio_state_outcome from_category_rename(enum rename_plan_outcome outcome)
+{
+    switch (outcome)
+    {
+    case RENAME_PLAN_ACCEPTED:
+        return FOLIO_STATE_READY;
+    case RENAME_PLAN_INVALID:
+        return FOLIO_STATE_CATEGORY_NAME_INVALID;
+    case RENAME_PLAN_OUT_OF_MEMORY:
+        return FOLIO_STATE_OUT_OF_MEMORY;
+    }
+    return FOLIO_STATE_CATEGORY_NAME_INVALID;
+}
+
+static enum folio_state_outcome
+prepare_category_rename(struct folio_state *_Nonnull state,
+                        const struct category_rename_target *_Nonnull target)
+{
+    struct rename_plan *_Nullable intent = nullptr;
+    enum folio_state_outcome prepared = from_category_rename(
+        rename_plan_create_category(state->categories, target->category, target->name, &intent));
+    if (prepared != FOLIO_STATE_READY)
+    {
+        return prepared;
+    }
+    if (note_corpus_create(&state->rename_corpus) != NOTE_CORPUS_ACCEPTED)
+    {
+        rename_plan_destroy(intent);
+        return FOLIO_STATE_OUT_OF_MEMORY;
+    }
+    return apply_prepared_rename(state, intent, target->category);
+}
+
+enum folio_state_outcome
+folio_state_rename_category(struct folio_state *_Nonnull state,
+                            const struct category_rename_target *_Nonnull target,
+                            const char16_t *_Nonnull units, size_t count)
+{
+    if (folio_state_filtering(state))
+    {
+        return FOLIO_STATE_FILTERED;
+    }
+    if (target->category >= folio_state_category_count(state))
+    {
+        return FOLIO_STATE_NO_SUCH_CATEGORY;
+    }
+    enum folio_state_outcome synced = synchronize(state);
+    if (synced != FOLIO_STATE_READY)
+    {
+        return synced;
+    }
+    const char *_Nonnull name = category_name_text(target->name);
+    if (strcmp(category_ledger_name(state->categories, target->category), name) == 0)
+    {
+        return FOLIO_STATE_READY;
+    }
+    if (holds_folded_category(state, name))
+    {
+        return FOLIO_STATE_CATEGORY_NAME_TAKEN;
+    }
+    if (state->document == FOLIO_DOCUMENT_NAMED && state->mode == PANE_MODE_EDIT &&
+        state->selected_category == target->category)
+    {
+        enum folio_state_outcome saved = save_note(state, units, count);
+        if (saved != FOLIO_STATE_READY)
+        {
+            return saved;
+        }
+    }
+    return prepare_category_rename(state, target);
 }
 
 /* 挿した台帳の結果。MALFORMED は完全一致の重複なので名前の衝突として返す。 */
@@ -2880,6 +2994,11 @@ size_t folio_state_replace_count(const struct folio_state *_Nonnull state)
     return state->preview == nullptr ? 0 : replace_preview_count(state->preview);
 }
 
+bool folio_state_has_replace_preview(const struct folio_state *_Nonnull state)
+{
+    return state->preview != nullptr;
+}
+
 size_t folio_state_replace_error_offset(const struct folio_state *_Nonnull state)
 {
     return state->replace_offset;
@@ -2954,6 +3073,14 @@ enum folio_state_outcome folio_state_set_index_filter(struct folio_state *_Nonnu
         state->scroll = 0;
         settle_cursor(state);
         return FOLIO_STATE_READY;
+    }
+    if (category_rename_pending(state))
+    {
+        enum folio_state_outcome synced = synchronize(state);
+        if (synced != FOLIO_STATE_READY)
+        {
+            return synced;
+        }
     }
     struct utf8_text *_Nullable term = nullptr;
     enum utf8_text_outcome converted = utf8_text_create(units, count, &term);
@@ -3044,13 +3171,14 @@ bool folio_state_rename_pending(const struct folio_state *_Nonnull state,
     }
     out->from = rename_plan_from(state->rename);
     out->to = rename_plan_to(state->rename);
+    out->kind = rename_plan_kind(state->rename);
     return true;
 }
 
 struct pane_title_view folio_state_pane_title(const struct folio_state *_Nonnull state)
 {
     struct pane_title_view title = {.any = false,
-                                    .recovering = false,
+                                    .recovering = PANE_RECOVERY_NONE,
                                     .ordinal = 0,
                                     .category = "",
                                     .note = "",
@@ -3061,7 +3189,18 @@ struct pane_title_view folio_state_pane_title(const struct folio_state *_Nonnull
     }
     title.any = true;
     /* 未完了の改名があることだけを伝える。言い換えの文言は UI が持つ（ADR 0022 の決定 2）。 */
-    title.recovering = state->rename != nullptr;
+    if (state->rename != nullptr && state->selected_category == state->rename_category)
+    {
+        switch (rename_plan_kind(state->rename))
+        {
+        case RENAME_KIND_NOTE:
+            title.recovering = PANE_RECOVERY_NOTE;
+            break;
+        case RENAME_KIND_CATEGORY:
+            title.recovering = PANE_RECOVERY_CATEGORY;
+            break;
+        }
+    }
     title.ordinal = state->selected_category + 1;
     title.category = category_ledger_name(state->categories, state->selected_category);
     title.note =
@@ -3127,6 +3266,15 @@ static bool read_version(struct folio_state *_Nonnull state,
 
 enum folio_state_outcome folio_state_open_history(struct folio_state *_Nonnull state)
 {
+    if (category_rename_pending(state) && state->document != FOLIO_DOCUMENT_NONE &&
+        state->selected_category == state->rename_category)
+    {
+        enum folio_state_outcome synced = synchronize(state);
+        if (synced != FOLIO_STATE_READY)
+        {
+            return synced;
+        }
+    }
     folio_state_close_history(state);
     if (state->document == FOLIO_DOCUMENT_NONE)
     {
@@ -3284,6 +3432,7 @@ void folio_state_destroy(struct folio_state *_Nullable state)
     free(state->notes);
     /* 未完了の意図は永続的な記録の側に残る。ここで捨てるのはメモリだけ（ADR 0022 の決定 7）。 */
     rename_plan_destroy(state->rename);
+    note_corpus_destroy(state->rename_corpus);
     category_ledger_destroy(state->categories);
     markdown_rtf_destroy(state->pane);
     note_text_destroy(state->body);
