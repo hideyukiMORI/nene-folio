@@ -282,7 +282,8 @@ void note_pane_render(struct note_pane *_Nonnull pane, const char *_Nonnull rtf,
     /* 流し込みの途中で EN_VSCROLL が届いても、そこから表を作って印を落とさない（補正 5）。
      * 印を落とすのは流し込みが終わったあとの、最初の描き直しである。 */
     pane->streaming = true;
-    SendMessageW(pane->handle, EM_STREAMIN, SF_RTF, (LPARAM)&editing);
+    SendMessageW(pane->handle, EM_STREAMIN, ((WPARAM)CP_UTF8 << 16) | SF_USECODEPAGE | SF_RTF,
+                 (LPARAM)&editing);
     pane->streaming = false;
 }
 

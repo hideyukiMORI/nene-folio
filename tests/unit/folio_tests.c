@@ -25,6 +25,11 @@ bool same_text(const char *_Nonnull actual, const char *_Nonnull expected)
 
 static bool run_target_tests(const char *_Nonnull argument)
 {
+    if (strcmp(argument, "--markdown-rtf") == 0)
+    {
+        run_markdown_tests();
+        return true;
+    }
     if (strcmp(argument, "--commands-ui") == 0)
     {
         run_command_tests();

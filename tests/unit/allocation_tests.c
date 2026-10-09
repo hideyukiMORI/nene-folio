@@ -257,7 +257,8 @@ static bool notes_scenario(void)
 
 static bool markdown_scenario(void)
 {
-    const char *source = "# T\n\n**b** `c` [l](u) \xE6\x97\xA5\n- i\n> q\n```\nx\n```\n";
+    const char *source =
+        "# T\n\n**b** `c` [l](u) \xE6\x97\xA5\xEF\xBF\xBD\v\n- i\n> q\n```\nx\n```\n";
     struct note_text *text = nullptr;
     enum note_text_outcome accepted = note_text_create(source, strlen(source), &text);
     if (accepted == NOTE_TEXT_OUT_OF_MEMORY)

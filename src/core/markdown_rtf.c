@@ -101,75 +101,20 @@ static enum markdown_line_kind classify(const char *_Nonnull line, size_t length
     return ordered_marker(line, length) > 0 ? MARKDOWN_LINE_ORDERED : MARKDOWN_LINE_TEXT;
 }
 
-/* UTF-16 の 1 単位を \uN? で書く。\u は 16 bit 符号付きなので 0x8000 以上は負数にする。 */
-static void append_unit(struct text_buffer *_Nonnull out, uint32_t unit)
-{
-    long value = unit >= 0x8000 ? (long)unit - 0x10000 : (long)unit;
-    char text[16];
-    size_t written = 0;
-    text[written++] = '\\';
-    text[written++] = 'u';
-    if (value < 0)
-    {
-        text[written++] = '-';
-        value = -value;
-    }
-    char digits[8];
-    size_t digit_count = 0;
-    do
-    {
-        digits[digit_count++] = (char)('0' + value % 10);
-        value /= 10;
-    } while (value > 0);
-    while (digit_count > 0)
-    {
-        text[written++] = digits[--digit_count];
-    }
-    text[written++] = '?';
-    text_buffer_append(out, text, written);
-}
-
-/* 1 文字を RTF として書く。制御文字は \ { } を守り、非 ASCII は \uN? にする。 */
-static void append_code_point(struct text_buffer *_Nonnull out, uint32_t code_point)
-{
-    if (code_point == '\\' || code_point == '{' || code_point == '}')
-    {
-        char escaped[2] = {'\\', (char)code_point};
-        text_buffer_append(out, escaped, 2);
-        return;
-    }
-    if (code_point < 0x80)
-    {
-        char raw = (char)code_point;
-        text_buffer_append(out, &raw, 1);
-        return;
-    }
-    if (code_point < 0x10000)
-    {
-        append_unit(out, code_point);
-        return;
-    }
-    append_unit(out, 0xD800 + ((code_point - 0x10000) >> 10));
-    append_unit(out, 0xDC00 + ((code_point - 0x10000) & 0x3FF));
-}
-
-/* text のバイト列を UTF-8 として読みながら書く。装飾は解釈しない。 */
+/* 検証済みUTF-8を保持し、RTFの構文記号だけをescapeする（ADR 0002の#236補正）。 */
 static void append_plain(struct text_buffer *_Nonnull out, const char *_Nonnull text, size_t length)
 {
-    for (size_t index = 0; index < length;)
+    for (size_t index = 0; index < length; ++index)
     {
-        uint32_t code_point = 0;
-        size_t consumed = utf8_text_decode(text + index, length - index, &code_point);
-        if (consumed == 0)
+        if (text[index] == '\r')
         {
-            index += 1; /* note_text が検証済みなので来ない。来ても止まらない */
             continue;
         }
-        if (code_point != '\r')
+        if (text[index] == '\\' || text[index] == '{' || text[index] == '}')
         {
-            append_code_point(out, code_point);
+            text_buffer_append_text(out, "\\");
         }
-        index += consumed;
+        text_buffer_append(out, text + index, 1);
     }
 }
 

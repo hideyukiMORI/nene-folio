@@ -53,3 +53,23 @@ SDL2 ＋ 即時モード GUI（枠なしは容易）。施主は「Windows の�
 ## 参考
 
 - NeNe Loupe ADR 0002（素の Win32・UI ライブラリ無し）
+
+## 2026-10-10 の補正（#236 — 閲覧もUTF-8 RTFで文字を保持する）
+
+main `1bb1616` のASCII RTFはU+FFFDを `\u-3?` へ変換していたが、RichEditの入力でその文字が消えた。
+隣接する縦タブも失う例があり、#234のraw取得では入力前の欠落を直せない。
+符号なしescape・uc0・fallback変更では保持できず、UTF-8 RTFの公式入力方法では保持できた。
+
+- core `markdown_rtf` が作る唯一の形式をUTF-8 RTFにする。検証済み本文のUTF-8 byte列を保持し、
+  RTF構文の `\` / `{` / `}` のescapeと既存のCR除去だけを同じ `append_plain` で行う。
+  UTF-16単位への変換と `\uN?` の生成は削除する。U+FFFDだけの特例表は追加しない。
+- UIの唯一のRTF入力で `EM_STREAMIN` に `SF_RTF | SF_USECODEPAGE` とCP_UTF8を渡す。
+  上位wordへ移す前にWPARAMへ広げ、signed intの左shift overflowを起こさない。
+  平文編集のUTF-16 stream、#234のraw取得、保存の検証・正規化は変えない。
+- Markdownの対応範囲、RTF制御語・face・palette、所有者と公開関数の型は維持する。
+  RTFは表示用の派生物であり、md・履歴・台帳の保存schemaと依存は変わらない。
+- 対象unitと実RichEditでU+FFFD、隣接VT、日本語/中国語/絵文字、装飾、検索位置、
+  callback境界を跨ぐUTF-8、確保失敗を検証する。物理IME・他画面・Markdown拡張は対象外。
+
+API根拠: Microsoft [EM_STREAMIN](https://learn.microsoft.com/en-us/windows/win32/controls/em-streamin) の
+Rich Edit 3.0以降のUTF-8 RTF入力。製品のRICHEDIT50Wで実測した。Waivers: none。
