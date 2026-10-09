@@ -535,6 +535,7 @@ static void reflow_prompt(struct name_prompt *_Nonnull prompt)
     position(prompt, prompt->accept, (RECT){192, 230, 280, 258}, lowered);
     position(prompt, prompt->cancel, (RECT){288, 230, 380, 258}, lowered);
     size_dialog(prompt);
+    RedrawWindow(prompt->dialog, nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN);
 }
 
 static bool initialize(struct name_prompt *_Nonnull prompt, HWND dialog)
@@ -695,6 +696,11 @@ static void show_pending_reason(struct name_prompt *_Nonnull prompt,
                                 enum folio_state_outcome outcome)
 {
     enum folio_language language = prompt_language(prompt);
+    if (outcome == FOLIO_STATE_RENAME_PENDING)
+    {
+        show_line(prompt->failure, UI_TEXT_PROMPT_PENDING_EXPLANATION, language);
+        return;
+    }
     const char *_Nonnull reason = folio_state_failure_line(outcome, language);
     const char *_Nonnull explanation = ui_text_line(UI_TEXT_PROMPT_PENDING_EXPLANATION, language);
     size_t reason_length = strlen(reason);

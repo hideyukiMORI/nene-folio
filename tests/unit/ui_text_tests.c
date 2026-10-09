@@ -243,7 +243,7 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_PROMPT_HINT_RETRY_RENAME] =
         "先にこの名前変更を終えます。いま頼んだ操作はまだ始めていません。",
     [UI_TEXT_PROMPT_TITLE_NEW_CATEGORY] = "新しいカテゴリ",
-    [UI_TEXT_PROMPT_HINT_PENDING] = "この名前変更を最後まで終えるまで、ほかの操作へ進めません。",
+    [UI_TEXT_PROMPT_HINT_PENDING] = "この名前変更はまだ完了していません。",
     [UI_TEXT_PROMPT_HINT_FIRST_SAVE] = "名前の末尾に .md を補います。",
     [UI_TEXT_PROMPT_HINT_SAVE_AS] = "元の保存内容を保ち、別の .md を作ります。",
     [UI_TEXT_PROMPT_HINT_RENAME] = "md と履歴を新しい名前へ移します。",
