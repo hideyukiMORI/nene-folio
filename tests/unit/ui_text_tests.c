@@ -36,6 +36,8 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_FAILURE_NOTHING_SELECTED] = "ノートを選んでから編集してください。",
     [UI_TEXT_FAILURE_NOT_EDITING] = "編集モードではありません。",
     [UI_TEXT_FAILURE_NOTE_MALFORMED] = "編集中の本文に壊れた文字があります。保存していません。",
+    [UI_TEXT_FAILURE_NOTE_TOO_LARGE] =
+        "本文が大きすぎて保存できません。上限は 16 MiB です。本文を減らしてから保存してください。",
     [UI_TEXT_FAILURE_NOTE_STORE_FAILED] =
         "ノートを書き戻せませんでした。編集中の本文はそのままです。"
         "別名で保存するか、編集を破棄して読み直せます。",

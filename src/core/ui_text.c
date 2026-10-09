@@ -39,6 +39,10 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
                                           "Select a note before editing.", "请先选择笔记再编辑。"},
     [UI_TEXT_FAILURE_NOT_EDITING] = {"編集モードではありません。", "Not in edit mode.",
                                      "当前不是编辑模式。"},
+    [UI_TEXT_FAILURE_NOTE_TOO_LARGE] =
+        {"本文が大きすぎて保存できません。上限は 16 MiB です。本文を減らしてから保存してください。",
+         "This note is too large to save. The limit is 16 MiB. Shorten the note, then save again.",
+         "笔记过大，无法保存。上限为 16 MiB。请缩短内容后再保存。"},
     [UI_TEXT_FAILURE_NOTE_MALFORMED] =
         {"編集中の本文に壊れた文字があります。保存していません。",
          "The body being edited has broken characters. It was not saved.",

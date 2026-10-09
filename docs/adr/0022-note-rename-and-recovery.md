@@ -211,3 +211,10 @@ data作成→錠取得→記録不在確認を経て成功し得る。これは�
 起動しただけではdataを作らない。初回保存で勝手にカテゴリを作る経路も追加しない。
 
 実測は [対象品質記録](../quality/2026-10-09-write-lock-checks.md)。公開port/enum/永続schema/依存/ゲートは変更しない。
+
+## 2026-10-09 の補正（#227 — 公開する記録の上限）
+
+[ADR0006の共通raw file上限](0006-edit-mode-and-save-path.md)は台帳と復旧記録にも適用する。
+STARTは記録全体の実serialized lengthが16 MiBを超えると、file_bytes_createの共通入口で
+temporary file/記録公開前にUNWRITABLEとなり、既存JOURNAL_FAILEDで拒否する。
+履歴/mdを動かさず、generic persistence結果やjournal schemaを増やさない。

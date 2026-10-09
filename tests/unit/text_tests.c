@@ -1,10 +1,13 @@
+#include "allocation_probe.h"
 #include "name_list.h"
 #include "note_text.h"
+#include "persisted_size_limit.h"
 #include "rgb_color.h"
 #include "unit_tests.h"
 #include "utf16_text.h"
 #include "utf8_text.h"
 
+#include <stdlib.h>
 #include <string.h>
 
 static void verify_utf8_decode(void)
@@ -278,4 +281,152 @@ void run_text_tests(void)
     verify_first_line();
     verify_colors();
     verify_name_list();
+}
+
+static char *_Nonnull size_bytes(void)
+{
+    char *bytes = malloc(persisted_size_limit + 4);
+    if (bytes == nullptr)
+    {
+        require(false, "size boundary fixture allocated");
+        exit(1);
+    }
+    memset(bytes, 'X', persisted_size_limit + 4);
+    return bytes;
+}
+
+static void verify_create_size(void)
+{
+    char *bytes = size_bytes();
+    struct note_text *text = nullptr;
+    for (size_t length = persisted_size_limit - 1; length <= persisted_size_limit; ++length)
+    {
+        require(note_text_create(bytes, length, &text) == NOTE_TEXT_ACCEPTED &&
+                    note_text_length(text) == length,
+                "canonical limit minus one and limit accepted");
+        note_text_destroy(text);
+    }
+    struct note_text *sentinel = nullptr;
+    require(note_text_create("M", 1, &sentinel) == NOTE_TEXT_ACCEPTED, "size sentinel");
+    text = sentinel;
+    require(note_text_create(bytes, persisted_size_limit + 1, &text) == NOTE_TEXT_TOO_LARGE &&
+                text == sentinel,
+            "canonical limit plus one rejected; output unchanged");
+    bytes[persisted_size_limit] = (char)0x80;
+    require(note_text_create(bytes, persisted_size_limit + 1, &text) == NOTE_TEXT_INVALID_UTF8 &&
+                text == sentinel,
+            "malformed UTF8 precedes oversized create");
+    require(note_text_from_editor(bytes, persisted_size_limit + 1, LINE_ENDING_CRLF, &text) ==
+                    NOTE_TEXT_INVALID_UTF8 &&
+                text == sentinel,
+            "malformed UTF8 precedes oversized normalization");
+    note_text_destroy(sentinel);
+    free(bytes);
+}
+
+static void verify_multibyte_bom_size(void)
+{
+    char *bytes = size_bytes();
+    for (size_t index = 0; index + 3 <= persisted_size_limit; index += 3)
+    {
+        memcpy(bytes + index, "\xE6\x97\xA5", 3);
+    }
+    struct note_text *text = nullptr;
+    require(note_text_create(bytes, persisted_size_limit, &text) == NOTE_TEXT_ACCEPTED &&
+                note_text_length(text) == persisted_size_limit,
+            "multibyte UTF8 is measured in bytes, not characters");
+    note_text_destroy(text);
+    text = nullptr;
+    require(note_text_create(bytes, persisted_size_limit + 1, &text) == NOTE_TEXT_TOO_LARGE &&
+                text == nullptr,
+            "multibyte limit plus byte rejected");
+    memmove(bytes + 3, bytes, persisted_size_limit);
+    memcpy(bytes, "\xEF\xBB\xBF", 3);
+    require(note_text_create(bytes, persisted_size_limit + 3, &text) == NOTE_TEXT_ACCEPTED &&
+                note_text_length(text) == persisted_size_limit,
+            "BOM excluded from canonical create limit");
+    note_text_destroy(text);
+    require(note_text_from_editor(bytes, persisted_size_limit + 3, LINE_ENDING_LF, &text) ==
+                    NOTE_TEXT_ACCEPTED &&
+                note_text_length(text) == persisted_size_limit,
+            "editor also excludes BOM from canonical limit");
+    note_text_destroy(text);
+    free(bytes);
+}
+
+static void verify_normalized_size(void)
+{
+    char *bytes = size_bytes();
+    bytes[0] = '\r';
+    bytes[1] = '\n';
+    struct note_text *text = nullptr;
+    require(note_text_from_editor(bytes, persisted_size_limit + 1, LINE_ENDING_LF, &text) ==
+                    NOTE_TEXT_ACCEPTED &&
+                note_text_length(text) == persisted_size_limit && note_text_bytes(text)[0] == '\n',
+            "CRLF shrinking accepts raw bytes above limit");
+    note_text_destroy(text);
+    text = nullptr;
+    require(note_text_from_editor(bytes, persisted_size_limit + 1, LINE_ENDING_CRLF, &text) ==
+                    NOTE_TEXT_TOO_LARGE &&
+                text == nullptr,
+            "CRLF preserved remains above limit");
+    bytes[1] = 'X';
+    require(note_text_from_editor(bytes, persisted_size_limit, LINE_ENDING_CRLF, &text) ==
+                    NOTE_TEXT_TOO_LARGE &&
+                text == nullptr,
+            "single CR expanding rejects raw within limit");
+    require(note_text_from_editor(bytes, persisted_size_limit - 1, LINE_ENDING_CRLF, &text) ==
+                    NOTE_TEXT_ACCEPTED &&
+                note_text_length(text) == persisted_size_limit &&
+                note_text_bytes(text)[0] == '\r' && note_text_bytes(text)[1] == '\n',
+            "expansion exactly to limit accepted");
+    note_text_destroy(text);
+    memset(bytes, 'X', persisted_size_limit + 1);
+    bytes[persisted_size_limit - 1] = '\n';
+    require(note_text_from_editor(bytes, persisted_size_limit, LINE_ENDING_LF, &text) ==
+                    NOTE_TEXT_ACCEPTED &&
+                note_text_bytes(text)[persisted_size_limit - 1] == '\n',
+            "terminal newline at limit preserved");
+    note_text_destroy(text);
+    text = nullptr;
+    require(note_text_from_editor(bytes, persisted_size_limit + 1, LINE_ENDING_LF, &text) ==
+                    NOTE_TEXT_TOO_LARGE &&
+                text == nullptr,
+            "editor canonical limit plus one rejected");
+    free(bytes);
+}
+
+static void verify_oversize_before_allocation(void)
+{
+    struct note_text *check = nullptr;
+    allocation_probe_fail_at(1);
+    enum note_text_outcome active = note_text_create("M", 1, &check);
+    allocation_probe_fail_at(0);
+    note_text_destroy(check);
+    if (active != NOTE_TEXT_OUT_OF_MEMORY)
+    {
+        return;
+    }
+    char *bytes = size_bytes();
+    check = nullptr;
+    allocation_probe_fail_at(1);
+    require(note_text_create(bytes, persisted_size_limit + 1, &check) == NOTE_TEXT_TOO_LARGE &&
+                note_text_create("M", 1, &check) == NOTE_TEXT_OUT_OF_MEMORY,
+            "oversized create consumes no allocation point");
+    allocation_probe_fail_at(0);
+    allocation_probe_fail_at(1);
+    require(note_text_from_editor(bytes, persisted_size_limit + 1, LINE_ENDING_LF, &check) ==
+                    NOTE_TEXT_TOO_LARGE &&
+                note_text_create("M", 1, &check) == NOTE_TEXT_OUT_OF_MEMORY,
+            "oversized normalization consumes no allocation point");
+    allocation_probe_fail_at(0);
+    free(bytes);
+}
+
+void run_note_size_text_tests(void)
+{
+    verify_create_size();
+    verify_multibyte_bom_size();
+    verify_normalized_size();
+    verify_oversize_before_allocation();
 }

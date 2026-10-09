@@ -1,4 +1,5 @@
 #include "note_text.h"
+#include "persisted_size_limit.h"
 
 #include "text_buffer.h"
 #include "utf8_text.h"
@@ -67,6 +68,10 @@ enum note_text_outcome note_text_create(const char *_Nonnull bytes, size_t lengt
     {
         return NOTE_TEXT_INVALID_UTF8;
     }
+    if (length > persisted_size_limit)
+    {
+        return NOTE_TEXT_TOO_LARGE;
+    }
     return adopt(bytes, length, out);
 }
 
@@ -83,6 +88,37 @@ static const char *_Nonnull break_of(enum line_ending ending)
     return "\n";
 }
 
+/* 改行tokenの入力byte数。事前計数と書出しが同じCRLF判定を使う。 */
+static size_t break_width(const char *_Nonnull bytes, size_t length, size_t index)
+{
+    if (bytes[index] != '\r' && bytes[index] != '\n')
+    {
+        return 0;
+    }
+    bool pair = bytes[index] == '\r' && index + 1 < length && bytes[index + 1] == '\n';
+    return pair ? 2 : 1;
+}
+
+/* UTF-8検証後に呼ぶ。raw長では断らず、出力byte数を上限内で数える。 */
+static bool normalized_within_limit(const char *_Nonnull bytes, size_t length,
+                                    enum line_ending ending)
+{
+    size_t total = 0;
+    size_t ending_width = strlen(break_of(ending));
+    for (size_t index = 0; index < length;)
+    {
+        size_t input_width = break_width(bytes, length, index);
+        size_t output_width = input_width == 0 ? 1 : ending_width;
+        if (output_width > persisted_size_limit - total)
+        {
+            return false;
+        }
+        total += output_width;
+        index += input_width == 0 ? 1 : input_width;
+    }
+    return true;
+}
+
 /* CR・CRLF・LF をすべて 1 つの改行と見なし、ending の形で書き直す。 */
 static void fold(const char *_Nonnull bytes, size_t length, enum line_ending ending,
                  struct text_buffer *_Nonnull out)
@@ -92,15 +128,15 @@ static void fold(const char *_Nonnull bytes, size_t length, enum line_ending end
     size_t index = 0;
     while (index < length)
     {
-        if (bytes[index] != '\r' && bytes[index] != '\n')
+        size_t width = break_width(bytes, length, index);
+        if (width == 0)
         {
             index += 1;
             continue;
         }
         text_buffer_append(out, bytes + start, index - start);
         text_buffer_append_text(out, line_break);
-        bool pair = bytes[index] == '\r' && index + 1 < length && bytes[index + 1] == '\n';
-        index += pair ? 2 : 1;
+        index += width;
         start = index;
     }
     text_buffer_append(out, bytes + start, length - start);
@@ -114,6 +150,10 @@ enum note_text_outcome note_text_from_editor(const char *_Nonnull bytes, size_t 
     if (!well_formed(bytes, length))
     {
         return NOTE_TEXT_INVALID_UTF8;
+    }
+    if (!normalized_within_limit(bytes, length, ending))
+    {
+        return NOTE_TEXT_TOO_LARGE;
     }
     struct text_buffer *_Nullable folded = nullptr;
     if (text_buffer_create(&folded) != TEXT_BUFFER_ACCEPTED)

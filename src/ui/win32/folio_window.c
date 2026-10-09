@@ -2364,6 +2364,7 @@ static const bool inline_outcomes[] = {
     [FOLIO_STATE_NO_SUCH_NOTE] = false,
     [FOLIO_STATE_NOTE_UNREADABLE] = false,
     [FOLIO_STATE_NOTE_MALFORMED] = false,
+    [FOLIO_STATE_NOTE_TOO_LARGE] = false,
     [FOLIO_STATE_NOTE_STORE_FAILED] = false,
     [FOLIO_STATE_HISTORY_FAILED] = false,
     [FOLIO_STATE_NAME_TAKEN] = false,

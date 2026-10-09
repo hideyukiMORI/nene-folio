@@ -1993,6 +1993,23 @@ static enum folio_state_outcome store_edited(struct folio_state *_Nonnull state,
     return refresh_copy(state);
 }
 
+/* 本文の型付き結果を、保存と複製で同じstate結果へ写す。 */
+static enum folio_state_outcome text_outcome(enum note_text_outcome outcome)
+{
+    switch (outcome)
+    {
+    case NOTE_TEXT_ACCEPTED:
+        return FOLIO_STATE_READY;
+    case NOTE_TEXT_INVALID_UTF8:
+        return FOLIO_STATE_NOTE_MALFORMED;
+    case NOTE_TEXT_TOO_LARGE:
+        return FOLIO_STATE_NOTE_TOO_LARGE;
+    case NOTE_TEXT_OUT_OF_MEMORY:
+        return FOLIO_STATE_OUT_OF_MEMORY;
+    }
+    return FOLIO_STATE_NOTE_MALFORMED;
+}
+
 /* UI が持つ編集中の本文（UTF-16）を core で検証・変換し、読んだ本文の改行の形へ揃える。
  * 保存と読み取り専用の変更問い合わせがこの 1 本を共有する（C-014・ADR 0016 の決定 10）。 */
 static enum folio_state_outcome edited_text(const struct folio_state *_Nonnull state,
@@ -2013,12 +2030,7 @@ static enum folio_state_outcome edited_text(const struct folio_state *_Nonnull s
     enum note_text_outcome accepted = note_text_from_editor(
         utf8_text_bytes(narrow), utf8_text_length(narrow), note_text_line_ending(state->body), out);
     utf8_text_destroy(narrow);
-    if (accepted != NOTE_TEXT_ACCEPTED)
-    {
-        return accepted == NOTE_TEXT_OUT_OF_MEMORY ? FOLIO_STATE_OUT_OF_MEMORY
-                                                   : FOLIO_STATE_NOTE_MALFORMED;
-    }
-    return FOLIO_STATE_READY;
+    return text_outcome(accepted);
 }
 
 static enum folio_state_outcome save_note(struct folio_state *_Nonnull state,
@@ -2127,12 +2139,7 @@ static enum folio_state_outcome copied_text(const struct folio_state *_Nonnull s
     }
     enum note_text_outcome copied =
         note_text_create(note_text_bytes(state->body), note_text_length(state->body), out);
-    if (copied != NOTE_TEXT_ACCEPTED)
-    {
-        return copied == NOTE_TEXT_OUT_OF_MEMORY ? FOLIO_STATE_OUT_OF_MEMORY
-                                                 : FOLIO_STATE_NOTE_MALFORMED;
-    }
-    return FOLIO_STATE_READY;
+    return text_outcome(copied);
 }
 
 enum folio_state_outcome folio_state_store_new(struct folio_state *_Nonnull state,
@@ -3376,6 +3383,7 @@ static const enum ui_text failure_lines[] = {
     [FOLIO_STATE_NOTHING_SELECTED] = UI_TEXT_FAILURE_NOTHING_SELECTED,
     [FOLIO_STATE_NOT_EDITING] = UI_TEXT_FAILURE_NOT_EDITING,
     [FOLIO_STATE_NOTE_MALFORMED] = UI_TEXT_FAILURE_NOTE_MALFORMED,
+    [FOLIO_STATE_NOTE_TOO_LARGE] = UI_TEXT_FAILURE_NOTE_TOO_LARGE,
     [FOLIO_STATE_NOTE_STORE_FAILED] = UI_TEXT_FAILURE_NOTE_STORE_FAILED,
     [FOLIO_STATE_HISTORY_FAILED] = UI_TEXT_FAILURE_HISTORY_FAILED,
     [FOLIO_STATE_UNSAVED_CHANGES] = UI_TEXT_FAILURE_UNSAVED_CHANGES,
