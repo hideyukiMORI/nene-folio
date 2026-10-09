@@ -101,3 +101,26 @@ RichEdit（`RICHEDIT50W` / Msftedit.dll / Windows 11 10.0.26200）の実測（20
 - [EM_STREAMOUT](https://learn.microsoft.com/en-us/windows/win32/controls/em-streamout) /
   [EN_MSGFILTER](https://learn.microsoft.com/en-us/windows/win32/controls/en-msgfilter) /
   [EM_EXLIMITTEXT](https://learn.microsoft.com/en-us/windows/win32/controls/em-exlimittext)
+
+## 2026-10-09 の補正（#227 — 保存できる本文の上限）
+
+coreの単一目的 `persisted_size_limit.h` が持つ `persisted_size_limit`（16 MiB = 16*1024*1024 bytes）を、
+`note_text` と `file_bytes` の唯一の上限にする。note_textはBOM除去後・終端NULを除くUTF-8本文、
+file_bytesはBOM/JSON escape/書式を含むraw serialized fileを数える。依存はadapter→coreの既存方向だけ。
+
+`note_text_create` / `note_text_from_editor` は不正UTF-8を先に `NOTE_TEXT_INVALID_UTF8` で拒否し、
+妥当な本文の正規化後byte数が上限を超える場合は `NOTE_TEXT_TOO_LARGE`。失敗時outは変えない。
+from_editorは改行を元の形へ揃えた長さを確保前に数え、raw入力長だけで拒否しない。
+UTF-16→UTF-8変換自体の実OOMは従来どおりOOMとする。
+
+applicationは専用 `FOLIO_STATE_NOTE_TOO_LARGE` と3言語の既存失敗表示へ写す。
+通常/初回/別名保存と変更問い合わせ（`:q`を含む）はarchive/render/create/write前に拒否し、
+mode/所有済みbody/対象/本文入力/選択/Undoを保つ。`:q`は既存失敗経路で退出を中止する。
+新しい確認面や退出取消の文言は追加しない。正常same-body/no-opの意味は変えない。
+既存の先行synchronizeの順序は維持し、以前の台帳/検索写し/改名保留の修復は今回本文の拒否と区別する。
+変更問い合わせのサイズ判定は名前付きEDIT。無題は従来どおり先にCHANGEDを返し、VIEWはSAMEとなる。
+
+file_bytesのread保護は現16 MiBのまま。store/createも共通store入口でraw長を検査し、
+temporary fileを作る前に `PERSISTENCE_UNWRITABLE` とする。generic persistence enumは増やさない。
+canonical本文16 MiBはBOM無しで保存/再読込可能。外部BOM付きraw16 MiB+3は従来どおり読込拒否。
+上限を緩めたり、別の巨大本文経路を作ったりしない。保存schema/依存/gateは不変。

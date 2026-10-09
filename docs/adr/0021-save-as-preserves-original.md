@@ -52,3 +52,10 @@ Ctrl+SのWM_CHARではShift併用を区別できない。製品は修飾キー�
   （move_note の (e) と create_edited の公開後）。名前入力面は STALE だけ閉じ、UNSYNCED は入力を残す。
 - `note_changed`（`:q`）も他の保存系と同じ修復を先に試み、失敗だけ UNSYNCED を返す。書込が回復すれば
   一度保存しなくても通常の変更判定へ進む。副作用はこの修復だけで、md・履歴・mode は変えない。
+
+## 2026-10-09 の補正（#227）
+
+別名保存も[ADR0006の共通上限](0006-edit-mode-and-save-path.md)へ従う。
+EDITは正規化後本文の超過をrender/create前に専用NOTE_TOO_LARGEで拒否し元の文書/入力/Undoを保つ。
+VIEWは同じ上限を満たす所有済みnote_text原文を既存経路で複製する。
+名前付きEDITの変更問い合わせ（`:q`）も型付き失敗で退出を止める。新しい確認箱や別の判定経路は追加しない。

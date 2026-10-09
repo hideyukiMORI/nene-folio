@@ -242,3 +242,10 @@ NOTEのmdが新名へ移り、台帳/記録の完了前に旧名で初回corpus�
 順序はindex修復→現在文書の写し修復→rename再開。通常経路で写し保留とrename保留は併存しない
 （必要保存の写し失敗なら改名STARTに進まない）。名前/台帳を変えるより先に保存済み正本を写す。
 planの所有・単一START/adopt・prepared CATEGORY corpus・最新preview失効の契約は不変。
+
+## 2026-10-09 の補正（#227 — 共通記録上限）
+
+NOTE/CATEGORYとも[ADR0006の共通raw file上限](0006-edit-mode-and-save-path.md)を使う。
+完成後台帳が上限以内でも、メタデータ込みjournal全体が超過すればSTART公開前のJOURNAL_FAILED。
+履歴/本体を動かさず記録も残さない。serialized escape/書式を含む実byte長で判断し、
+別journal/別port/別enum/schema改定/読込上限緩和は作らない。

@@ -443,6 +443,8 @@ static enum persistence_outcome read_text(const wchar_t *_Nonnull path,
         return PERSISTENCE_LOADED;
     case NOTE_TEXT_INVALID_UTF8:
         return PERSISTENCE_MALFORMED;
+    case NOTE_TEXT_TOO_LARGE:
+        return PERSISTENCE_UNREADABLE;
     case NOTE_TEXT_OUT_OF_MEMORY:
         return PERSISTENCE_OUT_OF_MEMORY;
     }

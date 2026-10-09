@@ -6,6 +6,7 @@ enum note_text_outcome : unsigned char
 {
     NOTE_TEXT_ACCEPTED,
     NOTE_TEXT_INVALID_UTF8,
+    NOTE_TEXT_TOO_LARGE, /* BOM除去/改行正規化後のUTF-8本文が共通上限を超える */
     NOTE_TEXT_OUT_OF_MEMORY
 };
 

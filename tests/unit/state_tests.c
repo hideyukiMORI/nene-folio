@@ -9,6 +9,7 @@
 #include "note_ledger.h"
 #include "note_name.h"
 #include "note_text.h"
+#include "persisted_size_limit.h"
 #include "persistence_port.h"
 #include "regex_port.h"
 #include "rename_plan.h"
@@ -1911,6 +1912,8 @@ static const char *_Nonnull const expected_failure_lines[] = {
     [FOLIO_STATE_NOTHING_SELECTED] = "ノートを選んでから編集してください。",
     [FOLIO_STATE_NOT_EDITING] = "編集モードではありません。",
     [FOLIO_STATE_NOTE_MALFORMED] = "編集中の本文に壊れた文字があります。保存していません。",
+    [FOLIO_STATE_NOTE_TOO_LARGE] =
+        "本文が大きすぎて保存できません。上限は 16 MiB です。本文を減らしてから保存してください。",
     [FOLIO_STATE_NOTE_STORE_FAILED] = "ノートを書き戻せませんでした。編集中の本文はそのままです。"
                                       "別名で保存するか、編集を破棄して読み直せます。",
     [FOLIO_STATE_HISTORY_FAILED] =
@@ -5264,4 +5267,164 @@ static void verify_copy_allocation_boundaries(void)
     size_t loaded = same_save_allocation_count(true);
     require(unloaded == loaded, "normal same-save adds no cache allocation");
     printf("unchanged-save allocations loaded/unloaded: %zu/%zu\n", loaded, unloaded);
+}
+
+static void verify_size_named(const char16_t *_Nonnull units, size_t count)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    adapter.note_body = "M";
+    struct folio_state *state = history_state(&adapter);
+    require(folio_state_begin_edit(state) == FOLIO_STATE_READY, "edit size fixture");
+    const char *old_body = folio_state_pane_text(state);
+    require(folio_state_store_note(state, units, count) == FOLIO_STATE_NOTE_TOO_LARGE &&
+                folio_state_end_edit(state, units, count) == FOLIO_STATE_NOTE_TOO_LARGE,
+            "normal save and leaving EDIT reject oversized body");
+    struct note_name *name = accepted_note_name("copy");
+    struct note_destination destination = {.category = 0, .name = name};
+    require(folio_state_store_new(state, &destination, units, count) == FOLIO_STATE_NOTE_TOO_LARGE,
+            "EDIT Save As rejects before new md preparation");
+    enum folio_note_change changed = FOLIO_NOTE_SAME;
+    require(folio_state_note_changed(state, units, count, &changed) == FOLIO_STATE_NOTE_TOO_LARGE &&
+                changed == FOLIO_NOTE_SAME,
+            "named EDIT :q query fails with output unchanged");
+    require(folio_state_pane_text(state) == old_body && same_text(old_body, "M") &&
+                folio_state_pane_mode(state) == PANE_MODE_EDIT &&
+                folio_state_document_kind(state) == FOLIO_DOCUMENT_NAMED &&
+                same_text(folio_state_document_name(state), "one") &&
+                folio_state_document_category(state) == 0 && adapter.archives == 0 &&
+                adapter.note_writes == 0 && adapter.creates == 0 && adapter.ledger_writes == 0,
+            "size failure retains mode/body/target and no publication/archive");
+    require(folio_state_store_note(state, u"M", 1) == FOLIO_STATE_READY && adapter.archives == 0 &&
+                adapter.note_writes == 0,
+            "same-body save remains a no-op");
+    note_name_destroy(name);
+    folio_state_destroy(state);
+}
+
+static void verify_size_untitled(const char16_t *_Nonnull units, size_t count)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    adapter.note_body = "M";
+    struct folio_state *state = history_state(&adapter);
+    require(folio_state_new_note(state, 0) == FOLIO_STATE_READY, "new size fixture");
+    const char *body = folio_state_pane_text(state);
+    struct note_name *name = accepted_note_name("copy");
+    struct note_destination destination = {.category = 0, .name = name};
+    require(folio_state_store_new(state, &destination, units, count) ==
+                    FOLIO_STATE_NOTE_TOO_LARGE &&
+                folio_state_pane_text(state) == body &&
+                folio_state_document_kind(state) == FOLIO_DOCUMENT_UNTITLED &&
+                folio_state_pane_mode(state) == PANE_MODE_EDIT && adapter.creates == 0 &&
+                adapter.archives == 0 && adapter.note_writes == 0,
+            "first save keeps untitled state before render/create/archive");
+    enum folio_note_change changed = FOLIO_NOTE_SAME;
+    require(folio_state_note_changed(state, units, count, &changed) == FOLIO_STATE_READY &&
+                changed == FOLIO_NOTE_CHANGED,
+            "untitled query retains the existing CHANGED early return");
+    note_name_destroy(name);
+    folio_state_destroy(state);
+}
+
+static void verify_size_view(const char16_t *_Nonnull units, size_t count)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    adapter.note_body = "M";
+    struct folio_state *state = history_state(&adapter);
+    struct note_name *name = accepted_note_name("copy");
+    struct note_destination destination = {.category = 0, .name = name};
+    require(folio_state_store_new(state, &destination, units, count) == FOLIO_STATE_READY &&
+                adapter.creates == 1 && same_text(adapter.written_body, "M") &&
+                adapter.archives == 0 && adapter.note_writes == 0 &&
+                folio_state_pane_mode(state) == PANE_MODE_VIEW,
+            "VIEW Save As ignores editor input and copies the owned valid Markdown");
+    enum folio_note_change changed = FOLIO_NOTE_CHANGED;
+    require(folio_state_note_changed(state, units, count, &changed) == FOLIO_STATE_READY &&
+                changed == FOLIO_NOTE_SAME,
+            "VIEW query retains existing SAME early return");
+    note_name_destroy(name);
+    folio_state_destroy(state);
+}
+
+static void verify_size_after_index_repair(const char16_t *_Nonnull units, size_t count)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    adapter.note_body = "M";
+    struct folio_state *state = history_state(&adapter);
+    require(folio_state_begin_edit(state) == FOLIO_STATE_READY, "pending index size fixture");
+    struct note_name *name = accepted_note_name("copy");
+    struct note_destination destination = {.category = 0, .name = name};
+    adapter.ledger_write_outcome = PERSISTENCE_UNWRITABLE;
+    require(folio_state_store_new(state, &destination, u"M", 1) == FOLIO_STATE_LEDGER_STALE &&
+                adapter.creates == 1 && adapter.ledger_writes == 1,
+            "existing published index pending precedes the oversized intent");
+    adapter.ledger_write_outcome = PERSISTENCE_STORED;
+    require(folio_state_store_note(state, units, count) == FOLIO_STATE_NOTE_TOO_LARGE &&
+                adapter.ledger_writes == 2 && adapter.creates == 1 && adapter.archives == 0 &&
+                adapter.note_writes == 0 && same_text(folio_state_document_name(state), "copy"),
+            "prior index repair remains allowed before current body size refusal");
+    note_name_destroy(name);
+    folio_state_destroy(state);
+}
+
+static void verify_size_expansion(char16_t *_Nonnull units)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    adapter.note_body = "M\r\n";
+    struct folio_state *state = history_state(&adapter);
+    require(folio_state_begin_edit(state) == FOLIO_STATE_READY, "CRLF size fixture");
+    units[0] = u'\r';
+    require(folio_state_store_note(state, units, persisted_size_limit) ==
+                    FOLIO_STATE_NOTE_TOO_LARGE &&
+                adapter.archives == 0 && adapter.note_writes == 0,
+            "application rejects CRLF expansion despite raw length within limit");
+    folio_state_destroy(state);
+    adapter = healthy_adapter();
+    adapter.note_body = "M\n";
+    state = history_state(&adapter);
+    require(folio_state_begin_edit(state) == FOLIO_STATE_READY, "LF size fixture");
+    units[1] = u'\n';
+    enum folio_note_change changed = FOLIO_NOTE_SAME;
+    require(folio_state_note_changed(state, units, persisted_size_limit + 1, &changed) ==
+                    FOLIO_STATE_READY &&
+                changed == FOLIO_NOTE_CHANGED && adapter.archives == 0 &&
+                adapter.note_writes == 0 && adapter.creates == 0,
+            "application accepts CRLF shrinking to canonical limit without publishing");
+    folio_state_destroy(state);
+}
+
+static void verify_size_languages(void)
+{
+    require(same_text(folio_state_failure_line(FOLIO_STATE_NOTE_TOO_LARGE, FOLIO_LANGUAGE_JA),
+                      "本文が大きすぎて保存できません。上限は 16 MiB "
+                      "です。本文を減らしてから保存してください。"),
+            "size failure Japanese reason");
+    require(same_text(folio_state_failure_line(FOLIO_STATE_NOTE_TOO_LARGE, FOLIO_LANGUAGE_EN),
+                      "This note is too large to save. The limit is 16 MiB. Shorten the note, then "
+                      "save again."),
+            "size failure English reason");
+    require(same_text(folio_state_failure_line(FOLIO_STATE_NOTE_TOO_LARGE, FOLIO_LANGUAGE_ZH_HANS),
+                      "笔记过大，无法保存。上限为 16 MiB。请缩短内容后再保存。"),
+            "size failure simplified Chinese reason");
+}
+
+void run_note_size_state_tests(void)
+{
+    finder = test_regex_port();
+    char16_t *units = malloc((persisted_size_limit + 2) * sizeof *units);
+    if (units == nullptr)
+    {
+        require(false, "editor size fixture allocated");
+        return;
+    }
+    for (size_t index = 0; index < persisted_size_limit + 2; ++index)
+    {
+        units[index] = u'X';
+    }
+    verify_size_named(units, persisted_size_limit + 1);
+    verify_size_untitled(units, persisted_size_limit + 1);
+    verify_size_view(units, persisted_size_limit + 1);
+    verify_size_after_index_repair(units, persisted_size_limit + 1);
+    verify_size_expansion(units);
+    verify_size_languages();
+    free(units);
 }

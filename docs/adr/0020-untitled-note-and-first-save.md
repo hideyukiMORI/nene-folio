@@ -67,3 +67,9 @@ name_listはUTF-8・区切り・末尾文字を検証するが、Windows予約�
 実機の名前入力・IME・取消・Undo・最小寸法・DPIは別に記録する。新規の実装前にこの判断を記した。
 
 Waivers: none
+
+## 2026-10-09 の補正（#227）
+
+初回保存も[ADR0006の共通上限](0006-edit-mode-and-save-path.md)を使う。
+正規化後本文の超過はRTF/挿入台帳の準備とcreate_noteより前に専用NOTE_TOO_LARGEで拒否し、
+無題・本文入力・Undo・対象を保持する。新しい保存ポート/面/スキーマは作らない。

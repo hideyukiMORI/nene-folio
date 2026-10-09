@@ -11,6 +11,8 @@ void require(bool condition, const char *_Nonnull description);
 [[nodiscard]] bool same_text(const char *_Nonnull actual, const char *_Nonnull expected);
 
 void run_text_tests(void);
+void run_note_size_text_tests(void);
+void run_note_size_state_tests(void);
 void run_json_tests(void);
 void run_ledger_tests(void);
 void run_layout_tests(void);

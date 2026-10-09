@@ -50,6 +50,14 @@ static bool run_target_tests(const char *_Nonnull argument)
         printf("rename D2 tests passed\n");
         return true;
     }
+    if (strcmp(argument, "--note-size-limit") == 0)
+    {
+        run_note_size_text_tests();
+        run_note_size_state_tests();
+        run_ui_text_tests();
+        printf("note size limit tests passed\n");
+        return true;
+    }
     if (strcmp(argument, "--index-cache-retry") == 0)
     {
         run_index_cache_retry_state_tests();
@@ -78,6 +86,8 @@ int main(int argc, char *_Nonnull *_Nonnull argv)
     {
         return 0;
     }
+    run_note_size_text_tests();
+    run_note_size_state_tests();
     run_json_tests();
     run_ledger_tests();
     run_layout_tests();

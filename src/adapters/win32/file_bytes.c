@@ -1,5 +1,6 @@
 #include "file_bytes.h"
 #include "file_write_kind.h"
+#include "persisted_size_limit.h"
 
 #include <stdint.h>
 #include <stdlib.h>
@@ -12,9 +13,6 @@ struct file_bytes
     size_t length;
     size_t offset; /* BOM の分だけ読み飛ばす */
 };
-
-/* 台帳としてあり得る上限。これを超えるファイルは壊れているとみなして読まない。 */
-constexpr LONGLONG file_bytes_limit = 16 * 1024 * 1024;
 
 static enum persistence_outcome open_outcome(void)
 {
@@ -45,7 +43,7 @@ static bool read_all(HANDLE file, char *_Nonnull data, size_t length)
 static enum persistence_outcome read_open_file(HANDLE file, struct file_bytes *_Nonnull bytes)
 {
     LARGE_INTEGER size = {0};
-    if (!GetFileSizeEx(file, &size) || size.QuadPart > file_bytes_limit)
+    if (!GetFileSizeEx(file, &size) || size.QuadPart > (LONGLONG)persisted_size_limit)
     {
         return PERSISTENCE_UNREADABLE;
     }
@@ -202,6 +200,11 @@ static enum persistence_outcome publish(const wchar_t *_Nonnull temporary,
 static enum persistence_outcome store(const wchar_t *_Nonnull path, const char *_Nonnull data,
                                       size_t length, enum file_write_kind kind)
 {
+    /* JSON/記録も自身で読めるraw長だけ公開する。一時ファイルより先に断る。 */
+    if (length > persisted_size_limit)
+    {
+        return PERSISTENCE_UNWRITABLE;
+    }
     wchar_t temporary[MAX_PATH * 4];
     HANDLE file = temporary_file(path, temporary, sizeof temporary / sizeof temporary[0]);
     if (file == INVALID_HANDLE_VALUE)
