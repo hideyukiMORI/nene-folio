@@ -60,8 +60,8 @@ ASanの測定exeは従来D2測定と同じ非致命の`interception_win: unhandl
 
 ## 最終単一ゲート
 
-対象unit/OOM成功checkpointを親へ提出済み。親静読の受理後、最終production sourceで`pwsh -NoProfile -File ./eng/check.ps1`を1回実行し、この節へ結果を追記する。
-現時点で最終ゲートは未実行。成功したsource不変の試験は、push/PR/mergeという工程だけでは反復しない。
+対象unit/OOM成功checkpointを親が静読して受理し、新規公開のコメントを補正した最終source `4d7e95b74b9e86d1b50f8caa58c0278b2c20586b`で`pwsh -NoProfile -File ./eng/check.ps1`を1回実行した。
+2026-10-09 21:32:38 JSTに終了0で成功。conformance 0、CTest 2/2、symbols core/application 2 librariesで違反0、branch 3222/3438 = 93.717277486911%（93.72%）、negative 7.33%を90%未満として拒否、実ツールproof 19件。全文gate.logをagentsへ保存した。成功したsource不変の試験はpush/PR/mergeという工程だけでは反復しない。
 
 ## 境界の静読と残る範囲
 
@@ -74,3 +74,7 @@ copy_pendingとrenameが併存する正常経路は無い（必要保存cache失
 利用者app/data、旧C作業木、削除拒否対象は未操作。Waivers: none。
 
 日時: 2026-10-09 21:27:49 JST
+
+最終証跡4本（coverage complete/negative/resultsとproof results）をD:/NeNeFolio/agents/219-index-cache-retry/へSHA256一致で退避し、archives.csvにsource/destination/bytes/SHAを保存した。gate後の追記は文書のみでsrc/tests/CMakeは成功sourceと同一。
+日時: 2026-10-09 21:32:38 JST
+
