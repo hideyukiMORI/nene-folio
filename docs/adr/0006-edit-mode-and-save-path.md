@@ -146,3 +146,22 @@ main `41f9b4e` の実Win32 probeで、U+0000を含む本文は通常編集のstr
 
 これはARC-009（黙って欠落させない）とC-007（生成時の不変条件）を本文型で守る補正である。
 保存schema・依存・ゲートは変わらず、waiverは無い。対象core/application/実OSの回帰検証を残す。
+
+## 2026-10-10 の補正（#234 — 本文を変換せず取り出す）
+
+main `09a198f` の実Win32 probeで、`EM_STREAMOUT` は本文中のU+FFFDを空白、
+U+000BをCRLFへ変えていた。`EM_GETTEXTEX` の `GT_DEFAULT` もU+FFFDを空白へ変える。
+一方、`GT_RAWTEXT` / codepage 1200は両文字・補助平面文字・孤立サロゲートを保持した。
+CP_UTF8を使わない決定4は維持し、UTF-16の取得を次の1経路へ揃える。
+
+- `note_pane_text` は `EM_GETTEXTEX(GT_RAWTEXT, 1200)` で内部のUTF-16単位列を返す。
+  段落区切りはCR 1個で、保存時のLF/CRLF化は既存の `note_text_from_editor` が担う。
+  `GT_USECRLF` は付けない。空本文と末尾改行の有無を保持し、孤立サロゲートは既存の拒否へ渡す。
+- 保存・変更問い合わせ・検索・置換はこの公開入口を共用し、`note_pane_display_text` と
+  stream-out専用の状態を削除する。行番号は同じ内部取得関数を専用bufferで使い、借用本文を無効化しない。
+- 読取は本文・選択・Undo・変更印を変えない。確保失敗時は出力引数と既存bufferを保つ。
+  schema・依存・ゲート・NUL拒否は不変。U+0007とU+2028/U+2029の流し込み時の変換は別の境界で、
+  この補正では変更しない。
+
+APIの根拠: [GETTEXTEX](https://learn.microsoft.com/en-us/windows/win32/api/richedit/ns-richedit-gettextex)。
+対象検証は保存/検索/置換/行番号の直接の境界に限り、物理IMEや無関係な画面操作は繰り返さない。

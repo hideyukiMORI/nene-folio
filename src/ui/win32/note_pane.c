@@ -21,8 +21,6 @@ struct note_pane
     ITextSelection *_Nullable selection;
     char16_t *_Nullable taken; /* 最後に取り出した本文（終端付き） */
     size_t capacity;           /* taken のバイト数 */
-    size_t used;               /* 取り出したバイト数（終端を含まない） */
-    bool overflowed;           /* 取り出しに足りなかった */
     /* 番号専用のバッファ。保存と検索が借りる taken を描画が無効化しない（ADR 0026 の決定 3） */
     char16_t *_Nullable numbered;
     size_t numbered_capacity;
@@ -69,23 +67,6 @@ static DWORD CALLBACK stream_in(DWORD_PTR cookie, LPBYTE buffer, LONG wanted, LO
     return 0;
 }
 
-/* EM_STREAMOUT のコールバック。cookie は note_pane への DWORD_PTR。 */
-static DWORD CALLBACK stream_out(DWORD_PTR cookie, LPBYTE buffer, LONG offered,
-                                 LONG *_Nonnull written)
-{
-    struct note_pane *_Nonnull pane = (struct note_pane *)cookie;
-    size_t count = offered > 0 ? (size_t)offered : 0;
-    if (pane->taken == nullptr || pane->used + count + sizeof(char16_t) > pane->capacity)
-    {
-        pane->overflowed = true;
-        return 1;
-    }
-    memcpy((char *)pane->taken + pane->used, buffer, count);
-    pane->used += count;
-    *written = (LONG)count;
-    return 0;
-}
-
 /* 取り出し用の領域を bytes まで広げる。保存用と番号用が同じ形で別の領域を持つ。 */
 static bool reserve_into(char16_t *_Nullable *_Nonnull slot, size_t *_Nonnull capacity,
                          size_t bytes)
@@ -102,11 +83,6 @@ static bool reserve_into(char16_t *_Nullable *_Nonnull slot, size_t *_Nonnull ca
     *slot = grown;
     *capacity = bytes;
     return true;
-}
-
-static bool reserve(struct note_pane *_Nonnull pane, size_t bytes)
-{
-    return reserve_into(&pane->taken, &pane->capacity, bytes);
 }
 
 static HRESULT move_caret(ITextSelection *_Nonnull selection, enum caret_command command)
@@ -328,42 +304,12 @@ void note_pane_edit(struct note_pane *_Nonnull pane, const char16_t *_Nonnull un
     SendMessageW(pane->handle, EM_SETMODIFY, FALSE, 0);
 }
 
-enum note_pane_text_outcome note_pane_text(struct note_pane *_Nonnull pane,
-                                           const char16_t *_Nonnull *_Nonnull units,
-                                           size_t *_Nonnull count)
-{
-    if (pane->handle == nullptr)
-    {
-        return NOTE_PANE_TEXT_UNAVAILABLE;
-    }
-    /* 段落区切りは CRLF で返る。単位数の上限をそのまま領域にする（2026-09-09 実測）。 */
-    GETTEXTLENGTHEX request = {.flags = GTL_NUMCHARS | GTL_USECRLF, .codepage = unicode_codepage};
-    LRESULT length = SendMessageW(pane->handle, EM_GETTEXTLENGTHEX, (WPARAM)&request, 0);
-    size_t limit = length > 0 ? (size_t)length : 0;
-    if (!reserve(pane, (limit + 1) * sizeof(char16_t)))
-    {
-        return NOTE_PANE_TEXT_OUT_OF_MEMORY;
-    }
-    pane->used = 0;
-    pane->overflowed = false;
-    EDITSTREAM editing = {.dwCookie = (DWORD_PTR)pane, .dwError = 0, .pfnCallback = stream_out};
-    SendMessageW(pane->handle, EM_STREAMOUT, SF_TEXT | SF_UNICODE, (LPARAM)&editing);
-    if (pane->overflowed || pane->taken == nullptr)
-    {
-        return NOTE_PANE_TEXT_OUT_OF_MEMORY;
-    }
-    pane->taken[pane->used / sizeof(char16_t)] = u'\0';
-    *units = pane->taken;
-    *count = pane->used / sizeof(char16_t);
-    return NOTE_PANE_TEXT_TAKEN;
-}
-
 /* 表示中の平文を slot へ取り出す。段落区切りを CR 1 つのまま受け取るので、EM_EXSETSEL の位置と
  * そのまま合う。GETTEXTEX の cb の単位（バイトか文字か）は版で揺れるので、どちらでも溢れない
  * 大きさを確保する（2026-09-17 の Win32 部品測定で実際の文字数を確かめている）。 */
-static enum note_pane_text_outcome take_display(struct note_pane *_Nonnull pane,
-                                                char16_t *_Nullable *_Nonnull slot,
-                                                size_t *_Nonnull capacity, size_t *_Nonnull count)
+static enum note_pane_text_outcome take_text(struct note_pane *_Nonnull pane,
+                                             char16_t *_Nullable *_Nonnull slot,
+                                             size_t *_Nonnull capacity, size_t *_Nonnull count)
 {
     GETTEXTLENGTHEX request = {.flags = GTL_NUMCHARS, .codepage = unicode_codepage};
     LRESULT length = SendMessageW(pane->handle, EM_GETTEXTLENGTHEX, (WPARAM)&request, 0);
@@ -373,7 +319,7 @@ static enum note_pane_text_outcome take_display(struct note_pane *_Nonnull pane,
         return NOTE_PANE_TEXT_OUT_OF_MEMORY;
     }
     GETTEXTEX taking = {.cb = (DWORD)((limit + 1) * sizeof(char16_t)),
-                        .flags = GT_DEFAULT,
+                        .flags = GT_RAWTEXT,
                         .codepage = unicode_codepage};
     LRESULT taken = SendMessageW(pane->handle, EM_GETTEXTEX, (WPARAM)&taking, (LPARAM)*slot);
     *count = taken > 0 ? (size_t)taken : 0;
@@ -381,21 +327,20 @@ static enum note_pane_text_outcome take_display(struct note_pane *_Nonnull pane,
     return NOTE_PANE_TEXT_TAKEN;
 }
 
-enum note_pane_text_outcome note_pane_display_text(struct note_pane *_Nonnull pane,
-                                                   const char16_t *_Nonnull *_Nonnull units,
-                                                   size_t *_Nonnull count)
+enum note_pane_text_outcome note_pane_text(struct note_pane *_Nonnull pane,
+                                           const char16_t *_Nonnull *_Nonnull units,
+                                           size_t *_Nonnull count)
 {
     if (pane->handle == nullptr)
     {
         return NOTE_PANE_TEXT_UNAVAILABLE;
     }
     size_t taken = 0;
-    enum note_pane_text_outcome outcome = take_display(pane, &pane->taken, &pane->capacity, &taken);
+    enum note_pane_text_outcome outcome = take_text(pane, &pane->taken, &pane->capacity, &taken);
     if (outcome != NOTE_PANE_TEXT_TAKEN)
     {
         return outcome;
     }
-    pane->used = taken * sizeof(char16_t);
     *units = pane->taken;
     *count = taken;
     return NOTE_PANE_TEXT_TAKEN;
@@ -419,8 +364,7 @@ static bool refresh_lines(struct note_pane *_Nonnull pane)
         return true;
     }
     size_t count = 0;
-    if (take_display(pane, &pane->numbered, &pane->numbered_capacity, &count) !=
-        NOTE_PANE_TEXT_TAKEN)
+    if (take_text(pane, &pane->numbered, &pane->numbered_capacity, &count) != NOTE_PANE_TEXT_TAKEN)
     {
         return false;
     }

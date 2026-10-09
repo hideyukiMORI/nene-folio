@@ -72,3 +72,8 @@ composition 中の不干渉・0 件表示を測る。物理キー・IME 候補�
    表示中の平文を取り出せない事象は `OUT_OF_MEMORY` に潰さず `FOLIO_STATE_PANE_UNAVAILABLE` として区別する。
 6. 決定 3 の「UTF-16 を受ける入口」の列挙を訂正する。ADR 0021 / 0022 で増えた分を含め、
    `store_new` / `rename_note` / `store_note` / `note_changed` / `end_edit` / `set_search_term` の 6 本である。
+
+## 2026-10-10 の補正（#234）
+
+表示本文の取得を保存と共通の `note_pane_text` に揃える。`EM_GETTEXTEX(GT_RAWTEXT, 1200)` で
+U+FFFDを空白へ変えず、CR 1個とUTF-16の選択位置を保持する。取得契約の正本はADR 0006の同日補正。
