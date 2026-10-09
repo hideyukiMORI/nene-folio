@@ -1911,7 +1911,8 @@ static const char *_Nonnull const expected_failure_lines[] = {
     [FOLIO_STATE_NOTE_UNREADABLE] = "ノートを読めませんでした。表示は変えていません。",
     [FOLIO_STATE_NOTHING_SELECTED] = "ノートを選んでから編集してください。",
     [FOLIO_STATE_NOT_EDITING] = "編集モードではありません。",
-    [FOLIO_STATE_NOTE_MALFORMED] = "編集中の本文に壊れた文字があります。保存していません。",
+    [FOLIO_STATE_NOTE_MALFORMED] =
+        "編集中の本文に壊れた文字、または扱えない文字があります。保存していません。",
     [FOLIO_STATE_NOTE_TOO_LARGE] =
         "本文が大きすぎて保存できません。上限は 16 MiB です。本文を減らしてから保存してください。",
     [FOLIO_STATE_NOTE_STORE_FAILED] = "ノートを書き戻せませんでした。編集中の本文はそのままです。"
@@ -5427,4 +5428,68 @@ void run_note_size_state_tests(void)
     verify_size_expansion(units);
     verify_size_languages();
     free(units);
+}
+
+static void verify_nul_named(void)
+{
+    const char16_t units[] = {u'A', u'\0', u'B'};
+    struct persistence_adapter adapter = healthy_adapter();
+    adapter.note_body = "kept";
+    adapter.history[1] = "old";
+    struct folio_state *state = history_state(&adapter);
+    require(folio_state_open_history(state) == FOLIO_STATE_READY &&
+                folio_state_begin_edit(state) == FOLIO_STATE_READY,
+            "named NUL fixture has an owned body and history");
+    const char *body = folio_state_pane_text(state);
+    const struct note_text *history = folio_state_history_body(state, 0);
+    require(folio_state_store_note(state, units, 3) == FOLIO_STATE_NOTE_MALFORMED &&
+                folio_state_end_edit(state, units, 3) == FOLIO_STATE_NOTE_MALFORMED,
+            "save and leave EDIT reject embedded NUL");
+    struct note_name *name = accepted_note_name("copy");
+    struct note_destination destination = {.category = 0, .name = name};
+    require(folio_state_store_new(state, &destination, units, 3) == FOLIO_STATE_NOTE_MALFORMED,
+            "Save As rejects NUL before publication");
+    enum folio_note_change changed = FOLIO_NOTE_SAME;
+    require(folio_state_note_changed(state, units, 3, &changed) == FOLIO_STATE_NOTE_MALFORMED &&
+                changed == FOLIO_NOTE_SAME,
+            "quit query refuses NUL with output unchanged");
+    require(folio_state_pane_text(state) == body && same_text(body, "kept") &&
+                folio_state_pane_mode(state) == PANE_MODE_EDIT &&
+                same_text(folio_state_document_name(state), "one") &&
+                folio_state_document_category(state) == 0 &&
+                folio_state_history_body(state, 0) == history &&
+                folio_state_history_count(state) == 1 && adapter.archives == 0 &&
+                adapter.note_writes == 0 && adapter.creates == 0 && adapter.ledger_writes == 0,
+            "NUL refusal preserves body mode destination and history without writes");
+    require(folio_state_store_note(state, u"kept", 4) == FOLIO_STATE_READY &&
+                adapter.note_writes == 0 && adapter.archives == 0,
+            "valid unchanged input remains saveable after refusal");
+    note_name_destroy(name);
+    folio_state_destroy(state);
+}
+
+static void verify_nul_untitled(void)
+{
+    const char16_t units[] = {u'\0', u'B'};
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = history_state(&adapter);
+    require(folio_state_new_note(state, 0) == FOLIO_STATE_READY, "untitled NUL fixture");
+    const char *body = folio_state_pane_text(state);
+    struct note_name *name = accepted_note_name("first");
+    struct note_destination destination = {.category = 0, .name = name};
+    require(folio_state_store_new(state, &destination, units, 2) == FOLIO_STATE_NOTE_MALFORMED &&
+                folio_state_pane_text(state) == body &&
+                folio_state_document_kind(state) == FOLIO_DOCUMENT_UNTITLED &&
+                folio_state_pane_mode(state) == PANE_MODE_EDIT && adapter.creates == 0 &&
+                adapter.archives == 0 && adapter.note_writes == 0,
+            "first save rejects NUL without leaving the untitled editor");
+    note_name_destroy(name);
+    folio_state_destroy(state);
+}
+
+void run_note_nul_state_tests(void)
+{
+    finder = test_regex_port();
+    verify_nul_named();
+    verify_nul_untitled();
 }

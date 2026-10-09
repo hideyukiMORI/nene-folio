@@ -1,5 +1,5 @@
 /* ノート 1 つの本文（FR-005 / FR-006）。UTF-8 として検証し、先頭の BOM を捨てて所有する。
- * 正規本文はpersisted_size_limit以内（BOM/終端NULを除く）。失敗時out不変。
+ * 正規本文はpersisted_size_limit以内（BOM/終端NULを除く）で、埋め込みNULを含まない。失敗時out不変。
  * 改行は元のまま（LF / CRLF）。解釈は markdown_rtf が行う（ARC-008）。
  * 編集した本文は note_text_from_editor で元の改行の形へ揃えてから書き戻す（ADR 0006）。 */
 #ifndef NENEFOLIO_NOTE_TEXT_H
@@ -15,7 +15,7 @@ struct note_text;
 [[nodiscard]] enum note_text_outcome note_text_create(const char *_Nonnull bytes, size_t length,
                                                       struct note_text *_Nullable *_Nonnull out);
 /* 編集した本文を受け取り、CR / CRLF / LF を ending の形に畳んで所有する。末尾改行の有無は触らない。
- * 不正UTF-8を先に拒否し、正規化後の上限超過は確保前にTOO_LARGEで拒否する。
+ * 不正UTF-8、埋め込みNULの順に拒否し、正規化後の上限超過は確保前にTOO_LARGEで拒否する。
  */
 [[nodiscard]] enum note_text_outcome
 note_text_from_editor(const char *_Nonnull bytes, size_t length, enum line_ending ending,

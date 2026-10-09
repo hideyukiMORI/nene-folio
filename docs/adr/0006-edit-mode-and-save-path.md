@@ -124,3 +124,25 @@ file_bytesのread保護は現16 MiBのまま。store/createも共通store入口�
 temporary fileを作る前に `PERSISTENCE_UNWRITABLE` とする。generic persistence enumは増やさない。
 canonical本文16 MiBはBOM無しで保存/再読込可能。外部BOM付きraw16 MiB+3は従来どおり読込拒否。
 上限を緩めたり、別の巨大本文経路を作ったりしない。保存schema/依存/gateは不変。
+
+## 2026-10-09 の補正（#232 — NULを本文として受理しない）
+
+main `41f9b4e` の実Win32 probeで、U+0000を含む本文は通常編集のstream往復で保持されず、
+履歴復元の `EM_REPLACESEL` ではNULより前だけになることを確認した。NULは妥当なUnicodeだが、
+この製品の本文として安全に編集・復元できないため、次の受理条件を採る。
+
+- `note_text` は長さの内側にNULを含まない。共通の生成時検証が、不正UTF-8を先に
+  `NOTE_TEXT_INVALID_UTF8`、次に埋め込みNULを `NOTE_TEXT_EMBEDDED_NUL` で拒否する。
+  BOM除去・上限・改行正規化の経路は維持し、拒否時にoutを変更しない。検証用の確保は増やさない。
+- ノートと履歴の読取は、読んだバイト列を同じ生成経路で検証する。NULは
+  `PERSISTENCE_MALFORMED` とし、既存の読めないノート/履歴の表示へ写す。元ファイルは変更しない。
+- 編集本文の保存・初回保存・別名保存・名前付きEDITの変更問い合わせは、既存の
+  `edited_text` から同じ検証を通る。NULは `FOLIO_STATE_NOTE_MALFORMED` とし、
+  その3言語の理由を「壊れている、または扱えない文字」を含む意味へ揃える。
+  今回のarchive/create/writeは行わず、既存のbody/モード/宛先/履歴とUI入力を保持する。
+  先行synchronize、無題のCHANGED、VIEWのSAMEと保存済み本文の複製は従来どおり。
+- 汎用のUTF-8/UTF-16 codecはU+0000を受理し続ける。本文以外へこの制約を広げず、
+  NULの自動削除や置換、別の保存経路、既存ファイルの一括変換は追加しない。
+
+これはARC-009（黙って欠落させない）とC-007（生成時の不変条件）を本文型で守る補正である。
+保存schema・依存・ゲートは変わらず、waiverは無い。対象core/application/実OSの回帰検証を残す。
