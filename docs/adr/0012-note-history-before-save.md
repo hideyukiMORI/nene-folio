@@ -33,7 +33,7 @@ core / application のテストが決定性を失う。
 3. **ローテーション（2026-09-10 の実測で改訂）。** adapters は `data/.history/<カテゴリ>/<ノート>/` を作り（無ければ）、
    **まず**いまの md の中身を `1.md.tmp` へ `file_bytes_store` で書き切る（ここで失敗したら**何も触らずに** `UNWRITABLE`。
    書き込みを拒否された環境では履歴も md も一切変わらない）。次に `5.md` を消し（無ければ可）、`4.md → 5.md` … `1.md → 2.md` を
-   `MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH` でずらし（相手が残っていても連鎖が止まらない）、最後に `1.md.tmp → 1.md` を
+   `MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH` でずらし（欠番だけは許す）、最後に `1.md.tmp → 1.md` を
    同じ旗で改名する。2 手目以降で落ちると番号が欠けた履歴や `1.md.tmp` が残りうるが、md は無傷（書き戻しはこのあと）。
    欠けた番号は次の保存で詰まらず、戻す側は「あるものだけ」を見る。実測: `(W)` だけを拒否した NTFS では `DeleteFileW` は通り
    `MoveFileExW` は落ちる（`DELETE` は `(W)` に含まれない）ので、旗だけでは 5 本を保てず、この順序が要る
@@ -44,6 +44,19 @@ core / application のテストが決定性を失う。
 6. **ポート。** `persistence_port` に `archive_note(adapter, category, note)` を 1 本足す。テストの偽アダプタは呼び出しの順
    （`archive` → `write`）と回数を記録する
 7. **戻す操作。** この縦切りでは持たない。利用者はエクスプローラで `data/.history` を開いて手で戻せる（それがこの保険の最低線）
+
+## 2026-10-09 補正 — 回転の失敗を保存前へ返す（#218）
+
+決定 3 の削除・改名の戻り値を捨てていた実装を補正する。`rotate_history` はパス生成に失敗したとき、
+または最古版の `DeleteFileW` / 各版の `MoveFileExW` が失敗したとき、その場で `UNWRITABLE` を返す。
+不在として許すのは `ERROR_FILE_NOT_FOUND` だけ。`ERROR_PATH_NOT_FOUND` は履歴の親経路が無い障害で、欠番とは扱わない。
+`store_history` はこの失敗のあと `1.md.tmp → 1.md` に進まない。application の既存 `HISTORY_FAILED` 経路で
+md の書戻しを止め、編集中の本文を残す。共有違反・読み取り専用の最古版でも失敗を成功と返さない。
+
+先に `1.md.tmp` を書き切る → 最古削除 → 番号回転 → 最後に公開、の順序・5 版・保存形式は同じ。
+回転は非原子的で、停止までに動いた古い履歴の巻戻しは行わない。途中失敗後の欠番・pending 残存や、
+解除後の再試行でも最古版が追加で失われうる既存の限界は残る。md は保存失敗時に無傷である。
+実測と再現手順は [対象品質記録](../quality/2026-10-09-history-rotation-checks.md)。
 
 ## 強制
 
