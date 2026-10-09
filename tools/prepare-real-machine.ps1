@@ -1,4 +1,4 @@
-# 実機で見る checkout を準備する（#101）。起動中の NeNeFolio.exe を閉じ、clean を確かめ、
+# 実機で見る checkout を準備する（#101 / #217）。対象 exe が停止済みで clean なことを確かめ、
 # pull --ff-only で進め、eng/toolchain.ps1 と同じ呼び出しで nenefolio を名指しでビルドし、
 # ビルドした SHA と exe の情報を標準出力に JSON 1 つで返す。起動はしない（起動は別の 1 行）。
 # ツールの出力はすべて標準エラーへ流し、標準出力は JSON だけにする。
@@ -17,11 +17,19 @@ function Invoke-Tool {
     if ($LASTEXITCODE -ne 0) { throw $Failure }
 }
 
-# (a) 開いたままだと exe のリンクが落ちる。名前だけで探し、ほかのプロセスは触らない。
+# (a) 開いたままだと exe のリンクが落ちる。未保存の本文を守るため、終了は利用者に委ねる。
+# 同名の別 checkout は触らない。実行パスを確認できなければ、準備の副作用より前に止める。
+$targetExe = [IO.Path]::GetFullPath((Join-Path $target 'build/NeNeFolio.exe'))
 $running = @(Get-Process -Name 'NeNeFolio' -ErrorAction SilentlyContinue)
-if ($running.Count -gt 0) {
-    $running | Stop-Process -Force
-    $running | Wait-Process -Timeout 30 -ErrorAction SilentlyContinue
+foreach ($process in $running) {
+    try { $runningPath = $process.Path }
+    catch { throw "Could not verify the path of NeNeFolio process $($process.Id). No application was closed." }
+    if ([string]::IsNullOrWhiteSpace($runningPath)) {
+        throw "Could not verify the path of NeNeFolio process $($process.Id). No application was closed."
+    }
+    if ([string]::Equals([IO.Path]::GetFullPath($runningPath), $targetExe, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "The target application is running (PID $($process.Id)). Save and close it before preparing this checkout: $target"
+    }
 }
 
 # (b) clean でない checkout は進めない。
