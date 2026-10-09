@@ -39,9 +39,11 @@ probe準備中には結果enumの取り違えによるcompile失敗が2回あり
 
 ## 最終ゲート
 
-source checkpointの静読受理後に、正典 `pwsh -NoProfile -File ./eng/check.ps1` を実行する。現時点では未実施。
-ログは同じ隔離成果物の `gate.log` へ保存し、結果と固有JSONの退避を追記する。
+source checkpoint `51d0c62` の静読受理後、正典 `pwsh -NoProfile -File ./eng/check.ps1` を1回実行してexit0。
+製品compile/clang-tidy、conformance、CTest 2/2、分岐カバレッジ3214/3430 = 93.70%（下限90%）、負例の7.35%拒否、ゲート証明19件、diff --checkが成功した。
+ログは隔離成果物の `gate.log`。`out/coverage/complete.json`・`negative.json`・`results.json` と `out/proofs/results.json` を `gate-json/` へ保存し、source/保存先のSHA256一致を `gate-json-hashes.json` に記録した。
+製品source/tests/CMakeはcheckpointから不変。文書のみの結果追記で製品ゲートを反復しない。
 
 ## 残る範囲
 
-IME中のmouse置換は別Issueの対象で、この枝は変更していない。今回の公開後失敗・公開前失敗・取消の直接境界に試験を限定した。
+IME中のmouse置換は別の監査候補であり、未修正。この枝は変更していない。今回の公開後失敗・公開前失敗・取消の直接境界に試験を限定した。
