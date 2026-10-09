@@ -14,13 +14,13 @@
 #include "note_history.h"
 #include "note_ledger.h"
 #include "note_name.h"
-#include "note_rename.h"
 #include "note_replace.h"
 #include "note_text.h"
 #include "persistence_port.h"
 #include "regex_matches.h"
 #include "regex_port.h"
 #include "regex_request.h"
+#include "rename_plan.h"
 #include "replace_edit.h"
 #include "replace_preview.h"
 #include "rtf_palette.h"
@@ -66,7 +66,7 @@ struct folio_state
     bool index_pending; /* 初回作成後に同期できなかった台帳。次の保存・変更前に再試行 */
     size_t pending_category;
     /* 記録を公開したまま完了していない改名の意図。1 つだけ持つ（ADR 0022 の決定 2 / 7） */
-    struct note_rename *_Nullable rename;
+    struct rename_plan *_Nullable rename;
     size_t rename_category;
     /* ノート内検索の語（UTF-8）と直前の方向。絞り込みの語とは別（ADR 0023 の決定 3） */
     struct utf8_text *_Nullable search_term;
@@ -177,14 +177,14 @@ static enum folio_state_outcome from_rename(enum rename_outcome outcome)
  * 報せる（md も履歴も台帳も新しい名前で揃っている）。 */
 static enum folio_state_outcome recopy_rename(struct folio_state *_Nonnull state)
 {
-    struct note_rename *_Nonnull intent = state->rename;
+    struct rename_plan *_Nonnull intent = state->rename;
     if (!state->corpus_loaded)
     {
         return FOLIO_STATE_READY;
     }
     if (note_corpus_rename(
             state->corpus, category_ledger_name(state->categories, state->rename_category),
-            note_rename_from(intent), note_rename_to(intent)) != NOTE_CORPUS_ACCEPTED)
+            rename_plan_from(intent), rename_plan_to(intent)) != NOTE_CORPUS_ACCEPTED)
     {
         state->corpus_loaded = false;
         return FOLIO_STATE_OUT_OF_MEMORY;
@@ -193,18 +193,31 @@ static enum folio_state_outcome recopy_rename(struct folio_state *_Nonnull state
 }
 
 /* 名前も判定の対象なので、写しを付け替えたら一致集合も作り直す。どの意図が改名を完了させても
- * （`rename_note` でも `resume_rename` でも）同じ結果になるよう、ここ 1 か所で行う
+ * （`apply_rename` でも `resume_rename` でも）同じ結果になるよう、ここ 1 か所で行う
  * （ADR 0024 の補正 3）。絞り込んでいなければ `refresh_filter` は何もしない。 */
-static enum folio_state_outcome adopt_rename(struct folio_state *_Nonnull state)
+static enum folio_state_outcome adopt_note_rename(struct folio_state *_Nonnull state)
 {
     enum folio_state_outcome copied = recopy_rename(state);
-    struct note_rename *_Nonnull intent = state->rename;
-    struct note_ledger *_Nonnull renamed = note_rename_take_ledger(intent);
+    struct rename_plan *_Nonnull intent = state->rename;
+    struct note_ledger *_Nonnull renamed = rename_plan_take_note_ledger(intent);
     note_ledger_destroy(state->notes[state->rename_category]);
     state->notes[state->rename_category] = renamed;
     state->rename = nullptr;
-    note_rename_destroy(intent);
+    rename_plan_destroy(intent);
     return copied != FOLIO_STATE_READY ? copied : refresh_filter(state);
+}
+
+static enum folio_state_outcome adopt_rename(struct folio_state *_Nonnull state)
+{
+    switch (rename_plan_kind(state->rename))
+    {
+    case RENAME_KIND_NOTE:
+        return adopt_note_rename(state);
+    case RENAME_KIND_CATEGORY:
+        /* D1 は CATEGORY を開始しない。採用は D2。異種台帳を NOTE として取得しない。 */
+        return FOLIO_STATE_RENAME_HALTED;
+    }
+    return FOLIO_STATE_RENAME_HALTED;
 }
 
 /* 未完了の改名を、次の意図より先に同じ意図で再開する（ADR 0022 の決定 7）。 */
@@ -216,7 +229,7 @@ static enum folio_state_outcome resume_rename(struct folio_state *_Nonnull state
     }
     /* 保持している意図の続きなので RESUME。記録が無ければ adapter が推測せずに止める（決定 5）。 */
     enum rename_outcome moved =
-        state->port.rename_note(state->port.adapter, state->rename, RENAME_RESUME);
+        state->port.apply_rename(state->port.adapter, state->rename, RENAME_RESUME);
     if (moved != RENAME_COMPLETED)
     {
         /* どの理由でも意図は捨てない。捨てられるのは完了したときだけ。 */
@@ -2138,15 +2151,15 @@ static bool holds_folded_name(const struct note_ledger *_Nonnull ledger, const c
     return false;
 }
 
-static enum folio_state_outcome from_note_rename(enum note_rename_outcome outcome)
+static enum folio_state_outcome from_note_rename(enum rename_plan_outcome outcome)
 {
     switch (outcome)
     {
-    case NOTE_RENAME_ACCEPTED:
+    case RENAME_PLAN_ACCEPTED:
         return FOLIO_STATE_READY;
-    case NOTE_RENAME_INVALID:
+    case RENAME_PLAN_INVALID:
         return FOLIO_STATE_INVALID_NAME;
-    case NOTE_RENAME_OUT_OF_MEMORY:
+    case RENAME_PLAN_OUT_OF_MEMORY:
         return FOLIO_STATE_OUT_OF_MEMORY;
     }
     return FOLIO_STATE_INVALID_NAME;
@@ -2158,15 +2171,15 @@ static enum folio_state_outcome rename_selected(struct folio_state *_Nonnull sta
 {
     size_t category = state->selected_category;
     struct note_rename_target target = {.index = state->selected_note, .name = name};
-    struct note_rename *_Nullable intent = nullptr;
+    struct rename_plan *_Nullable intent = nullptr;
     enum folio_state_outcome prepared =
-        from_note_rename(note_rename_create(category_ledger_name(state->categories, category),
-                                            state->notes[category], &target, &intent));
+        from_note_rename(rename_plan_create_note(category_ledger_name(state->categories, category),
+                                                 state->notes[category], &target, &intent));
     if (prepared != FOLIO_STATE_READY)
     {
         return prepared;
     }
-    enum rename_outcome moved = state->port.rename_note(state->port.adapter, intent, RENAME_START);
+    enum rename_outcome moved = state->port.apply_rename(state->port.adapter, intent, RENAME_START);
     if (moved == RENAME_COMPLETED)
     {
         state->rename = intent;
@@ -2181,7 +2194,7 @@ static enum folio_state_outcome rename_selected(struct folio_state *_Nonnull sta
         return from_rename(moved);
     }
     /* 記録を公開する前の拒否。data/ は何も変わっていないので意図は残さない。 */
-    note_rename_destroy(intent);
+    rename_plan_destroy(intent);
     return from_rename(moved);
 }
 
@@ -3029,8 +3042,8 @@ bool folio_state_rename_pending(const struct folio_state *_Nonnull state,
     {
         return false;
     }
-    out->from = note_rename_from(state->rename);
-    out->to = note_rename_to(state->rename);
+    out->from = rename_plan_from(state->rename);
+    out->to = rename_plan_to(state->rename);
     return true;
 }
 
@@ -3270,7 +3283,7 @@ void folio_state_destroy(struct folio_state *_Nullable state)
     }
     free(state->notes);
     /* 未完了の意図は永続的な記録の側に残る。ここで捨てるのはメモリだけ（ADR 0022 の決定 7）。 */
-    note_rename_destroy(state->rename);
+    rename_plan_destroy(state->rename);
     category_ledger_destroy(state->categories);
     markdown_rtf_destroy(state->pane);
     note_text_destroy(state->body);

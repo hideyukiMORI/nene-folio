@@ -1,18 +1,30 @@
 #include "rename_journal.h"
 #include "json_reader.h"
 #include "json_writer.h"
-#include "note_rename.h"
+#include "rename_plan.h"
 #include <stdlib.h>
 #include <string.h>
 
 struct rename_journal
 {
-    struct note_rename *_Nullable rename;
+    struct rename_plan *_Nullable rename;
     char file_id[rename_journal_id_length + 1];
     char history_id[rename_journal_id_length + 1];
 };
 
-constexpr uint32_t journal_version = 1;
+constexpr uint32_t journal_version = 2;
+
+static const char *_Nonnull kind_text(enum rename_kind kind)
+{
+    switch (kind)
+    {
+    case RENAME_KIND_NOTE:
+        return "note";
+    case RENAME_KIND_CATEGORY:
+        return "category";
+    }
+    return "";
+}
 
 static bool valid_id(const char *_Nonnull text, size_t length)
 {
@@ -45,7 +57,7 @@ static enum rename_journal_outcome from_writer(enum json_writer_outcome outcome)
     return RENAME_JOURNAL_INVALID;
 }
 
-enum rename_journal_outcome rename_journal_write(const struct note_rename *_Nonnull rename,
+enum rename_journal_outcome rename_journal_write(const struct rename_plan *_Nonnull rename,
                                                  const char *_Nonnull file_id,
                                                  const char *_Nonnull history_id,
                                                  struct json_writer *_Nonnull writer)
@@ -58,8 +70,10 @@ enum rename_journal_outcome rename_journal_write(const struct note_rename *_Nonn
     json_writer_object_begin(writer);
     json_writer_key(writer, "version");
     json_writer_unsigned(writer, journal_version);
+    json_writer_key(writer, "kind");
+    json_writer_string(writer, kind_text(rename_plan_kind(rename)));
     json_writer_key(writer, "rename");
-    note_rename_write(rename, writer);
+    rename_plan_write(rename, writer);
     json_writer_key(writer, "fileId");
     json_writer_string(writer, file_id);
     json_writer_key(writer, "historyId");
@@ -99,16 +113,49 @@ static enum rename_journal_outcome read_id(struct json_reader *_Nonnull reader,
     return RENAME_JOURNAL_ACCEPTED;
 }
 
-static enum rename_journal_outcome read_header(struct json_reader *_Nonnull reader)
+static enum rename_journal_outcome read_kind(struct json_reader *_Nonnull reader,
+                                             enum rename_kind *_Nonnull out)
+{
+    if (!key(reader, "kind") || json_reader_next(reader) != JSON_TOKEN_STRING)
+    {
+        return unexpected(reader);
+    }
+    const char *_Nonnull text = json_reader_text(reader);
+    size_t length = json_reader_text_length(reader);
+    if (length == 4 && strcmp(text, "note") == 0)
+    {
+        *out = RENAME_KIND_NOTE;
+        return RENAME_JOURNAL_ACCEPTED;
+    }
+    if (length == 8 && strcmp(text, "category") == 0)
+    {
+        *out = RENAME_KIND_CATEGORY;
+        return RENAME_JOURNAL_ACCEPTED;
+    }
+    return RENAME_JOURNAL_INVALID;
+}
+
+static enum rename_journal_outcome read_header(struct json_reader *_Nonnull reader,
+                                               enum rename_kind *_Nonnull out)
 {
     if (json_reader_next(reader) != JSON_TOKEN_OBJECT_BEGIN || !key(reader, "version") ||
         json_reader_next(reader) != JSON_TOKEN_UNSIGNED)
     {
         return unexpected(reader);
     }
-    if (json_reader_unsigned(reader) != journal_version)
+    uint32_t version = json_reader_unsigned(reader);
+    if (version != 1 && version != journal_version)
     {
         return RENAME_JOURNAL_UNSUPPORTED_VERSION;
+    }
+    *out = RENAME_KIND_NOTE;
+    if (version == journal_version)
+    {
+        enum rename_journal_outcome outcome = read_kind(reader, out);
+        if (outcome != RENAME_JOURNAL_ACCEPTED)
+        {
+            return outcome;
+        }
     }
     if (!key(reader, "rename"))
     {
@@ -120,15 +167,16 @@ static enum rename_journal_outcome read_header(struct json_reader *_Nonnull read
 static enum rename_journal_outcome read_document(struct json_reader *_Nonnull reader,
                                                  struct rename_journal *_Nonnull journal)
 {
-    enum rename_journal_outcome header = read_header(reader);
+    enum rename_kind kind = RENAME_KIND_NOTE;
+    enum rename_journal_outcome header = read_header(reader, &kind);
     if (header != RENAME_JOURNAL_ACCEPTED)
     {
         return header;
     }
-    enum note_rename_outcome parsed = note_rename_read(reader, &journal->rename);
-    if (parsed != NOTE_RENAME_ACCEPTED)
+    enum rename_plan_outcome parsed = rename_plan_read(reader, kind, &journal->rename);
+    if (parsed != RENAME_PLAN_ACCEPTED)
     {
-        return parsed == NOTE_RENAME_OUT_OF_MEMORY ? RENAME_JOURNAL_OUT_OF_MEMORY
+        return parsed == RENAME_PLAN_OUT_OF_MEMORY ? RENAME_JOURNAL_OUT_OF_MEMORY
                                                    : RENAME_JOURNAL_INVALID;
     }
     enum rename_journal_outcome outcome = read_id(reader, "fileId", false, journal->file_id);
@@ -173,7 +221,7 @@ enum rename_journal_outcome rename_journal_parse(const char *_Nonnull text, size
     return RENAME_JOURNAL_ACCEPTED;
 }
 
-const struct note_rename *_Nonnull rename_journal_rename(
+const struct rename_plan *_Nonnull rename_journal_rename(
     const struct rename_journal *_Nonnull journal)
 {
     return journal->rename;
@@ -195,6 +243,6 @@ void rename_journal_destroy(struct rename_journal *_Nullable journal)
     {
         return;
     }
-    note_rename_destroy(journal->rename);
+    rename_plan_destroy(journal->rename);
     free(journal);
 }

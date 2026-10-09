@@ -16,13 +16,13 @@
 #include "name_list.h"
 #include "note_ledger.h"
 #include "note_name.h"
-#include "note_rename.h"
 #include "note_replace.h"
 #include "note_text.h"
 #include "persistence_port.h"
 #include "regex_matches.h"
 #include "regex_port.h"
 #include "rename_journal.h"
+#include "rename_plan.h"
 #include "replace_edit.h"
 #include "replace_template.h"
 #include "rtf_palette.h"
@@ -724,7 +724,7 @@ static bool create_category_scenario(void)
     return completed;
 }
 
-static bool journal_under_probe(const struct note_rename *_Nonnull rename)
+static bool journal_under_probe(const struct rename_plan *_Nonnull rename)
 {
     struct json_writer *writer = nullptr;
     if (json_writer_create(&writer) != JSON_WRITER_ACCEPTED)
@@ -741,6 +741,21 @@ static bool journal_under_probe(const struct note_rename *_Nonnull rename)
     }
     require(outcome == RENAME_JOURNAL_ACCEPTED || outcome == RENAME_JOURNAL_OUT_OF_MEMORY,
             "journal allocation failure remains typed");
+    if (outcome == RENAME_JOURNAL_ACCEPTED)
+    {
+        struct rename_journal *out = journal;
+        outcome = rename_journal_parse(json_writer_text(writer), json_writer_length(writer), &out);
+        require(outcome == RENAME_JOURNAL_ACCEPTED || outcome == RENAME_JOURNAL_OUT_OF_MEMORY,
+                "journal second decode keeps OOM typed");
+        if (outcome == RENAME_JOURNAL_OUT_OF_MEMORY)
+        {
+            require(out == journal, "journal OOM preserves a nonnull output owner");
+        }
+        if (outcome == RENAME_JOURNAL_ACCEPTED)
+        {
+            rename_journal_destroy(out);
+        }
+    }
     rename_journal_destroy(journal);
     json_writer_destroy(writer);
     return outcome == RENAME_JOURNAL_ACCEPTED;
@@ -855,6 +870,90 @@ static bool replace_scenario(void)
     return built == NOTE_REPLACE_READY;
 }
 
+static bool category_renamed_under_probe(const struct category_ledger *_Nonnull ledger,
+                                         const struct category_name *_Nonnull name)
+{
+    struct category_ledger *out = nullptr;
+    /* sentinel は入力とは独立の所有物。失敗で失わず成功後にも自分で破棄する。 */
+    if (category_ledger_empty(&out) != CATEGORY_LEDGER_ACCEPTED)
+    {
+        return false;
+    }
+    struct category_ledger *sentinel = out;
+    enum category_ledger_outcome outcome = category_ledger_renamed(ledger, 1, name, &out);
+    require(outcome == CATEGORY_LEDGER_ACCEPTED || outcome == CATEGORY_LEDGER_OUT_OF_MEMORY,
+            "category rename allocation failure remains typed");
+    if (outcome == CATEGORY_LEDGER_OUT_OF_MEMORY)
+    {
+        require(out == sentinel, "category ledger OOM preserves nonnull output");
+    }
+    if (outcome == CATEGORY_LEDGER_ACCEPTED)
+    {
+        category_ledger_destroy(out);
+    }
+    category_ledger_destroy(sentinel);
+    return outcome == CATEGORY_LEDGER_ACCEPTED;
+}
+
+static bool category_plan_under_probe(const struct category_ledger *_Nonnull ledger,
+                                      const struct category_name *_Nonnull name,
+                                      struct rename_plan *_Nonnull sentinel)
+{
+    struct rename_plan *out = sentinel;
+    enum rename_plan_outcome outcome = rename_plan_create_category(ledger, 1, name, &out);
+    require(outcome == RENAME_PLAN_ACCEPTED || outcome == RENAME_PLAN_OUT_OF_MEMORY,
+            "category plan failure is typed");
+    require(outcome != RENAME_PLAN_OUT_OF_MEMORY || out == sentinel,
+            "category plan OOM preserves nonnull output");
+    bool completed = outcome == RENAME_PLAN_ACCEPTED && rename_plan_equals(sentinel, out) &&
+                     journal_under_probe(out);
+    if (outcome == RENAME_PLAN_ACCEPTED)
+    {
+        rename_plan_destroy(out);
+    }
+    return completed;
+}
+
+static bool category_rename_scenario(void)
+{
+    struct category_ledger *ledger = nullptr;
+    struct category_name *name = nullptr;
+    bool prepared =
+        category_ledger_parse(categories_text, strlen(categories_text), &ledger) ==
+            CATEGORY_LEDGER_ACCEPTED &&
+        category_name_create("日本語.md", strlen("日本語.md"), &name) == CATEGORY_NAME_ACCEPTED;
+    struct rename_plan *rename = nullptr;
+    bool completed = false;
+    if (prepared && category_renamed_under_probe(ledger, name))
+    {
+        enum rename_plan_outcome outcome = rename_plan_create_category(ledger, 1, name, &rename);
+        require(outcome == RENAME_PLAN_ACCEPTED || outcome == RENAME_PLAN_OUT_OF_MEMORY,
+                "category plan OOM remains typed");
+        require(outcome != RENAME_PLAN_OUT_OF_MEMORY || rename == nullptr,
+                "category plan OOM preserves out");
+        completed =
+            outcome == RENAME_PLAN_ACCEPTED && category_plan_under_probe(ledger, name, rename);
+    }
+    rename_plan_destroy(rename);
+    category_name_destroy(name);
+    category_ledger_destroy(ledger);
+    return completed;
+}
+
+static bool v1_journal_scenario(void)
+{
+    const char *text = "{\"version\":1,\"rename\":{\"category\":\"A\",\"from\":\"old\",\"to\":"
+                       "\"new\",\"ledger\":{\"version\":1,\"notes\":[\"new\"]}},\"fileId\":"
+                       "\"0123456789abcdef0123456789abcdef0123456789abcdef\",\"historyId\":\"\"}";
+    struct rename_journal *journal = nullptr;
+    enum rename_journal_outcome outcome = rename_journal_parse(text, strlen(text), &journal);
+    require(outcome == RENAME_JOURNAL_ACCEPTED || outcome == RENAME_JOURNAL_OUT_OF_MEMORY,
+            "v1 decode OOM remains typed");
+    require(outcome != RENAME_JOURNAL_OUT_OF_MEMORY || journal == nullptr, "v1 OOM preserves out");
+    rename_journal_destroy(journal);
+    return outcome == RENAME_JOURNAL_ACCEPTED;
+}
+
 static bool rename_scenario(void)
 {
     struct note_ledger *ledger = nullptr;
@@ -863,17 +962,18 @@ static bool rename_scenario(void)
         note_ledger_parse(notes_text, strlen(notes_text), &ledger) == NOTE_LEDGER_ACCEPTED &&
         note_name_create("日本語 保存名.md", strlen("日本語 保存名.md"), &name) ==
             NOTE_NAME_ACCEPTED;
-    struct note_rename *rename = nullptr;
+    struct rename_plan *rename = nullptr;
     bool completed = false;
     if (prepared)
     {
         struct note_rename_target target = {.index = 1, .name = name};
-        enum note_rename_outcome outcome = note_rename_create("カテゴリ", ledger, &target, &rename);
-        require(outcome == NOTE_RENAME_ACCEPTED || outcome == NOTE_RENAME_OUT_OF_MEMORY,
+        enum rename_plan_outcome outcome =
+            rename_plan_create_note("カテゴリ", ledger, &target, &rename);
+        require(outcome == RENAME_PLAN_ACCEPTED || outcome == RENAME_PLAN_OUT_OF_MEMORY,
                 "rename allocation failure remains typed");
-        completed = outcome == NOTE_RENAME_ACCEPTED && journal_under_probe(rename);
+        completed = outcome == RENAME_PLAN_ACCEPTED && journal_under_probe(rename);
     }
-    note_rename_destroy(rename);
+    rename_plan_destroy(rename);
     note_name_destroy(name);
     note_ledger_destroy(ledger);
     return completed;
@@ -1041,10 +1141,22 @@ void run_allocation_tests(void)
     exhaust(line_index_scenario, "line index scenario never completed");
     exhaust(settings_scenario, "settings scenario never completed");
     exhaust(replace_scenario, "replace scenario never completed");
-    exhaust(rename_scenario, "rename scenario never completed");
+    run_rename_allocation_tests();
     exhaust(history_scenario, "history scenario never completed");
     exhaust(create_category_scenario, "create category scenario never completed");
     exhaust(trash_scenario, "trash scenario never completed");
     exhaust(remove_category_scenario, "remove category scenario never completed");
     exhaust(removed_filter_scenario, "removed filter scenario never completed");
+}
+
+void run_rename_allocation_tests(void)
+{
+    if (!probe_active())
+    {
+        printf("rename allocation probe inactive: canonical build calls the real CRT\n");
+        return;
+    }
+    exhaust(rename_scenario, "rename scenario never completed");
+    exhaust(category_rename_scenario, "category rename scenario never completed");
+    exhaust(v1_journal_scenario, "v1 journal scenario never completed");
 }

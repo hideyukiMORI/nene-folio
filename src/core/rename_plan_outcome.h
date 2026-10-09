@@ -1,0 +1,9 @@
+#ifndef NENEFOLIO_RENAME_PLAN_OUTCOME_H
+#define NENEFOLIO_RENAME_PLAN_OUTCOME_H
+enum rename_plan_outcome : unsigned char
+{
+    RENAME_PLAN_ACCEPTED,
+    RENAME_PLAN_INVALID,
+    RENAME_PLAN_OUT_OF_MEMORY
+};
+#endif

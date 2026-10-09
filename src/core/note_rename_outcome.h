@@ -1,9 +1,0 @@
-#ifndef NENEFOLIO_NOTE_RENAME_OUTCOME_H
-#define NENEFOLIO_NOTE_RENAME_OUTCOME_H
-enum note_rename_outcome : unsigned char
-{
-    NOTE_RENAME_ACCEPTED,
-    NOTE_RENAME_INVALID,
-    NOTE_RENAME_OUT_OF_MEMORY
-};
-#endif

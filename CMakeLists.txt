@@ -27,7 +27,7 @@ nenefolio_target(nenefolio_core core STATIC
     src/core/json_reader.c src/core/json_writer.c src/core/name_list.c
     src/core/category_ledger.c src/core/category_name.c src/core/note_ledger.c src/core/drawer_layout.c
     src/core/text_buffer.c src/core/note_text.c src/core/markdown_rtf.c src/core/rtf_palette.c
-    src/core/folio_command.c src/core/note_name.c src/core/note_rename.c src/core/rename_journal.c
+    src/core/folio_command.c src/core/note_name.c src/core/rename_plan.c src/core/rename_journal.c
     src/core/note_search.c src/core/note_corpus.c src/core/index_filter.c
     src/core/folio_settings.c src/core/folio_theme.c src/core/line_index.c
     src/core/replace_template.c src/core/replace_edit.c src/core/note_replace.c

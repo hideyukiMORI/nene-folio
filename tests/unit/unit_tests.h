@@ -21,6 +21,8 @@ void run_command_tests(void);
 void run_note_name_tests(void);
 void run_category_name_tests(void);
 void run_rename_tests(void);
+void run_rename_state_tests(void);
+void run_rename_allocation_tests(void);
 void run_search_tests(void);
 void run_filter_tests(void);
 void run_settings_tests(void);

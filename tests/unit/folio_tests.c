@@ -32,6 +32,15 @@ int main(int argc, char *_Nonnull *_Nonnull argv)
         printf("command and UI text tests passed\n");
         return 0;
     }
+    if (argc == 2 && strcmp(argv[1], "--rename-d1") == 0)
+    {
+        run_ledger_tests();
+        run_rename_tests();
+        run_rename_state_tests();
+        run_rename_allocation_tests();
+        printf("rename D1 tests passed\n");
+        return 0;
+    }
     run_text_tests();
     /* eng/coverage.py の反例: 台帳・配置・状態のテストを省いた実行では分岐 90%
      * に届かないことを示す。 */
