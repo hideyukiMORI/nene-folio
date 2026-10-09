@@ -43,8 +43,13 @@ OS probeの既存ASan interception warningはログに保持し、assertion成�
 ## 統合前の検証と残る範囲
 
 本文型の共通生成契約が変わり、ノート・履歴・保存・検索写し・Markdown表示のconsumerへ影響する。
-この具体的な共通基盤の影響に対して、統合前に正典 `pwsh -NoProfile -File ./eng/check.ps1` を実行し、
-結果をこの記録とPRへ追記する。成功後に実行部が変わらなければ、その結果をpush/mergeで再利用する。
+この具体的な共通基盤の影響に対して、source `38e51bd032b2a8529e55f51d7cb6d6a5864d2049` で
+正典 `pwsh -NoProfile -File ./eng/check.ps1` を1回実行し、2026-10-09 23:53:16 JSTにexit0で成功した。
+conformance/self-tests、全79ビルド工程のclang-cl/clang-tidy、symbols 2 libraries違反0、CTest 2/2、
+branch 3246/3462 = 93.76083188908146%（93.76%）、negative 7.68%の90%未満拒否、実ツールproof 19件を確認した。
+証跡はfullgate.logとgate-result.json、4本のcoverage/proof JSONをgate-evidenceへSHA一致で保存した。
+最終実装で実OS probeも再実行し、27 assertion/9ファイル不変を再確認した。自己レビューは上記規則IDの範囲で実施し技術受理。
+収載後のsrc/tests/eng/CMake差分0を確認し、成功結果をpush/mergeで再利用する。
 
 NULを含む既存ファイルは読めない理由を示す。内容を自動変換しないため、修正には外部エディタが必要。
 物理IME・別DPI・長時間性能・外部編集監視は今回の対象外。新しいOS API・依存・保存schemaは無い。

@@ -2,6 +2,17 @@
 
 ## 最新（2026-10-09）
 
+23:29 JSTのhideの継続指示後、#232 / [PR #233](https://github.com/hideyukiMORI/nene-folio/pull/233)を進めた。
+埋め込みNULを受理して通常編集/履歴復元で本文が欠落する境界を実測し、本文型の共通生成時検証で拒否する。
+対象unit・サイズ境界・実Win32 27項目/元データ9ファイル不変・正典ゲートが成功し技術受理済み。
+source `38e51bd`、branch網羅93.76%、proof19件。最新の統合・通常exe反映・整理結果は
+`D:/NeNeFolio/agents/232-note-nul/completion.json` とPR #233を参照する。Waivers: none。
+
+今回7件の以前の整理残存のうち、baseline再現物3ディレクトリはhideの手動シェルで削除され、23:28 JSTに不在を確認した。
+残る統合済みWT2件と生成物53か所（485182986 bytes）は23:36 JSTの事前照合に成功し、
+手動実行用 `D:/NeNeFolio/agents/2026-10-09-autonomous/cleanup-remaining.ps1 -Apply` を提示した。
+この時点では未実行。以前の拒否で道具が返した情報は `blocked by policy` までで、拒否機構・詳細理由は確定していない。
+
 21:06 JSTのhideの自走継続指示で、親#169完了後も具体的な不具合を探し、再現→修正→対象検証→PR統合を進めている。停止・確認待ちではない。
 
 - 親#169はPR #216 → `4330745`で完了し、通常exeも反映済み。
