@@ -57,11 +57,14 @@ static void verify_paragraphs(void)
 static void verify_unicode(void)
 {
     expect_body("\xE6\x97\xA5\xE6\x9C\xAC",
-                "\\pard\\sa160\\sl300\\slmult1\\cf1 \\u26085?\\u26412?\\par\n");
-    expect_body("\xC3\xA9", "\\pard\\sa160\\sl300\\slmult1\\cf1 \\u233?\\par\n");
-    expect_body("\xEF\xBF\xBD", "\\pard\\sa160\\sl300\\slmult1\\cf1 \\u-3?\\par\n");
-    expect_body("\xF0\x9F\x98\x80",
-                "\\pard\\sa160\\sl300\\slmult1\\cf1 \\u-10179?\\u-8704?\\par\n");
+                "\\pard\\sa160\\sl300\\slmult1\\cf1 \xE6\x97\xA5\xE6\x9C\xAC\\par\n");
+    expect_body("\xC3\xA9", "\\pard\\sa160\\sl300\\slmult1\\cf1 \xC3\xA9\\par\n");
+    expect_body("\xEF\xBF\xBD", "\\pard\\sa160\\sl300\\slmult1\\cf1 \xEF\xBF\xBD\\par\n");
+    expect_body("\xF0\x9F\x98\x80", "\\pard\\sa160\\sl300\\slmult1\\cf1 \xF0\x9F\x98\x80\\par\n");
+    expect_body("A\xEF\xBF\xBD\vB", "\\pard\\sa160\\sl300\\slmult1\\cf1 A\xEF\xBF\xBD\vB\\par\n");
+    expect_body(
+        "`{\xEF\xBF\xBD}\\`",
+        "\\pard\\sa160\\sl300\\slmult1\\cf1 {\\f1\\fs20\\cf4 \\{\xEF\xBF\xBD\\}\\\\}\\par\n");
 }
 
 static void verify_headings(void)
