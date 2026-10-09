@@ -2647,6 +2647,10 @@ static void finish_replace(struct folio_window *_Nonnull self, struct replace_ed
  * （安全の正本は application・レビュー B1）。 */
 static void apply_replace(struct folio_window *_Nonnull self, enum replace_scope scope)
 {
+    if (self->command_composing)
+    {
+        return;
+    }
     if (self->replace_outcome != FOLIO_STATE_READY)
     {
         redraw_command_layer(self);

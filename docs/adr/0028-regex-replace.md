@@ -236,3 +236,10 @@ count だけの呼び出し・長さ 0 の本文・毎打鍵の `uregex_open` �
 UI（Win32 部品 probe）: `EM_REPLACESEL` 1 回が Undo 1 単位で本文が戻ること、template が入れた CR が `note_pane_display_text` で CR 1 つに戻ること、置換後の選択位置、
 全体置換後の最初に見える論理行、2 欄の Tab / Enter / Ctrl+Enter / Esc とフォーカスの復帰、`dismiss` が欄の集合で閉じないこと。
 実機の目視（hide）: 欄の見た目と最小寸法（ヘルプが 1 行増える）、IME 変換中の Enter、1MB のノートでの打鍵の体感。Waivers: none。
+
+## 2026-10-09 の補正（#226・変換中のマウス操作）
+
+未確定入力のあいだは、共通の `apply_replace` 入口で操作を行わず、本文・下見・状態行・選択・スクロール・Undo・focusを保持する。
+「1 件」「すべて」のクリックは消費したままにし、別欄へのfocus移動を起こさない。再描画・通知・強制確定・実行予約は追加しない。
+確定後の下見は既存の `command_composition_settled` で取り直し、改めて求めた操作だけを通常の経路で適用する。
+物理IMEの通知順とは区別した制御message再現と対象測定は [#226 確認記録](../quality/2026-10-09-ime-replace-checks.md)。
