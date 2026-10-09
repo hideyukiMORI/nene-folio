@@ -169,6 +169,7 @@ Waivers: none | WVR-NNNN
 署名・インストーラ・自動更新は別の焦点 Issue とする。
 
 実機で見るときは [`tools/prepare-real-machine.ps1`](../tools/prepare-real-machine.ps1) で main を進めてビルドする（起動は別の 1 行）。
+対象の `build/NeNeFolio.exe` が起動中なら、本文を保存して閉じてから実行する。ツールは対象の起動中や実行パスの確認不能を理由付きで拒否し、アプリを終了しない。別 checkout の同名アプリは操作しない（#217）。
 設計席が枝の exe を自分で動かして絵を撮るときは、キーは [`tools/post-keys.ps1`](../tools/post-keys.ps1)（`PostMessage`・`-TargetPid`）、
 絵は [`tools/capture-window.ps1`](../tools/capture-window.ps1)（`PrintWindow`・DPI 対応・`-TargetPid`）で、hide の実機とは PID で区別する。
 `SetForegroundWindow` / `SendKeys` と、席が作った DPI 非対応の写し（`out/agents/*/capwin.ps1`）は使わない
