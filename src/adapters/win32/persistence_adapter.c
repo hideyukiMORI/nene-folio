@@ -514,26 +514,36 @@ static bool compose_pending(const wchar_t *_Nonnull directory, size_t length, wc
            append_units(out, &position, L"\\1.md.tmp", history_pending_length);
 }
 
-/* 最古の版を消し、残りを 1 つずつ後ろへずらす（ADR 0012 の決定 3）。無い版は飛ばす。
- * 改名に MOVEFILE_REPLACE_EXISTING を付けるので、最古の削除が効かなくても改名が相手を上書きし、
- * 連鎖が止まって 1.md だけが失われることにならない。
- * 原子的ではないので、途中で落ちれば番号が欠けた履歴が残りうる。md はまだ無傷。 */
-static void rotate_history(const wchar_t *_Nonnull directory, size_t length)
+/* 最古の版を消し、残りを 1 つずつ後ろへずらす（ADR 0012 の決定 3）。無い版だけ飛ばす。
+ * パス生成・削除・改名が失敗したら止め、1.md.tmp の公開も本文保存も行わせない。
+ * 原子的ではないので、途中で止まれば番号が欠けた履歴が残りうる。md はまだ無傷。 */
+[[nodiscard]] static enum persistence_outcome rotate_history(const wchar_t *_Nonnull directory,
+                                                             size_t length)
 {
     wchar_t older[path_capacity];
     wchar_t newer[path_capacity];
-    if (compose_version(directory, length, note_history_depth, older))
+    if (!compose_version(directory, length, note_history_depth, older))
     {
-        (void)DeleteFileW(older);
+        return PERSISTENCE_UNWRITABLE;
+    }
+    if (!DeleteFileW(older) && GetLastError() != ERROR_FILE_NOT_FOUND)
+    {
+        return PERSISTENCE_UNWRITABLE;
     }
     for (size_t version = note_history_depth; version > 1; --version)
     {
-        if (compose_version(directory, length, version, older) &&
-            compose_version(directory, length, version - 1, newer))
+        if (!compose_version(directory, length, version, older) ||
+            !compose_version(directory, length, version - 1, newer))
         {
-            (void)MoveFileExW(newer, older, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH);
+            return PERSISTENCE_UNWRITABLE;
+        }
+        if (!MoveFileExW(newer, older, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) &&
+            GetLastError() != ERROR_FILE_NOT_FOUND)
+        {
+            return PERSISTENCE_UNWRITABLE;
         }
     }
+    return PERSISTENCE_STORED;
 }
 
 /* 履歴のディレクトリを用意し、**先に新しい版を 1.md.tmp へ書き切ってから**番号をずらし、
@@ -564,7 +574,11 @@ static enum persistence_outcome store_history(const struct persistence_adapter *
     {
         return written;
     }
-    rotate_history(directory, length);
+    enum persistence_outcome rotated = rotate_history(directory, length);
+    if (rotated != PERSISTENCE_STORED)
+    {
+        return rotated;
+    }
     return MoveFileExW(pending, newest, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)
                ? PERSISTENCE_STORED
                : PERSISTENCE_UNWRITABLE;
