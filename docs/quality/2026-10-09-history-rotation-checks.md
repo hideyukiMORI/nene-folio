@@ -64,7 +64,11 @@ python D:/NeNeFolio/agents/218-history-rotation/api-errors.py
 
 baseline/fixed target buildとprobe linkはexit0。baseline-results.json=2再現、fixed-results.json=9fixture、api-errors.json=7例。
 `baseline-probe.log`、`fixed-probe.log`（READONLY中間案の期待誤りを含む）、`fixed-probe-continued.log`、`api-errors.log`に全文がある。
-固定後sourceでの最終正典gateは静読受理後に1回実施し、結果を本節へ追記する。
+静読受理済みcheckpoint `5a44f57ce10535f36b9e31dccda46a704f895e30` で `pwsh -NoProfile -File ./eng/check.ps1` を1回実行しexit0。
+2026-10-09 21:25台〜21:27:45 JST、全文 `fullgate.log`・実行/終了情報 `fullgate-meta.json`。
+規約自己試験89/89、CTest2/2、分岐3214/3430=93.70262390670554%、7.35%の負例拒否、実ツールproof19。
+ゲート後にsrc/tests単体の全checkpoint SHAを照合して一致。続くcommitはこの結果の文書追記だけで、対象OS/同一gateを再実行しない。
+coverage3JSON/proofs1JSONを同root `gate-evidence/`へコピーして4/4hash一致を保存した。
 
 ## 残る範囲
 
