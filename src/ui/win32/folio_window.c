@@ -3106,10 +3106,20 @@ static bool report_save(struct folio_window *_Nonnull self, enum folio_state_out
 static void finish_save_command(struct folio_window *_Nonnull self,
                                 enum folio_state_outcome outcome)
 {
+    /* 公開後の台帳失敗でも版は破棄される。理由の箱へ入る前に古い面を閉じる（ADR 0038）。 */
+    bool empty_history = self->command_surface == COMMAND_SURFACE_HISTORY &&
+                         folio_state_history_count(self->state) == 0;
+    HWND _Nullable focus = nullptr;
+    if (empty_history)
+    {
+        close_command_surface(self);
+        focus = GetFocus();
+    }
     if (report_save(self, outcome) && self->command_surface != COMMAND_SURFACE_CLOSED)
     {
         close_command_surface(self);
     }
+    restore_valid_focus(focus);
 }
 
 /* 改名は本文を流し込み直さず、保持する入力面と元focusを触らない（ADR0041）。 */
