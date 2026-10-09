@@ -442,6 +442,7 @@ static enum persistence_outcome read_text(const wchar_t *_Nonnull path,
     case NOTE_TEXT_ACCEPTED:
         return PERSISTENCE_LOADED;
     case NOTE_TEXT_INVALID_UTF8:
+    case NOTE_TEXT_EMBEDDED_NUL:
         return PERSISTENCE_MALFORMED;
     case NOTE_TEXT_TOO_LARGE:
         return PERSISTENCE_UNREADABLE;

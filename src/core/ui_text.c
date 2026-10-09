@@ -44,9 +44,9 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
          "This note is too large to save. The limit is 16 MiB. Shorten the note, then save again.",
          "笔记过大，无法保存。上限为 16 MiB。请缩短内容后再保存。"},
     [UI_TEXT_FAILURE_NOTE_MALFORMED] =
-        {"編集中の本文に壊れた文字があります。保存していません。",
-         "The body being edited has broken characters. It was not saved.",
-         "编辑中的正文含有损坏的字符。未保存。"},
+        {"編集中の本文に壊れた文字、または扱えない文字があります。保存していません。",
+         "The body being edited has invalid or unsupported characters. It was not saved.",
+         "编辑中的正文含有无效或不支持的字符。未保存。"},
     [UI_TEXT_FAILURE_NOTE_STORE_FAILED] =
         {"ノートを書き戻せませんでした。編集中の本文はそのままです。"
          "別名で保存するか、編集を破棄して読み直せます。",

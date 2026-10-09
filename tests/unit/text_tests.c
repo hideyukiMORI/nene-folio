@@ -430,3 +430,57 @@ void run_note_size_text_tests(void)
     verify_normalized_size();
     verify_oversize_before_allocation();
 }
+
+static void verify_nul_rejected(const char *_Nonnull bytes, size_t length)
+{
+    struct note_text *sentinel = nullptr;
+    require(note_text_create("kept", 4, &sentinel) == NOTE_TEXT_ACCEPTED, "NUL sentinel owned");
+    struct note_text *text = sentinel;
+    require(note_text_create(bytes, length, &text) == NOTE_TEXT_EMBEDDED_NUL && text == sentinel,
+            "NUL file body rejected without changing out");
+    require(note_text_from_editor(bytes, length, LINE_ENDING_LF, &text) == NOTE_TEXT_EMBEDDED_NUL &&
+                text == sentinel,
+            "NUL editor body rejected before LF normalization");
+    require(note_text_from_editor(bytes, length, LINE_ENDING_CRLF, &text) ==
+                    NOTE_TEXT_EMBEDDED_NUL &&
+                text == sentinel && same_text(note_text_bytes(sentinel), "kept"),
+            "NUL editor body rejected before CRLF normalization");
+    note_text_destroy(sentinel);
+}
+
+static void verify_nul_codec(void)
+{
+    const char16_t input[] = {u'A', u'\0', u'B'};
+    struct utf8_text *narrow = nullptr;
+    require(utf8_text_create(input, 3, &narrow) == UTF8_TEXT_CONVERTED &&
+                utf8_text_length(narrow) == 3 && memcmp(utf8_text_bytes(narrow), "A\0B", 3) == 0,
+            "generic UTF-16 to UTF-8 conversion still accepts NUL");
+    struct utf16_text *wide = nullptr;
+    require(utf16_text_create(utf8_text_bytes(narrow), 3, &wide) == UTF16_TEXT_CONVERTED &&
+                utf16_text_length(wide) == 3 &&
+                memcmp(utf16_text_units(wide), input, sizeof input) == 0,
+            "generic UTF-8 to UTF-16 conversion still roundtrips NUL");
+    utf16_text_destroy(wide);
+    utf8_text_destroy(narrow);
+}
+
+void run_note_nul_text_tests(void)
+{
+    verify_nul_rejected("\0AB", 3);
+    verify_nul_rejected("A\0B", 3);
+    verify_nul_rejected("AB\0", 3);
+    verify_nul_rejected("\0", 1);
+    verify_nul_rejected("\xEF\xBB\xBF\0A", 5);
+    struct note_text *text = nullptr;
+    require(note_text_create("\0\xC3", 2, &text) == NOTE_TEXT_INVALID_UTF8 && text == nullptr &&
+                note_text_from_editor("\0\xC3", 2, LINE_ENDING_LF, &text) ==
+                    NOTE_TEXT_INVALID_UTF8 &&
+                text == nullptr,
+            "invalid UTF-8 keeps precedence over NUL");
+    require(note_text_create("AB\0", 2, &text) == NOTE_TEXT_ACCEPTED && note_text_length(text) == 2,
+            "the terminator outside the explicit length is not body data");
+    note_text_destroy(text);
+    expect_folded("", LINE_ENDING_LF, "");
+    expect_folded("\xE6\x97\xA5\r\nB", LINE_ENDING_CRLF, "\xE6\x97\xA5\r\nB");
+    verify_nul_codec();
+}

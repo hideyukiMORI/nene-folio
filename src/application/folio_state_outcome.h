@@ -13,7 +13,7 @@ enum folio_state_outcome : unsigned char
     FOLIO_STATE_NOTE_UNREADABLE,   /* ノートが無い・読めない・UTF-8 ではない。表示は変えていない */
     FOLIO_STATE_NOTHING_SELECTED,  /* ノートを選ばずに編集へ入ろうとした */
     FOLIO_STATE_NOT_EDITING,       /* 閲覧中に保存の意図が来た */
-    FOLIO_STATE_NOTE_MALFORMED,    /* 編集中の本文が UTF-16 として壊れている。保存していない */
+    FOLIO_STATE_NOTE_MALFORMED,    /* 編集本文が不正UnicodeまたはNULを含む。保存していない */
     FOLIO_STATE_NOTE_TOO_LARGE,    /* 正規化後本文が共通上限を超える。今回の本文は保存していない */
     FOLIO_STATE_NOTE_STORE_FAILED, /* md を書き戻せなかった。モードも読んだ本文も変えていない */
     FOLIO_STATE_HISTORY_FAILED,    /* 履歴を書けなかったので md も書いていない（ADR 0012） */

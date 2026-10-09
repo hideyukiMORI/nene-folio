@@ -2001,6 +2001,7 @@ static enum folio_state_outcome text_outcome(enum note_text_outcome outcome)
     case NOTE_TEXT_ACCEPTED:
         return FOLIO_STATE_READY;
     case NOTE_TEXT_INVALID_UTF8:
+    case NOTE_TEXT_EMBEDDED_NUL:
         return FOLIO_STATE_NOTE_MALFORMED;
     case NOTE_TEXT_TOO_LARGE:
         return FOLIO_STATE_NOTE_TOO_LARGE;

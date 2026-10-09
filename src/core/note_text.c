@@ -13,19 +13,21 @@ struct note_text
     size_t length;
 };
 
-static bool well_formed(const char *_Nonnull bytes, size_t length)
+static enum note_text_outcome validate(const char *_Nonnull bytes, size_t length)
 {
+    bool contains_nul = false;
     for (size_t index = 0; index < length;)
     {
         uint32_t code_point = 0;
         size_t consumed = utf8_text_decode(bytes + index, length - index, &code_point);
         if (consumed == 0)
         {
-            return false;
+            return NOTE_TEXT_INVALID_UTF8;
         }
+        contains_nul = contains_nul || code_point == 0;
         index += consumed;
     }
-    return true;
+    return contains_nul ? NOTE_TEXT_EMBEDDED_NUL : NOTE_TEXT_ACCEPTED;
 }
 
 /* 先頭の BOM は本文ではない（メモ帳が付ける）。書き戻すときも付けない（ADR 0006）。 */
@@ -64,9 +66,10 @@ enum note_text_outcome note_text_create(const char *_Nonnull bytes, size_t lengt
                                         struct note_text *_Nullable *_Nonnull out)
 {
     drop_bom(&bytes, &length);
-    if (!well_formed(bytes, length))
+    enum note_text_outcome accepted = validate(bytes, length);
+    if (accepted != NOTE_TEXT_ACCEPTED)
     {
-        return NOTE_TEXT_INVALID_UTF8;
+        return accepted;
     }
     if (length > persisted_size_limit)
     {
@@ -147,9 +150,10 @@ enum note_text_outcome note_text_from_editor(const char *_Nonnull bytes, size_t 
                                              struct note_text *_Nullable *_Nonnull out)
 {
     drop_bom(&bytes, &length);
-    if (!well_formed(bytes, length))
+    enum note_text_outcome accepted = validate(bytes, length);
+    if (accepted != NOTE_TEXT_ACCEPTED)
     {
-        return NOTE_TEXT_INVALID_UTF8;
+        return accepted;
     }
     if (!normalized_within_limit(bytes, length, ending))
     {
