@@ -2,7 +2,7 @@
 
 Issue: [#226](https://github.com/hideyukiMORI/nene-folio/issues/226)。規則: ADR0016 / ADR0028 決定6、ARC-001 / ARC-011、C-012、QLT-013。Waivers: none。
 
-最終基点main `9422b24`（#219統合）。backupを保持してown source commitだけをrebaseし、UI source差分0を確認した。
+ゲート実測基点main `9422b24`（#219統合）。backupを保持してown source commitだけをrebaseし、UI source差分0を確認した。
 #219のapplication差分は保存済み検索写しの保留修復であり、このprobeは保存/索引filter/cache読込を行わずcopy_pendingはfalseのまま。preview/apply APIと実行経路は不変なので対象成功結果を再利用した。
 製品差分は `apply_replace` 入口の4行だけで、`command_composing` 中は無操作で返す。
 click_replace_buttonsのクリック消費を維持し、別欄へfocusを移さない。通知・描画・強制確定・timer・実行予約を足していない。
@@ -49,7 +49,8 @@ write/archive/create/renameは0。非0境界以外の成功済み4caseは再実�
 source checkpoint `de87c49` の親静読受理後、正典 `pwsh -NoProfile -File ./eng/check.ps1` を1回実行してexit0。
 compile/clang-tidy、conformance、CTest 2/2、分岐カバレッジ3222/3438 = 93.72%（下限90%）、負例7.33%の拒否、ゲート証明19件、diff --checkが成功した。
 ログは隔離成果物の `gate.log`。`out/coverage/complete.json`・`negative.json`・`results.json` と `out/proofs/results.json` を `gate-json/` へ保存し、source/保存先のSHA256一致を `gate-json-hashes.json` に記録した。
-製品sourceはcheckpointから不変。文書のみの結果追記で製品ゲート/成功済み対象probeを反復しない。
+その後、公開枝へmain `27ea9bf`（#223）を通常mergeした。取込は実persistence adapterの書込前ロック検査だけで、UI/core/application/regex/appearance/対象tests/CMakeは差分0。
+このprobeはfake persistence portsを使い、実adapterの書込を呼ばないため対象経路へ影響しない。今回のUI sourceはcheckpointから不変であり、上記ゲート実測と対象成功を再利用する。#223自体のゲート/CI成功とは分けて扱い、製品ゲート/成功済み対象probeを反復しない。
 
 ## 未測定と残る範囲
 
