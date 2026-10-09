@@ -4,7 +4,8 @@
 - 規則: SPECIFICATION §4、ADR0022決定3/補正、ARC-001/003/007/010、C-005/008/012、QLT-008/013。Waivers: none。
 - 対象: persistence_adapterの通常7mutating port → 既存writable_data。取得後journal拒否はlocal HANDLEを閉じ、成功後だけ採用。
 - 読みのport、改名/ごみ箱の型付き境界、公開port/enum/schema/依存/ゲートは変更していない。
-- ソースSHA-256: `d38f93c615ec5d50f645dbfd321c4dd7f8f0c14c449a4fd62d8fbde87f3742e1`。
+- OS測定時ソースSHA-256: `d38f93c615ec5d50f645dbfd321c4dd7f8f0c14c449a4fd62d8fbde87f3742e1`。
+- 静読受理後のコメント1行補正（open_lockの共有範囲を「起動と書込」へ）のSHA-256: `ef77ced93ebc518661eb3573d6f40c37f0423fecbc24c8c20d81c3ea70e62e74`。振る舞い同一で対象OS成功を再利用。
 - Windows 11 Pro 10.0.26300、D:ローカルNTFS、固定clang-cl/toolchain、実Debug ASan/UBSan/nullability libraryを使用。
 
 ## 元の問題の成功済み再現
