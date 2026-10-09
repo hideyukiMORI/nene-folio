@@ -57,6 +57,7 @@ static_assert(note_history_depth >= 1 && note_history_depth <= 9,
 
 /* すべての走査・保存・履歴が共有するrootだけを長い絶対パスへ揃える（ADR0020）。 */
 static enum persistence_adapter_outcome acquire_lock(struct persistence_adapter *_Nonnull adapter);
+static bool writable_data(struct persistence_adapter *_Nonnull adapter);
 
 static bool module_path(wchar_t *_Nonnull out, size_t *_Nonnull length)
 {
@@ -612,7 +613,8 @@ static enum persistence_outcome archive_note(struct persistence_adapter *_Nonnul
 {
     wchar_t leaf[MAX_PATH];
     wchar_t source[path_capacity];
-    if (!note_leaf(note, leaf, MAX_PATH) || !compose(adapter, category, leaf, source))
+    if (!note_leaf(note, leaf, MAX_PATH) || !compose(adapter, category, leaf, source) ||
+        !writable_data(adapter))
     {
         return PERSISTENCE_UNWRITABLE;
     }
@@ -638,7 +640,8 @@ static enum persistence_outcome write_note(struct persistence_adapter *_Nonnull 
 {
     wchar_t leaf[MAX_PATH];
     wchar_t path[path_capacity];
-    if (!note_leaf(note, leaf, MAX_PATH) || !compose(adapter, category, leaf, path))
+    if (!note_leaf(note, leaf, MAX_PATH) || !compose(adapter, category, leaf, path) ||
+        !writable_data(adapter))
     {
         return PERSISTENCE_UNWRITABLE;
     }
@@ -653,7 +656,8 @@ static enum persistence_outcome create_note(struct persistence_adapter *_Nonnull
 {
     wchar_t leaf[MAX_PATH];
     wchar_t path[path_capacity];
-    if (!note_leaf(note, leaf, MAX_PATH) || !compose(adapter, category, leaf, path))
+    if (!note_leaf(note, leaf, MAX_PATH) || !compose(adapter, category, leaf, path) ||
+        !writable_data(adapter))
     {
         return PERSISTENCE_UNWRITABLE;
     }
@@ -672,7 +676,7 @@ static enum persistence_outcome move_note(struct persistence_adapter *_Nonnull a
     wchar_t from[path_capacity];
     wchar_t to[path_capacity];
     if (!note_leaf(note, leaf, MAX_PATH) || !compose(adapter, from_category, leaf, from) ||
-        !compose(adapter, to_category, leaf, to))
+        !compose(adapter, to_category, leaf, to) || !writable_data(adapter))
     {
         return PERSISTENCE_UNWRITABLE;
     }
@@ -698,7 +702,7 @@ static enum persistence_outcome write_category_ledger(struct persistence_adapter
                                                       const struct category_ledger *_Nonnull ledger)
 {
     wchar_t path[path_capacity];
-    if (!compose(adapter, nullptr, L"categories.json", path))
+    if (!compose(adapter, nullptr, L"categories.json", path) || !writable_data(adapter))
     {
         return PERSISTENCE_UNWRITABLE;
     }
@@ -747,7 +751,7 @@ static enum persistence_outcome write_settings(struct persistence_adapter *_Nonn
                                                const struct folio_settings *_Nonnull settings)
 {
     wchar_t path[path_capacity];
-    if (!compose(adapter, nullptr, settings_leaf, path))
+    if (!compose(adapter, nullptr, settings_leaf, path) || !writable_data(adapter))
     {
         return PERSISTENCE_UNWRITABLE;
     }
@@ -766,7 +770,7 @@ static enum persistence_outcome write_note_ledger(struct persistence_adapter *_N
                                                   const struct note_ledger *_Nonnull ledger)
 {
     wchar_t path[path_capacity];
-    if (!compose(adapter, category, L"index.json", path))
+    if (!compose(adapter, category, L"index.json", path) || !writable_data(adapter))
     {
         return PERSISTENCE_UNWRITABLE;
     }
@@ -1449,10 +1453,10 @@ static enum persistence_adapter_outcome acquire_lock(struct persistence_adapter 
                                    : PERSISTENCE_ADAPTER_RECOVERY_LOCKED;
 }
 
-/* カテゴリを作る前に、書ける data/ を用意する（ADR 0022 の決定 3 の予告と 2026-10-07 の補正）。
+/* 通常の書込前に、錠を持つ data/ を用意する（ADR 0022 の決定 3 と 2026-10-09 の補正）。
  * data/ が無ければ作り、錠を持っていなければ取り、いま取ったときだけ記録が無いことを確かめる。
  * 復旧は起動時にしか走らないので、起動の後に他のプロセスが途中で止めた改名はここで断る。
- * 錠を取った後で断っても、錠と作った空の data/ はそのまま持つ。 */
+ * 記録を拒否した錠は閉じ、次回も取得直後の確認を通す。作った空の data/ は残す。 */
 static bool writable_data(struct persistence_adapter *_Nonnull adapter)
 {
     if (!ensure_directory(adapter->root))
@@ -1473,8 +1477,13 @@ static bool writable_data(struct persistence_adapter *_Nonnull adapter)
     {
         return false;
     }
+    if (!journal_absent(adapter))
+    {
+        CloseHandle(lock);
+        return false;
+    }
     adapter->lock = lock;
-    return journal_absent(adapter);
+    return true;
 }
 
 /* data/<category>/ を作る（ADR 0039 の決定 10）。名前は呼ぶ側が検証済みで、道は compose の
