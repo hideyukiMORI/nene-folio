@@ -60,10 +60,30 @@ If the category ledger cannot be saved after deletion, the list updates and an e
 
 ## Rename recovery
 
-Note renames and startup recovery of category renames use one plan and `data/.rename.json`.
+Note and category renames use one plan and `data/.rename.json`.
 New records use version 2 with a `note` or `category` kind; version 1 note records remain readable.
-Recovery completes before scanning notes and categories. Category rename commands are a separate,
-pending implementation. A version 2 record must be recovered with this version before using an older binary.
+Recovery completes before scanning notes and categories.
+A version 2 record must be recovered with this version before using an older binary.
+
+## Rename a category
+
+Right-click a category row and choose **Rename category…**. **Actions**, the command palette,
+and Ex `:renamecategory name` / `:rencat name` use the cursor's category, or the open document's
+category when there is no cursor. With no name argument, the current category name is selected
+in the name form. Category names follow the same rules as category creation; `.md` is retained.
+
+The category folder, its history, and the category ledger move through one recoverable rename.
+Order, colour, expansion, the open body, mode and Undo are preserved. Only an edited named note
+in the target category is saved first; an unsaved document and other categories are preserved.
+Index filtering prevents category renaming. A replace preview for the target category expires
+after completion, while its input fields remain; type again to refresh it.
+
+If an earlier rename needs recovery, its own name form opens first. **Retry** finishes that rename
+before the requested save or rename begins. **Close** leaves the pending intent and does not start
+the requested action. The read-only old → new field selects the new name; Home/End and selection
+let long names be read or copied. **Rename** also opens this recovery form from an unsaved document.
+Search, replace, settings and valid history remain open after a rename; Ex and the palette close
+on completion. History closes if the required save clears its rows. There is no success notice.
 
 ## License
 

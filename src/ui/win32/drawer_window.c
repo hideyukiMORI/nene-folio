@@ -628,6 +628,8 @@ static enum ui_text menu_label(enum drawer_menu_item item)
         return UI_TEXT_MENU_TRASH_NOTE;
     case DRAWER_MENU_DELETE_CATEGORY:
         return UI_TEXT_MENU_DELETE_CATEGORY;
+    case DRAWER_MENU_RENAME_CATEGORY:
+        return UI_TEXT_MENU_RENAME_CATEGORY;
     }
     return UI_TEXT_MENU_NEW_CATEGORY;
 }
@@ -655,6 +657,7 @@ static bool fill_menu(HMENU menu, bool on_row, struct drawer_row row, enum folio
     {
     case DRAWER_ROW_CATEGORY:
         return append_item(menu, DRAWER_MENU_RECOLOR, language) &&
+               append_item(menu, DRAWER_MENU_RENAME_CATEGORY, language) &&
                append_item(menu, DRAWER_MENU_DELETE_CATEGORY, language) &&
                AppendMenuW(menu, MF_SEPARATOR, 0, nullptr) != 0 &&
                append_item(menu, DRAWER_MENU_NEW_CATEGORY, language);
@@ -679,6 +682,7 @@ static void run_item(struct drawer_window *_Nonnull self, enum drawer_menu_item 
     case DRAWER_MENU_NEW_CATEGORY:
     case DRAWER_MENU_TRASH_NOTE:
     case DRAWER_MENU_DELETE_CATEGORY:
+    case DRAWER_MENU_RENAME_CATEGORY:
         break;
     }
     struct note_ref target = {.category = row.category, .note = row.note};

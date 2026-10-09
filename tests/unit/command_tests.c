@@ -34,6 +34,10 @@ static void verify_aliases(void)
     expect_command(":newcategory", FOLIO_COMMAND_NEW_CATEGORY,
                    ":newcategory alone opens the name prompt");
     expect_command(":newcat", FOLIO_COMMAND_NEW_CATEGORY, ":newcat is the same command");
+    expect_command(":renamecategory", FOLIO_COMMAND_RENAME_CATEGORY,
+                   "category rename opens the form");
+    expect_command(":rencat 新しい 名前.md", FOLIO_COMMAND_RENAME_CATEGORY,
+                   "category rename accepts a name argument");
     expect_command(":help", FOLIO_COMMAND_HELP, ":help");
     expect_command(":h", FOLIO_COMMAND_HELP, ":h uses the same help command");
     expect_command(":startinsert", FOLIO_COMMAND_EDIT, "startinsert begins editing");
@@ -187,8 +191,8 @@ static void verify_listed(void)
     require(folio_command_matches(FOLIO_COMMAND_TOGGLE_NUMBER, "行番号", strlen("行番号"),
                                   FOLIO_LANGUAGE_JA),
             "the palette finds the toggle by label");
-    /* パレットの箱の高さはこの数で決まる。総数（21）で取ると 2 行ぶん余る（補正 9）。 */
-    require(folio_command_listed_count() == 19, "nineteen operations are offered on a surface");
+    /* パレットの箱の高さはlisted数で決まり、Ex専用の2操作は数えない（補正9）。 */
+    require(folio_command_listed_count() == 20, "twenty operations are offered on a surface");
     require(folio_command_listed_count() == folio_command_count() - 2,
             "exactly the two unlisted Ex grammars are left out");
     require(folio_command_alias_count(FOLIO_COMMAND_REPLACE) == 0 &&
@@ -294,6 +298,38 @@ static void verify_delete_category(void)
             "refusing a category deletion argument preserves both outputs");
 }
 
+static void verify_rename_category(void)
+{
+    require(folio_command_listed(FOLIO_COMMAND_RENAME_CATEGORY), "category rename is listed");
+    require(
+        folio_command_alias_count(FOLIO_COMMAND_RENAME_CATEGORY) == 2 &&
+            same_text(folio_command_alias(FOLIO_COMMAND_RENAME_CATEGORY, 0), "renamecategory") &&
+            same_text(folio_command_alias(FOLIO_COMMAND_RENAME_CATEGORY, 1), "rencat"),
+        "category rename has exactly two aliases");
+    const char *const labels[] = {"カテゴリ名を変更", "Rename category", "重命名分类"};
+    for (size_t column = 0; column < folio_language_count; ++column)
+    {
+        enum folio_language language = (enum folio_language)column;
+        require(
+            same_text(folio_command_label(FOLIO_COMMAND_RENAME_CATEGORY, language), labels[column]),
+            "category rename labels agree in three languages");
+        require(folio_command_matches(FOLIO_COMMAND_RENAME_CATEGORY, "RENCAT", 6, language),
+                "palette finds category rename alias in every language");
+    }
+    const char *input = ":rencat  new name.md ";
+    enum folio_command command = FOLIO_COMMAND_HELP;
+    size_t argument = 42;
+    require(
+        folio_command_parse(input, strlen(input), &command, &argument) &&
+            command == FOLIO_COMMAND_RENAME_CATEGORY && same_text(input + argument, "new name.md "),
+        "category rename preserves internal and trailing argument spaces for its name boundary");
+    command = FOLIO_COMMAND_HELP;
+    argument = 42;
+    require(!folio_command_parse(":Rencat bad", 11, &command, &argument) &&
+                command == FOLIO_COMMAND_HELP && argument == 42,
+            "rejected alias preserves both outputs");
+}
+
 static void verify_rejections(void)
 {
     static const char *const rejected[] = {"",
@@ -324,15 +360,16 @@ static void verify_rejections(void)
 
 static void verify_catalog(void)
 {
-    require(folio_command_count() == 21, "only implemented commands are registered");
+    require(folio_command_count() == 22, "only implemented commands are registered");
     const enum folio_command expected[] = {
-        FOLIO_COMMAND_SAVE,          FOLIO_COMMAND_QUIT,          FOLIO_COMMAND_SAVE_QUIT,
-        FOLIO_COMMAND_FORCE_QUIT,    FOLIO_COMMAND_HELP,          FOLIO_COMMAND_EDIT,
-        FOLIO_COMMAND_VIEW,          FOLIO_COMMAND_NEW,           FOLIO_COMMAND_SAVE_AS,
-        FOLIO_COMMAND_RENAME,        FOLIO_COMMAND_FIND,          FOLIO_COMMAND_SET,
-        FOLIO_COMMAND_TOGGLE_NUMBER, FOLIO_COMMAND_REPLACE,       FOLIO_COMMAND_SUBSTITUTE,
-        FOLIO_COMMAND_SETTINGS,      FOLIO_COMMAND_DISCARD_EDITS, FOLIO_COMMAND_HISTORY,
-        FOLIO_COMMAND_NEW_CATEGORY,  FOLIO_COMMAND_TRASH_NOTE,    FOLIO_COMMAND_DELETE_CATEGORY};
+        FOLIO_COMMAND_SAVE,           FOLIO_COMMAND_QUIT,          FOLIO_COMMAND_SAVE_QUIT,
+        FOLIO_COMMAND_FORCE_QUIT,     FOLIO_COMMAND_HELP,          FOLIO_COMMAND_EDIT,
+        FOLIO_COMMAND_VIEW,           FOLIO_COMMAND_NEW,           FOLIO_COMMAND_SAVE_AS,
+        FOLIO_COMMAND_RENAME,         FOLIO_COMMAND_FIND,          FOLIO_COMMAND_SET,
+        FOLIO_COMMAND_TOGGLE_NUMBER,  FOLIO_COMMAND_REPLACE,       FOLIO_COMMAND_SUBSTITUTE,
+        FOLIO_COMMAND_SETTINGS,       FOLIO_COMMAND_DISCARD_EDITS, FOLIO_COMMAND_HISTORY,
+        FOLIO_COMMAND_NEW_CATEGORY,   FOLIO_COMMAND_TRASH_NOTE,    FOLIO_COMMAND_DELETE_CATEGORY,
+        FOLIO_COMMAND_RENAME_CATEGORY};
     for (size_t index = 0; index < folio_command_count(); ++index)
     {
         enum folio_command command = folio_command_at(index);
@@ -419,6 +456,7 @@ void run_command_tests(void)
     verify_new_category();
     verify_trash_note();
     verify_delete_category();
+    verify_rename_category();
     verify_ascii_fold();
     verify_case_insensitive_palette();
 }

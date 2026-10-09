@@ -70,6 +70,10 @@ static const struct
                                        UI_TEXT_COMMAND_DELETE_CATEGORY,
                                        2,
                                        {"deletecategory", "delcat"}},
+    [FOLIO_COMMAND_RENAME_CATEGORY] = {FOLIO_COMMAND_RENAME_CATEGORY,
+                                       UI_TEXT_COMMAND_RENAME_CATEGORY,
+                                       2,
+                                       {"renamecategory", "rencat"}},
 };
 
 /* 設定の語（ADR 0026 の決定 8）。効果を実装した語だけを並べる。 */
@@ -103,6 +107,7 @@ static enum folio_argument_kind argument_kind(enum folio_command command)
     case FOLIO_COMMAND_SAVE_AS:
     case FOLIO_COMMAND_RENAME:
     case FOLIO_COMMAND_NEW_CATEGORY:
+    case FOLIO_COMMAND_RENAME_CATEGORY:
         return FOLIO_ARGUMENT_NAME;
     case FOLIO_COMMAND_SET:
         return FOLIO_ARGUMENT_OPTION;
@@ -154,6 +159,7 @@ bool folio_command_listed(enum folio_command command)
     case FOLIO_COMMAND_NEW_CATEGORY:
     case FOLIO_COMMAND_TRASH_NOTE:
     case FOLIO_COMMAND_DELETE_CATEGORY:
+    case FOLIO_COMMAND_RENAME_CATEGORY:
         return true;
     }
     return true;

@@ -16,6 +16,8 @@ struct name_prompt_request
 {
     struct folio_state *_Nonnull state;
     enum name_prompt_kind kind;
+    /* RENAME_CATEGORYだけが読む明示対象。RETRY_RENAMEは本文/targetを使わない。 */
+    size_t target;
     const char16_t *_Nonnull units;
     size_t count;
 };

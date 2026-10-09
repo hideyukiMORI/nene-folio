@@ -108,7 +108,7 @@ static const enum ui_text command_shortcuts[] = {
     UI_TEXT_HELP_EX_SUBSTITUTE,   UI_TEXT_HELP_SEARCH_KEYS,     UI_TEXT_HELP_SEARCH_STEP,
     UI_TEXT_HELP_SEARCH_FIELD,    UI_TEXT_HELP_INDEX_MOTION,    UI_TEXT_HELP_INDEX_FOLD,
     UI_TEXT_HELP_INDEX_SCROLL,    UI_TEXT_HELP_EDITOR_ESCAPE,   UI_TEXT_HELP_TRASH_NOTE,
-    UI_TEXT_HELP_DELETE_CATEGORY,
+    UI_TEXT_HELP_DELETE_CATEGORY, UI_TEXT_HELP_RENAME_CATEGORY,
 };
 
 /* 設定画面の行（ADR 0031 の決定 7・ADR 0032 の決定 7）。見出しと選択肢を**種別で**持ち、
@@ -275,6 +275,29 @@ static enum folio_state_outcome store_body(const struct folio_window *_Nonnull s
 static enum folio_state_outcome command_save_as(const struct folio_window *_Nonnull self,
                                                 const char *_Nonnull argument);
 static void close_command_surface(struct folio_window *_Nonnull self);
+static void restore_valid_focus(HWND _Nullable focus);
+static void redraw_drawer(const struct folio_window *_Nonnull self);
+static void redraw_command_layer(const struct folio_window *_Nonnull self);
+
+/* 先行復旧は元要求より前。READYは復旧だけの成功で、対象/本文/名前は呼出し元で取り直す。 */
+static enum folio_state_outcome prepare_name_operation(const struct folio_window *_Nonnull self)
+{
+    struct rename_view pending = {.from = "", .to = ""};
+    if (!folio_state_rename_pending(self->state, &pending))
+    {
+        return FOLIO_STATE_READY;
+    }
+    HWND focus = GetFocus();
+    struct name_prompt_request request = {
+        .state = self->state, .kind = NAME_PROMPT_RETRY_RENAME, .units = u"", .count = 0};
+    enum folio_state_outcome outcome = name_prompt_show(self->handle, &request, &self->palette);
+    /* 復旧の採用は元要求が失敗/未実行でも表示へ写す。本文には触らない。 */
+    redraw_drawer(self);
+    redraw_command_layer(self);
+    InvalidateRect(self->handle, nullptr, FALSE);
+    restore_valid_focus(focus);
+    return outcome;
+}
 static void set_trash_completed(struct folio_window *_Nonnull self, bool completed);
 static bool holds_document(const struct folio_window *_Nonnull self, struct note_ref target);
 static void decorate(HWND handle, struct folio_palette palette);
@@ -2244,6 +2267,11 @@ static enum folio_state_outcome flush_edit(struct folio_window *_Nonnull self)
 /* 編集中の本文を取り出して保存する。取り出せない理由も保存の失敗も 1 つの結果に写す。 */
 static enum folio_state_outcome store_body(const struct folio_window *_Nonnull self)
 {
+    enum folio_state_outcome prepared = prepare_name_operation(self);
+    if (prepared != FOLIO_STATE_READY)
+    {
+        return prepared;
+    }
     if (folio_state_pane_mode(self->state) == PANE_MODE_VIEW)
     {
         enum folio_state_outcome outcome = folio_state_store_note(self->state, u"", 0);
@@ -2265,6 +2293,11 @@ static enum folio_state_outcome store_body(const struct folio_window *_Nonnull s
 
 static enum folio_state_outcome command_save(struct folio_window *_Nonnull self)
 {
+    enum folio_state_outcome prepared = prepare_name_operation(self);
+    if (prepared != FOLIO_STATE_READY)
+    {
+        return prepared;
+    }
     if (folio_state_document_kind(self->state) == FOLIO_DOCUMENT_NONE)
     {
         return FOLIO_STATE_NOTHING_SELECTED;
@@ -2980,6 +3013,11 @@ static enum folio_state_outcome save_destination(const struct folio_window *_Non
 static enum folio_state_outcome command_save_as(const struct folio_window *_Nonnull self,
                                                 const char *_Nonnull argument)
 {
+    enum folio_state_outcome prepared = prepare_name_operation(self);
+    if (prepared != FOLIO_STATE_READY)
+    {
+        return prepared;
+    }
     if (folio_state_document_kind(self->state) == FOLIO_DOCUMENT_NONE)
     {
         return FOLIO_STATE_NOTHING_SELECTED;
@@ -3025,6 +3063,20 @@ static enum folio_state_outcome rename_destination(const struct folio_window *_N
 static enum folio_state_outcome command_rename(const struct folio_window *_Nonnull self,
                                                const char *_Nonnull argument)
 {
+    enum folio_state_outcome prepared = prepare_name_operation(self);
+    if (prepared != FOLIO_STATE_READY)
+    {
+        return prepared;
+    }
+    switch (folio_state_document_kind(self->state))
+    {
+    case FOLIO_DOCUMENT_NONE:
+        return FOLIO_STATE_NOTHING_SELECTED;
+    case FOLIO_DOCUMENT_UNTITLED:
+        return FOLIO_STATE_NAME_REQUIRED;
+    case FOLIO_DOCUMENT_NAMED:
+        break;
+    }
     const char16_t *units = u"";
     size_t count = 0;
     enum folio_state_outcome outcome = folio_state_pane_mode(self->state) == PANE_MODE_VIEW
@@ -3060,6 +3112,29 @@ static void finish_save_command(struct folio_window *_Nonnull self,
     }
 }
 
+/* 改名は本文を流し込み直さず、保持する入力面と元focusを触らない（ADR0041）。 */
+static void finish_rename_command(struct folio_window *_Nonnull self,
+                                  enum folio_state_outcome outcome, HWND _Nullable focus)
+{
+    bool empty_history = self->command_surface == COMMAND_SURFACE_HISTORY &&
+                         folio_state_history_count(self->state) == 0;
+    bool completed_command =
+        outcome == FOLIO_STATE_READY && (self->command_surface == COMMAND_SURFACE_EX ||
+                                         self->command_surface == COMMAND_SURFACE_PALETTE);
+    if (empty_history || completed_command)
+    {
+        close_command_surface(self);
+    }
+    if (outcome != FOLIO_STATE_READY)
+    {
+        command_failure(self, outcome);
+    }
+    redraw_drawer(self);
+    redraw_command_layer(self);
+    InvalidateRect(self->handle, nullptr, FALSE);
+    restore_valid_focus(focus);
+}
+
 /* 入力面（Ex・パレット・検索欄・置換の 2 欄・ドロワーの絞り込み欄）の中の Ctrl+S
  * （ADR 0016 の 2026-09-22 の補正 2）。保存は本文の Ctrl+S と同じ command_save を通り、
  * 違うのは**欄を閉じないこと**だけである。欄の語・キャレット・選択は触らない。
@@ -3083,6 +3158,12 @@ static void store_from_surface(struct folio_window *_Nonnull self)
 
 static void execute_save_command(struct folio_window *_Nonnull self, const char *_Nonnull argument)
 {
+    enum folio_state_outcome prepared = prepare_name_operation(self);
+    if (prepared != FOLIO_STATE_READY)
+    {
+        finish_save_command(self, prepared);
+        return;
+    }
     enum folio_state_outcome outcome = FOLIO_STATE_ALREADY_NAMED;
     if (argument[0] == '\0')
     {
@@ -3575,7 +3656,9 @@ static void execute_view_command(struct folio_window *_Nonnull self, const char 
 static void execute_rename_command(struct folio_window *_Nonnull self,
                                    const char *_Nonnull argument)
 {
-    finish_save_command(self, command_rename(self, argument));
+    HWND focus = GetFocus();
+    enum folio_state_outcome outcome = command_rename(self, argument);
+    finish_rename_command(self, outcome, focus);
 }
 
 /* カテゴリを作る（ADR 0039 の決定 10・補正 2）。名前が無ければ名前入力面を開く。
@@ -3636,7 +3719,7 @@ static void execute_new_category_command(struct folio_window *_Nonnull self,
 }
 
 /* 一時的な入力停止と失敗の箱の後で、元の有効な欄だけへ戻す。 */
-static void restore_removal_focus(HWND _Nullable focus)
+static void restore_valid_focus(HWND _Nullable focus)
 {
     if (focus != nullptr && IsWindow(focus) && IsWindowEnabled(focus) && IsWindowVisible(focus) &&
         GetFocus() != focus)
@@ -3660,7 +3743,7 @@ static void release_removal_input(struct folio_window *_Nonnull self, bool enabl
     EnableWindow(self->handle, enabled);
     if (enabled)
     {
-        restore_removal_focus(focus);
+        restore_valid_focus(focus);
     }
     self->removal_running = false;
 }
@@ -3715,7 +3798,7 @@ static void trash_note_at(struct folio_window *_Nonnull self, struct note_ref ta
         failure_box_show(self->handle, outcome, self->state);
         if (!current)
         {
-            restore_removal_focus(focus);
+            restore_valid_focus(focus);
         }
         return;
     }
@@ -3770,7 +3853,7 @@ static void delete_category_at(struct folio_window *_Nonnull self, size_t catego
     if (outcome != FOLIO_STATE_READY && outcome != FOLIO_STATE_CATEGORY_LEDGER_STALE)
     {
         command_failure(self, outcome);
-        restore_removal_focus(focus);
+        restore_valid_focus(focus);
         return;
     }
     focus = finish_delete_category(self, focus);
@@ -3778,12 +3861,12 @@ static void delete_category_at(struct folio_window *_Nonnull self, size_t catego
     {
         failure_box_show(self->handle, outcome, self->state);
     }
-    restore_removal_focus(focus);
+    restore_valid_focus(focus);
 }
 
 /* 最初のカテゴリへのfallbackはせず、cursorが無い時だけ現在文書の宛先を使う。 */
-static bool delete_category_target(const struct folio_window *_Nonnull self,
-                                   size_t *_Nonnull category)
+static bool category_command_target(const struct folio_window *_Nonnull self,
+                                    size_t *_Nonnull category)
 {
     enum folio_cursor_kind kind = FOLIO_CURSOR_CATEGORY;
     struct note_ref cursor = {.category = 0, .note = 0};
@@ -3809,14 +3892,98 @@ static void execute_delete_category_command(struct folio_window *_Nonnull self,
 {
     (void)argument;
     size_t category = 0;
-    if (!delete_category_target(self, &category))
+    if (!category_command_target(self, &category))
     {
         HWND focus = GetFocus();
         command_failure(self, FOLIO_STATE_CATEGORY_NOT_SELECTED);
-        restore_removal_focus(focus);
+        restore_valid_focus(focus);
         return;
     }
     delete_category_at(self, category);
+}
+
+static enum folio_state_outcome
+category_rename_destination(const struct folio_window *_Nonnull self, const char *_Nonnull argument,
+                            const struct name_prompt_request *_Nonnull request)
+{
+    if (argument[0] == '\0')
+    {
+        return name_prompt_show(self->handle, request, &self->palette);
+    }
+    struct category_name *_Nullable name = nullptr;
+    switch (category_name_create(argument, strlen(argument), &name))
+    {
+    case CATEGORY_NAME_ACCEPTED:
+        break;
+    case CATEGORY_NAME_INVALID:
+        return FOLIO_STATE_CATEGORY_NAME_INVALID;
+    case CATEGORY_NAME_OUT_OF_MEMORY:
+        return FOLIO_STATE_OUT_OF_MEMORY;
+    }
+    struct category_rename_target target = {.category = request->target, .name = name};
+    enum folio_state_outcome outcome =
+        folio_state_rename_category(self->state, &target, request->units, request->count);
+    category_name_destroy(name);
+    return outcome;
+}
+
+static enum folio_state_outcome run_category_rename(const struct folio_window *_Nonnull self,
+                                                    size_t category, const char *_Nonnull argument)
+{
+    if (category >= folio_state_category_count(self->state))
+    {
+        return FOLIO_STATE_NO_SUCH_CATEGORY;
+    }
+    const char16_t *units = u"";
+    size_t count = 0;
+    if (folio_state_document_kind(self->state) == FOLIO_DOCUMENT_NAMED &&
+        folio_state_document_category(self->state) == category &&
+        folio_state_pane_mode(self->state) == PANE_MODE_EDIT)
+    {
+        enum folio_state_outcome taken = take_text(self, &units, &count);
+        if (taken != FOLIO_STATE_READY)
+        {
+            return taken;
+        }
+    }
+    struct name_prompt_request request = {.state = self->state,
+                                          .kind = NAME_PROMPT_RENAME_CATEGORY,
+                                          .target = category,
+                                          .units = units,
+                                          .count = count};
+    return category_rename_destination(self, argument, &request);
+}
+
+/* カテゴリ行は押した添字をそのまま渡す。選択/保存/renderをUIで先に行わない。 */
+static void rename_category_at(struct folio_window *_Nonnull self, size_t category,
+                               const char *_Nonnull argument)
+{
+    HWND focus = GetFocus();
+    enum folio_state_outcome outcome = prepare_name_operation(self);
+    if (outcome == FOLIO_STATE_READY)
+    {
+        outcome = run_category_rename(self, category, argument);
+    }
+    finish_rename_command(self, outcome, focus);
+}
+
+static void execute_rename_category_command(struct folio_window *_Nonnull self,
+                                            const char *_Nonnull argument)
+{
+    HWND focus = GetFocus();
+    enum folio_state_outcome prepared = prepare_name_operation(self);
+    if (prepared != FOLIO_STATE_READY)
+    {
+        finish_rename_command(self, prepared, focus);
+        return;
+    }
+    size_t category = 0;
+    if (!category_command_target(self, &category))
+    {
+        finish_rename_command(self, FOLIO_STATE_CATEGORY_NOT_SELECTED, focus);
+        return;
+    }
+    rename_category_at(self, category, argument);
 }
 
 static void execute_find_command(struct folio_window *_Nonnull self, const char *_Nonnull argument)
@@ -3858,6 +4025,7 @@ static void (*_Nonnull const command_runs[])(struct folio_window *_Nonnull self,
     [FOLIO_COMMAND_NEW_CATEGORY] = execute_new_category_command,
     [FOLIO_COMMAND_TRASH_NOTE] = execute_trash_note_command,
     [FOLIO_COMMAND_DELETE_CATEGORY] = execute_delete_category_command,
+    [FOLIO_COMMAND_RENAME_CATEGORY] = execute_rename_category_command,
 };
 
 /* GUI・キー・Exで同じ操作と引数を実行する（ADR0020）。 */
@@ -3936,6 +4104,13 @@ static bool holds_document(const struct folio_window *_Nonnull self, struct note
  * コマンドの「名前を変更」と同じ受け口へ渡す。選べなければその失敗を出して止まる。 */
 static void rename_from_drawer(struct folio_window *_Nonnull self, struct note_ref target)
 {
+    HWND focus = GetFocus();
+    enum folio_state_outcome prepared = prepare_name_operation(self);
+    if (prepared != FOLIO_STATE_READY)
+    {
+        finish_rename_command(self, prepared, focus);
+        return;
+    }
     if (!holds_document(self, target))
     {
         enum folio_state_outcome outcome = switch_note(self, target.category, target.note);
@@ -3962,6 +4137,9 @@ static void run_drawer_menu(struct folio_window *_Nonnull self, enum drawer_menu
     {
     case DRAWER_MENU_DELETE_CATEGORY:
         delete_category_at(self, target->category);
+        return;
+    case DRAWER_MENU_RENAME_CATEGORY:
+        rename_category_at(self, target->category, "");
         return;
     case DRAWER_MENU_TRASH_NOTE:
         trash_note_at(self, *target);
