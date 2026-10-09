@@ -60,7 +60,15 @@ python D:/NeNeFolio/agents/223-write-lock/run-probe.py
 
 target build/clang-tidy、修正済みprobe link、10fixtureのrunnerはexit0。完了済みcaseはresults.jsonから再利用し、現fixtureを上書きしない。
 再現には新しいD専用rootを使い、probeのfixture prefixとrunner ROOT、buildscriptのtaskRoot/taskProbeをそのrootへ揃える。
-最終正典gateはsourcecheckpoint親静読受理後に1回行い、結果を追記する。
+静読受理・コメント補正のあと、親が統合した#219のmain `9422b2403fe141277e7139adb49d1696dff70b98` へ未公開own3commitをrebaseした。
+旧コミットは `chore/223-before-219-rebase` で保持。測定したadapter/core/CMake/eng/.githubに取込差分0、adapterのコメント補正後SHAも一致。
+applicationは検索用cache保留を追加したが、今回の拒否2fixtureはcorpus未準備・copy_pending=falseで追加分岐を踏まず、
+archive_before_store/store_editedの失敗経路も不変。実取込diffを静読してOS成功を再利用し、一律再実行していない。
+
+最終checkpoint `4990b81dbf7237671e776a1098e8fc118361aea3` で `pwsh -NoProfile -File ./eng/check.ps1` を1回実行してexit0。
+実時刻は `fullgate-meta.json`、全文 `fullgate.log`。自己試験89/89、CTest2/2、分岐3222/3438=93.717277486911%、7.33%の負例拒否、実ツールproof19。
+ゲート後src/tests単体240件のSHA全一致。このあと結果の文書追記だけをcommitし、同一gate/OSを再実行しない。
+coverage3JSON/proofs1JSONを `gate-evidence/` へcopyし、4/4hash一致を保存した。
 
 ## 残るもの
 
