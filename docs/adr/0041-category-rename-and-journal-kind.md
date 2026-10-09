@@ -228,3 +228,17 @@ ClaudeCodeのデザインリナによる `design:design-critique` / `design:ux-c
 
 改名は既存の `ReplaceIfExists=FALSE` を維持し、競合した新しい宛先を置き換えない。
 [FILE_RENAME_INFO](https://learn.microsoft.com/en-us/windows/win32/api/winbase/ns-winbase-file_rename_info)
+
+## 2026-10-09 の補正（#219 — NOTEの検索読込も保留同期へ揃える）
+
+決定4のCATEGORY保留中の読込前同期を、非空index_filterについてNOTE保留にも適用する。
+NOTEのmdが新名へ移り、台帳/記録の完了前に旧名で初回corpusを載せると、
+対象写しが欠落したままloaded=trueになり、完了後も検索に現れないためである。
+種別を問わず保持中のrenameがあれば、cache/語/scroll変更前に既存共通同期を通す。
+失敗時は現在表示を保持し旧名を読まない。成功後は完成済み台帳で同じ既存corpus読込を使う。
+空の絞り込み解除と本文だけの検索/置換は継続できる。CATEGORYの履歴前置同期は変えない。
+
+保存後の写し修復保留も同じ同期入口へ組み込む（ADR0024の#219補正）。
+順序はindex修復→現在文書の写し修復→rename再開。通常経路で写し保留とrename保留は併存しない
+（必要保存の写し失敗なら改名STARTに進まない）。名前/台帳を変えるより先に保存済み正本を写す。
+planの所有・単一START/adopt・prepared CATEGORY corpus・最新preview失効の契約は不変。

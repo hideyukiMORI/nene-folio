@@ -237,9 +237,9 @@ folio_state_rename_category(struct folio_state *_Nonnull state,
                                                               const char16_t *_Nonnull units,
                                                               size_t count);
 /* 編集中の本文を保存時と同じ形へ正規化し、保存済み本文との差を答える。
- * VIEWでは台帳が同期済みならSAME。未同期なら保存系と同じ修復を先に試み、
- * 失敗ならLEDGER_UNSYNCED。この修復のほかは mode・本文・履歴・md を
- * 変えない問い合わせである（ADR 0016・ADR 0021 の決定 3）。 */
+ * VIEWでは台帳・保存済み本文の写し・改名が同期済みならSAME。未同期なら保存系と同じ修復を先に試み、
+ * index修復の失敗はLEDGER_UNSYNCED、写しの記憶不足はOUT_OF_MEMORY。この修復のほかは
+ * mode・本文・履歴・md を変えない問い合わせである（ADR 0016・ADR 0021 の決定 3）。 */
 [[nodiscard]] enum folio_state_outcome
 folio_state_note_changed(struct folio_state *_Nonnull state, const char16_t *_Nonnull units,
                          size_t count, enum folio_note_change *_Nonnull out);
@@ -257,7 +257,8 @@ folio_state_note_changed(struct folio_state *_Nonnull state, const char16_t *_No
 folio_state_discard_edits(const struct folio_state *_Nonnull state);
 /* 索引の絞り込みの語を覚え、一致集合を作り直す（FR-032 / ADR 0024 の決定 7）。
  * UTF-16 の単位列を受ける C-014 の例外の 7 本目。ノート内検索の語（set_search_term）とは別で、
- * 通常は同期しない。CATEGORY保留中の非空語はcache/表示変更前に共通同期する。
+ * 通常は同期しない。改名（NOTE/CATEGORY）または保存済み写し保留中の非空語は、
+ * cache/語/scroll変更前に共通同期する。
  * 絞り込み自体は永続化しない。
  * count が 0 なら絞り込みを解き、索引は台帳のとおりに戻る。語が壊れていれば SEARCH_MALFORMED で
  * 前の語と絞り込みを保つ。空でない語が**初めて**来たときだけ、ポートの read_note で全ノートの

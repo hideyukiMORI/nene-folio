@@ -78,6 +78,9 @@ struct folio_state
     struct index_filter *_Nullable filter;
     struct note_corpus *_Nullable corpus; /* 本文の写し。最初の絞り込みで 1 回だけ読む */
     bool corpus_loaded;
+    /* trueならNAMEDかつcorpus_loaded。対象は現在文書の保存先で、state.bodyは保存済み正本。
+     * 文書/保存先を変える前の共通同期で修復するため、別の本文・名前・添字を所有しない（#219）。 */
+    bool copy_pending;
     bool cursor_any; /* 索引のカーソルがあるか（ADR 0015 の決定 1） */
     enum folio_cursor_kind cursor_kind;
     size_t cursor_category; /* FOLIO_CURSOR_CATEGORY のときのカテゴリ番号 */
@@ -91,6 +94,7 @@ struct folio_state
 /* 絞り込みの作り直しとカーソルの着地は、写しを付け替える経路（改名）より後に書いてあるので
  * ここで名前だけ先に出す。定義は 1 つずつで、経路は増やさない（ARC-001）。 */
 static enum folio_state_outcome refresh_filter(struct folio_state *_Nonnull state);
+static enum folio_state_outcome refresh_copy(struct folio_state *_Nonnull state);
 static bool holds_category(const struct folio_state *_Nonnull state, size_t category);
 static struct drawer_cursor first_stop_in(const struct folio_state *_Nonnull state,
                                           size_t category);
@@ -260,10 +264,14 @@ static enum folio_state_outcome resume_rename(struct folio_state *_Nonnull state
 }
 
 /* 保存・切替・並替・色・新規・別名保存・終了確認が共有する唯一の同期の入口。
- * 前回書けなかった index.json と未完了の改名を、この順に片付けてから意図へ進む。 */
+ * index.json→保存済み本文の写し→未完了の改名の順に片付けてから意図へ進む（#219）。 */
 static enum folio_state_outcome synchronize(struct folio_state *_Nonnull state)
 {
     enum folio_state_outcome synced = synchronize_index(state);
+    if (synced == FOLIO_STATE_READY && state->copy_pending)
+    {
+        synced = refresh_copy(state);
+    }
     return synced == FOLIO_STATE_READY ? resume_rename(state) : synced;
 }
 
@@ -1926,6 +1934,7 @@ static enum folio_state_outcome refresh_copy(struct folio_state *_Nonnull state)
     {
         return FOLIO_STATE_READY;
     }
+    state->copy_pending = true;
     enum note_corpus_outcome stored = note_corpus_put(
         state->corpus, category_ledger_name(state->categories, state->selected_category),
         note_ledger_name(state->notes[state->selected_category], state->selected_note),
@@ -1934,7 +1943,12 @@ static enum folio_state_outcome refresh_copy(struct folio_state *_Nonnull state)
     {
         return FOLIO_STATE_OUT_OF_MEMORY;
     }
-    return refresh_filter(state);
+    enum folio_state_outcome refreshed = refresh_filter(state);
+    if (refreshed == FOLIO_STATE_READY)
+    {
+        state->copy_pending = false;
+    }
+    return refreshed;
 }
 
 /* 正規化済みの本文を書き戻し、表示値も作り直す。書けなければ何も変えない（ADR 0006 の決定 6）。
@@ -3074,7 +3088,7 @@ enum folio_state_outcome folio_state_set_index_filter(struct folio_state *_Nonnu
         settle_cursor(state);
         return FOLIO_STATE_READY;
     }
-    if (category_rename_pending(state))
+    if (state->rename != nullptr || state->copy_pending)
     {
         enum folio_state_outcome synced = synchronize(state);
         if (synced != FOLIO_STATE_READY)
