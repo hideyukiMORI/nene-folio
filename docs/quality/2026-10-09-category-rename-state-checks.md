@@ -34,7 +34,7 @@ PENDING/HALTEDは同じplanと空corpusを保持し、共通adoptのCATEGORY分�
 | `python eng/conformance.py` | exit0、0違反 | 実行出力 |
 | rebase前backupとmain基点D2の `git diff ... -- src tests CMakeLists.txt` | 差分0。基点だけ置換 | rebase-main.log |
 
-最終単一ゲートの結果は下に実行後追記する。成功済みsourceに工程だけを理由とする再実行は行わない。
+最終単一ゲートの結果は下節に記録した。成功済みsourceに工程だけを理由とする再実行は行わない。
 
 ASanはD1の既存測定と同じ `interception_win: unhandled instruction ...` を非致命で出力した。終了0/対象PASSとは区別して記録する。
 新UIの実Win32表示/名前面/Undo/focus/物理入力はD3の対象probeへ残す。D1 adapter/B/C削除のprobeは繰り返していない。ユーザーapp/dataは操作していない。
