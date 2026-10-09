@@ -58,6 +58,13 @@ empty folder is removed. There is no confirmation dialog or success notice.
 Deleting another category preserves the open document, its edits and Undo, and search or replace fields.
 If the category ledger cannot be saved after deletion, the list updates and an error is shown.
 
+## Rename recovery
+
+Note renames and startup recovery of category renames use one plan and `data/.rename.json`.
+New records use version 2 with a `note` or `category` kind; version 1 note records remain readable.
+Recovery completes before scanning notes and categories. Category rename commands are a separate,
+pending implementation. A version 2 record must be recovered with this version before using an older binary.
+
 ## License
 
 MIT. See [LICENSE](LICENSE).
