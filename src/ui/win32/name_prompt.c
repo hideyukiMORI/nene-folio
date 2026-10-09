@@ -15,12 +15,15 @@ struct name_prompt
 {
     struct folio_state *_Nonnull state;
     enum name_prompt_kind kind;
+    size_t target;
+    enum rename_kind pending_kind;
     const char16_t *_Nonnull units;
     size_t count;
     HWND _Nullable dialog;
     HWND _Nullable name;
     HWND _Nullable category;
     HWND _Nullable failure;
+    HWND _Nullable hint;
     HWND _Nullable accept;
     HWND _Nullable cancel;
     WNDPROC _Nullable original;
@@ -30,6 +33,8 @@ struct name_prompt
     UINT dpi;
     /* 一覧が閉じたコンボより高いぶん、下の欄と面を下げる画素（ADR 0035 の補正 18）。 */
     int lowered;
+    int hint_extra;
+    int failure_extra;
     bool composing;
     /* 記録を公開した後は名前を固定し、同じ改名の再開だけを受ける（ADR 0022 の決定 7）。 */
     bool pending;
@@ -94,17 +99,18 @@ static void position(const struct name_prompt *_Nonnull prompt, HWND window, REC
                scaled(prompt, bounds.bottom - bounds.top), TRUE);
 }
 
-static bool label(struct name_prompt *_Nonnull prompt, enum ui_text id, RECT bounds, int lowered)
+static HWND _Nullable label(struct name_prompt *_Nonnull prompt, enum ui_text id, RECT bounds,
+                            int lowered)
 {
     char16_t units[ui_text_unit_limit];
     wide_line(id, prompt_language(prompt), units);
     HWND window = control(prompt, L"STATIC", units, SS_LEFT);
     if (window == nullptr)
     {
-        return false;
+        return nullptr;
     }
     position(prompt, window, bounds, lowered);
-    return true;
+    return window;
 }
 
 static bool button(struct name_prompt *_Nonnull prompt, enum ui_text id, int identity, RECT bounds)
@@ -218,7 +224,17 @@ static bool fill_pending(struct name_prompt *_Nonnull prompt, struct rename_view
         return false;
     }
     prompt->pending = true;
-    EnableWindow(prompt->name, FALSE);
+    prompt->pending_kind = pending.kind;
+    SendMessageW(prompt->name, EM_SETREADONLY, TRUE, 0);
+    char16_t to[pending_line_capacity];
+    size_t to_units = 0;
+    if (utf16_text_fill(pending.to, to, pending_line_capacity, &to_units) != UTF16_TEXT_FILL_READY)
+    {
+        return false;
+    }
+    LRESULT end = GetWindowTextLengthW(prompt->name);
+    SendMessageW(prompt->name, EM_SETSEL, (WPARAM)(end - (LRESULT)to_units), end);
+    SendMessageW(prompt->name, EM_SCROLLCARET, 0, 0);
     show_line(prompt->failure, UI_TEXT_PROMPT_PENDING_EXPLANATION, language);
     return true;
 }
@@ -226,21 +242,49 @@ static bool fill_pending(struct name_prompt *_Nonnull prompt, struct rename_view
 /* 改名は文書の実名を選択状態で出す。初回・別名保存は空のまま（決定 1）。 */
 static bool fill_name(struct name_prompt *_Nonnull prompt)
 {
-    if (prompt->kind != NAME_PROMPT_RENAME)
+    if (prompt->kind == NAME_PROMPT_RETRY_RENAME)
     {
+        struct rename_view pending = {.from = "", .to = ""};
+        return folio_state_rename_pending(prompt->state, &pending) && fill_pending(prompt, pending);
+    }
+    const char *_Nonnull name = "";
+    switch (prompt->kind)
+    {
+    case NAME_PROMPT_RENAME:
+        name = folio_state_document_name(prompt->state);
+        break;
+    case NAME_PROMPT_RENAME_CATEGORY:
+        name = folio_state_category_name(prompt->state, prompt->target);
+        break;
+    case NAME_PROMPT_FIRST_SAVE:
+    case NAME_PROMPT_SAVE_AS:
+    case NAME_PROMPT_NEW_CATEGORY:
+    case NAME_PROMPT_RETRY_RENAME:
         return true;
     }
-    struct rename_view pending = {.from = "", .to = ""};
-    if (folio_state_rename_pending(prompt->state, &pending))
-    {
-        return fill_pending(prompt, pending);
-    }
-    if (!set_name_text(prompt, folio_state_document_name(prompt->state)))
+    if (!set_name_text(prompt, name))
     {
         return false;
     }
     SendMessageW(prompt->name, EM_SETSEL, 0, -1);
     return true;
+}
+
+/* 面の種別は変えず、復旧の題と見出しだけ実際の意図から引く（ADR0041）。 */
+static enum name_prompt_kind displayed_kind(const struct name_prompt *_Nonnull prompt)
+{
+    if (!prompt->pending)
+    {
+        return prompt->kind;
+    }
+    switch (prompt->pending_kind)
+    {
+    case RENAME_KIND_NOTE:
+        return NAME_PROMPT_RENAME;
+    case RENAME_KIND_CATEGORY:
+        return NAME_PROMPT_RENAME_CATEGORY;
+    }
+    return prompt->kind;
 }
 
 static enum ui_text prompt_title(enum name_prompt_kind kind)
@@ -255,6 +299,10 @@ static enum ui_text prompt_title(enum name_prompt_kind kind)
         return UI_TEXT_PROMPT_TITLE_RENAME;
     case NAME_PROMPT_NEW_CATEGORY:
         return UI_TEXT_PROMPT_TITLE_NEW_CATEGORY;
+    case NAME_PROMPT_RENAME_CATEGORY:
+        return UI_TEXT_PROMPT_TITLE_RENAME_CATEGORY;
+    case NAME_PROMPT_RETRY_RENAME:
+        return UI_TEXT_PROMPT_TITLE_RENAME;
     }
     return UI_TEXT_PROMPT_TITLE_FIRST_SAVE;
 }
@@ -268,13 +316,20 @@ static enum ui_text prompt_name_label(enum name_prompt_kind kind)
     case NAME_PROMPT_RENAME:
         return UI_TEXT_PROMPT_LABEL_NAME;
     case NAME_PROMPT_NEW_CATEGORY:
+    case NAME_PROMPT_RENAME_CATEGORY:
         return UI_TEXT_PROMPT_LABEL_CATEGORY_NAME;
+    case NAME_PROMPT_RETRY_RENAME:
+        return UI_TEXT_PROMPT_LABEL_NAME;
     }
     return UI_TEXT_PROMPT_LABEL_NAME;
 }
 
 static enum ui_text prompt_hint(const struct name_prompt *_Nonnull prompt)
 {
+    if (prompt->kind == NAME_PROMPT_RETRY_RENAME)
+    {
+        return UI_TEXT_PROMPT_HINT_RETRY_RENAME;
+    }
     if (prompt->pending)
     {
         return UI_TEXT_PROMPT_HINT_PENDING;
@@ -289,6 +344,10 @@ static enum ui_text prompt_hint(const struct name_prompt *_Nonnull prompt)
         return UI_TEXT_PROMPT_HINT_RENAME;
     case NAME_PROMPT_NEW_CATEGORY:
         return UI_TEXT_PROMPT_HINT_NEW_CATEGORY;
+    case NAME_PROMPT_RENAME_CATEGORY:
+        return UI_TEXT_PROMPT_HINT_RENAME_CATEGORY;
+    case NAME_PROMPT_RETRY_RENAME:
+        return UI_TEXT_PROMPT_HINT_RETRY_RENAME;
     }
     return UI_TEXT_PROMPT_HINT_FIRST_SAVE;
 }
@@ -305,9 +364,12 @@ static enum ui_text prompt_accept(const struct name_prompt *_Nonnull prompt)
     case NAME_PROMPT_SAVE_AS:
         return UI_TEXT_PROMPT_ACCEPT_SAVE;
     case NAME_PROMPT_RENAME:
+    case NAME_PROMPT_RENAME_CATEGORY:
         return UI_TEXT_PROMPT_ACCEPT_RENAME;
     case NAME_PROMPT_NEW_CATEGORY:
         return UI_TEXT_PROMPT_ACCEPT_CREATE;
+    case NAME_PROMPT_RETRY_RENAME:
+        return UI_TEXT_PROMPT_ACCEPT_RETRY;
     }
     return UI_TEXT_PROMPT_ACCEPT_SAVE;
 }
@@ -337,6 +399,8 @@ static bool has_category_list(enum name_prompt_kind kind)
     case NAME_PROMPT_RENAME:
         return true;
     case NAME_PROMPT_NEW_CATEGORY:
+    case NAME_PROMPT_RENAME_CATEGORY:
+    case NAME_PROMPT_RETRY_RENAME:
         return false;
     }
     return true;
@@ -359,13 +423,31 @@ static int category_row_height(const struct name_prompt *_Nonnull prompt)
     return height;
 }
 
+/* EDITはこのstyleを作成時に保持する。今回STARTから固定面へ進む種別も先に付けておく。 */
+static DWORD name_selection_style(enum name_prompt_kind kind)
+{
+    switch (kind)
+    {
+    case NAME_PROMPT_RENAME:
+    case NAME_PROMPT_RENAME_CATEGORY:
+    case NAME_PROMPT_RETRY_RENAME:
+        return ES_NOHIDESEL;
+    case NAME_PROMPT_FIRST_SAVE:
+    case NAME_PROMPT_SAVE_AS:
+    case NAME_PROMPT_NEW_CATEGORY:
+        return 0;
+    }
+    return 0;
+}
+
 static bool inputs(struct name_prompt *_Nonnull prompt)
 {
     /* 塗れない OS の縁を外し、面が札の色の 1px の枠を描く（ADR 0035 の決定 3）。
      * 保存先カテゴリは常時開いた owner-draw の一覧で、矢印の釦もドロップダウンも持たない
      * （ADR 0035 の補正 17）。 */
     bool listed = has_category_list(prompt->kind);
-    prompt->name = control(prompt, L"EDIT", L"", WS_TABSTOP | ES_AUTOHSCROLL);
+    prompt->name = control(prompt, L"EDIT", L"",
+                           WS_TABSTOP | ES_AUTOHSCROLL | name_selection_style(prompt->kind));
     if (listed)
     {
         prompt->category = control(prompt, L"LISTBOX", L"",
@@ -403,6 +485,58 @@ static int lowered_by(const struct name_prompt *_Nonnull prompt)
     return category_rows * category_row_height(prompt) - scaled(prompt, category_slot_height);
 }
 
+static void size_dialog(const struct name_prompt *_Nonnull prompt)
+{
+    RECT bounds = {0, 0, scaled(prompt, 400),
+                   scaled(prompt, 270) + prompt->lowered + prompt->hint_extra +
+                       prompt->failure_extra};
+    DWORD style = (DWORD)GetWindowLongPtrW(prompt->dialog, GWL_STYLE);
+    AdjustWindowRectExForDpi(&bounds, style, FALSE, 0, prompt->dpi);
+    RECT owner;
+    GetWindowRect(GetParent(prompt->dialog), &owner);
+    int width = bounds.right - bounds.left;
+    int height = bounds.bottom - bounds.top;
+    MoveWindow(prompt->dialog, (owner.left + owner.right - width) / 2,
+               (owner.top + owner.bottom - height) / 2, width, height, FALSE);
+}
+
+/* STATICと同じfont/折り返し幅で必要な高さだけ広げる。名前や理由を切らない。 */
+static int text_extra(const struct name_prompt *_Nonnull prompt, HWND window, int minimum)
+{
+    char16_t text[pending_reason_capacity];
+    GetWindowTextW(window, text, pending_reason_capacity);
+    HDC device = GetDC(prompt->dialog);
+    if (device == nullptr)
+    {
+        return 0;
+    }
+    HGDIOBJ old_font = SelectObject(device, prompt->font);
+    RECT bounds = {0, 0, scaled(prompt, 360), 0};
+    DrawTextW(device, text, -1, &bounds, DT_LEFT | DT_WORDBREAK | DT_EXPANDTABS | DT_CALCRECT);
+    SelectObject(device, old_font);
+    ReleaseDC(prompt->dialog, device);
+    int base = scaled(prompt, minimum);
+    return bounds.bottom > base ? bounds.bottom - base : 0;
+}
+
+static void reflow_prompt(struct name_prompt *_Nonnull prompt)
+{
+    enum folio_language language = prompt_language(prompt);
+    show_line(prompt->dialog, prompt_title(displayed_kind(prompt)), language);
+    show_line(prompt->hint, prompt_hint(prompt), language);
+    prompt->hint_extra = text_extra(prompt, prompt->hint, 22);
+    prompt->failure_extra = text_extra(prompt, prompt->failure, 60);
+    MoveWindow(prompt->hint, scaled(prompt, 20), scaled(prompt, 144) + prompt->lowered,
+               scaled(prompt, 360), scaled(prompt, 22) + prompt->hint_extra, TRUE);
+    MoveWindow(prompt->failure, scaled(prompt, 20),
+               scaled(prompt, 166) + prompt->lowered + prompt->hint_extra, scaled(prompt, 360),
+               scaled(prompt, 60) + prompt->failure_extra, TRUE);
+    int lowered = prompt->lowered + prompt->hint_extra + prompt->failure_extra;
+    position(prompt, prompt->accept, (RECT){192, 230, 280, 258}, lowered);
+    position(prompt, prompt->cancel, (RECT){288, 230, 380, 258}, lowered);
+    size_dialog(prompt);
+}
+
 static bool initialize(struct name_prompt *_Nonnull prompt, HWND dialog)
 {
     prompt->dialog = dialog;
@@ -419,21 +553,16 @@ static bool initialize(struct name_prompt *_Nonnull prompt, HWND dialog)
         return false;
     }
     prompt->lowered = lowered_by(prompt);
-    RECT bounds = {0, 0, scaled(prompt, 400), scaled(prompt, 270) + prompt->lowered};
-    DWORD style = (DWORD)GetWindowLongPtrW(dialog, GWL_STYLE);
-    AdjustWindowRectExForDpi(&bounds, style, FALSE, 0, prompt->dpi);
-    RECT owner;
-    GetWindowRect(GetParent(dialog), &owner);
-    int width = bounds.right - bounds.left;
-    int height = bounds.bottom - bounds.top;
-    MoveWindow(dialog, (owner.left + owner.right - width) / 2,
-               (owner.top + owner.bottom - height) / 2, width, height, FALSE);
-    show_line(dialog, prompt_title(prompt->kind), prompt_language(prompt));
-    return inputs(prompt) && fill_name(prompt) &&
-           label(prompt, prompt_name_label(prompt->kind), (RECT){20, 20, 380, 42}, 0) &&
+    size_dialog(prompt);
+    if (!inputs(prompt) || !fill_name(prompt))
+    {
+        return false;
+    }
+    prompt->hint = label(prompt, prompt_hint(prompt), (RECT){20, 144, 380, 166}, prompt->lowered);
+    return prompt->hint != nullptr &&
+           label(prompt, prompt_name_label(displayed_kind(prompt)), (RECT){20, 20, 380, 42}, 0) &&
            (!has_category_list(prompt->kind) ||
             label(prompt, UI_TEXT_PROMPT_LABEL_CATEGORY, (RECT){20, 82, 380, 104}, 0)) &&
-           label(prompt, prompt_hint(prompt), (RECT){20, 144, 380, 166}, prompt->lowered) &&
            button(prompt, prompt_accept(prompt), IDOK, (RECT){192, 230, 280, 258}) &&
            button(prompt, prompt_close(prompt), IDCANCEL, (RECT){288, 230, 380, 258});
 }
@@ -501,6 +630,26 @@ static enum folio_state_outcome create_category(struct name_prompt *_Nonnull pro
     return result;
 }
 
+static enum folio_state_outcome rename_category(struct name_prompt *_Nonnull prompt,
+                                                const struct utf8_text *_Nonnull narrow)
+{
+    struct category_name *_Nullable name = nullptr;
+    switch (category_name_create(utf8_text_bytes(narrow), utf8_text_length(narrow), &name))
+    {
+    case CATEGORY_NAME_ACCEPTED:
+        break;
+    case CATEGORY_NAME_INVALID:
+        return FOLIO_STATE_CATEGORY_NAME_INVALID;
+    case CATEGORY_NAME_OUT_OF_MEMORY:
+        return FOLIO_STATE_OUT_OF_MEMORY;
+    }
+    struct category_rename_target target = {.category = prompt->target, .name = name};
+    enum folio_state_outcome result =
+        folio_state_rename_category(prompt->state, &target, prompt->units, prompt->count);
+    category_name_destroy(name);
+    return result;
+}
+
 /* 名前欄の字を UTF-8 にし、種別ごとの名前の型と意図へ渡す。 */
 static enum folio_state_outcome save(struct name_prompt *_Nonnull prompt)
 {
@@ -524,6 +673,12 @@ static enum folio_state_outcome save(struct name_prompt *_Nonnull prompt)
     case NAME_PROMPT_NEW_CATEGORY:
         result = create_category(prompt, narrow);
         break;
+    case NAME_PROMPT_RENAME_CATEGORY:
+        result = rename_category(prompt, narrow);
+        break;
+    case NAME_PROMPT_RETRY_RENAME:
+        result = FOLIO_STATE_RENAME_PENDING;
+        break;
     }
     utf8_text_destroy(narrow);
     return result;
@@ -532,22 +687,7 @@ static enum folio_state_outcome save(struct name_prompt *_Nonnull prompt)
 /* 保持している意図をそのまま再開する。名前欄は固定なので読まない（ADR 0022 の決定 7）。 */
 static enum folio_state_outcome retry_pending(struct name_prompt *_Nonnull prompt)
 {
-    struct rename_view pending = {.from = "", .to = ""};
-    if (!folio_state_rename_pending(prompt->state, &pending))
-    {
-        return FOLIO_STATE_READY;
-    }
-    struct note_name *_Nullable name = nullptr;
-    enum note_name_outcome accepted = note_name_create(pending.to, strlen(pending.to), &name);
-    if (accepted != NOTE_NAME_ACCEPTED)
-    {
-        return accepted == NOTE_NAME_OUT_OF_MEMORY ? FOLIO_STATE_OUT_OF_MEMORY
-                                                   : FOLIO_STATE_INVALID_NAME;
-    }
-    enum folio_state_outcome outcome =
-        folio_state_rename_note(prompt->state, name, prompt->units, prompt->count);
-    note_name_destroy(name);
-    return outcome;
+    return folio_state_retry_rename(prompt->state);
 }
 
 /* 止まった理由の 1 行と、閉じても取り消しにならないことを同じ欄で見せる。 */
@@ -580,16 +720,23 @@ static void show_pending_reason(struct name_prompt *_Nonnull prompt,
 
 /* 記録を公開した改名は、名前を固定して同じ意図の再開だけを受ける（ADR 0022 の決定 7）。
  * 「閉じる」は意図の取り消しではないので、そのことを面の中で言う。 */
-static void hold_pending(struct name_prompt *_Nonnull prompt, enum folio_state_outcome outcome)
+static bool hold_pending(struct name_prompt *_Nonnull prompt, enum folio_state_outcome outcome)
 {
     struct rename_view pending = {.from = "", .to = ""};
-    if (!prompt->pending && folio_state_rename_pending(prompt->state, &pending))
+    if (!folio_state_rename_pending(prompt->state, &pending))
     {
-        (void)fill_pending(prompt, pending);
-        show_line(prompt->accept, prompt_accept(prompt), prompt_language(prompt));
-        show_line(prompt->cancel, prompt_close(prompt), prompt_language(prompt));
+        return false;
     }
+    if (!fill_pending(prompt, pending))
+    {
+        prompt->outcome = FOLIO_STATE_OUT_OF_MEMORY;
+        return false;
+    }
+    show_line(prompt->accept, prompt_accept(prompt), prompt_language(prompt));
+    show_line(prompt->cancel, prompt_close(prompt), prompt_language(prompt));
     show_pending_reason(prompt, outcome);
+    reflow_prompt(prompt);
+    return true;
 }
 
 /* 面を閉じる結果か。ノートは新しい md を公開できたときで、LEDGER_STALE は公開後の台帳の失敗。
@@ -601,58 +748,117 @@ static bool closes_on(enum name_prompt_kind kind, enum folio_state_outcome outco
     {
     case NAME_PROMPT_FIRST_SAVE:
     case NAME_PROMPT_SAVE_AS:
-    case NAME_PROMPT_RENAME:
         return outcome == FOLIO_STATE_READY || outcome == FOLIO_STATE_LEDGER_STALE;
+    case NAME_PROMPT_RENAME:
+    case NAME_PROMPT_RENAME_CATEGORY:
+    case NAME_PROMPT_RETRY_RENAME:
+        return outcome == FOLIO_STATE_READY;
     case NAME_PROMPT_NEW_CATEGORY:
         return outcome == FOLIO_STATE_READY || outcome == FOLIO_STATE_CATEGORY_LEDGER_STALE;
     }
     return false;
 }
 
-/* 未完了の改名を面の中で保留にする種別か。カテゴリの面はノートの改名の再試行に化けず、
- * 同期の RENAME_PENDING / RENAME_HALTED も失敗の 1 行で見せる（ADR 0039 の決定 10）。
- * 初回保存・別名保存は現行のまま通す。 */
+/* 今回STARTを持つNOTE/CATEGORYだけが同じ面の固定retryへ進む（ADR0041）。 */
 static bool holds_pending(enum name_prompt_kind kind)
 {
     switch (kind)
     {
     case NAME_PROMPT_FIRST_SAVE:
     case NAME_PROMPT_SAVE_AS:
-    case NAME_PROMPT_RENAME:
-        return true;
     case NAME_PROMPT_NEW_CATEGORY:
+    case NAME_PROMPT_RETRY_RENAME:
         return false;
+    case NAME_PROMPT_RENAME:
+    case NAME_PROMPT_RENAME_CATEGORY:
+        return true;
     }
     return false;
 }
 
 /* 閉じない結果では入力を残して理由を見せる。ノートの LEDGER_UNSYNCED は何も作れていないので、
  * NAME_TAKEN と同じく残る。 */
-static void submit(struct name_prompt *_Nonnull prompt)
+static void show_failure(struct name_prompt *_Nonnull prompt, enum folio_state_outcome outcome)
 {
-    enum folio_state_outcome saved = prompt->pending ? retry_pending(prompt) : save(prompt);
-    if (closes_on(prompt->kind, saved))
-    {
-        prompt->outcome = saved;
-        EndDialog(prompt->dialog, IDOK);
-        return;
-    }
-    if (holds_pending(prompt->kind) &&
-        (saved == FOLIO_STATE_RENAME_PENDING || saved == FOLIO_STATE_RENAME_HALTED))
-    {
-        prompt->outcome = saved;
-        hold_pending(prompt, saved);
-        SetFocus(prompt->accept);
-        return;
-    }
-    const char *_Nonnull reason = folio_state_failure_line(saved, prompt_language(prompt));
+    const char *_Nonnull reason = folio_state_failure_line(outcome, prompt_language(prompt));
     char16_t units[ui_text_unit_limit];
     size_t written = 0;
     if (utf16_text_fill(reason, units, ui_text_unit_limit, &written) == UTF16_TEXT_FILL_READY)
     {
         SetWindowTextW(prompt->failure, units);
     }
+    reflow_prompt(prompt);
     SetFocus(prompt->name);
+}
+
+/* retryを越してviewを借りない。採用後OOMでplanが消えていたら面を終了して呼出し元へ返す。 */
+static void submit_retry(struct name_prompt *_Nonnull prompt)
+{
+    prompt->outcome = retry_pending(prompt);
+    if (prompt->outcome == FOLIO_STATE_READY || !hold_pending(prompt, prompt->outcome))
+    {
+        EndDialog(prompt->dialog, IDOK);
+        return;
+    }
+    SetFocus(prompt->accept);
+}
+
+static bool owns_started_pending(const struct name_prompt *_Nonnull prompt)
+{
+    struct rename_view pending = {.from = "", .to = ""};
+    if (!folio_state_rename_pending(prompt->state, &pending))
+    {
+        return false;
+    }
+    switch (prompt->kind)
+    {
+    case NAME_PROMPT_RENAME:
+        return pending.kind == RENAME_KIND_NOTE;
+    case NAME_PROMPT_RENAME_CATEGORY:
+        return pending.kind == RENAME_KIND_CATEGORY;
+    case NAME_PROMPT_FIRST_SAVE:
+    case NAME_PROMPT_SAVE_AS:
+    case NAME_PROMPT_NEW_CATEGORY:
+    case NAME_PROMPT_RETRY_RENAME:
+        return false;
+    }
+    return false;
+}
+
+static void submit(struct name_prompt *_Nonnull prompt)
+{
+    if (prompt->pending)
+    {
+        submit_retry(prompt);
+        return;
+    }
+    struct rename_view prior = {.from = "", .to = ""};
+    if (prompt->kind != NAME_PROMPT_NEW_CATEGORY &&
+        folio_state_rename_pending(prompt->state, &prior))
+    {
+        /* 面を開いた後の先行意図は入力を上書きせず、このsubmitでは保存しない。 */
+        show_failure(prompt, FOLIO_STATE_RENAME_PENDING);
+        return;
+    }
+    enum folio_state_outcome saved = save(prompt);
+    if (closes_on(prompt->kind, saved))
+    {
+        prompt->outcome = saved;
+        EndDialog(prompt->dialog, IDOK);
+        return;
+    }
+    if (holds_pending(prompt->kind) && owns_started_pending(prompt))
+    {
+        prompt->outcome = saved;
+        if (!hold_pending(prompt, saved))
+        {
+            EndDialog(prompt->dialog, IDOK);
+            return;
+        }
+        SetFocus(prompt->accept);
+        return;
+    }
+    show_failure(prompt, saved);
 }
 
 static void begin_dialog(struct name_prompt *_Nonnull prompt, HWND dialog)
@@ -664,7 +870,8 @@ static void begin_dialog(struct name_prompt *_Nonnull prompt, HWND dialog)
         EndDialog(dialog, IDCANCEL);
         return;
     }
-    /* 固定状態では名前欄が無効なので、押せるほうへ鍵を渡す（ADR 0022 の決定 7）。 */
+    reflow_prompt(prompt);
+    /* 固定状態は読取専用。初期focusは再試行で、欄の全文は選択/横移動で閲覧できる。 */
     SetFocus(prompt->pending ? prompt->accept : prompt->name);
 }
 
@@ -847,6 +1054,7 @@ enum folio_state_outcome name_prompt_show(HWND _Nonnull owner,
 {
     struct name_prompt prompt = {.state = request->state,
                                  .kind = request->kind,
+                                 .target = request->target,
                                  .units = request->units,
                                  .count = request->count,
                                  .outcome = FOLIO_STATE_CANCELLED};
