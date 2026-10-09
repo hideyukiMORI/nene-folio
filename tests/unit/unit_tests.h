@@ -15,6 +15,8 @@ void run_json_tests(void);
 void run_ledger_tests(void);
 void run_layout_tests(void);
 void run_state_tests(void);
+void run_index_cache_retry_state_tests(void);
+void run_index_cache_retry_allocation_tests(void);
 void run_allocation_tests(void);
 void run_markdown_tests(void);
 void run_command_tests(void);

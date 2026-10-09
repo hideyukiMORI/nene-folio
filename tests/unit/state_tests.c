@@ -53,7 +53,8 @@ struct persistence_adapter
     const char *_Nullable archived_category; /* 最後に履歴を求められたカテゴリ名 */
     const char *_Nullable archived_note;     /* 最後に履歴を求められたノート名 */
     enum persistence_outcome note_write_outcome;
-    size_t note_writes; /* write_note が呼ばれた回数 */
+    size_t note_writes;  /* write_note が呼ばれた回数 */
+    size_t copy_fail_at; /* md公開後のcache確保だけを注入で失敗させる。0なら未使用。 */
     enum persistence_outcome create_outcome;
     size_t creates;
     char created_note[256];
@@ -340,6 +341,10 @@ static enum persistence_outcome fake_write_note(struct persistence_adapter *_Non
     size_t length = note_text_length(body);
     require(length + 1 < sizeof adapter->written_body, "written body fits the fake");
     memcpy(adapter->written_body, note_text_bytes(body), length + 1);
+    if (adapter->copy_fail_at > 0)
+    {
+        allocation_probe_fail_at(adapter->copy_fail_at);
+    }
     return PERSISTENCE_STORED;
 }
 
@@ -385,6 +390,10 @@ static enum persistence_outcome fake_create_note(struct persistence_adapter *_No
     }
     require(note_text_length(body) < sizeof adapter->written_body, "created body fits");
     memcpy(adapter->written_body, note_text_bytes(body), note_text_length(body) + 1);
+    if (adapter->copy_fail_at > 0)
+    {
+        allocation_probe_fail_at(adapter->copy_fail_at);
+    }
     return PERSISTENCE_STORED;
 }
 
@@ -4866,4 +4875,393 @@ void run_category_rename_allocation_tests(void)
         printf("category state allocation scenario %zu: %zu failed points, then complete\n",
                scenario, completed_at - 1);
     }
+}
+
+/* 改名で旧mdが消えてから初めて検索する順序（#219）。完了後の新名を欠落させない。 */
+static void verify_note_pending_first_filter(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY,
+            "select before first filter");
+    struct note_name *name = accepted_note_name("newnote");
+    adapter.rename_outcome = RENAME_PENDING;
+    require(folio_state_rename_note(state, name, u"", 0) == FOLIO_STATE_RENAME_PENDING,
+            "md can move before the rename completes");
+    adapter.missing_note = "one";
+    enum folio_state_outcome filtered = folio_state_set_index_filter(state, u"newnote", 7);
+    require(filtered == FOLIO_STATE_RENAME_PENDING && adapter.note_reads == 1,
+            "first filter synchronizes NOTE before any old-path cache read");
+    adapter.rename_outcome = RENAME_COMPLETED;
+    require(folio_state_retry_rename(state) == FOLIO_STATE_READY, "finish NOTE rename");
+    require(folio_state_set_index_filter(state, u"newnote", 7) == FOLIO_STATE_READY,
+            "search the completed name");
+    require(folio_state_index_filter_count(state) == 1,
+            "completed NOTE remains searchable after first filter during pending");
+    note_name_destroy(name);
+    folio_state_destroy(state);
+}
+
+static void verify_note_filter_refusals(void);
+
+void run_index_cache_retry_state_tests(void)
+{
+    finder = test_regex_port();
+    verify_note_pending_first_filter();
+    verify_note_filter_refusals();
+}
+
+static void verify_saved_copy_retry(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY &&
+                folio_state_begin_edit(state) == FOLIO_STATE_READY &&
+                folio_state_set_index_filter(state, u"needle", 6) == FOLIO_STATE_READY,
+            "cache holds the old saved body");
+    adapter.copy_fail_at = 1;
+    require(folio_state_store_note(state, u"needle", 6) == FOLIO_STATE_OUT_OF_MEMORY,
+            "copy OOM occurs after successful md publication");
+    allocation_probe_fail_at(0);
+    adapter.copy_fail_at = 0;
+    require(same_text(adapter.written_body, "needle") &&
+                same_text(folio_state_pane_text(state), "needle"),
+            "published md and owned body already hold the new text");
+    require(folio_state_store_note(state, u"needle", 6) == FOLIO_STATE_READY &&
+                adapter.note_writes == 1 && adapter.archives == 1,
+            "same-body retry does not write or archive again");
+    require(folio_state_index_filter_count(state) == 1,
+            "same-body retry repairs the saved copy and match set");
+    folio_state_destroy(state);
+}
+
+static void verify_copy_allocation_boundaries(void);
+
+void run_index_cache_retry_allocation_tests(void)
+{
+    allocation_probe_fail_at(1);
+    struct note_text *check = nullptr;
+    enum note_text_outcome active = note_text_create("", 0, &check);
+    allocation_probe_fail_at(0);
+    note_text_destroy(check);
+    if (active != NOTE_TEXT_OUT_OF_MEMORY)
+    {
+        return;
+    }
+    finder = test_regex_port();
+    verify_saved_copy_retry();
+    verify_copy_allocation_boundaries();
+}
+
+static void note_filter_refusal_case(enum rename_outcome pending, enum folio_state_outcome expected)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY &&
+                folio_state_set_index_filter(state, u"Hello", 5) == FOLIO_STATE_READY &&
+                folio_state_scroll_drawer(state, scroll_metrics, 20) == FOLIO_STATE_READY,
+            "keep an existing match set and scroll before NOTE pending");
+    struct note_name *name = accepted_note_name("newnote");
+    adapter.rename_outcome = pending;
+    require(folio_state_rename_note(state, name, u"", 0) == expected, "hold NOTE intent");
+    adapter.missing_note = "one";
+    size_t reads = adapter.note_reads;
+    int top = scrolled_top(state);
+    require(folio_state_set_index_filter(state, u"newnote", 7) == expected &&
+                adapter.note_reads == reads && scrolled_top(state) == top &&
+                folio_state_index_filter_count(state) == 9 &&
+                same_text(folio_state_index_filter_term(state), "Hello"),
+            "pending and halted filter attempts keep rows, term and scroll without old reads");
+    require(folio_state_set_index_filter(state, u"", 0) == FOLIO_STATE_READY &&
+                !folio_state_filtering(state) && adapter.note_reads == reads,
+            "empty filter can clear while NOTE recovery is blocked");
+    adapter.rename_outcome = RENAME_COMPLETED;
+    require(folio_state_set_index_filter(state, u"newnote", 7) == FOLIO_STATE_READY &&
+                folio_state_index_filter_count(state) == 1 && adapter.note_reads == reads,
+            "filter itself resumes NOTE then uses rekeyed cached body");
+    note_name_destroy(name);
+    folio_state_destroy(state);
+}
+
+static void verify_note_filter_refusals(void)
+{
+    note_filter_refusal_case(RENAME_PENDING, FOLIO_STATE_RENAME_PENDING);
+    note_filter_refusal_case(RENAME_HALTED, FOLIO_STATE_RENAME_HALTED);
+}
+
+static struct folio_state *_Nonnull copy_test_state(struct persistence_adapter *_Nonnull adapter)
+{
+    struct folio_state *state = ready_state(adapter);
+    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY &&
+                folio_state_begin_edit(state) == FOLIO_STATE_READY &&
+                folio_state_set_index_filter(state, u"needle", 6) == FOLIO_STATE_READY,
+            "old saved text is loaded into the search corpus");
+    return state;
+}
+
+static enum folio_state_outcome copy_publication(struct folio_state *_Nonnull state,
+                                                 struct persistence_adapter *_Nonnull adapter,
+                                                 size_t nth)
+{
+    adapter->copy_fail_at = nth;
+    enum folio_state_outcome saved = folio_state_store_note(state, u"needle", 6);
+    allocation_probe_fail_at(0);
+    adapter->copy_fail_at = 0;
+    return saved;
+}
+
+static void copy_retry_refused(struct folio_state *_Nonnull state,
+                               const struct persistence_adapter *_Nonnull adapter)
+{
+    const char *body = folio_state_pane_text(state);
+    size_t matches = folio_state_index_filter_count(state);
+    allocation_probe_fail_at(1);
+    enum folio_state_outcome saved = folio_state_store_note(state, u"needle", 6);
+    allocation_probe_fail_at(0);
+    require(saved == FOLIO_STATE_OUT_OF_MEMORY && folio_state_pane_text(state) == body &&
+                folio_state_index_filter_count(state) == matches &&
+                keeps_document(state, at(0, 0), PANE_MODE_EDIT) && adapter->archives == 1 &&
+                adapter->note_writes == 1,
+            "another copy OOM retains the canonical body and blocks extra archive/write");
+}
+
+static bool copy_allocation_case(size_t nth)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = copy_test_state(&adapter);
+    size_t reads = adapter.note_reads;
+    enum folio_state_outcome saved = copy_publication(state, &adapter, nth);
+    require(saved == FOLIO_STATE_READY || saved == FOLIO_STATE_OUT_OF_MEMORY,
+            "each post-publication copy allocation remains typed");
+    if (saved == FOLIO_STATE_OUT_OF_MEMORY)
+    {
+        copy_retry_refused(state, &adapter);
+    }
+    require(folio_state_store_note(state, u"needle", 6) == FOLIO_STATE_READY &&
+                folio_state_index_filter_count(state) == 1 && adapter.note_reads == reads &&
+                adapter.archives == 1 && adapter.note_writes == 1,
+            "same-body retry repairs every put/filter OOM with no disk read or repeated write");
+    folio_state_destroy(state);
+    return saved == FOLIO_STATE_READY;
+}
+
+static void verify_copy_publication_allocations(void)
+{
+    for (size_t nth = 1; nth <= 16; ++nth)
+    {
+        if (copy_allocation_case(nth))
+        {
+            printf("saved copy allocation points: %zu\n", nth - 1);
+            return;
+        }
+    }
+    require(false, "all copy publication allocations must eventually complete");
+}
+
+static void verify_copy_filter_reentry(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = copy_test_state(&adapter);
+    require(copy_publication(state, &adapter, 1) == FOLIO_STATE_OUT_OF_MEMORY,
+            "copy needs repair before filter reentry");
+    size_t reads = adapter.note_reads;
+    require(folio_state_set_index_filter(state, u"", 0) == FOLIO_STATE_READY,
+            "clearing the filter does not pretend the saved copy was repaired");
+    allocation_probe_fail_at(1);
+    enum folio_state_outcome filtered = folio_state_set_index_filter(state, u"needle", 6);
+    allocation_probe_fail_at(0);
+    require(filtered == FOLIO_STATE_OUT_OF_MEMORY && !folio_state_filtering(state) &&
+                same_text(folio_state_index_filter_term(state), "") && adapter.note_reads == reads,
+            "nonempty filter waits for copy repair and retains the cleared state on OOM");
+    require(folio_state_set_index_filter(state, u"needle", 6) == FOLIO_STATE_READY &&
+                folio_state_index_filter_count(state) == 1 && adapter.note_reads == reads,
+            "reentry uses the owned saved body, not another read of old fake md bytes");
+    folio_state_destroy(state);
+}
+
+static void verify_copy_new_document(bool untitled)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = copy_test_state(&adapter);
+    if (untitled)
+    {
+        require(folio_state_new_note(state, 0) == FOLIO_STATE_READY,
+                "first save shares the new md publication boundary");
+    }
+    struct note_name *name = accepted_note_name("copied");
+    struct note_destination destination = {.category = 0, .name = name};
+    adapter.copy_fail_at = 1;
+    adapter.ledger_write_outcome = PERSISTENCE_UNWRITABLE;
+    require(folio_state_store_new(state, &destination, u"needle", 6) == FOLIO_STATE_LEDGER_STALE,
+            "new md publication retains both pending index and copy after failure");
+    allocation_probe_fail_at(0);
+    adapter.copy_fail_at = 0;
+    require(same_text(folio_state_document_name(state), "copied") &&
+                same_text(folio_state_pane_text(state), "needle") && adapter.creates == 1,
+            "published copy remains the current saved document");
+    require(folio_state_store_note(state, u"needle", 6) == FOLIO_STATE_LEDGER_UNSYNCED,
+            "index repair precedes copy repair");
+    adapter.ledger_write_outcome = PERSISTENCE_STORED;
+    allocation_probe_fail_at(1);
+    enum folio_state_outcome saved = folio_state_store_note(state, u"needle", 6);
+    allocation_probe_fail_at(0);
+    require(saved == FOLIO_STATE_OUT_OF_MEMORY && adapter.ledger_writes == 3,
+            "repaired index can be followed by another copy OOM");
+    require(folio_state_end_edit(state, u"needle", 6) == FOLIO_STATE_READY &&
+                folio_state_index_filter_count(state) == 1 &&
+                folio_state_pane_mode(state) == PANE_MODE_VIEW && adapter.creates == 1 &&
+                adapter.note_writes == 0 && adapter.archives == 0 && adapter.ledger_writes == 3,
+            "copy retry neither republishes new md nor saves the original");
+    note_name_destroy(name);
+    folio_state_destroy(state);
+}
+
+static enum folio_state_outcome copy_target_change(struct folio_state *_Nonnull state,
+                                                   size_t scenario)
+{
+    if (scenario == 0)
+    {
+        return folio_state_select_note(state, 0, 1);
+    }
+    if (scenario == 1)
+    {
+        return folio_state_new_note(state, 0);
+    }
+    if (scenario == 2)
+    {
+        return folio_state_move_note(state, at(0, 0), at(0, 2));
+    }
+    return folio_state_trash_note(state, at(0, 0), u"needle", 6);
+}
+
+static void copy_target_change_case(size_t scenario)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = copy_test_state(&adapter);
+    require(copy_publication(state, &adapter, 1) == FOLIO_STATE_OUT_OF_MEMORY,
+            "target still owns a copy repair");
+    require(folio_state_set_index_filter(state, u"", 0) == FOLIO_STATE_READY,
+            "allow ledger operations without resolving the pending copy");
+    size_t reads = adapter.note_reads;
+    allocation_probe_fail_at(1);
+    enum folio_state_outcome changed = copy_target_change(state, scenario);
+    allocation_probe_fail_at(0);
+    require(changed == FOLIO_STATE_OUT_OF_MEMORY &&
+                keeps_document(state, at(0, 0), PANE_MODE_EDIT) &&
+                same_text(folio_state_pane_text(state), "needle") && adapter.note_reads == reads &&
+                adapter.ledger_writes == 0 && adapter.trashes == 0,
+            "copy OOM prevents body replacement, index change and trash publication");
+    require(copy_target_change(state, scenario) == FOLIO_STATE_READY,
+            "target intent can proceed once its old saved copy is repaired");
+    require(folio_state_set_index_filter(state, u"needle", 6) == FOLIO_STATE_READY &&
+                folio_state_index_filter_count(state) == (scenario == 3 ? 0 : 1) &&
+                adapter.note_reads == reads + (scenario == 0 ? 1 : 0),
+            "the saved copy is repaired under its original name before target mutation");
+    folio_state_destroy(state);
+}
+
+static size_t same_save_allocation_count(bool loaded)
+{
+    for (size_t nth = 1; nth <= 32; ++nth)
+    {
+        struct persistence_adapter adapter = healthy_adapter();
+        adapter.note_body = "needle";
+        struct folio_state *state = ready_state(&adapter);
+        require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY &&
+                    folio_state_begin_edit(state) == FOLIO_STATE_READY,
+                "prepare same-body save");
+        if (loaded)
+        {
+            require(folio_state_set_index_filter(state, u"needle", 6) == FOLIO_STATE_READY,
+                    "same-body save with loaded search cache");
+        }
+        allocation_probe_fail_at(nth);
+        enum folio_state_outcome saved = folio_state_store_note(state, u"needle", 6);
+        allocation_probe_fail_at(0);
+        require(adapter.archives == 0 && adapter.note_writes == 0,
+                "normal unchanged saves never publish again");
+        folio_state_destroy(state);
+        if (saved == FOLIO_STATE_READY)
+        {
+            return nth - 1;
+        }
+        require(saved == FOLIO_STATE_OUT_OF_MEMORY, "normalization allocation fails explicitly");
+    }
+    require(false, "unchanged save normalization must eventually complete");
+    return 0;
+}
+
+static void verify_copy_view_query(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY &&
+                folio_state_set_index_filter(state, u"needle", 6) == FOLIO_STATE_READY,
+            "viewing source has a loaded search cache");
+    struct note_name *name = accepted_note_name("copied");
+    struct note_destination destination = {.category = 0, .name = name};
+    adapter.copy_fail_at = 1;
+    require(folio_state_store_new(state, &destination, u"ignored", 7) == FOLIO_STATE_OUT_OF_MEMORY,
+            "view save-as adopts raw saved text then copy OOM");
+    allocation_probe_fail_at(0);
+    adapter.copy_fail_at = 0;
+    size_t reads = adapter.note_reads;
+    enum folio_note_change change = FOLIO_NOTE_CHANGED;
+    allocation_probe_fail_at(1);
+    enum folio_state_outcome queried = folio_state_note_changed(state, u"", 0, &change);
+    allocation_probe_fail_at(0);
+    require(queried == FOLIO_STATE_OUT_OF_MEMORY && change == FOLIO_NOTE_CHANGED &&
+                folio_state_pane_mode(state) == PANE_MODE_VIEW,
+            "quit query repairs before reporting SAME and leaves output on failed repair");
+    require(folio_state_note_changed(state, u"", 0, &change) == FOLIO_STATE_READY &&
+                change == FOLIO_NOTE_SAME &&
+                folio_state_set_index_filter(state, u"copied", 6) == FOLIO_STATE_READY &&
+                folio_state_index_filter_count(state) == 1 && adapter.note_reads == reads &&
+                adapter.creates == 1 && adapter.archives == 0 && adapter.note_writes == 0,
+            "view query repairs the copy without input normalization or repeat publication");
+    note_name_destroy(name);
+    folio_state_destroy(state);
+}
+
+static void verify_copy_filter_failure(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = copy_test_state(&adapter);
+    require(folio_state_set_index_filter(state, u"Hello", 5) == FOLIO_STATE_READY &&
+                folio_state_scroll_drawer(state, scroll_metrics, 20) == FOLIO_STATE_READY &&
+                copy_publication(state, &adapter, 1) == FOLIO_STATE_OUT_OF_MEMORY,
+            "saved copy is pending while the old term and rows remain");
+    size_t reads = adapter.note_reads;
+    int top = scrolled_top(state);
+    allocation_probe_fail_at(1);
+    enum folio_state_outcome filtered = folio_state_set_index_filter(state, u"needle", 6);
+    allocation_probe_fail_at(0);
+    require(filtered == FOLIO_STATE_OUT_OF_MEMORY && scrolled_top(state) == top &&
+                folio_state_index_filter_count(state) == 9 &&
+                same_text(folio_state_index_filter_term(state), "Hello") &&
+                adapter.note_reads == reads,
+            "new search term cannot replace rows or scroll before copy repair succeeds");
+    require(folio_state_set_index_filter(state, u"needle", 6) == FOLIO_STATE_READY &&
+                folio_state_index_filter_count(state) == 1 && scrolled_top(state) == 0 &&
+                adapter.note_reads == reads,
+            "search proceeds from the repaired saved body with no whole-corpus reload");
+    folio_state_destroy(state);
+}
+
+static void verify_copy_allocation_boundaries(void)
+{
+    verify_copy_publication_allocations();
+    verify_copy_filter_reentry();
+    verify_copy_new_document(false);
+    verify_copy_new_document(true);
+    verify_copy_view_query();
+    verify_copy_filter_failure();
+    for (size_t scenario = 0; scenario < 4; ++scenario)
+    {
+        copy_target_change_case(scenario);
+    }
+    size_t unloaded = same_save_allocation_count(false);
+    size_t loaded = same_save_allocation_count(true);
+    require(unloaded == loaded, "normal same-save adds no cache allocation");
+    printf("unchanged-save allocations loaded/unloaded: %zu/%zu\n", loaded, unloaded);
 }

@@ -23,31 +23,52 @@ bool same_text(const char *_Nonnull actual, const char *_Nonnull expected)
     return false;
 }
 
-int main(int argc, char *_Nonnull *_Nonnull argv)
+static bool run_target_tests(const char *_Nonnull argument)
 {
-    if (argc == 2 && strcmp(argv[1], "--commands-ui") == 0)
+    if (strcmp(argument, "--commands-ui") == 0)
     {
         run_command_tests();
         run_ui_text_tests();
         printf("command and UI text tests passed\n");
-        return 0;
+        return true;
     }
-    if (argc == 2 && strcmp(argv[1], "--rename-d1") == 0)
+    if (strcmp(argument, "--rename-d1") == 0)
     {
         run_ledger_tests();
         run_rename_tests();
         run_rename_state_tests();
         run_rename_allocation_tests();
         printf("rename D1 tests passed\n");
-        return 0;
+        return true;
     }
-    if (argc == 2 && strcmp(argv[1], "--rename-d2") == 0)
+    if (strcmp(argument, "--rename-d2") == 0)
     {
         run_category_rename_state_tests();
         run_rename_state_tests();
         run_ui_text_tests();
         run_category_rename_allocation_tests();
         printf("rename D2 tests passed\n");
+        return true;
+    }
+    if (strcmp(argument, "--index-cache-retry") == 0)
+    {
+        run_index_cache_retry_state_tests();
+        printf("index cache retry state tests passed\n");
+        return true;
+    }
+    if (strcmp(argument, "--index-cache-retry-oom") == 0)
+    {
+        run_index_cache_retry_allocation_tests();
+        printf("index cache retry allocation tests passed\n");
+        return true;
+    }
+    return false;
+}
+
+int main(int argc, char *_Nonnull *_Nonnull argv)
+{
+    if (argc == 2 && run_target_tests(argv[1]))
+    {
         return 0;
     }
     run_text_tests();
@@ -71,6 +92,8 @@ int main(int argc, char *_Nonnull *_Nonnull argv)
     run_line_index_tests();
     run_replace_tests();
     run_state_tests();
+    run_index_cache_retry_state_tests();
+    run_index_cache_retry_allocation_tests();
     run_category_rename_state_tests();
     run_replace_state_tests();
     run_ui_text_tests();
