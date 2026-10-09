@@ -2061,7 +2061,9 @@ static enum folio_state_outcome unpublished(enum folio_state_outcome prepared,
     return stored == PERSISTENCE_UNWRITABLE ? FOLIO_STATE_NOTE_STORE_FAILED : translate(stored);
 }
 
-/* 副作用より先にすべてを確保。mdが公開された後は確保せず、表示をファイルへ揃える。 */
+/* 副作用より先に表示と台帳を確保。md公開後の表示採用は確保せず、
+ *
+ * 検索写しの失敗は保留して再試行する（#219）。 */
 static enum folio_state_outcome create_edited(struct folio_state *_Nonnull state,
                                               const struct note_destination *_Nonnull destination,
                                               struct note_text *_Nonnull edited)
