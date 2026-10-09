@@ -1,0 +1,11 @@
+#ifndef NENEFOLIO_PANE_RECOVERY_H
+#define NENEFOLIO_PANE_RECOVERY_H
+
+enum pane_recovery
+{
+    PANE_RECOVERY_NONE,
+    PANE_RECOVERY_NOTE,
+    PANE_RECOVERY_CATEGORY,
+};
+
+#endif

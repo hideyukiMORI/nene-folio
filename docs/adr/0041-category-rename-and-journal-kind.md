@@ -89,7 +89,9 @@ RESUMEで記録が無ければ、新規開始へ落とさず `HALTED`。記録�
 
 ### 4. applicationの開始と採用
 
-`folio_state_rename_category(state, category, name, units, count)` は対象を名指しする。
+`folio_state_rename_category(state, target, units, count)` は対象を名指しする。
+`category_rename_target` は対象添字と検証済み `category_name` を呼び出しの間だけ借りる入力で、
+範囲検証と準備の所有はapplicationにある。2026-10-09のD2実装前にC-012の4引数上限へ合わせた補正で、意味と順序は変えない。
 順序は `FILTERED` → 範囲 → 共通同期 → 完全同名no-op → ASCII大小を畳んだ名前衝突 → 必要な保存 → plan/空corpusの事前確保 → port。
 完全同名は先行同期を除き、新しい改名の副作用も対象文書の先保存も起こさない。
 大小文字だけの変更は衝突として断る。異なる文字体系のcase-onlyはOS側の衝突に従う。

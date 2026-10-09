@@ -8,19 +8,19 @@
 
 enum rename_outcome : unsigned char
 {
-    RENAME_COMPLETED, /* 履歴・md・index.json が移り、記録も消えた */
+    RENAME_COMPLETED, /* 本体・履歴・種別に合う台帳が新名で揃い、記録も消えた */
     /* ここから 2 つが「記録を公開した後」。application が意図を保持する。 */
     RENAME_PENDING, /* 段階の入出力・台帳・記録削除が失敗した。同じ意図の再試行で進み得る */
     RENAME_HALTED,  /* 識別子不一致・両方存在／両方不在・照会不能。data/ を直すまで進まない */
     RENAME_NONE,    /* 復旧する記録が無い（recover_rename だけが返す） */
     /* ここから下は「記録を公開する前」の拒否。data/ は何も変わっていない。 */
     RENAME_UNLOCKED,   /* data/ のロックが無いので書けない */
-    RENAME_NAME_TAKEN, /* 移動先の md か履歴が既にある（大小文字だけ違う名前を含む） */
+    RENAME_NAME_TAKEN, /* 移動先の本体か履歴が既にある（大小文字だけ違う名前を含む） */
     /* ローカル NTFS でない・照会できない・シンボリックリンク／junction（2026-09-17 の補正） */
     RENAME_UNSUPPORTED,
-    RENAME_IDENTITY_FAILED, /* 元の md / 履歴の識別子を取れない */
+    RENAME_IDENTITY_FAILED, /* 元の本体 / 履歴の識別子を取れない */
     RENAME_JOURNAL_FAILED,  /* 記録を公開できない */
-    RENAME_JOURNAL_BROKEN,  /* 記録が版 1 の形でない・名前が不正・台帳と合わない。消さない */
+    RENAME_JOURNAL_BROKEN,  /* 記録の版や形を読めない・名前が不正・台帳と合わない。消さない */
     RENAME_OUT_OF_MEMORY
 };
 

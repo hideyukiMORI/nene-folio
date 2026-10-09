@@ -76,32 +76,31 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
          "This action was not run; retry the save.",
          "上次的台账（index.json）尚未写回。本次操作未执行，请重试保存。"},
     [UI_TEXT_FAILURE_RENAME_PENDING] =
-        {"名前の変更が途中で止まっています。同じ名前変更をやり直してください。",
-         "A rename stopped halfway. Retry the same rename.",
-         "重命名中途停止。请重做同一次重命名。"},
+        {"名前の変更が途中で止まっています。「名前を変更」から再試行してください。",
+         "A rename stopped halfway. Open Rename to retry.", "重命名中途停止。请打开“重命名”重试。"},
     [UI_TEXT_FAILURE_RENAME_UNLOCKED] =
-        {"data/ に書けないため名前を変更できません。何も変えていません。",
-         "Cannot rename because data/ is not writable. Nothing was changed.",
-         "因无法写入 data/，不能重命名。未做任何改变。"},
+        {"data/ に書けないため名前を変更できません。名前は変更していません。",
+         "Cannot rename because data/ is not writable. The name was not changed.",
+         "因无法写入 data/，不能重命名。名称未更改。"},
     [UI_TEXT_FAILURE_RENAME_UNSUPPORTED] =
-        {"この data/ ではノート名を変更できません（ローカルの "
+        {"この data/ では名前を変更できません（ローカルの "
          "NTFS 以外、またはシンボリックリンク／junction）。",
-         "Note names cannot be changed in this data/ (not local NTFS, "
+         "Names cannot be changed in this data/ (not local NTFS, "
          "or a symbolic link / junction).",
-         "在此 data/ 中无法更改笔记名称（非本地 NTFS，或为符号链接／junction）。"},
+         "在此 data/ 中无法更改名称（非本地 NTFS，或为符号链接／junction）。"},
     [UI_TEXT_FAILURE_RENAME_IDENTITY_FAILED] =
-        {"元のファイルを確かめられないので名前を変更できません。何も変えていません。",
-         "Cannot verify the original file, so the rename did not run. Nothing was changed.",
-         "无法确认原文件，因此不能重命名。未做任何改变。"},
+        {"元のファイルやカテゴリを確かめられないので名前を変更できません。名前は変更していません。",
+         "Cannot verify the original file or category, so the name was not changed.",
+         "无法确认原文件或分类，因此不能重命名。名称未更改。"},
     [UI_TEXT_FAILURE_RENAME_JOURNAL_FAILED] =
-        {"名前変更の記録（data/.rename.json）を書けませんでした。何も変えていません。",
-         "Could not write the rename record (data/.rename.json). Nothing was changed.",
-         "无法写入重命名记录（data/.rename.json）。未做任何改变。"},
+        {"名前変更の記録（data/.rename.json）を書けませんでした。名前は変更していません。",
+         "Could not write the rename record (data/.rename.json). The name was not changed.",
+         "无法写入重命名记录（data/.rename.json）。名称未更改。"},
     [UI_TEXT_FAILURE_RENAME_JOURNAL_BROKEN] =
-        {"名前変更の記録（data/.rename.json）が版 1 の形ではありません。消していません。",
-         "The rename record (data/.rename.json) is not in the version 1 format. It was not "
-         "removed.",
-         "重命名记录（data/.rename.json）不是版本 1 的形式。未删除。"},
+        {"名前変更の記録（data/.rename.json）の版か形を読めません。記録は残しています。",
+         "The rename record (data/.rename.json) has an unreadable version or format. "
+         "The record was kept.",
+         "无法读取重命名记录（data/.rename.json）的版本或形式。记录已保留。"},
     [UI_TEXT_FAILURE_RENAME_HALTED] =
         {"名前変更の記録と実ファイルが一致しません。data/.rename.json "
          "と data/<カテゴリ>/ を確認してください。",
@@ -152,10 +151,9 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
                                            "The replaced body is too large. "
                                            "The body is unchanged.",
                                            "替换后的正文过大。正文未改变。"},
-    [UI_TEXT_FAILURE_REPLACE_STALE] =
-        {"本文か入力が変わったので、この置換は当てられません。もう一度入力してください。",
-         "The body or input changed, so this replace cannot apply. Type again.",
-         "正文或输入已改变，无法应用此次替换。请重新输入。"},
+    [UI_TEXT_FAILURE_REPLACE_STALE] = {"下見が古くなりました。もう一度入力してください。",
+                                       "The preview is out of date. Type again.",
+                                       "预览已过期。请重新输入。"},
     [UI_TEXT_FAILURE_REPLACE_BAD_SPAN] = {"選択範囲が正しくありません。本文は変えていません。",
                                           "The selection range is not valid. "
                                           "The body is unchanged.",
@@ -359,6 +357,7 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
     [UI_TEXT_TITLE_UNTITLED] = {"無題（未保存）", "Untitled (unsaved)", "无标题（未保存）"},
     [UI_TEXT_TITLE_RECOVERING] = {"名前変更の復旧待ち", "Rename recovery pending",
                                   "等待重命名恢复"},
+    [UI_TEXT_TITLE_CATEGORY_RECOVERING] = {"復旧待ち", "Recovering", "等待恢复"},
     [UI_TEXT_CHIP_VIEW] = {"閲覧", "View", "查看"},
     [UI_TEXT_CHIP_EDIT] = {"編集", "Edit", "编辑"},
     [UI_TEXT_PLACEHOLDER_FILTER] = {"すべてのノートを検索", "Search all notes", "搜索全部笔记"},
