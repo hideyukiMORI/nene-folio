@@ -41,6 +41,15 @@ int main(int argc, char *_Nonnull *_Nonnull argv)
         printf("rename D1 tests passed\n");
         return 0;
     }
+    if (argc == 2 && strcmp(argv[1], "--rename-d2") == 0)
+    {
+        run_category_rename_state_tests();
+        run_rename_state_tests();
+        run_ui_text_tests();
+        run_category_rename_allocation_tests();
+        printf("rename D2 tests passed\n");
+        return 0;
+    }
     run_text_tests();
     /* eng/coverage.py の反例: 台帳・配置・状態のテストを省いた実行では分岐 90%
      * に届かないことを示す。 */
@@ -62,10 +71,12 @@ int main(int argc, char *_Nonnull *_Nonnull argv)
     run_line_index_tests();
     run_replace_tests();
     run_state_tests();
+    run_category_rename_state_tests();
     run_replace_state_tests();
     run_ui_text_tests();
     run_font_bundle_tests();
     run_allocation_tests();
+    run_category_rename_allocation_tests();
     printf("folio unit tests passed\n");
     return 0;
 }
