@@ -1,6 +1,15 @@
 # いまのタスク — NeNe Folio
 
-## 最新（2026-10-09）
+## 最新（2026-10-10）
+
+#232はPR #233 / `09a198f`で完了し通常exeへ反映済み。
+#234で本文取得のU+FFFD/縦タブ変換を直し、保存・検索・置換を同じraw UTF-16取得へ揃えた。
+対象90項目成功、baseで同じ保持検査が失敗することも確認。
+[測定記録](../quality/2026-10-10-raw-editor-text-checks.md)、[日報](../reports/2026-10-10.md)、
+[引き継ぎ](../handoffs/2026-10-10.md)。正典ゲート・統合・通常exe・整理の最新状態は
+`D:/NeNeFolio/agents/234-raw-editor-text/completion.json`。Waivers: none。
+
+## 2026-10-09 の到達点
 
 23:29 JSTのhideの継続指示後、#232 / [PR #233](https://github.com/hideyukiMORI/nene-folio/pull/233)を進めた。
 埋め込みNULを受理して通常編集/履歴復元で本文が欠落する境界を実測し、本文型の共通生成時検証で拒否する。

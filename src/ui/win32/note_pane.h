@@ -1,5 +1,5 @@
 /* 右ペイン（FR-005 の閲覧側と FR-006 の編集側）。Msftedit.dll の RICHEDIT50W を所有し、
- * application が作った RTF を EM_STREAMIN で写し、編集中の本文を EM_STREAMOUT で渡すだけで、
+ * application が作った RTF を EM_STREAMIN で写し、本文を UTF-16 のまま渡すだけで、
  * 判断を持たない（ARC-011 / ADR 0002 / ADR 0006）。 */
 #ifndef NENEFOLIO_NOTE_PANE_H
 #define NENEFOLIO_NOTE_PANE_H
@@ -36,17 +36,13 @@ void note_pane_render(struct note_pane *_Nonnull pane, const char *_Nonnull rtf,
 /* 本文を平文で流し込み、入力を受け付ける（編集）。フォーカスは動かさない
  * （区画を移すのは主窓の仕事・ADR 0013 の決定 1）。 */
 void note_pane_edit(struct note_pane *_Nonnull pane, const char16_t *_Nonnull units, size_t count);
-/* 編集中の本文を UTF-16 で取り出す。pane が所有し、次の note_pane の呼び出しまで有効。 */
+/* いま表示している本文を変換せず UTF-16 で取り出す（閲覧なら描画後・編集なら未保存本文）。
+ * 段落区切りは CR 1 つで、位置は note_pane_select / note_pane_selection と 1 対 1。
+ * 保存時の改行正規化は core が担う（ADR 0006 の #234 補正）。
+ * pane が所有し、次の note_pane の呼び出しまで有効。失敗時は出力引数を変えない。 */
 [[nodiscard]] enum note_pane_text_outcome note_pane_text(struct note_pane *_Nonnull pane,
                                                          const char16_t *_Nonnull *_Nonnull units,
                                                          size_t *_Nonnull count);
-/* いま表示している平文を UTF-16 で取り出す（閲覧なら描画後の文字・編集なら未保存本文）。
- * 段落区切りは CR 1 つで、位置は note_pane_select / note_pane_selection と 1 対 1
- * （保存用の note_pane_text は CRLF なので別物・ADR 0023 の決定 1）。
- * pane が所有し、次の note_pane の呼び出しまで有効。 */
-[[nodiscard]] enum note_pane_text_outcome
-note_pane_display_text(struct note_pane *_Nonnull pane, const char16_t *_Nonnull *_Nonnull units,
-                       size_t *_Nonnull count);
 /* 一致 1 つを選択して見える位置へ寄せる。フォーカスも本文も Undo も触らない。 */
 void note_pane_select(struct note_pane *_Nonnull pane, size_t start, size_t end);
 /* テーマの切り替えで地と本文の色を当て直す（ADR 0031 の決定 6）。閲覧・編集の両方で呼ぶ

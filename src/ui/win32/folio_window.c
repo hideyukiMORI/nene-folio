@@ -2532,7 +2532,7 @@ static enum folio_state_outcome take_display_text(const struct folio_window *_No
     {
         return FOLIO_STATE_PANE_UNAVAILABLE;
     }
-    return from_pane_text(note_pane_display_text(self->pane, units, count));
+    return from_pane_text(note_pane_text(self->pane, units, count));
 }
 
 /* 表示中の平文と覚えている語を core へ渡す。本文は UI が貸すだけで、判断は core が持つ。 */
