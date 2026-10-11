@@ -233,7 +233,8 @@ enum note_pane_outcome note_pane_create(HWND _Nonnull parent, COLORREF backgroun
         return NOTE_PANE_NOT_CREATED;
     }
     SendMessageW(pane->handle, EM_SETBKGNDCOLOR, 0, (LPARAM)background);
-    /* 平文の流し込みはこの既定書式で描かれる（RTF の流し込みは既定を壊さない・2026-09-09 実測）。
+    /* 既定書式。閲覧も編集も RTF が face・大きさ・色を持ち込む（ADR 0006 の #245 補正）ので、
+     * これは RTF が書式を持たない箇所の退避で、RTF の流し込みは既定を壊さない（2026-09-09 実測）。
      * **face はここでは決めない**（言語ごとの値の正本は core の ui_font で、
      * 主窓が作った直後と言語の切り替えで note_pane_reface が当てる・ADR 0032 の決定 4）。 */
     CHARFORMAT2W format = {.cbSize = sizeof format,
@@ -544,8 +545,8 @@ static void apply_text_color(struct note_pane *_Nonnull pane, COLORREF text, WPA
 }
 
 /* 閲覧は RTF が文字色を持っていて直後に流し直すので、SCF_ALL は捨てる書式を
- * 1 度塗るだけでちらつきの元になる。既定書式は note_pane_edit の平文が使うので
- * 閲覧でも更新が要る（ADR 0031 の補正節・D6）。 */
+ * 1 度塗るだけでちらつきの元になる。既定書式は RTF が書式を持たない箇所の退避なので
+ * 閲覧でも更新が要る（ADR 0031 の補正節・D6。編集の流し込みも RTF になった・#245）。 */
 static bool recolor_body(enum pane_mode mode)
 {
     switch (mode)
