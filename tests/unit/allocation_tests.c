@@ -633,6 +633,79 @@ static bool state_scenario_with(struct persistence_adapter *_Nonnull adapter)
     return completed;
 }
 
+/* #250: 編集用の平文 RTF。どの確保が落ちても OUT_OF_MEMORY で、out は触らない。 */
+static bool plain_rtf_scenario(void)
+{
+    const char *source = "# T\r\na\\b{c}\rd\t\v\n\xE6\x97\xA5\n";
+    struct note_text *text = nullptr;
+    enum note_text_outcome accepted = note_text_create(source, strlen(source), &text);
+    if (accepted == NOTE_TEXT_OUT_OF_MEMORY)
+    {
+        return false;
+    }
+    require(accepted == NOTE_TEXT_ACCEPTED, "plain note under probe");
+    struct markdown_rtf *rtf = nullptr;
+    enum markdown_rtf_outcome converted = markdown_rtf_plain(
+        text, rtf_palette_for(FOLIO_THEME_DARK), ui_font_face(FOLIO_LANGUAGE_JA), &rtf);
+    note_text_destroy(text);
+    if (converted == MARKDOWN_RTF_OUT_OF_MEMORY)
+    {
+        require(rtf == nullptr, "a failed plain conversion leaves out untouched");
+        return false;
+    }
+    require(converted == MARKDOWN_RTF_CONVERTED, "plain rtf under probe");
+    markdown_rtf_destroy(rtf);
+    return true;
+}
+
+/* 1 回の要求。OUT_OF_MEMORY なら slot（指す先と中身）が前のままであることを見る。 */
+static bool edit_rtf_request(struct folio_state *_Nonnull state, bool history)
+{
+    const char *before = folio_state_edit_rtf(state);
+    size_t length = folio_state_edit_rtf_length(state);
+    enum folio_state_outcome outcome =
+        history ? folio_state_history_edit_rtf(state, 0) : folio_state_pane_edit_rtf(state);
+    if (outcome == FOLIO_STATE_OUT_OF_MEMORY)
+    {
+        require(folio_state_edit_rtf(state) == before &&
+                    folio_state_edit_rtf_length(state) == length,
+                "a failed edit rtf keeps the previous slot");
+        return false;
+    }
+    require(outcome == FOLIO_STATE_READY && folio_state_edit_rtf_length(state) > 0,
+            "edit rtf under probe");
+    return true;
+}
+
+/* #250: application の 2 本の入口。現在の本文 → 履歴の版 → 現在の本文の順に置き換える。 */
+static bool edit_rtf_scenario(void)
+{
+    struct persistence_adapter *adapter = test_adapter_create(categories_text, notes_text);
+    test_adapter_history(adapter, 1, "first\nline");
+    struct persistence_port port = test_adapter_port(adapter);
+    struct appearance_port looks = test_appearance_port();
+    struct regex_port finder = test_regex_port();
+    struct folio_state *state = nullptr;
+    bool completed = false;
+    enum folio_state_outcome outcome =
+        folio_state_create(test_ports(&port, &looks, &finder), &state);
+    if (outcome == FOLIO_STATE_READY)
+    {
+        outcome = folio_state_select_note(state, 0, 0);
+    }
+    if (outcome == FOLIO_STATE_READY && edit_rtf_request(state, false))
+    {
+        outcome = folio_state_open_history(state);
+        completed = outcome == FOLIO_STATE_READY && edit_rtf_request(state, true) &&
+                    edit_rtf_request(state, false);
+    }
+    require(outcome == FOLIO_STATE_READY || outcome == FOLIO_STATE_OUT_OF_MEMORY,
+            "edit rtf allocation failure remains typed");
+    folio_state_destroy(state);
+    test_adapter_destroy(adapter);
+    return completed;
+}
+
 /* 履歴の一覧は読んだ版の本文を確保して持つ（ADR 0038 の検証 2）。どの確保が落ちても
  * OUT_OF_MEMORY で一覧を持たない。 */
 static bool history_scenario(void)
@@ -1144,6 +1217,8 @@ void run_allocation_tests(void)
     exhaust(replace_scenario, "replace scenario never completed");
     run_rename_allocation_tests();
     exhaust(history_scenario, "history scenario never completed");
+    exhaust(plain_rtf_scenario, "plain rtf scenario never completed");
+    exhaust(edit_rtf_scenario, "edit rtf scenario never completed");
     exhaust(create_category_scenario, "create category scenario never completed");
     exhaust(trash_scenario, "trash scenario never completed");
     exhaust(remove_category_scenario, "remove category scenario never completed");

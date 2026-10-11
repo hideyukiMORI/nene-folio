@@ -332,6 +332,19 @@ folio_state_pane_title(const struct folio_state *_Nonnull state);
 /* 右ペインに写す RTF（終端付き）。何も選んでいなければ空の文書。次の意図まで有効。 */
 [[nodiscard]] const char *_Nonnull folio_state_pane_rtf(const struct folio_state *_Nonnull state);
 [[nodiscard]] size_t folio_state_pane_rtf_length(const struct folio_state *_Nonnull state);
+/* 編集用の平文 RTF（#250・markdown_rtf_plain）を folio_state_pane_text と同じ本文（最後に読んだか
+ * 保存に成功した本文・無題なら空）から作り、state が持つ 1 つの slot に置く。palette と face は
+ * 閲覧と同じ。READY か OUT_OF_MEMORY で、確保に失敗すれば前の slot を保つ。ほかの状態は変えない。
+ */
+[[nodiscard]] enum folio_state_outcome
+folio_state_pane_edit_rtf(struct folio_state *_Nonnull state);
+/* 履歴の一覧の index 行の版（folio_state_history_body）から同じ slot に置く。読めない行と範囲の外は
+ * HISTORY_UNREADABLE、確保に失敗すれば OUT_OF_MEMORY で、どちらも前の slot を保つ。 */
+[[nodiscard]] enum folio_state_outcome
+folio_state_history_edit_rtf(struct folio_state *_Nonnull state, size_t index);
+/* slot の RTF（終端付き）。まだ作っていなければ空文字列と 0。次に slot を置き換えるまで有効。 */
+[[nodiscard]] const char *_Nonnull folio_state_edit_rtf(const struct folio_state *_Nonnull state);
+[[nodiscard]] size_t folio_state_edit_rtf_length(const struct folio_state *_Nonnull state);
 /* 現在のノートの履歴の一覧を開く（FR-033 / ADR 0038 の決定 7）。前の一覧は先に捨てる。
  * port の read_history で 1〜note_history_depth を順に読み、無い版は飛ばし、読めない版
  * （UTF-8 でない・読めない）は本文の無い行として版番号順に持つ。md も履歴も書かない。
