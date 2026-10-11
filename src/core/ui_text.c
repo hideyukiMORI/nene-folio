@@ -43,6 +43,12 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
         {"本文が大きすぎて保存できません。上限は 16 MiB です。本文を減らしてから保存してください。",
          "This note is too large to save. The limit is 16 MiB. Shorten the note, then save again.",
          "笔记过大，无法保存。上限为 16 MiB。请缩短内容后再保存。"},
+    [UI_TEXT_FAILURE_NOTE_UNEDITABLE] =
+        {"この本文には編集で保てない文字（U+0007・U+2028・U+"
+         "2029）があります。閲覧のままにしました。",
+         "This note contains characters the editor cannot keep (U+0007, U+2028 or U+2029). It "
+         "stays in view mode.",
+         "正文包含编辑时无法保留的字符（U+0007、U+2028 或 U+2029），已保持为查看模式。"},
     [UI_TEXT_FAILURE_NOTE_MALFORMED] =
         {"編集中の本文に壊れた文字、または扱えない文字があります。保存していません。",
          "The body being edited has invalid or unsupported characters. It was not saved.",

@@ -201,6 +201,56 @@ static void verify_note_equals(void)
     note_text_destroy(nullptr);
 }
 
+static void expect_editability(const char *_Nonnull bytes, size_t length,
+                               enum note_text_editability expected,
+                               const char *_Nonnull description)
+{
+    struct note_text *text = nullptr;
+    require(note_text_create(bytes, length, &text) == NOTE_TEXT_ACCEPTED, "editability fixture");
+    require(note_text_editability(text) == expected, description);
+    note_text_destroy(text);
+}
+
+/* RichEdit が流し込みで変える 3 文字（Issue #242）と、変えない近い文字。 */
+static void verify_editability(void)
+{
+    /* U+0007 / U+2028 / U+2029 のどれか 1 つで ALTERS。位置は先頭・途中・末尾。 */
+    expect_editability("\x07"
+                       "ab",
+                       3, NOTE_TEXT_EDITOR_ALTERS, "U+0007 at the start alters");
+    expect_editability("a\x07"
+                       "b",
+                       3, NOTE_TEXT_EDITOR_ALTERS, "U+0007 in the middle alters");
+    expect_editability("ab\x07", 3, NOTE_TEXT_EDITOR_ALTERS, "U+0007 at the end alters");
+    expect_editability("\xE2\x80\xA8"
+                       "ab",
+                       5, NOTE_TEXT_EDITOR_ALTERS, "U+2028 at the start alters");
+    expect_editability("a\xE2\x80\xA8"
+                       "b",
+                       5, NOTE_TEXT_EDITOR_ALTERS, "U+2028 in the middle alters");
+    expect_editability("ab\xE2\x80\xA8", 5, NOTE_TEXT_EDITOR_ALTERS, "U+2028 at the end alters");
+    expect_editability("\xE2\x80\xA9"
+                       "ab",
+                       5, NOTE_TEXT_EDITOR_ALTERS, "U+2029 at the start alters");
+    expect_editability("a\xE2\x80\xA9"
+                       "b",
+                       5, NOTE_TEXT_EDITOR_ALTERS, "U+2029 in the middle alters");
+    expect_editability("ab\xE2\x80\xA9", 5, NOTE_TEXT_EDITOR_ALTERS, "U+2029 at the end alters");
+    /* 近い文字は EDITABLE: U+000B・U+FFFD・TAB・CRLF・絵文字・U+2027・U+202A・空。 */
+    expect_editability("a\vb", 3, NOTE_TEXT_EDITABLE, "U+000B is kept");
+    expect_editability("a\xEF\xBF\xBD"
+                       "b",
+                       5, NOTE_TEXT_EDITABLE, "U+FFFD is kept");
+    expect_editability("a\tb\r\nc", 6, NOTE_TEXT_EDITABLE, "TAB and CRLF are kept");
+    expect_editability("\xF0\x9F\x98\x80\xE6\x97\xA5", 7, NOTE_TEXT_EDITABLE, "emoji is kept");
+    expect_editability("\xE2\x80\xA7\xE2\x80\xAA", 6, NOTE_TEXT_EDITABLE,
+                       "U+2027 and U+202A are kept");
+    expect_editability("", 0, NOTE_TEXT_EDITABLE, "an empty body is editable");
+    expect_editability("\xEF\xBB\xBF"
+                       "a",
+                       4, NOTE_TEXT_EDITABLE, "a dropped BOM is not a body character");
+}
+
 static void verify_colors(void)
 {
     struct rgb_color color = {0, 0, 0};
@@ -278,6 +328,7 @@ void run_text_tests(void)
     verify_line_ending();
     verify_from_editor();
     verify_note_equals();
+    verify_editability();
     verify_first_line();
     verify_colors();
     verify_name_list();

@@ -195,6 +195,37 @@ bool note_text_equals(const struct note_text *_Nonnull text, const struct note_t
     return text->length == other->length && memcmp(text->bytes, other->bytes, text->length) == 0;
 }
 
+/* RichEdit が流し込みで別の文字へ変える文字（2026-10-12 実測・Issue #242）。集合はここ 1 か所。 */
+static constexpr uint32_t editor_altered[] = {0x0007, 0x2028, 0x2029};
+
+static bool editor_alters(uint32_t code_point)
+{
+    for (size_t index = 0; index < sizeof editor_altered / sizeof editor_altered[0]; ++index)
+    {
+        if (editor_altered[index] == code_point)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+enum note_text_editability note_text_editability(const struct note_text *_Nonnull text)
+{
+    /* 本文は生成時に検証済みなので、decode が 0 を返すことは無い。 */
+    for (size_t index = 0; index < text->length;)
+    {
+        uint32_t code_point = 0;
+        size_t consumed = utf8_text_decode(text->bytes + index, text->length - index, &code_point);
+        if (editor_alters(code_point))
+        {
+            return NOTE_TEXT_EDITOR_ALTERS;
+        }
+        index += consumed;
+    }
+    return NOTE_TEXT_EDITABLE;
+}
+
 const char *_Nonnull note_text_bytes(const struct note_text *_Nonnull text)
 {
     return text->bytes;
