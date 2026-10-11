@@ -2,20 +2,57 @@
 
 A frameless Markdown notebook for Windows with a category drawer. Plain C (C23), Win32, no UI library.
 
-> **Status (2026-09-09):** first vertical slice. The app starts, scans `data/` next to the executable,
-> reconciles it with `categories.json` / `index.json`, and draws the index in the drawer of a frameless
-> window. No viewer, no editing, no reordering yet. Nothing to download yet (Phase 4).
+> **Status (2026-10-12):** the notebook is usable from source. It views and edits notes, keeps a short
+> history of every save, searches, filters, replaces, and manages categories, with settings for theme,
+> language and line numbers. Version 0.1.0. There is no packaged download yet (Phase 4); build it with the
+> command below and run `build/NeNeFolio.exe` with a `data/` folder next to it.
 
-## What it will be
+## What it does
 
-- A borderless window: a drawer on the left, a Markdown view/editor on the right.
-- The drawer is an index of `data/<category>/*.md`. Categories fold like an accordion, carry a colour and an
-  order, and notes are reordered by drag. There is no scrollbar; the drawer scrolls by wheel and keys.
-- A search box at the top of the drawer searches every note.
-- Colours and orders live in `data/categories.json` and `data/<category>/index.json`.
+- **A borderless window** with a drawer on the left and a Markdown view/editor on the right. It follows
+  the OS light/dark theme (or a fixed one) and Per-Monitor v2 DPI.
+- **The drawer is an index** of `data/<category>/*.md`. Categories fold like an accordion, carry a colour
+  and an order, and rows are reordered by drag (notes can move between categories). There is no scrollbar;
+  the drawer scrolls by wheel and keys. A search box at the top filters every note by name and body.
+- **View and edit.** Clicking a note renders its Markdown. Edit mode shows the plain text in the same
+  pane; Ctrl+S writes the file back atomically, keeps the original line endings, and writes nothing when
+  the text is unchanged. The body just before each save is kept as `data/.history/<category>/<note>/1.md`
+  … `5.md`, and any version can be restored into the editor as an undoable edit.
+- **Notes**: new untitled note with a first save, save as, rename (recoverable across restarts through
+  `data/.rename.json`), move to the Windows Recycle Bin together with its history.
+- **Categories**: create, rename, change colour, delete when empty, all from the right-click menu,
+  the **Actions** list, the command palette, or Ex commands.
+- **Find**: search inside the open note (Ctrl+F, `/`, `?`, `n`, `N`, F3), filter all notes
+  (Ctrl+Shift+F), and regular-expression replace in the edited body (a replace field or `:%s/…/…/g`).
+- **Keyboard first.** The index takes Vim-like keys (`j` `k` `gg` `G` `h` `l` Enter, Esc from the body),
+  `:` opens an Ex line (`:w` `:q` `:wq` `:q!` `:set …` and the commands above), and Ctrl+P / F1 / `:h`
+  open a command palette that also lists the key bindings of each pane. The editor accepts
+  Ctrl+h/j/k/l as arrows.
+- **Settings** (`data/settings.json`): line numbers for the edited text, theme `system` / `light` / `dark`,
+  and UI language 日本語 / English / 简体中文. Noto Sans JP and Noto Sans SC are bundled under `fonts/`.
+- **Limits**: a note body is at most 16 MiB and may not contain NUL; both are refused rather than truncated.
+- Failures (unreadable ledgers, unwritable files, a second instance on the same `data/`) are reported in
+  the window, never silently ignored.
 
-The requirements are in [SPECIFICATION.md](SPECIFICATION.md).
-The current keyboard commands are described in [キーバインドとコマンド](docs/KEY_BINDINGS.md) (Japanese; draft additions are marked).
+The requirements, one FR per row, are in [SPECIFICATION.md](SPECIFICATION.md).
+Every key and command is listed in [キーバインドとコマンド](docs/KEY_BINDINGS.md) (Japanese).
+
+## Where the data lives
+
+Everything is in the `data/` folder next to the executable; the app never writes anywhere else.
+
+| Path | Meaning |
+| --- | --- |
+| `data/categories.json` | category order, colour and folded/expanded state |
+| `data/<category>/index.json` | note order inside the category |
+| `data/<category>/<note>.md` | the note itself, written back as-is |
+| `data/.history/<category>/<note>/1.md` … `5.md` | the last five bodies before a save (1 is newest) |
+| `data/settings.json` | line numbers, theme, language (version 3; older versions are read) |
+| `data/.rename.json` | an in-flight rename, replayed on the next start |
+| `data/.nenefolio.lock` | refuses a second instance on the same `data/` |
+
+Folders whose name starts with `.` are not scanned as categories. Use a local NTFS folder; sync-folder
+placeholders are read as ordinary files, but symbolic links and junctions are refused for renames.
 
 ## How it is built
 
