@@ -2181,8 +2181,20 @@ static void focus_pane(const struct folio_window *_Nonnull self)
     }
 }
 
+/* application が置いた編集 RTF（folio_state_pane_edit_rtf）を編集本文へ流し込む。
+ * 編集の入口はすべてここを通る（ADR 0006 の #245 補正）。 */
+static void pour_edit_rtf(struct folio_window *_Nonnull self)
+{
+    if (self->pane != nullptr)
+    {
+        note_pane_edit(self->pane, folio_state_edit_rtf(self->state),
+                       folio_state_edit_rtf_length(self->state));
+    }
+}
+
 /* 選択中のノートを、いまのモードのまま右ペインへ写す（ADR 0013 の決定 4 の (iii)）。
- * 編集中は本文を平文で流し込むだけで、フォーカスは動かさない。 */
+ * 編集中は本文を閲覧と同じ UTF-8 RTF で流し込むだけで、フォーカスは動かさない（ADR 0006 の #245
+ * 補正）。 */
 static enum folio_state_outcome show_note(struct folio_window *_Nonnull self)
 {
     set_trash_completed(self, false);
@@ -2191,15 +2203,11 @@ static enum folio_state_outcome show_note(struct folio_window *_Nonnull self)
         render_pane(self);
         return FOLIO_STATE_READY;
     }
-    struct utf16_text *_Nullable wide = nullptr;
-    if (self->pane == nullptr ||
-        utf16_text_create(folio_state_pane_text(self->state),
-                          folio_state_pane_text_length(self->state), &wide) != UTF16_TEXT_CONVERTED)
+    if (self->pane == nullptr || folio_state_pane_edit_rtf(self->state) != FOLIO_STATE_READY)
     {
         return FOLIO_STATE_OUT_OF_MEMORY;
     }
-    note_pane_edit(self->pane, utf16_text_units(wide), utf16_text_length(wide));
-    utf16_text_destroy(wide);
+    pour_edit_rtf(self);
     InvalidateRect(self->handle, nullptr, FALSE);
     return FOLIO_STATE_READY;
 }
@@ -2216,20 +2224,17 @@ static enum folio_state_outcome enter_edit(struct folio_window *_Nonnull self)
     {
         return FOLIO_STATE_NOTHING_SELECTED;
     }
-    struct utf16_text *_Nullable wide = nullptr;
-    if (self->pane == nullptr ||
-        utf16_text_create(folio_state_pane_text(self->state),
-                          folio_state_pane_text_length(self->state), &wide) != UTF16_TEXT_CONVERTED)
+    /* RTF は begin_edit より先に作る。確保に失敗したら application は何も変えていない。 */
+    if (self->pane == nullptr || folio_state_pane_edit_rtf(self->state) != FOLIO_STATE_READY)
     {
         return FOLIO_STATE_OUT_OF_MEMORY;
     }
     enum folio_state_outcome outcome = folio_state_begin_edit(self->state);
     if (outcome == FOLIO_STATE_READY)
     {
-        note_pane_edit(self->pane, utf16_text_units(wide), utf16_text_length(wide));
+        pour_edit_rtf(self);
         InvalidateRect(self->handle, nullptr, FALSE);
     }
-    utf16_text_destroy(wide);
     return outcome;
 }
 
@@ -3257,13 +3262,18 @@ static void execute_new_command(struct folio_window *_Nonnull self, const char *
     {
         saved = folio_state_new_note(self->state, category);
     }
+    /* 無題になった後で編集 RTF を作る（無題の本文は空なので空の文書になる）。 */
+    if (saved == FOLIO_STATE_READY)
+    {
+        saved = folio_state_pane_edit_rtf(self->state);
+    }
     if (saved != FOLIO_STATE_READY)
     {
         command_failure(self, saved);
         return;
     }
     hide_command_surface(self);
-    note_pane_edit(self->pane, u"", 0);
+    pour_edit_rtf(self);
     redraw_drawer(self);
     InvalidateRect(self->handle, nullptr, FALSE);
     focus_pane(self);
@@ -4389,14 +4399,15 @@ static void click_settings_surface(struct folio_window *_Nonnull self, POINT poi
 }
 
 /* 版の本文を編集中の本文へ流し込む（ADR 0038 の決定 1 の 2）。閲覧中だったなら、先に保存済みの
- * 本文で RichEdit を編集にしてから全文を置き換えるので、Ctrl+Z 1 回で保存済みの本文へ戻る。 */
+ * 本文の編集 RTF で RichEdit を編集にしてから全文を置き換えるので、Ctrl+Z 1 回で保存済みの本文へ
+ * 戻る。版の本文は従来どおり UTF-16 の置き換えで入れる（ADR 0006 の #245 補正）。 */
 static enum folio_state_outcome pour_history(struct folio_window *_Nonnull self,
                                              const struct utf16_text *_Nonnull restored,
-                                             const struct utf16_text *_Nullable saved)
+                                             bool from_view)
 {
-    if (saved != nullptr)
+    if (from_view)
     {
-        note_pane_edit(self->pane, utf16_text_units(saved), utf16_text_length(saved));
+        pour_edit_rtf(self);
     }
     const char16_t *_Nonnull text = u"";
     size_t length = 0;
@@ -4412,25 +4423,18 @@ static enum folio_state_outcome pour_history(struct folio_window *_Nonnull self,
     return FOLIO_STATE_READY;
 }
 
-/* 採用の前に作る写し（版の本文と、閲覧中なら保存済みの本文）。確保に失敗しても application は
- * 何も変えていない。 */
-static bool history_units(const struct folio_window *_Nonnull self,
-                          const struct note_text *_Nonnull body,
-                          struct utf16_text *_Nullable *_Nonnull restored,
-                          struct utf16_text *_Nullable *_Nonnull saved)
+/* 採用の前に作る写し（版の本文の UTF-16 と、閲覧中なら保存済みの本文の編集 RTF）。確保に
+ * 失敗しても application は本文もモードも変えていない（編集 RTF の slot は前のまま保たれる）。 */
+static bool history_units(struct folio_window *_Nonnull self, const struct note_text *_Nonnull body,
+                          struct utf16_text *_Nullable *_Nonnull restored, bool *_Nonnull from_view)
 {
     if (utf16_text_create(note_text_bytes(body), note_text_length(body), restored) !=
         UTF16_TEXT_CONVERTED)
     {
         return false;
     }
-    if (folio_state_pane_mode(self->state) != PANE_MODE_VIEW)
-    {
-        return true;
-    }
-    return utf16_text_create(folio_state_pane_text(self->state),
-                             folio_state_pane_text_length(self->state),
-                             saved) == UTF16_TEXT_CONVERTED;
+    *from_view = folio_state_pane_mode(self->state) == PANE_MODE_VIEW;
+    return !*from_view || folio_state_pane_edit_rtf(self->state) == FOLIO_STATE_READY;
 }
 
 /* カーソルの版を採用する（決定 9・14）。写しは restore より先に作る。restore が閲覧から EDIT へ
@@ -4449,16 +4453,15 @@ static void adopt_history_row(struct folio_window *_Nonnull self)
         return;
     }
     struct utf16_text *_Nullable restored = nullptr;
-    struct utf16_text *_Nullable saved = nullptr;
-    enum folio_state_outcome outcome = history_units(self, body, &restored, &saved)
+    bool from_view = false;
+    enum folio_state_outcome outcome = history_units(self, body, &restored, &from_view)
                                            ? folio_state_restore_history(self->state, index)
                                            : FOLIO_STATE_OUT_OF_MEMORY;
     if (outcome == FOLIO_STATE_READY && restored != nullptr)
     {
-        outcome = pour_history(self, restored, saved);
+        outcome = pour_history(self, restored, from_view);
     }
     utf16_text_destroy(restored);
-    utf16_text_destroy(saved);
     if (outcome != FOLIO_STATE_READY)
     {
         command_failure(self, outcome);

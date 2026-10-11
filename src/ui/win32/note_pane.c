@@ -268,15 +268,11 @@ bool note_pane_translate(const struct note_pane *_Nonnull pane, const MSG *_Nonn
     return TranslateAcceleratorW(pane->handle, pane->navigation, &translated) != 0;
 }
 
-void note_pane_render(struct note_pane *_Nonnull pane, const char *_Nonnull rtf, size_t length)
+/* 閲覧と編集が共有する唯一の流し込み（ADR 0006 の #245 補正）。UTF-8 RTF で表示を置き換える。
+ * 差し替えの中で印を付ける（外の呼び出し元は複数経路あり、呼び忘れを構造で防ぐ・決定 3）。 */
+static void stream_rtf(struct note_pane *_Nonnull pane, const char *_Nonnull rtf, size_t length)
 {
-    if (pane->handle == nullptr)
-    {
-        return;
-    }
-    /* 差し替えの中で印を付ける（外の呼び出し元は 4 経路あり、呼び忘れを構造で防ぐ・決定 3）。 */
     pane->lines_stale = true;
-    SendMessageW(pane->handle, EM_SETREADONLY, TRUE, 0);
     struct rtf_stream stream = {.bytes = rtf, .remaining = length};
     EDITSTREAM editing = {.dwCookie = (DWORD_PTR)&stream, .dwError = 0, .pfnCallback = stream_in};
     /* 流し込みの途中で EN_VSCROLL が届いても、そこから表を作って印を落とさない（補正 5）。
@@ -287,21 +283,25 @@ void note_pane_render(struct note_pane *_Nonnull pane, const char *_Nonnull rtf,
     pane->streaming = false;
 }
 
-void note_pane_edit(struct note_pane *_Nonnull pane, const char16_t *_Nonnull units, size_t count)
+void note_pane_render(struct note_pane *_Nonnull pane, const char *_Nonnull rtf, size_t length)
 {
     if (pane->handle == nullptr)
     {
         return;
     }
-    pane->lines_stale = true;
+    SendMessageW(pane->handle, EM_SETREADONLY, TRUE, 0);
+    stream_rtf(pane, rtf, length);
+}
+
+void note_pane_edit(struct note_pane *_Nonnull pane, const char *_Nonnull rtf, size_t length)
+{
+    if (pane->handle == nullptr)
+    {
+        return;
+    }
     SendMessageW(pane->handle, EM_EXLIMITTEXT, 0, editor_limit);
     SendMessageW(pane->handle, EM_SETREADONLY, FALSE, 0);
-    /* BOM は付けない（付けると本文の U+FEFF になる・2026-09-09 実測）。 */
-    struct rtf_stream stream = {.bytes = (const char *)units, .remaining = count * sizeof *units};
-    EDITSTREAM editing = {.dwCookie = (DWORD_PTR)&stream, .dwError = 0, .pfnCallback = stream_in};
-    pane->streaming = true;
-    SendMessageW(pane->handle, EM_STREAMIN, SF_TEXT | SF_UNICODE, (LPARAM)&editing);
-    pane->streaming = false;
+    stream_rtf(pane, rtf, length);
     SendMessageW(pane->handle, EM_SETMODIFY, FALSE, 0);
 }
 

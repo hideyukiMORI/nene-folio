@@ -33,9 +33,10 @@ constexpr int note_pane_control_id = 3;
                                        const MSG *_Nonnull message);
 /* UTF-8 RTFを流し込んで表示を置き換え、読み取り専用に戻す（閲覧・ADR 0002の#236補正）。 */
 void note_pane_render(struct note_pane *_Nonnull pane, const char *_Nonnull rtf, size_t length);
-/* 本文を平文で流し込み、入力を受け付ける（編集）。フォーカスは動かさない
- * （区画を移すのは主窓の仕事・ADR 0013 の決定 1）。 */
-void note_pane_edit(struct note_pane *_Nonnull pane, const char16_t *_Nonnull units, size_t count);
+/* 閲覧と同じ UTF-8 RTF を流し込み、入力を受け付ける（編集）。流し込みの経路は閲覧と 1 本
+ * （ADR 0006 の #245 補正）。フォーカスは動かさない（区画を移すのは主窓の仕事・ADR 0013 の決定
+ * 1）。 */
+void note_pane_edit(struct note_pane *_Nonnull pane, const char *_Nonnull rtf, size_t length);
 /* いま表示している本文を変換せず UTF-16 で取り出す（閲覧なら描画後・編集なら未保存本文）。
  * 段落区切りは CR 1 つで、位置は note_pane_select / note_pane_selection と 1 対 1。
  * 保存時の改行正規化は core が担う（ADR 0006 の #234 補正）。

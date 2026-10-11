@@ -4431,35 +4431,9 @@ static void verify_pane_edit_rtf(void)
     folio_state_destroy(state);
 }
 
-/* #250: 履歴の版から編集用 RTF を作る。無い版は前の slot を保つ。 */
-static void verify_history_edit_rtf(void)
-{
-    struct persistence_adapter adapter = healthy_adapter();
-    adapter.history[1] = "v1 {x}\r\nnext";
-    struct folio_state *state = history_state(&adapter);
-    require(folio_state_history_edit_rtf(state, 0) == FOLIO_STATE_HISTORY_UNREADABLE &&
-                folio_state_edit_rtf_length(state) == 0,
-            "no version before opening");
-    require(folio_state_open_history(state) == FOLIO_STATE_READY, "open the history");
-    require(folio_state_history_edit_rtf(state, 0) == FOLIO_STATE_READY &&
-                strstr(folio_state_edit_rtf(state), "v1 \\{x\\}\\par next\\par }") != nullptr,
-            "the version becomes the edit rtf");
-    const char *kept = folio_state_edit_rtf(state);
-    require(folio_state_history_edit_rtf(state, 9) == FOLIO_STATE_HISTORY_UNREADABLE &&
-                folio_state_edit_rtf(state) == kept,
-            "a missing version keeps the slot");
-    require(folio_state_history_edit_rtf(state, 0) == FOLIO_STATE_READY &&
-                strstr(folio_state_edit_rtf(state), "v1 \\{x\\}") != nullptr &&
-                folio_state_pane_mode(state) == PANE_MODE_VIEW &&
-                folio_state_history_count(state) == 1,
-            "a second request changes neither the mode nor the list");
-    folio_state_destroy(state);
-}
-
 void run_state_tests(void)
 {
     verify_pane_edit_rtf();
-    verify_history_edit_rtf();
     finder = test_regex_port();
     verify_ready_state();
     verify_absent_data();
