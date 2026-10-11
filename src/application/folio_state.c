@@ -3278,17 +3278,6 @@ enum folio_state_outcome folio_state_pane_edit_rtf(struct folio_state *_Nonnull 
     return place_edit_rtf(state, state->body);
 }
 
-enum folio_state_outcome folio_state_history_edit_rtf(struct folio_state *_Nonnull state,
-                                                      size_t index)
-{
-    const struct note_text *_Nullable body = folio_state_history_body(state, index);
-    if (body == nullptr)
-    {
-        return FOLIO_STATE_HISTORY_UNREADABLE;
-    }
-    return place_edit_rtf(state, body);
-}
-
 const char *_Nonnull folio_state_edit_rtf(const struct folio_state *_Nonnull state)
 {
     return state->edit == nullptr ? "" : markdown_rtf_text(state->edit);

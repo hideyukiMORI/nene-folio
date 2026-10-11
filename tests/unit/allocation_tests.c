@@ -659,12 +659,11 @@ static bool plain_rtf_scenario(void)
 }
 
 /* 1 回の要求。OUT_OF_MEMORY なら slot（指す先と中身）が前のままであることを見る。 */
-static bool edit_rtf_request(struct folio_state *_Nonnull state, bool history)
+static bool edit_rtf_request(struct folio_state *_Nonnull state)
 {
     const char *before = folio_state_edit_rtf(state);
     size_t length = folio_state_edit_rtf_length(state);
-    enum folio_state_outcome outcome =
-        history ? folio_state_history_edit_rtf(state, 0) : folio_state_pane_edit_rtf(state);
+    enum folio_state_outcome outcome = folio_state_pane_edit_rtf(state);
     if (outcome == FOLIO_STATE_OUT_OF_MEMORY)
     {
         require(folio_state_edit_rtf(state) == before &&
@@ -677,11 +676,10 @@ static bool edit_rtf_request(struct folio_state *_Nonnull state, bool history)
     return true;
 }
 
-/* #250: application の 2 本の入口。現在の本文 → 履歴の版 → 現在の本文の順に置き換える。 */
+/* #250 / #245: application の入口。空の slot へ置き、次に置いてある slot を置き換える。 */
 static bool edit_rtf_scenario(void)
 {
     struct persistence_adapter *adapter = test_adapter_create(categories_text, notes_text);
-    test_adapter_history(adapter, 1, "first\nline");
     struct persistence_port port = test_adapter_port(adapter);
     struct appearance_port looks = test_appearance_port();
     struct regex_port finder = test_regex_port();
@@ -693,12 +691,7 @@ static bool edit_rtf_scenario(void)
     {
         outcome = folio_state_select_note(state, 0, 0);
     }
-    if (outcome == FOLIO_STATE_READY && edit_rtf_request(state, false))
-    {
-        outcome = folio_state_open_history(state);
-        completed = outcome == FOLIO_STATE_READY && edit_rtf_request(state, true) &&
-                    edit_rtf_request(state, false);
-    }
+    completed = outcome == FOLIO_STATE_READY && edit_rtf_request(state) && edit_rtf_request(state);
     require(outcome == FOLIO_STATE_READY || outcome == FOLIO_STATE_OUT_OF_MEMORY,
             "edit rtf allocation failure remains typed");
     folio_state_destroy(state);

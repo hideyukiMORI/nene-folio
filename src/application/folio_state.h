@@ -338,10 +338,6 @@ folio_state_pane_title(const struct folio_state *_Nonnull state);
  */
 [[nodiscard]] enum folio_state_outcome
 folio_state_pane_edit_rtf(struct folio_state *_Nonnull state);
-/* 履歴の一覧の index 行の版（folio_state_history_body）から同じ slot に置く。読めない行と範囲の外は
- * HISTORY_UNREADABLE、確保に失敗すれば OUT_OF_MEMORY で、どちらも前の slot を保つ。 */
-[[nodiscard]] enum folio_state_outcome
-folio_state_history_edit_rtf(struct folio_state *_Nonnull state, size_t index);
 /* slot の RTF（終端付き）。まだ作っていなければ空文字列と 0。次に slot を置き換えるまで有効。 */
 [[nodiscard]] const char *_Nonnull folio_state_edit_rtf(const struct folio_state *_Nonnull state);
 [[nodiscard]] size_t folio_state_edit_rtf_length(const struct folio_state *_Nonnull state);

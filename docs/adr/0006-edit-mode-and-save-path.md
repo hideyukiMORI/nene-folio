@@ -176,3 +176,27 @@ U+0007→U+0020、U+2028→U+000B、U+2029→U+000D に変え、RTF に替えて
 - application は名前のある文書の `begin_edit` と、選んだ版の `restore_history` を `FOLIO_STATE_NOTE_UNEDITABLE` で断り、
   本文・mode・一覧を変えない。編集のまま該当ノートへ切り替えたときは、その本文を閲覧で開く。
 - 閲覧・検索・別名保存・改名・ごみ箱は従来どおり。NUL（#232）と違い、読めなくはしない。入力経路は変えない。
+
+## 2026-10-12 の補正 2（#245 — 編集本文も閲覧と同じ RTF で流し込む）
+
+2026-10-12 の実測（`D:/NeNeFolio/agents/render-perf-1012/`・`242-rtf-edit-probe/`）で、編集へ入るときの平文の流し込み
+（`EM_STREAMIN` の SF_TEXT|SF_UNICODE）は閲覧より重く（512 KiB で 0.8〜1.7 秒）、同じ本文を閲覧と同じ UTF-8 生バイトの
+RTF で流すと 1 MiB で約 5 倍速かった。取り出した本文・face・高さ・Undo の段数・変更印は平文と同じで、違いは無い。
+
+- core の `markdown_rtf_plain`（#250）が編集用の RTF を作る。頭（fonttbl・colortbl・段落開始）は閲覧と共有し、本文は
+  Markdown を解釈せず `\`・`{`・`}` だけを escape して UTF-8 の生バイトで書き、改行（LF / CRLF / 孤立 CR の各 1 つ）を
+  `\par ` 1 つにし、末尾に `\par ` を 1 つ足す。`rtf_palette.text` は ui の編集色と同じ値なので `\cf1` のままでよい。
+- application の `folio_state_pane_edit_rtf`（現在の本文・無題は空）がその RTF を所有し、ui は `folio_state_edit_rtf` で
+  借りる。UTF-16 への変換は編集の入口から消える。履歴の版を戻すときは、閲覧中なら保存済みの本文をこの RTF で流してから、
+  版の本文を従来どおり UTF-16 の全文置き換え（`note_pane_replace`・Undo 1 単位）で入れるので、#250 で足した
+  `folio_state_history_edit_rtf` は使い手が無く、#245 で取り除いた。
+- ui の `note_pane_edit` は RTF（UTF-8・長さ付き）を受け、`note_pane_render` と同じ `EM_STREAMIN`
+  （`(CP_UTF8 << 16) | SF_USECODEPAGE | SF_RTF`）で流してから読み取り専用を解き、変更印を消す。流し込みの経路は閲覧と
+  編集で 1 本になる（決定 2 の「平文で流し込む」はこの補正で置き換える）。
+- 取り出し（`note_pane_text` の GT_RAWTEXT・#234 補正）・保存時の改行正規化・NUL 拒否・#242 の編集拒否は変えない。
+  RichEdit が平文でも RTF でも変える 3 文字（#242）は、この補正の前に application が断っている。
+
+対象検証は #234 の実 Win32 90 項目（保存・検索・置換の位置・Undo・変更印・改行・実保存と履歴）と #242 の RTF 編集 probe
+（往復 12 ケース・打鍵後の保持・書式・時間）を製品の経路で再測し、編集開始の時間を平文と比べる。
+結果は [確認記録](../quality/2026-10-12-rtf-edit-checks.md)。ASCII の本文では編集開始が平文の約 0.21〜0.24 倍になったが、
+CJK（3 バイトの字）の本文では 0.52〜0.75 倍にとどまる。
