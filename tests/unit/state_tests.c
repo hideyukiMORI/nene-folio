@@ -1915,6 +1915,8 @@ static const char *_Nonnull const expected_failure_lines[] = {
         "編集中の本文に壊れた文字、または扱えない文字があります。保存していません。",
     [FOLIO_STATE_NOTE_TOO_LARGE] =
         "本文が大きすぎて保存できません。上限は 16 MiB です。本文を減らしてから保存してください。",
+    [FOLIO_STATE_NOTE_UNEDITABLE] = "この本文には編集で保てない文字（U+0007・U+2028・U+"
+                                    "2029）があります。閲覧のままにしました。",
     [FOLIO_STATE_NOTE_STORE_FAILED] = "ノートを書き戻せませんでした。編集中の本文はそのままです。"
                                       "別名で保存するか、編集を破棄して読み直せます。",
     [FOLIO_STATE_HISTORY_FAILED] =
@@ -4286,6 +4288,93 @@ static void verify_trash_all(void)
     verify_trash_hidden_category_cursor();
 }
 
+/* #242: RichEdit が変える文字（U+2028）を含む保存済みノートは編集へ入らない。閲覧のままなので、
+ * RichEdit が返す変換後の本文を渡しても変更なしと判定され、切り替えで保存されない。 */
+static void verify_uneditable_begin_edit(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    adapter.note_body = "a\xE2\x80\xA8"
+                        "b";
+    struct folio_state *state = history_state(&adapter);
+    const char *body = folio_state_pane_text(state);
+    require(folio_state_begin_edit(state) == FOLIO_STATE_NOTE_UNEDITABLE &&
+                folio_state_pane_mode(state) == PANE_MODE_VIEW &&
+                folio_state_pane_text(state) == body,
+            "a body with U+2028 does not enter edit mode");
+    enum folio_note_change changed = FOLIO_NOTE_CHANGED;
+    require(folio_state_note_changed(state, u"a\vb", 3, &changed) == FOLIO_STATE_READY &&
+                changed == FOLIO_NOTE_SAME && adapter.note_writes == 0 && adapter.archives == 0,
+            "switching away from the refused note saves nothing");
+    folio_state_destroy(state);
+}
+
+/* #242: 履歴の版が変わる文字（U+2029）を含めば、本文・mode・一覧を変えずに断る。 */
+static void verify_uneditable_restore(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    adapter.note_body = "kept";
+    adapter.history[1] = "old\xE2\x80\xA9"
+                         "x";
+    adapter.history[2] = "fine";
+    struct folio_state *state = history_state(&adapter);
+    require(folio_state_open_history(state) == FOLIO_STATE_READY &&
+                folio_state_history_count(state) == 2,
+            "two versions are listed");
+    const char *body = folio_state_pane_text(state);
+    require(folio_state_restore_history(state, 0) == FOLIO_STATE_NOTE_UNEDITABLE &&
+                folio_state_pane_mode(state) == PANE_MODE_VIEW &&
+                folio_state_pane_text(state) == body && same_text(body, "kept") &&
+                folio_state_history_count(state) == 2 && adapter.note_writes == 0,
+            "a version with U+2029 is not restored");
+    require(folio_state_restore_history(state, 1) == FOLIO_STATE_READY &&
+                folio_state_pane_mode(state) == PANE_MODE_EDIT,
+            "a clean version is still restored");
+    folio_state_destroy(state);
+
+    adapter.note_body = "\x07"
+                        "bell";
+    state = history_state(&adapter);
+    require(folio_state_open_history(state) == FOLIO_STATE_READY &&
+                folio_state_restore_history(state, 1) == FOLIO_STATE_NOTE_UNEDITABLE &&
+                folio_state_pane_mode(state) == PANE_MODE_VIEW,
+            "a current body with U+0007 cannot be put into the editor by a restore");
+    folio_state_destroy(state);
+}
+
+/* #242: VT・U+FFFD・TAB・CRLF だけの本文は編集できる。編集のまま切り替えた先が変わる文字を
+ * 含むなら、その本文は editor へ渡さず閲覧で開く。 */
+static void verify_uneditable_neighbours(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    adapter.note_body = "a\vb\xEF\xBF\xBD\tc\r\nd";
+    struct folio_state *state = history_state(&adapter);
+    require(folio_state_begin_edit(state) == FOLIO_STATE_READY &&
+                folio_state_pane_mode(state) == PANE_MODE_EDIT,
+            "VT and U+FFFD stay editable");
+    folio_state_destroy(state);
+
+    adapter.note_body = "x\xE2\x80\xA8"
+                        "y";
+    adapter.rare_note = "one";
+    adapter.rare_body = "clean";
+    state = history_state(&adapter);
+    require(folio_state_begin_edit(state) == FOLIO_STATE_READY &&
+                folio_state_select_note(state, 0, 1) == FOLIO_STATE_READY &&
+                same_text(folio_state_document_name(state), "two") &&
+                folio_state_pane_mode(state) == PANE_MODE_VIEW,
+            "switching in edit mode to an uneditable body opens it in view mode");
+    require(folio_state_begin_edit(state) == FOLIO_STATE_NOTE_UNEDITABLE,
+            "the switched note still refuses edit mode");
+    folio_state_destroy(state);
+}
+
+static void verify_uneditable(void)
+{
+    verify_uneditable_begin_edit();
+    verify_uneditable_restore();
+    verify_uneditable_neighbours();
+}
+
 void run_state_tests(void)
 {
     finder = test_regex_port();
@@ -4333,6 +4422,7 @@ void run_state_tests(void)
     verify_save_as_edit_unsynced();
     verify_history_all();
     verify_history_gaps();
+    verify_uneditable();
     verify_later_units();
     verify_trash_all();
     verify_remove_categories();

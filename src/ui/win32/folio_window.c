@@ -2351,6 +2351,8 @@ static const bool inline_outcomes[] = {
     [FOLIO_STATE_REPLACE_STALE] = true,
     [FOLIO_STATE_HISTORY_EMPTY] = true,      /* ADR 0038 の決定 13: 面を開かず欄の 1 行 */
     [FOLIO_STATE_HISTORY_UNREADABLE] = true, /* 読めない版を選んだ。箱を出すほどではない */
+    /* 編集で保てない本文（#242）。面が開いていれば欄の 1 行。札からの編集は面が無いので箱 */
+    [FOLIO_STATE_NOTE_UNEDITABLE] = true,
     [FOLIO_STATE_REPLACE_BAD_SPAN] = true,
     /* 設定の失敗は欄の中の 1 行（ADR 0031 の決定 7）。設定画面は閉じずに理由を出す。
      * `:set number` の失敗も同じ値なので、他の Ex の失敗と同じく欄の 1 行になる。 */

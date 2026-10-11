@@ -1565,6 +1565,11 @@ enum folio_state_outcome folio_state_select_note(struct folio_state *_Nonnull st
         state->selected_note = note;
         cursor_to_selection(state);
         folio_state_close_history(state);
+        /* 編集のまま切り替えても、編集で保てない本文は editor へ渡さず閲覧で開く（#242）。 */
+        if (note_text_editability(state->body) == NOTE_TEXT_EDITOR_ALTERS)
+        {
+            state->mode = PANE_MODE_VIEW;
+        }
     }
     return outcome;
 }
@@ -1838,6 +1843,13 @@ enum folio_state_outcome folio_state_begin_edit(struct folio_state *_Nonnull sta
     if (state->document == FOLIO_DOCUMENT_NONE)
     {
         return FOLIO_STATE_NOTHING_SELECTED;
+    }
+    /* RichEdit が流し込みで変える文字があると、何も打たずに切り替えるだけで md が変わる。
+     * 編集へ入る前に断り、閲覧のままにする（Issue #242）。無題の本文は空から始まる。 */
+    if (state->document == FOLIO_DOCUMENT_NAMED &&
+        note_text_editability(state->body) == NOTE_TEXT_EDITOR_ALTERS)
+    {
+        return FOLIO_STATE_NOTE_UNEDITABLE;
     }
     state->mode = PANE_MODE_EDIT;
     return FOLIO_STATE_READY;
@@ -3360,11 +3372,17 @@ const struct note_text *_Nullable folio_state_history_body(const struct folio_st
 enum folio_state_outcome folio_state_restore_history(struct folio_state *_Nonnull state,
                                                      size_t index)
 {
-    if (folio_state_history_body(state, index) == nullptr)
+    const struct note_text *_Nullable body = folio_state_history_body(state, index);
+    if (body == nullptr)
     {
         return FOLIO_STATE_HISTORY_UNREADABLE;
     }
-    /* 一覧は名前のある文書でしか開けないので、begin_edit は READY を返す（決定 9）。 */
+    /* 選んだ版も editor へ渡すと別の文字に変わるなら、本文も mode も一覧も変えない（#242）。 */
+    if (note_text_editability(body) == NOTE_TEXT_EDITOR_ALTERS)
+    {
+        return FOLIO_STATE_NOTE_UNEDITABLE;
+    }
+    /* 一覧は名前のある文書でしか開けない。今の本文が編集で保てないときは begin_edit が断る。 */
     return folio_state_begin_edit(state);
 }
 
@@ -3385,6 +3403,7 @@ static const enum ui_text failure_lines[] = {
     [FOLIO_STATE_NOT_EDITING] = UI_TEXT_FAILURE_NOT_EDITING,
     [FOLIO_STATE_NOTE_MALFORMED] = UI_TEXT_FAILURE_NOTE_MALFORMED,
     [FOLIO_STATE_NOTE_TOO_LARGE] = UI_TEXT_FAILURE_NOTE_TOO_LARGE,
+    [FOLIO_STATE_NOTE_UNEDITABLE] = UI_TEXT_FAILURE_NOTE_UNEDITABLE,
     [FOLIO_STATE_NOTE_STORE_FAILED] = UI_TEXT_FAILURE_NOTE_STORE_FAILED,
     [FOLIO_STATE_HISTORY_FAILED] = UI_TEXT_FAILURE_HISTORY_FAILED,
     [FOLIO_STATE_UNSAVED_CHANGES] = UI_TEXT_FAILURE_UNSAVED_CHANGES,

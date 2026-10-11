@@ -6,6 +6,7 @@
 #define NENEFOLIO_NOTE_TEXT_H
 
 #include "line_ending.h"
+#include "note_text_editability.h"
 #include "note_text_outcome.h"
 
 #include <stddef.h>
@@ -25,6 +26,9 @@ note_text_from_editor(const char *_Nonnull bytes, size_t length, enum line_endin
 /* バイト列として同じか。同じなら書き戻さない（ADR 0006）。 */
 [[nodiscard]] bool note_text_equals(const struct note_text *_Nonnull text,
                                     const struct note_text *_Nonnull other);
+/* 編集の RichEdit へ渡すと別の文字に変わる文字を含むか（Issue #242）。確保しない。 */
+[[nodiscard]] enum note_text_editability
+note_text_editability(const struct note_text *_Nonnull text);
 /* 終端付き。text が生きている間だけ有効。 */
 [[nodiscard]] const char *_Nonnull note_text_bytes(const struct note_text *_Nonnull text);
 [[nodiscard]] size_t note_text_length(const struct note_text *_Nonnull text);

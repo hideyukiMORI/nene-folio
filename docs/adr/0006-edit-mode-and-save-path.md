@@ -165,3 +165,14 @@ CP_UTF8を使わない決定4は維持し、UTF-16の取得を次の1経路へ�
 
 APIの根拠: [GETTEXTEX](https://learn.microsoft.com/en-us/windows/win32/api/richedit/ns-richedit-gettextex)。
 対象検証は保存/検索/置換/行番号の直接の境界に限り、物理IMEや無関係な画面操作は繰り返さない。
+
+## 2026-10-12 の補正（#242 — 編集で保てない文字を含む本文）
+
+RichEdit は平文の流し込み（`EM_STREAMIN` の SF_TEXT|SF_UNICODE・`EM_SETTEXTEX`・`EM_REPLACESEL`・TOM）で
+U+0007→U+0020、U+2028→U+000B、U+2029→U+000D に変え、RTF に替えても製品の face では同じに変わる（2026-10-12 実測）。
+変更判定は元の本文との比較なので、該当ノートは編集に入って何も打たずに切り替えるだけで md が書き換わっていた。
+
+- core の `note_text_editability` が 3 文字の表 1 か所で `NOTE_TEXT_EDITOR_ALTERS` を返す。確保しない。
+- application は名前のある文書の `begin_edit` と、選んだ版の `restore_history` を `FOLIO_STATE_NOTE_UNEDITABLE` で断り、
+  本文・mode・一覧を変えない。編集のまま該当ノートへ切り替えたときは、その本文を閲覧で開く。
+- 閲覧・検索・別名保存・改名・ごみ箱は従来どおり。NUL（#232）と違い、読めなくはしない。入力経路は変えない。
