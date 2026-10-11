@@ -57,6 +57,7 @@ struct folio_state
     struct note_ledger *_Nonnull *_Nullable notes; /* categories と同じ数・同じ順 */
     size_t notes_count;
     struct markdown_rtf *_Nullable pane; /* 選択中のノートの表示値。無ければ空の文書 */
+    struct markdown_rtf *_Nullable edit; /* 編集用の平文 RTF（#250）。作るまでは null */
     struct note_text *_Nullable body;    /* 最後に読んだ本文。何も選んでいなければ空 */
     enum pane_mode mode;
     int scroll; /* ドロワーのスクロール量（要求量・画素・0 以上）。上限は core が決める */
@@ -3257,6 +3258,47 @@ size_t folio_state_pane_rtf_length(const struct folio_state *_Nonnull state)
     return markdown_rtf_length(state->pane);
 }
 
+/* 本文から編集用の RTF を作って slot に置く。確保に失敗すれば前の slot を保つ（C-008）。 */
+static enum folio_state_outcome place_edit_rtf(struct folio_state *_Nonnull state,
+                                               const struct note_text *_Nonnull body)
+{
+    struct markdown_rtf *_Nullable rendered = nullptr;
+    if (markdown_rtf_plain(body, state->palette, ui_font_face(folio_state_language(state)),
+                           &rendered) != MARKDOWN_RTF_CONVERTED)
+    {
+        return FOLIO_STATE_OUT_OF_MEMORY;
+    }
+    markdown_rtf_destroy(state->edit);
+    state->edit = rendered;
+    return FOLIO_STATE_READY;
+}
+
+enum folio_state_outcome folio_state_pane_edit_rtf(struct folio_state *_Nonnull state)
+{
+    return place_edit_rtf(state, state->body);
+}
+
+enum folio_state_outcome folio_state_history_edit_rtf(struct folio_state *_Nonnull state,
+                                                      size_t index)
+{
+    const struct note_text *_Nullable body = folio_state_history_body(state, index);
+    if (body == nullptr)
+    {
+        return FOLIO_STATE_HISTORY_UNREADABLE;
+    }
+    return place_edit_rtf(state, body);
+}
+
+const char *_Nonnull folio_state_edit_rtf(const struct folio_state *_Nonnull state)
+{
+    return state->edit == nullptr ? "" : markdown_rtf_text(state->edit);
+}
+
+size_t folio_state_edit_rtf_length(const struct folio_state *_Nonnull state)
+{
+    return state->edit == nullptr ? 0 : markdown_rtf_length(state->edit);
+}
+
 void folio_state_close_history(struct folio_state *_Nonnull state)
 {
     for (size_t index = 0; index < state->history_count; ++index)
@@ -3479,6 +3521,7 @@ void folio_state_destroy(struct folio_state *_Nullable state)
     note_corpus_destroy(state->rename_corpus);
     category_ledger_destroy(state->categories);
     markdown_rtf_destroy(state->pane);
+    markdown_rtf_destroy(state->edit);
     note_text_destroy(state->body);
     utf8_text_destroy(state->search_term);
     utf8_text_destroy(state->index_term);

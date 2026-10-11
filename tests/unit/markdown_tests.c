@@ -226,8 +226,85 @@ static void verify_fonttbl(void)
     markdown_rtf_destroy(rtf);
 }
 
+static const char plain_start[] = "\\pard\\sa160\\sl300\\slmult1\\cf1 ";
+
+/* 編集用の RTF（#250）が頭 + 段落の書式 + expected と完全に一致するか。 */
+static void expect_plain(const char *_Nonnull input, size_t input_length,
+                         const char *_Nonnull expected)
+{
+    struct note_text *text = nullptr;
+    require(note_text_create(input, input_length, &text) == NOTE_TEXT_ACCEPTED, "plain note");
+    struct markdown_rtf *rtf = nullptr;
+    require(markdown_rtf_plain(text, rtf_palette_for(FOLIO_THEME_LIGHT),
+                               ui_font_face(FOLIO_LANGUAGE_JA), &rtf) == MARKDOWN_RTF_CONVERTED,
+            "plain convert");
+    const char *whole = markdown_rtf_text(rtf);
+    size_t head = strlen(header);
+    size_t start = strlen(plain_start);
+    require(markdown_rtf_length(rtf) == head + start + strlen(expected) &&
+                memcmp(whole, header, head) == 0 && memcmp(whole + head, plain_start, start) == 0,
+            "plain frame");
+    if (!same_text(whole + head + start, expected))
+    {
+        fprintf(stderr, "  plain: %s\n  got: %s\n", input, whole + head + start);
+        require(false, "plain body");
+    }
+    bool escaped = strchr(input, '\\') != nullptr; /* `\\b` は escape した字で、書式ではない */
+    require((escaped || strstr(whole + head, "\\b") == nullptr) &&
+                strstr(whole + head, "\\f1") == nullptr &&
+                strstr(whole + head, "\\fs") == nullptr && strstr(whole + head, "\\ul") == nullptr,
+            "the plain body has no markdown formatting");
+    markdown_rtf_destroy(rtf);
+    note_text_destroy(text);
+}
+
+static void verify_plain(void)
+{
+    /* 改行の 3 形はどれも \par 1 つ。CRLF を 2 つにしない。 */
+    expect_plain("A\nB", 3, "A\\par B\\par }");
+    expect_plain("A\r\nB", 4, "A\\par B\\par }");
+    expect_plain("A\rB", 3, "A\\par B\\par }");
+    expect_plain("A\r\n\r\nB", 6, "A\\par \\par B\\par }");
+    expect_plain("A\n\rB", 4, "A\\par \\par B\\par }");
+    /* 構文記号だけ escape し、TAB・VT・制御文字・UTF-8 は生のまま。 */
+    expect_plain("a\\b{c}d", 7, "a\\\\b\\{c\\}d\\par }");
+    expect_plain("A\tB\vC\x01"
+                 "D",
+                 7,
+                 "A\tB\vC\x01"
+                 "D\\par }");
+    expect_plain("\xE6\x97\xA5\xE6\x9C\xAC", 6, "\xE6\x97\xA5\xE6\x9C\xAC\\par }");
+    /* 末尾の改行を保つ。 */
+    expect_plain("A\n", 2, "A\\par \\par }");
+    expect_plain("A\r", 2, "A\\par \\par }");
+    expect_plain("A\r\n", 3, "A\\par \\par }");
+    /* Markdown の記法を解釈しない。 */
+    expect_plain("# H\n- x\n`c`\n**b** [l](u)", 24,
+                 "# H\\par - x\\par `c`\\par **b** [l](u)\\par }");
+    expect_plain("```\ncode\n```", 12, "```\\par code\\par ```\\par }");
+    /* 空の本文は頭 + \par + }。頭は閲覧の空の文書と同じバイト列で始まる。 */
+    expect_plain("", 0, "\\par }");
+    struct markdown_rtf *view = nullptr;
+    require(markdown_rtf_empty(rtf_palette_for(FOLIO_THEME_LIGHT), ui_font_face(FOLIO_LANGUAGE_JA),
+                               &view) == MARKDOWN_RTF_CONVERTED,
+            "empty view");
+    struct note_text *text = nullptr;
+    require(note_text_create("", 0, &text) == NOTE_TEXT_ACCEPTED, "empty plain note");
+    struct markdown_rtf *plain = nullptr;
+    require(markdown_rtf_plain(text, rtf_palette_for(FOLIO_THEME_LIGHT),
+                               ui_font_face(FOLIO_LANGUAGE_JA), &plain) == MARKDOWN_RTF_CONVERTED,
+            "empty plain");
+    size_t shared = markdown_rtf_length(view) - 1;
+    require(memcmp(markdown_rtf_text(view), markdown_rtf_text(plain), shared) == 0,
+            "the plain header is the view header");
+    markdown_rtf_destroy(plain);
+    markdown_rtf_destroy(view);
+    note_text_destroy(text);
+}
+
 void run_markdown_tests(void)
 {
+    verify_plain();
     verify_paragraphs();
     verify_fonttbl();
     verify_unicode();

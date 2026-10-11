@@ -5,6 +5,7 @@
 #include "drawer_layout.h"
 #include "folio_settings.h"
 #include "folio_state.h"
+#include "markdown_rtf.h"
 #include "name_list.h"
 #include "note_ledger.h"
 #include "note_name.h"
@@ -14,6 +15,7 @@
 #include "regex_port.h"
 #include "rename_plan.h"
 #include "replace_edit.h"
+#include "rtf_palette.h"
 #include "ui_font.h"
 #include "unit_tests.h"
 
@@ -4375,8 +4377,89 @@ static void verify_uneditable(void)
     verify_uneditable_neighbours();
 }
 
+/* 編集用 RTF の本文部分（頭の後の段落の書式から）。 */
+static const char *_Nonnull edit_rtf_tail(const char *_Nonnull rtf)
+{
+    const char *tail = strstr(rtf, "\\pard");
+    require(tail != nullptr, "the edit rtf has a paragraph");
+    return tail == nullptr ? rtf : tail;
+}
+
+/* folio_state_pane_text と同じ本文を core で直接変換した本文部分と同じか。 */
+static void expect_edit_rtf_matches_pane_text(const struct folio_state *_Nonnull state)
+{
+    struct note_text *text = nullptr;
+    require(note_text_create(folio_state_pane_text(state), folio_state_pane_text_length(state),
+                             &text) == NOTE_TEXT_ACCEPTED,
+            "pane text");
+    struct markdown_rtf *plain = nullptr;
+    require(markdown_rtf_plain(text, rtf_palette_for(FOLIO_THEME_LIGHT),
+                               ui_font_face(FOLIO_LANGUAGE_JA), &plain) == MARKDOWN_RTF_CONVERTED,
+            "core plain");
+    require(same_text(edit_rtf_tail(folio_state_edit_rtf(state)),
+                      edit_rtf_tail(markdown_rtf_text(plain))) &&
+                folio_state_edit_rtf_length(state) == strlen(folio_state_edit_rtf(state)),
+            "the edit rtf is the core plain rtf of the pane text");
+    markdown_rtf_destroy(plain);
+    note_text_destroy(text);
+}
+
+/* #250: 現在の本文と無題から編集用 RTF を作る。閲覧の pane は変えない。 */
+static void verify_pane_edit_rtf(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    require(same_text(folio_state_edit_rtf(state), "") && folio_state_edit_rtf_length(state) == 0,
+            "no edit rtf before the first request");
+    require(folio_state_select_note(state, 0, 1) == FOLIO_STATE_READY, "select B / two");
+    const char *pane = folio_state_pane_rtf(state);
+    require(folio_state_pane_edit_rtf(state) == FOLIO_STATE_READY, "edit rtf of the note");
+    expect_edit_rtf_matches_pane_text(state);
+    require(strstr(folio_state_edit_rtf(state), "# Hello\\par \\par body\\par }") != nullptr &&
+                strstr(folio_state_edit_rtf(state), "\\b\\cf2") == nullptr &&
+                strstr(folio_state_edit_rtf(state), ui_font_face(FOLIO_LANGUAGE_JA)) != nullptr,
+            "the markdown is kept as plain text with the view face");
+    require(folio_state_pane_edit_rtf(state) == FOLIO_STATE_READY, "a second request");
+    expect_edit_rtf_matches_pane_text(state);
+    require(folio_state_pane_rtf(state) == pane && folio_state_pane_mode(state) == PANE_MODE_VIEW,
+            "the view pane and the mode are untouched");
+    require(folio_state_new_note(state, 1) == FOLIO_STATE_READY, "new untitled in A");
+    require(folio_state_pane_edit_rtf(state) == FOLIO_STATE_READY, "edit rtf of the untitled");
+    require(same_text(edit_rtf_tail(folio_state_edit_rtf(state)),
+                      "\\pard\\sa160\\sl300\\slmult1\\cf1 \\par }"),
+            "the untitled edit rtf is empty");
+    folio_state_destroy(state);
+}
+
+/* #250: 履歴の版から編集用 RTF を作る。無い版は前の slot を保つ。 */
+static void verify_history_edit_rtf(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    adapter.history[1] = "v1 {x}\r\nnext";
+    struct folio_state *state = history_state(&adapter);
+    require(folio_state_history_edit_rtf(state, 0) == FOLIO_STATE_HISTORY_UNREADABLE &&
+                folio_state_edit_rtf_length(state) == 0,
+            "no version before opening");
+    require(folio_state_open_history(state) == FOLIO_STATE_READY, "open the history");
+    require(folio_state_history_edit_rtf(state, 0) == FOLIO_STATE_READY &&
+                strstr(folio_state_edit_rtf(state), "v1 \\{x\\}\\par next\\par }") != nullptr,
+            "the version becomes the edit rtf");
+    const char *kept = folio_state_edit_rtf(state);
+    require(folio_state_history_edit_rtf(state, 9) == FOLIO_STATE_HISTORY_UNREADABLE &&
+                folio_state_edit_rtf(state) == kept,
+            "a missing version keeps the slot");
+    require(folio_state_history_edit_rtf(state, 0) == FOLIO_STATE_READY &&
+                strstr(folio_state_edit_rtf(state), "v1 \\{x\\}") != nullptr &&
+                folio_state_pane_mode(state) == PANE_MODE_VIEW &&
+                folio_state_history_count(state) == 1,
+            "a second request changes neither the mode nor the list");
+    folio_state_destroy(state);
+}
+
 void run_state_tests(void)
 {
+    verify_pane_edit_rtf();
+    verify_history_edit_rtf();
     finder = test_regex_port();
     verify_ready_state();
     verify_absent_data();

@@ -102,6 +102,15 @@ static enum markdown_line_kind classify(const char *_Nonnull line, size_t length
 }
 
 /* 検証済みUTF-8を保持し、RTFの構文記号だけをescapeする（ADR 0002の#236補正）。 */
+static void append_escaped(struct text_buffer *_Nonnull out, const char *_Nonnull byte)
+{
+    if (*byte == '\\' || *byte == '{' || *byte == '}')
+    {
+        text_buffer_append_text(out, "\\");
+    }
+    text_buffer_append(out, byte, 1);
+}
+
 static void append_plain(struct text_buffer *_Nonnull out, const char *_Nonnull text, size_t length)
 {
     for (size_t index = 0; index < length; ++index)
@@ -110,11 +119,7 @@ static void append_plain(struct text_buffer *_Nonnull out, const char *_Nonnull 
         {
             continue;
         }
-        if (text[index] == '\\' || text[index] == '{' || text[index] == '}')
-        {
-            text_buffer_append_text(out, "\\");
-        }
-        text_buffer_append(out, text + index, 1);
+        append_escaped(out, text + index);
     }
 }
 
@@ -420,25 +425,50 @@ static void render_document(struct text_buffer *_Nonnull out, const char *_Nonnu
     text_buffer_append_text(out, document_footer);
 }
 
-/* text が nullptr なら空の文書。引数を 4 つに収めるため、本文の有無はここで見る（決定 5）。 */
-static enum markdown_rtf_outcome build(struct markdown_rtf *_Nullable *_Nonnull out,
-                                       struct rtf_palette palette, const char *_Nonnull face,
-                                       const struct note_text *_Nullable text)
+/* 編集用の本文（#250）。Markdown を解釈せず、UTF-8 の生バイトを構文記号だけ escape して書く。
+ * 改行は LF・CRLF・孤立 CR のそれぞれ 1 つを `\par ` 1 つにする（CRLF を 2 つにしない）。
+ * 末尾に `\par ` を 1 つ足して末尾の改行を保つ（最後の段落記号は RichEdit が吸収する）。 */
+static void render_plain(struct text_buffer *_Nonnull out, const char *_Nonnull text, size_t length)
 {
-    const char *_Nonnull bytes = text == nullptr ? "" : note_text_bytes(text);
-    size_t length = text == nullptr ? 0 : note_text_length(text);
+    text_buffer_append_text(out, paragraph_start);
+    for (size_t index = 0; index < length; ++index)
+    {
+        if (text[index] != '\r' && text[index] != '\n')
+        {
+            append_escaped(out, text + index);
+            continue;
+        }
+        if (text[index] == '\r' && index + 1 < length && text[index + 1] == '\n')
+        {
+            ++index;
+        }
+        text_buffer_append_text(out, "\\par ");
+    }
+    text_buffer_append_text(out, "\\par ");
+    text_buffer_append_text(out, document_footer);
+}
+
+/* 頭まで書いた入れ物を作る。確保に失敗すれば nullptr。 */
+static struct markdown_rtf *_Nullable begin(struct rtf_palette palette, const char *_Nonnull face)
+{
     struct markdown_rtf *_Nullable rtf = calloc(1, sizeof *rtf);
     if (rtf == nullptr)
     {
-        return MARKDOWN_RTF_OUT_OF_MEMORY;
+        return nullptr;
     }
     if (text_buffer_create(&rtf->buffer) != TEXT_BUFFER_ACCEPTED)
     {
         free(rtf);
-        return MARKDOWN_RTF_OUT_OF_MEMORY;
+        return nullptr;
     }
     append_header(rtf->buffer, palette, face);
-    render_document(rtf->buffer, bytes, length);
+    return rtf;
+}
+
+/* 書き終えた入れ物を確定して out へ渡す。失敗すれば入れ物を捨て、out は触らない。 */
+static enum markdown_rtf_outcome finish(struct markdown_rtf *_Nonnull rtf,
+                                        struct markdown_rtf *_Nullable *_Nonnull out)
+{
     if (text_buffer_finish(rtf->buffer) != TEXT_BUFFER_ACCEPTED)
     {
         markdown_rtf_destroy(rtf);
@@ -452,13 +482,38 @@ enum markdown_rtf_outcome markdown_rtf_create(const struct note_text *_Nonnull t
                                               struct rtf_palette palette, const char *_Nonnull face,
                                               struct markdown_rtf *_Nullable *_Nonnull out)
 {
-    return build(out, palette, face, text);
+    struct markdown_rtf *_Nullable rtf = begin(palette, face);
+    if (rtf == nullptr)
+    {
+        return MARKDOWN_RTF_OUT_OF_MEMORY;
+    }
+    render_document(rtf->buffer, note_text_bytes(text), note_text_length(text));
+    return finish(rtf, out);
 }
 
 enum markdown_rtf_outcome markdown_rtf_empty(struct rtf_palette palette, const char *_Nonnull face,
                                              struct markdown_rtf *_Nullable *_Nonnull out)
 {
-    return build(out, palette, face, nullptr);
+    struct markdown_rtf *_Nullable rtf = begin(palette, face);
+    if (rtf == nullptr)
+    {
+        return MARKDOWN_RTF_OUT_OF_MEMORY;
+    }
+    render_document(rtf->buffer, "", 0);
+    return finish(rtf, out);
+}
+
+enum markdown_rtf_outcome markdown_rtf_plain(const struct note_text *_Nonnull text,
+                                             struct rtf_palette palette, const char *_Nonnull face,
+                                             struct markdown_rtf *_Nullable *_Nonnull out)
+{
+    struct markdown_rtf *_Nullable rtf = begin(palette, face);
+    if (rtf == nullptr)
+    {
+        return MARKDOWN_RTF_OUT_OF_MEMORY;
+    }
+    render_plain(rtf->buffer, note_text_bytes(text), note_text_length(text));
+    return finish(rtf, out);
 }
 
 const char *_Nonnull markdown_rtf_text(const struct markdown_rtf *_Nonnull rtf)
