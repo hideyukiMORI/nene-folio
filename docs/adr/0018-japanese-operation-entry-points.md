@@ -99,3 +99,11 @@ probe では登録表の別名と ADR 0039 で足す予定の別名（23 語）�
 最長の組 `newcategory` + `newcat` は 131 px で左端 285 px、`renamecategory` + `rencat` と `deletecategory` + `delcat` は 152 px で左端 264 px。
 ラベル（「新しいカテゴリ」・`New category`・「カテゴリ名を変更」・`Rename category`・`Delete category` ほか）の字の右端は最大 115 px で、
 **重ならない**（隙間は最小 148 px。120 DPI で 176 px・144 DPI で 205 px）。
+
+## 2026-10-12 の補正（#260・決定本文は書き換えない）
+
+**現象。** Ex の欄の失敗の 1 行で「この本文には編集で保てない文字（U+0007・U+2028・U+2029）があります。閲覧のままにしました。」の「・」が空白に、「）」が次の字に重なり、末尾の「。」が消える（#258 の実機確認 v06・`D:/NeNeFolio/check/2026-10-12/258/v06.png`）。同じ文言を字間 0 で描く右ペイン下端の 1 行は正しい。
+
+**原因（実測・`D:/NeNeFolio/agents/260-probe/`）。** DC に `SetTextCharacterExtra ≠ 0` が掛かっていると GDI のフォントリンクが壊れる。`DrawTextW` はリンク先の狭い全角記号（96 DPI で 5 px）の位置を前の字へ食い込ませて末尾を落とし、`ExtTextOutW` はリンクを止めて豆腐にし、`GetTextExtentPoint32W` はリンク先を数えない。矩形を 2 倍にしても `DT_END_ELLIPSIS` を外しても同じで、字間 0 ならすべて正しい。#186 の補正で見た「Consolas だけの行では DT_CALCRECT が字間を含めず、フォントリンクの行では含める」も同じ現象の一面だった。
+
+**直し。** 字間は Consolas だけで描ける行（ASCII だけの行）にだけ掛ける。ASCII 以外の UTF-16 単位を含む行は、描く経路 `draw_utf8`（札の字も同じ `draw_units` を通す）が字間 0 で描き、測る経路 `measure_utf8` が字間 0 の `DT_CALCRECT` をそのまま返す。DC に字間を掛ける場所と値は変えず、抑えるのは描く・測る関数の中だけ（ARC-001）。見た目の変化は、日本語・中国語を含む行の字間が 96 DPI で 1 字 1 px 詰まること。ASCII だけの行は変わらない。drawer は Consolas で番号だけを字間つきで描くので対象外。

@@ -937,10 +937,46 @@ static int wide_units(const char *_Nonnull text, char16_t *_Nonnull out)
     return (int)written;
 }
 
-/* UTF-8 の 1 行を、device に掛かっている字間込みで測る。測れなければ 0。
- * DT_CALCRECT は字間を、Consolas だけの行では含めず、フォントリンクの行では含める。
- * 描くときはどちらも 1 字ごとに付くので、字間 0 で測って単位数 × 字間を足す
- * （ADR 0018 の補正 #186）。 */
+/* ASCII 以外の UTF-16 単位を 1 つでも含む行は、GDI のフォントリンクで描く行である。
+ * DC に字間（SetTextCharacterExtra ≠ 0）が掛かっているとフォントリンクが壊れるので、
+ * その行は字間 0 で測り、字間 0 で描く（ADR 0018 の補正 #260）。 */
+static bool font_linked_units(const char16_t *_Nonnull units, int count)
+{
+    for (int index = 0; index < count; index++)
+    {
+        if (units[index] >= 0x80)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+/* UTF-8 の 1 行を UTF-16 へ写して描く唯一の経路。ASCII だけの行は device の字間のまま、
+ * フォントリンクで描く行は字間 0 にして描き、元の字間へ戻す（ADR 0018 の補正 #260）。
+ * 写せなければ何も描かない。 */
+static void draw_units(HDC device, const char *_Nonnull text, RECT bounds, UINT format)
+{
+    char16_t units[draw_unit_limit];
+    int count = wide_units(text, units);
+    if (count == 0)
+    {
+        return;
+    }
+    bool linked = font_linked_units(units, count);
+    int tracking = linked ? SetTextCharacterExtra(device, 0) : 0;
+    tracking = tracking == tracking_unavailable ? 0 : tracking;
+    DrawTextW(device, units, count, &bounds, format);
+    if (linked)
+    {
+        SetTextCharacterExtra(device, tracking);
+    }
+}
+
+/* UTF-8 の 1 行を、描く経路 draw_units と同じ字間で測る。測れなければ 0。
+ * 字間 0 で DT_CALCRECT を取り、ASCII だけの行のときだけ単位数 × 字間を足す
+ * （Consolas だけの行では DT_CALCRECT が字間を含めない）。フォントリンクで描く行は
+ * 字間 0 で描くので、DT_CALCRECT の値そのままが描いた幅になる（ADR 0018 の補正 #260）。 */
 static int measure_utf8(HDC device, const char *_Nonnull text)
 {
     char16_t units[draw_unit_limit];
@@ -954,20 +990,14 @@ static int measure_utf8(HDC device, const char *_Nonnull text)
     RECT measured = {0, 0, 0, 0};
     DrawTextW(device, units, count, &measured, DT_SINGLELINE | DT_NOPREFIX | DT_CALCRECT);
     SetTextCharacterExtra(device, tracking);
-    return measured.right - measured.left + count * tracking;
+    int extra = font_linked_units(units, count) ? 0 : count * tracking;
+    return measured.right - measured.left + extra;
 }
 
 /* UTF-8 を 1 行で描く。bounds に収まらなければ末尾を省略記号にする（ADR 0011 の決定 4）。 */
 static void draw_utf8(HDC device, const char *_Nonnull text, RECT bounds)
 {
-    char16_t units[draw_unit_limit];
-    int count = wide_units(text, units);
-    if (count == 0)
-    {
-        return;
-    }
-    DrawTextW(device, units, count, &bounds,
-              DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX | DT_END_ELLIPSIS);
+    draw_units(device, text, bounds, DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX | DT_END_ELLIPSIS);
 }
 
 /* 右ペインの頭の帯（窓を掴んで動かせる帯）。 */
@@ -1207,9 +1237,8 @@ static void draw_chip(const struct folio_window *_Nonnull self, HDC device, enum
     {
         SetTextColor(device, self->palette.header_text);
     }
-    char16_t units[draw_unit_limit];
-    int count = wide_units(chip_text(self, chip), units);
-    DrawTextW(device, units, count, &bounds, DT_SINGLELINE | DT_VCENTER | DT_CENTER | DT_NOPREFIX);
+    draw_units(device, chip_text(self, chip), bounds,
+               DT_SINGLELINE | DT_VCENTER | DT_CENTER | DT_NOPREFIX);
 }
 
 /* 「×」は 24 の viewBox の面のパス（ADR 0033 の決定 6）。箱は close_rect のまま。 */
