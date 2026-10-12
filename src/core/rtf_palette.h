@@ -1,4 +1,4 @@
-/* 右ペインの RTF に使う色の束。テーマごとの値の正本はここ 1 つ（ARC-001・ADR 0005）。
+/* 右ペインの RTF に使う色の束。値の正本は folio_theme の theme_palette（ARC-001・ADR0049）。
  * 全メンバーが独立に妥当な色なので完全型で公開する（C-003）。 */
 #ifndef NENEFOLIO_RTF_PALETTE_H
 #define NENEFOLIO_RTF_PALETTE_H

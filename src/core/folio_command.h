@@ -8,6 +8,7 @@
 #include "folio_argument_kind.h"
 #include "folio_language.h"
 #include "folio_option.h"
+#include "folio_theme_choice.h"
 
 #include <stddef.h>
 
@@ -68,6 +69,9 @@ enum folio_command : unsigned char
  * 語なし・未知の語・余計な語があれば false で out は触らない。 */
 [[nodiscard]] bool folio_command_parse_option(const char *_Nonnull text, size_t length,
                                               enum folio_option *_Nonnull out);
+/* theme=<ID> uses the same fixed identifier catalog as settings.json (ADR0049). */
+[[nodiscard]] bool folio_command_parse_theme(const char *_Nonnull text, size_t length,
+                                             enum folio_theme_choice *_Nonnull out);
 /* `:%s` の後ろを解く（ADR 0028 の決定 8(b)）。text は folio_command_parse が返した argument の
  * 位置から渡す。区切りは `/` だけで、`\` の次の 1 文字は区切りにならない（`\/` はそのまま残す）。
  * 旗は `g` だけ。区切りの不足・空のパターン・知らない旗は false で out は触らない。 */

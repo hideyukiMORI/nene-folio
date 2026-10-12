@@ -1,11 +1,12 @@
 /* data/settings.json の設定（ADR 0025・ADR 0031 の決定 1）。
  * 効果を実装したキーだけがスキーマに入る。
- * 版 3 の形（キーの順序も固定。違えば MALFORMED で既定値には落ちない・ARC-009）:
- *   {"version": 3, "number": false, "theme": "system", "language": "ja"}
+ * 版 4 の形（キーの順序も固定。違えば MALFORMED で既定値には落ちない・ARC-009）:
+ *   {"version": 4, "number": false, "theme": "system", "language": "ja"}
  * 版 1 の形 {"version": 1, "number": <bool>} と版 2 の形
- * {"version": 2, "number": <bool>, "theme": "…"} も読めて、足りないキーに既定値を埋める（移行）。
+ * {"version": 2, "number": <bool>, "theme": "…"} と版 3
+ * の3語テーマも読めて、足りないキーに既定値を埋める（移行）。
  * キーを足すときは必ず版を上げ、旧版からの移行は core の純関数で行う（決定 2）。
- * 書くのは常に最新の版で、版 1・版 2 のファイルは次に書いた時点で版 3 になる。 */
+ * 書くのは常に最新の版で、版 1〜3 のファイルは次に書いた時点で版 4 になる。 */
 #ifndef NENEFOLIO_FOLIO_SETTINGS_H
 #define NENEFOLIO_FOLIO_SETTINGS_H
 
@@ -39,12 +40,13 @@ folio_settings_with_theme(const struct folio_settings *_Nonnull settings,
 folio_settings_with_language(const struct folio_settings *_Nonnull settings,
                              enum folio_language language,
                              struct folio_settings *_Nullable *_Nonnull out);
-/* writer へ版 3 の文書を 1 つ書く。完了の判定は json_writer_finish で行う。 */
+/* writer へ版 4 の文書を 1 つ書く。完了の判定は json_writer_finish で行う。 */
 void folio_settings_write(const struct folio_settings *_Nonnull settings,
                           struct json_writer *_Nonnull writer);
 /* 編集中の本文の左に原文の行番号を出すか（FR-021 / ADR 0026）。 */
 [[nodiscard]] bool folio_settings_number(const struct folio_settings *_Nonnull settings);
-/* 利用者が選んだテーマ（ADR 0031 の決定 1）。描画に使う値は folio_theme_resolve が決める。 */
+/* 利用者が選んだテーマ（ADR 0031 の決定 1）。描画に使う値は folio_theme_choice_resolve が決める。
+ */
 [[nodiscard]] enum folio_theme_choice
 folio_settings_theme(const struct folio_settings *_Nonnull settings);
 /* 利用者が選んだ表示言語（ADR 0032 の決定 1）。UI へ渡すのは application である。 */

@@ -103,9 +103,6 @@ static const struct
     {"nu!", FOLIO_OPTION_NUMBER_TOGGLE},
     {"invnumber", FOLIO_OPTION_NUMBER_TOGGLE},
     {"invnu", FOLIO_OPTION_NUMBER_TOGGLE},
-    {"theme=system", FOLIO_OPTION_THEME_SYSTEM},
-    {"theme=light", FOLIO_OPTION_THEME_LIGHT},
-    {"theme=dark", FOLIO_OPTION_THEME_DARK},
     {"language=ja", FOLIO_OPTION_LANGUAGE_JA},
     {"language=en", FOLIO_OPTION_LANGUAGE_EN},
     {"language=zh-Hans", FOLIO_OPTION_LANGUAGE_ZH_HANS},
@@ -396,6 +393,22 @@ bool folio_command_parse_option(const char *_Nonnull text, size_t length,
         }
     }
     return false;
+}
+
+bool folio_command_parse_theme(const char *_Nonnull text, size_t length,
+                               enum folio_theme_choice *_Nonnull out)
+{
+    size_t begin = 0;
+    size_t end = 0;
+    trim(text, length, &begin, &end);
+    static const char prefix[] = "theme=";
+    size_t prefix_length = sizeof prefix - 1;
+    if (end - begin <= prefix_length || memcmp(text + begin, prefix, prefix_length) != 0)
+    {
+        return false;
+    }
+    return folio_theme_choice_parse(text + begin + prefix_length, end - begin - prefix_length,
+                                    out) == FOLIO_THEME_LOOKUP_FOUND;
 }
 
 /* エスケープされていない次の区切り。`\` の次の 1 文字は区切りにならない。無ければ length。

@@ -193,7 +193,7 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_HELP_INDEX_COMMAND] = "索引・閲覧本文  : コマンド / i 編集",
     [UI_TEXT_HELP_EX_SET_NUMBER] =
         "Ex  :set number / :set nonumber / :set nu!（編集中の原文の行番号）",
-    [UI_TEXT_HELP_EX_SET_THEME] = "Ex  :set theme=system / :set theme=light / :set theme=dark",
+    [UI_TEXT_HELP_EX_SET_THEME] = "Ex  :set theme=dracula / :set theme=system",
     [UI_TEXT_HELP_EX_SET_LANGUAGE] =
         "Ex  :set language=ja / :set language=en / :set language=zh-Hans",
     [UI_TEXT_HELP_REPLACE_FIELD] =
@@ -238,6 +238,14 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_ACTION_PALETTE_PREVIOUS] = "↑ 前",
     [UI_TEXT_ACTION_PALETTE_NEXT] = "↓ 次",
     [UI_TEXT_ACTION_OPERATIONS] = "操作 ▾",
+    [UI_TEXT_THEME_TITLE] = "テーマを選ぶ",
+    [UI_TEXT_THEME_CHOOSE] = "テーマを選ぶ…",
+    [UI_TEXT_THEME_FILTER] = "テーマ名で検索",
+    [UI_TEXT_THEME_BACK] = "戻る",
+    [UI_TEXT_THEME_GUIDANCE] = "↑↓で移動・Enterで適用・Escで戻る",
+    [UI_TEXT_THEME_COUNT] = "{k} / {n} 件",
+    [UI_TEXT_THEME_EMPTY] = "一致するテーマがありません",
+    [UI_TEXT_THEME_SAMPLE] = "Aa",
     [UI_TEXT_SETTINGS_THEME] = "テーマ",
     [UI_TEXT_SETTINGS_THEME_SYSTEM] = "OS に従う",
     [UI_TEXT_SETTINGS_THEME_LIGHT] = "ライト",
@@ -590,9 +598,11 @@ static void verify_language(void)
     for (size_t index = 0; index < sizeof option_words / sizeof option_words[0]; ++index)
     {
         enum folio_option option = FOLIO_OPTION_NUMBER_SHOW;
-        require(
-            folio_command_parse_option(option_words[index], strlen(option_words[index]), &option),
-            "every word of the vocabulary is a word folio_command knows");
+        enum folio_theme_choice theme = FOLIO_THEME_CHOICE_SYSTEM;
+        size_t length = strlen(option_words[index]);
+        require(folio_command_parse_option(option_words[index], length, &option) ||
+                    folio_command_parse_theme(option_words[index], length, &theme),
+                "every word of the vocabulary is a word folio_command knows");
     }
     for (size_t id = UI_TEXT_COMMAND_SAVE; id <= UI_TEXT_COMMAND_DISCARD_EDITS; ++id)
     {

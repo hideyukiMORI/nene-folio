@@ -23,8 +23,18 @@ bool same_text(const char *_Nonnull actual, const char *_Nonnull expected)
     return false;
 }
 
-static bool run_layout_target_tests(const char *_Nonnull argument)
+static bool run_settings_layout_target_tests(const char *_Nonnull argument)
 {
+    if (strcmp(argument, "--themes") == 0)
+    {
+        run_theme_tests();
+        run_settings_tests();
+        run_theme_state_tests();
+        run_command_tests();
+        run_ui_text_tests();
+        printf("theme catalog, settings, state, Ex and UI text tests passed\n");
+        return true;
+    }
     if (strcmp(argument, "--layout-modes") == 0)
     {
         run_layout_mode_state_tests();
@@ -121,7 +131,7 @@ int main(int argc, char *_Nonnull *_Nonnull argv)
         run_bom_boundary_tests();
         return 0;
     }
-    if (argc == 2 && (run_layout_target_tests(argv[1]) || run_target_tests(argv[1])))
+    if (argc == 2 && (run_settings_layout_target_tests(argv[1]) || run_target_tests(argv[1])))
     {
         return 0;
     }
@@ -153,6 +163,7 @@ int main(int argc, char *_Nonnull *_Nonnull argv)
     run_search_tests();
     run_filter_tests();
     run_settings_tests();
+    run_theme_tests();
     run_line_index_tests();
     run_replace_tests();
     run_state_tests();

@@ -14,7 +14,7 @@
     {"enum": "src/application/folio_state_outcome.h", "table": "src/application/folio_state.c", "prefix": "FOLIO_STATE_"},
     {"enum": "src/application/folio_state_outcome.h", "table": "tests/unit/state_tests.c", "prefix": "FOLIO_STATE_"},
     {"enum": "src/core/ui_text.h", "table": "src/core/ui_text.c", "prefix": "UI_TEXT_"},
-    {"enum": "src/core/folio_theme_choice.h", "table": "src/core/folio_settings.c", "prefix": "FOLIO_THEME_CHOICE_"},
+    {"enum": "src/core/folio_theme.h", "table": "src/core/folio_theme.c", "prefix": "FOLIO_THEME_"},
     {"enum": "src/core/folio_language.h", "table": "src/core/folio_settings.c", "prefix": "FOLIO_LANGUAGE_"},
     {"enum": "src/core/folio_language.h", "table": "src/core/ui_font.c", "prefix": "FOLIO_LANGUAGE_"},
     {"enum": "src/core/folio_language.h", "table": "src/core/ui_font_fallback.c", "prefix": "FOLIO_LANGUAGE_"},

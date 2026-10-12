@@ -839,3 +839,11 @@ DPI 120 の寸法は 5-l と同じ（帯 55・カテゴリ行 43 と上の間 8�
 ## 日本語GUI入口の確認範囲（#49、2026-09-13）
 
 手順と未確認条件は [GUI入口の実機記録](2026-09-13-gui-entry-checks.md)。Computer Useのnative pipe接続が失敗しており、現時点でこの変更の実機合格は主張しない。以前のexeの確認やChromeの画面案を流用しない。
+
+## 2026-10-12 — #294 固定テーマ表の網羅
+
+CNF-009の設定語3値の表を、正本となった127配色の `folio_theme.c` へ移した（ADR0049）。
+検査実装/閾値/除外は変更していない。D側の対象2ファイルだけのfixtureに実 `line_table_checks` を適用し、
+正常0件、Draculaのdesignator欠落で `has 0 table entries`、重複で `has 2 table entries` を各1件検出した。
+復元後0件。`verify-catalog-boundaries.py` / `catalog-boundary-proof.json` が実行証跡。
+実buildグラフのconformanceも0違反。最終フルゲートは#294に紐付く最終headの必須CIで確認する。

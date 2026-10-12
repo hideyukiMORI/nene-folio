@@ -47,7 +47,7 @@ struct folio_state
     /* 外観ポート（ADR 0031 の決定 3）。OS の変更で読み直すので値で写して持つ */
     struct appearance_port appearance;
     enum folio_theme os_theme;            /* 直近に port から読んだ OS の値 */
-    enum folio_theme_choice theme_choice; /* 設定の選択。解決値は folio_theme_resolve */
+    enum folio_theme_choice theme_choice; /* 設定の選択。解決値は folio_theme_choice_resolve */
     /* data/settings.json の値の所有者（ADR 0025 の決定 5）。読めなければ既定値のまま */
     struct folio_settings *_Nullable settings;
     /* READY か SETTINGS_UNREADABLE。後者のあいだ設定の変更を断り、上書きもしない（決定 6） */
@@ -483,7 +483,8 @@ static bool render_pane_document(const struct folio_state *_Nonnull state,
 static enum folio_state_outcome adopt_theme_choice(struct folio_state *_Nonnull state)
 {
     enum folio_theme_choice choice = folio_settings_theme(state->settings);
-    struct rtf_palette palette = rtf_palette_for(folio_theme_resolve(choice, state->os_theme));
+    struct rtf_palette palette =
+        rtf_palette_for(folio_theme_choice_resolve(choice, state->os_theme));
     struct markdown_rtf *_Nullable pane = nullptr;
     if (!render_pane_document(state, palette, folio_state_language(state), &pane))
     {
@@ -514,7 +515,8 @@ enum folio_state_outcome folio_state_create(const struct folio_ports *_Nonnull p
     state->theme_choice = FOLIO_THEME_CHOICE_SYSTEM;
     state->layout_mode = FOLIO_LAYOUT_BOTH;
     state->select_notice = FOLIO_STATE_READY;
-    state->palette = rtf_palette_for(folio_theme_resolve(state->theme_choice, state->os_theme));
+    state->palette =
+        rtf_palette_for(folio_theme_choice_resolve(state->theme_choice, state->os_theme));
     if (markdown_rtf_empty(state->palette, ui_font_face(FOLIO_LANGUAGE_JA), &state->pane) !=
             MARKDOWN_RTF_CONVERTED ||
         note_text_create("", 0, &state->body) != NOTE_TEXT_ACCEPTED ||
@@ -911,9 +913,14 @@ enum folio_state_outcome folio_state_reveal_cursor(struct folio_state *_Nonnull 
     return FOLIO_STATE_READY;
 }
 
+enum folio_theme folio_state_system_theme(const struct folio_state *_Nonnull state)
+{
+    return state->os_theme;
+}
+
 enum folio_theme folio_state_theme(const struct folio_state *_Nonnull state)
 {
-    return folio_theme_resolve(state->theme_choice, state->os_theme);
+    return folio_theme_choice_resolve(state->theme_choice, state->os_theme);
 }
 
 enum folio_theme_choice folio_state_theme_choice(const struct folio_state *_Nonnull state)
@@ -1021,7 +1028,8 @@ enum folio_state_outcome folio_state_set_theme(struct folio_state *_Nonnull stat
     {
         return FOLIO_STATE_OUT_OF_MEMORY;
     }
-    struct rtf_palette palette = rtf_palette_for(folio_theme_resolve(choice, state->os_theme));
+    struct rtf_palette palette =
+        rtf_palette_for(folio_theme_choice_resolve(choice, state->os_theme));
     enum folio_state_outcome adopted =
         adopt_settings_change(state, changed, palette, folio_state_language(state));
     if (adopted == FOLIO_STATE_READY)
@@ -1055,8 +1063,8 @@ enum folio_state_outcome folio_state_refresh_theme(struct folio_state *_Nonnull 
 {
     enum folio_theme os_theme = state->appearance.read_theme(state->appearance.adapter);
     struct rtf_palette palette =
-        rtf_palette_for(folio_theme_resolve(state->theme_choice, os_theme));
-    if (folio_theme_resolve(state->theme_choice, os_theme) == folio_state_theme(state))
+        rtf_palette_for(folio_theme_choice_resolve(state->theme_choice, os_theme));
+    if (folio_theme_choice_resolve(state->theme_choice, os_theme) == folio_state_theme(state))
     {
         state->os_theme = os_theme;
         return FOLIO_STATE_READY;

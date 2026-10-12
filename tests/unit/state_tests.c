@@ -3464,8 +3464,73 @@ static void verify_language_at_start(void)
     folio_state_destroy(state);
 }
 
+static void verify_named_theme(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct appearance_adapter appearance = {.theme = FOLIO_THEME_DARK};
+    struct persistence_port persistence = port_for(&adapter);
+    struct appearance_port looks = looks_for(&appearance);
+    struct folio_state *state = nullptr;
+    require(folio_state_create(test_ports(&persistence, &looks, &finder), &state) ==
+                FOLIO_STATE_READY,
+            "named theme fixture starts");
+    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY &&
+                folio_state_begin_edit(state) == FOLIO_STATE_READY,
+            "named theme fixture is editing a document");
+    const char *body = folio_state_pane_text(state);
+    size_t writes = adapter.note_writes;
+    require(folio_state_set_theme(state, FOLIO_THEME_CHOICE_DRACULA) == FOLIO_STATE_READY,
+            "a named palette can be applied while editing");
+    require(adapter.settings_writes == 1 && adapter.written_theme == FOLIO_THEME_CHOICE_DRACULA &&
+                folio_state_theme(state) == FOLIO_THEME_DRACULA,
+            "the named choice is written and adopted once");
+    require(strstr(folio_state_pane_rtf(state), "\\red248\\green248\\blue242;") != nullptr,
+            "the view document carries Dracula's body color");
+    require(folio_state_pane_mode(state) == PANE_MODE_EDIT &&
+                folio_state_pane_text(state) == body && adapter.note_writes == writes,
+            "theme application neither saves nor replaces the application body");
+    appearance.theme = FOLIO_THEME_LIGHT;
+    require(folio_state_refresh_theme(state) == FOLIO_STATE_READY &&
+                folio_state_theme(state) == FOLIO_THEME_DRACULA &&
+                folio_state_system_theme(state) == FOLIO_THEME_LIGHT &&
+                adapter.settings_writes == 1,
+            "OS refresh updates the system preview while preserving the explicit palette");
+    const char *rtf = folio_state_pane_rtf(state);
+    adapter.settings_write_outcome = PERSISTENCE_UNWRITABLE;
+    require(folio_state_set_theme(state, FOLIO_THEME_CHOICE_NORD) ==
+                    FOLIO_STATE_SETTINGS_STORE_FAILED &&
+                folio_state_theme_choice(state) == FOLIO_THEME_CHOICE_DRACULA &&
+                folio_state_pane_rtf(state) == rtf && adapter.note_writes == writes,
+            "a failed named-theme write leaves the adopted palette and document untouched");
+    folio_state_destroy(state);
+}
+
+static void verify_named_theme_restart(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    adapter.settings_outcome = PERSISTENCE_LOADED;
+    adapter.settings_text =
+        "{\"version\":4,\"number\":true,\"theme\":\"dracula\",\"language\":\"en\"}";
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_theme_choice(state) == FOLIO_THEME_CHOICE_DRACULA &&
+                folio_state_theme(state) == FOLIO_THEME_DRACULA && folio_state_number(state) &&
+                folio_state_language(state) == FOLIO_LANGUAGE_EN && adapter.settings_writes == 0,
+            "startup restores a named theme and other settings without writing them");
+    folio_state_destroy(state);
+    adapter.settings_text =
+        "{\"version\":4,\"number\":true,\"theme\":\"future-theme\",\"language\":\"en\"}";
+    state = ready_state(&adapter);
+    require(folio_state_set_theme(state, FOLIO_THEME_CHOICE_DRACULA) ==
+                    FOLIO_STATE_SETTINGS_UNREADABLE &&
+                adapter.settings_writes == 0,
+            "an unknown persisted theme cannot be overwritten by choosing another theme");
+    folio_state_destroy(state);
+}
+
 static void verify_settings(void)
 {
+    verify_named_theme();
+    verify_named_theme_restart();
     verify_settings_absent();
     verify_settings_loaded();
     verify_theme_resolution();
@@ -5814,4 +5879,10 @@ void run_layout_mode_state_tests(void)
                 "display adoption does not invoke persistence or mutate adapter observations");
     }
     folio_state_destroy(state);
+}
+
+void run_theme_state_tests(void)
+{
+    finder = test_regex_port();
+    verify_settings();
 }

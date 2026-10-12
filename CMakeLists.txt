@@ -44,7 +44,7 @@ nenefolio_target(nenefolio_core core STATIC
     src/core/text_buffer.c src/core/note_text.c src/core/markdown_rtf.c src/core/rtf_palette.c
     src/core/folio_command.c src/core/note_name.c src/core/rename_plan.c src/core/rename_journal.c
     src/core/note_search.c src/core/note_corpus.c src/core/index_filter.c
-    src/core/folio_settings.c src/core/folio_theme.c src/core/line_index.c
+    src/core/folio_settings.c src/core/folio_theme.c src/core/folio_theme_choice.c src/core/line_index.c
     src/core/replace_template.c src/core/replace_edit.c src/core/note_replace.c
     src/core/replace_preview.c
     src/core/ascii_fold.c src/core/ui_font.c src/core/ui_font_fallback.c
@@ -60,7 +60,7 @@ nenefolio_target(folio_tests unit_tests EXECUTABLE
     tests/unit/command_tests.c tests/unit/note_name_tests.c tests/unit/rename_tests.c
     tests/unit/category_name_tests.c
     tests/unit/search_tests.c tests/unit/filter_tests.c tests/unit/settings_tests.c
-    tests/unit/line_index_tests.c tests/unit/replace_tests.c
+    tests/unit/theme_tests.c tests/unit/line_index_tests.c tests/unit/replace_tests.c
     tests/unit/replace_state_tests.c tests/unit/ui_text_tests.c
     tests/unit/font_bundle_tests.c)
 nenefolio_link(folio_tests nenefolio_core)

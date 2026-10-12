@@ -12,7 +12,8 @@ A frameless Markdown notebook for Windows with a category drawer. Plain C (C23),
 ## What it does
 
 The current source also includes the settings dialog, a fixed **+** for adding categories, and
-**List / Both / Note** views described below. These UI updates are newer than the published v0.1.0 ZIP.
+**List / Both / Note** views and the searchable theme catalog described below. These UI updates
+are newer than the published v0.1.0 ZIP.
 
 - **A borderless window** with a drawer on the left and a Markdown view/editor on the right. It follows
   the OS light/dark theme (or a fixed one) and Per-Monitor v2 DPI.
@@ -37,14 +38,18 @@ The current source also includes the settings dialog, a fixed **+** for adding c
   `:` opens an Ex line (`:w` `:q` `:wq` `:q!` `:set …` and the commands above), and Ctrl+P / F1 / `:h`
   open a command palette that also lists the key bindings of each pane. The editor accepts
   Ctrl+h/j/k/l as arrows.
-- **Settings** (`data/settings.json`): line numbers for the edited text, theme `system` / `light` / `dark`,
-  and UI language 日本語 / English / 简体中文. The settings surface also shows the build version.
+- **Settings** (`data/settings.json`): line numbers for the edited text, 125 themes shared with NeNeNib
+  plus the original `light` / `dark` and `system`,
+  and UI language 日本語 / English / 简体中文. **Choose a theme** searches names, shows color samples,
+  and applies a choice with Enter or a click. `:set theme=dracula` uses the same saved choice.
+  The settings surface also shows the build version.
   Noto Sans JP and Noto Sans SC are bundled under `fonts/`.
 - **Limits**: a note body is at most 16 MiB and may not contain NUL; both are refused rather than truncated.
 - Failures (unreadable ledgers, unwritable files, a second instance on the same `data/`) are reported in
   the window, never silently ignored.
 
 The requirements, one FR per row, are in [SPECIFICATION.md](SPECIFICATION.md).
+Palette sources and license texts are retained in [THIRD_PARTY_NOTICES.txt](THIRD_PARTY_NOTICES.txt).
 Every key and command is listed in [キーバインドとコマンド](docs/KEY_BINDINGS.md) (Japanese).
 
 ## Where the data lives
@@ -57,7 +62,7 @@ Everything is in the `data/` folder next to the executable; the app never writes
 | `data/<category>/index.json` | note order inside the category |
 | `data/<category>/<note>.md` | the note itself, written back as-is |
 | `data/.history/<category>/<note>/1.md` … `5.md` | the last five bodies before a save (1 is newest) |
-| `data/settings.json` | line numbers, theme, language (version 3; older versions are read) |
+| `data/settings.json` | line numbers, theme, language (version 4; versions 1–3 are read) |
 | `data/.rename.json` | an in-flight rename, replayed on the next start |
 | `data/.nenefolio.lock` | refuses a second instance on the same `data/` |
 
