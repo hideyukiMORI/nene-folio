@@ -9,6 +9,7 @@
 #include "folio_cursor_kind.h"
 #include "folio_document_kind.h"
 #include "folio_language.h"
+#include "folio_layout_mode.h"
 #include "folio_note_change.h"
 #include "folio_ports.h"
 #include "folio_state_outcome.h"
@@ -34,6 +35,11 @@ struct folio_state;
 struct note_name;
 struct note_text;
 struct replace_edit;
+
+/* 実行中だけの表示状態。設定/本文/IOに触れず、値だけを採用する（ADR0047）。 */
+[[nodiscard]] enum folio_layout_mode
+folio_state_layout_mode(const struct folio_state *_Nonnull state);
+void folio_state_set_layout_mode(struct folio_state *_Nonnull state, enum folio_layout_mode mode);
 
 /* ポートは複製して持つ。3 つのポートの adapter は state より長く生きていなければならない。
  * 束（struct folio_ports）は呼び出しの間だけ借り、返ったあとは参照しない（ADR 0029 の決定 3）。 */

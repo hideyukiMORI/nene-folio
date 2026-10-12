@@ -149,6 +149,9 @@ static const char *_Nonnull const expected[] = {
     /* #76 で構文の見本だけ ASCII に揃えた（括弧の外の日本語はそのまま・決定 3）。 */
     [UI_TEXT_COMMAND_SUBSTITUTE] = "正規表現で置換（:%s/pattern/replacement/g）",
     [UI_TEXT_COMMAND_SETTINGS] = "設定",
+    [UI_TEXT_COMMAND_LAYOUT_DRAWER] = "一覧",
+    [UI_TEXT_COMMAND_LAYOUT_BOTH] = "両方",
+    [UI_TEXT_COMMAND_LAYOUT_NOTE] = "ノート",
     [UI_TEXT_COMMAND_DISCARD_EDITS] = "編集を破棄して読み直す",
     [UI_TEXT_COMMAND_HISTORY] = "履歴から戻す",
     [UI_TEXT_COMMAND_TRASH_NOTE] = "ノートをごみ箱へ移す",

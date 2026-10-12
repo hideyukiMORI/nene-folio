@@ -34,7 +34,10 @@ enum folio_command : unsigned char
     FOLIO_COMMAND_NEW_CATEGORY,    /* カテゴリを作る。引数が無ければ名前入力面を開く（ADR 0039） */
     FOLIO_COMMAND_TRASH_NOTE,      /* 名前付きの文書をごみ箱へ移す（ADR 0039 の補正 4） */
     FOLIO_COMMAND_DELETE_CATEGORY, /* 空カテゴリを削除する（ADR 0039 の補正 6） */
-    FOLIO_COMMAND_RENAME_CATEGORY  /* 明示対象のカテゴリ名を変更する（ADR0041） */
+    FOLIO_COMMAND_RENAME_CATEGORY, /* 明示対象のカテゴリ名を変更する（ADR0041） */
+    FOLIO_COMMAND_LAYOUT_DRAWER,
+    FOLIO_COMMAND_LAYOUT_BOTH,
+    FOLIO_COMMAND_LAYOUT_NOTE
 };
 
 [[nodiscard]] size_t folio_command_count(void);

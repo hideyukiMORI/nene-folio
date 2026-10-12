@@ -74,6 +74,19 @@ static const struct
                                        UI_TEXT_COMMAND_RENAME_CATEGORY,
                                        2,
                                        {"renamecategory", "rencat"}},
+    [FOLIO_COMMAND_LAYOUT_DRAWER] = {FOLIO_COMMAND_LAYOUT_DRAWER,
+                                     UI_TEXT_COMMAND_LAYOUT_DRAWER,
+                                     1,
+                                     {"listonly", ""}},
+    [FOLIO_COMMAND_LAYOUT_BOTH] = {FOLIO_COMMAND_LAYOUT_BOTH,
+                                   UI_TEXT_COMMAND_LAYOUT_BOTH,
+                                   1,
+                                   {"both", ""}},
+    [FOLIO_COMMAND_LAYOUT_NOTE] = {FOLIO_COMMAND_LAYOUT_NOTE,
+                                   UI_TEXT_COMMAND_LAYOUT_NOTE,
+                                   1,
+                                   {"noteonly", ""}},
+
 };
 
 /* 設定の語（ADR 0026 の決定 8）。効果を実装した語だけを並べる。 */
@@ -124,6 +137,9 @@ static enum folio_argument_kind argument_kind(enum folio_command command)
     case FOLIO_COMMAND_TOGGLE_NUMBER:
     case FOLIO_COMMAND_REPLACE:
     case FOLIO_COMMAND_SETTINGS:
+    case FOLIO_COMMAND_LAYOUT_DRAWER:
+    case FOLIO_COMMAND_LAYOUT_BOTH:
+    case FOLIO_COMMAND_LAYOUT_NOTE:
     case FOLIO_COMMAND_DISCARD_EDITS:
     case FOLIO_COMMAND_HISTORY:
     case FOLIO_COMMAND_TRASH_NOTE:
@@ -154,6 +170,9 @@ bool folio_command_listed(enum folio_command command)
     case FOLIO_COMMAND_TOGGLE_NUMBER:
     case FOLIO_COMMAND_REPLACE:
     case FOLIO_COMMAND_SETTINGS:
+    case FOLIO_COMMAND_LAYOUT_DRAWER:
+    case FOLIO_COMMAND_LAYOUT_BOTH:
+    case FOLIO_COMMAND_LAYOUT_NOTE:
     case FOLIO_COMMAND_DISCARD_EDITS:
     case FOLIO_COMMAND_HISTORY:
     case FOLIO_COMMAND_NEW_CATEGORY:

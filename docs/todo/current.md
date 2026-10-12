@@ -1,14 +1,18 @@
 # いまのタスク — NeNe Folio
 
-確認基点: 2026-10-12 18:45 JST、main `3aaf37c`（#286 / PR #287統合）、公開tag `v0.1.0`。このファイルは状態の要約で、作業許可の正本ではない。
+記録時点: 2026-10-12 19:55 JST、#290の対象検証受理、実装基点main `7afc01c`、公開tag `v0.1.0`。このファイルは状態の要約で、作業許可の正本ではない。
 再開時はhideの現在の依頼、checkoutの差分、対象Issue/PRの実状態を照合する。
 現在欄は置き換えて保ち、経緯を追記し続けない（[ADR0043](../adr/0043-current-instructions-and-single-agent.md)）。
 
 ## 現在の作業
 
-- hideが中央の設定ダイアログ、ドロワー内のカテゴリ追加、一覧/両方/ノートの3表示モードを承認し、順に続けて実装するよう指示した。
-  一覧だけのときは窓も細くし、両方へ戻すと元の幅へ戻す。現在は2件目の[Issue #288](https://github.com/hideyukiMORI/nene-folio/issues/288)。
-  設計は[ADR0039補正8](../adr/0039-note-trash-and-category-operations.md)。後続の表示モードまで、対象確認・統合・通常exe反映・終了整理を続ける。
+- hideが承認した中央の設定、カテゴリ追加入口、3表示モードの3件を実装した。
+  3件目の[Issue #290](https://github.com/hideyukiMORI/nene-folio/issues/290)は対象検証と独立レビューを受理済み。
+  一覧は窓も細くし、両方/ノートへ戻すと元の幅または最大化状態へ戻す。設計は[ADR0047](../adr/0047-three-layout-modes.md)、実測は[品質記録](../quality/2026-10-12-layout-mode-checks.md)。
+  最終headのCI・統合・通常exe反映・終了整理の実状態は紐付くPRと`D:/NeNeFolio/agents/ui-layout-modes-20261012/completion.json`を照合する。
+- #288 / PR #289はclosed / merged。カテゴリ追加の固定入口は対象確認・最終headの必須CI・通常exe反映・追加作業木と一時出力の整理まで完了。
+  [ADR0039補正8](../adr/0039-note-trash-and-category-operations.md)、[品質記録](../quality/2026-10-12-category-entry-checks.md)、
+  `D:/NeNeFolio/agents/ui-category-entry-20261012/completion.json`で最終状態を確認する。
 - #286 / PR #287はclosed / merged。設定中央ダイアログは対象確認・最終headの必須CI・通常exe反映・追加作業木と一時出力の整理まで完了。
   [ADR0046](../adr/0046-distinct-settings-dialog.md)、[品質記録](../quality/2026-10-12-settings-dialog-checks.md)、
   `D:/NeNeFolio/agents/ui-settings-dialog-20261012/completion.json`で最終状態を確認する。

@@ -10,6 +10,7 @@
 #include "folio_command.h"
 #include "folio_message.h"
 #include "folio_palette.h"
+#include "folio_regions.h"
 #include "folio_state.h"
 #include "folio_step.h"
 #include "folio_theme_choice.h"
@@ -81,6 +82,10 @@ struct folio_window
     bool command_unknown;
     enum pane_notice notice;
     bool removal_running;
+    bool layout_changing; /* 同期WM_SIZEを含む一つの表示切替の間だけ立つ。 */
+    int wide_width;       /* DRAWER直前の通常幅（logical px）。 */
+    WINDOWPLACEMENT wide_placement;
+    bool restore_maximized;
     /* `:%s` が 1 件も一致しなかった。欄は閉じず、置換の欄と同じ 1 行を出す（ADR 0028 の補正） */
     bool command_no_match;
     enum folio_state_outcome command_failure;
@@ -138,6 +143,21 @@ static const struct
     {UI_TEXT_SETTINGS_LANGUAGE_ZH_HANS, SETTINGS_ROW_LANGUAGE, FOLIO_LANGUAGE_ZH_HANS, 1, 2},
     {UI_TEXT_SETTINGS_NUMBER_CHECK, SETTINGS_ROW_NUMBER, 1, 2, 0},
 };
+static const struct
+{
+    enum folio_layout_mode mode;
+    enum folio_command command;
+} layout_buttons[] = {
+    {FOLIO_LAYOUT_DRAWER, FOLIO_COMMAND_LAYOUT_DRAWER},
+    {FOLIO_LAYOUT_BOTH, FOLIO_COMMAND_LAYOUT_BOTH},
+    {FOLIO_LAYOUT_NOTE, FOLIO_COMMAND_LAYOUT_NOTE},
+};
+
+static size_t layout_button_count(void)
+{
+    return sizeof layout_buttons / sizeof layout_buttons[0];
+}
+
 /* 選択肢が始まる行（最初の見出しの次）。カーソルはこの行より上へは行かない。 */
 constexpr size_t settings_first_choice_row = 1;
 
@@ -192,6 +212,10 @@ constexpr int base_height = 640;
 constexpr int base_min_width = 560;
 constexpr int base_min_height = 360;
 constexpr int base_drawer_width = 240;
+constexpr int base_common_header_height = 44;
+constexpr int base_drawer_window_width = 320;
+constexpr int base_layout_button_width = 56;
+constexpr int base_layout_button_gap = 4;
 constexpr int base_caption_height = 44; /* 右ペインの頭。窓を掴んで動かせる帯 */
 constexpr int base_action_height = 36;
 constexpr int base_caption_indent = 36;
@@ -287,7 +311,11 @@ static enum folio_state_outcome store_body(const struct folio_window *_Nonnull s
 static enum folio_state_outcome command_save_as(const struct folio_window *_Nonnull self,
                                                 const char *_Nonnull argument);
 static void close_command_surface(struct folio_window *_Nonnull self);
-static void restore_valid_focus(HWND _Nullable focus);
+static void apply_layout_mode(struct folio_window *_Nonnull self, enum folio_layout_mode mode);
+static void show_pane_layout(struct folio_window *_Nonnull self);
+static void show_drawer_layout(struct folio_window *_Nonnull self);
+static void restore_valid_focus(const struct folio_window *_Nonnull self, HWND _Nullable focus);
+static HWND surface_return_target(const struct folio_window *_Nonnull self, HWND _Nullable window);
 static void redraw_drawer(const struct folio_window *_Nonnull self);
 static void redraw_command_layer(const struct folio_window *_Nonnull self);
 
@@ -307,7 +335,7 @@ static enum folio_state_outcome prepare_name_operation(const struct folio_window
     redraw_drawer(self);
     redraw_command_layer(self);
     InvalidateRect(self->handle, nullptr, FALSE);
-    restore_valid_focus(focus);
+    restore_valid_focus(self, focus);
     return outcome;
 }
 static void set_pane_notice(struct folio_window *_Nonnull self, enum pane_notice notice);
@@ -336,6 +364,44 @@ static LRESULT CALLBACK settings_backdrop_procedure(HWND window, UINT message, W
 static int scale(int value, UINT dpi)
 {
     return MulDiv(value, (int)dpi, base_dpi);
+}
+
+/* 表示/配置/paint/hitが同じclient・DPI・application値から領域を導く。 */
+static struct folio_regions regions_for(const struct folio_window *_Nonnull self)
+{
+    RECT client;
+    GetClientRect(self->handle, &client);
+    UINT dpi = GetDpiForWindow(self->handle);
+    int top = scale(base_common_header_height, dpi);
+    struct folio_regions regions = {.header = {0, 0, client.right, top},
+                                    .drawer = {0, top, 0, client.bottom},
+                                    .pane = {0, top, client.right, client.bottom}};
+    switch (folio_state_layout_mode(self->state))
+    {
+    case FOLIO_LAYOUT_BOTH:
+        regions.drawer.right = scale(base_drawer_width, dpi);
+        regions.pane.left = regions.drawer.right;
+        break;
+    case FOLIO_LAYOUT_DRAWER:
+        regions.drawer.right = client.right;
+        regions.pane.left = client.right;
+        break;
+    case FOLIO_LAYOUT_NOTE:
+        break;
+    }
+    return regions;
+}
+
+static bool pane_visible(const struct folio_window *_Nonnull self)
+{
+    RECT pane = regions_for(self).pane;
+    return pane.right > pane.left;
+}
+
+static bool drawer_visible(const struct folio_window *_Nonnull self)
+{
+    RECT drawer = regions_for(self).drawer;
+    return drawer.right > drawer.left;
 }
 
 /* 面が持つ操作の行数。#75 の設定画面（ADR 0029 の決定 9）はここへ自分の行数を足す。 */
@@ -510,7 +576,7 @@ static void refresh_font(struct folio_window *_Nonnull self, UINT dpi)
 /* 下端の 1 行は本文の既存余白だけを使い、面の下端に同じ高さを予約する。 */
 static int pane_notice_height(const struct folio_window *_Nonnull self)
 {
-    return self->notice != PANE_NOTICE_NONE
+    return pane_visible(self) && self->notice != PANE_NOTICE_NONE
                ? scale(base_command_status_height, GetDpiForWindow(self->handle))
                : 0;
 }
@@ -1010,7 +1076,7 @@ static void arrange_filter_input(struct folio_window *_Nonnull self)
  * 無題の編集中も出す。UI は第 2 の真偽を持たず、application の値から導く（ARC-004）。 */
 static bool gutter_visible(const struct folio_window *_Nonnull self)
 {
-    return self->pane != nullptr && folio_state_number(self->state) &&
+    return pane_visible(self) && self->pane != nullptr && folio_state_number(self->state) &&
            folio_state_pane_mode(self->state) == PANE_MODE_EDIT &&
            folio_state_document_kind(self->state) != FOLIO_DOCUMENT_NONE;
 }
@@ -1048,7 +1114,7 @@ static RECT gutter_rect(const struct folio_window *_Nonnull self)
 {
     UINT dpi = GetDpiForWindow(self->handle);
     RECT body = pane_bounds(self);
-    RECT band = {scale(base_drawer_width, dpi), body.top, body.left - scale(base_gutter_gap, dpi),
+    RECT band = {regions_for(self).pane.left, body.top, body.left - scale(base_gutter_gap, dpi),
                  body.bottom};
     return band;
 }
@@ -1057,6 +1123,10 @@ static RECT gutter_rect(const struct folio_window *_Nonnull self)
  * すぐ描く（UpdateWindow）のはスクロールの契機だけで、本文の増減は印と無効化だけにする。 */
 static void refresh_gutter(const struct folio_window *_Nonnull self, bool immediate)
 {
+    if (!pane_visible(self))
+    {
+        return;
+    }
     RECT band = gutter_rect(self);
     InvalidateRect(self->handle, &band, FALSE);
     if (immediate)
@@ -1065,25 +1135,47 @@ static void refresh_gutter(const struct folio_window *_Nonnull self, bool immedi
     }
 }
 
-static void arrange(struct folio_window *_Nonnull self)
+static void arrange_drawer(const struct folio_window *_Nonnull self, RECT bounds)
 {
     HWND drawer = self->drawer == nullptr ? nullptr : drawer_window_handle(self->drawer);
-    HWND pane = self->pane == nullptr ? nullptr : note_pane_handle(self->pane);
-    RECT client;
-    GetClientRect(self->handle, &client);
-    UINT dpi = GetDpiForWindow(self->handle);
-    int drawer_width = scale(base_drawer_width, dpi);
-    int top = scale(base_caption_height + base_action_height + base_pane_top, dpi);
-    int left = drawer_width + pane_inset(self, dpi);
+    bool visible = bounds.right > bounds.left;
     if (drawer != nullptr)
     {
-        MoveWindow(drawer, 0, 0, drawer_width, client.bottom, TRUE);
+        ShowWindow(drawer, visible ? SW_SHOWNA : SW_HIDE);
+        if (visible)
+        {
+            MoveWindow(drawer, bounds.left, bounds.top, bounds.right - bounds.left,
+                       bounds.bottom - bounds.top, TRUE);
+        }
+    }
+    if (self->filter_input != nullptr)
+    {
+        ShowWindow(self->filter_input, visible ? SW_SHOWNA : SW_HIDE);
+    }
+}
+
+static void arrange(struct folio_window *_Nonnull self)
+{
+    struct folio_regions regions = regions_for(self);
+    arrange_drawer(self, regions.drawer);
+    if (drawer_visible(self))
+    {
         arrange_filter_input(self);
     }
+    HWND pane = self->pane == nullptr ? nullptr : note_pane_handle(self->pane);
     if (pane != nullptr)
     {
-        MoveWindow(pane, left, top, client.right - left - scale(base_pane_right, dpi),
-                   client.bottom - top - scale(base_pane_bottom, dpi), TRUE);
+        bool visible = pane_visible(self);
+        ShowWindow(pane, visible ? SW_SHOWNA : SW_HIDE);
+        if (visible)
+        {
+            UINT dpi = GetDpiForWindow(self->handle);
+            int top = regions.pane.top +
+                      scale(base_caption_height + base_action_height + base_pane_top, dpi);
+            int left = regions.pane.left + pane_inset(self, dpi);
+            MoveWindow(pane, left, top, regions.pane.right - left - scale(base_pane_right, dpi),
+                       regions.pane.bottom - top - scale(base_pane_bottom, dpi), TRUE);
+        }
     }
     arrange_command_input(self);
     refresh_gutter(self, false);
@@ -1201,14 +1293,15 @@ static RECT caption_rect(const struct folio_window *_Nonnull self)
     RECT client;
     GetClientRect(self->handle, &client);
     UINT dpi = GetDpiForWindow(self->handle);
-    RECT caption = {scale(base_drawer_width, dpi) + scale(base_caption_indent, dpi), 0,
-                    client.right, scale(base_caption_height, dpi)};
+    RECT pane = regions_for(self).pane;
+    RECT caption = {pane.left + scale(base_caption_indent, dpi), pane.top, client.right,
+                    pane.top + scale(base_caption_height, dpi)};
     return caption;
 }
 
 static RECT close_rect(const struct folio_window *_Nonnull self)
 {
-    RECT caption = caption_rect(self);
+    RECT caption = regions_for(self).header;
     UINT dpi = GetDpiForWindow(self->handle);
     int size = scale(base_close_size, dpi);
     int margin = scale(base_close_margin, dpi);
@@ -1227,6 +1320,32 @@ static RECT settings_rect(const struct folio_window *_Nonnull self)
     int shift = scale(base_close_size + base_settings_gap, dpi);
     OffsetRect(&bounds, -shift, 0);
     return bounds;
+}
+
+static RECT layout_button_rect(const struct folio_window *_Nonnull self, size_t index)
+{
+    UINT dpi = GetDpiForWindow(self->handle);
+    RECT header = regions_for(self).header;
+    int width = scale(base_layout_button_width, dpi);
+    int gap = scale(base_layout_button_gap, dpi);
+    int right =
+        settings_rect(self).left - gap - (int)(layout_button_count() - index - 1) * (width + gap);
+    int middle = (header.top + header.bottom) / 2;
+    int half = scale(14, dpi);
+    return (RECT){right - width, middle - half, right, middle + half};
+}
+
+static int layout_button_hit(const struct folio_window *_Nonnull self, POINT point)
+{
+    for (size_t index = 0; index < layout_button_count(); ++index)
+    {
+        RECT button = layout_button_rect(self, index);
+        if (PtInRect(&button, point))
+        {
+            return (int)index;
+        }
+    }
+    return -1;
 }
 
 /* 2桁の番号。幅測定と描画で同じ文字列を使う。 */
@@ -1286,7 +1405,7 @@ static RECT chip_rect(const struct folio_window *_Nonnull self, HDC device, enum
     UINT dpi = GetDpiForWindow(self->handle);
     int height = scale(base_chip_height, dpi);
     int middle = (caption.top + caption.bottom) / 2;
-    int right = settings_rect(self).left - scale(base_chip_gap, dpi);
+    int right = caption.right - scale(base_close_margin, dpi);
     switch (chip)
     {
     case PANE_MODE_VIEW:
@@ -2162,7 +2281,7 @@ static bool chip_at(const struct folio_window *_Nonnull self, POINT point,
     return PtInRect(&view, point) || PtInRect(&edit, point);
 }
 
-/* 縁と札を先に見て、残りの頭の帯を掴んで動かせるようにする。 */
+/* 共通頭のbutton以外の空白を掴んで動かす。縁は既存のresize判定。 */
 static LRESULT hit_test(const struct folio_window *_Nonnull self, LPARAM lparam)
 {
     POINT point = {GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
@@ -2180,22 +2299,17 @@ static LRESULT hit_test(const struct folio_window *_Nonnull self, LPARAM lparam)
     {
         return HTCLIENT;
     }
-    POINT client = point;
-    ScreenToClient(self->handle, &client);
+    ScreenToClient(self->handle, &point);
+    RECT header = regions_for(self).header;
+    if (!PtInRect(&header, point))
+    {
+        return HTCLIENT;
+    }
     RECT close = close_rect(self);
     RECT settings = settings_rect(self);
-    if (PtInRect(&close, client) || PtInRect(&settings, client))
-    {
-        return HTCLIENT;
-    }
-    enum pane_mode chip = PANE_MODE_VIEW;
-    if (chip_at(self, client, &chip))
-    {
-        return HTCLIENT;
-    }
-    bool in_caption = point.x >= window.left + scale(base_drawer_width, dpi) &&
-                      point.y < window.top + scale(base_caption_height, dpi);
-    return in_caption ? HTCAPTION : HTCLIENT;
+    bool button = layout_button_hit(self, point) >= 0 || PtInRect(&close, point) ||
+                  PtInRect(&settings, point);
+    return button ? HTCLIENT : HTCAPTION;
 }
 
 /* 頭の釦 index 番に描く 1 行。釦の幅の実測も描画もこの 1 本を通る（#122）。 */
@@ -2224,8 +2338,9 @@ static RECT action_button_rect(const struct folio_window *_Nonnull self, size_t 
 {
     UINT dpi = GetDpiForWindow(self->handle);
     const int floors[] = {104, 52, 52, 70, 160};
-    int left = scale(base_drawer_width + 8, dpi);
-    int top = scale(base_caption_height + 4, dpi);
+    RECT pane = regions_for(self).pane;
+    int left = pane.left + scale(8, dpi);
+    int top = pane.top + scale(base_caption_height + 4, dpi);
     HDC device = GetDC(self->handle);
     HGDIOBJ previous = nullptr;
     if (device != nullptr)
@@ -2365,12 +2480,53 @@ static void draw_pane_notice(const struct folio_window *_Nonnull self, HDC devic
     draw_utf8(device, ui_text_line(line, folio_state_language(self->state)), bounds);
 }
 
+static void draw_layout_button(const struct folio_window *_Nonnull self, HDC device, size_t index)
+{
+    RECT bounds = layout_button_rect(self, index);
+    bool selected = folio_state_layout_mode(self->state) == layout_buttons[index].mode;
+    if (selected)
+    {
+        HBRUSH brush = CreateSolidBrush(self->palette.selected_background);
+        FillRect(device, &bounds, brush);
+        DeleteObject(brush);
+    }
+    SetTextColor(device, selected ? self->palette.selected_text : self->palette.current_text);
+    draw_units(
+        device,
+        folio_command_label(layout_buttons[index].command, folio_state_language(self->state)),
+        bounds, DT_SINGLELINE | DT_VCENTER | DT_CENTER | DT_NOPREFIX);
+}
+
+static void draw_common_header(const struct folio_window *_Nonnull self, HDC device)
+{
+    UINT dpi = GetDpiForWindow(self->handle);
+    SelectObject(device, self->mono_font);
+    SetBkMode(device, TRANSPARENT);
+    SetTextCharacterExtra(device, scale(base_tracking, dpi));
+    RECT logo = regions_for(self).header;
+    logo.left = scale(base_close_margin, dpi);
+    logo.right = layout_button_rect(self, 0).left - scale(8, dpi);
+    const char *text = ui_text_line(UI_TEXT_APP_LOGO, folio_state_language(self->state));
+    if (measure_utf8(device, text) <= logo.right - logo.left)
+    {
+        SetTextColor(device, self->palette.header_text);
+        draw_units(device, text, logo, DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
+    }
+    for (size_t index = 0; index < layout_button_count(); ++index)
+    {
+        draw_layout_button(self, device, index);
+    }
+    draw_close(self, device);
+    draw_settings_icon(self, device);
+    SetTextCharacterExtra(device, 0);
+}
+
 /* 右ペインの地と頭。本文は note_pane が持つ。 */
 static void draw_pane(const struct folio_window *_Nonnull self, HDC device, RECT client,
                       RECT damage)
 {
     UINT dpi = GetDpiForWindow(self->handle);
-    RECT pane = {scale(base_drawer_width, dpi), 0, client.right, client.bottom};
+    RECT pane = regions_for(self).pane;
     HBRUSH brush = CreateSolidBrush(self->palette.pane);
     FillRect(device, &pane, brush);
     DeleteObject(brush);
@@ -2380,17 +2536,14 @@ static void draw_pane(const struct folio_window *_Nonnull self, HDC device, RECT
     draw_breadcrumb(self, device, caption_rect(self));
     draw_chip(self, device, PANE_MODE_VIEW);
     draw_chip(self, device, PANE_MODE_EDIT);
-    draw_close(self, device);
-    draw_settings_icon(self, device);
     draw_actions(self, device);
     SetTextCharacterExtra(device, 0);
     draw_gutter(self, device, damage);
     draw_pane_notice(self, device, client);
 }
 
-/* 更新矩形と右ペインの重なりへ、client 座標のまま 1 枚だけ描き写す。
- * memory の原点をずらしてあるので draw_pane は今までどおり client 座標で描ける。 */
-static void blit_pane(struct folio_window *_Nonnull self, HDC target, RECT client, RECT damage)
+/* 共通頭と可視paneを更新矩形へ一枚だけ描く。memory原点をずらしてclient座標を共用する。 */
+static void blit_window(struct folio_window *_Nonnull self, HDC target, RECT client, RECT damage)
 {
     HDC memory = CreateCompatibleDC(target);
     int width = damage.right - damage.left;
@@ -2400,7 +2553,14 @@ static void blit_pane(struct folio_window *_Nonnull self, HDC target, RECT clien
     {
         HGDIOBJ previous = SelectObject(memory, surface);
         SetViewportOrgEx(memory, -damage.left, -damage.top, nullptr);
-        draw_pane(self, memory, client, damage);
+        HBRUSH brush = CreateSolidBrush(self->palette.window);
+        FillRect(memory, &damage, brush);
+        DeleteObject(brush);
+        draw_common_header(self, memory);
+        if (pane_visible(self))
+        {
+            draw_pane(self, memory, client, damage);
+        }
         BitBlt(target, damage.left, damage.top, width, height, memory, damage.left, damage.top,
                SRCCOPY);
         SelectObject(memory, previous);
@@ -2417,12 +2577,12 @@ static void blit_pane(struct folio_window *_Nonnull self, HDC target, RECT clien
  * 契機を 1 か所に保つため、描く矩形が空でも毎回の WM_PAINT で確かめる。 */
 static void check_pane_inset(const struct folio_window *_Nonnull self)
 {
-    if (self->pane == nullptr)
+    if (self->pane == nullptr || !pane_visible(self))
     {
         return;
     }
     UINT dpi = GetDpiForWindow(self->handle);
-    if (pane_bounds(self).left != scale(base_drawer_width, dpi) + pane_inset(self, dpi))
+    if (pane_bounds(self).left != regions_for(self).pane.left + pane_inset(self, dpi))
     {
         PostMessageW(self->handle, folio_message_gutter_resized, 0, 0);
     }
@@ -2435,12 +2595,9 @@ static void paint_pane(struct folio_window *_Nonnull self)
     HDC target = BeginPaint(self->handle, &painting);
     RECT client;
     GetClientRect(self->handle, &client);
-    RECT pane = {scale(base_drawer_width, GetDpiForWindow(self->handle)), 0, client.right,
-                 client.bottom};
-    RECT damage = {0, 0, 0, 0};
-    if (IntersectRect(&damage, &pane, &painting.rcPaint))
+    if (!IsRectEmpty(&painting.rcPaint))
     {
-        blit_pane(self, target, client, damage);
+        blit_window(self, target, client, painting.rcPaint);
     }
     EndPaint(self->handle, &painting);
     check_pane_inset(self);
@@ -2477,10 +2634,11 @@ static void redraw_drawer(const struct folio_window *_Nonnull self)
 }
 
 /* フォーカスを本文の区画へ移す（「編集」の札と Enter・ADR 0013 の決定 1 / 2）。 */
-static void focus_pane(const struct folio_window *_Nonnull self)
+static void focus_pane(struct folio_window *_Nonnull self)
 {
+    show_pane_layout(self);
     HWND pane = self->pane == nullptr ? nullptr : note_pane_handle(self->pane);
-    if (pane != nullptr)
+    if (pane != nullptr && IsWindowVisible(pane) && IsWindowEnabled(pane))
     {
         SetFocus(pane);
     }
@@ -2568,8 +2726,8 @@ static enum folio_state_outcome flush_edit(struct folio_window *_Nonnull self)
     if (outcome == FOLIO_STATE_READY)
     {
         render_pane(self);
-        /* 閲覧へ戻ったので、鍵が索引へ返るようにフォーカスを主窓へ（ADR 0013 の決定 1）。 */
-        SetFocus(self->handle);
+        /* NOTEでは可視pane、それ以外は従来の索引へ戻す（ADR0047）。 */
+        SetFocus(surface_return_target(self, self->handle));
     }
     return outcome;
 }
@@ -2939,6 +3097,7 @@ static struct note_search_span replace_anchor(const struct folio_window *_Nonnul
 static void finish_replace(struct folio_window *_Nonnull self, struct replace_edit *_Nonnull edit,
                            enum replace_scope scope, size_t line)
 {
+    show_pane_layout(self);
     struct note_search_span span = replace_edit_span(edit);
     size_t at = span.start + replace_edit_length(edit);
     note_pane_replace(self->pane, span, replace_edit_units(edit));
@@ -3003,6 +3162,7 @@ static void step_search(struct folio_window *_Nonnull self, enum search_directio
     {
         return;
     }
+    show_pane_layout(self);
     update_search(self, direction, true);
     report_search(self);
 }
@@ -3019,23 +3179,181 @@ static void repeat_search(struct folio_window *_Nonnull self, bool reverse)
 static HWND surface_focus_region(const struct folio_window *_Nonnull self)
 {
     HWND pane = self->pane == nullptr ? nullptr : note_pane_handle(self->pane);
-    if (pane != nullptr && folio_state_document_kind(self->state) != FOLIO_DOCUMENT_NONE &&
-        IsWindowVisible(pane))
+    if (pane != nullptr && pane_visible(self) && IsWindowVisible(pane) && IsWindowEnabled(pane) &&
+        (folio_state_layout_mode(self->state) == FOLIO_LAYOUT_NOTE ||
+         folio_state_document_kind(self->state) != FOLIO_DOCUMENT_NONE))
     {
         return pane;
     }
     return self->handle;
 }
 
-/* 面の戻り先は可視の窓だけ。非表示・消えた・無い窓は区画へ読み替える
- * （ADR 0016 の補正 5・#132）。 */
+/* rootはNOTEでは索引への復帰先ではない。空本文でも可視paneへ解釈する。 */
 static HWND surface_return_target(const struct folio_window *_Nonnull self, HWND _Nullable window)
 {
+    if (window == self->handle && folio_state_layout_mode(self->state) == FOLIO_LAYOUT_NOTE)
+    {
+        return surface_focus_region(self);
+    }
     if (window != nullptr && IsWindow(window) && IsWindowVisible(window))
     {
         return window;
     }
     return surface_focus_region(self);
+}
+
+static bool remember_wide_window(struct folio_window *_Nonnull self)
+{
+    self->wide_placement.length = sizeof self->wide_placement;
+    RECT bounds;
+    if (!GetWindowPlacement(self->handle, &self->wide_placement) ||
+        !GetWindowRect(self->handle, &bounds))
+    {
+        return false;
+    }
+    self->restore_maximized = IsZoomed(self->handle);
+    RECT normal = self->restore_maximized ? self->wide_placement.rcNormalPosition : bounds;
+    self->wide_width =
+        MulDiv(normal.right - normal.left, base_dpi, (int)GetDpiForWindow(self->handle));
+    return true;
+}
+
+/* 現位置/高さを保つ。画面外の場合だけ幅と共通頭の位置をwork areaへ収める。 */
+static bool set_layout_width(const struct folio_window *_Nonnull self, int logical_width)
+{
+    RECT bounds;
+    MONITORINFO monitor = {.cbSize = sizeof monitor};
+    if (!GetWindowRect(self->handle, &bounds) ||
+        !GetMonitorInfoW(MonitorFromWindow(self->handle, MONITOR_DEFAULTTONEAREST), &monitor))
+    {
+        return false;
+    }
+    int width = scale(logical_width, GetDpiForWindow(self->handle));
+    int available = monitor.rcWork.right - monitor.rcWork.left;
+    width = width > available ? available : width;
+    int left = bounds.left;
+    if (left + width > monitor.rcWork.right)
+    {
+        left = monitor.rcWork.right - width;
+    }
+    if (left < monitor.rcWork.left)
+    {
+        left = monitor.rcWork.left;
+    }
+    int top = bounds.top;
+    int header = regions_for(self).header.bottom;
+    if (top + header > monitor.rcWork.bottom)
+    {
+        top = monitor.rcWork.bottom - header;
+    }
+    if (top < monitor.rcWork.top)
+    {
+        top = monitor.rcWork.top;
+    }
+    return SetWindowPos(self->handle, nullptr, left, top, width, bounds.bottom - bounds.top,
+                        SWP_NOZORDER | SWP_NOACTIVATE);
+}
+
+static bool resize_layout_window(struct folio_window *_Nonnull self,
+                                 enum folio_layout_mode previous, enum folio_layout_mode mode)
+{
+    if (mode == FOLIO_LAYOUT_DRAWER)
+    {
+        if (self->restore_maximized)
+        {
+            ShowWindow(self->handle, SW_SHOWNOACTIVATE);
+        }
+        return set_layout_width(self, base_drawer_window_width);
+    }
+    if (previous != FOLIO_LAYOUT_DRAWER)
+    {
+        return true;
+    }
+    if (self->restore_maximized)
+    {
+        return SetWindowPlacement(self->handle, &self->wide_placement);
+    }
+    return set_layout_width(self, self->wide_width);
+}
+
+/* 一連の同期WM_SIZEも同じapplication値を使い、失敗なら元の配置へ戻す。 */
+static bool change_layout_geometry(struct folio_window *_Nonnull self,
+                                   enum folio_layout_mode previous, enum folio_layout_mode mode)
+{
+    WINDOWPLACEMENT before = {.length = sizeof before};
+    if (!GetWindowPlacement(self->handle, &before))
+    {
+        return false;
+    }
+    if (mode == FOLIO_LAYOUT_DRAWER && !remember_wide_window(self))
+    {
+        return false;
+    }
+    self->layout_changing = true;
+    folio_state_set_layout_mode(self->state, mode);
+    bool changed = resize_layout_window(self, previous, mode);
+    if (!changed)
+    {
+        folio_state_set_layout_mode(self->state, previous);
+        SetWindowPlacement(self->handle, &before);
+    }
+    arrange(self);
+    self->layout_changing = false;
+    return changed;
+}
+
+static void restore_layout_focus(const struct folio_window *_Nonnull self, HWND _Nullable focus)
+{
+    switch (folio_state_layout_mode(self->state))
+    {
+    case FOLIO_LAYOUT_DRAWER:
+        SetFocus(self->handle);
+        return;
+    case FOLIO_LAYOUT_NOTE:
+        SetFocus(self->pane == nullptr ? self->handle : note_pane_handle(self->pane));
+        return;
+    case FOLIO_LAYOUT_BOTH:
+        SetFocus(surface_return_target(self, focus));
+        return;
+    }
+}
+
+static void apply_layout_mode(struct folio_window *_Nonnull self, enum folio_layout_mode mode)
+{
+    enum folio_layout_mode previous = folio_state_layout_mode(self->state);
+    if (previous == mode)
+    {
+        return;
+    }
+    HWND focus = GetFocus();
+    size_t line = self->pane == nullptr ? 0 : note_pane_first_visible_line(self->pane);
+    bool changed = change_layout_geometry(self, previous, mode);
+    if (self->pane != nullptr && pane_visible(self))
+    {
+        note_pane_scroll_to_line(self->pane, line);
+    }
+    InvalidateRect(self->handle, nullptr, FALSE);
+    restore_layout_focus(self, focus);
+    if (!changed)
+    {
+        command_failure(self, FOLIO_STATE_OUT_OF_MEMORY);
+    }
+}
+
+static void show_pane_layout(struct folio_window *_Nonnull self)
+{
+    if (!pane_visible(self))
+    {
+        apply_layout_mode(self, FOLIO_LAYOUT_BOTH);
+    }
+}
+
+static void show_drawer_layout(struct folio_window *_Nonnull self)
+{
+    if (!drawer_visible(self))
+    {
+        apply_layout_mode(self, FOLIO_LAYOUT_BOTH);
+    }
 }
 
 static void open_command_surface(struct folio_window *_Nonnull self,
@@ -3145,6 +3463,7 @@ static void show_command_palette(struct folio_window *_Nonnull self)
  * （語は欄を空にする EN_CHANGE より先に写しておく）。 */
 static void show_search_surface(struct folio_window *_Nonnull self)
 {
+    show_pane_layout(self);
     struct utf16_text *_Nullable term = nullptr;
     if (utf16_text_create(folio_state_search_term(self->state),
                           folio_state_search_term_length(self->state),
@@ -3190,6 +3509,7 @@ static void begin_search(struct folio_window *_Nonnull self)
  * 語は欄が覚えたまま残し、開いた瞬間に下見を取り直して件数を出す。 */
 static void show_replace_surface(struct folio_window *_Nonnull self)
 {
+    show_pane_layout(self);
     if (self->command_surface == COMMAND_SURFACE_CLOSED)
     {
         open_command_surface(self, COMMAND_SURFACE_REPLACE);
@@ -3258,6 +3578,7 @@ static void show_settings_surface(struct folio_window *_Nonnull self, const char
  * 行を決めてから配置する（show_settings_surface と同じ順）。最初の行（1 = 最新）を選ぶ。 */
 static void show_history_surface(struct folio_window *_Nonnull self)
 {
+    show_pane_layout(self);
     if (self->command_surface == COMMAND_SURFACE_CLOSED)
     {
         open_command_surface(self, COMMAND_SURFACE_HISTORY);
@@ -3434,7 +3755,7 @@ static void finish_save_command(struct folio_window *_Nonnull self,
     {
         close_command_surface(self);
     }
-    restore_valid_focus(focus);
+    restore_valid_focus(self, focus);
 }
 
 /* 改名は本文を流し込み直さず、保持する入力面と元focusを触らない（ADR0041）。 */
@@ -3457,7 +3778,7 @@ static void finish_rename_command(struct folio_window *_Nonnull self,
     redraw_drawer(self);
     redraw_command_layer(self);
     InvalidateRect(self->handle, nullptr, FALSE);
-    restore_valid_focus(focus);
+    restore_valid_focus(self, focus);
 }
 
 /* 入力面（Ex・パレット・検索欄・置換の 2 欄・ドロワーの絞り込み欄）の中の Ctrl+S
@@ -3528,6 +3849,7 @@ static void execute_save_quit_command(struct folio_window *_Nonnull self,
 
 static void execute_mode_command(struct folio_window *_Nonnull self, enum pane_mode mode)
 {
+    show_pane_layout(self);
     enum folio_state_outcome outcome = FOLIO_STATE_READY;
     switch (mode)
     {
@@ -3550,7 +3872,7 @@ static void execute_mode_command(struct folio_window *_Nonnull self, enum pane_m
         focus_pane(self);
         return;
     case PANE_MODE_VIEW:
-        SetFocus(self->handle);
+        SetFocus(surface_return_target(self, self->handle));
         return;
     }
 }
@@ -3559,6 +3881,7 @@ static void execute_mode_command(struct folio_window *_Nonnull self, enum pane_m
 static void execute_new_command(struct folio_window *_Nonnull self, const char *_Nonnull argument)
 {
     (void)argument;
+    show_pane_layout(self);
     size_t category = folio_state_current_category(self->state);
     enum folio_state_outcome saved = store_body(self);
     if (saved == FOLIO_STATE_READY)
@@ -3585,14 +3908,14 @@ static void execute_new_command(struct folio_window *_Nonnull self, const char *
 /* 語ごとの行き先（ADR 0026 の決定 8）。切替はいまの値から導き、UI に第 2 の真偽を持たない。 */
 /* 本文の矩形が変わる操作の前後で、最初に見える論理行を保つ（ADR 0026 の決定 6）。
  * 本文・Undo・選択には触らない。折り返しの途中から見えていた場合は行の先頭へ寄る。
- * 戻すのは arrange() が実際に本文の左端を動かしたときだけで、3〜4 桁の切替や
- * 帯の出ない閲覧では読んでいる位置に触れない（ADR 0026 の補正 6）。 */
+ * 左端・幅・高さが変わったときだけ戻す。layoutの同期WM_SIZE全体は外側で保持する。 */
 static void rearrange_keeping_line(struct folio_window *_Nonnull self)
 {
-    LONG before = pane_bounds(self).left;
+    RECT before = pane_bounds(self);
     size_t line = self->pane == nullptr ? 0 : note_pane_first_visible_line(self->pane);
     arrange(self);
-    if (line > 0 && self->pane != nullptr && pane_bounds(self).left != before)
+    RECT after = pane_bounds(self);
+    if (self->pane != nullptr && pane_visible(self) && !EqualRect(&before, &after))
     {
         note_pane_scroll_to_line(self->pane, line);
     }
@@ -4029,6 +4352,7 @@ static void finish_new_category(struct folio_window *_Nonnull self,
         return;
     }
     hide_command_surface(self);
+    show_drawer_layout(self);
     redraw_drawer(self);
     if (self->drawer != nullptr)
     {
@@ -4049,12 +4373,16 @@ static void execute_new_category_command(struct folio_window *_Nonnull self,
 }
 
 /* 一時的な入力停止と失敗の箱の後で、元の有効な欄だけへ戻す。 */
-static void restore_valid_focus(HWND _Nullable focus)
+static void restore_valid_focus(const struct folio_window *_Nonnull self, HWND _Nullable focus)
 {
-    if (focus != nullptr && IsWindow(focus) && IsWindowEnabled(focus) && IsWindowVisible(focus) &&
-        GetFocus() != focus)
+    if (focus == nullptr || !IsWindow(focus) || !IsWindowEnabled(focus))
     {
-        SetFocus(focus);
+        return;
+    }
+    HWND target = surface_return_target(self, focus);
+    if (IsWindowVisible(target) && GetFocus() != target)
+    {
+        SetFocus(target);
     }
 }
 
@@ -4073,7 +4401,7 @@ static void release_removal_input(struct folio_window *_Nonnull self, bool enabl
     EnableWindow(self->handle, enabled);
     if (enabled)
     {
-        restore_valid_focus(focus);
+        restore_valid_focus(self, focus);
     }
     self->removal_running = false;
 }
@@ -4119,7 +4447,7 @@ static void trash_note_at(struct folio_window *_Nonnull self, struct note_ref ta
         hide_command_surface(self);
         render_pane(self);
         arrange(self);
-        SetFocus(self->handle);
+        SetFocus(surface_return_target(self, self->handle));
     }
     redraw_drawer(self);
     InvalidateRect(self->handle, nullptr, FALSE);
@@ -4128,7 +4456,7 @@ static void trash_note_at(struct folio_window *_Nonnull self, struct note_ref ta
         failure_box_show(self->handle, outcome, self->state);
         if (!current)
         {
-            restore_valid_focus(focus);
+            restore_valid_focus(self, focus);
         }
         return;
     }
@@ -4183,7 +4511,7 @@ static void delete_category_at(struct folio_window *_Nonnull self, size_t catego
     if (outcome != FOLIO_STATE_READY && outcome != FOLIO_STATE_CATEGORY_LEDGER_STALE)
     {
         command_failure(self, outcome);
-        restore_valid_focus(focus);
+        restore_valid_focus(self, focus);
         return;
     }
     focus = finish_delete_category(self, focus);
@@ -4191,7 +4519,7 @@ static void delete_category_at(struct folio_window *_Nonnull self, size_t catego
     {
         failure_box_show(self->handle, outcome, self->state);
     }
-    restore_valid_focus(focus);
+    restore_valid_focus(self, focus);
 }
 
 /* 最初のカテゴリへのfallbackはせず、cursorが無い時だけ現在文書の宛先を使う。 */
@@ -4226,7 +4554,7 @@ static void execute_delete_category_command(struct folio_window *_Nonnull self,
     {
         HWND focus = GetFocus();
         command_failure(self, FOLIO_STATE_CATEGORY_NOT_SELECTED);
-        restore_valid_focus(focus);
+        restore_valid_focus(self, focus);
         return;
     }
     delete_category_at(self, category);
@@ -4329,6 +4657,28 @@ static void execute_toggle_number_command(struct folio_window *_Nonnull self,
     apply_number(self, !folio_state_number(self->state));
 }
 
+/* 表示コマンドは一時入力面を閉じ、非保存の表示採用だけへ合流する。 */
+static void execute_layout_drawer(struct folio_window *_Nonnull self, const char *_Nonnull argument)
+{
+    (void)argument;
+    hide_command_surface(self);
+    apply_layout_mode(self, FOLIO_LAYOUT_DRAWER);
+}
+
+static void execute_layout_both(struct folio_window *_Nonnull self, const char *_Nonnull argument)
+{
+    (void)argument;
+    hide_command_surface(self);
+    apply_layout_mode(self, FOLIO_LAYOUT_BOTH);
+}
+
+static void execute_layout_note(struct folio_window *_Nonnull self, const char *_Nonnull argument)
+{
+    (void)argument;
+    hide_command_surface(self);
+    apply_layout_mode(self, FOLIO_LAYOUT_NOTE);
+}
+
 /* コマンドごとの行き先を 1 か所に置く（ADR 0027 の 2026-10-06 の補正）。全値を明示し、
  * 値を足して行を書き忘れると CNF-009 が落ちる（switch を離れて失う -Wswitch-enum の代わり）。
  * enum の外の値は作られないので添字の範囲検査は書かない。 */
@@ -4350,6 +4700,9 @@ static void (*_Nonnull const command_runs[])(struct folio_window *_Nonnull self,
     [FOLIO_COMMAND_REPLACE] = begin_replace,
     [FOLIO_COMMAND_SUBSTITUTE] = execute_substitute_command,
     [FOLIO_COMMAND_SETTINGS] = show_settings_surface,
+    [FOLIO_COMMAND_LAYOUT_DRAWER] = execute_layout_drawer,
+    [FOLIO_COMMAND_LAYOUT_BOTH] = execute_layout_both,
+    [FOLIO_COMMAND_LAYOUT_NOTE] = execute_layout_note,
     [FOLIO_COMMAND_DISCARD_EDITS] = execute_discard_command,
     [FOLIO_COMMAND_HISTORY] = execute_history_command,
     [FOLIO_COMMAND_NEW_CATEGORY] = execute_new_category_command,
@@ -4936,12 +5289,12 @@ static bool click_actions(struct folio_window *_Nonnull self, POINT point)
     return false;
 }
 
-/* 無効な側の札のクリックだけが意図になる。 */
-static void click_caption(struct folio_window *_Nonnull self, LPARAM lparam)
+static void click_common_header(struct folio_window *_Nonnull self, POINT point)
 {
-    POINT point = {GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
-    if (click_actions(self, point))
+    int index = layout_button_hit(self, point);
+    if (index >= 0)
     {
+        execute_command(self, layout_buttons[(size_t)index].command, "");
         return;
     }
     RECT close = close_rect(self);
@@ -4954,6 +5307,21 @@ static void click_caption(struct folio_window *_Nonnull self, LPARAM lparam)
     if (PtInRect(&settings, point))
     {
         execute_command(self, FOLIO_COMMAND_SETTINGS, "");
+    }
+}
+
+/* 無効な側の札のクリックだけが意図になる。 */
+static void click_caption(struct folio_window *_Nonnull self, LPARAM lparam)
+{
+    POINT point = {GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
+    RECT header = regions_for(self).header;
+    if (PtInRect(&header, point))
+    {
+        click_common_header(self, point);
+        return;
+    }
+    if (!pane_visible(self) || click_actions(self, point))
+    {
         return;
     }
     enum pane_mode chip = PANE_MODE_VIEW;
@@ -4980,6 +5348,7 @@ static void leave_pane(struct folio_window *_Nonnull self)
     {
         return;
     }
+    show_drawer_layout(self);
     SetFocus(self->handle);
 }
 
@@ -5086,7 +5455,7 @@ static LRESULT on_notify(struct folio_window *_Nonnull self, LPARAM lparam)
 static void forward_wheel(const struct folio_window *_Nonnull self, WPARAM wparam, LPARAM lparam)
 {
     HWND drawer = self->drawer == nullptr ? nullptr : drawer_window_handle(self->drawer);
-    if (drawer == nullptr)
+    if (drawer == nullptr || !drawer_visible(self))
     {
         return;
     }
@@ -5907,7 +6276,9 @@ static void filter_input_changed(struct folio_window *_Nonnull self)
 /* Ctrl+Shift+F は常設の欄へフォーカスを移し、いまの語を全選択する（ADR 0024 の決定 6）。 */
 static void focus_filter_input(struct folio_window *_Nonnull self)
 {
-    if (self->filter_input == nullptr)
+    show_drawer_layout(self);
+    if (self->filter_input == nullptr || !IsWindowVisible(self->filter_input) ||
+        !IsWindowEnabled(self->filter_input))
     {
         return;
     }
@@ -6123,7 +6494,11 @@ static LRESULT limit_size(HWND window, LPARAM lparam)
 {
     MINMAXINFO *_Nonnull limits = (MINMAXINFO *)lparam;
     UINT dpi = GetDpiForWindow(window);
-    limits->ptMinTrackSize.x = scale(base_min_width, dpi);
+    const struct folio_window *_Nullable self = self_of(window);
+    int width = self != nullptr && folio_state_layout_mode(self->state) == FOLIO_LAYOUT_DRAWER
+                    ? base_drawer_window_width
+                    : base_min_width;
+    limits->ptMinTrackSize.x = scale(width, dpi);
     limits->ptMinTrackSize.y = scale(base_min_height, dpi);
     return 0;
 }
@@ -6388,6 +6763,22 @@ static bool pane_notification(struct folio_window *_Nonnull self, WPARAM wparam,
     return false;
 }
 
+/* OSがNOTEのrootへ戻した実focusだけを、可視paneへ正規化する。 */
+static void normalize_root_focus(const struct folio_window *_Nonnull self)
+{
+    if (folio_state_layout_mode(self->state) != FOLIO_LAYOUT_NOTE ||
+        self->command_surface != COMMAND_SURFACE_CLOSED || self->pane == nullptr)
+    {
+        return;
+    }
+    HWND pane = note_pane_handle(self->pane);
+    if (pane != nullptr && pane_visible(self) && IsWindowVisible(pane) && IsWindowEnabled(pane) &&
+        IsWindowEnabled(self->handle) && GetFocus() == self->handle)
+    {
+        SetFocus(pane);
+    }
+}
+
 static LRESULT on_window_command(struct folio_window *_Nonnull self, WPARAM wparam, LPARAM lparam)
 {
     if ((HWND)lparam == self->filter_input && HIWORD(wparam) == EN_CHANGE)
@@ -6407,12 +6798,15 @@ static LRESULT on_window_command(struct folio_window *_Nonnull self, WPARAM wpar
     return 0;
 }
 
-/* 頭のパンくずと札は幅に依存する位置に描く（ADR 0011 の決定 2）。
- * 寸法の変更では最初に見える論理行を戻さない（戻すのは帯の幅と number の切替だけ・ADR 0026）。 */
+/* 通常のresizeは本文矩形の変化を保持する。表示切替中の同期WM_SIZEは外側の退避に含める。 */
 static void resize(struct folio_window *_Nonnull self)
 {
-    arrange(self);
-    InvalidateRect(self->handle, nullptr, FALSE);
+    if (self->layout_changing)
+    {
+        arrange(self);
+        return;
+    }
+    rearrange_keeping_line(self);
 }
 
 /* OS の「アプリのモード」の変更（ADR 0031 の決定 4）。WS_CHILD には届かないので主窓 1 か所。
@@ -6455,8 +6849,10 @@ static LRESULT on_input_message(struct folio_window *_Nonnull self, UINT message
         type_key(self, wparam);
         return 0;
     case WM_SETFOCUS:
+        normalize_root_focus(self);
+        redraw_drawer(self);
+        return 0;
     case WM_KILLFOCUS:
-        /* フォーカスの印は索引の選択行に描く（ADR 0013 の決定 8）。 */
         redraw_drawer(self);
         return 0;
     case WM_MOUSEWHEEL:

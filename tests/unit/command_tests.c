@@ -192,7 +192,7 @@ static void verify_listed(void)
                                   FOLIO_LANGUAGE_JA),
             "the palette finds the toggle by label");
     /* パレットの箱の高さはlisted数で決まり、Ex専用の2操作は数えない（補正9）。 */
-    require(folio_command_listed_count() == 20, "twenty operations are offered on a surface");
+    require(folio_command_listed_count() == 23, "twenty-three operations are offered on a surface");
     require(folio_command_listed_count() == folio_command_count() - 2,
             "exactly the two unlisted Ex grammars are left out");
     require(folio_command_alias_count(FOLIO_COMMAND_REPLACE) == 0 &&
@@ -360,16 +360,32 @@ static void verify_rejections(void)
 
 static void verify_catalog(void)
 {
-    require(folio_command_count() == 22, "only implemented commands are registered");
-    const enum folio_command expected[] = {
-        FOLIO_COMMAND_SAVE,           FOLIO_COMMAND_QUIT,          FOLIO_COMMAND_SAVE_QUIT,
-        FOLIO_COMMAND_FORCE_QUIT,     FOLIO_COMMAND_HELP,          FOLIO_COMMAND_EDIT,
-        FOLIO_COMMAND_VIEW,           FOLIO_COMMAND_NEW,           FOLIO_COMMAND_SAVE_AS,
-        FOLIO_COMMAND_RENAME,         FOLIO_COMMAND_FIND,          FOLIO_COMMAND_SET,
-        FOLIO_COMMAND_TOGGLE_NUMBER,  FOLIO_COMMAND_REPLACE,       FOLIO_COMMAND_SUBSTITUTE,
-        FOLIO_COMMAND_SETTINGS,       FOLIO_COMMAND_DISCARD_EDITS, FOLIO_COMMAND_HISTORY,
-        FOLIO_COMMAND_NEW_CATEGORY,   FOLIO_COMMAND_TRASH_NOTE,    FOLIO_COMMAND_DELETE_CATEGORY,
-        FOLIO_COMMAND_RENAME_CATEGORY};
+    require(folio_command_count() == 25, "only implemented commands are registered");
+    const enum folio_command expected[] = {FOLIO_COMMAND_SAVE,
+                                           FOLIO_COMMAND_QUIT,
+                                           FOLIO_COMMAND_SAVE_QUIT,
+                                           FOLIO_COMMAND_FORCE_QUIT,
+                                           FOLIO_COMMAND_HELP,
+                                           FOLIO_COMMAND_EDIT,
+                                           FOLIO_COMMAND_VIEW,
+                                           FOLIO_COMMAND_NEW,
+                                           FOLIO_COMMAND_SAVE_AS,
+                                           FOLIO_COMMAND_RENAME,
+                                           FOLIO_COMMAND_FIND,
+                                           FOLIO_COMMAND_SET,
+                                           FOLIO_COMMAND_TOGGLE_NUMBER,
+                                           FOLIO_COMMAND_REPLACE,
+                                           FOLIO_COMMAND_SUBSTITUTE,
+                                           FOLIO_COMMAND_SETTINGS,
+                                           FOLIO_COMMAND_DISCARD_EDITS,
+                                           FOLIO_COMMAND_HISTORY,
+                                           FOLIO_COMMAND_NEW_CATEGORY,
+                                           FOLIO_COMMAND_TRASH_NOTE,
+                                           FOLIO_COMMAND_DELETE_CATEGORY,
+                                           FOLIO_COMMAND_RENAME_CATEGORY,
+                                           FOLIO_COMMAND_LAYOUT_DRAWER,
+                                           FOLIO_COMMAND_LAYOUT_BOTH,
+                                           FOLIO_COMMAND_LAYOUT_NOTE};
     for (size_t index = 0; index < folio_command_count(); ++index)
     {
         enum folio_command command = folio_command_at(index);
@@ -386,6 +402,10 @@ static void verify_catalog(void)
                     "every catalog alias parses to its command");
         }
     }
+}
+
+static void verify_catalog_matches(void)
+{
     require(folio_command_matches(FOLIO_COMMAND_SAVE, "", 0, FOLIO_LANGUAGE_JA),
             "empty palette query shows all");
     require(folio_command_matches(FOLIO_COMMAND_SAVE_QUIT, "wq", 2, FOLIO_LANGUAGE_JA),
@@ -445,11 +465,38 @@ static void verify_case_insensitive_palette(void)
             "the Ex parser still tells the case apart");
 }
 
+static void verify_layout_commands(void)
+{
+    static const struct
+    {
+        const char *_Nonnull alias;
+        enum folio_command command;
+        const char *_Nonnull refused;
+    } modes[] = {
+        {":listonly", FOLIO_COMMAND_LAYOUT_DRAWER, ":listonly extra"},
+        {":both", FOLIO_COMMAND_LAYOUT_BOTH, ":both extra"},
+        {":noteonly", FOLIO_COMMAND_LAYOUT_NOTE, ":noteonly extra"},
+    };
+    for (size_t index = 0; index < sizeof modes / sizeof modes[0]; ++index)
+    {
+        expect_command(modes[index].alias, modes[index].command, "layout alias shares one ID");
+        require(folio_command_listed(modes[index].command), "layout is offered by the catalog");
+        enum folio_command command = FOLIO_COMMAND_HELP;
+        size_t argument = 42;
+        require(!folio_command_parse(modes[index].refused, strlen(modes[index].refused), &command,
+                                     &argument) &&
+                    command == FOLIO_COMMAND_HELP && argument == 42,
+                "layout commands reject arguments without changing outputs");
+    }
+}
+
 void run_command_tests(void)
 {
+    verify_layout_commands();
     verify_aliases();
     verify_rejections();
     verify_catalog();
+    verify_catalog_matches();
     verify_options();
     verify_substitute();
     verify_listed();

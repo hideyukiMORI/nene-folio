@@ -89,7 +89,9 @@
 | 文書の一覧（索引） | `data/<カテゴリ>/*.md` の存在と順序 | application（`folio_state`） | 起動時の走査と保存後の再読込だけ |
 | カテゴリの色・順序・展開状態 | `data/categories.json` | application | 右クリック・ドラッグ・トグルの意図を受けた reducer |
 | 文書の順序 | `data/<カテゴリ>/index.json` | application | ドラッグの意図を受けた reducer |
-| 選択中の文書と表示モード（閲覧／編集） | 閉じた enum | application | クリックと編集切替の意図 |
+| 選択中の文書と本文モード（閲覧／編集） | 閉じた enum | application | クリックと編集切替の意図 |
+| 表示モード（一覧／両方／ノート） | `folio_layout_mode`の閉じたenum。実行中だけの可視領域 | application（`folio_state`） | 共通コマンドの表示切替の意図。保存や本文再投入を伴わない（ADR0047） |
+| 一覧窓からの復元寸法 | 直前の広い通常幅・最大化と通常位置 | ui/win32（`folio_window`） | 一覧へ入るときだけ退避し、両方／ノートへ戻すときに適用するUI一時状態（ADR0047） |
 | 編集中の本文 | 保存前の文字列 | ui/win32（RichEdit が所有） | 保存の意図で application へ渡す |
 | ドロワーのスクロール量 | 画素 | application（レイアウト値の一部） | ホイール・キーの意図。上限は core が計算 |
 | 検索語と一致集合 | 文字列と文書 ID の列 | application | 検索窓の入力 |

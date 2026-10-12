@@ -18,6 +18,15 @@ CI: GitHub Actions `windows-2022`（PR の ready_for_review で起動。ロー�
 
 ## 1. 実測結果
 
+### #290: 3表示モード・窓幅復元・編集保持（2026-10-12）
+
+Windows build 26300、120 DPI（125%）、日本語/暗色、所有PID/HWNDへの合成入力とPrintWindowで確認した。
+通常幅の3mode、320 logical px一覧、幅復元、狭幅settings、可視focus、本文/Undo/選択/可視論理行と非保存を測定。
+helperの座標/改行計測/キー情報の診断を分け、成功済み結果を保持して残部だけ続行した。最後の通常残部は80 assertions成功。
+表示中desktopでの最大化は前面照合に失敗したため中止し、SwitchDesktopを使わない専用非表示desktopへ分離した。
+隔離した実Win32の最大化→一覧→最大化/通常位置復元は28 assertions成功。物理操作・別DPI・実複数画面の受理とはしない。
+実コマンド・入力286件のhash・画像・失敗と条件は[品質記録](2026-10-12-layout-mode-checks.md)。
+
 ### #288: カテゴリ追加の常設入口（2026-10-12）
 
 Windows build 26300、120 DPI（125%）、1000×750物理px、日本語/暗色で、所有PID/HWNDへの合成入力とPrintWindowを使用。
