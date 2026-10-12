@@ -57,7 +57,7 @@ unitでは125の名前と元RGB、127配色×19組の可読文字コントラス
   狭幅一般設定の下部はTab/スクロールで到達し、候補・案内・保存失敗の理由は最小サイズでも読めた。
 
 初回nativeの141件も成功したが、最終148件で空行の反例と実320幅を追加したため、受理対象は後者である。
-最終runnerの最初の起動でログ出力先を開けずworker生成前に停止した。ログ名/desktop名を分離して再実行し、結果を保存した。
+最終runnerの最初の起動はworker生成前に停止し、原因は特定していない。ログ名/desktop名を分離した再実行は成功し、結果を保存した。
 `native-stderr-picker-final.log` / `native-general-stderr.log`にASan interceptionの非致命警告1行がある。
 同環境の既知挙動（#292品質記録）と同じで、今回の両workerは全assertion成功、sanitizer実失敗なし、exit 0だった。
 
