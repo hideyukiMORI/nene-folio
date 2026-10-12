@@ -13,6 +13,9 @@
 
 struct utf8_text;
 
+/* 入力ストリーム先頭の UTF-8 署名の長さ。署名が無ければ 0、あれば 3。 */
+[[nodiscard]] size_t utf8_text_bom_length(const char *_Nonnull bytes, size_t length);
+
 /* 1 コードポイントの UTF-8 符号化に要る最大バイト数。 */
 constexpr size_t utf8_text_max_encoded = 4;
 

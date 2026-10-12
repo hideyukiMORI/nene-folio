@@ -41,8 +41,9 @@ enum json_reader_outcome json_reader_create(const char *_Nonnull text, size_t le
     }
     reader->scratch[0] = '\0';
     reader->scratch_capacity = scratch_initial;
-    reader->text = text;
-    reader->length = length;
+    size_t signature = utf8_text_bom_length(text, length);
+    reader->text = text + signature;
+    reader->length = length - signature;
     reader->phase = JSON_READER_PHASE_VALUE;
     reader->terminal = JSON_TOKEN_MALFORMED;
     *out = reader;

@@ -22,7 +22,8 @@ RichEdit の変更印は 0 だが application は CHANGED と判定し、履歴�
 
 ## 決定
 
-この ADR は [ADR 0006](0006-edit-mode-and-save-path.md) 決定 3 の BOM の扱いと、#227 の保存上限の計数を補正する。
+この ADR は [ADR 0004](0004-first-drawer-slice.md) のファイル読取時のBOM除去位置、
+[ADR 0006](0006-edit-mode-and-save-path.md) 決定 3 の BOM の扱いと、#227 の保存上限の計数を補正する。
 通常のノートは BOM を付けずに保存する。**本文先頭の U+FEFF を再読込で署名と誤認させないために必要な場合だけ、署名を 1 個付ける。**
 原文の BOM の有無を状態として覚えることはしない。出力の署名は現在の本文だけから決まる。
 

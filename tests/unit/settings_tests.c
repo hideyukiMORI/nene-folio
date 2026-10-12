@@ -37,6 +37,22 @@ static void verify_default(void)
     folio_settings_destroy(settings);
 }
 
+void run_bom_settings_tests(void)
+{
+    const char *raw = "\xEF\xBB\xBF\xEF\xBB\xBF"
+                      "{\"version\":3,\"number\":true,\"theme\":\"dark\",\"language\":\"en\"}";
+    struct folio_settings *settings = nullptr;
+    require(folio_settings_parse(raw + 3, strlen(raw) - 3, &settings) == FOLIO_SETTINGS_READY &&
+                folio_settings_number(settings) &&
+                folio_settings_language(settings) == FOLIO_LANGUAGE_EN,
+            "settings codec accepts one signature");
+    struct folio_settings *out = settings;
+    require(folio_settings_parse(raw, strlen(raw), &out) == FOLIO_SETTINGS_MALFORMED &&
+                out == settings,
+            "settings codec rejects two signatures without replacing out");
+    folio_settings_destroy(settings);
+}
+
 /* 言語の数の正本は列挙で、folio_language_count はそれと一致する（ADR 0032 の決定 1）。 */
 static void verify_language_count(void)
 {

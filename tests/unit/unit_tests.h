@@ -11,6 +11,12 @@ void require(bool condition, const char *_Nonnull description);
 [[nodiscard]] bool same_text(const char *_Nonnull actual, const char *_Nonnull expected);
 
 void run_text_tests(void);
+void run_bom_ledger_tests(void);
+void run_bom_settings_tests(void);
+void run_bom_rename_tests(void);
+void run_bom_filter_tests(void);
+void run_bom_state_tests(void);
+void run_bom_allocation_tests(void);
 void run_note_size_text_tests(void);
 void run_note_size_state_tests(void);
 void run_note_nul_text_tests(void);

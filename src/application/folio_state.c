@@ -2171,8 +2171,7 @@ static enum folio_state_outcome copied_text(const struct folio_state *_Nonnull s
     {
         return edited_text(state, units, count, out);
     }
-    enum note_text_outcome copied =
-        note_text_create(note_text_bytes(state->body), note_text_length(state->body), out);
+    enum note_text_outcome copied = note_text_copy(state->body, out);
     return text_outcome(copied);
 }
 

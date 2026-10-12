@@ -56,6 +56,36 @@ static void verify_category_parse(void)
     category_ledger_destroy(nullptr);
 }
 
+void run_bom_ledger_tests(void)
+{
+    const char *categories = "\xEF\xBB\xBF\xEF\xBB\xBF"
+                             "{\"version\":1,\"categories\":[]}";
+    struct category_ledger *category = nullptr;
+    require(category_ledger_parse(categories + 3, strlen(categories) - 3, &category) ==
+                    CATEGORY_LEDGER_ACCEPTED &&
+                category_ledger_count(category) == 0,
+            "category codec accepts one signature");
+    struct category_ledger *category_out = category;
+    require(category_ledger_parse(categories, strlen(categories), &category_out) ==
+                    CATEGORY_LEDGER_MALFORMED &&
+                category_out == category,
+            "category codec rejects two signatures without replacing out");
+    category_ledger_destroy(category);
+    const char *notes = "\xEF\xBB\xBF\xEF\xBB\xBF"
+                        "{\"version\":1,\"notes\":[\"A\xEF\xBB\xBF"
+                        "B\"]}";
+    struct note_ledger *note = nullptr;
+    require(note_ledger_parse(notes + 3, strlen(notes) - 3, &note) == NOTE_LEDGER_ACCEPTED &&
+                same_text(note_ledger_name(note, 0), "A\xEF\xBB\xBF"
+                                                     "B"),
+            "note codec accepts one signature and keeps string FEFF");
+    struct note_ledger *note_out = note;
+    require(note_ledger_parse(notes, strlen(notes), &note_out) == NOTE_LEDGER_MALFORMED &&
+                note_out == note,
+            "note codec rejects two signatures without replacing out");
+    note_ledger_destroy(note);
+}
+
 static void verify_category_rejections(void)
 {
     require(category_outcome("{\"version\": 2, \"categories\": []}") ==

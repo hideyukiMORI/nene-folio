@@ -1,6 +1,7 @@
 /* 文法を検証しながら JSON を字句の列として読む純関数の読み手（stdio 無し・ARC-003）。
  * 木（DOM）は作らない。値の解釈は各台帳の codec が行う（C-006）。
  * 文字列は \" \ \/ \b \f \n \r \t \uXXXX（サロゲート対を含む）を展開し、UTF-8 として検証する。
+ * 入力先頭のUTF-8署名は1個だけ消費し、文字列内のU+FEFFは保持する。
  * 入れ子は json_reader_max_depth まで。text は読み手より長く生きていなければならない。 */
 #ifndef NENEFOLIO_JSON_READER_H
 #define NENEFOLIO_JSON_READER_H
