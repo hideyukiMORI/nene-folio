@@ -135,10 +135,10 @@ static void verify_options(void)
     expect_option(":set nu!", FOLIO_OPTION_NUMBER_TOGGLE, "nu! toggles");
     expect_option(":set invnumber", FOLIO_OPTION_NUMBER_TOGGLE, "invnumber toggles");
     expect_option(":set invnu ", FOLIO_OPTION_NUMBER_TOGGLE, "invnu toggles and is trimmed");
-    /* テーマの 3 語（ADR 0031 の決定 8(c)）。完全一致の表なので parser は変わっていない。 */
-    expect_option(":set theme=system", FOLIO_OPTION_THEME_SYSTEM, "theme=system follows the OS");
-    expect_option(":se theme=light", FOLIO_OPTION_THEME_LIGHT, "theme=light is explicit");
-    expect_option(":set theme=dark ", FOLIO_OPTION_THEME_DARK, "theme=dark is trimmed");
+    enum folio_theme_choice theme = FOLIO_THEME_CHOICE_SYSTEM;
+    require(folio_command_parse_theme(" theme=dark ", 12, &theme) &&
+                theme == FOLIO_THEME_CHOICE_DARK,
+            "the legacy theme spelling is trimmed by the shared theme parser");
     /* 言語の 3 語（ADR 0032 の決定 7）。theme= と同じ完全一致の表である。 */
     expect_option(":set language=ja", FOLIO_OPTION_LANGUAGE_JA, "language=ja");
     expect_option(":se language=en", FOLIO_OPTION_LANGUAGE_EN, "language=en");

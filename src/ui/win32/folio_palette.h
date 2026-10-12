@@ -1,4 +1,4 @@
-/* UI が自前で描く部分の色の束。テーマごとの値の正本はここ 1 つ（ARC-001・ADR 0005）。
+/* UI が自前で描く部分の色の束。core の theme_palette から COLORREF へ写す（ARC-001・ADR0049）。
  * 全メンバーが独立に妥当な色なので完全型で公開する（C-003）。RTF の色は core の rtf_palette。 */
 #ifndef NENEFOLIO_FOLIO_PALETTE_H
 #define NENEFOLIO_FOLIO_PALETTE_H

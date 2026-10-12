@@ -15,6 +15,7 @@
 #include "folio_state_outcome.h"
 #include "folio_step.h"
 #include "folio_theme.h"
+#include "folio_theme_choice.h"
 #include "history_row_view.h"
 #include "note_destination.h"
 #include "note_ref.h"
@@ -48,6 +49,8 @@ folio_state_create(const struct folio_ports *_Nonnull ports,
                    struct folio_state *_Nullable *_Nonnull out);
 /* 描画に使うテーマ（ADR 0031 の決定 3）。選択が SYSTEM なら直近に読んだ OS の値を通す。 */
 [[nodiscard]] enum folio_theme folio_state_theme(const struct folio_state *_Nonnull state);
+/* Cached OS appearance, for the system candidate preview; does not perform IO. */
+[[nodiscard]] enum folio_theme folio_state_system_theme(const struct folio_state *_Nonnull state);
 /* 利用者が選んでいるテーマ。設定画面の印はこの値に付く（解決値ではない）。 */
 [[nodiscard]] enum folio_theme_choice
 folio_state_theme_choice(const struct folio_state *_Nonnull state);

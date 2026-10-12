@@ -289,7 +289,7 @@ def source_inputs() -> dict:
                                       cwd=ROOT).decode("utf-8").split("\0")
     prefixes = ("src/", "eng/", "tests/", "fonts/", "cmake/", "docs/release/")
     files = {name: digest(ROOT / name) for name in sorted(set(listing)) if name and (ROOT / name).is_file() and
-             (name.startswith(prefixes) or name in {"CMakeLists.txt", ".clang-tidy", ".clang-format", "LICENSE"})}
+             (name.startswith(prefixes) or name in {"CMakeLists.txt", ".clang-tidy", ".clang-format", "LICENSE", "THIRD_PARTY_NOTICES.txt"})}
     return {"sourceCommit": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
             "sourceDirty": bool(subprocess.check_output(["git", "status", "--porcelain"], cwd=ROOT)),
             "sourceInputsSHA256": files}

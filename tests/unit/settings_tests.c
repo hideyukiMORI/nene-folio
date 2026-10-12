@@ -1,5 +1,5 @@
 /* core の folio_settings（ADR 0025・ADR 0031 の決定 1・2・ADR 0032 の決定 1）。
- * 版 1・版 2 からの移行・版 3 の往復・既定値・拒む形・未知の版と、folio_theme_resolve の
+ * 版 1・版 2 からの移行・版 3 の往復・既定値・拒む形・未知の版と、folio_theme_choice_resolve の
  * 6 通り・folio_language_count の一致・ui_font_face と ui_font_fallback_face の 3 値・
  * ui_font_pick の 3 段を確かめる。 */
 #include "folio_language.h"
@@ -170,9 +170,9 @@ static void expect_migration(const char *_Nonnull text, const char *_Nonnull des
     folio_settings_write(settings, writer);
     folio_settings_destroy(settings);
     require(json_writer_finish(writer) == JSON_WRITER_ACCEPTED, "the document is complete");
-    require(strstr(json_writer_text(writer), "\"version\": 3") != nullptr &&
+    require(strstr(json_writer_text(writer), "\"version\": 4") != nullptr &&
                 strstr(json_writer_text(writer), "\"language\": \"ja\"") != nullptr,
-            "writing always produces version 3");
+            "writing always produces version 4");
     json_writer_destroy(writer);
 }
 
@@ -240,7 +240,7 @@ static void verify_parse(void)
 /* 黙って既定値へ落とさない形（決定 1）。無い・壊れているは呼び出し側が区別する。 */
 static void verify_refusals(void)
 {
-    expect_refusal("{\"version\": 4, \"number\": true, \"theme\": \"dark\", "
+    expect_refusal("{\"version\": 5, \"number\": true, \"theme\": \"dark\", "
                    "\"language\": \"ja\"}",
                    FOLIO_SETTINGS_UNSUPPORTED_VERSION,
                    "a newer version is refused, not downgraded");
@@ -295,21 +295,53 @@ static void verify_refusals(void)
 /* 3 つの選択 × 2 つの OS の値（ADR 0031 の決定 2）。 */
 static void verify_resolve(void)
 {
-    require(folio_theme_resolve(FOLIO_THEME_CHOICE_SYSTEM, FOLIO_THEME_LIGHT) == FOLIO_THEME_LIGHT,
+    require(folio_theme_choice_resolve(FOLIO_THEME_CHOICE_SYSTEM, FOLIO_THEME_LIGHT) ==
+                FOLIO_THEME_LIGHT,
             "system follows a light operating system");
-    require(folio_theme_resolve(FOLIO_THEME_CHOICE_SYSTEM, FOLIO_THEME_DARK) == FOLIO_THEME_DARK,
+    require(folio_theme_choice_resolve(FOLIO_THEME_CHOICE_SYSTEM, FOLIO_THEME_DARK) ==
+                FOLIO_THEME_DARK,
             "system follows a dark operating system");
-    require(folio_theme_resolve(FOLIO_THEME_CHOICE_LIGHT, FOLIO_THEME_LIGHT) == FOLIO_THEME_LIGHT &&
-                folio_theme_resolve(FOLIO_THEME_CHOICE_LIGHT, FOLIO_THEME_DARK) ==
+    require(folio_theme_choice_resolve(FOLIO_THEME_CHOICE_LIGHT, FOLIO_THEME_LIGHT) ==
+                    FOLIO_THEME_LIGHT &&
+                folio_theme_choice_resolve(FOLIO_THEME_CHOICE_LIGHT, FOLIO_THEME_DARK) ==
                     FOLIO_THEME_LIGHT,
             "light ignores the operating system");
-    require(folio_theme_resolve(FOLIO_THEME_CHOICE_DARK, FOLIO_THEME_LIGHT) == FOLIO_THEME_DARK &&
-                folio_theme_resolve(FOLIO_THEME_CHOICE_DARK, FOLIO_THEME_DARK) == FOLIO_THEME_DARK,
+    require(folio_theme_choice_resolve(FOLIO_THEME_CHOICE_DARK, FOLIO_THEME_LIGHT) ==
+                    FOLIO_THEME_DARK &&
+                folio_theme_choice_resolve(FOLIO_THEME_CHOICE_DARK, FOLIO_THEME_DARK) ==
+                    FOLIO_THEME_DARK,
             "dark ignores the operating system");
+}
+
+static void verify_catalog_schema(void)
+{
+    expect_refusal("{\"version\":3,\"number\":true,\"theme\":\"dracula\",\"language\":\"en\"}",
+                   FOLIO_SETTINGS_MALFORMED, "version 3 keeps its original theme vocabulary");
+    expect_refusal("{\"version\":4,\"number\":true,\"theme\":\"unknown\",\"language\":\"en\"}",
+                   FOLIO_SETTINGS_MALFORMED, "version 4 refuses unknown catalog identifiers");
+    expect_refusal("{\"version\":4,\"number\":true,\"theme\":\"dracula\"}",
+                   FOLIO_SETTINGS_MALFORMED, "version 4 still requires its language field");
+    expect_refusal(
+        "{\"version\":4,\"number\":true,\"theme\":\"dracula\\u0000future\",\"language\":\"en\"}",
+        FOLIO_SETTINGS_MALFORMED, "decoded NUL cannot truncate a persisted theme identifier");
+    struct folio_settings *settings = nullptr;
+    require(folio_settings_parse(version_three, strlen(version_three), &settings) ==
+                FOLIO_SETTINGS_READY,
+            "version 3 remains readable");
+    struct json_writer *writer = nullptr;
+    require(json_writer_create(&writer) == JSON_WRITER_ACCEPTED, "migration writer");
+    folio_settings_write(settings, writer);
+    folio_settings_destroy(settings);
+    require(json_writer_finish(writer) == JSON_WRITER_ACCEPTED &&
+                strstr(json_writer_text(writer), "\"version\": 4") != nullptr &&
+                strstr(json_writer_text(writer), "\"language\": \"en\"") != nullptr,
+            "writing migrated version 3 preserves its language in version 4");
+    json_writer_destroy(writer);
 }
 
 void run_settings_tests(void)
 {
+    verify_catalog_schema();
     verify_default();
     verify_language_count();
     verify_font_faces();
@@ -319,6 +351,10 @@ void run_settings_tests(void)
     verify_round_trip(true, FOLIO_THEME_CHOICE_DARK, FOLIO_LANGUAGE_ZH_HANS);
     verify_round_trip(false, FOLIO_THEME_CHOICE_LIGHT, FOLIO_LANGUAGE_EN);
     verify_round_trip(true, FOLIO_THEME_CHOICE_SYSTEM, FOLIO_LANGUAGE_JA);
+    for (size_t index = 0; index < folio_theme_choice_count(); ++index)
+    {
+        verify_round_trip(true, folio_theme_choice_at(index), FOLIO_LANGUAGE_EN);
+    }
     verify_refusals();
     verify_resolve();
 }

@@ -27,6 +27,7 @@
 #include "product_version.h"
 #include "replace_edit.h"
 #include "settings_row_kind.h"
+#include "theme_row.h"
 #include "ui_face.h"
 #include "ui_text.h"
 #include "ui_text_request.h"
@@ -145,9 +146,7 @@ static const struct
     unsigned char position;
 } settings_rows[] = {
     {UI_TEXT_SETTINGS_THEME, SETTINGS_ROW_HEADING, 0, 0, 0},
-    {UI_TEXT_SETTINGS_THEME_SYSTEM, SETTINGS_ROW_THEME, FOLIO_THEME_CHOICE_SYSTEM, 0, 0},
-    {UI_TEXT_SETTINGS_THEME_LIGHT, SETTINGS_ROW_THEME, FOLIO_THEME_CHOICE_LIGHT, 0, 1},
-    {UI_TEXT_SETTINGS_THEME_DARK, SETTINGS_ROW_THEME, FOLIO_THEME_CHOICE_DARK, 0, 2},
+    {UI_TEXT_THEME_CHOOSE, SETTINGS_ROW_THEME, 0, 0, 0},
     {UI_TEXT_SETTINGS_LANGUAGE, SETTINGS_ROW_HEADING, 0, 1, 0},
     {UI_TEXT_SETTINGS_LANGUAGE_JA, SETTINGS_ROW_LANGUAGE, FOLIO_LANGUAGE_JA, 1, 0},
     {UI_TEXT_SETTINGS_LANGUAGE_EN, SETTINGS_ROW_LANGUAGE, FOLIO_LANGUAGE_EN, 1, 1},
@@ -310,6 +309,10 @@ constexpr int base_settings_mark_inset = 4;
 constexpr int base_settings_mark_box = 24;
 constexpr int base_settings_width = 480;
 constexpr int base_settings_height = 384;
+constexpr int base_theme_height = 560;
+constexpr int base_theme_row_height = 48;
+constexpr int base_theme_choice_height = 56;
+constexpr int base_theme_footer_height = 72;
 constexpr int base_settings_header = 52;
 constexpr int base_settings_footer = 92;
 constexpr int base_settings_notice = 64;
@@ -409,6 +412,12 @@ static struct folio_regions regions_for(const struct folio_window *_Nonnull self
     return regions;
 }
 
+static bool settings_surface(const struct folio_window *_Nonnull self)
+{
+    return self->command_surface == COMMAND_SURFACE_SETTINGS ||
+           self->command_surface == COMMAND_SURFACE_THEMES;
+}
+
 static bool pane_visible(const struct folio_window *_Nonnull self)
 {
     RECT pane = regions_for(self).pane;
@@ -431,6 +440,8 @@ static int command_surface_rows(const struct folio_window *_Nonnull self)
         return (int)folio_command_listed_count();
     case COMMAND_SURFACE_SETTINGS:
         return (int)settings_row_count();
+    case COMMAND_SURFACE_THEMES:
+        return (int)folio_theme_choice_count();
     case COMMAND_SURFACE_HISTORY:
         return (int)folio_state_history_count(self->state);
     case COMMAND_SURFACE_EX:
@@ -456,6 +467,7 @@ static int command_help_rows(const struct folio_window *_Nonnull self)
     case COMMAND_SURFACE_SEARCH:
     case COMMAND_SURFACE_REPLACE:
     case COMMAND_SURFACE_SETTINGS:
+    case COMMAND_SURFACE_THEMES:
     case COMMAND_SURFACE_HISTORY:
         return 0;
     }
@@ -496,7 +508,8 @@ static bool command_owns(const struct folio_window *_Nonnull self, HWND _Nullabl
         return true;
     }
     /* 設定画面と履歴は EDIT を持たず、レイヤー自身がフォーカスを取る（ADR 0031 の決定 7）。 */
-    if (command_surface_listing(self->command_surface) && window == self->command_layer)
+    if ((command_surface_listing(self->command_surface) || settings_surface(self)) &&
+        window == self->command_layer)
     {
         return true;
     }
@@ -675,7 +688,9 @@ static RECT settings_dialog_rect(const struct folio_window *_Nonnull self)
     UINT dpi = GetDpiForWindow(self->handle);
     int edge = scale(base_settings_padding, dpi) * 2;
     int width = scale(base_settings_width, dpi);
-    int height = scale(base_settings_height, dpi);
+    int wanted =
+        self->command_surface == COMMAND_SURFACE_THEMES ? base_theme_height : base_settings_height;
+    int height = scale(wanted, dpi);
     width = width < client.right - edge ? width : client.right - edge;
     height = height < client.bottom - edge ? height : client.bottom - edge;
     return (RECT){(client.right - width) / 2, (client.bottom - height) / 2,
@@ -718,11 +733,18 @@ static RECT settings_item_rect(const struct folio_window *_Nonnull self, size_t 
     int height = scale(base_settings_item_height, dpi);
     int label = scale(base_settings_label, dpi);
     int stride = label + (3 / columns) * (height + gap) - gap + scale(base_settings_group_gap, dpi);
+    int theme = label + scale(base_theme_choice_height + base_settings_group_gap, dpi);
     int group = settings_rows[index].group;
-    bounds.top += group * stride - (int)self->command_first;
+    bounds.top += (group > 0 ? theme + (group - 1) * stride : 0) - (int)self->command_first;
     if (settings_rows[index].kind == SETTINGS_ROW_HEADING)
     {
         bounds.bottom = bounds.top + label;
+        return bounds;
+    }
+    if (settings_rows[index].kind == SETTINGS_ROW_THEME)
+    {
+        bounds.top += label;
+        bounds.bottom = bounds.top + scale(base_theme_choice_height, dpi);
         return bounds;
     }
     if (settings_rows[index].kind == SETTINGS_ROW_NUMBER)
@@ -789,6 +811,7 @@ static RECT command_surface_rect(const struct folio_window *_Nonnull self)
     case COMMAND_SURFACE_REPLACE:
         return command_replace_rect(self);
     case COMMAND_SURFACE_SETTINGS:
+    case COMMAND_SURFACE_THEMES:
         return settings_dialog_rect(self);
     case COMMAND_SURFACE_CLOSED:
     case COMMAND_SURFACE_PALETTE:
@@ -798,8 +821,53 @@ static RECT command_surface_rect(const struct folio_window *_Nonnull self)
     return command_palette_rect(self);
 }
 
+static RECT theme_input_rect(const struct folio_window *_Nonnull self)
+{
+    RECT client;
+    GetClientRect(self->command_layer, &client);
+    UINT dpi = GetDpiForWindow(self->handle);
+    int padding = scale(base_settings_padding, dpi);
+    int top = scale(base_settings_header + 20, dpi);
+    return (RECT){padding, top, client.right - padding, top + scale(28, dpi)};
+}
+
+static RECT theme_footer_rect(const struct folio_window *_Nonnull self)
+{
+    RECT client;
+    GetClientRect(self->command_layer, &client);
+    UINT dpi = GetDpiForWindow(self->handle);
+    int padding = scale(base_settings_padding, dpi);
+    int height = base_theme_footer_height + (settings_has_notice(self) ? base_settings_notice : 0);
+    return (RECT){padding, client.bottom - scale(height, dpi), client.right - padding,
+                  client.bottom - scale(8, dpi)};
+}
+
+static RECT theme_rows_rect(const struct folio_window *_Nonnull self)
+{
+    RECT bounds = theme_input_rect(self);
+    UINT dpi = GetDpiForWindow(self->handle);
+    bounds.top = bounds.bottom + scale(8, dpi);
+    int bottom = theme_footer_rect(self).top - scale(8, dpi);
+    int height = bottom > bounds.top ? bottom - bounds.top : 0;
+    int row = scale(base_theme_row_height, dpi);
+    bounds.bottom = bounds.top + height / row * row;
+    return bounds;
+}
+
+static RECT theme_back_rect(const struct folio_window *_Nonnull self)
+{
+    RECT close = settings_close_rect(self);
+    int padding = scale(base_settings_padding, GetDpiForWindow(self->handle));
+    return (RECT){padding, close.top, padding + scale(48, GetDpiForWindow(self->handle)),
+                  close.bottom};
+}
+
 static RECT command_input_rect(const struct folio_window *_Nonnull self)
 {
+    if (self->command_surface == COMMAND_SURFACE_THEMES)
+    {
+        return theme_input_rect(self);
+    }
     UINT dpi = GetDpiForWindow(self->handle);
     RECT bounds;
     GetClientRect(self->command_layer, &bounds);
@@ -912,6 +980,10 @@ static RECT command_toggle_rect(const struct folio_window *_Nonnull self)
 
 static RECT command_rows_rect(const struct folio_window *_Nonnull self)
 {
+    if (self->command_surface == COMMAND_SURFACE_THEMES)
+    {
+        return theme_rows_rect(self);
+    }
     RECT bounds = command_input_rect(self);
     UINT dpi = GetDpiForWindow(self->handle);
     bounds.top = command_body_rect(self).top;
@@ -928,8 +1000,9 @@ static RECT command_rows_rect(const struct folio_window *_Nonnull self)
 static size_t command_visible_rows(const struct folio_window *_Nonnull self)
 {
     RECT rows = command_rows_rect(self);
-    return (size_t)((rows.bottom - rows.top) /
-                    scale(base_command_row_height, GetDpiForWindow(self->handle)));
+    int height = self->command_surface == COMMAND_SURFACE_THEMES ? base_theme_row_height
+                                                                 : base_command_row_height;
+    return (size_t)((rows.bottom - rows.top) / scale(height, GetDpiForWindow(self->handle)));
 }
 
 static void reveal_command_selection(struct folio_window *_Nonnull self)
@@ -1013,7 +1086,7 @@ static bool arrange_settings_backdrop(const struct folio_window *_Nonnull self)
     {
         return true;
     }
-    bool visible = self->command_surface == COMMAND_SURFACE_SETTINGS;
+    bool visible = settings_surface(self);
     if (visible && !set_settings_backdrop_region(self))
     {
         return false;
@@ -1049,7 +1122,7 @@ static void arrange_command_input(struct folio_window *_Nonnull self)
     RECT bounds = command_input_rect(self);
     MoveWindow(self->command_input, bounds.left, bounds.top, bounds.right - bounds.left,
                bounds.bottom - bounds.top, TRUE);
-    if (self->command_surface == COMMAND_SURFACE_PALETTE ||
+    if (self->command_surface == COMMAND_SURFACE_PALETTE || settings_surface(self) ||
         command_surface_listing(self->command_surface))
     {
         self->command_first = 0;
@@ -2123,13 +2196,30 @@ static bool settings_row_current(const struct folio_window *_Nonnull self, size_
     case SETTINGS_ROW_HEADING:
         return false;
     case SETTINGS_ROW_THEME:
-        return (unsigned char)folio_state_theme_choice(self->state) == settings_rows[index].value;
+        return false;
     case SETTINGS_ROW_LANGUAGE:
         return (unsigned char)folio_state_language(self->state) == settings_rows[index].value;
     case SETTINGS_ROW_NUMBER:
         return (unsigned char)folio_state_number(self->state) == settings_rows[index].value;
     }
     return false;
+}
+
+static void draw_settings_theme(const struct folio_window *_Nonnull self, HDC device, RECT row)
+{
+    UINT dpi = GetDpiForWindow(self->handle);
+    enum folio_language language = folio_state_language(self->state);
+    row.left += scale(12, dpi);
+    row.right -= scale(12, dpi);
+    row.top += scale(6, dpi);
+    row.bottom = row.top + scale(20, dpi);
+    SetTextColor(device, self->palette.current_text);
+    draw_units(device, folio_theme_choice_label(folio_state_theme_choice(self->state), language),
+               row, DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
+    OffsetRect(&row, 0, scale(22, dpi));
+    SetTextColor(device, self->palette.dialog_secondary);
+    draw_units(device, ui_text_line(UI_TEXT_THEME_CHOOSE, language), row,
+               DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
 }
 
 static void draw_settings_row(const struct folio_window *_Nonnull self, HDC device, RECT row,
@@ -2153,6 +2243,11 @@ static void draw_settings_row(const struct folio_window *_Nonnull self, HDC devi
             icon_paint_fill(device, mark, ICON_PAINT_SELECTION, self->palette.current_text);
         }
     }
+    if (settings_rows[index].kind == SETTINGS_ROW_THEME)
+    {
+        draw_settings_theme(self, device, row);
+        return;
+    }
     RECT label = row;
     label.left += scale(choice ? 32 : 0, dpi);
     label.right -= scale(4, dpi);
@@ -2171,6 +2266,186 @@ static void draw_settings_rows(const struct folio_window *_Nonnull self, HDC dev
         draw_settings_row(self, device, settings_item_rect(self, index), index);
     }
     RestoreDC(device, saved);
+}
+
+static bool theme_at_query(const struct folio_window *_Nonnull self,
+                           const struct utf8_text *_Nonnull query, size_t wanted,
+                           enum folio_theme_choice *_Nonnull out)
+{
+    size_t visible = 0;
+    for (size_t index = 0; index < folio_theme_choice_count(); ++index)
+    {
+        enum folio_theme_choice choice = folio_theme_choice_at(index);
+        if (!folio_theme_choice_matches(choice, utf8_text_bytes(query), utf8_text_length(query),
+                                        folio_state_language(self->state)))
+        {
+            continue;
+        }
+        if (visible == wanted)
+        {
+            *out = choice;
+            return true;
+        }
+        visible += 1;
+    }
+    return false;
+}
+
+static size_t theme_matches_count(const struct folio_window *_Nonnull self,
+                                  const struct utf8_text *_Nonnull query)
+{
+    size_t count = 0;
+    for (size_t index = 0; index < folio_theme_choice_count(); ++index)
+    {
+        bool matches =
+            folio_theme_choice_matches(folio_theme_choice_at(index), utf8_text_bytes(query),
+                                       utf8_text_length(query), folio_state_language(self->state));
+        count += matches ? 1 : 0;
+    }
+    return count;
+}
+
+static void draw_theme_sample(HDC device, RECT bounds, COLORREF background, COLORREF foreground)
+{
+    fill_settings_rect(device, bounds, background);
+    SetTextColor(device, foreground);
+    draw_units(device, ui_text_line(UI_TEXT_THEME_SAMPLE, FOLIO_LANGUAGE_EN), bounds,
+               DT_SINGLELINE | DT_CENTER | DT_VCENTER | DT_NOPREFIX);
+}
+
+static void draw_theme_samples(const struct folio_window *_Nonnull self, HDC device, RECT row,
+                               struct folio_palette palette)
+{
+    UINT dpi = GetDpiForWindow(self->handle);
+    RECT sample = {row.left + scale(32, dpi), row.bottom - scale(21, dpi),
+                   row.left + scale(76, dpi), row.bottom - scale(5, dpi)};
+    draw_theme_sample(device, sample, palette.pane, palette.editor_text);
+    OffsetRect(&sample, scale(48, dpi), 0);
+    draw_theme_sample(device, sample, palette.selected_background, palette.selected_text);
+    OffsetRect(&sample, scale(48, dpi), 0);
+    draw_theme_sample(device, sample, palette.chip_background, palette.chip_text);
+}
+
+static void draw_theme_row(const struct folio_window *_Nonnull self, HDC device,
+                           struct theme_row row)
+{
+    RECT box = row.bounds;
+    UINT dpi = GetDpiForWindow(self->handle);
+    box.bottom -= scale(4, dpi);
+    fill_settings_rect(device, box, self->palette.dialog_control);
+    COLORREF border = row.focused ? self->palette.current_text : self->palette.dialog_border;
+    frame_settings_rect(device, box, border);
+    if (row.choice == folio_state_theme_choice(self->state))
+    {
+        RECT mark = settings_mark_rect(self, box);
+        icon_paint_fill(device, mark, ICON_PAINT_SELECTION, self->palette.current_text);
+    }
+    RECT label = {box.left + scale(32, dpi), box.top + scale(2, dpi), box.right - scale(6, dpi),
+                  box.top + scale(22, dpi)};
+    SetTextColor(device, self->palette.current_text);
+    draw_units(device, folio_theme_choice_label(row.choice, folio_state_language(self->state)),
+               label, DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
+    enum folio_theme resolved = row.choice == FOLIO_THEME_CHOICE_SYSTEM
+                                    ? folio_state_system_theme(self->state)
+                                    : folio_theme_choice_resolve(row.choice, FOLIO_THEME_LIGHT);
+    draw_theme_samples(self, device, row.bounds, folio_palette_for(resolved));
+}
+
+static void draw_theme_rows(const struct folio_window *_Nonnull self, HDC device,
+                            const struct utf8_text *_Nonnull query)
+{
+    RECT bounds = theme_rows_rect(self);
+    int height = scale(base_theme_row_height, GetDpiForWindow(self->handle));
+    size_t visible = command_visible_rows(self);
+    for (size_t offset = 0; offset < visible; ++offset)
+    {
+        enum folio_theme_choice choice = FOLIO_THEME_CHOICE_SYSTEM;
+        size_t index = self->command_first + offset;
+        if (!theme_at_query(self, query, index, &choice))
+        {
+            break;
+        }
+        RECT row = {bounds.left, bounds.top + (int)offset * height, bounds.right,
+                    bounds.top + ((int)offset + 1) * height};
+        draw_theme_row(self, device,
+                       (struct theme_row){row, choice, index == self->command_selection});
+    }
+    if (theme_matches_count(self, query) == 0)
+    {
+        SetTextColor(device, self->palette.current_text);
+        draw_units(device, ui_text_line(UI_TEXT_THEME_EMPTY, folio_state_language(self->state)),
+                   bounds, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+    }
+}
+
+static void draw_theme_footer(const struct folio_window *_Nonnull self, HDC device, size_t count)
+{
+    RECT line = theme_footer_rect(self);
+    int bottom = line.bottom;
+    int height = scale(20, GetDpiForWindow(self->handle));
+    line.bottom = line.top + height;
+    char text[ui_text_unit_limit];
+    enum folio_language language = folio_state_language(self->state);
+    struct ui_text_request request = {.id = UI_TEXT_THEME_COUNT,
+                                      .language = language,
+                                      .k = count,
+                                      .n = folio_theme_choice_count()};
+    SetTextColor(device, self->palette.current_text);
+    if (ui_text_format(&request, text, sizeof text) == UI_TEXT_FORMAT_READY)
+    {
+        draw_units(device, text, line, DT_SINGLELINE | DT_NOPREFIX);
+    }
+    line.top = line.bottom;
+    line.bottom += height * 2;
+    draw_units(device, ui_text_line(UI_TEXT_THEME_GUIDANCE, language), line,
+               DT_WORDBREAK | DT_NOPREFIX);
+    if (settings_has_notice(self))
+    {
+        enum folio_state_outcome reason = self->command_failure != FOLIO_STATE_READY
+                                              ? self->command_failure
+                                              : folio_state_settings_notice(self->state);
+        line.top = line.bottom;
+        line.bottom = bottom;
+        draw_units(device, folio_state_failure_line(reason, language), line,
+                   DT_WORDBREAK | DT_NOPREFIX);
+    }
+}
+
+static void draw_theme_header(const struct folio_window *_Nonnull self, HDC device)
+{
+    enum folio_language language = folio_state_language(self->state);
+    UINT dpi = GetDpiForWindow(self->handle);
+    RECT back = theme_back_rect(self);
+    RECT close = settings_close_rect(self);
+    RECT title = {back.right + scale(8, dpi), back.top, close.left - scale(8, dpi), back.bottom};
+    frame_settings_rect(device, back, self->palette.dialog_border);
+    SetTextColor(device, self->palette.current_text);
+    draw_units(device, ui_text_line(UI_TEXT_THEME_BACK, language), back,
+               DT_CENTER | DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
+    draw_units(device, ui_text_line(UI_TEXT_THEME_TITLE, language), title,
+               DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
+    icon_paint_fill(device, close, ICON_PAINT_CLOSE, self->palette.current_text);
+    RECT input = theme_input_rect(self);
+    RECT label = {input.left, input.top - scale(20, dpi), input.right, input.top};
+    draw_units(device, ui_text_line(UI_TEXT_THEME_FILTER, language), label,
+               DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
+    InflateRect(&input, scale(1, dpi), scale(1, dpi));
+    frame_settings_rect(device, input, self->palette.dialog_border);
+}
+
+static void draw_theme_dialog(const struct folio_window *_Nonnull self, HDC device, RECT bounds)
+{
+    fill_settings_rect(device, bounds, self->palette.dialog_surface);
+    frame_settings_rect(device, bounds, self->palette.dialog_border);
+    draw_theme_header(self, device);
+    struct utf8_text *_Nullable query = nullptr;
+    if (command_query(self, &query) != UTF8_TEXT_CONVERTED)
+    {
+        return;
+    }
+    draw_theme_rows(self, device, query);
+    draw_theme_footer(self, device, theme_matches_count(self, query));
+    utf8_text_destroy(query);
 }
 
 static void draw_settings_dialog(const struct folio_window *_Nonnull self, HDC device, RECT bounds)
@@ -2348,6 +2623,9 @@ static void draw_command_surface(const struct folio_window *_Nonnull self, HDC d
         FillRect(device, &bounds, self->command_brush);
         draw_replace_surface(self, device, bounds);
         return;
+    case COMMAND_SURFACE_THEMES:
+        draw_theme_dialog(self, device, bounds);
+        return;
     case COMMAND_SURFACE_SETTINGS:
         draw_settings_dialog(self, device, bounds);
         return;
@@ -2392,7 +2670,7 @@ static LRESULT hit_test(const struct folio_window *_Nonnull self, LPARAM lparam)
     {
         return edge;
     }
-    if (self->command_surface == COMMAND_SURFACE_SETTINGS)
+    if (settings_surface(self))
     {
         return HTCLIENT;
     }
@@ -3683,6 +3961,19 @@ static void show_settings_surface(struct folio_window *_Nonnull self, const char
     redraw_command_layer(self);
 }
 
+/* テーマ候補は同じ設定レイヤーと検索 EDIT を共有する（ADR0049）。 */
+static void show_theme_surface(struct folio_window *_Nonnull self)
+{
+    self->command_surface = COMMAND_SURFACE_THEMES;
+    clear_command_status(self);
+    SetWindowTextW(self->command_input, L"");
+    self->command_selection = (size_t)folio_state_theme_choice(self->state);
+    self->command_first = 0;
+    arrange_command_input(self);
+    focus_command_input(self);
+    redraw_command_layer(self);
+}
+
 /* 履歴の面（ADR 0038 の決定 12・14）。設定画面と同じく EDIT を持たず、レイヤーがフォーカスを取る。
  * 行を決めてから配置する（show_settings_surface と同じ順）。最初の行（1 = 最新）を選ぶ。 */
 static void show_history_surface(struct folio_window *_Nonnull self)
@@ -4040,7 +4331,7 @@ static void apply_number(struct folio_window *_Nonnull self, bool number)
         command_failure(self, outcome);
         return;
     }
-    if (self->command_surface == COMMAND_SURFACE_SETTINGS)
+    if (settings_surface(self))
     {
         clear_command_status(self);
     }
@@ -4159,7 +4450,7 @@ static void apply_theme(struct folio_window *_Nonnull self, enum folio_theme_cho
         command_failure(self, outcome);
         return;
     }
-    if (self->command_surface == COMMAND_SURFACE_SETTINGS)
+    if (settings_surface(self))
     {
         clear_command_status(self);
     }
@@ -4200,7 +4491,7 @@ static void apply_language(struct folio_window *_Nonnull self, enum folio_langua
         command_failure(self, outcome);
         return;
     }
-    if (self->command_surface == COMMAND_SURFACE_SETTINGS)
+    if (settings_surface(self))
     {
         clear_command_status(self);
     }
@@ -4218,9 +4509,15 @@ static void apply_language(struct folio_window *_Nonnull self, enum folio_langua
 }
 
 /* 未知の語・語なし・余計な語は、未知のコマンドと同じ 1 行で、入力を消さない（決定 8）。
- * 語は閉じた集合なので、行番号とテーマの 2 つの意図へここで振り分ける（ADR 0031 の決定 8(c)）。 */
+ * テーマ名は正本catalogで解析し、行番号・言語とともに既存採用経路へ渡す（ADR0049）。 */
 static void execute_set_command(struct folio_window *_Nonnull self, const char *_Nonnull argument)
 {
+    enum folio_theme_choice theme = FOLIO_THEME_CHOICE_SYSTEM;
+    if (folio_command_parse_theme(argument, strlen(argument), &theme))
+    {
+        apply_theme(self, theme);
+        return;
+    }
     enum folio_option option = FOLIO_OPTION_NUMBER_SHOW;
     if (!folio_command_parse_option(argument, strlen(argument), &option))
     {
@@ -4237,15 +4534,6 @@ static void execute_set_command(struct folio_window *_Nonnull self, const char *
         return;
     case FOLIO_OPTION_NUMBER_TOGGLE:
         apply_number(self, !folio_state_number(self->state));
-        return;
-    case FOLIO_OPTION_THEME_SYSTEM:
-        apply_theme(self, FOLIO_THEME_CHOICE_SYSTEM);
-        return;
-    case FOLIO_OPTION_THEME_LIGHT:
-        apply_theme(self, FOLIO_THEME_CHOICE_LIGHT);
-        return;
-    case FOLIO_OPTION_THEME_DARK:
-        apply_theme(self, FOLIO_THEME_CHOICE_DARK);
         return;
     case FOLIO_OPTION_LANGUAGE_JA:
         apply_language(self, FOLIO_LANGUAGE_JA);
@@ -5123,6 +5411,7 @@ static bool click_surface_buttons(struct folio_window *_Nonnull self, POINT poin
     case COMMAND_SURFACE_EX:
     case COMMAND_SURFACE_PALETTE:
     case COMMAND_SURFACE_SETTINGS:
+    case COMMAND_SURFACE_THEMES:
     case COMMAND_SURFACE_HISTORY:
         return false;
     }
@@ -5143,7 +5432,7 @@ static void adopt_settings_row(struct folio_window *_Nonnull self)
     case SETTINGS_ROW_HEADING:
         return;
     case SETTINGS_ROW_THEME:
-        apply_theme(self, (enum folio_theme_choice)settings_rows[index].value);
+        show_theme_surface(self);
         return;
     case SETTINGS_ROW_LANGUAGE:
         apply_language(self, (enum folio_language)settings_rows[index].value);
@@ -5273,27 +5562,107 @@ static void click_history_surface(struct folio_window *_Nonnull self, POINT poin
     adopt_history_row(self);
 }
 
-static void click_command_surface(struct folio_window *_Nonnull self, POINT point)
+static void adopt_theme_at(struct folio_window *_Nonnull self, size_t index)
 {
-    if (self->command_surface == COMMAND_SURFACE_SETTINGS)
+    if (self->command_composing)
     {
-        click_settings_surface(self, point);
         return;
     }
-    if (self->command_surface == COMMAND_SURFACE_HISTORY)
+    struct utf8_text *_Nullable query = nullptr;
+    if (command_query(self, &query) != UTF8_TEXT_CONVERTED)
     {
-        click_history_surface(self, point);
+        command_failure(self, FOLIO_STATE_OUT_OF_MEMORY);
         return;
     }
-    if (self->command_surface != COMMAND_SURFACE_PALETTE)
+    enum folio_theme_choice choice = FOLIO_THEME_CHOICE_SYSTEM;
+    bool found = theme_at_query(self, query, index, &choice);
+    utf8_text_destroy(query);
+    if (found)
     {
-        /* 置換の欄は 2 つあるので、既に自分の欄にいるならフォーカスを奪わない。 */
-        if (!click_surface_buttons(self, point) && !command_owns(self, GetFocus()))
-        {
-            focus_command_input(self);
-        }
+        self->command_selection = index;
+        apply_theme(self, choice);
+    }
+}
+
+static void click_theme_surface(struct folio_window *_Nonnull self, POINT point)
+{
+    RECT back = theme_back_rect(self);
+    RECT close = settings_close_rect(self);
+    if (PtInRect(&back, point))
+    {
+        show_settings_surface(self, "");
         return;
     }
+    if (PtInRect(&close, point))
+    {
+        close_command_surface(self);
+        return;
+    }
+    RECT rows = theme_rows_rect(self);
+    if (PtInRect(&rows, point) && !self->command_composing)
+    {
+        int height = scale(base_theme_row_height, GetDpiForWindow(self->handle));
+        size_t index = self->command_first + (size_t)((point.y - rows.top) / height);
+        adopt_theme_at(self, index);
+    }
+    focus_command_input(self);
+}
+
+static void move_theme_selection(struct folio_window *_Nonnull self, WPARAM key, size_t count)
+{
+    size_t step = key == VK_PRIOR || key == VK_NEXT ? command_visible_rows(self) : 1;
+    step = step > 0 ? step : 1;
+    if (key == VK_UP || key == VK_PRIOR)
+    {
+        self->command_selection =
+            self->command_selection < step ? 0 : self->command_selection - step;
+    }
+    else
+    {
+        size_t next = self->command_selection + step;
+        self->command_selection = next < count ? next : count - 1;
+    }
+}
+
+static bool theme_navigate(struct folio_window *_Nonnull self, WPARAM key)
+{
+    if (key != VK_UP && key != VK_DOWN && key != VK_PRIOR && key != VK_NEXT)
+    {
+        return false;
+    }
+    struct utf8_text *_Nullable query = nullptr;
+    if (command_query(self, &query) != UTF8_TEXT_CONVERTED)
+    {
+        command_failure(self, FOLIO_STATE_OUT_OF_MEMORY);
+        return true;
+    }
+    size_t count = theme_matches_count(self, query);
+    utf8_text_destroy(query);
+    if (count == 0)
+    {
+        return true;
+    }
+    move_theme_selection(self, key, count);
+    reveal_command_selection(self);
+    redraw_command_layer(self);
+    return true;
+}
+
+static void theme_query_changed(struct folio_window *_Nonnull self)
+{
+    if (self->command_composing)
+    {
+        return;
+    }
+    self->command_selection = 0;
+    self->command_first = 0;
+    clear_command_status(self);
+    arrange_command_input(self);
+    redraw_command_layer(self);
+}
+
+static void click_palette_surface(struct folio_window *_Nonnull self, POINT point)
+{
     if (click_command_footer(self, point))
     {
         return;
@@ -5319,6 +5688,35 @@ static void click_command_surface(struct folio_window *_Nonnull self, POINT poin
     {
         execute_command(self, command, "");
     }
+}
+
+static void click_command_surface(struct folio_window *_Nonnull self, POINT point)
+{
+    if (self->command_surface == COMMAND_SURFACE_THEMES)
+    {
+        click_theme_surface(self, point);
+        return;
+    }
+    if (self->command_surface == COMMAND_SURFACE_SETTINGS)
+    {
+        click_settings_surface(self, point);
+        return;
+    }
+    if (self->command_surface == COMMAND_SURFACE_HISTORY)
+    {
+        click_history_surface(self, point);
+        return;
+    }
+    if (self->command_surface != COMMAND_SURFACE_PALETTE)
+    {
+        /* 置換の欄は 2 つあるので、既に自分の欄にいるならフォーカスを奪わない。 */
+        if (!click_surface_buttons(self, point) && !command_owns(self, GetFocus()))
+        {
+            focus_command_input(self);
+        }
+        return;
+    }
+    click_palette_surface(self, point);
 }
 
 static bool append_operation(const struct folio_window *_Nonnull self, HMENU menu, size_t index)
@@ -5755,6 +6153,7 @@ static void execute_command_input(struct folio_window *_Nonnull self)
     /* 設定画面の Enter は command_return が行を採用するので、ここには来ない（ADR 0031 の決定 7）。
      */
     case COMMAND_SURFACE_SETTINGS:
+    case COMMAND_SURFACE_THEMES:
     case COMMAND_SURFACE_HISTORY:
         utf8_text_destroy(query);
         return;
@@ -5877,6 +6276,11 @@ static bool command_tab(struct folio_window *_Nonnull self)
 /* 置換の欄の Enter は素と Ctrl+ を見分けるので WM_CHAR で処理し、ここでは飲み込むだけ。 */
 static bool command_return(struct folio_window *_Nonnull self)
 {
+    if (self->command_surface == COMMAND_SURFACE_THEMES)
+    {
+        adopt_theme_at(self, self->command_selection);
+        return true;
+    }
     if (self->command_surface == COMMAND_SURFACE_REPLACE)
     {
         return true;
@@ -5927,7 +6331,8 @@ static size_t settings_vertical_choice(const struct folio_window *_Nonnull self,
             continue;
         }
         if (settings_rows[index].position == settings_rows[from].position ||
-            settings_rows[index].kind == SETTINGS_ROW_NUMBER)
+            settings_rows[index].kind == SETTINGS_ROW_NUMBER ||
+            settings_rows[index].kind == SETTINGS_ROW_THEME)
         {
             return index;
         }
@@ -5987,6 +6392,10 @@ static bool history_navigate(struct folio_window *_Nonnull self, WPARAM key)
 /* パレットの移動の鍵。↑↓ は操作の選択、PgUp / PgDn はヘルプのページ（#69）。 */
 static bool command_navigate(struct folio_window *_Nonnull self, WPARAM key)
 {
+    if (self->command_surface == COMMAND_SURFACE_THEMES)
+    {
+        return theme_navigate(self, key);
+    }
     if (self->command_surface == COMMAND_SURFACE_SETTINGS)
     {
         return settings_navigate(self, key);
@@ -6029,6 +6438,11 @@ static bool command_key_down(struct folio_window *_Nonnull self, WPARAM key)
     }
     if (key == VK_ESCAPE)
     {
+        if (self->command_surface == COMMAND_SURFACE_THEMES)
+        {
+            show_settings_surface(self, "");
+            return true;
+        }
         close_command_surface(self);
         return true;
     }
@@ -6101,7 +6515,7 @@ static void scroll_settings_content(struct folio_window *_Nonnull self, int delt
 
 static bool command_wheel(struct folio_window *_Nonnull self, WPARAM wparam)
 {
-    bool listed = self->command_surface == COMMAND_SURFACE_PALETTE ||
+    bool listed = self->command_surface == COMMAND_SURFACE_PALETTE || settings_surface(self) ||
                   command_surface_listing(self->command_surface);
     if (!listed || self->command_composing)
     {
@@ -6113,6 +6527,10 @@ static bool command_wheel(struct folio_window *_Nonnull self, WPARAM wparam)
         return true;
     }
     WPARAM key = delta > 0 ? VK_UP : VK_DOWN;
+    if (self->command_surface == COMMAND_SURFACE_THEMES)
+    {
+        return theme_navigate(self, key);
+    }
     if (self->command_surface == COMMAND_SURFACE_SETTINGS)
     {
         scroll_settings_content(self, delta);
@@ -6147,6 +6565,10 @@ static bool command_input_handled(struct folio_window *_Nonnull self, UINT messa
 /* 未確定入力を抜けたあとに、開いている面ごとに 1 回だけ取り直す。 */
 static void command_composition_settled(struct folio_window *_Nonnull self)
 {
+    if (self->command_surface == COMMAND_SURFACE_THEMES)
+    {
+        theme_query_changed(self);
+    }
     if (self->command_surface == COMMAND_SURFACE_SEARCH)
     {
         search_input_changed(self);
@@ -6437,6 +6859,11 @@ static LRESULT on_command(struct folio_window *_Nonnull self, WPARAM wparam, LPA
     {
         return 0;
     }
+    if (self->command_surface == COMMAND_SURFACE_THEMES)
+    {
+        theme_query_changed(self);
+        return 0;
+    }
     if (self->command_surface == COMMAND_SURFACE_SEARCH)
     {
         search_input_changed(self);
@@ -6555,8 +6982,8 @@ static void activate_tooltip(const struct folio_window *_Nonnull self)
     {
         return;
     }
-    bool active = self->command_surface != COMMAND_SURFACE_SETTINGS && !self->removal_running &&
-                  IsWindowEnabled(self->handle);
+    bool active =
+        !settings_surface(self) && !self->removal_running && IsWindowEnabled(self->handle);
     if (!active)
     {
         SendMessageW(self->tooltip, TTM_POP, 0, 0);
@@ -6936,9 +7363,9 @@ static void dismiss_command_if_focus_moved(struct folio_window *_Nonnull self)
 
 static bool layout_shortcut_allowed(const struct folio_window *_Nonnull self)
 {
-    if (self->command_surface == COMMAND_SURFACE_SETTINGS || self->removal_running ||
-        !IsWindowEnabled(self->handle) || self->root_composing || self->command_composing ||
-        self->filter_composing || (self->pane != nullptr && note_pane_composing(self->pane)))
+    if (settings_surface(self) || self->removal_running || !IsWindowEnabled(self->handle) ||
+        self->root_composing || self->command_composing || self->filter_composing ||
+        (self->pane != nullptr && note_pane_composing(self->pane)))
     {
         return false;
     }

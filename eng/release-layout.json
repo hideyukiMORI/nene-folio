@@ -4,6 +4,7 @@
   "files": [
     {"source": "build", "path": "NeNeFolio.exe", "destination": "NeNeFolio.exe"},
     {"source": "repository", "path": "docs/release/README.txt", "destination": "README.txt"},
-    {"source": "repository", "path": "LICENSE", "destination": "LICENSE"}
+    {"source": "repository", "path": "LICENSE", "destination": "LICENSE"},
+    {"source": "repository", "path": "THIRD_PARTY_NOTICES.txt", "destination": "THIRD_PARTY_NOTICES.txt"}
   ]
 }

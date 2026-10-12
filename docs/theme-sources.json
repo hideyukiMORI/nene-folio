@@ -1,0 +1,757 @@
+{
+  "source_repository": "https://github.com/hideyukiMORI/nene-nib",
+  "source_commit": "5b7dbb2791785e508384fd3a7e82cb01f40c8ebb",
+  "source_path": "src/core/BuiltinThemes.hpp",
+  "themes": [
+    {
+      "name": "ubuntu-aubergine",
+      "author": "NeNe Nib",
+      "license": "MIT",
+      "url": "https://github.com/hideyukiMORI/nene-nib"
+    },
+    {
+      "name": "neutral-light",
+      "author": "NeNe Nib",
+      "license": "MIT",
+      "url": "https://github.com/hideyukiMORI/nene-nib"
+    },
+    {
+      "name": "solarized-dark",
+      "author": "Ethan Schoonover",
+      "license": "MIT",
+      "url": "https://ethanschoonover.com/solarized/"
+    },
+    {
+      "name": "solarized-light",
+      "author": "Ethan Schoonover",
+      "license": "MIT",
+      "url": "https://ethanschoonover.com/solarized/"
+    },
+    {
+      "name": "monokai",
+      "author": "Wimer Hazenberg",
+      "license": "colors used; the name is attributed to the original author",
+      "url": "https://github.com/textmate/monokai.tmbundle/blob/master/Themes/Monokai.tmTheme"
+    },
+    {
+      "name": "dracula",
+      "author": "Zeno Rocha and contributors",
+      "license": "MIT",
+      "url": "https://spec.draculatheme.com/"
+    },
+    {
+      "name": "one-dark",
+      "author": "Atom",
+      "license": "MIT",
+      "url": "https://github.com/atom/one-dark-syntax"
+    },
+    {
+      "name": "night-owl",
+      "author": "Sarah Drasner",
+      "license": "MIT",
+      "url": "https://github.com/sdras/night-owl-vscode-theme"
+    },
+    {
+      "name": "night-owl-light",
+      "author": "Sarah Drasner",
+      "license": "MIT",
+      "url": "https://github.com/sdras/night-owl-vscode-theme"
+    },
+    {
+      "name": "blue",
+      "author": "Original author Steven Vertigan <steven@vertigan.wattle.id.au>",
+      "license": "Vim license; palette adaptation",
+      "url": "https://github.com/vim/vim/blob/99b9dd00cd180bade5b8b08c00e4e8ae2e553dbe/runtime/colors/blue.vim"
+    },
+    {
+      "name": "catppuccin",
+      "author": "The Catppuccin Community <catppuccin.com>",
+      "license": "Vim license; palette adaptation",
+      "url": "https://github.com/vim/vim/blob/99b9dd00cd180bade5b8b08c00e4e8ae2e553dbe/runtime/colors/catppuccin.vim"
+    },
+    {
+      "name": "darkblue",
+      "author": "Original author Bohdan Vlasyuk <bohdan@vstu.edu.ua>",
+      "license": "Vim license; palette adaptation",
+      "url": "https://github.com/vim/vim/blob/99b9dd00cd180bade5b8b08c00e4e8ae2e553dbe/runtime/colors/darkblue.vim"
+    },
+    {
+      "name": "default",
+      "author": "Vim contributors",
+      "license": "Vim license; palette adaptation",
+      "url": "https://github.com/vim/vim/blob/99b9dd00cd180bade5b8b08c00e4e8ae2e553dbe/runtime/colors/default.vim"
+    },
+    {
+      "name": "delek",
+      "author": "Original author David Schweikert <david@schweikert.ch>",
+      "license": "Vim license; palette adaptation",
+      "url": "https://github.com/vim/vim/blob/99b9dd00cd180bade5b8b08c00e4e8ae2e553dbe/runtime/colors/delek.vim"
+    },
+    {
+      "name": "desert",
+      "author": "Original author Hans Fugal <hans@fugal.net>",
+      "license": "Vim license; palette adaptation",
+      "url": "https://github.com/vim/vim/blob/99b9dd00cd180bade5b8b08c00e4e8ae2e553dbe/runtime/colors/desert.vim"
+    },
+    {
+      "name": "elflord",
+      "author": "original author Ron Aaron <ron@ronware.org>",
+      "license": "Vim license; palette adaptation",
+      "url": "https://github.com/vim/vim/blob/99b9dd00cd180bade5b8b08c00e4e8ae2e553dbe/runtime/colors/elflord.vim"
+    },
+    {
+      "name": "evening",
+      "author": "Original author Bram Moolenaar <Bram@vim.org>",
+      "license": "Vim license; palette adaptation",
+      "url": "https://github.com/vim/vim/blob/99b9dd00cd180bade5b8b08c00e4e8ae2e553dbe/runtime/colors/evening.vim"
+    },
+    {
+      "name": "habamax",
+      "author": "Maxim Kim <habamax@gmail.com>",
+      "license": "Vim license; palette adaptation",
+      "url": "https://github.com/vim/vim/blob/99b9dd00cd180bade5b8b08c00e4e8ae2e553dbe/runtime/colors/habamax.vim"
+    },
+    {
+      "name": "industry",
+      "author": "Original author Shian Lee.",
+      "license": "Vim license; palette adaptation",
+      "url": "https://github.com/vim/vim/blob/99b9dd00cd180bade5b8b08c00e4e8ae2e553dbe/runtime/colors/industry.vim"
+    },
+    {
+      "name": "koehler",
+      "author": "original author Ron Aaron <ron@ronware.org>",
+      "license": "Vim license; palette adaptation",
+      "url": "https://github.com/vim/vim/blob/99b9dd00cd180bade5b8b08c00e4e8ae2e553dbe/runtime/colors/koehler.vim"
+    },
+    {
+      "name": "lunaperche",
+      "author": "Maxim Kim <habamax@gmail.com>",
+      "license": "Vim license; palette adaptation",
+      "url": "https://github.com/vim/vim/blob/99b9dd00cd180bade5b8b08c00e4e8ae2e553dbe/runtime/colors/lunaperche.vim"
+    },
+    {
+      "name": "morning",
+      "author": "Original author Bram Moolenaar <Bram@vim.org>",
+      "license": "Vim license; palette adaptation",
+      "url": "https://github.com/vim/vim/blob/99b9dd00cd180bade5b8b08c00e4e8ae2e553dbe/runtime/colors/morning.vim"
+    },
+    {
+      "name": "murphy",
+      "author": "Original author Ron Aaron <ron@ronware.org>.",
+      "license": "Vim license; palette adaptation",
+      "url": "https://github.com/vim/vim/blob/99b9dd00cd180bade5b8b08c00e4e8ae2e553dbe/runtime/colors/murphy.vim"
+    },
+    {
+      "name": "novum",
+      "author": "Charan Mandati <charancuz008@gmail.com>",
+      "license": "Vim license; palette adaptation",
+      "url": "https://github.com/vim/vim/blob/99b9dd00cd180bade5b8b08c00e4e8ae2e553dbe/runtime/colors/novum.vim"
+    },
+    {
+      "name": "pablo",
+      "author": "Ron Aaron <ron@ronware.org>",
+      "license": "Vim license; palette adaptation",
+      "url": "https://github.com/vim/vim/blob/99b9dd00cd180bade5b8b08c00e4e8ae2e553dbe/runtime/colors/pablo.vim"
+    },
+    {
+      "name": "peachpuff",
+      "author": "Original author David Ne\\v{c}as (Yeti) <yeti@physics.muni.cz>",
+      "license": "Vim license; palette adaptation",
+      "url": "https://github.com/vim/vim/blob/99b9dd00cd180bade5b8b08c00e4e8ae2e553dbe/runtime/colors/peachpuff.vim"
+    },
+    {
+      "name": "quiet",
+      "author": "Maxence Weynans <neutaaaaan@gmail.com>",
+      "license": "Vim license; palette adaptation",
+      "url": "https://github.com/vim/vim/blob/99b9dd00cd180bade5b8b08c00e4e8ae2e553dbe/runtime/colors/quiet.vim"
+    },
+    {
+      "name": "retrobox",
+      "author": "Maxim Kim <habamax@gmail.com>, ported from gruvbox8 of Lifepillar <lifepillar@lifepillar.me>",
+      "license": "Vim license; palette adaptation",
+      "url": "https://github.com/vim/vim/blob/99b9dd00cd180bade5b8b08c00e4e8ae2e553dbe/runtime/colors/retrobox.vim"
+    },
+    {
+      "name": "ron",
+      "author": "original author Ron Aaron <ron@ronware.org>",
+      "license": "Vim license; palette adaptation",
+      "url": "https://github.com/vim/vim/blob/99b9dd00cd180bade5b8b08c00e4e8ae2e553dbe/runtime/colors/ron.vim"
+    },
+    {
+      "name": "shine",
+      "author": "Original author is Yasuhiro Matsumoto <mattn.jp@gmail.com>",
+      "license": "Vim license; palette adaptation",
+      "url": "https://github.com/vim/vim/blob/99b9dd00cd180bade5b8b08c00e4e8ae2e553dbe/runtime/colors/shine.vim"
+    },
+    {
+      "name": "slate",
+      "author": "Original maintainer Ralph Amissah <ralph@amissah.com>",
+      "license": "Vim license; palette adaptation",
+      "url": "https://github.com/vim/vim/blob/99b9dd00cd180bade5b8b08c00e4e8ae2e553dbe/runtime/colors/slate.vim"
+    },
+    {
+      "name": "sorbet",
+      "author": "Maxence Weynans <neutaaaaan@gmail.com>",
+      "license": "Vim license; palette adaptation",
+      "url": "https://github.com/vim/vim/blob/99b9dd00cd180bade5b8b08c00e4e8ae2e553dbe/runtime/colors/sorbet.vim"
+    },
+    {
+      "name": "torte",
+      "author": "Original maintainer Thorsten Maerz <info@netztorte.de>",
+      "license": "Vim license; palette adaptation",
+      "url": "https://github.com/vim/vim/blob/99b9dd00cd180bade5b8b08c00e4e8ae2e553dbe/runtime/colors/torte.vim"
+    },
+    {
+      "name": "unokai",
+      "author": "k-37 <60838818+k-37@users.noreply.github.com>",
+      "license": "Vim license; palette adaptation",
+      "url": "https://github.com/vim/vim/blob/99b9dd00cd180bade5b8b08c00e4e8ae2e553dbe/runtime/colors/unokai.vim"
+    },
+    {
+      "name": "wildcharm",
+      "author": "Maxim Kim <habamax@gmail.com>",
+      "license": "Vim license; palette adaptation",
+      "url": "https://github.com/vim/vim/blob/99b9dd00cd180bade5b8b08c00e4e8ae2e553dbe/runtime/colors/wildcharm.vim"
+    },
+    {
+      "name": "zaibatsu",
+      "author": "Romain Lafourcade <romainlafourcade@gmail.com>",
+      "license": "Vim license; palette adaptation",
+      "url": "https://github.com/vim/vim/blob/99b9dd00cd180bade5b8b08c00e4e8ae2e553dbe/runtime/colors/zaibatsu.vim"
+    },
+    {
+      "name": "zellner",
+      "author": "Original author Ron Aaron <ron@ronware.org>",
+      "license": "Vim license; palette adaptation",
+      "url": "https://github.com/vim/vim/blob/99b9dd00cd180bade5b8b08c00e4e8ae2e553dbe/runtime/colors/zellner.vim"
+    },
+    {
+      "name": "abyss",
+      "author": "Microsoft and theme contributors",
+      "license": "MIT",
+      "url": "https://github.com/microsoft/vscode/blob/6133b425600558c15ca5238ce483a2f5bdb8db9c/extensions/theme-abyss/themes/abyss-color-theme.json"
+    },
+    {
+      "name": "vscode-dark-2026",
+      "author": "Microsoft and theme contributors",
+      "license": "MIT",
+      "url": "https://github.com/microsoft/vscode/blob/6133b425600558c15ca5238ce483a2f5bdb8db9c/extensions/theme-defaults/themes/2026-dark.json"
+    },
+    {
+      "name": "vscode-light-2026",
+      "author": "Microsoft and theme contributors",
+      "license": "MIT",
+      "url": "https://github.com/microsoft/vscode/blob/6133b425600558c15ca5238ce483a2f5bdb8db9c/extensions/theme-defaults/themes/2026-light.json"
+    },
+    {
+      "name": "vscode-dark-modern",
+      "author": "Microsoft and theme contributors",
+      "license": "MIT",
+      "url": "https://github.com/microsoft/vscode/blob/6133b425600558c15ca5238ce483a2f5bdb8db9c/extensions/theme-defaults/themes/dark_modern.json"
+    },
+    {
+      "name": "vscode-dark-plus",
+      "author": "Microsoft and theme contributors",
+      "license": "MIT",
+      "url": "https://github.com/microsoft/vscode/blob/6133b425600558c15ca5238ce483a2f5bdb8db9c/extensions/theme-defaults/themes/dark_plus.json"
+    },
+    {
+      "name": "vscode-dark",
+      "author": "Microsoft and theme contributors",
+      "license": "MIT",
+      "url": "https://github.com/microsoft/vscode/blob/6133b425600558c15ca5238ce483a2f5bdb8db9c/extensions/theme-defaults/themes/dark_vs.json"
+    },
+    {
+      "name": "vscode-high-contrast",
+      "author": "Microsoft and theme contributors",
+      "license": "MIT",
+      "url": "https://github.com/microsoft/vscode/blob/6133b425600558c15ca5238ce483a2f5bdb8db9c/extensions/theme-defaults/themes/hc_black.json"
+    },
+    {
+      "name": "vscode-high-contrast-light",
+      "author": "Microsoft and theme contributors",
+      "license": "MIT",
+      "url": "https://github.com/microsoft/vscode/blob/6133b425600558c15ca5238ce483a2f5bdb8db9c/extensions/theme-defaults/themes/hc_light.json"
+    },
+    {
+      "name": "vscode-light-modern",
+      "author": "Microsoft and theme contributors",
+      "license": "MIT",
+      "url": "https://github.com/microsoft/vscode/blob/6133b425600558c15ca5238ce483a2f5bdb8db9c/extensions/theme-defaults/themes/light_modern.json"
+    },
+    {
+      "name": "vscode-light-plus",
+      "author": "Microsoft and theme contributors",
+      "license": "MIT",
+      "url": "https://github.com/microsoft/vscode/blob/6133b425600558c15ca5238ce483a2f5bdb8db9c/extensions/theme-defaults/themes/light_plus.json"
+    },
+    {
+      "name": "vscode-light",
+      "author": "Microsoft and theme contributors",
+      "license": "MIT",
+      "url": "https://github.com/microsoft/vscode/blob/6133b425600558c15ca5238ce483a2f5bdb8db9c/extensions/theme-defaults/themes/light_vs.json"
+    },
+    {
+      "name": "kimbie-dark",
+      "author": "Microsoft and theme contributors",
+      "license": "MIT",
+      "url": "https://github.com/microsoft/vscode/blob/6133b425600558c15ca5238ce483a2f5bdb8db9c/extensions/theme-kimbie-dark/themes/kimbie-dark-color-theme.json"
+    },
+    {
+      "name": "monokai-dimmed",
+      "author": "Microsoft and theme contributors",
+      "license": "MIT",
+      "url": "https://github.com/microsoft/vscode/blob/6133b425600558c15ca5238ce483a2f5bdb8db9c/extensions/theme-monokai-dimmed/themes/dimmed-monokai-color-theme.json"
+    },
+    {
+      "name": "quiet-light",
+      "author": "Microsoft and theme contributors",
+      "license": "MIT",
+      "url": "https://github.com/microsoft/vscode/blob/6133b425600558c15ca5238ce483a2f5bdb8db9c/extensions/theme-quietlight/themes/quietlight-color-theme.json"
+    },
+    {
+      "name": "red",
+      "author": "Microsoft and theme contributors",
+      "license": "MIT",
+      "url": "https://github.com/microsoft/vscode/blob/6133b425600558c15ca5238ce483a2f5bdb8db9c/extensions/theme-red/themes/Red-color-theme.json"
+    },
+    {
+      "name": "tomorrow-night-blue",
+      "author": "Microsoft and theme contributors",
+      "license": "MIT",
+      "url": "https://github.com/microsoft/vscode/blob/6133b425600558c15ca5238ce483a2f5bdb8db9c/extensions/theme-tomorrow-night-blue/themes/tomorrow-night-blue-color-theme.json"
+    },
+    {
+      "name": "monalisa",
+      "author": "Patrick Dewey and contributors",
+      "license": "MIT",
+      "url": "https://github.com/ptdewey/monalisa-nvim/blob/2ffe6db37fcad17da0d210f5b3a357712d0b8a2b/fnl/monalisa/init.fnl"
+    },
+    {
+      "name": "catppuccin-latte",
+      "author": "Catppuccin contributors",
+      "license": "MIT",
+      "url": "https://github.com/catppuccin/palette/blob/07d02aa110ef9eb7e7427afca5c73ba9cf7f8ebd/palette.json"
+    },
+    {
+      "name": "catppuccin-frappe",
+      "author": "Catppuccin contributors",
+      "license": "MIT",
+      "url": "https://github.com/catppuccin/palette/blob/07d02aa110ef9eb7e7427afca5c73ba9cf7f8ebd/palette.json"
+    },
+    {
+      "name": "catppuccin-macchiato",
+      "author": "Catppuccin contributors",
+      "license": "MIT",
+      "url": "https://github.com/catppuccin/palette/blob/07d02aa110ef9eb7e7427afca5c73ba9cf7f8ebd/palette.json"
+    },
+    {
+      "name": "nord",
+      "author": "Arctic Ice Studio and Sven Greb",
+      "license": "MIT",
+      "url": "https://github.com/nordtheme/nord/blob/1cef71605416a222e57225b544540ce0fcec18d4/src/nord.scss"
+    },
+    {
+      "name": "gruvbox",
+      "author": "Pavel Pertsev",
+      "license": "MIT",
+      "url": "https://github.com/morhetz/gruvbox/blob/ef8864bb42bf244f0295d1c5a403b27e3d139695/colors/gruvbox.vim"
+    },
+    {
+      "name": "gruvbox-light",
+      "author": "Pavel Pertsev",
+      "license": "MIT",
+      "url": "https://github.com/morhetz/gruvbox/blob/ef8864bb42bf244f0295d1c5a403b27e3d139695/colors/gruvbox.vim"
+    },
+    {
+      "name": "tokyo-night",
+      "author": "Folke Lemaitre and Tokyo Night contributors",
+      "license": "MIT",
+      "url": "https://github.com/folke/tokyonight.nvim/blob/cdc07ac78467a233fd62c493de29a17e0cf2b2b6/lua/tokyonight/colors/night.lua"
+    },
+    {
+      "name": "tokyo-night-storm",
+      "author": "Folke Lemaitre and Tokyo Night contributors",
+      "license": "MIT",
+      "url": "https://github.com/folke/tokyonight.nvim/blob/cdc07ac78467a233fd62c493de29a17e0cf2b2b6/lua/tokyonight/colors/storm.lua"
+    },
+    {
+      "name": "tokyo-night-moon",
+      "author": "Folke Lemaitre and Tokyo Night contributors",
+      "license": "MIT",
+      "url": "https://github.com/folke/tokyonight.nvim/blob/cdc07ac78467a233fd62c493de29a17e0cf2b2b6/lua/tokyonight/colors/moon.lua"
+    },
+    {
+      "name": "tokyo-night-light",
+      "author": "Enkia",
+      "license": "MIT",
+      "url": "https://github.com/enkia/tokyo-night-vscode-theme/blob/7c0f11eaef322f293621ca7befe462214b7ea468/themes/tokyo-night-light-color-theme.json"
+    },
+    {
+      "name": "github-dark",
+      "author": "GitHub and Primer contributors",
+      "license": "MIT",
+      "url": "https://github.com/primer/github-vscode-theme/blob/cd78e5e4e7bcf132a6f428ae0f32264bb1b729cf/src/theme.js"
+    },
+    {
+      "name": "github-light",
+      "author": "GitHub and Primer contributors",
+      "license": "MIT",
+      "url": "https://github.com/primer/github-vscode-theme/blob/cd78e5e4e7bcf132a6f428ae0f32264bb1b729cf/src/theme.js"
+    },
+    {
+      "name": "github-dark-dimmed",
+      "author": "GitHub and Primer contributors",
+      "license": "MIT",
+      "url": "https://github.com/primer/github-vscode-theme/blob/cd78e5e4e7bcf132a6f428ae0f32264bb1b729cf/src/theme.js"
+    },
+    {
+      "name": "one-light",
+      "author": "Atom",
+      "license": "MIT",
+      "url": "https://github.com/atom/one-light-syntax/blob/d84579027410c576086dfca14d934c4bd74b0438/styles/colors.less"
+    },
+    {
+      "name": "intellij-light",
+      "author": "JetBrains",
+      "license": "Apache-2.0; palette adaptation",
+      "url": "https://github.com/JetBrains/intellij-community/blob/8886d47ff4b7a538583b793ba29e9cc642ae01d9/platform/platform-resources/src/DefaultColorSchemesManager.xml"
+    },
+    {
+      "name": "darcula",
+      "author": "JetBrains",
+      "license": "Apache-2.0; palette adaptation",
+      "url": "https://github.com/JetBrains/intellij-community/blob/8886d47ff4b7a538583b793ba29e9cc642ae01d9/platform/platform-resources/src/DefaultColorSchemesManager.xml"
+    },
+    {
+      "name": "rose-pine",
+      "author": "Rosé Pine contributors",
+      "license": "MIT",
+      "url": "https://github.com/rose-pine/palette/blob/92af52b465ab6e47437aca223c9b8d3009a2023b/palette.json"
+    },
+    {
+      "name": "rose-pine-moon",
+      "author": "Rosé Pine contributors",
+      "license": "MIT",
+      "url": "https://github.com/rose-pine/palette/blob/92af52b465ab6e47437aca223c9b8d3009a2023b/palette.json"
+    },
+    {
+      "name": "rose-pine-dawn",
+      "author": "Rosé Pine contributors",
+      "license": "MIT",
+      "url": "https://github.com/rose-pine/palette/blob/92af52b465ab6e47437aca223c9b8d3009a2023b/palette.json"
+    },
+    {
+      "name": "everforest-dark",
+      "author": "Sainnhe Park",
+      "license": "MIT",
+      "url": "https://github.com/sainnhe/everforest/blob/85a86eb62409e3ec88713bff3d1b9d7374e112e4/autoload/everforest.vim"
+    },
+    {
+      "name": "everforest-light",
+      "author": "Sainnhe Park",
+      "license": "MIT",
+      "url": "https://github.com/sainnhe/everforest/blob/85a86eb62409e3ec88713bff3d1b9d7374e112e4/autoload/everforest.vim"
+    },
+    {
+      "name": "kanagawa",
+      "author": "Rebelot and Kanagawa contributors",
+      "license": "MIT",
+      "url": "https://github.com/rebelot/kanagawa.nvim/blob/bb85e4bfc8d89b0e62c8fa53ccdd13d12e2f77b3/lua/kanagawa/colors.lua"
+    },
+    {
+      "name": "kanagawa-dragon",
+      "author": "Rebelot and Kanagawa contributors",
+      "license": "MIT",
+      "url": "https://github.com/rebelot/kanagawa.nvim/blob/bb85e4bfc8d89b0e62c8fa53ccdd13d12e2f77b3/lua/kanagawa/colors.lua"
+    },
+    {
+      "name": "kanagawa-lotus",
+      "author": "Rebelot and Kanagawa contributors",
+      "license": "MIT",
+      "url": "https://github.com/rebelot/kanagawa.nvim/blob/bb85e4bfc8d89b0e62c8fa53ccdd13d12e2f77b3/lua/kanagawa/colors.lua"
+    },
+    {
+      "name": "material-oceanic",
+      "author": "Material Theme / Mallowigi and Equinusocio",
+      "license": "published palette colors; names attributed to their authors",
+      "url": "https://material-theme.com/docs/reference/color-palette/"
+    },
+    {
+      "name": "material-darker",
+      "author": "Material Theme / Mallowigi and Equinusocio",
+      "license": "published palette colors; names attributed to their authors",
+      "url": "https://material-theme.com/docs/reference/color-palette/"
+    },
+    {
+      "name": "material-lighter",
+      "author": "Material Theme / Mallowigi and Equinusocio",
+      "license": "published palette colors; names attributed to their authors",
+      "url": "https://material-theme.com/docs/reference/color-palette/"
+    },
+    {
+      "name": "material-palenight",
+      "author": "Material Theme / Mallowigi and Equinusocio",
+      "license": "published palette colors; names attributed to their authors",
+      "url": "https://material-theme.com/docs/reference/color-palette/"
+    },
+    {
+      "name": "material-deep-ocean",
+      "author": "Material Theme / Mallowigi and Equinusocio",
+      "license": "published palette colors; names attributed to their authors",
+      "url": "https://material-theme.com/docs/reference/color-palette/"
+    },
+    {
+      "name": "ayu-dark",
+      "author": "Ayu Theme and Yihui Hu",
+      "license": "MIT",
+      "url": "https://github.com/ayu-theme/vscode-ayu/blob/2c6feb7215bf7ca6c8c9a51066f255025df3a5b9/ayu-dark.json"
+    },
+    {
+      "name": "ayu-mirage",
+      "author": "Ayu Theme and Yihui Hu",
+      "license": "MIT",
+      "url": "https://github.com/ayu-theme/vscode-ayu/blob/2c6feb7215bf7ca6c8c9a51066f255025df3a5b9/ayu-mirage.json"
+    },
+    {
+      "name": "ayu-light",
+      "author": "Ayu Theme and Yihui Hu",
+      "license": "MIT",
+      "url": "https://github.com/ayu-theme/vscode-ayu/blob/2c6feb7215bf7ca6c8c9a51066f255025df3a5b9/ayu-light.json"
+    },
+    {
+      "name": "cobalt2",
+      "author": "Wes Bos",
+      "license": "MIT",
+      "url": "https://github.com/wesbos/cobalt2-vscode/blob/c4e9574372b85afad1682ed0fdd1ac0411c62512/theme/cobalt2.json"
+    },
+    {
+      "name": "synthwave-84",
+      "author": "Robb Owen",
+      "license": "MIT",
+      "url": "https://github.com/robb0wen/synthwave-vscode/blob/ecfa2fe1279f7233663fa3f98a96e6756000567b/themes/synthwave-color-theme.json"
+    },
+    {
+      "name": "alloy-core",
+      "author": "NeNe Nib",
+      "license": "MIT; original palette",
+      "url": "https://github.com/hideyukiMORI/nene-nib/blob/main/docs/design/2026-10-12-colorschemes.md"
+    },
+    {
+      "name": "verdant-rage",
+      "author": "NeNe Nib",
+      "license": "MIT; original palette",
+      "url": "https://github.com/hideyukiMORI/nene-nib/blob/main/docs/design/2026-10-12-colorschemes.md"
+    },
+    {
+      "name": "scarlet-web",
+      "author": "NeNe Nib",
+      "license": "MIT; original palette",
+      "url": "https://github.com/hideyukiMORI/nene-nib/blob/main/docs/design/2026-10-12-colorschemes.md"
+    },
+    {
+      "name": "relic-sand",
+      "author": "NeNe Nib",
+      "license": "MIT; original palette",
+      "url": "https://github.com/hideyukiMORI/nene-nib/blob/main/docs/design/2026-10-12-colorschemes.md"
+    },
+    {
+      "name": "soap-rebellion",
+      "author": "NeNe Nib",
+      "license": "MIT; original palette",
+      "url": "https://github.com/hideyukiMORI/nene-nib/blob/main/docs/design/2026-10-12-colorschemes.md"
+    },
+    {
+      "name": "code-rain",
+      "author": "NeNe Nib",
+      "license": "MIT; original palette",
+      "url": "https://github.com/hideyukiMORI/nene-nib/blob/main/docs/design/2026-10-12-colorschemes.md"
+    },
+    {
+      "name": "arcane-library",
+      "author": "NeNe Nib",
+      "license": "MIT; original palette",
+      "url": "https://github.com/hideyukiMORI/nene-nib/blob/main/docs/design/2026-10-12-colorschemes.md"
+    },
+    {
+      "name": "royal-kinetic",
+      "author": "NeNe Nib",
+      "license": "MIT; original palette",
+      "url": "https://github.com/hideyukiMORI/nene-nib/blob/main/docs/design/2026-10-12-cinema-collection.md"
+    },
+    {
+      "name": "arena-sunset",
+      "author": "NeNe Nib",
+      "license": "MIT; original palette",
+      "url": "https://github.com/hideyukiMORI/nene-nib/blob/main/docs/design/2026-10-12-cinema-collection.md"
+    },
+    {
+      "name": "cosmic-mixtape",
+      "author": "NeNe Nib",
+      "license": "MIT; original palette",
+      "url": "https://github.com/hideyukiMORI/nene-nib/blob/main/docs/design/2026-10-12-cinema-collection.md"
+    },
+    {
+      "name": "prism-sanctum",
+      "author": "NeNe Nib",
+      "license": "MIT; original palette",
+      "url": "https://github.com/hideyukiMORI/nene-nib/blob/main/docs/design/2026-10-12-cinema-collection.md"
+    },
+    {
+      "name": "winter-sentinel",
+      "author": "NeNe Nib",
+      "license": "MIT; original palette",
+      "url": "https://github.com/hideyukiMORI/nene-nib/blob/main/docs/design/2026-10-12-cinema-collection.md"
+    },
+    {
+      "name": "infinite-dusk",
+      "author": "NeNe Nib",
+      "license": "MIT; original palette",
+      "url": "https://github.com/hideyukiMORI/nene-nib/blob/main/docs/design/2026-10-12-cinema-collection.md"
+    },
+    {
+      "name": "stellar-pilot",
+      "author": "NeNe Nib",
+      "license": "MIT; original palette",
+      "url": "https://github.com/hideyukiMORI/nene-nib/blob/main/docs/design/2026-10-12-cinema-collection.md"
+    },
+    {
+      "name": "quantum-honey",
+      "author": "NeNe Nib",
+      "license": "MIT; original palette",
+      "url": "https://github.com/hideyukiMORI/nene-nib/blob/main/docs/design/2026-10-12-cinema-collection.md"
+    },
+    {
+      "name": "crimson-mercenary",
+      "author": "NeNe Nib",
+      "license": "MIT; original palette",
+      "url": "https://github.com/hideyukiMORI/nene-nib/blob/main/docs/design/2026-10-12-cinema-collection.md"
+    },
+    {
+      "name": "last-outlaw",
+      "author": "NeNe Nib",
+      "license": "MIT; original palette",
+      "url": "https://github.com/hideyukiMORI/nene-nib/blob/main/docs/design/2026-10-12-cinema-collection.md"
+    },
+    {
+      "name": "ivory-agent",
+      "author": "NeNe Nib",
+      "license": "MIT; original palette",
+      "url": "https://github.com/hideyukiMORI/nene-nib/blob/main/docs/design/2026-10-12-cinema-collection.md"
+    },
+    {
+      "name": "celestial-brass",
+      "author": "NeNe Nib",
+      "license": "MIT; original palette",
+      "url": "https://github.com/hideyukiMORI/nene-nib/blob/main/docs/design/2026-10-12-cinema-collection.md"
+    },
+    {
+      "name": "amber-haze",
+      "author": "NeNe Nib",
+      "license": "MIT; original palette",
+      "url": "https://github.com/hideyukiMORI/nene-nib/blob/main/docs/design/2026-10-12-cinema-collection.md"
+    },
+    {
+      "name": "desert-oracle",
+      "author": "NeNe Nib",
+      "license": "MIT; original palette",
+      "url": "https://github.com/hideyukiMORI/nene-nib/blob/main/docs/design/2026-10-12-cinema-collection.md"
+    },
+    {
+      "name": "chrome-wasteland",
+      "author": "NeNe Nib",
+      "license": "MIT; original palette",
+      "url": "https://github.com/hideyukiMORI/nene-nib/blob/main/docs/design/2026-10-12-cinema-collection.md"
+    },
+    {
+      "name": "neon-grid",
+      "author": "NeNe Nib",
+      "license": "MIT; original palette",
+      "url": "https://github.com/hideyukiMORI/nene-nib/blob/main/docs/design/2026-10-12-cinema-collection.md"
+    },
+    {
+      "name": "biolume-forest",
+      "author": "NeNe Nib",
+      "license": "MIT; original palette",
+      "url": "https://github.com/hideyukiMORI/nene-nib/blob/main/docs/design/2026-10-12-cinema-collection.md"
+    },
+    {
+      "name": "pastel-concierge",
+      "author": "NeNe Nib",
+      "license": "MIT; original palette",
+      "url": "https://github.com/hideyukiMORI/nene-nib/blob/main/docs/design/2026-10-12-cinema-collection.md"
+    },
+    {
+      "name": "twilight-jazz",
+      "author": "NeNe Nib",
+      "license": "MIT; original palette",
+      "url": "https://github.com/hideyukiMORI/nene-nib/blob/main/docs/design/2026-10-12-cinema-collection.md"
+    },
+    {
+      "name": "noir-vigil",
+      "author": "NeNe Nib",
+      "license": "MIT; original palette",
+      "url": "https://github.com/hideyukiMORI/nene-nib/blob/main/docs/design/2026-10-12-cinema-collection.md"
+    },
+    {
+      "name": "carnival-ashes",
+      "author": "NeNe Nib",
+      "license": "MIT; original palette",
+      "url": "https://github.com/hideyukiMORI/nene-nib/blob/main/docs/design/2026-10-12-cinema-collection.md"
+    },
+    {
+      "name": "orbital-frost",
+      "author": "NeNe Nib",
+      "license": "MIT; original palette",
+      "url": "https://github.com/hideyukiMORI/nene-nib/blob/main/docs/design/2026-10-12-cinema-collection.md"
+    },
+    {
+      "name": "folded-city",
+      "author": "NeNe Nib",
+      "license": "MIT; original palette",
+      "url": "https://github.com/hideyukiMORI/nene-nib/blob/main/docs/design/2026-10-12-cinema-collection.md"
+    },
+    {
+      "name": "midnight-drive",
+      "author": "NeNe Nib",
+      "license": "MIT; original palette",
+      "url": "https://github.com/hideyukiMORI/nene-nib/blob/main/docs/design/2026-10-12-cinema-collection.md"
+    },
+    {
+      "name": "editorial-cafe",
+      "author": "NeNe Nib",
+      "license": "MIT; original palette",
+      "url": "https://github.com/hideyukiMORI/nene-nib/blob/main/docs/design/2026-10-12-cinema-collection.md"
+    },
+    {
+      "name": "striped-haunt",
+      "author": "NeNe Nib",
+      "license": "MIT; original palette",
+      "url": "https://github.com/hideyukiMORI/nene-nib/blob/main/docs/design/2026-10-12-cinema-collection.md"
+    },
+    {
+      "name": "curious-garden",
+      "author": "NeNe Nib",
+      "license": "MIT; original palette",
+      "url": "https://github.com/hideyukiMORI/nene-nib/blob/main/docs/design/2026-10-12-cinema-collection.md"
+    },
+    {
+      "name": "tidebound-gold",
+      "author": "NeNe Nib",
+      "license": "MIT; original palette",
+      "url": "https://github.com/hideyukiMORI/nene-nib/blob/main/docs/design/2026-10-12-cinema-collection.md"
+    },
+    {
+      "name": "velvet-cabaret",
+      "author": "NeNe Nib",
+      "license": "MIT; original palette",
+      "url": "https://github.com/hideyukiMORI/nene-nib/blob/main/docs/design/2026-10-12-cinema-collection.md"
+    },
+    {
+      "name": "lagoon-whisper",
+      "author": "NeNe Nib",
+      "license": "MIT; original palette",
+      "url": "https://github.com/hideyukiMORI/nene-nib/blob/main/docs/design/2026-10-12-cinema-collection.md"
+    }
+  ]
+}
