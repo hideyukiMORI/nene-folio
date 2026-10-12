@@ -50,7 +50,8 @@ PR には目的・変更の要約・使った正典経路・規則 ID・検証�
 1 つの PR に 1 つの作業単位。マージは squash のみ。マージ後はローカル `main` を綺麗に同期する。
 統合の手順は `tools/merge-pr.ps1 -Number N -Subject "…"` の 1 本で行う（字面検査 → Ready → CI 待ち → squash merge → main の ff）。
 
-実装中とレビュー中は draft。Draft → Ready がフルゲートの要求である。
+実装中とレビュー中は draft。head・タイトル・本文を確定してからReadyにし、最終headの必須CIでフルゲートを要求する。
+実行時点・結果の再利用はQLT-012に従い、Ready前のローカルフルゲートは一律必須にしない（[ADR0044](adr/0044-tests-at-completion-and-integration.md)）。
 Draft の head は必須 check `check` が failure（赤）になる。これは「まだ統合しない」の表示で、Ready にすればフルゲートが走って緑になる（ADR 0037）。
 
 - 機械強制: **planned**（PR テンプレート・必須 check・ruleset の squash-only）
