@@ -22,6 +22,7 @@
 #include "note_ref.h"
 #include "note_search.h"
 #include "note_text.h"
+#include "pane_notice.h"
 #include "replace_edit.h"
 #include "settings_row_kind.h"
 #include "ui_face.h"
@@ -75,7 +76,7 @@ struct folio_window
     size_t command_help_first;
     bool command_composing;
     bool command_unknown;
-    bool trash_completed;
+    enum pane_notice notice;
     bool removal_running;
     /* `:%s` が 1 件も一致しなかった。欄は閉じず、置換の欄と同じ 1 行を出す（ADR 0028 の補正） */
     bool command_no_match;
@@ -298,7 +299,7 @@ static enum folio_state_outcome prepare_name_operation(const struct folio_window
     restore_valid_focus(focus);
     return outcome;
 }
-static void set_trash_completed(struct folio_window *_Nonnull self, bool completed);
+static void set_pane_notice(struct folio_window *_Nonnull self, enum pane_notice notice);
 static bool holds_document(const struct folio_window *_Nonnull self, struct note_ref target);
 static void decorate(HWND handle, struct folio_palette palette);
 static void render_pane(const struct folio_window *_Nonnull self);
@@ -435,7 +436,7 @@ static void focus_command_input(struct folio_window *_Nonnull self)
 /* 欄の上の 1 行を消す（失敗・未知の操作・`:%s` の 0 件）。 */
 static void clear_command_status(struct folio_window *_Nonnull self)
 {
-    set_trash_completed(self, false);
+    set_pane_notice(self, PANE_NOTICE_NONE);
     self->command_unknown = false;
     self->command_no_match = false;
     self->command_failure = FOLIO_STATE_READY;
@@ -490,11 +491,12 @@ static void refresh_font(struct folio_window *_Nonnull self, UINT dpi)
     self->digit_width = measure_digit(self, dpi);
 }
 
-/* 完了の 1 行は本文の既存余白だけを使い、面の下端に同じ高さを予約する。 */
-static int trash_notice_height(const struct folio_window *_Nonnull self)
+/* 下端の 1 行は本文の既存余白だけを使い、面の下端に同じ高さを予約する。 */
+static int pane_notice_height(const struct folio_window *_Nonnull self)
 {
-    return self->trash_completed ? scale(base_command_status_height, GetDpiForWindow(self->handle))
-                                 : 0;
+    return self->notice != PANE_NOTICE_NONE
+               ? scale(base_command_status_height, GetDpiForWindow(self->handle))
+               : 0;
 }
 
 static RECT command_palette_rect(const struct folio_window *_Nonnull self)
@@ -517,7 +519,7 @@ static RECT command_palette_rect(const struct folio_window *_Nonnull self)
                                                     : base_command_palette_top,
                     dpi);
     int available_height =
-        client.bottom - trash_notice_height(self) - top - scale(base_command_palette_edge, dpi);
+        client.bottom - pane_notice_height(self) - top - scale(base_command_palette_edge, dpi);
     if (height > available_height)
     {
         height = available_height;
@@ -530,7 +532,7 @@ static RECT command_ex_rect(const struct folio_window *_Nonnull self)
 {
     RECT client;
     GetClientRect(self->handle, &client);
-    client.bottom -= trash_notice_height(self);
+    client.bottom -= pane_notice_height(self);
     UINT dpi = GetDpiForWindow(self->handle);
     int status = self->command_failure != FOLIO_STATE_READY || self->command_unknown ||
                          self->command_no_match
@@ -546,7 +548,7 @@ static RECT command_search_rect(const struct folio_window *_Nonnull self)
 {
     RECT client;
     GetClientRect(self->handle, &client);
-    client.bottom -= trash_notice_height(self);
+    client.bottom -= pane_notice_height(self);
     UINT dpi = GetDpiForWindow(self->handle);
     RECT bounds = {0, client.bottom - scale(base_ex_height + base_command_status_height, dpi),
                    client.right, client.bottom};
@@ -558,7 +560,7 @@ static RECT command_replace_rect(const struct folio_window *_Nonnull self)
 {
     RECT client;
     GetClientRect(self->handle, &client);
-    client.bottom -= trash_notice_height(self);
+    client.bottom -= pane_notice_height(self);
     UINT dpi = GetDpiForWindow(self->handle);
     RECT bounds = {0, client.bottom - scale(base_ex_height * 2 + base_command_status_height, dpi),
                    client.right, client.bottom};
@@ -782,13 +784,13 @@ static void arrange_command_input(struct folio_window *_Nonnull self)
 }
 
 /* 印の立て下げと面の配置更新はここだけ。本文の HWND と矩形には触らない。 */
-static void set_trash_completed(struct folio_window *_Nonnull self, bool completed)
+static void set_pane_notice(struct folio_window *_Nonnull self, enum pane_notice notice)
 {
-    if (self->trash_completed == completed)
+    if (self->notice == notice)
     {
         return;
     }
-    self->trash_completed = completed;
+    self->notice = notice;
     arrange_command_input(self);
     InvalidateRect(self->handle, nullptr, FALSE);
 }
@@ -2046,18 +2048,25 @@ static void draw_gutter(const struct folio_window *_Nonnull self, HDC device, RE
     RestoreDC(device, saved);
 }
 
-static void draw_trash_notice(const struct folio_window *_Nonnull self, HDC device, RECT client)
+static void draw_pane_notice(const struct folio_window *_Nonnull self, HDC device, RECT client)
 {
-    if (!self->trash_completed)
+    enum ui_text line = UI_TEXT_TRASH_NOTE_COMPLETED;
+    switch (self->notice)
     {
+    case PANE_NOTICE_NONE:
         return;
+    case PANE_NOTICE_TRASH_COMPLETED:
+        line = UI_TEXT_TRASH_NOTE_COMPLETED;
+        break;
+    case PANE_NOTICE_NOTE_UNEDITABLE:
+        line = UI_TEXT_NOTE_OPENED_IN_VIEW;
+        break;
     }
     UINT dpi = GetDpiForWindow(self->handle);
-    RECT bounds = {pane_bounds(self).left, client.bottom - trash_notice_height(self),
+    RECT bounds = {pane_bounds(self).left, client.bottom - pane_notice_height(self),
                    client.right - scale(base_close_margin, dpi), client.bottom};
     SetTextColor(device, self->palette.header_text);
-    draw_utf8(device, ui_text_line(UI_TEXT_TRASH_NOTE_COMPLETED, folio_state_language(self->state)),
-              bounds);
+    draw_utf8(device, ui_text_line(line, folio_state_language(self->state)), bounds);
 }
 
 /* 右ペインの地と頭。本文は note_pane が持つ。 */
@@ -2080,7 +2089,7 @@ static void draw_pane(const struct folio_window *_Nonnull self, HDC device, RECT
     draw_actions(self, device);
     SetTextCharacterExtra(device, 0);
     draw_gutter(self, device, damage);
-    draw_trash_notice(self, device, client);
+    draw_pane_notice(self, device, client);
 }
 
 /* 更新矩形と右ペインの重なりへ、client 座標のまま 1 枚だけ描き写す。
@@ -2197,7 +2206,7 @@ static void pour_edit_rtf(struct folio_window *_Nonnull self)
  * 補正）。 */
 static enum folio_state_outcome show_note(struct folio_window *_Nonnull self)
 {
-    set_trash_completed(self, false);
+    set_pane_notice(self, PANE_NOTICE_NONE);
     if (folio_state_pane_mode(self->state) == PANE_MODE_VIEW)
     {
         render_pane(self);
@@ -3829,7 +3838,7 @@ static void trash_note_at(struct folio_window *_Nonnull self, struct note_ref ta
         }
         return;
     }
-    set_trash_completed(self, true);
+    set_pane_notice(self, PANE_NOTICE_TRASH_COMPLETED);
 }
 
 static void execute_trash_note_command(struct folio_window *_Nonnull self,
@@ -4063,7 +4072,7 @@ static void execute_command(struct folio_window *_Nonnull self, enum folio_comma
     {
         return;
     }
-    set_trash_completed(self, false);
+    set_pane_notice(self, PANE_NOTICE_NONE);
     command_runs[command](self, argument);
 }
 
@@ -4108,13 +4117,20 @@ static enum folio_state_outcome switch_note(struct folio_window *_Nonnull self, 
     {
         return FOLIO_STATE_CANCELLED;
     }
-    set_trash_completed(self, false);
+    set_pane_notice(self, PANE_NOTICE_NONE);
     enum folio_state_outcome outcome = save_edit(self);
     if (outcome != FOLIO_STATE_READY)
     {
         return outcome;
     }
-    return opened(self, folio_state_select_note(self->state, category, note));
+    outcome = opened(self, folio_state_select_note(self->state, category, note));
+    /* show_note が入口で印を下げるので、その後に立てる（#258）。 */
+    if (outcome == FOLIO_STATE_READY &&
+        folio_state_select_notice(self->state) == FOLIO_STATE_NOTE_UNEDITABLE)
+    {
+        set_pane_notice(self, PANE_NOTICE_NOTE_UNEDITABLE);
+    }
+    return outcome;
 }
 
 /* 押した行が、いま開いている名前付きの文書か。同じノートを選び直すと本文を読み直して
@@ -4159,7 +4175,7 @@ static void run_drawer_menu(struct folio_window *_Nonnull self, enum drawer_menu
     {
         return;
     }
-    set_trash_completed(self, false);
+    set_pane_notice(self, PANE_NOTICE_NONE);
     switch (item)
     {
     case DRAWER_MENU_DELETE_CATEGORY:

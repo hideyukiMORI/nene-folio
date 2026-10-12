@@ -327,6 +327,10 @@ ClaudeCode の NeNe Folioリナが `design:design-critique` / `design:ux-copy` �
 
 参照: [EnableWindow](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-enablewindow)。
 
+## 2026-10-12 の補正 5（#258）— 下端の 1 行を #242 の知らせにも使う
+
+補正 4 の「他の操作へ通知基盤を広げない」を 1 件だけ緩める。編集モードのまま編集で保てない文字を含むノートへ切り替えたとき（#242）、application が黙って閲覧で開くので、同じ下端の 1 行で「閲覧で開きました。編集で保てない文字があります。」と知らせる。印は UI の閉じた列挙 `pane_notice`（NONE / TRASH_COMPLETED / NOTE_UNEDITABLE）1 つで、立て下げ・配置・寿命（決定 6）は変えない。事実の正本は application の `folio_state_select_notice`（READY / NOTE_UNEDITABLE）で、UI は mode の前後比較で推測しない。文言は事実だけ（決定 4）で、末尾省略でも先頭の「閲覧で開きました」が残る語順にした。通知のためだけに結果の値・port・確保は足していない。
+
 ### B3 実装補足（#197）
 
 完了の印は `trash_completed` だけで、`set_trash_completed` が立て下げと面の配置更新を受け持つ。

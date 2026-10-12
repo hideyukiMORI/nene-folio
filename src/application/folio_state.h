@@ -74,6 +74,10 @@ folio_state_refresh_theme(struct folio_state *_Nonnull state);
  * 尋ね、READY でなければ既存の 1 行で見せて起動を続ける（「見せたか」はどこにも持たない）。 */
 [[nodiscard]] enum folio_state_outcome
 folio_state_settings_notice(const struct folio_state *_Nonnull state);
+/* 直前の folio_state_select_note が編集から閲覧へ落としたとき（編集で保てない本文・#242）
+ * NOTE_UNEDITABLE、それ以外 READY（#258）。select_note は入口で READY へ戻す。 */
+[[nodiscard]] enum folio_state_outcome
+folio_state_select_notice(const struct folio_state *_Nonnull state);
 /* 編集中の本文の左に原文の行番号を出すか（FR-021 / ADR 0026 の決定 5）。
  * 値の所有者はここ 1 つで、UI は第 2 の真偽を持たない（ARC-004）。 */
 [[nodiscard]] bool folio_state_number(const struct folio_state *_Nonnull state);
