@@ -23,6 +23,19 @@ bool same_text(const char *_Nonnull actual, const char *_Nonnull expected)
     return false;
 }
 
+static bool run_layout_target_tests(const char *_Nonnull argument)
+{
+    if (strcmp(argument, "--layout-modes") == 0)
+    {
+        run_layout_mode_state_tests();
+        run_command_tests();
+        run_ui_text_tests();
+        printf("layout state, command and UI text tests passed\n");
+        return true;
+    }
+    return false;
+}
+
 static bool run_target_tests(const char *_Nonnull argument)
 {
     if (strcmp(argument, "--markdown-rtf") == 0)
@@ -108,7 +121,7 @@ int main(int argc, char *_Nonnull *_Nonnull argv)
         run_bom_boundary_tests();
         return 0;
     }
-    if (argc == 2 && run_target_tests(argv[1]))
+    if (argc == 2 && (run_layout_target_tests(argv[1]) || run_target_tests(argv[1])))
     {
         return 0;
     }

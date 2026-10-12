@@ -62,6 +62,7 @@ struct folio_state
     struct markdown_rtf *_Nullable edit; /* 編集用の平文 RTF（#250）。作るまでは null */
     struct note_text *_Nullable body;    /* 最後に読んだ本文。何も選んでいなければ空 */
     enum pane_mode mode;
+    enum folio_layout_mode layout_mode;
     int scroll; /* ドロワーのスクロール量（要求量・画素・0 以上）。上限は core が決める */
     enum folio_document_kind document;
     size_t selected_category;
@@ -511,6 +512,7 @@ enum folio_state_outcome folio_state_create(const struct folio_ports *_Nonnull p
     state->appearance = *appearance;
     state->os_theme = appearance->read_theme(appearance->adapter);
     state->theme_choice = FOLIO_THEME_CHOICE_SYSTEM;
+    state->layout_mode = FOLIO_LAYOUT_BOTH;
     state->select_notice = FOLIO_STATE_READY;
     state->palette = rtf_palette_for(folio_theme_resolve(state->theme_choice, state->os_theme));
     if (markdown_rtf_empty(state->palette, ui_font_face(FOLIO_LANGUAGE_JA), &state->pane) !=
@@ -2850,6 +2852,16 @@ enum folio_state_outcome folio_state_discard_edits(const struct folio_state *_No
 enum pane_mode folio_state_pane_mode(const struct folio_state *_Nonnull state)
 {
     return state->mode;
+}
+
+enum folio_layout_mode folio_state_layout_mode(const struct folio_state *_Nonnull state)
+{
+    return state->layout_mode;
+}
+
+void folio_state_set_layout_mode(struct folio_state *_Nonnull state, enum folio_layout_mode mode)
+{
+    state->layout_mode = mode;
 }
 
 /* 走査の結果を閉じた値へ写す（ADR 0028 の決定 6。写像はここ 1 か所）。 */

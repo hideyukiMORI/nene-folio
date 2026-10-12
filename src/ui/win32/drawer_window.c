@@ -49,7 +49,6 @@ constexpr size_t draw_unit_limit = 1024;
 
 /* 96 DPI での寸法（デザイン「案2 堅」）。描くときに DPI で拡大する（FR-013）。 */
 constexpr int base_dpi = 96;
-constexpr int base_header_height = 44;
 constexpr int base_header_indent = 16;
 /* 常設の「すべてのノートを検索」の欄が占める帯（ADR 0024 の決定 6）。欄そのものは主窓の子で、
  * ここは行を置かない余白として数える。 */
@@ -122,11 +121,10 @@ static void refresh_fonts(struct drawer_window *_Nonnull self, UINT dpi)
     self->mono_font = create_font(dpi, base_mono_font, FW_NORMAL, mono_face);
 }
 
-/* 固定のアプリ名・検索欄・カテゴリ帯。行配置/clip/hit/scrollはこの高さを共用する。 */
+/* 固定の検索欄・カテゴリ帯。行配置/clip/hit/scrollはこの高さを共用する。 */
 static int band_height(const struct drawer_window *_Nonnull self)
 {
-    return scale(base_header_height + base_filter_height + base_category_band_height,
-                 GetDpiForWindow(self->handle));
+    return scale(base_filter_height + base_category_band_height, GetDpiForWindow(self->handle));
 }
 
 static RECT new_category_rect(const struct drawer_window *_Nonnull self)
@@ -139,6 +137,25 @@ static RECT new_category_rect(const struct drawer_window *_Nonnull self)
     int middle = band_height(self) - scale(base_category_band_height, dpi) / 2;
     return (RECT){client.right - inset - box, middle - box / 2, client.right - inset,
                   middle - box / 2 + box};
+}
+
+static RECT filter_rect(const struct drawer_window *_Nonnull drawer)
+{
+    RECT bounds = {0, 0, 0, 0};
+    if (drawer->handle == nullptr)
+    {
+        return bounds;
+    }
+    UINT dpi = GetDpiForWindow(drawer->handle);
+    RECT client = {0, 0, 0, 0};
+    GetClientRect(drawer->handle, &client);
+    int inset = scale(base_filter_inset, dpi);
+    int margin = scale(base_filter_margin, dpi);
+    bounds.left = inset;
+    bounds.top = margin;
+    bounds.right = client.right - inset;
+    bounds.bottom = scale(base_filter_height, dpi) - margin;
+    return bounds;
 }
 
 /* いまの DPI と client の高さで寸法を測る。スクロール上限は core がここから決める（FR-012）。 */
@@ -262,7 +279,7 @@ static void draw_filter_frame(const struct drawer_window *_Nonnull self, HDC dev
     {
         return;
     }
-    RECT bounds = drawer_window_filter_rect(self);
+    RECT bounds = filter_rect(self);
     InflateRect(&bounds, 1, 1);
     frame_rect(device, bounds, self->palette.chip_background);
 }
@@ -273,7 +290,7 @@ static void draw_category_band(const struct drawer_window *_Nonnull self, HDC de
     RECT button = new_category_rect(self);
     RECT label = {scale(base_header_indent, dpi),
                   band_height(self) - scale(base_category_band_height, dpi),
-                  button.left - scale(8, dpi), band_height(self)};
+                  button.left - scale(80, dpi), band_height(self)};
     SelectObject(device, self->category_font);
     SetTextColor(device, self->palette.category_text);
     draw_utf8(device, ui_text_line(UI_TEXT_TITLE_CATEGORIES, folio_state_language(self->state)),
@@ -282,24 +299,18 @@ static void draw_category_band(const struct drawer_window *_Nonnull self, HDC de
     {
         fill_rect(device, button, self->palette.selected_background);
     }
+    RECT count = {label.right + scale(8, dpi), label.top, button.left - scale(8, dpi),
+                  label.bottom};
+    SelectObject(device, self->mono_font);
+    SetTextColor(device, self->palette.note_text);
+    draw_header_count(self, device, count);
     icon_paint_fill(device, button, ICON_PAINT_ADD, self->palette.category_text);
 }
 
-/* 頭の帯: 左に NENE FOLIO、右にノート数、検索枠、その下にカテゴリ見出しと＋。 */
-static void draw_header(const struct drawer_window *_Nonnull self, HDC device, int width)
+/* 固定帯。共通のブランド/窓操作の頭は親が所有する（ADR0047）。 */
+static void draw_header(const struct drawer_window *_Nonnull self, HDC device)
 {
-    UINT dpi = GetDpiForWindow(self->handle);
-    int inset = scale(base_header_indent, dpi);
-    RECT bounds = {inset, 0, width - inset, scale(base_header_height, dpi)};
-    SelectObject(device, self->mono_font);
-    SetTextColor(device, self->palette.header_text);
-    SetTextCharacterExtra(device, scale(base_tracking, dpi));
-    char16_t logo[draw_unit_limit];
-    int logo_units =
-        wide_units(ui_text_line(UI_TEXT_APP_LOGO, folio_state_language(self->state)), logo);
-    DrawTextW(device, logo, logo_units, &bounds, DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
     SetTextCharacterExtra(device, 0);
-    draw_header_count(self, device, bounds);
     draw_filter_frame(self, device);
     draw_category_band(self, device);
 }
@@ -500,14 +511,14 @@ static void paint_surface(const struct drawer_window *_Nonnull self, HDC device,
     struct drawer_layout *_Nullable layout = nullptr;
     if (!current_layout(self, &layout))
     {
-        draw_header(self, device, client.right);
+        draw_header(self, device);
         return;
     }
     int header = band_height(self);
     IntersectClipRect(device, 0, header, client.right, client.bottom);
     draw_rows(self, device, layout, client.right);
     SelectClipRgn(device, nullptr);
-    draw_header(self, device, client.right);
+    draw_header(self, device);
     /* 画素へ触る前に GDI の溜めを吐き出す。 */
     GdiFlush();
     if (drawer_layout_overflow_above(layout))
@@ -1071,20 +1082,11 @@ HWND _Nullable drawer_window_handle(const struct drawer_window *_Nonnull drawer)
 
 RECT drawer_window_filter_rect(const struct drawer_window *_Nonnull drawer)
 {
-    RECT bounds = {0, 0, 0, 0};
-    if (drawer->handle == nullptr)
+    RECT bounds = filter_rect(drawer);
+    if (drawer->handle != nullptr)
     {
-        return bounds;
+        MapWindowPoints(drawer->handle, GetParent(drawer->handle), (POINT *)&bounds, 2);
     }
-    UINT dpi = GetDpiForWindow(drawer->handle);
-    RECT client = {0, 0, 0, 0};
-    GetClientRect(drawer->handle, &client);
-    int inset = scale(base_filter_inset, dpi);
-    int margin = scale(base_filter_margin, dpi);
-    bounds.left = inset;
-    bounds.top = scale(base_header_height, dpi) + margin;
-    bounds.right = client.right - inset;
-    bounds.bottom = scale(base_header_height + base_filter_height, dpi) - margin;
     return bounds;
 }
 

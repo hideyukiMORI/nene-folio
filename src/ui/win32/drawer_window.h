@@ -21,7 +21,7 @@ drawer_window_create(HWND _Nonnull parent, struct folio_state *_Nonnull state,
 [[nodiscard]] HWND _Nullable drawer_window_handle(const struct drawer_window *_Nonnull drawer);
 /* 常設の「すべてのノートを検索」の欄を置く矩形（ADR 0024 の決定 6）。
  * 欄は主窓の子なので、寸法を測れるドロワーが答え、主窓がそこへ動かす。
- * ドロワーは親の左上に置かれるので、この座標はそのまま親の座標でもある。
+ * localの同じ矩形から親client座標へ変換して答える（ADR0047）。
  * ウィンドウが既に破棄されていれば空の矩形。 */
 [[nodiscard]] RECT drawer_window_filter_rect(const struct drawer_window *_Nonnull drawer);
 /* 主窓が受けた鍵をスクロールの意図に変える（FR-012 / ADR 0009 の決定 5）。

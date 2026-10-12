@@ -4575,6 +4575,7 @@ static void verify_pane_edit_rtf(void)
 
 void run_state_tests(void)
 {
+    run_layout_mode_state_tests();
     verify_pane_edit_rtf();
     finder = test_regex_port();
     verify_ready_state();
@@ -5781,4 +5782,36 @@ void run_note_nul_state_tests(void)
     finder = test_regex_port();
     verify_nul_named();
     verify_nul_untitled();
+}
+
+/* UI本文を所有するRichEditとは独立に、applicationの表示採用は文書/portを触らない。 */
+void run_layout_mode_state_tests(void)
+{
+    finder = test_regex_port();
+    struct persistence_adapter adapter = healthy_adapter();
+    adapter.note_body = "original body";
+    struct folio_state *state = history_state(&adapter);
+    require(folio_state_layout_mode(state) == FOLIO_LAYOUT_BOTH, "layout starts with both regions");
+    require(folio_state_begin_edit(state) == FOLIO_STATE_READY, "layout fixture is editing");
+    const char *body = folio_state_pane_text(state);
+    const char *rtf = folio_state_pane_rtf(state);
+    struct persistence_adapter before;
+    memcpy(&before, &adapter, sizeof before);
+    static const enum folio_layout_mode modes[] = {
+        FOLIO_LAYOUT_DRAWER, FOLIO_LAYOUT_NOTE,   FOLIO_LAYOUT_BOTH, FOLIO_LAYOUT_NOTE,
+        FOLIO_LAYOUT_NOTE,   FOLIO_LAYOUT_DRAWER, FOLIO_LAYOUT_BOTH};
+    for (size_t index = 0; index < sizeof modes / sizeof modes[0]; ++index)
+    {
+        folio_state_set_layout_mode(state, modes[index]);
+        require(folio_state_layout_mode(state) == modes[index] &&
+                    folio_state_pane_mode(state) == PANE_MODE_EDIT &&
+                    folio_state_document_kind(state) == FOLIO_DOCUMENT_NAMED,
+                "display adoption leaves document kind and editing mode alone");
+        require(folio_state_pane_text(state) == body && folio_state_pane_rtf(state) == rtf &&
+                    same_text(body, "original body"),
+                "display adoption keeps the owned body and render value");
+        require(memcmp(&before, &adapter, sizeof before) == 0,
+                "display adoption does not invoke persistence or mutate adapter observations");
+    }
+    folio_state_destroy(state);
 }
