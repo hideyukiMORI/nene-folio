@@ -168,16 +168,27 @@ Waivers: none | WVR-NNNN
 製品の版入力は **CMakeLists.txt の project(... VERSION)** だけとする。設定画面・manifest・VERSIONINFO・配布物名はビルドがそこから導出し、
 2 か所目に手で書かない。配布物の正規生成経路は次の 1 本である。
 
-```text
-未実測（Phase 4 で `eng/package-release.ps1` を書いてから埋める）
+```powershell
+pwsh -NoProfile -File ./eng/package-release.ps1 `
+  -WorkDirectory D:/NeNeFolio/outputs/release-work `
+  -OutputDirectory D:/NeNeFolio/outputs/release
 ```
 
-このコマンドは固定した toolchain で **単一ゲートとは別のビルドディレクトリ** に clean build し、規約検査とテストを通し、
-成果物を検査（アーキテクチャ・宣言外の動的依存が無いこと・埋め込み版の一致・同梱一覧の完全一致）してから
-出力先（未実測・Phase 4）へ配布物と `SHA256SUMS` を作る。配布物の直下は **未実測（Phase 4 で固定する。候補: 実行ファイル・`README.txt`・`LICENSE`）** だけとする。
-**この検査は PR 最終 HEAD で行うフルゲートの代わりではない。**
+両ディレクトリはcheckoutの外にある未作成の絶対パスを指定する。既存・重複・包含・reparse point経由のパスは拒否し、
+既存の出力やdataを削除しない。親ディレクトリは先に用意し、再実行は新しい名前を使う。
+作業先は成功・失敗とも確認用に残り、完了後に§2の確認で整理する。
 
-公開は squash 統合後の clean な `main` から同じコマンドで作り直し、短い実機起動を確認してから
+固定toolchainで **単一ゲートとは別のRelease build** を作り、実exeのAMD64、宣言されたOS DLLだけのimport、
+固定/文字列版、埋め込みmanifest、同梱ファイル集合、書体のサイズ/hash/licenseを検査する。
+ZIPの内容と展開結果を照合してから出力先へ`NeNeFolio-<version>-win-x64.zip`と`SHA256SUMS`を公開する。
+ZIP内は同名の製品フォルダ一つで、その中は`NeNeFolio.exe`、`README.txt`、`LICENSE`、`fonts/`。
+同梱一覧は`eng/release-layout.json`、書体とそのlicenseは`fonts/manifest.json`から導出し、dataや開発用生成物を含めない。
+版のWindows表現は不足成分を0で補った4成分とする。実装判断は[ADR0045](adr/0045-single-version-and-verified-release-bundle.md)。
+
+配布コマンドでDebugのフルゲートを繰り返さない。**この成果物検査はPR最終HEADの必須CIの代わりではない。**
+検査器の反例は単一ゲートへ結び、完成候補の配布生成・dataなし起動・設定の版表示は変更した境界として確認する（QLT-012）。
+
+公開の依頼を受けたら、squash統合後のcleanな`main`から同じコマンドで作り、短い実機起動を確認してから
 `v<version>` の tag と同名 Release へ配布物と `SHA256SUMS` を添付する。公開後に再ダウンロードして照合する。
 署名・インストーラ・自動更新は別の焦点 Issue とする。
 
@@ -188,8 +199,8 @@ Waivers: none | WVR-NNNN
 `SetForegroundWindow` / `SendKeys` と、席が作った DPI 非対応の写し（`out/agents/*/capwin.ps1`）は使わない
 （125% の画面では窓の右と下の 20% が黙って切れる。#151 / #156）。
 
-参照実装: nene-loupe `eng/package-release.ps1`（2026-09-07 還流）。実行ファイルは `/MT` で静的に結び、`llvm-readobj --coff-imports` に
-`VCRUNTIME` / `UCRTBASE` / `MSVCP` が無いことを検査する（Phase 0 の R1 で実測済み）。
+実行ファイルは`/MT`で静的に結ぶ。配布検査のOS DLL許可集合は`eng/architecture.json`のplatformLibrariesから導出し、
+`VCRUNTIME` / `UCRTBASE` / `MSVCP`などの外部ランタイムを含む宣言外importを拒否する。
 
 ---
 

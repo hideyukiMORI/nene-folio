@@ -1,6 +1,21 @@
 cmake_minimum_required(VERSION 3.31)
 # 版はここが唯一の出どころ（DEVELOPMENT_WORKFLOW 第 9 節）。
-project(NeNeFolio VERSION 0.1.0 LANGUAGES C)
+project(NeNeFolio VERSION 0.1.0 LANGUAGES C RC)
+set(NENEFOLIO_VERSION_COMPONENTS)
+foreach(component MAJOR MINOR PATCH TWEAK)
+    set(value "${PROJECT_VERSION_${component}}")
+    if(value STREQUAL "")
+        set(value 0)
+    endif()
+    if(value GREATER 65535)
+        message(FATAL_ERROR "FR-014: Windows version components must be in 0..65535")
+    endif()
+    list(APPEND NENEFOLIO_VERSION_COMPONENTS "${value}")
+endforeach()
+list(JOIN NENEFOLIO_VERSION_COMPONENTS "." NENEFOLIO_WINDOWS_VERSION)
+list(JOIN NENEFOLIO_VERSION_COMPONENTS "," NENEFOLIO_RC_VERSION)
+configure_file(src/app/NeNeFolio.version.json.in product-version.json @ONLY)
+configure_file(src/app/NeNeFolio.manifest.in generated/src/app/NeNeFolio.manifest @ONLY)
 
 if(NOT CMAKE_C_COMPILER_ID STREQUAL "Clang" OR NOT CMAKE_C_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
     message(FATAL_ERROR "QLT-011: this gate requires the pinned clang-cl compiler (CC=clang-cl)")
@@ -33,7 +48,8 @@ nenefolio_target(nenefolio_core core STATIC
     src/core/replace_template.c src/core/replace_edit.c src/core/note_replace.c
     src/core/replace_preview.c
     src/core/ascii_fold.c src/core/ui_font.c src/core/ui_font_fallback.c
-    src/core/ui_text.c src/core/font_bundle_verdict.c)
+    src/core/ui_text.c src/core/font_bundle_verdict.c src/core/product_version.c)
+target_compile_definitions(nenefolio_core PRIVATE NENEFOLIO_PRODUCT_VERSION="${PROJECT_VERSION}")
 nenefolio_target(nenefolio_application application STATIC src/application/folio_state.c)
 nenefolio_link(nenefolio_application nenefolio_core)
 
@@ -82,7 +98,19 @@ nenefolio_system_link(nenefolio_window imm32)
 # 閉じる・設定・折畳・選択の印を面のパスで塗る（ADR 0033 の決定 1・ARC-002）。
 nenefolio_system_link(nenefolio_window gdiplus)
 
-nenefolio_target(nenefolio app EXECUTABLE src/app/main.c src/app/NeNeFolio.manifest)
+set_source_files_properties(src/app/NeNeFolio.manifest.in src/app/NeNeFolio.version.json.in
+    PROPERTIES HEADER_FILE_ONLY TRUE)
+set_source_files_properties(src/app/NeNeFolio.rc PROPERTIES
+    OBJECT_DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/generated/src/app/NeNeFolio.manifest")
+nenefolio_target(nenefolio app EXECUTABLE src/app/main.c src/app/NeNeFolio.rc
+    src/app/NeNeFolio.manifest.in src/app/NeNeFolio.version.json.in)
+target_compile_definitions(nenefolio PRIVATE
+    "$<$<COMPILE_LANGUAGE:RC>:NENEFOLIO_RC_VERSION=${NENEFOLIO_RC_VERSION}>"
+    "$<$<COMPILE_LANGUAGE:RC>:NENEFOLIO_PRODUCT_VERSION=\"${PROJECT_VERSION}\">"
+    "$<$<COMPILE_LANGUAGE:RC>:NENEFOLIO_WINDOWS_VERSION=\"${NENEFOLIO_WINDOWS_VERSION}\">")
+target_include_directories(nenefolio PRIVATE
+    "$<$<COMPILE_LANGUAGE:RC>:${CMAKE_CURRENT_BINARY_DIR}/generated/src/app>")
+target_link_options(nenefolio PRIVATE /MANIFEST:NO)
 set_property(TARGET nenefolio PROPERTY WIN32_EXECUTABLE TRUE)
 set_property(TARGET nenefolio PROPERTY OUTPUT_NAME NeNeFolio)
 nenefolio_link(nenefolio nenefolio_core)

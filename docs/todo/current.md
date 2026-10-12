@@ -1,28 +1,28 @@
 # いまのタスク — NeNe Folio
 
-確認基点: 2026-10-12、main `8f2399c`（#278 / PR #279統合まで）。このファイルは状態の要約で、作業許可の正本ではない。
+確認基点: 2026-10-12、main `7ff9b96`（#280 / PR #281統合まで）。このファイルは状態の要約で、作業許可の正本ではない。
 再開時はhideの現在の依頼、checkoutの差分、対象Issue/PRの実状態を照合する。
 現在欄は置き換えて保ち、経緯を追記し続けない（[ADR0043](../adr/0043-current-instructions-and-single-agent.md)）。
 
 ## 現在の作業
 
-- #270/#271/#274/#276/#278はclosed。BOM修正、運用と入口、ローカルメモリ全10件の整理・反映、前回の追加作業木の整理は完了した。
+- #270/#271/#274/#276/#278/#280はclosed。BOM修正、運用と入口、ローカルメモリ全10件の整理・反映、検証頻度の整理は完了した。
   到達点・検証・証跡は[当日日報](../reports/2026-10-12.md)と[引き継ぎ](../handoffs/2026-10-12.md)を参照する。
-- [Issue #280](https://github.com/hideyukiMORI/nene-folio/issues/280)で検証頻度を整理。
-  [ADR0044](../adr/0044-tests-at-completion-and-integration.md)・QLT-008/012を正本として、機能完成時の対象テストと統合時の最終head必須CIへ集約する。
-  統合状態は紐付くPR、最終main・CI・終了整理は `D:/NeNeFolio/agents/280-test-cadence/completion.json`で確認する。
+- hideの「配布準備を進める」を受け、[Issue #282](https://github.com/hideyukiMORI/nene-folio/issues/282)で版の一元化と配布ZIP生成を実装した。
+  [ADR0045](../adr/0045-single-version-and-verified-release-bundle.md)に判断を記録する。公開tag/GitHub Releaseは本Issueの範囲外。
+  実状態は紐付くPR、対象検証・最終main・CI・成果物・終了整理は `D:/NeNeFolio/agents/282-release-prep/`の証跡で確認する。
+  Release生成、配布検査器16/16、dataなし起動、3言語/最小窓の版表示は成功。範囲とhashは[品質記録](../quality/2026-10-12-release-prep-checks.md)。
 - 今回のhideの明示指定ではAstraの設計サナが要件・設計・判断・受理、SOL/LUNAの実装サナが適した調査・実装・検証を背景で担当する。
-  #280はSOL席が調査と文書反映を担当。見た目を扱う仕事ではimagegenやClaude Codeのデザインリナ等を必要に応じて使う。
+  #282はSOL席がビルド・製品・配布検査の実装を担当。Astra席が設計・文書・受理・統合を担当する。
   この指定を他案件へ広げず、再開時は現在の依頼と適用範囲を照合する。
-- 未統合の製品実装は無い。次の製品作業は現在の依頼か具体的な再現から選ぶ。
+- 検証は[ADR0044](../adr/0044-tests-at-completion-and-integration.md)・QLT-008/012に従い、完成候補の対象検証と最終headの必須CIへ集約する。
 
 ## 製品の到達点
 
-- 製品source: `69e0a61`（#271 / PR #272）。BOMをファイル境界で一度だけ解釈し、本文のU+FEFFを保持する（ADR0042）。
-- 通常exeは同sourceを反映済み: `build/NeNeFolio.exe`、3,253,760 bytes、
-  SHA256 `974C23E0D0DD779211A3B3A46F5105867630EBDFD78C3104EDF11F2BFA3CBAB2`。
-- 対象unit・正典gate（分岐93.86%、proof19）・実OS196 assertions・CI成功。
-  範囲と限界は[品質記録](../quality/2026-10-12-text-boundary-checks.md)。文書更新だけで製品を再ビルドしない。
+- #282でCMakeの版をexe資源・設定面・配布名へ導出し、検証済みのportable ZIPを生成できる。
+  通常exeの最終反映source/hashと保持したZIPの場所は`D:/NeNeFolio/agents/282-release-prep/completion.json`で確認する。
+- 直前の製品基点は`69e0a61`（#271 / PR #272）。BOMをファイル境界で一度だけ解釈し、本文のU+FEFFを保持する（ADR0042）。
+  既存の対象unit・正典gate・実OS196 assertions・CIの範囲と限界は[品質記録](../quality/2026-10-12-text-boundary-checks.md)。
 - 利用できる機能は [README](../../README.md)、要件は [SPECIFICATION](../../SPECIFICATION.md)、判断は受理ADRを参照する。
   Phase 4の配布物公開は未完了。
 

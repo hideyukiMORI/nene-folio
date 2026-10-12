@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "bundleName": "NeNeFolio-{version}-win-x64",
+  "files": [
+    {"source": "build", "path": "NeNeFolio.exe", "destination": "NeNeFolio.exe"},
+    {"source": "repository", "path": "docs/release/README.txt", "destination": "README.txt"},
+    {"source": "repository", "path": "LICENSE", "destination": "LICENSE"}
+  ]
+}

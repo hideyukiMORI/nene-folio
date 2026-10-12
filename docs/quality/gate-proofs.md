@@ -18,6 +18,20 @@ CI: GitHub Actions `windows-2022`（PR の ready_for_review で起動。ロー�
 
 ## 1. 実測結果
 
+### #282: 版・配布検査器の正例と反例（2026-10-12）
+
+`eng/test-release.py`を完成したRelease exeに対して実行し、16/16、exit 0（0.408秒）。
+版・manifest・AMD64の実artifact正例を確認し、x86 header、不一致の固定/文字列/manifest版、UAC/DPI変更、不許可importを拒否した。
+同梱の欠損/余計なdata、font破損→復帰→欠損、既存/相対/重複path、reparse属性、ZIP内容/pathの反例も意図した検査で拒否した。
+出力copyの2件目を失敗させた場合は完成名が存在せず、成功時だけ全成果物が公開され、既存の出力へは上書きしないことを確認した。
+reparse確認は属性注入であり、実junctionを作る試験ではない。
+
+同検査を`eng/check.ps1`へ結線した。Debugでは版・manifest・AMD64だけを実exeで確認し、Release用のimport条件と混同しない。
+別のRelease buildをCIのproofのために作らない。配布生成は`eng/package-release.ps1`で全照合がexit 0。
+実コマンド・source入力・hash・表示条件は[品質記録](2026-10-12-release-prep-checks.md)、
+ログは`D:/NeNeFolio/agents/282-release-prep/release-proof-20261012-1642.log`。
+最終headの必須CI結果は紐付くPRと同証跡ディレクトリの`completion.json`を確認する。
+
 ### 1-a. active の規則（規則 ID ごとの発火と復帰）
 
 | 規則 | 最小の違反 | 検証経路 | 実測 2026-09-09 |

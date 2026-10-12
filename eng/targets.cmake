@@ -58,8 +58,8 @@ function(nenefolio_target target module kind)
         message(FATAL_ERROR "ARC-002: unsupported target kind ${kind}")
     endif()
     set_property(TARGET ${target} PROPERTY NENE_MODULE "${module}")
-    target_compile_options(${target} PRIVATE ${NENEFOLIO_C_OPTIONS}
-                           "$<$<CONFIG:Debug>:${NENEFOLIO_SANITIZE_OPTIONS}>")
+    target_compile_options(${target} PRIVATE "$<$<COMPILE_LANGUAGE:C>:${NENEFOLIO_C_OPTIONS}>"
+        "$<$<AND:$<COMPILE_LANGUAGE:C>,$<CONFIG:Debug>>:${NENEFOLIO_SANITIZE_OPTIONS}>")
     target_include_directories(${target} PUBLIC "${CMAKE_SOURCE_DIR}/${module_path}")
     if(module MATCHES "^(adapters_win32|ui_win32|app)$")
         target_compile_definitions(${target} PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)

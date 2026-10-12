@@ -23,6 +23,7 @@
 #include "note_search.h"
 #include "note_text.h"
 #include "pane_notice.h"
+#include "product_version.h"
 #include "replace_edit.h"
 #include "settings_row_kind.h"
 #include "ui_face.h"
@@ -1609,6 +1610,20 @@ static void draw_command_guidance(const struct folio_window *_Nonnull self, HDC 
     draw_command_pages(self, device);
 }
 
+/* 入力欄を持たない設定面の空きへ、スクロールしない製品版を表示する（FR-014）。 */
+static void draw_settings_version(const struct folio_window *_Nonnull self, HDC device)
+{
+    char text[64];
+    struct ui_text_request request = {.id = UI_TEXT_SETTINGS_VERSION,
+                                      .language = folio_state_language(self->state),
+                                      .name = product_version_text()};
+    if (ui_text_format(&request, text, sizeof text) == UI_TEXT_FORMAT_READY)
+    {
+        SetTextColor(device, self->palette.header_text);
+        draw_utf8(device, text, command_input_rect(self));
+    }
+}
+
 /* 設定画面の案内 2 行（ADR 0031 の決定 7）。1 行目は操作の説明、
  * 2 行目は設定を読めないセッションだけその理由（開いた瞬間から出す）。 */
 static void draw_settings_guidance(const struct folio_window *_Nonnull self, HDC device)
@@ -1871,6 +1886,7 @@ static void draw_command_surface(const struct folio_window *_Nonnull self, HDC d
         return;
     case COMMAND_SURFACE_SETTINGS:
         FillRect(device, &bounds, self->command_brush);
+        draw_settings_version(self, device);
         draw_settings_rows(self, device, bounds);
         return;
     case COMMAND_SURFACE_HISTORY:

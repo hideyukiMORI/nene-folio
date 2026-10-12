@@ -77,6 +77,8 @@ def main() -> int:
     common = ["clang-cl", "/nologo", "/clang:-std=c23", "/MT", "/W4", "/WX", "/utf-8", "-fsanitize=address",
               "/clang:-fprofile-instr-generate", "/clang:-fcoverage-mapping", "/c", f"/Fo:{objects}\\"]
     common += [f"/I{scope}" for scope in scopes + [test_scope]]
+    version = json.loads((root / "build/product-version.json").read_text(encoding="utf-8"))
+    common += [f'/DNENEFOLIO_PRODUCT_VERSION="{version["version"]}"']
     # 中核の確保だけをテストの注入口へ向ける（tests/unit/allocation_probe.h）。製品の正典ビルドは触らない。
     probes = [f"/D{name}=folio_probe_{name}" for name in ("malloc", "calloc", "realloc")]
     run(common + probes + [str(p) for p in sources], output)

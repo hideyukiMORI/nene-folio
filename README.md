@@ -4,8 +4,9 @@ A frameless Markdown notebook for Windows with a category drawer. Plain C (C23),
 
 > **Status (2026-10-12):** the notebook is usable from source. It views and edits notes, keeps a short
 > history of every save, searches, filters, replaces, and manages categories, with settings for theme,
-> language and line numbers. Version 0.1.0. There is no packaged download yet (Phase 4); build it with the
-> command below and run `build/NeNeFolio.exe` with a `data/` folder next to it.
+> language and line numbers. A verified portable ZIP can be built with the release command below;
+> no public download has been published yet. Run `NeNeFolio.exe` after extracting the whole package.
+> It starts with no `data/` folder; saved notes and settings stay next to the executable.
 
 ## What it does
 
@@ -29,7 +30,8 @@ A frameless Markdown notebook for Windows with a category drawer. Plain C (C23),
   open a command palette that also lists the key bindings of each pane. The editor accepts
   Ctrl+h/j/k/l as arrows.
 - **Settings** (`data/settings.json`): line numbers for the edited text, theme `system` / `light` / `dark`,
-  and UI language 日本語 / English / 简体中文. Noto Sans JP and Noto Sans SC are bundled under `fonts/`.
+  and UI language 日本語 / English / 简体中文. The settings surface also shows the build version.
+  Noto Sans JP and Noto Sans SC are bundled under `fonts/`.
 - **Limits**: a note body is at most 16 MiB and may not contain NUL; both are refused rather than truncated.
 - Failures (unreadable ledgers, unwritable files, a second instance on the same `data/`) are reported in
   the window, never silently ignored.
@@ -72,6 +74,28 @@ pwsh -NoProfile -File ./eng/check.ps1
 
 It needs Visual Studio Build Tools with the pinned MSVC toolset and the bundled LLVM 19.1.5, CMake, Ninja and
 Python 3.12 (`eng/tool-versions.json`). Run `pwsh -NoProfile -File ./eng/bootstrap.ps1` once after cloning.
+
+## Build a portable package
+
+Use the same pinned build tools and two new absolute directories outside the checkout.
+Their parent directories must already exist:
+
+```powershell
+pwsh -NoProfile -File ./eng/package-release.ps1 `
+  -WorkDirectory D:/NeNeFolio/outputs/release-work `
+  -OutputDirectory D:/NeNeFolio/outputs/release
+```
+
+The command makes a separate Release build, checks the executable's architecture, version, manifest
+and OS imports, and verifies the complete file list and bundled fonts before producing
+`NeNeFolio-<version>-win-x64.zip` and `SHA256SUMS`. Existing, overlapping and linked paths are refused;
+choose fresh directories for another run. Build work remains in `WorkDirectory` for inspection.
+The package contains `NeNeFolio.exe`, `README.txt`, `LICENSE` and `fonts/`, with no user data.
+
+Extract the whole ZIP to a writable local folder and run the executable inside it. Keep `fonts/`
+beside the executable. The first launch does not require a pre-existing `data/` folder.
+The package check is separate from the required PR quality gate. See
+[the release workflow](docs/DEVELOPMENT_WORKFLOW.md#9-リリース) for the publication procedure.
 
 ## Move a note to Recycle Bin
 

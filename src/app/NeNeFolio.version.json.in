@@ -1,0 +1,5 @@
+{
+  "version": "@PROJECT_VERSION@",
+  "windowsVersion": "@NENEFOLIO_WINDOWS_VERSION@",
+  "buildType": "@CMAKE_BUILD_TYPE@"
+}
