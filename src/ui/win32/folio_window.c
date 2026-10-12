@@ -1570,9 +1570,10 @@ static void draw_command_pages(const struct folio_window *_Nonnull self, HDC dev
         return;
     }
     char line[command_pages_capacity];
+    /* 最後の送りは last に丸まるので切り上げで数える（#266）。 */
     struct ui_text_request request = {.id = UI_TEXT_STATUS_PALETTE_PAGES,
                                       .language = folio_state_language(self->state),
-                                      .k = command_help_offset(self) / visible + 1,
+                                      .k = (command_help_offset(self) + visible - 1) / visible + 1,
                                       .n = (total + visible - 1) / visible};
     if (ui_text_format(&request, line, command_pages_capacity) != UI_TEXT_FORMAT_READY)
     {
