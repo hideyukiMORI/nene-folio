@@ -1,17 +1,16 @@
 # いまのタスク — NeNe Folio
 
-確認基点: 2026-10-12、main `bc8fbe6`（#274統合まで）。このファイルは状態の要約で、作業許可の正本ではない。
+確認基点: 2026-10-12、main `fe89555`（#276統合まで）。このファイルは状態の要約で、作業許可の正本ではない。
 再開時はhideの現在の依頼、checkoutの差分、対象Issue/PRの実状態を照合する。
 現在欄は置き換えて保ち、経緯を追記し続けない（[ADR0043](../adr/0043-current-instructions-and-single-agent.md)）。
 
 ## 現在の作業
 
-- #274 / PR #275はmain `bc8fbe6`へ統合済み。運用と入口を整理し、ローカルメモリ6件を反映、追加作業木も整理した。
-  実結果は `D:/NeNeFolio/agents/274-agent-context/completion.json`。
-- #276: 残る技術メモ4件と索引、設定/検索/アイコンの旧説明、ADR索引を現在の正本へそろえる。製品変更は含まない。
-  統合状態は [Issue #276](https://github.com/hideyukiMORI/nene-folio/issues/276)と紐付くPR、メモリ反映と終了整理は
-  `D:/NeNeFolio/agents/276-context-followup/completion.json`で確認する。
-- 直前の#270 / #271はclosed。未統合の製品実装は無く、次の製品作業は現在の依頼か具体的な再現から選ぶ。
+- #270/#271/#274/#276はclosed。BOM修正、運用と入口、ローカルメモリ全10件の整理・反映、追加作業木の整理は完了した。
+  到達点・検証・証跡は[当日日報](../reports/2026-10-12.md)と[引き継ぎ](../handoffs/2026-10-12.md)を参照する。
+- 本記録[Issue #278](https://github.com/hideyukiMORI/nene-folio/issues/278)は日報・引き継ぎ・現在欄の確定。
+  統合状態は紐付くPR、最終main・CI・終了整理は `D:/NeNeFolio/agents/278-session-handoff/completion.json`で確認する。
+- 未統合の製品実装は無い。次の製品作業は現在の依頼か具体的な再現から選ぶ。
 
 ## 製品の到達点
 
