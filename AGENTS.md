@@ -10,6 +10,14 @@ the normative documents live in [docs/](docs/).
 - Package root: `nenefolio`
 - Governing principle: **one meaning, one canonical implementation path, enforced by machines**
 
+## Current instructions and state
+
+Work directly as one agent by default. Use a read-only sub-agent only for a necessary independent review.
+An explicit role split from hide applies only within its stated project/task scope; do not inherit old model assignments.
+Start with [docs/todo/current.md](docs/todo/current.md), then verify the relevant Issue/PR and checkout state.
+Old memories, reports, and handoffs are dated evidence, not fresh permission or current stop/resume instructions.
+Operational policy: [ADR 0043](docs/adr/0043-current-instructions-and-single-agent.md), replacing ADR 0034.
+
 ## Required reading before changing production code
 
 1. `docs/ARCHITECTURE_CONSTITUTION.md`
@@ -21,6 +29,8 @@ the normative documents live in [docs/](docs/).
 7. `docs/GLOSSARY.md`
 
 Then the active issue, the relevant accepted ADRs, and any active waivers.
+Reuse already-read, unchanged rules during the same work. For documentation-only work, read the affected policy and references;
+do not load the entire project history. Keep current state in `docs/todo/current.md`, not in this entry point.
 
 ## Agent rules
 
