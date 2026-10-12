@@ -2,10 +2,11 @@
 
 A frameless Markdown notebook for Windows with a category drawer. Plain C (C23), Win32, no UI library.
 
-> **Status (2026-10-12):** the notebook is usable from source. It views and edits notes, keeps a short
+> **Status (2026-10-12):** [v0.1.0 is available as a beta release](https://github.com/hideyukiMORI/nene-folio/releases/tag/v0.1.0)
+> for Windows x64. It views and edits notes, keeps a short
 > history of every save, searches, filters, replaces, and manages categories, with settings for theme,
-> language and line numbers. A verified portable ZIP can be built with the release command below;
-> no public download has been published yet. Run `NeNeFolio.exe` after extracting the whole package.
+> language and line numbers. Download `NeNeFolio-0.1.0-win-x64.zip` and `SHA256SUMS` from the release's Assets.
+> Run `NeNeFolio.exe` after extracting the whole package. The portable beta is unsigned.
 > It starts with no `data/` folder; saved notes and settings stay next to the executable.
 
 ## What it does
