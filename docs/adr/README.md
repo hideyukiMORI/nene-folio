@@ -59,3 +59,4 @@ ADR は「なぜそう決めたか」「何を却下したか」を書く。
 | [0041](0041-category-rename-and-journal-kind.md) | 改名意図を閉じた種別に広げ、カテゴリと履歴と台帳を一つの記録から復旧する | 受理 |
 | [0042](0042-bom-at-file-boundary.md) | BOMはファイル境界で一度だけ解釈し、本文のU+FEFFを編集・複製・保存・履歴で保持する | 受理 |
 | [0043](0043-current-instructions-and-single-agent.md) | 単体実行を既定とし、現在の指示・状態と過去の記録を分ける | 受理 |
+| [0044](0044-tests-at-completion-and-integration.md) | 有意味な対象テストを機能完成時、フルゲートを統合時へ集約する | 受理 |

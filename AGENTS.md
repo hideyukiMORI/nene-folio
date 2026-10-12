@@ -49,8 +49,9 @@ do not load the entire project history. Keep current state in `docs/todo/current
 pwsh -NoProfile -File ./eng/check.ps1
 ```
 
-Local and CI run exactly this. Use narrow checks while iterating; run the full gate before
-moving the PR from Draft to Ready.
+Local and CI use the same command. Integration requires its success in CI on the final PR head;
+running it locally before Ready is not mandatory. Test timing and reuse follow
+[QLT-008 / QLT-012](docs/QUALITY_GATES.md) and [ADR 0044](docs/adr/0044-tests-at-completion-and-integration.md).
 
 ## Required completion report
 

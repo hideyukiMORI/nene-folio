@@ -89,7 +89,8 @@ CMake の既定リンクライブラリは kernel32 だけに絞ってある。u
 pwsh -NoProfile -File ./eng/check.ps1          # 唯一の完了定義（ローカルと CI で同じ）
 ```
 
-開発中は最も狭い検査を使ってよい。フルゲートは **PR を Draft → Ready にする直前**に必ず通す。
+対象検証は機能の一区切りの完成時、フルゲートは最終PR headの必須CIに集約する。Ready前のローカルフルゲートは一律必須にしない。
+実行時点・途中診断・結果の再利用は [QLT-008 / QLT-012](docs/QUALITY_GATES.md)、判断の根拠は [ADR0044](docs/adr/0044-tests-at-completion-and-integration.md) に従う。
 
 🔴 **`pwsh -NoProfile -File ./eng/check.ps1` が通っていないものを「できた」と報告しない。**
 実行していないコマンドの結果を書かない。テストの失敗を隠さない。
@@ -102,7 +103,7 @@ pwsh -NoProfile -File ./eng/check.ps1          # 唯一の完了定義（ロー�
 [docs/DEVELOPMENT_WORKFLOW.md](docs/DEVELOPMENT_WORKFLOW.md) が正本。要約すると:
 
 Issue → 正典経路の特定 → ブランチ → （設計を変えるなら先に ADR）→ 最小の実装 →
-テスト → 狭い検査 → `pwsh -NoProfile -File ./eng/check.ps1` → 規則 ID ごとの自己レビュー → PR（draft）→ Ready → squash merge。
+規則 ID ごとの自己レビュー → 完成時の対象検証 → PR（draft）→ head・タイトル・本文の確定 → Ready → 最終headの必須CI成功 → squash merge。
 
 コミットは Conventional Commits（`type` と `scope` は英語、説明は日本語、末尾に `(#N)`）。形の正本は GIT-003。
 
