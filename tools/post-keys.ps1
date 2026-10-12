@@ -1,5 +1,5 @@
 # NeNe Folio の窓へ PostMessage でキーを投げる（#156）。前面化しない・他の窓には届かない。
-# -Text の `{ENTER}` `{ESC}` `{TAB}` `{UP}` `{DOWN}` `{F2}` `{CTRL+P}` `{CTRL+S}` `{PAUSE}` はキー、それ以外の文字は WM_CHAR。
+# -Text の `{ENTER}` `{ESC}` `{TAB}` `{UP}` `{DOWN}` `{PGUP}` `{PGDN}` `{HOME}` `{END}` `{F2}` `{CTRL+P}` `{CTRL+S}` `{PAUSE}` はキー、それ以外の文字は WM_CHAR（#264）。
 # -TargetPid でプロセスを選ぶ（hide の実機と枝の exe を取り違えない）。-Title を与えるとそのプロセスの可視の窓（面）を題で選ぶ。
 # 投げる先は GetGUIThreadInfo のフォーカス窓（無ければ主窓）。SetForegroundWindow / SendKeys は使わない（ADR 0034 決定 2）。
 [CmdletBinding()]
@@ -112,6 +112,10 @@ while ($index -lt $Text.Length) {
             'TAB'    { Send-Key 0x09 0x09 }
             'DOWN'   { Send-Key 0x28 -1 }
             'UP'     { Send-Key 0x26 -1 }
+            'PGUP'   { Send-Key 0x21 -1 }
+            'PGDN'   { Send-Key 0x22 -1 }
+            'END'    { Send-Key 0x23 -1 }
+            'HOME'   { Send-Key 0x24 -1 }
             'F2'     { Send-Key 0x71 -1 }
             'CTRL+P' { Send-Control 0x10 }
             'CTRL+S' { Send-Control 0x13 }
