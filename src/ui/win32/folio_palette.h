@@ -24,6 +24,12 @@ struct folio_palette
     COLORREF breadcrumb_background; /* Powerlineのカテゴリ面 */
     COLORREF breadcrumb_text;       /* カテゴリ面の文字 */
     COLORREF gutter_text;           /* 編集中の本文の左に出す原文の行番号（ADR 0026 の決定 7） */
+    COLORREF dialog_surface;        /* 設定カードの不透明な面 */
+    COLORREF dialog_border;         /* カードと選択肢の輪郭 */
+    COLORREF dialog_control;        /* 未採用の選択肢の面 */
+    COLORREF dialog_secondary;      /* 読める濃さを保った版と操作案内 */
+    COLORREF dialog_backdrop;       /* 背後操作を遮る暗幕 */
+    BYTE dialog_backdrop_alpha;     /* 暗幕だけの不透明度 */
 };
 
 [[nodiscard]] struct folio_palette folio_palette_for(enum folio_theme theme);

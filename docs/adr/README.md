@@ -61,3 +61,4 @@ ADR は「なぜそう決めたか」「何を却下したか」を書く。
 | [0043](0043-current-instructions-and-single-agent.md) | 単体実行を既定とし、現在の指示・状態と過去の記録を分ける | 受理 |
 | [0044](0044-tests-at-completion-and-integration.md) | 有意味な対象テストを機能完成時、フルゲートを統合時へ集約する | 受理 |
 | [0045](0045-single-version-and-verified-release-bundle.md) | CMakeの版からWindows資源と検証済み配布ZIPを作る | 受理 |
+| [0046](0046-distinct-settings-dialog.md) | 設定は既存の採用経路を保ち、独立した中央の面として描く | 受理 |

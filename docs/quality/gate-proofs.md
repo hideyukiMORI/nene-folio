@@ -18,6 +18,16 @@ CI: GitHub Actions `windows-2022`（PR の ready_for_review で起動。ロー�
 
 ## 1. 実測結果
 
+### #286: 中央設定の表示と入力境界（2026-10-12）
+
+Windows build 26300、120 DPI（125%）、通常1000×750/最小700×450物理pxで、3言語×明暗の設定面を撮影した。
+所有PID/HWNDへの合成click/keyと`tools/capture-window.ps1`のPrintWindowを使い、前面windowを変更しない。
+背景操作の遮断、開閉後のeditor snapshotとUndo、最小窓での選択、保存失敗の面内表示と再試行を確認した。
+初回にカードも暗くなる合成問題を検出し、設定矩形を暗幕regionから除くことで修正した。
+helperの待機/期待列の誤りは製品失敗と分け、成功済みの範囲を再実行せず残りを確認した。
+実コマンド・入力hash・画像・結果・限界は[品質記録](2026-10-12-settings-dialog-checks.md)。
+通常のunitや表示一般の保証、別OS/DPI・物理IME・hideの目視受理とは呼ばない。
+
 ### #282: 版・配布検査器の正例と反例（2026-10-12）
 
 `eng/test-release.py`を完成したRelease exeに対して実行し、16/16、exit 0（0.408秒）。
