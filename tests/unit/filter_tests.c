@@ -319,6 +319,27 @@ static void verify_corpus(void)
     note_corpus_destroy(corpus);
 }
 
+void run_bom_filter_tests(void)
+{
+    struct note_corpus *corpus = nullptr;
+    require(note_corpus_create(&corpus) == NOTE_CORPUS_ACCEPTED, "BOM corpus");
+    struct note_text *text = text_of("\xEF\xBB\xBF\xEF\xBB\xBF\xEF\xBB\xBF"
+                                     "A");
+    require(note_corpus_put(corpus, "work", "bom", text) == NOTE_CORPUS_ACCEPTED,
+            "BOM corpus stores literal body");
+    const struct note_text *copy = note_corpus_body(corpus, "work", "bom");
+    require(copy != nullptr && note_text_equals(text, copy), "corpus copy preserves both FEFF");
+    note_text_destroy(text);
+    const struct index_filter_entry entries[] = {entry_of(at(0, 0), "bom", note_text_bytes(copy))};
+    struct index_filter *filter = filter_of("\xEF\xBB\xBF\xEF\xBB\xBF"
+                                            "A",
+                                            entries, 1);
+    require(filter != nullptr && index_filter_note(filter, at(0, 0)),
+            "search reads the complete independently owned body");
+    index_filter_destroy(filter);
+    note_corpus_destroy(corpus);
+}
+
 static void verify_removed_filter(void)
 {
     const struct index_filter_entry entries[] = {

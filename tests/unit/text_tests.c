@@ -136,7 +136,9 @@ static void verify_from_editor(void)
     expect_folded("a\r", LINE_ENDING_CRLF, "a\r\n");
     expect_folded("\xEF\xBB\xBF"
                   "a\nb",
-                  LINE_ENDING_LF, "a\nb");
+                  LINE_ENDING_LF,
+                  "\xEF\xBB\xBF"
+                  "a\nb");
     expect_folded("\xE6\x97\xA5\r\n\xE6\x9C\xAC", LINE_ENDING_LF, "\xE6\x97\xA5\n\xE6\x9C\xAC");
     struct note_text *text = nullptr;
     require(note_text_from_editor("\xC3", 1, LINE_ENDING_LF, &text) == NOTE_TEXT_INVALID_UTF8,
@@ -319,6 +321,53 @@ static void verify_name_list(void)
     name_list_destroy(nullptr);
 }
 
+static void verify_bom_stream(const char *_Nonnull raw, const char *_Nonnull body)
+{
+    struct note_text *text = nullptr;
+    require(note_text_create(raw, strlen(raw), &text) == NOTE_TEXT_ACCEPTED, "BOM file input");
+    require(same_text(note_text_bytes(text), body) && note_text_length(text) == strlen(body),
+            "only the file signature is consumed");
+    size_t prefix = utf8_text_bom_length(body, strlen(body));
+    require(note_text_file_length(text) == strlen(body) + prefix &&
+                note_text_bytes(text) == note_text_file_bytes(text) + prefix &&
+                note_text_file_bytes(text)[note_text_file_length(text)] == '\0',
+            "body and terminated file representation borrow one owner");
+    struct note_text *copy = nullptr;
+    require(note_text_copy(text, &copy) == NOTE_TEXT_ACCEPTED, "literal body copied");
+    struct note_text *roundtrip = nullptr;
+    require(note_text_create(note_text_file_bytes(copy), note_text_file_length(copy), &roundtrip) ==
+                    NOTE_TEXT_ACCEPTED &&
+                note_text_equals(text, copy) && note_text_equals(text, roundtrip),
+            "copy and saved file roundtrip keep the complete body");
+    note_text_destroy(text);
+    require(same_text(note_text_bytes(copy), body), "copy owns its bytes independently");
+    note_text_destroy(roundtrip);
+    note_text_destroy(copy);
+}
+
+static void verify_bom_boundary(void)
+{
+    const char *raw = "\xEF\xBB\xBF\xEF\xBB\xBF\xEF\xBB\xBF\xEF\xBB\xBF"
+                      "A";
+    for (size_t signatures = 0; signatures <= 4; ++signatures)
+    {
+        const char *input = raw + (4 - signatures) * 3;
+        verify_bom_stream(input, input + (signatures == 0 ? 0 : 3));
+    }
+    verify_bom_stream("", "");
+    verify_bom_stream("\xEF\xBB\xBF", "");
+    verify_bom_stream("A\xEF\xBB\xBF\n\xEF\xBB\xBF"
+                      "B",
+                      "A\xEF\xBB\xBF\n\xEF\xBB\xBF"
+                      "B");
+    require(utf8_text_bom_length("", 0) == 0 && utf8_text_bom_length(raw, 2) == 0 &&
+                utf8_text_bom_length("\xEF\xBB\xBE", 3) == 0 && utf8_text_bom_length(raw, 3) == 3,
+            "signature detection is length bounded and exact");
+    expect_folded(raw, LINE_ENDING_LF, raw);
+    expect_folded("\xEF\xBB\xBF\r\n\xEF\xBB\xBF", LINE_ENDING_LF, "\xEF\xBB\xBF\n\xEF\xBB\xBF");
+    expect_first_line(raw, raw + 3, "first line uses body offsets after one signature");
+}
+
 void run_text_tests(void)
 {
     verify_utf8_decode();
@@ -327,6 +376,7 @@ void run_text_tests(void)
     verify_utf8_from_utf16();
     verify_line_ending();
     verify_from_editor();
+    verify_bom_boundary();
     verify_note_equals();
     verify_editability();
     verify_first_line();
@@ -397,11 +447,11 @@ static void verify_multibyte_bom_size(void)
                 note_text_length(text) == persisted_size_limit,
             "BOM excluded from canonical create limit");
     note_text_destroy(text);
+    text = nullptr;
     require(note_text_from_editor(bytes, persisted_size_limit + 3, LINE_ENDING_LF, &text) ==
-                    NOTE_TEXT_ACCEPTED &&
-                note_text_length(text) == persisted_size_limit,
-            "editor also excludes BOM from canonical limit");
-    note_text_destroy(text);
+                    NOTE_TEXT_TOO_LARGE &&
+                text == nullptr,
+            "editor FEFF is literal and protective signature counts toward limit");
     free(bytes);
 }
 
@@ -471,6 +521,78 @@ static void verify_oversize_before_allocation(void)
                 note_text_create("M", 1, &check) == NOTE_TEXT_OUT_OF_MEMORY,
             "oversized normalization consumes no allocation point");
     allocation_probe_fail_at(0);
+    memcpy(bytes, "\xEF\xBB\xBF\xEF\xBB\xBF", 6);
+    allocation_probe_fail_at(1);
+    require(note_text_create(bytes, persisted_size_limit + 1, &check) == NOTE_TEXT_TOO_LARGE &&
+                note_text_create("M", 1, &check) == NOTE_TEXT_OUT_OF_MEMORY,
+            "oversized prefixed create allocates nothing");
+    allocation_probe_fail_at(0);
+    allocation_probe_fail_at(1);
+    require(note_text_from_editor(bytes, persisted_size_limit - 2, LINE_ENDING_LF, &check) ==
+                    NOTE_TEXT_TOO_LARGE &&
+                note_text_create("M", 1, &check) == NOTE_TEXT_OUT_OF_MEMORY,
+            "oversized prefixed editor allocates nothing");
+    allocation_probe_fail_at(0);
+    free(bytes);
+}
+
+static void verify_bom_size(void)
+{
+    char *bytes = size_bytes();
+    memcpy(bytes, "\xEF\xBB\xBF\xEF\xBB\xBF", 6);
+    struct note_text *text = nullptr;
+    require(note_text_create(bytes, persisted_size_limit, &text) == NOTE_TEXT_ACCEPTED &&
+                note_text_length(text) == persisted_size_limit - 3 &&
+                note_text_file_length(text) == persisted_size_limit,
+            "file with literal FEFF exactly fits including protective signature");
+    struct note_text *copy = nullptr;
+    require(note_text_copy(text, &copy) == NOTE_TEXT_ACCEPTED && note_text_equals(text, copy),
+            "limit body copy is already validated");
+    note_text_destroy(copy);
+    require(note_text_create(bytes, persisted_size_limit + 1, &text) == NOTE_TEXT_TOO_LARGE &&
+                note_text_file_length(text) == persisted_size_limit,
+            "oversized prefixed file leaves out unchanged");
+    note_text_destroy(text);
+    text = nullptr;
+    require(note_text_from_editor(bytes, persisted_size_limit - 2, LINE_ENDING_LF, &text) ==
+                    NOTE_TEXT_TOO_LARGE &&
+                text == nullptr,
+            "editor limit minus two cannot fit protective signature");
+    require(note_text_from_editor(bytes, persisted_size_limit - 3, LINE_ENDING_LF, &text) ==
+                    NOTE_TEXT_ACCEPTED &&
+                note_text_file_length(text) == persisted_size_limit,
+            "editor limit minus three exactly fits protective signature");
+    note_text_destroy(text);
+    free(bytes);
+}
+
+static void verify_bom_normalized_size(void)
+{
+    char *bytes = size_bytes();
+    memcpy(bytes, "\xEF\xBB\xBF", 3);
+    bytes[3] = '\r';
+    bytes[4] = '\n';
+    struct note_text *text = nullptr;
+    require(note_text_from_editor(bytes, persisted_size_limit - 2, LINE_ENDING_LF, &text) ==
+                    NOTE_TEXT_ACCEPTED &&
+                note_text_file_length(text) == persisted_size_limit,
+            "CRLF shrinking and prefix share the limit calculation");
+    note_text_destroy(text);
+    text = nullptr;
+    require(note_text_from_editor(bytes, persisted_size_limit - 2, LINE_ENDING_CRLF, &text) ==
+                    NOTE_TEXT_TOO_LARGE &&
+                text == nullptr,
+            "preserved CRLF plus prefix exceeds limit");
+    bytes[4] = 'X';
+    require(note_text_from_editor(bytes, persisted_size_limit - 3, LINE_ENDING_CRLF, &text) ==
+                    NOTE_TEXT_TOO_LARGE &&
+                text == nullptr,
+            "CR expansion includes prefix");
+    require(note_text_from_editor(bytes, persisted_size_limit - 4, LINE_ENDING_CRLF, &text) ==
+                    NOTE_TEXT_ACCEPTED &&
+                note_text_file_length(text) == persisted_size_limit,
+            "CR expansion and prefix exactly fit");
+    note_text_destroy(text);
     free(bytes);
 }
 
@@ -479,6 +601,8 @@ void run_note_size_text_tests(void)
     verify_create_size();
     verify_multibyte_bom_size();
     verify_normalized_size();
+    verify_bom_size();
+    verify_bom_normalized_size();
     verify_oversize_before_allocation();
 }
 

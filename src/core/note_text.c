@@ -9,8 +9,10 @@
 
 struct note_text
 {
+    char *_Nonnull file_bytes;
     char *_Nonnull bytes;
     size_t length;
+    size_t file_length;
 };
 
 static enum note_text_outcome validate(const char *_Nonnull bytes, size_t length)
@@ -30,16 +32,6 @@ static enum note_text_outcome validate(const char *_Nonnull bytes, size_t length
     return contains_nul ? NOTE_TEXT_EMBEDDED_NUL : NOTE_TEXT_ACCEPTED;
 }
 
-/* 先頭の BOM は本文ではない（メモ帳が付ける）。書き戻すときも付けない（ADR 0006）。 */
-static void drop_bom(const char *_Nonnull *_Nonnull bytes, size_t *_Nonnull length)
-{
-    if (*length >= 3 && memcmp(*bytes, "\xEF\xBB\xBF", 3) == 0)
-    {
-        *bytes += 3;
-        *length -= 3;
-    }
-}
-
 /* 検証済みのバイト列を複製して所有する。 */
 static enum note_text_outcome adopt(const char *_Nonnull bytes, size_t length,
                                     struct note_text *_Nullable *_Nonnull out)
@@ -49,12 +41,16 @@ static enum note_text_outcome adopt(const char *_Nonnull bytes, size_t length,
     {
         return NOTE_TEXT_OUT_OF_MEMORY;
     }
-    text->bytes = malloc(length + 1);
-    if (text->bytes == nullptr)
+    size_t prefix = utf8_text_bom_length(bytes, length);
+    text->file_length = prefix + length;
+    text->file_bytes = malloc(text->file_length + 1);
+    if (text->file_bytes == nullptr)
     {
         free(text);
         return NOTE_TEXT_OUT_OF_MEMORY;
     }
+    memcpy(text->file_bytes, bytes, prefix);
+    text->bytes = text->file_bytes + prefix;
     memcpy(text->bytes, bytes, length);
     text->bytes[length] = '\0';
     text->length = length;
@@ -65,17 +61,25 @@ static enum note_text_outcome adopt(const char *_Nonnull bytes, size_t length,
 enum note_text_outcome note_text_create(const char *_Nonnull bytes, size_t length,
                                         struct note_text *_Nullable *_Nonnull out)
 {
-    drop_bom(&bytes, &length);
+    size_t signature = utf8_text_bom_length(bytes, length);
+    bytes += signature;
+    length -= signature;
     enum note_text_outcome accepted = validate(bytes, length);
     if (accepted != NOTE_TEXT_ACCEPTED)
     {
         return accepted;
     }
-    if (length > persisted_size_limit)
+    if (length > persisted_size_limit - utf8_text_bom_length(bytes, length))
     {
         return NOTE_TEXT_TOO_LARGE;
     }
     return adopt(bytes, length, out);
+}
+
+enum note_text_outcome note_text_copy(const struct note_text *_Nonnull text,
+                                      struct note_text *_Nullable *_Nonnull out)
+{
+    return adopt(text->bytes, text->length, out);
 }
 
 /* 畳んだあとの改行そのもの（終端付き）。 */
@@ -106,7 +110,7 @@ static size_t break_width(const char *_Nonnull bytes, size_t length, size_t inde
 static bool normalized_within_limit(const char *_Nonnull bytes, size_t length,
                                     enum line_ending ending)
 {
-    size_t total = 0;
+    size_t total = utf8_text_bom_length(bytes, length);
     size_t ending_width = strlen(break_of(ending));
     for (size_t index = 0; index < length;)
     {
@@ -149,7 +153,6 @@ enum note_text_outcome note_text_from_editor(const char *_Nonnull bytes, size_t 
                                              enum line_ending ending,
                                              struct note_text *_Nullable *_Nonnull out)
 {
-    drop_bom(&bytes, &length);
     enum note_text_outcome accepted = validate(bytes, length);
     if (accepted != NOTE_TEXT_ACCEPTED)
     {
@@ -236,6 +239,16 @@ size_t note_text_length(const struct note_text *_Nonnull text)
     return text->length;
 }
 
+const char *_Nonnull note_text_file_bytes(const struct note_text *_Nonnull text)
+{
+    return text->file_bytes;
+}
+
+size_t note_text_file_length(const struct note_text *_Nonnull text)
+{
+    return text->file_length;
+}
+
 static bool blank(char value)
 {
     return value == ' ' || value == '\t';
@@ -286,6 +299,6 @@ void note_text_destroy(struct note_text *_Nullable text)
     {
         return;
     }
-    free(text->bytes);
+    free(text->file_bytes);
     free(text);
 }

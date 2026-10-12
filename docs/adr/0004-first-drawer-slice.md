@@ -110,6 +110,10 @@ active にする。**
 
 ## 参考
 
+2026-10-12 補正（#271）: 決定のファイル境界でのBOM除去は、[ADR0042](0042-bom-at-file-boundary.md)で置き換える。
+`file_bytes`はraw bytesをそのまま返し、ノートとJSONそれぞれのcore入口が署名を1個だけ消費する。
+台帳・設定・改名記録のファイル受理範囲とschemaの版は変えない。
+
 - [ADR 0002](0002-plain-win32-no-ui-library.md) / [ADR 0003](0003-c23-clang-cl-foundation-and-measured-limits.md)
 - NeNe Loupe ADR 0004（最初の縦切り）・`eng/coverage.py`（測定ビルドの原型）
 - [LLVM source-based coverage](https://clang.llvm.org/docs/SourceBasedCodeCoverage.html)

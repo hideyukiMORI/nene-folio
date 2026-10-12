@@ -3499,6 +3499,119 @@ static struct folio_state *_Nonnull history_state(struct persistence_adapter *_N
     return state;
 }
 
+static void verify_bom_no_write(void)
+{
+    const char *raw = "\xEF\xBB\xBF\xEF\xBB\xBF\xEF\xBB\xBF\xEF\xBB\xBF"
+                      "A";
+    const char16_t wide[] = {0xFEFF, 0xFEFF, 0xFEFF, u'A'};
+    for (size_t signatures = 0; signatures <= 4; ++signatures)
+    {
+        struct persistence_adapter adapter = healthy_adapter();
+        adapter.note_body = raw + (4 - signatures) * 3;
+        struct folio_state *state = history_state(&adapter);
+        size_t literals = signatures == 0 ? 0 : signatures - 1;
+        const char16_t *edited = wide + 3 - literals;
+        require(folio_state_begin_edit(state) == FOLIO_STATE_READY, "BOM enters edit");
+        enum folio_note_change change = FOLIO_NOTE_CHANGED;
+        require(folio_state_note_changed(state, edited, literals + 1, &change) ==
+                        FOLIO_STATE_READY &&
+                    change == FOLIO_NOTE_SAME,
+                "unchanged FEFF body is SAME");
+        require(folio_state_store_note(state, edited, literals + 1) == FOLIO_STATE_READY &&
+                    folio_state_end_edit(state, edited, literals + 1) == FOLIO_STATE_READY &&
+                    adapter.note_writes == 0 && adapter.archives == 0,
+                "no write or history for signatures zero through four");
+        folio_state_destroy(state);
+    }
+}
+
+static void verify_bom_edit_save(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    adapter.note_body = "\xEF\xBB\xBF\xEF\xBB\xBF\xEF\xBB\xBF"
+                        "A";
+    struct folio_state *state = history_state(&adapter);
+    require(folio_state_set_index_filter(state, u"\uFEFF\uFEFFA", 3) == FOLIO_STATE_READY &&
+                any_selected_row(state),
+            "initial search copy retains two literal FEFF");
+    require(folio_state_begin_edit(state) == FOLIO_STATE_READY, "BOM edit fixture");
+    enum folio_note_change change = FOLIO_NOTE_SAME;
+    require(folio_state_note_changed(state, u"\uFEFF\uFEFFAx", 4, &change) == FOLIO_STATE_READY &&
+                change == FOLIO_NOTE_CHANGED,
+            "actual edit remains CHANGED");
+    require(folio_state_store_note(state, u"\uFEFF\uFEFFAx", 4) == FOLIO_STATE_READY &&
+                adapter.note_writes == 1 && adapter.archives == 1 &&
+                same_text(adapter.written_body, "\xEF\xBB\xBF\xEF\xBB\xBF"
+                                                "Ax") &&
+                same_text(folio_state_pane_text(state), adapter.written_body),
+            "save and application body keep literal FEFF");
+    require(folio_state_set_index_filter(state, u"\uFEFF\uFEFFAx", 4) == FOLIO_STATE_READY &&
+                any_selected_row(state),
+            "saved search copy retains two literal FEFF");
+    folio_state_destroy(state);
+}
+
+static void verify_bom_save_as(void)
+{
+    for (size_t edited = 0; edited < 2; ++edited)
+    {
+        struct persistence_adapter adapter = healthy_adapter();
+        adapter.note_body = "\xEF\xBB\xBF\xEF\xBB\xBF\xEF\xBB\xBF"
+                            "A";
+        struct folio_state *state = history_state(&adapter);
+        if (edited == 1)
+        {
+            require(folio_state_begin_edit(state) == FOLIO_STATE_READY, "BOM save as edit");
+        }
+        struct note_name *name = accepted_note_name("bom-copy");
+        struct note_destination destination = {.category = 0, .name = name};
+        require(folio_state_store_new(state, &destination, u"\uFEFF\uFEFFAx", 4) ==
+                        FOLIO_STATE_READY &&
+                    adapter.creates == 1 && adapter.archives == 0 && adapter.note_writes == 0,
+                "VIEW and EDIT save as only create new file");
+        const char *expected = edited == 0 ? "\xEF\xBB\xBF\xEF\xBB\xBF"
+                                             "A"
+                                           : "\xEF\xBB\xBF\xEF\xBB\xBF"
+                                             "Ax";
+        require(same_text(adapter.written_body, expected) &&
+                    same_text(folio_state_pane_text(state), expected),
+                "save as copies literal source in VIEW and literal editor in EDIT");
+        note_name_destroy(name);
+        folio_state_destroy(state);
+    }
+}
+
+static void verify_bom_history(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    adapter.note_body = "current";
+    adapter.history[1] = "\xEF\xBB\xBF\xEF\xBB\xBF\xEF\xBB\xBF"
+                         "A";
+    struct folio_state *state = history_state(&adapter);
+    require(folio_state_open_history(state) == FOLIO_STATE_READY, "BOM history opened");
+    const struct note_text *body = folio_state_history_body(state, 0);
+    require(body != nullptr && same_text(note_text_bytes(body), "\xEF\xBB\xBF\xEF\xBB\xBF"
+                                                                "A"),
+            "history file consumes one signature only");
+    require(folio_state_restore_history(state, 0) == FOLIO_STATE_READY &&
+                adapter.note_writes == 0 && adapter.archives == 0,
+            "restore is initially unsaved");
+    require(folio_state_store_note(state, u"\uFEFF\uFEFFA", 3) == FOLIO_STATE_READY &&
+                same_text(adapter.written_body, "\xEF\xBB\xBF\xEF\xBB\xBF"
+                                                "A"),
+            "restored editor keeps literal FEFF on save");
+    folio_state_destroy(state);
+}
+
+void run_bom_state_tests(void)
+{
+    finder = test_regex_port();
+    verify_bom_no_write();
+    verify_bom_edit_save();
+    verify_bom_save_as();
+    verify_bom_history();
+}
+
 static void expect_history_row(const struct folio_state *_Nonnull state, size_t index,
                                size_t version, const char *_Nonnull first_line)
 {
