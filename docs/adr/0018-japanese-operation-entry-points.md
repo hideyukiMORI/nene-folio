@@ -106,4 +106,4 @@ probe では登録表の別名と ADR 0039 で足す予定の別名（23 語）�
 
 **原因（実測・`D:/NeNeFolio/agents/260-probe/`）。** DC に `SetTextCharacterExtra ≠ 0` が掛かっていると GDI のフォントリンクが壊れる。`DrawTextW` はリンク先の狭い全角記号（96 DPI で 5 px）の位置を前の字へ食い込ませて末尾を落とし、`ExtTextOutW` はリンクを止めて豆腐にし、`GetTextExtentPoint32W` はリンク先を数えない。矩形を 2 倍にしても `DT_END_ELLIPSIS` を外しても同じで、字間 0 ならすべて正しい。#186 の補正で見た「Consolas だけの行では DT_CALCRECT が字間を含めず、フォントリンクの行では含める」も同じ現象の一面だった。
 
-**直し。** 字間は Consolas だけで描ける行（ASCII だけの行）にだけ掛ける。ASCII 以外の UTF-16 単位を含む行は、描く経路 `draw_utf8`（札の字も同じ `draw_units` を通す）が字間 0 で描き、測る経路 `measure_utf8` が字間 0 の `DT_CALCRECT` をそのまま返す。DC に字間を掛ける場所と値は変えず、抑えるのは描く・測る関数の中だけ（ARC-001）。見た目の変化は、日本語・中国語を含む行の字間が 96 DPI で 1 字 1 px 詰まること。ASCII だけの行は変わらない。drawer は Consolas で番号だけを字間つきで描くので対象外。
+**直し。** 字間は Consolas だけで描ける行（ASCII だけの行）にだけ掛ける。ASCII 以外の UTF-16 単位を含む行は、描く経路 `draw_utf8`（札の字も同じ `draw_units` を通す）が字間 0 で描き、測る経路 `measure_utf8` が字間 0 の `DT_CALCRECT` をそのまま返す。DC に字間を掛ける場所と値は変えず、抑えるのは描く・測る関数の中だけ（ARC-001）。見た目の変化は、日本語・中国語を含む行の字間が 96 DPI で 1 字 1 px 詰まること。ASCII だけの行は変わらない。drawer は Consolas で番号だけを字間つきで描くので対象外。English でも ▾ や ↑↓ を含む行（`Actions ▾`・`↑ Prev ↓ Next`）は字間が外れる（実測は[確認記録](../quality/2026-10-12-linked-tracking-checks.md)）。
