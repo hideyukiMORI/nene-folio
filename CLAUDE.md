@@ -124,6 +124,14 @@ Waivers: none | WVR-NNNN
 
 ## 6. いまの状況
 
+2026-10-12 13:45 JST 再開: hideの明示再開と全権委譲で、Astra設計/SOL実装・probe/LUNA棚卸しの分担を開始した（今回の指定）。
+再開時mainは`2f4f334`、製品は`130bfda`。有限境界1,372ケースで先頭U+FEFFの多重除去を確認し、#271・ADR0042で修正した。
+**PR #272 → main `69e0a61`へ統合、通常exe反映済み**（3,253,760 bytes、SHA256 `974C23E0…`）。
+対象unit・正典gate（分岐93.86%、proof19）・独立実OS196 assertions・CI成功。未統合の製品実装は無い。
+今回の終了整理と最終main/Issue/PRは`D:/NeNeFolio/agents/2026-10-12-astra-resume/completion.json`を参照する。
+記録#270の[日報](docs/reports/2026-10-12.md)・[引き継ぎ](docs/handoffs/2026-10-12.md)の再開後の節が最新。
+hideの目視258・260・266は未。以下の過去の停止・Issue件数を現在の指示や状態として扱わない。
+
 2026-10-12 12:47 JST 停止: hideの「区切りのいいところで日報と引き継ぎ書を書いて止めて」で区切って停止した。**明示的な再開指示まで実装を続行しない。**
 再開後（11:22〜）に統合したのは#258・#260・#262（記録）・#264（`tools/post-keys.ps1` にPgUp/PgDn/Home/End・PR #265 → `da152a6`）・
 #266（ヘルプの最後のページでも印が「1/2」のまま → `draw_command_pages` の頁番号を切り上げに・PR #267 → `130bfda`）。
