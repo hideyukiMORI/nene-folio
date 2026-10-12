@@ -1,13 +1,16 @@
 # いまのタスク — NeNe Folio
 
-確認基点: 2026-10-12、main `2b0e376`（#270記録まで）。このファイルは状態の要約で、作業許可の正本ではない。
+確認基点: 2026-10-12、main `bc8fbe6`（#274統合まで）。このファイルは状態の要約で、作業許可の正本ではない。
 再開時はhideの現在の依頼、checkoutの差分、対象Issue/PRの実状態を照合する。
 現在欄は置き換えて保ち、経緯を追記し続けない（[ADR0043](../adr/0043-current-instructions-and-single-agent.md)）。
 
 ## 現在の作業
 
-- #274: 古い固定モデル分担と現在状態の重複を整理する文書・プロジェクトメモリの更新。
-  製品変更は含まない。統合状態は [Issue #274](https://github.com/hideyukiMORI/nene-folio/issues/274)と紐付くPRで確認する。
+- #274 / PR #275はmain `bc8fbe6`へ統合済み。運用と入口を整理し、ローカルメモリ6件を反映、追加作業木も整理した。
+  実結果は `D:/NeNeFolio/agents/274-agent-context/completion.json`。
+- #276: 残る技術メモ4件と索引、設定/検索/アイコンの旧説明、ADR索引を現在の正本へそろえる。製品変更は含まない。
+  統合状態は [Issue #276](https://github.com/hideyukiMORI/nene-folio/issues/276)と紐付くPR、メモリ反映と終了整理は
+  `D:/NeNeFolio/agents/276-context-followup/completion.json`で確認する。
 - 直前の#270 / #271はclosed。未統合の製品実装は無く、次の製品作業は現在の依頼か具体的な再現から選ぶ。
 
 ## 製品の到達点
