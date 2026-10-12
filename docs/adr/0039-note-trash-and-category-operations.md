@@ -420,3 +420,7 @@ C1 の空カテゴリ削除を利用者の入口へ接続する前に、UI の�
 `restore_removal_focus` は一時停止と箱の後の有効な元HWNDへ戻す。カテゴリ完了はdrawerのrevealとパンくずのinvalidateだけで、
 RichEditをrenderしない。Ex／パレットの面を閉じた場合も、そこにfocusがあったときだけ索引へ戻す。
 測定条件と未確認範囲は [C2 の確認記録](../quality/2026-10-08-category-delete-ui-checks.md) に記録する。
+
+## 2026-10-12 の補正 7（#258）— 下端の 1 行を #242 の知らせにも使う
+
+補正 4 の「他の操作へ通知基盤を広げない」を 1 件だけ緩める。編集モードのまま編集で保てない文字を含むノートへ切り替えたとき（#242）、application が黙って閲覧で開くので、同じ下端の 1 行で「閲覧で開きました。編集で保てない文字があります。」と知らせる。印は UI の閉じた列挙 `pane_notice`（NONE / TRASH_COMPLETED / NOTE_UNEDITABLE）1 つで、立て下げ・配置・寿命（決定 6）は変えない。事実の正本は application の `folio_state_select_notice`（READY / NOTE_UNEDITABLE）で、UI は mode の前後比較で推測しない。文言は事実だけ（決定 4）で、末尾省略でも先頭の「閲覧で開きました」が残る語順にした。通知のためだけに結果の値・port・確保は足していない。

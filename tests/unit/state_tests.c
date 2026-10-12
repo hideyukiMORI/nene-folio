@@ -4370,11 +4370,40 @@ static void verify_uneditable_neighbours(void)
     folio_state_destroy(state);
 }
 
+/* #258: 編集から閲覧へ落とした切り替えだけが NOTE_UNEDITABLE を残し、次の切り替えで READY へ
+ * 戻る。閲覧のまま該当ノートを開いても何も奪っていないので READY。 */
+static void verify_uneditable_switch_notice(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    adapter.note_body = "x\xE2\x80\xA8"
+                        "y";
+    adapter.rare_note = "one";
+    adapter.rare_body = "clean";
+    struct folio_state *state = history_state(&adapter);
+    require(folio_state_select_notice(state) == FOLIO_STATE_READY, "no notice before any switch");
+    require(folio_state_begin_edit(state) == FOLIO_STATE_READY &&
+                folio_state_pane_mode(state) == PANE_MODE_EDIT &&
+                folio_state_select_note(state, 0, 1) == FOLIO_STATE_READY &&
+                folio_state_pane_mode(state) == PANE_MODE_VIEW &&
+                folio_state_select_notice(state) == FOLIO_STATE_NOTE_UNEDITABLE &&
+                adapter.note_writes == 0,
+            "dropping from edit to view on a switch leaves NOTE_UNEDITABLE");
+    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY &&
+                folio_state_select_notice(state) == FOLIO_STATE_READY,
+            "the next switch clears the notice");
+    require(folio_state_select_note(state, 0, 1) == FOLIO_STATE_READY &&
+                folio_state_pane_mode(state) == PANE_MODE_VIEW &&
+                folio_state_select_notice(state) == FOLIO_STATE_READY,
+            "opening the note in view mode takes nothing away");
+    folio_state_destroy(state);
+}
+
 static void verify_uneditable(void)
 {
     verify_uneditable_begin_edit();
     verify_uneditable_restore();
     verify_uneditable_neighbours();
+    verify_uneditable_switch_notice();
 }
 
 /* 編集用 RTF の本文部分（頭の後の段落の書式から）。 */

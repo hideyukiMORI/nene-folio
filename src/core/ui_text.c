@@ -284,6 +284,10 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
     [UI_TEXT_MENU_TRASH_NOTE] = {"ごみ箱へ移す", "Move to Recycle Bin", "移到回收站"},
     [UI_TEXT_TRASH_NOTE_COMPLETED] = {"一覧から除きました。", "Removed from the list.",
                                       "已从列表移除。"},
+    [UI_TEXT_NOTE_OPENED_IN_VIEW] =
+        {"閲覧で開きました。編集で保てない文字があります。",
+         "Opened in view mode. It has characters the editor cannot keep.",
+         "已以查看模式打开。正文含有编辑时无法保留的字符。"},
     [UI_TEXT_HELP_TRASH_NOTE] =
         {"Ex  :trashnote / :trash ノートと履歴をごみ箱へ移す（確認なし）",
          "Ex  :trashnote / :trash Move note and history to Recycle Bin (no confirmation)",

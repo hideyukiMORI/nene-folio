@@ -154,6 +154,7 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_COMMAND_TRASH_NOTE] = "ノートをごみ箱へ移す",
     [UI_TEXT_MENU_TRASH_NOTE] = "ごみ箱へ移す",
     [UI_TEXT_TRASH_NOTE_COMPLETED] = "一覧から除きました。",
+    [UI_TEXT_NOTE_OPENED_IN_VIEW] = "閲覧で開きました。編集で保てない文字があります。",
     [UI_TEXT_HELP_TRASH_NOTE] = "Ex  :trashnote / :trash ノートと履歴をごみ箱へ移す（確認なし）",
     [UI_TEXT_COMMAND_DELETE_CATEGORY] = "カテゴリを削除",
     [UI_TEXT_MENU_DELETE_CATEGORY] = "カテゴリを削除",
@@ -597,6 +598,19 @@ static void verify_trash_notice(void)
     verify_vocabulary_of(UI_TEXT_HELP_TRASH_NOTE);
 }
 
+static void verify_opened_in_view_notice(void)
+{
+    const char *const lines[] = {"閲覧で開きました。編集で保てない文字があります。",
+                                 "Opened in view mode. It has characters the editor cannot keep.",
+                                 "已以查看模式打开。正文含有编辑时无法保留的字符。"};
+    for (size_t column = 0; column < folio_language_count; ++column)
+    {
+        require(same_text(ui_text_line(UI_TEXT_NOTE_OPENED_IN_VIEW, (enum folio_language)column),
+                          lines[column]),
+                "the notice states the note opened in view mode and why");
+    }
+}
+
 static void verify_category_not_selected(void)
 {
     const char *const lines[] = {"カテゴリを選んでください。", "Select a category.",
@@ -648,6 +662,7 @@ void run_ui_text_tests(void)
     verify_fill();
     verify_language();
     verify_trash_notice();
+    verify_opened_in_view_notice();
     verify_category_not_selected();
     verify_rename_vocabulary();
 }

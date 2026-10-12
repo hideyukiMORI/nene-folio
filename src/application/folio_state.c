@@ -52,6 +52,8 @@ struct folio_state
     struct folio_settings *_Nullable settings;
     /* READY か SETTINGS_UNREADABLE。後者のあいだ設定の変更を断り、上書きもしない（決定 6） */
     enum folio_state_outcome settings_notice;
+    /* READY か NOTE_UNEDITABLE。直前の select_note が編集から閲覧へ落としたかの事実（#258） */
+    enum folio_state_outcome select_notice;
     struct rtf_palette palette;
     struct category_ledger *_Nullable categories;
     struct note_ledger *_Nonnull *_Nullable notes; /* categories と同じ数・同じ順 */
@@ -509,6 +511,7 @@ enum folio_state_outcome folio_state_create(const struct folio_ports *_Nonnull p
     state->appearance = *appearance;
     state->os_theme = appearance->read_theme(appearance->adapter);
     state->theme_choice = FOLIO_THEME_CHOICE_SYSTEM;
+    state->select_notice = FOLIO_STATE_READY;
     state->palette = rtf_palette_for(folio_theme_resolve(state->theme_choice, state->os_theme));
     if (markdown_rtf_empty(state->palette, ui_font_face(FOLIO_LANGUAGE_JA), &state->pane) !=
             MARKDOWN_RTF_CONVERTED ||
@@ -919,6 +922,11 @@ enum folio_theme_choice folio_state_theme_choice(const struct folio_state *_Nonn
 enum folio_state_outcome folio_state_settings_notice(const struct folio_state *_Nonnull state)
 {
     return state->settings_notice;
+}
+
+enum folio_state_outcome folio_state_select_notice(const struct folio_state *_Nonnull state)
+{
+    return state->select_notice;
 }
 
 bool folio_state_number(const struct folio_state *_Nonnull state)
@@ -1534,9 +1542,25 @@ static enum folio_state_outcome render_note(struct folio_state *_Nonnull state,
     return FOLIO_STATE_READY;
 }
 
+/* 編集のまま切り替えても、編集で保てない本文は editor へ渡さず閲覧で開く（#242）。
+ * 編集から閲覧へ落としたときだけ、その事実を select_notice に残す（#258）。 */
+static void open_uneditable_in_view(struct folio_state *_Nonnull state)
+{
+    if (note_text_editability(state->body) != NOTE_TEXT_EDITOR_ALTERS)
+    {
+        return;
+    }
+    if (state->mode == PANE_MODE_EDIT)
+    {
+        state->select_notice = FOLIO_STATE_NOTE_UNEDITABLE;
+    }
+    state->mode = PANE_MODE_VIEW;
+}
+
 enum folio_state_outcome folio_state_select_note(struct folio_state *_Nonnull state,
                                                  size_t category, size_t note)
 {
+    state->select_notice = FOLIO_STATE_READY;
     if (state->document == FOLIO_DOCUMENT_UNTITLED)
     {
         return FOLIO_STATE_NAME_REQUIRED;
@@ -1566,11 +1590,7 @@ enum folio_state_outcome folio_state_select_note(struct folio_state *_Nonnull st
         state->selected_note = note;
         cursor_to_selection(state);
         folio_state_close_history(state);
-        /* 編集のまま切り替えても、編集で保てない本文は editor へ渡さず閲覧で開く（#242）。 */
-        if (note_text_editability(state->body) == NOTE_TEXT_EDITOR_ALTERS)
-        {
-            state->mode = PANE_MODE_VIEW;
-        }
+        open_uneditable_in_view(state);
     }
     return outcome;
 }
