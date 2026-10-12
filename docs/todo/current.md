@@ -1,59 +1,39 @@
 # いまのタスク — NeNe Folio
 
-記録時点: 2026-10-12 19:55 JST、#290の対象検証受理、実装基点main `7afc01c`、公開tag `v0.1.0`。このファイルは状態の要約で、作業許可の正本ではない。
-再開時はhideの現在の依頼、checkoutの差分、対象Issue/PRの実状態を照合する。
-現在欄は置き換えて保ち、経緯を追記し続けない（[ADR0043](../adr/0043-current-instructions-and-single-agent.md)）。
+記録時点: 2026-10-12 21:44 JST。#292の実装基点main `913bc41`、公開tag `v0.1.0`。
+このファイルは状態の要約で、作業許可の正本ではない。hideの現在指示、checkout、Issue/PRの実状態を照合する。
+経緯は日報へ置き、現在欄は置き換えて保つ（[ADR0043](../adr/0043-current-instructions-and-single-agent.md)）。
 
-## 現在の作業
+## 現在の到達点
 
-- hideが承認した中央の設定、カテゴリ追加入口、3表示モードの3件を実装した。
-  3件目の[Issue #290](https://github.com/hideyukiMORI/nene-folio/issues/290)は対象検証と独立レビューを受理済み。
-  一覧は窓も細くし、両方/ノートへ戻すと元の幅または最大化状態へ戻す。設計は[ADR0047](../adr/0047-three-layout-modes.md)、実測は[品質記録](../quality/2026-10-12-layout-mode-checks.md)。
-  最終headのCI・統合・通常exe反映・終了整理の実状態は紐付くPRと`D:/NeNeFolio/agents/ui-layout-modes-20261012/completion.json`を照合する。
-- #288 / PR #289はclosed / merged。カテゴリ追加の固定入口は対象確認・最終headの必須CI・通常exe反映・追加作業木と一時出力の整理まで完了。
-  [ADR0039補正8](../adr/0039-note-trash-and-category-operations.md)、[品質記録](../quality/2026-10-12-category-entry-checks.md)、
-  `D:/NeNeFolio/agents/ui-category-entry-20261012/completion.json`で最終状態を確認する。
-- #286 / PR #287はclosed / merged。設定中央ダイアログは対象確認・最終headの必須CI・通常exe反映・追加作業木と一時出力の整理まで完了。
-  [ADR0046](../adr/0046-distinct-settings-dialog.md)、[品質記録](../quality/2026-10-12-settings-dialog-checks.md)、
-  `D:/NeNeFolio/agents/ui-settings-dialog-20261012/completion.json`で最終状態を確認する。
-- 今回のhide指定に従い、Astraが設計・判断・受理・統合、既存のSOL席が実装・対象検証を担当する。
-  各Issueの実状態、完成候補の検証、最終headのCI、通常exeと整理結果は当日日報・引き継ぎ・各証跡で照合する。
-- #270/#271/#274/#276/#278/#280はclosed。BOM修正、運用と入口、ローカルメモリ全10件の整理・反映、検証頻度の整理は完了した。
-  到達点・検証・証跡は[当日日報](../reports/2026-10-12.md)と[引き継ぎ](../handoffs/2026-10-12.md)を参照する。
-- #282 / PR #283はclosed / merged。版の一元化と配布生成の設計は[ADR0045](../adr/0045-single-version-and-verified-release-bundle.md)、
-  対象検証は[品質記録](../quality/2026-10-12-release-prep-checks.md)、通常exe反映・終了整理は`D:/NeNeFolio/agents/282-release-prep/completion.json`。
-- hideの公開指示を受け、[Issue #284](https://github.com/hideyukiMORI/nene-folio/issues/284)で
-  [v0.1.0](https://github.com/hideyukiMORI/nene-folio/releases/tag/v0.1.0)をベータ版（Pre-release）として公開した。
-  clean mainから生成したWindows x64 ZIPとSHA256SUMSを添付し、公開後の再ダウンロードで両方のhash一致を確認した。
-  公開記録は[当日日報](../reports/2026-10-12.md)、文書PRの統合・整理は`D:/NeNeFolio/agents/beta-release-20261012/completion.json`を参照する。
-- #284 / PR #285の公開・記録・統合・終了整理は完了。今回のUI変更で公開済みtag/Releaseの差替えは行わない。
-- 検証は[ADR0044](../adr/0044-tests-at-completion-and-integration.md)・QLT-008/012に従い、完成候補の対象検証と最終headの必須CIへ集約する。
+- hideの推奨案反映指示に基づく[Issue #292](https://github.com/hideyukiMORI/nene-folio/issues/292)は、
+  表示3択の共通枠/選択下線、Ctrl+Shift+1/2/3、説明/キー表示の実装と対象検証を受理した。
+  契約は[ADR0048](../adr/0048-layout-controls-and-native-tooltips.md)、実コマンド・画像・限界は[品質記録](../quality/2026-10-12-layout-control-checks.md)。
+- root IME抑止、標準tooltipのABIサイズとSDKマクロの実行時評価を修正し、最終候補のnative確認は494 assertions成功。
+  3言語×明暗の狭幅などPNG9枚を設計席が視認した。ゲート抑制・waiver・保存schema変更はない。
+- この記録後の最終head必須CI、main統合、通常exe反映/起動、終了整理は、紐付くPRと
+  `D:/NeNeFolio/agents/292-layout-controls/completion.json`を正本とする。結果追記だけでCIを再起動しない。
+  恒久証跡は同ディレクトリ。追加作業木`D:/NeNeFolio/worktrees/292-layout-controls`と一時出力`D:/NeNeFolio/outputs/292-layout-controls`は完了条件を満たしてから整理する。
+- 今回の明示分担はAstraが設計/判断/受理/統合、SOLが実装/対象検証。一般の既定は単体実行のまま。
+  検証済み入力286件は不変を照合し、変更していないunitと#290の最大化/幅復元を再利用した（[ADR0044](../adr/0044-tests-at-completion-and-integration.md)）。
 
-## 製品の到達点
+## 製品と公開版
 
-- #282でCMakeの版をexe資源・設定面・配布名へ導出し、検証済みのportable ZIPを生成できる。
-  通常exeの最終反映source/hashと保持したZIPの場所は`D:/NeNeFolio/agents/282-release-prep/completion.json`で確認する。
-- 直前の製品基点は`69e0a61`（#271 / PR #272）。BOMをファイル境界で一度だけ解釈し、本文のU+FEFFを保持する（ADR0042）。
-  既存の対象unit・正典gate・実OS196 assertions・CIの範囲と限界は[品質記録](../quality/2026-10-12-text-boundary-checks.md)。
-- 利用できる機能は [README](../../README.md)、要件は [SPECIFICATION](../../SPECIFICATION.md)、判断は受理ADRを参照する。
-  Phase 4の初回ベータ配布物は公開済み。署名・インストーラ・自動更新は未実装。
+- #286/PR#287、#288/PR#289、#290/PR#291はclosed/merged。設定中央ダイアログ、カテゴリ追加の＋、3表示モードは
+  必須CI・通常exe反映・追加作業木/一時出力整理まで完了した。#290の3表示要件はhideが実機で受理した。
+- 公開済み[v0.1.0ベータ](https://github.com/hideyukiMORI/nene-folio/releases/tag/v0.1.0)は上記UI更新より前の版。
+  通常の最新exeは `C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`。今回のUI変更で公開tag/Releaseを差し替えない。
+- 機能は[README](../../README.md)、要件は[SPECIFICATION](../../SPECIFICATION.md)、操作は[キー表](../KEY_BINDINGS.md)を参照する。
 
 ## 残る確認と判断条件
 
-- hideの目視258-1〜3・260-1〜3・266-1は未確認。過去の他項目も含む結果は
-  [実機チェックリスト](../quality/2026-09-22-visual-checklist.md)と各品質記録を参照し、probe成功で目視済みにしない。
-- #243の再開条件: codepage65001なしでU+FFFDと隣接VTを保持できる表現が見つかった場合。
-  保持を満たす新しい根拠なしに同じ性能測定を繰り返さない。
-- 物理IME・別DPI/別OSなど、未測定条件は品質記録に残る。過去の文字欠落を自動復旧するものではない。
-- 旧C側41作業木と `D:/NeNeFolio/worktrees/210-rename-state` は従来のhide判断待ち。
-  今回の運用整理だけで削除や再開の許可を得たものとして扱わない。
-- #270/#271の追加作業木と不要な生成物は整理済み。保持証跡と結果は
-  `D:/NeNeFolio/agents/2026-10-12-astra-resume/completion.json`。
+- #292の物理hoverによるtooltip popup、物理IME、OSの個別言語キー割当、別OS/DPI/実複数画面、スクリーンリーダーは未測定。
+  120 DPIのquery/画像/合成キー確認や#290のhide受理を、これらの受理に広げない。
+- 過去の258-1〜3・260-1〜3・266-1などは[実機チェックリスト](../quality/2026-09-22-visual-checklist.md)と各品質記録の条件を維持する。
+- #243は、codepage65001なしでU+FFFDと隣接VTを保持できる新しい根拠が再開条件。同じ測定を繰り返さない。
+- 旧C側41作業木と `D:/NeNeFolio/worktrees/210-rename-state` は従来のhide判断待ち。この変更だけで削除しない。
 
-## 再開と履歴の参照先
+## 再開と履歴
 
-現在の運用は[ワークフロー§10](../DEVELOPMENT_WORKFLOW.md#10-エージェントの運用)、検証頻度は[QLT-012](../QUALITY_GATES.md#qlt-012--検証の頻度は変更に従う)。既定は単体実行。
-対象プロジェクト/作業に明示された分担だけをその範囲で適用し、過去の停止・自走・許可は現在の指示にしない。
-直近の[日報](../reports/2026-10-12.md)・[引き継ぎ](../handoffs/2026-10-12.md)は日付と節の時点を区別して読む。
-旧現在欄595行は[整理前の固定版](https://github.com/hideyukiMORI/nene-folio/blob/2b0e376fb6838b13f6cf162ad395507b83c25607/docs/todo/current.md)に残る。
-Waivers: none。
+[ワークフロー§10](../DEVELOPMENT_WORKFLOW.md#10-エージェントの運用)、[QLT-012](../QUALITY_GATES.md#qlt-012--検証の頻度は変更に従う)、
+[当日日報](../reports/2026-10-12.md)、[引き継ぎ](../handoffs/2026-10-12.md)を時点付きで参照する。Waivers: none。

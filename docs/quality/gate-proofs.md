@@ -18,6 +18,15 @@ CI: GitHub Actions `windows-2022`（PR の ready_for_review で起動。ロー�
 
 ## 1. 実測結果
 
+### #292: 表示3択・直接キー・標準tooltip（2026-10-12）
+
+共通枠/選択下線、Ctrl+Shift+1/2/3、3言語の説明を追加し、独立レビューでroot IME抑止の欠落を修正した。
+実OS確認はcomctl32 5.82のTOOLINFOサイズ拒否とSDKマクロのUBSan停止を検出した。
+SDK V2形式の末尾を標準offsetof+sizeofでconstexprへ確定し、抑制やmanifest変更なしで解消した。
+最終候補の実HACCEL/IME・modal境界/本文・Undo・disk保持/同一process Tooltip queryは494 assertions、0失敗、exit 0。
+120 DPI、3言語×明暗の狭幅などPNG9枚を設計席が視認した。物理hover popup・物理IME・別OS/DPIとは区別する。
+コマンド・失敗の診断・最終hash・測定範囲は[品質記録](2026-10-12-layout-control-checks.md)。既成功のunitや#290幅復元は再利用した。
+
 ### #290: 3表示モード・窓幅復元・編集保持（2026-10-12）
 
 Windows build 26300、120 DPI（125%）、日本語/暗色、所有PID/HWNDへの合成入力とPrintWindowで確認した。
