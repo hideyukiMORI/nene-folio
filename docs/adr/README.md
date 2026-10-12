@@ -63,3 +63,4 @@ ADR は「なぜそう決めたか」「何を却下したか」を書く。
 | [0045](0045-single-version-and-verified-release-bundle.md) | CMakeの版からWindows資源と検証済み配布ZIPを作る | 受理 |
 | [0046](0046-distinct-settings-dialog.md) | 設定は既存の採用経路を保ち、独立した中央の面として描く | 受理 |
 | [0047](0047-three-layout-modes.md) | 一覧・両方・ノートを一つの状態で切り替え、一覧では窓幅も縮める | 受理 |
+| [0048](0048-layout-controls-and-native-tooltips.md) | 表示3択を一群として描き、直接キーと標準tooltipを共通コマンドへ結ぶ | 受理 |

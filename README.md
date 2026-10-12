@@ -18,6 +18,8 @@ The current source also includes the settings dialog, a fixed **+** for adding c
   the OS light/dark theme (or a fixed one) and Per-Monitor v2 DPI.
 - **List / Both / Note** buttons switch the visible panes. List narrows the window; returning to Both
   or Note restores the previous width or maximized state. Switching views keeps unsaved text and Undo.
+  The grouped controls also accept Ctrl+Shift+1 / 2 / 3. Tooltips, Actions, the command palette, and Help
+  show the shortcuts; they do not switch the layout during IME composition or a modal input.
 - **The drawer is an index** of `data/<category>/*.md`. Categories fold like an accordion, carry a colour
   and an order, and rows are reordered by drag (notes can move between categories). There is no scrollbar;
   the drawer scrolls by wheel and keys. A search box at the top filters every note by name and body.

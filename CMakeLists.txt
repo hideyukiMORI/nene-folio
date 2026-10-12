@@ -93,6 +93,8 @@ nenefolio_system_link(nenefolio_window user32)
 nenefolio_system_link(nenefolio_window gdi32)
 nenefolio_system_link(nenefolio_window dwmapi)
 nenefolio_system_link(nenefolio_window comdlg32)
+# 標準Tooltip control（ADR0048）。OS同梱DLL、外部配布物は増えない。
+nenefolio_system_link(nenefolio_window comctl32)
 # 設定画面のレイヤーから IME 文脈を外す（ADR 0031 の決定 7・ARC-002）。
 nenefolio_system_link(nenefolio_window imm32)
 # 閉じる・設定・折畳・選択の印を面のパスで塗る（ADR 0033 の決定 1・ARC-002）。

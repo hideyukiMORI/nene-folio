@@ -32,6 +32,7 @@
 | 止まる行（stop row） | 歩みが止まれる行の列。カテゴリごとに、見えるノート行があればそのノートを順に、無ければそのカテゴリ行 1 つ | `folio_state_select_adjacent`（application）・ADR 0015 の決定 2 |
 | 寄せる（reveal） | カーソルの行が頭の帯から下端までに収まる最小のスクロール量にすること。鍵でカーソルを動かしたときだけ行い、クリックでは行わない | `drawer_layout_reveal`（core）・`folio_state_reveal_cursor`（application）・ADR 0013 の決定 6 |
 | 札（chip） | 右ペインの頭の右端に並ぶ「閲覧」「編集」の切替。有効な側だけ面を塗る | `folio_window` の `chip_rect`・`chip_*` の色（`folio_palette`） |
+| 操作説明（tooltip） | 上部の表示3択・設定・閉じるにマウスを置くと出る説明。表示3択には直接キーを添える | `folio_window`所有のWin32標準Tooltip control・ui_text・ADR0048 |
 | 改行の形（line ending） | 本文の改行が LF か CRLF か。読んだ本文の最初の改行で決まり、書き戻すときに揃える | `enum line_ending`（core） |
 | ドロップ先（drop target） | ドラッグを離したときに落ちる場所。種類・**移動先の**カテゴリ・**移動後の番号**・挿入線の y を持つ | `struct drop_target` / `enum drop_kind`（core）・`drawer_layout_drop` |
 | 塊（chunk） | カテゴリ行と、展開中ならそのノート行をひとまとめにした範囲。カテゴリの並び替えの候補はこの境界で、ノートの移動先はポインタのある塊（境界は隣り合う塊の間の中ほど） | `drawer_layout_drop`（core） |

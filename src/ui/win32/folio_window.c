@@ -33,9 +33,11 @@
 #include "utf16_text.h"
 #include "utf8_text.h"
 
+#include <commctrl.h>
 #include <dwmapi.h>
 #include <imm.h>
 #include <richedit.h>
+#include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
 #include <windows.h>
@@ -43,6 +45,12 @@
 
 /* 置換の欄が持つ EDIT の数（パターンと置換文字列・ADR 0028 の決定 8(a)）。 */
 constexpr size_t replace_input_count = 2;
+/* 1 回の描画・測定で UTF-16 へ写せる単位数（ADR 0030 の決定 5）。表の 1 行（ui_text_unit_limit）・
+ * 状態の 1 行（replace_status_capacity）・ノート名（255 バイト）のどれもここに収まる。
+ * 収まらなければ何も描かない（描画のたびの確保をやめる代わりの上限）。 */
+constexpr size_t draw_unit_limit = 1024;
+/* SDK V2の末尾lParamまで。SDKマクロのNULL参照を実行時に評価しない（ADR0048）。 */
+constexpr UINT tooltip_info_size = offsetof(TOOLINFOW, lParam) + sizeof(LPARAM);
 
 struct folio_window
 {
@@ -56,6 +64,8 @@ struct folio_window
     HACCEL _Nullable search_keys;
     HFONT _Nullable mono_font;
     HWND _Nullable command_layer;
+    HWND _Nullable tooltip;
+    char16_t tooltip_text[draw_unit_limit];
     HWND _Nullable settings_backdrop;
     HBRUSH _Nullable settings_backdrop_brush;
     /* レイヤーから外した IME の文脈。窓を壊す前に戻す（MSDN の作法） */
@@ -70,6 +80,7 @@ struct folio_window
     HWND _Nullable filter_input;
     WNDPROC _Nullable filter_original;
     bool filter_composing;
+    bool root_composing;
     HWND _Nullable command_return_focus;
     HBRUSH _Nullable command_brush;
     enum command_surface_mode command_surface;
@@ -147,10 +158,17 @@ static const struct
 {
     enum folio_layout_mode mode;
     enum folio_command command;
+    enum ui_text button;
+    enum ui_text shortcut;
+    WORD accelerator;
+    WORD key;
 } layout_buttons[] = {
-    {FOLIO_LAYOUT_DRAWER, FOLIO_COMMAND_LAYOUT_DRAWER},
-    {FOLIO_LAYOUT_BOTH, FOLIO_COMMAND_LAYOUT_BOTH},
-    {FOLIO_LAYOUT_NOTE, FOLIO_COMMAND_LAYOUT_NOTE},
+    {FOLIO_LAYOUT_DRAWER, FOLIO_COMMAND_LAYOUT_DRAWER, UI_TEXT_LAYOUT_BUTTON_DRAWER,
+     UI_TEXT_LAYOUT_KEY_DRAWER, 108, '1'},
+    {FOLIO_LAYOUT_BOTH, FOLIO_COMMAND_LAYOUT_BOTH, UI_TEXT_LAYOUT_BUTTON_BOTH,
+     UI_TEXT_LAYOUT_KEY_BOTH, 109, '2'},
+    {FOLIO_LAYOUT_NOTE, FOLIO_COMMAND_LAYOUT_NOTE, UI_TEXT_LAYOUT_BUTTON_NOTE,
+     UI_TEXT_LAYOUT_KEY_NOTE, 110, '3'},
 };
 
 static size_t layout_button_count(void)
@@ -199,11 +217,6 @@ constexpr int replace_replacement_control_id = 5;
 constexpr size_t search_status_capacity = 128;
 /* 「対象名 / k 件」と失敗の 1 行（＋「 位置 N」）を組む領域。ノート名は 255 バイトまで。 */
 constexpr size_t replace_status_capacity = 512;
-/* 1 回の描画・測定で UTF-16 へ写せる単位数（ADR 0030 の決定 5）。表の 1 行（ui_text_unit_limit）・
- * 状態の 1 行（replace_status_capacity）・ノート名（255 バイト）のどれもここに収まる。
- * 収まらなければ何も描かない（描画のたびの確保をやめる代わりの上限）。 */
-constexpr size_t draw_unit_limit = 1024;
-
 /* 96 DPI での寸法（デザイン「案2 堅」）。 */
 constexpr int base_dpi = 96;
 constexpr int base_width = 960;
@@ -214,8 +227,9 @@ constexpr int base_min_height = 360;
 constexpr int base_drawer_width = 240;
 constexpr int base_common_header_height = 44;
 constexpr int base_drawer_window_width = 320;
-constexpr int base_layout_button_width = 56;
-constexpr int base_layout_button_gap = 4;
+constexpr int base_layout_button_width = 54;
+constexpr int base_layout_group_padding = 2;
+constexpr int base_layout_settings_gap = 12;
 constexpr int base_caption_height = 44; /* 右ペインの頭。窓を掴んで動かせる帯 */
 constexpr int base_action_height = 36;
 constexpr int base_caption_indent = 36;
@@ -341,6 +355,9 @@ static enum folio_state_outcome prepare_name_operation(const struct folio_window
 static void set_pane_notice(struct folio_window *_Nonnull self, enum pane_notice notice);
 static bool holds_document(const struct folio_window *_Nonnull self, struct note_ref target);
 static void decorate(HWND handle, struct folio_palette palette);
+static void refresh_tooltip_style(const struct folio_window *_Nonnull self);
+static void refresh_tooltip_rects(const struct folio_window *_Nonnull self);
+static void activate_tooltip(const struct folio_window *_Nonnull self);
 static void render_pane(const struct folio_window *_Nonnull self);
 static void show_settings_surface(struct folio_window *_Nonnull self,
                                   const char *_Nonnull argument);
@@ -432,7 +449,8 @@ static int command_help_rows(const struct folio_window *_Nonnull self)
     case COMMAND_SURFACE_CLOSED:
     case COMMAND_SURFACE_PALETTE:
         return self->command_keys_visible
-                   ? (int)(sizeof command_shortcuts / sizeof command_shortcuts[0])
+                   ? (int)(sizeof command_shortcuts / sizeof command_shortcuts[0] +
+                           layout_button_count())
                    : 0;
     case COMMAND_SURFACE_EX:
     case COMMAND_SURFACE_SEARCH:
@@ -571,6 +589,7 @@ static void refresh_font(struct folio_window *_Nonnull self, UINT dpi)
     }
     /* 帯の幅の材料はここで 1 回だけ測る。DPI の変更でもこの関数が走るので測り直る（補正 7）。 */
     self->digit_width = measure_digit(self, dpi);
+    refresh_tooltip_style(self);
 }
 
 /* 下端の 1 行は本文の既存余白だけを使い、面の下端に同じ高さを予約する。 */
@@ -1008,6 +1027,7 @@ static bool arrange_settings_backdrop(const struct folio_window *_Nonnull self)
 
 static void arrange_command_input(struct folio_window *_Nonnull self)
 {
+    activate_tooltip(self);
     if (self->command_layer == nullptr || self->command_input == nullptr)
     {
         return;
@@ -1179,6 +1199,7 @@ static void arrange(struct folio_window *_Nonnull self)
     }
     arrange_command_input(self);
     refresh_gutter(self, false);
+    refresh_tooltip_rects(self);
 }
 
 static void render_pane(const struct folio_window *_Nonnull self)
@@ -1322,17 +1343,28 @@ static RECT settings_rect(const struct folio_window *_Nonnull self)
     return bounds;
 }
 
-static RECT layout_button_rect(const struct folio_window *_Nonnull self, size_t index)
+static RECT layout_group_rect(const struct folio_window *_Nonnull self)
 {
     UINT dpi = GetDpiForWindow(self->handle);
     RECT header = regions_for(self).header;
-    int width = scale(base_layout_button_width, dpi);
-    int gap = scale(base_layout_button_gap, dpi);
-    int right =
-        settings_rect(self).left - gap - (int)(layout_button_count() - index - 1) * (width + gap);
+    int right = settings_rect(self).left - scale(base_layout_settings_gap, dpi);
+    int width = scale(
+        base_layout_button_width * (int)layout_button_count() + base_layout_group_padding * 2, dpi);
     int middle = (header.top + header.bottom) / 2;
-    int half = scale(14, dpi);
+    int half = scale(16, dpi);
     return (RECT){right - width, middle - half, right, middle + half};
+}
+
+static RECT layout_button_rect(const struct folio_window *_Nonnull self, size_t index)
+{
+    UINT dpi = GetDpiForWindow(self->handle);
+    RECT group = layout_group_rect(self);
+    int left =
+        group.left + scale(base_layout_group_padding + base_layout_button_width * (int)index, dpi);
+    int right = group.left +
+                scale(base_layout_group_padding + base_layout_button_width * (int)(index + 1), dpi);
+    int inset = scale(base_layout_group_padding, dpi);
+    return (RECT){left, group.top + inset, right, group.bottom - inset};
 }
 
 static int layout_button_hit(const struct folio_window *_Nonnull self, POINT point)
@@ -1616,6 +1648,51 @@ static size_t command_matches_count(const struct utf8_text *_Nonnull query,
     return count;
 }
 
+static int layout_command_index(enum folio_command command)
+{
+    for (size_t index = 0; index < layout_button_count(); ++index)
+    {
+        if (layout_buttons[index].command == command)
+        {
+            return (int)index;
+        }
+    }
+    return -1;
+}
+
+static void layout_phrase(const struct folio_window *_Nonnull self, size_t index,
+                          enum ui_text format, char *_Nonnull out)
+{
+    enum folio_language language = folio_state_language(self->state);
+    struct ui_text_request request = {
+        .id = format,
+        .language = language,
+        .name = folio_command_label(layout_buttons[index].command, language),
+        .from = ui_text_line(layout_buttons[index].shortcut, language),
+        .to = layout_buttons[index].mode == FOLIO_LAYOUT_DRAWER
+                  ? ui_text_line(UI_TEXT_LAYOUT_NARROW_HINT, language)
+                  : ""};
+    if (ui_text_format(&request, out, draw_unit_limit) != UI_TEXT_FORMAT_READY)
+    {
+        out[0] = '\0';
+    }
+}
+
+static void draw_layout_command(const struct folio_window *_Nonnull self, HDC device,
+                                struct command_row row, size_t index)
+{
+    UINT dpi = GetDpiForWindow(self->handle);
+    RECT line = row.bounds;
+    int padding = scale(base_command_row_padding, dpi);
+    line.left += padding;
+    line.right -= padding;
+    line.bottom = line.top + (row.bounds.bottom - row.bounds.top) / 2;
+    enum folio_language language = folio_state_language(self->state);
+    draw_utf8(device, folio_command_label(row.command, language), line);
+    OffsetRect(&line, 0, line.bottom - line.top);
+    draw_utf8(device, ui_text_line(layout_buttons[index].shortcut, language), line);
+}
+
 static void draw_aliases(const struct folio_window *_Nonnull self, HDC device,
                          enum folio_command command, RECT bounds)
 {
@@ -1639,6 +1716,13 @@ static void draw_command_row(const struct folio_window *_Nonnull self, HDC devic
         HBRUSH brush = CreateSolidBrush(self->palette.selected_background);
         FillRect(device, &row.bounds, brush);
         DeleteObject(brush);
+    }
+    SetTextColor(device, row.selected ? self->palette.selected_text : self->palette.current_text);
+    int layout = layout_command_index(row.command);
+    if (layout >= 0)
+    {
+        draw_layout_command(self, device, row, (size_t)layout);
+        return;
     }
     RECT label = row.bounds;
     UINT dpi = GetDpiForWindow(self->handle);
@@ -1842,10 +1926,23 @@ static void draw_command_shortcuts(const struct folio_window *_Nonnull self, HDC
     bounds.right -= scale(base_command_palette_padding, dpi);
     SetTextColor(device, self->palette.current_text);
     enum folio_language language = folio_state_language(self->state);
+    size_t generic = sizeof command_shortcuts / sizeof command_shortcuts[0];
     for (int index = 0; index < rows; ++index)
     {
         RECT row = {bounds.left, bounds.top, bounds.right, bounds.top + row_height};
-        draw_utf8(device, ui_text_line(command_shortcuts[first + (size_t)index], language), row);
+        size_t at = first + (size_t)index;
+        char text[draw_unit_limit];
+        const char *line = "";
+        if (at < generic)
+        {
+            line = ui_text_line(command_shortcuts[at], language);
+        }
+        if (at >= generic)
+        {
+            layout_phrase(self, at - generic, UI_TEXT_LAYOUT_HELP, text);
+            line = text;
+        }
+        draw_utf8(device, line, row);
         bounds.top = row.bottom;
     }
 }
@@ -2307,8 +2404,8 @@ static LRESULT hit_test(const struct folio_window *_Nonnull self, LPARAM lparam)
     }
     RECT close = close_rect(self);
     RECT settings = settings_rect(self);
-    bool button = layout_button_hit(self, point) >= 0 || PtInRect(&close, point) ||
-                  PtInRect(&settings, point);
+    RECT group = layout_group_rect(self);
+    bool button = PtInRect(&group, point) || PtInRect(&close, point) || PtInRect(&settings, point);
     return button ? HTCLIENT : HTCAPTION;
 }
 
@@ -2486,15 +2583,15 @@ static void draw_layout_button(const struct folio_window *_Nonnull self, HDC dev
     bool selected = folio_state_layout_mode(self->state) == layout_buttons[index].mode;
     if (selected)
     {
-        HBRUSH brush = CreateSolidBrush(self->palette.selected_background);
-        FillRect(device, &bounds, brush);
-        DeleteObject(brush);
+        fill_settings_rect(device, bounds, self->palette.selected_background);
+        RECT underline = bounds;
+        underline.top = underline.bottom - scale(2, GetDpiForWindow(self->handle));
+        fill_settings_rect(device, underline, self->palette.selected_text);
     }
     SetTextColor(device, selected ? self->palette.selected_text : self->palette.current_text);
-    draw_units(
-        device,
-        folio_command_label(layout_buttons[index].command, folio_state_language(self->state)),
-        bounds, DT_SINGLELINE | DT_VCENTER | DT_CENTER | DT_NOPREFIX);
+    draw_units(device,
+               ui_text_line(layout_buttons[index].button, folio_state_language(self->state)),
+               bounds, DT_SINGLELINE | DT_VCENTER | DT_CENTER | DT_NOPREFIX);
 }
 
 static void draw_common_header(const struct folio_window *_Nonnull self, HDC device)
@@ -2503,9 +2600,21 @@ static void draw_common_header(const struct folio_window *_Nonnull self, HDC dev
     SelectObject(device, self->mono_font);
     SetBkMode(device, TRANSPARENT);
     SetTextCharacterExtra(device, scale(base_tracking, dpi));
+    RECT group = layout_group_rect(self);
+    frame_settings_rect(device, group, self->palette.border);
     RECT logo = regions_for(self).header;
     logo.left = scale(base_close_margin, dpi);
-    logo.right = layout_button_rect(self, 0).left - scale(8, dpi);
+    logo.right = group.left - scale(8, dpi);
+    const char *heading = ui_text_line(UI_TEXT_LAYOUT_GROUP, folio_state_language(self->state));
+    int heading_width = measure_utf8(device, heading);
+    if (logo.right - logo.left >= heading_width + scale(128, dpi))
+    {
+        RECT label = logo;
+        label.left = label.right - heading_width;
+        SetTextColor(device, self->palette.current_text);
+        draw_units(device, heading, label, DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
+        logo.right = label.left - scale(16, dpi);
+    }
     const char *text = ui_text_line(UI_TEXT_APP_LOGO, folio_state_language(self->state));
     if (measure_utf8(device, text) <= logo.right - logo.left)
     {
@@ -4014,6 +4123,7 @@ static void reface_pane(const struct folio_window *_Nonnull self)
 static void recolor_window(struct folio_window *_Nonnull self)
 {
     self->palette = folio_palette_for(folio_state_theme(self->state));
+    refresh_tooltip_style(self);
     HBRUSH _Nullable brush = CreateSolidBrush(self->palette.window);
     if (brush != nullptr)
     {
@@ -4100,6 +4210,7 @@ static void apply_language(struct folio_window *_Nonnull self, enum folio_langua
     }
     if (folio_state_language(self->state) != before)
     {
+        refresh_tooltip_rects(self);
         relanguage_window(self);
         return;
     }
@@ -4404,6 +4515,7 @@ static void release_removal_input(struct folio_window *_Nonnull self, bool enabl
         restore_valid_focus(self, focus);
     }
     self->removal_running = false;
+    activate_tooltip(self);
 }
 
 /* 同期の Shell 境界で入力を止める。元の面とフォーカスは別文書の操作では保つ。 */
@@ -5209,11 +5321,19 @@ static void click_command_surface(struct folio_window *_Nonnull self, POINT poin
     }
 }
 
-static bool append_operation(HMENU menu, size_t index, enum folio_language language)
+static bool append_operation(const struct folio_window *_Nonnull self, HMENU menu, size_t index)
 {
     enum folio_command command = folio_command_at(index);
     char16_t units[draw_unit_limit];
-    if (wide_units(folio_command_label(command, language), units) == 0)
+    const char *label = folio_command_label(command, folio_state_language(self->state));
+    int layout = layout_command_index(command);
+    char text[draw_unit_limit];
+    if (layout >= 0)
+    {
+        layout_phrase(self, (size_t)layout, UI_TEXT_LAYOUT_MENU, text);
+        label = text;
+    }
+    if (wide_units(label, units) == 0)
     {
         return false;
     }
@@ -5235,7 +5355,7 @@ static void show_operations(struct folio_window *_Nonnull self)
         {
             continue;
         }
-        if (!append_operation(menu, index, folio_state_language(self->state)))
+        if (!append_operation(self, menu, index))
         {
             DestroyMenu(menu);
             command_failure(self, FOLIO_STATE_OUT_OF_MEMORY);
@@ -5430,10 +5550,35 @@ static LRESULT pane_key(struct folio_window *_Nonnull self, WPARAM key)
     return 0;
 }
 
+static LRESULT tooltip_display(struct folio_window *_Nonnull self, LPARAM lparam)
+{
+    NMTTDISPINFOW *_Nonnull notice = (NMTTDISPINFOW *)lparam;
+    size_t id = notice->hdr.idFrom;
+    self->tooltip_text[0] = u'\0';
+    if (id > 0 && id <= layout_button_count())
+    {
+        char text[draw_unit_limit];
+        layout_phrase(self, id - 1, UI_TEXT_LAYOUT_TOOLTIP, text);
+        wide_units(text, self->tooltip_text);
+    }
+    if (id == layout_button_count() + 1 || id == layout_button_count() + 2)
+    {
+        enum ui_text text =
+            id == layout_button_count() + 1 ? UI_TEXT_TOOLTIP_SETTINGS : UI_TEXT_TOOLTIP_CLOSE;
+        wide_units(ui_text_line(text, folio_state_language(self->state)), self->tooltip_text);
+    }
+    notice->lpszText = (wchar_t *)self->tooltip_text;
+    return 0;
+}
+
 /* RichEdit の鍵の通知。IME変換中は親の操作に変換しない。 */
 static LRESULT on_notify(struct folio_window *_Nonnull self, LPARAM lparam)
 {
     const NMHDR *_Nonnull header = (const NMHDR *)lparam;
+    if (header->hwndFrom == self->tooltip && header->code == TTN_GETDISPINFOW)
+    {
+        return tooltip_display(self, lparam);
+    }
     if (header->code != EN_MSGFILTER || self->pane == nullptr || note_pane_composing(self->pane))
     {
         return 0;
@@ -6395,6 +6540,93 @@ static bool create_command_inputs(struct folio_window *_Nonnull self)
     return true;
 }
 
+static RECT tooltip_rect(const struct folio_window *_Nonnull self, size_t index)
+{
+    if (index < layout_button_count())
+    {
+        return layout_button_rect(self, index);
+    }
+    return index == layout_button_count() ? settings_rect(self) : close_rect(self);
+}
+
+static void activate_tooltip(const struct folio_window *_Nonnull self)
+{
+    if (self->tooltip == nullptr)
+    {
+        return;
+    }
+    bool active = self->command_surface != COMMAND_SURFACE_SETTINGS && !self->removal_running &&
+                  IsWindowEnabled(self->handle);
+    if (!active)
+    {
+        SendMessageW(self->tooltip, TTM_POP, 0, 0);
+    }
+    SendMessageW(self->tooltip, TTM_ACTIVATE, active, 0);
+}
+
+static void refresh_tooltip_style(const struct folio_window *_Nonnull self)
+{
+    if (self->tooltip != nullptr)
+    {
+        SendMessageW(self->tooltip, WM_SETFONT, (WPARAM)self->mono_font, FALSE);
+        SendMessageW(self->tooltip, TTM_SETTIPBKCOLOR, self->palette.dialog_surface, 0);
+        SendMessageW(self->tooltip, TTM_SETTIPTEXTCOLOR, self->palette.current_text, 0);
+        SendMessageW(self->tooltip, TTM_SETMAXTIPWIDTH, 0,
+                     scale(320, GetDpiForWindow(self->handle)));
+    }
+}
+
+static void refresh_tooltip_rects(const struct folio_window *_Nonnull self)
+{
+    if (self->tooltip == nullptr)
+    {
+        return;
+    }
+    SendMessageW(self->tooltip, TTM_POP, 0, 0);
+    for (size_t index = 0; index < layout_button_count() + 2; ++index)
+    {
+        TOOLINFOW tool = {.cbSize = tooltip_info_size,
+                          .hwnd = self->handle,
+                          .uId = index + 1,
+                          .rect = tooltip_rect(self, index)};
+        SendMessageW(self->tooltip, TTM_NEWTOOLRECTW, 0, (LPARAM)&tool);
+    }
+}
+
+static bool create_tooltip(struct folio_window *_Nonnull self)
+{
+    INITCOMMONCONTROLSEX controls = {.dwSize = sizeof controls, .dwICC = ICC_WIN95_CLASSES};
+    if (!InitCommonControlsEx(&controls))
+    {
+        return false;
+    }
+    self->tooltip = CreateWindowExW(WS_EX_NOACTIVATE, TOOLTIPS_CLASSW, nullptr,
+                                    WS_POPUP | TTS_NOPREFIX | TTS_ALWAYSTIP, CW_USEDEFAULT,
+                                    CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, self->handle,
+                                    nullptr, GetModuleHandleW(nullptr), nullptr);
+    if (self->tooltip == nullptr || !SetWindowPos(self->tooltip, HWND_TOPMOST, 0, 0, 0, 0,
+                                                  SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE))
+    {
+        return false;
+    }
+    for (size_t index = 0; index < layout_button_count() + 2; ++index)
+    {
+        TOOLINFOW tool = {.cbSize = tooltip_info_size,
+                          .uFlags = TTF_SUBCLASS,
+                          .hwnd = self->handle,
+                          .uId = index + 1,
+                          .rect = tooltip_rect(self, index),
+                          .lpszText = LPSTR_TEXTCALLBACKW};
+        if (!SendMessageW(self->tooltip, TTM_ADDTOOLW, 0, (LPARAM)&tool))
+        {
+            return false;
+        }
+    }
+    refresh_tooltip_style(self);
+    activate_tooltip(self);
+    return true;
+}
+
 static bool create_settings_backdrop(struct folio_window *_Nonnull self)
 {
     self->settings_backdrop_brush = CreateSolidBrush(self->palette.dialog_backdrop);
@@ -6445,7 +6677,7 @@ static LRESULT on_create(HWND window, LPARAM lparam)
     /* レイヤーは文字を受けないので IME の文脈を外す（ADR 0031 の決定 7・窓ごとの設定）。
      * 同じプロセスの EDIT の文脈は残る。 */
     self->layer_context = ImmAssociateContext(self->command_layer, nullptr);
-    if (!create_command_inputs(self))
+    if (!create_command_inputs(self) || !create_tooltip(self))
     {
         return -1;
     }
@@ -6651,6 +6883,11 @@ static LRESULT CALLBACK settings_backdrop_procedure(HWND window, UINT message, W
 
 static void window_destroyed(struct folio_window *_Nonnull self)
 {
+    if (self->tooltip != nullptr)
+    {
+        DestroyWindow(self->tooltip);
+        self->tooltip = nullptr;
+    }
     /* 子はまだ生きているので、外した IME の文脈を戻してから手放す。 */
     if (self->command_layer != nullptr && self->layer_context != nullptr)
     {
@@ -6697,10 +6934,45 @@ static void dismiss_command_if_focus_moved(struct folio_window *_Nonnull self)
     }
 }
 
+static bool layout_shortcut_allowed(const struct folio_window *_Nonnull self)
+{
+    if (self->command_surface == COMMAND_SURFACE_SETTINGS || self->removal_running ||
+        !IsWindowEnabled(self->handle) || self->root_composing || self->command_composing ||
+        self->filter_composing || (self->pane != nullptr && note_pane_composing(self->pane)))
+    {
+        return false;
+    }
+    HWND focus = GetFocus();
+    HWND pane = self->pane == nullptr ? nullptr : note_pane_handle(self->pane);
+    return focus != nullptr && (focus == self->handle || focus == self->filter_input ||
+                                (pane != nullptr && focus == pane) || command_owns(self, focus));
+}
+
+static bool execute_layout_accelerator(struct folio_window *_Nonnull self, WORD id)
+{
+    for (size_t index = 0; index < layout_button_count(); ++index)
+    {
+        if (id != layout_buttons[index].accelerator)
+        {
+            continue;
+        }
+        if (layout_shortcut_allowed(self))
+        {
+            execute_command(self, layout_buttons[index].command, "");
+        }
+        return true;
+    }
+    return false;
+}
+
 /* HACCEL が届けた WM_COMMAND を同じ dispatcher へ渡す（ADR 0016 の決定 2）。 */
 static void execute_accelerator(struct folio_window *_Nonnull self, WPARAM wparam)
 {
     if (HIWORD(wparam) != 1)
+    {
+        return;
+    }
+    if (execute_layout_accelerator(self, LOWORD(wparam)))
     {
         return;
     }
@@ -6875,6 +7147,15 @@ static LRESULT on_message(struct folio_window *_Nonnull self, UINT message, WPAR
 {
     switch (message)
     {
+    case WM_IME_STARTCOMPOSITION:
+        self->root_composing = true;
+        return DefWindowProcW(self->handle, message, wparam, lparam);
+    case WM_IME_ENDCOMPOSITION:
+        self->root_composing = false;
+        return DefWindowProcW(self->handle, message, wparam, lparam);
+    case WM_ENABLE:
+        activate_tooltip(self);
+        return 0;
     case WM_NCHITTEST:
         return hit_test(self, lparam);
     case WM_SIZE:
@@ -7033,8 +7314,16 @@ static bool create_accelerators(struct folio_window *_Nonnull self)
         /* F3 は前方・Shift+F3 は後方を名指しする。覚えている向きは変えない（採用済み計画 #47）。 */
         {.fVirt = FVIRTKEY, .key = VK_F3, .cmd = search_forward_accelerator},
         {.fVirt = FVIRTKEY | FSHIFT, .key = VK_F3, .cmd = search_backward_accelerator}};
-    self->commands =
-        CreateAcceleratorTableW(shortcuts, (int)(sizeof shortcuts / sizeof shortcuts[0]));
+    constexpr size_t existing = sizeof shortcuts / sizeof shortcuts[0];
+    ACCEL combined[existing + sizeof layout_buttons / sizeof layout_buttons[0]];
+    memcpy(combined, shortcuts, sizeof shortcuts);
+    for (size_t index = 0; index < layout_button_count(); ++index)
+    {
+        combined[existing + index] = (ACCEL){.fVirt = FVIRTKEY | FCONTROL | FSHIFT,
+                                             .key = layout_buttons[index].key,
+                                             .cmd = layout_buttons[index].accelerator};
+    }
+    self->commands = CreateAcceleratorTableW(combined, (int)(existing + layout_button_count()));
     /* Enter と Shift+Enter は検索欄にいるあいだだけ。鍵の修飾は OS の表に読ませ、
      * こちらから鍵の状態を問い合わせない（ARC-007）。 */
     ACCEL stepping[] = {
