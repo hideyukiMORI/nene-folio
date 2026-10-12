@@ -49,7 +49,7 @@ ADR は「なぜそう決めたか」「何を却下したか」を書く。
 | [0031](0031-theme-and-settings-surface.md) | テーマは3値の選択をsettings.jsonの版2に置き、OSの変更に主窓が追従し、編集中の再着色はTOMのUndo停止と変更印の退避で守る | 受理 |
 | [0032](0032-languages.md) | 表示言語はui_textの表を3列にしてsettings.jsonの版3で選び、言語ごとのfaceはcoreの表から引き、訳し残しと列の欠落は機械で守る | 受理 |
 | [0033](0033-vector-icons.md) | 閉じる・設定・折畳・選択の印は24のviewBoxの面のパスとしてuiに持ち、OS同梱のGDI+を型定義の無い自前の宣言で結んで既存のDCに直接塗る | 受理 |
-| [0034](0034-agent-seats-by-job.md) | 背景席は仕事の種類でモデルを選び、Opusの実装席は1席1仕事で道具出力を小さくし、繰り返しの下ごしらえはスクリプトにする（運用） | 受理 |
+| [0034](0034-agent-seats-by-job.md) | 背景席のモデル固定と1席1仕事（旧運用） | 置換（→ 0043） |
 | [0035](0035-dialog-theme.md) | 名前入力面と失敗の箱はcomctl32 v5のままdialog_themeの1本の塗りでテーマに従い、失敗の箱はMessageBoxWをやめて同じ塗りの自前のモーダルにする | 受理 |
 | [0036](0036-bundled-fonts.md) | 日本語・简体中文・欧文の書体を固定版でfonts/に同梱し、exeの隣からFR_PRIVATEで登録してui_fontの表で選ぶ | 受理 |
 | [0037](0037-required-check-verdict.md) | 必須checkは判定jobにし、フルゲートが成功していないhead（Draftのskipped・cancelled）をfailureで止める | 受理 |
@@ -57,3 +57,4 @@ ADR は「なぜそう決めたか」「何を却下したか」を書く。
 | [0039](0039-note-trash-and-category-operations.md) | ノートの削除とカテゴリの作成／削除／改名は単位に分け、対象は行で名指しし、ファイルを真実・台帳を追随とし、消すものはOSのごみ箱へ送る | 受理 |
 | [0040](0040-trash-note-via-recycle-bin.md) | ノートは専用のITransferSource::RecycleItemでOSのごみ箱へ送り、失敗しても完全削除へ進まない | 受理 |
 | [0042](0042-bom-at-file-boundary.md) | BOMはファイル境界で一度だけ解釈し、本文のU+FEFFを編集・複製・保存・履歴で保持する | 受理 |
+| [0043](0043-current-instructions-and-single-agent.md) | 単体実行を既定とし、現在の指示・状態と過去の記録を分ける | 受理 |
