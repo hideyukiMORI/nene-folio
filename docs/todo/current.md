@@ -1,16 +1,17 @@
 # いまのタスク — NeNe Folio
 
-確認基点: 2026-10-12 17:50 JST、main `d2e9504`（#284 / PR #285統合）、公開tag `v0.1.0`。このファイルは状態の要約で、作業許可の正本ではない。
+確認基点: 2026-10-12 18:45 JST、main `3aaf37c`（#286 / PR #287統合）、公開tag `v0.1.0`。このファイルは状態の要約で、作業許可の正本ではない。
 再開時はhideの現在の依頼、checkoutの差分、対象Issue/PRの実状態を照合する。
 現在欄は置き換えて保ち、経緯を追記し続けない（[ADR0043](../adr/0043-current-instructions-and-single-agent.md)）。
 
 ## 現在の作業
 
 - hideが中央の設定ダイアログ、ドロワー内のカテゴリ追加、一覧/両方/ノートの3表示モードを承認し、順に続けて実装するよう指示した。
-  一覧だけのときは窓も細くし、両方へ戻すと元の幅へ戻す。現在は1件目の[Issue #286](https://github.com/hideyukiMORI/nene-folio/issues/286)。
-  設計は[ADR0046](../adr/0046-distinct-settings-dialog.md)。後続2件の実装・検証・統合・通常exe反映・終了整理まで依頼範囲に含む。
-  #286の完成候補は対象build/静的解析/規約と125%実OS確認を受理済み（[品質記録](../quality/2026-10-12-settings-dialog-checks.md)）。
-  CI・統合・通常exe・整理の最終状態は紐付くPRと`D:/NeNeFolio/agents/ui-settings-dialog-20261012/completion.json`で確認する。
+  一覧だけのときは窓も細くし、両方へ戻すと元の幅へ戻す。現在は2件目の[Issue #288](https://github.com/hideyukiMORI/nene-folio/issues/288)。
+  設計は[ADR0039補正8](../adr/0039-note-trash-and-category-operations.md)。後続の表示モードまで、対象確認・統合・通常exe反映・終了整理を続ける。
+- #286 / PR #287はclosed / merged。設定中央ダイアログは対象確認・最終headの必須CI・通常exe反映・追加作業木と一時出力の整理まで完了。
+  [ADR0046](../adr/0046-distinct-settings-dialog.md)、[品質記録](../quality/2026-10-12-settings-dialog-checks.md)、
+  `D:/NeNeFolio/agents/ui-settings-dialog-20261012/completion.json`で最終状態を確認する。
 - 今回のhide指定に従い、Astraが設計・判断・受理・統合、既存のSOL席が実装・対象検証を担当する。
   各Issueの実状態、完成候補の検証、最終headのCI、通常exeと整理結果は当日日報・引き継ぎ・各証跡で照合する。
 - #270/#271/#274/#276/#278/#280はclosed。BOM修正、運用と入口、ローカルメモリ全10件の整理・反映、検証頻度の整理は完了した。
