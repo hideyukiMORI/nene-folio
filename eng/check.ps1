@@ -35,6 +35,8 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'QLT-009: branch coverage or its negative proof failed.' }
     & python eng/prove-gates.py
     if ($LASTEXITCODE -ne 0) { throw 'QLT-007: gate proofs failed.' }
+    & python eng/test-release.py
+    if ($LASTEXITCODE -ne 0) { throw 'QLT-007 / FR-014: release proofs failed.' }
     & git diff --check
     if ($LASTEXITCODE -ne 0) { throw 'Whitespace verification failed.' }
     Write-Host 'NeNe Folio full gate passed (UI hardware checks are recorded separately).'

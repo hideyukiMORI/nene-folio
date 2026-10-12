@@ -234,6 +234,7 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_SETTINGS_NUMBER_ON] = "表示する",
     [UI_TEXT_SETTINGS_NUMBER_OFF] = "表示しない",
     [UI_TEXT_SETTINGS_GUIDANCE] = "↑↓ 選択 / Enter 採用 / Esc 戻る",
+    [UI_TEXT_SETTINGS_VERSION] = "版 {name}",
     [UI_TEXT_HISTORY_GUIDANCE] = "1 が最新 / ↑↓ 選択 / Enter 戻す / Esc 戻る",
     [UI_TEXT_HISTORY_ROW] = "{n}  {name}",
     [UI_TEXT_HISTORY_ROW_UNREADABLE] = "{n}  （読めません）",
@@ -652,6 +653,23 @@ static void verify_rename_vocabulary(void)
     }
 }
 
+static void verify_product_version(void)
+{
+    const char *const expected_lines[] = {"版 65535.65535.65535.65535",
+                                          "Version 65535.65535.65535.65535",
+                                          "版本 65535.65535.65535.65535"};
+    for (size_t column = 0; column < folio_language_count; ++column)
+    {
+        struct ui_text_request request = {.id = UI_TEXT_SETTINGS_VERSION,
+                                          .language = (enum folio_language)column,
+                                          .name = "65535.65535.65535.65535"};
+        char line[64];
+        require(ui_text_format(&request, line, sizeof line) == UI_TEXT_FORMAT_READY,
+                "the maximum Windows version fits the settings display");
+        require(same_text(line, expected_lines[column]), "the product version label is localized");
+    }
+}
+
 void run_ui_text_tests(void)
 {
     verify_identity();
@@ -665,4 +683,5 @@ void run_ui_text_tests(void)
     verify_opened_in_view_notice();
     verify_category_not_selected();
     verify_rename_vocabulary();
+    verify_product_version();
 }

@@ -425,6 +425,7 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
     [UI_TEXT_SETTINGS_NUMBER] = {"行番号", "Line numbers", "行号"},
     [UI_TEXT_SETTINGS_NUMBER_ON] = {"表示する", "Show", "显示"},
     [UI_TEXT_SETTINGS_NUMBER_OFF] = {"表示しない", "Hide", "隐藏"},
+    [UI_TEXT_SETTINGS_VERSION] = {"版 {name}", "Version {name}", "版本 {name}"},
     [UI_TEXT_SETTINGS_GUIDANCE] = {"↑↓ 選択 / Enter 採用 / Esc 戻る",
                                    "↑↓ Select / Enter Apply / Esc Back",
                                    "↑↓ 选择 / Enter 应用 / Esc 返回"},
