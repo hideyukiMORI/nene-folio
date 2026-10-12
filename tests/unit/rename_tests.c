@@ -95,6 +95,31 @@ static void round_trip(const struct rename_plan *_Nonnull rename, const char *_N
     rename_journal_destroy(journal);
 }
 
+void run_bom_rename_tests(void)
+{
+    struct rename_plan *rename = plan();
+    struct json_writer *writer = nullptr;
+    require(json_writer_create(&writer) == JSON_WRITER_ACCEPTED, "BOM journal writer");
+    require(rename_journal_write(rename, file_id, history_id, writer) == RENAME_JOURNAL_ACCEPTED &&
+                json_writer_finish(writer) == JSON_WRITER_ACCEPTED,
+            "BOM journal serialized");
+    char raw[4096];
+    size_t length = json_writer_length(writer);
+    require(length + 6 < sizeof raw, "BOM journal fixture fits");
+    memcpy(raw, "\xEF\xBB\xBF\xEF\xBB\xBF", 6);
+    memcpy(raw + 6, json_writer_text(writer), length);
+    struct rename_journal *journal = nullptr;
+    require(rename_journal_parse(raw + 3, length + 3, &journal) == RENAME_JOURNAL_ACCEPTED &&
+                rename_plan_equals(rename, rename_journal_rename(journal)),
+            "rename codec accepts one signature");
+    struct rename_journal *out = journal;
+    require(rename_journal_parse(raw, length + 6, &out) == RENAME_JOURNAL_INVALID && out == journal,
+            "rename codec rejects two signatures without replacing out");
+    rename_journal_destroy(journal);
+    json_writer_destroy(writer);
+    rename_plan_destroy(rename);
+}
+
 static void verify_journal(void)
 {
     struct rename_plan *rename = plan();

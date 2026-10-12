@@ -3,6 +3,11 @@
 #include <stdlib.h>
 #include <string.h>
 
+size_t utf8_text_bom_length(const char *_Nonnull bytes, size_t length)
+{
+    return length >= 3 && memcmp(bytes, "\xEF\xBB\xBF", 3) == 0 ? 3 : 0;
+}
+
 struct utf8_text
 {
     char *_Nonnull bytes;

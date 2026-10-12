@@ -1,6 +1,6 @@
 /* ファイル 1 つの中身をまとめて読んだ所有バッファと、ファイル 1 つの原子的な置き換え。
  * data/ の json を読み書きする唯一の経路（ARC-007 / ARC-009）。
- * 先頭の UTF-8 BOM は境界で取り除く（メモ帳が付けるため）。 */
+ * 全bytesをそのまま扱う。署名の解釈は各形式のcore入口だけが行う（ADR 0042）。 */
 #ifndef NENEFOLIO_FILE_BYTES_H
 #define NENEFOLIO_FILE_BYTES_H
 

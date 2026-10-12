@@ -11,7 +11,6 @@ struct file_bytes
 {
     char *_Nonnull data; /* 終端付き */
     size_t length;
-    size_t offset; /* BOM の分だけ読み飛ばす */
 };
 
 static enum persistence_outcome open_outcome(void)
@@ -59,10 +58,6 @@ static enum persistence_outcome read_open_file(HANDLE file, struct file_bytes *_
     }
     bytes->data[length] = '\0';
     bytes->length = length;
-    if (length >= 3 && memcmp(bytes->data, "\xEF\xBB\xBF", 3) == 0)
-    {
-        bytes->offset = 3;
-    }
     return PERSISTENCE_LOADED;
 }
 
@@ -235,12 +230,12 @@ enum persistence_outcome file_bytes_create(const wchar_t *_Nonnull path, const c
 
 const char *_Nonnull file_bytes_data(const struct file_bytes *_Nonnull bytes)
 {
-    return bytes->data + bytes->offset;
+    return bytes->data;
 }
 
 size_t file_bytes_length(const struct file_bytes *_Nonnull bytes)
 {
-    return bytes->length - bytes->offset;
+    return bytes->length;
 }
 
 void file_bytes_destroy(struct file_bytes *_Nullable bytes)

@@ -86,8 +86,28 @@ static bool run_target_tests(const char *_Nonnull argument)
     return false;
 }
 
+static void run_bom_boundary_tests(void)
+{
+    run_text_tests();
+    run_note_size_text_tests();
+    run_note_nul_text_tests();
+    run_json_tests();
+    run_bom_ledger_tests();
+    run_bom_settings_tests();
+    run_bom_rename_tests();
+    run_bom_filter_tests();
+    run_bom_state_tests();
+    run_bom_allocation_tests();
+    printf("BOM boundary tests passed\n");
+}
+
 int main(int argc, char *_Nonnull *_Nonnull argv)
 {
+    if (argc == 2 && strcmp(argv[1], "--bom-boundary") == 0)
+    {
+        run_bom_boundary_tests();
+        return 0;
+    }
     if (argc == 2 && run_target_tests(argv[1]))
     {
         return 0;
@@ -103,6 +123,12 @@ int main(int argc, char *_Nonnull *_Nonnull argv)
     run_note_size_state_tests();
     run_note_nul_text_tests();
     run_note_nul_state_tests();
+    run_bom_ledger_tests();
+    run_bom_settings_tests();
+    run_bom_rename_tests();
+    run_bom_filter_tests();
+    run_bom_state_tests();
+    run_bom_allocation_tests();
     run_json_tests();
     run_ledger_tests();
     run_layout_tests();

@@ -151,8 +151,7 @@ enum note_corpus_outcome note_corpus_put(struct note_corpus *_Nonnull corpus,
 {
     /* bodyは唯一のnote_text生成でUTF-8/共通上限を検証済み。複製で失敗し得るのは確保だけ。 */
     struct note_text *_Nullable copy = nullptr;
-    if (note_text_create(note_text_bytes(body), note_text_length(body), &copy) !=
-        NOTE_TEXT_ACCEPTED)
+    if (note_text_copy(body, &copy) != NOTE_TEXT_ACCEPTED)
     {
         return NOTE_CORPUS_OUT_OF_MEMORY;
     }

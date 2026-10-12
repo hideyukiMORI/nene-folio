@@ -74,6 +74,8 @@ static void verify_document_tokens(void)
     expect_tokens("{\"a\":{},\"b\":[[]]}", empties);
     static const enum json_token scalar[] = {JSON_TOKEN_STRING, JSON_TOKEN_END};
     expect_tokens("\"alone\"", scalar);
+    expect_tokens("\xEF\xBB\xBF\"alone\"", scalar);
+    expect_malformed("\xEF\xBB\xBF\xEF\xBB\xBF\"alone\"");
 }
 
 static void verify_strings(void)
@@ -85,6 +87,13 @@ static void verify_strings(void)
                                                 "A"),
             "escapes expanded");
     require(json_reader_text_length(reader) == 20, "text length");
+    json_reader_destroy(reader);
+    reader = open_reader("\xEF\xBB\xBF\"\xEF\xBB\xBF"
+                         "A\xEF\xBB\xBF\"");
+    require(json_reader_next(reader) == JSON_TOKEN_STRING &&
+                same_text(json_reader_text(reader), "\xEF\xBB\xBF"
+                                                    "A\xEF\xBB\xBF"),
+            "JSON strings retain leading and internal FEFF");
     json_reader_destroy(reader);
     char long_text[300];
     long_text[0] = '"';

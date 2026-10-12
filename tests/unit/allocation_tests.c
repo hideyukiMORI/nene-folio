@@ -1188,6 +1188,58 @@ static bool probe_active(void)
     return outcome == NAME_LIST_OUT_OF_MEMORY;
 }
 
+static void verify_bom_allocation(enum note_text_outcome outcome,
+                                  const struct note_text *_Nonnull sentinel,
+                                  struct note_text *_Nonnull out)
+{
+    require(outcome == NOTE_TEXT_ACCEPTED || outcome == NOTE_TEXT_OUT_OF_MEMORY,
+            "validated BOM operation only succeeds or reports OOM");
+    if (outcome == NOTE_TEXT_OUT_OF_MEMORY)
+    {
+        require(out == sentinel, "BOM allocation failure leaves nonnull out unchanged");
+    }
+    if (outcome == NOTE_TEXT_ACCEPTED)
+    {
+        require(out != sentinel && note_text_file_length(out) == note_text_length(out) + 3,
+                "BOM result owns protective prefix");
+        note_text_destroy(out);
+    }
+}
+
+void run_bom_allocation_tests(void)
+{
+    if (!probe_active())
+    {
+        return;
+    }
+    const char *raw = "\xEF\xBB\xBF\xEF\xBB\xBF"
+                      "A";
+    struct note_text *sentinel = nullptr;
+    require(note_text_create(raw, strlen(raw), &sentinel) == NOTE_TEXT_ACCEPTED,
+            "BOM OOM sentinel");
+    for (size_t nth = 1; nth <= 8; ++nth)
+    {
+        struct note_text *out = sentinel;
+        allocation_probe_fail_at(nth);
+        enum note_text_outcome created = note_text_create(raw, strlen(raw), &out);
+        allocation_probe_fail_at(0);
+        verify_bom_allocation(created, sentinel, out);
+        out = sentinel;
+        allocation_probe_fail_at(nth);
+        enum note_text_outcome copied = note_text_copy(sentinel, &out);
+        allocation_probe_fail_at(0);
+        verify_bom_allocation(copied, sentinel, out);
+        out = sentinel;
+        allocation_probe_fail_at(nth);
+        enum note_text_outcome edited =
+            note_text_from_editor(raw, strlen(raw), LINE_ENDING_LF, &out);
+        allocation_probe_fail_at(0);
+        verify_bom_allocation(edited, sentinel, out);
+        require(same_text(note_text_bytes(sentinel), raw + 3), "OOM preserves source body");
+    }
+    note_text_destroy(sentinel);
+}
+
 void run_allocation_tests(void)
 {
     if (!probe_active())

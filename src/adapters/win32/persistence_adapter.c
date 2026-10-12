@@ -609,7 +609,7 @@ static enum persistence_outcome read_history(struct persistence_adapter *_Nonnul
 }
 
 /* いま md にある本文を履歴へ写す（FR-017 / ADR 0012）。バイト列はそのまま写すので、
- * 改行の形も BOM の無さも元のままになる。md が無ければ写すものが無い（ABSENT）。 */
+ * 改行も BOM を含む全bytesも元のままになる。md が無ければ写すものが無い（ABSENT）。 */
 static enum persistence_outcome archive_note(struct persistence_adapter *_Nonnull adapter,
                                              const char *_Nonnull category,
                                              const char *_Nonnull note)
@@ -648,7 +648,7 @@ static enum persistence_outcome write_note(struct persistence_adapter *_Nonnull 
     {
         return PERSISTENCE_UNWRITABLE;
     }
-    return file_bytes_store(path, note_text_bytes(body), note_text_length(body));
+    return file_bytes_store(path, note_text_file_bytes(body), note_text_file_length(body));
 }
 
 /* 初回保存は同じパス生成と原子的書込を使い、既存mdの置換を許さない（ADR 0020）。 */
@@ -664,7 +664,7 @@ static enum persistence_outcome create_note(struct persistence_adapter *_Nonnull
     {
         return PERSISTENCE_UNWRITABLE;
     }
-    return file_bytes_create(path, note_text_bytes(body), note_text_length(body));
+    return file_bytes_create(path, note_text_file_bytes(body), note_text_file_length(body));
 }
 
 /* md を別のカテゴリのディレクトリへ移す（ADR 0008 の決定 4）。同じボリューム内なので rename で、
