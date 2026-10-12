@@ -1,4 +1,4 @@
-/* 右ペイン下端の 1 行の印（ADR 0039 の補正 4・補正 5）。立て下げと寿命は主窓が持つ。 */
+/* 右ペイン下端の 1 行の印（ADR 0039 の補正 4・補正 7）。立て下げと寿命は主窓が持つ。 */
 #ifndef NENEFOLIO_PANE_NOTICE_H
 #define NENEFOLIO_PANE_NOTICE_H
 
