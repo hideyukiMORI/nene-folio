@@ -18,6 +18,13 @@ CI: GitHub Actions `windows-2022`（PR の ready_for_review で起動。ロー�
 
 ## 1. 実測結果
 
+### #288: カテゴリ追加の常設入口（2026-10-12）
+
+Windows build 26300、120 DPI（125%）、1000×750物理px、日本語/暗色で、所有PID/HWNDへの合成入力とPrintWindowを使用。
+空一覧からの作成/取消、外でrelease/capturelost、固定帯と行hit/scroll、編集保持・filter拒否・実Undoを41 assertionsで確認した。
+初回の予期しない既存dialogと初期描画途中の画像は成功証跡に含めず、source不変の診断/最終実行と区別する。
+環境・実コマンド・画像・入力hash・限界は[品質記録](2026-10-12-category-entry-checks.md)。
+
 ### #286: 中央設定の表示と入力境界（2026-10-12）
 
 Windows build 26300、120 DPI（125%）、通常1000×750/最小700×450物理pxで、3言語×明暗の設定面を撮影した。

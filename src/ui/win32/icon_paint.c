@@ -185,7 +185,7 @@ static int add_round_rect(struct GpPath *_Nonnull path, size_t which)
 }
 
 /* + は横棒と縦棒の 2 枚。SVG の既定の nonzero と同じく Winding で重なりを埋める。 */
-static int add_fold_expand_path(struct GpPath *_Nonnull path)
+static int add_plus_path(struct GpPath *_Nonnull path)
 {
     int status = add_round_rect(path, round_rect_fold_bar);
     return first_failure(status, add_round_rect(path, round_rect_fold_stem));
@@ -203,7 +203,8 @@ static int build_path(struct GpPath *_Nonnull path, enum icon_paint_kind kind)
     case ICON_PAINT_FOLD_COLLAPSE:
         return add_round_rect(path, round_rect_fold_bar);
     case ICON_PAINT_FOLD_EXPAND:
-        return add_fold_expand_path(path);
+    case ICON_PAINT_ADD:
+        return add_plus_path(path);
     case ICON_PAINT_SELECTION:
         return add_round_rect(path, round_rect_selection);
     case ICON_PAINT_WARNING:
@@ -220,6 +221,7 @@ static int fill_mode_for(enum icon_paint_kind kind)
     case ICON_PAINT_CLOSE:
     case ICON_PAINT_FOLD_COLLAPSE:
     case ICON_PAINT_FOLD_EXPAND:
+    case ICON_PAINT_ADD:
     case ICON_PAINT_SELECTION:
         return gdiplus_fill_winding;
     case ICON_PAINT_SETTINGS:

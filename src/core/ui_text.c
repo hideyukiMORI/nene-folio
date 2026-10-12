@@ -440,6 +440,7 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
     [UI_TEXT_HISTORY_ROW_UNREADABLE] = {"{n}  （読めません）", "{n}  (cannot be read)",
                                         "{n}  （无法读取）"},
     [UI_TEXT_APP_LOGO] = {"NENE FOLIO", "NENE FOLIO", "NENE FOLIO"},
+    [UI_TEXT_TITLE_CATEGORIES] = {"カテゴリ", "Categories", "分类"},
     [UI_TEXT_PROMPT_PENDING_EXPLANATION] =
         {"「再試行」で同じ名前変更を続けます。「閉じる」は取り消しではありません。",
          "Retry continues the same rename. Close does not cancel it.",

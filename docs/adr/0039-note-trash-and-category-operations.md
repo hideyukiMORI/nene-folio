@@ -424,3 +424,19 @@ RichEditをrenderしない。Ex／パレットの面を閉じた場合も、そ�
 ## 2026-10-12 の補正 7（#258）— 下端の 1 行を #242 の知らせにも使う
 
 補正 4 の「他の操作へ通知基盤を広げない」を 1 件だけ緩める。編集モードのまま編集で保てない文字を含むノートへ切り替えたとき（#242）、application が黙って閲覧で開くので、同じ下端の 1 行で「閲覧で開きました。編集で保てない文字があります。」と知らせる。印は UI の閉じた列挙 `pane_notice`（NONE / TRASH_COMPLETED / NOTE_UNEDITABLE）1 つで、立て下げ・配置・寿命（決定 6）は変えない。事実の正本は application の `folio_state_select_notice`（READY / NOTE_UNEDITABLE）で、UI は mode の前後比較で推測しない。文言は事実だけ（決定 4）で、末尾省略でも先頭の「閲覧で開きました」が残る語順にした。通知のためだけに結果の値・port・確保は足していない。
+
+## 2026-10-12 の補正 8（#288）— ドロワーへカテゴリ作成の常設入口を置く
+
+hideの承認に基づき、検索欄の下へ固定36 logical pxのカテゴリ帯を設け、左に「カテゴリ」、右に＋を置く。
+カテゴリ0件でも表示し、一覧のscrollでは動かさない。既存のアプリ名・件数・検索欄とは重ねない。
+文言はui_textの日本語/英語/简体中文、形はicon_paintの既存plus描画を正本とする。
+
+描画/down/upは同じbutton矩形を使う。行のpress/dragより先にbuttonを判定し、押して外で離した場合は取消にする。
+押下中だけの状態とcaptureはdrawer_windowが持ち、captureを失ったら解除する。見出しの余白は行として扱わない。
+band_heightに帯を含め、coreのdrawer_metrics・行のclip/hit・scrollは同じ値から決める。
+
+確定時は既存folio_message_drawer_menuのDRAWER_MENU_NEW_CATEGORYを通して、
+親のFOLIO_COMMAND_NEW_CATEGORY・名前入力・検査・保存・失敗表示へ合流する。UIで別の作成規則を持たない。
+選択中の本文・モード・Undoを保ち、絞り込み中に断る既存契約も変えない。保存schema・依存・waiverは変更しない。
+完成候補で空一覧からの作成、取消、既存行のhit/scroll、編集中の保持、filter guardを確認する。
+設定ダイアログや永続化の成功済み回帰は繰り返さず、最終headのフルゲートは必須CIへ集約する。

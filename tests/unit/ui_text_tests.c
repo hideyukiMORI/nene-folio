@@ -241,6 +241,7 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_HISTORY_ROW] = "{n}  {name}",
     [UI_TEXT_HISTORY_ROW_UNREADABLE] = "{n}  （読めません）",
     [UI_TEXT_APP_LOGO] = "NENE FOLIO",
+    [UI_TEXT_TITLE_CATEGORIES] = "カテゴリ",
     [UI_TEXT_PROMPT_PENDING_EXPLANATION] =
         "「再試行」で同じ名前変更を続けます。「閉じる」は取り消しではありません。",
     [UI_TEXT_PROMPT_PENDING_RENAME] = "{from} → {to}",

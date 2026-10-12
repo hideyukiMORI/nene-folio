@@ -27,7 +27,8 @@ struct drawer_window
     HFONT _Nullable category_font;
     HFONT _Nullable note_font;
     HFONT _Nullable mono_font;
-    bool pressed; /* 左ボタンを押した行を覚えているか */
+    bool pressed;              /* 左ボタンを押した行を覚えているか */
+    bool new_category_pressed; /* 固定帯のbutton。行のpress/dragとは独立。 */
     size_t pressed_row;
     int pressed_y; /* 押したときの y。しきい値の判定に使う */
     int pointer_y; /* 最後に見たポインタの y。スクロール中に落とし先を引き直す */
@@ -53,6 +54,8 @@ constexpr int base_header_indent = 16;
 /* 常設の「すべてのノートを検索」の欄が占める帯（ADR 0024 の決定 6）。欄そのものは主窓の子で、
  * ここは行を置かない余白として数える。 */
 constexpr int base_filter_height = 36;
+constexpr int base_category_band_height = 36;
+constexpr int base_new_category_size = 24;
 constexpr int base_filter_inset = 12; /* 欄の左右の余白 */
 constexpr int base_filter_margin = 4; /* 欄の上下に空ける間 */
 /* 「一致 / 総数」の 1 行が要る大きさ（20 桁 2 つ ＋ 区切り ＋ 終端で足りる）。 */
@@ -119,10 +122,23 @@ static void refresh_fonts(struct drawer_window *_Nonnull self, UINT dpi)
     self->mono_font = create_font(dpi, base_mono_font, FW_NORMAL, mono_face);
 }
 
-/* 頭の帯（見出しと常設の絞り込みの欄）の高さ。行はこの下にだけ置く（ADR 0024 の決定 6）。 */
+/* 固定のアプリ名・検索欄・カテゴリ帯。行配置/clip/hit/scrollはこの高さを共用する。 */
 static int band_height(const struct drawer_window *_Nonnull self)
 {
-    return scale(base_header_height + base_filter_height, GetDpiForWindow(self->handle));
+    return scale(base_header_height + base_filter_height + base_category_band_height,
+                 GetDpiForWindow(self->handle));
+}
+
+static RECT new_category_rect(const struct drawer_window *_Nonnull self)
+{
+    UINT dpi = GetDpiForWindow(self->handle);
+    RECT client;
+    GetClientRect(self->handle, &client);
+    int box = scale(base_new_category_size, dpi);
+    int inset = scale(base_header_indent, dpi);
+    int middle = band_height(self) - scale(base_category_band_height, dpi) / 2;
+    return (RECT){client.right - inset - box, middle - box / 2, client.right - inset,
+                  middle - box / 2 + box};
 }
 
 /* いまの DPI と client の高さで寸法を測る。スクロール上限は core がここから決める（FR-012）。 */
@@ -251,7 +267,25 @@ static void draw_filter_frame(const struct drawer_window *_Nonnull self, HDC dev
     frame_rect(device, bounds, self->palette.chip_background);
 }
 
-/* 頭の帯: 左に NENE FOLIO、右にノートの数、絞り込み中は欄の枠。 */
+static void draw_category_band(const struct drawer_window *_Nonnull self, HDC device)
+{
+    UINT dpi = GetDpiForWindow(self->handle);
+    RECT button = new_category_rect(self);
+    RECT label = {scale(base_header_indent, dpi),
+                  band_height(self) - scale(base_category_band_height, dpi),
+                  button.left - scale(8, dpi), band_height(self)};
+    SelectObject(device, self->category_font);
+    SetTextColor(device, self->palette.category_text);
+    draw_utf8(device, ui_text_line(UI_TEXT_TITLE_CATEGORIES, folio_state_language(self->state)),
+              label, 0);
+    if (self->new_category_pressed)
+    {
+        fill_rect(device, button, self->palette.selected_background);
+    }
+    icon_paint_fill(device, button, ICON_PAINT_ADD, self->palette.category_text);
+}
+
+/* 頭の帯: 左に NENE FOLIO、右にノート数、検索枠、その下にカテゴリ見出しと＋。 */
 static void draw_header(const struct drawer_window *_Nonnull self, HDC device, int width)
 {
     UINT dpi = GetDpiForWindow(self->handle);
@@ -267,6 +301,7 @@ static void draw_header(const struct drawer_window *_Nonnull self, HDC device, i
     SetTextCharacterExtra(device, 0);
     draw_header_count(self, device, bounds);
     draw_filter_frame(self, device);
+    draw_category_band(self, device);
 }
 
 /* カーソルの行の右端に置く角（カテゴリ色の四角）。right はその右端の x。
@@ -695,7 +730,7 @@ static void run_item(struct drawer_window *_Nonnull self, enum drawer_menu_item 
 static void show_menu(struct drawer_window *_Nonnull self, LPARAM position)
 {
     POINT point = {GET_X_LPARAM(position), GET_Y_LPARAM(position)};
-    if (self->pressed || point.y < band_height(self))
+    if (self->pressed || self->new_category_pressed || point.y < band_height(self))
     {
         return;
     }
@@ -732,7 +767,7 @@ static void show_menu(struct drawer_window *_Nonnull self, LPARAM position)
 /* 押した行を覚えて捕捉する。クリックの確定は離すときに行う（ADR 0007 の決定 6）。
  * 押した側が区画を取るので、フォーカスは主窓へ渡す（ドロワー自身は取らない・ADR 0013 の決定 1）。
  */
-static void press(struct drawer_window *_Nonnull self, int y)
+static void press_row(struct drawer_window *_Nonnull self, int y)
 {
     SetFocus(GetParent(self->handle));
     struct drawer_layout *_Nullable layout = nullptr;
@@ -751,6 +786,26 @@ static void press(struct drawer_window *_Nonnull self, int y)
         SetCapture(self->handle);
     }
     drawer_layout_destroy(layout);
+}
+
+static void press(struct drawer_window *_Nonnull self, POINT point)
+{
+    if (self->pressed || self->new_category_pressed)
+    {
+        return;
+    }
+    RECT button = new_category_rect(self);
+    if (PtInRect(&button, point))
+    {
+        self->new_category_pressed = true;
+        SetCapture(self->handle);
+        InvalidateRect(self->handle, &button, FALSE);
+        return;
+    }
+    if (point.y >= band_height(self))
+    {
+        press_row(self, point.y);
+    }
 }
 
 /* 捕捉中の移動。しきい値を超えたらドラッグに入り、落とし先を core に決めさせる。 */
@@ -790,7 +845,7 @@ static void drag(struct drawer_window *_Nonnull self, int y)
 
 /* 捕捉を解いて、ドラッグなら並び替え、動かしていなければ今までどおりのクリック。
  * 閾値を超えて動かした操作は、並び替えに入れなかったときもクリックにしない（補正 2）。 */
-static void release(struct drawer_window *_Nonnull self)
+static void release_row(struct drawer_window *_Nonnull self)
 {
     bool pressed = self->pressed;
     bool moved = self->moved;
@@ -823,6 +878,23 @@ static void release(struct drawer_window *_Nonnull self)
         return;
     }
     act_on_row(self, row);
+}
+
+static void release(struct drawer_window *_Nonnull self, POINT point)
+{
+    if (!self->new_category_pressed)
+    {
+        release_row(self);
+        return;
+    }
+    self->new_category_pressed = false;
+    RECT button = new_category_rect(self);
+    ReleaseCapture();
+    InvalidateRect(self->handle, &button, FALSE);
+    if (PtInRect(&button, point))
+    {
+        run_item(self, DRAWER_MENU_NEW_CATEGORY, (struct drawer_row){0});
+    }
 }
 
 /* スクロールの意図を出し、結果を写す（ADR 0009 の決定 8）。
@@ -874,6 +946,7 @@ static int key_step(const struct drawer_window *_Nonnull self, WPARAM key)
 /* 捕捉を取り上げられたら、線も覚えた行も捨てる。 */
 static void cancel(struct drawer_window *_Nonnull self)
 {
+    self->new_category_pressed = false;
     self->pressed = false;
     self->moved = false;
     self->dragging = false;
@@ -910,13 +983,13 @@ static LRESULT CALLBACK drawer_procedure(HWND window, UINT message, WPARAM wpara
     case WM_ERASEBKGND:
         return 1;
     case WM_LBUTTONDOWN:
-        press(self, GET_Y_LPARAM(lparam));
+        press(self, (POINT){GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)});
         return 0;
     case WM_MOUSEMOVE:
         drag(self, GET_Y_LPARAM(lparam));
         return 0;
     case WM_LBUTTONUP:
-        release(self);
+        release(self, (POINT){GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)});
         return 0;
     case WM_RBUTTONUP:
         show_menu(self, lparam);
