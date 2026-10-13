@@ -1,35 +1,33 @@
 # いまのタスク — NeNe Folio
 
-記録日: 2026-10-13。#298の着手main `1a9739862fbed90b95d26faa6e373ce4e86c2227`、公開tag `v0.1.0`。
-これは状態の要約で、作業許可の正本ではない。hideの現在指示、checkout、Issue/PRの実状態を照合する。
+記録日: 2026-10-13。製品基点`f432fa7f77c03a5fa549fd0f3bff4bc3d7e11338`、公開tag `v0.1.0`。
+これは状態の要約で、作業許可の正本ではない。hideの現在指示、Issue/PR、checkoutを照合する。
 
 ## 現在の到達点
 
-- [Issue #298](https://github.com/hideyukiMORI/nene-folio/issues/298): 無題から別ノート・次の新規・通常終了へ進むときに、
-  保存／保存しない／キャンセルを選べる実装。[ADR0050](../adr/0050-unsaved-note-departure.md)を実装前に記録した。
-  明示保存・本文Esc・保存して閲覧は保存専用とし、移動先を準備するまで作りかけを保持する。
-- 枝は`feat/298-unsaved-note-choice`、作業木は`D:/NeNeFolio/worktrees/298-unsaved-note-choice`。
-  対象unit・確保失敗注入・隔離Win32確認の結果は当日日報に記録。最終CI・統合・通常exe反映・整理の実結果は、紐付くPRと
-  `D:/NeNeFolio/agents/unsaved-note-choice-20261013/completion.json`を確認する。
-- hideが今回明示した分担に従い、Astraが設計・判断・文書・受理・統合、SOLが実装・対象検証を担当する。
-  別のSOL席は必要な独立レビューだけを読み取りで行う。他案件・次の依頼の既定にはしない。
+- 無題を離れる保存/保存しない/キャンセルは[Issue #298](https://github.com/hideyukiMORI/nene-folio/issues/298) /
+  [PR #299](https://github.com/hideyukiMORI/nene-folio/pull/299)で完了。最終headの必須CI、main統合、通常exe反映、当該worktree/outputs整理まで済んだ。
+  証跡は`D:/NeNeFolio/agents/unsaved-note-choice-20261013/completion.json`。この枝を再実装しない。
+- hideの依頼によるGUIレビューは21画像・3専門家観点・3巡で完了。改善案の実装・実装Issue作成・仕様変更は行っていない。
+  成果物は`D:/NeNeFolio/agents/gui-review-20261013/NeNeFolio-GUI-review-20261013.html`。
+  撮影用アプリは終了し、一時出力は削除、資料と証跡は保持済み。
+- 最後の依頼は日報と引き継ぎ書の更新。[Issue #300](https://github.com/hideyukiMORI/nene-folio/issues/300)で
+  [当日日報](../reports/2026-10-13.md)と[引き継ぎ](../handoffs/2026-10-13.md)、本欄を整理する。
+  文書PRの統合実結果は#300のPRと`D:/NeNeFolio/agents/docs-gui-review-20261013/`を確認する。
 
-## 確認済みの基点と次回の入口
+## 次回の判断条件
 
-- 再開時は#298と紐付くPRの実状態を先に確認する。MERGEDかつ`completion.json`で通常exe反映・整理済みなら、
-  今回の枝を再実装せず新しいhide指示から始める。公開Releaseの更新は今回の依頼に含めない。
-- #294 / PR #295の125テーマ追加、#296 / PR #297の日報整備は、必須CI・main統合・必要反映・作業木整理まで完了。
-  製品基点`1fe120c`。#298着手時の通常exeは`C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`で、
-  SHA256 `41FAFE1143D7AFC31D7BE2786AA701AC3C64427E6140A89A6D26893C6E548C56`が前回記録と一致した。
-- 経緯は[当日日報](../reports/2026-10-13.md)、再開の詳細は[引き継ぎ](../handoffs/2026-10-13.md)。
-  操作は[キー表](../KEY_BINDINGS.md)、機能は[README](../../README.md)、要件は[SPECIFICATION](../../SPECIFICATION.md)。
-- 公開済み[v0.1.0ベータ](https://github.com/hideyukiMORI/nene-folio/releases/tag/v0.1.0)の基点は`9e93ae1`。
-  後続の設定/カテゴリ/表示/テーマ更新と#298は公開版へ含めていない。
-- 表示切替の「両方」の文言と2トグル案は相談のみ。今回の#298へ混ぜない。
-- 全125配色の個別目視、物理IME、別OS/DPI、スクリーンリーダー、#294のhide実機受理は未測定。
-  #292の未測定区分も維持する。今回の確認で受理済みに読み替えない。
+- 次の実装範囲はhideの新しい指示で決める。GUIレビューの推奨順は、ドロワー新規入口、ノート内検索、名前フォーム、
+  設定/ヘルプ、目的別メニュー。対象カテゴリの固定、空カテゴリ/絞込/一覧のみ/未保存取消の条件は引き継ぎ書を参照する。
+  提案を承認済みADRや実装許可に読み替えない。
+- 調査の担当分担と#298のモデル分担を次へ自動継承しない。既定は現在の対話席で単体実行（ADR0043）。
+- GUIレビューは日本語・120 DPIの合成データによる観察。実利用者試験、UIA/実読み上げ、物理Shift+Tab、実IME、
+  別DPI、高コントラスト、全テーマの評価は未測定。画像05は取得欠落、設定19→20はスクロール到達済みとして区別する。
+- 通常exeは`C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`、製品基点と同じソース。
+  SHA256 `AA288605F75DE4644D47765863D32071C06A555941F6CA8B7459C54C03E36521`。
+  公開済み[v0.1.0](https://github.com/hideyukiMORI/nene-folio/releases/tag/v0.1.0)は別で、後続の設定/カテゴリ/表示/テーマと#298を含めていない。
+  起動状態は時点依存なので、通常exe反映時に再確認して未保存内容を保護する。
 - #243はcodepage65001なしでU+FFFDと隣接VTを保てる新しい根拠が再開条件。
-  旧C側41作業木と`D:/NeNeFolio/worktrees/210-rename-state`の整理は従来のhide判断待ち。
+  旧C側41作業木と`D:/NeNeFolio/worktrees/210-rename-state`の整理判断は別件。今回触らない。
 
-成功済み対象検証は関係入力が不変なら再利用し、最終headの必須CIは維持する（QLT-012 / ADR0044）。
-通常exeを反映するときは現在の起動状態を確認し、未保存内容を保護する。Waivers: none。
+成功済み対象検証は関係入力が不変なら再利用し、最終headの必須CIは維持する（QLT-012 / ADR0044）。Waivers: none。
