@@ -7,6 +7,7 @@
 enum name_prompt_kind : unsigned char
 {
     NAME_PROMPT_FIRST_SAVE,
+    NAME_PROMPT_LEAVE_UNTITLED,
     NAME_PROMPT_SAVE_AS,
     NAME_PROMPT_RENAME,
     NAME_PROMPT_NEW_CATEGORY,

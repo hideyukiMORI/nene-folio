@@ -23,8 +23,29 @@ bool same_text(const char *_Nonnull actual, const char *_Nonnull expected)
     return false;
 }
 
-static bool run_settings_layout_target_tests(const char *_Nonnull argument)
+static bool run_document_settings_target_tests(const char *_Nonnull argument)
 {
+    if (strcmp(argument, "--untitled-expansion-query") == 0)
+    {
+        run_untitled_expansion_query_tests();
+        printf("untitled expansion query tests passed\n");
+        return true;
+    }
+    if (strcmp(argument, "--unsaved-departure-state") == 0)
+    {
+        run_unsaved_departure_tests();
+        printf("unsaved departure state tests passed\n");
+        return true;
+    }
+    if (strcmp(argument, "--unsaved-departure") == 0)
+    {
+        run_first_save_target_tests();
+        run_unsaved_departure_tests();
+        run_command_tests();
+        run_ui_text_tests();
+        printf("unsaved departure, first-save, command and UI text tests passed\n");
+        return true;
+    }
     if (strcmp(argument, "--themes") == 0)
     {
         run_theme_tests();
@@ -131,7 +152,7 @@ int main(int argc, char *_Nonnull *_Nonnull argv)
         run_bom_boundary_tests();
         return 0;
     }
-    if (argc == 2 && (run_settings_layout_target_tests(argv[1]) || run_target_tests(argv[1])))
+    if (argc == 2 && (run_document_settings_target_tests(argv[1]) || run_target_tests(argv[1])))
     {
         return 0;
     }
@@ -167,6 +188,7 @@ int main(int argc, char *_Nonnull *_Nonnull argv)
     run_line_index_tests();
     run_replace_tests();
     run_state_tests();
+    run_unsaved_departure_tests();
     run_index_cache_retry_state_tests();
     run_index_cache_retry_allocation_tests();
     run_category_rename_state_tests();

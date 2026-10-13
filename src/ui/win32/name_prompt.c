@@ -26,6 +26,7 @@ struct name_prompt
     HWND _Nullable hint;
     HWND _Nullable accept;
     HWND _Nullable cancel;
+    HWND _Nullable discard;
     WNDPROC _Nullable original;
     HFONT _Nullable font;
     /* 開く瞬間の palette を写した塗り。面は追随しない（ADR 0035 の決定 5）。 */
@@ -39,6 +40,7 @@ struct name_prompt
     /* 記録を公開した後は名前を固定し、同じ改名の再開だけを受ける（ADR 0022 の決定 7）。 */
     bool pending;
     enum folio_state_outcome outcome;
+    enum folio_untitled_policy untitled;
 };
 
 static const struct
@@ -113,6 +115,8 @@ static HWND _Nullable label(struct name_prompt *_Nonnull prompt, enum ui_text id
     return window;
 }
 
+constexpr int discard_identity = 3;
+
 static bool button(struct name_prompt *_Nonnull prompt, enum ui_text id, int identity, RECT bounds)
 {
     char16_t units[ui_text_unit_limit];
@@ -130,9 +134,13 @@ static bool button(struct name_prompt *_Nonnull prompt, enum ui_text id, int ide
     {
         prompt->accept = window;
     }
-    else
+    if (identity == IDCANCEL)
     {
         prompt->cancel = window;
+    }
+    if (identity == discard_identity)
+    {
+        prompt->discard = window;
     }
     return true;
 }
@@ -256,6 +264,7 @@ static bool fill_name(struct name_prompt *_Nonnull prompt)
     case NAME_PROMPT_RENAME_CATEGORY:
         name = folio_state_category_name(prompt->state, prompt->target);
         break;
+    case NAME_PROMPT_LEAVE_UNTITLED:
     case NAME_PROMPT_FIRST_SAVE:
     case NAME_PROMPT_SAVE_AS:
     case NAME_PROMPT_NEW_CATEGORY:
@@ -291,6 +300,8 @@ static enum ui_text prompt_title(enum name_prompt_kind kind)
 {
     switch (kind)
     {
+    case NAME_PROMPT_LEAVE_UNTITLED:
+        return UI_TEXT_PROMPT_TITLE_LEAVE;
     case NAME_PROMPT_FIRST_SAVE:
         return UI_TEXT_PROMPT_TITLE_FIRST_SAVE;
     case NAME_PROMPT_SAVE_AS:
@@ -311,6 +322,7 @@ static enum ui_text prompt_name_label(enum name_prompt_kind kind)
 {
     switch (kind)
     {
+    case NAME_PROMPT_LEAVE_UNTITLED:
     case NAME_PROMPT_FIRST_SAVE:
     case NAME_PROMPT_SAVE_AS:
     case NAME_PROMPT_RENAME:
@@ -336,6 +348,8 @@ static enum ui_text prompt_hint(const struct name_prompt *_Nonnull prompt)
     }
     switch (prompt->kind)
     {
+    case NAME_PROMPT_LEAVE_UNTITLED:
+        return UI_TEXT_PROMPT_HINT_LEAVE;
     case NAME_PROMPT_FIRST_SAVE:
         return UI_TEXT_PROMPT_HINT_FIRST_SAVE;
     case NAME_PROMPT_SAVE_AS:
@@ -360,6 +374,7 @@ static enum ui_text prompt_accept(const struct name_prompt *_Nonnull prompt)
     }
     switch (prompt->kind)
     {
+    case NAME_PROMPT_LEAVE_UNTITLED:
     case NAME_PROMPT_FIRST_SAVE:
     case NAME_PROMPT_SAVE_AS:
         return UI_TEXT_PROMPT_ACCEPT_SAVE;
@@ -394,6 +409,7 @@ static bool has_category_list(enum name_prompt_kind kind)
 {
     switch (kind)
     {
+    case NAME_PROMPT_LEAVE_UNTITLED:
     case NAME_PROMPT_FIRST_SAVE:
     case NAME_PROMPT_SAVE_AS:
     case NAME_PROMPT_RENAME:
@@ -432,6 +448,7 @@ static DWORD name_selection_style(enum name_prompt_kind kind)
     case NAME_PROMPT_RENAME_CATEGORY:
     case NAME_PROMPT_RETRY_RENAME:
         return ES_NOHIDESEL;
+    case NAME_PROMPT_LEAVE_UNTITLED:
     case NAME_PROMPT_FIRST_SAVE:
     case NAME_PROMPT_SAVE_AS:
     case NAME_PROMPT_NEW_CATEGORY:
@@ -534,6 +551,10 @@ static void reflow_prompt(struct name_prompt *_Nonnull prompt)
     int lowered = prompt->lowered + prompt->hint_extra + prompt->failure_extra;
     position(prompt, prompt->accept, (RECT){192, 230, 280, 258}, lowered);
     position(prompt, prompt->cancel, (RECT){288, 230, 380, 258}, lowered);
+    if (prompt->discard != nullptr)
+    {
+        position(prompt, prompt->discard, (RECT){20, 230, 118, 258}, lowered);
+    }
     size_dialog(prompt);
     RedrawWindow(prompt->dialog, nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN);
 }
@@ -565,7 +586,9 @@ static bool initialize(struct name_prompt *_Nonnull prompt, HWND dialog)
            (!has_category_list(prompt->kind) ||
             label(prompt, UI_TEXT_PROMPT_LABEL_CATEGORY, (RECT){20, 82, 380, 104}, 0)) &&
            button(prompt, prompt_accept(prompt), IDOK, (RECT){192, 230, 280, 258}) &&
-           button(prompt, prompt_close(prompt), IDCANCEL, (RECT){288, 230, 380, 258});
+           button(prompt, prompt_close(prompt), IDCANCEL, (RECT){288, 230, 380, 258}) &&
+           (prompt->kind != NAME_PROMPT_LEAVE_UNTITLED ||
+            button(prompt, UI_TEXT_PROMPT_DISCARD, discard_identity, (RECT){20, 230, 118, 258}));
 }
 
 /* ノートの種別は同じ名前型を使う（ADR 0022 の決定 1）。".md" はここで剥がれる。 */
@@ -664,6 +687,7 @@ static enum folio_state_outcome save(struct name_prompt *_Nonnull prompt)
     enum folio_state_outcome result = FOLIO_STATE_CANCELLED;
     switch (prompt->kind)
     {
+    case NAME_PROMPT_LEAVE_UNTITLED:
     case NAME_PROMPT_FIRST_SAVE:
     case NAME_PROMPT_SAVE_AS:
         result = store_note(prompt, narrow);
@@ -752,6 +776,7 @@ static bool closes_on(enum name_prompt_kind kind, enum folio_state_outcome outco
 {
     switch (kind)
     {
+    case NAME_PROMPT_LEAVE_UNTITLED:
     case NAME_PROMPT_FIRST_SAVE:
     case NAME_PROMPT_SAVE_AS:
         return outcome == FOLIO_STATE_READY || outcome == FOLIO_STATE_LEDGER_STALE;
@@ -770,6 +795,7 @@ static bool holds_pending(enum name_prompt_kind kind)
 {
     switch (kind)
     {
+    case NAME_PROMPT_LEAVE_UNTITLED:
     case NAME_PROMPT_FIRST_SAVE:
     case NAME_PROMPT_SAVE_AS:
     case NAME_PROMPT_NEW_CATEGORY:
@@ -822,6 +848,7 @@ static bool owns_started_pending(const struct name_prompt *_Nonnull prompt)
         return pending.kind == RENAME_KIND_NOTE;
     case NAME_PROMPT_RENAME_CATEGORY:
         return pending.kind == RENAME_KIND_CATEGORY;
+    case NAME_PROMPT_LEAVE_UNTITLED:
     case NAME_PROMPT_FIRST_SAVE:
     case NAME_PROMPT_SAVE_AS:
     case NAME_PROMPT_NEW_CATEGORY:
@@ -847,6 +874,15 @@ static void submit(struct name_prompt *_Nonnull prompt)
         return;
     }
     enum folio_state_outcome saved = save(prompt);
+    /* Publication can succeed before cache/index repair fails; this is no longer a discardable
+     * draft. */
+    if (prompt->kind == NAME_PROMPT_LEAVE_UNTITLED &&
+        folio_state_document_kind(prompt->state) != FOLIO_DOCUMENT_UNTITLED)
+    {
+        prompt->outcome = saved;
+        EndDialog(prompt->dialog, IDOK);
+        return;
+    }
     if (closes_on(prompt->kind, saved))
     {
         prompt->outcome = saved;
@@ -1016,11 +1052,42 @@ static bool reads_as_cancel(const struct name_prompt *_Nonnull prompt, WPARAM wp
 }
 
 /* 保存先カテゴリの行のダブルクリックは「保存」と同じ経路へ読む（ADR 0035 の補正 19）。 */
+static bool reads_as_discard(const struct name_prompt *_Nonnull prompt, WPARAM wparam)
+{
+    return prompt->discard != nullptr &&
+           folio_state_document_kind(prompt->state) == FOLIO_DOCUMENT_UNTITLED &&
+           (LOWORD(wparam) == discard_identity ||
+            (LOWORD(wparam) == IDOK && HIWORD(wparam) == BN_CLICKED &&
+             GetFocus() == prompt->discard));
+}
+
 static bool reads_as_accept(const struct name_prompt *_Nonnull prompt, WPARAM wparam, LPARAM lparam)
 {
     return LOWORD(wparam) == IDOK ||
            (prompt->category != nullptr && (HWND)lparam == prompt->category &&
             HIWORD(wparam) == LBN_DBLCLK);
+}
+
+static INT_PTR prompt_command(struct name_prompt *_Nonnull prompt, WPARAM wparam, LPARAM lparam)
+{
+    if (reads_as_cancel(prompt, wparam))
+    {
+        EndDialog(prompt->dialog, IDCANCEL);
+        return TRUE;
+    }
+    if (reads_as_discard(prompt, wparam))
+    {
+        prompt->outcome = FOLIO_STATE_READY;
+        prompt->untitled = FOLIO_UNTITLED_DISCARD;
+        EndDialog(prompt->dialog, discard_identity);
+        return TRUE;
+    }
+    if (reads_as_accept(prompt, wparam, lparam))
+    {
+        submit(prompt);
+        return TRUE;
+    }
+    return FALSE;
 }
 
 static INT_PTR CALLBACK procedure(HWND dialog, UINT message, WPARAM wparam, LPARAM lparam)
@@ -1041,29 +1108,25 @@ static INT_PTR CALLBACK procedure(HWND dialog, UINT message, WPARAM wparam, LPAR
     {
         return painted;
     }
-    if (message == WM_CLOSE || (message == WM_COMMAND && reads_as_cancel(prompt, wparam)))
+    if (message == WM_CLOSE)
     {
         EndDialog(dialog, IDCANCEL);
         return TRUE;
     }
-    if (message == WM_COMMAND && reads_as_accept(prompt, wparam, lparam))
-    {
-        submit(prompt);
-        return TRUE;
-    }
-    return FALSE;
+    return message == WM_COMMAND ? prompt_command(prompt, wparam, lparam) : FALSE;
 }
 
-enum folio_state_outcome name_prompt_show(HWND _Nonnull owner,
-                                          const struct name_prompt_request *_Nonnull request,
-                                          const struct folio_palette *_Nonnull palette)
+struct name_prompt_result name_prompt_show(HWND _Nonnull owner,
+                                           const struct name_prompt_request *_Nonnull request,
+                                           const struct folio_palette *_Nonnull palette)
 {
     struct name_prompt prompt = {.state = request->state,
                                  .kind = request->kind,
                                  .target = request->target,
                                  .units = request->units,
                                  .count = request->count,
-                                 .outcome = FOLIO_STATE_CANCELLED};
+                                 .outcome = FOLIO_STATE_CANCELLED,
+                                 .untitled = FOLIO_UNTITLED_PROTECT};
     /* 面を作る前に palette を写す。子の WM_CTLCOLOR* は作る途中から来て、
      * 開いている間に主窓の palette が変わっても面は追随しない（ADR 0035 の決定 3・5）。 */
     switch (dialog_theme_create(palette, &prompt.theme))
@@ -1072,7 +1135,7 @@ enum folio_state_outcome name_prompt_show(HWND _Nonnull owner,
         break;
     case DIALOG_THEME_NO_MEMORY:
     case DIALOG_THEME_NO_BRUSH:
-        return FOLIO_STATE_OUT_OF_MEMORY;
+        return (struct name_prompt_result){FOLIO_STATE_OUT_OF_MEMORY, FOLIO_UNTITLED_PROTECT};
     }
     INT_PTR result = DialogBoxIndirectParamW(GetModuleHandleW(nullptr), &template.dialog, owner,
                                              procedure, (LPARAM)&prompt);
@@ -1082,5 +1145,6 @@ enum folio_state_outcome name_prompt_show(HWND _Nonnull owner,
     {
         DeleteObject(prompt.font);
     }
-    return result == -1 ? FOLIO_STATE_OUT_OF_MEMORY : prompt.outcome;
+    return (struct name_prompt_result){result == -1 ? FOLIO_STATE_OUT_OF_MEMORY : prompt.outcome,
+                                       prompt.untitled};
 }

@@ -793,7 +793,8 @@ static void verify_recolor(void)
     struct folio_state *state = nullptr;
     require(folio_state_create(test_ports(&port, &looks, &finder), &state) == FOLIO_STATE_READY,
             "state for recolor");
-    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY, "select in B");
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "select in B");
     require(has_color(folio_state_pane_title(state).color, 0x11, 0x11, 0x11),
             "the title starts with B's color");
     struct rgb_color chosen = {.red = 0xAB, .green = 0xCD, .blue = 0xEF};
@@ -905,7 +906,8 @@ static void verify_scroll(void)
     verify_scroll_recount(state);
     require(folio_state_scroll_drawer(state, scroll_metrics, 5) == FOLIO_STATE_READY,
             "scroll a little");
-    require(folio_state_select_note(state, 1, 0) == FOLIO_STATE_READY && scrolled_top(state) == -5,
+    require(folio_state_select_note(state, 1, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
+                scrolled_top(state) == -5,
             "selecting a note leaves the amount alone");
     require(folio_state_move_note(state, at(1, 0), at(1, 2)) == FOLIO_STATE_READY &&
                 scrolled_top(state) == -5,
@@ -1018,7 +1020,8 @@ static void verify_move_selection(void)
 {
     struct persistence_adapter adapter = healthy_adapter();
     struct folio_state *state = ready_state(&adapter);
-    require(folio_state_select_note(state, 0, 1) == FOLIO_STATE_READY, "select B / two");
+    require(folio_state_select_note(state, 0, 1, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "select B / two");
     require(folio_state_move_note(state, at(0, 2), at(0, 0)) == FOLIO_STATE_READY,
             "three moves up");
     struct pane_title_view title = folio_state_pane_title(state);
@@ -1093,7 +1096,8 @@ static void verify_transfer_selection(void)
     struct persistence_adapter adapter = healthy_adapter();
     adapter.note_body = "# Hello\r\n\r\nbody";
     struct folio_state *state = transfer_state(&adapter);
-    require(folio_state_select_note(state, 0, 1) == FOLIO_STATE_READY, "select B / two");
+    require(folio_state_select_note(state, 0, 1, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "select B / two");
     require(folio_state_begin_edit(state) == FOLIO_STATE_READY, "begin edit");
     require(folio_state_move_note(state, at(0, 1), at(1, 0)) == FOLIO_STATE_READY,
             "move the selected note");
@@ -1112,16 +1116,19 @@ static void verify_transfer_renumbering(void)
 {
     struct persistence_adapter adapter = healthy_adapter();
     struct folio_state *state = transfer_state(&adapter);
-    require(folio_state_select_note(state, 0, 2) == FOLIO_STATE_READY, "select B / three");
+    require(folio_state_select_note(state, 0, 2, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "select B / three");
     require(folio_state_move_note(state, at(0, 1), at(1, 0)) == FOLIO_STATE_READY, "two leaves B");
     require(same_text(folio_state_pane_title(state).note, "three"),
             "the note behind the moved one closes up");
-    require(folio_state_select_note(state, 1, 2) == FOLIO_STATE_READY, "select A / five");
+    require(folio_state_select_note(state, 1, 2, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "select A / five");
     require(folio_state_move_note(state, at(0, 0), at(1, 0)) == FOLIO_STATE_READY, "one joins A");
     struct pane_title_view title = folio_state_pane_title(state);
     require(title.ordinal == 2 && same_text(title.category, "A") && same_text(title.note, "five"),
             "the notes at and after the insertion move down");
-    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY, "select B / three again");
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "select B / three again");
     require(folio_state_move_note(state, at(0, 0), at(1, 3)) == FOLIO_STATE_READY,
             "the selected note itself moves to the end of A");
     require(same_text(folio_state_pane_title(state).category, "A") &&
@@ -1204,7 +1211,8 @@ static void verify_select(void)
                 strstr(folio_state_pane_rtf(state), "\\par") == nullptr &&
                 folio_state_pane_rtf_length(state) == strlen(folio_state_pane_rtf(state)),
             "empty pane before selection");
-    require(folio_state_select_note(state, 0, 1) == FOLIO_STATE_READY, "select B / two");
+    require(folio_state_select_note(state, 0, 1, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "select B / two");
     require(same_text(adapter.last_note, "two"), "asked the port for the note");
     const char *rtf = folio_state_pane_rtf(state);
     require(strstr(rtf, "\\b\\cf2\\fs44 Hello") != nullptr && strstr(rtf, "body\\par") != nullptr &&
@@ -1220,19 +1228,30 @@ static void verify_select(void)
                 !drawer_layout_row(marked, 1).selected && !drawer_layout_row(marked, 1).cursor,
             "layout marks the selected note and the cursor");
     drawer_layout_destroy(marked);
-    require(folio_state_select_note(state, 5, 0) == FOLIO_STATE_NO_SUCH_CATEGORY, "bad category");
-    require(folio_state_select_note(state, 0, 3) == FOLIO_STATE_NO_SUCH_NOTE, "bad note");
+    require(folio_state_select_note(state, 5, 0, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_NO_SUCH_CATEGORY,
+            "bad category");
+    require(folio_state_select_note(state, 0, 3, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_NO_SUCH_NOTE,
+            "bad note");
     adapter.note_outcome = PERSISTENCE_ABSENT;
-    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_NOTE_UNREADABLE &&
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) ==
+                    FOLIO_STATE_NOTE_UNREADABLE &&
                 folio_state_pane_rtf(state) == rtf && folio_state_pane_title(state).note[0] == 't',
             "absent note keeps the pane and the selection");
     adapter.note_outcome = PERSISTENCE_UNREADABLE;
-    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_NOTE_UNREADABLE, "unreadable note");
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_NOTE_UNREADABLE,
+            "unreadable note");
     adapter.note_outcome = PERSISTENCE_LOADED;
     adapter.note_body = "\xC3";
-    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_NOTE_UNREADABLE, "invalid utf8");
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_NOTE_UNREADABLE,
+            "invalid utf8");
     adapter.note_outcome = PERSISTENCE_OUT_OF_MEMORY;
-    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_OUT_OF_MEMORY, "note oom");
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_OUT_OF_MEMORY,
+            "note oom");
     folio_state_destroy(state);
 }
 
@@ -1307,29 +1326,37 @@ static void verify_step_order(struct folio_state *_Nonnull state,
                               struct persistence_adapter *_Nonnull adapter)
 {
     expect_cursor(state, "-", "no cursor before the first step");
-    require(folio_state_select_adjacent(state, FOLIO_STEP_NEXT) == FOLIO_STATE_READY,
+    require(folio_state_select_adjacent(state, FOLIO_STEP_NEXT, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
             "the first step stops at the first stop row");
     expect_selection(state, "B/one", "nothing selected means the first note");
     expect_cursor(state, "n0.0", "the cursor is the selected note");
-    require(folio_state_select_adjacent(state, FOLIO_STEP_NEXT) == FOLIO_STATE_READY &&
-                folio_state_select_adjacent(state, FOLIO_STEP_NEXT) == FOLIO_STATE_READY,
+    require(folio_state_select_adjacent(state, FOLIO_STEP_NEXT, FOLIO_UNTITLED_PROTECT) ==
+                    FOLIO_STATE_READY &&
+                folio_state_select_adjacent(state, FOLIO_STEP_NEXT, FOLIO_UNTITLED_PROTECT) ==
+                    FOLIO_STATE_READY,
             "two more steps");
     expect_selection(state, "B/three", "the last note of the first category");
     adapter->last_note = nullptr;
-    require(folio_state_select_adjacent(state, FOLIO_STEP_NEXT) == FOLIO_STATE_READY,
+    require(folio_state_select_adjacent(state, FOLIO_STEP_NEXT, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
             "the next stop is the collapsed category row");
     expect_cursor(state, "c1", "the cursor stops on the collapsed category");
     expect_selection(state, "B/three", "a category row leaves the selection alone");
     require(adapter->last_note == nullptr, "a category row never reads a note");
-    require(folio_state_select_adjacent(state, FOLIO_STEP_NEXT) == FOLIO_STATE_READY,
+    require(folio_state_select_adjacent(state, FOLIO_STEP_NEXT, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
             "past the collapsed category");
     expect_selection(state, "C/one", "the next note is in the following category");
     expect_cursor(state, "n2.0", "and the cursor follows it");
-    require(folio_state_select_adjacent(state, FOLIO_STEP_PREVIOUS) == FOLIO_STATE_READY,
+    require(folio_state_select_adjacent(state, FOLIO_STEP_PREVIOUS, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
             "backwards onto the category row");
     expect_cursor(state, "c1", "the collapsed category is a stop backwards too");
     expect_selection(state, "C/one", "the right pane is still the note it was");
-    require(folio_state_select_adjacent(state, FOLIO_STEP_PREVIOUS) == FOLIO_STATE_READY, "back");
+    require(folio_state_select_adjacent(state, FOLIO_STEP_PREVIOUS, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
+            "back");
     expect_selection(state, "B/three", "backwards past the category row selects again");
     expect_cursor(state, "n0.2", "and the cursor is that note");
 }
@@ -1338,18 +1365,25 @@ static void verify_step_order(struct folio_state *_Nonnull state,
 static void verify_step_edges(struct folio_state *_Nonnull state,
                               struct persistence_adapter *_Nonnull adapter)
 {
-    require(folio_state_select_adjacent(state, FOLIO_STEP_FIRST) == FOLIO_STATE_READY, "gg");
+    require(folio_state_select_adjacent(state, FOLIO_STEP_FIRST, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
+            "gg");
     expect_selection(state, "B/one", "the first stop row");
     adapter->last_note = nullptr;
-    require(folio_state_select_adjacent(state, FOLIO_STEP_PREVIOUS) == FOLIO_STATE_READY,
+    require(folio_state_select_adjacent(state, FOLIO_STEP_PREVIOUS, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
             "at the top it stops");
     expect_cursor(state, "n0.0", "the cursor did not move");
-    require(folio_state_select_adjacent(state, FOLIO_STEP_FIRST) == FOLIO_STATE_READY &&
+    require(folio_state_select_adjacent(state, FOLIO_STEP_FIRST, FOLIO_UNTITLED_PROTECT) ==
+                    FOLIO_STATE_READY &&
                 adapter->last_note == nullptr,
             "the same note is never read again");
-    require(folio_state_select_adjacent(state, FOLIO_STEP_LAST) == FOLIO_STATE_READY, "G");
+    require(folio_state_select_adjacent(state, FOLIO_STEP_LAST, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
+            "G");
     expect_selection(state, "C/three", "the last stop row");
-    require(folio_state_select_adjacent(state, FOLIO_STEP_NEXT) == FOLIO_STATE_READY,
+    require(folio_state_select_adjacent(state, FOLIO_STEP_NEXT, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
             "at the end it stops");
     expect_cursor(state, "n2.2", "the cursor did not move");
 }
@@ -1358,13 +1392,17 @@ static void verify_step_edges(struct folio_state *_Nonnull state,
  * （自分のカテゴリ行へは戻らない）。 */
 static void verify_step_from_hidden(struct folio_state *_Nonnull state)
 {
-    require(folio_state_select_note(state, 1, 1) == FOLIO_STATE_READY, "select A / two");
+    require(folio_state_select_note(state, 1, 1, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "select A / two");
     expect_cursor(state, "n1.1", "the cursor is the hidden note");
-    require(folio_state_select_adjacent(state, FOLIO_STEP_NEXT) == FOLIO_STATE_READY,
+    require(folio_state_select_adjacent(state, FOLIO_STEP_NEXT, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
             "step out of the collapsed category");
     expect_selection(state, "C/one", "forward from a hidden note");
-    require(folio_state_select_note(state, 1, 1) == FOLIO_STATE_READY, "select A / two again");
-    require(folio_state_select_adjacent(state, FOLIO_STEP_PREVIOUS) == FOLIO_STATE_READY,
+    require(folio_state_select_note(state, 1, 1, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "select A / two again");
+    require(folio_state_select_adjacent(state, FOLIO_STEP_PREVIOUS, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
             "and backwards");
     expect_selection(state, "B/three", "backwards from a hidden note");
 }
@@ -1375,23 +1413,32 @@ static void verify_step_all_collapsed(struct folio_state *_Nonnull state,
 {
     for (size_t index = 0; index < 3; ++index)
     {
-        require(folio_state_set_category_expanded(state, index, false) == FOLIO_STATE_READY,
+        require(folio_state_set_category_expanded(state, index, false, FOLIO_UNTITLED_PROTECT) ==
+                    FOLIO_STATE_READY,
                 "collapse everything");
     }
     adapter->last_note = nullptr;
-    require(folio_state_select_adjacent(state, FOLIO_STEP_FIRST) == FOLIO_STATE_READY, "gg");
+    require(folio_state_select_adjacent(state, FOLIO_STEP_FIRST, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
+            "gg");
     expect_cursor(state, "c0", "the first stop is the first category row");
-    require(folio_state_select_adjacent(state, FOLIO_STEP_NEXT) == FOLIO_STATE_READY &&
-                folio_state_select_adjacent(state, FOLIO_STEP_NEXT) == FOLIO_STATE_READY,
+    require(folio_state_select_adjacent(state, FOLIO_STEP_NEXT, FOLIO_UNTITLED_PROTECT) ==
+                    FOLIO_STATE_READY &&
+                folio_state_select_adjacent(state, FOLIO_STEP_NEXT, FOLIO_UNTITLED_PROTECT) ==
+                    FOLIO_STATE_READY,
             "two steps down the category rows");
     expect_cursor(state, "c2", "every category row is a stop");
-    require(folio_state_select_adjacent(state, FOLIO_STEP_NEXT) == FOLIO_STATE_READY,
+    require(folio_state_select_adjacent(state, FOLIO_STEP_NEXT, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
             "at the end it stops");
     expect_cursor(state, "c2", "the cursor did not move");
-    require(folio_state_select_adjacent(state, FOLIO_STEP_PREVIOUS) == FOLIO_STATE_READY,
+    require(folio_state_select_adjacent(state, FOLIO_STEP_PREVIOUS, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
             "backwards");
     expect_cursor(state, "c1", "and back up the category rows");
-    require(folio_state_select_adjacent(state, FOLIO_STEP_LAST) == FOLIO_STATE_READY, "G");
+    require(folio_state_select_adjacent(state, FOLIO_STEP_LAST, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
+            "G");
     expect_cursor(state, "c2", "the last stop is the last category row");
     expect_selection(state, "B/three", "the selection never moved");
     require(adapter->last_note == nullptr && adapter->note_writes == 0,
@@ -1409,12 +1456,15 @@ static void verify_step_kind(void)
                 kind == FOLIO_CURSOR_NOTE,
             "the first stop is a note row");
     expect_cursor(state, "-", "asking never moves the cursor");
-    require(folio_state_select_note(state, 0, 2) == FOLIO_STATE_READY, "select B / three");
+    require(folio_state_select_note(state, 0, 2, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "select B / three");
     require(folio_state_step_kind(state, FOLIO_STEP_NEXT, &kind, &target) &&
                 kind == FOLIO_CURSOR_CATEGORY,
             "the next stop is the collapsed category row");
     expect_cursor(state, "n0.2", "and the cursor is still the note");
-    require(folio_state_select_adjacent(state, FOLIO_STEP_LAST) == FOLIO_STATE_READY, "G");
+    require(folio_state_select_adjacent(state, FOLIO_STEP_LAST, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
+            "G");
     kind = FOLIO_CURSOR_CATEGORY;
     require(!folio_state_step_kind(state, FOLIO_STEP_NEXT, &kind, &target) &&
                 kind == FOLIO_CURSOR_CATEGORY,
@@ -1429,15 +1479,18 @@ static void verify_step_without_categories(void)
     adapter.categories_outcome = PERSISTENCE_ABSENT;
     adapter.scan_outcome = PERSISTENCE_ABSENT;
     struct folio_state *state = ready_state(&adapter);
-    require(folio_state_select_adjacent(state, FOLIO_STEP_NEXT) == FOLIO_STATE_NO_SUCH_NOTE &&
-                folio_state_select_adjacent(state, FOLIO_STEP_LAST) == FOLIO_STATE_NO_SUCH_NOTE,
+    require(folio_state_select_adjacent(state, FOLIO_STEP_NEXT, FOLIO_UNTITLED_PROTECT) ==
+                    FOLIO_STATE_NO_SUCH_NOTE &&
+                folio_state_select_adjacent(state, FOLIO_STEP_LAST, FOLIO_UNTITLED_PROTECT) ==
+                    FOLIO_STATE_NO_SUCH_NOTE,
             "no stop row at all");
     expect_cursor(state, "-", "the refused step leaves no cursor");
     struct note_ref target = {.category = 0, .note = 0};
     enum folio_cursor_kind kind = FOLIO_CURSOR_NOTE;
     require(!folio_state_step_kind(state, FOLIO_STEP_FIRST, &kind, &target),
             "and no target to ask about");
-    require(folio_state_new_note(state, 0) == FOLIO_STATE_NO_SUCH_CATEGORY &&
+    require(folio_state_new_note(state, 0, FOLIO_UNTITLED_PROTECT) ==
+                    FOLIO_STATE_NO_SUCH_CATEGORY &&
                 folio_state_document_kind(state) == FOLIO_DOCUMENT_NONE,
             "new does not invent an initial category");
     folio_state_destroy(state);
@@ -1450,23 +1503,33 @@ static void verify_step_empty_category(void)
     struct persistence_adapter adapter = healthy_adapter();
     test_adapter_second_notes(&adapter, "A", "{\"version\": 1, \"notes\": []}", nothing);
     struct folio_state *state = ready_state(&adapter);
-    require(folio_state_select_note(state, 0, 2) == FOLIO_STATE_READY, "select B / three");
-    require(folio_state_select_adjacent(state, FOLIO_STEP_NEXT) == FOLIO_STATE_READY, "j onto A");
+    require(folio_state_select_note(state, 0, 2, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "select B / three");
+    require(folio_state_select_adjacent(state, FOLIO_STEP_NEXT, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
+            "j onto A");
     expect_cursor(state, "c1", "the collapsed empty category is a stop");
-    require(folio_state_set_category_expanded(state, 1, true) == FOLIO_STATE_READY &&
+    require(folio_state_set_category_expanded(state, 1, true, FOLIO_UNTITLED_PROTECT) ==
+                    FOLIO_STATE_READY &&
                 adapter.writes == 1,
             "expanding an empty category writes the ledger");
     expect_cursor(state, "c1", "with no note to move to, the cursor stays on the row");
     expect_selection(state, "B/three", "and the right pane is untouched");
     require(row_count(state) == 9, "an expanded empty category adds no row");
-    require(folio_state_set_category_expanded(state, 1, true) == FOLIO_STATE_READY &&
+    require(folio_state_set_category_expanded(state, 1, true, FOLIO_UNTITLED_PROTECT) ==
+                    FOLIO_STATE_READY &&
                 adapter.writes == 1,
             "expanding it again writes nothing");
-    require(folio_state_select_adjacent(state, FOLIO_STEP_NEXT) == FOLIO_STATE_READY, "j past it");
+    require(folio_state_select_adjacent(state, FOLIO_STEP_NEXT, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
+            "j past it");
     expect_selection(state, "C/one", "the next stop is the following category's first note");
-    require(folio_state_select_adjacent(state, FOLIO_STEP_PREVIOUS) == FOLIO_STATE_READY, "k back");
+    require(folio_state_select_adjacent(state, FOLIO_STEP_PREVIOUS, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
+            "k back");
     expect_cursor(state, "c1", "an expanded category without notes is a stop backwards too");
-    require(folio_state_set_category_expanded(state, 1, false) == FOLIO_STATE_READY,
+    require(folio_state_set_category_expanded(state, 1, false, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
             "h collapses it again");
     expect_cursor(state, "c1", "and the cursor stays on the row");
     folio_state_destroy(state);
@@ -1477,9 +1540,14 @@ static void verify_step_to_collapsed_end(void)
 {
     struct persistence_adapter adapter = healthy_adapter();
     struct folio_state *state = ready_state(&adapter);
-    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY, "select B / one");
-    require(folio_state_set_category_expanded(state, 2, false) == FOLIO_STATE_READY, "collapse C");
-    require(folio_state_select_adjacent(state, FOLIO_STEP_LAST) == FOLIO_STATE_READY, "G");
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "select B / one");
+    require(folio_state_set_category_expanded(state, 2, false, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
+            "collapse C");
+    require(folio_state_select_adjacent(state, FOLIO_STEP_LAST, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
+            "G");
     expect_cursor(state, "c2", "the last stop is the collapsed last category");
     expect_selection(state, "B/one", "and the right pane is untouched");
     folio_state_destroy(state);
@@ -1506,24 +1574,30 @@ static void verify_set_expanded(void)
     struct persistence_adapter adapter = healthy_adapter();
     struct folio_state *state = ready_state(&adapter);
     require(row_count(state) == 9, "rows before");
-    require(folio_state_set_category_expanded(state, 0, true) == FOLIO_STATE_READY &&
+    require(folio_state_set_category_expanded(state, 0, true, FOLIO_UNTITLED_PROTECT) ==
+                    FOLIO_STATE_READY &&
                 adapter.writes == 0,
             "already expanded writes nothing");
-    require(folio_state_set_category_expanded(state, 1, false) == FOLIO_STATE_READY &&
+    require(folio_state_set_category_expanded(state, 1, false, FOLIO_UNTITLED_PROTECT) ==
+                    FOLIO_STATE_READY &&
                 adapter.writes == 0,
             "already collapsed writes nothing");
-    require(folio_state_set_category_expanded(state, 0, false) == FOLIO_STATE_READY &&
+    require(folio_state_set_category_expanded(state, 0, false, FOLIO_UNTITLED_PROTECT) ==
+                    FOLIO_STATE_READY &&
                 adapter.writes == 1 && !adapter.written_expanded[0],
             "collapsing writes the ledger once");
     require(row_count(state) == 6, "B's notes are hidden");
-    require(folio_state_set_category_expanded(state, 1, true) == FOLIO_STATE_READY &&
+    require(folio_state_set_category_expanded(state, 1, true, FOLIO_UNTITLED_PROTECT) ==
+                    FOLIO_STATE_READY &&
                 adapter.writes == 2 && adapter.written_expanded[1],
             "expanding writes it too");
-    require(folio_state_set_category_expanded(state, 3, true) == FOLIO_STATE_NO_SUCH_CATEGORY &&
+    require(folio_state_set_category_expanded(state, 3, true, FOLIO_UNTITLED_PROTECT) ==
+                    FOLIO_STATE_NO_SUCH_CATEGORY &&
                 adapter.writes == 2,
             "out of range is refused without writing");
     adapter.write_outcome = PERSISTENCE_UNWRITABLE;
-    require(folio_state_set_category_expanded(state, 0, true) == FOLIO_STATE_STORE_FAILED &&
+    require(folio_state_set_category_expanded(state, 0, true, FOLIO_UNTITLED_PROTECT) ==
+                    FOLIO_STATE_STORE_FAILED &&
                 row_count(state) == 9,
             "a failed write leaves the ledger alone");
     folio_state_destroy(state);
@@ -1533,19 +1607,27 @@ static void verify_set_expanded(void)
 static void verify_cursor_collapse(struct folio_state *_Nonnull state,
                                    struct persistence_adapter *_Nonnull adapter)
 {
-    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY, "select B / one");
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "select B / one");
     adapter->last_note = nullptr;
-    require(folio_state_set_category_expanded(state, 0, false) == FOLIO_STATE_READY,
+    require(folio_state_set_category_expanded(state, 0, false, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
             "h collapses B");
     expect_cursor(state, "c0", "the cursor moves onto the collapsed category row");
     expect_selection(state, "B/one", "the selection and the right pane stay");
-    require(folio_state_select_adjacent(state, FOLIO_STEP_NEXT) == FOLIO_STATE_READY, "j");
+    require(folio_state_select_adjacent(state, FOLIO_STEP_NEXT, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
+            "j");
     expect_cursor(state, "c1", "on to the next collapsed category");
-    require(folio_state_select_adjacent(state, FOLIO_STEP_PREVIOUS) == FOLIO_STATE_READY, "k");
+    require(folio_state_select_adjacent(state, FOLIO_STEP_PREVIOUS, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
+            "k");
     expect_cursor(state, "c0", "and back to the category we collapsed");
     expect_selection(state, "B/one", "the right pane never changed");
     require(adapter->last_note == nullptr, "and no note was read");
-    require(folio_state_set_category_expanded(state, 0, true) == FOLIO_STATE_READY, "l expands B");
+    require(folio_state_set_category_expanded(state, 0, true, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
+            "l expands B");
     expect_cursor(state, "n0.0", "the selected note inside takes the cursor");
     require(adapter->last_note == nullptr, "the selected note is not read again");
 }
@@ -1554,21 +1636,28 @@ static void verify_cursor_collapse(struct folio_state *_Nonnull state,
 static void verify_cursor_expand_elsewhere(struct folio_state *_Nonnull state,
                                            struct persistence_adapter *_Nonnull adapter)
 {
-    require(folio_state_select_note(state, 2, 1) == FOLIO_STATE_READY, "select C / two");
-    require(folio_state_select_adjacent(state, FOLIO_STEP_PREVIOUS) == FOLIO_STATE_READY &&
-                folio_state_select_adjacent(state, FOLIO_STEP_PREVIOUS) == FOLIO_STATE_READY,
+    require(folio_state_select_note(state, 2, 1, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "select C / two");
+    require(folio_state_select_adjacent(state, FOLIO_STEP_PREVIOUS, FOLIO_UNTITLED_PROTECT) ==
+                    FOLIO_STATE_READY &&
+                folio_state_select_adjacent(state, FOLIO_STEP_PREVIOUS, FOLIO_UNTITLED_PROTECT) ==
+                    FOLIO_STATE_READY,
             "k twice onto the collapsed A");
     expect_cursor(state, "c1", "the cursor is on A");
     adapter->last_note = nullptr;
-    require(folio_state_set_category_expanded(state, 1, true) == FOLIO_STATE_READY, "l expands A");
+    require(folio_state_set_category_expanded(state, 1, true, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
+            "l expands A");
     expect_cursor(state, "n1.0", "the first note of A takes the cursor");
     expect_selection(state, "A/one", "and the right pane follows it");
     require(same_text(adapter->last_note, "one"), "that note was read");
-    require(folio_state_set_category_expanded(state, 1, false) == FOLIO_STATE_READY,
+    require(folio_state_set_category_expanded(state, 1, false, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
             "h collapses A again");
     expect_cursor(state, "c1", "the cursor is back on the category row");
     expect_selection(state, "A/one", "with the selection left inside");
-    require(folio_state_set_category_expanded(state, 1, false) == FOLIO_STATE_READY,
+    require(folio_state_set_category_expanded(state, 1, false, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
             "h on a collapsed category does nothing");
     expect_cursor(state, "c1", "and the cursor stays");
 }
@@ -1576,10 +1665,15 @@ static void verify_cursor_expand_elsewhere(struct folio_state *_Nonnull state,
 /* カーソルが別のカテゴリにあるときは、開閉でカーソルは動かない。 */
 static void verify_cursor_elsewhere(struct folio_state *_Nonnull state)
 {
-    require(folio_state_select_note(state, 0, 1) == FOLIO_STATE_READY, "select B / two");
-    require(folio_state_set_category_expanded(state, 2, false) == FOLIO_STATE_READY, "collapse C");
+    require(folio_state_select_note(state, 0, 1, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "select B / two");
+    require(folio_state_set_category_expanded(state, 2, false, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
+            "collapse C");
     expect_cursor(state, "n0.1", "collapsing another category leaves the cursor alone");
-    require(folio_state_set_category_expanded(state, 2, true) == FOLIO_STATE_READY, "expand C");
+    require(folio_state_set_category_expanded(state, 2, true, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
+            "expand C");
     expect_cursor(state, "n0.1", "expanding another category leaves it alone too");
 }
 
@@ -1603,25 +1697,31 @@ static void verify_reveal_cursor(void)
     require(folio_state_reveal_cursor(state, scroll_metrics) == FOLIO_STATE_READY &&
                 scrolled_top(state) == 0,
             "without a cursor nothing moves");
-    require(folio_state_select_note(state, 2, 0) == FOLIO_STATE_READY, "select C / one");
+    require(folio_state_select_note(state, 2, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "select C / one");
     require(folio_state_reveal_cursor(state, scroll_metrics) == FOLIO_STATE_READY &&
                 scrolled_top(state) == -20,
             "a row hidden below rises until its bottom edge is in view");
     require(folio_state_reveal_cursor(state, scroll_metrics) == FOLIO_STATE_READY &&
                 scrolled_top(state) == -20,
             "a row already in view does not move again");
-    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY, "select B / one");
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "select B / one");
     require(folio_state_reveal_cursor(state, scroll_metrics) == FOLIO_STATE_READY &&
                 scrolled_top(state) == -10,
             "a row hidden above sinks until its top edge reaches the band");
-    require(folio_state_select_adjacent(state, FOLIO_STEP_LAST) == FOLIO_STATE_READY, "G");
+    require(folio_state_select_adjacent(state, FOLIO_STEP_LAST, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
+            "G");
     require(scrolled_top(state) == -10, "the step alone does not scroll");
     require(folio_state_reveal_cursor(state, scroll_metrics) == FOLIO_STATE_READY &&
                 scrolled_top(state) == -40,
             "the last note lands at the reach");
     /* 行は B 0..10 / A 10..20 / C 20..30 / one 30..40 / two 40..50 / three 50..60・上限 10。 */
-    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY, "select B / one again");
-    require(folio_state_set_category_expanded(state, 0, false) == FOLIO_STATE_READY,
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "select B / one again");
+    require(folio_state_set_category_expanded(state, 0, false, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
             "h collapses B");
     expect_cursor(state, "c0", "the cursor is on the collapsed category row");
     require(scrolled_top(state) == -10, "the request is still past the smaller reach");
@@ -1637,11 +1737,15 @@ static void verify_mode_survives_selection(void)
     struct persistence_adapter adapter = healthy_adapter();
     adapter.note_body = "# Hello\r\n\r\nbody";
     struct folio_state *state = ready_state(&adapter);
-    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY, "select B / one");
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "select B / one");
     require(folio_state_begin_edit(state) == FOLIO_STATE_READY, "begin edit");
-    require(folio_state_select_note(state, 0, 1) == FOLIO_STATE_READY, "select another note");
+    require(folio_state_select_note(state, 0, 1, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "select another note");
     require(folio_state_pane_mode(state) == PANE_MODE_EDIT, "selecting keeps the edit mode");
-    require(folio_state_select_adjacent(state, FOLIO_STEP_NEXT) == FOLIO_STATE_READY, "j");
+    require(folio_state_select_adjacent(state, FOLIO_STEP_NEXT, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
+            "j");
     require(folio_state_pane_mode(state) == PANE_MODE_EDIT, "a step keeps it too");
     require(adapter.note_writes == 0, "selecting never saves by itself");
     require(folio_state_end_edit(state, u"# Hello\r\n\r\nbody", 15) == FOLIO_STATE_READY &&
@@ -1658,7 +1762,8 @@ static struct folio_state *_Nonnull edited_state(struct persistence_adapter *_No
     struct folio_state *state = nullptr;
     require(folio_state_create(test_ports(&port, &looks, &finder), &state) == FOLIO_STATE_READY,
             "state for edit");
-    require(folio_state_select_note(state, 0, 1) == FOLIO_STATE_READY, "select B / two");
+    require(folio_state_select_note(state, 0, 1, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "select B / two");
     require(same_text(folio_state_pane_text(state), "# Hello\r\n\r\nbody"),
             "pane text is the body");
     require(folio_state_pane_text_length(state) == 15, "pane text length");
@@ -1843,7 +1948,7 @@ static void verify_discard_refusals(void)
     struct folio_state *state = ready_state(&adapter);
     require(folio_state_discard_edits(state) == FOLIO_STATE_NOTHING_SELECTED,
             "nothing to discard without a document");
-    require(folio_state_select_note(state, 0, 1) == FOLIO_STATE_READY &&
+    require(folio_state_select_note(state, 0, 1, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
                 folio_state_discard_edits(state) == FOLIO_STATE_NOT_EDITING,
             "a viewed note has no edits to discard");
     folio_state_destroy(state);
@@ -1873,7 +1978,8 @@ static void verify_discard_edits(void)
 
     adapter.note_write_outcome = PERSISTENCE_STORED;
     state = ready_state(&adapter);
-    require(folio_state_new_note(state, 0) == FOLIO_STATE_READY, "an untitled note");
+    require(folio_state_new_note(state, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "an untitled note");
     require(folio_state_discard_edits(state) == FOLIO_STATE_READY &&
                 folio_state_document_kind(state) == FOLIO_DOCUMENT_UNTITLED &&
                 folio_state_pane_text_length(state) == 0 &&
@@ -2147,9 +2253,10 @@ static void verify_untitled(void)
     require(folio_state_document_kind(state) == FOLIO_DOCUMENT_NONE &&
                 folio_state_category_count(state) == 3 && folio_state_current_category(state) == 0,
             "empty pane default category");
-    require(folio_state_new_note(state, 99) == FOLIO_STATE_NO_SUCH_CATEGORY,
+    require(folio_state_new_note(state, 99, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_NO_SUCH_CATEGORY,
             "no invented category");
-    require(folio_state_new_note(state, 1) == FOLIO_STATE_READY, "new in A");
+    require(folio_state_new_note(state, 1, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "new in A");
     require(folio_state_document_kind(state) == FOLIO_DOCUMENT_UNTITLED &&
                 folio_state_pane_mode(state) == PANE_MODE_EDIT &&
                 folio_state_document_category(state) == 1,
@@ -2160,8 +2267,9 @@ static void verify_untitled(void)
     struct note_ref selection = {.category = 0, .note = 0};
     require(!folio_state_selection(state, &selection) && folio_state_note_count(state) == 9,
             "untitled has no fictitious index row");
-    require(folio_state_new_note(state, 0) == FOLIO_STATE_NAME_REQUIRED &&
-                folio_state_select_note(state, 0, 0) == FOLIO_STATE_NAME_REQUIRED,
+    require(folio_state_new_note(state, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_NAME_REQUIRED &&
+                folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) ==
+                    FOLIO_STATE_NAME_REQUIRED,
             "untitled cannot be displaced");
     require(folio_state_store_note(state, u"x", 1) == FOLIO_STATE_NAME_REQUIRED &&
                 folio_state_end_edit(state, u"x", 1) == FOLIO_STATE_NAME_REQUIRED,
@@ -2181,7 +2289,8 @@ static void verify_first_save(void)
 {
     struct persistence_adapter adapter = healthy_adapter();
     struct folio_state *state = ready_state(&adapter);
-    require(folio_state_new_note(state, 0) == FOLIO_STATE_READY, "new note");
+    require(folio_state_new_note(state, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "new note");
     struct note_name *name = accepted_note_name("日報 名前.MD");
     struct note_destination destination = {.category = 1, .name = name};
     require(folio_state_store_new(state, &destination, u"日本語\r\n本文", 7) == FOLIO_STATE_READY,
@@ -2217,7 +2326,8 @@ static void verify_first_save_refusals(void)
     struct note_destination destination = {.category = 0, .name = name};
     require(folio_state_store_new(state, &destination, u"x", 1) == FOLIO_STATE_NOTHING_SELECTED,
             "not an untitled document");
-    require(folio_state_new_note(state, 0) == FOLIO_STATE_READY, "untitled");
+    require(folio_state_new_note(state, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "untitled");
     destination.category = 99;
     require(folio_state_store_new(state, &destination, u"x", 1) == FOLIO_STATE_NO_SUCH_CATEGORY,
             "invalid destination");
@@ -2251,7 +2361,8 @@ static void verify_created_stale_index(void)
 {
     struct persistence_adapter adapter = healthy_adapter();
     struct folio_state *state = ready_state(&adapter);
-    require(folio_state_new_note(state, 0) == FOLIO_STATE_READY, "untitled");
+    require(folio_state_new_note(state, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "untitled");
     struct note_name *name = accepted_note_name("draft");
     struct note_destination destination = {.category = 0, .name = name};
     adapter.ledger_write_outcome = PERSISTENCE_UNWRITABLE;
@@ -2267,8 +2378,9 @@ static void verify_created_stale_index(void)
     require(folio_state_note_changed(state, u"draft text", 10, &changed) ==
                 FOLIO_STATE_LEDGER_UNSYNCED,
             "q cannot ignore a pending index");
-    require(folio_state_new_note(state, 1) == FOLIO_STATE_LEDGER_UNSYNCED &&
-                folio_state_select_note(state, 0, 0) == FOLIO_STATE_LEDGER_UNSYNCED &&
+    require(folio_state_new_note(state, 1, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_LEDGER_UNSYNCED &&
+                folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) ==
+                    FOLIO_STATE_LEDGER_UNSYNCED &&
                 folio_state_move_category(state, 0, 1) == FOLIO_STATE_LEDGER_UNSYNCED &&
                 folio_state_store_note(state, u"draft text", 10) == FOLIO_STATE_LEDGER_UNSYNCED,
             "pending index prevents follow-up operations");
@@ -2276,7 +2388,8 @@ static void verify_created_stale_index(void)
     require(folio_state_store_note(state, u"draft text", 10) == FOLIO_STATE_READY &&
                 adapter.creates == 1 && adapter.note_writes == 0 && adapter.archives == 0,
             "retry repairs only the index");
-    require(folio_state_new_note(state, 1) == FOLIO_STATE_READY, "continue after repair");
+    require(folio_state_new_note(state, 1, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "continue after repair");
     folio_state_destroy(state);
 }
 
@@ -2284,10 +2397,13 @@ static void verify_first_save_keeps_category_cursor(void)
 {
     struct persistence_adapter adapter = healthy_adapter();
     struct folio_state *state = ready_state(&adapter);
-    require(folio_state_set_category_expanded(state, 2, false) == FOLIO_STATE_READY,
+    require(folio_state_set_category_expanded(state, 2, false, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
             "last category is collapsed in this scenario");
-    require(folio_state_new_note(state, 0) == FOLIO_STATE_READY, "untitled in B");
-    require(folio_state_select_adjacent(state, FOLIO_STEP_LAST) == FOLIO_STATE_READY,
+    require(folio_state_new_note(state, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "untitled in B");
+    require(folio_state_select_adjacent(state, FOLIO_STEP_LAST, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
             "cursor to last collapsed category");
     enum folio_cursor_kind kind = FOLIO_CURSOR_NOTE;
     struct note_ref cursor = {.category = 0, .note = 0};
@@ -2301,7 +2417,8 @@ static void verify_first_save_keeps_category_cursor(void)
     require(folio_state_cursor(state, &kind, &cursor) && kind == FOLIO_CURSOR_CATEGORY &&
                 cursor.category == category,
             "first save does not steal the category cursor");
-    require(folio_state_set_category_expanded(state, category, true) == FOLIO_STATE_READY &&
+    require(folio_state_set_category_expanded(state, category, true, FOLIO_UNTITLED_PROTECT) ==
+                    FOLIO_STATE_READY &&
                 folio_state_document_category(state) == category,
             "l still enters the intended category");
     note_name_destroy(name);
@@ -2314,7 +2431,7 @@ static void verify_save_as_edit(void)
     struct persistence_adapter adapter = healthy_adapter();
     adapter.note_body = "# Original\r\n";
     struct folio_state *state = ready_state(&adapter);
-    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY &&
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
                 folio_state_begin_edit(state) == FOLIO_STATE_READY,
             "edit source for save as");
     struct note_name *name = accepted_note_name("別の 名前.md");
@@ -2342,7 +2459,8 @@ static void verify_save_as_view(void)
     struct persistence_adapter adapter = healthy_adapter();
     adapter.note_body = "# 原文\r\n**強調** [link](url)\n";
     struct folio_state *state = ready_state(&adapter);
-    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY, "select view");
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "select view");
     struct note_name *name = accepted_note_name("view-copy");
     struct note_destination destination = {.category = 0, .name = name};
     require(folio_state_store_new(state, &destination, u"Rendered text", 13) == FOLIO_STATE_READY,
@@ -2360,7 +2478,7 @@ static void verify_save_as_refusals(void)
     struct persistence_adapter adapter = healthy_adapter();
     adapter.note_body = "saved";
     struct folio_state *state = ready_state(&adapter);
-    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY &&
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
                 folio_state_begin_edit(state) == FOLIO_STATE_READY,
             "edit source for save as");
     struct note_name *name = accepted_note_name("copy");
@@ -2386,7 +2504,8 @@ static void verify_save_as_view_stale(void)
 {
     struct persistence_adapter adapter = healthy_adapter();
     struct folio_state *state = ready_state(&adapter);
-    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY, "select view");
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "select view");
     struct note_name *name = accepted_note_name("copy");
     struct note_destination destination = {.category = 0, .name = name};
     adapter.ledger_write_outcome = PERSISTENCE_UNWRITABLE;
@@ -2417,7 +2536,7 @@ static void verify_save_as_edit_unsynced(void)
     struct persistence_adapter adapter = healthy_adapter();
     adapter.note_body = "saved";
     struct folio_state *state = ready_state(&adapter);
-    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY &&
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
                 folio_state_begin_edit(state) == FOLIO_STATE_READY,
             "edit source for save as");
     struct note_name *first = accepted_note_name("copy");
@@ -2463,7 +2582,8 @@ static void verify_rename_refusals(void)
     struct note_name *other = accepted_note_name("次の名前");
     require(folio_state_rename_note(state, other, u"", 0) == FOLIO_STATE_NOTHING_SELECTED,
             "nothing selected cannot be renamed");
-    require(folio_state_new_note(state, 0) == FOLIO_STATE_READY, "untitled draft");
+    require(folio_state_new_note(state, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "untitled draft");
     require(folio_state_rename_note(state, other, u"draft", 5) == FOLIO_STATE_NAME_REQUIRED,
             "an untitled note must be saved first");
     require(adapter.renames == 0 && adapter.creates == 0, "no refusal touched data/");
@@ -2472,7 +2592,8 @@ static void verify_rename_refusals(void)
 
     adapter = healthy_adapter();
     state = ready_state(&adapter);
-    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY, "select B / one");
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "select B / one");
     struct note_name *same = accepted_note_name("one.md");
     require(folio_state_rename_note(state, same, u"", 0) == FOLIO_STATE_READY &&
                 adapter.renames == 0,
@@ -2500,7 +2621,7 @@ static void verify_rename_saves_first(void)
     struct persistence_adapter adapter = healthy_adapter();
     adapter.note_body = "saved";
     struct folio_state *state = ready_state(&adapter);
-    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY &&
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
                 folio_state_begin_edit(state) == FOLIO_STATE_READY,
             "edit the note to rename");
     struct note_name *name = accepted_note_name("日本語 新しい名前.md");
@@ -2533,7 +2654,7 @@ static void verify_rename_blocked_by_save(void)
     adapter.note_body = "saved";
     adapter.note_write_outcome = PERSISTENCE_UNWRITABLE;
     struct folio_state *state = ready_state(&adapter);
-    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY &&
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
                 folio_state_begin_edit(state) == FOLIO_STATE_READY,
             "edit the note to rename");
     struct note_name *name = accepted_note_name("新しい名前");
@@ -2545,7 +2666,8 @@ static void verify_rename_blocked_by_save(void)
 
     adapter = healthy_adapter();
     state = ready_state(&adapter);
-    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY, "select to copy");
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "select to copy");
     struct note_name *copy = accepted_note_name("copy");
     struct note_destination destination = {.category = 0, .name = copy};
     adapter.ledger_write_outcome = PERSISTENCE_UNWRITABLE;
@@ -2577,7 +2699,8 @@ static void verify_rename_refused_before_journal(void)
     {
         struct persistence_adapter adapter = healthy_adapter();
         struct folio_state *state = ready_state(&adapter);
-        require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY, "select to rename");
+        require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+                "select to rename");
         struct note_name *name = accepted_note_name("新しい名前");
         adapter.rename_outcome = refusals[index];
         require(folio_state_rename_note(state, name, u"", 0) == expected[index],
@@ -2586,7 +2709,7 @@ static void verify_rename_refused_before_journal(void)
                     same_text(folio_state_pane_title(state).note, "one") &&
                     !folio_state_pane_title(state).recovering,
                 "a refusal before the journal leaves no intent");
-        require(folio_state_select_note(state, 0, 1) == FOLIO_STATE_READY &&
+        require(folio_state_select_note(state, 0, 1, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
                     folio_state_toggle_category(state, 0) == FOLIO_STATE_READY &&
                     adapter.renames == 1,
                 "the next intents run without a retry");
@@ -2606,12 +2729,12 @@ static void verify_rename_blocked_intents(struct folio_state *_Nonnull state,
     struct note_ref to = {.category = 0, .note = 2};
     struct rgb_color color = {.red = 1, .green = 2, .blue = 3};
     require(folio_state_store_note(state, u"", 0) == expected &&
-                folio_state_select_note(state, 0, 1) == expected &&
+                folio_state_select_note(state, 0, 1, FOLIO_UNTITLED_PROTECT) == expected &&
                 folio_state_toggle_category(state, 0) == expected &&
                 folio_state_recolor_category(state, 0, color) == expected &&
                 folio_state_move_category(state, 0, 1) == expected &&
                 folio_state_move_note(state, from, to) == expected &&
-                folio_state_new_note(state, 0) == expected &&
+                folio_state_new_note(state, 0, FOLIO_UNTITLED_PROTECT) == expected &&
                 folio_state_store_new(state, &destination, u"", 0) == expected &&
                 folio_state_note_changed(state, u"", 0, &change) == expected,
             "every intent retries the same rename and refuses to proceed");
@@ -2633,7 +2756,8 @@ static void verify_rename_pending(void)
     struct persistence_adapter adapter = healthy_adapter();
     adapter.note_body = "saved";
     struct folio_state *state = ready_state(&adapter);
-    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY, "select to rename");
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "select to rename");
     struct note_name *name = accepted_note_name("新しい名前");
     adapter.rename_outcome = RENAME_PENDING;
     require(folio_state_rename_note(state, name, u"", 0) == FOLIO_STATE_RENAME_PENDING &&
@@ -2675,7 +2799,8 @@ static void verify_rename_halted(void)
 {
     struct persistence_adapter adapter = healthy_adapter();
     struct folio_state *state = ready_state(&adapter);
-    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY, "select to rename");
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "select to rename");
     struct note_name *name = accepted_note_name("新しい名前");
     adapter.rename_outcome = RENAME_HALTED;
     require(folio_state_rename_note(state, name, u"", 0) == FOLIO_STATE_RENAME_HALTED &&
@@ -2703,7 +2828,8 @@ static void verify_rename_halted(void)
     /* HALTED のまま閉じても記録は残る（:q! と同じ）。 */
     adapter = healthy_adapter();
     state = ready_state(&adapter);
-    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY, "select to rename");
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "select to rename");
     struct note_name *again = accepted_note_name("新しい名前");
     adapter.rename_outcome = RENAME_HALTED;
     require(folio_state_rename_note(state, again, u"", 0) == FOLIO_STATE_RENAME_HALTED,
@@ -2718,7 +2844,8 @@ static void verify_rename_force_quit_keeps_intent(void)
 {
     struct persistence_adapter adapter = healthy_adapter();
     struct folio_state *state = ready_state(&adapter);
-    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY, "select to rename");
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "select to rename");
     struct note_name *name = accepted_note_name("新しい名前");
     adapter.rename_outcome = RENAME_PENDING;
     require(folio_state_rename_note(state, name, u"", 0) == FOLIO_STATE_RENAME_PENDING,
@@ -2791,7 +2918,7 @@ static void verify_search_term(void)
     require(folio_state_set_search_term(state, u"cd", 2) == FOLIO_STATE_READY &&
                 same_text(folio_state_search_term(state), "cd"),
             "only one in-note term exists at a time");
-    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY &&
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
                 same_text(folio_state_search_term(state), "cd") &&
                 folio_state_search_direction(state) == SEARCH_DIRECTION_BACKWARD,
             "selecting a note touches neither the term nor the direction");
@@ -2881,7 +3008,9 @@ static void verify_filtered_refusals(void)
     size_t writes = adapter.writes;
     size_t ledger_writes = adapter.ledger_writes;
     require(folio_state_toggle_category(state, 0) == FOLIO_STATE_FILTERED, "no toggle");
-    require(folio_state_set_category_expanded(state, 0, false) == FOLIO_STATE_FILTERED, "no h/l");
+    require(folio_state_set_category_expanded(state, 0, false, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_FILTERED,
+            "no h/l");
     require(folio_state_move_category(state, 0, 1) == FOLIO_STATE_FILTERED, "no reorder");
     require(folio_state_move_note(state, at(0, 0), at(0, 1)) == FOLIO_STATE_FILTERED, "no move");
     require(adapter.writes == writes && adapter.ledger_writes == ledger_writes,
@@ -2894,7 +3023,8 @@ static void verify_filtered_refusals(void)
     require(adapter.writes == writes + 1 && adapter.written_expanded[0] &&
                 !adapter.written_expanded[1] && adapter.written_expanded[2],
             "and the expansion written with it is the ledger's own, not the filtered view");
-    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY, "a note can still be read");
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "a note can still be read");
     require(folio_state_begin_edit(state) == FOLIO_STATE_READY, "and edited");
     require(same_text(folio_state_failure_line(FOLIO_STATE_FILTERED, FOLIO_LANGUAGE_JA),
                       "絞り込み中はこの操作ができません。絞り込みを解いてからやり直してください。"),
@@ -2909,7 +3039,8 @@ static void verify_filter_keeps_document(void)
     adapter.rare_note = "three";
     adapter.rare_body = "the needle is here";
     struct folio_state *state = ready_state(&adapter);
-    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY, "select B / one");
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "select B / one");
     require(folio_state_begin_edit(state) == FOLIO_STATE_READY, "and edit it");
     require(folio_state_scroll_drawer(state, scroll_metrics, 20) == FOLIO_STATE_READY, "scroll");
     require(folio_state_set_index_filter(state, u"needle", 6) == FOLIO_STATE_READY, "filter");
@@ -2919,20 +3050,33 @@ static void verify_filter_keeps_document(void)
     require(scrolled_top(state) == 0, "the amount is reset on every change of the term");
     expect_cursor(state, "c0", "the cursor moves to the first visible row");
     /* 止まる行は B/three・A/three・C/three だけになる。 */
-    require(folio_state_select_adjacent(state, FOLIO_STEP_NEXT) == FOLIO_STATE_READY, "j");
+    require(folio_state_select_adjacent(state, FOLIO_STEP_NEXT, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
+            "j");
     expect_cursor(state, "n0.2", "the first stop is the match inside the first category");
-    require(folio_state_select_adjacent(state, FOLIO_STEP_NEXT) == FOLIO_STATE_READY, "j again");
+    require(folio_state_select_adjacent(state, FOLIO_STEP_NEXT, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
+            "j again");
     expect_cursor(state, "n1.2", "the next stop skips the notes that do not match");
-    require(folio_state_select_adjacent(state, FOLIO_STEP_NEXT) == FOLIO_STATE_READY, "j again");
+    require(folio_state_select_adjacent(state, FOLIO_STEP_NEXT, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
+            "j again");
     expect_cursor(state, "n2.2", "and lands in the last category");
-    require(folio_state_select_adjacent(state, FOLIO_STEP_NEXT) == FOLIO_STATE_READY,
+    require(folio_state_select_adjacent(state, FOLIO_STEP_NEXT, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
             "j at the end");
     expect_cursor(state, "n2.2", "the end does not move");
-    require(folio_state_select_adjacent(state, FOLIO_STEP_PREVIOUS) == FOLIO_STATE_READY, "k");
+    require(folio_state_select_adjacent(state, FOLIO_STEP_PREVIOUS, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
+            "k");
     expect_cursor(state, "n1.2", "backwards walks the same visible rows");
-    require(folio_state_select_adjacent(state, FOLIO_STEP_FIRST) == FOLIO_STATE_READY, "gg");
+    require(folio_state_select_adjacent(state, FOLIO_STEP_FIRST, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
+            "gg");
     expect_cursor(state, "n0.2", "gg is the first visible row");
-    require(folio_state_select_adjacent(state, FOLIO_STEP_LAST) == FOLIO_STATE_READY, "G");
+    require(folio_state_select_adjacent(state, FOLIO_STEP_LAST, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
+            "G");
     expect_cursor(state, "n2.2", "G is the last visible row");
     folio_state_destroy(state);
 }
@@ -2942,7 +3086,8 @@ static void verify_filter_follows_content(void)
 {
     struct persistence_adapter adapter = healthy_adapter();
     struct folio_state *state = ready_state(&adapter);
-    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY, "select B / one");
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "select B / one");
     require(folio_state_begin_edit(state) == FOLIO_STATE_READY, "edit");
     require(folio_state_set_index_filter(state, u"needle", 6) == FOLIO_STATE_READY, "filter");
     require(folio_state_index_filter_count(state) == 0, "nothing matches yet");
@@ -2977,7 +3122,8 @@ static void verify_filter_follows_new_note(void)
     struct folio_state *state = ready_state(&adapter);
     require(folio_state_set_index_filter(state, u"needle", 6) == FOLIO_STATE_READY, "filter");
     require(folio_state_index_filter_count(state) == 0, "nothing matches yet");
-    require(folio_state_new_note(state, 0) == FOLIO_STATE_READY, "a new untitled note");
+    require(folio_state_new_note(state, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "a new untitled note");
     struct note_name *name = accepted_note_name("fresh");
     struct note_destination destination = {.category = 0, .name = name};
     require(folio_state_store_new(state, &destination, u"a needle here", 13) == FOLIO_STATE_READY,
@@ -3001,7 +3147,8 @@ static void verify_filter_cursor_lands_near(void)
     test_adapter_second_notes(&adapter, "C", "{\"version\": 1, \"notes\": [\"four\", \"five\"]}",
                               alt_scanned);
     struct folio_state *state = ready_state(&adapter);
-    require(folio_state_select_note(state, 1, 0) == FOLIO_STATE_READY, "select A / one");
+    require(folio_state_select_note(state, 1, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "select A / one");
     expect_cursor(state, "n1.0", "the cursor follows the selection into the collapsed category");
     require(folio_state_set_index_filter(state, u"Hello", 5) == FOLIO_STATE_READY,
             "a term that every body holds");
@@ -3009,7 +3156,8 @@ static void verify_filter_cursor_lands_near(void)
     require(folio_state_set_index_filter(state, u"", 0) == FOLIO_STATE_READY, "clear the term");
     expect_cursor(state, "c1", "A closes again and the cursor stops on A's own row");
     expect_selection(state, "A/one", "the selection and the right pane never moved");
-    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY, "select B / one");
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "select B / one");
     require(folio_state_set_index_filter(state, u"four", 4) == FOLIO_STATE_READY,
             "a term only C holds");
     expect_cursor(state, "c2", "a cursor whose category is gone falls back to the first shown row");
@@ -3022,7 +3170,8 @@ static void verify_filter_follows_resumed_rename(void)
 {
     struct persistence_adapter adapter = healthy_adapter();
     struct folio_state *state = ready_state(&adapter);
-    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY, "select B / one");
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "select B / one");
     require(folio_state_set_index_filter(state, u"renamed", 7) == FOLIO_STATE_READY, "filter");
     require(folio_state_index_filter_count(state) == 0, "no name and no body holds the term");
     struct note_name *name = accepted_note_name("renamed");
@@ -3033,7 +3182,7 @@ static void verify_filter_follows_resumed_rename(void)
     require(folio_state_index_filter_count(state) == 0,
             "an unfinished rename changes neither the copy nor the set");
     adapter.rename_outcome = RENAME_COMPLETED;
-    require(folio_state_select_note(state, 0, 1) == FOLIO_STATE_READY,
+    require(folio_state_select_note(state, 0, 1, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
             "another intent resumes and finishes the same rename");
     require(folio_state_index_filter_count(state) == 1, "the resumed rename rebuilds the set");
     char order[128] = {0};
@@ -3144,7 +3293,8 @@ static void verify_set_number_ignores_resumed_rename(void)
 {
     struct persistence_adapter adapter = healthy_adapter();
     struct folio_state *state = ready_state(&adapter);
-    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY, "select to rename");
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "select to rename");
     struct note_name *name = accepted_note_name("新しい名前");
     adapter.rename_outcome = RENAME_PENDING;
     require(folio_state_rename_note(state, name, u"", 0) == FOLIO_STATE_RENAME_PENDING,
@@ -3191,7 +3341,8 @@ static void verify_settings_unreadable(enum persistence_outcome read,
     require(folio_state_theme_choice(state) == FOLIO_THEME_CHOICE_SYSTEM,
             "and the theme starts from the default too");
     /* ノートの閲覧・編集・保存は妨げない。 */
-    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY, "viewing still works");
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "viewing still works");
     require(folio_state_begin_edit(state) == FOLIO_STATE_READY, "editing still works");
     require(folio_state_store_note(state, u"changed", 7) == FOLIO_STATE_READY,
             "saving still works");
@@ -3265,7 +3416,8 @@ static void verify_set_theme(void)
 {
     struct persistence_adapter adapter = healthy_adapter();
     struct folio_state *state = ready_state(&adapter);
-    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY, "a named document");
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "a named document");
     require(folio_state_set_theme(state, FOLIO_THEME_CHOICE_SYSTEM) == FOLIO_STATE_READY,
             "the same choice is accepted");
     require(adapter.settings_writes == 0, "the same choice is not written");
@@ -3339,7 +3491,8 @@ static void verify_set_theme_out_of_memory(void)
     struct persistence_adapter adapter = healthy_adapter();
     adapter.settings_write_outcome = PERSISTENCE_OUT_OF_MEMORY;
     struct folio_state *state = ready_state(&adapter);
-    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY, "a named document");
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "a named document");
     const char *before = folio_state_pane_rtf(state);
     require(folio_state_set_theme(state, FOLIO_THEME_CHOICE_LIGHT) == FOLIO_STATE_OUT_OF_MEMORY,
             "a failing write is reported as out of memory");
@@ -3362,7 +3515,8 @@ static void verify_set_language(void)
 {
     struct persistence_adapter adapter = healthy_adapter();
     struct folio_state *state = ready_state(&adapter);
-    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY, "a named document");
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "a named document");
     require(folio_state_language(state) == FOLIO_LANGUAGE_JA, "the default is Japanese");
     require(folio_state_set_language(state, FOLIO_LANGUAGE_JA) == FOLIO_STATE_READY,
             "the same language is accepted");
@@ -3395,7 +3549,8 @@ static void verify_set_language_ignores_resumed_rename(void)
 {
     struct persistence_adapter adapter = healthy_adapter();
     struct folio_state *state = ready_state(&adapter);
-    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY, "select to rename");
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "select to rename");
     struct note_name *name = accepted_note_name("新しい名前");
     adapter.rename_outcome = RENAME_PENDING;
     require(folio_state_rename_note(state, name, u"", 0) == FOLIO_STATE_RENAME_PENDING,
@@ -3414,7 +3569,8 @@ static void verify_set_language_unwritable(void)
     struct persistence_adapter adapter = healthy_adapter();
     adapter.settings_write_outcome = PERSISTENCE_UNWRITABLE;
     struct folio_state *state = ready_state(&adapter);
-    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY, "a named document");
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "a named document");
     const char *before = folio_state_pane_rtf(state);
     require(folio_state_set_language(state, FOLIO_LANGUAGE_EN) == FOLIO_STATE_SETTINGS_STORE_FAILED,
             "an unwritable data/ refuses the change");
@@ -3474,7 +3630,7 @@ static void verify_named_theme(void)
     require(folio_state_create(test_ports(&persistence, &looks, &finder), &state) ==
                 FOLIO_STATE_READY,
             "named theme fixture starts");
-    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY &&
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
                 folio_state_begin_edit(state) == FOLIO_STATE_READY,
             "named theme fixture is editing a document");
     const char *body = folio_state_pane_text(state);
@@ -3560,7 +3716,8 @@ static struct folio_state *_Nonnull history_state(struct persistence_adapter *_N
     struct folio_state *state = nullptr;
     require(folio_state_create(test_ports(&port, &looks, &finder), &state) == FOLIO_STATE_READY,
             "state for history");
-    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY, "select B / one");
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "select B / one");
     return state;
 }
 
@@ -3736,7 +3893,7 @@ static void verify_history_all(void)
     require(folio_state_restore_history(state, 0) == FOLIO_STATE_HISTORY_UNREADABLE,
             "nothing to restore after closing");
     require(folio_state_open_history(state) == FOLIO_STATE_READY, "reopen before selecting");
-    require(folio_state_select_note(state, 0, 1) == FOLIO_STATE_READY &&
+    require(folio_state_select_note(state, 0, 1, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
                 folio_state_history_count(state) == 0,
             "moving to another note drops the list");
     require(folio_state_open_history(state) == FOLIO_STATE_READY, "reopen before saving");
@@ -3789,7 +3946,7 @@ static void verify_history_gaps(void)
     require(folio_state_open_history(state) == FOLIO_STATE_OUT_OF_MEMORY &&
                 folio_state_history_count(state) == 0,
             "out of memory keeps nothing");
-    require(folio_state_new_note(state, 0) == FOLIO_STATE_READY &&
+    require(folio_state_new_note(state, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
                 folio_state_open_history(state) == FOLIO_STATE_NAME_REQUIRED &&
                 folio_state_history_count(state) == 0,
             "an untitled note has no history");
@@ -3852,7 +4009,7 @@ static void verify_create_first_category(void)
                 cursor_on_category(state, 0) &&
                 folio_state_document_kind(state) == FOLIO_DOCUMENT_NONE,
             "the empty row is shown and holds the cursor");
-    require(folio_state_new_note(state, 0) == FOLIO_STATE_READY &&
+    require(folio_state_new_note(state, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
                 folio_state_document_kind(state) == FOLIO_DOCUMENT_UNTITLED,
             "a note can be started in the new category at once");
     struct note_name *note = accepted_note_name("最初");
@@ -3871,7 +4028,7 @@ static void verify_create_category(void)
 {
     struct persistence_adapter adapter = healthy_adapter();
     struct folio_state *state = ready_state(&adapter);
-    require(folio_state_select_note(state, 0, 1) == FOLIO_STATE_READY &&
+    require(folio_state_select_note(state, 0, 1, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
                 folio_state_begin_edit(state) == FOLIO_STATE_READY,
             "a document is open for editing");
     struct category_name *name = accepted_category_name("D");
@@ -3955,7 +4112,8 @@ static void verify_create_category_pending_rename(void)
 {
     struct persistence_adapter adapter = healthy_adapter();
     struct folio_state *state = ready_state(&adapter);
-    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY, "select to rename");
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "select to rename");
     struct note_name *renamed = accepted_note_name("新しい名前");
     adapter.rename_outcome = RENAME_PENDING;
     require(folio_state_rename_note(state, renamed, u"", 0) == FOLIO_STATE_RENAME_PENDING,
@@ -4002,7 +4160,8 @@ static void verify_remove_category_outcomes(void)
         struct persistence_adapter adapter = healthy_adapter();
         adapter.category_remove_outcome = results[index];
         struct folio_state *state = empty_category_state(&adapter, "B");
-        require(folio_state_select_note(state, 2, 1) == FOLIO_STATE_READY, "select later note");
+        require(folio_state_select_note(state, 2, 1, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+                "select later note");
         size_t reads = adapter.note_reads;
         const char *body = folio_state_pane_text(state);
         require(folio_state_delete_category(state, 0) == expected[index], "typed removal result");
@@ -4026,7 +4185,7 @@ static void verify_remove_category_refusals(void)
     require(folio_state_delete_category(state, 1) == FOLIO_STATE_CATEGORY_NOT_EMPTY &&
                 folio_state_delete_category(state, 9) == FOLIO_STATE_NO_SUCH_CATEGORY,
             "notes and invalid category refuse before the port");
-    require(folio_state_new_note(state, 0) == FOLIO_STATE_READY &&
+    require(folio_state_new_note(state, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
                 folio_state_delete_category(state, 0) == FOLIO_STATE_CATEGORY_NOT_EMPTY,
             "an untitled destination is not empty");
     require(folio_state_set_index_filter(state, u"one", 3) == FOLIO_STATE_READY &&
@@ -4046,7 +4205,7 @@ static void verify_remove_category_preserves_edit(void)
     struct persistence_adapter adapter = healthy_adapter();
     adapter.history[1] = "old";
     struct folio_state *state = empty_category_state(&adapter, "B");
-    require(folio_state_select_note(state, 2, 1) == FOLIO_STATE_READY &&
+    require(folio_state_select_note(state, 2, 1, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
                 folio_state_open_history(state) == FOLIO_STATE_READY,
             "keep a later document with loaded history");
     prepare_trash_preview(state);
@@ -4103,7 +4262,8 @@ static void verify_remove_category_untitled_and_last_cursor(void)
 {
     struct persistence_adapter adapter = healthy_adapter();
     struct folio_state *state = empty_category_state(&adapter, "B");
-    require(folio_state_new_note(state, 2) == FOLIO_STATE_READY, "untitled in a later category");
+    require(folio_state_new_note(state, 2, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "untitled in a later category");
     const char *body = folio_state_pane_text(state);
     const char *pane = folio_state_pane_rtf(state);
     require(folio_state_delete_category(state, 0) == FOLIO_STATE_READY &&
@@ -4130,7 +4290,8 @@ static void verify_remove_category_pending_rename(void)
 {
     struct persistence_adapter adapter = healthy_adapter();
     struct folio_state *state = empty_category_state(&adapter, "B");
-    require(folio_state_select_note(state, 1, 0) == FOLIO_STATE_READY, "select to rename");
+    require(folio_state_select_note(state, 1, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "select to rename");
     struct note_name *name = accepted_note_name("renamed");
     adapter.rename_outcome = RENAME_PENDING;
     require(folio_state_rename_note(state, name, u"", 0) == FOLIO_STATE_RENAME_PENDING &&
@@ -4255,7 +4416,7 @@ static void verify_trash_other(void)
         struct persistence_adapter adapter = healthy_adapter();
         adapter.history[1] = "old";
         struct folio_state *state = ready_state(&adapter);
-        require(folio_state_select_note(state, 0, 1) == FOLIO_STATE_READY &&
+        require(folio_state_select_note(state, 0, 1, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
                     folio_state_open_history(state) == FOLIO_STATE_READY,
                 "select and history");
         prepare_trash_preview(state);
@@ -4279,7 +4440,8 @@ static void verify_trash_other(void)
     }
     struct persistence_adapter adapter = healthy_adapter();
     struct folio_state *state = ready_state(&adapter);
-    require(folio_state_new_note(state, 0) == FOLIO_STATE_READY, "untitled editor");
+    require(folio_state_new_note(state, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "untitled editor");
     const char *body = folio_state_pane_text(state);
     require(folio_state_trash_note(state, at(0, 0), u"unsaved", 7) == FOLIO_STATE_READY &&
                 folio_state_document_kind(state) == FOLIO_DOCUMENT_UNTITLED &&
@@ -4370,7 +4532,7 @@ static void verify_trash_ledger_retry(void)
     require(folio_state_store_note(state, u"never write", 11) == FOLIO_STATE_NOTHING_SELECTED &&
                 same_text(adapter.ledger_order, "two/three") && adapter.note_writes == 0,
             "retry repairs the reduced ledger and never writes another note");
-    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY &&
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
                 same_text(folio_state_document_name(state), "two"),
             "the next note is explicitly selected");
     folio_state_destroy(state);
@@ -4415,7 +4577,7 @@ static void verify_trash_filter(void)
                 adapter.note_reads == reads,
             "nonmatch deletion keeps the term and maps later matches without rereading");
     require(scrolled_top(state) == top, "trash retains the scroll request");
-    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY &&
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
                 same_text(folio_state_document_name(state), "two"),
             "mapped match selects the right note");
     require(folio_state_trash_note(state, at(0, 0), u"", 0) == FOLIO_STATE_READY &&
@@ -4437,7 +4599,8 @@ static void verify_trash_hidden_category_cursor(void)
     struct folio_state *state = history_state(&adapter);
     for (size_t index = 0; index < 3; ++index)
     {
-        require(folio_state_select_adjacent(state, FOLIO_STEP_NEXT) == FOLIO_STATE_READY,
+        require(folio_state_select_adjacent(state, FOLIO_STEP_NEXT, FOLIO_UNTITLED_PROTECT) ==
+                    FOLIO_STATE_READY,
                 "step through B notes into collapsed A");
     }
     require(cursor_on_category(state, 1), "cursor on collapsed A before filtering");
@@ -4539,7 +4702,7 @@ static void verify_uneditable_neighbours(void)
     adapter.rare_body = "clean";
     state = history_state(&adapter);
     require(folio_state_begin_edit(state) == FOLIO_STATE_READY &&
-                folio_state_select_note(state, 0, 1) == FOLIO_STATE_READY &&
+                folio_state_select_note(state, 0, 1, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
                 same_text(folio_state_document_name(state), "two") &&
                 folio_state_pane_mode(state) == PANE_MODE_VIEW,
             "switching in edit mode to an uneditable body opens it in view mode");
@@ -4561,15 +4724,15 @@ static void verify_uneditable_switch_notice(void)
     require(folio_state_select_notice(state) == FOLIO_STATE_READY, "no notice before any switch");
     require(folio_state_begin_edit(state) == FOLIO_STATE_READY &&
                 folio_state_pane_mode(state) == PANE_MODE_EDIT &&
-                folio_state_select_note(state, 0, 1) == FOLIO_STATE_READY &&
+                folio_state_select_note(state, 0, 1, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
                 folio_state_pane_mode(state) == PANE_MODE_VIEW &&
                 folio_state_select_notice(state) == FOLIO_STATE_NOTE_UNEDITABLE &&
                 adapter.note_writes == 0,
             "dropping from edit to view on a switch leaves NOTE_UNEDITABLE");
-    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY &&
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
                 folio_state_select_notice(state) == FOLIO_STATE_READY,
             "the next switch clears the notice");
-    require(folio_state_select_note(state, 0, 1) == FOLIO_STATE_READY &&
+    require(folio_state_select_note(state, 0, 1, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
                 folio_state_pane_mode(state) == PANE_MODE_VIEW &&
                 folio_state_select_notice(state) == FOLIO_STATE_READY,
             "opening the note in view mode takes nothing away");
@@ -4618,7 +4781,8 @@ static void verify_pane_edit_rtf(void)
     struct folio_state *state = ready_state(&adapter);
     require(same_text(folio_state_edit_rtf(state), "") && folio_state_edit_rtf_length(state) == 0,
             "no edit rtf before the first request");
-    require(folio_state_select_note(state, 0, 1) == FOLIO_STATE_READY, "select B / two");
+    require(folio_state_select_note(state, 0, 1, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "select B / two");
     const char *pane = folio_state_pane_rtf(state);
     require(folio_state_pane_edit_rtf(state) == FOLIO_STATE_READY, "edit rtf of the note");
     expect_edit_rtf_matches_pane_text(state);
@@ -4630,7 +4794,8 @@ static void verify_pane_edit_rtf(void)
     expect_edit_rtf_matches_pane_text(state);
     require(folio_state_pane_rtf(state) == pane && folio_state_pane_mode(state) == PANE_MODE_VIEW,
             "the view pane and the mode are untouched");
-    require(folio_state_new_note(state, 1) == FOLIO_STATE_READY, "new untitled in A");
+    require(folio_state_new_note(state, 1, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "new untitled in A");
     require(folio_state_pane_edit_rtf(state) == FOLIO_STATE_READY, "edit rtf of the untitled");
     require(same_text(edit_rtf_tail(folio_state_edit_rtf(state)),
                       "\\pard\\sa160\\sl300\\slmult1\\cf1 \\par }"),
@@ -4707,7 +4872,7 @@ static void verify_category_rename_refusals(void)
 {
     struct persistence_adapter adapter = healthy_adapter();
     struct folio_state *state = ready_state(&adapter);
-    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY &&
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
                 folio_state_begin_edit(state) == FOLIO_STATE_READY,
             "edit before refusals");
     require(rename_category_to(state, 0, "B") == FOLIO_STATE_READY &&
@@ -4743,12 +4908,14 @@ static void category_scope_document(struct folio_state *_Nonnull state, size_t s
 {
     if (scenario == 1 || scenario == 3 || scenario == 4)
     {
-        require(folio_state_select_note(state, scenario == 1 ? 0 : 2, 1) == FOLIO_STATE_READY,
+        require(folio_state_select_note(state, scenario == 1 ? 0 : 2, 1, FOLIO_UNTITLED_PROTECT) ==
+                    FOLIO_STATE_READY,
                 "select current or separate document");
     }
     if (scenario == 2 || scenario == 5)
     {
-        require(folio_state_new_note(state, scenario == 2 ? 0 : 2) == FOLIO_STATE_READY,
+        require(folio_state_new_note(state, scenario == 2 ? 0 : 2, FOLIO_UNTITLED_PROTECT) ==
+                    FOLIO_STATE_READY,
                 "untitled current or separate document");
     }
     if (scenario == 4)
@@ -4899,12 +5066,14 @@ static void category_title_document(struct folio_state *_Nonnull state, size_t s
 {
     if (scenario == 1 || scenario == 3)
     {
-        require(folio_state_select_note(state, scenario == 1 ? 0 : 2, 0) == FOLIO_STATE_READY,
+        require(folio_state_select_note(state, scenario == 1 ? 0 : 2, 0, FOLIO_UNTITLED_PROTECT) ==
+                    FOLIO_STATE_READY,
                 "selected title");
     }
     if (scenario == 2)
     {
-        require(folio_state_new_note(state, 0) == FOLIO_STATE_READY, "untitled title");
+        require(folio_state_new_note(state, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+                "untitled title");
     }
 }
 
@@ -4992,7 +5161,8 @@ static void verify_category_rename_history(void)
     adapter = healthy_adapter();
     adapter.history[1] = "other";
     state = ready_state(&adapter);
-    require(folio_state_select_note(state, 2, 0) == FOLIO_STATE_READY, "separate history target");
+    require(folio_state_select_note(state, 2, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "separate history target");
     adapter.rename_outcome = RENAME_PENDING;
     require(rename_category_to(state, 0, "D") == FOLIO_STATE_RENAME_PENDING &&
                 folio_state_open_history(state) == FOLIO_STATE_READY && adapter.renames == 1 &&
@@ -5018,7 +5188,8 @@ static void category_rename_preview_case(size_t scenario)
 {
     struct persistence_adapter adapter = healthy_adapter();
     struct folio_state *state = ready_state(&adapter);
-    require(folio_state_select_note(state, scenario == 2 ? 2 : 0, 0) == FOLIO_STATE_READY &&
+    require(folio_state_select_note(state, scenario == 2 ? 2 : 0, 0, FOLIO_UNTITLED_PROTECT) ==
+                    FOLIO_STATE_READY &&
                 folio_state_begin_edit(state) == FOLIO_STATE_READY,
             "preview document");
     category_preview(state, u"body");
@@ -5055,7 +5226,8 @@ static void verify_category_rename_layout(void)
 {
     struct persistence_adapter adapter = healthy_adapter();
     struct folio_state *state = ready_state(&adapter);
-    require(folio_state_select_note(state, 2, 1) == FOLIO_STATE_READY, "keep later selection");
+    require(folio_state_select_note(state, 2, 1, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "keep later selection");
     char cursor[64];
     cursor_name(state, cursor, sizeof cursor);
     require(rename_category_to(state, 1, "D") == FOLIO_STATE_READY &&
@@ -5241,7 +5413,7 @@ static void verify_note_pending_first_filter(void)
 {
     struct persistence_adapter adapter = healthy_adapter();
     struct folio_state *state = ready_state(&adapter);
-    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY,
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
             "select before first filter");
     struct note_name *name = accepted_note_name("newnote");
     adapter.rename_outcome = RENAME_PENDING;
@@ -5274,7 +5446,7 @@ static void verify_saved_copy_retry(void)
 {
     struct persistence_adapter adapter = healthy_adapter();
     struct folio_state *state = ready_state(&adapter);
-    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY &&
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
                 folio_state_begin_edit(state) == FOLIO_STATE_READY &&
                 folio_state_set_index_filter(state, u"needle", 6) == FOLIO_STATE_READY,
             "cache holds the old saved body");
@@ -5316,7 +5488,7 @@ static void note_filter_refusal_case(enum rename_outcome pending, enum folio_sta
 {
     struct persistence_adapter adapter = healthy_adapter();
     struct folio_state *state = ready_state(&adapter);
-    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY &&
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
                 folio_state_set_index_filter(state, u"Hello", 5) == FOLIO_STATE_READY &&
                 folio_state_scroll_drawer(state, scroll_metrics, 20) == FOLIO_STATE_READY,
             "keep an existing match set and scroll before NOTE pending");
@@ -5351,7 +5523,7 @@ static void verify_note_filter_refusals(void)
 static struct folio_state *_Nonnull copy_test_state(struct persistence_adapter *_Nonnull adapter)
 {
     struct folio_state *state = ready_state(adapter);
-    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY &&
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
                 folio_state_begin_edit(state) == FOLIO_STATE_READY &&
                 folio_state_set_index_filter(state, u"needle", 6) == FOLIO_STATE_READY,
             "old saved text is loaded into the search corpus");
@@ -5444,7 +5616,7 @@ static void verify_copy_new_document(bool untitled)
     struct folio_state *state = copy_test_state(&adapter);
     if (untitled)
     {
-        require(folio_state_new_note(state, 0) == FOLIO_STATE_READY,
+        require(folio_state_new_note(state, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
                 "first save shares the new md publication boundary");
     }
     struct note_name *name = accepted_note_name("copied");
@@ -5480,11 +5652,11 @@ static enum folio_state_outcome copy_target_change(struct folio_state *_Nonnull 
 {
     if (scenario == 0)
     {
-        return folio_state_select_note(state, 0, 1);
+        return folio_state_select_note(state, 0, 1, FOLIO_UNTITLED_PROTECT);
     }
     if (scenario == 1)
     {
-        return folio_state_new_note(state, 0);
+        return folio_state_new_note(state, 0, FOLIO_UNTITLED_PROTECT);
     }
     if (scenario == 2)
     {
@@ -5526,7 +5698,7 @@ static size_t same_save_allocation_count(bool loaded)
         struct persistence_adapter adapter = healthy_adapter();
         adapter.note_body = "needle";
         struct folio_state *state = ready_state(&adapter);
-        require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY &&
+        require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
                     folio_state_begin_edit(state) == FOLIO_STATE_READY,
                 "prepare same-body save");
         if (loaded)
@@ -5554,7 +5726,7 @@ static void verify_copy_view_query(void)
 {
     struct persistence_adapter adapter = healthy_adapter();
     struct folio_state *state = ready_state(&adapter);
-    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY &&
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
                 folio_state_set_index_filter(state, u"needle", 6) == FOLIO_STATE_READY,
             "viewing source has a loaded search cache");
     struct note_name *name = accepted_note_name("copied");
@@ -5662,7 +5834,8 @@ static void verify_size_untitled(const char16_t *_Nonnull units, size_t count)
     struct persistence_adapter adapter = healthy_adapter();
     adapter.note_body = "M";
     struct folio_state *state = history_state(&adapter);
-    require(folio_state_new_note(state, 0) == FOLIO_STATE_READY, "new size fixture");
+    require(folio_state_new_note(state, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "new size fixture");
     const char *body = folio_state_pane_text(state);
     struct note_name *name = accepted_note_name("copy");
     struct note_destination destination = {.category = 0, .name = name};
@@ -5828,7 +6001,8 @@ static void verify_nul_untitled(void)
     const char16_t units[] = {u'\0', u'B'};
     struct persistence_adapter adapter = healthy_adapter();
     struct folio_state *state = history_state(&adapter);
-    require(folio_state_new_note(state, 0) == FOLIO_STATE_READY, "untitled NUL fixture");
+    require(folio_state_new_note(state, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "untitled NUL fixture");
     const char *body = folio_state_pane_text(state);
     struct note_name *name = accepted_note_name("first");
     struct note_destination destination = {.category = 0, .name = name};
@@ -5885,4 +6059,179 @@ void run_theme_state_tests(void)
 {
     finder = test_regex_port();
     verify_settings();
+}
+
+/* ADR0050: permission authorizes only this transition, never an intermediate empty document. */
+static void verify_untitled_departure(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_new_note(state, 1, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "prepare an untitled departure");
+    const char *pane = folio_state_pane_rtf(state);
+    const char *edit = folio_state_edit_rtf(state);
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) ==
+                    FOLIO_STATE_NAME_REQUIRED &&
+                folio_state_new_note(state, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_NAME_REQUIRED,
+            "the default permission protects an untitled document");
+    require(folio_state_select_note(state, 99, 0, FOLIO_UNTITLED_DISCARD) ==
+                    FOLIO_STATE_NO_SUCH_CATEGORY &&
+                folio_state_select_note(state, 0, 99, FOLIO_UNTITLED_DISCARD) ==
+                    FOLIO_STATE_NO_SUCH_NOTE &&
+                folio_state_new_note(state, 99, FOLIO_UNTITLED_DISCARD) ==
+                    FOLIO_STATE_NO_SUCH_CATEGORY,
+            "discard does not invent destinations");
+    adapter.note_outcome = PERSISTENCE_UNREADABLE;
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_DISCARD) ==
+                    FOLIO_STATE_NOTE_UNREADABLE &&
+                folio_state_document_kind(state) == FOLIO_DOCUMENT_UNTITLED &&
+                folio_state_document_category(state) == 1 && folio_state_pane_rtf(state) == pane &&
+                folio_state_edit_rtf(state) == edit &&
+                folio_state_pane_mode(state) == PANE_MODE_EDIT,
+            "unreadable replacement preserves the entire held untitled projection");
+    adapter.note_outcome = PERSISTENCE_LOADED;
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_DISCARD) == FOLIO_STATE_READY &&
+                folio_state_document_kind(state) == FOLIO_DOCUMENT_NAMED &&
+                folio_state_edit_rtf_length(state) != 0,
+            "a successful replacement already owns its editor projection");
+    require(folio_state_new_note(state, 1, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
+                folio_state_new_note(state, 0, FOLIO_UNTITLED_DISCARD) == FOLIO_STATE_READY &&
+                folio_state_document_category(state) == 0 &&
+                folio_state_edit_rtf_length(state) != 0,
+            "next new document prepares its empty editor before adoption");
+    require(adapter.creates == 0 && adapter.note_writes == 0 && adapter.archives == 0 &&
+                adapter.ledger_writes == 0 && adapter.writes == 0,
+            "discarded drafts never create md, history or an index row");
+    folio_state_destroy(state);
+}
+
+static void verify_untitled_expand_permission(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_select_adjacent(state, FOLIO_STEP_FIRST, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
+            "prepare the index cursor");
+    require(folio_state_set_category_expanded(state, 0, false, FOLIO_UNTITLED_PROTECT) ==
+                    FOLIO_STATE_READY &&
+                folio_state_new_note(state, 1, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
+                folio_state_select_adjacent(state, FOLIO_STEP_FIRST, FOLIO_UNTITLED_PROTECT) ==
+                    FOLIO_STATE_READY,
+            "a category cursor can move while holding an untitled document");
+    require(folio_state_category_replaces_document(state, 0, true),
+            "collapsed category with a note will replace the untitled document");
+    require(folio_state_toggle_category(state, 0) == FOLIO_STATE_READY &&
+                !folio_state_category_replaces_document(state, 0, true) &&
+                folio_state_document_kind(state) == FOLIO_DOCUMENT_UNTITLED,
+            "mouse expansion followed by an already-expanded l never requests discard");
+    require(folio_state_toggle_category(state, 0) == FOLIO_STATE_READY,
+            "restore the collapsed category for the actual replacement");
+    require(folio_state_set_category_expanded(state, 0, true, FOLIO_UNTITLED_DISCARD) ==
+                    FOLIO_STATE_READY &&
+                folio_state_document_kind(state) == FOLIO_DOCUMENT_NAMED &&
+                folio_state_edit_rtf_length(state) != 0 && adapter.creates == 0 &&
+                adapter.archives == 0,
+            "expansion passes the local discard permission to the same prepared selection");
+    folio_state_destroy(state);
+}
+
+static size_t departure_allocation_boundary(bool next_new)
+{
+    for (size_t nth = 1; nth < 128; ++nth)
+    {
+        struct persistence_adapter adapter = healthy_adapter();
+        struct folio_state *state = ready_state(&adapter);
+        require(folio_state_new_note(state, 1, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+                "prepare allocation-failure departure");
+        const char *pane = folio_state_pane_rtf(state);
+        const char *edit = folio_state_edit_rtf(state);
+        allocation_probe_fail_at(nth);
+        enum folio_state_outcome outcome =
+            next_new ? folio_state_new_note(state, 0, FOLIO_UNTITLED_DISCARD)
+                     : folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_DISCARD);
+        allocation_probe_fail_at(0);
+        if (outcome == FOLIO_STATE_OUT_OF_MEMORY)
+        {
+            require(folio_state_document_kind(state) == FOLIO_DOCUMENT_UNTITLED &&
+                        folio_state_document_category(state) == 1 &&
+                        folio_state_pane_rtf(state) == pane &&
+                        folio_state_edit_rtf(state) == edit &&
+                        folio_state_pane_mode(state) == PANE_MODE_EDIT,
+                    "every failed body/view/editor allocation keeps the prior draft");
+        }
+        require(outcome == FOLIO_STATE_READY || outcome == FOLIO_STATE_OUT_OF_MEMORY,
+                "departure has explicit allocation outcomes");
+        require(adapter.creates == 0 && adapter.archives == 0 && adapter.note_writes == 0 &&
+                    adapter.ledger_writes == 0 && adapter.writes == 0,
+                "allocation probes never persist the discarded draft");
+        folio_state_destroy(state);
+        if (outcome == FOLIO_STATE_READY)
+        {
+            return nth - 1;
+        }
+    }
+    require(false, "replacement allocation boundary must complete");
+    return 0;
+}
+
+static void verify_departure_partial_publication(void)
+{
+    struct note_text *probe = nullptr;
+    allocation_probe_fail_at(1);
+    enum note_text_outcome active = note_text_create("", 0, &probe);
+    allocation_probe_fail_at(0);
+    note_text_destroy(probe);
+    if (active != NOTE_TEXT_OUT_OF_MEMORY)
+    {
+        return;
+    }
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_new_note(state, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
+                folio_state_set_index_filter(state, u"needle", 6) == FOLIO_STATE_READY,
+            "prepare the first-save cache boundary");
+    struct note_name *name = accepted_note_name("pending-draft");
+    struct note_destination destination = {.category = 0, .name = name};
+    adapter.copy_fail_at = 1;
+    enum folio_state_outcome published = folio_state_store_new(state, &destination, u"needle", 6);
+    allocation_probe_fail_at(0);
+    adapter.copy_fail_at = 0;
+    require(published == FOLIO_STATE_OUT_OF_MEMORY &&
+                folio_state_document_kind(state) == FOLIO_DOCUMENT_NAMED && adapter.creates == 1,
+            "published draft is named even when its saved-copy repair fails");
+    enum folio_note_change changed = FOLIO_NOTE_CHANGED;
+    allocation_probe_fail_at(1);
+    enum folio_state_outcome queried = folio_state_note_changed(state, u"needle", 6, &changed);
+    allocation_probe_fail_at(0);
+    require(queried == FOLIO_STATE_OUT_OF_MEMORY && changed == FOLIO_NOTE_CHANGED &&
+                adapter.creates == 1 && adapter.archives == 0,
+            "a pending saved-copy repair continues to block departure rather than discarding");
+    require(folio_state_note_changed(state, u"needle", 6, &changed) == FOLIO_STATE_READY &&
+                changed == FOLIO_NOTE_SAME && adapter.creates == 1,
+            "retry repairs the published draft without creating it again");
+    note_name_destroy(name);
+    folio_state_destroy(state);
+}
+
+void run_first_save_target_tests(void)
+{
+    verify_untitled();
+    verify_first_save();
+    verify_first_save_refusals();
+}
+
+void run_unsaved_departure_tests(void)
+{
+    finder = test_regex_port();
+    verify_departure_partial_publication();
+    verify_untitled_departure();
+    verify_untitled_expand_permission();
+    size_t selected = departure_allocation_boundary(false);
+    size_t created = departure_allocation_boundary(true);
+    printf("untitled departure allocation points: select=%zu new=%zu\n", selected, created);
+}
+
+void run_untitled_expansion_query_tests(void)
+{
+    verify_untitled_expand_permission();
 }

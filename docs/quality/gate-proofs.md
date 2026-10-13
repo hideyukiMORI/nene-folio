@@ -847,3 +847,27 @@ CNF-009の設定語3値の表を、正本となった127配色の `folio_theme.c
 正常0件、Draculaのdesignator欠落で `has 0 table entries`、重複で `has 2 table entries` を各1件検出した。
 復元後0件。`verify-catalog-boundaries.py` / `catalog-boundary-proof.json` が実行証跡。
 実buildグラフのconformanceも0違反。最終フルゲートは#294に紐付く最終headの必須CIで確認する。
+
+## 2026-10-13 — #298 無題の退出3択
+
+完成候補の正典Win32 window/application/adaptersを結んだ外部harnessを、Windowsの専用desktopと
+`D:/NeNeFolio/outputs/298-unsaved-note-choice/`の私有fixtureで実行した。DebugのASan/UBSan/nullabilityを維持。
+120 DPI、PMv2、実RichEditと同期dialogを使い、キーは対象窓への合成メッセージ、画像は実寸`PrintWindow`。
+desktop切替や前景奪取は行わず、通常のdataは使っていない。
+
+`D:/NeNeFolio/agents/unsaved-note-choice-20261013/`の`compile-native.ps1`→`run-native.ps1`で、
+保存しないからノート選択/次の新規/通常終了、保存Enter、取消click/Enter/Esc/面の×、
+実Tab順、合成IME変換中の確定抑止、同名失敗後の入力保持、本文/選択範囲/Undo/dirty保持、
+名前付きの自動保存、md公開後の台帳書込失敗による後続停止を確認した。
+私有indexファイルを共有読取でlockし、mdが存在する一方で本文とUndoを保持して遷移停止する境界も通した。
+
+初回は109 assertionが成功、2件は試験helperが開いたままのEx面へ再び`:`を送り、`:wq`を実行できず失敗した。
+製品を変更せず、入力面を再利用するhelperに直した
+`compile-native-explicit-save-quit.ps1`→`run-native-explicit-save-quit.ps1`で、
+漏れた`:w`取消→`:wq`取消だけを補完。22 assertion成功・exit 0で、2択のまま本文/Undoと窓を保持した。
+初回ログは`native-initial-results.json`、補完は`native-explicit-save-quit-results.json`。成功済みの他境界は再実行していない。
+両実行で前景HWNDは実行前後一致、fixture窓は終了済み。
+
+日英中の`departure-{ja,en,zh}.png`をAstraのNeNeFolioサナが視認し、説明の折返しと3ボタンに見切れがないことを確認した。
+別OS/DPI、物理IME・実打鍵、スクリーンリーダーは未測定。ASanの起動時interception診断はログに残るが、
+補完実行と確保注入計測はexit 0、通常Debug対象unitは成功。最終headのフルゲートは必須CIで確認する。

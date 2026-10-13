@@ -16,6 +16,7 @@
 #include "folio_step.h"
 #include "folio_theme.h"
 #include "folio_theme_choice.h"
+#include "folio_untitled_policy.h"
 #include "history_row_view.h"
 #include "note_destination.h"
 #include "note_ref.h"
@@ -128,7 +129,8 @@ folio_state_toggle_category(struct folio_state *_Nonnull state, size_t index);
  * 無ければ最初のノートへ（右ペインが変わる。読めなければその結果を返しカーソルは行に残る）。
  * ノートが 0 本ならカテゴリ行に留まる。 */
 [[nodiscard]] enum folio_state_outcome
-folio_state_set_category_expanded(struct folio_state *_Nonnull state, size_t index, bool expanded);
+folio_state_set_category_expanded(struct folio_state *_Nonnull state, size_t index, bool expanded,
+                                  enum folio_untitled_policy untitled);
 /* カテゴリの色を変え、categories.json を書き戻す（FR-010 / ADR 0010 の決定 2）。
  * index が範囲外なら NO_SUCH_CATEGORY。いまと同じ色なら書かずに READY。
  * 書き戻せなければ状態は変えない。選択・編集モード・スクロール量は触らない。 */
@@ -168,7 +170,8 @@ folio_state_move_note(struct folio_state *_Nonnull state, struct note_ref from, 
 /* ノートを選び、本文を読んで右ペインの表示値を作る（FR-005）。読めなければ表示は変えない。
  * 表示モードは変えない（ADR 0013 の決定 4）。 */
 [[nodiscard]] enum folio_state_outcome folio_state_select_note(struct folio_state *_Nonnull state,
-                                                               size_t category, size_t note);
+                                                               size_t category, size_t note,
+                                                               enum folio_untitled_policy untitled);
 /* カーソルを歩みのぶんだけ動かす（FR-018 / ADR 0015 の決定 2）。
  * 止まる行は「カテゴリごとに、見えるノート行があればそのノート、無ければそのカテゴリ行 1 つ」で、
  * 台帳の順に辿る。カーソルが無ければ NEXT / FIRST は最初の止まる行、PREVIOUS / LAST は最後。
@@ -176,7 +179,8 @@ folio_state_move_note(struct folio_state *_Nonnull state, struct note_ref from, 
  * ノートに止まるときは folio_state_select_note と同じ読み込み経路で、表示モードは変わらない。
  * カテゴリ行に止まるときはカーソルだけが動き、選択も右ペインも変わらない（保存も要らない）。 */
 [[nodiscard]] enum folio_state_outcome
-folio_state_select_adjacent(struct folio_state *_Nonnull state, enum folio_step step);
+folio_state_select_adjacent(struct folio_state *_Nonnull state, enum folio_step step,
+                            enum folio_untitled_policy untitled);
 /* 歩みの行き先の種類（ADR 0015 の決定 2）。行き先が無ければ（端・止まる行が無い）false で
  * kindとoutは触らない。UIは保存前に行き先を写し、保存でカーソルが動いても同じ対象へ進む。 */
 [[nodiscard]] bool folio_state_step_kind(const struct folio_state *_Nonnull state,
@@ -197,15 +201,20 @@ folio_state_select_adjacent(struct folio_state *_Nonnull state, enum folio_step 
 [[nodiscard]] enum folio_document_kind
 folio_state_document_kind(const struct folio_state *_Nonnull state);
 [[nodiscard]] size_t folio_state_category_count(const struct folio_state *_Nonnull state);
+/* Whether this category expansion will actually replace the held document (ADR0050). */
+[[nodiscard]] bool folio_state_category_replaces_document(const struct folio_state *_Nonnull state,
+                                                          size_t category, bool expanded);
 [[nodiscard]] const char *_Nonnull folio_state_category_name(
     const struct folio_state *_Nonnull state, size_t category);
 /* カーソル→現在文書→最初のカテゴリ。カテゴリ0件なら0で、new_noteが拒否する。 */
 [[nodiscard]] size_t folio_state_current_category(const struct folio_state *_Nonnull state);
 /* 現在文書の保存先。NONEのときは呼ばない。 */
 [[nodiscard]] size_t folio_state_document_category(const struct folio_state *_Nonnull state);
-/* 現在本文の保存後にUIが呼ぶ。既に無題ならNAME_REQUIREDで本文を保護する。 */
+/* PROTECTは無題をNAME_REQUIREDで保護する。DISCARDはこの一回の置換だけを許す。
+ * 空本文・閲覧RTF・編集RTFを採用前に準備し、失敗では現在文書を保つ（ADR0050）。 */
 [[nodiscard]] enum folio_state_outcome folio_state_new_note(struct folio_state *_Nonnull state,
-                                                            size_t category);
+                                                            size_t category,
+                                                            enum folio_untitled_policy untitled);
 /* 初回/別名保存の共通作成。VIEWではunits/countを使わず所有する原文を複製する。
  * EDITでは入力を正規化。元ノートのwrite/archiveは呼ばず、成功時は新ノートを選択する。 */
 [[nodiscard]] enum folio_state_outcome
