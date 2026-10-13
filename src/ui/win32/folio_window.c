@@ -347,7 +347,8 @@ static enum folio_state_outcome prepare_name_operation(const struct folio_window
     HWND focus = GetFocus();
     struct name_prompt_request request = {
         .state = self->state, .kind = NAME_PROMPT_RETRY_RENAME, .units = u"", .count = 0};
-    enum folio_state_outcome outcome = name_prompt_show(self->handle, &request, &self->palette);
+    enum folio_state_outcome outcome =
+        name_prompt_show(self->handle, &request, &self->palette).outcome;
     /* 復旧の採用は元要求が失敗/未実行でも表示へ写す。本文には触らない。 */
     redraw_drawer(self);
     redraw_command_layer(self);
@@ -3045,20 +3046,36 @@ static void pour_edit_rtf(struct folio_window *_Nonnull self)
 /* 選択中のノートを、いまのモードのまま右ペインへ写す（ADR 0013 の決定 4 の (iii)）。
  * 編集中は本文を閲覧と同じ UTF-8 RTF で流し込むだけで、フォーカスは動かさない（ADR 0006 の #245
  * 補正）。 */
-static enum folio_state_outcome show_note(struct folio_window *_Nonnull self)
+static void reflect_note(struct folio_window *_Nonnull self)
 {
     set_pane_notice(self, PANE_NOTICE_NONE);
-    if (folio_state_pane_mode(self->state) == PANE_MODE_VIEW)
+    switch (folio_state_pane_mode(self->state))
     {
+    case PANE_MODE_VIEW:
         render_pane(self);
-        return FOLIO_STATE_READY;
+        return;
+    case PANE_MODE_EDIT:
+        pour_edit_rtf(self);
+        InvalidateRect(self->handle, nullptr, FALSE);
+        return;
     }
-    if (self->pane == nullptr || folio_state_pane_edit_rtf(self->state) != FOLIO_STATE_READY)
+}
+
+static enum folio_state_outcome show_note(struct folio_window *_Nonnull self)
+{
+    if (self->pane == nullptr)
     {
         return FOLIO_STATE_OUT_OF_MEMORY;
     }
-    pour_edit_rtf(self);
-    InvalidateRect(self->handle, nullptr, FALSE);
+    if (folio_state_pane_mode(self->state) == PANE_MODE_EDIT)
+    {
+        enum folio_state_outcome prepared = folio_state_pane_edit_rtf(self->state);
+        if (prepared != FOLIO_STATE_READY)
+        {
+            return prepared;
+        }
+    }
+    reflect_note(self);
     return FOLIO_STATE_READY;
 }
 
@@ -3144,6 +3161,41 @@ static enum folio_state_outcome store_body(const struct folio_window *_Nonnull s
     enum folio_state_outcome outcome = take_text(self, &units, &count);
     return outcome == FOLIO_STATE_READY ? folio_state_store_note(self->state, units, count)
                                         : outcome;
+}
+
+/* Leaving an untitled document reuses the first-save dialog without a second confirmation. */
+static struct name_prompt_result depart_document(const struct folio_window *_Nonnull self)
+{
+    struct name_prompt_result result = {FOLIO_STATE_READY, FOLIO_UNTITLED_PROTECT};
+    result.outcome = prepare_name_operation(self);
+    if (result.outcome != FOLIO_STATE_READY)
+    {
+        return result;
+    }
+    if (folio_state_document_kind(self->state) != FOLIO_DOCUMENT_UNTITLED)
+    {
+        result.outcome = store_body(self);
+        return result;
+    }
+    const char16_t *_Nonnull units = u"";
+    size_t count = 0;
+    result.outcome = take_text(self, &units, &count);
+    enum folio_note_change changed = FOLIO_NOTE_SAME;
+    if (result.outcome == FOLIO_STATE_READY)
+    {
+        result.outcome = folio_state_note_changed(self->state, units, count, &changed);
+    }
+    if (result.outcome != FOLIO_STATE_READY)
+    {
+        return result;
+    }
+    struct name_prompt_request request = {
+        .state = self->state, .kind = NAME_PROMPT_LEAVE_UNTITLED, .units = units, .count = count};
+    result = name_prompt_show(self->handle, &request, &self->palette);
+    /* A partial first-save publication changed title/index even when departure stops. */
+    redraw_drawer(self);
+    InvalidateRect(self->handle, nullptr, FALSE);
+    return result;
 }
 
 static enum folio_state_outcome command_save(struct folio_window *_Nonnull self)
@@ -4029,7 +4081,7 @@ static enum folio_state_outcome save_destination(const struct folio_window *_Non
                                                           : NAME_PROMPT_FIRST_SAVE,
                                               .units = units,
                                               .count = count};
-        return name_prompt_show(self->handle, &request, &self->palette);
+        return name_prompt_show(self->handle, &request, &self->palette).outcome;
     }
     struct note_name *_Nullable name = nullptr;
     enum note_name_outcome accepted = note_name_create(argument, strlen(argument), &name);
@@ -4081,7 +4133,7 @@ static enum folio_state_outcome rename_destination(const struct folio_window *_N
     {
         struct name_prompt_request request = {
             .state = self->state, .kind = NAME_PROMPT_RENAME, .units = units, .count = count};
-        return name_prompt_show(self->handle, &request, &self->palette);
+        return name_prompt_show(self->handle, &request, &self->palette).outcome;
     }
     struct note_name *_Nullable name = nullptr;
     enum note_name_outcome accepted = note_name_create(argument, strlen(argument), &name);
@@ -4222,10 +4274,8 @@ static void execute_save_command(struct folio_window *_Nonnull self, const char 
     finish_save_command(self, outcome);
 }
 
-static void execute_quit_command(struct folio_window *_Nonnull self, const char *_Nonnull argument)
+static void finish_quit(struct folio_window *_Nonnull self, enum folio_state_outcome outcome)
 {
-    (void)argument;
-    enum folio_state_outcome outcome = command_quit(self);
     if (outcome != FOLIO_STATE_READY)
     {
         command_failure(self, outcome);
@@ -4234,17 +4284,26 @@ static void execute_quit_command(struct folio_window *_Nonnull self, const char 
     DestroyWindow(self->handle);
 }
 
+static void close_window(struct folio_window *_Nonnull self)
+{
+    if (!self->removal_running)
+    {
+        /* Normal close accepts either saved content or explicit discard permission. */
+        finish_quit(self, depart_document(self).outcome);
+    }
+}
+
+static void execute_quit_command(struct folio_window *_Nonnull self, const char *_Nonnull argument)
+{
+    (void)argument;
+    finish_quit(self, command_quit(self));
+}
+
 static void execute_save_quit_command(struct folio_window *_Nonnull self,
                                       const char *_Nonnull argument)
 {
     (void)argument;
-    enum folio_state_outcome outcome = store_body(self);
-    if (outcome != FOLIO_STATE_READY)
-    {
-        command_failure(self, outcome);
-        return;
-    }
-    DestroyWindow(self->handle);
+    finish_quit(self, store_body(self));
 }
 
 static void execute_mode_command(struct folio_window *_Nonnull self, enum pane_mode mode)
@@ -4283,15 +4342,11 @@ static void execute_new_command(struct folio_window *_Nonnull self, const char *
     (void)argument;
     show_pane_layout(self);
     size_t category = folio_state_current_category(self->state);
-    enum folio_state_outcome saved = store_body(self);
+    struct name_prompt_result departure = depart_document(self);
+    enum folio_state_outcome saved = departure.outcome;
     if (saved == FOLIO_STATE_READY)
     {
-        saved = folio_state_new_note(self->state, category);
-    }
-    /* 無題になった後で編集 RTF を作る（無題の本文は空なので空の文書になる）。 */
-    if (saved == FOLIO_STATE_READY)
-    {
-        saved = folio_state_pane_edit_rtf(self->state);
+        saved = folio_state_new_note(self->state, category, departure.untitled);
     }
     if (saved != FOLIO_STATE_READY)
     {
@@ -4722,7 +4777,7 @@ static enum folio_state_outcome create_category(const struct folio_window *_Nonn
     {
         struct name_prompt_request request = {
             .state = self->state, .kind = NAME_PROMPT_NEW_CATEGORY, .units = u"", .count = 0};
-        return name_prompt_show(self->handle, &request, &self->palette);
+        return name_prompt_show(self->handle, &request, &self->palette).outcome;
     }
     struct category_name *_Nullable name = nullptr;
     switch (category_name_create(argument, strlen(argument), &name))
@@ -4966,7 +5021,7 @@ category_rename_destination(const struct folio_window *_Nonnull self, const char
 {
     if (argument[0] == '\0')
     {
-        return name_prompt_show(self->handle, request, &self->palette);
+        return name_prompt_show(self->handle, request, &self->palette).outcome;
     }
     struct category_name *_Nullable name = nullptr;
     switch (category_name_create(argument, strlen(argument), &name))
@@ -5137,10 +5192,13 @@ static bool store_edit(struct folio_window *_Nonnull self)
 }
 
 /* ノートを切り替える前の保存。閲覧中なら何もしない（ADR 0013 の決定 4 の (i)）。 */
-static enum folio_state_outcome save_edit(const struct folio_window *_Nonnull self)
+static struct name_prompt_result save_edit(const struct folio_window *_Nonnull self)
 {
-    return folio_state_pane_mode(self->state) == PANE_MODE_VIEW ? FOLIO_STATE_READY
-                                                                : store_body(self);
+    if (folio_state_pane_mode(self->state) == PANE_MODE_VIEW)
+    {
+        return (struct name_prompt_result){FOLIO_STATE_READY, FOLIO_UNTITLED_PROTECT};
+    }
+    return depart_document(self);
 }
 
 /* 選択の意図が通ったら、同じモードで開き直して索引も描き直す（決定 4 の (iii) / (iv)）。 */
@@ -5151,9 +5209,9 @@ static enum folio_state_outcome opened(struct folio_window *_Nonnull self,
     {
         return selected;
     }
-    enum folio_state_outcome outcome = show_note(self);
+    reflect_note(self);
     redraw_drawer(self);
-    return outcome;
+    return FOLIO_STATE_READY;
 }
 
 /* ノートを切り替える唯一の経路（ADR 0013 の決定 4）。保存できなければ選択は動かない。 */
@@ -5165,12 +5223,14 @@ static enum folio_state_outcome switch_note(struct folio_window *_Nonnull self, 
         return FOLIO_STATE_CANCELLED;
     }
     set_pane_notice(self, PANE_NOTICE_NONE);
-    enum folio_state_outcome outcome = save_edit(self);
+    struct name_prompt_result departure = save_edit(self);
+    enum folio_state_outcome outcome = departure.outcome;
     if (outcome != FOLIO_STATE_READY)
     {
         return outcome;
     }
-    outcome = opened(self, folio_state_select_note(self->state, category, note));
+    outcome =
+        opened(self, folio_state_select_note(self->state, category, note, departure.untitled));
     /* show_note が入口で印を下げるので、その後に立てる（#258）。 */
     if (outcome == FOLIO_STATE_READY &&
         folio_state_select_notice(self->state) == FOLIO_STATE_NOTE_UNEDITABLE)
@@ -5260,7 +5320,7 @@ static void switch_adjacent(struct folio_window *_Nonnull self, enum folio_step 
     }
     else
     {
-        outcome = folio_state_select_adjacent(self->state, step);
+        outcome = folio_state_select_adjacent(self->state, step, FOLIO_UNTITLED_PROTECT);
         redraw_drawer(self);
     }
     if (outcome != FOLIO_STATE_READY)
@@ -5288,7 +5348,8 @@ static enum folio_state_outcome reopen_if_moved(struct folio_window *_Nonnull se
     {
         return FOLIO_STATE_READY;
     }
-    return show_note(self);
+    reflect_note(self);
+    return FOLIO_STATE_READY;
 }
 
 /* h / l。カーソルの行のカテゴリを折り畳む／展開する（ADR 0015 の決定 3）。
@@ -5308,14 +5369,19 @@ static void expand_cursor(struct folio_window *_Nonnull self, bool expanded)
     {
         return;
     }
-    enum folio_state_outcome outcome =
-        expanded && kind == FOLIO_CURSOR_CATEGORY ? save_edit(self) : FOLIO_STATE_READY;
+    struct name_prompt_result departure = {FOLIO_STATE_READY, FOLIO_UNTITLED_PROTECT};
+    if (folio_state_category_replaces_document(self->state, cursor.category, expanded))
+    {
+        departure = save_edit(self);
+    }
+    enum folio_state_outcome outcome = departure.outcome;
     /* 初回保存で名前が付いても、本文自体は同じRichEdit。保存後から比較する。 */
     struct note_ref before = {.category = 0, .note = 0};
     bool had = folio_state_selection(self->state, &before);
     if (outcome == FOLIO_STATE_READY)
     {
-        outcome = folio_state_set_category_expanded(self->state, cursor.category, expanded);
+        outcome = folio_state_set_category_expanded(self->state, cursor.category, expanded,
+                                                    departure.untitled);
     }
     if (outcome == FOLIO_STATE_READY)
     {
@@ -5818,7 +5884,7 @@ static void click_common_header(struct folio_window *_Nonnull self, POINT point)
     RECT close = close_rect(self);
     if (PtInRect(&close, point))
     {
-        execute_command(self, FOLIO_COMMAND_SAVE_QUIT, "");
+        close_window(self);
         return;
     }
     RECT settings = settings_rect(self);
@@ -7558,7 +7624,7 @@ static LRESULT on_input_message(struct folio_window *_Nonnull self, UINT message
         forward_wheel(self, wparam, lparam);
         return 0;
     case WM_CLOSE:
-        execute_command(self, FOLIO_COMMAND_SAVE_QUIT, "");
+        close_window(self);
         return 0;
     case WM_DESTROY:
         window_destroyed(self);

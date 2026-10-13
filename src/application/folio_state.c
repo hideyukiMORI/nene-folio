@@ -1125,7 +1125,8 @@ enum folio_state_outcome folio_state_toggle_category(struct folio_state *_Nonnul
 
 /* 展開したあとのカーソル（ADR 0015 の決定 3）。選択がその中にあればそのノート、
  * 無ければ最初のノート（右ペインが変わる）、ノートが 0 本なら行に留まる。 */
-static enum folio_state_outcome cursor_into(struct folio_state *_Nonnull state, size_t index)
+static enum folio_state_outcome cursor_into(struct folio_state *_Nonnull state, size_t index,
+                                            enum folio_untitled_policy untitled)
 {
     if (state->document == FOLIO_DOCUMENT_NAMED && state->selected_category == index)
     {
@@ -1136,12 +1137,13 @@ static enum folio_state_outcome cursor_into(struct folio_state *_Nonnull state, 
     {
         return FOLIO_STATE_READY;
     }
-    return folio_state_select_note(state, index, 0);
+    return folio_state_select_note(state, index, 0, untitled);
 }
 
 /* 開閉のあとにカーソルを移す。カーソルがそのカテゴリに無ければ動かさない（決定 3）。 */
 static enum folio_state_outcome cursor_after_expanded(struct folio_state *_Nonnull state,
-                                                      size_t index, bool expanded)
+                                                      size_t index, bool expanded,
+                                                      enum folio_untitled_policy untitled)
 {
     struct drawer_cursor cursor = on_note(0, 0);
     if (!current_cursor(state, &cursor) || cursor.ref.category != index)
@@ -1153,11 +1155,12 @@ static enum folio_state_outcome cursor_after_expanded(struct folio_state *_Nonnu
         cursor_to_category(state, index);
         return FOLIO_STATE_READY;
     }
-    return cursor_into(state, index);
+    return cursor_into(state, index, untitled);
 }
 
 enum folio_state_outcome folio_state_set_category_expanded(struct folio_state *_Nonnull state,
-                                                           size_t index, bool expanded)
+                                                           size_t index, bool expanded,
+                                                           enum folio_untitled_policy untitled)
 {
     if (state->filter != nullptr)
     {
@@ -1183,7 +1186,7 @@ enum folio_state_outcome folio_state_set_category_expanded(struct folio_state *_
     {
         return outcome;
     }
-    return cursor_after_expanded(state, index, expanded);
+    return cursor_after_expanded(state, index, expanded, untitled);
 }
 
 static bool same_color(struct rgb_color left, struct rgb_color right)
@@ -1521,6 +1524,21 @@ enum folio_state_outcome folio_state_move_note(struct folio_state *_Nonnull stat
     return transfer_note(state, from, to);
 }
 
+/* Prepare both projections before adopting a replacement (ADR0050). */
+static enum folio_state_outcome prepare_note_edit(const struct folio_state *_Nonnull state,
+                                                  const struct note_text *_Nonnull body,
+                                                  struct markdown_rtf *_Nullable *_Nonnull edit)
+{
+    if (state->mode != PANE_MODE_EDIT || note_text_editability(body) == NOTE_TEXT_EDITOR_ALTERS)
+    {
+        return FOLIO_STATE_READY;
+    }
+    return markdown_rtf_plain(body, state->palette, ui_font_face(folio_state_language(state)),
+                              edit) == MARKDOWN_RTF_CONVERTED
+               ? FOLIO_STATE_READY
+               : FOLIO_STATE_OUT_OF_MEMORY;
+}
+
 /* 本文を読んで RTF にする。読めない理由は 1 つに畳む（無い・読めない・UTF-8 でない）。 */
 static enum folio_state_outcome render_note(struct folio_state *_Nonnull state,
                                             const char *_Nonnull category,
@@ -1545,9 +1563,19 @@ static enum folio_state_outcome render_note(struct folio_state *_Nonnull state,
         note_text_destroy(body);
         return FOLIO_STATE_OUT_OF_MEMORY;
     }
+    struct markdown_rtf *_Nullable edit = nullptr;
+    enum folio_state_outcome ready = prepare_note_edit(state, body, &edit);
+    if (ready != FOLIO_STATE_READY)
+    {
+        note_text_destroy(body);
+        markdown_rtf_destroy(rendered);
+        return ready;
+    }
     markdown_rtf_destroy(state->pane);
-    state->pane = rendered;
+    markdown_rtf_destroy(state->edit);
     note_text_destroy(state->body);
+    state->pane = rendered;
+    state->edit = edit;
     state->body = body;
     return FOLIO_STATE_READY;
 }
@@ -1567,11 +1595,24 @@ static void open_uneditable_in_view(struct folio_state *_Nonnull state)
     state->mode = PANE_MODE_VIEW;
 }
 
+static bool permits_untitled_replacement(enum folio_untitled_policy policy)
+{
+    switch (policy)
+    {
+    case FOLIO_UNTITLED_PROTECT:
+        return false;
+    case FOLIO_UNTITLED_DISCARD:
+        return true;
+    }
+    return false;
+}
+
 enum folio_state_outcome folio_state_select_note(struct folio_state *_Nonnull state,
-                                                 size_t category, size_t note)
+                                                 size_t category, size_t note,
+                                                 enum folio_untitled_policy untitled)
 {
     state->select_notice = FOLIO_STATE_READY;
-    if (state->document == FOLIO_DOCUMENT_UNTITLED)
+    if (state->document == FOLIO_DOCUMENT_UNTITLED && !permits_untitled_replacement(untitled))
     {
         return FOLIO_STATE_NAME_REQUIRED;
     }
@@ -1796,7 +1837,8 @@ static bool stepped_to(const struct folio_state *_Nonnull state, enum folio_step
 
 /* 行き先のノートへ移る。同じノートなら読み直さず、カーソルだけをそのノートへ戻す。 */
 static enum folio_state_outcome stepped_to_note(struct folio_state *_Nonnull state,
-                                                struct note_ref target)
+                                                struct note_ref target,
+                                                enum folio_untitled_policy untitled)
 {
     if (state->document == FOLIO_DOCUMENT_NAMED && state->selected_category == target.category &&
         state->selected_note == target.note)
@@ -1804,11 +1846,12 @@ static enum folio_state_outcome stepped_to_note(struct folio_state *_Nonnull sta
         cursor_to_selection(state);
         return FOLIO_STATE_READY;
     }
-    return folio_state_select_note(state, target.category, target.note);
+    return folio_state_select_note(state, target.category, target.note, untitled);
 }
 
 enum folio_state_outcome folio_state_select_adjacent(struct folio_state *_Nonnull state,
-                                                     enum folio_step step)
+                                                     enum folio_step step,
+                                                     enum folio_untitled_policy untitled)
 {
     struct drawer_cursor target = on_note(0, 0);
     if (!first_stop(state, &target))
@@ -1828,7 +1871,7 @@ enum folio_state_outcome folio_state_select_adjacent(struct folio_state *_Nonnul
         cursor_to_category(state, target.ref.category);
         return FOLIO_STATE_READY;
     case DRAWER_ROW_NOTE:
-        return stepped_to_note(state, target.ref);
+        return stepped_to_note(state, target.ref, untitled);
     }
     return FOLIO_STATE_READY;
 }
@@ -1901,6 +1944,24 @@ size_t folio_state_document_category(const struct folio_state *_Nonnull state)
     return state->selected_category;
 }
 
+bool folio_state_category_replaces_document(const struct folio_state *_Nonnull state,
+                                            size_t category, bool expanded)
+{
+    struct drawer_cursor cursor = on_note(0, 0);
+    if (!expanded || state->filter != nullptr ||
+        category >= category_ledger_count(state->categories) ||
+        category_ledger_expanded(state->categories, category) ||
+        note_ledger_count(state->notes[category]) == 0)
+    {
+        return false;
+    }
+    if (state->document == FOLIO_DOCUMENT_NAMED && state->selected_category == category)
+    {
+        return false;
+    }
+    return current_cursor(state, &cursor) && cursor.ref.category == category;
+}
+
 const char *_Nonnull folio_state_category_name(const struct folio_state *_Nonnull state,
                                                size_t category)
 {
@@ -1917,9 +1978,10 @@ size_t folio_state_current_category(const struct folio_state *_Nonnull state)
     return state->document == FOLIO_DOCUMENT_NONE ? 0 : state->selected_category;
 }
 
-enum folio_state_outcome folio_state_new_note(struct folio_state *_Nonnull state, size_t category)
+enum folio_state_outcome folio_state_new_note(struct folio_state *_Nonnull state, size_t category,
+                                              enum folio_untitled_policy untitled)
 {
-    if (state->document == FOLIO_DOCUMENT_UNTITLED)
+    if (state->document == FOLIO_DOCUMENT_UNTITLED && !permits_untitled_replacement(untitled))
     {
         return FOLIO_STATE_NAME_REQUIRED;
     }
@@ -1934,18 +1996,24 @@ enum folio_state_outcome folio_state_new_note(struct folio_state *_Nonnull state
     }
     struct note_text *_Nullable body = nullptr;
     struct markdown_rtf *_Nullable pane = nullptr;
+    struct markdown_rtf *_Nullable edit = nullptr;
     if (note_text_create("", 0, &body) != NOTE_TEXT_ACCEPTED ||
         markdown_rtf_empty(state->palette, ui_font_face(folio_state_language(state)), &pane) !=
-            MARKDOWN_RTF_CONVERTED)
+            MARKDOWN_RTF_CONVERTED ||
+        markdown_rtf_plain(body, state->palette, ui_font_face(folio_state_language(state)),
+                           &edit) != MARKDOWN_RTF_CONVERTED)
     {
         note_text_destroy(body);
         markdown_rtf_destroy(pane);
+        markdown_rtf_destroy(edit);
         return FOLIO_STATE_OUT_OF_MEMORY;
     }
     note_text_destroy(state->body);
     markdown_rtf_destroy(state->pane);
+    markdown_rtf_destroy(state->edit);
     state->body = body;
     state->pane = pane;
+    state->edit = edit;
     state->document = FOLIO_DOCUMENT_UNTITLED;
     state->selected_category = category;
     state->mode = PANE_MODE_EDIT;

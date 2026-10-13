@@ -95,6 +95,7 @@
 | 上部の操作説明 | 標準tooltipのHWND・矩形登録・固定UTF-16表示buffer | ui/win32（`folio_window`） | 同じボタン矩形とui_textを参照し、resize/DPI/言語/テーマ・modal境界に追従する。表示状態や文書の別所有者にはしない（ADR0048） |
 | 表示キーのIME抑止 | 主窓・入力欄・本文の変換中状態 | ui/win32（各入力窓の所有者） | WM_IME_STARTCOMPOSITION/ENDCOMPOSITIONから追跡し、表示キーの実行前に確認する。通常のIME処理は維持する（ADR0048） |
 | 編集中の本文 | 保存前の文字列 | ui/win32（RichEdit が所有） | 保存の意図で application へ渡す |
+| 無題を置き換える許可 | 無題保護／明示破棄の閉じた値 | 同期呼出し元のローカル | 退出用の名前入力面から受け、既存の選択・新規の意図へ一回だけ渡す。次文書の準備後に採用し、永続状態や継続キューを作らない（ADR0050） |
 | ドロワーのスクロール量 | 画素 | application（レイアウト値の一部） | ホイール・キーの意図。上限は core が計算 |
 | 検索語と一致集合 | 文字列と文書 ID の列 | application | 検索窓の入力 |
 | テーマの名前と配色 | 127固定配色の識別子・UI/RTF用RGB | core（`folio_theme`の`theme_palette`表） | `folio_theme_choice`がsystemを含む選択・名前解析を集約し、UIはCOLORREFへの変換だけ行う（ADR0049） |

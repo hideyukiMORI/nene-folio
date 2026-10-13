@@ -397,21 +397,24 @@ static bool ledger_under_probe(struct folio_state *_Nonnull state)
  * （FR-005 / FR-018・ADR 0013 の決定 5 / 6・ADR 0015 の決定 2 / 3）。 */
 static bool selection_under_probe(struct folio_state *_Nonnull state)
 {
-    enum folio_state_outcome selected = folio_state_select_note(state, 0, 0);
+    enum folio_state_outcome selected =
+        folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT);
     require(selected == FOLIO_STATE_READY || selected == FOLIO_STATE_OUT_OF_MEMORY,
             "select under probe");
     if (selected != FOLIO_STATE_READY)
     {
         return false;
     }
-    enum folio_state_outcome stepped = folio_state_select_adjacent(state, FOLIO_STEP_LAST);
+    enum folio_state_outcome stepped =
+        folio_state_select_adjacent(state, FOLIO_STEP_LAST, FOLIO_UNTITLED_PROTECT);
     require(stepped == FOLIO_STATE_READY || stepped == FOLIO_STATE_OUT_OF_MEMORY,
             "step under probe");
     if (stepped != FOLIO_STATE_READY)
     {
         return false;
     }
-    enum folio_state_outcome expanded = folio_state_set_category_expanded(state, 0, true);
+    enum folio_state_outcome expanded =
+        folio_state_set_category_expanded(state, 0, true, FOLIO_UNTITLED_PROTECT);
     require(expanded == FOLIO_STATE_READY || expanded == FOLIO_STATE_OUT_OF_MEMORY,
             "expand under probe");
     if (expanded != FOLIO_STATE_READY)
@@ -434,7 +437,7 @@ static bool new_note_under_probe(struct folio_state *_Nonnull state)
         return false;
     }
     require(named == NOTE_NAME_ACCEPTED, "name under probe");
-    enum folio_state_outcome created = folio_state_new_note(state, 0);
+    enum folio_state_outcome created = folio_state_new_note(state, 0, FOLIO_UNTITLED_PROTECT);
     require(created == FOLIO_STATE_READY || created == FOLIO_STATE_OUT_OF_MEMORY,
             "new under probe");
     if (created == FOLIO_STATE_READY)
@@ -689,7 +692,7 @@ static bool edit_rtf_scenario(void)
         folio_state_create(test_ports(&port, &looks, &finder), &state);
     if (outcome == FOLIO_STATE_READY)
     {
-        outcome = folio_state_select_note(state, 0, 0);
+        outcome = folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT);
     }
     completed = outcome == FOLIO_STATE_READY && edit_rtf_request(state) && edit_rtf_request(state);
     require(outcome == FOLIO_STATE_READY || outcome == FOLIO_STATE_OUT_OF_MEMORY,
@@ -715,7 +718,7 @@ static bool history_scenario(void)
         folio_state_create(test_ports(&port, &looks, &finder), &state);
     if (outcome == FOLIO_STATE_READY)
     {
-        outcome = folio_state_select_note(state, 0, 0);
+        outcome = folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT);
     }
     if (outcome == FOLIO_STATE_READY)
     {
@@ -1083,7 +1086,7 @@ static bool trash_scenario(void)
     struct folio_state *state = nullptr;
     bool prepared =
         folio_state_create(test_ports(&port, &looks, &regex), &state) == FOLIO_STATE_READY &&
-        folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY &&
+        folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
         folio_state_set_index_filter(state, u"Hello", 5) == FOLIO_STATE_READY;
     bool completed = prepared && trash_under_probe(state, adapter);
     folio_state_destroy(state);
@@ -1125,7 +1128,7 @@ static bool remove_category_scenario(void)
     struct folio_state *state = nullptr;
     bool prepared =
         folio_state_create(test_ports(&port, &looks, &regex), &state) == FOLIO_STATE_READY &&
-        folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY;
+        folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY;
     bool completed = prepared && remove_category_under_probe(state, adapter);
     folio_state_destroy(state);
     test_adapter_destroy(adapter);

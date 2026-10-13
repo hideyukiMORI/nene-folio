@@ -24,7 +24,7 @@
 | ドロワー（drawer） | 左のペイン。検索窓と索引。自前描画・スクロールバー無し | `src/ui/win32` |
 | ビュー（view）／編集（edit） | 右のペインの 2 つのモード。閉じた enum。ノートを切り替えても保たれ、閲覧へ戻すのは「閲覧」の札と窓を閉じる操作だけ | `enum pane_mode`（application）・ADR 0013 |
 | 表示モード（layout mode） | 一覧／両方／ノートの可視領域。閲覧／編集とは独立し、切替だけでは保存しない。一覧は窓を細くし、戻すと直前の広い幅または最大化へ復元する。実行中だけの状態 | `enum folio_layout_mode`（core）・`folio_state_layout_mode`（application）・ADR0047 |
-| 名前入力面（name prompt） | 初回保存・別名保存・改名で名前と保存先カテゴリを受けるモーダル。`dialog_theme` の塗りで、保存先カテゴリは常時開いた一覧（4 行） | `name_prompt_show`（ui/win32）・ADR 0035（補正 17〜21） |
+| 名前入力面（name prompt） | 初回保存・別名保存・改名で名前と保存先カテゴリを受けるモーダル。無題から離れる種別だけ保存／保存しない／キャンセルを持つ。`dialog_theme` の塗りで、保存先カテゴリは常時開いた一覧（4 行） | `name_prompt_show`（ui/win32）・ADR 0035（補正 17〜21）/0050 |
 | 失敗の箱（failure box） | 「知らせて戻る」だけのモーダル。application の `folio_state_failure_line` の 1 行を、名前入力面と同じ `dialog_theme` の塗りで見せる。警告音と三角の「!」の印（`ICON_PAINT_WARNING`）を持つ。答えで分岐しない。作れないときだけ `MessageBoxW` へ退避 | `failure_box_show`（ui/win32）・ADR 0035（補正 12〜16） |
 | 区画（focus zone） | 鍵を受け取る側。**索引**（主窓）と**本文**（RichEdit）の 2 つで、Win32 のフォーカスそのものが正本。application は区画の状態を持たない | `GetFocus()`（ui/win32）・ADR 0013 の決定 1 |
 | カーソル（cursor） | 索引で鍵が指している行。**ノート行**（そのときは選択そのもの）と、**見えるノート行を持たないカテゴリ行**（折り畳み・ノート 0 本）にだけ止まる。カテゴリ行にあるあいだ選択と右ペインは動かない。印は行の右端の角（カテゴリ行では**折畳の印**の左。印は字形ではなく 24 の viewBox の面のパスなので、空ける幅は定数） | `enum folio_cursor_kind`・`folio_state_cursor`（application）・`struct drawer_cursor`・`drawer_row.cursor`（core）・ADR 0015 |
@@ -39,6 +39,7 @@
 | ノートの居場所（note ref） | カテゴリ番号とノート番号の組。移動の意図はこれを 2 つ受ける | `struct note_ref`（core） |
 | 台帳が古い（ledger stale） | mdの作成・移動は済んだがindex.jsonを保存できない状態。表示はファイルに従い、再起動の照合で揃う。初回保存では次の保存・変更前に再試行し、未同期の終了を拒否する | `FOLIO_STATE_LEDGER_STALE`（application）・ADR0008/0020 |
 | 無題（untitled） | まだファイル名を持たない編集中の文書。空でも未保存。本文とUndoはRichEdit、種類と文書カテゴリはapplicationが持つ | `folio_document_kind`・ADR0020 |
+| 無題の破棄許可（untitled policy） | 「保存しない」を選んだ一回の離脱で、無題を別文書に置き換えてよいという閉じた値。呼出しローカルだけで渡し、次文書の準備成功後に採用する | `folio_untitled_policy`（application）・ADR0050 |
 | 初回保存（first save） | 無題の本文を名前とカテゴリに結び、新しいmdを既存ファイルの置換なしで公開する。初回の履歴は作らない | `note_name`（core）・`folio_state_store_new`（application）・`create_note`ポート |
 | スクロール量（scroll offset） | ドロワーを下へずらした画素。**要求量**は application が持つ値で、**有効量**はいまの配置の上限（0〜`bottom + bottom_padding − viewport_height`）へ丸めた量。表示座標は内部の座標から有効量を引いたもの | `folio_state_scroll_drawer`（application）・`drawer_layout_scroll` / `drawer_layout_scroll_limit`（core）・ADR 0009 |
 | フェード（fade） | あふれている側の端に置く短い帯。端で地の色 100%・内側で 0% になるよう画素ごとに混ぜ、隠れた行があることを示す。要否は core の `drawer_layout_overflow_above` / `_below` が答える | `drawer_window` の `draw_fade`（ui/win32）・ADR 0009 |

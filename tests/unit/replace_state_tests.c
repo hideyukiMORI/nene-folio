@@ -136,7 +136,8 @@ static struct folio_state *_Nonnull edited_state(struct persistence_adapter *_No
     require(folio_state_create(test_ports(&port, &looks, &finder), &state) == FOLIO_STATE_READY,
             "the state takes four ports");
     require(state != nullptr, "the state is owned");
-    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY, "a note is selected");
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "a note is selected");
     require(folio_state_begin_edit(state) == FOLIO_STATE_READY, "the note is being edited");
     return state;
 }
@@ -160,7 +161,8 @@ static void verify_guards(void)
     require(folio_state_apply_replace(state, &apply, &edit) == FOLIO_STATE_NOT_EDITING,
             "viewing refuses to apply");
     require(edit == nullptr && script.scans == 0, "nothing was scanned");
-    require(folio_state_select_note(state, 0, 0) == FOLIO_STATE_READY, "select");
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "select");
     require(folio_state_begin_edit(state) == FOLIO_STATE_READY, "edit");
     /* 下見が無いあいだは適用できない（決定 6）。 */
     require(folio_state_apply_replace(state, &apply, &edit) == FOLIO_STATE_REPLACE_STALE,
@@ -294,7 +296,8 @@ static void verify_stale(void)
             "an inverted anchor is refused");
     require(edit == nullptr, "nothing was built");
     /* 同じ本文でも宛先が違えば当てない（別のノートへ同じ文字列が入っている場合）。 */
-    require(folio_state_select_note(state, 0, 1) == FOLIO_STATE_READY, "another note");
+    require(folio_state_select_note(state, 0, 1, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "another note");
     require(folio_state_begin_edit(state) == FOLIO_STATE_READY, "editing it");
     struct replace_apply same = apply_for(u"a-a", REPLACE_ALL, 0);
     require(folio_state_apply_replace(state, &same, &edit) == FOLIO_STATE_REPLACE_STALE,

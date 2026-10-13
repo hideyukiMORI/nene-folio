@@ -30,6 +30,10 @@ are newer than the published v0.1.0 ZIP.
   … `5.md`, and any version can be restored into the editor as an undoable edit.
 - **Notes**: new untitled note with a first save, save as, rename (recoverable across restarts through
   `data/.rename.json`), move to the Windows Recycle Bin together with its history.
+  Leaving an untitled note for another note, a new note, or the window's Close action offers
+  **Save / Don't save / Cancel** in the name form. Don't save continues without creating a file;
+  Cancel keeps the draft and Undo. If the destination cannot be opened, the draft is kept.
+  Ctrl+S and explicit **Save and quit** remain save commands.
 - **Categories**: create, rename, change colour, delete when empty, all from the right-click menu,
   the **Actions** list, the command palette, or Ex commands.
 - **Find**: search inside the open note (Ctrl+F, `/`, `?`, `n`, `N`, F3), filter all notes

@@ -164,7 +164,7 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_LAYOUT_MENU] = "{name}\t{from}",
     [UI_TEXT_LAYOUT_HELP] = "{from}  {name}",
     [UI_TEXT_TOOLTIP_SETTINGS] = "設定を開く",
-    [UI_TEXT_TOOLTIP_CLOSE] = "保存して閉じる",
+    [UI_TEXT_TOOLTIP_CLOSE] = "閉じる",
     [UI_TEXT_COMMAND_DISCARD_EDITS] = "編集を破棄して読み直す",
     [UI_TEXT_COMMAND_HISTORY] = "履歴から戻す",
     [UI_TEXT_COMMAND_TRASH_NOTE] = "ノートをごみ箱へ移す",
@@ -269,6 +269,10 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_PROMPT_PENDING_EXPLANATION] =
         "「再試行」で同じ名前変更を続けます。「閉じる」は取り消しではありません。",
     [UI_TEXT_PROMPT_PENDING_RENAME] = "{from} → {to}",
+    [UI_TEXT_PROMPT_TITLE_LEAVE] = "保存しますか",
+    [UI_TEXT_PROMPT_HINT_LEAVE] =
+        "保存しないと、この内容は失われます。名前の末尾に .md を補います。",
+    [UI_TEXT_PROMPT_DISCARD] = "保存しない",
     [UI_TEXT_PROMPT_TITLE_FIRST_SAVE] = "名前をつけて保存",
     [UI_TEXT_PROMPT_TITLE_SAVE_AS] = "別名で保存",
     [UI_TEXT_PROMPT_TITLE_RENAME] = "名前を変更",
