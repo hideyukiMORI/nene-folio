@@ -34,6 +34,8 @@ are newer than the published v0.1.0 ZIP.
   **Save / Don't save / Cancel** in the name form. Don't save continues without creating a file;
   Cancel keeps the draft and Undo. If the destination cannot be opened, the draft is kept.
   Ctrl+S and explicit **Save and quit** remain save commands.
+  The drawer's fixed **+ New note** button also works in List view. A category's right-click
+  **New note in this category** starts writing there; Cancel keeps the previous view and draft.
 - **Categories**: create, rename, change colour, delete when empty, all from the right-click menu,
   the **Actions** list, the command palette, or Ex commands.
 - **Find**: search inside the open note (Ctrl+F, `/`, `?`, `n`, `N`, F3), filter all notes

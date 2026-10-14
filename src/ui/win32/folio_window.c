@@ -4336,12 +4336,9 @@ static void execute_mode_command(struct folio_window *_Nonnull self, enum pane_m
     }
 }
 
-/* Ex・パレット・既存入口が共有する唯一の HWND 操作 dispatcher（ADR 0016 の決定 2）。 */
-static void execute_new_command(struct folio_window *_Nonnull self, const char *_Nonnull argument)
+/* 作成先は離脱確認の前に確定する。旧無題の保存先を変えても新規の宛先を変えない（ADR0051）。 */
+static void new_note_at(struct folio_window *_Nonnull self, size_t category)
 {
-    (void)argument;
-    show_pane_layout(self);
-    size_t category = folio_state_current_category(self->state);
     struct name_prompt_result departure = depart_document(self);
     enum folio_state_outcome saved = departure.outcome;
     if (saved == FOLIO_STATE_READY)
@@ -4353,11 +4350,19 @@ static void execute_new_command(struct folio_window *_Nonnull self, const char *
         command_failure(self, saved);
         return;
     }
+    show_pane_layout(self);
     hide_command_surface(self);
     pour_edit_rtf(self);
     redraw_drawer(self);
     InvalidateRect(self->handle, nullptr, FALSE);
     focus_pane(self);
+}
+
+/* Ex・パレット・既存入口は現在カテゴリを解き、対象付きの共通受け口へ渡す。 */
+static void execute_new_command(struct folio_window *_Nonnull self, const char *_Nonnull argument)
+{
+    (void)argument;
+    new_note_at(self, folio_state_current_category(self->state));
 }
 
 /* 語ごとの行き先（ADR 0026 の決定 8）。切替はいまの値から導き、UI に第 2 の真偽を持たない。 */
@@ -5302,6 +5307,9 @@ static void run_drawer_menu(struct folio_window *_Nonnull self, enum drawer_menu
         return;
     case DRAWER_MENU_NEW_CATEGORY:
         execute_new_category_command(self, "");
+        return;
+    case DRAWER_MENU_NEW_NOTE:
+        new_note_at(self, target->category);
         return;
     }
 }

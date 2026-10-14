@@ -320,6 +320,8 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
     [UI_TEXT_MENU_RECOLOR] = {"色を変える…", "Change color…", "更改颜色…"},
     [UI_TEXT_MENU_RENAME_NOTE] = {"名前を変更…", "Rename…", "重命名…"},
     [UI_TEXT_MENU_NEW_CATEGORY] = {"新しいカテゴリ…", "New category…", "新建分类…"},
+    [UI_TEXT_MENU_NEW_NOTE_IN_CATEGORY] = {"このカテゴリに新しいノート",
+                                           "New note in this category", "在此分类中新建笔记"},
     [UI_TEXT_HELP_PALETTE] = {"一覧  ↑↓ 選択 / Enter 実行 / Esc 戻る / Tab 説明",
                               "List  ↑↓ Select / Enter Run / Esc Back / Tab Keys",
                               "列表  ↑↓ 选择 / Enter 执行 / Esc 返回 / Tab 按键"},

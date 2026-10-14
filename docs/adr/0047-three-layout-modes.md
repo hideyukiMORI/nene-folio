@@ -68,3 +68,8 @@ ADR0011の常に560幅という前提とADR0013の常時両区画という前提
 - [Microsoft SetWindowPlacement](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setwindowplacement)
 - [Microsoft WINDOWPLACEMENT](https://learn.microsoft.com/en-us/windows/win32/api/winuser/ns-winuser-windowplacement)
 - [Microsoft ShowWindow](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-showwindow)
+
+## 2026-10-14 の補正（#302）
+
+[ADR0051](0051-drawer-new-note.md)で決定6の新規を補正する。無題の離脱と次文書の準備が成功した後にだけ
+一覧から両方へ広げる。キャンセル・失敗では一覧の表示と窓幅を保持する。
