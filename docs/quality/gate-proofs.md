@@ -871,3 +871,10 @@ desktop切替や前景奪取は行わず、通常のdataは使っていない。
 日英中の`departure-{ja,en,zh}.png`をAstraのNeNeFolioサナが視認し、説明の折返しと3ボタンに見切れがないことを確認した。
 別OS/DPI、物理IME・実打鍵、スクリーンリーダーは未測定。ASanの起動時interception診断はログに残るが、
 補完実行と確保注入計測はexit 0、通常Debug対象unitは成功。最終headのフルゲートは必須CIで確認する。
+
+## 2026-10-14 — #302 ドロワー新規入口
+
+常設新規・カテゴリ右クリック・対象付きの共通作成・一覧の取消保持を、専用fixtureの実Win32で確認した。
+通常85、カテゴリ0件16、絞り込み/最小寸法の補完44 assertion成功。3言語・明暗の実画像を確認。
+Debug build/tidyと関係するunit、規約検査も成功。試験helperの初回失敗・修正と未測定条件を含む
+詳細は[対象品質記録](2026-10-14-drawer-new-note-checks.md)、証跡は`D:/NeNeFolio/agents/302-drawer-new-note/`。

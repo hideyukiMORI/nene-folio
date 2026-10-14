@@ -1,5 +1,6 @@
 #include "drawer_window.h"
 
+#include "drawer_header_button.h"
 #include "drawer_layout.h"
 #include "drawer_menu_item.h"
 #include "failure_box.h"
@@ -27,8 +28,8 @@ struct drawer_window
     HFONT _Nullable category_font;
     HFONT _Nullable note_font;
     HFONT _Nullable mono_font;
-    bool pressed;              /* 左ボタンを押した行を覚えているか */
-    bool new_category_pressed; /* 固定帯のbutton。行のpress/dragとは独立。 */
+    bool pressed; /* 左ボタンを押した行を覚えているか */
+    enum drawer_header_button header_pressed;
     size_t pressed_row;
     int pressed_y; /* 押したときの y。しきい値の判定に使う */
     int pointer_y; /* 最後に見たポインタの y。スクロール中に落とし先を引き直す */
@@ -50,6 +51,7 @@ constexpr size_t draw_unit_limit = 1024;
 /* 96 DPI での寸法（デザイン「案2 堅」）。描くときに DPI で拡大する（FR-013）。 */
 constexpr int base_dpi = 96;
 constexpr int base_header_indent = 16;
+constexpr int base_new_note_height = 40;
 /* 常設の「すべてのノートを検索」の欄が占める帯（ADR 0024 の決定 6）。欄そのものは主窓の子で、
  * ここは行を置かない余白として数える。 */
 constexpr int base_filter_height = 36;
@@ -121,10 +123,21 @@ static void refresh_fonts(struct drawer_window *_Nonnull self, UINT dpi)
     self->mono_font = create_font(dpi, base_mono_font, FW_NORMAL, mono_face);
 }
 
-/* 固定の検索欄・カテゴリ帯。行配置/clip/hit/scrollはこの高さを共用する。 */
+/* 固定の新規・検索欄・カテゴリ帯。行配置/clip/hit/scrollはこの高さを共用する。 */
 static int band_height(const struct drawer_window *_Nonnull self)
 {
-    return scale(base_filter_height + base_category_band_height, GetDpiForWindow(self->handle));
+    return scale(base_new_note_height + base_filter_height + base_category_band_height,
+                 GetDpiForWindow(self->handle));
+}
+
+static RECT new_note_rect(const struct drawer_window *_Nonnull self)
+{
+    UINT dpi = GetDpiForWindow(self->handle);
+    RECT client;
+    GetClientRect(self->handle, &client);
+    int inset = scale(base_filter_inset, dpi);
+    int margin = scale(base_filter_margin, dpi);
+    return (RECT){inset, margin, client.right - inset, scale(base_new_note_height, dpi) - margin};
 }
 
 static RECT new_category_rect(const struct drawer_window *_Nonnull self)
@@ -152,9 +165,9 @@ static RECT filter_rect(const struct drawer_window *_Nonnull drawer)
     int inset = scale(base_filter_inset, dpi);
     int margin = scale(base_filter_margin, dpi);
     bounds.left = inset;
-    bounds.top = margin;
+    bounds.top = scale(base_new_note_height, dpi) + margin;
     bounds.right = client.right - inset;
-    bounds.bottom = scale(base_filter_height, dpi) - margin;
+    bounds.bottom = scale(base_new_note_height + base_filter_height, dpi) - margin;
     return bounds;
 }
 
@@ -284,6 +297,28 @@ static void draw_filter_frame(const struct drawer_window *_Nonnull self, HDC dev
     frame_rect(device, bounds, self->palette.chip_background);
 }
 
+static void draw_new_note(const struct drawer_window *_Nonnull self, HDC device)
+{
+    UINT dpi = GetDpiForWindow(self->handle);
+    RECT button = new_note_rect(self);
+    bool pressed = self->header_pressed == DRAWER_HEADER_NEW_NOTE;
+    fill_rect(device, button,
+              pressed ? self->palette.selected_background : self->palette.chip_background);
+    frame_rect(device, button, self->palette.category_text);
+    COLORREF ink = pressed ? self->palette.selected_text : self->palette.chip_text;
+    int box = scale(base_new_category_size, dpi);
+    int left = button.left + scale(8, dpi);
+    int top = button.top + (button.bottom - button.top - box) / 2;
+    RECT icon = {left, top, left + box, top + box};
+    icon_paint_fill(device, icon, ICON_PAINT_ADD, ink);
+    RECT label = {icon.right + scale(8, dpi), button.top, button.right - scale(8, dpi),
+                  button.bottom};
+    SelectObject(device, self->note_font);
+    SetTextColor(device, ink);
+    draw_utf8(device, ui_text_line(UI_TEXT_COMMAND_NEW, folio_state_language(self->state)), label,
+              0);
+}
+
 static void draw_category_band(const struct drawer_window *_Nonnull self, HDC device)
 {
     UINT dpi = GetDpiForWindow(self->handle);
@@ -295,7 +330,7 @@ static void draw_category_band(const struct drawer_window *_Nonnull self, HDC de
     SetTextColor(device, self->palette.category_text);
     draw_utf8(device, ui_text_line(UI_TEXT_TITLE_CATEGORIES, folio_state_language(self->state)),
               label, 0);
-    if (self->new_category_pressed)
+    if (self->header_pressed == DRAWER_HEADER_NEW_CATEGORY)
     {
         fill_rect(device, button, self->palette.selected_background);
     }
@@ -311,6 +346,7 @@ static void draw_category_band(const struct drawer_window *_Nonnull self, HDC de
 static void draw_header(const struct drawer_window *_Nonnull self, HDC device)
 {
     SetTextCharacterExtra(device, 0);
+    draw_new_note(self, device);
     draw_filter_frame(self, device);
     draw_category_band(self, device);
 }
@@ -670,6 +706,8 @@ static enum ui_text menu_label(enum drawer_menu_item item)
         return UI_TEXT_MENU_RENAME_NOTE;
     case DRAWER_MENU_NEW_CATEGORY:
         return UI_TEXT_MENU_NEW_CATEGORY;
+    case DRAWER_MENU_NEW_NOTE:
+        return UI_TEXT_MENU_NEW_NOTE_IN_CATEGORY;
     case DRAWER_MENU_TRASH_NOTE:
         return UI_TEXT_MENU_TRASH_NOTE;
     case DRAWER_MENU_DELETE_CATEGORY:
@@ -702,7 +740,9 @@ static bool fill_menu(HMENU menu, bool on_row, struct drawer_row row, enum folio
     switch (row.kind)
     {
     case DRAWER_ROW_CATEGORY:
-        return append_item(menu, DRAWER_MENU_RECOLOR, language) &&
+        return append_item(menu, DRAWER_MENU_NEW_NOTE, language) &&
+               AppendMenuW(menu, MF_SEPARATOR, 0, nullptr) != 0 &&
+               append_item(menu, DRAWER_MENU_RECOLOR, language) &&
                append_item(menu, DRAWER_MENU_RENAME_CATEGORY, language) &&
                append_item(menu, DRAWER_MENU_DELETE_CATEGORY, language) &&
                AppendMenuW(menu, MF_SEPARATOR, 0, nullptr) != 0 &&
@@ -726,6 +766,7 @@ static void run_item(struct drawer_window *_Nonnull self, enum drawer_menu_item 
         return;
     case DRAWER_MENU_RENAME_NOTE:
     case DRAWER_MENU_NEW_CATEGORY:
+    case DRAWER_MENU_NEW_NOTE:
     case DRAWER_MENU_TRASH_NOTE:
     case DRAWER_MENU_DELETE_CATEGORY:
     case DRAWER_MENU_RENAME_CATEGORY:
@@ -741,7 +782,7 @@ static void run_item(struct drawer_window *_Nonnull self, enum drawer_menu_item 
 static void show_menu(struct drawer_window *_Nonnull self, LPARAM position)
 {
     POINT point = {GET_X_LPARAM(position), GET_Y_LPARAM(position)};
-    if (self->pressed || self->new_category_pressed || point.y < band_height(self))
+    if (self->pressed || self->header_pressed != DRAWER_HEADER_NONE || point.y < band_height(self))
     {
         return;
     }
@@ -799,18 +840,47 @@ static void press_row(struct drawer_window *_Nonnull self, int y)
     drawer_layout_destroy(layout);
 }
 
+static RECT header_button_rect(const struct drawer_window *_Nonnull self,
+                               enum drawer_header_button button)
+{
+    switch (button)
+    {
+    case DRAWER_HEADER_NONE:
+        return (RECT){0, 0, 0, 0};
+    case DRAWER_HEADER_NEW_NOTE:
+        return new_note_rect(self);
+    case DRAWER_HEADER_NEW_CATEGORY:
+        return new_category_rect(self);
+    }
+    return (RECT){0, 0, 0, 0};
+}
+
+static bool press_header(struct drawer_window *_Nonnull self, POINT point)
+{
+    const enum drawer_header_button buttons[] = {DRAWER_HEADER_NEW_NOTE,
+                                                 DRAWER_HEADER_NEW_CATEGORY};
+    for (size_t index = 0; index < sizeof buttons / sizeof buttons[0]; ++index)
+    {
+        RECT button = header_button_rect(self, buttons[index]);
+        if (PtInRect(&button, point))
+        {
+            self->header_pressed = buttons[index];
+            SetCapture(self->handle);
+            InvalidateRect(self->handle, &button, FALSE);
+            return true;
+        }
+    }
+    return false;
+}
+
 static void press(struct drawer_window *_Nonnull self, POINT point)
 {
-    if (self->pressed || self->new_category_pressed)
+    if (self->pressed || self->header_pressed != DRAWER_HEADER_NONE)
     {
         return;
     }
-    RECT button = new_category_rect(self);
-    if (PtInRect(&button, point))
+    if (press_header(self, point))
     {
-        self->new_category_pressed = true;
-        SetCapture(self->handle);
-        InvalidateRect(self->handle, &button, FALSE);
         return;
     }
     if (point.y >= band_height(self))
@@ -891,20 +961,38 @@ static void release_row(struct drawer_window *_Nonnull self)
     act_on_row(self, row);
 }
 
+static void run_header(struct drawer_window *_Nonnull self, enum drawer_header_button button)
+{
+    struct drawer_row row = {0};
+    switch (button)
+    {
+    case DRAWER_HEADER_NONE:
+        return;
+    case DRAWER_HEADER_NEW_NOTE:
+        row.category = folio_state_current_category(self->state);
+        run_item(self, DRAWER_MENU_NEW_NOTE, row);
+        return;
+    case DRAWER_HEADER_NEW_CATEGORY:
+        run_item(self, DRAWER_MENU_NEW_CATEGORY, row);
+        return;
+    }
+}
+
 static void release(struct drawer_window *_Nonnull self, POINT point)
 {
-    if (!self->new_category_pressed)
+    enum drawer_header_button pressed = self->header_pressed;
+    if (pressed == DRAWER_HEADER_NONE)
     {
         release_row(self);
         return;
     }
-    self->new_category_pressed = false;
-    RECT button = new_category_rect(self);
+    self->header_pressed = DRAWER_HEADER_NONE;
+    RECT button = header_button_rect(self, pressed);
     ReleaseCapture();
     InvalidateRect(self->handle, &button, FALSE);
     if (PtInRect(&button, point))
     {
-        run_item(self, DRAWER_MENU_NEW_CATEGORY, (struct drawer_row){0});
+        run_header(self, pressed);
     }
 }
 
@@ -957,7 +1045,7 @@ static int key_step(const struct drawer_window *_Nonnull self, WPARAM key)
 /* 捕捉を取り上げられたら、線も覚えた行も捨てる。 */
 static void cancel(struct drawer_window *_Nonnull self)
 {
-    self->new_category_pressed = false;
+    self->header_pressed = DRAWER_HEADER_NONE;
     self->pressed = false;
     self->moved = false;
     self->dragging = false;

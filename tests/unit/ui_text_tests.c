@@ -180,6 +180,7 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_MENU_RECOLOR] = "色を変える…",
     [UI_TEXT_MENU_RENAME_NOTE] = "名前を変更…",
     [UI_TEXT_MENU_NEW_CATEGORY] = "新しいカテゴリ…",
+    [UI_TEXT_MENU_NEW_NOTE_IN_CATEGORY] = "このカテゴリに新しいノート",
     [UI_TEXT_HELP_PALETTE] = "一覧  ↑↓ 選択 / Enter 実行 / Esc 戻る / Tab 説明",
     [UI_TEXT_HELP_EDITOR_MOTION] = "編集本文  Ctrl+h/j/k/l ←/↓/↑/→",
     [UI_TEXT_HELP_GLOBAL_KEYS] = "全区画  F1 ヘルプ / Ctrl+P 一覧 / Ctrl+F このノート内を検索",
