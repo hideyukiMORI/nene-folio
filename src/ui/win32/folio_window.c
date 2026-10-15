@@ -282,6 +282,9 @@ constexpr int base_command_alias_room = 96;
 constexpr int base_command_alias_gap = 12;
 constexpr int base_command_input_vertical_inset = 2;
 constexpr int base_search_button_width = 64;
+constexpr int base_search_header_height = 24;
+constexpr int base_search_compact_width = 640;
+constexpr int base_search_title_width = 320;
 /* 操作行の常設ボタンを出せる最小の余白（これより狭ければ「操作 ▾」のメニューへ移る）。 */
 constexpr int base_action_margin = 8;
 /* 頭の釦の字の左の字下げと右の余白、釦と釦の間隔（96 DPI・#122）。 */
@@ -335,6 +338,7 @@ static void restore_valid_focus(const struct folio_window *_Nonnull self, HWND _
 static HWND surface_return_target(const struct folio_window *_Nonnull self, HWND _Nullable window);
 static void redraw_drawer(const struct folio_window *_Nonnull self);
 static void redraw_command_layer(const struct folio_window *_Nonnull self);
+static void rearrange_keeping_line(struct folio_window *_Nonnull self);
 
 /* 先行復旧は元要求より前。READYは復旧だけの成功で、対象/本文/名前は呼出し元で取り直す。 */
 static enum folio_state_outcome prepare_name_operation(const struct folio_window *_Nonnull self)
@@ -658,16 +662,73 @@ static RECT command_ex_rect(const struct folio_window *_Nonnull self)
     return bounds;
 }
 
-/* 検索欄は Ex と同じ下端の帯で、件数の行を常に持ち、右端に「前へ」「次へ」を置く。 */
+/* 結果の内容ではなく本文ペインの幅で行数を決める。最小320 DIPでは結果を独立させる。 */
+static bool search_compact(const struct folio_window *_Nonnull self)
+{
+    RECT pane = regions_for(self).pane;
+    return pane.right - pane.left < scale(base_search_compact_width, GetDpiForWindow(self->handle));
+}
+
+static int search_surface_height(const struct folio_window *_Nonnull self)
+{
+    int result = search_compact(self) ? base_command_status_height : 0;
+    return scale(base_search_header_height + base_ex_height + result,
+                 GetDpiForWindow(self->handle));
+}
+
+/* 同じ帯高を本文の上端にも予約し、検索の一致が入力面の裏へ隠れないようにする（ADR0052）。 */
 static RECT command_search_rect(const struct folio_window *_Nonnull self)
 {
-    RECT client;
-    GetClientRect(self->handle, &client);
-    client.bottom -= pane_notice_height(self);
+    RECT pane = regions_for(self).pane;
     UINT dpi = GetDpiForWindow(self->handle);
-    RECT bounds = {0, client.bottom - scale(base_ex_height + base_command_status_height, dpi),
-                   client.right, client.bottom};
-    return bounds;
+    int gap = scale(base_command_gap, dpi);
+    int top = pane.top + scale(base_caption_height + base_action_height, dpi);
+    return (RECT){pane.left + gap, top, pane.right - gap, top + search_surface_height(self)};
+}
+
+static RECT search_close_rect(const struct folio_window *_Nonnull self)
+{
+    RECT bounds;
+    GetClientRect(self->command_layer, &bounds);
+    int box = scale(base_close_size, GetDpiForWindow(self->handle));
+    return (RECT){bounds.right - box, 0, bounds.right, box};
+}
+
+static RECT search_header_rect(const struct folio_window *_Nonnull self)
+{
+    UINT dpi = GetDpiForWindow(self->handle);
+    RECT close = search_close_rect(self);
+    int right = search_compact(self) ? close.left - scale(base_command_gap, dpi)
+                                     : scale(base_search_title_width, dpi);
+    return (RECT){0, 0, right, scale(base_search_header_height, dpi)};
+}
+
+static RECT search_result_rect(const struct folio_window *_Nonnull self)
+{
+    RECT bounds;
+    GetClientRect(self->command_layer, &bounds);
+    UINT dpi = GetDpiForWindow(self->handle);
+    if (search_compact(self))
+    {
+        return (RECT){0, scale(base_search_header_height + base_ex_height, dpi), bounds.right,
+                      bounds.bottom};
+    }
+    RECT close = search_close_rect(self);
+    return (RECT){scale(base_search_title_width + base_command_gap, dpi), 0,
+                  close.left - scale(base_command_gap, dpi), scale(base_search_header_height, dpi)};
+}
+
+/* 検索だけの入力行。置換の下端ボタンとは分け、描画とhitは同じ矩形を使う。 */
+static RECT search_button_rect(const struct folio_window *_Nonnull self, size_t index)
+{
+    RECT bounds;
+    GetClientRect(self->command_layer, &bounds);
+    UINT dpi = GetDpiForWindow(self->handle);
+    int width = scale(base_search_button_width, dpi);
+    int gap = scale(base_command_gap, dpi);
+    int right = bounds.right - (index == 0 ? width + gap : 0);
+    return (RECT){right - width, scale(base_search_header_height, dpi), right,
+                  scale(base_search_header_height + base_ex_height, dpi)};
 }
 
 /* 置換の欄も同じ下端の帯で、状態の 1 行と 2 つの欄の高さを持つ（ADR 0028 の決定 8(a)）。 */
@@ -872,6 +933,13 @@ static RECT command_input_rect(const struct folio_window *_Nonnull self)
     UINT dpi = GetDpiForWindow(self->handle);
     RECT bounds;
     GetClientRect(self->command_layer, &bounds);
+    if (self->command_surface == COMMAND_SURFACE_SEARCH)
+    {
+        RECT previous = search_button_rect(self, 0);
+        int vertical = scale(base_command_input_vertical_inset, dpi);
+        return (RECT){0, previous.top + vertical, previous.left - scale(base_command_gap, dpi),
+                      previous.bottom - vertical};
+    }
     if (self->command_surface == COMMAND_SURFACE_PALETTE ||
         command_surface_listing(self->command_surface))
     {
@@ -883,11 +951,8 @@ static RECT command_input_rect(const struct folio_window *_Nonnull self)
     }
     int inset = scale(base_command_gap, dpi);
     int vertical = scale(base_command_input_vertical_inset, dpi);
-    int room = self->command_surface == COMMAND_SURFACE_SEARCH
-                   ? scale((base_search_button_width + base_command_gap) * 2, dpi)
-                   : 0;
     RECT input = {bounds.left + inset, bounds.bottom - scale(base_ex_height, dpi) + vertical,
-                  bounds.right - inset - room, bounds.bottom - vertical};
+                  bounds.right - inset, bounds.bottom - vertical};
     return input;
 }
 
@@ -908,8 +973,7 @@ static RECT replace_input_rect(const struct folio_window *_Nonnull self, size_t 
     return input;
 }
 
-/* 下端の帯の右端に置く 2 つのボタン。検索欄の「前へ」「次へ」と置換の欄の「1 件」「すべて」が
- * 同じ位置を共有し、描画と当たり判定もここを共有する。 */
+/* 置換の下端の帯の「1 件」「すべて」。描画と当たり判定が同じ矩形を使う。 */
 static RECT surface_button_rect(const struct folio_window *_Nonnull self, size_t index)
 {
     UINT dpi = GetDpiForWindow(self->handle);
@@ -1266,6 +1330,8 @@ static void arrange(struct folio_window *_Nonnull self)
             UINT dpi = GetDpiForWindow(self->handle);
             int top = regions.pane.top +
                       scale(base_caption_height + base_action_height + base_pane_top, dpi);
+            top +=
+                self->command_surface == COMMAND_SURFACE_SEARCH ? search_surface_height(self) : 0;
             int left = regions.pane.left + pane_inset(self, dpi);
             MoveWindow(pane, left, top, regions.pane.right - left - scale(base_pane_right, dpi),
                        regions.pane.bottom - top - scale(base_pane_bottom, dpi), TRUE);
@@ -1849,39 +1915,36 @@ static enum ui_text search_result_line(enum note_search_outcome outcome)
     return UI_TEXT_EMPTY;
 }
 
-/* 向きと「k / n 件」。0 件も壊れた語も同じ場所に出し、選択は変えない。
- * 句どうしは並置し、句の中の数は置換子で埋める（ADR 0030 の決定 3）。 */
+/* 結果は対象/Enter方向と別の矩形へ出す。狭幅でも失敗理由に行の全幅を使う（ADR0052）。 */
 static void search_status(const struct folio_window *_Nonnull self, char *_Nonnull out)
 {
     enum folio_language language = folio_state_language(self->state);
-    size_t at = append_text(out, 0, ui_text_line(search_direction_label(self), language));
     struct ui_text_request request = {.id = search_result_line(self->search_outcome),
                                       .language = language,
                                       .k = self->search_ordinal,
                                       .n = self->search_total};
-    if (ui_text_format(&request, out + at, search_status_capacity - at) != UI_TEXT_FORMAT_READY)
+    if (ui_text_format(&request, out, search_status_capacity) != UI_TEXT_FORMAT_READY)
     {
-        /* 表の値は単体で収まりが固定されるので、ここへは来ない。来たら札だけを残す。 */
-        out[at] = '\0';
+        /* 表の値は単体で収まりが固定される。 */
+        out[0] = '\0';
     }
 }
 
-static void draw_search_surface(const struct folio_window *_Nonnull self, HDC device, RECT bounds)
+static void draw_search_surface(const struct folio_window *_Nonnull self, HDC device)
 {
-    UINT dpi = GetDpiForWindow(self->handle);
-    int gap = scale(base_command_gap, dpi);
-    RECT status = {bounds.left + gap, bounds.top, bounds.right - gap,
-                   bounds.top + scale(base_command_status_height, dpi)};
+    enum folio_language language = folio_state_language(self->state);
     char line[search_status_capacity];
     search_status(self, line);
     SetTextColor(device, self->palette.current_text);
-    draw_utf8(device, line, status);
+    draw_utf8(device, ui_text_line(search_direction_label(self), language),
+              search_header_rect(self));
+    draw_utf8(device, line, search_result_rect(self));
+    icon_paint_fill(device, search_close_rect(self), ICON_PAINT_CLOSE, self->palette.current_text);
     SetTextColor(device, self->palette.selected_text);
-    enum folio_language language = folio_state_language(self->state);
     draw_utf8(device, ui_text_line(UI_TEXT_ACTION_SEARCH_PREVIOUS, language),
-              surface_button_rect(self, 0));
+              search_button_rect(self, 0));
     draw_utf8(device, ui_text_line(UI_TEXT_ACTION_SEARCH_NEXT, language),
-              surface_button_rect(self, 1));
+              search_button_rect(self, 1));
 }
 
 /* 失敗の 1 行。REPLACE_BAD_PATTERN のときだけ末尾に位置を添える（ADR 0028 の決定 9）。
@@ -2618,7 +2681,7 @@ static void draw_command_surface(const struct folio_window *_Nonnull self, HDC d
         return;
     case COMMAND_SURFACE_SEARCH:
         FillRect(device, &bounds, self->command_brush);
-        draw_search_surface(self, device, bounds);
+        draw_search_surface(self, device);
         return;
     case COMMAND_SURFACE_REPLACE:
         FillRect(device, &bounds, self->command_brush);
@@ -3820,7 +3883,7 @@ static void open_command_surface(struct folio_window *_Nonnull self,
     self->command_help_first = 0;
     clear_command_status(self);
     SetWindowTextW(self->command_input, surface == COMMAND_SURFACE_EX ? L":" : L"");
-    arrange_command_input(self);
+    rearrange_keeping_line(self);
     focus_command_input(self);
     /* WM_SETTEXT はキャレットを先頭へ置き、EM_SETSEL(-1, -1) は選択を解くだけで動かさない。
      * 打った字が `:` の前に入らないよう、末尾（Ex は 1・他の面は 0）へ明示的に置く（#85）。 */
@@ -3854,7 +3917,7 @@ static void hide_command_surface(struct folio_window *_Nonnull self)
     self->command_selection = 0;
     self->command_help_first = 0;
     clear_command_status(self);
-    arrange_command_input(self);
+    rearrange_keeping_line(self);
     InvalidateRect(self->handle, nullptr, FALSE);
     if (surface_focused)
     {
@@ -3892,7 +3955,7 @@ static void show_command_palette(struct folio_window *_Nonnull self)
     {
         SetWindowTextW(self->command_input, L"");
     }
-    arrange_command_input(self);
+    rearrange_keeping_line(self);
     focus_command_input(self);
     redraw_command_layer(self);
 }
@@ -3920,7 +3983,7 @@ static void show_search_surface(struct folio_window *_Nonnull self)
         release_history(self);
         self->command_surface = COMMAND_SURFACE_SEARCH;
         clear_command_status(self);
-        arrange_command_input(self);
+        rearrange_keeping_line(self);
     }
     if (self->command_input != nullptr)
     {
@@ -3958,7 +4021,7 @@ static void show_replace_surface(struct folio_window *_Nonnull self)
         release_history(self);
         self->command_surface = COMMAND_SURFACE_REPLACE;
         clear_command_status(self);
-        arrange_command_input(self);
+        rearrange_keeping_line(self);
         focus_command_input(self);
     }
     update_replace_preview(self);
@@ -4008,7 +4071,7 @@ static void show_settings_surface(struct folio_window *_Nonnull self, const char
     }
     /* 他の入力面から来た場合も、現在値の行を決めてから配置する。 */
     self->command_selection = settings_initial_row(self);
-    arrange_command_input(self);
+    rearrange_keeping_line(self);
     focus_command_input(self);
     redraw_command_layer(self);
 }
@@ -4021,7 +4084,7 @@ static void show_theme_surface(struct folio_window *_Nonnull self)
     SetWindowTextW(self->command_input, L"");
     self->command_selection = (size_t)folio_state_theme_choice(self->state);
     self->command_first = 0;
-    arrange_command_input(self);
+    rearrange_keeping_line(self);
     focus_command_input(self);
     redraw_command_layer(self);
 }
@@ -4041,7 +4104,7 @@ static void show_history_surface(struct folio_window *_Nonnull self)
         clear_command_status(self);
     }
     self->command_selection = 0;
-    arrange_command_input(self);
+    rearrange_keeping_line(self);
     focus_command_input(self);
     redraw_command_layer(self);
 }
@@ -5436,19 +5499,34 @@ static bool click_command_footer(struct folio_window *_Nonnull self, POINT point
     return false;
 }
 
-/* 欄の中の「前へ」「次へ」。押した向きを覚えてから 1 つ進む（ADR 0023 の決定 4）。 */
+/* 変換中のmouse hitも消費するが、本文選択・focus・compositionを変えず、実行を予約しない。 */
 static bool click_search_buttons(struct folio_window *_Nonnull self, POINT point)
 {
-    RECT previous = surface_button_rect(self, 0);
-    RECT next = surface_button_rect(self, 1);
+    RECT close = search_close_rect(self);
+    if (PtInRect(&close, point))
+    {
+        if (!self->command_composing)
+        {
+            close_command_surface(self);
+        }
+        return true;
+    }
+    RECT previous = search_button_rect(self, 0);
+    RECT next = search_button_rect(self, 1);
     if (PtInRect(&previous, point))
     {
-        step_search(self, SEARCH_DIRECTION_BACKWARD);
+        if (!self->command_composing)
+        {
+            step_search(self, SEARCH_DIRECTION_BACKWARD);
+        }
         return true;
     }
     if (PtInRect(&next, point))
     {
-        step_search(self, SEARCH_DIRECTION_FORWARD);
+        if (!self->command_composing)
+        {
+            step_search(self, SEARCH_DIRECTION_FORWARD);
+        }
         return true;
     }
     return false;

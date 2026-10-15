@@ -40,6 +40,8 @@ are newer than the published v0.1.0 ZIP.
   the **Actions** list, the command palette, or Ex commands.
 - **Find**: search inside the open note (Ctrl+F, `/`, `?`, `n`, `N`, F3), filter all notes
   (Ctrl+Shift+F), and regular-expression replace in the edited body (a replace field or `:%s/…/…/g`).
+  In-note search sits above the body with its match count, Previous / Next, and Close controls.
+  It keeps the matched text visible and places the result on a separate row in narrow panes.
 - **Keyboard first.** The index takes Vim-like keys (`j` `k` `gg` `G` `h` `l` Enter, Esc from the body),
   `:` opens an Ex line (`:w` `:q` `:wq` `:q!` `:set …` and the commands above), and Ctrl+P / F1 / `:h`
   open a command palette that also lists the key bindings of each pane. The editor accepts

@@ -216,8 +216,8 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_PLACEHOLDER_FILTER] = "すべてのノートを検索",
     /* #86 で足した。索引の頭の帯の右に出す「一致 / 総数」（ADR 0024 の 2026-09-22 の補正 7）。 */
     [UI_TEXT_STATUS_FILTER_COUNT] = "{k} / {n}",
-    [UI_TEXT_STATUS_SEARCH_FORWARD] = "このノート内を検索 ／ 次へ  ",
-    [UI_TEXT_STATUS_SEARCH_BACKWARD] = "このノート内を検索 ／ 前へ  ",
+    [UI_TEXT_STATUS_SEARCH_FORWARD] = "このノート内を検索 / Enter: 次へ",
+    [UI_TEXT_STATUS_SEARCH_BACKWARD] = "このノート内を検索 / Enter: 前へ",
     [UI_TEXT_STATUS_SEARCH_MALFORMED] = "検索できない文字があります",
     [UI_TEXT_STATUS_SEARCH_BAD_SPAN] = "選択の範囲を読めません",
     [UI_TEXT_STATUS_SEARCH_NOT_FOUND] = "見つかりません",
@@ -618,6 +618,9 @@ static void verify_language(void)
         verify_vocabulary_of((enum ui_text)id);
     }
     verify_vocabulary_of(UI_TEXT_SETTINGS_GUIDANCE);
+    /* 入力後も残る対象表示は、どの言語でもEnterの動きを明記する（ADR0052）。 */
+    verify_vocabulary_of(UI_TEXT_STATUS_SEARCH_FORWARD);
+    verify_vocabulary_of(UI_TEXT_STATUS_SEARCH_BACKWARD);
 }
 
 static void verify_trash_notice(void)
