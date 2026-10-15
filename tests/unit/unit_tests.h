@@ -25,6 +25,7 @@ void run_json_tests(void);
 void run_ledger_tests(void);
 void run_layout_tests(void);
 void run_state_tests(void);
+void run_pane_load_state_tests(void);
 void run_unsaved_departure_tests(void);
 void run_untitled_expansion_query_tests(void);
 void run_first_save_target_tests(void);

@@ -55,6 +55,8 @@ enum folio_state_outcome : unsigned char
     FOLIO_STATE_SETTINGS_STORE_FAILED,
     /* 右ペインが表示している平文を取り出せない。探していないし、表示も選択も変えていない */
     FOLIO_STATE_PANE_UNAVAILABLE,
+    /* RichEditへの投入が未完了。不完全本文は保存/検索/置換へ渡さない（ADR0054） */
+    FOLIO_STATE_PANE_LOAD_FAILED,
     /* 置換のパターンが空。下見も本文も変えていない（ADR 0028 の決定 6） */
     FOLIO_STATE_REPLACE_NO_PATTERN,
     /* パターンが正規表現の文法に合わない。位置は folio_state_replace_error_offset が持つ */

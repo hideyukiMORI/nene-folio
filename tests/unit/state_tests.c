@@ -2064,6 +2064,8 @@ static const char *_Nonnull const expected_failure_lines[] = {
     [FOLIO_STATE_SETTINGS_STORE_FAILED] =
         "設定（data/settings.json）を書けませんでした。設定は変えていません。",
     [FOLIO_STATE_PANE_UNAVAILABLE] = "表示中の本文を取り出せませんでした。探していません。",
+    [FOLIO_STATE_PANE_LOAD_FAILED] =
+        "本文の準備ができていません。「閲覧」か「編集」で再試行してください。",
     [FOLIO_STATE_REPLACE_NO_PATTERN] = "置換するパターンを入れてください。",
     [FOLIO_STATE_REPLACE_BAD_PATTERN] = "正規表現の書き方が違います。",
     [FOLIO_STATE_REPLACE_BAD_TEMPLATE] =
@@ -4794,6 +4796,14 @@ static void verify_pane_edit_rtf(void)
     expect_edit_rtf_matches_pane_text(state);
     require(folio_state_pane_rtf(state) == pane && folio_state_pane_mode(state) == PANE_MODE_VIEW,
             "the view pane and the mode are untouched");
+    require(folio_state_begin_edit(state) == FOLIO_STATE_READY &&
+                folio_state_store_note(state, u"latest saved body", 17) == FOLIO_STATE_READY,
+            "save an edited body before a possible load retry");
+    require(strstr(folio_state_edit_rtf(state), "# Hello") != nullptr,
+            "the prior edit cache can be stale after saving");
+    require(folio_state_pane_edit_rtf(state) == FOLIO_STATE_READY,
+            "retry regenerates from the latest saved body");
+    expect_edit_rtf_matches_pane_text(state);
     require(folio_state_new_note(state, 1, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
             "new untitled in A");
     require(folio_state_pane_edit_rtf(state) == FOLIO_STATE_READY, "edit rtf of the untitled");
@@ -4801,6 +4811,12 @@ static void verify_pane_edit_rtf(void)
                       "\\pard\\sa160\\sl300\\slmult1\\cf1 \\par }"),
             "the untitled edit rtf is empty");
     folio_state_destroy(state);
+}
+
+void run_pane_load_state_tests(void)
+{
+    verify_pane_edit_rtf();
+    verify_failure_lines();
 }
 
 void run_state_tests(void)

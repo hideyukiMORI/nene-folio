@@ -26,8 +26,7 @@ struct note_pane
     size_t numbered_capacity;
     struct line_index *_Nullable lines; /* 本文の派生物の写し。所有者はここ */
     bool lines_stale;                   /* 次に番号を描くときに作り直す */
-    /* EM_STREAMIN を挟むあいだだけ真。途中の本文から表を作らせない（ADR 0026 の補正 5） */
-    bool streaming;
+    enum note_pane_readiness readiness;
 };
 
 static const wchar_t library_name[] = L"Msftedit.dll";
@@ -271,39 +270,70 @@ bool note_pane_translate(const struct note_pane *_Nonnull pane, const MSG *_Nonn
 
 /* 閲覧と編集が共有する唯一の流し込み（ADR 0006 の #245 補正）。UTF-8 RTF で表示を置き換える。
  * 差し替えの中で印を付ける（外の呼び出し元は複数経路あり、呼び忘れを構造で防ぐ・決定 3）。 */
-static void stream_rtf(struct note_pane *_Nonnull pane, const char *_Nonnull rtf, size_t length)
+static bool stream_rtf(struct note_pane *_Nonnull pane, const char *_Nonnull rtf, size_t length)
 {
     pane->lines_stale = true;
     struct rtf_stream stream = {.bytes = rtf, .remaining = length};
     EDITSTREAM editing = {.dwCookie = (DWORD_PTR)&stream, .dwError = 0, .pfnCallback = stream_in};
     /* 流し込みの途中で EN_VSCROLL が届いても、そこから表を作って印を落とさない（補正 5）。
      * 印を落とすのは流し込みが終わったあとの、最初の描き直しである。 */
-    pane->streaming = true;
-    SendMessageW(pane->handle, EM_STREAMIN, ((WPARAM)CP_UTF8 << 16) | SF_USECODEPAGE | SF_RTF,
-                 (LPARAM)&editing);
-    pane->streaming = false;
+    LRESULT count =
+        SendMessageW(pane->handle, EM_STREAMIN, ((WPARAM)CP_UTF8 << 16) | SF_USECODEPAGE | SF_RTF,
+                     (LPARAM)&editing);
+    return count >= 0 && editing.dwError == 0 && stream.remaining == 0;
 }
 
-void note_pane_render(struct note_pane *_Nonnull pane, const char *_Nonnull rtf, size_t length)
+/* readonly化自体も失敗したら入力窓を止める。親の既存札から再試行できる。 */
+static enum note_pane_load_outcome failed_load(struct note_pane *_Nonnull pane, LRESULT modified)
 {
-    if (pane->handle == nullptr)
+    if (SendMessageW(pane->handle, EM_SETREADONLY, TRUE, 0) == 0)
     {
-        return;
+        EnableWindow(pane->handle, FALSE);
     }
-    SendMessageW(pane->handle, EM_SETREADONLY, TRUE, 0);
-    stream_rtf(pane, rtf, length);
+    SendMessageW(pane->handle, EM_SETMODIFY, (WPARAM)(modified != 0), 0);
+    pane->readiness = NOTE_PANE_READINESS_UNAVAILABLE;
+    return NOTE_PANE_LOAD_FAILED;
 }
 
-void note_pane_edit(struct note_pane *_Nonnull pane, const char *_Nonnull rtf, size_t length)
+enum note_pane_load_outcome note_pane_load(struct note_pane *_Nonnull pane,
+                                           const char *_Nonnull rtf, size_t length,
+                                           enum pane_mode mode)
 {
+    if (pane->readiness == NOTE_PANE_READINESS_STREAMING)
+    {
+        return NOTE_PANE_LOAD_BUSY;
+    }
     if (pane->handle == nullptr)
     {
-        return;
+        return NOTE_PANE_LOAD_UNAVAILABLE;
     }
+    pane->readiness = NOTE_PANE_READINESS_STREAMING;
+    LRESULT modified = SendMessageW(pane->handle, EM_GETMODIFY, 0, 0);
     SendMessageW(pane->handle, EM_EXLIMITTEXT, 0, editor_limit);
-    SendMessageW(pane->handle, EM_SETREADONLY, FALSE, 0);
-    stream_rtf(pane, rtf, length);
-    SendMessageW(pane->handle, EM_SETMODIFY, FALSE, 0);
+    if (SendMessageW(pane->handle, EM_SETREADONLY, TRUE, 0) == 0 || !stream_rtf(pane, rtf, length))
+    {
+        return failed_load(pane, modified);
+    }
+    switch (mode)
+    {
+    case PANE_MODE_EDIT:
+        if (SendMessageW(pane->handle, EM_SETREADONLY, FALSE, 0) == 0)
+        {
+            return failed_load(pane, modified);
+        }
+        SendMessageW(pane->handle, EM_SETMODIFY, FALSE, 0);
+        break;
+    case PANE_MODE_VIEW:
+        break;
+    }
+    EnableWindow(pane->handle, TRUE);
+    pane->readiness = NOTE_PANE_READINESS_READY;
+    return NOTE_PANE_LOAD_READY;
+}
+
+enum note_pane_readiness note_pane_readiness(const struct note_pane *_Nonnull pane)
+{
+    return pane->readiness;
 }
 
 /* 表示中の平文を slot へ取り出す。段落区切りを CR 1 つのまま受け取るので、EM_EXSETSEL の位置と
@@ -337,6 +367,10 @@ enum note_pane_text_outcome note_pane_text(struct note_pane *_Nonnull pane,
     {
         return NOTE_PANE_TEXT_UNAVAILABLE;
     }
+    if (pane->readiness != NOTE_PANE_READINESS_READY)
+    {
+        return NOTE_PANE_TEXT_NOT_READY;
+    }
     size_t taken = 0;
     enum note_pane_text_outcome outcome = take_text(pane, &pane->taken, &pane->capacity, &taken);
     if (outcome != NOTE_PANE_TEXT_TAKEN)
@@ -356,7 +390,7 @@ void note_pane_invalidate_lines(struct note_pane *_Nonnull pane)
 /* 番号の表を、必要なときだけ作り直す（描画の合流が打鍵の連続をまとめる・決定 3）。 */
 static bool refresh_lines(struct note_pane *_Nonnull pane)
 {
-    if (pane->streaming)
+    if (pane->readiness != NOTE_PANE_READINESS_READY)
     {
         /* 流し込みの途中の本文は原文ではない。表を作らず「古い」の印も残す（補正 5）。 */
         return false;
@@ -627,7 +661,7 @@ void note_pane_reface(struct note_pane *_Nonnull pane, const wchar_t *_Nonnull f
 void note_pane_replace(struct note_pane *_Nonnull pane, struct note_search_span span,
                        const char16_t *_Nonnull units)
 {
-    if (pane->handle == nullptr)
+    if (pane->handle == nullptr || pane->readiness != NOTE_PANE_READINESS_READY)
     {
         return;
     }
