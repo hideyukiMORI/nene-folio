@@ -67,6 +67,30 @@ reparse確認は属性注入であり、実junctionを作る試験ではない�
 ログは`D:/NeNeFolio/agents/282-release-prep/release-proof-20261012-1642.log`。
 最終headの必須CI結果は紐付くPRと同証跡ディレクトリの`completion.json`を確認する。
 
+### #315: 限定された規約検査の状態照合（2026-10-15）
+
+対象はCNF-001/002/005/007の現在の規範本文。検査器・設定・CI・規則内容は変更していない。
+CNF-002は明記されたファイル直下の型/名前/接頭辞、CNF-005は設定済みの禁止名と既知オプション、
+CNF-007はconfig-bindingsの存在/参照照合と既存実ツール反例への接続を確認し、本文とmatrixをactiveへ揃えた。
+C-010/C-011、QLT-003/QLT-007等の親規則を連鎖でactiveへ変更していない。
+
+CNF-001はplannedを維持する。`eng/conformance.py:41`の`top_level_types`はdepth 0の型名だけを返し、
+`source_checks`の禁止語尾検査もその名前だけに適用する。現規範の型名検査はマクロ生成以外を直下だけに限定しておらず、
+入れ子の名前付き型まで検査する実装とは確認できない。既存4件の成功はこの未完成範囲を埋めない。
+規範を実装の部分範囲へ狭めず、検査器の追加実装も本件では行わない。CNF-003/004もplannedのまま。
+
+既存`tests/conformance/test_conformance.py`から001=4件・002=8件・005=4件・007=3件と、
+文書整合006=6件だけを選び、25/25成功・exit 0（0.148秒）。
+実コマンドは `python D:/NeNeFolio/agents/315-gate-status/run-selected.py`。
+runnerは既存テストを名前で選ぶだけで、新しいtest caseは持たない。fixtureの一時先もD側へ固定した。
+対象一覧・出力・入力hashは`D:/NeNeFolio/agents/315-gate-status/`に保持する。
+
+到達経路は`eng/conformance.py`の`check`→`source_checks`/`configuration_checks`、
+`eng/check.ps1:9`→conformance、同11行→`eng/test-conformance.py`の非0件discoveryと結果検査、
+同36行→実ツール反例。CIは`.github/workflows/check.yml`のFull gateから同じcheck.ps1を実行し、
+判定jobはfull-gateのsuccessだけを通す。文字列参照の存在をツール実行の証明へ読み替えていない。
+本件の最終head必須CIは統合時に確認し、この対象suite成功をその代わりにしない。
+
 ### 1-a. active の規則（規則 ID ごとの発火と復帰）
 
 | 規則 | 最小の違反 | 検証経路 | 実測 2026-09-09 |
@@ -78,6 +102,9 @@ reparse確認は属性注入であり、実junctionを作る試験ではない�
 | QLT-004 | 一行に詰めた main | eng/prove-gates.py / clang-format --dry-run --Werror | `clang-format-violations` で非 0。元の整形は 0 |
 | QLT-009 | 台帳・配置・状態のテストを省いて実行（`--coverage-negative`） | eng/coverage.py / 同一 exe の別プロファイル | 21.51% で `QLT-009: branch coverage 21.51% < 90%`。全テストへ復帰すると 707/744 分岐＝95.03% で成功（P19） |
 | QLT-012 | フルゲートを回していない head（Draft の push。`full-gate` が skipped）で merge を試みる | GitHub Actions の判定 job `check`（`.github/workflows/check.yml`）＋ ruleset `main` の必須 check。手元で再現できないので PR で実測 | 2026-09-23 実測（PR #146・run 35843768164）: `full-gate` = skipped・`check` = failure・`mergeStateStatus` = BLOCKED。Ready にしてフルゲートが success になると CLEAN（[確認記録](2026-09-23-required-check-checks.md)） |
+| CNF-002 | 複数の直下型・型名とファイル名の不一致・外部関数のstem接頭辞欠落 | `source_checks` / `top_level_types` / `external_functions`、既存 `SourceChecks.test_cnf002_*` | 2026-10-15（#315）: 8件成功。複数型・名前不一致・接頭辞欠落をCNF-002で拒否。不完全型・入れ子の型・正しい接頭辞・src/appの入口は通る |
+| CNF-005 | 禁止語を含む設定ファイル名・既知の警告無力化オプション | `configuration_checks`、既存 `RepositoryChecks.test_cnf005_*` | 2026-10-15（#315）: 4件成功。baseline.json、/WX-・-Wno-error・-wをCNF-005で拒否。正常設定と名指しの-Wno-switch-defaultは通る。設定された禁止語・拡張子・パターンの字句検査であり、任意scriptの迂回まで保証しない |
+| CNF-007 | 宣言されたconsumerの参照欠落・未登録の.clang-tidy | `configuration_checks`、既存 `RepositoryChecks.test_cnf007_*` / `eng/prove-gates.py` | 2026-10-15（#315）: 3件成功。参照欠落・未登録設定をCNF-007で拒否し、正常なbindingは通る。実ツールの実行・発火・復帰は既存P1〜P4/P8/P13〜P18等の証明とcheckへの結線を照合。今回その実ツール反例は再実行していない |
 | CNF-006 | 未定義 ID・重複定義・状態不一致・証明行欠落・未置換値 | tests/conformance の document_checks 正例・反例 | 正例は指摘 0、反例は CNF-006。本文書を書いた直後に「active の証明行が無い」を 4 件検出し、この表を書かせた |
 | CNF-008 | Issue 番号の無いタスクコメント | tests/conformance の configuration_checks 正例・反例 | 番号付きは指摘 0、番号なしは CNF-008 |
 | CNF-009 | 失敗の文言の表から 1 値を消す・同じ値を 2 度書く | eng/prove-gates.py（実 `eng/conformance.py`）/ tests/conformance の line_table_checks 正例・反例 | 2026-09-22: 全ファイルを写した木で `CNF-009: src/application/folio_state.c: FOLIO_STATE_CANCELLED has 0 table entries, expected 1` として非 0（P21）。戻すと `Conformance: 0 violation(s)` で 0。欠落・重複・コメントだけの行・ファイル欠落は tests/conformance で CNF-009、正例は指摘 0 |
