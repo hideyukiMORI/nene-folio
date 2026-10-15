@@ -147,7 +147,7 @@ failure になる。GitHub は skipped の必須 check を「満たした」と�
 ファイル直下の型定義の数、ヘッダの主要型名とファイル名の一致、実装ファイルの外部関数の接頭辞（`<stem>_`）を字句検査する。`src/app` は例外（エントリポイント）。
 
 - 対応する規則: C-011
-- 機械強制: **planned**（`eng/conformance.py`）
+- 機械強制: **active**（`eng/conformance.py` の `source_checks` / `top_level_types` / `external_functions`、既存正反例。ファイル直下の字句検査）
 
 ### CNF-003 — 抑制と waiver の結び付け
 
@@ -168,7 +168,7 @@ failure になる。GitHub は skipped の必須 check を「満たした」と�
 禁止された設定ファイル名と既知の無力化オプション（`/WX-`・`/W0-3`・`/wd`・`-Wno-error`・`-w`・`ignoreFailures`・`continue-on-error` 等）を検査。名指しの `-Wno-<診断名>` は無力化ではなく規則の選択なので対象外。任意のスクリプトによる迂回を網羅したとは扱わない。
 
 - 対応する規則: QLT-003
-- 機械強制: **planned**（`eng/conformance.py`）
+- 機械強制: **active**（`eng/conformance.py` の `configuration_checks`、`eng/conformance-rules.json` の禁止名・既知オプション、既存正反例）
 
 ### CNF-006 — 文書整合
 
@@ -182,7 +182,7 @@ failure になる。GitHub は skipped の必須 check を「満たした」と�
 `eng/config-bindings.json` の設定と参照先を照合する。文字列参照だけでは実行を証明しないため、整形・lint・CMake・リンカ検査は実ツールの反例も実行する（`eng/prove-gates.py`）。
 
 - 対応する規則: QLT-007
-- 機械強制: **planned**（`eng/conformance.py`）
+- 機械強制: **active**（`eng/conformance.py` の `configuration_checks`、既存正反例と `eng/prove-gates.py` の実ツール反例。参照照合自体は文字列検査）
 
 ### CNF-008 — TODO と FIXME に Issue 番号
 
@@ -300,12 +300,12 @@ CNF-006 が「本文に定義があるのにここに行が無い」を拒否す
 | QLT-012 | active | 最終headの必須CI: ruleset の `check`（strict）＋判定 job（ADR0037）。実行時点・範囲・再利用の判断は不能（ADR0044） |
 | QLT-013 | planned | |
 | CNF-001 | planned | eng/conformance.py / tests/conformance |
-| CNF-002 | planned | eng/conformance.py / tests/conformance |
+| CNF-002 | active | eng/conformance.py / tests/conformance |
 | CNF-003 | planned | eng/conformance.py / tests/conformance |
 | CNF-004 | planned | eng/conformance.py / tests/conformance |
-| CNF-005 | planned | eng/conformance.py / tests/conformance |
+| CNF-005 | active | eng/conformance.py / tests/conformance |
 | CNF-006 | active | eng/conformance.py / tests/conformance |
-| CNF-007 | planned | eng/conformance.py / tests/conformance |
+| CNF-007 | active | eng/conformance.py / tests/conformance / eng/prove-gates.py |
 | CNF-008 | active | eng/conformance.py / tests/conformance |
 | CNF-009 | active | eng/conformance.py / tests/conformance / eng/prove-gates.py |
 | CNF-010 | active | eng/conformance.py / tests/conformance / eng/prove-gates.py |
