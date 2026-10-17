@@ -1,4 +1,8 @@
 #include "drawer_window.h"
+#include "accessibility_host.h"
+#include "accessibility_node.h"
+#include "accessible_request.h"
+#include "accessible_view.h"
 
 #include "drawer_header_button.h"
 #include "drawer_layout.h"
@@ -17,6 +21,7 @@
 #include <commdlg.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 #include <windowsx.h>
 
 /* ドラッグ中の一時状態はここだけが持つ（ARC-004 / ARC-005 の許可区画）。 */
@@ -24,6 +29,11 @@ struct drawer_window
 {
     HWND _Nullable handle;
     struct folio_state *_Nonnull state;
+    struct accessibility_host *_Nonnull accessibility; /* 親窓より先に破棄する借用。 */
+    struct drawer_layout *_Nullable accessible_layout;
+    uint64_t accessible_revision;
+    UINT accessible_dpi;
+    int accessible_height;
     struct folio_palette palette;
     HFONT _Nullable category_font;
     HFONT _Nullable note_font;
@@ -238,7 +248,7 @@ static void frame_rect(HDC device, RECT bounds, COLORREF color)
  * ドロワーはフォーカスを取らないので、見るのは主窓（ADR 0009 の決定 5）。 */
 static bool index_focused(const struct drawer_window *_Nonnull self)
 {
-    return GetFocus() == GetParent(self->handle);
+    return SendMessageW(GetParent(self->handle), folio_message_index_focused, 0, 0) != 0;
 }
 
 /* 10 進の文字列にする。反転して並べ直す。 */
@@ -349,6 +359,29 @@ static void draw_header(const struct drawer_window *_Nonnull self, HDC device)
     draw_new_note(self, device);
     draw_filter_frame(self, device);
     draw_category_band(self, device);
+}
+
+static void draw_header_focus(const struct drawer_window *_Nonnull self, HDC device)
+{
+    struct accessible_item focus = {.kind = ACCESSIBLE_WINDOW};
+    if (accessibility_host_focus(self->accessibility, ACCESSIBLE_DRAWER, &focus) != S_OK)
+    {
+        return;
+    }
+    RECT bounds = {0};
+    if (focus.kind == ACCESSIBLE_NEW_NOTE)
+    {
+        bounds = new_note_rect(self);
+    }
+    if (focus.kind == ACCESSIBLE_NEW_CATEGORY)
+    {
+        bounds = new_category_rect(self);
+    }
+    if (!IsRectEmpty(&bounds))
+    {
+        InflateRect(&bounds, -2, -2);
+        DrawFocusRect(device, &bounds);
+    }
 }
 
 /* カーソルの行の右端に置く角（カテゴリ色の四角）。right はその右端の x。
@@ -556,6 +589,7 @@ static void paint_surface(const struct drawer_window *_Nonnull self, HDC device,
     SelectClipRgn(device, nullptr);
     draw_header(self, device);
     /* 画素へ触る前に GDI の溜めを吐き出す。 */
+    draw_header_focus(self, device);
     GdiFlush();
     if (drawer_layout_overflow_above(layout))
     {
@@ -821,7 +855,7 @@ static void show_menu(struct drawer_window *_Nonnull self, LPARAM position)
  */
 static void press_row(struct drawer_window *_Nonnull self, int y)
 {
-    SetFocus(GetParent(self->handle));
+    SendMessageW(GetParent(self->handle), folio_message_index_focus, 0, 0);
     struct drawer_layout *_Nullable layout = nullptr;
     if (!current_layout(self, &layout))
     {
@@ -865,6 +899,10 @@ static bool press_header(struct drawer_window *_Nonnull self, POINT point)
         if (PtInRect(&button, point))
         {
             self->header_pressed = buttons[index];
+            enum accessible_kind kind = buttons[index] == DRAWER_HEADER_NEW_NOTE
+                                            ? ACCESSIBLE_NEW_NOTE
+                                            : ACCESSIBLE_NEW_CATEGORY;
+            SendMessageW(GetParent(self->handle), folio_message_index_focus, (WPARAM)kind, 0);
             SetCapture(self->handle);
             InvalidateRect(self->handle, &button, FALSE);
             return true;
@@ -1057,23 +1095,9 @@ static struct drawer_window *_Nullable self_of(HWND window)
     return (struct drawer_window *)GetWindowLongPtrW(window, GWLP_USERDATA);
 }
 
-static LRESULT CALLBACK drawer_procedure(HWND window, UINT message, WPARAM wparam, LPARAM lparam)
+static LRESULT drawer_message(struct drawer_window *_Nonnull self, UINT message, WPARAM wparam,
+                              LPARAM lparam)
 {
-    struct drawer_window *_Nullable self = self_of(window);
-    if (message == WM_CREATE)
-    {
-        /* Win32 のコールバック引数を境界で受ける唯一の void *（C-006）。 */
-        const CREATESTRUCTW *_Nonnull creation = (const CREATESTRUCTW *)lparam;
-        self = creation->lpCreateParams;
-        SetWindowLongPtrW(window, GWLP_USERDATA, (LONG_PTR)self);
-        self->handle = window;
-        refresh_fonts(self, GetDpiForWindow(window));
-        return 0;
-    }
-    if (self == nullptr)
-    {
-        return DefWindowProcW(window, message, wparam, lparam);
-    }
     switch (message)
     {
     case WM_PAINT:
@@ -1100,8 +1124,8 @@ static LRESULT CALLBACK drawer_procedure(HWND window, UINT message, WPARAM wpara
         cancel(self);
         return 0;
     case WM_DPICHANGED_AFTERPARENT:
-        refresh_fonts(self, GetDpiForWindow(window));
-        InvalidateRect(window, nullptr, FALSE);
+        refresh_fonts(self, GetDpiForWindow(self->handle));
+        InvalidateRect(self->handle, nullptr, FALSE);
         return 0;
     case WM_DESTROY:
         release_fonts(self);
@@ -1109,8 +1133,42 @@ static LRESULT CALLBACK drawer_procedure(HWND window, UINT message, WPARAM wpara
         return 0;
     default:
         /* Win32 のメッセージは開いた集合（C-017）。 */
+        return DefWindowProcW(self->handle, message, wparam, lparam);
+    }
+}
+
+static LRESULT CALLBACK drawer_procedure(HWND window, UINT message, WPARAM wparam, LPARAM lparam)
+{
+    struct drawer_window *_Nullable self = self_of(window);
+    if (message == WM_NCDESTROY)
+    {
+        SetWindowLongPtrW(window, GWLP_USERDATA, 0);
         return DefWindowProcW(window, message, wparam, lparam);
     }
+    if (message == WM_CREATE)
+    {
+        /* Win32 のコールバック引数を境界で受ける唯一の void *（C-006）。 */
+        const CREATESTRUCTW *_Nonnull creation = (const CREATESTRUCTW *)lparam;
+        self = creation->lpCreateParams;
+        SetWindowLongPtrW(window, GWLP_USERDATA, (LONG_PTR)self);
+        self->handle = window;
+        refresh_fonts(self, GetDpiForWindow(window));
+        return 0;
+    }
+    if (self == nullptr)
+    {
+        return DefWindowProcW(window, message, wparam, lparam);
+    }
+    accessibility_host_changed(self->accessibility, message);
+    if (message == WM_GETOBJECT)
+    {
+        return accessibility_host_object(self->accessibility, ACCESSIBLE_DRAWER, wparam, lparam);
+    }
+    if (message == WM_ENTERMENULOOP || message == WM_EXITMENULOOP)
+    {
+        return SendMessageW(GetParent(window), message, wparam, lparam);
+    }
+    return drawer_message(self, message, wparam, lparam);
 }
 
 static bool ensure_class(HINSTANCE instance)
@@ -1132,6 +1190,7 @@ static bool ensure_class(HINSTANCE instance)
 
 enum drawer_window_outcome drawer_window_create(HWND _Nonnull parent,
                                                 struct folio_state *_Nonnull state,
+                                                struct accessibility_host *_Nonnull accessibility,
                                                 struct drawer_window *_Nullable *_Nonnull out)
 {
     HINSTANCE instance = GetModuleHandleW(nullptr);
@@ -1145,6 +1204,7 @@ enum drawer_window_outcome drawer_window_create(HWND _Nonnull parent,
         return DRAWER_WINDOW_OUT_OF_MEMORY;
     }
     self->state = state;
+    self->accessibility = accessibility;
     self->palette = folio_palette_for(folio_state_theme(state));
     /* 未設定のカスタム色は白で始める（Windows の慣例。黒だと設定済みに見える）。
      * 実行中だけ持ち、保存しない（ADR 0010 の決定 4）。 */
@@ -1240,5 +1300,370 @@ void drawer_window_destroy(struct drawer_window *_Nullable drawer)
         DestroyWindow(drawer->handle);
     }
     release_fonts(drawer);
+    drawer_layout_destroy(drawer->accessible_layout);
     free(drawer);
+}
+
+static HRESULT accessible_layout(struct drawer_window *_Nonnull self)
+{
+    if (self->handle == nullptr)
+    {
+        return accessibility_node_unavailable;
+    }
+    RECT client;
+    GetClientRect(self->handle, &client);
+    UINT dpi = GetDpiForWindow(self->handle);
+    uint64_t revision = folio_state_index_revision(self->state);
+    if (self->accessible_layout == nullptr || revision == UINT64_MAX ||
+        self->accessible_revision != revision || self->accessible_dpi != dpi ||
+        self->accessible_height != client.bottom)
+    {
+        drawer_layout_destroy(self->accessible_layout);
+        self->accessible_layout = nullptr;
+        if (!current_layout(self, &self->accessible_layout))
+        {
+            return E_OUTOFMEMORY;
+        }
+        self->accessible_revision = revision;
+        self->accessible_dpi = dpi;
+        self->accessible_height = client.bottom;
+    }
+    drawer_layout_scroll(self->accessible_layout, folio_state_drawer_scroll(self->state));
+    return S_OK;
+}
+
+static int accessible_compare(struct drawer_row row, const struct accessible_item *_Nonnull item)
+{
+    if (row.category != item->ref.category)
+    {
+        return row.category < item->ref.category ? -1 : 1;
+    }
+    bool category = row.kind == DRAWER_ROW_CATEGORY;
+    bool target_category = item->kind == ACCESSIBLE_CATEGORY;
+    if (category != target_category)
+    {
+        return category ? -1 : 1;
+    }
+    if (category || row.note == item->ref.note)
+    {
+        return 0;
+    }
+    return row.note < item->ref.note ? -1 : 1;
+}
+
+static bool accessible_row_index(const struct drawer_window *_Nonnull self,
+                                 const struct accessible_item *_Nonnull item, size_t *_Nonnull out)
+{
+    size_t low = 0;
+    size_t high = drawer_layout_row_count(self->accessible_layout);
+    while (low < high)
+    {
+        size_t middle = low + (high - low) / 2;
+        struct drawer_row row = drawer_layout_row(self->accessible_layout, middle);
+        int comparison = accessible_compare(row, item);
+        if (comparison == 0)
+        {
+            *out = middle;
+            return true;
+        }
+        if (comparison < 0)
+        {
+            low = middle + 1;
+        }
+        else
+        {
+            high = middle;
+        }
+    }
+    return false;
+}
+
+static struct accessible_item accessible_row_item(const struct drawer_window *_Nonnull self,
+                                                  size_t index)
+{
+    struct drawer_row row = drawer_layout_row(self->accessible_layout, index);
+    return (struct accessible_item){.kind = row.kind == DRAWER_ROW_CATEGORY ? ACCESSIBLE_CATEGORY
+                                                                            : ACCESSIBLE_NOTE,
+                                    .ref = {row.category, row.note},
+                                    .revision = folio_state_row_revision(self->state)};
+}
+
+static void accessible_row_view(struct drawer_window *_Nonnull self, struct drawer_row row,
+                                struct accessible_view *_Nonnull out)
+{
+    (void)wide_units(row.text, out->name);
+    RECT client;
+    GetClientRect(self->handle, &client);
+    RECT bounds = {0, row.top, client.right, row.top + row.height};
+    RECT viewport = {0, band_height(self), client.right, client.bottom};
+    out->offscreen = !IntersectRect(&out->bounds, &bounds, &viewport);
+    out->expanded = row.expanded;
+    out->focusable = true;
+    struct note_ref selected;
+    out->selected = row.kind == DRAWER_ROW_NOTE && folio_state_selection(self->state, &selected) &&
+                    selected.category == row.category && selected.note == row.note;
+}
+
+static RECT accessible_fixed_rect(const struct drawer_window *_Nonnull self,
+                                  enum accessible_kind kind)
+{
+    if (kind == ACCESSIBLE_NEW_NOTE)
+    {
+        return new_note_rect(self);
+    }
+    if (kind == ACCESSIBLE_NEW_CATEGORY)
+    {
+        return new_category_rect(self);
+    }
+    RECT client;
+    GetClientRect(self->handle, &client);
+    if (kind == ACCESSIBLE_TREE)
+    {
+        client.top = band_height(self);
+    }
+    return client;
+}
+
+static void accessible_scroll_view(struct drawer_window *_Nonnull self,
+                                   struct accessible_view *_Nonnull out)
+{
+    int limit = drawer_layout_scroll_limit(self->accessible_layout);
+    int scroll = folio_state_drawer_scroll(self->state);
+    out->scroll = scroll < limit ? scroll : limit;
+    out->scroll_limit = limit;
+    out->viewport = out->bounds.bottom > out->bounds.top ? out->bounds.bottom - out->bounds.top : 0;
+}
+
+HRESULT drawer_window_accessible_read(struct drawer_window *_Nonnull self,
+                                      const struct accessible_item *_Nonnull item,
+                                      struct accessible_view *_Nonnull out)
+{
+    HRESULT result = accessible_layout(self);
+    if (FAILED(result))
+    {
+        return result;
+    }
+    if (accessible_item_row(*item))
+    {
+        size_t index = 0;
+        if (item->revision == UINT64_MAX ||
+            item->revision != folio_state_row_revision(self->state) ||
+            !accessible_row_index(self, item, &index))
+        {
+            return accessibility_node_unavailable;
+        }
+        accessible_row_view(self, drawer_layout_row(self->accessible_layout, index), out);
+    }
+    else
+    {
+        out->bounds = accessible_fixed_rect(self, item->kind);
+    }
+    if (item->kind == ACCESSIBLE_TREE)
+    {
+        accessible_scroll_view(self, out);
+    }
+    if (!IsRectEmpty(&out->bounds))
+    {
+        MapWindowPoints(self->handle, nullptr, (POINT *)&out->bounds, 2);
+    }
+    out->offscreen = out->offscreen || !IsWindowVisible(self->handle) || IsRectEmpty(&out->bounds);
+    return S_OK;
+}
+
+static HRESULT accessible_category_edge(struct drawer_window *_Nonnull self,
+                                        const struct accessible_item *_Nonnull item,
+                                        enum accessible_navigation direction,
+                                        struct accessible_item *_Nonnull out)
+{
+    size_t count = drawer_layout_row_count(self->accessible_layout);
+    size_t index = 0;
+    if (!accessible_row_index(self, item, &index) || index + 1 >= count)
+    {
+        return S_FALSE;
+    }
+    index += 1;
+    struct drawer_row row = drawer_layout_row(self->accessible_layout, index);
+    if (row.kind != DRAWER_ROW_NOTE || row.category != item->ref.category)
+    {
+        return S_FALSE;
+    }
+    if (direction == ACCESSIBLE_NAVIGATION_LAST)
+    {
+        while (index + 1 < count &&
+               drawer_layout_row(self->accessible_layout, index + 1).category == row.category)
+        {
+            index += 1;
+        }
+    }
+    *out = accessible_row_item(self, index);
+    return S_OK;
+}
+
+static HRESULT accessible_edge(struct drawer_window *_Nonnull self,
+                               const struct accessible_item *_Nonnull item,
+                               enum accessible_navigation direction,
+                               struct accessible_item *_Nonnull out)
+{
+    size_t count = drawer_layout_row_count(self->accessible_layout);
+    if (count == 0 || folio_state_row_revision(self->state) == UINT64_MAX)
+    {
+        return S_FALSE;
+    }
+    if (item->kind == ACCESSIBLE_CATEGORY)
+    {
+        return accessible_category_edge(self, item, direction, out);
+    }
+    if (item->kind != ACCESSIBLE_TREE)
+    {
+        return S_FALSE;
+    }
+    size_t index = direction == ACCESSIBLE_NAVIGATION_FIRST ? 0 : count - 1;
+    while (drawer_layout_row(self->accessible_layout, index).kind != DRAWER_ROW_CATEGORY)
+    {
+        index -= 1;
+    }
+    *out = accessible_row_item(self, index);
+    return S_OK;
+}
+
+static bool accessible_same_level(struct accessible_item item, struct accessible_item candidate)
+{
+    return item.kind != ACCESSIBLE_NOTE ||
+           (candidate.kind == ACCESSIBLE_NOTE && candidate.ref.category == item.ref.category);
+}
+
+static bool accessible_has_sibling(size_t index, size_t count, bool next)
+{
+    return next ? index + 1 < count : index > 0;
+}
+
+static HRESULT accessible_sibling(struct drawer_window *_Nonnull self,
+                                  const struct accessible_item *_Nonnull item,
+                                  enum accessible_navigation direction,
+                                  struct accessible_item *_Nonnull out)
+{
+    size_t index = 0;
+    if (!accessible_row_index(self, item, &index))
+    {
+        return S_FALSE;
+    }
+    size_t count = drawer_layout_row_count(self->accessible_layout);
+    bool next = direction == ACCESSIBLE_NAVIGATION_NEXT;
+    while (accessible_has_sibling(index, count, next))
+    {
+        index = next ? index + 1 : index - 1;
+        struct accessible_item candidate = accessible_row_item(self, index);
+        if (!accessible_same_level(*item, candidate))
+        {
+            return S_FALSE;
+        }
+        if (candidate.kind == item->kind)
+        {
+            *out = candidate;
+            return S_OK;
+        }
+    }
+    return S_FALSE;
+}
+
+HRESULT drawer_window_accessible_navigate(struct drawer_window *_Nonnull self,
+                                          const struct accessible_item *_Nonnull item,
+                                          enum accessible_navigation direction,
+                                          struct accessible_item *_Nonnull out)
+{
+    HRESULT result = accessible_layout(self);
+    if (FAILED(result))
+    {
+        return result;
+    }
+    switch (direction)
+    {
+    case ACCESSIBLE_NAVIGATION_PARENT:
+        *out = (struct accessible_item){.kind = ACCESSIBLE_DRAWER};
+        if (item->kind == ACCESSIBLE_CATEGORY)
+        {
+            out->kind = ACCESSIBLE_TREE;
+        }
+        if (item->kind == ACCESSIBLE_NOTE)
+        {
+            *out = (struct accessible_item){.kind = ACCESSIBLE_CATEGORY,
+                                            .ref = {item->ref.category, 0},
+                                            .revision = item->revision};
+        }
+        return S_OK;
+    case ACCESSIBLE_NAVIGATION_FIRST:
+    case ACCESSIBLE_NAVIGATION_LAST:
+        return accessible_edge(self, item, direction, out);
+    case ACCESSIBLE_NAVIGATION_NEXT:
+    case ACCESSIBLE_NAVIGATION_PREVIOUS:
+        return accessible_sibling(self, item, direction, out);
+    }
+    return E_INVALIDARG;
+}
+
+HRESULT drawer_window_accessible_at(struct drawer_window *_Nonnull self, POINT point,
+                                    struct accessible_item *_Nonnull out)
+{
+    HRESULT result = accessible_layout(self);
+    if (FAILED(result))
+    {
+        return result;
+    }
+    ScreenToClient(self->handle, &point);
+    RECT bounds = new_note_rect(self);
+    *out = (struct accessible_item){.kind = ACCESSIBLE_DRAWER};
+    if (PtInRect(&bounds, point))
+    {
+        out->kind = ACCESSIBLE_NEW_NOTE;
+        return S_OK;
+    }
+    bounds = new_category_rect(self);
+    if (PtInRect(&bounds, point))
+    {
+        out->kind = ACCESSIBLE_NEW_CATEGORY;
+        return S_OK;
+    }
+    bounds = filter_rect(self);
+    if (PtInRect(&bounds, point))
+    {
+        return S_FALSE; /* native EDITのhostへ委ねる。 */
+    }
+    size_t index = 0;
+    if (drawer_layout_hit(self->accessible_layout, point.y, &index) &&
+        folio_state_row_revision(self->state) != UINT64_MAX)
+    {
+        *out = accessible_row_item(self, index);
+        return S_OK;
+    }
+    out->kind = ACCESSIBLE_TREE;
+    return S_OK;
+}
+
+enum folio_state_outcome
+drawer_window_accessible_scroll(struct drawer_window *_Nonnull self,
+                                const struct accessible_request *_Nonnull request)
+{
+    enum folio_state_outcome result = FOLIO_STATE_READY;
+    if (request->action == ACCESSIBLE_ACTION_REVEAL)
+    {
+        struct drawer_cursor cursor = {.kind = request->item.kind == ACCESSIBLE_CATEGORY
+                                                   ? DRAWER_ROW_CATEGORY
+                                                   : DRAWER_ROW_NOTE,
+                                       .ref = request->item.ref};
+        result = folio_state_reveal_row(self->state, metrics_for(self), cursor);
+    }
+    if (request->action == ACCESSIBLE_ACTION_SCROLL)
+    {
+        if (FAILED(accessible_layout(self)))
+        {
+            return FOLIO_STATE_OUT_OF_MEMORY;
+        }
+        int limit = drawer_layout_scroll_limit(self->accessible_layout);
+        int scroll = folio_state_drawer_scroll(self->state);
+        scroll = scroll < limit ? scroll : limit;
+        result = folio_state_scroll_drawer(self->state, metrics_for(self),
+                                           request->scroll_target - scroll);
+    }
+    InvalidateRect(self->handle, nullptr, FALSE);
+    return result;
 }

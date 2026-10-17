@@ -13,6 +13,16 @@
  * 列の網羅（訳し忘れと空の列）は CNF-011 が字句で守る。**简体中文は母語話者の確認を
  * 得ていない**（ADR 0032 の決定 3。後日この 1 列だけを直せる）。 */
 static const char *_Nonnull const catalog[][folio_language_count] = {
+    [UI_TEXT_ACCESSIBLE_HEADER] = {"共通操作", "Main toolbar", "主工具栏"},
+    [UI_TEXT_ACCESSIBLE_PANE_TOOLS] = {"ノートの操作", "Note toolbar", "笔记工具栏"},
+    [UI_TEXT_ACCESSIBLE_MODE] = {"ノートのモード", "Note mode", "笔记模式"},
+    [UI_TEXT_ACCESSIBLE_BODY] = {"ノート本文", "Note body", "笔记正文"},
+    [UI_TEXT_ACCESSIBLE_NAMED_BODY] = {"{name} — ノート本文", "{name} — Note body",
+                                       "{name} — 笔记正文"},
+    [UI_TEXT_HELP_ACCESSIBILITY] =
+        {"F6 / Shift+F6 区画の移動 · Tab / Shift+Tab 区画内の移動",
+         "F6 / Shift+F6: move between regions · Tab / Shift+Tab: move within a region",
+         "F6 / Shift+F6：切换区域 · Tab / Shift+Tab：在区域内移动"},
     [UI_TEXT_EMPTY] = {"", "", ""},
     [UI_TEXT_FAILURE_DATA_UNREADABLE] = {"data/ を読めませんでした。", "Could not read data/.",
                                          "无法读取 data/。"},

@@ -5,6 +5,7 @@
 #define NENEFOLIO_FOLIO_STATE_H
 
 #include "category_rename_target.h"
+#include "drawer_cursor.h"
 #include "drawer_metrics.h"
 #include "folio_cursor_kind.h"
 #include "folio_document_kind.h"
@@ -29,6 +30,7 @@
 #include "search_direction.h"
 
 #include <stddef.h>
+#include <stdint.h>
 #include <uchar.h>
 
 struct category_name;
@@ -117,10 +119,18 @@ folio_state_drawer_layout(const struct folio_state *_Nonnull state, struct drawe
  * 配置が作れなければ OUT_OF_MEMORY で状態は変えない。鍵でカーソルを動かしたときだけ使う。 */
 [[nodiscard]] enum folio_state_outcome folio_state_reveal_cursor(struct folio_state *_Nonnull state,
                                                                  struct drawer_metrics metrics);
+/* 行だけを見える位置へ寄せる。cursor・選択・本文は変えない。 */
+[[nodiscard]] enum folio_state_outcome folio_state_reveal_row(struct folio_state *_Nonnull state,
+                                                              struct drawer_metrics metrics,
+                                                              struct drawer_cursor cursor);
+[[nodiscard]] int folio_state_drawer_scroll(const struct folio_state *_Nonnull state);
 /* カテゴリの展開状態を反転し、台帳を書き戻す（FR-004 / FR-007）。書き戻せなければ状態は変えない。
  */
 [[nodiscard]] enum folio_state_outcome
 folio_state_toggle_category(struct folio_state *_Nonnull state, size_t index);
+/* 展開状態だけを採用する。別ノートを選択せず、消えたcursorだけ可視の行へ戻す。 */
+[[nodiscard]] enum folio_state_outcome folio_state_set_expansion(struct folio_state *_Nonnull state,
+                                                                 size_t index, bool expanded);
 /* カテゴリの展開状態を expanded にする（FR-018 の h / l・ADR 0015 の決定 3）。
  * index が範囲外なら NO_SUCH_CATEGORY。既にそうなら書かずに READY（カーソルも動かさない）。
  * 変わるときは folio_state_toggle_category と同じ経路で書き戻す。
@@ -192,6 +202,15 @@ folio_state_select_adjacent(struct folio_state *_Nonnull state, enum folio_step 
 [[nodiscard]] bool folio_state_cursor(const struct folio_state *_Nonnull state,
                                       enum folio_cursor_kind *_Nonnull kind,
                                       struct note_ref *_Nonnull out);
+/* 可視の行へcursorだけを置く。保存・読込・未完了処理の再試行は行わず、本文/選択を保つ。
+ * 行が見えない場合はNO_SUCH_NOTE、カテゴリ自体が無ければNO_SUCH_CATEGORY。 */
+[[nodiscard]] enum folio_state_outcome folio_state_focus_cursor(struct folio_state *_Nonnull state,
+                                                                enum folio_cursor_kind kind,
+                                                                struct note_ref target);
+/* 行集合/名前/順序/展開の改訂。派生レイアウトの無効化に使う。 */
+[[nodiscard]] uint64_t folio_state_index_revision(const struct folio_state *_Nonnull state);
+/* 行の意味を変える改訂。開閉は保持し、消えた行は可視性で拒む。上限で行公開を停止する。 */
+[[nodiscard]] uint64_t folio_state_row_revision(const struct folio_state *_Nonnull state);
 /* 選択中のノートの居場所。何も選んでいなければ false で out は触らない。 */
 [[nodiscard]] bool folio_state_selection(const struct folio_state *_Nonnull state,
                                          struct note_ref *_Nonnull out);

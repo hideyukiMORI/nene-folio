@@ -6,16 +6,24 @@
 #ifndef NENEFOLIO_DRAWER_WINDOW_H
 #define NENEFOLIO_DRAWER_WINDOW_H
 
+#include "accessible_item.h"
+#include "accessible_navigation.h"
 #include "drawer_window_outcome.h"
+#include "folio_state_outcome.h"
 
+#include <objbase.h>
 #include <windows.h>
 
 struct drawer_window;
 struct folio_state;
+struct accessibility_host;
+struct accessible_view;
+struct accessible_request;
 
 /* parent の子として作る。state は drawer より長く生きていなければならない。 */
 [[nodiscard]] enum drawer_window_outcome
 drawer_window_create(HWND _Nonnull parent, struct folio_state *_Nonnull state,
+                     struct accessibility_host *_Nonnull accessibility,
                      struct drawer_window *_Nullable *_Nonnull out);
 /* 親が配置に使う。ウィンドウが既に破棄されていれば nullptr。 */
 [[nodiscard]] HWND _Nullable drawer_window_handle(const struct drawer_window *_Nonnull drawer);
@@ -40,5 +48,18 @@ void drawer_window_refont(struct drawer_window *_Nonnull drawer);
  * 値の正本は folio_palette で、ここは写しを更新して全面を無効にするだけ。 */
 void drawer_window_recolor(struct drawer_window *_Nonnull drawer);
 void drawer_window_destroy(struct drawer_window *_Nullable drawer);
+
+[[nodiscard]] HRESULT drawer_window_accessible_read(struct drawer_window *_Nonnull self,
+                                                    const struct accessible_item *_Nonnull item,
+                                                    struct accessible_view *_Nonnull out);
+[[nodiscard]] HRESULT drawer_window_accessible_navigate(struct drawer_window *_Nonnull self,
+                                                        const struct accessible_item *_Nonnull item,
+                                                        enum accessible_navigation direction,
+                                                        struct accessible_item *_Nonnull out);
+[[nodiscard]] HRESULT drawer_window_accessible_at(struct drawer_window *_Nonnull self, POINT point,
+                                                  struct accessible_item *_Nonnull out);
+[[nodiscard]] enum folio_state_outcome
+drawer_window_accessible_scroll(struct drawer_window *_Nonnull self,
+                                const struct accessible_request *_Nonnull request);
 
 #endif

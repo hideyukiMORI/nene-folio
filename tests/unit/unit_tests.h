@@ -99,4 +99,6 @@ struct folio_ports;
     const struct persistence_port *_Nonnull persistence,
     const struct appearance_port *_Nonnull appearance, const struct regex_port *_Nonnull regex);
 
+void run_accessibility_state_tests(void);
+
 #endif

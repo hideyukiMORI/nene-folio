@@ -84,6 +84,7 @@ nenefolio_system_link(nenefolio_adapters icu)
 nenefolio_system_link(nenefolio_adapters gdi32)
 
 nenefolio_target(nenefolio_window ui_win32 STATIC
+    src/ui/win32/accessible_item.c src/ui/win32/accessibility_host.c src/ui/win32/accessibility_node.c
     src/ui/win32/drawer_window.c src/ui/win32/folio_window.c src/ui/win32/note_pane.c
     src/ui/win32/folio_palette.c src/ui/win32/failure_box.c src/ui/win32/name_prompt.c
     src/ui/win32/ui_face.c src/ui/win32/icon_paint.c src/ui/win32/dialog_theme.c)
@@ -95,6 +96,12 @@ nenefolio_system_link(nenefolio_window dwmapi)
 nenefolio_system_link(nenefolio_window comdlg32)
 # 標準Tooltip control（ADR0048）。OS同梱DLL、外部配布物は増えない。
 nenefolio_system_link(nenefolio_window comctl32)
+# Windows同梱のUI Automationとnative controlへの名前注釈（ADR0056）。
+nenefolio_system_link(nenefolio_window uiautomationcore)
+nenefolio_system_link(nenefolio_window ole32)
+nenefolio_system_link(nenefolio_window oleaut32)
+nenefolio_system_link(nenefolio_window oleacc)
+nenefolio_system_link(nenefolio_window uuid)
 # 設定画面のレイヤーから IME 文脈を外す（ADR 0031 の決定 7・ARC-002）。
 nenefolio_system_link(nenefolio_window imm32)
 # 閉じる・設定・折畳・選択の印を面のパスで塗る（ADR 0033 の決定 1・ARC-002）。

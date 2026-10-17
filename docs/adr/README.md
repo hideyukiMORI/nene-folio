@@ -71,3 +71,4 @@ ADR は「なぜそう決めたか」「何を却下したか」を書く。
 | [0053](0053-session-end-and-exit-contract.md) | OS終了は保存後に同意し、取消と入力停止を管理して最終破棄を共有する | 受理 |
 | [0054](0054-checked-rich-edit-load.md) | RichEdit投入の完成を確認し、未完成本文の取得・置換・保存を拒否する | 受理 |
 | [0055](0055-accessibility-and-system-contrast-scope.md) | 基本操作のUIA公開・OS高コントラスト・補助画面の公開を別の受理単位にする（製品実装はplanned） | 受理 |
+| [0056](0056-ui-automation-provider-lifetime.md) | UIAをUIスレッドのCOM公開・native入力名の直接注釈・失効可能な行参照で構成する | 受理 |

@@ -1,29 +1,31 @@
 # いまのタスク — NeNe Folio
 
-記録日: 2026-10-17。#312開始mainは8ffb9bcb9e64e1f131642cd38eebfad917a0d019、公開tag v0.1.0。
-hideの「次の対応を進めて」で、#312のアクセシビリティ/OS高コントラストの現状測定と範囲設計を進めた。
-現在の対話席が単体で調査・設計・測定し、必要な独立設計レビューだけ読み取り専用で依頼した。
+記録日: 2026-10-17。[#319](https://github.com/hideyukiMORI/nene-folio/issues/319)の基本UI Automation/キーボード到達を実装中。
+基点mainはa2f253cd6d008b400e05908e9f2600079c5fc60e。枝はfeat/319-basic-accessibility。
+hideのcommit/push指示により途中状態を保存する。受理・統合・通常exe反映は未完了。
 
-## 今回の焦点と最終照合
+## 現在の到達点
 
-- [#312](https://github.com/hideyukiMORI/nene-folio/issues/312)の範囲・正典経路・受理条件を[ADR0055](../adr/0055-accessibility-and-system-contrast-scope.md)へ収載。
-  自前ヘッダ/索引のUIA、OS配色、補助画面を別Issueにした。製品実装はすべてplanned。
-- 隔離fixtureで既存exeの操作/取得情報を測定。本文/検索値は取得できたが、行/操作/設定項目は取得treeにない。
-  OS高コントラストはOFFを読取確認。reader発話と実OS ON/OFFは未測定。詳細は[品質記録](../quality/2026-10-17-accessibility-observations.md)。
-- 最終head必須CI・統合・証跡収載・専用作業物整理は、#312の関連PRと
-  D:/NeNeFolio/agents/312-a11y-scope/completion.jsonで照合する。
-  MERGED/CLOSEDと整理成功が揃えば#312の範囲設計は完了として再開しない。
+- UIスレッド上のCOM provider、native入力名の注釈、ヘッダ/索引/本文操作列の公開、F6/Tab移動を実装した。
+- applicationの索引cursorを文書選択から独立させ、SetFocusと保存を伴うSelectを分けた。
+- 対象build/tidyと`folio_tests.exe --accessibility`は成功。実行コマンドと限界は[品質記録](../quality/2026-10-17-basic-accessibility-checkpoint.md)。
+- 独立レビューは途中。Invokeの実行通知不足が指摘され、未修正。
+- 実画面確認はhideのEsc操作で停止。試験データのJSONキー順を修正した後の起動、reader発話は未確認。
 
-## 次の入口
+## 残る受理条件
 
-- 最初の実装は[#319](https://github.com/hideyukiMORI/nene-folio/issues/319): 基本操作のUIA公開とキーボード到達。
-  C/COM寿命・threading・native子窓の結合を小さく実測し、applicationのcursorと文書選択を分ける契約を守る。
-- [#320](https://github.com/hideyukiMORI/nene-folio/issues/320): OS高コントラスト。#319から独立して実装できる。
-- [#321](https://github.com/hideyukiMORI/nene-folio/issues/321): 設定/候補/検索置換/通知。#319の公開基盤を再利用する。
-  後続の実装やreader/OS試験を、#312の設計完了と同一視しない。
-- #311は[PR #318](https://github.com/hideyukiMORI/nene-folio/pull/318)、#310は[PR #317](https://github.com/hideyukiMORI/nene-folio/pull/317)でCI・main・通常exe反映・専用作業物整理まで完了。
-  詳細は[日報](../reports/2026-10-17.md)・[引き継ぎ](../handoffs/2026-10-17.md)と各completion.json。
-- 性能、portable/installer、UI分割、定期draft退避、起動temp回収、公開v0.1.0差替え、#243、旧作業木整理は別件。
+- Invoke通知の修正と、COM寿命/参照保持/破棄/再入の独立レビュー完了。
+- 製品providerのproperty/pattern/event、SetFocus/Select、失敗/取消、native Text/Value/Undoの対象検証。
+- 3言語/3表示/狭幅/通常幅/絞込0件/画面外行、IME/modal/終了中の拒否、実reader発話の確認。
+- ADR0015/関連するADR0013、FR-018、ARC-004の状態契約との照合・更新。
+- 最終PR headの必須CI、main統合、通常exe反映、恒久証跡収載、専用作業物整理。
 
-通常exeはC:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe（#311反映済み）。#312は文書だけで再build/更新しない。
-対象検証の不変な結果は再利用する（QLT-012）。schema・依存・ゲート変更なし。Waivers: none。
+## 保持する場所と後続
+
+作業木はD:/NeNeFolio/worktrees/319-basic-accessibility、build/試験データはD:/NeNeFolio/outputs/319-basic-accessibility。
+証跡はD:/NeNeFolio/agents/319-basic-accessibility。未完了の実装と検証入力があるため、現時点では削除しない。
+通常exeはC:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe（#311反映時のまま）。
+
+#312の範囲設計はPR #322で統合済み。履歴は[日報](../reports/2026-10-17.md)と[引き継ぎ](../handoffs/2026-10-17.md)。
+#320のOS高コントラスト、#321の補助画面公開、性能、配布、UI分割は別件。
+成功済みで関係入力が不変の対象検証は再利用する（QLT-012）。保存schema・ゲート変更なし。Waivers: none。
