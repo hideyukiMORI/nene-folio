@@ -31,23 +31,36 @@ static struct note_search_span group_span(const struct regex_match *_Nonnull mat
     return match->groups[group - 1].present ? match->groups[group - 1].span : empty;
 }
 
-/* この一致に対して置換文字列が生む長さ（UTF-16 単位）。 */
-static size_t measure_match(const struct note_replace_plan *_Nonnull plan,
-                            const struct regex_match *_Nonnull match)
+/* この一致に対して置換文字列が生む長さ（UTF-16 単位）。残容量を超える前に断る。 */
+static enum note_replace_outcome measure_match(const struct note_replace_plan *_Nonnull plan,
+                                               const struct regex_match *_Nonnull match,
+                                               size_t available, size_t *_Nonnull needed)
 {
     size_t total = 0;
     size_t pieces = replace_template_count(plan->replacement);
     for (size_t index = 0; index < pieces; ++index)
     {
         size_t group = 0;
-        total += replace_template_literal_length(plan->replacement, index);
+        size_t literal = replace_template_literal_length(plan->replacement, index);
+        if (literal > available - total)
+        {
+            return NOTE_REPLACE_TOO_LARGE;
+        }
+        total += literal;
+        size_t length = 0;
         if (replace_template_group(plan->replacement, index, &group))
         {
             struct note_search_span span = group_span(match, group);
-            total += span.end - span.start;
+            length = span.end - span.start;
         }
+        if (length > available - total)
+        {
+            return NOTE_REPLACE_TOO_LARGE;
+        }
+        total += length;
     }
-    return total;
+    *needed = total;
+    return NOTE_REPLACE_READY;
 }
 
 static void write_match(const struct note_replace_plan *_Nonnull plan,
@@ -110,13 +123,12 @@ static bool applies(const struct note_replace_plan *_Nonnull plan, size_t index)
 
 /* 適用する一致を順に辿る。edit があれば書きながら、いずれにせよ生む長さを数えて返す。
  * 数えるのと書くのが同じ道を通るので、必要長と実際に書く量が食い違わない。 */
-static size_t sweep(const struct note_replace_plan *_Nonnull plan,
-                    struct replace_edit *_Nullable edit, size_t *_Nonnull picked)
+static enum note_replace_outcome sweep(const struct note_replace_plan *_Nonnull plan,
+                                       struct replace_edit *_Nullable edit, size_t *_Nonnull needed)
 {
     size_t total = 0;
     size_t cursor = 0;
     size_t count = stored_count(plan);
-    *picked = 0;
     for (size_t index = 0; index < count; ++index)
     {
         if (!applies(plan, index))
@@ -124,34 +136,48 @@ static size_t sweep(const struct note_replace_plan *_Nonnull plan,
             continue;
         }
         const struct regex_match *_Nonnull match = match_at(plan, index);
-        total += match->whole.start - cursor + measure_match(plan, match);
+        size_t prefix = match->whole.start - cursor;
+        size_t replacement = 0;
+        if (prefix > note_replace_limit - total ||
+            measure_match(plan, match, note_replace_limit - total - prefix, &replacement) !=
+                NOTE_REPLACE_READY)
+        {
+            return NOTE_REPLACE_TOO_LARGE;
+        }
+        total += prefix + replacement;
         if (edit != nullptr)
         {
             replace_edit_append(edit, plan->text + cursor, match->whole.start - cursor);
             write_match(plan, match, edit);
         }
         cursor = match->whole.end;
-        *picked += 1;
+    }
+    size_t tail = plan->length - cursor;
+    if (tail > note_replace_limit - total)
+    {
+        return NOTE_REPLACE_TOO_LARGE;
     }
     if (edit != nullptr)
     {
         replace_edit_append(edit, plan->text + cursor, plan->length - cursor);
     }
-    return total + plan->length - cursor;
+    *needed = total + tail;
+    return NOTE_REPLACE_READY;
 }
 
 static enum note_replace_outcome build_many(const struct note_replace_plan *_Nonnull plan,
                                             struct replace_edit *_Nullable *_Nonnull out)
 {
-    size_t picked = 0;
-    size_t needed = sweep(plan, nullptr, &picked);
-    if (picked == 0)
+    /* 全部・各行最初はいずれも、列が空でなければ最初の一致を選ぶ。 */
+    if (stored_count(plan) == 0)
     {
         return NOTE_REPLACE_NOT_FOUND;
     }
-    if (needed > note_replace_limit)
+    size_t needed = 0;
+    enum note_replace_outcome measured = sweep(plan, nullptr, &needed);
+    if (measured != NOTE_REPLACE_READY)
     {
-        return NOTE_REPLACE_TOO_LARGE;
+        return measured;
     }
     struct note_search_span whole = {.start = 0, .end = plan->length};
     struct replace_edit *_Nullable edit = nullptr;
@@ -159,8 +185,12 @@ static enum note_replace_outcome build_many(const struct note_replace_plan *_Non
     {
         return NOTE_REPLACE_OUT_OF_MEMORY;
     }
-    size_t written = 0;
-    sweep(plan, edit, &written);
+    measured = sweep(plan, edit, &needed);
+    if (measured != NOTE_REPLACE_READY)
+    {
+        replace_edit_destroy(edit);
+        return measured;
+    }
     *out = edit;
     return NOTE_REPLACE_READY;
 }
@@ -194,10 +224,11 @@ static enum note_replace_outcome build_one(const struct note_replace_plan *_Nonn
         return NOTE_REPLACE_NOT_FOUND;
     }
     const struct regex_match *_Nonnull match = match_at(plan, index);
-    size_t needed = measure_match(plan, match);
-    if (needed > note_replace_limit)
+    size_t needed = 0;
+    enum note_replace_outcome measured = measure_match(plan, match, note_replace_limit, &needed);
+    if (measured != NOTE_REPLACE_READY)
     {
-        return NOTE_REPLACE_TOO_LARGE;
+        return measured;
     }
     struct replace_edit *_Nullable edit = nullptr;
     if (replace_edit_create(match->whole, needed, &edit) != REPLACE_EDIT_READY)

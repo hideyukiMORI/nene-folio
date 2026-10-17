@@ -10,6 +10,7 @@
 
 struct utf16_text;
 
+/* 必要容量を数値で表現できない場合も OUT_OF_MEMORY。失敗時は out を変更しない。 */
 [[nodiscard]] enum utf16_text_outcome utf16_text_create(const char *_Nonnull bytes, size_t length,
                                                         struct utf16_text *_Nullable *_Nonnull out);
 /* 終端付きの UTF-16。text が生きている間だけ有効。 */

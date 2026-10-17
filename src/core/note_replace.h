@@ -17,7 +17,8 @@ struct replace_edit;
 constexpr size_t note_replace_limit = 4000000;
 
 /* 置き換えの結果を 1 つ作る。呼び出し側が replace_edit_destroy する。
- * 一致が無ければ NOT_FOUND で out は触らない（本文は変えない）。 */
+ * 一致が無ければ NOT_FOUND。必要長は加算前に上限を確認し、超えれば TOO_LARGE。
+ * 失敗時は out を変更しない（本文は変えない）。 */
 [[nodiscard]] enum note_replace_outcome
 note_replace_build(const struct note_replace_plan *_Nonnull plan,
                    struct replace_edit *_Nullable *_Nonnull out);

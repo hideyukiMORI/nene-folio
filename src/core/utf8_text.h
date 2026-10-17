@@ -19,6 +19,7 @@ struct utf8_text;
 /* 1 コードポイントの UTF-8 符号化に要る最大バイト数。 */
 constexpr size_t utf8_text_max_encoded = 4;
 
+/* 必要容量を数値で表現できない場合も OUT_OF_MEMORY。失敗時は out を変更しない。 */
 [[nodiscard]] enum utf8_text_outcome utf8_text_create(const char16_t *_Nonnull units, size_t length,
                                                       struct utf8_text *_Nullable *_Nonnull out);
 /* 終端付きの UTF-8。text が生きている間だけ有効。 */

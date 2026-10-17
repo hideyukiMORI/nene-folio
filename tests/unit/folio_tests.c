@@ -157,6 +157,24 @@ static bool run_pane_load_target_tests(const char *_Nonnull argument)
     return false;
 }
 
+static bool run_size_overflow_target_tests(const char *_Nonnull argument)
+{
+    if (strcmp(argument, "--size-overflow") != 0)
+    {
+        return false;
+    }
+    run_size_overflow_tests();
+    run_text_tests();
+    run_markdown_tests();
+    run_replace_tests();
+    run_replace_state_tests();
+    run_size_overflow_state_tests();
+    run_note_size_text_tests();
+    run_note_size_state_tests();
+    printf("size overflow, text, Markdown RTF, replacement and note size boundary tests passed\n");
+    return true;
+}
+
 int main(int argc, char *_Nonnull *_Nonnull argv)
 {
     if (argc == 2 && strcmp(argv[1], "--bom-boundary") == 0)
@@ -164,8 +182,9 @@ int main(int argc, char *_Nonnull *_Nonnull argv)
         run_bom_boundary_tests();
         return 0;
     }
-    if (argc == 2 && (run_pane_load_target_tests(argv[1]) ||
-                      run_document_settings_target_tests(argv[1]) || run_target_tests(argv[1])))
+    if (argc == 2 &&
+        (run_size_overflow_target_tests(argv[1]) || run_pane_load_target_tests(argv[1]) ||
+         run_document_settings_target_tests(argv[1]) || run_target_tests(argv[1])))
     {
         return 0;
     }
@@ -177,6 +196,8 @@ int main(int argc, char *_Nonnull *_Nonnull argv)
         return 0;
     }
     run_note_size_text_tests();
+    run_size_overflow_tests();
+    run_size_overflow_state_tests();
     run_note_size_state_tests();
     run_note_nul_text_tests();
     run_note_nul_state_tests();
