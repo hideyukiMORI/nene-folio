@@ -27,6 +27,7 @@ struct accessibility_node
     IExpandCollapseProvider expand;
     IScrollProvider scroll;
     IScrollItemProvider scroll_item;
+    IToggleProvider toggle;
     LONG references;
     struct accessibility_host *_Nonnull host;
     struct accessible_item item;
@@ -40,20 +41,34 @@ static bool has_invoke(enum accessible_kind kind)
     return kind == ACCESSIBLE_SETTINGS || kind == ACCESSIBLE_CLOSE || kind == ACCESSIBLE_MENU ||
            kind == ACCESSIBLE_NEW_NOTE || kind == ACCESSIBLE_NEW_CATEGORY ||
            kind == ACCESSIBLE_NOTE || kind == ACCESSIBLE_PANE_NEW || kind == ACCESSIBLE_SAVE ||
-           kind == ACCESSIBLE_HELP || kind == ACCESSIBLE_FIND;
+           kind == ACCESSIBLE_HELP || kind == ACCESSIBLE_FIND ||
+           kind == ACCESSIBLE_SURFACE_CHOICE || kind == ACCESSIBLE_SURFACE_BUTTON;
 }
 
 static bool has_selection(enum accessible_kind kind)
 {
     return kind == ACCESSIBLE_TREE || kind == ACCESSIBLE_LAYOUT_GROUP ||
-           kind == ACCESSIBLE_MODE_GROUP;
+           kind == ACCESSIBLE_MODE_GROUP || kind == ACCESSIBLE_SURFACE_LIST;
 }
 
 static bool has_selection_item(enum accessible_kind kind)
 {
     return kind == ACCESSIBLE_NOTE || kind == ACCESSIBLE_LAYOUT_DRAWER ||
            kind == ACCESSIBLE_LAYOUT_BOTH || kind == ACCESSIBLE_LAYOUT_NOTE ||
-           kind == ACCESSIBLE_VIEW || kind == ACCESSIBLE_EDIT;
+           kind == ACCESSIBLE_VIEW || kind == ACCESSIBLE_EDIT ||
+           kind == ACCESSIBLE_SURFACE_CHOICE || kind == ACCESSIBLE_SURFACE_LANGUAGE;
+}
+
+static bool has_scroll(enum accessible_kind kind)
+{
+    return kind == ACCESSIBLE_TREE || kind == ACCESSIBLE_SURFACE_LIST;
+}
+
+static bool has_scroll_item(struct accessible_item item)
+{
+    return accessible_item_row(item) || item.kind == ACCESSIBLE_SURFACE_CHOICE ||
+           item.kind == ACCESSIBLE_SURFACE_LANGUAGE || item.kind == ACCESSIBLE_SURFACE_TOGGLE ||
+           item.kind == ACCESSIBLE_SURFACE_HELP;
 }
 
 static bool has_expand(enum accessible_kind kind)
@@ -117,6 +132,12 @@ static struct accessibility_node *_Nonnull scroll_item_owner(IScrollItemProvider
                                          offsetof(struct accessibility_node, scroll_item));
 }
 
+static struct accessibility_node *_Nonnull toggle_owner(IToggleProvider *_Nonnull value)
+{
+    return (struct accessibility_node *)((char *)value -
+                                         offsetof(struct accessibility_node, toggle));
+}
+
 static HRESULT read_view(struct accessibility_node *_Nonnull node,
                          struct accessible_view *_Nonnull out)
 {
@@ -159,7 +180,8 @@ static void *_Nullable pattern_interface(struct accessibility_node *_Nonnull nod
                     {&IID_ISelectionItemProvider, UIA_SelectionItemPatternId},
                     {&IID_IExpandCollapseProvider, UIA_ExpandCollapsePatternId},
                     {&IID_IScrollProvider, UIA_ScrollPatternId},
-                    {&IID_IScrollItemProvider, UIA_ScrollItemPatternId}};
+                    {&IID_IScrollItemProvider, UIA_ScrollItemPatternId},
+                    {&IID_IToggleProvider, UIA_TogglePatternId}};
     for (size_t index = 0; index < sizeof patterns / sizeof patterns[0]; ++index)
     {
         if (IsEqualIID(id, patterns[index].id))
@@ -259,8 +281,9 @@ static IUnknown *_Nullable pattern_for(struct accessibility_node *_Nonnull node,
         {UIA_SelectionPatternId, (IUnknown *)&node->selection, has_selection(kind)},
         {UIA_SelectionItemPatternId, (IUnknown *)&node->selection_item, has_selection_item(kind)},
         {UIA_ExpandCollapsePatternId, (IUnknown *)&node->expand, has_expand(kind)},
-        {UIA_ScrollPatternId, (IUnknown *)&node->scroll, kind == ACCESSIBLE_TREE},
-        {UIA_ScrollItemPatternId, (IUnknown *)&node->scroll_item, accessible_item_row(node->item)}};
+        {UIA_ScrollPatternId, (IUnknown *)&node->scroll, has_scroll(kind)},
+        {UIA_ScrollItemPatternId, (IUnknown *)&node->scroll_item, has_scroll_item(node->item)},
+        {UIA_TogglePatternId, (IUnknown *)&node->toggle, kind == ACCESSIBLE_SURFACE_TOGGLE}};
     for (size_t index = 0; index < sizeof patterns / sizeof patterns[0]; ++index)
     {
         if (patterns[index].id == id && patterns[index].supported)
@@ -316,6 +339,19 @@ static const CONTROLTYPEID control_types[] = {
     [ACCESSIBLE_NOTE] = UIA_TreeItemControlTypeId,
     [ACCESSIBLE_FILTER] = UIA_EditControlTypeId,
     [ACCESSIBLE_BODY] = UIA_DocumentControlTypeId,
+    [ACCESSIBLE_NOTICE] = UIA_StatusBarControlTypeId,
+    [ACCESSIBLE_SURFACE] = UIA_PaneControlTypeId,
+    [ACCESSIBLE_SURFACE_LIST] = UIA_ListControlTypeId,
+    [ACCESSIBLE_SURFACE_CHOICE] = UIA_ListItemControlTypeId,
+    [ACCESSIBLE_SURFACE_LANGUAGE] = UIA_RadioButtonControlTypeId,
+    [ACCESSIBLE_SURFACE_TOGGLE] = UIA_CheckBoxControlTypeId,
+    [ACCESSIBLE_SURFACE_BUTTON] = UIA_ButtonControlTypeId,
+    [ACCESSIBLE_SURFACE_TEXT] = UIA_TextControlTypeId,
+    [ACCESSIBLE_SURFACE_HELP] = UIA_TextControlTypeId,
+    [ACCESSIBLE_SURFACE_STATUS] = UIA_StatusBarControlTypeId,
+    [ACCESSIBLE_COMMAND_INPUT] = UIA_EditControlTypeId,
+    [ACCESSIBLE_REPLACE_PATTERN] = UIA_EditControlTypeId,
+    [ACCESSIBLE_REPLACE_TEXT] = UIA_EditControlTypeId,
 };
 
 static void boolean_value(VARIANT *_Nonnull out, bool value)
@@ -324,15 +360,9 @@ static void boolean_value(VARIANT *_Nonnull out, bool value)
     out->boolVal = value ? VARIANT_TRUE : VARIANT_FALSE;
 }
 
-static HRESULT property_value(const struct accessible_view *_Nonnull view, PROPERTYID id,
-                              VARIANT *_Nonnull out)
+static void property_boolean(const struct accessible_view *_Nonnull view, PROPERTYID id,
+                             VARIANT *_Nonnull out)
 {
-    if (id == UIA_NamePropertyId)
-    {
-        out->vt = VT_BSTR;
-        out->bstrVal = SysAllocString(view->name);
-        return out->bstrVal == nullptr ? E_OUTOFMEMORY : S_OK;
-    }
     const struct
     {
         PROPERTYID id;
@@ -342,15 +372,34 @@ static HRESULT property_value(const struct accessible_view *_Nonnull view, PROPE
                       {UIA_IsKeyboardFocusablePropertyId, view->focusable},
                       {UIA_HasKeyboardFocusPropertyId, view->focused},
                       {UIA_IsControlElementPropertyId, true},
-                      {UIA_IsContentElementPropertyId, true}};
+                      {UIA_IsContentElementPropertyId, true},
+                      {UIA_IsDialogPropertyId, view->dialog}};
     for (size_t index = 0; index < sizeof properties / sizeof properties[0]; ++index)
     {
         if (properties[index].id == id)
         {
             boolean_value(out, properties[index].value);
-            return S_OK;
+            return;
         }
     }
+}
+
+static HRESULT property_value(const struct accessible_view *_Nonnull view, PROPERTYID id,
+                              VARIANT *_Nonnull out)
+{
+    if (id == UIA_NamePropertyId || id == UIA_HelpTextPropertyId)
+    {
+        out->vt = VT_BSTR;
+        out->bstrVal = SysAllocString(id == UIA_NamePropertyId ? view->name : view->help);
+        return out->bstrVal == nullptr ? E_OUTOFMEMORY : S_OK;
+    }
+    if (id == UIA_LiveSettingPropertyId)
+    {
+        out->vt = VT_I4;
+        out->lVal = view->live ? Polite : Off;
+        return S_OK;
+    }
+    property_boolean(view, id, out);
     return S_OK;
 }
 
@@ -459,19 +508,20 @@ fragment_navigate(IRawElementProviderFragment *_Nonnull self, enum NavigateDirec
 static HRESULT runtime_array(struct accessible_item item, SAFEARRAY *_Nullable *_Nonnull out)
 {
     /* 16bitずつ分け、SDKのsigned intへ範囲外のcastを行わない。 */
-    int parts[14] = {UiaAppendRuntimeId, (int)item.kind};
-    uint64_t values[3] = {item.revision, (uint64_t)item.ref.category, (uint64_t)item.ref.note};
-    for (size_t group = 0; group < 3; ++group)
+    int parts[18] = {UiaAppendRuntimeId, (int)item.kind};
+    uint64_t values[4] = {item.revision, (uint64_t)item.ref.category, (uint64_t)item.ref.note,
+                          (uint64_t)item.slot};
+    for (size_t group = 0; group < 4; ++group)
     {
         for (size_t part = 0; part < 4; ++part)
         {
             parts[2 + group * 4 + part] = (int)((values[group] >> (part * 16)) & 0xFFFFU);
         }
     }
-    SAFEARRAY *_Nullable array = SafeArrayCreateVector(VT_I4, 0, 14);
+    SAFEARRAY *_Nullable array = SafeArrayCreateVector(VT_I4, 0, 18);
     if (array == nullptr)
         return E_OUTOFMEMORY;
-    for (LONG index = 0; index < 14; ++index)
+    for (LONG index = 0; index < 18; ++index)
     {
         HRESULT result = SafeArrayPutElement(array, &index, &parts[index]);
         if (FAILED(result))
@@ -674,13 +724,17 @@ static HRESULT STDMETHODCALLTYPE selection_required(ISelectionProvider *_Nonnull
     return result;
 }
 
-static enum accessible_kind selection_container_kind(enum accessible_kind kind)
+static struct accessible_item selection_container(struct accessible_item item)
 {
+    if (accessible_item_surface(item))
+        return (struct accessible_item){.kind = ACCESSIBLE_SURFACE_LIST, .revision = item.revision};
+    enum accessible_kind kind = item.kind;
     if (kind == ACCESSIBLE_VIEW || kind == ACCESSIBLE_EDIT)
     {
-        return ACCESSIBLE_MODE_GROUP;
+        return (struct accessible_item){.kind = ACCESSIBLE_MODE_GROUP};
     }
-    return kind == ACCESSIBLE_NOTE ? ACCESSIBLE_TREE : ACCESSIBLE_LAYOUT_GROUP;
+    return (struct accessible_item){.kind = kind == ACCESSIBLE_NOTE ? ACCESSIBLE_TREE
+                                                                    : ACCESSIBLE_LAYOUT_GROUP};
 }
 
 static HRESULT STDMETHODCALLTYPE selection_item_select(ISelectionItemProvider *_Nonnull self)
@@ -697,7 +751,7 @@ static HRESULT STDMETHODCALLTYPE selection_item_add_selection(ISelectionItemProv
     {
         return available;
     }
-    struct accessible_item group = {.kind = selection_container_kind(node->item.kind)};
+    struct accessible_item group = selection_container(node->item);
     struct accessible_item selected = {.kind = ACCESSIBLE_WINDOW};
     HRESULT result = accessibility_host_selected(node->host, &group, &selected);
     if (FAILED(result))
@@ -746,7 +800,7 @@ static HRESULT STDMETHODCALLTYPE selection_item_container(
     {
         return result;
     }
-    struct accessible_item group = {.kind = selection_container_kind(node->item.kind)};
+    struct accessible_item group = selection_container(node->item);
     return simple_for(node, group, out);
 }
 
@@ -1053,6 +1107,40 @@ static ULONG STDMETHODCALLTYPE scroll_item_release(IScrollItemProvider *_Nonnull
     return release(scroll_item_owner(self));
 }
 
+static HRESULT STDMETHODCALLTYPE toggle_query(IToggleProvider *_Nonnull self, REFIID id,
+                                              void *_Nullable *_Nullable out)
+{
+    return query(toggle_owner(self), id, out);
+}
+
+static ULONG STDMETHODCALLTYPE toggle_add(IToggleProvider *_Nonnull self)
+{
+    return add_ref(toggle_owner(self));
+}
+
+static ULONG STDMETHODCALLTYPE toggle_release(IToggleProvider *_Nonnull self)
+{
+    return release(toggle_owner(self));
+}
+
+static HRESULT STDMETHODCALLTYPE toggle_run(IToggleProvider *_Nonnull self)
+{
+    return perform(toggle_owner(self), ACCESSIBLE_ACTION_SELECT);
+}
+
+static HRESULT STDMETHODCALLTYPE toggle_get(IToggleProvider *_Nonnull self,
+                                            enum ToggleState *_Nonnull out)
+{
+    struct accessible_view view = {0};
+    HRESULT result = read_view(toggle_owner(self), &view);
+    if (SUCCEEDED(result))
+        *out = view.selected ? ToggleState_On : ToggleState_Off;
+    return result;
+}
+
+static IToggleProviderVtbl toggle_table = {toggle_query, toggle_add, toggle_release, toggle_run,
+                                           toggle_get};
+
 static IRawElementProviderSimpleVtbl simple_table = {
     simple_query,   simple_add,      simple_release, simple_options,
     simple_pattern, simple_property, simple_host};
@@ -1115,6 +1203,7 @@ HRESULT accessibility_node_create(struct accessibility_host *_Nonnull host,
     node->expand.lpVtbl = &expand_table;
     node->scroll.lpVtbl = &scroll_table;
     node->scroll_item.lpVtbl = &scroll_item_table;
+    node->toggle.lpVtbl = &toggle_table;
     accessibility_host_add_ref(host);
     *out = node;
     return S_OK;
@@ -1293,6 +1382,15 @@ static void raise_patterns(struct accessibility_node *_Nonnull node,
                            const struct accessible_view *_Nonnull after)
 {
     raise_expand(node, before, after);
+    if (node->item.kind == ACCESSIBLE_SURFACE_TOGGLE && before->selected != after->selected)
+    {
+        VARIANT old_value = {.vt = VT_I4,
+                             .lVal = before->selected ? ToggleState_On : ToggleState_Off};
+        VARIANT new_value = {.vt = VT_I4,
+                             .lVal = after->selected ? ToggleState_On : ToggleState_Off};
+        (void)UiaRaiseAutomationPropertyChangedEvent(&node->simple, UIA_ToggleToggleStatePropertyId,
+                                                     old_value, new_value);
+    }
     if (has_selection_item(node->item.kind))
     {
         raise_boolean(node, UIA_SelectionItemIsSelectedPropertyId, before->selected,
@@ -1303,7 +1401,7 @@ static void raise_patterns(struct accessibility_node *_Nonnull node,
         raise_boolean(node, UIA_SelectionIsSelectionRequiredPropertyId, before->selection_required,
                       after->selection_required);
     }
-    if (node->item.kind == ACCESSIBLE_TREE)
+    if (has_scroll(node->item.kind))
     {
         raise_boolean(node, UIA_ScrollVerticallyScrollablePropertyId, before->scroll_limit > 0,
                       after->scroll_limit > 0);
@@ -1325,11 +1423,15 @@ void accessibility_node_refresh(struct accessibility_node *_Nonnull node)
     bool observed = node->observed;
     node->previous = view;
     node->observed = true; /* 通知が再入しても同じ差分を繰り返さない。 */
+    (void)add_ref(node);
+    if (view.live && !view.offscreen && view.name[0] != u'\0' &&
+        (!observed || before.offscreen || wcscmp(before.name, view.name) != 0))
+        (void)UiaRaiseAutomationEvent(&node->simple, UIA_LiveRegionChangedEventId);
     if (!observed)
     {
+        (void)release(node);
         return;
     }
-    (void)add_ref(node);
     raise_name(node, &before, &view);
     raise_bounds(node, before.bounds, view.bounds);
     raise_boolean(node, UIA_IsEnabledPropertyId, before.enabled, view.enabled);

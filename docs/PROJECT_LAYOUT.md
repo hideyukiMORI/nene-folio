@@ -82,6 +82,8 @@ Win32・永続化・ファイル・ネットワークを知らない。
 ### `src/ui/win32`
 
 application が作った値を描き、操作を意図として渡す（ARC-011）。可変性の隔離区画（ARC-005）。
+UIAのCOM寿命は`accessibility_host`、自前要素のABIは`accessibility_node`、native入力の名前注釈は
+`accessibility_native`に集約する。主窓・索引・補助面は同じ公開基盤から既存操作を呼ぶ（ADR0056/0058）。
 
 ### `src/app`
 

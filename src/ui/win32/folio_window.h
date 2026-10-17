@@ -52,6 +52,8 @@ void folio_window_destroy(struct folio_window *_Nullable window);
 folio_window_accessible_action(struct folio_window *_Nonnull self,
                                const struct accessible_request *_Nonnull request);
 [[nodiscard]] bool folio_window_accessible_ready(const struct folio_window *_Nonnull self);
+[[nodiscard]] uint64_t
+folio_window_accessible_surface_revision(const struct folio_window *_Nonnull self);
 [[nodiscard]] uint64_t folio_window_accessible_revision(const struct folio_window *_Nonnull self);
 
 #endif

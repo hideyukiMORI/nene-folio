@@ -26,8 +26,8 @@
 | 表示モード（layout mode） | 一覧／両方／ノートの可視領域。閲覧／編集とは独立し、切替だけでは保存しない。一覧は窓を細くし、戻すと直前の広い幅または最大化へ復元する。実行中だけの状態 | `enum folio_layout_mode`（core）・`folio_state_layout_mode`（application）・ADR0047 |
 | 名前入力面（name prompt） | 初回保存・別名保存・改名で名前と保存先カテゴリを受けるモーダル。無題から離れる種別だけ保存／保存しない／キャンセルを持つ。`dialog_theme` の塗りで、保存先カテゴリは常時開いた一覧（4 行） | `name_prompt_show`（ui/win32）・ADR 0035（補正 17〜21）/0050 |
 | 失敗の箱（failure box） | 「知らせて戻る」だけのモーダル。application の `folio_state_failure_line` の 1 行を、名前入力面と同じ `dialog_theme` の塗りで見せる。警告音と三角の「!」の印（`ICON_PAINT_WARNING`）を持つ。答えで分岐しない。作れないときだけ `MessageBoxW` へ退避 | `failure_box_show`（ui/win32）・ADR 0035（補正 12〜16） |
-| 区画（focus zone） | 鍵を受け取る側。**索引**（主窓）と**本文**（RichEdit）の 2 つで、Win32 のフォーカスそのものが正本。application は区画の状態を持たない | `GetFocus()`（ui/win32）・ADR 0013 の決定 1 |
-| カーソル（cursor） | 索引で鍵が指している行。**ノート行**（そのときは選択そのもの）と、**見えるノート行を持たないカテゴリ行**（折り畳み・ノート 0 本）にだけ止まる。カテゴリ行にあるあいだ選択と右ペインは動かない。印は行の右端の角（カテゴリ行では**折畳の印**の左。印は字形ではなく 24 の viewBox の面のパスなので、空ける幅は定数） | `enum folio_cursor_kind`・`folio_state_cursor`（application）・`struct drawer_cursor`・`drawer_row.cursor`（core）・ADR 0015 |
+| 区画（focus zone） | 鍵を受け取る可視の操作領域。共通ヘッダ・索引・本文操作列・本文をF6で巡回する。Win32のfocusが正本で、自前操作の位置だけUIが持つ。補助面は自身の入力/候補へfocusを限定し、閉鎖時に可視の元領域へ戻す | `GetFocus()`・`keyboard_target`・`command_selection`（ui/win32）・ADR0013/0056/0058 |
+| カーソル（cursor） | 索引で鍵が指している単一の行参照。文書選択とは独立し、UIA SetFocusは本文や選択を動かさない。Select/Invoke/Enterは既存の保存・確認を経て選択する。通常の歩みはノート行と、見えるノート行を持たないカテゴリ行に止まる | `enum folio_cursor_kind`・`folio_state_cursor`（application）・`struct drawer_cursor`・`drawer_row.cursor`（core）・ADR0015/0056 |
 | 歩み（step） | 索引のカーソルを動かす向きと行き先。次・前・最初・最後の閉じた集合で、辿り方（止まる行の列・端で止まる）は application が持つ | `enum folio_step`（application）・`folio_state_select_adjacent` |
 | 止まる行（stop row） | 歩みが止まれる行の列。カテゴリごとに、見えるノート行があればそのノートを順に、無ければそのカテゴリ行 1 つ | `folio_state_select_adjacent`（application）・ADR 0015 の決定 2 |
 | 寄せる（reveal） | カーソルの行が頭の帯から下端までに収まる最小のスクロール量にすること。鍵でカーソルを動かしたときだけ行い、クリックでは行わない | `drawer_layout_reveal`（core）・`folio_state_reveal_cursor`（application）・ADR 0013 の決定 6 |

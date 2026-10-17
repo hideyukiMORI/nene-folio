@@ -57,7 +57,7 @@ providerを切断後、保持していたInvoke参照はUIA_E_ELEMENTNOTAVAILABL
 
 ADR0055 Aと#319の条件を維持する。UIA property/pattern/eventとkeyboardの対象試験、参照保持/破棄/再入、
 未保存文書からSetFocusとSelectを分けた試験、実readerの発話、最終head必須CIを揃える。
-OS高コントラストと補助面の全面公開は#320/#321。Waivers: none。
+OS高コントラストは#320/ADR0057、補助面の公開は#321/ADR0058へ接続する。Waivers: none。
 
 2026-10-17の対象実装・C試験106項目・NVDA 2026.2の実発話・寿命境界レビューは[品質記録](../quality/2026-10-17-basic-accessibility-checkpoint.md)を参照。
 最終head必須CIと統合・反映の実結果は関連PRと恒久証跡へ残す。

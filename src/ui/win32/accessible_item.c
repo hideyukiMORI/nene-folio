@@ -7,7 +7,13 @@ bool accessible_item_row(struct accessible_item item)
 
 bool accessible_item_root(struct accessible_item item)
 {
-    return item.kind == ACCESSIBLE_WINDOW || item.kind == ACCESSIBLE_DRAWER;
+    return item.kind == ACCESSIBLE_WINDOW || item.kind == ACCESSIBLE_DRAWER ||
+           item.kind == ACCESSIBLE_SURFACE;
+}
+
+bool accessible_item_surface(struct accessible_item item)
+{
+    return item.kind >= ACCESSIBLE_SURFACE && item.kind <= ACCESSIBLE_SURFACE_STATUS;
 }
 
 enum accessible_kind accessible_item_host(struct accessible_item item)
@@ -40,7 +46,21 @@ enum accessible_kind accessible_item_host(struct accessible_item item)
     case ACCESSIBLE_FIND:
     case ACCESSIBLE_FILTER:
     case ACCESSIBLE_BODY:
+    case ACCESSIBLE_NOTICE:
+    case ACCESSIBLE_COMMAND_INPUT:
+    case ACCESSIBLE_REPLACE_PATTERN:
+    case ACCESSIBLE_REPLACE_TEXT:
         return ACCESSIBLE_WINDOW;
+    case ACCESSIBLE_SURFACE:
+    case ACCESSIBLE_SURFACE_LIST:
+    case ACCESSIBLE_SURFACE_CHOICE:
+    case ACCESSIBLE_SURFACE_LANGUAGE:
+    case ACCESSIBLE_SURFACE_TOGGLE:
+    case ACCESSIBLE_SURFACE_BUTTON:
+    case ACCESSIBLE_SURFACE_TEXT:
+    case ACCESSIBLE_SURFACE_HELP:
+    case ACCESSIBLE_SURFACE_STATUS:
+        return ACCESSIBLE_SURFACE;
     }
     return ACCESSIBLE_WINDOW;
 }
@@ -50,6 +70,10 @@ bool accessible_item_equal(struct accessible_item left, struct accessible_item r
     if (left.kind != right.kind)
     {
         return false;
+    }
+    if (accessible_item_surface(left) && !accessible_item_root(left))
+    {
+        return left.revision == right.revision && left.slot == right.slot;
     }
     return !accessible_item_row(left) ||
            (left.revision == right.revision && left.ref.category == right.ref.category &&

@@ -1,4 +1,5 @@
 #include "name_prompt.h"
+#include "accessibility_native.h"
 #include "category_name.h"
 #include "dialog_theme.h"
 #include "folio_palette.h"
@@ -559,6 +560,22 @@ static void reflow_prompt(struct name_prompt *_Nonnull prompt)
     RedrawWindow(prompt->dialog, nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN);
 }
 
+static bool name_inputs(const struct name_prompt *_Nonnull prompt)
+{
+    char16_t name[ui_text_unit_limit];
+    wide_line(prompt_name_label(displayed_kind(prompt)), prompt_language(prompt), name);
+    if (FAILED(accessibility_native_name(prompt->name, name)))
+    {
+        return false;
+    }
+    if (prompt->category == nullptr)
+    {
+        return true;
+    }
+    wide_line(UI_TEXT_PROMPT_LABEL_CATEGORY, prompt_language(prompt), name);
+    return SUCCEEDED(accessibility_native_name(prompt->category, name));
+}
+
 static bool initialize(struct name_prompt *_Nonnull prompt, HWND dialog)
 {
     prompt->dialog = dialog;
@@ -576,7 +593,7 @@ static bool initialize(struct name_prompt *_Nonnull prompt, HWND dialog)
     }
     prompt->lowered = lowered_by(prompt);
     size_dialog(prompt);
-    if (!inputs(prompt) || !fill_name(prompt))
+    if (!inputs(prompt) || !fill_name(prompt) || !name_inputs(prompt))
     {
         return false;
     }

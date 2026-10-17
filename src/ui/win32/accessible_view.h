@@ -8,6 +8,9 @@
 struct accessible_view
 {
     char16_t name[1024];
+    char16_t help[1024];
+    bool dialog;
+    bool live;
     RECT bounds; /* screen座標。描画/hit testと同じ矩形から写す。 */
     bool enabled;
     bool offscreen;
