@@ -1,31 +1,26 @@
 # いまのタスク — NeNe Folio
 
-記録日: 2026-10-17。[#319](https://github.com/hideyukiMORI/nene-folio/issues/319)の基本UI Automation/キーボード到達を実装中。
-基点mainはa2f253cd6d008b400e05908e9f2600079c5fc60e。枝はfeat/319-basic-accessibility。
-hideのcommit/push指示により途中状態を保存する。受理・統合・通常exe反映は未完了。
+記録日: 2026-10-17。[#319](https://github.com/hideyukiMORI/nene-folio/issues/319)の基本UI Automation/キーボード到達を実装し、対象検証を完了した。
+基点mainはa2f253c、実装枝はfeat/319-basic-accessibility。
 
-## 現在の到達点
+## 確認済み
 
-- UIスレッド上のCOM provider、native入力名の注釈、ヘッダ/索引/本文操作列の公開、F6/Tab移動を実装した。
-- applicationの索引cursorを文書選択から独立させ、SetFocusと保存を伴うSelectを分けた。
-- 対象build/tidyと`folio_tests.exe --accessibility`は成功。実行コマンドと限界は[品質記録](../quality/2026-10-17-basic-accessibility-checkpoint.md)。
-- 独立レビューは途中。Invokeの実行通知不足が指摘され、未修正。
-- 実画面確認はhideのEsc操作で停止。試験データのJSONキー順を修正した後の起動、reader発話は未確認。
+- UIスレッド上のCOM provider、native入力名、ヘッダ/索引/本文操作列、F6/Tab到達。
+- applicationの単一cursorを文書選択と分離。SetFocusは保存なし、Select/Invokeは既存保存/未保存確認へ合流。
+- 対象build/tidy・状態/3言語文言試験、Cの製品provider試験106項目すべて成功。
+- NVDA 2026.2で名前・役割・focus・選択・展開の実発話を取得。寿命境界の独立レビューに追加blocker/highなし。
+- FR-006/018、ARC-004、ADR0013/0015/0056を実装契約へ更新。詳細と限界は[品質記録](../quality/2026-10-17-basic-accessibility-checkpoint.md)。
 
-## 残る受理条件
+## 統合と反映の確認先
 
-- Invoke通知の修正と、COM寿命/参照保持/破棄/再入の独立レビュー完了。
-- 製品providerのproperty/pattern/event、SetFocus/Select、失敗/取消、native Text/Value/Undoの対象検証。
-- 3言語/3表示/狭幅/通常幅/絞込0件/画面外行、IME/modal/終了中の拒否、実reader発話の確認。
-- ADR0015/関連するADR0013、FR-018、ARC-004の状態契約との照合・更新。
-- 最終PR headの必須CI、main統合、通常exe反映、恒久証跡収載、専用作業物整理。
+最終PR headの必須CI、main統合、通常exe反映、恒久証跡、専用作業物整理の実結果は
+#319の関連PRとD:/NeNeFolio/agents/319-basic-accessibility/completion.jsonを照合する。
+途中commit fd1bf23やローカル対象検証の成功だけで統合済みとは扱わない。
 
-## 保持する場所と後続
+通常exeはC:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe。
+専用作業木はD:/NeNeFolio/worktrees/319-basic-accessibility、仮出力はD:/NeNeFolio/outputs/319-basic-accessibility。
+完了確認後に専用作業物だけを整理し、枝とcommit・恒久証跡を保持する。
 
-作業木はD:/NeNeFolio/worktrees/319-basic-accessibility、build/試験データはD:/NeNeFolio/outputs/319-basic-accessibility。
-証跡はD:/NeNeFolio/agents/319-basic-accessibility。未完了の実装と検証入力があるため、現時点では削除しない。
-通常exeはC:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe（#311反映時のまま）。
-
-#312の範囲設計はPR #322で統合済み。履歴は[日報](../reports/2026-10-17.md)と[引き継ぎ](../handoffs/2026-10-17.md)。
-#320のOS高コントラスト、#321の補助画面公開、性能、配布、UI分割は別件。
-成功済みで関係入力が不変の対象検証は再利用する（QLT-012）。保存schema・ゲート変更なし。Waivers: none。
+次の候補は#320のOS高コントラスト、#321の補助画面公開。性能・配布・UI分割は別件。
+#312の設計はPR #322で統合済み。履歴は[日報](../reports/2026-10-17.md)と[引き継ぎ](../handoffs/2026-10-17.md)。
+成功済みで関係入力が不変の検証を再利用する（QLT-012）。保存schema・ゲート変更なし。Waivers: none。

@@ -1,6 +1,6 @@
 # ADR 0056 — UI AutomationはUIスレッドのCOM公開と失効可能な参照で構成する
 
-- 状態: 受理（#319の実装契約。受理試験が揃うまでは製品対応はplanned）
+- 状態: 受理（#319の実装・対象検証を完了。最終統合は関連PRの必須CIで確認）
 - 日付: 2026-10-17
 - Issue: [#319](https://github.com/hideyukiMORI/nene-folio/issues/319)
 - 規則: ARC-001/002/003/004/008/010/011、C-004/006/007/011/012/013/016/018、QLT-008/012/013
@@ -33,7 +33,8 @@ providerを切断後、保持していたInvoke参照はUIA_E_ELEMENTNOTAVAILABL
    clientが保持した参照から破棄済みのfolio_window/stateへ戻れない。参照計数の0だけでproviderを解放する。
 4. 行の識別はapplicationの行識別改訂番号と行参照で結ぶ。並べ替え/追加/改名/削除/絞込で改訂を更新する。
    描画から導くlayoutの改訂は別に持ち、展開/折畳ではlayoutだけを更新する。カテゴリ自身の参照を保って展開変更を通知し、
-   非表示になった子行の参照は現在のlayoutに存在しないものとして拒否する。
+   非表示になった子行の参照は切断済みと記録して拒否し、再展開しても復活させない。
+   行操作の終了時にlayoutを照合し、clientが直後に再展開しても古い子参照を再利用できない。
    過去の行識別改訂に結び付いた参照は別の行へ転用しない。改訂番号の上限では行公開を失効させ、番号を再利用しない。
    閲覧/編集、cursor、選択、スクロールの変化だけでは行の同一性を更新しない。
 5. applicationは既存cursorを選択とは独立した単一の行参照へ拡張する。フォーカス意図は可視の行だけを受け付け、保存/読込を行わない。
@@ -45,6 +46,12 @@ providerを切断後、保持していたInvoke参照はUIA_E_ELEMENTNOTAVAILABL
    COMのQueryInterface/SAFEARRAY等に必要なvoid pointerはSDK境界だけで受け、状態/コールバックの自前文脈は具体型にする（C-006）。
    SDKのvtable宣言に合わせた関数は公開ABIの境界であり、製品内の汎用データバッグにはしない。
    Cで定数の外部定義を含むUIAutomation.hはaccessibility_node.cだけで読み、他のUIファイルは具体型の公開境界を使う。
+8. InvokeはUIスレッドへ非同期に送り、実行時に可否を再確認する。未保存確認やnative menuが利用者入力を待つため、
+   受付後・共通操作の実行直前にInvoked通知を1回出す。クリック/キーも同じ操作通知へ合流し、二重通知を防ぐ。
+   [Invokeのmodal例外](https://learn.microsoft.com/en-us/windows/win32/api/uiautomationcore/nf-uiautomationcore-iinvokeprovider-invoke)に従う。
+   操作メニューはExpandCollapseも公開し、native menu loop中は背景操作を拒否する。Collapseだけは自身のmenuを閉じられる。
+   `TrackPopupMenuEx`の`TPM_RETURNCMD`で選択を返し、menu loop通知を受け取って開閉状態を導く。
+   イベント発行中の再入による状態変更は拒否し、通知処理中もhost/nodeを所有参照で保持する。
 
 ## 受理
 
@@ -52,5 +59,5 @@ ADR0055 Aと#319の条件を維持する。UIA property/pattern/eventとkeyboard
 未保存文書からSetFocusとSelectを分けた試験、実readerの発話、最終head必須CIを揃える。
 OS高コントラストと補助面の全面公開は#320/#321。Waivers: none。
 
-2026-10-17時点の途中実装・実施済み検証・残件は[品質記録](../quality/2026-10-17-basic-accessibility-checkpoint.md)を参照。
-実画面/reader/寿命境界の受理試験は未完了であり、この時点のcommit/pushは製品対応完了を意味しない。
+2026-10-17の対象実装・C試験106項目・NVDA 2026.2の実発話・寿命境界レビューは[品質記録](../quality/2026-10-17-basic-accessibility-checkpoint.md)を参照。
+最終head必須CIと統合・反映の実結果は関連PRと恒久証跡へ残す。

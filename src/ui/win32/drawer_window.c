@@ -841,8 +841,8 @@ static void show_menu(struct drawer_window *_Nonnull self, LPARAM position)
         return;
     }
     ClientToScreen(self->handle, &point);
-    int chosen = TrackPopupMenuEx(menu, TPM_RETURNCMD | TPM_NONOTIFY, point.x, point.y,
-                                  GetParent(self->handle), nullptr);
+    int chosen =
+        TrackPopupMenuEx(menu, TPM_RETURNCMD, point.x, point.y, GetParent(self->handle), nullptr);
     DestroyMenu(menu);
     if (chosen > 0)
     {
@@ -1635,7 +1635,10 @@ HRESULT drawer_window_accessible_at(struct drawer_window *_Nonnull self, POINT p
         *out = accessible_row_item(self, index);
         return S_OK;
     }
-    out->kind = ACCESSIBLE_TREE;
+    if (point.y >= band_height(self))
+    {
+        out->kind = ACCESSIBLE_TREE;
+    }
     return S_OK;
 }
 

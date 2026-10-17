@@ -37,6 +37,8 @@ struct accessibility_host
     char16_t body_name[1024];
 };
 
+static void refresh_snapshot(struct accessibility_host *_Nonnull host);
+
 HRESULT accessibility_host_create(struct folio_window *_Nonnull window,
                                   struct accessibility_host *_Nullable *_Nonnull out)
 {
@@ -247,11 +249,44 @@ static HRESULT action_ready(struct accessibility_host *_Nonnull host,
     {
         return accessibility_node_disabled;
     }
-    if (host->refreshing || host->executing || !folio_window_accessible_ready(host->owner))
+    if (host->refreshing)
+    {
+        return accessibility_node_invalid;
+    }
+    if (request->item.kind == ACCESSIBLE_MENU && request->action == ACCESSIBLE_ACTION_COLLAPSE &&
+        view.expanded)
+    {
+        return S_OK; /* 開いているnative menu自身の終了は、背後の操作ではない。 */
+    }
+    if (host->executing || !folio_window_accessible_ready(host->owner))
     {
         return accessibility_node_invalid;
     }
     return S_OK;
+}
+
+static void raise_invoked(struct accessibility_host *_Nonnull host, struct accessible_item item)
+{
+    struct accessibility_node *_Nullable node = nullptr;
+    if (SUCCEEDED(accessibility_host_node(host, item, &node)))
+    {
+        accessibility_node_invoked(node);
+        accessibility_node_release(node);
+    }
+}
+
+void accessibility_host_invoked(struct accessibility_host *_Nonnull host,
+                                struct accessible_item item)
+{
+    if (host->executing || host->refreshing || host->owner == nullptr)
+    {
+        return;
+    }
+    accessibility_host_add_ref(host);
+    host->executing = true;
+    raise_invoked(host, item);
+    host->executing = false;
+    accessibility_host_release(host);
 }
 
 HRESULT accessibility_host_action(struct accessibility_host *_Nonnull host,
@@ -263,9 +298,16 @@ HRESULT accessibility_host_action(struct accessibility_host *_Nonnull host,
         return result;
     }
     accessibility_host_add_ref(host);
+    bool executing = host->executing;
     host->executing = true;
-    result = folio_window_accessible_action(host->owner, request);
-    host->executing = false;
+    if (request->action == ACCESSIBLE_ACTION_INVOKE)
+    {
+        raise_invoked(host, request->item);
+    }
+    result = host->owner == nullptr ? accessibility_node_unavailable
+                                    : folio_window_accessible_action(host->owner, request);
+    host->executing = executing;
+    refresh_snapshot(host);
     accessibility_host_schedule(host);
     accessibility_host_release(host);
     return result;
@@ -444,14 +486,20 @@ static void observe_focus(struct accessibility_host *_Nonnull host)
     }
 }
 
-void accessibility_host_refresh(struct accessibility_host *_Nonnull host)
+static bool menu_open(struct accessibility_host *_Nonnull host)
+{
+    struct accessible_view view = {0};
+    struct accessible_item item = {.kind = ACCESSIBLE_MENU};
+    return SUCCEEDED(accessibility_host_read(host, &item, &view)) && view.expanded;
+}
+
+static void refresh_snapshot(struct accessibility_host *_Nonnull host)
 {
     host->scheduled = false;
-    if (host->owner == nullptr || host->refreshing || host->executing)
+    if (host->owner == nullptr || host->refreshing || (host->executing && !menu_open(host)))
     {
         return;
     }
-    accessibility_host_add_ref(host);
     host->refreshing = true;
     refresh_structure(host);
     refresh_visibility(host);
@@ -468,6 +516,12 @@ void accessibility_host_refresh(struct accessibility_host *_Nonnull host)
         accessibility_node_refresh(host->nodes[index]);
     }
     host->refreshing = false;
+}
+
+void accessibility_host_refresh(struct accessibility_host *_Nonnull host)
+{
+    accessibility_host_add_ref(host);
+    refresh_snapshot(host);
     accessibility_host_release(host);
 }
 

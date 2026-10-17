@@ -90,6 +90,10 @@
 | カテゴリの色・順序・展開状態 | `data/categories.json` | application | 右クリック・ドラッグ・トグルの意図を受けた reducer |
 | 文書の順序 | `data/<カテゴリ>/index.json` | application | ドラッグの意図を受けた reducer |
 | 選択中の文書と本文モード（閲覧／編集） | 閉じた enum | application | クリックと編集切替の意図 |
+| 索引cursorと行識別の改訂 | 文書選択から独立した単一の行参照、layout/行識別の改訂番号 | application（`folio_state`） | focus意図はcursorだけを変更する。選択・移動・改名・削除・絞込で整合させ、公開行の同一性変更で行識別を更新する。展開変更はlayoutだけを更新する（ADR0056） |
+| 自前操作のfocus位置 | 実Win32 focusが主窓にある間の操作種類 | ui/win32（`folio_window`） | F6/Tab/クリック/UIAの共通focus経路。行cursorはapplication、native入力focusはHWNDから導く（ADR0056） |
+| UIA公開先と参照寿命 | COM参照計数、失効状態、イベント用の直前snapshot | ui/win32（`accessibility_host` / `accessibility_node`） | UIスレッド上で公開・通知・切断する。製品状態を複製せず、破棄前に公開先を切り離す（ADR0056） |
+| UIAの行layout cache | 既存描画layoutから導く可視行と矩形 | ui/win32（`drawer_window`） | applicationのlayout改訂・DPI・寸法で無効化する。選択・focus・スクロールは現在値を参照する（ADR0056） |
 | 表示モード（一覧／両方／ノート） | `folio_layout_mode`の閉じたenum。実行中だけの可視領域 | application（`folio_state`） | 共通コマンドの表示切替の意図。保存や本文再投入を伴わない（ADR0047） |
 | 一覧窓からの復元寸法 | 直前の広い通常幅・最大化と通常位置 | ui/win32（`folio_window`） | 一覧へ入るときだけ退避し、両方／ノートへ戻すときに適用するUI一時状態（ADR0047） |
 | 上部の操作説明 | 標準tooltipのHWND・矩形登録・固定UTF-16表示buffer | ui/win32（`folio_window`） | 同じボタン矩形とui_textを参照し、resize/DPI/言語/テーマ・modal境界に追従する。表示状態や文書の別所有者にはしない（ADR0048） |

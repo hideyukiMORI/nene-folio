@@ -49,6 +49,9 @@ void accessibility_host_detach(struct accessibility_host *_Nonnull host);
 void accessibility_host_dispatch(struct accessibility_host *_Nonnull host);
 void accessibility_host_schedule(struct accessibility_host *_Nonnull host);
 void accessibility_host_refresh(struct accessibility_host *_Nonnull host);
+/* modal/保存を伴い得る共通操作の開始を、直接入力でも同じ要素から通知する。 */
+void accessibility_host_invoked(struct accessibility_host *_Nonnull host,
+                                struct accessible_item item);
 [[nodiscard]] LRESULT accessibility_host_object(struct accessibility_host *_Nonnull host,
                                                 enum accessible_kind root, WPARAM wparam,
                                                 LPARAM lparam);

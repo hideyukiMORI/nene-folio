@@ -35,6 +35,7 @@ void accessibility_node_refresh(struct accessibility_node *_Nonnull node);
 void accessibility_node_structure_changed(struct accessibility_node *_Nonnull node);
 void accessibility_node_focus_changed(struct accessibility_node *_Nonnull node);
 void accessibility_node_selection_changed(struct accessibility_node *_Nonnull node);
+void accessibility_node_invoked(struct accessibility_node *_Nonnull node);
 [[nodiscard]] bool accessibility_node_is_request(LPARAM lparam);
 [[nodiscard]] LRESULT accessibility_node_object(struct accessibility_node *_Nonnull node,
                                                 HWND _Nonnull window, WPARAM wparam, LPARAM lparam);

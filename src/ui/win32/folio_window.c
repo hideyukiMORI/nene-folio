@@ -65,6 +65,7 @@ struct folio_window
     struct accessibility_host *_Nullable accessibility;
     enum accessible_kind keyboard_target;
     bool menu_active;
+    bool operations_menu;
     HACCEL _Nullable region_keys;
     HACCEL _Nullable traversal_keys;
     struct folio_palette palette;
@@ -360,6 +361,8 @@ static bool translate_keyboard(const struct folio_window *_Nonnull self,
 static void keyboard_activate(struct folio_window *_Nonnull self);
 static void draw_keyboard_focus(const struct folio_window *_Nonnull self, HDC device);
 static void pointer_focus(struct folio_window *_Nonnull self, POINT point);
+static void accessible_command_invoked(struct folio_window *_Nonnull self,
+                                       enum folio_command command);
 static bool accessible_visible(const struct folio_window *_Nonnull self, enum accessible_kind kind);
 static LRESULT on_accessibility_message(struct folio_window *_Nonnull self, UINT message,
                                         WPARAM wparam, LPARAM lparam);
@@ -4640,6 +4643,8 @@ static void close_window(struct folio_window *_Nonnull self)
 {
     if (!self->removal_running && !session_busy(self))
     {
+        accessibility_host_invoked(self->accessibility,
+                                   (struct accessible_item){.kind = ACCESSIBLE_CLOSE});
         /* Normal close accepts either saved content or explicit discard permission. */
         finish_quit(self, depart_document(self).outcome);
     }
@@ -5570,6 +5575,7 @@ static void execute_command(struct folio_window *_Nonnull self, enum folio_comma
         return;
     }
     set_pane_notice(self, PANE_NOTICE_NONE);
+    accessible_command_invoked(self, command);
     command_runs[command](self, argument);
 }
 
@@ -6262,8 +6268,13 @@ static void show_operations(struct folio_window *_Nonnull self)
     RECT button = action_button_rect(self, 2);
     POINT point = {button.left, button.bottom};
     ClientToScreen(self->handle, &point);
-    int chosen = TrackPopupMenuEx(menu, TPM_RETURNCMD | TPM_NONOTIFY, point.x, point.y,
-                                  self->handle, nullptr);
+    accessibility_host_invoked(self->accessibility,
+                               (struct accessible_item){.kind = ACCESSIBLE_MENU});
+    self->operations_menu = true;
+    accessibility_host_schedule(self->accessibility);
+    int chosen = TrackPopupMenuEx(menu, TPM_RETURNCMD, point.x, point.y, self->handle, nullptr);
+    self->operations_menu = false;
+    accessibility_host_schedule(self->accessibility);
     DestroyMenu(menu);
     if (chosen > 0 && (size_t)chosen <= folio_command_count())
     {
@@ -8695,6 +8706,18 @@ static void accessible_selection_view(struct folio_window *_Nonnull self, enum a
     }
 }
 
+static void accessible_availability(const struct folio_window *_Nonnull self,
+                                    enum accessible_kind kind, struct accessible_view *_Nonnull out)
+{
+    out->enabled = folio_window_accessible_ready(self) && accessible_visible(self, kind);
+    if (kind == ACCESSIBLE_MENU)
+    {
+        out->expanded = self->operations_menu && self->menu_active;
+        out->enabled = out->enabled || out->expanded;
+    }
+    out->focusable = accessible_controls[kind].focusable;
+}
+
 HRESULT folio_window_accessible_read(struct folio_window *_Nonnull self,
                                      const struct accessible_item *_Nonnull item,
                                      struct accessible_view *_Nonnull out)
@@ -8705,8 +8728,7 @@ HRESULT folio_window_accessible_read(struct folio_window *_Nonnull self,
     }
     *out = (struct accessible_view){0};
     accessible_name(self, item->kind, out->name);
-    out->enabled = folio_window_accessible_ready(self) && accessible_visible(self, item->kind);
-    out->focusable = accessible_controls[item->kind].focusable;
+    accessible_availability(self, item->kind, out);
     if (accessible_item_host(*item) == ACCESSIBLE_DRAWER)
     {
         if (self->drawer == nullptr)
@@ -9012,7 +9034,6 @@ static bool accessible_command(enum accessible_kind kind, enum folio_command *_N
                     {ACCESSIBLE_LAYOUT_BOTH, FOLIO_COMMAND_LAYOUT_BOTH},
                     {ACCESSIBLE_LAYOUT_NOTE, FOLIO_COMMAND_LAYOUT_NOTE},
                     {ACCESSIBLE_SETTINGS, FOLIO_COMMAND_SETTINGS},
-                    {ACCESSIBLE_CLOSE, FOLIO_COMMAND_QUIT},
                     {ACCESSIBLE_VIEW, FOLIO_COMMAND_VIEW},
                     {ACCESSIBLE_EDIT, FOLIO_COMMAND_EDIT},
                     {ACCESSIBLE_NEW_NOTE, FOLIO_COMMAND_NEW},
@@ -9032,9 +9053,39 @@ static bool accessible_command(enum accessible_kind kind, enum folio_command *_N
     return false;
 }
 
+static void accessible_command_invoked(struct folio_window *_Nonnull self,
+                                       enum folio_command command)
+{
+    const enum accessible_kind kinds[] = {
+        ACCESSIBLE_SETTINGS,     ACCESSIBLE_SAVE,     ACCESSIBLE_HELP,    ACCESSIBLE_FIND,
+        ACCESSIBLE_NEW_CATEGORY, ACCESSIBLE_NEW_NOTE, ACCESSIBLE_PANE_NEW};
+    enum folio_command mapped = FOLIO_COMMAND_HELP;
+    if (accessible_command(self->keyboard_target, &mapped) && mapped == command &&
+        accessible_visible(self, self->keyboard_target))
+    {
+        accessibility_host_invoked(self->accessibility,
+                                   (struct accessible_item){.kind = self->keyboard_target});
+        return;
+    }
+    for (size_t index = 0; index < sizeof kinds / sizeof kinds[0]; ++index)
+    {
+        if (accessible_command(kinds[index], &mapped) && mapped == command &&
+            accessible_visible(self, kinds[index]))
+        {
+            accessibility_host_invoked(self->accessibility,
+                                       (struct accessible_item){.kind = kinds[index]});
+            return;
+        }
+    }
+}
+
 static HRESULT accessible_select_note(struct folio_window *_Nonnull self,
                                       const struct accessible_request *_Nonnull request)
 {
+    if (request->action == ACCESSIBLE_ACTION_INVOKE)
+    {
+        accessibility_host_invoked(self->accessibility, request->item);
+    }
     enum folio_state_outcome result =
         holds_document(self, request->item.ref)
             ? folio_state_focus_cursor(self->state, FOLIO_CURSOR_NOTE, request->item.ref)
@@ -9050,6 +9101,11 @@ static HRESULT accessible_select_note(struct folio_window *_Nonnull self,
 static HRESULT accessible_activate(struct folio_window *_Nonnull self,
                                    const struct accessible_request *_Nonnull request)
 {
+    if (request->item.kind == ACCESSIBLE_CLOSE)
+    {
+        close_window(self);
+        return S_OK;
+    }
     if (request->item.kind == ACCESSIBLE_NOTE)
     {
         return accessible_select_note(self, request);
@@ -9074,6 +9130,28 @@ static HRESULT accessible_activate(struct folio_window *_Nonnull self,
     return S_OK;
 }
 
+static HRESULT accessible_expand(struct folio_window *_Nonnull self,
+                                 const struct accessible_request *_Nonnull request)
+{
+    if (request->item.kind == ACCESSIBLE_MENU)
+    {
+        if (request->action == ACCESSIBLE_ACTION_EXPAND)
+        {
+            show_operations(self);
+        }
+        return S_OK;
+    }
+    if (request->item.kind != ACCESSIBLE_CATEGORY || folio_state_filtering(self->state))
+    {
+        return accessibility_node_invalid;
+    }
+    HRESULT result = accessible_outcome(
+        self, folio_state_set_expansion(self->state, request->item.ref.category,
+                                        request->action == ACCESSIBLE_ACTION_EXPAND));
+    redraw_drawer(self);
+    return result;
+}
+
 HRESULT folio_window_accessible_action(struct folio_window *_Nonnull self,
                                        const struct accessible_request *_Nonnull request)
 {
@@ -9082,6 +9160,11 @@ HRESULT folio_window_accessible_action(struct folio_window *_Nonnull self,
     if (FAILED(result))
     {
         return result;
+    }
+    if (request->item.kind == ACCESSIBLE_MENU && request->action == ACCESSIBLE_ACTION_COLLAPSE &&
+        view.expanded)
+    {
+        return EndMenu() ? S_OK : accessibility_node_invalid;
     }
     if (!view.enabled || !folio_window_accessible_ready(self))
     {
@@ -9101,15 +9184,7 @@ HRESULT folio_window_accessible_action(struct folio_window *_Nonnull self,
         return accessible_activate(self, request);
     case ACCESSIBLE_ACTION_EXPAND:
     case ACCESSIBLE_ACTION_COLLAPSE:
-        if (request->item.kind != ACCESSIBLE_CATEGORY || folio_state_filtering(self->state))
-        {
-            return accessibility_node_invalid;
-        }
-        result = accessible_outcome(
-            self, folio_state_set_expansion(self->state, request->item.ref.category,
-                                            request->action == ACCESSIBLE_ACTION_EXPAND));
-        redraw_drawer(self);
-        return result;
+        return accessible_expand(self, request);
     case ACCESSIBLE_ACTION_REVEAL:
     case ACCESSIBLE_ACTION_SCROLL:
         return accessible_outcome(self, drawer_window_accessible_scroll(self->drawer, request));

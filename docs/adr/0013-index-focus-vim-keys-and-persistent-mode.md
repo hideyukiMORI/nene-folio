@@ -86,6 +86,20 @@ RichEdit の Ctrl+S だけ。ADR 0009 は「ドロワーはフォーカスを取
 | クリックでも見える位置へ寄せる | 見えている行を押しているので寄せる理由が無い |
 | `Esc` で編集を抜けて閲覧へ | 施主の (c) に反する。`Esc` はフォーカスだけを動かす |
 
+## 2026-10-17 の補正（#319 / ADR0055・0056）
+
+決定1の2区画を、共通ヘッダ・索引・本文操作列・本文の可視4区画へ拡張する。
+F6/Shift+F6で区画を巡回し、自前操作列内はTab/Shift+Tab、Enter/Spaceで操作する。
+非表示区画を飛ばし、本文のTabとIME入力はnative RichEditへ残す。
+主窓に実Win32 focusがある間だけ、UIが自前操作の位置を閉じた種類で区別する。
+native入力欄のfocusはHWNDから導き、行cursorと文書選択はapplicationが所有する。
+
+単なるF6/Tab/UIA SetFocusでは保存・本文再投入をしない。本文・Undo・変更印を保持する。
+本文のEscによる保存後の索引復帰、`j/k`やクリックによる保存後の文書切替、Ctrl+Sは既存契約を維持する。
+UIA Select/Invokeも同じ共通操作と未保存確認へ合流する。
+modal・IME変換・本文投入・終了処理中は背後への移動/操作を拒否する。
+自前操作のfocus印は描画と同じ矩形で描き、標準EDIT/RichEditの公開能力を保持する。
+
 ## 参考
 
 - [ADR 0006](0006-edit-mode-and-save-path.md)（保存の意図と決定 5）/ [ADR 0009](0009-drawer-scroll-and-overflow-fade.md)（鍵の経路・フォーカス）/

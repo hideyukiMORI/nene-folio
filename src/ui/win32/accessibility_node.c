@@ -32,6 +32,7 @@ struct accessibility_node
     struct accessible_item item;
     struct accessible_view previous;
     bool observed;
+    bool disconnected;
 };
 
 static bool has_invoke(enum accessible_kind kind)
@@ -57,7 +58,7 @@ static bool has_selection_item(enum accessible_kind kind)
 
 static bool has_expand(enum accessible_kind kind)
 {
-    return kind == ACCESSIBLE_CATEGORY || kind == ACCESSIBLE_NOTE;
+    return kind == ACCESSIBLE_CATEGORY || kind == ACCESSIBLE_NOTE || kind == ACCESSIBLE_MENU;
 }
 
 static struct accessibility_node *_Nonnull simple_owner(IRawElementProviderSimple *_Nonnull value)
@@ -119,7 +120,8 @@ static struct accessibility_node *_Nonnull scroll_item_owner(IScrollItemProvider
 static HRESULT read_view(struct accessibility_node *_Nonnull node,
                          struct accessible_view *_Nonnull out)
 {
-    return accessibility_host_read(node->host, &node->item, out);
+    return node->disconnected ? (HRESULT)UIA_E_ELEMENTNOTAVAILABLE
+                              : accessibility_host_read(node->host, &node->item, out);
 }
 
 static void destroy(struct accessibility_node *_Nonnull node)
@@ -188,6 +190,12 @@ static HRESULT query(struct accessibility_node *_Nonnull node, REFIID id,
 
 static HRESULT perform(struct accessibility_node *_Nonnull node, enum accessible_action action)
 {
+    struct accessible_view view = {0};
+    HRESULT result = read_view(node, &view);
+    if (FAILED(result))
+    {
+        return result;
+    }
     struct accessible_request request = {.item = node->item, .action = action, .scroll_target = 0};
     return accessibility_host_action(node->host, &request);
 }
@@ -429,6 +437,12 @@ fragment_navigate(IRawElementProviderFragment *_Nonnull self, enum NavigateDirec
     struct accessibility_node *_Nonnull node = fragment_owner(self);
     struct accessible_item item = {.kind = ACCESSIBLE_WINDOW};
     *out = nullptr;
+    struct accessible_view view = {0};
+    HRESULT available = read_view(node, &view);
+    if (FAILED(available))
+    {
+        return available;
+    }
     enum accessible_navigation intent = ACCESSIBLE_NAVIGATION_PARENT;
     if (!navigation_intent(direction, &intent))
     {
@@ -581,6 +595,12 @@ static HRESULT STDMETHODCALLTYPE root_focus(IRawElementProviderFragmentRoot *_No
 static HRESULT STDMETHODCALLTYPE invoke_run(IInvokeProvider *_Nonnull self)
 {
     struct accessibility_node *_Nonnull node = invoke_owner(self);
+    struct accessible_view view = {0};
+    HRESULT result = read_view(node, &view);
+    if (FAILED(result))
+    {
+        return result;
+    }
     struct accessible_request request = {.item = node->item, .action = ACCESSIBLE_ACTION_INVOKE};
     return accessibility_host_post(node->host, &request);
 }
@@ -671,6 +691,12 @@ static HRESULT STDMETHODCALLTYPE selection_item_select(ISelectionItemProvider *_
 static HRESULT STDMETHODCALLTYPE selection_item_add_selection(ISelectionItemProvider *_Nonnull self)
 {
     struct accessibility_node *_Nonnull node = selection_item_owner(self);
+    struct accessible_view view = {0};
+    HRESULT available = read_view(node, &view);
+    if (FAILED(available))
+    {
+        return available;
+    }
     struct accessible_item group = {.kind = selection_container_kind(node->item.kind)};
     struct accessible_item selected = {.kind = ACCESSIBLE_WINDOW};
     HRESULT result = accessibility_host_selected(node->host, &group, &selected);
@@ -726,7 +752,14 @@ static HRESULT STDMETHODCALLTYPE selection_item_container(
 
 static HRESULT STDMETHODCALLTYPE expand_open(IExpandCollapseProvider *_Nonnull self)
 {
-    return perform(expand_owner(self), ACCESSIBLE_ACTION_EXPAND);
+    struct accessibility_node *_Nonnull node = expand_owner(self);
+    if (node->item.kind == ACCESSIBLE_MENU)
+    {
+        struct accessible_request request = {.item = node->item,
+                                             .action = ACCESSIBLE_ACTION_EXPAND};
+        return accessibility_host_post(node->host, &request);
+    }
+    return perform(node, ACCESSIBLE_ACTION_EXPAND);
 }
 
 static HRESULT STDMETHODCALLTYPE expand_close(IExpandCollapseProvider *_Nonnull self)
@@ -1099,6 +1132,7 @@ void accessibility_node_release(struct accessibility_node *_Nonnull node)
 
 void accessibility_node_disconnect(struct accessibility_node *_Nonnull node)
 {
+    node->disconnected = true; /* 再展開後も切断済み参照を復活させない。 */
     (void)UiaDisconnectProvider(&node->simple);
 }
 
@@ -1111,6 +1145,14 @@ void accessibility_node_structure_changed(struct accessibility_node *_Nonnull no
 void accessibility_node_focus_changed(struct accessibility_node *_Nonnull node)
 {
     (void)UiaRaiseAutomationEvent(&node->simple, UIA_AutomationFocusChangedEventId);
+}
+
+void accessibility_node_invoked(struct accessibility_node *_Nonnull node)
+{
+    if (has_invoke(node->item.kind))
+    {
+        (void)UiaRaiseAutomationEvent(&node->simple, UIA_Invoke_InvokedEventId);
+    }
 }
 
 void accessibility_node_selection_changed(struct accessibility_node *_Nonnull node)
