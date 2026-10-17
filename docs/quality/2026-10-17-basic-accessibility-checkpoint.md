@@ -18,7 +18,7 @@ Invoke通知・選択・focus・展開・property/structure通知を共通状態
 操作メニューのExpandは非同期、Collapseはnative menu自身を閉じ、通知中の再入は拒否する。
 閉じる操作は既存の保存/確認経路を通る。
 
-保存schema・外部runtime・ゲート変更なし。Windows同梱UIA/COM/直接注釈ライブラリをCMakeとeng/architecture.jsonへ宣言した。
+保存schema・外部runtime・ゲートの判定基準変更なし。Windows同梱UIA/COM/直接注釈ライブラリをCMakeとeng/architecture.jsonへ宣言した。
 ui_textに3言語の区画名/本文名/キー説明を追加し、FR-006/018、ARC-004、ADR0013/0015/0056を更新した。
 
 ## 実行した対象検証
@@ -35,6 +35,7 @@ ui_textに3言語の区画名/本文名/キー説明を追加し、FR-006/018、
 | `pwsh -NoProfile -File D:/NeNeFolio/agents/319-basic-accessibility/compile-native.ps1` | native-build-09成功。製品sourceと正典buildのライブラリを使う隔離C fixture |
 | `D:/NeNeFolio/outputs/319-basic-accessibility/native-runtime/native-contract.exe` | native-run-05: **106 checks / 0 failures**、provider reads 9319、wrong thread 0 |
 | `native-contract.exe reader` + NVDA 2026.2 | reader-run-04成功。下記の実発話を取得 |
+| `python eng/test-release.py --artifact D:/NeNeFolio/outputs/319-basic-accessibility/build/NeNeFolio.exe --metadata D:/NeNeFolio/outputs/319-basic-accessibility/build/product-version.json --workspace D:/NeNeFolio/outputs/319-basic-accessibility/release-proofs` | 配布検証器の異常系修正後、17項目成功（release-proofs-final.log） |
 | `python eng/conformance.py` / `git diff --check` | 規約違反0件・空白エラーなし |
 
 C fixtureは外部試験の中だけで保存失敗・名前確認取消・イベント観測を注入する。製品へ試験hookは追加しない。
@@ -89,10 +90,17 @@ hideのEscによる停止後は試験とreaderを終了し、再開指示後のr
 寿命/所有境界の独立レビューは読み取り専用。Invoke通知不足と固定帯hit testを修正し、
 20:44の差分再レビューでは追加blocker/highなし。lifetime-review-final.mdに結果を残した。
 
+最初のCI（39030934078）はbuild/unit/coverage/ゲート負例証明を通過後、wrong-machine配布試験で失敗した。
+UIA追加前のexeと追加後のexeのMachineだけをI386へ書き換えて比較し、前者はllvm-readobjが成功終了、
+後者はMachineを報告した後にimport名の解析で終了1になることを再現した（pe-machine-probe.log）。
+`eng/release.py`を、CPU種別の拒否を先に報告し、その後に外部解析器の成功終了を必須とする順へ修正した。
+AMD64を報告していても解析に失敗した入力を拒否する回帰試験を追加し、従来のwrong-machine試験も維持した。
+不正成果物の受理、除外、閾値変更はない。直接影響した配布検証器17項目だけをローカルで実行し、UI試験結果を再利用した。
+
 ## 限界と統合
 
 IME/終了の拒否は実Win32窓と状態flagによる境界試験であり、OS終了や全IME製品の再測定ではない。
 補助画面の全面公開は#321、OS高コントラストは#320。一般的なWCAG適合や全reader対応を宣言しない。
 成功済み対象試験は入力不変なら再利用する（QLT-012）。最終headの`pwsh -NoProfile -File ./eng/check.ps1`成功をCIで必須とする。
 
-規則: FR-012/013/018/020/022/024/032、ARC-001/002/003/004/008/010/011、C-002/004/007/012/018、QLT-008/010/012/013、GIT-001〜004。Waivers: none。
+規則: FR-012/013/014/018/020/022/024/032、ARC-001/002/003/004/008/010/011、C-002/004/007/012/018、QLT-007/008/010/012/013、GIT-001〜004。Waivers: none。

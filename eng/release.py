@@ -263,9 +263,11 @@ def validate_versions(actual: dict, value: dict) -> None:
 
 def validate_identity(path: Path, value: dict) -> dict:
     result = subprocess.run(["llvm-readobj", "--file-headers", "--coff-imports", str(path)],
-                            capture_output=True, text=True, encoding="utf-8", check=True)
+                            capture_output=True, text=True, encoding="utf-8", check=False)
     if not re.search(r"Machine:\s+IMAGE_FILE_MACHINE_AMD64\b", result.stdout):
         raise ValueError("release: executable is not AMD64")
+    # A mismatched machine can also make import decoding fail; valid AMD64 still requires full success.
+    result.check_returncode()
     imports = re.findall(r"^\s+Name:\s+(\S+)\s*$", result.stdout, re.M)
     versions = windows_versions(path)
     validate_versions(versions, value)

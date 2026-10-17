@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import shutil
 import struct
+import subprocess
 import tempfile
 import unittest
 import zipfile
@@ -44,6 +45,14 @@ class ReleaseProofs(unittest.TestCase):
         actual["fixedFile"][0] ^= 1
         with self.assertRaisesRegex(ValueError, "fixed version differs"):
             release.validate_versions(actual, self.version)
+
+    def test_amd64_import_decode_failure_is_rejected(self):
+        failed = subprocess.CompletedProcess(["llvm-readobj"], 1,
+                                             stdout="Machine: IMAGE_FILE_MACHINE_AMD64\n",
+                                             stderr="import decoding failed")
+        with patch.object(release.subprocess, "run", return_value=failed):
+            with self.assertRaises(subprocess.CalledProcessError):
+                release.validate_identity(self.artifact, self.version)
 
     def test_wrong_string_version(self):
         actual = release.windows_versions(self.artifact)
