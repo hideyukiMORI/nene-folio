@@ -73,3 +73,4 @@ ADR は「なぜそう決めたか」「何を却下したか」を書く。
 | [0055](0055-accessibility-and-system-contrast-scope.md) | 基本操作のUIA公開・OS高コントラスト・補助画面の公開を別の受理単位にする | 受理 |
 | [0056](0056-ui-automation-provider-lifetime.md) | UIAをUIスレッドのCOM公開・native入力名の直接注釈・失効可能な行参照で構成する | 受理 |
 | [0057](0057-system-contrast-snapshot.md) | 失敗と区別したOS外観snapshotを一つの実効paletteへ解決し、UI/RTFへ共有する | 受理 |
+| [0058](0058-accessible-command-surfaces.md) | 補助面の候補・設定値・通知を既存UIA hostと操作状態から公開する | 受理 |

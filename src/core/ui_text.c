@@ -13,6 +13,12 @@
  * 列の網羅（訳し忘れと空の列）は CNF-011 が字句で守る。**简体中文は母語話者の確認を
  * 得ていない**（ADR 0032 の決定 3。後日この 1 列だけを直せる）。 */
 static const char *_Nonnull const catalog[][folio_language_count] = {
+    [UI_TEXT_ACCESSIBLE_COMMAND] = {"コマンド入力", "Command input", "命令输入"},
+    [UI_TEXT_ACCESSIBLE_PALETTE] = {"コマンド一覧", "Command palette", "命令列表"},
+    [UI_TEXT_ACCESSIBLE_PATTERN] = {"検索する正規表現", "Search pattern", "搜索正则表达式"},
+    [UI_TEXT_ACCESSIBLE_REPLACEMENT] = {"置換文字列", "Replacement text", "替换文本"},
+    [UI_TEXT_ACCESSIBLE_CURRENT] = {"現在の設定", "Current setting", "当前设置"},
+    [UI_TEXT_ACCESSIBLE_NO_RESULTS] = {"候補がありません。", "No results.", "没有候选项。"},
     [UI_TEXT_ACCESSIBLE_HEADER] = {"共通操作", "Main toolbar", "主工具栏"},
     [UI_TEXT_ACCESSIBLE_PANE_TOOLS] = {"ノートの操作", "Note toolbar", "笔记工具栏"},
     [UI_TEXT_ACCESSIBLE_MODE] = {"ノートのモード", "Note mode", "笔记模式"},

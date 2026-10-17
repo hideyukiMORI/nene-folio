@@ -24,6 +24,12 @@
 
 /* 変更前の文言（機械的に写した）。ui_text.c の表と 1 字も違ってはいけない。 */
 static const char *_Nonnull const expected[] = {
+    [UI_TEXT_ACCESSIBLE_COMMAND] = "コマンド入力",
+    [UI_TEXT_ACCESSIBLE_PALETTE] = "コマンド一覧",
+    [UI_TEXT_ACCESSIBLE_PATTERN] = "検索する正規表現",
+    [UI_TEXT_ACCESSIBLE_REPLACEMENT] = "置換文字列",
+    [UI_TEXT_ACCESSIBLE_CURRENT] = "現在の設定",
+    [UI_TEXT_ACCESSIBLE_NO_RESULTS] = "候補がありません。",
     [UI_TEXT_ACCESSIBLE_HEADER] = "共通操作",
     [UI_TEXT_ACCESSIBLE_PANE_TOOLS] = "ノートの操作",
     [UI_TEXT_ACCESSIBLE_MODE] = "ノートのモード",
@@ -339,7 +345,7 @@ static size_t utf16_units_of(const char *_Nonnull utf8)
 /* 表の全 ID が、変更前と 1 字も違わないこと（同一性）。 */
 static void verify_identity(void)
 {
-    require(expected_count == UI_TEXT_HELP_ACCESSIBILITY + 1,
+    require(expected_count == UI_TEXT_ACCESSIBLE_NO_RESULTS + 1,
             "the expected table covers every id in the enumeration");
     for (size_t index = 0; index < expected_count; ++index)
     {

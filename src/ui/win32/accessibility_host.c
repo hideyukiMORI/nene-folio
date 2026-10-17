@@ -1,14 +1,12 @@
 #include "accessibility_host.h"
 
+#include "accessibility_native.h"
 #include "accessibility_node.h"
 #include "accessible_request.h"
 #include "accessible_view.h"
 #include "folio_message.h"
 #include "folio_window.h"
 
-/* 直接注釈のGUIDはuuid.libに含まれないため、この所有者でSDK定義を実体化する。 */
-#include <initguid.h>
-#include <oleacc.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -20,7 +18,6 @@ struct accessibility_host
     struct accessibility_node *_Nonnull *_Nullable nodes;
     size_t count;
     size_t capacity;
-    IAccPropServices *_Nullable annotations;
     bool apartment;
     bool refreshing;
     bool executing;
@@ -28,13 +25,15 @@ struct accessibility_host
     bool pending;
     bool had_focus;
     struct accessible_item focused;
-    struct accessible_item selections[3];
-    bool had_selection[3];
+    struct accessible_item selections[4];
+    bool had_selection[4];
+    uint64_t surface_revision;
     uint64_t revision;
     unsigned visibility;
     struct accessible_request request;
     char16_t filter_name[1024];
     char16_t body_name[1024];
+    char16_t command_names[3][1024];
 };
 
 static void refresh_snapshot(struct accessibility_host *_Nonnull host);
@@ -57,15 +56,6 @@ HRESULT accessibility_host_create(struct folio_window *_Nonnull window,
     host->apartment = true;
     host->references = 1;
     host->owner = window;
-    /* void**はCOMの出力ABIに限定する。 */
-    result = CoCreateInstance(&CLSID_AccPropServices, nullptr, CLSCTX_INPROC_SERVER,
-                              &IID_IAccPropServices, (void **)&host->annotations);
-    if (FAILED(result))
-    {
-        accessibility_host_detach(host);
-        accessibility_host_release(host);
-        return result;
-    }
     *out = host;
     return S_OK;
 }
@@ -102,11 +92,6 @@ void accessibility_host_detach(struct accessibility_host *_Nonnull host)
     while (host->count != 0)
     {
         remove_node(host, host->count - 1);
-    }
-    if (host->annotations != nullptr)
-    {
-        host->annotations->lpVtbl->Release(host->annotations);
-        host->annotations = nullptr;
     }
     if (host->apartment)
     {
@@ -170,8 +155,14 @@ HRESULT accessibility_host_node(struct accessibility_host *_Nonnull host,
     }
     host->nodes[host->count] = node;
     host->count += 1;
+    accessibility_node_add_ref(node); /* 初回live eventも再入してcacheを切断できる。 */
     accessibility_node_refresh(node);
-    accessibility_node_add_ref(node);
+    result = accessibility_host_read(host, &item, &view);
+    if (FAILED(result))
+    {
+        accessibility_node_release(node);
+        return result;
+    }
     *out = node;
     return S_OK;
 }
@@ -367,16 +358,14 @@ static void annotate(struct accessibility_host *_Nonnull host, enum accessible_k
         return;
     }
     HWND window = accessibility_host_window(host, kind);
-    if (window == nullptr || host->annotations == nullptr)
+    if (window == nullptr)
     {
         return;
     }
-    HRESULT result = host->annotations->lpVtbl->SetHwndPropStr(
-        host->annotations, window, (DWORD)OBJID_CLIENT, CHILDID_SELF, PROPID_ACC_NAME, view.name);
+    HRESULT result = accessibility_native_name(window, view.name);
     if (SUCCEEDED(result))
     {
         memcpy(previous, view.name, sizeof view.name);
-        NotifyWinEvent(EVENT_OBJECT_NAMECHANGE, window, OBJID_CLIENT, CHILDID_SELF);
     }
 }
 
@@ -419,6 +408,44 @@ static void raise_structure(struct accessibility_host *_Nonnull host, enum acces
     }
 }
 
+static void retire_surface_nodes(struct accessibility_host *_Nonnull host)
+{
+    size_t index = 0;
+    while (index < host->count)
+    {
+        struct accessible_item item = accessibility_node_item(host->nodes[index]);
+        struct accessible_view view = {0};
+        if (accessible_item_surface(item) && !accessible_item_root(item) &&
+            FAILED(accessibility_host_read(host, &item, &view)))
+        {
+            remove_node(host, index);
+            continue;
+        }
+        index += 1;
+    }
+}
+
+static void refresh_surface(struct accessibility_host *_Nonnull host)
+{
+    if (host->owner == nullptr)
+        return;
+    uint64_t revision = folio_window_accessible_surface_revision(host->owner);
+    if (host->surface_revision != revision || revision == UINT64_MAX)
+    {
+        host->surface_revision = revision;
+        retire_surface_nodes(host);
+        raise_structure(host, ACCESSIBLE_SURFACE);
+    }
+    struct accessible_item items[] = {{.kind = ACCESSIBLE_NOTICE},
+                                      {.kind = ACCESSIBLE_SURFACE_STATUS, .revision = revision}};
+    for (size_t at = 0; at < sizeof items / sizeof items[0]; ++at)
+    {
+        struct accessibility_node *_Nullable node = nullptr;
+        if (SUCCEEDED(accessibility_host_node(host, items[at], &node)))
+            accessibility_node_release(node);
+    }
+}
+
 static void refresh_visibility(struct accessibility_host *_Nonnull host)
 {
     const enum accessible_kind kinds[] = {ACCESSIBLE_DRAWER, ACCESSIBLE_PANE_TOOLS,
@@ -444,8 +471,10 @@ static void refresh_visibility(struct accessibility_host *_Nonnull host)
 static void observe_selection(struct accessibility_host *_Nonnull host, size_t index)
 {
     const enum accessible_kind groups[] = {ACCESSIBLE_LAYOUT_GROUP, ACCESSIBLE_MODE_GROUP,
-                                           ACCESSIBLE_TREE};
-    struct accessible_item group = {.kind = groups[index]};
+                                           ACCESSIBLE_TREE, ACCESSIBLE_SURFACE_LIST};
+    struct accessible_item group = {
+        .kind = groups[index],
+        .revision = groups[index] == ACCESSIBLE_SURFACE_LIST ? host->surface_revision : 0};
     struct accessible_item item = {.kind = ACCESSIBLE_WINDOW};
     bool present = accessibility_host_selected(host, &group, &item) == S_OK;
     bool changed = host->had_selection[index] != present ||
@@ -503,10 +532,15 @@ static void refresh_snapshot(struct accessibility_host *_Nonnull host)
     host->refreshing = true;
     refresh_structure(host);
     refresh_visibility(host);
+    refresh_surface(host);
     annotate(host, ACCESSIBLE_FILTER, host->filter_name);
     annotate(host, ACCESSIBLE_BODY, host->body_name);
+    const enum accessible_kind inputs[] = {ACCESSIBLE_COMMAND_INPUT, ACCESSIBLE_REPLACE_PATTERN,
+                                           ACCESSIBLE_REPLACE_TEXT};
+    for (size_t at = 0; at < sizeof inputs / sizeof inputs[0]; ++at)
+        annotate(host, inputs[at], host->command_names[at]);
     observe_focus(host);
-    for (size_t index = 0; index < 3; ++index)
+    for (size_t index = 0; index < 4; ++index)
     {
         observe_selection(host, index);
     }
