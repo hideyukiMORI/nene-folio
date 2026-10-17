@@ -11,6 +11,8 @@ void require(bool condition, const char *_Nonnull description);
 [[nodiscard]] bool same_text(const char *_Nonnull actual, const char *_Nonnull expected);
 
 void run_text_tests(void);
+void run_size_overflow_tests(void);
+void run_size_overflow_state_tests(void);
 void run_bom_ledger_tests(void);
 void run_bom_settings_tests(void);
 void run_bom_rename_tests(void);
@@ -74,6 +76,9 @@ void test_adapter_history(struct persistence_adapter *_Nonnull adapter, size_t v
 /* create_category が呼ばれた回数（ADR 0039 の決定 10。確保の失敗が port に届かない証拠）。 */
 [[nodiscard]] size_t
 test_adapter_category_creates(const struct persistence_adapter *_Nonnull adapter);
+/* 本文公開と保存前履歴の合計呼出数。境界拒否が保存へ進まないことを観測する。 */
+[[nodiscard]] size_t
+test_adapter_body_publications(const struct persistence_adapter *_Nonnull adapter);
 /* trash_note が呼ばれた回数（ADR 0040。確保失敗が副作用の前で止まる証拠）。 */
 [[nodiscard]] size_t test_adapter_trashes(const struct persistence_adapter *_Nonnull adapter);
 [[nodiscard]] size_t

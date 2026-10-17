@@ -9,6 +9,7 @@
 #include "replace_edit.h"
 #include "unit_tests.h"
 
+#include <stdint.h>
 #include <string.h>
 
 /* 偽の adapter。application が不完全型としてしか知らない型をここで定義する（C-006）。 */
@@ -382,4 +383,65 @@ void run_replace_state_tests(void)
     verify_stale();
     verify_second_pass();
     verify_preview_owns_matches();
+}
+
+static void verify_conversion_size_guard(struct folio_state *_Nonnull state,
+                                         struct persistence_adapter *_Nonnull adapter)
+{
+    enum folio_note_change changed = FOLIO_NOTE_CHANGED;
+    size_t overflow = (SIZE_MAX - 1) / 3 + 1;
+    require(test_adapter_body_publications(adapter) == 0,
+            "conversion boundary starts before body writes and history calls");
+    require(folio_state_note_changed(state, u"x", overflow, &changed) ==
+                    FOLIO_STATE_OUT_OF_MEMORY &&
+                changed == FOLIO_NOTE_CHANGED,
+            "converter refusal propagates through change query without changing output mark");
+    require(folio_state_store_note(state, u"x", overflow) == FOLIO_STATE_OUT_OF_MEMORY &&
+                test_adapter_body_publications(adapter) == 0,
+            "converter refusal prevents both body publication and history archival");
+    require(folio_state_pane_mode(state) == PANE_MODE_EDIT &&
+                same_text(folio_state_pane_text(state), "# Hello\n\nbody"),
+            "converter refusal preserves saved application body and mode");
+}
+
+void run_size_overflow_state_tests(void)
+{
+    reset_script();
+    char16_t body[2001] = {u'\0'};
+    char16_t replacement[2002] = {u'\0'};
+    for (size_t index = 0; index < 2000; ++index)
+    {
+        body[index] = u'a';
+        replacement[index] = u'&';
+    }
+    replacement[2000] = u'&';
+    struct persistence_adapter *adapter = test_adapter_create(categories_text, notes_text);
+    struct folio_state *state = edited_state(adapter);
+    verify_conversion_size_guard(state, adapter);
+    struct replace_request request = request_for(body, body, replacement);
+    require(folio_state_preview_replace(state, &request) == FOLIO_STATE_READY &&
+                folio_state_replace_count(state) == 1,
+            "size limit fixture previews one complete literal match");
+    struct replace_edit *kept = nullptr;
+    require(replace_edit_create((struct note_search_span){0, 1}, 1, &kept) == REPLACE_EDIT_READY &&
+                kept != nullptr,
+            "application refusal has a real caller-owned output sentinel");
+    replace_edit_append(kept, u"k", 1);
+    struct replace_edit *out = kept;
+    struct replace_apply apply = apply_for(body, REPLACE_ALL, 0);
+    require(folio_state_apply_replace(state, &apply, &out) == FOLIO_STATE_REPLACE_TOO_LARGE &&
+                out == nullptr && replace_edit_length(kept) == 1 &&
+                replace_edit_units(kept)[0] == u'k',
+            "application maps TOO_LARGE to null output without modifying the owned sentinel");
+    enum folio_note_change changed = FOLIO_NOTE_CHANGED;
+    require(folio_state_pane_mode(state) == PANE_MODE_EDIT &&
+                same_text(folio_state_pane_text(state), "# Hello\n\nbody") &&
+                folio_state_note_changed(state, u"# Hello\r\rbody", 13, &changed) ==
+                    FOLIO_STATE_READY &&
+                changed == FOLIO_NOTE_SAME,
+            "refused replacement preserves application saved body and EDIT mode");
+    replace_edit_destroy(kept);
+    folio_state_destroy(state);
+    test_adapter_destroy(adapter);
+    reset_script();
 }

@@ -155,6 +155,10 @@ enum utf8_text_outcome utf8_text_create(const char16_t *_Nonnull units, size_t l
                                         struct utf8_text *_Nullable *_Nonnull out)
 {
     /* 1 単位は最大 3 バイト、サロゲート対（2 単位）は 4 バイトなので 3 倍で足りる。 */
+    if (length > (SIZE_MAX - 1) / 3)
+    {
+        return UTF8_TEXT_OUT_OF_MEMORY;
+    }
     char *_Nullable bytes = malloc(length * 3 + 1);
     if (bytes == nullptr)
     {

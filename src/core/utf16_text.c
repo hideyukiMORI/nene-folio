@@ -2,6 +2,7 @@
 
 #include "utf8_text.h"
 
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -30,6 +31,10 @@ enum utf16_text_outcome utf16_text_create(const char *_Nonnull bytes, size_t len
                                           struct utf16_text *_Nullable *_Nonnull out)
 {
     /* 1 バイトは最大 1 単位、4 バイト列だけ 2 単位なので、バイト数ぶんの単位で足りる。 */
+    if (length > SIZE_MAX / sizeof(char16_t) - 1)
+    {
+        return UTF16_TEXT_OUT_OF_MEMORY;
+    }
     char16_t *_Nullable units = malloc((length + 1) * sizeof *units);
     if (units == nullptr)
     {

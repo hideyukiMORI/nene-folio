@@ -1,5 +1,6 @@
 #include "text_buffer.h"
 
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -39,9 +40,19 @@ void text_buffer_append(struct text_buffer *_Nonnull buffer, const char *_Nonnul
     {
         return;
     }
-    if (buffer->length + count + 1 > buffer->capacity)
+    if (count > SIZE_MAX - buffer->length - 1)
     {
-        size_t capacity = buffer->capacity * 2 + count;
+        buffer->exhausted = true;
+        return;
+    }
+    size_t required = buffer->length + count + 1;
+    if (required > buffer->capacity)
+    {
+        size_t capacity = required;
+        if (buffer->capacity <= (SIZE_MAX - count) / 2)
+        {
+            capacity = buffer->capacity * 2 + count;
+        }
         char *_Nullable grown = realloc(buffer->bytes, capacity);
         if (grown == nullptr)
         {

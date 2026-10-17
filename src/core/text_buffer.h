@@ -1,4 +1,5 @@
-/* 伸びるバイト列（終端付き）。途中の記憶不足は記憶され、text_buffer_finish がまとめて返す。 */
+/* 伸びるバイト列（終端付き）。途中の記憶不足は記憶され、text_buffer_finish がまとめて返す。
+ * 表現できない容量も OUT_OF_MEMORY。失敗した追加は既存の本文と容量を保ち、後続の追加は無視する。 */
 #ifndef NENEFOLIO_TEXT_BUFFER_H
 #define NENEFOLIO_TEXT_BUFFER_H
 

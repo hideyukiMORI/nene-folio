@@ -2207,6 +2207,11 @@ size_t test_adapter_category_creates(const struct persistence_adapter *_Nonnull 
     return adapter->category_creates;
 }
 
+size_t test_adapter_body_publications(const struct persistence_adapter *_Nonnull adapter)
+{
+    return adapter->note_writes + adapter->archives;
+}
+
 size_t test_adapter_trashes(const struct persistence_adapter *_Nonnull adapter)
 {
     return adapter->trashes;

@@ -62,7 +62,7 @@ nenefolio_target(folio_tests unit_tests EXECUTABLE
     tests/unit/search_tests.c tests/unit/filter_tests.c tests/unit/settings_tests.c
     tests/unit/theme_tests.c tests/unit/line_index_tests.c tests/unit/replace_tests.c
     tests/unit/replace_state_tests.c tests/unit/ui_text_tests.c
-    tests/unit/font_bundle_tests.c)
+    tests/unit/font_bundle_tests.c tests/unit/size_overflow_tests.c)
 nenefolio_link(folio_tests nenefolio_core)
 nenefolio_link(folio_tests nenefolio_application)
 add_test(NAME folio_unit COMMAND folio_tests)
