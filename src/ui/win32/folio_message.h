@@ -21,4 +21,11 @@ constexpr UINT folio_message_gutter_resized = WM_APP + 4;
  * ノート番号を使わない）。同期で送り、失敗は主窓が出すので戻り値は使わない。 */
 constexpr UINT folio_message_drawer_menu = WM_APP + 5;
 
+constexpr UINT folio_message_accessibility_changed = WM_APP + 6;
+constexpr UINT folio_message_accessibility_invoke = WM_APP + 7;
+/* drawerの描画で索引のkeyboard focusを調べる。主窓がboolを返す。 */
+constexpr UINT folio_message_index_focused = WM_APP + 8;
+/* drawerのpointer操作が索引へfocusを置く。 */
+constexpr UINT folio_message_index_focus = WM_APP + 9;
+
 #endif

@@ -4375,7 +4375,7 @@ static void verify_trash_current(void)
                 folio_state_pane_mode(state) == PANE_MODE_VIEW &&
                 folio_state_pane_text_length(state) == 0 && folio_state_history_count(state) == 0,
             "current deletion leaves an empty view without history");
-    expect_cursor(state, "-", "current deletion has no cursor");
+    expect_cursor(state, "c0", "current deletion returns the cursor to its category");
     require(adapter.note_reads == reads && adapter.note_writes == 0 && adapter.trashes == 1,
             "view deletion neither writes nor reads a next note");
     require(same_text(adapter.trashed_category, "B") && same_text(adapter.trashed_note, "one") &&
@@ -6254,4 +6254,180 @@ void run_unsaved_departure_tests(void)
 void run_untitled_expansion_query_tests(void)
 {
     verify_untitled_expand_permission();
+}
+
+static void verify_accessible_focus(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    adapter.note_body = "# Hello\r\n\r\nbody";
+    struct folio_state *state = edited_state(&adapter);
+    const char *pane = folio_state_pane_rtf(state);
+    const char *edit = folio_state_edit_rtf(state);
+    size_t reads = adapter.note_reads;
+    uint64_t revision = folio_state_index_revision(state);
+    adapter.note_write_outcome = PERSISTENCE_UNWRITABLE;
+    require(folio_state_focus_cursor(state, FOLIO_CURSOR_NOTE, at(2, 2)) == FOLIO_STATE_READY,
+            "focus reaches an unselected visible note while saving is unavailable");
+    expect_cursor(state, "n2.2", "the independent cursor reaches C / three");
+    require(keeps_document(state, at(0, 1), PANE_MODE_EDIT) &&
+                folio_state_pane_rtf(state) == pane && folio_state_edit_rtf(state) == edit,
+            "focus preserves the held document and both rendered objects");
+    require(adapter.note_reads == reads && adapter.archives == 0 && adapter.note_writes == 0 &&
+                adapter.writes == 0 && adapter.ledger_writes == 0 &&
+                folio_state_index_revision(state) == revision,
+            "focus performs no read or persistence and keeps row identity");
+    require(folio_state_store_note(state, u"unsaved", 7) == FOLIO_STATE_NOTE_STORE_FAILED,
+            "a subsequent save can fail independently");
+    expect_cursor(state, "n2.2", "save failure preserves the focused unselected row");
+    require(keeps_document(state, at(0, 1), PANE_MODE_EDIT), "save failure keeps selection A");
+    require(folio_state_focus_cursor(state, FOLIO_CURSOR_NOTE, at(1, 0)) ==
+                    FOLIO_STATE_NO_SUCH_NOTE &&
+                folio_state_focus_cursor(state, FOLIO_CURSOR_NOTE, at(2, 99)) ==
+                    FOLIO_STATE_NO_SUCH_NOTE &&
+                folio_state_focus_cursor(state, FOLIO_CURSOR_CATEGORY, at(99, 0)) ==
+                    FOLIO_STATE_NO_SUCH_CATEGORY,
+            "collapsed children and missing rows cannot acquire focus");
+    expect_cursor(state, "n2.2", "refused focus leaves the previous cursor");
+    require(folio_state_focus_cursor(state, FOLIO_CURSOR_CATEGORY, at(0, 0)) == FOLIO_STATE_READY,
+            "an expanded category is an explicit focus target");
+    expect_cursor(state, "c0", "category focus does not follow its selected child");
+    folio_state_destroy(state);
+}
+
+static void verify_accessible_untitled_focus(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_new_note(state, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "prepare an unsaved draft");
+    const char *edit = folio_state_edit_rtf(state);
+    require(folio_state_focus_cursor(state, FOLIO_CURSOR_NOTE, at(2, 0)) == FOLIO_STATE_READY,
+            "focus a row without replacing the draft");
+    require(folio_state_select_note(state, 2, 0, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_NAME_REQUIRED,
+            "selection still requires the existing draft decision");
+    expect_cursor(state, "n2.0", "a refused selection preserves the prior focus");
+    require(folio_state_document_kind(state) == FOLIO_DOCUMENT_UNTITLED &&
+                folio_state_edit_rtf(state) == edit && adapter.note_reads == 0 &&
+                adapter.creates == 0 && adapter.archives == 0,
+            "focus and refused selection retain the draft without persistence");
+    adapter.note_outcome = PERSISTENCE_UNREADABLE;
+    require(folio_state_select_note(state, 2, 0, FOLIO_UNTITLED_DISCARD) ==
+                FOLIO_STATE_NOTE_UNREADABLE,
+            "a failed read cannot adopt the target");
+    expect_cursor(state, "n2.0", "read failure preserves the cursor");
+    require(folio_state_document_kind(state) == FOLIO_DOCUMENT_UNTITLED &&
+                folio_state_edit_rtf(state) == edit,
+            "failed replacement keeps the draft objects");
+    adapter.note_outcome = PERSISTENCE_LOADED;
+    require(folio_state_select_note(state, 2, 0, FOLIO_UNTITLED_DISCARD) == FOLIO_STATE_READY &&
+                keeps_document(state, at(2, 0), PANE_MODE_EDIT),
+            "successful selection adopts B");
+    expect_cursor(state, "n2.0", "successful selection aligns cursor and selection");
+    folio_state_destroy(state);
+}
+
+static void verify_accessible_expansion(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    adapter.note_body = "# Hello\r\n\r\nbody";
+    struct folio_state *state = edited_state(&adapter);
+    size_t reads = adapter.note_reads;
+    require(folio_state_focus_cursor(state, FOLIO_CURSOR_CATEGORY, at(1, 0)) == FOLIO_STATE_READY,
+            "focus a collapsed category outside the held document");
+    uint64_t revision = folio_state_index_revision(state);
+    require(folio_state_set_expansion(state, 1, true) == FOLIO_STATE_READY &&
+                folio_state_index_revision(state) != revision,
+            "expansion changes exposed rows");
+    expect_cursor(state, "c1", "UIA-style expansion leaves the cursor on its category");
+    require(keeps_document(state, at(0, 1), PANE_MODE_EDIT) && adapter.note_reads == reads &&
+                adapter.archives == 0 && adapter.note_writes == 0 && adapter.writes == 1,
+            "expansion writes only the category ledger and never selects a child");
+    revision = folio_state_index_revision(state);
+    require(folio_state_set_expansion(state, 1, true) == FOLIO_STATE_READY &&
+                folio_state_index_revision(state) == revision && adapter.writes == 1,
+            "idempotent expansion keeps identity and writes nothing");
+    require(folio_state_focus_cursor(state, FOLIO_CURSOR_NOTE, at(1, 2)) == FOLIO_STATE_READY &&
+                folio_state_set_expansion(state, 1, false) == FOLIO_STATE_READY,
+            "collapse a category containing only the cursor");
+    expect_cursor(state, "c1", "collapse returns the hidden cursor to its visible parent");
+    require(keeps_document(state, at(0, 1), PANE_MODE_EDIT), "collapse leaves selection elsewhere");
+    adapter.write_outcome = PERSISTENCE_UNWRITABLE;
+    revision = folio_state_index_revision(state);
+    require(folio_state_set_expansion(state, 1, true) == FOLIO_STATE_STORE_FAILED &&
+                folio_state_index_revision(state) == revision,
+            "failed expansion preserves row identity");
+    folio_state_destroy(state);
+}
+
+static void verify_accessible_reveal(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    adapter.note_body = "# Hello\r\n\r\nbody";
+    struct folio_state *state = edited_state(&adapter);
+    require(folio_state_focus_cursor(state, FOLIO_CURSOR_NOTE, at(0, 0)) == FOLIO_STATE_READY,
+            "focus the first note while a different note is selected");
+    struct drawer_cursor target = {.kind = DRAWER_ROW_NOTE, .ref = at(2, 2)};
+    uint64_t revision = folio_state_index_revision(state);
+    require(folio_state_reveal_row(state, scroll_metrics, target) == FOLIO_STATE_READY &&
+                folio_state_drawer_scroll(state) == 40,
+            "reveal the last row without focus");
+    expect_cursor(state, "n0.0", "ScrollItem does not move the cursor");
+    require(keeps_document(state, at(0, 1), PANE_MODE_EDIT) && adapter.archives == 0 &&
+                adapter.note_writes == 0 && folio_state_index_revision(state) == revision,
+            "reveal preserves selection, persistence and row identity");
+    target = (struct drawer_cursor){.kind = DRAWER_ROW_CATEGORY, .ref = at(0, 0)};
+    require(folio_state_reveal_row(state, scroll_metrics, target) == FOLIO_STATE_READY &&
+                folio_state_drawer_scroll(state) == 0,
+            "category reveal uses the same layout path");
+    folio_state_destroy(state);
+}
+
+static void verify_accessible_row_identity(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    adapter.note_body = "# Hello\r\n\r\nbody";
+    struct folio_state *state = edited_state(&adapter);
+    require(folio_state_focus_cursor(state, FOLIO_CURSOR_NOTE, at(0, 2)) == FOLIO_STATE_READY,
+            "focus B / three while B / two remains selected");
+    uint64_t revision = folio_state_index_revision(state);
+    require(folio_state_move_note(state, at(0, 2), at(0, 0)) == FOLIO_STATE_READY &&
+                folio_state_index_revision(state) != revision,
+            "row order invalidates prior references");
+    expect_cursor(state, "n0.0", "cursor follows the same reordered note");
+    require(keeps_document(state, at(0, 2), PANE_MODE_EDIT), "selection follows its separate note");
+    revision = folio_state_index_revision(state);
+    require(folio_state_move_category(state, 0, 2) == FOLIO_STATE_READY &&
+                folio_state_index_revision(state) != revision,
+            "category order changes row identity");
+    expect_cursor(state, "n2.0", "the independent cursor follows the category");
+    require(keeps_document(state, at(2, 2), PANE_MODE_EDIT),
+            "the document follows the category too");
+    require(folio_state_set_index_filter(state, u"nothing-matches", 15) == FOLIO_STATE_READY,
+            "hide every row");
+    expect_cursor(state, "-", "a zero-result filter has no hidden cursor");
+    require(folio_state_focus_cursor(state, FOLIO_CURSOR_CATEGORY, at(2, 0)) ==
+                FOLIO_STATE_NO_SUCH_NOTE,
+            "a filtered-out category cannot acquire focus");
+    require(keeps_document(state, at(2, 2), PANE_MODE_EDIT), "filtering keeps the held document");
+    require(folio_state_set_expansion(state, 2, false) == FOLIO_STATE_FILTERED,
+            "expansion cannot bypass the filter contract");
+    folio_state_destroy(state);
+}
+
+void run_accessibility_state_tests(void)
+{
+    finder = test_regex_port();
+    verify_accessible_focus();
+    verify_accessible_untitled_focus();
+    verify_accessible_expansion();
+    verify_accessible_reveal();
+    verify_accessible_row_identity();
+    verify_select_adjacent();
+    verify_cursor_expanded();
+    verify_reveal_cursor();
+    verify_move_while_editing();
+    verify_first_save_keeps_category_cursor();
+    verify_trash_all();
+    verify_remove_categories();
 }

@@ -85,6 +85,21 @@ application は「選択中のノート」（`selected` / `selected_category` / 
    重なりを避けるという決定の意図は満たしたままで、**カテゴリ名の省略幅は `toggle_room` に依存しない**ので変わらない。
    実際の見え方（板の太さと左右の位置・角との間）は hide の実機目視で確かめる（統合チェックリストの 88-3）。
 
+## 2026-10-17 の補正（#319 / ADR0055・0056）
+
+決定1の「ノートcursorは選択そのもの」を置き換える。applicationの既存cursorは種類とカテゴリ/ノート番号を持つ
+単一の行参照になり、文書選択から独立する。UIA SetFocusは公開中の行へcursorだけを移し、保存・読込・本文投入をしない。
+展開中のカテゴリ行にもSetFocusできる。UIに別の行cursorを持たせない。
+
+`j/k/gg/G`の停止列と保存を伴うノート選択、`h/l`の従来の選択規則は維持する。
+UIA Expand/Collapseはカテゴリの展開状態だけを変え、別ノートを選ばない。子cursorが隠れたときはカテゴリへ寄せる。
+ノートのSelect/Invokeと、独立cursor上のEnterは既存の保存・無題確認・切替を通し、成功時だけcursorと選択を揃える。
+保存失敗・取消では選択と独立cursorを保持する。カテゴリ上のEnterは何もしない。
+ScrollIntoViewはスクロールだけを変え、cursor・文書選択を変えない。
+
+改名・移動・削除・絞込に伴うcursor整合と行識別の改訂はapplicationが所有する。
+対象状態試験とWin32 provider試験は[品質記録](../quality/2026-10-17-basic-accessibility-checkpoint.md)へ残す。
+
 ## 参考
 
 - [ADR 0013](0013-index-focus-vim-keys-and-persistent-mode.md)（置き換える決定 2）/ [ADR 0004](0004-first-drawer-slice.md)（トグル）
