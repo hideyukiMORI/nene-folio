@@ -50,6 +50,8 @@ are newer than the published v0.1.0 ZIP.
   plus the original `light` / `dark` and `system`,
   and UI language 日本語 / English / 简体中文. **Choose a theme** searches names, shows color samples,
   and applies a choice with Enter or a click. `:set theme=dracula` uses the same saved choice.
+  Windows high contrast temporarily uses the system colors across the window and note body.
+  Your theme and category colors stay saved; turning high contrast off restores the chosen theme.
   The settings surface also shows the build version.
   Noto Sans JP and Noto Sans SC are bundled under `fonts/`.
 - **Limits**: a note body is at most 16 MiB and may not contain NUL; both are refused rather than truncated.

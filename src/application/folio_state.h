@@ -28,6 +28,7 @@
 #include "replace_request.h"
 #include "rgb_color.h"
 #include "search_direction.h"
+#include "theme_palette.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -50,8 +51,15 @@ void folio_state_set_layout_mode(struct folio_state *_Nonnull state, enum folio_
 [[nodiscard]] enum folio_state_outcome
 folio_state_create(const struct folio_ports *_Nonnull ports,
                    struct folio_state *_Nullable *_Nonnull out);
-/* 描画に使うテーマ（ADR 0031 の決定 3）。選択が SYSTEM なら直近に読んだ OS の値を通す。 */
+/* 通常表示での固定テーマID。HCの実効色はfolio_state_paletteを使う（ADR0057）。 */
 [[nodiscard]] enum folio_theme folio_state_theme(const struct folio_state *_Nonnull state);
+/* 実効配色。表示側はテーマIDから引き直さず、この値を共用する（ADR0057）。 */
+[[nodiscard]] const struct theme_palette *_Nonnull folio_state_palette(
+    const struct folio_state *_Nonnull state);
+/* 実効値が変わったときだけ進む。UIは前後の等否で再着色を判断する。 */
+[[nodiscard]] uint64_t folio_state_palette_revision(const struct folio_state *_Nonnull state);
+[[nodiscard]] enum folio_state_outcome
+folio_state_appearance_notice(const struct folio_state *_Nonnull state);
 /* Cached OS appearance, for the system candidate preview; does not perform IO. */
 [[nodiscard]] enum folio_theme folio_state_system_theme(const struct folio_state *_Nonnull state);
 /* 利用者が選んでいるテーマ。設定画面の印はこの値に付く（解決値ではない）。 */
@@ -65,10 +73,9 @@ folio_state_theme_choice(const struct folio_state *_Nonnull state);
  * 設定は md・台帳・.rename.json と独立なので、未完了の改名の再開は通さない。 */
 [[nodiscard]] enum folio_state_outcome folio_state_set_theme(struct folio_state *_Nonnull state,
                                                              enum folio_theme_choice choice);
-/* OS の「アプリのモード」を読み直す意図（ADR 0031 の決定 3 / 4）。主窓が WM_SETTINGCHANGE
- * （ImmersiveColorSet）で呼ぶ。解決値が変わったときだけ閲覧文書を作り直す。設定は書かない。
- * 作れなければ OUT_OF_MEMORY で状態は変わらない。変わったかは UI が folio_state_theme を
- * 前後で比べて決める。 */
+/* OS外観を再取得し、実効色が変わったときだけRTFを準備して同時に採用する（ADR0057）。
+ * 取得/準備失敗は既存配色とsnapshotを保持し、appearance_noticeに理由を残す。設定は書かない。
+ * UIはpalette_revisionの前後を比べて再着色する。 */
 [[nodiscard]] enum folio_state_outcome
 folio_state_refresh_theme(struct folio_state *_Nonnull state);
 /* 利用者が選んでいる表示言語（ADR 0032 の決定 5）。UI は ui_text_line / ui_text_format と

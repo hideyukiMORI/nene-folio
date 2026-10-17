@@ -104,7 +104,9 @@
 | ドロワーの固定ボタン押下 | NONE / NEW_NOTE / NEW_CATEGORYの閉じた値 | ui/win32（`drawer_window`） | 同じ矩形で押下と解放を照合し、capture喪失で解除する。新規の宛先は実行時に値で渡し、文書状態を複製しない（ADR0051） |
 | 検索語と一致集合 | 文字列と文書 ID の列 | application | 検索窓の入力 |
 | テーマの名前と配色 | 127固定配色の識別子・UI/RTF用RGB | core（`folio_theme`の`theme_palette`表） | `folio_theme_choice`がsystemを含む選択・名前解析を集約し、UIはCOLORREFへの変換だけ行う（ADR0049） |
-| テーマの選択とOSの明暗 | 保存する`folio_theme_choice`とappearanceポートから読んだlight/dark | application（`folio_state`） | 設定の書込み成功後だけ選択を採用する。OS値はstateが保持し、systemの色見本にも同じgetterで渡す（ADR0049） |
+| テーマの選択とOS外観 | 保存する`folio_theme_choice`、最後の有効appearance_snapshot、実効theme_paletteと改訂番号 | application（`folio_state`） | 設定は書込み成功後、OS外観はRTF準備成功後だけ採用する。HCを優先して同じpaletteをUI/RTFへ渡し、選択/カテゴリ保存色は変えない。取得失敗とHC_OFFを区別する（ADR0057） |
+| 外観更新の延期・未適用 | 本文投入/終了処理中の通知と再着色の再試行要求 | ui/win32（`folio_window`） | 安全なdispatchへ一つの通知として戻し、同じpaletteでも失敗分は再試行する。新対象の投入成功後にも未適用色を揃える（ADR0057） |
+| 再着色が停止したUndo | 再開未完了とその間の編集入力停止 | ui/win32（`note_pane`） | 自分が停止したUndoのResume成功後だけ再Suspend/編集/投入を許す。本文を保持し、次対象投入を拒否した時点ではUNAVAILABLEへ渡す（ADR0057） |
 | 利用者に見える文言 | 表示する語・句・1 行 | core（`ui_text` の表 1 か所） | ID で引くだけ。置換子の組み立ても core（`ui_text_format`）で、言語は application （`folio_state_language`）が渡す。ui / app は文言を持たない（C-018 / CNF-010）。表は言語ごとの列を持ち、列の網羅は CNF-011 が守る |
 | UI の書体の face | 言語ごとのフォント名 | core（`ui_font` の表。同梱の face は `ui_font.c`、OS の退避の face は `ui_font_fallback.c`。#42 で差し替えた） | `ui_font_face(language)` で引くだけ。ui は同梱 → その言語の退避 → 日本語の退避の順に実在を確かめて UTF-16 へ広げる（`ui_face`・順は core の `ui_font_pick`・ADR 0036 の決定 4）、core の `markdown_rtf` は fonttbl へ入れる。主窓の自前描画の等幅（Consolas）は言語で変えない（ADR 0032 の決定 4） |
 | 同梱の書体の登録 | exe の隣の `fonts\` の `*.otf` / `*.ttf` を `FR_PRIVATE` で登録した組 | app の入口（`font_bundle`） | 起動と終了の 1 回ずつ。窓を作る前に `font_bundle_register`、メッセージループのあとに `font_bundle_destroy`。結果の判定は core の `font_bundle_verdict`、知らせるのは窓の最初の描画のあとの 1 回（ADR 0036 の決定 3・5） |

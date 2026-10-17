@@ -139,6 +139,14 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
         {"設定（data/settings.json）を読めません。既定値で始め、直すまで上書きしません。",
          "Cannot read data/settings.json. Using defaults without overwriting it.",
          "无法读取设置（data/settings.json）。以默认值启动，且不会覆盖。"},
+    [UI_TEXT_FAILURE_APPEARANCE_UNAVAILABLE] =
+        {"Windowsの外観を取得できません。前の配色（初回は通常配色）を保ちます。",
+         "Windows appearance is unavailable. Keeping the previous colors (standard colors at "
+         "startup).",
+         "无法获取 Windows 外观。保留之前的配色（首次启动时使用标准配色）。"},
+    [UI_TEXT_HIGH_CONTRAST_ACTIVE] = {"Windowsの高コントラストを適用中",
+                                      "Windows high contrast is active",
+                                      "正在使用 Windows 高对比度"},
     [UI_TEXT_FAILURE_SETTINGS_STORE_FAILED] =
         {"設定（data/settings.json）を書けませんでした。設定は変えていません。",
          "Could not write data/settings.json. The settings are unchanged.",
@@ -146,6 +154,10 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
     [UI_TEXT_FAILURE_PANE_LOAD_FAILED] = {"本文読込失敗。同じモードで再試行。",
                                           "Load failed. Retry the current mode.",
                                           "正文加载失败。请重试当前模式。"},
+    [UI_TEXT_FAILURE_PANE_RECOLOR_FAILED] =
+        {"本文の配色を更新できませんでした。本文は保持しています。テーマの再選択で再試行できます。",
+         "Could not update the body colors. Your text is kept. Select a theme again to retry.",
+         "无法更新正文配色。正文已保留。重新选择主题即可重试。"},
     [UI_TEXT_FAILURE_PANE_UNAVAILABLE] = {"表示中の本文を取り出せませんでした。探していません。",
                                           "Could not read the displayed body. "
                                           "Nothing was searched.",

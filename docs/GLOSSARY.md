@@ -47,10 +47,11 @@
 | 意図（intent） | UI が発行する操作。クリック・ドラッグ・ホイール・鍵・入力 | application の reducer 関数 `folio_state_*`（`folio_state_toggle_category` 等）。種類が増えたら `enum folio_intent` に束ねる |
 | 表示値（view model） | application が作り UI が写す値 | `struct *_view`（application）・`struct drawer_row`（core） |
 | 測定ビルド（measurement build） | 同じ中核ソースと単体テストを計装コンパイルして分岐を測る検証専用のビルド。第 2 の製品実装ではない | `eng/coverage.py` → `out/coverage/` |
-| テーマ（theme） | 描画に使うライト／ダークの閉じた 2 値。選択と OS の値から `folio_theme_resolve` が決める | `enum folio_theme`・`folio_theme_resolve`（core） |
-| テーマの選択（theme choice） | 利用者が設定で選ぶ 3 値（`system` / `light` / `dark`）。`system` だけが OS の値を通す | `enum folio_theme_choice`（core）・`folio_state_theme_choice`（application）・ADR 0031 |
+| テーマ（theme） | light/darkを含む127固定配色の閉じた識別子。OS高コントラストの任意色はこのenumへ追加しない | `enum folio_theme`・`folio_theme_palette`（core）・ADR0049/0057 |
+| テーマの選択（theme choice） | 利用者が保存する128値。固定127配色とOS明暗へ追従するsystem。OS高コントラスト中も保存選択は保持する | `enum folio_theme_choice`（core）・`folio_state_theme_choice`（application）・ADR0049/0057 |
+| OS外観snapshot | OS明暗、高コントラスト状態、window/button/highlightの前景・背景RGB対。取得失敗と通常状態を区別する | `appearance_snapshot`（core）・`appearance_port`（application）・ADR0057 |
 | 設定画面（settings surface） | 頭の歯車・「操作」メニュー・パレットの「設定」が開く入力面。EDIT を持たずレイヤー自身がフォーカスと鍵を受ける | `COMMAND_SURFACE_SETTINGS`（ui/win32）・ADR 0031 の決定 7 |
-| パレット（palette） | テーマごとの色の束。RTF 用と自前描画用の 2 つが正本 | `rtf_palette`（core）・`folio_palette`（ui/win32） |
+| パレット（palette） | UIとRTFを含む一つの実効色の束。固定表かOS色からcoreで解決しapplicationが所有する。UIはCOLORREFへ変換するだけ | `theme_palette`・`appearance_snapshot_palette`（core）・`folio_state_palette`（application）・`folio_palette_from`（ui/win32） |
 | 操作 ID（command ID） | Ex・操作パレット・既存ショートカットが共通して実行する、表示名から独立した閉じた値 | `enum folio_command`（core） |
 | 操作パレット（command palette） | Ctrl+P で開き、登録済みの操作を表示名または Ex 別名で絞り込んで実行する一時的な入力面 | `folio_command`（core）の登録表・`folio_window`（ui/win32）の入力面 |
 | 編集の破棄（`:e!`） | 編集を破棄して保存済みの本文に戻す。ディスクは読み直さない（vim と違う）。別名 `:edit!`・パレットと「操作」メニューの「編集を破棄して読み直す」も同じ意図を通る | `folio_state_discard_edits`（application）・ADR 0016 の補正 4 |

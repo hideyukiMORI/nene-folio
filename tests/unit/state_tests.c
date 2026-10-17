@@ -503,18 +503,27 @@ static enum rename_outcome fake_recover_rename(struct persistence_adapter *_Nonn
 struct appearance_adapter
 {
     enum folio_theme theme;
+    enum appearance_outcome outcome;
+    struct appearance_snapshot snapshot;
 };
 
-static enum folio_theme fake_read_theme(struct appearance_adapter *_Nonnull adapter)
+static enum appearance_outcome fake_read_appearance(struct appearance_adapter *_Nonnull adapter,
+                                                    struct appearance_snapshot *_Nonnull out)
 {
-    return adapter->theme;
+    if (adapter->outcome != APPEARANCE_READY)
+    {
+        return adapter->outcome;
+    }
+    *out = adapter->snapshot;
+    out->theme = adapter->theme;
+    return APPEARANCE_READY;
 }
 
 static struct appearance_adapter dark_adapter = {.theme = FOLIO_THEME_DARK};
 
 static struct appearance_port looks_for(struct appearance_adapter *_Nonnull adapter)
 {
-    struct appearance_port port = {.adapter = adapter, .read_theme = fake_read_theme};
+    struct appearance_port port = {.adapter = adapter, .read = fake_read_appearance};
     return port;
 }
 
@@ -2061,10 +2070,14 @@ static const char *_Nonnull const expected_failure_lines[] = {
         "絞り込み中はこの操作ができません。絞り込みを解いてからやり直してください。",
     [FOLIO_STATE_SETTINGS_UNREADABLE] =
         "設定（data/settings.json）を読めません。既定値で始め、直すまで上書きしません。",
+    [FOLIO_STATE_APPEARANCE_UNAVAILABLE] =
+        "Windowsの外観を取得できません。前の配色（初回は通常配色）を保ちます。",
     [FOLIO_STATE_SETTINGS_STORE_FAILED] =
         "設定（data/settings.json）を書けませんでした。設定は変えていません。",
     [FOLIO_STATE_PANE_UNAVAILABLE] = "表示中の本文を取り出せませんでした。探していません。",
     [FOLIO_STATE_PANE_LOAD_FAILED] = "本文読込失敗。同じモードで再試行。",
+    [FOLIO_STATE_PANE_RECOLOR_FAILED] =
+        "本文の配色を更新できませんでした。本文は保持しています。テーマの再選択で再試行できます。",
     [FOLIO_STATE_REPLACE_NO_PATTERN] = "置換するパターンを入れてください。",
     [FOLIO_STATE_REPLACE_BAD_PATTERN] = "正規表現の書き方が違います。",
     [FOLIO_STATE_REPLACE_BAD_TEMPLATE] =
@@ -3689,8 +3702,182 @@ static void verify_named_theme_restart(void)
     folio_state_destroy(state);
 }
 
+static struct appearance_snapshot contrast_sample(bool light)
+{
+    return (struct appearance_snapshot){
+        .theme = FOLIO_THEME_DARK,
+        .contrast = FOLIO_CONTRAST_HIGH,
+        .window = light ? (struct rgb_color){239, 244, 231} : (struct rgb_color){13, 24, 35},
+        .window_text = light ? (struct rgb_color){17, 28, 39} : (struct rgb_color){241, 232, 223},
+        .button = light ? (struct rgb_color){221, 232, 243} : (struct rgb_color){31, 42, 53},
+        .button_text = light ? (struct rgb_color){23, 34, 45} : (struct rgb_color){233, 244, 255},
+        .highlight = light ? (struct rgb_color){45, 56, 67} : (struct rgb_color){211, 222, 233},
+        .highlight_text =
+            light ? (struct rgb_color){245, 236, 227} : (struct rgb_color){15, 26, 37},
+    };
+}
+
+static struct folio_state *_Nonnull appearance_state(struct persistence_adapter *_Nonnull files,
+                                                     struct appearance_adapter *_Nonnull looks)
+{
+    struct persistence_port port = port_for(files);
+    struct appearance_port appearance = looks_for(looks);
+    struct folio_state *state = nullptr;
+    require(folio_state_create(test_ports(&port, &appearance, &finder), &state) ==
+                FOLIO_STATE_READY,
+            "appearance fixture starts without writing data");
+    return state;
+}
+
+static void verify_contrast_pairs(const struct folio_state *_Nonnull state,
+                                  struct appearance_snapshot expected)
+{
+    const struct theme_palette *palette = folio_state_palette(state);
+    require(palette->contrast == FOLIO_CONTRAST_HIGH &&
+                rgb_color_equal(palette->pane, expected.window) &&
+                rgb_color_equal(palette->editor_text, expected.window_text) &&
+                rgb_color_equal(palette->category_text, expected.window_text),
+            "body and category labels use the user window pair");
+    require(rgb_color_equal(palette->chip_background, expected.button) &&
+                rgb_color_equal(palette->chip_text, expected.button_text) &&
+                rgb_color_equal(palette->selected_background, expected.highlight) &&
+                rgb_color_equal(palette->selected_text, expected.highlight_text),
+            "buttons and selected rows retain their own OS foreground/background pairs");
+    require(rgb_color_equal(palette->rtf.heading, expected.window_text) &&
+                rgb_color_equal(palette->rtf.link, expected.window_text) &&
+                rgb_color_equal(palette->rtf.muted, expected.window_text) &&
+                rgb_color_equal(palette->rtf.code_text, expected.window_text) &&
+                rgb_color_equal(palette->rtf.code_background, expected.window),
+            "Markdown decoration cannot introduce a second contrast palette");
+    require(rgb_color_equal(palette->dialog_surface, expected.window) &&
+                rgb_color_equal(palette->dialog_secondary, expected.window_text) &&
+                palette->dialog_backdrop_alpha == 255,
+            "modal text uses the window pair and its backdrop is opaque");
+}
+
+static void verify_contrast_transition(enum folio_theme_choice choice)
+{
+    struct persistence_adapter files = healthy_adapter();
+    struct appearance_adapter looks = {.theme = FOLIO_THEME_DARK};
+    struct folio_state *state = appearance_state(&files, &looks);
+    require(folio_state_set_theme(state, choice) == FOLIO_STATE_READY, "stored choice");
+    size_t settings_writes = files.settings_writes;
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
+                folio_state_begin_edit(state) == FOLIO_STATE_READY,
+            "open an editable note");
+    const char *body = folio_state_pane_text(state);
+    looks.snapshot = contrast_sample(false);
+    require(folio_state_refresh_theme(state) == FOLIO_STATE_READY, "normal to high contrast");
+    verify_contrast_pairs(state, looks.snapshot);
+    require(strstr(folio_state_pane_rtf(state), "\\red241\\green232\\blue223;") != nullptr,
+            "the prepared RTF uses the same arbitrary dark foreground");
+    uint64_t revision = folio_state_palette_revision(state);
+    looks.snapshot = contrast_sample(true);
+    require(folio_state_refresh_theme(state) == FOLIO_STATE_READY &&
+                folio_state_palette_revision(state) != revision,
+            "HC color changes are detected while the OS light/dark enum stays equal");
+    verify_contrast_pairs(state, looks.snapshot);
+    require(strstr(folio_state_pane_rtf(state), "\\red17\\green28\\blue39;") != nullptr,
+            "light RTF and visible palette move together");
+    const char *rendered = folio_state_pane_rtf(state);
+    require(folio_state_refresh_theme(state) == FOLIO_STATE_READY &&
+                folio_state_pane_rtf(state) == rendered,
+            "duplicate OS notifications do not rebuild the document");
+    looks.snapshot.contrast = FOLIO_CONTRAST_STANDARD;
+    looks.theme = FOLIO_THEME_LIGHT;
+    require(folio_state_refresh_theme(state) == FOLIO_STATE_READY &&
+                theme_palette_equal(
+                    folio_state_palette(state),
+                    folio_theme_palette(folio_theme_choice_resolve(choice, looks.theme))),
+            "OFF restores the saved selection against the current OS mode");
+    require(folio_state_theme_choice(state) == choice && folio_state_pane_text(state) == body &&
+                folio_state_pane_mode(state) == PANE_MODE_EDIT &&
+                files.settings_writes == settings_writes && files.note_writes == 0 &&
+                files.archives == 0 && files.writes == 0,
+            "OS appearance never saves settings, category colors, body or history");
+    folio_state_destroy(state);
+}
+
+static void verify_contrast_failures(void)
+{
+    struct persistence_adapter files = healthy_adapter();
+    struct appearance_adapter looks = {.theme = FOLIO_THEME_DARK,
+                                       .outcome = APPEARANCE_UNAVAILABLE};
+    struct folio_state *state = appearance_state(&files, &looks);
+    require(folio_state_appearance_notice(state) == FOLIO_STATE_APPEARANCE_UNAVAILABLE &&
+                folio_state_system_theme(state) == FOLIO_THEME_LIGHT && files.settings_writes == 0,
+            "first failure has an explicit notice and standard light fallback");
+    looks.outcome = APPEARANCE_READY;
+    looks.snapshot = contrast_sample(false);
+    require(folio_state_refresh_theme(state) == FOLIO_STATE_READY &&
+                folio_state_appearance_notice(state) == FOLIO_STATE_READY,
+            "recovery clears notice");
+    const char *before = folio_state_pane_rtf(state);
+    uint64_t revision = folio_state_palette_revision(state);
+    looks.outcome = APPEARANCE_UNAVAILABLE;
+    looks.snapshot = contrast_sample(true);
+    require(folio_state_refresh_theme(state) == FOLIO_STATE_APPEARANCE_UNAVAILABLE &&
+                folio_state_palette_revision(state) == revision &&
+                folio_state_pane_rtf(state) == before,
+            "failed retrieval cannot be interpreted as OFF or replace a valid document");
+    verify_contrast_pairs(state, contrast_sample(false));
+    looks.outcome = APPEARANCE_READY;
+    allocation_probe_fail_at(1);
+    enum folio_state_outcome result = folio_state_refresh_theme(state);
+    allocation_probe_fail_at(0);
+    require(result == FOLIO_STATE_READY || result == FOLIO_STATE_OUT_OF_MEMORY,
+            "typed preparation result");
+    if (result == FOLIO_STATE_OUT_OF_MEMORY)
+    {
+        require(folio_state_palette_revision(state) == revision &&
+                    folio_state_pane_rtf(state) == before,
+                "RTF preparation failure also keeps the entire valid snapshot");
+        verify_contrast_pairs(state, contrast_sample(false));
+    }
+    require(folio_state_refresh_theme(state) == FOLIO_STATE_READY,
+            "retry can adopt the new snapshot");
+    verify_contrast_pairs(state, contrast_sample(true));
+    folio_state_destroy(state);
+}
+
+static void verify_theme_choice_during_contrast(void)
+{
+    struct persistence_adapter files = healthy_adapter();
+    struct appearance_adapter looks = {.theme = FOLIO_THEME_DARK,
+                                       .snapshot = contrast_sample(false)};
+    struct folio_state *state = appearance_state(&files, &looks);
+    uint64_t revision = folio_state_palette_revision(state);
+    require(folio_state_set_theme(state, FOLIO_THEME_CHOICE_NORD) == FOLIO_STATE_READY &&
+                files.written_theme == FOLIO_THEME_CHOICE_NORD &&
+                folio_state_palette_revision(state) == revision,
+            "choosing a fixed theme stores it but cannot override OS high contrast");
+    verify_contrast_pairs(state, looks.snapshot);
+    files.settings_write_outcome = PERSISTENCE_UNWRITABLE;
+    require(folio_state_set_theme(state, FOLIO_THEME_CHOICE_DRACULA) ==
+                    FOLIO_STATE_SETTINGS_STORE_FAILED &&
+                folio_state_theme_choice(state) == FOLIO_THEME_CHOICE_NORD,
+            "a failed settings write still cannot adopt a new saved selection");
+    looks.snapshot.contrast = FOLIO_CONTRAST_STANDARD;
+    require(
+        folio_state_refresh_theme(state) == FOLIO_STATE_READY &&
+            theme_palette_equal(folio_state_palette(state), folio_theme_palette(FOLIO_THEME_NORD)),
+        "OFF returns to the theme chosen during HC");
+    folio_state_destroy(state);
+}
+
+void run_system_contrast_tests(void)
+{
+    finder = test_regex_port();
+    verify_contrast_transition(FOLIO_THEME_CHOICE_SYSTEM);
+    verify_contrast_transition(FOLIO_THEME_CHOICE_DRACULA);
+    verify_contrast_failures();
+    verify_theme_choice_during_contrast();
+    verify_refresh_theme();
+}
+
 static void verify_settings(void)
 {
+    run_system_contrast_tests();
     verify_named_theme();
     verify_named_theme_restart();
     verify_settings_absent();

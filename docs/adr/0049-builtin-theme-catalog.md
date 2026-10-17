@@ -16,7 +16,9 @@ hideはNeNeNibと同じ125種類をFolioでも選べることを指定した。�
 ## 決定
 
 1. 既存light/darkにNibの125種類を追加して、固定配色は127種類とする。選択肢はOS追従のsystemを加えた128種類。
-   既存のFolio light/darkのRGB値と、systemがこれらを選ぶ規則を保持する。OSポートが返す値は従来どおりlight/darkに限る。
+   既存のFolio light/darkのRGB値と、systemがこれらを選ぶ通常時の規則を保持する。
+   OSポートのlight/dark限定は#320の[ADR0057](0057-system-contrast-snapshot.md)で置換する。
+   高コントラストではOS色から解決した一時的な実効paletteが優先し、保存した固定選択は保持する。
 2. `folio_theme`は固定配色ID、`folio_theme_choice`はsystemを含む利用者の選択という既存の区別を維持する。
    固定配色の名前と全色はcoreの1表が所有する。選択enumの固定値は固定配色enumから明示的に導出し、独立した名前表を作らない。
    systemの解決と名前の解析は`folio_theme_choice`へ集約する。旧`folio_theme_resolve`は同時に移行・削除する。

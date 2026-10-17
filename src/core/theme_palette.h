@@ -3,11 +3,13 @@
 #ifndef NENEFOLIO_THEME_PALETTE_H
 #define NENEFOLIO_THEME_PALETTE_H
 
+#include "folio_contrast.h"
 #include "rgb_color.h"
 #include "rtf_palette.h"
 
 struct theme_palette
 {
+    enum folio_contrast contrast;
     struct rgb_color window;
     struct rgb_color pane;
     struct rgb_color header_text;
@@ -31,5 +33,8 @@ struct theme_palette
     unsigned char dialog_backdrop_alpha;
     struct rtf_palette rtf;
 };
+
+[[nodiscard]] bool theme_palette_equal(const struct theme_palette *_Nonnull left,
+                                       const struct theme_palette *_Nonnull right);
 
 #endif

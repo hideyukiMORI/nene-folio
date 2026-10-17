@@ -49,6 +49,7 @@ void run_filter_tests(void);
 void run_settings_tests(void);
 void run_theme_tests(void);
 void run_theme_state_tests(void);
+void run_system_contrast_tests(void);
 void run_line_index_tests(void);
 void run_replace_tests(void);
 void run_replace_state_tests(void);

@@ -69,6 +69,8 @@ struct folio_window
     HACCEL _Nullable region_keys;
     HACCEL _Nullable traversal_keys;
     struct folio_palette palette;
+    bool appearance_pending;         /* 本文投入/終了処理中のOS通知を一つにまとめる。 */
+    bool appearance_recolor_pending; /* 色が同じでも失敗した本文の再着色は再試行する。 */
     struct drawer_window *_Nullable drawer;
     struct note_pane *_Nullable pane;
     HACCEL _Nullable commands;
@@ -79,7 +81,6 @@ struct folio_window
     HWND _Nullable tooltip;
     char16_t tooltip_text[draw_unit_limit];
     HWND _Nullable settings_backdrop;
-    HBRUSH _Nullable settings_backdrop_brush;
     /* レイヤーから外した IME の文脈。窓を壊す前に戻す（MSDN の作法） */
     HIMC _Nullable layer_context;
     HWND _Nullable command_input;
@@ -317,8 +318,6 @@ constexpr size_t gutter_row_capacity = 256;
 constexpr DWORD attribute_corner_preference = 33;
 constexpr DWORD attribute_border_color = 34;
 constexpr DWORD corner_round_small = 3;
-/* OS の「アプリのモード」の変更を知らせる WM_SETTINGCHANGE の lParam（ADR 0031 の決定 4）。 */
-static const wchar_t immersive_color_set[] = L"ImmersiveColorSet";
 /* 設定の歯車と、現在の選択の印の寸法（96 DPI）。歯車は close_rect と同じ 24px の箱へ
  * 面のパスで塗る（ADR 0033 の決定 6）ので、放射線の長さの定数は要らない。 */
 constexpr int base_settings_gap = 6;
@@ -705,8 +704,7 @@ static bool load_blocks_input(const struct folio_window *_Nonnull self, UINT mes
 {
     return pane_streaming(self) &&
            (message == WM_KEYDOWN || message == WM_CHAR || message == WM_LBUTTONDOWN ||
-            message == WM_CLOSE || message == WM_SETTINGCHANGE ||
-            message == folio_message_drawer_menu);
+            message == WM_CLOSE || message == folio_message_drawer_menu);
 }
 
 static int pane_notice_height(const struct folio_window *_Nonnull self)
@@ -857,10 +855,19 @@ static RECT settings_dialog_rect(const struct folio_window *_Nonnull self)
                   (client.right + width) / 2, (client.bottom + height) / 2};
 }
 
+static enum folio_state_outcome settings_notice(const struct folio_window *_Nonnull self)
+{
+    if (self->command_failure != FOLIO_STATE_READY)
+    {
+        return self->command_failure;
+    }
+    enum folio_state_outcome settings = folio_state_settings_notice(self->state);
+    return settings != FOLIO_STATE_READY ? settings : folio_state_appearance_notice(self->state);
+}
+
 static bool settings_has_notice(const struct folio_window *_Nonnull self)
 {
-    return self->command_failure != FOLIO_STATE_READY ||
-           folio_state_settings_notice(self->state) != FOLIO_STATE_READY;
+    return settings_notice(self) != FOLIO_STATE_READY;
 }
 
 static RECT settings_content_rect(const struct folio_window *_Nonnull self)
@@ -1476,6 +1483,10 @@ static enum folio_state_outcome loaded_pane(struct folio_window *_Nonnull self,
         arrange_command_contents(self);
     }
     InvalidateRect(self->handle, nullptr, FALSE);
+    if (outcome == NOTE_PANE_LOAD_READY && self->appearance_recolor_pending)
+    {
+        PostMessageW(self->handle, folio_message_appearance_changed, 0, 0);
+    }
     return from_pane_load(outcome);
 }
 
@@ -1826,15 +1837,18 @@ static void draw_breadcrumb(const struct folio_window *_Nonnull self, HDC device
         draw_breadcrumb_label(device, breadcrumb_category(title, folio_state_language(self->state)),
                               cells.category, cells.padding + cells.tip);
     }
-    COLORREF color = RGB(title.color.red, title.color.green, title.color.blue);
+    bool contrast = self->palette.contrast == FOLIO_CONTRAST_HIGH;
+    COLORREF color = contrast ? self->palette.chip_background
+                              : RGB(title.color.red, title.color.green, title.color.blue);
     draw_breadcrumb_segment(device, cells.ordinal, cells.tip, color);
-    SetTextColor(device, folio_palette_ink(color));
+    SetTextColor(device, contrast ? self->palette.chip_text : folio_palette_ink(color));
     char digits[3];
     ordinal_label(title.ordinal, digits);
     draw_breadcrumb_label(device, digits, cells.ordinal, cells.padding);
     /* 復旧待ちの言い換えはここ 1 か所だけが持つ。application は実名を返す（ADR 0022 の決定 2）。 */
-    SetTextColor(device, title.recovering == PANE_RECOVERY_NOTE ? self->palette.selected_text
-                                                                : self->palette.current_text);
+    SetTextColor(device, !contrast && title.recovering == PANE_RECOVERY_NOTE
+                             ? self->palette.selected_text
+                             : self->palette.current_text);
     draw_breadcrumb_label(device, breadcrumb_note(title, folio_state_language(self->state)),
                           cells.note, cells.padding + cells.tip);
     RestoreDC(device, saved);
@@ -1858,6 +1872,13 @@ static void draw_chip(const struct folio_window *_Nonnull self, HDC device, enum
         DeleteObject(pen);
         DeleteObject(brush);
         SetTextColor(device, self->palette.chip_text);
+        if (self->palette.contrast == FOLIO_CONTRAST_HIGH)
+        {
+            RECT mark = bounds;
+            mark.top = mark.bottom - scale(2, dpi);
+            SetDCBrushColor(device, self->palette.chip_text);
+            FillRect(device, &mark, (HBRUSH)GetStockObject(DC_BRUSH));
+        }
     }
     else
     {
@@ -1976,7 +1997,6 @@ static void draw_layout_command(const struct folio_window *_Nonnull self, HDC de
 static void draw_aliases(const struct folio_window *_Nonnull self, HDC device,
                          enum folio_command command, RECT bounds)
 {
-    SetTextColor(device, self->palette.header_text);
     for (size_t index = 0; index < folio_command_alias_count(command); ++index)
     {
         const char *_Nonnull alias = folio_command_alias(command, index);
@@ -2013,6 +2033,7 @@ static void draw_command_row(const struct folio_window *_Nonnull self, HDC devic
     RECT aliases = row.bounds;
     aliases.right -= scale(base_command_row_padding, dpi);
     aliases.left = aliases.right;
+    SetTextColor(device, row.selected ? self->palette.selected_text : self->palette.header_text);
     draw_aliases(self, device, row.command, aliases);
 }
 
@@ -2080,7 +2101,9 @@ static void draw_search_surface(const struct folio_window *_Nonnull self, HDC de
               search_header_rect(self));
     draw_utf8(device, line, search_result_rect(self));
     icon_paint_fill(device, search_close_rect(self), ICON_PAINT_CLOSE, self->palette.current_text);
-    SetTextColor(device, self->palette.selected_text);
+    SetTextColor(device, self->palette.contrast == FOLIO_CONTRAST_HIGH
+                             ? self->palette.current_text
+                             : self->palette.selected_text);
     draw_utf8(device, ui_text_line(UI_TEXT_ACTION_SEARCH_PREVIOUS, language),
               search_button_rect(self, 0));
     draw_utf8(device, ui_text_line(UI_TEXT_ACTION_SEARCH_NEXT, language),
@@ -2151,7 +2174,9 @@ static void draw_replace_surface(const struct folio_window *_Nonnull self, HDC d
     replace_line(self, line);
     SetTextColor(device, self->palette.current_text);
     draw_utf8(device, line, status);
-    SetTextColor(device, self->palette.selected_text);
+    SetTextColor(device, self->palette.contrast == FOLIO_CONTRAST_HIGH
+                             ? self->palette.current_text
+                             : self->palette.selected_text);
     enum folio_language language = folio_state_language(self->state);
     draw_utf8(device, ui_text_line(UI_TEXT_ACTION_REPLACE_ONE, language),
               surface_button_rect(self, 0));
@@ -2285,7 +2310,9 @@ static void draw_command_guidance(const struct folio_window *_Nonnull self, HDC 
     draw_utf8(device, ui_text_line(UI_TEXT_STATUS_PALETTE_FILTER, language), line);
     RECT toggle = command_toggle_rect(self);
     toggle.right = command_pages_rect(self).left;
-    SetTextColor(device, self->palette.selected_text);
+    SetTextColor(device, self->palette.contrast == FOLIO_CONTRAST_HIGH
+                             ? self->palette.current_text
+                             : self->palette.selected_text);
     draw_utf8(device,
               ui_text_line(self->command_keys_visible ? UI_TEXT_ACTION_KEYS_HIDE
                                                       : UI_TEXT_ACTION_KEYS_SHOW,
@@ -2340,9 +2367,7 @@ static void draw_settings_footer(const struct folio_window *_Nonnull self, HDC d
     if (settings_has_notice(self))
     {
         SetTextColor(device, self->palette.current_text);
-        enum folio_state_outcome reason = self->command_failure != FOLIO_STATE_READY
-                                              ? self->command_failure
-                                              : folio_state_settings_notice(self->state);
+        enum folio_state_outcome reason = settings_notice(self);
         line.top = line.bottom;
         line.bottom = bounds.bottom;
         draw_units(device, folio_state_failure_line(reason, language), line,
@@ -2367,6 +2392,20 @@ static void frame_settings_rect(HDC device, RECT bounds, COLORREF color)
     {
         FrameRect(device, &bounds, brush);
         DeleteObject(brush);
+    }
+}
+
+/* OS色では同じ輪郭色になり得るので、注目は内枠の有無でも示す。 */
+static void frame_settings_focus(const struct folio_window *_Nonnull self, HDC device, RECT bounds,
+                                 bool focused)
+{
+    COLORREF border = focused ? self->palette.current_text : self->palette.dialog_border;
+    frame_settings_rect(device, bounds, border);
+    if (focused && self->palette.contrast == FOLIO_CONTRAST_HIGH)
+    {
+        int inset = scale(3, GetDpiForWindow(self->handle));
+        InflateRect(&bounds, -inset, -inset);
+        frame_settings_rect(device, bounds, border);
     }
 }
 
@@ -2422,7 +2461,10 @@ static void draw_settings_theme(const struct folio_window *_Nonnull self, HDC de
                row, DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
     OffsetRect(&row, 0, scale(22, dpi));
     SetTextColor(device, self->palette.dialog_secondary);
-    draw_units(device, ui_text_line(UI_TEXT_THEME_CHOOSE, language), row,
+    enum ui_text guidance = self->palette.contrast == FOLIO_CONTRAST_HIGH
+                                ? UI_TEXT_HIGH_CONTRAST_ACTIVE
+                                : UI_TEXT_THEME_CHOOSE;
+    draw_units(device, ui_text_line(guidance, language), row,
                DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
 }
 
@@ -2434,9 +2476,7 @@ static void draw_settings_row(const struct folio_window *_Nonnull self, HDC devi
     if (choice)
     {
         fill_settings_rect(device, row, self->palette.dialog_control);
-        COLORREF border = index == self->command_selection ? self->palette.current_text
-                                                           : self->palette.dialog_border;
-        frame_settings_rect(device, row, border);
+        frame_settings_focus(self, device, row, index == self->command_selection);
         if (settings_rows[index].kind == SETTINGS_ROW_NUMBER)
         {
             draw_settings_mark(self, device, row);
@@ -2537,8 +2577,7 @@ static void draw_theme_row(const struct folio_window *_Nonnull self, HDC device,
     UINT dpi = GetDpiForWindow(self->handle);
     box.bottom -= scale(4, dpi);
     fill_settings_rect(device, box, self->palette.dialog_control);
-    COLORREF border = row.focused ? self->palette.current_text : self->palette.dialog_border;
-    frame_settings_rect(device, box, border);
+    frame_settings_focus(self, device, box, row.focused);
     if (row.choice == folio_state_theme_choice(self->state))
     {
         RECT mark = settings_mark_rect(self, box);
@@ -2552,7 +2591,11 @@ static void draw_theme_row(const struct folio_window *_Nonnull self, HDC device,
     enum folio_theme resolved = row.choice == FOLIO_THEME_CHOICE_SYSTEM
                                     ? folio_state_system_theme(self->state)
                                     : folio_theme_choice_resolve(row.choice, FOLIO_THEME_LIGHT);
-    draw_theme_samples(self, device, row.bounds, folio_palette_for(resolved));
+    struct folio_palette palette = self->palette.contrast == FOLIO_CONTRAST_HIGH
+                                       ? self->palette
+                                       : folio_palette_from(folio_theme_palette(resolved));
+    RECT samples = self->palette.contrast == FOLIO_CONTRAST_HIGH ? box : row.bounds;
+    draw_theme_samples(self, device, samples, palette);
 }
 
 static void draw_theme_rows(const struct folio_window *_Nonnull self, HDC device,
@@ -2601,13 +2644,13 @@ static void draw_theme_footer(const struct folio_window *_Nonnull self, HDC devi
     }
     line.top = line.bottom;
     line.bottom += height * 2;
-    draw_units(device, ui_text_line(UI_TEXT_THEME_GUIDANCE, language), line,
-               DT_WORDBREAK | DT_NOPREFIX);
+    enum ui_text guidance = self->palette.contrast == FOLIO_CONTRAST_HIGH
+                                ? UI_TEXT_HIGH_CONTRAST_ACTIVE
+                                : UI_TEXT_THEME_GUIDANCE;
+    draw_units(device, ui_text_line(guidance, language), line, DT_WORDBREAK | DT_NOPREFIX);
     if (settings_has_notice(self))
     {
-        enum folio_state_outcome reason = self->command_failure != FOLIO_STATE_READY
-                                              ? self->command_failure
-                                              : folio_state_settings_notice(self->state);
+        enum folio_state_outcome reason = settings_notice(self);
         line.top = line.bottom;
         line.bottom = bottom;
         draw_units(device, folio_state_failure_line(reason, language), line,
@@ -3480,6 +3523,7 @@ static const bool inline_outcomes[] = {
     /* 設定の失敗は欄の中の 1 行（ADR 0031 の決定 7）。設定画面は閉じずに理由を出す。
      * `:set number` の失敗も同じ値なので、他の Ex の失敗と同じく欄の 1 行になる。 */
     [FOLIO_STATE_SETTINGS_UNREADABLE] = true,
+    [FOLIO_STATE_APPEARANCE_UNAVAILABLE] = true,
     [FOLIO_STATE_SETTINGS_STORE_FAILED] = true,
     [FOLIO_STATE_READY] = false,
     [FOLIO_STATE_DATA_UNREADABLE] = false,
@@ -3506,6 +3550,7 @@ static const bool inline_outcomes[] = {
     [FOLIO_STATE_FILTERED] = false,
     [FOLIO_STATE_PANE_UNAVAILABLE] = false,
     [FOLIO_STATE_PANE_LOAD_FAILED] = false,
+    [FOLIO_STATE_PANE_RECOLOR_FAILED] = false,
     [FOLIO_STATE_OUT_OF_MEMORY] = false,
     [FOLIO_STATE_NAME_REQUIRED] = false,
     [FOLIO_STATE_INVALID_NAME] = false,
@@ -4795,13 +4840,18 @@ static enum folio_state_outcome recolor_pane(struct folio_window *_Nonnull self)
     }
     enum pane_mode mode = folio_state_pane_mode(self->state);
     size_t line = note_pane_first_visible_line(self->pane);
-    note_pane_recolor(self->pane, self->palette.pane, self->palette.editor_text, mode);
+    enum note_pane_recolor_outcome colored =
+        note_pane_recolor(self->pane, self->palette.pane, self->palette.editor_text, mode);
     enum folio_state_outcome outcome = FOLIO_STATE_READY;
-    if (mode == PANE_MODE_VIEW)
+    if (colored == NOTE_PANE_RECOLOR_FAILED)
+    {
+        outcome = FOLIO_STATE_PANE_RECOLOR_FAILED;
+    }
+    if (outcome == FOLIO_STATE_READY && mode == PANE_MODE_VIEW)
     {
         outcome = restream_pane(self);
     }
-    if (outcome == FOLIO_STATE_READY && line > 0)
+    if (line > 0 && !pane_unavailable(self))
     {
         note_pane_scroll_to_line(self->pane, line);
     }
@@ -4845,7 +4895,13 @@ static enum folio_state_outcome reface_pane(struct folio_window *_Nonnull self)
 
 static void recolor_window(struct folio_window *_Nonnull self)
 {
-    self->palette = folio_palette_for(folio_state_theme(self->state));
+    self->palette = folio_palette_from(folio_state_palette(self->state));
+    if (self->settings_backdrop != nullptr)
+    {
+        SetLayeredWindowAttributes(self->settings_backdrop, 0, self->palette.dialog_backdrop_alpha,
+                                   LWA_ALPHA);
+        InvalidateRect(self->settings_backdrop, nullptr, TRUE);
+    }
     refresh_tooltip_style(self);
     HBRUSH _Nullable brush = CreateSolidBrush(self->palette.window);
     if (brush != nullptr)
@@ -4862,14 +4918,20 @@ static void recolor_window(struct folio_window *_Nonnull self)
         drawer_window_recolor(self->drawer);
     }
     enum folio_state_outcome outcome = recolor_pane(self);
+    self->appearance_recolor_pending = outcome != FOLIO_STATE_READY;
+    if (outcome == FOLIO_STATE_READY && self->command_failure == FOLIO_STATE_PANE_RECOLOR_FAILED)
+    {
+        clear_command_status(self);
+    }
     InvalidateRect(self->handle, nullptr, FALSE);
     /* 主窓は WS_CLIPCHILDREN なので、上の無効化は子の EDIT に届かない（#121）。 */
     if (self->filter_input != nullptr)
     {
         InvalidateRect(self->filter_input, nullptr, TRUE);
     }
+    arrange_command_input(self);
     redraw_command_layer(self);
-    if (outcome != FOLIO_STATE_READY && !session_busy(self))
+    if (outcome != FOLIO_STATE_READY && !session_busy(self) && IsWindowEnabled(self->handle))
     {
         command_failure(self, outcome);
     }
@@ -4883,7 +4945,7 @@ static void apply_theme(struct folio_window *_Nonnull self, enum folio_theme_cho
     {
         return;
     }
-    enum folio_theme before = folio_state_theme(self->state);
+    uint64_t before = folio_state_palette_revision(self->state);
     enum folio_state_outcome outcome = folio_state_set_theme(self->state, choice);
     if (outcome != FOLIO_STATE_READY)
     {
@@ -4898,7 +4960,7 @@ static void apply_theme(struct folio_window *_Nonnull self, enum folio_theme_cho
     {
         hide_command_surface(self);
     }
-    if (folio_state_theme(self->state) != before)
+    if (folio_state_palette_revision(self->state) != before || self->appearance_recolor_pending)
     {
         recolor_window(self);
         return;
@@ -7573,11 +7635,6 @@ static bool create_tooltip(struct folio_window *_Nonnull self)
 
 static bool create_settings_backdrop(struct folio_window *_Nonnull self)
 {
-    self->settings_backdrop_brush = CreateSolidBrush(self->palette.dialog_backdrop);
-    if (self->settings_backdrop_brush == nullptr)
-    {
-        return false;
-    }
     self->settings_backdrop =
         CreateWindowExW(WS_EX_LAYERED | WS_EX_NOACTIVATE, settings_backdrop_class, L"", WS_CHILD, 0,
                         0, 0, 0, self->handle, nullptr, GetModuleHandleW(nullptr), self);
@@ -7782,10 +7839,8 @@ static void paint_settings_backdrop(const struct folio_window *_Nonnull self, HW
 {
     PAINTSTRUCT painting;
     HDC device = BeginPaint(window, &painting);
-    if (self->settings_backdrop_brush != nullptr)
-    {
-        FillRect(device, &painting.rcPaint, self->settings_backdrop_brush);
-    }
+    SetDCBrushColor(device, self->palette.dialog_backdrop);
+    FillRect(device, &painting.rcPaint, (HBRUSH)GetStockObject(DC_BRUSH));
     EndPaint(window, &painting);
 }
 
@@ -8042,23 +8097,37 @@ static void resize(struct folio_window *_Nonnull self)
     rearrange_keeping_line(self);
 }
 
-/* OS の「アプリのモード」の変更（ADR 0031 の決定 4）。WS_CHILD には届かないので主窓 1 か所。
- * 選択が SYSTEM でなければ解決値は動かないので、前後を比べて変わったときだけ再着色する。 */
-static void system_colors_changed(struct folio_window *_Nonnull self, LPARAM lparam)
+/* OS通知とモーダルの再取得要求はここへ合流する。enumのテーマ名で色変更を判定しない。 */
+static void system_colors_changed(struct folio_window *_Nonnull self)
 {
-    const wchar_t *_Nullable name = (const wchar_t *)lparam;
-    if (name == nullptr || wcscmp(name, immersive_color_set) != 0)
+    if (pane_streaming(self) || session_busy(self))
     {
+        self->appearance_pending = true;
         return;
     }
-    enum folio_theme before = folio_state_theme(self->state);
-    if (folio_state_refresh_theme(self->state) != FOLIO_STATE_READY)
-    {
-        return;
-    }
-    if (folio_state_theme(self->state) != before)
+    self->appearance_pending = false;
+    uint64_t before = folio_state_palette_revision(self->state);
+    enum folio_state_outcome outcome = folio_state_refresh_theme(self->state);
+    if (outcome == FOLIO_STATE_READY &&
+        (folio_state_palette_revision(self->state) != before || self->appearance_recolor_pending))
     {
         recolor_window(self);
+        return;
+    }
+    if (settings_surface(self))
+    {
+        arrange_command_input(self);
+        redraw_command_layer(self);
+    }
+}
+
+static void resume_appearance(struct folio_window *_Nonnull self)
+{
+    if (self->appearance_pending && self->handle != nullptr && !pane_streaming(self) &&
+        !session_busy(self))
+    {
+        self->appearance_pending =
+            !PostMessageW(self->handle, folio_message_appearance_changed, 0, 0);
     }
 }
 
@@ -8075,6 +8144,9 @@ static LRESULT on_input_message(struct folio_window *_Nonnull self, UINT message
     {
     case WM_QUERYENDSESSION:
         return query_session_end(self);
+    case WM_ENABLE:
+        activate_tooltip(self);
+        return 0;
     case WM_ENDSESSION:
         return end_session(self, wparam);
     case WM_COMMAND:
@@ -8119,9 +8191,6 @@ static LRESULT on_message(struct folio_window *_Nonnull self, UINT message, WPAR
     case WM_IME_ENDCOMPOSITION:
         self->root_composing = false;
         return DefWindowProcW(self->handle, message, wparam, lparam);
-    case WM_ENABLE:
-        activate_tooltip(self);
-        return 0;
     case WM_NCHITTEST:
         return hit_test(self, lparam);
     case WM_SIZE:
@@ -8131,7 +8200,9 @@ static LRESULT on_message(struct folio_window *_Nonnull self, UINT message, WPAR
         apply_dpi(self, lparam);
         return 0;
     case WM_SETTINGCHANGE:
-        system_colors_changed(self, lparam);
+    case WM_SYSCOLORCHANGE:
+    case folio_message_appearance_changed:
+        system_colors_changed(self);
         return 0;
     case WM_PAINT:
         paint_pane(self);
@@ -8206,7 +8277,9 @@ static LRESULT CALLBACK window_procedure(HWND window, UINT message, WPARAM wpara
         return 0;
     }
     accessibility_host_changed(self->accessibility, message);
-    return on_message(self, message, wparam, lparam);
+    LRESULT result = on_message(self, message, wparam, lparam);
+    resume_appearance(self);
+    return result;
 }
 
 static bool ensure_named_class(HINSTANCE instance, const wchar_t *_Nonnull name,
@@ -8331,7 +8404,7 @@ enum folio_window_outcome folio_window_create(struct folio_state *_Nonnull state
         folio_window_destroy(self);
         return FOLIO_WINDOW_NOT_CREATED;
     }
-    self->palette = folio_palette_for(folio_state_theme(state));
+    self->palette = folio_palette_from(folio_state_palette(state));
     /* 窓を作る前に GDI+ を起動する。枠なし窓で × が描けないと閉じる入口が見えなくなる
      * （ADR 0013）ので、起動できなければ窓を作らない（ADR 0033 の決定 4）。 */
     if (!start_gdiplus(self))
@@ -8455,10 +8528,6 @@ void folio_window_destroy(struct folio_window *_Nullable window)
     if (window->command_brush != nullptr)
     {
         DeleteObject(window->command_brush);
-    }
-    if (window->settings_backdrop_brush != nullptr)
-    {
-        DeleteObject(window->settings_backdrop_brush);
     }
     /* 子窓の WM_NCDESTROY まで済んだあとに終える（ADR 0033 の決定 4）。
      * 生成の途中で失敗した経路では token が 0 のままなので 1 対 1 が保たれる。 */

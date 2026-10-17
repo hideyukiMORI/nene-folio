@@ -38,6 +38,19 @@ static const enum ui_text adapter_lines[] = {
     [PERSISTENCE_ADAPTER_OUT_OF_MEMORY] = UI_TEXT_APP_OUT_OF_MEMORY,
 };
 
+static void report_initial_notices(const struct folio_state *_Nonnull state)
+{
+    const enum folio_state_outcome notices[] = {folio_state_settings_notice(state),
+                                                folio_state_appearance_notice(state)};
+    for (size_t index = 0; index < sizeof notices / sizeof notices[0]; ++index)
+    {
+        if (notices[index] != FOLIO_STATE_READY)
+        {
+            report(folio_state_failure_line(notices[index], folio_state_language(state)));
+        }
+    }
+}
+
 static void run_message_loop(const struct folio_window *_Nonnull window)
 {
     MSG message;
@@ -71,11 +84,7 @@ static int run(struct persistence_adapter *_Nonnull persistence,
     }
     /* 起動は続けるが、設定を読めなかった理由は窓を作る前に 1 回だけ見せる（ADR 0025 の決定 6）。
      * main は 1 回しか走らないので「見せたか」の真偽はどこにも持たない。 */
-    enum folio_state_outcome settings = folio_state_settings_notice(state);
-    if (settings != FOLIO_STATE_READY)
-    {
-        report(folio_state_failure_line(settings, folio_state_language(state)));
-    }
+    report_initial_notices(state);
     struct folio_window *_Nullable window = nullptr;
     if (folio_window_create(state, fonts, &window) != FOLIO_WINDOW_CREATED)
     {

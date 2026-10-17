@@ -46,7 +46,9 @@ struct folio_state
     size_t replace_offset; /* 直前の下見が BAD_PATTERN だったときの位置（1 起算） */
     /* 外観ポート（ADR 0031 の決定 3）。OS の変更で読み直すので値で写して持つ */
     struct appearance_port appearance;
-    enum folio_theme os_theme;            /* 直近に port から読んだ OS の値 */
+    struct appearance_snapshot appearance_snapshot; /* 最後に採用できたOS外観（ADR0057）。 */
+    enum folio_state_outcome appearance_notice;
+    uint64_t palette_revision;            /* 実効配色変更時だけ進むUI cacheの無効化番号。 */
     enum folio_theme_choice theme_choice; /* 設定の選択。解決値は folio_theme_choice_resolve */
     /* data/settings.json の値の所有者（ADR 0025 の決定 5）。読めなければ既定値のまま */
     struct folio_settings *_Nullable settings;
@@ -54,7 +56,7 @@ struct folio_state
     enum folio_state_outcome settings_notice;
     /* READY か NOTE_UNEDITABLE。直前の select_note が編集から閲覧へ落としたかの事実（#258） */
     enum folio_state_outcome select_notice;
-    struct rtf_palette palette;
+    struct theme_palette palette;
     struct category_ledger *_Nullable categories;
     struct note_ledger *_Nonnull *_Nullable notes; /* categories と同じ数・同じ順 */
     size_t notes_count;
@@ -505,10 +507,9 @@ static bool render_pane_document(const struct folio_state *_Nonnull state,
 static enum folio_state_outcome adopt_theme_choice(struct folio_state *_Nonnull state)
 {
     enum folio_theme_choice choice = folio_settings_theme(state->settings);
-    struct rtf_palette palette =
-        rtf_palette_for(folio_theme_choice_resolve(choice, state->os_theme));
+    struct theme_palette palette = appearance_snapshot_palette(&state->appearance_snapshot, choice);
     struct markdown_rtf *_Nullable pane = nullptr;
-    if (!render_pane_document(state, palette, folio_state_language(state), &pane))
+    if (!render_pane_document(state, palette.rtf, folio_state_language(state), &pane))
     {
         return FOLIO_STATE_OUT_OF_MEMORY;
     }
@@ -533,13 +534,16 @@ enum folio_state_outcome folio_state_create(const struct folio_ports *_Nonnull p
     state->regex = *ports->regex;
     /* 外観ポートも値で写して持つ（ADR 0031 の決定 3）。adapter の寿命は合成ルートが保証する。 */
     state->appearance = *appearance;
-    state->os_theme = appearance->read_theme(appearance->adapter);
+    state->appearance_snapshot.theme = FOLIO_THEME_LIGHT;
+    state->appearance_notice =
+        appearance->read(appearance->adapter, &state->appearance_snapshot) == APPEARANCE_READY
+            ? FOLIO_STATE_READY
+            : FOLIO_STATE_APPEARANCE_UNAVAILABLE;
     state->theme_choice = FOLIO_THEME_CHOICE_SYSTEM;
     state->layout_mode = FOLIO_LAYOUT_BOTH;
     state->select_notice = FOLIO_STATE_READY;
-    state->palette =
-        rtf_palette_for(folio_theme_choice_resolve(state->theme_choice, state->os_theme));
-    if (markdown_rtf_empty(state->palette, ui_font_face(FOLIO_LANGUAGE_JA), &state->pane) !=
+    state->palette = appearance_snapshot_palette(&state->appearance_snapshot, state->theme_choice);
+    if (markdown_rtf_empty(state->palette.rtf, ui_font_face(FOLIO_LANGUAGE_JA), &state->pane) !=
             MARKDOWN_RTF_CONVERTED ||
         note_text_create("", 0, &state->body) != NOTE_TEXT_ACCEPTED ||
         note_corpus_create(&state->corpus) != NOTE_CORPUS_ACCEPTED ||
@@ -952,12 +956,36 @@ enum folio_state_outcome folio_state_reveal_row(struct folio_state *_Nonnull sta
 
 enum folio_theme folio_state_system_theme(const struct folio_state *_Nonnull state)
 {
-    return state->os_theme;
+    return state->appearance_snapshot.theme;
 }
 
 enum folio_theme folio_state_theme(const struct folio_state *_Nonnull state)
 {
-    return folio_theme_choice_resolve(state->theme_choice, state->os_theme);
+    return folio_theme_choice_resolve(state->theme_choice, state->appearance_snapshot.theme);
+}
+
+const struct theme_palette *_Nonnull folio_state_palette(const struct folio_state *_Nonnull state)
+{
+    return &state->palette;
+}
+
+uint64_t folio_state_palette_revision(const struct folio_state *_Nonnull state)
+{
+    return state->palette_revision;
+}
+
+enum folio_state_outcome folio_state_appearance_notice(const struct folio_state *_Nonnull state)
+{
+    return state->appearance_notice;
+}
+
+static void adopt_palette(struct folio_state *_Nonnull state, struct theme_palette palette)
+{
+    if (!theme_palette_equal(&state->palette, &palette))
+    {
+        state->palette_revision += 1;
+        state->palette = palette;
+    }
 }
 
 enum folio_theme_choice folio_state_theme_choice(const struct folio_state *_Nonnull state)
@@ -1024,11 +1052,11 @@ enum folio_state_outcome folio_state_set_number(struct folio_state *_Nonnull sta
  * 変えない（ADR 0032 の決定 5）。changed はこの関数が引き取る。 */
 static enum folio_state_outcome adopt_settings_change(struct folio_state *_Nonnull state,
                                                       struct folio_settings *_Nonnull changed,
-                                                      struct rtf_palette palette,
+                                                      struct theme_palette palette,
                                                       enum folio_language language)
 {
     struct markdown_rtf *_Nullable pane = nullptr;
-    if (!render_pane_document(state, palette, language, &pane))
+    if (!render_pane_document(state, palette.rtf, language, &pane))
     {
         folio_settings_destroy(changed);
         return FOLIO_STATE_OUT_OF_MEMORY;
@@ -1045,7 +1073,7 @@ static enum folio_state_outcome adopt_settings_change(struct folio_state *_Nonnu
     state->settings = changed;
     markdown_rtf_destroy(state->pane);
     state->pane = pane;
-    state->palette = palette;
+    adopt_palette(state, palette);
     return FOLIO_STATE_READY;
 }
 
@@ -1065,8 +1093,7 @@ enum folio_state_outcome folio_state_set_theme(struct folio_state *_Nonnull stat
     {
         return FOLIO_STATE_OUT_OF_MEMORY;
     }
-    struct rtf_palette palette =
-        rtf_palette_for(folio_theme_choice_resolve(choice, state->os_theme));
+    struct theme_palette palette = appearance_snapshot_palette(&state->appearance_snapshot, choice);
     enum folio_state_outcome adopted =
         adopt_settings_change(state, changed, palette, folio_state_language(state));
     if (adopted == FOLIO_STATE_READY)
@@ -1098,23 +1125,30 @@ enum folio_state_outcome folio_state_set_language(struct folio_state *_Nonnull s
 
 enum folio_state_outcome folio_state_refresh_theme(struct folio_state *_Nonnull state)
 {
-    enum folio_theme os_theme = state->appearance.read_theme(state->appearance.adapter);
-    struct rtf_palette palette =
-        rtf_palette_for(folio_theme_choice_resolve(state->theme_choice, os_theme));
-    if (folio_theme_choice_resolve(state->theme_choice, os_theme) == folio_state_theme(state))
+    struct appearance_snapshot snapshot = state->appearance_snapshot;
+    if (state->appearance.read(state->appearance.adapter, &snapshot) != APPEARANCE_READY)
     {
-        state->os_theme = os_theme;
+        state->appearance_notice = FOLIO_STATE_APPEARANCE_UNAVAILABLE;
+        return state->appearance_notice;
+    }
+    struct theme_palette palette = appearance_snapshot_palette(&snapshot, state->theme_choice);
+    if (theme_palette_equal(&state->palette, &palette))
+    {
+        state->appearance_snapshot = snapshot;
+        state->appearance_notice = FOLIO_STATE_READY;
         return FOLIO_STATE_READY;
     }
     struct markdown_rtf *_Nullable pane = nullptr;
-    if (!render_pane_document(state, palette, folio_state_language(state), &pane))
+    if (!render_pane_document(state, palette.rtf, folio_state_language(state), &pane))
     {
-        return FOLIO_STATE_OUT_OF_MEMORY;
+        state->appearance_notice = FOLIO_STATE_OUT_OF_MEMORY;
+        return state->appearance_notice;
     }
     markdown_rtf_destroy(state->pane);
     state->pane = pane;
-    state->palette = palette;
-    state->os_theme = os_theme;
+    adopt_palette(state, palette);
+    state->appearance_snapshot = snapshot;
+    state->appearance_notice = FOLIO_STATE_READY;
     return FOLIO_STATE_READY;
 }
 
@@ -1612,7 +1646,7 @@ static enum folio_state_outcome prepare_note_edit(const struct folio_state *_Non
     {
         return FOLIO_STATE_READY;
     }
-    return markdown_rtf_plain(body, state->palette, ui_font_face(folio_state_language(state)),
+    return markdown_rtf_plain(body, state->palette.rtf, ui_font_face(folio_state_language(state)),
                               edit) == MARKDOWN_RTF_CONVERTED
                ? FOLIO_STATE_READY
                : FOLIO_STATE_OUT_OF_MEMORY;
@@ -1636,7 +1670,7 @@ static enum folio_state_outcome render_note(struct folio_state *_Nonnull state,
     }
     struct markdown_rtf *_Nullable rendered = nullptr;
     enum markdown_rtf_outcome converted = markdown_rtf_create(
-        body, state->palette, ui_font_face(folio_state_language(state)), &rendered);
+        body, state->palette.rtf, ui_font_face(folio_state_language(state)), &rendered);
     if (converted != MARKDOWN_RTF_CONVERTED)
     {
         note_text_destroy(body);
@@ -2115,9 +2149,9 @@ enum folio_state_outcome folio_state_new_note(struct folio_state *_Nonnull state
     struct markdown_rtf *_Nullable pane = nullptr;
     struct markdown_rtf *_Nullable edit = nullptr;
     if (note_text_create("", 0, &body) != NOTE_TEXT_ACCEPTED ||
-        markdown_rtf_empty(state->palette, ui_font_face(folio_state_language(state)), &pane) !=
+        markdown_rtf_empty(state->palette.rtf, ui_font_face(folio_state_language(state)), &pane) !=
             MARKDOWN_RTF_CONVERTED ||
-        markdown_rtf_plain(body, state->palette, ui_font_face(folio_state_language(state)),
+        markdown_rtf_plain(body, state->palette.rtf, ui_font_face(folio_state_language(state)),
                            &edit) != MARKDOWN_RTF_CONVERTED)
     {
         note_text_destroy(body);
@@ -2196,7 +2230,7 @@ static enum folio_state_outcome store_edited(struct folio_state *_Nonnull state,
         return archived;
     }
     struct markdown_rtf *_Nullable rendered = nullptr;
-    if (markdown_rtf_create(edited, state->palette, ui_font_face(folio_state_language(state)),
+    if (markdown_rtf_create(edited, state->palette.rtf, ui_font_face(folio_state_language(state)),
                             &rendered) != MARKDOWN_RTF_CONVERTED)
     {
         note_text_destroy(edited);
@@ -2320,7 +2354,7 @@ static enum folio_state_outcome create_edited(struct folio_state *_Nonnull state
     enum folio_state_outcome prepared =
         from_note_ledger(note_ledger_inserted(state->notes[category], index, name, &ledger));
     if (prepared == FOLIO_STATE_READY &&
-        markdown_rtf_create(edited, state->palette, ui_font_face(folio_state_language(state)),
+        markdown_rtf_create(edited, state->palette.rtf, ui_font_face(folio_state_language(state)),
                             &rendered) != MARKDOWN_RTF_CONVERTED)
     {
         prepared = FOLIO_STATE_OUT_OF_MEMORY;
@@ -2609,9 +2643,10 @@ static enum folio_state_outcome finish_trash(struct folio_state *_Nonnull state,
     bool current = trashing_current(state, target);
     struct note_text *_Nullable body = nullptr;
     struct markdown_rtf *_Nullable pane = nullptr;
-    if (current && (note_text_create("", 0, &body) != NOTE_TEXT_ACCEPTED ||
-                    markdown_rtf_empty(state->palette, ui_font_face(folio_state_language(state)),
-                                       &pane) != MARKDOWN_RTF_CONVERTED))
+    if (current &&
+        (note_text_create("", 0, &body) != NOTE_TEXT_ACCEPTED ||
+         markdown_rtf_empty(state->palette.rtf, ui_font_face(folio_state_language(state)), &pane) !=
+             MARKDOWN_RTF_CONVERTED))
     {
         note_text_destroy(body);
         markdown_rtf_destroy(pane);
@@ -3510,7 +3545,7 @@ static enum folio_state_outcome place_edit_rtf(struct folio_state *_Nonnull stat
                                                const struct note_text *_Nonnull body)
 {
     struct markdown_rtf *_Nullable rendered = nullptr;
-    if (markdown_rtf_plain(body, state->palette, ui_font_face(folio_state_language(state)),
+    if (markdown_rtf_plain(body, state->palette.rtf, ui_font_face(folio_state_language(state)),
                            &rendered) != MARKDOWN_RTF_CONVERTED)
     {
         return FOLIO_STATE_OUT_OF_MEMORY;
@@ -3699,8 +3734,10 @@ static const enum ui_text failure_lines[] = {
     [FOLIO_STATE_FILTERED] = UI_TEXT_FAILURE_FILTERED,
     [FOLIO_STATE_SETTINGS_UNREADABLE] = UI_TEXT_FAILURE_SETTINGS_UNREADABLE,
     [FOLIO_STATE_SETTINGS_STORE_FAILED] = UI_TEXT_FAILURE_SETTINGS_STORE_FAILED,
+    [FOLIO_STATE_APPEARANCE_UNAVAILABLE] = UI_TEXT_FAILURE_APPEARANCE_UNAVAILABLE,
     [FOLIO_STATE_PANE_UNAVAILABLE] = UI_TEXT_FAILURE_PANE_UNAVAILABLE,
     [FOLIO_STATE_PANE_LOAD_FAILED] = UI_TEXT_FAILURE_PANE_LOAD_FAILED,
+    [FOLIO_STATE_PANE_RECOLOR_FAILED] = UI_TEXT_FAILURE_PANE_RECOLOR_FAILED,
     [FOLIO_STATE_REPLACE_NO_PATTERN] = UI_TEXT_FAILURE_REPLACE_NO_PATTERN,
     [FOLIO_STATE_REPLACE_BAD_PATTERN] = UI_TEXT_FAILURE_REPLACE_BAD_PATTERN,
     [FOLIO_STATE_REPLACE_BAD_TEMPLATE] = UI_TEXT_FAILURE_REPLACE_BAD_TEMPLATE,

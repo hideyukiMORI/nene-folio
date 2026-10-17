@@ -1,27 +1,23 @@
 # いまのタスク — NeNe Folio
 
-記録日: 2026-10-17。[#319](https://github.com/hideyukiMORI/nene-folio/issues/319)の基本UI Automation/キーボード到達を実装し、対象検証を完了した。
-基点mainはa2f253c、実装枝はfeat/319-basic-accessibility。
+記録日: 2026-10-17。#320のOS高コントラスト追随を実装し、対象検証を完了した。
+基点mainは2f037e9、専用枝はfeat/320-system-high-contrast。
 
 ## 確認済み
 
-- UIスレッド上のCOM provider、native入力名、ヘッダ/索引/本文操作列、F6/Tab到達。
-- applicationの単一cursorを文書選択と分離。SetFocusは保存なし、Select/Invokeは既存保存/未保存確認へ合流。
-- 対象build/tidy・状態/3言語文言試験、Cの製品provider試験106項目すべて成功。
-- NVDA 2026.2で名前・役割・focus・選択・展開の実発話を取得。寿命境界の独立レビューに追加blocker/highなし。
-- FR-006/018、ARC-004、ADR0013/0015/0056を実装契約へ更新。詳細と限界は[品質記録](../quality/2026-10-17-basic-accessibility-checkpoint.md)。
+- appearance_adapter/portのsnapshotから、一つの実効paletteをUI/RTFへ共有。
+- 保存選択とカテゴリ色を保持。dirty本文・Undo・選択・表示行、故障と対象採用後の旧本文保護。
+- 対象build/tidy/単体と実Win32 347項目成功。実OS ON/OFF、flags/31色/通常テーマ/保存配色名の復元。
+- 独立レビューの重大指摘を解消。初回試験の失敗とOS既定名cacheの差分を含め、[品質記録](../quality/2026-10-17-system-contrast-checkpoint.md)へ記載。
+- FR-016、ARC-004、用語、ADR0049/0055/0057を同期。Waivers: none。
 
-## 統合と反映の確認先
+## 統合・反映の確認先
 
-最終PR headの必須CI、main統合、通常exe反映、恒久証跡、専用作業物整理の実結果は
-#319の関連PRとD:/NeNeFolio/agents/319-basic-accessibility/completion.jsonを照合する。
-途中commit fd1bf23やローカル対象検証の成功だけで統合済みとは扱わない。
+最終PR head必須CI、main、通常exe、恒久証跡、専用作業物整理の実結果は#320関連PRと
+D:/NeNeFolio/agents/320-system-high-contrast/completion.jsonを照合する。対象検証だけで統合済みとは扱わない。
+通常exeはC:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe。通常dataは保持する。
+専用作業木はD:/NeNeFolio/worktrees/320-system-high-contrast、仮出力はD:/NeNeFolio/outputs/320-system-high-contrast。
+取込・未保存/ignored・唯一成果物・稼働参照・リンク確認後に整理し、枝/commit/agentsは保持する。
 
-通常exeはC:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe。
-専用作業木はD:/NeNeFolio/worktrees/319-basic-accessibility、仮出力はD:/NeNeFolio/outputs/319-basic-accessibility。
-完了確認後に専用作業物だけを整理し、枝とcommit・恒久証跡を保持する。
-
-次の候補は#320のOS高コントラスト、#321の補助画面公開。性能・配布・UI分割は別件。
-#312の設計はPR #322で統合済み。履歴は[日報](../reports/2026-10-17.md)と[引き継ぎ](../handoffs/2026-10-17.md)。
-初回CIで露呈したwrong-machine配布試験の解析エラー判定順を修正し、配布検証17項目も成功した。
-成功済みで関係入力が不変の検証を再利用する（QLT-012）。保存schema・ゲート判定基準変更なし。Waivers: none。
+次の候補は#321の補助面UIA公開。#319は完了記録を照合し、今回へ混ぜて再実行しない。
+旧C側作業木、D側210、#319の他プロセス参照で残したDLLの整理判断は別件。
