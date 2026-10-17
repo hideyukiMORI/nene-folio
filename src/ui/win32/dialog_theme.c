@@ -1,5 +1,7 @@
 #include "dialog_theme.h"
+#include "folio_message.h"
 #include "folio_palette.h"
+#include "folio_state.h"
 #include "ui_text.h"
 
 #include <dwmapi.h>
@@ -78,6 +80,31 @@ void dialog_theme_destroy(struct dialog_theme *_Nullable theme)
     free(theme);
 }
 
+bool dialog_theme_follow(HWND _Nonnull dialog, const struct folio_state *_Nonnull state,
+                         struct dialog_theme *_Nullable *_Nonnull theme)
+{
+    HWND owner = GetWindow(dialog, GW_OWNER);
+    if (owner != nullptr)
+    {
+        SendMessageW(owner, folio_message_appearance_changed, 0, 0);
+    }
+    struct folio_palette palette = folio_palette_from(folio_state_palette(state));
+    struct dialog_theme *_Nullable changed = nullptr;
+    switch (dialog_theme_create(&palette, &changed))
+    {
+    case DIALOG_THEME_READY:
+        break;
+    case DIALOG_THEME_NO_MEMORY:
+    case DIALOG_THEME_NO_BRUSH:
+        return false;
+    }
+    dialog_theme_destroy(*theme);
+    *theme = changed;
+    dialog_theme_decorate(changed, dialog);
+    RedrawWindow(dialog, nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN);
+    return true;
+}
+
 HBRUSH dialog_theme_color(const struct dialog_theme *_Nonnull theme,
                           enum dialog_theme_surface surface, HDC _Nonnull device)
 {
@@ -149,7 +176,7 @@ static COLORREF button_face(const struct dialog_theme *_Nonnull theme, UINT stat
 static COLORREF button_text(const struct dialog_theme *_Nonnull theme, UINT state,
                             enum dialog_theme_button kind)
 {
-    if ((state & ODS_DISABLED) != 0)
+    if ((state & ODS_DISABLED) != 0 && theme->palette.contrast != FOLIO_CONTRAST_HIGH)
     {
         return theme->palette.border;
     }
@@ -191,7 +218,8 @@ void dialog_theme_draw_button(const struct dialog_theme *_Nonnull theme,
     RECT bounds = item->rcItem;
     FillRect(item->hDC, &bounds, theme->window);
     COLORREF face = button_face(theme, item->itemState, kind);
-    COLORREF edge = kind == DIALOG_THEME_BUTTON_PRIMARY && (item->itemState & ODS_SELECTED) == 0
+    COLORREF edge = theme->palette.contrast == FOLIO_CONTRAST_HIGH ? theme->palette.current_text
+                    : kind == DIALOG_THEME_BUTTON_PRIMARY && (item->itemState & ODS_SELECTED) == 0
                         ? face
                         : theme->palette.chip_background;
     round_face(item, face, edge);
@@ -212,7 +240,7 @@ void dialog_theme_draw_item(const struct dialog_theme *_Nonnull theme,
     bool selected = !closed && (item->itemState & ODS_SELECTED) != 0;
     COLORREF background = selected ? theme->palette.selected_background : theme->palette.pane;
     COLORREF ink = selected ? theme->palette.selected_text : theme->palette.editor_text;
-    if ((item->itemState & ODS_DISABLED) != 0)
+    if ((item->itemState & ODS_DISABLED) != 0 && theme->palette.contrast != FOLIO_CONTRAST_HIGH)
     {
         ink = theme->palette.border;
     }
@@ -234,6 +262,11 @@ void dialog_theme_draw_item(const struct dialog_theme *_Nonnull theme,
 void dialog_theme_frame(const struct dialog_theme *_Nonnull theme, HDC _Nonnull dc,
                         const RECT *_Nonnull rect)
 {
+    if (theme->palette.contrast == FOLIO_CONTRAST_HIGH)
+    {
+        frame(dc, *rect, theme->palette.current_text);
+        return;
+    }
     FrameRect(dc, rect, theme->chip);
 }
 

@@ -31,6 +31,9 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_ACCESSIBLE_NAMED_BODY] = "{name} — ノート本文",
     [UI_TEXT_HELP_ACCESSIBILITY] = "F6 / Shift+F6 区画の移動 · Tab / Shift+Tab 区画内の移動",
     [UI_TEXT_EMPTY] = "",
+    [UI_TEXT_FAILURE_APPEARANCE_UNAVAILABLE] =
+        "Windowsの外観を取得できません。前の配色（初回は通常配色）を保ちます。",
+    [UI_TEXT_HIGH_CONTRAST_ACTIVE] = "Windowsの高コントラストを適用中",
     [UI_TEXT_FAILURE_DATA_UNREADABLE] = "data/ を読めませんでした。",
     [UI_TEXT_FAILURE_LEDGER_MALFORMED] =
         "data/ の台帳（categories.json / index.json）が版 1 の形ではありません。",
@@ -86,6 +89,8 @@ static const char *_Nonnull const expected[] = {
         "設定（data/settings.json）を書けませんでした。設定は変えていません。",
     [UI_TEXT_FAILURE_PANE_UNAVAILABLE] = "表示中の本文を取り出せませんでした。探していません。",
     [UI_TEXT_FAILURE_PANE_LOAD_FAILED] = "本文読込失敗。同じモードで再試行。",
+    [UI_TEXT_FAILURE_PANE_RECOLOR_FAILED] =
+        "本文の配色を更新できませんでした。本文は保持しています。テーマの再選択で再試行できます。",
     [UI_TEXT_FAILURE_REPLACE_NO_PATTERN] = "置換するパターンを入れてください。",
     [UI_TEXT_FAILURE_REPLACE_BAD_PATTERN] = "正規表現の書き方が違います。",
     [UI_TEXT_FAILURE_REPLACE_BAD_TEMPLATE] =

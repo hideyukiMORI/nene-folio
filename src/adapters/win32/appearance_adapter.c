@@ -48,9 +48,37 @@ static enum folio_theme read_theme(struct appearance_adapter *_Nonnull adapter)
     return value == 0 ? FOLIO_THEME_DARK : FOLIO_THEME_LIGHT;
 }
 
+static struct rgb_color system_color(int index)
+{
+    COLORREF color = GetSysColor(index);
+    return (struct rgb_color){GetRValue(color), GetGValue(color), GetBValue(color)};
+}
+
+static enum appearance_outcome read_appearance(struct appearance_adapter *_Nonnull adapter,
+                                               struct appearance_snapshot *_Nonnull out)
+{
+    HIGHCONTRASTW contrast = {.cbSize = sizeof contrast};
+    if (!SystemParametersInfoW(SPI_GETHIGHCONTRAST, sizeof contrast, &contrast, 0))
+    {
+        return APPEARANCE_UNAVAILABLE;
+    }
+    *out = (struct appearance_snapshot){
+        .theme = read_theme(adapter),
+        .contrast = (contrast.dwFlags & HCF_HIGHCONTRASTON) != 0 ? FOLIO_CONTRAST_HIGH
+                                                                 : FOLIO_CONTRAST_STANDARD,
+        .window = system_color(COLOR_WINDOW),
+        .window_text = system_color(COLOR_WINDOWTEXT),
+        .button = system_color(COLOR_BTNFACE),
+        .button_text = system_color(COLOR_BTNTEXT),
+        .highlight = system_color(COLOR_HIGHLIGHT),
+        .highlight_text = system_color(COLOR_HIGHLIGHTTEXT),
+    };
+    return APPEARANCE_READY;
+}
+
 struct appearance_port appearance_adapter_port(struct appearance_adapter *_Nonnull adapter)
 {
-    struct appearance_port port = {.adapter = adapter, .read_theme = read_theme};
+    struct appearance_port port = {.adapter = adapter, .read = read_appearance};
     return port;
 }
 

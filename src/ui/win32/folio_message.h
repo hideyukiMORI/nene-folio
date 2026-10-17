@@ -27,5 +27,7 @@ constexpr UINT folio_message_accessibility_invoke = WM_APP + 7;
 constexpr UINT folio_message_index_focused = WM_APP + 8;
 /* drawerのpointer操作が索引へfocusを置く。 */
 constexpr UINT folio_message_index_focus = WM_APP + 9;
+/* OS外観を安全な時点で読み直す。モーダルも同じ所有者へ要求する（ADR0057）。 */
+constexpr UINT folio_message_appearance_changed = WM_APP + 10;
 
 #endif

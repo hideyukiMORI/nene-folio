@@ -1,5 +1,10 @@
 #include "rgb_color.h"
 
+bool rgb_color_equal(struct rgb_color left, struct rgb_color right)
+{
+    return left.red == right.red && left.green == right.green && left.blue == right.blue;
+}
+
 static int hex_digit_value(char digit)
 {
     if (digit >= '0' && digit <= '9')

@@ -25,6 +25,13 @@ bool same_text(const char *_Nonnull actual, const char *_Nonnull expected)
 
 static bool run_document_settings_target_tests(const char *_Nonnull argument)
 {
+    if (strcmp(argument, "--system-contrast") == 0)
+    {
+        run_system_contrast_tests();
+        run_ui_text_tests();
+        printf("system contrast and UI text tests passed\n");
+        return true;
+    }
     if (strcmp(argument, "--accessibility") == 0)
     {
         run_accessibility_state_tests();

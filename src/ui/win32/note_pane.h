@@ -8,6 +8,7 @@
 #include "note_pane_load_outcome.h"
 #include "note_pane_outcome.h"
 #include "note_pane_readiness.h"
+#include "note_pane_recolor_outcome.h"
 #include "note_pane_text_outcome.h"
 #include "note_search_span.h"
 #include "pane_mode.h"
@@ -50,12 +51,13 @@ constexpr int note_pane_control_id = 3;
 void note_pane_select(struct note_pane *_Nonnull pane, size_t start, size_t end);
 /* テーマの切り替えで地と本文の色を当て直す（ADR 0031 の決定 6）。閲覧・編集の両方で呼ぶ
  * （地の色は RTF に入らない）。本文・選択・Undo の段数・変更印は変わらない。
- * ITextDocument が取れなければ地の色だけ変える（Undo を汚さない方を取る）。
+ * ITextDocument / Undo停止の失敗時は色を変えない。本文のreadinessは変えず再試行できる。
  * **閲覧は既定書式だけ**（直後に RTF を流し直すので SCF_ALL はちらつきの元）、
  * **編集は本文と既定書式の両方**を塗る。
  * EN_CHANGE は編集で 2 件・閲覧で 1 件出る（受け手は番号の表に印を付けるだけ）。 */
-void note_pane_recolor(struct note_pane *_Nonnull pane, COLORREF background, COLORREF text,
-                       enum pane_mode mode);
+[[nodiscard]] enum note_pane_recolor_outcome note_pane_recolor(struct note_pane *_Nonnull pane,
+                                                               COLORREF background, COLORREF text,
+                                                               enum pane_mode mode);
 /* 既定書式の face を当て直す（ADR 0032 の決定 6）。窓が本文を作った直後と、言語を採り直した
  * ときに呼ぶ。**モードによらず当てる**（SCF_DEFAULT は既存の run を塗らないので、RTF が face を
  * 明示している閲覧の見た目は変わらないが、次に平文を流し込む編集はこの既定書式で描かれる）。

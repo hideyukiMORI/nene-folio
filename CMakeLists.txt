@@ -38,7 +38,8 @@ nenefolio_target(toolchain_smoke verification EXECUTABLE tests/build/toolchain_s
 add_test(NAME toolchain_smoke COMMAND toolchain_smoke)
 
 nenefolio_target(nenefolio_core core STATIC
-    src/core/rgb_color.c src/core/utf8_text.c src/core/utf16_text.c
+    src/core/rgb_color.c src/core/appearance_snapshot.c src/core/theme_palette.c
+    src/core/utf8_text.c src/core/utf16_text.c
     src/core/json_reader.c src/core/json_writer.c src/core/name_list.c
     src/core/category_ledger.c src/core/category_name.c src/core/note_ledger.c src/core/drawer_layout.c
     src/core/text_buffer.c src/core/note_text.c src/core/markdown_rtf.c src/core/rtf_palette.c
@@ -78,6 +79,8 @@ nenefolio_system_link(nenefolio_adapters shell32)
 nenefolio_system_link(nenefolio_adapters ole32)
 nenefolio_system_link(nenefolio_adapters uuid)
 nenefolio_system_link(nenefolio_adapters advapi32)
+# OS高コントラストと利用者のシステム色は外観adapterだけが読む（ADR0057）。
+nenefolio_system_link(nenefolio_adapters user32)
 # Windows 同梱の ICU（ADR 0028 の決定 1）。配布物は増えず、版は OS が決める。
 nenefolio_system_link(nenefolio_adapters icu)
 # 同梱の書体を AddFontResourceExW(FR_PRIVATE) で登録する（ADR 0036 の決定 3・6・ARC-002）。

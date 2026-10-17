@@ -10,10 +10,10 @@ static COLORREF to_color(struct rgb_color color)
 }
 
 /* RGB-to-Win32 adaptation only; the core catalog owns every fixed color (ADR0049). */
-struct folio_palette folio_palette_for(enum folio_theme theme)
+struct folio_palette folio_palette_from(const struct theme_palette *_Nonnull palette)
 {
-    const struct theme_palette *_Nonnull palette = folio_theme_palette(theme);
     return (struct folio_palette){
+        .contrast = palette->contrast,
         .window = to_color(palette->window),
         .pane = to_color(palette->pane),
         .header_text = to_color(palette->header_text),

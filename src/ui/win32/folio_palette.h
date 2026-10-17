@@ -3,12 +3,13 @@
 #ifndef NENEFOLIO_FOLIO_PALETTE_H
 #define NENEFOLIO_FOLIO_PALETTE_H
 
-#include "folio_theme.h"
+#include "theme_palette.h"
 
 #include <windows.h>
 
 struct folio_palette
 {
+    enum folio_contrast contrast;
     COLORREF window;                /* 窓とドロワーの地 */
     COLORREF pane;                  /* 右ペインの地 */
     COLORREF header_text;           /* ドロワーの頭・右ペインの頭の薄い文字 */
@@ -32,7 +33,7 @@ struct folio_palette
     BYTE dialog_backdrop_alpha;     /* 暗幕だけの不透明度 */
 };
 
-[[nodiscard]] struct folio_palette folio_palette_for(enum folio_theme theme);
+[[nodiscard]] struct folio_palette folio_palette_from(const struct theme_palette *_Nonnull palette);
 /* カテゴリ色に対し、相対輝度のコントラスト比が高い白か黒を返す（ADR 0017）。 */
 [[nodiscard]] COLORREF folio_palette_ink(COLORREF background);
 

@@ -3,15 +3,17 @@
 #ifndef NENEFOLIO_APPEARANCE_PORT_H
 #define NENEFOLIO_APPEARANCE_PORT_H
 
-#include "folio_theme.h"
+#include "appearance_outcome.h"
+#include "appearance_snapshot.h"
 
 struct appearance_adapter;
 
 struct appearance_port
 {
     struct appearance_adapter *_Nonnull adapter;
-    /* 読めなければアダプタが LIGHT を返す（OS の既定と同じ）。 */
-    enum folio_theme (*_Nonnull read_theme)(struct appearance_adapter *_Nonnull adapter);
+    /* UNAVAILABLEではoutを変更しない。失敗と通常表示を区別する（ADR0057）。 */
+    enum appearance_outcome (*_Nonnull read)(struct appearance_adapter *_Nonnull adapter,
+                                             struct appearance_snapshot *_Nonnull out);
 };
 
 #endif

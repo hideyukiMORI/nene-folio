@@ -9,7 +9,7 @@
 
 struct folio_state;
 
-/* 箱の中で言語（folio_state_language）と palette（folio_state_theme）を引き、
+/* 箱の中で言語（folio_state_language）と palette（folio_state_palette）を引き、
  * dialog_theme で塗る自前のモーダルに 1 行を出す（ADR 0035 の決定 4）。state は読むだけ。
  * 自前のモーダルを組み立てられないときだけ MessageBoxW へ退避して必ず知らせる（補正 3）。
  * 箱の題は製品名なので翻訳しない（ADR 0032 の決定 7）。owner はトップレベルの窓（決定 6）。 */

@@ -70,5 +70,6 @@ ADR は「なぜそう決めたか」「何を却下したか」を書く。
 | [0052](0052-note-search-surface.md) | ノート内検索を本文上部へ置き、閉じる操作と配置を既存経路へ揃える | 受理 |
 | [0053](0053-session-end-and-exit-contract.md) | OS終了は保存後に同意し、取消と入力停止を管理して最終破棄を共有する | 受理 |
 | [0054](0054-checked-rich-edit-load.md) | RichEdit投入の完成を確認し、未完成本文の取得・置換・保存を拒否する | 受理 |
-| [0055](0055-accessibility-and-system-contrast-scope.md) | 基本操作のUIA公開・OS高コントラスト・補助画面の公開を別の受理単位にする（製品実装はplanned） | 受理 |
+| [0055](0055-accessibility-and-system-contrast-scope.md) | 基本操作のUIA公開・OS高コントラスト・補助画面の公開を別の受理単位にする | 受理 |
 | [0056](0056-ui-automation-provider-lifetime.md) | UIAをUIスレッドのCOM公開・native入力名の直接注釈・失効可能な行参照で構成する | 受理 |
+| [0057](0057-system-contrast-snapshot.md) | 失敗と区別したOS外観snapshotを一つの実効paletteへ解決し、UI/RTFへ共有する | 受理 |

@@ -27,6 +27,8 @@ struct note_pane
     struct line_index *_Nullable lines; /* 本文の派生物の写し。所有者はここ */
     bool lines_stale;                   /* 次に番号を描くときに作り直す */
     enum note_pane_readiness readiness;
+    bool recolor_undo_pending; /* 自分が停止したUndo。再開成功まで新たな停止をしない。 */
+    bool recolor_input_locked; /* Undo停止中の入力だけを止め、本文のREADYは保持する。 */
 };
 
 static const wchar_t library_name[] = L"Msftedit.dll";
@@ -179,6 +181,47 @@ static ITextDocument *_Nullable text_document(struct note_pane *_Nonnull pane)
     return result;
 }
 
+static bool resume_recolor(struct note_pane *_Nonnull pane, ITextDocument *_Nonnull document,
+                           enum pane_mode mode)
+{
+    if (pane->recolor_undo_pending)
+    {
+        if (FAILED(document->lpVtbl->Undo(document, tomResume, nullptr)))
+        {
+            return false;
+        }
+        pane->recolor_undo_pending = false;
+    }
+    if (pane->recolor_input_locked)
+    {
+        bool writable = mode == PANE_MODE_EDIT && pane->readiness == NOTE_PANE_READINESS_READY;
+        if (SendMessageW(pane->handle, EM_SETREADONLY, (WPARAM)!writable, 0) == 0)
+        {
+            return false;
+        }
+        EnableWindow(pane->handle, TRUE);
+        pane->recolor_input_locked = false;
+    }
+    return true;
+}
+
+/* 次の本文投入も、未解決のUndo停止を捨てず先に回復する。失敗なら元の本文を維持する。 */
+static bool ready_to_load(struct note_pane *_Nonnull pane, enum pane_mode mode)
+{
+    if (!pane->recolor_undo_pending && !pane->recolor_input_locked)
+    {
+        return true;
+    }
+    ITextDocument *_Nullable document = text_document(pane);
+    if (document == nullptr)
+    {
+        return false;
+    }
+    bool ready = resume_recolor(pane, document, mode);
+    document->lpVtbl->Release(document);
+    return ready;
+}
+
 static bool prepare_selection(struct note_pane *_Nonnull pane)
 {
     ITextDocument *_Nullable document = text_document(pane);
@@ -306,6 +349,11 @@ enum note_pane_load_outcome note_pane_load(struct note_pane *_Nonnull pane,
     if (pane->handle == nullptr)
     {
         return NOTE_PANE_LOAD_UNAVAILABLE;
+    }
+    if (!ready_to_load(pane, mode))
+    {
+        /* applicationは既に次の対象を採用し得る。旧本文を次の保存対象へ渡してはいけない。 */
+        return failed_load(pane, SendMessageW(pane->handle, EM_GETMODIFY, 0, 0));
     }
     pane->readiness = NOTE_PANE_READINESS_STREAMING;
     LRESULT modified = SendMessageW(pane->handle, EM_GETMODIFY, 0, 0);
@@ -572,10 +620,10 @@ void note_pane_restore_selection(struct note_pane *_Nonnull pane, struct note_se
 }
 
 /* 文字色だけを scope（SCF_ALL か SCF_DEFAULT）へ当てる。書体と大きさは触らない。 */
-static void apply_text_color(struct note_pane *_Nonnull pane, COLORREF text, WPARAM scope)
+static bool apply_text_color(struct note_pane *_Nonnull pane, COLORREF text, WPARAM scope)
 {
     CHARFORMAT2W format = {.cbSize = sizeof format, .dwMask = CFM_COLOR, .crTextColor = text};
-    SendMessageW(pane->handle, EM_SETCHARFORMAT, scope, (LPARAM)&format);
+    return SendMessageW(pane->handle, EM_SETCHARFORMAT, scope, (LPARAM)&format) != 0;
 }
 
 /* 閲覧は RTF が文字色を持っていて直後に流し直すので、SCF_ALL は捨てる書式を
@@ -593,32 +641,74 @@ static bool recolor_body(enum pane_mode mode)
     return true;
 }
 
-void note_pane_recolor(struct note_pane *_Nonnull pane, COLORREF background, COLORREF text,
-                       enum pane_mode mode)
+/* 既定書式を先に塗り、本文に失敗したら既定色も戻す。背景は両方の成功まで保持する。 */
+static bool recolor_text(struct note_pane *_Nonnull pane, COLORREF text, enum pane_mode mode)
 {
-    if (pane->handle == nullptr)
+    CHARFORMAT2W previous = {.cbSize = sizeof previous};
+    SendMessageW(pane->handle, EM_GETCHARFORMAT, SCF_DEFAULT, (LPARAM)&previous);
+    if ((previous.dwMask & CFM_COLOR) == 0 || !apply_text_color(pane, text, SCF_DEFAULT))
     {
-        return;
+        return false;
     }
-    /* 地の色は Undo も変更印も EN_CHANGE も動かさない（実測 (a1)）。 */
-    SendMessageW(pane->handle, EM_SETBKGNDCOLOR, 0, (LPARAM)background);
+    if (recolor_body(mode) && !apply_text_color(pane, text, SCF_ALL))
+    {
+        /* 本文は編集の単色。復元が失敗しても成功扱いせず次の通知で再試行する。 */
+        apply_text_color(pane, previous.crTextColor, SCF_ALL);
+        apply_text_color(pane, previous.crTextColor, SCF_DEFAULT);
+        return false;
+    }
+    return true;
+}
+
+static bool finish_recolor(struct note_pane *_Nonnull pane, ITextDocument *_Nonnull document)
+{
+    if (SUCCEEDED(document->lpVtbl->Undo(document, tomResume, nullptr)))
+    {
+        return true;
+    }
+    pane->recolor_undo_pending = true;
+    pane->recolor_input_locked = true;
+    if (SendMessageW(pane->handle, EM_SETREADONLY, TRUE, 0) == 0)
+    {
+        EnableWindow(pane->handle, FALSE);
+    }
+    return false;
+}
+
+enum note_pane_recolor_outcome note_pane_recolor(struct note_pane *_Nonnull pane,
+                                                 COLORREF background, COLORREF text,
+                                                 enum pane_mode mode)
+{
+    if (pane->handle == nullptr || pane->readiness != NOTE_PANE_READINESS_READY)
+    {
+        return NOTE_PANE_RECOLOR_FAILED;
+    }
     ITextDocument *_Nullable document = text_document(pane);
     if (document == nullptr)
     {
-        return; /* 地だけ変えて本文の色は次の流し込みまで古いまま（Undo を汚さない） */
+        return NOTE_PANE_RECOLOR_FAILED;
     }
-    /* 変更印を退避し、Undo を止めたまま SCF_ALL と SCF_DEFAULT を続けて当てる
-     * （ADR 0031 の決定 6。SCF_DEFAULT も Undo を積むので必ず suspend の内側）。 */
-    LRESULT modified = SendMessageW(pane->handle, EM_GETMODIFY, 0, 0);
-    document->lpVtbl->Undo(document, tomSuspend, nullptr);
-    if (recolor_body(mode))
+    if (!resume_recolor(pane, document, mode))
     {
-        apply_text_color(pane, text, SCF_ALL);
+        document->lpVtbl->Release(document);
+        return NOTE_PANE_RECOLOR_FAILED;
     }
-    apply_text_color(pane, text, SCF_DEFAULT);
-    document->lpVtbl->Undo(document, tomResume, nullptr);
+    LRESULT modified = SendMessageW(pane->handle, EM_GETMODIFY, 0, 0);
+    /* 特殊Countの停止/再開は実MsfteditがS_FALSEも返す。負のHRESULTだけを失敗とする。 */
+    if (FAILED(document->lpVtbl->Undo(document, tomSuspend, nullptr)))
+    {
+        document->lpVtbl->Release(document);
+        return NOTE_PANE_RECOLOR_FAILED;
+    }
+    bool colored = recolor_text(pane, text, mode);
+    bool resumed = finish_recolor(pane, document);
     document->lpVtbl->Release(document);
     SendMessageW(pane->handle, EM_SETMODIFY, (WPARAM)(modified != 0), 0);
+    if (colored)
+    {
+        SendMessageW(pane->handle, EM_SETBKGNDCOLOR, 0, (LPARAM)background);
+    }
+    return colored && resumed ? NOTE_PANE_RECOLOR_READY : NOTE_PANE_RECOLOR_FAILED;
 }
 
 /* 既定書式の face だけを当て直す（ADR 0032 の決定 6）。色（note_pane_recolor）と同じ枠で、
@@ -627,7 +717,7 @@ void note_pane_recolor(struct note_pane *_Nonnull pane, COLORREF background, COL
  * 再折り返しが起きるので、呼び出し側が論理行を退避・復元する。 */
 void note_pane_reface(struct note_pane *_Nonnull pane, const wchar_t *_Nonnull face)
 {
-    if (pane->handle == nullptr)
+    if (pane->handle == nullptr || pane->recolor_undo_pending || pane->recolor_input_locked)
     {
         return;
     }
@@ -661,7 +751,8 @@ void note_pane_reface(struct note_pane *_Nonnull pane, const wchar_t *_Nonnull f
 void note_pane_replace(struct note_pane *_Nonnull pane, struct note_search_span span,
                        const char16_t *_Nonnull units)
 {
-    if (pane->handle == nullptr || pane->readiness != NOTE_PANE_READINESS_READY)
+    if (pane->handle == nullptr || pane->readiness != NOTE_PANE_READINESS_READY ||
+        pane->recolor_undo_pending || pane->recolor_input_locked)
     {
         return;
     }

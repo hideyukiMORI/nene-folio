@@ -29,13 +29,13 @@ struct failure_box
 {
     const char16_t *_Nonnull units;
     enum folio_language language;
-    /* palette は開く瞬間の描画テーマから写し、面は追随しない（ADR 0035 の決定 5）。 */
-    enum folio_theme theme_choice;
+    const struct folio_state *_Nonnull state; /* 同期モーダルの間だけ借りる。 */
     struct dialog_theme *_Nullable theme;
     HFONT _Nullable font;
     HWND _Nullable dialog;
     UINT dpi;
-    /* 警告の印の箱（client 座標）と色。色は開く瞬間の palette の chip_background（補正 13）。 */
+    /* 警告の印の箱（client
+     * 座標）と色。通常はchip_background、高コントラストはwindow_text（ADR0057）。 */
     RECT mark;
     COLORREF mark_color;
 };
@@ -197,8 +197,9 @@ static bool initialize(struct failure_box *_Nonnull box, HWND dialog)
     box->dialog = dialog;
     box->dpi = GetDpiForWindow(dialog);
     /* 子を作る前に塗りを用意する。子の WM_CTLCOLOR* は作る途中から来る（ADR 0035 の決定 3）。 */
-    struct folio_palette palette = folio_palette_for(box->theme_choice);
-    box->mark_color = palette.chip_background;
+    struct folio_palette palette = folio_palette_from(folio_state_palette(box->state));
+    box->mark_color =
+        palette.contrast == FOLIO_CONTRAST_HIGH ? palette.current_text : palette.chip_background;
     switch (dialog_theme_create(&palette, &box->theme))
     {
     case DIALOG_THEME_READY:
@@ -219,6 +220,28 @@ static bool initialize(struct failure_box *_Nonnull box, HWND dialog)
     return true;
 }
 
+static void follow_appearance(struct failure_box *_Nonnull box)
+{
+    if (!dialog_theme_follow(box->dialog, box->state, &box->theme))
+    {
+        return;
+    }
+    struct folio_palette palette = folio_palette_from(folio_state_palette(box->state));
+    box->mark_color =
+        palette.contrast == FOLIO_CONTRAST_HIGH ? palette.current_text : palette.chip_background;
+}
+
+static void paint_mark(const struct failure_box *_Nonnull box)
+{
+    PAINTSTRUCT paint;
+    HDC device = BeginPaint(box->dialog, &paint);
+    if (device != nullptr)
+    {
+        icon_paint_fill(device, box->mark, ICON_PAINT_WARNING, box->mark_color);
+    }
+    EndPaint(box->dialog, &paint);
+}
+
 /* 塗りのメッセージを dialog_theme へ渡す。扱ったものは 0 でない値、扱わなければ FALSE。 */
 static INT_PTR paint_message(struct failure_box *_Nonnull box, UINT message, WPARAM wparam,
                              LPARAM lparam)
@@ -227,34 +250,26 @@ static INT_PTR paint_message(struct failure_box *_Nonnull box, UINT message, WPA
     {
         return FALSE;
     }
-    if (message == WM_CTLCOLORDLG)
+    switch (message)
     {
+    case WM_SYSCOLORCHANGE:
+    case WM_SETTINGCHANGE:
+        follow_appearance(box);
+        return TRUE;
+    case WM_CTLCOLORDLG:
         return (INT_PTR)dialog_theme_color(box->theme, DIALOG_THEME_DIALOG, (HDC)wparam);
-    }
-    if (message == WM_CTLCOLORSTATIC)
-    {
+    case WM_CTLCOLORSTATIC:
         return (INT_PTR)dialog_theme_color(box->theme, DIALOG_THEME_LABEL, (HDC)wparam);
-    }
-    if (message == WM_DRAWITEM)
-    {
+    case WM_DRAWITEM:
         /* 釦は 1 本で、それが既定（ADR 0035 の決定 4）。 */
         dialog_theme_draw_button(box->theme, (const DRAWITEMSTRUCT *)lparam,
                                  DIALOG_THEME_BUTTON_PRIMARY);
         return TRUE;
-    }
-    if (message == WM_PAINT)
-    {
+    case WM_PAINT:
         /* 地は WM_CTLCOLORDLG のブラシで消えているので、印だけを描く（補正 13・14）。 */
-        PAINTSTRUCT paint;
-        HDC device = BeginPaint(box->dialog, &paint);
-        if (device != nullptr)
-        {
-            icon_paint_fill(device, box->mark, ICON_PAINT_WARNING, box->mark_color);
-        }
-        EndPaint(box->dialog, &paint);
+        paint_mark(box);
         return TRUE;
-    }
-    if (message == WM_DPICHANGED)
+    case WM_DPICHANGED:
     {
         const RECT *_Nonnull suggested = (const RECT *)lparam;
         SetWindowPos(box->dialog, nullptr, suggested->left, suggested->top,
@@ -262,7 +277,9 @@ static INT_PTR paint_message(struct failure_box *_Nonnull box, UINT message, WPA
                      SWP_NOZORDER | SWP_NOACTIVATE);
         return TRUE;
     }
-    return FALSE;
+    default:
+        return FALSE;
+    }
 }
 
 static INT_PTR CALLBACK procedure(HWND dialog, UINT message, WPARAM wparam, LPARAM lparam)
@@ -322,9 +339,8 @@ void failure_box_show(HWND _Nullable owner, enum folio_state_outcome outcome,
     {
         return;
     }
-    struct failure_box box = {.units = utf16_text_units(text),
-                              .language = language,
-                              .theme_choice = folio_state_theme(state)};
+    struct failure_box box = {
+        .units = utf16_text_units(text), .language = language, .state = state};
     enum failure_box_outcome shown = show_themed(owner, &box);
     /* ブラシと書体は面が返った直後に捨てる（ADR 0035 の決定 2）。 */
     dialog_theme_destroy(box.theme);

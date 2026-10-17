@@ -22,4 +22,6 @@ constexpr size_t rgb_color_hex_length = 7;
 /* out は rgb_color_hex_length 文字ぶんの領域。終端は書かない。大文字で書く。 */
 void rgb_color_write_hex(struct rgb_color color, char *_Nonnull out);
 
+[[nodiscard]] bool rgb_color_equal(struct rgb_color left, struct rgb_color right);
+
 #endif

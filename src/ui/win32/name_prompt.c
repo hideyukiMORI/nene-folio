@@ -29,7 +29,7 @@ struct name_prompt
     HWND _Nullable discard;
     WNDPROC _Nullable original;
     HFONT _Nullable font;
-    /* 開く瞬間の palette を写した塗り。面は追随しない（ADR 0035 の決定 5）。 */
+    /* 初期paletteの塗り。OS色通知で実効色へ追随する（ADR0057）。 */
     struct dialog_theme *_Nullable theme;
     UINT dpi;
     /* 一覧が閉じたコンボより高いぶん、下の欄と面を下げる画素（ADR 0035 の補正 18）。 */
@@ -1019,6 +1019,10 @@ static INT_PTR paint_message(struct name_prompt *_Nonnull prompt, UINT message, 
     }
     switch (message)
     {
+    case WM_SYSCOLORCHANGE:
+    case WM_SETTINGCHANGE:
+        dialog_theme_follow(prompt->dialog, prompt->state, &prompt->theme);
+        return TRUE;
     case WM_CTLCOLORDLG:
     case WM_CTLCOLORSTATIC:
     case WM_CTLCOLOREDIT:
@@ -1128,7 +1132,7 @@ struct name_prompt_result name_prompt_show(HWND _Nonnull owner,
                                  .outcome = FOLIO_STATE_CANCELLED,
                                  .untitled = FOLIO_UNTITLED_PROTECT};
     /* 面を作る前に palette を写す。子の WM_CTLCOLOR* は作る途中から来て、
-     * 開いている間に主窓の palette が変わっても面は追随しない（ADR 0035 の決定 3・5）。 */
+     * OS色通知で主窓の実効paletteへ追随する（ADR0057）。 */
     switch (dialog_theme_create(palette, &prompt.theme))
     {
     case DIALOG_THEME_READY:

@@ -205,6 +205,16 @@ static COLORREF to_colorref(struct rgb_color color)
     return RGB(color.red, color.green, color.blue);
 }
 
+/* 装飾色も、その行で実際に載る背景と同じOS対を使う（ADR0057）。 */
+static COLORREF row_ink(const struct drawer_window *_Nonnull self, struct drawer_row row)
+{
+    if (self->palette.contrast == FOLIO_CONTRAST_HIGH)
+    {
+        return row.selected ? self->palette.selected_text : self->palette.category_text;
+    }
+    return to_colorref(row.color);
+}
+
 /* UTF-8 を確保せずに呼び出し側の入れ物へ写す（ADR 0030 の決定 5）。
  * 収まらない・壊れている場合は 0 を返し、呼び出し側は何も出さない。 */
 static int wide_units(const char *_Nonnull text, char16_t *_Nonnull out)
@@ -304,7 +314,9 @@ static void draw_filter_frame(const struct drawer_window *_Nonnull self, HDC dev
     }
     RECT bounds = filter_rect(self);
     InflateRect(&bounds, 1, 1);
-    frame_rect(device, bounds, self->palette.chip_background);
+    frame_rect(device, bounds,
+               self->palette.contrast == FOLIO_CONTRAST_HIGH ? self->palette.category_text
+                                                             : self->palette.chip_background);
 }
 
 static void draw_new_note(const struct drawer_window *_Nonnull self, HDC device)
@@ -349,7 +361,9 @@ static void draw_category_band(const struct drawer_window *_Nonnull self, HDC de
     SelectObject(device, self->mono_font);
     SetTextColor(device, self->palette.note_text);
     draw_header_count(self, device, count);
-    icon_paint_fill(device, button, ICON_PAINT_ADD, self->palette.category_text);
+    COLORREF ink = self->header_pressed == DRAWER_HEADER_NEW_CATEGORY ? self->palette.selected_text
+                                                                      : self->palette.category_text;
+    icon_paint_fill(device, button, ICON_PAINT_ADD, ink);
 }
 
 /* 固定帯。共通のブランド/窓操作の頭は親が所有する（ADR0047）。 */
@@ -394,11 +408,11 @@ static void draw_cursor_mark(const struct drawer_window *_Nonnull self, HDC devi
     RECT square = {right - mark, top, right, top + mark};
     if (index_focused(self))
     {
-        fill_rect(device, square, to_colorref(row.color));
+        fill_rect(device, square, row_ink(self, row));
     }
     else
     {
-        frame_rect(device, square, to_colorref(row.color));
+        frame_rect(device, square, row_ink(self, row));
     }
 }
 
@@ -420,7 +434,7 @@ static void draw_category(const struct drawer_window *_Nonnull self, HDC device,
                           (wchar_t)(L'0' + row.ordinal % 10), L'\0'};
     RECT number = {row.indent, row.top, width, row.top + row.height};
     SelectObject(device, self->mono_font);
-    SetTextColor(device, to_colorref(row.color));
+    SetTextColor(device, row_ink(self, row));
     DrawTextW(device, ordinal, 2, &number, DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
     RECT name = {row.indent + scale(base_name_offset, dpi), row.top,
                  width - scale(base_right_inset, dpi) * 2, row.top + row.height};
@@ -476,7 +490,9 @@ static void draw_drop_line(const struct drawer_window *_Nonnull self, HDC device
     struct drawer_row row = drawer_layout_row(layout, self->pressed_row);
     RECT line = {row.indent, self->target.line_y, width - scale(base_right_inset, dpi),
                  self->target.line_y + scale(base_line_thickness, dpi)};
-    fill_rect(device, line, to_colorref(row.color));
+    fill_rect(device, line,
+              self->palette.contrast == FOLIO_CONTRAST_HIGH ? self->palette.category_text
+                                                            : row_ink(self, row));
 }
 
 static void draw_rows(const struct drawer_window *_Nonnull self, HDC device,
@@ -591,11 +607,11 @@ static void paint_surface(const struct drawer_window *_Nonnull self, HDC device,
     /* 画素へ触る前に GDI の溜めを吐き出す。 */
     draw_header_focus(self, device);
     GdiFlush();
-    if (drawer_layout_overflow_above(layout))
+    if (self->palette.contrast != FOLIO_CONTRAST_HIGH && drawer_layout_overflow_above(layout))
     {
         draw_fade(self, pixels, client, true);
     }
-    if (drawer_layout_overflow_below(layout))
+    if (self->palette.contrast != FOLIO_CONTRAST_HIGH && drawer_layout_overflow_below(layout))
     {
         draw_fade(self, pixels, client, false);
     }
@@ -1205,7 +1221,7 @@ enum drawer_window_outcome drawer_window_create(HWND _Nonnull parent,
     }
     self->state = state;
     self->accessibility = accessibility;
-    self->palette = folio_palette_for(folio_state_theme(state));
+    self->palette = folio_palette_from(folio_state_palette(state));
     /* 未設定のカスタム色は白で始める（Windows の慣例。黒だと設定済みに見える）。
      * 実行中だけ持ち、保存しない（ADR 0010 の決定 4）。 */
     for (size_t slot = 0; slot < sizeof self->custom_colors / sizeof self->custom_colors[0]; ++slot)
@@ -1282,7 +1298,7 @@ void drawer_window_refont(struct drawer_window *_Nonnull drawer)
 /* テーマの切り替えで palette の写しを取り直して全面を描き直す（ADR 0031 の決定 6）。 */
 void drawer_window_recolor(struct drawer_window *_Nonnull drawer)
 {
-    drawer->palette = folio_palette_for(folio_state_theme(drawer->state));
+    drawer->palette = folio_palette_from(folio_state_palette(drawer->state));
     if (drawer->handle != nullptr)
     {
         InvalidateRect(drawer->handle, nullptr, FALSE);
