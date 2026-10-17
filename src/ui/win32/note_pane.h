@@ -5,7 +5,9 @@
 #define NENEFOLIO_NOTE_PANE_H
 
 #include "gutter_row.h"
+#include "note_pane_load_outcome.h"
 #include "note_pane_outcome.h"
+#include "note_pane_readiness.h"
 #include "note_pane_text_outcome.h"
 #include "note_search_span.h"
 #include "pane_mode.h"
@@ -31,12 +33,12 @@ constexpr int note_pane_control_id = 3;
 /* 編集本文だけを対象に主窓が呼ぶ。処理済みなら元のMSGを再翻訳しない（ADR 0019）。 */
 [[nodiscard]] bool note_pane_translate(const struct note_pane *_Nonnull pane,
                                        const MSG *_Nonnull message);
-/* UTF-8 RTFを流し込んで表示を置き換え、読み取り専用に戻す（閲覧・ADR 0002の#236補正）。 */
-void note_pane_render(struct note_pane *_Nonnull pane, const char *_Nonnull rtf, size_t length);
-/* 閲覧と同じ UTF-8 RTF を流し込み、入力を受け付ける（編集）。流し込みの経路は閲覧と 1 本
- * （ADR 0006 の #245 補正）。フォーカスは動かさない（区画を移すのは主窓の仕事・ADR 0013 の決定
- * 1）。 */
-void note_pane_edit(struct note_pane *_Nonnull pane, const char *_Nonnull rtf, size_t length);
+/* 同じUTF-8 RTF経路で閲覧/編集を投入する。完成した編集だけ書込可能にし変更印を消す。
+ * 失敗は未準備にし、読み取り専用（それも失敗なら入力停止）にする。本文rollbackはしない。 */
+[[nodiscard]] enum note_pane_load_outcome note_pane_load(struct note_pane *_Nonnull pane,
+                                                         const char *_Nonnull rtf, size_t length,
+                                                         enum pane_mode mode);
+[[nodiscard]] enum note_pane_readiness note_pane_readiness(const struct note_pane *_Nonnull pane);
 /* いま表示している本文を変換せず UTF-16 で取り出す（閲覧なら描画後・編集なら未保存本文）。
  * 段落区切りは CR 1 つで、位置は note_pane_select / note_pane_selection と 1 対 1。
  * 保存時の改行正規化は core が担う（ADR 0006 の #234 補正）。

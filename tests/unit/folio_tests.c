@@ -145,6 +145,18 @@ static void run_bom_boundary_tests(void)
     printf("BOM boundary tests passed\n");
 }
 
+static bool run_pane_load_target_tests(const char *_Nonnull argument)
+{
+    if (strcmp(argument, "--pane-load") == 0)
+    {
+        run_pane_load_state_tests();
+        run_ui_text_tests();
+        printf("pane load state and UI text tests passed\n");
+        return true;
+    }
+    return false;
+}
+
 int main(int argc, char *_Nonnull *_Nonnull argv)
 {
     if (argc == 2 && strcmp(argv[1], "--bom-boundary") == 0)
@@ -152,7 +164,8 @@ int main(int argc, char *_Nonnull *_Nonnull argv)
         run_bom_boundary_tests();
         return 0;
     }
-    if (argc == 2 && (run_document_settings_target_tests(argv[1]) || run_target_tests(argv[1])))
+    if (argc == 2 && (run_pane_load_target_tests(argv[1]) ||
+                      run_document_settings_target_tests(argv[1]) || run_target_tests(argv[1])))
     {
         return 0;
     }

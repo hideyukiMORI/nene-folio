@@ -419,7 +419,8 @@ static void decorate(HWND handle, struct folio_palette palette);
 static void refresh_tooltip_style(const struct folio_window *_Nonnull self);
 static void refresh_tooltip_rects(const struct folio_window *_Nonnull self);
 static void activate_tooltip(const struct folio_window *_Nonnull self);
-static void render_pane(const struct folio_window *_Nonnull self);
+static enum folio_state_outcome render_pane(struct folio_window *_Nonnull self);
+static enum folio_state_outcome from_pane_text(enum note_pane_text_outcome outcome);
 static void show_settings_surface(struct folio_window *_Nonnull self,
                                   const char *_Nonnull argument);
 static void command_not_found(struct folio_window *_Nonnull self);
@@ -664,9 +665,31 @@ static void refresh_font(struct folio_window *_Nonnull self, UINT dpi)
 }
 
 /* 下端の 1 行は本文の既存余白だけを使い、面の下端に同じ高さを予約する。 */
+static bool pane_unavailable(const struct folio_window *_Nonnull self)
+{
+    return self->pane != nullptr &&
+           note_pane_readiness(self->pane) == NOTE_PANE_READINESS_UNAVAILABLE;
+}
+
+static bool pane_streaming(const struct folio_window *_Nonnull self)
+{
+    return self->pane != nullptr &&
+           note_pane_readiness(self->pane) == NOTE_PANE_READINESS_STREAMING;
+}
+
+/* 同期投入が借りているapplicationのRTFを、再入操作で作り直させない。
+ * EN_CHANGE/EN_VSCROLLや描画は止めず、既存の行索引の無効化へ通す。 */
+static bool load_blocks_input(const struct folio_window *_Nonnull self, UINT message)
+{
+    return pane_streaming(self) &&
+           (message == WM_KEYDOWN || message == WM_CHAR || message == WM_LBUTTONDOWN ||
+            message == WM_CLOSE || message == WM_SETTINGCHANGE ||
+            message == folio_message_drawer_menu);
+}
+
 static int pane_notice_height(const struct folio_window *_Nonnull self)
 {
-    return pane_visible(self) && self->notice != PANE_NOTICE_NONE
+    return pane_visible(self) && (self->notice != PANE_NOTICE_NONE || pane_unavailable(self))
                ? scale(base_command_status_height, GetDpiForWindow(self->handle))
                : 0;
 }
@@ -1406,14 +1429,45 @@ static void arrange(struct folio_window *_Nonnull self)
     refresh_tooltip_rects(self);
 }
 
-static void render_pane(const struct folio_window *_Nonnull self)
+static enum folio_state_outcome from_pane_load(enum note_pane_load_outcome outcome)
 {
-    if (self->pane != nullptr)
+    switch (outcome)
     {
-        note_pane_render(self->pane, folio_state_pane_rtf(self->state),
-                         folio_state_pane_rtf_length(self->state));
+    case NOTE_PANE_LOAD_READY:
+        return FOLIO_STATE_READY;
+    case NOTE_PANE_LOAD_UNAVAILABLE:
+        return FOLIO_STATE_PANE_UNAVAILABLE;
+    case NOTE_PANE_LOAD_FAILED:
+    case NOTE_PANE_LOAD_BUSY:
+        return FOLIO_STATE_PANE_LOAD_FAILED;
+    }
+    return FOLIO_STATE_PANE_LOAD_FAILED;
+}
+
+/* 未準備の通知は状態から導く。高さが変わるときだけ、既存surfaceの下端予約を同期で更新する。 */
+static enum folio_state_outcome loaded_pane(struct folio_window *_Nonnull self,
+                                            bool was_unavailable,
+                                            enum note_pane_load_outcome outcome)
+{
+    if (was_unavailable != pane_unavailable(self))
+    {
+        arrange_command_contents(self);
     }
     InvalidateRect(self->handle, nullptr, FALSE);
+    return from_pane_load(outcome);
+}
+
+static enum folio_state_outcome render_pane(struct folio_window *_Nonnull self)
+{
+    if (self->pane == nullptr)
+    {
+        return FOLIO_STATE_PANE_UNAVAILABLE;
+    }
+    bool was_unavailable = pane_unavailable(self);
+    enum note_pane_load_outcome outcome =
+        note_pane_load(self->pane, folio_state_pane_rtf(self->state),
+                       folio_state_pane_rtf_length(self->state), PANE_MODE_VIEW);
+    return loaded_pane(self, was_unavailable, outcome);
 }
 
 /* value が low 未満なら 0、high 以上なら 2、間なら 1。 */
@@ -2965,20 +3019,25 @@ static void draw_gutter(const struct folio_window *_Nonnull self, HDC device, RE
 static void draw_pane_notice(const struct folio_window *_Nonnull self, HDC device, RECT client)
 {
     enum ui_text line = UI_TEXT_TRASH_NOTE_COMPLETED;
-    switch (self->notice)
+    if (pane_unavailable(self))
     {
-    case PANE_NOTICE_NONE:
-        return;
-    case PANE_NOTICE_TRASH_COMPLETED:
-        line = UI_TEXT_TRASH_NOTE_COMPLETED;
-        break;
-    case PANE_NOTICE_NOTE_UNEDITABLE:
-        line = UI_TEXT_NOTE_OPENED_IN_VIEW;
-        break;
-    case PANE_NOTICE_SESSION_BLOCKED:
-        line = self->session_reason;
-        break;
+        line = UI_TEXT_FAILURE_PANE_LOAD_FAILED;
     }
+    else
+        switch (self->notice)
+        {
+        case PANE_NOTICE_NONE:
+            return;
+        case PANE_NOTICE_TRASH_COMPLETED:
+            line = UI_TEXT_TRASH_NOTE_COMPLETED;
+            break;
+        case PANE_NOTICE_NOTE_UNEDITABLE:
+            line = UI_TEXT_NOTE_OPENED_IN_VIEW;
+            break;
+        case PANE_NOTICE_SESSION_BLOCKED:
+            line = self->session_reason;
+            break;
+        }
     UINT dpi = GetDpiForWindow(self->handle);
     RECT bounds = {pane_bounds(self).left, client.bottom - pane_notice_height(self),
                    client.right - scale(base_close_margin, dpi), client.bottom};
@@ -3121,24 +3180,16 @@ static void paint_pane(struct folio_window *_Nonnull self)
     check_pane_inset(self);
 }
 
-/* 編集中の本文を UI から取り出す。取り出せない理由は 1 つに畳む。 */
+/* 保存も検索も同じ本文取得の結果変換を使う。 */
 static enum folio_state_outcome take_text(const struct folio_window *_Nonnull self,
                                           const char16_t *_Nonnull *_Nonnull units,
                                           size_t *_Nonnull count)
 {
     if (self->pane == nullptr)
     {
-        return FOLIO_STATE_OUT_OF_MEMORY;
+        return FOLIO_STATE_PANE_UNAVAILABLE;
     }
-    switch (note_pane_text(self->pane, units, count))
-    {
-    case NOTE_PANE_TEXT_TAKEN:
-        return FOLIO_STATE_READY;
-    case NOTE_PANE_TEXT_UNAVAILABLE:
-    case NOTE_PANE_TEXT_OUT_OF_MEMORY:
-        return FOLIO_STATE_OUT_OF_MEMORY;
-    }
-    return FOLIO_STATE_OUT_OF_MEMORY;
+    return from_pane_text(note_pane_text(self->pane, units, count));
 }
 
 /* ドロワーへ描き直しを頼む。選択の印もフォーカスの印もドロワーが描く（ADR 0013 の決定 8）。 */
@@ -3164,35 +3215,41 @@ static void focus_pane(struct folio_window *_Nonnull self)
 
 /* application が置いた編集 RTF（folio_state_pane_edit_rtf）を編集本文へ流し込む。
  * 編集の入口はすべてここを通る（ADR 0006 の #245 補正）。 */
-static void pour_edit_rtf(struct folio_window *_Nonnull self)
+static enum folio_state_outcome pour_edit_rtf(struct folio_window *_Nonnull self)
 {
-    if (self->pane != nullptr)
+    if (self->pane == nullptr)
     {
-        note_pane_edit(self->pane, folio_state_edit_rtf(self->state),
-                       folio_state_edit_rtf_length(self->state));
+        return FOLIO_STATE_PANE_UNAVAILABLE;
     }
+    bool was_unavailable = pane_unavailable(self);
+    enum note_pane_load_outcome outcome =
+        note_pane_load(self->pane, folio_state_edit_rtf(self->state),
+                       folio_state_edit_rtf_length(self->state), PANE_MODE_EDIT);
+    return loaded_pane(self, was_unavailable, outcome);
 }
 
 /* 選択中のノートを、いまのモードのまま右ペインへ写す（ADR 0013 の決定 4 の (iii)）。
  * 編集中は本文を閲覧と同じ UTF-8 RTF で流し込むだけで、フォーカスは動かさない（ADR 0006 の #245
  * 補正）。 */
-static void reflect_note(struct folio_window *_Nonnull self)
+static enum folio_state_outcome reflect_note(struct folio_window *_Nonnull self)
 {
     set_pane_notice(self, PANE_NOTICE_NONE);
     switch (folio_state_pane_mode(self->state))
     {
     case PANE_MODE_VIEW:
-        render_pane(self);
-        return;
+        return render_pane(self);
     case PANE_MODE_EDIT:
-        pour_edit_rtf(self);
-        InvalidateRect(self->handle, nullptr, FALSE);
-        return;
+        return pour_edit_rtf(self);
     }
+    return FOLIO_STATE_PANE_LOAD_FAILED;
 }
 
 static enum folio_state_outcome show_note(struct folio_window *_Nonnull self)
 {
+    if (pane_streaming(self))
+    {
+        return FOLIO_STATE_PANE_LOAD_FAILED;
+    }
     if (self->pane == nullptr)
     {
         return FOLIO_STATE_OUT_OF_MEMORY;
@@ -3205,19 +3262,22 @@ static enum folio_state_outcome show_note(struct folio_window *_Nonnull self)
             return prepared;
         }
     }
-    reflect_note(self);
-    return FOLIO_STATE_READY;
+    return reflect_note(self);
 }
 
 /* 初回だけ本文を用意して編集へ入る。同じmodeへの操作は未保存本文とUndoを保つ。 */
 static enum folio_state_outcome enter_edit(struct folio_window *_Nonnull self)
 {
-    if (folio_state_pane_mode(self->state) == PANE_MODE_EDIT)
+    if (pane_streaming(self))
+    {
+        return FOLIO_STATE_PANE_LOAD_FAILED;
+    }
+    if (folio_state_pane_mode(self->state) == PANE_MODE_EDIT && self->pane != nullptr &&
+        note_pane_readiness(self->pane) == NOTE_PANE_READINESS_READY)
     {
         return FOLIO_STATE_READY;
     }
-    struct note_ref selected = {.category = 0, .note = 0};
-    if (!folio_state_selection(self->state, &selected))
+    if (folio_state_document_kind(self->state) == FOLIO_DOCUMENT_NONE)
     {
         return FOLIO_STATE_NOTHING_SELECTED;
     }
@@ -3229,8 +3289,7 @@ static enum folio_state_outcome enter_edit(struct folio_window *_Nonnull self)
     enum folio_state_outcome outcome = folio_state_begin_edit(self->state);
     if (outcome == FOLIO_STATE_READY)
     {
-        pour_edit_rtf(self);
-        InvalidateRect(self->handle, nullptr, FALSE);
+        outcome = pour_edit_rtf(self);
     }
     return outcome;
 }
@@ -3240,7 +3299,7 @@ static enum folio_state_outcome flush_edit(struct folio_window *_Nonnull self)
 {
     if (folio_state_pane_mode(self->state) == PANE_MODE_VIEW)
     {
-        return store_body(self);
+        return pane_unavailable(self) ? render_pane(self) : store_body(self);
     }
     if (folio_state_document_kind(self->state) == FOLIO_DOCUMENT_UNTITLED)
     {
@@ -3259,7 +3318,7 @@ static enum folio_state_outcome flush_edit(struct folio_window *_Nonnull self)
     }
     if (outcome == FOLIO_STATE_READY)
     {
-        render_pane(self);
+        outcome = render_pane(self);
         /* NOTEでは可視pane、それ以外は従来の索引へ戻す（ADR0047）。 */
         SetFocus(surface_return_target(self, self->handle));
     }
@@ -3269,6 +3328,10 @@ static enum folio_state_outcome flush_edit(struct folio_window *_Nonnull self)
 /* 編集中の本文を取り出して保存する。取り出せない理由も保存の失敗も 1 つの結果に写す。 */
 static enum folio_state_outcome store_body(const struct folio_window *_Nonnull self)
 {
+    if (self->pane != nullptr && note_pane_readiness(self->pane) != NOTE_PANE_READINESS_READY)
+    {
+        return FOLIO_STATE_PANE_LOAD_FAILED;
+    }
     enum folio_state_outcome prepared = prepare_name_operation(self);
     if (prepared != FOLIO_STATE_READY)
     {
@@ -3419,6 +3482,7 @@ static const bool inline_outcomes[] = {
     [FOLIO_STATE_SEARCH_MALFORMED] = false,
     [FOLIO_STATE_FILTERED] = false,
     [FOLIO_STATE_PANE_UNAVAILABLE] = false,
+    [FOLIO_STATE_PANE_LOAD_FAILED] = false,
     [FOLIO_STATE_OUT_OF_MEMORY] = false,
     [FOLIO_STATE_NAME_REQUIRED] = false,
     [FOLIO_STATE_INVALID_NAME] = false,
@@ -3543,6 +3607,8 @@ static enum folio_state_outcome from_pane_text(enum note_pane_text_outcome outco
         return FOLIO_STATE_READY;
     case NOTE_PANE_TEXT_UNAVAILABLE:
         return FOLIO_STATE_PANE_UNAVAILABLE;
+    case NOTE_PANE_TEXT_NOT_READY:
+        return FOLIO_STATE_PANE_LOAD_FAILED;
     case NOTE_PANE_TEXT_OUT_OF_MEMORY:
         return FOLIO_STATE_OUT_OF_MEMORY;
     }
@@ -3567,11 +3633,7 @@ static enum folio_state_outcome take_display_text(const struct folio_window *_No
                                                   const char16_t *_Nonnull *_Nonnull units,
                                                   size_t *_Nonnull count)
 {
-    if (self->pane == nullptr)
-    {
-        return FOLIO_STATE_PANE_UNAVAILABLE;
-    }
-    return from_pane_text(note_pane_text(self->pane, units, count));
+    return take_text(self, units, count);
 }
 
 /* 表示中の平文と覚えている語を core へ渡す。本文は UI が貸すだけで、判断は core が持つ。 */
@@ -4616,9 +4678,14 @@ static void new_note_at(struct folio_window *_Nonnull self, size_t category)
     }
     show_pane_layout(self);
     hide_command_surface(self);
-    pour_edit_rtf(self);
+    saved = pour_edit_rtf(self);
     redraw_drawer(self);
     InvalidateRect(self->handle, nullptr, FALSE);
+    if (saved != FOLIO_STATE_READY)
+    {
+        command_failure(self, saved);
+        return;
+    }
     focus_pane(self);
 }
 
@@ -4671,16 +4738,17 @@ static void apply_number(struct folio_window *_Nonnull self, bool number)
  * **実測の補正**: EM_EXSETSEL は EM_SCROLLCARET を送らなくても選択を見える位置へ寄せる。
  * 空の選択を戻すと先頭へ飛ぶので、選んでいる一致があるときだけ戻す（ADR 0023 の
  * ハイライトは保ち、選んでいないときは流し直しが保ったスクロール位置をそのまま残す）。 */
-static void restream_pane(const struct folio_window *_Nonnull self)
+static enum folio_state_outcome restream_pane(struct folio_window *_Nonnull self)
 {
     size_t start = 0;
     size_t end = 0;
     bool had = note_pane_selection(self->pane, &start, &end);
-    render_pane(self);
-    if (had && end > start)
+    enum folio_state_outcome outcome = render_pane(self);
+    if (outcome == FOLIO_STATE_READY && had && end > start)
     {
         note_pane_restore_selection(self->pane, (struct note_search_span){start, end});
     }
+    return outcome;
 }
 
 /* 色を持つものを全部当て直す（ADR 0031 の決定 6）。palette の写しは主窓・ドロワー・
@@ -4688,33 +4756,42 @@ static void restream_pane(const struct folio_window *_Nonnull self)
  * 閲覧は選択を退避して流し直し、編集は色を当て直すだけ（本文・Undo・変更印を守る）。
  * **最初に見える論理行を退避して戻す**（ADR 0031 の 2026-09-22 の補正 2）。
  * キャレットが画面の外にあると EM_SETCHARFORMAT がキャレットまでスクロールするため。 */
-static void recolor_pane(const struct folio_window *_Nonnull self)
+static enum folio_state_outcome recolor_pane(struct folio_window *_Nonnull self)
 {
     if (self->pane == nullptr)
     {
-        return;
+        return FOLIO_STATE_PANE_UNAVAILABLE;
     }
     enum pane_mode mode = folio_state_pane_mode(self->state);
     size_t line = note_pane_first_visible_line(self->pane);
     note_pane_recolor(self->pane, self->palette.pane, self->palette.editor_text, mode);
+    enum folio_state_outcome outcome = FOLIO_STATE_READY;
     if (mode == PANE_MODE_VIEW)
     {
-        restream_pane(self);
+        outcome = restream_pane(self);
     }
-    if (line > 0)
+    if (outcome == FOLIO_STATE_READY && line > 0)
     {
         note_pane_scroll_to_line(self->pane, line);
     }
+    return outcome;
+}
+
+static void apply_pane_face(const struct folio_window *_Nonnull self)
+{
+    wchar_t face[LF_FACESIZE];
+    ui_face_for(folio_state_language(self->state), face);
+    note_pane_reface(self->pane, face);
 }
 
 /* 言語の切り替えで本文の書体を当て直す（ADR 0032 の決定 6(c)）。
  * 編集は既定書式の face だけを当て、閲覧は新しい fonttbl の RTF を流し直す（順が違う）。
  * face は再折り返しを起こすので、最初に見える論理行を退避して最後に戻す。 */
-static void reface_pane(const struct folio_window *_Nonnull self)
+static enum folio_state_outcome reface_pane(struct folio_window *_Nonnull self)
 {
     if (self->pane == nullptr)
     {
-        return;
+        return FOLIO_STATE_PANE_UNAVAILABLE;
     }
     size_t line = note_pane_first_visible_line(self->pane);
     /* **既定書式の face はモードによらず当てる。** `SCF_DEFAULT` は既存の run を塗らないので、
@@ -4722,17 +4799,17 @@ static void reface_pane(const struct folio_window *_Nonnull self)
      * 閲覧のまま言語を変えたあとに `i` で編集へ入った本文が RichEdit の既定 face になる
      * （平文の流し込みは既定書式で描かれる）。`note_pane_recolor` が閲覧でも `SCF_DEFAULT` を
      * 無条件に当てているのと同じ理屈である（ADR 0031 の補正 9・ADR 0032 の補正 4）。 */
-    wchar_t face[LF_FACESIZE];
-    ui_face_for(folio_state_language(self->state), face);
-    note_pane_reface(self->pane, face);
+    apply_pane_face(self);
+    enum folio_state_outcome outcome = FOLIO_STATE_READY;
     if (folio_state_pane_mode(self->state) == PANE_MODE_VIEW)
     {
-        restream_pane(self);
+        outcome = restream_pane(self);
     }
-    if (line > 0)
+    if (outcome == FOLIO_STATE_READY && line > 0)
     {
         note_pane_scroll_to_line(self->pane, line);
     }
+    return outcome;
 }
 
 static void recolor_window(struct folio_window *_Nonnull self)
@@ -4753,7 +4830,7 @@ static void recolor_window(struct folio_window *_Nonnull self)
     {
         drawer_window_recolor(self->drawer);
     }
-    recolor_pane(self);
+    enum folio_state_outcome outcome = recolor_pane(self);
     InvalidateRect(self->handle, nullptr, FALSE);
     /* 主窓は WS_CLIPCHILDREN なので、上の無効化は子の EDIT に届かない（#121）。 */
     if (self->filter_input != nullptr)
@@ -4761,12 +4838,20 @@ static void recolor_window(struct folio_window *_Nonnull self)
         InvalidateRect(self->filter_input, nullptr, TRUE);
     }
     redraw_command_layer(self);
+    if (outcome != FOLIO_STATE_READY && !session_busy(self))
+    {
+        command_failure(self, outcome);
+    }
 }
 
 /* 2 つの入口（設定画面の Enter と `:set theme=`）が通る唯一の意図（ADR 0031 の決定 3）。
  * 設定画面は採用しても閉じず、印を移したまま残る（決定 7）。 */
 static void apply_theme(struct folio_window *_Nonnull self, enum folio_theme_choice choice)
 {
+    if (pane_streaming(self))
+    {
+        return;
+    }
     enum folio_theme before = folio_state_theme(self->state);
     enum folio_state_outcome outcome = folio_state_set_theme(self->state, choice);
     if (outcome != FOLIO_STATE_READY)
@@ -4799,15 +4884,23 @@ static void relanguage_window(struct folio_window *_Nonnull self)
     {
         drawer_window_refont(self->drawer);
     }
-    reface_pane(self);
+    enum folio_state_outcome outcome = reface_pane(self);
     InvalidateRect(self->handle, nullptr, FALSE);
     redraw_command_layer(self);
+    if (outcome != FOLIO_STATE_READY && !session_busy(self))
+    {
+        command_failure(self, outcome);
+    }
 }
 
 /* 2 つの入口（設定画面の Enter と `:set language=`）が通る唯一の意図（ADR 0032 の決定 5）。
  * 設定画面は採用しても閉じず、印を移したまま残る（apply_theme と同じ流儀）。 */
 static void apply_language(struct folio_window *_Nonnull self, enum folio_language language)
 {
+    if (pane_streaming(self))
+    {
+        return;
+    }
     enum folio_language before = folio_state_language(self->state);
     enum folio_state_outcome outcome = folio_state_set_language(self->state, language);
     if (outcome != FOLIO_STATE_READY)
@@ -5169,9 +5262,15 @@ static void trash_note_at(struct folio_window *_Nonnull self, struct note_ref ta
     if (current)
     {
         hide_command_surface(self);
-        render_pane(self);
+        enum folio_state_outcome loaded = render_pane(self);
         arrange(self);
         SetFocus(surface_return_target(self, self->handle));
+        if (loaded != FOLIO_STATE_READY)
+        {
+            command_failure(self, loaded);
+            redraw_drawer(self);
+            return;
+        }
     }
     redraw_drawer(self);
     InvalidateRect(self->handle, nullptr, FALSE);
@@ -5439,7 +5538,7 @@ static void (*_Nonnull const command_runs[])(struct folio_window *_Nonnull self,
 static void execute_command(struct folio_window *_Nonnull self, enum folio_command command,
                             const char *_Nonnull argument)
 {
-    if (self->removal_running || session_busy(self))
+    if (self->removal_running || session_busy(self) || pane_streaming(self))
     {
         return;
     }
@@ -5478,15 +5577,19 @@ static enum folio_state_outcome opened(struct folio_window *_Nonnull self,
     {
         return selected;
     }
-    reflect_note(self);
+    enum folio_state_outcome loaded = reflect_note(self);
     redraw_drawer(self);
-    return FOLIO_STATE_READY;
+    return loaded;
 }
 
 /* ノートを切り替える唯一の経路（ADR 0013 の決定 4）。保存できなければ選択は動かない。 */
 static enum folio_state_outcome switch_note(struct folio_window *_Nonnull self, size_t category,
                                             size_t note)
 {
+    if (pane_streaming(self))
+    {
+        return FOLIO_STATE_PANE_LOAD_FAILED;
+    }
     if (self->removal_running || session_busy(self))
     {
         return FOLIO_STATE_CANCELLED;
@@ -5620,8 +5723,7 @@ static enum folio_state_outcome reopen_if_moved(struct folio_window *_Nonnull se
     {
         return FOLIO_STATE_READY;
     }
-    reflect_note(self);
-    return FOLIO_STATE_READY;
+    return reflect_note(self);
 }
 
 /* h / l。カーソルの行のカテゴリを折り畳む／展開する（ADR 0015 の決定 3）。
@@ -5827,11 +5929,15 @@ static void click_settings_surface(struct folio_window *_Nonnull self, POINT poi
  * 戻る。版の本文は従来どおり UTF-16 の置き換えで入れる（ADR 0006 の #245 補正）。 */
 static enum folio_state_outcome pour_history(struct folio_window *_Nonnull self,
                                              const struct utf16_text *_Nonnull restored,
-                                             bool from_view)
+                                             bool needs_base)
 {
-    if (from_view)
+    if (needs_base)
     {
-        pour_edit_rtf(self);
+        enum folio_state_outcome loaded = pour_edit_rtf(self);
+        if (loaded != FOLIO_STATE_READY)
+        {
+            return loaded;
+        }
     }
     const char16_t *_Nonnull text = u"";
     size_t length = 0;
@@ -5850,22 +5956,28 @@ static enum folio_state_outcome pour_history(struct folio_window *_Nonnull self,
 /* 採用の前に作る写し（版の本文の UTF-16 と、閲覧中なら保存済みの本文の編集 RTF）。確保に
  * 失敗しても application は本文もモードも変えていない（編集 RTF の slot は前のまま保たれる）。 */
 static bool history_units(struct folio_window *_Nonnull self, const struct note_text *_Nonnull body,
-                          struct utf16_text *_Nullable *_Nonnull restored, bool *_Nonnull from_view)
+                          struct utf16_text *_Nullable *_Nonnull restored,
+                          bool *_Nonnull needs_base)
 {
     if (utf16_text_create(note_text_bytes(body), note_text_length(body), restored) !=
         UTF16_TEXT_CONVERTED)
     {
         return false;
     }
-    *from_view = folio_state_pane_mode(self->state) == PANE_MODE_VIEW;
-    return !*from_view || folio_state_pane_edit_rtf(self->state) == FOLIO_STATE_READY;
+    *needs_base = folio_state_pane_mode(self->state) == PANE_MODE_VIEW ||
+                  note_pane_readiness(self->pane) != NOTE_PANE_READINESS_READY;
+    return !*needs_base || folio_state_pane_edit_rtf(self->state) == FOLIO_STATE_READY;
 }
 
 /* カーソルの版を採用する（決定 9・14）。写しは restore より先に作る。restore が閲覧から EDIT へ
  * 移すので enter_edit は呼ばない（enter_edit は EDIT なら何もせず、先に呼ぶと読めない版でも
- * 編集へ入ってしまう）。RichEdit 側の切り替えは pour_history が note_pane_edit で行う。 */
+ * 編集へ入ってしまう）。RichEdit 側の切り替えは pour_history が note_pane_load で行う。 */
 static void adopt_history_row(struct folio_window *_Nonnull self)
 {
+    if (pane_streaming(self))
+    {
+        return;
+    }
     size_t index = self->command_selection;
     const struct note_text *_Nullable body = folio_state_history_body(self->state, index);
     if (body == nullptr || self->pane == nullptr)
@@ -5877,13 +5989,13 @@ static void adopt_history_row(struct folio_window *_Nonnull self)
         return;
     }
     struct utf16_text *_Nullable restored = nullptr;
-    bool from_view = false;
-    enum folio_state_outcome outcome = history_units(self, body, &restored, &from_view)
+    bool needs_base = false;
+    enum folio_state_outcome outcome = history_units(self, body, &restored, &needs_base)
                                            ? folio_state_restore_history(self->state, index)
                                            : FOLIO_STATE_OUT_OF_MEMORY;
     if (outcome == FOLIO_STATE_READY && restored != nullptr)
     {
-        outcome = pour_history(self, restored, from_view);
+        outcome = pour_history(self, restored, needs_base);
     }
     utf16_text_destroy(restored);
     if (outcome != FOLIO_STATE_READY)
@@ -6196,7 +6308,9 @@ static void click_caption(struct folio_window *_Nonnull self, LPARAM lparam)
         return;
     }
     enum pane_mode chip = PANE_MODE_VIEW;
-    if (!chip_at(self, point, &chip) || chip == folio_state_pane_mode(self->state))
+    if (!chip_at(self, point, &chip) ||
+        (chip == folio_state_pane_mode(self->state) && self->pane != nullptr &&
+         note_pane_readiness(self->pane) == NOTE_PANE_READINESS_READY))
     {
         return;
     }
@@ -6326,7 +6440,7 @@ static LRESULT tooltip_display(struct folio_window *_Nonnull self, LPARAM lparam
 static LRESULT on_notify(struct folio_window *_Nonnull self, LPARAM lparam)
 {
     const NMHDR *_Nonnull header = (const NMHDR *)lparam;
-    if (session_busy(self) && header->code == EN_MSGFILTER)
+    if ((session_busy(self) || pane_streaming(self)) && header->code == EN_MSGFILTER)
     {
         return 1;
     }
@@ -6944,7 +7058,7 @@ static LRESULT CALLBACK command_input_procedure(HWND window, UINT message, WPARA
     {
         return DefWindowProcW(window, message, wparam, lparam);
     }
-    if (session_blocks_message(self, message))
+    if (session_blocks_message(self, message) || load_blocks_input(self, message))
     {
         return 0;
     }
@@ -7449,7 +7563,7 @@ static LRESULT on_create(HWND window, LPARAM lparam)
         return -1;
     }
     /* 既定書式の face は core の表が決める（ADR 0032 の決定 4）。作った直後に 1 回当てる。 */
-    reface_pane(self);
+    apply_pane_face(self);
     if (!create_filter_input(self, window))
     {
         return -1;
@@ -7473,8 +7587,7 @@ static LRESULT on_create(HWND window, LPARAM lparam)
     {
         return -1;
     }
-    render_pane(self);
-    return 0;
+    return render_pane(self) == FOLIO_STATE_READY ? 0 : -1;
 }
 
 /* OS が勧める矩形へ移し、字の大きさを取り直す（FR-013）。 */
@@ -7581,7 +7694,7 @@ static LRESULT CALLBACK command_layer_procedure(HWND window, UINT message, WPARA
     {
         return DefWindowProcW(window, message, wparam, lparam);
     }
-    if (session_blocks_message(self, message))
+    if (session_blocks_message(self, message) || load_blocks_input(self, message))
     {
         return 0;
     }
@@ -7847,6 +7960,11 @@ static void normalize_root_focus(const struct folio_window *_Nonnull self)
 
 static LRESULT on_window_command(struct folio_window *_Nonnull self, WPARAM wparam, LPARAM lparam)
 {
+    if (pane_streaming(self))
+    {
+        (void)pane_notification(self, wparam, lparam);
+        return 0;
+    }
     if ((HWND)lparam == self->filter_input && HIWORD(wparam) == EN_CHANGE)
     {
         filter_input_changed(self);
@@ -8033,7 +8151,7 @@ static LRESULT CALLBACK window_procedure(HWND window, UINT message, WPARAM wpara
     {
         return DefWindowProcW(window, message, wparam, lparam);
     }
-    if (session_blocks_message(self, message))
+    if (session_blocks_message(self, message) || load_blocks_input(self, message))
     {
         return 0;
     }

@@ -133,6 +133,9 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
         {"設定（data/settings.json）を書けませんでした。設定は変えていません。",
          "Could not write data/settings.json. The settings are unchanged.",
          "无法写入设置（data/settings.json）。设置未改变。"},
+    [UI_TEXT_FAILURE_PANE_LOAD_FAILED] = {"本文読込失敗。同じモードで再試行。",
+                                          "Load failed. Retry the current mode.",
+                                          "正文加载失败。请重试当前模式。"},
     [UI_TEXT_FAILURE_PANE_UNAVAILABLE] = {"表示中の本文を取り出せませんでした。探していません。",
                                           "Could not read the displayed body. "
                                           "Nothing was searched.",

@@ -6,6 +6,7 @@ enum note_pane_text_outcome : unsigned char
 {
     NOTE_PANE_TEXT_TAKEN,
     NOTE_PANE_TEXT_UNAVAILABLE, /* 控えのウィンドウが既に無い */
+    NOTE_PANE_TEXT_NOT_READY,   /* 投入中または投入失敗後。不完全本文を貸さない（ADR0054） */
     NOTE_PANE_TEXT_OUT_OF_MEMORY
 };
 

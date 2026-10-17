@@ -79,6 +79,7 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_FAILURE_SETTINGS_STORE_FAILED] =
         "設定（data/settings.json）を書けませんでした。設定は変えていません。",
     [UI_TEXT_FAILURE_PANE_UNAVAILABLE] = "表示中の本文を取り出せませんでした。探していません。",
+    [UI_TEXT_FAILURE_PANE_LOAD_FAILED] = "本文読込失敗。同じモードで再試行。",
     [UI_TEXT_FAILURE_REPLACE_NO_PATTERN] = "置換するパターンを入れてください。",
     [UI_TEXT_FAILURE_REPLACE_BAD_PATTERN] = "正規表現の書き方が違います。",
     [UI_TEXT_FAILURE_REPLACE_BAD_TEMPLATE] =
