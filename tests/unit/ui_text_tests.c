@@ -79,8 +79,7 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_FAILURE_SETTINGS_STORE_FAILED] =
         "設定（data/settings.json）を書けませんでした。設定は変えていません。",
     [UI_TEXT_FAILURE_PANE_UNAVAILABLE] = "表示中の本文を取り出せませんでした。探していません。",
-    [UI_TEXT_FAILURE_PANE_LOAD_FAILED] =
-        "本文の準備ができていません。「閲覧」か「編集」で再試行してください。",
+    [UI_TEXT_FAILURE_PANE_LOAD_FAILED] = "本文読込失敗。同じモードで再試行。",
     [UI_TEXT_FAILURE_REPLACE_NO_PATTERN] = "置換するパターンを入れてください。",
     [UI_TEXT_FAILURE_REPLACE_BAD_PATTERN] = "正規表現の書き方が違います。",
     [UI_TEXT_FAILURE_REPLACE_BAD_TEMPLATE] =
@@ -210,6 +209,11 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_HELP_INDEX_FOLD] = "索引  h/l 折畳/展開 / Enter 本文",
     [UI_TEXT_HELP_INDEX_SCROLL] = "索引  ↑↓ / PgUp/PgDn スクロール",
     [UI_TEXT_HELP_EDITOR_ESCAPE] = "本文  Esc 保存して索引へ（編集は維持）",
+    [UI_TEXT_SESSION_UNTITLED] = "無題のノートを保存してから終了してください。",
+    [UI_TEXT_SESSION_RENAME_PENDING] = "名前変更の復旧を完了してから終了してください。",
+    [UI_TEXT_SESSION_COMPOSING] = "文字の変換を確定してから終了してください。",
+    [UI_TEXT_SESSION_BUSY] = "開いている操作を終えてから終了してください。",
+    [UI_TEXT_SESSION_SAVE_INCOMPLETE] = "保存処理が未完了です。保存を再試行してください。",
     [UI_TEXT_TITLE_UNTITLED] = "無題（未保存）",
     [UI_TEXT_TITLE_RECOVERING] = "名前変更の復旧待ち",
     [UI_TEXT_TITLE_CATEGORY_RECOVERING] = "復旧待ち",

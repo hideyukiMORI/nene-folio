@@ -26,6 +26,7 @@
 #include "pane_notice.h"
 #include "product_version.h"
 #include "replace_edit.h"
+#include "session_phase.h"
 #include "settings_row_kind.h"
 #include "theme_row.h"
 #include "ui_face.h"
@@ -94,6 +95,10 @@ struct folio_window
     bool command_unknown;
     enum pane_notice notice;
     bool removal_running;
+    enum session_phase session_phase;
+    HWND _Nullable session_return_focus;
+    enum ui_text session_reason;
+    bool session_reason_owned;
     bool layout_changing; /* 同期WM_SIZEを含む一つの表示切替の間だけ立つ。 */
     int wide_width;       /* DRAWER直前の通常幅（logical px）。 */
     WINDOWPLACEMENT wide_placement;
@@ -339,6 +344,54 @@ static HWND surface_return_target(const struct folio_window *_Nonnull self, HWND
 static void redraw_drawer(const struct folio_window *_Nonnull self);
 static void redraw_command_layer(const struct folio_window *_Nonnull self);
 static void rearrange_keeping_line(struct folio_window *_Nonnull self);
+
+static bool session_busy(const struct folio_window *_Nonnull self)
+{
+    return self->session_phase != SESSION_PHASE_IDLE;
+}
+
+/* disableだけでは既に届いたmessageを止めない。通常loopと各入力窓が同じ集合を使う。 */
+static bool session_input_message(UINT message)
+{
+    if ((message >= WM_KEYFIRST && message <= WM_KEYLAST) ||
+        (message >= WM_MOUSEFIRST && message <= WM_MOUSELAST))
+    {
+        return true;
+    }
+    switch (message)
+    {
+    case WM_COMMAND:
+    case WM_SYSCOMMAND:
+    case WM_CLOSE:
+    case WM_CONTEXTMENU:
+    case WM_IME_STARTCOMPOSITION:
+    case WM_IME_COMPOSITION:
+    case WM_IME_ENDCOMPOSITION:
+    case WM_IME_CHAR:
+    case WM_IME_KEYDOWN:
+    case WM_IME_KEYUP:
+    case folio_message_select_note:
+    case folio_message_drawer_menu:
+    case folio_message_command_focus_lost:
+        return true;
+    default:
+        /* Win32のmessageは開いた集合（C-017）。 */
+        return false;
+    }
+}
+
+static bool session_blocks_message(const struct folio_window *_Nonnull self, UINT message)
+{
+    return session_busy(self) && session_input_message(message);
+}
+
+/* 同じthreadの別トップレベルやモーダルの入力は、主窓の承認待ちで消費しない。 */
+static bool session_blocks_queued_input(const struct folio_window *_Nonnull self,
+                                        const MSG *_Nonnull message)
+{
+    return session_blocks_message(self, message->message) &&
+           (message->hwnd == self->handle || IsChild(self->handle, message->hwnd));
+}
 
 /* 先行復旧は元要求より前。READYは復旧だけの成功で、対象/本文/名前は呼出し元で取り直す。 */
 static enum folio_state_outcome prepare_name_operation(const struct folio_window *_Nonnull self)
@@ -1186,17 +1239,11 @@ static bool arrange_settings_backdrop(const struct folio_window *_Nonnull self)
     return true;
 }
 
-static void arrange_command_input(struct folio_window *_Nonnull self)
+/* 配置本体は通常更新とnotice更新が共有する。暗幕はnoticeの高さに依存しない。 */
+static void arrange_command_contents(struct folio_window *_Nonnull self)
 {
-    activate_tooltip(self);
     if (self->command_layer == nullptr || self->command_input == nullptr)
     {
-        return;
-    }
-    if (!arrange_settings_backdrop(self))
-    {
-        close_command_surface(self);
-        failure_box_show(self->handle, FOLIO_STATE_OUT_OF_MEMORY, self->state);
         return;
     }
     if (self->command_surface == COMMAND_SURFACE_CLOSED)
@@ -1225,6 +1272,22 @@ static void arrange_command_input(struct folio_window *_Nonnull self)
     BringWindowToTop(self->command_layer);
 }
 
+static void arrange_command_input(struct folio_window *_Nonnull self)
+{
+    activate_tooltip(self);
+    if (self->command_layer == nullptr || self->command_input == nullptr)
+    {
+        return;
+    }
+    if (!arrange_settings_backdrop(self))
+    {
+        close_command_surface(self);
+        failure_box_show(self->handle, FOLIO_STATE_OUT_OF_MEMORY, self->state);
+        return;
+    }
+    arrange_command_contents(self);
+}
+
 /* 印の立て下げと面の配置更新はここだけ。本文の HWND と矩形には触らない。 */
 static void set_pane_notice(struct folio_window *_Nonnull self, enum pane_notice notice)
 {
@@ -1233,7 +1296,8 @@ static void set_pane_notice(struct folio_window *_Nonnull self, enum pane_notice
         return;
     }
     self->notice = notice;
-    arrange_command_input(self);
+    /* 暗幕はclient/cardだけに依存し、notice変更では再確保不要。配置本体には失敗の対話が無い。 */
+    arrange_command_contents(self);
     InvalidateRect(self->handle, nullptr, FALSE);
 }
 
@@ -1387,7 +1451,7 @@ static enum folio_state_outcome loaded_pane(struct folio_window *_Nonnull self,
 {
     if (was_unavailable != pane_unavailable(self))
     {
-        arrange_command_input(self);
+        arrange_command_contents(self);
     }
     InvalidateRect(self->handle, nullptr, FALSE);
     return from_pane_load(outcome);
@@ -2970,6 +3034,9 @@ static void draw_pane_notice(const struct folio_window *_Nonnull self, HDC devic
         case PANE_NOTICE_NOTE_UNEDITABLE:
             line = UI_TEXT_NOTE_OPENED_IN_VIEW;
             break;
+        case PANE_NOTICE_SESSION_BLOCKED:
+            line = self->session_reason;
+            break;
         }
     UINT dpi = GetDpiForWindow(self->handle);
     RECT bounds = {pane_bounds(self).left, client.bottom - pane_notice_height(self),
@@ -4399,6 +4466,126 @@ static void execute_save_command(struct folio_window *_Nonnull self, const char 
     finish_save_command(self, outcome);
 }
 
+/* 登録失敗を成功にせず、解除失敗の所有は次の取消/承認/終了まで保つ。 */
+static void clear_session_reason(struct folio_window *_Nonnull self)
+{
+    if (self->session_reason_owned && self->handle != nullptr &&
+        ShutdownBlockReasonDestroy(self->handle) != 0)
+    {
+        self->session_reason_owned = false;
+    }
+    self->session_reason = UI_TEXT_EMPTY;
+    if (self->notice == PANE_NOTICE_SESSION_BLOCKED)
+    {
+        set_pane_notice(self, PANE_NOTICE_NONE);
+    }
+}
+
+static LRESULT reject_session(struct folio_window *_Nonnull self, enum ui_text reason)
+{
+    self->session_reason = reason;
+    char16_t units[ui_text_unit_limit];
+    size_t written = 0;
+    const char *_Nonnull text = ui_text_line(reason, folio_state_language(self->state));
+    if (utf16_text_fill(text, units, ui_text_unit_limit, &written) == UTF16_TEXT_FILL_READY &&
+        ShutdownBlockReasonCreate(self->handle, units) != 0)
+    {
+        self->session_reason_owned = true;
+    }
+    set_pane_notice(self, PANE_NOTICE_SESSION_BLOCKED);
+    InvalidateRect(self->handle, nullptr, FALSE);
+    return FALSE;
+}
+
+static bool session_composing(const struct folio_window *_Nonnull self)
+{
+    return self->root_composing || self->command_composing || self->filter_composing ||
+           (self->pane != nullptr && note_pane_composing(self->pane));
+}
+
+/* store_bodyの改名復旧や無題保存は対話を開くため、呼び出す前に拒否する。 */
+static enum ui_text session_unready_reason(const struct folio_window *_Nonnull self)
+{
+    if (!IsWindowEnabled(self->handle) || self->removal_running)
+    {
+        return UI_TEXT_SESSION_BUSY;
+    }
+    if (session_composing(self))
+    {
+        return UI_TEXT_SESSION_COMPOSING;
+    }
+    if (folio_state_document_kind(self->state) == FOLIO_DOCUMENT_UNTITLED)
+    {
+        return UI_TEXT_SESSION_UNTITLED;
+    }
+    struct rename_view pending = {.from = "", .to = ""};
+    return folio_state_rename_pending(self->state, &pending) ? UI_TEXT_SESSION_RENAME_PENDING
+                                                             : UI_TEXT_EMPTY;
+}
+
+/* 保存中の取消はCANCELLEDに留め、外側QUERYが戻るまで新しい保存を始めさせない。 */
+static void cancel_session(struct folio_window *_Nonnull self)
+{
+    switch (self->session_phase)
+    {
+    case SESSION_PHASE_IDLE:
+    case SESSION_PHASE_CANCELLED:
+        break;
+    case SESSION_PHASE_CHECKING:
+        self->session_phase = SESSION_PHASE_CANCELLED;
+        break;
+    case SESSION_PHASE_APPROVED:
+        self->session_phase = SESSION_PHASE_IDLE;
+        EnableWindow(self->handle, TRUE);
+        restore_valid_focus(self, self->session_return_focus);
+        self->session_return_focus = nullptr;
+        break;
+    }
+    clear_session_reason(self);
+}
+
+static LRESULT query_session_end(struct folio_window *_Nonnull self)
+{
+    switch (self->session_phase)
+    {
+    case SESSION_PHASE_APPROVED:
+        return TRUE;
+    case SESSION_PHASE_CHECKING:
+    case SESSION_PHASE_CANCELLED:
+        return reject_session(self, UI_TEXT_SESSION_BUSY);
+    case SESSION_PHASE_IDLE:
+        break;
+    }
+    enum ui_text reason = session_unready_reason(self);
+    if (reason != UI_TEXT_EMPTY)
+    {
+        return reject_session(self, reason);
+    }
+    self->session_phase = SESSION_PHASE_CHECKING;
+    enum folio_state_outcome saved = store_body(self);
+    if (self->session_phase == SESSION_PHASE_CANCELLED)
+    {
+        self->session_phase = SESSION_PHASE_IDLE;
+        clear_session_reason(self);
+        return FALSE;
+    }
+    if (saved != FOLIO_STATE_READY)
+    {
+        self->session_phase = SESSION_PHASE_IDLE;
+        return reject_session(self, UI_TEXT_SESSION_SAVE_INCOMPLETE);
+    }
+    clear_session_reason(self);
+    if (self->session_phase == SESSION_PHASE_CANCELLED)
+    {
+        self->session_phase = SESSION_PHASE_IDLE;
+        return FALSE;
+    }
+    self->session_phase = SESSION_PHASE_APPROVED;
+    self->session_return_focus = GetFocus();
+    EnableWindow(self->handle, FALSE);
+    return self->session_phase == SESSION_PHASE_APPROVED ? TRUE : FALSE;
+}
+
 static void finish_quit(struct folio_window *_Nonnull self, enum folio_state_outcome outcome)
 {
     if (outcome != FOLIO_STATE_READY)
@@ -4406,12 +4593,26 @@ static void finish_quit(struct folio_window *_Nonnull self, enum folio_state_out
         command_failure(self, outcome);
         return;
     }
+    clear_session_reason(self);
     DestroyWindow(self->handle);
+}
+
+static LRESULT end_session(struct folio_window *_Nonnull self, WPARAM ending)
+{
+    if (ending == FALSE)
+    {
+        cancel_session(self);
+    }
+    if (ending != FALSE && self->session_phase == SESSION_PHASE_APPROVED)
+    {
+        finish_quit(self, FOLIO_STATE_READY);
+    }
+    return 0;
 }
 
 static void close_window(struct folio_window *_Nonnull self)
 {
-    if (!self->removal_running)
+    if (!self->removal_running && !session_busy(self))
     {
         /* Normal close accepts either saved content or explicit discard permission. */
         finish_quit(self, depart_document(self).outcome);
@@ -4637,7 +4838,7 @@ static void recolor_window(struct folio_window *_Nonnull self)
         InvalidateRect(self->filter_input, nullptr, TRUE);
     }
     redraw_command_layer(self);
-    if (outcome != FOLIO_STATE_READY)
+    if (outcome != FOLIO_STATE_READY && !session_busy(self))
     {
         command_failure(self, outcome);
     }
@@ -4686,7 +4887,7 @@ static void relanguage_window(struct folio_window *_Nonnull self)
     enum folio_state_outcome outcome = reface_pane(self);
     InvalidateRect(self->handle, nullptr, FALSE);
     redraw_command_layer(self);
-    if (outcome != FOLIO_STATE_READY)
+    if (outcome != FOLIO_STATE_READY && !session_busy(self))
     {
         command_failure(self, outcome);
     }
@@ -4900,7 +5101,7 @@ static void execute_force_quit_command(struct folio_window *_Nonnull self,
                                        const char *_Nonnull argument)
 {
     (void)argument;
-    DestroyWindow(self->handle);
+    finish_quit(self, FOLIO_STATE_READY);
 }
 
 static void execute_help_command(struct folio_window *_Nonnull self, const char *_Nonnull argument)
@@ -5337,7 +5538,7 @@ static void (*_Nonnull const command_runs[])(struct folio_window *_Nonnull self,
 static void execute_command(struct folio_window *_Nonnull self, enum folio_command command,
                             const char *_Nonnull argument)
 {
-    if (self->removal_running || pane_streaming(self))
+    if (self->removal_running || session_busy(self) || pane_streaming(self))
     {
         return;
     }
@@ -5389,7 +5590,7 @@ static enum folio_state_outcome switch_note(struct folio_window *_Nonnull self, 
     {
         return FOLIO_STATE_PANE_LOAD_FAILED;
     }
-    if (self->removal_running)
+    if (self->removal_running || session_busy(self))
     {
         return FOLIO_STATE_CANCELLED;
     }
@@ -5449,7 +5650,7 @@ static void rename_from_drawer(struct folio_window *_Nonnull self, struct note_r
 static void run_drawer_menu(struct folio_window *_Nonnull self, enum drawer_menu_item item,
                             const struct note_ref *_Nonnull target)
 {
-    if (self->removal_running)
+    if (self->removal_running || session_busy(self))
     {
         return;
     }
@@ -6239,6 +6440,10 @@ static LRESULT tooltip_display(struct folio_window *_Nonnull self, LPARAM lparam
 static LRESULT on_notify(struct folio_window *_Nonnull self, LPARAM lparam)
 {
     const NMHDR *_Nonnull header = (const NMHDR *)lparam;
+    if ((session_busy(self) || pane_streaming(self)) && header->code == EN_MSGFILTER)
+    {
+        return 1;
+    }
     if (header->hwndFrom == self->tooltip && header->code == TTN_GETDISPINFOW)
     {
         return tooltip_display(self, lparam);
@@ -6853,7 +7058,7 @@ static LRESULT CALLBACK command_input_procedure(HWND window, UINT message, WPARA
     {
         return DefWindowProcW(window, message, wparam, lparam);
     }
-    if (load_blocks_input(self, message))
+    if (session_blocks_message(self, message) || load_blocks_input(self, message))
     {
         return 0;
     }
@@ -7053,6 +7258,10 @@ static LRESULT CALLBACK filter_input_procedure(HWND window, UINT message, WPARAM
     if (self == nullptr || self->filter_original == nullptr)
     {
         return DefWindowProcW(window, message, wparam, lparam);
+    }
+    if (session_blocks_message(self, message))
+    {
+        return 0;
     }
     update_filter_composition(self, message);
     if (filter_input_handled(self, message, wparam))
@@ -7485,7 +7694,13 @@ static LRESULT CALLBACK command_layer_procedure(HWND window, UINT message, WPARA
     {
         return DefWindowProcW(window, message, wparam, lparam);
     }
-    if (load_blocks_input(self, message))
+    if (session_blocks_message(self, message) || load_blocks_input(self, message))
+    {
+        return 0;
+    }
+    update_command_composition(self, message);
+    if ((message == WM_KEYDOWN || message == WM_CHAR) &&
+        command_input_handled(self, message, wparam))
     {
         return 0;
     }
@@ -7513,18 +7728,6 @@ static LRESULT CALLBACK command_layer_procedure(HWND window, UINT message, WPARA
             PostMessageW(self->handle, folio_message_command_focus_lost, 0, 0);
         }
         return 0;
-    case WM_KEYDOWN:
-        if (command_key_down(self, wparam))
-        {
-            return 0;
-        }
-        return DefWindowProcW(window, message, wparam, lparam);
-    case WM_CHAR:
-        if (command_character(self, wparam))
-        {
-            return 0;
-        }
-        return DefWindowProcW(window, message, wparam, lparam);
     case WM_COMMAND:
         return on_command(self, wparam, lparam);
     case WM_CTLCOLOREDIT:
@@ -7560,6 +7763,10 @@ static LRESULT CALLBACK settings_backdrop_procedure(HWND window, UINT message, W
     if (self == nullptr)
     {
         return DefWindowProcW(window, message, wparam, lparam);
+    }
+    if (session_blocks_message(self, message))
+    {
+        return 0;
     }
     switch (message)
     {
@@ -7621,7 +7828,7 @@ static LRESULT window_finalized(HWND window, UINT message, WPARAM wparam, LPARAM
 
 static void dismiss_command_if_focus_moved(struct folio_window *_Nonnull self)
 {
-    if (self->removal_running)
+    if (self->removal_running || session_busy(self))
     {
         return;
     }
@@ -7817,6 +8024,10 @@ static LRESULT on_input_message(struct folio_window *_Nonnull self, UINT message
     }
     switch (message)
     {
+    case WM_QUERYENDSESSION:
+        return query_session_end(self);
+    case WM_ENDSESSION:
+        return end_session(self, wparam);
     case WM_COMMAND:
         return on_window_command(self, wparam, lparam);
     case WM_KEYDOWN:
@@ -7940,7 +8151,7 @@ static LRESULT CALLBACK window_procedure(HWND window, UINT message, WPARAM wpara
     {
         return DefWindowProcW(window, message, wparam, lparam);
     }
-    if (load_blocks_input(self, message))
+    if (session_blocks_message(self, message) || load_blocks_input(self, message))
     {
         return 0;
     }
@@ -8116,6 +8327,10 @@ static bool search_target(const struct folio_window *_Nonnull window, HWND targe
 
 bool folio_window_translate(const struct folio_window *_Nonnull window, const MSG *_Nonnull message)
 {
+    if (session_blocks_queued_input(window, message))
+    {
+        return true;
+    }
     if (search_target(window, message->hwnd))
     {
         MSG stepping = *message;
@@ -8147,6 +8362,7 @@ void folio_window_destroy(struct folio_window *_Nullable window)
     }
     if (window->handle != nullptr)
     {
+        clear_session_reason(window);
         DestroyWindow(window->handle);
     }
     if (window->commands != nullptr)
