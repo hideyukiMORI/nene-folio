@@ -76,3 +76,13 @@ reader接続時のfixture stderrにはASanの`interception_win: unhandled instru
 #319の残留DLL2個は既存Chromeが参照中のため保持。#320仮出力の削除は再確認後も自動承認審査が
 `blocked by policy`で拒否し、詳細理由は返らなかった。別手段で回避せず保持した。
 最後の参照確認・#321自身の整理結果はcompletion.jsonと引き継ぎへ記録する。
+
+## 統合・反映の実結果
+
+[PR #325](https://github.com/hideyukiMORI/nene-folio/pull/325)の最終head40f500fは
+[必須CI](https://github.com/hideyukiMORI/nene-folio/actions/runs/39044569674)でfull-gate/checkとも成功。
+`tools/merge-pr.ps1 -Number 325`でmainへ54634b6として統合し、#321 CLOSEDを確認した。
+`tools/prepare-real-machine.ps1`が通常exeの更新に成功（2026-10-18 00:24:52、4249088 bytes）。
+全575 source blobとarchiveを照合後、実装作業木を削除。#321仮出力の削除は自動承認審査が
+blocked by policyで拒否したため保持した。#319のChrome参照中DLL、#320仮出力も引き続き保持。
+最後のヘルプreader fixtureは6 checks / 0 failures。試験reader/fixtureは終了済み。
