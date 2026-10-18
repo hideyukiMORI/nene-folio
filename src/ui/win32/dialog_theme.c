@@ -268,12 +268,6 @@ void dialog_theme_field(const struct dialog_theme *_Nonnull theme, HDC _Nonnull 
     ui_part_draw_field(dc, &theme->palette, *rect, focus);
 }
 
-void dialog_theme_frame(const struct dialog_theme *_Nonnull theme, HDC _Nonnull dc,
-                        const RECT *_Nonnull rect, int focus)
-{
-    ui_part_frame_field(dc, &theme->palette, *rect, focus);
-}
-
 void dialog_theme_decorate(const struct dialog_theme *_Nonnull theme, HWND _Nonnull dialog)
 {
     /* 地に対して白い字が立つなら暗い面なので、題の帯も暗くする（ADR 0017 と同じ判定）。 */

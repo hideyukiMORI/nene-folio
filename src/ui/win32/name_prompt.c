@@ -1003,15 +1003,24 @@ static void measure_category(const struct name_prompt *_Nonnull prompt,
     item->itemHeight = (UINT)category_row_height(prompt);
 }
 
+static RECT child_bounds(const struct name_prompt *_Nonnull prompt, HWND window)
+{
+    RECT bounds;
+    GetWindowRect(window, &bounds);
+    MapWindowPoints(nullptr, prompt->dialog, (POINT *)&bounds, 2);
+    return bounds;
+}
+
 static RECT field_bounds(const struct name_prompt *_Nonnull prompt, HWND window)
 {
     if (window == prompt->name)
     {
         return name_box(prompt);
     }
-    RECT bounds;
-    GetWindowRect(window, &bounds);
-    MapWindowPoints(nullptr, prompt->dialog, (POINT *)&bounds, 2);
+    /* 一覧は窓の外に focus の太さの空きを取った箱。枠はその内側（＝一覧の外の空き）に描く。 */
+    RECT bounds = child_bounds(prompt, window);
+    int ring = ui_part_focus_width(GetDpiForWindow(prompt->dialog));
+    InflateRect(&bounds, ring, ring);
     return bounds;
 }
 
@@ -1019,12 +1028,15 @@ static void frame_around(const struct name_prompt *_Nonnull prompt, HDC device, 
 {
     RECT bounds = field_bounds(prompt, window);
     int focus = GetFocus() == window ? ui_part_focus_width(GetDpiForWindow(prompt->dialog)) : 0;
-    if (window == prompt->name)
+    /* 対話は WS_CLIPCHILDREN を持たないので、子の上を塗らないよう子の矩形を除いて箱を塗る。 */
+    RECT child = child_bounds(prompt, window);
+    int saved = SaveDC(device);
+    ExcludeClipRect(device, child.left, child.top, child.right, child.bottom);
+    dialog_theme_field(prompt->theme, device, &bounds, focus);
+    if (saved != 0)
     {
-        dialog_theme_field(prompt->theme, device, &bounds, focus);
-        return;
+        RestoreDC(device, saved);
     }
-    dialog_theme_frame(prompt->theme, device, &bounds, focus);
 }
 
 /* focus の出入りで枠の太さが変わるので、枠だけを描き直す。一覧は外側の輪、名前欄は箱（#349）。 */

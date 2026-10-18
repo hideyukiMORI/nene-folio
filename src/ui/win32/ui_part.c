@@ -38,7 +38,7 @@ static COLORREF resting_ink(const struct folio_palette *_Nonnull palette, enum u
     case UI_PART_STYLE_CHOICE:
         return palette->current_text;
     case UI_PART_STYLE_PRIMARY:
-        return palette->chip_text;
+        return palette->unsaved_ink;
     case UI_PART_STYLE_ICON:
         return palette->header_text;
     }
@@ -71,6 +71,19 @@ static void draw_selection_bar(HDC device, const struct folio_palette *_Nonnull 
     fill(device, bar, part->disabled ? palette->border : palette->selected_text);
 }
 
+/* B 主操作の地。塗りが地に 3:1 届くテーマでは塗り、届かないテーマでは同じ色の 2px の枠
+ * （theme_contrast_unsaved・#349）。 */
+static void draw_primary(HDC device, const struct folio_palette *_Nonnull palette,
+                         const struct ui_part_paint *_Nonnull part)
+{
+    if (palette->unsaved_filled)
+    {
+        fill(device, part_body(part), palette->unsaved_fill);
+        return;
+    }
+    frame(device, part_body(part), ui_part_focus_width(part->dpi), palette->unsaved_fill);
+}
+
 static void draw_surface(HDC device, const struct folio_palette *_Nonnull palette,
                          const struct ui_part_paint *_Nonnull part)
 {
@@ -80,7 +93,7 @@ static void draw_surface(HDC device, const struct folio_palette *_Nonnull palett
     }
     else if (part->style == UI_PART_STYLE_PRIMARY)
     {
-        fill(device, part_body(part), palette->chip_background);
+        draw_primary(device, palette, part);
     }
     if (part->style == UI_PART_STYLE_CHOICE && part->selected)
     {
@@ -114,7 +127,7 @@ static void draw_hover(HDC device, const struct folio_palette *_Nonnull palette,
     if (part->style == UI_PART_STYLE_PRIMARY)
     {
         body.top = body.bottom - ui_part_focus_width(part->dpi);
-        fill(device, body, palette->chip_text);
+        fill(device, body, palette->unsaved_ink);
         return;
     }
     if (part->style == UI_PART_STYLE_COMMAND && !part->grouped)
@@ -196,14 +209,6 @@ void ui_part_frame_group(HDC _Nonnull device, const struct folio_palette *_Nonnu
                          RECT bounds)
 {
     frame(device, bounds, 1, palette->border);
-}
-
-void ui_part_frame_field(HDC _Nonnull device, const struct folio_palette *_Nonnull palette,
-                         RECT field, int focus)
-{
-    int width = focus > 0 ? focus : 1;
-    InflateRect(&field, width, width);
-    frame(device, field, width, focus > 0 ? palette->field_focus_line : palette->field_line);
 }
 
 RECT ui_part_field_edit(RECT box, int text_height, UINT dpi)

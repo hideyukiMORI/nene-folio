@@ -12,7 +12,10 @@ enum theme_line : unsigned char
     THEME_LINE_FOCUS_SELECTED, /* 群の選択中・押下中の項目の内側のfocus。地は selected_background */
     THEME_LINE_FOCUS_PRIMARY,  /* B主操作の内側のfocus。地は chip_background */
     THEME_LINE_FIELD, /* 入力欄の静止枠。地は window / pane / dialog_surface / dialog_control */
-    THEME_LINE_FIELD_FOCUS /* 入力欄のfocus枠。地はFIELDと同じ */
+    THEME_LINE_FIELD_FOCUS, /* 入力欄のfocus枠。地はFIELDと同じ */
+    /* 未保存の合図（保存釦の B と丸・ADR0060 の決定 8）。地は window / pane。塗りは
+     * theme_contrast_unsaved が選び、どの塗りも届かないときの枠と丸の線はこの役割の線。 */
+    THEME_LINE_UNSAVED
 };
 
 #endif

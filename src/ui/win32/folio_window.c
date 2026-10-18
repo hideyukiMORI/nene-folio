@@ -109,7 +109,12 @@ struct folio_window
      * 入力の後の 1 か所（settle_save_state）でだけ取り直す。描画はこの写しだけを読む。 */
     bool unsaved;
     uint64_t store_revision; /* 前回の照合での folio_state_store_revision */
-    bool hover_tracking;     /* TrackMouseEvent の WM_MOUSELEAVE を待っている。 */
+    /* 本文の EN_CHANGE があった（変更の疑い）。名前付きの編集本文はこの印か、世代・文書・mode の
+     * 変化があるときだけ写して比べる（矢印など本文を変えない入力では比べない）。 */
+    bool body_touched;
+    enum folio_document_kind settled_kind;
+    enum pane_mode settled_mode;
+    bool hover_tracking; /* TrackMouseEvent の WM_MOUSELEAVE を待っている。 */
     /* キーボードで動かした後だけ focus を描く（ADR0060 の決定 3）。押下で下ろす。 */
     bool focus_cues;
     bool focus_cues_always; /* OS の「常にキーボードの印を表示」（SPI_GETKEYBOARDCUES） */
@@ -2138,7 +2143,7 @@ static void draw_unsaved_mark(const struct folio_window *_Nonnull self, HDC devi
     int y = middle - size / 2;
     HGDIOBJ brush = SelectObject(device, GetStockObject(DC_BRUSH));
     HGDIOBJ pen = SelectObject(device, GetStockObject(NULL_PEN));
-    SetDCBrushColor(device, self->palette.chip_background);
+    SetDCBrushColor(device, self->palette.unsaved_fill); /* 保存釦の B と同じ合図の色 */
     /* NULL_PEN の Ellipse は右下の 1px を塗らないので、箱を 1px 広げて 8px の丸にする。 */
     Ellipse(device, x, y, x + size + 1, y + size + 1);
     SelectObject(device, pen);
@@ -8853,6 +8858,7 @@ static bool pane_notification(struct folio_window *_Nonnull self, WPARAM wparam,
     {
         /* 印と無効化だけ。EM_STREAMIN の最中に本文へ問い合わせない（決定 4）。 */
         note_pane_invalidate_lines(self->pane);
+        self->body_touched = true;
         refresh_gutter(self, false);
         return true;
     }
@@ -8864,13 +8870,21 @@ static bool pane_notification(struct folio_window *_Nonnull self, WPARAM wparam,
     return false;
 }
 
-/* OSがNOTEのrootへ戻した実focusだけを、可視paneへ正規化する。 */
-static void normalize_root_focus(const struct folio_window *_Nonnull self)
+/* OSがNOTEのrootへ戻した実focusだけを、可視paneへ正規化する。文書が無く本文を隠している間は
+ * 見えない索引に残さず、F6 の先頭（新しいノート）へ寄せて印を出す（#349）。 */
+static void normalize_root_focus(struct folio_window *_Nonnull self)
 {
     if (self->keyboard_target != ACCESSIBLE_TREE ||
         folio_state_layout_mode(self->state) != FOLIO_LAYOUT_NOTE ||
         self->command_surface != COMMAND_SURFACE_CLOSED || self->pane == nullptr)
     {
+        return;
+    }
+    if (!document_open(self))
+    {
+        self->keyboard_target = ACCESSIBLE_NEW_NOTE;
+        show_focus_cues(self, true);
+        InvalidateRect(self->handle, nullptr, FALSE);
         return;
     }
     HWND pane = note_pane_handle(self->pane);
@@ -11310,32 +11324,57 @@ static void pointer_focus(struct folio_window *_Nonnull self, POINT point)
 
 /* いまの本文が未保存か。application の 1 つの問い合わせ（folio_state_unsaved）に、名前付きの
  * 編集中だけ本文を渡す。本文を取れない間（流し込み中・未準備）は前の答えを保つ。 */
-static bool current_unsaved(const struct folio_window *_Nonnull self)
+static bool unsaved_needs_compare(const struct folio_window *_Nonnull self, uint64_t revision)
+{
+    return self->body_touched || revision != self->store_revision ||
+           folio_state_document_kind(self->state) != self->settled_kind ||
+           folio_state_pane_mode(self->state) != self->settled_mode;
+}
+
+/* 本文を評価できたら真で、out に答えを置く。流し込み中・本文を取れない回は偽（前の答えを保つ）。 */
+static bool current_unsaved(const struct folio_window *_Nonnull self, uint64_t revision,
+                            bool *_Nonnull out)
 {
     const char16_t *units = u"";
     size_t count = 0;
+    *out = self->unsaved;
     if (pane_streaming(self))
     {
-        return self->unsaved;
+        return false;
     }
     if (folio_state_pane_mode(self->state) == PANE_MODE_EDIT &&
-        folio_state_document_kind(self->state) == FOLIO_DOCUMENT_NAMED &&
-        take_text(self, &units, &count) != FOLIO_STATE_READY)
+        folio_state_document_kind(self->state) == FOLIO_DOCUMENT_NAMED)
     {
-        return self->unsaved;
+        if (!unsaved_needs_compare(self, revision))
+        {
+            return true;
+        }
+        if (take_text(self, &units, &count) != FOLIO_STATE_READY)
+        {
+            return false;
+        }
     }
-    return folio_state_unsaved(self->state, units, count) == FOLIO_NOTE_CHANGED;
+    *out = folio_state_unsaved(self->state, units, count) == FOLIO_NOTE_CHANGED;
+    return true;
 }
 
 /* 保存の状態を取り直す唯一の経路（ADR0060 の決定 8）。入力・保存・Esc・ノート切替・新規の後に
  * 同じ合流点（folio_message_accessibility_changed）から呼ばれ、釦の様式・未保存印・UIA を戻す。
- * md を書いた後に保存済みになったら真を返し、呼び出し側が UIA の通知を 1 回出す。 */
+ * md を書いていたら真を返し、呼び出し側が UIA の通知を 1 回出す。 */
 static bool settle_save_state(struct folio_window *_Nonnull self)
 {
-    bool unsaved = current_unsaved(self);
     uint64_t revision = folio_state_store_revision(self->state);
-    bool saved = revision != self->store_revision && !unsaved;
+    bool unsaved = self->unsaved;
+    if (!current_unsaved(self, revision, &unsaved))
+    {
+        return false; /* 評価できない回は世代も印も持ち越し、次の合流点で取り直す */
+    }
+    /* md を書いた（世代が進んだ）ことだけで知らせる。Ctrl+N の離脱保存の後に無題が開いても出す。 */
+    bool saved = revision != self->store_revision;
     self->store_revision = revision;
+    self->body_touched = false;
+    self->settled_kind = folio_state_document_kind(self->state);
+    self->settled_mode = folio_state_pane_mode(self->state);
     if (unsaved != self->unsaved)
     {
         self->unsaved = unsaved;

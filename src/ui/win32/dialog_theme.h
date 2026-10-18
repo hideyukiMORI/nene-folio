@@ -34,12 +34,10 @@ void dialog_theme_draw_button(const struct dialog_theme *_Nonnull theme,
 /* CBS_OWNERDRAWFIXED のコンボの項目（閉じた面とリストの行）を描く。 */
 void dialog_theme_draw_item(const struct dialog_theme *_Nonnull theme,
                             const DRAWITEMSTRUCT *_Nonnull item, const wchar_t *_Nonnull text);
-/* 名前欄などの外側に入力欄の枠を描く（面が WS_BORDER の代わりに描く枠）。rect は欄そのもの。
- * focus に太さを渡せば focus 線、0 なら 1px の静止枠（ADR0060 の決定 3）。 */
-/* 入力欄の箱を欄の地で塗ってから外側に枠を描く（EDIT は箱の中で縦中央・#349）。 */
+/* 名前欄・一覧の箱を欄の地で塗り、箱の内側に枠を描く（WS_BORDER の代わり・ADR0060 の決定 3・
+ * #349）。rect は箱で、欄の窓は箱の中で focus の太さだけ空けて置く。focus に太さを渡せば focus 線、
+ * 0 なら 1px の静止枠。 */
 void dialog_theme_field(const struct dialog_theme *_Nonnull theme, HDC _Nonnull dc,
-                        const RECT *_Nonnull rect, int focus);
-void dialog_theme_frame(const struct dialog_theme *_Nonnull theme, HDC _Nonnull dc,
                         const RECT *_Nonnull rect, int focus);
 /* 題の帯を DWM で palette の地と字の色にする。 */
 void dialog_theme_decorate(const struct dialog_theme *_Nonnull theme, HWND _Nonnull dialog);

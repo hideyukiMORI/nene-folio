@@ -27,10 +27,6 @@ struct ui_part_ink ui_part_draw(HDC _Nonnull device, const struct folio_palette 
 void ui_part_frame_group(HDC _Nonnull device, const struct folio_palette *_Nonnull palette,
                          RECT bounds);
 
-/* 入力欄の外側の枠。focus に太さを渡せば focus 線、0 なら 1px の静止枠。 */
-void ui_part_frame_field(HDC _Nonnull device, const struct folio_palette *_Nonnull palette,
-                         RECT field, int focus);
-
 /* 入力欄の箱（高さ 28）に単一行 EDIT を置く矩形。枠は箱の内側に静止 1px / focus 2px で描くので、
  * EDIT は左右と上下を focus の太さだけ空け、縦は字の高さで中央に寄せる（単一行 EDIT は字を上端に
  * 描く）。字の左右の余白は ui_part_field_margins と合わせて箱の縁から 8 になり、focus で動かない。
