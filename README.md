@@ -15,6 +15,9 @@ The current source also includes the settings dialog, a fixed **+** for adding c
 **List / Both / Note** views and the searchable theme catalog described below. These UI updates
 are newer than the published v0.1.0 ZIP.
 
+The [0.2.0 beta candidate notes](docs/release/0.2.0.md) summarize these changes,
+update instructions, and the remaining acceptance checks. The published download remains v0.1.0.
+
 - **A borderless window** with a drawer on the left and a Markdown view/editor on the right. It follows
   the OS light/dark theme (or a fixed one) and Per-Monitor v2 DPI.
 - **List / Both / Note** buttons switch the visible panes. List narrows the window; returning to Both
