@@ -4491,6 +4491,16 @@ static bool change_layout_geometry(struct folio_window *_Nonnull self,
     return changed;
 }
 
+/* ノートのみで文書が無いと本文も索引も見えないので、F6 の先頭（新しいノート）に印を出して
+ * focus を置く（#349）。表示切替の復帰と、OS が root へ戻した focus の正規化が同じ 1 本を使う。 */
+static void focus_header_entry(struct folio_window *_Nonnull self)
+{
+    self->keyboard_target = ACCESSIBLE_NEW_NOTE;
+    show_focus_cues(self, true);
+    SetFocus(self->handle);
+    InvalidateRect(self->handle, nullptr, FALSE);
+}
+
 static void restore_layout_focus(struct folio_window *_Nonnull self, HWND _Nullable focus)
 {
     if (focus == self->handle && accessible_visible(self, self->keyboard_target))
@@ -4505,6 +4515,11 @@ static void restore_layout_focus(struct folio_window *_Nonnull self, HWND _Nulla
         SetFocus(self->handle);
         return;
     case FOLIO_LAYOUT_NOTE:
+        if (!body_shown(self))
+        {
+            focus_header_entry(self);
+            return;
+        }
         SetFocus(self->pane == nullptr ? self->handle : note_pane_handle(self->pane));
         return;
     case FOLIO_LAYOUT_BOTH:
@@ -8882,9 +8897,7 @@ static void normalize_root_focus(struct folio_window *_Nonnull self)
     }
     if (!document_open(self))
     {
-        self->keyboard_target = ACCESSIBLE_NEW_NOTE;
-        show_focus_cues(self, true);
-        InvalidateRect(self->handle, nullptr, FALSE);
+        focus_header_entry(self);
         return;
     }
     HWND pane = note_pane_handle(self->pane);
