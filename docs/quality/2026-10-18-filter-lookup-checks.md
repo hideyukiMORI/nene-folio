@@ -119,5 +119,21 @@ source、fixture、binary、compile command、実行引数、全CSV、負荷観�
 ## 現在の到達点
 
 対象実装・対象検証・独立レビューと全性能比較は完了。entryの80%短縮条件を満たした。
-最終PR headの必須CI、main/通常exe反映、専用作業物の証跡収載と整理も未完了。
+最終PR head `f6fb86967b7e8d4a9e636ce0f94a49d5cb9c7320`で
+[CI](https://github.com/hideyukiMORI/nene-folio/actions/runs/39094579640)の`eng/check.ps1`と必須`check`が成功。
+[PR #329](https://github.com/hideyukiMORI/nene-folio/pull/329)を`beb8214c64267d6c7e246011b4133125e75d88c0`へsquash統合し、Issue #328を閉じた。
+測定/対象検証の実装commitは`13c3cfd`。最終headまでの追加は文書4件だけで、製品/テスト/設定は同じ結果を再利用した。
+Ready直後の旧Draft判定を受けて統合ツールがReadyを1回再送した。旧skipped/failure/cancelledは成功と数えず、上記最終runの成功を確認した。
+
+`pwsh -NoProfile -File ./tools/prepare-real-machine.ps1`が成功し、通常exeは2026-10-18 12:47:52 JSTに更新した。
+`C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`、4,252,672 bytes、SHA256
+`A1A8D0366BB6433B57587BDF4748AD20FD379802F30390175E8D6A3A7EEE18C8`。
+対象はcoreの1単位再compile、core libraryとexeの再linkだけだった。アプリの強制終了や利用者データの変更は行っていない。
+
+実装証跡528件と性能証跡103件を恒久保存先で再度hash照合し、不一致0件。
+一時出力35,143ファイルと計画用1ファイルの削除は自動承認審査が`blocked by policy`で拒否し、processは起動されなかった。
+詳細理由は返されていない。`D:/NeNeFolio/outputs/328-filter-lookup/`と
+`D:/NeNeFolio/outputs/filter-lookup-planning-20261018/`を保持し、迂回削除していない。
+削除前監査ではreparse/稼働process参照は0、唯一の未収載成果物はなかった。拒否と収載確認は`output-cleanup.json`と`permanent-verification.json`。
+完了記録PRと専用作業木の最終状態は恒久証跡の`completion.json`へ記録する。枝とcommitは保持する。
 成功済み結果は関係入力が不変なら工程間で再利用する。Waivers: none。
