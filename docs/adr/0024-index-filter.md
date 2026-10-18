@@ -146,3 +146,22 @@ cache/語/scroll変更より前に同じ共通同期を通る。失敗なら語/
 
 公開API/enum/port/schemaを増やさない。#219の検証は公開後put/filter確保失敗と回復、
 同本文保存の無追加write/archive、文書/保存先を変更する前の拒否、NOTE pendingの初回絞り込みに限定する。
+
+## 2026-10-18 の補正（#342 — 検索focusで名前付き本文を保存）
+
+hideの実機確認後の合意により、検索欄がfocusを得たとき、NAMEDかつEDITの本文を既存store_bodyで保存する。
+マウス・上下余白・Ctrl+Shift+F・アクセシビリティは同じnative EDITのWM_SETFOCUSを通る。
+保存済み本文を検索する原則は維持し、履歴・md・検索cacheの同期は既存application/portだけが所有する。
+同本文の再focusは既存保存のno-op。モード・選択・Undoは変更しない。
+UNTITLED/VIEW/NONEでは自動保存しない。UNTITLEDは名前を尋ねず検索へ進み、索引の対象外を維持する。
+保存に失敗したら既存failure_boxを表示し、本文へfocusを戻す。本文を再投入せず、未保存内容とUndoを保つ。
+IME未確定中は保存を始めず本文へ戻す。session処理/stream投入中は開始しない。
+
+保存はEDITの既定WM_SETFOCUS処理後に行い、WM_KILLFOCUSでは実行しない。
+改名復旧や失敗表示のmodal復帰で同じfocusを再通知されても、UI所有のfilter_saving印で再入を抑止する。
+この印は保存中だけの操作状態で、本文の変更印や検索cacheの複製ではない。
+focusの順序の根拠は[WM_SETFOCUS](https://learn.microsoft.com/en-us/windows/win32/inputdev/wm-setfocus)と
+[WM_KILLFOCUS](https://learn.microsoft.com/en-us/windows/win32/inputdev/wm-killfocus)。schema/公開port/依存/ゲート変更なし。
+
+クリアボタンもSetFocus→保存成功→空語の順にする。保存失敗時は元の語を保つ。
+#340で検索欄の外枠は常設のdialog_borderへ変更済み（ADR0051）。旧補正5の「絞り込み時だけの枠」は置き換える。

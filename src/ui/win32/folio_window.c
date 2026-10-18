@@ -94,6 +94,7 @@ struct folio_window
     HWND _Nullable filter_input;
     WNDPROC _Nullable filter_original;
     bool filter_composing;
+    bool filter_saving; /* 保存中のmodalから戻るfocus通知の再入だけを抑止する。 */
     bool root_composing;
     HWND _Nullable command_return_focus;
     HBRUSH _Nullable command_brush;
@@ -7417,9 +7418,42 @@ static bool filter_clear_pressed(struct folio_window *_Nonnull self, HWND window
     {
         return false;
     }
-    SetWindowTextW(window, L"");
     SetFocus(window);
+    if (GetFocus() == window)
+    {
+        SetWindowTextW(window, L"");
+    }
     return true;
+}
+
+/* 検索は保存済み本文だけを見る。名前付きEDITのfocus入口で共通保存を先に通す。 */
+static void save_on_filter_focus(struct folio_window *_Nonnull self)
+{
+    if (self->filter_saving || session_busy(self) || pane_streaming(self) ||
+        self->removal_running || folio_state_document_kind(self->state) != FOLIO_DOCUMENT_NAMED ||
+        folio_state_pane_mode(self->state) != PANE_MODE_EDIT)
+    {
+        return;
+    }
+    if (self->pane != nullptr && note_pane_composing(self->pane))
+    {
+        focus_pane(self);
+        return;
+    }
+    self->filter_saving = true;
+    enum folio_state_outcome outcome = store_body(self);
+    if (outcome != FOLIO_STATE_READY)
+    {
+        focus_pane(self);
+        if (outcome != FOLIO_STATE_CANCELLED)
+        {
+            failure_box_show(self->handle, outcome, self->state);
+        }
+        focus_pane(self);
+    }
+    self->filter_saving = false;
+    redraw_drawer(self);
+    InvalidateRect(self->handle, nullptr, FALSE);
 }
 
 static LRESULT CALLBACK filter_input_procedure(HWND window, UINT message, WPARAM wparam,
@@ -7444,6 +7478,10 @@ static LRESULT CALLBACK filter_input_procedure(HWND window, UINT message, WPARAM
         return 0;
     }
     LRESULT result = CallWindowProcW(self->filter_original, window, message, wparam, lparam);
+    if (message == WM_SETFOCUS)
+    {
+        save_on_filter_focus(self);
+    }
     /* 確定した文字は composition を抜けたあとに届くので、抜けてから 1 回だけ絞り直す。 */
     if (message == WM_IME_ENDCOMPOSITION)
     {
@@ -7462,7 +7500,7 @@ static LRESULT CALLBACK filter_input_procedure(HWND window, UINT message, WPARAM
  * 壊れた語は前の絞り込みを保つだけで、打つたびにモーダルを出さない。 */
 static void filter_input_changed(struct folio_window *_Nonnull self)
 {
-    if (self->filter_composing || self->filter_input == nullptr)
+    if (self->filter_composing || self->filter_saving || self->filter_input == nullptr)
     {
         return;
     }
