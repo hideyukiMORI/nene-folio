@@ -1,19 +1,17 @@
 # いまのタスク — NeNe Folio
 
-記録日: 2026-10-18。hideの「それに着手して」に基づく[#331](https://github.com/hideyukiMORI/nene-folio/issues/331)の本文部分一致改善は完了。
-[PR #332](https://github.com/hideyukiMORI/nene-folio/pull/332)は最終head b4e3ffcの[必須CI](https://github.com/hideyukiMORI/nene-folio/actions/runs/39102770310)成功後、d65dcdcへ統合。IssueはCLOSED。
-通常exeは15:08:29更新済み。検索結果、ASCIIのみ大小同一、明示長、失敗時の採用済み状態を維持して比較を減らした。
-全16条件で入力/結果一致・回帰条件を達成。10,000件のzは531.333→329.921ms（37.907%短縮）、aaaaabは1096.857→259.008ms（76.386%短縮）。
-性能値は合成データ・Debug sanitizerのcore factory比較に限り、UI/I/O/Release全体の短縮率ではない。
+記録日: 2026-10-18。hideの「やりやすい順番で進めて」に基づき、Release検索応答→残る実機確認→次ベータ準備を単体で進める。
+最初の単位は[#336](https://github.com/hideyukiMORI/nene-folio/issues/336)。製品は変更せず、main 0d983a7のReleaseを測定した。
+1,000/10,000件の初回・後続3語・描画・scroll、採用316 raw / 306統計試行の入力/結果/QPC/負荷照合が完了。
+10,000件の中央値は初回719.264ms、不一致z 51.820ms、全件一致alpha 211.946ms、一覧描画203.217ms、scroll 206.007ms。
+全件一致の時間の大半は描画。画面外行への描画呼出しが次の改善候補だが、このIssueでは最適化していない。
+実測条件・失敗/再試行・限界は[品質記録](../quality/2026-10-18-release-response.md)。恒久証跡はD:/NeNeFolio/agents/release-readiness-20261018/。
+最終PR/head/CI・archive・追加作業木/一時出力の整理は同所completion.jsonを参照する。
 
-受理条件・実測は[品質記録](../quality/2026-10-18-filter-matching-checks.md)、再開の入口は[引き継ぎ](../handoffs/2026-10-18.md)。
-恒久証跡はD:/NeNeFolio/agents/331-filter-matching/。PR #333も必須CI成功後に統合し、追加作業木は15:16に削除済み。
-最終PR/CI・exe・作業木整理は同所completion.json、後の手動削除は下記実行記録で確認する。
-成功済みの対象検証・性能比較・独立レビューは再実行不要。schema・依存・ゲート変更なし、Waivers: none。
+11,000 mdを含む全11,204入力のhashは実行前後一致。通常ノート/通常exeは変更していない。schema・依存・ゲート変更なし、Waivers: none。
+成功済みのDebug core/OOM/UIA/reader検証は再実行不要。物理IME・混在DPI・人の聴取は未受理として次の確認へ持ち越す。
+公開版はv0.1.0のまま。計測用に作った0.1.0 ZIPは公開済み配布物を置換せず、次版の公開候補にはしない。
 
-hideの手動実行により15:40:09、#319/#320/#321/#328/#331と計画・デザインの一時出力7フォルダを削除済み。
-40,279ファイル、1,323,547,077 bytes。15:48と15:50にも対象パスの不在を確認し、15:48には削除processの終了も確認した。
-実行記録はD:/NeNeFolio/agents/manual-cleanup-20261018/cleanup-result-20261018-154009.json。
-outputsに残る282-release-prepと284-beta-releaseは保存対象の配布ZIPで、恒久証跡も保持している。
-過去の削除拒否は当時の事実であり、現在の削除待ちとして扱わない。状態文書の整合は[#334](https://github.com/hideyukiMORI/nene-folio/issues/334)で収載する。
-新しい作業は現在のhide指示と実Issue/PR・checkoutを照合してから開始する。
+#331の検索改善と#334の状態整合は統合済み。hideが手動削除した旧一時出力7フォルダの解消は[引き継ぎ](../handoffs/2026-10-18.md)に記録済み。
+古い削除拒否やモデル分担を現在の残留条件・役割指定に戻さない。
+次の作業は実Issue/PR・checkoutと現在のhide指示を照合して進める。
