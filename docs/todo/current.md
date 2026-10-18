@@ -3,12 +3,13 @@
 記録日: 2026-10-19。hideの依頼による日報・引き継ぎの確定は[#354](https://github.com/hideyukiMORI/nene-folio/issues/354)。
 GUI統一は[#348](https://github.com/hideyukiMORI/nene-folio/issues/348)（部品体系と状態）と[#349](https://github.com/hideyukiMORI/nene-folio/issues/349)（操作帯と保存状態）をmain `c78a398`へ統合済み。
 [#350](https://github.com/hideyukiMORI/nene-folio/issues/350)（メニューの器・失敗の一本化）と[#351](https://github.com/hideyukiMORI/nene-folio/issues/351)（面の規則）は設計済み・未着手で、順序はI-C→I-D。
-最新確認先は`D:/NeNeFolio/check/2026-10-19/349-action-bar/NeNeFolio-0.2.0-win-x64/NeNeFolio.exe`。稼働中アプリや未保存本文を操作しない。
+[#356](https://github.com/hideyukiMORI/nene-folio/issues/356)（空状態で描画と配り直しが自己ループし入力が届かない退行）をmain `5457c48`へ統合済み。
+最新確認先は`D:/NeNeFolio/check/2026-10-19/356-empty-state/NeNeFolio-0.2.0-win-x64/NeNeFolio.exe`。`check/2026-10-19/349-action-bar`の候補は文書を開いていない間固まるので起動しない。稼働中アプリや未保存本文を操作しない。
 
 再開時は[引き継ぎ書の最新節](../handoffs/2026-10-19.md)を読み、実Issue/PR・checkoutと照合する。
 当日の到達点は[日報](../reports/2026-10-19.md)、対象検証は[I-A](../quality/2026-10-18-ui-part-styles.md)と[I-B](../quality/2026-10-18-action-bar-and-save-state.md)の品質記録。
 設計の正本は[ADR0060](../adr/0060-ui-part-styles-and-state-rule.md)。議論・文献・撮影・下書きは`D:/NeNeFolio/agents/ui-consistency-20261018/`、
-完了結果は`D:/NeNeFolio/agents/348-ui-parts/completion.json`と`D:/NeNeFolio/agents/349-action-bar/completion.json`。
+完了結果は`D:/NeNeFolio/agents/348-ui-parts/`・`349-action-bar/`・`356-empty-state/`の各`completion.json`。候補確認は起動直後・入力なし・20秒の主スレッドCPUを必ず測る（#356の教訓）。
 文書だけの変更では既存の製品検証・通常exe・配布候補を維持する。
 
 hideの分担指定（設計=Fable 5.1の設計席、実装・調査・測定=Opusの実装席、独立レビューは読み取り専用）はこのGUI統一の作業に限る。
