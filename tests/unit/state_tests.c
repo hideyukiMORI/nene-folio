@@ -6618,3 +6618,20 @@ void run_accessibility_state_tests(void)
     verify_trash_all();
     verify_remove_categories();
 }
+
+/* #328 の対象実行。本文写しを読む既存の操作境界を同じ試験で確認する。 */
+void run_filter_lookup_state_tests(void)
+{
+    finder = test_regex_port();
+    verify_index_filter();
+    verify_index_filter_refusals();
+    verify_filtered_refusals();
+    verify_filter_keeps_document();
+    verify_filter_follows_content();
+    verify_filter_follows_new_note();
+    verify_filter_cursor_lands_near();
+    verify_filter_follows_resumed_rename();
+    verify_filter_follows_move();
+    verify_trash_filter();
+    verify_category_rename_filter();
+}

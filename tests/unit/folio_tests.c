@@ -144,6 +144,27 @@ static bool run_target_tests(const char *_Nonnull argument)
     return false;
 }
 
+static bool run_filter_target_tests(const char *_Nonnull argument)
+{
+    if (strcmp(argument, "--filter-lookup") == 0)
+    {
+        run_filter_tests();
+        run_bom_filter_tests();
+        run_filter_lookup_state_tests();
+        run_index_cache_retry_state_tests();
+        printf("filter corpus and application boundary tests passed\n");
+        return true;
+    }
+    if (strcmp(argument, "--filter-lookup-oom") == 0)
+    {
+        run_corpus_allocation_tests();
+        run_index_cache_retry_allocation_tests();
+        printf("filter corpus allocation and cache retry tests passed\n");
+        return true;
+    }
+    return false;
+}
+
 static void run_bom_boundary_tests(void)
 {
     run_text_tests();
@@ -198,7 +219,8 @@ int main(int argc, char *_Nonnull *_Nonnull argv)
     }
     if (argc == 2 &&
         (run_size_overflow_target_tests(argv[1]) || run_pane_load_target_tests(argv[1]) ||
-         run_document_settings_target_tests(argv[1]) || run_target_tests(argv[1])))
+         run_document_settings_target_tests(argv[1]) || run_target_tests(argv[1]) ||
+         run_filter_target_tests(argv[1])))
     {
         return 0;
     }

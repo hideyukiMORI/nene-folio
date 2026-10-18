@@ -384,12 +384,123 @@ static void verify_removed_corpus(void)
     require(note_corpus_body(corpus, "A", "one") == nullptr &&
                 note_corpus_body(corpus, "A", "two") != nullptr &&
                 note_corpus_body(corpus, "B", "one") != nullptr,
-            "only the removed destination disappears, including the moved last slot");
+            "only the removed destination disappears and the surviving destinations stay readable");
     note_corpus_remove(corpus, "A", "one");
     require(note_corpus_put(corpus, "A", "one", text) == NOTE_CORPUS_ACCEPTED &&
                 same_text(note_text_bytes(note_corpus_body(corpus, "A", "one")), "kept body"),
             "the removed name can receive a fresh cache entry");
     note_text_destroy(text);
+    note_corpus_destroy(corpus);
+}
+
+/* 宛先の大小・prefix・多バイトと、追加順に関係なく本文の対応を保つ（#328）。 */
+static void verify_corpus_insertion_order(void)
+{
+    static const char *const categories[] = {"A", "a", "a", "a", "aa", "b", "猫", "猫"};
+    static const char *const names[] = {"x", "A", "a", "aa", "a", "a", "a", "文"};
+    static const char *const bodies[] = {
+        "upper category",  "upper note",     "lower note", "note prefix",
+        "category prefix", "other category", "cat",        "text"};
+    static const size_t orders[][8] = {{7, 6, 5, 4, 3, 2, 1, 0}, {3, 6, 1, 7, 0, 5, 2, 4}};
+    for (size_t pass = 0; pass < 2; ++pass)
+    {
+        struct note_corpus *corpus = nullptr;
+        require(note_corpus_create(&corpus) == NOTE_CORPUS_ACCEPTED, "ordered corpus");
+        for (size_t at = 0; at < 8; ++at)
+        {
+            size_t index = orders[pass][at];
+            struct note_text *text = text_of(bodies[index]);
+            require(note_corpus_put(corpus, categories[index], names[index], text) ==
+                        NOTE_CORPUS_ACCEPTED,
+                    "reverse and interleaved destinations are accepted");
+            note_text_destroy(text);
+        }
+        for (size_t index = 0; index < 8; ++index)
+        {
+            require(same_text(
+                        note_text_bytes(note_corpus_body(corpus, categories[index], names[index])),
+                        bodies[index]),
+                    "each destination keeps its own body after arbitrary insertions");
+        }
+        require(note_corpus_body(corpus, "0", "x") == nullptr &&
+                    note_corpus_body(corpus, "a", "0") == nullptr &&
+                    note_corpus_body(corpus, "a", "ab") == nullptr &&
+                    note_corpus_body(corpus, "猫", "語") == nullptr,
+                "missing destinations before, between and after known names stay absent");
+        const size_t removed[] = {0, 3, 7};
+        for (size_t index = 0; index < 3; ++index)
+        {
+            size_t key = removed[index];
+            note_corpus_remove(corpus, categories[key], names[key]);
+            require(note_corpus_body(corpus, categories[key], names[key]) == nullptr,
+                    "first, middle and last destinations can be removed");
+            struct note_text *text = text_of(bodies[key]);
+            require(note_corpus_put(corpus, categories[key], names[key], text) ==
+                        NOTE_CORPUS_ACCEPTED,
+                    "removed destinations can be reinserted");
+            note_text_destroy(text);
+        }
+        for (size_t index = 0; index < 8; ++index)
+        {
+            require(same_text(
+                        note_text_bytes(note_corpus_body(corpus, categories[index], names[index])),
+                        bodies[index]),
+                    "remove and re-add preserve all destination/body pairs");
+        }
+        note_corpus_destroy(corpus);
+    }
+}
+
+static void put_corpus_body(struct note_corpus *_Nonnull corpus, const char *_Nonnull category,
+                            const char *_Nonnull name, const char *_Nonnull bytes)
+{
+    struct note_text *text = text_of(bytes);
+    require(note_corpus_put(corpus, category, name, text) == NOTE_CORPUS_ACCEPTED,
+            "corpus mutation fixture");
+    note_text_destroy(text);
+}
+
+/* 名前だけを動かす操作は、左右どちらへ移っても同じ本文を所有し続ける（#328）。 */
+static void verify_corpus_rekey(void)
+{
+    struct note_corpus *corpus = nullptr;
+    require(note_corpus_create(&corpus) == NOTE_CORPUS_ACCEPTED, "rekey corpus");
+    put_corpus_body(corpus, "z", "z", "tail");
+    put_corpus_body(corpus, "a", "f", "right");
+    put_corpus_body(corpus, "b", "b", "stale move target");
+    put_corpus_body(corpus, "a", "b", "stale rename target");
+    put_corpus_body(corpus, "a", "d", "source");
+    const struct note_text *held = note_corpus_body(corpus, "a", "d");
+    require(held != nullptr, "hold the source body before changing its name");
+    require(note_corpus_rename(corpus, "a", "d", "a") == NOTE_CORPUS_ACCEPTED &&
+                note_corpus_body(corpus, "a", "d") == nullptr &&
+                note_corpus_body(corpus, "a", "a") == held,
+            "rename toward the start preserves the owned body address");
+    require(note_corpus_rename(corpus, "a", "a", "z") == NOTE_CORPUS_ACCEPTED &&
+                note_corpus_rename(corpus, "a", "z", "y") == NOTE_CORPUS_ACCEPTED &&
+                note_corpus_body(corpus, "a", "a") == nullptr &&
+                note_corpus_body(corpus, "a", "z") == nullptr &&
+                note_corpus_body(corpus, "a", "y") == held,
+            "rename toward the end and within the same position preserve the body");
+    require(note_corpus_relocate(corpus, "a", "y", "A") == NOTE_CORPUS_ACCEPTED &&
+                note_corpus_relocate(corpus, "A", "y", "z") == NOTE_CORPUS_ACCEPTED &&
+                note_corpus_relocate(corpus, "z", "y", "a") == NOTE_CORPUS_ACCEPTED &&
+                note_corpus_body(corpus, "A", "y") == nullptr &&
+                note_corpus_body(corpus, "z", "y") == nullptr &&
+                note_corpus_body(corpus, "a", "y") == held,
+            "moving across categories in both directions preserves the source");
+    require(note_corpus_rename(corpus, "a", "y", "b") == NOTE_CORPUS_ACCEPTED &&
+                note_corpus_body(corpus, "a", "y") == nullptr &&
+                note_corpus_body(corpus, "a", "b") == held,
+            "rename discards an earlier stale target before locating the source again");
+    require(note_corpus_relocate(corpus, "a", "b", "b") == NOTE_CORPUS_ACCEPTED &&
+                note_corpus_body(corpus, "a", "b") == nullptr &&
+                note_corpus_body(corpus, "b", "b") == held,
+            "relocate discards a later stale target and retains the source body");
+    require(same_text(note_text_bytes(held), "source") &&
+                same_text(note_text_bytes(note_corpus_body(corpus, "a", "f")), "right") &&
+                same_text(note_text_bytes(note_corpus_body(corpus, "z", "z")), "tail"),
+            "unrelated bodies survive every rekey and target removal");
     note_corpus_destroy(corpus);
 }
 
@@ -404,4 +515,6 @@ void run_filter_tests(void)
     verify_corpus();
     verify_removed_filter();
     verify_removed_corpus();
+    verify_corpus_insertion_order();
+    verify_corpus_rekey();
 }
