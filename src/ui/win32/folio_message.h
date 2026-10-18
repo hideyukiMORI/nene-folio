@@ -29,5 +29,9 @@ constexpr UINT folio_message_index_focused = WM_APP + 8;
 constexpr UINT folio_message_index_focus = WM_APP + 9;
 /* OS外観を安全な時点で読み直す。モーダルも同じ所有者へ要求する（ADR0057）。 */
 constexpr UINT folio_message_appearance_changed = WM_APP + 10;
+/* drawerの描画でキーボードの印（focus）を描いてよいかを調べる。主窓がboolを返す（ADR0060）。 */
+constexpr UINT folio_message_focus_cues = WM_APP + 11;
+/* drawerの描画で「すべてのノートを検索」の欄にfocusがあるかを調べる。主窓がboolを返す。 */
+constexpr UINT folio_message_filter_focused = WM_APP + 12;
 
 #endif

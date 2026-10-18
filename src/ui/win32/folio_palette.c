@@ -1,5 +1,6 @@
 #include "folio_palette.h"
 
+#include "theme_contrast.h"
 #include "theme_palette.h"
 
 #include <math.h>
@@ -35,6 +36,13 @@ struct folio_palette folio_palette_from(const struct theme_palette *_Nonnull pal
         .dialog_secondary = to_color(palette->dialog_secondary),
         .dialog_backdrop = to_color(palette->dialog_backdrop),
         .dialog_backdrop_alpha = palette->dialog_backdrop_alpha,
+        .hover_line = to_color(theme_contrast_line(palette, THEME_LINE_HOVER)),
+        .focus_line = to_color(theme_contrast_line(palette, THEME_LINE_FOCUS)),
+        .focus_item_line = to_color(theme_contrast_line(palette, THEME_LINE_FOCUS_ITEM)),
+        .focus_selected_line = to_color(theme_contrast_line(palette, THEME_LINE_FOCUS_SELECTED)),
+        .focus_primary_line = to_color(theme_contrast_line(palette, THEME_LINE_FOCUS_PRIMARY)),
+        .field_line = to_color(theme_contrast_line(palette, THEME_LINE_FIELD)),
+        .field_focus_line = to_color(theme_contrast_line(palette, THEME_LINE_FIELD_FOCUS)),
     };
 }
 

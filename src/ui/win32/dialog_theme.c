@@ -1,7 +1,9 @@
 #include "dialog_theme.h"
+
 #include "folio_message.h"
 #include "folio_palette.h"
 #include "folio_state.h"
+#include "ui_part.h"
 #include "ui_text.h"
 
 #include <dwmapi.h>
@@ -260,14 +262,9 @@ void dialog_theme_draw_item(const struct dialog_theme *_Nonnull theme,
 }
 
 void dialog_theme_frame(const struct dialog_theme *_Nonnull theme, HDC _Nonnull dc,
-                        const RECT *_Nonnull rect)
+                        const RECT *_Nonnull rect, int focus)
 {
-    if (theme->palette.contrast == FOLIO_CONTRAST_HIGH)
-    {
-        frame(dc, *rect, theme->palette.current_text);
-        return;
-    }
-    FrameRect(dc, rect, theme->chip);
+    ui_part_frame_field(dc, &theme->palette, *rect, focus);
 }
 
 void dialog_theme_decorate(const struct dialog_theme *_Nonnull theme, HWND _Nonnull dialog)

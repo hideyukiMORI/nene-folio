@@ -31,6 +31,15 @@ struct folio_palette
     COLORREF dialog_secondary;      /* 読める濃さを保った版と操作案内 */
     COLORREF dialog_backdrop;       /* 背後操作を遮る暗幕 */
     BYTE dialog_backdrop_alpha;     /* 暗幕だけの不透明度 */
+    /* 以下は token ではなく、core の theme_contrast_line が文字系 token から選んだ線の色
+     * （ADR0060 の決定 3）。描画は役割をここから引き、token を直接選ばない。 */
+    COLORREF hover_line;          /* 部品の内側 1px の hover 枠 */
+    COLORREF focus_line;          /* 単独部品の外側の focus */
+    COLORREF focus_item_line;     /* 群の非選択項目の内側の focus */
+    COLORREF focus_selected_line; /* 群の選択中・押下中の項目の内側の focus */
+    COLORREF focus_primary_line;  /* B 主操作の内側の focus */
+    COLORREF field_line;          /* 入力欄の静止枠 */
+    COLORREF field_focus_line;    /* 入力欄の focus 枠 */
 };
 
 [[nodiscard]] struct folio_palette folio_palette_from(const struct theme_palette *_Nonnull palette);

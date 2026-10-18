@@ -3,6 +3,7 @@
  */
 #include "folio_command.h"
 #include "folio_theme_choice.h"
+#include "theme_contrast.h"
 #include "theme_palette.h"
 #include "unit_tests.h"
 #include <math.h>
@@ -153,13 +154,11 @@ static double luminance(struct rgb_color color)
            0.0722 * linear_channel(color.blue);
 }
 
+/* 比の式は core の theme_contrast_ratio の 1 本。pow
+ * の式は表との突き合わせ（verify_line_ratio_table）だけに使う。 */
 static void readable(struct rgb_color foreground, struct rgb_color background)
 {
-    double first = luminance(foreground);
-    double second = luminance(background);
-    double high = first > second ? first : second;
-    double low = first > second ? second : first;
-    require((high + 0.05) / (low + 0.05) >= 4.5,
+    require(theme_contrast_ratio(foreground, background) >= 4.5,
             "readable theme roles contrast at least 4.5:1 against their actual background");
 }
 
@@ -237,6 +236,91 @@ static void verify_readable_roles(void)
     }
 }
 
+static double ratio_of(struct rgb_color first, struct rgb_color second)
+{
+    double left = luminance(first);
+    double right = luminance(second);
+    double high = left > right ? left : right;
+    double low = left > right ? right : left;
+    return (high + 0.05) / (low + 0.05);
+}
+
+/* 線の役割と、その線が接する地（ADR0060の決定3）。正典の表とは独立に書き下す。 */
+static void line_meets(const struct theme_palette *_Nonnull palette, enum theme_line line,
+                       const struct rgb_color *_Nonnull grounds, size_t count)
+{
+    struct rgb_color ink = theme_contrast_line(palette, line);
+    for (size_t index = 0; index < count; ++index)
+    {
+        require(theme_contrast_ratio(ink, grounds[index]) >= 3.0,
+                "state, boundary and focus lines contrast at least 3:1 with every adjacent color");
+    }
+}
+
+static void verify_line_roles(void)
+{
+    for (size_t index = 0; index < folio_theme_count(); ++index)
+    {
+        const struct theme_palette *_Nonnull palette = folio_theme_palette(folio_theme_at(index));
+        const struct rgb_color parts[] = {palette->window, palette->pane};
+        const struct rgb_color outside[] = {palette->window, palette->pane,
+                                            palette->dialog_surface};
+        const struct rgb_color fields[] = {palette->window, palette->pane, palette->dialog_surface,
+                                           palette->dialog_control};
+        line_meets(palette, THEME_LINE_HOVER, parts, 2);
+        line_meets(palette, THEME_LINE_FOCUS, outside, 3);
+        line_meets(palette, THEME_LINE_FOCUS_ITEM, parts, 2);
+        line_meets(palette, THEME_LINE_FOCUS_SELECTED, &palette->selected_background, 1);
+        line_meets(palette, THEME_LINE_FOCUS_PRIMARY, &palette->chip_background, 1);
+        line_meets(palette, THEME_LINE_FIELD, fields, 4);
+        line_meets(palette, THEME_LINE_FIELD_FOCUS, fields, 4);
+    }
+}
+
+static void verify_line_ratio_table(void)
+{
+    const struct rgb_color black = {0, 0, 0};
+    for (unsigned value = 0; value < 256; ++value)
+    {
+        struct rgb_color gray = {(unsigned char)value, (unsigned char)value, (unsigned char)value};
+        double expected = ratio_of(gray, black);
+        double actual = theme_contrast_ratio(black, gray);
+        require(fabs(actual - expected) < 1e-9,
+                "the folded sRGB table matches the WCAG luminance formula for every channel value");
+    }
+}
+
+/* 既定の色が届かないテーマでは決まった順の別の文字系トークンへ切り替わる。 */
+static void verify_line_fallback(void)
+{
+    const struct rgb_color white = {0xFF, 0xFF, 0xFF};
+    const struct rgb_color black = {0, 0, 0};
+    const struct rgb_color pale = {0xC0, 0xC0, 0xC0};
+    struct theme_palette palette = {.window = white,
+                                    .pane = white,
+                                    .dialog_surface = white,
+                                    .dialog_control = white,
+                                    .header_text = black,
+                                    .current_text = white,
+                                    .category_text = white,
+                                    .editor_text = white,
+                                    .selected_text = white,
+                                    .note_text = white,
+                                    .selected_background = white,
+                                    .chip_background = white,
+                                    .chip_text = white};
+    require(rgb_color_equal(theme_contrast_line(&palette, THEME_LINE_FIELD), black),
+            "a role keeps its own token when that token already contrasts enough");
+    palette.header_text = white;
+    palette.editor_text = black;
+    require(rgb_color_equal(theme_contrast_line(&palette, THEME_LINE_FIELD_FOCUS), black),
+            "a failing role switches to the first text token that reaches 3:1");
+    palette.editor_text = white;
+    palette.note_text = pale;
+    require(rgb_color_equal(theme_contrast_line(&palette, THEME_LINE_FOCUS_SELECTED), pale),
+            "when no text token reaches 3:1 the line takes the strongest available contrast");
+}
+
 static void verify_filter_and_ex(void)
 {
     size_t tokyo = 0;
@@ -272,5 +356,8 @@ void run_theme_tests(void)
     verify_nib_import();
     verify_catalog_names();
     verify_readable_roles();
+    verify_line_ratio_table();
+    verify_line_roles();
+    verify_line_fallback();
     verify_filter_and_ex();
 }

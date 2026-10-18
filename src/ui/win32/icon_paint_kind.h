@@ -12,7 +12,10 @@ enum icon_paint_kind : unsigned char
     ICON_PAINT_ADD,           /* 新しいカテゴリを作る + */
     ICON_PAINT_NEW_NOTE,      /* 紙の輪郭と追加記号（共通ヘッダーの新規ノート） */
     ICON_PAINT_SELECTION,     /* 設定画面のいまの値の行に付く印 */
-    ICON_PAINT_WARNING        /* 失敗の箱の本文の左の三角の「!」（ADR 0035 の補正 13） */
+    ICON_PAINT_WARNING,       /* 失敗の箱の本文の左の三角の「!」（ADR 0035 の補正 13） */
+    ICON_PAINT_SAVE,          /* 右上を45°で面取りした円盤（保存・ADR0060 の決定 6） */
+    ICON_PAINT_SEARCH,        /* 虫眼鏡（このノート内を検索） */
+    ICON_PAINT_HELP           /* 輪の中の「?」の面（ヘルプ・C様式の20pxで使う） */
 };
 
 #endif

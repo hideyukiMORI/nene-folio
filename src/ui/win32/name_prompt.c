@@ -6,6 +6,7 @@
 #include "folio_state.h"
 #include "note_name.h"
 #include "ui_face.h"
+#include "ui_part.h"
 #include "ui_text.h"
 #include "ui_text_request.h"
 #include "utf16_text.h"
@@ -991,17 +992,61 @@ static void measure_category(const struct name_prompt *_Nonnull prompt,
     item->itemHeight = (UINT)category_row_height(prompt);
 }
 
-static void frame_around(const struct name_prompt *_Nonnull prompt, HDC device, HWND window)
+static RECT field_bounds(const struct name_prompt *_Nonnull prompt, HWND window)
 {
     RECT bounds;
     GetWindowRect(window, &bounds);
     MapWindowPoints(nullptr, prompt->dialog, (POINT *)&bounds, 2);
-    InflateRect(&bounds, 1, 1);
-    dialog_theme_frame(prompt->theme, device, &bounds);
+    return bounds;
 }
 
-/* WS_BORDER を外した名前欄と一覧の外側に札の色の 1px の枠を描く（draw_filter_frame と同じ流儀・
- * ADR 0035 の補正 17）。 */
+static void frame_around(const struct name_prompt *_Nonnull prompt, HDC device, HWND window)
+{
+    RECT bounds = field_bounds(prompt, window);
+    int focus = GetFocus() == window ? ui_part_focus_width(GetDpiForWindow(prompt->dialog)) : 0;
+    dialog_theme_frame(prompt->theme, device, &bounds, focus);
+}
+
+/* focus の出入りで枠の太さが変わるので、欄の外側の輪だけを描き直す（欄の中は塗らない）。 */
+static void refresh_frame(const struct name_prompt *_Nonnull prompt, HWND window)
+{
+    RECT inner = field_bounds(prompt, window);
+    RECT outer = inner;
+    int reach = ui_part_focus_width(GetDpiForWindow(prompt->dialog));
+    InflateRect(&outer, reach, reach);
+    HRGN ring = CreateRectRgnIndirect(&outer);
+    HRGN hole = CreateRectRgnIndirect(&inner);
+    if (ring != nullptr && hole != nullptr && CombineRgn(ring, ring, hole, RGN_DIFF) != ERROR)
+    {
+        InvalidateRgn(prompt->dialog, ring, TRUE);
+    }
+    if (ring != nullptr)
+    {
+        DeleteObject(ring);
+    }
+    if (hole != nullptr)
+    {
+        DeleteObject(hole);
+    }
+}
+
+static bool field_focus_changed(const struct name_prompt *_Nonnull prompt, WPARAM wparam,
+                                LPARAM lparam)
+{
+    HWND window = (HWND)lparam;
+    WORD code = HIWORD(wparam);
+    bool name = window == prompt->name && (code == EN_SETFOCUS || code == EN_KILLFOCUS);
+    bool category = prompt->category != nullptr && window == prompt->category &&
+                    (code == LBN_SETFOCUS || code == LBN_KILLFOCUS);
+    if (name || category)
+    {
+        refresh_frame(prompt, window);
+    }
+    return name || category;
+}
+
+/* WS_BORDER を外した名前欄と一覧の外側に入力欄の枠を描く（draw_filter_frame と同じ ui_part の 1
+ * 本・ ADR 0035 の補正 17 を ADR0060 の決定 3 で置き換えた）。 */
 static void paint_frame(const struct name_prompt *_Nonnull prompt)
 {
     PAINTSTRUCT paint;
@@ -1091,6 +1136,10 @@ static bool reads_as_accept(const struct name_prompt *_Nonnull prompt, WPARAM wp
 
 static INT_PTR prompt_command(struct name_prompt *_Nonnull prompt, WPARAM wparam, LPARAM lparam)
 {
+    if (field_focus_changed(prompt, wparam, lparam))
+    {
+        return FALSE;
+    }
     if (reads_as_cancel(prompt, wparam))
     {
         EndDialog(prompt->dialog, IDCANCEL);

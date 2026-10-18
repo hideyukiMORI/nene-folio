@@ -35,6 +35,7 @@
 #include "settings_row_kind.h"
 #include "theme_row.h"
 #include "ui_face.h"
+#include "ui_part.h"
 #include "ui_text.h"
 #include "ui_text_request.h"
 #include "utf16_text.h"
@@ -96,7 +97,17 @@ struct folio_window
     bool filter_composing;
     bool filter_saving; /* 保存中のmodalから戻るfocus通知の再入だけを抑止する。 */
     bool root_composing;
-    bool new_note_pressed; /* 共通ヘッダーの新規だけが所有するcapture中の押下。 */
+    /* 押された部品は 1 つの値で持つ（ACCESSIBLE_WINDOW = 押されていない・ADR0060 の決定 4）。
+     * マウスはcapture中に矩形の内外を pressed_inside に写し、Space は離すまで押下の見た目にする。
+     */
+    enum accessible_kind pressed_part;
+    bool pressed_inside;
+    bool pressed_by_key;
+    enum accessible_kind hover_part; /* ポインタの下の部品。地は塗らず内側の枠で示す。 */
+    bool hover_tracking;             /* TrackMouseEvent の WM_MOUSELEAVE を待っている。 */
+    /* キーボードで動かした後だけ focus を描く（ADR0060 の決定 3）。押下で下ろす。 */
+    bool focus_cues;
+    bool focus_cues_always; /* OS の「常にキーボードの印を表示」（SPI_GETKEYBOARDCUES） */
     HWND _Nullable command_return_focus;
     HBRUSH _Nullable command_brush;
     enum command_surface_mode command_surface;
@@ -177,17 +188,151 @@ static const struct
 {
     enum folio_layout_mode mode;
     enum folio_command command;
-    enum ui_text button;
+    enum accessible_kind kind;
     enum ui_text shortcut;
     WORD accelerator;
     WORD key;
 } layout_buttons[] = {
-    {FOLIO_LAYOUT_DRAWER, FOLIO_COMMAND_LAYOUT_DRAWER, UI_TEXT_LAYOUT_BUTTON_DRAWER,
+    {FOLIO_LAYOUT_DRAWER, FOLIO_COMMAND_LAYOUT_DRAWER, ACCESSIBLE_LAYOUT_DRAWER,
      UI_TEXT_LAYOUT_KEY_DRAWER, 108, '1'},
-    {FOLIO_LAYOUT_BOTH, FOLIO_COMMAND_LAYOUT_BOTH, UI_TEXT_LAYOUT_BUTTON_BOTH,
-     UI_TEXT_LAYOUT_KEY_BOTH, 109, '2'},
-    {FOLIO_LAYOUT_NOTE, FOLIO_COMMAND_LAYOUT_NOTE, UI_TEXT_LAYOUT_BUTTON_NOTE,
-     UI_TEXT_LAYOUT_KEY_NOTE, 110, '3'},
+    {FOLIO_LAYOUT_BOTH, FOLIO_COMMAND_LAYOUT_BOTH, ACCESSIBLE_LAYOUT_BOTH, UI_TEXT_LAYOUT_KEY_BOTH,
+     109, '2'},
+    {FOLIO_LAYOUT_NOTE, FOLIO_COMMAND_LAYOUT_NOTE, ACCESSIBLE_LAYOUT_NOTE, UI_TEXT_LAYOUT_KEY_NOTE,
+     110, '3'},
+};
+
+/* 自前操作の親子順・名前・focus可否と、表示名・UIA Name・AcceleratorKey・tooltip の 1 つの元
+ * （ADR0060 の決定 5）。key は AcceleratorKey と tooltip に、hint は tooltip だけに出る。
+ * native入力欄はこのtreeに複製しない。 */
+static const struct
+{
+    enum accessible_kind parent;
+    enum ui_text label;
+    bool focusable;
+    enum ui_text key;
+    enum ui_text hint;
+} accessible_controls[] = {
+    [ACCESSIBLE_WINDOW] = {ACCESSIBLE_WINDOW, UI_TEXT_APP_LOGO, false, UI_TEXT_EMPTY,
+                           UI_TEXT_EMPTY},
+    [ACCESSIBLE_DRAWER] = {ACCESSIBLE_WINDOW, UI_TEXT_TITLE_CATEGORIES, false, UI_TEXT_EMPTY,
+                           UI_TEXT_EMPTY},
+    [ACCESSIBLE_HEADER] = {ACCESSIBLE_WINDOW, UI_TEXT_ACCESSIBLE_HEADER, false, UI_TEXT_EMPTY,
+                           UI_TEXT_EMPTY},
+    [ACCESSIBLE_NEW_NOTE] = {ACCESSIBLE_HEADER, UI_TEXT_COMMAND_NEW, true, UI_TEXT_KEY_NEW,
+                             UI_TEXT_EMPTY},
+    [ACCESSIBLE_LAYOUT_GROUP] = {ACCESSIBLE_HEADER, UI_TEXT_LAYOUT_GROUP, false, UI_TEXT_EMPTY,
+                                 UI_TEXT_EMPTY},
+    [ACCESSIBLE_LAYOUT_DRAWER] = {ACCESSIBLE_LAYOUT_GROUP, UI_TEXT_LAYOUT_BUTTON_DRAWER, true,
+                                  UI_TEXT_LAYOUT_KEY_DRAWER, UI_TEXT_LAYOUT_NARROW_HINT},
+    [ACCESSIBLE_LAYOUT_BOTH] = {ACCESSIBLE_LAYOUT_GROUP, UI_TEXT_LAYOUT_BUTTON_BOTH, true,
+                                UI_TEXT_LAYOUT_KEY_BOTH, UI_TEXT_EMPTY},
+    [ACCESSIBLE_LAYOUT_NOTE] = {ACCESSIBLE_LAYOUT_GROUP, UI_TEXT_LAYOUT_BUTTON_NOTE, true,
+                                UI_TEXT_LAYOUT_KEY_NOTE, UI_TEXT_EMPTY},
+    [ACCESSIBLE_SETTINGS] = {ACCESSIBLE_HEADER, UI_TEXT_TOOLTIP_SETTINGS, true, UI_TEXT_EMPTY,
+                             UI_TEXT_EMPTY},
+    [ACCESSIBLE_CLOSE] = {ACCESSIBLE_HEADER, UI_TEXT_TOOLTIP_CLOSE, true, UI_TEXT_KEY_CLOSE,
+                          UI_TEXT_EMPTY},
+    [ACCESSIBLE_PANE_TOOLS] = {ACCESSIBLE_WINDOW, UI_TEXT_ACCESSIBLE_PANE_TOOLS, false,
+                               UI_TEXT_EMPTY, UI_TEXT_EMPTY},
+    [ACCESSIBLE_MODE_GROUP] = {ACCESSIBLE_PANE_TOOLS, UI_TEXT_ACCESSIBLE_MODE, false, UI_TEXT_EMPTY,
+                               UI_TEXT_EMPTY},
+    [ACCESSIBLE_VIEW] = {ACCESSIBLE_MODE_GROUP, UI_TEXT_CHIP_VIEW, true, UI_TEXT_EMPTY,
+                         UI_TEXT_COMMAND_VIEW},
+    [ACCESSIBLE_EDIT] = {ACCESSIBLE_MODE_GROUP, UI_TEXT_CHIP_EDIT, true, UI_TEXT_EMPTY,
+                         UI_TEXT_TOOLTIP_EDIT},
+    [ACCESSIBLE_SAVE] = {ACCESSIBLE_PANE_TOOLS, UI_TEXT_COMMAND_SAVE, true, UI_TEXT_KEY_SAVE,
+                         UI_TEXT_EMPTY},
+    [ACCESSIBLE_MENU] = {ACCESSIBLE_PANE_TOOLS, UI_TEXT_ACTION_OPERATIONS, true, UI_TEXT_EMPTY,
+                         UI_TEXT_TOOLTIP_OPERATIONS},
+    [ACCESSIBLE_HELP] = {ACCESSIBLE_PANE_TOOLS, UI_TEXT_COMMAND_HELP, true, UI_TEXT_KEY_HELP,
+                         UI_TEXT_EMPTY},
+    [ACCESSIBLE_FIND] = {ACCESSIBLE_PANE_TOOLS, UI_TEXT_COMMAND_FIND, true, UI_TEXT_KEY_FIND,
+                         UI_TEXT_EMPTY},
+    [ACCESSIBLE_NEW_CATEGORY] = {ACCESSIBLE_DRAWER, UI_TEXT_COMMAND_NEW_CATEGORY, true,
+                                 UI_TEXT_EMPTY, UI_TEXT_EMPTY},
+    [ACCESSIBLE_TREE] = {ACCESSIBLE_DRAWER, UI_TEXT_TITLE_CATEGORIES, true, UI_TEXT_EMPTY,
+                         UI_TEXT_EMPTY},
+    [ACCESSIBLE_CATEGORY] = {ACCESSIBLE_TREE, UI_TEXT_EMPTY, true, UI_TEXT_EMPTY, UI_TEXT_EMPTY},
+    [ACCESSIBLE_NOTE] = {ACCESSIBLE_CATEGORY, UI_TEXT_EMPTY, true, UI_TEXT_EMPTY, UI_TEXT_EMPTY},
+    [ACCESSIBLE_FILTER] = {ACCESSIBLE_WINDOW, UI_TEXT_PLACEHOLDER_FILTER, true, UI_TEXT_EMPTY,
+                           UI_TEXT_EMPTY},
+    [ACCESSIBLE_BODY] = {ACCESSIBLE_WINDOW, UI_TEXT_ACCESSIBLE_BODY, true, UI_TEXT_EMPTY,
+                         UI_TEXT_EMPTY},
+    [ACCESSIBLE_NOTICE] = {ACCESSIBLE_WINDOW, UI_TEXT_EMPTY, false, UI_TEXT_EMPTY, UI_TEXT_EMPTY},
+    [ACCESSIBLE_SURFACE] = {ACCESSIBLE_WINDOW, UI_TEXT_EMPTY, false, UI_TEXT_EMPTY, UI_TEXT_EMPTY},
+    [ACCESSIBLE_SURFACE_LIST] = {ACCESSIBLE_SURFACE, UI_TEXT_EMPTY, false, UI_TEXT_EMPTY,
+                                 UI_TEXT_EMPTY},
+    [ACCESSIBLE_SURFACE_CHOICE] = {ACCESSIBLE_SURFACE_LIST, UI_TEXT_EMPTY, true, UI_TEXT_EMPTY,
+                                   UI_TEXT_EMPTY},
+    [ACCESSIBLE_SURFACE_LANGUAGE] = {ACCESSIBLE_SURFACE_LIST, UI_TEXT_EMPTY, true, UI_TEXT_EMPTY,
+                                     UI_TEXT_EMPTY},
+    [ACCESSIBLE_SURFACE_TOGGLE] = {ACCESSIBLE_SURFACE_LIST, UI_TEXT_EMPTY, true, UI_TEXT_EMPTY,
+                                   UI_TEXT_EMPTY},
+    [ACCESSIBLE_SURFACE_BUTTON] = {ACCESSIBLE_SURFACE, UI_TEXT_EMPTY, false, UI_TEXT_EMPTY,
+                                   UI_TEXT_EMPTY},
+    [ACCESSIBLE_SURFACE_TEXT] = {ACCESSIBLE_SURFACE_LIST, UI_TEXT_EMPTY, false, UI_TEXT_EMPTY,
+                                 UI_TEXT_EMPTY},
+    [ACCESSIBLE_SURFACE_HELP] = {ACCESSIBLE_SURFACE, UI_TEXT_EMPTY, false, UI_TEXT_EMPTY,
+                                 UI_TEXT_EMPTY},
+    [ACCESSIBLE_SURFACE_STATUS] = {ACCESSIBLE_SURFACE, UI_TEXT_EMPTY, false, UI_TEXT_EMPTY,
+                                   UI_TEXT_EMPTY},
+    [ACCESSIBLE_COMMAND_INPUT] = {ACCESSIBLE_SURFACE, UI_TEXT_EMPTY, true, UI_TEXT_EMPTY,
+                                  UI_TEXT_EMPTY},
+    [ACCESSIBLE_REPLACE_PATTERN] = {ACCESSIBLE_SURFACE, UI_TEXT_ACCESSIBLE_PATTERN, true,
+                                    UI_TEXT_EMPTY, UI_TEXT_EMPTY},
+    [ACCESSIBLE_REPLACE_TEXT] = {ACCESSIBLE_SURFACE, UI_TEXT_ACCESSIBLE_REPLACEMENT, true,
+                                 UI_TEXT_EMPTY, UI_TEXT_EMPTY},
+};
+
+/* 自前で描く操作部品と、その様式（ADR0060 の決定 1）。hover・押下・tooltipの対象もこの表。 */
+static const struct
+{
+    enum accessible_kind kind;
+    enum ui_part_style style;
+} main_parts[] = {
+    {ACCESSIBLE_NEW_NOTE, UI_PART_STYLE_COMMAND},
+    {ACCESSIBLE_LAYOUT_DRAWER, UI_PART_STYLE_CHOICE},
+    {ACCESSIBLE_LAYOUT_BOTH, UI_PART_STYLE_CHOICE},
+    {ACCESSIBLE_LAYOUT_NOTE, UI_PART_STYLE_CHOICE},
+    {ACCESSIBLE_SETTINGS, UI_PART_STYLE_ICON},
+    {ACCESSIBLE_CLOSE, UI_PART_STYLE_ICON},
+    {ACCESSIBLE_VIEW, UI_PART_STYLE_CHOICE},
+    {ACCESSIBLE_EDIT, UI_PART_STYLE_CHOICE},
+    {ACCESSIBLE_SAVE, UI_PART_STYLE_COMMAND},
+    {ACCESSIBLE_MENU, UI_PART_STYLE_COMMAND},
+    {ACCESSIBLE_HELP, UI_PART_STYLE_COMMAND},
+    {ACCESSIBLE_FIND, UI_PART_STYLE_COMMAND},
+};
+
+static size_t main_part_count(void)
+{
+    return sizeof main_parts / sizeof main_parts[0];
+}
+
+static bool main_part(enum accessible_kind kind)
+{
+    for (size_t index = 0; index < main_part_count(); ++index)
+    {
+        if (main_parts[index].kind == kind)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+/* 本文操作帯の群の項目（添字は action_button_rect と共有）。絵は 5 秒で意味が分かるものだけ。 */
+constexpr size_t action_count = 4;
+static const struct
+{
+    enum accessible_kind kind;
+    bool has_icon;
+    enum icon_paint_kind icon;
+} action_parts[action_count] = {
+    {ACCESSIBLE_SAVE, true, ICON_PAINT_SAVE},
+    {ACCESSIBLE_MENU, false, ICON_PAINT_SAVE},
+    {ACCESSIBLE_HELP, false, ICON_PAINT_SAVE},
+    {ACCESSIBLE_FIND, true, ICON_PAINT_SEARCH},
 };
 
 static size_t layout_button_count(void)
@@ -245,25 +390,15 @@ constexpr int base_min_width = 560;
 constexpr int base_min_height = 360;
 constexpr int base_drawer_width = 240;
 constexpr int base_common_header_height = 44;
-constexpr int base_new_note_left = 12;
-constexpr int base_new_note_size = 32;
-constexpr int base_new_note_label = 36;
 constexpr int base_new_note_drag_gap = 24;
 constexpr int base_drawer_window_width = 320;
-constexpr int base_layout_button_width = 54;
-constexpr int base_layout_group_padding = 2;
-constexpr int base_layout_settings_gap = 12;
-constexpr int base_caption_height = 44; /* 右ペインの頭。窓を掴んで動かせる帯 */
+constexpr int base_layout_button_width = 56; /* 表示3択の区画（4 の倍数・ADR0060 の決定 2） */
+constexpr int base_caption_height = 44;      /* 右ペインの頭。窓を掴んで動かせる帯 */
 constexpr int base_action_height = 36;
-constexpr int base_caption_gap = 14;
 constexpr int base_pane_left = 36;
 constexpr int base_pane_right = 56;
 constexpr int base_pane_top = 16;
 constexpr int base_pane_bottom = 32;
-constexpr int base_chip_padding = 12;
-constexpr int base_chip_height = 24;
-constexpr int base_chip_gap = 8;
-constexpr int base_chip_radius = 3;
 constexpr int base_mono_font = 11;
 constexpr int base_tracking = 1;
 /* SetTextCharacterExtra が失敗したときの戻り値（wingdi.h に名前が無い）。 */
@@ -309,11 +444,7 @@ constexpr int base_search_header_height = 24;
 constexpr int base_search_compact_width = 640;
 constexpr int base_search_title_width = 320;
 /* 操作行の常設ボタンを出せる最小の余白（これより狭ければ「操作 ▾」のメニューへ移る）。 */
-constexpr int base_action_margin = 8;
 /* 頭の釦の字の左の字下げと右の余白、釦と釦の間隔（96 DPI・#122）。 */
-constexpr int base_action_inset = 8;
-constexpr int base_action_trail = 6;
-constexpr int base_action_gap = 6;
 /* 番号の右端と本文の左端のあいだ（96 DPI・ADR 0026 の決定 1）。 */
 constexpr int base_gutter_gap = 8;
 /* 数字を測れなかったときの目安（96 DPI の Consolas 11px の実寸に近い値）。 */
@@ -327,7 +458,10 @@ constexpr DWORD attribute_border_color = 34;
 constexpr DWORD corner_round_small = 3;
 /* 設定の歯車と、現在の選択の印の寸法（96 DPI）。歯車は close_rect と同じ 24px の箱へ
  * 面のパスで塗る（ADR 0033 の決定 6）ので、放射線の長さの定数は要らない。 */
-constexpr int base_settings_gap = 6;
+constexpr int base_settings_gap = 4; /* 歯車と × の間 */
+/* 表示3択の群と歯車の間。群間 16 にすると一覧のみ（幅 320）で新規との間の移動領域 24（ADR0059）が
+ * 取れないので 8 にする（群の余白 4 と合わせ、項目と歯車の間は 12）。 */
+constexpr int base_layout_settings_gap = 8;
 /* チェック枠と採用印は24の箱へ置き、ラベルはrow.left + 32から始める。 */
 constexpr int base_settings_mark_inset = 4;
 constexpr int base_settings_mark_box = 24;
@@ -365,11 +499,16 @@ static bool create_keyboard_accelerators(struct folio_window *_Nonnull self);
 static bool translate_keyboard(const struct folio_window *_Nonnull self,
                                const MSG *_Nonnull message);
 static void keyboard_activate(struct folio_window *_Nonnull self);
-static void draw_keyboard_focus(const struct folio_window *_Nonnull self, HDC device);
+static bool choice_step(struct folio_window *_Nonnull self, WPARAM key);
+static bool part_selected(const struct folio_window *_Nonnull self, enum accessible_kind kind);
+static void set_hover(struct folio_window *_Nonnull self, enum accessible_kind kind);
+static void show_focus_cues(struct folio_window *_Nonnull self, bool shown);
 static void pointer_focus(struct folio_window *_Nonnull self, POINT point);
 static void accessible_command_invoked(struct folio_window *_Nonnull self,
                                        enum folio_command command);
 static bool accessible_visible(const struct folio_window *_Nonnull self, enum accessible_kind kind);
+static RECT accessible_main_rect(const struct folio_window *_Nonnull self,
+                                 enum accessible_kind kind);
 static LRESULT on_accessibility_message(struct folio_window *_Nonnull self, UINT message,
                                         WPARAM wparam, LPARAM lparam);
 
@@ -1048,7 +1187,8 @@ static RECT command_input_rect(const struct folio_window *_Nonnull self)
     {
         RECT previous = search_button_rect(self, 0);
         int vertical = scale(base_command_input_vertical_inset, dpi);
-        return (RECT){0, previous.top + vertical, previous.left - scale(base_command_gap, dpi),
+        int frame = ui_part_focus_width(dpi);
+        return (RECT){frame, previous.top + vertical, previous.left - scale(base_command_gap, dpi),
                       previous.bottom - vertical};
     }
     if (self->command_surface == COMMAND_SURFACE_PALETTE ||
@@ -1656,16 +1796,22 @@ static RECT caption_rect(const struct folio_window *_Nonnull self)
     return caption;
 }
 
+/* 共通ヘッダーの部品は 44 の帯の中央に高さ 28 で置く（8+28+8・ADR0060 の決定 2）。 */
+static RECT header_part_rect(const struct folio_window *_Nonnull self, int left, int width)
+{
+    RECT header = regions_for(self).header;
+    int size = scale(ui_part_height, GetDpiForWindow(self->handle));
+    int top = (header.top + header.bottom - size) / 2;
+    return (RECT){left, top, left + width, top + size};
+}
+
+/* 窓の × は C 様式（当たり 28×28）。面の端から 12。 */
 static RECT close_rect(const struct folio_window *_Nonnull self)
 {
-    RECT caption = regions_for(self).header;
+    RECT header = regions_for(self).header;
     UINT dpi = GetDpiForWindow(self->handle);
-    int size = scale(base_close_size, dpi);
-    int margin = scale(base_close_margin, dpi);
-    int middle = (caption.top + caption.bottom) / 2;
-    RECT bounds = {caption.right - margin - size, middle - size / 2, caption.right - margin,
-                   middle - size / 2 + size};
-    return bounds;
+    int size = scale(ui_part_height, dpi);
+    return header_part_rect(self, header.right - scale(ui_part_edge, dpi) - size, size);
 }
 
 /* 閉じるアイコンの左隣に置く設定の歯車（ADR 0031 の決定 8(a)）。
@@ -1674,9 +1820,26 @@ static RECT settings_rect(const struct folio_window *_Nonnull self)
 {
     RECT bounds = close_rect(self);
     UINT dpi = GetDpiForWindow(self->handle);
-    int shift = scale(base_close_size + base_settings_gap, dpi);
+    int shift = scale(ui_part_height + base_settings_gap, dpi);
     OffsetRect(&bounds, -shift, 0);
     return bounds;
+}
+
+/* 選択群の枠（項目の高さ 28 ＋上下左右 4 の余白）。表示3択と閲覧/編集が同じ形を使う。 */
+static RECT choice_group_rect(int right, int middle, int items, UINT dpi)
+{
+    int inset = scale(ui_part_choice_padding, dpi);
+    int height = scale(ui_part_height, dpi) + inset * 2;
+    int top = middle - height / 2;
+    return (RECT){right - items - inset * 2, top, right, top + height};
+}
+
+/* 群の index 番の項目。項目は等幅で、間は 0（区切りは項目の左端の 1px）。 */
+static RECT choice_item_rect(RECT group, int width, size_t index, UINT dpi)
+{
+    int inset = scale(ui_part_choice_padding, dpi);
+    int left = group.left + inset + width * (int)index;
+    return (RECT){left, group.top + inset, left + width, group.bottom - inset};
 }
 
 static RECT layout_group_rect(const struct folio_window *_Nonnull self)
@@ -1684,64 +1847,50 @@ static RECT layout_group_rect(const struct folio_window *_Nonnull self)
     UINT dpi = GetDpiForWindow(self->handle);
     RECT header = regions_for(self).header;
     int right = settings_rect(self).left - scale(base_layout_settings_gap, dpi);
-    int width = scale(
-        base_layout_button_width * (int)layout_button_count() + base_layout_group_padding * 2, dpi);
-    int middle = (header.top + header.bottom) / 2;
-    int half = scale(16, dpi);
-    return (RECT){right - width, middle - half, right, middle + half};
+    int items = scale(base_layout_button_width, dpi) * (int)layout_button_count();
+    return choice_group_rect(right, (header.top + header.bottom) / 2, items, dpi);
 }
 
-/* 文字を省く境界も描画/hit/tooltip/UIAで共有する。狭幅でも右の表示群との移動領域を残す。 */
+/* 字の幅は描画と同じ等幅の書体と字間で測る。測れなければ 0。 */
+static int measure_part_text(const struct folio_window *_Nonnull self, enum ui_text text)
+{
+    HDC device = GetDC(self->handle);
+    if (device == nullptr)
+    {
+        return 0;
+    }
+    HGDIOBJ previous = SelectObject(device, self->mono_font);
+    SetTextCharacterExtra(device, scale(base_tracking, GetDpiForWindow(self->handle)));
+    int width = measure_utf8(device, ui_text_line(text, folio_state_language(self->state)));
+    SetTextCharacterExtra(device, 0);
+    SelectObject(device, previous);
+    ReleaseDC(self->handle, device);
+    return width;
+}
+
+/* 新しいノートは A 様式の単独の釦。狭幅では字を落として絵だけ（28×28）に縮め、消さない。
+ * 文字を省く境界も描画/hit/tooltip/UIAで共有する。狭幅でも右の表示群との移動領域を残す。 */
 static RECT new_note_rect(const struct folio_window *_Nonnull self)
 {
     UINT dpi = GetDpiForWindow(self->handle);
-    int size = scale(base_new_note_size, dpi);
-    int width = size;
-    int left = scale(base_new_note_left, dpi);
+    int size = scale(ui_part_height, dpi);
+    int left = scale(ui_part_edge, dpi);
     int room = layout_group_rect(self).left - left - scale(base_new_note_drag_gap, dpi);
-    HDC device = GetDC(self->handle);
-    if (device != nullptr)
-    {
-        HGDIOBJ previous = SelectObject(device, self->mono_font);
-        SetTextCharacterExtra(device, scale(base_tracking, dpi));
-        int needed = measure_utf8(device, ui_text_line(UI_TEXT_COMMAND_NEW,
-                                                       folio_state_language(self->state))) +
-                     scale(base_new_note_label + 8, dpi);
-        if (needed <= room)
-        {
-            width = needed;
-        }
-        SetTextCharacterExtra(device, 0);
-        SelectObject(device, previous);
-        ReleaseDC(self->handle, device);
-    }
-    int top = (scale(base_common_header_height, dpi) - size) / 2;
-    return (RECT){left, top, left + width, top + size};
+    int needed = ui_part_command_width(measure_part_text(self, UI_TEXT_COMMAND_NEW), true, dpi);
+    return header_part_rect(self, left, needed <= room ? needed : size);
+}
+
+static bool new_note_labeled(const struct folio_window *_Nonnull self)
+{
+    RECT bounds = new_note_rect(self);
+    return bounds.right - bounds.left > bounds.bottom - bounds.top;
 }
 
 static RECT layout_button_rect(const struct folio_window *_Nonnull self, size_t index)
 {
     UINT dpi = GetDpiForWindow(self->handle);
-    RECT group = layout_group_rect(self);
-    int left =
-        group.left + scale(base_layout_group_padding + base_layout_button_width * (int)index, dpi);
-    int right = group.left +
-                scale(base_layout_group_padding + base_layout_button_width * (int)(index + 1), dpi);
-    int inset = scale(base_layout_group_padding, dpi);
-    return (RECT){left, group.top + inset, right, group.bottom - inset};
-}
-
-static int layout_button_hit(const struct folio_window *_Nonnull self, POINT point)
-{
-    for (size_t index = 0; index < layout_button_count(); ++index)
-    {
-        RECT button = layout_button_rect(self, index);
-        if (PtInRect(&button, point))
-        {
-            return (int)index;
-        }
-    }
-    return -1;
+    return choice_item_rect(layout_group_rect(self), scale(base_layout_button_width, dpi), index,
+                            dpi);
 }
 
 /* 2桁の番号。幅測定と描画で同じ文字列を使う。 */
@@ -1769,50 +1918,66 @@ static void breadcrumb_room(int budget, int minimum, int *_Nonnull category, int
     *category = budget - *note;
 }
 
-static enum ui_text chip_label(enum pane_mode chip)
+static enum accessible_kind mode_kind(enum pane_mode mode)
 {
-    switch (chip)
+    switch (mode)
     {
     case PANE_MODE_VIEW:
-        return UI_TEXT_CHIP_VIEW;
+        return ACCESSIBLE_VIEW;
     case PANE_MODE_EDIT:
-        return UI_TEXT_CHIP_EDIT;
+        return ACCESSIBLE_EDIT;
     }
-    return UI_TEXT_CHIP_VIEW;
+    return ACCESSIBLE_VIEW;
 }
 
-/* 札に描く 1 行。札の幅も当たり判定もこの 1 本を通る。 */
-static const char *_Nonnull chip_text(const struct folio_window *_Nonnull self, enum pane_mode chip)
+/* 閲覧/編集は表示3択と同じ S 様式の群（ADR0060 の決定 1）。位置はパンくず段の右端のまま。
+ * 項目は等幅で、広い方の字＋左右 12 の余白に揃える。描画と当たり判定はこの 1 か所を共有する。 */
+static int mode_item_width(const struct folio_window *_Nonnull self)
 {
-    return ui_text_line(chip_label(chip), folio_state_language(self->state));
+    int view = measure_part_text(self, accessible_controls[ACCESSIBLE_VIEW].label);
+    int edit = measure_part_text(self, accessible_controls[ACCESSIBLE_EDIT].label);
+    int text = view > edit ? view : edit;
+    return text + scale(ui_part_padding * 2, GetDpiForWindow(self->handle));
 }
 
-/* 札 1 つの幅（左右の余白込み）。等幅フォントを選んだ device で測る。 */
-static int chip_width(const struct folio_window *_Nonnull self, HDC device, enum pane_mode chip)
-{
-    return measure_utf8(device, chip_text(self, chip)) +
-           scale(base_chip_padding, GetDpiForWindow(self->handle)) * 2;
-}
-
-/* 札の矩形。右端が「編集」、その左が「閲覧」。描画と当たり判定はこの 1 か所を共有する。 */
-static RECT chip_rect(const struct folio_window *_Nonnull self, HDC device, enum pane_mode chip)
+static RECT mode_group_rect(const struct folio_window *_Nonnull self)
 {
     RECT caption = caption_rect(self);
     UINT dpi = GetDpiForWindow(self->handle);
-    int height = scale(base_chip_height, dpi);
-    int middle = (caption.top + caption.bottom) / 2;
-    int right = caption.right - scale(base_close_margin, dpi);
-    switch (chip)
+    int right = caption.right - scale(ui_part_edge, dpi);
+    return choice_group_rect(right, (caption.top + caption.bottom) / 2, mode_item_width(self) * 2,
+                             dpi);
+}
+
+/* 表示3択の選択中の項目。 */
+static enum accessible_kind selected_layout_kind(const struct folio_window *_Nonnull self)
+{
+    for (size_t index = 0; index < layout_button_count(); ++index)
     {
-    case PANE_MODE_VIEW:
-        right -= chip_width(self, device, PANE_MODE_EDIT) + scale(base_chip_gap, dpi);
-        break;
-    case PANE_MODE_EDIT:
-        break;
+        if (folio_state_layout_mode(self->state) == layout_buttons[index].mode)
+        {
+            return layout_buttons[index].kind;
+        }
     }
-    RECT bounds = {right - chip_width(self, device, chip), middle - height / 2, right,
-                   middle - height / 2 + height};
-    return bounds;
+    return ACCESSIBLE_LAYOUT_BOTH;
+}
+
+/* 選択群の項目が選ばれているか。描画・UIA の IsSelected・押下の判定がこの 1 本を使う。 */
+static bool part_selected(const struct folio_window *_Nonnull self, enum accessible_kind kind)
+{
+    if (accessible_controls[kind].parent == ACCESSIBLE_LAYOUT_GROUP)
+    {
+        return selected_layout_kind(self) == kind;
+    }
+    bool chip = kind == ACCESSIBLE_VIEW || kind == ACCESSIBLE_EDIT;
+    return chip && mode_kind(folio_state_pane_mode(self->state)) == kind;
+}
+
+static RECT mode_item_rect(const struct folio_window *_Nonnull self, enum pane_mode mode)
+{
+    size_t index = mode == PANE_MODE_EDIT ? 1 : 0;
+    return choice_item_rect(mode_group_rect(self), mode_item_width(self), index,
+                            GetDpiForWindow(self->handle));
 }
 
 /* パンくずのノート区画に実際に描く文字。幅の見積りも描画もこの 1 本を使う（ADR 0022 の決定 2）。 */
@@ -1836,7 +2001,7 @@ static struct breadcrumb_layout breadcrumb_cells(const struct folio_window *_Non
                                                  RECT caption)
 {
     UINT dpi = GetDpiForWindow(self->handle);
-    int right = chip_rect(self, device, PANE_MODE_VIEW).left - scale(base_caption_gap, dpi);
+    int right = mode_group_rect(self).left - scale(ui_part_group_gap, dpi);
     int available = right - caption.left;
     bool compact = available < scale(base_breadcrumb_compact_width, dpi);
     int padding = scale(compact ? base_breadcrumb_compact_padding : base_breadcrumb_padding, dpi);
@@ -1899,8 +2064,8 @@ static void draw_breadcrumb(const struct folio_window *_Nonnull self, HDC device
         return;
     }
     struct breadcrumb_layout cells = breadcrumb_cells(self, device, title, caption);
-    int right = chip_rect(self, device, PANE_MODE_VIEW).left -
-                scale(base_caption_gap, GetDpiForWindow(self->handle));
+    int right =
+        mode_group_rect(self).left - scale(ui_part_group_gap, GetDpiForWindow(self->handle));
     IntersectClipRect(device, caption.left, caption.top, right, caption.bottom);
     if (cells.category.right > cells.category.left)
     {
@@ -1927,50 +2092,68 @@ static void draw_breadcrumb(const struct folio_window *_Nonnull self, HDC device
     RestoreDC(device, saved);
 }
 
-/* 有効な側だけ面を塗り、無効な側は頭の文字色で描く（ADR 0006 の決定 7）。 */
-static void draw_chip(const struct folio_window *_Nonnull self, HDC device, enum pane_mode chip)
+/* キーボードで動かした後（または OS が常に印を出す設定）だけ focus を描く（ADR0060 の決定 3）。 */
+static bool part_focus_shown(const struct folio_window *_Nonnull self, enum accessible_kind kind)
 {
-    RECT bounds = chip_rect(self, device, chip);
-    UINT dpi = GetDpiForWindow(self->handle);
-    if (chip == folio_state_pane_mode(self->state))
-    {
-        HBRUSH brush = CreateSolidBrush(self->palette.chip_background);
-        HPEN pen = CreatePen(PS_NULL, 0, 0);
-        HGDIOBJ old_brush = SelectObject(device, brush);
-        HGDIOBJ old_pen = SelectObject(device, pen);
-        int radius = scale(base_chip_radius, dpi) * 2;
-        RoundRect(device, bounds.left, bounds.top, bounds.right, bounds.bottom, radius, radius);
-        SelectObject(device, old_pen);
-        SelectObject(device, old_brush);
-        DeleteObject(pen);
-        DeleteObject(brush);
-        SetTextColor(device, self->palette.chip_text);
-        if (self->palette.contrast == FOLIO_CONTRAST_HIGH)
-        {
-            RECT mark = bounds;
-            mark.top = mark.bottom - scale(2, dpi);
-            SetDCBrushColor(device, self->palette.chip_text);
-            FillRect(device, &mark, (HBRUSH)GetStockObject(DC_BRUSH));
-        }
-    }
-    else
-    {
-        SetTextColor(device, self->palette.header_text);
-    }
-    draw_units(device, chip_text(self, chip), bounds,
-               DT_SINGLELINE | DT_VCENTER | DT_CENTER | DT_NOPREFIX);
+    return (self->focus_cues || self->focus_cues_always) && self->keyboard_target == kind &&
+           GetFocus() == self->handle;
 }
 
-/* 「×」は 24 の viewBox の面のパス（ADR 0033 の決定 6）。箱は close_rect のまま。 */
-static void draw_close(const struct folio_window *_Nonnull self, HDC device)
+/* 部品の表示値。矩形は UIA・focus・当たり判定と同じ accessible_main_rect から取る。 */
+static struct ui_part_paint part_paint(const struct folio_window *_Nonnull self,
+                                       enum accessible_kind kind, enum ui_part_style style)
 {
-    icon_paint_fill(device, close_rect(self), ICON_PAINT_CLOSE, self->palette.header_text);
+    return (struct ui_part_paint){
+        .bounds = accessible_main_rect(self, kind),
+        .style = style,
+        .dpi = GetDpiForWindow(self->handle),
+        .grouped = style == UI_PART_STYLE_CHOICE,
+        .labeled = style != UI_PART_STYLE_ICON,
+        .hovered = self->hover_part == kind && self->pressed_part == ACCESSIBLE_WINDOW,
+        .pressed = self->pressed_part == kind && self->pressed_inside,
+        .focused = part_focus_shown(self, kind),
+    };
 }
 
-/* 歯車も同じ 1 本で塗る（字形は使わない・CNF-010）。箱は settings_rect のまま。 */
-static void draw_settings_icon(const struct folio_window *_Nonnull self, HDC device)
+/* 部品の字は表示名＝UIA Name の 1 つの元（accessible_controls）から引く。 */
+static void draw_part_label(const struct folio_window *_Nonnull self, HDC device,
+                            enum accessible_kind kind, struct ui_part_ink ink)
 {
-    icon_paint_fill(device, settings_rect(self), ICON_PAINT_SETTINGS, self->palette.header_text);
+    UINT align = kind == ACCESSIBLE_VIEW || kind == ACCESSIBLE_EDIT ||
+                         accessible_controls[kind].parent == ACCESSIBLE_LAYOUT_GROUP
+                     ? DT_CENTER
+                     : DT_LEFT;
+    SetTextColor(device, ink.text);
+    draw_units(device,
+               ui_text_line(accessible_controls[kind].label, folio_state_language(self->state)),
+               ink.label, align | DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX | DT_END_ELLIPSIS);
+}
+
+static void draw_choice_item(const struct folio_window *_Nonnull self, HDC device,
+                             enum accessible_kind kind, bool selected)
+{
+    struct ui_part_paint part = part_paint(self, kind, UI_PART_STYLE_CHOICE);
+    part.leading_rule = kind != ACCESSIBLE_VIEW && kind != ACCESSIBLE_LAYOUT_DRAWER;
+    part.selected = selected;
+    draw_part_label(self, device, kind, ui_part_draw(device, &self->palette, &part));
+}
+
+static void draw_mode_group(const struct folio_window *_Nonnull self, HDC device)
+{
+    ui_part_frame_group(device, &self->palette, mode_group_rect(self));
+    enum pane_mode mode = folio_state_pane_mode(self->state);
+    draw_choice_item(self, device, ACCESSIBLE_VIEW, mode == PANE_MODE_VIEW);
+    draw_choice_item(self, device, ACCESSIBLE_EDIT, mode == PANE_MODE_EDIT);
+}
+
+/* 歯車と × は C 様式（絵は面のパス・字形は使わない・CNF-010）。 */
+static void draw_icon_part(const struct folio_window *_Nonnull self, HDC device,
+                           enum accessible_kind kind, enum icon_paint_kind icon)
+{
+    struct ui_part_paint part = part_paint(self, kind, UI_PART_STYLE_ICON);
+    part.has_icon = true;
+    part.icon = icon;
+    ui_part_draw(device, &self->palette, &part);
 }
 
 static enum utf8_text_outcome command_query(const struct folio_window *_Nonnull self,
@@ -2174,6 +2357,9 @@ static void draw_search_surface(const struct folio_window *_Nonnull self, HDC de
               search_header_rect(self));
     draw_utf8(device, line, search_result_rect(self));
     icon_paint_fill(device, search_close_rect(self), ICON_PAINT_CLOSE, self->palette.current_text);
+    int focus =
+        GetFocus() == self->command_input ? ui_part_focus_width(GetDpiForWindow(self->handle)) : 0;
+    ui_part_frame_field(device, &self->palette, command_input_rect(self), focus);
     SetTextColor(device, self->palette.contrast == FOLIO_CONTRAST_HIGH
                              ? self->palette.current_text
                              : self->palette.selected_text);
@@ -2956,26 +3142,6 @@ static void draw_command_surface(const struct folio_window *_Nonnull self, HDC d
     }
 }
 
-/* 点が札の上なら true。当たり判定は描画と同じ chip_rect を使う（ADR 0006 の決定 7）。 */
-static bool chip_at(const struct folio_window *_Nonnull self, POINT point,
-                    enum pane_mode *_Nonnull chip)
-{
-    HDC device = GetDC(self->handle);
-    if (device == nullptr)
-    {
-        return false;
-    }
-    HGDIOBJ previous = SelectObject(device, self->mono_font);
-    SetTextCharacterExtra(device, scale(base_tracking, GetDpiForWindow(self->handle)));
-    RECT view = chip_rect(self, device, PANE_MODE_VIEW);
-    RECT edit = chip_rect(self, device, PANE_MODE_EDIT);
-    SetTextCharacterExtra(device, 0);
-    SelectObject(device, previous);
-    ReleaseDC(self->handle, device);
-    *chip = PtInRect(&view, point) ? PANE_MODE_VIEW : PANE_MODE_EDIT;
-    return PtInRect(&view, point) || PtInRect(&edit, point);
-}
-
 /* 共通頭のbutton以外の空白を掴んで動かす。縁は既存のresize判定。 */
 static LRESULT hit_test(const struct folio_window *_Nonnull self, LPARAM lparam)
 {
@@ -3009,90 +3175,85 @@ static LRESULT hit_test(const struct folio_window *_Nonnull self, LPARAM lparam)
     return button ? HTCLIENT : HTCAPTION;
 }
 
-/* 頭の釦 index 番に描く 1 行。釦の幅の実測も描画もこの 1 本を通る（#122）。 */
-static const char *_Nonnull action_button_label(const struct folio_window *_Nonnull self,
-                                                size_t index)
-{
-    enum folio_language language = folio_state_language(self->state);
-    if (index == 1)
-    {
-        return ui_text_line(UI_TEXT_ACTION_OPERATIONS, language);
-    }
-    static const enum folio_command commands[] = {
-        [0] = FOLIO_COMMAND_SAVE,
-        [2] = FOLIO_COMMAND_HELP,
-        [3] = FOLIO_COMMAND_FIND,
-    };
-    return folio_command_label(commands[index], language);
-}
-
-/* 頭の釦の矩形。描画・当たり判定・「操作 ▾」のメニューの位置がこの 1 本を共有する。
- * 幅は現在の言語の字面を頭と同じ等幅フォントと字間で測った幅 ＋ 字下げ ＋ 右の余白で、
- * 日本語の画面案の幅（floors）を下限にする。字がそれより広い言語だけ釦が広がり、
- * 右の釦はその分だけ右へずれる（#122。English の「Actions ▾」が省略されない）。 */
-static RECT action_button_rect(const struct folio_window *_Nonnull self, size_t index)
+/* 本文操作帯の A 様式の群（帯 36 = 4+28+4）。幅は現在の言語の字面を頭と同じ等幅の書体と字間で
+ * 測る（#122）。字を出すと面の端 12 に収まらないときだけ、絵を持つ項目を検索・保存の順に
+ * 絵だけへ縮め、消さない（ADR0060 の決定 1）。描画・当たり判定・UIA・メニューの位置が共有する。 */
+static void action_layout(const struct folio_window *_Nonnull self, RECT *_Nonnull out,
+                          bool *_Nonnull labeled)
 {
     UINT dpi = GetDpiForWindow(self->handle);
-    const int floors[] = {52, 52, 70, 160};
     RECT pane = regions_for(self).pane;
-    int left = pane.left + scale(base_pane_left, dpi);
-    int top = pane.top + scale(base_caption_height + 4, dpi);
-    HDC device = GetDC(self->handle);
-    HGDIOBJ previous = nullptr;
-    if (device != nullptr)
-    {
-        previous = SelectObject(device, self->mono_font);
-        SetTextCharacterExtra(device, scale(base_tracking, dpi));
-    }
-    int width = 0;
-    for (size_t at = 0; at <= index; ++at)
-    {
-        left += at == 0 ? 0 : width + scale(base_action_gap, dpi);
-        int measured = device == nullptr ? 0 : measure_utf8(device, action_button_label(self, at));
-        int needed = scale(base_action_inset, dpi) + measured + scale(base_action_trail, dpi);
-        width = needed > scale(floors[at], dpi) ? needed : scale(floors[at], dpi);
-    }
-    if (device != nullptr)
-    {
-        SetTextCharacterExtra(device, 0);
-        SelectObject(device, previous);
-        ReleaseDC(self->handle, device);
-    }
-    return (RECT){left, top, left + width, top + scale(28, dpi)};
-}
-
-/* 幅が足りない窓（560px など）では常設ボタンを出さず、「操作 ▾」のメニューへ委ねる
- * （登録表に載っている操作はメニューに必ず出る・ADR 0018 / ADR 0023 の決定 4）。 */
-static bool action_button_fits(const struct folio_window *_Nonnull self, size_t index)
-{
     RECT client;
     GetClientRect(self->handle, &client);
-    return action_button_rect(self, index).right +
-               scale(base_action_margin, GetDpiForWindow(self->handle)) <=
-           client.right;
+    int left = pane.left + scale(base_pane_left, dpi);
+    int height = scale(ui_part_height, dpi);
+    int top =
+        pane.top + scale(base_caption_height, dpi) + (scale(base_action_height, dpi) - height) / 2;
+    int widths[action_count] = {};
+    int total = 0;
+    for (size_t index = 0; index < action_count; ++index)
+    {
+        int text = measure_part_text(self, accessible_controls[action_parts[index].kind].label);
+        widths[index] = ui_part_command_width(text, action_parts[index].has_icon, dpi);
+        labeled[index] = true;
+        total += widths[index];
+    }
+    int room = client.right - scale(ui_part_edge, dpi) - left - 2;
+    const size_t shrink[] = {3, 0};
+    for (size_t at = 0; at < sizeof shrink / sizeof shrink[0] && total > room; ++at)
+    {
+        total -= widths[shrink[at]] - height;
+        widths[shrink[at]] = height;
+        labeled[shrink[at]] = false;
+    }
+    int x = left + 1; /* 群の 1px の枠の内側 */
+    for (size_t index = 0; index < action_count; ++index)
+    {
+        out[index] = (RECT){x, top, x + widths[index], top + height};
+        x += widths[index];
+    }
 }
 
-static void draw_action_button(const struct folio_window *_Nonnull self, HDC device, RECT bounds,
-                               const char *_Nonnull label)
+static RECT action_button_rect(const struct folio_window *_Nonnull self, size_t index)
 {
-    HBRUSH brush = CreateSolidBrush(self->palette.window);
-    FillRect(device, &bounds, brush);
-    DeleteObject(brush);
-    SetTextColor(device, self->palette.current_text);
-    bounds.left += scale(base_action_inset, GetDpiForWindow(self->handle));
-    draw_utf8(device, label, bounds);
+    RECT rects[action_count];
+    bool labeled[action_count];
+    action_layout(self, rects, labeled);
+    return rects[index];
+}
+
+/* 群の枠は項目の 1px 外側。 */
+static RECT action_group_rect(const struct folio_window *_Nonnull self)
+{
+    RECT rects[action_count];
+    bool labeled[action_count];
+    action_layout(self, rects, labeled);
+    RECT group = {rects[0].left, rects[0].top, rects[action_count - 1].right, rects[0].bottom};
+    InflateRect(&group, 1, 1);
+    return group;
 }
 
 static void draw_actions(const struct folio_window *_Nonnull self, HDC device)
 {
-    for (size_t index = 0; index < 3; ++index)
+    RECT rects[action_count];
+    bool labeled[action_count];
+    action_layout(self, rects, labeled);
+    ui_part_frame_group(device, &self->palette, action_group_rect(self));
+    for (size_t index = 0; index < action_count; ++index)
     {
-        draw_action_button(self, device, action_button_rect(self, index),
-                           action_button_label(self, index));
-    }
-    if (action_button_fits(self, 3))
-    {
-        draw_action_button(self, device, action_button_rect(self, 3), action_button_label(self, 3));
+        struct ui_part_paint part =
+            part_paint(self, action_parts[index].kind, UI_PART_STYLE_COMMAND);
+        part.bounds = rects[index];
+        part.grouped = true;
+        part.leading_rule = index > 0;
+        part.labeled = labeled[index];
+        part.has_icon = action_parts[index].has_icon;
+        part.icon = action_parts[index].icon;
+        struct ui_part_ink ink = ui_part_draw(device, &self->palette, &part);
+        if (labeled[index])
+        {
+            draw_part_label(self, device, action_parts[index].kind, ink);
+        }
     }
 }
 
@@ -3197,47 +3358,17 @@ static void draw_pane_notice(const struct folio_window *_Nonnull self, HDC devic
               pane_notice_rect(self, client));
 }
 
-static void draw_layout_button(const struct folio_window *_Nonnull self, HDC device, size_t index)
-{
-    RECT bounds = layout_button_rect(self, index);
-    bool selected = folio_state_layout_mode(self->state) == layout_buttons[index].mode;
-    if (selected)
-    {
-        fill_settings_rect(device, bounds, self->palette.selected_background);
-        RECT underline = bounds;
-        underline.top = underline.bottom - scale(2, GetDpiForWindow(self->handle));
-        fill_settings_rect(device, underline, self->palette.selected_text);
-    }
-    SetTextColor(device, selected ? self->palette.selected_text : self->palette.current_text);
-    draw_units(device,
-               ui_text_line(layout_buttons[index].button, folio_state_language(self->state)),
-               bounds, DT_SINGLELINE | DT_VCENTER | DT_CENTER | DT_NOPREFIX);
-}
-
+/* 新しいノートは A 様式の単独の釦。狭幅では絵だけに縮める（ADR0059 / ADR0060）。 */
 static void draw_new_note(const struct folio_window *_Nonnull self, HDC device)
 {
-    UINT dpi = GetDpiForWindow(self->handle);
-    RECT button = new_note_rect(self);
-    fill_settings_rect(device, button,
-                       self->new_note_pressed ? self->palette.selected_background
-                                              : self->palette.dialog_control);
-    frame_settings_rect(device, button,
-                        self->palette.contrast == FOLIO_CONTRAST_HIGH
-                            ? self->palette.category_text
-                            : self->palette.dialog_border);
-    COLORREF ink =
-        self->new_note_pressed ? self->palette.selected_text : self->palette.category_text;
-    int box = scale(base_close_size, dpi);
-    int left = button.left + scale(4, dpi);
-    int top = button.top + (button.bottom - button.top - box) / 2;
-    icon_paint_fill(device, (RECT){left, top, left + box, top + box}, ICON_PAINT_NEW_NOTE, ink);
-    if (button.right - button.left > scale(base_new_note_size, dpi))
+    struct ui_part_paint part = part_paint(self, ACCESSIBLE_NEW_NOTE, UI_PART_STYLE_COMMAND);
+    part.labeled = new_note_labeled(self);
+    part.has_icon = true;
+    part.icon = ICON_PAINT_NEW_NOTE;
+    struct ui_part_ink ink = ui_part_draw(device, &self->palette, &part);
+    if (part.labeled)
     {
-        button.left += scale(base_new_note_label, dpi);
-        button.right -= scale(8, dpi);
-        SetTextColor(device, ink);
-        draw_utf8(device, ui_text_line(UI_TEXT_COMMAND_NEW, folio_state_language(self->state)),
-                  button);
+        draw_part_label(self, device, ACCESSIBLE_NEW_NOTE, ink);
     }
 }
 
@@ -3248,7 +3379,7 @@ static void draw_common_header(const struct folio_window *_Nonnull self, HDC dev
     SetBkMode(device, TRANSPARENT);
     SetTextCharacterExtra(device, scale(base_tracking, dpi));
     RECT group = layout_group_rect(self);
-    frame_settings_rect(device, group, self->palette.border);
+    ui_part_frame_group(device, &self->palette, group);
     RECT logo = regions_for(self).header;
     logo.left = new_note_rect(self).right + scale(base_new_note_drag_gap, dpi);
     logo.right = group.left - scale(8, dpi);
@@ -3268,13 +3399,15 @@ static void draw_common_header(const struct folio_window *_Nonnull self, HDC dev
         SetTextColor(device, self->palette.header_text);
         draw_units(device, text, logo, DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
     }
+    enum folio_layout_mode mode = folio_state_layout_mode(self->state);
     for (size_t index = 0; index < layout_button_count(); ++index)
     {
-        draw_layout_button(self, device, index);
+        draw_choice_item(self, device, layout_buttons[index].kind,
+                         mode == layout_buttons[index].mode);
     }
     draw_new_note(self, device);
-    draw_close(self, device);
-    draw_settings_icon(self, device);
+    draw_icon_part(self, device, ACCESSIBLE_SETTINGS, ICON_PAINT_SETTINGS);
+    draw_icon_part(self, device, ACCESSIBLE_CLOSE, ICON_PAINT_CLOSE);
     SetTextCharacterExtra(device, 0);
 }
 
@@ -3291,8 +3424,7 @@ static void draw_pane(const struct folio_window *_Nonnull self, HDC device, RECT
     SelectObject(device, self->mono_font);
     SetTextCharacterExtra(device, scale(base_tracking, dpi));
     draw_breadcrumb(self, device, caption_rect(self));
-    draw_chip(self, device, PANE_MODE_VIEW);
-    draw_chip(self, device, PANE_MODE_EDIT);
+    draw_mode_group(self, device);
     draw_actions(self, device);
     SetTextCharacterExtra(device, 0);
     draw_gutter(self, device, damage);
@@ -3318,7 +3450,6 @@ static void blit_window(struct folio_window *_Nonnull self, HDC target, RECT cli
         {
             draw_pane(self, memory, client, damage);
         }
-        draw_keyboard_focus(self, memory);
         BitBlt(target, damage.left, damage.top, width, height, memory, damage.left, damage.top,
                SRCCOPY);
         SelectObject(memory, previous);
@@ -4187,6 +4318,10 @@ static void invalidate_surface_items(struct folio_window *_Nonnull self)
 
 static void set_command_surface(struct folio_window *_Nonnull self, enum command_surface_mode mode)
 {
+    if (mode != COMMAND_SURFACE_CLOSED)
+    {
+        set_hover(self, ACCESSIBLE_WINDOW); /* 面の下の部品は hover できない */
+    }
     invalidate_surface_items(self);
     self->command_surface = mode;
 }
@@ -6475,124 +6610,200 @@ static void show_operations(struct folio_window *_Nonnull self)
     }
 }
 
-static bool click_actions(struct folio_window *_Nonnull self, POINT point)
+/* 点の下の自前の操作部品。矩形は描画・UIA・focus と同じ accessible_main_rect から取る。 */
+static enum accessible_kind part_at(const struct folio_window *_Nonnull self, POINT point)
 {
-    RECT save = action_button_rect(self, 0);
-    RECT operations = action_button_rect(self, 1);
-    RECT help = action_button_rect(self, 2);
-    if (PtInRect(&save, point))
+    for (size_t index = 0; index < main_part_count(); ++index)
     {
-        execute_command(self, FOLIO_COMMAND_SAVE, "");
-        return true;
+        enum accessible_kind kind = main_parts[index].kind;
+        RECT bounds = accessible_main_rect(self, kind);
+        if (accessible_visible(self, kind) && PtInRect(&bounds, point))
+        {
+            return kind;
+        }
     }
-    if (PtInRect(&operations, point))
-    {
-        show_operations(self);
-        return true;
-    }
-    if (PtInRect(&help, point))
-    {
-        execute_command(self, FOLIO_COMMAND_HELP, "");
-        return true;
-    }
-    RECT find = action_button_rect(self, 3);
-    if (action_button_fits(self, 3) && PtInRect(&find, point))
-    {
-        execute_command(self, FOLIO_COMMAND_FIND, "");
-        return true;
-    }
-    return false;
+    return ACCESSIBLE_WINDOW;
 }
 
-static void cancel_new_note_press(struct folio_window *_Nonnull self)
+/* 部品の矩形と、単独部品の外側の focus のぶんを描き直す。 */
+static void invalidate_part(const struct folio_window *_Nonnull self, enum accessible_kind kind)
 {
-    if (self->new_note_pressed)
+    if (!main_part(kind))
     {
-        self->new_note_pressed = false;
-        RECT bounds = new_note_rect(self);
-        InvalidateRect(self->handle, &bounds, FALSE);
+        return;
+    }
+    RECT bounds = accessible_main_rect(self, kind);
+    if (IsRectEmpty(&bounds))
+    {
+        return;
+    }
+    int reach = ui_part_focus_reach(GetDpiForWindow(self->handle));
+    InflateRect(&bounds, reach, reach);
+    InvalidateRect(self->handle, &bounds, FALSE);
+}
+
+/* キーボードの印の有無。Tab・F6・矢印・Enter・Space で立て、押下で下ろす。 */
+static void show_focus_cues(struct folio_window *_Nonnull self, bool shown)
+{
+    if (self->focus_cues == shown)
+    {
+        return;
+    }
+    self->focus_cues = shown;
+    InvalidateRect(self->handle, nullptr, FALSE);
+    redraw_drawer(self);
+}
+
+/* マウス・キーボード・UIA の 3 つが同じ実行の経路を通る（ADR0060 の決定 4）。
+ * 選択群の項目は Select（選択中なら何もしない）、他は
+ * Invoke。復旧待ちの本文の札は選択中でも実行する。 */
+static enum accessible_action part_action(const struct folio_window *_Nonnull self,
+                                          enum accessible_kind kind)
+{
+    bool chip = kind == ACCESSIBLE_VIEW || kind == ACCESSIBLE_EDIT;
+    bool recovering = chip && (self->pane == nullptr ||
+                               note_pane_readiness(self->pane) != NOTE_PANE_READINESS_READY);
+    bool choice = chip || accessible_controls[kind].parent == ACCESSIBLE_LAYOUT_GROUP;
+    return choice && !recovering ? ACCESSIBLE_ACTION_SELECT : ACCESSIBLE_ACTION_INVOKE;
+}
+
+static void activate_part(struct folio_window *_Nonnull self, enum accessible_kind kind)
+{
+    set_hover(self, ACCESSIBLE_WINDOW); /* 面・モーダル・メニューの後に枠を残さない */
+    struct accessible_request request = {.item = {.kind = kind}, .action = part_action(self, kind)};
+    (void)folio_window_accessible_action(self, &request);
+    accessibility_host_schedule(self->accessibility);
+}
+
+/* 押下を取り消す唯一の経路。マウスの押下なら capture も返す（値を下ろしてから返すので、
+ * 再入する WM_CAPTURECHANGED は何もしない）。Space・Tab・F6・矢印・Enter・focus 喪失から呼ばれる。
+ */
+static void cancel_part_press(struct folio_window *_Nonnull self)
+{
+    enum accessible_kind kind = self->pressed_part;
+    if (kind == ACCESSIBLE_WINDOW)
+    {
+        return;
+    }
+    bool mouse = !self->pressed_by_key;
+    self->pressed_part = ACCESSIBLE_WINDOW;
+    self->pressed_inside = false;
+    self->pressed_by_key = false;
+    invalidate_part(self, kind);
+    if (mouse && GetCapture() == self->handle)
+    {
+        ReleaseCapture();
     }
 }
 
-static void release_new_note(struct folio_window *_Nonnull self, LPARAM lparam)
+static void begin_part_press(struct folio_window *_Nonnull self, enum accessible_kind kind,
+                             bool by_key)
 {
-    if (!self->new_note_pressed)
+    cancel_part_press(self);
+    self->pressed_part = kind;
+    self->pressed_inside = true;
+    self->pressed_by_key = by_key;
+    invalidate_part(self, kind);
+}
+
+/* 押下。操作▾だけは OS の作法どおり押下で開き、ほかは capture して離すのを待つ。
+ * 選択中の項目は押しても何も起きないので押下の見た目にもしない。 */
+static void press_part(struct folio_window *_Nonnull self, LPARAM lparam)
+{
+    POINT point = {GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
+    show_focus_cues(self, false);
+    pointer_focus(self, point);
+    enum accessible_kind kind = part_at(self, point);
+    if (kind == ACCESSIBLE_WINDOW || !folio_window_accessible_ready(self))
+    {
+        return;
+    }
+    if (kind == ACCESSIBLE_MENU)
+    {
+        activate_part(self, kind);
+        return;
+    }
+    if (part_action(self, kind) == ACCESSIBLE_ACTION_SELECT && part_selected(self, kind))
+    {
+        return;
+    }
+    begin_part_press(self, kind, false);
+    SetCapture(self->handle);
+}
+
+/* 矩形の内で離したときだけ実行し、外で離せば取り消す（WM_CAPTURECHANGED からの取消は無害）。 */
+static void release_part(struct folio_window *_Nonnull self, LPARAM lparam)
+{
+    enum accessible_kind kind = self->pressed_part;
+    if (kind == ACCESSIBLE_WINDOW || self->pressed_by_key)
     {
         return;
     }
     POINT point = {GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
-    RECT button = new_note_rect(self);
-    cancel_new_note_press(self);
-    ReleaseCapture();
-    if (PtInRect(&button, point) && folio_window_accessible_ready(self) &&
-        self->command_surface == COMMAND_SURFACE_CLOSED)
+    RECT bounds = accessible_main_rect(self, kind);
+    bool inside = PtInRect(&bounds, point) && accessible_visible(self, kind);
+    cancel_part_press(self);
+    if (inside)
     {
-        execute_command(self, FOLIO_COMMAND_NEW, "");
+        activate_part(self, kind);
     }
 }
 
-static void click_common_header(struct folio_window *_Nonnull self, POINT point)
+static void set_hover(struct folio_window *_Nonnull self, enum accessible_kind kind)
 {
-    RECT fresh = new_note_rect(self);
-    if (PtInRect(&fresh, point))
+    if (self->hover_part == kind)
     {
-        if (folio_window_accessible_ready(self) && self->command_surface == COMMAND_SURFACE_CLOSED)
+        return;
+    }
+    invalidate_part(self, self->hover_part);
+    self->hover_part = kind;
+    invalidate_part(self, kind);
+}
+
+/* capture 中は押下の内外だけを写す（外へ出たら押していない見た目に戻す）。それ以外は hover。 */
+static void track_pointer(struct folio_window *_Nonnull self, LPARAM lparam)
+{
+    POINT point = {GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
+    if (self->pressed_part != ACCESSIBLE_WINDOW && !self->pressed_by_key)
+    {
+        RECT bounds = accessible_main_rect(self, self->pressed_part);
+        bool inside = PtInRect(&bounds, point) != 0;
+        if (inside != self->pressed_inside)
         {
-            self->new_note_pressed = true;
-            SetCapture(self->handle);
-            InvalidateRect(self->handle, &fresh, FALSE);
+            self->pressed_inside = inside;
+            invalidate_part(self, self->pressed_part);
         }
         return;
     }
-    int index = layout_button_hit(self, point);
-    if (index >= 0)
+    if (!self->hover_tracking)
     {
-        execute_command(self, layout_buttons[(size_t)index].command, "");
-        return;
+        TRACKMOUSEEVENT track = {
+            .cbSize = sizeof track, .dwFlags = TME_LEAVE, .hwndTrack = self->handle};
+        self->hover_tracking = TrackMouseEvent(&track) != 0;
     }
-    RECT close = close_rect(self);
-    if (PtInRect(&close, point))
-    {
-        close_window(self);
-        return;
-    }
-    RECT settings = settings_rect(self);
-    if (PtInRect(&settings, point))
-    {
-        execute_command(self, FOLIO_COMMAND_SETTINGS, "");
-    }
+    bool open =
+        folio_window_accessible_ready(self) && self->command_surface == COMMAND_SURFACE_CLOSED;
+    set_hover(self, open ? part_at(self, point) : ACCESSIBLE_WINDOW);
 }
 
-/* 無効な側の札のクリックだけが意図になる。 */
-static void click_caption(struct folio_window *_Nonnull self, LPARAM lparam)
+static void leave_pointer(struct folio_window *_Nonnull self)
 {
-    POINT point = {GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
-    pointer_focus(self, point);
-    RECT header = regions_for(self).header;
-    if (PtInRect(&header, point))
-    {
-        click_common_header(self, point);
-        return;
-    }
-    if (!pane_visible(self) || click_actions(self, point))
-    {
-        return;
-    }
-    enum pane_mode chip = PANE_MODE_VIEW;
-    if (!chip_at(self, point, &chip) ||
-        (chip == folio_state_pane_mode(self->state) && self->pane != nullptr &&
-         note_pane_readiness(self->pane) == NOTE_PANE_READINESS_READY))
+    self->hover_tracking = false;
+    set_hover(self, ACCESSIBLE_WINDOW);
+}
+
+/* Space は押下の見た目にして離した時に実行する。自動繰り返しは呼び出し側で捨てる。 */
+static void release_key(struct folio_window *_Nonnull self, WPARAM key)
+{
+    if (key != VK_SPACE || !self->pressed_by_key)
     {
         return;
     }
-    switch (chip)
+    bool same = self->pressed_part == self->keyboard_target;
+    cancel_part_press(self);
+    if (same && self->command_surface == COMMAND_SURFACE_CLOSED)
     {
-    case PANE_MODE_VIEW:
-        execute_command(self, FOLIO_COMMAND_VIEW, "");
-        break;
-    case PANE_MODE_EDIT:
-        execute_command(self, FOLIO_COMMAND_EDIT, "");
-        break;
+        keyboard_activate(self);
     }
 }
 
@@ -6687,27 +6898,66 @@ static LRESULT pane_key(struct folio_window *_Nonnull self, WPARAM key)
     return 0;
 }
 
+/* 字を出している部品か。絵だけの C 様式と、狭幅で絵へ縮めた A 様式は偽。 */
+static bool part_labeled(const struct folio_window *_Nonnull self, enum accessible_kind kind)
+{
+    if (kind == ACCESSIBLE_SETTINGS || kind == ACCESSIBLE_CLOSE)
+    {
+        return false;
+    }
+    if (kind == ACCESSIBLE_NEW_NOTE)
+    {
+        return new_note_labeled(self);
+    }
+    RECT rects[action_count];
+    bool labeled[action_count];
+    action_layout(self, rects, labeled);
+    for (size_t index = 0; index < action_count; ++index)
+    {
+        if (action_parts[index].kind == kind)
+        {
+            return labeled[index];
+        }
+    }
+    return true;
+}
+
+/* tooltip は表示名・キーと同じ元から組む（ADR0060 の決定
+ * 5）。字付きの釦はキー（無ければ補足）だけ、 絵だけの部品は名前＋キー。out は draw_unit_limit
+ * バイトの入れ物。 */
+static void part_tooltip(const struct folio_window *_Nonnull self, enum accessible_kind kind,
+                         char *_Nonnull out)
+{
+    enum folio_language language = folio_state_language(self->state);
+    enum ui_text key = accessible_controls[kind].key;
+    bool labeled = part_labeled(self, kind);
+    struct ui_text_request request = {
+        .id = labeled ? UI_TEXT_TOOLTIP_KEY : UI_TEXT_TOOLTIP_NAMED_KEY,
+        .language = language,
+        .name = ui_text_line(accessible_controls[kind].label, language),
+        .from = ui_text_line(key, language),
+        .to = labeled ? ui_text_line(accessible_controls[kind].hint, language) : ""};
+    if (key == UI_TEXT_EMPTY)
+    {
+        request.id = UI_TEXT_TOOLTIP_KEY;
+        request.from = labeled ? "" : request.name;
+    }
+    if (ui_text_format(&request, out, draw_unit_limit) != UI_TEXT_FORMAT_READY)
+    {
+        out[0] = '\0';
+    }
+}
+
 static LRESULT tooltip_display(struct folio_window *_Nonnull self, LPARAM lparam)
 {
     NMTTDISPINFOW *_Nonnull notice = (NMTTDISPINFOW *)lparam;
-    size_t id = notice->hdr.idFrom;
     self->tooltip_text[0] = u'\0';
-    if (id > 0 && id <= layout_button_count())
+    if (notice->hdr.idFrom < sizeof accessible_controls / sizeof accessible_controls[0] &&
+        main_part((enum accessible_kind)notice->hdr.idFrom))
     {
         char text[draw_unit_limit];
-        layout_phrase(self, id - 1, UI_TEXT_LAYOUT_TOOLTIP, text);
-        wide_units(text, self->tooltip_text);
-    }
-    if (id == layout_button_count() + 1 || id == layout_button_count() + 2)
-    {
-        enum ui_text text =
-            id == layout_button_count() + 1 ? UI_TEXT_TOOLTIP_SETTINGS : UI_TEXT_TOOLTIP_CLOSE;
-        wide_units(ui_text_line(text, folio_state_language(self->state)), self->tooltip_text);
-    }
-    if (id == layout_button_count() + 3)
-    {
-        wide_units(ui_text_line(UI_TEXT_TOOLTIP_NEW_NOTE, folio_state_language(self->state)),
-                   self->tooltip_text);
+        part_tooltip(self, (enum accessible_kind)notice->hdr.idFrom, text);
+        (void)wide_units(text, self->tooltip_text);
     }
     notice->lpszText = (wchar_t *)self->tooltip_text;
     return 0;
@@ -6760,10 +7010,32 @@ static void forward_wheel(const struct folio_window *_Nonnull self, WPARAM wpara
 }
 
 /* カーソルが折り畳んだ／空のカテゴリ行にあるか（ADR 0015 の決定 4）。 */
+/* Enter は押下で、Space は離した時に実行する。押し続けた自動繰り返しで新規や保存が連続しないように
+ * 繰り返しの打鍵は捨てる（ADR0060 の決定 4）。索引の行では Space を使わない。 */
+static bool press_activation(struct folio_window *_Nonnull self, WPARAM key, LPARAM lparam)
+{
+    if (key != VK_RETURN && (key != VK_SPACE || self->keyboard_target == ACCESSIBLE_TREE))
+    {
+        return false;
+    }
+    if ((HIWORD(lparam) & KF_REPEAT) != 0)
+    {
+        return true;
+    }
+    if (key == VK_SPACE)
+    {
+        begin_part_press(self, self->keyboard_target, true);
+        return true;
+    }
+    cancel_part_press(self); /* マウスや Space で押している操作を二重に実行しない */
+    keyboard_activate(self);
+    return true;
+}
+
 /* 索引の鍵（ADR 0013 の決定 2）。Enter で本文へ（カーソルがカテゴリ行なら何もしない・
  * ADR 0015 の決定 4）、↑↓ / PgUp / PgDn はドロワーのスクロールへ渡す（ADR 0009 の決定 5）。
  * Escape はここでは何もしない（窓を閉じるのは Alt+F4 と閉じる操作だけ）。 */
-static void press_key(struct folio_window *_Nonnull self, WPARAM key)
+static void press_key(struct folio_window *_Nonnull self, WPARAM key, LPARAM lparam)
 {
     if (key == VK_F1)
     {
@@ -6783,9 +7055,9 @@ static void press_key(struct folio_window *_Nonnull self, WPARAM key)
         /* 'G' は g / G の仮想キー。ほかの鍵が挟まれば gg の 1 打目は忘れる。 */
         self->pending_g = false;
     }
-    if (key == VK_RETURN || (key == VK_SPACE && self->keyboard_target != ACCESSIBLE_TREE))
+    if (press_activation(self, key, lparam) || choice_step(self, key))
     {
-        keyboard_activate(self);
+        show_focus_cues(self, true);
         return;
     }
     if (self->drawer != nullptr && self->keyboard_target == ACCESSIBLE_TREE)
@@ -7317,6 +7589,19 @@ static void command_composition_settled(struct folio_window *_Nonnull self)
     }
 }
 
+/* 欄の枠は focus の出入りで太さが変わる（ADR0060 の決定 3）。外へ出たら主窓が閉じるか判断する。 */
+static void command_focus_changed(struct folio_window *_Nonnull self, UINT message)
+{
+    if (message == WM_SETFOCUS || message == WM_KILLFOCUS)
+    {
+        redraw_command_layer(self);
+    }
+    if (message == WM_KILLFOCUS && !self->removal_running)
+    {
+        PostMessageW(self->handle, folio_message_command_focus_lost, 0, 0);
+    }
+}
+
 static LRESULT CALLBACK command_input_procedure(HWND window, UINT message, WPARAM wparam,
                                                 LPARAM lparam)
 {
@@ -7335,10 +7620,7 @@ static LRESULT CALLBACK command_input_procedure(HWND window, UINT message, WPARA
     {
         return 0;
     }
-    if (message == WM_KILLFOCUS && !self->removal_running)
-    {
-        PostMessageW(self->handle, folio_message_command_focus_lost, 0, 0);
-    }
+    command_focus_changed(self, message);
     LRESULT result = CallWindowProcW(self->command_input_original, window, message, wparam, lparam);
     /* 確定した文字は composition を抜けたあとに届くので、抜けてから 1 回だけ数え直す。 */
     if (message == WM_IME_ENDCOMPOSITION)
@@ -7554,6 +7836,19 @@ static void save_on_filter_focus(struct folio_window *_Nonnull self)
     InvalidateRect(self->handle, nullptr, FALSE);
 }
 
+/* 欄の枠は focus 中だけ 2px なので描き直す（ADR0060 の決定 3）。focus を受けたら先に保存する。 */
+static void filter_focus_changed(struct folio_window *_Nonnull self, UINT message)
+{
+    if (message == WM_SETFOCUS || message == WM_KILLFOCUS)
+    {
+        redraw_drawer(self);
+    }
+    if (message == WM_SETFOCUS)
+    {
+        save_on_filter_focus(self);
+    }
+}
+
 static LRESULT CALLBACK filter_input_procedure(HWND window, UINT message, WPARAM wparam,
                                                LPARAM lparam)
 {
@@ -7576,10 +7871,7 @@ static LRESULT CALLBACK filter_input_procedure(HWND window, UINT message, WPARAM
         return 0;
     }
     LRESULT result = CallWindowProcW(self->filter_original, window, message, wparam, lparam);
-    if (message == WM_SETFOCUS)
-    {
-        save_on_filter_focus(self);
-    }
+    filter_focus_changed(self, message);
     /* 確定した文字は composition を抜けたあとに届くので、抜けてから 1 回だけ絞り直す。 */
     if (message == WM_IME_ENDCOMPOSITION)
     {
@@ -7758,17 +8050,10 @@ static bool create_command_inputs(struct folio_window *_Nonnull self)
     return true;
 }
 
-static RECT tooltip_rect(const struct folio_window *_Nonnull self, size_t index)
+/* 見えていない部品の tool は空の矩形にして出さない。矩形は描画と同じ 1 本。 */
+static RECT tooltip_rect(const struct folio_window *_Nonnull self, enum accessible_kind kind)
 {
-    if (index < layout_button_count())
-    {
-        return layout_button_rect(self, index);
-    }
-    if (index == layout_button_count() + 2)
-    {
-        return new_note_rect(self);
-    }
-    return index == layout_button_count() ? settings_rect(self) : close_rect(self);
+    return accessible_visible(self, kind) ? accessible_main_rect(self, kind) : (RECT){0};
 }
 
 static void activate_tooltip(const struct folio_window *_Nonnull self)
@@ -7798,19 +8083,51 @@ static void refresh_tooltip_style(const struct folio_window *_Nonnull self)
     }
 }
 
+/* ドロワーのカテゴリ＋（C 様式）の tool。名前は UIA と同じ表から引き、矩形はドロワーの client
+ * 座標。 文言を固定で渡すので、言語と配置が変わるたびに描き直しの経路から写し直す。 */
+static TOOLINFOW drawer_tool(const struct folio_window *_Nonnull self, char16_t *_Nonnull text)
+{
+    HWND drawer = self->drawer == nullptr ? nullptr : drawer_window_handle(self->drawer);
+    TOOLINFOW tool = {.cbSize = tooltip_info_size,
+                      .uFlags = TTF_SUBCLASS,
+                      .hwnd = drawer,
+                      .uId = ACCESSIBLE_NEW_CATEGORY,
+                      .lpszText = (wchar_t *)text};
+    text[0] = u'\0';
+    (void)wide_units(ui_text_line(accessible_controls[ACCESSIBLE_NEW_CATEGORY].label,
+                                  folio_state_language(self->state)),
+                     text);
+    struct accessible_item item = {.kind = ACCESSIBLE_NEW_CATEGORY};
+    struct accessible_view view = {0};
+    if (drawer != nullptr && drawer_visible(self) &&
+        SUCCEEDED(drawer_window_accessible_read(self->drawer, &item, &view)))
+    {
+        tool.rect = view.bounds;
+        MapWindowPoints(nullptr, drawer, (POINT *)&tool.rect, 2);
+    }
+    return tool;
+}
+
 static void refresh_tooltip_rects(const struct folio_window *_Nonnull self)
 {
     if (self->tooltip == nullptr)
     {
         return;
     }
+    char16_t text[draw_unit_limit];
+    TOOLINFOW drawer = drawer_tool(self, text);
+    if (drawer.hwnd != nullptr)
+    {
+        SendMessageW(self->tooltip, TTM_NEWTOOLRECTW, 0, (LPARAM)&drawer);
+        SendMessageW(self->tooltip, TTM_UPDATETIPTEXTW, 0, (LPARAM)&drawer);
+    }
     SendMessageW(self->tooltip, TTM_POP, 0, 0);
-    for (size_t index = 0; index < layout_button_count() + 3; ++index)
+    for (size_t index = 0; index < main_part_count(); ++index)
     {
         TOOLINFOW tool = {.cbSize = tooltip_info_size,
                           .hwnd = self->handle,
-                          .uId = index + 1,
-                          .rect = tooltip_rect(self, index)};
+                          .uId = main_parts[index].kind,
+                          .rect = tooltip_rect(self, main_parts[index].kind)};
         SendMessageW(self->tooltip, TTM_NEWTOOLRECTW, 0, (LPARAM)&tool);
     }
 }
@@ -7831,18 +8148,24 @@ static bool create_tooltip(struct folio_window *_Nonnull self)
     {
         return false;
     }
-    for (size_t index = 0; index < layout_button_count() + 3; ++index)
+    for (size_t index = 0; index < main_part_count(); ++index)
     {
         TOOLINFOW tool = {.cbSize = tooltip_info_size,
                           .uFlags = TTF_SUBCLASS,
                           .hwnd = self->handle,
-                          .uId = index + 1,
-                          .rect = tooltip_rect(self, index),
+                          .uId = main_parts[index].kind,
+                          .rect = tooltip_rect(self, main_parts[index].kind),
                           .lpszText = LPSTR_TEXTCALLBACKW};
         if (!SendMessageW(self->tooltip, TTM_ADDTOOLW, 0, (LPARAM)&tool))
         {
             return false;
         }
+    }
+    char16_t text[draw_unit_limit];
+    TOOLINFOW drawer = drawer_tool(self, text);
+    if (drawer.hwnd == nullptr || !SendMessageW(self->tooltip, TTM_ADDTOOLW, 0, (LPARAM)&drawer))
+    {
+        return false;
     }
     refresh_tooltip_style(self);
     activate_tooltip(self);
@@ -7859,6 +8182,21 @@ static bool create_settings_backdrop(struct folio_window *_Nonnull self)
                                       self->palette.dialog_backdrop_alpha, LWA_ALPHA);
 }
 
+/* OS の「キーボードの印を常に表示」。読むのは作成時と WM_SETTINGCHANGE だけ（ADR0060 の決定 3）。
+ */
+static void read_focus_cues(struct folio_window *_Nonnull self)
+{
+    BOOL always = FALSE;
+    bool known = SystemParametersInfoW(SPI_GETKEYBOARDCUES, 0, &always, 0) != 0;
+    bool shown = known && always != FALSE;
+    if (shown != self->focus_cues_always)
+    {
+        self->focus_cues_always = shown;
+        InvalidateRect(self->handle, nullptr, FALSE);
+        redraw_drawer(self);
+    }
+}
+
 static LRESULT on_create(HWND window, LPARAM lparam)
 {
     /* Win32 のコールバック引数を境界で受ける唯一の void *（C-006）。 */
@@ -7867,6 +8205,7 @@ static LRESULT on_create(HWND window, LPARAM lparam)
     SetWindowLongPtrW(window, GWLP_USERDATA, (LONG_PTR)self);
     self->handle = window;
     refresh_font(self, GetDpiForWindow(window));
+    read_focus_cues(self);
     if (drawer_window_create(window, self->state, self->accessibility, &self->drawer) !=
             DRAWER_WINDOW_CREATED ||
         note_pane_create(window, self->palette.pane, self->palette.editor_text, &self->pane) !=
@@ -8319,6 +8658,7 @@ static void resize(struct folio_window *_Nonnull self)
 /* OS通知とモーダルの再取得要求はここへ合流する。enumのテーマ名で色変更を判定しない。 */
 static void system_colors_changed(struct folio_window *_Nonnull self)
 {
+    read_focus_cues(self);
     if (pane_streaming(self) || session_busy(self))
     {
         self->appearance_pending = true;
@@ -8350,6 +8690,45 @@ static void resume_appearance(struct folio_window *_Nonnull self)
     }
 }
 
+/* 部品の押下・hover・Space の離鍵（ADR0060 の決定 3・4）。 */
+static LRESULT on_part_message(struct folio_window *_Nonnull self, UINT message, WPARAM wparam,
+                               LPARAM lparam)
+{
+    switch (message)
+    {
+    case WM_LBUTTONUP:
+        release_part(self, lparam);
+        return 0;
+    case WM_CAPTURECHANGED:
+        if (!self->pressed_by_key)
+        {
+            cancel_part_press(self);
+        }
+        return 0;
+    case WM_CANCELMODE:
+        cancel_part_press(self);
+        return DefWindowProcW(self->handle, message, wparam, lparam);
+    case WM_MOUSEMOVE:
+        track_pointer(self, lparam);
+        return 0;
+    case WM_MOUSELEAVE:
+        leave_pointer(self);
+        return 0;
+    case WM_KEYUP:
+        release_key(self, wparam);
+        return 0;
+    case WM_ACTIVATE:
+        if (LOWORD(wparam) == WA_INACTIVE)
+        {
+            cancel_part_press(self);
+        }
+        return DefWindowProcW(self->handle, message, wparam, lparam);
+    default:
+        /* Win32 のメッセージは開いた集合（C-017）。 */
+        return DefWindowProcW(self->handle, message, wparam, lparam);
+    }
+}
+
 /* 鍵・フォーカス・ホイール・終了。on_message を C-012 の行数に収めるために分けてある。 */
 static LRESULT on_input_message(struct folio_window *_Nonnull self, UINT message, WPARAM wparam,
                                 LPARAM lparam)
@@ -8362,25 +8741,28 @@ static LRESULT on_input_message(struct folio_window *_Nonnull self, UINT message
     switch (message)
     {
     case WM_LBUTTONUP:
-        release_new_note(self, lparam);
-        return 0;
     case WM_CAPTURECHANGED:
-        cancel_new_note_press(self);
-        return 0;
     case WM_CANCELMODE:
-        cancel_new_note_press(self);
-        return DefWindowProcW(self->handle, message, wparam, lparam);
+    case WM_MOUSEMOVE:
+    case WM_MOUSELEAVE:
+    case WM_KEYUP:
+    case WM_ACTIVATE:
+        return on_part_message(self, message, wparam, lparam);
     case WM_QUERYENDSESSION:
         return query_session_end(self);
     case WM_ENABLE:
         activate_tooltip(self);
+        if (wparam == FALSE)
+        {
+            set_hover(self, ACCESSIBLE_WINDOW);
+        }
         return 0;
     case WM_ENDSESSION:
         return end_session(self, wparam);
     case WM_COMMAND:
         return on_window_command(self, wparam, lparam);
     case WM_KEYDOWN:
-        press_key(self, wparam);
+        press_key(self, wparam, lparam);
         return 0;
     case WM_CHAR:
         type_key(self, wparam);
@@ -8390,6 +8772,7 @@ static LRESULT on_input_message(struct folio_window *_Nonnull self, UINT message
         redraw_drawer(self);
         return 0;
     case WM_KILLFOCUS:
+        cancel_part_press(self);
         redraw_drawer(self);
         InvalidateRect(self->handle, nullptr, FALSE);
         return 0;
@@ -8440,7 +8823,7 @@ static LRESULT on_message(struct folio_window *_Nonnull self, UINT message, WPAR
     case WM_LBUTTONDOWN:
         if (!self->removal_running)
         {
-            click_caption(self, lparam);
+            press_part(self, lparam);
         }
         return 0;
     case WM_NOTIFY:
@@ -9086,11 +9469,13 @@ static enum ui_text surface_button_label(const struct folio_window *_Nonnull sel
     if (slot == ACCESSIBLE_SURFACE_NEXT)
         return self->command_surface == COMMAND_SURFACE_SEARCH ? UI_TEXT_ACTION_SEARCH_NEXT
                                                                : UI_TEXT_ACTION_PALETTE_NEXT;
+    if (slot == ACCESSIBLE_SURFACE_SHOW_HELP)
+        return self->command_keys_visible ? UI_TEXT_ACTION_KEYS_HIDE : UI_TEXT_ACTION_KEYS_SHOW;
     const enum ui_text labels[] = {UI_TEXT_TOOLTIP_CLOSE,
                                    UI_TEXT_THEME_BACK,
                                    UI_TEXT_EMPTY,
                                    UI_TEXT_EMPTY,
-                                   UI_TEXT_COMMAND_HELP,
+                                   UI_TEXT_EMPTY,
                                    UI_TEXT_ACTION_REPLACE_ONE,
                                    UI_TEXT_ACTION_REPLACE_ALL,
                                    UI_TEXT_THEME_CHOOSE};
@@ -9549,52 +9934,6 @@ static HRESULT surface_action(struct folio_window *_Nonnull self,
     return surface_row_action(self, request);
 }
 
-/* 自前操作の親子順・名前・focus可否。native入力欄はこのtreeに複製しない。 */
-static const struct
-{
-    enum accessible_kind parent;
-    enum ui_text label;
-    bool focusable;
-} accessible_controls[] = {
-    [ACCESSIBLE_WINDOW] = {ACCESSIBLE_WINDOW, UI_TEXT_APP_LOGO, false},
-    [ACCESSIBLE_DRAWER] = {ACCESSIBLE_WINDOW, UI_TEXT_TITLE_CATEGORIES, false},
-    [ACCESSIBLE_HEADER] = {ACCESSIBLE_WINDOW, UI_TEXT_ACCESSIBLE_HEADER, false},
-    [ACCESSIBLE_NEW_NOTE] = {ACCESSIBLE_HEADER, UI_TEXT_COMMAND_NEW, true},
-    [ACCESSIBLE_LAYOUT_GROUP] = {ACCESSIBLE_HEADER, UI_TEXT_LAYOUT_GROUP, false},
-    [ACCESSIBLE_LAYOUT_DRAWER] = {ACCESSIBLE_LAYOUT_GROUP, UI_TEXT_LAYOUT_BUTTON_DRAWER, true},
-    [ACCESSIBLE_LAYOUT_BOTH] = {ACCESSIBLE_LAYOUT_GROUP, UI_TEXT_LAYOUT_BUTTON_BOTH, true},
-    [ACCESSIBLE_LAYOUT_NOTE] = {ACCESSIBLE_LAYOUT_GROUP, UI_TEXT_LAYOUT_BUTTON_NOTE, true},
-    [ACCESSIBLE_SETTINGS] = {ACCESSIBLE_HEADER, UI_TEXT_TOOLTIP_SETTINGS, true},
-    [ACCESSIBLE_CLOSE] = {ACCESSIBLE_HEADER, UI_TEXT_TOOLTIP_CLOSE, true},
-    [ACCESSIBLE_PANE_TOOLS] = {ACCESSIBLE_WINDOW, UI_TEXT_ACCESSIBLE_PANE_TOOLS, false},
-    [ACCESSIBLE_MODE_GROUP] = {ACCESSIBLE_PANE_TOOLS, UI_TEXT_ACCESSIBLE_MODE, false},
-    [ACCESSIBLE_VIEW] = {ACCESSIBLE_MODE_GROUP, UI_TEXT_CHIP_VIEW, true},
-    [ACCESSIBLE_EDIT] = {ACCESSIBLE_MODE_GROUP, UI_TEXT_CHIP_EDIT, true},
-    [ACCESSIBLE_SAVE] = {ACCESSIBLE_PANE_TOOLS, UI_TEXT_COMMAND_SAVE, true},
-    [ACCESSIBLE_MENU] = {ACCESSIBLE_PANE_TOOLS, UI_TEXT_ACTION_OPERATIONS, true},
-    [ACCESSIBLE_HELP] = {ACCESSIBLE_PANE_TOOLS, UI_TEXT_COMMAND_HELP, true},
-    [ACCESSIBLE_FIND] = {ACCESSIBLE_PANE_TOOLS, UI_TEXT_COMMAND_FIND, true},
-    [ACCESSIBLE_NEW_CATEGORY] = {ACCESSIBLE_DRAWER, UI_TEXT_COMMAND_NEW_CATEGORY, true},
-    [ACCESSIBLE_TREE] = {ACCESSIBLE_DRAWER, UI_TEXT_TITLE_CATEGORIES, true},
-    [ACCESSIBLE_CATEGORY] = {ACCESSIBLE_TREE, UI_TEXT_EMPTY, true},
-    [ACCESSIBLE_NOTE] = {ACCESSIBLE_CATEGORY, UI_TEXT_EMPTY, true},
-    [ACCESSIBLE_FILTER] = {ACCESSIBLE_WINDOW, UI_TEXT_PLACEHOLDER_FILTER, true},
-    [ACCESSIBLE_BODY] = {ACCESSIBLE_WINDOW, UI_TEXT_ACCESSIBLE_BODY, true},
-    [ACCESSIBLE_NOTICE] = {ACCESSIBLE_WINDOW, UI_TEXT_EMPTY, false},
-    [ACCESSIBLE_SURFACE] = {ACCESSIBLE_WINDOW, UI_TEXT_EMPTY, false},
-    [ACCESSIBLE_SURFACE_LIST] = {ACCESSIBLE_SURFACE, UI_TEXT_EMPTY, false},
-    [ACCESSIBLE_SURFACE_CHOICE] = {ACCESSIBLE_SURFACE_LIST, UI_TEXT_EMPTY, true},
-    [ACCESSIBLE_SURFACE_LANGUAGE] = {ACCESSIBLE_SURFACE_LIST, UI_TEXT_EMPTY, true},
-    [ACCESSIBLE_SURFACE_TOGGLE] = {ACCESSIBLE_SURFACE_LIST, UI_TEXT_EMPTY, true},
-    [ACCESSIBLE_SURFACE_BUTTON] = {ACCESSIBLE_SURFACE, UI_TEXT_EMPTY, false},
-    [ACCESSIBLE_SURFACE_TEXT] = {ACCESSIBLE_SURFACE_LIST, UI_TEXT_EMPTY, false},
-    [ACCESSIBLE_SURFACE_HELP] = {ACCESSIBLE_SURFACE, UI_TEXT_EMPTY, false},
-    [ACCESSIBLE_SURFACE_STATUS] = {ACCESSIBLE_SURFACE, UI_TEXT_EMPTY, false},
-    [ACCESSIBLE_COMMAND_INPUT] = {ACCESSIBLE_SURFACE, UI_TEXT_EMPTY, true},
-    [ACCESSIBLE_REPLACE_PATTERN] = {ACCESSIBLE_SURFACE, UI_TEXT_ACCESSIBLE_PATTERN, true},
-    [ACCESSIBLE_REPLACE_TEXT] = {ACCESSIBLE_SURFACE, UI_TEXT_ACCESSIBLE_REPLACEMENT, true},
-};
-
 static bool accessible_pane_control(enum accessible_kind kind)
 {
     return kind == ACCESSIBLE_PANE_TOOLS || kind == ACCESSIBLE_MODE_GROUP ||
@@ -9619,24 +9958,9 @@ static bool accessible_visible(const struct folio_window *_Nonnull self, enum ac
     }
     if (accessible_pane_control(kind))
     {
-        return pane_visible(self) && (kind != ACCESSIBLE_FIND || action_button_fits(self, 3));
+        return pane_visible(self);
     }
     return true;
-}
-
-static RECT accessible_chip_rect(const struct folio_window *_Nonnull self, enum pane_mode mode)
-{
-    HDC device = GetDC(self->handle);
-    if (device == nullptr)
-    {
-        return (RECT){0};
-    }
-    HGDIOBJ previous = SelectObject(device, self->mono_font);
-    SetTextCharacterExtra(device, scale(base_tracking, GetDpiForWindow(self->handle)));
-    RECT bounds = chip_rect(self, device, mode);
-    SelectObject(device, previous);
-    ReleaseDC(self->handle, device);
-    return bounds;
 }
 
 static RECT accessible_main_group_rect(const struct folio_window *_Nonnull self,
@@ -9650,9 +9974,7 @@ static RECT accessible_main_group_rect(const struct folio_window *_Nonnull self,
     }
     if (kind == ACCESSIBLE_MODE_GROUP)
     {
-        RECT bounds = accessible_chip_rect(self, PANE_MODE_VIEW);
-        bounds.right = accessible_chip_rect(self, PANE_MODE_EDIT).right;
-        return bounds;
+        return mode_group_rect(self);
     }
     RECT bounds = {0};
     GetClientRect(self->handle, &bounds);
@@ -9683,9 +10005,9 @@ static RECT accessible_main_rect(const struct folio_window *_Nonnull self,
     case ACCESSIBLE_WINDOW:
         return accessible_main_group_rect(self, kind);
     case ACCESSIBLE_VIEW:
-        return accessible_chip_rect(self, PANE_MODE_VIEW);
+        return mode_item_rect(self, PANE_MODE_VIEW);
     case ACCESSIBLE_EDIT:
-        return accessible_chip_rect(self, PANE_MODE_EDIT);
+        return mode_item_rect(self, PANE_MODE_EDIT);
     case ACCESSIBLE_NEW_NOTE:
         return new_note_rect(self);
     case ACCESSIBLE_SAVE:
@@ -9798,6 +10120,20 @@ static void accessible_name(const struct folio_window *_Nonnull self, enum acces
     (void)wide_units(line, out);
 }
 
+/* AcceleratorKey は tooltip と同じキーの文言から写す（ADR0060 の決定 5）。out は 64 単位。 */
+static void accessible_accelerator(const struct folio_window *_Nonnull self,
+                                   enum accessible_kind kind, char16_t *_Nonnull out)
+{
+    enum ui_text key = accessible_controls[kind].key;
+    size_t written = 0;
+    if (key == UI_TEXT_EMPTY ||
+        utf16_text_fill(ui_text_line(key, folio_state_language(self->state)), out, 64, &written) !=
+            UTF16_TEXT_FILL_READY)
+    {
+        out[0] = u'\0';
+    }
+}
+
 static void accessible_main_bounds(struct folio_window *_Nonnull self, enum accessible_kind kind,
                                    struct accessible_view *_Nonnull out)
 {
@@ -9832,21 +10168,7 @@ static void accessible_main_bounds(struct folio_window *_Nonnull self, enum acce
 static void accessible_selection_view(struct folio_window *_Nonnull self, enum accessible_kind kind,
                                       struct accessible_view *_Nonnull out)
 {
-    if (kind == ACCESSIBLE_LAYOUT_DRAWER || kind == ACCESSIBLE_LAYOUT_BOTH ||
-        kind == ACCESSIBLE_LAYOUT_NOTE)
-    {
-        const enum accessible_kind layouts[] = {[FOLIO_LAYOUT_DRAWER] = ACCESSIBLE_LAYOUT_DRAWER,
-                                                [FOLIO_LAYOUT_BOTH] = ACCESSIBLE_LAYOUT_BOTH,
-                                                [FOLIO_LAYOUT_NOTE] = ACCESSIBLE_LAYOUT_NOTE};
-        out->selected = kind == layouts[folio_state_layout_mode(self->state)];
-    }
-    if (kind == ACCESSIBLE_VIEW || kind == ACCESSIBLE_EDIT)
-    {
-        enum accessible_kind selected = folio_state_pane_mode(self->state) == PANE_MODE_VIEW
-                                            ? ACCESSIBLE_VIEW
-                                            : ACCESSIBLE_EDIT;
-        out->selected = kind == selected;
-    }
+    out->selected = part_selected(self, kind);
     if (kind == ACCESSIBLE_LAYOUT_GROUP || kind == ACCESSIBLE_MODE_GROUP || kind == ACCESSIBLE_TREE)
     {
         struct accessible_item item = {.kind = kind};
@@ -9883,6 +10205,7 @@ HRESULT folio_window_accessible_read(struct folio_window *_Nonnull self,
     if (accessible_item_surface(*item))
         return surface_read(self, *item, out);
     accessible_name(self, item->kind, out->name);
+    accessible_accelerator(self, item->kind, out->accelerator);
     accessible_availability(self, item->kind, out);
     if (accessible_item_host(*item) == ACCESSIBLE_DRAWER)
     {
@@ -10413,6 +10736,65 @@ static bool keyboard_focus(struct folio_window *_Nonnull self, enum accessible_k
     return SUCCEEDED(result);
 }
 
+/* 選択群は Tab で 1 回だけ止まる。群の中の項目は群の先頭の項目を代表にする（ADR0060 の決定 5）。 */
+static enum accessible_kind keyboard_slot(enum accessible_kind kind)
+{
+    if (accessible_controls[kind].parent == ACCESSIBLE_LAYOUT_GROUP)
+    {
+        return ACCESSIBLE_LAYOUT_DRAWER;
+    }
+    return accessible_controls[kind].parent == ACCESSIBLE_MODE_GROUP ? ACCESSIBLE_VIEW : kind;
+}
+
+/* 群へ入るときは選択中の項目に止まる。 */
+static enum accessible_kind keyboard_entry(const struct folio_window *_Nonnull self,
+                                           enum accessible_kind kind)
+{
+    if (kind == ACCESSIBLE_LAYOUT_DRAWER)
+    {
+        return selected_layout_kind(self);
+    }
+    return kind == ACCESSIBLE_VIEW ? mode_kind(folio_state_pane_mode(self->state)) : kind;
+}
+
+/* 群の中の隣の項目（端で折り返す）。兄弟は列挙で連続している。 */
+static enum accessible_kind choice_neighbor(enum accessible_kind kind, bool forward)
+{
+    constexpr size_t count = sizeof accessible_controls / sizeof accessible_controls[0];
+    enum accessible_kind parent = accessible_controls[kind].parent;
+    size_t first = kind;
+    while (first > 0 && accessible_controls[first - 1].parent == parent)
+    {
+        --first;
+    }
+    size_t last = kind;
+    while (last + 1 < count && accessible_controls[last + 1].parent == parent)
+    {
+        ++last;
+    }
+    size_t span = last - first + 1;
+    size_t at = (size_t)kind - first;
+    at = forward ? (at + 1) % span : (at + span - 1) % span;
+    return (enum accessible_kind)(first + at);
+}
+
+/* 選択群の中では矢印が focus だけを動かし、選択は Enter/Space で確定する。
+ * 矢印で選ぶと一覧経由で窓が縮む・閲覧で保存が走るため（ADR0060 の決定 5）。 */
+static bool choice_step(struct folio_window *_Nonnull self, WPARAM key)
+{
+    bool forward = key == VK_RIGHT || key == VK_DOWN;
+    bool backward = key == VK_LEFT || key == VK_UP;
+    enum accessible_kind parent = accessible_controls[self->keyboard_target].parent;
+    if ((!forward && !backward) ||
+        (parent != ACCESSIBLE_LAYOUT_GROUP && parent != ACCESSIBLE_MODE_GROUP))
+    {
+        return false;
+    }
+    cancel_part_press(self);
+    (void)keyboard_focus(self, choice_neighbor(self->keyboard_target, forward));
+    return true;
+}
+
 static void keyboard_region_step(struct folio_window *_Nonnull self, bool forward)
 {
     const enum accessible_kind regions[] = {ACCESSIBLE_HEADER, ACCESSIBLE_DRAWER,
@@ -10431,7 +10813,8 @@ static void keyboard_region_step(struct folio_window *_Nonnull self, bool forwar
     for (size_t step = 0; step < 4; ++step)
     {
         index = forward ? (index + 1) % 4 : (index + 3) % 4;
-        if (accessible_visible(self, entries[index]) && keyboard_focus(self, entries[index]))
+        enum accessible_kind entry = keyboard_entry(self, entries[index]);
+        if (accessible_visible(self, entry) && keyboard_focus(self, entry))
         {
             return;
         }
@@ -10446,13 +10829,11 @@ static bool keyboard_same_region(enum accessible_kind left, enum accessible_kind
 static void keyboard_tab_step(struct folio_window *_Nonnull self, bool forward)
 {
     const enum accessible_kind order[] = {
-        ACCESSIBLE_NEW_NOTE,    ACCESSIBLE_LAYOUT_DRAWER, ACCESSIBLE_LAYOUT_BOTH,
-        ACCESSIBLE_LAYOUT_NOTE, ACCESSIBLE_SETTINGS,      ACCESSIBLE_CLOSE,
-        ACCESSIBLE_FILTER,      ACCESSIBLE_NEW_CATEGORY,  ACCESSIBLE_TREE,
-        ACCESSIBLE_VIEW,        ACCESSIBLE_EDIT,          ACCESSIBLE_SAVE,
-        ACCESSIBLE_MENU,        ACCESSIBLE_HELP,          ACCESSIBLE_FIND};
+        ACCESSIBLE_NEW_NOTE, ACCESSIBLE_LAYOUT_DRAWER, ACCESSIBLE_SETTINGS, ACCESSIBLE_CLOSE,
+        ACCESSIBLE_FILTER,   ACCESSIBLE_NEW_CATEGORY,  ACCESSIBLE_TREE,     ACCESSIBLE_VIEW,
+        ACCESSIBLE_SAVE,     ACCESSIBLE_MENU,          ACCESSIBLE_HELP,     ACCESSIBLE_FIND};
     size_t count = sizeof order / sizeof order[0];
-    enum accessible_kind current = keyboard_kind(self);
+    enum accessible_kind current = keyboard_slot(keyboard_kind(self));
     size_t index = 0;
     for (size_t at = 0; at < count; ++at)
     {
@@ -10464,8 +10845,9 @@ static void keyboard_tab_step(struct folio_window *_Nonnull self, bool forward)
     for (size_t step = 0; step < count; ++step)
     {
         index = forward ? (index + 1) % count : (index + count - 1) % count;
-        if (keyboard_same_region(current, order[index]) && accessible_visible(self, order[index]) &&
-            keyboard_focus(self, order[index]))
+        enum accessible_kind entry = keyboard_entry(self, order[index]);
+        if (keyboard_same_region(current, entry) && accessible_visible(self, entry) &&
+            keyboard_focus(self, entry))
         {
             return;
         }
@@ -10482,6 +10864,8 @@ static bool keyboard_accelerator(struct folio_window *_Nonnull self, WORD id)
     {
         return true;
     }
+    cancel_part_press(self);
+    show_focus_cues(self, true);
     if (id <= 112)
     {
         keyboard_region_step(self, id == 111);
@@ -10526,9 +10910,12 @@ static bool translate_keyboard(const struct folio_window *_Nonnull self,
 
 static void keyboard_activate(struct folio_window *_Nonnull self)
 {
-    struct accessible_item item = self->keyboard_target == ACCESSIBLE_TREE
-                                      ? accessible_cursor(self)
-                                      : (struct accessible_item){.kind = self->keyboard_target};
+    if (self->keyboard_target != ACCESSIBLE_TREE)
+    {
+        activate_part(self, self->keyboard_target);
+        return;
+    }
+    struct accessible_item item = accessible_cursor(self);
     if (item.kind == ACCESSIBLE_CATEGORY || item.kind == ACCESSIBLE_TREE)
     {
         return;
@@ -10536,21 +10923,6 @@ static void keyboard_activate(struct folio_window *_Nonnull self)
     struct accessible_request request = {.item = item, .action = ACCESSIBLE_ACTION_INVOKE};
     (void)folio_window_accessible_action(self, &request);
     accessibility_host_schedule(self->accessibility);
-}
-
-static void draw_keyboard_focus(const struct folio_window *_Nonnull self, HDC device)
-{
-    if (GetFocus() != self->handle || self->keyboard_target == ACCESSIBLE_TREE ||
-        !accessible_visible(self, self->keyboard_target))
-    {
-        return;
-    }
-    RECT bounds = accessible_main_rect(self, self->keyboard_target);
-    if (!IsRectEmpty(&bounds))
-    {
-        InflateRect(&bounds, -2, -2);
-        DrawFocusRect(device, &bounds);
-    }
 }
 
 static void pointer_focus(struct folio_window *_Nonnull self, POINT point)
@@ -10573,6 +10945,7 @@ static LRESULT on_accessibility_message(struct folio_window *_Nonnull self, UINT
         return accessibility_host_object(self->accessibility, ACCESSIBLE_WINDOW, wparam, lparam);
     case WM_ENTERMENULOOP:
         self->menu_active = true;
+        set_hover(self, ACCESSIBLE_WINDOW);
         return 0;
     case WM_EXITMENULOOP:
         self->menu_active = false;
@@ -10585,7 +10958,12 @@ static LRESULT on_accessibility_message(struct folio_window *_Nonnull self, UINT
         return 0;
     case folio_message_index_focused:
         return GetFocus() == self->handle && self->keyboard_target == ACCESSIBLE_TREE;
+    case folio_message_focus_cues:
+        return self->focus_cues || self->focus_cues_always;
+    case folio_message_filter_focused:
+        return self->filter_input != nullptr && GetFocus() == self->filter_input;
     case folio_message_index_focus:
+        show_focus_cues(self, false); /* drawer のポインタ操作だけが送る */
         if ((enum accessible_kind)wparam == ACCESSIBLE_FILTER)
         {
             focus_filter_input(self);
