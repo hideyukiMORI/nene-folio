@@ -61,3 +61,10 @@ OSの個別言語切替設定・物理IME実入力・スクリーンリーダー
 - [Microsoft About Tooltip Controls](https://learn.microsoft.com/en-us/windows/win32/controls/tooltip-controls)
 - [Microsoft InitCommonControlsEx](https://learn.microsoft.com/en-us/windows/win32/api/commctrl/nf-commctrl-initcommoncontrolsex)
 - [W3C Non-text Contrast](https://www.w3.org/WAI/WCAG22/Understanding/non-text-contrast.html)
+
+## 2026-10-18 の補正（#344）
+
+[ADR0059](0059-common-new-note-and-content-alignment.md)で新規の常設入口を共通ヘッダー左へ集約する。
+狭幅では同じ位置の図形へ縮め、24 logical px以上の移動領域を残す。本文操作列は固定36pxへ揃える。
+UIAの新規の親は共通ヘッダー、F6のヘッダー入口は新規、索引入口は検索欄とする。
+検索focusの保存は#342/ADR0024、作成・取消・成功後の表示変更はADR0050/0051の契約を維持する。

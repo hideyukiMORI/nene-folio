@@ -102,7 +102,8 @@
 | 編集中の本文 | 保存前の文字列 | ui/win32（RichEdit が所有） | 保存の意図で application へ渡す |
 | 無題を置き換える許可 | 無題保護／明示破棄の閉じた値 | 同期呼出し元のローカル | 退出用の名前入力面から受け、既存の選択・新規の意図へ一回だけ渡す。次文書の準備後に採用し、永続状態や継続キューを作らない（ADR0050） |
 | ドロワーのスクロール量 | 画素 | application（レイアウト値の一部） | ホイール・キーの意図。上限は core が計算 |
-| ドロワーの固定ボタン押下 | NONE / NEW_NOTE / NEW_CATEGORYの閉じた値 | ui/win32（`drawer_window`） | 同じ矩形で押下と解放を照合し、capture喪失で解除する。新規の宛先は実行時に値で渡し、文書状態を複製しない（ADR0051） |
+| 共通ヘッダーの新規押下 | 新規ボタンのcapture中の押下状態 | ui/win32（`folio_window`） | 同じ矩形で押下と解放を照合し、capture喪失で解除する。共通NEWコマンドへ渡し、文書状態を複製しない（ADR0059） |
+| ドロワーの固定ボタン押下 | NONE / NEW_CATEGORYの閉じた値 | ui/win32（`drawer_window`） | 同じ矩形で押下と解放を照合し、capture喪失で解除する。カテゴリ追加の既存受け口へ渡す（ADR0051/0059） |
 | 検索語と一致集合 | 文字列と文書 ID の列 | application | 検索窓の入力 |
 | テーマの名前と配色 | 127固定配色の識別子・UI/RTF用RGB | core（`folio_theme`の`theme_palette`表） | `folio_theme_choice`がsystemを含む選択・名前解析を集約し、UIはCOLORREFへの変換だけ行う（ADR0049） |
 | テーマの選択とOS外観 | 保存する`folio_theme_choice`、最後の有効appearance_snapshot、実効theme_paletteと改訂番号 | application（`folio_state`） | 設定は書込み成功後、OS外観はRTF準備成功後だけ採用する。HCを優先して同じpaletteをUI/RTFへ渡し、選択/カテゴリ保存色は変えない。取得失敗とHC_OFFを区別する（ADR0057） |

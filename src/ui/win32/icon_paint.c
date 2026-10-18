@@ -11,6 +11,25 @@
  * 画面案そのものの性質）。突き合わせは out/design/2026-09-23/icon-ui-probe/geometry.py。 */
 constexpr float icon_view_box = 24.0f;
 
+/* 新規ノート（ADR0059）。紙の輪郭と右下の追加記号を別の閉じた面にする。 */
+static const struct
+{
+    float x;
+    float y;
+} new_note_points[] = {
+    {4.0f, 2.0f},   {14.0f, 2.0f},  {19.0f, 7.0f}, {19.0f, 11.0f}, {17.0f, 11.0f},
+    {17.0f, 8.0f},  {13.0f, 8.0f},  {13.0f, 4.0f}, {6.0f, 4.0f},   {6.0f, 20.0f},
+    {11.0f, 20.0f}, {11.0f, 22.0f}, {4.0f, 22.0f},
+};
+static const struct
+{
+    float x;
+    float y;
+} new_note_plus_points[] = {
+    {16.0f, 12.0f}, {18.0f, 12.0f}, {18.0f, 16.0f}, {22.0f, 16.0f}, {22.0f, 18.0f}, {18.0f, 18.0f},
+    {18.0f, 22.0f}, {16.0f, 22.0f}, {16.0f, 18.0f}, {12.0f, 18.0f}, {12.0f, 16.0f}, {16.0f, 16.0f},
+};
+
 /* 写しの規則 (1): <path> の M/L/l は絶対座標の点列にして、続く 2 点ごとに線を足し、
  * z は図形を閉じる（最後の点から最初の点への線は GDI+ が引く）。
  * 閉じる: M8.1 6.7L12 10.6l3.9-3.9 1.4 1.4-3.9 3.9 3.9 3.9-1.4 1.4-3.9-3.9-3.9 3.9-1.4-1.4
@@ -101,6 +120,27 @@ constexpr float quarter_turn = 90.0f;
 static int first_failure(int status, int step)
 {
     return status != gdiplus_ok ? status : step;
+}
+
+static int add_new_note_path(struct GpPath *_Nonnull path)
+{
+    int status = gdiplus_ok;
+    for (size_t index = 0; index + 1 < sizeof new_note_points / sizeof new_note_points[0]; ++index)
+    {
+        status = first_failure(
+            status, GdipAddPathLine(path, new_note_points[index].x, new_note_points[index].y,
+                                    new_note_points[index + 1].x, new_note_points[index + 1].y));
+    }
+    status = first_failure(status, GdipClosePathFigure(path));
+    for (size_t index = 0; index + 1 < sizeof new_note_plus_points / sizeof new_note_plus_points[0];
+         ++index)
+    {
+        status = first_failure(status, GdipAddPathLine(path, new_note_plus_points[index].x,
+                                                       new_note_plus_points[index].y,
+                                                       new_note_plus_points[index + 1].x,
+                                                       new_note_plus_points[index + 1].y));
+    }
+    return first_failure(status, GdipClosePathFigure(path));
 }
 
 /* 点の表を線でつないで閉じる。表は 2 つとも絶対座標なので畳み直さない。 */
@@ -205,6 +245,8 @@ static int build_path(struct GpPath *_Nonnull path, enum icon_paint_kind kind)
     case ICON_PAINT_FOLD_EXPAND:
     case ICON_PAINT_ADD:
         return add_plus_path(path);
+    case ICON_PAINT_NEW_NOTE:
+        return add_new_note_path(path);
     case ICON_PAINT_SELECTION:
         return add_round_rect(path, round_rect_selection);
     case ICON_PAINT_WARNING:
@@ -222,6 +264,7 @@ static int fill_mode_for(enum icon_paint_kind kind)
     case ICON_PAINT_FOLD_COLLAPSE:
     case ICON_PAINT_FOLD_EXPAND:
     case ICON_PAINT_ADD:
+    case ICON_PAINT_NEW_NOTE:
     case ICON_PAINT_SELECTION:
         return gdiplus_fill_winding;
     case ICON_PAINT_SETTINGS:

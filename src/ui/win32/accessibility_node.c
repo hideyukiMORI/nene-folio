@@ -40,9 +40,9 @@ static bool has_invoke(enum accessible_kind kind)
 {
     return kind == ACCESSIBLE_SETTINGS || kind == ACCESSIBLE_CLOSE || kind == ACCESSIBLE_MENU ||
            kind == ACCESSIBLE_NEW_NOTE || kind == ACCESSIBLE_NEW_CATEGORY ||
-           kind == ACCESSIBLE_NOTE || kind == ACCESSIBLE_PANE_NEW || kind == ACCESSIBLE_SAVE ||
-           kind == ACCESSIBLE_HELP || kind == ACCESSIBLE_FIND ||
-           kind == ACCESSIBLE_SURFACE_CHOICE || kind == ACCESSIBLE_SURFACE_BUTTON;
+           kind == ACCESSIBLE_NOTE || kind == ACCESSIBLE_SAVE || kind == ACCESSIBLE_HELP ||
+           kind == ACCESSIBLE_FIND || kind == ACCESSIBLE_SURFACE_CHOICE ||
+           kind == ACCESSIBLE_SURFACE_BUTTON;
 }
 
 static bool has_selection(enum accessible_kind kind)
@@ -328,7 +328,6 @@ static const CONTROLTYPEID control_types[] = {
     [ACCESSIBLE_VIEW] = UIA_RadioButtonControlTypeId,
     [ACCESSIBLE_EDIT] = UIA_RadioButtonControlTypeId,
     [ACCESSIBLE_MENU] = UIA_ButtonControlTypeId,
-    [ACCESSIBLE_PANE_NEW] = UIA_ButtonControlTypeId,
     [ACCESSIBLE_SAVE] = UIA_ButtonControlTypeId,
     [ACCESSIBLE_HELP] = UIA_ButtonControlTypeId,
     [ACCESSIBLE_FIND] = UIA_ButtonControlTypeId,

@@ -183,6 +183,7 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_LAYOUT_HELP] = "{from}  {name}",
     [UI_TEXT_TOOLTIP_SETTINGS] = "設定を開く",
     [UI_TEXT_TOOLTIP_CLOSE] = "閉じる",
+    [UI_TEXT_TOOLTIP_NEW_NOTE] = "新しいノート\nCtrl+N",
     [UI_TEXT_COMMAND_DISCARD_EDITS] = "編集を破棄して読み直す",
     [UI_TEXT_COMMAND_HISTORY] = "履歴から戻す",
     [UI_TEXT_COMMAND_TRASH_NOTE] = "ノートをごみ箱へ移す",

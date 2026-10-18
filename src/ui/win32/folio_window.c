@@ -96,6 +96,7 @@ struct folio_window
     bool filter_composing;
     bool filter_saving; /* 保存中のmodalから戻るfocus通知の再入だけを抑止する。 */
     bool root_composing;
+    bool new_note_pressed; /* 共通ヘッダーの新規だけが所有するcapture中の押下。 */
     HWND _Nullable command_return_focus;
     HBRUSH _Nullable command_brush;
     enum command_surface_mode command_surface;
@@ -244,13 +245,16 @@ constexpr int base_min_width = 560;
 constexpr int base_min_height = 360;
 constexpr int base_drawer_width = 240;
 constexpr int base_common_header_height = 44;
+constexpr int base_new_note_left = 12;
+constexpr int base_new_note_size = 32;
+constexpr int base_new_note_label = 36;
+constexpr int base_new_note_drag_gap = 24;
 constexpr int base_drawer_window_width = 320;
 constexpr int base_layout_button_width = 54;
 constexpr int base_layout_group_padding = 2;
 constexpr int base_layout_settings_gap = 12;
 constexpr int base_caption_height = 44; /* 右ペインの頭。窓を掴んで動かせる帯 */
 constexpr int base_action_height = 36;
-constexpr int base_caption_indent = 36;
 constexpr int base_caption_gap = 14;
 constexpr int base_pane_left = 36;
 constexpr int base_pane_right = 56;
@@ -1647,7 +1651,7 @@ static RECT caption_rect(const struct folio_window *_Nonnull self)
     GetClientRect(self->handle, &client);
     UINT dpi = GetDpiForWindow(self->handle);
     RECT pane = regions_for(self).pane;
-    RECT caption = {pane.left + scale(base_caption_indent, dpi), pane.top, client.right,
+    RECT caption = {pane.left + scale(base_pane_left, dpi), pane.top, client.right,
                     pane.top + scale(base_caption_height, dpi)};
     return caption;
 }
@@ -1685,6 +1689,34 @@ static RECT layout_group_rect(const struct folio_window *_Nonnull self)
     int middle = (header.top + header.bottom) / 2;
     int half = scale(16, dpi);
     return (RECT){right - width, middle - half, right, middle + half};
+}
+
+/* 文字を省く境界も描画/hit/tooltip/UIAで共有する。狭幅でも右の表示群との移動領域を残す。 */
+static RECT new_note_rect(const struct folio_window *_Nonnull self)
+{
+    UINT dpi = GetDpiForWindow(self->handle);
+    int size = scale(base_new_note_size, dpi);
+    int width = size;
+    int left = scale(base_new_note_left, dpi);
+    int room = layout_group_rect(self).left - left - scale(base_new_note_drag_gap, dpi);
+    HDC device = GetDC(self->handle);
+    if (device != nullptr)
+    {
+        HGDIOBJ previous = SelectObject(device, self->mono_font);
+        SetTextCharacterExtra(device, scale(base_tracking, dpi));
+        int needed = measure_utf8(device, ui_text_line(UI_TEXT_COMMAND_NEW,
+                                                       folio_state_language(self->state))) +
+                     scale(base_new_note_label + 8, dpi);
+        if (needed <= room)
+        {
+            width = needed;
+        }
+        SetTextCharacterExtra(device, 0);
+        SelectObject(device, previous);
+        ReleaseDC(self->handle, device);
+    }
+    int top = (scale(base_common_header_height, dpi) - size) / 2;
+    return (RECT){left, top, left + width, top + size};
 }
 
 static RECT layout_button_rect(const struct folio_window *_Nonnull self, size_t index)
@@ -2971,7 +3003,9 @@ static LRESULT hit_test(const struct folio_window *_Nonnull self, LPARAM lparam)
     RECT close = close_rect(self);
     RECT settings = settings_rect(self);
     RECT group = layout_group_rect(self);
-    bool button = PtInRect(&group, point) || PtInRect(&close, point) || PtInRect(&settings, point);
+    RECT fresh = new_note_rect(self);
+    bool button = PtInRect(&fresh, point) || PtInRect(&group, point) || PtInRect(&close, point) ||
+                  PtInRect(&settings, point);
     return button ? HTCLIENT : HTCAPTION;
 }
 
@@ -2980,15 +3014,14 @@ static const char *_Nonnull action_button_label(const struct folio_window *_Nonn
                                                 size_t index)
 {
     enum folio_language language = folio_state_language(self->state);
-    if (index == 2)
+    if (index == 1)
     {
         return ui_text_line(UI_TEXT_ACTION_OPERATIONS, language);
     }
     static const enum folio_command commands[] = {
-        [0] = FOLIO_COMMAND_NEW,
-        [1] = FOLIO_COMMAND_SAVE,
-        [3] = FOLIO_COMMAND_HELP,
-        [4] = FOLIO_COMMAND_FIND,
+        [0] = FOLIO_COMMAND_SAVE,
+        [2] = FOLIO_COMMAND_HELP,
+        [3] = FOLIO_COMMAND_FIND,
     };
     return folio_command_label(commands[index], language);
 }
@@ -3000,9 +3033,9 @@ static const char *_Nonnull action_button_label(const struct folio_window *_Nonn
 static RECT action_button_rect(const struct folio_window *_Nonnull self, size_t index)
 {
     UINT dpi = GetDpiForWindow(self->handle);
-    const int floors[] = {104, 52, 52, 70, 160};
+    const int floors[] = {52, 52, 70, 160};
     RECT pane = regions_for(self).pane;
-    int left = pane.left + scale(8, dpi);
+    int left = pane.left + scale(base_pane_left, dpi);
     int top = pane.top + scale(base_caption_height + 4, dpi);
     HDC device = GetDC(self->handle);
     HGDIOBJ previous = nullptr;
@@ -3052,14 +3085,14 @@ static void draw_action_button(const struct folio_window *_Nonnull self, HDC dev
 
 static void draw_actions(const struct folio_window *_Nonnull self, HDC device)
 {
-    for (size_t index = 0; index < 4; ++index)
+    for (size_t index = 0; index < 3; ++index)
     {
         draw_action_button(self, device, action_button_rect(self, index),
                            action_button_label(self, index));
     }
-    if (action_button_fits(self, 4))
+    if (action_button_fits(self, 3))
     {
-        draw_action_button(self, device, action_button_rect(self, 4), action_button_label(self, 4));
+        draw_action_button(self, device, action_button_rect(self, 3), action_button_label(self, 3));
     }
 }
 
@@ -3181,6 +3214,33 @@ static void draw_layout_button(const struct folio_window *_Nonnull self, HDC dev
                bounds, DT_SINGLELINE | DT_VCENTER | DT_CENTER | DT_NOPREFIX);
 }
 
+static void draw_new_note(const struct folio_window *_Nonnull self, HDC device)
+{
+    UINT dpi = GetDpiForWindow(self->handle);
+    RECT button = new_note_rect(self);
+    fill_settings_rect(device, button,
+                       self->new_note_pressed ? self->palette.selected_background
+                                              : self->palette.dialog_control);
+    frame_settings_rect(device, button,
+                        self->palette.contrast == FOLIO_CONTRAST_HIGH
+                            ? self->palette.category_text
+                            : self->palette.dialog_border);
+    COLORREF ink =
+        self->new_note_pressed ? self->palette.selected_text : self->palette.category_text;
+    int box = scale(base_close_size, dpi);
+    int left = button.left + scale(4, dpi);
+    int top = button.top + (button.bottom - button.top - box) / 2;
+    icon_paint_fill(device, (RECT){left, top, left + box, top + box}, ICON_PAINT_NEW_NOTE, ink);
+    if (button.right - button.left > scale(base_new_note_size, dpi))
+    {
+        button.left += scale(base_new_note_label, dpi);
+        button.right -= scale(8, dpi);
+        SetTextColor(device, ink);
+        draw_utf8(device, ui_text_line(UI_TEXT_COMMAND_NEW, folio_state_language(self->state)),
+                  button);
+    }
+}
+
 static void draw_common_header(const struct folio_window *_Nonnull self, HDC device)
 {
     UINT dpi = GetDpiForWindow(self->handle);
@@ -3190,7 +3250,7 @@ static void draw_common_header(const struct folio_window *_Nonnull self, HDC dev
     RECT group = layout_group_rect(self);
     frame_settings_rect(device, group, self->palette.border);
     RECT logo = regions_for(self).header;
-    logo.left = scale(base_close_margin, dpi);
+    logo.left = new_note_rect(self).right + scale(base_new_note_drag_gap, dpi);
     logo.right = group.left - scale(8, dpi);
     const char *heading = ui_text_line(UI_TEXT_LAYOUT_GROUP, folio_state_language(self->state));
     int heading_width = measure_utf8(device, heading);
@@ -3212,6 +3272,7 @@ static void draw_common_header(const struct folio_window *_Nonnull self, HDC dev
     {
         draw_layout_button(self, device, index);
     }
+    draw_new_note(self, device);
     draw_close(self, device);
     draw_settings_icon(self, device);
     SetTextCharacterExtra(device, 0);
@@ -6397,7 +6458,7 @@ static void show_operations(struct folio_window *_Nonnull self)
             return;
         }
     }
-    RECT button = action_button_rect(self, 2);
+    RECT button = action_button_rect(self, 1);
     POINT point = {button.left, button.bottom};
     ClientToScreen(self->handle, &point);
     accessibility_host_invoked(self->accessibility,
@@ -6416,15 +6477,9 @@ static void show_operations(struct folio_window *_Nonnull self)
 
 static bool click_actions(struct folio_window *_Nonnull self, POINT point)
 {
-    RECT fresh = action_button_rect(self, 0);
-    RECT save = action_button_rect(self, 1);
-    RECT operations = action_button_rect(self, 2);
-    RECT help = action_button_rect(self, 3);
-    if (PtInRect(&fresh, point))
-    {
-        execute_command(self, FOLIO_COMMAND_NEW, "");
-        return true;
-    }
+    RECT save = action_button_rect(self, 0);
+    RECT operations = action_button_rect(self, 1);
+    RECT help = action_button_rect(self, 2);
     if (PtInRect(&save, point))
     {
         execute_command(self, FOLIO_COMMAND_SAVE, "");
@@ -6440,8 +6495,8 @@ static bool click_actions(struct folio_window *_Nonnull self, POINT point)
         execute_command(self, FOLIO_COMMAND_HELP, "");
         return true;
     }
-    RECT find = action_button_rect(self, 4);
-    if (action_button_fits(self, 4) && PtInRect(&find, point))
+    RECT find = action_button_rect(self, 3);
+    if (action_button_fits(self, 3) && PtInRect(&find, point))
     {
         execute_command(self, FOLIO_COMMAND_FIND, "");
         return true;
@@ -6449,8 +6504,46 @@ static bool click_actions(struct folio_window *_Nonnull self, POINT point)
     return false;
 }
 
+static void cancel_new_note_press(struct folio_window *_Nonnull self)
+{
+    if (self->new_note_pressed)
+    {
+        self->new_note_pressed = false;
+        RECT bounds = new_note_rect(self);
+        InvalidateRect(self->handle, &bounds, FALSE);
+    }
+}
+
+static void release_new_note(struct folio_window *_Nonnull self, LPARAM lparam)
+{
+    if (!self->new_note_pressed)
+    {
+        return;
+    }
+    POINT point = {GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
+    RECT button = new_note_rect(self);
+    cancel_new_note_press(self);
+    ReleaseCapture();
+    if (PtInRect(&button, point) && folio_window_accessible_ready(self) &&
+        self->command_surface == COMMAND_SURFACE_CLOSED)
+    {
+        execute_command(self, FOLIO_COMMAND_NEW, "");
+    }
+}
+
 static void click_common_header(struct folio_window *_Nonnull self, POINT point)
 {
+    RECT fresh = new_note_rect(self);
+    if (PtInRect(&fresh, point))
+    {
+        if (folio_window_accessible_ready(self) && self->command_surface == COMMAND_SURFACE_CLOSED)
+        {
+            self->new_note_pressed = true;
+            SetCapture(self->handle);
+            InvalidateRect(self->handle, &fresh, FALSE);
+        }
+        return;
+    }
     int index = layout_button_hit(self, point);
     if (index >= 0)
     {
@@ -6610,6 +6703,11 @@ static LRESULT tooltip_display(struct folio_window *_Nonnull self, LPARAM lparam
         enum ui_text text =
             id == layout_button_count() + 1 ? UI_TEXT_TOOLTIP_SETTINGS : UI_TEXT_TOOLTIP_CLOSE;
         wide_units(ui_text_line(text, folio_state_language(self->state)), self->tooltip_text);
+    }
+    if (id == layout_button_count() + 3)
+    {
+        wide_units(ui_text_line(UI_TEXT_TOOLTIP_NEW_NOTE, folio_state_language(self->state)),
+                   self->tooltip_text);
     }
     notice->lpszText = (wchar_t *)self->tooltip_text;
     return 0;
@@ -7666,6 +7764,10 @@ static RECT tooltip_rect(const struct folio_window *_Nonnull self, size_t index)
     {
         return layout_button_rect(self, index);
     }
+    if (index == layout_button_count() + 2)
+    {
+        return new_note_rect(self);
+    }
     return index == layout_button_count() ? settings_rect(self) : close_rect(self);
 }
 
@@ -7703,7 +7805,7 @@ static void refresh_tooltip_rects(const struct folio_window *_Nonnull self)
         return;
     }
     SendMessageW(self->tooltip, TTM_POP, 0, 0);
-    for (size_t index = 0; index < layout_button_count() + 2; ++index)
+    for (size_t index = 0; index < layout_button_count() + 3; ++index)
     {
         TOOLINFOW tool = {.cbSize = tooltip_info_size,
                           .hwnd = self->handle,
@@ -7729,7 +7831,7 @@ static bool create_tooltip(struct folio_window *_Nonnull self)
     {
         return false;
     }
-    for (size_t index = 0; index < layout_button_count() + 2; ++index)
+    for (size_t index = 0; index < layout_button_count() + 3; ++index)
     {
         TOOLINFOW tool = {.cbSize = tooltip_info_size,
                           .uFlags = TTF_SUBCLASS,
@@ -8259,6 +8361,15 @@ static LRESULT on_input_message(struct folio_window *_Nonnull self, UINT message
     }
     switch (message)
     {
+    case WM_LBUTTONUP:
+        release_new_note(self, lparam);
+        return 0;
+    case WM_CAPTURECHANGED:
+        cancel_new_note_press(self);
+        return 0;
+    case WM_CANCELMODE:
+        cancel_new_note_press(self);
+        return DefWindowProcW(self->handle, message, wparam, lparam);
     case WM_QUERYENDSESSION:
         return query_session_end(self);
     case WM_ENABLE:
@@ -9448,6 +9559,7 @@ static const struct
     [ACCESSIBLE_WINDOW] = {ACCESSIBLE_WINDOW, UI_TEXT_APP_LOGO, false},
     [ACCESSIBLE_DRAWER] = {ACCESSIBLE_WINDOW, UI_TEXT_TITLE_CATEGORIES, false},
     [ACCESSIBLE_HEADER] = {ACCESSIBLE_WINDOW, UI_TEXT_ACCESSIBLE_HEADER, false},
+    [ACCESSIBLE_NEW_NOTE] = {ACCESSIBLE_HEADER, UI_TEXT_COMMAND_NEW, true},
     [ACCESSIBLE_LAYOUT_GROUP] = {ACCESSIBLE_HEADER, UI_TEXT_LAYOUT_GROUP, false},
     [ACCESSIBLE_LAYOUT_DRAWER] = {ACCESSIBLE_LAYOUT_GROUP, UI_TEXT_LAYOUT_BUTTON_DRAWER, true},
     [ACCESSIBLE_LAYOUT_BOTH] = {ACCESSIBLE_LAYOUT_GROUP, UI_TEXT_LAYOUT_BUTTON_BOTH, true},
@@ -9458,12 +9570,10 @@ static const struct
     [ACCESSIBLE_MODE_GROUP] = {ACCESSIBLE_PANE_TOOLS, UI_TEXT_ACCESSIBLE_MODE, false},
     [ACCESSIBLE_VIEW] = {ACCESSIBLE_MODE_GROUP, UI_TEXT_CHIP_VIEW, true},
     [ACCESSIBLE_EDIT] = {ACCESSIBLE_MODE_GROUP, UI_TEXT_CHIP_EDIT, true},
-    [ACCESSIBLE_PANE_NEW] = {ACCESSIBLE_PANE_TOOLS, UI_TEXT_COMMAND_NEW, true},
     [ACCESSIBLE_SAVE] = {ACCESSIBLE_PANE_TOOLS, UI_TEXT_COMMAND_SAVE, true},
     [ACCESSIBLE_MENU] = {ACCESSIBLE_PANE_TOOLS, UI_TEXT_ACTION_OPERATIONS, true},
     [ACCESSIBLE_HELP] = {ACCESSIBLE_PANE_TOOLS, UI_TEXT_COMMAND_HELP, true},
     [ACCESSIBLE_FIND] = {ACCESSIBLE_PANE_TOOLS, UI_TEXT_COMMAND_FIND, true},
-    [ACCESSIBLE_NEW_NOTE] = {ACCESSIBLE_DRAWER, UI_TEXT_COMMAND_NEW, true},
     [ACCESSIBLE_NEW_CATEGORY] = {ACCESSIBLE_DRAWER, UI_TEXT_COMMAND_NEW_CATEGORY, true},
     [ACCESSIBLE_TREE] = {ACCESSIBLE_DRAWER, UI_TEXT_TITLE_CATEGORIES, true},
     [ACCESSIBLE_CATEGORY] = {ACCESSIBLE_TREE, UI_TEXT_EMPTY, true},
@@ -9509,7 +9619,7 @@ static bool accessible_visible(const struct folio_window *_Nonnull self, enum ac
     }
     if (accessible_pane_control(kind))
     {
-        return pane_visible(self) && (kind != ACCESSIBLE_FIND || action_button_fits(self, 4));
+        return pane_visible(self) && (kind != ACCESSIBLE_FIND || action_button_fits(self, 3));
     }
     return true;
 }
@@ -9576,18 +9686,17 @@ static RECT accessible_main_rect(const struct folio_window *_Nonnull self,
         return accessible_chip_rect(self, PANE_MODE_VIEW);
     case ACCESSIBLE_EDIT:
         return accessible_chip_rect(self, PANE_MODE_EDIT);
-    case ACCESSIBLE_PANE_NEW:
-        return action_button_rect(self, 0);
-    case ACCESSIBLE_SAVE:
-        return action_button_rect(self, 1);
-    case ACCESSIBLE_MENU:
-        return action_button_rect(self, 2);
-    case ACCESSIBLE_HELP:
-        return action_button_rect(self, 3);
-    case ACCESSIBLE_FIND:
-        return action_button_rect(self, 4);
-    case ACCESSIBLE_DRAWER:
     case ACCESSIBLE_NEW_NOTE:
+        return new_note_rect(self);
+    case ACCESSIBLE_SAVE:
+        return action_button_rect(self, 0);
+    case ACCESSIBLE_MENU:
+        return action_button_rect(self, 1);
+    case ACCESSIBLE_HELP:
+        return action_button_rect(self, 2);
+    case ACCESSIBLE_FIND:
+        return action_button_rect(self, 3);
+    case ACCESSIBLE_DRAWER:
     case ACCESSIBLE_NEW_CATEGORY:
     case ACCESSIBLE_TREE:
     case ACCESSIBLE_CATEGORY:
@@ -10101,7 +10210,6 @@ static bool accessible_command(enum accessible_kind kind, enum folio_command *_N
                     {ACCESSIBLE_VIEW, FOLIO_COMMAND_VIEW},
                     {ACCESSIBLE_EDIT, FOLIO_COMMAND_EDIT},
                     {ACCESSIBLE_NEW_NOTE, FOLIO_COMMAND_NEW},
-                    {ACCESSIBLE_PANE_NEW, FOLIO_COMMAND_NEW},
                     {ACCESSIBLE_NEW_CATEGORY, FOLIO_COMMAND_NEW_CATEGORY},
                     {ACCESSIBLE_SAVE, FOLIO_COMMAND_SAVE},
                     {ACCESSIBLE_HELP, FOLIO_COMMAND_HELP},
@@ -10120,9 +10228,9 @@ static bool accessible_command(enum accessible_kind kind, enum folio_command *_N
 static void accessible_command_invoked(struct folio_window *_Nonnull self,
                                        enum folio_command command)
 {
-    const enum accessible_kind kinds[] = {
-        ACCESSIBLE_SETTINGS,     ACCESSIBLE_SAVE,     ACCESSIBLE_HELP,    ACCESSIBLE_FIND,
-        ACCESSIBLE_NEW_CATEGORY, ACCESSIBLE_NEW_NOTE, ACCESSIBLE_PANE_NEW};
+    const enum accessible_kind kinds[] = {ACCESSIBLE_SETTINGS,     ACCESSIBLE_SAVE,
+                                          ACCESSIBLE_HELP,         ACCESSIBLE_FIND,
+                                          ACCESSIBLE_NEW_CATEGORY, ACCESSIBLE_NEW_NOTE};
     enum folio_command mapped = FOLIO_COMMAND_HELP;
     if (accessible_command(self->keyboard_target, &mapped) && mapped == command &&
         accessible_visible(self, self->keyboard_target))
@@ -10309,8 +10417,8 @@ static void keyboard_region_step(struct folio_window *_Nonnull self, bool forwar
 {
     const enum accessible_kind regions[] = {ACCESSIBLE_HEADER, ACCESSIBLE_DRAWER,
                                             ACCESSIBLE_PANE_TOOLS, ACCESSIBLE_BODY};
-    const enum accessible_kind entries[] = {ACCESSIBLE_LAYOUT_DRAWER, ACCESSIBLE_NEW_NOTE,
-                                            ACCESSIBLE_VIEW, ACCESSIBLE_BODY};
+    const enum accessible_kind entries[] = {ACCESSIBLE_NEW_NOTE, ACCESSIBLE_FILTER, ACCESSIBLE_VIEW,
+                                            ACCESSIBLE_BODY};
     enum accessible_kind current = keyboard_region(keyboard_kind(self));
     size_t index = 0;
     for (size_t at = 0; at < 4; ++at)
@@ -10338,12 +10446,11 @@ static bool keyboard_same_region(enum accessible_kind left, enum accessible_kind
 static void keyboard_tab_step(struct folio_window *_Nonnull self, bool forward)
 {
     const enum accessible_kind order[] = {
-        ACCESSIBLE_LAYOUT_DRAWER, ACCESSIBLE_LAYOUT_BOTH,  ACCESSIBLE_LAYOUT_NOTE,
-        ACCESSIBLE_SETTINGS,      ACCESSIBLE_CLOSE,        ACCESSIBLE_NEW_NOTE,
-        ACCESSIBLE_FILTER,        ACCESSIBLE_NEW_CATEGORY, ACCESSIBLE_TREE,
-        ACCESSIBLE_VIEW,          ACCESSIBLE_EDIT,         ACCESSIBLE_PANE_NEW,
-        ACCESSIBLE_SAVE,          ACCESSIBLE_MENU,         ACCESSIBLE_HELP,
-        ACCESSIBLE_FIND};
+        ACCESSIBLE_NEW_NOTE,    ACCESSIBLE_LAYOUT_DRAWER, ACCESSIBLE_LAYOUT_BOTH,
+        ACCESSIBLE_LAYOUT_NOTE, ACCESSIBLE_SETTINGS,      ACCESSIBLE_CLOSE,
+        ACCESSIBLE_FILTER,      ACCESSIBLE_NEW_CATEGORY,  ACCESSIBLE_TREE,
+        ACCESSIBLE_VIEW,        ACCESSIBLE_EDIT,          ACCESSIBLE_SAVE,
+        ACCESSIBLE_MENU,        ACCESSIBLE_HELP,          ACCESSIBLE_FIND};
     size_t count = sizeof order / sizeof order[0];
     enum accessible_kind current = keyboard_kind(self);
     size_t index = 0;
