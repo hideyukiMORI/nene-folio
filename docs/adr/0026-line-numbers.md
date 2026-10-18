@@ -131,3 +131,12 @@ UI は独立 Win32 部品 probe で、折り返しの継続行に番号が出な
 ## 2026-10-10 の補正（#234）
 
 行番号もADR 0006の同日補正の内部取得関数を使う。番号専用bufferは維持し、保存/検索/置換の借用本文を無効化しない。段落CRの位置と論理行の数え方は変えない。
+
+## 2026-10-18 の補正（#340 — 本文のbaselineへ揃える）
+
+EM_POSFROMCHARの行上端へ小さいConsolasの上端を揃えると、Noto Sansの本文とは縦位置がずれる。
+gutter_rowに主窓client座標のbaselineを加える。note_paneが選択を変えないITextRangeを観測時だけ所有し、
+表示する論理行の先頭を`GetPoint(tomStart | TA_BASELINE | tomClientCoord | tomAllowOffClient)`で読む。
+主窓の番号描画もTA_BASELINEで同じyを使う。表示行上端・clip・折返し継続行の省略は既存の経路を維持する。
+API根拠: [ITextRange::GetPoint](https://learn.microsoft.com/en-us/windows/win32/api/tom/nf-tom-itextrange-getpoint)。
+範囲は都度Releaseし、選択・Undo・変更印を動かさない。取得できない行の位置を固定offsetで推測しない。

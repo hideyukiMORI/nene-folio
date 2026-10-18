@@ -430,7 +430,7 @@ static void render_document(struct text_buffer *_Nonnull out, const char *_Nonnu
  * 末尾に `\par ` を 1 つ足して末尾の改行を保つ（最後の段落記号は RichEdit が吸収する）。 */
 static void render_plain(struct text_buffer *_Nonnull out, const char *_Nonnull text, size_t length)
 {
-    text_buffer_append_text(out, paragraph_start);
+    text_buffer_append_text(out, "\\pard\\sb0\\sa0\\sl240\\slmult1\\cf1 ");
     for (size_t index = 0; index < length; ++index)
     {
         if (text[index] != '\r' && text[index] != '\n')

@@ -504,15 +504,42 @@ static void close_row(struct gutter_row *_Nonnull rows, size_t count, LONG *_Non
     *opened = -1;
 }
 
-static void collect_rows(struct note_pane *_Nonnull pane, struct gutter_row *_Nonnull rows,
-                         size_t capacity, size_t *_Nonnull count)
+/* 選択を動かさず、本文の実baselineを測る範囲。所有者は呼び出し側。 */
+static ITextRange *_Nullable measuring_range(struct note_pane *_Nonnull pane)
+{
+    ITextDocument *_Nullable document = text_document(pane);
+    if (document == nullptr)
+    {
+        return nullptr;
+    }
+    ITextRange *_Nullable range = nullptr;
+    HRESULT made = document->lpVtbl->Range(document, 0, 0, &range);
+    document->lpVtbl->Release(document);
+    return SUCCEEDED(made) ? range : nullptr;
+}
+
+static bool row_baseline(ITextRange *_Nonnull range, size_t position, LONG *_Nonnull baseline)
+{
+    if (FAILED(range->lpVtbl->SetRange(range, (LONG)position, (LONG)position)))
+    {
+        return false;
+    }
+    LONG left = 0;
+    return range->lpVtbl->GetPoint(range,
+                                   tomStart | TA_BASELINE | tomClientCoord | tomAllowOffClient,
+                                   &left, baseline) == S_OK;
+}
+
+static size_t collect_rows(struct note_pane *_Nonnull pane, ITextRange *_Nonnull range,
+                           struct gutter_row *_Nonnull rows, size_t capacity)
 {
     RECT bounds = {0, 0, 0, 0};
     GetClientRect(pane->handle, &bounds);
     POINT origin = {.x = 0, .y = 0};
     MapWindowPoints(pane->handle, GetParent(pane->handle), &origin, 1);
     LRESULT total = SendMessageW(pane->handle, EM_GETLINECOUNT, 0, 0);
-    LONG opened = -1; /* 高さがまだ決まっていない行の y。無ければ -1 */
+    LONG opened = -1;
+    size_t count = 0;
     for (LRESULT display = SendMessageW(pane->handle, EM_GETFIRSTVISIBLELINE, 0, 0);
          display < total; ++display)
     {
@@ -522,8 +549,8 @@ static void collect_rows(struct note_pane *_Nonnull pane, struct gutter_row *_No
         {
             break;
         }
-        close_row(rows, *count, &opened, top);
-        if (top >= bounds.bottom || *count == capacity)
+        close_row(rows, count, &opened, top);
+        if (top >= bounds.bottom || count == capacity)
         {
             break;
         }
@@ -532,11 +559,19 @@ static void collect_rows(struct note_pane *_Nonnull pane, struct gutter_row *_No
         {
             continue;
         }
-        rows[*count] = (struct gutter_row){
-            .top = origin.y + top, .height = (int)(bounds.bottom - top), .number = number};
-        *count += 1;
+        LONG baseline = 0;
+        if (!row_baseline(range, position, &baseline))
+        {
+            break;
+        }
+        rows[count] = (struct gutter_row){.top = origin.y + top,
+                                          .height = (int)(bounds.bottom - top),
+                                          .baseline = origin.y + baseline,
+                                          .number = number};
+        count += 1;
         opened = top;
     }
+    return count;
 }
 
 bool note_pane_visible_rows(struct note_pane *_Nonnull pane, struct gutter_row *_Nonnull rows,
@@ -547,7 +582,13 @@ bool note_pane_visible_rows(struct note_pane *_Nonnull pane, struct gutter_row *
     {
         return false;
     }
-    collect_rows(pane, rows, capacity, count);
+    ITextRange *_Nullable range = measuring_range(pane);
+    if (range == nullptr)
+    {
+        return false;
+    }
+    *count = collect_rows(pane, range, rows, capacity);
+    range->lpVtbl->Release(range);
     return true;
 }
 

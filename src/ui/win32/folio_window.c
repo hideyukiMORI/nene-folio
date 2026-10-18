@@ -1349,6 +1349,22 @@ static void set_pane_notice(struct folio_window *_Nonnull self, enum pane_notice
 /* 常設の欄はドロワーの頭の帯に重ねる。寸法はドロワーが答える（ADR 0024 の決定 6）。
  * 右端は「×」のぶんだけ常に空ける。出るのは絞り込み中だけだが、余白を出し入れすると
  * 打っている途中で本文が動くので、いつも同じ幅にしておく（補正 6）。 */
+/* 単一行EDITを文字の高さで置く。外枠の矩形はドロワーだけが決める。 */
+static int filter_text_height(const struct folio_window *_Nonnull self)
+{
+    HDC device = GetDC(self->filter_input);
+    if (device == nullptr)
+    {
+        return 0;
+    }
+    HGDIOBJ previous = SelectObject(device, self->mono_font);
+    TEXTMETRICW metrics = {0};
+    bool measured = GetTextMetricsW(device, &metrics) != 0;
+    SelectObject(device, previous);
+    ReleaseDC(self->filter_input, device);
+    return measured ? (int)metrics.tmHeight : 0;
+}
+
 static void arrange_filter_input(struct folio_window *_Nonnull self)
 {
     if (self->filter_input == nullptr || self->drawer == nullptr)
@@ -1356,10 +1372,18 @@ static void arrange_filter_input(struct folio_window *_Nonnull self)
         return;
     }
     RECT bounds = drawer_window_filter_rect(self->drawer);
+    int height = filter_text_height(self);
+    if (height > 0 && height < bounds.bottom - bounds.top)
+    {
+        bounds.top += (bounds.bottom - bounds.top - height) / 2;
+        bounds.bottom = bounds.top + height;
+    }
     MoveWindow(self->filter_input, bounds.left, bounds.top, bounds.right - bounds.left,
                bounds.bottom - bounds.top, TRUE);
     int room = scale(base_filter_clear_size, GetDpiForWindow(self->handle));
-    SendMessageW(self->filter_input, EM_SETMARGINS, EC_RIGHTMARGIN, MAKELPARAM(0, room));
+    int inset = scale(base_filter_text_inset, GetDpiForWindow(self->handle));
+    SendMessageW(self->filter_input, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN,
+                 MAKELPARAM(inset, room));
 }
 
 /* 出すのは「number が真・編集モード・文書がある」のときだけ（ADR 0026 の決定 5）。
@@ -3087,12 +3111,12 @@ static void draw_gutter(const struct folio_window *_Nonnull self, HDC device, RE
     SetTextColor(device, self->palette.gutter_text);
     SelectObject(device, self->mono_font);
     SetTextCharacterExtra(device, 0);
+    SetTextAlign(device, TA_RIGHT | TA_BASELINE | TA_NOUPDATECP);
     for (size_t at = 0; at < count; ++at)
     {
         wchar_t label[24];
         int length = number_units(rows[at].number, label, 24);
-        RECT cell = {band.left, rows[at].top, band.right, rows[at].top + rows[at].height};
-        DrawTextW(device, label, length, &cell, DT_SINGLELINE | DT_RIGHT | DT_TOP | DT_NOPREFIX);
+        TextOutW(device, band.right, rows[at].baseline, label, length);
     }
     RestoreDC(device, saved);
 }
@@ -7334,8 +7358,7 @@ static void paint_filter_placeholder(const struct folio_window *_Nonnull self, H
         return;
     }
     RECT bounds;
-    GetClientRect(window, &bounds);
-    bounds.left += scale(base_filter_text_inset, GetDpiForWindow(self->handle));
+    SendMessageW(window, EM_GETRECT, 0, (LPARAM)&bounds);
     HGDIOBJ previous = SelectObject(device, self->mono_font);
     SetBkMode(device, TRANSPARENT);
     SetTextColor(device, self->palette.header_text);
@@ -7354,13 +7377,15 @@ static RECT filter_clear_rect(const struct folio_window *_Nonnull self, HWND win
     RECT client;
     GetClientRect(window, &client);
     int size = scale(base_filter_clear_size, GetDpiForWindow(self->handle));
+    int height = client.bottom - client.top;
+    size = size < height ? size : height;
     int middle = (client.top + client.bottom) / 2;
     RECT bounds = {client.right - size, middle - size / 2, client.right, middle - size / 2 + size};
     return bounds;
 }
 
 /* 「×」は頭の draw_close と同じ面のパスで描く（ADR 0033 の決定 3・補正 9）。× を描く経路は 1 本。
- * 箱は filter_clear_rect の 20px のままで、倍率は icon_paint_fill が bounds から出す。
+ * 箱は filter_clear_rect が欄の高さに収め、倍率は icon_paint_fill が bounds から出す。
  * 絞り込みが効いていないあいだは出さない（出ていれば押せば解けるという意味になる）。 */
 static void paint_filter_clear(const struct folio_window *_Nonnull self, HWND window)
 {
@@ -10416,6 +10441,11 @@ static LRESULT on_accessibility_message(struct folio_window *_Nonnull self, UINT
     case folio_message_index_focused:
         return GetFocus() == self->handle && self->keyboard_target == ACCESSIBLE_TREE;
     case folio_message_index_focus:
+        if ((enum accessible_kind)wparam == ACCESSIBLE_FILTER)
+        {
+            focus_filter_input(self);
+            return 0;
+        }
         self->keyboard_target = wparam == 0 ? ACCESSIBLE_TREE : (enum accessible_kind)wparam;
         SetFocus(self->handle);
         InvalidateRect(self->handle, nullptr, FALSE);

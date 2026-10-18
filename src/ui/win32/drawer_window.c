@@ -308,15 +308,11 @@ static void draw_header_count(const struct drawer_window *_Nonnull self, HDC dev
  * 欄そのものは主窓の子で、ドロワーの DC からは欄の矩形が除かれているので、囲むのは 1px 外側。 */
 static void draw_filter_frame(const struct drawer_window *_Nonnull self, HDC device)
 {
-    if (!folio_state_filtering(self->state))
-    {
-        return;
-    }
     RECT bounds = filter_rect(self);
     InflateRect(&bounds, 1, 1);
     frame_rect(device, bounds,
                self->palette.contrast == FOLIO_CONTRAST_HIGH ? self->palette.category_text
-                                                             : self->palette.chip_background);
+                                                             : self->palette.dialog_border);
 }
 
 static void draw_new_note(const struct drawer_window *_Nonnull self, HDC device)
@@ -325,9 +321,11 @@ static void draw_new_note(const struct drawer_window *_Nonnull self, HDC device)
     RECT button = new_note_rect(self);
     bool pressed = self->header_pressed == DRAWER_HEADER_NEW_NOTE;
     fill_rect(device, button,
-              pressed ? self->palette.selected_background : self->palette.chip_background);
-    frame_rect(device, button, self->palette.category_text);
-    COLORREF ink = pressed ? self->palette.selected_text : self->palette.chip_text;
+              pressed ? self->palette.selected_background : self->palette.dialog_control);
+    frame_rect(device, button,
+               self->palette.contrast == FOLIO_CONTRAST_HIGH ? self->palette.category_text
+                                                             : self->palette.dialog_border);
+    COLORREF ink = pressed ? self->palette.selected_text : self->palette.category_text;
     int box = scale(base_new_category_size, dpi);
     int left = button.left + scale(8, dpi);
     int top = button.top + (button.bottom - button.top - box) / 2;
@@ -935,6 +933,13 @@ static void press(struct drawer_window *_Nonnull self, POINT point)
     }
     if (press_header(self, point))
     {
+        return;
+    }
+    RECT filter = filter_rect(self);
+    if (PtInRect(&filter, point))
+    {
+        SendMessageW(GetParent(self->handle), folio_message_index_focus, (WPARAM)ACCESSIBLE_FILTER,
+                     0);
         return;
     }
     if (point.y >= band_height(self))
