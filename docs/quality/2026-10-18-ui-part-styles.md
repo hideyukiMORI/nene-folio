@@ -53,6 +53,25 @@ hide の稼働プロセスとデータには触れていない。データは合
 hover の内側の枠・押下の塗り・選択の塗りと下辺の棒・単独の外側/群の内側の focus・disabled・入力欄の静止1px/focus2px を目視した。
 保存・検索・ヘルプ「?」の面パスを 16/20/24/28/32/48/96px で描き、潰れ・抜けの誤りがないことを目視した。ヘルプ「?」の配置は I-B のため製品では未使用。
 
+## 独立レビュー後の修正（H1・M1・M2・L1・L2・L3・L7）
+
+設計席の独立レビュー（読み取り専用）の指摘を同じ枝で直した。`check.ps1` は修正後の作業木で exit 0（`check-3.log`）。
+対象確認は `D:/NeNeFolio/agents/348-ui-parts/review-2/`（製品の exe）と `review-m2probe/`（一時の計装版）。27条件の geometry など成功済みで無関係な確認は再実行していない。
+
+- H1: 押下の取消は `cancel_part_press` の1本で、マウスの押下なら capture も返す。保存を押したまま Space・Tab・F6、「ノート」を押したまま → のどれでも
+  キーの直後に capture が 0 になり、その後の一覧のノート行クリックで本文が切り替わり、検索欄クリックで focus が EDIT へ移った。
+- M1: WM_KILLFOCUS と WM_ACTIVATE（非活性化）で押下を取り消す。「ノート」に focus を置いて Space を押したまま検索欄へ移し、
+  主窓へ Space の離鍵だけを送っても表示は「両方」のまま（実行されない）。
+- M2: 実行の前、面を開くとき（`set_command_surface`）、WM_ENABLE(FALSE)、WM_ENTERMENULOOP で hover を下ろす。ドロワーは run_header の前に下ろす。
+  計装版（hover の値を窓の property へ書き、TrackMouseEvent を呼ばない）で、hover 中の歯車→設定面・操作▾→メニュー・カテゴリ＋→ダイアログの
+  どれでも開いた直後の hover 値が無しになった。計装版の hover 枠の画像（`m2-gear-hover-crop.png`）で内側 1px の枠の見た目も確認した。
+- L1: ドロワーのポインタ由来の `folio_message_index_focus` で印を下ろす。F6 で印を出した後にカテゴリ＋をクリックしダイアログを閉じても、＋に focus の枠が無い。
+- L2: Enter も実行の前に押下を取り消す。新しいノートを押したまま Enter → 無題が1つ開き、そのまま離しても2回目（保存しますかの確認）は出ない
+  （保存は2回目の書き込みが同値で省かれ数えられないため、回数が見える新しいノートで数えた。終了は無題の確認で止まるので自分で起動した PID を Path 照合のうえ停止した）。
+- L3: 線の最小比は `theme_contrast.c` の内部の定数にした。`theme_contrast_ratio` は core の唯一の比の式として公開し、`theme_tests` の readable と線の検査もこの関数を使う。pow の式は表との突き合わせだけに残した。
+- L7: B 主操作の hover は内側の枠でなく、下辺に focus と同じ太さの chip_text の棒（chip_text / chip_background は全テーマ 4.5:1 の既存検査の対）。単体の描画確認で目視した。
+- 送付（この PR では直さない）: L5 ダイアログの owner-draw 釦/コンボの 1px focus と L6 IME 変換中の枠の描き直し → I-D（#351）、L9 キーの文言とアクセラレータ表の機械結合 → I-C（#350）。
+
 ## 未測定・限界
 
 - hover の画面上の見た目は fixture で撮れない。隔離デスクトップでは実カーソルが (0,0) にあり、TrackMouseEvent が直ちに WM_MOUSELEAVE を出す。

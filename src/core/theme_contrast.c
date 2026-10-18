@@ -268,6 +268,8 @@ static const double linear_channels[256] = {
 };
 
 constexpr size_t ground_limit = 4;
+/* 状態・境界・focusの線が隣接色に対して保つ比（WCAG 2.1 1.4.11）。 */
+constexpr double line_minimum = 3.0;
 
 static double luminance(struct rgb_color color)
 {
@@ -364,7 +366,7 @@ struct rgb_color theme_contrast_line(const struct theme_palette *_Nonnull palett
     for (size_t index = 0; index < sizeof candidates / sizeof candidates[0]; ++index)
     {
         double ratio = weakest(candidates[index], grounds, count);
-        if (ratio >= theme_contrast_line_minimum)
+        if (ratio >= line_minimum)
         {
             return candidates[index];
         }

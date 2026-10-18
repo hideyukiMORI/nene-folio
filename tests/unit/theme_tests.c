@@ -154,13 +154,11 @@ static double luminance(struct rgb_color color)
            0.0722 * linear_channel(color.blue);
 }
 
+/* 比の式は core の theme_contrast_ratio の 1 本。pow
+ * の式は表との突き合わせ（verify_line_ratio_table）だけに使う。 */
 static void readable(struct rgb_color foreground, struct rgb_color background)
 {
-    double first = luminance(foreground);
-    double second = luminance(background);
-    double high = first > second ? first : second;
-    double low = first > second ? second : first;
-    require((high + 0.05) / (low + 0.05) >= 4.5,
+    require(theme_contrast_ratio(foreground, background) >= 4.5,
             "readable theme roles contrast at least 4.5:1 against their actual background");
 }
 
@@ -254,7 +252,7 @@ static void line_meets(const struct theme_palette *_Nonnull palette, enum theme_
     struct rgb_color ink = theme_contrast_line(palette, line);
     for (size_t index = 0; index < count; ++index)
     {
-        require(ratio_of(ink, grounds[index]) >= 3.0,
+        require(theme_contrast_ratio(ink, grounds[index]) >= 3.0,
                 "state, boundary and focus lines contrast at least 3:1 with every adjacent color");
     }
 }

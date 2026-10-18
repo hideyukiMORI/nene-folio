@@ -1032,6 +1032,7 @@ static void release(struct drawer_window *_Nonnull self, POINT point)
     InvalidateRect(self->handle, &button, FALSE);
     if (PtInRect(&button, point))
     {
+        self->header_hover = false; /* ダイアログの後に hover の枠を残さない */
         run_header(self, pressed);
     }
 }

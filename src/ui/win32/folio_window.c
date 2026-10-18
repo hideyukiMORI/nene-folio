@@ -501,6 +501,8 @@ static bool translate_keyboard(const struct folio_window *_Nonnull self,
 static void keyboard_activate(struct folio_window *_Nonnull self);
 static bool choice_step(struct folio_window *_Nonnull self, WPARAM key);
 static bool part_selected(const struct folio_window *_Nonnull self, enum accessible_kind kind);
+static void set_hover(struct folio_window *_Nonnull self, enum accessible_kind kind);
+static void show_focus_cues(struct folio_window *_Nonnull self, bool shown);
 static void pointer_focus(struct folio_window *_Nonnull self, POINT point);
 static void accessible_command_invoked(struct folio_window *_Nonnull self,
                                        enum folio_command command);
@@ -4316,6 +4318,10 @@ static void invalidate_surface_items(struct folio_window *_Nonnull self)
 
 static void set_command_surface(struct folio_window *_Nonnull self, enum command_surface_mode mode)
 {
+    if (mode != COMMAND_SURFACE_CLOSED)
+    {
+        set_hover(self, ACCESSIBLE_WINDOW); /* 面の下の部品は hover できない */
+    }
     invalidate_surface_items(self);
     self->command_surface = mode;
 }
@@ -6663,11 +6669,15 @@ static enum accessible_action part_action(const struct folio_window *_Nonnull se
 
 static void activate_part(struct folio_window *_Nonnull self, enum accessible_kind kind)
 {
+    set_hover(self, ACCESSIBLE_WINDOW); /* 面・モーダル・メニューの後に枠を残さない */
     struct accessible_request request = {.item = {.kind = kind}, .action = part_action(self, kind)};
     (void)folio_window_accessible_action(self, &request);
     accessibility_host_schedule(self->accessibility);
 }
 
+/* 押下を取り消す唯一の経路。マウスの押下なら capture も返す（値を下ろしてから返すので、
+ * 再入する WM_CAPTURECHANGED は何もしない）。Space・Tab・F6・矢印・Enter・focus 喪失から呼ばれる。
+ */
 static void cancel_part_press(struct folio_window *_Nonnull self)
 {
     enum accessible_kind kind = self->pressed_part;
@@ -6675,10 +6685,15 @@ static void cancel_part_press(struct folio_window *_Nonnull self)
     {
         return;
     }
+    bool mouse = !self->pressed_by_key;
     self->pressed_part = ACCESSIBLE_WINDOW;
     self->pressed_inside = false;
     self->pressed_by_key = false;
     invalidate_part(self, kind);
+    if (mouse && GetCapture() == self->handle)
+    {
+        ReleaseCapture();
+    }
 }
 
 static void begin_part_press(struct folio_window *_Nonnull self, enum accessible_kind kind,
@@ -6728,7 +6743,6 @@ static void release_part(struct folio_window *_Nonnull self, LPARAM lparam)
     RECT bounds = accessible_main_rect(self, kind);
     bool inside = PtInRect(&bounds, point) && accessible_visible(self, kind);
     cancel_part_press(self);
-    ReleaseCapture();
     if (inside)
     {
         activate_part(self, kind);
@@ -7013,6 +7027,7 @@ static bool press_activation(struct folio_window *_Nonnull self, WPARAM key, LPA
         begin_part_press(self, self->keyboard_target, true);
         return true;
     }
+    cancel_part_press(self); /* マウスや Space で押している操作を二重に実行しない */
     keyboard_activate(self);
     return true;
 }
@@ -8702,6 +8717,12 @@ static LRESULT on_part_message(struct folio_window *_Nonnull self, UINT message,
     case WM_KEYUP:
         release_key(self, wparam);
         return 0;
+    case WM_ACTIVATE:
+        if (LOWORD(wparam) == WA_INACTIVE)
+        {
+            cancel_part_press(self);
+        }
+        return DefWindowProcW(self->handle, message, wparam, lparam);
     default:
         /* Win32 のメッセージは開いた集合（C-017）。 */
         return DefWindowProcW(self->handle, message, wparam, lparam);
@@ -8725,11 +8746,16 @@ static LRESULT on_input_message(struct folio_window *_Nonnull self, UINT message
     case WM_MOUSEMOVE:
     case WM_MOUSELEAVE:
     case WM_KEYUP:
+    case WM_ACTIVATE:
         return on_part_message(self, message, wparam, lparam);
     case WM_QUERYENDSESSION:
         return query_session_end(self);
     case WM_ENABLE:
         activate_tooltip(self);
+        if (wparam == FALSE)
+        {
+            set_hover(self, ACCESSIBLE_WINDOW);
+        }
         return 0;
     case WM_ENDSESSION:
         return end_session(self, wparam);
@@ -8746,6 +8772,7 @@ static LRESULT on_input_message(struct folio_window *_Nonnull self, UINT message
         redraw_drawer(self);
         return 0;
     case WM_KILLFOCUS:
+        cancel_part_press(self);
         redraw_drawer(self);
         InvalidateRect(self->handle, nullptr, FALSE);
         return 0;
@@ -10918,6 +10945,7 @@ static LRESULT on_accessibility_message(struct folio_window *_Nonnull self, UINT
         return accessibility_host_object(self->accessibility, ACCESSIBLE_WINDOW, wparam, lparam);
     case WM_ENTERMENULOOP:
         self->menu_active = true;
+        set_hover(self, ACCESSIBLE_WINDOW);
         return 0;
     case WM_EXITMENULOOP:
         self->menu_active = false;
@@ -10935,6 +10963,7 @@ static LRESULT on_accessibility_message(struct folio_window *_Nonnull self, UINT
     case folio_message_filter_focused:
         return self->filter_input != nullptr && GetFocus() == self->filter_input;
     case folio_message_index_focus:
+        show_focus_cues(self, false); /* drawer のポインタ操作だけが送る */
         if ((enum accessible_kind)wparam == ACCESSIBLE_FILTER)
         {
             focus_filter_input(self);

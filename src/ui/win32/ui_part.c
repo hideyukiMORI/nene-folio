@@ -101,7 +101,8 @@ static void draw_surface(HDC device, const struct folio_palette *_Nonnull palett
     }
 }
 
-/* hover は地を塗らず内側 1px の枠（ADR0060 の決定 3）。押下中・選択中・無効では描かない。 */
+/* hover は地を塗らず内側 1px の枠（ADR0060 の決定 3）。押下中・選択中・無効では描かない。
+ * B 主操作は塗りの上なので、枠の代わりに下辺へ focus と同じ太さの chip_text の棒を描く。 */
 static void draw_hover(HDC device, const struct folio_palette *_Nonnull palette,
                        const struct ui_part_paint *_Nonnull part)
 {
@@ -110,6 +111,12 @@ static void draw_hover(HDC device, const struct folio_palette *_Nonnull palette,
         return;
     }
     RECT body = part_body(part);
+    if (part->style == UI_PART_STYLE_PRIMARY)
+    {
+        body.top = body.bottom - ui_part_focus_width(part->dpi);
+        fill(device, body, palette->chip_text);
+        return;
+    }
     if (part->style == UI_PART_STYLE_COMMAND && !part->grouped)
     {
         InflateRect(&body, -1, -1);

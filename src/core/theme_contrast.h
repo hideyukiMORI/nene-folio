@@ -8,10 +8,9 @@
 
 struct theme_palette;
 
-/* 状態・境界・focusの線が隣接色に対して保つ比。 */
-constexpr double theme_contrast_line_minimum = 3.0;
-
-/* WCAG 2.1 の相対輝度によるコントラスト比（1〜21）。引数の順は問わない。 */
+/* WCAG 2.1 の相対輝度によるコントラスト比（1〜21）。引数の順は問わない。
+ * 線の選択と theme_tests の 4.5:1 / 3:1 の検査が同じ式を使うよう、core の唯一の定義として公開する。
+ */
 [[nodiscard]] double theme_contrast_ratio(struct rgb_color first, struct rgb_color second);
 
 /* 役割の線の色。既定トークン、次に current / category / editor / selected / note / header
