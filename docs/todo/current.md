@@ -7,10 +7,13 @@
 性能値は合成データ・Debug sanitizerのcore factory比較に限り、UI/I/O/Release全体の短縮率ではない。
 
 受理条件・実測は[品質記録](../quality/2026-10-18-filter-matching-checks.md)、再開の入口は[引き継ぎ](../handoffs/2026-10-18.md)。
-恒久証跡はD:/NeNeFolio/agents/331-filter-matching/。最終PR/CI・exe・整理状態は同所completion.jsonに記録する。
+恒久証跡はD:/NeNeFolio/agents/331-filter-matching/。PR #333も必須CI成功後に統合し、追加作業木は15:16に削除済み。
+最終PR/CI・exe・作業木整理は同所completion.json、後の手動削除は下記実行記録で確認する。
 成功済みの対象検証・性能比較・独立レビューは再実行不要。schema・依存・ゲート変更なし、Waivers: none。
 
-一時出力D:/NeNeFolio/outputs/331-filter-matching（2,910ファイル、284,362,460 bytes）の削除は自動承認審査がblocked by policyで拒否したため保持する。
-唯一未収載の成果物・稼働参照・リンクは監査で見つからず、保存先との全hashも一致した。拒否を別手段で回避しない。
-追加作業木は完了記録の収載後に整理し、枝とcommitは保持する。旧#319/#320/#321/#328の残留物は前件の記録に従って保持する。
+hideの手動実行により15:40:09、#319/#320/#321/#328/#331と計画・デザインの一時出力7フォルダを削除済み。
+40,279ファイル、1,323,547,077 bytes。15:48と15:50にも対象パスの不在を確認し、15:48には削除processの終了も確認した。
+実行記録はD:/NeNeFolio/agents/manual-cleanup-20261018/cleanup-result-20261018-154009.json。
+outputsに残る282-release-prepと284-beta-releaseは保存対象の配布ZIPで、恒久証跡も保持している。
+過去の削除拒否は当時の事実であり、現在の削除待ちとして扱わない。状態文書の整合は[#334](https://github.com/hideyukiMORI/nene-folio/issues/334)で収載する。
 新しい作業は現在のhide指示と実Issue/PR・checkoutを照合してから開始する。
