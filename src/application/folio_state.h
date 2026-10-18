@@ -291,6 +291,16 @@ folio_state_rename_category(struct folio_state *_Nonnull state,
 [[nodiscard]] enum folio_state_outcome
 folio_state_note_changed(struct folio_state *_Nonnull state, const char16_t *_Nonnull units,
                          size_t count, enum folio_note_change *_Nonnull out);
+/* 保存の主操作・未保存印・UIA の状態の 1 つの元（ADR0060 の決定 8）。未選択と閲覧は SAME、
+ * 無題は開いた時点から CHANGED、編集中は note_changed と同じ正規化で保存済み本文と比べる。
+ * 台帳の同期も修復もしない純粋な問い合わせで、本文を写せない（記憶不足・壊れた文字）ときは
+ * 保存を促す側の CHANGED と答える。 */
+[[nodiscard]] enum folio_note_change folio_state_unsaved(const struct folio_state *_Nonnull state,
+                                                         const char16_t *_Nonnull units,
+                                                         size_t count);
+/* md を書き戻すか新しい md を作るたびに 1 進む世代。保存の成功を UI が 1 か所で知るために使う
+ * （同じ本文で書かなかった保存では進まない）。 */
+[[nodiscard]] uint64_t folio_state_store_revision(const struct folio_state *_Nonnull state);
 /* 編集中の本文を保存して閲覧へ戻る。保存できなければ編集モードのまま。
  * 使うのは「閲覧」の札。終了操作は編集モードを変えず store_note で保存する（ADR 0016）。
  * ノートの切り替えではモードを保つ（ADR 0013 の決定 4）。 */

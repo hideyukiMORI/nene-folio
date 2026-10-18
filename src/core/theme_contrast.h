@@ -5,6 +5,7 @@
 
 #include "rgb_color.h"
 #include "theme_line.h"
+#include "theme_unsaved.h"
 
 struct theme_palette;
 
@@ -18,5 +19,11 @@ struct theme_palette;
  * 以上の最初の色を返す。どれも届かなければ最も比の高い色を返す。 */
 [[nodiscard]] struct rgb_color theme_contrast_line(const struct theme_palette *_Nonnull palette,
                                                    enum theme_line line);
+
+/* 未保存の合図の色。塗りの候補は chip_background（字 chip_text）→ selected_background（字
+ * selected_text）の順で、window と pane の両方に 3:1 以上の最初の塗り。どちらも届かなければ
+ * 塗らず、THEME_LINE_UNSAVED の線の色で枠と字と丸を描く。 */
+[[nodiscard]] struct theme_unsaved
+theme_contrast_unsaved(const struct theme_palette *_Nonnull palette);
 
 #endif

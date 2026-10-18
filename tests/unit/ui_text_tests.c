@@ -31,7 +31,7 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_ACCESSIBLE_CURRENT] = "現在の設定",
     [UI_TEXT_ACCESSIBLE_NO_RESULTS] = "候補がありません。",
     [UI_TEXT_ACCESSIBLE_HEADER] = "共通操作",
-    [UI_TEXT_ACCESSIBLE_PANE_TOOLS] = "ノートの操作",
+    [UI_TEXT_ACCESSIBLE_PANE_TOOLS] = "本文の操作帯",
     [UI_TEXT_ACCESSIBLE_MODE] = "ノートのモード",
     [UI_TEXT_ACCESSIBLE_BODY] = "ノート本文",
     [UI_TEXT_ACCESSIBLE_NAMED_BODY] = "{name} — ノート本文",
@@ -240,7 +240,7 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_SESSION_COMPOSING] = "文字の変換を確定してから終了してください。",
     [UI_TEXT_SESSION_BUSY] = "開いている操作を終えてから終了してください。",
     [UI_TEXT_SESSION_SAVE_INCOMPLETE] = "保存処理が未完了です。保存を再試行してください。",
-    [UI_TEXT_TITLE_UNTITLED] = "無題（未保存）",
+    [UI_TEXT_TITLE_UNTITLED] = "無題",
     [UI_TEXT_TITLE_RECOVERING] = "名前変更の復旧待ち",
     [UI_TEXT_TITLE_CATEGORY_RECOVERING] = "復旧待ち",
     [UI_TEXT_CHIP_VIEW] = "閲覧",
@@ -335,6 +335,21 @@ static const char *_Nonnull const expected[] = {
                                     "を占有できないので復旧できません。",
     [UI_TEXT_APP_OUT_OF_MEMORY] = "記憶域が足りません。",
     [UI_TEXT_APP_NO_WINDOW] = "窓を作れませんでした。",
+    /* #349 で足した ID（期待表へ手で足した。3 言語は verify_action_bar_texts が見る）。 */
+    [UI_TEXT_ACCESSIBLE_OPERATIONS] = "操作",
+    [UI_TEXT_ACCESSIBLE_NOTE_ACTIONS] = "ノートの操作",
+    [UI_TEXT_ACCESSIBLE_BREADCRUMB] = "{from} / {name}",
+    [UI_TEXT_ACCESSIBLE_BREADCRUMB_UNSAVED] = "{from} / {name}（未保存）",
+    [UI_TEXT_STATUS_UNSAVED] = "未保存の変更があります",
+    [UI_TEXT_STATUS_SAVED] = "保存済み",
+    [UI_TEXT_NOTIFY_SAVED] = "保存しました",
+    [UI_TEXT_TOOLTIP_HELP] = "ヘルプとコマンド一覧（F1 / Ctrl+P）",
+    [UI_TEXT_TOOLTIP_NEW_NOTE] = "新しいノート — {name}へ（{from}）",
+    [UI_TEXT_NEW_NOTE_NO_CATEGORY] = "カテゴリがありません。先にカテゴリを作ります",
+    [UI_TEXT_EMPTY_HEADING] = "ノートが選ばれていません",
+    [UI_TEXT_EMPTY_BODY] = "左の一覧からノートを選ぶか、新しいノートを作ります",
+    [UI_TEXT_EMPTY_KEYS] =
+        "新しいノート: Ctrl+N ／ すべてのノートを検索: Ctrl+Shift+F ／ ヘルプ: F1",
 };
 
 constexpr size_t expected_count = sizeof expected / sizeof expected[0];
@@ -354,7 +369,7 @@ static size_t utf16_units_of(const char *_Nonnull utf8)
 /* 表の全 ID が、変更前と 1 字も違わないこと（同一性）。 */
 static void verify_identity(void)
 {
-    require(expected_count == UI_TEXT_ACCESSIBLE_NO_RESULTS + 1,
+    require(expected_count == UI_TEXT_EMPTY_KEYS + 1,
             "the expected table covers every id in the enumeration");
     for (size_t index = 0; index < expected_count; ++index)
     {
@@ -740,8 +755,93 @@ static void verify_product_version(void)
     }
 }
 
+/* #349: 本文操作帯・保存状態・空状態の文言を 3 言語で固定し、組み立ての完成形を見る。 */
+static void verify_action_bar_texts(void)
+{
+    const enum ui_text ids[] = {UI_TEXT_TITLE_UNTITLED,
+                                UI_TEXT_CHIP_VIEW,
+                                UI_TEXT_ACCESSIBLE_OPERATIONS,
+                                UI_TEXT_ACCESSIBLE_NOTE_ACTIONS,
+                                UI_TEXT_STATUS_UNSAVED,
+                                UI_TEXT_STATUS_SAVED,
+                                UI_TEXT_NOTIFY_SAVED,
+                                UI_TEXT_TOOLTIP_HELP,
+                                UI_TEXT_NEW_NOTE_NO_CATEGORY,
+                                UI_TEXT_EMPTY_HEADING,
+                                UI_TEXT_EMPTY_BODY,
+                                UI_TEXT_EMPTY_KEYS};
+    const char *const lines[][folio_language_count] = {
+        {"無題", "Untitled", "无标题"},
+        {"閲覧", "Read", "查看"},
+        {"操作", "Actions", "操作"},
+        {"ノートの操作", "Note actions", "笔记操作"},
+        {"未保存の変更があります", "Unsaved changes", "有未保存的更改"},
+        {"保存済み", "Saved", "已保存"},
+        {"保存しました", "Saved.", "已保存。"},
+        {"ヘルプとコマンド一覧（F1 / Ctrl+P）", "Help and command list (F1 / Ctrl+P)",
+         "帮助和命令列表（F1 / Ctrl+P）"},
+        {"カテゴリがありません。先にカテゴリを作ります",
+         "There are no categories. Create a category first", "没有分类。请先创建分类"},
+        {"ノートが選ばれていません", "No note is selected", "未选择笔记"},
+        {"左の一覧からノートを選ぶか、新しいノートを作ります",
+         "Choose a note from the list on the left, or create a new note",
+         "从左侧列表选择笔记，或新建笔记"},
+        {"新しいノート: Ctrl+N ／ すべてのノートを検索: Ctrl+Shift+F ／ ヘルプ: F1",
+         "New note: Ctrl+N / Search all notes: Ctrl+Shift+F / Help: F1",
+         "新建笔记: Ctrl+N ／ 搜索全部笔记: Ctrl+Shift+F ／ 帮助: F1"},
+    };
+    for (size_t row = 0; row < sizeof ids / sizeof ids[0]; ++row)
+    {
+        for (size_t column = 0; column < folio_language_count; ++column)
+        {
+            require(
+                same_text(ui_text_line(ids[row], (enum folio_language)column), lines[row][column]),
+                "the action bar and save state wording is fixed in all three languages");
+        }
+    }
+}
+
+/* 組み立ての完成形と、外した語（題の「未保存」と UIA 名の▾）。 */
+static void verify_action_bar_formats(void)
+{
+    /* 無題の印は丸と UIA 名が持つので、題には「未保存」を書かない（ADR0060 の決定 8）。 */
+    require(!holds(ui_text_line(UI_TEXT_TITLE_UNTITLED, FOLIO_LANGUAGE_JA), "未保存"),
+            "the untitled title no longer carries the unsaved word");
+    /* ▾は表示だけの記号で、UIA 名の元には入れない。 */
+    require(!holds(ui_text_line(UI_TEXT_ACCESSIBLE_OPERATIONS, FOLIO_LANGUAGE_EN), "▾"),
+            "the operations name has no chevron");
+    const char *const tooltips[] = {"新しいノート — 仕事へ（Ctrl+N）",
+                                    "New note — in 仕事 (Ctrl+N)", "新建笔记 — 放入仕事（Ctrl+N）"};
+    const char *const crumbs[] = {"仕事 / メモ（未保存）", "仕事 / メモ (unsaved)",
+                                  "仕事 / メモ（未保存）"};
+    for (size_t column = 0; column < folio_language_count; ++column)
+    {
+        struct ui_text_request request = {.id = UI_TEXT_TOOLTIP_NEW_NOTE,
+                                          .language = (enum folio_language)column,
+                                          .name = "仕事",
+                                          .from = "Ctrl+N"};
+        char line[256];
+        require(ui_text_format(&request, line, sizeof line) == UI_TEXT_FORMAT_READY &&
+                    same_text(line, tooltips[column]),
+                "the new note tooltip names the destination category and the key");
+        request = (struct ui_text_request){.id = UI_TEXT_ACCESSIBLE_BREADCRUMB_UNSAVED,
+                                           .language = (enum folio_language)column,
+                                           .name = "メモ",
+                                           .from = "仕事"};
+        require(ui_text_format(&request, line, sizeof line) == UI_TEXT_FORMAT_READY &&
+                    same_text(line, crumbs[column]),
+                "the breadcrumb name carries the unsaved word only in the unsaved form");
+        request.id = UI_TEXT_ACCESSIBLE_BREADCRUMB;
+        require(ui_text_format(&request, line, sizeof line) == UI_TEXT_FORMAT_READY &&
+                    same_text(line, "仕事 / メモ"),
+                "the saved breadcrumb name is the category and the note");
+    }
+}
+
 void run_ui_text_tests(void)
 {
+    verify_action_bar_texts();
+    verify_action_bar_formats();
     verify_identity();
     verify_lines();
     verify_placeholders();

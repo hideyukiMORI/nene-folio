@@ -271,10 +271,49 @@ static void verify_line_roles(void)
         line_meets(palette, THEME_LINE_FOCUS, outside, 3);
         line_meets(palette, THEME_LINE_FOCUS_ITEM, parts, 2);
         line_meets(palette, THEME_LINE_FOCUS_SELECTED, &palette->selected_background, 1);
-        line_meets(palette, THEME_LINE_FOCUS_PRIMARY, &palette->chip_background, 1);
+        struct theme_unsaved unsaved = theme_contrast_unsaved(palette);
+        line_meets(palette, THEME_LINE_FOCUS_PRIMARY, unsaved.filled ? &unsaved.fill : parts,
+                   unsaved.filled ? 1 : 2);
+        line_meets(palette, THEME_LINE_UNSAVED, parts, 2);
         line_meets(palette, THEME_LINE_FIELD, fields, 4);
         line_meets(palette, THEME_LINE_FIELD_FOCUS, fields, 4);
     }
+}
+
+/* 未保存の合図（ADR0060 の決定 8・#349）。塗りも塗らないときの線も window / pane に 3:1、
+ * 塗りと字の対は 4.5:1。候補は chip_background → selected_background の順。正典とは独立に書く。 */
+static void verify_unsaved_signal(void)
+{
+    size_t outlined = 0;
+    for (size_t index = 0; index < folio_theme_count(); ++index)
+    {
+        enum folio_theme theme = folio_theme_at(index);
+        const struct theme_palette *_Nonnull palette = folio_theme_palette(theme);
+        struct theme_unsaved unsaved = theme_contrast_unsaved(palette);
+        require(theme_contrast_ratio(unsaved.fill, palette->window) >= 3.0 &&
+                    theme_contrast_ratio(unsaved.fill, palette->pane) >= 3.0,
+                "the unsaved signal contrasts at least 3:1 with the window and the pane");
+        bool chip = theme_contrast_ratio(palette->chip_background, palette->window) >= 3.0 &&
+                    theme_contrast_ratio(palette->chip_background, palette->pane) >= 3.0;
+        require(!chip || (unsaved.filled && same_color(unsaved.fill, palette->chip_background)),
+                "the chip background stays the unsaved fill wherever it already contrasts");
+        if (unsaved.filled)
+        {
+            require(theme_contrast_ratio(unsaved.ink, unsaved.fill) >= 4.5,
+                    "the chosen fill and its text pair contrast at least 4.5:1");
+        }
+        else
+        {
+            require(same_color(unsaved.ink, unsaved.fill), "an outlined signal draws frame, text "
+                                                           "and dot in one line color");
+            outlined += 1;
+        }
+        bool reported = strcmp(folio_theme_name(theme), "cobalt2") == 0 ||
+                        strcmp(folio_theme_name(theme), "tokyo-night-light") == 0;
+        require(!reported || !same_color(unsaved.fill, palette->chip_background),
+                "the reported low-contrast themes choose another unsaved signal");
+    }
+    require(outlined < folio_theme_count(), "most themes keep a filled primary save");
 }
 
 static void verify_line_ratio_table(void)
@@ -358,6 +397,7 @@ void run_theme_tests(void)
     verify_readable_roles();
     verify_line_ratio_table();
     verify_line_roles();
+    verify_unsaved_signal();
     verify_line_fallback();
     verify_filter_and_ex();
 }

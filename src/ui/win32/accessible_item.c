@@ -36,7 +36,9 @@ enum accessible_kind accessible_item_host(struct accessible_item item)
     case ACCESSIBLE_SETTINGS:
     case ACCESSIBLE_CLOSE:
     case ACCESSIBLE_PANE_TOOLS:
+    case ACCESSIBLE_BREADCRUMB:
     case ACCESSIBLE_MODE_GROUP:
+    case ACCESSIBLE_ACTION_GROUP:
     case ACCESSIBLE_VIEW:
     case ACCESSIBLE_EDIT:
     case ACCESSIBLE_MENU:
@@ -46,6 +48,7 @@ enum accessible_kind accessible_item_host(struct accessible_item item)
     case ACCESSIBLE_FILTER:
     case ACCESSIBLE_BODY:
     case ACCESSIBLE_NOTICE:
+    case ACCESSIBLE_GUIDE:
     case ACCESSIBLE_COMMAND_INPUT:
     case ACCESSIBLE_REPLACE_PATTERN:
     case ACCESSIBLE_REPLACE_TEXT:

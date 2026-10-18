@@ -21,7 +21,8 @@ struct ui_text_request;
  * 全 ID がここに収まることは単体が全 ID を回して固定する。 */
 constexpr size_t ui_text_unit_limit = 256;
 
-enum ui_text : unsigned char
+/* 値は 256 を超えたので 16bit で持つ（#349）。表の添字にだけ使い、永続化しない。 */
+enum ui_text : unsigned short
 {
     UI_TEXT_EMPTY,
     UI_TEXT_FAILURE_DATA_UNREADABLE,
@@ -269,6 +270,20 @@ enum ui_text : unsigned char
     UI_TEXT_ACCESSIBLE_REPLACEMENT,
     UI_TEXT_ACCESSIBLE_CURRENT,
     UI_TEXT_ACCESSIBLE_NO_RESULTS,
+    /* 本文操作帯と保存状態（#349・ADR0060 の決定 8〜14） */
+    UI_TEXT_ACCESSIBLE_OPERATIONS,
+    UI_TEXT_ACCESSIBLE_NOTE_ACTIONS,
+    UI_TEXT_ACCESSIBLE_BREADCRUMB,
+    UI_TEXT_ACCESSIBLE_BREADCRUMB_UNSAVED,
+    UI_TEXT_STATUS_UNSAVED,
+    UI_TEXT_STATUS_SAVED,
+    UI_TEXT_NOTIFY_SAVED,
+    UI_TEXT_TOOLTIP_HELP,
+    UI_TEXT_TOOLTIP_NEW_NOTE,
+    UI_TEXT_NEW_NOTE_NO_CATEGORY,
+    UI_TEXT_EMPTY_HEADING,
+    UI_TEXT_EMPTY_BODY,
+    UI_TEXT_EMPTY_KEYS,
 };
 
 /* 表を 1 回引く。UTF-8 の終端付きで、長さは strlen で取る。表の外の値へは落ちない

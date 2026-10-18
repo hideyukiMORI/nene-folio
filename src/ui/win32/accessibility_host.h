@@ -5,6 +5,7 @@
 #include "accessible_navigation.h"
 
 #include <objbase.h>
+#include <uchar.h>
 #include <windows.h>
 
 struct accessibility_host;
@@ -52,6 +53,9 @@ void accessibility_host_refresh(struct accessibility_host *_Nonnull host);
 /* modal/保存を伴い得る共通操作の開始を、直接入力でも同じ要素から通知する。 */
 void accessibility_host_invoked(struct accessibility_host *_Nonnull host,
                                 struct accessible_item item);
+/* 保存の完了を UIA の通知で読み上げに渡す。視覚の面は出さない（ADR0060 の決定 8）。 */
+void accessibility_host_notify(struct accessibility_host *_Nonnull host,
+                               struct accessible_item item, const char16_t *_Nonnull text);
 [[nodiscard]] LRESULT accessibility_host_object(struct accessibility_host *_Nonnull host,
                                                 enum accessible_kind root, WPARAM wparam,
                                                 LPARAM lparam);

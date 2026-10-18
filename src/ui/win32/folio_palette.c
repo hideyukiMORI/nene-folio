@@ -11,9 +11,19 @@ static COLORREF to_color(struct rgb_color color)
 }
 
 /* RGB-to-Win32 adaptation only; the core catalog owns every fixed color (ADR0049). */
+/* 未保存の合図の 3 値を写す。 */
+static void adopt_unsaved(struct folio_palette *_Nonnull out,
+                          const struct theme_palette *_Nonnull palette)
+{
+    struct theme_unsaved unsaved = theme_contrast_unsaved(palette);
+    out->unsaved_filled = unsaved.filled;
+    out->unsaved_fill = to_color(unsaved.fill);
+    out->unsaved_ink = to_color(unsaved.ink);
+}
+
 struct folio_palette folio_palette_from(const struct theme_palette *_Nonnull palette)
 {
-    return (struct folio_palette){
+    struct folio_palette adapted = (struct folio_palette){
         .contrast = palette->contrast,
         .window = to_color(palette->window),
         .pane = to_color(palette->pane),
@@ -44,6 +54,8 @@ struct folio_palette folio_palette_from(const struct theme_palette *_Nonnull pal
         .field_line = to_color(theme_contrast_line(palette, THEME_LINE_FIELD)),
         .field_focus_line = to_color(theme_contrast_line(palette, THEME_LINE_FIELD_FOCUS)),
     };
+    adopt_unsaved(&adapted, palette);
+    return adapted;
 }
 
 static double linear_channel(BYTE value)

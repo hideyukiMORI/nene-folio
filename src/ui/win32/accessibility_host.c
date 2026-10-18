@@ -266,6 +266,21 @@ static void raise_invoked(struct accessibility_host *_Nonnull host, struct acces
     }
 }
 
+void accessibility_host_notify(struct accessibility_host *_Nonnull host,
+                               struct accessible_item item, const char16_t *_Nonnull text)
+{
+    if (host->owner == nullptr)
+    {
+        return;
+    }
+    struct accessibility_node *_Nullable node = nullptr;
+    if (SUCCEEDED(accessibility_host_node(host, item, &node)))
+    {
+        accessibility_node_notify(node, text);
+        accessibility_node_release(node);
+    }
+}
+
 void accessibility_host_invoked(struct accessibility_host *_Nonnull host,
                                 struct accessible_item item)
 {

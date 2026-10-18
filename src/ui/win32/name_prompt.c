@@ -459,6 +459,13 @@ static DWORD name_selection_style(enum name_prompt_kind kind)
     return 0;
 }
 
+/* 名前欄の箱（96 DPI で 20,46 から 360×28）。EDIT は箱の中で字の高さに縦中央、枠は箱の外側。 */
+static RECT name_box(const struct name_prompt *_Nonnull prompt)
+{
+    return (RECT){scaled(prompt, 20), scaled(prompt, 46), scaled(prompt, 20) + scaled(prompt, 360),
+                  scaled(prompt, 46) + scaled(prompt, 28)};
+}
+
 static bool inputs(struct name_prompt *_Nonnull prompt)
 {
     /* 塗れない OS の縁を外し、面が札の色の 1px の枠を描く（ADR 0035 の決定 3）。
@@ -479,7 +486,11 @@ static bool inputs(struct name_prompt *_Nonnull prompt)
     {
         return false;
     }
-    position(prompt, prompt->name, (RECT){20, 46, 380, 74}, 0);
+    RECT box = name_box(prompt);
+    RECT field = ui_part_field_edit(box, ui_part_field_text_height(prompt->name), prompt->dpi);
+    MoveWindow(prompt->name, field.left, field.top, field.right - field.left,
+               field.bottom - field.top, TRUE);
+    ui_part_field_margins(prompt->name, prompt->dpi, 0);
     if (listed)
     {
         MoveWindow(prompt->category, scaled(prompt, 20), scaled(prompt, 108), scaled(prompt, 360),
@@ -992,7 +1003,7 @@ static void measure_category(const struct name_prompt *_Nonnull prompt,
     item->itemHeight = (UINT)category_row_height(prompt);
 }
 
-static RECT field_bounds(const struct name_prompt *_Nonnull prompt, HWND window)
+static RECT child_bounds(const struct name_prompt *_Nonnull prompt, HWND window)
 {
     RECT bounds;
     GetWindowRect(window, &bounds);
@@ -1000,16 +1011,44 @@ static RECT field_bounds(const struct name_prompt *_Nonnull prompt, HWND window)
     return bounds;
 }
 
+static RECT field_bounds(const struct name_prompt *_Nonnull prompt, HWND window)
+{
+    if (window == prompt->name)
+    {
+        return name_box(prompt);
+    }
+    /* 一覧は窓の外に focus の太さの空きを取った箱。枠はその内側（＝一覧の外の空き）に描く。 */
+    RECT bounds = child_bounds(prompt, window);
+    int ring = ui_part_focus_width(GetDpiForWindow(prompt->dialog));
+    InflateRect(&bounds, ring, ring);
+    return bounds;
+}
+
 static void frame_around(const struct name_prompt *_Nonnull prompt, HDC device, HWND window)
 {
     RECT bounds = field_bounds(prompt, window);
     int focus = GetFocus() == window ? ui_part_focus_width(GetDpiForWindow(prompt->dialog)) : 0;
-    dialog_theme_frame(prompt->theme, device, &bounds, focus);
+    /* 対話は WS_CLIPCHILDREN を持たないので、子の上を塗らないよう子の矩形を除いて箱を塗る。 */
+    RECT child = child_bounds(prompt, window);
+    int saved = SaveDC(device);
+    ExcludeClipRect(device, child.left, child.top, child.right, child.bottom);
+    dialog_theme_field(prompt->theme, device, &bounds, focus);
+    if (saved != 0)
+    {
+        RestoreDC(device, saved);
+    }
 }
 
-/* focus の出入りで枠の太さが変わるので、欄の外側の輪だけを描き直す（欄の中は塗らない）。 */
+/* focus の出入りで枠の太さが変わるので、枠だけを描き直す。一覧は外側の輪、名前欄は箱（#349）。 */
 static void refresh_frame(const struct name_prompt *_Nonnull prompt, HWND window)
 {
+    if (window == prompt->name)
+    {
+        /* 名前欄の枠は箱の内側で太る。EDIT の外の箱だけが描き直しの対象になる。 */
+        RECT box = name_box(prompt);
+        InvalidateRect(prompt->dialog, &box, FALSE);
+        return;
+    }
     RECT inner = field_bounds(prompt, window);
     RECT outer = inner;
     int reach = ui_part_focus_width(GetDpiForWindow(prompt->dialog));
@@ -1045,8 +1084,8 @@ static bool field_focus_changed(const struct name_prompt *_Nonnull prompt, WPARA
     return name || category;
 }
 
-/* WS_BORDER を外した名前欄と一覧の外側に入力欄の枠を描く（draw_filter_frame と同じ ui_part の 1
- * 本・ ADR 0035 の補正 17 を ADR0060 の決定 3 で置き換えた）。 */
+/* WS_BORDER を外した名前欄（箱の内側）と一覧（外側）に入力欄の枠を描く（draw_filter_frame と同じ
+ * ui_part の 1 本・ ADR 0035 の補正 17 を ADR0060 の決定 3 で置き換えた）。 */
 static void paint_frame(const struct name_prompt *_Nonnull prompt)
 {
     PAINTSTRUCT paint;

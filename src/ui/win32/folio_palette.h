@@ -40,6 +40,11 @@ struct folio_palette
     COLORREF focus_primary_line;  /* B 主操作の内側の focus */
     COLORREF field_line;          /* 入力欄の静止枠 */
     COLORREF field_focus_line;    /* 入力欄の focus 枠 */
+    /* 未保存の合図（B 主操作の保存と丸）。core の theme_contrast_unsaved が選ぶ（#349）。
+     * unsaved_filled なら unsaved_fill で塗って unsaved_ink の字、偽なら同じ色の 2px の枠と字。 */
+    bool unsaved_filled;
+    COLORREF unsaved_fill;
+    COLORREF unsaved_ink;
 };
 
 [[nodiscard]] struct folio_palette folio_palette_from(const struct theme_palette *_Nonnull palette);

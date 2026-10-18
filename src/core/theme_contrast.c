@@ -286,6 +286,24 @@ double theme_contrast_ratio(struct rgb_color first, struct rgb_color second)
     return (high + 0.05) / (low + 0.05);
 }
 
+static double weakest(struct rgb_color ink, const struct rgb_color *_Nonnull grounds, size_t count);
+
+/* B 主操作の内側の focus が接する地。塗るテーマでは選んだ塗り、塗らないテーマでは window / pane。
+ */
+static size_t primary_grounds(const struct theme_palette *_Nonnull palette,
+                              struct rgb_color *_Nonnull out)
+{
+    struct theme_unsaved unsaved = theme_contrast_unsaved(palette);
+    if (unsaved.filled)
+    {
+        out[0] = unsaved.fill;
+        return 1;
+    }
+    out[0] = palette->window;
+    out[1] = palette->pane;
+    return 2;
+}
+
 /* 役割ごとに線が接する地。数を返す（全値のswitch・C-002）。 */
 static size_t line_grounds(const struct theme_palette *_Nonnull palette, enum theme_line line,
                            struct rgb_color *_Nonnull out)
@@ -294,6 +312,7 @@ static size_t line_grounds(const struct theme_palette *_Nonnull palette, enum th
     {
     case THEME_LINE_HOVER:
     case THEME_LINE_FOCUS_ITEM:
+    case THEME_LINE_UNSAVED:
         out[0] = palette->window;
         out[1] = palette->pane;
         return 2;
@@ -306,8 +325,7 @@ static size_t line_grounds(const struct theme_palette *_Nonnull palette, enum th
         out[0] = palette->selected_background;
         return 1;
     case THEME_LINE_FOCUS_PRIMARY:
-        out[0] = palette->chip_background;
-        return 1;
+        return primary_grounds(palette, out);
     case THEME_LINE_FIELD:
     case THEME_LINE_FIELD_FOCUS:
         out[0] = palette->window;
@@ -331,11 +349,12 @@ static struct rgb_color line_preferred(const struct theme_palette *_Nonnull pale
     case THEME_LINE_FOCUS:
     case THEME_LINE_FOCUS_ITEM:
     case THEME_LINE_FIELD_FOCUS:
+    case THEME_LINE_UNSAVED:
         return palette->current_text;
     case THEME_LINE_FOCUS_SELECTED:
         return palette->selected_text;
     case THEME_LINE_FOCUS_PRIMARY:
-        return palette->chip_text;
+        return theme_contrast_unsaved(palette).ink;
     }
     return palette->current_text;
 }
@@ -377,4 +396,22 @@ struct rgb_color theme_contrast_line(const struct theme_palette *_Nonnull palett
         }
     }
     return best;
+}
+
+struct theme_unsaved theme_contrast_unsaved(const struct theme_palette *_Nonnull palette)
+{
+    const struct rgb_color grounds[] = {palette->window, palette->pane};
+    const struct theme_unsaved fills[] = {
+        {.filled = true, .fill = palette->chip_background, .ink = palette->chip_text},
+        {.filled = true, .fill = palette->selected_background, .ink = palette->selected_text},
+    };
+    for (size_t index = 0; index < sizeof fills / sizeof fills[0]; ++index)
+    {
+        if (weakest(fills[index].fill, grounds, 2) >= line_minimum)
+        {
+            return fills[index];
+        }
+    }
+    struct rgb_color line = theme_contrast_line(palette, THEME_LINE_UNSAVED);
+    return (struct theme_unsaved){.filled = false, .fill = line, .ink = line};
 }

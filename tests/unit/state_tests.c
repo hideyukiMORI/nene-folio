@@ -1854,6 +1854,46 @@ static void verify_note_changed(void)
     folio_state_destroy(state);
 }
 
+/* 保存の主操作と未保存印の元（ADR0060 の決定 8）。同期せず、写せない本文は CHANGED に倒す。
+ * 保存の世代は md を書いたときだけ進む。 */
+static void verify_unsaved(void)
+{
+    static const char16_t lone_surrogate[] = {u'a', 0xD83D, u'b'};
+    struct persistence_adapter adapter = healthy_adapter();
+    adapter.note_body = "# Hello\r\n\r\nbody";
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_document_kind(state) == FOLIO_DOCUMENT_NONE &&
+                folio_state_unsaved(state, u"x", 1) == FOLIO_NOTE_SAME,
+            "no document has nothing to save");
+    folio_state_destroy(state);
+    state = edited_state(&adapter);
+    const char16_t same[] = u"# Hello\n\nbody";
+    require(folio_state_unsaved(state, same, sizeof same / sizeof same[0] - 1) == FOLIO_NOTE_SAME,
+            "entering edit alone does not light the save");
+    require(folio_state_unsaved(state, u"# Hello\n\nchanged", 16) == FOLIO_NOTE_CHANGED,
+            "a changed body is unsaved");
+    require(folio_state_unsaved(state, lone_surrogate, 3) == FOLIO_NOTE_CHANGED,
+            "a body that cannot be normalized asks to be saved");
+    uint64_t before = folio_state_store_revision(state);
+    require(folio_state_store_note(state, same, sizeof same / sizeof same[0] - 1) ==
+                    FOLIO_STATE_READY &&
+                folio_state_store_revision(state) == before,
+            "a save that writes nothing does not advance the store revision");
+    require(folio_state_store_note(state, u"# Hello\n\nchanged", 16) == FOLIO_STATE_READY &&
+                folio_state_store_revision(state) == before + 1 &&
+                folio_state_unsaved(state, u"# Hello\n\nchanged", 16) == FOLIO_NOTE_SAME,
+            "a written save advances the revision and the body becomes saved");
+    require(adapter.note_writes == 1 && folio_state_pane_mode(state) == PANE_MODE_EDIT,
+            "the query writes nothing itself");
+    require(folio_state_end_edit(state, u"# Hello\n\nchanged", 16) == FOLIO_STATE_READY &&
+                folio_state_unsaved(state, u"other", 5) == FOLIO_NOTE_SAME,
+            "view mode has no unsaved change");
+    require(folio_state_new_note(state, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
+                folio_state_unsaved(state, u"", 0) == FOLIO_NOTE_CHANGED,
+            "an untitled note is unsaved from the moment it opens");
+    folio_state_destroy(state);
+}
+
 /* 保存は履歴が先で、写せたときだけ md を書く（ADR 0012 の決定 2）。 */
 static void verify_history_order(void)
 {
@@ -2280,7 +2320,7 @@ static void verify_untitled(void)
                 folio_state_pane_mode(state) == PANE_MODE_EDIT &&
                 folio_state_document_category(state) == 1,
             "untitled edit state");
-    require(same_text(folio_state_pane_title(state).note, "無題（未保存）") &&
+    require(same_text(folio_state_pane_title(state).note, "無題") &&
                 same_text(folio_state_category_name(state, 1), "A"),
             "untitled title and category");
     struct note_ref selection = {.category = 0, .note = 0};
@@ -5039,6 +5079,7 @@ void run_state_tests(void)
     verify_edit_guards();
     verify_edit_unchanged();
     verify_note_changed();
+    verify_unsaved();
     verify_history_order();
     verify_history_failures();
     verify_edit_saves();

@@ -324,7 +324,9 @@ static const CONTROLTYPEID control_types[] = {
     [ACCESSIBLE_SETTINGS] = UIA_ButtonControlTypeId,
     [ACCESSIBLE_CLOSE] = UIA_ButtonControlTypeId,
     [ACCESSIBLE_PANE_TOOLS] = UIA_ToolBarControlTypeId,
+    [ACCESSIBLE_BREADCRUMB] = UIA_TextControlTypeId,
     [ACCESSIBLE_MODE_GROUP] = UIA_GroupControlTypeId,
+    [ACCESSIBLE_ACTION_GROUP] = UIA_GroupControlTypeId,
     [ACCESSIBLE_VIEW] = UIA_RadioButtonControlTypeId,
     [ACCESSIBLE_EDIT] = UIA_RadioButtonControlTypeId,
     [ACCESSIBLE_MENU] = UIA_ButtonControlTypeId,
@@ -339,6 +341,7 @@ static const CONTROLTYPEID control_types[] = {
     [ACCESSIBLE_FILTER] = UIA_EditControlTypeId,
     [ACCESSIBLE_BODY] = UIA_DocumentControlTypeId,
     [ACCESSIBLE_NOTICE] = UIA_StatusBarControlTypeId,
+    [ACCESSIBLE_GUIDE] = UIA_TextControlTypeId,
     [ACCESSIBLE_SURFACE] = UIA_PaneControlTypeId,
     [ACCESSIBLE_SURFACE_LIST] = UIA_ListControlTypeId,
     [ACCESSIBLE_SURFACE_CHOICE] = UIA_ListItemControlTypeId,
@@ -394,6 +397,10 @@ static const char16_t *_Nullable property_text(const struct accessible_view *_No
     if (id == UIA_HelpTextPropertyId)
     {
         return view->help;
+    }
+    if (id == UIA_ItemStatusPropertyId && view->status[0] != u'\0')
+    {
+        return view->status;
     }
     return id == UIA_AcceleratorKeyPropertyId && view->accelerator[0] != u'\0' ? view->accelerator
                                                                                : nullptr;
@@ -1260,6 +1267,24 @@ void accessibility_node_invoked(struct accessibility_node *_Nonnull node)
     }
 }
 
+void accessibility_node_notify(struct accessibility_node *_Nonnull node,
+                               const char16_t *_Nonnull text)
+{
+    if (!UiaClientsAreListening())
+    {
+        return;
+    }
+    BSTR display = SysAllocString(text);
+    BSTR activity = SysAllocString(u"NeNeFolio.Saved");
+    if (display != nullptr && activity != nullptr)
+    {
+        (void)UiaRaiseNotificationEvent(&node->simple, NotificationKind_ActionCompleted,
+                                        NotificationProcessing_MostRecent, display, activity);
+    }
+    SysFreeString(display);
+    SysFreeString(activity);
+}
+
 void accessibility_node_selection_changed(struct accessibility_node *_Nonnull node)
 {
     EVENTID event = has_selection(node->item.kind) ? UIA_Selection_InvalidatedEventId
@@ -1323,20 +1348,19 @@ static void raise_number(struct accessibility_node *_Nonnull node, PROPERTYID pr
     (void)UiaRaiseAutomationPropertyChangedEvent(&node->simple, property, old_value, new_value);
 }
 
-static void raise_name(struct accessibility_node *_Nonnull node,
-                       const struct accessible_view *_Nonnull before,
-                       const struct accessible_view *_Nonnull after)
+/* 文字列の性質（Name・ItemStatus）の変化。 */
+static void raise_text(struct accessibility_node *_Nonnull node, PROPERTYID property,
+                       const char16_t *_Nonnull before, const char16_t *_Nonnull after)
 {
-    if (wcscmp(before->name, after->name) == 0)
+    if (wcscmp(before, after) == 0)
     {
         return;
     }
-    VARIANT old_value = {.vt = VT_BSTR, .bstrVal = SysAllocString(before->name)};
-    VARIANT new_value = {.vt = VT_BSTR, .bstrVal = SysAllocString(after->name)};
+    VARIANT old_value = {.vt = VT_BSTR, .bstrVal = SysAllocString(before)};
+    VARIANT new_value = {.vt = VT_BSTR, .bstrVal = SysAllocString(after)};
     if (old_value.bstrVal != nullptr && new_value.bstrVal != nullptr)
     {
-        (void)UiaRaiseAutomationPropertyChangedEvent(&node->simple, UIA_NamePropertyId, old_value,
-                                                     new_value);
+        (void)UiaRaiseAutomationPropertyChangedEvent(&node->simple, property, old_value, new_value);
     }
     VariantClear(&old_value);
     VariantClear(&new_value);
@@ -1448,7 +1472,8 @@ void accessibility_node_refresh(struct accessibility_node *_Nonnull node)
         (void)release(node);
         return;
     }
-    raise_name(node, &before, &view);
+    raise_text(node, UIA_NamePropertyId, before.name, view.name);
+    raise_text(node, UIA_ItemStatusPropertyId, before.status, view.status);
     raise_bounds(node, before.bounds, view.bounds);
     raise_boolean(node, UIA_IsEnabledPropertyId, before.enabled, view.enabled);
     raise_boolean(node, UIA_IsOffscreenPropertyId, before.offscreen, view.offscreen);

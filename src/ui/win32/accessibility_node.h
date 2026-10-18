@@ -4,6 +4,7 @@
 #include "accessible_item.h"
 
 #include <objbase.h>
+#include <uchar.h>
 #include <windows.h>
 
 struct accessibility_node;
@@ -36,6 +37,9 @@ void accessibility_node_structure_changed(struct accessibility_node *_Nonnull no
 void accessibility_node_focus_changed(struct accessibility_node *_Nonnull node);
 void accessibility_node_selection_changed(struct accessibility_node *_Nonnull node);
 void accessibility_node_invoked(struct accessibility_node *_Nonnull node);
+/* 画面に出さない完了の知らせ（UiaRaiseNotificationEvent・ADR0060 の決定 8）。 */
+void accessibility_node_notify(struct accessibility_node *_Nonnull node,
+                               const char16_t *_Nonnull text);
 [[nodiscard]] bool accessibility_node_is_request(LPARAM lparam);
 [[nodiscard]] LRESULT accessibility_node_object(struct accessibility_node *_Nonnull node,
                                                 HWND _Nonnull window, WPARAM wparam, LPARAM lparam);
