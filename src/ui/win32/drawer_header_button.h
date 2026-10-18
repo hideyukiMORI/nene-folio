@@ -5,7 +5,6 @@
 enum drawer_header_button : unsigned char
 {
     DRAWER_HEADER_NONE,
-    DRAWER_HEADER_NEW_NOTE,
     DRAWER_HEADER_NEW_CATEGORY
 };
 

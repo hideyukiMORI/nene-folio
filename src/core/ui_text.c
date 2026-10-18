@@ -323,6 +323,7 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
     [UI_TEXT_LAYOUT_HELP] = {"{from}  {name}", "{from}  {name}", "{from}  {name}"},
     [UI_TEXT_TOOLTIP_SETTINGS] = {"設定を開く", "Open settings", "打开设置"},
     [UI_TEXT_TOOLTIP_CLOSE] = {"閉じる", "Close", "关闭"},
+    [UI_TEXT_TOOLTIP_NEW_NOTE] = {"新しいノート\nCtrl+N", "New note\nCtrl+N", "新建笔记\nCtrl+N"},
     [UI_TEXT_COMMAND_DISCARD_EDITS] = {"編集を破棄して読み直す", "Discard edits and reload",
                                        "放弃编辑并重新载入"},
     [UI_TEXT_COMMAND_HISTORY] = {"履歴から戻す", "Restore from history", "从历史恢复"},

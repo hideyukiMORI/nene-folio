@@ -61,7 +61,6 @@ constexpr size_t draw_unit_limit = 1024;
 /* 96 DPI での寸法（デザイン「案2 堅」）。描くときに DPI で拡大する（FR-013）。 */
 constexpr int base_dpi = 96;
 constexpr int base_header_indent = 16;
-constexpr int base_new_note_height = 40;
 /* 常設の「すべてのノートを検索」の欄が占める帯（ADR 0024 の決定 6）。欄そのものは主窓の子で、
  * ここは行を置かない余白として数える。 */
 constexpr int base_filter_height = 36;
@@ -133,21 +132,10 @@ static void refresh_fonts(struct drawer_window *_Nonnull self, UINT dpi)
     self->mono_font = create_font(dpi, base_mono_font, FW_NORMAL, mono_face);
 }
 
-/* 固定の新規・検索欄・カテゴリ帯。行配置/clip/hit/scrollはこの高さを共用する。 */
+/* 固定の検索欄・カテゴリ帯。行配置/clip/hit/scrollはこの高さを共用する。 */
 static int band_height(const struct drawer_window *_Nonnull self)
 {
-    return scale(base_new_note_height + base_filter_height + base_category_band_height,
-                 GetDpiForWindow(self->handle));
-}
-
-static RECT new_note_rect(const struct drawer_window *_Nonnull self)
-{
-    UINT dpi = GetDpiForWindow(self->handle);
-    RECT client;
-    GetClientRect(self->handle, &client);
-    int inset = scale(base_filter_inset, dpi);
-    int margin = scale(base_filter_margin, dpi);
-    return (RECT){inset, margin, client.right - inset, scale(base_new_note_height, dpi) - margin};
+    return scale(base_filter_height + base_category_band_height, GetDpiForWindow(self->handle));
 }
 
 static RECT new_category_rect(const struct drawer_window *_Nonnull self)
@@ -175,9 +163,9 @@ static RECT filter_rect(const struct drawer_window *_Nonnull drawer)
     int inset = scale(base_filter_inset, dpi);
     int margin = scale(base_filter_margin, dpi);
     bounds.left = inset;
-    bounds.top = scale(base_new_note_height, dpi) + margin;
+    bounds.top = margin;
     bounds.right = client.right - inset;
-    bounds.bottom = scale(base_new_note_height + base_filter_height, dpi) - margin;
+    bounds.bottom = scale(base_filter_height, dpi) - margin;
     return bounds;
 }
 
@@ -315,30 +303,6 @@ static void draw_filter_frame(const struct drawer_window *_Nonnull self, HDC dev
                                                              : self->palette.dialog_border);
 }
 
-static void draw_new_note(const struct drawer_window *_Nonnull self, HDC device)
-{
-    UINT dpi = GetDpiForWindow(self->handle);
-    RECT button = new_note_rect(self);
-    bool pressed = self->header_pressed == DRAWER_HEADER_NEW_NOTE;
-    fill_rect(device, button,
-              pressed ? self->palette.selected_background : self->palette.dialog_control);
-    frame_rect(device, button,
-               self->palette.contrast == FOLIO_CONTRAST_HIGH ? self->palette.category_text
-                                                             : self->palette.dialog_border);
-    COLORREF ink = pressed ? self->palette.selected_text : self->palette.category_text;
-    int box = scale(base_new_category_size, dpi);
-    int left = button.left + scale(8, dpi);
-    int top = button.top + (button.bottom - button.top - box) / 2;
-    RECT icon = {left, top, left + box, top + box};
-    icon_paint_fill(device, icon, ICON_PAINT_ADD, ink);
-    RECT label = {icon.right + scale(8, dpi), button.top, button.right - scale(8, dpi),
-                  button.bottom};
-    SelectObject(device, self->note_font);
-    SetTextColor(device, ink);
-    draw_utf8(device, ui_text_line(UI_TEXT_COMMAND_NEW, folio_state_language(self->state)), label,
-              0);
-}
-
 static void draw_category_band(const struct drawer_window *_Nonnull self, HDC device)
 {
     UINT dpi = GetDpiForWindow(self->handle);
@@ -368,7 +332,6 @@ static void draw_category_band(const struct drawer_window *_Nonnull self, HDC de
 static void draw_header(const struct drawer_window *_Nonnull self, HDC device)
 {
     SetTextCharacterExtra(device, 0);
-    draw_new_note(self, device);
     draw_filter_frame(self, device);
     draw_category_band(self, device);
 }
@@ -381,10 +344,6 @@ static void draw_header_focus(const struct drawer_window *_Nonnull self, HDC dev
         return;
     }
     RECT bounds = {0};
-    if (focus.kind == ACCESSIBLE_NEW_NOTE)
-    {
-        bounds = new_note_rect(self);
-    }
     if (focus.kind == ACCESSIBLE_NEW_CATEGORY)
     {
         bounds = new_category_rect(self);
@@ -895,8 +854,6 @@ static RECT header_button_rect(const struct drawer_window *_Nonnull self,
     {
     case DRAWER_HEADER_NONE:
         return (RECT){0, 0, 0, 0};
-    case DRAWER_HEADER_NEW_NOTE:
-        return new_note_rect(self);
     case DRAWER_HEADER_NEW_CATEGORY:
         return new_category_rect(self);
     }
@@ -905,24 +862,17 @@ static RECT header_button_rect(const struct drawer_window *_Nonnull self,
 
 static bool press_header(struct drawer_window *_Nonnull self, POINT point)
 {
-    const enum drawer_header_button buttons[] = {DRAWER_HEADER_NEW_NOTE,
-                                                 DRAWER_HEADER_NEW_CATEGORY};
-    for (size_t index = 0; index < sizeof buttons / sizeof buttons[0]; ++index)
+    RECT button = new_category_rect(self);
+    if (!PtInRect(&button, point))
     {
-        RECT button = header_button_rect(self, buttons[index]);
-        if (PtInRect(&button, point))
-        {
-            self->header_pressed = buttons[index];
-            enum accessible_kind kind = buttons[index] == DRAWER_HEADER_NEW_NOTE
-                                            ? ACCESSIBLE_NEW_NOTE
-                                            : ACCESSIBLE_NEW_CATEGORY;
-            SendMessageW(GetParent(self->handle), folio_message_index_focus, (WPARAM)kind, 0);
-            SetCapture(self->handle);
-            InvalidateRect(self->handle, &button, FALSE);
-            return true;
-        }
+        return false;
     }
-    return false;
+    self->header_pressed = DRAWER_HEADER_NEW_CATEGORY;
+    SendMessageW(GetParent(self->handle), folio_message_index_focus,
+                 (WPARAM)ACCESSIBLE_NEW_CATEGORY, 0);
+    SetCapture(self->handle);
+    InvalidateRect(self->handle, &button, FALSE);
+    return true;
 }
 
 static void press(struct drawer_window *_Nonnull self, POINT point)
@@ -1026,10 +976,6 @@ static void run_header(struct drawer_window *_Nonnull self, enum drawer_header_b
     switch (button)
     {
     case DRAWER_HEADER_NONE:
-        return;
-    case DRAWER_HEADER_NEW_NOTE:
-        row.category = folio_state_current_category(self->state);
-        run_item(self, DRAWER_MENU_NEW_NOTE, row);
         return;
     case DRAWER_HEADER_NEW_CATEGORY:
         run_item(self, DRAWER_MENU_NEW_CATEGORY, row);
@@ -1428,10 +1374,6 @@ static void accessible_row_view(struct drawer_window *_Nonnull self, struct draw
 static RECT accessible_fixed_rect(const struct drawer_window *_Nonnull self,
                                   enum accessible_kind kind)
 {
-    if (kind == ACCESSIBLE_NEW_NOTE)
-    {
-        return new_note_rect(self);
-    }
     if (kind == ACCESSIBLE_NEW_CATEGORY)
     {
         return new_category_rect(self);
@@ -1631,14 +1573,8 @@ HRESULT drawer_window_accessible_at(struct drawer_window *_Nonnull self, POINT p
         return result;
     }
     ScreenToClient(self->handle, &point);
-    RECT bounds = new_note_rect(self);
+    RECT bounds = new_category_rect(self);
     *out = (struct accessible_item){.kind = ACCESSIBLE_DRAWER};
-    if (PtInRect(&bounds, point))
-    {
-        out->kind = ACCESSIBLE_NEW_NOTE;
-        return S_OK;
-    }
-    bounds = new_category_rect(self);
     if (PtInRect(&bounds, point))
     {
         out->kind = ACCESSIBLE_NEW_CATEGORY;
