@@ -11,6 +11,7 @@ struct gutter_row
 {
     int top;       /* 主窓の client 座標の y */
     int height;    /* その表示行の高さ */
+    int baseline;  /* 本文と共通のベースライン。主窓の client 座標 */
     size_t number; /* 1 始まりの論理行番号 */
 };
 

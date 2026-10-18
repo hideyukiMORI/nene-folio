@@ -83,7 +83,8 @@ void note_pane_replace(struct note_pane *_Nonnull pane, struct note_search_span 
 void note_pane_invalidate_lines(struct note_pane *_Nonnull pane);
 /* いま見えている表示行のうち、論理行の先頭になっている行だけを rows へ並べる（決定 3）。
  * y は主窓の client 座標へ直して返し、高さは表示行ごとに EM_POSFROMCHAR から得る
- * （行高は一定でないので番号 × 行高では求めない）。capacity を超えたら描けるぶんだけで止める。
+ * （行高は一定でないので番号 × 行高では求めない）。baselineは選択を動かさずTOMで読む。
+ * capacity を超えたら描けるぶんだけで止める。
  * 本文が古ければ先に表を作り直す。取り出せなければ false（帯を描かない）。 */
 [[nodiscard]] bool note_pane_visible_rows(struct note_pane *_Nonnull pane,
                                           struct gutter_row *_Nonnull rows, size_t capacity,

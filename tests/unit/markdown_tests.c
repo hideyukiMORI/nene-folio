@@ -226,7 +226,7 @@ static void verify_fonttbl(void)
     markdown_rtf_destroy(rtf);
 }
 
-static const char plain_start[] = "\\pard\\sa160\\sl300\\slmult1\\cf1 ";
+static const char plain_start[] = "\\pard\\sb0\\sa0\\sl240\\slmult1\\cf1 ";
 
 /* 編集用の RTF（#250）が頭 + 段落の書式 + expected と完全に一致するか。 */
 static void expect_plain(const char *_Nonnull input, size_t input_length,
