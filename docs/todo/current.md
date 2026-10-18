@@ -8,7 +8,9 @@
 恒久証跡はD:/NeNeFolio/agents/328-filter-lookup/、仮出力はD:/NeNeFolio/outputs/328-filter-lookup/。
 今回のhide指定によりAstraが設計・判断・受理、SOLが実装/対象検証と外部性能比較、LUNAが現況/計測資産調査を担当する。
 対象build/tidy・filter/application・確保失敗試験は成功、独立レビューに修正要求なし。
-性能比較、最終head必須CI、main/通常exe反映、専用作業物整理は未完了。Waivers: none。
+[PR #329](https://github.com/hideyukiMORI/nene-folio/pull/329)の最終headを準備中。
+同条件1万件のentry組立中央値は749.617→5.318ms、99.291%短縮で80%の受理条件を達成。結果/本文/読込回数も一致した。
+最終head必須CI、main/通常exe反映、専用作業物整理は未完了。Waivers: none。
 
 #321までの対応は統合済み。旧42作業木も整理済みで再作成しない。
 #319の使用中だったDLL2個と#320/#321の削除を拒否された仮出力は、今回の整理対象へ混ぜない。
