@@ -48,6 +48,7 @@ WM_SHOWWINDOW → UIA の再予約）＋ `InvalidateRect`（client 全体）→ 
 合格の条件は「3 条件とも起動後 20 秒の主スレッド CPU 合計 1 秒未満、PostMessage の入力が届く」。修正後は 3 条件とも満たした。
 カテゴリ 0 件の Ctrl+N は KEY_BINDINGS の規則どおり無題を開かないので、入力の到達は `:q!` の終了で確かめた。
 
+- `pwsh -NoProfile -File ./eng/check.ps1`（57d6b01）: exit 0、「NeNe Folio full gate passed」、分岐網羅 93.23%（3552/3810）。
 - 単体試験は足していない。原因は ui/win32 の配置と描画の間にあり、既存の単体試験の範囲（core / application）に入らない。
   `accessibility_host` の再帰の単体試験は、再帰が原因でないため足していない。
 
