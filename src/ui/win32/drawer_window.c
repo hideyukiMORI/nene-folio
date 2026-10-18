@@ -69,7 +69,7 @@ constexpr int base_header_indent = 16;
  * ここは行を置かない余白として数える。 */
 constexpr int base_filter_height = 36;
 constexpr int base_category_band_height = 36;
-constexpr int base_filter_inset = 12; /* 欄の左右の余白 */
+constexpr int base_filter_inset = 16; /* 欄の左右の余白（窓の縁 16・#349） */
 constexpr int base_filter_margin = 4; /* 欄の上下に空ける間 */
 /* 「一致 / 総数」の 1 行が要る大きさ（20 桁 2 つ ＋ 区切り ＋ 終端で足りる）。 */
 constexpr size_t filter_count_capacity = 48;
@@ -295,14 +295,17 @@ static void draw_header_count(const struct drawer_window *_Nonnull self, HDC dev
     draw_utf8(device, line, bounds, DT_RIGHT);
 }
 
-/* 欄そのものは主窓の子で、ドロワーの DC からは欄の矩形が除かれているので、枠は外側に描く。
- * 静止は 1px、focus 中は DPI で拡大した 2px（ADR0060 の決定 3。ADR 0024 の補正 5 を置き換える）。
- */
+/* 欄そのものは主窓の子で、ドロワーの DC からは欄の矩形が除かれている。EDIT は箱の中で上下左右を
+ * focus の太さだけ空けて置かれるので、その空きに静止 1px・focus 2px の枠を箱の内側へ描く
+ * （ADR0060 の決定 3・#349。ADR 0024 の補正 5 を置き換える）。 */
 static void draw_filter_frame(const struct drawer_window *_Nonnull self, HDC device)
 {
     bool focused = SendMessageW(GetParent(self->handle), folio_message_filter_focused, 0, 0) != 0;
     int focus = focused ? ui_part_focus_width(GetDpiForWindow(self->handle)) : 0;
-    ui_part_frame_field(device, &self->palette, filter_rect(self), focus);
+    /* 欄の EDIT は字の高さで縦中央に置かれ、周りの空きを EDIT と同じ地で塗ってから内側に枠を
+     * 描く。focus の 2px は空きの中で太り、字は動かない（#349）。 */
+    ui_part_fill_field(device, filter_rect(self), self->palette.window);
+    ui_part_draw_field(device, &self->palette, filter_rect(self), focus);
 }
 
 static bool header_focused(const struct drawer_window *_Nonnull self)

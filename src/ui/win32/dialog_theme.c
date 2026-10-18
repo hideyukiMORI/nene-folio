@@ -261,6 +261,13 @@ void dialog_theme_draw_item(const struct dialog_theme *_Nonnull theme,
               DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX | DT_END_ELLIPSIS);
 }
 
+void dialog_theme_field(const struct dialog_theme *_Nonnull theme, HDC _Nonnull dc,
+                        const RECT *_Nonnull rect, int focus)
+{
+    ui_part_fill_field(dc, *rect, theme->palette.pane);
+    ui_part_draw_field(dc, &theme->palette, *rect, focus);
+}
+
 void dialog_theme_frame(const struct dialog_theme *_Nonnull theme, HDC _Nonnull dc,
                         const RECT *_Nonnull rect, int focus)
 {

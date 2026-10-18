@@ -206,6 +206,53 @@ void ui_part_frame_field(HDC _Nonnull device, const struct folio_palette *_Nonnu
     frame(device, field, width, focus > 0 ? palette->field_focus_line : palette->field_line);
 }
 
+RECT ui_part_field_edit(RECT box, int text_height, UINT dpi)
+{
+    int ring = ui_part_focus_width(dpi);
+    InflateRect(&box, -ring, -ring);
+    int room = box.bottom - box.top;
+    if (text_height <= 0 || text_height >= room)
+    {
+        return box;
+    }
+    int top = box.top + (room - text_height) / 2;
+    return (RECT){box.left, top, box.right, top + text_height};
+}
+
+void ui_part_field_margins(HWND _Nonnull edit, UINT dpi, int right_room)
+{
+    int padding = scaled(ui_part_field_padding, dpi) - ui_part_focus_width(dpi);
+    int right = right_room > padding ? right_room : padding;
+    SendMessageW(edit, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELPARAM(padding, right));
+}
+
+int ui_part_field_text_height(HWND _Nonnull edit)
+{
+    HDC device = GetDC(edit);
+    if (device == nullptr)
+    {
+        return 0;
+    }
+    HGDIOBJ previous = SelectObject(device, (HGDIOBJ)SendMessageW(edit, WM_GETFONT, 0, 0));
+    TEXTMETRICW metrics = {0};
+    bool measured = GetTextMetricsW(device, &metrics) != 0;
+    SelectObject(device, previous);
+    ReleaseDC(edit, device);
+    return measured ? (int)metrics.tmHeight : 0;
+}
+
+void ui_part_fill_field(HDC _Nonnull device, RECT box, COLORREF background)
+{
+    fill(device, box, background);
+}
+
+void ui_part_draw_field(HDC _Nonnull device, const struct folio_palette *_Nonnull palette, RECT box,
+                        int focus)
+{
+    frame(device, box, focus > 0 ? focus : 1,
+          focus > 0 ? palette->field_focus_line : palette->field_line);
+}
+
 int ui_part_focus_width(UINT dpi)
 {
     return scaled(2, dpi);
@@ -216,8 +263,11 @@ int ui_part_focus_reach(UINT dpi)
     return scaled(1, dpi) + ui_part_focus_width(dpi);
 }
 
+/* 字の実測を足した幅を論理 px の 4 の倍数へ切り上げる（ADR0060 の決定 2）。 */
 int ui_part_command_width(int text, bool icon, UINT dpi)
 {
     int mark = icon ? scaled(ui_part_icon + ui_part_icon_gap, dpi) : 0;
-    return scaled(ui_part_padding * 2, dpi) + mark + text;
+    int width = scaled(ui_part_padding * 2, dpi) + mark + text;
+    int logical = (width * 96 + (int)dpi - 1) / (int)dpi;
+    return scaled((logical + 3) / 4 * 4, dpi);
 }

@@ -93,6 +93,7 @@ struct folio_state
     size_t cursor_note;      /* FOLIO_CURSOR_NOTEのときだけ使う。 */
     uint64_t index_revision; /* 行配置/名前が変わるたびに更新する。 */
     uint64_t row_revision;   /* 並べ替え等で行参照が別の意味になる改訂。開閉だけでは変えない。 */
+    uint64_t store_revision; /* md を書き戻す・作るたびに進む（保存の成功の印・#349）。 */
     /* 開いている履歴の一覧（ADR 0038 の決定 7）。版番号の昇順に history_count 行。
      * 本文が null の行は読めない版。閉じる・別の文書へ移る・保存するときに捨てる（決定 10） */
     struct note_text *_Nullable history[note_history_depth];
@@ -113,6 +114,14 @@ static void layout_changed(struct folio_state *_Nonnull state)
     if (state->index_revision != UINT64_MAX)
     {
         state->index_revision += 1;
+    }
+}
+
+static void stored_note(struct folio_state *_Nonnull state)
+{
+    if (state->store_revision != UINT64_MAX)
+    {
+        state->store_revision += 1;
     }
 }
 
@@ -2246,6 +2255,7 @@ static enum folio_state_outcome store_edited(struct folio_state *_Nonnull state,
         return stored == PERSISTENCE_OUT_OF_MEMORY ? FOLIO_STATE_OUT_OF_MEMORY
                                                    : FOLIO_STATE_NOTE_STORE_FAILED;
     }
+    stored_note(state);
     markdown_rtf_destroy(state->pane);
     state->pane = rendered;
     note_text_destroy(state->body);
@@ -2375,6 +2385,7 @@ static enum folio_state_outcome create_edited(struct folio_state *_Nonnull state
     note_ledger_destroy(state->notes[category]);
     state->notes[category] = ledger;
     index_changed(state);
+    stored_note(state);
     markdown_rtf_destroy(state->pane);
     state->pane = rendered;
     note_text_destroy(state->body);
@@ -3040,16 +3051,11 @@ enum folio_state_outcome folio_state_store_note(struct folio_state *_Nonnull sta
     return save_note(state, units, count);
 }
 
-enum folio_state_outcome folio_state_note_changed(struct folio_state *_Nonnull state,
-                                                  const char16_t *_Nonnull units, size_t count,
-                                                  enum folio_note_change *_Nonnull out)
+/* 保存済み本文との差。note_changed と unsaved が共有する比較の 1 本（ARC-001）。 */
+static enum folio_state_outcome note_difference(const struct folio_state *_Nonnull state,
+                                                const char16_t *_Nonnull units, size_t count,
+                                                enum folio_note_change *_Nonnull out)
 {
-    /* 他の保存系と同じく未同期の台帳を先に修復する。副作用はこの修復だけ（ADR 0021 の決定 3）。 */
-    enum folio_state_outcome synced = synchronize(state);
-    if (synced != FOLIO_STATE_READY)
-    {
-        return synced;
-    }
     if (state->document == FOLIO_DOCUMENT_UNTITLED)
     {
         *out = FOLIO_NOTE_CHANGED;
@@ -3069,6 +3075,36 @@ enum folio_state_outcome folio_state_note_changed(struct folio_state *_Nonnull s
     *out = note_text_equals(state->body, edited) ? FOLIO_NOTE_SAME : FOLIO_NOTE_CHANGED;
     note_text_destroy(edited);
     return FOLIO_STATE_READY;
+}
+
+enum folio_state_outcome folio_state_note_changed(struct folio_state *_Nonnull state,
+                                                  const char16_t *_Nonnull units, size_t count,
+                                                  enum folio_note_change *_Nonnull out)
+{
+    /* 他の保存系と同じく未同期の台帳を先に修復する。副作用はこの修復だけ（ADR 0021 の決定 3）。 */
+    enum folio_state_outcome synced = synchronize(state);
+    if (synced != FOLIO_STATE_READY)
+    {
+        return synced;
+    }
+    return note_difference(state, units, count, out);
+}
+
+enum folio_note_change folio_state_unsaved(const struct folio_state *_Nonnull state,
+                                           const char16_t *_Nonnull units, size_t count)
+{
+    if (state->document == FOLIO_DOCUMENT_NONE)
+    {
+        return FOLIO_NOTE_SAME;
+    }
+    enum folio_note_change change = FOLIO_NOTE_CHANGED;
+    return note_difference(state, units, count, &change) == FOLIO_STATE_READY ? change
+                                                                              : FOLIO_NOTE_CHANGED;
+}
+
+uint64_t folio_state_store_revision(const struct folio_state *_Nonnull state)
+{
+    return state->store_revision;
 }
 
 enum folio_state_outcome folio_state_end_edit(struct folio_state *_Nonnull state,
