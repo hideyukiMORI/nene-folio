@@ -90,6 +90,31 @@ constexpr float warning_dot_left = 12.0f - 1.35f;
 constexpr float warning_dot_top = 17.6f - 1.35f;
 constexpr float warning_dot_size = 2.0f * 1.35f;
 
+/* ADR0060 の決定 6 の 3 つの絵。既存の語彙（面で塗る・太さ 2・直角か 45°・曲線は円だけ・
+ * evenodd）に揃え、字形は使わない（CNF-010）。点は x, y の対で並べ、多角形を 1 つずつ閉じる。 */
+/* 保存: 外形 3〜21 の正方形の右上を 45° で面取りし、上のシャッターと下のラベルを穴で抜く。 */
+static const float save_outline[] = {3.0f, 3.0f,  17.0f, 3.0f, 21.0f,
+                                     7.0f, 21.0f, 21.0f, 3.0f, 21.0f};
+static const float save_shutter[] = {7.0f, 5.0f, 15.0f, 5.0f, 15.0f, 9.0f, 7.0f, 9.0f};
+static const float save_label[] = {7.0f, 13.0f, 17.0f, 13.0f, 17.0f, 19.0f, 7.0f, 19.0f};
+/* 検索: 中心 (10,10)・外半径 7・内半径 5 の輪と、右下へ (20.5,20.5) まで伸びる幅 1.98 の 45° の柄。
+ * 柄の根元の角を外周の円の上に置き（軸方向 6.93）、輪との重なりを残さない。先は直角で切る。 */
+static const float search_handle[] = {14.2f, 15.6f, 15.6f, 14.2f, 21.2f, 19.8f, 19.8f, 21.2f};
+constexpr float search_ring_outer = 3.0f;
+constexpr float search_ring_outer_size = 14.0f;
+constexpr float search_ring_inner = 5.0f;
+constexpr float search_ring_inner_size = 10.0f;
+/* ヘルプ: 中心 (12,12)・外半径 10・内半径 8 の輪の中に、上の横棒→右の縦棒→45° で中央へ→短い軸の
+ * 太さ 2 の 1 本の面と、下の 2×2 の点。 */
+static const float help_mark[] = {9.0f,    7.0f,    15.0f, 7.0f,  15.0f, 10.914f, 13.0f,
+                                  12.914f, 13.0f,   15.0f, 11.0f, 15.0f, 11.0f,   12.086f,
+                                  13.0f,   10.086f, 13.0f, 9.0f,  9.0f,  9.0f};
+static const float help_dot[] = {11.0f, 16.5f, 13.0f, 16.5f, 13.0f, 18.5f, 11.0f, 18.5f};
+constexpr float help_ring_outer = 2.0f;
+constexpr float help_ring_outer_size = 20.0f;
+constexpr float help_ring_inner = 4.0f;
+constexpr float help_ring_inner_size = 16.0f;
+
 /* 写しの規則 (2): <rect x y width height rx> の表。引数を 4 つに収めるため（C-012）、
  * 写しは 1 本の関数に保って添字で選ぶ。 */
 constexpr size_t round_rect_fold_bar = 0;
@@ -231,6 +256,52 @@ static int add_plus_path(struct GpPath *_Nonnull path)
     return first_failure(status, add_round_rect(path, round_rect_fold_stem));
 }
 
+/* x, y の対の表を 1 つの閉じた多角形にする。count は float の数。 */
+static int add_polygon(struct GpPath *_Nonnull path, const float *_Nonnull points, size_t count)
+{
+    int status = gdiplus_ok;
+    for (size_t index = 0; index + 3 < count; index += 2)
+    {
+        status = first_failure(status, GdipAddPathLine(path, points[index], points[index + 1],
+                                                       points[index + 2], points[index + 3]));
+    }
+    return first_failure(status, GdipClosePathFigure(path));
+}
+
+/* 保存は外形と 2 つの穴。穴は Alternate で抜ける。 */
+static int add_save_path(struct GpPath *_Nonnull path)
+{
+    int status = add_polygon(path, save_outline, sizeof save_outline / sizeof save_outline[0]);
+    status = first_failure(
+        status, add_polygon(path, save_shutter, sizeof save_shutter / sizeof save_shutter[0]));
+    return first_failure(status,
+                         add_polygon(path, save_label, sizeof save_label / sizeof save_label[0]));
+}
+
+/* 輪は外と内の 2 つの円。柄は輪の外に置くので Alternate でも抜けない。 */
+static int add_search_path(struct GpPath *_Nonnull path)
+{
+    int status = GdipAddPathEllipse(path, search_ring_outer, search_ring_outer,
+                                    search_ring_outer_size, search_ring_outer_size);
+    status =
+        first_failure(status, GdipAddPathEllipse(path, search_ring_inner, search_ring_inner,
+                                                 search_ring_inner_size, search_ring_inner_size));
+    return first_failure(
+        status, add_polygon(path, search_handle, sizeof search_handle / sizeof search_handle[0]));
+}
+
+/* 「?」の面は輪の穴の中にあるので、Alternate で再び塗られる。 */
+static int add_help_path(struct GpPath *_Nonnull path)
+{
+    int status = GdipAddPathEllipse(path, help_ring_outer, help_ring_outer, help_ring_outer_size,
+                                    help_ring_outer_size);
+    status = first_failure(status, GdipAddPathEllipse(path, help_ring_inner, help_ring_inner,
+                                                      help_ring_inner_size, help_ring_inner_size));
+    status =
+        first_failure(status, add_polygon(path, help_mark, sizeof help_mark / sizeof help_mark[0]));
+    return first_failure(status, add_polygon(path, help_dot, sizeof help_dot / sizeof help_dot[0]));
+}
+
 /* 形ごとに割る（全値の switch・default は書かない・C-002）。 */
 static int build_path(struct GpPath *_Nonnull path, enum icon_paint_kind kind)
 {
@@ -251,6 +322,12 @@ static int build_path(struct GpPath *_Nonnull path, enum icon_paint_kind kind)
         return add_round_rect(path, round_rect_selection);
     case ICON_PAINT_WARNING:
         return add_warning_path(path);
+    case ICON_PAINT_SAVE:
+        return add_save_path(path);
+    case ICON_PAINT_SEARCH:
+        return add_search_path(path);
+    case ICON_PAINT_HELP:
+        return add_help_path(path);
     }
     return gdiplus_ok;
 }
@@ -269,6 +346,9 @@ static int fill_mode_for(enum icon_paint_kind kind)
         return gdiplus_fill_winding;
     case ICON_PAINT_SETTINGS:
     case ICON_PAINT_WARNING:
+    case ICON_PAINT_SAVE:
+    case ICON_PAINT_SEARCH:
+    case ICON_PAINT_HELP:
         return gdiplus_fill_alternate;
     }
     return gdiplus_fill_winding;

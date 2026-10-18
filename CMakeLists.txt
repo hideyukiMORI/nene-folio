@@ -39,6 +39,7 @@ add_test(NAME toolchain_smoke COMMAND toolchain_smoke)
 
 nenefolio_target(nenefolio_core core STATIC
     src/core/rgb_color.c src/core/appearance_snapshot.c src/core/theme_palette.c
+    src/core/theme_contrast.c
     src/core/utf8_text.c src/core/utf16_text.c
     src/core/json_reader.c src/core/json_writer.c src/core/name_list.c
     src/core/category_ledger.c src/core/category_name.c src/core/note_ledger.c src/core/drawer_layout.c
@@ -91,7 +92,8 @@ nenefolio_target(nenefolio_window ui_win32 STATIC
     src/ui/win32/accessibility_native.c
     src/ui/win32/drawer_window.c src/ui/win32/folio_window.c src/ui/win32/note_pane.c
     src/ui/win32/folio_palette.c src/ui/win32/failure_box.c src/ui/win32/name_prompt.c
-    src/ui/win32/ui_face.c src/ui/win32/icon_paint.c src/ui/win32/dialog_theme.c)
+    src/ui/win32/ui_face.c src/ui/win32/icon_paint.c src/ui/win32/dialog_theme.c
+    src/ui/win32/ui_part.c)
 nenefolio_link(nenefolio_window nenefolio_core)
 nenefolio_link(nenefolio_window nenefolio_application)
 nenefolio_system_link(nenefolio_window user32)

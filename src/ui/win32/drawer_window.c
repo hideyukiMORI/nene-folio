@@ -14,6 +14,7 @@
 #include "icon_paint.h"
 #include "note_ref.h"
 #include "ui_face.h"
+#include "ui_part.h"
 #include "ui_text.h"
 #include "ui_text_request.h"
 #include "utf16_text.h"
@@ -40,6 +41,9 @@ struct drawer_window
     HFONT _Nullable mono_font;
     bool pressed; /* 左ボタンを押した行を覚えているか */
     enum drawer_header_button header_pressed;
+    bool header_inside;   /* 押したボタンの矩形の内にポインタがある（外なら押していない見た目） */
+    bool header_hover;    /* ポインタがカテゴリ＋の上にある */
+    bool header_tracking; /* TrackMouseEvent の WM_MOUSELEAVE を待っている */
     size_t pressed_row;
     int pressed_y; /* 押したときの y。しきい値の判定に使う */
     int pointer_y; /* 最後に見たポインタの y。スクロール中に落とし先を引き直す */
@@ -65,7 +69,6 @@ constexpr int base_header_indent = 16;
  * ここは行を置かない余白として数える。 */
 constexpr int base_filter_height = 36;
 constexpr int base_category_band_height = 36;
-constexpr int base_new_category_size = 24;
 constexpr int base_filter_inset = 12; /* 欄の左右の余白 */
 constexpr int base_filter_margin = 4; /* 欄の上下に空ける間 */
 /* 「一致 / 総数」の 1 行が要る大きさ（20 桁 2 つ ＋ 区切り ＋ 終端で足りる）。 */
@@ -143,8 +146,8 @@ static RECT new_category_rect(const struct drawer_window *_Nonnull self)
     UINT dpi = GetDpiForWindow(self->handle);
     RECT client;
     GetClientRect(self->handle, &client);
-    int box = scale(base_new_category_size, dpi);
-    int inset = scale(base_header_indent, dpi);
+    int box = scale(ui_part_height, dpi); /* C 様式の当たり 28×28（ADR0060 の決定 1） */
+    int inset = scale(ui_part_edge, dpi);
     int middle = band_height(self) - scale(base_category_band_height, dpi) / 2;
     return (RECT){client.right - inset - box, middle - box / 2, client.right - inset,
                   middle - box / 2 + box};
@@ -292,17 +295,25 @@ static void draw_header_count(const struct drawer_window *_Nonnull self, HDC dev
     draw_utf8(device, line, bounds, DT_RIGHT);
 }
 
-/* 絞り込みが効いているあいだ、欄の外周 1px を札の色で囲む（ADR 0024 の 2026-09-22 の補正 5）。
- * 欄そのものは主窓の子で、ドロワーの DC からは欄の矩形が除かれているので、囲むのは 1px 外側。 */
+/* 欄そのものは主窓の子で、ドロワーの DC からは欄の矩形が除かれているので、枠は外側に描く。
+ * 静止は 1px、focus 中は DPI で拡大した 2px（ADR0060 の決定 3。ADR 0024 の補正 5 を置き換える）。
+ */
 static void draw_filter_frame(const struct drawer_window *_Nonnull self, HDC device)
 {
-    RECT bounds = filter_rect(self);
-    InflateRect(&bounds, 1, 1);
-    frame_rect(device, bounds,
-               self->palette.contrast == FOLIO_CONTRAST_HIGH ? self->palette.category_text
-                                                             : self->palette.dialog_border);
+    bool focused = SendMessageW(GetParent(self->handle), folio_message_filter_focused, 0, 0) != 0;
+    int focus = focused ? ui_part_focus_width(GetDpiForWindow(self->handle)) : 0;
+    ui_part_frame_field(device, &self->palette, filter_rect(self), focus);
 }
 
+static bool header_focused(const struct drawer_window *_Nonnull self)
+{
+    struct accessible_item focus = {.kind = ACCESSIBLE_WINDOW};
+    return accessibility_host_focus(self->accessibility, ACCESSIBLE_DRAWER, &focus) == S_OK &&
+           focus.kind == ACCESSIBLE_NEW_CATEGORY &&
+           SendMessageW(GetParent(self->handle), folio_message_focus_cues, 0, 0) != 0;
+}
+
+/* カテゴリ＋は C 様式。状態の表現は主窓の部品と同じ ui_part の 1 本を通る。 */
 static void draw_category_band(const struct drawer_window *_Nonnull self, HDC device)
 {
     UINT dpi = GetDpiForWindow(self->handle);
@@ -314,18 +325,23 @@ static void draw_category_band(const struct drawer_window *_Nonnull self, HDC de
     SetTextColor(device, self->palette.category_text);
     draw_utf8(device, ui_text_line(UI_TEXT_TITLE_CATEGORIES, folio_state_language(self->state)),
               label, 0);
-    if (self->header_pressed == DRAWER_HEADER_NEW_CATEGORY)
-    {
-        fill_rect(device, button, self->palette.selected_background);
-    }
     RECT count = {label.right + scale(8, dpi), label.top, button.left - scale(8, dpi),
                   label.bottom};
     SelectObject(device, self->mono_font);
     SetTextColor(device, self->palette.note_text);
     draw_header_count(self, device, count);
-    COLORREF ink = self->header_pressed == DRAWER_HEADER_NEW_CATEGORY ? self->palette.selected_text
-                                                                      : self->palette.category_text;
-    icon_paint_fill(device, button, ICON_PAINT_ADD, ink);
+    bool pressed = self->header_pressed == DRAWER_HEADER_NEW_CATEGORY;
+    struct ui_part_paint part = {
+        .bounds = button,
+        .style = UI_PART_STYLE_ICON,
+        .dpi = dpi,
+        .has_icon = true,
+        .icon = ICON_PAINT_ADD,
+        .hovered = self->header_hover && !pressed,
+        .pressed = pressed && self->header_inside,
+        .focused = header_focused(self),
+    };
+    ui_part_draw(device, &self->palette, &part);
 }
 
 /* 固定帯。共通のブランド/窓操作の頭は親が所有する（ADR0047）。 */
@@ -334,25 +350,6 @@ static void draw_header(const struct drawer_window *_Nonnull self, HDC device)
     SetTextCharacterExtra(device, 0);
     draw_filter_frame(self, device);
     draw_category_band(self, device);
-}
-
-static void draw_header_focus(const struct drawer_window *_Nonnull self, HDC device)
-{
-    struct accessible_item focus = {.kind = ACCESSIBLE_WINDOW};
-    if (accessibility_host_focus(self->accessibility, ACCESSIBLE_DRAWER, &focus) != S_OK)
-    {
-        return;
-    }
-    RECT bounds = {0};
-    if (focus.kind == ACCESSIBLE_NEW_CATEGORY)
-    {
-        bounds = new_category_rect(self);
-    }
-    if (!IsRectEmpty(&bounds))
-    {
-        InflateRect(&bounds, -2, -2);
-        DrawFocusRect(device, &bounds);
-    }
 }
 
 /* カーソルの行の右端に置く角（カテゴリ色の四角）。right はその右端の x。
@@ -562,7 +559,6 @@ static void paint_surface(const struct drawer_window *_Nonnull self, HDC device,
     SelectClipRgn(device, nullptr);
     draw_header(self, device);
     /* 画素へ触る前に GDI の溜めを吐き出す。 */
-    draw_header_focus(self, device);
     GdiFlush();
     if (self->palette.contrast != FOLIO_CONTRAST_HIGH && drawer_layout_overflow_above(layout))
     {
@@ -868,6 +864,7 @@ static bool press_header(struct drawer_window *_Nonnull self, POINT point)
         return false;
     }
     self->header_pressed = DRAWER_HEADER_NEW_CATEGORY;
+    self->header_inside = true;
     SendMessageW(GetParent(self->handle), folio_message_index_focus,
                  (WPARAM)ACCESSIBLE_NEW_CATEGORY, 0);
     SetCapture(self->handle);
@@ -895,6 +892,44 @@ static void press(struct drawer_window *_Nonnull self, POINT point)
     if (point.y >= band_height(self))
     {
         press_row(self, point.y);
+    }
+}
+
+/* 帯のボタンの hover と、押したまま外へ出たときの見た目（ADR0060 の決定 3・4）。 */
+static void track_header(struct drawer_window *_Nonnull self, POINT point)
+{
+    RECT button = new_category_rect(self);
+    bool over = PtInRect(&button, point) != 0;
+    if (self->header_pressed != DRAWER_HEADER_NONE)
+    {
+        if (over != self->header_inside)
+        {
+            self->header_inside = over;
+            InvalidateRect(self->handle, &button, FALSE);
+        }
+        return;
+    }
+    if (!self->header_tracking)
+    {
+        TRACKMOUSEEVENT track = {
+            .cbSize = sizeof track, .dwFlags = TME_LEAVE, .hwndTrack = self->handle};
+        self->header_tracking = TrackMouseEvent(&track) != 0;
+    }
+    if (over != self->header_hover)
+    {
+        self->header_hover = over;
+        InvalidateRect(self->handle, &button, FALSE);
+    }
+}
+
+static void leave_header(struct drawer_window *_Nonnull self)
+{
+    self->header_tracking = false;
+    if (self->header_hover)
+    {
+        self->header_hover = false;
+        RECT button = new_category_rect(self);
+        InvalidateRect(self->handle, &button, FALSE);
     }
 }
 
@@ -1076,7 +1111,11 @@ static LRESULT drawer_message(struct drawer_window *_Nonnull self, UINT message,
         press(self, (POINT){GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)});
         return 0;
     case WM_MOUSEMOVE:
+        track_header(self, (POINT){GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)});
         drag(self, GET_Y_LPARAM(lparam));
+        return 0;
+    case WM_MOUSELEAVE:
+        leave_header(self);
         return 0;
     case WM_LBUTTONUP:
         release(self, (POINT){GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)});

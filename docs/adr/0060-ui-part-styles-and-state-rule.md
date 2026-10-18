@@ -1,0 +1,88 @@
+# ADR 0060 — 操作部品を3様式＋選択群と1つの状態規則へ統一する
+
+- 状態: 受理（2026-10-18、hideの「GUIの統一性」の依頼に対する設計席の判断。実装前に固定）
+- 日付: 2026-10-18
+- Issue: [#348](https://github.com/hideyukiMORI/nene-folio/issues/348)（I-A: 部品体系と状態）
+- 規則: ARC-001/004/011、C-002/008/012/017/018、QLT-008/011/012/013
+- 関連: ADR0047/0048/0051/0056/0059（補正）、[docs/design/2026-09-13-gui-first-operations.md](../design/2026-09-13-gui-first-operations.md)
+
+## 文脈
+
+hideが2026-10-18に、共通ヘッダー・ドロワー・本文操作列の14要素の統一性の不足を指摘し、
+クリック後の動作と見た目の確認、専門家ペルソナの議論、文献の考察を経た調整を依頼した。
+設計席は隔離fixtureで59状態を撮影し（`D:/NeNeFolio/agents/ui-consistency-20261018/captures/`）、
+情報設計・視覚デザイン・Windows操作/アクセシビリティの3ペルソナによる2ターンの独立レビュー
+（同 `discussion/`）と約30件の文献（同 `research/literature.md`）で統合案を収束させた。実在専門家への取材ではない。
+
+実測の事実: 部品は枠付き絵＋字・塗りセグメント・絵だけ・地だけの字・角丸の橙の札の5様式、高さは32/28/27/24の4種。
+hover表現はどこにもなく、押下の見た目は新規とカテゴリ＋だけで、他は`WM_LBUTTONDOWN`の時点で実行される。
+focusは`DrawFocusRect`のXOR点線で、橙の札の上では1.38:1。tooltipは6要素だけ。
+全127テーマの計算で、文字系トークンは地に対し4.5:1以上あるが、`border`は全テーマ、`selected_background`は112テーマ、
+`dialog_border`は47テーマで3:1に届かない。
+
+## 決定
+
+1. **様式を3つ＋選択群に固定する。** 他の様式（枠付き文字・角丸札・地だけの溝）は廃止する。
+   - A 中立コマンド: 16pxの絵＋字。絵は「5秒で意味が分かる」もの（新規・保存・検索）に限り、広い窓では字を常に出す。幅が不足するときだけ絵に縮め、消さない。
+     単独なら1pxの`dialog_border`枠、群の中なら群が枠を持ち項目間は1pxの`border`区切り。「操作▾」は絵を持たず、シェブロンを絵の位置に置く。
+   - B 主操作: `chip_background`で塗り`chip_text`の字。1つの面に最大1つ。本件では用途を定めるだけで、本文での適用（変更ありの保存）はI-Bで行う。
+   - C 絵だけ: 窓の慣例と部品内の小操作に限る（設定ギア・窓の×・ヘルプ「?」・欄内の消去×・カテゴリ＋/−・前/次）。当たり28×28、絵20px。tooltip必須。
+   - S 選択群: 表示3択と閲覧/編集を同じ部品で描く。群全体に1px枠、項目は等幅、項目間1px区切り。選択中は`selected_background`＋`selected_text`＋下辺2pxの`selected_text`の棒。
+2. **寸法を1つの体系にする。** 操作部品の高さ28。ヘッダー44（8+28+8）、本文操作帯36（4+28+4）は維持する。字の釦の左右余白12、絵16、絵と字の間6。
+   群内の間隔0、群と群の間16、部品と面の端12。角は直角（GDIの`RoundRect`は縁を平滑化せず125/150/175%で段が出る）。
+   論理pxは4の倍数とし、120/144/168 DPIで整数にする。表示3択の区画54→56、群の余白2→4。ダイアログの確定列の高さ32は唯一の例外として明記する。
+3. **状態の表現を1つの規則にし、線は文字系トークンで引く。**
+   - hover: 地を塗らず、内側1pxの`header_text`枠（地を`border`で塗ると15テーマで字が4.5:1を割る）。
+   - pressed: 地`selected_background`、字`selected_text`。selected/on: S群の項目だけ、上記1の表現。
+   - focus: 2pxの実線。色は「枠が接する地の上で使う字の色」とする。単独部品は1px外側に`current_text`、群の中の項目は内側にその項目の字色。
+     キーボード操作の後だけ描き、`SPI_GETKEYBOARDCUES`が有効なら常に描く。太さはDPIで拡大する。XORの`DrawFocusRect`は廃止する。
+   - disabled: 字`border`（dialog_themeの既存規則）。
+   - 入力欄: 静止枠は1pxの`header_text`（4つの地すべてで全テーマ3:1以上、最低4.26）、focus時は2pxの`current_text`。
+   - `border`／`dialog_border`／`selected_background`は装飾の面とし、それだけで状態を表さない。
+   - `theme_tests`に「状態・境界・focusの線のroleと隣接色 ≥ 3:1（全テーマ）」を加える。満たさないテーマでは別の文字系トークンへ機械的に切り替える関数を正典に1つ置く。
+4. **押下は離した時に実行する。** 新規の既存capture経路（`folio_window.c`の`SetCapture`→矩形内`UP`で実行）を一般化し、
+   押された部品を1つの値で持ち、矩形内で離したときだけ実行し、外で離すかcaptureを失えば取り消す。
+   実行はキーボード・UIAと同じ`folio_window_accessible_action`を通し、経路を1本にする。Spaceも離した時に実行し、自動繰り返しは無視する。
+   押下で開く例外は「操作▾」だけ（メニューを押下で開くのがOSの慣例）。
+5. **表示名・UIA Name・AcceleratorKey・tooltipを1つの元から引く。** 表示名＝UIA名。字付き釦のtooltipはキーだけ、C様式は名前＋キー。
+   全操作部品にtooltipを付ける。検索欄のUIA Nameが空である点と、「キー操作を表示」釦のUIA名が「ヘルプ」である点を直す。
+   S群はTabで群に1回だけ止まり、矢印はfocusだけを動かし、Enter/Spaceで選ぶ（矢印で選択まで動かすと一覧経由で窓が縮む・閲覧で保存が走る）。
+   F6/Tabの区画巡回と、UIAのRadioButton/SelectionItemの構造は維持する。ADR0048の決定3（3択へのTab順の追加なし）とADR0059の決定3をこの形で補正する。
+6. **新しい面パス**: 保存・検索・ヘルプ「?」を`icon_paint`へ追加する。既存の語彙（面で塗る・太さ2・直角か45°・曲線は円だけ・evenodd）に従い、字形は使わない。
+7. **変えないもの**: theme schema、command catalogの意味と並び、保存モデル（明示保存＋Esc／ノート切替の保存）、vim風キー、3言語、3DPI、最小窓560×360と一覧のみ320、
+   新しいノートの位置とヘッダー高44、本文操作帯36と左端36（ADR0059）。新しいトークンは足さない。
+
+本ADRは部品体系と状態の規則（I-A）だけを固定する。本文操作帯の再配置・保存の主操作化・未保存印・ヘルプのヘッダー移動・空状態（I-B）、
+操作▾の中身と区切り・View/Readの文言（I-C）は、hideの確認後に別Issueと本ADRの補正節で固定する。
+owner-drawメニュー・既定カテゴリ色と`chip_background`の衝突・#32770ダイアログへの暗幕は別案件とする。
+
+## 強制と確認
+
+- active（維持）: enum網羅、文言表の3言語網羅、閉じたコマンド、format/tidy/conformance、`theme_tests`の文字系4.5:1。
+- active（本Issueで追加）: `theme_tests`の「線のrole／隣接色 ≥ 3:1」の全テーマ検査。
+- 不能: 見た目・実OSのhover/capture/focus・DPIの一般保証。完成候補でDebug/tidy・theme_tests・文言unitと、隔離Win32 fixtureでの
+  geometry／hover／press-release-cancel／focus／tooltip／UIAの対象確認、3DPI×3言語×3表示の画像を品質記録へ残す。
+  既存の保存・RTF・検索性能の試験は再実行しない。最終headのフルゲートは必須CIに集約する。schema・依存・ゲート変更なし。Waivers: none。
+
+## 結果
+
+14要素が3様式＋選択群のどれかに属し、同じ高さ・同じ状態表現・同じ実行契約（離した時に実行）を持つ。
+focusと境界は全テーマで3:1以上を機械で守る。押し間違いは離す前に取り消せる。tooltipとUIA名が表示名と一致する。
+部品の高さが揃うぶん、新規（32→28）と札（24→28）の見た目が変わる。
+
+## 却下した選択肢
+
+- 全部を字だけにする: 狭幅で「字を落として絵を残す」規則が作れず、13aのようにノート内検索だけが消える問題が残る。
+- 常設のprimaryを置く（新しいノート）: 橙がヘッダー左上に常時灯り、未保存の合図（I-B）と競合する。
+- hoverの地を`border`で塗る: 15テーマで字のコントラストが4.5:1を割る。
+- focusを外白・内暗の二重枠にする: 1px外側の間隔と合わせて4pxになり28高の部品で太すぎる。単色でも文字系トークンなら全テーマで3:1を満たす。
+- 窓タイトルへ未保存の`*`を付ける: `tools/capture-window.ps1`と`post-keys.ps1`が題名の完全一致で窓を探すため、既存の測定道具が壊れる。
+- 角丸4px（Windows 11風）: 縁の平滑化を前提にしないと段が出る。採るなら全部品同時の別判断。
+- 新トークン`control_border`の追加: `header_text`で全テーマ3:1を満たすため不要。
+
+## 参照
+
+- NN/g「Icon Usability」（2014）、Nielsen「10 Usability Heuristics」#4、Norman『The Design of Everyday Things』のシグニファイア
+- Microsoft Fluent 2「Button」（primaryは1レイアウトに1つ）、WinUI「Command bar」「Buttons」、「Keyboard accelerators」
+- W3C WCAG 2.1 1.4.3 / 1.4.11 / 2.5.2 / 2.5.3、Microsoft「About Tooltip Controls」
+- 文献の全一覧と確認度: `D:/NeNeFolio/agents/ui-consistency-20261018/research/literature.md`

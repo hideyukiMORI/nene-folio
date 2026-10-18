@@ -383,13 +383,30 @@ static void property_boolean(const struct accessible_view *_Nonnull view, PROPER
     }
 }
 
+/* 文字列の性質。AcceleratorKey は持つ部品だけが答え、無ければ既定（空）に任せる。 */
+static const char16_t *_Nullable property_text(const struct accessible_view *_Nonnull view,
+                                               PROPERTYID id)
+{
+    if (id == UIA_NamePropertyId)
+    {
+        return view->name;
+    }
+    if (id == UIA_HelpTextPropertyId)
+    {
+        return view->help;
+    }
+    return id == UIA_AcceleratorKeyPropertyId && view->accelerator[0] != u'\0' ? view->accelerator
+                                                                               : nullptr;
+}
+
 static HRESULT property_value(const struct accessible_view *_Nonnull view, PROPERTYID id,
                               VARIANT *_Nonnull out)
 {
-    if (id == UIA_NamePropertyId || id == UIA_HelpTextPropertyId)
+    const char16_t *_Nullable text = property_text(view, id);
+    if (text != nullptr)
     {
         out->vt = VT_BSTR;
-        out->bstrVal = SysAllocString(id == UIA_NamePropertyId ? view->name : view->help);
+        out->bstrVal = SysAllocString(text);
         return out->bstrVal == nullptr ? E_OUTOFMEMORY : S_OK;
     }
     if (id == UIA_LiveSettingPropertyId)
