@@ -22,6 +22,7 @@
 #include "gdiplus_flat.h"
 #include "history_row_view.h"
 #include "icon_paint.h"
+#include "layout_metrics.h"
 #include "name_prompt.h"
 #include "note_name.h"
 #include "note_pane.h"
@@ -1868,12 +1869,6 @@ static RECT help_rect(const struct folio_window *_Nonnull self)
 /* 表示3択の区画と、群とヘルプ「?」の間（論理 px）。最小幅 560 以上は 56 と 16。より細い窓
  * （一覧のみ 320）では区画を 44 にし、新しいノート（絵だけ）の右端から群の左端までの移動領域 24
  * （ADR0059）が残らなければ 群間 16→8、それでも足りなければ 区画 44→40 の順に縮める（#349）。 */
-struct layout_metrics
-{
-    int width;
-    int gap;
-};
-
 static struct layout_metrics layout_metrics_for(const struct folio_window *_Nonnull self)
 {
     RECT client;
