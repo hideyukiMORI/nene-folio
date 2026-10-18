@@ -1072,8 +1072,8 @@ static bool field_focus_changed(const struct name_prompt *_Nonnull prompt, WPARA
     return name || category;
 }
 
-/* WS_BORDER を外した名前欄（箱の内側）と一覧（外側）に入力欄の枠を描く（draw_filter_frame と同じ ui_part の 1
- * 本・ ADR 0035 の補正 17 を ADR0060 の決定 3 で置き換えた）。 */
+/* WS_BORDER を外した名前欄（箱の内側）と一覧（外側）に入力欄の枠を描く（draw_filter_frame と同じ
+ * ui_part の 1 本・ ADR 0035 の補正 17 を ADR0060 の決定 3 で置き換えた）。 */
 static void paint_frame(const struct name_prompt *_Nonnull prompt)
 {
     PAINTSTRUCT paint;
