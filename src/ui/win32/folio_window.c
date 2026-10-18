@@ -3707,10 +3707,12 @@ static void blit_window(struct folio_window *_Nonnull self, HDC target, RECT cli
 
 /* 帯の有無と桁数で本文の左端が変わっていたら、配り直す（ADR 0026 の決定 6）。
  * 描画の途中で窓を動かさないので、意図は 1 通のメッセージにして次の回で受ける。
- * 契機を 1 か所に保つため、描く矩形が空でも毎回の WM_PAINT で確かめる。 */
+ * 契機を 1 か所に保つため、描く矩形が空でも毎回の WM_PAINT で確かめる。
+ * 本文を置くかは arrange と同じ body_shown で決める。隠した本文は配り直しても動かないので、
+ * 空状態で比べると WM_PAINT と配り直しが互いを呼び続ける（#356）。 */
 static void check_pane_inset(const struct folio_window *_Nonnull self)
 {
-    if (self->pane == nullptr || !pane_visible(self))
+    if (self->pane == nullptr || !body_shown(self))
     {
         return;
     }
