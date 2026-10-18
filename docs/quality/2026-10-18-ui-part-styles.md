@@ -3,7 +3,7 @@
 2026-10-18、hideが明示した分担（設計=Fable席、実装/調査/テスト=Opus席）に基づく実装席の記録。
 Issue: [#348](https://github.com/hideyukiMORI/nene-folio/issues/348)。設計の正本は [ADR0060](../adr/0060-ui-part-styles-and-state-rule.md)。
 規則: ARC-001/004/011、C-002/008/012/017/018、QLT-008/011/012/013、GIT-001〜004。基点 main 7233647。
-恒久証跡: `D:/NeNeFolio/agents/348-ui-parts/`（final/ が3言語の matrix、final-head/ が実装コミットの exe での ja の対象確認の再実行、run1〜4・hoverprobe・uiaprobe* は途中診断）。
+恒久証跡: `D:/NeNeFolio/agents/348-ui-parts/`（final/ が3言語の matrix、final-head2/ が最終の C 差分（カテゴリ＋の tooltip を含む）の exe での ja の対象確認の再実行、run1〜4・hoverprobe・uiaprobe* は途中診断）。
 schema・依存・ゲート・閾値の変更なし。新しい theme トークンなし。Waivers: none。
 
 ## 変更境界
@@ -40,9 +40,9 @@ hide の稼働プロセスとデータには触れていない。データは合
   F6 の巡回は 本文 → 新規 → 検索欄 → 選択中の札。Tab は表示3択に1回だけ止まり（選択中の「両方」）、次は設定。
   →で focus だけが「ノート」へ移り選択は「両方」のまま、Enter で選ぶ。Space は押下では実行せず離した時に1回だけ実行。
   自動繰り返しの Enter・Space は無視。本文操作列も同じく札の群を1回で抜けて保存へ進む。
-- tooltip: TTM_ENUMTOOLS / TTM_GETTEXT で製品の TTN_GETDISPINFO を通して読んだ。12部品すべてに登録があり矩形は描画と一致。
+- tooltip: TTM_ENUMTOOLS / TTM_GETTEXT で製品の TTN_GETDISPINFO を通して読んだ。主窓の12部品とドロワーのカテゴリ＋に登録があり矩形は描画と一致。
   字付きはキーだけ（Ctrl+N・Ctrl+Shift+1〜3・Ctrl+S・F1・Ctrl+F）、一覧は「窓を細くします。」を添え、キーの無い字付きは補足（保存して閲覧・本文の編集を始める・このノートの操作）、
-  絵だけは名前＋キー（閉じる / Alt+F4、設定を開く）。
+  絵だけは名前＋キー（閉じる / Alt+F4、設定を開く、新しいカテゴリ）。
 - UIA: 部品の Name は表示名と一致し、AcceleratorKey を公開（例 新しいノート=Ctrl+N、一覧=Ctrl+Shift+1、閉じる=Alt+F4）。
   ヘルプ面の釦の名前は描いた字と同じ「キー操作を表示」→ Tab 後「キー操作を閉じる」。
 

@@ -8068,11 +8068,43 @@ static void refresh_tooltip_style(const struct folio_window *_Nonnull self)
     }
 }
 
+/* ドロワーのカテゴリ＋（C 様式）の tool。名前は UIA と同じ表から引き、矩形はドロワーの client
+ * 座標。 文言を固定で渡すので、言語と配置が変わるたびに描き直しの経路から写し直す。 */
+static TOOLINFOW drawer_tool(const struct folio_window *_Nonnull self, char16_t *_Nonnull text)
+{
+    HWND drawer = self->drawer == nullptr ? nullptr : drawer_window_handle(self->drawer);
+    TOOLINFOW tool = {.cbSize = tooltip_info_size,
+                      .uFlags = TTF_SUBCLASS,
+                      .hwnd = drawer,
+                      .uId = ACCESSIBLE_NEW_CATEGORY,
+                      .lpszText = (wchar_t *)text};
+    text[0] = u'\0';
+    (void)wide_units(ui_text_line(accessible_controls[ACCESSIBLE_NEW_CATEGORY].label,
+                                  folio_state_language(self->state)),
+                     text);
+    struct accessible_item item = {.kind = ACCESSIBLE_NEW_CATEGORY};
+    struct accessible_view view = {0};
+    if (drawer != nullptr && drawer_visible(self) &&
+        SUCCEEDED(drawer_window_accessible_read(self->drawer, &item, &view)))
+    {
+        tool.rect = view.bounds;
+        MapWindowPoints(nullptr, drawer, (POINT *)&tool.rect, 2);
+    }
+    return tool;
+}
+
 static void refresh_tooltip_rects(const struct folio_window *_Nonnull self)
 {
     if (self->tooltip == nullptr)
     {
         return;
+    }
+    char16_t text[draw_unit_limit];
+    TOOLINFOW drawer = drawer_tool(self, text);
+    if (drawer.hwnd != nullptr)
+    {
+        SendMessageW(self->tooltip, TTM_NEWTOOLRECTW, 0, (LPARAM)&drawer);
+        SendMessageW(self->tooltip, TTM_UPDATETIPTEXTW, 0, (LPARAM)&drawer);
     }
     SendMessageW(self->tooltip, TTM_POP, 0, 0);
     for (size_t index = 0; index < main_part_count(); ++index)
@@ -8113,6 +8145,12 @@ static bool create_tooltip(struct folio_window *_Nonnull self)
         {
             return false;
         }
+    }
+    char16_t text[draw_unit_limit];
+    TOOLINFOW drawer = drawer_tool(self, text);
+    if (drawer.hwnd == nullptr || !SendMessageW(self->tooltip, TTM_ADDTOOLW, 0, (LPARAM)&drawer))
+    {
+        return false;
     }
     refresh_tooltip_style(self);
     activate_tooltip(self);
