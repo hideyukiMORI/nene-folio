@@ -60,10 +60,26 @@ UIA の通知は native の `IUIAutomation5::AddNotificationEventHandler` を使
 **全ノート検索の EDIT は実デスクトップでも native UIA（UIAutomationCore）が ControlType Pane・Name 空で返した。** 隔離デスクトップだけの現象ではない。
 MSAA の名前は I-A の記録どおり入っている。原因の調査と修正は本 Issue では行っていない（設計席へ送付）。
 
+## 独立レビュー後の修正（H1・M1・M2・L1・L3・L5）
+
+設計席の独立レビューの指摘を同じ枝で直した。`check.ps1` は 55e9dd2 で exit 0（`check-4.log`、分岐網羅 93.23%）。
+対象確認は `D:/NeNeFolio/agents/349-action-bar/review-final/`（製品の exe・SHA256 C291B9BB…5C72）と `review-probe*/`（一時の計装版）。成功済みで無関係な確認は再実行していない。
+
+- H1: 未保存の合図は core の `theme_contrast_unsaved`（役割 `THEME_LINE_UNSAVED`、地は window / pane）が chip_background→selected_background の順に 3:1 以上の塗りを選び、
+  どちらも届かないテーマでは同じ線の色で 2px の枠・字・丸を描く。`theme_tests` に全テーマの「合図 対 window / pane ≥ 3:1」「選んだ塗りと字 ≥ 4.5:1」「chip が届くテーマは chip のまま」
+  「cobalt2 / tokyo-night-light は chip 以外」を足した。fixture では cobalt2 と tokyo-night-light の両方で保存釦が枠（cobalt2 は #FFFFFF、tokyo-night-light は #343B59）、丸も同じ色、既定テーマは従来どおり #E95420 の塗り。
+  B の focus の地は選んだ塗り（塗らないテーマでは window / pane）にした。
+- M1: 通知は md を書いた世代の前進だけで出し、本文を評価できない回は世代を持ち越す。名前付きの dirty のまま Ctrl+N で無題を開くと、離脱の保存で通知が 1 回出た（既定・cobalt2・tokyo-night-light）。
+- M2: 本文の比較は EN_CHANGE の印・保存の世代・文書・mode の変化があるときだけ行う。一時の計装版（比較の回数を窓の property へ書く。ソースは戻し製品に含めない）で、
+  編集に入った後の比較 1 回に対し、→×5・↓×1 の後も 1 回のまま、1 字入力で 2 回になった。
+- L1: ノートのみで文書が無いとき、表示切替の復帰と root へ戻った focus の正規化の両方で新しいノートへ focus と印を置く。索引に focus がある状態からパレットの「ノートのみ表示」で切り替えると新しいノートに focus、F6 でも新しいノートに戻る。
+- L3: 名前入力のカテゴリ一覧も箱の内側の枠（`dialog_theme_field`）にし、外側の枠の経路（`ui_part_frame_field` / `dialog_theme_frame`）を消した。対話は WS_CLIPCHILDREN を持たないので子の矩形を除いて塗る。
+- L5: ToolBar の日本語名を「本文の操作帯」にした（Group「ノートの操作」と区別。英語・中国語は元から別名）。
+
 ## 未測定・限界
 
 - 実カーソルの hover・物理キー・ナレーターの読み上げ（通知が実際に読まれるか）、96 DPI、ハイコントラスト実機は確かめていない。
 - 選択中の項目に focus が乗ると下辺の棒が focus 枠の下辺と重なって見える。設計席が規則内として受理済み。
-- 保存の状態は本文の変更ごとに名前付きの編集本文を写して比べる（入力の合流点で 1 回）。巨大なノートでの打鍵の遅れは測っていない。
+- 保存の状態は EN_CHANGE の後の合流点で名前付きの編集本文を写して比べる。巨大なノートでの打鍵の遅れは測っていない（設計席の指示で測定不要）。
 - 変更の無い Ctrl+S（md を書かない保存）では通知を出さない（保存の世代が進まないため）。
 - I-A で成功済みの押下・capture・focus 規則の対象確認は、入力の経路を変えていないので再実行していない。既存の保存・RTF・検索性能の試験も再実行していない。
