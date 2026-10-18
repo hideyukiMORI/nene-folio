@@ -186,3 +186,18 @@ zの25%以上、aaaaabの50%以上という事前条件を満たした。各欄�
 全件一致をparent-performance-verification.jsonに保存した。旧1k記録にcomplete fieldはないが、生31行の順序から完結を確認している。
 元の不採用/中断rawと理由も保持し、成功群を再実行していない。Debug sanitizerのメモリ内core factory比較に限る。
 最終headの必須CI・main統合・通常exe反映はこの時点では未完了。対象検証と独立レビューは製品入力が不変なので再利用する。
+
+## 統合・通常exe・完了記録（15:10）
+
+PR #332の最終head b4e3ffcea1aff70be44cdf132127273cc5ebaf13で[CI run 39102770310](https://github.com/hideyukiMORI/nene-folio/actions/runs/39102770310)のfull-gate/checkが成功。
+CIは正典pwsh -NoProfile -File ./eng/check.ps1を実行した。Draft時のskip/failureと初回Readyのcancelを通過と見なさず、統合ツールのReady再送後の成功を受理した。
+tools/merge-pr.ps1 -Number 332でd65dcdc3f92df9961ea16d848a08f9093d2c24b4へsquash統合し、mainをff、Issue #331 CLOSEDを確認した。
+tools/prepare-real-machine.ps1もexit 0。nenefolioの変更1object・lib・exeの3工程だけを増分buildし、通常exeは15:08:29更新、4,264,448 bytes。
+SHA256はee0474c508a73583d576e0c81387feb0d5c023309e9abd30f24e6b26e938d02d。UIの追加実測をしたとは扱わない。
+
+親が実装643件/97,042,497 bytesと性能341件/126,543,355 bytesを再読hash照合し、不一致0。
+性能outputs 2,584件/214,904,069 bytesは元ファイル・ZIP内byteとも一致。整理前の全outputsは2,910件/284,362,460 bytes。
+絶対パス・統合・通常反映・未追跡/ignored・唯一成果物・リンク・稼働参照を確認したが、D:/NeNeFolio/outputs/331-filter-matchingの削除は自動承認審査がblocked by policyで実行前に拒否した。
+詳細理由は返らず、そのまま保持する。再試行や別手段による回避はしていない。作業木は完了記録の収載後に整理し、枝とcommitは保持する。
+最終文書PRのCI・統合・整理結果はD:/NeNeFolio/agents/331-filter-matching/completion.jsonに記録する。
+文書のみの完了記録では製品・対象試験・性能を再実行せず、必須CIだけを正典で通す。schema/依存/ゲート変更なし、Waivers: none。
