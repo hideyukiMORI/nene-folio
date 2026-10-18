@@ -7,6 +7,7 @@
 
 struct note_corpus
 {
+    /* 宛先はカテゴリ名、ノート名の strcmp 順で厳密昇順。台帳の表示順は持たない。 */
     char *_Nullable *_Nullable categories;         /* 写しごとのカテゴリ名 */
     char *_Nullable *_Nullable notes;              /* 同じ数のノート名 */
     struct note_text *_Nullable *_Nullable bodies; /* 同じ数の本文 */
@@ -37,19 +38,48 @@ static char *_Nullable duplicate(const char *_Nonnull name)
     return copy;
 }
 
+static int compare(const struct note_corpus *_Nonnull corpus, size_t index,
+                   const char *_Nonnull category, const char *_Nonnull note)
+{
+    int category_order = strcmp(corpus->categories[index], category);
+    return category_order == 0 ? strcmp(corpus->notes[index], note) : category_order;
+}
+
+/* その宛先以上の最初の位置。無ければ count。 */
+static size_t lower_bound(const struct note_corpus *_Nonnull corpus, const char *_Nonnull category,
+                          const char *_Nonnull note)
+{
+    size_t low = 0;
+    size_t high = corpus->count;
+    while (low < high)
+    {
+        size_t middle = low + (high - low) / 2;
+        bool earlier = compare(corpus, middle, category, note) < 0;
+        low = earlier ? middle + 1 : low;
+        high = earlier ? high : middle;
+    }
+    return low;
+}
+
 /* その宛先の写しの番号。無ければ count。 */
 static size_t locate(const struct note_corpus *_Nonnull corpus, const char *_Nonnull category,
                      const char *_Nonnull note)
 {
-    for (size_t index = 0; index < corpus->count; ++index)
+    size_t index = lower_bound(corpus, category, note);
+    return index < corpus->count && compare(corpus, index, category, note) == 0 ? index
+                                                                                : corpus->count;
+}
+
+/* 3 配列の対応を保って位置だけを移す。本文そのものは動かさない。 */
+static void shift(struct note_corpus *_Nonnull corpus, size_t to, size_t from, size_t count)
+{
+    if (count == 0)
     {
-        if (strcmp(corpus->categories[index], category) == 0 &&
-            strcmp(corpus->notes[index], note) == 0)
-        {
-            return index;
-        }
+        return;
     }
-    return corpus->count;
+    memmove(corpus->categories + to, corpus->categories + from, count * sizeof *corpus->categories);
+    memmove(corpus->notes + to, corpus->notes + from, count * sizeof *corpus->notes);
+    memmove(corpus->bodies + to, corpus->bodies + from, count * sizeof *corpus->bodies);
 }
 
 static bool reserve(struct note_corpus *_Nonnull corpus)
@@ -83,7 +113,7 @@ static bool reserve(struct note_corpus *_Nonnull corpus)
     return true;
 }
 
-/* index の写しを捨て、最後の写しを穴へ移す。index が count 以上なら何もしない。 */
+/* index の写しを捨て、後続を詰めて宛先順を保つ。index が count 以上なら何もしない。 */
 static void discard(struct note_corpus *_Nonnull corpus, size_t index)
 {
     if (index >= corpus->count)
@@ -94,9 +124,7 @@ static void discard(struct note_corpus *_Nonnull corpus, size_t index)
     free(corpus->notes[index]);
     note_text_destroy(corpus->bodies[index]);
     corpus->count -= 1;
-    corpus->categories[index] = corpus->categories[corpus->count];
-    corpus->notes[index] = corpus->notes[corpus->count];
-    corpus->bodies[index] = corpus->bodies[corpus->count];
+    shift(corpus, index, index + 1, corpus->count - index);
 }
 
 void note_corpus_remove(struct note_corpus *_Nonnull corpus, const char *_Nonnull category,
@@ -117,10 +145,22 @@ static enum note_corpus_outcome rekey(struct note_corpus *_Nonnull corpus, size_
         free(right);
         return NOTE_CORPUS_OUT_OF_MEMORY;
     }
+    size_t destination = lower_bound(corpus, category, note);
+    destination -= index < destination ? 1 : 0;
+    struct note_text *_Nonnull body = corpus->bodies[index];
     free(corpus->categories[index]);
     free(corpus->notes[index]);
-    corpus->categories[index] = left;
-    corpus->notes[index] = right;
+    if (destination < index)
+    {
+        shift(corpus, destination + 1, destination, index - destination);
+    }
+    if (destination > index)
+    {
+        shift(corpus, index, index + 1, destination - index);
+    }
+    corpus->categories[destination] = left;
+    corpus->notes[destination] = right;
+    corpus->bodies[destination] = body;
     return NOTE_CORPUS_ACCEPTED;
 }
 
@@ -138,9 +178,11 @@ static enum note_corpus_outcome append(struct note_corpus *_Nonnull corpus,
         note_text_destroy(body);
         return NOTE_CORPUS_OUT_OF_MEMORY;
     }
-    corpus->categories[corpus->count] = left;
-    corpus->notes[corpus->count] = right;
-    corpus->bodies[corpus->count] = body;
+    size_t index = lower_bound(corpus, category, note);
+    shift(corpus, index + 1, index, corpus->count - index);
+    corpus->categories[index] = left;
+    corpus->notes[index] = right;
+    corpus->bodies[index] = body;
     corpus->count += 1;
     return NOTE_CORPUS_ACCEPTED;
 }

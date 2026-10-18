@@ -1,16 +1,16 @@
 # いまのタスク — NeNe Folio
 
-記録日: 2026-10-18。hideの「残ってる対応を進めて」に基づく#321はPR #325でmainへ統合済み（54634b6）。
-最終head 40f500fの必須CIが成功し、通常exeを00:24に更新した。#321はCLOSED。
-00:24の照合時点でOpen Issue/PRは0件。ここでは完了結果と残留物だけを同期する。
-後から読む際は実Issue/PRと`D:/NeNeFolio/agents/321-accessible-surfaces/completion.json`を照合する。
+記録日: 2026-10-18。hideの「対応を始めて」に基づき、[#328](https://github.com/hideyukiMORI/nene-folio/issues/328)の全ノート絞り込み性能を改善中。
+基点mainは9db5d2b。本文の写しを毎回先頭から探す経路を、同じnote_corpus内の宛先順配列と二分探索へ置き換える。
+検索意味・台帳順・保存・公開API・schema・依存・ゲートは維持する。設計と受理条件は[品質記録](../quality/2026-10-18-filter-lookup-checks.md)。
 
-設定/テーマ・コマンド/ヘルプ/履歴・検索/置換・通知は同じUIA hostと既存操作へ接続した。
-native226+3+18項目、対象unit、実NVDAの発話を確認済み。[品質記録](../quality/2026-10-18-accessible-surfaces-checkpoint.md)とADR0058を参照。
-schema・外部runtime・ゲート変更なし。Waivers: none。公開Releaseは対象外。
+作業木はD:/NeNeFolio/worktrees/328-filter-lookup、枝はfix/328-filter-lookup。
+恒久証跡はD:/NeNeFolio/agents/328-filter-lookup/、仮出力はD:/NeNeFolio/outputs/328-filter-lookup/。
+今回のhide指定によりAstraが設計・判断・受理、SOLが実装/対象検証と外部性能比較、LUNAが現況/計測資産調査を担当する。
+対象build/tidy・filter/application・確保失敗試験は成功、独立レビューに修正要求なし。
+性能比較、最終head必須CI、main/通常exe反映、専用作業物整理は未完了。Waivers: none。
 
-旧42作業木と#321実装作業木は証跡収載・hash照合後に整理済み。枝とcommitは保持。
-残留は#319のChrome参照中DLL2個、#320と#321の自動承認審査で削除を拒否された仮出力。
-対象はD:/NeNeFolio/outputs/320-system-high-contrastと321-accessible-surfaces。拒否理由はblocked by policyのみ。
-新しい許可/環境変化なしに別手段で回避せず、Chromeをこの目的で終了しない。
-最終の稼働参照/整理結果と再開条件は[引き継ぎ](../handoffs/2026-10-18.md)とcompletion.jsonを参照する。
+#321までの対応は統合済み。旧42作業木も整理済みで再作成しない。
+#319の使用中だったDLL2個と#320/#321の削除を拒否された仮出力は、今回の整理対象へ混ぜない。
+前件の確定結果・残留物・再開条件は[引き継ぎ](../handoffs/2026-10-18.md)と
+D:/NeNeFolio/agents/321-accessible-surfaces/completion.jsonを参照する。

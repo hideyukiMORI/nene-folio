@@ -14,6 +14,7 @@
 #include "line_index.h"
 #include "markdown_rtf.h"
 #include "name_list.h"
+#include "note_corpus.h"
 #include "note_ledger.h"
 #include "note_name.h"
 #include "note_replace.h"
@@ -1191,6 +1192,125 @@ static bool probe_active(void)
     return outcome == NAME_LIST_OUT_OF_MEMORY;
 }
 
+static struct note_corpus *_Nonnull corpus_fixture(const struct note_text *_Nonnull text)
+{
+    struct note_corpus *corpus = nullptr;
+    require(note_corpus_create(&corpus) == NOTE_CORPUS_ACCEPTED, "allocation corpus");
+    require(note_corpus_put(corpus, "C", "last", text) == NOTE_CORPUS_ACCEPTED &&
+                note_corpus_put(corpus, "B", "two", text) == NOTE_CORPUS_ACCEPTED &&
+                note_corpus_put(corpus, "A", "one", text) == NOTE_CORPUS_ACCEPTED &&
+                note_corpus_put(corpus, "B", "one", text) == NOTE_CORPUS_ACCEPTED,
+            "four destinations fill the initial capacity in interleaved order");
+    return corpus;
+}
+
+static enum note_corpus_outcome mutate_corpus(struct note_corpus *_Nonnull corpus,
+                                              const struct note_text *_Nonnull text,
+                                              size_t scenario)
+{
+    if (scenario == 0)
+    {
+        return note_corpus_put(corpus, "A", "middle", text);
+    }
+    if (scenario == 1)
+    {
+        return note_corpus_put(corpus, "B", "one", text);
+    }
+    if (scenario == 2)
+    {
+        return note_corpus_rename(corpus, "B", "one", "aaa");
+    }
+    if (scenario == 3)
+    {
+        return note_corpus_rename(corpus, "B", "one", "two");
+    }
+    return note_corpus_relocate(corpus, "B", "one", "A");
+}
+
+static void verify_failed_corpus(const struct note_corpus *_Nonnull corpus, size_t scenario,
+                                 const struct note_text *_Nonnull held)
+{
+    require(note_corpus_body(corpus, "B", "one") == held &&
+                same_text(note_text_bytes(held), "kept") &&
+                same_text(note_text_bytes(note_corpus_body(corpus, "C", "last")), "kept"),
+            "failed growth, replacement or rekey retains the old source and unrelated body");
+    const struct note_text *rename_target = note_corpus_body(corpus, "B", "two");
+    const struct note_text *move_target = note_corpus_body(corpus, "A", "one");
+    require((scenario == 3 ? rename_target == nullptr : rename_target != nullptr) &&
+                (scenario == 4 ? move_target == nullptr : move_target != nullptr),
+            "a stale rekey target is discarded before name allocation, as before");
+    require(note_corpus_body(corpus, "A", "middle") == nullptr &&
+                note_corpus_body(corpus, "B", "aaa") == nullptr,
+            "failed additions and renamed destinations stay absent");
+}
+
+static void verify_completed_corpus(const struct note_corpus *_Nonnull corpus, size_t scenario,
+                                    const struct note_text *_Nullable held)
+{
+    static const char *const categories[] = {"A", "B", "B", "B", "A"};
+    static const char *const notes[] = {"middle", "one", "aaa", "two", "one"};
+    const struct note_text *body = note_corpus_body(corpus, categories[scenario], notes[scenario]);
+    require(body != nullptr && same_text(note_text_bytes(body), scenario < 2 ? "changed" : "kept"),
+            "the completed operation and an OOM retry publish the intended body");
+    if (scenario >= 2)
+    {
+        require(body == held && note_corpus_body(corpus, "B", "one") == nullptr,
+                "rekey retry preserves body identity and removes the source name");
+    }
+    require(same_text(note_text_bytes(note_corpus_body(corpus, "C", "last")), "kept"),
+            "the untouched tail remains reachable after success or retry");
+}
+
+static void verify_corpus_allocation_case(size_t scenario, const struct note_text *_Nonnull kept,
+                                          const struct note_text *_Nonnull changed)
+{
+    for (size_t nth = 1; nth < 16; ++nth)
+    {
+        struct note_corpus *corpus = corpus_fixture(kept);
+        const struct note_text *held = note_corpus_body(corpus, "B", "one");
+        allocation_probe_fail_at(nth);
+        enum note_corpus_outcome outcome = mutate_corpus(corpus, changed, scenario);
+        allocation_probe_fail_at(0);
+        require(outcome == NOTE_CORPUS_ACCEPTED || outcome == NOTE_CORPUS_OUT_OF_MEMORY,
+                "a corpus mutation either succeeds or reports OOM");
+        if (outcome == NOTE_CORPUS_OUT_OF_MEMORY)
+        {
+            verify_failed_corpus(corpus, scenario, held);
+            require(mutate_corpus(corpus, changed, scenario) == NOTE_CORPUS_ACCEPTED,
+                    "retry uses the retained sorted corpus after an allocation failure");
+        }
+        verify_completed_corpus(corpus, scenario, scenario < 2 ? nullptr : held);
+        note_corpus_destroy(corpus);
+        if (outcome == NOTE_CORPUS_ACCEPTED)
+        {
+            printf("corpus allocation scenario %zu: %zu failed points, then complete\n", scenario,
+                   nth - 1);
+            return;
+        }
+    }
+    require(false, "every corpus allocation point was exhausted");
+}
+
+void run_corpus_allocation_tests(void)
+{
+    if (!probe_active())
+    {
+        printf("corpus allocation probe inactive in the canonical build\n");
+        return;
+    }
+    struct note_text *kept = nullptr;
+    struct note_text *changed = nullptr;
+    require(note_text_create("kept", 4, &kept) == NOTE_TEXT_ACCEPTED &&
+                note_text_create("changed", 7, &changed) == NOTE_TEXT_ACCEPTED,
+            "corpus allocation bodies");
+    for (size_t scenario = 0; scenario < 5; ++scenario)
+    {
+        verify_corpus_allocation_case(scenario, kept, changed);
+    }
+    note_text_destroy(kept);
+    note_text_destroy(changed);
+}
+
 static void verify_bom_allocation(enum note_text_outcome outcome,
                                   const struct note_text *_Nonnull sentinel,
                                   struct note_text *_Nonnull out)
@@ -1271,6 +1391,7 @@ void run_allocation_tests(void)
     exhaust(trash_scenario, "trash scenario never completed");
     exhaust(remove_category_scenario, "remove category scenario never completed");
     exhaust(removed_filter_scenario, "removed filter scenario never completed");
+    run_corpus_allocation_tests();
 }
 
 void run_rename_allocation_tests(void)
