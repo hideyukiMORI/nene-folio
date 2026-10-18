@@ -1,13 +1,15 @@
 # いまのタスク — NeNe Folio
 
-記録日: 2026-10-18。[#328](https://github.com/hideyukiMORI/nene-folio/issues/328)の機能対応は完了。
-[PR #329](https://github.com/hideyukiMORI/nene-folio/pull/329)を最終head必須CI成功後にmainへ統合し、通常exeへ反映した。
-現在の機能タスクはない。実測・制約は[品質記録](../quality/2026-10-18-filter-lookup-checks.md)、経緯と再開条件は[引き継ぎ](../handoffs/2026-10-18.md)。
+記録日: 2026-10-18。hideの「それに着手して」を受け、[#331](https://github.com/hideyukiMORI/nene-folio/issues/331)の本文部分一致を改善中。
+基点mainは85e8beb。#328の宛先探索改善後に残った、index_filterの反復比較を対象とする。
+検索語ごとに固定長の移動表を作り、既存の名前/本文検索の一経路で使う。ASCIIのみ大小同一、明示長、失敗時の採用済み状態を維持する。
 
-恒久証跡と完了記録・作業木整理の最終結果はD:/NeNeFolio/agents/328-filter-lookup/completion.jsonを参照する。
-一時出力D:/NeNeFolio/outputs/328-filter-lookup/とD:/NeNeFolio/outputs/filter-lookup-planning-20261018/は、
-自動承認審査が削除を`blocked by policy`で拒否したため保持。詳細理由は返らず、別手段で回避しない。
-#319の使用中だったDLL2個と#320/#321の削除を拒否された仮出力も今回触っていない。旧42作業木を未完了と誤認して再作成しない。
+完成候補は対象build/filter/application/OOM試験・規約検査が成功し、独立レビューに修正要求なし。
+全16条件で入力/結果一致・回帰条件を達成し、性能受理とした。10,000件のzは531.333→329.921ms（37.907%短縮）、aaaaabは1096.857→259.008ms（76.386%短縮）。
+[PR #332](https://github.com/hideyukiMORI/nene-folio/pull/332)の最終head必須CI、統合、通常exe反映、専用作業物整理を進める。
+実装証跡643件は恒久収載・hash照合済み。外部負荷と重なったrunも保持する。
+受理条件・実測は[品質記録](../quality/2026-10-18-filter-matching-checks.md)、再開の入口は[引き継ぎ](../handoffs/2026-10-18.md)。
+作業木D:/NeNeFolio/worktrees/331-filter-matching、恒久証跡D:/NeNeFolio/agents/331-filter-matching/。
 
-次の作業はその時点のhide指示、正本、実Issue/PRとcheckoutを照合して判断する。
 成功済み検証は関係入力が不変なら再利用する。schema・依存・ゲート変更なし、Waivers: none。
+旧#319/#320/#321/#328の残留物は前件の記録に従って保持し、今回の整理へ混ぜない。

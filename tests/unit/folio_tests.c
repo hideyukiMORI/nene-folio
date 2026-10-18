@@ -157,6 +157,7 @@ static bool run_filter_target_tests(const char *_Nonnull argument)
     }
     if (strcmp(argument, "--filter-lookup-oom") == 0)
     {
+        run_filter_allocation_tests();
         run_corpus_allocation_tests();
         run_index_cache_retry_allocation_tests();
         printf("filter corpus allocation and cache retry tests passed\n");

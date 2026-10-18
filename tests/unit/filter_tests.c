@@ -117,6 +117,103 @@ static void verify_rejections(void)
     require(index_filter_create(&longer, &filter) == INDEX_FILTER_ACCEPTED,
             "a term longer than every text still builds a set");
     require(index_filter_count(filter) == 0, "with nothing in it");
+    struct index_filter *held = filter;
+    require(index_filter_create(&empty, &filter) == INDEX_FILTER_NO_TERM && filter == held &&
+                index_filter_create(&broken, &filter) == INDEX_FILTER_MALFORMED && filter == held &&
+                index_filter_count(held) == 0,
+            "empty and malformed terms also leave an existing output untouched");
+    index_filter_destroy(filter);
+}
+
+/* #331: 単一 byte、最後の候補、skip 後、重なり、密な prefix と逆向きを公開 factory で確かめる。 */
+static void verify_match_boundaries(void)
+{
+    static const char *const terms[] = {
+        "z",      "z",      "Z",      "a",      "abc", "abc", "abab",  "aab",   "ababc", "baaaaa",
+        "baaaaa", "aaaaab", "aaaaab", "aaaaaa", "bab", "aba", "aabaa", "aabaa", "abca",  "["};
+    static const char *const bodies[] = {
+        "",      "zz",      "abZ",      "aaa",        "xabc",         "zzabc",     "xxabab",
+        "aaab",  "abababc", "aaaaaaaa", "aaaabaaaaa", "aaaaaaaaaaaa", "aaaaaaaab", "aaaaaa",
+        "abbab", "ababa",   "xxaabaax", "aaaabaa",    "acaaabca",     "{"};
+    static const bool expected[] = {false, true,  true, true, true, true, true, true, true, false,
+                                    true,  false, true, true, true, true, true, true, true, false};
+    for (size_t index = 0; index < sizeof terms / sizeof terms[0]; ++index)
+    {
+        const struct index_filter_entry entry = entry_of(at(0, 0), "_", bodies[index]);
+        struct index_filter *filter = filter_of(terms[index], &entry, 1);
+        require(filter != nullptr && index_filter_note(filter, entry.ref) == expected[index] &&
+                    index_filter_count(filter) == (expected[index] ? 1U : 0U),
+                "candidate selection preserves single-byte, overlap and tail-boundary results");
+        index_filter_destroy(filter);
+    }
+}
+
+static void verify_match_utf8(void)
+{
+    static const char *const terms[] = {"猫a犬", "猫a犬", "😀a猫", "😀a猫", "é", "É", "é", "が"};
+    static const char *const bodies[] = {"前猫A犬後",    "前猫A狗後",     "前😀A猫後",
+                                         "前😁A猫後",    "café",          "café",
+                                         "cafe\xCC\x81", "か\xE3\x82\x99"};
+    static const bool expected[] = {true, false, true, false, true, false, false, false};
+    for (size_t index = 0; index < sizeof terms / sizeof terms[0]; ++index)
+    {
+        const struct index_filter_entry entry = entry_of(at(0, 0), "_", bodies[index]);
+        struct index_filter *filter = filter_of(terms[index], &entry, 1);
+        require(filter != nullptr && index_filter_note(filter, entry.ref) == expected[index],
+                "ASCII folding coexists with exact Japanese, four-byte and combining bytes");
+        index_filter_destroy(filter);
+    }
+}
+
+static void verify_byte_sources(void)
+{
+    const struct index_filter_entry entries[] = {
+        entry_of(at(0, 0), "Z", ""), entry_of(at(0, 1), "_", "prefix z"),
+        entry_of(at(0, 2), "z", nullptr), entry_of(at(0, 3), "_", "none"),
+        entry_of(at(0, 4), "[", "")};
+    struct index_filter *filter = filter_of("z", entries, 5);
+    require(filter != nullptr && index_filter_count(filter) == 2 &&
+                index_filter_note(filter, at(0, 0)) && index_filter_note(filter, at(0, 1)) &&
+                !index_filter_note(filter, at(0, 2)) && !index_filter_note(filter, at(0, 3)),
+            "one-byte matching uses both name and body while preserving missing-body rejection");
+    index_filter_destroy(filter);
+    filter = filter_of("[", entries, 5);
+    require(filter != nullptr && index_filter_count(filter) == 1 &&
+                index_filter_note(filter, at(0, 4)),
+            "a one-byte term with one raw spelling matches an empty-body note by name");
+    index_filter_destroy(filter);
+}
+
+/* 語にも本文にも終端を要求しない。明示長の先の不正 byte や一致候補を読まない（#331）。 */
+static void verify_match_spans(void)
+{
+    const char term[] = {'A', 'b', (char)0xFF};
+    const char body[] = {'x', 'a', 'B'};
+    struct index_filter_entry entry = {.ref = at(0, 0), .name = "_", .body = body, .length = 3};
+    struct index_filter_query query = {
+        .term = term, .term_length = 2, .entries = &entry, .count = 1};
+    struct index_filter *filter = nullptr;
+    require(index_filter_create(&query, &filter) == INDEX_FILTER_ACCEPTED &&
+                index_filter_note(filter, entry.ref),
+            "an unterminated term matches at the last byte of an unterminated body");
+    index_filter_destroy(filter);
+    entry.length = 2;
+    require(index_filter_create(&query, &filter) == INDEX_FILTER_ACCEPTED &&
+                index_filter_count(filter) == 0,
+            "a body byte beyond its declared length cannot complete a match");
+    index_filter_destroy(filter);
+    entry.length = 0;
+    require(index_filter_create(&query, &filter) == INDEX_FILTER_ACCEPTED &&
+                index_filter_count(filter) == 0,
+            "a nonnull empty body has no match");
+    index_filter_destroy(filter);
+    const char nul[] = {'\0'};
+    query.term = nul;
+    query.term_length = 1;
+    entry.length = 3;
+    require(index_filter_create(&query, &filter) == INDEX_FILTER_ACCEPTED &&
+                index_filter_count(filter) == 0,
+            "a one-byte NUL term is length-delimited rather than treated as an empty term");
     index_filter_destroy(filter);
 }
 
@@ -510,6 +607,10 @@ void run_filter_tests(void)
     verify_sources();
     verify_rejections();
     verify_lengths();
+    verify_match_boundaries();
+    verify_match_utf8();
+    verify_byte_sources();
+    verify_match_spans();
     verify_order();
     verify_layout();
     verify_corpus();
