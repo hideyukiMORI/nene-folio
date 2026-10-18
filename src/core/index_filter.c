@@ -6,6 +6,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+constexpr size_t byte_values = 256;
+
 /* 不変条件: (categories[i], notes[i]) は i の昇順に厳密に増える（ADR 0024 の補正 6）。
  * 入力の列が台帳の順（カテゴリ番号・ノート番号の昇順）で来るので、作るときに並べ替えは要らない。
  * 所属の判定はこの順序に依る二分探索で、配置を作り直すたびの走査を対数にする。 */
@@ -30,25 +32,83 @@ static bool matches_at(const char *_Nonnull text, const char *_Nonnull term, siz
     return true;
 }
 
-/* text のどこかに語があるか。語が本文より長ければ無い。
- * 打鍵ごとに全本文を走るので、頭の 1 バイトが合う位置だけを比べに行く。 */
-static bool contains(const char *_Nonnull text, size_t length, const char *_Nonnull term,
-                     size_t term_length)
+/* 語の末尾以外の右端出現位置から移動量を作る。末尾と同じ byte は 0 で完全確認へ送る。
+ * 最後に raw byte 全体を唯一の ASCII fold へ写し、本文走査では fold 呼出しを避ける（#331）。 */
+static void prepare_steps(const struct index_filter_query *_Nonnull query, size_t *_Nonnull steps)
 {
-    if (term_length > length)
+    for (size_t byte = 0; byte < byte_values; ++byte)
     {
-        return false;
+        steps[byte] = query->term_length;
     }
-    char head = ascii_fold_byte(term[0]);
-    size_t limit = length - term_length + 1;
-    for (size_t at = 0; at < limit; ++at)
+    for (size_t index = 0; index < query->term_length - 1; ++index)
     {
-        if (ascii_fold_byte(text[at]) == head && matches_at(text, term, term_length, at))
+        steps[(unsigned char)ascii_fold_byte(query->term[index])] = query->term_length - 1 - index;
+    }
+    steps[(unsigned char)ascii_fold_byte(query->term[query->term_length - 1])] = 0;
+    for (size_t byte = 0; byte < byte_values; ++byte)
+    {
+        steps[byte] = steps[(unsigned char)ascii_fold_byte((char)byte)];
+    }
+}
+
+/* 1 byte の語と同じ raw byte を、既存の表の 0 から問い合わせごとに一度だけ取り出す（#331）。 */
+static void prepare_bytes(const struct index_filter_query *_Nonnull query,
+                          const size_t *_Nonnull steps, char *_Nonnull matches)
+{
+    matches[0] = query->term[0];
+    matches[1] = query->term[0];
+    if (query->term_length != 1)
+    {
+        return;
+    }
+    for (size_t byte = 0; byte < byte_values; ++byte)
+    {
+        if (steps[byte] == 0 && (char)byte != matches[0])
+        {
+            matches[1] = (char)byte;
+        }
+    }
+}
+
+static bool contains_byte(char first, char second, const char *_Nonnull text, size_t length)
+{
+    for (size_t at = 0; at < length; ++at)
+    {
+        char byte = text[at];
+        if (byte == first || byte == second)
         {
             return true;
         }
     }
     return false;
+}
+
+/* 正の移動量の間には、現在の末尾 byte を置ける語の位置がない。末尾一致後は 1 byte だけ進む。
+ * 先頭も選別して逆向きの密な候補を避けるが、完全比較の最悪 O(n*m) は残る。 */
+static bool contains(const struct index_filter_query *_Nonnull query, const size_t *_Nonnull steps,
+                     const char *_Nonnull text, size_t length)
+{
+    if (query->term_length > length)
+    {
+        return false;
+    }
+    char head = ascii_fold_byte(query->term[0]);
+    size_t last_start = length - query->term_length;
+    for (size_t at = 0;;)
+    {
+        size_t step = steps[(unsigned char)text[at + query->term_length - 1]];
+        if (step == 0 && ascii_fold_byte(text[at]) == head &&
+            matches_at(text, query->term, query->term_length, at))
+        {
+            return true;
+        }
+        step = step == 0 ? 1 : step;
+        if (step > last_start - at)
+        {
+            return false;
+        }
+        at += step;
+    }
 }
 
 /* 整形式の UTF-8 か（語だけを確かめる。名前と本文は境界で検証済み）。 */
@@ -70,14 +130,20 @@ static bool well_formed(const char *_Nonnull bytes, size_t length)
 
 /* このノートが見えるか。本文の写しが無ければ名前によらず見えない（決定 1）。 */
 static bool visible(const struct index_filter_query *_Nonnull query,
-                    const struct index_filter_entry *_Nonnull entry)
+                    const struct index_filter_entry *_Nonnull entry, const size_t *_Nonnull steps,
+                    const char *_Nonnull byte_matches)
 {
     if (entry->body == nullptr)
     {
         return false;
     }
-    return contains(entry->name, strlen(entry->name), query->term, query->term_length) ||
-           contains(entry->body, entry->length, query->term, query->term_length);
+    if (query->term_length == 1)
+    {
+        return contains_byte(byte_matches[0], byte_matches[1], entry->name, strlen(entry->name)) ||
+               contains_byte(byte_matches[0], byte_matches[1], entry->body, entry->length);
+    }
+    return contains(query, steps, entry->name, strlen(entry->name)) ||
+           contains(query, steps, entry->body, entry->length);
 }
 
 static void admit(struct index_filter *_Nonnull filter, struct note_ref ref)
@@ -98,6 +164,10 @@ enum index_filter_outcome index_filter_create(const struct index_filter_query *_
     {
         return INDEX_FILTER_MALFORMED;
     }
+    size_t steps[byte_values];
+    prepare_steps(query, steps);
+    char byte_matches[2];
+    prepare_bytes(query, steps, byte_matches);
     struct index_filter *_Nullable filter = calloc(1, sizeof *filter);
     if (filter == nullptr)
     {
@@ -113,7 +183,7 @@ enum index_filter_outcome index_filter_create(const struct index_filter_query *_
     }
     for (size_t index = 0; index < query->count; ++index)
     {
-        if (visible(query, &query->entries[index]))
+        if (visible(query, &query->entries[index], steps, byte_matches))
         {
             admit(filter, query->entries[index].ref);
         }

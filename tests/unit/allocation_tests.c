@@ -1192,6 +1192,53 @@ static bool probe_active(void)
     return outcome == NAME_LIST_OUT_OF_MEMORY;
 }
 
+static bool verify_filter_factory_allocation(size_t nth)
+{
+    const struct index_filter_entry entry = {
+        .ref = {.category = 3, .note = 7}, .name = "_", .body = "aaaaaa", .length = 6};
+    struct index_filter_query query = {
+        .term = "aaaaaa", .term_length = 6, .entries = &entry, .count = 1};
+    struct index_filter *held = nullptr;
+    require(index_filter_create(&query, &held) == INDEX_FILTER_ACCEPTED,
+            "hold a nonempty filter before injected factory allocation failure");
+    query.term = "aaaaab";
+    struct index_filter *out = held;
+    allocation_probe_fail_at(nth);
+    enum index_filter_outcome outcome = index_filter_create(&query, &out);
+    allocation_probe_fail_at(0);
+    require(outcome == INDEX_FILTER_ACCEPTED || outcome == INDEX_FILTER_OUT_OF_MEMORY,
+            "a valid filter query either builds or reports OOM");
+    if (outcome == INDEX_FILTER_OUT_OF_MEMORY)
+    {
+        require(out == held, "factory OOM leaves a nonnull output untouched");
+        require(index_filter_create(&query, &out) == INDEX_FILTER_ACCEPTED,
+                "the same query can be retried after factory OOM");
+    }
+    require(out != held && index_filter_count(out) == 0 && index_filter_count(held) == 1 &&
+                index_filter_note(held, entry.ref),
+            "success or retry builds an empty set without changing the previous match set");
+    index_filter_destroy(out);
+    index_filter_destroy(held);
+    return outcome == INDEX_FILTER_ACCEPTED;
+}
+
+void run_filter_allocation_tests(void)
+{
+    if (!probe_active())
+    {
+        return;
+    }
+    for (size_t nth = 1; nth < 16; ++nth)
+    {
+        if (verify_filter_factory_allocation(nth))
+        {
+            printf("filter factory allocation: %zu failed points, then complete\n", nth - 1);
+            return;
+        }
+    }
+    require(false, "every filter factory allocation point was exhausted");
+}
+
 static struct note_corpus *_Nonnull corpus_fixture(const struct note_text *_Nonnull text)
 {
     struct note_corpus *corpus = nullptr;
@@ -1391,6 +1438,7 @@ void run_allocation_tests(void)
     exhaust(trash_scenario, "trash scenario never completed");
     exhaust(remove_category_scenario, "remove category scenario never completed");
     exhaust(removed_filter_scenario, "removed filter scenario never completed");
+    run_filter_allocation_tests();
     run_corpus_allocation_tests();
 }
 
