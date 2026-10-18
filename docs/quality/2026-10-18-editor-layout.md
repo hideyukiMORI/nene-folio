@@ -19,7 +19,7 @@ EDITを実フォント高さで中央へ置き、placeholderはEM_GETRECT、左�
 
 ## 対象検証
 
-- `cmake --preset dev` と `cmake --build build --target nenefolio`: 成功。最終UI追加後の増分buildも成功。Debug ASan/UBSan/nullabilityと既定clang-tidyを維持。
+- `cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug` と `cmake --build build --target nenefolio`: 成功。最終UI追加後の増分buildも成功。Debug ASan/UBSan/nullabilityと既定clang-tidyを維持。
 - `cmake --build build --target folio_tests` と `./build/folio_tests.exe --markdown-rtf`: exit 0。編集の期待RTFだけ更新し、既存の閲覧/往復検証を利用。
 - 外部 `build-probe.py <repo> <build> <output>`: 実compile_commandsの全flags・4製品lib・resourceを利用。ソースを緩和せず、実Win32の専用desktopで実行。
 - `NativeDesktopPerf.Run`: final1/extra ともexit 0、前景HWND不変。hideの稼働アプリ・編集中データは操作していない。
@@ -34,6 +34,9 @@ source-inputs.jsonに成功時の関係入力hashを保存し、push/統合時�
 ## 失敗と限界
 
 初回probeはTOM SetRangeのS_FALSEを誤って失敗扱いし、成功判定をSUCCEEDEDへ修正。
+初回CIはapplicationのUNTITLED編集RTFに残っていた旧段落書式の期待値で失敗した。Draftへ戻し、該当期待値だけを更新する。
+更新後の`cmake --build build --target folio_tests`と`folio_tests.exe --pane-load`はexit 0。
+統合ツールが自動開始した同一headの再試行は取消し、修正後の最終headで必須CIを実行する。
 同名ログへの再実行はCreateNewで拒否され、新しいラベルで実行した。最初のbuild対象名とprobeのenum名の誤記も修正した。
 初回normalと一部言語切替直後のPrintWindow画像は未変更部が欠落し、全画面の受理には使わなかった。
 後続の完全な日本語通常/DPI/最小画像とnative値で確認。英中はplaceholderの文字領域の確認に限定する。

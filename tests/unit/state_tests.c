@@ -4999,7 +4999,7 @@ static void verify_pane_edit_rtf(void)
             "new untitled in A");
     require(folio_state_pane_edit_rtf(state) == FOLIO_STATE_READY, "edit rtf of the untitled");
     require(same_text(edit_rtf_tail(folio_state_edit_rtf(state)),
-                      "\\pard\\sa160\\sl300\\slmult1\\cf1 \\par }"),
+                      "\\pard\\sb0\\sa0\\sl240\\slmult1\\cf1 \\par }"),
             "the untitled edit rtf is empty");
     folio_state_destroy(state);
 }
