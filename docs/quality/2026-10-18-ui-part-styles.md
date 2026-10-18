@@ -18,8 +18,8 @@ schema・依存・ゲート・閾値の変更なし。新しい theme トーク�
 
 ## 完成時の対象検証
 
-- `pwsh -NoProfile -File ./eng/check.ps1`（作業木、実装コミット f055574）: exit 0、「NeNe Folio full gate passed」（`check-1.log`）。
-  この文書だけのコミットは C/H を変えない。最終 head のフルゲートは必須 CI に集約する。
+- `pwsh -NoProfile -File ./eng/check.ps1`（作業木）: f055574 で exit 0（`check-1.log`）、最終の C 差分 7dbcb96 で exit 0（`check-2.log`）。
+  どちらも「NeNe Folio full gate passed」。以後の文書だけのコミットは C/H を変えない。最終 head のフルゲートは必須 CI に集約する。
 - `folio_tests`: 既存に加え、`theme_tests` の「線の役割／隣接色 ≥ 3:1」を全127テーマ×7役割で検査（独立の pow の式で比を計算）。
   畳んだ sRGB 表と WCAG の式の一致（256値）、既定トークン維持・最初の合格トークンへの切替・どれも届かないときの最大比の3例を合成パレットで確認。
 - 文言 unit: 追加した tooltip/キーの9 ID を期待表へ足し、3言語の網羅は CNF-011 のまま。
