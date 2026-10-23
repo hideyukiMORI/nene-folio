@@ -3,6 +3,7 @@
 #ifndef NENEFOLIO_FAILURE_BOX_H
 #define NENEFOLIO_FAILURE_BOX_H
 
+#include "folio_command.h"
 #include "folio_state_outcome.h"
 
 #include <windows.h>
@@ -14,6 +15,7 @@ struct folio_state;
  * 自前のモーダルを組み立てられないときだけ MessageBoxW へ退避して必ず知らせる（補正 3）。
  * 箱の題は製品名なので翻訳しない（ADR 0032 の決定 7）。owner はトップレベルの窓（決定 6）。 */
 void failure_box_show(HWND _Nullable owner, enum folio_state_outcome outcome,
-                      const struct folio_state *_Nonnull state);
+                      const struct folio_state *_Nonnull state,
+                      const enum folio_command *_Nullable command);
 
 #endif

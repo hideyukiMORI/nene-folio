@@ -1,14 +1,16 @@
 /* 名前入力面と失敗の箱を palette で塗る唯一の経路（ADR 0035 の決定 2・ARC-001）。
  * comctl32 v5 のまま、WM_CTLCOLOR* のブラシ・owner-draw の釦と
- * コンボの項目・DWM の題の帯だけで塗る。palette は作る瞬間に写し、
+ * コンボの項目・clientの共通題で塗る。palette は作る瞬間に写し、
  * OS色通知でも採り直す（ADR0057）。ブラシの所有者はこの型 1 つで、
  * DialogBoxIndirectParamW が返った直後に destroy で捨てる（C-016 / C-017）。 */
 #ifndef NENEFOLIO_DIALOG_THEME_H
 #define NENEFOLIO_DIALOG_THEME_H
 
 #include "dialog_theme_button.h"
+#include "dialog_theme_control_outcome.h"
 #include "dialog_theme_outcome.h"
 #include "dialog_theme_surface.h"
+#include "folio_language.h"
 
 #include <windows.h>
 
@@ -39,7 +41,22 @@ void dialog_theme_draw_item(const struct dialog_theme *_Nonnull theme,
  * 0 なら 1px の静止枠。 */
 void dialog_theme_field(const struct dialog_theme *_Nonnull theme, HDC _Nonnull dc,
                         const RECT *_Nonnull rect, int focus);
-/* 題の帯を DWM で palette の地と字の色にする。 */
+/* NCの題を除去する面に、角丸なし・DWM枠なしとpaletteを要求する。 */
 void dialog_theme_decorate(const struct dialog_theme *_Nonnull theme, HWND _Nonnull dialog);
+
+/* NC結果はDWLP_MSGRESULTへ返す。閉鎖/IMEの可否は面の既存procedureが判断する。 */
+[[nodiscard]] bool dialog_theme_native_message(HWND _Nonnull dialog, UINT message, WPARAM wparam,
+                                               LPARAM lparam);
+[[nodiscard]] RECT dialog_theme_popup_bounds(HWND _Nullable owner, SIZE wanted_client);
+/* BUTTONのpointer表示だけを追跡する。dialog managerのkey/click/styleは変えない。 */
+[[nodiscard]] enum dialog_theme_control_outcome dialog_theme_track_button(HWND _Nonnull button);
+/* ×とowned標準tooltipを一緒に作る。失敗時は両方を破棄し*outをnullptrに保つ。 */
+[[nodiscard]] enum dialog_theme_control_outcome
+dialog_theme_create_close(HWND _Nonnull dialog, HFONT _Nonnull font, enum folio_language language,
+                          HWND _Nullable *_Nonnull out);
+void dialog_theme_draw_title(const struct dialog_theme *_Nonnull theme, HWND _Nonnull dialog,
+                             HDC _Nonnull device, HFONT _Nonnull font);
+void dialog_theme_draw_warning(const struct dialog_theme *_Nonnull theme, HDC _Nonnull device,
+                               RECT bounds);
 
 #endif

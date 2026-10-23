@@ -262,25 +262,25 @@ static void verify_line_roles(void)
     for (size_t index = 0; index < folio_theme_count(); ++index)
     {
         const struct theme_palette *_Nonnull palette = folio_theme_palette(folio_theme_at(index));
-        const struct rgb_color parts[] = {palette->window, palette->pane};
+        const struct rgb_color parts[] = {palette->window, palette->pane, palette->dialog_surface};
         const struct rgb_color outside[] = {palette->window, palette->pane,
                                             palette->dialog_surface};
         const struct rgb_color fields[] = {palette->window, palette->pane, palette->dialog_surface,
                                            palette->dialog_control};
-        line_meets(palette, THEME_LINE_HOVER, parts, 2);
+        line_meets(palette, THEME_LINE_HOVER, parts, 3);
         line_meets(palette, THEME_LINE_FOCUS, outside, 3);
-        line_meets(palette, THEME_LINE_FOCUS_ITEM, parts, 2);
+        line_meets(palette, THEME_LINE_FOCUS_ITEM, parts, 3);
         line_meets(palette, THEME_LINE_FOCUS_SELECTED, &palette->selected_background, 1);
         struct theme_unsaved unsaved = theme_contrast_unsaved(palette);
         line_meets(palette, THEME_LINE_FOCUS_PRIMARY, unsaved.filled ? &unsaved.fill : parts,
-                   unsaved.filled ? 1 : 2);
-        line_meets(palette, THEME_LINE_UNSAVED, parts, 2);
+                   unsaved.filled ? 1 : 3);
+        line_meets(palette, THEME_LINE_UNSAVED, parts, 3);
         line_meets(palette, THEME_LINE_FIELD, fields, 4);
         line_meets(palette, THEME_LINE_FIELD_FOCUS, fields, 4);
     }
 }
 
-/* 未保存の合図（ADR0060 の決定 8・#349）。塗りも塗らないときの線も window / pane に 3:1、
+/* B主操作の地（ADR0060 決定8/22）。塗りも線もwindow/pane/dialog_surfaceに3:1、
  * 塗りと字の対は 4.5:1。候補は chip_background → selected_background の順。正典とは独立に書く。 */
 static void verify_unsaved_signal(void)
 {
@@ -291,10 +291,12 @@ static void verify_unsaved_signal(void)
         const struct theme_palette *_Nonnull palette = folio_theme_palette(theme);
         struct theme_unsaved unsaved = theme_contrast_unsaved(palette);
         require(theme_contrast_ratio(unsaved.fill, palette->window) >= 3.0 &&
-                    theme_contrast_ratio(unsaved.fill, palette->pane) >= 3.0,
-                "the unsaved signal contrasts at least 3:1 with the window and the pane");
+                    theme_contrast_ratio(unsaved.fill, palette->pane) >= 3.0 &&
+                    theme_contrast_ratio(unsaved.fill, palette->dialog_surface) >= 3.0,
+                "the primary signal contrasts with all three surfaces where it is drawn");
         bool chip = theme_contrast_ratio(palette->chip_background, palette->window) >= 3.0 &&
-                    theme_contrast_ratio(palette->chip_background, palette->pane) >= 3.0;
+                    theme_contrast_ratio(palette->chip_background, palette->pane) >= 3.0 &&
+                    theme_contrast_ratio(palette->chip_background, palette->dialog_surface) >= 3.0;
         require(!chip || (unsaved.filled && same_color(unsaved.fill, palette->chip_background)),
                 "the chip background stays the unsaved fill wherever it already contrasts");
         if (unsaved.filled)

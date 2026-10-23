@@ -6,10 +6,11 @@
 
 enum dialog_theme_surface : unsigned char
 {
-    DIALOG_THEME_DIALOG, /* 面の地 */
-    DIALOG_THEME_LABEL,  /* STATIC の字 */
-    DIALOG_THEME_FIELD,  /* EDIT の中とコンボの閉じた面（無効なコンボの STATIC も） */
-    DIALOG_THEME_LIST    /* コンボのドロップダウンのリスト */
+    DIALOG_THEME_DIALOG,   /* 面の地 */
+    DIALOG_THEME_LABEL,    /* STATIC の字 */
+    DIALOG_THEME_FIELD,    /* EDIT の中とコンボの閉じた面（無効なコンボの STATIC も） */
+    DIALOG_THEME_LIST,     /* コンボのドロップダウンのリスト */
+    DIALOG_THEME_SECONDARY /* 面上の案内 */
 };
 
 #endif

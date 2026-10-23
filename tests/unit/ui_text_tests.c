@@ -208,7 +208,7 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_MENU_RENAME_NOTE] = "名前を変更…",
     [UI_TEXT_MENU_NEW_CATEGORY] = "新しいカテゴリ…",
     [UI_TEXT_MENU_NEW_NOTE_IN_CATEGORY] = "このカテゴリに新しいノート",
-    [UI_TEXT_HELP_PALETTE] = "一覧  ↑↓ 選択 / Enter 実行 / Esc 戻る / Tab 説明",
+    [UI_TEXT_HELP_PALETTE] = "一覧  ↑↓ 選択 / Enter 実行 / Esc 閉じる / Tab 説明",
     [UI_TEXT_HELP_EDITOR_MOTION] = "編集本文  Ctrl+h/j/k/l ←/↓/↑/→",
     [UI_TEXT_HELP_GLOBAL_KEYS] = "全区画  {name} ヘルプ / {from} 一覧 / {to} このノート内を検索",
     [UI_TEXT_HELP_GLOBAL_FILTER] = "全区画  {name} すべてのノートを検索（索引を絞り込む）",
@@ -293,7 +293,7 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_SETTINGS_IMMEDIATE] = "変更はすぐに反映",
     [UI_TEXT_SETTINGS_NUMBER_CHECK] = "行番号を表示",
     [UI_TEXT_SETTINGS_VERSION] = "版 {name}",
-    [UI_TEXT_HISTORY_GUIDANCE] = "1 が最新 / ↑↓ 選択 / Enter 戻す / Esc 戻る",
+    [UI_TEXT_HISTORY_GUIDANCE] = "1 が最新 / ↑↓ 選択 / Enter 戻す / Esc 閉じる",
     [UI_TEXT_HISTORY_ROW] = "{n}  {name}",
     [UI_TEXT_HISTORY_ROW_UNREADABLE] = "{n}  （読めません）",
     [UI_TEXT_APP_LOGO] = "NENE FOLIO",
@@ -303,7 +303,7 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_PROMPT_PENDING_RENAME] = "{from} → {to}",
     [UI_TEXT_PROMPT_TITLE_LEAVE] = "保存しますか",
     [UI_TEXT_PROMPT_HINT_LEAVE] =
-        "保存しないと、この内容は失われます。名前の末尾に .md を補います。",
+        "保存しますか。保存しないと内容は失われます。名前の末尾に .md を補います。",
     [UI_TEXT_PROMPT_DISCARD] = "保存しない(&D)",
     [UI_TEXT_PROMPT_TITLE_FIRST_SAVE] = "名前をつけて保存",
     [UI_TEXT_PROMPT_TITLE_SAVE_AS] = "別名で保存",
@@ -876,6 +876,8 @@ static void verify_action_bar_formats(void)
 /* 帯の件数は長い対象名を複製せず、箱とreadonly欄は語を欠落させない。 */
 static void verify_surface_formats(void)
 {
+    require(same_text(ui_text_line(UI_TEXT_ACCESSIBLE_PATTERN, FOLIO_LANGUAGE_EN), "Regex pattern"),
+            "the persistent replacement label explicitly says that the pattern is a regex");
     const char *const counts[] = {"12 件", "12 matches", "12 处"};
     const char *const categories[] = {"仕事（変更できません）", "仕事 (cannot be changed)",
                                       "仕事（无法更改）"};

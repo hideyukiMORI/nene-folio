@@ -157,7 +157,7 @@ static void draw_focus(HDC device, const struct folio_palette *_Nonnull palette,
         return;
     }
     int width = ui_part_focus_width(part->dpi);
-    if (part->grouped)
+    if (part->grouped || part->focus_inside)
     {
         frame(device, part_body(part), width, item_focus_color(palette, part));
         return;

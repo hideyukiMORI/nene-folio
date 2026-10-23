@@ -2655,7 +2655,7 @@ static void verify_rename_refusals(void)
     require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
             "select B / one");
     struct note_name *same = accepted_note_name("one.md");
-    require(folio_state_rename_note(state, same, u"", 0) == FOLIO_STATE_READY &&
+    require(folio_state_rename_note(state, same, u"", 0) == FOLIO_STATE_NAME_UNCHANGED &&
                 adapter.renames == 0,
             "the same name changes nothing");
     note_name_destroy(same);
@@ -2847,7 +2847,7 @@ static void verify_rename_pending(void)
                 same_text(folio_state_document_name(state), "新しい名前") &&
                 !folio_state_rename_pending(state, &pending),
             "the completed intent hands over the prepared ledger and drops the pending pair");
-    require(folio_state_rename_note(state, name, u"", 0) == FOLIO_STATE_READY &&
+    require(folio_state_rename_note(state, name, u"", 0) == FOLIO_STATE_NAME_UNCHANGED &&
                 adapter.renames == 12,
             "asking for the finished name again changes nothing");
     note_name_destroy(name);
@@ -5124,7 +5124,7 @@ static void verify_category_rename_refusals(void)
     require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
                 folio_state_begin_edit(state) == FOLIO_STATE_READY,
             "edit before refusals");
-    require(rename_category_to(state, 0, "B") == FOLIO_STATE_READY &&
+    require(rename_category_to(state, 0, "B") == FOLIO_STATE_NAME_UNCHANGED &&
                 rename_category_to(state, 0, "b") == FOLIO_STATE_CATEGORY_NAME_TAKEN &&
                 rename_category_to(state, 0, "A") == FOLIO_STATE_CATEGORY_NAME_TAKEN &&
                 rename_category_to(state, 9, "D") == FOLIO_STATE_NO_SUCH_CATEGORY,
@@ -6707,4 +6707,40 @@ void run_menu_availability_tests(void)
     require(folio_state_recolor_availability(state, 999) == FOLIO_STATE_NO_SUCH_CATEGORY,
             "stale color target is unavailable");
     folio_state_destroy(state);
+}
+
+/* #351: 完全同名は本文を保存しないが、先行同期の門は飛ばさない。 */
+static void verify_name_unchanged_note(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
+                folio_state_begin_edit(state) == FOLIO_STATE_READY,
+            "edit an existing note");
+    const char *body = folio_state_pane_text(state);
+    struct note_name *same = accepted_note_name("one.md");
+    require(folio_state_rename_note(state, same, u"unsaved", 7) == FOLIO_STATE_NAME_UNCHANGED &&
+                adapter.note_writes == 0 && adapter.archives == 0 && adapter.renames == 0 &&
+                adapter.creates == 0 && folio_state_pane_text(state) == body &&
+                folio_state_pane_mode(state) == PANE_MODE_EDIT,
+            "same note leaves unsaved editing and persistence untouched");
+    struct note_name *next = accepted_note_name("next");
+    adapter.rename_outcome = RENAME_PENDING;
+    require(folio_state_rename_note(state, next, u"unsaved", 7) == FOLIO_STATE_RENAME_PENDING,
+            "publish an unfinished rename");
+    size_t writes = adapter.note_writes, archives = adapter.archives, renames = adapter.renames;
+    require(folio_state_rename_note(state, same, u"later", 5) == FOLIO_STATE_RENAME_PENDING &&
+                adapter.renames == renames + 1 && adapter.last_attempt == RENAME_RESUME &&
+                adapter.note_writes == writes && adapter.archives == archives,
+            "prior synchronization precedes same-name rejection and never saves the later body");
+    note_name_destroy(next);
+    note_name_destroy(same);
+    folio_state_destroy(state);
+}
+
+void run_name_unchanged_state_tests(void)
+{
+    finder = test_regex_port();
+    verify_name_unchanged_note();
+    verify_category_rename_refusals();
 }

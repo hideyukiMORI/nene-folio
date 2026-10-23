@@ -221,7 +221,25 @@ static bool run_menu_target_tests(const char *_Nonnull argument)
     run_menu_availability_tests();
     printf("menu catalog, shortcut, text and availability tests passed\n");
     return true;
+}
+
+static bool run_surface_target_tests(const char *_Nonnull argument)
+{
+    if (strcmp(argument, "--surface-rules") != 0)
+        return false;
+    run_theme_tests();
+    run_ui_text_tests();
+    run_name_unchanged_state_tests();
+    printf("surface geometry text, theme contrast and unchanged-name tests passed\n");
     return true;
+}
+
+static bool run_selected_tests(const char *_Nonnull argument)
+{
+    return (run_surface_target_tests(argument) || run_menu_target_tests(argument) ||
+            run_size_overflow_target_tests(argument) || run_pane_load_target_tests(argument) ||
+            run_document_settings_target_tests(argument) || run_target_tests(argument) ||
+            run_filter_target_tests(argument));
 }
 
 int main(int argc, char *_Nonnull *_Nonnull argv)
@@ -231,10 +249,7 @@ int main(int argc, char *_Nonnull *_Nonnull argv)
         run_bom_boundary_tests();
         return 0;
     }
-    if (argc == 2 &&
-        (run_menu_target_tests(argv[1]) || run_size_overflow_target_tests(argv[1]) ||
-         run_pane_load_target_tests(argv[1]) || run_document_settings_target_tests(argv[1]) ||
-         run_target_tests(argv[1]) || run_filter_target_tests(argv[1])))
+    if (argc == 2 && run_selected_tests(argv[1]))
     {
         return 0;
     }

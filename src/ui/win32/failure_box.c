@@ -4,40 +4,30 @@
 #include "failure_box_outcome.h"
 #include "folio_palette.h"
 #include "folio_state.h"
-#include "icon_paint.h"
-#include "icon_paint_kind.h"
 #include "ui_face.h"
+#include "ui_part.h"
 #include "ui_text.h"
+#include "ui_text_request.h"
 #include "utf16_text.h"
 
-#include <string.h>
-
-/* 寸法は 96 DPI の論理値で、開く瞬間の DPI で拡げる（ADR 0035 の決定 4）。 */
-constexpr int box_margin = 20;
-constexpr int box_gap = 16;
-constexpr int box_line_limit = 480;
-constexpr int box_button_width = 88;
-constexpr int box_button_height = 28;
-constexpr int box_font_height = 14;
-/* 警告の印の箱は他の印と同じ 24px の正方形（ADR 0035 の補正 14）。 */
-constexpr int box_mark_size = 24;
-/* WM_INITDIALOG で面を組み立てられなかったことを EndDialog で返す値。
- * IDOK（閉じた）とも DialogBoxIndirectParamW の −1（面を作れなかった）とも重ならない。 */
 constexpr INT_PTR box_not_built = -2;
 
 struct failure_box
 {
     const char16_t *_Nonnull units;
     enum folio_language language;
-    const struct folio_state *_Nonnull state; /* 同期モーダルの間だけ借りる。 */
+    const struct folio_state *_Nonnull state;
     struct dialog_theme *_Nullable theme;
     HFONT _Nullable font;
     HWND _Nullable dialog;
+    HWND _Nullable body;
+    HWND _Nullable accept;
+    HWND _Nullable close;
     UINT dpi;
-    /* 警告の印の箱（client
-     * 座標）と色。通常はchip_background、高コントラストはwindow_text（ADR0057）。 */
     RECT mark;
-    COLORREF mark_color;
+    bool ready;
+    bool announced;
+    bool io_failure;
 };
 
 static const struct
@@ -47,148 +37,191 @@ static const struct
     WORD window_class;
     WORD title;
 } template = {
-    .dialog = {.style = WS_POPUP | WS_CAPTION | WS_SYSMENU | DS_MODALFRAME, .cx = 200, .cy = 80}};
+    .dialog = {.style = WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_CLIPCHILDREN, .cx = 200, .cy = 80}};
+
+/* 入力/前提/形式判定は無音。既存resultが束ねる読込・公開操作単位で分類する。 */
+static constexpr bool io_sounds[] = {
+    [FOLIO_STATE_READY] = false,
+    [FOLIO_STATE_DATA_UNREADABLE] = true,
+    [FOLIO_STATE_LEDGER_MALFORMED] = false,
+    [FOLIO_STATE_STORE_FAILED] = true,
+    [FOLIO_STATE_NO_SUCH_CATEGORY] = false,
+    [FOLIO_STATE_NO_SUCH_NOTE] = false,
+    [FOLIO_STATE_NOTE_UNREADABLE] = true,
+    [FOLIO_STATE_NOTHING_SELECTED] = false,
+    [FOLIO_STATE_NOT_EDITING] = false,
+    [FOLIO_STATE_NOTE_MALFORMED] = false,
+    [FOLIO_STATE_NOTE_TOO_LARGE] = false,
+    [FOLIO_STATE_NOTE_UNEDITABLE] = false,
+    [FOLIO_STATE_NOTE_STORE_FAILED] = true,
+    [FOLIO_STATE_HISTORY_FAILED] = true,
+    [FOLIO_STATE_UNSAVED_CHANGES] = false,
+    [FOLIO_STATE_NAME_TAKEN] = false,
+    [FOLIO_STATE_NAME_UNCHANGED] = false,
+    [FOLIO_STATE_LEDGER_STALE] = true,
+    [FOLIO_STATE_LEDGER_UNSYNCED] = true,
+    [FOLIO_STATE_RENAME_PENDING] = true,
+    [FOLIO_STATE_RENAME_UNLOCKED] = true,
+    [FOLIO_STATE_RENAME_UNSUPPORTED] = false,
+    [FOLIO_STATE_RENAME_IDENTITY_FAILED] = true,
+    [FOLIO_STATE_RENAME_JOURNAL_FAILED] = true,
+    [FOLIO_STATE_RENAME_JOURNAL_BROKEN] = false,
+    [FOLIO_STATE_RENAME_HALTED] = false,
+    [FOLIO_STATE_SEARCH_MALFORMED] = false,
+    [FOLIO_STATE_FILTERED] = false,
+    [FOLIO_STATE_SETTINGS_UNREADABLE] = true,
+    [FOLIO_STATE_SETTINGS_STORE_FAILED] = true,
+    [FOLIO_STATE_APPEARANCE_UNAVAILABLE] = false,
+    [FOLIO_STATE_PANE_UNAVAILABLE] = false,
+    [FOLIO_STATE_PANE_LOAD_FAILED] = false,
+    [FOLIO_STATE_PANE_RECOLOR_FAILED] = false,
+    [FOLIO_STATE_REPLACE_NO_PATTERN] = false,
+    [FOLIO_STATE_REPLACE_BAD_PATTERN] = false,
+    [FOLIO_STATE_REPLACE_BAD_TEMPLATE] = false,
+    [FOLIO_STATE_REPLACE_TIMED_OUT] = false,
+    [FOLIO_STATE_REPLACE_TOO_COMPLEX] = false,
+    [FOLIO_STATE_REPLACE_TOO_MANY] = false,
+    [FOLIO_STATE_REPLACE_TOO_LARGE] = false,
+    [FOLIO_STATE_REPLACE_STALE] = false,
+    [FOLIO_STATE_REPLACE_BAD_SPAN] = false,
+    [FOLIO_STATE_OUT_OF_MEMORY] = false,
+    [FOLIO_STATE_NAME_REQUIRED] = false,
+    [FOLIO_STATE_INVALID_NAME] = false,
+    [FOLIO_STATE_ALREADY_NAMED] = false,
+    [FOLIO_STATE_CANCELLED] = false,
+    [FOLIO_STATE_FONT_BUNDLE_UNAVAILABLE] = false,
+    [FOLIO_STATE_HISTORY_EMPTY] = false,
+    [FOLIO_STATE_HISTORY_UNREADABLE] = true,
+    [FOLIO_STATE_CATEGORY_NAME_INVALID] = false,
+    [FOLIO_STATE_CATEGORY_NAME_TAKEN] = false,
+    [FOLIO_STATE_CATEGORY_NOT_CREATED] = true,
+    [FOLIO_STATE_CATEGORY_LEDGER_STALE] = true,
+    [FOLIO_STATE_TRASH_UNAVAILABLE] = false,
+    [FOLIO_STATE_TRASH_BUSY] = true,
+    [FOLIO_STATE_TRASH_FAILED] = true,
+    [FOLIO_STATE_CATEGORY_NOT_EMPTY] = false,
+    [FOLIO_STATE_CATEGORY_HAS_FILES] = false,
+    [FOLIO_STATE_CATEGORY_HISTORY_NOT_RECYCLED] = true,
+    [FOLIO_STATE_CATEGORY_REMOVE_FAILED] = true,
+    [FOLIO_STATE_CATEGORY_NOT_SELECTED] = false,
+};
+
+static bool io_failure(enum folio_state_outcome outcome)
+{
+    return io_sounds[outcome];
+}
 
 static int scaled(const struct failure_box *_Nonnull box, int value)
 {
     return MulDiv(value, (int)box->dpi, 96);
 }
 
-/* 子を作って書体を渡す。置き場所は作った後に MoveWindow で決める（name_prompt と同じ）。 */
-static HWND _Nullable child(struct failure_box *_Nonnull box, const wchar_t *_Nonnull kind,
-                            const wchar_t *_Nonnull text, DWORD style)
-{
-    HWND window = CreateWindowExW(0, kind, text, WS_CHILD | WS_VISIBLE | style, 0, 0, 0, 0,
-                                  box->dialog, nullptr, GetModuleHandleW(nullptr), nullptr);
-    if (window != nullptr)
-    {
-        SendMessageW(window, WM_SETFONT, (WPARAM)box->font, TRUE);
-    }
-    return window;
-}
-
-static void position(HWND _Nonnull window, RECT bounds)
+static void position(HWND window, RECT bounds)
 {
     MoveWindow(window, bounds.left, bounds.top, bounds.right - bounds.left,
                bounds.bottom - bounds.top, TRUE);
 }
 
-/* 本文の矩形（物理画素）。幅は min(480 − 印 − 隙間, 1 行で測った幅) に下限（釦 ＋ 余白 2 つ）、
- * 高さはその幅で折り返して測る（ADR 0035 の決定 4・補正 14）。line は 1 行の高さ。 */
-static bool measure_body(const struct failure_box *_Nonnull box, SIZE *_Nonnull out,
-                         int *_Nonnull line_height)
+static bool make_font(struct failure_box *_Nonnull box)
 {
-    HDC device = GetDC(box->dialog);
-    if (device == nullptr)
-    {
+    wchar_t face[LF_FACESIZE];
+    ui_face_for(box->language, face);
+    HFONT font = CreateFontW(-scaled(box, 14), 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+                             DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+                             CLEARTYPE_QUALITY, DEFAULT_PITCH, face);
+    if (font == nullptr)
         return false;
-    }
-    HGDIOBJ old_font = SelectObject(device, box->font);
-    RECT line = {0, 0, 0, 0};
-    DrawTextW(device, box->units, -1, &line, DT_CALCRECT | DT_SINGLELINE | DT_NOPREFIX);
-    int floor = scaled(box, box_button_width + 2 * box_margin);
-    int limit = scaled(box, box_line_limit - box_mark_size - box_gap);
-    int measured = (int)(line.right - line.left);
-    int width = measured < limit ? measured : limit;
-    width = width < floor ? floor : width;
-    RECT wrapped = {0, 0, width, 0};
-    DrawTextW(device, box->units, -1, &wrapped, DT_CALCRECT | DT_WORDBREAK | DT_NOPREFIX);
-    SelectObject(device, old_font);
-    ReleaseDC(box->dialog, device);
-    /* 切れない長い語は DT_CALCRECT が右へ拡げるので、その幅を採る。 */
-    int spread = (int)(wrapped.right - wrapped.left);
-    out->cx = spread > width ? spread : width;
-    out->cy = wrapped.bottom - wrapped.top;
-    *line_height = line.bottom - line.top;
+    HFONT previous = box->font;
+    box->font = font;
+    for (HWND child = GetWindow(box->dialog, GW_CHILD); child != nullptr;
+         child = GetWindow(child, GW_HWNDNEXT))
+        SendMessageW(child, WM_SETFONT, (WPARAM)font, FALSE);
+    if (previous != nullptr)
+        DeleteObject(previous);
     return true;
 }
 
-/* owner の中央に置く。owner が無ければ窓のある画面の作業領域の中央。 */
-static RECT center_of(HWND _Nonnull dialog)
+static bool make_controls(struct failure_box *_Nonnull box)
 {
-    RECT area = {0, 0, 0, 0};
-    HWND owner = GetWindow(dialog, GW_OWNER);
-    if (owner != nullptr && GetWindowRect(owner, &area))
-    {
-        return area;
-    }
-    MONITORINFO monitor = {.cbSize = sizeof monitor};
-    if (GetMonitorInfoW(MonitorFromWindow(dialog, MONITOR_DEFAULTTOPRIMARY), &monitor))
-    {
-        area = monitor.rcWork;
-    }
-    return area;
-}
-
-static void place(const struct failure_box *_Nonnull box, SIZE client)
-{
-    RECT bounds = {0, 0, client.cx, client.cy};
-    DWORD style = (DWORD)GetWindowLongPtrW(box->dialog, GWL_STYLE);
-    AdjustWindowRectExForDpi(&bounds, style, FALSE, 0, box->dpi);
-    RECT area = center_of(box->dialog);
-    int width = bounds.right - bounds.left;
-    int height = bounds.bottom - bounds.top;
-    MoveWindow(box->dialog, (area.left + area.right - width) / 2,
-               (area.top + area.bottom - height) / 2, width, height, FALSE);
-}
-
-static bool make_font(struct failure_box *_Nonnull box)
-{
-    /* 面はモーダルなので、言語は開く瞬間に決まる（ADR 0032 の決定 4）。 */
-    wchar_t face[LF_FACESIZE];
-    ui_face_for(box->language, face);
-    box->font = CreateFontW(-scaled(box, box_font_height), 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
-                            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-                            CLEARTYPE_QUALITY, DEFAULT_PITCH, face);
-    return box->font != nullptr;
-}
-
-/* 本文と釦を作り、面を本文に合わせる。釦の字は ui_text の表から写す（C-018）。 */
-static bool lay_out(struct failure_box *_Nonnull box)
-{
-    SIZE body;
-    int line_height = 0;
-    if (!measure_body(box, &body, &line_height))
-    {
-        return false;
-    }
-    int margin = scaled(box, box_margin);
-    int gap = scaled(box, box_gap);
-    int mark = scaled(box, box_mark_size);
-    int button_width = scaled(box, box_button_width);
-    int button_height = scaled(box, box_button_height);
-    /* 印は本文の左に隙間を空けて置き、本文の 1 行目の高さの中央に揃える（補正 14）。 */
-    int mark_top = margin + (line_height - mark) / 2;
-    box->mark = (RECT){margin, mark_top, margin + mark, mark_top + mark};
-    int text_left = margin + mark + gap;
-    int content_bottom = margin + body.cy;
-    content_bottom = content_bottom < box->mark.bottom ? box->mark.bottom : content_bottom;
-    SIZE client = {text_left + body.cx + margin, content_bottom + gap + button_height + margin};
-    place(box, client);
-    HWND text = child(box, L"STATIC", box->units, SS_LEFT | SS_NOPREFIX);
-    if (text == nullptr)
-    {
-        return false;
-    }
-    position(text, (RECT){text_left, margin, text_left + body.cx, margin + body.cy});
+    box->body = CreateWindowExW(
+        0, L"EDIT", box->units,
+        WS_CHILD | WS_VISIBLE | ES_READONLY | ES_MULTILINE | ES_AUTOVSCROLL | WS_VSCROLL, 0, 0, 0,
+        0, box->dialog, nullptr, GetModuleHandleW(nullptr), nullptr);
     char16_t label[ui_text_unit_limit];
     size_t written = 0;
-    if (utf16_text_fill(ui_text_line(UI_TEXT_PROMPT_OK, box->language), label, ui_text_unit_limit,
-                        &written) != UTF16_TEXT_FILL_READY)
-    {
+    if (utf16_text_fill(ui_text_line(UI_TEXT_TOOLTIP_CLOSE, box->language), label,
+                        ui_text_unit_limit, &written) != UTF16_TEXT_FILL_READY)
         return false;
-    }
-    int right = client.cx - margin;
-    int bottom = client.cy - margin;
-    /* 押し釦は WM_CTLCOLORBTN では塗れないので owner-draw にする（ADR 0035 の決定 3・4）。 */
-    HWND accept = child(box, L"BUTTON", label, WS_TABSTOP | BS_OWNERDRAW);
-    if (accept == nullptr)
-    {
+    box->accept = CreateWindowExW(
+        0, L"BUTTON", label, WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW, 0, 0, 0, 0,
+        box->dialog, (HMENU)(INT_PTR)IDOK, GetModuleHandleW(nullptr), nullptr);
+    if (box->body == nullptr || box->accept == nullptr ||
+        dialog_theme_track_button(box->accept) != DIALOG_THEME_CONTROL_READY ||
+        dialog_theme_create_close(box->dialog, box->font, box->language, &box->close) !=
+            DIALOG_THEME_CONTROL_READY)
         return false;
-    }
-    position(accept, (RECT){right - button_width, bottom - button_height, right, bottom});
-    SetWindowLongPtrW(accept, GWLP_ID, IDOK);
-    SetFocus(accept);
+    SendMessageW(box->body, WM_SETFONT, (WPARAM)box->font, FALSE);
+    SendMessageW(box->body, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, 0);
+    SendMessageW(box->accept, WM_SETFONT, (WPARAM)box->font, FALSE);
+    return true;
+}
+
+static int measured_height(const struct failure_box *_Nonnull box, int width)
+{
+    HDC device = GetDC(box->dialog);
+    if (device == nullptr)
+        return 0;
+    HGDIOBJ previous = SelectObject(device, box->font);
+    RECT bounds = {0, 0, width, 0};
+    DrawTextW(device, box->units, -1, &bounds,
+              DT_CALCRECT | DT_WORDBREAK | DT_NOPREFIX | DT_EXPANDTABS);
+    SelectObject(device, previous);
+    ReleaseDC(box->dialog, device);
+    return bounds.bottom;
+}
+
+static SIZE maximum_size(const struct failure_box *_Nonnull box, HWND anchor)
+{
+    HWND owner = GetWindow(box->dialog, GW_OWNER);
+    RECT parent = {0, 0, scaled(box, 560), scaled(box, 360)};
+    if (owner != nullptr)
+        GetClientRect(owner, &parent);
+    RECT bounds = dialog_theme_popup_bounds(
+        anchor, (SIZE){scaled(box, 480), parent.bottom - scaled(box, 32)});
+    return (SIZE){bounds.right - bounds.left, bounds.bottom - bounds.top};
+}
+
+static void place_controls(struct failure_box *_Nonnull box, SIZE size, int height)
+{
+    int edge = scaled(box, 16);
+    int top = scaled(box, 60);
+    box->mark = (RECT){edge, top, edge + scaled(box, 24), top + scaled(box, 24)};
+    position(box->body, (RECT){scaled(box, 48), top, size.cx - edge, top + height});
+    int bottom = size.cy - edge;
+    position(box->accept, (RECT){size.cx - edge - scaled(box, 88), bottom - scaled(box, 28),
+                                 size.cx - edge, bottom});
+    position(box->close,
+             ui_part_surface_rect((RECT){0, 0, size.cx, size.cy}, box->dpi, UI_PART_SURFACE_CLOSE));
+}
+
+static bool lay_out(struct failure_box *_Nonnull box, HWND anchor)
+{
+    SIZE size = maximum_size(box, anchor);
+    int room = size.cy - scaled(box, 120);
+    int wanted = measured_height(box, size.cx - scaled(box, 64));
+    if (room <= 0 || wanted <= 0)
+        return false;
+    int height = wanted < room ? wanted : room;
+    height = height < scaled(box, 24) ? scaled(box, 24) : height;
+    size.cy = scaled(box, 120) + height;
+    RECT bounds = dialog_theme_popup_bounds(anchor, size);
+    position(box->dialog, bounds);
+    bool scrolling = wanted > height;
+    ShowScrollBar(box->body, SB_VERT, scrolling);
+    LONG_PTR style = GetWindowLongPtrW(box->body, GWL_STYLE);
+    SetWindowLongPtrW(box->body, GWL_STYLE,
+                      scrolling ? style | WS_TABSTOP : style & ~(LONG_PTR)WS_TABSTOP);
+    place_controls(box, size, height);
     return true;
 }
 
@@ -196,10 +229,7 @@ static bool initialize(struct failure_box *_Nonnull box, HWND dialog)
 {
     box->dialog = dialog;
     box->dpi = GetDpiForWindow(dialog);
-    /* 子を作る前に塗りを用意する。子の WM_CTLCOLOR* は作る途中から来る（ADR 0035 の決定 3）。 */
     struct folio_palette palette = folio_palette_from(folio_state_palette(box->state));
-    box->mark_color =
-        palette.contrast == FOLIO_CONTRAST_HIGH ? palette.current_text : palette.chip_background;
     switch (dialog_theme_create(&palette, &box->theme))
     {
     case DIALOG_THEME_READY:
@@ -210,104 +240,111 @@ static bool initialize(struct failure_box *_Nonnull box, HWND dialog)
     }
     dialog_theme_decorate(box->theme, dialog);
     SetWindowTextW(dialog, L"NeNe Folio");
-    if (!make_font(box) || !lay_out(box))
-    {
+    if (!make_font(box) || !make_controls(box) || !lay_out(box, GetWindow(dialog, GW_OWNER)))
         return false;
-    }
-    /* 組み上がって見える直前に 1 回だけ鳴らす。鳴らなくても箱の働きは変わらないので戻り値は
-     * 見ない（ADR 0035 の補正 12）。 */
-    MessageBeep(MB_ICONWARNING);
+    box->ready = true;
+    SetFocus(box->accept);
     return true;
 }
 
-static void follow_appearance(struct failure_box *_Nonnull box)
+static void announce(struct failure_box *_Nonnull box)
 {
-    if (!dialog_theme_follow(box->dialog, box->state, &box->theme))
-    {
+    if (!box->ready || box->announced)
         return;
-    }
-    struct folio_palette palette = folio_palette_from(folio_state_palette(box->state));
-    box->mark_color =
-        palette.contrast == FOLIO_CONTRAST_HIGH ? palette.current_text : palette.chip_background;
+    box->announced = true;
+    NotifyWinEvent(EVENT_SYSTEM_ALERT, box->dialog, OBJID_WINDOW, CHILDID_SELF);
+    if (box->io_failure)
+        MessageBeep(MB_ICONWARNING);
 }
 
-static void paint_mark(const struct failure_box *_Nonnull box)
+static void paint_contents(const struct failure_box *_Nonnull box, HDC device)
+{
+    dialog_theme_draw_title(box->theme, box->dialog, device, box->font);
+    dialog_theme_draw_warning(box->theme, device, box->mark);
+}
+
+static void paint_box(const struct failure_box *_Nonnull box)
 {
     PAINTSTRUCT paint;
     HDC device = BeginPaint(box->dialog, &paint);
     if (device != nullptr)
-    {
-        icon_paint_fill(device, box->mark, ICON_PAINT_WARNING, box->mark_color);
-    }
+        paint_contents(box, device);
     EndPaint(box->dialog, &paint);
 }
 
-/* 塗りのメッセージを dialog_theme へ渡す。扱ったものは 0 でない値、扱わなければ FALSE。 */
+static void follow_dpi(struct failure_box *_Nonnull box, const RECT *_Nonnull suggested)
+{
+    SetWindowPos(box->dialog, nullptr, suggested->left, suggested->top,
+                 suggested->right - suggested->left, suggested->bottom - suggested->top,
+                 SWP_NOZORDER | SWP_NOACTIVATE);
+    box->dpi = GetDpiForWindow(box->dialog);
+    if (!make_font(box) || !lay_out(box, box->dialog))
+        EndDialog(box->dialog, box_not_built);
+    RedrawWindow(box->dialog, nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN);
+}
+
 static INT_PTR paint_message(struct failure_box *_Nonnull box, UINT message, WPARAM wparam,
                              LPARAM lparam)
 {
     if (box->theme == nullptr)
-    {
         return FALSE;
-    }
     switch (message)
     {
     case WM_SYSCOLORCHANGE:
     case WM_SETTINGCHANGE:
-        follow_appearance(box);
+        dialog_theme_follow(box->dialog, box->state, &box->theme);
         return TRUE;
     case WM_CTLCOLORDLG:
-        return (INT_PTR)dialog_theme_color(box->theme, DIALOG_THEME_DIALOG, (HDC)wparam);
     case WM_CTLCOLORSTATIC:
         return (INT_PTR)dialog_theme_color(box->theme, DIALOG_THEME_LABEL, (HDC)wparam);
     case WM_DRAWITEM:
-        /* 釦は 1 本で、それが既定（ADR 0035 の決定 4）。 */
         dialog_theme_draw_button(box->theme, (const DRAWITEMSTRUCT *)lparam,
-                                 DIALOG_THEME_BUTTON_PRIMARY);
+                                 ((const DRAWITEMSTRUCT *)lparam)->CtlID == IDCLOSE
+                                     ? DIALOG_THEME_BUTTON_CLOSE
+                                     : DIALOG_THEME_BUTTON_SECONDARY);
         return TRUE;
     case WM_PAINT:
-        /* 地は WM_CTLCOLORDLG のブラシで消えているので、印だけを描く（補正 13・14）。 */
-        paint_mark(box);
+        paint_box(box);
+        return TRUE;
+    case WM_PRINTCLIENT:
+        paint_contents(box, (HDC)wparam);
         return TRUE;
     case WM_DPICHANGED:
-    {
-        const RECT *_Nonnull suggested = (const RECT *)lparam;
-        SetWindowPos(box->dialog, nullptr, suggested->left, suggested->top,
-                     suggested->right - suggested->left, suggested->bottom - suggested->top,
-                     SWP_NOZORDER | SWP_NOACTIVATE);
+        follow_dpi(box, (const RECT *)lparam);
         return TRUE;
-    }
     default:
         return FALSE;
     }
 }
 
+static bool closes_box(UINT message, WPARAM wparam)
+{
+    return message == WM_CLOSE ||
+           (message == WM_COMMAND &&
+            (LOWORD(wparam) == IDOK || LOWORD(wparam) == IDCANCEL || LOWORD(wparam) == IDCLOSE));
+}
+
 static INT_PTR CALLBACK procedure(HWND dialog, UINT message, WPARAM wparam, LPARAM lparam)
 {
+    if (dialog_theme_native_message(dialog, message, wparam, lparam))
+        return TRUE;
     if (message == WM_INITDIALOG)
     {
         struct failure_box *_Nonnull box = (struct failure_box *)lparam;
         SetWindowLongPtrW(dialog, DWLP_USER, (LONG_PTR)box);
-        /* 塗れない・作れない箱は閉じて、呼び出し側が OS の箱へ退避する（補正 3）。 */
         if (!initialize(box, dialog))
-        {
             EndDialog(dialog, box_not_built);
-        }
         return FALSE;
     }
     struct failure_box *_Nullable box = (struct failure_box *)GetWindowLongPtrW(dialog, DWLP_USER);
     if (box == nullptr)
-    {
         return FALSE;
-    }
+    if (message == WM_SHOWWINDOW && wparam != 0)
+        announce(box);
     INT_PTR painted = paint_message(box, message, wparam, lparam);
     if (painted != FALSE)
-    {
         return painted;
-    }
-    /* Enter・OK は IDOK、Esc・× は IDCANCEL で来る。どれも閉じるだけ（決定 4）。 */
-    if (message == WM_CLOSE ||
-        (message == WM_COMMAND && (LOWORD(wparam) == IDOK || LOWORD(wparam) == IDCANCEL)))
+    if (closes_box(message, wparam))
     {
         EndDialog(dialog, IDOK);
         return TRUE;
@@ -315,8 +352,6 @@ static INT_PTR CALLBACK procedure(HWND dialog, UINT message, WPARAM wparam, LPAR
     return FALSE;
 }
 
-/* 自前のモーダルを出す。塗り・書体・DC・子窓のどれかを作れない（box_not_built）か、
- * 面そのものを作れない（−1）なら FALLBACK。閉じ方の区別は使わない（決定 4）。 */
 [[nodiscard]] static enum failure_box_outcome show_themed(HWND _Nullable owner,
                                                           struct failure_box *_Nonnull box)
 {
@@ -325,37 +360,52 @@ static INT_PTR CALLBACK procedure(HWND dialog, UINT message, WPARAM wparam, LPAR
     return ended == -1 || ended == box_not_built ? FAILURE_BOX_FALLBACK : FAILURE_BOX_SHOWN;
 }
 
+static const char *_Nonnull failure_line(enum folio_state_outcome outcome,
+                                         const struct folio_state *_Nonnull state,
+                                         const enum folio_command *_Nullable command,
+                                         char *_Nonnull out)
+{
+    enum folio_language language = folio_state_language(state);
+    const char *_Nonnull reason = folio_state_failure_line(outcome, language);
+    if (command == nullptr)
+        return reason;
+    enum folio_command copied = *command;
+    struct ui_text_request request = {.id = UI_TEXT_FAILURE_COMMAND_REASON,
+                                      .language = language,
+                                      .name = folio_command_label(copied, language),
+                                      .from = reason};
+    return ui_text_format(&request, out, ui_text_unit_limit * 8 + 2) == UI_TEXT_FORMAT_READY
+               ? out
+               : reason;
+}
+
 void failure_box_show(HWND _Nullable owner, enum folio_state_outcome outcome,
-                      const struct folio_state *_Nonnull state)
+                      const struct folio_state *_Nonnull state,
+                      const enum folio_command *_Nullable command)
 {
     if (outcome == FOLIO_STATE_CANCELLED)
-    {
         return;
-    }
     enum folio_language language = folio_state_language(state);
-    const char *_Nonnull line = folio_state_failure_line(outcome, language);
-    struct utf16_text *_Nullable text = nullptr;
-    if (utf16_text_create(line, strlen(line), &text) != UTF16_TEXT_CONVERTED)
-    {
+    char message[ui_text_unit_limit * 8 + 2];
+    const char *_Nonnull line = failure_line(outcome, state, command, message);
+    char16_t units[ui_text_unit_limit * 2];
+    size_t written = 0;
+    if (utf16_text_fill(line, units, ui_text_unit_limit * 2, &written) != UTF16_TEXT_FILL_READY)
         return;
-    }
     struct failure_box box = {
-        .units = utf16_text_units(text), .language = language, .state = state};
+        .units = units, .language = language, .state = state, .io_failure = io_failure(outcome)};
     enum failure_box_outcome shown = show_themed(owner, &box);
-    /* ブラシと書体は面が返った直後に捨てる（ADR 0035 の決定 2）。 */
     dialog_theme_destroy(box.theme);
     if (box.font != nullptr)
-    {
         DeleteObject(box.font);
-    }
     switch (shown)
     {
     case FAILURE_BOX_SHOWN:
         break;
     case FAILURE_BOX_FALLBACK:
-        /* 正典の箱と同じく警告の音と印を付ける（ADR 0035 の補正 12）。題は製品名で翻訳しない。 */
-        MessageBoxW(owner, box.units, L"NeNe Folio", MB_OK | MB_ICONWARNING);
+        /* 同じ元理由をOSへ渡す。既に通知した面がDPI更新で退避した場合も二重に鳴らさない。 */
+        MessageBoxW(owner, box.units, L"NeNe Folio",
+                    MB_OK | (box.io_failure && !box.announced ? MB_ICONWARNING : 0));
         break;
     }
-    utf16_text_destroy(text);
 }
