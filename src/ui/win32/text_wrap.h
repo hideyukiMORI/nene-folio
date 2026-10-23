@@ -7,7 +7,7 @@
 
 struct text_wrap
 {
-    HDC device;
+    HDC _Nonnull device;
     const char16_t *_Nonnull units;
     int count;
     RECT bounds;
