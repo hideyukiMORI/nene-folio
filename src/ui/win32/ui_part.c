@@ -277,6 +277,36 @@ int ui_part_command_width(int text, bool icon, UINT dpi)
     return scaled((logical + 3) / 4 * 4, dpi);
 }
 
+RECT ui_part_surface_rect(RECT bounds, UINT dpi, enum ui_part_surface_region region)
+{
+    int title = scaled(ui_part_surface_title_height, dpi);
+    int edge = scaled(ui_part_edge, dpi);
+    int close_edge = scaled(8, dpi);
+    int close = scaled(ui_part_height, dpi);
+    switch (region)
+    {
+    case UI_PART_SURFACE_TITLE:
+        return (RECT){bounds.left, bounds.top, bounds.right, bounds.top + title};
+    case UI_PART_SURFACE_TITLE_TEXT:
+        return (RECT){bounds.left + edge, bounds.top, bounds.right - close - close_edge * 2,
+                      bounds.top + title};
+    case UI_PART_SURFACE_CLOSE:
+        return (RECT){bounds.right - close_edge - close, bounds.top + close_edge,
+                      bounds.right - close_edge, bounds.top + close_edge + close};
+    case UI_PART_SURFACE_CONTENT:
+        return (RECT){bounds.left + edge, bounds.top + title + edge, bounds.right - edge,
+                      bounds.bottom - edge};
+    }
+    return bounds;
+}
+
+void ui_part_draw_surface(HDC _Nonnull device, const struct folio_palette *_Nonnull palette,
+                          RECT bounds)
+{
+    fill(device, bounds, palette->dialog_surface);
+    frame(device, bounds, 1, palette->dialog_border);
+}
+
 struct ui_part_ink ui_part_draw_menu(HDC _Nonnull device,
                                      const struct folio_palette *_Nonnull palette,
                                      const struct ui_part_menu_paint *_Nonnull part)

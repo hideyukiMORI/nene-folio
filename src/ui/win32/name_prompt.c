@@ -331,7 +331,7 @@ static enum ui_text prompt_name_label(enum name_prompt_kind kind)
         return UI_TEXT_PROMPT_LABEL_NAME;
     case NAME_PROMPT_NEW_CATEGORY:
     case NAME_PROMPT_RENAME_CATEGORY:
-        return UI_TEXT_PROMPT_LABEL_CATEGORY_NAME;
+        return UI_TEXT_PROMPT_LABEL_NAME;
     case NAME_PROMPT_RETRY_RENAME:
         return UI_TEXT_PROMPT_LABEL_NAME;
     }

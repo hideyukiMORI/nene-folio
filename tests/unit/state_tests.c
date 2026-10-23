@@ -2084,6 +2084,7 @@ static const char *_Nonnull const expected_failure_lines[] = {
     [FOLIO_STATE_NAME_TAKEN] =
         "同じ名前のノートがあります。別の名前を指定してください。既存ファイルは変更していま"
         "せん。",
+    [FOLIO_STATE_NAME_UNCHANGED] = "同じ名前です。",
     [FOLIO_STATE_LEDGER_STALE] =
         "mdは反映しましたが、台帳（index."
         "json）を書き戻せませんでした。保存を再試行するか、次回の起動で揃います。",
