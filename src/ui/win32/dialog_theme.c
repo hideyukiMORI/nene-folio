@@ -1,5 +1,6 @@
 #include "dialog_theme.h"
 
+#include "button_pointer_state.h"
 #include "folio_message.h"
 #include "folio_palette.h"
 #include "folio_shortcut.h"
@@ -27,11 +28,6 @@ struct dialog_theme
 
 /* コンボの項目の字を左の縁から離す量（96 DPI）。 */
 constexpr int base_item_indent = 4;
-struct button_pointer_state
-{
-    WNDPROC original;
-    bool hovered;
-};
 static const wchar_t pointer_property[] = L"NeNeFolio.DialogButtonPointer";
 constexpr UINT tooltip_info_size = offsetof(TOOLINFOW, lParam) + sizeof(LPARAM);
 
