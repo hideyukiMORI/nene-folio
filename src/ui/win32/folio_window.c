@@ -7,6 +7,7 @@
 
 #include "breadcrumb_layout.h"
 #include "category_name.h"
+#include "command_band_layout.h"
 #include "command_row.h"
 #include "command_surface_mode.h"
 #include "drawer_menu_item.h"
@@ -37,6 +38,8 @@
 #include "replace_edit.h"
 #include "session_phase.h"
 #include "settings_row_kind.h"
+#include "text_draw_request.h"
+#include "text_wrap.h"
 #include "theme_row.h"
 #include "ui_face.h"
 #include "ui_part.h"
@@ -55,8 +58,6 @@
 #include <windows.h>
 #include <windowsx.h>
 
-/* 置換の欄が持つ EDIT の数（パターンと置換文字列・ADR 0028 の決定 8(a)）。 */
-constexpr size_t replace_input_count = 2;
 constexpr size_t surface_button_count = 8;
 /* 1 回の描画・測定で UTF-16 へ写せる単位数（ADR 0030 の決定 5）。表の 1 行（ui_text_unit_limit）・
  * 状態の 1 行（replace_status_capacity）・ノート名（255 バイト）のどれもここに収まる。
@@ -64,24 +65,6 @@ constexpr size_t surface_button_count = 8;
 constexpr size_t draw_unit_limit = 1024;
 /* SDK V2の末尾lParamまで。SDKマクロのNULL参照を実行時に評価しない（ADR0048）。 */
 constexpr UINT tooltip_info_size = offsetof(TOOLINFOW, lParam) + sizeof(LPARAM);
-
-/* 幅/DPI/font/modeだけから導く配置。結果文字列や業務状態は保持しない。 */
-struct command_band_layout
-{
-    bool valid;
-    int width;
-    UINT dpi;
-    HFONT _Nullable font;
-    enum command_surface_mode mode;
-    RECT label[replace_input_count];
-    RECT field[replace_input_count];
-    RECT action[replace_input_count];
-    RECT close;
-    RECT result;
-    int height;
-    int measured_width;
-    int result_height;
-};
 
 struct folio_window
 {
@@ -1846,24 +1829,6 @@ static SIZE measured_units(HDC device, const char16_t *_Nonnull units, int count
         SetTextCharacterExtra(device, previous);
     return (SIZE){box.right - box.left + count * tracking, box.bottom - box.top};
 }
-
-/* 折返し一回の入力。文字の所有者は呼出し元のUTF16バッファのまま。 */
-struct text_wrap
-{
-    HDC device;
-    const char16_t *_Nonnull units;
-    int count;
-    RECT bounds;
-    int tracking;
-    bool paint;
-};
-
-struct text_draw_request
-{
-    RECT bounds;
-    UINT format;
-    bool wrapped;
-};
 
 static int wrap_next_unit(const char16_t *_Nonnull units, int count, int at)
 {
