@@ -6676,3 +6676,34 @@ void run_filter_lookup_state_tests(void)
     verify_trash_filter();
     verify_category_rename_filter();
 }
+
+void run_menu_availability_tests(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    struct note_ref target = {0};
+    size_t reads = adapter.note_reads, scans = adapter.note_scans, writes = adapter.writes;
+    require(folio_state_command_availability(state, FOLIO_COMMAND_RENAME,
+                                             FOLIO_COMMAND_TARGET_CURRENT,
+                                             target) == FOLIO_STATE_NOTHING_SELECTED,
+            "no current note disables rename");
+    require(folio_state_command_availability(state, FOLIO_COMMAND_RENAME, FOLIO_COMMAND_TARGET_NOTE,
+                                             target) == FOLIO_STATE_READY,
+            "explicit note can be renamed without being selected");
+    require(folio_state_command_availability(state, FOLIO_COMMAND_DELETE_CATEGORY,
+                                             FOLIO_COMMAND_TARGET_CATEGORY,
+                                             target) == FOLIO_STATE_CATEGORY_NOT_EMPTY,
+            "known notes disable category deletion");
+    for (size_t at = 0; at < folio_command_count(); ++at)
+    {
+        enum folio_state_outcome outcome = folio_state_command_availability(
+            state, folio_command_at(at), FOLIO_COMMAND_TARGET_CURRENT, target);
+        require(outcome <= FOLIO_STATE_CATEGORY_NOT_SELECTED,
+                "every command has a known query result");
+    }
+    require(adapter.note_reads == reads && adapter.note_scans == scans && adapter.writes == writes,
+            "availability never reads notes, scans files or writes state");
+    require(folio_state_recolor_availability(state, 999) == FOLIO_STATE_NO_SUCH_CATEGORY,
+            "stale color target is unavailable");
+    folio_state_destroy(state);
+}

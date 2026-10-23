@@ -302,6 +302,13 @@ static int add_help_path(struct GpPath *_Nonnull path)
     return first_failure(status, add_polygon(path, help_dot, sizeof help_dot / sizeof help_dot[0]));
 }
 
+static int add_menu_path(struct GpPath *_Nonnull path)
+{
+    static const float points[] = {6.0f, 8.0f,  12.0f, 14.0f, 18.0f, 8.0f, 16.0f,
+                                   6.0f, 12.0f, 10.0f, 8.0f,  6.0f,  6.0f, 8.0f};
+    return add_polygon(path, points, sizeof points / sizeof points[0]);
+}
+
 /* 形ごとに割る（全値の switch・default は書かない・C-002）。 */
 static int build_path(struct GpPath *_Nonnull path, enum icon_paint_kind kind)
 {
@@ -326,6 +333,8 @@ static int build_path(struct GpPath *_Nonnull path, enum icon_paint_kind kind)
         return add_save_path(path);
     case ICON_PAINT_SEARCH:
         return add_search_path(path);
+    case ICON_PAINT_MENU:
+        return add_menu_path(path);
     case ICON_PAINT_HELP:
         return add_help_path(path);
     }
@@ -343,6 +352,7 @@ static int fill_mode_for(enum icon_paint_kind kind)
     case ICON_PAINT_ADD:
     case ICON_PAINT_NEW_NOTE:
     case ICON_PAINT_SELECTION:
+    case ICON_PAINT_MENU:
         return gdiplus_fill_winding;
     case ICON_PAINT_SETTINGS:
     case ICON_PAINT_WARNING:

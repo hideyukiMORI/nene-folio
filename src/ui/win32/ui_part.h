@@ -5,6 +5,7 @@
 
 #include "folio_palette.h"
 #include "ui_part_ink.h"
+#include "ui_part_menu_paint.h"
 #include "ui_part_paint.h"
 
 #include <windows.h>
@@ -58,4 +59,8 @@ void ui_part_fill_field(HDC _Nonnull device, RECT box, COLORREF background);
 /* A 様式の字の釦の幅（論理 px の 4 の倍数へ切り上げる）。字の幅は呼び出し側が自分の書体で測る。 */
 [[nodiscard]] int ui_part_command_width(int text, bool icon, UINT dpi);
 
+/* MENU一覧variant。字のinset16、選択の面inset4と左2pxの棒。 */
+struct ui_part_ink ui_part_draw_menu(HDC _Nonnull device,
+                                     const struct folio_palette *_Nonnull palette,
+                                     const struct ui_part_menu_paint *_Nonnull part);
 #endif

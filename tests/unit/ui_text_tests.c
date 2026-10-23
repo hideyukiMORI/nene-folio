@@ -210,14 +210,13 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_MENU_NEW_NOTE_IN_CATEGORY] = "このカテゴリに新しいノート",
     [UI_TEXT_HELP_PALETTE] = "一覧  ↑↓ 選択 / Enter 実行 / Esc 戻る / Tab 説明",
     [UI_TEXT_HELP_EDITOR_MOTION] = "編集本文  Ctrl+h/j/k/l ←/↓/↑/→",
-    [UI_TEXT_HELP_GLOBAL_KEYS] = "全区画  F1 ヘルプ / Ctrl+P 一覧 / Ctrl+F このノート内を検索",
-    [UI_TEXT_HELP_GLOBAL_FILTER] = "全区画  Ctrl+Shift+F すべてのノートを検索（索引を絞り込む）",
+    [UI_TEXT_HELP_GLOBAL_KEYS] = "全区画  {name} ヘルプ / {from} 一覧 / {to} このノート内を検索",
+    [UI_TEXT_HELP_GLOBAL_FILTER] = "全区画  {name} すべてのノートを検索（索引を絞り込む）",
     [UI_TEXT_HELP_FILTER_FIELD] =
         "絞り込み欄  Esc・Enter 索引へ戻る（絞り込みは残る）/ 空にすると解除",
     [UI_TEXT_HELP_FILTER_LIMITS] =
         "絞り込み中  並び替えと折畳/展開はできない（色・保存・編集は可）",
-    [UI_TEXT_HELP_FILE_KEYS] =
-        "入力欄でも  Ctrl+N 新規 / Ctrl+S 保存 / Ctrl+Shift+S 別名保存 / F2 名前変更",
+    [UI_TEXT_HELP_FILE_KEYS] = "入力欄でも  {name} 新規 / {from} 保存 / {to} 別名保存",
     [UI_TEXT_HELP_INDEX_COMMAND] = "索引・閲覧本文  : コマンド / i 編集",
     [UI_TEXT_HELP_EX_SET_NUMBER] =
         "Ex  :set number / :set nonumber / :set nu!（編集中の原文の行番号）",
@@ -229,8 +228,8 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_HELP_EX_SUBSTITUTE] =
         "Ex  :%s/pattern/replacement/[g]（g なしは各行の最初の一致・正規表現）",
     [UI_TEXT_HELP_SEARCH_KEYS] = "索引・閲覧本文  / 次を検索 / ? 前を検索 / n・N 繰り返し",
-    [UI_TEXT_HELP_SEARCH_STEP] = "全区画  F3 次の一致 / Shift+F3 前の一致（向きは変えない）",
-    [UI_TEXT_HELP_SEARCH_FIELD] = "検索欄  Enter 次 / Shift+Enter 逆 / Esc 閉じる（選択は残る）",
+    [UI_TEXT_HELP_SEARCH_STEP] = "全区画  {name} 次の一致 / {from} 前の一致（向きは変えない）",
+    [UI_TEXT_HELP_SEARCH_FIELD] = "検索欄  {name} 次 / {from} 逆 / Esc 閉じる（選択は残る）",
     [UI_TEXT_HELP_INDEX_MOTION] = "索引  j/k 次/前 / gg/G 先頭/末尾",
     [UI_TEXT_HELP_INDEX_FOLD] = "索引  h/l 折畳/展開 / Enter 本文",
     [UI_TEXT_HELP_INDEX_SCROLL] = "索引  ↑↓ / PgUp/PgDn スクロール",
@@ -350,6 +349,29 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_EMPTY_BODY] = "左の一覧からノートを選ぶか、新しいノートを作ります",
     [UI_TEXT_EMPTY_KEYS] =
         "新しいノート: Ctrl+N ／ すべてのノートを検索: Ctrl+Shift+F ／ ヘルプ: F1",
+    [UI_TEXT_COMMAND_CAPTION] = "{name}",
+    [UI_TEXT_COMMAND_INPUT_CAPTION] = "{name}…",
+    [UI_TEXT_MENU_ACCESS_CAPTION] = "{name} ({from})",
+    [UI_TEXT_KEY_SAVE_AS] = "Ctrl+Shift+S",
+    [UI_TEXT_KEY_RENAME] = "F2",
+    [UI_TEXT_KEY_PALETTE] = "Ctrl+P",
+    [UI_TEXT_KEY_FILTER] = "Ctrl+Shift+F",
+    [UI_TEXT_KEY_SEARCH_FORWARD] = "F3",
+    [UI_TEXT_KEY_SEARCH_BACKWARD] = "Shift+F3",
+    [UI_TEXT_KEY_SEARCH_NEXT] = "Enter",
+    [UI_TEXT_KEY_SEARCH_PREVIOUS] = "Shift+Enter",
+    [UI_TEXT_KEY_SUBSTITUTE] = ":%s",
+    [UI_TEXT_FAILURE_COMMAND_NOTE_REQUIRED] = "「{name}」はノートを開くと使えます。",
+    [UI_TEXT_NOTIFY_NOTE_REMOVED] = "「{name}」を一覧から除きました。",
+    [UI_TEXT_HELP_RECYCLE] = "ごみ箱へ移せたノートは Windows のごみ箱から戻せます。",
+    [UI_TEXT_TOOLTIP_HELP_KEYS] = "ヘルプとコマンド一覧（{from} / {to}）",
+    [UI_TEXT_MENU_SCROLL_UP] = "上に項目があります",
+    [UI_TEXT_MENU_SCROLL_DOWN] = "下に項目があります",
+    [UI_TEXT_MENU_LOCAL_KEY] = "{name}（メニュー内）",
+    [UI_TEXT_KEY_CONTEXT_MENU] = "Shift+F10",
+    [UI_TEXT_KEY_APPS] = "Apps",
+    [UI_TEXT_HELP_RENAME_KEY] = "{name} / {from} 名前変更",
+
 };
 
 constexpr size_t expected_count = sizeof expected / sizeof expected[0];
@@ -369,7 +391,7 @@ static size_t utf16_units_of(const char *_Nonnull utf8)
 /* 表の全 ID が、変更前と 1 字も違わないこと（同一性）。 */
 static void verify_identity(void)
 {
-    require(expected_count == UI_TEXT_EMPTY_KEYS + 1,
+    require(expected_count == UI_TEXT_HELP_RENAME_KEY + 1,
             "the expected table covers every id in the enumeration");
     for (size_t index = 0; index < expected_count; ++index)
     {

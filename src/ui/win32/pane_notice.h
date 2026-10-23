@@ -6,7 +6,7 @@ enum pane_notice : unsigned char
 {
     PANE_NOTICE_NONE,
     /* ノートをごみ箱へ送り終えた（ADR 0039 の補正 4） */
-    PANE_NOTICE_TRASH_COMPLETED,
+    PANE_NOTICE_COMMAND_RESULT,
     /* 編集のまま編集で保てないノートへ切り替え、閲覧で開いた（#242・#258） */
     PANE_NOTICE_NOTE_UNEDITABLE,
     /* 終了を拒否した短い理由。文言IDはfolio_windowが所有する（ADR0053） */

@@ -276,3 +276,24 @@ int ui_part_command_width(int text, bool icon, UINT dpi)
     int logical = (width * 96 + (int)dpi - 1) / (int)dpi;
     return scaled((logical + 3) / 4 * 4, dpi);
 }
+
+struct ui_part_ink ui_part_draw_menu(HDC _Nonnull device,
+                                     const struct folio_palette *_Nonnull palette,
+                                     const struct ui_part_menu_paint *_Nonnull part)
+{
+    RECT body = part->bounds;
+    body.left += scaled(4, part->dpi);
+    body.right -= scaled(4, part->dpi);
+    bool selected = part->enabled && part->selected;
+    if (selected)
+    {
+        fill(device, body, palette->selected_background);
+        body.right = body.left + ui_part_focus_width(part->dpi);
+        fill(device, body, palette->focus_selected_line);
+    }
+    RECT label = part->bounds;
+    label.left += scaled(16, part->dpi);
+    label.right -= scaled(16, part->dpi);
+    COLORREF text = part->enabled ? palette->current_text : palette->header_text;
+    return (struct ui_part_ink){.text = selected ? palette->selected_text : text, .label = label};
+}

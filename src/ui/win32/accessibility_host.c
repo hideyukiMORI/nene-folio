@@ -624,3 +624,22 @@ void accessibility_host_changed(struct accessibility_host *_Nonnull host, UINT m
         break;
     }
 }
+
+void accessibility_host_menu(struct accessibility_host *_Nonnull host,
+                             enum accessible_menu_event event)
+{
+    if (host->owner == nullptr)
+        return;
+    struct accessible_item item = {.kind = ACCESSIBLE_SURFACE_LIST,
+                                   .revision =
+                                       folio_window_accessible_surface_revision(host->owner)};
+    struct accessibility_node *_Nullable node = nullptr;
+    if (SUCCEEDED(accessibility_host_node(host, item, &node)))
+    {
+        bool previous = host->refreshing;
+        host->refreshing = true;
+        accessibility_node_menu_event(node, event);
+        host->refreshing = previous;
+        accessibility_node_release(node);
+    }
+}

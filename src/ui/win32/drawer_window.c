@@ -12,6 +12,7 @@
 #include "folio_palette.h"
 #include "folio_state.h"
 #include "icon_paint.h"
+#include "menu_request.h"
 #include "note_ref.h"
 #include "ui_face.h"
 #include "ui_part.h"
@@ -636,7 +637,7 @@ static void act_on_row(struct drawer_window *_Nonnull self, struct drawer_row ro
         InvalidateRect(self->handle, nullptr, FALSE);
         return;
     }
-    failure_box_show(GetAncestor(self->handle, GA_ROOT), outcome, self->state);
+    SendMessageW(GetParent(self->handle), folio_message_report_outcome, (WPARAM)outcome, 0);
 }
 
 /* 落とし先を意図にする（ノートは別カテゴリへの移動も同じ 1 本・ADR 0008 の決定 2 / 6）。
@@ -658,7 +659,7 @@ static void apply_drop(struct drawer_window *_Nonnull self, struct drawer_row so
     }
     if (outcome != FOLIO_STATE_READY)
     {
-        failure_box_show(GetAncestor(self->handle, GA_ROOT), outcome, self->state);
+        SendMessageW(GetParent(self->handle), folio_message_report_outcome, (WPARAM)outcome, 0);
         return;
     }
     InvalidateRect(self->handle, nullptr, FALSE);
@@ -694,7 +695,7 @@ static void choose_color(struct drawer_window *_Nonnull self, struct drawer_row 
         folio_state_recolor_category(self->state, row.category, to_rgb_color(choice.rgbResult));
     if (outcome != FOLIO_STATE_READY)
     {
-        failure_box_show(GetAncestor(self->handle, GA_ROOT), outcome, self->state);
+        SendMessageW(GetParent(self->handle), folio_message_report_outcome, (WPARAM)outcome, 0);
         return;
     }
     InvalidateRect(self->handle, nullptr, FALSE);
@@ -702,124 +703,73 @@ static void choose_color(struct drawer_window *_Nonnull self, struct drawer_row 
     InvalidateRect(GetParent(self->handle), nullptr, FALSE);
 }
 
-static enum ui_text menu_label(enum drawer_menu_item item)
-{
-    switch (item)
-    {
-    case DRAWER_MENU_RECOLOR:
-        return UI_TEXT_MENU_RECOLOR;
-    case DRAWER_MENU_RENAME_NOTE:
-        return UI_TEXT_MENU_RENAME_NOTE;
-    case DRAWER_MENU_NEW_CATEGORY:
-        return UI_TEXT_MENU_NEW_CATEGORY;
-    case DRAWER_MENU_NEW_NOTE:
-        return UI_TEXT_MENU_NEW_NOTE_IN_CATEGORY;
-    case DRAWER_MENU_TRASH_NOTE:
-        return UI_TEXT_MENU_TRASH_NOTE;
-    case DRAWER_MENU_DELETE_CATEGORY:
-        return UI_TEXT_MENU_DELETE_CATEGORY;
-    case DRAWER_MENU_RENAME_CATEGORY:
-        return UI_TEXT_MENU_RENAME_CATEGORY;
-    }
-    return UI_TEXT_MENU_NEW_CATEGORY;
-}
-
-/* 項目を 1 つ足す。メニュー ID は値 + 1（0 は「何も選ばれなかった」）。 */
-static bool append_item(HMENU menu, enum drawer_menu_item item, enum folio_language language)
-{
-    char16_t units[draw_unit_limit];
-    if (wide_units(ui_text_line(menu_label(item), language), units) == 0)
-    {
-        return false;
-    }
-    return AppendMenuW(menu, MF_STRING, (UINT_PTR)item + 1, units) != 0;
-}
-
-/* 押した所に効く項目を並べる（ADR 0039 の決定 11）。on_row が false なら行の無い所。
- * 項目は灰色にしない。断る理由は実行したときに application が返す（ARC-011）。 */
-static bool fill_menu(HMENU menu, bool on_row, struct drawer_row row, enum folio_language language)
-{
-    if (!on_row)
-    {
-        return append_item(menu, DRAWER_MENU_NEW_CATEGORY, language);
-    }
-    switch (row.kind)
-    {
-    case DRAWER_ROW_CATEGORY:
-        return append_item(menu, DRAWER_MENU_NEW_NOTE, language) &&
-               AppendMenuW(menu, MF_SEPARATOR, 0, nullptr) != 0 &&
-               append_item(menu, DRAWER_MENU_RECOLOR, language) &&
-               append_item(menu, DRAWER_MENU_RENAME_CATEGORY, language) &&
-               append_item(menu, DRAWER_MENU_DELETE_CATEGORY, language) &&
-               AppendMenuW(menu, MF_SEPARATOR, 0, nullptr) != 0 &&
-               append_item(menu, DRAWER_MENU_NEW_CATEGORY, language);
-    case DRAWER_ROW_NOTE:
-        return append_item(menu, DRAWER_MENU_RENAME_NOTE, language) &&
-               append_item(menu, DRAWER_MENU_TRASH_NOTE, language);
-    }
-    return false;
-}
-
-/* 選ばれた項目を実行する。色だけはドロワーが今までと同じ色の選択を開き（ADR 0039 の決定 12 の
- * 例外）、ほかは主窓の既存の受け口へ対象付きで同期に渡す（ARC-001）。 */
-static void run_item(struct drawer_window *_Nonnull self, enum drawer_menu_item item,
-                     struct drawer_row row)
-{
-    switch (item)
-    {
-    case DRAWER_MENU_RECOLOR:
-        choose_color(self, row);
-        return;
-    case DRAWER_MENU_RENAME_NOTE:
-    case DRAWER_MENU_NEW_CATEGORY:
-    case DRAWER_MENU_NEW_NOTE:
-    case DRAWER_MENU_TRASH_NOTE:
-    case DRAWER_MENU_DELETE_CATEGORY:
-    case DRAWER_MENU_RENAME_CATEGORY:
-        break;
-    }
-    struct note_ref target = {.category = row.category, .note = row.note};
-    SendMessageW(GetParent(self->handle), folio_message_drawer_menu, (WPARAM)item, (LPARAM)&target);
-}
-
-/* 右ボタンを離した位置の行に効く操作のメニューを出す（FR-038・ADR 0039 の決定 11 / 12。
- * ADR 0010 の 2026-10-07 の補正）。頭の帯では出さない。左ボタンを押している間は捕捉中の再入を
- * 避けて無視する。右クリックは選択もカーソルもフォーカスも動かさない。 */
+/* 右クリックは対象とanchorだけを主窓へ渡す。文書・cursor・focusを変更しない。 */
 static void show_menu(struct drawer_window *_Nonnull self, LPARAM position)
 {
     POINT point = {GET_X_LPARAM(position), GET_Y_LPARAM(position)};
     if (self->pressed || self->header_pressed != DRAWER_HEADER_NONE || point.y < band_height(self))
-    {
         return;
-    }
     struct drawer_layout *_Nullable layout = nullptr;
     if (!current_layout(self, &layout))
-    {
         return;
-    }
     size_t index = 0;
     bool found = drawer_layout_hit(layout, point.y, &index);
     struct drawer_row row = found ? drawer_layout_row(layout, index) : (struct drawer_row){0};
     drawer_layout_destroy(layout);
-    HMENU menu = CreatePopupMenu();
-    if (menu == nullptr || !fill_menu(menu, found, row, folio_state_language(self->state)))
-    {
-        if (menu != nullptr)
-        {
-            DestroyMenu(menu);
-        }
-        failure_box_show(GetAncestor(self->handle, GA_ROOT), FOLIO_STATE_OUT_OF_MEMORY,
-                         self->state);
+    MapWindowPoints(self->handle, GetParent(self->handle), &point, 1);
+    struct menu_request request = {.context = FOLIO_MENU_EMPTY,
+                                   .target = {row.category, row.note},
+                                   .anchor = {point.x, point.y, point.x, point.y}};
+    if (found)
+        request.context = row.kind == DRAWER_ROW_CATEGORY ? FOLIO_MENU_CATEGORY : FOLIO_MENU_NOTE;
+    SendMessageW(GetParent(self->handle), folio_message_open_menu, 0, (LPARAM)&request);
+}
+
+void drawer_window_choose_color(struct drawer_window *_Nonnull self, size_t category)
+{
+    struct drawer_layout *_Nullable layout = nullptr;
+    if (!current_layout(self, &layout))
         return;
-    }
-    ClientToScreen(self->handle, &point);
-    int chosen =
-        TrackPopupMenuEx(menu, TPM_RETURNCMD, point.x, point.y, GetParent(self->handle), nullptr);
-    DestroyMenu(menu);
-    if (chosen > 0)
+    for (size_t at = 0; at < drawer_layout_row_count(layout); ++at)
     {
-        run_item(self, (enum drawer_menu_item)(chosen - 1), row);
+        struct drawer_row row = drawer_layout_row(layout, at);
+        if (row.kind == DRAWER_ROW_CATEGORY && row.category == category)
+        {
+            drawer_layout_destroy(layout);
+            choose_color(self, row);
+            return;
+        }
     }
+    drawer_layout_destroy(layout);
+}
+
+void drawer_window_context_menu(struct drawer_window *_Nonnull self)
+{
+    struct menu_request request = {.context = FOLIO_MENU_EMPTY, .keyboard = true};
+    enum folio_cursor_kind kind = FOLIO_CURSOR_CATEGORY;
+    struct note_ref target = {0};
+    if (folio_state_cursor(self->state, &kind, &target))
+    {
+        struct accessible_item item = {.kind = kind == FOLIO_CURSOR_CATEGORY ? ACCESSIBLE_CATEGORY
+                                                                             : ACCESSIBLE_NOTE,
+                                       .ref = target,
+                                       .revision = folio_state_row_revision(self->state)};
+        struct accessible_view view = {0};
+        if (SUCCEEDED(drawer_window_accessible_read(self, &item, &view)) && !view.offscreen)
+        {
+            request.context = kind == FOLIO_CURSOR_CATEGORY ? FOLIO_MENU_CATEGORY : FOLIO_MENU_NOTE;
+            request.target = target;
+            request.anchor = view.bounds;
+            MapWindowPoints(nullptr, GetParent(self->handle), (POINT *)&request.anchor, 2);
+        }
+    }
+    if (request.context == FOLIO_MENU_EMPTY)
+    {
+        POINT point = {16, band_height(self)};
+        MapWindowPoints(self->handle, GetParent(self->handle), &point, 1);
+        request.anchor = (RECT){point.x, point.y, point.x, point.y};
+    }
+    SendMessageW(GetParent(self->handle), folio_message_open_menu, 0, (LPARAM)&request);
 }
 
 /* 押した行を覚えて捕捉する。クリックの確定は離すときに行う（ADR 0007 の決定 6）。
@@ -1010,13 +960,14 @@ static void release_row(struct drawer_window *_Nonnull self)
 
 static void run_header(struct drawer_window *_Nonnull self, enum drawer_header_button button)
 {
-    struct drawer_row row = {0};
+    struct note_ref target = {0};
     switch (button)
     {
     case DRAWER_HEADER_NONE:
         return;
     case DRAWER_HEADER_NEW_CATEGORY:
-        run_item(self, DRAWER_MENU_NEW_CATEGORY, row);
+        SendMessageW(GetParent(self->handle), folio_message_drawer_menu, DRAWER_MENU_NEW_CATEGORY,
+                     (LPARAM)&target);
         return;
     }
 }
@@ -1048,7 +999,7 @@ static void scroll_by(struct drawer_window *_Nonnull self, int delta)
         folio_state_scroll_drawer(self->state, metrics_for(self), delta);
     if (outcome != FOLIO_STATE_READY)
     {
-        failure_box_show(GetAncestor(self->handle, GA_ROOT), outcome, self->state);
+        SendMessageW(GetParent(self->handle), folio_message_report_outcome, (WPARAM)outcome, 0);
         return;
     }
     if (self->dragging)

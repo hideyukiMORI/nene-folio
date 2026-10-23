@@ -1,6 +1,8 @@
 #include "ascii_fold.h"
 #include "folio_command.h"
 #include "folio_language.h"
+#include "folio_menu_action.h"
+#include "folio_shortcut.h"
 #include "unit_tests.h"
 
 #include <string.h>
@@ -490,8 +492,13 @@ static void verify_layout_commands(void)
     }
 }
 
+static void verify_menu_catalog(void);
+static void verify_menu_shortcuts(void);
+static void verify_menu_captions(void);
+
 void run_command_tests(void)
 {
+    verify_menu_catalog();
     verify_layout_commands();
     verify_aliases();
     verify_rejections();
@@ -506,4 +513,84 @@ void run_command_tests(void)
     verify_rename_category();
     verify_ascii_fold();
     verify_case_insensitive_palette();
+}
+
+static void verify_menu_catalog(void)
+{
+    const enum folio_command commands[] = {FOLIO_COMMAND_SAVE_AS,   FOLIO_COMMAND_RENAME,
+                                           FOLIO_COMMAND_VIEW,      FOLIO_COMMAND_REPLACE,
+                                           FOLIO_COMMAND_HISTORY,   FOLIO_COMMAND_DISCARD_EDITS,
+                                           FOLIO_COMMAND_TRASH_NOTE};
+    const size_t counts[] = {7, 5, 2, 1};
+    require(folio_command_count() == 25, "stable command IDs and count");
+    for (size_t context = 0; context < 4; ++context)
+    {
+        require(folio_menu_action_count((enum folio_menu_context)context) == counts[context],
+                "menu membership");
+        for (size_t at = 0; at < counts[context]; ++at)
+        {
+            const struct folio_menu_action *action =
+                folio_menu_action_at((enum folio_menu_context)context, at);
+            if (context == 0)
+                require(folio_menu_action_command(action) == commands[at],
+                        "seven note commands in intended order");
+            for (size_t other = at + 1; other < counts[context]; ++other)
+                require(folio_menu_action_access_key(action) !=
+                            folio_menu_action_access_key(
+                                folio_menu_action_at((enum folio_menu_context)context, other)),
+                        "unique access keys in each menu");
+        }
+    }
+    require(folio_menu_action_group(folio_menu_action_at(FOLIO_MENU_CATEGORY, 3)) ==
+                FOLIO_MENU_GROUP_THIRD,
+            "category creation is a third group");
+    require(!folio_command_needs_input(FOLIO_COMMAND_DISCARD_EDITS) &&
+                !folio_command_needs_input(FOLIO_COMMAND_TRASH_NOTE),
+            "no misleading ellipsis for unconfirmed operations");
+    require(folio_command_destructive(FOLIO_COMMAND_TRASH_NOTE),
+            "trash is destructive independently of additional input");
+    verify_menu_shortcuts();
+    verify_menu_captions();
+}
+
+static void verify_menu_shortcuts(void)
+{
+    for (size_t at = 0; at < folio_shortcut_count(); ++at)
+    {
+        const struct folio_shortcut *binding = folio_shortcut_at(at);
+        for (size_t next = at + 1; next < folio_shortcut_count(); ++next)
+        {
+            const struct folio_shortcut *other = folio_shortcut_at(next);
+            require(folio_shortcut_route(binding) != folio_shortcut_route(other) ||
+                        folio_shortcut_key(binding) != folio_shortcut_key(other) ||
+                        folio_shortcut_modifiers(binding) != folio_shortcut_modifiers(other),
+                    "no duplicate binding in a route");
+        }
+    }
+}
+
+static void verify_menu_captions(void)
+{
+    require(same_text(folio_shortcut_command_hint(FOLIO_COMMAND_SAVE, FOLIO_LANGUAGE_JA), "Ctrl+S"),
+            "save shortcut unchanged");
+    require(same_text(folio_shortcut_command_hint(FOLIO_COMMAND_RENAME, FOLIO_LANGUAGE_EN), "F2"),
+            "rename shortcut unchanged");
+    require(same_text(folio_shortcut_command_hint(FOLIO_COMMAND_VIEW, FOLIO_LANGUAGE_JA), ""),
+            "GUI-only view has no false global shortcut");
+    for (size_t language = 0; language < folio_language_count; ++language)
+    {
+        char text[1024];
+        require(folio_command_caption(FOLIO_COMMAND_SAVE_AS, (enum folio_language)language, text,
+                                      sizeof text) == UI_TEXT_FORMAT_READY &&
+                    strstr(text, "…") != nullptr,
+                "input caption in each language");
+        require(folio_command_caption(FOLIO_COMMAND_TRASH_NOTE, (enum folio_language)language, text,
+                                      sizeof text) == UI_TEXT_FORMAT_READY &&
+                    strstr(text, "…") == nullptr,
+                "immediate caption in each language");
+        require(folio_shortcut_help(UI_TEXT_HELP_FILE_KEYS, (enum folio_language)language, text,
+                                    sizeof text) == UI_TEXT_FORMAT_READY &&
+                    strstr(text, "Ctrl+Shift+S") != nullptr && strstr(text, "F2") != nullptr,
+                "help uses actual binding values");
+    }
 }

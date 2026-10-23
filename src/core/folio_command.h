@@ -6,9 +6,11 @@
 
 #include "ex_substitute.h"
 #include "folio_argument_kind.h"
+#include "folio_command_scope.h"
 #include "folio_language.h"
 #include "folio_option.h"
 #include "folio_theme_choice.h"
+#include "ui_text_format_outcome.h"
 
 #include <stddef.h>
 
@@ -77,5 +79,14 @@ enum folio_command : unsigned char
  * 旗は `g` だけ。区切りの不足・空のパターン・知らない旗は false で out は触らない。 */
 [[nodiscard]] bool folio_command_parse_substitute(const char *_Nonnull text, size_t length,
                                                   struct ex_substitute *_Nonnull out);
+
+/* 引数なしGUI入口の属性と、全ての一覧が共有する装飾済みの名前（ADR0060）。 */
+[[nodiscard]] enum folio_command_scope folio_command_scope(enum folio_command command);
+[[nodiscard]] bool folio_command_destructive(enum folio_command command);
+[[nodiscard]] bool folio_command_needs_input(enum folio_command command);
+[[nodiscard]] enum ui_text_format_outcome folio_command_caption(enum folio_command command,
+                                                                enum folio_language language,
+                                                                char *_Nonnull out,
+                                                                size_t capacity);
 
 #endif

@@ -34,4 +34,8 @@ constexpr UINT folio_message_focus_cues = WM_APP + 11;
 /* drawerの描画で「すべてのノートを検索」の欄にfocusがあるかを調べる。主窓がboolを返す。 */
 constexpr UINT folio_message_filter_focused = WM_APP + 12;
 
+/* lParamは同期呼出し元が所有するmenu_request。 */
+constexpr UINT folio_message_open_menu = WM_APP + 13;
+/* drawer操作の結果を主窓のreport_outcomeへ渡す。wParam=folio_state_outcome。 */
+constexpr UINT folio_message_report_outcome = WM_APP + 14;
 #endif

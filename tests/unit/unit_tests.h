@@ -105,4 +105,5 @@ struct folio_ports;
 
 void run_accessibility_state_tests(void);
 
+void run_menu_availability_tests(void);
 #endif
