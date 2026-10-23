@@ -62,4 +62,6 @@ void drawer_window_destroy(struct drawer_window *_Nullable drawer);
 drawer_window_accessible_scroll(struct drawer_window *_Nonnull self,
                                 const struct accessible_request *_Nonnull request);
 
+void drawer_window_choose_color(struct drawer_window *_Nonnull drawer, size_t category);
+void drawer_window_context_menu(struct drawer_window *_Nonnull drawer);
 #endif

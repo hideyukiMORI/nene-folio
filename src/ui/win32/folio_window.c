@@ -13,9 +13,11 @@
 #include "drawer_window.h"
 #include "failure_box.h"
 #include "folio_command.h"
+#include "folio_menu_action.h"
 #include "folio_message.h"
 #include "folio_palette.h"
 #include "folio_regions.h"
+#include "folio_shortcut.h"
 #include "folio_state.h"
 #include "folio_step.h"
 #include "folio_theme_choice.h"
@@ -23,6 +25,7 @@
 #include "history_row_view.h"
 #include "icon_paint.h"
 #include "layout_metrics.h"
+#include "menu_request.h"
 #include "name_prompt.h"
 #include "note_name.h"
 #include "note_pane.h"
@@ -68,7 +71,13 @@ struct folio_window
     struct accessibility_host *_Nullable accessibility;
     enum accessible_kind keyboard_target;
     bool menu_active;
-    bool operations_menu;
+    HFONT _Nullable menu_font;
+    struct menu_request menu;
+    size_t menu_pressed;
+    WPARAM menu_key;
+    char result_line[1024];
+    bool command_context;
+    enum folio_command reporting_command;
     HACCEL _Nullable region_keys;
     HACCEL _Nullable traversal_keys;
     struct folio_palette palette;
@@ -172,6 +181,7 @@ static const enum ui_text command_shortcuts[] = {
     UI_TEXT_HELP_SEARCH_FIELD,    UI_TEXT_HELP_INDEX_MOTION,    UI_TEXT_HELP_INDEX_FOLD,
     UI_TEXT_HELP_INDEX_SCROLL,    UI_TEXT_HELP_EDITOR_ESCAPE,   UI_TEXT_HELP_TRASH_NOTE,
     UI_TEXT_HELP_DELETE_CATEGORY, UI_TEXT_HELP_RENAME_CATEGORY, UI_TEXT_HELP_ACCESSIBILITY,
+    UI_TEXT_HELP_RECYCLE,
 };
 
 /* 設定画面の行（ADR 0031 の決定 7・ADR 0032 の決定 7）。見出しと選択肢を**種別で**持ち、
@@ -199,16 +209,10 @@ static const struct
     enum folio_layout_mode mode;
     enum folio_command command;
     enum accessible_kind kind;
-    enum ui_text shortcut;
-    WORD accelerator;
-    WORD key;
 } layout_buttons[] = {
-    {FOLIO_LAYOUT_DRAWER, FOLIO_COMMAND_LAYOUT_DRAWER, ACCESSIBLE_LAYOUT_DRAWER,
-     UI_TEXT_LAYOUT_KEY_DRAWER, 108, '1'},
-    {FOLIO_LAYOUT_BOTH, FOLIO_COMMAND_LAYOUT_BOTH, ACCESSIBLE_LAYOUT_BOTH, UI_TEXT_LAYOUT_KEY_BOTH,
-     109, '2'},
-    {FOLIO_LAYOUT_NOTE, FOLIO_COMMAND_LAYOUT_NOTE, ACCESSIBLE_LAYOUT_NOTE, UI_TEXT_LAYOUT_KEY_NOTE,
-     110, '3'},
+    {FOLIO_LAYOUT_DRAWER, FOLIO_COMMAND_LAYOUT_DRAWER, ACCESSIBLE_LAYOUT_DRAWER},
+    {FOLIO_LAYOUT_BOTH, FOLIO_COMMAND_LAYOUT_BOTH, ACCESSIBLE_LAYOUT_BOTH},
+    {FOLIO_LAYOUT_NOTE, FOLIO_COMMAND_LAYOUT_NOTE, ACCESSIBLE_LAYOUT_NOTE},
 };
 
 /* 自前操作の親子順・名前・focus可否と、表示名・UIA Name・AcceleratorKey・tooltip の 1 つの元
@@ -219,86 +223,59 @@ static const struct
     enum accessible_kind parent;
     enum ui_text label;
     bool focusable;
-    enum ui_text key;
     enum ui_text hint;
 } accessible_controls[] = {
-    [ACCESSIBLE_WINDOW] = {ACCESSIBLE_WINDOW, UI_TEXT_APP_LOGO, false, UI_TEXT_EMPTY,
-                           UI_TEXT_EMPTY},
-    [ACCESSIBLE_DRAWER] = {ACCESSIBLE_WINDOW, UI_TEXT_TITLE_CATEGORIES, false, UI_TEXT_EMPTY,
-                           UI_TEXT_EMPTY},
-    [ACCESSIBLE_HEADER] = {ACCESSIBLE_WINDOW, UI_TEXT_ACCESSIBLE_HEADER, false, UI_TEXT_EMPTY,
-                           UI_TEXT_EMPTY},
-    [ACCESSIBLE_NEW_NOTE] = {ACCESSIBLE_HEADER, UI_TEXT_COMMAND_NEW, true, UI_TEXT_KEY_NEW,
-                             UI_TEXT_EMPTY},
-    [ACCESSIBLE_LAYOUT_GROUP] = {ACCESSIBLE_HEADER, UI_TEXT_LAYOUT_GROUP, false, UI_TEXT_EMPTY,
-                                 UI_TEXT_EMPTY},
+    [ACCESSIBLE_WINDOW] = {ACCESSIBLE_WINDOW, UI_TEXT_APP_LOGO, false, UI_TEXT_EMPTY},
+    [ACCESSIBLE_DRAWER] = {ACCESSIBLE_WINDOW, UI_TEXT_TITLE_CATEGORIES, false, UI_TEXT_EMPTY},
+    [ACCESSIBLE_HEADER] = {ACCESSIBLE_WINDOW, UI_TEXT_ACCESSIBLE_HEADER, false, UI_TEXT_EMPTY},
+    [ACCESSIBLE_NEW_NOTE] = {ACCESSIBLE_HEADER, UI_TEXT_COMMAND_NEW, true, UI_TEXT_EMPTY},
+    [ACCESSIBLE_LAYOUT_GROUP] = {ACCESSIBLE_HEADER, UI_TEXT_LAYOUT_GROUP, false, UI_TEXT_EMPTY},
     [ACCESSIBLE_LAYOUT_DRAWER] = {ACCESSIBLE_LAYOUT_GROUP, UI_TEXT_LAYOUT_BUTTON_DRAWER, true,
-                                  UI_TEXT_LAYOUT_KEY_DRAWER, UI_TEXT_LAYOUT_NARROW_HINT},
+                                  UI_TEXT_LAYOUT_NARROW_HINT},
     [ACCESSIBLE_LAYOUT_BOTH] = {ACCESSIBLE_LAYOUT_GROUP, UI_TEXT_LAYOUT_BUTTON_BOTH, true,
-                                UI_TEXT_LAYOUT_KEY_BOTH, UI_TEXT_EMPTY},
+                                UI_TEXT_EMPTY},
     [ACCESSIBLE_LAYOUT_NOTE] = {ACCESSIBLE_LAYOUT_GROUP, UI_TEXT_LAYOUT_BUTTON_NOTE, true,
-                                UI_TEXT_LAYOUT_KEY_NOTE, UI_TEXT_EMPTY},
-    [ACCESSIBLE_HELP] = {ACCESSIBLE_HEADER, UI_TEXT_COMMAND_HELP, true, UI_TEXT_KEY_HELP,
-                         UI_TEXT_TOOLTIP_HELP},
-    [ACCESSIBLE_SETTINGS] = {ACCESSIBLE_HEADER, UI_TEXT_TOOLTIP_SETTINGS, true, UI_TEXT_EMPTY,
-                             UI_TEXT_EMPTY},
-    [ACCESSIBLE_CLOSE] = {ACCESSIBLE_HEADER, UI_TEXT_TOOLTIP_CLOSE, true, UI_TEXT_KEY_CLOSE,
-                          UI_TEXT_EMPTY},
+                                UI_TEXT_EMPTY},
+    [ACCESSIBLE_HELP] = {ACCESSIBLE_HEADER, UI_TEXT_COMMAND_HELP, true, UI_TEXT_TOOLTIP_HELP},
+    [ACCESSIBLE_SETTINGS] = {ACCESSIBLE_HEADER, UI_TEXT_TOOLTIP_SETTINGS, true, UI_TEXT_EMPTY},
+    [ACCESSIBLE_CLOSE] = {ACCESSIBLE_HEADER, UI_TEXT_TOOLTIP_CLOSE, true, UI_TEXT_EMPTY},
     [ACCESSIBLE_PANE_TOOLS] = {ACCESSIBLE_WINDOW, UI_TEXT_ACCESSIBLE_PANE_TOOLS, false,
-                               UI_TEXT_EMPTY, UI_TEXT_EMPTY},
-    [ACCESSIBLE_BREADCRUMB] = {ACCESSIBLE_PANE_TOOLS, UI_TEXT_EMPTY, false, UI_TEXT_EMPTY,
                                UI_TEXT_EMPTY},
-    [ACCESSIBLE_MODE_GROUP] = {ACCESSIBLE_PANE_TOOLS, UI_TEXT_ACCESSIBLE_MODE, false, UI_TEXT_EMPTY,
+    [ACCESSIBLE_BREADCRUMB] = {ACCESSIBLE_PANE_TOOLS, UI_TEXT_EMPTY, false, UI_TEXT_EMPTY},
+    [ACCESSIBLE_MODE_GROUP] = {ACCESSIBLE_PANE_TOOLS, UI_TEXT_ACCESSIBLE_MODE, false,
                                UI_TEXT_EMPTY},
-    [ACCESSIBLE_VIEW] = {ACCESSIBLE_MODE_GROUP, UI_TEXT_CHIP_VIEW, true, UI_TEXT_EMPTY,
-                         UI_TEXT_COMMAND_VIEW},
-    [ACCESSIBLE_EDIT] = {ACCESSIBLE_MODE_GROUP, UI_TEXT_CHIP_EDIT, true, UI_TEXT_EMPTY,
-                         UI_TEXT_TOOLTIP_EDIT},
+    [ACCESSIBLE_VIEW] = {ACCESSIBLE_MODE_GROUP, UI_TEXT_CHIP_VIEW, true, UI_TEXT_COMMAND_VIEW},
+    [ACCESSIBLE_EDIT] = {ACCESSIBLE_MODE_GROUP, UI_TEXT_CHIP_EDIT, true, UI_TEXT_TOOLTIP_EDIT},
     [ACCESSIBLE_ACTION_GROUP] = {ACCESSIBLE_PANE_TOOLS, UI_TEXT_ACCESSIBLE_NOTE_ACTIONS, false,
-                                 UI_TEXT_EMPTY, UI_TEXT_EMPTY},
-    [ACCESSIBLE_SAVE] = {ACCESSIBLE_ACTION_GROUP, UI_TEXT_COMMAND_SAVE, true, UI_TEXT_KEY_SAVE,
-                         UI_TEXT_EMPTY},
-    [ACCESSIBLE_FIND] = {ACCESSIBLE_ACTION_GROUP, UI_TEXT_COMMAND_FIND, true, UI_TEXT_KEY_FIND,
-                         UI_TEXT_EMPTY},
+                                 UI_TEXT_EMPTY},
+    [ACCESSIBLE_SAVE] = {ACCESSIBLE_ACTION_GROUP, UI_TEXT_COMMAND_SAVE, true, UI_TEXT_EMPTY},
+    [ACCESSIBLE_FIND] = {ACCESSIBLE_ACTION_GROUP, UI_TEXT_COMMAND_FIND, true, UI_TEXT_EMPTY},
     /* 名前は「操作」。▾は描く字（UI_TEXT_ACTION_OPERATIONS）だけが持つ表示の記号。 */
     [ACCESSIBLE_MENU] = {ACCESSIBLE_ACTION_GROUP, UI_TEXT_ACCESSIBLE_OPERATIONS, true,
-                         UI_TEXT_EMPTY, UI_TEXT_TOOLTIP_OPERATIONS},
+                         UI_TEXT_TOOLTIP_OPERATIONS},
     [ACCESSIBLE_NEW_CATEGORY] = {ACCESSIBLE_DRAWER, UI_TEXT_COMMAND_NEW_CATEGORY, true,
-                                 UI_TEXT_EMPTY, UI_TEXT_EMPTY},
-    [ACCESSIBLE_TREE] = {ACCESSIBLE_DRAWER, UI_TEXT_TITLE_CATEGORIES, true, UI_TEXT_EMPTY,
-                         UI_TEXT_EMPTY},
-    [ACCESSIBLE_CATEGORY] = {ACCESSIBLE_TREE, UI_TEXT_EMPTY, true, UI_TEXT_EMPTY, UI_TEXT_EMPTY},
-    [ACCESSIBLE_NOTE] = {ACCESSIBLE_CATEGORY, UI_TEXT_EMPTY, true, UI_TEXT_EMPTY, UI_TEXT_EMPTY},
-    [ACCESSIBLE_FILTER] = {ACCESSIBLE_WINDOW, UI_TEXT_PLACEHOLDER_FILTER, true, UI_TEXT_EMPTY,
-                           UI_TEXT_EMPTY},
-    [ACCESSIBLE_BODY] = {ACCESSIBLE_WINDOW, UI_TEXT_ACCESSIBLE_BODY, true, UI_TEXT_EMPTY,
-                         UI_TEXT_EMPTY},
-    [ACCESSIBLE_NOTICE] = {ACCESSIBLE_WINDOW, UI_TEXT_EMPTY, false, UI_TEXT_EMPTY, UI_TEXT_EMPTY},
-    [ACCESSIBLE_GUIDE] = {ACCESSIBLE_WINDOW, UI_TEXT_EMPTY_HEADING, false, UI_TEXT_EMPTY,
-                          UI_TEXT_EMPTY},
-    [ACCESSIBLE_SURFACE] = {ACCESSIBLE_WINDOW, UI_TEXT_EMPTY, false, UI_TEXT_EMPTY, UI_TEXT_EMPTY},
-    [ACCESSIBLE_SURFACE_LIST] = {ACCESSIBLE_SURFACE, UI_TEXT_EMPTY, false, UI_TEXT_EMPTY,
                                  UI_TEXT_EMPTY},
-    [ACCESSIBLE_SURFACE_CHOICE] = {ACCESSIBLE_SURFACE_LIST, UI_TEXT_EMPTY, true, UI_TEXT_EMPTY,
-                                   UI_TEXT_EMPTY},
-    [ACCESSIBLE_SURFACE_LANGUAGE] = {ACCESSIBLE_SURFACE_LIST, UI_TEXT_EMPTY, true, UI_TEXT_EMPTY,
-                                     UI_TEXT_EMPTY},
-    [ACCESSIBLE_SURFACE_TOGGLE] = {ACCESSIBLE_SURFACE_LIST, UI_TEXT_EMPTY, true, UI_TEXT_EMPTY,
-                                   UI_TEXT_EMPTY},
-    [ACCESSIBLE_SURFACE_BUTTON] = {ACCESSIBLE_SURFACE, UI_TEXT_EMPTY, false, UI_TEXT_EMPTY,
-                                   UI_TEXT_EMPTY},
-    [ACCESSIBLE_SURFACE_TEXT] = {ACCESSIBLE_SURFACE_LIST, UI_TEXT_EMPTY, false, UI_TEXT_EMPTY,
-                                 UI_TEXT_EMPTY},
-    [ACCESSIBLE_SURFACE_HELP] = {ACCESSIBLE_SURFACE, UI_TEXT_EMPTY, false, UI_TEXT_EMPTY,
-                                 UI_TEXT_EMPTY},
-    [ACCESSIBLE_SURFACE_STATUS] = {ACCESSIBLE_SURFACE, UI_TEXT_EMPTY, false, UI_TEXT_EMPTY,
-                                   UI_TEXT_EMPTY},
-    [ACCESSIBLE_COMMAND_INPUT] = {ACCESSIBLE_SURFACE, UI_TEXT_EMPTY, true, UI_TEXT_EMPTY,
-                                  UI_TEXT_EMPTY},
+    [ACCESSIBLE_TREE] = {ACCESSIBLE_DRAWER, UI_TEXT_TITLE_CATEGORIES, true, UI_TEXT_EMPTY},
+    [ACCESSIBLE_CATEGORY] = {ACCESSIBLE_TREE, UI_TEXT_EMPTY, true, UI_TEXT_EMPTY},
+    [ACCESSIBLE_NOTE] = {ACCESSIBLE_CATEGORY, UI_TEXT_EMPTY, true, UI_TEXT_EMPTY},
+    [ACCESSIBLE_FILTER] = {ACCESSIBLE_WINDOW, UI_TEXT_PLACEHOLDER_FILTER, true, UI_TEXT_EMPTY},
+    [ACCESSIBLE_BODY] = {ACCESSIBLE_WINDOW, UI_TEXT_ACCESSIBLE_BODY, true, UI_TEXT_EMPTY},
+    [ACCESSIBLE_NOTICE] = {ACCESSIBLE_WINDOW, UI_TEXT_EMPTY, false, UI_TEXT_EMPTY},
+    [ACCESSIBLE_GUIDE] = {ACCESSIBLE_WINDOW, UI_TEXT_EMPTY_HEADING, false, UI_TEXT_EMPTY},
+    [ACCESSIBLE_SURFACE] = {ACCESSIBLE_WINDOW, UI_TEXT_EMPTY, false, UI_TEXT_EMPTY},
+    [ACCESSIBLE_SURFACE_LIST] = {ACCESSIBLE_SURFACE, UI_TEXT_EMPTY, false, UI_TEXT_EMPTY},
+    [ACCESSIBLE_SURFACE_CHOICE] = {ACCESSIBLE_SURFACE_LIST, UI_TEXT_EMPTY, true, UI_TEXT_EMPTY},
+    [ACCESSIBLE_SURFACE_LANGUAGE] = {ACCESSIBLE_SURFACE_LIST, UI_TEXT_EMPTY, true, UI_TEXT_EMPTY},
+    [ACCESSIBLE_SURFACE_TOGGLE] = {ACCESSIBLE_SURFACE_LIST, UI_TEXT_EMPTY, true, UI_TEXT_EMPTY},
+    [ACCESSIBLE_SURFACE_BUTTON] = {ACCESSIBLE_SURFACE, UI_TEXT_EMPTY, false, UI_TEXT_EMPTY},
+    [ACCESSIBLE_SURFACE_TEXT] = {ACCESSIBLE_SURFACE_LIST, UI_TEXT_EMPTY, false, UI_TEXT_EMPTY},
+    [ACCESSIBLE_SURFACE_HELP] = {ACCESSIBLE_SURFACE, UI_TEXT_EMPTY, false, UI_TEXT_EMPTY},
+    [ACCESSIBLE_SURFACE_STATUS] = {ACCESSIBLE_SURFACE, UI_TEXT_EMPTY, false, UI_TEXT_EMPTY},
+    [ACCESSIBLE_COMMAND_INPUT] = {ACCESSIBLE_SURFACE, UI_TEXT_EMPTY, true, UI_TEXT_EMPTY},
     [ACCESSIBLE_REPLACE_PATTERN] = {ACCESSIBLE_SURFACE, UI_TEXT_ACCESSIBLE_PATTERN, true,
-                                    UI_TEXT_EMPTY, UI_TEXT_EMPTY},
+                                    UI_TEXT_EMPTY},
     [ACCESSIBLE_REPLACE_TEXT] = {ACCESSIBLE_SURFACE, UI_TEXT_ACCESSIBLE_REPLACEMENT, true,
-                                 UI_TEXT_EMPTY, UI_TEXT_EMPTY},
+                                 UI_TEXT_EMPTY},
 };
 
 /* 自前で描く操作部品と、その様式（ADR0060 の決定 1）。hover・押下・tooltipの対象もこの表。 */
@@ -349,7 +326,7 @@ static const struct
 } action_parts[action_count] = {
     {ACCESSIBLE_SAVE, true, ICON_PAINT_SAVE},
     {ACCESSIBLE_FIND, true, ICON_PAINT_SEARCH},
-    {ACCESSIBLE_MENU, false, ICON_PAINT_SAVE},
+    {ACCESSIBLE_MENU, true, ICON_PAINT_MENU},
 };
 
 static size_t layout_button_count(void)
@@ -371,18 +348,7 @@ static bool settings_row_choice(size_t index)
 }
 
 /* Ctrl+S が WM_CHAR で届く制御文字（GetKeyState を読まない・ARC-007）。 */
-constexpr WPARAM store_character = 0x13;
-constexpr WPARAM palette_character = 0x10;
-constexpr WPARAM new_character = 0x0E;
 constexpr int command_control_id = 1;
-constexpr WORD save_as_accelerator = 100;
-constexpr WORD rename_accelerator = 101;
-constexpr WORD find_accelerator = 102;
-constexpr WORD search_next_accelerator = 103;
-constexpr WORD search_previous_accelerator = 104;
-constexpr WORD search_forward_accelerator = 105;
-constexpr WORD search_backward_accelerator = 106;
-constexpr WORD filter_accelerator = 107;
 constexpr int filter_control_id = 2;
 constexpr size_t filter_input_capacity = 128;
 /* 絞り込みが効いているあいだ欄の右端に出す「×」（ADR 0024 の 2026-09-22 の補正 6）。
@@ -509,6 +475,28 @@ constexpr int base_settings_item_height = 36;
 constexpr int base_settings_item_gap = 8;
 constexpr int base_settings_group_gap = 20;
 
+static WPARAM shortcut_character_for(enum folio_command command);
+static bool shortcut_keydown(struct folio_window *_Nonnull self, WPARAM key);
+static bool accessible_command(enum accessible_kind kind, enum folio_command *_Nonnull out);
+static const char *_Nonnull part_shortcut(enum accessible_kind kind, enum folio_language language);
+static RECT menu_rect(const struct folio_window *_Nonnull self);
+static RECT menu_row_rect(const struct folio_window *_Nonnull self, size_t index);
+static size_t menu_visible_count(const struct folio_window *_Nonnull self);
+static size_t menu_scroll_limit(const struct folio_window *_Nonnull self);
+static void arrange_drawer_region(struct folio_window *_Nonnull self, RECT bounds);
+static void menu_reveal(struct folio_window *_Nonnull self);
+static void draw_menu_surface(const struct folio_window *_Nonnull self, HDC device);
+static void show_menu_surface(struct folio_window *_Nonnull self,
+                              const struct menu_request *_Nonnull request);
+static bool menu_message(struct folio_window *_Nonnull self, UINT message, WPARAM wparam,
+                         LPARAM lparam);
+static void menu_execute(struct folio_window *_Nonnull self, size_t index);
+static bool menu_navigate(struct folio_window *_Nonnull self, WPARAM key);
+static enum folio_state_outcome menu_availability(const struct folio_window *_Nonnull self,
+                                                  size_t index);
+static void menu_accessible(const struct folio_window *_Nonnull self, size_t index,
+                            struct accessible_view *_Nonnull out);
+static void report_outcome(struct folio_window *_Nonnull self, enum folio_state_outcome outcome);
 static void execute_command(struct folio_window *_Nonnull self, enum folio_command command,
                             const char *_Nonnull argument);
 static enum folio_state_outcome store_body(const struct folio_window *_Nonnull self);
@@ -695,6 +683,9 @@ static bool drawer_visible(const struct folio_window *_Nonnull self)
 /* 面が持つ操作の行数。#75 の設定画面（ADR 0029 の決定 9）はここへ自分の行数を足す。 */
 static int command_surface_rows(const struct folio_window *_Nonnull self)
 {
+    if (self->command_surface == COMMAND_SURFACE_MENU)
+        return (int)folio_menu_action_count(self->menu.context);
+
     switch (self->command_surface)
     {
     case COMMAND_SURFACE_CLOSED:
@@ -704,6 +695,7 @@ static int command_surface_rows(const struct folio_window *_Nonnull self)
         return (int)settings_row_count();
     case COMMAND_SURFACE_THEMES:
         return (int)folio_theme_choice_count();
+    case COMMAND_SURFACE_MENU:
     case COMMAND_SURFACE_HISTORY:
         return (int)folio_state_history_count(self->state);
     case COMMAND_SURFACE_EX:
@@ -730,6 +722,7 @@ static int command_help_rows(const struct folio_window *_Nonnull self)
     case COMMAND_SURFACE_REPLACE:
     case COMMAND_SURFACE_SETTINGS:
     case COMMAND_SURFACE_THEMES:
+    case COMMAND_SURFACE_MENU:
     case COMMAND_SURFACE_HISTORY:
         return 0;
     }
@@ -749,7 +742,8 @@ static int command_box_height(int rows, int help_rows)
  * ADR 0031 の決定 7・ADR 0038 の決定 12）。 */
 static bool command_surface_listing(enum command_surface_mode surface)
 {
-    return surface == COMMAND_SURFACE_SETTINGS || surface == COMMAND_SURFACE_HISTORY;
+    return surface == COMMAND_SURFACE_SETTINGS || surface == COMMAND_SURFACE_HISTORY ||
+           surface == COMMAND_SURFACE_MENU;
 }
 
 static struct folio_window *_Nullable self_of(HWND window)
@@ -814,6 +808,7 @@ static void clear_command_status(struct folio_window *_Nonnull self)
     self->command_unknown = false;
     self->command_no_match = false;
     self->command_failure = FOLIO_STATE_READY;
+    self->result_line[0] = '\0';
 }
 
 /* 等幅書体の数字 1 文字の幅（字間 0・決定 1）。測れなければ DPI 換算の目安を使う。
@@ -890,7 +885,9 @@ static bool load_blocks_input(const struct folio_window *_Nonnull self, UINT mes
 
 static int pane_notice_height(const struct folio_window *_Nonnull self)
 {
-    return pane_visible(self) && (self->notice != PANE_NOTICE_NONE || pane_unavailable(self))
+    return (self->notice == PANE_NOTICE_COMMAND_RESULT ||
+            (folio_state_layout_mode(self->state) != FOLIO_LAYOUT_DRAWER &&
+             (self->notice != PANE_NOTICE_NONE || pane_unavailable(self))))
                ? scale(base_command_status_height, GetDpiForWindow(self->handle))
                : 0;
 }
@@ -1150,6 +1147,9 @@ static RECT settings_close_rect(const struct folio_window *_Nonnull self)
 
 static RECT command_surface_rect(const struct folio_window *_Nonnull self)
 {
+    if (self->command_surface == COMMAND_SURFACE_MENU)
+        return menu_rect(self);
+
     switch (self->command_surface)
     {
     case COMMAND_SURFACE_EX:
@@ -1163,6 +1163,7 @@ static RECT command_surface_rect(const struct folio_window *_Nonnull self)
         return settings_dialog_rect(self);
     case COMMAND_SURFACE_CLOSED:
     case COMMAND_SURFACE_PALETTE:
+    case COMMAND_SURFACE_MENU:
     case COMMAND_SURFACE_HISTORY:
         return command_palette_rect(self);
     }
@@ -1332,6 +1333,13 @@ static RECT command_toggle_rect(const struct folio_window *_Nonnull self)
 
 static RECT command_rows_rect(const struct folio_window *_Nonnull self)
 {
+    if (self->command_surface == COMMAND_SURFACE_MENU)
+    {
+        RECT r;
+        GetClientRect(self->command_layer, &r);
+        return r;
+    }
+
     if (self->command_surface == COMMAND_SURFACE_THEMES)
     {
         return theme_rows_rect(self);
@@ -1351,6 +1359,9 @@ static RECT command_rows_rect(const struct folio_window *_Nonnull self)
 
 static size_t command_visible_rows(const struct folio_window *_Nonnull self)
 {
+    if (self->command_surface == COMMAND_SURFACE_MENU)
+        return menu_visible_count(self);
+
     RECT rows = command_rows_rect(self);
     int height = self->command_surface == COMMAND_SURFACE_THEMES ? base_theme_row_height
                                                                  : base_command_row_height;
@@ -1359,6 +1370,12 @@ static size_t command_visible_rows(const struct folio_window *_Nonnull self)
 
 static void reveal_command_selection(struct folio_window *_Nonnull self)
 {
+    if (self->command_surface == COMMAND_SURFACE_MENU)
+    {
+        menu_reveal(self);
+        return;
+    }
+
     if (self->command_surface == COMMAND_SURFACE_SETTINGS)
     {
         reveal_settings_selection(self);
@@ -1496,7 +1513,8 @@ static void arrange_command_contents(struct folio_window *_Nonnull self)
     if (self->command_surface == COMMAND_SURFACE_PALETTE || settings_surface(self) ||
         command_surface_listing(self->command_surface))
     {
-        self->command_first = 0;
+        if (self->command_surface != COMMAND_SURFACE_MENU)
+            self->command_first = 0;
         reveal_command_selection(self);
     }
     arrange_replace_inputs(self);
@@ -1531,7 +1549,11 @@ static void set_pane_notice(struct folio_window *_Nonnull self, enum pane_notice
     {
         return;
     }
+    bool boundary =
+        self->notice == PANE_NOTICE_COMMAND_RESULT || notice == PANE_NOTICE_COMMAND_RESULT;
     self->notice = notice;
+    if (boundary && self->drawer != nullptr)
+        arrange_drawer_region(self, regions_for(self).drawer);
     accessibility_host_schedule(self->accessibility);
     /* 暗幕はclient/cardだけに依存し、notice変更では再確保不要。配置本体には失敗の対話が無い。 */
     arrange_command_contents(self);
@@ -1640,10 +1662,18 @@ static bool body_shown(const struct folio_window *_Nonnull self)
     return pane_visible(self) && document_open(self);
 }
 
+static void arrange_drawer_region(struct folio_window *_Nonnull self, RECT bounds)
+{
+    if (folio_state_layout_mode(self->state) == FOLIO_LAYOUT_DRAWER &&
+        self->notice == PANE_NOTICE_COMMAND_RESULT)
+        bounds.bottom -= pane_notice_height(self);
+    arrange_drawer(self, bounds);
+}
+
 static void arrange(struct folio_window *_Nonnull self)
 {
     struct folio_regions regions = regions_for(self);
-    arrange_drawer(self, regions.drawer);
+    arrange_drawer_region(self, regions.drawer);
     if (drawer_visible(self))
     {
         arrange_filter_input(self);
@@ -2260,7 +2290,7 @@ static struct ui_part_paint part_paint(const struct folio_window *_Nonnull self,
  * 付いた字を描く（ADR0060 の補正 2。▾は UIA 名に入れない）。測る経路もこの 1 本を使う。 */
 static enum ui_text part_display_text(enum accessible_kind kind)
 {
-    return kind == ACCESSIBLE_MENU ? UI_TEXT_ACTION_OPERATIONS : accessible_controls[kind].label;
+    return accessible_controls[kind].label;
 }
 
 /* 部品の字は表示名＝UIA Name の 1 つの元（accessible_controls）から引く。 */
@@ -2371,7 +2401,7 @@ static void layout_phrase(const struct folio_window *_Nonnull self, size_t index
         .id = format,
         .language = language,
         .name = folio_command_label(layout_buttons[index].command, language),
-        .from = ui_text_line(layout_buttons[index].shortcut, language),
+        .from = folio_shortcut_command_hint(layout_buttons[index].command, language),
         .to = layout_buttons[index].mode == FOLIO_LAYOUT_DRAWER
                   ? ui_text_line(UI_TEXT_LAYOUT_NARROW_HINT, language)
                   : ""};
@@ -2393,7 +2423,7 @@ static void draw_layout_command(const struct folio_window *_Nonnull self, HDC de
     enum folio_language language = folio_state_language(self->state);
     draw_utf8(device, folio_command_label(row.command, language), line);
     OffsetRect(&line, 0, line.bottom - line.top);
-    draw_utf8(device, ui_text_line(layout_buttons[index].shortcut, language), line);
+    draw_utf8(device, folio_shortcut_command_hint(layout_buttons[index].command, language), line);
 }
 
 static void draw_aliases(const struct folio_window *_Nonnull self, HDC device,
@@ -2431,7 +2461,10 @@ static void draw_command_row(const struct folio_window *_Nonnull self, HDC devic
     label.left += scale(base_command_row_padding, dpi);
     label.right -= scale(base_command_alias_room, dpi);
     SetTextColor(device, row.selected ? self->palette.selected_text : self->palette.current_text);
-    draw_utf8(device, folio_command_label(row.command, folio_state_language(self->state)), label);
+    char caption[draw_unit_limit];
+    if (folio_command_caption(row.command, folio_state_language(self->state), caption,
+                              sizeof caption) == UI_TEXT_FORMAT_READY)
+        draw_utf8(device, caption, label);
     RECT aliases = row.bounds;
     aliases.right -= scale(base_command_row_padding, dpi);
     aliases.left = aliases.right;
@@ -2515,7 +2548,8 @@ static void draw_search_surface(const struct folio_window *_Nonnull self, HDC de
     SetTextColor(device, self->palette.current_text);
     draw_utf8(device, ui_text_line(search_direction_label(self), language),
               search_header_rect(self));
-    draw_utf8(device, line, search_result_rect(self));
+    draw_utf8(device, self->command_failure == FOLIO_STATE_READY ? line : self->result_line,
+              search_result_rect(self));
     icon_paint_fill(device, search_close_rect(self), ICON_PAINT_CLOSE, self->palette.current_text);
     draw_input_field(self, device, self->command_input, command_input_rect(self));
     SetTextColor(device, self->palette.contrast == FOLIO_CONTRAST_HIGH
@@ -2532,6 +2566,11 @@ static void draw_search_surface(const struct folio_window *_Nonnull self, HDC de
 static void failure_status(const struct folio_window *_Nonnull self,
                            enum folio_state_outcome outcome, char *_Nonnull out)
 {
+    if (outcome == self->command_failure && self->result_line[0] != '\0')
+    {
+        (void)strcpy_s(out, replace_status_capacity, self->result_line);
+        return;
+    }
     enum folio_language language = folio_state_language(self->state);
     size_t at = append_text(out, 0, folio_state_failure_line(outcome, language));
     out[at] = '\0';
@@ -2566,6 +2605,12 @@ static void replace_status(const struct folio_window *_Nonnull self, char *_Nonn
 /* 欄の状態の 1 行。失敗の 1 行が「対象名 / k 件」より優先する（決定 8(a)）。 */
 static void replace_line(const struct folio_window *_Nonnull self, char *_Nonnull out)
 {
+    if (self->command_failure != FOLIO_STATE_READY)
+    {
+        failure_status(self, self->command_failure, out);
+        return;
+    }
+
     if (self->replace_outcome == FOLIO_STATE_READY &&
         GetWindowTextLengthW(self->replace_inputs[0]) > 0 &&
         !folio_state_has_replace_preview(self->state))
@@ -2659,7 +2704,9 @@ static void draw_command_shortcuts(const struct folio_window *_Nonnull self, HDC
         const char *line = "";
         if (at < generic)
         {
-            line = ui_text_line(command_shortcuts[at], language);
+            if (folio_shortcut_help(command_shortcuts[at], language, text, sizeof text) ==
+                UI_TEXT_FORMAT_READY)
+                line = text;
         }
         if (at >= generic)
         {
@@ -3261,6 +3308,12 @@ static void draw_palette_rows(const struct folio_window *_Nonnull self, HDC devi
 
 static void draw_command_surface(const struct folio_window *_Nonnull self, HDC device, RECT bounds)
 {
+    if (self->command_surface == COMMAND_SURFACE_MENU)
+    {
+        draw_menu_surface(self, device);
+        return;
+    }
+
     if (self->command_brush == nullptr)
     {
         return;
@@ -3299,6 +3352,7 @@ static void draw_command_surface(const struct folio_window *_Nonnull self, HDC d
     case COMMAND_SURFACE_SETTINGS:
         draw_settings_dialog(self, device, bounds);
         return;
+    case COMMAND_SURFACE_MENU:
     case COMMAND_SURFACE_HISTORY:
         FillRect(device, &bounds, self->command_brush);
         draw_history_rows(self, device, bounds);
@@ -3500,8 +3554,8 @@ static enum ui_text pane_notice_line(const struct folio_window *_Nonnull self)
         {
         case PANE_NOTICE_NONE:
             return UI_TEXT_EMPTY;
-        case PANE_NOTICE_TRASH_COMPLETED:
-            line = UI_TEXT_TRASH_NOTE_COMPLETED;
+        case PANE_NOTICE_COMMAND_RESULT:
+            line = UI_TEXT_COMMAND_CAPTION;
             break;
         case PANE_NOTICE_NOTE_UNEDITABLE:
             line = UI_TEXT_NOTE_OPENED_IN_VIEW;
@@ -3516,7 +3570,10 @@ static enum ui_text pane_notice_line(const struct folio_window *_Nonnull self)
 static RECT pane_notice_rect(const struct folio_window *_Nonnull self, RECT client)
 {
     UINT dpi = GetDpiForWindow(self->handle);
-    return (RECT){pane_bounds(self).left, client.bottom - pane_notice_height(self),
+    return (RECT){folio_state_layout_mode(self->state) == FOLIO_LAYOUT_DRAWER
+                      ? scale(16, dpi)
+                      : pane_bounds(self).left,
+                  client.bottom - pane_notice_height(self),
                   client.right - scale(base_close_margin, dpi), client.bottom};
 }
 
@@ -3525,8 +3582,13 @@ static void draw_pane_notice(const struct folio_window *_Nonnull self, HDC devic
     enum ui_text line = pane_notice_line(self);
     if (line == UI_TEXT_EMPTY)
         return;
+    SelectObject(device, self->mono_font);
+    SetBkMode(device, TRANSPARENT);
     SetTextColor(device, self->palette.header_text);
-    draw_utf8(device, ui_text_line(line, folio_state_language(self->state)),
+    draw_utf8(device,
+              self->notice == PANE_NOTICE_COMMAND_RESULT
+                  ? self->result_line
+                  : ui_text_line(line, folio_state_language(self->state)),
               pane_notice_rect(self, client));
 }
 
@@ -3542,7 +3604,7 @@ static void new_note_destination(const struct folio_window *_Nonnull self, char 
         request.id = UI_TEXT_TOOLTIP_NEW_NOTE;
         request.name =
             folio_state_category_name(self->state, folio_state_current_category(self->state));
-        request.from = ui_text_line(UI_TEXT_KEY_NEW, language);
+        request.from = folio_shortcut_command_hint(FOLIO_COMMAND_NEW, language);
     }
     if (ui_text_format(&request, out, draw_unit_limit) != UI_TEXT_FORMAT_READY)
     {
@@ -3649,8 +3711,7 @@ static void draw_common_header(const struct folio_window *_Nonnull self, HDC dev
 }
 
 /* 右ペインの地と頭。本文は note_pane が持つ。 */
-static void draw_pane(const struct folio_window *_Nonnull self, HDC device, RECT client,
-                      RECT damage)
+static void draw_pane(const struct folio_window *_Nonnull self, HDC device, RECT damage)
 {
     UINT dpi = GetDpiForWindow(self->handle);
     RECT pane = regions_for(self).pane;
@@ -3672,7 +3733,6 @@ static void draw_pane(const struct folio_window *_Nonnull self, HDC device, RECT
         draw_guide(self, device);
     }
     draw_gutter(self, device, damage);
-    draw_pane_notice(self, device, client);
 }
 
 /* 共通頭と可視paneを更新矩形へ一枚だけ描く。memory原点をずらしてclient座標を共用する。 */
@@ -3692,8 +3752,9 @@ static void blit_window(struct folio_window *_Nonnull self, HDC target, RECT cli
         draw_common_header(self, memory);
         if (pane_visible(self))
         {
-            draw_pane(self, memory, client, damage);
+            draw_pane(self, memory, damage);
         }
+        draw_pane_notice(self, memory, client);
         BitBlt(target, damage.left, damage.top, width, height, memory, damage.left, damage.top,
                SRCCOPY);
         SelectObject(memory, previous);
@@ -4016,53 +4077,53 @@ static const bool inline_outcomes[] = {
      * `:set number` の失敗も同じ値なので、他の Ex の失敗と同じく欄の 1 行になる。 */
     [FOLIO_STATE_SETTINGS_UNREADABLE] = true,
     [FOLIO_STATE_APPEARANCE_UNAVAILABLE] = true,
-    [FOLIO_STATE_SETTINGS_STORE_FAILED] = true,
+    [FOLIO_STATE_SETTINGS_STORE_FAILED] = false,
     [FOLIO_STATE_READY] = false,
     [FOLIO_STATE_DATA_UNREADABLE] = false,
     [FOLIO_STATE_LEDGER_MALFORMED] = false,
     [FOLIO_STATE_STORE_FAILED] = false,
-    [FOLIO_STATE_NO_SUCH_CATEGORY] = false,
-    [FOLIO_STATE_NO_SUCH_NOTE] = false,
+    [FOLIO_STATE_NO_SUCH_CATEGORY] = true,
+    [FOLIO_STATE_NO_SUCH_NOTE] = true,
     [FOLIO_STATE_NOTE_UNREADABLE] = false,
-    [FOLIO_STATE_NOTE_MALFORMED] = false,
-    [FOLIO_STATE_NOTE_TOO_LARGE] = false,
+    [FOLIO_STATE_NOTE_MALFORMED] = true,
+    [FOLIO_STATE_NOTE_TOO_LARGE] = true,
     [FOLIO_STATE_NOTE_STORE_FAILED] = false,
     [FOLIO_STATE_HISTORY_FAILED] = false,
-    [FOLIO_STATE_NAME_TAKEN] = false,
+    [FOLIO_STATE_NAME_TAKEN] = true,
     [FOLIO_STATE_LEDGER_STALE] = false,
     [FOLIO_STATE_LEDGER_UNSYNCED] = false,
     [FOLIO_STATE_RENAME_PENDING] = false,
     [FOLIO_STATE_RENAME_UNLOCKED] = false,
-    [FOLIO_STATE_RENAME_UNSUPPORTED] = false,
+    [FOLIO_STATE_RENAME_UNSUPPORTED] = true,
     [FOLIO_STATE_RENAME_IDENTITY_FAILED] = false,
     [FOLIO_STATE_RENAME_JOURNAL_FAILED] = false,
     [FOLIO_STATE_RENAME_JOURNAL_BROKEN] = false,
     [FOLIO_STATE_RENAME_HALTED] = false,
-    [FOLIO_STATE_SEARCH_MALFORMED] = false,
-    [FOLIO_STATE_FILTERED] = false,
+    [FOLIO_STATE_SEARCH_MALFORMED] = true,
+    [FOLIO_STATE_FILTERED] = true,
     [FOLIO_STATE_PANE_UNAVAILABLE] = false,
     [FOLIO_STATE_PANE_LOAD_FAILED] = false,
     [FOLIO_STATE_PANE_RECOLOR_FAILED] = false,
     [FOLIO_STATE_OUT_OF_MEMORY] = false,
-    [FOLIO_STATE_NAME_REQUIRED] = false,
-    [FOLIO_STATE_INVALID_NAME] = false,
-    [FOLIO_STATE_ALREADY_NAMED] = false,
+    [FOLIO_STATE_NAME_REQUIRED] = true,
+    [FOLIO_STATE_INVALID_NAME] = true,
+    [FOLIO_STATE_ALREADY_NAMED] = true,
     [FOLIO_STATE_CANCELLED] = false,
     /* 起動時に 1 回だけ箱で知らせる（ADR 0036 の決定 5）。欄から来ることは無い */
     [FOLIO_STATE_FONT_BUNDLE_UNAVAILABLE] = false,
     /* カテゴリの操作の失敗は箱で知らせる（ADR 0039 の補正 1） */
-    [FOLIO_STATE_CATEGORY_NAME_INVALID] = false,
-    [FOLIO_STATE_CATEGORY_NAME_TAKEN] = false,
+    [FOLIO_STATE_CATEGORY_NAME_INVALID] = true,
+    [FOLIO_STATE_CATEGORY_NAME_TAKEN] = true,
     [FOLIO_STATE_CATEGORY_NOT_CREATED] = false,
     [FOLIO_STATE_CATEGORY_LEDGER_STALE] = false,
     [FOLIO_STATE_TRASH_UNAVAILABLE] = false,
     [FOLIO_STATE_TRASH_BUSY] = false,
     [FOLIO_STATE_TRASH_FAILED] = false,
-    [FOLIO_STATE_CATEGORY_NOT_EMPTY] = false,
-    [FOLIO_STATE_CATEGORY_HAS_FILES] = false,
+    [FOLIO_STATE_CATEGORY_NOT_EMPTY] = true,
+    [FOLIO_STATE_CATEGORY_HAS_FILES] = true,
     [FOLIO_STATE_CATEGORY_HISTORY_NOT_RECYCLED] = false,
     [FOLIO_STATE_CATEGORY_REMOVE_FAILED] = false,
-    [FOLIO_STATE_CATEGORY_NOT_SELECTED] = false,
+    [FOLIO_STATE_CATEGORY_NOT_SELECTED] = true,
 };
 
 static bool inline_outcome(enum folio_state_outcome outcome)
@@ -4070,35 +4131,74 @@ static bool inline_outcome(enum folio_state_outcome outcome)
     return inline_outcomes[outcome];
 }
 
-static void command_failure(struct folio_window *_Nonnull self, enum folio_state_outcome outcome)
+static bool result_surface(const struct folio_window *_Nonnull self)
 {
-    /* キャンセルは失敗ではないので何も見せない。ただし名前入力面（モーダル）を閉じた後の
-     * フォーカスは主窓へ落ちるので、失敗の箱の後と同じく開いている入力面へ返す
-     * （ADR 0016 の補正 6・#185）。 */
+    return self->command_surface == COMMAND_SURFACE_EX ||
+           self->command_surface == COMMAND_SURFACE_PALETTE ||
+           self->command_surface == COMMAND_SURFACE_SEARCH ||
+           self->command_surface == COMMAND_SURFACE_REPLACE ||
+           self->command_surface == COMMAND_SURFACE_THEMES;
+}
+
+static void outcome_line(const struct folio_window *_Nonnull self, enum folio_state_outcome outcome,
+                         char *_Nonnull out)
+{
+    enum folio_language language = folio_state_language(self->state);
+    bool note_required = outcome == FOLIO_STATE_NOTHING_SELECTED && self->command_context;
+    struct ui_text_request request = {
+        .id = note_required ? UI_TEXT_FAILURE_COMMAND_NOTE_REQUIRED : UI_TEXT_COMMAND_CAPTION,
+        .language = language,
+        .name = note_required ? folio_command_label(self->reporting_command, language)
+                              : folio_state_failure_line(outcome, language)};
+    if (ui_text_format(&request, out, 1024) != UI_TEXT_FORMAT_READY)
+        out[0] = '\0';
+}
+
+static void clear_report_outcome(struct folio_window *_Nonnull self)
+{
+    self->command_failure = FOLIO_STATE_READY;
+    self->result_line[0] = '\0';
+    if (self->notice == PANE_NOTICE_COMMAND_RESULT)
+        set_pane_notice(self, PANE_NOTICE_NONE);
+    redraw_command_layer(self);
+}
+
+static void report_outcome(struct folio_window *_Nonnull self, enum folio_state_outcome outcome)
+{
+    if (outcome == FOLIO_STATE_READY)
+    {
+        clear_report_outcome(self);
+        return;
+    }
     if (outcome == FOLIO_STATE_CANCELLED)
     {
-        if (self->command_surface != COMMAND_SURFACE_CLOSED)
-        {
+        if (result_surface(self))
             focus_command_input(self);
-        }
         return;
     }
-    bool inline_failure =
-        self->command_surface != COMMAND_SURFACE_CLOSED && inline_outcome(outcome);
-    if (!inline_failure)
+    if (result_surface(self))
+    {
+        clear_command_status(self);
+        outcome_line(self, outcome, self->result_line);
+        self->command_failure = outcome;
+        arrange_command_input(self);
+        redraw_command_layer(self);
+        focus_command_input(self);
+        return;
+    }
+    if (!inline_outcome(outcome))
     {
         failure_box_show(self->handle, outcome, self->state);
-        if (self->command_surface != COMMAND_SURFACE_CLOSED)
-        {
-            focus_command_input(self);
-        }
         return;
     }
-    clear_command_status(self);
-    self->command_failure = outcome;
-    arrange_command_input(self);
-    redraw_command_layer(self);
-    focus_command_input(self);
+    outcome_line(self, outcome, self->result_line);
+    set_pane_notice(self, PANE_NOTICE_COMMAND_RESULT);
+    arrange(self);
+    InvalidateRect(self->handle, nullptr, FALSE);
+    char16_t units[draw_unit_limit];
+    if (wide_units(self->result_line, units) > 0)
+        accessibility_host_notify(self->accessibility,
+                                  (struct accessible_item){.kind = ACCESSIBLE_NOTICE}, units);
 }
 
 static enum search_direction reversed_direction(enum search_direction direction)
@@ -4214,7 +4314,7 @@ static void update_search(struct folio_window *_Nonnull self, enum search_direct
     }
     if (taken != FOLIO_STATE_READY)
     {
-        failure_box_show(self->handle, taken, self->state);
+        report_outcome(self, taken);
         return;
     }
     struct note_search_query query = {.text = text,
@@ -4251,6 +4351,8 @@ static size_t input_text(HWND _Nullable input, wchar_t *_Nonnull units)
  * 打つたびに呼ぶので、失敗もモーダルではなく欄の中の 1 行にする（閲覧中は NOT_EDITING）。 */
 static void update_replace_preview(struct folio_window *_Nonnull self)
 {
+    clear_command_status(self);
+
     wchar_t pattern[command_input_capacity];
     wchar_t replacement[command_input_capacity];
     size_t patterns = input_text(self->replace_inputs[0], pattern);
@@ -4548,7 +4650,7 @@ static void apply_layout_mode(struct folio_window *_Nonnull self, enum folio_lay
     restore_layout_focus(self, focus);
     if (!changed)
     {
-        command_failure(self, FOLIO_STATE_OUT_OF_MEMORY);
+        report_outcome(self, FOLIO_STATE_OUT_OF_MEMORY);
     }
 }
 
@@ -4583,8 +4685,18 @@ static void set_command_surface(struct folio_window *_Nonnull self, enum command
     {
         set_hover(self, ACCESSIBLE_WINDOW); /* 面の下の部品は hover できない */
     }
+    bool closing = self->command_surface == COMMAND_SURFACE_MENU && mode != COMMAND_SURFACE_MENU;
+    if (closing)
+        accessibility_host_menu(self->accessibility, ACCESSIBLE_MENU_CLOSED);
     invalidate_surface_items(self);
     self->command_surface = mode;
+    if (closing)
+    {
+        self->menu_pressed = SIZE_MAX;
+        self->menu_key = 0;
+        if (GetCapture() == self->command_layer)
+            ReleaseCapture();
+    }
 }
 
 static void open_command_surface(struct folio_window *_Nonnull self,
@@ -4700,7 +4812,7 @@ static void show_search_surface(struct folio_window *_Nonnull self)
                           folio_state_search_term_length(self->state),
                           &term) != UTF16_TEXT_CONVERTED)
     {
-        command_failure(self, FOLIO_STATE_OUT_OF_MEMORY);
+        report_outcome(self, FOLIO_STATE_OUT_OF_MEMORY);
         return;
     }
     if (self->command_surface == COMMAND_SURFACE_CLOSED)
@@ -4729,7 +4841,7 @@ static void begin_search(struct folio_window *_Nonnull self)
 {
     if (folio_state_document_kind(self->state) == FOLIO_DOCUMENT_NONE)
     {
-        command_failure(self, FOLIO_STATE_NOTHING_SELECTED);
+        report_outcome(self, FOLIO_STATE_NOTHING_SELECTED);
         return;
     }
     show_search_surface(self);
@@ -4763,7 +4875,7 @@ static void begin_replace(struct folio_window *_Nonnull self, const char *_Nonnu
     (void)argument;
     if (folio_state_document_kind(self->state) == FOLIO_DOCUMENT_NONE)
     {
-        command_failure(self, FOLIO_STATE_NOTHING_SELECTED);
+        report_outcome(self, FOLIO_STATE_NOTHING_SELECTED);
         return;
     }
     show_replace_surface(self);
@@ -4846,7 +4958,7 @@ static void execute_history_command(struct folio_window *_Nonnull self,
     enum folio_state_outcome outcome = folio_state_open_history(self->state);
     if (outcome != FOLIO_STATE_READY)
     {
-        command_failure(self, outcome);
+        report_outcome(self, outcome);
         return;
     }
     show_history_surface(self);
@@ -4976,9 +5088,10 @@ static bool report_save(struct folio_window *_Nonnull self, enum folio_state_out
 {
     if (outcome != FOLIO_STATE_READY)
     {
-        command_failure(self, outcome);
+        report_outcome(self, outcome);
         return false;
     }
+    report_outcome(self, FOLIO_STATE_READY);
     InvalidateRect(self->handle, nullptr, FALSE);
     return true;
 }
@@ -5017,7 +5130,7 @@ static void finish_rename_command(struct folio_window *_Nonnull self,
     }
     if (outcome != FOLIO_STATE_READY)
     {
-        command_failure(self, outcome);
+        report_outcome(self, outcome);
     }
     redraw_drawer(self);
     redraw_command_layer(self);
@@ -5190,7 +5303,7 @@ static void finish_quit(struct folio_window *_Nonnull self, enum folio_state_out
 {
     if (outcome != FOLIO_STATE_READY)
     {
-        command_failure(self, outcome);
+        report_outcome(self, outcome);
         return;
     }
     clear_session_reason(self);
@@ -5249,7 +5362,7 @@ static void execute_mode_command(struct folio_window *_Nonnull self, enum pane_m
     }
     if (outcome != FOLIO_STATE_READY)
     {
-        command_failure(self, outcome);
+        report_outcome(self, outcome);
         return;
     }
     hide_command_surface(self);
@@ -5275,7 +5388,7 @@ static void new_note_at(struct folio_window *_Nonnull self, size_t category)
     }
     if (saved != FOLIO_STATE_READY)
     {
-        command_failure(self, saved);
+        report_outcome(self, saved);
         return;
     }
     show_pane_layout(self);
@@ -5285,7 +5398,7 @@ static void new_note_at(struct folio_window *_Nonnull self, size_t category)
     InvalidateRect(self->handle, nullptr, FALSE);
     if (saved != FOLIO_STATE_READY)
     {
-        command_failure(self, saved);
+        report_outcome(self, saved);
         return;
     }
     focus_pane(self);
@@ -5321,7 +5434,7 @@ static void apply_number(struct folio_window *_Nonnull self, bool number)
     enum folio_state_outcome outcome = folio_state_set_number(self->state, number);
     if (outcome != FOLIO_STATE_READY)
     {
-        command_failure(self, outcome);
+        report_outcome(self, outcome);
         return;
     }
     if (settings_surface(self))
@@ -5459,7 +5572,7 @@ static void recolor_window(struct folio_window *_Nonnull self)
     redraw_command_layer(self);
     if (outcome != FOLIO_STATE_READY && !session_busy(self) && IsWindowEnabled(self->handle))
     {
-        command_failure(self, outcome);
+        report_outcome(self, outcome);
     }
 }
 
@@ -5475,7 +5588,7 @@ static void apply_theme(struct folio_window *_Nonnull self, enum folio_theme_cho
     enum folio_state_outcome outcome = folio_state_set_theme(self->state, choice);
     if (outcome != FOLIO_STATE_READY)
     {
-        command_failure(self, outcome);
+        report_outcome(self, outcome);
         return;
     }
     if (settings_surface(self))
@@ -5508,7 +5621,7 @@ static void relanguage_window(struct folio_window *_Nonnull self)
     redraw_command_layer(self);
     if (outcome != FOLIO_STATE_READY && !session_busy(self))
     {
-        command_failure(self, outcome);
+        report_outcome(self, outcome);
     }
 }
 
@@ -5524,7 +5637,7 @@ static void apply_language(struct folio_window *_Nonnull self, enum folio_langua
     enum folio_state_outcome outcome = folio_state_set_language(self->state, language);
     if (outcome != FOLIO_STATE_READY)
     {
-        command_failure(self, outcome);
+        report_outcome(self, outcome);
         return;
     }
     if (settings_surface(self))
@@ -5645,7 +5758,7 @@ static void apply_substitute(struct folio_window *_Nonnull self, bool global)
     }
     if (applied != FOLIO_STATE_READY)
     {
-        command_failure(self, applied);
+        report_outcome(self, applied);
         return;
     }
     if (edit == nullptr)
@@ -5677,7 +5790,7 @@ static void execute_substitute_command(struct folio_window *_Nonnull self,
     enum folio_state_outcome previewed = substitute_preview(self, argument, &parts);
     if (previewed != FOLIO_STATE_READY)
     {
-        command_failure(self, previewed);
+        report_outcome(self, previewed);
         return;
     }
     if (folio_state_replace_count(self->state) == 0)
@@ -5701,7 +5814,7 @@ static void execute_discard_command(struct folio_window *_Nonnull self,
     }
     if (outcome != FOLIO_STATE_READY)
     {
-        command_failure(self, outcome);
+        report_outcome(self, outcome);
         return;
     }
     hide_command_surface(self);
@@ -5783,7 +5896,7 @@ static void finish_new_category(struct folio_window *_Nonnull self,
 {
     if (outcome != FOLIO_STATE_READY && outcome != FOLIO_STATE_CATEGORY_LEDGER_STALE)
     {
-        command_failure(self, outcome);
+        report_outcome(self, outcome);
         return;
     }
     hide_command_surface(self);
@@ -5798,7 +5911,7 @@ static void finish_new_category(struct folio_window *_Nonnull self,
     SetFocus(self->handle);
     if (outcome == FOLIO_STATE_CATEGORY_LEDGER_STALE)
     {
-        failure_box_show(self->handle, outcome, self->state);
+        report_outcome(self, outcome);
     }
 }
 
@@ -5865,18 +5978,34 @@ static enum folio_state_outcome run_trash_note(struct folio_window *_Nonnull sel
 }
 
 /* 入口に依らず押した対象を直接渡す。別文書の本文を流し込み直す経路は持たない。 */
+static void notify_note_removed(struct folio_window *_Nonnull self,
+                                const char *_Nonnull removed_name)
+{
+    struct ui_text_request request = {.id = UI_TEXT_NOTIFY_NOTE_REMOVED,
+                                      .language = folio_state_language(self->state),
+                                      .name = removed_name};
+    char text[draw_unit_limit];
+    char16_t units[draw_unit_limit];
+    if (ui_text_format(&request, text, sizeof text) == UI_TEXT_FORMAT_READY &&
+        wide_units(text, units) > 0)
+        accessibility_host_notify(self->accessibility,
+                                  (struct accessible_item){.kind = ACCESSIBLE_WINDOW}, units);
+}
+
 static void trash_note_at(struct folio_window *_Nonnull self, struct note_ref target)
 {
     if (self->removal_running)
     {
         return;
     }
+    char removed_name[draw_unit_limit];
+    (void)strcpy_s(removed_name, sizeof removed_name, folio_state_note_name(self->state, target));
     bool current = holds_document(self, target);
     HWND focus = GetFocus();
     enum folio_state_outcome outcome = run_trash_note(self, target);
     if (outcome != FOLIO_STATE_READY && outcome != FOLIO_STATE_LEDGER_STALE)
     {
-        command_failure(self, outcome);
+        report_outcome(self, outcome);
         return;
     }
     if (current)
@@ -5887,7 +6016,7 @@ static void trash_note_at(struct folio_window *_Nonnull self, struct note_ref ta
         SetFocus(surface_return_target(self, self->handle));
         if (loaded != FOLIO_STATE_READY)
         {
-            command_failure(self, loaded);
+            report_outcome(self, loaded);
             redraw_drawer(self);
             return;
         }
@@ -5896,14 +6025,14 @@ static void trash_note_at(struct folio_window *_Nonnull self, struct note_ref ta
     InvalidateRect(self->handle, nullptr, FALSE);
     if (outcome == FOLIO_STATE_LEDGER_STALE)
     {
-        failure_box_show(self->handle, outcome, self->state);
+        report_outcome(self, outcome);
         if (!current)
         {
             restore_valid_focus(self, focus);
         }
         return;
     }
-    set_pane_notice(self, PANE_NOTICE_TRASH_COMPLETED);
+    notify_note_removed(self, removed_name);
 }
 
 static void execute_trash_note_command(struct folio_window *_Nonnull self,
@@ -5914,7 +6043,7 @@ static void execute_trash_note_command(struct folio_window *_Nonnull self,
     if (folio_state_document_kind(self->state) != FOLIO_DOCUMENT_NAMED ||
         !folio_state_selection(self->state, &target))
     {
-        command_failure(self, FOLIO_STATE_NOTHING_SELECTED);
+        report_outcome(self, FOLIO_STATE_NOTHING_SELECTED);
         return;
     }
     trash_note_at(self, target);
@@ -5953,14 +6082,14 @@ static void delete_category_at(struct folio_window *_Nonnull self, size_t catego
     release_removal_input(self, enabled, focus);
     if (outcome != FOLIO_STATE_READY && outcome != FOLIO_STATE_CATEGORY_LEDGER_STALE)
     {
-        command_failure(self, outcome);
+        report_outcome(self, outcome);
         restore_valid_focus(self, focus);
         return;
     }
     focus = finish_delete_category(self, focus);
     if (outcome == FOLIO_STATE_CATEGORY_LEDGER_STALE)
     {
-        failure_box_show(self->handle, outcome, self->state);
+        report_outcome(self, outcome);
     }
     restore_valid_focus(self, focus);
 }
@@ -5996,7 +6125,7 @@ static void execute_delete_category_command(struct folio_window *_Nonnull self,
     if (!category_command_target(self, &category))
     {
         HWND focus = GetFocus();
-        command_failure(self, FOLIO_STATE_CATEGORY_NOT_SELECTED);
+        report_outcome(self, FOLIO_STATE_CATEGORY_NOT_SELECTED);
         restore_valid_focus(self, focus);
         return;
     }
@@ -6162,9 +6291,17 @@ static void execute_command(struct folio_window *_Nonnull self, enum folio_comma
     {
         return;
     }
+    if (self->command_surface == COMMAND_SURFACE_MENU)
+        close_command_surface(self);
     set_pane_notice(self, PANE_NOTICE_NONE);
+    bool previous_context = self->command_context;
+    enum folio_command previous_command = self->reporting_command;
+    self->command_context = true;
+    self->reporting_command = command;
     accessible_command_invoked(self, command);
     command_runs[command](self, argument);
+    self->command_context = previous_context;
+    self->reporting_command = previous_command;
 }
 
 /* Ctrl+S と本文の Esc。保存して編集モードのまま残る。失敗なら 1 行を出して false。 */
@@ -6173,7 +6310,7 @@ static bool store_edit(struct folio_window *_Nonnull self)
     enum folio_state_outcome outcome = store_body(self);
     if (outcome != FOLIO_STATE_READY)
     {
-        failure_box_show(self->handle, outcome, self->state);
+        report_outcome(self, outcome);
         return false;
     }
     InvalidateRect(self->handle, nullptr, FALSE);
@@ -6259,7 +6396,7 @@ static void rename_from_drawer(struct folio_window *_Nonnull self, struct note_r
         enum folio_state_outcome outcome = switch_note(self, target.category, target.note);
         if (outcome != FOLIO_STATE_READY)
         {
-            failure_box_show(self->handle, outcome, self->state);
+            report_outcome(self, outcome);
             return;
         }
     }
@@ -6321,7 +6458,7 @@ static void switch_adjacent(struct folio_window *_Nonnull self, enum folio_step 
     }
     if (outcome != FOLIO_STATE_READY)
     {
-        failure_box_show(self->handle, outcome, self->state);
+        report_outcome(self, outcome);
         return;
     }
     if (self->drawer != nullptr)
@@ -6392,7 +6529,7 @@ static void expand_cursor(struct folio_window *_Nonnull self, bool expanded)
     enum folio_state_outcome outcome = expand_category(self, cursor.category, expanded);
     if (outcome != FOLIO_STATE_READY)
     {
-        failure_box_show(self->handle, outcome, self->state);
+        report_outcome(self, outcome);
         return;
     }
     if (self->drawer != nullptr)
@@ -6496,6 +6633,7 @@ static bool click_surface_buttons(struct folio_window *_Nonnull self, POINT poin
     case COMMAND_SURFACE_PALETTE:
     case COMMAND_SURFACE_SETTINGS:
     case COMMAND_SURFACE_THEMES:
+    case COMMAND_SURFACE_MENU:
     case COMMAND_SURFACE_HISTORY:
         return false;
     }
@@ -6612,9 +6750,9 @@ static void adopt_history_row(struct folio_window *_Nonnull self)
     if (body == nullptr || self->pane == nullptr)
     {
         /* 読めない版・範囲外は application が HISTORY_UNREADABLE で断り、何も変えない。 */
-        command_failure(self, self->pane == nullptr
-                                  ? FOLIO_STATE_PANE_UNAVAILABLE
-                                  : folio_state_restore_history(self->state, index));
+        report_outcome(self, self->pane == nullptr
+                                 ? FOLIO_STATE_PANE_UNAVAILABLE
+                                 : folio_state_restore_history(self->state, index));
         return;
     }
     struct utf16_text *_Nullable restored = nullptr;
@@ -6629,7 +6767,7 @@ static void adopt_history_row(struct folio_window *_Nonnull self)
     utf16_text_destroy(restored);
     if (outcome != FOLIO_STATE_READY)
     {
-        command_failure(self, outcome);
+        report_outcome(self, outcome);
         return;
     }
     /* 流し込んでから一覧を捨てる（hide_command_surface が close を呼ぶ）。フォーカスは本文へ。 */
@@ -6665,7 +6803,7 @@ static void adopt_theme_at(struct folio_window *_Nonnull self, size_t index)
     struct utf8_text *_Nullable query = nullptr;
     if (command_query(self, &query) != UTF8_TEXT_CONVERTED)
     {
-        command_failure(self, FOLIO_STATE_OUT_OF_MEMORY);
+        report_outcome(self, FOLIO_STATE_OUT_OF_MEMORY);
         return;
     }
     enum folio_theme_choice choice = FOLIO_THEME_CHOICE_SYSTEM;
@@ -6727,7 +6865,7 @@ static bool theme_navigate(struct folio_window *_Nonnull self, WPARAM key)
     struct utf8_text *_Nullable query = nullptr;
     if (command_query(self, &query) != UTF8_TEXT_CONVERTED)
     {
-        command_failure(self, FOLIO_STATE_OUT_OF_MEMORY);
+        report_outcome(self, FOLIO_STATE_OUT_OF_MEMORY);
         return true;
     }
     size_t count = theme_matches_count(self, query);
@@ -6813,62 +6951,18 @@ static void click_command_surface(struct folio_window *_Nonnull self, POINT poin
     click_palette_surface(self, point);
 }
 
-static bool append_operation(const struct folio_window *_Nonnull self, HMENU menu, size_t index)
-{
-    enum folio_command command = folio_command_at(index);
-    char16_t units[draw_unit_limit];
-    const char *label = folio_command_label(command, folio_state_language(self->state));
-    int layout = layout_command_index(command);
-    char text[draw_unit_limit];
-    if (layout >= 0)
-    {
-        layout_phrase(self, (size_t)layout, UI_TEXT_LAYOUT_MENU, text);
-        label = text;
-    }
-    if (wide_units(label, units) == 0)
-    {
-        return false;
-    }
-    return AppendMenuW(menu, MF_STRING, index + 1, units) != 0;
-}
-
 static void show_operations(struct folio_window *_Nonnull self)
 {
-    HMENU menu = CreatePopupMenu();
-    if (menu == nullptr)
+    if (self->command_surface == COMMAND_SURFACE_MENU)
     {
-        command_failure(self, FOLIO_STATE_OUT_OF_MEMORY);
+        close_command_surface(self);
         return;
     }
-    for (size_t index = 0; index < folio_command_count(); ++index)
-    {
-        /* メニュー ID は添字 + 1 なので、飛ばしても対応は壊れない（決定 8 の補正）。 */
-        if (!folio_command_listed(folio_command_at(index)))
-        {
-            continue;
-        }
-        if (!append_operation(self, menu, index))
-        {
-            DestroyMenu(menu);
-            command_failure(self, FOLIO_STATE_OUT_OF_MEMORY);
-            return;
-        }
-    }
-    RECT button = action_button_rect(self, 1);
-    POINT point = {button.left, button.bottom};
-    ClientToScreen(self->handle, &point);
-    accessibility_host_invoked(self->accessibility,
-                               (struct accessible_item){.kind = ACCESSIBLE_MENU});
-    self->operations_menu = true;
-    accessibility_host_schedule(self->accessibility);
-    int chosen = TrackPopupMenuEx(menu, TPM_RETURNCMD, point.x, point.y, self->handle, nullptr);
-    self->operations_menu = false;
-    accessibility_host_schedule(self->accessibility);
-    DestroyMenu(menu);
-    if (chosen > 0 && (size_t)chosen <= folio_command_count())
-    {
-        execute_command(self, folio_command_at((size_t)chosen - 1), "");
-    }
+    struct menu_request request = {.context = FOLIO_MENU_OPERATIONS,
+                                   .anchor = accessible_main_rect(self, ACCESSIBLE_MENU),
+                                   .keyboard = self->focus_cues};
+    self->keyboard_target = ACCESSIBLE_MENU;
+    show_menu_surface(self, &request);
 }
 
 /* 点の下の自前の操作部品。矩形は描画・UIA・focus と同じ accessible_main_rect から取る。 */
@@ -6972,6 +7066,14 @@ static void begin_part_press(struct folio_window *_Nonnull self, enum accessible
 static void press_part(struct folio_window *_Nonnull self, LPARAM lparam)
 {
     POINT point = {GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
+    if (self->command_surface == COMMAND_SURFACE_MENU)
+    {
+        bool opener =
+            PtInRect(&self->menu.anchor, point) != 0 && self->menu.context == FOLIO_MENU_OPERATIONS;
+        close_command_surface(self);
+        if (opener)
+            return;
+    }
     show_focus_cues(self, false);
     pointer_focus(self, point);
     enum accessible_kind kind = part_at(self, point);
@@ -7126,17 +7228,17 @@ static bool view_character(struct folio_window *_Nonnull self, WPARAM character)
 
 static LRESULT pane_character(struct folio_window *_Nonnull self, WPARAM character)
 {
-    if (character == new_character)
+    if (character == shortcut_character_for(FOLIO_COMMAND_NEW))
     {
         execute_command(self, FOLIO_COMMAND_NEW, "");
         return 1;
     }
-    if (character == store_character)
+    if (character == shortcut_character_for(FOLIO_COMMAND_SAVE))
     {
         execute_command(self, FOLIO_COMMAND_SAVE, "");
         return 1;
     }
-    if (character == palette_character)
+    if (character == shortcut_character_for(FOLIO_COMMAND_HELP))
     {
         open_command_surface(self, COMMAND_SURFACE_PALETTE);
         return 1;
@@ -7146,9 +7248,8 @@ static LRESULT pane_character(struct folio_window *_Nonnull self, WPARAM charact
 
 static LRESULT pane_key(struct folio_window *_Nonnull self, WPARAM key)
 {
-    if (key == VK_F1)
+    if (shortcut_keydown(self, key))
     {
-        execute_command(self, FOLIO_COMMAND_HELP, "");
         return 1;
     }
     if (key == VK_ESCAPE)
@@ -7183,19 +7284,24 @@ static bool part_labeled(const struct folio_window *_Nonnull self, enum accessib
     return true;
 }
 
-/* 置換子の無い 1 行を ui_text_format の経路で out（draw_unit_limit バイト）へ写す。 */
-static void request_line(enum ui_text id, enum folio_language language, char *_Nonnull out)
+static void help_tooltip(enum folio_language language, char *_Nonnull out)
 {
-    struct ui_text_request request = {.id = id, .language = language};
-    if (ui_text_format(&request, out, draw_unit_limit) != UI_TEXT_FORMAT_READY)
+    const char *key = part_shortcut(ACCESSIBLE_HELP, language);
+
+    const char *palette = "";
+    for (size_t at = 0; at < folio_shortcut_count(); ++at)
     {
-        out[0] = '\0';
+        const struct folio_shortcut *binding = folio_shortcut_at(at);
+        if (folio_shortcut_route(binding) == FOLIO_SHORTCUT_CHARACTER &&
+            folio_shortcut_command(binding) == FOLIO_COMMAND_HELP)
+            palette = folio_shortcut_label(binding, language);
     }
+    struct ui_text_request help = {
+        .id = UI_TEXT_TOOLTIP_HELP_KEYS, .language = language, .from = key, .to = palette};
+    if (ui_text_format(&help, out, draw_unit_limit) != UI_TEXT_FORMAT_READY)
+        out[0] = '\0';
 }
 
-/* tooltip は表示名・キーと同じ元から組む（ADR0060 の決定
- * 5）。字付きの釦はキー（無ければ補足）だけ、 絵だけの部品は名前＋キー。out は draw_unit_limit
- * バイトの入れ物。 */
 static void part_tooltip(const struct folio_window *_Nonnull self, enum accessible_kind kind,
                          char *_Nonnull out)
 {
@@ -7206,21 +7312,20 @@ static void part_tooltip(const struct folio_window *_Nonnull self, enum accessib
         return;
     }
     enum folio_language language = folio_state_language(self->state);
-    enum ui_text key = accessible_controls[kind].key;
+    const char *key = part_shortcut(kind, language);
     bool labeled = part_labeled(self, kind);
-    if (!labeled && accessible_controls[kind].hint != UI_TEXT_EMPTY)
+    if (kind == ACCESSIBLE_HELP)
     {
-        /* 絵だけの部品で名前とキーを 1 行に持つ補足（ヘルプ「?」）は、そのまま tooltip にする。 */
-        request_line(accessible_controls[kind].hint, language, out);
+        help_tooltip(language, out);
         return;
     }
     struct ui_text_request request = {
         .id = labeled ? UI_TEXT_TOOLTIP_KEY : UI_TEXT_TOOLTIP_NAMED_KEY,
         .language = language,
         .name = ui_text_line(accessible_controls[kind].label, language),
-        .from = ui_text_line(key, language),
+        .from = key,
         .to = labeled ? ui_text_line(accessible_controls[kind].hint, language) : ""};
-    if (key == UI_TEXT_EMPTY)
+    if (key[0] == '\0')
     {
         request.id = UI_TEXT_TOOLTIP_KEY;
         request.from = labeled ? "" : request.name;
@@ -7305,6 +7410,7 @@ static bool press_activation(struct folio_window *_Nonnull self, WPARAM key, LPA
     {
         return true;
     }
+    show_focus_cues(self, true);
     if (key == VK_SPACE)
     {
         begin_part_press(self, self->keyboard_target, true);
@@ -7320,11 +7426,8 @@ static bool press_activation(struct folio_window *_Nonnull self, WPARAM key, LPA
  * Escape はここでは何もしない（窓を閉じるのは Alt+F4 と閉じる操作だけ）。 */
 static void press_key(struct folio_window *_Nonnull self, WPARAM key, LPARAM lparam)
 {
-    if (key == VK_F1)
-    {
-        execute_command(self, FOLIO_COMMAND_HELP, "");
+    if (shortcut_keydown(self, key))
         return;
-    }
     if (self->command_surface != COMMAND_SURFACE_CLOSED)
     {
         if (key == VK_ESCAPE)
@@ -7354,6 +7457,14 @@ static void press_key(struct folio_window *_Nonnull self, WPARAM key, LPARAM lpa
  * IME が ON のときは未確定文字になってここへ届かない（ADR 0013 の「失う・残る」）。 */
 static void type_key(struct folio_window *_Nonnull self, WPARAM character)
 {
+    if (character == shortcut_character_for(FOLIO_COMMAND_SAVE) ||
+        character == shortcut_character_for(FOLIO_COMMAND_NEW) ||
+        character == shortcut_character_for(FOLIO_COMMAND_HELP))
+    {
+        (void)pane_character(self, character);
+        return;
+    }
+
     if (self->command_surface != COMMAND_SURFACE_CLOSED || self->keyboard_target != ACCESSIBLE_TREE)
     {
         return;
@@ -7375,12 +7486,6 @@ static void type_key(struct folio_window *_Nonnull self, WPARAM character)
     case 'i':
         execute_command(self, FOLIO_COMMAND_EDIT, "");
         break;
-    case new_character:
-        execute_command(self, FOLIO_COMMAND_NEW, "");
-        break;
-    case palette_character:
-        open_command_surface(self, COMMAND_SURFACE_PALETTE);
-        break;
     case 'j':
         switch_adjacent(self, FOLIO_STEP_NEXT);
         break;
@@ -7401,9 +7506,6 @@ static void type_key(struct folio_window *_Nonnull self, WPARAM character)
         break;
     case 'l':
         expand_cursor(self, true);
-        break;
-    case store_character:
-        execute_command(self, FOLIO_COMMAND_SAVE, "");
         break;
     default:
         /* WM_CHAR の文字は開いた集合（C-017）。 */
@@ -7447,6 +7549,7 @@ static void execute_command_input(struct folio_window *_Nonnull self)
      */
     case COMMAND_SURFACE_SETTINGS:
     case COMMAND_SURFACE_THEMES:
+    case COMMAND_SURFACE_MENU:
     case COMMAND_SURFACE_HISTORY:
         utf8_text_destroy(query);
         return;
@@ -7569,6 +7672,12 @@ static bool command_tab(struct folio_window *_Nonnull self)
 /* 置換の欄の Enter は素と Ctrl+ を見分けるので WM_CHAR で処理し、ここでは飲み込むだけ。 */
 static bool command_return(struct folio_window *_Nonnull self)
 {
+    if (self->command_surface == COMMAND_SURFACE_MENU)
+    {
+        menu_execute(self, self->command_selection);
+        return true;
+    }
+
     if (self->command_surface == COMMAND_SURFACE_THEMES)
     {
         adopt_theme_at(self, self->command_selection);
@@ -7720,9 +7829,8 @@ static bool command_key_down(struct folio_window *_Nonnull self, WPARAM key)
     {
         return false;
     }
-    if (key == VK_F1)
+    if (shortcut_keydown(self, key))
     {
-        execute_command(self, FOLIO_COMMAND_HELP, "");
         return true;
     }
     if (key == VK_TAB)
@@ -7772,18 +7880,18 @@ static bool command_character(struct folio_window *_Nonnull self, WPARAM charact
     {
         return true;
     }
-    if (character == store_character)
+    if (character == shortcut_character_for(FOLIO_COMMAND_SAVE))
     {
         /* 保存して欄は開いたまま（ADR 0016 の補正 2）。鍵の状態は読まない（ARC-007）。 */
         store_from_surface(self);
         return true;
     }
-    if (character == new_character)
+    if (character == shortcut_character_for(FOLIO_COMMAND_NEW))
     {
         execute_command(self, FOLIO_COMMAND_NEW, "");
         return true;
     }
-    if (character == palette_character)
+    if (character == shortcut_character_for(FOLIO_COMMAND_HELP))
     {
         show_command_palette(self);
         return true;
@@ -7897,6 +8005,9 @@ static LRESULT CALLBACK command_input_procedure(HWND window, UINT message, WPARA
     {
         return 0;
     }
+    if (self->command_surface == COMMAND_SURFACE_MENU &&
+        menu_message(self, message, wparam, lparam))
+        return 0;
     accessibility_host_changed(self->accessibility, message);
     update_command_composition(self, message);
     if (command_input_handled(self, message, wparam))
@@ -7921,6 +8032,7 @@ static void search_input_changed(struct folio_window *_Nonnull self)
     {
         return;
     }
+    clear_command_status(self);
     wchar_t units[command_input_capacity];
     int count = GetWindowTextW(self->command_input, units, (int)command_input_capacity);
     enum folio_state_outcome kept = folio_state_set_search_term(
@@ -7936,7 +8048,7 @@ static void search_input_changed(struct folio_window *_Nonnull self)
     }
     if (kept != FOLIO_STATE_READY)
     {
-        command_failure(self, kept);
+        report_outcome(self, kept);
         return;
     }
     update_search(self, folio_state_search_direction(self->state), false);
@@ -7959,21 +8071,20 @@ static void update_filter_composition(struct folio_window *_Nonnull self, UINT m
  * 同じ形で共通の操作へ渡す（ADR 0024 の補正 5）。受け止めたら true。 */
 static bool filter_input_anywhere(struct folio_window *_Nonnull self, UINT message, WPARAM wparam)
 {
-    if (message == WM_KEYDOWN && wparam == VK_F1)
+    if (message == WM_KEYDOWN && shortcut_keydown(self, wparam))
     {
-        execute_command(self, FOLIO_COMMAND_HELP, "");
         return true;
     }
     if (message != WM_CHAR)
     {
         return false;
     }
-    if (wparam == new_character)
+    if (wparam == shortcut_character_for(FOLIO_COMMAND_NEW))
     {
         execute_command(self, FOLIO_COMMAND_NEW, "");
         return true;
     }
-    if (wparam == palette_character)
+    if (wparam == shortcut_character_for(FOLIO_COMMAND_HELP))
     {
         open_command_surface(self, COMMAND_SURFACE_PALETTE);
         return true;
@@ -7999,7 +8110,7 @@ static bool filter_input_handled(struct folio_window *_Nonnull self, UINT messag
         SetFocus(self->handle);
         return true;
     }
-    if (message == WM_CHAR && wparam == store_character)
+    if (message == WM_CHAR && wparam == shortcut_character_for(FOLIO_COMMAND_SAVE))
     {
         /* 共通の保存だが、開いている入力面を閉じない（ADR 0016 の補正 2）。 */
         store_from_surface(self);
@@ -8110,7 +8221,7 @@ static void save_on_filter_focus(struct folio_window *_Nonnull self)
         focus_pane(self);
         if (outcome != FOLIO_STATE_CANCELLED)
         {
-            failure_box_show(self->handle, outcome, self->state);
+            report_outcome(self, outcome);
         }
         focus_pane(self);
     }
@@ -8184,7 +8295,7 @@ static void filter_input_changed(struct folio_window *_Nonnull self)
         self->state, (const char16_t *)units, count > 0 ? (size_t)count : 0);
     if (filtered == FOLIO_STATE_OUT_OF_MEMORY)
     {
-        command_failure(self, filtered);
+        report_outcome(self, filtered);
         return;
     }
     /* 「×」が出入りするのは効き始めと解けたときだけ。打つたびに欄を消して描き直すと
@@ -8614,6 +8725,26 @@ static void paint_command_layer(struct folio_window *_Nonnull self)
     EndPaint(self->command_layer, &painting);
 }
 
+static bool layer_input_handled(struct folio_window *_Nonnull self, UINT message, WPARAM wparam,
+                                LPARAM lparam)
+{
+    if (session_blocks_message(self, message) || load_blocks_input(self, message))
+    {
+        return true;
+    }
+    if (self->command_surface == COMMAND_SURFACE_MENU &&
+        menu_message(self, message, wparam, lparam))
+        return true;
+    accessibility_host_changed(self->accessibility, message);
+    update_command_composition(self, message);
+    if ((message == WM_KEYDOWN || message == WM_CHAR) &&
+        command_input_handled(self, message, wparam))
+    {
+        return true;
+    }
+    return false;
+}
+
 static LRESULT CALLBACK command_layer_procedure(HWND window, UINT message, WPARAM wparam,
                                                 LPARAM lparam)
 {
@@ -8628,17 +8759,8 @@ static LRESULT CALLBACK command_layer_procedure(HWND window, UINT message, WPARA
     {
         return DefWindowProcW(window, message, wparam, lparam);
     }
-    if (session_blocks_message(self, message) || load_blocks_input(self, message))
-    {
+    if (layer_input_handled(self, message, wparam, lparam))
         return 0;
-    }
-    accessibility_host_changed(self->accessibility, message);
-    update_command_composition(self, message);
-    if ((message == WM_KEYDOWN || message == WM_CHAR) &&
-        command_input_handled(self, message, wparam))
-    {
-        return 0;
-    }
     switch (message)
     {
     case WM_GETOBJECT:
@@ -8745,6 +8867,11 @@ static void window_destroyed(struct folio_window *_Nonnull self)
         DeleteObject(self->mono_font);
         self->mono_font = nullptr;
     }
+    if (self->menu_font != nullptr)
+    {
+        DeleteObject(self->menu_font);
+        self->menu_font = nullptr;
+    }
     /* self->handle はここでは消さない。WM_DESTROY の後も WM_NCDESTROY までメッセージは届き、
      * 既定処理はその HWND を要る。手放すのは window_finalized 1 か所（ADR 0014 の補正 1）。 */
     PostQuitMessage(0);
@@ -8794,71 +8921,48 @@ static bool layout_shortcut_allowed(const struct folio_window *_Nonnull self)
                                 (pane != nullptr && focus == pane) || command_owns(self, focus));
 }
 
-static bool execute_layout_accelerator(struct folio_window *_Nonnull self, WORD id)
+static void run_shortcut(struct folio_window *_Nonnull self,
+                         const struct folio_shortcut *_Nonnull binding)
 {
-    for (size_t index = 0; index < layout_button_count(); ++index)
+    switch (folio_shortcut_action(binding))
     {
-        if (id != layout_buttons[index].accelerator)
-        {
-            continue;
-        }
-        if (layout_shortcut_allowed(self))
-        {
-            execute_command(self, layout_buttons[index].command, "");
-        }
-        return true;
+    case FOLIO_SHORTCUT_ACTION_COMMAND:
+    {
+        enum folio_command command = folio_shortcut_command(binding);
+        if (folio_command_scope(command) != FOLIO_COMMAND_SCOPE_LAYOUT ||
+            layout_shortcut_allowed(self))
+            execute_command(self, command, "");
+        return;
     }
-    return false;
-}
-
-/* HACCEL が届けた WM_COMMAND を同じ dispatcher へ渡す（ADR 0016 の決定 2）。 */
-static bool execute_navigation_accelerator(struct folio_window *_Nonnull self, WORD id)
-{
-    return execute_layout_accelerator(self, id) || keyboard_accelerator(self, id);
+    case FOLIO_SHORTCUT_ACTION_CONTEXT_MENU:
+        if (self->drawer != nullptr)
+            drawer_window_context_menu(self->drawer);
+        return;
+    case FOLIO_SHORTCUT_ACTION_FILTER:
+        focus_filter_input(self);
+        return;
+    case FOLIO_SHORTCUT_ACTION_SEARCH_FORWARD:
+        step_search(self, SEARCH_DIRECTION_FORWARD);
+        return;
+    case FOLIO_SHORTCUT_ACTION_SEARCH_BACKWARD:
+        step_search(self, SEARCH_DIRECTION_BACKWARD);
+        return;
+    case FOLIO_SHORTCUT_ACTION_SEARCH_NEXT:
+        repeat_search(self, false);
+        return;
+    case FOLIO_SHORTCUT_ACTION_SEARCH_PREVIOUS:
+        repeat_search(self, true);
+        return;
+    }
 }
 
 static void execute_accelerator(struct folio_window *_Nonnull self, WPARAM wparam)
 {
-    if (HIWORD(wparam) != 1)
-    {
+    if (HIWORD(wparam) != 1 || keyboard_accelerator(self, LOWORD(wparam)))
         return;
-    }
-    if (execute_navigation_accelerator(self, LOWORD(wparam)))
-    {
-        return;
-    }
-    if (LOWORD(wparam) == save_as_accelerator)
-    {
-        execute_command(self, FOLIO_COMMAND_SAVE_AS, "");
-    }
-    if (LOWORD(wparam) == rename_accelerator)
-    {
-        execute_command(self, FOLIO_COMMAND_RENAME, "");
-    }
-    if (LOWORD(wparam) == find_accelerator)
-    {
-        execute_command(self, FOLIO_COMMAND_FIND, "");
-    }
-    if (LOWORD(wparam) == filter_accelerator)
-    {
-        focus_filter_input(self);
-    }
-    if (LOWORD(wparam) == search_next_accelerator)
-    {
-        repeat_search(self, false);
-    }
-    if (LOWORD(wparam) == search_previous_accelerator)
-    {
-        repeat_search(self, true);
-    }
-    if (LOWORD(wparam) == search_forward_accelerator)
-    {
-        step_search(self, SEARCH_DIRECTION_FORWARD);
-    }
-    if (LOWORD(wparam) == search_backward_accelerator)
-    {
-        step_search(self, SEARCH_DIRECTION_BACKWARD);
-    }
+    WORD id = LOWORD(wparam);
+    if (id >= 200 && (size_t)(id - 200) < folio_shortcut_count())
+        run_shortcut(self, folio_shortcut_at((size_t)(id - 200)));
 }
 
 /* 主窓の WM_COMMAND には HACCEL と、常設の欄の EN_CHANGE の 2 つが届く。 */
@@ -9011,6 +9115,8 @@ static LRESULT on_part_message(struct folio_window *_Nonnull self, UINT message,
         if (LOWORD(wparam) == WA_INACTIVE)
         {
             cancel_part_press(self);
+            if (self->command_surface == COMMAND_SURFACE_MENU)
+                close_command_surface(self);
         }
         return DefWindowProcW(self->handle, message, wparam, lparam);
     default:
@@ -9081,6 +9187,22 @@ static LRESULT on_input_message(struct folio_window *_Nonnull self, UINT message
     }
 }
 
+static LRESULT on_drawer_request(struct folio_window *_Nonnull self, UINT message, WPARAM wparam,
+                                 LPARAM lparam)
+{
+    switch (message)
+    {
+    case folio_message_open_menu:
+        show_menu_surface(self, (const struct menu_request *)lparam);
+        return 0;
+    case folio_message_report_outcome:
+        report_outcome(self, (enum folio_state_outcome)wparam);
+        return 0;
+    default:
+        return on_input_message(self, message, wparam, lparam);
+    }
+}
+
 static LRESULT on_message(struct folio_window *_Nonnull self, UINT message, WPARAM wparam,
                           LPARAM lparam)
 {
@@ -9139,7 +9261,7 @@ static LRESULT on_message(struct folio_window *_Nonnull self, UINT message, WPAR
         run_drawer_menu(self, (enum drawer_menu_item)wparam, (const struct note_ref *)lparam);
         return 0;
     default:
-        return on_input_message(self, message, wparam, lparam);
+        return on_drawer_request(self, message, wparam, lparam);
     }
 }
 
@@ -9248,35 +9370,112 @@ static void announce_fonts(HWND handle, enum font_bundle_outcome fonts,
 
 /* 主窓の 2 つのアクセラレータの表を作る。両方を作ってから成否を見る（どちらかが
  * nullptr なら偽）。作れた側の後始末は呼び出し元の folio_window_destroy が行う。 */
+static WORD shortcut_virtual_key(enum folio_shortcut_key key)
+{
+    switch (key)
+    {
+    case FOLIO_SHORTCUT_KEY_S:
+        return 'S';
+    case FOLIO_SHORTCUT_KEY_N:
+        return 'N';
+    case FOLIO_SHORTCUT_KEY_P:
+        return 'P';
+    case FOLIO_SHORTCUT_KEY_F:
+        return 'F';
+    case FOLIO_SHORTCUT_KEY_ONE:
+        return '1';
+    case FOLIO_SHORTCUT_KEY_TWO:
+        return '2';
+    case FOLIO_SHORTCUT_KEY_THREE:
+        return '3';
+    case FOLIO_SHORTCUT_KEY_F1:
+        return VK_F1;
+    case FOLIO_SHORTCUT_KEY_F2:
+        return VK_F2;
+    case FOLIO_SHORTCUT_KEY_F3:
+        return VK_F3;
+    case FOLIO_SHORTCUT_KEY_F4:
+        return VK_F4;
+    case FOLIO_SHORTCUT_KEY_F10:
+        return VK_F10;
+    case FOLIO_SHORTCUT_KEY_APPS:
+        return VK_APPS;
+    case FOLIO_SHORTCUT_KEY_ENTER:
+        return VK_RETURN;
+    }
+    return 0;
+}
+
+static BYTE shortcut_virtual_modifiers(enum folio_shortcut_modifiers modifiers)
+{
+    switch (modifiers)
+    {
+    case FOLIO_SHORTCUT_MOD_NONE:
+        return FVIRTKEY;
+    case FOLIO_SHORTCUT_MOD_SHIFT:
+        return FVIRTKEY | FSHIFT;
+    case FOLIO_SHORTCUT_MOD_CONTROL:
+        return FVIRTKEY | FCONTROL;
+    case FOLIO_SHORTCUT_MOD_CONTROL_SHIFT:
+        return FVIRTKEY | FCONTROL | FSHIFT;
+    case FOLIO_SHORTCUT_MOD_ALT:
+        return FVIRTKEY | FALT;
+    }
+    return FVIRTKEY;
+}
+
+static HACCEL _Nullable shortcut_table(enum folio_shortcut_route route)
+{
+    /* Catalog is fixed and bounded; no variable-length array or product test hook. */
+    ACCEL rows[32];
+    size_t count = 0;
+    for (size_t at = 0; at < folio_shortcut_count(); ++at)
+    {
+        const struct folio_shortcut *binding = folio_shortcut_at(at);
+        if (folio_shortcut_route(binding) != route)
+            continue;
+        if (count == sizeof rows / sizeof rows[0])
+            return nullptr;
+        rows[count++] =
+            (ACCEL){.fVirt = shortcut_virtual_modifiers(folio_shortcut_modifiers(binding)),
+                    .key = shortcut_virtual_key(folio_shortcut_key(binding)),
+                    .cmd = (WORD)(200 + at)};
+    }
+    return CreateAcceleratorTableW(rows, (int)count);
+}
+
 static bool create_accelerators(struct folio_window *_Nonnull self)
 {
-    ACCEL shortcuts[] = {
-        {.fVirt = FVIRTKEY | FCONTROL | FSHIFT, .key = 'S', .cmd = save_as_accelerator},
-        {.fVirt = FVIRTKEY, .key = VK_F2, .cmd = rename_accelerator},
-        {.fVirt = FVIRTKEY | FCONTROL, .key = 'F', .cmd = find_accelerator},
-        /* Ctrl+Shift+F は常設の絞り込みの欄へ（ADR 0024 の決定 6）。 */
-        {.fVirt = FVIRTKEY | FCONTROL | FSHIFT, .key = 'F', .cmd = filter_accelerator},
-        /* F3 は前方・Shift+F3 は後方を名指しする。覚えている向きは変えない（採用済み計画 #47）。 */
-        {.fVirt = FVIRTKEY, .key = VK_F3, .cmd = search_forward_accelerator},
-        {.fVirt = FVIRTKEY | FSHIFT, .key = VK_F3, .cmd = search_backward_accelerator}};
-    constexpr size_t existing = sizeof shortcuts / sizeof shortcuts[0];
-    ACCEL combined[existing + sizeof layout_buttons / sizeof layout_buttons[0]];
-    memcpy(combined, shortcuts, sizeof shortcuts);
-    for (size_t index = 0; index < layout_button_count(); ++index)
-    {
-        combined[existing + index] = (ACCEL){.fVirt = FVIRTKEY | FCONTROL | FSHIFT,
-                                             .key = layout_buttons[index].key,
-                                             .cmd = layout_buttons[index].accelerator};
-    }
-    self->commands = CreateAcceleratorTableW(combined, (int)(existing + layout_button_count()));
-    /* Enter と Shift+Enter は検索欄にいるあいだだけ。鍵の修飾は OS の表に読ませ、
-     * こちらから鍵の状態を問い合わせない（ARC-007）。 */
-    ACCEL stepping[] = {
-        {.fVirt = FVIRTKEY, .key = VK_RETURN, .cmd = search_next_accelerator},
-        {.fVirt = FVIRTKEY | FSHIFT, .key = VK_RETURN, .cmd = search_previous_accelerator}};
-    self->search_keys =
-        CreateAcceleratorTableW(stepping, (int)(sizeof stepping / sizeof stepping[0]));
+    self->commands = shortcut_table(FOLIO_SHORTCUT_HACCEL);
+    self->search_keys = shortcut_table(FOLIO_SHORTCUT_SEARCH_HACCEL);
     return self->commands != nullptr && self->search_keys != nullptr;
+}
+
+static WPARAM shortcut_character_for(enum folio_command command)
+{
+    for (size_t at = 0; at < folio_shortcut_count(); ++at)
+    {
+        const struct folio_shortcut *binding = folio_shortcut_at(at);
+        if (folio_shortcut_route(binding) == FOLIO_SHORTCUT_CHARACTER &&
+            folio_shortcut_command(binding) == command)
+            return (WPARAM)(shortcut_virtual_key(folio_shortcut_key(binding)) & 0x1f);
+    }
+    return 0;
+}
+
+static bool shortcut_keydown(struct folio_window *_Nonnull self, WPARAM key)
+{
+    for (size_t at = 0; at < folio_shortcut_count(); ++at)
+    {
+        const struct folio_shortcut *binding = folio_shortcut_at(at);
+        if (folio_shortcut_route(binding) == FOLIO_SHORTCUT_KEYDOWN &&
+            key == shortcut_virtual_key(folio_shortcut_key(binding)))
+        {
+            run_shortcut(self, binding);
+            return true;
+        }
+    }
+    return false;
 }
 
 enum folio_window_outcome folio_window_create(struct folio_state *_Nonnull state,
@@ -9357,12 +9556,40 @@ static bool search_target(const struct folio_window *_Nonnull window, HWND targe
            !window->command_composing && window->search_keys != nullptr;
 }
 
+static bool translate_menu_system_key(const struct folio_window *_Nonnull window,
+                                      const MSG *_Nonnull message)
+{
+    if (window->command_surface == COMMAND_SURFACE_MENU && message->message == WM_SYSKEYDOWN &&
+        (message->wParam == VK_MENU || message->wParam == VK_F10))
+    {
+        SendMessageW(window->command_layer, message->message, message->wParam, message->lParam);
+        return true;
+    }
+    return false;
+}
+
+static bool translate_command_shortcut(const struct folio_window *_Nonnull window,
+                                       const MSG *_Nonnull message)
+{
+    if (command_target(window, message->hwnd))
+    {
+        MSG translated = *message;
+        if (TranslateAcceleratorW(window->handle, window->commands, &translated) != 0)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
 bool folio_window_translate(const struct folio_window *_Nonnull window, const MSG *_Nonnull message)
 {
     if (session_blocks_queued_input(window, message))
     {
         return true;
     }
+    if (translate_menu_system_key(window, message))
+        return true;
     if (translate_keyboard(window, message))
     {
         return true;
@@ -9375,14 +9602,8 @@ bool folio_window_translate(const struct folio_window *_Nonnull window, const MS
             return true;
         }
     }
-    if (command_target(window, message->hwnd))
-    {
-        MSG translated = *message;
-        if (TranslateAcceleratorW(window->handle, window->commands, &translated) != 0)
-        {
-            return true;
-        }
-    }
+    if (translate_command_shortcut(window, message))
+        return true;
     if (window->pane == nullptr || folio_state_pane_mode(window->state) != PANE_MODE_EDIT)
     {
         return false;
@@ -9426,6 +9647,8 @@ void folio_window_destroy(struct folio_window *_Nullable window)
     {
         DeleteObject(window->mono_font);
     }
+    if (window->menu_font != nullptr)
+        DeleteObject(window->menu_font);
     if (window->command_brush != nullptr)
     {
         DeleteObject(window->command_brush);
@@ -9453,6 +9676,9 @@ static struct accessible_item surface_item(const struct folio_window *_Nonnull s
 
 static enum ui_text surface_title(const struct folio_window *_Nonnull self)
 {
+    if (self->command_surface == COMMAND_SURFACE_MENU)
+        return UI_TEXT_ACCESSIBLE_OPERATIONS;
+
     switch (self->command_surface)
     {
     case COMMAND_SURFACE_CLOSED:
@@ -9469,6 +9695,7 @@ static enum ui_text surface_title(const struct folio_window *_Nonnull self)
         return UI_TEXT_COMMAND_SETTINGS;
     case COMMAND_SURFACE_THEMES:
         return UI_TEXT_THEME_TITLE;
+    case COMMAND_SURFACE_MENU:
     case COMMAND_SURFACE_HISTORY:
         return UI_TEXT_COMMAND_HISTORY;
     }
@@ -9477,6 +9704,12 @@ static enum ui_text surface_title(const struct folio_window *_Nonnull self)
 
 static HRESULT surface_row_count(const struct folio_window *_Nonnull self, size_t *_Nonnull out)
 {
+    if (self->command_surface == COMMAND_SURFACE_MENU)
+    {
+        *out = folio_menu_action_count(self->menu.context);
+        return S_OK;
+    }
+
     *out = 0;
     if (self->command_surface == COMMAND_SURFACE_SETTINGS)
     {
@@ -9508,7 +9741,8 @@ static HRESULT surface_row_count(const struct folio_window *_Nonnull self, size_
 static bool surface_has_list(const struct folio_window *_Nonnull self)
 {
     return self->command_surface == COMMAND_SURFACE_PALETTE || settings_surface(self) ||
-           self->command_surface == COMMAND_SURFACE_HISTORY;
+           self->command_surface == COMMAND_SURFACE_HISTORY ||
+           self->command_surface == COMMAND_SURFACE_MENU;
 }
 
 static enum accessible_kind surface_row_kind(const struct folio_window *_Nonnull self, size_t at)
@@ -9734,13 +9968,21 @@ static bool surface_query_name(const struct folio_window *_Nonnull self,
     enum folio_command command = FOLIO_COMMAND_HELP;
     if (!command_at_query(query, slot, language, &command))
         return false;
-    (void)wide_units(folio_command_label(command, language), out->name);
+    char caption[draw_unit_limit];
+    if (folio_command_caption(command, language, caption, sizeof caption) == UI_TEXT_FORMAT_READY)
+        (void)wide_units(caption, out->name);
     return true;
 }
 
 static HRESULT surface_choice_name(const struct folio_window *_Nonnull self, size_t slot,
                                    struct accessible_view *_Nonnull out)
 {
+    if (self->command_surface == COMMAND_SURFACE_MENU)
+    {
+        menu_accessible(self, slot, out);
+        return S_OK;
+    }
+
     if (self->command_surface == COMMAND_SURFACE_HISTORY)
         return surface_history_name(self, slot, out->name);
     struct utf8_text *_Nullable query = nullptr;
@@ -9822,8 +10064,10 @@ static void surface_help_name(const struct folio_window *_Nonnull self, size_t s
     size_t generic = sizeof command_shortcuts / sizeof command_shortcuts[0];
     if (slot < generic)
     {
-        (void)wide_units(ui_text_line(command_shortcuts[slot], folio_state_language(self->state)),
-                         out);
+        char text[draw_unit_limit];
+        if (folio_shortcut_help(command_shortcuts[slot], folio_state_language(self->state), text,
+                                sizeof text) == UI_TEXT_FORMAT_READY)
+            (void)wide_units(text, out);
         return;
     }
     char text[draw_unit_limit];
@@ -9910,6 +10154,9 @@ static RECT accessible_surface_button_rect(const struct folio_window *_Nonnull s
 
 static RECT surface_row_rect(const struct folio_window *_Nonnull self, size_t slot)
 {
+    if (self->command_surface == COMMAND_SURFACE_MENU)
+        return menu_row_rect(self, slot);
+
     if (self->command_surface == COMMAND_SURFACE_SETTINGS)
     {
         RECT row = settings_item_rect(self, slot);
@@ -10003,6 +10250,12 @@ static HRESULT surface_list_view(const struct folio_window *_Nonnull self,
         out->scroll_limit = (int)settings_scroll_limit(self);
         return result;
     }
+    if (self->command_surface == COMMAND_SURFACE_MENU)
+    {
+        out->viewport = (int)menu_visible_count(self);
+        out->scroll_limit = (int)menu_scroll_limit(self);
+        return result;
+    }
     out->viewport = (int)command_visible_rows(self);
     out->scroll_limit = (int)count > out->viewport ? (int)count - out->viewport : 0;
     return result;
@@ -10024,6 +10277,20 @@ static void surface_control_view(const struct folio_window *_Nonnull self,
         out->selected = settings_row_current(self, item.slot);
 }
 
+static void surface_menu_view(const struct folio_window *_Nonnull self, struct accessible_item item,
+                              struct accessible_view *_Nonnull out)
+{
+    if (self->command_surface == COMMAND_SURFACE_MENU)
+    {
+        out->menu = true;
+        if (item.kind == ACCESSIBLE_SURFACE_CHOICE)
+        {
+            out->enabled = out->enabled && menu_availability(self, item.slot) == FOLIO_STATE_READY;
+            out->focusable = out->enabled;
+        }
+    }
+}
+
 static HRESULT surface_read(struct folio_window *_Nonnull self, struct accessible_item item,
                             struct accessible_view *_Nonnull out)
 {
@@ -10043,6 +10310,7 @@ static HRESULT surface_read(struct folio_window *_Nonnull self, struct accessibl
     else
         MapWindowPoints(self->command_layer, nullptr, (POINT *)&out->bounds, 2);
     surface_control_view(self, item, out);
+    surface_menu_view(self, item, out);
     return item.kind == ACCESSIBLE_SURFACE_LIST ? surface_list_view(self, out) : S_OK;
 }
 
@@ -10183,6 +10451,10 @@ static void surface_reveal(struct folio_window *_Nonnull self, struct accessible
 static HRESULT surface_row_action(struct folio_window *_Nonnull self,
                                   const struct accessible_request *_Nonnull request)
 {
+    if (self->command_surface == COMMAND_SURFACE_MENU &&
+        menu_availability(self, request->item.slot) != FOLIO_STATE_READY)
+        return accessibility_node_disabled;
+
     struct accessible_item item = request->item;
     self->command_selection = surface_ordinal(item);
     reveal_command_selection(self);
@@ -10243,10 +10515,16 @@ static bool pane_control_visible(const struct folio_window *_Nonnull self,
     return body_shown(self);
 }
 
+static bool notice_visible(const struct folio_window *_Nonnull self)
+{
+    return (pane_visible(self) || self->notice == PANE_NOTICE_COMMAND_RESULT) &&
+           pane_notice_line(self) != UI_TEXT_EMPTY;
+}
+
 static bool accessible_visible(const struct folio_window *_Nonnull self, enum accessible_kind kind)
 {
     if (kind == ACCESSIBLE_NOTICE)
-        return pane_visible(self) && pane_notice_line(self) != UI_TEXT_EMPTY;
+        return notice_visible(self);
     if (kind == ACCESSIBLE_COMMAND_INPUT)
         return IsWindowVisible(self->command_input);
     if (kind == ACCESSIBLE_REPLACE_PATTERN)
@@ -10440,17 +10718,25 @@ static bool breadcrumb_name(const struct folio_window *_Nonnull self, struct pan
     return ui_text_format(&request, out, 1024) == UI_TEXT_FORMAT_READY;
 }
 
-static void accessible_name(const struct folio_window *_Nonnull self, enum accessible_kind kind,
-                            char16_t *_Nonnull out)
+static const char *_Nonnull accessible_label_line(const struct folio_window *_Nonnull self,
+                                                  enum accessible_kind kind)
 {
-    enum folio_language language = folio_state_language(self->state);
     enum ui_text label =
         kind == ACCESSIBLE_COMMAND_INPUT ? surface_title(self) : accessible_controls[kind].label;
     if (kind == ACCESSIBLE_COMMAND_INPUT && self->command_surface == COMMAND_SURFACE_THEMES)
         label = UI_TEXT_THEME_FILTER;
     if (kind == ACCESSIBLE_NOTICE)
         label = pane_notice_line(self);
-    const char *_Nonnull line = ui_text_line(label, language);
+    if (kind == ACCESSIBLE_NOTICE && self->notice == PANE_NOTICE_COMMAND_RESULT)
+        return self->result_line;
+    return ui_text_line(label, folio_state_language(self->state));
+}
+
+static void accessible_name(const struct folio_window *_Nonnull self, enum accessible_kind kind,
+                            char16_t *_Nonnull out)
+{
+    enum folio_language language = folio_state_language(self->state);
+    const char *line = accessible_label_line(self, kind);
     struct pane_title_view title = folio_state_pane_title(self->state);
     char body[1024];
     if (kind == ACCESSIBLE_BODY && title.any)
@@ -10521,17 +10807,30 @@ static void accessible_details(const struct folio_window *_Nonnull self, enum ac
 }
 
 /* AcceleratorKey は tooltip と同じキーの文言から写す（ADR0060 の決定 5）。out は 64 単位。 */
+static const char *_Nonnull part_shortcut(enum accessible_kind kind, enum folio_language language)
+{
+    enum folio_command command = FOLIO_COMMAND_HELP;
+    if (kind == ACCESSIBLE_CLOSE)
+        command = FOLIO_COMMAND_QUIT;
+    else if (!accessible_command(kind, &command))
+        return "";
+    for (size_t at = 0; at < folio_shortcut_count(); ++at)
+    {
+        const struct folio_shortcut *binding = folio_shortcut_at(at);
+        if (folio_shortcut_action(binding) == FOLIO_SHORTCUT_ACTION_COMMAND &&
+            folio_shortcut_command(binding) == command)
+            return folio_shortcut_label(binding, language);
+    }
+    return "";
+}
+
 static void accessible_accelerator(const struct folio_window *_Nonnull self,
                                    enum accessible_kind kind, char16_t *_Nonnull out)
 {
-    enum ui_text key = accessible_controls[kind].key;
     size_t written = 0;
-    if (key == UI_TEXT_EMPTY ||
-        utf16_text_fill(ui_text_line(key, folio_state_language(self->state)), out, 64, &written) !=
-            UTF16_TEXT_FILL_READY)
-    {
+    if (utf16_text_fill(part_shortcut(kind, folio_state_language(self->state)), out, 64,
+                        &written) != UTF16_TEXT_FILL_READY)
         out[0] = u'\0';
-    }
 }
 
 static void accessible_main_bounds(struct folio_window *_Nonnull self, enum accessible_kind kind,
@@ -10584,7 +10883,8 @@ static void accessible_availability(const struct folio_window *_Nonnull self,
                    self->command_surface == COMMAND_SURFACE_CLOSED;
     if (kind == ACCESSIBLE_MENU)
     {
-        out->expanded = self->operations_menu && self->menu_active;
+        out->expanded = self->command_surface == COMMAND_SURFACE_MENU &&
+                        self->menu.context == FOLIO_MENU_OPERATIONS;
         out->enabled = out->enabled || out->expanded;
     }
     if (kind == ACCESSIBLE_COMMAND_INPUT || kind == ACCESSIBLE_REPLACE_PATTERN ||
@@ -10861,7 +11161,7 @@ static HRESULT accessible_outcome(struct folio_window *_Nonnull self,
     }
     if (outcome != FOLIO_STATE_CANCELLED)
     {
-        command_failure(self, outcome);
+        report_outcome(self, outcome);
     }
     return accessibility_node_invalid;
 }
@@ -11087,7 +11387,8 @@ HRESULT folio_window_accessible_action(struct folio_window *_Nonnull self,
     if (request->item.kind == ACCESSIBLE_MENU && request->action == ACCESSIBLE_ACTION_COLLAPSE &&
         view.expanded)
     {
-        return EndMenu() ? S_OK : accessibility_node_invalid;
+        close_command_surface(self);
+        return S_OK;
     }
     if (!view.enabled || !folio_window_accessible_ready(self))
     {
@@ -11460,5 +11761,627 @@ static LRESULT on_accessibility_message(struct folio_window *_Nonnull self, UINT
         return 0;
     default:
         return DefWindowProcW(self->handle, message, wparam, lparam);
+    }
+}
+
+/* MENU is a mode of the existing CommandLayer. The static descriptors own its vocabulary. */
+static const struct folio_menu_action *_Nonnull menu_action(
+    const struct folio_window *_Nonnull self, size_t index)
+{
+    return folio_menu_action_at(self->menu.context, index);
+}
+
+static enum folio_state_outcome menu_availability(const struct folio_window *_Nonnull self,
+                                                  size_t index)
+{
+    if (index >= folio_menu_action_count(self->menu.context))
+        return FOLIO_STATE_CANCELLED;
+    const struct folio_menu_action *action = menu_action(self, index);
+    if (folio_menu_action_kind(action) == FOLIO_MENU_ACTION_RECOLOR_CATEGORY)
+        return folio_state_recolor_availability(self->state, self->menu.target.category);
+    enum folio_command_target kind = FOLIO_COMMAND_TARGET_CURRENT;
+    if (self->menu.context == FOLIO_MENU_CATEGORY)
+        kind = FOLIO_COMMAND_TARGET_CATEGORY;
+    if (self->menu.context == FOLIO_MENU_NOTE)
+        kind = FOLIO_COMMAND_TARGET_NOTE;
+    return folio_state_command_availability(self->state, folio_menu_action_command(action), kind,
+                                            self->menu.target);
+}
+
+static void menu_caption(const struct folio_window *_Nonnull self, size_t index, char *_Nonnull out)
+{
+    if (folio_menu_action_caption(menu_action(self, index), folio_state_language(self->state), out,
+                                  draw_unit_limit) != UI_TEXT_FORMAT_READY)
+        out[0] = '\0';
+}
+
+static void menu_label(const struct folio_window *_Nonnull self, size_t index, char *_Nonnull out)
+{
+    char caption[draw_unit_limit];
+    menu_caption(self, index, caption);
+    char key[2] = {folio_menu_action_access_key(menu_action(self, index)), '\0'};
+    struct ui_text_request request = {.id = UI_TEXT_MENU_ACCESS_CAPTION,
+                                      .language = folio_state_language(self->state),
+                                      .name = caption,
+                                      .from = key};
+    if (ui_text_format(&request, out, draw_unit_limit) != UI_TEXT_FORMAT_READY)
+        out[0] = '\0';
+}
+
+static void menu_hint(const struct folio_window *_Nonnull self, size_t index, char *_Nonnull out)
+{
+    if (folio_menu_action_hint(menu_action(self, index), folio_state_language(self->state), out,
+                               draw_unit_limit) != UI_TEXT_FORMAT_READY)
+        out[0] = '\0';
+}
+
+static int menu_separator(const struct folio_window *_Nonnull self, size_t index)
+{
+    bool separated = index > 0 && folio_menu_action_group(menu_action(self, index)) !=
+                                      folio_menu_action_group(menu_action(self, index - 1));
+    return separated ? scale(8, GetDpiForWindow(self->handle)) : 0;
+}
+
+static int menu_total_height(const struct folio_window *_Nonnull self)
+{
+    UINT dpi = GetDpiForWindow(self->handle);
+    int height = scale(8, dpi) + 2;
+    for (size_t at = 0; at < folio_menu_action_count(self->menu.context); ++at)
+        height += scale(32, dpi) + menu_separator(self, at);
+    return height;
+}
+
+static int menu_measure(HDC device, const char *_Nonnull text)
+{
+    char16_t units[draw_unit_limit];
+    int length = wide_units(text, units);
+    RECT bounds = {0};
+    DrawTextW(device, units, length, &bounds, DT_CALCRECT | DT_SINGLELINE | DT_NOPREFIX);
+    return bounds.right - bounds.left;
+}
+
+static int menu_width(const struct folio_window *_Nonnull self)
+{
+    HDC device = GetDC(self->handle);
+    if (device == nullptr)
+        return scale(360, GetDpiForWindow(self->handle));
+    HGDIOBJ previous = SelectObject(device, self->menu_font);
+    SetTextCharacterExtra(device, 0);
+    int width = 0;
+    for (size_t at = 0; at < folio_menu_action_count(self->menu.context); ++at)
+    {
+        char label[draw_unit_limit];
+        char hint[draw_unit_limit];
+        menu_label(self, at, label);
+        menu_hint(self, at, hint);
+        SelectObject(device, self->menu_font);
+        int measured = menu_measure(device, label);
+        SelectObject(device, self->mono_font);
+        measured += menu_measure(device, hint);
+        if (measured > width)
+            width = measured;
+    }
+    SelectObject(device, previous);
+    ReleaseDC(self->handle, device);
+    UINT dpi = GetDpiForWindow(self->handle);
+    width += scale(48, dpi);
+    int floor = scale(240, dpi);
+    int ceiling = scale(360, dpi);
+    width = width < floor ? floor : width;
+    return width > ceiling ? ceiling : width;
+}
+
+static RECT menu_rect(const struct folio_window *_Nonnull self)
+{
+    RECT client;
+    GetClientRect(self->handle, &client);
+    int edge = scale(16, GetDpiForWindow(self->handle));
+    int below = client.bottom - edge - self->menu.anchor.bottom;
+    int above = self->menu.anchor.top - edge;
+    bool down = menu_total_height(self) <= below || below >= above;
+    int room = down ? below : above;
+    int height = menu_total_height(self);
+    if (height > room)
+        height = room;
+    if (height < 0)
+        height = 0;
+    int width = menu_width(self);
+    if (width > client.right - 2 * edge)
+        width = client.right - 2 * edge;
+    int left = self->menu.anchor.left;
+    if (left + width > client.right - edge)
+        left = client.right - edge - width;
+    if (left < edge)
+        left = edge;
+    int top = down ? self->menu.anchor.bottom : self->menu.anchor.top - height;
+    return (RECT){left, top, left + width, top + height};
+}
+
+static RECT menu_rows_area(const struct folio_window *_Nonnull self)
+{
+    RECT area;
+    GetClientRect(self->command_layer, &area);
+    int inset = scale(4, GetDpiForWindow(self->handle)) + 1;
+    bool overflow = menu_total_height(self) > area.bottom;
+    int arrows = overflow ? scale(8, GetDpiForWindow(self->handle)) : 0;
+    area.top += inset + arrows;
+    area.bottom -= inset + arrows;
+    return area;
+}
+
+static RECT menu_row_rect_at(const struct folio_window *_Nonnull self, size_t first, size_t index)
+{
+    if (index < first || index >= folio_menu_action_count(self->menu.context))
+        return (RECT){0};
+    RECT area = menu_rows_area(self);
+    int height = scale(32, GetDpiForWindow(self->handle));
+    int top = area.top;
+    for (size_t at = first; at <= index; ++at)
+    {
+        if (at > first)
+            top += menu_separator(self, at);
+        if (top + height > area.bottom)
+            return (RECT){0};
+        if (at == index)
+            return (RECT){area.left, top, area.right, top + height};
+        top += height;
+    }
+    return (RECT){0};
+}
+
+static RECT menu_row_rect(const struct folio_window *_Nonnull self, size_t index)
+{
+    return menu_row_rect_at(self, self->command_first, index);
+}
+
+static size_t menu_visible_count(const struct folio_window *_Nonnull self)
+{
+    size_t visible = 0;
+    for (size_t at = self->command_first; at < folio_menu_action_count(self->menu.context); ++at)
+    {
+        RECT bounds = menu_row_rect(self, at);
+        if (IsRectEmpty(&bounds))
+            break;
+        visible += 1;
+    }
+    return visible;
+}
+
+static size_t menu_scroll_limit(const struct folio_window *_Nonnull self)
+{
+    size_t count = folio_menu_action_count(self->menu.context);
+    for (size_t first = 0; first < count; ++first)
+    {
+        RECT last = menu_row_rect_at(self, first, count - 1);
+        if (!IsRectEmpty(&last))
+            return first;
+    }
+    return count - 1;
+}
+
+static void menu_reveal(struct folio_window *_Nonnull self)
+{
+    size_t count = folio_menu_action_count(self->menu.context);
+    if (self->command_selection >= count)
+        return;
+    if (self->command_selection < self->command_first)
+        self->command_first = self->command_selection;
+    RECT bounds = menu_row_rect(self, self->command_selection);
+    while (IsRectEmpty(&bounds) && self->command_first < self->command_selection)
+    {
+        self->command_first += 1;
+        bounds = menu_row_rect(self, self->command_selection);
+    }
+}
+
+static size_t menu_hit(const struct folio_window *_Nonnull self, POINT point)
+{
+    for (size_t at = self->command_first; at < folio_menu_action_count(self->menu.context); ++at)
+    {
+        RECT bounds = menu_row_rect(self, at);
+        if (PtInRect(&bounds, point))
+            return at;
+    }
+    return SIZE_MAX;
+}
+
+static void menu_draw_row(const struct folio_window *_Nonnull self, HDC device, size_t index)
+{
+    RECT row = menu_row_rect(self, index);
+    if (IsRectEmpty(&row))
+        return;
+    UINT dpi = GetDpiForWindow(self->handle);
+    struct ui_part_menu_paint part = {.bounds = row,
+                                      .dpi = dpi,
+                                      .selected = self->command_selection == index,
+                                      .enabled =
+                                          menu_availability(self, index) == FOLIO_STATE_READY};
+    struct ui_part_ink ink = ui_part_draw_menu(device, &self->palette, &part);
+    char label[draw_unit_limit];
+    char hint[draw_unit_limit];
+    menu_label(self, index, label);
+    menu_hint(self, index, hint);
+    SelectObject(device, self->mono_font);
+    int width = menu_measure(device, hint);
+    RECT keys = ink.label;
+    keys.left = keys.right - width;
+    SetTextColor(device,
+                 part.enabled && !part.selected ? self->palette.dialog_secondary : ink.text);
+    draw_utf8(device, hint, keys);
+    ink.label.right = keys.left - scale(16, dpi);
+    SelectObject(device, self->menu_font);
+    SetTextColor(device, ink.text);
+    draw_utf8(device, label, ink.label);
+    if (self->focus_cues || self->focus_cues_always)
+    {
+        int label_width = menu_measure(device, label);
+        char suffix[4] = {'(', folio_menu_action_access_key(menu_action(self, index)), ')', '\0'};
+        int suffix_width = menu_measure(device, suffix);
+        int key_width = menu_measure(device, suffix + 1) - menu_measure(device, suffix + 2);
+        int x = ink.label.left + label_width - suffix_width + menu_measure(device, "(");
+        SetDCBrushColor(device, ink.text);
+        RECT underline = {x, row.bottom - scale(7, dpi), x + key_width,
+                          row.bottom - scale(7, dpi) + 1};
+        FillRect(device, &underline, (HBRUSH)GetStockObject(DC_BRUSH));
+    }
+}
+
+static void menu_draw_arrows(const struct folio_window *_Nonnull self, HDC device)
+{
+    RECT bounds;
+    GetClientRect(self->command_layer, &bounds);
+    if (menu_total_height(self) <= bounds.bottom)
+        return;
+    int size = scale(8, GetDpiForWindow(self->handle));
+    bool more_above = self->command_first > 0;
+    RECT last = menu_row_rect(self, folio_menu_action_count(self->menu.context) - 1);
+    bool more_below = IsRectEmpty(&last) != 0;
+    POINT up[3] = {{bounds.right / 2 - size / 2, size},
+                   {bounds.right / 2, size / 2},
+                   {bounds.right / 2 + size / 2, size}};
+    POINT down[3] = {{bounds.right / 2 - size / 2, bounds.bottom - size},
+                     {bounds.right / 2, bounds.bottom - size / 2},
+                     {bounds.right / 2 + size / 2, bounds.bottom - size}};
+    HGDIOBJ pen = SelectObject(device, GetStockObject(NULL_PEN));
+    HGDIOBJ brush = SelectObject(device, GetStockObject(DC_BRUSH));
+    SetDCBrushColor(device, self->palette.dialog_secondary);
+    if (more_above)
+        Polygon(device, up, 3);
+    if (more_below)
+        Polygon(device, down, 3);
+    SelectObject(device, brush);
+    SelectObject(device, pen);
+}
+
+static void draw_menu_surface(const struct folio_window *_Nonnull self, HDC device)
+{
+    SetTextCharacterExtra(device, 0);
+    RECT bounds;
+    GetClientRect(self->command_layer, &bounds);
+    SetDCBrushColor(device, self->palette.dialog_surface);
+    FillRect(device, &bounds, (HBRUSH)GetStockObject(DC_BRUSH));
+    SetDCBrushColor(device, self->palette.dialog_border);
+    FrameRect(device, &bounds, (HBRUSH)GetStockObject(DC_BRUSH));
+    for (size_t at = self->command_first; at < folio_menu_action_count(self->menu.context); ++at)
+    {
+        RECT row = menu_row_rect(self, at);
+        if (IsRectEmpty(&row))
+            break;
+        if (at > self->command_first && menu_separator(self, at) > 0)
+        {
+            RECT line = {scale(4, GetDpiForWindow(self->handle)),
+                         row.top - menu_separator(self, at) / 2,
+                         bounds.right - scale(4, GetDpiForWindow(self->handle)),
+                         row.top - menu_separator(self, at) / 2 + 1};
+            SetDCBrushColor(device, self->palette.dialog_border);
+            FillRect(device, &line, (HBRUSH)GetStockObject(DC_BRUSH));
+        }
+        menu_draw_row(self, device, at);
+    }
+    menu_draw_arrows(self, device);
+}
+
+static size_t menu_advance(size_t at, size_t count, bool forward)
+{
+    if (at >= count)
+        return forward ? 0 : count - 1;
+    return forward ? (at + 1) % count : (at + count - 1) % count;
+}
+
+static bool menu_navigate(struct folio_window *_Nonnull self, WPARAM key)
+{
+    size_t count = folio_menu_action_count(self->menu.context);
+    size_t at = self->command_selection;
+    if (key == VK_HOME || key == VK_END)
+        at = key == VK_HOME ? count - 1 : 0;
+    bool forward = key == VK_DOWN || key == VK_HOME;
+    for (size_t tried = 0; tried < count; ++tried)
+    {
+        at = menu_advance(at, count, forward);
+        if (menu_availability(self, at) == FOLIO_STATE_READY)
+        {
+            self->command_selection = at;
+            menu_reveal(self);
+            redraw_command_layer(self);
+            accessibility_host_schedule(self->accessibility);
+            return true;
+        }
+    }
+    self->command_selection = SIZE_MAX;
+    return true;
+}
+
+static void show_menu_surface(struct folio_window *_Nonnull self,
+                              const struct menu_request *_Nonnull request)
+{
+    if (self->removal_running || session_busy(self) || pane_streaming(self))
+        return;
+    if (self->command_surface != COMMAND_SURFACE_CLOSED)
+        hide_command_surface(self);
+    self->menu = *request;
+    self->menu_pressed = SIZE_MAX;
+    self->menu_key = 0;
+    if (self->menu_font != nullptr)
+        DeleteObject(self->menu_font);
+    wchar_t face[LF_FACESIZE];
+    ui_face_for(folio_state_language(self->state), face);
+    self->menu_font = CreateFontW(-scale(16, GetDpiForWindow(self->handle)), 0, 0, 0, FW_NORMAL,
+                                  FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
+                                  CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH, face);
+    if (self->menu_font == nullptr)
+    {
+        report_outcome(self, FOLIO_STATE_OUT_OF_MEMORY);
+        return;
+    }
+    open_command_surface(self, COMMAND_SURFACE_MENU);
+    self->command_selection = SIZE_MAX;
+    self->command_first = 0;
+    if (request->keyboard)
+        (void)menu_navigate(self, VK_HOME);
+    redraw_command_layer(self);
+    accessibility_host_menu(self->accessibility, ACCESSIBLE_MENU_OPENED);
+}
+
+static void menu_run_target(struct folio_window *_Nonnull self, enum folio_command command,
+                            const struct menu_request *_Nonnull request)
+{
+    if (request->context == FOLIO_MENU_OPERATIONS || request->context == FOLIO_MENU_EMPTY)
+    {
+        execute_command(self, command, "");
+        return;
+    }
+    bool previous = self->command_context;
+    enum folio_command previous_command = self->reporting_command;
+    self->command_context = true;
+    self->reporting_command = command;
+    if (command == FOLIO_COMMAND_NEW)
+        new_note_at(self, request->target.category);
+    if (command == FOLIO_COMMAND_RENAME)
+        rename_from_drawer(self, request->target);
+    if (command == FOLIO_COMMAND_RENAME_CATEGORY)
+        rename_category_at(self, request->target.category, "");
+    if (command == FOLIO_COMMAND_TRASH_NOTE)
+        trash_note_at(self, request->target);
+    if (command == FOLIO_COMMAND_DELETE_CATEGORY)
+        delete_category_at(self, request->target.category);
+    if (command == FOLIO_COMMAND_NEW_CATEGORY)
+        execute_new_category_command(self, "");
+    self->command_context = previous;
+    self->reporting_command = previous_command;
+}
+
+static void menu_execute(struct folio_window *_Nonnull self, size_t index)
+{
+    if (self->command_surface != COMMAND_SURFACE_MENU ||
+        menu_availability(self, index) != FOLIO_STATE_READY)
+        return;
+    struct menu_request request = self->menu;
+    const struct folio_menu_action *action = menu_action(self, index);
+    close_command_surface(self);
+    switch (folio_menu_action_kind(action))
+    {
+    case FOLIO_MENU_ACTION_COMMAND:
+        menu_run_target(self, folio_menu_action_command(action), &request);
+        return;
+    case FOLIO_MENU_ACTION_RECOLOR_CATEGORY:
+        if (self->drawer != nullptr)
+            drawer_window_choose_color(self->drawer, request.target.category);
+        return;
+    }
+}
+
+static size_t menu_access_key(const struct folio_window *_Nonnull self, WPARAM key)
+{
+    for (size_t at = 0; at < folio_menu_action_count(self->menu.context); ++at)
+        if (key == (WPARAM)(unsigned char)folio_menu_action_access_key(menu_action(self, at)) &&
+            menu_availability(self, at) == FOLIO_STATE_READY)
+            return at;
+    return SIZE_MAX;
+}
+
+static bool menu_key_down(struct folio_window *_Nonnull self, WPARAM key, LPARAM lparam)
+{
+    show_focus_cues(self, true);
+    if (key == VK_ESCAPE || key == VK_MENU || key == VK_F10)
+    {
+        close_command_surface(self);
+        return true;
+    }
+    if (key == VK_UP || key == VK_DOWN || key == VK_HOME || key == VK_END)
+    {
+        self->menu_key = 0;
+        self->menu_pressed = SIZE_MAX;
+        return menu_navigate(self, key);
+    }
+    if ((HIWORD(lparam) & KF_REPEAT) != 0)
+        return true;
+    if (self->menu_key != 0)
+        return true;
+    if (key == VK_RETURN || key == VK_SPACE)
+    {
+        self->menu_pressed = self->command_selection;
+        self->menu_key = key;
+        return true;
+    }
+    size_t at = menu_access_key(self, key);
+    if (at != SIZE_MAX)
+    {
+        self->command_selection = at;
+        self->menu_pressed = at;
+        self->menu_key = key;
+        menu_reveal(self);
+        redraw_command_layer(self);
+    }
+    return true;
+}
+
+static void menu_mouse(struct folio_window *_Nonnull self, UINT message, POINT point)
+{
+    size_t hit = menu_hit(self, point);
+    if (message == WM_LBUTTONDOWN)
+    {
+        self->menu_pressed = menu_availability(self, hit) == FOLIO_STATE_READY ? hit : SIZE_MAX;
+        SetCapture(self->command_layer);
+    }
+    if (message == WM_LBUTTONUP)
+    {
+        size_t pressed = self->menu_pressed;
+        self->menu_pressed = SIZE_MAX;
+        if (GetCapture() == self->command_layer)
+            ReleaseCapture();
+        if (pressed == hit)
+            menu_execute(self, hit);
+        return;
+    }
+    self->command_selection = menu_availability(self, hit) == FOLIO_STATE_READY ? hit : SIZE_MAX;
+    redraw_command_layer(self);
+    accessibility_host_schedule(self->accessibility);
+}
+
+static void menu_global_character(struct folio_window *_Nonnull self, WPARAM wparam)
+{
+    if (wparam == shortcut_character_for(FOLIO_COMMAND_SAVE) ||
+        wparam == shortcut_character_for(FOLIO_COMMAND_NEW) ||
+        wparam == shortcut_character_for(FOLIO_COMMAND_HELP))
+    {
+        close_command_surface(self);
+        (void)command_character(self, wparam);
+    }
+}
+
+static bool menu_keyboard_message(struct folio_window *_Nonnull self, UINT message, WPARAM wparam,
+                                  LPARAM lparam)
+{
+    switch (message)
+    {
+    case WM_KEYDOWN:
+        if (shortcut_keydown(self, wparam))
+            return true;
+        return menu_key_down(self, wparam, lparam);
+    case WM_SYSKEYDOWN:
+        if (wparam == VK_MENU || wparam == VK_F10)
+            return menu_key_down(self, wparam, lparam);
+        return false;
+    case WM_KEYUP:
+    case WM_SYSKEYUP:
+    {
+        size_t at = self->menu_pressed;
+        bool run = self->menu_key == wparam && self->menu_key != 0;
+        self->menu_key = 0;
+        self->menu_pressed = SIZE_MAX;
+        if (run)
+            menu_execute(self, at);
+        return true;
+    }
+    case WM_CHAR:
+    case WM_SYSCHAR:
+        menu_global_character(self, wparam);
+        return true;
+    default:
+        return false;
+    }
+}
+
+static bool menu_message(struct folio_window *_Nonnull self, UINT message, WPARAM wparam,
+                         LPARAM lparam)
+{
+    switch (message)
+    {
+    case WM_KEYDOWN:
+    case WM_SYSKEYDOWN:
+    case WM_KEYUP:
+    case WM_SYSKEYUP:
+    case WM_CHAR:
+    case WM_SYSCHAR:
+        return menu_keyboard_message(self, message, wparam, lparam);
+    case WM_LBUTTONDOWN:
+    case WM_LBUTTONUP:
+    case WM_MOUSEMOVE:
+        menu_mouse(self, message, (POINT){GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)});
+        return true;
+    case WM_RBUTTONDOWN:
+        close_command_surface(self);
+        return true;
+    case WM_CAPTURECHANGED:
+    case WM_CANCELMODE:
+        self->menu_pressed = SIZE_MAX;
+        self->menu_key = 0;
+        return true;
+    case WM_MOUSEWHEEL:
+        return menu_navigate(self, GET_WHEEL_DELTA_WPARAM(wparam) > 0 ? VK_UP : VK_DOWN);
+    default:
+        return false; /* Win32 messages are an open set. */
+    }
+}
+
+static void menu_command_accelerator(const struct folio_window *_Nonnull self,
+                                     enum folio_command command,
+                                     struct accessible_view *_Nonnull out)
+{
+    for (size_t at = 0; at < folio_shortcut_count(); ++at)
+    {
+        const struct folio_shortcut *binding = folio_shortcut_at(at);
+        if (folio_shortcut_action(binding) == FOLIO_SHORTCUT_ACTION_COMMAND &&
+            folio_shortcut_command(binding) == command)
+        {
+            (void)wide_units(folio_shortcut_label(binding, folio_state_language(self->state)),
+                             out->accelerator);
+            break;
+        }
+    }
+}
+
+static void menu_accessible(const struct folio_window *_Nonnull self, size_t index,
+                            struct accessible_view *_Nonnull out)
+{
+    char caption[draw_unit_limit];
+    menu_caption(self, index, caption);
+    (void)wide_units(caption, out->name);
+    char key[2] = {folio_menu_action_access_key(menu_action(self, index)), '\0'};
+    (void)wide_units(key, out->access_key);
+    out->position = (int)index + 1;
+    out->set_size = (int)folio_menu_action_count(self->menu.context);
+    const struct folio_menu_action *action = menu_action(self, index);
+    if (folio_menu_action_kind(action) != FOLIO_MENU_ACTION_COMMAND)
+        return;
+    enum folio_command command = folio_menu_action_command(action);
+    menu_command_accelerator(self, command, out);
+    if (command == FOLIO_COMMAND_TRASH_NOTE)
+        (void)wide_units(ui_text_line(UI_TEXT_HELP_RECYCLE, folio_state_language(self->state)),
+                         out->help);
+    if (command == FOLIO_COMMAND_NEW)
+    {
+        struct ui_text_request request = {
+            .id = UI_TEXT_TOOLTIP_NEW_NOTE,
+            .language = folio_state_language(self->state),
+            .name = folio_state_category_name(self->state, self->menu.target.category),
+            .from = folio_shortcut_command_hint(command, folio_state_language(self->state))};
+        if (ui_text_format(&request, caption, draw_unit_limit) == UI_TEXT_FORMAT_READY)
+            (void)wide_units(caption, out->help);
+    }
+    if (command == FOLIO_COMMAND_VIEW || command == FOLIO_COMMAND_REPLACE)
+    {
+        menu_hint(self, index, caption);
+        (void)wide_units(caption, out->help);
     }
 }

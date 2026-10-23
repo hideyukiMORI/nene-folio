@@ -1651,7 +1651,8 @@ static enum folio_state_outcome prepare_note_edit(const struct folio_state *_Non
                                                   const struct note_text *_Nonnull body,
                                                   struct markdown_rtf *_Nullable *_Nonnull edit)
 {
-    if (state->mode != PANE_MODE_EDIT || note_text_editability(body) == NOTE_TEXT_EDITOR_ALTERS)
+    if (folio_state_pane_mode(state) != PANE_MODE_EDIT ||
+        note_text_editability(body) == NOTE_TEXT_EDITOR_ALTERS)
     {
         return FOLIO_STATE_READY;
     }
@@ -2289,7 +2290,7 @@ static enum folio_state_outcome edited_text(const struct folio_state *_Nonnull s
                                             const char16_t *_Nonnull units, size_t count,
                                             struct note_text *_Nullable *_Nonnull out)
 {
-    if (state->mode != PANE_MODE_EDIT)
+    if (folio_state_pane_mode(state) != PANE_MODE_EDIT)
     {
         return FOLIO_STATE_NOT_EDITING;
     }
@@ -3843,4 +3844,118 @@ void folio_state_destroy(struct folio_state *_Nullable state)
     free(state->found);
     folio_state_close_history(state);
     free(state);
+}
+
+static bool query_category_target(const struct folio_state *_Nonnull state,
+                                  size_t *_Nonnull category)
+{
+    enum folio_cursor_kind kind = FOLIO_CURSOR_CATEGORY;
+    struct note_ref cursor = {0};
+    if (folio_state_cursor(state, &kind, &cursor))
+    {
+        *category = cursor.category;
+        return true;
+    }
+    if (state->document != FOLIO_DOCUMENT_NONE)
+    {
+        *category = state->selected_category;
+        return true;
+    }
+    return false;
+}
+
+static enum folio_state_outcome query_category_command(const struct folio_state *_Nonnull state,
+                                                       enum folio_command command,
+                                                       enum folio_command_target target_kind,
+                                                       struct note_ref target)
+{
+    if (state->filter != nullptr)
+        return FOLIO_STATE_FILTERED;
+    if (command == FOLIO_COMMAND_NEW_CATEGORY)
+        return FOLIO_STATE_READY;
+    if (target_kind == FOLIO_COMMAND_TARGET_CURRENT &&
+        !query_category_target(state, &target.category))
+        return FOLIO_STATE_CATEGORY_NOT_SELECTED;
+    if (!holds_category(state, target.category))
+        return FOLIO_STATE_NO_SUCH_CATEGORY;
+    if (command == FOLIO_COMMAND_DELETE_CATEGORY &&
+        (note_ledger_count(state->notes[target.category]) != 0 ||
+         (state->document == FOLIO_DOCUMENT_UNTITLED &&
+          state->selected_category == target.category)))
+        return FOLIO_STATE_CATEGORY_NOT_EMPTY;
+    return FOLIO_STATE_READY;
+}
+
+static enum folio_state_outcome query_held_note(const struct folio_state *_Nonnull state,
+                                                enum folio_command command)
+{
+    if (state->document == FOLIO_DOCUMENT_NONE)
+        return FOLIO_STATE_NOTHING_SELECTED;
+    bool named = command == FOLIO_COMMAND_RENAME || command == FOLIO_COMMAND_TRASH_NOTE ||
+                 command == FOLIO_COMMAND_HISTORY;
+    bool editing = command == FOLIO_COMMAND_REPLACE || command == FOLIO_COMMAND_SUBSTITUTE ||
+                   command == FOLIO_COMMAND_DISCARD_EDITS;
+    if (named && state->document == FOLIO_DOCUMENT_UNTITLED)
+        return FOLIO_STATE_NAME_REQUIRED;
+    if (editing && folio_state_pane_mode(state) != PANE_MODE_EDIT)
+        return FOLIO_STATE_NOT_EDITING;
+    return FOLIO_STATE_READY;
+}
+
+static enum folio_state_outcome query_note_target(const struct folio_state *_Nonnull state,
+                                                  struct note_ref target)
+{
+    if (!holds_category(state, target.category))
+        return FOLIO_STATE_NO_SUCH_CATEGORY;
+    return target.note < note_ledger_count(state->notes[target.category])
+               ? FOLIO_STATE_READY
+               : FOLIO_STATE_NO_SUCH_NOTE;
+}
+
+static enum folio_state_outcome query_note_command(const struct folio_state *_Nonnull state,
+                                                   enum folio_command command,
+                                                   enum folio_command_target target_kind,
+                                                   struct note_ref target)
+{
+    if (command == FOLIO_COMMAND_NEW)
+    {
+        size_t category = target_kind == FOLIO_COMMAND_TARGET_CURRENT
+                              ? folio_state_current_category(state)
+                              : target.category;
+        return holds_category(state, category) ? FOLIO_STATE_READY : FOLIO_STATE_NO_SUCH_CATEGORY;
+    }
+    if (target_kind == FOLIO_COMMAND_TARGET_NOTE)
+        return query_note_target(state, target);
+    return query_held_note(state, command);
+}
+
+enum folio_state_outcome folio_state_command_availability(const struct folio_state *_Nonnull state,
+                                                          enum folio_command command,
+                                                          enum folio_command_target target_kind,
+                                                          struct note_ref target)
+{
+    switch (folio_command_scope(command))
+    {
+    case FOLIO_COMMAND_SCOPE_NOTE:
+        return query_note_command(state, command, target_kind, target);
+    case FOLIO_COMMAND_SCOPE_CATEGORY:
+        return query_category_command(state, command, target_kind, target);
+    case FOLIO_COMMAND_SCOPE_APP:
+    case FOLIO_COMMAND_SCOPE_LAYOUT:
+    case FOLIO_COMMAND_SCOPE_QUIT:
+        return FOLIO_STATE_READY;
+    }
+    return FOLIO_STATE_READY;
+}
+
+enum folio_state_outcome folio_state_recolor_availability(const struct folio_state *_Nonnull state,
+                                                          size_t category)
+{
+    return holds_category(state, category) ? FOLIO_STATE_READY : FOLIO_STATE_NO_SUCH_CATEGORY;
+}
+
+const char *_Nonnull folio_state_note_name(const struct folio_state *_Nonnull state,
+                                           struct note_ref target)
+{
+    return note_ledger_name(state->notes[target.category], target.note);
 }

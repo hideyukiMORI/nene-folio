@@ -1,0 +1,8 @@
+#ifndef NENEFOLIO_FOLIO_MENU_ACTION_KIND_H
+#define NENEFOLIO_FOLIO_MENU_ACTION_KIND_H
+enum folio_menu_action_kind : unsigned char
+{
+    FOLIO_MENU_ACTION_COMMAND,
+    FOLIO_MENU_ACTION_RECOLOR_CATEGORY
+};
+#endif

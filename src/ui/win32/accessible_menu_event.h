@@ -1,0 +1,8 @@
+#ifndef NENEFOLIO_ACCESSIBLE_MENU_EVENT_H
+#define NENEFOLIO_ACCESSIBLE_MENU_EVENT_H
+enum accessible_menu_event : unsigned char
+{
+    ACCESSIBLE_MENU_OPENED,
+    ACCESSIBLE_MENU_CLOSED
+};
+#endif

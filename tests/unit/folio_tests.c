@@ -211,6 +211,19 @@ static bool run_size_overflow_target_tests(const char *_Nonnull argument)
     return true;
 }
 
+static bool run_menu_target_tests(const char *_Nonnull argument)
+{
+    if (strcmp(argument, "--menu-surface") != 0)
+        return false;
+
+    run_command_tests();
+    run_ui_text_tests();
+    run_menu_availability_tests();
+    printf("menu catalog, shortcut, text and availability tests passed\n");
+    return true;
+    return true;
+}
+
 int main(int argc, char *_Nonnull *_Nonnull argv)
 {
     if (argc == 2 && strcmp(argv[1], "--bom-boundary") == 0)
@@ -219,9 +232,9 @@ int main(int argc, char *_Nonnull *_Nonnull argv)
         return 0;
     }
     if (argc == 2 &&
-        (run_size_overflow_target_tests(argv[1]) || run_pane_load_target_tests(argv[1]) ||
-         run_document_settings_target_tests(argv[1]) || run_target_tests(argv[1]) ||
-         run_filter_target_tests(argv[1])))
+        (run_menu_target_tests(argv[1]) || run_size_overflow_target_tests(argv[1]) ||
+         run_pane_load_target_tests(argv[1]) || run_document_settings_target_tests(argv[1]) ||
+         run_target_tests(argv[1]) || run_filter_target_tests(argv[1])))
     {
         return 0;
     }
@@ -249,6 +262,7 @@ int main(int argc, char *_Nonnull *_Nonnull argv)
     run_layout_tests();
     run_markdown_tests();
     run_command_tests();
+    run_menu_availability_tests();
     run_note_name_tests();
     run_category_name_tests();
     run_rename_tests();

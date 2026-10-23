@@ -2,6 +2,7 @@
 #define NENEFOLIO_ACCESSIBILITY_HOST_H
 
 #include "accessible_item.h"
+#include "accessible_menu_event.h"
 #include "accessible_navigation.h"
 
 #include <objbase.h>
@@ -61,4 +62,6 @@ void accessibility_host_notify(struct accessibility_host *_Nonnull host,
                                                 LPARAM lparam);
 void accessibility_host_changed(struct accessibility_host *_Nonnull host, UINT message);
 
+void accessibility_host_menu(struct accessibility_host *_Nonnull host,
+                             enum accessible_menu_event event);
 #endif

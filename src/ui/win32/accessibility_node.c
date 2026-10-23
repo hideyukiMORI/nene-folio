@@ -390,6 +390,8 @@ static void property_boolean(const struct accessible_view *_Nonnull view, PROPER
 static const char16_t *_Nullable property_text(const struct accessible_view *_Nonnull view,
                                                PROPERTYID id)
 {
+    if (id == UIA_AccessKeyPropertyId && view->access_key[0] != u'\0')
+        return view->access_key;
     if (id == UIA_NamePropertyId)
     {
         return view->name;
@@ -406,6 +408,18 @@ static const char16_t *_Nullable property_text(const struct accessible_view *_No
                                                                                : nullptr;
 }
 
+static bool property_position(const struct accessible_view *_Nonnull view, PROPERTYID id,
+                              VARIANT *_Nonnull out)
+{
+    if ((id == UIA_PositionInSetPropertyId || id == UIA_SizeOfSetPropertyId) && view->set_size > 0)
+    {
+        out->vt = VT_I4;
+        out->lVal = id == UIA_PositionInSetPropertyId ? view->position : view->set_size;
+        return true;
+    }
+    return false;
+}
+
 static HRESULT property_value(const struct accessible_view *_Nonnull view, PROPERTYID id,
                               VARIANT *_Nonnull out)
 {
@@ -416,6 +430,8 @@ static HRESULT property_value(const struct accessible_view *_Nonnull view, PROPE
         out->bstrVal = SysAllocString(text);
         return out->bstrVal == nullptr ? E_OUTOFMEMORY : S_OK;
     }
+    if (property_position(view, id, out))
+        return S_OK;
     if (id == UIA_LiveSettingPropertyId)
     {
         out->vt = VT_I4;
@@ -441,6 +457,10 @@ static HRESULT STDMETHODCALLTYPE simple_property(IRawElementProviderSimple *_Non
     {
         out->vt = VT_I4;
         out->lVal = control_types[node->item.kind];
+        if (view.menu && node->item.kind == ACCESSIBLE_SURFACE_LIST)
+            out->lVal = UIA_MenuControlTypeId;
+        if (view.menu && node->item.kind == ACCESSIBLE_SURFACE_CHOICE)
+            out->lVal = UIA_MenuItemControlTypeId;
         return S_OK;
     }
     return property_value(&view, id, out);
@@ -1481,4 +1501,20 @@ void accessibility_node_refresh(struct accessibility_node *_Nonnull node)
     raise_boolean(node, UIA_HasKeyboardFocusPropertyId, before.focused, view.focused);
     raise_patterns(node, &before, &view);
     (void)release(node);
+}
+
+void accessibility_node_menu_event(struct accessibility_node *_Nonnull node,
+                                   enum accessible_menu_event event)
+{
+    EVENTID id = UIA_MenuOpenedEventId;
+    switch (event)
+    {
+    case ACCESSIBLE_MENU_OPENED:
+        id = UIA_MenuOpenedEventId;
+        break;
+    case ACCESSIBLE_MENU_CLOSED:
+        id = UIA_MenuClosedEventId;
+        break;
+    }
+    (void)UiaRaiseAutomationEvent(&node->simple, id);
 }

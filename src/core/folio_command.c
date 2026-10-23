@@ -2,6 +2,7 @@
 
 #include "ascii_fold.h"
 #include "ui_text.h"
+#include "ui_text_request.h"
 
 #include <string.h>
 
@@ -498,4 +499,67 @@ bool folio_command_matches(enum folio_command command, const char *_Nonnull text
         }
     }
     return false;
+}
+
+enum folio_command_scope folio_command_scope(enum folio_command command)
+{
+    switch (command)
+    {
+    case FOLIO_COMMAND_QUIT:
+    case FOLIO_COMMAND_SAVE_QUIT:
+    case FOLIO_COMMAND_FORCE_QUIT:
+        return FOLIO_COMMAND_SCOPE_QUIT;
+    case FOLIO_COMMAND_HELP:
+    case FOLIO_COMMAND_SET:
+    case FOLIO_COMMAND_SETTINGS:
+    case FOLIO_COMMAND_TOGGLE_NUMBER:
+        return FOLIO_COMMAND_SCOPE_APP;
+    case FOLIO_COMMAND_NEW_CATEGORY:
+    case FOLIO_COMMAND_DELETE_CATEGORY:
+    case FOLIO_COMMAND_RENAME_CATEGORY:
+        return FOLIO_COMMAND_SCOPE_CATEGORY;
+    case FOLIO_COMMAND_LAYOUT_DRAWER:
+    case FOLIO_COMMAND_LAYOUT_BOTH:
+    case FOLIO_COMMAND_LAYOUT_NOTE:
+        return FOLIO_COMMAND_SCOPE_LAYOUT;
+    case FOLIO_COMMAND_SAVE:
+    case FOLIO_COMMAND_EDIT:
+    case FOLIO_COMMAND_VIEW:
+    case FOLIO_COMMAND_NEW:
+    case FOLIO_COMMAND_SAVE_AS:
+    case FOLIO_COMMAND_RENAME:
+    case FOLIO_COMMAND_FIND:
+    case FOLIO_COMMAND_REPLACE:
+    case FOLIO_COMMAND_SUBSTITUTE:
+    case FOLIO_COMMAND_DISCARD_EDITS:
+    case FOLIO_COMMAND_HISTORY:
+    case FOLIO_COMMAND_TRASH_NOTE:
+        return FOLIO_COMMAND_SCOPE_NOTE;
+    }
+    return FOLIO_COMMAND_SCOPE_NOTE;
+}
+
+bool folio_command_destructive(enum folio_command command)
+{
+    return command == FOLIO_COMMAND_DISCARD_EDITS || command == FOLIO_COMMAND_TRASH_NOTE ||
+           command == FOLIO_COMMAND_DELETE_CATEGORY || command == FOLIO_COMMAND_FORCE_QUIT;
+}
+
+bool folio_command_needs_input(enum folio_command command)
+{
+    return command == FOLIO_COMMAND_SAVE_AS || command == FOLIO_COMMAND_RENAME ||
+           command == FOLIO_COMMAND_REPLACE || command == FOLIO_COMMAND_HISTORY ||
+           command == FOLIO_COMMAND_NEW_CATEGORY || command == FOLIO_COMMAND_RENAME_CATEGORY;
+}
+
+enum ui_text_format_outcome folio_command_caption(enum folio_command command,
+                                                  enum folio_language language, char *_Nonnull out,
+                                                  size_t capacity)
+{
+    struct ui_text_request request = {.id = folio_command_needs_input(command)
+                                                ? UI_TEXT_COMMAND_INPUT_CAPTION
+                                                : UI_TEXT_COMMAND_CAPTION,
+                                      .language = language,
+                                      .name = folio_command_label(command, language)};
+    return ui_text_format(&request, out, capacity);
 }

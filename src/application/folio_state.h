@@ -7,6 +7,8 @@
 #include "category_rename_target.h"
 #include "drawer_cursor.h"
 #include "drawer_metrics.h"
+#include "folio_command.h"
+#include "folio_command_target.h"
 #include "folio_cursor_kind.h"
 #include "folio_document_kind.h"
 #include "folio_language.h"
@@ -428,4 +430,15 @@ void folio_state_close_history(struct folio_state *_Nonnull state);
                                                             enum folio_language language);
 void folio_state_destroy(struct folio_state *_Nullable state);
 
+/* メニューの既知の可否だけを読む。確保・同期・I/O・本文変更を行わない。
+ * CURRENTではtargetを使わない。実行時は既存意図が改めて検証する。 */
+[[nodiscard]] enum folio_state_outcome
+folio_state_command_availability(const struct folio_state *_Nonnull state,
+                                 enum folio_command command, enum folio_command_target target_kind,
+                                 struct note_ref target);
+[[nodiscard]] enum folio_state_outcome
+folio_state_recolor_availability(const struct folio_state *_Nonnull state, size_t category);
+/* 有効な索引上の対象の名前。同期呼出しの間だけ借りる。 */
+[[nodiscard]] const char *_Nonnull folio_state_note_name(const struct folio_state *_Nonnull state,
+                                                         struct note_ref target);
 #endif

@@ -2,6 +2,7 @@
 #define NENEFOLIO_ACCESSIBILITY_NODE_H
 
 #include "accessible_item.h"
+#include "accessible_menu_event.h"
 
 #include <objbase.h>
 #include <uchar.h>
@@ -44,4 +45,6 @@ void accessibility_node_notify(struct accessibility_node *_Nonnull node,
 [[nodiscard]] LRESULT accessibility_node_object(struct accessibility_node *_Nonnull node,
                                                 HWND _Nonnull window, WPARAM wparam, LPARAM lparam);
 
+void accessibility_node_menu_event(struct accessibility_node *_Nonnull node,
+                                   enum accessible_menu_event event);
 #endif
