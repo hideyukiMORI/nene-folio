@@ -209,3 +209,7 @@ hide が 2026-09-23 に名前入力面を実機で見て、**保存先カテゴ�
 
 DWM属性の成功やPrintWindowだけでは窓外の影・角の実表示を保証しない。完成候補の矩形・属性・画像と未測定を品質記録に残す。
 保存schema・依存・gate閾値/除外は不変。Waivers: none。
+
+釦のsubclassを禁じた旧決定7は、WM_GETDLGCODE/BM_SETSTYLEに介入してowner-drawを失うV4経路への禁止として維持する。
+#351ではpointer MOVE/LEAVEによるhover表示だけを共通dialog_themeへ許し、実行/Enter/Space/既定釦/Tabはnativeのままとする。
+内側focusと寿命・rollbackの条件はADR0060の「native釦の表示境界に関する補足」を正本とする。

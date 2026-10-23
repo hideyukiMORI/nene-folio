@@ -76,4 +76,22 @@ menu幅334はclient縁16ずつを除いた360以内で、anchorの上側へ収�
 
 物理IME・実打鍵・スクリーンリーダーの聴取・全OS/全DPIの一般保証は未測定。独立レビューは製品やテストを再実行していない。
 合成fixtureのログにはASanの `interception_win: unhandled instruction` 警告も残る。これを警告なしと扱わず、製品Debug/clang-tidyと独立clientの警告0とは区別する。
-最終headの `pwsh -NoProfile -File ./eng/check.ps1` はPRの必須CIで確認し、この対象検証だけで統合済みとはしない。
+最終headの `pwsh -NoProfile -File ./eng/check.ps1` は対象検証と区別し、次節の必須CIで確認した。
+
+## 最終headのCI・統合・配布候補
+
+[PR #360](https://github.com/hideyukiMORI/nene-folio/pull/360) の最終head `5f11cad60e618a733a2772d825b3cbbb6b48c6dd` は、
+[必須CI](https://github.com/hideyukiMORI/nene-folio/actions/runs/39976651896)で `pwsh -NoProfile -File ./eng/check.ps1` が成功した。
+`tools/merge-pr.ps1` の正典経路でmain `80e2814e733d8758011eead897c61f830dad8808`へ統合し、#350はclosed。mainは同SHA・clean。
+製品source `9bbb7c3` と最終headの差は文書だけなので対象機能検証を再実行していない。
+
+- `pwsh -NoProfile -File ./tools/prepare-real-machine.ps1`: exit 0、通常試遊buildを更新。
+- `pwsh -NoProfile -File ./eng/package-release.ps1 -WorkDirectory D:/NeNeFolio/outputs/350-release-20261024 -OutputDirectory D:/NeNeFolio/release-candidates/350-20261024`: exit 0。
+  正典のRelease build/tidy・conformance・symbols・同梱集合・版・font/manifest/import/ZIP検査が成功し、新しい確認先の11ファイルのhashが一致。
+- 実配布exeを専用desktopで起動し、実120DPI・入力なし20.0546128秒、主thread累積CPU 0.03125秒（1秒未満）を観測。
+  PID/exe pathを照合しWM_CLOSEでexit 0、残存processなし。前景を変更せず、ユーザーデータや稼働アプリは操作していない。
+
+確認先は `D:/NeNeFolio/check/2026-10-24/350-menu-surface/NeNeFolio-0.2.0-win-x64/NeNeFolio.exe`。
+exe SHA256は `d2c979aa096a7833dddf65c24d7159c866a75e43887f9d9c14ce3f14f03020db`。
+未公開ZIPとSHA256SUMSは `D:/NeNeFolio/release-candidates/350-20261024/`、詳細は `D:/NeNeFolio/agents/350-menu-surface/deployment/`。
+この追加起動確認は120DPIの空data・入力なしに限り、公開Releaseは作成していない。既存の未測定範囲は維持する。

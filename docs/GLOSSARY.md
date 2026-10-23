@@ -24,8 +24,8 @@
 | ドロワー（drawer） | 左のペイン。検索窓と索引。自前描画・スクロールバー無し | `src/ui/win32` |
 | ビュー（view）／編集（edit） | 右のペインの 2 つのモード。閉じた enum。ノートを切り替えても保たれ、閲覧へ戻すのは「閲覧」の札と窓を閉じる操作だけ | `enum pane_mode`（application）・ADR 0013 |
 | 表示モード（layout mode） | 一覧／両方／ノートの可視領域。閲覧／編集とは独立し、切替だけでは保存しない。一覧は窓を細くし、戻すと直前の広い幅または最大化へ復元する。実行中だけの状態 | `enum folio_layout_mode`（core）・`folio_state_layout_mode`（application）・ADR0047 |
-| 名前入力面（name prompt） | 初回保存・別名保存・改名で名前と保存先カテゴリを受けるモーダル。無題から離れる種別だけ保存／保存しない／キャンセルを持つ。`dialog_theme` の塗りで、保存先カテゴリは常時開いた一覧（4 行） | `name_prompt_show`（ui/win32）・ADR 0035（補正 17〜21）/0050 |
-| 失敗の箱（failure box） | 「知らせて戻る」だけのモーダル。application の `folio_state_failure_line` の 1 行を、名前入力面と同じ `dialog_theme` の塗りで見せる。警告音と三角の「!」の印（`ICON_PAINT_WARNING`）を持つ。答えで分岐しない。作れないときだけ `MessageBoxW` へ退避 | `failure_box_show`（ui/win32）・ADR 0035（補正 12〜16） |
+| 名前入力面（name prompt） | 保存・改名・カテゴリ作成で名前を受けるnativeモーダル。無題から離れる種別は保存／保存しない／キャンセルを持つ。`dialog_theme` と `ui_part` の共通外形・状態描画を使い、保存先は通常4行・小窓2行の一覧、改名先カテゴリはコピー可能なreadonly欄 | `name_prompt_show`（ui/win32）・ADR0035/0050/0060（決定22〜23） |
+| 失敗の箱（failure box） | 「知らせて戻る」だけのnativeモーダル。applicationの失敗理由と操作名を、名前入力面と同じ共通外形で見せる。三角の印・表示時のUIA通知を持ち、警告音はI/O失敗だけ。中立の「閉じる」で戻り、作れないときだけ `MessageBoxW` へ退避 | `failure_box_show`（ui/win32）・ADR0035/0060（決定24） |
 | 区画（focus zone） | 鍵を受け取る可視の操作領域。共通ヘッダ・索引・本文操作列・本文をF6で巡回する。Win32のfocusが正本で、自前操作の位置だけUIが持つ。補助面は自身の入力/候補へfocusを限定し、閉鎖時に可視の元領域へ戻す | `GetFocus()`・`keyboard_target`・`command_selection`（ui/win32）・ADR0013/0056/0058 |
 | カーソル（cursor） | 索引で鍵が指している単一の行参照。文書選択とは独立し、UIA SetFocusは本文や選択を動かさない。Select/Invoke/Enterは既存の保存・確認を経て選択する。通常の歩みはノート行と、見えるノート行を持たないカテゴリ行に止まる | `enum folio_cursor_kind`・`folio_state_cursor`（application）・`struct drawer_cursor`・`drawer_row.cursor`（core）・ADR0015/0056 |
 | 歩み（step） | 索引のカーソルを動かす向きと行き先。次・前・最初・最後の閉じた集合で、辿り方（止まる行の列・端で止まる）は application が持つ | `enum folio_step`（application）・`folio_state_select_adjacent` |

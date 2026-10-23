@@ -352,5 +352,25 @@ schema/依存/ゲート閾値/除外は不変。Waivers: none。完了後D作業
   共通native_messageのTTN_GETDISPINFOで固定modal languageから文字を作り、通知のszText等の正しい寿命へ格納する。stack pointerを残さない。
 - ui_text.[ch]/ui_text_testsはA単独所有。新IDはFAILURE_NAME_UNCHANGED、PROMPT_NAME_EMPTY、PROMPT_TITLE_UNTITLED、PROMPT_CATEGORY_READONLY、FAILURE_COMMAND_REASON、
   STATUS_REPLACE_COUNT_ONLY、HELP_TAB_COMMANDS/HELP_TAB_KEYS、HELP_GROUP_NOTE/CATEGORY/LAYOUT/APP/QUIT。THEME_BACKとPROMPT_LABEL_NAME/CATEGORYは既存IDを更新する。
-  SEARCH/REPLACEラベルは既存COMMAND_FIND/ACCESSIBLE_PATTERN/REPLACEMENTを表示とUIAで共用し、不要なPROMPT_LABEL_CATEGORY_NAMEは共通Nameへ統合する。
+  SEARCH/REPLACEラベルは既存COMMAND_FIND/ACCESSIBLE_PATTERN/REPLACEMENTを表示とUIAで共用する。ACCESSIBLE_PATTERNの英語はRegex patternとし、正規表現であることを3言語で明示する。
+  不要なPROMPT_LABEL_CATEGORY_NAMEは共通Nameへ統合する。
 - ADR・quality/current/report/handoffと必要なCMake登録は親が所有する。#350main統合→#351新作業木→ADR補正→A共通宣言→A/B排他的実装の順で進む。
+
+### I-D の狭幅配置を決めた独立計測（2026-10-24）
+
+`commandlayer-implementation/band-measure/`のGDI font計測で、全closed outcomeの理由、操作名入りの拒否、最大桁のoffset/件数等を3言語×3DPIで測った。
+ASCIIの字間を含めた単一の折返し計測では、幅288の最大は4行、120/144/168DPIで54.4/53.333/50.286logical。
+4logical単位への切上げで結果予約高56/56/52を採る。これは実OS DPI120でfont rasterだけを明示した設計診断であり、製品の表示試験ではない。
+
+最小pane320のREPLACEは共通CONTENTの上端60から入力28、次のlabel16、入力28、間4、結果予約高、下16で、帯208/208/204logical。
+最小BOTH560×360では本文24/24/28logicalを残す。SEARCHは同じ一入力と結果で帯164/164/160logical。
+この値は名目の高さへ切る定数ではなく、実font・幅・字間で測る最大必要高の受理値である。描画と計測は同じ折返し経路を使い、入力や結果だけで面高を変えない。
+完成候補ではTITLE_TEXTの実幅、label/釦、本文の実行高1行以上、fallback条件を別途確認する。最大理由の288幅の測定を題の領域の成功根拠にはしない。
+
+### native釦の表示境界に関する補足（2026-10-24）
+
+native BUTTONのchild HDCでは外側focusが切れるため、ui_part_paintの独立値focus_insideで同じ共通描画を内側2pxへ向ける。
+既存standaloneの既定falseと、groupedの規則は不変。comctl32 v5のODS_HOTLIGHTを成功根拠にせず、必要なhover追跡だけdialog_themeの共通BUTTON subclassへ置く。
+subclassが扱うのはpointerのMOVE/LEAVEと再描画であり、WM_GETDLGCODE/BM_SETSTYLE・実行・既定釦の選択を変更しない。クリック/Space/Enterはnative dialog managerと既存読み替え経路のまま。
+追跡の寿命はchild HWNDに結び、palette/brush再生成から独立させる。作成失敗のrollbackとWM_NCDESTROYでの解除を対にし、別のpressed/focus/実行モデルは持たない。
+ADR0035のV4不採用は既定釦styleを書き換えてowner-drawを壊す経路について維持し、pointer表示だけのこの用途とは区別する。
