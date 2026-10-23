@@ -215,7 +215,7 @@ hideの今回の再開・全権委譲と、設計サナ／実装サナ／デザ�
 20. **キー表記と実行は同じbindingから読む。** coreの静的な型付きshortcut descriptorがkey・modifier・action・routeと表示を所有する。
     UIはHACCEL担当分をそこから変換し、WM_CHAR／WM_KEYDOWN担当分も同じ記述子で解決する。OS担当のAlt+F4は既存OS経路のまま明示する。
     全キーをHACCELへ移さず、IME抑止・入力欄・F6/Tabの既存契約を維持する。tooltip／UIA／menu／helpの重複キー文字列を同じ元へ合流させる。
-    既存キー・Ex文法は不変。直接キーが無いときはEx名を表示し、どちらも無い保存して閲覧／置換は同じmenu descriptorのアクセスキーを「V（メニュー内）」等の限定付きで表示する。
+    既存キー・Ex文法は不変。直接キーが無いときはEx名を `:history` のようにコロン付きで表示し、どちらも無い保存して閲覧／置換は同じmenu descriptorのアクセスキーを「V（メニュー内）」等の限定付きで表示する。
     この2項目のUIA AcceleratorKeyは空、AccessKeyとHelpTextが面内の限定を示す。本文Escは保存して索引へfocusを返すだけで閲覧へ変えないため、VIEWのshortcutと偽らない。
     `:%s` は既存の直接置換文法としてhelpに残し、置換面を開くキーと偽らない。新しいglobal shortcutは作らない。
     単体でbindingの意味・重複・表記を、native対象検証で実アクセラレータと既存の入口を確認する。「すべてHACCELと一致」とした下書きの検証は実在routeに沿って補正する。
