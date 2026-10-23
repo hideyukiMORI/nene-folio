@@ -2,10 +2,10 @@
 
 記録日: 2026-10-24。前回の日報・引き継ぎの確定は[#354](https://github.com/hideyukiMORI/nene-folio/issues/354)。
 GUI統一は[#348](https://github.com/hideyukiMORI/nene-folio/issues/348)（部品体系と状態）と[#349](https://github.com/hideyukiMORI/nene-folio/issues/349)（操作帯と保存状態）をmain `c78a398`へ統合済み。
-[#350](https://github.com/hideyukiMORI/nene-folio/issues/350)（メニューの器・失敗の一本化）は `9bbb7c3` で対象検証・独立レビューを完了し、[PR #360](https://github.com/hideyukiMORI/nene-folio/pull/360)の最終head必須CI・統合待ち。
-[#351](https://github.com/hideyukiMORI/nene-folio/issues/351)（面の規則）は設計を実寸とnative挙動で確認中、製品未着手。順序はI-C統合→I-D。
+[#350](https://github.com/hideyukiMORI/nene-folio/issues/350)（メニューの器・失敗の一本化）は [PR #360](https://github.com/hideyukiMORI/nene-folio/pull/360)の最終head `5f11cad` 必須CI成功後、main `80e2814`へ統合済み。
+[#351](https://github.com/hideyukiMORI/nene-folio/issues/351)（面の規則）は実寸とnative挙動の設計診断を完了し、ADR0060/0035/0052を補正済み。`D:/NeNeFolio/worktrees/351-surface-rules`（`feat/351-surface-rules`）で共通APIの先行実装から進める。
 [#356](https://github.com/hideyukiMORI/nene-folio/issues/356)（空状態で描画と配り直しが自己ループし入力が届かない退行）をmain `5457c48`へ統合済み。
-最新確認先は`D:/NeNeFolio/check/2026-10-19/356-empty-state/NeNeFolio-0.2.0-win-x64/NeNeFolio.exe`。`check/2026-10-19/349-action-bar`の候補は文書を開いていない間固まるので起動しない。稼働中アプリや未保存本文を操作しない。
+最新確認先は`D:/NeNeFolio/check/2026-10-24/350-menu-surface/NeNeFolio-0.2.0-win-x64/NeNeFolio.exe`。実配布exeは120DPI・入力なし20秒で主thread CPU 0.03125秒、通常終了を確認。通常build更新と未公開ZIP作成も完了。`check/2026-10-19/349-action-bar`の候補は文書を開いていない間固まるので起動しない。稼働中アプリや未保存本文を操作しない。
 
 再開時は[引き継ぎ書](../handoffs/2026-10-24.md)を読み、実Issue/PR・checkoutと照合する。
 当日の到達点は[日報](../reports/2026-10-24.md)、対象検証は[I-C](../quality/2026-10-24-menu-surface.md)。I-A/I-Bの結果はそれぞれの品質記録を再利用する。

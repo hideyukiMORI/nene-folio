@@ -237,3 +237,120 @@ hideの今回の再開・全権委譲と、設計サナ／実装サナ／デザ�
 独立レビュー後の補足に記した全ノート検索EDITのUIA Name未達は、[再診断](../quality/2026-10-23-native-edit-uia-probe.md)で検証clientの初期化順によるものと判明した。
 独立native clientでは既存製品のName・Edit・ValuePatternは正常。#351に製品のName修正を要求しない。
 I-C以降のnative検証はmanaged UIAと別プロセスに分離する。物理IME・実readerの未測定は維持する。
+
+## 2026-10-24 の補正（#351 / I-D — 面・入力・検索置換帯）
+
+hideの2026-10-23の継続・全権委譲と、設計サナ／実装サナ／ClaudeCodeのデザインリナの照合に基づく実装前の裁定。
+#350はPR #360でmain `80e2814`へ統合済み。設計資料と実寸・native挙動の診断は `D:/NeNeFolio/agents/351-surface-research/`。
+この節は決定2のダイアログ32高例外、I-A時点の暗幕対象外、ADR0035の旧題帯・角丸・固定4行・無効な改名一覧、ADR0052の置換配置対象外を補正する。
+Issue下書きの全modal共通AltF4、一致への独自着色、既存対比検査の重複追加は、以下のowner境界・標準選択・既存検査再利用で置き換える。
+合成診断は設計可能性の証拠であり、製品実装と完成候補の検証はこれから行う。plannedの検査をactiveとは扱わない。
+
+### 22. 面の所有者と共通の外形
+
+- 名前入力6種（初回保存、別名保存、ノート改名、新規カテゴリ、カテゴリ改名、無題離脱）と改名の再試行、失敗箱は既存native DialogBoxを維持する。
+  標準EDIT/LISTBOX/BUTTON、dialog manager、IME、native UIAを維持し、独自入力provider・別の状態modelを作らない。
+- 設定/テーマは既存CommandLayerのmodal、ヘルプ/履歴は同じownerの浮き面、検索/置換は同じownerの帯。
+  外形の矩形・題・閉じる形・境界描画をui_part/dialog_themeの共通経路へ集める。各面の内容の所有者と実行経路は移さない。
+- 面はdialog_surface、1px dialog_border、直角。題の段44、文字は左16、×は右8/上8の28四方、内容の縁16、行32。
+  native popupと設定/テーマ/履歴は幅480、ヘルプは460。主窓child面はclient幅−32へ縮める。native popupはowner中央基準でmonitor workareaへ寄せる。
+  native popupは一覧320幅のownerからも480幅で開き、ownerの表示モードを変更しない。これは従来400幅popupの位置づけを維持する。
+  対応最小BOTH560×360ではpopup高さを328以内にする。monitor workareaの方が狭ければそこへ制限し、ラベルを上積みにする。
+  小窓の縮退は開く時の最大結果高さで決め、結果が出てから面や一覧が縮まないようにする。
+- native windowは合法なWS_CAPTION|WS_SYSMENUを保持し、WM_NCCALCSIZEで非client領域を除いて題をclientに一つ描く。
+  titleのhitはDialogProcのDWLP_MSGRESULT規約でHTCAPTION。OSの移動/終了経路を維持する。題はSTATICを重ねず描画のみで、windowのNameは既存title。
+  Alt+SpaceはOSのGetSystemMenuを使い、メニューや移動処理を別実装しない。EDIT focus時はWM_SYSCOMMAND/SC_KEYMENU(lParam=32)が入口であり、WM_SYSKEYDOWNだけでは不足する。
+  clientの×はnative BUTTON、Tabstopなし、Nameは閉じる。
+  2026-10-23の合成診断ではTab/Enter/Esc/×/AltF4/Move/owner復元/IME guard、native Name/Value/Invokeと余計なTitleBar/Closeが無いことを確認した。
+  DWM矩形・属性・画像を製品でも記録する。PrintWindowが窓外の影を含まない限界を明示し、属性成功だけで影や角の見た目を成功としない。
+- 暗幕はmodalだけ。既存folio_window所有のbackdropをnative DialogBox実行中はclient全体へ出し、ネスト前の面/regionへ戻す。
+  名前入力や失敗箱が別のbackdropやmodal状態を所有しない。作成失敗/取消/正常完了でも対にして戻す。
+
+### 23. 名前入力・確定列・結果
+
+- 題はcatalogのlabelを使う（captionの末尾ellipsisは付けない）。無題離脱だけ「無題のノート」を題にし、保存の問いを本文へ置く。
+  retryでは保留中の実kindに対応する題と説明を使う。既存の復旧順序・取消が意図を消さない意味は変えない。
+- ラベルは名前/保存先、Name/Save to、名称/保存到。左列80、間8、右欄360、外16で幅480。
+  これは同梱Noto Sans JP/SC・14px logical・120/144/168DPIの実測で最長49.6logicalだった。fallback書体では実幅を検査する。
+- 名前欄32。改名時は全選択。作成/保存のカテゴリは既存LISTBOXで行32、通常4行、小窓では2行にして全候補へスクロールできる。
+  ノート改名のカテゴリはdisabled一覧を除き、readonlyの1行EDIT「〈カテゴリ〉（変更できません）」を使う。全文を選択/コピー/横送りでき、UIAにも全文を公開する。
+- 案内はdialog_secondary、検証はcurrent_text＋警告の形。該当する検証1件が案内を置換する。
+  最大必要高を実fontのDrawTextで測って最初から予約する。448幅の英語invalid-categoryは3行、最大62.4logicalであり、名目60へ切らない。
+  復旧の長い理由はreadonly複数行EDITの固定領域とnative縦scrollで読み切れるようにする。WM_CTLCOLORSTATICでもFIELDの地を使う。
+  Enterを文字改行へ奪わず、釦外のEnterは既定承認。readonly欄にいるときもこの規則である。
+- 確定列は右寄せ、同じ幅、最小88、高さ28、間8。無題離脱は左から保存/保存しない/キャンセル、native creation/Tab順も同じ。
+  主操作Bは承認1つ、中立Aは他。dialog_themeは共通ui_partの状態描画を使い、角丸と旧1px focusを撤去する。
+  無題離脱の保存/保存しない/キャンセルはAlt+S/D/Cをnative mnemonicで付け、dialog managerへ任せる。
+  既存ui_text captionを正本とし、owner-drawと幅測定のprefix解釈を揃え、ODS_NOACCEL時は下線を隠す。UIA Nameへ&を漏らさずglobal shortcutは足さない。
+  Enterはfocusされた釦、その外では承認。Esc/×/AltF4は取消。既存の読み替え1関数に×も含め、×へfocusが来ても承認へ落とさない。
+  IME中は確定/取消を実行せず、focus枠の再描画だけは止めない。IME終了時も現focusへ同期する。
+- 空入力は長さ0だけをUIの入力不足として「名前を入力してください。」にする。空白のみなどの名前規則は既存の型で判定する。
+  既存NAME_REQUIREDは無題の名前付き保存が必要という別意味なので流用しない。
+- 完全同名の改名は既存application内の一致判定位置で新しい閉じた結果NAME_UNCHANGEDを返す。
+  note/categoryともsynchronize優先を維持し、後続保存/改名を行わない。GUIで重複比較せず「同じ名前です。」を表示して面を残す。
+  Exも同じ結果行と入力保持へ合流する。core rename_planのno-op意味は変えず、schema/portは増やさない。
+
+### 24. 失敗の箱
+
+- #350のreport_outcomeと分類を維持。箱の題は製品名、command由来なら本文の先頭にcatalog名、起動失敗などcommandなしなら理由だけ。
+  三角はcurrent_text。釦は「閉じる」で中立、OKを使わない。native EVENT_SYSTEM_ALERTを実際の表示時に1回送る。
+- 警告音はI/O失敗だけ。前提不足/入力拒否には音を付けない。起動時の資源不足など既存の通知経路を消さず、音の分類だけ明記する。
+  色・書体・境界・題・×は名前入力と同じ経路。長文は省略せず折返し/内容領域scrollで読み切れるようにする。
+
+### 25. 検索・置換の上部帯
+
+- SEARCHとREPLACEは既存CommandLayerの共通帯のmode差。本文の操作列の下に置き、本文領域を同じ高さだけ下げて覆わない。
+  通常検索はliteral（既存ASCII大小無視）、置換は正規表現・編集本文だけ。語を自動コピーせず、意味/下見/保存/Undo/IMEの既存所有者を保つ。
+- SEARCHは検索ラベル/入力/前/次/×/結果。REPLACEは上段に正規表現のパターン、2段目に置換後/1件/すべて、×と結果。
+  labelとEnter方向は入力後も残す。対象名は帯の上で常に見える既存pane breadcrumbとそのUIA全文を正本にし、帯内へ重複しない。
+  置換結果の帯内は件数だけのSTATUS_REPLACE_COUNT_ONLYを使い、:%sは従来の名前/件数を維持する。幅がある場合の基本行44、狭幅ではlabel/結果を独立した固定高の行へ置く。
+  最小pane320の置換欄は144logicalを許し、1件/すべては既存mono11と幅64を使う。native dialogの88下限とは別の帯の部品。
+  幅/DPI/fontごとのgeometryと最長の関連理由を実測し、結果変化で本文高さが動かないよう予約する。省略で理由を隠さず、最小窓でも本文の可視行を残す。
+- 「1件」は現在の選択開始位置以降でパターンに一致する最初の対象に作用する。現在の選択範囲を置換対象の制限と解釈せず、既存anchor意味を保つ。
+  Enter=1件、Ctrl+Enter=すべて、Tab=2入力間、Esc/×=共通閉鎖、Ctrl+H=本文caretの既存契約を維持。:%sは直接置換のまま。
+- 一致の着色は標準RichEdit選択を維持する。Issue下書きのselected_background強制は採らない。
+  文字書式の変更でUndo/dirty/高コントラストを壊す別経路を足さず、ADR0052決定5を維持する。
+
+### 26. ヘルプ・履歴・設定/テーマ
+
+- ヘルプの表示切替は「操作｜キー」のS2択とUIA SelectionItem、従来Tabの切替を維持する。この面ではS群への通常Tabstop追加をしない明示例外。
+  候補のID/catalog順は不変。表示はscopeで群にして、群内の順だけcatalog順を保つ。表示順はノート/カテゴリ/表示/アプリ/終了。
+  見出しは非選択Text、↑↓は飛ばす。絞り込みで空の群は表示しない。候補indexから既存commandへの写像を一つにし、別の実行経路を作らない。
+  キー説明は折返してページ送りを維持。切替の表示/Hit/UIAは同じ選択値を読む。
+- 履歴は題と×、Esc案内は閉じる。履歴採用の未保存/Undo/読込失敗意味は維持する。
+- テーマには「‹ 設定」。Escは従来どおり設定へ1段戻る。×は設定全体を閉じる。主窓childなのでAltF4はアプリの通常終了で、#350のOS routeを奪わない。
+  native DialogBoxではAltF4取消、というowner境界の差を明記し、全modalに同じAltF4意味を強制した下書きを補正する。
+- theme_testsのdialog_secondary/current_text対dialog_surfaceは既存で検査済みなので同じassertを増やさず再利用。追加した状態役割があればその境界だけ増やす。
+
+### 検証と統合
+
+対象Debug/tidy、名前outcomeと3言語文言・themeの単体、各面の3言語×3DPI・最小560×360/一覧320の画像、Tab/Enter/Esc/×/AltF4/IMEメッセージ、
+暗幕ネスト/失敗時復元、native UIA Name/Value/Invoke、検索置換のCtrlS/Undo/選択/dirty/矩形復帰を変更境界として確認。
+native UIAはmanaged UIAと別clientプロセスにする。全ノート検索EDIT Nameの製品修正は不要（再診断済み）。
+物理IME・実reader・DWM窓外影など未測定を明記。成功済みの無関係な検証は繰り返さない。CI最終head check.ps1成功後に統合。
+schema/依存/ゲート閾値/除外は不変。Waivers: none。完了後D作業木/不要一時物を規約どおり確認して整理する。
+
+### 2026-10-24 のA/B実装契約
+
+- Aが `ui_part_surface_region.h` の閉じたenum（TITLE/TITLE_TEXT/CLOSE/CONTENT）、`ui_part_surface_rect(RECT,UINT,region)` と `ui_part_draw_surface(HDC,palette,RECT)` を先行実装する。
+  boundsは呼出元座標のphysical px、44/16/8/28は明示dpiで拡大、境界はclient1physical px。面の配置・内容・翻訳・fontは各ownerに残す。
+  Bは共通API確定後に利用だけを行い、ui_partとui_textを同時編集しない。
+- Aはnative name_prompt/failure_box/dialog_theme、NAME_UNCHANGED/application/unit、共通ui_partのdialog_surface隣接地を担当。
+  既存PRIMARY/hover/focusのcontrast選定へdialog_surfaceを追加して機械で確認する。既存saveの色が変わる場合は影響themeだけを追加確認する。
+  dialog_secondary/current_textの既存assertを複製しない。
+- Bはfolio_windowのCommandLayer/帯/各面/暗幕wrapper、drawerの残るreport直呼び、既存UIA面公開を担当。
+  name_promptのrequest/resultは不変。failure_box_showは第4引数にnullableの `const enum folio_command*` だけを追加し、既存command_context/reporting_commandを渡す。
+  同期呼出し中だけ借り、Aが入口でcopyする。文字列historyや第2のcommand状態を作らない。
+- native暗幕はHRGN snapshotの複製を作らず、native_modal_depthと既存command_surfaceからregionを再導出する。
+  native中はSetWindowRgn(NULL)で全client、深さ0への復帰で現在の面から穴/可視性/Z順を再構成する。DPI/resize後に古い矩形を復元しない。
+  名前入力の準備失敗は業務操作前にOUT_OF_MEMORYで既存reportへ戻す。
+  元の失敗を知らせる箱は暗幕準備失敗で理由を捨てず、既存failure_boxのnative/OSfallbackでその理由を表示する。wrapperは再帰reportしない。
+  復元失敗は暗幕をhideして入力不能を避け、既存の資源失敗経路へ一度だけ渡す。DialogBox自身のowner disableは保つ。
+- native C様式×に短いtooltipを付ける。既存TOOLTIP_CLOSEとshortcut bindingのAlt+F4表示を使い、新文言IDやキーliteralを増やさない。
+  tooltipはdialogのowned windowとして寿命を結び、palette更新で作り替わるdialog_themeのbrush状態と分離する。
+  TTF_IDISHWND|TTF_SUBCLASSで×を登録し、tooltipのための第2の矩形を持たない。作成/登録失敗は×と共にrollbackする。
+  共通native_messageのTTN_GETDISPINFOで固定modal languageから文字を作り、通知のszText等の正しい寿命へ格納する。stack pointerを残さない。
+- ui_text.[ch]/ui_text_testsはA単独所有。新IDはFAILURE_NAME_UNCHANGED、PROMPT_NAME_EMPTY、PROMPT_TITLE_UNTITLED、PROMPT_CATEGORY_READONLY、FAILURE_COMMAND_REASON、
+  STATUS_REPLACE_COUNT_ONLY、HELP_TAB_COMMANDS/HELP_TAB_KEYS、HELP_GROUP_NOTE/CATEGORY/LAYOUT/APP/QUIT。THEME_BACKとPROMPT_LABEL_NAME/CATEGORYは既存IDを更新する。
+  SEARCH/REPLACEラベルは既存COMMAND_FIND/ACCESSIBLE_PATTERN/REPLACEMENTを表示とUIAで共用し、不要なPROMPT_LABEL_CATEGORY_NAMEは共通Nameへ統合する。
+- ADR・quality/current/report/handoffと必要なCMake登録は親が所有する。#350main統合→#351新作業木→ADR補正→A共通宣言→A/B排他的実装の順で進む。

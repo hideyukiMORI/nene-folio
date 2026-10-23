@@ -59,3 +59,19 @@ Claude Codeのデザインリナが`design:design-critique`で既存画像と実
 同CLIの`/design`はアクセス管理用であり、設計用としては利用できなかった。
 入力後も残る対象表示・文字によるEnter方向・結果の十分な幅は設計サナが採用条件として補正した。
 今回のモデル分担はhideの現在指示に限る。恒久証跡は`D:/NeNeFolio/agents/search-ui-20261015/`。
+
+## 2026-10-24 の補正（#351 / I-D）
+
+[ADR0060 決定25](0060-ui-part-styles-and-state-rule.md)で、決定1の「置換の配置は変更しない」を置き換える。
+SEARCH/REPLACEは同じCommandLayerの上部帯のmode差とし、置換は正規表現のパターンと置換後の2入力を置く。
+SEARCHのliteral/ASCII大小無視とREPLACEの正規表現・編集中だけという意味は不変。語を自動コピーしない。
+
+- ラベルとEnter方向は入力後も残す。対象は帯より上に常に見えるpane breadcrumbとそのUIA全文を共用し、帯へ長い名前を複製しない。
+  置換面の件数はSTATUS_REPLACE_COUNT_ONLY、直接Exの:%sでは既存の対象名/件数表示を維持する。
+- 狭幅ではラベルと結果を独立した固定高の行へ。最小pane320では置換欄144、1件/すべて各64を許す。
+  結果領域は実font/spacing/DPIの最長関連理由から予約し、表示結果で本文高を変えず、最小560×360でも本文の可視行を残す。
+- 1件のanchorは現選択の開始位置以降の最初の一致。選択範囲内に制限する意味へ変えない。Enter=1件、Ctrl+Enter=すべて、Tab=2入力、Esc/×=閉鎖。
+  Ctrl+Hのcaretと:%sの直接置換は既存経路を保つ。保存/Undo/dirty/IMEと閉鎖後の矩形復帰も同じ所有者のまま。
+- 決定5の標準RichEdit選択を維持する。Issue下書きのselected_background強制は、文字書式・Undo・dirty・高コントラストへ別経路を作るため採用しない。
+
+完成候補の対象確認でgeometryと最長文言を記録する。3言語/3DPIの範囲や物理IME/実reader等の未測定を区別し、既に成功した無関係な検証は繰り返さない。
