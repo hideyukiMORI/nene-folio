@@ -370,6 +370,7 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_MENU_LOCAL_KEY] = "{name}（メニュー内）",
     [UI_TEXT_KEY_CONTEXT_MENU] = "Shift+F10",
     [UI_TEXT_KEY_APPS] = "Apps",
+    [UI_TEXT_MENU_EX_HINT] = ":{name}",
     [UI_TEXT_HELP_RENAME_KEY] = "{name} / {from} 名前変更",
 
 };
@@ -391,7 +392,7 @@ static size_t utf16_units_of(const char *_Nonnull utf8)
 /* 表の全 ID が、変更前と 1 字も違わないこと（同一性）。 */
 static void verify_identity(void)
 {
-    require(expected_count == UI_TEXT_HELP_RENAME_KEY + 1,
+    require(expected_count == UI_TEXT_MENU_EX_HINT + 1,
             "the expected table covers every id in the enumeration");
     for (size_t index = 0; index < expected_count; ++index)
     {

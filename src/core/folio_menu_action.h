@@ -19,4 +19,8 @@ folio_menu_action_group(const struct folio_menu_action *_Nonnull action);
 [[nodiscard]] enum ui_text_format_outcome
 folio_menu_action_caption(const struct folio_menu_action *_Nonnull action,
                           enum folio_language language, char *_Nonnull out, size_t capacity);
+/* キー、コロン付きEx名、またはこのメニュー内のアクセスキー案内。 */
+[[nodiscard]] enum ui_text_format_outcome
+folio_menu_action_hint(const struct folio_menu_action *_Nonnull action,
+                       enum folio_language language, char *_Nonnull out, size_t capacity);
 #endif

@@ -642,6 +642,7 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
     [UI_TEXT_KEY_APPS] = {"Apps", "Apps", "Apps"},
     [UI_TEXT_MENU_LOCAL_KEY] = {"{name}（メニュー内）", "{name} (menu)", "{name}（菜单内）"},
 
+    [UI_TEXT_MENU_EX_HINT] = {":{name}", ":{name}", ":{name}"},
     [UI_TEXT_HELP_RENAME_KEY] = {"{name} / {from} 名前変更", "{name} / {from} Rename",
                                  "{name} / {from} 重命名"},
 

@@ -580,6 +580,11 @@ static void verify_menu_captions(void)
     for (size_t language = 0; language < folio_language_count; ++language)
     {
         char text[1024];
+        require(folio_menu_action_hint(folio_menu_action_at(FOLIO_MENU_OPERATIONS, 4),
+                                       (enum folio_language)language, text,
+                                       sizeof text) == UI_TEXT_FORMAT_READY &&
+                    same_text(text, ":history"),
+                "Ex hint has a colon without changing its alias");
         require(folio_command_caption(FOLIO_COMMAND_SAVE_AS, (enum folio_language)language, text,
                                       sizeof text) == UI_TEXT_FORMAT_READY &&
                     strstr(text, "…") != nullptr,

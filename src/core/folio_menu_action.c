@@ -1,6 +1,8 @@
 #include "folio_menu_action.h"
+#include "folio_shortcut.h"
 #include "ui_text.h"
 #include "ui_text_request.h"
+#include <string.h>
 struct folio_menu_action
 {
     enum folio_menu_action_kind kind;
@@ -89,4 +91,25 @@ folio_menu_action_caption(const struct folio_menu_action *_Nonnull action,
     }
     }
     return UI_TEXT_FORMAT_TOO_LONG;
+}
+
+enum ui_text_format_outcome folio_menu_action_hint(const struct folio_menu_action *_Nonnull action,
+                                                   enum folio_language language, char *_Nonnull out,
+                                                   size_t capacity)
+{
+    const char *hint = "";
+    enum ui_text format = UI_TEXT_MENU_LOCAL_KEY;
+    if (action->kind == FOLIO_MENU_ACTION_COMMAND)
+    {
+        hint = folio_shortcut_command_hint(action->command, language);
+        if (hint[0] != '\0')
+            format = UI_TEXT_COMMAND_CAPTION;
+        if (folio_command_alias_count(action->command) > 0 &&
+            strcmp(hint, folio_command_alias(action->command, 0)) == 0)
+            format = UI_TEXT_MENU_EX_HINT;
+    }
+    char key[2] = {action->key, '\0'};
+    struct ui_text_request request = {
+        .id = format, .language = language, .name = hint[0] == '\0' ? key : hint};
+    return ui_text_format(&request, out, capacity);
 }

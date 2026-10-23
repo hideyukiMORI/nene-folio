@@ -306,6 +306,7 @@ enum ui_text : unsigned short
     UI_TEXT_KEY_CONTEXT_MENU,
     UI_TEXT_KEY_APPS,
     UI_TEXT_HELP_RENAME_KEY,
+    UI_TEXT_MENU_EX_HINT,
 
 };
 

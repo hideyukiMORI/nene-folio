@@ -481,6 +481,9 @@ static bool accessible_command(enum accessible_kind kind, enum folio_command *_N
 static const char *_Nonnull part_shortcut(enum accessible_kind kind, enum folio_language language);
 static RECT menu_rect(const struct folio_window *_Nonnull self);
 static RECT menu_row_rect(const struct folio_window *_Nonnull self, size_t index);
+static size_t menu_visible_count(const struct folio_window *_Nonnull self);
+static size_t menu_scroll_limit(const struct folio_window *_Nonnull self);
+static void arrange_drawer_region(struct folio_window *_Nonnull self, RECT bounds);
 static void menu_reveal(struct folio_window *_Nonnull self);
 static void draw_menu_surface(const struct folio_window *_Nonnull self, HDC device);
 static void show_menu_surface(struct folio_window *_Nonnull self,
@@ -1356,6 +1359,9 @@ static RECT command_rows_rect(const struct folio_window *_Nonnull self)
 
 static size_t command_visible_rows(const struct folio_window *_Nonnull self)
 {
+    if (self->command_surface == COMMAND_SURFACE_MENU)
+        return menu_visible_count(self);
+
     RECT rows = command_rows_rect(self);
     int height = self->command_surface == COMMAND_SURFACE_THEMES ? base_theme_row_height
                                                                  : base_command_row_height;
@@ -1543,7 +1549,11 @@ static void set_pane_notice(struct folio_window *_Nonnull self, enum pane_notice
     {
         return;
     }
+    bool boundary =
+        self->notice == PANE_NOTICE_COMMAND_RESULT || notice == PANE_NOTICE_COMMAND_RESULT;
     self->notice = notice;
+    if (boundary && self->drawer != nullptr)
+        arrange_drawer_region(self, regions_for(self).drawer);
     accessibility_host_schedule(self->accessibility);
     /* 暗幕はclient/cardだけに依存し、notice変更では再確保不要。配置本体には失敗の対話が無い。 */
     arrange_command_contents(self);
@@ -3572,6 +3582,8 @@ static void draw_pane_notice(const struct folio_window *_Nonnull self, HDC devic
     enum ui_text line = pane_notice_line(self);
     if (line == UI_TEXT_EMPTY)
         return;
+    SelectObject(device, self->mono_font);
+    SetBkMode(device, TRANSPARENT);
     SetTextColor(device, self->palette.header_text);
     draw_utf8(device,
               self->notice == PANE_NOTICE_COMMAND_RESULT
@@ -3699,8 +3711,7 @@ static void draw_common_header(const struct folio_window *_Nonnull self, HDC dev
 }
 
 /* 右ペインの地と頭。本文は note_pane が持つ。 */
-static void draw_pane(const struct folio_window *_Nonnull self, HDC device, RECT client,
-                      RECT damage)
+static void draw_pane(const struct folio_window *_Nonnull self, HDC device, RECT damage)
 {
     UINT dpi = GetDpiForWindow(self->handle);
     RECT pane = regions_for(self).pane;
@@ -3722,7 +3733,6 @@ static void draw_pane(const struct folio_window *_Nonnull self, HDC device, RECT
         draw_guide(self, device);
     }
     draw_gutter(self, device, damage);
-    draw_pane_notice(self, device, client);
 }
 
 /* 共通頭と可視paneを更新矩形へ一枚だけ描く。memory原点をずらしてclient座標を共用する。 */
@@ -3742,8 +3752,9 @@ static void blit_window(struct folio_window *_Nonnull self, HDC target, RECT cli
         draw_common_header(self, memory);
         if (pane_visible(self))
         {
-            draw_pane(self, memory, client, damage);
+            draw_pane(self, memory, damage);
         }
+        draw_pane_notice(self, memory, client);
         BitBlt(target, damage.left, damage.top, width, height, memory, damage.left, damage.top,
                SRCCOPY);
         SelectObject(memory, previous);
@@ -4143,10 +4154,22 @@ static void outcome_line(const struct folio_window *_Nonnull self, enum folio_st
         out[0] = '\0';
 }
 
+static void clear_report_outcome(struct folio_window *_Nonnull self)
+{
+    self->command_failure = FOLIO_STATE_READY;
+    self->result_line[0] = '\0';
+    if (self->notice == PANE_NOTICE_COMMAND_RESULT)
+        set_pane_notice(self, PANE_NOTICE_NONE);
+    redraw_command_layer(self);
+}
+
 static void report_outcome(struct folio_window *_Nonnull self, enum folio_state_outcome outcome)
 {
     if (outcome == FOLIO_STATE_READY)
+    {
+        clear_report_outcome(self);
         return;
+    }
     if (outcome == FOLIO_STATE_CANCELLED)
     {
         if (result_surface(self))
@@ -4328,6 +4351,8 @@ static size_t input_text(HWND _Nullable input, wchar_t *_Nonnull units)
  * 打つたびに呼ぶので、失敗もモーダルではなく欄の中の 1 行にする（閲覧中は NOT_EDITING）。 */
 static void update_replace_preview(struct folio_window *_Nonnull self)
 {
+    clear_command_status(self);
+
     wchar_t pattern[command_input_capacity];
     wchar_t replacement[command_input_capacity];
     size_t patterns = input_text(self->replace_inputs[0], pattern);
@@ -5066,6 +5091,7 @@ static bool report_save(struct folio_window *_Nonnull self, enum folio_state_out
         report_outcome(self, outcome);
         return false;
     }
+    report_outcome(self, FOLIO_STATE_READY);
     InvalidateRect(self->handle, nullptr, FALSE);
     return true;
 }
@@ -6933,7 +6959,7 @@ static void show_operations(struct folio_window *_Nonnull self)
         return;
     }
     struct menu_request request = {.context = FOLIO_MENU_OPERATIONS,
-                                   .anchor = action_button_rect(self, 1),
+                                   .anchor = accessible_main_rect(self, ACCESSIBLE_MENU),
                                    .keyboard = self->focus_cues};
     self->keyboard_target = ACCESSIBLE_MENU;
     show_menu_surface(self, &request);
@@ -7384,6 +7410,7 @@ static bool press_activation(struct folio_window *_Nonnull self, WPARAM key, LPA
     {
         return true;
     }
+    show_focus_cues(self, true);
     if (key == VK_SPACE)
     {
         begin_part_press(self, self->keyboard_target, true);
@@ -8005,6 +8032,7 @@ static void search_input_changed(struct folio_window *_Nonnull self)
     {
         return;
     }
+    clear_command_status(self);
     wchar_t units[command_input_capacity];
     int count = GetWindowTextW(self->command_input, units, (int)command_input_capacity);
     enum folio_state_outcome kept = folio_state_set_search_term(
@@ -10222,6 +10250,12 @@ static HRESULT surface_list_view(const struct folio_window *_Nonnull self,
         out->scroll_limit = (int)settings_scroll_limit(self);
         return result;
     }
+    if (self->command_surface == COMMAND_SURFACE_MENU)
+    {
+        out->viewport = (int)menu_visible_count(self);
+        out->scroll_limit = (int)menu_scroll_limit(self);
+        return result;
+    }
     out->viewport = (int)command_visible_rows(self);
     out->scroll_limit = (int)count > out->viewport ? (int)count - out->viewport : 0;
     return result;
@@ -11776,17 +11810,8 @@ static void menu_label(const struct folio_window *_Nonnull self, size_t index, c
 
 static void menu_hint(const struct folio_window *_Nonnull self, size_t index, char *_Nonnull out)
 {
-    const struct folio_menu_action *action = menu_action(self, index);
-    enum folio_language language = folio_state_language(self->state);
-    const char *hint = "";
-    if (folio_menu_action_kind(action) == FOLIO_MENU_ACTION_COMMAND)
-        hint = folio_shortcut_command_hint(folio_menu_action_command(action), language);
-    char key[2] = {folio_menu_action_access_key(action), '\0'};
-    struct ui_text_request request = {.id = hint[0] == '\0' ? UI_TEXT_MENU_LOCAL_KEY
-                                                            : UI_TEXT_COMMAND_CAPTION,
-                                      .language = language,
-                                      .name = hint[0] == '\0' ? key : hint};
-    if (ui_text_format(&request, out, draw_unit_limit) != UI_TEXT_FORMAT_READY)
+    if (folio_menu_action_hint(menu_action(self, index), folio_state_language(self->state), out,
+                               draw_unit_limit) != UI_TEXT_FORMAT_READY)
         out[0] = '\0';
 }
 
@@ -11884,16 +11909,16 @@ static RECT menu_rows_area(const struct folio_window *_Nonnull self)
     return area;
 }
 
-static RECT menu_row_rect(const struct folio_window *_Nonnull self, size_t index)
+static RECT menu_row_rect_at(const struct folio_window *_Nonnull self, size_t first, size_t index)
 {
-    if (index < self->command_first || index >= folio_menu_action_count(self->menu.context))
+    if (index < first || index >= folio_menu_action_count(self->menu.context))
         return (RECT){0};
     RECT area = menu_rows_area(self);
     int height = scale(32, GetDpiForWindow(self->handle));
     int top = area.top;
-    for (size_t at = self->command_first; at <= index; ++at)
+    for (size_t at = first; at <= index; ++at)
     {
-        if (at > self->command_first)
+        if (at > first)
             top += menu_separator(self, at);
         if (top + height > area.bottom)
             return (RECT){0};
@@ -11902,6 +11927,36 @@ static RECT menu_row_rect(const struct folio_window *_Nonnull self, size_t index
         top += height;
     }
     return (RECT){0};
+}
+
+static RECT menu_row_rect(const struct folio_window *_Nonnull self, size_t index)
+{
+    return menu_row_rect_at(self, self->command_first, index);
+}
+
+static size_t menu_visible_count(const struct folio_window *_Nonnull self)
+{
+    size_t visible = 0;
+    for (size_t at = self->command_first; at < folio_menu_action_count(self->menu.context); ++at)
+    {
+        RECT bounds = menu_row_rect(self, at);
+        if (IsRectEmpty(&bounds))
+            break;
+        visible += 1;
+    }
+    return visible;
+}
+
+static size_t menu_scroll_limit(const struct folio_window *_Nonnull self)
+{
+    size_t count = folio_menu_action_count(self->menu.context);
+    for (size_t first = 0; first < count; ++first)
+    {
+        RECT last = menu_row_rect_at(self, first, count - 1);
+        if (!IsRectEmpty(&last))
+            return first;
+    }
+    return count - 1;
 }
 
 static void menu_reveal(struct folio_window *_Nonnull self)
@@ -12144,8 +12199,9 @@ static size_t menu_access_key(const struct folio_window *_Nonnull self, WPARAM k
     return SIZE_MAX;
 }
 
-static bool menu_key_down(struct folio_window *_Nonnull self, WPARAM key)
+static bool menu_key_down(struct folio_window *_Nonnull self, WPARAM key, LPARAM lparam)
 {
+    show_focus_cues(self, true);
     if (key == VK_ESCAPE || key == VK_MENU || key == VK_F10)
     {
         close_command_surface(self);
@@ -12157,6 +12213,8 @@ static bool menu_key_down(struct folio_window *_Nonnull self, WPARAM key)
         self->menu_pressed = SIZE_MAX;
         return menu_navigate(self, key);
     }
+    if ((HIWORD(lparam) & KF_REPEAT) != 0)
+        return true;
     if (self->menu_key != 0)
         return true;
     if (key == VK_RETURN || key == VK_SPACE)
@@ -12211,17 +12269,18 @@ static void menu_global_character(struct folio_window *_Nonnull self, WPARAM wpa
     }
 }
 
-static bool menu_keyboard_message(struct folio_window *_Nonnull self, UINT message, WPARAM wparam)
+static bool menu_keyboard_message(struct folio_window *_Nonnull self, UINT message, WPARAM wparam,
+                                  LPARAM lparam)
 {
     switch (message)
     {
     case WM_KEYDOWN:
         if (shortcut_keydown(self, wparam))
             return true;
-        return menu_key_down(self, wparam);
+        return menu_key_down(self, wparam, lparam);
     case WM_SYSKEYDOWN:
         if (wparam == VK_MENU || wparam == VK_F10)
-            return menu_key_down(self, wparam);
+            return menu_key_down(self, wparam, lparam);
         return false;
     case WM_KEYUP:
     case WM_SYSKEYUP:
@@ -12254,7 +12313,7 @@ static bool menu_message(struct folio_window *_Nonnull self, UINT message, WPARA
     case WM_SYSKEYUP:
     case WM_CHAR:
     case WM_SYSCHAR:
-        return menu_keyboard_message(self, message, wparam);
+        return menu_keyboard_message(self, message, wparam, lparam);
     case WM_LBUTTONDOWN:
     case WM_LBUTTONUP:
     case WM_MOUSEMOVE:

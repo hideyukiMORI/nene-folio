@@ -21,7 +21,7 @@ folio_shortcut_action(const struct folio_shortcut *_Nonnull shortcut);
 folio_shortcut_command(const struct folio_shortcut *_Nonnull shortcut);
 [[nodiscard]] const char *_Nonnull folio_shortcut_label(
     const struct folio_shortcut *_Nonnull shortcut, enum folio_language language);
-/* COMMANDの第一binding。直接キーの無い操作はEx名（置換は既存substitute文法）を返す。 */
+/* COMMANDの第一binding。無ければ第一Ex別名、どちらも無ければ空文字。 */
 [[nodiscard]] const char *_Nonnull folio_shortcut_command_hint(enum folio_command command,
                                                                enum folio_language language);
 [[nodiscard]] enum ui_text_format_outcome folio_shortcut_help(enum ui_text id,
