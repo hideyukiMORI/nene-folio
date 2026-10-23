@@ -29,7 +29,7 @@ Aの初回compile/tidyで見つかったmain61行、6引数SUBCLASSPROC、分岐
 ## 残る確認
 
 設定/theme/help/historyの外形・Help scope/S2/SelectionItemは未実装。新しいnative面と帯のGUI/画像/実音/fresh native UIA/IME/暗幕失敗復帰は未検証。
-独立レビューは準備のみ。#351の最終head `eng/check.ps1` 必須CI・Ready・統合は未実施。文書PR #361のCIはこの製品チェックポイントの受理を意味しない。
+独立レビューは準備のみ。#351の最終head `eng/check.ps1` 必須CI・Ready・統合は未実施。文書PR #362（Issue #361）のCIはこの製品チェックポイントの受理を意味しない。
 物理IME、実reader、DWM窓外影、全OS/DPIの保証はしない。通常試遊buildと配布候補は#350を維持する。
 
 恒久証跡: `D:/NeNeFolio/agents/351-surface-research/native-implementation/`、`commandlayer-implementation/`、`checkpoint/`。
