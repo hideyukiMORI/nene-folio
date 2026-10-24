@@ -372,7 +372,7 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_PROMPT_NAME_EMPTY] = "名前を入力してください。",
     [UI_TEXT_PROMPT_TITLE_UNTITLED] = "無題のノート",
     [UI_TEXT_PROMPT_CATEGORY_READONLY] = "{name}（変更できません）",
-    [UI_TEXT_FAILURE_COMMAND_REASON] = "{name}\n{from}",
+    [UI_TEXT_FAILURE_COMMAND_REASON] = "{name}\r\n{from}",
     [UI_TEXT_STATUS_REPLACE_COUNT_ONLY] = "{k} 件",
     [UI_TEXT_HELP_TAB_COMMANDS] = "操作",
     [UI_TEXT_HELP_TAB_KEYS] = "キー",
@@ -894,7 +894,7 @@ static void verify_surface_formats(void)
                                            .language = (enum folio_language)column,
                                            .name = "operation",
                                            .from = "reason"};
-        expect_format(&request, "operation\nreason");
+        expect_format(&request, "operation\r\nreason");
     }
 }
 

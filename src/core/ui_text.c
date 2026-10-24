@@ -645,7 +645,7 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
     [UI_TEXT_PROMPT_TITLE_UNTITLED] = {"無題のノート", "Untitled note", "无标题笔记"},
     [UI_TEXT_PROMPT_CATEGORY_READONLY] = {"{name}（変更できません）", "{name} (cannot be changed)",
                                           "{name}（无法更改）"},
-    [UI_TEXT_FAILURE_COMMAND_REASON] = {"{name}\n{from}", "{name}\n{from}", "{name}\n{from}"},
+    [UI_TEXT_FAILURE_COMMAND_REASON] = {"{name}\r\n{from}", "{name}\r\n{from}", "{name}\r\n{from}"},
     [UI_TEXT_STATUS_REPLACE_COUNT_ONLY] = {"{k} 件", "{k} matches", "{k} 处"},
     [UI_TEXT_HELP_TAB_COMMANDS] = {"操作", "Actions", "操作"},
     [UI_TEXT_HELP_TAB_KEYS] = {"キー", "Keys", "按键"},
