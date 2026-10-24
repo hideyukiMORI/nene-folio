@@ -9,7 +9,8 @@
 - Releaseで初回設定541.5→97.2ms、テーマ切替492.9→20.8ms、10,000件一覧235.9→1.52ms。機械/fixture固有の実測。
 - Debug/Release build/tidy、折返し15,968件、Help101件、帯geometry95件、設定scroll48件が成功。6枚の一覧比較とdrag/contrast12件で画素差0。
 - 判断は[ADR0062](../adr/0062-ui-measurement-and-visible-paint.md)、詳細/限界は[品質記録](../quality/2026-10-25-ui-latency.md)。
-- 最終head CI・統合・通常試遊への反映・起動・整理は `D:/NeNeFolio/agents/performance-20261024/completion.json` と#368のPR Checksを照合する。
+- [PR #370](https://github.com/hideyukiMORI/nene-folio/pull/370)の最終head CIは成功し、製品main `f631d819`へ統合済み。通常ビルドを更新し、00:32 JSTに起動・応答を確認した。
+- 実行結果は `D:/NeNeFolio/agents/performance-20261024/completion.json`、要約は[日報](../reports/2026-10-25.md)、再開手順は[引き継ぎ](../handoffs/2026-10-25.md)を読む。PID/稼働状態は再開時に確認する。
 - 調査/設計/実装/検証は対話席が単体、必要な独立レビューだけ読み取り専用。schema/依存/ゲート変更なし、Waivers: none。
 
 ## 次の判断
@@ -23,6 +24,9 @@ VIEWのテーマ変更ではRichEdit再投入、巨大本文の行番号index再
 
 通常試遊の正規更新は `tools/prepare-real-machine.ps1`。稼働中アプリ/未保存本文を終了しない。公開Releaseは今回の依頼に含めない。
 統合/必要反映/恒久成果物を確認後、追加worktreeと不要出力を整理し、branch/commitを保持する。
+今回の `D:/NeNeFolio/worktrees/368-ui-latency` と `D:/NeNeFolio/outputs/performance-20261024` は、
+必要物の収載・全entry照合後の削除コマンドを自動承認レビューが `blocked by policy` で実行前に拒否したため保持。
+両パスとも未削除。拒否回避のため別手段で削除しない。詳細は恒久証跡の `cleanup-final.json` と引き継ぎ書に記録した。
 前件#366は[品質記録](../quality/2026-10-24-theme-preview.md)、#351は[面の規則](../quality/2026-10-24-surface-rules.md)を参照。
 
 過去の自動承認レビューが再帰削除を拒否した9箇所は再試行/別手段の削除をしない（すべて `D:/NeNeFolio/outputs/` 配下）:
