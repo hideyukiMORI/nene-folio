@@ -1569,9 +1569,11 @@ static struct name_prompt_result
 show_name_prompt(struct folio_window *_Nonnull self,
                  const struct name_prompt_request *_Nonnull request)
 {
+    HWND _Nullable focus = GetFocus();
     if (!begin_native_modal(self))
     {
         (void)end_native_modal(self);
+        restore_valid_focus(self, focus);
         return (struct name_prompt_result){FOLIO_STATE_OUT_OF_MEMORY, FOLIO_UNTITLED_PROTECT};
     }
     struct name_prompt_result result = name_prompt_show(self->handle, request, &self->palette);
@@ -1580,11 +1582,13 @@ show_name_prompt(struct folio_window *_Nonnull self,
         /* 業務操作の結果を変えず、暗幕なしで資源失敗を一度だけ知らせる。 */
         native_modal_resource_failure(self);
     }
+    restore_valid_focus(self, focus);
     return result;
 }
 
 static void show_failure_box(struct folio_window *_Nonnull self, enum folio_state_outcome outcome)
 {
+    HWND _Nullable focus = GetFocus();
     enum folio_command command = self->reporting_command;
     const enum folio_command *_Nullable context = self->command_context ? &command : nullptr;
     /* 暗幕の準備を失敗しても、元の理由は同じnative/OS退避経路で知らせる。 */
@@ -1592,6 +1596,7 @@ static void show_failure_box(struct folio_window *_Nonnull self, enum folio_stat
     failure_box_show(self->handle, outcome, self->state, context);
     if (!end_native_modal(self) && outcome != FOLIO_STATE_OUT_OF_MEMORY)
         native_modal_resource_failure(self);
+    restore_valid_focus(self, focus);
 }
 
 static void arrange_command_input(struct folio_window *_Nonnull self)
