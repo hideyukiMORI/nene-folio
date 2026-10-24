@@ -1,0 +1,10 @@
+#ifndef NENEFOLIO_DIALOG_THEME_CONTROL_OUTCOME_H
+#define NENEFOLIO_DIALOG_THEME_CONTROL_OUTCOME_H
+
+enum dialog_theme_control_outcome : unsigned char
+{
+    DIALOG_THEME_CONTROL_READY,
+    DIALOG_THEME_CONTROL_UNAVAILABLE
+};
+
+#endif

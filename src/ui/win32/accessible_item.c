@@ -54,6 +54,8 @@ enum accessible_kind accessible_item_host(struct accessible_item item)
     case ACCESSIBLE_REPLACE_TEXT:
         return ACCESSIBLE_WINDOW;
     case ACCESSIBLE_SURFACE:
+    case ACCESSIBLE_SURFACE_TABS:
+    case ACCESSIBLE_SURFACE_TAB:
     case ACCESSIBLE_SURFACE_LIST:
     case ACCESSIBLE_SURFACE_CHOICE:
     case ACCESSIBLE_SURFACE_LANGUAGE:

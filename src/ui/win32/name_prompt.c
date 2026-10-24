@@ -2,8 +2,10 @@
 #include "accessibility_native.h"
 #include "category_name.h"
 #include "dialog_theme.h"
+#include "folio_command.h"
 #include "folio_palette.h"
 #include "folio_state.h"
+#include "icon_paint.h"
 #include "note_name.h"
 #include "ui_face.h"
 #include "ui_part.h"
@@ -29,15 +31,24 @@ struct name_prompt
     HWND _Nullable accept;
     HWND _Nullable cancel;
     HWND _Nullable discard;
+    HWND _Nullable close;
+    HWND _Nullable name_label;
+    HWND _Nullable category_label;
     WNDPROC _Nullable original;
     HFONT _Nullable font;
     /* 初期paletteの塗り。OS色通知で実効色へ追随する（ADR0057）。 */
     struct dialog_theme *_Nullable theme;
     UINT dpi;
-    /* 一覧が閉じたコンボより高いぶん、下の欄と面を下げる画素（ADR 0035 の補正 18）。 */
-    int lowered;
-    int hint_extra;
-    int failure_extra;
+    RECT name_bounds;
+    RECT category_bounds;
+    RECT result_bounds;
+    RECT name_label_bounds;
+    RECT category_label_bounds;
+    int body_height;
+    int rows;
+    int button_width;
+    bool stacked;
+    bool result_scroll;
     bool composing;
     /* 記録を公開した後は名前を固定し、同じ改名の再開だけを受ける（ADR 0022 の決定 7）。 */
     bool pending;
@@ -51,7 +62,7 @@ static const struct
     WORD menu;
     WORD window_class;
     WORD title;
-} template = {.dialog = {.style = WS_POPUP | WS_CAPTION | WS_SYSMENU | DS_MODALFRAME | DS_CENTER,
+} template = {.dialog = {.style = WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_CLIPCHILDREN,
                          .cx = 250,
                          .cy = 180}};
 
@@ -90,6 +101,12 @@ static HWND _Nullable control(struct name_prompt *_Nonnull prompt, const wchar_t
     if (window != nullptr)
     {
         SendMessageW(window, WM_SETFONT, (WPARAM)prompt->font, TRUE);
+    }
+    if (window != nullptr && wcscmp(kind, L"BUTTON") == 0 &&
+        dialog_theme_track_button(window) != DIALOG_THEME_CONTROL_READY)
+    {
+        DestroyWindow(window);
+        return nullptr;
     }
     return window;
 }
@@ -131,7 +148,7 @@ static bool button(struct name_prompt *_Nonnull prompt, enum ui_text id, int ide
         return false;
     }
     SetWindowLongPtrW(window, GWLP_ID, identity);
-    position(prompt, window, bounds, prompt->lowered);
+    position(prompt, window, bounds, 0);
     if (identity == IDOK)
     {
         prompt->accept = window;
@@ -162,6 +179,7 @@ static LRESULT CALLBACK input_procedure(HWND window, UINT message, WPARAM wparam
     if (message == WM_IME_ENDCOMPOSITION)
     {
         prompt->composing = false;
+        InvalidateRect(prompt->dialog, nullptr, FALSE);
     }
     return CallWindowProcW(prompt->original, window, message, wparam, lparam);
 }
@@ -186,11 +204,6 @@ static bool fill_categories(struct name_prompt *_Nonnull prompt)
         }
     }
     SendMessageW(prompt->category, LB_SETCURSEL, folio_state_document_category(prompt->state), 0);
-    if (prompt->kind == NAME_PROMPT_RENAME)
-    {
-        /* 改名はカテゴリを変えない（ADR 0022 の決定 1）。表示だけ残して選べなくする。 */
-        EnableWindow(prompt->category, FALSE);
-    }
     return true;
 }
 
@@ -298,26 +311,25 @@ static enum name_prompt_kind displayed_kind(const struct name_prompt *_Nonnull p
     return prompt->kind;
 }
 
-static enum ui_text prompt_title(enum name_prompt_kind kind)
+static const char *_Nonnull prompt_title(enum name_prompt_kind kind, enum folio_language language)
 {
     switch (kind)
     {
     case NAME_PROMPT_LEAVE_UNTITLED:
-        return UI_TEXT_PROMPT_TITLE_LEAVE;
+        return ui_text_line(UI_TEXT_PROMPT_TITLE_UNTITLED, language);
     case NAME_PROMPT_FIRST_SAVE:
-        return UI_TEXT_PROMPT_TITLE_FIRST_SAVE;
+        return folio_command_label(FOLIO_COMMAND_SAVE, language);
     case NAME_PROMPT_SAVE_AS:
-        return UI_TEXT_PROMPT_TITLE_SAVE_AS;
+        return folio_command_label(FOLIO_COMMAND_SAVE_AS, language);
     case NAME_PROMPT_RENAME:
-        return UI_TEXT_PROMPT_TITLE_RENAME;
-    case NAME_PROMPT_NEW_CATEGORY:
-        return UI_TEXT_PROMPT_TITLE_NEW_CATEGORY;
-    case NAME_PROMPT_RENAME_CATEGORY:
-        return UI_TEXT_PROMPT_TITLE_RENAME_CATEGORY;
     case NAME_PROMPT_RETRY_RENAME:
-        return UI_TEXT_PROMPT_TITLE_RENAME;
+        return folio_command_label(FOLIO_COMMAND_RENAME, language);
+    case NAME_PROMPT_NEW_CATEGORY:
+        return folio_command_label(FOLIO_COMMAND_NEW_CATEGORY, language);
+    case NAME_PROMPT_RENAME_CATEGORY:
+        return folio_command_label(FOLIO_COMMAND_RENAME_CATEGORY, language);
     }
-    return UI_TEXT_PROMPT_TITLE_FIRST_SAVE;
+    return "";
 }
 
 static enum ui_text prompt_name_label(enum name_prompt_kind kind)
@@ -331,7 +343,7 @@ static enum ui_text prompt_name_label(enum name_prompt_kind kind)
         return UI_TEXT_PROMPT_LABEL_NAME;
     case NAME_PROMPT_NEW_CATEGORY:
     case NAME_PROMPT_RENAME_CATEGORY:
-        return UI_TEXT_PROMPT_LABEL_CATEGORY_NAME;
+        return UI_TEXT_PROMPT_LABEL_NAME;
     case NAME_PROMPT_RETRY_RENAME:
         return UI_TEXT_PROMPT_LABEL_NAME;
     }
@@ -396,17 +408,6 @@ static enum ui_text prompt_close(const struct name_prompt *_Nonnull prompt)
     return prompt->pending ? UI_TEXT_PROMPT_CLOSE_PENDING : UI_TEXT_PROMPT_CLOSE_CANCEL;
 }
 
-/* 保存先カテゴリの一覧の見える行の数（ADR 0035 の補正 18）。 */
-constexpr int category_rows = 4;
-/* 閉じたコンボが占めていた縦の枠（96 DPI の単位。名前欄と同じ 28）。一覧はこれより高いぶん
- * 下の欄と面を下げる。 */
-constexpr int category_slot_height = 28;
-/* 一覧を持たない面で詰める縦の幅（96 DPI の単位）。カテゴリの見出しの上端 82 から、一覧の下の
- * 案内の上端 144 まで。案内・失敗・釦・面の高さがこの分だけ上がる（ADR 0039 の決定 10）。 */
-constexpr int category_block_height = 62;
-
-/* 保存先カテゴリの見出しと一覧を置く種別か。置かない種別は一覧の窓を作らない
- * （ADR 0039 の決定 10）。 */
 static bool has_category_list(enum name_prompt_kind kind)
 {
     switch (kind)
@@ -414,34 +415,21 @@ static bool has_category_list(enum name_prompt_kind kind)
     case NAME_PROMPT_LEAVE_UNTITLED:
     case NAME_PROMPT_FIRST_SAVE:
     case NAME_PROMPT_SAVE_AS:
-    case NAME_PROMPT_RENAME:
         return true;
+    case NAME_PROMPT_RENAME:
     case NAME_PROMPT_NEW_CATEGORY:
     case NAME_PROMPT_RENAME_CATEGORY:
     case NAME_PROMPT_RETRY_RENAME:
         return false;
     }
-    return true;
+    return false;
 }
 
-/* 一覧の 1 行の高さ（画素）。WM_MEASUREITEM と面の配置の両方がこの 1 本から取る。 */
 static int category_row_height(const struct name_prompt *_Nonnull prompt)
 {
-    HDC device = GetDC(prompt->dialog);
-    if (device == nullptr)
-    {
-        return scaled(prompt, 22);
-    }
-    HGDIOBJ old_font = SelectObject(device, prompt->font);
-    TEXTMETRICW metrics;
-    int height = GetTextMetricsW(device, &metrics) ? (int)metrics.tmHeight + scaled(prompt, 4)
-                                                   : scaled(prompt, 22);
-    SelectObject(device, old_font);
-    ReleaseDC(prompt->dialog, device);
-    return height;
+    return scaled(prompt, 32);
 }
 
-/* EDITはこのstyleを作成時に保持する。今回STARTから固定面へ進む種別も先に付けておく。 */
 static DWORD name_selection_style(enum name_prompt_kind kind)
 {
     switch (kind)
@@ -459,116 +447,284 @@ static DWORD name_selection_style(enum name_prompt_kind kind)
     return 0;
 }
 
-/* 名前欄の箱（96 DPI で 20,46 から 360×28）。EDIT は箱の中で字の高さに縦中央、枠は箱の外側。 */
 static RECT name_box(const struct name_prompt *_Nonnull prompt)
 {
-    return (RECT){scaled(prompt, 20), scaled(prompt, 46), scaled(prompt, 20) + scaled(prompt, 360),
-                  scaled(prompt, 46) + scaled(prompt, 28)};
+    return prompt->name_bounds;
+}
+
+static bool readonly_category(struct name_prompt *_Nonnull prompt)
+{
+    struct ui_text_request request = {
+        .id = UI_TEXT_PROMPT_CATEGORY_READONLY,
+        .language = prompt_language(prompt),
+        .name =
+            folio_state_category_name(prompt->state, folio_state_document_category(prompt->state))};
+    char text[pending_line_capacity];
+    char16_t units[pending_line_capacity];
+    size_t written = 0;
+    if (ui_text_format(&request, text, sizeof text) != UI_TEXT_FORMAT_READY ||
+        utf16_text_fill(text, units, pending_line_capacity, &written) != UTF16_TEXT_FILL_READY)
+    {
+        return false;
+    }
+    SetWindowTextW(prompt->category, units);
+    return true;
 }
 
 static bool inputs(struct name_prompt *_Nonnull prompt)
 {
-    /* 塗れない OS の縁を外し、面が札の色の 1px の枠を描く（ADR 0035 の決定 3）。
-     * 保存先カテゴリは常時開いた owner-draw の一覧で、矢印の釦もドロップダウンも持たない
-     * （ADR 0035 の補正 17）。 */
-    bool listed = has_category_list(prompt->kind);
     prompt->name = control(prompt, L"EDIT", L"",
                            WS_TABSTOP | ES_AUTOHSCROLL | name_selection_style(prompt->kind));
-    if (listed)
+    if (has_category_list(prompt->kind))
     {
         prompt->category = control(prompt, L"LISTBOX", L"",
                                    WS_TABSTOP | LBS_OWNERDRAWFIXED | LBS_HASSTRINGS | LBS_NOTIFY |
                                        LBS_NOINTEGRALHEIGHT | WS_VSCROLL);
+        if (prompt->category == nullptr || !fill_categories(prompt))
+            return false;
     }
-    prompt->failure = control(prompt, L"STATIC", L"", SS_LEFT);
-    if (prompt->name == nullptr || (listed && prompt->category == nullptr) ||
-        prompt->failure == nullptr)
+    if (prompt->kind == NAME_PROMPT_RENAME)
     {
+        prompt->category = control(prompt, L"EDIT", L"", WS_TABSTOP | ES_READONLY | ES_AUTOHSCROLL);
+        if (prompt->category == nullptr || !readonly_category(prompt))
+            return false;
+    }
+    prompt->failure =
+        control(prompt, L"EDIT", L"", ES_READONLY | ES_MULTILINE | ES_AUTOVSCROLL | WS_VSCROLL);
+    if (prompt->name == nullptr || prompt->failure == nullptr)
         return false;
-    }
-    RECT box = name_box(prompt);
-    RECT field = ui_part_field_edit(box, ui_part_field_text_height(prompt->name), prompt->dpi);
-    MoveWindow(prompt->name, field.left, field.top, field.right - field.left,
-               field.bottom - field.top, TRUE);
-    ui_part_field_margins(prompt->name, prompt->dpi, 0);
-    if (listed)
-    {
-        MoveWindow(prompt->category, scaled(prompt, 20), scaled(prompt, 108), scaled(prompt, 360),
-                   category_rows * category_row_height(prompt), TRUE);
-    }
-    position(prompt, prompt->failure, (RECT){20, 166, 380, 226}, prompt->lowered);
     SendMessageW(prompt->name, EM_SETLIMITTEXT, 255, 0);
     SetWindowLongPtrW(prompt->name, GWLP_USERDATA, (LONG_PTR)prompt);
     prompt->original =
         (WNDPROC)SetWindowLongPtrW(prompt->name, GWLP_WNDPROC, (LONG_PTR)input_procedure);
-    return prompt->original != nullptr && (!listed || fill_categories(prompt));
+    return prompt->original != nullptr;
 }
 
-/* 一覧より下の欄と面をずらす画素。一覧を持つ種別は閉じたコンボより高いぶん下げ（補正 18）、
- * 持たない種別はカテゴリの見出しと一覧の枠のぶん上げる（ADR 0039 の決定 10）。 */
-static int lowered_by(const struct name_prompt *_Nonnull prompt)
+static int wrapped_height(HDC device, const char *_Nonnull text, int width)
 {
-    if (!has_category_list(prompt->kind))
-    {
-        return -scaled(prompt, category_block_height);
-    }
-    return category_rows * category_row_height(prompt) - scaled(prompt, category_slot_height);
+    char16_t units[pending_reason_capacity];
+    size_t written = 0;
+    if (utf16_text_fill(text, units, pending_reason_capacity, &written) != UTF16_TEXT_FILL_READY)
+        return 0;
+    RECT bounds = {0, 0, width, 0};
+    DrawTextW(device, units, -1, &bounds, DT_WORDBREAK | DT_CALCRECT | DT_NOPREFIX | DT_EXPANDTABS);
+    return bounds.bottom;
 }
 
-static void size_dialog(const struct name_prompt *_Nonnull prompt)
+static int maximum_result_height(const struct name_prompt *_Nonnull prompt, int width)
 {
-    RECT bounds = {0, 0, scaled(prompt, 400),
-                   scaled(prompt, 270) + prompt->lowered + prompt->hint_extra +
-                       prompt->failure_extra};
-    DWORD style = (DWORD)GetWindowLongPtrW(prompt->dialog, GWL_STYLE);
-    AdjustWindowRectExForDpi(&bounds, style, FALSE, 0, prompt->dpi);
-    RECT owner;
-    GetWindowRect(GetParent(prompt->dialog), &owner);
-    int width = bounds.right - bounds.left;
-    int height = bounds.bottom - bounds.top;
-    MoveWindow(prompt->dialog, (owner.left + owner.right - width) / 2,
-               (owner.top + owner.bottom - height) / 2, width, height, FALSE);
-}
-
-/* STATICと同じfont/折り返し幅で必要な高さだけ広げる。名前や理由を切らない。 */
-static int text_extra(const struct name_prompt *_Nonnull prompt, HWND window, int minimum)
-{
-    char16_t text[pending_reason_capacity];
-    GetWindowTextW(window, text, pending_reason_capacity);
     HDC device = GetDC(prompt->dialog);
     if (device == nullptr)
-    {
         return 0;
+    HGDIOBJ previous = SelectObject(device, prompt->font);
+    int maximum = 0;
+    for (size_t at = 0; at <= FOLIO_STATE_CATEGORY_NOT_SELECTED; ++at)
+    {
+        int height = wrapped_height(
+            device, folio_state_failure_line((enum folio_state_outcome)at, prompt_language(prompt)),
+            width);
+        maximum = height > maximum ? height : maximum;
     }
-    HGDIOBJ old_font = SelectObject(device, prompt->font);
-    RECT bounds = {0, 0, scaled(prompt, 360), 0};
-    DrawTextW(device, text, -1, &bounds, DT_LEFT | DT_WORDBREAK | DT_EXPANDTABS | DT_CALCRECT);
-    SelectObject(device, old_font);
+    const enum ui_text ids[] = {prompt_hint(prompt), UI_TEXT_PROMPT_NAME_EMPTY,
+                                UI_TEXT_PROMPT_PENDING_EXPLANATION};
+    for (size_t at = 0; at < sizeof ids / sizeof ids[0]; ++at)
+    {
+        int height = wrapped_height(device, ui_text_line(ids[at], prompt_language(prompt)), width);
+        maximum = height > maximum ? height : maximum;
+    }
+    SelectObject(device, previous);
     ReleaseDC(prompt->dialog, device);
-    int base = scaled(prompt, minimum);
-    return bounds.bottom > base ? bounds.bottom - base : 0;
+    return maximum;
+}
+
+static int measure_button_width(const struct name_prompt *_Nonnull prompt)
+{
+    HDC device = GetDC(prompt->dialog);
+    if (device == nullptr)
+        return 0;
+    HGDIOBJ previous = SelectObject(device, prompt->font);
+    HWND buttons[] = {prompt->accept, prompt->discard, prompt->cancel};
+    int width = scaled(prompt, 88);
+    for (size_t at = 0; at < sizeof buttons / sizeof buttons[0]; ++at)
+    {
+        if (buttons[at] == nullptr)
+            continue;
+        wchar_t text[ui_text_unit_limit];
+        GetWindowTextW(buttons[at], text, (int)ui_text_unit_limit);
+        RECT line = {0};
+        DrawTextW(device, text, -1, &line, DT_SINGLELINE | DT_CALCRECT);
+        int candidate = ui_part_command_width(line.right, false, prompt->dpi);
+        width = candidate > width ? candidate : width;
+    }
+    SelectObject(device, previous);
+    ReleaseDC(prompt->dialog, device);
+    return width;
+}
+
+static bool stacked_labels(const struct name_prompt *_Nonnull prompt, int width)
+{
+    if (width < scaled(prompt, 480))
+        return true;
+    HDC device = GetDC(prompt->dialog);
+    if (device == nullptr)
+        return true;
+    HGDIOBJ previous = SelectObject(device, prompt->font);
+    const enum ui_text ids[] = {UI_TEXT_PROMPT_LABEL_NAME, UI_TEXT_PROMPT_LABEL_CATEGORY};
+    bool stacked = false;
+    for (size_t at = 0; at < sizeof ids / sizeof ids[0]; ++at)
+    {
+        wchar_t text[ui_text_unit_limit];
+        wide_line(ids[at], prompt_language(prompt), text);
+        SIZE measured = {0};
+        GetTextExtentPoint32W(device, text, (int)wcslen(text), &measured);
+        stacked = stacked || measured.cx > scaled(prompt, 80);
+    }
+    SelectObject(device, previous);
+    ReleaseDC(prompt->dialog, device);
+    return stacked;
+}
+
+static int plan_category(struct name_prompt *_Nonnull prompt, int width, int top)
+{
+    int edge = scaled(prompt, 16);
+    int label = prompt->stacked ? scaled(prompt, 24) : 0;
+    int left = prompt->stacked ? edge : scaled(prompt, 104);
+    prompt->category_label_bounds =
+        (RECT){edge, top, prompt->stacked ? width - edge : left - scaled(prompt, 8),
+               top + (prompt->stacked ? label : scaled(prompt, 32))};
+    int height = prompt->rows > 0 ? prompt->rows * category_row_height(prompt) +
+                                        ui_part_focus_width(prompt->dpi) * 2
+                                  : scaled(prompt, 32);
+    prompt->category_bounds = (RECT){left, top + label, width - edge, top + label + height};
+    return prompt->category_bounds.bottom;
+}
+
+static int plan_fields(struct name_prompt *_Nonnull prompt, int width)
+{
+    int edge = scaled(prompt, 16);
+    int top = scaled(prompt, 60);
+    int label = prompt->stacked ? scaled(prompt, 24) : 0;
+    int left = prompt->stacked ? edge : scaled(prompt, 104);
+    prompt->name_label_bounds =
+        (RECT){edge, top, prompt->stacked ? width - edge : left - scaled(prompt, 8),
+               top + (prompt->stacked ? label : scaled(prompt, 32))};
+    prompt->name_bounds = (RECT){left, top + label, width - edge, top + label + scaled(prompt, 32)};
+    top = prompt->name_bounds.bottom;
+    if (prompt->category != nullptr)
+        top = plan_category(prompt, width, top + scaled(prompt, 8));
+    return top + scaled(prompt, 8);
+}
+
+static bool plan_dialog(struct name_prompt *_Nonnull prompt, HWND anchor, SIZE *_Nonnull size)
+{
+    HWND owner = GetWindow(prompt->dialog, GW_OWNER);
+    RECT parent = {0, 0, scaled(prompt, 560), scaled(prompt, 360)};
+    if (owner != nullptr)
+        GetClientRect(owner, &parent);
+    int maximum = parent.bottom - scaled(prompt, 32);
+    RECT allowed = dialog_theme_popup_bounds(anchor, (SIZE){scaled(prompt, 480), maximum});
+    int width = allowed.right - allowed.left;
+    int limit = allowed.bottom - allowed.top;
+    prompt->stacked = stacked_labels(prompt, width);
+    prompt->rows = has_category_list(prompt->kind) ? 4 : 0;
+    prompt->button_width = measure_button_width(prompt);
+    prompt->body_height = maximum_result_height(prompt, width - scaled(prompt, 64));
+    int top = plan_fields(prompt, width);
+    int footer = scaled(prompt, 60);
+    if (top + prompt->body_height + footer > limit && prompt->rows == 4)
+    {
+        prompt->rows = 2;
+        top = plan_fields(prompt, width);
+    }
+    int room = limit - top - footer;
+    if (room <= 0 || prompt->button_width <= 0 || prompt->body_height <= 0)
+        return false;
+    prompt->result_scroll = prompt->body_height > room;
+    prompt->body_height = prompt->body_height < room ? prompt->body_height : room;
+    prompt->result_bounds =
+        (RECT){scaled(prompt, 16), top, width - scaled(prompt, 16), top + prompt->body_height};
+    *size = (SIZE){width, top + prompt->body_height + footer};
+    return true;
+}
+
+static void place_control(HWND window, RECT bounds)
+{
+    MoveWindow(window, bounds.left, bounds.top, bounds.right - bounds.left,
+               bounds.bottom - bounds.top, TRUE);
+}
+
+static void place_buttons(const struct name_prompt *_Nonnull prompt, RECT client)
+{
+    int right = client.right - scaled(prompt, 16);
+    int bottom = client.bottom - scaled(prompt, 16);
+    int width = prompt->button_width;
+    int gap = scaled(prompt, 8);
+    place_control(prompt->cancel,
+                  (RECT){right - width, bottom - scaled(prompt, 28), right, bottom});
+    right -= width + gap;
+    if (prompt->discard != nullptr)
+    {
+        place_control(prompt->discard,
+                      (RECT){right - width, bottom - scaled(prompt, 28), right, bottom});
+        right -= width + gap;
+    }
+    place_control(prompt->accept,
+                  (RECT){right - width, bottom - scaled(prompt, 28), right, bottom});
+    place_control(prompt->close, ui_part_surface_rect(client, prompt->dpi, UI_PART_SURFACE_CLOSE));
+}
+
+static void reflow_category(const struct name_prompt *_Nonnull prompt)
+{
+    if (prompt->category != nullptr)
+    {
+        RECT field = ui_part_field_edit(
+            prompt->category_bounds,
+            prompt->rows > 0 ? 0 : ui_part_field_text_height(prompt->category), prompt->dpi);
+        place_control(prompt->category, field);
+        place_control(prompt->category_label, prompt->category_label_bounds);
+        if (prompt->rows == 0)
+            ui_part_field_margins(prompt->category, prompt->dpi, 0);
+    }
+}
+
+static void reflow_result(const struct name_prompt *_Nonnull prompt)
+{
+    bool failed = GetWindowTextLengthW(prompt->failure) > 0;
+    RECT result = prompt->result_bounds;
+    place_control(prompt->hint, result);
+    if (!prompt->pending)
+        result.left += scaled(prompt, 32);
+    place_control(prompt->failure,
+                  prompt->pending ? ui_part_field_edit(result, 0, prompt->dpi) : result);
+    ShowWindow(prompt->hint, failed ? SW_HIDE : SW_SHOW);
+    ShowWindow(prompt->failure, failed ? SW_SHOW : SW_HIDE);
+    LONG_PTR style = GetWindowLongPtrW(prompt->failure, GWL_STYLE);
+    SetWindowLongPtrW(prompt->failure, GWL_STYLE,
+                      prompt->pending ? style | WS_TABSTOP : style & ~(LONG_PTR)WS_TABSTOP);
+    /* 通常結果もmonitor縮退で予約高が不足した時は全文をscrollで読める。 */
+    SendMessageW(prompt->failure, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, 0);
+    ShowScrollBar(prompt->failure, SB_VERT, prompt->pending || prompt->result_scroll);
 }
 
 static void reflow_prompt(struct name_prompt *_Nonnull prompt)
 {
     enum folio_language language = prompt_language(prompt);
-    show_line(prompt->dialog, prompt_title(displayed_kind(prompt)), language);
+    char16_t title[ui_text_unit_limit];
+    size_t written = 0;
+    if (utf16_text_fill(prompt_title(displayed_kind(prompt), language), title, ui_text_unit_limit,
+                        &written) == UTF16_TEXT_FILL_READY)
+        SetWindowTextW(prompt->dialog, title);
     show_line(prompt->hint, prompt_hint(prompt), language);
-    prompt->hint_extra = text_extra(prompt, prompt->hint, 22);
-    prompt->failure_extra = text_extra(prompt, prompt->failure, 60);
-    MoveWindow(prompt->hint, scaled(prompt, 20), scaled(prompt, 144) + prompt->lowered,
-               scaled(prompt, 360), scaled(prompt, 22) + prompt->hint_extra, TRUE);
-    MoveWindow(prompt->failure, scaled(prompt, 20),
-               scaled(prompt, 166) + prompt->lowered + prompt->hint_extra, scaled(prompt, 360),
-               scaled(prompt, 60) + prompt->failure_extra, TRUE);
-    int lowered = prompt->lowered + prompt->hint_extra + prompt->failure_extra;
-    position(prompt, prompt->accept, (RECT){192, 230, 280, 258}, lowered);
-    position(prompt, prompt->cancel, (RECT){288, 230, 380, 258}, lowered);
-    if (prompt->discard != nullptr)
-    {
-        position(prompt, prompt->discard, (RECT){20, 230, 118, 258}, lowered);
-    }
-    size_dialog(prompt);
+    RECT field = ui_part_field_edit(prompt->name_bounds, ui_part_field_text_height(prompt->name),
+                                    prompt->dpi);
+    place_control(prompt->name, field);
+    ui_part_field_margins(prompt->name, prompt->dpi, 0);
+    place_control(prompt->name_label, prompt->name_label_bounds);
+    reflow_category(prompt);
+    reflow_result(prompt);
+    RECT client;
+    GetClientRect(prompt->dialog, &client);
+    place_buttons(prompt, client);
     RedrawWindow(prompt->dialog, nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN);
 }
 
@@ -588,36 +744,60 @@ static bool name_inputs(const struct name_prompt *_Nonnull prompt)
     return SUCCEEDED(accessibility_native_name(prompt->category, name));
 }
 
+static bool refresh_font(struct name_prompt *_Nonnull prompt)
+{
+    wchar_t face[LF_FACESIZE];
+    ui_face_for(prompt_language(prompt), face);
+    HFONT font = CreateFontW(-scaled(prompt, 14), 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+                             DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+                             CLEARTYPE_QUALITY, DEFAULT_PITCH, face);
+    if (font == nullptr)
+        return false;
+    HFONT previous = prompt->font;
+    prompt->font = font;
+    for (HWND child = GetWindow(prompt->dialog, GW_CHILD); child != nullptr;
+         child = GetWindow(child, GW_HWNDNEXT))
+        SendMessageW(child, WM_SETFONT, (WPARAM)font, FALSE);
+    if (previous != nullptr)
+        DeleteObject(previous);
+    return true;
+}
+
+static bool make_labels_and_buttons(struct name_prompt *_Nonnull prompt)
+{
+    prompt->hint = label(prompt, prompt_hint(prompt), (RECT){0}, 0);
+    prompt->name_label = label(prompt, UI_TEXT_PROMPT_LABEL_NAME, (RECT){0}, 0);
+    if (prompt->category != nullptr)
+        prompt->category_label = label(prompt, UI_TEXT_PROMPT_LABEL_CATEGORY, (RECT){0}, 0);
+    if (!button(prompt, prompt_accept(prompt), IDOK, (RECT){0}))
+        return false;
+    if (prompt->kind == NAME_PROMPT_LEAVE_UNTITLED &&
+        !button(prompt, UI_TEXT_PROMPT_DISCARD, discard_identity, (RECT){0}))
+        return false;
+    if (!button(prompt, prompt_close(prompt), IDCANCEL, (RECT){0}) ||
+        dialog_theme_create_close(prompt->dialog, prompt->font, prompt_language(prompt),
+                                  &prompt->close) != DIALOG_THEME_CONTROL_READY)
+        return false;
+    return prompt->hint != nullptr && prompt->name_label != nullptr &&
+           (prompt->category == nullptr || prompt->category_label != nullptr);
+}
+
 static bool initialize(struct name_prompt *_Nonnull prompt, HWND dialog)
 {
     prompt->dialog = dialog;
     prompt->dpi = GetDpiForWindow(dialog);
     dialog_theme_decorate(prompt->theme, dialog);
-    /* 面はモーダルなので、言語は開く瞬間に決まる（ADR 0032 の決定 4）。 */
-    wchar_t face[LF_FACESIZE];
-    ui_face_for(prompt_language(prompt), face);
-    prompt->font = CreateFontW(-scaled(prompt, 14), 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
-                               DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-                               CLEARTYPE_QUALITY, DEFAULT_PITCH, face);
-    if (prompt->font == nullptr)
-    {
+    if (!refresh_font(prompt) || !inputs(prompt) || !fill_name(prompt) || !name_inputs(prompt))
         return false;
-    }
-    prompt->lowered = lowered_by(prompt);
-    size_dialog(prompt);
-    if (!inputs(prompt) || !fill_name(prompt) || !name_inputs(prompt))
-    {
+    if (!make_labels_and_buttons(prompt))
         return false;
-    }
-    prompt->hint = label(prompt, prompt_hint(prompt), (RECT){20, 144, 380, 166}, prompt->lowered);
-    return prompt->hint != nullptr &&
-           label(prompt, prompt_name_label(displayed_kind(prompt)), (RECT){20, 20, 380, 42}, 0) &&
-           (!has_category_list(prompt->kind) ||
-            label(prompt, UI_TEXT_PROMPT_LABEL_CATEGORY, (RECT){20, 82, 380, 104}, 0)) &&
-           button(prompt, prompt_accept(prompt), IDOK, (RECT){192, 230, 280, 258}) &&
-           button(prompt, prompt_close(prompt), IDCANCEL, (RECT){288, 230, 380, 258}) &&
-           (prompt->kind != NAME_PROMPT_LEAVE_UNTITLED ||
-            button(prompt, UI_TEXT_PROMPT_DISCARD, discard_identity, (RECT){20, 230, 118, 258}));
+    SIZE size;
+    if (!plan_dialog(prompt, GetWindow(dialog, GW_OWNER), &size))
+        return false;
+    RECT bounds = dialog_theme_popup_bounds(GetWindow(dialog, GW_OWNER), size);
+    MoveWindow(dialog, bounds.left, bounds.top, bounds.right - bounds.left,
+               bounds.bottom - bounds.top, FALSE);
+    return true;
 }
 
 /* ノートの種別は同じ名前型を使う（ADR 0022 の決定 1）。".md" はここで剥がれる。 */
@@ -887,21 +1067,8 @@ static bool owns_started_pending(const struct name_prompt *_Nonnull prompt)
     return false;
 }
 
-static void submit(struct name_prompt *_Nonnull prompt)
+static void submit_new(struct name_prompt *_Nonnull prompt)
 {
-    if (prompt->pending)
-    {
-        submit_retry(prompt);
-        return;
-    }
-    struct rename_view prior = {.from = "", .to = ""};
-    if (prompt->kind != NAME_PROMPT_NEW_CATEGORY &&
-        folio_state_rename_pending(prompt->state, &prior))
-    {
-        /* 面を開いた後の先行意図は入力を上書きせず、このsubmitでは保存しない。 */
-        show_failure(prompt, FOLIO_STATE_RENAME_PENDING);
-        return;
-    }
     enum folio_state_outcome saved = save(prompt);
     /* Publication can succeed before cache/index repair fails; this is no longer a discardable
      * draft. */
@@ -930,6 +1097,31 @@ static void submit(struct name_prompt *_Nonnull prompt)
         return;
     }
     show_failure(prompt, saved);
+}
+
+static void submit(struct name_prompt *_Nonnull prompt)
+{
+    if (prompt->pending)
+    {
+        submit_retry(prompt);
+        return;
+    }
+    if (GetWindowTextLengthW(prompt->name) == 0)
+    {
+        show_line(prompt->failure, UI_TEXT_PROMPT_NAME_EMPTY, prompt_language(prompt));
+        reflow_prompt(prompt);
+        SetFocus(prompt->name);
+        return;
+    }
+    struct rename_view prior = {.from = "", .to = ""};
+    if (prompt->kind != NAME_PROMPT_NEW_CATEGORY &&
+        folio_state_rename_pending(prompt->state, &prior))
+    {
+        /* 面を開いた後の先行意図は入力を上書きせず、このsubmitでは保存しない。 */
+        show_failure(prompt, FOLIO_STATE_RENAME_PENDING);
+        return;
+    }
+    submit_new(prompt);
 }
 
 static void begin_dialog(struct name_prompt *_Nonnull prompt, HWND dialog)
@@ -964,6 +1156,10 @@ static enum dialog_theme_surface surface_for(const struct name_prompt *_Nonnull 
     {
         return DIALOG_THEME_FIELD;
     }
+    if (child == prompt->category || (child == prompt->failure && prompt->pending))
+        return DIALOG_THEME_FIELD;
+    if (child == prompt->hint)
+        return DIALOG_THEME_SECONDARY;
     return DIALOG_THEME_LABEL;
 }
 
@@ -991,9 +1187,11 @@ static void draw_owned(const struct name_prompt *_Nonnull prompt,
         return;
     }
     /* 既定は「保存」「変更」「再試行」の側（ADR 0035 の決定 3）。 */
-    dialog_theme_draw_button(prompt->theme, item,
-                             item->CtlID == IDOK ? DIALOG_THEME_BUTTON_PRIMARY
-                                                 : DIALOG_THEME_BUTTON_SECONDARY);
+    enum dialog_theme_button kind =
+        item->CtlID == IDOK ? DIALOG_THEME_BUTTON_PRIMARY : DIALOG_THEME_BUTTON_SECONDARY;
+    if (item->CtlID == IDCLOSE)
+        kind = DIALOG_THEME_BUTTON_CLOSE;
+    dialog_theme_draw_button(prompt->theme, item, kind);
 }
 
 /* 一覧の行の高さ。WM_MEASUREITEM は inputs() の作る途中で来るので書体から測る。 */
@@ -1017,18 +1215,14 @@ static RECT field_bounds(const struct name_prompt *_Nonnull prompt, HWND window)
     {
         return name_box(prompt);
     }
-    /* 一覧は窓の外に focus の太さの空きを取った箱。枠はその内側（＝一覧の外の空き）に描く。 */
-    RECT bounds = child_bounds(prompt, window);
-    int ring = ui_part_focus_width(GetDpiForWindow(prompt->dialog));
-    InflateRect(&bounds, ring, ring);
-    return bounds;
+    return window == prompt->failure ? prompt->result_bounds : prompt->category_bounds;
 }
 
 static void frame_around(const struct name_prompt *_Nonnull prompt, HDC device, HWND window)
 {
     RECT bounds = field_bounds(prompt, window);
     int focus = GetFocus() == window ? ui_part_focus_width(GetDpiForWindow(prompt->dialog)) : 0;
-    /* 対話は WS_CLIPCHILDREN を持たないので、子の上を塗らないよう子の矩形を除いて箱を塗る。 */
+    /* WM_PRINTCLIENTも同じ経路を通るので子の矩形を除いて箱だけを塗る。 */
     RECT child = child_bounds(prompt, window);
     int saved = SaveDC(device);
     ExcludeClipRect(device, child.left, child.top, child.right, child.bottom);
@@ -1042,31 +1236,8 @@ static void frame_around(const struct name_prompt *_Nonnull prompt, HDC device, 
 /* focus の出入りで枠の太さが変わるので、枠だけを描き直す。一覧は外側の輪、名前欄は箱（#349）。 */
 static void refresh_frame(const struct name_prompt *_Nonnull prompt, HWND window)
 {
-    if (window == prompt->name)
-    {
-        /* 名前欄の枠は箱の内側で太る。EDIT の外の箱だけが描き直しの対象になる。 */
-        RECT box = name_box(prompt);
-        InvalidateRect(prompt->dialog, &box, FALSE);
-        return;
-    }
-    RECT inner = field_bounds(prompt, window);
-    RECT outer = inner;
-    int reach = ui_part_focus_width(GetDpiForWindow(prompt->dialog));
-    InflateRect(&outer, reach, reach);
-    HRGN ring = CreateRectRgnIndirect(&outer);
-    HRGN hole = CreateRectRgnIndirect(&inner);
-    if (ring != nullptr && hole != nullptr && CombineRgn(ring, ring, hole, RGN_DIFF) != ERROR)
-    {
-        InvalidateRgn(prompt->dialog, ring, TRUE);
-    }
-    if (ring != nullptr)
-    {
-        DeleteObject(ring);
-    }
-    if (hole != nullptr)
-    {
-        DeleteObject(hole);
-    }
+    RECT box = field_bounds(prompt, window);
+    InvalidateRect(prompt->dialog, &box, FALSE);
 }
 
 static bool field_focus_changed(const struct name_prompt *_Nonnull prompt, WPARAM wparam,
@@ -1076,16 +1247,36 @@ static bool field_focus_changed(const struct name_prompt *_Nonnull prompt, WPARA
     WORD code = HIWORD(wparam);
     bool name = window == prompt->name && (code == EN_SETFOCUS || code == EN_KILLFOCUS);
     bool category = prompt->category != nullptr && window == prompt->category &&
-                    (code == LBN_SETFOCUS || code == LBN_KILLFOCUS);
-    if (name || category)
+                    (code == LBN_SETFOCUS || code == LBN_KILLFOCUS || code == EN_SETFOCUS ||
+                     code == EN_KILLFOCUS);
+    bool reason = prompt->pending && window == prompt->failure &&
+                  (code == EN_SETFOCUS || code == EN_KILLFOCUS);
+    if (name || category || reason)
     {
         refresh_frame(prompt, window);
     }
-    return name || category;
+    return name || category || reason;
 }
 
 /* WS_BORDER を外した名前欄（箱の内側）と一覧（外側）に入力欄の枠を描く（draw_filter_frame と同じ
  * ui_part の 1 本・ ADR 0035 の補正 17 を ADR0060 の決定 3 で置き換えた）。 */
+static void paint_contents(const struct name_prompt *_Nonnull prompt, HDC device)
+{
+    dialog_theme_draw_title(prompt->theme, prompt->dialog, device, prompt->font);
+    frame_around(prompt, device, prompt->name);
+    if (prompt->category != nullptr)
+        frame_around(prompt, device, prompt->category);
+    if (prompt->pending)
+        frame_around(prompt, device, prompt->failure);
+    if (!prompt->pending && GetWindowTextLengthW(prompt->failure) > 0)
+    {
+        RECT mark = prompt->result_bounds;
+        mark.right = mark.left + scaled(prompt, 24);
+        mark.bottom = mark.top + scaled(prompt, 24);
+        dialog_theme_draw_warning(prompt->theme, device, mark);
+    }
+}
+
 static void paint_frame(const struct name_prompt *_Nonnull prompt)
 {
     PAINTSTRUCT paint;
@@ -1094,19 +1285,29 @@ static void paint_frame(const struct name_prompt *_Nonnull prompt)
     {
         return;
     }
-    frame_around(prompt, device, prompt->name);
-    if (prompt->category != nullptr)
-    {
-        frame_around(prompt, device, prompt->category);
-    }
+    paint_contents(prompt, device);
     EndPaint(prompt->dialog, &paint);
 }
 
-static void follow_dpi(const struct name_prompt *_Nonnull prompt, const RECT *_Nonnull suggested)
+static void follow_dpi(struct name_prompt *_Nonnull prompt, const RECT *_Nonnull suggested)
 {
     SetWindowPos(prompt->dialog, nullptr, suggested->left, suggested->top,
                  suggested->right - suggested->left, suggested->bottom - suggested->top,
                  SWP_NOZORDER | SWP_NOACTIVATE);
+    prompt->dpi = GetDpiForWindow(prompt->dialog);
+    SIZE size;
+    if (!refresh_font(prompt) || !plan_dialog(prompt, prompt->dialog, &size))
+    {
+        prompt->outcome = FOLIO_STATE_OUT_OF_MEMORY;
+        EndDialog(prompt->dialog, IDCANCEL);
+        return;
+    }
+    if (prompt->rows > 0)
+        SendMessageW(prompt->category, LB_SETITEMHEIGHT, 0, category_row_height(prompt));
+    RECT fitted = dialog_theme_popup_bounds(prompt->dialog, size);
+    MoveWindow(prompt->dialog, fitted.left, fitted.top, fitted.right - fitted.left,
+               fitted.bottom - fitted.top, FALSE);
+    reflow_prompt(prompt);
 }
 
 /* 塗りのメッセージを dialog_theme へ渡す。IME の門より前で答えるので組成中も色が抜けない
@@ -1139,6 +1340,9 @@ static INT_PTR paint_message(struct name_prompt *_Nonnull prompt, UINT message, 
     case WM_PAINT:
         paint_frame(prompt);
         return TRUE;
+    case WM_PRINTCLIENT:
+        paint_contents(prompt, (HDC)wparam);
+        return TRUE;
     case WM_DPICHANGED:
         follow_dpi(prompt, (const RECT *)lparam);
         return TRUE;
@@ -1152,8 +1356,9 @@ static INT_PTR paint_message(struct name_prompt *_Nonnull prompt, UINT message, 
  * フォーカスを押した釦へ移すので、OK のクリックを読み替えることはない。 */
 static bool reads_as_cancel(const struct name_prompt *_Nonnull prompt, WPARAM wparam)
 {
-    return LOWORD(wparam) == IDCANCEL ||
-           (LOWORD(wparam) == IDOK && HIWORD(wparam) == BN_CLICKED && GetFocus() == prompt->cancel);
+    return LOWORD(wparam) == IDCANCEL || LOWORD(wparam) == IDCLOSE ||
+           (LOWORD(wparam) == IDOK && HIWORD(wparam) == BN_CLICKED &&
+            (GetFocus() == prompt->cancel || GetFocus() == prompt->close));
 }
 
 /* 保存先カテゴリの行のダブルクリックは「保存」と同じ経路へ読む（ADR 0035 の補正 19）。 */
@@ -1175,10 +1380,6 @@ static bool reads_as_accept(const struct name_prompt *_Nonnull prompt, WPARAM wp
 
 static INT_PTR prompt_command(struct name_prompt *_Nonnull prompt, WPARAM wparam, LPARAM lparam)
 {
-    if (field_focus_changed(prompt, wparam, lparam))
-    {
-        return FALSE;
-    }
     if (reads_as_cancel(prompt, wparam))
     {
         EndDialog(prompt->dialog, IDCANCEL);
@@ -1199,8 +1400,25 @@ static INT_PTR prompt_command(struct name_prompt *_Nonnull prompt, WPARAM wparam
     return FALSE;
 }
 
+static INT_PTR operation_message(struct name_prompt *_Nonnull prompt, UINT message, WPARAM wparam,
+                                 LPARAM lparam)
+{
+    if (message == WM_COMMAND && field_focus_changed(prompt, wparam, lparam))
+        return FALSE;
+    if (prompt->composing && (message == WM_COMMAND || message == WM_CLOSE))
+        return TRUE;
+    if (message == WM_CLOSE)
+    {
+        EndDialog(prompt->dialog, IDCANCEL);
+        return TRUE;
+    }
+    return message == WM_COMMAND ? prompt_command(prompt, wparam, lparam) : FALSE;
+}
+
 static INT_PTR CALLBACK procedure(HWND dialog, UINT message, WPARAM wparam, LPARAM lparam)
 {
+    if (dialog_theme_native_message(dialog, message, wparam, lparam))
+        return TRUE;
     if (message == WM_INITDIALOG)
     {
         begin_dialog((struct name_prompt *)lparam, dialog);
@@ -1213,16 +1431,11 @@ static INT_PTR CALLBACK procedure(HWND dialog, UINT message, WPARAM wparam, LPAR
         return FALSE;
     }
     INT_PTR painted = paint_message(prompt, message, wparam, lparam);
-    if (painted != FALSE || prompt->composing)
+    if (painted != FALSE)
     {
         return painted;
     }
-    if (message == WM_CLOSE)
-    {
-        EndDialog(dialog, IDCANCEL);
-        return TRUE;
-    }
-    return message == WM_COMMAND ? prompt_command(prompt, wparam, lparam) : FALSE;
+    return operation_message(prompt, message, wparam, lparam);
 }
 
 struct name_prompt_result name_prompt_show(HWND _Nonnull owner,

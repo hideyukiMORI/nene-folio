@@ -288,7 +288,7 @@ double theme_contrast_ratio(struct rgb_color first, struct rgb_color second)
 
 static double weakest(struct rgb_color ink, const struct rgb_color *_Nonnull grounds, size_t count);
 
-/* B 主操作の内側の focus が接する地。塗るテーマでは選んだ塗り、塗らないテーマでは window / pane。
+/* B 主操作の内側の focus が接する地。塗らないテーマには面の地も含む（ADR0060 決定22）。
  */
 static size_t primary_grounds(const struct theme_palette *_Nonnull palette,
                               struct rgb_color *_Nonnull out)
@@ -301,7 +301,8 @@ static size_t primary_grounds(const struct theme_palette *_Nonnull palette,
     }
     out[0] = palette->window;
     out[1] = palette->pane;
-    return 2;
+    out[2] = palette->dialog_surface;
+    return 3;
 }
 
 /* 役割ごとに線が接する地。数を返す（全値のswitch・C-002）。 */
@@ -315,7 +316,8 @@ static size_t line_grounds(const struct theme_palette *_Nonnull palette, enum th
     case THEME_LINE_UNSAVED:
         out[0] = palette->window;
         out[1] = palette->pane;
-        return 2;
+        out[2] = palette->dialog_surface;
+        return 3;
     case THEME_LINE_FOCUS:
         out[0] = palette->window;
         out[1] = palette->pane;
@@ -400,14 +402,14 @@ struct rgb_color theme_contrast_line(const struct theme_palette *_Nonnull palett
 
 struct theme_unsaved theme_contrast_unsaved(const struct theme_palette *_Nonnull palette)
 {
-    const struct rgb_color grounds[] = {palette->window, palette->pane};
+    const struct rgb_color grounds[] = {palette->window, palette->pane, palette->dialog_surface};
     const struct theme_unsaved fills[] = {
         {.filled = true, .fill = palette->chip_background, .ink = palette->chip_text},
         {.filled = true, .fill = palette->selected_background, .ink = palette->selected_text},
     };
     for (size_t index = 0; index < sizeof fills / sizeof fills[0]; ++index)
     {
-        if (weakest(fills[index].fill, grounds, 2) >= line_minimum)
+        if (weakest(fills[index].fill, grounds, 3) >= line_minimum)
         {
             return fills[index];
         }

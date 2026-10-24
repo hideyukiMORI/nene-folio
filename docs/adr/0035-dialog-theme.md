@@ -190,3 +190,26 @@ hide が 2026-09-23 に名前入力面を実機で見て、**保存先カテゴ�
 21. **確かめること。** `category-list-probe` を最終の配置の数値に合わせて更新し（両テーマ × 3 件 / 8 件の画素・無効化・鍵 7 場面・3 DPI の配置表）、実機では名前入力面（保存・別名保存・改名）の
     ダーク／ライトの絵を撮る（統合チェックリスト 82-1 / 82-3 / 82-4 を「一覧」の文言に書き直すのは次の記録の単位）。移行で触る文書は **この補正・GLOSSARY「名前入力面」（コンボ → 一覧の 1 句）**。
 
+
+## 2026-10-24 の補正（#351 / I-D）
+
+現在の面とキー契約は[ADR0060 決定22〜26](0060-ui-part-styles-and-state-rule.md)を正本とする。
+本ADRのcomctl32 v5・native DialogBox/EDIT/LISTBOX/BUTTON・単一dialog_theme・owner disable/restore・作成失敗時の退避は維持し、次を置き換える。
+
+- 幅480、題44、面dialog_surface、1physical px境界、直角、同列同幅・最小88・高28のA/B釦。
+  OSの合法caption/sysmenu styleを保ち、非clientを取り除いてclientに題/×を一つ描く。native Alt+Space/MoveとDialogProcのhit結果規約を保つ。
+- 部品の状態はui_partの経路へ集める。暗幕はfolio_window所有の既存backdropへ合流し、native modalの深さと現surfaceから復元する。
+- 名前/保存先の短いラベル、案内を置き換える検証1件、実fontで最大結果高を予約する。小窓の一覧は2行へ縮退し、改名先カテゴリはコピー可能なreadonly EDIT。
+  長い保留理由は固定高のreadonly複数行EDITとnative scrollへ。空入力専用文言、applicationのNAME_UNCHANGEDを同じ入力面に表示する。
+- 無題離脱のTab順は画面順の保存/保存しない/キャンセル。native mnemonicはAlt+S/D/C。Enterの読み替えは既存の一関数へ集め、×focusも取消とする。
+  IME guardは操作だけを抑え、focusの更新を妨げない。
+- failure_box_showの第4引数はnullableのcommand借用で、入口でcopyし別の履歴を作らない。本文にcatalog名、釦は中立の「閉じる」、三角はcurrent_text。
+  表示時のEVENT_SYSTEM_ALERTは1回、音はI/O失敗だけ。資源不足時のnative/OS退避でも元の理由を捨てない。
+- dialog_secondary/current_text対dialog_surfaceの既存theme検査を再利用し、今回追加する状態の隣接地だけ検査を増やす。
+
+DWM属性の成功やPrintWindowだけでは窓外の影・角の実表示を保証しない。完成候補の矩形・属性・画像と未測定を品質記録に残す。
+保存schema・依存・gate閾値/除外は不変。Waivers: none。
+
+釦のsubclassを禁じた旧決定7は、WM_GETDLGCODE/BM_SETSTYLEに介入してowner-drawを失うV4経路への禁止として維持する。
+#351ではpointer MOVE/LEAVEによるhover表示だけを共通dialog_themeへ許し、実行/Enter/Space/既定釦/Tabはnativeのままとする。
+内側focusと寿命・rollbackの条件はADR0060の「native釦の表示境界に関する補足」を正本とする。

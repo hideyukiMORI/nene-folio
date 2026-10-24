@@ -7,7 +7,6 @@
 #include "drawer_header_button.h"
 #include "drawer_layout.h"
 #include "drawer_menu_item.h"
-#include "failure_box.h"
 #include "folio_message.h"
 #include "folio_palette.h"
 #include "folio_state.h"
@@ -1222,7 +1221,7 @@ void drawer_window_reveal_cursor(struct drawer_window *_Nonnull drawer)
         folio_state_reveal_cursor(drawer->state, metrics_for(drawer));
     if (outcome != FOLIO_STATE_READY)
     {
-        failure_box_show(GetAncestor(drawer->handle, GA_ROOT), outcome, drawer->state);
+        SendMessageW(GetParent(drawer->handle), folio_message_report_outcome, (WPARAM)outcome, 0);
         return;
     }
     InvalidateRect(drawer->handle, nullptr, FALSE);

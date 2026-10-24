@@ -5,8 +5,9 @@
 
 enum dialog_theme_button : unsigned char
 {
-    DIALOG_THEME_BUTTON_PRIMARY,  /* 既定の釦: 札の地に札の字 */
-    DIALOG_THEME_BUTTON_SECONDARY /* 他の釦: 札の色の 1px の枠に字 */
+    DIALOG_THEME_BUTTON_PRIMARY,   /* 既定の釦: 札の地に札の字 */
+    DIALOG_THEME_BUTTON_SECONDARY, /* A中立 */
+    DIALOG_THEME_BUTTON_CLOSE      /* C様式のclient× */
 };
 
 #endif

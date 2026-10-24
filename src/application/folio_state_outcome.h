@@ -20,7 +20,8 @@ enum folio_state_outcome : unsigned char
     FOLIO_STATE_NOTE_STORE_FAILED, /* md を書き戻せなかった。モードも読んだ本文も変えていない */
     FOLIO_STATE_HISTORY_FAILED,    /* 履歴を書けなかったので md も書いていない（ADR 0012） */
     FOLIO_STATE_UNSAVED_CHANGES,   /* :q は未保存の変更を破棄せず、終了を拒否した（ADR 0016） */
-    FOLIO_STATE_NAME_TAKEN, /* 移動先に同じ名前のノートがある。ファイルも索引も変えていない */
+    FOLIO_STATE_NAME_TAKEN,     /* 移動先に同じ名前のノートがある。ファイルも索引も変えていない */
+    FOLIO_STATE_NAME_UNCHANGED, /* 完全同名の改名。先行同期以外の保存・改名は行っていない */
     /* 今回 md を移した・公開したが index.json を書けなかった。次回の起動で揃う */
     FOLIO_STATE_LEDGER_STALE,
     /* 前回書けなかった index.json の修復を先に試みたが失敗した。

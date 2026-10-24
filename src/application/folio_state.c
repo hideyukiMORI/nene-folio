@@ -2563,7 +2563,7 @@ enum folio_state_outcome folio_state_rename_note(struct folio_state *_Nonnull st
     if (strcmp(note_ledger_name(state->notes[category], state->selected_note), stem) == 0)
     {
         /* 同じ名前は変更なし。md も履歴も台帳も触らない（決定 1）。 */
-        return FOLIO_STATE_READY;
+        return FOLIO_STATE_NAME_UNCHANGED;
     }
     if (holds_folded_name(state->notes[category], stem))
     {
@@ -2802,7 +2802,7 @@ folio_state_rename_category(struct folio_state *_Nonnull state,
     const char *_Nonnull name = category_name_text(target->name);
     if (strcmp(category_ledger_name(state->categories, target->category), name) == 0)
     {
-        return FOLIO_STATE_READY;
+        return FOLIO_STATE_NAME_UNCHANGED;
     }
     if (holds_folded_category(state, name))
     {
@@ -3758,6 +3758,7 @@ static const enum ui_text failure_lines[] = {
     [FOLIO_STATE_HISTORY_FAILED] = UI_TEXT_FAILURE_HISTORY_FAILED,
     [FOLIO_STATE_UNSAVED_CHANGES] = UI_TEXT_FAILURE_UNSAVED_CHANGES,
     [FOLIO_STATE_NAME_TAKEN] = UI_TEXT_FAILURE_NAME_TAKEN,
+    [FOLIO_STATE_NAME_UNCHANGED] = UI_TEXT_FAILURE_NAME_UNCHANGED,
     [FOLIO_STATE_LEDGER_STALE] = UI_TEXT_FAILURE_LEDGER_STALE,
     [FOLIO_STATE_LEDGER_UNSYNCED] = UI_TEXT_FAILURE_LEDGER_UNSYNCED,
     [FOLIO_STATE_RENAME_PENDING] = UI_TEXT_FAILURE_RENAME_PENDING,

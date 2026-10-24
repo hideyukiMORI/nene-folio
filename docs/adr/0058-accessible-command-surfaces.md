@@ -41,3 +41,10 @@
 
 - [UI Automation property identifiers](https://learn.microsoft.com/en-us/windows/win32/winauto/uiauto-automation-element-propids)
 - [UI Automation event identifiers](https://learn.microsoft.com/en-us/windows/win32/winauto/uiauto-event-ids)
+
+## 2026-10-24 の補正（#351 / I-D）
+
+ヘルプの「操作｜キー」は[ADR0060 決定26と再開時の明確化](0060-ui-part-styles-and-state-rule.md)に従い排他的に切り替える。
+既存host/nodeへS2のSelection groupとRadioButton/SelectionItemを追加し、選択は`command_keys_visible`から読む。候補Listの選択とは別containerにする。
+scope見出しは非選択Text、候補は既存ListItemで、描画と同じ群順・候補写像を参照する。
+キー面では候補と検索EDITを公開・実行せず、切替による既存の世代更新で前の子参照を失効する。独立した選択値・command実行経路・native入力providerは追加しない。

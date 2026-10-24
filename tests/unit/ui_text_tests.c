@@ -208,7 +208,7 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_MENU_RENAME_NOTE] = "名前を変更…",
     [UI_TEXT_MENU_NEW_CATEGORY] = "新しいカテゴリ…",
     [UI_TEXT_MENU_NEW_NOTE_IN_CATEGORY] = "このカテゴリに新しいノート",
-    [UI_TEXT_HELP_PALETTE] = "一覧  ↑↓ 選択 / Enter 実行 / Esc 戻る / Tab 説明",
+    [UI_TEXT_HELP_PALETTE] = "一覧  ↑↓ 選択 / Enter 実行 / Esc 閉じる / Tab 説明",
     [UI_TEXT_HELP_EDITOR_MOTION] = "編集本文  Ctrl+h/j/k/l ←/↓/↑/→",
     [UI_TEXT_HELP_GLOBAL_KEYS] = "全区画  {name} ヘルプ / {from} 一覧 / {to} このノート内を検索",
     [UI_TEXT_HELP_GLOBAL_FILTER] = "全区画  {name} すべてのノートを検索（索引を絞り込む）",
@@ -273,7 +273,7 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_THEME_TITLE] = "テーマを選ぶ",
     [UI_TEXT_THEME_CHOOSE] = "テーマを選ぶ…",
     [UI_TEXT_THEME_FILTER] = "テーマ名で検索",
-    [UI_TEXT_THEME_BACK] = "戻る",
+    [UI_TEXT_THEME_BACK] = "‹ 設定",
     [UI_TEXT_THEME_GUIDANCE] = "↑↓で移動・Enterで適用・Escで戻る",
     [UI_TEXT_THEME_COUNT] = "{k} / {n} 件",
     [UI_TEXT_THEME_EMPTY] = "一致するテーマがありません",
@@ -293,7 +293,7 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_SETTINGS_IMMEDIATE] = "変更はすぐに反映",
     [UI_TEXT_SETTINGS_NUMBER_CHECK] = "行番号を表示",
     [UI_TEXT_SETTINGS_VERSION] = "版 {name}",
-    [UI_TEXT_HISTORY_GUIDANCE] = "1 が最新 / ↑↓ 選択 / Enter 戻す / Esc 戻る",
+    [UI_TEXT_HISTORY_GUIDANCE] = "1 が最新 / ↑↓ 選択 / Enter 戻す / Esc 閉じる",
     [UI_TEXT_HISTORY_ROW] = "{n}  {name}",
     [UI_TEXT_HISTORY_ROW_UNREADABLE] = "{n}  （読めません）",
     [UI_TEXT_APP_LOGO] = "NENE FOLIO",
@@ -303,8 +303,8 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_PROMPT_PENDING_RENAME] = "{from} → {to}",
     [UI_TEXT_PROMPT_TITLE_LEAVE] = "保存しますか",
     [UI_TEXT_PROMPT_HINT_LEAVE] =
-        "保存しないと、この内容は失われます。名前の末尾に .md を補います。",
-    [UI_TEXT_PROMPT_DISCARD] = "保存しない",
+        "保存しますか。保存しないと内容は失われます。名前の末尾に .md を補います。",
+    [UI_TEXT_PROMPT_DISCARD] = "保存しない(&D)",
     [UI_TEXT_PROMPT_TITLE_FIRST_SAVE] = "名前をつけて保存",
     [UI_TEXT_PROMPT_TITLE_SAVE_AS] = "別名で保存",
     [UI_TEXT_PROMPT_TITLE_RENAME] = "名前を変更",
@@ -319,15 +319,14 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_PROMPT_HINT_RENAME] = "md と履歴を新しい名前へ移します。",
     [UI_TEXT_PROMPT_HINT_NEW_CATEGORY] = "data/ にカテゴリのフォルダを作ります。",
     [UI_TEXT_PROMPT_ACCEPT_RETRY] = "再試行",
-    [UI_TEXT_PROMPT_ACCEPT_SAVE] = "保存",
+    [UI_TEXT_PROMPT_ACCEPT_SAVE] = "保存(&S)",
     [UI_TEXT_PROMPT_ACCEPT_RENAME] = "変更",
     [UI_TEXT_PROMPT_ACCEPT_CREATE] = "作成",
     [UI_TEXT_PROMPT_OK] = "OK",
     [UI_TEXT_PROMPT_CLOSE_PENDING] = "閉じる",
-    [UI_TEXT_PROMPT_CLOSE_CANCEL] = "キャンセル",
-    [UI_TEXT_PROMPT_LABEL_NAME] = "ノートの名前",
-    [UI_TEXT_PROMPT_LABEL_CATEGORY] = "保存先カテゴリ",
-    [UI_TEXT_PROMPT_LABEL_CATEGORY_NAME] = "カテゴリの名前",
+    [UI_TEXT_PROMPT_CLOSE_CANCEL] = "キャンセル(&C)",
+    [UI_TEXT_PROMPT_LABEL_NAME] = "名前",
+    [UI_TEXT_PROMPT_LABEL_CATEGORY] = "保存先",
     [UI_TEXT_APP_NO_MODULE_PATH] = "実行ファイルの場所が長すぎるか、取得できません。",
     [UI_TEXT_APP_DATA_IN_USE] = "同じ data/ を別の NeNe Folio が使っています。先に閉じてください。",
     [UI_TEXT_APP_RECOVERY_LOCKED] = "名前変更の復旧記録（data/.rename.json）がありますが、data/ "
@@ -347,8 +346,7 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_NEW_NOTE_NO_CATEGORY] = "カテゴリがありません。先にカテゴリを作ります",
     [UI_TEXT_EMPTY_HEADING] = "ノートが選ばれていません",
     [UI_TEXT_EMPTY_BODY] = "左の一覧からノートを選ぶか、新しいノートを作ります",
-    [UI_TEXT_EMPTY_KEYS] =
-        "新しいノート: Ctrl+N ／ すべてのノートを検索: Ctrl+Shift+F ／ ヘルプ: F1",
+    [UI_TEXT_EMPTY_KEYS] = "すべてのノートを検索: Ctrl+Shift+F ／ ヘルプ: F1",
     [UI_TEXT_COMMAND_CAPTION] = "{name}",
     [UI_TEXT_COMMAND_INPUT_CAPTION] = "{name}…",
     [UI_TEXT_MENU_ACCESS_CAPTION] = "{name} ({from})",
@@ -370,6 +368,19 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_MENU_LOCAL_KEY] = "{name}（メニュー内）",
     [UI_TEXT_KEY_CONTEXT_MENU] = "Shift+F10",
     [UI_TEXT_KEY_APPS] = "Apps",
+    [UI_TEXT_FAILURE_NAME_UNCHANGED] = "同じ名前です。",
+    [UI_TEXT_PROMPT_NAME_EMPTY] = "名前を入力してください。",
+    [UI_TEXT_PROMPT_TITLE_UNTITLED] = "無題のノート",
+    [UI_TEXT_PROMPT_CATEGORY_READONLY] = "{name}（変更できません）",
+    [UI_TEXT_FAILURE_COMMAND_REASON] = "{name}\r\n{from}",
+    [UI_TEXT_STATUS_REPLACE_COUNT_ONLY] = "{k} 件",
+    [UI_TEXT_HELP_TAB_COMMANDS] = "操作",
+    [UI_TEXT_HELP_TAB_KEYS] = "キー",
+    [UI_TEXT_HELP_GROUP_NOTE] = "ノート",
+    [UI_TEXT_HELP_GROUP_CATEGORY] = "カテゴリ",
+    [UI_TEXT_HELP_GROUP_LAYOUT] = "表示",
+    [UI_TEXT_HELP_GROUP_APP] = "アプリ",
+    [UI_TEXT_HELP_GROUP_QUIT] = "終了",
     [UI_TEXT_MENU_EX_HINT] = ":{name}",
     [UI_TEXT_HELP_RENAME_KEY] = "{name} / {from} 名前変更",
 
@@ -809,9 +820,8 @@ static void verify_action_bar_texts(void)
         {"左の一覧からノートを選ぶか、新しいノートを作ります",
          "Choose a note from the list on the left, or create a new note",
          "从左侧列表选择笔记，或新建笔记"},
-        {"新しいノート: Ctrl+N ／ すべてのノートを検索: Ctrl+Shift+F ／ ヘルプ: F1",
-         "New note: Ctrl+N / Search all notes: Ctrl+Shift+F / Help: F1",
-         "新建笔记: Ctrl+N ／ 搜索全部笔记: Ctrl+Shift+F ／ 帮助: F1"},
+        {"すべてのノートを検索: Ctrl+Shift+F ／ ヘルプ: F1",
+         "Search all notes: Ctrl+Shift+F / Help: F1", "搜索全部笔记: Ctrl+Shift+F ／ 帮助: F1"},
     };
     for (size_t row = 0; row < sizeof ids / sizeof ids[0]; ++row)
     {
@@ -861,8 +871,56 @@ static void verify_action_bar_formats(void)
     }
 }
 
+/* 帯の件数は長い対象名を複製せず、箱とreadonly欄は語を欠落させない。 */
+static void verify_surface_formats(void)
+{
+    require(same_text(ui_text_line(UI_TEXT_ACCESSIBLE_PATTERN, FOLIO_LANGUAGE_EN), "Regex pattern"),
+            "the persistent replacement label explicitly says that the pattern is a regex");
+    const char *const counts[] = {"12 件", "12 matches", "12 处"};
+    const char *const categories[] = {"仕事（変更できません）", "仕事 (cannot be changed)",
+                                      "仕事（无法更改）"};
+    for (size_t column = 0; column < folio_language_count; ++column)
+    {
+        struct ui_text_request request = {.id = UI_TEXT_STATUS_REPLACE_COUNT_ONLY,
+                                          .language = (enum folio_language)column,
+                                          .k = 12,
+                                          .name = "an unrelated long target name"};
+        expect_format(&request, counts[column]);
+        request = (struct ui_text_request){.id = UI_TEXT_PROMPT_CATEGORY_READONLY,
+                                           .language = (enum folio_language)column,
+                                           .name = "仕事"};
+        expect_format(&request, categories[column]);
+        request = (struct ui_text_request){.id = UI_TEXT_FAILURE_COMMAND_REASON,
+                                           .language = (enum folio_language)column,
+                                           .name = "operation",
+                                           .from = "reason"};
+        expect_format(&request, "operation\r\nreason");
+    }
+}
+
+/* 3言語のnative captionが同じS/D/Cを一意に持つ。global shortcutを増やす表ではない。 */
+static void verify_prompt_mnemonics(void)
+{
+    const enum ui_text ids[] = {UI_TEXT_PROMPT_ACCEPT_SAVE, UI_TEXT_PROMPT_DISCARD,
+                                UI_TEXT_PROMPT_CLOSE_CANCEL};
+    const char keys[] = {'S', 'D', 'C'};
+    for (size_t column = 0; column < folio_language_count; ++column)
+    {
+        for (size_t index = 0; index < sizeof ids / sizeof ids[0]; ++index)
+        {
+            const char *_Nonnull line = ui_text_line(ids[index], (enum folio_language)column);
+            const char *_Nullable marker = strchr(line, '&');
+            require(marker != nullptr && marker[1] == keys[index] &&
+                        strchr(marker + 1, '&') == nullptr,
+                    "native prompt captions have one matching S/D/C mnemonic in every language");
+        }
+    }
+}
+
 void run_ui_text_tests(void)
 {
+    verify_surface_formats();
+    verify_prompt_mnemonics();
     verify_action_bar_texts();
     verify_action_bar_formats();
     verify_identity();

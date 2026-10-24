@@ -7,6 +7,7 @@
 #include "ui_part_ink.h"
 #include "ui_part_menu_paint.h"
 #include "ui_part_paint.h"
+#include "ui_part_surface_region.h"
 
 #include <windows.h>
 
@@ -19,6 +20,13 @@ constexpr int ui_part_glyph = 20;        /* C 様式の絵 */
 constexpr int ui_part_group_gap = 16;    /* 群と群の間 */
 constexpr int ui_part_edge = 16;         /* 部品と窓・面の縁（余白の原則: 縁 16・枠の内側 8） */
 constexpr int ui_part_field_padding = 8; /* 入力欄の枠の内側の字の左右の余白（#349） */
+constexpr int ui_part_surface_title_height = 44; /* 面の題の段（ADR0060 決定22） */
+
+/* boundsは呼出元座標のphysical px。題44・内容の縁16・閉じるの縁8/当たり28はdpiで拡大する。 */
+[[nodiscard]] RECT ui_part_surface_rect(RECT bounds, UINT dpi, enum ui_part_surface_region region);
+/* dialog_surfaceの地とdialog_borderの1 physical pxの境界。内容や字は各ownerが描く。 */
+void ui_part_draw_surface(HDC _Nonnull device, const struct folio_palette *_Nonnull palette,
+                          RECT bounds);
 
 /* 部品を描き、字の色と矩形を返す。字そのものは呼び出し側の文字の経路が描く。 */
 struct ui_part_ink ui_part_draw(HDC _Nonnull device, const struct folio_palette *_Nonnull palette,
