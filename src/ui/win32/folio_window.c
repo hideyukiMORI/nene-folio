@@ -1062,10 +1062,16 @@ static bool settings_has_notice(const struct folio_window *_Nonnull self)
     return settings_notice(self) != FOLIO_STATE_READY;
 }
 
+static int settings_footer_height(const struct folio_window *_Nonnull self)
+{
+    return self->command_surface == COMMAND_SURFACE_THEMES ? self->settings_metrics.themes_footer
+                                                           : self->settings_metrics.settings_footer;
+}
+
 static RECT settings_content_rect(const struct folio_window *_Nonnull self)
 {
     RECT content = surface_frame_rect(self, UI_PART_SURFACE_CONTENT);
-    content.bottom -= self->settings_metrics.footer + scale(8, GetDpiForWindow(self->handle));
+    content.bottom -= settings_footer_height(self) + scale(8, GetDpiForWindow(self->handle));
     if (content.bottom < content.top)
         content.bottom = content.top;
     return content;
@@ -1185,7 +1191,7 @@ static RECT theme_input_rect(const struct folio_window *_Nonnull self)
 static RECT theme_footer_rect(const struct folio_window *_Nonnull self)
 {
     RECT bounds = surface_frame_rect(self, UI_PART_SURFACE_CONTENT);
-    bounds.top = bounds.bottom - self->settings_metrics.footer;
+    bounds.top = bounds.bottom - settings_footer_height(self);
     return bounds;
 }
 
@@ -1914,43 +1920,109 @@ static int wrap_next_unit(const char16_t *_Nonnull units, int count, int at)
     return at + (pair ? 2 : 1);
 }
 
-static int wrap_stop(int end, int count, int word, int fitting)
+static int wrap_trim(const struct text_wrap *_Nonnull text, int start, int stop)
 {
-    return end == count ? end : (word > 0 ? word : fitting);
+    while (stop > start && (text->units[stop - 1] == u' ' || text->units[stop - 1] == u'\t'))
+        stop -= 1;
+    return stop;
+}
+
+static int wrap_prefix_width(const struct text_wrap *_Nonnull text, int start, int stop)
+{
+    int trimmed = wrap_trim(text, start, stop);
+    return trimmed == start
+               ? 0
+               : measured_units(text->device, text->units + start, trimmed - start, text->tracking)
+                     .cx;
+}
+
+/* 改行を越えず、計測する候補をsurrogate pairの後ろへ揃える。 */
+static int wrap_boundaries(const struct text_wrap *_Nonnull text, int start, int *_Nonnull ends)
+{
+    int count = 0;
+    while (start < text->count && text->units[start] != u'\r' && text->units[start] != u'\n')
+    {
+        start = wrap_next_unit(text->units, text->count, start);
+        ends[count++] = start;
+    }
+    return count;
+}
+
+static int wrap_probe_position(int estimate, int low, int high)
+{
+    return estimate <= low ? low + 1 : (estimate >= high ? high - 1 : estimate);
+}
+
+/* 実測幅から次の候補を見積もり、収まる端とあふれる端を狭める（ADR0062）。 */
+static int wrap_fitting(const struct text_wrap *_Nonnull text, int start, const int *_Nonnull ends,
+                        int count)
+{
+    int width = text->bounds.right - text->bounds.left;
+    if (count == 0 || width <= 0)
+        return 0;
+    int high_width = wrap_prefix_width(text, start, ends[count - 1]);
+    if (high_width <= width)
+        return count;
+    int low = 0;
+    int low_width = 0;
+    int high = count;
+    while (high - low > 1)
+    {
+        int estimate =
+            low + (int)((int64_t)(width - low_width) * (high - low) / (high_width - low_width));
+        int next = wrap_probe_position(estimate, low, high);
+        int measured = wrap_prefix_width(text, start, ends[next - 1]);
+        if (measured <= width)
+        {
+            low = next;
+            low_width = measured;
+        }
+        else
+        {
+            high = next;
+            high_width = measured;
+        }
+    }
+    return low;
+}
+
+static int wrap_word(const struct text_wrap *_Nonnull text, int start, const int *_Nonnull ends,
+                     int fitting)
+{
+    int word = 0;
+    for (int index = 0; index < fitting; ++index)
+    {
+        char16_t unit = text->units[index == 0 ? start : ends[index - 1]];
+        if (unit == u' ' || unit == u'\t' || unit >= 0x80)
+            word = index + 1;
+    }
+    return word > 0 ? word : fitting;
 }
 
 static int wrapped_line_end(const struct text_wrap *_Nonnull text, int start,
                             bool *_Nonnull newline)
 {
-    int end = start;
-    int fitting = start;
-    int word = 0;
-    *newline = false;
-    while (end < text->count)
+    int ends[draw_unit_limit];
+    int count = wrap_boundaries(text, start, ends);
+    int fitting = wrap_fitting(text, start, ends, count);
+    if (fitting == count)
     {
-        if (text->units[end] == u'\r' || text->units[end] == u'\n')
-        {
-            *newline = true;
-            return end;
-        }
-        int next = wrap_next_unit(text->units, text->count, end);
-        if (measured_units(text->device, text->units + start, next - start, text->tracking).cx >
-            text->bounds.right - text->bounds.left)
-            break;
-        fitting = next;
-        if (text->units[end] == u' ' || text->units[end] == u'\t' || text->units[end] >= 0x80)
-            word = next;
-        end = next;
+        int stop = count == 0 ? start : ends[count - 1];
+        *newline = stop < text->count;
+        return stop;
     }
-    return wrap_stop(end, text->count, word, fitting);
+    *newline = false;
+    int chosen = wrap_word(text, start, ends, fitting);
+    /* 文脈依存の字形ではprefix幅の単調性を仮定せず、採用行を必ず実測する。 */
+    while (chosen > 0 && wrap_prefix_width(text, start, ends[chosen - 1]) >
+                             text->bounds.right - text->bounds.left)
+        chosen -= 1;
+    return chosen == 0 ? start : ends[chosen - 1];
 }
 
 static int wrapped_line(const struct text_wrap *_Nonnull text, int start, int stop, int offset)
 {
-    int trimmed = stop;
-    while (trimmed > start &&
-           (text->units[trimmed - 1] == u' ' || text->units[trimmed - 1] == u'\t'))
-        trimmed -= 1;
+    int trimmed = wrap_trim(text, start, stop);
     SIZE measured = trimmed == start ? measured_units(text->device, u" ", 1, text->tracking)
                                      : measured_units(text->device, text->units + start,
                                                       trimmed - start, text->tracking);
@@ -3224,7 +3296,7 @@ static void draw_command_guidance(const struct folio_window *_Nonnull self, HDC 
 static RECT settings_footer_rect(const struct folio_window *_Nonnull self)
 {
     RECT bounds = surface_frame_rect(self, UI_PART_SURFACE_CONTENT);
-    bounds.top = bounds.bottom - self->settings_metrics.footer;
+    bounds.top = bounds.bottom - settings_footer_height(self);
     return bounds;
 }
 
@@ -4582,11 +4654,11 @@ static bool band_outcomes_height(HDC device, enum folio_language language, RECT 
 }
 
 static int surface_footer_text_height(const struct folio_window *_Nonnull self, HDC device,
-                                      RECT bounds)
+                                      RECT bounds, bool themes)
 {
     enum folio_language language = folio_state_language(self->state);
     char text[ui_text_unit_limit];
-    if (self->command_surface == COMMAND_SURFACE_THEMES)
+    if (themes)
     {
         struct ui_text_request count = {.id = UI_TEXT_THEME_COUNT,
                                         .language = language,
@@ -4619,13 +4691,10 @@ static bool prepare_surface_metrics(struct folio_window *_Nonnull self)
     struct command_surface_metrics metrics = {.width = bounds.right - bounds.left,
                                               .dpi = GetDpiForWindow(self->handle),
                                               .font = self->mono_font,
-                                              .language = folio_state_language(self->state),
-                                              .themes =
-                                                  self->command_surface == COMMAND_SURFACE_THEMES};
+                                              .language = folio_state_language(self->state)};
     if (self->settings_metrics.width == metrics.width &&
         self->settings_metrics.dpi == metrics.dpi && self->settings_metrics.font == metrics.font &&
-        self->settings_metrics.language == metrics.language &&
-        self->settings_metrics.themes == metrics.themes)
+        self->settings_metrics.language == metrics.language)
         return true;
     HDC device = GetDC(self->command_layer);
     if (device == nullptr)
@@ -4633,9 +4702,11 @@ static bool prepare_surface_metrics(struct folio_window *_Nonnull self)
     HGDIOBJ previous = SelectObject(device, self->mono_font);
     SetTextCharacterExtra(device, scale(base_tracking, metrics.dpi));
     bool ready = band_outcomes_height(device, metrics.language, bounds, &metrics.notice);
-    metrics.footer = metrics.notice + surface_footer_text_height(self, device, bounds);
-    if (metrics.themes)
-        metrics.footer += scale(ui_part_height + 8, metrics.dpi);
+    metrics.settings_footer =
+        metrics.notice + surface_footer_text_height(self, device, bounds, false);
+    metrics.themes_footer = metrics.notice +
+                            surface_footer_text_height(self, device, bounds, true) +
+                            scale(ui_part_height + 8, metrics.dpi);
     SelectObject(device, previous);
     ReleaseDC(self->command_layer, device);
     if (ready)
