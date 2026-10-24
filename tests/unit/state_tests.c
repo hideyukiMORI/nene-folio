@@ -3916,9 +3916,115 @@ void run_system_contrast_tests(void)
     verify_refresh_theme();
 }
 
+static void verify_theme_preview_transaction(void)
+{
+    struct persistence_adapter files = healthy_adapter();
+    struct folio_state *state = ready_state(&files);
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
+                folio_state_begin_edit(state) == FOLIO_STATE_READY,
+            "preview with an editable document");
+    const char *body = folio_state_pane_text(state);
+    require(folio_state_preview_theme(state, FOLIO_THEME_CHOICE_LIGHT) == FOLIO_STATE_READY &&
+                folio_state_theme(state) == FOLIO_THEME_LIGHT &&
+                folio_state_theme_choice(state) == FOLIO_THEME_CHOICE_SYSTEM &&
+                strstr(folio_state_pane_rtf(state), light_body_color) != nullptr,
+            "candidate changes the shared palette and RTF, not the saved theme");
+    const char *pane = folio_state_pane_rtf(state);
+    uint64_t revision = folio_state_palette_revision(state);
+    require(folio_state_preview_theme(state, FOLIO_THEME_CHOICE_LIGHT) == FOLIO_STATE_READY &&
+                folio_state_pane_rtf(state) == pane &&
+                folio_state_palette_revision(state) == revision && files.settings_writes == 0,
+            "repeated candidate does no rendering or writing");
+    require(folio_state_set_theme(state, FOLIO_THEME_CHOICE_LIGHT) == FOLIO_STATE_READY &&
+                files.settings_writes == 1 && folio_state_palette_revision(state) == revision,
+            "confirming the preview writes once without changing its palette");
+    require(folio_state_preview_theme(state, FOLIO_THEME_CHOICE_NORD) == FOLIO_STATE_READY &&
+                folio_state_preview_theme(state, folio_state_theme_choice(state)) ==
+                    FOLIO_STATE_READY &&
+                folio_state_theme(state) == FOLIO_THEME_LIGHT,
+            "cancel returns to the latest confirmation, not the opening choice");
+    require(folio_state_preview_theme(state, FOLIO_THEME_CHOICE_DARK) == FOLIO_STATE_READY &&
+                folio_state_set_theme(state, FOLIO_THEME_CHOICE_LIGHT) == FOLIO_STATE_READY &&
+                folio_state_theme(state) == FOLIO_THEME_LIGHT && files.settings_writes == 1,
+            "confirming the saved value restores it without writing again");
+    require(folio_state_pane_text(state) == body &&
+                folio_state_pane_mode(state) == PANE_MODE_EDIT && files.note_writes == 0 &&
+                files.archives == 0 && files.writes == 0,
+            "preview and cancel keep document, mode and unrelated files");
+    folio_state_destroy(state);
+}
+
+static void verify_theme_preview_failures(void)
+{
+    struct persistence_adapter files = healthy_adapter();
+    struct folio_state *state = ready_state(&files);
+    require(folio_state_preview_theme(state, FOLIO_THEME_CHOICE_LIGHT) == FOLIO_STATE_READY,
+            "preview before a failed confirmation");
+    const char *pane = folio_state_pane_rtf(state);
+    files.settings_write_outcome = PERSISTENCE_UNWRITABLE;
+    require(folio_state_set_theme(state, FOLIO_THEME_CHOICE_LIGHT) ==
+                    FOLIO_STATE_SETTINGS_STORE_FAILED &&
+                folio_state_theme_choice(state) == FOLIO_THEME_CHOICE_SYSTEM &&
+                folio_state_pane_rtf(state) == pane,
+            "failed confirmation retains preview and saved baseline");
+    uint64_t revision = folio_state_palette_revision(state);
+    allocation_probe_fail_at(1);
+    enum folio_state_outcome result =
+        folio_state_preview_theme(state, folio_state_theme_choice(state));
+    allocation_probe_fail_at(0);
+    require(result == FOLIO_STATE_READY || result == FOLIO_STATE_OUT_OF_MEMORY,
+            "cancel reports a typed preparation outcome");
+    if (result == FOLIO_STATE_OUT_OF_MEMORY)
+    {
+        require(folio_state_pane_rtf(state) == pane &&
+                    folio_state_palette_revision(state) == revision &&
+                    folio_state_theme(state) == FOLIO_THEME_LIGHT,
+                "failed cancel keeps the complete preview for retry");
+    }
+    require(folio_state_preview_theme(state, folio_state_theme_choice(state)) ==
+                    FOLIO_STATE_READY &&
+                folio_state_theme(state) == FOLIO_THEME_DARK && files.settings_writes == 1,
+            "cancel retries without another settings write");
+    folio_state_destroy(state);
+}
+
+static void verify_theme_preview_contrast(void)
+{
+    struct persistence_adapter files = healthy_adapter();
+    struct appearance_adapter looks = {.theme = FOLIO_THEME_DARK,
+                                       .snapshot = contrast_sample(false)};
+    struct folio_state *state = appearance_state(&files, &looks);
+    uint64_t revision = folio_state_palette_revision(state);
+    require(folio_state_preview_theme(state, FOLIO_THEME_CHOICE_NORD) == FOLIO_STATE_READY &&
+                folio_state_palette_revision(state) == revision && files.settings_writes == 0,
+            "HC keeps OS colors while the candidate moves");
+    verify_contrast_pairs(state, looks.snapshot);
+    looks.snapshot.contrast = FOLIO_CONTRAST_STANDARD;
+    require(folio_state_refresh_theme(state) == FOLIO_STATE_READY &&
+                folio_state_theme(state) == FOLIO_THEME_NORD &&
+                folio_state_theme_choice(state) == FOLIO_THEME_CHOICE_SYSTEM,
+            "HC off resolves the preview rather than the saved choice");
+    require(folio_state_preview_theme(state, folio_state_theme_choice(state)) == FOLIO_STATE_READY,
+            "cancel back to OS-following choice");
+    looks.theme = FOLIO_THEME_LIGHT;
+    require(folio_state_refresh_theme(state) == FOLIO_STATE_READY &&
+                folio_state_theme(state) == FOLIO_THEME_LIGHT && files.settings_writes == 0,
+            "cancelled system choice follows later OS changes without persistence");
+    require(folio_state_preview_theme(state, FOLIO_THEME_CHOICE_LIGHT) == FOLIO_STATE_READY,
+            "fixed candidate can share the current OS palette");
+    looks.theme = FOLIO_THEME_DARK;
+    require(folio_state_refresh_theme(state) == FOLIO_STATE_READY &&
+                folio_state_theme(state) == FOLIO_THEME_LIGHT,
+            "equal palettes still adopt semantic choice for later OS refresh");
+    folio_state_destroy(state);
+}
+
 static void verify_settings(void)
 {
     run_system_contrast_tests();
+    verify_theme_preview_transaction();
+    verify_theme_preview_failures();
+    verify_theme_preview_contrast();
     verify_named_theme();
     verify_named_theme_restart();
     verify_settings_absent();

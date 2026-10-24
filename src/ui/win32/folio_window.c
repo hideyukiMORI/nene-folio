@@ -106,6 +106,8 @@ struct folio_window
     size_t surface_pressed;
     bool surface_pressed_inside;
     bool surface_tracking;
+    POINT surface_pointer_position;
+    bool surface_pointer_known;
     /* レイヤーから外した IME の文脈。窓を壊す前に戻す（MSDN の作法） */
     HIMC _Nullable layer_context;
     HWND _Nullable command_input;
@@ -523,6 +525,8 @@ static enum folio_state_outcome menu_availability(const struct folio_window *_No
 static void menu_accessible(const struct folio_window *_Nonnull self, size_t index,
                             struct accessible_view *_Nonnull out);
 static void report_outcome(struct folio_window *_Nonnull self, enum folio_state_outcome outcome);
+[[nodiscard]] static bool preview_theme(struct folio_window *_Nonnull self,
+                                        enum folio_theme_choice choice);
 static bool refresh_band_layout(struct folio_window *_Nonnull self);
 static enum ui_text surface_button_label(const struct folio_window *_Nonnull self, size_t slot);
 static bool surface_button_visible(const struct folio_window *_Nonnull self, size_t slot);
@@ -5428,8 +5432,14 @@ static void invalidate_surface_items(struct folio_window *_Nonnull self)
     accessibility_host_schedule(self->accessibility);
 }
 
-static void set_command_surface(struct folio_window *_Nonnull self, enum command_surface_mode mode)
+[[nodiscard]] static bool set_command_surface(struct folio_window *_Nonnull self,
+                                              enum command_surface_mode mode)
 {
+    if (self->command_surface == COMMAND_SURFACE_THEMES && mode != COMMAND_SURFACE_THEMES &&
+        !preview_theme(self, folio_state_theme_choice(self->state)))
+        return false;
+    self->surface_tracking = false;
+    self->surface_pointer_known = false;
     bool captured = self->surface_pressed < surface_pointer_count;
     self->surface_hover = surface_pointer_count;
     self->surface_pressed = surface_pointer_count;
@@ -5452,6 +5462,7 @@ static void set_command_surface(struct folio_window *_Nonnull self, enum command
         if (GetCapture() == self->command_layer)
             ReleaseCapture();
     }
+    return true;
 }
 
 static void open_command_surface(struct folio_window *_Nonnull self,
@@ -5472,7 +5483,8 @@ static void open_command_surface(struct folio_window *_Nonnull self,
         return;
     }
     self->command_return_focus = surface_return_target(self, GetFocus());
-    set_command_surface(self, surface);
+    if (!set_command_surface(self, surface))
+        return;
     self->command_selection = surface == COMMAND_SURFACE_SETTINGS ? settings_initial_row(self) : 0;
     self->command_first = 0;
     self->command_keys_visible = false;
@@ -5501,14 +5513,15 @@ static void release_history(struct folio_window *_Nonnull self)
 /* 面を隠す経路はここ 1 か所。面がフォーカスを持っていれば、隠す前に覚えた戻り先
  * （可視でなければ区画）へ返す。Windows は隠した窓のフォーカスを動かさない
  * （ADR 0016 の補正 5・#132）。 */
-static void hide_command_surface(struct folio_window *_Nonnull self)
+[[nodiscard]] static bool hide_command_surface(struct folio_window *_Nonnull self)
 {
     release_history(self);
     HWND _Nullable focus = GetFocus();
     bool surface_focused = focus != nullptr && self->command_layer != nullptr &&
                            (focus == self->command_layer || IsChild(self->command_layer, focus));
     HWND _Nullable remembered = self->command_return_focus;
-    set_command_surface(self, COMMAND_SURFACE_CLOSED);
+    if (!set_command_surface(self, COMMAND_SURFACE_CLOSED))
+        return false;
     self->command_return_focus = nullptr;
     self->command_selection = 0;
     self->command_help_scroll = 0;
@@ -5519,18 +5532,21 @@ static void hide_command_surface(struct folio_window *_Nonnull self)
     {
         SetFocus(surface_return_target(self, remembered));
     }
+    return true;
 }
 
 static void close_command_surface(struct folio_window *_Nonnull self)
 {
     HWND _Nullable focus = self->command_return_focus;
-    hide_command_surface(self);
+    if (!hide_command_surface(self))
+        return;
     SetFocus(surface_return_target(self, focus));
 }
 
 static void dismiss_command_surface(struct folio_window *_Nonnull self)
 {
-    hide_command_surface(self);
+    if (!hide_command_surface(self))
+        return;
 }
 
 static void show_command_palette(struct folio_window *_Nonnull self)
@@ -5541,7 +5557,8 @@ static void show_command_palette(struct folio_window *_Nonnull self)
         return;
     }
     release_history(self);
-    set_command_surface(self, COMMAND_SURFACE_PALETTE);
+    if (!set_command_surface(self, COMMAND_SURFACE_PALETTE))
+        return;
     self->command_selection = 0;
     self->command_first = 0;
     self->command_keys_visible = false;
@@ -5577,7 +5594,11 @@ static void show_search_surface(struct folio_window *_Nonnull self)
     else
     {
         release_history(self);
-        set_command_surface(self, COMMAND_SURFACE_SEARCH);
+        if (!set_command_surface(self, COMMAND_SURFACE_SEARCH))
+        {
+            utf16_text_destroy(term);
+            return;
+        }
         clear_command_status(self);
         rearrange_keeping_line(self);
     }
@@ -5615,7 +5636,8 @@ static void show_replace_surface(struct folio_window *_Nonnull self)
     else
     {
         release_history(self);
-        set_command_surface(self, COMMAND_SURFACE_REPLACE);
+        if (!set_command_surface(self, COMMAND_SURFACE_REPLACE))
+            return;
         clear_command_status(self);
         rearrange_keeping_line(self);
         focus_command_input(self);
@@ -5662,7 +5684,8 @@ static void show_settings_surface(struct folio_window *_Nonnull self, const char
     else
     {
         release_history(self);
-        set_command_surface(self, COMMAND_SURFACE_SETTINGS);
+        if (!set_command_surface(self, COMMAND_SURFACE_SETTINGS))
+            return;
         clear_command_status(self);
     }
     /* 他の入力面から来た場合も、現在値の行を決めてから配置する。 */
@@ -5675,9 +5698,11 @@ static void show_settings_surface(struct folio_window *_Nonnull self, const char
 /* テーマ候補は同じ設定レイヤーと検索 EDIT を共有する（ADR0049）。 */
 static void show_theme_surface(struct folio_window *_Nonnull self)
 {
-    set_command_surface(self, COMMAND_SURFACE_THEMES);
-    clear_command_status(self);
+    /* Clear while the previous face still owns EN_CHANGE; opening must not preview row zero. */
     SetWindowTextW(self->command_input, L"");
+    if (!set_command_surface(self, COMMAND_SURFACE_THEMES))
+        return;
+    clear_command_status(self);
     self->command_selection = (size_t)folio_state_theme_choice(self->state);
     self->command_first = 0;
     rearrange_keeping_line(self);
@@ -5696,7 +5721,8 @@ static void show_history_surface(struct folio_window *_Nonnull self)
     }
     else
     {
-        set_command_surface(self, COMMAND_SURFACE_HISTORY);
+        if (!set_command_surface(self, COMMAND_SURFACE_HISTORY))
+            return;
         clear_command_status(self);
     }
     self->command_selection = 0;
@@ -6120,7 +6146,8 @@ static void execute_mode_command(struct folio_window *_Nonnull self, enum pane_m
         report_outcome(self, outcome);
         return;
     }
-    hide_command_surface(self);
+    if (!hide_command_surface(self))
+        return;
     switch (mode)
     {
     case PANE_MODE_EDIT:
@@ -6147,7 +6174,8 @@ static void new_note_at(struct folio_window *_Nonnull self, size_t category)
         return;
     }
     show_pane_layout(self);
-    hide_command_surface(self);
+    if (!hide_command_surface(self))
+        return;
     saved = pour_edit_rtf(self);
     redraw_drawer(self);
     InvalidateRect(self->handle, nullptr, FALSE);
@@ -6198,7 +6226,8 @@ static void apply_number(struct folio_window *_Nonnull self, bool number)
     }
     else
     {
-        hide_command_surface(self);
+        if (!hide_command_surface(self))
+            return;
     }
     rearrange_keeping_line(self);
     redraw_command_layer(self);
@@ -6331,6 +6360,24 @@ static void recolor_window(struct folio_window *_Nonnull self)
     }
 }
 
+/* One UI path for preview and cancellation, including retry of native recolor failures. */
+[[nodiscard]] static bool preview_theme(struct folio_window *_Nonnull self,
+                                        enum folio_theme_choice choice)
+{
+    if (pane_streaming(self))
+        return false;
+    uint64_t before = folio_state_palette_revision(self->state);
+    enum folio_state_outcome outcome = folio_state_preview_theme(self->state, choice);
+    if (outcome != FOLIO_STATE_READY)
+    {
+        report_outcome(self, outcome);
+        return false;
+    }
+    if (folio_state_palette_revision(self->state) != before || self->appearance_recolor_pending)
+        recolor_window(self);
+    return !self->appearance_recolor_pending;
+}
+
 /* 2 つの入口（設定画面の Enter と `:set theme=`）が通る唯一の意図（ADR 0031 の決定 3）。
  * 設定画面は採用しても閉じず、印を移したまま残る（決定 7）。 */
 static void apply_theme(struct folio_window *_Nonnull self, enum folio_theme_choice choice)
@@ -6352,7 +6399,8 @@ static void apply_theme(struct folio_window *_Nonnull self, enum folio_theme_cho
     }
     else
     {
-        hide_command_surface(self);
+        if (!hide_command_surface(self))
+            return;
     }
     if (folio_state_palette_revision(self->state) != before || self->appearance_recolor_pending)
     {
@@ -6401,7 +6449,8 @@ static void apply_language(struct folio_window *_Nonnull self, enum folio_langua
     }
     else
     {
-        hide_command_surface(self);
+        if (!hide_command_surface(self))
+            return;
     }
     if (folio_state_language(self->state) != before)
     {
@@ -6572,7 +6621,8 @@ static void execute_discard_command(struct folio_window *_Nonnull self,
         report_outcome(self, outcome);
         return;
     }
-    hide_command_surface(self);
+    if (!hide_command_surface(self))
+        return;
     focus_pane(self);
 }
 
@@ -6654,7 +6704,8 @@ static void finish_new_category(struct folio_window *_Nonnull self,
         report_outcome(self, outcome);
         return;
     }
-    hide_command_surface(self);
+    if (!hide_command_surface(self))
+        return;
     show_drawer_layout(self);
     redraw_drawer(self);
     if (self->drawer != nullptr)
@@ -6747,6 +6798,23 @@ static void notify_note_removed(struct folio_window *_Nonnull self,
                                   (struct accessible_item){.kind = ACCESSIBLE_WINDOW}, units);
 }
 
+/* After removal of the held document, retire the face before rendering the empty pane. */
+[[nodiscard]] static bool reflect_removed_document(struct folio_window *_Nonnull self)
+{
+    if (!hide_command_surface(self))
+        return false;
+    enum folio_state_outcome loaded = render_pane(self);
+    arrange(self);
+    SetFocus(surface_return_target(self, self->handle));
+    if (loaded != FOLIO_STATE_READY)
+    {
+        report_outcome(self, loaded);
+        redraw_drawer(self);
+        return false;
+    }
+    return true;
+}
+
 static void trash_note_at(struct folio_window *_Nonnull self, struct note_ref target)
 {
     if (self->removal_running)
@@ -6763,19 +6831,8 @@ static void trash_note_at(struct folio_window *_Nonnull self, struct note_ref ta
         report_outcome(self, outcome);
         return;
     }
-    if (current)
-    {
-        hide_command_surface(self);
-        enum folio_state_outcome loaded = render_pane(self);
-        arrange(self);
-        SetFocus(surface_return_target(self, self->handle));
-        if (loaded != FOLIO_STATE_READY)
-        {
-            report_outcome(self, loaded);
-            redraw_drawer(self);
-            return;
-        }
-    }
+    if (current && !reflect_removed_document(self))
+        return;
     redraw_drawer(self);
     InvalidateRect(self->handle, nullptr, FALSE);
     if (outcome == FOLIO_STATE_LEDGER_STALE)
@@ -6813,7 +6870,8 @@ static HWND _Nullable finish_delete_category(struct folio_window *_Nonnull self,
     bool closed_focus = close && (command_owns(self, focus) || focus == self->command_layer);
     if (close)
     {
-        hide_command_surface(self);
+        if (!hide_command_surface(self))
+            return focus;
     }
     redraw_drawer(self);
     if (self->drawer != nullptr)
@@ -6988,21 +7046,24 @@ static void execute_toggle_number_command(struct folio_window *_Nonnull self,
 static void execute_layout_drawer(struct folio_window *_Nonnull self, const char *_Nonnull argument)
 {
     (void)argument;
-    hide_command_surface(self);
+    if (!hide_command_surface(self))
+        return;
     apply_layout_mode(self, FOLIO_LAYOUT_DRAWER);
 }
 
 static void execute_layout_both(struct folio_window *_Nonnull self, const char *_Nonnull argument)
 {
     (void)argument;
-    hide_command_surface(self);
+    if (!hide_command_surface(self))
+        return;
     apply_layout_mode(self, FOLIO_LAYOUT_BOTH);
 }
 
 static void execute_layout_note(struct folio_window *_Nonnull self, const char *_Nonnull argument)
 {
     (void)argument;
-    hide_command_surface(self);
+    if (!hide_command_surface(self))
+        return;
     apply_layout_mode(self, FOLIO_LAYOUT_NOTE);
 }
 
@@ -7046,6 +7107,12 @@ static void execute_command(struct folio_window *_Nonnull self, enum folio_comma
     {
         return;
     }
+    bool preserves_theme = command == FOLIO_COMMAND_SAVE || command == FOLIO_COMMAND_QUIT ||
+                           command == FOLIO_COMMAND_SAVE_QUIT ||
+                           command == FOLIO_COMMAND_FORCE_QUIT;
+    if (!preserves_theme && self->command_surface == COMMAND_SURFACE_THEMES &&
+        !preview_theme(self, folio_state_theme_choice(self->state)))
+        return;
     if (self->command_surface == COMMAND_SURFACE_MENU)
         close_command_surface(self);
     set_pane_notice(self, PANE_NOTICE_NONE);
@@ -7457,7 +7524,8 @@ static void adopt_history_row(struct folio_window *_Nonnull self)
         return;
     }
     /* 流し込んでから一覧を捨てる（hide_command_surface が close を呼ぶ）。フォーカスは本文へ。 */
-    hide_command_surface(self);
+    if (!hide_command_surface(self))
+        return;
     InvalidateRect(self->handle, nullptr, FALSE);
     focus_pane(self);
 }
@@ -7484,6 +7552,26 @@ static void click_history_surface(struct folio_window *_Nonnull self, POINT poin
     }
     self->command_selection = index;
     adopt_history_row(self);
+}
+
+static void preview_theme_selection(struct folio_window *_Nonnull self)
+{
+    if (self->command_composing)
+        return;
+    struct utf8_text *_Nullable query = nullptr;
+    if (command_query(self, &query) != UTF8_TEXT_CONVERTED)
+    {
+        report_outcome(self, FOLIO_STATE_OUT_OF_MEMORY);
+        return;
+    }
+    enum folio_theme_choice choice = folio_state_theme_choice(self->state);
+    bool found = theme_at_query(self, query, self->command_selection, &choice);
+    utf8_text_destroy(query);
+    if (!found)
+        choice = folio_state_theme_choice(self->state);
+    if (!preview_theme(self, choice))
+        return;
+    redraw_command_layer(self);
 }
 
 static void adopt_theme_at(struct folio_window *_Nonnull self, size_t index)
@@ -7568,7 +7656,7 @@ static bool theme_navigate(struct folio_window *_Nonnull self, WPARAM key)
     }
     move_theme_selection(self, key, count);
     reveal_command_selection(self);
-    redraw_command_layer(self);
+    preview_theme_selection(self);
     return true;
 }
 
@@ -7582,7 +7670,7 @@ static void theme_query_changed(struct folio_window *_Nonnull self)
     self->command_first = 0;
     clear_command_status(self);
     arrange_command_input(self);
-    redraw_command_layer(self);
+    preview_theme_selection(self);
 }
 
 static bool palette_point_command(const struct folio_window *_Nonnull self,
@@ -9537,8 +9625,39 @@ static void cancel_surface_press(struct folio_window *_Nonnull self)
     }
 }
 
+static void preview_theme_pointer(struct folio_window *_Nonnull self, POINT point)
+{
+    if (self->command_surface != COMMAND_SURFACE_THEMES || self->command_composing)
+        return;
+    RECT rows = theme_rows_rect(self);
+    if (!PtInRect(&rows, point))
+        return;
+    int height = scale(base_theme_row_height, GetDpiForWindow(self->handle));
+    size_t index = self->command_first + (size_t)((point.y - rows.top) / height);
+    struct utf8_text *_Nullable query = nullptr;
+    if (command_query(self, &query) != UTF8_TEXT_CONVERTED)
+    {
+        report_outcome(self, FOLIO_STATE_OUT_OF_MEMORY);
+        return;
+    }
+    size_t count = theme_matches_count(self, query);
+    utf8_text_destroy(query);
+    if (index >= count || index == self->command_selection)
+        return;
+    self->command_selection = index;
+    preview_theme_selection(self);
+}
+
 static void surface_pointer(struct folio_window *_Nonnull self, POINT point)
 {
+    POINT screen = point;
+    ClientToScreen(self->command_layer, &screen);
+    bool moved = self->surface_pointer_known && (screen.x != self->surface_pointer_position.x ||
+                                                 screen.y != self->surface_pointer_position.y);
+    self->surface_pointer_position = screen;
+    self->surface_pointer_known = true;
+    if (moved)
+        preview_theme_pointer(self, point);
     size_t hover = surface_part_at(self, point);
     bool inside = self->surface_pressed < surface_pointer_count && hover == self->surface_pressed;
     bool changed = hover != self->surface_hover || inside != self->surface_pressed_inside;
@@ -11540,6 +11659,13 @@ static void surface_reveal(struct folio_window *_Nonnull self, struct accessible
     redraw_command_layer(self);
 }
 
+static HRESULT focus_surface_row(struct folio_window *_Nonnull self)
+{
+    SetFocus(self->command_layer);
+    redraw_command_layer(self);
+    return GetFocus() == self->command_layer ? S_OK : accessibility_node_invalid;
+}
+
 static HRESULT surface_row_action(struct folio_window *_Nonnull self,
                                   const struct accessible_request *_Nonnull request)
 {
@@ -11550,12 +11676,11 @@ static HRESULT surface_row_action(struct folio_window *_Nonnull self,
     struct accessible_item item = request->item;
     self->command_selection = surface_selection_ordinal(item);
     reveal_command_selection(self);
+    if (self->command_surface == COMMAND_SURFACE_THEMES &&
+        request->action != ACCESSIBLE_ACTION_INVOKE)
+        preview_theme_selection(self);
     if (request->action == ACCESSIBLE_ACTION_FOCUS)
-    {
-        SetFocus(self->command_layer);
-        redraw_command_layer(self);
-        return GetFocus() == self->command_layer ? S_OK : accessibility_node_invalid;
-    }
+        return focus_surface_row(self);
     if (item.kind == ACCESSIBLE_SURFACE_LANGUAGE || item.kind == ACCESSIBLE_SURFACE_TOGGLE)
         adopt_settings_row(self);
     if (item.kind == ACCESSIBLE_SURFACE_CHOICE && request->action == ACCESSIBLE_ACTION_INVOKE)
@@ -13234,8 +13359,8 @@ static void show_menu_surface(struct folio_window *_Nonnull self,
 {
     if (self->removal_running || session_busy(self) || pane_streaming(self))
         return;
-    if (self->command_surface != COMMAND_SURFACE_CLOSED)
-        hide_command_surface(self);
+    if (self->command_surface != COMMAND_SURFACE_CLOSED && !hide_command_surface(self))
+        return;
     self->menu = *request;
     self->menu_pressed = SIZE_MAX;
     self->menu_key = 0;

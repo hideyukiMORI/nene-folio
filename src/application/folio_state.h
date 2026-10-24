@@ -64,17 +64,21 @@ folio_state_create(const struct folio_ports *_Nonnull ports,
 folio_state_appearance_notice(const struct folio_state *_Nonnull state);
 /* Cached OS appearance, for the system candidate preview; does not perform IO. */
 [[nodiscard]] enum folio_theme folio_state_system_theme(const struct folio_state *_Nonnull state);
-/* 利用者が選んでいるテーマ。設定画面の印はこの値に付く（解決値ではない）。 */
+/* 保存済みのテーマ。設定画面の採用印とプレビュー取消の復元先（ADR0061）。 */
 [[nodiscard]] enum folio_theme_choice
 folio_state_theme_choice(const struct folio_state *_Nonnull state);
 /* テーマの選択を変える意図（ADR 0031 の決定 3）。**新しい設定と新しい閲覧文書を先に作り、
  * data/settings.json へ書けてから採用する**ので、表示と保存が食い違わない。
- * いまと同じ選択なら書かずに READY。作れなければ OUT_OF_MEMORY、書けなければ
+ * 同じ保存値なら書かずに表示を戻す。作れなければ OUT_OF_MEMORY、書けなければ
  * SETTINGS_STORE_FAILED で、どちらもファイルも状態も変えない。設定が読めていなければ
  * SETTINGS_UNREADABLE（folio_state_set_number と同じ値で断り、上書きもしない）。
  * 設定は md・台帳・.rename.json と独立なので、未完了の改名の再開は通さない。 */
 [[nodiscard]] enum folio_state_outcome folio_state_set_theme(struct folio_state *_Nonnull state,
                                                              enum folio_theme_choice choice);
+/* 一時的な表示choice。設定/IOは変えず、paletteとRTFを準備できたときだけ採用する。
+ * OUT_OF_MEMORYなら表示も保持する。取消は保存済みtheme_choiceを渡す（ADR0061）。 */
+[[nodiscard]] enum folio_state_outcome folio_state_preview_theme(struct folio_state *_Nonnull state,
+                                                                 enum folio_theme_choice choice);
 /* OS外観を再取得し、実効色が変わったときだけRTFを準備して同時に採用する（ADR0057）。
  * 取得/準備失敗は既存配色とsnapshotを保持し、appearance_noticeに理由を残す。設定は書かない。
  * UIはpalette_revisionの前後を比べて再着色する。 */
