@@ -453,23 +453,27 @@ static void draw_drop_line(const struct drawer_window *_Nonnull self, HDC device
 }
 
 static void draw_rows(const struct drawer_window *_Nonnull self, HDC device,
-                      const struct drawer_layout *_Nonnull layout, int width)
+                      const struct drawer_layout *_Nonnull layout, RECT clip)
 {
     size_t count = drawer_layout_row_count(layout);
     for (size_t index = 0; index < count; ++index)
     {
         struct drawer_row row = drawer_layout_row(layout, index);
+        if (row.top >= clip.bottom)
+            break;
+        if (row.top + row.height <= clip.top)
+            continue;
         switch (row.kind)
         {
         case DRAWER_ROW_CATEGORY:
-            draw_category(self, device, row, width);
+            draw_category(self, device, row, clip.right);
             break;
         case DRAWER_ROW_NOTE:
-            draw_note(self, device, row, width);
+            draw_note(self, device, row, clip.right);
             break;
         }
     }
-    draw_drop_line(self, device, layout, width);
+    draw_drop_line(self, device, layout, clip.right);
 }
 
 /* いまの配置を作る。作れなければ false（描き直しの機会に回復する）。 */
@@ -558,7 +562,7 @@ static void paint_surface(const struct drawer_window *_Nonnull self, HDC device,
     }
     int header = band_height(self);
     IntersectClipRect(device, 0, header, client.right, client.bottom);
-    draw_rows(self, device, layout, client.right);
+    draw_rows(self, device, layout, (RECT){0, header, client.right, client.bottom});
     SelectClipRgn(device, nullptr);
     draw_header(self, device);
     /* 画素へ触る前に GDI の溜めを吐き出す。 */

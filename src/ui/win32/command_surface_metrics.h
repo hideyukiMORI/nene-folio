@@ -11,9 +11,9 @@ struct command_surface_metrics
     UINT dpi;
     HFONT font;
     enum folio_language language;
-    bool themes;
     int notice;
-    int footer;
+    int settings_footer;
+    int themes_footer;
 };
 
 #endif
