@@ -377,3 +377,19 @@ native BUTTONのchild HDCでは外側focusが切れるため、ui_part_paintの�
 subclassが扱うのはpointerのMOVE/LEAVEと再描画であり、WM_GETDLGCODE/BM_SETSTYLE・実行・既定釦の選択を変更しない。クリック/Space/Enterはnative dialog managerと既存読み替え経路のまま。
 追跡の寿命はchild HWNDに結び、palette/brush再生成から独立させる。作成失敗のrollbackとWM_NCDESTROYでの解除を対にし、別のpressed/focus/実行モデルは持たない。
 ADR0035のV4不採用は既定釦styleを書き換えてowner-drawを壊す経路について維持し、pointer表示だけのこの用途とは区別する。
+
+### I-D 再開時の表示境界の明確化（2026-10-24）
+
+- 決定26の「操作｜キー」は内容を排他的に切り替える。旧来の候補3行とキー説明の併記を置き換え、操作では絞込み入力とscope別候補、キーでは折返し説明を表示する。
+  選択の正本は既存`command_keys_visible`。キー面では検索EDITを隠し、既存CommandLayerへfocusを移す。検索語と候補選択は保持し、操作へ戻れば同じEDITへ復帰する。
+  Tabは従来の切替、PgUp/PgDnはキー説明のページ送り。キー面のEnterや↑↓で隠れた候補を実行・変更せず、候補のUIA操作も拒否する。
+  S2は独立したSelection groupと2つのRadioButton/SelectionItemとして公開し、候補ListとはSelectionContainerを分ける。
+  描画・hit・UIAの子集合は表示modeを共用し、切替時には既存の世代更新で古い子参照を失効する。別の選択状態や新規キーは足さない。
+- 決定13の空状態は見出し・本文・キー・作成先の4行を維持し、キー行から新規の案内を除く。新規の作成先とCtrl+Nは既存`new_note_destination`を使う4行目だけで示す。
+  カテゴリが無い場合は同じ経路で作成不可の理由を示す。キー行は全ノート検索とヘルプだけとし、tooltip/UIA HelpTextの作成先との第2の組立経路を作らない。
+- 主窓child面の高さもclient高−32へ制限する。設定/テーマのnoticeはスクロールする内容の外へ予約し、縮小後の実幅・font・DPI・言語で最大必要高を測る。
+  結果だけでは再計測・伸縮せず、幅/font/DPI/言語が変わったときに再導出して選択行をrevealする。最小窓でも選択行1行と閉じる操作へ届くことを受理条件とする。
+- Helpの絞込みは既存のcommand名/別名だけを対象とし、scope見出しとキー説明は照合対象に加えない。0件表示は既存のものを維持する。
+  操作の見出しは次の候補と同じ可視領域へ置き、群先頭の候補をrevealするときは見出しも含める。見出しへのhitを候補へ読み替えない。
+  キー説明は同じ折返し計測から内容の総高とページ位置を導き、1項目が表示高を超えてもページ送りで全文を読めるようにする。UIA Nameは項目全文を返す。
+  テーマの「‹ 設定」は既存の脚の位置を使い、題44には題と×だけを置く。
