@@ -3439,9 +3439,7 @@ static void draw_theme_row(const struct folio_window *_Nonnull self, HDC device,
                                  .style = UI_PART_STYLE_COMMAND,
                                  .focus_inside = true,
                                  .selected = row.choice == folio_state_theme_choice(self->state),
-                                 .focused = row.focused &&
-                                            (self->focus_cues || self->focus_cues_always) &&
-                                            GetFocus() == self->command_layer};
+                                 .focused = row.cursor};
     ui_part_draw(device, &self->palette, &part);
     if (row.choice == folio_state_theme_choice(self->state))
     {
