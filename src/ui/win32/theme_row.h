@@ -10,7 +10,7 @@ struct theme_row
 {
     RECT bounds;
     enum folio_theme_choice choice;
-    bool focused;
+    bool cursor; /* Candidate cursor; native keyboard focus may remain in the filter EDIT. */
 };
 
 #endif

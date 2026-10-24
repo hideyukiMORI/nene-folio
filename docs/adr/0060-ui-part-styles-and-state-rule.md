@@ -323,6 +323,9 @@ Issue下書きの全modal共通AltF4、一致への独自着色、既存対比�
 - 履歴は題と×、Esc案内は閉じる。履歴採用の未保存/Undo/読込失敗意味は維持する。
 - テーマには「‹ 設定」。Escは従来どおり設定へ1段戻る。×は設定全体を閉じる。主窓childなのでAltF4はアプリの通常終了で、#350のOS routeを奪わない。
   native DialogBoxではAltF4取消、というowner境界の差を明記し、全modalに同じAltF4意味を強制した下書きを補正する。
+  テーマの候補カーソルは、採用済みの印ともnativeの入力focusとも別の表示値である（ADR0049決定6、#364の回帰修正）。
+  既存command_selectionの候補を共通部品の内側2px枠で常に示し、決定3のkeyboard cueやGetFocus()==CommandLayerで隠さない。
+  検索EDITにfocusを保ったwheel/矢印操作も直ちに見せる。native/UIAのfocusと採用の意味は変えず、別のカーソル状態を持たない。
 - theme_testsのdialog_secondary/current_text対dialog_surfaceは既存で検査済みなので同じassertを増やさず再利用。追加した状態役割があればその境界だけ増やす。
 
 ### 検証と統合
