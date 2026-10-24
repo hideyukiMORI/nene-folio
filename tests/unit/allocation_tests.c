@@ -477,6 +477,29 @@ static bool set_number_under_probe(struct folio_state *_Nonnull state)
 
 /* テーマの 2 つの意図（ADR 0031 の決定 3）。どちらも設定の複製と
  * 閲覧文書の作り直しで確保する。read_theme は確保しないので refresh は文書だけ。 */
+static bool preview_theme_under_probe(struct folio_state *_Nonnull state)
+{
+    const char *pane = folio_state_pane_rtf(state);
+    uint64_t revision = folio_state_palette_revision(state);
+    enum folio_theme theme = folio_state_theme(state);
+    enum folio_theme_choice saved = folio_state_theme_choice(state);
+    enum folio_state_outcome result = folio_state_preview_theme(state, FOLIO_THEME_CHOICE_NORD);
+    require(result == FOLIO_STATE_READY || result == FOLIO_STATE_OUT_OF_MEMORY,
+            "theme preview under allocation probe");
+    if (result == FOLIO_STATE_OUT_OF_MEMORY)
+    {
+        require(folio_state_pane_rtf(state) == pane &&
+                    folio_state_palette_revision(state) == revision &&
+                    folio_state_theme(state) == theme && folio_state_theme_choice(state) == saved,
+                "every preview allocation failure preserves complete state");
+        return false;
+    }
+    result = folio_state_preview_theme(state, saved);
+    require(result == FOLIO_STATE_READY || result == FOLIO_STATE_OUT_OF_MEMORY,
+            "preview cancel under allocation probe");
+    return result == FOLIO_STATE_READY;
+}
+
 static bool set_theme_under_probe(struct folio_state *_Nonnull state)
 {
     enum folio_theme_choice before = folio_state_theme_choice(state);
@@ -626,13 +649,14 @@ static bool state_scenario_with(struct persistence_adapter *_Nonnull adapter)
         return false;
     }
     require(outcome == FOLIO_STATE_READY, "state under probe");
-    bool completed =
-        layout_intent_under_probe(state) && ledger_under_probe(state) &&
-        selection_under_probe(state) && filter_under_probe(state) && reorder_under_probe(state) &&
-        edit_under_probe(state) && transfer_under_probe(state) && new_note_under_probe(state) &&
-        save_as_under_probe(state) && replace_under_probe(state) && rename_under_probe(state) &&
-        search_under_probe(state) && set_number_under_probe(state) &&
-        set_theme_under_probe(state) && set_language_under_probe(state);
+    bool completed = layout_intent_under_probe(state) && ledger_under_probe(state) &&
+                     selection_under_probe(state) && filter_under_probe(state) &&
+                     reorder_under_probe(state) && edit_under_probe(state) &&
+                     transfer_under_probe(state) && new_note_under_probe(state) &&
+                     save_as_under_probe(state) && replace_under_probe(state) &&
+                     rename_under_probe(state) && search_under_probe(state) &&
+                     set_number_under_probe(state) && preview_theme_under_probe(state) &&
+                     set_theme_under_probe(state) && set_language_under_probe(state);
     folio_state_destroy(state);
     return completed;
 }

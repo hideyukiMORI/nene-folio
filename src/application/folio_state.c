@@ -48,8 +48,8 @@ struct folio_state
     struct appearance_port appearance;
     struct appearance_snapshot appearance_snapshot; /* 最後に採用できたOS外観（ADR0057）。 */
     enum folio_state_outcome appearance_notice;
-    uint64_t palette_revision;            /* 実効配色変更時だけ進むUI cacheの無効化番号。 */
-    enum folio_theme_choice theme_choice; /* 設定の選択。解決値は folio_theme_choice_resolve */
+    uint64_t palette_revision;                    /* 実効配色変更時だけ進むUI cacheの無効化番号。 */
+    enum folio_theme_choice display_theme_choice; /* 保存前の候補も含む表示選択（ADR0061）。 */
     /* data/settings.json の値の所有者（ADR 0025 の決定 5）。読めなければ既定値のまま */
     struct folio_settings *_Nullable settings;
     /* READY か SETTINGS_UNREADABLE。後者のあいだ設定の変更を断り、上書きもしない（決定 6） */
@@ -525,7 +525,7 @@ static enum folio_state_outcome adopt_theme_choice(struct folio_state *_Nonnull 
     markdown_rtf_destroy(state->pane);
     state->pane = pane;
     state->palette = palette;
-    state->theme_choice = choice;
+    state->display_theme_choice = choice;
     return FOLIO_STATE_READY;
 }
 
@@ -548,10 +548,11 @@ enum folio_state_outcome folio_state_create(const struct folio_ports *_Nonnull p
         appearance->read(appearance->adapter, &state->appearance_snapshot) == APPEARANCE_READY
             ? FOLIO_STATE_READY
             : FOLIO_STATE_APPEARANCE_UNAVAILABLE;
-    state->theme_choice = FOLIO_THEME_CHOICE_SYSTEM;
+    state->display_theme_choice = FOLIO_THEME_CHOICE_SYSTEM;
     state->layout_mode = FOLIO_LAYOUT_BOTH;
     state->select_notice = FOLIO_STATE_READY;
-    state->palette = appearance_snapshot_palette(&state->appearance_snapshot, state->theme_choice);
+    state->palette =
+        appearance_snapshot_palette(&state->appearance_snapshot, state->display_theme_choice);
     if (markdown_rtf_empty(state->palette.rtf, ui_font_face(FOLIO_LANGUAGE_JA), &state->pane) !=
             MARKDOWN_RTF_CONVERTED ||
         note_text_create("", 0, &state->body) != NOTE_TEXT_ACCEPTED ||
@@ -970,7 +971,8 @@ enum folio_theme folio_state_system_theme(const struct folio_state *_Nonnull sta
 
 enum folio_theme folio_state_theme(const struct folio_state *_Nonnull state)
 {
-    return folio_theme_choice_resolve(state->theme_choice, state->appearance_snapshot.theme);
+    return folio_theme_choice_resolve(state->display_theme_choice,
+                                      state->appearance_snapshot.theme);
 }
 
 const struct theme_palette *_Nonnull folio_state_palette(const struct folio_state *_Nonnull state)
@@ -999,7 +1001,7 @@ static void adopt_palette(struct folio_state *_Nonnull state, struct theme_palet
 
 enum folio_theme_choice folio_state_theme_choice(const struct folio_state *_Nonnull state)
 {
-    return state->theme_choice;
+    return folio_settings_theme(state->settings);
 }
 
 enum folio_state_outcome folio_state_settings_notice(const struct folio_state *_Nonnull state)
@@ -1086,6 +1088,37 @@ static enum folio_state_outcome adopt_settings_change(struct folio_state *_Nonnu
     return FOLIO_STATE_READY;
 }
 
+/* Preview and OS refresh share one non-persisting palette/RTF transaction (ADR0061). */
+static enum folio_state_outcome adopt_display_palette(struct folio_state *_Nonnull state,
+                                                      struct theme_palette palette)
+{
+    if (theme_palette_equal(&state->palette, &palette))
+    {
+        return FOLIO_STATE_READY;
+    }
+    struct markdown_rtf *_Nullable pane = nullptr;
+    if (!render_pane_document(state, palette.rtf, folio_state_language(state), &pane))
+    {
+        return FOLIO_STATE_OUT_OF_MEMORY;
+    }
+    markdown_rtf_destroy(state->pane);
+    state->pane = pane;
+    adopt_palette(state, palette);
+    return FOLIO_STATE_READY;
+}
+
+enum folio_state_outcome folio_state_preview_theme(struct folio_state *_Nonnull state,
+                                                   enum folio_theme_choice choice)
+{
+    struct theme_palette palette = appearance_snapshot_palette(&state->appearance_snapshot, choice);
+    enum folio_state_outcome outcome = adopt_display_palette(state, palette);
+    if (outcome == FOLIO_STATE_READY)
+    {
+        state->display_theme_choice = choice;
+    }
+    return outcome;
+}
+
 enum folio_state_outcome folio_state_set_theme(struct folio_state *_Nonnull state,
                                                enum folio_theme_choice choice)
 {
@@ -1095,7 +1128,7 @@ enum folio_state_outcome folio_state_set_theme(struct folio_state *_Nonnull stat
     }
     if (folio_settings_theme(state->settings) == choice)
     {
-        return FOLIO_STATE_READY;
+        return folio_state_preview_theme(state, choice);
     }
     struct folio_settings *_Nullable changed = nullptr;
     if (folio_settings_with_theme(state->settings, choice, &changed) != FOLIO_SETTINGS_READY)
@@ -1107,7 +1140,7 @@ enum folio_state_outcome folio_state_set_theme(struct folio_state *_Nonnull stat
         adopt_settings_change(state, changed, palette, folio_state_language(state));
     if (adopted == FOLIO_STATE_READY)
     {
-        state->theme_choice = choice;
+        state->display_theme_choice = choice;
     }
     return adopted;
 }
@@ -1140,22 +1173,14 @@ enum folio_state_outcome folio_state_refresh_theme(struct folio_state *_Nonnull 
         state->appearance_notice = FOLIO_STATE_APPEARANCE_UNAVAILABLE;
         return state->appearance_notice;
     }
-    struct theme_palette palette = appearance_snapshot_palette(&snapshot, state->theme_choice);
-    if (theme_palette_equal(&state->palette, &palette))
+    struct theme_palette palette =
+        appearance_snapshot_palette(&snapshot, state->display_theme_choice);
+    enum folio_state_outcome outcome = adopt_display_palette(state, palette);
+    if (outcome != FOLIO_STATE_READY)
     {
-        state->appearance_snapshot = snapshot;
-        state->appearance_notice = FOLIO_STATE_READY;
-        return FOLIO_STATE_READY;
+        state->appearance_notice = outcome;
+        return outcome;
     }
-    struct markdown_rtf *_Nullable pane = nullptr;
-    if (!render_pane_document(state, palette.rtf, folio_state_language(state), &pane))
-    {
-        state->appearance_notice = FOLIO_STATE_OUT_OF_MEMORY;
-        return state->appearance_notice;
-    }
-    markdown_rtf_destroy(state->pane);
-    state->pane = pane;
-    adopt_palette(state, palette);
     state->appearance_snapshot = snapshot;
     state->appearance_notice = FOLIO_STATE_READY;
     return FOLIO_STATE_READY;
