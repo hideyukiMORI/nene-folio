@@ -1,4 +1,4 @@
-/* 幅/DPI/font/modeだけから導く配置。結果文字列や業務状態は保持しない。 */
+/* 幅/利用可能高/DPI/font/modeだけから導く配置。結果文字列や業務状態は保持しない。 */
 #ifndef NENEFOLIO_COMMAND_BAND_LAYOUT_H
 #define NENEFOLIO_COMMAND_BAND_LAYOUT_H
 
@@ -14,6 +14,7 @@ struct command_band_layout
 {
     bool valid;
     int width;
+    int available_height;
     UINT dpi;
     HFONT _Nullable font;
     enum command_surface_mode mode;
@@ -23,6 +24,9 @@ struct command_band_layout
     RECT close;
     RECT result;
     int height;
+    int pane_top;
+    int pane_bottom;
+    bool narrow;
     int measured_width;
     int result_height;
 };

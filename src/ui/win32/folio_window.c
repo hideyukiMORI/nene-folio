@@ -8,6 +8,7 @@
 #include "breadcrumb_layout.h"
 #include "category_name.h"
 #include "command_band_layout.h"
+#include "command_help_metrics.h"
 #include "command_row.h"
 #include "command_surface_metrics.h"
 #include "command_surface_mode.h"
@@ -61,6 +62,7 @@
 
 constexpr size_t surface_button_count = 8;
 constexpr size_t surface_pointer_count = surface_button_count + 2;
+constexpr UINT_PTR surface_tooltip_base = 256;
 /* 1 回の描画・測定で UTF-16 へ写せる単位数（ADR 0030 の決定 5）。表の 1 行（ui_text_unit_limit）・
  * 状態の 1 行（replace_status_capacity）・ノート名（255 バイト）のどれもここに収まる。
  * 収まらなければ何も描かない（描画のたびの確保をやめる代わりの上限）。 */
@@ -151,6 +153,7 @@ struct folio_window
     bool command_unknown;
     enum pane_notice notice;
     struct command_surface_metrics settings_metrics;
+    struct command_help_metrics help_metrics;
     bool removal_running;
     enum session_phase session_phase;
     HWND _Nullable session_return_focus;
@@ -243,6 +246,10 @@ static const struct
     {FOLIO_LAYOUT_BOTH, FOLIO_COMMAND_LAYOUT_BOTH, ACCESSIBLE_LAYOUT_BOTH},
     {FOLIO_LAYOUT_NOTE, FOLIO_COMMAND_LAYOUT_NOTE, ACCESSIBLE_LAYOUT_NOTE},
 };
+
+static_assert(sizeof command_shortcuts / sizeof command_shortcuts[0] +
+                  sizeof layout_buttons / sizeof layout_buttons[0] <=
+              command_help_capacity);
 
 /* 自前操作の親子順・名前・focus可否と、表示名・UIA Name・AcceleratorKey・tooltip の 1 つの元
  * （ADR0060 の決定 5）。key は AcceleratorKey と tooltip に、hint は tooltip だけに出る。
@@ -630,6 +637,7 @@ static void decorate(HWND handle, struct folio_palette palette);
 static void refresh_tooltip_style(const struct folio_window *_Nonnull self);
 static void refresh_tooltip_rects(const struct folio_window *_Nonnull self);
 static void activate_tooltip(const struct folio_window *_Nonnull self);
+static void refresh_surface_tooltip_rects(const struct folio_window *_Nonnull self);
 static enum folio_state_outcome render_pane(struct folio_window *_Nonnull self);
 static enum folio_state_outcome from_pane_text(enum note_pane_text_outcome outcome);
 static void show_settings_surface(struct folio_window *_Nonnull self,
@@ -866,6 +874,7 @@ static void refresh_font(struct folio_window *_Nonnull self, UINT dpi)
 {
     self->band.valid = false;
     self->settings_metrics.width = 0;
+    self->help_metrics.valid = false;
     if (self->mono_font != nullptr)
     {
         DeleteObject(self->mono_font);
@@ -1291,7 +1300,7 @@ static size_t command_help_offset(const struct folio_window *_Nonnull self)
 static RECT command_toggle_rect(const struct folio_window *_Nonnull self)
 {
     RECT bounds = surface_frame_rect(self, UI_PART_SURFACE_CONTENT);
-    bounds.top = bounds.bottom - scale(base_command_status_height, GetDpiForWindow(self->handle));
+    bounds.top = bounds.bottom - scale(ui_part_height, GetDpiForWindow(self->handle));
     return bounds;
 }
 
@@ -1500,13 +1509,20 @@ static void arrange_command_contents(struct folio_window *_Nonnull self)
     if (self->command_surface == COMMAND_SURFACE_CLOSED)
     {
         ShowWindow(self->command_layer, SW_HIDE);
+        refresh_surface_tooltip_rects(self);
         return;
     }
     RECT layer = command_surface_rect(self);
     MoveWindow(self->command_layer, layer.left, layer.top, layer.right - layer.left,
                layer.bottom - layer.top, TRUE);
     if (!prepare_surface_metrics(self))
-        self->command_failure = FOLIO_STATE_OUT_OF_MEMORY;
+    {
+        close_command_surface(self);
+        show_failure_box(self, FOLIO_STATE_OUT_OF_MEMORY);
+        return;
+    }
+    if (command_keys(self))
+        self->command_help_scroll = command_help_offset(self);
     place_field(self->command_input, command_input_rect(self), 0);
     arrange_surface_selection(self);
     arrange_replace_inputs(self);
@@ -1517,6 +1533,7 @@ static void arrange_command_contents(struct folio_window *_Nonnull self)
     ShowWindow(self->command_layer, SW_SHOW);
     if (self->native_modal_depth == 0)
         BringWindowToTop(self->command_layer);
+    refresh_surface_tooltip_rects(self);
 }
 
 /* 深さはDialogBoxの前後の再入も塞ぐ。準備失敗でもendまでは深さを保持する。 */
@@ -1732,6 +1749,16 @@ static void arrange_drawer_region(struct folio_window *_Nonnull self, RECT bound
     arrange_drawer(self, bounds);
 }
 
+static RECT body_content_rect(const struct folio_window *_Nonnull self, RECT pane, UINT dpi)
+{
+    int top = command_band(self) ? self->band.pane_top : scale(base_pane_top, dpi);
+    int bottom = command_band(self) ? self->band.pane_bottom : scale(base_pane_bottom, dpi);
+    top += pane.top + scale(base_caption_height + base_action_height, dpi);
+    top += command_band(self) ? self->band.height : 0;
+    return (RECT){pane.left + pane_inset(self, dpi), top, pane.right - scale(base_pane_right, dpi),
+                  pane.bottom - bottom};
+}
+
 static void arrange(struct folio_window *_Nonnull self)
 {
     arrange_command_input(self); /* 帯高を確定してから同じ高さだけ本文を下げる。 */
@@ -1749,12 +1776,9 @@ static void arrange(struct folio_window *_Nonnull self)
         if (visible)
         {
             UINT dpi = GetDpiForWindow(self->handle);
-            int top = regions.pane.top +
-                      scale(base_caption_height + base_action_height + base_pane_top, dpi);
-            top += command_band(self) ? self->band.height : 0;
-            int left = regions.pane.left + pane_inset(self, dpi);
-            MoveWindow(pane, left, top, regions.pane.right - left - scale(base_pane_right, dpi),
-                       regions.pane.bottom - top - scale(base_pane_bottom, dpi), TRUE);
+            RECT body = body_content_rect(self, regions.pane, dpi);
+            MoveWindow(pane, body.left, body.top, body.right - body.left, body.bottom - body.top,
+                       TRUE);
         }
     }
     refresh_gutter(self, false);
@@ -2727,49 +2751,79 @@ static void command_help_text(const struct folio_window *_Nonnull self, size_t s
     layout_phrase(self, slot - generic, UI_TEXT_LAYOUT_HELP, out);
 }
 
-static RECT command_help_geometry(const struct folio_window *_Nonnull self, size_t slot,
-                                  int *_Nullable maximum_line_height)
+static bool measure_help_metrics(const struct folio_window *_Nonnull self, HDC device,
+                                 struct command_help_metrics *_Nonnull metrics)
 {
-    RECT row = command_body_rect(self);
-    row.bottom = row.top;
-    HDC device = GetDC(self->command_layer);
-    if (device == nullptr)
-        return row;
-    HGDIOBJ previous = SelectObject(device, self->mono_font);
-    SetTextCharacterExtra(device, scale(base_tracking, GetDpiForWindow(self->handle)));
-    for (size_t index = 0; index <= slot; ++index)
+    RECT bounds = {0, 0, metrics->width, 0};
+    for (size_t index = 0; index < metrics->count; ++index)
     {
         char text[draw_unit_limit];
         command_help_text(self, index, text);
-        row.top = row.bottom;
-        struct text_draw_request request = {.bounds = row,
+        struct text_draw_request request = {.bounds = bounds,
                                             .format = DT_CALCRECT,
                                             .wrapped = true,
-                                            .maximum_line_height = maximum_line_height};
-        row.bottom += draw_text(device, text, &request) + scale(8, GetDpiForWindow(self->handle));
+                                            .maximum_line_height = &metrics->maximum_line_height};
+        int height = draw_text(device, text, &request);
+        if (height <= 0)
+            return false;
+        metrics->offsets[index + 1] = metrics->offsets[index] + height + scale(8, metrics->dpi);
     }
+    return metrics->maximum_line_height > 0;
+}
+
+static bool prepare_help_metrics(struct folio_window *_Nonnull self)
+{
+    RECT bounds = command_body_rect(self);
+    struct command_help_metrics metrics = {.width = bounds.right - bounds.left,
+                                           .dpi = GetDpiForWindow(self->handle),
+                                           .font = self->mono_font,
+                                           .language = folio_state_language(self->state),
+                                           .count = (size_t)command_help_rows(self)};
+    if (self->help_metrics.valid && self->help_metrics.width == metrics.width &&
+        self->help_metrics.dpi == metrics.dpi && self->help_metrics.font == metrics.font &&
+        self->help_metrics.language == metrics.language)
+        return true;
+    HDC device = GetDC(self->command_layer);
+    if (device == nullptr)
+        return false;
+    HGDIOBJ previous = SelectObject(device, self->mono_font);
+    SetTextCharacterExtra(device, scale(base_tracking, metrics.dpi));
+    bool ready = measure_help_metrics(self, device, &metrics);
     SelectObject(device, previous);
     ReleaseDC(self->command_layer, device);
+    if (ready)
+    {
+        metrics.valid = true;
+        self->help_metrics = metrics;
+    }
+    return ready;
+}
+
+static RECT command_help_geometry(const struct folio_window *_Nonnull self, size_t slot,
+                                  int *_Nullable maximum_line_height)
+{
+    if (!self->help_metrics.valid || slot >= self->help_metrics.count)
+        return (RECT){0};
+    RECT row = command_body_rect(self);
+    int top = row.top;
+    row.top = top + self->help_metrics.offsets[slot];
+    row.bottom = top + self->help_metrics.offsets[slot + 1];
+    if (maximum_line_height != nullptr)
+        *maximum_line_height = self->help_metrics.maximum_line_height;
     return row;
 }
 
 static int command_help_total(const struct folio_window *_Nonnull self)
 {
-    int count = command_help_rows(self);
-    if (count == 0)
+    if (!command_keys(self) || !self->help_metrics.valid)
         return 0;
-    RECT last = command_help_geometry(self, (size_t)count - 1, nullptr);
-    return last.bottom - command_body_rect(self).top;
+    return self->help_metrics.offsets[self->help_metrics.count];
 }
 
 /* 実際の折返し行を一行以上重ね、ページ境界で文字行を読めなくしない。 */
 static size_t command_help_step(const struct folio_window *_Nonnull self)
 {
-    int maximum = 0;
-    int count = command_help_rows(self);
-    if (count > 0)
-        (void)command_help_geometry(self, (size_t)count - 1, &maximum);
-    int step = command_visible_help(self) - maximum;
+    int step = command_visible_help(self) - self->help_metrics.maximum_line_height;
     return step > 0 ? (size_t)step : 1;
 }
 
@@ -3079,15 +3133,15 @@ static void draw_command_shortcuts(const struct folio_window *_Nonnull self, HDC
 static RECT command_previous_rect(const struct folio_window *_Nonnull self)
 {
     RECT bounds = command_toggle_rect(self);
-    bounds.left = bounds.right - scale(88, GetDpiForWindow(self->handle));
-    bounds.right -= scale(44, GetDpiForWindow(self->handle));
+    bounds.left = bounds.right - scale(176, GetDpiForWindow(self->handle));
+    bounds.right -= scale(88, GetDpiForWindow(self->handle));
     return bounds;
 }
 
 static RECT command_next_rect(const struct folio_window *_Nonnull self)
 {
     RECT bounds = command_toggle_rect(self);
-    bounds.left = bounds.right - scale(44, GetDpiForWindow(self->handle));
+    bounds.left = bounds.right - scale(88, GetDpiForWindow(self->handle));
     return bounds;
 }
 
@@ -3133,6 +3187,7 @@ static void draw_command_guidance(const struct folio_window *_Nonnull self, HDC 
         struct ui_part_paint part = {.bounds = command_tab_rect(self, index),
                                      .dpi = GetDpiForWindow(self->handle),
                                      .style = UI_PART_STYLE_CHOICE,
+                                     .labeled = true,
                                      .grouped = true,
                                      .leading_rule = index != 0,
                                      .hovered = self->surface_hover == surface_button_count + index,
@@ -3142,10 +3197,10 @@ static void draw_command_guidance(const struct folio_window *_Nonnull self, HDC 
                                      .selected = self->command_keys_visible == (index == 1)};
         struct ui_part_ink ink = ui_part_draw(device, &self->palette, &part);
         SetTextColor(device, ink.text);
-        draw_utf8(
+        draw_units(
             device,
             ui_text_line(index == 0 ? UI_TEXT_HELP_TAB_COMMANDS : UI_TEXT_HELP_TAB_KEYS, language),
-            part.bounds);
+            ink.label, DT_CENTER | DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
     }
     if (command_keys(self))
     {
@@ -4548,6 +4603,8 @@ static int surface_footer_text_height(const struct folio_window *_Nonnull self, 
 
 static bool prepare_surface_metrics(struct folio_window *_Nonnull self)
 {
+    if (command_keys(self))
+        return prepare_help_metrics(self);
     if (!settings_surface(self))
         return true;
     RECT bounds = surface_frame_rect(self, UI_PART_SURFACE_CONTENT);
@@ -4727,6 +4784,7 @@ static void band_geometry(struct command_band_layout *_Nonnull layout, HDC devic
     int remaining = right - scale(base_search_button_width * 2 + 16, dpi) - left;
     bool wide = remaining >= scale(144, dpi) &&
                 layout->close.left - scale(8, dpi) - left >= scale(144, dpi);
+    layout->narrow = !wide;
     if (wide)
         band_wide_layout(layout, content, label);
     if (!wide)
@@ -4736,6 +4794,46 @@ static void band_geometry(struct command_band_layout *_Nonnull layout, HDC devic
     layout->measured_width = measured < narrow ? measured : narrow;
 }
 
+/* 通常値/下限は4logical単位、resize中の不足分はpixelのまま配分して逆行を防ぐ。 */
+static void reduce_band_spacing(int *_Nonnull spacing, int minimum, int *_Nonnull shortage)
+{
+    int available = *spacing - minimum;
+    int taken = *shortage < available ? *shortage : available;
+    *spacing -= taken;
+    *shortage -= taken;
+}
+
+static void shift_band_content(struct command_band_layout *_Nonnull layout, int shift)
+{
+    for (size_t index = 0; index < replace_input_count; ++index)
+    {
+        OffsetRect(&layout->field[index], 0, -shift);
+        OffsetRect(&layout->action[index], 0, -shift);
+    }
+    OffsetRect(&layout->label[1], 0, -shift);
+    OffsetRect(&layout->result, 0, -shift);
+}
+
+static void fit_band_height(struct command_band_layout *_Nonnull layout)
+{
+    UINT dpi = layout->dpi;
+    layout->pane_top = scale(base_pane_top, dpi);
+    layout->pane_bottom = scale(base_pane_bottom, dpi);
+    int trailing = scale(ui_part_edge, dpi);
+    int title_gap = scale(16, dpi);
+    int minimum = scale(layout->mode == COMMAND_SURFACE_REPLACE ? 32 : 76, dpi);
+    int body = layout->available_height - layout->result.bottom - trailing - layout->pane_top -
+               layout->pane_bottom;
+    int shortage = minimum > body ? minimum - body : 0;
+    reduce_band_spacing(&layout->pane_bottom, scale(8, dpi), &shortage);
+    reduce_band_spacing(&layout->pane_top, scale(8, dpi), &shortage);
+    reduce_band_spacing(&trailing, scale(8, dpi), &shortage);
+    if (layout->narrow)
+        reduce_band_spacing(&title_gap, scale(4, dpi), &shortage);
+    shift_band_content(layout, scale(16, dpi) - title_gap);
+    layout->height = layout->result.bottom + trailing;
+}
+
 static bool refresh_band_layout(struct folio_window *_Nonnull self)
 {
     if (!command_band(self))
@@ -4743,16 +4841,21 @@ static bool refresh_band_layout(struct folio_window *_Nonnull self)
     RECT pane = regions_for(self).pane;
     int width = pane.right - pane.left;
     UINT dpi = GetDpiForWindow(self->handle);
-    if (self->band.valid && self->band.width == width && self->band.dpi == dpi &&
-        self->band.font == self->mono_font && self->band.mode == self->command_surface)
+    int available = pane.bottom - pane.top - scale(base_caption_height + base_action_height, dpi);
+    if (self->band.valid && self->band.width == width && self->band.available_height == available &&
+        self->band.dpi == dpi && self->band.font == self->mono_font &&
+        self->band.mode == self->command_surface)
         return true;
     HDC device = GetDC(self->handle);
     if (device == nullptr)
         return false;
     HGDIOBJ previous = SelectObject(device, self->mono_font);
     int tracking = SetTextCharacterExtra(device, scale(base_tracking, dpi));
-    struct command_band_layout layout = {
-        .width = width, .dpi = dpi, .font = self->mono_font, .mode = self->command_surface};
+    struct command_band_layout layout = {.width = width,
+                                         .available_height = available,
+                                         .dpi = dpi,
+                                         .font = self->mono_font,
+                                         .mode = self->command_surface};
     band_geometry(&layout, device);
     bool reusable = self->band.valid && self->band.dpi == dpi &&
                     self->band.font == self->mono_font &&
@@ -4767,7 +4870,7 @@ static bool refresh_band_layout(struct folio_window *_Nonnull self)
     if (!measured)
         return false;
     layout.result.bottom = layout.result.top + layout.result_height;
-    layout.height = layout.result.bottom + scale(ui_part_edge, dpi);
+    fit_band_height(&layout);
     layout.valid = true;
     self->band = layout;
     return true;
@@ -7933,6 +8036,14 @@ static LRESULT tooltip_display(struct folio_window *_Nonnull self, LPARAM lparam
 {
     NMTTDISPINFOW *_Nonnull notice = (NMTTDISPINFOW *)lparam;
     self->tooltip_text[0] = u'\0';
+    if (notice->hdr.idFrom >= surface_tooltip_base &&
+        notice->hdr.idFrom - surface_tooltip_base < surface_button_count)
+    {
+        size_t slot = notice->hdr.idFrom - surface_tooltip_base;
+        (void)wide_units(
+            ui_text_line(surface_button_label(self, slot), folio_state_language(self->state)),
+            self->tooltip_text);
+    }
     if (notice->hdr.idFrom < sizeof accessible_controls / sizeof accessible_controls[0] &&
         main_part((enum accessible_kind)notice->hdr.idFrom))
     {
@@ -9049,7 +9160,9 @@ static bool create_command_inputs(struct folio_window *_Nonnull self)
 /* 見えていない部品の tool は空の矩形にして出さない。矩形は描画と同じ 1 本。 */
 static RECT tooltip_rect(const struct folio_window *_Nonnull self, enum accessible_kind kind)
 {
-    return accessible_visible(self, kind) ? accessible_main_rect(self, kind) : (RECT){0};
+    bool visible = self->command_surface == COMMAND_SURFACE_CLOSED &&
+                   self->native_modal_depth == 0 && accessible_visible(self, kind);
+    return visible ? accessible_main_rect(self, kind) : (RECT){0};
 }
 
 static void activate_tooltip(const struct folio_window *_Nonnull self)
@@ -9059,7 +9172,7 @@ static void activate_tooltip(const struct folio_window *_Nonnull self)
         return;
     }
     bool active =
-        !settings_surface(self) && !self->removal_running && IsWindowEnabled(self->handle);
+        self->native_modal_depth == 0 && !self->removal_running && IsWindowEnabled(self->handle);
     if (!active)
     {
         SendMessageW(self->tooltip, TTM_POP, 0, 0);
@@ -9096,12 +9209,49 @@ static TOOLINFOW drawer_tool(const struct folio_window *_Nonnull self, char16_t 
     struct accessible_item item = {.kind = ACCESSIBLE_NEW_CATEGORY};
     struct accessible_view view = {0};
     if (drawer != nullptr && drawer_visible(self) &&
+        self->command_surface == COMMAND_SURFACE_CLOSED && self->native_modal_depth == 0 &&
         SUCCEEDED(drawer_window_accessible_read(self->drawer, &item, &view)))
     {
         tool.rect = view.bounds;
         MapWindowPoints(nullptr, drawer, (POINT *)&tool.rect, 2);
     }
     return tool;
+}
+
+static TOOLINFOW surface_tool(const struct folio_window *_Nonnull self, size_t slot)
+{
+    RECT rect = {0};
+    if (self->native_modal_depth == 0 && surface_button_visible(self, slot))
+        rect = accessible_surface_button_rect(self, slot);
+    return (TOOLINFOW){.cbSize = tooltip_info_size,
+                       .uFlags = TTF_SUBCLASS,
+                       .hwnd = self->command_layer,
+                       .uId = surface_tooltip_base + slot,
+                       .rect = rect,
+                       .lpszText = LPSTR_TEXTCALLBACKW};
+}
+
+static void refresh_surface_tooltip_rects(const struct folio_window *_Nonnull self)
+{
+    if (self->tooltip == nullptr)
+        return;
+    SendMessageW(self->tooltip, TTM_POP, 0, 0);
+    for (size_t slot = 0; slot < surface_button_count; ++slot)
+    {
+        TOOLINFOW tool = surface_tool(self, slot);
+        SendMessageW(self->tooltip, TTM_NEWTOOLRECTW, 0, (LPARAM)&tool);
+    }
+}
+
+static bool create_surface_tooltips(const struct folio_window *_Nonnull self)
+{
+    for (size_t slot = 0; slot < surface_button_count; ++slot)
+    {
+        TOOLINFOW tool = surface_tool(self, slot);
+        if (!SendMessageW(self->tooltip, TTM_ADDTOOLW, 0, (LPARAM)&tool))
+            return false;
+    }
+    return true;
 }
 
 static void refresh_tooltip_rects(const struct folio_window *_Nonnull self)
@@ -9165,7 +9315,7 @@ static bool create_tooltip(struct folio_window *_Nonnull self)
     }
     refresh_tooltip_style(self);
     activate_tooltip(self);
-    return true;
+    return create_surface_tooltips(self);
 }
 
 static bool create_settings_backdrop(struct folio_window *_Nonnull self)
@@ -9483,6 +9633,8 @@ static LRESULT CALLBACK command_layer_procedure(HWND window, UINT message, WPARA
         return 0;
     switch (message)
     {
+    case WM_NOTIFY:
+        return on_notify(self, lparam);
     case WM_GETOBJECT:
         return accessibility_host_object(self->accessibility, ACCESSIBLE_SURFACE, wparam, lparam);
     case WM_PAINT:
@@ -10404,7 +10556,7 @@ static enum ui_text surface_title(const struct folio_window *_Nonnull self)
     case COMMAND_SURFACE_EX:
         return UI_TEXT_ACCESSIBLE_COMMAND;
     case COMMAND_SURFACE_PALETTE:
-        return UI_TEXT_ACCESSIBLE_PALETTE;
+        return UI_TEXT_COMMAND_HELP;
     case COMMAND_SURFACE_SEARCH:
         return UI_TEXT_COMMAND_FIND;
     case COMMAND_SURFACE_REPLACE:
@@ -10508,12 +10660,12 @@ static bool surface_button_visible(const struct folio_window *_Nonnull self, siz
 static HRESULT surface_root_child(const struct folio_window *_Nonnull self, size_t index,
                                   struct accessible_item *_Nonnull out)
 {
-    const enum accessible_kind kinds[] = {ACCESSIBLE_SURFACE_LIST, ACCESSIBLE_SURFACE_STATUS,
-                                          ACCESSIBLE_SURFACE_TABS};
+    const enum accessible_kind kinds[] = {ACCESSIBLE_SURFACE_TABS, ACCESSIBLE_SURFACE_LIST,
+                                          ACCESSIBLE_SURFACE_STATUS};
     if (index < sizeof kinds / sizeof kinds[0])
     {
-        bool visible[] = {surface_has_list(self), true,
-                          self->command_surface == COMMAND_SURFACE_PALETTE};
+        bool visible[] = {self->command_surface == COMMAND_SURFACE_PALETTE, surface_has_list(self),
+                          true};
         *out = surface_item(self, kinds[index], 0);
         return visible[index] ? S_OK : S_FALSE;
     }
@@ -10653,7 +10805,7 @@ static size_t surface_navigation_ordinal(const struct folio_window *_Nonnull sel
     if (surface_parent(item) == ACCESSIBLE_SURFACE_TABS)
         return item.slot;
     if (item.kind == ACCESSIBLE_SURFACE_TABS)
-        return 2;
+        return 0;
     if (surface_parent(item) == ACCESSIBLE_SURFACE_LIST)
     {
         if (self->command_surface != COMMAND_SURFACE_PALETTE)
@@ -10661,9 +10813,9 @@ static size_t surface_navigation_ordinal(const struct folio_window *_Nonnull sel
         return surface_palette_ordinal(self, item);
     }
     if (item.kind == ACCESSIBLE_SURFACE_LIST)
-        return 0;
-    if (item.kind == ACCESSIBLE_SURFACE_STATUS)
         return 1;
+    if (item.kind == ACCESSIBLE_SURFACE_STATUS)
+        return 2;
     return item.slot + 3 + (item.kind == ACCESSIBLE_SURFACE_HELP ? surface_button_count : 0);
 }
 
