@@ -417,3 +417,11 @@ ADR0035のV4不採用は既定釦styleを書き換えてowner-drawを壊す経�
   H1のRTFは22pt・段前14pt・段後6pt。実OS120DPIで元の行送り103pxとbaseline74pxを観測したが、これだけで可視文字の必要高を103pxと断定しない。
   完成候補で実RichEditの位置と画像を照合し、狭幅SEARCHの大見出し・REPLACEの編集行、理由全文、入力、帯と本文の非重複を確認する。
   段前/段後の属性は[MicrosoftのPARAFORMAT2の定義](https://learn.microsoft.com/en-us/windows/win32/api/richedit/ns-richedit-paraformat2)、位置計測は[GetPointの定義](https://learn.microsoft.com/en-us/windows/win32/api/tom/nf-tom-itextrange-getpoint)に従う。
+
+### native面から呼出元へのfocus復帰（2026-10-24）
+
+実製品の設定保存失敗と本文保存失敗で、native失敗箱をEsc/×で閉じた後にCommandLayer/本文へfocusが戻らず、rootまたはNULLになる条件を確認した。
+DialogBoxのowner有効化だけを、アプリ内の元の欄への復帰の保証にしない。
+`folio_window`の名前入力/失敗箱wrapperが呼出前のfocus HWNDを同期呼出しのlocal値として捕捉し、暗幕と現在の面を復元した後に既存`restore_valid_focus`へ渡す。
+準備失敗・復元失敗の追加通知を含め、最後のnative面が戻ってから復帰する。可視性/有効性/現在の区画の判断は既存経路へ合流し、永続的な第2のfocus状態や個々の設定への修復経路を足さない。
+実製品で本文/設定/Exからの取消・保存失敗を確認し、設定へ戻った後のEscが元の本文へ戻ることも確認する。
