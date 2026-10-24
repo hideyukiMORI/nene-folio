@@ -1534,6 +1534,7 @@ static void arrange_command_contents(struct folio_window *_Nonnull self)
     if (self->native_modal_depth == 0)
         BringWindowToTop(self->command_layer);
     refresh_surface_tooltip_rects(self);
+    redraw_command_layer(self);
 }
 
 /* 深さはDialogBoxの前後の再入も塞ぐ。準備失敗でもendまでは深さを保持する。 */
