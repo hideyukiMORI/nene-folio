@@ -13,6 +13,7 @@ struct text_wrap
     RECT bounds;
     int tracking;
     bool paint;
+    int *_Nullable maximum_line_height;
 };
 
 #endif

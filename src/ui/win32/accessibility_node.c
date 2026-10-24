@@ -48,7 +48,8 @@ static bool has_invoke(enum accessible_kind kind)
 static bool has_selection(enum accessible_kind kind)
 {
     return kind == ACCESSIBLE_TREE || kind == ACCESSIBLE_LAYOUT_GROUP ||
-           kind == ACCESSIBLE_MODE_GROUP || kind == ACCESSIBLE_SURFACE_LIST;
+           kind == ACCESSIBLE_MODE_GROUP || kind == ACCESSIBLE_SURFACE_LIST ||
+           kind == ACCESSIBLE_SURFACE_TABS;
 }
 
 static bool has_selection_item(enum accessible_kind kind)
@@ -56,7 +57,8 @@ static bool has_selection_item(enum accessible_kind kind)
     return kind == ACCESSIBLE_NOTE || kind == ACCESSIBLE_LAYOUT_DRAWER ||
            kind == ACCESSIBLE_LAYOUT_BOTH || kind == ACCESSIBLE_LAYOUT_NOTE ||
            kind == ACCESSIBLE_VIEW || kind == ACCESSIBLE_EDIT ||
-           kind == ACCESSIBLE_SURFACE_CHOICE || kind == ACCESSIBLE_SURFACE_LANGUAGE;
+           kind == ACCESSIBLE_SURFACE_CHOICE || kind == ACCESSIBLE_SURFACE_LANGUAGE ||
+           kind == ACCESSIBLE_SURFACE_TAB;
 }
 
 static bool has_scroll(enum accessible_kind kind)
@@ -343,6 +345,8 @@ static const CONTROLTYPEID control_types[] = {
     [ACCESSIBLE_NOTICE] = UIA_StatusBarControlTypeId,
     [ACCESSIBLE_GUIDE] = UIA_TextControlTypeId,
     [ACCESSIBLE_SURFACE] = UIA_PaneControlTypeId,
+    [ACCESSIBLE_SURFACE_TABS] = UIA_GroupControlTypeId,
+    [ACCESSIBLE_SURFACE_TAB] = UIA_RadioButtonControlTypeId,
     [ACCESSIBLE_SURFACE_LIST] = UIA_ListControlTypeId,
     [ACCESSIBLE_SURFACE_CHOICE] = UIA_ListItemControlTypeId,
     [ACCESSIBLE_SURFACE_LANGUAGE] = UIA_RadioButtonControlTypeId,
@@ -770,7 +774,10 @@ static HRESULT STDMETHODCALLTYPE selection_required(ISelectionProvider *_Nonnull
 static struct accessible_item selection_container(struct accessible_item item)
 {
     if (accessible_item_surface(item))
-        return (struct accessible_item){.kind = ACCESSIBLE_SURFACE_LIST, .revision = item.revision};
+        return (struct accessible_item){.kind = item.kind == ACCESSIBLE_SURFACE_TAB
+                                                    ? ACCESSIBLE_SURFACE_TABS
+                                                    : ACCESSIBLE_SURFACE_LIST,
+                                        .revision = item.revision};
     enum accessible_kind kind = item.kind;
     if (kind == ACCESSIBLE_VIEW || kind == ACCESSIBLE_EDIT)
     {

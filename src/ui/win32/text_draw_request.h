@@ -9,6 +9,7 @@ struct text_draw_request
     RECT bounds;
     UINT format;
     bool wrapped;
+    int *_Nullable maximum_line_height;
 };
 
 #endif

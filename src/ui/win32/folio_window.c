@@ -9,6 +9,7 @@
 #include "category_name.h"
 #include "command_band_layout.h"
 #include "command_row.h"
+#include "command_surface_metrics.h"
 #include "command_surface_mode.h"
 #include "drawer_menu_item.h"
 #include "drawer_window.h"
@@ -59,6 +60,7 @@
 #include <windowsx.h>
 
 constexpr size_t surface_button_count = 8;
+constexpr size_t surface_pointer_count = surface_button_count + 2;
 /* 1 回の描画・測定で UTF-16 へ写せる単位数（ADR 0030 の決定 5）。表の 1 行（ui_text_unit_limit）・
  * 状態の 1 行（replace_status_capacity）・ノート名（255 バイト）のどれもここに収まる。
  * 収まらなければ何も描かない（描画のたびの確保をやめる代わりの上限）。 */
@@ -144,10 +146,11 @@ struct folio_window
     size_t command_first;
     bool command_keys_visible;
     /* ヘルプが箱に入りきらないときに送り出す先頭の行（PgUp / PgDn・#69）。 */
-    size_t command_help_first;
+    size_t command_help_scroll;
     bool command_composing;
     bool command_unknown;
     enum pane_notice notice;
+    struct command_surface_metrics settings_metrics;
     bool removal_running;
     enum session_phase session_phase;
     HWND _Nullable session_return_focus;
@@ -192,6 +195,23 @@ static const enum ui_text command_shortcuts[] = {
     UI_TEXT_HELP_DELETE_CATEGORY, UI_TEXT_HELP_RENAME_CATEGORY, UI_TEXT_HELP_ACCESSIBILITY,
     UI_TEXT_HELP_RECYCLE,
 };
+
+static const struct
+{
+    enum folio_command_scope scope;
+    enum ui_text label;
+} command_groups[] = {
+    {FOLIO_COMMAND_SCOPE_NOTE, UI_TEXT_HELP_GROUP_NOTE},
+    {FOLIO_COMMAND_SCOPE_CATEGORY, UI_TEXT_HELP_GROUP_CATEGORY},
+    {FOLIO_COMMAND_SCOPE_LAYOUT, UI_TEXT_HELP_GROUP_LAYOUT},
+    {FOLIO_COMMAND_SCOPE_APP, UI_TEXT_HELP_GROUP_APP},
+    {FOLIO_COMMAND_SCOPE_QUIT, UI_TEXT_HELP_GROUP_QUIT},
+};
+
+static size_t command_group_count(void)
+{
+    return sizeof command_groups / sizeof command_groups[0];
+}
 
 /* 設定画面の行（ADR 0031 の決定 7・ADR 0032 の決定 7）。見出しと選択肢を**種別で**持ち、
  * value はその種別の列挙の値（THEME なら folio_theme_choice・LANGUAGE なら folio_language・
@@ -272,6 +292,8 @@ static const struct
     [ACCESSIBLE_NOTICE] = {ACCESSIBLE_WINDOW, UI_TEXT_EMPTY, false, UI_TEXT_EMPTY},
     [ACCESSIBLE_GUIDE] = {ACCESSIBLE_WINDOW, UI_TEXT_EMPTY_HEADING, false, UI_TEXT_EMPTY},
     [ACCESSIBLE_SURFACE] = {ACCESSIBLE_WINDOW, UI_TEXT_EMPTY, false, UI_TEXT_EMPTY},
+    [ACCESSIBLE_SURFACE_TABS] = {ACCESSIBLE_SURFACE, UI_TEXT_COMMAND_HELP, false, UI_TEXT_EMPTY},
+    [ACCESSIBLE_SURFACE_TAB] = {ACCESSIBLE_SURFACE_TABS, UI_TEXT_EMPTY, false, UI_TEXT_EMPTY},
     [ACCESSIBLE_SURFACE_LIST] = {ACCESSIBLE_SURFACE, UI_TEXT_EMPTY, false, UI_TEXT_EMPTY},
     [ACCESSIBLE_SURFACE_CHOICE] = {ACCESSIBLE_SURFACE_LIST, UI_TEXT_EMPTY, true, UI_TEXT_EMPTY},
     [ACCESSIBLE_SURFACE_LANGUAGE] = {ACCESSIBLE_SURFACE_LIST, UI_TEXT_EMPTY, true, UI_TEXT_EMPTY},
@@ -411,21 +433,16 @@ constexpr int base_breadcrumb_tip = 10;
 constexpr int base_breadcrumb_compact_width = 320;
 constexpr int base_breadcrumb_compact_padding = 4;
 constexpr int base_breadcrumb_compact_tip = 6;
-constexpr int base_close_size = 24;
 constexpr int base_close_margin = 16;
 constexpr int base_command_gap = 8;
 constexpr int base_command_input_height = 28;
 constexpr int base_command_palette_width = 460;
-constexpr int base_command_palette_margin = 32;
 constexpr int base_command_palette_top = 76;
 constexpr int base_command_palette_compact_top = 40;
 constexpr int base_command_palette_padding = 16;
 constexpr int base_command_row_height = 32;
 constexpr int base_command_status_height = 24;
 constexpr int base_command_help_row_height = 14;
-constexpr int base_command_palette_edge = 4;
-/* ヘルプを出しても操作の一覧に残す行数。最小寸法（560×360）でここが 0 になっていた（#69）。 */
-constexpr int command_row_floor = 3;
 /* 札の右に出す「n/m」の幅と、それを組む領域（数字と `/` だけ・翻訳の対象を増やさない・#69）。 */
 constexpr int base_command_pages_width = 44;
 constexpr size_t command_pages_capacity = 16;
@@ -469,15 +486,11 @@ constexpr int base_settings_mark_box = 24;
 constexpr int base_settings_width = 480;
 constexpr int base_settings_height = 384;
 constexpr int base_theme_height = 560;
-constexpr int base_theme_row_height = 48;
-constexpr int base_theme_choice_height = 56;
-constexpr int base_theme_footer_height = 72;
-constexpr int base_settings_header = 52;
-constexpr int base_settings_footer = 92;
-constexpr int base_settings_notice = 64;
+constexpr int base_theme_row_height = 32;
+constexpr int base_theme_choice_height = 32;
 constexpr int base_settings_padding = 16;
 constexpr int base_settings_label = 24;
-constexpr int base_settings_item_height = 36;
+constexpr int base_settings_item_height = 32;
 constexpr int base_settings_item_gap = 8;
 constexpr int base_settings_group_gap = 20;
 
@@ -623,6 +636,7 @@ static void show_settings_surface(struct folio_window *_Nonnull self,
                                   const char *_Nonnull argument);
 static void command_not_found(struct folio_window *_Nonnull self);
 static void show_command_palette(struct folio_window *_Nonnull self);
+static void move_command_help(struct folio_window *_Nonnull self, WPARAM key);
 static void move_command_selection(struct folio_window *_Nonnull self, WPARAM key);
 static bool settings_navigate(struct folio_window *_Nonnull self, WPARAM key);
 static size_t settings_initial_row(const struct folio_window *_Nonnull self);
@@ -667,6 +681,11 @@ static struct folio_regions regions_for(const struct folio_window *_Nonnull self
         break;
     }
     return regions;
+}
+
+static bool command_keys(const struct folio_window *_Nonnull self)
+{
+    return self->command_surface == COMMAND_SURFACE_PALETTE && self->command_keys_visible;
 }
 
 static bool settings_surface(const struct folio_window *_Nonnull self)
@@ -799,7 +818,7 @@ static HWND _Nullable command_focus_target(const struct folio_window *_Nonnull s
     {
         return self->replace_inputs[0];
     }
-    if (command_surface_listing(self->command_surface))
+    if (command_surface_listing(self->command_surface) || command_keys(self))
     {
         return self->command_layer;
     }
@@ -846,6 +865,7 @@ static int measure_digit(const struct folio_window *_Nonnull self, UINT dpi)
 static void refresh_font(struct folio_window *_Nonnull self, UINT dpi)
 {
     self->band.valid = false;
+    self->settings_metrics.width = 0;
     if (self->mono_font != nullptr)
     {
         DeleteObject(self->mono_font);
@@ -912,9 +932,11 @@ static RECT command_palette_rect(const struct folio_window *_Nonnull self)
     RECT client;
     GetClientRect(self->handle, &client);
     UINT dpi = GetDpiForWindow(self->handle);
-    int margin = scale(base_command_palette_margin, dpi);
+    int margin = scale(ui_part_edge, dpi);
     int available = client.right - margin * 2;
-    int width = scale(base_command_palette_width, dpi);
+    int width = scale(self->command_surface == COMMAND_SURFACE_HISTORY ? base_settings_width
+                                                                       : base_command_palette_width,
+                      dpi);
     if (width > available)
     {
         width = available;
@@ -927,7 +949,7 @@ static RECT command_palette_rect(const struct folio_window *_Nonnull self)
                                                     : base_command_palette_top,
                     dpi);
     int available_height =
-        client.bottom - pane_notice_height(self) - top - scale(base_command_palette_edge, dpi);
+        client.bottom - pane_notice_height(self) - top - scale(ui_part_edge, dpi);
     if (height > available_height)
     {
         height = available_height;
@@ -986,6 +1008,16 @@ static RECT search_button_rect(const struct folio_window *_Nonnull self, size_t 
     return self->band.action[index];
 }
 
+static bool prepare_surface_metrics(struct folio_window *_Nonnull self);
+
+static RECT surface_frame_rect(const struct folio_window *_Nonnull self,
+                               enum ui_part_surface_region region)
+{
+    RECT bounds;
+    GetClientRect(self->command_layer, &bounds);
+    return ui_part_surface_rect(bounds, GetDpiForWindow(self->handle), region);
+}
+
 static RECT settings_dialog_rect(const struct folio_window *_Nonnull self)
 {
     RECT client;
@@ -1019,17 +1051,11 @@ static bool settings_has_notice(const struct folio_window *_Nonnull self)
 
 static RECT settings_content_rect(const struct folio_window *_Nonnull self)
 {
-    RECT bounds;
-    GetClientRect(self->command_layer, &bounds);
-    UINT dpi = GetDpiForWindow(self->handle);
-    int padding = scale(base_settings_padding, dpi);
-    int footer = base_settings_footer + (settings_has_notice(self) ? base_settings_notice : 0);
-    if (bounds.right - padding * 2 < scale(360, dpi))
-    {
-        footer += 24;
-    }
-    return (RECT){padding, scale(base_settings_header, dpi), bounds.right - padding,
-                  bounds.bottom - scale(footer, dpi)};
+    RECT content = surface_frame_rect(self, UI_PART_SURFACE_CONTENT);
+    content.bottom -= self->settings_metrics.footer + scale(8, GetDpiForWindow(self->handle));
+    if (content.bottom < content.top)
+        content.bottom = content.top;
+    return content;
 }
 
 static int settings_columns(const struct folio_window *_Nonnull self)
@@ -1106,12 +1132,7 @@ static void reveal_settings_selection(struct folio_window *_Nonnull self)
 
 static RECT settings_close_rect(const struct folio_window *_Nonnull self)
 {
-    RECT bounds;
-    GetClientRect(self->command_layer, &bounds);
-    UINT dpi = GetDpiForWindow(self->handle);
-    int edge = scale(base_settings_padding, dpi);
-    int box = scale(base_close_size, dpi);
-    return (RECT){bounds.right - edge - box, edge, bounds.right - edge, edge + box};
+    return surface_frame_rect(self, UI_PART_SURFACE_CLOSE);
 }
 
 static RECT command_surface_rect(const struct folio_window *_Nonnull self)
@@ -1141,23 +1162,18 @@ static RECT command_surface_rect(const struct folio_window *_Nonnull self)
 
 static RECT theme_input_rect(const struct folio_window *_Nonnull self)
 {
-    RECT client;
-    GetClientRect(self->command_layer, &client);
+    RECT input = surface_frame_rect(self, UI_PART_SURFACE_CONTENT);
     UINT dpi = GetDpiForWindow(self->handle);
-    int padding = scale(base_settings_padding, dpi);
-    int top = scale(base_settings_header + 20, dpi);
-    return (RECT){padding, top, client.right - padding, top + scale(28, dpi)};
+    input.top += scale(20, dpi);
+    input.bottom = input.top + scale(ui_part_height, dpi);
+    return input;
 }
 
 static RECT theme_footer_rect(const struct folio_window *_Nonnull self)
 {
-    RECT client;
-    GetClientRect(self->command_layer, &client);
-    UINT dpi = GetDpiForWindow(self->handle);
-    int padding = scale(base_settings_padding, dpi);
-    int height = base_theme_footer_height + (settings_has_notice(self) ? base_settings_notice : 0);
-    return (RECT){padding, client.bottom - scale(height, dpi), client.right - padding,
-                  client.bottom - scale(8, dpi)};
+    RECT bounds = surface_frame_rect(self, UI_PART_SURFACE_CONTENT);
+    bounds.top = bounds.bottom - self->settings_metrics.footer;
+    return bounds;
 }
 
 static RECT theme_rows_rect(const struct folio_window *_Nonnull self)
@@ -1174,10 +1190,21 @@ static RECT theme_rows_rect(const struct folio_window *_Nonnull self)
 
 static RECT theme_back_rect(const struct folio_window *_Nonnull self)
 {
-    RECT close = settings_close_rect(self);
-    int padding = scale(base_settings_padding, GetDpiForWindow(self->handle));
-    return (RECT){padding, close.top, padding + scale(48, GetDpiForWindow(self->handle)),
-                  close.bottom};
+    RECT back = surface_frame_rect(self, UI_PART_SURFACE_CONTENT);
+    back.top = back.bottom - scale(ui_part_height, GetDpiForWindow(self->handle));
+    back.right = back.left + scale(100, GetDpiForWindow(self->handle));
+    return back;
+}
+
+static RECT command_tab_rect(const struct folio_window *_Nonnull self, size_t slot)
+{
+    RECT tab = surface_frame_rect(self, UI_PART_SURFACE_CONTENT);
+    UINT dpi = GetDpiForWindow(self->handle);
+    int width = scale(88, dpi);
+    tab.left += (int)slot * width;
+    tab.right = tab.left + width;
+    tab.bottom = tab.top + scale(ui_part_height, dpi);
+    return tab;
 }
 
 static RECT command_input_rect(const struct folio_window *_Nonnull self)
@@ -1193,8 +1220,14 @@ static RECT command_input_rect(const struct folio_window *_Nonnull self)
     {
         return self->band.field[0];
     }
-    if (self->command_surface == COMMAND_SURFACE_PALETTE ||
-        command_surface_listing(self->command_surface))
+    if (self->command_surface == COMMAND_SURFACE_PALETTE)
+    {
+        RECT input = surface_frame_rect(self, UI_PART_SURFACE_CONTENT);
+        input.top = command_tab_rect(self, 0).bottom + scale(8, dpi);
+        input.bottom = input.top + scale(base_command_input_height, dpi);
+        return input;
+    }
+    if (command_surface_listing(self->command_surface))
     {
         int padding = scale(base_command_palette_padding, dpi);
         int top = padding + scale(base_command_help_row_height * 2, dpi);
@@ -1222,57 +1255,44 @@ static RECT surface_button_rect(const struct folio_window *_Nonnull self, size_t
 
 static RECT command_body_rect(const struct folio_window *_Nonnull self)
 {
-    RECT bounds;
-    GetClientRect(self->command_layer, &bounds);
+    RECT body = surface_frame_rect(self, UI_PART_SURFACE_CONTENT);
     UINT dpi = GetDpiForWindow(self->handle);
-    RECT body = {bounds.left, command_input_rect(self).bottom + scale(base_command_gap, dpi),
-                 bounds.right,
-                 bounds.bottom - scale(base_command_status_height * 2 + base_command_gap, dpi)};
+    body.top = command_keys(self) ? command_tab_rect(self, 0).bottom + scale(8, dpi)
+                                  : command_input_rect(self).bottom + scale(8, dpi);
+    body.bottom -= scale(base_command_status_height + 8, dpi);
     if (body.bottom < body.top)
-    {
         body.bottom = body.top;
-    }
     return body;
 }
 
 /* いま出せるヘルプの行数。操作の一覧に command_row_floor 行を残し、余りをヘルプへ回す。
  * 最小寸法（560×360 と 840×540）では操作 3 行・ヘルプ 6 行になる（#69）。 */
+static RECT command_help_geometry(const struct folio_window *_Nonnull self, size_t slot,
+                                  int *_Nullable maximum_line_height);
+static int command_help_total(const struct folio_window *_Nonnull self);
+
 static int command_visible_help(const struct folio_window *_Nonnull self)
 {
-    int wanted = command_help_rows(self);
-    if (wanted == 0)
-    {
+    if (!command_keys(self))
         return 0;
-    }
-    UINT dpi = GetDpiForWindow(self->handle);
-    RECT body = command_body_rect(self);
-    int room = body.bottom - body.top - scale(base_command_row_height, dpi) * command_row_floor;
-    int fits = room < 0 ? 0 : room / scale(base_command_help_row_height, dpi);
-    return fits < wanted ? fits : wanted;
+    RECT area = command_body_rect(self);
+    return area.bottom - area.top;
 }
 
-/* 送り出すヘルプの先頭の行。窓が広がって全部入るようになったら先頭へ戻る（#69）。 */
+/* 累積pixel位置を現在のviewportへ丸める。全内容が入る場合は先頭へ戻す。 */
 static size_t command_help_offset(const struct folio_window *_Nonnull self)
 {
-    size_t visible = (size_t)command_visible_help(self);
-    size_t total = (size_t)command_help_rows(self);
-    if (visible == 0 || visible >= total)
-    {
-        return 0;
-    }
-    size_t last = total - visible;
-    return self->command_help_first > last ? last : self->command_help_first;
+    int total = command_help_total(self);
+    int visible = command_visible_help(self);
+    size_t limit = total > visible ? (size_t)(total - visible) : 0;
+    return self->command_help_scroll < limit ? self->command_help_scroll : limit;
 }
 
 static RECT command_toggle_rect(const struct folio_window *_Nonnull self)
 {
-    RECT bounds;
-    GetClientRect(self->command_layer, &bounds);
-    UINT dpi = GetDpiForWindow(self->handle);
-    int keys = scale(base_command_help_row_height, dpi) * command_visible_help(self);
-    int inset = scale(base_command_palette_padding, dpi);
-    int top = command_body_rect(self).bottom - keys;
-    return (RECT){inset, top, bounds.right - inset, top + scale(base_command_status_height, dpi)};
+    RECT bounds = surface_frame_rect(self, UI_PART_SURFACE_CONTENT);
+    bounds.top = bounds.bottom - scale(base_command_status_height, GetDpiForWindow(self->handle));
+    return bounds;
 }
 
 static RECT command_rows_rect(const struct folio_window *_Nonnull self)
@@ -1288,10 +1308,16 @@ static RECT command_rows_rect(const struct folio_window *_Nonnull self)
     {
         return theme_rows_rect(self);
     }
+    if (self->command_surface == COMMAND_SURFACE_HISTORY)
+    {
+        RECT rows = surface_frame_rect(self, UI_PART_SURFACE_CONTENT);
+        rows.bottom -= scale(base_command_status_height * 2, GetDpiForWindow(self->handle));
+        return rows;
+    }
     RECT bounds = command_input_rect(self);
     UINT dpi = GetDpiForWindow(self->handle);
     bounds.top = command_body_rect(self).top;
-    bounds.bottom = command_toggle_rect(self).top;
+    bounds.bottom = command_body_rect(self).bottom;
     int row = scale(base_command_row_height, dpi);
     if (bounds.bottom < bounds.top)
     {
@@ -1301,10 +1327,15 @@ static RECT command_rows_rect(const struct folio_window *_Nonnull self)
     return bounds;
 }
 
+static size_t palette_visible_count(const struct folio_window *_Nonnull self);
+static void reveal_palette_selection(struct folio_window *_Nonnull self);
+
 static size_t command_visible_rows(const struct folio_window *_Nonnull self)
 {
     if (self->command_surface == COMMAND_SURFACE_MENU)
         return menu_visible_count(self);
+    if (self->command_surface == COMMAND_SURFACE_PALETTE)
+        return palette_visible_count(self);
 
     RECT rows = command_rows_rect(self);
     int height = self->command_surface == COMMAND_SURFACE_THEMES ? base_theme_row_height
@@ -1314,6 +1345,11 @@ static size_t command_visible_rows(const struct folio_window *_Nonnull self)
 
 static void reveal_command_selection(struct folio_window *_Nonnull self)
 {
+    if (self->command_surface == COMMAND_SURFACE_PALETTE)
+    {
+        reveal_palette_selection(self);
+        return;
+    }
     if (self->command_surface == COMMAND_SURFACE_MENU)
     {
         menu_reveal(self);
@@ -1443,6 +1479,17 @@ static void enable_surface_background(const struct folio_window *_Nonnull self)
 }
 
 /* 配置本体は通常更新とnotice更新が共有する。暗幕はnoticeの高さに依存しない。 */
+static void arrange_surface_selection(struct folio_window *_Nonnull self)
+{
+    if (self->command_surface == COMMAND_SURFACE_MENU || command_keys(self))
+        return;
+    if (settings_surface(self) || command_surface_listing(self->command_surface))
+        self->command_first = 0;
+    if (self->command_surface == COMMAND_SURFACE_PALETTE || settings_surface(self) ||
+        command_surface_listing(self->command_surface))
+        reveal_command_selection(self);
+}
+
 static void arrange_command_contents(struct folio_window *_Nonnull self)
 {
     enable_surface_background(self);
@@ -1458,17 +1505,13 @@ static void arrange_command_contents(struct folio_window *_Nonnull self)
     RECT layer = command_surface_rect(self);
     MoveWindow(self->command_layer, layer.left, layer.top, layer.right - layer.left,
                layer.bottom - layer.top, TRUE);
+    if (!prepare_surface_metrics(self))
+        self->command_failure = FOLIO_STATE_OUT_OF_MEMORY;
     place_field(self->command_input, command_input_rect(self), 0);
-    if (self->command_surface == COMMAND_SURFACE_PALETTE || settings_surface(self) ||
-        command_surface_listing(self->command_surface))
-    {
-        if (self->command_surface != COMMAND_SURFACE_MENU)
-            self->command_first = 0;
-        reveal_command_selection(self);
-    }
+    arrange_surface_selection(self);
     arrange_replace_inputs(self);
     /* 置換は 2 つの欄を使い、設定と履歴は欄を持たないのでどれも隠す。 */
-    bool hidden = self->command_surface == COMMAND_SURFACE_REPLACE ||
+    bool hidden = self->command_surface == COMMAND_SURFACE_REPLACE || command_keys(self) ||
                   command_surface_listing(self->command_surface);
     ShowWindow(self->command_input, hidden ? SW_HIDE : SW_SHOW);
     ShowWindow(self->command_layer, SW_SHOW);
@@ -1915,6 +1958,8 @@ static int wrapped_units(const struct text_wrap *_Nonnull text)
         int line = wrapped_line(text, start, stop, height);
         if (line <= 0)
             return 0;
+        if (text->maximum_line_height != nullptr && line > *text->maximum_line_height)
+            *text->maximum_line_height = line;
         height += line;
         start = wrap_advance(text, stop, newline);
     }
@@ -1937,7 +1982,8 @@ static int draw_text(HDC device, const char *_Nonnull text,
                              .count = count,
                              .bounds = request->bounds,
                              .tracking = tracking == tracking_unavailable ? 0 : tracking,
-                             .paint = (request->format & DT_CALCRECT) == 0};
+                             .paint = (request->format & DT_CALCRECT) == 0,
+                             .maximum_line_height = request->maximum_line_height};
     RECT bounds = request->bounds;
     int height = request->wrapped ? wrapped_units(&wrap)
                                   : DrawTextW(device, units, count, &bounds, request->format);
@@ -2474,26 +2520,66 @@ static enum utf8_text_outcome command_query(const struct folio_window *_Nonnull 
     return utf8_text_create((const char16_t *)units, count > 0 ? (size_t)count : 0, out);
 }
 
-static bool command_at_query(const struct utf8_text *_Nonnull query, size_t wanted,
-                             enum folio_language language, enum folio_command *_Nonnull out)
+static size_t command_group_size(size_t group)
 {
-    size_t visible = 0;
+    size_t count = 0;
     for (size_t index = 0; index < folio_command_count(); ++index)
     {
         enum folio_command command = folio_command_at(index);
-        /* 引数を渡せない面なので、語を要る Ex の文法は出さない（ADR 0026 の決定 8 の補正）。 */
+        if (folio_command_listed(command) &&
+            folio_command_scope(command) == command_groups[group].scope)
+            count += 1;
+    }
+    return count;
+}
+
+static bool command_group_at(size_t group, size_t wanted, enum folio_command *_Nonnull out)
+{
+    for (size_t index = 0; index < folio_command_count(); ++index)
+    {
+        enum folio_command command = folio_command_at(index);
         if (!folio_command_listed(command) ||
-            !folio_command_matches(command, utf8_text_bytes(query), utf8_text_length(query),
-                                   language))
-        {
+            folio_command_scope(command) != command_groups[group].scope)
             continue;
-        }
-        if (visible == wanted)
+        if (wanted == 0)
         {
             *out = command;
             return true;
         }
-        visible += 1;
+        wanted -= 1;
+    }
+    return false;
+}
+
+static bool command_display_at(size_t wanted, enum folio_command *_Nonnull out)
+{
+    for (size_t group = 0; group < command_group_count(); ++group)
+    {
+        size_t count = command_group_size(group);
+        if (wanted < count)
+            return command_group_at(group, wanted, out);
+        wanted -= count;
+    }
+    return false;
+}
+
+static bool command_at_query(const struct utf8_text *_Nonnull query, size_t wanted,
+                             enum folio_language language, enum folio_command *_Nonnull out)
+{
+    for (size_t index = 0; index < folio_command_listed_count(); ++index)
+    {
+        enum folio_command command = FOLIO_COMMAND_SAVE;
+        if (!command_display_at(index, &command))
+            return false;
+        if (!folio_command_matches(command, utf8_text_bytes(query), utf8_text_length(query),
+                                   language))
+            continue;
+        if (wanted == 0)
+        {
+            *out = command;
+            return true;
+        }
+        wanted -= 1;
     }
     return false;
 }
@@ -2511,6 +2597,89 @@ static size_t command_matches_count(const struct utf8_text *_Nonnull query,
         count += shown ? 1 : 0;
     }
     return count;
+}
+
+static RECT palette_candidate_rect(const struct folio_window *_Nonnull self,
+                                   const struct utf8_text *_Nonnull query, size_t first,
+                                   size_t wanted)
+{
+    RECT rows = command_rows_rect(self);
+    int height = scale(base_command_row_height, GetDpiForWindow(self->handle));
+    int top = rows.top;
+    enum folio_command previous = FOLIO_COMMAND_SAVE;
+    for (size_t index = first; index <= wanted; ++index)
+    {
+        enum folio_command command = FOLIO_COMMAND_SAVE;
+        if (!command_at_query(query, index, folio_state_language(self->state), &command))
+            return (RECT){0};
+        if (index == first || folio_command_scope(previous) != folio_command_scope(command))
+            top += height;
+        if (top + height > rows.bottom)
+            return (RECT){0};
+        if (index == wanted)
+            return (RECT){rows.left, top, rows.right, top + height};
+        previous = command;
+        top += height;
+    }
+    return (RECT){0};
+}
+
+static size_t palette_visible_count(const struct folio_window *_Nonnull self)
+{
+    struct utf8_text *_Nullable query = nullptr;
+    if (command_query(self, &query) != UTF8_TEXT_CONVERTED)
+        return 0;
+    size_t count = 0;
+    RECT row = palette_candidate_rect(self, query, self->command_first, self->command_first);
+    while (!IsRectEmpty(&row))
+    {
+        count += 1;
+        row = palette_candidate_rect(self, query, self->command_first, self->command_first + count);
+    }
+    utf8_text_destroy(query);
+    return count;
+}
+
+static size_t palette_scroll_limit(const struct folio_window *_Nonnull self, size_t count)
+{
+    if (count == 0)
+        return 0;
+    struct utf8_text *_Nullable query = nullptr;
+    if (command_query(self, &query) != UTF8_TEXT_CONVERTED)
+        return 0;
+    size_t first = 0;
+    RECT last = palette_candidate_rect(self, query, first, count - 1);
+    while (IsRectEmpty(&last) && first < count - 1)
+    {
+        first += 1;
+        last = palette_candidate_rect(self, query, first, count - 1);
+    }
+    utf8_text_destroy(query);
+    return first;
+}
+
+static void reveal_palette_selection(struct folio_window *_Nonnull self)
+{
+    struct utf8_text *_Nullable query = nullptr;
+    if (command_query(self, &query) != UTF8_TEXT_CONVERTED)
+        return;
+    if (self->command_selection < self->command_first)
+        self->command_first = self->command_selection;
+    RECT row = palette_candidate_rect(self, query, self->command_first, self->command_selection);
+    while (IsRectEmpty(&row) && self->command_first < self->command_selection)
+    {
+        self->command_first += 1;
+        row = palette_candidate_rect(self, query, self->command_first, self->command_selection);
+    }
+    utf8_text_destroy(query);
+}
+
+static size_t command_group_index(enum folio_command command)
+{
+    for (size_t index = 0; index < command_group_count(); ++index)
+        if (command_groups[index].scope == folio_command_scope(command))
+            return index;
+    return 0;
 }
 
 static int layout_command_index(enum folio_command command)
@@ -2543,18 +2712,78 @@ static void layout_phrase(const struct folio_window *_Nonnull self, size_t index
     }
 }
 
+static void command_help_text(const struct folio_window *_Nonnull self, size_t slot,
+                              char *_Nonnull out)
+{
+    size_t generic = sizeof command_shortcuts / sizeof command_shortcuts[0];
+    out[0] = '\0';
+    if (slot < generic)
+    {
+        if (folio_shortcut_help(command_shortcuts[slot], folio_state_language(self->state), out,
+                                draw_unit_limit) != UI_TEXT_FORMAT_READY)
+            out[0] = '\0';
+        return;
+    }
+    layout_phrase(self, slot - generic, UI_TEXT_LAYOUT_HELP, out);
+}
+
+static RECT command_help_geometry(const struct folio_window *_Nonnull self, size_t slot,
+                                  int *_Nullable maximum_line_height)
+{
+    RECT row = command_body_rect(self);
+    row.bottom = row.top;
+    HDC device = GetDC(self->command_layer);
+    if (device == nullptr)
+        return row;
+    HGDIOBJ previous = SelectObject(device, self->mono_font);
+    SetTextCharacterExtra(device, scale(base_tracking, GetDpiForWindow(self->handle)));
+    for (size_t index = 0; index <= slot; ++index)
+    {
+        char text[draw_unit_limit];
+        command_help_text(self, index, text);
+        row.top = row.bottom;
+        struct text_draw_request request = {.bounds = row,
+                                            .format = DT_CALCRECT,
+                                            .wrapped = true,
+                                            .maximum_line_height = maximum_line_height};
+        row.bottom += draw_text(device, text, &request) + scale(8, GetDpiForWindow(self->handle));
+    }
+    SelectObject(device, previous);
+    ReleaseDC(self->command_layer, device);
+    return row;
+}
+
+static int command_help_total(const struct folio_window *_Nonnull self)
+{
+    int count = command_help_rows(self);
+    if (count == 0)
+        return 0;
+    RECT last = command_help_geometry(self, (size_t)count - 1, nullptr);
+    return last.bottom - command_body_rect(self).top;
+}
+
+/* 実際の折返し行を一行以上重ね、ページ境界で文字行を読めなくしない。 */
+static size_t command_help_step(const struct folio_window *_Nonnull self)
+{
+    int maximum = 0;
+    int count = command_help_rows(self);
+    if (count > 0)
+        (void)command_help_geometry(self, (size_t)count - 1, &maximum);
+    int step = command_visible_help(self) - maximum;
+    return step > 0 ? (size_t)step : 1;
+}
+
 static void draw_layout_command(const struct folio_window *_Nonnull self, HDC device,
                                 struct command_row row, size_t index)
 {
     UINT dpi = GetDpiForWindow(self->handle);
     RECT line = row.bounds;
-    int padding = scale(base_command_row_padding, dpi);
-    line.left += padding;
-    line.right -= padding;
-    line.bottom = line.top + (row.bounds.bottom - row.bounds.top) / 2;
+    line.left += scale(base_command_row_padding, dpi);
+    line.right -= scale(base_command_alias_room, dpi);
     enum folio_language language = folio_state_language(self->state);
     draw_utf8(device, folio_command_label(row.command, language), line);
-    OffsetRect(&line, 0, line.bottom - line.top);
+    line.left = line.right;
+    line.right = row.bounds.right - scale(base_command_row_padding, dpi);
     draw_utf8(device, folio_shortcut_command_hint(layout_buttons[index].command, language), line);
 }
 
@@ -2826,41 +3055,25 @@ static void draw_command_status(const struct folio_window *_Nonnull self, HDC de
 static void draw_command_shortcuts(const struct folio_window *_Nonnull self, HDC device,
                                    RECT bounds)
 {
-    int rows = command_visible_help(self);
-    if (rows == 0)
-    {
+    (void)bounds;
+    if (!command_keys(self))
         return;
-    }
-    UINT dpi = GetDpiForWindow(self->handle);
-    int row_height = scale(base_command_help_row_height, dpi);
-    size_t first = command_help_offset(self);
-    bounds.bottom -= scale(base_command_status_height + base_command_gap, dpi);
-    bounds.top = bounds.bottom - row_height * rows;
-    bounds.left += scale(base_command_palette_padding, dpi);
-    bounds.right -= scale(base_command_palette_padding, dpi);
+    RECT area = command_body_rect(self);
+    int saved = SaveDC(device);
+    IntersectClipRect(device, area.left, area.top, area.right, area.bottom);
+    int offset = (int)command_help_offset(self);
     SetTextColor(device, self->palette.current_text);
-    enum folio_language language = folio_state_language(self->state);
-    size_t generic = sizeof command_shortcuts / sizeof command_shortcuts[0];
-    for (int index = 0; index < rows; ++index)
+    for (size_t index = 0; index < (size_t)command_help_rows(self); ++index)
     {
-        RECT row = {bounds.left, bounds.top, bounds.right, bounds.top + row_height};
-        size_t at = first + (size_t)index;
+        RECT row = command_help_geometry(self, index, nullptr);
+        OffsetRect(&row, 0, -offset);
+        if (row.bottom <= area.top || row.top >= area.bottom)
+            continue;
         char text[draw_unit_limit];
-        const char *line = "";
-        if (at < generic)
-        {
-            if (folio_shortcut_help(command_shortcuts[at], language, text, sizeof text) ==
-                UI_TEXT_FORMAT_READY)
-                line = text;
-        }
-        if (at >= generic)
-        {
-            layout_phrase(self, at - generic, UI_TEXT_LAYOUT_HELP, text);
-            line = text;
-        }
-        draw_utf8(device, line, row);
-        bounds.top = row.bottom;
+        command_help_text(self, index, text);
+        (void)wrapped_text(device, text, row, true);
     }
+    RestoreDC(device, saved);
 }
 
 static RECT command_previous_rect(const struct folio_window *_Nonnull self)
@@ -2891,101 +3104,85 @@ static RECT command_pages_rect(const struct folio_window *_Nonnull self)
 static void draw_command_pages(const struct folio_window *_Nonnull self, HDC device)
 {
     size_t visible = (size_t)command_visible_help(self);
-    size_t total = (size_t)command_help_rows(self);
-    if (visible == 0 || visible >= total)
-    {
+    size_t total = (size_t)command_help_total(self);
+    if (visible == 0 || total <= visible)
         return;
-    }
+    size_t step = command_help_step(self);
+    size_t limit = total - visible;
     char line[command_pages_capacity];
-    /* 最後の送りは last に丸まるので切り上げで数える（#266）。 */
     struct ui_text_request request = {.id = UI_TEXT_STATUS_PALETTE_PAGES,
                                       .language = folio_state_language(self->state),
-                                      .k = (command_help_offset(self) + visible - 1) / visible + 1,
-                                      .n = (total + visible - 1) / visible};
-    if (ui_text_format(&request, line, command_pages_capacity) != UI_TEXT_FORMAT_READY)
+                                      .k = (command_help_offset(self) + step - 1) / step + 1,
+                                      .n = (limit + step - 1) / step + 1};
+    if (ui_text_format(&request, line, sizeof line) == UI_TEXT_FORMAT_READY)
     {
-        return;
+        SetTextColor(device, self->palette.current_text);
+        draw_utf8(device, line, command_pages_rect(self));
     }
-    SetTextColor(device, self->palette.current_text);
-    draw_utf8(device, line, command_pages_rect(self));
 }
 
 static void draw_command_guidance(const struct folio_window *_Nonnull self, HDC device)
 {
-    UINT dpi = GetDpiForWindow(self->handle);
-    RECT line = command_input_rect(self);
-    int row = scale(base_command_help_row_height, dpi);
-    line.bottom = line.top - row;
-    line.top -= row * 2;
     enum folio_language language = folio_state_language(self->state);
-    SetTextColor(device, self->palette.current_text);
-    draw_utf8(device, ui_text_line(UI_TEXT_STATUS_PALETTE_CLICK, language), line);
-    OffsetRect(&line, 0, row);
-    draw_utf8(device, ui_text_line(UI_TEXT_STATUS_PALETTE_FILTER, language), line);
-    RECT toggle = command_toggle_rect(self);
-    toggle.right = command_pages_rect(self).left;
-    SetTextColor(device, self->palette.contrast == FOLIO_CONTRAST_HIGH
-                             ? self->palette.current_text
-                             : self->palette.selected_text);
-    draw_utf8(device,
-              ui_text_line(self->command_keys_visible ? UI_TEXT_ACTION_KEYS_HIDE
-                                                      : UI_TEXT_ACTION_KEYS_SHOW,
-                           language),
-              toggle);
-    draw_utf8(device, ui_text_line(UI_TEXT_ACTION_PALETTE_PREVIOUS, language),
-              command_previous_rect(self));
-    draw_utf8(device, ui_text_line(UI_TEXT_ACTION_PALETTE_NEXT, language), command_next_rect(self));
-    draw_command_pages(self, device);
+    RECT first = command_tab_rect(self, 0);
+    RECT group = first;
+    group.right = command_tab_rect(self, 1).right;
+    ui_part_frame_group(device, &self->palette, group);
+    for (size_t index = 0; index < 2; ++index)
+    {
+        struct ui_part_paint part = {.bounds = command_tab_rect(self, index),
+                                     .dpi = GetDpiForWindow(self->handle),
+                                     .style = UI_PART_STYLE_CHOICE,
+                                     .grouped = true,
+                                     .leading_rule = index != 0,
+                                     .hovered = self->surface_hover == surface_button_count + index,
+                                     .pressed =
+                                         self->surface_pressed == surface_button_count + index &&
+                                         self->surface_pressed_inside,
+                                     .selected = self->command_keys_visible == (index == 1)};
+        struct ui_part_ink ink = ui_part_draw(device, &self->palette, &part);
+        SetTextColor(device, ink.text);
+        draw_utf8(
+            device,
+            ui_text_line(index == 0 ? UI_TEXT_HELP_TAB_COMMANDS : UI_TEXT_HELP_TAB_KEYS, language),
+            part.bounds);
+    }
+    if (command_keys(self))
+    {
+        draw_surface_button(self, device, ACCESSIBLE_SURFACE_PREVIOUS);
+        draw_surface_button(self, device, ACCESSIBLE_SURFACE_NEXT);
+        draw_command_pages(self, device);
+    }
 }
 
 /* 固定footerは内容のスクロールに参加しない。 */
 static RECT settings_footer_rect(const struct folio_window *_Nonnull self)
 {
-    RECT bounds = settings_content_rect(self);
-    RECT client;
-    GetClientRect(self->command_layer, &client);
-    bounds.top = bounds.bottom + scale(8, GetDpiForWindow(self->handle));
-    bounds.bottom = client.bottom - scale(8, GetDpiForWindow(self->handle));
+    RECT bounds = surface_frame_rect(self, UI_PART_SURFACE_CONTENT);
+    bounds.top = bounds.bottom - self->settings_metrics.footer;
     return bounds;
-}
-
-static void draw_settings_version(const struct folio_window *_Nonnull self, HDC device, RECT line)
-{
-    char text[64];
-    struct ui_text_request request = {.id = UI_TEXT_SETTINGS_VERSION,
-                                      .language = folio_state_language(self->state),
-                                      .name = product_version_text()};
-    if (ui_text_format(&request, text, sizeof text) == UI_TEXT_FORMAT_READY)
-    {
-        draw_units(device, text, line, DT_NOPREFIX | DT_WORDBREAK);
-    }
 }
 
 static void draw_settings_footer(const struct folio_window *_Nonnull self, HDC device)
 {
-    RECT bounds = settings_footer_rect(self);
-    int row = scale(20, GetDpiForWindow(self->handle));
+    RECT line = settings_footer_rect(self);
     enum folio_language language = folio_state_language(self->state);
     SetTextColor(device, self->palette.current_text);
-    RECT line = {bounds.left, bounds.top, bounds.right, bounds.top + row};
-    draw_units(device, ui_text_line(UI_TEXT_SETTINGS_IMMEDIATE, language), line,
-               DT_NOPREFIX | DT_WORDBREAK);
-    OffsetRect(&line, 0, row);
+    line.top +=
+        wrapped_text(device, ui_text_line(UI_TEXT_SETTINGS_IMMEDIATE, language), line, true);
     SetTextColor(device, self->palette.dialog_secondary);
-    draw_settings_version(self, device, line);
-    OffsetRect(&line, 0, row);
-    line.bottom =
-        line.top + scale(settings_columns(self) == 3 ? 36 : 60, GetDpiForWindow(self->handle));
-    draw_units(device, ui_text_line(UI_TEXT_SETTINGS_GUIDANCE, language), line,
-               DT_NOPREFIX | DT_WORDBREAK);
+    char text[64];
+    struct ui_text_request version = {
+        .id = UI_TEXT_SETTINGS_VERSION, .language = language, .name = product_version_text()};
+    if (ui_text_format(&version, text, sizeof text) == UI_TEXT_FORMAT_READY)
+        line.top += wrapped_text(device, text, line, true);
+    line.top += wrapped_text(device, ui_text_line(UI_TEXT_SETTINGS_GUIDANCE, language), line, true);
+    line.top = line.bottom - self->settings_metrics.notice;
     if (settings_has_notice(self))
     {
         SetTextColor(device, self->palette.current_text);
-        enum folio_state_outcome reason = settings_notice(self);
-        line.top = line.bottom;
-        line.bottom = bounds.bottom;
-        draw_units(device, folio_state_failure_line(reason, language), line,
-                   DT_NOPREFIX | DT_WORDBREAK);
+        (void)wrapped_text(device, folio_state_failure_line(settings_notice(self), language), line,
+                           true);
     }
 }
 
@@ -3010,18 +3207,6 @@ static void frame_settings_rect(HDC device, RECT bounds, COLORREF color)
 }
 
 /* OS色では同じ輪郭色になり得るので、注目は内枠の有無でも示す。 */
-static void frame_settings_focus(const struct folio_window *_Nonnull self, HDC device, RECT bounds,
-                                 bool focused)
-{
-    COLORREF border = focused ? self->palette.current_text : self->palette.dialog_border;
-    frame_settings_rect(device, bounds, border);
-    if (focused && self->palette.contrast == FOLIO_CONTRAST_HIGH)
-    {
-        int inset = scale(3, GetDpiForWindow(self->handle));
-        InflateRect(&bounds, -inset, -inset);
-        frame_settings_rect(device, bounds, border);
-    }
-}
 
 static RECT settings_mark_rect(const struct folio_window *_Nonnull self, RECT row)
 {
@@ -3065,21 +3250,13 @@ static bool settings_row_current(const struct folio_window *_Nonnull self, size_
 static void draw_settings_theme(const struct folio_window *_Nonnull self, HDC device, RECT row)
 {
     UINT dpi = GetDpiForWindow(self->handle);
-    enum folio_language language = folio_state_language(self->state);
     row.left += scale(12, dpi);
     row.right -= scale(12, dpi);
-    row.top += scale(6, dpi);
-    row.bottom = row.top + scale(20, dpi);
     SetTextColor(device, self->palette.current_text);
-    draw_units(device, folio_theme_choice_label(folio_state_theme_choice(self->state), language),
+    draw_units(device,
+               folio_theme_choice_label(folio_state_theme_choice(self->state),
+                                        folio_state_language(self->state)),
                row, DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
-    OffsetRect(&row, 0, scale(22, dpi));
-    SetTextColor(device, self->palette.dialog_secondary);
-    enum ui_text guidance = self->palette.contrast == FOLIO_CONTRAST_HIGH
-                                ? UI_TEXT_HIGH_CONTRAST_ACTIVE
-                                : UI_TEXT_THEME_CHOOSE;
-    draw_units(device, ui_text_line(guidance, language), row,
-               DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
 }
 
 static void draw_settings_row(const struct folio_window *_Nonnull self, HDC device, RECT row,
@@ -3089,8 +3266,15 @@ static void draw_settings_row(const struct folio_window *_Nonnull self, HDC devi
     bool choice = settings_row_choice(index);
     if (choice)
     {
-        fill_settings_rect(device, row, self->palette.dialog_control);
-        frame_settings_focus(self, device, row, index == self->command_selection);
+        struct ui_part_paint part = {.bounds = row,
+                                     .dpi = dpi,
+                                     .style = UI_PART_STYLE_COMMAND,
+                                     .focus_inside = true,
+                                     .selected = settings_row_current(self, index),
+                                     .focused = (self->focus_cues || self->focus_cues_always) &&
+                                                GetFocus() == self->command_layer &&
+                                                index == self->command_selection};
+        ui_part_draw(device, &self->palette, &part);
         if (settings_rows[index].kind == SETTINGS_ROW_NUMBER)
         {
             draw_settings_mark(self, device, row);
@@ -3189,26 +3373,36 @@ static void draw_theme_row(const struct folio_window *_Nonnull self, HDC device,
 {
     RECT box = row.bounds;
     UINT dpi = GetDpiForWindow(self->handle);
-    box.bottom -= scale(4, dpi);
-    fill_settings_rect(device, box, self->palette.dialog_control);
-    frame_settings_focus(self, device, box, row.focused);
+    struct ui_part_paint part = {.bounds = box,
+                                 .dpi = dpi,
+                                 .style = UI_PART_STYLE_COMMAND,
+                                 .focus_inside = true,
+                                 .selected = row.choice == folio_state_theme_choice(self->state),
+                                 .focused = row.focused &&
+                                            (self->focus_cues || self->focus_cues_always) &&
+                                            GetFocus() == self->command_layer};
+    ui_part_draw(device, &self->palette, &part);
     if (row.choice == folio_state_theme_choice(self->state))
     {
         RECT mark = settings_mark_rect(self, box);
         icon_paint_fill(device, mark, ICON_PAINT_SELECTION, self->palette.current_text);
     }
-    RECT label = {box.left + scale(32, dpi), box.top + scale(2, dpi), box.right - scale(6, dpi),
-                  box.top + scale(22, dpi)};
+    bool samples_visible = box.right - box.left >= scale(388, dpi);
+    RECT label = {box.left + scale(32, dpi), box.top + scale(2, dpi),
+                  box.right - scale(samples_visible ? 156 : 6, dpi), box.bottom};
     SetTextColor(device, self->palette.current_text);
     draw_units(device, folio_theme_choice_label(row.choice, folio_state_language(self->state)),
                label, DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
+    if (!samples_visible)
+        return;
     enum folio_theme resolved = row.choice == FOLIO_THEME_CHOICE_SYSTEM
                                     ? folio_state_system_theme(self->state)
                                     : folio_theme_choice_resolve(row.choice, FOLIO_THEME_LIGHT);
     struct folio_palette palette = self->palette.contrast == FOLIO_CONTRAST_HIGH
                                        ? self->palette
                                        : folio_palette_from(folio_theme_palette(resolved));
-    RECT samples = self->palette.contrast == FOLIO_CONTRAST_HIGH ? box : row.bounds;
+    RECT samples = box;
+    samples.left = box.right - scale(180, dpi);
     draw_theme_samples(self, device, samples, palette);
 }
 
@@ -3242,50 +3436,40 @@ static void draw_theme_rows(const struct folio_window *_Nonnull self, HDC device
 static void draw_theme_footer(const struct folio_window *_Nonnull self, HDC device, size_t count)
 {
     RECT line = theme_footer_rect(self);
-    int bottom = line.bottom;
-    int height = scale(20, GetDpiForWindow(self->handle));
-    line.bottom = line.top + height;
-    char text[ui_text_unit_limit];
+    line.bottom = theme_back_rect(self).top - scale(8, GetDpiForWindow(self->handle));
     enum folio_language language = folio_state_language(self->state);
+    char text[ui_text_unit_limit];
     struct ui_text_request request = {.id = UI_TEXT_THEME_COUNT,
                                       .language = language,
                                       .k = count,
                                       .n = folio_theme_choice_count()};
     SetTextColor(device, self->palette.current_text);
     if (ui_text_format(&request, text, sizeof text) == UI_TEXT_FORMAT_READY)
-    {
-        draw_units(device, text, line, DT_SINGLELINE | DT_NOPREFIX);
-    }
-    line.top = line.bottom;
-    line.bottom += height * 2;
+        line.top += wrapped_text(device, text, line, true);
     enum ui_text guidance = self->palette.contrast == FOLIO_CONTRAST_HIGH
                                 ? UI_TEXT_HIGH_CONTRAST_ACTIVE
                                 : UI_TEXT_THEME_GUIDANCE;
-    draw_units(device, ui_text_line(guidance, language), line, DT_WORDBREAK | DT_NOPREFIX);
+    SetTextColor(device, self->palette.dialog_secondary);
+    (void)wrapped_text(device, ui_text_line(guidance, language), line, true);
+    line.top = line.bottom - self->settings_metrics.notice;
     if (settings_has_notice(self))
     {
-        enum folio_state_outcome reason = settings_notice(self);
-        line.top = line.bottom;
-        line.bottom = bottom;
-        draw_units(device, folio_state_failure_line(reason, language), line,
-                   DT_WORDBREAK | DT_NOPREFIX);
+        SetTextColor(device, self->palette.current_text);
+        (void)wrapped_text(device, folio_state_failure_line(settings_notice(self), language), line,
+                           true);
     }
+    draw_surface_button(self, device, ACCESSIBLE_SURFACE_BACK);
 }
 
 static void draw_theme_header(const struct folio_window *_Nonnull self, HDC device)
 {
     enum folio_language language = folio_state_language(self->state);
     UINT dpi = GetDpiForWindow(self->handle);
-    RECT back = theme_back_rect(self);
-    RECT close = settings_close_rect(self);
-    RECT title = {back.right + scale(8, dpi), back.top, close.left - scale(8, dpi), back.bottom};
-    frame_settings_rect(device, back, self->palette.dialog_border);
+    RECT title = surface_frame_rect(self, UI_PART_SURFACE_TITLE_TEXT);
     SetTextColor(device, self->palette.current_text);
-    draw_units(device, ui_text_line(UI_TEXT_THEME_BACK, language), back,
-               DT_CENTER | DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
     draw_units(device, ui_text_line(UI_TEXT_THEME_TITLE, language), title,
                DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
-    icon_paint_fill(device, close, ICON_PAINT_CLOSE, self->palette.current_text);
+    draw_surface_button(self, device, ACCESSIBLE_SURFACE_CLOSE);
     RECT input = theme_input_rect(self);
     RECT label = {input.left, input.top - scale(20, dpi), input.right, input.top};
     draw_units(device, ui_text_line(UI_TEXT_THEME_FILTER, language), label,
@@ -3294,8 +3478,7 @@ static void draw_theme_header(const struct folio_window *_Nonnull self, HDC devi
 
 static void draw_theme_dialog(const struct folio_window *_Nonnull self, HDC device, RECT bounds)
 {
-    fill_settings_rect(device, bounds, self->palette.dialog_surface);
-    frame_settings_rect(device, bounds, self->palette.dialog_border);
+    ui_part_draw_surface(device, &self->palette, bounds);
     draw_theme_header(self, device);
     draw_input_field(self, device, self->command_input, command_input_rect(self));
     struct utf8_text *_Nullable query = nullptr;
@@ -3310,31 +3493,35 @@ static void draw_theme_dialog(const struct folio_window *_Nonnull self, HDC devi
 
 static void draw_settings_dialog(const struct folio_window *_Nonnull self, HDC device, RECT bounds)
 {
-    fill_settings_rect(device, bounds, self->palette.dialog_surface);
-    frame_settings_rect(device, bounds, self->palette.dialog_border);
-    RECT close = settings_close_rect(self);
-    RECT title = close;
-    title.left = scale(base_settings_padding, GetDpiForWindow(self->handle));
-    title.right = close.left - title.left;
+    ui_part_draw_surface(device, &self->palette, bounds);
+    RECT title = surface_frame_rect(self, UI_PART_SURFACE_TITLE_TEXT);
     SetTextColor(device, self->palette.current_text);
     draw_units(device, ui_text_line(UI_TEXT_COMMAND_SETTINGS, folio_state_language(self->state)),
                title, DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
-    icon_paint_fill(device, close, ICON_PAINT_CLOSE, self->palette.current_text);
+    draw_surface_button(self, device, ACCESSIBLE_SURFACE_CLOSE);
     draw_settings_rows(self, device);
     draw_settings_footer(self, device);
 }
 
 /* 履歴の面の案内 1 行（ADR 0038 の決定 12）。設定画面の案内と同じ位置に出す。 */
+static void draw_floating_header(const struct folio_window *_Nonnull self, HDC device,
+                                 enum ui_text label)
+{
+    SetTextColor(device, self->palette.current_text);
+    RECT title = surface_frame_rect(self, UI_PART_SURFACE_TITLE_TEXT);
+    draw_units(device, ui_text_line(label, folio_state_language(self->state)), title,
+               DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
+    draw_surface_button(self, device, ACCESSIBLE_SURFACE_CLOSE);
+}
+
 static void draw_history_guidance(const struct folio_window *_Nonnull self, HDC device)
 {
-    UINT dpi = GetDpiForWindow(self->handle);
-    RECT line = command_input_rect(self);
-    int row = scale(base_command_help_row_height, dpi);
-    line.bottom = line.top - row;
-    line.top -= row * 2;
-    SetTextColor(device, self->palette.current_text);
-    draw_utf8(device, ui_text_line(UI_TEXT_HISTORY_GUIDANCE, folio_state_language(self->state)),
-              line);
+    RECT line = surface_frame_rect(self, UI_PART_SURFACE_CONTENT);
+    line.top = line.bottom - scale(base_command_status_height, GetDpiForWindow(self->handle));
+    SetTextColor(device, self->palette.dialog_secondary);
+    (void)wrapped_text(device,
+                       ui_text_line(UI_TEXT_HISTORY_GUIDANCE, folio_state_language(self->state)),
+                       line, true);
 }
 
 /* 版の行の字面（「{n}  {name}」・読めない版は「{n}  （読めません）」）。最初の行は写しの大きさで
@@ -3418,37 +3605,68 @@ static void draw_history_rows(const struct folio_window *_Nonnull self, HDC devi
     draw_history_guidance(self, device);
 }
 
+static void draw_palette_empty(const struct folio_window *_Nonnull self, HDC device,
+                               const struct utf8_text *_Nonnull query)
+{
+    enum folio_language language = folio_state_language(self->state);
+    if (command_matches_count(query, language) != 0)
+        return;
+    SetTextColor(device, self->palette.dialog_secondary);
+    (void)wrapped_text(device, ui_text_line(UI_TEXT_ACCESSIBLE_NO_RESULTS, language),
+                       command_rows_rect(self), true);
+}
+
 static void draw_palette_rows(const struct folio_window *_Nonnull self, HDC device, RECT bounds)
 {
     struct utf8_text *_Nullable query = nullptr;
     if (command_query(self, &query) != UTF8_TEXT_CONVERTED)
-    {
         return;
-    }
-    UINT dpi = GetDpiForWindow(self->handle);
-    int padding = scale(base_command_palette_padding, dpi);
-    RECT rows = command_rows_rect(self);
-    int top = rows.top;
-    size_t count = command_visible_rows(self);
-    for (size_t visible = 0; visible < count; ++visible)
+    enum folio_command previous = FOLIO_COMMAND_SAVE;
+    for (size_t index = self->command_first;; ++index)
     {
+        RECT row = palette_candidate_rect(self, query, self->command_first, index);
         enum folio_command command = FOLIO_COMMAND_SAVE;
-        size_t index = self->command_first + visible;
-        if (!command_at_query(query, index, folio_state_language(self->state), &command))
-        {
+        if (IsRectEmpty(&row) ||
+            !command_at_query(query, index, folio_state_language(self->state), &command))
             break;
+        if (index == self->command_first ||
+            folio_command_scope(previous) != folio_command_scope(command))
+        {
+            RECT heading = row;
+            OffsetRect(&heading, 0, row.top - row.bottom);
+            SetTextColor(device, self->palette.dialog_secondary);
+            draw_utf8(device,
+                      ui_text_line(command_groups[command_group_index(command)].label,
+                                   folio_state_language(self->state)),
+                      heading);
         }
-        RECT row = {rows.left, top, rows.right, top + scale(base_command_row_height, dpi)};
         draw_command_row(self, device,
                          (struct command_row){row, command, index == self->command_selection});
-        top = row.bottom;
+        previous = command;
     }
-    RECT status = {bounds.left + padding, bounds.bottom - scale(base_command_status_height, dpi),
+    int padding = scale(base_command_palette_padding, GetDpiForWindow(self->handle));
+    RECT status = {padding,
+                   bounds.bottom - scale(base_command_status_height, GetDpiForWindow(self->handle)),
                    bounds.right - padding, bounds.bottom};
     draw_command_status(self, device, status);
     draw_command_shortcuts(self, device, bounds);
     draw_command_guidance(self, device);
+    draw_palette_empty(self, device, query);
     utf8_text_destroy(query);
+}
+
+static void draw_help_surface(const struct folio_window *_Nonnull self, HDC device, RECT bounds)
+{
+    ui_part_draw_surface(device, &self->palette, bounds);
+    draw_floating_header(self, device, UI_TEXT_COMMAND_HELP);
+    if (command_keys(self))
+    {
+        draw_command_shortcuts(self, device, bounds);
+        draw_command_guidance(self, device);
+        return;
+    }
+    draw_palette_rows(self, device, bounds);
+    draw_input_field(self, device, self->command_input, command_input_rect(self));
 }
 
 static void draw_command_surface(const struct folio_window *_Nonnull self, HDC device, RECT bounds)
@@ -3479,9 +3697,7 @@ static void draw_command_surface(const struct folio_window *_Nonnull self, HDC d
         return;
     }
     case COMMAND_SURFACE_PALETTE:
-        FillRect(device, &bounds, self->command_brush);
-        draw_palette_rows(self, device, bounds);
-        draw_input_field(self, device, self->command_input, command_input_rect(self));
+        draw_help_surface(self, device, bounds);
         return;
     case COMMAND_SURFACE_SEARCH:
         ui_part_draw_surface(device, &self->palette, bounds);
@@ -3499,7 +3715,8 @@ static void draw_command_surface(const struct folio_window *_Nonnull self, HDC d
         return;
     case COMMAND_SURFACE_MENU:
     case COMMAND_SURFACE_HISTORY:
-        FillRect(device, &bounds, self->command_brush);
+        ui_part_draw_surface(device, &self->palette, bounds);
+        draw_floating_header(self, device, UI_TEXT_COMMAND_HISTORY);
         draw_history_rows(self, device, bounds);
         return;
     }
@@ -3770,7 +3987,7 @@ static RECT guide_rect(const struct folio_window *_Nonnull self)
                   client.bottom - scale(base_pane_bottom, dpi)};
 }
 
-/* 空状態の案内の 4 行（見出し・本文・キー・作成先）。文言は ui_text が持つ。 */
+/* 空状態の案内の 4 行（見出し・本文・作成先・キー）。文言は ui_text が持つ。 */
 static void guide_lines(const struct folio_window *_Nonnull self,
                         const char *_Nonnull *_Nonnull out, char *_Nonnull destination)
 {
@@ -3778,8 +3995,8 @@ static void guide_lines(const struct folio_window *_Nonnull self,
     new_note_destination(self, destination);
     out[0] = ui_text_line(UI_TEXT_EMPTY_HEADING, language);
     out[1] = ui_text_line(UI_TEXT_EMPTY_BODY, language);
-    out[2] = ui_text_line(UI_TEXT_EMPTY_KEYS, language);
-    out[3] = destination;
+    out[2] = destination;
+    out[3] = ui_text_line(UI_TEXT_EMPTY_KEYS, language);
 }
 
 static void draw_guide(const struct folio_window *_Nonnull self, HDC device)
@@ -4299,6 +4516,66 @@ static bool band_outcomes_height(HDC device, enum folio_language language, RECT 
                                  bounds, maximum))
             return false;
     return true;
+}
+
+static int surface_footer_text_height(const struct folio_window *_Nonnull self, HDC device,
+                                      RECT bounds)
+{
+    enum folio_language language = folio_state_language(self->state);
+    char text[ui_text_unit_limit];
+    if (self->command_surface == COMMAND_SURFACE_THEMES)
+    {
+        struct ui_text_request count = {.id = UI_TEXT_THEME_COUNT,
+                                        .language = language,
+                                        .k = folio_theme_choice_count(),
+                                        .n = folio_theme_choice_count()};
+        if (ui_text_format(&count, text, sizeof text) != UI_TEXT_FORMAT_READY)
+            return 0;
+        int standard =
+            wrapped_text(device, ui_text_line(UI_TEXT_THEME_GUIDANCE, language), bounds, false);
+        int high = wrapped_text(device, ui_text_line(UI_TEXT_HIGH_CONTRAST_ACTIVE, language),
+                                bounds, false);
+        return wrapped_text(device, text, bounds, false) + (standard > high ? standard : high);
+    }
+    struct ui_text_request version = {
+        .id = UI_TEXT_SETTINGS_VERSION, .language = language, .name = product_version_text()};
+    if (ui_text_format(&version, text, sizeof text) != UI_TEXT_FORMAT_READY)
+        return 0;
+    return wrapped_text(device, text, bounds, false) +
+           wrapped_text(device, ui_text_line(UI_TEXT_SETTINGS_IMMEDIATE, language), bounds, false) +
+           wrapped_text(device, ui_text_line(UI_TEXT_SETTINGS_GUIDANCE, language), bounds, false);
+}
+
+static bool prepare_surface_metrics(struct folio_window *_Nonnull self)
+{
+    if (!settings_surface(self))
+        return true;
+    RECT bounds = surface_frame_rect(self, UI_PART_SURFACE_CONTENT);
+    struct command_surface_metrics metrics = {.width = bounds.right - bounds.left,
+                                              .dpi = GetDpiForWindow(self->handle),
+                                              .font = self->mono_font,
+                                              .language = folio_state_language(self->state),
+                                              .themes =
+                                                  self->command_surface == COMMAND_SURFACE_THEMES};
+    if (self->settings_metrics.width == metrics.width &&
+        self->settings_metrics.dpi == metrics.dpi && self->settings_metrics.font == metrics.font &&
+        self->settings_metrics.language == metrics.language &&
+        self->settings_metrics.themes == metrics.themes)
+        return true;
+    HDC device = GetDC(self->command_layer);
+    if (device == nullptr)
+        return false;
+    HGDIOBJ previous = SelectObject(device, self->mono_font);
+    SetTextCharacterExtra(device, scale(base_tracking, metrics.dpi));
+    bool ready = band_outcomes_height(device, metrics.language, bounds, &metrics.notice);
+    metrics.footer = metrics.notice + surface_footer_text_height(self, device, bounds);
+    if (metrics.themes)
+        metrics.footer += scale(ui_part_height + 8, metrics.dpi);
+    SelectObject(device, previous);
+    ReleaseDC(self->command_layer, device);
+    if (ready)
+        self->settings_metrics = metrics;
+    return ready;
 }
 
 static bool band_commands_height(HDC device, enum folio_language language, RECT bounds,
@@ -5046,9 +5323,9 @@ static void invalidate_surface_items(struct folio_window *_Nonnull self)
 
 static void set_command_surface(struct folio_window *_Nonnull self, enum command_surface_mode mode)
 {
-    bool captured = self->surface_pressed < surface_button_count;
-    self->surface_hover = surface_button_count;
-    self->surface_pressed = surface_button_count;
+    bool captured = self->surface_pressed < surface_pointer_count;
+    self->surface_hover = surface_pointer_count;
+    self->surface_pressed = surface_pointer_count;
     self->surface_pressed_inside = false;
     if (captured && GetCapture() == self->command_layer)
         ReleaseCapture();
@@ -5092,7 +5369,7 @@ static void open_command_surface(struct folio_window *_Nonnull self,
     self->command_selection = surface == COMMAND_SURFACE_SETTINGS ? settings_initial_row(self) : 0;
     self->command_first = 0;
     self->command_keys_visible = false;
-    self->command_help_first = 0;
+    self->command_help_scroll = 0;
     clear_command_status(self);
     SetWindowTextW(self->command_input, surface == COMMAND_SURFACE_EX ? L":" : L"");
     rearrange_keeping_line(self);
@@ -5127,7 +5404,7 @@ static void hide_command_surface(struct folio_window *_Nonnull self)
     set_command_surface(self, COMMAND_SURFACE_CLOSED);
     self->command_return_focus = nullptr;
     self->command_selection = 0;
-    self->command_help_first = 0;
+    self->command_help_scroll = 0;
     clear_command_status(self);
     rearrange_keeping_line(self);
     InvalidateRect(self->handle, nullptr, FALSE);
@@ -5161,7 +5438,7 @@ static void show_command_palette(struct folio_window *_Nonnull self)
     self->command_selection = 0;
     self->command_first = 0;
     self->command_keys_visible = false;
-    self->command_help_first = 0;
+    self->command_help_scroll = 0;
     clear_command_status(self);
     if (self->command_input != nullptr)
     {
@@ -6914,29 +7191,32 @@ static void toggle_command_keys(struct folio_window *_Nonnull self)
 {
     invalidate_surface_items(self);
     self->command_keys_visible = !self->command_keys_visible;
-    self->command_help_first = 0;
+    self->command_help_scroll = 0;
     arrange_command_input(self);
+    focus_command_input(self);
     redraw_command_layer(self);
 }
 
 static bool click_command_footer(struct folio_window *_Nonnull self, POINT point)
 {
-    RECT toggle = command_toggle_rect(self);
+    for (size_t index = 0; index < 2; ++index)
+    {
+        RECT tab = command_tab_rect(self, index);
+        if (PtInRect(&tab, point))
+        {
+            if (self->command_keys_visible != (index == 1))
+                toggle_command_keys(self);
+            return true;
+        }
+    }
+    if (!command_keys(self))
+        return false;
     RECT previous = command_previous_rect(self);
     RECT next = command_next_rect(self);
-    if (PtInRect(&toggle, point))
-    {
-        if (PtInRect(&previous, point) || PtInRect(&next, point))
-        {
-            move_command_selection(self, PtInRect(&previous, point) ? VK_UP : VK_DOWN);
-        }
-        else
-        {
-            toggle_command_keys(self);
-        }
-        return true;
-    }
-    return false;
+    if (!PtInRect(&previous, point) && !PtInRect(&next, point))
+        return false;
+    move_command_help(self, PtInRect(&previous, point) ? VK_PRIOR : VK_NEXT);
+    return true;
 }
 
 /* カーソルの行を採用する（ADR 0031 の決定 7・ADR 0032 の決定 7）。
@@ -7078,6 +7358,12 @@ static void adopt_history_row(struct folio_window *_Nonnull self)
 /* クリックはパレットと同じ行の当たり。行を押すとその場で採用する。 */
 static void click_history_surface(struct folio_window *_Nonnull self, POINT point)
 {
+    RECT close = settings_close_rect(self);
+    if (PtInRect(&close, point))
+    {
+        close_command_surface(self);
+        return;
+    }
     RECT rows = command_rows_rect(self);
     if (!PtInRect(&rows, point))
     {
@@ -7192,18 +7478,30 @@ static void theme_query_changed(struct folio_window *_Nonnull self)
     redraw_command_layer(self);
 }
 
+static bool palette_point_command(const struct folio_window *_Nonnull self,
+                                  const struct utf8_text *_Nonnull query, POINT point,
+                                  enum folio_command *_Nonnull out)
+{
+    for (size_t index = self->command_first;; ++index)
+    {
+        RECT row = palette_candidate_rect(self, query, self->command_first, index);
+        if (IsRectEmpty(&row))
+            return false;
+        if (PtInRect(&row, point))
+            return command_at_query(query, index, folio_state_language(self->state), out);
+    }
+}
+
 static void click_palette_surface(struct folio_window *_Nonnull self, POINT point)
 {
-    if (click_command_footer(self, point))
+    RECT close = settings_close_rect(self);
+    if (PtInRect(&close, point))
     {
+        close_command_surface(self);
         return;
     }
-    RECT rows = command_rows_rect(self);
-    if (!PtInRect(&rows, point))
-    {
-        SetFocus(self->command_input);
+    if (click_command_footer(self, point) || command_keys(self))
         return;
-    }
     struct utf8_text *_Nullable query = nullptr;
     if (command_query(self, &query) != UTF8_TEXT_CONVERTED)
     {
@@ -7211,14 +7509,10 @@ static void click_palette_surface(struct folio_window *_Nonnull self, POINT poin
         return;
     }
     enum folio_command command = FOLIO_COMMAND_SAVE;
-    int row_height = scale(base_command_row_height, GetDpiForWindow(self->handle));
-    size_t index = self->command_first + (size_t)((point.y - rows.top) / row_height);
-    bool found = command_at_query(query, index, folio_state_language(self->state), &command);
+    bool found = palette_point_command(self, query, point, &command);
     utf8_text_destroy(query);
     if (found)
-    {
         execute_command(self, command, "");
-    }
 }
 
 static void click_command_surface(struct folio_window *_Nonnull self, POINT point)
@@ -7908,21 +8202,16 @@ static void move_command_selection(struct folio_window *_Nonnull self, WPARAM ke
 static void move_command_help(struct folio_window *_Nonnull self, WPARAM key)
 {
     size_t visible = (size_t)command_visible_help(self);
-    size_t total = (size_t)command_help_rows(self);
+    size_t total = (size_t)command_help_total(self);
     if (visible == 0 || visible >= total)
-    {
         return;
-    }
     size_t first = command_help_offset(self);
     size_t last = total - visible;
+    size_t step = command_help_step(self);
     if (key == VK_PRIOR)
-    {
-        self->command_help_first = first < visible ? 0 : first - visible;
-    }
+        self->command_help_scroll = first < step ? 0 : first - step;
     else
-    {
-        self->command_help_first = first + visible > last ? last : first + visible;
-    }
+        self->command_help_scroll = first + step > last ? last : first + step;
     redraw_command_layer(self);
 }
 
@@ -7971,6 +8260,8 @@ static bool command_tab(struct folio_window *_Nonnull self)
 /* 置換の欄の Enter は素と Ctrl+ を見分けるので WM_CHAR で処理し、ここでは飲み込むだけ。 */
 static bool command_return(struct folio_window *_Nonnull self)
 {
+    if (command_keys(self))
+        return true;
     if (self->command_surface == COMMAND_SURFACE_MENU)
     {
         menu_execute(self, self->command_selection);
@@ -8111,7 +8402,8 @@ static bool command_navigate(struct folio_window *_Nonnull self, WPARAM key)
     }
     if (key == VK_UP || key == VK_DOWN)
     {
-        move_command_selection(self, key);
+        if (!command_keys(self))
+            move_command_selection(self, key);
         return true;
     }
     if (key == VK_PRIOR || key == VK_NEXT)
@@ -8128,6 +8420,7 @@ static bool command_key_down(struct folio_window *_Nonnull self, WPARAM key)
     {
         return false;
     }
+    show_focus_cues(self, true);
     if (shortcut_keydown(self, key))
     {
         return true;
@@ -8213,6 +8506,11 @@ static void scroll_settings_content(struct folio_window *_Nonnull self, int delt
     redraw_command_layer(self);
 }
 
+static void command_help_wheel(struct folio_window *_Nonnull self, WPARAM key)
+{
+    move_command_help(self, key == VK_UP ? VK_PRIOR : VK_NEXT);
+}
+
 static bool command_wheel(struct folio_window *_Nonnull self, WPARAM wparam)
 {
     bool listed = self->command_surface == COMMAND_SURFACE_PALETTE || settings_surface(self) ||
@@ -8227,6 +8525,11 @@ static bool command_wheel(struct folio_window *_Nonnull self, WPARAM wparam)
         return true;
     }
     WPARAM key = delta > 0 ? VK_UP : VK_DOWN;
+    if (command_keys(self))
+    {
+        command_help_wheel(self, key);
+        return true;
+    }
     if (self->command_surface == COMMAND_SURFACE_THEMES)
     {
         return theme_navigate(self, key);
@@ -9044,7 +9347,20 @@ static bool layer_input_handled(struct folio_window *_Nonnull self, UINT message
     return false;
 }
 
-static size_t surface_button_at(const struct folio_window *_Nonnull self, POINT point)
+static size_t surface_tab_at(const struct folio_window *_Nonnull self, POINT point)
+{
+    if (self->command_surface != COMMAND_SURFACE_PALETTE)
+        return surface_pointer_count;
+    for (size_t index = 0; index < 2; ++index)
+    {
+        RECT tab = command_tab_rect(self, index);
+        if (PtInRect(&tab, point))
+            return surface_button_count + index;
+    }
+    return surface_pointer_count;
+}
+
+static size_t surface_part_at(const struct folio_window *_Nonnull self, POINT point)
 {
     for (size_t slot = 0; slot < surface_button_count; ++slot)
     {
@@ -9054,14 +9370,14 @@ static size_t surface_button_at(const struct folio_window *_Nonnull self, POINT 
         if (PtInRect(&bounds, point))
             return slot;
     }
-    return surface_button_count;
+    return surface_tab_at(self, point);
 }
 
 static void cancel_surface_press(struct folio_window *_Nonnull self)
 {
-    if (self->surface_pressed < surface_button_count)
+    if (self->surface_pressed < surface_pointer_count)
     {
-        self->surface_pressed = surface_button_count;
+        self->surface_pressed = surface_pointer_count;
         self->surface_pressed_inside = false;
         redraw_command_layer(self);
     }
@@ -9069,8 +9385,8 @@ static void cancel_surface_press(struct folio_window *_Nonnull self)
 
 static void surface_pointer(struct folio_window *_Nonnull self, POINT point)
 {
-    size_t hover = surface_button_at(self, point);
-    bool inside = self->surface_pressed < surface_button_count && hover == self->surface_pressed;
+    size_t hover = surface_part_at(self, point);
+    bool inside = self->surface_pressed < surface_pointer_count && hover == self->surface_pressed;
     bool changed = hover != self->surface_hover || inside != self->surface_pressed_inside;
     self->surface_hover = hover;
     self->surface_pressed_inside = inside;
@@ -9086,8 +9402,8 @@ static void surface_pointer(struct folio_window *_Nonnull self, POINT point)
 
 static bool press_surface_button(struct folio_window *_Nonnull self, POINT point)
 {
-    size_t slot = surface_button_at(self, point);
-    if (slot == surface_button_count)
+    size_t slot = surface_part_at(self, point);
+    if (slot == surface_pointer_count)
         return false;
     if (folio_window_accessible_ready(self))
     {
@@ -9103,13 +9419,16 @@ static bool press_surface_button(struct folio_window *_Nonnull self, POINT point
 static void release_surface_button(struct folio_window *_Nonnull self, POINT point)
 {
     size_t slot = self->surface_pressed;
-    bool run = slot < surface_button_count && surface_button_at(self, point) == slot &&
+    bool run = slot < surface_pointer_count && surface_part_at(self, point) == slot &&
                folio_window_accessible_ready(self);
     cancel_surface_press(self);
     if (GetCapture() == self->command_layer)
         ReleaseCapture();
-    if (run)
+    if (run && slot < surface_button_count)
         (void)surface_button_action(self, slot);
+    if (run && slot >= surface_button_count &&
+        self->command_keys_visible != (slot - surface_button_count == 1))
+        toggle_command_keys(self);
 }
 
 static bool surface_pointer_message(struct folio_window *_Nonnull self, UINT message, LPARAM lparam)
@@ -9131,7 +9450,7 @@ static bool surface_pointer_message(struct folio_window *_Nonnull self, UINT mes
         return true;
     case WM_MOUSELEAVE:
         self->surface_tracking = false;
-        self->surface_hover = surface_button_count;
+        self->surface_hover = surface_pointer_count;
         self->surface_pressed_inside = false;
         redraw_command_layer(self);
         return true;
@@ -9889,8 +10208,8 @@ enum folio_window_outcome folio_window_create(struct folio_state *_Nonnull state
     {
         return FOLIO_WINDOW_OUT_OF_MEMORY;
     }
-    self->surface_hover = surface_button_count;
-    self->surface_pressed = surface_button_count;
+    self->surface_hover = surface_pointer_count;
+    self->surface_pressed = surface_pointer_count;
     if (!create_accelerators(self) || !create_keyboard_accelerators(self))
     {
         folio_window_destroy(self);
@@ -10120,6 +10439,11 @@ static HRESULT surface_row_count(const struct folio_window *_Nonnull self, size_
         *out = folio_state_history_count(self->state);
         return S_OK;
     }
+    if (command_keys(self))
+    {
+        *out = 0;
+        return S_OK;
+    }
     if (self->command_surface != COMMAND_SURFACE_PALETTE &&
         self->command_surface != COMMAND_SURFACE_THEMES)
     {
@@ -10139,8 +10463,8 @@ static HRESULT surface_row_count(const struct folio_window *_Nonnull self, size_
 
 static bool surface_has_list(const struct folio_window *_Nonnull self)
 {
-    return self->command_surface == COMMAND_SURFACE_PALETTE || settings_surface(self) ||
-           self->command_surface == COMMAND_SURFACE_HISTORY ||
+    return (self->command_surface == COMMAND_SURFACE_PALETTE && !command_keys(self)) ||
+           settings_surface(self) || self->command_surface == COMMAND_SURFACE_HISTORY ||
            self->command_surface == COMMAND_SURFACE_MENU;
 }
 
@@ -10167,14 +10491,15 @@ static enum accessible_kind surface_row_kind(const struct folio_window *_Nonnull
 static bool surface_button_visible(const struct folio_window *_Nonnull self, size_t slot)
 {
     if (slot == ACCESSIBLE_SURFACE_CLOSE)
-        return settings_surface(self) || command_band(self);
+        return settings_surface(self) || command_band(self) ||
+               self->command_surface == COMMAND_SURFACE_HISTORY ||
+               self->command_surface == COMMAND_SURFACE_PALETTE;
     if (slot == ACCESSIBLE_SURFACE_BACK)
         return self->command_surface == COMMAND_SURFACE_THEMES;
     if (slot == ACCESSIBLE_SURFACE_PREVIOUS || slot == ACCESSIBLE_SURFACE_NEXT)
-        return self->command_surface == COMMAND_SURFACE_SEARCH ||
-               self->command_surface == COMMAND_SURFACE_PALETTE;
+        return self->command_surface == COMMAND_SURFACE_SEARCH || command_keys(self);
     if (slot == ACCESSIBLE_SURFACE_SHOW_HELP)
-        return self->command_surface == COMMAND_SURFACE_PALETTE;
+        return false;
     if (slot == ACCESSIBLE_SURFACE_REPLACE_ONE || slot == ACCESSIBLE_SURFACE_REPLACE_ALL)
         return self->command_surface == COMMAND_SURFACE_REPLACE;
     return false; /* theme button is a settings list child. */
@@ -10183,33 +10508,82 @@ static bool surface_button_visible(const struct folio_window *_Nonnull self, siz
 static HRESULT surface_root_child(const struct folio_window *_Nonnull self, size_t index,
                                   struct accessible_item *_Nonnull out)
 {
-    if (index == 0)
+    const enum accessible_kind kinds[] = {ACCESSIBLE_SURFACE_LIST, ACCESSIBLE_SURFACE_STATUS,
+                                          ACCESSIBLE_SURFACE_TABS};
+    if (index < sizeof kinds / sizeof kinds[0])
     {
-        *out = surface_item(self, ACCESSIBLE_SURFACE_LIST, 0);
-        return surface_has_list(self) ? S_OK : S_FALSE;
+        bool visible[] = {surface_has_list(self), true,
+                          self->command_surface == COMMAND_SURFACE_PALETTE};
+        *out = surface_item(self, kinds[index], 0);
+        return visible[index] ? S_OK : S_FALSE;
     }
-    if (index == 1)
+    if (index < 3 + surface_button_count)
     {
-        *out = surface_item(self, ACCESSIBLE_SURFACE_STATUS, 0);
-        return S_OK;
+        *out = surface_item(self, ACCESSIBLE_SURFACE_BUTTON, index - 3);
+        return surface_button_visible(self, index - 3) ? S_OK : S_FALSE;
     }
-    if (index < 2 + surface_button_count)
-    {
-        *out = surface_item(self, ACCESSIBLE_SURFACE_BUTTON, index - 2);
-        return surface_button_visible(self, index - 2) ? S_OK : S_FALSE;
-    }
-    size_t slot = index - 2 - surface_button_count;
+    size_t slot = index - 3 - surface_button_count;
     *out = surface_item(self, ACCESSIBLE_SURFACE_HELP, slot);
     return slot < (size_t)command_help_rows(self) ? S_OK : S_FALSE;
 }
 
-static HRESULT surface_child(const struct folio_window *_Nonnull self, enum accessible_kind parent,
-                             size_t index, struct accessible_item *_Nonnull out)
+static bool command_group_start(const struct folio_window *_Nonnull self,
+                                const struct utf8_text *_Nonnull query, size_t index)
 {
-    if (parent == ACCESSIBLE_SURFACE)
-        return surface_root_child(self, index, out);
-    if (parent != ACCESSIBLE_SURFACE_LIST)
+    if (index == 0)
+        return true;
+    enum folio_command command = FOLIO_COMMAND_SAVE;
+    enum folio_command previous = FOLIO_COMMAND_SAVE;
+    enum folio_language language = folio_state_language(self->state);
+    return command_at_query(query, index, language, &command) &&
+           command_at_query(query, index - 1, language, &previous) &&
+           folio_command_scope(command) != folio_command_scope(previous);
+}
+
+static HRESULT surface_palette_child_at(const struct folio_window *_Nonnull self,
+                                        const struct utf8_text *_Nonnull query, size_t wanted,
+                                        struct accessible_item *_Nonnull out)
+{
+    size_t child = 0;
+    for (size_t index = 0;; ++index)
+    {
+        enum folio_command command = FOLIO_COMMAND_SAVE;
+        if (!command_at_query(query, index, folio_state_language(self->state), &command))
+            return S_FALSE;
+        bool heading = command_group_start(self, query, index);
+        if (heading && child == wanted)
+        {
+            *out = surface_item(self, ACCESSIBLE_SURFACE_TEXT, command_group_index(command));
+            return S_OK;
+        }
+        child += heading ? 1 : 0;
+        if (child == wanted)
+        {
+            *out = surface_item(self, ACCESSIBLE_SURFACE_CHOICE, index);
+            return S_OK;
+        }
+        child += 1;
+    }
+}
+
+static HRESULT surface_palette_child(const struct folio_window *_Nonnull self, size_t wanted,
+                                     struct accessible_item *_Nonnull out)
+{
+    if (command_keys(self))
         return S_FALSE;
+    struct utf8_text *_Nullable query = nullptr;
+    if (command_query(self, &query) != UTF8_TEXT_CONVERTED)
+        return E_OUTOFMEMORY;
+    HRESULT result = surface_palette_child_at(self, query, wanted, out);
+    utf8_text_destroy(query);
+    return result;
+}
+
+static HRESULT surface_list_child(const struct folio_window *_Nonnull self, size_t index,
+                                  struct accessible_item *_Nonnull out)
+{
+    if (self->command_surface == COMMAND_SURFACE_PALETTE)
+        return surface_palette_child(self, index, out);
     size_t count = 0;
     HRESULT result = surface_row_count(self, &count);
     if (FAILED(result))
@@ -10217,13 +10591,30 @@ static HRESULT surface_child(const struct folio_window *_Nonnull self, enum acce
     if (index >= count)
         return S_FALSE;
     enum accessible_kind kind = surface_row_kind(self, index);
-    *out = surface_item(self, kind,
-                        kind == ACCESSIBLE_SURFACE_BUTTON ? ACCESSIBLE_SURFACE_THEME : index);
+    size_t slot = kind == ACCESSIBLE_SURFACE_BUTTON ? ACCESSIBLE_SURFACE_THEME : index;
+    *out = surface_item(self, kind, slot);
     return S_OK;
+}
+
+static HRESULT surface_child(const struct folio_window *_Nonnull self, enum accessible_kind parent,
+                             size_t index, struct accessible_item *_Nonnull out)
+{
+    if (parent == ACCESSIBLE_SURFACE)
+        return surface_root_child(self, index, out);
+    if (parent == ACCESSIBLE_SURFACE_TABS)
+    {
+        *out = surface_item(self, ACCESSIBLE_SURFACE_TAB, index);
+        return self->command_surface == COMMAND_SURFACE_PALETTE && index < 2 ? S_OK : S_FALSE;
+    }
+    if (parent != ACCESSIBLE_SURFACE_LIST || !surface_has_list(self))
+        return S_FALSE;
+    return surface_list_child(self, index, out);
 }
 
 static enum accessible_kind surface_parent(struct accessible_item item)
 {
+    if (item.kind == ACCESSIBLE_SURFACE_TAB)
+        return ACCESSIBLE_SURFACE_TABS;
     if (item.kind == ACCESSIBLE_SURFACE_CHOICE || item.kind == ACCESSIBLE_SURFACE_LANGUAGE ||
         item.kind == ACCESSIBLE_SURFACE_TOGGLE || item.kind == ACCESSIBLE_SURFACE_TEXT ||
         (item.kind == ACCESSIBLE_SURFACE_BUTTON && item.slot == ACCESSIBLE_SURFACE_THEME))
@@ -10231,7 +10622,7 @@ static enum accessible_kind surface_parent(struct accessible_item item)
     return ACCESSIBLE_SURFACE;
 }
 
-static size_t surface_ordinal(struct accessible_item item)
+static size_t surface_selection_ordinal(struct accessible_item item)
 {
     if (surface_parent(item) == ACCESSIBLE_SURFACE_LIST)
         return item.kind == ACCESSIBLE_SURFACE_BUTTON ? settings_first_choice_row : item.slot;
@@ -10240,6 +10631,40 @@ static size_t surface_ordinal(struct accessible_item item)
     if (item.kind == ACCESSIBLE_SURFACE_STATUS)
         return 1;
     return item.slot + 2 + (item.kind == ACCESSIBLE_SURFACE_HELP ? surface_button_count : 0);
+}
+
+static size_t surface_palette_ordinal(const struct folio_window *_Nonnull self,
+                                      struct accessible_item item)
+{
+    struct accessible_item child;
+    size_t index = 0;
+    while (surface_palette_child(self, index, &child) == S_OK)
+    {
+        if (accessible_item_equal(item, child))
+            return index;
+        index += 1;
+    }
+    return SIZE_MAX;
+}
+
+static size_t surface_navigation_ordinal(const struct folio_window *_Nonnull self,
+                                         struct accessible_item item)
+{
+    if (surface_parent(item) == ACCESSIBLE_SURFACE_TABS)
+        return item.slot;
+    if (item.kind == ACCESSIBLE_SURFACE_TABS)
+        return 2;
+    if (surface_parent(item) == ACCESSIBLE_SURFACE_LIST)
+    {
+        if (self->command_surface != COMMAND_SURFACE_PALETTE)
+            return surface_selection_ordinal(item);
+        return surface_palette_ordinal(self, item);
+    }
+    if (item.kind == ACCESSIBLE_SURFACE_LIST)
+        return 0;
+    if (item.kind == ACCESSIBLE_SURFACE_STATUS)
+        return 1;
+    return item.slot + 3 + (item.kind == ACCESSIBLE_SURFACE_HELP ? surface_button_count : 0);
 }
 
 static HRESULT surface_valid(const struct folio_window *_Nonnull self, struct accessible_item item)
@@ -10252,19 +10677,43 @@ static HRESULT surface_valid(const struct folio_window *_Nonnull self, struct ac
         item.revision != self->surface_revision || item.revision == UINT64_MAX)
         return accessibility_node_unavailable;
     struct accessible_item child;
-    HRESULT result = surface_child(self, surface_parent(item), surface_ordinal(item), &child);
+    HRESULT result =
+        surface_child(self, surface_parent(item), surface_navigation_ordinal(self, item), &child);
     if (FAILED(result))
         return result;
     return result == S_OK && accessible_item_equal(item, child) ? S_OK
                                                                 : accessibility_node_unavailable;
 }
 
+static HRESULT surface_palette_child_count(const struct folio_window *_Nonnull self,
+                                           size_t *_Nonnull out)
+{
+    *out = 0;
+    struct accessible_item item;
+    HRESULT result = surface_palette_child(self, *out, &item);
+    while (result == S_OK)
+    {
+        *out += 1;
+        result = surface_palette_child(self, *out, &item);
+    }
+    return FAILED(result) ? result : S_OK;
+}
+
 static HRESULT surface_child_count(const struct folio_window *_Nonnull self,
                                    enum accessible_kind parent, size_t *_Nonnull out)
 {
+    if (parent == ACCESSIBLE_SURFACE_TABS)
+    {
+        *out = self->command_surface == COMMAND_SURFACE_PALETTE ? 2 : 0;
+        return S_OK;
+    }
     if (parent == ACCESSIBLE_SURFACE_LIST)
-        return surface_row_count(self, out);
-    *out = parent == ACCESSIBLE_SURFACE ? 2 + surface_button_count + (size_t)command_help_rows(self)
+    {
+        if (self->command_surface != COMMAND_SURFACE_PALETTE)
+            return surface_row_count(self, out);
+        return surface_palette_child_count(self, out);
+    }
+    *out = parent == ACCESSIBLE_SURFACE ? 3 + surface_button_count + (size_t)command_help_rows(self)
                                         : 0;
     return S_OK;
 }
@@ -10274,7 +10723,8 @@ static bool surface_edge(enum accessible_navigation direction)
     return direction == ACCESSIBLE_NAVIGATION_FIRST || direction == ACCESSIBLE_NAVIGATION_LAST;
 }
 
-static int surface_navigation_start(struct accessible_item item,
+static int surface_navigation_start(const struct folio_window *_Nonnull self,
+                                    struct accessible_item item,
                                     enum accessible_navigation direction, size_t count)
 {
     switch (direction)
@@ -10286,9 +10736,9 @@ static int surface_navigation_start(struct accessible_item item,
     case ACCESSIBLE_NAVIGATION_LAST:
         return (int)count - 1;
     case ACCESSIBLE_NAVIGATION_NEXT:
-        return (int)surface_ordinal(item) + 1;
+        return (int)surface_navigation_ordinal(self, item) + 1;
     case ACCESSIBLE_NAVIGATION_PREVIOUS:
-        return (int)surface_ordinal(item) - 1;
+        return (int)surface_navigation_ordinal(self, item) - 1;
     }
     return -1;
 }
@@ -10306,8 +10756,8 @@ static HRESULT surface_move(const struct folio_window *_Nonnull self,
     bool forward =
         direction == ACCESSIBLE_NAVIGATION_FIRST || direction == ACCESSIBLE_NAVIGATION_NEXT;
     int step = forward ? 1 : -1;
-    for (int at = surface_navigation_start(*item, direction, count); at >= 0 && (size_t)at < count;
-         at += step)
+    for (int at = surface_navigation_start(self, *item, direction, count);
+         at >= 0 && (size_t)at < count; at += step)
     {
         result = surface_child(self, parent, (size_t)at, out);
         if (result != S_FALSE)
@@ -10460,23 +10910,18 @@ static void surface_status_text(const struct folio_window *_Nonnull self, char *
 static void surface_help_name(const struct folio_window *_Nonnull self, size_t slot,
                               char16_t *_Nonnull out)
 {
-    size_t generic = sizeof command_shortcuts / sizeof command_shortcuts[0];
-    if (slot < generic)
-    {
-        char text[draw_unit_limit];
-        if (folio_shortcut_help(command_shortcuts[slot], folio_state_language(self->state), text,
-                                sizeof text) == UI_TEXT_FORMAT_READY)
-            (void)wide_units(text, out);
-        return;
-    }
     char text[draw_unit_limit];
-    layout_phrase(self, slot - generic, UI_TEXT_LAYOUT_HELP, text);
+    command_help_text(self, slot, text);
     (void)wide_units(text, out);
 }
 
 static enum ui_text surface_control_label(const struct folio_window *_Nonnull self,
                                           struct accessible_item item)
 {
+    if (item.kind == ACCESSIBLE_SURFACE_TAB)
+        return item.slot == 0 ? UI_TEXT_HELP_TAB_COMMANDS : UI_TEXT_HELP_TAB_KEYS;
+    if (item.kind == ACCESSIBLE_SURFACE_TEXT && self->command_surface == COMMAND_SURFACE_PALETTE)
+        return command_groups[item.slot].label;
     if (item.kind == ACCESSIBLE_SURFACE_BUTTON)
         return surface_button_label(self, item.slot);
     if (item.kind == ACCESSIBLE_SURFACE_LANGUAGE || item.kind == ACCESSIBLE_SURFACE_TOGGLE ||
@@ -10522,7 +10967,7 @@ static RECT accessible_surface_button_rect(const struct folio_window *_Nonnull s
     switch ((enum accessible_surface_button)slot)
     {
     case ACCESSIBLE_SURFACE_CLOSE:
-        return settings_surface(self) ? settings_close_rect(self) : search_close_rect(self);
+        return command_band(self) ? search_close_rect(self) : settings_close_rect(self);
     case ACCESSIBLE_SURFACE_BACK:
         return theme_back_rect(self);
     case ACCESSIBLE_SURFACE_THEME:
@@ -10551,8 +10996,45 @@ static RECT accessible_surface_button_rect(const struct folio_window *_Nonnull s
     return (RECT){0};
 }
 
+static RECT surface_palette_heading(const struct folio_window *_Nonnull self,
+                                    const struct utf8_text *_Nonnull query, size_t group)
+{
+    for (size_t index = self->command_first;; ++index)
+    {
+        enum folio_command command = FOLIO_COMMAND_SAVE;
+        RECT row = palette_candidate_rect(self, query, self->command_first, index);
+        if (IsRectEmpty(&row) ||
+            !command_at_query(query, index, folio_state_language(self->state), &command))
+            return (RECT){0};
+        if (command_group_index(command) != group)
+            continue;
+        if (index == self->command_first || command_group_start(self, query, index))
+        {
+            OffsetRect(&row, 0, row.top - row.bottom);
+            return row;
+        }
+    }
+}
+
+static RECT surface_palette_rect(const struct folio_window *_Nonnull self, size_t slot,
+                                 bool heading)
+{
+    struct utf8_text *_Nullable query = nullptr;
+    if (command_query(self, &query) != UTF8_TEXT_CONVERTED)
+        return (RECT){0};
+    RECT row = {0};
+    if (heading)
+        row = surface_palette_heading(self, query, slot);
+    if (!heading && slot >= self->command_first)
+        row = palette_candidate_rect(self, query, self->command_first, slot);
+    utf8_text_destroy(query);
+    return row;
+}
+
 static RECT surface_row_rect(const struct folio_window *_Nonnull self, size_t slot)
 {
+    if (self->command_surface == COMMAND_SURFACE_PALETTE)
+        return command_keys(self) ? (RECT){0} : surface_palette_rect(self, slot, false);
     if (self->command_surface == COMMAND_SURFACE_MENU)
         return menu_row_rect(self, slot);
 
@@ -10577,20 +11059,14 @@ static RECT surface_row_rect(const struct folio_window *_Nonnull self, size_t sl
 
 static RECT surface_help_rect(const struct folio_window *_Nonnull self, size_t slot)
 {
-    size_t first = command_help_offset(self);
-    int rows = command_visible_help(self);
-    if (slot < first || slot - first >= (size_t)rows)
+    if (!command_keys(self) || slot >= (size_t)command_help_rows(self))
         return (RECT){0};
-    RECT bounds;
-    GetClientRect(self->command_layer, &bounds);
-    UINT dpi = GetDpiForWindow(self->handle);
-    int height = scale(base_command_help_row_height, dpi);
-    bounds.bottom -= scale(base_command_status_height + base_command_gap, dpi);
-    bounds.top = bounds.bottom - rows * height + (int)(slot - first) * height;
-    bounds.bottom = bounds.top + height;
-    bounds.left += scale(base_command_palette_padding, dpi);
-    bounds.right -= scale(base_command_palette_padding, dpi);
-    return bounds;
+    RECT row = command_help_geometry(self, slot, nullptr);
+    OffsetRect(&row, 0, -(int)command_help_offset(self));
+    RECT viewport = command_body_rect(self);
+    RECT visible = {0};
+    IntersectRect(&visible, &row, &viewport);
+    return visible;
 }
 
 static RECT surface_status_rect(const struct folio_window *_Nonnull self)
@@ -10608,8 +11084,24 @@ static RECT surface_status_rect(const struct folio_window *_Nonnull self)
     return bounds;
 }
 
+static RECT surface_list_bounds(const struct folio_window *_Nonnull self)
+{
+    return self->command_surface == COMMAND_SURFACE_SETTINGS ? settings_content_rect(self)
+                                                             : command_rows_rect(self);
+}
+
 static RECT surface_bounds(const struct folio_window *_Nonnull self, struct accessible_item item)
 {
+    if (item.kind == ACCESSIBLE_SURFACE_TAB)
+        return command_tab_rect(self, item.slot);
+    if (item.kind == ACCESSIBLE_SURFACE_TABS)
+    {
+        RECT bounds = command_tab_rect(self, 0);
+        bounds.right = command_tab_rect(self, 1).right;
+        return bounds;
+    }
+    if (item.kind == ACCESSIBLE_SURFACE_TEXT && self->command_surface == COMMAND_SURFACE_PALETTE)
+        return surface_palette_rect(self, item.slot, true);
     if (item.kind == ACCESSIBLE_SURFACE_BUTTON)
         return accessible_surface_button_rect(self, item.slot);
     if (item.kind == ACCESSIBLE_SURFACE_HELP)
@@ -10617,8 +11109,7 @@ static RECT surface_bounds(const struct folio_window *_Nonnull self, struct acce
     if (surface_parent(item) == ACCESSIBLE_SURFACE_LIST)
         return surface_row_rect(self, item.slot);
     if (item.kind == ACCESSIBLE_SURFACE_LIST)
-        return self->command_surface == COMMAND_SURFACE_SETTINGS ? settings_content_rect(self)
-                                                                 : command_rows_rect(self);
+        return surface_list_bounds(self);
     if (item.kind == ACCESSIBLE_SURFACE_STATUS)
         return surface_status_rect(self);
     RECT bounds = {0};
@@ -10653,8 +11144,22 @@ static HRESULT surface_list_view(const struct folio_window *_Nonnull self,
         return result;
     }
     out->viewport = (int)command_visible_rows(self);
-    out->scroll_limit = (int)count > out->viewport ? (int)count - out->viewport : 0;
+    out->scroll_limit = self->command_surface == COMMAND_SURFACE_PALETTE
+                            ? (int)palette_scroll_limit(self, count)
+                            : ((int)count > out->viewport ? (int)count - out->viewport : 0);
     return result;
+}
+
+static void surface_selection_view(const struct folio_window *_Nonnull self,
+                                   struct accessible_item item,
+                                   struct accessible_view *_Nonnull out)
+{
+    out->selection_required = item.kind == ACCESSIBLE_SURFACE_TABS;
+    out->selected = item.kind == ACCESSIBLE_SURFACE_CHOICE && item.slot == self->command_selection;
+    if (item.kind == ACCESSIBLE_SURFACE_TAB)
+        out->selected = self->command_keys_visible == (item.slot == 1);
+    if (item.kind == ACCESSIBLE_SURFACE_LANGUAGE || item.kind == ACCESSIBLE_SURFACE_TOGGLE)
+        out->selected = settings_row_current(self, item.slot);
 }
 
 static void surface_control_view(const struct folio_window *_Nonnull self,
@@ -10664,13 +11169,17 @@ static void surface_control_view(const struct folio_window *_Nonnull self,
         folio_window_accessible_ready(self) && self->command_surface != COMMAND_SURFACE_CLOSED;
     out->dialog = item.kind == ACCESSIBLE_SURFACE && settings_surface(self);
     out->live = item.kind == ACCESSIBLE_SURFACE_STATUS;
+    if (item.kind == ACCESSIBLE_SURFACE && command_keys(self))
+    {
+        out->focusable = true;
+        out->focused = GetFocus() == self->command_layer;
+        return;
+    }
+    surface_selection_view(self, item, out);
     out->focusable = surface_row_focusable(item.kind) || (item.kind == ACCESSIBLE_SURFACE_BUTTON &&
                                                           item.slot == ACCESSIBLE_SURFACE_THEME);
     out->focused = out->focusable && GetFocus() == self->command_layer &&
-                   self->command_selection == surface_ordinal(item);
-    out->selected = item.kind == ACCESSIBLE_SURFACE_CHOICE && item.slot == self->command_selection;
-    if (item.kind == ACCESSIBLE_SURFACE_LANGUAGE || item.kind == ACCESSIBLE_SURFACE_TOGGLE)
-        out->selected = settings_row_current(self, item.slot);
+                   self->command_selection == surface_selection_ordinal(item);
 }
 
 static void surface_menu_view(const struct folio_window *_Nonnull self, struct accessible_item item,
@@ -10710,16 +11219,15 @@ static HRESULT surface_read(struct folio_window *_Nonnull self, struct accessibl
     return item.kind == ACCESSIBLE_SURFACE_LIST ? surface_list_view(self, out) : S_OK;
 }
 
-static HRESULT surface_selected(const struct folio_window *_Nonnull self,
-                                const struct accessible_item *_Nonnull item,
-                                struct accessible_item *_Nonnull out)
+static HRESULT surface_selected_row(const struct folio_window *_Nonnull self,
+                                    struct accessible_item *_Nonnull out)
 {
-    HRESULT result = surface_valid(self, *item);
-    if (FAILED(result))
-        return result;
-    if (item->kind != ACCESSIBLE_SURFACE_LIST)
-        return S_FALSE;
     size_t at = self->command_selection;
+    if (self->command_surface == COMMAND_SURFACE_PALETTE)
+    {
+        *out = surface_item(self, ACCESSIBLE_SURFACE_CHOICE, at);
+        return surface_valid(self, *out) == S_OK ? S_OK : S_FALSE;
+    }
     if (self->command_surface == COMMAND_SURFACE_SETTINGS)
     {
         for (size_t index = 0; index < settings_row_count(); ++index)
@@ -10732,14 +11240,41 @@ static HRESULT surface_selected(const struct folio_window *_Nonnull self,
     return surface_child(self, ACCESSIBLE_SURFACE_LIST, at, out);
 }
 
+static HRESULT surface_selected(const struct folio_window *_Nonnull self,
+                                const struct accessible_item *_Nonnull item,
+                                struct accessible_item *_Nonnull out)
+{
+    HRESULT result = surface_valid(self, *item);
+    if (FAILED(result))
+        return result;
+    if (item->kind == ACCESSIBLE_SURFACE_TABS)
+    {
+        *out = surface_item(self, ACCESSIBLE_SURFACE_TAB, (size_t)self->command_keys_visible);
+        return S_OK;
+    }
+    if (item->kind != ACCESSIBLE_SURFACE_LIST || !surface_has_list(self))
+        return S_FALSE;
+    return surface_selected_row(self, out);
+}
+
 static HRESULT surface_focus(const struct folio_window *_Nonnull self,
                              struct accessible_item *_Nonnull out)
 {
     if (GetFocus() != self->command_layer || !folio_window_accessible_ready(self) ||
         self->command_surface == COMMAND_SURFACE_CLOSED)
         return S_FALSE;
+    if (command_keys(self))
+    {
+        *out = surface_item(self, ACCESSIBLE_SURFACE, 0);
+        return S_OK;
+    }
     if (!surface_has_list(self))
         return S_FALSE;
+    if (self->command_surface == COMMAND_SURFACE_PALETTE)
+    {
+        *out = surface_item(self, ACCESSIBLE_SURFACE_CHOICE, self->command_selection);
+        return surface_valid(self, *out) == S_OK ? S_OK : S_FALSE;
+    }
     return surface_child(self, ACCESSIBLE_SURFACE_LIST, self->command_selection, out);
 }
 
@@ -10788,6 +11323,11 @@ static HRESULT surface_at(struct folio_window *_Nonnull self, POINT point,
 
 static void surface_step(struct folio_window *_Nonnull self, bool previous)
 {
+    if (command_keys(self))
+    {
+        move_command_help(self, previous ? VK_PRIOR : VK_NEXT);
+        return;
+    }
     if (self->command_surface == COMMAND_SURFACE_SEARCH)
         step_search(self, previous ? SEARCH_DIRECTION_BACKWARD : SEARCH_DIRECTION_FORWARD);
     else
@@ -10830,15 +11370,15 @@ static void surface_reveal(struct folio_window *_Nonnull self, struct accessible
 {
     if (item.kind == ACCESSIBLE_SURFACE_HELP)
     {
-        size_t total = (size_t)command_help_rows(self);
-        size_t visible = (size_t)command_visible_help(self);
-        size_t limit = total > visible ? total - visible : 0;
-        self->command_help_first = item.slot < limit ? item.slot : limit;
+        RECT row = command_help_geometry(self, item.slot, nullptr);
+        RECT area = command_body_rect(self);
+        self->command_help_scroll = (size_t)(row.top - area.top);
+        self->command_help_scroll = command_help_offset(self);
         redraw_command_layer(self);
         return;
     }
     size_t selected = self->command_selection;
-    self->command_selection = surface_ordinal(item);
+    self->command_selection = surface_selection_ordinal(item);
     reveal_command_selection(self);
     self->command_selection = selected;
     redraw_command_layer(self);
@@ -10852,7 +11392,7 @@ static HRESULT surface_row_action(struct folio_window *_Nonnull self,
         return accessibility_node_disabled;
 
     struct accessible_item item = request->item;
-    self->command_selection = surface_ordinal(item);
+    self->command_selection = surface_selection_ordinal(item);
     reveal_command_selection(self);
     if (request->action == ACCESSIBLE_ACTION_FOCUS)
     {
@@ -10868,10 +11408,33 @@ static HRESULT surface_row_action(struct folio_window *_Nonnull self,
     return S_OK;
 }
 
+static HRESULT surface_tab_action(struct folio_window *_Nonnull self,
+                                  const struct accessible_request *_Nonnull request)
+{
+    if (request->action != ACCESSIBLE_ACTION_SELECT)
+        return accessibility_node_invalid;
+    if (self->command_keys_visible != (request->item.slot == 1))
+        toggle_command_keys(self);
+    return S_OK;
+}
+
+static HRESULT surface_root_action(struct folio_window *_Nonnull self,
+                                   const struct accessible_request *_Nonnull request)
+{
+    if (request->action != ACCESSIBLE_ACTION_FOCUS || !command_keys(self))
+        return accessibility_node_invalid;
+    focus_command_input(self);
+    return GetFocus() == self->command_layer ? S_OK : accessibility_node_invalid;
+}
+
 static HRESULT surface_action(struct folio_window *_Nonnull self,
                               const struct accessible_request *_Nonnull request)
 {
     struct accessible_item item = request->item;
+    if (item.kind == ACCESSIBLE_SURFACE)
+        return surface_root_action(self, request);
+    if (item.kind == ACCESSIBLE_SURFACE_TAB)
+        return surface_tab_action(self, request);
     if (item.kind == ACCESSIBLE_SURFACE_BUTTON && request->action == ACCESSIBLE_ACTION_INVOKE)
         return surface_button_action(self, item.slot);
     if (request->action == ACCESSIBLE_ACTION_SCROLL && item.kind == ACCESSIBLE_SURFACE_LIST)
@@ -11032,6 +11595,8 @@ static RECT accessible_main_rect(const struct folio_window *_Nonnull self,
     case ACCESSIBLE_BODY:
     case ACCESSIBLE_NOTICE:
     case ACCESSIBLE_SURFACE:
+    case ACCESSIBLE_SURFACE_TABS:
+    case ACCESSIBLE_SURFACE_TAB:
     case ACCESSIBLE_SURFACE_LIST:
     case ACCESSIBLE_SURFACE_CHOICE:
     case ACCESSIBLE_SURFACE_LANGUAGE:
