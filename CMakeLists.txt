@@ -93,7 +93,8 @@ nenefolio_target(nenefolio_window ui_win32 STATIC
     src/ui/win32/drawer_window.c src/ui/win32/folio_window.c src/ui/win32/note_pane.c
     src/ui/win32/folio_palette.c src/ui/win32/failure_box.c src/ui/win32/name_prompt.c
     src/ui/win32/ui_face.c src/ui/win32/icon_paint.c src/ui/win32/dialog_theme.c
-    src/ui/win32/ui_part.c src/ui/win32/modal_owner.c src/ui/win32/name_prompt_metrics.c)
+    src/ui/win32/ui_part.c src/ui/win32/modal_owner.c src/ui/win32/name_prompt_metrics.c
+    src/ui/win32/command_candidates.c src/ui/win32/theme_candidates.c)
 nenefolio_link(nenefolio_window nenefolio_core)
 nenefolio_link(nenefolio_window nenefolio_application)
 nenefolio_system_link(nenefolio_window user32)

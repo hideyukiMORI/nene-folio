@@ -1,37 +1,40 @@
 # いまのタスク — NeNe Folio
 
-記録日: 2026-10-25。[#373](https://github.com/hideyukiMORI/nene-folio/issues/373)の設定/モーダル応答と主窓操作について、実装・対象検証を完了。統合・通常exe・整理の最新状態は[PR #374](https://github.com/hideyukiMORI/nene-folio/pull/374)と下記の完了記録を照合する。
-現在のhide指示、Issue/PR、checkoutを照合して再開する。前件#351の分担や過去の一時的許可を継承しない。
+記録日: 2026-10-25。[#375](https://github.com/hideyukiMORI/nene-folio/issues/375)の連続入力中の描画停止と他部品の横断調査。
+実装と対象検証を完了し、最終headの必須CI・統合・通常exe反映へ進む。最新状態はIssue/PRと恒久証跡の`completion.json`を照合する。
+現在のhide指示とcheckoutを正とし、過去の分担・一時的な許可を継承しない。
 
 ## 現在の到達点
 
-- hideの今回の明示指定により、対話席のAstraが設計と受理を担当し、Sol/Lunaが調査・実装・検証を担当する。ClaudeCodeのデザインリナと設計を批評した。この分担は今回の作業に限る。
-- [ADR0063](../adr/0063-derived-ui-metrics-and-surface-arrangement.md)で、固定UIの派生計測を所有者へ保持し、初期化途中の重複配置と不変な背景子窓の再配置を削減する。
-- [ADR0064](../adr/0064-content-modal-and-window-shell.md)で、内容操作の禁止と主窓の移動・終了を分ける。native同期loopを保ち、root所有のmodal ownerを使う。保存/取消/IME/最外dispatchの寿命を維持する。
-- 作業checkoutは `D:/NeNeFolio/worktrees/373-gui-responsiveness`。恒久証跡は `D:/NeNeFolio/agents/gui-responsiveness-20261025`、一時出力は `D:/NeNeFolio/outputs/gui-responsiveness-20261025`。
-- Debug build/tidyと直接境界371、名前計測22/独立oracle288条件、native261、最小窓追加188 checksが成功。独立レビューのfocus指摘を修正し、完成画像も確認した。
-- 同条件8回中央値で設定open21.05→11.93ms、名前入力初回paint40.24→17.09ms。起動後の初回設定約81msは残り、実display呈示の保証ではない。
-- 統合は最終headの必須CI成功後に正規ツールで行う。通常exeへ反映後も自動起動せず、hideの実機試用へ渡す。現在のPR/CIと恒久証跡の`completion.json`を照合する。
-- hideの並行作業へ干渉しないため、再開後はComputer Useを使わず専用非入力desktopと保存画像で確認した。
-- 詳細/限界は[#373品質記録](../quality/2026-10-25-gui-responsiveness.md)、[日報](../reports/2026-10-25.md)、[引き継ぎ](../handoffs/2026-10-25.md)。schema/依存/ゲート変更なし、Waivers: none。
-
-前件#368/PR #370の統合・通常反映は完了済み。過去の数値やCIを#373の合格へ読み替えず、履歴は[前件品質記録](../quality/2026-10-25-ui-latency.md)を読む。
+- 調査・設計・実装・検証は単体。候補所有/IME/同期paintと完成差分の独立レビューのみ読み取り専用で実施した。
+- [ADR0065](../adr/0065-candidate-index-and-input-presentation.md)で操作/テーマ候補の対応を所有者の派生資源へ集約。
+  描画・hit・キー・UIAの重複走査を除去し、入力後の合流点で可視の更新領域を描いてから通知する。
+- 全操作を横断する60入力の最大post→paintはkey 2,921.10→11.62ms、wheel 1,203.62→44.08ms。
+  専用非入力desktopの合成入力/GDI処理完了であり、実display呈示や一般的な性能保証ではない。
+- 3言語/2幅/3描画DPI比率のoracle照合20,457 checks、失敗注入/Enter/paint中close 11 checks、native 59 checks、
+  Debug build/tidy・規約検査が成功。独立レビューのEnter OOM誤報は修正し、再レビュー済み。
+- 設定・メニュー・履歴・検索/置換・1,000ノート索引・キー説明も横断した。テーマの候補照会は改善したがnative再着色の負荷は残る。
+  本文の合成wheelは未判定、native PageUp/Downでは60回描画と表示行の移動を確認した。
+- 作業checkout: `D:/NeNeFolio/worktrees/375-continuous-ui-response`、一時出力: `D:/NeNeFolio/outputs/375-ui-input-latency`。
+  恒久証跡: `D:/NeNeFolio/agents/375-ui-input-latency`。現在も存在するかは完了記録を照合する。
+- 詳細/限界は[#375品質記録](../quality/2026-10-25-continuous-ui-response.md)、[日報](../reports/2026-10-25.md)、[引き継ぎ](../handoffs/2026-10-25.md)。
+  保存schema・依存・ゲート変更なし、Waivers: none。
 
 ## 次の判断
 
-[#369](https://github.com/hideyukiMORI/nene-folio/issues/369)は大量ノートの初回全文読込中のUI停止。実装未着手。
-新規合成データ初読と既読ファイルでI/O時間が大きく異なる。今回の描画改善によるI/O短縮として扱わない。
-同期方針を変えるなら先に所有者/取消/最新語の採用/保存済み本文の契約をADRで固定する。
-VIEWのテーマ変更ではRichEdit再投入、巨大本文の行番号index再構築も残る。未測定の一般性能を保証しない。
+最終PR headの必須CI成功後、`tools/merge-pr.ps1`で統合する。通常exeは`tools/prepare-real-machine.ps1`で反映し、自動起動しない。
+[#369](https://github.com/hideyukiMORI/nene-folio/issues/369)の大量ノート初回全文読込は別件で未着手。
+キー説明の折り返し計測、巨大本文のnative再着色/行番号index再構築、実reader接続時の大規模な参照更新は別の境界として残る。
+前件#373/PR #374と#368/PR #370は統合・通常反映済み。各件の検証を新しい変更の合格へ読み替えない。
 
 ## 運用と保持
 
-通常試遊の正規更新は `tools/prepare-real-machine.ps1`。稼働中アプリ/未保存本文を終了しない。公開Releaseは今回の依頼に含めない。
-統合/必要反映/恒久成果物を確認後、追加worktreeと不要出力を整理し、branch/commitを保持する。
-今回の `D:/NeNeFolio/worktrees/368-ui-latency` と `D:/NeNeFolio/outputs/performance-20261024` は、
-必要物の収載・全entry照合後の削除コマンドを自動承認レビューが `blocked by policy` で実行前に拒否したため保持。
-両パスとも未削除。拒否回避のため別手段で削除しない。詳細は恒久証跡の `cleanup-final.json` と引き継ぎ書に記録した。
-前件#366は[品質記録](../quality/2026-10-24-theme-preview.md)、#351は[面の規則](../quality/2026-10-24-surface-rules.md)を参照。
+稼働中アプリ/未保存本文を終了しない。Computer Useや実画面の入力は使わず、公開Releaseは作らない。
+統合/必要反映/恒久成果物を確認後、このtaskの追加worktreeと不要出力を整理し、branch/commitを保持する。
+下記の旧taskは削除が自動承認レビューに拒否されて未削除であり、再試行/別手段での削除をしない。
+
+- #368: `D:/NeNeFolio/worktrees/368-ui-latency`、`D:/NeNeFolio/outputs/performance-20261024`。
+- #373: `D:/NeNeFolio/worktrees/373-gui-responsiveness`、`D:/NeNeFolio/outputs/gui-responsiveness-20261025`。
 
 過去の自動承認レビューが再帰削除を拒否した9箇所は再試行/別手段の削除をしない（すべて `D:/NeNeFolio/outputs/` 配下）:
 `350-menu-surface`、`350-release-20261024`、`351-native-name`、`351-dialog-feasibility`、`351-surface-rules`、`351-release-20261024`、

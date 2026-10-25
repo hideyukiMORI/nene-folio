@@ -85,6 +85,8 @@ application が作った値を描き、操作を意図として渡す（ARC-011�
 UIAのCOM寿命は`accessibility_host`、自前要素のABIは`accessibility_node`、native入力の名前注釈は
 `accessibility_native`に集約する。主窓・索引・補助面は同じ公開基盤から既存操作を呼ぶ（ADR0056/0058）。
 固定UIの派生計測は`folio_window`と`name_prompt_metrics`が入力条件付きで保持する（ADR0063）。
+操作/テーマ候補の対応は主窓所有の`command_candidates`/`theme_candidates`で共有し、描画・hit・鍵・UIAが
+同じ派生列を使う。入力後の可視面の描画は既存通知合流点から既存WM_PAINTへ渡す（ADR0065）。
 native同期面のowner境界は`modal_owner`に集約する。主窓のshell操作と内容操作の可否、通常終了の安全な合流は
 `folio_window`が所有し、名前入力・失敗箱・色選択へ別のmodal状態を作らない（ADR0064）。
 
