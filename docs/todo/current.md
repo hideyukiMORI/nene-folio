@@ -1,6 +1,6 @@
 # いまのタスク — NeNe Folio
 
-記録日: 2026-10-25。[#373](https://github.com/hideyukiMORI/nene-folio/issues/373)の設定/モーダル応答と主窓操作について、実装・対象検証を完了。統合・通常exe・整理の最新状態はPRと下記の完了記録を照合する。
+記録日: 2026-10-25。[#373](https://github.com/hideyukiMORI/nene-folio/issues/373)の設定/モーダル応答と主窓操作について、実装・対象検証を完了。統合・通常exe・整理の最新状態は[PR #374](https://github.com/hideyukiMORI/nene-folio/pull/374)と下記の完了記録を照合する。
 現在のhide指示、Issue/PR、checkoutを照合して再開する。前件#351の分担や過去の一時的許可を継承しない。
 
 ## 現在の到達点

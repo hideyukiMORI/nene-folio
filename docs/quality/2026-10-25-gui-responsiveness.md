@@ -104,6 +104,6 @@ ClaudeCode CLIのデザインリナも同4枚を実読し、最終批評で確�
 
 ## 統合候補の確認状態
 
-native統合fixtureと最小窓の追加検証は上記範囲で成功。最終PR headの必須CIで`eng/check.ps1`を通してから統合する。
+native統合fixtureと最小窓の追加検証は上記範囲で成功。[PR #374](https://github.com/hideyukiMORI/nene-folio/pull/374)の最終headの必須CIで`eng/check.ps1`を通してから統合する。
 hideの並行作業へ干渉しないため、再開後はComputer Useを使わず、専用非入力desktopと保存画像で対象境界だけを確認する。
 通常ビルドは`tools/prepare-real-machine.ps1`で反映し、自動起動しない。統合・通常exe・整理の確定結果はIssue/PRと恒久証跡の`completion.json`へ記録する。
