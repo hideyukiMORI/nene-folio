@@ -4,12 +4,14 @@
 #include "folio_message.h"
 #include "line_index.h"
 #include "pane_mode.h"
+#include "pane_zoom_command.h"
 #include "rtf_stream.h"
 
 #include <richedit.h>
 #include <stdlib.h>
 #include <string.h>
 #include <tom.h>
+#include <windowsx.h>
 
 struct note_pane
 {
@@ -19,6 +21,9 @@ struct note_pane
     COLORREF background; /* 実効paletteから受けた描画色。無効時も同じ地を使う（ADR0066）。 */
     bool composing;
     HACCEL _Nullable navigation;
+    HACCEL _Nullable zoom_keys;
+    int zoom_percent; /* 表示倍率の唯一の所有値。RTF投入がnative倍率を戻すので再適用する。 */
+    int zoom_wheel_delta;
     ITextSelection *_Nullable selection;
     char16_t *_Nullable taken; /* 最後に取り出した本文（終端付き） */
     size_t capacity;           /* taken のバイト数 */
@@ -46,6 +51,26 @@ static const struct
                            {'J', CARET_COMMAND_DOWN},
                            {'K', CARET_COMMAND_UP},
                            {'L', CARET_COMMAND_RIGHT}};
+
+static const struct
+{
+    WORD key;
+    BYTE modifiers;
+    enum pane_zoom_command command;
+} zoom_bindings[] = {{VK_OEM_PLUS, FCONTROL, PANE_ZOOM_COMMAND_IN},
+                     {VK_OEM_PLUS, FCONTROL | FSHIFT, PANE_ZOOM_COMMAND_IN},
+                     {VK_ADD, FCONTROL, PANE_ZOOM_COMMAND_IN},
+                     {VK_OEM_MINUS, FCONTROL, PANE_ZOOM_COMMAND_OUT},
+                     {VK_SUBTRACT, FCONTROL, PANE_ZOOM_COMMAND_OUT},
+                     {'0', FCONTROL, PANE_ZOOM_COMMAND_RESET},
+                     {VK_NUMPAD0, FCONTROL, PANE_ZOOM_COMMAND_RESET}};
+static_assert((unsigned short)CARET_COMMAND_RIGHT < (unsigned short)PANE_ZOOM_COMMAND_IN,
+              "pane accelerator ids do not overlap");
+
+constexpr int zoom_normal = 100;
+constexpr int zoom_minimum = 50;
+constexpr int zoom_maximum = 300;
+constexpr int zoom_step = 10;
 
 constexpr LONG editor_height = 220; /* 11pt（twips）。RTF 側の \fs22 と同じ */
 constexpr UINT unicode_codepage = 1200;
@@ -125,8 +150,112 @@ static bool navigation_command(const struct note_pane *_Nonnull pane, WPARAM com
     return false;
 }
 
-static LRESULT enable_pane(const struct note_pane *_Nonnull pane, WPARAM enabled, LPARAM parameter)
+/* nativeの投影はここだけで変更し、成功した値だけを所有する。投入中にも同じ経路を使う。 */
+static bool apply_zoom(struct note_pane *_Nonnull pane, int percent)
 {
+    if (SendMessageW(pane->handle, EM_SETZOOM, (WPARAM)percent, zoom_normal) == 0)
+        return false;
+    pane->zoom_percent = percent;
+    return true;
+}
+
+static bool zoom_available(const struct note_pane *_Nonnull pane)
+{
+    return pane->handle != nullptr && !pane->composing &&
+           pane->readiness == NOTE_PANE_READINESS_READY && IsWindowEnabled(pane->handle) &&
+           IsWindowVisible(pane->handle);
+}
+
+static void zoom_to(struct note_pane *_Nonnull pane, int percent)
+{
+    percent = percent < zoom_minimum ? zoom_minimum : percent;
+    percent = percent > zoom_maximum ? zoom_maximum : percent;
+    if (!zoom_available(pane) || percent == pane->zoom_percent)
+        return;
+    size_t first = note_pane_first_visible_line(pane);
+    if (!apply_zoom(pane, percent))
+    {
+        MessageBeep(MB_ICONWARNING);
+        return;
+    }
+    SendMessageW(GetParent(pane->handle), folio_message_pane_zoomed, (WPARAM)first, 0);
+}
+
+static void zoom_action(struct note_pane *_Nonnull pane, enum pane_zoom_command command)
+{
+    int percent = pane->zoom_percent;
+    switch (command)
+    {
+    case PANE_ZOOM_COMMAND_IN:
+        percent += zoom_step;
+        break;
+    case PANE_ZOOM_COMMAND_OUT:
+        percent -= zoom_step;
+        break;
+    case PANE_ZOOM_COMMAND_RESET:
+        percent = zoom_normal;
+        break;
+    }
+    pane->zoom_wheel_delta = 0;
+    zoom_to(pane, percent);
+}
+
+static bool zoom_command(struct note_pane *_Nonnull pane, WPARAM command)
+{
+    if (HIWORD(command) != 1)
+        return false;
+    for (size_t index = 0; index < sizeof zoom_bindings / sizeof zoom_bindings[0]; ++index)
+    {
+        if (LOWORD(command) == zoom_bindings[index].command)
+        {
+            zoom_action(pane, zoom_bindings[index].command);
+            return true;
+        }
+    }
+    return false;
+}
+
+/* ポインタが本文外なら主窓の振分けへ戻し、nativeの独立したCtrl+wheel zoomは呼ばない。 */
+static bool zoom_wheel(struct note_pane *_Nonnull pane, UINT message, WPARAM keys, LPARAM position)
+{
+    if (message != WM_MOUSEWHEEL)
+        return false;
+    if ((GET_KEYSTATE_WPARAM(keys) & MK_CONTROL) == 0)
+    {
+        pane->zoom_wheel_delta = 0;
+        return false;
+    }
+    if (!zoom_available(pane))
+    {
+        pane->zoom_wheel_delta = 0;
+        return true;
+    }
+    RECT bounds;
+    GetWindowRect(pane->handle, &bounds);
+    POINT point = {GET_X_LPARAM(position), GET_Y_LPARAM(position)};
+    if (!PtInRect(&bounds, point))
+    {
+        pane->zoom_wheel_delta = 0;
+        SendMessageW(GetParent(pane->handle), message, keys, position);
+        return true;
+    }
+    pane->zoom_wheel_delta += GET_WHEEL_DELTA_WPARAM(keys);
+    int steps = pane->zoom_wheel_delta / WHEEL_DELTA;
+    pane->zoom_wheel_delta %= WHEEL_DELTA;
+    zoom_to(pane, pane->zoom_percent + steps * zoom_step);
+    return true;
+}
+
+static bool pane_input(struct note_pane *_Nonnull pane, UINT message, WPARAM keys, LPARAM parameter)
+{
+    if (message == WM_COMMAND && parameter == 0)
+        return zoom_command(pane, keys) || navigation_command(pane, keys);
+    return zoom_wheel(pane, message, keys, parameter);
+}
+
+static LRESULT enable_pane(struct note_pane *_Nonnull pane, WPARAM enabled, LPARAM parameter)
+{
+    pane->zoom_wheel_delta = 0;
     LRESULT result = CallWindowProcW(pane->original, pane->handle, WM_ENABLE, enabled, parameter);
     LONG_PTR style = GetWindowLongPtrW(pane->handle, GWL_EXSTYLE);
     style = IsWindowEnabled(pane->handle) ? style & ~WS_EX_TRANSPARENT : style | WS_EX_TRANSPARENT;
@@ -178,13 +307,14 @@ static LRESULT CALLBACK pane_procedure(HWND window, UINT message, WPARAM wparam,
         return enable_pane(pane, wparam, lparam);
     if (paint_background(pane, message, wparam, lparam))
         return 1;
-    if (message == WM_COMMAND && lparam == 0 && navigation_command(pane, wparam))
+    if (pane_input(pane, message, wparam, lparam))
     {
         return 0;
     }
     if (message == WM_IME_STARTCOMPOSITION)
     {
         pane->composing = true;
+        pane->zoom_wheel_delta = 0;
     }
     if (message == WM_IME_ENDCOMPOSITION)
     {
@@ -281,6 +411,20 @@ static bool prepare_selection(struct note_pane *_Nonnull pane)
     return SUCCEEDED(selected) && pane->selection != nullptr;
 }
 
+static bool prepare_zoom(struct note_pane *_Nonnull pane)
+{
+    constexpr size_t count = sizeof zoom_bindings / sizeof zoom_bindings[0];
+    ACCEL accelerators[count];
+    for (size_t index = 0; index < count; ++index)
+    {
+        accelerators[index] = (ACCEL){.fVirt = (BYTE)(FVIRTKEY | zoom_bindings[index].modifiers),
+                                      .key = zoom_bindings[index].key,
+                                      .cmd = zoom_bindings[index].command};
+    }
+    pane->zoom_keys = CreateAcceleratorTableW(accelerators, (int)count);
+    return pane->zoom_keys != nullptr;
+}
+
 static bool prepare_navigation(struct note_pane *_Nonnull pane)
 {
     constexpr size_t count = sizeof navigation_bindings / sizeof navigation_bindings[0];
@@ -292,7 +436,7 @@ static bool prepare_navigation(struct note_pane *_Nonnull pane)
                                       .cmd = navigation_bindings[index].command};
     }
     pane->navigation = CreateAcceleratorTableW(accelerators, (int)count);
-    return pane->navigation != nullptr && prepare_selection(pane);
+    return pane->navigation != nullptr && prepare_selection(pane) && prepare_zoom(pane);
 }
 
 static void set_background(struct note_pane *_Nonnull pane, COLORREF background)
@@ -310,6 +454,7 @@ enum note_pane_outcome note_pane_create(HWND _Nonnull parent, COLORREF backgroun
     {
         return NOTE_PANE_OUT_OF_MEMORY;
     }
+    pane->zoom_percent = zoom_normal;
     pane->library = LoadLibraryW(library_name);
     if (pane->library == nullptr)
     {
@@ -355,14 +500,23 @@ bool note_pane_composing(const struct note_pane *_Nonnull pane)
     return pane->composing;
 }
 
-bool note_pane_translate(const struct note_pane *_Nonnull pane, const MSG *_Nonnull message)
+bool note_pane_translate(const struct note_pane *_Nonnull pane, const MSG *_Nonnull message,
+                         enum pane_mode mode)
 {
-    if (pane->navigation == nullptr || pane->composing || message->hwnd != pane->handle)
+    if (message->hwnd != pane->handle || !zoom_available(pane))
     {
         return false;
     }
     MSG translated = *message;
-    return TranslateAcceleratorW(pane->handle, pane->navigation, &translated) != 0;
+    if (TranslateAcceleratorW(pane->handle, pane->zoom_keys, &translated) != 0)
+        return true;
+    return mode == PANE_MODE_EDIT &&
+           TranslateAcceleratorW(pane->handle, pane->navigation, &translated) != 0;
+}
+
+int note_pane_zoom_percent(const struct note_pane *_Nonnull pane)
+{
+    return pane->zoom_percent;
 }
 
 /* 閲覧と編集が共有する唯一の流し込み（ADR 0006 の #245 補正）。UTF-8 RTF で表示を置き換える。
@@ -412,7 +566,8 @@ enum note_pane_load_outcome note_pane_load(struct note_pane *_Nonnull pane,
     pane->readiness = NOTE_PANE_READINESS_STREAMING;
     LRESULT modified = SendMessageW(pane->handle, EM_GETMODIFY, 0, 0);
     SendMessageW(pane->handle, EM_EXLIMITTEXT, 0, editor_limit);
-    if (SendMessageW(pane->handle, EM_SETREADONLY, TRUE, 0) == 0 || !stream_rtf(pane, rtf, length))
+    if (SendMessageW(pane->handle, EM_SETREADONLY, TRUE, 0) == 0 ||
+        !stream_rtf(pane, rtf, length) || !apply_zoom(pane, pane->zoom_percent))
     {
         return failed_load(pane, modified);
     }
@@ -885,6 +1040,8 @@ void note_pane_destroy(struct note_pane *_Nullable pane)
     {
         DestroyAcceleratorTable(pane->navigation);
     }
+    if (pane->zoom_keys != nullptr)
+        DestroyAcceleratorTable(pane->zoom_keys);
     if (pane->handle != nullptr && IsWindow(pane->handle))
     {
         DestroyWindow(pane->handle);

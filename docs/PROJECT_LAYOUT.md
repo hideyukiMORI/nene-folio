@@ -91,6 +91,8 @@ native同期面のowner境界は`modal_owner`に集約する。主窓のshell操
 `folio_window`が所有し、名前入力・失敗箱・色選択へ別のmodal状態を作らない（ADR0064）。
 無効な本文の地は`note_pane`の既存subclassが実効paletteから描き、文字/IME/無効化通知はnativeに保つ。
 EDITの無効時配色も`folio_window`の一つの配色経路へ合流する（ADR0066）。
+本文の実行中の表示倍率は`note_pane`が所有し、キー/ホイールとRTF再投入を同じEM_SETZOOM経路へ渡す。
+主窓の行番号font/幅は本文倍率から導く派生資源であり、本文の書式や操作文字用fontは変えない（ADR0067）。
 
 ### `src/app`
 
