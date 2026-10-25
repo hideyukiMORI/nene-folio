@@ -1,27 +1,24 @@
 # いまのタスク — NeNe Folio
 
-記録日: 2026-10-25。[#377](https://github.com/hideyukiMORI/nene-folio/issues/377)のモーダル中の本文/絞込欄の背景修正。
+記録日: 2026-10-25。[#379](https://github.com/hideyukiMORI/nene-folio/issues/379)のメニュー文字階層の統一。
 最終状態はIssue/PRと恒久証跡の`completion.json`を照合する。現在のhide指示とcheckoutを正とする。
 
 ## 現在の到達点
 
-- hideの実機画像と製品baseline fixtureで、設定時に両欄がシステム灰色へ変わる不具合を確認した。
-- [ADR0066](../adr/0066-disabled-pane-theme-background.md)に従い、EDITのWM_CTLCOLORSTATICを既存配色へ合流。
-  本文はnativeの無効化を保ち、無効時の地だけを実効paletteで描く。通常編集は元のnative描画へ戻す。
-- 専用desktopで設定/テーマ/閲覧/編集/native入れ子/復帰の色と本文・選択・dirty・Undo、nativeUIA/MSAA/focusを検証（最終full fixture 142 checks / 0 failures、exit 0）。
-  nativeの部分更新と全面更新の9比較は差分0、対象paint fixture 11 checks成功。
-- 調査・設計・実装・検証は単体。必要な設計/完成差分レビューだけ読み取り専用で実施した。
-- 作業checkout: `D:/NeNeFolio/worktrees/377-modal-theme-background`、出力: `D:/NeNeFolio/outputs/modal-theme-fix-20261025`。
-  恒久証跡: `D:/NeNeFolio/agents/modal-theme-fix-20261025`。現存状況は完了記録を照合する。
-- 詳細: [品質記録](../quality/2026-10-25-modal-theme-background.md)。保存schema・依存・ゲート変更なし、Waivers: none。
+- hide指定のOpusによるdesign-critiqueと現行画像/実測を基に、メニュー項目16を既存の14 logical pxへ揃えた。
+- ADR0060決定17にサイズを追記し、`folio_window`の一つのmenu_font生成で操作/右クリックの全MENUへ適用する。
+  言語別face・キー列11・行高32・余白・色・枠は維持する。
+- 調査/実装/検証は単体。変更前の明示依頼による批評を再利用し、軽微な差分でレビューを繰り返さない。
+- 作業checkout: `D:/NeNeFolio/worktrees/379-menu-typography`、出力: `D:/NeNeFolio/outputs/menu-typography-20261025`。
+  恒久証跡: `D:/NeNeFolio/agents/menu-typography-20261025`。現存状況は完了記録を照合する。
+- 詳細: [品質記録](../quality/2026-10-25-menu-typography.md)。保存schema・依存・ゲート変更なし、Waivers: none。
 
 ## 次の判断
 
 最終headの必須CI成功後、`tools/merge-pr.ps1`で統合し、`tools/prepare-real-machine.ps1`で通常exeへ反映する。
 稼働中の実機アプリはhideが閉じてから更新し、自動起動しない。最終結果は実際のPRと`completion.json`が正。
-#375/PR #376はmain統合・通常反映・当該worktree/出力整理まで完了。#369の大量ノート初回読込は別件で未着手。
-巨大本文のnative再着色/無効時の本文再描画、実reader接続時の規模境界は残る。
-
+#377/PR #378はmain統合・通常反映・当該worktree/出力整理まで完了。#369の大量ノート初回読込は別件で未着手。
+今回の確認はメニューの文字と直接影響する表示境界に限定する。
 ## 運用と保持
 
 稼働中アプリ/未保存本文を終了しない。Computer Useや実画面の入力は使わず、公開Releaseは作らない。
