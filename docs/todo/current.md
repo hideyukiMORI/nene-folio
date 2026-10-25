@@ -1,34 +1,33 @@
 # いまの状態 — NeNe Folio
 
-記録日: 2026-10-25。直近の機能実装タスクはすべて完了。
-本書の更新開始前（22:43 JST）の確認でOpen Issue / PRはともに0件。本書の状態記録更新は機能変更に含めない。
+記録日: 2026-10-25。直近の機能実装は完了し、v0.2.0をGitHubのβ版として公開済み。
 再開時は最新のhide指示、Issue / PR、checkoutを照合し、過去の記録を新しい実行許可として扱わない。
 
-## 完了状態と根拠
+## 公開状態
 
-- 直近の[#369](https://github.com/hideyukiMORI/nene-folio/issues/369)はCLOSED、
-  [PR #385](https://github.com/hideyukiMORI/nene-folio/pull/385)はMERGED。
-  製品コードの統合commitは`6a294697c804de15e30e06e0a9507369906a9bf3`。
-- 最終PR head `ad5e812f264ad87e33fbe868ee79eaa48582d53f`の
-  [必須CI](https://github.com/hideyukiMORI/nene-folio/actions/runs/40197477671)は成功。
-  対象検証と性能条件は[品質記録](../quality/2026-10-25-first-search-responsiveness.md)、判断は[ADR0068](../adr/0068-idle-index-preparation.md)を参照する。
-- 通常exe `C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`は上記製品commitから22:31 JSTに更新済み。
-  更新後の自動起動はしていない。本書だけの変更では製品を再ビルドしない。
-- #369の追加worktree `D:/NeNeFolio/worktrees/369-first-search-responsiveness`と
-  一時出力 `D:/NeNeFolio/outputs/first-search-20261025`は、統合・通常反映・成果物保全の確認後に削除済み。
-  作業branch / commitは保持している。
-- 恒久証跡: `D:/NeNeFolio/agents/first-search-20261025/`。
-  `completion.json`、`final-ci.json`、`final-pr.json`、`prepare-result.json`、`cleanup-final.json`に確定結果を記録。
-  `frozen-fixtures-and-builds.zip`は22,957ファイルを保全し、全entryのSHA256照合済み。
+- [v0.2.0 Beta](https://github.com/hideyukiMORI/nene-folio/releases/tag/v0.2.0)を23:19 JSTに公開。
+  Windows x64向けの署名なしportable ZIPとSHA256SUMSを添付し、公開後の再取得一致を確認した。
+- tagの対象はclean main `3bc46969564b9422cbc8f49230cb815a3103f704`。
+  treeが一致するPR #387最終headの[必須CI](https://github.com/hideyukiMORI/nene-folio/actions/runs/40199179102)は成功。
+  今回の公開・README画像・文書更新は[#388](https://github.com/hideyukiMORI/nene-folio/issues/388)へ追跡する。
+- [変更履歴と更新手順](../release/0.2.0.md)、[配布・起動・保存・旧版データ・再取得の品質記録](../quality/2026-10-25-beta-release.md)を更新。
+  [README](../../README.md)の画面は、実際のv0.2.0配布exeをサンプルノートで起動して撮影したもの。
+- 製品コード・版入力・保存schemaは今回変更していない。通常exe
+  `C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`は#369統合commit `6a294697c804de15e30e06e0a9507369906a9bf3`
+  から22:31 JSTに更新した状態を維持し、今回の作業では再ビルド・終了・起動していない。
+- 公開証跡と配布物の恒久コピーは`D:/NeNeFolio/agents/beta-release-20261025/`。
+  `published-release.json`、`download-verification.json`、`published-assets/`が確定公開物の根拠。
+  文書PRのCI・整理の確定結果は同所の`completion.json`を参照する。作業branch / commitは保持する。
+- #369の追加worktree / 一時出力は削除済み。恒久証跡は`D:/NeNeFolio/agents/first-search-20261025/`。
   当日の経緯は[日報](../reports/2026-10-25.md)と[引き継ぎ](../handoffs/2026-10-25.md)を参照する。
 
 ## 未確認事項と次の判断
 
-- 未完了の機能修正Issueは無い。新しい作業はhideの次の指示と、その時点のIssue / PRを起点にする。
-- 物理IME・実UIA reader・物理DPI移動・DWM呈示は未測定。専用desktopの合成入力/描画検証と区別する。
-- 一件分の重いI/O / UTF-8検証 / 写し作成と、最後の一致計算は同期処理のまま。
-  入力が続くと検索準備の完了が遅れる。既知の制約と実測条件は上記品質記録を参照する。
-- 下記の旧作業物は削除拒否のため保持している。本書の更新は削除や実機確認の追加実行を許可するものではない。
+- 物理IME、人によるreader聴取、DWM呈示は今回の配布確認に含めていない。専用desktopの合成入力/描画確認と区別する。
+- 初回全ノート検索は準備中も入力・描画を処理するが、一件分の重いI/O / UTF-8検証 / 写し作成と、最後の一致計算は同期処理のまま。
+  入力が続くと準備完了が遅れる。条件と実測は[検索品質記録](../quality/2026-10-25-first-search-responsiveness.md)を参照する。
+- Microsoft Store公開、署名、インストーラ、自動更新は今回のβ公開に含めていない。次の作業はhideの指示と実際のIssue / PRを起点にする。
+- 下記の旧作業物は削除拒否のため保持している。今回も再試行しない。
 
 ## 保持中の旧作業物
 
@@ -42,4 +41,4 @@
 
 旧#336/#338/#340/#342/#348/#349の一時物も今回の更新対象外。
 旧 `check/2026-10-19/349-action-bar` は空状態で固まるため起動しない。
-稼働中アプリや未保存本文を終了せず、過去の記録だけを根拠に実画面操作・公開Releaseを始めない。
+稼働中アプリや未保存本文を終了しない。今後の実画面操作・追加公開は、その時点のhide指示と照合する。
