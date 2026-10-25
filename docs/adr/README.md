@@ -76,3 +76,4 @@ ADR は「なぜそう決めたか」「何を却下したか」を書く。
 | [0058](0058-accessible-command-surfaces.md) | 補助面の候補・設定値・通知を既存UIA hostと操作状態から公開する | 受理 |
 | [0059](0059-common-new-note-and-content-alignment.md) | 新規ノートを共通ヘッダーへ集約し、本文操作列を36pxの基準へ揃える | 受理 |
 | [0065](0065-candidate-index-and-input-presentation.md) | 候補対応を所有者で共有し、入力後の描画をUIA通知待ちにしない | 受理 |
+| [0066](0066-disabled-pane-theme-background.md) | 無効な本文の背景も実効テーマで描く | 受理 |
