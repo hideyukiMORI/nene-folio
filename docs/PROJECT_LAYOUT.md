@@ -84,6 +84,9 @@ Win32・永続化・ファイル・ネットワークを知らない。
 application が作った値を描き、操作を意図として渡す（ARC-011）。可変性の隔離区画（ARC-005）。
 UIAのCOM寿命は`accessibility_host`、自前要素のABIは`accessibility_node`、native入力の名前注釈は
 `accessibility_native`に集約する。主窓・索引・補助面は同じ公開基盤から既存操作を呼ぶ（ADR0056/0058）。
+固定UIの派生計測は`folio_window`と`name_prompt_metrics`が入力条件付きで保持する（ADR0063）。
+native同期面のowner境界は`modal_owner`に集約する。主窓のshell操作と内容操作の可否、通常終了の安全な合流は
+`folio_window`が所有し、名前入力・失敗箱・色選択へ別のmodal状態を作らない（ADR0064）。
 
 ### `src/app`
 

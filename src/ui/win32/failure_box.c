@@ -1,4 +1,6 @@
 #include "failure_box.h"
+#include "folio_message.h"
+#include "modal_owner.h"
 
 #include "dialog_theme.h"
 #include "failure_box_outcome.h"
@@ -182,12 +184,13 @@ static int measured_height(const struct failure_box *_Nonnull box, int width)
 
 static SIZE maximum_size(const struct failure_box *_Nonnull box, HWND anchor)
 {
-    HWND owner = GetWindow(box->dialog, GW_OWNER);
+    HWND owner = modal_owner_root(box->dialog);
     RECT parent = {0, 0, scaled(box, 560), scaled(box, 360)};
     if (owner != nullptr)
         GetClientRect(owner, &parent);
     RECT bounds = dialog_theme_popup_bounds(
-        anchor, (SIZE){scaled(box, 480), parent.bottom - scaled(box, 32)});
+        anchor,
+        (SIZE){scaled(box, 480), parent.bottom - scaled(box, ui_part_surface_title_height + 32)});
     return (SIZE){bounds.right - bounds.left, bounds.bottom - bounds.top};
 }
 
@@ -240,7 +243,7 @@ static bool initialize(struct failure_box *_Nonnull box, HWND dialog)
     }
     dialog_theme_decorate(box->theme, dialog);
     SetWindowTextW(dialog, L"NeNe Folio");
-    if (!make_font(box) || !make_controls(box) || !lay_out(box, GetWindow(dialog, GW_OWNER)))
+    if (!make_font(box) || !make_controls(box) || !lay_out(box, modal_owner_root(dialog)))
         return false;
     box->ready = true;
     SetFocus(box->accept);
@@ -312,6 +315,10 @@ static INT_PTR paint_message(struct failure_box *_Nonnull box, UINT message, WPA
     case WM_DPICHANGED:
         follow_dpi(box, (const RECT *)lparam);
         return TRUE;
+    case folio_message_modal_reflow:
+        if (!lay_out(box, box->dialog))
+            EndDialog(box->dialog, box_not_built);
+        return TRUE;
     default:
         return FALSE;
     }
@@ -339,6 +346,12 @@ static INT_PTR CALLBACK procedure(HWND dialog, UINT message, WPARAM wparam, LPAR
     struct failure_box *_Nullable box = (struct failure_box *)GetWindowLongPtrW(dialog, DWLP_USER);
     if (box == nullptr)
         return FALSE;
+    if (message == folio_message_modal_cancel)
+    {
+        SetWindowLongPtrW(dialog, DWLP_MSGRESULT, 1);
+        EndDialog(dialog, IDOK);
+        return TRUE;
+    }
     if (message == WM_SHOWWINDOW && wparam != 0)
         announce(box);
     INT_PTR painted = paint_message(box, message, wparam, lparam);

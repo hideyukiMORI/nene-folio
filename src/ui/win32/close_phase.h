@@ -1,0 +1,9 @@
+#ifndef NENEFOLIO_CLOSE_PHASE_H
+#define NENEFOLIO_CLOSE_PHASE_H
+enum close_phase
+{
+    CLOSE_PHASE_IDLE,
+    CLOSE_PHASE_REQUESTED,
+    CLOSE_PHASE_RUNNING
+};
+#endif

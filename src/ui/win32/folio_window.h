@@ -15,6 +15,9 @@
 
 struct folio_state;
 struct folio_window;
+/* UIA hostの同期処理（通知・snapshot復元まで）も終了の安全境界へ含める。 */
+void folio_window_begin_dispatch(struct folio_window *_Nonnull self);
+void folio_window_end_dispatch(struct folio_window *_Nonnull self);
 struct accessible_view;
 struct accessible_request;
 

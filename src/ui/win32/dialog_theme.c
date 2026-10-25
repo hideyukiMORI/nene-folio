@@ -6,6 +6,7 @@
 #include "folio_shortcut.h"
 #include "folio_state.h"
 #include "icon_paint.h"
+#include "modal_owner.h"
 #include "ui_part.h"
 #include "ui_text.h"
 #include "ui_text_request.h"
@@ -93,7 +94,7 @@ void dialog_theme_destroy(struct dialog_theme *_Nullable theme)
 bool dialog_theme_follow(HWND _Nonnull dialog, const struct folio_state *_Nonnull state,
                          struct dialog_theme *_Nullable *_Nonnull theme)
 {
-    HWND owner = GetWindow(dialog, GW_OWNER);
+    HWND owner = modal_owner_root(dialog);
     if (owner != nullptr)
     {
         SendMessageW(owner, folio_message_appearance_changed, 0, 0);
@@ -243,6 +244,7 @@ void dialog_theme_field(const struct dialog_theme *_Nonnull theme, HDC _Nonnull 
 
 void dialog_theme_decorate(const struct dialog_theme *_Nonnull theme, HWND _Nonnull dialog)
 {
+    modal_owner_positioned(dialog);
     /* 地に対して白い字が立つなら暗い面なので、題の帯も暗くする（ADR 0017 と同じ判定）。 */
     BOOL dark = folio_palette_ink(theme->palette.window) == RGB(0xFF, 0xFF, 0xFF) ? TRUE : FALSE;
     DwmSetWindowAttribute(dialog, DWMWA_USE_IMMERSIVE_DARK_MODE, &dark, sizeof dark);
@@ -441,8 +443,21 @@ static LRESULT native_hit(HWND dialog, LPARAM lparam)
     return PtInRect(&title, point) && !PtInRect(&close, point) ? HTCAPTION : HTCLIENT;
 }
 
+static void native_anchor(HWND dialog, UINT message, WPARAM wparam, LPARAM lparam)
+{
+    bool activating = message == WM_ACTIVATE && LOWORD(wparam) == WA_INACTIVE;
+    bool idle = message == WM_ENTERIDLE && wparam == MSGF_DIALOGBOX;
+    if ((activating || idle) && lparam != 0)
+    {
+        HWND root = modal_owner_root(dialog);
+        if (root != nullptr)
+            modal_owner_anchor(root, (HWND)lparam);
+    }
+}
+
 bool dialog_theme_native_message(HWND _Nonnull dialog, UINT message, WPARAM wparam, LPARAM lparam)
 {
+    native_anchor(dialog, message, wparam, lparam);
     if (message == WM_NCCALCSIZE || message == WM_NCHITTEST)
     {
         SetWindowLongPtrW(dialog, DWLP_MSGRESULT,
@@ -460,18 +475,41 @@ bool dialog_theme_native_message(HWND _Nonnull dialog, UINT message, WPARAM wpar
     return message == WM_NOTIFY && lparam != 0 && close_tip_text(dialog, lparam);
 }
 
+/* 横は既存480幅を保ち、縦は主ヘッダー下の16px余白へ制限する。 */
+static RECT popup_work_area(HWND root, RECT monitor)
+{
+    RECT content = modal_owner_work_area(root);
+    int edge = scale(ui_part_edge, GetDpiForWindow(root));
+    content.top += edge;
+    content.bottom -= edge;
+    monitor.top = monitor.top > content.top ? monitor.top : content.top;
+    monitor.bottom = monitor.bottom < content.bottom ? monitor.bottom : content.bottom;
+    return monitor;
+}
+
+static RECT popup_center(HWND owner, HWND root)
+{
+    wchar_t kind[32];
+    RECT center = modal_owner_work_area(root);
+    if (GetClassNameW(owner, kind, 32) != 0 && wcscmp(kind, L"#32770") == 0)
+        GetWindowRect(owner, &center);
+    return center;
+}
+
 RECT dialog_theme_popup_bounds(HWND _Nullable owner, SIZE wanted_client)
 {
     MONITORINFO monitor = {.cbSize = sizeof monitor};
     RECT area = {0, 0, wanted_client.cx, wanted_client.cy};
-    if (GetMonitorInfoW(MonitorFromWindow(owner, MONITOR_DEFAULTTOPRIMARY), &monitor))
+    HWND root = modal_owner_root(owner);
+    if (GetMonitorInfoW(MonitorFromWindow(root, MONITOR_DEFAULTTOPRIMARY), &monitor))
     {
         area = monitor.rcWork;
     }
     RECT center = area;
-    if (owner != nullptr)
+    if (root != nullptr)
     {
-        GetWindowRect(owner, &center);
+        center = popup_center(owner, root);
+        area = popup_work_area(root, area);
     }
     int width =
         wanted_client.cx < area.right - area.left ? wanted_client.cx : area.right - area.left;

@@ -1,17 +1,21 @@
 # いまのタスク — NeNe Folio
 
-記録日: 2026-10-25。[#368](https://github.com/hideyukiMORI/nene-folio/issues/368)で設定/テーマ等の遅延と一覧描画を改善。
+記録日: 2026-10-25。[#373](https://github.com/hideyukiMORI/nene-folio/issues/373)の設定/モーダル応答と主窓操作について、実装・対象検証を完了。統合・通常exe・整理の最新状態は[PR #374](https://github.com/hideyukiMORI/nene-folio/pull/374)と下記の完了記録を照合する。
 現在のhide指示、Issue/PR、checkoutを照合して再開する。前件#351の分担や過去の一時的許可を継承しない。
 
-## 最新の成果
+## 現在の到達点
 
-- 同一GDI経路の折返し計測回数を減らし、設定/テーマの共通予約高を一つのcacheで再利用。画面外の一覧行は描画しない。
-- Releaseで初回設定541.5→97.2ms、テーマ切替492.9→20.8ms、10,000件一覧235.9→1.52ms。機械/fixture固有の実測。
-- Debug/Release build/tidy、折返し15,968件、Help101件、帯geometry95件、設定scroll48件が成功。6枚の一覧比較とdrag/contrast12件で画素差0。
-- 判断は[ADR0062](../adr/0062-ui-measurement-and-visible-paint.md)、詳細/限界は[品質記録](../quality/2026-10-25-ui-latency.md)。
-- [PR #370](https://github.com/hideyukiMORI/nene-folio/pull/370)の最終head CIは成功し、製品main `f631d819`へ統合済み。通常ビルドを更新し、00:32 JSTに起動・応答を確認した。
-- 実行結果は `D:/NeNeFolio/agents/performance-20261024/completion.json`、要約は[日報](../reports/2026-10-25.md)、再開手順は[引き継ぎ](../handoffs/2026-10-25.md)を読む。PID/稼働状態は再開時に確認する。
-- 調査/設計/実装/検証は対話席が単体、必要な独立レビューだけ読み取り専用。schema/依存/ゲート変更なし、Waivers: none。
+- hideの今回の明示指定により、対話席のAstraが設計と受理を担当し、Sol/Lunaが調査・実装・検証を担当する。ClaudeCodeのデザインリナと設計を批評した。この分担は今回の作業に限る。
+- [ADR0063](../adr/0063-derived-ui-metrics-and-surface-arrangement.md)で、固定UIの派生計測を所有者へ保持し、初期化途中の重複配置と不変な背景子窓の再配置を削減する。
+- [ADR0064](../adr/0064-content-modal-and-window-shell.md)で、内容操作の禁止と主窓の移動・終了を分ける。native同期loopを保ち、root所有のmodal ownerを使う。保存/取消/IME/最外dispatchの寿命を維持する。
+- 作業checkoutは `D:/NeNeFolio/worktrees/373-gui-responsiveness`。恒久証跡は `D:/NeNeFolio/agents/gui-responsiveness-20261025`、一時出力は `D:/NeNeFolio/outputs/gui-responsiveness-20261025`。
+- Debug build/tidyと直接境界371、名前計測22/独立oracle288条件、native261、最小窓追加188 checksが成功。独立レビューのfocus指摘を修正し、完成画像も確認した。
+- 同条件8回中央値で設定open21.05→11.93ms、名前入力初回paint40.24→17.09ms。起動後の初回設定約81msは残り、実display呈示の保証ではない。
+- 統合は最終headの必須CI成功後に正規ツールで行う。通常exeへ反映後も自動起動せず、hideの実機試用へ渡す。現在のPR/CIと恒久証跡の`completion.json`を照合する。
+- hideの並行作業へ干渉しないため、再開後はComputer Useを使わず専用非入力desktopと保存画像で確認した。
+- 詳細/限界は[#373品質記録](../quality/2026-10-25-gui-responsiveness.md)、[日報](../reports/2026-10-25.md)、[引き継ぎ](../handoffs/2026-10-25.md)。schema/依存/ゲート変更なし、Waivers: none。
+
+前件#368/PR #370の統合・通常反映は完了済み。過去の数値やCIを#373の合格へ読み替えず、履歴は[前件品質記録](../quality/2026-10-25-ui-latency.md)を読む。
 
 ## 次の判断
 

@@ -4,6 +4,7 @@
  * （どちらもフォルダは作られている）。 */
 #ifndef NENEFOLIO_NAME_PROMPT_H
 #define NENEFOLIO_NAME_PROMPT_H
+#include "name_prompt_metrics.h"
 #include "name_prompt_request.h"
 #include "name_prompt_result.h"
 #include <windows.h>
@@ -12,5 +13,6 @@ struct folio_palette;
  * 退出種別の結果は保存の成否と、この一回だけの無題置換許可を分ける（ADR0050）。 */
 [[nodiscard]] struct name_prompt_result
 name_prompt_show(HWND _Nonnull owner, const struct name_prompt_request *_Nonnull request,
-                 const struct folio_palette *_Nonnull palette);
+                 const struct folio_palette *_Nonnull palette,
+                 struct name_prompt_metrics *_Nonnull metrics);
 #endif
