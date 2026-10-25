@@ -9440,6 +9440,23 @@ static LRESULT CALLBACK filter_input_message(HWND window, UINT message, WPARAM w
     return result;
 }
 
+/* 準備開始/取消/完成/失敗は同じ表示更新へ合流する。本文の投入は行わない。 */
+static void refresh_index_filter(struct folio_window *_Nonnull self, bool was_filtering)
+{
+    /* 「×」が出入りするのは効き始めと解けたときだけ。打つたびに欄を消して描き直すと
+     * ちらつくので、変わった 1 回だけ欄ごと描き直す（補正 6）。 */
+    if (folio_state_filtering(self->state) != was_filtering)
+    {
+        InvalidateRect(self->filter_input, nullptr, TRUE);
+    }
+    if (self->drawer != nullptr)
+    {
+        drawer_window_reveal_cursor(self->drawer);
+    }
+    redraw_drawer(self);
+    InvalidateRect(self->handle, nullptr, FALSE);
+}
+
 /* 打つたびに語を覚え直し、索引を作り直す（ADR 0024 の決定 6）。
  * IME の未確定入力のあいだは動かさず、確定の WM_IME_ENDCOMPOSITION のあとで 1 回だけ動く。
  * 壊れた語は前の絞り込みを保つだけで、打つたびにモーダルを出さない。 */
@@ -9459,18 +9476,7 @@ static void filter_input_changed(struct folio_window *_Nonnull self)
         report_outcome(self, filtered);
         return;
     }
-    /* 「×」が出入りするのは効き始めと解けたときだけ。打つたびに欄を消して描き直すと
-     * ちらつくので、変わった 1 回だけ欄ごと描き直す（補正 6）。 */
-    if (folio_state_filtering(self->state) != was_filtering)
-    {
-        InvalidateRect(self->filter_input, nullptr, TRUE);
-    }
-    if (self->drawer != nullptr)
-    {
-        drawer_window_reveal_cursor(self->drawer);
-    }
-    redraw_drawer(self);
-    InvalidateRect(self->handle, nullptr, FALSE);
+    refresh_index_filter(self, was_filtering);
 }
 
 /* Ctrl+Shift+F は常設の欄へフォーカスを移し、いまの語を全選択する（ADR 0024 の決定 6）。 */
@@ -13402,6 +13408,31 @@ static void refresh_after_input(struct folio_window *_Nonnull self)
     {
         announce_saved(self);
     }
+}
+
+/* 空queueとWaitMessageの間でも呼ぶため、副作用/queue確認を持たない（ADR0068）。 */
+bool folio_window_idle_work_ready(const struct folio_window *_Nonnull self)
+{
+    return folio_state_index_filter_pending(self->state) && !self->filter_saving &&
+           self->command_surface == COMMAND_SURFACE_CLOSED && folio_window_accessible_ready(self);
+}
+
+void folio_window_continue_index_filter(struct folio_window *_Nonnull self)
+{
+    if (!folio_window_idle_work_ready(self))
+        return;
+    folio_window_begin_dispatch(self);
+    bool was_filtering = folio_state_filtering(self->state);
+    enum folio_state_outcome outcome = folio_state_continue_index_filter(self->state);
+    if (!folio_state_index_filter_pending(self->state))
+    {
+        refresh_index_filter(self, was_filtering);
+        if (part_enabled(self, ACCESSIBLE_TREE))
+            refresh_after_input(self);
+        if (outcome != FOLIO_STATE_READY && part_enabled(self, ACCESSIBLE_TREE))
+            report_outcome(self, outcome);
+    }
+    folio_window_end_dispatch(self);
 }
 
 static LRESULT on_accessibility_message(struct folio_window *_Nonnull self, UINT message,

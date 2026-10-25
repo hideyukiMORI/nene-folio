@@ -453,6 +453,7 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
     [UI_TEXT_CHIP_EDIT] = {"編集", "Edit", "编辑"},
     [UI_TEXT_PLACEHOLDER_FILTER] = {"すべてのノートを検索", "Search all notes", "搜索全部笔记"},
     /* 絞り込み中の件数（#86）。数だけなので 3 列とも同じ。 */
+    [UI_TEXT_STATUS_FILTER_PREPARING] = {"準備中", "Loading", "准备中"},
     [UI_TEXT_STATUS_FILTER_COUNT] = {"{k} / {n}", "{k} / {n}", "{k} / {n}"},
     [UI_TEXT_STATUS_SEARCH_FORWARD] = {"このノート内を検索 / Enter: 次へ",
                                        "Find in this note / Enter: Next",

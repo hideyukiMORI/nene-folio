@@ -30,6 +30,9 @@ folio_window_create(struct folio_state *_Nonnull state, enum font_bundle_outcome
 /* メッセージループのTranslateMessageより前。処理済みの鍵は再dispatchしない。 */
 [[nodiscard]] bool folio_window_translate(const struct folio_window *_Nonnull window,
                                           const MSG *_Nonnull message);
+/* 合成ルートが空queueで使う副作用のない可否判定と、dispatch寿命で包んだ一件の継続。 */
+[[nodiscard]] bool folio_window_idle_work_ready(const struct folio_window *_Nonnull self);
+void folio_window_continue_index_filter(struct folio_window *_Nonnull self);
 void folio_window_destroy(struct folio_window *_Nullable window);
 
 /* UIAはこの表示境界だけを通る。状態の正本や保存経路をproviderへ複製しない。 */

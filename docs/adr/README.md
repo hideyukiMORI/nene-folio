@@ -78,3 +78,4 @@ ADR は「なぜそう決めたか」「何を却下したか」を書く。
 | [0065](0065-candidate-index-and-input-presentation.md) | 候補対応を所有者で共有し、入力後の描画をUIA通知待ちにしない | 受理 |
 | [0066](0066-disabled-pane-theme-background.md) | 無効な本文の背景も実効テーマで描く | 受理 |
 | [0067](0067-note-display-zoom.md) | 本文の倍率を一つのRichEdit表示状態として扱う | 受理 |
+| [0068](0068-idle-index-preparation.md) | 初回検索の本文準備を入力待機中に一件ずつ進める | 受理 |

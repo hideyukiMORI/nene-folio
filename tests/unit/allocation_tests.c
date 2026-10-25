@@ -552,7 +552,7 @@ static bool search_under_probe(struct folio_state *_Nonnull state)
  * 絞り込んだまま保存して、写しの差し替えと一致集合の作り直しも通す（決定 4）。 */
 static bool filter_under_probe(struct folio_state *_Nonnull state)
 {
-    enum folio_state_outcome filtered = folio_state_set_index_filter(state, u"one", 3);
+    enum folio_state_outcome filtered = test_index_filter_complete(state, u"one", 3);
     require(filtered == FOLIO_STATE_READY || filtered == FOLIO_STATE_OUT_OF_MEMORY,
             "index filter under probe");
     if (filtered != FOLIO_STATE_READY)
@@ -567,7 +567,7 @@ static bool filter_under_probe(struct folio_state *_Nonnull state)
     {
         return false;
     }
-    return folio_state_set_index_filter(state, u"", 0) == FOLIO_STATE_READY;
+    return test_index_filter_complete(state, u"", 0) == FOLIO_STATE_READY;
 }
 
 /* 置換は本文の写し・一致の列・置換文字列・組み立ての出力の確保をまとめて通す
@@ -1112,7 +1112,7 @@ static bool trash_scenario(void)
     bool prepared =
         folio_state_create(test_ports(&port, &looks, &regex), &state) == FOLIO_STATE_READY &&
         folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
-        folio_state_set_index_filter(state, u"Hello", 5) == FOLIO_STATE_READY;
+        test_index_filter_complete(state, u"Hello", 5) == FOLIO_STATE_READY;
     bool completed = prepared && trash_under_probe(state, adapter);
     folio_state_destroy(state);
     test_adapter_destroy(adapter);
