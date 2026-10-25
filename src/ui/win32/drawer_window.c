@@ -689,7 +689,7 @@ static void choose_color(struct drawer_window *_Nonnull self, struct drawer_row 
         .lpCustColors = self->custom_colors,
         .Flags = CC_RGBINIT | CC_FULLOPEN,
     };
-    if (!ChooseColorW(&choice))
+    if (!SendMessageW(GetParent(self->handle), folio_message_choose_color, 0, (LPARAM)&choice))
     {
         /* キャンセルは何もしない（決定 4）。 */
         return;

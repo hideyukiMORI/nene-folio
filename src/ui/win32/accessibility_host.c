@@ -244,6 +244,8 @@ static HRESULT action_ready(struct accessibility_host *_Nonnull host,
     {
         return accessibility_node_invalid;
     }
+    if (request->item.kind == ACCESSIBLE_CLOSE && request->action == ACCESSIBLE_ACTION_INVOKE)
+        return S_OK; /* shell可否はview.enabled。外側の業務実行guardは維持する。 */
     if (request->item.kind == ACCESSIBLE_MENU && request->action == ACCESSIBLE_ACTION_COLLAPSE &&
         view.expanded)
     {
@@ -303,6 +305,10 @@ HRESULT accessibility_host_action(struct accessibility_host *_Nonnull host,
     {
         return result;
     }
+    struct folio_window *owner = host->owner;
+    if (owner == nullptr)
+        return accessibility_node_unavailable;
+    folio_window_begin_dispatch(owner);
     accessibility_host_add_ref(host);
     bool executing = host->executing;
     host->executing = true;
@@ -316,6 +322,7 @@ HRESULT accessibility_host_action(struct accessibility_host *_Nonnull host,
     refresh_snapshot(host);
     accessibility_host_schedule(host);
     accessibility_host_release(host);
+    folio_window_end_dispatch(owner);
     return result;
 }
 

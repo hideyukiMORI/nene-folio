@@ -1,0 +1,10 @@
+#ifndef NENEFOLIO_NAME_PROMPT_METRICS_OUTCOME_H
+#define NENEFOLIO_NAME_PROMPT_METRICS_OUTCOME_H
+
+enum name_prompt_metrics_outcome : unsigned char
+{
+    NAME_PROMPT_METRICS_READY,
+    NAME_PROMPT_METRICS_FAILED
+};
+
+#endif

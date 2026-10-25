@@ -1,5 +1,8 @@
 # ADR 0035 — 名前入力面と失敗の箱は comctl32 v5 のまま `dialog_theme` の 1 本の塗りでテーマに従い、失敗の箱は `MessageBoxW` をやめて同じ塗りの自前のモーダルにする
 
+> 2026-10-25・#373: 主窓をnative modalのownerとして無効化する境界は[ADR0064](0064-content-modal-and-window-shell.md)で補正した。
+> 標準DialogBoxの同期loopと入れ子ownerのdisable/restoreは維持し、主窓所有の非表示proxyを最下層のownerとする。
+
 - 状態: 受理（設計リナ 2026-09-23。Issue #82。実測 `out/design/2026-09-24/prompt-theme-probe/`（v5 / v6 の 2 本の塗りの表・失敗の箱の幅・13 か所の文脈・S6 / S7 / S8 の追試・Enter の直し方 V4〜V6）に基づき、現行コード（main `2a13318`）に照らした読み取り専用の批評（止める所見 8・直したい所見 12・追補 8）をすべて本文へ織り込んで受理した。草案は ADR 0034 の番号で書いたが、0034 は運用 ADR が取ったので 0035 になった）
 - 日付: 2026-09-23
 - Issue: #82（ADR 0031 決定 10 の積み残し）

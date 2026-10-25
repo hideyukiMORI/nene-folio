@@ -1,0 +1,8 @@
+#ifndef NENEFOLIO_MODAL_OWNER_OUTCOME_H
+#define NENEFOLIO_MODAL_OWNER_OUTCOME_H
+enum modal_owner_outcome
+{
+    MODAL_OWNER_READY,
+    MODAL_OWNER_UNAVAILABLE
+};
+#endif

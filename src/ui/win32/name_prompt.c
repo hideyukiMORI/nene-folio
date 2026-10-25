@@ -3,9 +3,12 @@
 #include "category_name.h"
 #include "dialog_theme.h"
 #include "folio_command.h"
+#include "folio_message.h"
 #include "folio_palette.h"
 #include "folio_state.h"
 #include "icon_paint.h"
+#include "modal_owner.h"
+#include "name_prompt_metrics.h"
 #include "note_name.h"
 #include "ui_face.h"
 #include "ui_part.h"
@@ -36,6 +39,7 @@ struct name_prompt
     HWND _Nullable category_label;
     WNDPROC _Nullable original;
     HFONT _Nullable font;
+    struct name_prompt_metrics *_Nonnull metrics;
     /* 初期paletteの塗り。OS色通知で実効色へ追随する（ADR0057）。 */
     struct dialog_theme *_Nullable theme;
     UINT dpi;
@@ -500,36 +504,66 @@ static bool inputs(struct name_prompt *_Nonnull prompt)
     return prompt->original != nullptr;
 }
 
-static int wrapped_height(HDC device, const char *_Nonnull text, int width)
+static enum name_prompt_metrics_outcome
+wrapped_height(HDC _Nonnull device, const char *_Nonnull text, int width, int *_Nonnull height)
 {
+    if (width <= 0)
+        return NAME_PROMPT_METRICS_FAILED;
+    if (text[0] == '\0')
+    {
+        *height = 0;
+        return NAME_PROMPT_METRICS_READY;
+    }
     char16_t units[pending_reason_capacity];
     size_t written = 0;
     if (utf16_text_fill(text, units, pending_reason_capacity, &written) != UTF16_TEXT_FILL_READY)
-        return 0;
+        return NAME_PROMPT_METRICS_FAILED;
     RECT bounds = {0, 0, width, 0};
-    DrawTextW(device, units, -1, &bounds, DT_WORDBREAK | DT_CALCRECT | DT_NOPREFIX | DT_EXPANDTABS);
-    return bounds.bottom;
+    int drawn = DrawTextW(device, units, -1, &bounds,
+                          DT_WORDBREAK | DT_CALCRECT | DT_NOPREFIX | DT_EXPANDTABS);
+    if (drawn <= 0 || bounds.bottom <= 0)
+        return NAME_PROMPT_METRICS_FAILED;
+    *height = bounds.bottom;
+    return NAME_PROMPT_METRICS_READY;
 }
 
 static int maximum_result_height(const struct name_prompt *_Nonnull prompt, int width)
 {
+    int maximum = 0;
+    const struct name_prompt_metrics_request request = {.dialog = prompt->dialog,
+                                                        .font = prompt->font,
+                                                        .width = width,
+                                                        .dpi = prompt->dpi,
+                                                        .language = prompt_language(prompt)};
+    if (name_prompt_metrics_failure_height(prompt->metrics, &request, &maximum) !=
+        NAME_PROMPT_METRICS_READY)
+        return 0;
     HDC device = GetDC(prompt->dialog);
     if (device == nullptr)
-        return 0;
-    HGDIOBJ previous = SelectObject(device, prompt->font);
-    int maximum = 0;
-    for (size_t at = 0; at <= FOLIO_STATE_CATEGORY_NOT_SELECTED; ++at)
     {
-        int height = wrapped_height(
-            device, folio_state_failure_line((enum folio_state_outcome)at, prompt_language(prompt)),
-            width);
-        maximum = height > maximum ? height : maximum;
+        name_prompt_metrics_invalidate(prompt->metrics);
+        return 0;
+    }
+    HGDIOBJ previous = SelectObject(device, prompt->font);
+    if (previous == nullptr || previous == HGDI_ERROR)
+    {
+        ReleaseDC(prompt->dialog, device);
+        name_prompt_metrics_invalidate(prompt->metrics);
+        return 0;
     }
     const enum ui_text ids[] = {prompt_hint(prompt), UI_TEXT_PROMPT_NAME_EMPTY,
                                 UI_TEXT_PROMPT_PENDING_EXPLANATION};
     for (size_t at = 0; at < sizeof ids / sizeof ids[0]; ++at)
     {
-        int height = wrapped_height(device, ui_text_line(ids[at], prompt_language(prompt)), width);
+        int height = 0;
+        if (wrapped_height(device, ui_text_line(ids[at], prompt_language(prompt)), width,
+                           &height) != NAME_PROMPT_METRICS_READY)
+        {
+            SelectObject(device, previous);
+            ReleaseDC(prompt->dialog, device);
+            name_prompt_metrics_invalidate(prompt->metrics);
+            return 0;
+        }
         maximum = height > maximum ? height : maximum;
     }
     SelectObject(device, previous);
@@ -617,11 +651,11 @@ static int plan_fields(struct name_prompt *_Nonnull prompt, int width)
 
 static bool plan_dialog(struct name_prompt *_Nonnull prompt, HWND anchor, SIZE *_Nonnull size)
 {
-    HWND owner = GetWindow(prompt->dialog, GW_OWNER);
+    HWND owner = modal_owner_root(prompt->dialog);
     RECT parent = {0, 0, scaled(prompt, 560), scaled(prompt, 360)};
     if (owner != nullptr)
         GetClientRect(owner, &parent);
-    int maximum = parent.bottom - scaled(prompt, 32);
+    int maximum = parent.bottom - scaled(prompt, ui_part_surface_title_height + 32);
     RECT allowed = dialog_theme_popup_bounds(anchor, (SIZE){scaled(prompt, 480), maximum});
     int width = allowed.right - allowed.left;
     int limit = allowed.bottom - allowed.top;
@@ -792,9 +826,9 @@ static bool initialize(struct name_prompt *_Nonnull prompt, HWND dialog)
     if (!make_labels_and_buttons(prompt))
         return false;
     SIZE size;
-    if (!plan_dialog(prompt, GetWindow(dialog, GW_OWNER), &size))
+    if (!plan_dialog(prompt, modal_owner_root(dialog), &size))
         return false;
-    RECT bounds = dialog_theme_popup_bounds(GetWindow(dialog, GW_OWNER), size);
+    RECT bounds = dialog_theme_popup_bounds(modal_owner_root(dialog), size);
     MoveWindow(dialog, bounds.left, bounds.top, bounds.right - bounds.left,
                bounds.bottom - bounds.top, FALSE);
     return true;
@@ -1310,6 +1344,22 @@ static void follow_dpi(struct name_prompt *_Nonnull prompt, const RECT *_Nonnull
     reflow_prompt(prompt);
 }
 
+/* ownerのresizeは既存font/同じ計測cacheで再flowする。 */
+static void reflow_owner(struct name_prompt *_Nonnull prompt)
+{
+    SIZE size;
+    if (!plan_dialog(prompt, prompt->dialog, &size))
+    {
+        prompt->outcome = FOLIO_STATE_OUT_OF_MEMORY;
+        EndDialog(prompt->dialog, IDCANCEL);
+        return;
+    }
+    RECT fitted = dialog_theme_popup_bounds(prompt->dialog, size);
+    MoveWindow(prompt->dialog, fitted.left, fitted.top, fitted.right - fitted.left,
+               fitted.bottom - fitted.top, FALSE);
+    reflow_prompt(prompt);
+}
+
 /* 塗りのメッセージを dialog_theme へ渡す。IME の門より前で答えるので組成中も色が抜けない
  * （ADR 0035 の決定 3）。扱わないメッセージは FALSE で、扱ったものは 0 でない値を返す。 */
 static INT_PTR paint_message(struct name_prompt *_Nonnull prompt, UINT message, WPARAM wparam,
@@ -1345,6 +1395,9 @@ static INT_PTR paint_message(struct name_prompt *_Nonnull prompt, UINT message, 
         return TRUE;
     case WM_DPICHANGED:
         follow_dpi(prompt, (const RECT *)lparam);
+        return TRUE;
+    case folio_message_modal_reflow:
+        reflow_owner(prompt);
         return TRUE;
     default:
         return FALSE;
@@ -1400,9 +1453,19 @@ static INT_PTR prompt_command(struct name_prompt *_Nonnull prompt, WPARAM wparam
     return FALSE;
 }
 
+static INT_PTR cancel_from_owner(struct name_prompt *_Nonnull prompt)
+{
+    SetWindowLongPtrW(prompt->dialog, DWLP_MSGRESULT, prompt->composing ? 2 : 1);
+    if (!prompt->composing)
+        EndDialog(prompt->dialog, IDCANCEL);
+    return TRUE;
+}
+
 static INT_PTR operation_message(struct name_prompt *_Nonnull prompt, UINT message, WPARAM wparam,
                                  LPARAM lparam)
 {
+    if (message == folio_message_modal_cancel)
+        return cancel_from_owner(prompt);
     if (message == WM_COMMAND && field_focus_changed(prompt, wparam, lparam))
         return FALSE;
     if (prompt->composing && (message == WM_COMMAND || message == WM_CLOSE))
@@ -1440,13 +1503,15 @@ static INT_PTR CALLBACK procedure(HWND dialog, UINT message, WPARAM wparam, LPAR
 
 struct name_prompt_result name_prompt_show(HWND _Nonnull owner,
                                            const struct name_prompt_request *_Nonnull request,
-                                           const struct folio_palette *_Nonnull palette)
+                                           const struct folio_palette *_Nonnull palette,
+                                           struct name_prompt_metrics *_Nonnull metrics)
 {
     struct name_prompt prompt = {.state = request->state,
                                  .kind = request->kind,
                                  .target = request->target,
                                  .units = request->units,
                                  .count = request->count,
+                                 .metrics = metrics,
                                  .outcome = FOLIO_STATE_CANCELLED,
                                  .untitled = FOLIO_UNTITLED_PROTECT};
     /* 面を作る前に palette を写す。子の WM_CTLCOLOR* は作る途中から来て、

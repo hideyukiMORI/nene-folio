@@ -38,4 +38,11 @@ constexpr UINT folio_message_filter_focused = WM_APP + 12;
 constexpr UINT folio_message_open_menu = WM_APP + 13;
 /* drawer操作の結果を主窓のreport_outcomeへ渡す。wParam=folio_state_outcome。 */
 constexpr UINT folio_message_report_outcome = WM_APP + 14;
+/* modal取消の応答: 0=標準OS面、1=受理、2=IME等により拒否。 */
+constexpr UINT folio_message_modal_cancel = WM_APP + 15;
+constexpr UINT folio_message_modal_reflow = WM_APP + 16;
+/* 最外dispatch/native呼出しが戻った地点で通常終了を一度だけ再開する。 */
+constexpr UINT folio_message_close_requested = WM_APP + 17;
+/* drawer色選択のowner/取消/暗幕を主窓の同期境界へ集約する。 */
+constexpr UINT folio_message_choose_color = WM_APP + 18;
 #endif

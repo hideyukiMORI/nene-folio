@@ -7,6 +7,7 @@
 
 #include "breadcrumb_layout.h"
 #include "category_name.h"
+#include "close_phase.h"
 #include "command_band_layout.h"
 #include "command_help_metrics.h"
 #include "command_row.h"
@@ -29,7 +30,9 @@
 #include "icon_paint.h"
 #include "layout_metrics.h"
 #include "menu_request.h"
+#include "modal_owner.h"
 #include "name_prompt.h"
+#include "name_prompt_metrics.h"
 #include "note_name.h"
 #include "note_pane.h"
 #include "note_ref.h"
@@ -45,12 +48,14 @@
 #include "theme_row.h"
 #include "ui_face.h"
 #include "ui_part.h"
+#include "ui_part_metrics.h"
 #include "ui_text.h"
 #include "ui_text_request.h"
 #include "utf16_text.h"
 #include "utf8_text.h"
 
 #include <commctrl.h>
+#include <commdlg.h>
 #include <dwmapi.h>
 #include <imm.h>
 #include <richedit.h>
@@ -101,6 +106,11 @@ struct folio_window
     HWND _Nullable settings_backdrop;
     /* native DialogBoxの暗幕は同じownerが持つ。復帰は現surface/DPIから再導出する。 */
     size_t native_modal_depth;
+    struct modal_owner *_Nullable modal_owner;
+    struct name_prompt_metrics *_Nullable native_metrics;
+    enum close_phase close_phase;
+    size_t dispatch_depth;
+    bool modal_arrange_failed;
     struct command_band_layout band;
     size_t surface_hover;
     size_t surface_pressed;
@@ -156,6 +166,8 @@ struct folio_window
     enum pane_notice notice;
     struct command_surface_metrics settings_metrics;
     struct command_help_metrics help_metrics;
+    struct ui_part_metrics part_metrics;
+    bool command_initializing; /* 同期の初期WM_SETTEXTを利用者のEN_CHANGEから区別する。 */
     bool removal_running;
     enum session_phase session_phase;
     HWND _Nullable session_return_focus;
@@ -446,8 +458,6 @@ constexpr int base_close_margin = 16;
 constexpr int base_command_gap = 8;
 constexpr int base_command_input_height = 28;
 constexpr int base_command_palette_width = 460;
-constexpr int base_command_palette_top = 76;
-constexpr int base_command_palette_compact_top = 40;
 constexpr int base_command_palette_padding = 16;
 constexpr int base_command_row_height = 32;
 constexpr int base_command_status_height = 24;
@@ -562,6 +572,7 @@ static void show_focus_cues(struct folio_window *_Nonnull self, bool shown);
 static void pointer_focus(struct folio_window *_Nonnull self, POINT point);
 static void accessible_command_invoked(struct folio_window *_Nonnull self,
                                        enum folio_command command);
+static bool pane_streaming(const struct folio_window *_Nonnull self);
 static bool accessible_visible(const struct folio_window *_Nonnull self, enum accessible_kind kind);
 static RECT accessible_main_rect(const struct folio_window *_Nonnull self,
                                  enum accessible_kind kind);
@@ -596,6 +607,9 @@ static bool session_input_message(UINT message)
     case folio_message_select_note:
     case folio_message_drawer_menu:
     case folio_message_command_focus_lost:
+    case folio_message_open_menu:
+    case folio_message_report_outcome:
+    case folio_message_choose_color:
         return true;
     default:
         /* Win32のmessageは開いた集合（C-017）。 */
@@ -605,15 +619,88 @@ static bool session_input_message(UINT message)
 
 static bool session_blocks_message(const struct folio_window *_Nonnull self, UINT message)
 {
-    return (session_busy(self) || self->native_modal_depth > 0) && session_input_message(message);
+    return (session_busy(self) || self->native_modal_depth > 0 ||
+            self->close_phase != CLOSE_PHASE_IDLE) &&
+           session_input_message(message);
 }
+
+/* shellと内容の可否を分け、UIA/pointer/描画/tooltipで共有する。 */
+static bool shell_ready(const struct folio_window *_Nonnull self)
+{
+    return self->handle != nullptr && IsWindowEnabled(self->handle) && !session_busy(self) &&
+           (self->native_modal_depth > 0 ||
+            (!self->removal_running && !pane_streaming(self) && !self->layout_changing));
+}
+
+static bool part_enabled(const struct folio_window *_Nonnull self, enum accessible_kind kind)
+{
+    if (kind == ACCESSIBLE_CLOSE || kind == ACCESSIBLE_WINDOW || kind == ACCESSIBLE_HEADER)
+        return shell_ready(self);
+    return folio_window_accessible_ready(self) && self->command_surface == COMMAND_SURFACE_CLOSED;
+}
+
+static void dispatch_finished(struct folio_window *_Nonnull self)
+{
+    self->dispatch_depth -= 1;
+    if (self->dispatch_depth == 0 && self->native_modal_depth == 0 &&
+        self->close_phase == CLOSE_PHASE_REQUESTED && self->handle != nullptr)
+        PostMessageW(self->handle, folio_message_close_requested, 0, 0);
+}
+
+void folio_window_begin_dispatch(struct folio_window *_Nonnull self)
+{
+    self->dispatch_depth += 1;
+}
+
+void folio_window_end_dispatch(struct folio_window *_Nonnull self)
+{
+    dispatch_finished(self);
+}
+
+static bool root_blocks_message(const struct folio_window *_Nonnull self, UINT message,
+                                WPARAM wparam);
 
 /* 同じthreadの別トップレベルやモーダルの入力は、主窓の承認待ちで消費しない。 */
 static bool session_blocks_queued_input(const struct folio_window *_Nonnull self,
                                         const MSG *_Nonnull message)
 {
-    return session_blocks_message(self, message->message) &&
-           (message->hwnd == self->handle || IsChild(self->handle, message->hwnd));
+    if (message->hwnd == self->handle)
+        return root_blocks_message(self, message->message, message->wParam);
+    return session_blocks_message(self, message->message) && IsChild(self->handle, message->hwnd);
+}
+
+static bool shell_system_command(WPARAM command)
+{
+    switch (command & 0xFFF0)
+    {
+    case SC_CLOSE:
+    case SC_MOVE:
+    case SC_SIZE:
+    case SC_MINIMIZE:
+    case SC_MAXIMIZE:
+    case SC_RESTORE:
+    case SC_KEYMENU:
+    case SC_MOUSEMENU:
+        return true;
+    default:
+        return false; /* OSのsystem commandは開いた集合。 */
+    }
+}
+
+static bool root_blocks_message(const struct folio_window *_Nonnull self, UINT message,
+                                WPARAM wparam)
+{
+    if (session_busy(self))
+        return session_input_message(message);
+    if (self->native_modal_depth == 0 && self->close_phase == CLOSE_PHASE_IDLE)
+        return false;
+    if (message == WM_CLOSE || message == WM_LBUTTONDOWN || message == WM_LBUTTONUP ||
+        message == WM_MOUSEMOVE || message == WM_MOUSELEAVE || message == WM_CAPTURECHANGED ||
+        message == WM_CANCELMODE)
+        return false;
+    if (message == WM_SYSCOMMAND)
+        return !shell_system_command(wparam);
+    return session_input_message(message);
 }
 
 /* 先行復旧は元要求より前。READYは復旧だけの成功で、対象/本文/名前は呼出し元で取り直す。 */
@@ -663,6 +750,7 @@ static LRESULT CALLBACK command_layer_procedure(HWND window, UINT message, WPARA
                                                 LPARAM lparam);
 static LRESULT CALLBACK settings_backdrop_procedure(HWND window, UINT message, WPARAM wparam,
                                                     LPARAM lparam);
+static LRESULT CALLBACK window_procedure(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
 
 static int scale(int value, UINT dpi)
 {
@@ -874,11 +962,16 @@ static int measure_digit(const struct folio_window *_Nonnull self, UINT dpi)
     return measurable ? (int)measured.cx : scale(base_digit_fallback, dpi);
 }
 
+static void refresh_part_metrics(struct folio_window *_Nonnull self, UINT dpi);
+
 static void refresh_font(struct folio_window *_Nonnull self, UINT dpi)
 {
+    if (self->native_metrics != nullptr)
+        name_prompt_metrics_invalidate(self->native_metrics);
     self->band.valid = false;
     self->settings_metrics.width = 0;
     self->help_metrics.valid = false;
+    self->part_metrics.valid = false;
     if (self->mono_font != nullptr)
     {
         DeleteObject(self->mono_font);
@@ -906,6 +999,7 @@ static void refresh_font(struct folio_window *_Nonnull self, UINT dpi)
     }
     /* 帯の幅の材料はここで 1 回だけ測る。DPI の変更でもこの関数が走るので測り直る（補正 7）。 */
     self->digit_width = measure_digit(self, dpi);
+    refresh_part_metrics(self, dpi);
     refresh_tooltip_style(self);
 }
 
@@ -958,15 +1052,15 @@ static RECT command_palette_rect(const struct folio_window *_Nonnull self)
      * 望む高さであり、窓に入らなければ下で丸める。入った分の配り方は command_visible_help。 */
     int height =
         scale(command_box_height(command_surface_rows(self), command_help_rows(self)), dpi);
-    int top = scale(client.bottom < scale(480, dpi) ? base_command_palette_compact_top
-                                                    : base_command_palette_top,
-                    dpi);
+    int header = scale(base_common_header_height, dpi);
+    int top = header + scale(ui_part_edge, dpi);
     int available_height =
         client.bottom - pane_notice_height(self) - top - scale(ui_part_edge, dpi);
     if (height > available_height)
     {
         height = available_height;
     }
+    top += (available_height - height) / 2;
     RECT bounds = {(client.right - width) / 2, top, (client.right + width) / 2, top + height};
     return bounds;
 }
@@ -1042,9 +1136,10 @@ static RECT settings_dialog_rect(const struct folio_window *_Nonnull self)
         self->command_surface == COMMAND_SURFACE_THEMES ? base_theme_height : base_settings_height;
     int height = scale(wanted, dpi);
     width = width < client.right - edge ? width : client.right - edge;
-    height = height < client.bottom - edge ? height : client.bottom - edge;
-    return (RECT){(client.right - width) / 2, (client.bottom - height) / 2,
-                  (client.right + width) / 2, (client.bottom + height) / 2};
+    int header = scale(base_common_header_height, dpi);
+    height = height < client.bottom - header - edge ? height : client.bottom - header - edge;
+    int top = header + (client.bottom - header - height) / 2;
+    return (RECT){(client.right - width) / 2, top, (client.right + width) / 2, top + height};
 }
 
 static enum folio_state_outcome settings_notice(const struct folio_window *_Nonnull self)
@@ -1203,6 +1298,14 @@ static RECT theme_rows_rect(const struct folio_window *_Nonnull self)
     int bottom = theme_footer_rect(self).top - scale(8, dpi);
     int height = bottom > bounds.top ? bottom - bounds.top : 0;
     int row = scale(base_theme_row_height, dpi);
+    /* 短い面だけ二つの余白を8→4 logicalまで縮め、固定脚と候補1行を保つ（ADR0064）。 */
+    int missing = row > height ? row - height : 0;
+    int capacity = scale(8, dpi) - scale(4, dpi);
+    int before = missing < capacity ? missing : capacity;
+    missing -= before;
+    int after = missing < capacity ? missing : capacity;
+    bounds.top -= before;
+    height = bottom + after > bounds.top ? bottom + after - bounds.top : 0;
     bounds.bottom = bounds.top + height / row * row;
     return bounds;
 }
@@ -1391,10 +1494,28 @@ static void reveal_command_selection(struct folio_window *_Nonnull self)
     }
 }
 
-/* 置換の 2 欄を置く。他の面では隠す（ADR 0016 の 2026-09-22 の補正）。 */
-/* 入力欄の箱に単一行 EDIT を置く唯一の経路（#349）。縦は字の高さで中央、字は箱の縁から 8。
- * 枠は箱の内側に描き、focus の 2px は EDIT の外の空きで太る（draw_input_field・ドロワーの
- * draw_filter_frame・名前入力の frame_around）。 */
+/* 背景の配置正本は実HWND。位置不変ならMoveWindowによる再描画を増やさない。 */
+static void move_child(HWND window, RECT bounds)
+{
+    RECT current;
+    if (GetWindowRect(window, &current))
+    {
+        MapWindowPoints(nullptr, GetParent(window), (POINT *)&current, 2);
+        if (EqualRect(&current, &bounds))
+            return;
+    }
+    MoveWindow(window, bounds.left, bounds.top, bounds.right - bounds.left,
+               bounds.bottom - bounds.top, TRUE);
+}
+
+static void show_child(HWND window, bool visible)
+{
+    bool shown = (GetWindowLongPtrW(window, GWL_STYLE) & WS_VISIBLE) != 0;
+    if (shown != visible)
+        ShowWindow(window, visible ? SW_SHOWNA : SW_HIDE);
+}
+
+/* 入力欄の箱に単一行EDITを置く唯一の経路。枠とfocusは箱の外に描く（#349）。 */
 static void place_field(HWND _Nullable edit, RECT box, int right_room)
 {
     if (edit == nullptr)
@@ -1402,8 +1523,7 @@ static void place_field(HWND _Nullable edit, RECT box, int right_room)
         return;
     }
     RECT bounds = ui_part_field_edit(box, ui_part_field_text_height(edit), GetDpiForWindow(edit));
-    MoveWindow(edit, bounds.left, bounds.top, bounds.right - bounds.left,
-               bounds.bottom - bounds.top, TRUE);
+    move_child(edit, bounds);
     ui_part_field_margins(edit, GetDpiForWindow(edit), right_room);
 }
 
@@ -1428,7 +1548,9 @@ static HRGN _Nullable settings_backdrop_region(const struct folio_window *_Nonnu
     RECT client;
     GetClientRect(self->handle, &client);
     RECT card = settings_dialog_rect(self);
-    HRGN _Nullable region = CreateRectRgn(0, 0, client.right, client.bottom);
+    HRGN _Nullable region =
+        CreateRectRgn(0, scale(base_common_header_height, GetDpiForWindow(self->handle)),
+                      client.right, client.bottom);
     HRGN _Nullable hole = CreateRectRgn(card.left, card.top, card.right, card.bottom);
     if (region == nullptr || hole == nullptr)
     {
@@ -1469,9 +1591,20 @@ static bool arrange_settings_backdrop(const struct folio_window *_Nonnull self)
     }
     bool native = self->native_modal_depth > 0;
     bool visible = native || settings_surface(self);
-    if (native && !SetWindowRgn(self->settings_backdrop, nullptr, TRUE))
+    if (native)
     {
-        return false;
+        RECT client;
+        GetClientRect(self->handle, &client);
+        HRGN region =
+            CreateRectRgn(0, scale(base_common_header_height, GetDpiForWindow(self->handle)),
+                          client.right, client.bottom);
+        if (region == nullptr)
+            return false;
+        if (!SetWindowRgn(self->settings_backdrop, region, TRUE))
+        {
+            DeleteObject(region);
+            return false;
+        }
     }
     if (!native && visible && !set_settings_backdrop_region(self))
     {
@@ -1485,8 +1618,8 @@ static bool arrange_settings_backdrop(const struct folio_window *_Nonnull self)
 
 static void enable_surface_background(const struct folio_window *_Nonnull self)
 {
-    /* nativeはDialogBoxがownerを無効化する。子を先にdisableするとnativeのfocus復元を壊す。 */
-    bool enabled = !settings_surface(self);
+    /* native0では元focusを復帰できる状態へ戻す。終了phaseの業務入力は共通guardが止める。 */
+    bool enabled = !settings_surface(self) && self->native_modal_depth == 0;
     HWND windows[] = {self->filter_input,
                       self->pane == nullptr ? nullptr : note_pane_handle(self->pane),
                       self->drawer == nullptr ? nullptr : drawer_window_handle(self->drawer)};
@@ -1495,6 +1628,18 @@ static void enable_surface_background(const struct folio_window *_Nonnull self)
         if (windows[at] != nullptr && (IsWindowEnabled(windows[at]) != 0) != enabled)
             EnableWindow(windows[at], enabled);
     }
+    if (self->command_layer != nullptr)
+        EnableWindow(self->command_layer, self->native_modal_depth == 0);
+}
+
+static void refresh_modal_availability(const struct folio_window *_Nonnull self)
+{
+    enable_surface_background(self);
+    refresh_tooltip_rects(self);
+    refresh_surface_tooltip_rects(self);
+    activate_tooltip(self);
+    InvalidateRect(self->handle, nullptr, FALSE);
+    accessibility_host_schedule(self->accessibility);
 }
 
 /* 配置本体は通常更新とnotice更新が共有する。暗幕はnoticeの高さに依存しない。 */
@@ -1512,6 +1657,8 @@ static void arrange_surface_selection(struct folio_window *_Nonnull self)
 static void arrange_command_contents(struct folio_window *_Nonnull self)
 {
     enable_surface_background(self);
+    if (self->native_modal_depth > 0)
+        return;
     if (self->command_layer == nullptr || self->command_input == nullptr)
     {
         return;
@@ -1551,8 +1698,7 @@ static void arrange_command_contents(struct folio_window *_Nonnull self)
 static bool begin_native_modal(struct folio_window *_Nonnull self)
 {
     self->native_modal_depth += 1;
-    enable_surface_background(self);
-    activate_tooltip(self);
+    refresh_modal_availability(self);
     return self->settings_backdrop != nullptr && arrange_settings_backdrop(self);
 }
 
@@ -1564,16 +1710,28 @@ static bool end_native_modal(struct folio_window *_Nonnull self)
     if (!restored && self->settings_backdrop != nullptr)
         ShowWindow(self->settings_backdrop, SW_HIDE);
     arrange_command_contents(self);
-    activate_tooltip(self);
-    return restored;
+    refresh_modal_availability(self);
+    if (self->native_modal_depth > 0)
+    {
+        self->modal_arrange_failed = self->modal_arrange_failed || !restored;
+        return true;
+    }
+    bool deferred = self->modal_arrange_failed;
+    self->modal_arrange_failed = false;
+    return restored && !deferred;
 }
 
 /* 復元失敗の通知は暗幕を作り直さない。DialogBox前後の入力guardだけを対にする。 */
 static void native_modal_resource_failure(struct folio_window *_Nonnull self)
 {
+    if (self->close_phase == CLOSE_PHASE_REQUESTED)
+        return;
     self->native_modal_depth += 1;
-    failure_box_show(self->handle, FOLIO_STATE_OUT_OF_MEMORY, self->state, nullptr);
+    refresh_modal_availability(self);
+    failure_box_show(modal_owner_current(self->modal_owner), FOLIO_STATE_OUT_OF_MEMORY, self->state,
+                     nullptr);
     self->native_modal_depth -= 1;
+    refresh_modal_availability(self);
 }
 
 static struct name_prompt_result
@@ -1587,13 +1745,16 @@ show_name_prompt(struct folio_window *_Nonnull self,
         restore_valid_focus(self, focus);
         return (struct name_prompt_result){FOLIO_STATE_OUT_OF_MEMORY, FOLIO_UNTITLED_PROTECT};
     }
-    struct name_prompt_result result = name_prompt_show(self->handle, request, &self->palette);
+    struct name_prompt_result result = name_prompt_show(
+        modal_owner_current(self->modal_owner), request, &self->palette, self->native_metrics);
     if (!end_native_modal(self))
     {
         /* 業務操作の結果を変えず、暗幕なしで資源失敗を一度だけ知らせる。 */
         native_modal_resource_failure(self);
     }
     restore_valid_focus(self, focus);
+    if (self->close_phase == CLOSE_PHASE_REQUESTED)
+        return (struct name_prompt_result){FOLIO_STATE_CANCELLED, FOLIO_UNTITLED_PROTECT};
     return result;
 }
 
@@ -1604,10 +1765,29 @@ static void show_failure_box(struct folio_window *_Nonnull self, enum folio_stat
     const enum folio_command *_Nullable context = self->command_context ? &command : nullptr;
     /* 暗幕の準備を失敗しても、元の理由は同じnative/OS退避経路で知らせる。 */
     (void)begin_native_modal(self);
-    failure_box_show(self->handle, outcome, self->state, context);
+    failure_box_show(modal_owner_current(self->modal_owner), outcome, self->state, context);
     if (!end_native_modal(self) && outcome != FOLIO_STATE_OUT_OF_MEMORY)
         native_modal_resource_failure(self);
     restore_valid_focus(self, focus);
+}
+
+static LRESULT choose_category_color(struct folio_window *_Nonnull self,
+                                     CHOOSECOLORW *_Nonnull choice)
+{
+    HWND focus = GetFocus();
+    if (!begin_native_modal(self))
+    {
+        (void)end_native_modal(self);
+        show_failure_box(self, FOLIO_STATE_OUT_OF_MEMORY);
+        restore_valid_focus(self, focus);
+        return FALSE;
+    }
+    choice->hwndOwner = modal_owner_current(self->modal_owner);
+    BOOL accepted = ChooseColorW(choice);
+    if (!end_native_modal(self))
+        native_modal_resource_failure(self);
+    restore_valid_focus(self, focus);
+    return accepted && self->close_phase != CLOSE_PHASE_REQUESTED;
 }
 
 static void arrange_command_input(struct folio_window *_Nonnull self)
@@ -1619,6 +1799,12 @@ static void arrange_command_input(struct folio_window *_Nonnull self)
     }
     if (!refresh_band_layout(self))
     {
+        if (self->native_modal_depth > 0)
+        {
+            self->modal_arrange_failed = true;
+            ShowWindow(self->settings_backdrop, SW_HIDE);
+            return;
+        }
         close_command_surface(self);
         show_failure_box(self, FOLIO_STATE_OUT_OF_MEMORY);
         return;
@@ -1627,6 +1813,7 @@ static void arrange_command_input(struct folio_window *_Nonnull self)
     {
         if (self->native_modal_depth > 0)
         {
+            self->modal_arrange_failed = true;
             ShowWindow(self->settings_backdrop, SW_HIDE);
             return; /* native内の再配置から失敗箱を再帰させない。 */
         }
@@ -1647,9 +1834,14 @@ static void set_pane_notice(struct folio_window *_Nonnull self, enum pane_notice
     bool boundary =
         self->notice == PANE_NOTICE_COMMAND_RESULT || notice == PANE_NOTICE_COMMAND_RESULT;
     self->notice = notice;
+    accessibility_host_schedule(self->accessibility);
+    if (self->command_initializing)
+    {
+        InvalidateRect(self->handle, nullptr, FALSE);
+        return; /* 最終の面・選択・入力が揃ってから同じ配置経路へ渡す。 */
+    }
     if (boundary && self->drawer != nullptr)
         arrange_drawer_region(self, regions_for(self).drawer);
-    accessibility_host_schedule(self->accessibility);
     /* 暗幕はclient/cardだけに依存し、notice変更では再確保不要。配置本体には失敗の対話が無い。 */
     arrange_command_contents(self);
     InvalidateRect(self->handle, nullptr, FALSE);
@@ -1738,16 +1930,15 @@ static void arrange_drawer(const struct folio_window *_Nonnull self, RECT bounds
     bool visible = bounds.right > bounds.left;
     if (drawer != nullptr)
     {
-        ShowWindow(drawer, visible ? SW_SHOWNA : SW_HIDE);
+        show_child(drawer, visible);
         if (visible)
         {
-            MoveWindow(drawer, bounds.left, bounds.top, bounds.right - bounds.left,
-                       bounds.bottom - bounds.top, TRUE);
+            move_child(drawer, bounds);
         }
     }
     if (self->filter_input != nullptr)
     {
-        ShowWindow(self->filter_input, visible ? SW_SHOWNA : SW_HIDE);
+        show_child(self->filter_input, visible);
     }
 }
 
@@ -1777,6 +1968,7 @@ static RECT body_content_rect(const struct folio_window *_Nonnull self, RECT pan
 
 static void arrange(struct folio_window *_Nonnull self)
 {
+    refresh_part_metrics(self, GetDpiForWindow(self->handle));
     arrange_command_input(self); /* 帯高を確定してから同じ高さだけ本文を下げる。 */
     struct folio_regions regions = regions_for(self);
     arrange_drawer_region(self, regions.drawer);
@@ -1788,13 +1980,12 @@ static void arrange(struct folio_window *_Nonnull self)
     if (pane != nullptr)
     {
         bool visible = body_shown(self);
-        ShowWindow(pane, visible ? SW_SHOWNA : SW_HIDE);
+        show_child(pane, visible);
         if (visible)
         {
             UINT dpi = GetDpiForWindow(self->handle);
             RECT body = body_content_rect(self, regions.pane, dpi);
-            MoveWindow(pane, body.left, body.top, body.right - body.left, body.bottom - body.top,
-                       TRUE);
+            move_child(pane, body);
         }
     }
     refresh_gutter(self, false);
@@ -2246,7 +2437,7 @@ static RECT layout_group_rect(const struct folio_window *_Nonnull self)
 }
 
 /* 字の幅は描画と同じ等幅の書体と字間で測る。測れなければ 0。 */
-static int measure_part_text(const struct folio_window *_Nonnull self, enum ui_text text)
+static int measure_part_text_uncached(const struct folio_window *_Nonnull self, enum ui_text text)
 {
     HDC device = GetDC(self->handle);
     if (device == nullptr)
@@ -2260,6 +2451,59 @@ static int measure_part_text(const struct folio_window *_Nonnull self, enum ui_t
     SelectObject(device, previous);
     ReleaseDC(self->handle, device);
     return width;
+}
+
+static const enum accessible_kind measured_parts[] = {ACCESSIBLE_NEW_NOTE, ACCESSIBLE_SAVE,
+                                                      ACCESSIBLE_FIND, ACCESSIBLE_MENU};
+
+static_assert(sizeof measured_parts / sizeof measured_parts[0] ==
+              sizeof(((struct ui_part_metrics){0}).widths) / sizeof(int));
+
+static void refresh_part_metrics(struct folio_window *_Nonnull self, UINT dpi)
+{
+    enum folio_language language = folio_state_language(self->state);
+    int tracking = scale(base_tracking, dpi);
+    const struct ui_part_metrics *_Nonnull current = &self->part_metrics;
+    if (current->valid && current->font == self->mono_font && current->dpi == dpi &&
+        current->language == language && current->tracking == tracking)
+        return;
+    struct ui_part_metrics metrics = {
+        .font = self->mono_font, .dpi = dpi, .language = language, .tracking = tracking};
+    if (self->mono_font == nullptr)
+    {
+        self->part_metrics.valid = false;
+        return;
+    }
+    for (size_t at = 0; at < sizeof measured_parts / sizeof measured_parts[0]; ++at)
+    {
+        metrics.widths[at] =
+            measure_part_text_uncached(self, accessible_controls[measured_parts[at]].label);
+        if (metrics.widths[at] <= 0)
+        {
+            self->part_metrics.valid = false;
+            return;
+        }
+    }
+    metrics.valid = true;
+    self->part_metrics = metrics;
+}
+
+static int measure_part_text(const struct folio_window *_Nonnull self, enum ui_text text)
+{
+    const struct ui_part_metrics *_Nonnull metrics = &self->part_metrics;
+    UINT dpi = GetDpiForWindow(self->handle);
+    bool current = metrics->valid && metrics->font == self->mono_font && metrics->dpi == dpi &&
+                   metrics->tracking == scale(base_tracking, dpi) &&
+                   metrics->language == folio_state_language(self->state);
+    if (current)
+    {
+        for (size_t at = 0; at < sizeof measured_parts / sizeof measured_parts[0]; ++at)
+        {
+            if (accessible_controls[measured_parts[at]].label == text)
+                return metrics->widths[at];
+        }
+    }
+    return measure_part_text_uncached(self, text);
 }
 
 /* 新しいノートは A 様式の単独の釦。狭幅では字を落として絵だけ（28×28）に縮め、消さない。
@@ -2564,9 +2808,11 @@ static struct ui_part_paint part_paint(const struct folio_window *_Nonnull self,
         .dpi = GetDpiForWindow(self->handle),
         .grouped = style == UI_PART_STYLE_CHOICE,
         .labeled = style != UI_PART_STYLE_ICON,
-        .hovered = self->hover_part == kind && self->pressed_part == ACCESSIBLE_WINDOW,
+        .hovered = part_enabled(self, kind) && self->hover_part == kind &&
+                   self->pressed_part == ACCESSIBLE_WINDOW,
         .pressed = self->pressed_part == kind && self->pressed_inside,
         .focused = part_focus_shown(self, kind),
+        .disabled = !part_enabled(self, kind),
     };
 }
 
@@ -3870,10 +4116,6 @@ static LRESULT hit_test(const struct folio_window *_Nonnull self, LPARAM lparam)
     if (edge != HTNOWHERE)
     {
         return edge;
-    }
-    if (settings_surface(self))
-    {
-        return HTCLIENT;
     }
     ScreenToClient(self->handle, &point);
     RECT header = regions_for(self).header;
@@ -5536,6 +5778,18 @@ static void invalidate_surface_items(struct folio_window *_Nonnull self)
     return true;
 }
 
+/* WM_SETTEXTが同期で送るEN_CHANGEは初期化途中の配置をしない。利用者入力には使わない。 */
+static void initialize_command_input(struct folio_window *_Nonnull self,
+                                     const wchar_t *_Nonnull text)
+{
+    bool previous = self->command_initializing;
+    self->command_initializing = true;
+    clear_command_status(self);
+    if (self->command_input != nullptr)
+        SetWindowTextW(self->command_input, text);
+    self->command_initializing = previous;
+}
+
 static void open_command_surface(struct folio_window *_Nonnull self,
                                  enum command_surface_mode surface)
 {
@@ -5560,8 +5814,7 @@ static void open_command_surface(struct folio_window *_Nonnull self,
     self->command_first = 0;
     self->command_keys_visible = false;
     self->command_help_scroll = 0;
-    clear_command_status(self);
-    SetWindowTextW(self->command_input, surface == COMMAND_SURFACE_EX ? L":" : L"");
+    initialize_command_input(self, surface == COMMAND_SURFACE_EX ? L":" : L"");
     rearrange_keeping_line(self);
     focus_command_input(self);
     /* WM_SETTEXT はキャレットを先頭へ置き、EM_SETSEL(-1, -1) は選択を解くだけで動かさない。
@@ -5634,11 +5887,7 @@ static void show_command_palette(struct folio_window *_Nonnull self)
     self->command_first = 0;
     self->command_keys_visible = false;
     self->command_help_scroll = 0;
-    clear_command_status(self);
-    if (self->command_input != nullptr)
-    {
-        SetWindowTextW(self->command_input, L"");
-    }
+    initialize_command_input(self, L"");
     rearrange_keeping_line(self);
     focus_command_input(self);
     redraw_command_layer(self);
@@ -5751,13 +6000,14 @@ static void show_settings_surface(struct folio_window *_Nonnull self, const char
     if (self->command_surface == COMMAND_SURFACE_CLOSED)
     {
         open_command_surface(self, COMMAND_SURFACE_SETTINGS);
+        return; /* open_command_surfaceが初期選択と配置まで確定する。 */
     }
     else
     {
         release_history(self);
         if (!set_command_surface(self, COMMAND_SURFACE_SETTINGS))
             return;
-        clear_command_status(self);
+        initialize_command_input(self, L"");
     }
     /* 他の入力面から来た場合も、現在値の行を決めてから配置する。 */
     self->command_selection = settings_initial_row(self);
@@ -5770,7 +6020,7 @@ static void show_settings_surface(struct folio_window *_Nonnull self, const char
 static void show_theme_surface(struct folio_window *_Nonnull self)
 {
     /* Clear while the previous face still owns EN_CHANGE; opening must not preview row zero. */
-    SetWindowTextW(self->command_input, L"");
+    initialize_command_input(self, L"");
     if (!set_command_surface(self, COMMAND_SURFACE_THEMES))
         return;
     clear_command_status(self);
@@ -6071,7 +6321,8 @@ static bool session_composing(const struct folio_window *_Nonnull self)
 /* store_bodyの改名復旧や無題保存は対話を開くため、呼び出す前に拒否する。 */
 static enum ui_text session_unready_reason(const struct folio_window *_Nonnull self)
 {
-    if (!IsWindowEnabled(self->handle) || self->removal_running)
+    if (!IsWindowEnabled(self->handle) || self->removal_running || self->native_modal_depth > 0 ||
+        self->close_phase != CLOSE_PHASE_IDLE)
     {
         return UI_TEXT_SESSION_BUSY;
     }
@@ -6175,15 +6426,52 @@ static LRESULT end_session(struct folio_window *_Nonnull self, WPARAM ending)
     return 0;
 }
 
+static void run_normal_close(struct folio_window *_Nonnull self)
+{
+    self->close_phase = CLOSE_PHASE_RUNNING;
+    finish_quit(self, depart_document(self).outcome);
+    self->close_phase = CLOSE_PHASE_IDLE;
+    if (self->handle != nullptr)
+        refresh_modal_availability(self);
+}
+
 static void close_window(struct folio_window *_Nonnull self)
 {
-    if (!self->removal_running && !session_busy(self))
+    if (!shell_ready(self))
+        return;
+    if (self->close_phase == CLOSE_PHASE_RUNNING)
     {
+        modal_owner_capture_focus(self->modal_owner);
+        modal_owner_restore_focus(self->modal_owner);
+        return;
+    }
+    if (self->close_phase == CLOSE_PHASE_IDLE)
+    {
+        self->close_phase = CLOSE_PHASE_REQUESTED;
         accessibility_host_invoked(self->accessibility,
                                    (struct accessible_item){.kind = ACCESSIBLE_CLOSE});
-        /* Normal close accepts either saved content or explicit discard permission. */
-        finish_quit(self, depart_document(self).outcome);
     }
+    if (self->native_modal_depth == 0)
+    {
+        return;
+    }
+    self->close_phase = CLOSE_PHASE_REQUESTED;
+    switch (modal_owner_cancel(self->modal_owner))
+    {
+    case MODAL_CANCEL_ACCEPTED:
+    case MODAL_CANCEL_NOT_VISIBLE:
+        break;
+    case MODAL_CANCEL_REJECTED:
+        self->close_phase = CLOSE_PHASE_IDLE;
+        break;
+    }
+}
+
+static void resume_normal_close(struct folio_window *_Nonnull self)
+{
+    if (self->close_phase == CLOSE_PHASE_REQUESTED && self->native_modal_depth == 0 &&
+        self->dispatch_depth == 1 && !session_busy(self))
+        run_normal_close(self);
 }
 
 static void execute_quit_command(struct folio_window *_Nonnull self, const char *_Nonnull argument)
@@ -6279,7 +6567,8 @@ static void rearrange_keeping_line(struct folio_window *_Nonnull self)
     {
         note_pane_scroll_to_line(self->pane, line);
     }
-    InvalidateRect(self->handle, nullptr, FALSE);
+    if (!settings_surface(self) || !EqualRect(&before, &after))
+        InvalidateRect(self->handle, nullptr, FALSE);
 }
 
 /* 3 つの入口（`:set` の語・パレット／メニューの切替・#38 の設定画面）が通る唯一の意図。 */
@@ -6514,6 +6803,7 @@ static void apply_language(struct folio_window *_Nonnull self, enum folio_langua
         report_outcome(self, outcome);
         return;
     }
+    refresh_part_metrics(self, GetDpiForWindow(self->handle));
     if (settings_surface(self))
     {
         clear_command_status(self);
@@ -6806,9 +7096,13 @@ static void restore_valid_focus(const struct folio_window *_Nonnull self, HWND _
         return;
     }
     HWND target = surface_return_target(self, focus);
-    if (IsWindowVisible(target) && GetFocus() != target)
+    if (IsWindowVisible(target))
     {
-        SetFocus(target);
+        HWND root = GetAncestor(target, GA_ROOT);
+        if (GetActiveWindow() != root)
+            SetActiveWindow(root);
+        if (GetFocus() != target)
+            SetFocus(target);
     }
 }
 
@@ -7174,7 +7468,8 @@ static void (*_Nonnull const command_runs[])(struct folio_window *_Nonnull self,
 static void execute_command(struct folio_window *_Nonnull self, enum folio_command command,
                             const char *_Nonnull argument)
 {
-    if (self->removal_running || session_busy(self) || pane_streaming(self))
+    if (self->removal_running || session_busy(self) || pane_streaming(self) ||
+        self->native_modal_depth > 0 || self->close_phase != CLOSE_PHASE_IDLE)
     {
         return;
     }
@@ -7922,21 +8217,26 @@ static void begin_part_press(struct folio_window *_Nonnull self, enum accessible
 
 /* 押下。操作▾だけは OS の作法どおり押下で開き、ほかは capture して離すのを待つ。
  * 選択中の項目は押しても何も起きないので押下の見た目にもしない。 */
+static bool dismiss_menu_press(struct folio_window *_Nonnull self, POINT point)
+{
+    if (self->command_surface != COMMAND_SURFACE_MENU)
+        return false;
+    bool opener =
+        PtInRect(&self->menu.anchor, point) != 0 && self->menu.context == FOLIO_MENU_OPERATIONS;
+    close_command_surface(self);
+    return opener;
+}
+
 static void press_part(struct folio_window *_Nonnull self, LPARAM lparam)
 {
     POINT point = {GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
-    if (self->command_surface == COMMAND_SURFACE_MENU)
-    {
-        bool opener =
-            PtInRect(&self->menu.anchor, point) != 0 && self->menu.context == FOLIO_MENU_OPERATIONS;
-        close_command_surface(self);
-        if (opener)
-            return;
-    }
+    if (dismiss_menu_press(self, point))
+        return;
     show_focus_cues(self, false);
-    pointer_focus(self, point);
+    if (self->native_modal_depth == 0 && self->command_surface == COMMAND_SURFACE_CLOSED)
+        pointer_focus(self, point);
     enum accessible_kind kind = part_at(self, point);
-    if (kind == ACCESSIBLE_WINDOW || !folio_window_accessible_ready(self))
+    if (kind == ACCESSIBLE_WINDOW || !part_enabled(self, kind))
     {
         return;
     }
@@ -7973,6 +8273,8 @@ static void release_part(struct folio_window *_Nonnull self, LPARAM lparam)
 
 static void set_hover(struct folio_window *_Nonnull self, enum accessible_kind kind)
 {
+    if (kind != ACCESSIBLE_WINDOW && !part_enabled(self, kind))
+        kind = ACCESSIBLE_WINDOW;
     if (self->hover_part == kind)
     {
         return;
@@ -8869,8 +9171,8 @@ static void command_focus_changed(struct folio_window *_Nonnull self, UINT messa
     }
 }
 
-static LRESULT CALLBACK command_input_procedure(HWND window, UINT message, WPARAM wparam,
-                                                LPARAM lparam)
+static LRESULT CALLBACK command_input_message(HWND window, UINT message, WPARAM wparam,
+                                              LPARAM lparam)
 {
     struct folio_window *_Nullable self = self_of(window);
     if (self == nullptr || self->command_input_original == nullptr)
@@ -9119,8 +9421,8 @@ static void filter_focus_changed(struct folio_window *_Nonnull self, UINT messag
     }
 }
 
-static LRESULT CALLBACK filter_input_procedure(HWND window, UINT message, WPARAM wparam,
-                                               LPARAM lparam)
+static LRESULT CALLBACK filter_input_message(HWND window, UINT message, WPARAM wparam,
+                                             LPARAM lparam)
 {
     struct folio_window *_Nullable self = self_of(window);
     if (self == nullptr || self->filter_original == nullptr)
@@ -9207,6 +9509,8 @@ static LRESULT on_command(struct folio_window *_Nonnull self, WPARAM wparam, LPA
     {
         return 0;
     }
+    if (self->command_initializing)
+        return 0;
     if (self->command_surface == COMMAND_SURFACE_PALETTE ||
         self->command_surface == COMMAND_SURFACE_THEMES)
     {
@@ -9323,8 +9627,7 @@ static bool create_command_inputs(struct folio_window *_Nonnull self)
 /* 見えていない部品の tool は空の矩形にして出さない。矩形は描画と同じ 1 本。 */
 static RECT tooltip_rect(const struct folio_window *_Nonnull self, enum accessible_kind kind)
 {
-    bool visible = self->command_surface == COMMAND_SURFACE_CLOSED &&
-                   self->native_modal_depth == 0 && accessible_visible(self, kind);
+    bool visible = part_enabled(self, kind) && accessible_visible(self, kind);
     return visible ? accessible_main_rect(self, kind) : (RECT){0};
 }
 
@@ -9334,8 +9637,7 @@ static void activate_tooltip(const struct folio_window *_Nonnull self)
     {
         return;
     }
-    bool active =
-        self->native_modal_depth == 0 && !self->removal_running && IsWindowEnabled(self->handle);
+    bool active = shell_ready(self);
     if (!active)
     {
         SendMessageW(self->tooltip, TTM_POP, 0, 0);
@@ -9506,6 +9808,12 @@ static void read_focus_cues(struct folio_window *_Nonnull self)
     }
 }
 
+static bool create_modal_resources(struct folio_window *_Nonnull self)
+{
+    return modal_owner_create(self->handle, &self->modal_owner) == MODAL_OWNER_READY &&
+           name_prompt_metrics_create(&self->native_metrics) == NAME_PROMPT_METRICS_CREATED;
+}
+
 static LRESULT on_create(HWND window, LPARAM lparam)
 {
     /* Win32 のコールバック引数を境界で受ける唯一の void *（C-006）。 */
@@ -9513,6 +9821,8 @@ static LRESULT on_create(HWND window, LPARAM lparam)
     struct folio_window *_Nonnull self = creation->lpCreateParams;
     SetWindowLongPtrW(window, GWLP_USERDATA, (LONG_PTR)self);
     self->handle = window;
+    if (!create_modal_resources(self))
+        return -1;
     refresh_font(self, GetDpiForWindow(window));
     read_focus_cues(self);
     if (drawer_window_create(window, self->state, self->accessibility, &self->drawer) !=
@@ -9807,8 +10117,8 @@ static bool surface_pointer_message(struct folio_window *_Nonnull self, UINT mes
     }
 }
 
-static LRESULT CALLBACK command_layer_procedure(HWND window, UINT message, WPARAM wparam,
-                                                LPARAM lparam)
+static LRESULT CALLBACK command_layer_message(HWND window, UINT message, WPARAM wparam,
+                                              LPARAM lparam)
 {
     if (message == WM_CREATE)
     {
@@ -10148,6 +10458,17 @@ static void resume_appearance(struct folio_window *_Nonnull self)
 }
 
 /* 部品の押下・hover・Space の離鍵（ADR0060 の決定 3・4）。 */
+static void window_activation(struct folio_window *_Nonnull self, WPARAM wparam, LPARAM lparam)
+{
+    if (LOWORD(wparam) != WA_INACTIVE)
+        return;
+    if (self->native_modal_depth > 0 && lparam != 0)
+        modal_owner_anchor(self->handle, (HWND)lparam);
+    cancel_part_press(self);
+    if (self->command_surface == COMMAND_SURFACE_MENU)
+        close_command_surface(self);
+}
+
 static LRESULT on_part_message(struct folio_window *_Nonnull self, UINT message, WPARAM wparam,
                                LPARAM lparam)
 {
@@ -10175,12 +10496,7 @@ static LRESULT on_part_message(struct folio_window *_Nonnull self, UINT message,
         release_key(self, wparam);
         return 0;
     case WM_ACTIVATE:
-        if (LOWORD(wparam) == WA_INACTIVE)
-        {
-            cancel_part_press(self);
-            if (self->command_surface == COMMAND_SURFACE_MENU)
-                close_command_surface(self);
-        }
+        window_activation(self, wparam, lparam);
         return DefWindowProcW(self->handle, message, wparam, lparam);
     default:
         /* Win32 のメッセージは開いた集合（C-017）。 */
@@ -10192,8 +10508,9 @@ static LRESULT on_part_message(struct folio_window *_Nonnull self, UINT message,
 static LRESULT on_input_message(struct folio_window *_Nonnull self, UINT message, WPARAM wparam,
                                 LPARAM lparam)
 {
-    if (self->removal_running && (message == WM_COMMAND || message == WM_KEYDOWN ||
-                                  message == WM_CHAR || message == WM_CLOSE))
+    if (self->removal_running && self->native_modal_depth == 0 &&
+        (message == WM_COMMAND || message == WM_KEYDOWN || message == WM_CHAR ||
+         message == WM_CLOSE))
     {
         return 0;
     }
@@ -10255,6 +10572,11 @@ static LRESULT on_drawer_request(struct folio_window *_Nonnull self, UINT messag
 {
     switch (message)
     {
+    case folio_message_choose_color:
+        return choose_category_color(self, (CHOOSECOLORW *)lparam);
+    case folio_message_close_requested:
+        resume_normal_close(self);
+        return 0;
     case folio_message_open_menu:
         show_menu_surface(self, (const struct menu_request *)lparam);
         return 0;
@@ -10263,6 +10585,46 @@ static LRESULT on_drawer_request(struct folio_window *_Nonnull self, UINT messag
         return 0;
     default:
         return on_input_message(self, message, wparam, lparam);
+    }
+}
+
+static LRESULT shell_system_action(struct folio_window *_Nonnull self, WPARAM wparam, LPARAM lparam)
+{
+    if (self->native_modal_depth > 0)
+        modal_owner_capture_focus(self->modal_owner);
+    LRESULT result = DefWindowProcW(self->handle, WM_SYSCOMMAND, wparam, lparam);
+    if (self->handle != nullptr && self->native_modal_depth > 0 && !IsIconic(self->handle))
+        modal_owner_restore_focus(self->modal_owner);
+    return result;
+}
+
+static LRESULT on_shell_message(struct folio_window *_Nonnull self, UINT message, WPARAM wparam,
+                                LPARAM lparam)
+{
+    switch (message)
+    {
+    case WM_WINDOWPOSCHANGED:
+    {
+        LRESULT result = DefWindowProcW(self->handle, message, wparam, lparam);
+        if (self->modal_owner != nullptr)
+            modal_owner_arrange(self->modal_owner);
+        return result;
+    }
+    case WM_MOUSEACTIVATE:
+        if (self->native_modal_depth > 0)
+        {
+            modal_owner_capture_focus(self->modal_owner);
+            return MA_NOACTIVATE;
+        }
+        return DefWindowProcW(self->handle, message, wparam, lparam);
+    case WM_EXITSIZEMOVE:
+        if (self->native_modal_depth > 0)
+            modal_owner_restore_focus(self->modal_owner);
+        return DefWindowProcW(self->handle, message, wparam, lparam);
+    case WM_SYSCOMMAND:
+        return shell_system_action(self, wparam, lparam);
+    default:
+        return on_drawer_request(self, message, wparam, lparam);
     }
 }
 
@@ -10296,15 +10658,14 @@ static LRESULT on_message(struct folio_window *_Nonnull self, UINT message, WPAR
     case WM_ERASEBKGND:
         return 1;
     case WM_LBUTTONDOWN:
-        if (!self->removal_running)
+        if (!self->removal_running || self->native_modal_depth > 0)
         {
             press_part(self, lparam);
         }
         return 0;
     case WM_NOTIFY:
         return on_notify(self, lparam);
-    /* 常設の絞り込みの欄は主窓の子なので、地と文字の色をここで答える。
-     * 入力面の EDIT と同じ color_command_input を通る（第 2 の経路を作らない）。 */
+    /* 常設絞込と入力面EDITは同じ配色経路を使う。 */
     case WM_CTLCOLOREDIT:
         return color_command_input(self, wparam, lparam);
     case folio_message_command_focus_lost:
@@ -10324,11 +10685,11 @@ static LRESULT on_message(struct folio_window *_Nonnull self, UINT message, WPAR
         run_drawer_menu(self, (enum drawer_menu_item)wparam, (const struct note_ref *)lparam);
         return 0;
     default:
-        return on_drawer_request(self, message, wparam, lparam);
+        return on_shell_message(self, message, wparam, lparam);
     }
 }
 
-static LRESULT CALLBACK window_procedure(HWND window, UINT message, WPARAM wparam, LPARAM lparam)
+static LRESULT CALLBACK window_message(HWND window, UINT message, WPARAM wparam, LPARAM lparam)
 {
     /* 窓の構造体を要らないものは、結び付けの前に届いても自分で答える（ADR 0011 の決定 1 / 3）。 */
     switch (message)
@@ -10358,7 +10719,8 @@ static LRESULT CALLBACK window_procedure(HWND window, UINT message, WPARAM wpara
     {
         return DefWindowProcW(window, message, wparam, lparam);
     }
-    if (session_blocks_message(self, message) || load_blocks_input(self, message))
+    if (root_blocks_message(self, message, wparam) ||
+        (self->native_modal_depth == 0 && load_blocks_input(self, message)))
     {
         return 0;
     }
@@ -10591,7 +10953,9 @@ enum folio_window_outcome folio_window_create(struct folio_state *_Nonnull state
     ShowWindow(handle, SW_SHOW);
     accessibility_host_schedule(self->accessibility);
     *out = self;
+    self->dispatch_depth += 1;
     announce_fonts(self, fonts);
+    dispatch_finished(self);
     return FOLIO_WINDOW_CREATED;
 }
 
@@ -10702,6 +11066,8 @@ void folio_window_destroy(struct folio_window *_Nullable window)
         DestroyWindow(window->handle);
     }
     release_accelerators(window);
+    modal_owner_destroy(window->modal_owner);
+    name_prompt_metrics_destroy(window->native_metrics);
     note_pane_destroy(window->pane);
     drawer_window_destroy(window->drawer);
     if (window->accessibility != nullptr)
@@ -11969,7 +12335,7 @@ bool folio_window_accessible_ready(const struct folio_window *_Nonnull self)
 {
     if (self->handle == nullptr || !IsWindowEnabled(self->handle) || self->removal_running ||
         session_busy(self) || pane_streaming(self) || self->layout_changing || self->menu_active ||
-        self->native_modal_depth > 0)
+        self->native_modal_depth > 0 || self->close_phase != CLOSE_PHASE_IDLE)
     {
         return false;
     }
@@ -12193,8 +12559,7 @@ static void accessible_selection_view(struct folio_window *_Nonnull self, enum a
 static void accessible_availability(const struct folio_window *_Nonnull self,
                                     enum accessible_kind kind, struct accessible_view *_Nonnull out)
 {
-    out->enabled = folio_window_accessible_ready(self) && accessible_visible(self, kind) &&
-                   self->command_surface == COMMAND_SURFACE_CLOSED;
+    out->enabled = part_enabled(self, kind) && accessible_visible(self, kind);
     if (kind == ACCESSIBLE_MENU)
     {
         out->expanded = self->command_surface == COMMAND_SURFACE_MENU &&
@@ -12204,7 +12569,10 @@ static void accessible_availability(const struct folio_window *_Nonnull self,
     if (kind == ACCESSIBLE_COMMAND_INPUT || kind == ACCESSIBLE_REPLACE_PATTERN ||
         kind == ACCESSIBLE_REPLACE_TEXT)
         out->enabled = folio_window_accessible_ready(self);
-    out->focusable = accessible_controls[kind].focusable;
+    out->focusable =
+        accessible_controls[kind].focusable &&
+        (kind != ACCESSIBLE_CLOSE ||
+         (self->native_modal_depth == 0 && self->command_surface == COMMAND_SURFACE_CLOSED));
 }
 
 HRESULT folio_window_accessible_read(struct folio_window *_Nonnull self,
@@ -12689,8 +13057,8 @@ static HRESULT accessible_dispatch(struct folio_window *_Nonnull self,
     return accessibility_node_invalid;
 }
 
-HRESULT folio_window_accessible_action(struct folio_window *_Nonnull self,
-                                       const struct accessible_request *_Nonnull request)
+static HRESULT accessible_action(struct folio_window *_Nonnull self,
+                                 const struct accessible_request *_Nonnull request)
 {
     struct accessible_view view = {0};
     HRESULT result = folio_window_accessible_read(self, &request->item, &view);
@@ -12704,11 +13072,23 @@ HRESULT folio_window_accessible_action(struct folio_window *_Nonnull self,
         close_command_surface(self);
         return S_OK;
     }
-    if (!view.enabled || !folio_window_accessible_ready(self))
+    if (!view.enabled ||
+        (request->item.kind != ACCESSIBLE_CLOSE && !folio_window_accessible_ready(self)))
     {
         return accessibility_node_disabled;
     }
+    if (request->action == ACCESSIBLE_ACTION_FOCUS && !view.focusable)
+        return accessibility_node_invalid;
     return accessible_dispatch(self, request, view.selected);
+}
+
+HRESULT folio_window_accessible_action(struct folio_window *self,
+                                       const struct accessible_request *request)
+{
+    self->dispatch_depth += 1;
+    HRESULT result = accessible_action(self, request);
+    dispatch_finished(self);
+    return result;
 }
 
 /* F6は区画、Tabは区画内。本文・IME・modalはこの表へ入れない。 */
@@ -13698,4 +14078,55 @@ static void menu_accessible(const struct folio_window *_Nonnull self, size_t ind
         menu_hint(self, index, caption);
         (void)wide_units(caption, out->help);
     }
+}
+
+/* 最外の同期入力dispatchが戻るまで終了要求を実行しない（ADR0064）。 */
+static LRESULT CALLBACK command_input_procedure(HWND window, UINT message, WPARAM wparam,
+                                                LPARAM lparam)
+{
+    struct folio_window *self = self_of(window);
+    if (self == nullptr)
+        return command_input_message(window, message, wparam, lparam);
+    self->dispatch_depth += 1;
+    LRESULT result = command_input_message(window, message, wparam, lparam);
+    dispatch_finished(self);
+    return result;
+}
+
+/* 最外の同期入力dispatchが戻るまで終了要求を実行しない（ADR0064）。 */
+static LRESULT CALLBACK filter_input_procedure(HWND window, UINT message, WPARAM wparam,
+                                               LPARAM lparam)
+{
+    struct folio_window *self = self_of(window);
+    if (self == nullptr)
+        return filter_input_message(window, message, wparam, lparam);
+    self->dispatch_depth += 1;
+    LRESULT result = filter_input_message(window, message, wparam, lparam);
+    dispatch_finished(self);
+    return result;
+}
+
+/* 最外の同期入力dispatchが戻るまで終了要求を実行しない（ADR0064）。 */
+static LRESULT CALLBACK command_layer_procedure(HWND window, UINT message, WPARAM wparam,
+                                                LPARAM lparam)
+{
+    struct folio_window *self = self_of(window);
+    if (self == nullptr)
+        return command_layer_message(window, message, wparam, lparam);
+    self->dispatch_depth += 1;
+    LRESULT result = command_layer_message(window, message, wparam, lparam);
+    dispatch_finished(self);
+    return result;
+}
+
+/* 最外の同期入力dispatchが戻るまで終了要求を実行しない（ADR0064）。 */
+static LRESULT CALLBACK window_procedure(HWND window, UINT message, WPARAM wparam, LPARAM lparam)
+{
+    struct folio_window *self = self_of(window);
+    if (self == nullptr)
+        return window_message(window, message, wparam, lparam);
+    self->dispatch_depth += 1;
+    LRESULT result = window_message(window, message, wparam, lparam);
+    dispatch_finished(self);
+    return result;
 }
