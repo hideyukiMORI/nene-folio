@@ -1,0 +1,10 @@
+#ifndef NENEFOLIO_COMMAND_CANDIDATE_KIND_H
+#define NENEFOLIO_COMMAND_CANDIDATE_KIND_H
+
+enum command_candidate_kind : unsigned char
+{
+    COMMAND_CANDIDATE_GROUP,
+    COMMAND_CANDIDATE_COMMAND
+};
+
+#endif
