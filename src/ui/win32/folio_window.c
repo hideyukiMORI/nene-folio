@@ -84,7 +84,6 @@ struct folio_window
     struct accessibility_host *_Nullable accessibility;
     enum accessible_kind keyboard_target;
     bool menu_active;
-    HFONT _Nullable menu_font;
     struct menu_request menu;
     size_t menu_pressed;
     WPARAM menu_key;
@@ -10182,11 +10181,6 @@ static void window_destroyed(struct folio_window *_Nonnull self)
         DeleteObject(self->mono_font);
         self->mono_font = nullptr;
     }
-    if (self->menu_font != nullptr)
-    {
-        DeleteObject(self->menu_font);
-        self->menu_font = nullptr;
-    }
     /* self->handle はここでは消さない。WM_DESTROY の後も WM_NCDESTROY までメッセージは届き、
      * 既定処理はその HWND を要る。手放すのは window_finalized 1 か所（ADR 0014 の補正 1）。 */
     PostQuitMessage(0);
@@ -11024,8 +11018,6 @@ void folio_window_destroy(struct folio_window *_Nullable window)
     {
         DeleteObject(window->mono_font);
     }
-    if (window->menu_font != nullptr)
-        DeleteObject(window->menu_font);
     if (window->command_brush != nullptr)
     {
         DeleteObject(window->command_brush);
@@ -13455,22 +13447,14 @@ static int menu_total_height(const struct folio_window *_Nonnull self)
     return height;
 }
 
-static int menu_measure(HDC device, const char *_Nonnull text)
-{
-    char16_t units[draw_unit_limit];
-    int length = wide_units(text, units);
-    RECT bounds = {0};
-    DrawTextW(device, units, length, &bounds, DT_CALCRECT | DT_SINGLELINE | DT_NOPREFIX);
-    return bounds.right - bounds.left;
-}
-
 static int menu_width(const struct folio_window *_Nonnull self)
 {
     HDC device = GetDC(self->handle);
     if (device == nullptr)
         return scale(360, GetDpiForWindow(self->handle));
-    HGDIOBJ previous = SelectObject(device, self->menu_font);
-    SetTextCharacterExtra(device, 0);
+    HGDIOBJ previous = SelectObject(device, self->mono_font);
+    int tracking =
+        SetTextCharacterExtra(device, scale(base_tracking, GetDpiForWindow(self->handle)));
     int width = 0;
     for (size_t at = 0; at < folio_menu_action_count(self->menu.context); ++at)
     {
@@ -13478,14 +13462,13 @@ static int menu_width(const struct folio_window *_Nonnull self)
         char hint[draw_unit_limit];
         menu_label(self, at, label);
         menu_hint(self, at, hint);
-        SelectObject(device, self->menu_font);
-        int measured = menu_measure(device, label);
-        SelectObject(device, self->mono_font);
-        measured += menu_measure(device, hint);
+        int measured = measure_utf8(device, label) + measure_utf8(device, hint);
         if (measured > width)
             width = measured;
     }
     SelectObject(device, previous);
+    if (tracking != tracking_unavailable)
+        SetTextCharacterExtra(device, tracking);
     ReleaseDC(self->handle, device);
     UINT dpi = GetDpiForWindow(self->handle);
     width += scale(48, dpi);
@@ -13609,6 +13592,26 @@ static size_t menu_hit(const struct folio_window *_Nonnull self, POINT point)
     return SIZE_MAX;
 }
 
+/* 末尾の (key) は共通のMENU文言。部分文字列もラベル全体のfont-link規則で測る。 */
+static RECT menu_key_rect(HDC device, const char *_Nonnull label, RECT bounds)
+{
+    char16_t units[draw_unit_limit];
+    int count = wide_units(label, units);
+    if (count < 3)
+        return (RECT){0};
+    int tracking = GetTextCharacterExtra(device);
+    if (tracking == tracking_unavailable || font_linked_units(units, count))
+        tracking = 0;
+    SIZE full = measured_units(device, units, count, tracking);
+    TEXTMETRICW metrics;
+    if (full.cx > bounds.right - bounds.left || GetTextMetricsW(device, &metrics) == 0)
+        return (RECT){0};
+    SIZE before = measured_units(device, units, count - 2, tracking);
+    SIZE through = measured_units(device, units, count - 1, tracking);
+    int y = bounds.top + (bounds.bottom - bounds.top - full.cy) / 2 + metrics.tmAscent + 1;
+    return (RECT){bounds.left + before.cx, y, bounds.left + through.cx - tracking, y + 1};
+}
+
 static void menu_draw_row(const struct folio_window *_Nonnull self, HDC device, size_t index)
 {
     RECT row = menu_row_rect(self, index);
@@ -13625,27 +13628,19 @@ static void menu_draw_row(const struct folio_window *_Nonnull self, HDC device, 
     char hint[draw_unit_limit];
     menu_label(self, index, label);
     menu_hint(self, index, hint);
-    SelectObject(device, self->mono_font);
-    int width = menu_measure(device, hint);
+    int width = measure_utf8(device, hint);
     RECT keys = ink.label;
     keys.left = keys.right - width;
     SetTextColor(device,
                  part.enabled && !part.selected ? self->palette.dialog_secondary : ink.text);
     draw_utf8(device, hint, keys);
     ink.label.right = keys.left - scale(16, dpi);
-    SelectObject(device, self->menu_font);
     SetTextColor(device, ink.text);
     draw_utf8(device, label, ink.label);
     if (self->focus_cues || self->focus_cues_always)
     {
-        int label_width = menu_measure(device, label);
-        char suffix[4] = {'(', folio_menu_action_access_key(menu_action(self, index)), ')', '\0'};
-        int suffix_width = menu_measure(device, suffix);
-        int key_width = menu_measure(device, suffix + 1) - menu_measure(device, suffix + 2);
-        int x = ink.label.left + label_width - suffix_width + menu_measure(device, "(");
+        RECT underline = menu_key_rect(device, label, ink.label);
         SetDCBrushColor(device, ink.text);
-        RECT underline = {x, row.bottom - scale(7, dpi), x + key_width,
-                          row.bottom - scale(7, dpi) + 1};
         FillRect(device, &underline, (HBRUSH)GetStockObject(DC_BRUSH));
     }
 }
@@ -13679,7 +13674,6 @@ static void menu_draw_arrows(const struct folio_window *_Nonnull self, HDC devic
 
 static void draw_menu_surface(const struct folio_window *_Nonnull self, HDC device)
 {
-    SetTextCharacterExtra(device, 0);
     RECT bounds;
     GetClientRect(self->command_layer, &bounds);
     SetDCBrushColor(device, self->palette.dialog_surface);
@@ -13745,18 +13739,6 @@ static void show_menu_surface(struct folio_window *_Nonnull self,
     self->menu = *request;
     self->menu_pressed = SIZE_MAX;
     self->menu_key = 0;
-    if (self->menu_font != nullptr)
-        DeleteObject(self->menu_font);
-    wchar_t face[LF_FACESIZE];
-    ui_face_for(folio_state_language(self->state), face);
-    self->menu_font = CreateFontW(-scale(14, GetDpiForWindow(self->handle)), 0, 0, 0, FW_NORMAL,
-                                  FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
-                                  CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH, face);
-    if (self->menu_font == nullptr)
-    {
-        report_outcome(self, FOLIO_STATE_OUT_OF_MEMORY);
-        return;
-    }
     open_command_surface(self, COMMAND_SURFACE_MENU);
     self->command_selection = SIZE_MAX;
     self->command_first = 0;
