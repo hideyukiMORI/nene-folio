@@ -9850,12 +9850,15 @@ static LRESULT limit_size(HWND window, LPARAM lparam)
     return 0;
 }
 
-static LRESULT color_command_input(struct folio_window *_Nonnull self, WPARAM wparam, LPARAM lparam)
+static LRESULT color_command_input(HWND window, UINT message, WPARAM wparam, LPARAM lparam)
 {
+    struct folio_window *_Nullable self = self_of(window);
+    if (self == nullptr)
+        return DefWindowProcW(window, message, wparam, lparam);
     bool ours = command_owns(self, (HWND)lparam) || (HWND)lparam == self->filter_input;
     if (!ours || self->command_brush == nullptr)
     {
-        return DefWindowProcW(self->handle, WM_CTLCOLOREDIT, wparam, lparam);
+        return DefWindowProcW(window, message, wparam, lparam);
     }
     HDC device = (HDC)wparam;
     SetTextColor(device, self->palette.current_text);
@@ -10101,7 +10104,8 @@ static LRESULT CALLBACK command_layer_message(HWND window, UINT message, WPARAM 
     case WM_COMMAND:
         return on_command(self, wparam, lparam);
     case WM_CTLCOLOREDIT:
-        return color_command_input(self, wparam, lparam);
+    case WM_CTLCOLORSTATIC:
+        return color_command_input(window, message, wparam, lparam);
     default:
         /* Win32 のメッセージは開いた集合（C-017）。 */
         return DefWindowProcW(window, message, wparam, lparam);
@@ -10605,7 +10609,8 @@ static LRESULT on_message(struct folio_window *_Nonnull self, UINT message, WPAR
         return on_notify(self, lparam);
     /* 常設絞込と入力面EDITは同じ配色経路を使う。 */
     case WM_CTLCOLOREDIT:
-        return color_command_input(self, wparam, lparam);
+    case WM_CTLCOLORSTATIC:
+        return color_command_input(self->handle, message, wparam, lparam);
     case folio_message_command_focus_lost:
         dismiss_command_if_focus_moved(self);
         return 0;

@@ -89,6 +89,8 @@ UIAのCOM寿命は`accessibility_host`、自前要素のABIは`accessibility_nod
 同じ派生列を使う。入力後の可視面の描画は既存通知合流点から既存WM_PAINTへ渡す（ADR0065）。
 native同期面のowner境界は`modal_owner`に集約する。主窓のshell操作と内容操作の可否、通常終了の安全な合流は
 `folio_window`が所有し、名前入力・失敗箱・色選択へ別のmodal状態を作らない（ADR0064）。
+無効な本文の地は`note_pane`の既存subclassが実効paletteから描き、文字/IME/無効化通知はnativeに保つ。
+EDITの無効時配色も`folio_window`の一つの配色経路へ合流する（ADR0066）。
 
 ### `src/app`
 

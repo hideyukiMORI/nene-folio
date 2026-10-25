@@ -16,6 +16,7 @@ struct note_pane
     HMODULE _Nullable library; /* Msftedit.dll。窓より長く生かす */
     HWND _Nullable handle;
     WNDPROC _Nullable original;
+    COLORREF background; /* 実効paletteから受けた描画色。無効時も同じ地を使う（ADR0066）。 */
     bool composing;
     HACCEL _Nullable navigation;
     ITextSelection *_Nullable selection;
@@ -124,6 +125,48 @@ static bool navigation_command(const struct note_pane *_Nonnull pane, WPARAM com
     return false;
 }
 
+static LRESULT enable_pane(const struct note_pane *_Nonnull pane, WPARAM enabled, LPARAM parameter)
+{
+    LRESULT result = CallWindowProcW(pane->original, pane->handle, WM_ENABLE, enabled, parameter);
+    LONG_PTR style = GetWindowLongPtrW(pane->handle, GWL_EXSTYLE);
+    style = IsWindowEnabled(pane->handle) ? style & ~WS_EX_TRANSPARENT : style | WS_EX_TRANSPARENT;
+    SetWindowLongPtrW(pane->handle, GWL_EXSTYLE, style);
+    InvalidateRect(pane->handle, nullptr, TRUE);
+    return result;
+}
+
+static bool background_requested(const struct note_pane *_Nonnull pane, UINT message, LPARAM flags)
+{
+    if (IsWindowEnabled(pane->handle))
+        return false;
+    if (message == WM_ERASEBKGND)
+        return true;
+    if (message != WM_PRINTCLIENT || (flags & (PRF_CLIENT | PRF_ERASEBKGND)) == 0)
+        return false;
+    return (flags & PRF_CHECKVISIBLE) == 0 || IsWindowVisible(pane->handle);
+}
+
+/* 文字とWM_PAINTはnativeが所有する。disabled時の地だけを同じpaletteで用意する。 */
+static bool paint_background(const struct note_pane *_Nonnull pane, UINT message, WPARAM wparam,
+                             LPARAM flags)
+{
+    if (message == WM_PAINT && !IsWindowEnabled(pane->handle))
+    {
+        /* nativeは選択内の文字を部分paintで再使用する。地を消すときは同じ本文全体を更新する。 */
+        if (GetUpdateRect(pane->handle, nullptr, FALSE))
+            InvalidateRect(pane->handle, nullptr, TRUE);
+    }
+    if (!background_requested(pane, message, flags))
+        return false;
+    HDC device = (HDC)wparam;
+    RECT bounds;
+    GetClientRect(pane->handle, &bounds);
+    COLORREF previous = SetDCBrushColor(device, pane->background);
+    FillRect(device, &bounds, (HBRUSH)GetStockObject(DC_BRUSH));
+    SetDCBrushColor(device, previous);
+    return message == WM_ERASEBKGND;
+}
+
 static LRESULT CALLBACK pane_procedure(HWND window, UINT message, WPARAM wparam, LPARAM lparam)
 {
     struct note_pane *_Nullable pane = (struct note_pane *)GetWindowLongPtrW(window, GWLP_USERDATA);
@@ -131,6 +174,10 @@ static LRESULT CALLBACK pane_procedure(HWND window, UINT message, WPARAM wparam,
     {
         return DefWindowProcW(window, message, wparam, lparam);
     }
+    if (message == WM_ENABLE)
+        return enable_pane(pane, wparam, lparam);
+    if (paint_background(pane, message, wparam, lparam))
+        return 1;
     if (message == WM_COMMAND && lparam == 0 && navigation_command(pane, wparam))
     {
         return 0;
@@ -248,6 +295,13 @@ static bool prepare_navigation(struct note_pane *_Nonnull pane)
     return pane->navigation != nullptr && prepare_selection(pane);
 }
 
+static void set_background(struct note_pane *_Nonnull pane, COLORREF background)
+{
+    pane->background = background;
+    SendMessageW(pane->handle, EM_SETBKGNDCOLOR, 0, (LPARAM)background);
+    InvalidateRect(pane->handle, nullptr, TRUE);
+}
+
 enum note_pane_outcome note_pane_create(HWND _Nonnull parent, COLORREF background, COLORREF text,
                                         struct note_pane *_Nullable *_Nonnull out)
 {
@@ -274,7 +328,7 @@ enum note_pane_outcome note_pane_create(HWND _Nonnull parent, COLORREF backgroun
         note_pane_destroy(pane);
         return NOTE_PANE_NOT_CREATED;
     }
-    SendMessageW(pane->handle, EM_SETBKGNDCOLOR, 0, (LPARAM)background);
+    set_background(pane, background);
     /* 既定書式。閲覧も編集も RTF が face・大きさ・色を持ち込む（ADR 0006 の #245 補正）ので、
      * これは RTF が書式を持たない箇所の退避で、RTF の流し込みは既定を壊さない（2026-09-09 実測）。
      * **face はここでは決めない**（言語ごとの値の正本は core の ui_font で、
@@ -747,7 +801,7 @@ enum note_pane_recolor_outcome note_pane_recolor(struct note_pane *_Nonnull pane
     SendMessageW(pane->handle, EM_SETMODIFY, (WPARAM)(modified != 0), 0);
     if (colored)
     {
-        SendMessageW(pane->handle, EM_SETBKGNDCOLOR, 0, (LPARAM)background);
+        set_background(pane, background);
     }
     return colored && resumed ? NOTE_PANE_RECOLOR_READY : NOTE_PANE_RECOLOR_FAILED;
 }
