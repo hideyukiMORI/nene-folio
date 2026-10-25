@@ -13749,7 +13749,7 @@ static void show_menu_surface(struct folio_window *_Nonnull self,
         DeleteObject(self->menu_font);
     wchar_t face[LF_FACESIZE];
     ui_face_for(folio_state_language(self->state), face);
-    self->menu_font = CreateFontW(-scale(16, GetDpiForWindow(self->handle)), 0, 0, 0, FW_NORMAL,
+    self->menu_font = CreateFontW(-scale(14, GetDpiForWindow(self->handle)), 0, 0, 0, FW_NORMAL,
                                   FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
                                   CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH, face);
     if (self->menu_font == nullptr)

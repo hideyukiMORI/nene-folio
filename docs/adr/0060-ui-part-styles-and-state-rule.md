@@ -166,6 +166,9 @@ hideの今回の再開・全権委譲と、設計サナ／実装サナ／デザ�
     メニューの行描画は `ui_part` に集約し、OSの `TrackPopupMenuEx` / `TrackPopupMenu` と重複する語・実行経路を撤去する。パレット全体の外枠変更は #351。
     - 地 `dialog_surface`、1px `dialog_border`、直角、影なし。行高32、行の塗りは縁から左右4、字は縁から16、上下の内側4。
       枠内8以上は字までの距離であり、塗りのinset4とは別の寸法。群間は高さ8の領域の中央に1px線を引く。
+    - 項目名は言語別の `ui_face_for`、14 logical px、標準の太さ。キー列は既存のConsolas11を保つ。
+      2026-10-25の#379で、周囲より大きく見える16を名前入力・ノート一覧と同じ14へ揃える。
+      操作/右クリックとも同じMENUの生成・幅計測・描画を使い、行高や余白を縮めない。
     - 有効行は通常の文字色、キー列は `dialog_secondary`。無効行は字もキーも `header_text`、選択・押下・実行を受けない。
       一覧の無効行は内容を読めることを優先するvariantとして、決定3の釦のdisabled色から区別する。
       hoverとキー選択は `selected_background` と `selected_text`、左2pxの棒で示す。棒は既存 `THEME_LINE_FOCUS_SELECTED` の色選定に従う。
