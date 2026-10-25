@@ -1,26 +1,26 @@
 # いまのタスク — NeNe Folio
 
-記録日: 2026-10-25。[#381](https://github.com/hideyukiMORI/nene-folio/issues/381)のメニュー操作文字の統合。
+記録日: 2026-10-25。[#383](https://github.com/hideyukiMORI/nene-folio/issues/383)の本文表示倍率。
 最終状態はIssue/PRと恒久証跡の`completion.json`を照合する。現在のhide指示とcheckoutを正とする。
 
 ## 現在の到達点
 
-- メニューはノート名ではなく、同じ操作を並べるヘルプ「操作」の役割へ揃える。hideの「その方向性で対応して」に基づく。
-- ADR0060決定17を補正し、MENUの項目名/キー列を既存mono_fontのConsolas11・標準の太さ・共通字間へ統合した。
-  専用menu_fontと専用幅計測を撤去し、下線位置と省略時の下線も共通計測へ合わせた。行高32・余白・色・枠は維持する。
-- 調査/実装/検証は単体。変更前の明示依頼によるOpusの画像批評を再利用した。
-- Debug/tidy・規約検査・3言語/3倍率の4,947 checks・比較画像13枚を確認済み。
-  一覧320幅では英語5条件に省略が残り、等幅/字間によって長い項目の必要幅は増える。全文UIAを保持し、孤立した下線は解消した。
-- 作業checkout: `D:/NeNeFolio/worktrees/381-menu-operation-style`、出力: `D:/NeNeFolio/outputs/menu-operation-style-20261025`。
-  恒久証跡: `D:/NeNeFolio/agents/menu-operation-style-20261025`。現存状況は完了記録を照合する。
-- 詳細: [品質記録](../quality/2026-10-25-menu-operation-style.md)。保存schema・依存・ゲート変更なし、Waivers: none。
+- hideのCtrl+ホイール/Ctrl++/Ctrl+-依頼を受け、ADR0067を先に定めた。
+- 閲覧/編集本文だけを50～300%・10%刻みで拡大縮小し、Ctrl+0で100%へ戻す。
+  倍率はnote_paneの実行中の状態一つ。RTF再投入後も維持し、行番号font/幅/配置を追従させる。
+- 単体で実装/自己レビュー/対象検証を実施した。48条件、入力/再投入/本文/Undo/資源/故障注入の成功結果を確認済み。
+  初回fixtureのmodal戻り値期待1件を訂正し、当該キー群96 checks成功。ui_text 66,157 checks成功。
+  PrintWindowの文字欠けは実WM_PAINTと分離し、8条件の部分/全面描画比較が差分0だった。
+- 詳細: [品質記録](../quality/2026-10-25-note-zoom.md)。保存schema・依存・ゲート変更なし、Waivers: none。
+- 作業checkout: `D:/NeNeFolio/worktrees/383-note-zoom`、出力: `D:/NeNeFolio/outputs/note-zoom-20261025`。
+  恒久証跡: `D:/NeNeFolio/agents/note-zoom-20261025`。現存状況は完了記録を照合する。
 
 ## 次の判断
 
 最終headの必須CI成功後、`tools/merge-pr.ps1`で統合し、`tools/prepare-real-machine.ps1`で通常exeへ反映する。
 稼働中の実機アプリはhideが閉じてから更新し、自動起動しない。最終結果は実際のPRと`completion.json`が正。
-#379/PR #380はmain統合・通常反映・当該worktree/出力整理まで完了。#369の大量ノート初回読込は別件で未着手。
-今回の確認はメニューの文字と直接影響する表示境界に限定する。
+#381/PR #382はmain統合・通常反映・当該worktree/出力整理まで完了。#369の大量ノート初回読込は別件で未着手。
+今回の確認は本文倍率と直接影響する入力・再投入・行番号・描画に限定する。
 
 ## 運用と保持
 

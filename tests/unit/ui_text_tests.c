@@ -210,6 +210,7 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_MENU_NEW_NOTE_IN_CATEGORY] = "このカテゴリに新しいノート",
     [UI_TEXT_HELP_PALETTE] = "一覧  ↑↓ 選択 / Enter 実行 / Esc 閉じる / Tab 説明",
     [UI_TEXT_HELP_EDITOR_MOTION] = "編集本文  Ctrl+h/j/k/l ←/↓/↑/→",
+    [UI_TEXT_HELP_BODY_ZOOM] = "本文  Ctrl+ホイール / Ctrl++ / Ctrl+- 拡大縮小 / Ctrl+0 100%",
     [UI_TEXT_HELP_GLOBAL_KEYS] = "全区画  {name} ヘルプ / {from} 一覧 / {to} このノート内を検索",
     [UI_TEXT_HELP_GLOBAL_FILTER] = "全区画  {name} すべてのノートを検索（索引を絞り込む）",
     [UI_TEXT_HELP_FILTER_FIELD] =
@@ -580,6 +581,9 @@ static void verify_fill(void)
  * この綴りが ja の行にあれば en と zh-Hans の同じ行にも無ければならない。 */
 static const char *_Nonnull const key_names[] = {
     "Ctrl+h/j/k/l",
+    "Ctrl++",
+    "Ctrl+-",
+    "Ctrl+0",
     "Ctrl+P",
     "Ctrl+F",
     "Ctrl+Shift+F",

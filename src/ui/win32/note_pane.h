@@ -31,9 +31,11 @@ constexpr int note_pane_control_id = 3;
 [[nodiscard]] HWND _Nullable note_pane_handle(const struct note_pane *_Nonnull pane);
 /* 未確定入力中は親がキーを操作へ変換せず、RichEdit/IMEへ渡す（ADR 0018）。 */
 [[nodiscard]] bool note_pane_composing(const struct note_pane *_Nonnull pane);
-/* 編集本文だけを対象に主窓が呼ぶ。処理済みなら元のMSGを再翻訳しない（ADR 0019）。 */
+/* 本文のzoomは両モード、Ctrl+hjklは編集だけで翻訳する。処理済みなら再翻訳しない。 */
 [[nodiscard]] bool note_pane_translate(const struct note_pane *_Nonnull pane,
-                                       const MSG *_Nonnull message);
+                                       const MSG *_Nonnull message, enum pane_mode mode);
+/* 実行中だけ共有する本文倍率（百分率）。nativeの倍率はこの値の投影（ADR0067）。 */
+[[nodiscard]] int note_pane_zoom_percent(const struct note_pane *_Nonnull pane);
 /* 同じUTF-8 RTF経路で閲覧/編集を投入する。完成した編集だけ書込可能にし変更印を消す。
  * 失敗は未準備にし、読み取り専用（それも失敗なら入力停止）にする。本文rollbackはしない。 */
 [[nodiscard]] enum note_pane_load_outcome note_pane_load(struct note_pane *_Nonnull pane,

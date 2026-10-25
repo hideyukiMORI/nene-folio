@@ -101,6 +101,7 @@ struct folio_window
     /* 検索欄にいるあいだだけ使う Enter / Shift+Enter（ADR 0023 の決定 4） */
     HACCEL _Nullable search_keys;
     HFONT _Nullable mono_font;
+    HFONT _Nullable gutter_font; /* mono_fontと本文倍率から作る行番号の派生資源（ADR0067）。 */
     HWND _Nullable command_layer;
     HWND _Nullable tooltip;
     char16_t tooltip_text[draw_unit_limit];
@@ -205,15 +206,15 @@ static const wchar_t edit_class[] = L"EDIT";
 /* 一覧に出すキー操作の行（ADR 0030 の決定 4）。文言は core の ui_text が持ち、
  * ここは並びだけを持つ。1 行 1 ID で、欄分けは単位 C（ADR 0032）。 */
 static const enum ui_text command_shortcuts[] = {
-    UI_TEXT_HELP_PALETTE,         UI_TEXT_HELP_EDITOR_MOTION,   UI_TEXT_HELP_GLOBAL_KEYS,
-    UI_TEXT_HELP_GLOBAL_FILTER,   UI_TEXT_HELP_FILTER_FIELD,    UI_TEXT_HELP_FILTER_LIMITS,
-    UI_TEXT_HELP_FILE_KEYS,       UI_TEXT_HELP_INDEX_COMMAND,   UI_TEXT_HELP_EX_SET_NUMBER,
-    UI_TEXT_HELP_EX_SET_THEME,    UI_TEXT_HELP_EX_SET_LANGUAGE, UI_TEXT_HELP_REPLACE_FIELD,
-    UI_TEXT_HELP_EX_SUBSTITUTE,   UI_TEXT_HELP_SEARCH_KEYS,     UI_TEXT_HELP_SEARCH_STEP,
-    UI_TEXT_HELP_SEARCH_FIELD,    UI_TEXT_HELP_INDEX_MOTION,    UI_TEXT_HELP_INDEX_FOLD,
-    UI_TEXT_HELP_INDEX_SCROLL,    UI_TEXT_HELP_EDITOR_ESCAPE,   UI_TEXT_HELP_TRASH_NOTE,
-    UI_TEXT_HELP_DELETE_CATEGORY, UI_TEXT_HELP_RENAME_CATEGORY, UI_TEXT_HELP_ACCESSIBILITY,
-    UI_TEXT_HELP_RECYCLE,
+    UI_TEXT_HELP_PALETTE,       UI_TEXT_HELP_EDITOR_MOTION,   UI_TEXT_HELP_BODY_ZOOM,
+    UI_TEXT_HELP_GLOBAL_KEYS,   UI_TEXT_HELP_GLOBAL_FILTER,   UI_TEXT_HELP_FILTER_FIELD,
+    UI_TEXT_HELP_FILTER_LIMITS, UI_TEXT_HELP_FILE_KEYS,       UI_TEXT_HELP_INDEX_COMMAND,
+    UI_TEXT_HELP_EX_SET_NUMBER, UI_TEXT_HELP_EX_SET_THEME,    UI_TEXT_HELP_EX_SET_LANGUAGE,
+    UI_TEXT_HELP_REPLACE_FIELD, UI_TEXT_HELP_EX_SUBSTITUTE,   UI_TEXT_HELP_SEARCH_KEYS,
+    UI_TEXT_HELP_SEARCH_STEP,   UI_TEXT_HELP_SEARCH_FIELD,    UI_TEXT_HELP_INDEX_MOTION,
+    UI_TEXT_HELP_INDEX_FOLD,    UI_TEXT_HELP_INDEX_SCROLL,    UI_TEXT_HELP_EDITOR_ESCAPE,
+    UI_TEXT_HELP_TRASH_NOTE,    UI_TEXT_HELP_DELETE_CATEGORY, UI_TEXT_HELP_RENAME_CATEGORY,
+    UI_TEXT_HELP_ACCESSIBILITY, UI_TEXT_HELP_RECYCLE,
 };
 
 /* 設定画面の行（ADR 0031 の決定 7・ADR 0032 の決定 7）。見出しと選択肢を**種別で**持ち、
@@ -930,8 +931,12 @@ static void clear_command_status(struct folio_window *_Nonnull self)
     self->result_line[0] = '\0';
 }
 
-/* 等幅書体の数字 1 文字の幅（字間 0・決定 1）。測れなければ DPI 換算の目安を使う。
- * 呼ぶのは書体を作り直す refresh_font だけで、毎回の WM_PAINT では測らない（補正 7）。 */
+static HFONT _Nullable gutter_font(const struct folio_window *_Nonnull self)
+{
+    return self->gutter_font != nullptr ? self->gutter_font : self->mono_font;
+}
+
+/* 行番号の数字幅（字間0）。font/DPI/倍率の変更時だけ測り、毎回のpaintでは測らない。 */
 static int measure_digit(const struct folio_window *_Nonnull self, UINT dpi)
 {
     HDC device = GetDC(self->handle);
@@ -939,13 +944,35 @@ static int measure_digit(const struct folio_window *_Nonnull self, UINT dpi)
     {
         return scale(base_digit_fallback, dpi);
     }
-    HGDIOBJ previous = SelectObject(device, self->mono_font);
+    HGDIOBJ previous = SelectObject(device, gutter_font(self));
     SetTextCharacterExtra(device, 0);
     SIZE measured = {.cx = 0, .cy = 0};
     bool measurable = GetTextExtentPoint32W(device, L"0", 1, &measured) != 0;
     SelectObject(device, previous);
     ReleaseDC(self->handle, device);
     return measurable ? (int)measured.cx : scale(base_digit_fallback, dpi);
+}
+
+static void refresh_gutter_font(struct folio_window *_Nonnull self, UINT dpi)
+{
+    LOGFONTW font;
+    if (GetObjectW(self->mono_font, sizeof font, &font) != 0)
+    {
+        int percent = self->pane == nullptr ? 100 : note_pane_zoom_percent(self->pane);
+        font.lfHeight = MulDiv(font.lfHeight, percent, 100);
+        HFONT next = CreateFontIndirectW(&font);
+        if (next != nullptr)
+        {
+            if (self->gutter_font != nullptr)
+                DeleteObject(self->gutter_font);
+            self->gutter_font = next;
+        }
+        else
+        {
+            MessageBeep(MB_ICONWARNING);
+        }
+    }
+    self->digit_width = measure_digit(self, dpi);
 }
 
 static void refresh_part_metrics(struct folio_window *_Nonnull self, UINT dpi);
@@ -984,7 +1011,7 @@ static void refresh_font(struct folio_window *_Nonnull self, UINT dpi)
         SendMessageW(self->filter_input, WM_SETFONT, (WPARAM)self->mono_font, TRUE);
     }
     /* 帯の幅の材料はここで 1 回だけ測る。DPI の変更でもこの関数が走るので測り直る（補正 7）。 */
-    self->digit_width = measure_digit(self, dpi);
+    refresh_gutter_font(self, dpi);
     refresh_part_metrics(self, dpi);
     refresh_tooltip_style(self);
 }
@@ -1976,6 +2003,18 @@ static void arrange(struct folio_window *_Nonnull self)
     }
     refresh_gutter(self, false);
     refresh_tooltip_rects(self);
+}
+
+static void arrange_zoomed_pane(struct folio_window *_Nonnull self, size_t first_line)
+{
+    if (self->pane == nullptr)
+        return;
+    refresh_gutter_font(self, GetDpiForWindow(self->handle));
+    arrange(self);
+    note_pane_scroll_to_line(self->pane, first_line);
+    InvalidateRect(self->handle, nullptr, FALSE);
+    UpdateWindow(note_pane_handle(self->pane));
+    refresh_gutter(self, true);
 }
 
 static enum folio_state_outcome from_pane_load(enum note_pane_load_outcome outcome)
@@ -4183,7 +4222,7 @@ static void draw_gutter(const struct folio_window *_Nonnull self, HDC device, RE
     }
     IntersectClipRect(device, band.left, band.top, band.right, band.bottom);
     SetTextColor(device, self->palette.gutter_text);
-    SelectObject(device, self->mono_font);
+    SelectObject(device, gutter_font(self));
     SetTextCharacterExtra(device, 0);
     SetTextAlign(device, TA_RIGHT | TA_BASELINE | TA_NOUPDATECP);
     for (size_t at = 0; at < count; ++at)
@@ -8457,10 +8496,28 @@ static LRESULT on_notify(struct folio_window *_Nonnull self, LPARAM lparam)
     return 0;
 }
 
-/* ポインタの下がドロワーならホイールをそこへ渡す（ADR 0009 の決定 5）。
+static bool forward_body_zoom(const struct folio_window *_Nonnull self, WPARAM keys,
+                              LPARAM position)
+{
+    if ((GET_KEYSTATE_WPARAM(keys) & MK_CONTROL) == 0 || self->pane == nullptr ||
+        !pane_visible(self))
+        return false;
+    HWND pane = note_pane_handle(self->pane);
+    RECT bounds;
+    GetWindowRect(pane, &bounds);
+    POINT point = {GET_X_LPARAM(position), GET_Y_LPARAM(position)};
+    if (!PtInRect(&bounds, point))
+        return false;
+    SendMessageW(pane, WM_MOUSEWHEEL, keys, position);
+    return true;
+}
+
+/* 本文上のCtrl+wheelは本文へ、ドロワー上のwheelは従来の索引へ渡す。
  * lparam はスクリーン座標なので、位置を読むために OS へ問い合わせない（ARC-007）。 */
 static void forward_wheel(const struct folio_window *_Nonnull self, WPARAM wparam, LPARAM lparam)
 {
+    if (forward_body_zoom(self, wparam, lparam))
+        return;
     HWND drawer = self->drawer == nullptr ? nullptr : drawer_window_handle(self->drawer);
     if (drawer == nullptr || !drawer_visible(self))
     {
@@ -10181,6 +10238,11 @@ static void window_destroyed(struct folio_window *_Nonnull self)
         DeleteObject(self->mono_font);
         self->mono_font = nullptr;
     }
+    if (self->gutter_font != nullptr)
+    {
+        DeleteObject(self->gutter_font);
+        self->gutter_font = nullptr;
+    }
     /* self->handle はここでは消さない。WM_DESTROY の後も WM_NCDESTROY までメッセージは届き、
      * 既定処理はその HWND を要る。手放すのは window_finalized 1 か所（ADR 0014 の補正 1）。 */
     PostQuitMessage(0);
@@ -10503,11 +10565,14 @@ static LRESULT on_input_message(struct folio_window *_Nonnull self, UINT message
     }
 }
 
-static LRESULT on_drawer_request(struct folio_window *_Nonnull self, UINT message, WPARAM wparam,
-                                 LPARAM lparam)
+static LRESULT on_child_request(struct folio_window *_Nonnull self, UINT message, WPARAM wparam,
+                                LPARAM lparam)
 {
     switch (message)
     {
+    case folio_message_pane_zoomed:
+        arrange_zoomed_pane(self, (size_t)wparam);
+        return 0;
     case folio_message_choose_color:
         return choose_category_color(self, (CHOOSECOLORW *)lparam);
     case folio_message_close_requested:
@@ -10560,7 +10625,7 @@ static LRESULT on_shell_message(struct folio_window *_Nonnull self, UINT message
     case WM_SYSCOMMAND:
         return shell_system_action(self, wparam, lparam);
     default:
-        return on_drawer_request(self, message, wparam, lparam);
+        return on_child_request(self, message, wparam, lparam);
     }
 }
 
@@ -10971,11 +11036,11 @@ bool folio_window_translate(const struct folio_window *_Nonnull window, const MS
     }
     if (translate_command_shortcut(window, message))
         return true;
-    if (window->pane == nullptr || folio_state_pane_mode(window->state) != PANE_MODE_EDIT)
+    if (window->pane == nullptr || !command_target(window, message->hwnd))
     {
         return false;
     }
-    return note_pane_translate(window->pane, message);
+    return note_pane_translate(window->pane, message, folio_state_pane_mode(window->state));
 }
 
 static void release_accelerators(struct folio_window *_Nonnull window)
@@ -11018,6 +11083,8 @@ void folio_window_destroy(struct folio_window *_Nullable window)
     {
         DeleteObject(window->mono_font);
     }
+    if (window->gutter_font != nullptr)
+        DeleteObject(window->gutter_font);
     if (window->command_brush != nullptr)
     {
         DeleteObject(window->command_brush);

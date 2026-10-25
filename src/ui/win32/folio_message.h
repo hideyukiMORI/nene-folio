@@ -45,4 +45,6 @@ constexpr UINT folio_message_modal_reflow = WM_APP + 16;
 constexpr UINT folio_message_close_requested = WM_APP + 17;
 /* drawer色選択のowner/取消/暗幕を主窓の同期境界へ集約する。 */
 constexpr UINT folio_message_choose_color = WM_APP + 18;
+/* 本文倍率の適用後、行番号font/幅と配置を更新する。wParamは変更前の先頭論理行。 */
+constexpr UINT folio_message_pane_zoomed = WM_APP + 19;
 #endif
