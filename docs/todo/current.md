@@ -3,6 +3,15 @@
 記録日: 2026-10-25。直近の機能実装は完了し、v0.2.0をGitHubのβ版として公開済み。
 再開時は最新のhide指示、Issue / PR、checkoutを照合し、過去の記録を新しい実行許可として扱わない。
 
+## 次の予定: ノートの保存先設定（未実装）
+
+hideの23時台の方針を[#390](https://github.com/hideyukiMORI/nene-folio/issues/390)で文書化した。
+インストール版は初回に保存先を確認し、Windowsのドキュメント内`NeNeFolio`を既定とする。
+portable版はexe隣の`data`を既定とし、両方とも設定から「ノートの保存先」を変更できるようにする予定。
+起動設定の分離、既存ノートを勝手に移動しない切替、書込/ロック確認、未保存本文とアンインストール時のデータ保護を含む。
+詳細と次回の設計事項は[引き継ぎの保存先計画](../handoffs/2026-10-25.md#store-data-directory-plan)を参照する。
+今回の依頼は引き継ぎと日報への記録まで。保存先設定・MSIX作成・Store申請は未着手で、実装開始はその時点のhide指示と照合する。
+
 ## 公開状態
 
 - [v0.2.0 Beta](https://github.com/hideyukiMORI/nene-folio/releases/tag/v0.2.0)を23:19 JSTに公開。
