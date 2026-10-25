@@ -2,21 +2,27 @@
 
 A frameless Markdown notebook for Windows with a category drawer. Plain C (C23), Win32, no UI library.
 
-> **Status (2026-10-12):** [v0.1.0 is available as a beta release](https://github.com/hideyukiMORI/nene-folio/releases/tag/v0.1.0)
+> **Status (2026-10-25):** [v0.2.0 is available as a beta release](https://github.com/hideyukiMORI/nene-folio/releases/tag/v0.2.0)
 > for Windows x64. It views and edits notes, keeps a short
 > history of every save, searches, filters, replaces, and manages categories, with settings for theme,
-> language and line numbers. Download `NeNeFolio-0.1.0-win-x64.zip` and `SHA256SUMS` from the release's Assets.
+> language and line numbers. Download `NeNeFolio-0.2.0-win-x64.zip` and `SHA256SUMS` from the release's Assets.
 > Run `NeNeFolio.exe` after extracting the whole package. The portable beta is unsigned.
 > It starts with no `data/` folder; saved notes and settings stay next to the executable.
 
+[Download Windows x64 ZIP](https://github.com/hideyukiMORI/nene-folio/releases/download/v0.2.0/NeNeFolio-0.2.0-win-x64.zip)
+· [SHA256SUMS](https://github.com/hideyukiMORI/nene-folio/releases/download/v0.2.0/SHA256SUMS)
+· Windows 10 version 2004 or later
+
+![NeNe Folio 0.2.0 showing categories and a rendered Markdown note](docs/images/0.2.0-main.png)
+
+v0.2.0 with the Japanese UI, Light theme, and sample notes.
+
 ## What it does
 
-The current source also includes the settings dialog, a fixed **+** for adding categories, and
-**List / Both / Note** views and the searchable theme catalog described below. These UI updates
-are newer than the published v0.1.0 ZIP.
-
-The [0.2.0 beta candidate notes](docs/release/0.2.0.md) summarize these changes,
-update instructions, and the remaining acceptance checks. The published download remains v0.1.0.
+The [0.2.0 beta release notes](docs/release/0.2.0.md) cover the settings dialog, category creation,
+**List / Both / Note** views, theme previews, note zoom, and search responsiveness improvements.
+They also include update instructions and known limitations. The [publication checks](docs/quality/2026-10-25-beta-release.md)
+record the package validation, saved-data check, and download verification.
 
 - **A borderless window** with a drawer on the left and a Markdown view/editor on the right. It follows
   the OS light/dark theme (or a fixed one) and Per-Monitor v2 DPI.
@@ -27,20 +33,25 @@ update instructions, and the remaining acceptance checks. The published download
 - **The drawer is an index** of `data/<category>/*.md`. Categories fold like an accordion, carry a colour
   and an order, and rows are reordered by drag (notes can move between categories). There is no scrollbar;
   the drawer scrolls by wheel and keys. A search box at the top filters every note by name and body.
+  The first search prepares saved note bodies one at a time while continuing to process input and paint.
+  Results appear after preparation finishes; large collections can still take time to prepare.
 - **View and edit.** Clicking a note renders its Markdown. Edit mode shows the plain text in the same
   pane; Ctrl+S writes the file back atomically, keeps the original line endings, and writes nothing when
   the text is unchanged. The body just before each save is kept as `data/.history/<category>/<note>/1.md`
   … `5.md`, and any version can be restored into the editor as an undoable edit.
+- **Note zoom**: Ctrl+wheel or Ctrl++ / Ctrl+- changes the display from 50% to 300%; Ctrl+0 restores 100%.
+  Read and Edit share the zoom while the app runs, and line numbers follow it. Note contents stay unchanged.
 - **Notes**: new untitled note with a first save, save as, rename (recoverable across restarts through
   `data/.rename.json`), move to the Windows Recycle Bin together with its history.
   Leaving an untitled note for another note, a new note, or the window's Close action offers
   **Save / Don't save / Cancel** in the name form. Don't save continues without creating a file;
   Cancel keeps the draft and Undo. If the destination cannot be opened, the draft is kept.
   Ctrl+S and explicit **Save and quit** remain save commands.
-  The drawer's fixed **+ New note** button also works in List view. A category's right-click
+  The shared header's **New note** button also works in List view. A category's right-click
   **New note in this category** starts writing there; Cancel keeps the previous view and draft.
-- **Categories**: create, rename, change colour, delete when empty, all from the right-click menu,
-  the **Actions** list, the command palette, or Ex commands.
+- **Categories**: create, rename, change colour, or delete when empty from the right-click menu.
+  A fixed **+** beside the Categories heading creates a category; the command palette and Ex commands
+  also provide category creation, renaming, and deletion.
 - **Find**: search inside the open note (Ctrl+F, `/`, `?`, `n`, `N`, F3), filter all notes
   (Ctrl+Shift+F), and regular-expression replace in the edited body (a replace field or `:%s/…/…/g`).
   In-note search sits above the body with its match count, Previous / Next, and Close controls.
@@ -52,7 +63,8 @@ update instructions, and the remaining acceptance checks. The published download
 - **Settings** (`data/settings.json`): line numbers for the edited text, 125 themes shared with NeNeNib
   plus the original `light` / `dark` and `system`,
   and UI language 日本語 / English / 简体中文. **Choose a theme** searches names, shows color samples,
-  and applies a choice with Enter or a click. `:set theme=dracula` uses the same saved choice.
+  and previews the highlighted choice before saving it with Enter or a click. Esc returns to the saved choice.
+  `:set theme=dracula` uses the same saved choice.
   Windows high contrast temporarily uses the system colors across the window and note body.
   Your theme and category colors stay saved; turning high contrast off restores the chosen theme.
   The settings surface also shows the build version.
@@ -65,9 +77,14 @@ The requirements, one FR per row, are in [SPECIFICATION.md](SPECIFICATION.md).
 Palette sources and license texts are retained in [THIRD_PARTY_NOTICES.txt](THIRD_PARTY_NOTICES.txt).
 Every key and command is listed in [キーバインドとコマンド](docs/KEY_BINDINGS.md) (Japanese).
 
+![The searchable theme chooser in NeNe Folio 0.2.0, with Nord selected](docs/images/0.2.0-themes.png)
+
+The theme chooser offers 128 choices, including the OS setting and the original Light / Dark themes.
+Arrow keys preview a choice across the window before it is saved.
+
 ## Where the data lives
 
-Everything is in the `data/` folder next to the executable; the app never writes anywhere else.
+Notes and settings live in the `data/` folder next to the executable.
 
 | Path | Meaning |
 | --- | --- |
@@ -116,7 +133,7 @@ The command makes a separate Release build, checks the executable's architecture
 and OS imports, and verifies the complete file list and bundled fonts before producing
 `NeNeFolio-<version>-win-x64.zip` and `SHA256SUMS`. Existing, overlapping and linked paths are refused;
 choose fresh directories for another run. Build work remains in `WorkDirectory` for inspection.
-The package contains `NeNeFolio.exe`, `README.txt`, `LICENSE` and `fonts/`, with no user data.
+The package contains `NeNeFolio.exe`, `README.txt`, `LICENSE`, `THIRD_PARTY_NOTICES.txt` and `fonts/`, with no user data.
 
 Extract the whole ZIP to a writable local folder and run the executable inside it. Keep `fonts/`
 beside the executable. The first launch does not require a pre-existing `data/` folder.
@@ -129,13 +146,13 @@ Right-click a note row and choose **Move to Recycle Bin** to move that note and 
 **Actions**, the command palette, and Ex `:trashnote` / `:trash` target the open named note.
 An edited target is saved first. There is no confirmation dialog.
 
-The bottom line reports **Removed from the list.**, including when the original file was already absent.
+The row is removed from the list, and UI Automation announces the removal without an extra visual notice.
 To restore a moved note, restore the note and its history folder separately from Windows Recycle Bin,
 then restart the app.
 
 ## Delete an empty category
 
-Right-click a category row and choose **Delete category**. **Actions**, the command palette,
+Right-click a category row and choose **Delete category**. The command palette
 and Ex `:deletecategory` / `:delcat` use the cursor's category, or the open document's category
 when there is no cursor. Select a category first if neither exists.
 
@@ -154,7 +171,7 @@ A version 2 record must be recovered with this version before using an older bin
 
 ## Rename a category
 
-Right-click a category row and choose **Rename category…**. **Actions**, the command palette,
+Right-click a category row and choose **Rename category…**. The command palette
 and Ex `:renamecategory name` / `:rencat name` use the cursor's category, or the open document's
 category when there is no cursor. With no name argument, the current category name is selected
 in the name form. Category names follow the same rules as category creation; `.md` is retained.
