@@ -319,24 +319,23 @@ folio_state_note_changed(struct folio_state *_Nonnull state, const char16_t *_No
  * ディスクは読み直さない。 */
 [[nodiscard]] enum folio_state_outcome
 folio_state_discard_edits(const struct folio_state *_Nonnull state);
-/* 索引の絞り込みの語を覚え、一致集合を作り直す（FR-032 / ADR 0024 の決定 7）。
- * UTF-16 の単位列を受ける C-014 の例外の 7 本目。ノート内検索の語（set_search_term）とは別で、
- * 通常は同期しない。改名（NOTE/CATEGORY）または保存済み写し保留中の非空語は、
- * cache/語/scroll変更前に共通同期する。
- * 絞り込み自体は永続化しない。
- * count が 0 なら絞り込みを解き、索引は台帳のとおりに戻る。語が壊れていれば SEARCH_MALFORMED で
- * 前の語と絞り込みを保つ。空でない語が**初めて**来たときだけ、ポートの read_note で全ノートの
- * 本文を 1 回読んで写しにする（起動時には読まない・決定 1）。読めないノートは写しを持たず、
- * 一致しない（理由は出さない）。
- * 変えたあとはスクロール量を 0 に戻し、カーソルの行が消えていれば最初に見える行へ移す。
- * 選択・右ペイン・モードは変えない（決定 5）。寄せる量は UI が folio_state_reveal_cursor で決める。
- */
+/* 索引の絞り込み要求（FR-032 / ADR0068）。UTF-16入力はC-014の例外7。
+ * 空語は取消して通常索引へ戻す。不正語/OOMは前の要求/結果を保つ。
+ * 改名/保存済みcopy修復の先行同期を行い、完成済みcorpusなら同期で結果を採用する。
+ * 未完成なら最新語を所有するだけでcorpus用の本文を読まず、準備中の通常索引を表示する。
+ * 準備中の語の変更は走査位置を保つ。取消/索引変更/保存は未完成走査を先頭へ戻す。
+ * 現在文書/本文/modeは変えず、語の受理でscrollを戻す。cursorは結果の採用/取消で整える。 */
 [[nodiscard]] enum folio_state_outcome
 folio_state_set_index_filter(struct folio_state *_Nonnull state, const char16_t *_Nonnull units,
                              size_t count);
-/* いま絞り込んでいるか。UI はこれを見てドラッグを始めない（ADR 0024 の決定 4）。 */
+/* 一回につき最大一ノート。未読/不正本文は旧copyも除く。OOM/先行同期失敗は要求を止める。
+ * 最後の次の継続で最新語の全結果を採用する。部分結果は公開せず、要求無しなら何もしない。 */
+[[nodiscard]] enum folio_state_outcome
+folio_state_continue_index_filter(struct folio_state *_Nonnull state);
+[[nodiscard]] bool folio_state_index_filter_pending(const struct folio_state *_Nonnull state);
+/* 準備要求または確定した絞り込みがあるか。UIはこれを見てドラッグを始めない（ADR0068）。 */
 [[nodiscard]] bool folio_state_filtering(const struct folio_state *_Nonnull state);
-/* 覚えている絞り込みの語（UTF-8・終端付き）。無ければ空文字列。次の set まで有効。 */
+/* 最新の準備要求または確定語（UTF-8・終端付き）。無ければ空文字列。次のset/continueまで有効。 */
 [[nodiscard]] const char *_Nonnull folio_state_index_filter_term(
     const struct folio_state *_Nonnull state);
 /* いま索引に見えているノートの数。絞り込んでいなければ索引の総数。 */

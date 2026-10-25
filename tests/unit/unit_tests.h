@@ -3,7 +3,10 @@
 #ifndef NENEFOLIO_UNIT_TESTS_H
 #define NENEFOLIO_UNIT_TESTS_H
 
+#include "folio_state_outcome.h"
+
 #include <stddef.h>
+#include <uchar.h>
 
 /* 条件が偽なら説明を stderr に出して終了コード 1 で止める。 */
 void require(bool condition, const char *_Nonnull description);
@@ -46,6 +49,13 @@ void run_category_rename_state_tests(void);
 void run_category_rename_allocation_tests(void);
 void run_rename_allocation_tests(void);
 void run_search_tests(void);
+struct folio_state;
+/* 完成後の既存契約を調べる試験だけが使う。準備状態の試験は生のAPIを直接呼ぶ。 */
+[[nodiscard]] enum folio_state_outcome
+test_index_filter_complete(struct folio_state *_Nonnull state, const char16_t *_Nonnull units,
+                           size_t count);
+void run_index_preparation_tests(void);
+void run_index_preparation_allocation_tests(void);
 void run_filter_tests(void);
 void run_filter_lookup_state_tests(void);
 void run_corpus_allocation_tests(void);

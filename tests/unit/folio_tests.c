@@ -146,6 +146,17 @@ static bool run_target_tests(const char *_Nonnull argument)
 
 static bool run_filter_target_tests(const char *_Nonnull argument)
 {
+    if (strcmp(argument, "--index-preparation") == 0)
+    {
+        run_index_preparation_tests();
+        run_index_preparation_allocation_tests();
+        run_filter_lookup_state_tests();
+        run_index_cache_retry_state_tests();
+        run_index_cache_retry_allocation_tests();
+        run_ui_text_tests();
+        printf("index preparation and affected filter boundaries passed\n");
+        return true;
+    }
     if (strcmp(argument, "--filter-lookup") == 0)
     {
         run_filter_tests();
@@ -290,6 +301,8 @@ int main(int argc, char *_Nonnull *_Nonnull argv)
     run_state_tests();
     run_accessibility_state_tests();
     run_unsaved_departure_tests();
+    run_index_preparation_tests();
+    run_index_preparation_allocation_tests();
     run_index_cache_retry_state_tests();
     run_index_cache_retry_allocation_tests();
     run_category_rename_state_tests();

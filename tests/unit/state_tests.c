@@ -3014,7 +3014,7 @@ static void verify_index_filter(void)
     require(!folio_state_filtering(state) && adapter.note_reads == 0,
             "no note is read before the first term");
     require(row_count(state) == 9, "the whole index is placed");
-    require(folio_state_set_index_filter(state, u"needle", 6) == FOLIO_STATE_READY,
+    require(test_index_filter_complete(state, u"needle", 6) == FOLIO_STATE_READY,
             "a term filters the index");
     require(adapter.note_reads == 8, "every note was read exactly once");
     require(folio_state_filtering(state) && folio_state_index_filter_count(state) == 1,
@@ -3022,15 +3022,15 @@ static void verify_index_filter(void)
     char order[128] = {0};
     row_order(state, order, sizeof order);
     require(same_text(order, "A/four"), "a collapsed category is opened for its match");
-    require(folio_state_set_index_filter(state, u"NEEDLE", 6) == FOLIO_STATE_READY &&
+    require(test_index_filter_complete(state, u"NEEDLE", 6) == FOLIO_STATE_READY &&
                 adapter.note_reads == 8,
             "a second term reads nothing again");
     require(folio_state_index_filter_count(state) == 1, "and ASCII case is ignored");
-    require(folio_state_set_index_filter(state, u"three", 5) == FOLIO_STATE_READY, "a name term");
+    require(test_index_filter_complete(state, u"three", 5) == FOLIO_STATE_READY, "a name term");
     row_order(state, order, sizeof order);
     require(same_text(order, "B/three/C/three"), "the name is matched too");
     require(same_text(folio_state_index_filter_term(state), "three"), "the term is kept as UTF-8");
-    require(folio_state_set_index_filter(state, u"", 0) == FOLIO_STATE_READY &&
+    require(test_index_filter_complete(state, u"", 0) == FOLIO_STATE_READY &&
                 !folio_state_filtering(state) && row_count(state) == 9,
             "an empty term restores the whole index");
     require(folio_state_index_filter_count(state) == 8, "and every note is visible again");
@@ -3043,14 +3043,14 @@ static void verify_index_filter_refusals(void)
     struct persistence_adapter adapter = healthy_adapter();
     adapter.missing_note = "two";
     struct folio_state *state = ready_state(&adapter);
-    require(folio_state_set_index_filter(state, u"Hello", 5) == FOLIO_STATE_READY,
+    require(test_index_filter_complete(state, u"Hello", 5) == FOLIO_STATE_READY,
             "every readable body is searched");
     char order[128] = {0};
     row_order(state, order, sizeof order);
     require(same_text(order, "B/one/three/A/one/three/C/one/three"),
             "a note that could not be read never matches");
     const char16_t lone[] = {u'a', 0xD800, u'\0'};
-    require(folio_state_set_index_filter(state, lone, 2) == FOLIO_STATE_SEARCH_MALFORMED,
+    require(test_index_filter_complete(state, lone, 2) == FOLIO_STATE_SEARCH_MALFORMED,
             "a broken term is refused");
     row_order(state, order, sizeof order);
     require(same_text(order, "B/one/three/A/one/three/C/one/three"),
@@ -3064,7 +3064,7 @@ static void verify_filtered_refusals(void)
 {
     struct persistence_adapter adapter = healthy_adapter();
     struct folio_state *state = ready_state(&adapter);
-    require(folio_state_set_index_filter(state, u"one", 3) == FOLIO_STATE_READY, "filter on");
+    require(test_index_filter_complete(state, u"one", 3) == FOLIO_STATE_READY, "filter on");
     size_t writes = adapter.writes;
     size_t ledger_writes = adapter.ledger_writes;
     require(folio_state_toggle_category(state, 0) == FOLIO_STATE_FILTERED, "no toggle");
@@ -3103,7 +3103,7 @@ static void verify_filter_keeps_document(void)
             "select B / one");
     require(folio_state_begin_edit(state) == FOLIO_STATE_READY, "and edit it");
     require(folio_state_scroll_drawer(state, scroll_metrics, 20) == FOLIO_STATE_READY, "scroll");
-    require(folio_state_set_index_filter(state, u"needle", 6) == FOLIO_STATE_READY, "filter");
+    require(test_index_filter_complete(state, u"needle", 6) == FOLIO_STATE_READY, "filter");
     expect_selection(state, "B/one", "the current note is not closed when it stops matching");
     require(folio_state_pane_mode(state) == PANE_MODE_EDIT, "and the mode stays");
     require(!any_selected_row(state), "no row carries the selection while its row is gone");
@@ -3149,14 +3149,14 @@ static void verify_filter_follows_content(void)
     require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
             "select B / one");
     require(folio_state_begin_edit(state) == FOLIO_STATE_READY, "edit");
-    require(folio_state_set_index_filter(state, u"needle", 6) == FOLIO_STATE_READY, "filter");
+    require(test_index_filter_complete(state, u"needle", 6) == FOLIO_STATE_READY, "filter");
     require(folio_state_index_filter_count(state) == 0, "nothing matches yet");
     require(folio_state_store_note(state, u"a needle appears", 16) == FOLIO_STATE_READY, "save");
     require(folio_state_index_filter_count(state) == 1, "the saved body now matches");
     char order[128] = {0};
     row_order(state, order, sizeof order);
     require(same_text(order, "B/one"), "and it is the note that was saved");
-    require(folio_state_set_index_filter(state, u"renamed", 7) == FOLIO_STATE_READY, "a new term");
+    require(test_index_filter_complete(state, u"renamed", 7) == FOLIO_STATE_READY, "a new term");
     require(folio_state_index_filter_count(state) == 0, "no name holds it");
     struct note_name *name = accepted_note_name("renamed");
     require(folio_state_rename_note(state, name, u"a needle appears", 16) == FOLIO_STATE_READY,
@@ -3169,7 +3169,7 @@ static void verify_filter_follows_content(void)
     require(folio_state_index_filter_count(state) == 1 &&
                 same_text(folio_state_index_filter_term(state), "renamed"),
             "does not touch the filter");
-    require(folio_state_set_index_filter(state, u"one", 3) == FOLIO_STATE_READY, "a filter term");
+    require(test_index_filter_complete(state, u"one", 3) == FOLIO_STATE_READY, "a filter term");
     require(same_text(folio_state_search_term(state), "zzz"),
             "and the filter does not touch the in-note term");
     folio_state_destroy(state);
@@ -3180,7 +3180,7 @@ static void verify_filter_follows_new_note(void)
 {
     struct persistence_adapter adapter = healthy_adapter();
     struct folio_state *state = ready_state(&adapter);
-    require(folio_state_set_index_filter(state, u"needle", 6) == FOLIO_STATE_READY, "filter");
+    require(test_index_filter_complete(state, u"needle", 6) == FOLIO_STATE_READY, "filter");
     require(folio_state_index_filter_count(state) == 0, "nothing matches yet");
     require(folio_state_new_note(state, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
             "a new untitled note");
@@ -3210,15 +3210,15 @@ static void verify_filter_cursor_lands_near(void)
     require(folio_state_select_note(state, 1, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
             "select A / one");
     expect_cursor(state, "n1.0", "the cursor follows the selection into the collapsed category");
-    require(folio_state_set_index_filter(state, u"Hello", 5) == FOLIO_STATE_READY,
+    require(test_index_filter_complete(state, u"Hello", 5) == FOLIO_STATE_READY,
             "a term that every body holds");
     expect_cursor(state, "n1.0", "filtering opens A, so the cursor keeps its own row");
-    require(folio_state_set_index_filter(state, u"", 0) == FOLIO_STATE_READY, "clear the term");
+    require(test_index_filter_complete(state, u"", 0) == FOLIO_STATE_READY, "clear the term");
     expect_cursor(state, "c1", "A closes again and the cursor stops on A's own row");
     expect_selection(state, "A/one", "the selection and the right pane never moved");
     require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
             "select B / one");
-    require(folio_state_set_index_filter(state, u"four", 4) == FOLIO_STATE_READY,
+    require(test_index_filter_complete(state, u"four", 4) == FOLIO_STATE_READY,
             "a term only C holds");
     expect_cursor(state, "c2", "a cursor whose category is gone falls back to the first shown row");
     folio_state_destroy(state);
@@ -3232,7 +3232,7 @@ static void verify_filter_follows_resumed_rename(void)
     struct folio_state *state = ready_state(&adapter);
     require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
             "select B / one");
-    require(folio_state_set_index_filter(state, u"renamed", 7) == FOLIO_STATE_READY, "filter");
+    require(test_index_filter_complete(state, u"renamed", 7) == FOLIO_STATE_READY, "filter");
     require(folio_state_index_filter_count(state) == 0, "no name and no body holds the term");
     struct note_name *name = accepted_note_name("renamed");
     adapter.rename_outcome = RENAME_PENDING;
@@ -3262,15 +3262,15 @@ static void verify_filter_follows_move(void)
     adapter.rare_note = "two";
     adapter.rare_body = "the needle is here";
     struct folio_state *state = ready_state(&adapter);
-    require(folio_state_set_index_filter(state, u"needle", 6) == FOLIO_STATE_READY, "filter");
+    require(test_index_filter_complete(state, u"needle", 6) == FOLIO_STATE_READY, "filter");
     require(adapter.note_reads == 8, "every note is read once at the first term");
     char order[160] = {0};
     row_order(state, order, sizeof order);
     require(same_text(order, "B/two/C/two"), "the two bodies that hold the term");
-    require(folio_state_set_index_filter(state, u"", 0) == FOLIO_STATE_READY, "clear the term");
+    require(test_index_filter_complete(state, u"", 0) == FOLIO_STATE_READY, "clear the term");
     require(folio_state_move_note(state, at(0, 1), at(1, 0)) == FOLIO_STATE_READY,
             "B / two moves into A while nothing is filtered");
-    require(folio_state_set_index_filter(state, u"needle", 6) == FOLIO_STATE_READY, "filter again");
+    require(test_index_filter_complete(state, u"needle", 6) == FOLIO_STATE_READY, "filter again");
     require(adapter.note_reads == 8, "the copies are still the ones read at the first term");
     row_order(state, order, sizeof order);
     require(same_text(order, "A/two/C/two"),
@@ -4093,7 +4093,7 @@ static void verify_bom_edit_save(void)
     adapter.note_body = "\xEF\xBB\xBF\xEF\xBB\xBF\xEF\xBB\xBF"
                         "A";
     struct folio_state *state = history_state(&adapter);
-    require(folio_state_set_index_filter(state, u"\uFEFF\uFEFFA", 3) == FOLIO_STATE_READY &&
+    require(test_index_filter_complete(state, u"\uFEFF\uFEFFA", 3) == FOLIO_STATE_READY &&
                 any_selected_row(state),
             "initial search copy retains two literal FEFF");
     require(folio_state_begin_edit(state) == FOLIO_STATE_READY, "BOM edit fixture");
@@ -4107,7 +4107,7 @@ static void verify_bom_edit_save(void)
                                                 "Ax") &&
                 same_text(folio_state_pane_text(state), adapter.written_body),
             "save and application body keep literal FEFF");
-    require(folio_state_set_index_filter(state, u"\uFEFF\uFEFFAx", 4) == FOLIO_STATE_READY &&
+    require(test_index_filter_complete(state, u"\uFEFF\uFEFFAx", 4) == FOLIO_STATE_READY &&
                 any_selected_row(state),
             "saved search copy retains two literal FEFF");
     folio_state_destroy(state);
@@ -4404,14 +4404,14 @@ static void verify_create_category_refusals(void)
     struct category_name *folded = accepted_category_name("b");
     require(folio_state_create_category(state, folded) == FOLIO_STATE_CATEGORY_NAME_TAKEN,
             "a name that differs only in case is taken");
-    require(folio_state_set_index_filter(state, u"one", 3) == FOLIO_STATE_READY, "filter on");
+    require(test_index_filter_complete(state, u"one", 3) == FOLIO_STATE_READY, "filter on");
     struct category_name *name = accepted_category_name("D");
     require(folio_state_create_category(state, name) == FOLIO_STATE_FILTERED,
             "filtering refuses the structural change");
     require(adapter.category_creates == 0 && adapter.writes == 0 && adapter.renames == 0 &&
                 folio_state_category_count(state) == 3 && !cursor_on_category(state, 3),
             "neither refusal reaches the port or changes the state");
-    require(folio_state_set_index_filter(state, u"", 0) == FOLIO_STATE_READY, "filter off");
+    require(test_index_filter_complete(state, u"", 0) == FOLIO_STATE_READY, "filter off");
     adapter.category_create_outcome = PERSISTENCE_NAME_TAKEN;
     require(folio_state_create_category(state, name) == FOLIO_STATE_CATEGORY_NAME_TAKEN,
             "a folder that appeared meanwhile is taken");
@@ -4528,7 +4528,7 @@ static void verify_remove_category_refusals(void)
     require(folio_state_new_note(state, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
                 folio_state_delete_category(state, 0) == FOLIO_STATE_CATEGORY_NOT_EMPTY,
             "an untitled destination is not empty");
-    require(folio_state_set_index_filter(state, u"one", 3) == FOLIO_STATE_READY &&
+    require(test_index_filter_complete(state, u"one", 3) == FOLIO_STATE_READY &&
                 folio_state_delete_category(state, 9) == FOLIO_STATE_FILTERED,
             "filter rejection precedes range and synchronization");
     require(adapter.category_removes == 0 && adapter.writes == 0 && adapter.archives == 0 &&
@@ -4905,7 +4905,7 @@ static void verify_trash_filter(void)
 {
     struct persistence_adapter adapter = healthy_adapter();
     struct folio_state *state = history_state(&adapter);
-    require(folio_state_set_index_filter(state, u"two", 3) == FOLIO_STATE_READY,
+    require(test_index_filter_complete(state, u"two", 3) == FOLIO_STATE_READY,
             "filter a later note");
     require(folio_state_scroll_drawer(state, scroll_metrics, 10) == FOLIO_STATE_READY,
             "scroll request");
@@ -4923,7 +4923,7 @@ static void verify_trash_filter(void)
     require(folio_state_trash_note(state, at(0, 0), u"", 0) == FOLIO_STATE_READY &&
                 folio_state_index_filter_count(state) == 2,
             "last match in this category disappears");
-    require(folio_state_set_index_filter(state, u"one", 3) == FOLIO_STATE_READY &&
+    require(test_index_filter_complete(state, u"one", 3) == FOLIO_STATE_READY &&
                 folio_state_index_filter_count(state) == 2,
             "removed cache entry cannot reappear on requery");
     folio_state_destroy(state);
@@ -4947,7 +4947,7 @@ static void verify_trash_hidden_category_cursor(void)
     struct note_ref selected = {.category = 0, .note = 0};
     require(folio_state_selection(state, &selected), "the current B document stays selected");
     const char *body = folio_state_pane_text(state);
-    require(folio_state_set_index_filter(state, u"needle", 6) == FOLIO_STATE_READY &&
+    require(test_index_filter_complete(state, u"needle", 6) == FOLIO_STATE_READY &&
                 folio_state_index_filter_count(state) == 1 && cursor_on_category(state, 1),
             "only A's note matches, with a category cursor retained");
     require(folio_state_trash_note(state, at(1, 0), u"", 0) == FOLIO_STATE_READY &&
@@ -5237,7 +5237,7 @@ static void verify_category_rename_refusals(void)
             "same-name is no-op and ASCII-fold collisions/range refuse before saving");
     require(adapter.renames == 0 && adapter.note_writes == 0 && adapter.archives == 0,
             "no-op and early refusal have no new side effect");
-    require(folio_state_set_index_filter(state, u"one", 3) == FOLIO_STATE_READY &&
+    require(test_index_filter_complete(state, u"one", 3) == FOLIO_STATE_READY &&
                 rename_category_to(state, 9, "D") == FOLIO_STATE_FILTERED,
             "filter precedes target range");
     struct note_name *name = accepted_note_name("new");
@@ -5248,7 +5248,7 @@ static void verify_category_rename_refusals(void)
     size_t calls = adapter.renames;
     require(rename_category_to(state, 0, "D") == FOLIO_STATE_FILTERED && adapter.renames == calls,
             "filtered category request does not even resume prior intent");
-    require(folio_state_set_index_filter(state, u"", 0) == FOLIO_STATE_READY &&
+    require(test_index_filter_complete(state, u"", 0) == FOLIO_STATE_READY &&
                 rename_category_to(state, 9, "D") == FOLIO_STATE_NO_SUCH_CATEGORY &&
                 adapter.renames == calls,
             "range rejection precedes prior synchronization");
@@ -5464,8 +5464,8 @@ static void verify_category_rename_filter(void)
 {
     struct persistence_adapter adapter = healthy_adapter();
     struct folio_state *state = ready_state(&adapter);
-    require(folio_state_set_index_filter(state, u"body", 4) == FOLIO_STATE_READY &&
-                folio_state_set_index_filter(state, u"", 0) == FOLIO_STATE_READY,
+    require(test_index_filter_complete(state, u"body", 4) == FOLIO_STATE_READY &&
+                test_index_filter_complete(state, u"", 0) == FOLIO_STATE_READY,
             "load old corpus then clear filter");
     require(folio_state_scroll_drawer(state, metrics, 40) == FOLIO_STATE_READY,
             "scroll before pending");
@@ -5473,7 +5473,7 @@ static void verify_category_rename_filter(void)
     size_t old_reads = adapter.old_category_reads;
     adapter.rename_outcome = RENAME_PENDING;
     require(rename_category_to(state, 0, "D") == FOLIO_STATE_RENAME_PENDING &&
-                folio_state_set_index_filter(state, u"body", 4) == FOLIO_STATE_RENAME_PENDING &&
+                test_index_filter_complete(state, u"body", 4) == FOLIO_STATE_RENAME_PENDING &&
                 adapter.note_reads == reads && !folio_state_filtering(state) &&
                 same_text(folio_state_index_filter_term(state), ""),
             "pending filter keeps display before read/allocation");
@@ -5482,10 +5482,10 @@ static void verify_category_rename_filter(void)
                 drawer_layout_row(layout, 0).top == -40,
             "pending filter preserves scroll");
     drawer_layout_destroy(layout);
-    require(folio_state_set_index_filter(state, u"", 0) == FOLIO_STATE_READY,
+    require(test_index_filter_complete(state, u"", 0) == FOLIO_STATE_READY,
             "empty filter remains usable");
     adapter.rename_outcome = RENAME_COMPLETED;
-    require(folio_state_set_index_filter(state, u"body", 4) == FOLIO_STATE_READY &&
+    require(test_index_filter_complete(state, u"body", 4) == FOLIO_STATE_READY &&
                 adapter.note_reads == reads + 9 && adapter.old_category_reads == old_reads &&
                 folio_state_index_filter_count(state) == 9,
             "completion clears all old-name cache and reloads new paths");
@@ -5685,8 +5685,8 @@ static bool category_state_allocation(size_t nth, bool saved, bool cached)
             "allocation setup without injection");
     if (cached)
     {
-        require(folio_state_set_index_filter(state, u"body", 4) == FOLIO_STATE_READY &&
-                    folio_state_set_index_filter(state, u"", 0) == FOLIO_STATE_READY,
+        require(test_index_filter_complete(state, u"body", 4) == FOLIO_STATE_READY &&
+                    test_index_filter_complete(state, u"", 0) == FOLIO_STATE_READY,
                 "pre-save cache allocation boundary");
     }
     struct category_name *name = accepted_category_name("D");
@@ -5715,8 +5715,8 @@ static void verify_note_retry_allocation(void)
 {
     struct persistence_adapter adapter = healthy_adapter();
     struct folio_state *state = history_state(&adapter);
-    require(folio_state_set_index_filter(state, u"body", 4) == FOLIO_STATE_READY &&
-                folio_state_set_index_filter(state, u"", 0) == FOLIO_STATE_READY,
+    require(test_index_filter_complete(state, u"body", 4) == FOLIO_STATE_READY &&
+                test_index_filter_complete(state, u"", 0) == FOLIO_STATE_READY,
             "NOTE retry has loaded corpus");
     struct note_name *name = accepted_note_name("new");
     adapter.rename_outcome = RENAME_PENDING;
@@ -5775,12 +5775,12 @@ static void verify_note_pending_first_filter(void)
     require(folio_state_rename_note(state, name, u"", 0) == FOLIO_STATE_RENAME_PENDING,
             "md can move before the rename completes");
     adapter.missing_note = "one";
-    enum folio_state_outcome filtered = folio_state_set_index_filter(state, u"newnote", 7);
+    enum folio_state_outcome filtered = test_index_filter_complete(state, u"newnote", 7);
     require(filtered == FOLIO_STATE_RENAME_PENDING && adapter.note_reads == 1,
             "first filter synchronizes NOTE before any old-path cache read");
     adapter.rename_outcome = RENAME_COMPLETED;
     require(folio_state_retry_rename(state) == FOLIO_STATE_READY, "finish NOTE rename");
-    require(folio_state_set_index_filter(state, u"newnote", 7) == FOLIO_STATE_READY,
+    require(test_index_filter_complete(state, u"newnote", 7) == FOLIO_STATE_READY,
             "search the completed name");
     require(folio_state_index_filter_count(state) == 1,
             "completed NOTE remains searchable after first filter during pending");
@@ -5803,7 +5803,7 @@ static void verify_saved_copy_retry(void)
     struct folio_state *state = ready_state(&adapter);
     require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
                 folio_state_begin_edit(state) == FOLIO_STATE_READY &&
-                folio_state_set_index_filter(state, u"needle", 6) == FOLIO_STATE_READY,
+                test_index_filter_complete(state, u"needle", 6) == FOLIO_STATE_READY,
             "cache holds the old saved body");
     adapter.copy_fail_at = 1;
     require(folio_state_store_note(state, u"needle", 6) == FOLIO_STATE_OUT_OF_MEMORY,
@@ -5844,7 +5844,7 @@ static void note_filter_refusal_case(enum rename_outcome pending, enum folio_sta
     struct persistence_adapter adapter = healthy_adapter();
     struct folio_state *state = ready_state(&adapter);
     require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
-                folio_state_set_index_filter(state, u"Hello", 5) == FOLIO_STATE_READY &&
+                test_index_filter_complete(state, u"Hello", 5) == FOLIO_STATE_READY &&
                 folio_state_scroll_drawer(state, scroll_metrics, 20) == FOLIO_STATE_READY,
             "keep an existing match set and scroll before NOTE pending");
     struct note_name *name = accepted_note_name("newnote");
@@ -5853,16 +5853,16 @@ static void note_filter_refusal_case(enum rename_outcome pending, enum folio_sta
     adapter.missing_note = "one";
     size_t reads = adapter.note_reads;
     int top = scrolled_top(state);
-    require(folio_state_set_index_filter(state, u"newnote", 7) == expected &&
+    require(test_index_filter_complete(state, u"newnote", 7) == expected &&
                 adapter.note_reads == reads && scrolled_top(state) == top &&
                 folio_state_index_filter_count(state) == 9 &&
                 same_text(folio_state_index_filter_term(state), "Hello"),
             "pending and halted filter attempts keep rows, term and scroll without old reads");
-    require(folio_state_set_index_filter(state, u"", 0) == FOLIO_STATE_READY &&
+    require(test_index_filter_complete(state, u"", 0) == FOLIO_STATE_READY &&
                 !folio_state_filtering(state) && adapter.note_reads == reads,
             "empty filter can clear while NOTE recovery is blocked");
     adapter.rename_outcome = RENAME_COMPLETED;
-    require(folio_state_set_index_filter(state, u"newnote", 7) == FOLIO_STATE_READY &&
+    require(test_index_filter_complete(state, u"newnote", 7) == FOLIO_STATE_READY &&
                 folio_state_index_filter_count(state) == 1 && adapter.note_reads == reads,
             "filter itself resumes NOTE then uses rekeyed cached body");
     note_name_destroy(name);
@@ -5880,7 +5880,7 @@ static struct folio_state *_Nonnull copy_test_state(struct persistence_adapter *
     struct folio_state *state = ready_state(adapter);
     require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
                 folio_state_begin_edit(state) == FOLIO_STATE_READY &&
-                folio_state_set_index_filter(state, u"needle", 6) == FOLIO_STATE_READY,
+                test_index_filter_complete(state, u"needle", 6) == FOLIO_STATE_READY,
             "old saved text is loaded into the search corpus");
     return state;
 }
@@ -5951,15 +5951,15 @@ static void verify_copy_filter_reentry(void)
     require(copy_publication(state, &adapter, 1) == FOLIO_STATE_OUT_OF_MEMORY,
             "copy needs repair before filter reentry");
     size_t reads = adapter.note_reads;
-    require(folio_state_set_index_filter(state, u"", 0) == FOLIO_STATE_READY,
+    require(test_index_filter_complete(state, u"", 0) == FOLIO_STATE_READY,
             "clearing the filter does not pretend the saved copy was repaired");
     allocation_probe_fail_at(1);
-    enum folio_state_outcome filtered = folio_state_set_index_filter(state, u"needle", 6);
+    enum folio_state_outcome filtered = test_index_filter_complete(state, u"needle", 6);
     allocation_probe_fail_at(0);
     require(filtered == FOLIO_STATE_OUT_OF_MEMORY && !folio_state_filtering(state) &&
                 same_text(folio_state_index_filter_term(state), "") && adapter.note_reads == reads,
             "nonempty filter waits for copy repair and retains the cleared state on OOM");
-    require(folio_state_set_index_filter(state, u"needle", 6) == FOLIO_STATE_READY &&
+    require(test_index_filter_complete(state, u"needle", 6) == FOLIO_STATE_READY &&
                 folio_state_index_filter_count(state) == 1 && adapter.note_reads == reads,
             "reentry uses the owned saved body, not another read of old fake md bytes");
     folio_state_destroy(state);
@@ -6026,7 +6026,7 @@ static void copy_target_change_case(size_t scenario)
     struct folio_state *state = copy_test_state(&adapter);
     require(copy_publication(state, &adapter, 1) == FOLIO_STATE_OUT_OF_MEMORY,
             "target still owns a copy repair");
-    require(folio_state_set_index_filter(state, u"", 0) == FOLIO_STATE_READY,
+    require(test_index_filter_complete(state, u"", 0) == FOLIO_STATE_READY,
             "allow ledger operations without resolving the pending copy");
     size_t reads = adapter.note_reads;
     allocation_probe_fail_at(1);
@@ -6039,7 +6039,7 @@ static void copy_target_change_case(size_t scenario)
             "copy OOM prevents body replacement, index change and trash publication");
     require(copy_target_change(state, scenario) == FOLIO_STATE_READY,
             "target intent can proceed once its old saved copy is repaired");
-    require(folio_state_set_index_filter(state, u"needle", 6) == FOLIO_STATE_READY &&
+    require(test_index_filter_complete(state, u"needle", 6) == FOLIO_STATE_READY &&
                 folio_state_index_filter_count(state) == (scenario == 3 ? 0 : 1) &&
                 adapter.note_reads == reads + (scenario == 0 ? 1 : 0),
             "the saved copy is repaired under its original name before target mutation");
@@ -6058,7 +6058,7 @@ static size_t same_save_allocation_count(bool loaded)
                 "prepare same-body save");
         if (loaded)
         {
-            require(folio_state_set_index_filter(state, u"needle", 6) == FOLIO_STATE_READY,
+            require(test_index_filter_complete(state, u"needle", 6) == FOLIO_STATE_READY,
                     "same-body save with loaded search cache");
         }
         allocation_probe_fail_at(nth);
@@ -6082,7 +6082,7 @@ static void verify_copy_view_query(void)
     struct persistence_adapter adapter = healthy_adapter();
     struct folio_state *state = ready_state(&adapter);
     require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
-                folio_state_set_index_filter(state, u"needle", 6) == FOLIO_STATE_READY,
+                test_index_filter_complete(state, u"needle", 6) == FOLIO_STATE_READY,
             "viewing source has a loaded search cache");
     struct note_name *name = accepted_note_name("copied");
     struct note_destination destination = {.category = 0, .name = name};
@@ -6101,7 +6101,7 @@ static void verify_copy_view_query(void)
             "quit query repairs before reporting SAME and leaves output on failed repair");
     require(folio_state_note_changed(state, u"", 0, &change) == FOLIO_STATE_READY &&
                 change == FOLIO_NOTE_SAME &&
-                folio_state_set_index_filter(state, u"copied", 6) == FOLIO_STATE_READY &&
+                test_index_filter_complete(state, u"copied", 6) == FOLIO_STATE_READY &&
                 folio_state_index_filter_count(state) == 1 && adapter.note_reads == reads &&
                 adapter.creates == 1 && adapter.archives == 0 && adapter.note_writes == 0,
             "view query repairs the copy without input normalization or repeat publication");
@@ -6113,21 +6113,21 @@ static void verify_copy_filter_failure(void)
 {
     struct persistence_adapter adapter = healthy_adapter();
     struct folio_state *state = copy_test_state(&adapter);
-    require(folio_state_set_index_filter(state, u"Hello", 5) == FOLIO_STATE_READY &&
+    require(test_index_filter_complete(state, u"Hello", 5) == FOLIO_STATE_READY &&
                 folio_state_scroll_drawer(state, scroll_metrics, 20) == FOLIO_STATE_READY &&
                 copy_publication(state, &adapter, 1) == FOLIO_STATE_OUT_OF_MEMORY,
             "saved copy is pending while the old term and rows remain");
     size_t reads = adapter.note_reads;
     int top = scrolled_top(state);
     allocation_probe_fail_at(1);
-    enum folio_state_outcome filtered = folio_state_set_index_filter(state, u"needle", 6);
+    enum folio_state_outcome filtered = test_index_filter_complete(state, u"needle", 6);
     allocation_probe_fail_at(0);
     require(filtered == FOLIO_STATE_OUT_OF_MEMORY && scrolled_top(state) == top &&
                 folio_state_index_filter_count(state) == 9 &&
                 same_text(folio_state_index_filter_term(state), "Hello") &&
                 adapter.note_reads == reads,
             "new search term cannot replace rows or scroll before copy repair succeeds");
-    require(folio_state_set_index_filter(state, u"needle", 6) == FOLIO_STATE_READY &&
+    require(test_index_filter_complete(state, u"needle", 6) == FOLIO_STATE_READY &&
                 folio_state_index_filter_count(state) == 1 && scrolled_top(state) == 0 &&
                 adapter.note_reads == reads,
             "search proceeds from the repaired saved body with no whole-corpus reload");
@@ -6543,7 +6543,7 @@ static void verify_departure_partial_publication(void)
     struct persistence_adapter adapter = healthy_adapter();
     struct folio_state *state = ready_state(&adapter);
     require(folio_state_new_note(state, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
-                folio_state_set_index_filter(state, u"needle", 6) == FOLIO_STATE_READY,
+                test_index_filter_complete(state, u"needle", 6) == FOLIO_STATE_READY,
             "prepare the first-save cache boundary");
     struct note_name *name = accepted_note_name("pending-draft");
     struct note_destination destination = {.category = 0, .name = name};
@@ -6738,7 +6738,7 @@ static void verify_accessible_row_identity(void)
     expect_cursor(state, "n2.0", "the independent cursor follows the category");
     require(keeps_document(state, at(2, 2), PANE_MODE_EDIT),
             "the document follows the category too");
-    require(folio_state_set_index_filter(state, u"nothing-matches", 15) == FOLIO_STATE_READY,
+    require(test_index_filter_complete(state, u"nothing-matches", 15) == FOLIO_STATE_READY,
             "hide every row");
     expect_cursor(state, "-", "a zero-result filter has no hidden cursor");
     require(folio_state_focus_cursor(state, FOLIO_CURSOR_CATEGORY, at(2, 0)) ==
@@ -6849,4 +6849,340 @@ void run_name_unchanged_state_tests(void)
     finder = test_regex_port();
     verify_name_unchanged_note();
     verify_category_rename_refusals();
+}
+
+/* 入力の再設定をせず、public継続だけで完了まで進める試験用driver。 */
+static enum folio_state_outcome finish_test_index_filter(struct folio_state *_Nonnull state)
+{
+    enum folio_state_outcome outcome = FOLIO_STATE_READY;
+    size_t limit = folio_state_note_count(state) + 1;
+    while (outcome == FOLIO_STATE_READY && folio_state_index_filter_pending(state) && limit > 0)
+    {
+        outcome = folio_state_continue_index_filter(state);
+        limit -= 1;
+    }
+    require(!folio_state_index_filter_pending(state) || outcome != FOLIO_STATE_READY,
+            "bounded preparation completes without mutations");
+    return outcome;
+}
+
+/* 通常のUI待機継続と同じpublic APIで完成させる。旧契約の試験へ同期実装を複製しない。 */
+enum folio_state_outcome test_index_filter_complete(struct folio_state *_Nonnull state,
+                                                    const char16_t *_Nonnull units, size_t count)
+{
+    enum folio_state_outcome outcome = folio_state_set_index_filter(state, units, count);
+    return outcome == FOLIO_STATE_READY ? finish_test_index_filter(state) : outcome;
+}
+
+static struct persistence_adapter preparation_adapter(void)
+{
+    static const char *const categories[] = {"B", nullptr};
+    static const char *const notes[] = {"one", "two", nullptr};
+    struct persistence_adapter adapter = healthy_adapter();
+    adapter.categories_text = "{\"version\":1,\"categories\":["
+                              "{\"name\":\"B\",\"color\":\"#111111\",\"expanded\":true}]}";
+    adapter.scanned_categories = categories;
+    adapter.scanned_category_count = 1;
+    adapter.scanned_notes = notes;
+    adapter.scanned_note_count = 2;
+    adapter.note_body = "plain";
+    return adapter;
+}
+
+static void verify_preparation_steps(void)
+{
+    struct persistence_adapter adapter = preparation_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_set_index_filter(state, u"one", 3) == FOLIO_STATE_READY &&
+                folio_state_index_filter_pending(state) && folio_state_filtering(state) &&
+                adapter.note_reads == 0 && folio_state_index_filter_count(state) == 2,
+            "accept intent without reading or publishing partial matches");
+    require(folio_state_continue_index_filter(state) == FOLIO_STATE_READY &&
+                adapter.note_reads == 1 && same_text(adapter.last_note, "one") &&
+                folio_state_index_filter_pending(state) &&
+                folio_state_index_filter_count(state) == 2,
+            "first continuation reads exactly the first note and keeps ordinary rows");
+    const char16_t broken[] = {0xd800};
+    require(folio_state_set_index_filter(state, broken, 1) == FOLIO_STATE_SEARCH_MALFORMED &&
+                same_text(folio_state_index_filter_term(state), "one"),
+            "malformed replacement preserves the pending request");
+    require(folio_state_set_index_filter(state, u"two", 3) == FOLIO_STATE_READY &&
+                adapter.note_reads == 1 && same_text(folio_state_index_filter_term(state), "two"),
+            "latest valid intent replaces only the term");
+    require(folio_state_continue_index_filter(state) == FOLIO_STATE_READY &&
+                adapter.note_reads == 2 && same_text(adapter.last_note, "two") &&
+                folio_state_index_filter_pending(state),
+            "replacement does not reread the first note");
+    require(folio_state_continue_index_filter(state) == FOLIO_STATE_READY &&
+                adapter.note_reads == 2 && !folio_state_index_filter_pending(state) &&
+                folio_state_index_filter_count(state) == 1,
+            "completion publishes only the latest request without another read");
+    char order[64];
+    row_order(state, order, sizeof order);
+    require(same_text(order, "B/two"), "latest requested name supplies the result");
+    require(folio_state_set_index_filter(state, u"one", 3) == FOLIO_STATE_READY &&
+                !folio_state_index_filter_pending(state) && adapter.note_reads == 2,
+            "completed corpus preserves the existing immediate warm query");
+    folio_state_destroy(state);
+}
+
+static void verify_preparation_cancel(void)
+{
+    struct persistence_adapter adapter = preparation_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_set_index_filter(state, u"one", 3) == FOLIO_STATE_READY &&
+                folio_state_continue_index_filter(state) == FOLIO_STATE_READY,
+            "prepare one copy before cancellation");
+    require(folio_state_toggle_category(state, 0) == FOLIO_STATE_FILTERED &&
+                folio_state_set_expansion(state, 0, false) == FOLIO_STATE_FILTERED &&
+                folio_state_move_note(state, at(0, 0), at(0, 1)) == FOLIO_STATE_FILTERED &&
+                folio_state_command_availability(state, FOLIO_COMMAND_NEW_CATEGORY,
+                                                 FOLIO_COMMAND_TARGET_CURRENT,
+                                                 at(0, 0)) == FOLIO_STATE_FILTERED,
+            "preparation uses the same mutation refusals as completed filtering");
+    require(folio_state_set_index_filter(state, u"", 0) == FOLIO_STATE_READY &&
+                !folio_state_index_filter_pending(state) && !folio_state_filtering(state) &&
+                folio_state_continue_index_filter(state) == FOLIO_STATE_READY &&
+                adapter.note_reads == 1,
+            "clear cancels future reads");
+    require(folio_state_move_note(state, at(0, 0), at(0, 1)) == FOLIO_STATE_READY &&
+                folio_state_set_index_filter(state, u"two", 3) == FOLIO_STATE_READY &&
+                folio_state_continue_index_filter(state) == FOLIO_STATE_READY &&
+                same_text(adapter.last_note, "two") && adapter.note_reads == 2,
+            "cancel and reorder restart at the new first note instead of the old position");
+    require(finish_test_index_filter(state) == FOLIO_STATE_READY && adapter.note_reads == 3 &&
+                folio_state_index_filter_count(state) == 1,
+            "restart reads every current note once");
+    folio_state_destroy(state);
+}
+
+static void verify_preparation_stale_copy(enum persistence_outcome outcome)
+{
+    struct persistence_adapter adapter = preparation_adapter();
+    adapter.rare_note = "one";
+    adapter.rare_body = "needle";
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_set_index_filter(state, u"needle", 6) == FOLIO_STATE_READY &&
+                folio_state_continue_index_filter(state) == FOLIO_STATE_READY &&
+                folio_state_set_index_filter(state, u"", 0) == FOLIO_STATE_READY,
+            "retain a partial copy then cancel");
+    adapter.note_outcome = outcome;
+    require(folio_state_set_index_filter(state, u"needle", 6) == FOLIO_STATE_READY &&
+                finish_test_index_filter(state) == FOLIO_STATE_READY &&
+                folio_state_index_filter_count(state) == 0 && adapter.note_reads == 3,
+            "unavailable or malformed reread removes stale partial copies");
+    folio_state_destroy(state);
+}
+
+static void verify_preparation_save(void)
+{
+    struct persistence_adapter adapter = preparation_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
+                folio_state_begin_edit(state) == FOLIO_STATE_READY,
+            "select editable first note");
+    const char *edit = folio_state_edit_rtf(state);
+    require(folio_state_set_index_filter(state, u"needle", 6) == FOLIO_STATE_READY &&
+                folio_state_continue_index_filter(state) == FOLIO_STATE_READY &&
+                folio_state_edit_rtf(state) == edit &&
+                keeps_document(state, at(0, 0), PANE_MODE_EDIT),
+            "reading saved copies does not replace the held edit or its mode");
+    require(folio_state_store_note(state, u"needle", 6) == FOLIO_STATE_READY,
+            "saving remains available during preparation");
+    adapter.rare_note = "one";
+    adapter.rare_body = adapter.written_body;
+    size_t reads = adapter.note_reads;
+    require(folio_state_continue_index_filter(state) == FOLIO_STATE_READY &&
+                same_text(adapter.last_note, "one") && adapter.note_reads == reads + 1,
+            "a changed saved body restarts the incomplete scan");
+    require(finish_test_index_filter(state) == FOLIO_STATE_READY &&
+                folio_state_index_filter_count(state) == 1 &&
+                same_text(folio_state_pane_text(state), "needle"),
+            "completed result sees the newly saved text");
+    folio_state_destroy(state);
+}
+
+static void verify_preparation_mutations(void)
+{
+    struct persistence_adapter adapter = preparation_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
+                folio_state_set_index_filter(state, u"renamed", 7) == FOLIO_STATE_READY &&
+                folio_state_continue_index_filter(state) == FOLIO_STATE_READY,
+            "prepare before rename");
+    struct note_name *name = accepted_note_name("renamed");
+    require(folio_state_rename_note(state, name, u"", 0) == FOLIO_STATE_READY &&
+                folio_state_continue_index_filter(state) == FOLIO_STATE_READY &&
+                same_text(adapter.last_note, "renamed"),
+            "rename restarts at the new identity");
+    note_name_destroy(name);
+    require(folio_state_trash_note(state, at(0, 0), u"", 0) == FOLIO_STATE_READY &&
+                folio_state_continue_index_filter(state) == FOLIO_STATE_READY &&
+                same_text(adapter.last_note, "two"),
+            "deletion restarts at the shifted remaining note");
+    require(folio_state_new_note(state, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "new draft remains allowed");
+    name = accepted_note_name("fresh");
+    struct note_destination destination = {.category = 0, .name = name};
+    require(folio_state_store_new(state, &destination, u"needle", 6) == FOLIO_STATE_READY,
+            "publish while preparing");
+    note_name_destroy(name);
+    adapter.rare_note = "fresh";
+    adapter.rare_body = adapter.written_body;
+    require(folio_state_set_index_filter(state, u"needle", 6) == FOLIO_STATE_READY &&
+                finish_test_index_filter(state) == FOLIO_STATE_READY &&
+                folio_state_index_filter_count(state) == 1,
+            "newly published body is included");
+    char order[64];
+    row_order(state, order, sizeof order);
+    require(same_text(order, "B/fresh"), "deleted and renamed old copies never reappear");
+    folio_state_destroy(state);
+}
+
+static void verify_preparation_failure(void)
+{
+    struct persistence_adapter adapter = preparation_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_set_index_filter(state, u"one", 3) == FOLIO_STATE_READY &&
+                folio_state_continue_index_filter(state) == FOLIO_STATE_READY,
+            "prepare partial corpus");
+    adapter.note_outcome = PERSISTENCE_OUT_OF_MEMORY;
+    require(folio_state_continue_index_filter(state) == FOLIO_STATE_OUT_OF_MEMORY &&
+                !folio_state_index_filter_pending(state) && !folio_state_filtering(state),
+            "read OOM stops preparation without publishing a partial result");
+    adapter.note_outcome = PERSISTENCE_LOADED;
+    require(folio_state_set_index_filter(state, u"two", 3) == FOLIO_STATE_READY &&
+                folio_state_continue_index_filter(state) == FOLIO_STATE_READY &&
+                same_text(adapter.last_note, "one"),
+            "retry after failure restarts at the first note");
+    require(finish_test_index_filter(state) == FOLIO_STATE_READY &&
+                folio_state_index_filter_count(state) == 1,
+            "retry completes with correct results");
+    folio_state_destroy(state);
+}
+
+static void verify_preparation_pending_rename(void)
+{
+    struct persistence_adapter adapter = preparation_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
+                folio_state_set_index_filter(state, u"renamed", 7) == FOLIO_STATE_READY &&
+                folio_state_continue_index_filter(state) == FOLIO_STATE_READY,
+            "prepare before interrupted rename");
+    struct note_name *name = accepted_note_name("renamed");
+    adapter.rename_outcome = RENAME_PENDING;
+    require(folio_state_rename_note(state, name, u"", 0) == FOLIO_STATE_RENAME_PENDING,
+            "rename keeps its pending intent");
+    size_t reads = adapter.note_reads;
+    require(folio_state_continue_index_filter(state) == FOLIO_STATE_RENAME_PENDING &&
+                !folio_state_index_filter_pending(state) && adapter.note_reads == reads,
+            "pending rename stops preparation before any old-path read");
+    adapter.rename_outcome = RENAME_COMPLETED;
+    require(test_index_filter_complete(state, u"renamed", 7) == FOLIO_STATE_READY &&
+                folio_state_index_filter_count(state) == 1,
+            "retry synchronizes rename and searches the new identity");
+    note_name_destroy(name);
+    folio_state_destroy(state);
+}
+
+static void verify_preparation_category_invalidation(void)
+{
+    struct persistence_adapter adapter = preparation_adapter();
+    adapter.rare_note = "one";
+    adapter.rare_body = "needle";
+    struct folio_state *state = ready_state(&adapter);
+    require(test_index_filter_complete(state, u"needle", 6) == FOLIO_STATE_READY &&
+                folio_state_index_filter_count(state) == 1 &&
+                folio_state_set_index_filter(state, u"", 0) == FOLIO_STATE_READY,
+            "complete and clear before category rename");
+    require(rename_category_to(state, 0, "D") == FOLIO_STATE_READY,
+            "category rename invalidates the formerly complete corpus");
+    size_t reads = adapter.note_reads;
+    require(folio_state_set_index_filter(state, u"needle", 6) == FOLIO_STATE_READY &&
+                folio_state_index_filter_pending(state) &&
+                finish_test_index_filter(state) == FOLIO_STATE_READY &&
+                adapter.note_reads == reads + 2 && same_text(adapter.read_category, "D") &&
+                folio_state_index_filter_count(state) == 1,
+            "invalidated completed corpus restarts at zero and reads the renamed category");
+    folio_state_destroy(state);
+}
+
+static void verify_preparation_empty(void)
+{
+    struct persistence_adapter adapter = preparation_adapter();
+    adapter.categories_text = "{\"version\":1,\"categories\":[]}";
+    adapter.scanned_category_count = 0;
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_set_index_filter(state, u"one", 3) == FOLIO_STATE_READY &&
+                folio_state_continue_index_filter(state) == FOLIO_STATE_READY &&
+                !folio_state_index_filter_pending(state) && adapter.note_reads == 0 &&
+                folio_state_index_filter_count(state) == 0,
+            "empty corpus completes without a read or repeated idle work");
+    folio_state_destroy(state);
+}
+
+void run_index_preparation_tests(void)
+{
+    finder = test_regex_port();
+    verify_preparation_steps();
+    verify_preparation_cancel();
+    verify_preparation_stale_copy(PERSISTENCE_ABSENT);
+    verify_preparation_stale_copy(PERSISTENCE_MALFORMED);
+    verify_preparation_save();
+    verify_preparation_mutations();
+    verify_preparation_failure();
+    verify_preparation_pending_rename();
+    verify_preparation_category_invalidation();
+    verify_preparation_empty();
+}
+
+static bool preparation_allocation(size_t nth)
+{
+    struct persistence_adapter adapter = preparation_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    allocation_probe_fail_at(nth);
+    enum folio_state_outcome outcome = test_index_filter_complete(state, u"one", 3);
+    allocation_probe_fail_at(0);
+    require(outcome == FOLIO_STATE_READY || outcome == FOLIO_STATE_OUT_OF_MEMORY,
+            "all preparation and adoption allocations have a typed outcome");
+    require(!folio_state_index_filter_pending(state),
+            "allocation failure cannot leave a retry loop");
+    require(test_index_filter_complete(state, u"two", 3) == FOLIO_STATE_READY &&
+                folio_state_index_filter_count(state) == 1,
+            "every failure point can retry safely");
+    folio_state_destroy(state);
+    return outcome == FOLIO_STATE_READY;
+}
+
+void run_index_preparation_allocation_tests(void)
+{
+    allocation_probe_fail_at(1);
+    struct note_text *check = nullptr;
+    enum note_text_outcome active = note_text_create("", 0, &check);
+    allocation_probe_fail_at(0);
+    note_text_destroy(check);
+    if (active != NOTE_TEXT_OUT_OF_MEMORY)
+        return;
+    finder = test_regex_port();
+    struct persistence_adapter adapter = preparation_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_set_index_filter(state, u"one", 3) == FOLIO_STATE_READY &&
+                folio_state_continue_index_filter(state) == FOLIO_STATE_READY,
+            "partial prior request");
+    allocation_probe_fail_at(1);
+    enum folio_state_outcome replaced = folio_state_set_index_filter(state, u"two", 3);
+    allocation_probe_fail_at(0);
+    require(replaced == FOLIO_STATE_OUT_OF_MEMORY && folio_state_index_filter_pending(state) &&
+                same_text(folio_state_index_filter_term(state), "one"),
+            "term OOM preserves the prior intent");
+    require(folio_state_continue_index_filter(state) == FOLIO_STATE_READY &&
+                same_text(adapter.last_note, "two") && adapter.note_reads == 2,
+            "term OOM also preserves progress");
+    folio_state_destroy(state);
+    bool completed = false;
+    size_t nth = 1;
+    for (; nth < 128 && !completed; ++nth)
+        completed = preparation_allocation(nth);
+    require(completed, "preparation allocation sweep completes");
+    printf("index preparation allocations: %zu failed points, then complete\n", nth - 2);
 }

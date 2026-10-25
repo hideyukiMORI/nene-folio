@@ -51,16 +51,32 @@ static void report_initial_notices(const struct folio_state *_Nonnull state)
     }
 }
 
-static void run_message_loop(const struct folio_window *_Nonnull window)
+static void dispatch_message(const struct folio_window *_Nonnull window, MSG *_Nonnull message)
+{
+    if (!folio_window_translate(window, message))
+    {
+        TranslateMessage(message);
+        DispatchMessageW(message);
+    }
+}
+
+/* 全範囲queueを空にした直後だけ一件準備し、抑止中は新規messageを待つ（ADR0068）。 */
+static void run_message_loop(struct folio_window *_Nonnull window)
 {
     MSG message;
-    while (GetMessageW(&message, nullptr, 0, 0) > 0)
+    for (;;)
     {
-        if (!folio_window_translate(window, &message))
+        if (PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE))
         {
-            TranslateMessage(&message);
-            DispatchMessageW(&message);
+            if (message.message == WM_QUIT)
+                break;
+            dispatch_message(window, &message);
+            continue;
         }
+        if (folio_window_idle_work_ready(window))
+            folio_window_continue_index_filter(window);
+        else if (!WaitMessage())
+            break;
     }
 }
 

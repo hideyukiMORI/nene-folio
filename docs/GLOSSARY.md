@@ -68,7 +68,7 @@
 | 検索の向き（search direction） | 前方（`/`・「次へ」）か後方（`?`・「前へ」）の閉じた選択肢。application が「直前の方向」を 1 つ覚え、`N` の一回きりの逆向きでは変わらない | `enum search_direction`（core）・`folio_state_search_direction`（application） |
 | anchor（探し始める位置） | いまの選択範囲。次へは選択の外側から、入力中は同じ一致の頭から数え直す。選択の正本は RichEdit で、core も application も持たない | `struct note_search_span`（core）・ADR 0023 の決定 1 |
 | 復旧待ち（recovering） | 記録を公開したまま完了していない状態。パンくずは古い名前を実ファイル名として示さず、次の意図が先に同じ改名を再試行する | `pane_title_view.recovering`・`FOLIO_STATE_RENAME_PENDING`（application） |
-| 絞り込み（index filter） | 全ノートの名前と本文に語が含まれるノートだけを索引に残すこと。一致を持つカテゴリは折り畳んでいても展開して並ぶ。ノート内検索（FR-011）とは対象も語も別 | `index_filter`（core）・`folio_state_set_index_filter`（application）・ADR 0024 |
+| 絞り込み（index filter） | 全ノートの名前と本文に語が含まれるノートだけを索引に残すこと。一致を持つカテゴリは折り畳んでいても展開して並ぶ。ノート内検索（FR-011）とは対象も語も別。初回は未完了の最新要求を保持し、一件ずつ本文を準備してから一致を採用する | `index_filter`（core）・`folio_state_set_index_filter` / `folio_state_continue_index_filter`（application）・ADR0024/0068 |
 | 論理行（logical line） | md 原文の改行で区切られた 1 行。RichEdit が折り返して作る**表示行**とは別で、折り返しの継続行には番号を出さない。表示中の平文では段落区切りが CR 1 つに揃っている | `line_index`（core）・`struct line_mark`・ADR 0026 の決定 2 |
 | 番号の帯（gutter） | 編集中の本文の左の空きに、主窓が自前で描く論理行番号の列。RichEdit の中には置かない（スクロールで一緒に動いてしまうため） | `struct gutter_row`（ui/win32）・`note_pane_visible_rows`・ADR 0026 の決定 1 / 3 |
 | 設定（settings） | `data/settings.json` の版4（`number`・`theme`・`language`）。版1〜3も読み、足りない値を既定値で補い、次の設定変更で版4へ移行する。themeはsystemと127固定配色のID。効果を実装したキーだけが入り、キーを足すたびに版を上げる。ファイルが無ければ既定値で始め、読めなければ既定値で起動して**上書きしない** | `folio_settings`（core）・`folio_state_set_number` / `folio_state_set_theme` / `folio_state_set_language`（application）・ADR 0025 / 0031 / 0032 / 0049・SPECIFICATION §2-1 |

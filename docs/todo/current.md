@@ -1,26 +1,28 @@
 # いまのタスク — NeNe Folio
 
-記録日: 2026-10-25。[#383](https://github.com/hideyukiMORI/nene-folio/issues/383)の本文表示倍率。
-最終状態はIssue/PRと恒久証跡の`completion.json`を照合する。現在のhide指示とcheckoutを正とする。
+記録日: 2026-10-25。[#369](https://github.com/hideyukiMORI/nene-folio/issues/369)の初回全文検索中の応答維持。
+hideの「#369に着手して」を受け、現在のサナが単体で調査・設計・実装・検証する。
+最終状態はIssue/PRと恒久証跡の`completion.json`を照合し、現在のhide指示とcheckoutを正とする。
 
 ## 現在の到達点
 
-- hideのCtrl+ホイール/Ctrl++/Ctrl+-依頼を受け、ADR0067を先に定めた。
-- 閲覧/編集本文だけを50～300%・10%刻みで拡大縮小し、Ctrl+0で100%へ戻す。
-  倍率はnote_paneの実行中の状態一つ。RTF再投入後も維持し、行番号font/幅/配置を追従させる。
-- 単体で実装/自己レビュー/対象検証を実施した。48条件、入力/再投入/本文/Undo/資源/故障注入の成功結果を確認済み。
-  初回fixtureのmodal戻り値期待1件を訂正し、当該キー群96 checks成功。ui_text 66,157 checks成功。
-  PrintWindowの文字欠けは実WM_PAINTと分離し、8条件の部分/全面描画比較が差分0だった。
-- 詳細: [品質記録](../quality/2026-10-25-note-zoom.md)。保存schema・依存・ゲート変更なし、Waivers: none。
-- 作業checkout: `D:/NeNeFolio/worktrees/383-note-zoom`、出力: `D:/NeNeFolio/outputs/note-zoom-20261025`。
-  恒久証跡: `D:/NeNeFolio/agents/note-zoom-20261025`。現存状況は完了記録を照合する。
+- 基点main: `fe2b3766207233a5aa4f5152374418008071fffe`。#383/PR #384は通常反映・当該作業物整理まで完了。
+- [ADR0068](../adr/0068-idle-index-preparation.md)に沿い、最新語/走査位置をapplicationが所有し、空queueで最大一件を読む。
+  完成前は通常索引と準備中表示。取消/保存/索引変更/失敗、既存copy修復、UI寿命を同じ正典経路で扱う。
+- 対象単体、21点の確保失敗/再試行、native16条件/221 checks、Debug/Release build/tidyが成功。
+  読み取り専用独立レビューのカテゴリ改名時の巻戻し・再入close後通知も修正/再確認した。
+- 新規10,000件の初回入力は64,602msから0.467ms。準備中も4,386確認message/4,334paintを処理した。
+  候補の全準備は約140秒で、追加描画負荷があるため読込速度の改善とは扱わない。一回の最大継続119.5ms。
+- 詳細は[品質記録](../quality/2026-10-25-first-search-responsiveness.md)。
+  恒久証跡: `D:/NeNeFolio/agents/first-search-20261025`。
+  worktree: `D:/NeNeFolio/worktrees/369-first-search-responsiveness`、出力: `D:/NeNeFolio/outputs/first-search-20261025`。
 
 ## 次の判断
 
-最終headの必須CI成功後、`tools/merge-pr.ps1`で統合し、`tools/prepare-real-machine.ps1`で通常exeへ反映する。
-稼働中の実機アプリはhideが閉じてから更新し、自動起動しない。最終結果は実際のPRと`completion.json`が正。
-#381/PR #382はmain統合・通常反映・当該worktree/出力整理まで完了。#369の大量ノート初回読込は別件で未着手。
-今回の確認は本文倍率と直接影響する入力・再投入・行番号・描画に限定する。
+最終headの必須CIへ進み、成功後は正規merge経路でmainを統合する。
+統合後は通常exeへ反映し、成果物保全を確認してこのtaskのworktree/一時出力を整理する。
+通常アプリが稼働中ならhideが保存して閉じた後に反映し、自動起動しない。
+CI/統合/通常exe/整理の確定状態は実際のPRと恒久証跡の`completion.json`を照合する。
 
 ## 運用と保持
 

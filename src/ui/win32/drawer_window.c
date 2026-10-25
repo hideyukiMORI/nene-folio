@@ -274,6 +274,13 @@ static int format_count(size_t value, wchar_t *_Nonnull out)
  * （ADR 0024 の 2026-09-22 の補正 7）。数は application の一致集合から取り、UI は数えない。 */
 static void draw_header_count(const struct drawer_window *_Nonnull self, HDC device, RECT bounds)
 {
+    if (folio_state_index_filter_pending(self->state))
+    {
+        draw_utf8(device,
+                  ui_text_line(UI_TEXT_STATUS_FILTER_PREPARING, folio_state_language(self->state)),
+                  bounds, DT_RIGHT);
+        return;
+    }
     size_t total = folio_state_note_count(self->state);
     if (!folio_state_filtering(self->state))
     {

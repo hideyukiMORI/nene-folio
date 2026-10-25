@@ -82,6 +82,10 @@ struct folio_state
     /* 全ノートの絞り込み（ADR 0024）。語と一致集合の所有者で、どちらも永続化しない */
     struct utf8_text *_Nullable index_term;
     struct index_filter *_Nullable filter;
+    /* 準備中の最新要求と次の読込位置（ADR0068）。部分corpusを結果へ公開しない。 */
+    struct utf8_text *_Nullable index_request;
+    size_t corpus_category;
+    size_t corpus_note;
     struct note_corpus *_Nullable corpus; /* 本文の写し。最初の絞り込みで 1 回だけ読む */
     bool corpus_loaded;
     /* trueならNAMEDかつcorpus_loaded。対象は現在文書の保存先で、state.bodyは保存済み正本。
@@ -125,8 +129,18 @@ static void stored_note(struct folio_state *_Nonnull state)
     }
 }
 
+static void restart_corpus_load(struct folio_state *_Nonnull state)
+{
+    if (!state->corpus_loaded)
+    {
+        state->corpus_category = 0;
+        state->corpus_note = 0;
+    }
+}
+
 static void index_changed(struct folio_state *_Nonnull state)
 {
+    restart_corpus_load(state);
     layout_changed(state);
     if (state->row_revision != UINT64_MAX)
     {
@@ -254,11 +268,11 @@ static enum folio_state_outcome adopt_category_rename(struct folio_state *_Nonnu
     struct rename_plan *_Nonnull intent = state->rename;
     category_ledger_destroy(state->categories);
     state->categories = rename_plan_take_category_ledger(intent);
-    index_changed(state);
     note_corpus_destroy(state->corpus);
     state->corpus = state->rename_corpus;
     state->rename_corpus = nullptr;
     state->corpus_loaded = false;
+    index_changed(state);
     if (state->document != FOLIO_DOCUMENT_NONE &&
         state->selected_category == state->rename_category)
     {
@@ -761,55 +775,42 @@ static enum folio_state_outcome build_filter(const struct folio_state *_Nonnull 
     return from_index_filter(built);
 }
 
-/* 空でない語が初めて来たときだけ、1 カテゴリぶんの本文を読んで写しにする（決定 1）。
- * 読めないノートは写しを持たず、絞り込みで一致しない（理由は出さない）。 */
-static enum folio_state_outcome load_category_corpus(struct folio_state *_Nonnull state,
-                                                     size_t category)
+/* 一回につき一本文だけを既存の写しへ入れる。再試行時も既存copyでreadを省略しない。 */
+static enum folio_state_outcome load_corpus_note(struct folio_state *_Nonnull state)
 {
-    const char *_Nonnull folder = category_ledger_name(state->categories, category);
-    size_t notes = note_ledger_count(state->notes[category]);
-    for (size_t note = 0; note < notes; ++note)
+    const char *_Nonnull folder = category_ledger_name(state->categories, state->corpus_category);
+    const char *_Nonnull name =
+        note_ledger_name(state->notes[state->corpus_category], state->corpus_note);
+    struct note_text *_Nullable body = nullptr;
+    enum persistence_outcome read = state->port.read_note(state->port.adapter, folder, name, &body);
+    if (read == PERSISTENCE_OUT_OF_MEMORY)
     {
-        const char *_Nonnull name = note_ledger_name(state->notes[category], note);
-        struct note_text *_Nullable body = nullptr;
-        enum persistence_outcome read =
-            state->port.read_note(state->port.adapter, folder, name, &body);
-        if (read == PERSISTENCE_OUT_OF_MEMORY)
-        {
-            /* 記憶不足は「読めないノート」ではない。写しを欠いたまま絞り込まない。 */
-            return FOLIO_STATE_OUT_OF_MEMORY;
-        }
-        if (read != PERSISTENCE_LOADED)
-        {
-            continue;
-        }
-        enum note_corpus_outcome stored = note_corpus_put(state->corpus, folder, name, body);
-        note_text_destroy(body);
-        if (stored != NOTE_CORPUS_ACCEPTED)
-        {
-            return FOLIO_STATE_OUT_OF_MEMORY;
-        }
+        return FOLIO_STATE_OUT_OF_MEMORY;
     }
-    return FOLIO_STATE_READY;
-}
-
-/* 本文の写しを 1 回だけ載せる。起動時には読まない（決定 1）。 */
-static enum folio_state_outcome load_corpus(struct folio_state *_Nonnull state)
-{
-    if (state->corpus_loaded)
+    if (read != PERSISTENCE_LOADED)
     {
+        note_corpus_remove(state->corpus, folder, name);
         return FOLIO_STATE_READY;
     }
-    for (size_t category = 0; category < state->notes_count; ++category)
+    enum note_corpus_outcome stored = note_corpus_put(state->corpus, folder, name, body);
+    note_text_destroy(body);
+    return stored == NOTE_CORPUS_ACCEPTED ? FOLIO_STATE_READY : FOLIO_STATE_OUT_OF_MEMORY;
+}
+
+/* 空カテゴリを越えて次の一件へ進む。全件終了時だけ完成済みとする（ADR0068）。 */
+static bool corpus_next_present(struct folio_state *_Nonnull state)
+{
+    while (state->corpus_category < state->notes_count)
     {
-        enum folio_state_outcome read = load_category_corpus(state, category);
-        if (read != FOLIO_STATE_READY)
+        if (state->corpus_note < note_ledger_count(state->notes[state->corpus_category]))
         {
-            return read;
+            return true;
         }
+        state->corpus_category += 1;
+        state->corpus_note = 0;
     }
     state->corpus_loaded = true;
-    return FOLIO_STATE_READY;
+    return false;
 }
 
 /* カーソルの行がいまの配置にあるか。 */
@@ -1194,7 +1195,7 @@ size_t folio_state_note_count(const struct folio_state *_Nonnull state)
 enum folio_state_outcome folio_state_toggle_category(struct folio_state *_Nonnull state,
                                                      size_t index)
 {
-    if (state->filter != nullptr)
+    if (folio_state_filtering(state))
     {
         /* 絞り込み中は台帳を書く操作を断る（ADR 0024 の決定 4）。 */
         return FOLIO_STATE_FILTERED;
@@ -1269,7 +1270,7 @@ static enum folio_state_outcome adopt_expansion(struct folio_state *_Nonnull sta
                                                 bool expanded, bool *_Nonnull changed)
 {
     *changed = false;
-    if (state->filter != nullptr)
+    if (folio_state_filtering(state))
     {
         return FOLIO_STATE_FILTERED;
     }
@@ -1389,7 +1390,7 @@ static void move_notes(struct note_ledger *_Nonnull *_Nonnull items, size_t from
 enum folio_state_outcome folio_state_move_category(struct folio_state *_Nonnull state, size_t from,
                                                    size_t to)
 {
-    if (state->filter != nullptr)
+    if (folio_state_filtering(state))
     {
         return FOLIO_STATE_FILTERED;
     }
@@ -1649,7 +1650,7 @@ static enum folio_state_outcome transfer_note(struct folio_state *_Nonnull state
 enum folio_state_outcome folio_state_move_note(struct folio_state *_Nonnull state,
                                                struct note_ref from, struct note_ref to)
 {
-    if (state->filter != nullptr)
+    if (folio_state_filtering(state))
     {
         return FOLIO_STATE_FILTERED;
     }
@@ -2134,7 +2135,7 @@ bool folio_state_category_replaces_document(const struct folio_state *_Nonnull s
                                             size_t category, bool expanded)
 {
     struct drawer_cursor cursor = on_note(0, 0);
-    if (!expanded || state->filter != nullptr ||
+    if (!expanded || folio_state_filtering(state) ||
         category >= category_ledger_count(state->categories) ||
         category_ledger_expanded(state->categories, category) ||
         note_ledger_count(state->notes[category]) == 0)
@@ -2224,9 +2225,10 @@ static enum folio_state_outcome archive_before_store(struct folio_state *_Nonnul
 }
 
 /* 保存できた本文で写しを差し替え、絞り込み中なら一致集合も作り直す（ADR 0024 の決定 1 / 4）。
- * まだ本文を読み込んでいなければ何もしない（最初の絞り込みで全部読む）。 */
+ * 未完成なら走査を先頭へ戻し、次の継続で保存済み本文を読む（ADR0068）。 */
 static enum folio_state_outcome refresh_copy(struct folio_state *_Nonnull state)
 {
+    restart_corpus_load(state);
     if (!state->corpus_loaded || state->document != FOLIO_DOCUMENT_NAMED)
     {
         return FOLIO_STATE_READY;
@@ -2926,7 +2928,7 @@ static void adopt_category(struct folio_state *_Nonnull state,
 enum folio_state_outcome folio_state_create_category(struct folio_state *_Nonnull state,
                                                      const struct category_name *_Nonnull name)
 {
-    if (state->filter != nullptr)
+    if (folio_state_filtering(state))
     {
         return FOLIO_STATE_FILTERED;
     }
@@ -3032,7 +3034,7 @@ static void adopt_category_removal(struct folio_state *_Nonnull state, size_t ta
 enum folio_state_outcome folio_state_delete_category(struct folio_state *_Nonnull state,
                                                      size_t category)
 {
-    if (state->filter != nullptr)
+    if (folio_state_filtering(state))
     {
         return FOLIO_STATE_FILTERED;
     }
@@ -3435,6 +3437,13 @@ static void clear_index_filter(struct folio_state *_Nonnull state)
     state->filter = nullptr;
 }
 
+static void cancel_index_request(struct folio_state *_Nonnull state)
+{
+    utf8_text_destroy(state->index_request);
+    state->index_request = nullptr;
+    restart_corpus_load(state);
+}
+
 /* 新しい語と一致集合を受け取り、前のものと入れ替える。 */
 static void adopt_index_filter(struct folio_state *_Nonnull state, struct utf8_text *_Nonnull term,
                                struct index_filter *_Nonnull filter)
@@ -3445,23 +3454,26 @@ static void adopt_index_filter(struct folio_state *_Nonnull state, struct utf8_t
     index_changed(state);
 }
 
+static enum folio_state_outcome synchronize_filter(struct folio_state *_Nonnull state)
+{
+    return state->rename != nullptr || state->copy_pending ? synchronize(state) : FOLIO_STATE_READY;
+}
+
 enum folio_state_outcome folio_state_set_index_filter(struct folio_state *_Nonnull state,
                                                       const char16_t *_Nonnull units, size_t count)
 {
     if (count == 0)
     {
+        cancel_index_request(state);
         clear_index_filter(state);
         state->scroll = 0;
         settle_cursor(state);
         return FOLIO_STATE_READY;
     }
-    if (state->rename != nullptr || state->copy_pending)
+    enum folio_state_outcome synced = synchronize_filter(state);
+    if (synced != FOLIO_STATE_READY)
     {
-        enum folio_state_outcome synced = synchronize(state);
-        if (synced != FOLIO_STATE_READY)
-        {
-            return synced;
-        }
+        return synced;
     }
     struct utf8_text *_Nullable term = nullptr;
     enum utf8_text_outcome converted = utf8_text_create(units, count, &term);
@@ -3470,12 +3482,16 @@ enum folio_state_outcome folio_state_set_index_filter(struct folio_state *_Nonnu
         return converted == UTF8_TEXT_OUT_OF_MEMORY ? FOLIO_STATE_OUT_OF_MEMORY
                                                     : FOLIO_STATE_SEARCH_MALFORMED;
     }
-    struct index_filter *_Nullable filter = nullptr;
-    enum folio_state_outcome built = load_corpus(state);
-    if (built == FOLIO_STATE_READY)
+    if (!state->corpus_loaded)
     {
-        built = build_filter(state, term, &filter);
+        clear_index_filter(state);
+        utf8_text_destroy(state->index_request);
+        state->index_request = term;
+        state->scroll = 0;
+        return FOLIO_STATE_READY;
     }
+    struct index_filter *_Nullable filter = nullptr;
+    enum folio_state_outcome built = build_filter(state, term, &filter);
     if (built != FOLIO_STATE_READY)
     {
         utf8_text_destroy(term);
@@ -3488,13 +3504,60 @@ enum folio_state_outcome folio_state_set_index_filter(struct folio_state *_Nonnu
     return FOLIO_STATE_READY;
 }
 
+/* 完成するまで採用せず、最新の要求だけを既存build/adoptへ渡す。 */
+static enum folio_state_outcome finish_index_request(struct folio_state *_Nonnull state)
+{
+    struct index_filter *_Nullable filter = nullptr;
+    enum folio_state_outcome built = build_filter(state, state->index_request, &filter);
+    if (built != FOLIO_STATE_READY)
+    {
+        cancel_index_request(state);
+        return built;
+    }
+    struct utf8_text *_Nonnull term = state->index_request;
+    state->index_request = nullptr;
+    adopt_index_filter(state, term, filter);
+    state->scroll = 0;
+    settle_cursor(state);
+    return FOLIO_STATE_READY;
+}
+
+enum folio_state_outcome folio_state_continue_index_filter(struct folio_state *_Nonnull state)
+{
+    if (state->index_request == nullptr)
+    {
+        return FOLIO_STATE_READY;
+    }
+    enum folio_state_outcome loaded = synchronize_filter(state);
+    if (loaded == FOLIO_STATE_READY && corpus_next_present(state))
+    {
+        loaded = load_corpus_note(state);
+        state->corpus_note += 1;
+    }
+    if (loaded != FOLIO_STATE_READY)
+    {
+        cancel_index_request(state);
+        return loaded;
+    }
+    return state->corpus_loaded ? finish_index_request(state) : FOLIO_STATE_READY;
+}
+
+bool folio_state_index_filter_pending(const struct folio_state *_Nonnull state)
+{
+    return state->index_request != nullptr;
+}
+
 bool folio_state_filtering(const struct folio_state *_Nonnull state)
 {
-    return state->filter != nullptr;
+    return state->index_request != nullptr || state->filter != nullptr;
 }
 
 const char *_Nonnull folio_state_index_filter_term(const struct folio_state *_Nonnull state)
 {
+    if (state->index_request != nullptr)
+    {
+        return utf8_text_bytes(state->index_request);
+    }
     return state->index_term == nullptr ? "" : utf8_text_bytes(state->index_term);
 }
 
@@ -3862,6 +3925,7 @@ void folio_state_destroy(struct folio_state *_Nullable state)
     note_text_destroy(state->body);
     utf8_text_destroy(state->search_term);
     utf8_text_destroy(state->index_term);
+    utf8_text_destroy(state->index_request);
     index_filter_destroy(state->filter);
     note_corpus_destroy(state->corpus);
     folio_settings_destroy(state->settings);
@@ -3895,7 +3959,7 @@ static enum folio_state_outcome query_category_command(const struct folio_state 
                                                        enum folio_command_target target_kind,
                                                        struct note_ref target)
 {
-    if (state->filter != nullptr)
+    if (folio_state_filtering(state))
         return FOLIO_STATE_FILTERED;
     if (command == FOLIO_COMMAND_NEW_CATEGORY)
         return FOLIO_STATE_READY;
