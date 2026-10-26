@@ -2,7 +2,7 @@
 
 A frameless Markdown notebook for Windows with a category drawer. Plain C (C23), Win32, no UI library.
 
-> **Status (2026-10-27):** v0.3.0 beta for Windows x64.
+> **Status (2026-10-27):** [v0.3.0 is available as a beta release](https://github.com/hideyukiMORI/nene-folio/releases/tag/v0.3.0) for Windows x64.
 > [Release page and assets](https://github.com/hideyukiMORI/nene-folio/releases/tag/v0.3.0).
 > It views and edits notes, keeps a short
 > history of every save, searches, filters, replaces, and manages categories, with settings for theme,
