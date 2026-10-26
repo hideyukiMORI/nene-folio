@@ -1,31 +1,35 @@
 # いまの状態 — NeNe Folio
 
-記録日: 2026-10-27。hideの実機サンプル受理と「ベータ版更新しておいて」に基づき、
-[#398](https://github.com/hideyukiMORI/nene-folio/issues/398)でv0.3.0 betaの更新を準備している。
-統合・配布生成・公開・再取得・整理の確定値は、実際のIssue/PR/Releaseと
-`D:/NeNeFolio/agents/beta-release-20261027/completion.json`を照合する。ここでは公開実行済みとは扱わない。
-再開時は最新のhide指示とcheckoutも照合し、過去の記録を新しい実行許可として扱わない。
+記録日: 2026-10-27。[v0.3.0 Beta](https://github.com/hideyukiMORI/nene-folio/releases/tag/v0.3.0)は01:14:32 JSTに公開済み。
+配布・専用smoke・再取得照合まで成功した。[変更履歴](../release/0.3.0.md)、
+[Markdownの範囲](../MARKDOWN.md)、[品質記録](../quality/2026-10-27-beta-release.md)を参照する。
+公開結果と再開情報は、hideの「日報と引き継ぎ書を書いて」に基づく[#400](https://github.com/hideyukiMORI/nene-folio/issues/400)で記録した。
+再開時は最新のhide指示・Issue/PR・checkoutを照合し、過去の記録を新しい実行許可として扱わない。
 
-## 今回の焦点: v0.3.0 beta
+## 完了した公開と残る文書確定
 
-唯一のruntime版入力`CMakeLists.txt`のproject VERSIONを0.3.0へ更新する。
-[変更履歴と更新手順](../release/0.3.0.md)、[Markdownの対応範囲](../MARKDOWN.md)、
-[配布確認の計画と結果](../quality/2026-10-27-beta-release.md)を参照する。
-最終PR headの必須CI後、clean mainから正規配布器でRelease ZIPを生成し、専用の展開先で起動・版表示・
-合成データの更新を確認する。tag/Release公開と再取得照合、成果物保全・安全整理は設計サナが担当する。
-公開済みv0.2.0のReleaseと旧release文書は置き換えない。署名・インストーラ・Store申請・自動更新は対象外。
+[#398](https://github.com/hideyukiMORI/nene-folio/issues/398) /
+[PR #399](https://github.com/hideyukiMORI/nene-folio/pull/399)は最終head `f50a25b24b2438c107ae96b18c654ea628d5febf`の
+[必須CI](https://github.com/hideyukiMORI/nene-folio/actions/runs/40354478601)に成功し、
+main `a0df9932620e3575d692c71134465eb704ec5e01`へ統合した。
+clean mainから正規配布器で0.3.0を生成し、Pre-releaseへZIP/SHA256SUMSを公開した。
+再取得bytes/hashとZIP内11 membersが一致した。旧v0.2.0 Releaseは維持している。
 
-v0.3.0は#392のホイール修正、#394の表示密度/小見出し/コード面、#396の基本構文とnative表を含む。
-既存機能の入力不変な成功結果は[ホイール](../quality/2026-10-26-view-wheel.md)、
-[表示調整](../quality/2026-10-26-markdown-style.md)、[構文](../quality/2026-10-26-markdown-syntax.md)から再利用する。
-#396は[PR #397](https://github.com/hideyukiMORI/nene-folio/pull/397)をmain `063f5bab`へ統合し、必須CIと通常exe反映・
-恒久保管・追加worktree/出力整理を完了した。確定値は`D:/NeNeFolio/agents/markdown-syntax-20261026/completion.json`。
-list内quoteから親list継続へ戻る組合せ、表63列、装飾リンク等の制限は利用者向け文書に明記している。
+専用fresh/legacy/upgradeで起動・設定版・日本語合成ノート・旧版生成data 5ファイルの更新保持を確認した。
+upgradeの設定画像はmodalが映っておらず版表示証拠へ使わず、同じexeのfresh成功とhashを再利用した。
+#392/#394/#396の機能結果とhideの通常サンプル実機受理は入力不変で再利用し、保存schema・設定・依存・gate・配布仕様は変えていない。
 
-hide確認用の合成サンプルを通常`data/サンプル/Markdown構文サンプル.md`へ作成し、hideが表示を受理した。
-通常アプリPID56180は稼働中として引き継ぎ、操作・終了・exe上書きをしない。通常dataを配布物に含めない。
-保存schema・設定・gate・packaging仕様は今回変更しない。現在の配布手順は[workflow§9](../DEVELOPMENT_WORKFLOW.md#9-リリース)と
-[ADR0045](../adr/0045-single-version-and-verified-release-bundle.md)。日付付き経緯は[日報](../reports/2026-10-27.md)と[引き継ぎ](../handoffs/2026-10-27.md)。
+#398はarchive200ファイルの全hash照合と安全監査を経て、01:18:08 JSTに当該worktree/4出力の整理までexit0で完了した。
+branch/commitと恒久証跡は保持し、`D:/NeNeFolio/agents/beta-release-20261027/completion.json`の`release-complete`へ記録した。
+#400自身の最終CI・統合・整理の確定値は、実Issue/PRと同所の`docs-completion.json`を照合する。
+#400で使用した文書作業木は`D:/NeNeFolio/worktrees/400-beta-handoff`。成果物保全・安全監査後の整理結果も同記録へ分け、branch/commitを保持する。
+
+## 通常exeとhideの実機確認
+
+hide受理済み合成サンプル`data/サンプル/Markdown構文サンプル.md`は通常dataへ残している。実ノート内容は記録・同梱しない。
+現在の通常`C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`はsource `a0df993`・表示版0.3.0/Windows版0.3.0.0。
+通常process0件を確認してから正規ツールで反映しexit0だった。01:16:51 JST更新済みで、更新後は起動していない。
+`normal-build-verification.json`に通常exeの版・hashと、サンプルhashの不変を記録した。通常dataは操作していない。
 
 ## 次の予定: ノートの保存先設定（未実装）
 
@@ -38,11 +42,11 @@ portable版はexe隣の`data`を既定とし、両方とも設定から「ノー
 
 ## 継続する確認範囲
 
+- list内quoteから同じ親list継続への復帰は未保証、表は63列まで、リンクは装飾のみ。HTML/画像等は対応外。
 - 大量ノートの初回検索には同期処理と準備待ちが残る。[検索品質記録](../quality/2026-10-25-first-search-responsiveness.md)を参照する。
-- 専用desktopの合成入力/描画確認と、物理IME・人によるreader聴取・DWM実画面呈示は区別する。
-- 今回の作業木は`D:/NeNeFolio/worktrees/398-beta-030`。恒久証跡は`D:/NeNeFolio/agents/beta-release-20261027/`。
-  設計サナが統合・必要反映・収載後に稼働参照/未保存物/唯一成果物/リンクを監査して整理する。branch/commitは保持する。
-- 下記の削除拒否済み作業物は今回も再試行しない。
+- 専用desktopの合成入力/描画と、物理IME・実reader聴取・DWM実画面呈示を区別する。
+- 署名・インストーラ・Store・自動更新は未実装/対象外。日付付き事実は[日報](../reports/2026-10-27.md)と[引き継ぎ](../handoffs/2026-10-27.md)。
+- 下記の旧削除拒否済み作業物は再試行しない。
 
 ## 保持中の旧作業物
 
