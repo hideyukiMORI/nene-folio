@@ -1,0 +1,8 @@
+#ifndef NENEFOLIO_MARKDOWN_ROW_KIND_H
+#define NENEFOLIO_MARKDOWN_ROW_KIND_H
+enum markdown_row_kind
+{
+    MARKDOWN_ROW_KIND_HEADER,
+    MARKDOWN_ROW_KIND_BODY
+};
+#endif

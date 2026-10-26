@@ -44,6 +44,8 @@ nenefolio_target(nenefolio_core core STATIC
     src/core/json_reader.c src/core/json_writer.c src/core/name_list.c
     src/core/category_ledger.c src/core/category_name.c src/core/note_ledger.c src/core/drawer_layout.c
     src/core/text_buffer.c src/core/note_text.c src/core/markdown_rtf.c src/core/rtf_palette.c
+    src/core/rtf_text.c src/core/markdown_blocks.c src/core/markdown_inline_tokens.c
+    src/core/markdown_line.c src/core/markdown_view.c src/core/markdown_table.c src/core/markdown_list.c
     src/core/folio_command.c src/core/folio_menu_action.c src/core/folio_shortcut.c src/core/note_name.c src/core/rename_plan.c src/core/rename_journal.c
     src/core/note_search.c src/core/note_corpus.c src/core/index_filter.c
     src/core/folio_settings.c src/core/folio_theme.c src/core/folio_theme_choice.c src/core/line_index.c
@@ -90,7 +92,7 @@ nenefolio_system_link(nenefolio_adapters gdi32)
 nenefolio_target(nenefolio_window ui_win32 STATIC
     src/ui/win32/accessible_item.c src/ui/win32/accessibility_host.c src/ui/win32/accessibility_node.c
     src/ui/win32/accessibility_native.c
-    src/ui/win32/drawer_window.c src/ui/win32/folio_window.c src/ui/win32/note_pane.c
+    src/ui/win32/drawer_window.c src/ui/win32/folio_window.c src/ui/win32/note_pane.c src/ui/win32/note_pane_table.c
     src/ui/win32/folio_palette.c src/ui/win32/failure_box.c src/ui/win32/name_prompt.c
     src/ui/win32/ui_face.c src/ui/win32/icon_paint.c src/ui/win32/dialog_theme.c
     src/ui/win32/ui_part.c src/ui/win32/modal_owner.c src/ui/win32/name_prompt_metrics.c

@@ -1,5 +1,9 @@
+#include "allocation_probe.h"
 #include "folio_language.h"
+#include "markdown_inline_tokens.h"
+#include "markdown_line.h"
 #include "markdown_rtf.h"
+#include "markdown_table.h"
 #include "note_text.h"
 #include "rtf_palette.h"
 #include "text_buffer.h"
@@ -78,18 +82,17 @@ static void verify_headings(void)
     expect_body("####### Seven", "\\pard\\sa80\\sl240\\slmult1\\cf1 ####### Seven\\par\n");
     expect_body("#NoSpace", "\\pard\\sa80\\sl240\\slmult1\\cf1 #NoSpace\\par\n");
     expect_body("##", "\\pard\\sa80\\sl240\\slmult1\\cf1 ##\\par\n");
-    expect_body("# *Em*", "\\pard\\sb200\\sa80\\b\\cf2\\fs44 \\i Em\\i0 \\b0\\cf1\\fs22\\par\n");
+    expect_body("# *Em*", "\\pard\\sb200\\sa80\\b\\cf2\\fs44 {\\i Em}\\b0\\cf1\\fs22\\par\n");
 }
 
 static void verify_emphasis(void)
 {
-    expect_body("**bold** text", "\\pard\\sa80\\sl240\\slmult1\\cf1 \\b bold\\b0  text\\par\n");
-    expect_body("__bold__", "\\pard\\sa80\\sl240\\slmult1\\cf1 \\b bold\\b0 \\par\n");
-    expect_body("*em* and _em_",
-                "\\pard\\sa80\\sl240\\slmult1\\cf1 \\i em\\i0  and \\i em\\i0 \\par\n");
+    expect_body("**bold** text", "\\pard\\sa80\\sl240\\slmult1\\cf1 {\\b bold} text\\par\n");
+    expect_body("__bold__", "\\pard\\sa80\\sl240\\slmult1\\cf1 {\\b bold}\\par\n");
+    expect_body("*em* and _em_", "\\pard\\sa80\\sl240\\slmult1\\cf1 {\\i em} and {\\i em}\\par\n");
     expect_body("snake_case_name", "\\pard\\sa80\\sl240\\slmult1\\cf1 snake_case_name\\par\n");
-    expect_body("**unclosed", "\\pard\\sa80\\sl240\\slmult1\\cf1 \\b unclosed\\b0 \\par\n");
-    expect_body("*open", "\\pard\\sa80\\sl240\\slmult1\\cf1 \\i open\\i0 \\par\n");
+    expect_body("**unclosed", "\\pard\\sa80\\sl240\\slmult1\\cf1 **unclosed\\par\n");
+    expect_body("*open", "\\pard\\sa80\\sl240\\slmult1\\cf1 *open\\par\n");
     expect_body("\\*literal\\*", "\\pard\\sa80\\sl240\\slmult1\\cf1 *literal*\\par\n");
     expect_body("trailing\\", "\\pard\\sa80\\sl240\\slmult1\\cf1 trailing\\\\\\par\n");
     expect_body("A_B 1_2 x_9 Z_z", "\\pard\\sa80\\sl240\\slmult1\\cf1 A_B 1_2 x_9 Z_z\\par\n");
@@ -132,13 +135,13 @@ static void verify_lists_quotes_links(void)
                 "\\pard\\li440\\fi-220\\sa40\\sl240\\slmult1\\cf1\\bullet\\tab three\\par\n");
     expect_body("1. first\n12. twelfth",
                 "\\pard\\li440\\fi-220\\sa40\\sl240\\slmult1\\cf1 1.\\tab first\\par\n"
-                "\\pard\\li440\\fi-220\\sa40\\sl240\\slmult1\\cf1 12.\\tab twelfth\\par\n");
+                "\\pard\\li440\\fi-220\\sa40\\sl240\\slmult1\\cf1 2.\\tab twelfth\\par\n");
     expect_body("1.nospace", "\\pard\\sa80\\sl240\\slmult1\\cf1 1.nospace\\par\n");
     expect_body("1.", "\\pard\\sa80\\sl240\\slmult1\\cf1 1.\\par\n");
     expect_body("12x", "\\pard\\sa80\\sl240\\slmult1\\cf1 12x\\par\n");
     expect_body("-dash", "\\pard\\sa80\\sl240\\slmult1\\cf1 -dash\\par\n");
-    expect_body("> quoted\n>bare", "\\pard\\li480\\sa80\\sl240\\slmult1\\cf3 quoted\\cf1\\par\n"
-                                   "\\pard\\li480\\sa80\\sl240\\slmult1\\cf3 bare\\cf1\\par\n");
+    expect_body("> quoted\n>bare",
+                "\\pard\\li480\\sa80\\sl240\\slmult1\\cf3 quoted bare\\cf1\\par\n");
     expect_body("see [docs](https://x.example/) now",
                 "\\pard\\sa80\\sl240\\slmult1\\cf1 see {\\cf4\\ul docs\\ul0} now\\par\n");
     expect_body("[no url]", "\\pard\\sa80\\sl240\\slmult1\\cf1 [no url]\\par\n");
@@ -311,8 +314,225 @@ static void verify_plain(void)
     note_text_destroy(text);
 }
 
+static struct markdown_rtf *_Nonnull convert_syntax(const char *_Nonnull source)
+{
+    struct note_text *text = nullptr;
+    require(note_text_create(source, strlen(source), &text) == NOTE_TEXT_ACCEPTED, "syntax source");
+    struct markdown_rtf *rtf = nullptr;
+    require(markdown_rtf_create(text, rtf_palette_for(FOLIO_THEME_LIGHT), "Noto Sans JP", &rtf) ==
+                MARKDOWN_RTF_CONVERTED,
+            "syntax conversion");
+    note_text_destroy(text);
+    return rtf;
+}
+
+static void expect_fragment(const char *_Nonnull source, const char *_Nonnull included,
+                            const char *_Nonnull excluded)
+{
+    struct markdown_rtf *rtf = convert_syntax(source);
+    const char *body = markdown_rtf_text(rtf) + strlen(header);
+    if (strstr(body, included) == nullptr ||
+        (excluded[0] != '\0' && strstr(body, excluded) != nullptr))
+    {
+        fprintf(stderr, "source=%s\nRTF=%s\n", source, body);
+        require(false, "syntax fragment and forbidden interpretation");
+    }
+    markdown_rtf_destroy(rtf);
+}
+
+static void verify_new_blocks(void)
+{
+    expect_fragment("----", "\\sl-20\\slmult0\\fs2\\highlight3\\par}", "----");
+    expect_fragment("- - -", "\\sl-20", "\\bullet");
+    expect_fragment("* * *", "\\sl-20", "\\bullet");
+    expect_fragment("_ _ _", "\\sl-20", "\\i ");
+    expect_fragment("title\n----", "\\fs34 title", "\\sl-20");
+    expect_fragment("title\n===", "\\fs44 title", "===");
+    expect_fragment("a  \nb\\\nc\nd", "a\\line b\\line c d", "  ");
+    expect_fragment("1) one\n9) two", "2)\\tab two", "9)");
+    expect_fragment("0. zero\n4. next", "1.\\tab next", "4.");
+    expect_fragment("paragraph\n2. literal", "paragraph 2. literal", "\\tab");
+    expect_fragment("paragraph\n1. item", "1.\\tab item", "paragraph 1.");
+    expect_fragment("- parent\n  - child\n- next", "\\li880\\fi-220", "child next");
+    expect_fragment("1. one\n\n   continued\n\n2. two", "2.\\tab two", "1.\\tab two");
+    expect_fragment("> - item\n>   continued", "\\li920\\fi-220", "\\cf3 continued");
+    expect_fragment("> > ## nested", "\\fs34\\li960 nested", "> ##");
+    expect_fragment("- [ ] open\n- [x] done\n- [X] done", "\\u9744?\\tab open", "[x]");
+    expect_fragment("- [x] done", "\\u9745?\\tab done", "[x]");
+}
+
+static void verify_new_inline(void)
+{
+    expect_fragment("*a **b* c**", "*a {\\b b* c}", "\\i ");
+    expect_fragment("~~gone~~ tail", "{\\strike gone} tail", "~~");
+    expect_fragment("~~unclosed", "~~unclosed", "\\strike");
+    expect_fragment("``a`b``", "{\\f1\\fs20\\cf4 a`b}", "``");
+    expect_fragment("` a `", "\\cf4 a}", " a ");
+    expect_fragment("`  `", "\\cf4   }", "``");
+    expect_fragment("`a\\`b`", "\\cf4 a\\\\}b`", "\\cf4 a`b");
+    expect_fragment("\\\\`code`", "\\\\{\\f1\\fs20\\cf4 code}", "`code`");
+    expect_fragment("\\`literal", "`literal", "\\f1");
+    expect_fragment("``a\nb``", "\\cf4 a b}", "\\line");
+    expect_fragment("# **bold** tail", "{\\b bold} tail", "\\b0  tail");
+    expect_fragment("*before [x](foo*) after", "*before {\\cf4\\ul x\\ul0} after", "\\i ");
+    expect_fragment("*before [x](foo) after*", "{\\i before {\\cf4\\ul x\\ul0} after}", "foo");
+    expect_fragment("![alt](url)", "![alt](url)", "\\ul");
+    expect_fragment("\\~~literal\\~~", "~~literal~~", "\\strike");
+    expect_fragment("~~~ lang\nraw\n```\n~~~~", "raw\\par\n", "lang");
+    expect_fragment("````\na\n```\nb\n````", "```\\par\n", "\\cf1 b");
+    expect_fragment("- item\n  ```\n  code\noutside", "\\cf1 outside", "code outside");
+    expect_fragment("```\na\n``` trailing\nb\n```", "``` trailing\\par\n", "\\cf1 b");
+}
+
+static void verify_tables(void)
+{
+    expect_fragment("A | B\n:--- | ---:\nx | y", "\\trowd", ":---");
+    expect_fragment("| A | B |\n| :--: | -- |\n| x | y |", "\\qc {\\b A}", "| A");
+    expect_fragment("A | B\n--- | ---\nx", "{x}\\cell ", "\\cf1 x");
+    expect_fragment("A | B\n--- | ---\nx | y | ignored", "{y}\\cell ", "ignored");
+    expect_fragment("A | B\n--- | ---\n`a\\|b` | ~~x~~", "\\cf4 a|b}", "a\\\\|b");
+    expect_fragment("A | B\n--- | ---\n# heading | x", "\\fs44 heading | x", "{# heading");
+    expect_fragment("A | B\n--- | ---\n~~~ lang | x\ncode\n~~~", "\\highlight6", "{~~~ lang");
+    expect_fragment("A | B\n---", "A | B", "\\trowd");
+}
+
+static void verify_large_syntax(void)
+{
+    struct text_buffer *source = nullptr;
+    require(text_buffer_create(&source) == TEXT_BUFFER_ACCEPTED, "large source buffer");
+    for (size_t index = 0; index < 20000; ++index)
+        text_buffer_append_text(source, "[");
+    text_buffer_append_text(source, "\ntext");
+    expect_fragment(text_buffer_bytes(source), "text", "\\ul");
+    text_buffer_destroy(source);
+    require(text_buffer_create(&source) == TEXT_BUFFER_ACCEPTED, "space source buffer");
+    text_buffer_append_text(source, "text");
+    for (size_t index = 0; index < 20000; ++index)
+        text_buffer_append_text(source, " ");
+    text_buffer_append_text(source, "\nnext");
+    expect_fragment(text_buffer_bytes(source), "text\\line next", "  ");
+    text_buffer_destroy(source);
+}
+
+static void verify_deep_and_wide(void)
+{
+    struct text_buffer *source = nullptr;
+    require(text_buffer_create(&source) == TEXT_BUFFER_ACCEPTED, "nested source");
+    for (size_t depth = 0; depth < 512; ++depth)
+    {
+        for (size_t column = 0; column < depth; ++column)
+            text_buffer_append_text(source, "  ");
+        text_buffer_append_text(source, "- nested\n");
+    }
+    text_buffer_append_text(source, "\nend");
+    expect_fragment(text_buffer_bytes(source), "end", "- nested");
+    text_buffer_destroy(source);
+    require(text_buffer_create(&source) == TEXT_BUFFER_ACCEPTED, "wide source");
+    for (size_t row = 0; row < 3; ++row)
+    {
+        for (size_t column = 0; column < 64; ++column)
+            text_buffer_append_text(source, row == 1 ? "| --- " : "| **cell** ");
+        text_buffer_append_text(source, "|\n");
+    }
+    expect_fragment(text_buffer_bytes(source), "**cell**", "\\trowd");
+    expect_fragment(text_buffer_bytes(source), "|\\par\n", "\\b ");
+    text_buffer_destroy(source);
+}
+
+static void verify_wide_delimiter_cells(void)
+{
+    struct text_buffer *source = nullptr;
+    require(text_buffer_create(&source) == TEXT_BUFFER_ACCEPTED, "wide invalid delimiter source");
+    for (size_t index = 0; index < 64; ++index)
+        text_buffer_append_text(source, index == 63 ? "| :: " : "| --- ");
+    text_buffer_append_text(source, "|");
+    struct markdown_line line =
+        markdown_line_read(text_buffer_bytes(source), text_buffer_length(source), 0);
+    require(!markdown_table_delimiter(line), "invalid sixty-fourth delimiter cell is not a table");
+    text_buffer_destroy(source);
+    require(text_buffer_create(&source) == TEXT_BUFFER_ACCEPTED, "wide empty delimiter source");
+    for (size_t index = 0; index < 64; ++index)
+        text_buffer_append_text(source, index == 63 ? "|  " : "| --- ");
+    text_buffer_append_text(source, "|");
+    line = markdown_line_read(text_buffer_bytes(source), text_buffer_length(source), 0);
+    require(!markdown_table_delimiter(line), "empty sixty-fourth delimiter cell is not a table");
+    text_buffer_destroy(source);
+}
+
+static void verify_syntax_allocation(void)
+{
+    const char *source = "paragraph\nline2\nline3\nline4\nline5\nline6\nline7\nline8\nline9\nline10"
+                         "\n\n- parent\n  - child\n\nA | B\n-- | --\n`x` | ~~y~~\n\ntail";
+    struct note_text *text = nullptr;
+    require(note_text_create(source, strlen(source), &text) == NOTE_TEXT_ACCEPTED, "OOM source");
+    struct markdown_rtf *sentinel = nullptr;
+    require(markdown_rtf_empty(rtf_palette_for(FOLIO_THEME_LIGHT), "Noto Sans JP", &sentinel) ==
+                MARKDOWN_RTF_CONVERTED,
+            "OOM sentinel");
+    bool finished = false;
+    size_t rejected = 0;
+    for (size_t fail = 1; fail < 200 && !finished; ++fail)
+    {
+        allocation_probe_fail_at(fail);
+        struct markdown_rtf *out = sentinel;
+        enum markdown_rtf_outcome result =
+            markdown_rtf_create(text, rtf_palette_for(FOLIO_THEME_LIGHT), "Noto Sans JP", &out);
+        size_t calls = allocation_probe_calls();
+        allocation_probe_fail_at(0);
+        if (calls == 0)
+            printf("Markdown allocation injection inactive in canonical build\n");
+        if (result == MARKDOWN_RTF_OUT_OF_MEMORY)
+        {
+            require(out == sentinel, "OOM keeps the output unchanged");
+            ++rejected;
+        }
+        if (result == MARKDOWN_RTF_CONVERTED)
+        {
+            markdown_rtf_destroy(out);
+            finished = true;
+        }
+    }
+    require(finished, "syntax allocation exhaustion reaches success");
+    printf("Markdown syntax allocation exhaustion completed: rejected=%zu\n", rejected);
+    markdown_rtf_destroy(sentinel);
+    note_text_destroy(text);
+}
+
+static void verify_borrowed_input(void)
+{
+    struct markdown_span span = {.bytes = "x", .length = 1, .offset = 2};
+    struct markdown_view view = {.spans = &span, .count = 1, .length = 1};
+    struct text_buffer *out = nullptr;
+    require(text_buffer_create(&out) == TEXT_BUFFER_ACCEPTED, "invalid input output");
+    require(markdown_inline_tokens_render(out, view) == MARKDOWN_RTF_INVALID_INPUT &&
+                text_buffer_length(out) == 0,
+            "inconsistent borrowed offsets are typed invalid input");
+    view.count = 0;
+    require(!markdown_view_valid(view) && markdown_view_at(view, 0) == '\0',
+            "empty borrowed spans never access memory for a positive length");
+    struct markdown_line line = {.bytes = "x", .length = 1, .content = 2};
+    require(!markdown_line_valid(line) && markdown_line_heading(line) == 0,
+            "line source bounds are checked before classification");
+    struct markdown_line header_line = markdown_line_read("A | B", 5, 0);
+    struct markdown_line delimiter = markdown_line_read("-- | --", 7, 0);
+    require(markdown_table_row(out, header_line, delimiter, (enum markdown_row_kind)99) ==
+                    MARKDOWN_RTF_INVALID_INPUT &&
+                text_buffer_length(out) == 0,
+            "invalid row enum is rejected before any RTF is appended");
+    text_buffer_destroy(out);
+}
+
 void run_markdown_tests(void)
 {
+    run_markdown_source_state_tests();
+    verify_borrowed_input();
+    verify_new_blocks();
+    verify_new_inline();
+    verify_tables();
+    verify_large_syntax();
+    verify_deep_and_wide();
+    verify_wide_delimiter_cells();
+    verify_syntax_allocation();
     verify_plain();
     verify_paragraphs();
     verify_fonttbl();

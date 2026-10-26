@@ -66,6 +66,8 @@ src/app
 意味の正本を持つ。値型・閉じた選択肢・拒否理由と結果型。ドロワーのレイアウト（どの行が何ピクセルに見えるか・ヒットテスト・
 ドロップ先・スクロール上限）、カテゴリと索引の json 読み書き、md → RTF のサブセット変換、全文検索の索引を**純関数**として持つ。
 テーマの固定ID/名前/UI・RTF配色は `folio_theme` の一表、systemを含む名前の解析・解決は `folio_theme_choice` が持つ（ADR0049）。
+Markdown生成物は`markdown_rtf`が所有し、block/container、inline、tableの解釈を同じcore内の処理へ分ける。
+原文を長さ付きで借用し、RTF文字escapeは`rtf_text`へ集約する。表示用の第2の本文や永続ASTは持たない（ADR0070）。
 UI 状態・ファイル・現在時刻を持たない。実行時依存の許可表は空で、外部シンボルは `eng/symbol-allowlist.json` の libc の一部だけ（ARC-003）。
 
 ### `src/application`
@@ -94,6 +96,8 @@ native同期面のowner境界は`modal_owner`に集約する。主窓のshell操
 EDITの無効時配色も`folio_window`の一つの配色経路へ合流する（ADR0066）。
 本文の実行中の表示倍率は`note_pane`が所有し、キー/ホイールとRTF再投入を同じEM_SETZOOM経路へ渡す。
 主窓の行番号font/幅は本文倍率から導く派生資源であり、本文の書式や操作文字用fontは変えない（ADR0067）。
+閲覧表の列幅も`note_pane`が同じ本文幅/倍率からnativeのrow書式へ反映する。RTFを再投入せず、
+native構造を正本として選択・dirty・Undoを保ち、配置失敗は既存の本文準備契約へ戻す（ADR0070）。
 
 ### `src/app`
 
