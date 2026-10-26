@@ -307,7 +307,7 @@ static LRESULT native_message(struct note_pane *_Nonnull pane, UINT message, WPA
     pane->wheel_dispatching = true;
     LRESULT answer = CallWindowProcW(pane->original, pane->handle, message, wparam, lparam);
     pane->wheel_dispatching = false;
-    /* ホイールは EN_VSCROLL を出さないので、動かしたあとで親へ知らせる（決定 4）。 */
+    /* 同期呼出しの完了を既存通知へ寄せる。非同期の移動は EN_VSCROLL が知らせる。 */
     SendMessageW(GetParent(pane->handle), folio_message_pane_scrolled, 0, 0);
     return answer;
 }
@@ -471,10 +471,11 @@ enum note_pane_outcome note_pane_create(HWND _Nonnull parent, COLORREF backgroun
         note_pane_destroy(pane);
         return NOTE_PANE_NOT_CREATED;
     }
-    /* スクロールバーは出さない（FR-012 と同じ流儀）。ホイールで動く。
+    /* nativeのスクロール能力は残し、バーの外観だけをEM_SHOWSCROLLBARで隠す。
+     * ES_DISABLENOSCROLLが空/短文での能力の自動除去を防ぐ。
      * ES_NOHIDESEL は、検索欄に鍵があるあいだも一致の選択を見せるため（ADR 0023 の決定 4）。 */
     DWORD style = WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | ES_MULTILINE | ES_READONLY |
-                  ES_AUTOVSCROLL | ES_NOHIDESEL;
+                  ES_AUTOVSCROLL | ES_NOHIDESEL | WS_VSCROLL | ES_DISABLENOSCROLL;
     pane->handle =
         CreateWindowExW(0, class_name, L"", style, 0, 0, 0, 0, parent,
                         (HMENU)(INT_PTR)note_pane_control_id, GetModuleHandleW(nullptr), nullptr);
@@ -483,6 +484,7 @@ enum note_pane_outcome note_pane_create(HWND _Nonnull parent, COLORREF backgroun
         note_pane_destroy(pane);
         return NOTE_PANE_NOT_CREATED;
     }
+    SendMessageW(pane->handle, EM_SHOWSCROLLBAR, SB_VERT, FALSE);
     set_background(pane, background);
     /* 既定書式。閲覧も編集も RTF が face・大きさ・色を持ち込む（ADR 0006 の #245 補正）ので、
      * これは RTF が書式を持たない箇所の退避で、RTF の流し込みは既定を壊さない（2026-09-09 実測）。

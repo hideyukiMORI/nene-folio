@@ -1,15 +1,18 @@
 # いまの状態 — NeNe Folio
 
-記録日: 2026-10-26。v0.2.0をGitHubのβ版として公開済み。直近の修正は閲覧本文への通常ホイール配送。
+記録日: 2026-10-26。v0.2.0をGitHubのβ版として公開済み。直近の修正は本文の通常ホイール配送とnativeスクロール。
 再開時は最新のhide指示、Issue / PR、checkoutを照合し、過去の記録を新しい実行許可として扱わない。
 
-## 直近の修正: 閲覧本文への通常ホイール配送
+## 直近の修正: 本文の通常ホイール配送とnativeスクロール
 
-[#392](https://github.com/hideyukiMORI/nene-folio/issues/392)で、主窓にfocusがあると本文上の通常ホイールが届かない経路を修正した。
-閲覧への切替直後に該当する。通常/Ctrl共通の座標振分けと、本文のnative処理への同期再入拒否に絞り、本文・倍率・focusの所有は維持する。
-対象検証は106 checks / 0 failures。根拠と確認範囲は[品質記録](../quality/2026-10-26-view-wheel.md)、再開情報は[引き継ぎ](../handoffs/2026-10-26.md)。
+[#392](https://github.com/hideyukiMORI/nene-folio/issues/392) / [PR #393](https://github.com/hideyukiMORI/nene-folio/pull/393)で、
+主窓から本文への通常ホイール配送と、本文クリック後もnativeが動かない生成設定を修正した。
+バーの外観は隠したままnativeのスクロール能力を保ち、本文・倍率・focusの所有は維持する。
+最終実製品197 checks / 0 failures、native64 checks / 0 failures、配送106 checksは再利用。
+根拠と確認範囲は[品質記録](../quality/2026-10-26-view-wheel.md)、再開情報は[引き継ぎ](../handoffs/2026-10-26.md)。
 最終PRの必須CI・統合・通常exe反映・整理は実際のPRと`D:/NeNeFolio/agents/view-wheel-20261026/completion.json`を照合する。
 公開済みのv0.2.0 ZIPにはこの修正を含めない。物理ホイールによる実スクロールと専用desktopでの合成入力検証を区別する。
+途中のGUI操作はhideの停止操作で中止済み。専用テスト窓の稼働参照がある一時出力は保持し、確定状態は完了記録に残す。
 
 ## 次の予定: ノートの保存先設定（未実装）
 
