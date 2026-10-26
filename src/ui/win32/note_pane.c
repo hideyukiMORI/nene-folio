@@ -24,6 +24,7 @@ struct note_pane
     HACCEL _Nullable zoom_keys;
     int zoom_percent; /* 表示倍率の唯一の所有値。RTF投入がnative倍率を戻すので再適用する。 */
     int zoom_wheel_delta;
+    bool wheel_dispatching; /* nativeの親伝播が同じ本文へ戻っても二度渡さない。 */
     ITextSelection *_Nullable selection;
     char16_t *_Nullable taken; /* 最後に取り出した本文（終端付き） */
     size_t capacity;           /* taken のバイト数 */
@@ -296,6 +297,21 @@ static bool paint_background(const struct note_pane *_Nonnull pane, UINT message
     return message == WM_ERASEBKGND;
 }
 
+static LRESULT native_message(struct note_pane *_Nonnull pane, UINT message, WPARAM wparam,
+                              LPARAM lparam)
+{
+    if (message != WM_MOUSEWHEEL)
+        return CallWindowProcW(pane->original, pane->handle, message, wparam, lparam);
+    if (pane->wheel_dispatching)
+        return 0;
+    pane->wheel_dispatching = true;
+    LRESULT answer = CallWindowProcW(pane->original, pane->handle, message, wparam, lparam);
+    pane->wheel_dispatching = false;
+    /* 同期呼出しの完了を既存通知へ寄せる。非同期の移動は EN_VSCROLL が知らせる。 */
+    SendMessageW(GetParent(pane->handle), folio_message_pane_scrolled, 0, 0);
+    return answer;
+}
+
 static LRESULT CALLBACK pane_procedure(HWND window, UINT message, WPARAM wparam, LPARAM lparam)
 {
     struct note_pane *_Nullable pane = (struct note_pane *)GetWindowLongPtrW(window, GWLP_USERDATA);
@@ -320,13 +336,7 @@ static LRESULT CALLBACK pane_procedure(HWND window, UINT message, WPARAM wparam,
     {
         pane->composing = false;
     }
-    LRESULT answer = CallWindowProcW(pane->original, window, message, wparam, lparam);
-    if (message == WM_MOUSEWHEEL)
-    {
-        /* ホイールは EN_VSCROLL を出さないので、動かしたあとで親へ知らせる（決定 4）。 */
-        SendMessageW(GetParent(window), folio_message_pane_scrolled, 0, 0);
-    }
-    return answer;
+    return native_message(pane, message, wparam, lparam);
 }
 
 static bool subclass_pane(struct note_pane *_Nonnull pane)
@@ -461,10 +471,11 @@ enum note_pane_outcome note_pane_create(HWND _Nonnull parent, COLORREF backgroun
         note_pane_destroy(pane);
         return NOTE_PANE_NOT_CREATED;
     }
-    /* スクロールバーは出さない（FR-012 と同じ流儀）。ホイールで動く。
+    /* nativeのスクロール能力は残し、バーの外観だけをEM_SHOWSCROLLBARで隠す。
+     * ES_DISABLENOSCROLLが空/短文での能力の自動除去を防ぐ。
      * ES_NOHIDESEL は、検索欄に鍵があるあいだも一致の選択を見せるため（ADR 0023 の決定 4）。 */
     DWORD style = WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | ES_MULTILINE | ES_READONLY |
-                  ES_AUTOVSCROLL | ES_NOHIDESEL;
+                  ES_AUTOVSCROLL | ES_NOHIDESEL | WS_VSCROLL | ES_DISABLENOSCROLL;
     pane->handle =
         CreateWindowExW(0, class_name, L"", style, 0, 0, 0, 0, parent,
                         (HMENU)(INT_PTR)note_pane_control_id, GetModuleHandleW(nullptr), nullptr);
@@ -473,6 +484,7 @@ enum note_pane_outcome note_pane_create(HWND _Nonnull parent, COLORREF backgroun
         note_pane_destroy(pane);
         return NOTE_PANE_NOT_CREATED;
     }
+    SendMessageW(pane->handle, EM_SHOWSCROLLBAR, SB_VERT, FALSE);
     set_background(pane, background);
     /* 既定書式。閲覧も編集も RTF が face・大きさ・色を持ち込む（ADR 0006 の #245 補正）ので、
      * これは RTF が書式を持たない箇所の退避で、RTF の流し込みは既定を壊さない（2026-09-09 実測）。

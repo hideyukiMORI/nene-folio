@@ -1,7 +1,18 @@
 # いまの状態 — NeNe Folio
 
-記録日: 2026-10-25。直近の機能実装は完了し、v0.2.0をGitHubのβ版として公開済み。
+記録日: 2026-10-26。v0.2.0をGitHubのβ版として公開済み。直近の修正は本文の通常ホイール配送とnativeスクロール。
 再開時は最新のhide指示、Issue / PR、checkoutを照合し、過去の記録を新しい実行許可として扱わない。
+
+## 直近の修正: 本文の通常ホイール配送とnativeスクロール
+
+[#392](https://github.com/hideyukiMORI/nene-folio/issues/392) / [PR #393](https://github.com/hideyukiMORI/nene-folio/pull/393)で、
+主窓から本文への通常ホイール配送と、本文クリック後もnativeが動かない生成設定を修正した。
+バーの外観は隠したままnativeのスクロール能力を保ち、本文・倍率・focusの所有は維持する。
+最終実製品197 checks / 0 failures、native64 checks / 0 failures、配送106 checksは再利用。
+根拠と確認範囲は[品質記録](../quality/2026-10-26-view-wheel.md)、再開情報は[引き継ぎ](../handoffs/2026-10-26.md)。
+最終PRの必須CI・統合・通常exe反映・整理は実際のPRと`D:/NeNeFolio/agents/view-wheel-20261026/completion.json`を照合する。
+公開済みのv0.2.0 ZIPにはこの修正を含めない。物理ホイールによる実スクロールと専用desktopでの合成入力検証を区別する。
+途中のGUI操作はhideの停止操作で中止済み。専用テスト窓の稼働参照がある一時出力は保持し、確定状態は完了記録に残す。
 
 ## 次の予定: ノートの保存先設定（未実装）
 
@@ -21,9 +32,9 @@ portable版はexe隣の`data`を既定とし、両方とも設定から「ノー
   今回の公開・README画像・文書更新は[#388](https://github.com/hideyukiMORI/nene-folio/issues/388)へ追跡する。
 - [変更履歴と更新手順](../release/0.2.0.md)、[配布・起動・保存・旧版データ・再取得の品質記録](../quality/2026-10-25-beta-release.md)を更新。
   [README](../../README.md)の画面は、実際のv0.2.0配布exeをサンプルノートで起動して撮影したもの。
-- 製品コード・版入力・保存schemaは今回変更していない。通常exe
+- β公開では製品コード・版入力・保存schemaを変更していない。公開時点の通常exe
   `C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`は#369統合commit `6a294697c804de15e30e06e0a9507369906a9bf3`
-  から22:31 JSTに更新した状態を維持し、今回の作業では再ビルド・終了・起動していない。
+  から10月25日22:31 JSTに更新したもの。その後の#392反映は上記の完了記録で確認する。
 - 公開証跡と配布物の恒久コピーは`D:/NeNeFolio/agents/beta-release-20261025/`。
   `published-release.json`、`download-verification.json`、`published-assets/`が確定公開物の根拠。
   文書PRのCI・整理の確定結果は同所の`completion.json`を参照する。作業branch / commitは保持する。

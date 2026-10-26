@@ -140,3 +140,18 @@ gutter_rowに主窓client座標のbaselineを加える。note_paneが選択を�
 主窓の番号描画もTA_BASELINEで同じyを使う。表示行上端・clip・折返し継続行の省略は既存の経路を維持する。
 API根拠: [ITextRange::GetPoint](https://learn.microsoft.com/en-us/windows/win32/api/tom/nf-tom-itextrange-getpoint)。
 範囲は都度Releaseし、選択・Undo・変更印を動かさない。取得できない行の位置を固定offsetで推測しない。
+
+## 2026-10-26 の補正（#392 — 非表示のバーとnativeスクロール）
+
+本文は`WS_VSCROLL | ES_DISABLENOSCROLL`を備えて生成し、直後に`EM_SHOWSCROLLBAR(SB_VERT, FALSE)`で外観だけを隠す。
+`WS_VSCROLL`を最初から除くと通常ホイールで動かず、`ES_DISABLENOSCROLL`が無いと初期0寸法や短文で
+スクロール能力が失われることを実測した。バーは不可視・占有幅0のまま、スクロール位置と量はRichEditが所有する。
+`ShowScrollBar(FALSE)`では移動後にバーが再表示されたため採用しない。新しいタイマやスクロール量の計算は設けない。
+
+通常ホイールの実移動は非同期であり、nativeの`EN_VSCROLL`が複数回届く。決定4の既存通知経路で
+移動途中と完了時の行番号を更新する。サブクラスの同期呼出し後の独自通知は一度だけ維持する。
+文脈節の「WS_VSCROLLなし」とホイール未確認は当時の状態であり、この補正後の実装や検証結果ではない。
+初期の合成入力試験で動かなかった一因は、呼出し直後だけを読んで非同期移動を待たなかったことだった。
+実製品fixtureでは安定後の本文位置と最後の行番号描画を照合した。条件と結果は[品質記録](../quality/2026-10-26-view-wheel.md)。
+API根拠: [EM_SHOWSCROLLBAR](https://learn.microsoft.com/en-us/windows/win32/controls/em-showscrollbar)、
+[Rich Edit Control Styles](https://learn.microsoft.com/en-us/windows/win32/controls/rich-edit-control-styles)。

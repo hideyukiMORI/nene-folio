@@ -43,10 +43,22 @@
 本文・選択・dirty・Undo/Redo、各再投入後の倍率、先頭行、行番号baseline/幅を実値と画像で照合する。
 物理入力・物理DPI移動と合成メッセージ/描画倍率の検証は区別する。全件ゲートは最終headの必須CIに集約する。
 
+## 2026-10-26 の補正（#392 — 通常ホイールの配送）
+
+閲覧へ切り替えた直後はfocusが主窓へ戻る。主窓で受けた本文上のホイールは、Ctrlの有無によらず
+既存の座標による振分けから同じ`note_pane`へ渡す。通常ホイールのスクロールはnative、
+Ctrl+ホイールの倍率は既存の`note_pane`が処理し、focusを移動しない。
+nativeの未処理ホイールが親へ伝播して戻っても二度nativeへ入らないよう、`note_pane`が同期呼出し中だけ
+再入を拒否する。主窓からの転送と本文へ直接届く入力の両方に同じ拒否を適用し、同期呼出し後の独自行番号通知は一度だけ出す。
+本文の生成時にnativeのスクロール能力を残してバーだけを隠す判断と、非同期の`EN_VSCROLL`による追随は
+[ADR0026の同日補正](0026-line-numbers.md)に揃える。公開API・スクロール位置の所有・保存schemaを変更しない。対象検証と合成入力の限界は
+[品質記録](../quality/2026-10-26-view-wheel.md)に残す。
+
 ## 根拠
 
 - [EM_SETZOOM](https://learn.microsoft.com/en-us/windows/win32/controls/em-setzoom)：表示倍率を適用し、受理を返す。
 - [EM_GETZOOM](https://learn.microsoft.com/en-us/windows/win32/controls/em-getzoom)：nativeへ適用された倍率の検証に使う。
+- [WM_MOUSEWHEEL](https://learn.microsoft.com/en-us/windows/win32/inputdev/wm-mousewheel)：focus窓への入力と、未処理時の親への伝播。
 - `D:/NeNeFolio/agents/note-zoom-20261025/native-zoom-probe.log`：倍率変更で文字/選択/dirty/Undoを保ち、RTF投入で倍率が戻る実測。
 
 Waivers: none
