@@ -7186,3 +7186,34 @@ void run_index_preparation_allocation_tests(void)
     require(completed, "preparation allocation sweep completes");
     printf("index preparation allocations: %zu failed points, then complete\n", nth - 2);
 }
+
+void run_markdown_source_state_tests(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    adapter.note_body = "A | B\r\n--- | ---\n**cell** | 日本語😀\r\n\n----\n";
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "select native table source");
+    require(strstr(folio_state_pane_rtf(state), "\\trowd") != nullptr,
+            "view prepares the canonical native table RTF");
+    const char16_t native[] = u"\xFFF9\rA\x0007";
+    require(folio_state_store_note(state, native, sizeof native / sizeof native[0] - 1) ==
+                    FOLIO_STATE_READY &&
+                adapter.note_writes == 0 &&
+                same_text(folio_state_pane_text(state), adapter.note_body),
+            "VIEW save ignores native structural text and retains source");
+    struct note_name *name = accepted_note_name("table-copy");
+    struct note_destination destination = {.category = 0, .name = name};
+    require(folio_state_store_new(state, &destination, native,
+                                  sizeof native / sizeof native[0] - 1) == FOLIO_STATE_READY &&
+                same_text(adapter.written_body, adapter.note_body),
+            "VIEW SaveAs copies exact mixed-line-ending source, not native table markers");
+    require(folio_state_begin_edit(state) == FOLIO_STATE_READY &&
+                folio_state_pane_edit_rtf(state) == FOLIO_STATE_READY &&
+                strstr(folio_state_edit_rtf(state), "A | B\\par --- | ---\\par **cell**") !=
+                    nullptr &&
+                strstr(folio_state_edit_rtf(state), "\\trowd") == nullptr,
+            "EDIT is constructed from original Markdown and has no native table structure");
+    note_name_destroy(name);
+    folio_state_destroy(state);
+}

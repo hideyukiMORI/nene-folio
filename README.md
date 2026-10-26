@@ -39,6 +39,9 @@ record the package validation, saved-data check, and download verification.
   pane; Ctrl+S writes the file back atomically, keeps the original line endings, and writes nothing when
   the text is unchanged. The body just before each save is kept as `data/.history/<category>/<note>/1.md`
   … `5.md`, and any version can be restored into the editor as an undoable edit.
+  The source version also supports tables, nested lists and quotes, task lists, strikethrough,
+  thematic breaks, and explicit line breaks. See [Markdown syntax and limits](docs/MARKDOWN.md) (Japanese).
+  These additions are not included in the already-published 0.2.0 ZIP.
 - **Note zoom**: Ctrl+wheel or Ctrl++ / Ctrl+- changes the display from 50% to 300%; Ctrl+0 restores 100%.
   Read and Edit share the zoom while the app runs, and line numbers follow it. Note contents stay unchanged.
 - **Notes**: new untitled note with a first save, save as, rename (recoverable across restarts through

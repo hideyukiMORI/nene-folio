@@ -1979,6 +1979,14 @@ static RECT body_content_rect(const struct folio_window *_Nonnull self, RECT pan
                   pane.bottom - bottom};
 }
 
+static bool reflow_body(struct folio_window *_Nonnull self)
+{
+    if (self->pane == nullptr || note_pane_readiness(self->pane) != NOTE_PANE_READINESS_READY)
+        return true;
+    return note_pane_reflow(self->pane, folio_state_pane_mode(self->state)) !=
+           NOTE_PANE_LOAD_FAILED;
+}
+
 static void arrange(struct folio_window *_Nonnull self)
 {
     refresh_part_metrics(self, GetDpiForWindow(self->handle));
@@ -2000,6 +2008,12 @@ static void arrange(struct folio_window *_Nonnull self)
             RECT body = body_content_rect(self, regions.pane, dpi);
             move_child(pane, body);
         }
+    }
+    if (!reflow_body(self))
+    {
+        arrange(self); /* UNAVAILABLE now skips reflow; synchronize the existing retry notice. */
+        InvalidateRect(self->handle, nullptr, FALSE);
+        return;
     }
     refresh_gutter(self, false);
     refresh_tooltip_rects(self);

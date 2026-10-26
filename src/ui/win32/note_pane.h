@@ -41,6 +41,9 @@ constexpr int note_pane_control_id = 3;
 [[nodiscard]] enum note_pane_load_outcome note_pane_load(struct note_pane *_Nonnull pane,
                                                          const char *_Nonnull rtf, size_t length,
                                                          enum pane_mode mode);
+/* Reflow the native VIEW tables after layout or zoom; no RTF reinsertion. */
+[[nodiscard]] enum note_pane_load_outcome note_pane_reflow(struct note_pane *_Nonnull pane,
+                                                           enum pane_mode mode);
 [[nodiscard]] enum note_pane_readiness note_pane_readiness(const struct note_pane *_Nonnull pane);
 /* いま表示している本文を変換せず UTF-16 で取り出す（閲覧なら描画後・編集なら未保存本文）。
  * 段落区切りは CR 1 つで、位置は note_pane_select / note_pane_selection と 1 対 1。

@@ -3,6 +3,7 @@
 #include "caret_command.h"
 #include "folio_message.h"
 #include "line_index.h"
+#include "note_pane_table.h"
 #include "pane_mode.h"
 #include "pane_zoom_command.h"
 #include "rtf_stream.h"
@@ -24,6 +25,8 @@ struct note_pane
     HACCEL _Nullable zoom_keys;
     int zoom_percent; /* 表示倍率の唯一の所有値。RTF投入がnative倍率を戻すので再適用する。 */
     int zoom_wheel_delta;
+    LONG table_width; /* Successful native width in twips; reset on every document load. */
+    bool table_layout_active;
     bool wheel_dispatching; /* nativeの親伝播が同じ本文へ戻っても二度渡さない。 */
     ITextSelection *_Nullable selection;
     char16_t *_Nullable taken; /* 最後に取り出した本文（終端付き） */
@@ -37,6 +40,9 @@ struct note_pane
     bool recolor_undo_pending; /* 自分が停止したUndo。再開成功まで新たな停止をしない。 */
     bool recolor_input_locked; /* Undo停止中の入力だけを止め、本文のREADYは保持する。 */
 };
+
+static bool layout_tables(struct note_pane *_Nonnull pane, enum pane_mode mode);
+static bool finish_recolor(struct note_pane *_Nonnull pane, ITextDocument *_Nonnull document);
 
 static const wchar_t library_name[] = L"Msftedit.dll";
 static const wchar_t class_name[] = L"RICHEDIT50W";
@@ -583,10 +589,12 @@ enum note_pane_load_outcome note_pane_load(struct note_pane *_Nonnull pane,
         return failed_load(pane, SendMessageW(pane->handle, EM_GETMODIFY, 0, 0));
     }
     pane->readiness = NOTE_PANE_READINESS_STREAMING;
+    pane->table_width = 0;
     LRESULT modified = SendMessageW(pane->handle, EM_GETMODIFY, 0, 0);
     SendMessageW(pane->handle, EM_EXLIMITTEXT, 0, editor_limit);
     if (SendMessageW(pane->handle, EM_SETREADONLY, TRUE, 0) == 0 ||
-        !stream_rtf(pane, rtf, length) || !apply_zoom(pane, pane->zoom_percent))
+        !stream_rtf(pane, rtf, length) || !apply_zoom(pane, pane->zoom_percent) ||
+        !layout_tables(pane, mode))
     {
         return failed_load(pane, modified);
     }
@@ -633,6 +641,79 @@ static enum note_pane_text_outcome take_text(struct note_pane *_Nonnull pane,
     *count = taken > 0 ? (size_t)taken : 0;
     (*slot)[*count] = u'\0';
     return NOTE_PANE_TEXT_TAKEN;
+}
+
+static LONG table_width(struct note_pane *_Nonnull pane)
+{
+    RECT client;
+    GetClientRect(pane->handle, &client);
+    RECT format = {0};
+    SendMessageW(pane->handle, EM_GETRECT, 0, (LPARAM)&format);
+    LONG pixels = client.right - client.left - format.left - (client.right - format.right);
+    if (pixels <= 0)
+        return 0;
+    LONG width =
+        MulDiv(MulDiv(pixels, 1440, (int)GetDpiForWindow(pane->handle)), 100, pane->zoom_percent);
+    return width > 31679 ? 31679 : width;
+}
+
+static bool format_tables(struct note_pane *_Nonnull pane, LONG width, size_t count)
+{
+    ITextDocument *_Nullable document = text_document(pane);
+    if (document == nullptr)
+        return false;
+    if (!resume_recolor(pane, document, PANE_MODE_VIEW) ||
+        FAILED(document->lpVtbl->Undo(document, tomSuspend, nullptr)))
+    {
+        document->lpVtbl->Release(document);
+        return false;
+    }
+    LRESULT modified = SendMessageW(pane->handle, EM_GETMODIFY, 0, 0);
+    bool placed =
+        note_pane_table_layout(pane->handle, pane->numbered, count, width) == NOTE_PANE_LOAD_READY;
+    bool resumed = finish_recolor(pane, document);
+    document->lpVtbl->Release(document);
+    SendMessageW(pane->handle, EM_SETMODIFY, (WPARAM)(modified != 0), 0);
+    return placed && resumed;
+}
+
+static bool layout_tables(struct note_pane *_Nonnull pane, enum pane_mode mode)
+{
+    if (mode == PANE_MODE_EDIT || pane->table_layout_active)
+        return true;
+    LONG width = table_width(pane);
+    if (width <= 0 || width == pane->table_width)
+        return true;
+    size_t count = 0;
+    pane->table_layout_active = true;
+    bool taken =
+        take_text(pane, &pane->numbered, &pane->numbered_capacity, &count) == NOTE_PANE_TEXT_TAKEN;
+    bool placed = taken;
+    if (taken)
+    {
+        enum note_pane_table_scan scanned =
+            note_pane_table_scan(pane->handle, pane->numbered, count);
+        placed = scanned != NOTE_PANE_TABLE_FAILED;
+        if (scanned == NOTE_PANE_TABLE_PRESENT)
+            placed = format_tables(pane, width, count);
+    }
+    pane->table_layout_active = false;
+    if (placed)
+        pane->table_width = width;
+    return placed;
+}
+
+enum note_pane_load_outcome note_pane_reflow(struct note_pane *_Nonnull pane, enum pane_mode mode)
+{
+    if (pane->handle == nullptr)
+        return NOTE_PANE_LOAD_UNAVAILABLE;
+    if (pane->readiness == NOTE_PANE_READINESS_STREAMING || pane->table_layout_active)
+        return NOTE_PANE_LOAD_BUSY;
+    if (pane->readiness != NOTE_PANE_READINESS_READY)
+        return NOTE_PANE_LOAD_FAILED;
+    if (layout_tables(pane, mode))
+        return NOTE_PANE_LOAD_READY;
+    return failed_load(pane, SendMessageW(pane->handle, EM_GETMODIFY, 0, 0));
 }
 
 enum note_pane_text_outcome note_pane_text(struct note_pane *_Nonnull pane,

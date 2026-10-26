@@ -78,3 +78,9 @@ API根拠: [EM_SETEDITSTYLE](https://learn.microsoft.com/en-us/windows/win32/con
 関係入力が変わらない成功済み結果は再利用し、物理入力や全配色/全OSの保証へ広げない。
 
 公開API・保存schema・依存・ゲート変更なし。Waivers: none。
+
+## 後続の構文拡張
+
+[ADR0070](0070-markdown-syntax-and-native-tables.md)でblock/inline/tableの内部処理を分割する。
+本ADRの寸法とコード面はblock処理へ移し、値の所有経路は一つに保つ。
+Markdownの表は実際の表構造を持たせるが、コード面には引き続きtableを使わない。

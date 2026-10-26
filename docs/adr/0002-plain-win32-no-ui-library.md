@@ -73,3 +73,10 @@ main `1bb1616` のASCII RTFはU+FFFDを `\u-3?` へ変換していたが、RichE
 
 API根拠: Microsoft [EM_STREAMIN](https://learn.microsoft.com/en-us/windows/win32/controls/em-streamin) の
 Rich Edit 3.0以降のUTF-8 RTF入力。製品のRICHEDIT50Wで実測した。Waivers: none。
+
+## 2026-10-26 の補正（#396 — 基本構文とnative table）
+
+hideの構文拡張依頼により、サブセットを[ADR0070](0070-markdown-syntax-and-native-tables.md)の範囲へ拡張する。
+表・入れ子リスト/引用・task・strike・水平区切り・setext・明示改行と、fence/code spanの区切りを同じ純C→UTF-8 RTFへ加える。
+block/inline/tableの内部責務を分け、旧行分類を並行して残さない。native表の構造字もGT_RAWTEXTの位置契約を保つ。
+CommonMark完全互換・HTML描画・画像埋込みの非要件、追加実行時依存なし、同じRichEditによる表示/編集は維持する。

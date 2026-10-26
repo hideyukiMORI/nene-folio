@@ -5,7 +5,8 @@
 enum markdown_rtf_outcome : unsigned char
 {
     MARKDOWN_RTF_CONVERTED,
-    MARKDOWN_RTF_OUT_OF_MEMORY
+    MARKDOWN_RTF_OUT_OF_MEMORY,
+    MARKDOWN_RTF_INVALID_INPUT
 };
 
 #endif

@@ -1,7 +1,19 @@
 # いまの状態 — NeNe Folio
 
-記録日: 2026-10-26。v0.2.0をGitHubのβ版として公開済み。本文ホイールの修正に続き、Markdown閲覧の表示を調整した。
+記録日: 2026-10-27。v0.2.0をGitHubのβ版として公開済み。Markdown表示の調整に続き、一般的な構文を追加した。
 再開時は最新のhide指示、Issue / PR、checkoutを照合し、過去の記録を新しい実行許可として扱わない。
+
+## 直近の実装: Markdownの基本構文と表
+
+hideの構文拡張依頼を[#396](https://github.com/hideyukiMORI/nene-folio/issues/396)で扱った。
+対象は表、入れ子リスト/引用、task、strike、水平区切り、setext、明示改行、fence/code spanの区切り。
+設計は[ADR0070](../adr/0070-markdown-syntax-and-native-tables.md)、利用者向け範囲は[Markdownの書き方](../MARKDOWN.md)。
+対象build/tidy/unitと26箇所の確保失敗注入が成功した。実製品nativeの初回221件中218成功と、
+字下げoracle訂正後の対象37件成功を合わせて受理した。画像、原文保持、表内/表後の検索・幅/倍率・失敗回復も確認した。
+詳細と限界は[品質記録](../quality/2026-10-26-markdown-syntax.md)。最終head CI・main統合・通常exe反映・整理の確定値は
+実際のIssue/PRと`D:/NeNeFolio/agents/markdown-syntax-20261026/completion.json`を照合する。
+追加作業木は`D:/NeNeFolio/worktrees/396-markdown-syntax`。統合/反映/恒久保管後に同taskの一時出力とともに整理する。
+公開済みv0.2.0 ZIPは更新対象外。生成関数の型付き失敗とUI内部reflow入口を加え、保存schema・設定・依存・gateは変更していない。
 
 ## 直近の修正: Markdown閲覧の密度・小見出し・コード面
 
@@ -12,8 +24,9 @@
 実製品の初回257件中255成功と、背景測定修正後の関連138件成功を組み合わせて受理した。
 確認範囲と測定修正の根拠は[品質記録](../quality/2026-10-26-markdown-style.md)を参照する。
 最終headの必須CI・統合・通常exe反映・整理の確定値は実際のPRと証跡の`completion.json`を照合する。
-作業木は`D:/NeNeFolio/worktrees/394-markdown-style`、証跡は`D:/NeNeFolio/agents/markdown-style-20261026/`。
-通常アプリは22:44 JSTに終了を確認した。更新時も稼働を再確認し、開いていれば自動終了せずexe反映を待つ。
+[PR #395](https://github.com/hideyukiMORI/nene-folio/pull/395)をmain `cfbff7c`へ統合し、最終head CIと通常exe更新を完了した。
+証跡は`D:/NeNeFolio/agents/markdown-style-20261026/`。187ファイルを保管・全件照合し、追加worktreeと一時出力は削除済み。
+branch/commitは保持した。通常exeは22:55 JSTに更新し、自動起動していない。
 
 ## 直近の修正: 本文の通常ホイール配送とnativeスクロール
 

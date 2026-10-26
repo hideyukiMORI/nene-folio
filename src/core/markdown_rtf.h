@@ -1,9 +1,5 @@
-/* md → RTF のサブセット変換（FR-005 / ADR 0002）。純関数でUTF-8 RTFを作る。
- * RichEditの入力境界はUTF-8を明示する（#236）。対応する記法: 見出し（#〜######）・強調（**太字**
- * __太字__ *斜体* _斜体_）・インラインコード（`…`）・ コードブロック（``` … ```）・箇条書き（- *
- * +）・番号付き（1.）・リンク（[文字](url) は下線の文字だけ）・引用（>）
- * それ以外の行は段落で、連続する行は 1 つの段落に繋ぐ。入れ子のリスト・表・画像・HTML は扱わない。
- */
+/* Markdown source → the one UTF-8 RTF path (ADR0070). Supported syntax is documented
+ * in docs/MARKDOWN.md. Editing retains the original source through markdown_rtf_plain. */
 #ifndef NENEFOLIO_MARKDOWN_RTF_H
 #define NENEFOLIO_MARKDOWN_RTF_H
 
