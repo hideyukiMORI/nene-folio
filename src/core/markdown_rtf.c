@@ -20,8 +20,8 @@ static const char document_header_open[] = "{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0\
 static const char document_header_close[] = ";}{\\f1\\fmodern Consolas;}}";
 static const char document_body_start[] = "\\f0\\fs22\\cf1";
 static const char document_footer[] = "}";
-static const char paragraph_start[] = "\\pard\\sa160\\sl300\\slmult1\\cf1 ";
-static const int heading_sizes[] = {44, 34, 28, 24, 22, 22};
+static const char paragraph_start[] = "\\pard\\sa80\\sl240\\slmult1\\cf1 ";
+static const int heading_sizes[] = {44, 34, 28, 22, 22, 22};
 constexpr size_t heading_max = 6;
 
 static bool is_digit(char character)
@@ -265,7 +265,8 @@ static void render_heading(struct text_buffer *_Nonnull out, const char *_Nonnul
     size[0] = (char)('0' + value / 10);
     size[1] = (char)('0' + value % 10);
     size[2] = '\0';
-    text_buffer_append_text(out, "\\pard\\sb280\\sa120\\b\\cf2\\fs");
+    text_buffer_append_text(out, level <= 3 ? "\\pard\\sb200\\sa80\\b\\cf2\\fs"
+                                            : "\\pard\\sb160\\sa60\\b0\\cf2\\fs");
     text_buffer_append_text(out, size);
     text_buffer_append_text(out, " ");
     render_inline(out, line + level + 1, length - level - 1);
@@ -283,21 +284,21 @@ static void render_block(struct text_buffer *_Nonnull out, enum markdown_line_ki
     case MARKDOWN_LINE_QUOTE:
     {
         size_t skip = length >= 2 && line[1] == ' ' ? 2 : 1;
-        text_buffer_append_text(out, "\\pard\\li480\\sa100\\sl300\\slmult1\\cf3 ");
+        text_buffer_append_text(out, "\\pard\\li480\\sa80\\sl240\\slmult1\\cf3 ");
         render_inline(out, line + skip, length - skip);
         text_buffer_append_text(out, "\\cf1\\par\n");
         return;
     }
     case MARKDOWN_LINE_BULLET:
         text_buffer_append_text(out,
-                                "\\pard\\li440\\fi-220\\sa80\\sl300\\slmult1\\cf1\\bullet\\tab ");
+                                "\\pard\\li440\\fi-220\\sa40\\sl240\\slmult1\\cf1\\bullet\\tab ");
         render_inline(out, line + 2, length - 2);
         text_buffer_append_text(out, "\\par\n");
         return;
     case MARKDOWN_LINE_ORDERED:
     {
         size_t marker = ordered_marker(line, length);
-        text_buffer_append_text(out, "\\pard\\li440\\fi-220\\sa80\\sl300\\slmult1\\cf1 ");
+        text_buffer_append_text(out, "\\pard\\li440\\fi-220\\sa40\\sl240\\slmult1\\cf1 ");
         append_plain(out, line, marker - 1);
         text_buffer_append_text(out, "\\tab ");
         render_inline(out, line + marker, length - marker);
@@ -321,7 +322,29 @@ static void close_paragraph(struct text_buffer *_Nonnull out, bool *_Nonnull ope
     }
 }
 
-/* 1 行を文書の状態に応じて書く。in_code と paragraph_open は行をまたぐ状態。 */
+/* 段落末尾まで地色を保つ。次行までparを遅らせ、空白文字を足さず外周だけに余白を置く。 */
+static void render_code_line(struct text_buffer *_Nonnull out, const char *_Nonnull line,
+                             size_t length, bool *_Nonnull open)
+{
+    if (*open)
+        text_buffer_append_text(out, "\\par\n");
+    text_buffer_append_text(out, "\\pard\\li180\\ri180\\sb");
+    text_buffer_append_text(out, *open ? "0" : "120");
+    text_buffer_append_text(out, "\\sa0\\sl240\\slmult1 ");
+    append_plain(out, line, length);
+    *open = true;
+}
+
+static void close_code(struct text_buffer *_Nonnull out, bool *_Nonnull state)
+{
+    if (state[1])
+        text_buffer_append_text(out, "\\sa120\\par\n");
+    text_buffer_append_text(out, "}");
+    state[0] = false;
+    state[1] = false;
+}
+
+/* stateはcode内かと現在段落が開いているか。閲覧pとcodeが同じ段落の寿命を共有する。 */
 static void render_line(struct text_buffer *_Nonnull out, const char *_Nonnull line, size_t length,
                         bool *_Nonnull state)
 {
@@ -332,12 +355,10 @@ static void render_line(struct text_buffer *_Nonnull out, const char *_Nonnull l
     {
         if (kind == MARKDOWN_LINE_FENCE)
         {
-            *in_code = false;
+            close_code(out, state);
             return;
         }
-        text_buffer_append_text(out, "\\pard\\li240\\sa40\\f1\\fs20\\cf5\\highlight6 ");
-        append_plain(out, line, length);
-        text_buffer_append_text(out, "\\highlight0\\f0\\fs22\\cf1\\par\n");
+        render_code_line(out, line, length, paragraph_open);
         return;
     }
     if (kind == MARKDOWN_LINE_TEXT)
@@ -350,6 +371,7 @@ static void render_line(struct text_buffer *_Nonnull out, const char *_Nonnull l
     close_paragraph(out, paragraph_open);
     if (kind == MARKDOWN_LINE_FENCE)
     {
+        text_buffer_append_text(out, "{\\f1\\fs20\\cf5\\highlight6");
         *in_code = true;
         return;
     }
@@ -398,6 +420,14 @@ static void append_header(struct text_buffer *_Nonnull out, struct rtf_palette p
     text_buffer_append_text(out, document_body_start);
 }
 
+static void close_document(struct text_buffer *_Nonnull out, bool *_Nonnull state)
+{
+    if (state[0])
+        close_code(out, state);
+    close_paragraph(out, &state[1]);
+    text_buffer_append_text(out, document_footer);
+}
+
 static void render_document(struct text_buffer *_Nonnull out, const char *_Nonnull text,
                             size_t length)
 {
@@ -421,8 +451,7 @@ static void render_document(struct text_buffer *_Nonnull out, const char *_Nonnu
         render_line(out, text + start, line_length, state);
         start = index + 1;
     }
-    close_paragraph(out, &state[1]);
-    text_buffer_append_text(out, document_footer);
+    close_document(out, state);
 }
 
 /* 編集用の本文（#250）。Markdown を解釈せず、UTF-8 の生バイトを構文記号だけ escape して書く。

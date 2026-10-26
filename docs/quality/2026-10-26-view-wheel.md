@@ -67,9 +67,21 @@ fixtureには既存の`interception_win: unhandled instruction`起動warningが�
 
 最終PR/CI/通常exe反映/整理は同directoryの`completion.json`と実際のPRを照合する。
 実移動はバックグラウンドで検証でき、Computer Useは必須ではない。途中の専用テスト窓のGUI試験はhideの停止操作で中止した。
-以後GUIを操作せず、別の`runtime-v2`で対象検証を完了した。物理ホイール・物理IME・実reader・DWM呈示は未確認。
+以後GUIを操作せず、別の`runtime-v2`で対象検証を完了した。この自動検証では物理ホイール・物理IME・実reader・DWM呈示は未確認。
 通常exe更新は`tools/prepare-real-machine.ps1`を使い、稼働アプリの終了・自動起動・公開Release更新は行わない。
 
 作業木は`D:/NeNeFolio/worktrees/392-view-wheel`、一時出力は`D:/NeNeFolio/outputs/view-wheel-20261026`。
 統合・反映・恒久成果物収載後に取込状態・未保存物・稼働参照・リンクを確認して整理する。branch/commitは保持する。
 旧runtimeのテスト窓が稼働中なら一時出力は保持し、停止を迂回するための終了操作はしない。旧削除拒否済み13箇所は対象外。
+
+## 同日追記 — hideの実機確認と保持物
+
+PR #393をmain `5e7205b`へ統合し、最終PR head `ac1089d`の必須CIは成功した。
+通常exeを21:06 JSTに更新し、hideの実機テスト依頼で22:10 JSTに起動した。
+hideは「スクロールは出来るようになってる。拡大縮小もできる。」と確認した。
+物理IME・実reader・DWM呈示の別個の評価まで成功とは扱わない。続くMarkdown表示の改善は#394へ分ける。
+
+作業木と`build/native/runtime-v2`は保管・監査後に削除した。旧テスト窓はhideが閉じたことを確認済み。
+残る`D:/NeNeFolio/outputs/view-wheel-20261026/runtime`の22ファイルも`closed-runtime.zip`へ保管し全件照合したが、
+runtimeと空になる親フォルダの削除要求は自動承認レビューに`blocked by policy`で拒否された。
+削除は実行されていない。別手段での再試行はせず保持する。完了記録の`cleanupFollowup`を正本とする。

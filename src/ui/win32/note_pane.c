@@ -456,6 +456,13 @@ static void set_background(struct note_pane *_Nonnull pane, COLORREF background)
     InvalidateRect(pane->handle, nullptr, TRUE);
 }
 
+static bool extend_background(const struct note_pane *_Nonnull pane)
+{
+    LRESULT styles =
+        SendMessageW(pane->handle, EM_SETEDITSTYLE, SES_EXTENDBACKCOLOR, SES_EXTENDBACKCOLOR);
+    return (styles & SES_EXTENDBACKCOLOR) != 0;
+}
+
 enum note_pane_outcome note_pane_create(HWND _Nonnull parent, COLORREF background, COLORREF text,
                                         struct note_pane *_Nullable *_Nonnull out)
 {
@@ -471,15 +478,15 @@ enum note_pane_outcome note_pane_create(HWND _Nonnull parent, COLORREF backgroun
         note_pane_destroy(pane);
         return NOTE_PANE_NOT_CREATED;
     }
-    /* nativeのスクロール能力は残し、バーの外観だけをEM_SHOWSCROLLBARで隠す。
-     * ES_DISABLENOSCROLLが空/短文での能力の自動除去を防ぐ。
+    /* nativeのスクロール能力を空/短文でも保ち、バーの外観だけを隠す。
      * ES_NOHIDESEL は、検索欄に鍵があるあいだも一致の選択を見せるため（ADR 0023 の決定 4）。 */
     DWORD style = WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | ES_MULTILINE | ES_READONLY |
                   ES_AUTOVSCROLL | ES_NOHIDESEL | WS_VSCROLL | ES_DISABLENOSCROLL;
     pane->handle =
         CreateWindowExW(0, class_name, L"", style, 0, 0, 0, 0, parent,
                         (HMENU)(INT_PTR)note_pane_control_id, GetModuleHandleW(nullptr), nullptr);
-    if (pane->handle == nullptr || !subclass_pane(pane) || !prepare_navigation(pane))
+    if (pane->handle == nullptr || !subclass_pane(pane) || !prepare_navigation(pane) ||
+        !extend_background(pane))
     {
         note_pane_destroy(pane);
         return NOTE_PANE_NOT_CREATED;

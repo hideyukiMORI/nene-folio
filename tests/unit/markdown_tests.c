@@ -46,98 +46,107 @@ static void expect_body(const char *_Nonnull markdown, const char *_Nonnull expe
 static void verify_paragraphs(void)
 {
     expect_body("", "");
-    expect_body("hello", "\\pard\\sa160\\sl300\\slmult1\\cf1 hello\\par\n");
-    expect_body("one\ntwo\n\nthree\n", "\\pard\\sa160\\sl300\\slmult1\\cf1 one "
-                                       "two\\par\n\\pard\\sa160\\sl300\\slmult1\\cf1 three\\par\n");
-    expect_body("a\r\nb\r\n", "\\pard\\sa160\\sl300\\slmult1\\cf1 a b\\par\n");
+    expect_body("hello", "\\pard\\sa80\\sl240\\slmult1\\cf1 hello\\par\n");
+    expect_body("one\ntwo\n\nthree\n", "\\pard\\sa80\\sl240\\slmult1\\cf1 one "
+                                       "two\\par\n\\pard\\sa80\\sl240\\slmult1\\cf1 three\\par\n");
+    expect_body("a\r\nb\r\n", "\\pard\\sa80\\sl240\\slmult1\\cf1 a b\\par\n");
     expect_body("  \n\t\n", "");
-    expect_body("x \\ { }", "\\pard\\sa160\\sl300\\slmult1\\cf1 x \\\\ \\{ \\}\\par\n");
+    expect_body("x \\ { }", "\\pard\\sa80\\sl240\\slmult1\\cf1 x \\\\ \\{ \\}\\par\n");
 }
 
 static void verify_unicode(void)
 {
     expect_body("\xE6\x97\xA5\xE6\x9C\xAC",
-                "\\pard\\sa160\\sl300\\slmult1\\cf1 \xE6\x97\xA5\xE6\x9C\xAC\\par\n");
-    expect_body("\xC3\xA9", "\\pard\\sa160\\sl300\\slmult1\\cf1 \xC3\xA9\\par\n");
-    expect_body("\xEF\xBF\xBD", "\\pard\\sa160\\sl300\\slmult1\\cf1 \xEF\xBF\xBD\\par\n");
-    expect_body("\xF0\x9F\x98\x80", "\\pard\\sa160\\sl300\\slmult1\\cf1 \xF0\x9F\x98\x80\\par\n");
-    expect_body("A\xEF\xBF\xBD\vB", "\\pard\\sa160\\sl300\\slmult1\\cf1 A\xEF\xBF\xBD\vB\\par\n");
+                "\\pard\\sa80\\sl240\\slmult1\\cf1 \xE6\x97\xA5\xE6\x9C\xAC\\par\n");
+    expect_body("\xC3\xA9", "\\pard\\sa80\\sl240\\slmult1\\cf1 \xC3\xA9\\par\n");
+    expect_body("\xEF\xBF\xBD", "\\pard\\sa80\\sl240\\slmult1\\cf1 \xEF\xBF\xBD\\par\n");
+    expect_body("\xF0\x9F\x98\x80", "\\pard\\sa80\\sl240\\slmult1\\cf1 \xF0\x9F\x98\x80\\par\n");
+    expect_body("A\xEF\xBF\xBD\vB", "\\pard\\sa80\\sl240\\slmult1\\cf1 A\xEF\xBF\xBD\vB\\par\n");
     expect_body(
         "`{\xEF\xBF\xBD}\\`",
-        "\\pard\\sa160\\sl300\\slmult1\\cf1 {\\f1\\fs20\\cf4 \\{\xEF\xBF\xBD\\}\\\\}\\par\n");
+        "\\pard\\sa80\\sl240\\slmult1\\cf1 {\\f1\\fs20\\cf4 \\{\xEF\xBF\xBD\\}\\\\}\\par\n");
 }
 
 static void verify_headings(void)
 {
-    expect_body("# Title", "\\pard\\sb280\\sa120\\b\\cf2\\fs44 Title\\b0\\cf1\\fs22\\par\n");
-    expect_body("## Sub", "\\pard\\sb280\\sa120\\b\\cf2\\fs34 Sub\\b0\\cf1\\fs22\\par\n");
-    expect_body("###### Six", "\\pard\\sb280\\sa120\\b\\cf2\\fs22 Six\\b0\\cf1\\fs22\\par\n");
-    expect_body("####### Seven", "\\pard\\sa160\\sl300\\slmult1\\cf1 ####### Seven\\par\n");
-    expect_body("#NoSpace", "\\pard\\sa160\\sl300\\slmult1\\cf1 #NoSpace\\par\n");
-    expect_body("##", "\\pard\\sa160\\sl300\\slmult1\\cf1 ##\\par\n");
-    expect_body("# *Em*", "\\pard\\sb280\\sa120\\b\\cf2\\fs44 \\i Em\\i0 \\b0\\cf1\\fs22\\par\n");
+    expect_body("# Title", "\\pard\\sb200\\sa80\\b\\cf2\\fs44 Title\\b0\\cf1\\fs22\\par\n");
+    expect_body("## Sub", "\\pard\\sb200\\sa80\\b\\cf2\\fs34 Sub\\b0\\cf1\\fs22\\par\n");
+    expect_body("### Third", "\\pard\\sb200\\sa80\\b\\cf2\\fs28 Third\\b0\\cf1\\fs22\\par\n");
+    expect_body("#### Four", "\\pard\\sb160\\sa60\\b0\\cf2\\fs22 Four\\b0\\cf1\\fs22\\par\n");
+    expect_body("##### Five", "\\pard\\sb160\\sa60\\b0\\cf2\\fs22 Five\\b0\\cf1\\fs22\\par\n");
+    expect_body("###### Six", "\\pard\\sb160\\sa60\\b0\\cf2\\fs22 Six\\b0\\cf1\\fs22\\par\n");
+    expect_body("####### Seven", "\\pard\\sa80\\sl240\\slmult1\\cf1 ####### Seven\\par\n");
+    expect_body("#NoSpace", "\\pard\\sa80\\sl240\\slmult1\\cf1 #NoSpace\\par\n");
+    expect_body("##", "\\pard\\sa80\\sl240\\slmult1\\cf1 ##\\par\n");
+    expect_body("# *Em*", "\\pard\\sb200\\sa80\\b\\cf2\\fs44 \\i Em\\i0 \\b0\\cf1\\fs22\\par\n");
 }
 
 static void verify_emphasis(void)
 {
-    expect_body("**bold** text", "\\pard\\sa160\\sl300\\slmult1\\cf1 \\b bold\\b0  text\\par\n");
-    expect_body("__bold__", "\\pard\\sa160\\sl300\\slmult1\\cf1 \\b bold\\b0 \\par\n");
+    expect_body("**bold** text", "\\pard\\sa80\\sl240\\slmult1\\cf1 \\b bold\\b0  text\\par\n");
+    expect_body("__bold__", "\\pard\\sa80\\sl240\\slmult1\\cf1 \\b bold\\b0 \\par\n");
     expect_body("*em* and _em_",
-                "\\pard\\sa160\\sl300\\slmult1\\cf1 \\i em\\i0  and \\i em\\i0 \\par\n");
-    expect_body("snake_case_name", "\\pard\\sa160\\sl300\\slmult1\\cf1 snake_case_name\\par\n");
-    expect_body("**unclosed", "\\pard\\sa160\\sl300\\slmult1\\cf1 \\b unclosed\\b0 \\par\n");
-    expect_body("*open", "\\pard\\sa160\\sl300\\slmult1\\cf1 \\i open\\i0 \\par\n");
-    expect_body("\\*literal\\*", "\\pard\\sa160\\sl300\\slmult1\\cf1 *literal*\\par\n");
-    expect_body("trailing\\", "\\pard\\sa160\\sl300\\slmult1\\cf1 trailing\\\\\\par\n");
-    expect_body("A_B 1_2 x_9 Z_z", "\\pard\\sa160\\sl300\\slmult1\\cf1 A_B 1_2 x_9 Z_z\\par\n");
+                "\\pard\\sa80\\sl240\\slmult1\\cf1 \\i em\\i0  and \\i em\\i0 \\par\n");
+    expect_body("snake_case_name", "\\pard\\sa80\\sl240\\slmult1\\cf1 snake_case_name\\par\n");
+    expect_body("**unclosed", "\\pard\\sa80\\sl240\\slmult1\\cf1 \\b unclosed\\b0 \\par\n");
+    expect_body("*open", "\\pard\\sa80\\sl240\\slmult1\\cf1 \\i open\\i0 \\par\n");
+    expect_body("\\*literal\\*", "\\pard\\sa80\\sl240\\slmult1\\cf1 *literal*\\par\n");
+    expect_body("trailing\\", "\\pard\\sa80\\sl240\\slmult1\\cf1 trailing\\\\\\par\n");
+    expect_body("A_B 1_2 x_9 Z_z", "\\pard\\sa80\\sl240\\slmult1\\cf1 A_B 1_2 x_9 Z_z\\par\n");
     expect_body("\\~ \\@ \\[x] \\{ \\a",
-                "\\pard\\sa160\\sl300\\slmult1\\cf1 ~ @ [x] \\{ \\\\a\\par\n");
-    expect_body("a\rb", "\\pard\\sa160\\sl300\\slmult1\\cf1 ab\\par\n");
+                "\\pard\\sa80\\sl240\\slmult1\\cf1 ~ @ [x] \\{ \\\\a\\par\n");
+    expect_body("a\rb", "\\pard\\sa80\\sl240\\slmult1\\cf1 ab\\par\n");
 }
 
 static void verify_code(void)
 {
-    expect_body("use `x_y` here", "\\pard\\sa160\\sl300\\slmult1\\cf1 use "
+    expect_body("use `x_y` here", "\\pard\\sa80\\sl240\\slmult1\\cf1 use "
                                   "{\\f1\\fs20\\cf4 x_y} here\\par\n");
-    expect_body("`unclosed", "\\pard\\sa160\\sl300\\slmult1\\cf1 `unclosed\\par\n");
+    expect_body("`unclosed", "\\pard\\sa80\\sl240\\slmult1\\cf1 `unclosed\\par\n");
     expect_body(
         "```\nint a;\n\n  b\n```\nafter",
-        "\\pard\\li240\\sa40\\f1\\fs20\\cf5\\highlight6 int a;\\highlight0\\f0\\fs22\\cf1\\par\n"
-        "\\pard\\li240\\sa40\\f1\\fs20\\cf5\\highlight6 \\highlight0\\f0\\fs22\\cf1\\par\n"
-        "\\pard\\li240\\sa40\\f1\\fs20\\cf5\\highlight6   b\\highlight0\\f0\\fs22\\cf1\\par\n"
-        "\\pard\\sa160\\sl300\\slmult1\\cf1 after\\par\n");
-    expect_body(
-        "```c\n*raw*\n",
-        "\\pard\\li240\\sa40\\f1\\fs20\\cf5\\highlight6 *raw*\\highlight0\\f0\\fs22\\cf1\\par\n");
-    expect_body(
-        "text\n```\ncode\n```",
-        "\\pard\\sa160\\sl300\\slmult1\\cf1 text\\par\n"
-        "\\pard\\li240\\sa40\\f1\\fs20\\cf5\\highlight6 code\\highlight0\\f0\\fs22\\cf1\\par\n");
+        "{\\f1\\fs20\\cf5\\highlight6\\pard\\li180\\ri180\\sb120\\sa0\\sl240\\slmult1 int a;\\par\n"
+        "\\pard\\li180\\ri180\\sb0\\sa0\\sl240\\slmult1 \\par\n"
+        "\\pard\\li180\\ri180\\sb0\\sa0\\sl240\\slmult1   b\\sa120\\par\n}"
+        "\\pard\\sa80\\sl240\\slmult1\\cf1 after\\par\n");
+    expect_body("```c\n*raw*\n", "{\\f1\\fs20\\cf5\\highlight6\\pard\\li180\\ri180\\sb120\\sa0\\sl2"
+                                 "40\\slmult1 *raw*\\sa120\\par\n}");
+    expect_body("text\n```\ncode\n```", "\\pard\\sa80\\sl240\\slmult1\\cf1 text\\par\n"
+                                        "{\\f1\\fs20\\cf5\\highlight6\\pard\\li180\\ri180\\sb120\\s"
+                                        "a0\\sl240\\slmult1 code\\sa120\\par\n}");
+    expect_body("```\n```", "{\\f1\\fs20\\cf5\\highlight6}");
+    expect_body("```", "{\\f1\\fs20\\cf5\\highlight6}");
+    expect_body("```\n\n```", "{\\f1\\fs20\\cf5\\highlight6\\pard\\li180\\ri180\\sb120\\sa0\\sl240"
+                              "\\slmult1 \\sa120\\par\n}");
+    expect_body("```\na\n```\n```\nb\n```", "{\\f1\\fs20\\cf5\\highlight6\\pard\\li180\\ri180\\sb12"
+                                            "0\\sa0\\sl240\\slmult1 a\\sa120\\par\n}"
+                                            "{\\f1\\fs20\\cf5\\highlight6\\pard\\li180\\ri180\\sb12"
+                                            "0\\sa0\\sl240\\slmult1 b\\sa120\\par\n}");
 }
 
 static void verify_lists_quotes_links(void)
 {
     expect_body("- one\n* two\n+ three",
-                "\\pard\\li440\\fi-220\\sa80\\sl300\\slmult1\\cf1\\bullet\\tab one\\par\n"
-                "\\pard\\li440\\fi-220\\sa80\\sl300\\slmult1\\cf1\\bullet\\tab two\\par\n"
-                "\\pard\\li440\\fi-220\\sa80\\sl300\\slmult1\\cf1\\bullet\\tab three\\par\n");
+                "\\pard\\li440\\fi-220\\sa40\\sl240\\slmult1\\cf1\\bullet\\tab one\\par\n"
+                "\\pard\\li440\\fi-220\\sa40\\sl240\\slmult1\\cf1\\bullet\\tab two\\par\n"
+                "\\pard\\li440\\fi-220\\sa40\\sl240\\slmult1\\cf1\\bullet\\tab three\\par\n");
     expect_body("1. first\n12. twelfth",
-                "\\pard\\li440\\fi-220\\sa80\\sl300\\slmult1\\cf1 1.\\tab first\\par\n"
-                "\\pard\\li440\\fi-220\\sa80\\sl300\\slmult1\\cf1 12.\\tab twelfth\\par\n");
-    expect_body("1.nospace", "\\pard\\sa160\\sl300\\slmult1\\cf1 1.nospace\\par\n");
-    expect_body("1.", "\\pard\\sa160\\sl300\\slmult1\\cf1 1.\\par\n");
-    expect_body("12x", "\\pard\\sa160\\sl300\\slmult1\\cf1 12x\\par\n");
-    expect_body("-dash", "\\pard\\sa160\\sl300\\slmult1\\cf1 -dash\\par\n");
-    expect_body("> quoted\n>bare", "\\pard\\li480\\sa100\\sl300\\slmult1\\cf3 quoted\\cf1\\par\n"
-                                   "\\pard\\li480\\sa100\\sl300\\slmult1\\cf3 bare\\cf1\\par\n");
+                "\\pard\\li440\\fi-220\\sa40\\sl240\\slmult1\\cf1 1.\\tab first\\par\n"
+                "\\pard\\li440\\fi-220\\sa40\\sl240\\slmult1\\cf1 12.\\tab twelfth\\par\n");
+    expect_body("1.nospace", "\\pard\\sa80\\sl240\\slmult1\\cf1 1.nospace\\par\n");
+    expect_body("1.", "\\pard\\sa80\\sl240\\slmult1\\cf1 1.\\par\n");
+    expect_body("12x", "\\pard\\sa80\\sl240\\slmult1\\cf1 12x\\par\n");
+    expect_body("-dash", "\\pard\\sa80\\sl240\\slmult1\\cf1 -dash\\par\n");
+    expect_body("> quoted\n>bare", "\\pard\\li480\\sa80\\sl240\\slmult1\\cf3 quoted\\cf1\\par\n"
+                                   "\\pard\\li480\\sa80\\sl240\\slmult1\\cf3 bare\\cf1\\par\n");
     expect_body("see [docs](https://x.example/) now",
-                "\\pard\\sa160\\sl300\\slmult1\\cf1 see {\\cf4\\ul docs\\ul0} now\\par\n");
-    expect_body("[no url]", "\\pard\\sa160\\sl300\\slmult1\\cf1 [no url]\\par\n");
-    expect_body("[open](", "\\pard\\sa160\\sl300\\slmult1\\cf1 [open](\\par\n");
-    expect_body("[a]b", "\\pard\\sa160\\sl300\\slmult1\\cf1 [a]b\\par\n");
+                "\\pard\\sa80\\sl240\\slmult1\\cf1 see {\\cf4\\ul docs\\ul0} now\\par\n");
+    expect_body("[no url]", "\\pard\\sa80\\sl240\\slmult1\\cf1 [no url]\\par\n");
+    expect_body("[open](", "\\pard\\sa80\\sl240\\slmult1\\cf1 [open](\\par\n");
+    expect_body("[a]b", "\\pard\\sa80\\sl240\\slmult1\\cf1 [a]b\\par\n");
     expect_body("para\n- item",
-                "\\pard\\sa160\\sl300\\slmult1\\cf1 para\\par\n"
-                "\\pard\\li440\\fi-220\\sa80\\sl300\\slmult1\\cf1\\bullet\\tab item\\par\n");
+                "\\pard\\sa80\\sl240\\slmult1\\cf1 para\\par\n"
+                "\\pard\\li440\\fi-220\\sa40\\sl240\\slmult1\\cf1\\bullet\\tab item\\par\n");
 }
 
 static void verify_note_text(void)
