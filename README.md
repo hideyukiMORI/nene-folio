@@ -2,15 +2,16 @@
 
 A frameless Markdown notebook for Windows with a category drawer. Plain C (C23), Win32, no UI library.
 
-> **Status (2026-10-25):** [v0.2.0 is available as a beta release](https://github.com/hideyukiMORI/nene-folio/releases/tag/v0.2.0)
-> for Windows x64. It views and edits notes, keeps a short
+> **Status (2026-10-27):** v0.3.0 beta for Windows x64.
+> [Release page and assets](https://github.com/hideyukiMORI/nene-folio/releases/tag/v0.3.0).
+> It views and edits notes, keeps a short
 > history of every save, searches, filters, replaces, and manages categories, with settings for theme,
-> language and line numbers. Download `NeNeFolio-0.2.0-win-x64.zip` and `SHA256SUMS` from the release's Assets.
+> language and line numbers. Download `NeNeFolio-0.3.0-win-x64.zip` and `SHA256SUMS` from the release's Assets.
 > Run `NeNeFolio.exe` after extracting the whole package. The portable beta is unsigned.
 > It starts with no `data/` folder; saved notes and settings stay next to the executable.
 
-[Download Windows x64 ZIP](https://github.com/hideyukiMORI/nene-folio/releases/download/v0.2.0/NeNeFolio-0.2.0-win-x64.zip)
-· [SHA256SUMS](https://github.com/hideyukiMORI/nene-folio/releases/download/v0.2.0/SHA256SUMS)
+[Download Windows x64 ZIP](https://github.com/hideyukiMORI/nene-folio/releases/download/v0.3.0/NeNeFolio-0.3.0-win-x64.zip)
+· [SHA256SUMS](https://github.com/hideyukiMORI/nene-folio/releases/download/v0.3.0/SHA256SUMS)
 · Windows 10 version 2004 or later
 
 ![NeNe Folio 0.2.0 showing categories and a rendered Markdown note](docs/images/0.2.0-main.png)
@@ -19,10 +20,10 @@ v0.2.0 with the Japanese UI, Light theme, and sample notes.
 
 ## What it does
 
-The [0.2.0 beta release notes](docs/release/0.2.0.md) cover the settings dialog, category creation,
-**List / Both / Note** views, theme previews, note zoom, and search responsiveness improvements.
-They also include update instructions and known limitations. The [publication checks](docs/quality/2026-10-25-beta-release.md)
-record the package validation, saved-data check, and download verification.
+The [0.3.0 beta release notes](docs/release/0.3.0.md) cover working note-wheel scrolling,
+more compact Markdown spacing and code blocks, and the added syntax below.
+They include update instructions and known limitations. The [release checks](docs/quality/2026-10-27-beta-release.md)
+track package validation, saved-data checks, publication, and download verification.
 
 - **A borderless window** with a drawer on the left and a Markdown view/editor on the right. It follows
   the OS light/dark theme (or a fixed one) and Per-Monitor v2 DPI.
@@ -39,9 +40,9 @@ record the package validation, saved-data check, and download verification.
   pane; Ctrl+S writes the file back atomically, keeps the original line endings, and writes nothing when
   the text is unchanged. The body just before each save is kept as `data/.history/<category>/<note>/1.md`
   … `5.md`, and any version can be restored into the editor as an undoable edit.
-  The source version also supports tables, nested lists and quotes, task lists, strikethrough,
-  thematic breaks, and explicit line breaks. See [Markdown syntax and limits](docs/MARKDOWN.md) (Japanese).
-  These additions are not included in the already-published 0.2.0 ZIP.
+  The 0.3.0 beta supports tables, nested lists and quotes, task lists, strikethrough,
+  thematic breaks, setext headings, explicit line breaks, and longer code delimiters.
+  See [Markdown syntax and limits](docs/MARKDOWN.md) (Japanese).
 - **Note zoom**: Ctrl+wheel or Ctrl++ / Ctrl+- changes the display from 50% to 300%; Ctrl+0 restores 100%.
   Read and Edit share the zoom while the app runs, and line numbers follow it. Note contents stay unchanged.
 - **Notes**: new untitled note with a first save, save as, rename (recoverable across restarts through
