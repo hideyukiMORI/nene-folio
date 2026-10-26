@@ -1,45 +1,31 @@
 # いまの状態 — NeNe Folio
 
-記録日: 2026-10-27。v0.2.0をGitHubのβ版として公開済み。Markdown表示の調整に続き、一般的な構文を追加した。
-再開時は最新のhide指示、Issue / PR、checkoutを照合し、過去の記録を新しい実行許可として扱わない。
+記録日: 2026-10-27。hideの実機サンプル受理と「ベータ版更新しておいて」に基づき、
+[#398](https://github.com/hideyukiMORI/nene-folio/issues/398)でv0.3.0 betaの更新を準備している。
+統合・配布生成・公開・再取得・整理の確定値は、実際のIssue/PR/Releaseと
+`D:/NeNeFolio/agents/beta-release-20261027/completion.json`を照合する。ここでは公開実行済みとは扱わない。
+再開時は最新のhide指示とcheckoutも照合し、過去の記録を新しい実行許可として扱わない。
 
-## 直近の実装: Markdownの基本構文と表
+## 今回の焦点: v0.3.0 beta
 
-hideの構文拡張依頼を[#396](https://github.com/hideyukiMORI/nene-folio/issues/396)で扱った。
-対象は表、入れ子リスト/引用、task、strike、水平区切り、setext、明示改行、fence/code spanの区切り。
-設計は[ADR0070](../adr/0070-markdown-syntax-and-native-tables.md)、利用者向け範囲は[Markdownの書き方](../MARKDOWN.md)。
-対象build/tidy/unitと26箇所の確保失敗注入が成功した。実製品nativeの初回221件中218成功と、
-字下げoracle訂正後の対象37件成功を合わせて受理した。画像、原文保持、表内/表後の検索・幅/倍率・失敗回復も確認した。
-詳細と限界は[品質記録](../quality/2026-10-26-markdown-syntax.md)。最終head CI・main統合・通常exe反映・整理の確定値は
-実際のIssue/PRと`D:/NeNeFolio/agents/markdown-syntax-20261026/completion.json`を照合する。
-追加作業木は`D:/NeNeFolio/worktrees/396-markdown-syntax`。統合/反映/恒久保管後に同taskの一時出力とともに整理する。
-公開済みv0.2.0 ZIPは更新対象外。生成関数の型付き失敗とUI内部reflow入口を加え、保存schema・設定・依存・gateは変更していない。
+唯一のruntime版入力`CMakeLists.txt`のproject VERSIONを0.3.0へ更新する。
+[変更履歴と更新手順](../release/0.3.0.md)、[Markdownの対応範囲](../MARKDOWN.md)、
+[配布確認の計画と結果](../quality/2026-10-27-beta-release.md)を参照する。
+最終PR headの必須CI後、clean mainから正規配布器でRelease ZIPを生成し、専用の展開先で起動・版表示・
+合成データの更新を確認する。tag/Release公開と再取得照合、成果物保全・安全整理は設計サナが担当する。
+公開済みv0.2.0のReleaseと旧release文書は置き換えない。署名・インストーラ・Store申請・自動更新は対象外。
 
-## 直近の修正: Markdown閲覧の密度・小見出し・コード面
+v0.3.0は#392のホイール修正、#394の表示密度/小見出し/コード面、#396の基本構文とnative表を含む。
+既存機能の入力不変な成功結果は[ホイール](../quality/2026-10-26-view-wheel.md)、
+[表示調整](../quality/2026-10-26-markdown-style.md)、[構文](../quality/2026-10-26-markdown-syntax.md)から再利用する。
+#396は[PR #397](https://github.com/hideyukiMORI/nene-folio/pull/397)をmain `063f5bab`へ統合し、必須CIと通常exe反映・
+恒久保管・追加worktree/出力整理を完了した。確定値は`D:/NeNeFolio/agents/markdown-syntax-20261026/completion.json`。
+list内quoteから親list継続へ戻る組合せ、表63列、装飾リンク等の制限は利用者向け文書に明記している。
 
-[#394](https://github.com/hideyukiMORI/nene-folio/issues/394)で、hideの実機確認後の表示調整を行った。
-本文の行と段落の余白を詰め、h4以降を本文と同じ11pt・通常weight・見出し色へ揃える。
-コードブロックはnativeの背景拡張で空行もつながる面とし、文字・改行・検索/コピー位置を変えない。
-設計は[ADR0069](../adr/0069-markdown-reading-density-and-code-surface.md)。実装・対象検証・画像確認を完了した。
-実製品の初回257件中255成功と、背景測定修正後の関連138件成功を組み合わせて受理した。
-確認範囲と測定修正の根拠は[品質記録](../quality/2026-10-26-markdown-style.md)を参照する。
-最終headの必須CI・統合・通常exe反映・整理の確定値は実際のPRと証跡の`completion.json`を照合する。
-[PR #395](https://github.com/hideyukiMORI/nene-folio/pull/395)をmain `cfbff7c`へ統合し、最終head CIと通常exe更新を完了した。
-証跡は`D:/NeNeFolio/agents/markdown-style-20261026/`。187ファイルを保管・全件照合し、追加worktreeと一時出力は削除済み。
-branch/commitは保持した。通常exeは22:55 JSTに更新し、自動起動していない。
-
-## 直近の修正: 本文の通常ホイール配送とnativeスクロール
-
-[#392](https://github.com/hideyukiMORI/nene-folio/issues/392) / [PR #393](https://github.com/hideyukiMORI/nene-folio/pull/393)で、
-主窓から本文への通常ホイール配送と、本文クリック後もnativeが動かない生成設定を修正した。
-バーの外観は隠したままnativeのスクロール能力を保ち、本文・倍率・focusの所有は維持する。
-最終実製品197 checks / 0 failures、native64 checks / 0 failures、配送106 checksは再利用。
-根拠と確認範囲は[品質記録](../quality/2026-10-26-view-wheel.md)、再開情報は[引き継ぎ](../handoffs/2026-10-26.md)。
-PR #393はmain `5e7205b`へ統合し、最終head CI成功・通常exe更新まで完了した。
-hideがその通常exeを実機試験し、スクロールと拡大縮小の成功を報告した。自動検証の結果とは区別して記録する。
-確定したCI・統合・通常exe反映・整理は実際のPRと`D:/NeNeFolio/agents/view-wheel-20261026/completion.json`を照合する。
-公開済みのv0.2.0 ZIPにはこの修正を含めない。物理ホイールによる実スクロールと専用desktopでの合成入力検証を区別する。
-途中のGUI操作はhideの停止操作で中止した。後でhideが専用テスト窓を閉じたが、残る実行フォルダの削除は自動承認レビューに拒否され保持中。
+hide確認用の合成サンプルを通常`data/サンプル/Markdown構文サンプル.md`へ作成し、hideが表示を受理した。
+通常アプリPID56180は稼働中として引き継ぎ、操作・終了・exe上書きをしない。通常dataを配布物に含めない。
+保存schema・設定・gate・packaging仕様は今回変更しない。現在の配布手順は[workflow§9](../DEVELOPMENT_WORKFLOW.md#9-リリース)と
+[ADR0045](../adr/0045-single-version-and-verified-release-bundle.md)。日付付き経緯は[日報](../reports/2026-10-27.md)と[引き継ぎ](../handoffs/2026-10-27.md)。
 
 ## 次の予定: ノートの保存先設定（未実装）
 
@@ -50,31 +36,13 @@ portable版はexe隣の`data`を既定とし、両方とも設定から「ノー
 詳細と次回の設計事項は[引き継ぎの保存先計画](../handoffs/2026-10-25.md#store-data-directory-plan)を参照する。
 今回の依頼は引き継ぎと日報への記録まで。保存先設定・MSIX作成・Store申請は未着手で、実装開始はその時点のhide指示と照合する。
 
-## 公開状態
+## 継続する確認範囲
 
-- [v0.2.0 Beta](https://github.com/hideyukiMORI/nene-folio/releases/tag/v0.2.0)を23:19 JSTに公開。
-  Windows x64向けの署名なしportable ZIPとSHA256SUMSを添付し、公開後の再取得一致を確認した。
-- tagの対象はclean main `3bc46969564b9422cbc8f49230cb815a3103f704`。
-  treeが一致するPR #387最終headの[必須CI](https://github.com/hideyukiMORI/nene-folio/actions/runs/40199179102)は成功。
-  今回の公開・README画像・文書更新は[#388](https://github.com/hideyukiMORI/nene-folio/issues/388)へ追跡する。
-- [変更履歴と更新手順](../release/0.2.0.md)、[配布・起動・保存・旧版データ・再取得の品質記録](../quality/2026-10-25-beta-release.md)を更新。
-  [README](../../README.md)の画面は、実際のv0.2.0配布exeをサンプルノートで起動して撮影したもの。
-- β公開では製品コード・版入力・保存schemaを変更していない。公開時点の通常exe
-  `C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`は#369統合commit `6a294697c804de15e30e06e0a9507369906a9bf3`
-  から10月25日22:31 JSTに更新したもの。その後の#392反映は上記の完了記録で確認する。
-- 公開証跡と配布物の恒久コピーは`D:/NeNeFolio/agents/beta-release-20261025/`。
-  `published-release.json`、`download-verification.json`、`published-assets/`が確定公開物の根拠。
-  文書PRのCI・整理の確定結果は同所の`completion.json`を参照する。作業branch / commitは保持する。
-- #369の追加worktree / 一時出力は削除済み。恒久証跡は`D:/NeNeFolio/agents/first-search-20261025/`。
-  当日の経緯は[日報](../reports/2026-10-25.md)と[引き継ぎ](../handoffs/2026-10-25.md)を参照する。
-
-## 未確認事項と次の判断
-
-- 物理IME、人によるreader聴取、DWM呈示は今回の配布確認に含めていない。専用desktopの合成入力/描画確認と区別する。
-- 初回全ノート検索は準備中も入力・描画を処理するが、一件分の重いI/O / UTF-8検証 / 写し作成と、最後の一致計算は同期処理のまま。
-  入力が続くと準備完了が遅れる。条件と実測は[検索品質記録](../quality/2026-10-25-first-search-responsiveness.md)を参照する。
-- Microsoft Store公開、署名、インストーラ、自動更新は今回のβ公開に含めていない。次の作業はhideの指示と実際のIssue / PRを起点にする。
-- 下記の旧作業物は削除拒否のため保持している。今回も再試行しない。
+- 大量ノートの初回検索には同期処理と準備待ちが残る。[検索品質記録](../quality/2026-10-25-first-search-responsiveness.md)を参照する。
+- 専用desktopの合成入力/描画確認と、物理IME・人によるreader聴取・DWM実画面呈示は区別する。
+- 今回の作業木は`D:/NeNeFolio/worktrees/398-beta-030`。恒久証跡は`D:/NeNeFolio/agents/beta-release-20261027/`。
+  設計サナが統合・必要反映・収載後に稼働参照/未保存物/唯一成果物/リンクを監査して整理する。branch/commitは保持する。
+- 下記の削除拒否済み作業物は今回も再試行しない。
 
 ## 保持中の旧作業物
 
