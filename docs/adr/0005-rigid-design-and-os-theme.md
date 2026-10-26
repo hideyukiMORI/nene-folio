@@ -52,6 +52,12 @@
 - Windows 10 では角が四角く、縁の色も付かない
 - 高 DPI・複数モニタでのフォントと字間は 96 DPI でしか見ていない
 
+## 2026-10-26 の補正（#394 — 閲覧の密度とコード面）
+
+閲覧本文の行送り・段落余白とh4以降の階層は[ADR0069](0069-markdown-reading-density-and-code-surface.md)へ揃える。
+fenced codeは同じRichEditの`SES_EXTENDBACKCOLOR`と段落記号を含むhighlightにより、空行もつながる背景面とする。
+段落罫線/shadingを描かない制約は維持し、表・別renderer・自前背景描画は加えない。インラインコードは従来どおり色と等幅だけとする。
+
 ## 却下した選択肢
 
 | 選択肢 | 却下の理由 |

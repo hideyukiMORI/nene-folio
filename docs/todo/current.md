@@ -1,7 +1,19 @@
 # いまの状態 — NeNe Folio
 
-記録日: 2026-10-26。v0.2.0をGitHubのβ版として公開済み。直近の修正は本文の通常ホイール配送とnativeスクロール。
+記録日: 2026-10-26。v0.2.0をGitHubのβ版として公開済み。本文ホイールの修正に続き、Markdown閲覧の表示を調整した。
 再開時は最新のhide指示、Issue / PR、checkoutを照合し、過去の記録を新しい実行許可として扱わない。
+
+## 直近の修正: Markdown閲覧の密度・小見出し・コード面
+
+[#394](https://github.com/hideyukiMORI/nene-folio/issues/394)で、hideの実機確認後の表示調整を行った。
+本文の行と段落の余白を詰め、h4以降を本文と同じ11pt・通常weight・見出し色へ揃える。
+コードブロックはnativeの背景拡張で空行もつながる面とし、文字・改行・検索/コピー位置を変えない。
+設計は[ADR0069](../adr/0069-markdown-reading-density-and-code-surface.md)。実装・対象検証・画像確認を完了した。
+実製品の初回257件中255成功と、背景測定修正後の関連138件成功を組み合わせて受理した。
+確認範囲と測定修正の根拠は[品質記録](../quality/2026-10-26-markdown-style.md)を参照する。
+最終headの必須CI・統合・通常exe反映・整理の確定値は実際のPRと証跡の`completion.json`を照合する。
+作業木は`D:/NeNeFolio/worktrees/394-markdown-style`、証跡は`D:/NeNeFolio/agents/markdown-style-20261026/`。
+通常アプリは22:44 JSTに終了を確認した。更新時も稼働を再確認し、開いていれば自動終了せずexe反映を待つ。
 
 ## 直近の修正: 本文の通常ホイール配送とnativeスクロール
 
@@ -10,9 +22,11 @@
 バーの外観は隠したままnativeのスクロール能力を保ち、本文・倍率・focusの所有は維持する。
 最終実製品197 checks / 0 failures、native64 checks / 0 failures、配送106 checksは再利用。
 根拠と確認範囲は[品質記録](../quality/2026-10-26-view-wheel.md)、再開情報は[引き継ぎ](../handoffs/2026-10-26.md)。
-最終PRの必須CI・統合・通常exe反映・整理は実際のPRと`D:/NeNeFolio/agents/view-wheel-20261026/completion.json`を照合する。
+PR #393はmain `5e7205b`へ統合し、最終head CI成功・通常exe更新まで完了した。
+hideがその通常exeを実機試験し、スクロールと拡大縮小の成功を報告した。自動検証の結果とは区別して記録する。
+確定したCI・統合・通常exe反映・整理は実際のPRと`D:/NeNeFolio/agents/view-wheel-20261026/completion.json`を照合する。
 公開済みのv0.2.0 ZIPにはこの修正を含めない。物理ホイールによる実スクロールと専用desktopでの合成入力検証を区別する。
-途中のGUI操作はhideの停止操作で中止済み。専用テスト窓の稼働参照がある一時出力は保持し、確定状態は完了記録に残す。
+途中のGUI操作はhideの停止操作で中止した。後でhideが専用テスト窓を閉じたが、残る実行フォルダの削除は自動承認レビューに拒否され保持中。
 
 ## 次の予定: ノートの保存先設定（未実装）
 
@@ -51,8 +65,9 @@ portable版はexe隣の`data`を既定とし、両方とも設定から「ノー
 
 ## 保持中の旧作業物
 
-下記の13箇所は過去の自動承認レビューが削除を拒否したため未削除。再試行や別手段での削除をしない。
+下記の14箇所は自動承認レビューが削除を拒否したため未削除。再試行や別手段での削除をしない。
 
+- #392: `D:/NeNeFolio/outputs/view-wheel-20261026`（残るのは`runtime`。窓終了後の22ファイルも保管・照合済みだが、削除要求は`blocked by policy`で拒否）。
 - #368: `D:/NeNeFolio/worktrees/368-ui-latency`、`D:/NeNeFolio/outputs/performance-20261024`。
 - #373: `D:/NeNeFolio/worktrees/373-gui-responsiveness`、`D:/NeNeFolio/outputs/gui-responsiveness-20261025`。
 - `D:/NeNeFolio/outputs/`配下の9箇所:
