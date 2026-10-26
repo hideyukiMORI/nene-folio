@@ -8496,13 +8496,15 @@ static LRESULT on_notify(struct folio_window *_Nonnull self, LPARAM lparam)
     return 0;
 }
 
-static bool forward_body_zoom(const struct folio_window *_Nonnull self, WPARAM keys,
-                              LPARAM position)
+static bool forward_body_wheel(const struct folio_window *_Nonnull self, WPARAM keys,
+                               LPARAM position)
 {
-    if ((GET_KEYSTATE_WPARAM(keys) & MK_CONTROL) == 0 || self->pane == nullptr ||
-        !pane_visible(self))
+    if (self->pane == nullptr || !pane_visible(self) ||
+        note_pane_readiness(self->pane) != NOTE_PANE_READINESS_READY)
         return false;
     HWND pane = note_pane_handle(self->pane);
+    if (!IsWindowVisible(pane) || !IsWindowEnabled(pane))
+        return false;
     RECT bounds;
     GetWindowRect(pane, &bounds);
     POINT point = {GET_X_LPARAM(position), GET_Y_LPARAM(position)};
@@ -8512,11 +8514,11 @@ static bool forward_body_zoom(const struct folio_window *_Nonnull self, WPARAM k
     return true;
 }
 
-/* 本文上のCtrl+wheelは本文へ、ドロワー上のwheelは従来の索引へ渡す。
+/* 本文上のwheelは本文へ、ドロワー上のwheelは従来の索引へ渡す。
  * lparam はスクリーン座標なので、位置を読むために OS へ問い合わせない（ARC-007）。 */
 static void forward_wheel(const struct folio_window *_Nonnull self, WPARAM wparam, LPARAM lparam)
 {
-    if (forward_body_zoom(self, wparam, lparam))
+    if (forward_body_wheel(self, wparam, lparam))
         return;
     HWND drawer = self->drawer == nullptr ? nullptr : drawer_window_handle(self->drawer);
     if (drawer == nullptr || !drawer_visible(self))

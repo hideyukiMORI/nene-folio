@@ -24,6 +24,7 @@ struct note_pane
     HACCEL _Nullable zoom_keys;
     int zoom_percent; /* 表示倍率の唯一の所有値。RTF投入がnative倍率を戻すので再適用する。 */
     int zoom_wheel_delta;
+    bool wheel_dispatching; /* nativeの親伝播が同じ本文へ戻っても二度渡さない。 */
     ITextSelection *_Nullable selection;
     char16_t *_Nullable taken; /* 最後に取り出した本文（終端付き） */
     size_t capacity;           /* taken のバイト数 */
@@ -296,6 +297,21 @@ static bool paint_background(const struct note_pane *_Nonnull pane, UINT message
     return message == WM_ERASEBKGND;
 }
 
+static LRESULT native_message(struct note_pane *_Nonnull pane, UINT message, WPARAM wparam,
+                              LPARAM lparam)
+{
+    if (message != WM_MOUSEWHEEL)
+        return CallWindowProcW(pane->original, pane->handle, message, wparam, lparam);
+    if (pane->wheel_dispatching)
+        return 0;
+    pane->wheel_dispatching = true;
+    LRESULT answer = CallWindowProcW(pane->original, pane->handle, message, wparam, lparam);
+    pane->wheel_dispatching = false;
+    /* ホイールは EN_VSCROLL を出さないので、動かしたあとで親へ知らせる（決定 4）。 */
+    SendMessageW(GetParent(pane->handle), folio_message_pane_scrolled, 0, 0);
+    return answer;
+}
+
 static LRESULT CALLBACK pane_procedure(HWND window, UINT message, WPARAM wparam, LPARAM lparam)
 {
     struct note_pane *_Nullable pane = (struct note_pane *)GetWindowLongPtrW(window, GWLP_USERDATA);
@@ -320,13 +336,7 @@ static LRESULT CALLBACK pane_procedure(HWND window, UINT message, WPARAM wparam,
     {
         pane->composing = false;
     }
-    LRESULT answer = CallWindowProcW(pane->original, window, message, wparam, lparam);
-    if (message == WM_MOUSEWHEEL)
-    {
-        /* ホイールは EN_VSCROLL を出さないので、動かしたあとで親へ知らせる（決定 4）。 */
-        SendMessageW(GetParent(window), folio_message_pane_scrolled, 0, 0);
-    }
-    return answer;
+    return native_message(pane, message, wparam, lparam);
 }
 
 static bool subclass_pane(struct note_pane *_Nonnull pane)
