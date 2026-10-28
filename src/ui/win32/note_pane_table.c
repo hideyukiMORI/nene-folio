@@ -53,7 +53,7 @@ static bool layout_row(HWND _Nonnull handle, LONG start, LONG width)
         return false;
     size_t count = row.cCell;
     for (size_t index = 0; index < count; ++index)
-        cells[index].dxWidth = width / (LONG)count + (index == count - 1 ? width % (LONG)count : 0);
+        cells[index].dxWidth = width / (LONG)count + ((LONG)index < width % (LONG)count ? 1 : 0);
     row.cRow = 1;
     row.iCell = 0;
     if ((HRESULT)SendMessageW(handle, EM_SETTABLEPARMS, (WPARAM)&row, (LPARAM)cells) != S_OK)
