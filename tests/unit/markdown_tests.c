@@ -590,6 +590,164 @@ static void verify_container_queries(void)
     markdown_containers_destroy(owner);
 }
 
+static void verify_container_style_boundaries(void)
+{
+    expect_fragment("7. ordered\n- bullet\n1. ordered again", "1.\\tab }ordered again", "8.\\tab ");
+    expect_fragment("7. first\n3) changed\n1) next", "4)\\tab }next", "8)\\tab ");
+    expect_fragment("7. parent\n   > 3. inside\n   > - bullet\n\n   resumed\n1. next",
+                    "8.\\tab }next", "4.\\tab }next");
+    expect_fragment("paragraph\n1.\nnext", "paragraph 1. next", "\\tab");
+    expect_fragment("123456789. max\n1. next", "123456790.\\tab }next", "1.\\tab }next");
+    expect_fragment("1234567890. literal", "1234567890. literal", "\\tab");
+    expect_fragment("7. # title ###  \n1. next", "}title\\b0", "title ###");
+    expect_fragment("# title###", "title###", "title\\b0");
+    expect_fragment("- [z] literal", "[z] literal", "\\u9745?");
+    expect_fragment("- [x) literal", "[x) literal", "\\u9745?");
+    expect_fragment("- [x]nospace", "[x]nospace", "\\u9745?");
+    expect_fragment("- [] literal", "[] literal", "\\u9744?");
+}
+
+static void verify_empty_owner_queries(void)
+{
+    struct markdown_containers *owner = nullptr;
+    require(markdown_containers_create(&owner) == MARKDOWN_RTF_CONVERTED, "empty query owner");
+    require(markdown_containers_indent(owner) == 0 && markdown_containers_quote_depth(owner) == 0 &&
+                !markdown_containers_in_list(owner) && !markdown_containers_task_start(owner) &&
+                markdown_containers_pending(owner) == 0,
+            "empty owner has root scope and no task or pending marker");
+    require(markdown_containers_marker_indent(owner) == 0 &&
+                markdown_containers_marker_number(owner) == 0 &&
+                markdown_containers_marker_delimiter(owner) == '.' &&
+                !markdown_containers_marker_ordered(owner),
+            "optional marker queries are safe before the first accepted item");
+    markdown_containers_consume_marker(owner);
+    struct markdown_line root = markdown_line_read("root", 4, 0);
+    require(markdown_containers_match(owner, &root) == MARKDOWN_CONTAINER_MATCH_MATCHED &&
+                root.prefix == 0,
+            "empty scope strictly matches a root line without altering its prefix");
+    require(markdown_containers_accept(owner, root, root, (enum markdown_paragraph_state)99) ==
+                    MARKDOWN_RTF_INVALID_INPUT &&
+                markdown_containers_line(owner).length == 0,
+            "invalid paragraph enum is rejected before the accepted line changes");
+    struct markdown_line invalid = {.bytes = "x", .length = 1, .content = 2};
+    require(markdown_containers_accept(owner, root, invalid, MARKDOWN_PARAGRAPH_STATE_NONE) ==
+                    MARKDOWN_RTF_INVALID_INPUT &&
+                markdown_containers_line(owner).length == 0,
+            "malformed lookahead is rejected before root scope is committed");
+    markdown_containers_destroy(owner);
+    markdown_containers_destroy(nullptr);
+}
+
+static void verify_borrowed_column_rejections(void)
+{
+    struct markdown_line line = {.bytes = "x", .length = 1, .prefix = 1};
+    require(!markdown_line_valid(line), "a consumed prefix cannot be beyond the content start");
+    line = (struct markdown_line){.bytes = "x", .length = 1, .marker = 2};
+    require(!markdown_line_valid(line), "marker bytes must fit the remaining borrowed content");
+    line = (struct markdown_line){.bytes = "x", .length = 1, .padding = 4};
+    require(!markdown_line_valid(line), "one partial tab cannot retain four virtual columns");
+    line = (struct markdown_line){.bytes = "x", .length = 1, .column = SIZE_MAX, .indent = 1};
+    require(!markdown_line_valid(line), "visual column plus remaining indent cannot overflow");
+    line = (struct markdown_line){.bytes = "x",
+                                  .length = 1,
+                                  .prefix = 1,
+                                  .content = 1,
+                                  .column = 3,
+                                  .padding = 1,
+                                  .indent = 1};
+    require(!markdown_line_valid(line), "virtual padding requires a preceding source tab");
+    line = (struct markdown_line){.bytes = "\t",
+                                  .length = 1,
+                                  .prefix = 1,
+                                  .content = 1,
+                                  .column = 2,
+                                  .padding = 2,
+                                  .indent = 1};
+    require(!markdown_line_valid(line), "virtual padding cannot exceed the remaining indent");
+    line.column = 1;
+    line.padding = 1;
+    require(!markdown_line_valid(line), "partial tab suffix must reach the physical tab stop");
+    line = markdown_line_read("  x", 3, 0);
+    require(!markdown_line_skip(&line, 3) && line.prefix == 0,
+            "column removal cannot exceed known whitespace");
+    line = (struct markdown_line){.bytes = "x", .length = 1, .indent = 1};
+    require(!markdown_line_skip(&line, 1) && line.prefix == 0,
+            "inconsistent indent metadata cannot consume a nonspace byte");
+    line = markdown_line_read("    > literal", 13, 0);
+    require(!markdown_line_quote(&line) && line.prefix == 0,
+            "four residual columns do not open a quote");
+}
+
+static void verify_borrowed_marker_rejections(void)
+{
+    struct markdown_line line = {.bytes = "x", .length = 1, .content = 2};
+    require(!markdown_line_quote(&line) && !markdown_line_enter_list(&line),
+            "quote and item consumers reject inconsistent content bounds");
+    markdown_line_list(&line);
+    require(line.marker == 0, "list classification checks bounds before looking for a marker");
+    line = markdown_line_read("plain", 5, 0);
+    require(!markdown_line_enter_list(&line), "ordinary text cannot be entered as a list item");
+    line = (struct markdown_line){.bytes = "- x", .length = 3, .marker = 1, .marker_columns = 1};
+    require(!markdown_line_enter_list(&line) && line.prefix == 0,
+            "marker padding must contain at least one column");
+    line = (struct markdown_line){.bytes = "-x", .length = 2, .marker = 1, .marker_columns = 3};
+    require(!markdown_line_enter_list(&line) && line.prefix == 0,
+            "padding metadata cannot strip the nonspace body after a marker");
+    line = (struct markdown_line){
+        .bytes = " - x", .length = 4, .content = 1, .indent = 2, .marker = 1, .marker_columns = 2};
+    require(!markdown_line_enter_list(&line) && line.prefix == 0,
+            "inconsistent marker indentation is rejected without changing the query");
+}
+
+static void verify_table_query_rejections(void)
+{
+    struct text_buffer *out = nullptr;
+    require(text_buffer_create(&out) == TEXT_BUFFER_ACCEPTED, "table rejection output");
+    struct markdown_line header_line = markdown_line_read("A | B", 5, 0);
+    struct markdown_line delimiter = markdown_line_read("-- | --", 7, 0);
+    struct markdown_line invalid = {.bytes = "x", .length = 1, .content = 2};
+    require(markdown_table_columns(invalid) == 0 && !markdown_table_delimiter(invalid) &&
+                !markdown_table_starts(invalid, delimiter) &&
+                !markdown_table_starts(header_line, invalid),
+            "borrowed table classifiers reject malformed header and delimiter queries");
+    require(markdown_table_row(out, invalid, delimiter, MARKDOWN_ROW_KIND_HEADER) ==
+                    MARKDOWN_RTF_INVALID_INPUT &&
+                markdown_table_row(out, header_line, invalid, MARKDOWN_ROW_KIND_BODY) ==
+                    MARKDOWN_RTF_INVALID_INPUT &&
+                text_buffer_length(out) == 0,
+            "native row rejects malformed queries before appending partial RTF");
+    struct text_buffer *wide = nullptr;
+    require(text_buffer_create(&wide) == TEXT_BUFFER_ACCEPTED, "native ceiling delimiter");
+    for (size_t column = 0; column < 64; ++column)
+        text_buffer_append_text(wide, "| -- ");
+    text_buffer_append_text(wide, "|");
+    delimiter = markdown_line_read(text_buffer_bytes(wide), text_buffer_length(wide), 0);
+    require(markdown_table_row(out, header_line, delimiter, MARKDOWN_ROW_KIND_HEADER) ==
+                    MARKDOWN_RTF_INVALID_INPUT &&
+                text_buffer_length(out) == 0,
+            "native row API rejects more than sixty-three columns rather than truncating");
+    text_buffer_destroy(wide);
+    text_buffer_destroy(out);
+}
+
+static void verify_nested_leaf_boundaries(void)
+{
+    expect_fragment("~~~\ncode\n~~~ \t\noutside", "\\cf1 outside", "~~~");
+    expect_fragment("~~~\ncode\n    ~~~\n~~~\noutside", "    ~~~\\sa120", "code outside");
+    expect_fragment("   ~~~\ncode\n~~~", " code\\sa120", "   code");
+    expect_fragment("> A | B\n> -- | --\n> > nested", "\\li960\\sa80", "{> nested}\\cell");
+    expect_fragment("7. parent\n   > A | B\n   > -- | --\n\n   resumed\n1. next", "8.\\tab }next",
+                    "1.\\tab }next");
+    expect_fragment("> A | B\n-- | --", "A | B", "\\trowd");
+    expect_fragment("A | B\n--x | --", "--x | --", "\\trowd");
+    struct markdown_rtf *rtf = convert_syntax("| \tA\t | B\t |\n| -- | -- |\n| \tx\t | y\t |");
+    const char *body = markdown_rtf_text(rtf);
+    require(strchr(body, '\t') == nullptr && strstr(body, "{\\b A}\\cell") != nullptr &&
+                strstr(body, "{x}\\cell") != nullptr,
+            "table cell leading and trailing tabs are trimmed as syntactic whitespace");
+    markdown_rtf_destroy(rtf);
+}
+
 static void verify_new_blocks(void)
 {
     expect_fragment("----", "\\sl-20\\slmult0\\fs2\\highlight3\\par}", "----");
@@ -801,6 +959,12 @@ void run_markdown_tests(void)
     verify_literal_container_table();
     verify_container_columns();
     verify_container_queries();
+    verify_container_style_boundaries();
+    verify_empty_owner_queries();
+    verify_borrowed_column_rejections();
+    verify_borrowed_marker_rejections();
+    verify_table_query_rejections();
+    verify_nested_leaf_boundaries();
     verify_new_blocks();
     verify_new_inline();
     verify_tables();

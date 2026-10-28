@@ -9,7 +9,10 @@
 現在は[#404](https://github.com/hideyukiMORI/nene-folio/issues/404)で、リスト内の引用から親本文へ戻る際の番号・字下げを修正する。
 [ADR0071](../adr/0071-ordered-markdown-containers.md)で順序付きの単一container owner、純粋な先読み、paragraphだけのlazy継続を受理した。
 印はquote/headingで同じ段落、code/tableと複数印の外側では専用段落にする。
-Debug build/tidy・対象unit、29箇所の確保失敗注入、実製品RTFのnative投入106 checksは成功。最終レビュー・必須CIへ進む。
+Debug build/tidy・対象unit、29箇所の確保失敗注入、実製品RTFのnative投入106 checksは成功。
+[PR #406](https://github.com/hideyukiMORI/nene-folio/pull/406)の初回CIは全unitまで成功したが、全体分岐89.82%で90%下限を満たさず失敗。
+Draftへ戻して新owner/借用行の未検証境界へ対象テストを追加し、対象build/tidy・unit・計装selectorが成功。
+製品不変でcovered分岐が51増えた。閾値・除外を維持し、新headの必須CIへ進む。
 作業木は`D:/NeNeFolio/worktrees/404-markdown-containers`、証跡は`D:/NeNeFolio/agents/404-markdown-containers/`。
 
 CR改行の[#402 / PR #403](https://github.com/hideyukiMORI/nene-folio/pull/403)は最終head必須CI成功後、main `5c1240e`へ統合し通常exeへ反映済み。
@@ -23,6 +26,7 @@ idle一致計算や背景I/Oの設計案は比較段階であり、製品採用�
 引用内表のnative字下げ/残幅・狭幅可読性は、#404の所属修正とは別課題として残す。
 等幅列の余りが最後へ偏る問題は[#405](https://github.com/hideyukiMORI/nene-folio/issues/405)で修正中。
 通常段落の折返しを変える水平bar案等は採用していない。診断と残る範囲は日報・引き継ぎを参照する。
+確保失敗時のnonnull代入は[#407](https://github.com/hideyukiMORI/nene-folio/issues/407)で別に修正する。候補監査と設計を記録済み。
 
 ## 公開済みbeta
 

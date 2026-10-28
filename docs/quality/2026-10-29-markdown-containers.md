@@ -62,6 +62,24 @@ geometryを自動assertした件数として106を報告しない。原文保持
 最終PR headの`pwsh -NoProfile -File ./eng/check.ps1`と必須CIは親が実施する。ローカル全件gateは実行していない。
 commit/push/PR作成・main統合・通常exe反映・作業木/一時出力の整理はこの実装担当の対象検証結果へ混ぜない。
 
+## 最初の必須CIと追加の確認
+
+[PR #406](https://github.com/hideyukiMORI/nene-folio/pull/406)のhead `40ef31d543489600f10427d24bca01e5869205b3`は、
+[CI run 40788343029](https://github.com/hideyukiMORI/nene-folio/actions/runs/40788343029)でbuild/tidy・conformance・symbols・全unitが成功した。
+全体の分岐カバレッジは89.82%で90%下限へ届かず、full-gate/checkはfailureだった。ローカルの対象成功を全体合格と扱わない。
+親はこの失敗を確認して所有するmerge待機helperのidentityを照合し停止した。同じheadの自動再試行は行わず、PRをDraftへ戻した。
+生ログは`ci-first-failure.log`。閾値・除外・抑制を変えず、新ownerと借用行の未検証境界を対象に確認を補う。
+
+追加は`markdown_tests.c`の境界確認だけとし、製品コードを変えていない。
+list種別/区切りの切替と親scope、空owner、不正paragraph enum/先読み、借用queryとtabの拒否、9/10桁marker、
+native表APIの63列上限、cellのtab trim、表/コードの終了と親復帰を確認した。
+`build-coverage-boundaries.ps1`のfolio_tests build/tidy・`--markdown-rtf`はexit0。
+同じ製品計装objectを再利用した対象測定もexit0で、29箇所の確保失敗注入を維持した。
+対象selectorのcoveredは1563→1614（+51）、製品全branch数5078は不変。
+内訳はblocks +12、containers +11、line +16、table +12。`coverage-boundaries-increase.json`へ前後比較を保存した。
+これは対象selectorの増分であり、全体90%の成功とは区別する。全体判定は新headの必須CIで行う。
+追加testのformat/diffはexit0。製品不変のnative投入・画像確認は再利用し、繰り返していない。
+
 ## 限界
 
 native表の左端とcontainer字下げ、残り幅の再配置は別Issueで未解消。#404は所属と終了を修正する範囲である。
