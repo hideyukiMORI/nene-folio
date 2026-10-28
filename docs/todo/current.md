@@ -6,17 +6,23 @@
 
 ## 品質改善の現在位置
 
-[#402](https://github.com/hideyukiMORI/nene-folio/issues/402)で、孤立CRの改行がMarkdown閲覧時に消える問題を修正する。
-既存の行読取へLF・CRLF・CRの解釈を集約し、原文保存と編集用plain RTFを維持する。
-修正前の対象回帰は失敗を再現した。完成候補の結果と確認範囲は
-[品質記録](../quality/2026-10-29-markdown-line-endings.md)へ集約する。
-最終headの必須CI・統合・通常反映・整理の確定値は実PRと
-`D:/NeNeFolio/agents/402-markdown-line-endings/completion.json`を照合する。
+現在は[#404](https://github.com/hideyukiMORI/nene-folio/issues/404)で、リスト内の引用から親本文へ戻る際の番号・字下げを修正する。
+[ADR0071](../adr/0071-ordered-markdown-containers.md)で順序付きの単一container owner、純粋な先読み、paragraphだけのlazy継続を受理した。
+印はquote/headingで同じ段落、code/tableと複数印の外側では専用段落にする。
+Debug build/tidy・対象unit、29箇所の確保失敗注入、実製品RTFのnative投入106 checksは成功。最終レビュー・必須CIへ進む。
+作業木は`D:/NeNeFolio/worktrees/404-markdown-containers`、証跡は`D:/NeNeFolio/agents/404-markdown-containers/`。
+
+CR改行の[#402 / PR #403](https://github.com/hideyukiMORI/nene-folio/pull/403)は最終head必須CI成功後、main `5c1240e`へ統合し通常exeへ反映済み。
+確認範囲は[品質記録](../quality/2026-10-29-markdown-line-endings.md)、確定値は
+`D:/NeNeFolio/agents/402-markdown-line-endings/completion.json`。作業物の削除は自動承認レビューが拒否し、下記2箇所を保持する。
 
 検索は既存計測を照合し、ファイルopen待ちと一致計算のCPU時間を分けて調査した。
-1文字検索の限定診断を先行し、idle一致計算や背景I/Oの設計案は比較段階とする。
+1文字検索の3候補は非製品の正確性診断まで完了。初回計時は他案件buildと競合したため不採用とし、負荷が続く間は再計時しない。
+idle一致計算や背景I/Oの設計案は比較段階であり、製品採用はしていない。
 調査・診断原本は `D:/NeNeFolio/agents/quality-20261029/`。
-list/quote復帰の既知制限と引用内表の字下げ候補は、#402へ混ぜず別課題として扱う。
+引用内表のnative字下げ/残幅・狭幅可読性は、#404の所属修正とは別課題として残す。
+等幅列の余りが最後へ偏る問題は[#405](https://github.com/hideyukiMORI/nene-folio/issues/405)で修正中。
+通常段落の折返しを変える水平bar案等は採用していない。診断と残る範囲は日報・引き継ぎを参照する。
 
 ## 公開済みbeta
 
@@ -30,9 +36,9 @@ list/quote復帰の既知制限と引用内表の字下げ候補は、#402へ混
 ## 通常exeとhideの実機確認
 
 hide受理済み合成サンプル`data/サンプル/Markdown構文サンプル.md`は通常dataへ残している。実ノート内容は記録・同梱しない。
-現在の通常`C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`はsource `a0df993`・表示版0.3.0/Windows版0.3.0.0。
-通常process0件を確認してから正規ツールで反映しexit0だった。01:16:51 JST更新済みで、更新後は起動していない。
-`normal-build-verification.json`に通常exeの版・hashと、サンプルhashの不変を記録した。通常dataは操作していない。
+現在の通常`C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`はsource `5c1240e`・表示版0.3.0/Windows版0.3.0.0。
+通常process0件を確認してから正規ツールで反映しexit0だった。10月29日07:24:08 JST更新済みで、更新後は起動していない。
+版・hashは#402の`completion.json`。通常dataは操作していない。
 
 ## 次の予定: ノートの保存先設定（未実装）
 
@@ -53,8 +59,9 @@ portable版はexe隣の`data`を既定とし、両方とも設定から「ノー
 
 ## 保持中の旧作業物
 
-下記の14箇所は自動承認レビューが削除を拒否したため未削除。再試行や別手段での削除をしない。
+下記の16箇所は自動承認レビューが削除を拒否したため未削除。再試行や別手段での削除をしない。
 
+- #402: `D:/NeNeFolio/worktrees/402-markdown-line-endings`、`D:/NeNeFolio/outputs/402-markdown-line-endings`。統合・通常反映・98ファイルのarchive/hash照合後、削除要求が実行開始前に`blocked by policy`で拒否。追加理由は返っていない。
 - #392: `D:/NeNeFolio/outputs/view-wheel-20261026`（残るのは`runtime`。窓終了後の22ファイルも保管・照合済みだが、削除要求は`blocked by policy`で拒否）。
 - #368: `D:/NeNeFolio/worktrees/368-ui-latency`、`D:/NeNeFolio/outputs/performance-20261024`。
 - #373: `D:/NeNeFolio/worktrees/373-gui-responsiveness`、`D:/NeNeFolio/outputs/gui-responsiveness-20261025`。

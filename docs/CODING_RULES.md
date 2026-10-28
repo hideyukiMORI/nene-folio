@@ -156,6 +156,8 @@ C はメモリ安全を言語で保証しない。本リポジトリでは次を
 - 確保と解放は同じモジュールの対になる関数で行う（`x_create` / `x_destroy`）。`free` を呼ぶのは `destroy` だけ
 - 単体テストは常に AddressSanitizer と UndefinedBehaviorSanitizer 付きでビルドし、`-fno-sanitize-recover` で必ず落とす
 - JSON と Markdown の読み取りは境界で長さを受け取り、`strcpy` / `sprintf` 系の長さを持たない関数を呼ばない
+- Markdownの借用行queryはbyte offsetとprefixのvisual columnを区別する。部分消費tabの残余paddingは0〜3列とし、
+  実際の消費箇所でもbyte範囲・空白・加算を確認する。原文全体の第2文字列へ展開しない（ADR0071）
 
 - 機械強制: **planned** → VLA は `-Werror=vla`（K2-vla-werror。`-Wvla` だけでは C23 で通る＝K2-vla-plain-hole）。`strcpy` 等は clang-tidy `clang-analyzer-security.insecureAPI.*`。ASan / UBSan / nullability は Debug 構成の全 target と単体テストに結線済みで、確保失敗の経路は測定ビルドの注入で全部走る（2026-09-09・ADR 0004）。「確保と解放の対」はレビュー事項なので全体としては planned
 

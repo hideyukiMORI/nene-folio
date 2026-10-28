@@ -79,3 +79,6 @@ ADR は「なぜそう決めたか」「何を却下したか」を書く。
 | [0066](0066-disabled-pane-theme-background.md) | 無効な本文の背景も実効テーマで描く | 受理 |
 | [0067](0067-note-display-zoom.md) | 本文の倍率を一つのRichEdit表示状態として扱う | 受理 |
 | [0068](0068-idle-index-preparation.md) | 初回検索の本文準備を入力待機中に一件ずつ進める | 受理 |
+| [0069](0069-markdown-reading-density-and-code-surface.md) | 閲覧の密度とコード面を既存のRTFへ揃える | 受理 |
+| [0070](0070-markdown-syntax-and-native-tables.md) | Markdownの基本構文と表を一つのRTF変換へ加える | 受理 |
+| [0071](0071-ordered-markdown-containers.md) | 引用とリストの親子関係を一つの順序付きownerで解釈する | 受理 |
