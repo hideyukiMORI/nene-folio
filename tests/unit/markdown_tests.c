@@ -49,6 +49,7 @@ static void expect_body(const char *_Nonnull markdown, const char *_Nonnull expe
 
 static void verify_paragraphs(void)
 {
+    expect_body("one\rtwo", "\\pard\\sa80\\sl240\\slmult1\\cf1 one two\\par\n");
     expect_body("", "");
     expect_body("hello", "\\pard\\sa80\\sl240\\slmult1\\cf1 hello\\par\n");
     expect_body("one\ntwo\n\nthree\n", "\\pard\\sa80\\sl240\\slmult1\\cf1 one "
@@ -98,7 +99,7 @@ static void verify_emphasis(void)
     expect_body("A_B 1_2 x_9 Z_z", "\\pard\\sa80\\sl240\\slmult1\\cf1 A_B 1_2 x_9 Z_z\\par\n");
     expect_body("\\~ \\@ \\[x] \\{ \\a",
                 "\\pard\\sa80\\sl240\\slmult1\\cf1 ~ @ [x] \\{ \\\\a\\par\n");
-    expect_body("a\rb", "\\pard\\sa80\\sl240\\slmult1\\cf1 ab\\par\n");
+    expect_body("a\rb", "\\pard\\sa80\\sl240\\slmult1\\cf1 a b\\par\n");
 }
 
 static void verify_code(void)
@@ -326,6 +327,76 @@ static struct markdown_rtf *_Nonnull convert_syntax(const char *_Nonnull source)
     return rtf;
 }
 
+static void expect_same_rendering(const char *_Nonnull source, const char *_Nonnull canonical)
+{
+    struct markdown_rtf *actual = convert_syntax(source);
+    struct markdown_rtf *expected = convert_syntax(canonical);
+    if (markdown_rtf_length(actual) != markdown_rtf_length(expected) ||
+        memcmp(markdown_rtf_text(actual), markdown_rtf_text(expected),
+               markdown_rtf_length(expected)) != 0)
+    {
+        fprintf(stderr, "source=%s\nRTF=%s\n", source, markdown_rtf_text(actual));
+        require(false, "logical line endings produce identical RTF");
+    }
+    markdown_rtf_destroy(actual);
+    markdown_rtf_destroy(expected);
+}
+
+static void expect_breaks(const char *_Nonnull canonical, const char *_Nonnull ending)
+{
+    struct text_buffer *source = nullptr;
+    require(text_buffer_create(&source) == TEXT_BUFFER_ACCEPTED, "line-ending source");
+    for (size_t index = 0; canonical[index] != '\0'; ++index)
+    {
+        if (canonical[index] == '\n')
+            text_buffer_append_text(source, ending);
+        else
+            text_buffer_append(source, canonical + index, 1);
+    }
+    require(text_buffer_finish(source) == TEXT_BUFFER_ACCEPTED, "line-ending source complete");
+    expect_same_rendering(text_buffer_bytes(source), canonical);
+    text_buffer_destroy(source);
+}
+
+static void verify_line_endings(void)
+{
+    const char *canonical =
+        "# first\n# second\n\nsoft\nwrap  \nhard\\\nbreak\n\n"
+        "setext\n===\n\n1. item\n   continued\n2. next\n\n> quote\n> continued\n\n"
+        "----\n\n~~~c\n\xE6\x97\xA5\xE6\x9C\xAC \xF0\x9F\x98\x80 {\\}\n\ncode\n~~~\n\n"
+        "A | B\n--- | ---\n\xE6\x97\xA5\xE6\x9C\xAC | `a\\|b`\n\n"
+        "\xF0\x9F\x98\x80 \\{brace\\} \\\\ tail\n\n~~~\nunclosed\n";
+    expect_breaks(canonical, "\r");
+    expect_breaks(canonical, "\r\n");
+    expect_same_rendering("# first\r\n# second\r\n\rone\ntwo  \rthree\\\r\nfour\r",
+                          "# first\n# second\n\none\ntwo  \nthree\\\nfour\n");
+    expect_same_rendering("one\n\rtwo", "one\n\ntwo");
+    expect_same_rendering("one\r\rtwo", "one\n\ntwo");
+    expect_same_rendering("\r", "\n");
+    expect_same_rendering("\r\n\r\n", "\n\n");
+}
+
+static void verify_line_bounds(void)
+{
+    const char terminal[] = {'a', '\r'};
+    struct markdown_line line = markdown_line_read(terminal, sizeof terminal, 0);
+    require(line.length == 1 && line.next == sizeof terminal && line.bytes[0] == 'a',
+            "terminal CR ends a bounded source without reading beyond it");
+    line = markdown_line_read(terminal, sizeof terminal, line.next);
+    require(line.length == 0 && line.next == sizeof terminal, "EOF after terminal CR is empty");
+    const char sliced[] = {'a', '\r', '\n', 'b'};
+    line = markdown_line_read(sliced, 2, 0);
+    require(line.length == 1 && line.next == 2, "CRLF is not consumed beyond the declared length");
+    const char crlf[] = {'\r', '\n'};
+    line = markdown_line_read(crlf, sizeof crlf, 0);
+    require(line.length == 0 && line.next == sizeof crlf, "CRLF is one empty logical line");
+    const char lfcr[] = {'\n', '\r'};
+    line = markdown_line_read(lfcr, sizeof lfcr, 0);
+    require(line.length == 0 && line.next == 1, "LFCR starts with a separate LF boundary");
+    line = markdown_line_read(lfcr, sizeof lfcr, line.next);
+    require(line.length == 0 && line.next == sizeof lfcr, "LFCR has a second CR boundary");
+}
+
 static void expect_fragment(const char *_Nonnull source, const char *_Nonnull included,
                             const char *_Nonnull excluded)
 {
@@ -524,6 +595,8 @@ static void verify_borrowed_input(void)
 
 void run_markdown_tests(void)
 {
+    verify_line_endings();
+    verify_line_bounds();
     run_markdown_source_state_tests();
     verify_borrowed_input();
     verify_new_blocks();

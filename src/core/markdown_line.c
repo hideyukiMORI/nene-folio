@@ -18,12 +18,16 @@ struct markdown_line markdown_line_read(const char *_Nonnull source, size_t leng
     if (start > length)
         start = length;
     size_t end = start;
-    while (end < length && source[end] != '\n')
+    while (end < length && source[end] != '\r' && source[end] != '\n')
         ++end;
-    struct markdown_line line = {
-        .bytes = source + start, .length = end - start, .next = end < length ? end + 1 : length};
-    if (line.length != 0 && line.bytes[line.length - 1] == '\r')
-        --line.length;
+    size_t next = end;
+    if (next < length)
+    {
+        ++next;
+        if (source[end] == '\r' && next < length && source[next] == '\n')
+            ++next;
+    }
+    struct markdown_line line = {.bytes = source + start, .length = end - start, .next = next};
     prefix(&line);
     return line;
 }
