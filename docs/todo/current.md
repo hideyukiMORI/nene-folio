@@ -17,7 +17,11 @@
 直近16:34の負荷照会でも他案件compile/tidyが稼働しており、追加の性能計時は0件。
 #428後のmatcherへ旧候補の計測値を読み替えず、背景I/Oと極狭幅表の可読性は未解消のまま扱う。
 結果と未確認範囲は[品質の現在地](../quality/2026-10-29-quality-checkpoint.md)へ整理した。
-文書反映 [#436](https://github.com/hideyukiMORI/nene-folio/issues/436)の最終head CI/統合/整理は実PRと同taskのintegration-completionを照合する。
+文書反映 #436 / [PR #437](https://github.com/hideyukiMORI/nene-folio/pull/437)は、最終head `96ad8c5`のCI `40837772905`成功後、main `c860e0b`へ統合・作業木整理済み。通常exeは#434のhashを維持した。確定値は`agents/436-quality-checkpoint/integration-completion.json`。
+
+[#438](https://github.com/hideyukiMORI/nene-folio/issues/438)の共有診断では、read-only readerと改名・ごみ箱の両立は合成条件で成立したが、保存はMoveFileExWのERROR_ACCESS_DENIEDで失敗した。
+reader close後は同じ保存が成功したため、この共有設定だけの背景読込案は採用しない。初回45確認/2FAIL、保存限定12確認/2FAILを負の成立性証拠として保持する。
+製品source・共有規則・背景thread・ADR・通常exeは変更していない。[品質記録](../quality/2026-10-29-read-sharing-feasibility.md)を参照し、文書PRの最終CI/統合/整理は同taskのintegration-completionと実PRを照合する。
 
 以前の完了履歴は[日報](../reports/2026-10-29.md)・[引き継ぎ](../handoffs/2026-10-29.md)と各品質記録へ置く。
 旧計測/設計原本は`D:/NeNeFolio/agents/quality-20261029/`。成功済み対象は関係入力が不変なら再実行しない。
