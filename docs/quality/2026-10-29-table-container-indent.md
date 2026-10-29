@@ -102,3 +102,10 @@ ASan runtimeの`interception_win: unhandled instruction`警告を各生logへ残
 最終PR headの必須CI `pwsh -NoProfile -File ./eng/check.ps1`、commit/push/PR/mergeと通常反映は親担当。
 worktree・出力は未統合のため保持し、稼働参照と保全状態はcompletionへ記す。
 統合/反映/恒久成果物収載後に、親が絶対path・取込・未保存/未追跡/ignored・唯一成果物・稼働参照・リンクを監査して整理する。
+
+## 統合後の確定値
+
+PR #412のhead `355d034`はCI `40796594189`のfull-gate/check成功後、main `eb9706d`へ統合した。
+全体4619/5084分岐（90.854%）。#411を含むmain `bb6dc01`を10:07:08 JSTに通常exeへ反映し、起動していない。
+出力205ファイルの全hash保全と最終監査後、worktree/outputの削除要求は実行前に自動承認レビューで拒否されたため保持する。
+確定値と再試行禁止は`D:/NeNeFolio/agents/410-table-container-indent/integration-completion.json`。
