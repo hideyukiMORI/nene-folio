@@ -211,7 +211,8 @@ static void pair_links(struct markdown_inline_tokens *_Nonnull parser)
     {
         struct markdown_inline_token *token = (&parser->tokens[index]);
         if (at(parser, token->start) != '[' || token->mate == SIZE_MAX ||
-            (token->start != 0 && at(parser, token->start - 1) == '!'))
+            (token->start != 0 && at(parser, token->start - 1) == '!' &&
+             !escaped_at(parser, token->start - 1)))
             continue;
         size_t close = token->mate;
         size_t destination = close + 1;
