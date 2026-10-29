@@ -47,4 +47,7 @@ constexpr UINT folio_message_close_requested = WM_APP + 17;
 constexpr UINT folio_message_choose_color = WM_APP + 18;
 /* 本文倍率の適用後、行番号font/幅と配置を更新する。wParamは変更前の先頭論理行。 */
 constexpr UINT folio_message_pane_zoomed = WM_APP + 19;
+/* 子が覆う点を主窓のresizeへ通せるか同期で問い合わせる。wParamは未使用、lParamはsignedの
+ * screen座標。capture中/最大化中/窓縁以外は0、通せるときだけ1。子は寸法を複製しない。 */
+constexpr UINT folio_message_resize_through = WM_APP + 20;
 #endif

@@ -96,3 +96,12 @@ v2抽出helperの外側例外は専用rawファイルがなく、会話出力と
 固定標本の実測を任意入力の形式証明、実時間非退行、UI応答改善の実測へ広げない。後方近傍の定数費用は変わり得る。
 通常data/save、公開beta、他案件の操作はしていない。Issue #448、ARC-001/003/004/005/007/010/011/012、
 C-002/003/005/008/011/012/014/016、QLT-008/010/012/013。公開API/schema変更なし、Waivers none。
+
+## 最終CI・統合・通常反映
+
+[PR #453](https://github.com/hideyukiMORI/nene-folio/pull/453)の最終head`47c1333`で必須CI`40968520980`のfull-gate/checkが成功し、
+main`6f20dcc`へ統合した。親の最終conformanceは違反0、文書24参照成功。CIは5356分岐中4872を確認し、112規約testが成功した。
+通常exeは正規prepare-real-machineで07:55:57 JST更新、source6f20dcc・Windows版0.3.0.0、hashは完了原本に記録した。
+通常process0、起動とdata操作0。9051filesを恒久保管し全hash照合、追加worktreeを削除してbranch/commitを保持した。
+出力削除は実行前に自動承認レビューの`blocked by policy`で拒否され、追加理由なし。出力を保持し再試行しない。
+確定原本は`D:/NeNeFolio/agents/448-linear-note-search/integration-completion.json`。

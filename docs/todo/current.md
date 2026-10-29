@@ -8,23 +8,21 @@
 
 ## 品質改善の現在位置
 
-製品修正17件、検証・記録ツール2件、診断・品質記録4件を10月29日にmainへ統合した。
-最後の[#446](https://github.com/hideyukiMORI/nene-folio/issues/446) / [PR #447](https://github.com/hideyukiMORI/nene-folio/pull/447)は
-最終head`72bc611`の必須CI`40894191660`成功後、main`35e1948`へ統合した。
-一般語の部分一致を保持し、各source長Nの比較workを3N以下に抑える。周期4入力は8180/32756/7940/32516work。
-Debug/tidy・限定matching・測定build・strict OOM成功、File API規約違反0。実時間・実UI応答改善の測定ではない。
-通常exe反映、6593filesの全hash保全、worktree削除まで完了。出力削除拒否は下記へ保持する。
-詳細は[品質記録](../quality/2026-10-29-linear-index-matching.md)、確定原本は`agents/446-linear-index-matching/integration-completion.json`。
+[#448](https://github.com/hideyukiMORI/nene-folio/issues/448) / [PR #453](https://github.com/hideyukiMORI/nene-folio/pull/453)の
+現在ノート検索の無確保線形化を、最終head`47c1333`・必須CI`40968520980`成功後、main`6f20dcc`へ統合した。
+固定36callは結果一致・`2N+5m`以内。Debug/tidy・限定search・比較計数・symbols・最終conformanceが成功した。
+通常exe反映、9051filesの全hash保全、追加worktree削除まで完了。出力削除拒否は下記へ保持する。
+詳細は[品質記録](../quality/2026-10-30-linear-note-search.md)、確定原本は`agents/448-linear-note-search/integration-completion.json`。
+比較量の改善であり、実時間や実UI応答改善の測定ではない。#446以前の完成履歴は日報を参照する。
 
-[#448](https://github.com/hideyukiMORI/nene-folio/issues/448)は現在ノート内検索の無確保線形化。
-変更前baselineの固定36callを測り、24callが固定比較上限を超えることを確認・受理した。
-単一Two-Way候補を実装し、独立静読とDebug/tidyの指摘を修正した。対象build/search unit/比較計数が成功し、親が3252snapshotを照合受理した。
-固定36callの最大比較は4128/4604/16416/16892で、全て固定`2N+5m`以内。最終CI・統合・通常反映は未完了。
-作業木`D:/NeNeFolio/worktrees/448-linear-note-search`は文書のみの差分をffしてbase f167cee。
-根拠と限定範囲は[品質記録](../quality/2026-10-30-linear-note-search.md)、次の手順は[引き継ぎ](../handoffs/2026-10-30.md#次の焦点-448--現在ノート検索)。
+[#451](https://github.com/hideyukiMORI/nene-folio/issues/451)はdrawer/backdropが窓縁を遮る経路を修正中。
+旧baselineは73checks/1failure・既知遮断8点、候補は73checks/0fail・8点とも子から親のedgeへ到達した。
+最大化中の親HTLEFT誤判定も修復。合成操作から実nativeリサイズ開始/一回取消まで16checks/0fail、親の原本監査も受理済み。
+物理dragと実寸法変更は未確認、必須CI・統合は未完了。[品質記録](../quality/2026-10-30-window-edge-routing.md)。
 
-[#451](https://github.com/hideyukiMORI/nene-folio/issues/451)の左端resizeは子窓のhit遮断を調査し、専用非input desktopのbaseline用build段階。
-[#452](https://github.com/hideyukiMORI/nene-folio/issues/452)の最小化/最大化/復元はデザインリナと狭幅配置を検討中。いずれも製品未編集。
+[#452](https://github.com/hideyukiMORI/nene-folio/issues/452)は最小化/最大化/復元の常設入口を設計した。
+狭幅では表示3択だけを既存MENUへまとめ、shell操作は常時可視にする。デザインリナの提案と独立静読を受理し、
+一覧中のOS最大化から退出するplacementの2経路を静的fixtureで準備中。製品編集/実行はまだ0。
 
 本文/置換の追加静読は新具体的不具合0。置換4Mの生成片/完成本文の差を新規不具合とせず、既存のedit資源上限を維持した。
 背景読込・極狭幅表は未解決で、新しい性能値や実UIの一般保証はない。
@@ -43,9 +41,9 @@ Waivers none。
 ## 通常exeとhideの実機確認
 
 hide受理済み合成サンプル`data/サンプル/Markdown構文サンプル.md`は通常dataへ残している。実ノート内容は記録・同梱しない。
-現在の通常`C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`はsource `35e1948`・表示版0.3.0/Windows版0.3.0.0。
-通常process0件を確認してから正規ツールで反映しexit0だった。10月29日23:50:29 JST更新済みで、更新後は起動していない。
-版・hashは`D:/NeNeFolio/agents/446-linear-index-matching/normal-build-verification.json`。通常dataは操作していない。
+現在の通常`C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`はsource `6f20dcc`・表示版0.3.0/Windows版0.3.0.0。
+通常process0件を確認して正規ツールで反映しexit0、10月30日07:55:57 JST更新済み。更新後は起動していない。
+版・hashは`D:/NeNeFolio/agents/448-linear-note-search/normal-build-verification.json`。通常dataは操作していない。
 
 ## 次の予定: ノートの保存先設定（未実装）
 
@@ -66,7 +64,9 @@ portable版はexe隣の`data`を既定とし、両方とも設定から「ノー
 
 ## 保持中の旧作業物
 
-下記の45箇所は自動承認レビューの削除拒否により保持する。再試行や別手段での削除をしない。
+下記の46箇所は自動承認レビューの削除拒否により保持する。再試行や別手段での削除をしない。
+
+- #448: `D:/NeNeFolio/outputs/448-linear-note-search`。統合・通常反映・9051filesの全hash保全と安全監査後、出力削除要求が実行前に`blocked by policy`で拒否された。追加理由なし。worktreeは削除済み、branch/commit保持。確定原本は同taskの`integration-completion.json`。
 
 - #446: `D:/NeNeFolio/outputs/446-linear-index-matching`。統合・通常反映・6593filesの全hash保全と安全監査後、出力削除要求が実行前に`blocked by policy`で拒否された。追加理由なし。worktreeは削除済み、branch/commit保持。確定値は同taskの`integration-completion.json`。
 
