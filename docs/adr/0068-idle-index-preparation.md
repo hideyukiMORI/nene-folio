@@ -74,3 +74,13 @@ OS cacheは強制的にcoldへ戻していない。CreateFileW内部の待ちの
 全範囲Peekが空を返した直後だけ待ち、待機判定に副作用を入れない。
 
 Waivers: none
+
+## 2026-10-29 の補正（#428 — warm入力と本文準備後の一致計算）
+
+決定2のwarm同期計算、決定4の本文準備直後の全件同期build、決定8のcore/API不変更を
+[ADR0073](0073-bounded-index-matching.md)で置き換える。
+入力と初回末尾のmatchingは同じidle loopから65536比較workずつ進め、完成集合だけを採用する。
+新語は未完成corpusの読込位置を保ちmatching進捗を破棄する。索引/保存変更はrequestを保ち進捗を破棄し、
+未完成corpusだけ先頭へ戻す。完成corpusを再読込しない。clear/destroyはbuild→termの順に破棄する。
+既存一件read、message先行、実行抑止、通常本文/Undo保持、#219の同期修復、削除前予約は維持する。
+workは比較量であり、OS read/初期集計/確保/lookup/同期UI等の実時間を上限保証しない。

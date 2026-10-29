@@ -1,6 +1,7 @@
 /* #311 宣言長の算術境界。最大fitは測定buildの確保拒否でだけ観測し、巨大実確保をしない。 */
 #include "allocation_probe.h"
 #include "index_filter.h"
+#include "index_filter_build.h"
 #include "note_replace.h"
 #include "regex_matches.h"
 #include "replace_edit.h"
@@ -253,87 +254,77 @@ void run_replace_factory_size_tests(void)
     run_replace_preview_size_tests();
 }
 
-static struct index_filter *_Nonnull filter_sentinel(void)
+static struct index_filter_build *_Nonnull filter_sentinel(void)
 {
     const struct index_filter_entry entry = {
         .ref = {.category = 3, .note = 7}, .name = "_", .body = "a", .length = 1};
-    struct index_filter_query query = {
-        .term = "a", .term_length = 1, .entries = &entry, .count = 1};
-    struct index_filter *filter = nullptr;
-    require(index_filter_create(&query, &filter) == INDEX_FILTER_ACCEPTED && filter != nullptr,
+    struct index_filter_build *filter = nullptr;
+    size_t work = 65536;
+    require(index_filter_build_create("a", 1, 1, &filter) == INDEX_FILTER_ACCEPTED &&
+                index_filter_build_step(filter, &entry, &work) == INDEX_FILTER_STEP_ALL_DONE,
             "filter sentinel is a real owned nonempty set");
     return filter;
 }
 
 static void verify_filter_capacity_bounds(bool measured)
 {
-    struct index_filter *kept = filter_sentinel();
-    const struct index_filter_entry entry = {
-        .ref = {.category = 3, .note = 7}, .name = "_", .body = "a", .length = 1};
-    struct index_filter_query query = {.term = "a", .term_length = 1, .entries = &entry};
+    struct index_filter_build *kept = filter_sentinel();
     const size_t refused[] = {SIZE_MAX / sizeof(size_t), SIZE_MAX};
     for (size_t index = 0; index < sizeof refused / sizeof refused[0]; ++index)
     {
-        query.count = refused[index];
-        struct index_filter *out = kept;
+        struct index_filter_build *out = kept;
         allocation_probe_fail_at(1);
-        enum index_filter_outcome outcome = index_filter_create(&query, &out);
+        enum index_filter_outcome outcome = index_filter_build_create("a", 1, refused[index], &out);
         size_t calls = allocation_probe_calls();
         size_t array_bytes = allocation_probe_malloc_size();
         allocation_probe_fail_at(0);
         printf("filter capacity: count=%zu, result=%u, expected_calls=0, actual_calls=%zu, "
                "malloc_bytes=%zu\n",
-               query.count, (unsigned)outcome, calls, array_bytes);
+               refused[index], (unsigned)outcome, calls, array_bytes);
         require(outcome == INDEX_FILTER_OUT_OF_MEMORY && out == kept && calls == 0 &&
                     array_bytes == 0,
                 "filter capacity overflow refuses before owner allocation or entry access");
     }
     if (measured)
     {
-        query.count = SIZE_MAX / sizeof(size_t) - 1;
-        struct index_filter *out = kept;
+        size_t count = SIZE_MAX / sizeof(size_t) - 1;
+        struct index_filter_build *out = kept;
         allocation_probe_fail_at(1);
-        enum index_filter_outcome outcome = index_filter_create(&query, &out);
+        enum index_filter_outcome outcome = index_filter_build_create("a", 1, count, &out);
         size_t calls = allocation_probe_calls();
         size_t array_bytes = allocation_probe_malloc_size();
         allocation_probe_fail_at(0);
         printf(
             "filter maximum fit: count=%zu, expected_calls=1, actual_calls=%zu, malloc_bytes=%zu\n",
-            query.count, calls, array_bytes);
+            count, calls, array_bytes);
         require(outcome == INDEX_FILTER_OUT_OF_MEMORY && out == kept && calls == 1 &&
                     array_bytes == 0,
                 "maximum fitting filter count reaches only the deliberately refused small owner");
     }
-    require(index_filter_count(kept) == 1 &&
-                index_filter_note(kept, (struct note_ref){.category = 3, .note = 7}) &&
-                index_filter_category(kept, 3),
+    require(index_filter_build_count(kept) == 1 && index_filter_build_ref(kept, 0).category == 3 &&
+                index_filter_build_ref(kept, 0).note == 7,
             "capacity refusal preserves the actual nonempty filter and every queried ref");
-    index_filter_destroy(kept);
+    index_filter_build_destroy(kept);
 }
 
 static void verify_filter_result_priority(void)
 {
-    struct index_filter *kept = filter_sentinel();
-    const struct index_filter_entry entry = {.ref = {0, 0}, .name = "_", .body = "a", .length = 1};
-    struct index_filter_query query = {
-        .term = "", .term_length = 0, .entries = &entry, .count = SIZE_MAX};
-    struct index_filter *out = kept;
+    struct index_filter_build *kept = filter_sentinel();
+    struct index_filter_build *out = kept;
     allocation_probe_fail_at(1);
-    enum index_filter_outcome empty = index_filter_create(&query, &out);
+    enum index_filter_outcome empty = index_filter_build_create("", 0, SIZE_MAX, &out);
     size_t empty_calls = allocation_probe_calls();
     allocation_probe_fail_at(0);
     require(empty == INDEX_FILTER_NO_TERM && out == kept && empty_calls == 0,
             "NO_TERM still precedes impossible count without allocation");
-    query.term = "\xC0\xAF";
-    query.term_length = 2;
     allocation_probe_fail_at(1);
-    enum index_filter_outcome malformed = index_filter_create(&query, &out);
+    enum index_filter_outcome malformed = index_filter_build_create("\xC0\xAF", 2, SIZE_MAX, &out);
     size_t malformed_calls = allocation_probe_calls();
     allocation_probe_fail_at(0);
     require(malformed == INDEX_FILTER_MALFORMED && out == kept && malformed_calls == 0 &&
-                index_filter_count(kept) == 1,
+                index_filter_build_count(kept) == 1,
             "MALFORMED still precedes impossible count and preserves the owned result");
-    index_filter_destroy(kept);
+    index_filter_build_destroy(kept);
 }
 
 void run_index_filter_size_tests(void)

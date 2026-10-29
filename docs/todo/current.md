@@ -8,11 +8,26 @@
 
 ## 品質改善の現在位置
 
-表開始と見出しの優先順位[#426](https://github.com/hideyukiMORI/nene-folio/issues/426)は対象検証済みの完成候補。
-1列候補のraw pipe有無でsetextと表が入れ替わる点を、既存の行分類/列数/区切り判定へ揃える。
-共用開始判定だけを修正し、旧sourceの独立red2件で表とsetextの逆転を確認した。完成候補のDebug build/tidyと対象selectorはexit0。
-1列表・setext・先行block・複数行段落・quote/listの所属を確認し、入力/実行物/出力の証跡を別run-dirへ保全した。
-詳細は[品質記録](../quality/2026-10-29-table-start-priority.md)。最終head CI・統合/通常反映/保全/整理の確定値は実PRと同taskの`integration-completion.json`を照合する。
+検索の一致計算分割[#428](https://github.com/hideyukiMORI/nene-folio/issues/428)は対象検証済みの完成候補。
+[ADR0073](../adr/0073-bounded-index-matching.md)と所有/可変区画/C-013等を実装前に受理した。
+新語と初回末尾の計算を既存idleから65536比較workずつ進め、確定集合の保存/改名修復は同じengineを同期完了する設計。
+warmも準備中の全索引へ移し、完成集合だけを採用する。取消/更新時の進捗破棄と失敗時の契約を明記した。
+親が設計/規約/統合、SOLが製品/unit/OOM/品質記録、LUNAが実loopのnative4ケースを担当する。
+専用作業木は`D:/NeNeFolio/worktrees/428-bounded-index-matching`、原本/出力はD側agents/outputsの同名領域。
+旧sourceのwarm同期完了を限定redで確認し、完成候補のDebug build/tidy・検索対象unit・同vectorの確保失敗試験が成功した。
+初回buildは新テストのmalloc後の静的診断で停止し、テスト2箇所の失敗分岐を明示して解消。製品sourceは不変だった。
+専用desktopで実loopの通常message/clear/close/native modalの4ケースも成功し、read1を維持した。
+親は成功したunit側5runとnative4runの指定入力/生成物hashを照合し、再実行していない。
+診断build自体は子0だったが、未生成compiler PDB4件の宣言による記録wrapper125を分離して残した。
+最終static/CI・統合/通常反映/整理の確定値は実PRと同taskの`integration-completion.json`を照合する。
+同期layout・OS read・初期集計/確保等は残り、実時間上限や速度改善率は主張しない。
+
+表開始と見出しの優先順位#426 / [PR #427](https://github.com/hideyukiMORI/nene-folio/pull/427)は、
+最終head `5bc03fa`のCI `40817131821`でfull-gate/check成功後、main `9d611cf`へ統合した。
+共用開始判定を既存行分類へ揃え、独立red2件と完成候補のDebug build/tidy・対象selectorが成功した。
+通常exeへ13:26:47 JST反映済み、1243ファイルの全hash保全とworktree整理も完了。
+出力削除は拒否されたため保持する。[品質記録](../quality/2026-10-29-table-start-priority.md)、
+確定値は`D:/NeNeFolio/agents/426-table-start-priority/integration-completion.json`。
 
 対象実行の証跡保存[#424 / PR #425](https://github.com/hideyukiMORI/nene-folio/pull/425)は、最終head `3a8eacd`の
 CI `40813130935`でfull-gate/check成功後、main `1cae763`へ統合した。
@@ -47,8 +62,8 @@ worktreeは整理済み、出力削除は拒否され保持する。application�
 確定値は`D:/NeNeFolio/agents/416-escaped-image-link/integration-completion.json`。
 内部pycと出力の削除は自動承認レビューに拒否されたため、worktree/outputを保持する。
 
-今回の製品修正#402/#404/#405/#407/#410/#411/#416/#418/#420/#422は、各最終headの必須CI成功後にmainへ統合し、通常exeへ反映済み。
-最新の製品sourceは`88cdf79`、通常反映は11:48:26 JST、版0.3.0.0。更新後は起動していない。
+今回の製品修正#402/#404/#405/#407/#410/#411/#416/#418/#420/#422/#426は、各最終headの必須CI成功後にmainへ統合し、通常exeへ反映済み。
+最新の製品sourceは`9d611cf`、通常反映は13:26:47 JST、版0.3.0.0。更新後は起動していない。
 
 置換factory容量[#411 / PR #413](https://github.com/hideyukiMORI/nene-folio/pull/413)は最終head `5a0a427`の
 CI `40797586045`が成功し、main `bb6dc01`へ統合した。preview7失敗点と最大fit計2件、out/matches保持・同じ一覧でのretryを確認した。
@@ -67,16 +82,18 @@ native317 checks/0 failures、失敗注入native25点/literal16点を確認し�
 検索は既存計測を照合し、ファイルopen待ちと一致計算のCPU時間を分けて調査した。
 1文字検索の3候補は非製品の正確性診断まで完了。初回計時は他案件buildと競合したため不採用とし、負荷が続く間は再計時しない。
 10:02〜10:03の確認でも別案件のcompile/tidyが稼働していたため、新計時は0件のまま。
-idle一致計算の追加検討では、保存修復/削除後の結果・scroll・所有移転も変更が必要と分かった。
-背景I/Oを含め設計案は比較段階であり、製品採用はしていない。次は現行契約を守る小さい案と、計算分割の契約変更を分けて判断する。
+idle一致計算の追加検討では、保存修復/削除後の結果・scroll・所有移転を分ける必要があると分かった。
+13時台に#428で、確定集合の同期修復を保ちながら入力/初回末尾だけを分割する設計を受理した。
+背景I/Oやmemchr案は引き続き未採用。matching以外の同期費用を残す限定もADR0073へ明記した。
 調査・診断原本は `D:/NeNeFolio/agents/quality-20261029/`。
 10:33の次段階確認でも別案件のcompile/tidyが稼働しており、新たな性能計時は0件のまま。
 11:46の13.24秒CPU監査では別案件のtest process2件が各約12.8秒増えたため、候補3種の計時は開始しなかった。
 13ファイルの既存入力/binary hashは一致し、正確性検証を再実行していない。原本は上記領域の`matching-probe/attempt-1145/`。
 入力時をidle、保存/改名後を同engineの同期完了とする案も読取レビューした。変更範囲を狭める余地はあるが、
-遅延OOM、同期修復scan、所有移転、無効化、budgetが未決で未採用。詳細は日報/引き継ぎへ残し、製品実装へ進めていない。
+当時は遅延OOM、同期修復scan、所有移転、無効化、budgetが未決で未採用だった。後の#428で契約と限定を受理した。
 12:53の再開前監査も新しいcompile/tidyと別案件testのCPU増加を確認し、計時0件で停止した。原本は`matching-probe/attempt-1253/`。
-分割計算案はsealed ownerの移譲と12/13操作の構成まで比較したが、公開契約変更・初期集計・予算値を含め未採用。
+分割計算案はsealed ownerの移譲と12/13操作を比較し、13操作・65536 work・限定的な可変ownerを#428/ADR0073で受理した。
+公開契約の変更と同期layout等の残費用を明記した。これから対象実装/検証を行い、速度の数値は採否条件にしない。
 未対応画像内部の文字保持は#422で統合済み。通常LINK labelを跨ぐ先行分類案は不採用とし、親label内へ収まる範囲だけを保護した。
 引用内表のnative字下げ/残幅は#410でmain統合済み、極狭幅の多列表の可読性は別課題として残す。
 通常段落の折返しを変える水平bar案等は採用していない。診断と残る範囲は日報・引き継ぎを参照する。
@@ -93,9 +110,9 @@ idle一致計算の追加検討では、保存修復/削除後の結果・scroll
 ## 通常exeとhideの実機確認
 
 hide受理済み合成サンプル`data/サンプル/Markdown構文サンプル.md`は通常dataへ残している。実ノート内容は記録・同梱しない。
-現在の通常`C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`はsource `88cdf79`・表示版0.3.0/Windows版0.3.0.0。
-通常process0件を確認してから正規ツールで反映しexit0だった。10月29日11:48:26 JST更新済みで、更新後は起動していない。
-版・hashは`D:/NeNeFolio/agents/422-image-literal/normal-build-verification.json`。通常dataは操作していない。
+現在の通常`C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`はsource `9d611cf`・表示版0.3.0/Windows版0.3.0.0。
+通常process0件を確認してから正規ツールで反映しexit0だった。10月29日13:26:47 JST更新済みで、更新後は起動していない。
+版・hashは`D:/NeNeFolio/agents/426-table-start-priority/normal-build-verification.json`。通常dataは操作していない。
 
 ## 次の予定: ノートの保存先設定（未実装）
 
@@ -116,7 +133,9 @@ portable版はexe隣の`data`を既定とし、両方とも設定から「ノー
 
 ## 保持中の旧作業物
 
-下記の34箇所は自動承認レビューの削除拒否により保持する。再試行や別手段での削除をしない。
+下記の35箇所は自動承認レビューの削除拒否により保持する。再試行や別手段での削除をしない。
+
+- #426: `D:/NeNeFolio/outputs/426-table-start-priority`。統合・通常反映・1243ファイル全hash保全と安全監査後、出力削除要求が`blocked by policy`で拒否された。追加理由なし。worktreeは削除済み、branch/commit保持。確定値は同taskの`integration-completion.json`。
 
 - #424: `D:/NeNeFolio/outputs/424-run-record`。統合・103ファイル全hash保全と安全監査後、出力削除要求が`blocked by policy`で拒否された。追加理由なし。worktreeは削除済み、branch/commitは保持。確定値は同taskの`integration-completion.json`。
 

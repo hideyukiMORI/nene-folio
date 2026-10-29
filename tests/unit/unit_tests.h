@@ -4,6 +4,7 @@
 #define NENEFOLIO_UNIT_TESTS_H
 
 #include "folio_state_outcome.h"
+#include "index_filter_finish_outcome.h"
 
 #include <stddef.h>
 #include <uchar.h>
@@ -19,6 +20,13 @@ void run_size_overflow_tests(void);
 void run_index_filter_size_tests(void);
 void run_index_filter_size_allocation_tests(void);
 void run_index_filter_tests(void);
+struct index_filter_build;
+struct index_filter_entry;
+struct index_filter;
+[[nodiscard]] enum index_filter_finish_outcome
+test_index_filter_finish(struct index_filter_build *_Nullable *_Nonnull build,
+                         const struct index_filter_entry *_Nonnull entries, size_t count,
+                         struct index_filter *_Nullable *_Nonnull out);
 void run_replace_factory_size_tests(void);
 void run_replace_factory_allocation_tests(void);
 void run_replace_preview_size_tests(void);
@@ -71,6 +79,7 @@ struct folio_state;
 test_index_filter_complete(struct folio_state *_Nonnull state, const char16_t *_Nonnull units,
                            size_t count);
 void run_index_preparation_tests(void);
+void run_index_bounded_warm_tests(void);
 void run_index_preparation_allocation_tests(void);
 void run_filter_tests(void);
 void run_filter_lookup_state_tests(void);

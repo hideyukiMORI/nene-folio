@@ -103,7 +103,8 @@
 | 上部の操作説明 | 標準tooltipのHWND・矩形登録・固定UTF-16表示buffer | ui/win32（`folio_window`） | 同じボタン矩形とui_textを参照し、resize/DPI/言語/テーマ・modal境界に追従する。表示状態や文書の別所有者にはしない（ADR0048） |
 | 表示キーのIME抑止 | 主窓・入力欄・本文の変換中状態 | ui/win32（各入力窓の所有者） | WM_IME_STARTCOMPOSITION/ENDCOMPOSITIONから追跡し、表示キーの実行前に確認する。通常のIME処理は維持する（ADR0048） |
 | 編集中の本文 | 保存前の文字列 | ui/win32（RichEdit が所有） | 保存の意図で application へ渡す |
-| 全ノート検索の準備 | 未完了要求の最新語・次に読む位置・不完全な本文写し | application（`folio_state`） | 同じUIスレッドで一件継続し、完成後だけ最新語の一致集合を採用する。取消/失敗は位置0、索引/保存更新は未完成の走査を先頭へ戻す。UIは実行可否と通常message待機を担当する（ADR0068） |
+| 全ノート検索の準備 | 未完了要求の最新語・読込/一致計算の位置・不完全な本文写し・構築ownerのhandle | application（`folio_state`） | 同じUIスレッドで本文を一件ずつ準備し、一致計算は有限workで継続する。完成後だけ最新語の集合を採用する。更新時は進捗を破棄し、未完成本文走査だけを先頭へ戻す。UIは実行可否と通常message待機を担当する（ADR0068/0073） |
+| 一致集合の構築進捗 | 比較phase/数値位置・番号列・scratch。完成後は不変 | core（`index_filter_build`） | 単一matcherのstepで進め、SEALED時にterm借用を解除する。完成filterが所有を引き取り、配列/内部recordを公開しない。入力/初回末尾のidleと確定集合修復の同期driverが同じengineを使う（ADR0073） |
 | 本文の表示倍率 | 閲覧/編集/ノートで共有する実行中だけの百分率 | ui/win32（`note_pane`） | Ctrlキー/ホイールの同じEM_SETZOOM経路で変更し、RTF投入後も再適用する。native倍率と主窓の行番号font/幅はこの値の投影（ADR0067） |
 | 無題を置き換える許可 | 無題保護／明示破棄の閉じた値 | 同期呼出し元のローカル | 退出用の名前入力面から受け、既存の選択・新規の意図へ一回だけ渡す。次文書の準備後に採用し、永続状態や継続キューを作らない（ADR0050） |
 | ドロワーのスクロール量 | 画素 | application（レイアウト値の一部） | ホイール・キーの意図。上限は core が計算 |
@@ -130,8 +131,12 @@
 | --- | --- | --- |
 | `src/ui/win32` | ウィンドウの HWND・描画資源・RichEdit の本文・ドラッグ中の一時状態 | Win32 はメッセージ駆動で可変が前提 |
 | `src/adapters/win32` | ファイルハンドル・読み書きバッファ | OS の入出力は可変 |
+| `src/core/index_filter_build` ownerのみ | 構築中の比較phase/数値位置・番号列・scratch。SEALED後は不変 | 同じmatcherを有限workで中断/再開するため。applicationへは限定操作のopaque handleだけを渡す（ADR0073） |
 
 隔離区画は、可変なコレクション・配列・ビルダを外へ返さず、検証済みの値型だけを受け取り、同じ入力に対して同じ結果を返す。
+ADR0073の`index_filter_build`に限り、applicationがcreate/step/finish/destroyのopaque handleを保持できる。
+可変配列・内部record・書込viewは返さない。構築状態と入力/work列が同じなら同じ結果となり、SEALEDの完成結果を変更しない。
+この限定許可を他のcore/application ownerへ広げない。
 
 🔴 **区画を増やさない。** 必要になったら、この表と ADR を先に変える。区画が増えるたびに検査の除外が伸びるので、伸びること自体が警告になる。
 

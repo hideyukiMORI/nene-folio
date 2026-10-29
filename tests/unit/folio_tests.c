@@ -149,6 +149,35 @@ static bool run_target_tests(const char *_Nonnull argument)
     return false;
 }
 
+static bool run_bounded_filter_target_tests(const char *_Nonnull argument)
+{
+    if (strcmp(argument, "--bounded-index-warm") == 0)
+    {
+        run_index_bounded_warm_tests();
+        printf("bounded warm index matching test passed\n");
+        return true;
+    }
+    if (strcmp(argument, "--bounded-index-matching") == 0)
+    {
+        run_index_filter_tests();
+        run_index_preparation_tests();
+        run_filter_lookup_state_tests();
+        run_index_cache_retry_state_tests();
+        run_index_filter_size_tests();
+        printf("bounded core and application matching tests passed\n");
+        return true;
+    }
+    if (strcmp(argument, "--bounded-index-matching-oom") == 0)
+    {
+        run_index_filter_size_allocation_tests();
+        run_index_preparation_allocation_tests();
+        run_index_cache_retry_allocation_tests();
+        printf("bounded matching allocation and ownership tests passed\n");
+        return true;
+    }
+    return false;
+}
+
 static bool run_filter_target_tests(const char *_Nonnull argument)
 {
     if (strcmp(argument, "--index-preparation") == 0)
@@ -179,7 +208,7 @@ static bool run_filter_target_tests(const char *_Nonnull argument)
         printf("filter corpus allocation and cache retry tests passed\n");
         return true;
     }
-    return false;
+    return run_bounded_filter_target_tests(argument);
 }
 
 static void run_bom_boundary_tests(void)

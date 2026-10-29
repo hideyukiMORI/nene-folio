@@ -6855,7 +6855,7 @@ void run_name_unchanged_state_tests(void)
 static enum folio_state_outcome finish_test_index_filter(struct folio_state *_Nonnull state)
 {
     enum folio_state_outcome outcome = FOLIO_STATE_READY;
-    size_t limit = folio_state_note_count(state) + 1;
+    size_t limit = folio_state_note_count(state) + 65536;
     while (outcome == FOLIO_STATE_READY && folio_state_index_filter_pending(state) && limit > 0)
     {
         outcome = folio_state_continue_index_filter(state);
@@ -6921,8 +6921,42 @@ static void verify_preparation_steps(void)
     row_order(state, order, sizeof order);
     require(same_text(order, "B/two"), "latest requested name supplies the result");
     require(folio_state_set_index_filter(state, u"one", 3) == FOLIO_STATE_READY &&
-                !folio_state_index_filter_pending(state) && adapter.note_reads == 2,
-            "completed corpus preserves the existing immediate warm query");
+                folio_state_index_filter_pending(state) && adapter.note_reads == 2 &&
+                finish_test_index_filter(state) == FOLIO_STATE_READY && adapter.note_reads == 2,
+            "completed corpus queues warm matching without rereading");
+    folio_state_destroy(state);
+}
+
+void run_index_bounded_warm_tests(void)
+{
+    finder = test_regex_port();
+    static const char *const notes[] = {"one", nullptr};
+    char body[2 * 65536 + 18];
+    memset(body, 'a', sizeof body - 1);
+    body[sizeof body - 1] = '\0';
+    struct persistence_adapter adapter = preparation_adapter();
+    adapter.notes_text = "{\"version\":1,\"notes\":[\"one\"]}";
+    adapter.scanned_notes = notes;
+    adapter.scanned_note_count = 1;
+    adapter.note_body = body;
+    struct folio_state *state = ready_state(&adapter);
+    require(test_index_filter_complete(state, u"a", 1) == FOLIO_STATE_READY &&
+                !folio_state_index_filter_pending(state) && adapter.note_reads == 1 &&
+                folio_state_index_filter_count(state) == 1,
+            "warm fixture loads one body and completes its initial matching");
+    require(folio_state_set_index_filter(state, u"", 0) == FOLIO_STATE_READY,
+            "clear before the warm request without invalidating the completed corpus");
+    require(folio_state_set_index_filter(state, u"z", 1) == FOLIO_STATE_READY &&
+                folio_state_index_filter_pending(state) && adapter.note_reads == 1,
+            "warm set returns pending before matching the giant single body");
+    require(folio_state_continue_index_filter(state) == FOLIO_STATE_READY &&
+                folio_state_index_filter_pending(state) && adapter.note_reads == 1,
+            "first warm matching continuation yields inside the single body without rereading");
+    require(folio_state_set_index_filter(state, u"", 0) == FOLIO_STATE_READY &&
+                !folio_state_index_filter_pending(state) &&
+                folio_state_continue_index_filter(state) == FOLIO_STATE_READY &&
+                !folio_state_filtering(state) && adapter.note_reads == 1,
+            "clear cancels the partially matched warm request");
     folio_state_destroy(state);
 }
 
@@ -7121,9 +7155,183 @@ static void verify_preparation_empty(void)
     folio_state_destroy(state);
 }
 
+static void verify_matching_policy_boundary(void)
+{
+    static const char *const notes[] = {"N", nullptr};
+    char body[65534];
+    for (size_t extra = 0; extra < 2; ++extra)
+    {
+        /* Entry 1 + name byte/NUL 2 + name comparison 1 + body bytes. */
+        size_t length = 65532 + extra;
+        memset(body, 'a', length);
+        body[length] = '\0';
+        struct persistence_adapter adapter = preparation_adapter();
+        adapter.notes_text = "{\"version\":1,\"notes\":[\"N\"]}";
+        adapter.scanned_notes = notes;
+        adapter.scanned_note_count = 1;
+        adapter.note_body = body;
+        struct folio_state *state = ready_state(&adapter);
+        require(test_index_filter_complete(state, u"a", 1) == FOLIO_STATE_READY &&
+                    folio_state_set_index_filter(state, u"", 0) == FOLIO_STATE_READY &&
+                    folio_state_set_index_filter(state, u"z", 1) == FOLIO_STATE_READY,
+                "prime one warm body for the policy boundary");
+        require(folio_state_continue_index_filter(state) == FOLIO_STATE_READY &&
+                    folio_state_index_filter_pending(state) == (extra == 1) &&
+                    adapter.note_reads == 1,
+                "first matching call creates and uses exactly the 65536-work policy budget");
+        require(finish_test_index_filter(state) == FOLIO_STATE_READY &&
+                    folio_state_index_filter_count(state) == 0 && adapter.note_reads == 1,
+                "the immediately over-budget body completes on a later call without rereading");
+        folio_state_destroy(state);
+    }
+}
+
+static void verify_matching_empty_category(void)
+{
+    static const char *const categories[] = {"B", "A", nullptr};
+    static const char *const notes[] = {"N", nullptr};
+    static const char *const no_notes[] = {nullptr};
+    char body[65533];
+    memset(body, 'a', sizeof body - 1);
+    body[sizeof body - 1] = '\0';
+    struct persistence_adapter adapter = preparation_adapter();
+    adapter.categories_text = "{\"version\":1,\"categories\":["
+                              "{\"name\":\"B\",\"color\":\"#111111\",\"expanded\":true},"
+                              "{\"name\":\"A\",\"color\":\"#222222\",\"expanded\":true}]}";
+    adapter.scanned_categories = categories;
+    adapter.scanned_category_count = 2;
+    adapter.notes_text = "{\"version\":1,\"notes\":[\"N\"]}";
+    adapter.scanned_notes = notes;
+    adapter.scanned_note_count = 1;
+    adapter.note_body = body;
+    test_adapter_second_notes(&adapter, "B", "{\"version\":1,\"notes\":[]}", no_notes);
+    struct folio_state *state = ready_state(&adapter);
+    require(test_index_filter_complete(state, u"a", 1) == FOLIO_STATE_READY &&
+                folio_state_set_index_filter(state, u"z", 1) == FOLIO_STATE_READY,
+            "prime a corpus with an empty category before its one note");
+    require(folio_state_continue_index_filter(state) == FOLIO_STATE_READY &&
+                folio_state_index_filter_pending(state) && adapter.note_reads == 1,
+            "the empty category consumes one work beyond the otherwise exact 65536 entry");
+    require(finish_test_index_filter(state) == FOLIO_STATE_READY &&
+                folio_state_index_filter_count(state) == 0 && adapter.note_reads == 1,
+            "empty-category progress resumes without starving the valid entry or rereading");
+    folio_state_destroy(state);
+}
+
+static struct folio_state *_Nonnull matching_mutation_state(
+    struct persistence_adapter *_Nonnull adapter, const char *_Nonnull body)
+{
+    *adapter = preparation_adapter();
+    adapter->note_body = body;
+    adapter->rare_note = "one";
+    adapter->rare_body = "small";
+    struct folio_state *state = ready_state(adapter);
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
+                test_index_filter_complete(state, u"a", 1) == FOLIO_STATE_READY,
+            "warm mutation fixture has one short current note and one giant cached body");
+    return state;
+}
+
+static void verify_matching_save_restart(void)
+{
+    char body[2 * 65536 + 18];
+    memset(body, 'a', sizeof body - 1);
+    body[sizeof body - 1] = '\0';
+    struct persistence_adapter adapter = preparation_adapter();
+    struct folio_state *state = matching_mutation_state(&adapter, body);
+    require(folio_state_begin_edit(state) == FOLIO_STATE_READY &&
+                folio_state_set_index_filter(state, u"z", 1) == FOLIO_STATE_READY &&
+                folio_state_continue_index_filter(state) == FOLIO_STATE_READY &&
+                folio_state_index_filter_pending(state),
+            "match partially before saving");
+    size_t reads = adapter.note_reads;
+    require(folio_state_store_note(state, u"zmall", 5) == FOLIO_STATE_READY &&
+                folio_state_index_filter_pending(state),
+            "pending save keeps the request");
+    require(finish_test_index_filter(state) == FOLIO_STATE_READY &&
+                folio_state_index_filter_count(state) == 1 && adapter.note_reads == reads,
+            "same-length saved first entry is rematched after invalidation without corpus reread");
+    folio_state_destroy(state);
+}
+
+static void verify_matching_identity_restart(void)
+{
+    char body[2 * 65536 + 18];
+    memset(body, 'a', sizeof body - 1);
+    body[sizeof body - 1] = '\0';
+    struct persistence_adapter adapter = preparation_adapter();
+    struct folio_state *state = matching_mutation_state(&adapter, body);
+    size_t reads = adapter.note_reads;
+    require(folio_state_set_index_filter(state, u"q", 1) == FOLIO_STATE_READY &&
+                folio_state_continue_index_filter(state) == FOLIO_STATE_READY &&
+                folio_state_index_filter_pending(state),
+            "match partially before rename");
+    struct note_name *name = accepted_note_name("q");
+    require(folio_state_rename_note(state, name, u"", 0) == FOLIO_STATE_READY &&
+                folio_state_index_filter_pending(state),
+            "pending rename keeps the request");
+    note_name_destroy(name);
+    require(finish_test_index_filter(state) == FOLIO_STATE_READY &&
+                folio_state_index_filter_count(state) == 1 && adapter.note_reads == reads,
+            "a renamed entry before the old cursor is rematched without rereading");
+    require(folio_state_set_index_filter(state, u"q", 1) == FOLIO_STATE_READY &&
+                folio_state_continue_index_filter(state) == FOLIO_STATE_READY &&
+                folio_state_index_filter_pending(state) &&
+                folio_state_trash_note(state, at(0, 0), u"", 0) == FOLIO_STATE_READY,
+            "delete remains available with a partially matched request");
+    require(finish_test_index_filter(state) == FOLIO_STATE_READY &&
+                folio_state_index_filter_count(state) == 0 && adapter.note_reads == reads,
+            "delete restarts against the shifted ledger and drops the old admitted match");
+    folio_state_destroy(state);
+}
+
+static void verify_matching_new_and_latest(void)
+{
+    char body[2 * 65536 + 18];
+    memset(body, 'a', sizeof body - 1);
+    body[sizeof body - 1] = '\0';
+    struct persistence_adapter adapter = preparation_adapter();
+    struct folio_state *state = matching_mutation_state(&adapter, body);
+    size_t reads = adapter.note_reads;
+    require(folio_state_set_index_filter(state, u"z", 1) == FOLIO_STATE_READY &&
+                folio_state_continue_index_filter(state) == FOLIO_STATE_READY &&
+                folio_state_index_filter_pending(state),
+            "partially match before replacement");
+    const char16_t broken[] = {0xd800};
+    require(folio_state_set_index_filter(state, broken, 1) == FOLIO_STATE_SEARCH_MALFORMED &&
+                same_text(folio_state_index_filter_term(state), "z"),
+            "malformed warm replacement preserves the current request");
+    require(folio_state_set_index_filter(state, u"a", 1) == FOLIO_STATE_READY &&
+                folio_state_index_filter_pending(state) &&
+                finish_test_index_filter(state) == FOLIO_STATE_READY &&
+                folio_state_index_filter_count(state) == 2,
+            "latest warm term replaces the old partial matcher");
+    require(folio_state_set_index_filter(state, u"q", 1) == FOLIO_STATE_READY &&
+                folio_state_continue_index_filter(state) == FOLIO_STATE_READY &&
+                folio_state_index_filter_pending(state) &&
+                folio_state_new_note(state, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "new draft remains available while matching is partial");
+    struct note_name *name = accepted_note_name("q");
+    struct note_destination destination = {.category = 0, .name = name};
+    require(folio_state_store_new(state, &destination, u"", 0) == FOLIO_STATE_READY &&
+                folio_state_index_filter_pending(state),
+            "publication keeps the latest request");
+    note_name_destroy(name);
+    require(finish_test_index_filter(state) == FOLIO_STATE_READY &&
+                folio_state_index_filter_count(state) == 1 && adapter.note_reads == reads,
+            "published name/body is included by a fresh matching count without rereading");
+    folio_state_destroy(state);
+}
+
 void run_index_preparation_tests(void)
 {
     finder = test_regex_port();
+    run_index_bounded_warm_tests();
+    verify_matching_policy_boundary();
+    verify_matching_empty_category();
+    verify_matching_save_restart();
+    verify_matching_identity_restart();
+    verify_matching_new_and_latest();
     verify_preparation_steps();
     verify_preparation_cancel();
     verify_preparation_stale_copy(PERSISTENCE_ABSENT);
@@ -7154,6 +7362,57 @@ static bool preparation_allocation(size_t nth)
     return outcome == FOLIO_STATE_READY;
 }
 
+static void verify_warm_request_oom(void)
+{
+    char body[2 * 65536 + 18];
+    memset(body, 'a', sizeof body - 1);
+    body[sizeof body - 1] = '\0';
+    struct persistence_adapter adapter = preparation_adapter();
+    struct folio_state *state = matching_mutation_state(&adapter, body);
+    size_t reads = adapter.note_reads;
+    require(folio_state_set_index_filter(state, u"z", 1) == FOLIO_STATE_READY &&
+                folio_state_continue_index_filter(state) == FOLIO_STATE_READY &&
+                folio_state_index_filter_pending(state),
+            "active warm matcher before term OOM");
+    allocation_probe_fail_at(1);
+    enum folio_state_outcome replaced = folio_state_set_index_filter(state, u"a", 1);
+    allocation_probe_fail_at(0);
+    require(replaced == FOLIO_STATE_OUT_OF_MEMORY && folio_state_index_filter_pending(state) &&
+                same_text(folio_state_index_filter_term(state), "z"),
+            "warm term OOM preserves the active request and builder");
+    require(folio_state_continue_index_filter(state) == FOLIO_STATE_READY &&
+                folio_state_index_filter_pending(state) &&
+                folio_state_continue_index_filter(state) == FOLIO_STATE_READY &&
+                !folio_state_index_filter_pending(state) &&
+                folio_state_index_filter_count(state) == 0 && adapter.note_reads == reads,
+            "term OOM preserves the already consumed work rather than restarting the giant entry");
+    folio_state_destroy(state);
+}
+
+static void verify_warm_build_oom(size_t nth)
+{
+    char body[2 * 65536 + 18];
+    memset(body, 'a', sizeof body - 1);
+    body[sizeof body - 1] = '\0';
+    struct persistence_adapter adapter = preparation_adapter();
+    struct folio_state *state = matching_mutation_state(&adapter, body);
+    require(test_index_filter_complete(state, u"one", 3) == FOLIO_STATE_READY &&
+                folio_state_index_filter_count(state) == 1 &&
+                folio_state_set_index_filter(state, u"a", 1) == FOLIO_STATE_READY,
+            "a valid warm term is accepted before its delayed build/finish OOM");
+    allocation_probe_fail_at(nth);
+    enum folio_state_outcome outcome = folio_state_continue_index_filter(state);
+    allocation_probe_fail_at(0);
+    require(outcome == FOLIO_STATE_OUT_OF_MEMORY && !folio_state_index_filter_pending(state) &&
+                !folio_state_filtering(state) && folio_state_index_filter_count(state) == 2 &&
+                folio_state_continue_index_filter(state) == FOLIO_STATE_READY,
+            "delayed OOM stops once on the full index without restoring the old narrow filter");
+    require(test_index_filter_complete(state, u"a", 1) == FOLIO_STATE_READY &&
+                folio_state_index_filter_count(state) == 2,
+            "stopped warm construction can retry through the same request/engine path");
+    folio_state_destroy(state);
+}
+
 void run_index_preparation_allocation_tests(void)
 {
     allocation_probe_fail_at(1);
@@ -7164,6 +7423,9 @@ void run_index_preparation_allocation_tests(void)
     if (active != NOTE_TEXT_OUT_OF_MEMORY)
         return;
     finder = test_regex_port();
+    verify_warm_request_oom();
+    for (size_t nth = 1; nth <= 4; ++nth)
+        verify_warm_build_oom(nth);
     struct persistence_adapter adapter = preparation_adapter();
     struct folio_state *state = ready_state(&adapter);
     require(folio_state_set_index_filter(state, u"one", 3) == FOLIO_STATE_READY &&

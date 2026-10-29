@@ -64,7 +64,9 @@ src/app
 ### `src/core`
 
 意味の正本を持つ。値型・閉じた選択肢・拒否理由と結果型。ドロワーのレイアウト（どの行が何ピクセルに見えるか・ヒットテスト・
-ドロップ先・スクロール上限）、カテゴリと索引の json 読み書き、md → RTF のサブセット変換、全文検索の索引を**純関数**として持つ。
+ドロップ先・スクロール上限）、カテゴリと索引の json 読み書き、md → RTF のサブセット変換を**純関数**として持つ。
+全文検索は`index_filter_build`だけに非公開の継続状態を認め、有限workの同一matcherから不変の`index_filter`を作る（ADR0073）。
+step自体を純関数とは呼ばず、同じ構築状態・入力・work列から同じ結果になる決定性を守る。
 テーマの固定ID/名前/UI・RTF配色は `folio_theme` の一表、systemを含む名前の解析・解決は `folio_theme_choice` が持つ（ADR0049）。
 Markdown生成物は`markdown_rtf`、leafと段落spanは`markdown_blocks`、順序付きquote/list pathとitem連番・未表示の印は
 `markdown_containers`が所有する。通常受理は旧段落のflushを要求でき、fence/tableの所属先読みは同ownerへの純粋な厳密照合を使う。
@@ -79,7 +81,9 @@ UI 状態・ファイル・現在時刻を持たない。実行時依存の許�
 
 振る舞いの調整を持つ。ポートの宣言・状態の所有者（`folio_state`）・意図を受ける reducer・表示値の生成・結果型。
 Win32・永続化・ファイル・ネットワークを知らない。
-初回全文検索の準備要求・読込位置・corpusは`folio_state`が所有し、一件継続の意図と完成時の採用を持つ（ADR0068）。
+全文検索の要求・読込位置・corpus・pending build handleと数値cursorは`folio_state`が所有する。
+本文準備は一件、入力/初回末尾のmatchingは有限workで継続し、完成時だけ採用する。
+確定filter修復の同期driverも同じcore engine/entry解決helperを使う（ADR0068/0073）。
 
 ### `src/adapters/win32`
 
