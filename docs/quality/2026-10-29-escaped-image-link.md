@@ -26,7 +26,7 @@ Issue: [#416](https://github.com/hideyukiMORI/nene-folio/issues/416)。基点mai
 | green build/tidy | 同じtarget/引数、clang-tidy込みexit 0。修正sourceと共用unitを再compile/link |
 | 限定green | 同じselector、exit 0 |
 | C/header format、`git diff --check` | 10:21:58 JST、両方exit 0 |
-| Full conformance | 10:22:04 JST、exit 1。初版の記録例2件をCNF-006がrelative linkと誤認。記録例は単純な分割表記へ修正した。full conformanceは未実行・未確認 |
+| Full conformance | 初回10:22:04 JSTは記録例2件をCNF-006がrelative linkと誤認しexit 1。分割表記へ修正・mainへrebase・親の状態文書更新後、`python -B eng/conformance.py --build-dir D:/NeNeFolio/outputs/416-escaped-image-link/build`は0件/exit 0。原本は`parent-conformance.log`と`parent-static-result.json` |
 | 品質記録の文書検査、diff | 記録完成後、変更文書だけに`eng.conformance.document_checks`を適用し0 findings/exit 0、`git diff --check` exit 0。C/header formatは既成功結果を再利用 |
 
 実コマンド、環境、結果JSON、入力hash、red sourceとlogは`D:/NeNeFolio/agents/416-escaped-image-link/`に保全。greenの4入力hashは作業木の現ファイルと一致し、redの4入力hashは保存snapshotと一致。red exe hashは`red-binary-hash.json`と一致。self-reviewと一覧は同directoryの`self-review.md`、`commands.json`、`final-hashes.json`、`completion.json`に記録する。
