@@ -466,10 +466,6 @@ static void verify_container_paths(void)
 
 static void verify_container_markers(void)
 {
-    expect_fragment("- > [x] quote", "[x] quote", "\\u9745?");
-    expect_fragment("> - [x] item", "\\u9745?\\tab }item", "[x]");
-    expect_fragment("- > - [x] item", "\\u9745?\\tab }item", "[x]");
-    expect_fragment("- item\n  [x] literal", "item [x] literal", "\\u9745?");
     expect_fragment("7. > quote\n\n   continued\n1. next", "\\li920\\fi-700\\tx920", "");
     expect_fragment("7. # heading\n1. next", "\\pard\\sb0\\sa80\\b\\cf2\\fs44\\li440", "\\sb200");
     expect_fragment("7. ~~~\n   code\n   ~~~\n1. next", "7.\\tab }\\par\n{\\f1", "1.\\tab }next");
@@ -601,10 +597,6 @@ static void verify_container_style_boundaries(void)
     expect_fragment("1234567890. literal", "1234567890. literal", "\\tab");
     expect_fragment("7. # title ###  \n1. next", "}title\\b0", "title ###");
     expect_fragment("# title###", "title###", "title\\b0");
-    expect_fragment("- [z] literal", "[z] literal", "\\u9745?");
-    expect_fragment("- [x) literal", "[x) literal", "\\u9745?");
-    expect_fragment("- [x]nospace", "[x]nospace", "\\u9745?");
-    expect_fragment("- [] literal", "[] literal", "\\u9744?");
 }
 
 static void verify_empty_owner_queries(void)
@@ -769,8 +761,6 @@ static void verify_new_blocks(void)
     expect_fragment("1. one\n\n   continued\n\n2. two", "2.\\tab }two", "1.\\tab }two");
     expect_fragment("> - item\n>   continued", "\\li920\\fi-220", "\\cf3 continued");
     expect_fragment("> > ## nested", "\\fs34\\li960 nested", "> ##");
-    expect_fragment("- [ ] open\n- [x] done\n- [X] done", "\\u9744?\\tab }open", "[x]");
-    expect_fragment("- [x] done", "\\u9745?\\tab }done", "[x]");
 }
 
 static void verify_image_literal(void)
@@ -1274,6 +1264,48 @@ void run_markdown_table_indent_tests(void)
     verify_deep_table_policy();
 }
 
+void run_markdown_task_tests(void)
+{
+    expect_body("- [x]\ttext", "\\pard\\li440\\fi-220\\tx440\\sa40\\sl240\\slmult1\\cf1 "
+                               "{\\f0\\fs22\\cf1\\b0\\highlight0 \\u9745?\\tab }text\\par\n");
+    expect_fragment("- [ ] open\n- [x] done\n- [X] done", "\\u9744?\\tab }open", "[x]");
+    expect_fragment("- [x] done", "\\u9745?\\tab }done", "[x]");
+    expect_fragment("- [X] done", "\\u9745?\\tab }done", "[X]");
+    expect_same_rendering("- [ ]\topen", "- [ ] open");
+    expect_same_rendering("- [x]\tdone", "- [x] done");
+    expect_same_rendering("- [X]\tdone", "- [X] done");
+    expect_body("- [ ]\t", "\\pard\\li440\\fi-220\\tx440\\sa40\\sl240\\slmult1\\cf1 "
+                           "{\\f0\\fs22\\cf1\\b0\\highlight0 \\u9744?\\tab }\\par\n");
+    expect_body("- [x]\t \ttext  ",
+                "\\pard\\li440\\fi-220\\tx440\\sa40\\sl240\\slmult1\\cf1 "
+                "{\\f0\\fs22\\cf1\\b0\\highlight0 \\u9745?\\tab } \ttext  \\par\n");
+    expect_fragment("7. [x]\tdone\n1. next", "\\u9745?\\tab }done", "[x]");
+    expect_fragment("7. [x]\tdone\n1. next", "8.\\tab }next", "1.\\tab }next");
+    expect_fragment("> - [x] item", "\\u9745?\\tab }item", "[x]");
+    expect_same_rendering("> - [x]\titem", "> - [x] item");
+    expect_fragment("- > - [x] item", "\\u9745?\\tab }item", "[x]");
+    expect_same_rendering("- > - [x]\titem", "- > - [x] item");
+
+    expect_fragment("- > [x] quote", "[x] quote", "\\u9745?");
+    expect_fragment("- > [x]\tquote", "[x]\tquote", "\\u9745?");
+    expect_fragment("- item\n  [x] literal", "item [x] literal", "\\u9745?");
+    expect_fragment("- item\n  [x]\tliteral", "item [x]\tliteral", "\\u9745?");
+    expect_fragment("- [z] literal", "[z] literal", "\\u9745?");
+    expect_fragment("- [z]\tliteral", "[z]\tliteral", "\\u9745?");
+    expect_fragment("- [x) literal", "[x) literal", "\\u9745?");
+    expect_fragment("- [x)\tliteral", "[x)\tliteral", "\\u9745?");
+    expect_fragment("- [x]nospace", "[x]nospace", "\\u9745?");
+    expect_fragment("- [x]", "[x]", "\\u9745?");
+    expect_fragment("- [] literal", "[] literal", "\\u9744?");
+    expect_fragment("- [\t]\ttext", "[\t]\ttext", "\\u9744?");
+    expect_fragment("- [x]\xC2\xA0text", "[x]\xC2\xA0text", "\\u9745?");
+    expect_fragment("- [\xC2\xA0]\ttext", "[\xC2\xA0]\ttext", "\\u9744?");
+    expect_fragment("[x]\ttext", "[x]\ttext", "\\u9745?");
+    expect_fragment("> [x]\ttext", "[x]\ttext", "\\u9745?");
+    expect_fragment("- \\[x]\ttext", "[x]\ttext", "\\u9745?");
+    expect_fragment("- `[x]\ttext`", "\\cf4 [x]\ttext}", "\\u9745?");
+}
+
 void run_markdown_tests(void)
 {
     verify_line_endings();
@@ -1286,6 +1318,7 @@ void run_markdown_tests(void)
     verify_container_columns();
     verify_container_queries();
     verify_container_style_boundaries();
+    run_markdown_task_tests();
     verify_empty_owner_queries();
     verify_borrowed_column_rejections();
     verify_borrowed_marker_rejections();

@@ -290,7 +290,7 @@ static void task_marker(struct markdown_blocks *_Nonnull parser,
     size_t start = line->content;
     if (parser->span_count != 0 || !markdown_containers_task_start(parser->containers) ||
         line->length - start < 4 || line->bytes[start] != '[' || line->bytes[start + 2] != ']' ||
-        line->bytes[start + 3] != ' ')
+        (line->bytes[start + 3] != ' ' && line->bytes[start + 3] != '\t'))
         return;
     char mark = line->bytes[start + 1];
     if (mark != ' ' && mark != 'x' && mark != 'X')
