@@ -87,3 +87,19 @@ link stdout213bytesは親がcp932でlib/exp作成通知と再読した。表示d
 
 規則: ARC-001/004/005/010/012、C-002/003/004/007/008/011/012/013/014/016、QLT-008/009/010/012/013。Waivers: none。
 通常data/Nib/削除拒否44path不操作。新物は統合・通常反映・全hash保全とdirty/ignored/link/稼働参照の安全監査まで保持し、整理は親担当。branch/commit保持。
+
+## 統合・通常反映・保全の確定（23:57 JST）
+
+[PR #447](https://github.com/hideyukiMORI/nene-folio/pull/447)の最終head `72bc6110f40f82ff278ea6392208bd1870f83322`で
+CI run `40894191660`のfull-gate/checkが成功した。`pwsh -NoProfile -File ./eng/check.ps1`は規約違反0、
+conformance tests112件、分岐4830/5312を確認した。正規merge-prでmain `35e194833600fa6b0703593782440bc403c75200`へ統合し、IssueはCLOSED。
+最終archiveで6593files / 403,036,759bytesを全hash照合し、追加worktreeを削除、branch/commitを保持した。
+
+通常exeは正規prepare-real-machineで反映した。ファイル更新23:50:29 JST、照合23:50:31 JST、版0.3.0.0、5,488,128bytes、
+SHA256 `FE654297A28829DE05F266157945160D3E98DE7CA049BA6F96339CFEB20D5C60`。
+対象process0件を確認し、子/wrapper0・記録エラー0。更新後のアプリ起動・通常data操作は行っていない。
+
+出力 `D:/NeNeFolio/outputs/446-linear-index-matching` の削除は、自動承認レビューが実行前に`blocked by policy`で拒否した。
+追加理由は返らず、再試行や別手段の削除をしない。旧44と合わせ45箇所を保持する。
+確定原本は`D:/NeNeFolio/agents/446-linear-index-matching/integration-completion.json`。
+成功対象検証は再実行せず、この完了事実を#449の文書収載で反映した。Waivers none。

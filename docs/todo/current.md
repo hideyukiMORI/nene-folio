@@ -1,80 +1,29 @@
 # いまの状態 — NeNe Folio
 
-記録日: 2026-10-29。hideの継続品質改善依頼により、設計Astra・実装SOL/LUNAの分担で調査と修正を進める。
-この分担は今回の作業に適用し、将来の再開では最新のhide指示・実Issue/PR・checkoutを照合する。
-経緯は[日報](../reports/2026-10-29.md)、再開情報は[引き継ぎ](../handoffs/2026-10-29.md)。
+記録日: 2026-10-30。hideの「収載後にいったん停止」指定に従い、継続品質改善は#448の設計・準備までで区切る。
+再開はhideの新しい指示を受けてから。今回のAstra設計・SOL/LUNA分担を次の作業へ自動継承しない。
+最新は[日報](../reports/2026-10-30.md)・[引き継ぎ](../handoffs/2026-10-30.md)、
+10月29日の完成成果は[23件の一覧](../reports/2026-10-29.md#一日の成果一覧2026-10-30の終了整理で確定)。
 
 ## 品質改善の現在位置
 
-[#446](https://github.com/hideyukiMORI/nene-folio/issues/446)の一般語検索は、部分一致を保持して総比較workを線形に抑える完成候補が対象検証を通過した。
-prefixが無い候補だけ既存tail skipを使い、不一致は一比較ずつ継続する。[ADR0074](../adr/0074-linear-index-matching.md)の各source長Nに対する3N上限を維持する。
-周期4入力の総workは8180/32756/7940/32516となり、旧73442/294626/990722/4161026から縮んだ。5予算scheduleで集合と総workが一致し、single65538と同phrase5057も成立した。
-Debug/tidy・限定matching・測定build・strict OOMは子/wrapper0・記録エラー0。親が420/429/456/478入力と19生成物を全hash照合した。
-prefixを含むcreate4失敗点、途中SCAN破棄、prefix不要3経路、warm多文字語の第4確保失敗と再要求回復を確認した。旧binding proof3件をhash付き再利用し、新proof実行0。
-strict stderrのinterception診断一行を保持し、全sanitizer正常・実時間速度・実UI応答改善は主張しない。一般語createのO(m)メモリ/前処理と同期I/O等の費用は残る。
-単文字/公開signature/65536政策/UI/loop/I/O/schemaは不変。core OOMの既存間接配線を使い、当初の重複追加案は未実行で撤回した。
-詳細は[品質記録](../quality/2026-10-29-linear-index-matching.md)、親の受理は`agents/446-linear-index-matching/parent-green-acceptance.json`。
-最終File API規約検査は違反0。文書末尾の空行2件を訂正し、diff-final-02は773入力不変・子/wrapper0・記録エラー0で成功した。最終stage・必須CI・統合・通常反映・全保全と安全整理を続ける。作業木は`D:/NeNeFolio/worktrees/446-linear-index-matching`。Waivers none。
+製品修正17件、検証・記録ツール2件、診断・品質記録4件を10月29日にmainへ統合した。
+最後の[#446](https://github.com/hideyukiMORI/nene-folio/issues/446) / [PR #447](https://github.com/hideyukiMORI/nene-folio/pull/447)は
+最終head`72bc611`の必須CI`40894191660`成功後、main`35e1948`へ統合した。
+一般語の部分一致を保持し、各source長Nの比較workを3N以下に抑える。周期4入力は8180/32756/7940/32516work。
+Debug/tidy・限定matching・測定build・strict OOM成功、File API規約違反0。実時間・実UI応答改善の測定ではない。
+通常exe反映、6593filesの全hash保全、worktree削除まで完了。出力削除拒否は下記へ保持する。
+詳細は[品質記録](../quality/2026-10-29-linear-index-matching.md)、確定原本は`agents/446-linear-index-matching/integration-completion.json`。
 
-[#444](https://github.com/hideyukiMORI/nene-folio/issues/444)の現行matcher診断は、同じ公開APIによる6入力×2予算の12rowsが成功した。
-各stepは予算4096/65536以内、両予算で完成集合と総workが一致した。周期的late-mismatchの総workは`2+(N-m+1)(m+1)`と一致し、有限stepだけでは総費用を線形に抑えないことを確認した。
-N16384/m17は294626work、N16384/m257は4161026work。現UIは127 UTF-16単位制限のため、257 ASCIIのcaseは公開core限定、17 ASCIIも今回の実UI操作ではない。
-10.2671577秒の負荷確認で外部CPU2.765625秒・不明16件となり、WORK_ONLYで一回実行した。診断時計API0・全時間nullで、速度値や実UI応答時間は主張しない。
-新4TUのDebug/tidy/linkとnativeは子/wrapper0・記録エラー0。親がbuild1275入力/16生成物、native1306入力/19生成物を全hash照合した。stderrのinterception一行は保持し、全sanitizer正常とはしない。
-製品source/API/schema/ADRは不変。詳細は[品質記録](../quality/2026-10-29-bounded-search-diagnostic.md)、親受理は`agents/444-bounded-search-diagnostic/parent-native-acceptance.json`。
-[PR #445](https://github.com/hideyukiMORI/nene-folio/pull/445)最終head`88e1f3e`のCI`40880367466`成功後、main`84efcff`へ統合した。
-通常exeは#442のhashを維持し、2753ファイル全hash保全とworktree削除済み。出力は削除拒否のため保持する。
-確定値は`D:/NeNeFolio/agents/444-bounded-search-diagnostic/integration-completion.json`。
+[#448](https://github.com/hideyukiMORI/nene-folio/issues/448)は現在ノート内検索の無確保線形化案。
+設計とIssue作成まで済み、未実行のbaseline計画で停止した。製品/test/ADR編集、新configure/build/link/診断は0。
+作業木`D:/NeNeFolio/worktrees/448-linear-note-search`はbase35e1948のcleanな準備状態で保持し、同名outputsは空。
+親の計画受理とhideの再開指示が先。原本と次の手順は[引き継ぎ](../handoffs/2026-10-30.md#次の焦点-448--現在ノート検索)。
 
-[#442](https://github.com/hideyukiMORI/nene-folio/issues/442)の通常literal内部SPの集約は、完成候補v2の対象5段が成功した。
-通常literalの境界からSPを外し、先頭SP runとLF直前SP runを維持する。pair/emit・code/link/image・明示改行・OOM契約は不変。
-65536bytesの空白区切り文で解析用calloc最大要求は旧1835008bytesから56bytesへ縮み、厳密RTF全bytesとfinishも一致した。
-短phrase7bytesと既存通常literalも56bytes。metadata確保失敗2件と公開factory失敗8件を個別確認した。
-最初のbuildはC-012複雑度12>10で停止したが、境界定義とLF以外の早期returnへ整理し、閾値・期待を保ったv2が実tidyを通過した。
-Debug/tidy・canonical Markdown・測定build・strict資源/境界・strict OOMは全て子/wrapper0・記録エラー0。
-親が452/455/456/461/461入力と11生成物を全hash照合し、実3compile commandとproof再利用3件も確認した。
-各strictのinterception診断行を保持し、全sanitizer正常・全heap量・速度改善率は主張しない。最大backtick比例scratchは残る。
-詳細は[品質記録](../quality/2026-10-29-inline-spaces.md)、親の受理は`agents/442-inline-spaces/parent-green-acceptance.json`。
-最終File API規約検査と差分確認は各772入力不変、子/wrapper0・記録エラー0。親が全6150保全ファイルと最終8ファイルを照合した。
-[PR #443](https://github.com/hideyukiMORI/nene-folio/pull/443)最終head`1e41166`のCI`40868567105`成功後、main`89b5873`へ統合した。
-20:57:03 JSTに通常exeへ反映、6818ファイル全hash保全とworktree削除済み。出力は削除拒否のため保持する。
-確定値は`D:/NeNeFolio/agents/442-inline-spaces/integration-completion.json`。
-
-[#440](https://github.com/hideyukiMORI/nene-folio/issues/440)の行内解析は、通常文字の連続部分をまとめ、
-共通の字句範囲で数えたtoken数Tと最長backtick長Bから容量を決める完成候補で対象検証が成功した。
-token容量T・共用scratch容量max(T,B+1)とし、構文/出力/失敗契約と既存の長さ上限を保つ。
-65536bytesの通常本文で解析用calloc最大要求は旧3670072bytesから56bytesへ縮み、正確なRTF出力も一致した。
-Debug build/tidy、canonical Markdown、測定用build、資源/境界、OOMの5段は子/wrapper0・記録エラー0。
-metadata確保失敗2件と公開factory失敗8件を個別確認し、成功済みの検出設定proofは再利用した。
-各strict実行のinterception診断行を保持し、全sanitizer正常・全heap量・速度改善率は主張しない。
-詳細は[品質記録](../quality/2026-10-29-inline-storage.md)、親の受理は`agents/440-inline-storage/parent-green-acceptance.json`。
-最終File API規約検査・差分確認は各768入力不変、子/wrapper0・記録エラー0。親が全snapshotと最終10ファイルを照合した。
-[PR #441](https://github.com/hideyukiMORI/nene-folio/pull/441)最終head`dbf0829`のCI`40861826966`成功後、main`591e5c4`へ統合した。
-20:04:07 JSTに通常exeへ反映、6180ファイル全hash保全とworktree削除済み。出力は削除拒否のため保持する。
-確定値は`D:/NeNeFolio/agents/440-inline-storage/integration-completion.json`。
-
-索引スクロールの加算境界 #434 / [PR #435](https://github.com/hideyukiMORI/nene-folio/pull/435)は、
-最終head `64a8b78`のCI `40836070731`でfull-gate/check成功後、main `875d058`へ統合した。
-旧実装の有効位置15＋INT_MAXをUBSanで確認し、同じscroll意図内で移動量を先に丸める修正と対象検証が成功した。
-16:39:26 JSTに通常exeへ反映、2589ファイル全hash保全とworktree削除まで完了。出力削除は拒否され保持する。
-[品質記録](../quality/2026-10-29-drawer-scroll-delta.md)、確定値は`D:/NeNeFolio/agents/434-drawer-scroll-delta/integration-completion.json`。
-
-本文入力・表示位置の静読と、検索pending中の保存/改名/削除/新規公開・借用寿命の独立静読は、新しい具体的不具合候補0件だった。
-今回の試験成功や全経路の安全性証明を意味しない。新しい製品修正は採用していない。
-直近16:34の負荷照会でも他案件compile/tidyが稼働しており、追加の性能計時は0件。
-#428後のmatcherへ旧候補の計測値を読み替えず、背景I/Oと極狭幅表の可読性は未解消のまま扱う。
-結果と未確認範囲は[品質の現在地](../quality/2026-10-29-quality-checkpoint.md)へ整理した。
-文書反映 #436 / [PR #437](https://github.com/hideyukiMORI/nene-folio/pull/437)は、最終head `96ad8c5`のCI `40837772905`成功後、main `c860e0b`へ統合・作業木整理済み。通常exeは#434のhashを維持した。確定値は`agents/436-quality-checkpoint/integration-completion.json`。
-
-[#438](https://github.com/hideyukiMORI/nene-folio/issues/438)の共有診断では、read-only readerと改名・ごみ箱の両立は合成条件で成立したが、保存はMoveFileExWのERROR_ACCESS_DENIEDで失敗した。
-reader close後は同じ保存が成功したため、この共有設定だけの背景読込案は採用しない。初回45確認/2FAIL、保存限定12確認/2FAILを負の成立性証拠として保持する。
-製品source・共有規則・背景thread・ADR・通常exeは変更していない。[品質記録](../quality/2026-10-29-read-sharing-feasibility.md)を参照する。
-文書[PR #439](https://github.com/hideyukiMORI/nene-folio/pull/439)は最終head`1c176b8`のCI`40849927435`でfull-gate/check成功後、
-main`f032adc`へ統合した。2632ファイルの全hash保全とworktree整理済み。出力は削除拒否により保持する。
-確定値は`D:/NeNeFolio/agents/438-read-sharing-feasibility/integration-completion.json`。
-
-以前の完了履歴は[日報](../reports/2026-10-29.md)・[引き継ぎ](../handoffs/2026-10-29.md)と各品質記録へ置く。
-旧計測/設計原本は`D:/NeNeFolio/agents/quality-20261029/`。成功済み対象は関係入力が不変なら再実行しない。
+本文/置換の追加静読は新具体的不具合0。置換4Mの生成片/完成本文の差を新規不具合とせず、既存のedit資源上限を維持した。
+背景読込・極狭幅表は未解決で、新しい性能値や実UIの一般保証はない。
+文書収載#449の統合・通常exe hash維持・安全整理の確定原本は`agents/day-close-20261030/integration-completion.json`。
+Waivers none。
 
 ## 公開済みbeta
 
@@ -88,9 +37,9 @@ main`f032adc`へ統合した。2632ファイルの全hash保全とworktree整理
 ## 通常exeとhideの実機確認
 
 hide受理済み合成サンプル`data/サンプル/Markdown構文サンプル.md`は通常dataへ残している。実ノート内容は記録・同梱しない。
-現在の通常`C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`はsource `89b5873`・表示版0.3.0/Windows版0.3.0.0。
-通常process0件を確認してから正規ツールで反映しexit0だった。10月29日20:57:03 JST更新済みで、更新後は起動していない。
-版・hashは`D:/NeNeFolio/agents/442-inline-spaces/normal-build-verification.json`。通常dataは操作していない。
+現在の通常`C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`はsource `35e1948`・表示版0.3.0/Windows版0.3.0.0。
+通常process0件を確認してから正規ツールで反映しexit0だった。10月29日23:50:29 JST更新済みで、更新後は起動していない。
+版・hashは`D:/NeNeFolio/agents/446-linear-index-matching/normal-build-verification.json`。通常dataは操作していない。
 
 ## 次の予定: ノートの保存先設定（未実装）
 
@@ -111,7 +60,9 @@ portable版はexe隣の`data`を既定とし、両方とも設定から「ノー
 
 ## 保持中の旧作業物
 
-下記の44箇所は自動承認レビューの削除拒否により保持する。再試行や別手段での削除をしない。
+下記の45箇所は自動承認レビューの削除拒否により保持する。再試行や別手段での削除をしない。
+
+- #446: `D:/NeNeFolio/outputs/446-linear-index-matching`。統合・通常反映・6593filesの全hash保全と安全監査後、出力削除要求が実行前に`blocked by policy`で拒否された。追加理由なし。worktreeは削除済み、branch/commit保持。確定値は同taskの`integration-completion.json`。
 
 - #444: `D:/NeNeFolio/outputs/444-bounded-search-diagnostic`。文書統合・通常exe hash維持・2753ファイル全hash保全と安全監査後、出力削除要求が実行前に`blocked by policy`で拒否された。追加理由なし。worktreeは削除済み、branch/commit保持。確定原本は同taskの`integration-completion.json`。
 
