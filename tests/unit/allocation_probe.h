@@ -13,6 +13,8 @@ void allocation_probe_fail_at(size_t nth);
 [[nodiscard]] size_t allocation_probe_calls(void);
 [[nodiscard]] size_t allocation_probe_malloc_size(void);
 [[nodiscard]] size_t allocation_probe_realloc_size(void);
+/* fail_atからの最大calloc要求bytes。積overflowはSIZE_MAXへ飽和して観測する。 */
+[[nodiscard]] size_t allocation_probe_calloc_max_bytes(void);
 
 void *_Nullable folio_probe_malloc(size_t size);
 void *_Nullable folio_probe_calloc(size_t count, size_t size);

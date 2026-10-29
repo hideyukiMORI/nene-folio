@@ -340,6 +340,20 @@ static bool run_surface_target_tests(const char *_Nonnull argument)
 
 static bool run_selected_tests(const char *_Nonnull argument)
 {
+    if (strcmp(argument, "--inline-storage-oom") == 0)
+    {
+        require(run_markdown_inline_storage_allocation_tests() >= 3,
+                "inline storage OOM selector requires metadata and factory failure injection");
+        printf("Markdown inline storage allocation tests passed\n");
+        return true;
+    }
+    if (strcmp(argument, "--inline-storage") == 0)
+    {
+        require(run_markdown_inline_storage_tests(),
+                "inline storage selector requires actual allocation instrumentation");
+        printf("Markdown inline storage tests passed\n");
+        return true;
+    }
     if (strcmp(argument, "--drawer-scroll-delta") == 0)
     {
         run_drawer_scroll_delta_tests();

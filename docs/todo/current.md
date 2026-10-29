@@ -6,6 +6,17 @@
 
 ## 品質改善の現在位置
 
+[#440](https://github.com/hideyukiMORI/nene-folio/issues/440)の行内解析は、通常文字の連続部分をまとめ、
+共通の字句範囲で数えたtoken数Tと最長backtick長Bから容量を決める完成候補で対象検証が成功した。
+token容量T・共用scratch容量max(T,B+1)とし、構文/出力/失敗契約と既存の長さ上限を保つ。
+65536bytesの通常本文で解析用calloc最大要求は旧3670072bytesから56bytesへ縮み、正確なRTF出力も一致した。
+Debug build/tidy、canonical Markdown、測定用build、資源/境界、OOMの5段は子/wrapper0・記録エラー0。
+metadata確保失敗2件と公開factory失敗8件を個別確認し、成功済みの検出設定proofは再利用した。
+各strict実行のinterception診断行を保持し、全sanitizer正常・全heap量・速度改善率は主張しない。
+詳細は[品質記録](../quality/2026-10-29-inline-storage.md)、親の受理は`agents/440-inline-storage/parent-green-acceptance.json`。
+最終File API規約検査・差分確認は各768入力不変、子/wrapper0・記録エラー0。親が全snapshotと最終10ファイルを照合した。
+最終CI/統合/通常反映/整理は実PRと同taskのintegration-completionを照合する。作業木は`D:/NeNeFolio/worktrees/440-inline-storage`。
+
 索引スクロールの加算境界 #434 / [PR #435](https://github.com/hideyukiMORI/nene-folio/pull/435)は、
 最終head `64a8b78`のCI `40836070731`でfull-gate/check成功後、main `875d058`へ統合した。
 旧実装の有効位置15＋INT_MAXをUBSanで確認し、同じscroll意図内で移動量を先に丸める修正と対象検証が成功した。
@@ -21,7 +32,10 @@
 
 [#438](https://github.com/hideyukiMORI/nene-folio/issues/438)の共有診断では、read-only readerと改名・ごみ箱の両立は合成条件で成立したが、保存はMoveFileExWのERROR_ACCESS_DENIEDで失敗した。
 reader close後は同じ保存が成功したため、この共有設定だけの背景読込案は採用しない。初回45確認/2FAIL、保存限定12確認/2FAILを負の成立性証拠として保持する。
-製品source・共有規則・背景thread・ADR・通常exeは変更していない。[品質記録](../quality/2026-10-29-read-sharing-feasibility.md)を参照し、文書PRの最終CI/統合/整理は同taskのintegration-completionと実PRを照合する。
+製品source・共有規則・背景thread・ADR・通常exeは変更していない。[品質記録](../quality/2026-10-29-read-sharing-feasibility.md)を参照する。
+文書[PR #439](https://github.com/hideyukiMORI/nene-folio/pull/439)は最終head`1c176b8`のCI`40849927435`でfull-gate/check成功後、
+main`f032adc`へ統合した。2632ファイルの全hash保全とworktree整理済み。出力は削除拒否により保持する。
+確定値は`D:/NeNeFolio/agents/438-read-sharing-feasibility/integration-completion.json`。
 
 以前の完了履歴は[日報](../reports/2026-10-29.md)・[引き継ぎ](../handoffs/2026-10-29.md)と各品質記録へ置く。
 旧計測/設計原本は`D:/NeNeFolio/agents/quality-20261029/`。成功済み対象は関係入力が不変なら再実行しない。
@@ -61,7 +75,9 @@ portable版はexe隣の`data`を既定とし、両方とも設定から「ノー
 
 ## 保持中の旧作業物
 
-下記の40箇所は自動承認レビューの削除拒否により保持する。再試行や別手段での削除をしない。
+下記の41箇所は自動承認レビューの削除拒否により保持する。再試行や別手段での削除をしない。
+
+- #438: `D:/NeNeFolio/outputs/438-read-sharing-feasibility`。文書統合・通常exe hash保持・2632ファイル全hash保全と安全監査後、出力削除要求が実行前に`blocked by policy`で拒否された。追加理由なし。worktreeは削除済み、branch/commit保持。自作ごみ箱の1組は別途保持してpurgeしない。確定値は同taskの`integration-completion.json`。
 
 - #436: `D:/NeNeFolio/outputs/436-quality-checkpoint`。文書だけの作業で作った空directoryの非再帰削除要求が、実行前に`blocked by policy`で拒否された。追加理由なし。空のまま保持し、検証記録はagentsへ直接残す。確定原本は同taskの`empty-output-cleanup.json`。
 
