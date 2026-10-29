@@ -102,3 +102,14 @@ schema/実行時依存/ゲート閾値/除外は不変。最終head必須CI成�
 - [GetAncestor](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getancestor)
 - [GetLastActivePopup](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getlastactivepopup)
 - [EnumThreadWindows](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-enumthreadwindows)
+
+## 2026-10-30の実装補足（#451）
+
+drawerとsettings/nativeのbackdropが窓縁を覆い、親の正しいresize判定へ入力が届かない境界を修復する。
+主窓のsigned screen座標・DPI/system metrics・edge表を一つの`resize_hit`へ集約し、親のhit_testも子用queryもこれを使う。
+最大化中は同じ関数でresizeなしとする。子へborder幅や最大化状態を複製しない。
+
+子用の同期queryはcaptureが無いときだけresize帯を通過可とし、drawer/backdropはその点だけHTTRANSPARENTを返す。
+行dragや押下capture、内側client、面のcardは既存入力経路を維持する。子からSC_SIZEやReleaseCaptureを強制せず、
+親へ届いた後は既存Win32のshell経路を使う。内容のguard・modal owner・終了の寿命・保存schemaは変更しない。
+根拠とOS query/合成操作/物理入力の区別は[品質記録](../quality/2026-10-30-window-edge-routing.md)へ残す。

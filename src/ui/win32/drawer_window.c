@@ -1067,6 +1067,12 @@ static LRESULT drawer_message(struct drawer_window *_Nonnull self, UINT message,
 {
     switch (message)
     {
+    case WM_NCHITTEST:
+        if (SendMessageW(GetParent(self->handle), folio_message_resize_through, 0, lparam) != 0)
+        {
+            return HTTRANSPARENT;
+        }
+        return DefWindowProcW(self->handle, message, wparam, lparam);
     case WM_PAINT:
         paint(self);
         return 0;

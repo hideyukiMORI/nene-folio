@@ -4070,20 +4070,37 @@ static void draw_command_surface(const struct folio_window *_Nonnull self, HDC d
     }
 }
 
-/* 共通頭のbutton以外の空白を掴んで動かす。縁は既存のresize判定。 */
-static LRESULT hit_test(const struct folio_window *_Nonnull self, LPARAM lparam)
+/* 主窓と外周を覆う子が共有する、screen座標とDPIによる唯一のresize判定。 */
+static LRESULT resize_hit(const struct folio_window *_Nonnull self, LPARAM lparam)
 {
+    if (IsZoomed(self->handle))
+    {
+        return HTNOWHERE;
+    }
     POINT point = {GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
     RECT window;
     GetWindowRect(self->handle, &window);
     UINT dpi = GetDpiForWindow(self->handle);
     int border = GetSystemMetricsForDpi(SM_CXSIZEFRAME, dpi) +
                  GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi);
-    LRESULT edge = edge_hit(point, window, border);
+    return edge_hit(point, window, border);
+}
+
+/* 行dragや押下のcaptureは子に残し、新しい窓縁の操作だけを主窓へ通す。 */
+static bool resize_through(const struct folio_window *_Nonnull self, LPARAM lparam)
+{
+    return GetCapture() == nullptr && resize_hit(self, lparam) != HTNOWHERE;
+}
+
+/* 共通頭のbutton以外の空白を掴んで動かす。縁は既存のresize判定。 */
+static LRESULT hit_test(const struct folio_window *_Nonnull self, LPARAM lparam)
+{
+    LRESULT edge = resize_hit(self, lparam);
     if (edge != HTNOWHERE)
     {
         return edge;
     }
+    POINT point = {GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
     ScreenToClient(self->handle, &point);
     RECT header = regions_for(self).header;
     if (!PtInRect(&header, point))
@@ -10220,6 +10237,9 @@ static LRESULT CALLBACK settings_backdrop_procedure(HWND window, UINT message, W
     }
     switch (message)
     {
+    case WM_NCHITTEST:
+        return resize_through(self, lparam) ? HTTRANSPARENT
+                                            : DefWindowProcW(window, message, wparam, lparam);
     case WM_PAINT:
         paint_settings_backdrop(self, window);
         return 0;
@@ -10592,6 +10612,8 @@ static LRESULT on_child_request(struct folio_window *_Nonnull self, UINT message
 {
     switch (message)
     {
+    case folio_message_resize_through:
+        return resize_through(self, lparam);
     case folio_message_pane_zoomed:
         arrange_zoomed_pane(self, (size_t)wparam);
         return 0;
