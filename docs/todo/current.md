@@ -12,10 +12,14 @@
 設計は[ADR0071](../adr/0071-ordered-markdown-containers.md)、対象結果は[品質記録](../quality/2026-10-29-markdown-containers.md)。
 通常exeへの反映と作業物整理は後続修正の統合後に行う。確定値は`D:/NeNeFolio/agents/404-markdown-containers/completion.json`を照合する。
 
-現在は[#405](https://github.com/hideyukiMORI/nene-folio/issues/405)の表の等幅配分と、
-[#407](https://github.com/hideyukiMORI/nene-folio/issues/407)の確保失敗時nonnull契約を進める。
-#405は実native対象79 checks/0 failures、修正前の不均等幅も再現済み。#404統合後のmainを取り込み、最終head必須CIへ進む。
-#407は7factoryのnullable確認と測定sanitizerの統一を実装し、対象失敗注入とtool正負例が成功。完成記録を確認中。
+表の等幅配分[#405 / PR #408](https://github.com/hideyukiMORI/nene-folio/pull/408)も最終head `204f016`の
+CI `40791642453`が成功し、main `ff4b8bf`へ統合済み。実native対象79 checks/0 failures、修正前の不均等幅も再現した。
+通常反映・整理の確定値は`D:/NeNeFolio/agents/405-equal-table-columns/integration-completion.json`を照合する。
+
+現在は[#407](https://github.com/hideyukiMORI/nene-folio/issues/407)の確保失敗時nonnull契約を進める。
+7factoryのnullable確認と測定sanitizerの統一を実装し、対象失敗注入、binding検出正負例、tool8 tests、build/tidyと規約検査が成功。
+親レビュー後にmain `ff4b8bf`を取り込んだ。最終headの必須CI・統合と、上記修正を含む通常exe反映が残る。
+対象結果は[品質記録](../quality/2026-10-29-nullable-allocation.md)、実装席の記録は`D:/NeNeFolio/agents/407-nullable-allocation/completion.json`。
 
 CR改行の[#402 / PR #403](https://github.com/hideyukiMORI/nene-folio/pull/403)は最終head必須CI成功後、main `5c1240e`へ統合し通常exeへ反映済み。
 確認範囲は[品質記録](../quality/2026-10-29-markdown-line-endings.md)、確定値は
