@@ -86,6 +86,17 @@ static bool run_document_settings_target_tests(const char *_Nonnull argument)
     return false;
 }
 
+static bool run_note_search_target_tests(const char *_Nonnull argument)
+{
+    if (strcmp(argument, "--note-search") != 0)
+    {
+        return false;
+    }
+    run_search_tests();
+    printf("note search tests passed\n");
+    return true;
+}
+
 static bool run_target_tests(const char *_Nonnull argument)
 {
     if (strcmp(argument, "--markdown-rtf") == 0)
@@ -388,30 +399,15 @@ static bool run_selected_tests(const char *_Nonnull argument)
         printf("nullable allocation, preview ownership, BOM and template tests passed\n");
         return true;
     }
-    return (run_surface_target_tests(argument) || run_menu_target_tests(argument) ||
-            run_size_overflow_target_tests(argument) || run_pane_load_target_tests(argument) ||
-            run_document_settings_target_tests(argument) || run_target_tests(argument) ||
-            run_filter_target_tests(argument));
+    return (run_note_search_target_tests(argument) || run_surface_target_tests(argument) ||
+            run_menu_target_tests(argument) || run_size_overflow_target_tests(argument) ||
+            run_pane_load_target_tests(argument) || run_document_settings_target_tests(argument) ||
+            run_target_tests(argument) || run_filter_target_tests(argument));
 }
 
-int main(int argc, char *_Nonnull *_Nonnull argv)
+static void run_full_suite(void)
 {
-    if (argc == 2 && strcmp(argv[1], "--bom-boundary") == 0)
-    {
-        run_bom_boundary_tests();
-        return 0;
-    }
-    if (argc == 2 && run_selected_tests(argv[1]))
-    {
-        return 0;
-    }
     run_text_tests();
-    /* eng/coverage.py の反例: 台帳・配置・状態のテストを省いた実行では分岐 90%
-     * に届かないことを示す。 */
-    if (argc == 2 && strcmp(argv[1], "--coverage-negative") == 0)
-    {
-        return 0;
-    }
     run_note_size_text_tests();
     run_size_overflow_tests();
     run_size_overflow_state_tests();
@@ -453,5 +449,30 @@ int main(int argc, char *_Nonnull *_Nonnull argv)
     run_allocation_tests();
     run_category_rename_allocation_tests();
     printf("folio unit tests passed\n");
+}
+
+int main(int argc, char *_Nonnull *_Nonnull argv)
+{
+    if (argc == 2 && strcmp(argv[1], "--bom-boundary") == 0)
+    {
+        run_bom_boundary_tests();
+        return 0;
+    }
+    if (argc == 2 && run_selected_tests(argv[1]))
+    {
+        return 0;
+    }
+    if (argc != 1 && (argc != 2 || strcmp(argv[1], "--coverage-negative") != 0))
+    {
+        fprintf(stderr, "unknown test selector\n");
+        return 2;
+    }
+    /* eng/coverage.py の反例は text のみを実行し、全体の分岐下限を満たさない。 */
+    if (argc == 2 && strcmp(argv[1], "--coverage-negative") == 0)
+    {
+        run_text_tests();
+        return 0;
+    }
+    run_full_suite();
     return 0;
 }
