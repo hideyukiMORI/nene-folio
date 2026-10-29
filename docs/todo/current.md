@@ -8,12 +8,20 @@
 
 ## 品質改善の現在位置
 
-対象実行の証跡保存[#424](https://github.com/hideyukiMORI/nene-folio/issues/424)は対象検証済みの完成候補。
+表開始と見出しの優先順位[#426](https://github.com/hideyukiMORI/nene-folio/issues/426)は対象検証済みの完成候補。
+1列候補のraw pipe有無でsetextと表が入れ替わる点を、既存の行分類/列数/区切り判定へ揃える。
+共用開始判定だけを修正し、旧sourceの独立red2件で表とsetextの逆転を確認した。完成候補のDebug build/tidyと対象selectorはexit0。
+1列表・setext・先行block・複数行段落・quote/listの所属を確認し、入力/実行物/出力の証跡を別run-dirへ保全した。
+詳細は[品質記録](../quality/2026-10-29-table-start-priority.md)。最終head CI・統合/通常反映/保全/整理の確定値は実PRと同taskの`integration-completion.json`を照合する。
+
+対象実行の証跡保存[#424 / PR #425](https://github.com/hideyukiMORI/nene-folio/pull/425)は、最終head `3a8eacd`の
+CI `40813130935`でfull-gate/check成功後、main `1cae763`へ統合した。
 #422で途中exe/inputを同名上書きした問題へ、既存コマンドの実行前入力・終了時成果物・raw出力・終了値を新規directoryへ記録する小さな道具を加える。
 既存run-dirは子起動前に拒否する。入力の十分性やテスト判定は自動認定しない。親が設計/規約/統合、SOLがtool/test/品質記録を担当する。
 初回9件は成功。追加Windows終了値の1件でhigh-bitの喪失を検出し、CLI末尾のsigned32変換後に同じ1件が成功した。
 受理設計は`D:/NeNeFolio/agents/424-run-record/design-decision.md`、試行結果は[品質記録](../quality/2026-10-29-run-record.md)。
-最終head必須CI・統合・保全/整理の確定値は実PRと同taskの`integration-completion.json`を照合する。製品無変更で通常exe再buildは不要。
+CIでも新規10件を含む107件のconformanceが成功。103ファイルを全hash保全し、worktreeは整理済み。
+出力削除は拒否され保持する。確定値は実PRと同taskの`integration-completion.json`。製品無変更で通常exe再buildは不要だった。
 
 閉じた未対応画像の内部記号保持[#422 / PR #423](https://github.com/hideyukiMORI/nene-folio/pull/423)は、
 最終head `16c4a94`のCI `40807935836`でfull-gate/check成功後、main `88cdf79`へ統合した。
@@ -67,6 +75,8 @@ idle一致計算の追加検討では、保存修復/削除後の結果・scroll
 13ファイルの既存入力/binary hashは一致し、正確性検証を再実行していない。原本は上記領域の`matching-probe/attempt-1145/`。
 入力時をidle、保存/改名後を同engineの同期完了とする案も読取レビューした。変更範囲を狭める余地はあるが、
 遅延OOM、同期修復scan、所有移転、無効化、budgetが未決で未採用。詳細は日報/引き継ぎへ残し、製品実装へ進めていない。
+12:53の再開前監査も新しいcompile/tidyと別案件testのCPU増加を確認し、計時0件で停止した。原本は`matching-probe/attempt-1253/`。
+分割計算案はsealed ownerの移譲と12/13操作の構成まで比較したが、公開契約変更・初期集計・予算値を含め未採用。
 未対応画像内部の文字保持は#422で統合済み。通常LINK labelを跨ぐ先行分類案は不採用とし、親label内へ収まる範囲だけを保護した。
 引用内表のnative字下げ/残幅は#410でmain統合済み、極狭幅の多列表の可読性は別課題として残す。
 通常段落の折返しを変える水平bar案等は採用していない。診断と残る範囲は日報・引き継ぎを参照する。
@@ -106,7 +116,9 @@ portable版はexe隣の`data`を既定とし、両方とも設定から「ノー
 
 ## 保持中の旧作業物
 
-下記の33箇所は自動承認レビューの削除拒否により保持する。再試行や別手段での削除をしない。
+下記の34箇所は自動承認レビューの削除拒否により保持する。再試行や別手段での削除をしない。
+
+- #424: `D:/NeNeFolio/outputs/424-run-record`。統合・103ファイル全hash保全と安全監査後、出力削除要求が`blocked by policy`で拒否された。追加理由なし。worktreeは削除済み、branch/commitは保持。確定値は同taskの`integration-completion.json`。
 
 - #422: `D:/NeNeFolio/outputs/422-image-literal`。統合・通常反映・112ファイル全hash保全と安全監査後、出力削除要求が`blocked by policy`で拒否された。追加理由なし。追加worktreeは削除済み、branch/commitは保持。確定値は同taskの`integration-completion.json`。
 
