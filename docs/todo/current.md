@@ -6,26 +6,21 @@
 
 ## 品質改善の現在位置
 
-索引スクロールの加算境界 [#434](https://github.com/hideyukiMORI/nene-folio/issues/434)は対象検証済みの完成候補。
-正常な小さい索引で有効位置15へINT_MAXを加えた旧sourceのUBSan診断を確認した。
-通常wheelの自然到達とは区別する。旧redの250指定入力と原本のhash一致を親が受理した。
-既存scroll意図一箇所で移動量を先に許容範囲へ丸め、現在の有効量・0〜上限・失敗時状態保持を維持する。
-親が設計/状態文書/統合、SOLがapplication/test/品質記録を担当する。新API/確保/Win32/schemaは無い。
-作業木は`D:/NeNeFolio/worktrees/434-drawer-scroll-delta`、原本/出力はD側agents/outputsの同名領域。
-完成候補のDebug build/tidyと同selectorは子/wrapper0で成功し、503指定入力/3生成物の現物・snapshot全hash一致を親が確認した。
-成功対象は再実行しない。[品質記録](../quality/2026-10-29-drawer-scroll-delta.md)と受理設計は同taskに保持する。
-最終整形・File API規約検査・差分検査も成功した。最終head CI・統合/通常反映/整理の確定値は実PRとintegration-completionを照合する。
+索引スクロールの加算境界 #434 / [PR #435](https://github.com/hideyukiMORI/nene-folio/pull/435)は、
+最終head `64a8b78`のCI `40836070731`でfull-gate/check成功後、main `875d058`へ統合した。
+旧実装の有効位置15＋INT_MAXをUBSanで確認し、同じscroll意図内で移動量を先に丸める修正と対象検証が成功した。
+16:39:26 JSTに通常exeへ反映、2589ファイル全hash保全とworktree削除まで完了。出力削除は拒否され保持する。
+[品質記録](../quality/2026-10-29-drawer-scroll-delta.md)、確定値は`D:/NeNeFolio/agents/434-drawer-scroll-delta/integration-completion.json`。
 
-対象記録の入力一覧 #432 / [PR #433](https://github.com/hideyukiMORI/nene-folio/pull/433)は、
-最終head `b418a77`のCI `40832797981`でfull-gate/check成功後、main `0803ff5`へ統合した。
-対象tool15件と規約検査が成功し、CIの既存discoveryでも112件が成功した。製品無変更で通常exeのhashを維持した。
-2361ファイル全hash保全とworktree削除まで完了。出力削除は拒否されたため保持する。
-[品質記録](../quality/2026-10-29-run-record-input-list.md)、確定値は`D:/NeNeFolio/agents/432-run-record-input-list/integration-completion.json`。
+本文入力・表示位置の静読と、検索pending中の保存/改名/削除/新規公開・借用寿命の独立静読は、新しい具体的不具合候補0件だった。
+今回の試験成功や全経路の安全性証明を意味しない。新しい製品修正は採用していない。
+直近16:34の負荷照会でも他案件compile/tidyが稼働しており、追加の性能計時は0件。
+#428後のmatcherへ旧候補の計測値を読み替えず、背景I/Oと極狭幅表の可読性は未解消のまま扱う。
+結果と未確認範囲は[品質の現在地](../quality/2026-10-29-quality-checkpoint.md)へ整理した。
+文書反映 [#436](https://github.com/hideyukiMORI/nene-folio/issues/436)の最終head CI/統合/整理は実PRと同taskのintegration-completionを照合する。
 
 以前の完了履歴は[日報](../reports/2026-10-29.md)・[引き継ぎ](../handoffs/2026-10-29.md)と各品質記録へ置く。
-検索のmemchr候補は未採用。直近12:53の負荷監査も他案件compile/test稼働で計時せず、以後の新計時は0件。
-#428でmatcher構造が変わったため、旧候補の結果を現在版の改善率へ読み替えない。
-旧計測/設計原本は`D:/NeNeFolio/agents/quality-20261029/`。背景I/Oと極狭幅表の可読性は未解消。
+旧計測/設計原本は`D:/NeNeFolio/agents/quality-20261029/`。成功済み対象は関係入力が不変なら再実行しない。
 
 ## 公開済みbeta
 
@@ -39,9 +34,9 @@
 ## 通常exeとhideの実機確認
 
 hide受理済み合成サンプル`data/サンプル/Markdown構文サンプル.md`は通常dataへ残している。実ノート内容は記録・同梱しない。
-現在の通常`C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`はsource `e2da1ab`・表示版0.3.0/Windows版0.3.0.0。
-通常process0件を確認してから正規ツールで反映しexit0だった。10月29日15:24:07 JST更新済みで、更新後は起動していない。
-版・hashは`D:/NeNeFolio/agents/430-task-marker-tab/normal-build-verification.json`。通常dataは操作していない。
+現在の通常`C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`はsource `875d058`・表示版0.3.0/Windows版0.3.0.0。
+通常process0件を確認してから正規ツールで反映しexit0だった。10月29日16:39:26 JST更新済みで、更新後は起動していない。
+版・hashは`D:/NeNeFolio/agents/434-drawer-scroll-delta/normal-build-verification.json`。通常dataは操作していない。
 
 ## 次の予定: ノートの保存先設定（未実装）
 
@@ -62,7 +57,11 @@ portable版はexe隣の`data`を既定とし、両方とも設定から「ノー
 
 ## 保持中の旧作業物
 
-下記の38箇所は自動承認レビューの削除拒否により保持する。再試行や別手段での削除をしない。
+下記の40箇所は自動承認レビューの削除拒否により保持する。再試行や別手段での削除をしない。
+
+- #436: `D:/NeNeFolio/outputs/436-quality-checkpoint`。文書だけの作業で作った空directoryの非再帰削除要求が、実行前に`blocked by policy`で拒否された。追加理由なし。空のまま保持し、検証記録はagentsへ直接残す。確定原本は同taskの`empty-output-cleanup.json`。
+
+- #434: `D:/NeNeFolio/outputs/434-drawer-scroll-delta`。統合・通常反映・2589ファイル全hash保全と安全監査後、出力削除要求が`blocked by policy`で拒否された。追加理由なし。worktreeは削除済み、branch/commit保持。確定値は同taskの`integration-completion.json`。
 
 - #432: `D:/NeNeFolio/outputs/432-run-record-input-list`。統合・通常exe hash維持・2361ファイル全hash保全と安全監査後、出力削除要求が`blocked by policy`で拒否された。追加理由なし。worktreeは削除済み、branch/commit保持。確定値は同taskの`integration-completion.json`。
 
