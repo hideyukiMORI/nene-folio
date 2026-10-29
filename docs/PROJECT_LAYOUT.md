@@ -66,8 +66,10 @@ src/app
 意味の正本を持つ。値型・閉じた選択肢・拒否理由と結果型。ドロワーのレイアウト（どの行が何ピクセルに見えるか・ヒットテスト・
 ドロップ先・スクロール上限）、カテゴリと索引の json 読み書き、md → RTF のサブセット変換、全文検索の索引を**純関数**として持つ。
 テーマの固定ID/名前/UI・RTF配色は `folio_theme` の一表、systemを含む名前の解析・解決は `folio_theme_choice` が持つ（ADR0049）。
-Markdown生成物は`markdown_rtf`が所有し、block/container、inline、tableの解釈を同じcore内の処理へ分ける。
-原文を長さ付きで借用し、RTF文字escapeは`rtf_text`へ集約する。表示用の第2の本文や永続ASTは持たない（ADR0070）。
+Markdown生成物は`markdown_rtf`、leafと段落spanは`markdown_blocks`、順序付きquote/list pathとitem連番・未表示の印は
+`markdown_containers`が所有する。通常受理は旧段落のflushを要求でき、fence/tableの所属先読みは同ownerへの純粋な厳密照合を使う。
+inline、tableの解釈も同じcore内の処理へ分け、RTF文字escapeは`rtf_text`へ集約する。
+原文は長さ付きで借用し、tab途中の残余列も短命queryで表す。表示用の第2の本文や永続ASTは持たない（ADR0070/0071）。
 UI 状態・ファイル・現在時刻を持たない。実行時依存の許可表は空で、外部シンボルは `eng/symbol-allowlist.json` の libc の一部だけ（ARC-003）。
 
 ### `src/application`

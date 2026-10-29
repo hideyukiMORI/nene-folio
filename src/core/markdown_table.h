@@ -7,6 +7,7 @@ struct text_buffer;
 /* A count above the native limit is returned intact, never truncated. */
 [[nodiscard]] size_t markdown_table_columns(struct markdown_line line);
 [[nodiscard]] bool markdown_table_delimiter(struct markdown_line line);
+[[nodiscard]] bool markdown_table_starts(struct markdown_line line, struct markdown_line delimiter);
 [[nodiscard]] enum markdown_rtf_outcome markdown_table_row(struct text_buffer *_Nonnull out,
                                                            struct markdown_line line,
                                                            struct markdown_line delimiter,

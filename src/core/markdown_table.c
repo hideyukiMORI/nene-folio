@@ -113,6 +113,17 @@ bool markdown_table_delimiter(struct markdown_line line)
     return true;
 }
 
+bool markdown_table_starts(struct markdown_line line, struct markdown_line delimiter)
+{
+    if (!markdown_line_valid(line) || !markdown_line_valid(delimiter))
+        return false;
+    for (size_t index = line.content; index < line.length; ++index)
+        if (line.bytes[index] == '|')
+            return markdown_table_columns(line) == markdown_table_columns(delimiter) &&
+                   markdown_table_delimiter(delimiter);
+    return false;
+}
+
 static void row_header(struct text_buffer *_Nonnull out, size_t columns)
 {
     text_buffer_append_text(out, "\\trowd\\trgaph80\\trleft0");

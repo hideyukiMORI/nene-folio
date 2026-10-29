@@ -1,16 +1,48 @@
 #include "markdown_line.h"
-
-static void prefix(struct markdown_line *_Nonnull line);
+#include <stdint.h>
 
 static bool space(char character)
 {
     return character == ' ' || character == '\t';
 }
 
+static size_t space_width(char character, size_t column)
+{
+    return character == '\t' ? 4 - column % 4 : 1;
+}
+
 bool markdown_line_valid(struct markdown_line line)
 {
-    return line.prefix <= line.content && line.content <= line.length &&
-           line.marker <= line.length - line.content;
+    if (line.prefix > line.content || line.content > line.length ||
+        line.marker > line.length - line.content || line.padding > 3 ||
+        line.column > SIZE_MAX - line.indent)
+        return false;
+    if (line.prefix <= SIZE_MAX / 4 && line.column > line.prefix * 4)
+        return false;
+    if (line.padding == 0)
+        return true;
+    return line.prefix != 0 && line.bytes[line.prefix - 1] == '\t' && line.indent >= line.padding &&
+           (line.column + line.padding) % 4 == 0;
+}
+
+static bool prefix(struct markdown_line *_Nonnull line)
+{
+    size_t index = line->prefix;
+    size_t column = line->column;
+    if (column > SIZE_MAX - line->padding)
+        return false;
+    column += line->padding;
+    while (index < line->length && space(line->bytes[index]))
+    {
+        size_t width = space_width(line->bytes[index], column);
+        if (column > SIZE_MAX - width)
+            return false;
+        column += width;
+        ++index;
+    }
+    line->content = index;
+    line->indent = column - line->column;
+    return true;
 }
 
 struct markdown_line markdown_line_read(const char *_Nonnull source, size_t length, size_t start)
@@ -28,38 +60,66 @@ struct markdown_line markdown_line_read(const char *_Nonnull source, size_t leng
             ++next;
     }
     struct markdown_line line = {.bytes = source + start, .length = end - start, .next = next};
-    prefix(&line);
+    if (!prefix(&line))
+        line.content = line.length;
     return line;
 }
 
-static size_t quote_end(struct markdown_line *_Nonnull line)
+static bool consume_space(struct markdown_line *_Nonnull line, size_t columns)
 {
-    size_t index = 0;
-    while (index < line->length)
+    size_t pending = columns < line->padding ? columns : line->padding;
+    line->padding -= pending;
+    line->column += pending;
+    columns -= pending;
+    while (columns != 0)
     {
-        size_t before = index;
-        while (index < line->length && index - before < 3 && line->bytes[index] == ' ')
-            ++index;
-        if (index == line->length || line->bytes[index] != '>')
-            return before;
-        ++line->quote;
-        ++index;
-        if (index < line->length && space(line->bytes[index]))
-            ++index;
+        if (line->prefix == line->length || !space(line->bytes[line->prefix]))
+            return false;
+        size_t width = space_width(line->bytes[line->prefix], line->column);
+        size_t taken = columns < width ? columns : width;
+        if (line->column > SIZE_MAX - taken)
+            return false;
+        ++line->prefix;
+        line->padding = width - taken;
+        line->column += taken;
+        columns -= taken;
     }
-    return index;
+    return true;
 }
 
-static void prefix(struct markdown_line *_Nonnull line)
+bool markdown_line_skip(struct markdown_line *_Nonnull line, size_t columns)
 {
-    size_t index = quote_end(line);
-    line->prefix = index;
-    while (index < line->length && space(line->bytes[index]))
-    {
-        line->indent += line->bytes[index] == '\t' ? 4 - line->indent % 4 : 1;
-        ++index;
-    }
-    line->content = index;
+    if (!markdown_line_valid(*line) || columns > line->indent)
+        return false;
+    struct markdown_line skipped = *line;
+    if (!consume_space(&skipped, columns) || !prefix(&skipped))
+        return false;
+    *line = skipped;
+    return true;
+}
+
+static bool advance(struct markdown_line *_Nonnull line, size_t bytes)
+{
+    if (line->padding != 0 || bytes > line->length - line->prefix ||
+        line->column > SIZE_MAX - bytes)
+        return false;
+    line->prefix += bytes;
+    line->column += bytes;
+    return prefix(line);
+}
+
+bool markdown_line_quote(struct markdown_line *_Nonnull line)
+{
+    if (!markdown_line_valid(*line) || line->indent > 3 || line->content == line->length ||
+        line->bytes[line->content] != '>')
+        return false;
+    struct markdown_line entered = *line;
+    if (!markdown_line_skip(&entered, entered.indent) || !advance(&entered, 1))
+        return false;
+    if (entered.indent != 0 && !markdown_line_skip(&entered, 1))
+        return false;
+    *line = entered;
+    return true;
 }
 
 static size_t skip_space(struct markdown_line line, size_t index)
@@ -167,16 +227,36 @@ static size_t marker_end(struct markdown_line *_Nonnull line)
 
 void markdown_line_list(struct markdown_line *_Nonnull line)
 {
-    if (!markdown_line_valid(*line) || line->content == line->length)
+    line->marker = line->marker_columns = line->number = 0;
+    line->ordered = false;
+    if (!markdown_line_valid(*line) || line->content == line->length || line->indent > 3)
         return;
     size_t end = marker_end(line);
-    if (end == line->content || end == line->length || !space(line->bytes[end]))
+    if (end == line->content || (end < line->length && !space(line->bytes[end])))
         return;
+    size_t token = end - line->content;
+    struct markdown_line after = *line;
+    if (!markdown_line_skip(&after, after.indent) || !advance(&after, token))
+        return;
+    size_t padding = after.indent;
+    if (padding == 0 || padding > 4 || markdown_line_blank(after))
+        padding = 1;
     line->delimiter = line->bytes[end - 1];
-    size_t first = end;
-    while (end < line->length && space(line->bytes[end]))
-        ++end;
-    if (end - first > 4)
-        end = first + 1;
-    line->marker = end - line->content;
+    line->marker = token;
+    line->marker_columns = token + padding;
+}
+
+bool markdown_line_enter_list(struct markdown_line *_Nonnull line)
+{
+    if (!markdown_line_valid(*line) || line->marker == 0 || line->marker_columns <= line->marker)
+        return false;
+    struct markdown_line entered = *line;
+    size_t padding = line->marker_columns - line->marker;
+    if (!markdown_line_skip(&entered, entered.indent) || !advance(&entered, entered.marker))
+        return false;
+    entered.marker = entered.marker_columns = 0;
+    if (!markdown_line_blank(entered) && !markdown_line_skip(&entered, padding))
+        return false;
+    *line = entered;
+    return true;
 }

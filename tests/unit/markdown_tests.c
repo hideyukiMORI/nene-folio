@@ -1,5 +1,6 @@
 #include "allocation_probe.h"
 #include "folio_language.h"
+#include "markdown_containers.h"
 #include "markdown_inline_tokens.h"
 #include "markdown_line.h"
 #include "markdown_rtf.h"
@@ -10,6 +11,7 @@
 #include "ui_font.h"
 #include "unit_tests.h"
 
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -131,14 +133,20 @@ static void verify_code(void)
 static void verify_lists_quotes_links(void)
 {
     expect_body("- one\n* two\n+ three",
-                "\\pard\\li440\\fi-220\\sa40\\sl240\\slmult1\\cf1\\bullet\\tab one\\par\n"
-                "\\pard\\li440\\fi-220\\sa40\\sl240\\slmult1\\cf1\\bullet\\tab two\\par\n"
-                "\\pard\\li440\\fi-220\\sa40\\sl240\\slmult1\\cf1\\bullet\\tab three\\par\n");
+                "\\pard\\li440\\fi-220\\tx440\\sa40\\sl240\\slmult1\\cf1 "
+                "{\\f0\\fs22\\cf1\\b0\\highlight0 \\bullet\\tab }one\\par\n"
+                "\\pard\\li440\\fi-220\\tx440\\sa40\\sl240\\slmult1\\cf1 "
+                "{\\f0\\fs22\\cf1\\b0\\highlight0 \\bullet\\tab }two\\par\n"
+                "\\pard\\li440\\fi-220\\tx440\\sa40\\sl240\\slmult1\\cf1 "
+                "{\\f0\\fs22\\cf1\\b0\\highlight0 \\bullet\\tab }three\\par\n");
     expect_body("1. first\n12. twelfth",
-                "\\pard\\li440\\fi-220\\sa40\\sl240\\slmult1\\cf1 1.\\tab first\\par\n"
-                "\\pard\\li440\\fi-220\\sa40\\sl240\\slmult1\\cf1 2.\\tab twelfth\\par\n");
+                "\\pard\\li440\\fi-220\\tx440\\sa40\\sl240\\slmult1\\cf1 "
+                "{\\f0\\fs22\\cf1\\b0\\highlight0 1.\\tab }first\\par\n"
+                "\\pard\\li440\\fi-220\\tx440\\sa40\\sl240\\slmult1\\cf1 "
+                "{\\f0\\fs22\\cf1\\b0\\highlight0 2.\\tab }twelfth\\par\n");
     expect_body("1.nospace", "\\pard\\sa80\\sl240\\slmult1\\cf1 1.nospace\\par\n");
-    expect_body("1.", "\\pard\\sa80\\sl240\\slmult1\\cf1 1.\\par\n");
+    expect_body("1.", "\\pard\\li440\\fi-220\\tx440\\sb0\\sa0\\sl240\\slmult1 "
+                      "{\\f0\\fs22\\cf1\\b0\\highlight0 1.\\tab }\\par\n");
     expect_body("12x", "\\pard\\sa80\\sl240\\slmult1\\cf1 12x\\par\n");
     expect_body("-dash", "\\pard\\sa80\\sl240\\slmult1\\cf1 -dash\\par\n");
     expect_body("> quoted\n>bare",
@@ -148,9 +156,9 @@ static void verify_lists_quotes_links(void)
     expect_body("[no url]", "\\pard\\sa80\\sl240\\slmult1\\cf1 [no url]\\par\n");
     expect_body("[open](", "\\pard\\sa80\\sl240\\slmult1\\cf1 [open](\\par\n");
     expect_body("[a]b", "\\pard\\sa80\\sl240\\slmult1\\cf1 [a]b\\par\n");
-    expect_body("para\n- item",
-                "\\pard\\sa80\\sl240\\slmult1\\cf1 para\\par\n"
-                "\\pard\\li440\\fi-220\\sa40\\sl240\\slmult1\\cf1\\bullet\\tab item\\par\n");
+    expect_body("para\n- item", "\\pard\\sa80\\sl240\\slmult1\\cf1 para\\par\n"
+                                "\\pard\\li440\\fi-220\\tx440\\sa40\\sl240\\slmult1\\cf1 "
+                                "{\\f0\\fs22\\cf1\\b0\\highlight0 \\bullet\\tab }item\\par\n");
 }
 
 static void verify_note_text(void)
@@ -411,6 +419,335 @@ static void expect_fragment(const char *_Nonnull source, const char *_Nonnull in
     markdown_rtf_destroy(rtf);
 }
 
+static size_t fragment_count(const char *_Nonnull text, const char *_Nonnull fragment)
+{
+    size_t count = 0;
+    const char *cursor = text;
+    while ((cursor = strstr(cursor, fragment)) != nullptr)
+    {
+        ++count;
+        cursor += strlen(fragment);
+    }
+    return count;
+}
+
+static void verify_container_paths(void)
+{
+    expect_fragment("7. parent\n   > quote\n\n   continued\n1. next",
+                    "\\li440\\sa40\\sl240\\slmult1\\cf1 continued", "1.\\tab }next");
+    expect_fragment("7. parent\n   > quote\n\n   continued\n1. next", "8.\\tab }next", "");
+    expect_fragment("7. parent\n   > quote\n   continued\n1. next", "quote continued\\cf1", "");
+    expect_fragment("> 7. parent\n>    > quote\n>\n>    continued\n> 2. next", "8.\\tab }next",
+                    "2.\\tab }next");
+    expect_fragment("7. parent\n   > 2. child\n   >    continued\n\n   parent again\n2. next",
+                    "8.\\tab }next", "3.\\tab }next");
+    expect_fragment("- parent\n  - child\n    > quote\n\n  parent again\n- next",
+                    "\\li440\\sa40\\sl240\\slmult1\\cf1 parent again", "");
+    expect_fragment("7. parent\n> outside\n\n1. next", "1.\\tab }next", "8.\\tab }next");
+    expect_fragment("> quote\nplain", "quote plain\\cf1", "\\cf1 plain");
+    expect_fragment("> quote\n\nplain", "\\cf1 plain", "quote plain");
+    expect_fragment("> quote\n# heading", "\\fs44 heading", "quote heading");
+    expect_fragment("> quote\n---", "\\sl-20", "\\fs34");
+    expect_fragment("> quote\nA | B\n-- | --", "\\trowd", "quote A | B");
+    expect_fragment("paragraph\n+\nnext", "paragraph + next", "\\bullet");
+    expect_fragment("paragraph\n2. literal", "paragraph 2. literal", "\\tab");
+    expect_fragment("7. item\n2.\n3. next", "9.\\tab }next", "3.\\tab }next");
+    expect_fragment("-\n  text", "\\li440\\sa40\\sl240\\slmult1\\cf1 text", "- text");
+    expect_fragment("-\n\n  text", "\\pard\\sa80\\sl240\\slmult1\\cf1 text", "\\li440\\sa40");
+    expect_fragment("7. first\n 1. next", "8.\\tab }next", "1.\\tab }next");
+    expect_fragment("7. first\n   1. child\n1. next", "\\li880\\fi-220\\tx880", "1.\\tab }next");
+    expect_fragment("7.\n\n1. next", "8.\\tab }next", "1.\\tab }next");
+    expect_fragment("7.\n\n   text\n1. next", "1.\\tab }next", "8.\\tab }next");
+    expect_fragment("> 7.\n>\n> 1. next", "8.\\tab }next", "1.\\tab }next");
+    expect_fragment("> 7.\n\n> 1. next", "1.\\tab }next", "8.\\tab }next");
+    expect_same_rendering("7. parent\r   > quote\r\r   continued\r1. next",
+                          "7. parent\n   > quote\n\n   continued\n1. next");
+}
+
+static void verify_container_markers(void)
+{
+    expect_fragment("- > [x] quote", "[x] quote", "\\u9745?");
+    expect_fragment("> - [x] item", "\\u9745?\\tab }item", "[x]");
+    expect_fragment("- > - [x] item", "\\u9745?\\tab }item", "[x]");
+    expect_fragment("- item\n  [x] literal", "item [x] literal", "\\u9745?");
+    expect_fragment("7. > quote\n\n   continued\n1. next", "\\li920\\fi-700\\tx920", "");
+    expect_fragment("7. # heading\n1. next", "\\pard\\sb0\\sa80\\b\\cf2\\fs44\\li440", "\\sb200");
+    expect_fragment("7. ~~~\n   code\n   ~~~\n1. next", "7.\\tab }\\par\n{\\f1", "1.\\tab }next");
+    expect_fragment("7. ~~~\n   ~~~\n1. next", "{\\f1\\fs20\\cf5\\highlight6}", "\\li620");
+    expect_fragment("7. >\n1. next", "7.\\tab }\\par\n", "1.\\tab }next");
+    expect_fragment("7. - child\n1. next", "7.\\tab }\\par\n\\pard\\li880\\fi-220\\tx880", "");
+    expect_fragment("7. ----\n1. next", "7.\\tab }\\par\n{\\pard", "7.----");
+    struct markdown_rtf *rtf = convert_syntax("7. > quote\n\n   continued\n1. next");
+    require(fragment_count(markdown_rtf_text(rtf), "7.\\tab ") == 1 &&
+                fragment_count(markdown_rtf_text(rtf), "8.\\tab ") == 1,
+            "each item marker is emitted once across quote and parent continuation");
+    markdown_rtf_destroy(rtf);
+}
+
+static void verify_container_leaves(void)
+{
+    expect_fragment("- A | B\n  -- | --\n  x | y\noutside", "\\cf1 outside", "{outside}\\cell");
+    expect_fragment("- A | B\n-- | --", "A | B", "\\trowd");
+    expect_fragment("> A | B\n> -- | --\nx | y", "\\cf1 x | y", "{x}\\cell");
+    expect_fragment("- A | B\n  -- | --\n- next", "\\bullet\\tab }next", "{next}\\cell");
+    expect_fragment("7. > ~~~\n   > code\n\n   continued\n1. next", "8.\\tab }next", "");
+    expect_fragment("- ~~~\n  > literal\noutside", "> literal\\sa120\\par\n}", "\\cf3");
+    expect_fragment("- ~~~\n\tcode\n  ~~~", "  code\\sa120", "\\cf1 code");
+    expect_fragment(">\t~~~\n>\t\tcode\n>\t~~~", "\tcode\\sa120", "    code");
+    expect_fragment(">    ~~~\n>\t\tcode\n>    ~~~", "   code\\sa120", "\tcode");
+    expect_fragment("- ~~~\n  code\n- next", "\\bullet\\tab }next", "code next");
+}
+
+static void verify_literal_container_table(void)
+{
+    struct text_buffer *source = nullptr;
+    require(text_buffer_create(&source) == TEXT_BUFFER_ACCEPTED, "wide container table source");
+    text_buffer_append_text(source, "7. > ");
+    for (size_t column = 0; column < 64; ++column)
+        text_buffer_append_text(source, "| **head** ");
+    text_buffer_append_text(source, "|\n   > ");
+    for (size_t column = 0; column < 64; ++column)
+        text_buffer_append_text(source, "| -- ");
+    text_buffer_append_text(source, "|\n   > ");
+    for (size_t column = 0; column < 64; ++column)
+        text_buffer_append_text(source, "| cell ");
+    text_buffer_append_text(source, "|\n1. next");
+    struct markdown_rtf *rtf = convert_syntax(text_buffer_bytes(source));
+    const char *body = markdown_rtf_text(rtf);
+    require(strstr(body, "7. > | **head**") != nullptr && strstr(body, "   > | --") != nullptr &&
+                strstr(body, "   > | cell") != nullptr && fragment_count(body, "**head**") == 64 &&
+                strstr(body, "\\trowd") == nullptr,
+            "literal table retains every column and original nested prefix");
+    require(fragment_count(body, "7.") == 1 && strstr(body, "7.\\tab ") == nullptr &&
+                strstr(body, "8.\\tab }next") != nullptr,
+            "literal source marker replaces synthesis while the owner sequence continues");
+    markdown_rtf_destroy(rtf);
+    text_buffer_destroy(source);
+}
+
+static void verify_container_columns(void)
+{
+    struct markdown_line line = markdown_line_read("\tcode", 5, 0);
+    require(markdown_line_skip(&line, 2) && line.prefix == 1 && line.padding == 2 &&
+                line.column == 2 && line.indent == 2,
+            "list continuation consumes only two columns of a tab");
+    require(markdown_line_skip(&line, 1) && line.padding == 1 && line.column == 3,
+            "fence deindent consumes virtual padding before source bytes");
+    line = markdown_line_read(">\t\tcode", 7, 0);
+    require(markdown_line_quote(&line) && line.padding == 2 && line.indent == 6,
+            "optional quote spacing consumes one column of a tab");
+    require(markdown_line_skip(&line, 3) && line.prefix == 3 && line.padding == 3,
+            "the next partial tab retains its remaining columns");
+    struct markdown_line column = {.bytes = "x", .length = 1, .column = SIZE_MAX};
+    require(!markdown_line_valid(column),
+            "a visual column cannot exceed its consumed prefix bytes");
+    struct markdown_line invalid = {.bytes = " ", .length = 1, .indent = 8};
+    require(!markdown_line_skip(&invalid, 8) && invalid.prefix == 0 && invalid.column == 0,
+            "an inconsistent indent cannot make column consumption exceed borrowed bytes");
+    invalid = (struct markdown_line){.bytes = "x", .length = 1, .padding = 1};
+    require(!markdown_line_valid(invalid), "virtual tab padding requires its source tab");
+}
+
+static void verify_container_queries(void)
+{
+    struct markdown_containers *owner = nullptr;
+    require(markdown_containers_create(&owner) == MARKDOWN_RTF_CONVERTED, "container owner");
+    require(markdown_line_valid(markdown_containers_line(owner)) &&
+                markdown_containers_line(owner).bytes[0] == '\0',
+            "a newly created owner exposes a valid empty borrowed line");
+    struct markdown_line parent = markdown_line_read("7. parent", 9, 0);
+    struct markdown_line next = markdown_line_read("2. next", 7, 0);
+    require(markdown_containers_accept(owner, parent, next, MARKDOWN_PARAGRAPH_STATE_NONE) ==
+                MARKDOWN_RTF_CONVERTED,
+            "initial parent item");
+    struct markdown_line matching = markdown_line_read("   payload", 10, 0);
+    size_t calls = allocation_probe_calls();
+    require(markdown_containers_match(owner, &matching) == MARKDOWN_CONTAINER_MATCH_MATCHED &&
+                matching.content == 3 && allocation_probe_calls() == calls &&
+                markdown_containers_marker_number(owner) == 7,
+            "strict lookahead allocates nothing and does not advance the item");
+    struct markdown_line outside = markdown_line_read("outside", 7, 0);
+    require(markdown_containers_match(owner, &outside) == MARKDOWN_CONTAINER_MATCH_LEFT &&
+                outside.prefix == 0 && markdown_containers_marker_number(owner) == 7,
+            "strict scope mismatch leaves query and owner unchanged");
+    require(markdown_containers_accept(owner, next, outside, MARKDOWN_PARAGRAPH_STATE_OPEN) ==
+                    MARKDOWN_RTF_CONVERTED &&
+                markdown_containers_event(owner) == MARKDOWN_CONTAINER_EVENT_FLUSH_REQUIRED &&
+                markdown_containers_line(owner).bytes == parent.bytes &&
+                markdown_containers_marker_number(owner) == 7,
+            "a sibling requests flush before replacing the old item or accepted line");
+    markdown_containers_consume_marker(owner);
+    require(markdown_containers_accept(owner, next, outside, MARKDOWN_PARAGRAPH_STATE_NONE) ==
+                    MARKDOWN_RTF_CONVERTED &&
+                markdown_containers_marker_number(owner) == 8,
+            "an existing sibling advances even when its source number is two");
+    struct markdown_line invalid = {.bytes = "x", .length = 1, .content = 2};
+    require(markdown_containers_match(owner, &invalid) == MARKDOWN_CONTAINER_MATCH_INVALID_INPUT,
+            "strict mismatch and malformed borrowed query are different outcomes");
+    require(markdown_containers_accept(owner, invalid, outside, MARKDOWN_PARAGRAPH_STATE_NONE) ==
+                MARKDOWN_RTF_INVALID_INPUT,
+            "normal acceptance validates borrowed bounds");
+    markdown_containers_destroy(owner);
+}
+
+static void verify_container_style_boundaries(void)
+{
+    expect_fragment("7. ordered\n- bullet\n1. ordered again", "1.\\tab }ordered again", "8.\\tab ");
+    expect_fragment("7. first\n3) changed\n1) next", "4)\\tab }next", "8)\\tab ");
+    expect_fragment("7. parent\n   > 3. inside\n   > - bullet\n\n   resumed\n1. next",
+                    "8.\\tab }next", "4.\\tab }next");
+    expect_fragment("paragraph\n1.\nnext", "paragraph 1. next", "\\tab");
+    expect_fragment("123456789. max\n1. next", "123456790.\\tab }next", "1.\\tab }next");
+    expect_fragment("1234567890. literal", "1234567890. literal", "\\tab");
+    expect_fragment("7. # title ###  \n1. next", "}title\\b0", "title ###");
+    expect_fragment("# title###", "title###", "title\\b0");
+    expect_fragment("- [z] literal", "[z] literal", "\\u9745?");
+    expect_fragment("- [x) literal", "[x) literal", "\\u9745?");
+    expect_fragment("- [x]nospace", "[x]nospace", "\\u9745?");
+    expect_fragment("- [] literal", "[] literal", "\\u9744?");
+}
+
+static void verify_empty_owner_queries(void)
+{
+    struct markdown_containers *owner = nullptr;
+    require(markdown_containers_create(&owner) == MARKDOWN_RTF_CONVERTED, "empty query owner");
+    require(markdown_containers_indent(owner) == 0 && markdown_containers_quote_depth(owner) == 0 &&
+                !markdown_containers_in_list(owner) && !markdown_containers_task_start(owner) &&
+                markdown_containers_pending(owner) == 0,
+            "empty owner has root scope and no task or pending marker");
+    require(markdown_containers_marker_indent(owner) == 0 &&
+                markdown_containers_marker_number(owner) == 0 &&
+                markdown_containers_marker_delimiter(owner) == '.' &&
+                !markdown_containers_marker_ordered(owner),
+            "optional marker queries are safe before the first accepted item");
+    markdown_containers_consume_marker(owner);
+    struct markdown_line root = markdown_line_read("root", 4, 0);
+    require(markdown_containers_match(owner, &root) == MARKDOWN_CONTAINER_MATCH_MATCHED &&
+                root.prefix == 0,
+            "empty scope strictly matches a root line without altering its prefix");
+    require(markdown_containers_accept(owner, root, root, (enum markdown_paragraph_state)99) ==
+                    MARKDOWN_RTF_INVALID_INPUT &&
+                markdown_containers_line(owner).length == 0,
+            "invalid paragraph enum is rejected before the accepted line changes");
+    struct markdown_line invalid = {.bytes = "x", .length = 1, .content = 2};
+    require(markdown_containers_accept(owner, root, invalid, MARKDOWN_PARAGRAPH_STATE_NONE) ==
+                    MARKDOWN_RTF_INVALID_INPUT &&
+                markdown_containers_line(owner).length == 0,
+            "malformed lookahead is rejected before root scope is committed");
+    markdown_containers_destroy(owner);
+    markdown_containers_destroy(nullptr);
+}
+
+static void verify_borrowed_column_rejections(void)
+{
+    struct markdown_line line = {.bytes = "x", .length = 1, .prefix = 1};
+    require(!markdown_line_valid(line), "a consumed prefix cannot be beyond the content start");
+    line = (struct markdown_line){.bytes = "x", .length = 1, .marker = 2};
+    require(!markdown_line_valid(line), "marker bytes must fit the remaining borrowed content");
+    line = (struct markdown_line){.bytes = "x", .length = 1, .padding = 4};
+    require(!markdown_line_valid(line), "one partial tab cannot retain four virtual columns");
+    line = (struct markdown_line){.bytes = "x", .length = 1, .column = SIZE_MAX, .indent = 1};
+    require(!markdown_line_valid(line), "visual column plus remaining indent cannot overflow");
+    line = (struct markdown_line){.bytes = "x",
+                                  .length = 1,
+                                  .prefix = 1,
+                                  .content = 1,
+                                  .column = 3,
+                                  .padding = 1,
+                                  .indent = 1};
+    require(!markdown_line_valid(line), "virtual padding requires a preceding source tab");
+    line = (struct markdown_line){.bytes = "\t",
+                                  .length = 1,
+                                  .prefix = 1,
+                                  .content = 1,
+                                  .column = 2,
+                                  .padding = 2,
+                                  .indent = 1};
+    require(!markdown_line_valid(line), "virtual padding cannot exceed the remaining indent");
+    line.column = 1;
+    line.padding = 1;
+    require(!markdown_line_valid(line), "partial tab suffix must reach the physical tab stop");
+    line = markdown_line_read("  x", 3, 0);
+    require(!markdown_line_skip(&line, 3) && line.prefix == 0,
+            "column removal cannot exceed known whitespace");
+    line = (struct markdown_line){.bytes = "x", .length = 1, .indent = 1};
+    require(!markdown_line_skip(&line, 1) && line.prefix == 0,
+            "inconsistent indent metadata cannot consume a nonspace byte");
+    line = markdown_line_read("    > literal", 13, 0);
+    require(!markdown_line_quote(&line) && line.prefix == 0,
+            "four residual columns do not open a quote");
+}
+
+static void verify_borrowed_marker_rejections(void)
+{
+    struct markdown_line line = {.bytes = "x", .length = 1, .content = 2};
+    require(!markdown_line_quote(&line) && !markdown_line_enter_list(&line),
+            "quote and item consumers reject inconsistent content bounds");
+    markdown_line_list(&line);
+    require(line.marker == 0, "list classification checks bounds before looking for a marker");
+    line = markdown_line_read("plain", 5, 0);
+    require(!markdown_line_enter_list(&line), "ordinary text cannot be entered as a list item");
+    line = (struct markdown_line){.bytes = "- x", .length = 3, .marker = 1, .marker_columns = 1};
+    require(!markdown_line_enter_list(&line) && line.prefix == 0,
+            "marker padding must contain at least one column");
+    line = (struct markdown_line){.bytes = "-x", .length = 2, .marker = 1, .marker_columns = 3};
+    require(!markdown_line_enter_list(&line) && line.prefix == 0,
+            "padding metadata cannot strip the nonspace body after a marker");
+    line = (struct markdown_line){
+        .bytes = " - x", .length = 4, .content = 1, .indent = 2, .marker = 1, .marker_columns = 2};
+    require(!markdown_line_enter_list(&line) && line.prefix == 0,
+            "inconsistent marker indentation is rejected without changing the query");
+}
+
+static void verify_table_query_rejections(void)
+{
+    struct text_buffer *out = nullptr;
+    require(text_buffer_create(&out) == TEXT_BUFFER_ACCEPTED, "table rejection output");
+    struct markdown_line header_line = markdown_line_read("A | B", 5, 0);
+    struct markdown_line delimiter = markdown_line_read("-- | --", 7, 0);
+    struct markdown_line invalid = {.bytes = "x", .length = 1, .content = 2};
+    require(markdown_table_columns(invalid) == 0 && !markdown_table_delimiter(invalid) &&
+                !markdown_table_starts(invalid, delimiter) &&
+                !markdown_table_starts(header_line, invalid),
+            "borrowed table classifiers reject malformed header and delimiter queries");
+    require(markdown_table_row(out, invalid, delimiter, MARKDOWN_ROW_KIND_HEADER) ==
+                    MARKDOWN_RTF_INVALID_INPUT &&
+                markdown_table_row(out, header_line, invalid, MARKDOWN_ROW_KIND_BODY) ==
+                    MARKDOWN_RTF_INVALID_INPUT &&
+                text_buffer_length(out) == 0,
+            "native row rejects malformed queries before appending partial RTF");
+    struct text_buffer *wide = nullptr;
+    require(text_buffer_create(&wide) == TEXT_BUFFER_ACCEPTED, "native ceiling delimiter");
+    for (size_t column = 0; column < 64; ++column)
+        text_buffer_append_text(wide, "| -- ");
+    text_buffer_append_text(wide, "|");
+    delimiter = markdown_line_read(text_buffer_bytes(wide), text_buffer_length(wide), 0);
+    require(markdown_table_row(out, header_line, delimiter, MARKDOWN_ROW_KIND_HEADER) ==
+                    MARKDOWN_RTF_INVALID_INPUT &&
+                text_buffer_length(out) == 0,
+            "native row API rejects more than sixty-three columns rather than truncating");
+    text_buffer_destroy(wide);
+    text_buffer_destroy(out);
+}
+
+static void verify_nested_leaf_boundaries(void)
+{
+    expect_fragment("~~~\ncode\n~~~ \t\noutside", "\\cf1 outside", "~~~");
+    expect_fragment("~~~\ncode\n    ~~~\n~~~\noutside", "    ~~~\\sa120", "code outside");
+    expect_fragment("   ~~~\ncode\n~~~", " code\\sa120", "   code");
+    expect_fragment("> A | B\n> -- | --\n> > nested", "\\li960\\sa80", "{> nested}\\cell");
+    expect_fragment("7. parent\n   > A | B\n   > -- | --\n\n   resumed\n1. next", "8.\\tab }next",
+                    "1.\\tab }next");
+    expect_fragment("> A | B\n-- | --", "A | B", "\\trowd");
+    expect_fragment("A | B\n--x | --", "--x | --", "\\trowd");
+    struct markdown_rtf *rtf = convert_syntax("| \tA\t | B\t |\n| -- | -- |\n| \tx\t | y\t |");
+    const char *body = markdown_rtf_text(rtf);
+    require(strchr(body, '\t') == nullptr && strstr(body, "{\\b A}\\cell") != nullptr &&
+                strstr(body, "{x}\\cell") != nullptr,
+            "table cell leading and trailing tabs are trimmed as syntactic whitespace");
+    markdown_rtf_destroy(rtf);
+}
+
 static void verify_new_blocks(void)
 {
     expect_fragment("----", "\\sl-20\\slmult0\\fs2\\highlight3\\par}", "----");
@@ -420,16 +757,16 @@ static void verify_new_blocks(void)
     expect_fragment("title\n----", "\\fs34 title", "\\sl-20");
     expect_fragment("title\n===", "\\fs44 title", "===");
     expect_fragment("a  \nb\\\nc\nd", "a\\line b\\line c d", "  ");
-    expect_fragment("1) one\n9) two", "2)\\tab two", "9)");
-    expect_fragment("0. zero\n4. next", "1.\\tab next", "4.");
+    expect_fragment("1) one\n9) two", "2)\\tab }two", "9)");
+    expect_fragment("0. zero\n4. next", "1.\\tab }next", "4.");
     expect_fragment("paragraph\n2. literal", "paragraph 2. literal", "\\tab");
-    expect_fragment("paragraph\n1. item", "1.\\tab item", "paragraph 1.");
+    expect_fragment("paragraph\n1. item", "1.\\tab }item", "paragraph 1.");
     expect_fragment("- parent\n  - child\n- next", "\\li880\\fi-220", "child next");
-    expect_fragment("1. one\n\n   continued\n\n2. two", "2.\\tab two", "1.\\tab two");
+    expect_fragment("1. one\n\n   continued\n\n2. two", "2.\\tab }two", "1.\\tab }two");
     expect_fragment("> - item\n>   continued", "\\li920\\fi-220", "\\cf3 continued");
     expect_fragment("> > ## nested", "\\fs34\\li960 nested", "> ##");
-    expect_fragment("- [ ] open\n- [x] done\n- [X] done", "\\u9744?\\tab open", "[x]");
-    expect_fragment("- [x] done", "\\u9745?\\tab done", "[x]");
+    expect_fragment("- [ ] open\n- [x] done\n- [X] done", "\\u9744?\\tab }open", "[x]");
+    expect_fragment("- [x] done", "\\u9745?\\tab }done", "[x]");
 }
 
 static void verify_new_inline(void)
@@ -510,6 +847,22 @@ static void verify_deep_and_wide(void)
     text_buffer_destroy(source);
 }
 
+static void verify_deep_mixed_containers(void)
+{
+    struct text_buffer *source = nullptr;
+    require(text_buffer_create(&source) == TEXT_BUFFER_ACCEPTED, "mixed depth source");
+    for (size_t depth = 0; depth < 256; ++depth)
+        text_buffer_append_text(source, "- > ");
+    text_buffer_append_text(source, "deep\n\nroot");
+    struct markdown_rtf *rtf = convert_syntax(text_buffer_bytes(source));
+    require(strstr(markdown_rtf_text(rtf), "\\li235520") != nullptr &&
+                strstr(markdown_rtf_text(rtf), "\\cf1 root\\par") != nullptr &&
+                fragment_count(markdown_rtf_text(rtf), "\\bullet\\tab ") == 256,
+            "512 ordered container frames terminate, retain every item, and return to root");
+    markdown_rtf_destroy(rtf);
+    text_buffer_destroy(source);
+}
+
 static void verify_wide_delimiter_cells(void)
 {
     struct text_buffer *source = nullptr;
@@ -533,7 +886,8 @@ static void verify_wide_delimiter_cells(void)
 static void verify_syntax_allocation(void)
 {
     const char *source = "paragraph\nline2\nline3\nline4\nline5\nline6\nline7\nline8\nline9\nline10"
-                         "\n\n- parent\n  - child\n\nA | B\n-- | --\n`x` | ~~y~~\n\ntail";
+                         "\n\n- parent\n  - child\n    > > > > > > > > > quote\n\nA | B\n-- | "
+                         "--\n`x` | ~~y~~\n\ntail";
     struct note_text *text = nullptr;
     require(note_text_create(source, strlen(source), &text) == NOTE_TEXT_ACCEPTED, "OOM source");
     struct markdown_rtf *sentinel = nullptr;
@@ -599,11 +953,24 @@ void run_markdown_tests(void)
     verify_line_bounds();
     run_markdown_source_state_tests();
     verify_borrowed_input();
+    verify_container_paths();
+    verify_container_markers();
+    verify_container_leaves();
+    verify_literal_container_table();
+    verify_container_columns();
+    verify_container_queries();
+    verify_container_style_boundaries();
+    verify_empty_owner_queries();
+    verify_borrowed_column_rejections();
+    verify_borrowed_marker_rejections();
+    verify_table_query_rejections();
+    verify_nested_leaf_boundaries();
     verify_new_blocks();
     verify_new_inline();
     verify_tables();
     verify_large_syntax();
     verify_deep_and_wide();
+    verify_deep_mixed_containers();
     verify_wide_delimiter_cells();
     verify_syntax_allocation();
     verify_plain();
