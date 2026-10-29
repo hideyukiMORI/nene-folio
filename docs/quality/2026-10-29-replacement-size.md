@@ -65,3 +65,10 @@ red/canonical/計装stderrには既存ASan runtimeの`interception_win: unhandle
 カテゴリ/ノート名strlen経路、全core確保監査、無関係UI/検索、#410の表修正は今回対象外。
 local full gate・全体coverage閾値判定は実行しない。最終head必須CI、commit/PR/統合/通常反映と
 保全後の安全監査・整理は親担当。通常data/Nibと削除拒否済み23箇所は操作しない。
+
+## 統合後の確定値
+
+PR #413のhead `5a0a427`はCI `40797586045`のfull-gate/check成功後、main `bb6dc01`へ統合した。
+全体4627/5092分岐（90.868%）。10:07:08 JSTに通常exeへ反映し、起動していない。
+出力200ファイルの全hash保全と最終監査後、worktree/outputの削除要求は実行前に自動承認レビューで拒否されたため保持する。
+確定値と再試行禁止は`D:/NeNeFolio/agents/411-replacement-size/integration-completion.json`。
