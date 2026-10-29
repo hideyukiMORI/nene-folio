@@ -8,15 +8,22 @@
 
 ## 品質改善の現在位置
 
-エスケープした画像印の直後の通常link [#416](https://github.com/hideyukiMORI/nene-folio/issues/416)は、
-既存のescape判定を画像抑止条件へ加えた完成候補。旧sourceの限定red exit1、修正後の対象build/tidy・unit exit0。
-backslash偶奇、通常link、code、未閉じlinkを確認し、main `815afde`へのrebase後も4入力のhashが不変だった。
-[対象記録](../quality/2026-10-29-escaped-image-link.md)。最終head必須CI・統合・通常反映・出力保全の確定値は
-実PRと`D:/NeNeFolio/agents/416-escaped-image-link/integration-completion.json`を照合する。
-文書検査が生成したpycの削除は自動承認レビューに拒否されたため、このworktreeは削除せず保持する。
+検索結果集合の件数容量[#418](https://github.com/hideyukiMORI/nene-folio/issues/418)は対象検証済みの完成候補。
+公開core queryの不可能な宣言件数を配列確保前に拒否する。通常UIで巨大件数へ自然到達した再現とは区別する。
+旧sourceの安全な限定red、修正後のbuild/tidy・unit・同sanitizer計装・静的確認が完了した。
+[対象記録](../quality/2026-10-29-index-filter-size.md)。最終head必須CI・統合・反映・整理の確定値は
+実PRと`D:/NeNeFolio/agents/418-index-filter-size/integration-completion.json`を照合する。
+applicationの件数集計全般、検索性能、画像構文はこの修正に含めない。
 
-今回の製品修正#402/#404/#405/#407/#410/#411は、各最終headの必須CI成功後にmainへ統合し、通常exeへ反映済み。
-最新の製品sourceは`bb6dc01`、通常反映は10:07:08 JST、版0.3.0.0。更新後は起動していない。
+エスケープした画像印の直後の通常link #416 / [PR #417](https://github.com/hideyukiMORI/nene-folio/pull/417)は、
+最終head `76dac10`のCI `40801128237`でfull-gate/check成功後、main `de2a53a`へ統合した。
+既存escape判定1か所で修正し、限定red/greenとbackslash偶奇・code・未閉じlinkを確認した。
+[対象記録](../quality/2026-10-29-escaped-image-link.md)。通常exe反映と111ファイル全hash保全も完了。
+確定値は`D:/NeNeFolio/agents/416-escaped-image-link/integration-completion.json`。
+内部pycと出力の削除は自動承認レビューに拒否されたため、worktree/outputを保持する。
+
+今回の製品修正#402/#404/#405/#407/#410/#411/#416は、各最終headの必須CI成功後にmainへ統合し、通常exeへ反映済み。
+最新の製品sourceは`de2a53a`、通常反映は10:40:31 JST、版0.3.0.0。更新後は起動していない。
 
 置換factory容量[#411 / PR #413](https://github.com/hideyukiMORI/nene-folio/pull/413)は最終head `5a0a427`の
 CI `40797586045`が成功し、main `bb6dc01`へ統合した。preview7失敗点と最大fit計2件、out/matches保持・同じ一覧でのretryを確認した。
@@ -38,6 +45,9 @@ native317 checks/0 failures、失敗注入native25点/literal16点を確認し�
 idle一致計算の追加検討では、保存修復/削除後の結果・scroll・所有移転も変更が必要と分かった。
 背景I/Oを含め設計案は比較段階であり、製品採用はしていない。次は現行契約を守る小さい案と、計算分割の契約変更を分けて判断する。
 調査・診断原本は `D:/NeNeFolio/agents/quality-20261029/`。
+10:33の次段階確認でも別案件のcompile/tidyが稼働しており、新たな性能計時は0件のまま。
+未対応画像内部の装飾は原文保持との不整合候補として読取監査したが、通常linkのlabel内画像の境界が未決。
+画像をliteral範囲として保護する案は未採用で、実行再現・製品変更を行っていない。
 引用内表のnative字下げ/残幅は#410でmain統合済み、極狭幅の多列表の可読性は別課題として残す。
 通常段落の折返しを変える水平bar案等は採用していない。診断と残る範囲は日報・引き継ぎを参照する。
 
@@ -53,9 +63,9 @@ idle一致計算の追加検討では、保存修復/削除後の結果・scroll
 ## 通常exeとhideの実機確認
 
 hide受理済み合成サンプル`data/サンプル/Markdown構文サンプル.md`は通常dataへ残している。実ノート内容は記録・同梱しない。
-現在の通常`C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`はsource `bb6dc01`・表示版0.3.0/Windows版0.3.0.0。
-通常process0件を確認してから正規ツールで反映しexit0だった。10月29日10:07:08 JST更新済みで、更新後は起動していない。
-版・hashは`D:/NeNeFolio/agents/411-replacement-size/normal-build-verification.json`。通常dataは操作していない。
+現在の通常`C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`はsource `de2a53a`・表示版0.3.0/Windows版0.3.0.0。
+通常process0件を確認してから正規ツールで反映しexit0だった。10月29日10:40:31 JST更新済みで、更新後は起動していない。
+版・hashは`D:/NeNeFolio/agents/416-escaped-image-link/normal-build-verification.json`。通常dataは操作していない。
 
 ## 次の予定: ノートの保存先設定（未実装）
 
@@ -76,9 +86,9 @@ portable版はexe隣の`data`を既定とし、両方とも設定から「ノー
 
 ## 保持中の旧作業物
 
-既存28箇所と、拒否されたpycを含む#416作業木は保持する。再試行や別手段での削除をしない。
+下記の30箇所は自動承認レビューの削除拒否により保持する。再試行や別手段での削除をしない。
 
-- #416: `D:/NeNeFolio/worktrees/416-escaped-image-link`。内部の`eng/__pycache__`と`conformance.cpython-312.pyc`の削除が`blocked by policy`で拒否された。追加理由なし。含む作業木の削除も行わない。出力領域の統合後保全・整理は同taskの`integration-completion.json`を照合する。
+- #416: `D:/NeNeFolio/worktrees/416-escaped-image-link`と`D:/NeNeFolio/outputs/416-escaped-image-link`（2箇所）。作業木内部の`eng/__pycache__`/pyc削除と、統合・通常反映・111ファイル全hash保全・安全監査後の出力削除が`blocked by policy`で拒否された。追加理由なし。含む作業木の削除も行わない。確定値は同taskの`integration-completion.json`。
 
 - #410/#411と境界診断: `D:/NeNeFolio/worktrees/`と`D:/NeNeFolio/outputs/`それぞれの`410-table-container-indent`、`411-replacement-size`、および`D:/NeNeFolio/outputs/table-indent-boundary-20261029`（5箇所）。統合・通常反映・420ファイルのarchive全hash照合・未保存/ignored/link/稼働参照監査後、削除要求全体が実行前`blocked by policy`で拒否された。追加理由なし。
 - #404/#405/#407: `D:/NeNeFolio/worktrees/`と`D:/NeNeFolio/outputs/`それぞれの`404-markdown-containers`、`405-equal-table-columns`、`407-nullable-allocation`（6箇所）。統合・通常反映・archive全hash照合・未保存/ignored/link/稼働参照監査後、削除要求全体が実行前`blocked by policy`で拒否された。追加理由なし。

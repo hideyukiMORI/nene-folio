@@ -211,6 +211,20 @@ static bool run_pane_load_target_tests(const char *_Nonnull argument)
 
 static bool run_size_overflow_target_tests(const char *_Nonnull argument)
 {
+    if (strcmp(argument, "--index-filter-size-allocation") == 0)
+    {
+        run_index_filter_size_allocation_tests();
+        run_index_filter_tests();
+        printf("index filter capacity and allocation tests passed\n");
+        return true;
+    }
+    if (strcmp(argument, "--index-filter-size") == 0)
+    {
+        run_index_filter_size_tests();
+        run_index_filter_tests();
+        printf("index filter capacity and semantics tests passed\n");
+        return true;
+    }
     if (strcmp(argument, "--replacement-size-allocation") == 0)
     {
         run_replace_factory_allocation_tests();
