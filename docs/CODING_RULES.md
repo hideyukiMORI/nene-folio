@@ -38,6 +38,9 @@
 
 `null` 相当が意味してよいのは「省略可能な値が無い」だけ。無効・未読込・失敗・未知・削除済みを表さない。公開 API は `null` を返さない。
 
+確保結果は`_Nullable`のlocalで受け、成功を検査してから`_Nonnull` memberへ渡す。
+memberへnullを代入してから検査する順序は、失敗を返す前に契約を破る。複数の必須資源も、全成功後にまとめてcommitする（#407）。
+
 - 機械強制: **planned** → 未初期化の読み出しは `-Wuninitialized`（K7）。`nullptr` の逆参照はコンパイルが通り（K5）、clang-tidy の `clang-analyzer-core.NullDereference` が拒否する（T2）。`_Nonnull` / `_Nullable` の注釈は `-Wnullability-completeness` で強制し、注釈の無い公開ポインタ引数を拒否する（注釈は clang 拡張なので `-Wpedantic` との併用には名指しの `-Wno-nullability-extension` が要る・ADR 0004）。`-fsanitize=nullability` が `_Nonnull` への `nullptr` を単体テストで検出する。`{0}` によるゼロ値の構築（K15）は C-007 で扱う
 
 ### C-005 — 期待される失敗は例外で表さない
@@ -158,6 +161,11 @@ C はメモリ安全を言語で保証しない。本リポジトリでは次を
 - JSON と Markdown の読み取りは境界で長さを受け取り、`strcpy` / `sprintf` 系の長さを持たない関数を呼ばない
 - Markdownの借用行queryはbyte offsetとprefixのvisual columnを区別する。部分消費tabの残余paddingは0〜3列とし、
   実際の消費箇所でもbyte範囲・空白・加算を確認する。原文全体の第2文字列へ展開しない（ADR0071）
+
+確保失敗の測定ビルドも、Debugの`compile_commands.json`にあるASan/UBSan/nullabilityとrecover禁止の
+同じvectorをcompile/linkへ使う。対象recordの欠落・不一致・無効化指定は拒否し、ASan-onlyへ退避しない。
+同vectorによるnullable→nonnull bindingの正例と、該当診断で停止する反例を既存`eng/coverage.py`で確認する（#407）。
+未完成objectを公開destroyへ渡さず、factoryが持つlocalだけを同moduleの構築用destroyで片付ける。
 
 - 機械強制: **planned** → VLA は `-Werror=vla`（K2-vla-werror。`-Wvla` だけでは C23 で通る＝K2-vla-plain-hole）。`strcpy` 等は clang-tidy `clang-analyzer-security.insecureAPI.*`。ASan / UBSan / nullability は Debug 構成の全 target と単体テストに結線済みで、確保失敗の経路は測定ビルドの注入で全部走る（2026-09-09・ADR 0004）。「確保と解放の対」はレビュー事項なので全体としては planned
 

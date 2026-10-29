@@ -76,6 +76,12 @@ CI で必要なゲートは、すべてローカルで実行できる。検査�
 
 - 機械強制: **active**（`eng/coverage.py` / `eng/coverage-policy.json`。core / application の全 `.c` を測定ビルドで計装し、LLVM の分岐 90% 下限。対象欠落・空の集計も拒否。テストを省いた反例が落ちることを毎回確かめる。中核の確保失敗の経路は測定ビルドでだけ注入して走らせる。2026-09-09・ADR 0004）
 
+#407で測定用sanitizerをDebugの`compile_commands.json`から導出する。全対象core/application/test recordの
+vector一致とASan/UBSan/nullability・recover禁止を必須にし、欠落・不一致・無効化を拒否する。
+同vectorをcompile/linkと独立したbinding検出proofへ使い、正例成功・反例の該当診断と非zero終了を要求する。
+proofのobjectは製品/testのobject集合へ入れない。90%下限・source inventory・負例profile判定は維持する。
+実結果は[品質記録](quality/2026-10-29-nullable-allocation.md)へ残す。
+
 ### QLT-010 — ゲートの弱体化はアーキテクチャ変更
 
 重大度・除外・閾値・モジュール境界・必須 CI ジョブを変えるには明示的な根拠が要る。MUST 規則を弱める変更には ADR か waiver が要る。

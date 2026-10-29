@@ -26,12 +26,13 @@ enum json_writer_outcome json_writer_create(struct json_writer *_Nullable *_Nonn
     {
         return JSON_WRITER_OUT_OF_MEMORY;
     }
-    writer->buffer = malloc(buffer_initial);
-    if (writer->buffer == nullptr)
+    char *_Nullable buffer = malloc(buffer_initial);
+    if (buffer == nullptr)
     {
         free(writer);
         return JSON_WRITER_OUT_OF_MEMORY;
     }
+    writer->buffer = buffer;
     writer->buffer[0] = '\0';
     writer->capacity = buffer_initial;
     writer->failure = JSON_WRITER_ACCEPTED;

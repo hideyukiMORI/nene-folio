@@ -33,12 +33,13 @@ enum json_reader_outcome json_reader_create(const char *_Nonnull text, size_t le
     {
         return JSON_READER_OUT_OF_MEMORY;
     }
-    reader->scratch = malloc(scratch_initial);
-    if (reader->scratch == nullptr)
+    char *_Nullable scratch = malloc(scratch_initial);
+    if (scratch == nullptr)
     {
         free(reader);
         return JSON_READER_OUT_OF_MEMORY;
     }
+    reader->scratch = scratch;
     reader->scratch[0] = '\0';
     reader->scratch_capacity = scratch_initial;
     size_t signature = utf8_text_bom_length(text, length);

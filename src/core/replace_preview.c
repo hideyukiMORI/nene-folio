@@ -27,16 +27,27 @@ static char *_Nullable copy_bytes(const char *_Nonnull text)
     return copy;
 }
 
+static void source_destroy(char16_t *_Nullable text, char *_Nullable category, char *_Nullable note)
+{
+    free(text);
+    free(category);
+    free(note);
+}
+
 static bool adopt_source(struct replace_preview *_Nonnull preview,
                          const struct replace_source *_Nonnull source)
 {
-    preview->text = calloc(source->length + 1, sizeof *preview->text);
-    preview->category = copy_bytes(source->category);
-    preview->note = copy_bytes(source->note);
-    if (preview->text == nullptr || preview->category == nullptr || preview->note == nullptr)
+    char16_t *_Nullable text = calloc(source->length + 1, sizeof *text);
+    char *_Nullable category = copy_bytes(source->category);
+    char *_Nullable note = copy_bytes(source->note);
+    if (text == nullptr || category == nullptr || note == nullptr)
     {
+        source_destroy(text, category, note);
         return false;
     }
+    preview->text = text;
+    preview->category = category;
+    preview->note = note;
     memcpy(preview->text, source->text, source->length * sizeof *preview->text);
     preview->length = source->length;
     return true;
@@ -66,6 +77,13 @@ static enum replace_preview_outcome from_template(enum replace_template_outcome 
     return REPLACE_PREVIEW_BAD_TEMPLATE;
 }
 
+static void construction_destroy(struct replace_preview *_Nonnull preview,
+                                 struct replace_template *_Nullable replacement)
+{
+    replace_template_destroy(replacement);
+    free(preview);
+}
+
 enum replace_preview_outcome replace_preview_create(const struct replace_source *_Nonnull source,
                                                     struct regex_matches *_Nonnull matches,
                                                     struct replace_preview *_Nullable *_Nonnull out)
@@ -80,15 +98,15 @@ enum replace_preview_outcome replace_preview_create(const struct replace_source 
         replace_template_create(source->replacement, source->replacement_length, &replacement));
     if (parsed != REPLACE_PREVIEW_READY)
     {
-        replace_preview_destroy(preview);
+        construction_destroy(preview, replacement);
         return parsed;
     }
-    preview->replacement = replacement;
     if (!adopt_source(preview, source))
     {
-        replace_preview_destroy(preview);
+        construction_destroy(preview, replacement);
         return REPLACE_PREVIEW_OUT_OF_MEMORY;
     }
+    preview->replacement = replacement;
     adopt_matches(preview, matches);
     *out = preview;
     return REPLACE_PREVIEW_READY;

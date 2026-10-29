@@ -19,12 +19,13 @@ enum replace_edit_outcome replace_edit_create(struct note_search_span span, size
     {
         return REPLACE_EDIT_OUT_OF_MEMORY;
     }
-    edit->units = calloc(capacity + 1, sizeof *edit->units);
-    if (edit->units == nullptr)
+    char16_t *_Nullable units = calloc(capacity + 1, sizeof *units);
+    if (units == nullptr)
     {
         free(edit);
         return REPLACE_EDIT_OUT_OF_MEMORY;
     }
+    edit->units = units;
     edit->span = span;
     edit->capacity = capacity;
     *out = edit;

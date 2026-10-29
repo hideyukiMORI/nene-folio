@@ -43,12 +43,13 @@ static enum note_text_outcome adopt(const char *_Nonnull bytes, size_t length,
     }
     size_t prefix = utf8_text_bom_length(bytes, length);
     text->file_length = prefix + length;
-    text->file_bytes = malloc(text->file_length + 1);
-    if (text->file_bytes == nullptr)
+    char *_Nullable file_bytes = malloc(text->file_length + 1);
+    if (file_bytes == nullptr)
     {
         free(text);
         return NOTE_TEXT_OUT_OF_MEMORY;
     }
+    text->file_bytes = file_bytes;
     memcpy(text->file_bytes, bytes, prefix);
     text->bytes = text->file_bytes + prefix;
     memcpy(text->bytes, bytes, length);

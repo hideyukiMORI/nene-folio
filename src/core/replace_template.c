@@ -119,6 +119,15 @@ static enum replace_template_outcome parse(struct replace_template *_Nonnull rep
     return REPLACE_TEMPLATE_READY;
 }
 
+static void construction_destroy(struct replace_template *_Nonnull replacement,
+                                 char16_t *_Nullable literals,
+                                 struct replace_piece *_Nullable pieces)
+{
+    free(literals);
+    free(pieces);
+    free(replacement);
+}
+
 enum replace_template_outcome
 replace_template_create(const char16_t *_Nonnull units, size_t count,
                         struct replace_template *_Nullable *_Nonnull out)
@@ -129,13 +138,16 @@ replace_template_create(const char16_t *_Nonnull units, size_t count,
         return REPLACE_TEMPLATE_OUT_OF_MEMORY;
     }
     /* literal は入力より長くならず、断片は「群の数 + 1」なので count + 1 で必ず足りる。 */
-    replacement->literals = calloc(count + 1, sizeof *replacement->literals);
-    replacement->pieces = calloc(count + 1, sizeof *replacement->pieces);
-    enum replace_template_outcome parsed = REPLACE_TEMPLATE_OUT_OF_MEMORY;
-    if (replacement->literals != nullptr && replacement->pieces != nullptr)
+    char16_t *_Nullable literals = calloc(count + 1, sizeof *literals);
+    struct replace_piece *_Nullable pieces = calloc(count + 1, sizeof *pieces);
+    if (literals == nullptr || pieces == nullptr)
     {
-        parsed = parse(replacement, units, count);
+        construction_destroy(replacement, literals, pieces);
+        return REPLACE_TEMPLATE_OUT_OF_MEMORY;
     }
+    replacement->literals = literals;
+    replacement->pieces = pieces;
+    enum replace_template_outcome parsed = parse(replacement, units, count);
     if (parsed != REPLACE_TEMPLATE_READY)
     {
         replace_template_destroy(replacement);
