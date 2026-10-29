@@ -124,15 +124,21 @@ bool markdown_table_starts(struct markdown_line line, struct markdown_line delim
     return false;
 }
 
-static void row_header(struct text_buffer *_Nonnull out, size_t columns)
+bool markdown_table_native(size_t columns, size_t indent_twips)
 {
-    text_buffer_append_text(out, "\\trowd\\trgaph80\\trleft0");
+    return columns != 0 && columns <= 63 && indent_twips <= 32767;
+}
+
+static void row_header(struct text_buffer *_Nonnull out, size_t columns, size_t indent_twips)
+{
+    text_buffer_append_text(out, "\\trowd\\trgaph80\\trleft");
+    rtf_text_number(out, indent_twips);
     for (size_t index = 0; index < columns; ++index)
     {
         text_buffer_append_text(
             out, "\\clbrdrt\\brdrs\\brdrw10\\brdrcf3\\clbrdrb\\brdrs\\brdrw10\\brdrcf3"
                  "\\clbrdrl\\brdrs\\brdrw10\\brdrcf3\\clbrdrr\\brdrs\\brdrw10\\brdrcf3\\cellx");
-        rtf_text_number(out, (index + 1) * (9000 / columns));
+        rtf_text_number(out, indent_twips + (index + 1) * (9000 / columns));
     }
 }
 
@@ -168,21 +174,22 @@ static bool row_kind_valid(enum markdown_row_kind kind)
 enum markdown_rtf_outcome markdown_table_row(struct text_buffer *_Nonnull out,
                                              struct markdown_line line,
                                              struct markdown_line delimiter,
-                                             enum markdown_row_kind kind)
+                                             struct markdown_table_format format)
 {
-    if (!row_kind_valid(kind) || !markdown_line_valid(line) || !markdown_line_valid(delimiter))
+    if (!row_kind_valid(format.kind) || !markdown_line_valid(line) ||
+        !markdown_line_valid(delimiter) || !markdown_table_delimiter(delimiter))
         return MARKDOWN_RTF_INVALID_INPUT;
     struct markdown_table cells = split(line);
     struct markdown_table delimiters = split(delimiter);
-    if (delimiters.count == 0 || delimiters.count > 63)
+    if (!markdown_table_native(delimiters.count, format.indent_twips))
         return MARKDOWN_RTF_INVALID_INPUT;
-    row_header(out, delimiters.count);
+    row_header(out, delimiters.count, format.indent_twips);
     for (size_t index = 0; index < delimiters.count; ++index)
     {
         struct markdown_span cell = {.bytes = "", .length = 0};
         if (index < cells.count)
             cell = cells.spans[index];
-        cell_header(out, delimiters.spans[index], kind);
+        cell_header(out, delimiters.spans[index], format.kind);
         struct markdown_view view = {
             .spans = &cell, .count = 1, .length = cell.length, .table_cell = true};
         enum markdown_rtf_outcome rendered = markdown_inline_tokens_render(out, view);

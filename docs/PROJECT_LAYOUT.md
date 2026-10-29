@@ -69,6 +69,9 @@ src/app
 Markdown生成物は`markdown_rtf`、leafと段落spanは`markdown_blocks`、順序付きquote/list pathとitem連番・未表示の印は
 `markdown_containers`が所有する。通常受理は旧段落のflushを要求でき、fence/tableの所属先読みは同ownerへの純粋な厳密照合を使う。
 inline、tableの解釈も同じcore内の処理へ分け、RTF文字escapeは`rtf_text`へ集約する。
+表の借用表示入力`markdown_table_format`はkindとcontainer owner由来のtwip字下げを持つ。
+`markdown_table_native`の純粋な対応判定（1〜63列・字下げ32767twip以下）をblocksと直接row入力で共有し、
+範囲外は同じ全行literal経路へ渡す。nativeの`trleft`と絶対`cellx`もtableが生成する（ADR0072）。
 原文は長さ付きで借用し、tab途中の残余列も短命queryで表す。表示用の第2の本文や永続ASTは持たない（ADR0070/0071）。
 UI 状態・ファイル・現在時刻を持たない。実行時依存の許可表は空で、外部シンボルは `eng/symbol-allowlist.json` の libc の一部だけ（ARC-003）。
 
@@ -100,6 +103,8 @@ EDITの無効時配色も`folio_window`の一つの配色経路へ合流する�
 主窓の行番号font/幅は本文倍率から導く派生資源であり、本文の書式や操作文字用fontは変えない（ADR0067）。
 閲覧表の列幅も`note_pane`が同じ本文幅/倍率からnativeのrow書式へ反映する。RTFを再投入せず、
 native構造を正本として選択・dirty・Undoを保ち、配置失敗は既存の本文準備契約へ戻す（ADR0070）。
+native rowの字下げを引いた非負の残幅を商と余りで均等配分し、列幅0も構造を保つ。
+UIはMarkdownを再解釈せず、更新後の字下げ・列数・列幅をnative readbackで照合する（ADR0072）。
 
 ### `src/app`
 

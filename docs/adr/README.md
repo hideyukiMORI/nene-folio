@@ -82,3 +82,4 @@ ADR は「なぜそう決めたか」「何を却下したか」を書く。
 | [0069](0069-markdown-reading-density-and-code-surface.md) | 閲覧の密度とコード面を既存のRTFへ揃える | 受理 |
 | [0070](0070-markdown-syntax-and-native-tables.md) | Markdownの基本構文と表を一つのRTF変換へ加える | 受理 |
 | [0071](0071-ordered-markdown-containers.md) | 引用とリストの親子関係を一つの順序付きownerで解釈する | 受理 |
+| [0072](0072-native-table-container-indent.md) | native表の字下げと残幅を既存container位置へ揃える | 受理 |

@@ -348,8 +348,10 @@ static bool start_table(struct markdown_blocks *_Nonnull parser, struct markdown
     if (!flush(parser, false))
         return false;
     parser->delimiter = delimiter;
-    parser->table_state = markdown_table_columns(line) > 63 ? MARKDOWN_TABLE_STATE_LITERAL
-                                                            : MARKDOWN_TABLE_STATE_NATIVE;
+    size_t indent_twips = markdown_containers_indent(parser->containers);
+    parser->table_state = markdown_table_native(markdown_table_columns(line), indent_twips)
+                              ? MARKDOWN_TABLE_STATE_NATIVE
+                              : MARKDOWN_TABLE_STATE_LITERAL;
     if (parser->table_state == MARKDOWN_TABLE_STATE_LITERAL)
     {
         while (markdown_containers_pending(parser->containers) != 0)
@@ -357,7 +359,9 @@ static bool start_table(struct markdown_blocks *_Nonnull parser, struct markdown
         return literal_row(parser, line) && literal_row(parser, delimiter);
     }
     outer_markers(parser, 0);
-    parser->outcome = markdown_table_row(parser->out, line, delimiter, MARKDOWN_ROW_KIND_HEADER);
+    struct markdown_table_format format = {.kind = MARKDOWN_ROW_KIND_HEADER,
+                                           .indent_twips = indent_twips};
+    parser->outcome = markdown_table_row(parser->out, line, delimiter, format);
     return parser->outcome == MARKDOWN_RTF_CONVERTED;
 }
 
@@ -365,8 +369,10 @@ static bool table_body(struct markdown_blocks *_Nonnull parser, struct markdown_
 {
     if (parser->table_state == MARKDOWN_TABLE_STATE_LITERAL)
         return literal_row(parser, line);
-    parser->outcome =
-        markdown_table_row(parser->out, line, parser->delimiter, MARKDOWN_ROW_KIND_BODY);
+    struct markdown_table_format format = {.kind = MARKDOWN_ROW_KIND_BODY,
+                                           .indent_twips =
+                                               markdown_containers_indent(parser->containers)};
+    parser->outcome = markdown_table_row(parser->out, line, parser->delimiter, format);
     return parser->outcome == MARKDOWN_RTF_CONVERTED;
 }
 
