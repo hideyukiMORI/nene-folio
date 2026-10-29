@@ -16,6 +16,9 @@ void require(bool condition, const char *_Nonnull description);
 
 void run_text_tests(void);
 void run_size_overflow_tests(void);
+void run_replace_factory_size_tests(void);
+void run_replace_factory_allocation_tests(void);
+void run_replace_preview_size_tests(void);
 void run_size_overflow_state_tests(void);
 void run_bom_ledger_tests(void);
 void run_bom_settings_tests(void);

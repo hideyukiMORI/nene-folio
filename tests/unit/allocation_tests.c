@@ -1508,6 +1508,13 @@ static bool buffer_scenario(void)
     return result == TEXT_BUFFER_ACCEPTED;
 }
 
+void run_replace_factory_allocation_tests(void)
+{
+    require(probe_active(), "replacement allocation selector requires active failure injection");
+    exhaust(replace_scenario, "replace scenario never completed");
+    run_replace_preview_allocation_tests();
+}
+
 void run_nullable_allocation_tests(void)
 {
     require(probe_active(), "nullable allocation selector requires active failure injection");
@@ -1515,8 +1522,7 @@ void run_nullable_allocation_tests(void)
     exhaust(reader_scenario, "reader scenario never completed");
     exhaust(writer_scenario, "writer scenario never completed");
     exhaust(plain_rtf_scenario, "plain rtf scenario never completed");
-    exhaust(replace_scenario, "replace scenario never completed");
-    run_replace_preview_allocation_tests();
+    run_replace_factory_allocation_tests();
 }
 
 void run_allocation_tests(void)

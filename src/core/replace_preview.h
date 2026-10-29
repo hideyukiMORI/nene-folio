@@ -24,6 +24,8 @@ struct replace_preview;
  * 所有権: READY のときだけ matches->items（malloc 系で確保したもの）は下見のものになり、
  * matches の capacity と count は 0 に戻る。呼び出し側は自分の手元の同じポインタを捨てる。
  * READY 以外（BAD_TEMPLATE・OUT_OF_MEMORY）では何も引き取らず、matches はそのまま残る。
+ * 終端付き本文のbyte数を表現できなければ、置換文法の解析・確保前にOUT_OF_MEMORYで拒否する。
+ * 失敗時outは不変。置換文字列の容量拒否もtemplateのOUT_OF_MEMORYを同じ結果へ写す。
  * 置換文字列はここで解析するので、文法が壊れていれば BAD_TEMPLATE で何も作らない。
  * count が capacity を超えていても総数のまま残し、組み立て（note_replace_build）が断る。 */
 [[nodiscard]] enum replace_preview_outcome

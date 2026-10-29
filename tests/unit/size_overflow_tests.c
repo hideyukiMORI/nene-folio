@@ -181,6 +181,77 @@ static struct replace_edit *_Nonnull edit_sentinel(void)
     return edit;
 }
 
+static void verify_edit_capacity_bounds(bool measured)
+{
+    struct replace_edit *kept = edit_sentinel();
+    const size_t refused[] = {SIZE_MAX / sizeof(char16_t), SIZE_MAX};
+    for (size_t index = 0; index < sizeof refused / sizeof refused[0]; ++index)
+    {
+        struct replace_edit *out = kept;
+        allocation_probe_fail_at(1);
+        require(replace_edit_create((struct note_search_span){0, 0}, refused[index], &out) ==
+                        REPLACE_EDIT_OUT_OF_MEMORY &&
+                    out == kept && allocation_probe_calls() == 0,
+                "edit capacity overflow refuses before owner allocation and preserves out");
+        allocation_probe_fail_at(0);
+    }
+    if (measured)
+    {
+        struct replace_edit *out = kept;
+        allocation_probe_fail_at(1);
+        require(replace_edit_create((struct note_search_span){0, 0},
+                                    SIZE_MAX / sizeof(char16_t) - 1,
+                                    &out) == REPLACE_EDIT_OUT_OF_MEMORY &&
+                    out == kept && allocation_probe_calls() == 1,
+                "maximum fitting edit capacity reaches only the refused small owner allocation");
+        allocation_probe_fail_at(0);
+    }
+    require(replace_edit_length(kept) == 1 &&
+                memcmp(replace_edit_units(kept), u"k", 2 * sizeof(char16_t)) == 0 &&
+                replace_edit_span(kept).end == 1,
+            "capacity refusal preserves the existing edit text, terminator and span");
+    replace_edit_destroy(kept);
+    struct replace_edit *empty = nullptr;
+    require(replace_edit_create((struct note_search_span){2, 3}, 0, &empty) == REPLACE_EDIT_READY,
+            "zero capacity still owns a terminated empty edit");
+    replace_edit_append(empty, u"x", 1);
+    require(replace_edit_length(empty) == 0 && replace_edit_units(empty)[0] == u'\0' &&
+                replace_edit_span(empty).start == 2 && replace_edit_span(empty).end == 3,
+            "zero capacity preserves its span and terminator when an append has no room");
+    replace_edit_destroy(empty);
+}
+
+static void verify_template_capacity_bounds(void)
+{
+    struct replace_template *kept = replacement_for(u"kept", 4);
+    /* Each private piece contains size_t; no copy of its layout or exact size is needed. */
+    const size_t refused[] = {SIZE_MAX / sizeof(char16_t), SIZE_MAX / sizeof(size_t), SIZE_MAX};
+    for (size_t index = 0; index < sizeof refused / sizeof refused[0]; ++index)
+    {
+        struct replace_template *out = kept;
+        allocation_probe_fail_at(1);
+        require(replace_template_create(u"x", refused[index], &out) ==
+                        REPLACE_TEMPLATE_OUT_OF_MEMORY &&
+                    out == kept && allocation_probe_calls() == 0,
+                "literal or piece capacity overflow refuses before owner allocation or input read");
+        allocation_probe_fail_at(0);
+    }
+    require(replace_template_count(kept) == 1 && replace_template_literal_length(kept, 0) == 4 &&
+                memcmp(replace_template_literal(kept, 0), u"kept", 4 * sizeof(char16_t)) == 0,
+            "template capacity refusal preserves every existing literal");
+    replace_template_destroy(kept);
+}
+
+void run_replace_factory_size_tests(void)
+{
+    bool measured = probe_active();
+    printf("replacement capacity probe: %s; edit maximum-fit checks: %d\n",
+           measured ? "active" : "inactive (canonical)", measured ? 1 : 0);
+    verify_edit_capacity_bounds(measured);
+    verify_template_capacity_bounds();
+    run_replace_preview_size_tests();
+}
+
 static void expect_too_large(const struct note_replace_plan *_Nonnull plan)
 {
     struct replace_edit *kept = edit_sentinel();
@@ -314,4 +385,5 @@ void run_size_overflow_tests(void)
     verify_replace_exact_limit();
     verify_replace_declared_bounds();
     verify_replace_accumulated_limit();
+    run_replace_factory_size_tests();
 }

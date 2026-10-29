@@ -4,6 +4,7 @@
 #include "replace_preview.h"
 #include "unit_tests.h"
 
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -19,6 +20,16 @@ static struct regex_matches heap_matches(void)
     items[1].whole.start = 2;
     items[1].whole.end = 3;
     return (struct regex_matches){.items = items, .capacity = 2, .count = 2};
+}
+
+static struct replace_source source_fixture(void)
+{
+    return (struct replace_source){.text = u"a-a",
+                                   .length = 3,
+                                   .replacement = u"<&>",
+                                   .replacement_length = 3,
+                                   .category = "category",
+                                   .note = ""};
 }
 
 static void verify_transfer(const struct replace_preview *_Nonnull preview,
@@ -111,12 +122,7 @@ static void verify_bad_template(const struct replace_source *_Nonnull source)
 
 void run_replace_preview_allocation_tests(void)
 {
-    const struct replace_source source = {.text = u"a-a",
-                                          .length = 3,
-                                          .replacement = u"<&>",
-                                          .replacement_length = 3,
-                                          .category = "category",
-                                          .note = ""};
+    const struct replace_source source = source_fixture();
     verify_bad_template(&source);
     for (size_t nth = 1; nth < 64; ++nth)
     {
@@ -127,4 +133,112 @@ void run_replace_preview_allocation_tests(void)
         }
     }
     require(false, "all preview allocation failures were exhausted");
+}
+
+static bool preview_probe_active(void)
+{
+    struct replace_source source = source_fixture();
+    struct regex_matches list = heap_matches();
+    struct replace_preview *preview = nullptr;
+    allocation_probe_fail_at(1);
+    enum replace_preview_outcome result = replace_preview_create(&source, &list, &preview);
+    bool measured = result == REPLACE_PREVIEW_OUT_OF_MEMORY && allocation_probe_calls() == 1;
+    allocation_probe_fail_at(0);
+    require(measured || result == REPLACE_PREVIEW_READY,
+            "preview probe detection either rejects its first owner or constructs normally");
+    if (result != REPLACE_PREVIEW_READY)
+    {
+        free(list.items);
+    }
+    replace_preview_destroy(preview);
+    return measured;
+}
+
+static void verify_size_refusal(const struct replace_source *_Nonnull refused, bool measured,
+                                size_t expected_calls)
+{
+    struct replace_source source = source_fixture();
+    struct regex_matches list = heap_matches();
+    struct regex_matches held = list;
+    struct regex_match original[2];
+    memcpy(original, list.items, sizeof original);
+    struct replace_preview *sentinel = sentinel_preview(&source);
+    struct replace_preview *out = sentinel;
+    allocation_probe_fail_at(0);
+    require(replace_preview_create(refused, &list, &out) == REPLACE_PREVIEW_OUT_OF_MEMORY &&
+                out == sentinel && allocation_probe_calls() == (measured ? expected_calls : 0),
+            "unrepresentable preview capacity refuses at its guard and keeps nonnull out");
+    allocation_probe_fail_at(0);
+    verify_caller(&list, &held, original);
+    require(replace_preview_holds(sentinel, &source), "capacity refusal preserves old preview");
+    require(replace_preview_create(&source, &list, &out) == REPLACE_PREVIEW_READY &&
+                out != sentinel,
+            "capacity refusal permits normal retry with exactly the same heap matches");
+    verify_transfer(out, &list, &held, &source);
+    replace_preview_destroy(out);
+    replace_preview_destroy(sentinel);
+}
+
+static void verify_source_maximum_fit(void)
+{
+    struct replace_source source = source_fixture();
+    struct replace_preview *sentinel = sentinel_preview(&source);
+    struct replace_preview *out = sentinel;
+    struct regex_matches list = heap_matches();
+    struct regex_matches held = list;
+    struct regex_match original[2];
+    memcpy(original, list.items, sizeof original);
+    source.length = SIZE_MAX / sizeof(char16_t) - 1;
+    allocation_probe_fail_at(1);
+    require(replace_preview_create(&source, &list, &out) == REPLACE_PREVIEW_OUT_OF_MEMORY &&
+                out == sentinel && allocation_probe_calls() == 1,
+            "maximum fitting source reaches only the deliberately refused small owner");
+    allocation_probe_fail_at(0);
+    verify_caller(&list, &held, original);
+    source = source_fixture();
+    require(replace_preview_create(&source, &list, &out) == REPLACE_PREVIEW_READY,
+            "maximum-fit owner refusal also leaves caller matches available for normal retry");
+    verify_transfer(out, &list, &held, &source);
+    replace_preview_destroy(out);
+    replace_preview_destroy(sentinel);
+}
+
+void run_replace_preview_size_tests(void)
+{
+    bool measured = preview_probe_active();
+    printf("preview capacity probe: %s; source maximum-fit checks: %d\n",
+           measured ? "active" : "inactive (canonical)", measured ? 1 : 0);
+    const size_t refused[] = {SIZE_MAX / sizeof(char16_t), SIZE_MAX};
+    for (size_t index = 0; index < sizeof refused / sizeof refused[0]; ++index)
+    {
+        struct replace_source source = source_fixture();
+        source.length = refused[index];
+        source.replacement = u"\\q";
+        source.replacement_length = 2;
+        verify_size_refusal(&source, measured, 0);
+        source = source_fixture();
+        source.replacement_length = refused[index];
+        verify_size_refusal(&source, measured, 1);
+    }
+    if (measured)
+    {
+        verify_source_maximum_fit();
+    }
+    struct replace_source empty = source_fixture();
+    empty.text = u"";
+    empty.length = 0;
+    empty.replacement = u"";
+    empty.replacement_length = 0;
+    struct regex_matches list = heap_matches();
+    list.count = 0;
+    struct regex_matches held = list;
+    struct replace_preview *preview = nullptr;
+    require(replace_preview_create(&empty, &list, &preview) == REPLACE_PREVIEW_READY,
+            "empty source and replacement remain valid with no matches");
+    verify_transfer(preview, &list, &held, &empty);
+    struct note_replace_plan plan =
+        replace_preview_plan(preview, REPLACE_ALL, (struct note_search_span){0, 0});
+    require(plan.length == 0 && plan.text[0] == u'\0',
+            "empty preview retains its owned UTF-16 terminator");
+    replace_preview_destroy(preview);
 }

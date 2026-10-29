@@ -3,6 +3,7 @@
 #include "regex_matches.h"
 #include "replace_template.h"
 
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -88,6 +89,10 @@ enum replace_preview_outcome replace_preview_create(const struct replace_source 
                                                     struct regex_matches *_Nonnull matches,
                                                     struct replace_preview *_Nullable *_Nonnull out)
 {
+    if (source->length >= SIZE_MAX / sizeof(char16_t))
+    {
+        return REPLACE_PREVIEW_OUT_OF_MEMORY;
+    }
     struct replace_preview *_Nullable preview = calloc(1, sizeof *preview);
     if (preview == nullptr)
     {
