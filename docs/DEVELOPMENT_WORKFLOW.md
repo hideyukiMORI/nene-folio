@@ -51,6 +51,29 @@ production コード・ビルド・依存・方針・利用者向けドキュメ
 Ready後のhead変更は先にDraftへ戻してまとめる。CI結果はPR Checksと外部証跡に残し、結果追記だけの本文編集でCIを再起動しない。
 文書変更は差分・参照・関係する規約検査、ツール変更はそのツールの確認をローカルでまとめる。文書PRの必須CIも維持する。
 
+### 対象実行の記録
+
+対象検証や途中診断の記録には `tools/record-run.py` を使う。明示した既存コマンドを実行し、
+指定入力の実行前snapshot、指定成果物の終了時snapshot、raw stdout/stderrと終了値を同じ新規directoryへ保存する。
+#422で途中exe/inputの同名上書きが起きたため、#424で既存run-dirへの再実行を子起動前に拒否する経路を設けた。
+Python標準libraryだけを使い、テストの意味・対象範囲・再実行判断・必須CIは変えない。
+
+```powershell
+python -B tools/record-run.py --run-dir D:/NeNeFolio/outputs/424-run-record/attempt-01 --cwd C:/Users/info/WORKS/NeNeFolio --input C:/Users/info/WORKS/NeNeFolio/tools/record-run.py -- python -B tools/record-run.py --help
+```
+
+run-dirは未作成の絶対pathで、親directoryを先に用意する。cwd・input・artifactも絶対pathを使う。
+`--input` は実行前のsource/test/config/exe等、`--artifact` は終了後に保管するbuild生成exe等を繰り返し指定する。
+環境変数・ノート・未指定依存は自動収集しない。機微な値をargvや指定ファイルへ入れない。
+artifactは終了時に存在したbytesの記録であり、そのコマンドが生成した証明ではない。
+
+`run.json` は開始情報、`result.json` は完了情報、`stdout.log` / `stderr.log` はraw出力。
+完了情報は子の終了値と記録側の終了値を分け、入力変化・起動失敗・記録失敗を成功扱いしない。
+resultが欠落または破損した試行は未完了であり、終了値だけから成功を認定しない。
+失敗時も部分記録を残し、再実行には新しいrun-dirを使う。入力選定の十分性、記録間に変化して戻った入力、
+実行中の外部環境までは自動保証しない。必要な環境条件と対象範囲はQLT-012に従い別途記録する。
+保全・整理は本節の完了時手順に従い、このツールは既存成果物を削除しない。
+
 ---
 
 ## 3. ブランチとコミット
