@@ -83,3 +83,5 @@ ADR は「なぜそう決めたか」「何を却下したか」を書く。
 | [0070](0070-markdown-syntax-and-native-tables.md) | Markdownの基本構文と表を一つのRTF変換へ加える | 受理 |
 | [0071](0071-ordered-markdown-containers.md) | 引用とリストの親子関係を一つの順序付きownerで解釈する | 受理 |
 | [0072](0072-native-table-container-indent.md) | native表の字下げと残幅を既存container位置へ揃える | 受理 |
+| [0073](0073-bounded-index-matching.md) | 全ノートの一致計算を同じengineの有限workで継続する | 受理 |
+| [0074](0074-linear-index-matching.md) | 部分一致を保持して総比較workを線形に抑える | 受理 |

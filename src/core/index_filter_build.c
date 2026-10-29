@@ -12,14 +12,14 @@ struct index_filter_build
         BUILD_NAME_LENGTH,
         BUILD_SINGLE,
         BUILD_TAIL,
-        BUILD_HEAD,
-        BUILD_FULL,
+        BUILD_SCAN,
         BUILD_BODY,
         BUILD_DONE,
         BUILD_SEALED
     } phase;
     size_t *_Nonnull categories;
     size_t *_Nonnull notes;
+    size_t *_Nullable prefix;
     const char *_Nullable term;
     size_t term_length;
     size_t steps[256];
@@ -40,25 +40,40 @@ struct index_filter_build
     bool matched;
 };
 
-static enum index_filter_outcome allocate_build(size_t count,
+static void prefix_destroy(size_t *_Nullable prefix)
+{
+    free(prefix);
+}
+
+static void parts_destroy(struct index_filter_build *_Nullable build, size_t *_Nullable categories,
+                          size_t *_Nullable notes, size_t *_Nullable prefix)
+{
+    prefix_destroy(prefix);
+    free(categories);
+    free(notes);
+    free(build);
+}
+
+static enum index_filter_outcome allocate_build(size_t count, size_t prefix_length,
                                                 struct index_filter_build *_Nullable *_Nonnull out)
 {
-    if (count >= SIZE_MAX / sizeof(size_t))
+    if (count >= SIZE_MAX / sizeof(size_t) || prefix_length > SIZE_MAX / sizeof(size_t))
         return INDEX_FILTER_OUT_OF_MEMORY;
     struct index_filter_build *_Nullable build = calloc(1, sizeof *build);
     if (build == nullptr)
         return INDEX_FILTER_OUT_OF_MEMORY;
     size_t *_Nullable categories = malloc((count + 1) * sizeof *categories);
     size_t *_Nullable notes = malloc((count + 1) * sizeof *notes);
-    if (categories == nullptr || notes == nullptr)
+    size_t *_Nullable prefix =
+        prefix_length == 0 ? nullptr : malloc(prefix_length * sizeof *prefix);
+    if (categories == nullptr || notes == nullptr || (prefix_length != 0 && prefix == nullptr))
     {
-        free(categories);
-        free(notes);
-        free(build);
+        parts_destroy(build, categories, notes, prefix);
         return INDEX_FILTER_OUT_OF_MEMORY;
     }
     build->categories = categories;
     build->notes = notes;
+    build->prefix = prefix;
     build->entries = count;
     *out = build;
     return INDEX_FILTER_ACCEPTED;
@@ -99,8 +114,25 @@ static void prepare(struct index_filter_build *_Nonnull build, const char *_Nonn
 
 static void seal(struct index_filter_build *_Nonnull build)
 {
+    prefix_destroy(build->prefix);
+    build->prefix = nullptr;
     build->term = nullptr;
     build->phase = BUILD_SEALED;
+}
+
+static void prepare_prefix(struct index_filter_build *_Nonnull build, const char *_Nonnull term)
+{
+    size_t *_Nonnull prefix = build->prefix;
+    prefix[0] = 0;
+    for (size_t index = 1; index < build->term_length; ++index)
+    {
+        size_t matched = prefix[index - 1];
+        while (matched > 0 && ascii_fold_byte(term[index]) != ascii_fold_byte(term[matched]))
+            matched = prefix[matched - 1];
+        if (ascii_fold_byte(term[index]) == ascii_fold_byte(term[matched]))
+            matched += 1;
+        prefix[index] = matched;
+    }
 }
 
 enum index_filter_outcome
@@ -112,10 +144,13 @@ index_filter_build_create(const char *_Nonnull term, size_t length, size_t count
     if (!well_formed(term, length))
         return INDEX_FILTER_MALFORMED;
     struct index_filter_build *_Nullable build = nullptr;
-    enum index_filter_outcome allocated = allocate_build(count, &build);
+    size_t prefix_length = count > 0 && length >= 2 ? length : 0;
+    enum index_filter_outcome allocated = allocate_build(count, prefix_length, &build);
     if (allocated != INDEX_FILTER_ACCEPTED)
         return allocated;
     prepare(build, term, length);
+    if (prefix_length != 0)
+        prepare_prefix(build, term);
     if (count == 0)
         seal(build);
     *out = build;
@@ -192,39 +227,43 @@ static void tail_byte(struct index_filter_build *_Nonnull build, const char *_No
     size_t amount = build->steps[(unsigned char)bytes[build->at + build->term_length - 1]];
     if (amount == 0)
     {
-        build->phase = BUILD_HEAD;
+        build->phase = BUILD_SCAN;
         return;
     }
     move_candidate(build, amount);
 }
 
-static void head_byte(struct index_filter_build *_Nonnull build, const char *_Nonnull bytes)
+static void resume_tail(struct index_filter_build *_Nonnull build)
 {
-    if (ascii_fold_byte(bytes[build->at]) != ascii_fold_byte(build->first))
-    {
-        move_candidate(build, 1);
-        return;
-    }
-    build->compared = 0;
-    build->phase = BUILD_FULL;
+    build->phase = BUILD_TAIL;
+    if (build->at > build->source_length - build->term_length)
+        end_source(build);
 }
 
-static void full_byte(struct index_filter_build *_Nonnull build, const char *_Nonnull bytes)
+static void scan_byte(struct index_filter_build *_Nonnull build, const char *_Nonnull bytes)
 {
-    /* BUILD_FULL requires the live term borrow; sanitizers enforce this binding. */
+    /* BUILD_SCAN keeps r=at, q=compared and requires both live borrowed/owned inputs. */
     const char *_Nonnull term = build->term;
-    if (ascii_fold_byte(bytes[build->at + build->compared]) !=
-        ascii_fold_byte(term[build->compared]))
+    const size_t *_Nonnull prefix = build->prefix;
+    if (ascii_fold_byte(bytes[build->at]) != ascii_fold_byte(term[build->compared]))
     {
-        move_candidate(build, 1);
+        if (build->compared > 0)
+            build->compared = prefix[build->compared - 1];
+        else
+            build->at += 1;
+        if (build->compared == 0)
+            resume_tail(build);
         return;
     }
+    build->at += 1;
     build->compared += 1;
     if (build->compared == build->term_length)
     {
         build->matched = true;
         build->phase = BUILD_DONE;
     }
+    else if (build->at == build->source_length)
+        end_source(build);
 }
 
 static void compare_byte(struct index_filter_build *_Nonnull build, const char *_Nonnull bytes)
@@ -237,11 +276,8 @@ static void compare_byte(struct index_filter_build *_Nonnull build, const char *
     case BUILD_TAIL:
         tail_byte(build, bytes);
         break;
-    case BUILD_HEAD:
-        head_byte(build, bytes);
-        break;
-    case BUILD_FULL:
-        full_byte(build, bytes);
+    case BUILD_SCAN:
+        scan_byte(build, bytes);
         break;
     case BUILD_ENTRY:
     case BUILD_NAME_LENGTH:
@@ -340,7 +376,7 @@ index_filter_build_removed(const struct index_filter_build *_Nonnull sealed, str
                            struct index_filter_build *_Nullable *_Nonnull out)
 {
     struct index_filter_build *_Nullable removed = nullptr;
-    enum index_filter_outcome allocated = allocate_build(sealed->count, &removed);
+    enum index_filter_outcome allocated = allocate_build(sealed->count, 0, &removed);
     if (allocated != INDEX_FILTER_ACCEPTED)
         return allocated;
     for (size_t index = 0; index < sealed->count; ++index)
@@ -361,7 +397,5 @@ void index_filter_build_destroy(struct index_filter_build *_Nullable build)
 {
     if (build == nullptr)
         return;
-    free(build->categories);
-    free(build->notes);
-    free(build);
+    parts_destroy(build, build->categories, build->notes, build->prefix);
 }
