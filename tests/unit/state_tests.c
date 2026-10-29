@@ -7447,6 +7447,37 @@ static void verify_warm_build_oom(size_t nth)
     folio_state_destroy(state);
 }
 
+static void verify_warm_prefix_oom(void)
+{
+    struct persistence_adapter adapter = preparation_adapter();
+    struct folio_state *state = matching_mutation_state(&adapter, "aaaaaaaa");
+    size_t reads = adapter.note_reads;
+    require(test_index_filter_complete(state, u"one", 3) == FOLIO_STATE_READY &&
+                folio_state_index_filter_count(state) == 1 &&
+                folio_state_set_index_filter(state, u"aa", 2) == FOLIO_STATE_READY &&
+                folio_state_index_filter_pending(state),
+            "accept a warm general request after an existing narrow completed filter");
+    allocation_probe_fail_at(4);
+    enum folio_state_outcome outcome = folio_state_continue_index_filter(state);
+    size_t calls = allocation_probe_calls(), bytes = allocation_probe_malloc_size();
+    allocation_probe_fail_at(0);
+    require(outcome == FOLIO_STATE_OUT_OF_MEMORY && calls == 4 && bytes == 2 * sizeof(size_t) &&
+                !folio_state_index_filter_pending(state) && !folio_state_filtering(state) &&
+                folio_state_index_filter_count(state) == 2 && adapter.note_reads == reads,
+            "the new prefix OOM stops the accepted warm request on the full cached index");
+    require(folio_state_continue_index_filter(state) == FOLIO_STATE_READY &&
+                !folio_state_filtering(state) && folio_state_index_filter_count(state) == 2,
+            "the stopped request returns no second failure and does not restore the old filter");
+    require(test_index_filter_complete(state, u"aa", 2) == FOLIO_STATE_READY &&
+                folio_state_filtering(state) && folio_state_index_filter_count(state) == 1 &&
+                same_text(folio_state_index_filter_term(state), "aa") &&
+                adapter.note_reads == reads,
+            "the same general request recovers through the one engine without corpus reread");
+    printf("warm prefix OOM: calls=%zu bytes=%zu, one failure then READY; retry count=1\n", calls,
+           bytes);
+    folio_state_destroy(state);
+}
+
 void run_index_preparation_allocation_tests(void)
 {
     allocation_probe_fail_at(1);
@@ -7458,6 +7489,7 @@ void run_index_preparation_allocation_tests(void)
         return;
     finder = test_regex_port();
     verify_warm_request_oom();
+    verify_warm_prefix_oom();
     for (size_t nth = 1; nth <= 4; ++nth)
         verify_warm_build_oom(nth);
     struct persistence_adapter adapter = preparation_adapter();

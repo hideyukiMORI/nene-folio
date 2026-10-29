@@ -1,4 +1,4 @@
-/* ADR0073: the sole incremental matcher; only this opaque owner is mutable while building. */
+/* ADR0073/0074: the sole matcher; only this opaque owner is mutable while building. */
 #ifndef NENEFOLIO_INDEX_FILTER_BUILD_H
 #define NENEFOLIO_INDEX_FILTER_BUILD_H
 #include "index_filter_entry.h"
@@ -8,13 +8,17 @@
 struct index_filter_build;
 /* Borrow immutable term bytes until READY or destroy. Empty term precedes UTF-8 rejection,
  * then count >= SIZE_MAX / sizeof(size_t) is refused before allocation. Failure preserves out.
- * Count zero creates a READY owner with no term borrow. Entries arrive in strict ledger order. */
+ * General terms with entries own length size_t prefix elements until READY; their product is
+ * checked before allocation. Count zero creates READY without that scratch or a term borrow.
+ * Entries arrive in strict ledger order. UTF-8/skip/prefix preparation is synchronous. */
 [[nodiscard]] enum index_filter_outcome
 index_filter_build_create(const char *_Nonnull term, size_t length, size_t count,
                           struct index_filter_build *_Nullable *_Nonnull out);
 /* Entry/name/body are borrowed only during this call. Resubmit the same unchanged entry until
  * ENTRY_DONE/ALL_DONE. Mutation requires discarding the build first. Work counts entry start,
- * name bytes including NUL, single/tail/head/full comparison bytes. Positive work with MORE
+ * name bytes including NUL, single/tail/scan comparison bytes (one prefix fallback per comparison).
+ * General source length N uses at most 3N comparison work; preparation/cleanup time is outside it.
+ * Positive work with MORE
  * consumes work; zero work does not advance. READY returns ALL_DONE without reading entry/term. */
 [[nodiscard]] enum index_filter_step
 index_filter_build_step(struct index_filter_build *_Nonnull build,

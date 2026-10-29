@@ -8,6 +8,7 @@
 #include "note_text.h"
 #include "unit_tests.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -671,13 +672,13 @@ static void verify_exact_work(void)
     index_filter_build_destroy(build);
     entry = entry_of(at(0, 0), "", "ab");
     require(index_filter_build_create("ab", 2, 1, &build) == INDEX_FILTER_ACCEPTED, "full owner");
-    work = 5;
+    work = 4;
     require(index_filter_build_step(build, &entry, &work) == INDEX_FILTER_STEP_MORE && work == 0,
-            "tail and head do not hide the last full-comparison byte outside the budget");
+            "tail and first scan leave the final source byte pending within the budget");
     work = 1;
     require(index_filter_build_step(build, &entry, &work) == INDEX_FILTER_STEP_ALL_DONE &&
                 work == 0 && index_filter_build_count(build) == 1,
-            "a complete comparison resumes at its saved byte");
+            "the last scan succeeds even when its cursor is beyond the final candidate start");
     index_filter_build_destroy(build);
 }
 
@@ -729,6 +730,115 @@ static void verify_sealed_ownership(void)
     index_filter_build_destroy(nullptr);
 }
 
+static size_t measure_entry_work(struct index_filter_build *_Nonnull build,
+                                 const struct index_filter_entry *_Nonnull entry,
+                                 const size_t *_Nonnull schedule, size_t schedule_count)
+{
+    size_t total = 0, calls = 0, zero = 0;
+    require(index_filter_build_step(build, entry, &zero) == INDEX_FILTER_STEP_MORE && zero == 0 &&
+                index_filter_build_readiness(build) == INDEX_FILTER_NOT_READY,
+            "zero work leaves the new owner unstarted");
+    enum index_filter_step step = INDEX_FILTER_STEP_MORE;
+    while (step == INDEX_FILTER_STEP_MORE && calls < 200000)
+    {
+        size_t budget = schedule[calls % schedule_count], remaining = budget;
+        step = index_filter_build_step(build, entry, &remaining);
+        require(remaining < budget && budget - remaining <= 200000 - total,
+                "each positive step consumes bounded work without hiding an unbounded loop");
+        total += budget - remaining;
+        calls += 1;
+        require((step == INDEX_FILTER_STEP_MORE) ==
+                    (index_filter_build_readiness(build) == INDEX_FILTER_NOT_READY),
+                "every actual step reports readiness consistent with its completion");
+    }
+    require(step == INDEX_FILTER_STEP_ALL_DONE, "one-entry work fixture completes within its cap");
+    return total;
+}
+
+static size_t verify_entry_work(const char *_Nonnull term,
+                                const struct index_filter_entry *_Nonnull entry,
+                                size_t expected_count, size_t bound)
+{
+    const size_t schedules[][4] = {{1, 1, 1, 1},
+                                   {2, 2, 2, 2},
+                                   {1, 3, 2, 7},
+                                   {4096, 4096, 4096, 4096},
+                                   {65536, 65536, 65536, 65536}};
+    size_t baseline = 0;
+    for (size_t index = 0; index < sizeof schedules / sizeof schedules[0]; ++index)
+    {
+        struct index_filter_build *build = nullptr;
+        require(index_filter_build_create(term, strlen(term), 1, &build) == INDEX_FILTER_ACCEPTED,
+                "public owner for fixed work and set oracle");
+        size_t work = measure_entry_work(build, entry, schedules[index], 4);
+        require(work <= bound && index_filter_build_count(build) == expected_count,
+                "known result and comparison-work bound hold for every schedule");
+        if (expected_count != 0)
+            require(index_filter_build_ref(build, 0).category == entry->ref.category &&
+                        index_filter_build_ref(build, 0).note == entry->ref.note,
+                    "a known match retains its exact ledger ref");
+        if (index == 0)
+            baseline = work;
+        require(work == baseline, "schedule changes neither total comparisons nor the set");
+        index_filter_build_destroy(build);
+    }
+    return baseline;
+}
+
+static void verify_periodic_work(size_t length, size_t term_length)
+{
+    char body[16384], term[258];
+    require(length <= sizeof body && term_length < sizeof term, "small fixed periodic spans");
+    memset(body, 'a', length);
+    memset(term, 'a', term_length);
+    term[term_length - 2] = 'b';
+    term[term_length] = '\0';
+    const struct index_filter_entry entry = {
+        .ref = at(0, 0), .name = "", .body = body, .length = length};
+    size_t work = verify_entry_work(term, &entry, 0, 2 + 3 * length);
+    printf("linear periodic: N=%zu m=%zu work=%zu bound=%zu count=0\n", length, term_length, work,
+           2 + 3 * length);
+}
+
+static void verify_skip_and_single_work(void)
+{
+    char body[65536];
+    memset(body, 'x', sizeof body);
+    struct index_filter_entry entry = {
+        .ref = at(0, 0), .name = "", .body = body, .length = sizeof body};
+    size_t work = verify_entry_work("z", &entry, 0, 65538);
+    require(work == 65538, "the unchanged single-byte fixture keeps its exact work");
+    memcpy(body + sizeof body - 13, "NeEdLe PhRaSe", 13);
+    size_t phrase = verify_entry_work("needle phrase", &entry, 1, 5058);
+    printf("single work=%zu; phrase work=%zu <=5058, known counts=0/1\n", work, phrase);
+}
+
+static void verify_prefix_boundaries(void)
+{
+    static const char *const terms[] = {"ab",    "abaca",  "aaaab", "abaca",
+                                        "AaAaB", "猫a猫b", "aAaBB"};
+    static const char *const names[] = {"", "", "", "ababa", "", "", ""};
+    static const char *const bodies[] = {"ab",         "ababaca",     "aaacbaaaab", "caxxx",
+                                         "AAaCbAaAAb", "猫A猫猫A猫b", "aaaaBB"};
+    for (size_t index = 0; index < sizeof terms / sizeof terms[0]; ++index)
+    {
+        struct index_filter_entry entry = entry_of(at(2, index), names[index], bodies[index]);
+        size_t expected = index == 3 ? 0 : 1;
+        (void)verify_entry_work(terms[index], &entry, expected,
+                                2 + 4 * strlen(names[index]) + 3 * entry.length);
+    }
+}
+
+static void verify_linear_work(void)
+{
+    verify_periodic_work(4096, 17);
+    verify_periodic_work(16384, 17);
+    verify_periodic_work(4096, 257);
+    verify_periodic_work(16384, 257);
+    verify_skip_and_single_work();
+    verify_prefix_boundaries();
+}
+
 void run_index_filter_tests(void)
 {
     const size_t single[] = {1}, pair[] = {2}, mixed[] = {1, 3, 2, 7}, large[] = {65536};
@@ -737,6 +847,7 @@ void run_index_filter_tests(void)
     verify_work_schedule(mixed, 4);
     verify_work_schedule(large, 1);
     verify_exact_work();
+    verify_linear_work();
     verify_sealed_ownership();
     verify_folding();
     verify_sources();

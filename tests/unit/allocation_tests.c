@@ -1361,19 +1361,25 @@ static void verify_build_owner_oom(void)
 
 static void verify_finish_released_term_oom(void)
 {
-    char *term = malloc(1);
+    char *term = malloc(4);
     if (term == nullptr)
         test_failure("owned term for finish retry");
-    term[0] = 'a';
+    memcpy(term, "aaab", 4);
     struct index_filter_build *build = nullptr;
     const struct index_filter_entry entry = {
-        .ref = {.category = 3, .note = 7}, .name = "_", .body = "a", .length = 1};
-    require(index_filter_build_create(term, 1, 1, &build) == INDEX_FILTER_ACCEPTED,
+        .ref = {.category = 3, .note = 7}, .name = "_", .body = "aaab", .length = 4};
+    require(index_filter_build_create(term, 4, 1, &build) == INDEX_FILTER_ACCEPTED,
             "borrowed term");
     size_t work = 65536;
     require(index_filter_build_step(build, &entry, &work) == INDEX_FILTER_STEP_ALL_DONE,
             "seal before ending the term lifetime");
     free(term);
+    struct index_filter_build *removed = nullptr;
+    require(index_filter_build_removed(build, (struct note_ref){.category = 3, .note = 1},
+                                       &removed) == INDEX_FILTER_ACCEPTED &&
+                index_filter_build_ref(removed, 0).note == 6,
+            "removed uses the general SEALED set after term and prefix have been released");
+    index_filter_build_destroy(removed);
     struct index_filter_build *sentinel = sealed_filter_build();
     struct index_filter *held = nullptr;
     require(index_filter_finish(&sentinel, &held) == INDEX_FILTER_FINISH_ACCEPTED,
@@ -1393,6 +1399,73 @@ static void verify_finish_released_term_oom(void)
     index_filter_destroy(held);
 }
 
+static void verify_prefix_owner_oom(void)
+{
+    struct index_filter_build *held = sealed_filter_build();
+    const struct index_filter_entry entry = {
+        .ref = {.category = 3, .note = 7}, .name = "_", .body = "aaaaaaab", .length = 8};
+    for (size_t nth = 1; nth <= 4; ++nth)
+    {
+        struct index_filter_build *out = held;
+        allocation_probe_fail_at(nth);
+        enum index_filter_outcome created = index_filter_build_create("aaab", 4, 1, &out);
+        size_t calls = allocation_probe_calls(), bytes = allocation_probe_malloc_size();
+        allocation_probe_fail_at(0);
+        require(created == INDEX_FILTER_OUT_OF_MEMORY && out == held &&
+                    index_filter_build_count(held) == 1 &&
+                    index_filter_build_ref(held, 0).note == 7,
+                "four-resource constructor failure preserves an actual nonempty owner sentinel");
+        if (nth == 4)
+            require(calls == 4 && bytes == 4 * sizeof(size_t),
+                    "the fourth refused resource is the prefix allocation itself");
+        require(index_filter_build_create("aaab", 4, 1, &out) == INDEX_FILTER_ACCEPTED &&
+                    out != held,
+                "all general constructor failures retry the same input");
+        size_t work = 9;
+        require(index_filter_build_step(out, &entry, &work) == INDEX_FILTER_STEP_MORE &&
+                    work == 0 && index_filter_build_readiness(out) == INDEX_FILTER_NOT_READY,
+                "destroy a partial SCAN owner with its live prefix and unowned input spans");
+        index_filter_build_destroy(out);
+    }
+    printf("prefix owner OOM: 4 failure points, prefix point=4; partial SCAN destroy=4\n");
+    index_filter_build_destroy(held);
+}
+
+static void verify_without_prefix_allocation(void)
+{
+    struct index_filter_build *held = sealed_filter_build(), *out = nullptr;
+    allocation_probe_fail_at(4);
+    enum index_filter_outcome created = index_filter_build_create("aaab", 4, 0, &out);
+    size_t calls = allocation_probe_calls();
+    allocation_probe_fail_at(0);
+    require(created == INDEX_FILTER_ACCEPTED && calls == 3 &&
+                index_filter_build_readiness(out) == INDEX_FILTER_READY &&
+                index_filter_build_count(out) == 0,
+            "general zero-entry constructor has three resources and no prefix");
+    index_filter_build_destroy(out);
+    out = nullptr;
+    allocation_probe_fail_at(4);
+    created = index_filter_build_create("z", 1, 1, &out);
+    calls = allocation_probe_calls();
+    allocation_probe_fail_at(0);
+    require(created == INDEX_FILTER_ACCEPTED && calls == 3,
+            "single-byte construction never requests a prefix resource");
+    index_filter_build_destroy(out);
+    out = nullptr;
+    allocation_probe_fail_at(4);
+    created = index_filter_build_removed(held, (struct note_ref){.category = 3, .note = 1}, &out);
+    calls = allocation_probe_calls();
+    allocation_probe_fail_at(0);
+    require(created == INDEX_FILTER_ACCEPTED && calls == 3 &&
+                index_filter_build_readiness(out) == INDEX_FILTER_READY &&
+                index_filter_build_ref(out, 0).note == 6 &&
+                index_filter_build_ref(held, 0).note == 7,
+            "removed owns only three resources and preserves the source SEALED numbering");
+    index_filter_build_destroy(out);
+    index_filter_build_destroy(held);
+    printf("prefix-free constructors: count0=3 single=3 removed=3 allocations\n");
+}
+
 void run_filter_allocation_tests(void)
 {
     if (!probe_active())
@@ -1400,6 +1473,8 @@ void run_filter_allocation_tests(void)
         return;
     }
     verify_build_owner_oom();
+    verify_prefix_owner_oom();
+    verify_without_prefix_allocation();
     verify_finish_released_term_oom();
     for (size_t nth = 1; nth < 16; ++nth)
     {

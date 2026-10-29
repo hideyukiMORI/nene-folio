@@ -135,3 +135,11 @@ ARC-005/C-013はplannedのまま。機械強制の不存在をactiveへ変更せ
 統合/通常反映/恒久保全後、新作業木/出力だけを安全監査して整理する。削除拒否35箇所は再試行しない。
 
 Waivers: none
+
+## 2026-10-29 の補正（#446 — 総比較workの線形化）
+
+一般語のtail/head/完全比較の再開始を、[ADR0074](0074-linear-index-matching.md)のtailとprefix継続へ置き換える。
+一比較/一fallbackのworkを維持し、各source長Nに対する一般語の比較workを3N以下にする。
+追加prefixは構築中だけ所有してSEALED時に破棄する。既存skip表は完成ownerに残る。
+単文字・entry/name長のwork、13公開操作、借用と完成結果の所有、65536政策、application/UIの実行と無効化は維持する。
+create前処理や解放を含む実時間上限は主張しない。新規約と対象検証・旧証拠の再利用範囲はADR0074を正本とする。
