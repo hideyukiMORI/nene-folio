@@ -6,14 +6,16 @@
 
 ## 品質改善の現在位置
 
-現在は[#404](https://github.com/hideyukiMORI/nene-folio/issues/404)で、リスト内の引用から親本文へ戻る際の番号・字下げを修正する。
-[ADR0071](../adr/0071-ordered-markdown-containers.md)で順序付きの単一container owner、純粋な先読み、paragraphだけのlazy継続を受理した。
-印はquote/headingで同じ段落、code/tableと複数印の外側では専用段落にする。
-Debug build/tidy・対象unit、29箇所の確保失敗注入、実製品RTFのnative投入106 checksは成功。
-[PR #406](https://github.com/hideyukiMORI/nene-folio/pull/406)の初回CIは全unitまで成功したが、全体分岐89.82%で90%下限を満たさず失敗。
-Draftへ戻して新owner/借用行の未検証境界へ対象テストを追加し、対象build/tidy・unit・計装selectorが成功。
-製品不変でcovered分岐が51増えた。閾値・除外を維持し、新headの必須CIへ進む。
-作業木は`D:/NeNeFolio/worktrees/404-markdown-containers`、証跡は`D:/NeNeFolio/agents/404-markdown-containers/`。
+リスト内の引用から親本文へ戻る修正[#404 / PR #406](https://github.com/hideyukiMORI/nene-folio/pull/406)は、
+最終head `59bab9e`の必須CI `40790608210`が成功し、main `6047bcf`へ統合済み。
+初回coverage不足へ境界テストを追加し、全体4612/5078分岐（90.823%）を確認した。閾値・除外は不変。
+設計は[ADR0071](../adr/0071-ordered-markdown-containers.md)、対象結果は[品質記録](../quality/2026-10-29-markdown-containers.md)。
+通常exeへの反映と作業物整理は後続修正の統合後に行う。確定値は`D:/NeNeFolio/agents/404-markdown-containers/completion.json`を照合する。
+
+現在は[#405](https://github.com/hideyukiMORI/nene-folio/issues/405)の表の等幅配分と、
+[#407](https://github.com/hideyukiMORI/nene-folio/issues/407)の確保失敗時nonnull契約を進める。
+#405は実native対象79 checks/0 failures、修正前の不均等幅も再現済み。#404統合後のmainを取り込み、最終head必須CIへ進む。
+#407は7factoryのnullable確認と測定sanitizerの統一を実装し、対象失敗注入とtool正負例が成功。完成記録を確認中。
 
 CR改行の[#402 / PR #403](https://github.com/hideyukiMORI/nene-folio/pull/403)は最終head必須CI成功後、main `5c1240e`へ統合し通常exeへ反映済み。
 確認範囲は[品質記録](../quality/2026-10-29-markdown-line-endings.md)、確定値は
@@ -24,9 +26,7 @@ CR改行の[#402 / PR #403](https://github.com/hideyukiMORI/nene-folio/pull/403)
 idle一致計算や背景I/Oの設計案は比較段階であり、製品採用はしていない。
 調査・診断原本は `D:/NeNeFolio/agents/quality-20261029/`。
 引用内表のnative字下げ/残幅・狭幅可読性は、#404の所属修正とは別課題として残す。
-等幅列の余りが最後へ偏る問題は[#405](https://github.com/hideyukiMORI/nene-folio/issues/405)で修正中。
 通常段落の折返しを変える水平bar案等は採用していない。診断と残る範囲は日報・引き継ぎを参照する。
-確保失敗時のnonnull代入は[#407](https://github.com/hideyukiMORI/nene-folio/issues/407)で別に修正する。候補監査と設計を記録済み。
 
 ## 公開済みbeta
 
@@ -55,7 +55,7 @@ portable版はexe隣の`data`を既定とし、両方とも設定から「ノー
 
 ## 継続する確認範囲
 
-- list内quoteから同じ親list継続への復帰は未保証、表は63列まで、リンクは装飾のみ。HTML/画像等は対応外。
+- 表は63列まで、container内のnative表字下げと極狭幅可読性は未解消。リンクは装飾のみ、HTML/画像等は対応外。
 - 大量ノートの初回検索には同期処理と準備待ちが残る。[検索品質記録](../quality/2026-10-25-first-search-responsiveness.md)を参照する。
 - 専用desktopの合成入力/描画と、物理IME・実reader聴取・DWM実画面呈示を区別する。
 - 署名・インストーラ・Store・自動更新は未実装/対象外。日付付き事実は[日報](../reports/2026-10-27.md)と[引き継ぎ](../handoffs/2026-10-27.md)。
