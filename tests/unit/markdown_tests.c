@@ -710,19 +710,23 @@ static void verify_table_query_rejections(void)
                 !markdown_table_starts(invalid, delimiter) &&
                 !markdown_table_starts(header_line, invalid),
             "borrowed table classifiers reject malformed header and delimiter queries");
-    require(markdown_table_row(out, invalid, delimiter, MARKDOWN_ROW_KIND_HEADER) ==
-                    MARKDOWN_RTF_INVALID_INPUT &&
-                markdown_table_row(out, header_line, invalid, MARKDOWN_ROW_KIND_BODY) ==
-                    MARKDOWN_RTF_INVALID_INPUT &&
-                text_buffer_length(out) == 0,
-            "native row rejects malformed queries before appending partial RTF");
+    require(
+        markdown_table_row(out, invalid, delimiter,
+                           (struct markdown_table_format){.kind = MARKDOWN_ROW_KIND_HEADER}) ==
+                MARKDOWN_RTF_INVALID_INPUT &&
+            markdown_table_row(out, header_line, invalid,
+                               (struct markdown_table_format){.kind = MARKDOWN_ROW_KIND_BODY}) ==
+                MARKDOWN_RTF_INVALID_INPUT &&
+            text_buffer_length(out) == 0,
+        "native row rejects malformed queries before appending partial RTF");
     struct text_buffer *wide = nullptr;
     require(text_buffer_create(&wide) == TEXT_BUFFER_ACCEPTED, "native ceiling delimiter");
     for (size_t column = 0; column < 64; ++column)
         text_buffer_append_text(wide, "| -- ");
     text_buffer_append_text(wide, "|");
     delimiter = markdown_line_read(text_buffer_bytes(wide), text_buffer_length(wide), 0);
-    require(markdown_table_row(out, header_line, delimiter, MARKDOWN_ROW_KIND_HEADER) ==
+    require(markdown_table_row(out, header_line, delimiter,
+                               (struct markdown_table_format){.kind = MARKDOWN_ROW_KIND_HEADER}) ==
                     MARKDOWN_RTF_INVALID_INPUT &&
                 text_buffer_length(out) == 0,
             "native row API rejects more than sixty-three columns rather than truncating");
@@ -883,11 +887,8 @@ static void verify_wide_delimiter_cells(void)
     text_buffer_destroy(source);
 }
 
-static void verify_syntax_allocation(void)
+static size_t verify_render_allocation(const char *_Nonnull source)
 {
-    const char *source = "paragraph\nline2\nline3\nline4\nline5\nline6\nline7\nline8\nline9\nline10"
-                         "\n\n- parent\n  - child\n    > > > > > > > > > quote\n\nA | B\n-- | "
-                         "--\n`x` | ~~y~~\n\ntail";
     struct note_text *text = nullptr;
     require(note_text_create(source, strlen(source), &text) == NOTE_TEXT_ACCEPTED, "OOM source");
     struct markdown_rtf *sentinel = nullptr;
@@ -921,6 +922,15 @@ static void verify_syntax_allocation(void)
     printf("Markdown syntax allocation exhaustion completed: rejected=%zu\n", rejected);
     markdown_rtf_destroy(sentinel);
     note_text_destroy(text);
+    return rejected;
+}
+
+static void verify_syntax_allocation(void)
+{
+    (void)verify_render_allocation(
+        "paragraph\nline2\nline3\nline4\nline5\nline6\nline7\nline8\nline9\nline10"
+        "\n\n- parent\n  - child\n    > > > > > > > > > quote\n\nA | B\n-- | "
+        "--\n`x` | ~~y~~\n\ntail");
 }
 
 static void verify_borrowed_input(void)
@@ -940,11 +950,156 @@ static void verify_borrowed_input(void)
             "line source bounds are checked before classification");
     struct markdown_line header_line = markdown_line_read("A | B", 5, 0);
     struct markdown_line delimiter = markdown_line_read("-- | --", 7, 0);
-    require(markdown_table_row(out, header_line, delimiter, (enum markdown_row_kind)99) ==
-                    MARKDOWN_RTF_INVALID_INPUT &&
-                text_buffer_length(out) == 0,
-            "invalid row enum is rejected before any RTF is appended");
+    require(
+        markdown_table_row(out, header_line, delimiter,
+                           (struct markdown_table_format){.kind = (enum markdown_row_kind)99}) ==
+                MARKDOWN_RTF_INVALID_INPUT &&
+            text_buffer_length(out) == 0,
+        "invalid row enum is rejected before any RTF is appended");
     text_buffer_destroy(out);
+}
+
+static void expect_table_indent(const char *_Nonnull source, size_t indent_twips)
+{
+    struct markdown_rtf *rtf = convert_syntax(source);
+    const char *body = markdown_rtf_text(rtf);
+    char row[64];
+    char first[64];
+    char second[64];
+    snprintf(row, sizeof row, "\\trowd\\trgaph80\\trleft%zu\\", indent_twips);
+    snprintf(first, sizeof first, "\\cellx%zu\\", indent_twips + 4500);
+    snprintf(second, sizeof second, "\\cellx%zu\\", indent_twips + 9000);
+    require(fragment_count(body, row) == 2 && fragment_count(body, first) == 2 &&
+                fragment_count(body, second) == 2,
+            "header and body share canonical container indent and absolute cell edges");
+    require(strstr(body, "\\pard\\sa80\\sl240\\slmult1\\cf1 Tail\\par") != nullptr,
+            "following root paragraph restores ordinary indentation and cell style");
+    markdown_rtf_destroy(rtf);
+}
+
+static void verify_table_indentation(void)
+{
+    expect_table_indent("H_A | H_B\n-- | --\nx | y\n\nTail", 0);
+    expect_table_indent("> H_A | H_B\n> -- | --\n> x | y\n\nTail", 480);
+    expect_table_indent("7. H_A | H_B\n   -- | --\n   x | y\n\nTail", 440);
+    expect_table_indent("- > H_A | H_B\n  > -- | --\n  > x | y\n\nTail", 920);
+    expect_table_indent("> - H_A | H_B\n>   -- | --\n>   x | y\n\nTail", 920);
+    struct markdown_rtf *rtf =
+        convert_syntax("7. H_A | H_B\n   -- | --\n   x | y\n1. next\n\nTail");
+    const char *body = markdown_rtf_text(rtf);
+    require(fragment_count(body, "7.\\tab ") == 1 && fragment_count(body, "8.\\tab }next") == 1 &&
+                fragment_count(body, "\\trowd") == 2,
+            "native table marker occurs once and following sibling retains numbering");
+    markdown_rtf_destroy(rtf);
+}
+
+static void verify_table_format_limits(void)
+{
+    require(markdown_table_native(1, 0) && markdown_table_native(63, 32767) &&
+                !markdown_table_native(0, 0) && !markdown_table_native(64, 0) &&
+                !markdown_table_native(2, 32768) && !markdown_table_native(2, SIZE_MAX),
+            "one product range predicate includes both boundaries and rejects excess");
+    struct text_buffer *out = nullptr;
+    require(text_buffer_create(&out) == TEXT_BUFFER_ACCEPTED, "table format boundary output");
+    struct markdown_line line = markdown_line_read("A | B", 5, 0);
+    struct markdown_line delimiter = markdown_line_read("-- | --", 7, 0);
+    struct markdown_table_format format = {.kind = MARKDOWN_ROW_KIND_HEADER, .indent_twips = 32768};
+    require(markdown_table_row(out, line, delimiter, format) == MARKDOWN_RTF_INVALID_INPUT &&
+                text_buffer_length(out) == 0,
+            "above-policy indent is rejected before output or overflow");
+    format.indent_twips = SIZE_MAX;
+    require(markdown_table_row(out, line, delimiter, format) == MARKDOWN_RTF_INVALID_INPUT &&
+                text_buffer_length(out) == 0,
+            "an unrepresentable direct indent cannot wrap during cell edge addition");
+    format.indent_twips = 32767;
+    struct markdown_line malformed = markdown_line_read("bad | --", 8, 0);
+    require(markdown_table_row(out, line, malformed, format) == MARKDOWN_RTF_INVALID_INPUT &&
+                text_buffer_length(out) == 0,
+            "direct row input requires actual delimiter syntax");
+    require(markdown_table_row(out, line, delimiter, format) == MARKDOWN_RTF_CONVERTED &&
+                strstr(text_buffer_bytes(out), "\\trleft32767\\") != nullptr &&
+                strstr(text_buffer_bytes(out), "\\cellx37267\\") != nullptr &&
+                strstr(text_buffer_bytes(out), "\\cellx41767\\") != nullptr,
+            "inclusive policy boundary safely emits indent plus initial edges");
+    text_buffer_destroy(out);
+}
+
+static void quoted_table_line(struct text_buffer *_Nonnull source, const char *_Nonnull lead,
+                              size_t depth, const char *_Nonnull content)
+{
+    text_buffer_append_text(source, lead);
+    for (size_t index = 0; index < depth; ++index)
+        text_buffer_append_text(source, "> ");
+    text_buffer_append_text(source, content);
+    text_buffer_append_text(source, "\n");
+}
+
+static struct text_buffer *_Nonnull deep_table_source(size_t depth)
+{
+    struct text_buffer *source = nullptr;
+    require(text_buffer_create(&source) == TEXT_BUFFER_ACCEPTED, "deep table source");
+    quoted_table_line(source, "7. ", depth, "**H_A** | [H_B](u)");
+    quoted_table_line(source, "   ", depth, "-- | --");
+    quoted_table_line(source, "   ", depth, "`x` | ~~y~~");
+    text_buffer_append_text(source, "1. next\n\nTail");
+    require(text_buffer_finish(source) == TEXT_BUFFER_ACCEPTED, "deep table source complete");
+    return source;
+}
+
+static void verify_literal_lines(const char *_Nonnull rtf,
+                                 const struct text_buffer *_Nonnull source)
+{
+    size_t start = 0;
+    for (size_t row = 0; row < 3; ++row)
+    {
+        struct markdown_line line =
+            markdown_line_read(text_buffer_bytes(source), text_buffer_length(source), start);
+        char expected[512];
+        require(line.length < sizeof expected, "literal source line fits");
+        memcpy(expected, line.bytes, line.length);
+        expected[line.length] = '\0';
+        require(strstr(rtf, expected) != nullptr,
+                "above-policy literal preserves the complete original line and every marker");
+        start = line.next;
+    }
+}
+
+static void verify_deep_table_policy(void)
+{
+    struct text_buffer *native = deep_table_source(67);
+    expect_table_indent(text_buffer_bytes(native), 32600);
+    text_buffer_destroy(native);
+    struct text_buffer *literal = deep_table_source(68);
+    struct markdown_rtf *rtf = convert_syntax(text_buffer_bytes(literal));
+    const char *body = markdown_rtf_text(rtf);
+    verify_literal_lines(body, literal);
+    require(strstr(body, "\\trowd") == nullptr && fragment_count(body, "7.") == 1 &&
+                strstr(body, "7.\\tab ") == nullptr && strstr(body, "8.\\tab }next") != nullptr,
+            "literal fallback consumes the original item marker once and keeps following sequence");
+    markdown_rtf_destroy(rtf);
+    text_buffer_destroy(literal);
+}
+
+size_t run_markdown_table_allocation_tests(void)
+{
+    struct text_buffer *native = deep_table_source(67);
+    struct text_buffer *literal = deep_table_source(68);
+    size_t rejected = verify_render_allocation(text_buffer_bytes(native));
+    rejected += verify_render_allocation(text_buffer_bytes(literal));
+    text_buffer_destroy(native);
+    text_buffer_destroy(literal);
+    return rejected;
+}
+
+void run_markdown_table_indent_tests(void)
+{
+    verify_tables();
+    verify_literal_container_table();
+    verify_table_query_rejections();
+    verify_borrowed_input();
+    verify_table_indentation();
+    verify_table_format_limits();
+    verify_deep_table_policy();
 }
 
 void run_markdown_tests(void)
@@ -952,27 +1107,25 @@ void run_markdown_tests(void)
     verify_line_endings();
     verify_line_bounds();
     run_markdown_source_state_tests();
-    verify_borrowed_input();
+    run_markdown_table_indent_tests();
     verify_container_paths();
     verify_container_markers();
     verify_container_leaves();
-    verify_literal_container_table();
     verify_container_columns();
     verify_container_queries();
     verify_container_style_boundaries();
     verify_empty_owner_queries();
     verify_borrowed_column_rejections();
     verify_borrowed_marker_rejections();
-    verify_table_query_rejections();
     verify_nested_leaf_boundaries();
     verify_new_blocks();
     verify_new_inline();
-    verify_tables();
     verify_large_syntax();
     verify_deep_and_wide();
     verify_deep_mixed_containers();
     verify_wide_delimiter_cells();
     verify_syntax_allocation();
+    (void)run_markdown_table_allocation_tests();
     verify_plain();
     verify_paragraphs();
     verify_fonttbl();

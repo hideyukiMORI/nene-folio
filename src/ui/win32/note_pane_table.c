@@ -51,9 +51,14 @@ static bool layout_row(HWND _Nonnull handle, LONG start, LONG width)
         return true;
     if (scanned == NOTE_PANE_TABLE_FAILED)
         return false;
+    if (row.dxIndent < 0)
+        return false;
     size_t count = row.cCell;
+    LONG indent = row.dxIndent;
+    LONG available = width > indent ? width - indent : 0;
     for (size_t index = 0; index < count; ++index)
-        cells[index].dxWidth = width / (LONG)count + ((LONG)index < width % (LONG)count ? 1 : 0);
+        cells[index].dxWidth =
+            available / (LONG)count + ((LONG)index < available % (LONG)count ? 1 : 0);
     row.cRow = 1;
     row.iCell = 0;
     if ((HRESULT)SendMessageW(handle, EM_SETTABLEPARMS, (WPARAM)&row, (LPARAM)cells) != S_OK)
@@ -61,13 +66,15 @@ static bool layout_row(HWND _Nonnull handle, LONG start, LONG width)
     TABLECELLPARMS actual[63] = {0};
     if ((HRESULT)SendMessageW(handle, EM_GETTABLEPARMS, (WPARAM)&row, (LPARAM)actual) != S_OK)
         return false;
-    return same_widths(cells, actual, count);
+    return row.dxIndent == indent && row.cCell == count && same_widths(cells, actual, count);
 }
 
 enum note_pane_load_outcome note_pane_table_layout(HWND _Nonnull handle,
                                                    const char16_t *_Nonnull units, size_t length,
                                                    LONG width)
 {
+    if (width < 0)
+        return NOTE_PANE_LOAD_FAILED;
     for (size_t index = 0; index < length; ++index)
     {
         if (units[index] != 0xFFF9)

@@ -252,6 +252,19 @@ static bool run_surface_target_tests(const char *_Nonnull argument)
 
 static bool run_selected_tests(const char *_Nonnull argument)
 {
+    if (strcmp(argument, "--markdown-tables") == 0)
+    {
+        run_markdown_table_indent_tests();
+        printf("Markdown table indent and representation tests passed\n");
+        return true;
+    }
+    if (strcmp(argument, "--table-indent-oom") == 0)
+    {
+        require(run_markdown_table_allocation_tests() != 0,
+                "table indent OOM selector requires actual failure injection");
+        printf("table indent allocation tests passed\n");
+        return true;
+    }
     if (strcmp(argument, "--nullable-allocation") == 0)
     {
         run_nullable_allocation_tests();
