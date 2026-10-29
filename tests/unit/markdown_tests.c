@@ -773,8 +773,55 @@ static void verify_new_blocks(void)
     expect_fragment("- [x] done", "\\u9745?\\tab }done", "[x]");
 }
 
+static void verify_image_literal(void)
+{
+    expect_body("![**alt**](**destination**)",
+                "\\pard\\sa80\\sl240\\slmult1\\cf1 ![**alt**](**destination**)\\par\n");
+    expect_body("![**alt**](destination)",
+                "\\pard\\sa80\\sl240\\slmult1\\cf1 ![**alt**](destination)\\par\n");
+    expect_body("![alt](**destination**)",
+                "\\pard\\sa80\\sl240\\slmult1\\cf1 ![alt](**destination**)\\par\n");
+    expect_body("![**alt** and ~~strike~~ and `code` and [link](url)](destination)",
+                "\\pard\\sa80\\sl240\\slmult1\\cf1 ![**alt** and ~~strike~~ and `code` and "
+                "[link](url)](destination)\\par\n");
+    expect_body("**before   ![**inside**](url) after**",
+                "\\pard\\sa80\\sl240\\slmult1\\cf1 {\\b before   ![**inside**](url) after}\\par\n");
+    expect_body("**outside ![inside**](url) tail**",
+                "\\pard\\sa80\\sl240\\slmult1\\cf1 {\\b outside ![inside**](url) tail}\\par\n");
+    expect_body("[before   ![**inside**](url) after](outer)",
+                "\\pard\\sa80\\sl240\\slmult1\\cf1 {\\cf4\\ul before   ![**inside**](url) "
+                "after\\ul0}\\par\n");
+    expect_body(
+        "![escaped \\*mark* and 日本 {x}](url)",
+        "\\pard\\sa80\\sl240\\slmult1\\cf1 ![escaped \\\\*mark* and 日本 \\{x\\}](url)\\par\n");
+    expect_body("![line\nbreak](url)",
+                "\\pard\\sa80\\sl240\\slmult1\\cf1 ![line break](url)\\par\n");
+    expect_body("![**a](u)**", "\\pard\\sa80\\sl240\\slmult1\\cf1 ![**a](u)**\\par\n");
+    expect_fragment("![**open**](url", "{\\b open}", "![**open**](url)");
+    expect_fragment("| ![a\\|b](url) |\n|---|\n| c |", "![a|b](url)", "\\\\|");
+}
+
+static void verify_image_boundaries(void)
+{
+    expect_body("[\\![**a**](u)](v)",
+                "\\pard\\sa80\\sl240\\slmult1\\cf1 {\\cf4\\ul ![{\\b a}](u)\\ul0}\\par\n");
+    expect_body("[\\\\![**a**](u)](v)",
+                "\\pard\\sa80\\sl240\\slmult1\\cf1 {\\cf4\\ul \\\\![**a**](u)\\ul0}\\par\n");
+    expect_body("[![a](b](c))",
+                "\\pard\\sa80\\sl240\\slmult1\\cf1 {\\cf4\\ul ![a](b\\ul0})\\par\n");
+    expect_body("[label]( ![hidden](url) )",
+                "\\pard\\sa80\\sl240\\slmult1\\cf1 {\\cf4\\ul label\\ul0}\\par\n");
+    expect_body("![`[code](url)`](destination)",
+                "\\pard\\sa80\\sl240\\slmult1\\cf1 ![`[code](url)`](destination)\\par\n");
+    expect_body("[label `![x](url)` after](outer)",
+                "\\pard\\sa80\\sl240\\slmult1\\cf1 {\\cf4\\ul label "
+                "{\\f1\\fs20\\cf4 ![x](url)} after\\ul0}\\par\n");
+}
+
 void run_markdown_link_tests(void)
 {
+    verify_image_literal();
+    verify_image_boundaries();
     expect_body("[a]([b) [x](v)](u)", "\\pard\\sa80\\sl240\\slmult1\\cf1 {\\cf4\\ul a\\ul0} "
                                       "{\\cf4\\ul x\\ul0}](u)\\par\n");
     expect_body("[a]([b](u)) [x](v)", "\\pard\\sa80\\sl240\\slmult1\\cf1 {\\cf4\\ul a\\ul0} "

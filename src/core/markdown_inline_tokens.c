@@ -204,29 +204,86 @@ static void pair_brackets(struct markdown_inline_tokens *_Nonnull parser)
     }
 }
 
+/* 既存mateから、limitの内側で閉じる[...](...)のendを返す。 */
+static size_t closed_link_end(struct markdown_inline_tokens *_Nonnull parser, size_t index,
+                              size_t limit)
+{
+    if (limit > parser->count || index >= limit || at(parser, parser->tokens[index].start) != '[')
+    {
+        return SIZE_MAX;
+    }
+    size_t close = parser->tokens[index].mate;
+    if (close == SIZE_MAX || close <= index || close >= limit)
+        return SIZE_MAX;
+    size_t destination = close + 1;
+    if (destination >= limit || at(parser, parser->tokens[destination].start) != '(')
+        return SIZE_MAX;
+    size_t end = parser->tokens[destination].mate;
+    return end > destination && end < limit ? end : SIZE_MAX;
+}
+
+/* 直前の!がescapeされていないことを画像印の条件にする。 */
+static bool image_marker(struct markdown_inline_tokens *_Nonnull parser, size_t index)
+{
+    size_t start = parser->tokens[index].start;
+    return start != 0 && at(parser, start - 1) == '!' && !escaped_at(parser, start - 1);
+}
+
+static void mark_image_literal(struct markdown_inline_tokens *_Nonnull parser, size_t start,
+                               size_t end)
+{
+    struct markdown_inline_token *open = &parser->tokens[start];
+    open->kind = MARKDOWN_INLINE_IMAGE_LITERAL;
+    open->opens = true;
+    open->after = end + 1;
+}
+
+static void pair_label_images(struct markdown_inline_tokens *_Nonnull parser, size_t start,
+                              size_t close)
+{
+    for (size_t index = start + 1; index < close; ++index)
+    {
+        struct markdown_inline_token *token = &parser->tokens[index];
+        if (token->kind == MARKDOWN_INLINE_CODE && token->opens)
+        {
+            index = token->mate;
+            continue;
+        }
+        size_t end = closed_link_end(parser, index, close);
+        if (end == SIZE_MAX || !image_marker(parser, index))
+            continue;
+        mark_image_literal(parser, index, end);
+        index = end;
+    }
+}
+
 static void pair_links(struct markdown_inline_tokens *_Nonnull parser)
 {
     pair_brackets(parser);
     for (size_t index = 0; index < parser->count; ++index)
     {
-        struct markdown_inline_token *token = (&parser->tokens[index]);
-        if (at(parser, token->start) != '[' || token->mate == SIZE_MAX ||
-            (token->start != 0 && at(parser, token->start - 1) == '!' &&
-             !escaped_at(parser, token->start - 1)))
+        struct markdown_inline_token *token = &parser->tokens[index];
+        if (token->kind == MARKDOWN_INLINE_CODE && token->opens)
+        {
+            index = token->mate;
             continue;
-        size_t close = token->mate;
-        size_t destination = close + 1;
-        if (destination >= parser->count ||
-            at(parser, ((&parser->tokens[destination]))->start) != '(')
-            continue;
-        size_t end = ((&parser->tokens[destination]))->mate;
+        }
+        size_t end = closed_link_end(parser, index, parser->count);
         if (end == SIZE_MAX)
             continue;
+        size_t close = token->mate;
+        if (image_marker(parser, index))
+        {
+            mark_image_literal(parser, index, end);
+            index = end;
+            continue;
+        }
         token->kind = MARKDOWN_INLINE_LINK;
         token->opens = true;
-        ((&parser->tokens[close]))->kind = MARKDOWN_INLINE_LINK;
-        ((&parser->tokens[close]))->opens = false;
-        ((&parser->tokens[close]))->after = end + 1;
+        parser->tokens[close].kind = MARKDOWN_INLINE_LINK;
+        parser->tokens[close].opens = false;
+        parser->tokens[close].after = end + 1;
+        pair_label_images(parser, index, close);
         index = end;
     }
 }
@@ -249,6 +306,7 @@ static enum markdown_delimiter_kind delimiter_slot(struct markdown_inline_tokens
     case MARKDOWN_INLINE_ESCAPE:
     case MARKDOWN_INLINE_CODE:
     case MARKDOWN_INLINE_LINK:
+    case MARKDOWN_INLINE_IMAGE_LITERAL:
         return MARKDOWN_DELIMITER_COUNT;
     }
     return MARKDOWN_DELIMITER_COUNT;
@@ -302,6 +360,26 @@ static size_t delimiter_scope(struct markdown_inline_tokens *_Nonnull parser, si
     return ((&parser->tokens[scope]))->scope;
 }
 
+static bool skip_pair_range(const struct markdown_inline_token *token, size_t *_Nonnull index)
+{
+    if (token->kind == MARKDOWN_INLINE_LINK && !token->opens)
+    {
+        *index = token->after - 1;
+        return true;
+    }
+    if (token->kind == MARKDOWN_INLINE_IMAGE_LITERAL)
+    {
+        *index = token->after - 1;
+        return true;
+    }
+    if (token->kind == MARKDOWN_INLINE_CODE && token->opens)
+    {
+        *index = token->mate;
+        return true;
+    }
+    return false;
+}
+
 static void pair_delimiters(struct markdown_inline_tokens *_Nonnull parser)
 {
     size_t heads[MARKDOWN_DELIMITER_COUNT];
@@ -312,16 +390,8 @@ static void pair_delimiters(struct markdown_inline_tokens *_Nonnull parser)
     {
         struct markdown_inline_token *token = (&parser->tokens[index]);
         scope = delimiter_scope(parser, index, scope, heads);
-        if (token->kind == MARKDOWN_INLINE_LINK && !token->opens)
-        {
-            index = token->after - 1;
+        if (skip_pair_range(token, &index))
             continue;
-        }
-        if (token->kind == MARKDOWN_INLINE_CODE && token->opens)
-        {
-            index = token->mate;
-            continue;
-        }
         if (!emphasis_token(token->kind))
             continue;
         token->scope = scope;
@@ -349,11 +419,8 @@ static void coherent_pairs(struct markdown_inline_tokens *_Nonnull parser, size_
     for (size_t index = 0; index < parser->count; ++index)
     {
         struct markdown_inline_token *token = &parser->tokens[index];
-        if (token->kind == MARKDOWN_INLINE_CODE && token->opens)
-        {
-            index = token->mate;
+        if (skip_pair_range(token, &index))
             continue;
-        }
         if (!emphasis_token(token->kind) || token->mate == SIZE_MAX)
             continue;
         if (token->opens)
@@ -435,6 +502,7 @@ static void emit_style(struct markdown_inline_tokens *_Nonnull parser, size_t in
     case MARKDOWN_INLINE_LITERAL:
     case MARKDOWN_INLINE_ESCAPE:
     case MARKDOWN_INLINE_CODE:
+    case MARKDOWN_INLINE_IMAGE_LITERAL:
         return;
     }
 }
@@ -442,6 +510,13 @@ static void emit_style(struct markdown_inline_tokens *_Nonnull parser, size_t in
 static size_t emit_token(struct markdown_inline_tokens *_Nonnull parser, size_t index)
 {
     const struct markdown_inline_token *token = (&parser->tokens[index]);
+    if (token->kind == MARKDOWN_INLINE_IMAGE_LITERAL)
+    {
+        size_t end = token->after - 1;
+        const struct markdown_inline_token *last = &parser->tokens[end];
+        append_range(parser, token->start, last->start + last->length);
+        return token->after;
+    }
     if (token->kind == MARKDOWN_INLINE_CODE && token->opens)
     {
         emit_code(parser, index);
