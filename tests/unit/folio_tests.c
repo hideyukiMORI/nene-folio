@@ -270,10 +270,10 @@ static bool run_menu_target_tests(const char *_Nonnull argument)
 
 static bool run_surface_target_tests(const char *_Nonnull argument)
 {
-    if (strcmp(argument, "--markdown-link-escape") == 0)
+    if (strcmp(argument, "--markdown-links") == 0)
     {
-        run_markdown_link_escape_tests();
-        printf("Markdown escaped image marker and link tests passed\n");
+        run_markdown_link_tests();
+        printf("Markdown link scope and escape tests passed\n");
         return true;
     }
     if (strcmp(argument, "--surface-rules") != 0)

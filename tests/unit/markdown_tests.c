@@ -773,8 +773,22 @@ static void verify_new_blocks(void)
     expect_fragment("- [x] done", "\\u9745?\\tab }done", "[x]");
 }
 
-void run_markdown_link_escape_tests(void)
+void run_markdown_link_tests(void)
 {
+    expect_body("[a]([b) [x](v)](u)", "\\pard\\sa80\\sl240\\slmult1\\cf1 {\\cf4\\ul a\\ul0} "
+                                      "{\\cf4\\ul x\\ul0}](u)\\par\n");
+    expect_body("[a]([b](u)) [x](v)", "\\pard\\sa80\\sl240\\slmult1\\cf1 {\\cf4\\ul a\\ul0} "
+                                      "{\\cf4\\ul x\\ul0}\\par\n");
+    expect_body("[a](u)[x](v)", "\\pard\\sa80\\sl240\\slmult1\\cf1 {\\cf4\\ul a\\ul0}"
+                                "{\\cf4\\ul x\\ul0}\\par\n");
+    expect_body("[**a**](u) plain",
+                "\\pard\\sa80\\sl240\\slmult1\\cf1 {\\cf4\\ul {\\b a}\\ul0} plain\\par\n");
+    expect_body("**[a](u)** [x](v)", "\\pard\\sa80\\sl240\\slmult1\\cf1 {\\b {\\cf4\\ul a\\ul0}} "
+                                     "{\\cf4\\ul x\\ul0}\\par\n");
+    expect_body("`[a](u)` [x](v)", "\\pard\\sa80\\sl240\\slmult1\\cf1 {\\f1\\fs20\\cf4 [a](u)} "
+                                   "{\\cf4\\ul x\\ul0}\\par\n");
+    expect_body("[a](`u) tail`) [x](v)", "\\pard\\sa80\\sl240\\slmult1\\cf1 {\\cf4\\ul a\\ul0} "
+                                         "{\\cf4\\ul x\\ul0}\\par\n");
     expect_fragment("*before [x](foo*) after", "*before {\\cf4\\ul x\\ul0} after", "\\i ");
     expect_fragment("*before [x](foo) after*", "{\\i before {\\cf4\\ul x\\ul0} after}", "foo");
     expect_fragment("![alt](url)", "![alt](url)", "\\ul");
@@ -804,7 +818,7 @@ static void verify_new_inline(void)
     expect_fragment("\\`literal", "`literal", "\\f1");
     expect_fragment("``a\nb``", "\\cf4 a b}", "\\line");
     expect_fragment("# **bold** tail", "{\\b bold} tail", "\\b0  tail");
-    run_markdown_link_escape_tests();
+    run_markdown_link_tests();
     expect_fragment("\\~~literal\\~~", "~~literal~~", "\\strike");
     expect_fragment("~~~ lang\nraw\n```\n~~~~", "raw\\par\n", "lang");
     expect_fragment("````\na\n```\nb\n````", "```\\par\n", "\\cf1 b");

@@ -8,12 +8,19 @@
 
 ## 品質改善の現在位置
 
-検索結果集合の件数容量[#418](https://github.com/hideyukiMORI/nene-folio/issues/418)は対象検証済みの完成候補。
-公開core queryの不可能な宣言件数を配列確保前に拒否する。通常UIで巨大件数へ自然到達した再現とは区別する。
-旧sourceの安全な限定red、修正後のbuild/tidy・unit・同sanitizer計装・静的確認が完了した。
-[対象記録](../quality/2026-10-29-index-filter-size.md)。最終head必須CI・統合・反映・整理の確定値は
-実PRと`D:/NeNeFolio/agents/418-index-filter-size/integration-completion.json`を照合する。
-applicationの件数集計全般、検索性能、画像構文はこの修正に含めない。
+リンク宛先内の括弧から別LINKを作る安全性課題[#420](https://github.com/hideyukiMORI/nene-folio/issues/420)は対象検証済みの完成候補。
+18文字の合成入力で、旧sourceがscope未設定の閉じLINKを処理し、範囲外参照のUBSan診断で停止することを確認した。
+成立LINKのdestination終端までを同じ走査の消費済み範囲とする最小修正。画像literal案は別課題のまま未採用。
+SOLが旧redまで完了し、モデルcapacityによる中断後、LUNAが残り1行・対象検証・記録を引き継いだ。
+修正後の同selector・build/tidy・format/conformance/diffは成功し、親が差分と実結果を受理した。
+[対象記録](../quality/2026-10-29-link-destination-scope.md)。最終head必須CI・統合・反映・保全/整理の確定値は
+実PRと`D:/NeNeFolio/agents/420-link-destination-scope/integration-completion.json`を照合する。通常data/通常UIは使っていない。
+
+検索結果集合の件数容量#418 / [PR #419](https://github.com/hideyukiMORI/nene-folio/pull/419)は、最終head `06a2082`の
+CI `40803188868`でfull-gate/check成功後、main `88c441f`へ統合した。通常exe反映と278ファイル全hash保全も完了。
+公開core queryの不可能な宣言件数を確保前に拒否する。通常UIの巨大件数到達とは区別する。
+[対象記録](../quality/2026-10-29-index-filter-size.md)、確定値は`D:/NeNeFolio/agents/418-index-filter-size/integration-completion.json`。
+worktreeは整理済み、出力削除は拒否され保持する。application集計全般や検索性能は変更していない。
 
 エスケープした画像印の直後の通常link #416 / [PR #417](https://github.com/hideyukiMORI/nene-folio/pull/417)は、
 最終head `76dac10`のCI `40801128237`でfull-gate/check成功後、main `de2a53a`へ統合した。
@@ -22,8 +29,8 @@ applicationの件数集計全般、検索性能、画像構文はこの修正に
 確定値は`D:/NeNeFolio/agents/416-escaped-image-link/integration-completion.json`。
 内部pycと出力の削除は自動承認レビューに拒否されたため、worktree/outputを保持する。
 
-今回の製品修正#402/#404/#405/#407/#410/#411/#416は、各最終headの必須CI成功後にmainへ統合し、通常exeへ反映済み。
-最新の製品sourceは`de2a53a`、通常反映は10:40:31 JST、版0.3.0.0。更新後は起動していない。
+今回の製品修正#402/#404/#405/#407/#410/#411/#416/#418は、各最終headの必須CI成功後にmainへ統合し、通常exeへ反映済み。
+最新の製品sourceは`88c441f`、通常反映は11:01:16 JST、版0.3.0.0。更新後は起動していない。
 
 置換factory容量[#411 / PR #413](https://github.com/hideyukiMORI/nene-folio/pull/413)は最終head `5a0a427`の
 CI `40797586045`が成功し、main `bb6dc01`へ統合した。preview7失敗点と最大fit計2件、out/matches保持・同じ一覧でのretryを確認した。
@@ -63,9 +70,9 @@ idle一致計算の追加検討では、保存修復/削除後の結果・scroll
 ## 通常exeとhideの実機確認
 
 hide受理済み合成サンプル`data/サンプル/Markdown構文サンプル.md`は通常dataへ残している。実ノート内容は記録・同梱しない。
-現在の通常`C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`はsource `de2a53a`・表示版0.3.0/Windows版0.3.0.0。
-通常process0件を確認してから正規ツールで反映しexit0だった。10月29日10:40:31 JST更新済みで、更新後は起動していない。
-版・hashは`D:/NeNeFolio/agents/416-escaped-image-link/normal-build-verification.json`。通常dataは操作していない。
+現在の通常`C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`はsource `88c441f`・表示版0.3.0/Windows版0.3.0.0。
+通常process0件を確認してから正規ツールで反映しexit0だった。10月29日11:01:16 JST更新済みで、更新後は起動していない。
+版・hashは`D:/NeNeFolio/agents/418-index-filter-size/normal-build-verification.json`。通常dataは操作していない。
 
 ## 次の予定: ノートの保存先設定（未実装）
 
@@ -86,7 +93,9 @@ portable版はexe隣の`data`を既定とし、両方とも設定から「ノー
 
 ## 保持中の旧作業物
 
-下記の30箇所は自動承認レビューの削除拒否により保持する。再試行や別手段での削除をしない。
+下記の31箇所は自動承認レビューの削除拒否により保持する。再試行や別手段での削除をしない。
+
+- #418: `D:/NeNeFolio/outputs/418-index-filter-size`。統合・通常反映・278ファイル全hash保全と安全監査後、出力削除要求が`blocked by policy`で拒否された。追加理由なし。追加worktreeの削除は成功しbranch/commitを保持。確定値は同taskの`integration-completion.json`。
 
 - #416: `D:/NeNeFolio/worktrees/416-escaped-image-link`と`D:/NeNeFolio/outputs/416-escaped-image-link`（2箇所）。作業木内部の`eng/__pycache__`/pyc削除と、統合・通常反映・111ファイル全hash保全・安全監査後の出力削除が`blocked by policy`で拒否された。追加理由なし。含む作業木の削除も行わない。確定値は同taskの`integration-completion.json`。
 
