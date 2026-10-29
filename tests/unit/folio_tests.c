@@ -299,6 +299,13 @@ static bool run_menu_target_tests(const char *_Nonnull argument)
 
 static bool run_surface_target_tests(const char *_Nonnull argument)
 {
+    if (strcmp(argument, "--inline-phrase") == 0)
+    {
+        require(run_markdown_inline_phrase_tests(),
+                "inline phrase selector requires actual allocation instrumentation");
+        printf("Markdown inline phrase storage tests passed\n");
+        return true;
+    }
     if (strcmp(argument, "--markdown-tasks") == 0)
     {
         run_markdown_task_tests();

@@ -67,8 +67,9 @@ static bool run_character(char character)
 
 static bool literal_boundary(char character)
 {
-    return run_character(character) || character == '\\' || character == '[' || character == ']' ||
-           character == '(' || character == ')' || character == '\n';
+    return delimiter_character(character) || character == '`' || character == '\\' ||
+           character == '[' || character == ']' || character == '(' || character == ')' ||
+           character == '\n';
 }
 
 /* Both counting and emission consume exactly this borrowed lexical extent. */
@@ -84,6 +85,11 @@ static size_t extent(struct markdown_view view, size_t start)
     size_t end = start + 1;
     while (end < view.length && !literal_boundary(markdown_view_at(view, end)))
         ++end;
+    if (markdown_view_at(view, end) != '\n')
+        return end - start;
+    /* This extent starts with a non-SP literal, so rewinding stays positive. */
+    while (markdown_view_at(view, end - 1) == ' ')
+        --end;
     return end - start;
 }
 

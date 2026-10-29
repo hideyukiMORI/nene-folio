@@ -1429,6 +1429,33 @@ static void verify_inline_borrowed_storage(void)
     expect_inline_view(view, "{\\f1\\fs20\\cf4 a|b}", strlen("{\\f1\\fs20\\cf4 a|b}"));
 }
 
+static void verify_inline_space_boundaries(void)
+{
+    expect_inline_text(" abc def  ", " abc def  ");
+    expect_inline_text(" abc def\nq", " abc def q");
+    expect_inline_text("a b \nc d  \ne f   \ng", "a b c d\\line e f\\line g");
+    expect_inline_text("a b \\\nc", "a b \\line c");
+    expect_inline_text("*a b* [c d](u) [e] (v)", "{\\i a b} {\\cf4\\ul c d\\ul0} [e] (v)");
+    expect_inline_text("` a b ` / `  `", "{\\f1\\fs20\\cf4 a b} / {\\f1\\fs20\\cf4   }");
+    expect_inline_text("x ![a b](u v) y", "x ![a b](u v) y");
+}
+
+static void verify_inline_space_borrowed(void)
+{
+    const struct markdown_span spans[] = {{.bytes = " a b  ", .length = 6},
+                                          {.bytes = "", .length = 0, .offset = 7},
+                                          {.bytes = "c d", .length = 3, .offset = 8}};
+    struct markdown_view view = {.spans = spans, .count = 3, .length = 11};
+    expect_inline_view(view, " a b\\line  c d", strlen(" a b\\line  c d"));
+    struct markdown_span cell = {.bytes = "![a b\\|c](u)", .length = strlen("![a b\\|c](u)")};
+    view = (struct markdown_view){
+        .spans = &cell, .count = 1, .length = cell.length, .table_cell = true};
+    expect_inline_view(view, "![a b|c](u)", strlen("![a b|c](u)"));
+    cell = (struct markdown_span){.bytes = "`a b\\|c`", .length = strlen("`a b\\|c`")};
+    view.length = cell.length;
+    expect_inline_view(view, "{\\f1\\fs20\\cf4 a b|c}", strlen("{\\f1\\fs20\\cf4 a b|c}"));
+}
+
 static void verify_inline_storage_guards(void)
 {
     struct text_buffer *out = nullptr;
@@ -1458,15 +1485,18 @@ static void verify_inline_storage_guards(void)
     text_buffer_destroy(out);
 }
 
-static bool verify_inline_literal_storage(size_t length, const char *_Nonnull label)
+static bool verify_inline_literal_storage(size_t length, const char *_Nonnull label,
+                                          const char *_Nonnull pattern)
 {
+    size_t pattern_length = strlen(pattern);
+    require(pattern_length != 0, "inline storage pattern is nonempty");
     struct text_buffer *source = nullptr;
     struct text_buffer *out = nullptr;
     require(text_buffer_create(&source) == TEXT_BUFFER_ACCEPTED &&
                 text_buffer_create(&out) == TEXT_BUFFER_ACCEPTED,
             "inline literal storage buffers");
     for (size_t index = 0; index < length; ++index)
-        text_buffer_append(source, "a", 1);
+        text_buffer_append(source, pattern + index % pattern_length, 1);
     require(text_buffer_finish(source) == TEXT_BUFFER_ACCEPTED, "inline literal source complete");
     struct markdown_span span = {.bytes = text_buffer_bytes(source), .length = length};
     struct markdown_view view = {.spans = &span, .count = 1, .length = length};
@@ -1492,6 +1522,15 @@ static bool verify_inline_literal_storage(size_t length, const char *_Nonnull la
     return observed;
 }
 
+bool run_markdown_inline_phrase_tests(void)
+{
+    bool short_observed = verify_inline_literal_storage(7, "phrase-short", "abc def ");
+    bool long_observed = verify_inline_literal_storage(64 * 1024, "phrase-long", "abc def ");
+    if (!short_observed || !long_observed)
+        printf("Inline phrase allocation observation inactive in canonical build\n");
+    return short_observed && long_observed;
+}
+
 static void verify_calloc_observation_overflow(void)
 {
     allocation_probe_fail_at(1);
@@ -1505,18 +1544,21 @@ static void verify_calloc_observation_overflow(void)
 
 bool run_markdown_inline_storage_tests(void)
 {
-    bool short_observed = verify_inline_literal_storage(7, "short");
-    bool long_observed = verify_inline_literal_storage(64 * 1024, "long");
+    bool phrase_observed = run_markdown_inline_phrase_tests();
+    bool short_observed = verify_inline_literal_storage(7, "short", "a");
+    bool long_observed = verify_inline_literal_storage(64 * 1024, "long", "a");
     verify_calloc_observation_overflow();
     verify_inline_backtick_storage();
     verify_inline_delimiter_storage();
     verify_inline_coherent_storage();
     verify_inline_literal_boundaries();
     verify_inline_borrowed_storage();
+    verify_inline_space_boundaries();
+    verify_inline_space_borrowed();
     verify_inline_storage_guards();
     if (!short_observed || !long_observed)
         printf("Inline storage allocation observation inactive in canonical build\n");
-    return short_observed && long_observed;
+    return phrase_observed && short_observed && long_observed;
 }
 
 static size_t verify_inline_metadata_allocation(void)
