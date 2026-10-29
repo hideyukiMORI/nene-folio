@@ -3,6 +3,7 @@
 import argparse
 import datetime
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
@@ -33,14 +34,15 @@ def digest_file(path):
     return {"sha256": digest.hexdigest(), "sizeBytes": size}
 
 
-def snapshot(source, destination, run_dir, errors, stage):
+def snapshot(source, destination, run_dir, errors, stage, captured_bytes=None):
     entry = {"source": str(source), "snapshot": destination.relative_to(run_dir).as_posix()}
     try:
-        if not source.is_file():
+        if captured_bytes is None and not source.is_file():
             raise OSError(f"not an existing file: {source}")
         digest = hashlib.sha256()
         size = 0
-        with source.open("rb") as original, destination.open("xb") as copied:
+        original = io.BytesIO(captured_bytes) if captured_bytes is not None else source.open("rb")
+        with original, destination.open("xb") as copied:
             while chunk := original.read(CHUNK_BYTES):
                 copied.write(chunk)
                 digest.update(chunk)
@@ -83,6 +85,7 @@ def parse_cli(arguments):
     parser.add_argument("--run-dir", required=True, type=Path)
     parser.add_argument("--cwd", required=True, type=Path)
     parser.add_argument("--input", action="append", type=Path, default=[], metavar="ABS_FILE")
+    parser.add_argument("--input-list", action="append", metavar="ABS_JSON")
     parser.add_argument("--artifact", action="append", type=Path, default=[], metavar="ABS_FILE")
     if "--" not in arguments:
         if arguments in (["--help"], ["-h"]):
@@ -90,10 +93,41 @@ def parse_cli(arguments):
         parser.error("use -- followed by the executable and its argv")
     separator = arguments.index("--")
     options = parser.parse_args(arguments[:separator])
+    if options.input_list is not None and len(options.input_list) > 1:
+        parser.error("--input-list may be specified only once")
+    options.input_list = options.input_list[0] if options.input_list else None
     options.command = arguments[separator + 1:]
     if not options.command or not options.command[0] or any("\0" in item for item in options.command):
         parser.error("a nonempty executable argv without NUL is required")
     return options
+
+
+def resolve_input_list(options):
+    options.captured_input_list_bytes = None
+    if options.input_list is None:
+        return
+    input_list_value = options.input_list
+    if "\0" in input_list_value:
+        raise ValueError("input-list path must not contain NUL")
+    input_list_path = Path(input_list_value)
+    if not input_list_path.is_absolute():
+        raise ValueError(f"input-list path must be absolute: {input_list_value}")
+    captured_bytes = input_list_path.read_bytes()
+    input_list = json.loads(captured_bytes.decode("utf-8-sig"))
+    if not isinstance(input_list, list):
+        raise ValueError("input-list JSON must be an array of absolute file paths")
+    resolved_paths = []
+    for index, value in enumerate(input_list):
+        if not isinstance(value, str):
+            raise ValueError(f"input-list item {index} must be a string path")
+        if "\0" in value:
+            raise ValueError(f"input-list item {index} must not contain NUL")
+        path = Path(value)
+        if not path.is_absolute():
+            raise ValueError(f"input-list item {index} must be absolute: {value}")
+        resolved_paths.append(path)
+    options.input = [input_list_path, *options.input, *resolved_paths]
+    options.captured_input_list_bytes = captured_bytes
 
 
 def validate_paths(options):
@@ -128,7 +162,8 @@ def record_run(options):
         (run_dir / "artifacts").mkdir()
         for index, source in enumerate(options.input, 1):
             result["inputs"].append(snapshot(source, run_dir / "inputs" / f"{index:04d}.bin",
-                                             run_dir, errors, "input_snapshot"))
+                                             run_dir, errors, "input_snapshot",
+                                             options.captured_input_list_bytes if index == 1 else None))
         if not errors:
             with (run_dir / "stdout.log").open("xb") as output, (run_dir / "stderr.log").open("xb") as error:
                 try:
@@ -159,6 +194,7 @@ def record_run(options):
 def main(arguments=None):
     options = parse_cli(sys.argv[1:] if arguments is None else arguments)
     try:
+        resolve_input_list(options)
         validate_paths(options)
         return record_run(options)
     except (OSError, ValueError) as failure:
