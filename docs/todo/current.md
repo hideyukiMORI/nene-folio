@@ -6,6 +6,14 @@
 
 ## 品質改善の現在位置
 
+[#444](https://github.com/hideyukiMORI/nene-folio/issues/444)の現行matcher診断は、同じ公開APIによる6入力×2予算の12rowsが成功した。
+各stepは予算4096/65536以内、両予算で完成集合と総workが一致した。周期的late-mismatchの総workは`2+(N-m+1)(m+1)`と一致し、有限stepだけでは総費用を線形に抑えないことを確認した。
+N16384/m17は294626work、N16384/m257は4161026work。現UIは127 UTF-16単位制限のため、257 ASCIIのcaseは公開core限定、17 ASCIIも今回の実UI操作ではない。
+10.2671577秒の負荷確認で外部CPU2.765625秒・不明16件となり、WORK_ONLYで一回実行した。診断時計API0・全時間nullで、速度値や実UI応答時間は主張しない。
+新4TUのDebug/tidy/linkとnativeは子/wrapper0・記録エラー0。親がbuild1275入力/16生成物、native1306入力/19生成物を全hash照合した。stderrのinterception一行は保持し、全sanitizer正常とはしない。
+製品source/API/schema/ADRは不変。詳細は[品質記録](../quality/2026-10-29-bounded-search-diagnostic.md)、親受理は`agents/444-bounded-search-diagnostic/parent-native-acceptance.json`。
+文書の最終検査・必須CI・統合・通常exe hash維持・保全整理を続ける。作業木は`D:/NeNeFolio/worktrees/444-bounded-search-diagnostic`。
+
 [#442](https://github.com/hideyukiMORI/nene-folio/issues/442)の通常literal内部SPの集約は、完成候補v2の対象5段が成功した。
 通常literalの境界からSPを外し、先頭SP runとLF直前SP runを維持する。pair/emit・code/link/image・明示改行・OOM契約は不変。
 65536bytesの空白区切り文で解析用calloc最大要求は旧1835008bytesから56bytesへ縮み、厳密RTF全bytesとfinishも一致した。
@@ -16,7 +24,9 @@ Debug/tidy・canonical Markdown・測定build・strict資源/境界・strict OOM
 各strictのinterception診断行を保持し、全sanitizer正常・全heap量・速度改善率は主張しない。最大backtick比例scratchは残る。
 詳細は[品質記録](../quality/2026-10-29-inline-spaces.md)、親の受理は`agents/442-inline-spaces/parent-green-acceptance.json`。
 最終File API規約検査と差分確認は各772入力不変、子/wrapper0・記録エラー0。親が全6150保全ファイルと最終8ファイルを照合した。
-CI/統合/通常反映/整理は実PRと同taskのintegration-completionを照合する。作業木は`D:/NeNeFolio/worktrees/442-inline-spaces`。
+[PR #443](https://github.com/hideyukiMORI/nene-folio/pull/443)最終head`1e41166`のCI`40868567105`成功後、main`89b5873`へ統合した。
+20:57:03 JSTに通常exeへ反映、6818ファイル全hash保全とworktree削除済み。出力は削除拒否のため保持する。
+確定値は`D:/NeNeFolio/agents/442-inline-spaces/integration-completion.json`。
 
 [#440](https://github.com/hideyukiMORI/nene-folio/issues/440)の行内解析は、通常文字の連続部分をまとめ、
 共通の字句範囲で数えたtoken数Tと最長backtick長Bから容量を決める完成候補で対象検証が成功した。
@@ -66,9 +76,9 @@ main`f032adc`へ統合した。2632ファイルの全hash保全とworktree整理
 ## 通常exeとhideの実機確認
 
 hide受理済み合成サンプル`data/サンプル/Markdown構文サンプル.md`は通常dataへ残している。実ノート内容は記録・同梱しない。
-現在の通常`C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`はsource `591e5c4`・表示版0.3.0/Windows版0.3.0.0。
-通常process0件を確認してから正規ツールで反映しexit0だった。10月29日20:04:07 JST更新済みで、更新後は起動していない。
-版・hashは`D:/NeNeFolio/agents/440-inline-storage/normal-build-verification.json`。通常dataは操作していない。
+現在の通常`C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`はsource `89b5873`・表示版0.3.0/Windows版0.3.0.0。
+通常process0件を確認してから正規ツールで反映しexit0だった。10月29日20:57:03 JST更新済みで、更新後は起動していない。
+版・hashは`D:/NeNeFolio/agents/442-inline-spaces/normal-build-verification.json`。通常dataは操作していない。
 
 ## 次の予定: ノートの保存先設定（未実装）
 
@@ -89,7 +99,9 @@ portable版はexe隣の`data`を既定とし、両方とも設定から「ノー
 
 ## 保持中の旧作業物
 
-下記の42箇所は自動承認レビューの削除拒否により保持する。再試行や別手段での削除をしない。
+下記の43箇所は自動承認レビューの削除拒否により保持する。再試行や別手段での削除をしない。
+
+- #442: `D:/NeNeFolio/outputs/442-inline-spaces`。統合・通常反映・6818ファイル全hash保全と安全監査後、出力削除要求が実行前に`blocked by policy`で拒否された。追加理由なし。worktreeは削除済み、branch/commit保持。確定値は同taskの`integration-completion.json`。
 
 - #440: `D:/NeNeFolio/outputs/440-inline-storage`。統合・通常反映・6180ファイル全hash保全と安全監査後、出力削除要求が実行前に`blocked by policy`で拒否された。追加理由なし。worktreeは削除済み、branch/commit保持。確定原本は同taskの`integration-completion.json`。
 
