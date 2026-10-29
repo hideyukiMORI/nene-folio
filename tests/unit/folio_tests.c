@@ -340,6 +340,12 @@ static bool run_surface_target_tests(const char *_Nonnull argument)
 
 static bool run_selected_tests(const char *_Nonnull argument)
 {
+    if (strcmp(argument, "--drawer-scroll-delta") == 0)
+    {
+        run_drawer_scroll_delta_tests();
+        printf("drawer scroll delta boundary tests passed\n");
+        return true;
+    }
     if (strcmp(argument, "--markdown-tables") == 0)
     {
         run_markdown_table_indent_tests();

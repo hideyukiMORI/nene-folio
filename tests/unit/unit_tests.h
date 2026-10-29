@@ -45,6 +45,7 @@ void run_json_tests(void);
 void run_ledger_tests(void);
 void run_layout_tests(void);
 void run_state_tests(void);
+void run_drawer_scroll_delta_tests(void);
 void run_name_unchanged_state_tests(void);
 void run_pane_load_state_tests(void);
 void run_unsaved_departure_tests(void);
