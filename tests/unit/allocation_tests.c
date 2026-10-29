@@ -27,6 +27,7 @@
 #include "replace_edit.h"
 #include "replace_template.h"
 #include "rtf_palette.h"
+#include "text_buffer.h"
 #include "ui_font.h"
 #include "unit_tests.h"
 #include "utf16_text.h"
@@ -78,8 +79,20 @@ static bool reader_scenario(void)
     struct json_reader *reader = nullptr;
     if (json_reader_create(text, strlen(text), &reader) == JSON_READER_OUT_OF_MEMORY)
     {
+        require(reader == nullptr, "reader OOM preserves empty output");
         return false;
     }
+    struct json_reader *held = reader;
+    enum json_reader_outcome created = json_reader_create(text, strlen(text), &reader);
+    require(created != JSON_READER_OUT_OF_MEMORY || reader == held,
+            "reader OOM preserves nonnull output");
+    if (created == JSON_READER_OUT_OF_MEMORY)
+    {
+        json_reader_destroy(held);
+        return false;
+    }
+    require(created == JSON_READER_CREATED && reader != held, "reader retry owns a new object");
+    json_reader_destroy(held);
     for (;;)
     {
         enum json_token token = json_reader_next(reader);
@@ -102,8 +115,20 @@ static bool writer_scenario(void)
     struct json_writer *writer = nullptr;
     if (json_writer_create(&writer) == JSON_WRITER_OUT_OF_MEMORY)
     {
+        require(writer == nullptr, "writer OOM preserves empty output");
         return false;
     }
+    struct json_writer *held = writer;
+    enum json_writer_outcome created = json_writer_create(&writer);
+    require(created != JSON_WRITER_OUT_OF_MEMORY || writer == held,
+            "writer OOM preserves nonnull output");
+    if (created == JSON_WRITER_OUT_OF_MEMORY)
+    {
+        json_writer_destroy(held);
+        return false;
+    }
+    require(created == JSON_WRITER_ACCEPTED && writer != held, "writer retry owns a new object");
+    json_writer_destroy(held);
     json_writer_array_begin(writer);
     for (size_t index = 0; index < 64; ++index)
     {
@@ -945,6 +970,17 @@ static bool replace_scenario(void)
         return false;
     }
     require(replacement != nullptr, "template under probe");
+    struct replace_template *held = replacement;
+    enum replace_template_outcome parsed = replace_template_create(u"<&>", 3, &replacement);
+    require(parsed != REPLACE_TEMPLATE_OUT_OF_MEMORY || replacement == held,
+            "template OOM preserves nonnull output");
+    if (parsed == REPLACE_TEMPLATE_OUT_OF_MEMORY)
+    {
+        replace_template_destroy(held);
+        return false;
+    }
+    require(parsed == REPLACE_TEMPLATE_READY && replacement != held, "template retry owns output");
+    replace_template_destroy(held);
     struct regex_match items[2] = {};
     items[0].whole.end = 1;
     items[1].whole.start = 2;
@@ -957,9 +993,25 @@ static bool replace_scenario(void)
                                      .scope = REPLACE_ALL,
                                      .anchor = {.start = 0, .end = 0}};
     struct replace_edit *edit = nullptr;
+    enum replace_edit_outcome prepared =
+        replace_edit_create((struct note_search_span){0, 0}, 0, &edit);
+    if (prepared == REPLACE_EDIT_OUT_OF_MEMORY)
+    {
+        replace_template_destroy(replacement);
+        return false;
+    }
+    require(prepared == REPLACE_EDIT_READY && edit != nullptr, "zero-capacity edit sentinel");
+    struct replace_edit *sentinel = edit;
     enum note_replace_outcome built = note_replace_build(&plan, &edit);
     replace_template_destroy(replacement);
-    replace_edit_destroy(edit);
+    require(built != NOTE_REPLACE_OUT_OF_MEMORY || edit == sentinel,
+            "edit allocation OOM preserves nonnull output");
+    if (built == NOTE_REPLACE_READY)
+    {
+        require(edit != sentinel, "built edit owns a separate result");
+        replace_edit_destroy(edit);
+    }
+    replace_edit_destroy(sentinel);
     require(built == NOTE_REPLACE_READY || built == NOTE_REPLACE_OUT_OF_MEMORY,
             "replacement allocation failure remains typed");
     return built == NOTE_REPLACE_READY;
@@ -1434,6 +1486,39 @@ void run_bom_allocation_tests(void)
     note_text_destroy(sentinel);
 }
 
+static bool buffer_scenario(void)
+{
+    struct text_buffer *held = nullptr;
+    if (text_buffer_create(&held) == TEXT_BUFFER_OUT_OF_MEMORY)
+    {
+        require(held == nullptr, "buffer OOM preserves empty output");
+        return false;
+    }
+    struct text_buffer *out = held;
+    enum text_buffer_outcome result = text_buffer_create(&out);
+    require(result != TEXT_BUFFER_OUT_OF_MEMORY || out == held,
+            "buffer OOM preserves nonnull output");
+    if (result == TEXT_BUFFER_ACCEPTED)
+    {
+        require(out != held && text_buffer_length(out) == 0 && text_buffer_bytes(out)[0] == '\0',
+                "accepted buffer owns a separately terminated empty result");
+        text_buffer_destroy(out);
+    }
+    text_buffer_destroy(held);
+    return result == TEXT_BUFFER_ACCEPTED;
+}
+
+void run_nullable_allocation_tests(void)
+{
+    require(probe_active(), "nullable allocation selector requires active failure injection");
+    exhaust(buffer_scenario, "buffer scenario never completed");
+    exhaust(reader_scenario, "reader scenario never completed");
+    exhaust(writer_scenario, "writer scenario never completed");
+    exhaust(plain_rtf_scenario, "plain rtf scenario never completed");
+    exhaust(replace_scenario, "replace scenario never completed");
+    run_replace_preview_allocation_tests();
+}
+
 void run_allocation_tests(void)
 {
     if (!probe_active())
@@ -1442,8 +1527,7 @@ void run_allocation_tests(void)
         return;
     }
     exhaust(text_scenario, "text scenario never completed");
-    exhaust(reader_scenario, "reader scenario never completed");
-    exhaust(writer_scenario, "writer scenario never completed");
+    run_nullable_allocation_tests();
     exhaust(names_scenario, "names scenario never completed");
     exhaust(categories_scenario, "categories scenario never completed");
     exhaust(category_insert_scenario, "category insert scenario never completed");
@@ -1453,10 +1537,8 @@ void run_allocation_tests(void)
     exhaust(state_scenario, "state scenario never completed");
     exhaust(line_index_scenario, "line index scenario never completed");
     exhaust(settings_scenario, "settings scenario never completed");
-    exhaust(replace_scenario, "replace scenario never completed");
     run_rename_allocation_tests();
     exhaust(history_scenario, "history scenario never completed");
-    exhaust(plain_rtf_scenario, "plain rtf scenario never completed");
     exhaust(edit_rtf_scenario, "edit rtf scenario never completed");
     exhaust(create_category_scenario, "create category scenario never completed");
     exhaust(trash_scenario, "trash scenario never completed");

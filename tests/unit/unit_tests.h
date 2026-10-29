@@ -10,6 +10,7 @@
 
 /* 条件が偽なら説明を stderr に出して終了コード 1 で止める。 */
 void require(bool condition, const char *_Nonnull description);
+[[noreturn]] void test_failure(const char *_Nonnull description);
 /* 2 つの終端付き文字列が同じか。 */
 [[nodiscard]] bool same_text(const char *_Nonnull actual, const char *_Nonnull expected);
 
@@ -39,6 +40,8 @@ void run_layout_mode_state_tests(void);
 void run_index_cache_retry_state_tests(void);
 void run_index_cache_retry_allocation_tests(void);
 void run_allocation_tests(void);
+void run_nullable_allocation_tests(void);
+void run_replace_preview_allocation_tests(void);
 void run_markdown_tests(void);
 void run_markdown_source_state_tests(void);
 void run_command_tests(void);
@@ -67,6 +70,7 @@ void run_theme_state_tests(void);
 void run_system_contrast_tests(void);
 void run_line_index_tests(void);
 void run_replace_tests(void);
+void run_replace_template_tests(void);
 void run_replace_state_tests(void);
 void run_ui_text_tests(void);
 void run_font_bundle_tests(void);

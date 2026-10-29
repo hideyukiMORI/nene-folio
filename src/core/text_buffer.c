@@ -21,12 +21,13 @@ enum text_buffer_outcome text_buffer_create(struct text_buffer *_Nullable *_Nonn
     {
         return TEXT_BUFFER_OUT_OF_MEMORY;
     }
-    buffer->bytes = malloc(buffer_initial);
-    if (buffer->bytes == nullptr)
+    char *_Nullable bytes = malloc(buffer_initial);
+    if (bytes == nullptr)
     {
         free(buffer);
         return TEXT_BUFFER_OUT_OF_MEMORY;
     }
+    buffer->bytes = bytes;
     buffer->bytes[0] = '\0';
     buffer->capacity = buffer_initial;
     *out = buffer;

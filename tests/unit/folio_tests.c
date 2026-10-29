@@ -4,12 +4,17 @@
 #include <stdlib.h>
 #include <string.h>
 
+void test_failure(const char *_Nonnull description)
+{
+    fprintf(stderr, "FAIL: %s\n", description);
+    exit(1);
+}
+
 void require(bool condition, const char *_Nonnull description)
 {
     if (!condition)
     {
-        fprintf(stderr, "FAIL: %s\n", description);
-        exit(1);
+        test_failure(description);
     }
 }
 
@@ -247,6 +252,14 @@ static bool run_surface_target_tests(const char *_Nonnull argument)
 
 static bool run_selected_tests(const char *_Nonnull argument)
 {
+    if (strcmp(argument, "--nullable-allocation") == 0)
+    {
+        run_nullable_allocation_tests();
+        run_bom_allocation_tests();
+        run_replace_template_tests();
+        printf("nullable allocation, preview ownership, BOM and template tests passed\n");
+        return true;
+    }
     return (run_surface_target_tests(argument) || run_menu_target_tests(argument) ||
             run_size_overflow_target_tests(argument) || run_pane_load_target_tests(argument) ||
             run_document_settings_target_tests(argument) || run_target_tests(argument) ||

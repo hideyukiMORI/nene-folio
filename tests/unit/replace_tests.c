@@ -133,14 +133,16 @@ static void verify_template_grammar(void)
 static void verify_template_refusals(void)
 {
     static const char16_t *const refused[] = {u"\\q", u"\\", u"a\\", u"\\t", u"\\x41", u"&\\"};
+    struct replace_template *held = template_for(u"held");
     for (size_t index = 0; index < sizeof refused / sizeof refused[0]; ++index)
     {
-        struct replace_template *replacement = nullptr;
+        struct replace_template *replacement = held;
         require(replace_template_create(refused[index], units_length(refused[index]),
                                         &replacement) == REPLACE_TEMPLATE_MALFORMED,
                 "an unknown escape or a lone trailing backslash is refused");
-        require(replacement == nullptr, "a refused replacement owns nothing");
+        require(replacement == held, "a refused replacement leaves nonnull output untouched");
     }
+    replace_template_destroy(held);
 }
 
 /* 組み立ての結果を 1 つ確かめる。 */
@@ -318,10 +320,15 @@ static void verify_replace_limit(void)
             "the two core limits stay where the ADR put them");
 }
 
-void run_replace_tests(void)
+void run_replace_template_tests(void)
 {
     verify_template_grammar();
     verify_template_refusals();
+}
+
+void run_replace_tests(void)
+{
+    run_replace_template_tests();
     verify_replace_all();
     verify_replace_edges();
     verify_replace_groups();
