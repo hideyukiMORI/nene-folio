@@ -57,6 +57,7 @@ void run_allocation_tests(void);
 void run_nullable_allocation_tests(void);
 void run_replace_preview_allocation_tests(void);
 void run_markdown_tests(void);
+void run_markdown_task_tests(void);
 void run_markdown_link_tests(void);
 void run_markdown_table_indent_tests(void);
 void run_markdown_table_setext_tests(void);

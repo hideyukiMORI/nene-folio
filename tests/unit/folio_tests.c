@@ -299,6 +299,12 @@ static bool run_menu_target_tests(const char *_Nonnull argument)
 
 static bool run_surface_target_tests(const char *_Nonnull argument)
 {
+    if (strcmp(argument, "--markdown-tasks") == 0)
+    {
+        run_markdown_task_tests();
+        printf("Markdown task marker tests passed\n");
+        return true;
+    }
     if (strcmp(argument, "--table-start-setext") == 0)
     {
         run_markdown_table_setext_tests();
