@@ -2,6 +2,7 @@
 
 #include "regex_match.h"
 
+#include <stdint.h>
 #include <stdlib.h>
 
 /* RichEdit の段落区切り。`\r` も `\n` もこれ 1 つになる（ADR 0028 の決定 5）。 */
@@ -132,6 +133,10 @@ enum replace_template_outcome
 replace_template_create(const char16_t *_Nonnull units, size_t count,
                         struct replace_template *_Nullable *_Nonnull out)
 {
+    if (count >= SIZE_MAX / sizeof(char16_t) || count >= SIZE_MAX / sizeof(struct replace_piece))
+    {
+        return REPLACE_TEMPLATE_OUT_OF_MEMORY;
+    }
     struct replace_template *_Nullable replacement = calloc(1, sizeof *replacement);
     if (replacement == nullptr)
     {

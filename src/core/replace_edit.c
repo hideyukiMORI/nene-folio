@@ -1,5 +1,6 @@
 #include "replace_edit.h"
 
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -14,6 +15,10 @@ struct replace_edit
 enum replace_edit_outcome replace_edit_create(struct note_search_span span, size_t capacity,
                                               struct replace_edit *_Nullable *_Nonnull out)
 {
+    if (capacity >= SIZE_MAX / sizeof(char16_t))
+    {
+        return REPLACE_EDIT_OUT_OF_MEMORY;
+    }
     struct replace_edit *_Nullable edit = calloc(1, sizeof *edit);
     if (edit == nullptr)
     {

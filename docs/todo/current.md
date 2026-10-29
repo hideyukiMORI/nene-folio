@@ -6,25 +6,27 @@
 
 ## 品質改善の現在位置
 
-現在は[#410](https://github.com/hideyukiMORI/nene-folio/issues/410)で、引用/リスト内のnative表を本文の字下げと残幅へ揃える。
-[ADR0072](../adr/0072-native-table-container-indent.md)を実装前に受理した。coreの既存container位置とnative rowのindentを使い、
-過大な字下げは既存literal表へ戻す。上限32767twipの2列/63列診断は29 checks/0 failures。
-作業木は`D:/NeNeFolio/worktrees/410-table-container-indent`、成果物は`D:/NeNeFolio/agents/410-table-container-indent/`。
-完成候補のbuild/tidy、表の対象unit、失敗注入（native25点/literal16点）、native317 checks/0 failuresが成功した。
-親は代表2画像と生値を照合した。[対象記録](../quality/2026-10-29-table-container-indent.md)を確定し、最終head必須CI・統合へ進む。
-別の[#411](https://github.com/hideyukiMORI/nene-folio/issues/411)では、置換factoryの終端付き容量を加算前に検査する。
-通常UIの自然到達は未確認で、公開core APIの宣言長算術として扱う。旧editへSIZE_MAXを渡す限定redは誤ったREADYを再現した。
-既存OOM・所有契約・製品上限を維持した修正のbuild/tidyと対象unitが成功し、計装された対象回帰を進める。
+現在は[#411](https://github.com/hideyukiMORI/nene-folio/issues/411)で、置換factoryの終端付き容量を加算前に検査する修正を統合する。
+旧editへSIZE_MAXを渡す限定redは誤ったREADYを再現した。修正のbuild/tidy、対象unit、同sanitizerの失敗注入と容量境界、規約検査は成功。
+preview7失敗点と最大fit計2件でout/matches保持と同じ一覧でのretryを確認し、親レビュー後にmain `eb9706d`を取り込んだ。
+[対象記録](../quality/2026-10-29-replacement-size.md)。通常UIの自然到達は未確認で、公開core APIの宣言長算術として扱う。
+最終headの必須CI・統合・通常反映が残る。
+
+引用/リスト内の表の字下げ[#410 / PR #412](https://github.com/hideyukiMORI/nene-folio/pull/412)は最終head `355d034`の
+CI `40796594189`でfull-gate/check成功後、main `eb9706d`へ統合済み。
+[ADR0072](../adr/0072-native-table-container-indent.md)、[対象記録](../quality/2026-10-29-table-container-indent.md)。
+native317 checks/0 failures、失敗注入native25点/literal16点を確認した。通常反映・整理は#411の後に行う。
+確定値は`D:/NeNeFolio/agents/410-table-container-indent/integration-completion.json`を照合する。
 
 CR改行#402、親listへの復帰#404、表の等幅#405、確保失敗時nonnull契約#407は、各最終headの必須CI後にmainへ統合済み。
-最新main `f6d7f88`を通常exeへ09:20:45 JST反映しexit0。対象結果とCIの確定値は日報・引き継ぎを参照する。
+当時のmain `f6d7f88`を通常exeへ09:20:45 JST反映しexit0。対象結果とCIの確定値は日報・引き継ぎを参照する。
 #404/#405/#407の成果物は各agents内output-archiveへ全hash照合済み。作業物削除は自動承認レビューに拒否され、下記へ保持理由を記録した。
 
 検索は既存計測を照合し、ファイルopen待ちと一致計算のCPU時間を分けて調査した。
 1文字検索の3候補は非製品の正確性診断まで完了。初回計時は他案件buildと競合したため不採用とし、負荷が続く間は再計時しない。
 idle一致計算や背景I/Oの設計案は比較段階であり、製品採用はしていない。
 調査・診断原本は `D:/NeNeFolio/agents/quality-20261029/`。
-引用内表のnative字下げ/残幅は#410、極狭幅の多列表の可読性は別課題として残す。
+引用内表のnative字下げ/残幅は#410でmain統合済み、極狭幅の多列表の可読性は別課題として残す。
 通常段落の折返しを変える水平bar案等は採用していない。診断と残る範囲は日報・引き継ぎを参照する。
 
 ## 公開済みbeta
@@ -54,7 +56,7 @@ portable版はexe隣の`data`を既定とし、両方とも設定から「ノー
 
 ## 継続する確認範囲
 
-- 表は63列まで、container内のnative表字下げと極狭幅可読性は未解消。リンクは装飾のみ、HTML/画像等は対応外。
+- 表は63列/字下げ32767twipまで、極狭幅可読性は未解消。リンクは装飾のみ、HTML/画像等は対応外。
 - 大量ノートの初回検索には同期処理と準備待ちが残る。[検索品質記録](../quality/2026-10-25-first-search-responsiveness.md)を参照する。
 - 専用desktopの合成入力/描画と、物理IME・実reader聴取・DWM実画面呈示を区別する。
 - 署名・インストーラ・Store・自動更新は未実装/対象外。日付付き事実は[日報](../reports/2026-10-27.md)と[引き継ぎ](../handoffs/2026-10-27.md)。

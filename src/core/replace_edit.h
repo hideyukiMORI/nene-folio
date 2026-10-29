@@ -13,7 +13,8 @@
 
 struct replace_edit;
 
-/* span を置き換える編集を、capacity 単位ぶんの空の入れ物として作る（note_replace が満たす）。 */
+/* span を置き換える編集を、capacity 単位ぶんの空の入れ物として作る（note_replace が満たす）。
+ * 終端を含む容量のbyte数を表現できなければ確保前にOUT_OF_MEMORYで拒否する。失敗時outは不変。 */
 [[nodiscard]] enum replace_edit_outcome
 replace_edit_create(struct note_search_span span, size_t capacity,
                     struct replace_edit *_Nullable *_Nonnull out);

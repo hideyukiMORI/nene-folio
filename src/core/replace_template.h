@@ -18,7 +18,9 @@
 
 struct replace_template;
 
-/* units は呼び出しの間だけ借りる。count が 0 でも空の置換文字列として受ける。 */
+/* units は呼び出しの間だけ借りる。count が 0 でも空の置換文字列として受ける。
+ * 終端付きliteral/断片列のbyte数を表現できなければ入力参照・確保前にOUT_OF_MEMORYで拒否する。
+ * MALFORMED/OUT_OF_MEMORYではoutは不変。 */
 [[nodiscard]] enum replace_template_outcome
 replace_template_create(const char16_t *_Nonnull units, size_t count,
                         struct replace_template *_Nullable *_Nonnull out);

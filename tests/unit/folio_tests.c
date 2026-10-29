@@ -211,6 +211,21 @@ static bool run_pane_load_target_tests(const char *_Nonnull argument)
 
 static bool run_size_overflow_target_tests(const char *_Nonnull argument)
 {
+    if (strcmp(argument, "--replacement-size-allocation") == 0)
+    {
+        run_replace_factory_allocation_tests();
+        run_replace_factory_size_tests();
+        run_replace_tests();
+        printf("replacement capacity, failure injection and ownership tests passed\n");
+        return true;
+    }
+    if (strcmp(argument, "--replacement-size") == 0)
+    {
+        run_replace_factory_size_tests();
+        run_replace_tests();
+        printf("replacement factory capacity and template tests passed\n");
+        return true;
+    }
     if (strcmp(argument, "--size-overflow") != 0)
     {
         return false;
