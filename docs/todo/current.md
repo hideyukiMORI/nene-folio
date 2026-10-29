@@ -6,16 +6,22 @@
 
 ## 品質改善の現在位置
 
-チェックリスト印の後続tab [#430](https://github.com/hideyukiMORI/nene-folio/issues/430)は対象検証済みの完成候補。
-`[ ]` / `[x]` / `[X]`の直後をspaceだけに限定する既存判定を、水平区切りのtabにも揃える。
-ADR0070が採用する境界規則と公式GFM 5.3を親が照合して採用した。区切りなし終端の印や内部tabの解釈は変えない。
-既存task判定一箇所と共用unit/selector、対応範囲文書が対象。新API/確保/Win32変更はない。
-親が設計/MARKDOWN/状態文書/統合、SOLが製品/unit/品質記録と対象検証を担当する。
-作業木は`D:/NeNeFolio/worktrees/430-task-marker-tab`、原本/出力はD側agents/outputsの同名領域。
-旧sourceの限定redを保全し、完成候補の正典Debug build/tidy・共用task selectorは成功した。
-親が成功2runの500指定入力と3生成物の現物/snapshot全hashを照合し、再実行していない。
-対象結果は[品質記録](../quality/2026-10-29-task-marker-tab.md)を参照する。
-最終head CI・統合/通常反映/整理の確定値は実PRと同taskの`integration-completion.json`を照合する。
+対象記録の入力一覧 [#432](https://github.com/hideyukiMORI/nene-folio/issues/432)は対象検証済みの完成候補。
+#430で739入力/62518文字の外側argvが起動前に失敗したため、既存record-runへ入力一覧を渡す入口を受理した。
+解析した一覧bytesと記録snapshotを結び、既存の実行・記録・終了値・上書き拒否を共用する。
+親が設計/規約/状態文書/統合、LUNAがtool/test/品質記録と対象検証を担当する。
+SOLの読取レビュー後、実装開始時のモデル混雑でLUNAへ交代した。設計と対象範囲は維持する。
+作業木は`D:/NeNeFolio/worktrees/432-run-record-input-list`、原本/出力はD側agents/outputsの同名領域。
+最初の準備は誤った一覧のJSON文字列を子起動前に拒否した。正しい配列で実行した対象tool15件は子/wrapper0で成功した。
+親が7指定入力の現物/snapshot全hash一致を確認し、再実行していない。
+[品質記録](../quality/2026-10-29-run-record-input-list.md)と同taskの記録に結果と限界を残す。
+製品変更と通常exe再buildは対象外。最終head CI/統合/整理の確定値は実PRとintegration-completionを照合する。
+
+チェックリスト印の後続tab #430 / [PR #431](https://github.com/hideyukiMORI/nene-folio/pull/431)は、
+最終head `805433f`のCI `40828357919`でfull-gate/check成功後、main `e2da1ab`へ統合した。
+旧redと完成候補Debug build/tidy・共用task selectorを確認し、15:24:07 JSTに通常exeへ反映した。
+2319ファイル全hash保全とworktree削除まで完了。出力削除は拒否されたため保持する。
+[品質記録](../quality/2026-10-29-task-marker-tab.md)、確定値は`D:/NeNeFolio/agents/430-task-marker-tab/integration-completion.json`。
 
 検索の一致計算分割#428 / [PR #429](https://github.com/hideyukiMORI/nene-folio/pull/429)は、
 最終head `d71540b`のCI `40825100739`でfull-gate/check成功後、main `ac4b1ad`へ統合した。
@@ -42,9 +48,9 @@ unit/OOMと実loopの通常message/clear/close/native modalの4ケースを確�
 ## 通常exeとhideの実機確認
 
 hide受理済み合成サンプル`data/サンプル/Markdown構文サンプル.md`は通常dataへ残している。実ノート内容は記録・同梱しない。
-現在の通常`C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`はsource `ac4b1ad`・表示版0.3.0/Windows版0.3.0.0。
-通常process0件を確認してから正規ツールで反映しexit0だった。10月29日14:52:06 JST更新済みで、更新後は起動していない。
-版・hashは`D:/NeNeFolio/agents/428-bounded-index-matching/normal-build-verification.json`。通常dataは操作していない。
+現在の通常`C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`はsource `e2da1ab`・表示版0.3.0/Windows版0.3.0.0。
+通常process0件を確認してから正規ツールで反映しexit0だった。10月29日15:24:07 JST更新済みで、更新後は起動していない。
+版・hashは`D:/NeNeFolio/agents/430-task-marker-tab/normal-build-verification.json`。通常dataは操作していない。
 
 ## 次の予定: ノートの保存先設定（未実装）
 
@@ -65,7 +71,9 @@ portable版はexe隣の`data`を既定とし、両方とも設定から「ノー
 
 ## 保持中の旧作業物
 
-下記の36箇所は自動承認レビューの削除拒否により保持する。再試行や別手段での削除をしない。
+下記の37箇所は自動承認レビューの削除拒否により保持する。再試行や別手段での削除をしない。
+
+- #430: `D:/NeNeFolio/outputs/430-task-marker-tab`。統合・通常反映・2319ファイル全hash保全と安全監査後、出力削除要求が`blocked by policy`で拒否された。追加理由なし。worktreeは削除済み、branch/commit保持。確定値は同taskの`integration-completion.json`。
 
 - #428: `D:/NeNeFolio/outputs/428-bounded-index-matching`。統合・通常反映・2564ファイル全hash保全と安全監査後、出力削除要求が`blocked by policy`で拒否された。追加理由なし。worktreeは削除済み、branch/commit保持。確定値は同taskの`integration-completion.json`。
 

@@ -109,6 +109,9 @@ proofのobjectは製品/testのobject集合へ入れない。90%下限・source 
 #424の `tools/record-run.py` は、明示input/artifactのsnapshot・hashとraw出力・終了値を新規directoryへ記録し、
 既存保存先への再実行を子起動前に拒否する。使い方と保証の限界は[ワークフロー](DEVELOPMENT_WORKFLOW.md#対象実行の記録)、
 境界確認は[品質記録](quality/2026-10-29-run-record.md)に残す。入力選定・検証の妥当性や、全実行がこの道具を使ったことの機械強制ではない。
+#432の`--input-list`は多数のinput指定を同じ記録処理へ渡す。解析した一覧bytes自身もinputとして保全し、
+読込後の変更を再読snapshotで隠さない。準備拒否とsnapshot後の失敗、残る観測限界は
+[対象品質記録](quality/2026-10-29-run-record-input-list.md)とワークフローに記す。新しいゲートや完了条件は設けない。
 
 文書・コメント・運用規則だけの変更では、ローカルは差分・参照・関係する規約検査で完結させ、製品テストや再ビルドを行わない。
 ツール変更はそのツールの動作を確認する。実機検証は、変更したOS境界・表示条件を対象テストで保証できないときに行う。

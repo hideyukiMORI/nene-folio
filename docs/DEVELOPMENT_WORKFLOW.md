@@ -64,6 +64,31 @@ python -B tools/record-run.py --run-dir D:/NeNeFolio/outputs/424-run-record/atte
 
 run-dirは未作成の絶対pathで、親directoryを先に用意する。cwd・input・artifactも絶対pathを使う。
 `--input` は実行前のsource/test/config/exe等、`--artifact` は終了後に保管するbuild生成exe等を繰り返し指定する。
+入力が多い場合は `--input-list ABS_JSON` を一回指定する。JSONはUTF-8（BOM可）の絶対file pathの文字列配列で、
+同時に指定した直接`--input`の順序、その後に一覧内の順序で展開する。一覧自身を先頭inputとして自動収載する。
+たとえば`D:/NeNeFolio/outputs/432-run-record-input-list/inputs.json`へ次を保存し、親directoryが存在する新run-dirを指定する。
+
+```json
+[
+  "C:/Users/info/WORKS/NeNeFolio/tools/record-run.py",
+  "C:/Users/info/WORKS/NeNeFolio/tests/conformance/test_run_record.py"
+]
+```
+
+```powershell
+python -B tools/record-run.py --run-dir D:/NeNeFolio/outputs/432-run-record-input-list/attempt-01 --cwd C:/Users/info/WORKS/NeNeFolio --input-list D:/NeNeFolio/outputs/432-run-record-input-list/inputs.json -- python -B tools/record-run.py --help
+```
+
+#430の739入力/62518文字の外側argvが起動前に失敗したため、#432でこの入口を既存のsnapshot/実行処理へ加えた。
+空配列は一覧自身だけを記録し、重複pathの既存許容は維持する。複数の一覧指定、不正UTF-8/JSON、非配列、文字列以外、
+相対path/NULはrun-dir作成・子起動前に拒否する。glob・再帰・環境展開・shell評価はせず、子の`--`以降のargvを解釈しない。
+子argv自体やartifact列のOS長さ制限を解消するものではない。
+
+一覧は一度読んだbytesを解析し、そのbytesを同じchunk-copy/hash処理でsnapshotする。解析後に原一覧が変化しても、
+新しいbytesを解析元として成功記録しない。validationで非file等を拒否した場合は従来どおりrun/resultがなく、bytesの保存も保証しない。
+snapshotまで進んだ場合は解析bytesを保存してから原fileを照合し、変更/消失/読込失敗なら子を起動せず記録失敗にする。
+子終了後の一覧も既存inputと同じ再照合を行う。詳細と境界確認は[品質記録](quality/2026-10-29-run-record-input-list.md)を参照する。
+
 環境変数・ノート・未指定依存は自動収集しない。機微な値をargvや指定ファイルへ入れない。
 artifactは終了時に存在したbytesの記録であり、そのコマンドが生成した証明ではない。
 
@@ -71,7 +96,7 @@ artifactは終了時に存在したbytesの記録であり、そのコマンド�
 完了情報は子の終了値と記録側の終了値を分け、入力変化・起動失敗・記録失敗を成功扱いしない。
 resultが欠落または破損した試行は未完了であり、終了値だけから成功を認定しない。
 失敗時も部分記録を残し、再実行には新しいrun-dirを使う。入力選定の十分性、記録間に変化して戻った入力、
-実行中の外部環境までは自動保証しない。必要な環境条件と対象範囲はQLT-012に従い別途記録する。
+snapshot後から子起動までの外部改変や実行中の外部環境までは自動保証しない。必要な環境条件と対象範囲はQLT-012に従い別途記録する。
 保全・整理は本節の完了時手順に従い、このツールは既存成果物を削除しない。
 
 ---
