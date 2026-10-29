@@ -137,5 +137,10 @@ CommonMark/GFMの全構文への完全互換は保証しません。HTML描画�
 参照形式のリンク、HTML entityの展開、言語別syntax highlightingは対応対象外です。
 未対応の記法は原文を編集・保存できます。表示上の制限や構文の取り違えがあれば、そのMarkdownを添えて報告してください。
 
+画像は埋め込まず、括弧が閉じた `![説明](https://example.com/image.png)` の記法を文字として表示します。通常の本文で感嘆符をbackslashでescapeした場合は、後続をリンクとして扱います。
+その内部の強調記号・backtick・backslash・リンク記法も文字として残ります。画像全体を囲む強調やリンクの装飾は適用されます。
+リンクの表示文字内では、その内側で閉じる画像記法を対象にします。閉じていない場合や外側リンクの括弧を跨ぐ場合は、通常の行内記法として扱います。
+画像記法全体をbacktickで囲む場合はコードの規則を適用します。画像記法内の改行は空白としてつなぎ、表セルの `\|` はpipeとして表示します。
+
 設計と検証の根拠: [ADR0070](adr/0070-markdown-syntax-and-native-tables.md)、
 [ADR0071](adr/0071-ordered-markdown-containers.md)、[ADR0072](adr/0072-native-table-container-indent.md)。

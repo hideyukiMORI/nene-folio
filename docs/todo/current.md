@@ -8,13 +8,17 @@
 
 ## 品質改善の現在位置
 
-リンク宛先内の括弧から別LINKを作る安全性課題[#420](https://github.com/hideyukiMORI/nene-folio/issues/420)は対象検証済みの完成候補。
-18文字の合成入力で、旧sourceがscope未設定の閉じLINKを処理し、範囲外参照のUBSan診断で停止することを確認した。
-成立LINKのdestination終端までを同じ走査の消費済み範囲とする最小修正。画像literal案は別課題のまま未採用。
-SOLが旧redまで完了し、モデルcapacityによる中断後、LUNAが残り1行・対象検証・記録を引き継いだ。
-修正後の同selector・build/tidy・format/conformance/diffは成功し、親が差分と実結果を受理した。
-[対象記録](../quality/2026-10-29-link-destination-scope.md)。最終head必須CI・統合・反映・保全/整理の確定値は
-実PRと`D:/NeNeFolio/agents/420-link-destination-scope/integration-completion.json`を照合する。通常data/通常UIは使っていない。
+閉じた未対応画像の内部記号保持[#422](https://github.com/hideyukiMORI/nene-folio/issues/422)は対象検証済みの完成候補。
+ADR0070の文字保持方針を既存inline owner内で回復する。通常LINKと同じ括弧対応を使い、label内は完全に収まる画像だけを保護する。
+設計を親が受理し、LUNAが限定red・最小実装・対象検証を担当した。画像表示・取得・通常nested LINK解禁は含まない。
+11:38:18 JSTの最終build/tidy・共用LINK selectorは成功。途中の静的解析/fixture oracle失敗と証跡欠落を[品質記録](../quality/2026-10-29-image-literal.md)へ分離した。
+最終head必須CI・統合・通常反映・保全/整理の確定値は実PRと`D:/NeNeFolio/agents/422-image-literal/integration-completion.json`を照合する。
+
+リンク宛先から別LINKを作る安全性課題#420 / [PR #421](https://github.com/hideyukiMORI/nene-folio/pull/421)は、
+最終head `bb513b7`のCI `40804908767`でfull-gate/check成功後、main `0793434`へ統合した。
+18文字の合成入力の旧UBSan診断に対し、成立LINKのdestination終端まで消費する1行で修正した。
+[対象記録](../quality/2026-10-29-link-destination-scope.md)。通常exe反映と112ファイル全hash保全も完了。
+作業木削除は成功、出力削除は拒否され保持する。確定値は`D:/NeNeFolio/agents/420-link-destination-scope/integration-completion.json`。
 
 検索結果集合の件数容量#418 / [PR #419](https://github.com/hideyukiMORI/nene-folio/pull/419)は、最終head `06a2082`の
 CI `40803188868`でfull-gate/check成功後、main `88c441f`へ統合した。通常exe反映と278ファイル全hash保全も完了。
@@ -29,8 +33,8 @@ worktreeは整理済み、出力削除は拒否され保持する。application�
 確定値は`D:/NeNeFolio/agents/416-escaped-image-link/integration-completion.json`。
 内部pycと出力の削除は自動承認レビューに拒否されたため、worktree/outputを保持する。
 
-今回の製品修正#402/#404/#405/#407/#410/#411/#416/#418は、各最終headの必須CI成功後にmainへ統合し、通常exeへ反映済み。
-最新の製品sourceは`88c441f`、通常反映は11:01:16 JST、版0.3.0.0。更新後は起動していない。
+今回の製品修正#402/#404/#405/#407/#410/#411/#416/#418/#420は、各最終headの必須CI成功後にmainへ統合し、通常exeへ反映済み。
+最新の製品sourceは`0793434`、通常反映は11:18:29 JST、版0.3.0.0。更新後は起動していない。
 
 置換factory容量[#411 / PR #413](https://github.com/hideyukiMORI/nene-folio/pull/413)は最終head `5a0a427`の
 CI `40797586045`が成功し、main `bb6dc01`へ統合した。preview7失敗点と最大fit計2件、out/matches保持・同じ一覧でのretryを確認した。
@@ -53,8 +57,8 @@ idle一致計算の追加検討では、保存修復/削除後の結果・scroll
 背景I/Oを含め設計案は比較段階であり、製品採用はしていない。次は現行契約を守る小さい案と、計算分割の契約変更を分けて判断する。
 調査・診断原本は `D:/NeNeFolio/agents/quality-20261029/`。
 10:33の次段階確認でも別案件のcompile/tidyが稼働しており、新たな性能計時は0件のまま。
-未対応画像内部の装飾は原文保持との不整合候補として読取監査したが、通常linkのlabel内画像の境界が未決。
-画像をliteral範囲として保護する案は未採用で、実行再現・製品変更を行っていない。
+未対応画像内部の装飾は原文保持との不整合候補として読取監査した。通常LINK labelを跨ぐ先行分類案は不採用。
+#420のdestination消費を前提に、親label内へ収まる範囲だけを保護する設計を#422で受理した。実結果は同Issueの対象記録へまとめる。
 引用内表のnative字下げ/残幅は#410でmain統合済み、極狭幅の多列表の可読性は別課題として残す。
 通常段落の折返しを変える水平bar案等は採用していない。診断と残る範囲は日報・引き継ぎを参照する。
 
@@ -70,9 +74,9 @@ idle一致計算の追加検討では、保存修復/削除後の結果・scroll
 ## 通常exeとhideの実機確認
 
 hide受理済み合成サンプル`data/サンプル/Markdown構文サンプル.md`は通常dataへ残している。実ノート内容は記録・同梱しない。
-現在の通常`C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`はsource `88c441f`・表示版0.3.0/Windows版0.3.0.0。
-通常process0件を確認してから正規ツールで反映しexit0だった。10月29日11:01:16 JST更新済みで、更新後は起動していない。
-版・hashは`D:/NeNeFolio/agents/418-index-filter-size/normal-build-verification.json`。通常dataは操作していない。
+現在の通常`C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`はsource `0793434`・表示版0.3.0/Windows版0.3.0.0。
+通常process0件を確認してから正規ツールで反映しexit0だった。10月29日11:18:29 JST更新済みで、更新後は起動していない。
+版・hashは`D:/NeNeFolio/agents/420-link-destination-scope/normal-build-verification.json`。通常dataは操作していない。
 
 ## 次の予定: ノートの保存先設定（未実装）
 
@@ -93,7 +97,9 @@ portable版はexe隣の`data`を既定とし、両方とも設定から「ノー
 
 ## 保持中の旧作業物
 
-下記の31箇所は自動承認レビューの削除拒否により保持する。再試行や別手段での削除をしない。
+下記の32箇所は自動承認レビューの削除拒否により保持する。再試行や別手段での削除をしない。
+
+- #420: `D:/NeNeFolio/outputs/420-link-destination-scope`。統合・通常反映・112ファイル全hash保全と安全監査後、出力削除要求が`blocked by policy`で拒否された。追加理由なし。追加worktreeの削除は成功しbranch/commitを保持。確定値は同taskの`integration-completion.json`。
 
 - #418: `D:/NeNeFolio/outputs/418-index-filter-size`。統合・通常反映・278ファイル全hash保全と安全監査後、出力削除要求が`blocked by policy`で拒否された。追加理由なし。追加worktreeの削除は成功しbranch/commitを保持。確定値は同taskの`integration-completion.json`。
 
