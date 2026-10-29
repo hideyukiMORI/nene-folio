@@ -8,6 +8,7 @@
 #include "drawer_layout.h"
 #include "folio_settings.h"
 #include "index_filter.h"
+#include "index_filter_build.h"
 #include "markdown_rtf.h"
 #include "name_list.h"
 #include "note_corpus.h"
@@ -27,8 +28,11 @@
 #include "ui_font.h"
 #include "utf8_text.h"
 
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+
+constexpr size_t index_matching_work_budget = 65536;
 
 /* 走査の入れ物の最初の大きさ。足りなければ総数まで広げて 1 度だけ走査し直す（ADR 0028 の決定 2）。
  */
@@ -84,6 +88,8 @@ struct folio_state
     struct index_filter *_Nullable filter;
     /* 準備中の最新要求と次の読込位置（ADR0068）。部分corpusを結果へ公開しない。 */
     struct utf8_text *_Nullable index_request;
+    struct index_filter_build *_Nullable index_build;
+    struct note_ref index_cursor;
     size_t corpus_category;
     size_t corpus_note;
     struct note_corpus *_Nullable corpus; /* 本文の写し。最初の絞り込みで 1 回だけ読む */
@@ -129,8 +135,16 @@ static void stored_note(struct folio_state *_Nonnull state)
     }
 }
 
+static void discard_index_build(struct folio_state *_Nonnull state)
+{
+    index_filter_build_destroy(state->index_build);
+    state->index_build = nullptr;
+    state->index_cursor = (struct note_ref){0};
+}
+
 static void restart_corpus_load(struct folio_state *_Nonnull state)
 {
+    discard_index_build(state);
     if (!state->corpus_loaded)
     {
         state->corpus_category = 0;
@@ -729,50 +743,91 @@ static enum folio_state_outcome from_index_filter(enum index_filter_outcome outc
     return FOLIO_STATE_SEARCH_MALFORMED;
 }
 
-/* 索引の全ノートを台帳の順に写す。写しが無いノート（読めなかった・まだ読んでいない）は
- * 本文を nullptr で渡し、core が一致しない扱いにする（ADR 0024 の決定 1）。 */
-static size_t collect_entries(const struct folio_state *_Nonnull state,
-                              struct index_filter_entry *_Nonnull entries)
+/* Initial O(categories) count, checked before constructing the only matching owner. */
+static enum folio_state_outcome
+create_index_build(const struct folio_state *_Nonnull state, const struct utf8_text *_Nonnull term,
+                   struct index_filter_build *_Nullable *_Nonnull out)
 {
-    size_t filled = 0;
+    size_t count = 0;
     for (size_t category = 0; category < state->notes_count; ++category)
     {
-        const char *_Nonnull folder = category_ledger_name(state->categories, category);
         size_t notes = note_ledger_count(state->notes[category]);
-        for (size_t note = 0; note < notes; ++note)
-        {
-            const char *_Nonnull name = note_ledger_name(state->notes[category], note);
-            const struct note_text *_Nullable body = note_corpus_body(state->corpus, folder, name);
-            struct index_filter_entry entry = {
-                .ref = located(category, note),
-                .name = name,
-                .body = body == nullptr ? nullptr : note_text_bytes(body),
-                .length = body == nullptr ? 0 : note_text_length(body)};
-            entries[filled] = entry;
-            filled += 1;
-        }
+        if (notes > SIZE_MAX - count)
+            return FOLIO_STATE_OUT_OF_MEMORY;
+        count += notes;
     }
-    return filled;
+    return from_index_filter(
+        index_filter_build_create(utf8_text_bytes(term), utf8_text_length(term), count, out));
 }
 
-/* 語と索引の全ノートから一致集合を作る。列は呼び出しの間だけ持つ（集合は番号しか持たない）。 */
+/* Only this call borrows name/body. No entry array or pointer survives a step. */
+static struct index_filter_entry filter_entry(const struct folio_state *_Nonnull state,
+                                              struct note_ref ref)
+{
+    const char *_Nonnull folder = category_ledger_name(state->categories, ref.category);
+    const char *_Nonnull name = note_ledger_name(state->notes[ref.category], ref.note);
+    const struct note_text *_Nullable body = note_corpus_body(state->corpus, folder, name);
+    return (struct index_filter_entry){.ref = ref,
+                                       .name = name,
+                                       .body = body == nullptr ? nullptr : note_text_bytes(body),
+                                       .length = body == nullptr ? 0 : note_text_length(body)};
+}
+
+/* Shared by pending idle and call-local synchronous repair; no second iterator/matcher. */
+static void step_filter(const struct folio_state *_Nonnull state,
+                        struct index_filter_build *_Nonnull build, struct note_ref *_Nonnull cursor,
+                        size_t *_Nonnull work)
+{
+    while (*work != 0 && index_filter_build_readiness(build) == INDEX_FILTER_NOT_READY)
+    {
+        size_t count = note_ledger_count(state->notes[cursor->category]);
+        if (cursor->note == count)
+        {
+            cursor->category += 1;
+            cursor->note = 0;
+            if (count == 0)
+                *work -= 1;
+            continue;
+        }
+        struct index_filter_entry entry = filter_entry(state, *cursor);
+        switch (index_filter_build_step(build, &entry, work))
+        {
+        case INDEX_FILTER_STEP_MORE:
+            return;
+        case INDEX_FILTER_STEP_ENTRY_DONE:
+            cursor->note += 1;
+            break;
+        case INDEX_FILTER_STEP_ALL_DONE:
+            cursor->note += 1;
+            return;
+        }
+    }
+}
+
 static enum folio_state_outcome build_filter(const struct folio_state *_Nonnull state,
                                              const struct utf8_text *_Nonnull term,
                                              struct index_filter *_Nullable *_Nonnull out)
 {
-    struct index_filter_entry *_Nullable entries =
-        malloc((total_notes(state) + 1) * sizeof *entries);
-    if (entries == nullptr)
+    struct index_filter_build *_Nullable build = nullptr;
+    enum folio_state_outcome created = create_index_build(state, term, &build);
+    if (created != FOLIO_STATE_READY)
+        return created;
+    struct note_ref cursor = {0};
+    for (;;)
     {
-        return FOLIO_STATE_OUT_OF_MEMORY;
+        size_t work = index_matching_work_budget;
+        step_filter(state, build, &cursor, &work);
+        switch (index_filter_finish(&build, out))
+        {
+        case INDEX_FILTER_FINISH_NOT_READY:
+            break;
+        case INDEX_FILTER_FINISH_OUT_OF_MEMORY:
+            index_filter_build_destroy(build);
+            return FOLIO_STATE_OUT_OF_MEMORY;
+        case INDEX_FILTER_FINISH_ACCEPTED:
+            return FOLIO_STATE_READY;
+        }
     }
-    struct index_filter_query query = {.term = utf8_text_bytes(term),
-                                       .term_length = utf8_text_length(term),
-                                       .entries = entries,
-                                       .count = collect_entries(state, entries)};
-    enum index_filter_outcome built = index_filter_create(&query, out);
-    free(entries);
-    return from_index_filter(built);
 }
 
 /* 一回につき一本文だけを既存の写しへ入れる。再試行時も既存copyでreadを省略しない。 */
@@ -3439,9 +3494,9 @@ static void clear_index_filter(struct folio_state *_Nonnull state)
 
 static void cancel_index_request(struct folio_state *_Nonnull state)
 {
+    restart_corpus_load(state);
     utf8_text_destroy(state->index_request);
     state->index_request = nullptr;
-    restart_corpus_load(state);
 }
 
 /* 新しい語と一致集合を受け取り、前のものと入れ替える。 */
@@ -3482,25 +3537,11 @@ enum folio_state_outcome folio_state_set_index_filter(struct folio_state *_Nonnu
         return converted == UTF8_TEXT_OUT_OF_MEMORY ? FOLIO_STATE_OUT_OF_MEMORY
                                                     : FOLIO_STATE_SEARCH_MALFORMED;
     }
-    if (!state->corpus_loaded)
-    {
-        clear_index_filter(state);
-        utf8_text_destroy(state->index_request);
-        state->index_request = term;
-        state->scroll = 0;
-        return FOLIO_STATE_READY;
-    }
-    struct index_filter *_Nullable filter = nullptr;
-    enum folio_state_outcome built = build_filter(state, term, &filter);
-    if (built != FOLIO_STATE_READY)
-    {
-        utf8_text_destroy(term);
-        return built;
-    }
-    adopt_index_filter(state, term, filter);
-    /* 語を変えるたびに頭から見せ、消えた行のカーソルを最初に見える行へ移す（決定 5）。 */
+    discard_index_build(state);
+    clear_index_filter(state);
+    utf8_text_destroy(state->index_request);
+    state->index_request = term;
     state->scroll = 0;
-    settle_cursor(state);
     return FOLIO_STATE_READY;
 }
 
@@ -3508,11 +3549,15 @@ enum folio_state_outcome folio_state_set_index_filter(struct folio_state *_Nonnu
 static enum folio_state_outcome finish_index_request(struct folio_state *_Nonnull state)
 {
     struct index_filter *_Nullable filter = nullptr;
-    enum folio_state_outcome built = build_filter(state, state->index_request, &filter);
-    if (built != FOLIO_STATE_READY)
+    switch (index_filter_finish(&state->index_build, &filter))
     {
+    case INDEX_FILTER_FINISH_NOT_READY:
+        return FOLIO_STATE_READY;
+    case INDEX_FILTER_FINISH_OUT_OF_MEMORY:
         cancel_index_request(state);
-        return built;
+        return FOLIO_STATE_OUT_OF_MEMORY;
+    case INDEX_FILTER_FINISH_ACCEPTED:
+        break;
     }
     struct utf8_text *_Nonnull term = state->index_request;
     state->index_request = nullptr;
@@ -3539,7 +3584,21 @@ enum folio_state_outcome folio_state_continue_index_filter(struct folio_state *_
         cancel_index_request(state);
         return loaded;
     }
-    return state->corpus_loaded ? finish_index_request(state) : FOLIO_STATE_READY;
+    if (!state->corpus_loaded)
+        return FOLIO_STATE_READY;
+    if (state->index_build == nullptr)
+    {
+        enum folio_state_outcome created =
+            create_index_build(state, state->index_request, &state->index_build);
+        if (created != FOLIO_STATE_READY)
+        {
+            cancel_index_request(state);
+            return created;
+        }
+    }
+    size_t work = index_matching_work_budget;
+    step_filter(state, state->index_build, &state->index_cursor, &work);
+    return finish_index_request(state);
 }
 
 bool folio_state_index_filter_pending(const struct folio_state *_Nonnull state)
@@ -3925,6 +3984,7 @@ void folio_state_destroy(struct folio_state *_Nullable state)
     note_text_destroy(state->body);
     utf8_text_destroy(state->search_term);
     utf8_text_destroy(state->index_term);
+    index_filter_build_destroy(state->index_build);
     utf8_text_destroy(state->index_request);
     index_filter_destroy(state->filter);
     note_corpus_destroy(state->corpus);

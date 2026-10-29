@@ -1,0 +1,9 @@
+#ifndef NENEFOLIO_INDEX_FILTER_STEP_H
+#define NENEFOLIO_INDEX_FILTER_STEP_H
+enum index_filter_step : unsigned char
+{
+    INDEX_FILTER_STEP_MORE,
+    INDEX_FILTER_STEP_ENTRY_DONE,
+    INDEX_FILTER_STEP_ALL_DONE
+};
+#endif

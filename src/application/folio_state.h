@@ -319,17 +319,19 @@ folio_state_note_changed(struct folio_state *_Nonnull state, const char16_t *_No
  * ディスクは読み直さない。 */
 [[nodiscard]] enum folio_state_outcome
 folio_state_discard_edits(const struct folio_state *_Nonnull state);
-/* 索引の絞り込み要求（FR-032 / ADR0068）。UTF-16入力はC-014の例外7。
- * 空語は取消して通常索引へ戻す。不正語/OOMは前の要求/結果を保つ。
- * 改名/保存済みcopy修復の先行同期を行い、完成済みcorpusなら同期で結果を採用する。
- * 未完成なら最新語を所有するだけでcorpus用の本文を読まず、準備中の通常索引を表示する。
- * 準備中の語の変更は走査位置を保つ。取消/索引変更/保存は未完成走査を先頭へ戻す。
+/* 索引の絞り込み要求（FR-032 / ADR0068/0073）。UTF-16入力はC-014の例外7。
+ * 空語は取消。不正語/語確保OOMは前の要求/結果を保つ。先行copy/改名修復は同期で行う。
+ * 有効語の受理後はwarmでも最新要求だけを持ち、全索引を準備中表示する。本文read/全一致計算をしない。
+ * 語の差替えは未完成本文の読込位置を保ち、一致計算進捗だけを破棄する。
+ * 更新はmatchingを破棄し、未完成本文走査だけを先頭へ戻す。builder/finish OOMは要求を停止する。
  * 現在文書/本文/modeは変えず、語の受理でscrollを戻す。cursorは結果の採用/取消で整える。 */
 [[nodiscard]] enum folio_state_outcome
 folio_state_set_index_filter(struct folio_state *_Nonnull state, const char16_t *_Nonnull units,
                              size_t count);
-/* 一回につき最大一ノート。未読/不正本文は旧copyも除く。OOM/先行同期失敗は要求を止める。
- * 最後の次の継続で最新語の全結果を採用する。部分結果は公開せず、要求無しなら何もしない。 */
+/* 一回最大一ノートread後、本文が完成済みなら65536比較workまでmatchingを継続する。
+ * 最初のmatching継続はcount/build作成とworkを同じcallで行い、count0は即finish。
+ * 未読/不正本文は旧copyも除く。OOM/先行同期失敗は要求を止め、完成時だけ最新語の結果を採用。
+ * 比較workは実時間上限ではない。部分結果は非公開、要求無しなら何もしない。 */
 [[nodiscard]] enum folio_state_outcome
 folio_state_continue_index_filter(struct folio_state *_Nonnull state);
 [[nodiscard]] bool folio_state_index_filter_pending(const struct folio_state *_Nonnull state);

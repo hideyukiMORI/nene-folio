@@ -2,11 +2,13 @@
 #include "category_ledger.h"
 #include "drawer_layout.h"
 #include "index_filter.h"
+#include "index_filter_build.h"
 #include "note_corpus.h"
 #include "note_ledger.h"
 #include "note_text.h"
 #include "unit_tests.h"
 
+#include <stdlib.h>
 #include <string.h>
 
 static const struct drawer_metrics metrics = {.top_padding = 8,
@@ -30,19 +32,44 @@ static struct index_filter_entry entry_of(struct note_ref ref, const char *_Nonn
     return entry;
 }
 
-/* 語と列から集合を作る。作れなければ nullptr を返す（理由は呼び出し側が別に測る）。 */
+enum index_filter_finish_outcome
+test_index_filter_finish(struct index_filter_build *_Nullable *_Nonnull build,
+                         const struct index_filter_entry *_Nonnull entries, size_t count,
+                         struct index_filter *_Nullable *_Nonnull out)
+{
+    for (size_t index = 0; index < count; ++index)
+    {
+        enum index_filter_step step = INDEX_FILTER_STEP_MORE;
+        while (step == INDEX_FILTER_STEP_MORE)
+        {
+            size_t work = 65536;
+            step = index_filter_build_step(*build, &entries[index], &work);
+        }
+    }
+    return index_filter_finish(build, out);
+}
+
+static struct index_filter *_Nullable filter_of_span(
+    const char *_Nonnull term, size_t length, const struct index_filter_entry *_Nonnull entries,
+    size_t count)
+{
+    struct index_filter_build *build = nullptr;
+    if (index_filter_build_create(term, length, count, &build) != INDEX_FILTER_ACCEPTED)
+        return nullptr;
+    struct index_filter *filter = nullptr;
+    if (test_index_filter_finish(&build, entries, count, &filter) != INDEX_FILTER_FINISH_ACCEPTED)
+    {
+        index_filter_build_destroy(build);
+        return nullptr;
+    }
+    return filter;
+}
+
 static struct index_filter *_Nullable filter_of(const char *_Nonnull term,
                                                 const struct index_filter_entry *_Nonnull entries,
                                                 size_t count)
 {
-    struct index_filter_query query = {
-        .term = term, .term_length = strlen(term), .entries = entries, .count = count};
-    struct index_filter *filter = nullptr;
-    if (index_filter_create(&query, &filter) != INDEX_FILTER_ACCEPTED)
-    {
-        return nullptr;
-    }
-    return filter;
+    return filter_of_span(term, strlen(term), entries, count);
 }
 
 /* ASCII の英字だけ大小を無視し、多バイト文字は区別する（決定 2）。 */
@@ -100,28 +127,25 @@ static void verify_sources(void)
 static void verify_rejections(void)
 {
     const struct index_filter_entry entries[] = {entry_of(at(0, 0), "alpha", "body")};
-    struct index_filter_query empty = {
-        .term = "", .term_length = 0, .entries = entries, .count = 1};
-    struct index_filter *filter = nullptr;
-    require(index_filter_create(&empty, &filter) == INDEX_FILTER_NO_TERM,
+    struct index_filter_build *build = nullptr;
+    require(index_filter_build_create("", 0, 1, &build) == INDEX_FILTER_NO_TERM,
             "an empty term does not filter");
-    require(filter == nullptr, "and leaves the output alone");
+    require(build == nullptr, "and leaves the output alone");
     /* 0xC3 は 2 バイト列の先頭で、続きが無い。 */
-    struct index_filter_query broken = {
-        .term = "\xC3", .term_length = 1, .entries = entries, .count = 1};
-    require(index_filter_create(&broken, &filter) == INDEX_FILTER_MALFORMED,
+    require(index_filter_build_create("\xC3", 1, 1, &build) == INDEX_FILTER_MALFORMED,
             "a broken term is refused");
-    require(filter == nullptr, "and leaves the output alone");
-    struct index_filter_query longer = {
-        .term = "bodybody", .term_length = 8, .entries = entries, .count = 1};
-    require(index_filter_create(&longer, &filter) == INDEX_FILTER_ACCEPTED,
+    require(build == nullptr, "and leaves the output alone");
+    require(index_filter_build_create("bodybody", 8, 1, &build) == INDEX_FILTER_ACCEPTED,
             "a term longer than every text still builds a set");
+    struct index_filter_build *held = build;
+    require(index_filter_build_create("", 0, 1, &build) == INDEX_FILTER_NO_TERM && build == held &&
+                index_filter_build_create("\xC3", 1, 1, &build) == INDEX_FILTER_MALFORMED &&
+                build == held,
+            "empty and malformed terms leave an existing owner untouched");
+    struct index_filter *filter = nullptr;
+    require(test_index_filter_finish(&build, entries, 1, &filter) == INDEX_FILTER_FINISH_ACCEPTED,
+            "the preserved owner can complete");
     require(index_filter_count(filter) == 0, "with nothing in it");
-    struct index_filter *held = filter;
-    require(index_filter_create(&empty, &filter) == INDEX_FILTER_NO_TERM && filter == held &&
-                index_filter_create(&broken, &filter) == INDEX_FILTER_MALFORMED && filter == held &&
-                index_filter_count(held) == 0,
-            "empty and malformed terms also leave an existing output untouched");
     index_filter_destroy(filter);
 }
 
@@ -190,29 +214,24 @@ static void verify_match_spans(void)
     const char term[] = {'A', 'b', (char)0xFF};
     const char body[] = {'x', 'a', 'B'};
     struct index_filter_entry entry = {.ref = at(0, 0), .name = "_", .body = body, .length = 3};
-    struct index_filter_query query = {
-        .term = term, .term_length = 2, .entries = &entry, .count = 1};
-    struct index_filter *filter = nullptr;
-    require(index_filter_create(&query, &filter) == INDEX_FILTER_ACCEPTED &&
-                index_filter_note(filter, entry.ref),
+    struct index_filter *filter = filter_of_span(term, 2, &entry, 1);
+    require(filter != nullptr && index_filter_note(filter, entry.ref),
             "an unterminated term matches at the last byte of an unterminated body");
     index_filter_destroy(filter);
     entry.length = 2;
-    require(index_filter_create(&query, &filter) == INDEX_FILTER_ACCEPTED &&
-                index_filter_count(filter) == 0,
+    filter = filter_of_span(term, 2, &entry, 1);
+    require(filter != nullptr && index_filter_count(filter) == 0,
             "a body byte beyond its declared length cannot complete a match");
     index_filter_destroy(filter);
     entry.length = 0;
-    require(index_filter_create(&query, &filter) == INDEX_FILTER_ACCEPTED &&
-                index_filter_count(filter) == 0,
+    filter = filter_of_span(term, 2, &entry, 1);
+    require(filter != nullptr && index_filter_count(filter) == 0,
             "a nonnull empty body has no match");
     index_filter_destroy(filter);
     const char nul[] = {'\0'};
-    query.term = nul;
-    query.term_length = 1;
     entry.length = 3;
-    require(index_filter_create(&query, &filter) == INDEX_FILTER_ACCEPTED &&
-                index_filter_count(filter) == 0,
+    filter = filter_of_span(nul, 1, &entry, 1);
+    require(filter != nullptr && index_filter_count(filter) == 0,
             "a one-byte NUL term is length-delimited rather than treated as an empty term");
     index_filter_destroy(filter);
 }
@@ -601,8 +620,124 @@ static void verify_corpus_rekey(void)
     note_corpus_destroy(corpus);
 }
 
+static void verify_work_schedule(const size_t *_Nonnull schedule, size_t schedule_count)
+{
+    const struct index_filter_entry entries[] = {
+        entry_of(at(0, 0), "_", "aaaaaaab"), entry_of(at(0, 1), "AAAB", ""),
+        entry_of(at(0, 2), "aaab", nullptr), entry_of(at(1, 0), "_", "aaaaaaax")};
+    struct index_filter_build *build = nullptr;
+    require(index_filter_build_create("aaab", 4, 4, &build) == INDEX_FILTER_ACCEPTED,
+            "scheduled owner");
+    size_t zero = 0;
+    require(index_filter_build_step(build, &entries[0], &zero) == INDEX_FILTER_STEP_MORE &&
+                index_filter_build_readiness(build) == INDEX_FILTER_NOT_READY,
+            "zero work does not publish a result or start the first entry");
+    size_t calls = 0;
+    for (size_t index = 0; index < 4; ++index)
+    {
+        enum index_filter_step step = INDEX_FILTER_STEP_MORE;
+        while (step == INDEX_FILTER_STEP_MORE && calls < 512)
+        {
+            size_t budget = schedule[calls % schedule_count];
+            size_t work = budget;
+            step = index_filter_build_step(build, &entries[index], &work);
+            require(work <= budget && (step != INDEX_FILTER_STEP_MORE || work < budget),
+                    "positive MORE consumes comparison work within the supplied budget");
+            calls += 1;
+        }
+        require(step == (index == 3 ? INDEX_FILTER_STEP_ALL_DONE : INDEX_FILTER_STEP_ENTRY_DONE),
+                "every completed entry advances once, even with no work left");
+    }
+    require(index_filter_build_readiness(build) == INDEX_FILTER_READY &&
+                index_filter_build_count(build) == 2 &&
+                index_filter_build_ref(build, 0).note == 0 &&
+                index_filter_build_ref(build, 1).note == 1,
+            "all schedules preserve concrete ordered name/body matches and missing-body exclusion");
+    index_filter_build_destroy(build);
+}
+
+static void verify_exact_work(void)
+{
+    struct index_filter_entry entry = entry_of(at(0, 0), "N", "");
+    struct index_filter_build *build = nullptr;
+    require(index_filter_build_create("z", 1, 1, &build) == INDEX_FILTER_ACCEPTED, "byte owner");
+    size_t work = 3;
+    require(index_filter_build_step(build, &entry, &work) == INDEX_FILTER_STEP_MORE && work == 0,
+            "entry plus name byte/NUL leaves the name comparison pending");
+    work = 1;
+    require(index_filter_build_step(build, &entry, &work) == INDEX_FILTER_STEP_ALL_DONE &&
+                work == 0 && index_filter_build_count(build) == 0,
+            "the final name comparison completes with exactly zero remaining work");
+    index_filter_build_destroy(build);
+    entry = entry_of(at(0, 0), "", "ab");
+    require(index_filter_build_create("ab", 2, 1, &build) == INDEX_FILTER_ACCEPTED, "full owner");
+    work = 5;
+    require(index_filter_build_step(build, &entry, &work) == INDEX_FILTER_STEP_MORE && work == 0,
+            "tail and head do not hide the last full-comparison byte outside the budget");
+    work = 1;
+    require(index_filter_build_step(build, &entry, &work) == INDEX_FILTER_STEP_ALL_DONE &&
+                work == 0 && index_filter_build_count(build) == 1,
+            "a complete comparison resumes at its saved byte");
+    index_filter_build_destroy(build);
+}
+
+static void verify_sealed_ownership(void)
+{
+    char *term = malloc(4);
+    if (term == nullptr)
+        test_failure("owned test term");
+    memcpy(term, "aaab", 4);
+    struct index_filter_entry entry = entry_of(at(2, 7), "_", "aaab");
+    struct index_filter_build *build = nullptr;
+    require(index_filter_build_create(term, 4, 1, &build) == INDEX_FILTER_ACCEPTED, "borrow owner");
+    struct index_filter *held = filter_of("_", &entry, 1);
+    require(held != nullptr, "actual nonempty finish sentinel");
+    struct index_filter *out = held;
+    struct index_filter_build *before = build;
+    require(index_filter_finish(&build, &out) == INDEX_FILTER_FINISH_NOT_READY && build == before &&
+                out == held,
+            "NOT_READY preserves the working owner and actual existing output");
+    size_t work = 65536;
+    require(index_filter_build_step(build, &entry, &work) == INDEX_FILTER_STEP_ALL_DONE,
+            "seal owner");
+    free(term);
+    work = 0;
+    require(index_filter_build_step(build, &entry, &work) == INDEX_FILTER_STEP_ALL_DONE &&
+                work == 0 && index_filter_build_count(build) == 1 &&
+                index_filter_build_ref(build, 0).note == 7,
+            "SEALED step and queries do not touch the released term borrow");
+    struct index_filter_build *removed = nullptr;
+    require(index_filter_build_removed(build, at(2, 1), &removed) == INDEX_FILTER_ACCEPTED &&
+                index_filter_build_readiness(removed) == INDEX_FILTER_READY &&
+                index_filter_build_ref(removed, 0).note == 6,
+            "removed constructs its own SEALED numbering without the old term");
+    index_filter_build_destroy(removed);
+    require(index_filter_finish(&build, &out) == INDEX_FILTER_FINISH_ACCEPTED && build == nullptr &&
+                out != held && index_filter_note(out, entry.ref) && index_filter_count(held) == 1,
+            "finish alone transfers ownership and preserves the previous result");
+    index_filter_destroy(out);
+    index_filter_destroy(held);
+    out = nullptr;
+    require(index_filter_build_create("x", 1, 0, &build) == INDEX_FILTER_ACCEPTED &&
+                index_filter_build_readiness(build) == INDEX_FILTER_READY &&
+                index_filter_build_count(build) == 0,
+            "zero entries seal without a synthetic entry");
+    require(index_filter_finish(&build, &out) == INDEX_FILTER_FINISH_ACCEPTED && build == nullptr &&
+                index_filter_count(out) == 0,
+            "zero-entry SEALED owner finishes normally");
+    index_filter_destroy(out);
+    index_filter_build_destroy(nullptr);
+}
+
 void run_index_filter_tests(void)
 {
+    const size_t single[] = {1}, pair[] = {2}, mixed[] = {1, 3, 2, 7}, large[] = {65536};
+    verify_work_schedule(single, 1);
+    verify_work_schedule(pair, 1);
+    verify_work_schedule(mixed, 4);
+    verify_work_schedule(large, 1);
+    verify_exact_work();
+    verify_sealed_ownership();
     verify_folding();
     verify_sources();
     verify_rejections();

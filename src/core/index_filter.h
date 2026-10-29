@@ -8,25 +8,26 @@
 #ifndef NENEFOLIO_INDEX_FILTER_H
 #define NENEFOLIO_INDEX_FILTER_H
 
+#include "index_filter_finish_outcome.h"
 #include "index_filter_outcome.h"
-#include "index_filter_query.h"
 #include "note_ref.h"
 
 #include <stddef.h>
 
 struct index_filter;
+struct index_filter_build;
 
 /* 台帳から対象を除いた番号へ写す。入力は不変、確保失敗では out も変えない。 */
 [[nodiscard]] enum index_filter_outcome
 index_filter_removed(const struct index_filter *_Nonnull filter, struct note_ref target,
                      struct index_filter *_Nullable *_Nonnull out);
 
-/* 語が空なら NO_TERM、整形式の UTF-8 でなければ MALFORMED で、どちらも out は触らない
- * （呼び出し側は前の絞り込みを保つ）。この順の語検証後、終端用1要素を含むsize_t配列の
- * byte数を表現できないcountは、確保・entry参照前にOUT_OF_MEMORYで拒否し、outを触らない。
- * 一致が 0 件でも集合は作る（索引が空になる）。 */
-[[nodiscard]] enum index_filter_outcome
-index_filter_create(const struct index_filter_query *_Nonnull query,
+/* *build must be nonnull and owned by the caller. NOT_READY and OOM preserve both outputs
+ * and the build, including a READY build that can retry without its original term.
+ * Success alone transfers the sealed owner, sets *build=nullptr and commits out.
+ * Former aliases must not be used after success. A READY empty result is accepted. */
+[[nodiscard]] enum index_filter_finish_outcome
+index_filter_finish(struct index_filter_build *_Nullable *_Nonnull build,
                     struct index_filter *_Nullable *_Nonnull out);
 /* そのノートが見えるか。 */
 [[nodiscard]] bool index_filter_note(const struct index_filter *_Nonnull filter,

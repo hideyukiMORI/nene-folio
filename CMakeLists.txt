@@ -47,7 +47,7 @@ nenefolio_target(nenefolio_core core STATIC
     src/core/rtf_text.c src/core/markdown_blocks.c src/core/markdown_inline_tokens.c
     src/core/markdown_line.c src/core/markdown_view.c src/core/markdown_table.c src/core/markdown_containers.c
     src/core/folio_command.c src/core/folio_menu_action.c src/core/folio_shortcut.c src/core/note_name.c src/core/rename_plan.c src/core/rename_journal.c
-    src/core/note_search.c src/core/note_corpus.c src/core/index_filter.c
+    src/core/note_search.c src/core/note_corpus.c src/core/index_filter.c src/core/index_filter_build.c
     src/core/folio_settings.c src/core/folio_theme.c src/core/folio_theme_choice.c src/core/line_index.c
     src/core/replace_template.c src/core/replace_edit.c src/core/note_replace.c
     src/core/replace_preview.c
