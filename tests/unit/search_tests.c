@@ -2,6 +2,8 @@
 #include "note_search.h"
 #include "unit_tests.h"
 
+#include <stdint.h>
+
 static size_t units_of(const char16_t *_Nonnull units)
 {
     size_t length = 0;
@@ -256,6 +258,275 @@ static void verify_refusals(void)
             "a term longer than the text and an empty text find nothing");
 }
 
+static void require_count(const struct note_search_query *_Nonnull query, size_t position,
+                          size_t expected_total, size_t expected_ordinal)
+{
+    size_t total = 91;
+    size_t ordinal = 93;
+    enum note_search_outcome expected =
+        expected_total == 0 ? NOTE_SEARCH_NOT_FOUND : NOTE_SEARCH_FOUND;
+    require(note_search_count(query, position, &total, &ordinal) == expected &&
+                total == expected_total && ordinal == expected_ordinal,
+            "the ascending match sequence gives the expected count and ordinal");
+}
+
+/* 小さい oracle は素朴な候補全走査。製品の fold や matcher を呼ばない。 */
+static char16_t oracle_fold(char16_t unit)
+{
+    return unit >= u'A' && unit <= u'Z' ? (char16_t)(unit + 32) : unit;
+}
+
+static bool oracle_matches_at(const struct note_search_query *_Nonnull query, size_t at)
+{
+    for (size_t index = 0; index < query->term_length; ++index)
+    {
+        if (oracle_fold(query->text[at + index]) != oracle_fold(query->term[index]))
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+static size_t oracle_matches(const struct note_search_query *_Nonnull query,
+                             size_t *_Nonnull positions)
+{
+    size_t count = 0;
+    if (query->term_length > query->length)
+    {
+        return 0;
+    }
+    for (size_t at = 0; at <= query->length - query->term_length; ++at)
+    {
+        if (oracle_matches_at(query, at))
+        {
+            positions[count] = at;
+            count += 1;
+        }
+    }
+    return count;
+}
+
+static size_t oracle_forward(const size_t *_Nonnull positions, size_t count,
+                             struct note_search_span anchor)
+{
+    if (count == 0)
+    {
+        return SIZE_MAX;
+    }
+    size_t from = anchor.start + (anchor.start == anchor.end ? 0 : 1);
+    for (size_t index = 0; index < count; ++index)
+    {
+        if (positions[index] >= from)
+        {
+            return positions[index];
+        }
+    }
+    return positions[0];
+}
+
+static size_t oracle_backward(const size_t *_Nonnull positions, size_t count,
+                              struct note_search_span anchor)
+{
+    if (count == 0)
+    {
+        return SIZE_MAX;
+    }
+    for (size_t index = count; index > 0; --index)
+    {
+        if (positions[index - 1] < anchor.start)
+        {
+            return positions[index - 1];
+        }
+    }
+    return positions[count - 1];
+}
+
+static void require_oracle_next(const struct note_search_query *_Nonnull query,
+                                struct note_search_span anchor, enum search_direction direction,
+                                size_t expected)
+{
+    struct note_search_span match = span_of(91, 93);
+    enum note_search_outcome outcome = note_search_next(query, anchor, direction, &match);
+    if (expected == SIZE_MAX)
+    {
+        require(outcome == NOTE_SEARCH_NOT_FOUND && match.start == 91 && match.end == 93,
+                "a missing oracle match preserves the output sentinel");
+        return;
+    }
+    require(outcome == NOTE_SEARCH_FOUND && match.start == expected &&
+                match.end == expected + query->term_length,
+            "both directions select the same occurrence as the independent oracle");
+}
+
+static void require_oracle_anchor(const struct note_search_query *_Nonnull query,
+                                  const size_t *_Nonnull positions, size_t count,
+                                  struct note_search_span anchor)
+{
+    require_oracle_next(query, anchor, SEARCH_DIRECTION_FORWARD,
+                        oracle_forward(positions, count, anchor));
+    require_oracle_next(query, anchor, SEARCH_DIRECTION_BACKWARD,
+                        oracle_backward(positions, count, anchor));
+}
+
+static size_t oracle_ordinal(const size_t *_Nonnull positions, size_t count, size_t position)
+{
+    size_t ordinal = 0;
+    for (size_t index = 0; index < count; ++index)
+    {
+        ordinal += positions[index] <= position ? 1 : 0;
+    }
+    return ordinal;
+}
+
+static void verify_oracle_query(const struct note_search_query *_Nonnull query)
+{
+    size_t positions[4];
+    size_t count = oracle_matches(query, positions);
+    for (size_t position = 0; position <= query->length + 1; ++position)
+    {
+        require_count(query, position, count, oracle_ordinal(positions, count, position));
+        require_oracle_anchor(query, positions, count, span_of(position, position));
+        require_oracle_anchor(query, positions, count, span_of(position, position + 1));
+    }
+}
+
+static void fill_sequence(char16_t *_Nonnull text, size_t length, size_t code)
+{
+    constexpr char16_t alphabet[] = {u'a', u'A', u'b'};
+    for (size_t index = 0; index < length; ++index)
+    {
+        text[index] = alphabet[code % 3];
+        code /= 3;
+    }
+}
+
+static void verify_oracle_terms(const char16_t *_Nonnull text, size_t length)
+{
+    char16_t term[3];
+    size_t cases = 1;
+    for (size_t term_length = 1; term_length <= 3; ++term_length)
+    {
+        cases *= 3;
+        for (size_t code = 0; code < cases; ++code)
+        {
+            fill_sequence(term, term_length, code);
+            struct note_search_query query = {text, length, term, term_length};
+            verify_oracle_query(&query);
+        }
+    }
+}
+
+/* 本文0〜4単位、語1〜3単位。大小衝突を含む4719queryだけを全候補oracleと比較する。 */
+static void verify_small_oracle(void)
+{
+    char16_t text[4];
+    size_t cases = 1;
+    for (size_t length = 0; length <= 4; ++length)
+    {
+        for (size_t code = 0; code < cases; ++code)
+        {
+            fill_sequence(text, length, code);
+            verify_oracle_terms(text, length);
+        }
+        cases *= 3;
+    }
+}
+
+static void verify_critical_periods(void)
+{
+    struct note_search_query odd = query_of(u"abXabXab", u"abXab");
+    require_count(&odd, 3, 2, 2);
+    require(found_at(&odd, span_of(0, 5), SEARCH_DIRECTION_FORWARD) == 3 &&
+                found_at(&odd, span_of(0, 0), SEARCH_DIRECTION_BACKWARD) == 3,
+            "an odd short period preserves its overlapping second match and backward wrap");
+    struct note_search_query folded = query_of(u"aBXAbxab", u"AbxAB");
+    require_count(&folded, 3, 2, 2);
+    struct note_search_query nonperiodic = query_of(u"abcabYabcab", u"abcab");
+    require_count(&nonperiodic, 5, 2, 1);
+    require(found_at(&nonperiodic, span_of(0, 5), SEARCH_DIRECTION_FORWARD) == 6,
+            "the nonperiodic shift does not skip a later match");
+    struct note_search_query reset = query_of(u"aaaabXXYa", u"aaaa");
+    require_count(&reset, reset.length, 1, 1);
+    require(found_at(&reset, span_of(0, 4), SEARCH_DIRECTION_FORWARD) == 0,
+            "a right mismatch discards remembered prefix and does not invent a second match");
+}
+
+static void verify_long_overlap(void)
+{
+    char16_t text[1024];
+    char16_t term[257];
+    for (size_t index = 0; index < 1024; ++index)
+    {
+        text[index] = u'a';
+    }
+    for (size_t index = 0; index < 257; ++index)
+    {
+        term[index] = u'A';
+    }
+    struct note_search_query query = {text, 1024, term, 257};
+    require_count(&query, 767, 768, 768);
+    require(found_at(&query, span_of(0, 257), SEARCH_DIRECTION_FORWARD) == 1 &&
+                found_at(&query, span_of(0, 0), SEARCH_DIRECTION_BACKWARD) == 767,
+            "longer than UI capacity terms retain every overlapping match");
+}
+
+static void verify_explicit_units(void)
+{
+    const char16_t text[] = {u'a', 0, u'\r', u'B', u'a', 0, u'\r', u'b'};
+    const char16_t term[] = {0, u'\r', u'b'};
+    struct note_search_query embedded = {text, 8, term, 3};
+    require_count(&embedded, 4, 2, 1);
+    require(found_at(&embedded, span_of(1, 4), SEARCH_DIRECTION_FORWARD) == 5,
+            "NUL and CR are explicit UTF16 units and do not terminate the query");
+    const char16_t pairs[] = {0xD800, 0xDC00, 0xD800, 0xDC00, 0xD800, 0xDC00};
+    struct note_search_query split_pair = {pairs, 6, pairs, 4};
+    require_count(&split_pair, 2, 2, 2);
+    require(found_at(&split_pair, span_of(0, 4), SEARCH_DIRECTION_FORWARD) == 2 &&
+                found_at(&split_pair, span_of(0, 0), SEARCH_DIRECTION_BACKWARD) == 2,
+            "a critical split within a surrogate pair preserves complete UTF16 matches");
+}
+
+static void verify_refusal_priority(void)
+{
+    const char16_t malformed[] = {0xDC00};
+    struct note_search_query empty = {malformed, 1, malformed, 0};
+    struct note_search_span match = span_of(91, 93);
+    size_t total = 91;
+    size_t ordinal = 93;
+    require(note_search_next(&empty, span_of(3, 1), SEARCH_DIRECTION_FORWARD, &match) ==
+                NOTE_SEARCH_BAD_SPAN,
+            "BAD_SPAN precedes NO_TERM and MALFORMED");
+    require(note_search_next(&empty, span_of(0, 0), SEARCH_DIRECTION_BACKWARD, &match) ==
+                    NOTE_SEARCH_NO_TERM &&
+                note_search_count(&empty, 0, &total, &ordinal) == NOTE_SEARCH_NO_TERM,
+            "NO_TERM precedes malformed UTF16 and preserves every output");
+    struct note_search_query too_long = {malformed, 0, malformed, 1};
+    require(note_search_next(&too_long, span_of(0, 0), SEARCH_DIRECTION_FORWARD, &match) ==
+                    NOTE_SEARCH_MALFORMED &&
+                note_search_count(&too_long, 0, &total, &ordinal) == NOTE_SEARCH_MALFORMED,
+            "UTF16 validation precedes the longer-than-text shortcut");
+    require(match.start == 91 && match.end == 93 && total == 91 && ordinal == 93,
+            "combined refusals leave all output sentinels unchanged");
+}
+
+static void verify_extreme_anchors(void)
+{
+    struct note_search_query query = query_of(u"ab ab", u"ab");
+    require(found_at(&query, span_of(SIZE_MAX, SIZE_MAX), SEARCH_DIRECTION_FORWARD) == 0 &&
+                found_at(&query, span_of(SIZE_MAX, SIZE_MAX), SEARCH_DIRECTION_BACKWARD) == 3,
+            "a maximum empty anchor clamps without overflow");
+    require(found_at(&query, span_of(SIZE_MAX - 1, SIZE_MAX), SEARCH_DIRECTION_FORWARD) == 0 &&
+                found_at(&query, span_of(SIZE_MAX - 1, SIZE_MAX), SEARCH_DIRECTION_BACKWARD) == 3,
+            "a maximum nonempty anchor advances safely before clamping");
+    require_count(&query, SIZE_MAX, 2, 2);
+    struct note_search_span match = span_of(91, 93);
+    require(note_search_next(&query, span_of(SIZE_MAX, 0), SEARCH_DIRECTION_FORWARD, &match) ==
+                    NOTE_SEARCH_BAD_SPAN &&
+                match.start == 91 && match.end == 93,
+            "a maximum inverted anchor is refused without touching output");
+}
+
 void run_search_tests(void)
 {
     verify_ascii_case();
@@ -268,4 +539,10 @@ void run_search_tests(void)
     verify_counting();
     verify_surrogates();
     verify_refusals();
+    verify_small_oracle();
+    verify_critical_periods();
+    verify_long_overlap();
+    verify_explicit_units();
+    verify_refusal_priority();
+    verify_extreme_anchors();
 }

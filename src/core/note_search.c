@@ -1,6 +1,19 @@
 #include "note_search.h"
 
 #include "ascii_fold.h"
+#include "note_search_order.h"
+
+/* 呼出中だけの借用と走査位置。公開 owner・語長に比例する領域は持たない。 */
+struct note_search
+{
+    const struct note_search_query *_Nonnull query;
+    size_t split;
+    size_t period;
+    size_t after_shift;
+    size_t at;
+    size_t memory;
+    size_t limit;
+};
 
 constexpr char16_t high_surrogate_first = 0xD800;
 constexpr char16_t high_surrogate_last = 0xDBFF;
@@ -66,11 +79,74 @@ static size_t candidate_limit(const struct note_search_query *_Nonnull query)
     return query->term_length > query->length ? 0 : query->length - query->term_length + 1;
 }
 
-static bool matches_at(const struct note_search_query *_Nonnull query, size_t at)
+static bool precedes(char16_t left, char16_t right, enum note_search_order order)
 {
-    for (size_t index = 0; index < query->term_length; ++index)
+    switch (order)
     {
-        if (ascii_fold_unit(query->text[at + index]) != ascii_fold_unit(query->term[index]))
+    case NOTE_SEARCH_ORDER_NORMAL:
+        return left < right;
+    case NOTE_SEARCH_ORDER_REVERSED:
+        return left > right;
+    }
+    return false;
+}
+
+/* left < right <= m、matched < m-right のときだけ比較する。
+ * left+matched < right+matched < m なので番兵 -1 や範囲外加算は要らない。 */
+static size_t maximal_suffix(const struct note_search_query *_Nonnull query,
+                             enum note_search_order order, size_t *_Nonnull period)
+{
+    size_t left = 0;
+    size_t right = 1;
+    size_t matched = 0;
+    *period = 1;
+    while (matched < query->term_length - right)
+    {
+        char16_t first = ascii_fold_unit(query->term[left + matched]);
+        char16_t second = ascii_fold_unit(query->term[right + matched]);
+        if (first == second && matched + 1 != *period)
+        {
+            matched += 1;
+            continue;
+        }
+        if (first == second)
+        {
+            right += *period;
+            matched = 0;
+            continue;
+        }
+        if (precedes(second, first, order))
+        {
+            right += matched + 1;
+            matched = 0;
+            *period = right - left;
+            continue;
+        }
+        left = right;
+        right += 1;
+        matched = 0;
+        *period = 1;
+    }
+    return left;
+}
+
+static bool same_unit(char16_t left, char16_t right)
+{
+    return ascii_fold_unit(left) == ascii_fold_unit(right);
+}
+
+static bool periodic_prefix(const struct note_search *_Nonnull iterator)
+{
+    size_t length = iterator->query->term_length;
+    /* 奇数長でも数学上の split < m/2 と同じ。整数除算は使わない。 */
+    if (iterator->split >= length - iterator->split)
+    {
+        return false;
+    }
+    for (size_t index = 0; index < iterator->split; ++index)
+    {
+        if (!same_unit(iterator->query->term[index],
+                       iterator->query->term[iterator->period + index]))
         {
             return false;
         }
@@ -78,13 +154,96 @@ static bool matches_at(const struct note_search_query *_Nonnull query, size_t at
     return true;
 }
 
-/* [from, upto) を昇順に見る。 */
-static bool scan_forward(const struct note_search_query *_Nonnull query, size_t from, size_t upto,
-                         size_t *_Nonnull found)
+static struct note_search iterator_of(const struct note_search_query *_Nonnull query)
 {
-    for (size_t at = from; at < upto; ++at)
+    size_t period = 1;
+    size_t split = maximal_suffix(query, NOTE_SEARCH_ORDER_NORMAL, &period);
+    size_t other_period = 1;
+    size_t other_split = maximal_suffix(query, NOTE_SEARCH_ORDER_REVERSED, &other_period);
+    if (other_split > split)
     {
-        if (matches_at(query, at))
+        split = other_split;
+        period = other_period;
+    }
+    struct note_search iterator = {.query = query,
+                                   .split = split,
+                                   .period = period,
+                                   .after_shift = 0,
+                                   .at = 0,
+                                   .memory = 0,
+                                   .limit = candidate_limit(query)};
+    if (periodic_prefix(&iterator))
+    {
+        iterator.after_shift = query->term_length - period;
+    }
+    else
+    {
+        size_t right = query->term_length - split;
+        /* 非周期なら split > 0。両半分が m-1 以下なので +1 は m 以下。 */
+        iterator.period = (split > right ? split : right) + 1;
+    }
+    return iterator;
+}
+
+/* at==limit が終端。差分との比較を先に行い、本文外の位置を加算しない。 */
+static void advance(struct note_search *_Nonnull iterator, size_t shift)
+{
+    size_t remaining = iterator->limit - iterator->at;
+    iterator->at = shift >= remaining ? iterator->limit : iterator->at + shift;
+}
+
+static size_t right_end(const struct note_search *_Nonnull iterator)
+{
+    size_t index = iterator->split > iterator->memory ? iterator->split : iterator->memory;
+    const struct note_search_query *_Nonnull query = iterator->query;
+    while (index < query->term_length &&
+           same_unit(query->text[iterator->at + index], query->term[index]))
+    {
+        index += 1;
+    }
+    return index;
+}
+
+static bool left_matches(const struct note_search *_Nonnull iterator)
+{
+    size_t index = iterator->split;
+    const struct note_search_query *_Nonnull query = iterator->query;
+    while (index > iterator->memory)
+    {
+        if (!same_unit(query->text[iterator->at + index - 1], query->term[index - 1]))
+        {
+            return false;
+        }
+        index -= 1;
+    }
+    return true;
+}
+
+static size_t mismatch_shift(const struct note_search *_Nonnull iterator, size_t index)
+{
+    size_t shift = index - iterator->split + 1;
+    size_t remembered =
+        iterator->memory >= iterator->period ? iterator->memory - iterator->period + 1 : 0;
+    return shift > remembered ? shift : remembered;
+}
+
+/* 一致を返す前に前進し、次の呼出しでも同じ前処理と一致記憶を使う。 */
+static bool next_match(struct note_search *_Nonnull iterator, size_t *_Nonnull found)
+{
+    while (iterator->at < iterator->limit)
+    {
+        size_t index = right_end(iterator);
+        if (index < iterator->query->term_length)
+        {
+            advance(iterator, mismatch_shift(iterator, index));
+            iterator->memory = 0;
+            continue;
+        }
+        size_t at = iterator->at;
+        bool matched = left_matches(iterator);
+        advance(iterator, iterator->period);
+        iterator->memory = iterator->after_shift;
+        if (matched)
         {
             *found = at;
             return true;
@@ -93,19 +252,50 @@ static bool scan_forward(const struct note_search_query *_Nonnull query, size_t 
     return false;
 }
 
-/* [downto, from) を降順に見る。 */
-static bool scan_backward(const struct note_search_query *_Nonnull query, size_t from,
-                          size_t downto, size_t *_Nonnull found)
+static bool pick_forward(struct note_search *_Nonnull iterator, size_t from, size_t *_Nonnull found)
 {
-    for (size_t at = from; at > downto; --at)
+    size_t first = 0;
+    if (!next_match(iterator, &first))
     {
-        if (matches_at(query, at - 1))
+        return false;
+    }
+    *found = first;
+    if (first >= from)
+    {
+        return true;
+    }
+    size_t next = 0;
+    while (next_match(iterator, &next))
+    {
+        if (next >= from)
         {
-            *found = at - 1;
+            *found = next;
             return true;
         }
     }
-    return false;
+    return true;
+}
+
+static bool pick_backward(struct note_search *_Nonnull iterator, size_t from,
+                          size_t *_Nonnull found)
+{
+    size_t chosen = 0;
+    if (!next_match(iterator, &chosen))
+    {
+        return false;
+    }
+    size_t next = 0;
+    while (next_match(iterator, &next))
+    {
+        if (chosen < from && next >= from)
+        {
+            *found = chosen;
+            return true;
+        }
+        chosen = next;
+    }
+    *found = chosen;
+    return true;
 }
 
 /* 前方の探し始め。**一致の開始の次**から見るので、重なった候補も飛ばさない
@@ -116,22 +306,21 @@ static size_t forward_start(struct note_search_span anchor, size_t limit)
     return from < limit ? from : limit;
 }
 
-/* anchor から始めて、端まで行ったら反対の端から続ける（巡回）。候補はちょうど 1 回ずつ見る。 */
+/* 同じ昇順の一致列から、anchor 前後の巡回先だけを選ぶ。 */
 static bool seek(const struct note_search_query *_Nonnull query, struct note_search_span anchor,
                  enum search_direction direction, size_t *_Nonnull found)
 {
-    size_t limit = candidate_limit(query);
+    struct note_search iterator = iterator_of(query);
     switch (direction)
     {
     case SEARCH_DIRECTION_FORWARD:
     {
-        size_t from = forward_start(anchor, limit);
-        return scan_forward(query, from, limit, found) || scan_forward(query, 0, from, found);
+        return pick_forward(&iterator, forward_start(anchor, iterator.limit), found);
     }
     case SEARCH_DIRECTION_BACKWARD:
     {
-        size_t from = anchor.start < limit ? anchor.start : limit;
-        return scan_backward(query, from, 0, found) || scan_backward(query, limit, from, found);
+        size_t from = anchor.start < iterator.limit ? anchor.start : iterator.limit;
+        return pick_backward(&iterator, from, found);
     }
     }
     return false;
@@ -170,15 +359,12 @@ enum note_search_outcome note_search_count(const struct note_search_query *_Nonn
     {
         return rejected;
     }
-    size_t limit = candidate_limit(query);
+    struct note_search iterator = iterator_of(query);
     size_t count = 0;
     size_t rank = 0;
-    for (size_t at = 0; at < limit; ++at)
+    size_t at = 0;
+    while (next_match(&iterator, &at))
     {
-        if (!matches_at(query, at))
-        {
-            continue;
-        }
         count += 1;
         rank = at <= position ? count : rank;
     }

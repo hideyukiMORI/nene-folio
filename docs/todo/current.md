@@ -1,7 +1,8 @@
 # いまの状態 — NeNe Folio
 
-記録日: 2026-10-30。hideの「収載後にいったん停止」指定に従い、継続品質改善は#448の設計・準備までで区切る。
-再開はhideの新しい指示を受けてから。今回のAstra設計・SOL/LUNA分担を次の作業へ自動継承しない。
+記録日: 2026-10-30。06:52 JST頃のhideの依頼で品質改善を再開した。
+この継続作業ではAstraの設計サナが設計・受理、SOL/LUNAの実装サナが調査・実装・検証を分担し、停止指示まで進める。
+今回の明示分担を他案件・次の作業へ自動継承しない。00時台の停止記録は当時の区切りとして保持する。
 最新は[日報](../reports/2026-10-30.md)・[引き継ぎ](../handoffs/2026-10-30.md)、
 10月29日の完成成果は[23件の一覧](../reports/2026-10-29.md#一日の成果一覧2026-10-30の終了整理で確定)。
 
@@ -15,10 +16,15 @@ Debug/tidy・限定matching・測定build・strict OOM成功、File API規約違
 通常exe反映、6593filesの全hash保全、worktree削除まで完了。出力削除拒否は下記へ保持する。
 詳細は[品質記録](../quality/2026-10-29-linear-index-matching.md)、確定原本は`agents/446-linear-index-matching/integration-completion.json`。
 
-[#448](https://github.com/hideyukiMORI/nene-folio/issues/448)は現在ノート内検索の無確保線形化案。
-設計とIssue作成まで済み、未実行のbaseline計画で停止した。製品/test/ADR編集、新configure/build/link/診断は0。
-作業木`D:/NeNeFolio/worktrees/448-linear-note-search`はbase35e1948のcleanな準備状態で保持し、同名outputsは空。
-親の計画受理とhideの再開指示が先。原本と次の手順は[引き継ぎ](../handoffs/2026-10-30.md#次の焦点-448--現在ノート検索)。
+[#448](https://github.com/hideyukiMORI/nene-folio/issues/448)は現在ノート内検索の無確保線形化。
+変更前baselineの固定36callを測り、24callが固定比較上限を超えることを確認・受理した。
+単一Two-Way候補を実装し、独立静読とDebug/tidyの指摘を修正した。対象build/search unit/比較計数が成功し、親が3252snapshotを照合受理した。
+固定36callの最大比較は4128/4604/16416/16892で、全て固定`2N+5m`以内。最終CI・統合・通常反映は未完了。
+作業木`D:/NeNeFolio/worktrees/448-linear-note-search`は文書のみの差分をffしてbase f167cee。
+根拠と限定範囲は[品質記録](../quality/2026-10-30-linear-note-search.md)、次の手順は[引き継ぎ](../handoffs/2026-10-30.md#次の焦点-448--現在ノート検索)。
+
+[#451](https://github.com/hideyukiMORI/nene-folio/issues/451)の左端resizeは子窓のhit遮断を調査し、専用非input desktopのbaseline用build段階。
+[#452](https://github.com/hideyukiMORI/nene-folio/issues/452)の最小化/最大化/復元はデザインリナと狭幅配置を検討中。いずれも製品未編集。
 
 本文/置換の追加静読は新具体的不具合0。置換4Mの生成片/完成本文の差を新規不具合とせず、既存のedit資源上限を維持した。
 背景読込・極狭幅表は未解決で、新しい性能値や実UIの一般保証はない。
