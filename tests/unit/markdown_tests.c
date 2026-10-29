@@ -1306,8 +1306,267 @@ void run_markdown_task_tests(void)
     expect_fragment("- `[x]\ttext`", "\\cf4 [x]\ttext}", "\\u9745?");
 }
 
+static void expect_inline_view(struct markdown_view view, const char *_Nonnull expected,
+                               size_t length)
+{
+    struct text_buffer *out = nullptr;
+    require(text_buffer_create(&out) == TEXT_BUFFER_ACCEPTED, "direct inline output");
+    require(markdown_inline_tokens_render(out, view) == MARKDOWN_RTF_CONVERTED &&
+                text_buffer_finish(out) == TEXT_BUFFER_ACCEPTED &&
+                text_buffer_length(out) == length &&
+                memcmp(text_buffer_bytes(out), expected, length) == 0,
+            "direct inline bytes match expected RTF");
+    text_buffer_destroy(out);
+}
+
+static void expect_inline_text(const char *_Nonnull source, const char *_Nonnull expected)
+{
+    struct markdown_span span = {.bytes = source, .length = strlen(source)};
+    struct markdown_view view = {.spans = &span, .count = 1, .length = span.length};
+    expect_inline_view(view, expected, strlen(expected));
+}
+
+static void append_inline_run(struct text_buffer *_Nonnull buffer, char character, size_t length)
+{
+    for (size_t index = 0; index < length; ++index)
+        text_buffer_append(buffer, &character, 1);
+}
+
+static void verify_inline_backtick_storage(void)
+{
+    struct text_buffer *source = nullptr;
+    struct text_buffer *expected = nullptr;
+    require(text_buffer_create(&source) == TEXT_BUFFER_ACCEPTED &&
+                text_buffer_create(&expected) == TEXT_BUFFER_ACCEPTED,
+            "long backtick buffers");
+    append_inline_run(source, '`', 513);
+    text_buffer_append_text(source, "x");
+    append_inline_run(source, '`', 513);
+    text_buffer_append_text(source, "a");
+    append_inline_run(source, '`', 514);
+    text_buffer_append_text(source, "b");
+    text_buffer_append_text(expected, "{\\f1\\fs20\\cf4 x}a");
+    append_inline_run(expected, '`', 514);
+    text_buffer_append_text(expected, "b");
+    require(text_buffer_finish(source) == TEXT_BUFFER_ACCEPTED &&
+                text_buffer_finish(expected) == TEXT_BUFFER_ACCEPTED,
+            "long backtick bytes complete");
+    struct markdown_span span = {.bytes = text_buffer_bytes(source),
+                                 .length = text_buffer_length(source)};
+    struct markdown_view view = {.spans = &span, .count = 1, .length = span.length};
+    expect_inline_view(view, text_buffer_bytes(expected), text_buffer_length(expected));
+    text_buffer_destroy(expected);
+    text_buffer_destroy(source);
+}
+
+static void verify_inline_delimiter_storage(void)
+{
+    struct text_buffer *source = nullptr;
+    require(text_buffer_create(&source) == TEXT_BUFFER_ACCEPTED, "long delimiter source");
+    text_buffer_append_text(source, "a");
+    append_inline_run(source, '*', 1025);
+    require(text_buffer_finish(source) == TEXT_BUFFER_ACCEPTED, "long delimiter bytes complete");
+    struct markdown_span span = {.bytes = text_buffer_bytes(source),
+                                 .length = text_buffer_length(source)};
+    struct markdown_view view = {.spans = &span, .count = 1, .length = span.length};
+    expect_inline_view(view, span.bytes, span.length);
+    text_buffer_destroy(source);
+}
+
+static void verify_inline_coherent_storage(void)
+{
+    struct text_buffer *source = nullptr;
+    struct text_buffer *expected = nullptr;
+    require(text_buffer_create(&source) == TEXT_BUFFER_ACCEPTED &&
+                text_buffer_create(&expected) == TEXT_BUFFER_ACCEPTED,
+            "nested inline buffers");
+    for (size_t index = 0; index < 32; ++index)
+    {
+        text_buffer_append_text(source, "*a ");
+        text_buffer_append_text(expected, "{\\i a ");
+    }
+    text_buffer_append_text(source, "z");
+    text_buffer_append_text(expected, "z");
+    for (size_t index = 0; index < 32; ++index)
+    {
+        text_buffer_append_text(source, " a*");
+        text_buffer_append_text(expected, " a}");
+    }
+    require(text_buffer_finish(source) == TEXT_BUFFER_ACCEPTED &&
+                text_buffer_finish(expected) == TEXT_BUFFER_ACCEPTED,
+            "nested inline bytes complete");
+    expect_inline_text(text_buffer_bytes(source), text_buffer_bytes(expected));
+    text_buffer_destroy(expected);
+    text_buffer_destroy(source);
+}
+
+static void verify_inline_literal_boundaries(void)
+{
+    expect_inline_text("ab![cd](u)ef", "ab![cd](u)ef");
+    expect_inline_text("ab!/[cd](u)ef", "ab!/{\\cf4\\ul cd\\ul0}ef");
+    expect_inline_text("日本!/{x}\\a", "日本!/\\{x\\}\\\\a");
+    expect_inline_text("a\tb\rc", "a\tbc");
+    expect_inline_text("a \nb", "a b");
+    expect_inline_text("a  \nb", "a\\line b");
+    expect_inline_text("a\\\nb", "a\\line b");
+    expect_inline_text("a\\\\\nb", "a\\\\ b");
+    expect_inline_text("\\`literal", "`literal");
+}
+
+static void verify_inline_borrowed_storage(void)
+{
+    const struct markdown_span spans[] = {{.bytes = "a  ", .length = 3},
+                                          {.bytes = "", .length = 0, .offset = 4},
+                                          {.bytes = "b", .length = 1, .offset = 5}};
+    struct markdown_view view = {.spans = spans, .count = 3, .length = 6};
+    expect_inline_view(view, "a\\line  b", strlen("a\\line  b"));
+    struct markdown_span cell = {.bytes = "![a\\|b](u)", .length = strlen("![a\\|b](u)")};
+    view = (struct markdown_view){
+        .spans = &cell, .count = 1, .length = cell.length, .table_cell = true};
+    expect_inline_view(view, "![a|b](u)", strlen("![a|b](u)"));
+    cell = (struct markdown_span){.bytes = "`a\\|b`", .length = strlen("`a\\|b`")};
+    view.length = cell.length;
+    expect_inline_view(view, "{\\f1\\fs20\\cf4 a|b}", strlen("{\\f1\\fs20\\cf4 a|b}"));
+}
+
+static void verify_inline_storage_guards(void)
+{
+    struct text_buffer *out = nullptr;
+    require(text_buffer_create(&out) == TEXT_BUFFER_ACCEPTED, "inline guard output");
+    text_buffer_append_text(out, "kept");
+    struct markdown_span span = {.bytes = "", .length = 0};
+    struct markdown_view view = {.spans = &span, .count = 0, .length = 0};
+    allocation_probe_fail_at(0);
+    require(markdown_inline_tokens_render(out, view) == MARKDOWN_RTF_CONVERTED,
+            "empty view does not require token storage");
+    view.count = 1;
+    span.length = view.length = SIZE_MAX;
+    require(markdown_inline_tokens_render(out, view) == MARKDOWN_RTF_OUT_OF_MEMORY,
+            "SIZE_MAX guard precedes borrowed source scanning");
+    span.length = view.length = SIZE_MAX - 1;
+    require(markdown_inline_tokens_render(out, view) == MARKDOWN_RTF_OUT_OF_MEMORY,
+            "existing allocation length ceiling precedes source scanning");
+    span.length = 0;
+    span.offset = 1;
+    view.length = 0;
+    require(markdown_inline_tokens_render(out, view) == MARKDOWN_RTF_INVALID_INPUT,
+            "invalid offsets remain invalid input before planning");
+    require(allocation_probe_calls() == 0 && text_buffer_length(out) == 4 &&
+                same_text(text_buffer_bytes(out), "kept"),
+            "empty and rejected views allocate nothing or change existing output");
+    allocation_probe_fail_at(0);
+    text_buffer_destroy(out);
+}
+
+static bool verify_inline_literal_storage(size_t length, const char *_Nonnull label)
+{
+    struct text_buffer *source = nullptr;
+    struct text_buffer *out = nullptr;
+    require(text_buffer_create(&source) == TEXT_BUFFER_ACCEPTED &&
+                text_buffer_create(&out) == TEXT_BUFFER_ACCEPTED,
+            "inline literal storage buffers");
+    for (size_t index = 0; index < length; ++index)
+        text_buffer_append(source, "a", 1);
+    require(text_buffer_finish(source) == TEXT_BUFFER_ACCEPTED, "inline literal source complete");
+    struct markdown_span span = {.bytes = text_buffer_bytes(source), .length = length};
+    struct markdown_view view = {.spans = &span, .count = 1, .length = length};
+    allocation_probe_fail_at(0);
+    enum markdown_rtf_outcome rendered = markdown_inline_tokens_render(out, view);
+    size_t calls = allocation_probe_calls();
+    size_t maximum = allocation_probe_calloc_max_bytes();
+    allocation_probe_fail_at(0);
+    constexpr size_t limit = 4096;
+    bool observed = calls != 0;
+    printf(
+        "INLINE_STORAGE,%s,source_bytes=%zu,calloc_max_bytes=%zu,limit=%zu,calls=%zu,active=%d\n",
+        label, length, maximum, limit, calls, (int)observed);
+    require(rendered == MARKDOWN_RTF_CONVERTED && text_buffer_finish(out) == TEXT_BUFFER_ACCEPTED &&
+                text_buffer_length(out) == length &&
+                memcmp(text_buffer_bytes(out), text_buffer_bytes(source), length) == 0,
+            "direct literal RTF is exactly the unchanged source bytes");
+    text_buffer_destroy(out);
+    text_buffer_destroy(source);
+    if (observed)
+        require(maximum != 0 && maximum <= limit,
+                "literal inline metadata calloc request is observed and stays within 4096 bytes");
+    return observed;
+}
+
+static void verify_calloc_observation_overflow(void)
+{
+    allocation_probe_fail_at(1);
+    char *rejected = folio_probe_calloc(SIZE_MAX, 2);
+    size_t maximum = allocation_probe_calloc_max_bytes();
+    allocation_probe_fail_at(0);
+    require(rejected == nullptr && maximum == SIZE_MAX,
+            "calloc observation saturates without sending an overflowing request to the CRT");
+    require(allocation_probe_calloc_max_bytes() == 0, "calloc maximum resets with fail_at");
+}
+
+bool run_markdown_inline_storage_tests(void)
+{
+    bool short_observed = verify_inline_literal_storage(7, "short");
+    bool long_observed = verify_inline_literal_storage(64 * 1024, "long");
+    verify_calloc_observation_overflow();
+    verify_inline_backtick_storage();
+    verify_inline_delimiter_storage();
+    verify_inline_coherent_storage();
+    verify_inline_literal_boundaries();
+    verify_inline_borrowed_storage();
+    verify_inline_storage_guards();
+    if (!short_observed || !long_observed)
+        printf("Inline storage allocation observation inactive in canonical build\n");
+    return short_observed && long_observed;
+}
+
+static size_t verify_inline_metadata_allocation(void)
+{
+    const char *source = "literal **bold** `code` [label](url)";
+    struct markdown_span span = {.bytes = source, .length = strlen(source)};
+    struct markdown_view view = {.spans = &span, .count = 1, .length = span.length};
+    size_t rejected = 0;
+    for (size_t fail = 1; fail <= 2; ++fail)
+    {
+        struct text_buffer *out = nullptr;
+        require(text_buffer_create(&out) == TEXT_BUFFER_ACCEPTED, "metadata OOM output");
+        text_buffer_append_text(out, "kept");
+        allocation_probe_fail_at(fail);
+        enum markdown_rtf_outcome result = markdown_inline_tokens_render(out, view);
+        size_t calls = allocation_probe_calls();
+        allocation_probe_fail_at(0);
+        if (calls == 0)
+        {
+            require(result == MARKDOWN_RTF_CONVERTED &&
+                        text_buffer_finish(out) == TEXT_BUFFER_ACCEPTED,
+                    "unhooked direct render completes");
+            text_buffer_destroy(out);
+            return 0;
+        }
+        require(result == MARKDOWN_RTF_OUT_OF_MEMORY && text_buffer_length(out) == 4 &&
+                    same_text(text_buffer_bytes(out), "kept"),
+                "each inline metadata allocation failure keeps existing buffer bytes");
+        text_buffer_destroy(out);
+        ++rejected;
+    }
+    return rejected;
+}
+
+size_t run_markdown_inline_storage_allocation_tests(void)
+{
+    size_t metadata = verify_inline_metadata_allocation();
+    size_t factory =
+        verify_render_allocation("literal **bold** `code` [label](url) ![**alt**](url)\nnext");
+    printf("INLINE_STORAGE_OOM,metadata_rejected=%zu,factory_rejected=%zu\n", metadata, factory);
+    if (metadata != 0 || factory != 0)
+        require(metadata == 2 && factory != 0,
+                "inline metadata and public factory OOM are both injected");
+    return metadata + factory;
+}
+
 void run_markdown_tests(void)
 {
+    (void)run_markdown_inline_storage_tests();
+    (void)run_markdown_inline_storage_allocation_tests();
     verify_line_endings();
     verify_line_bounds();
     run_markdown_source_state_tests();

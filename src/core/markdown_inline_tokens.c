@@ -47,12 +47,60 @@ static char at(const struct markdown_inline_tokens *_Nonnull parser, size_t inde
     return markdown_view_at(parser->view, index);
 }
 
-static size_t run(const struct markdown_inline_tokens *_Nonnull parser, size_t index)
+static size_t run(struct markdown_view view, size_t index)
 {
     size_t end = index + 1;
-    while (end < parser->view.length && at(parser, end) == at(parser, index))
+    while (end < view.length && markdown_view_at(view, end) == markdown_view_at(view, index))
         ++end;
     return end - index;
+}
+
+static bool delimiter_character(char character)
+{
+    return character == '*' || character == '_' || character == '~';
+}
+
+static bool run_character(char character)
+{
+    return delimiter_character(character) || character == '`' || character == ' ';
+}
+
+static bool literal_boundary(char character)
+{
+    return run_character(character) || character == '\\' || character == '[' || character == ']' ||
+           character == '(' || character == ')' || character == '\n';
+}
+
+/* Both counting and emission consume exactly this borrowed lexical extent. */
+static size_t extent(struct markdown_view view, size_t start)
+{
+    char character = markdown_view_at(view, start);
+    if (character == '\\' && punctuation(markdown_view_at(view, start + 1)))
+        return markdown_view_at(view, start + 1) == '`' ? 1 : 2;
+    if (run_character(character))
+        return run(view, start);
+    if (literal_boundary(character))
+        return 1;
+    size_t end = start + 1;
+    while (end < view.length && !literal_boundary(markdown_view_at(view, end)))
+        ++end;
+    return end - start;
+}
+
+static size_t token_count(struct markdown_view view, size_t *_Nonnull longest_backtick)
+{
+    size_t count = 0;
+    *longest_backtick = 0;
+    for (size_t start = 0; start < view.length;)
+    {
+        size_t length = extent(view, start);
+        char character = markdown_view_at(view, start);
+        count += delimiter_character(character) ? length / 2 + length % 2 : 1;
+        if (character == '`' && length > *longest_backtick)
+            *longest_backtick = length;
+        start += length;
+    }
+    return count;
 }
 
 static void add_token(struct markdown_inline_tokens *_Nonnull parser, size_t start, size_t length)
@@ -114,22 +162,18 @@ static bool escaped_at(struct markdown_inline_tokens *_Nonnull parser, size_t in
 static size_t tokenize_at(struct markdown_inline_tokens *_Nonnull parser, size_t start)
 {
     char character = at(parser, start);
-    size_t length = 1;
+    size_t length = extent(parser->view, start);
     if (character == '\\' && punctuation(at(parser, start + 1)))
     {
-        size_t escaped_length = at(parser, start + 1) == '`' ? 1 : 2;
-        add_token(parser, start, escaped_length);
+        add_token(parser, start, length);
         ((&parser->tokens[parser->count - 1]))->kind = MARKDOWN_INLINE_ESCAPE;
-        return escaped_length;
+        return length;
     }
-    if (character == '*' || character == '_' || character == '~')
+    if (delimiter_character(character))
     {
-        length = run(parser, start);
         add_delimiter_run(parser, start, length);
         return length;
     }
-    if (character == '`' || character == ' ')
-        length = run(parser, start);
     add_token(parser, start, length);
     ((&parser->tokens[parser->count - 1]))->opens = !escaped_at(parser, start);
     return length;
@@ -558,8 +602,15 @@ enum markdown_rtf_outcome markdown_inline_tokens_render(struct text_buffer *_Non
         return MARKDOWN_RTF_OUT_OF_MEMORY;
     if (view.length > SIZE_MAX / sizeof(struct markdown_inline_token) - 1)
         return MARKDOWN_RTF_OUT_OF_MEMORY;
-    struct markdown_inline_token *tokens = calloc(view.length + 1, sizeof *tokens);
-    size_t *next = calloc(view.length + 1, sizeof *next);
+    size_t longest_backtick = 0;
+    size_t count = token_count(view, &longest_backtick);
+    size_t scratch = longest_backtick + 1;
+    if (scratch < count)
+        scratch = count;
+    /* Each extent emits at most its byte length: count <= N, scratch <= N + 1.
+     * The unchanged pre-scan length guard bounds both allocations. */
+    struct markdown_inline_token *_Nullable tokens = calloc(count, sizeof *tokens);
+    size_t *_Nullable next = calloc(scratch, sizeof *next);
     if (tokens == nullptr || next == nullptr)
     {
         markdown_inline_tokens_destroy(tokens, next);
