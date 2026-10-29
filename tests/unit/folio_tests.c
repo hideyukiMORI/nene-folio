@@ -270,6 +270,24 @@ static bool run_menu_target_tests(const char *_Nonnull argument)
 
 static bool run_surface_target_tests(const char *_Nonnull argument)
 {
+    if (strcmp(argument, "--table-start-setext") == 0)
+    {
+        run_markdown_table_setext_tests();
+        printf("Markdown table-start setext test passed\n");
+        return true;
+    }
+    if (strcmp(argument, "--table-start-bare") == 0)
+    {
+        run_markdown_table_bare_tests();
+        printf("Markdown table-start bare-header test passed\n");
+        return true;
+    }
+    if (strcmp(argument, "--table-start-priority") == 0)
+    {
+        run_markdown_table_start_tests();
+        printf("Markdown table-start priority and container tests passed\n");
+        return true;
+    }
     if (strcmp(argument, "--markdown-links") == 0)
     {
         run_markdown_link_tests();

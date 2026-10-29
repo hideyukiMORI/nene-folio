@@ -117,11 +117,12 @@ bool markdown_table_starts(struct markdown_line line, struct markdown_line delim
 {
     if (!markdown_line_valid(line) || !markdown_line_valid(delimiter))
         return false;
-    for (size_t index = line.content; index < line.length; ++index)
-        if (line.bytes[index] == '|')
-            return markdown_table_columns(line) == markdown_table_columns(delimiter) &&
-                   markdown_table_delimiter(delimiter);
-    return false;
+    if (markdown_line_blank(line) || markdown_line_heading(line) != 0 ||
+        markdown_line_thematic(line) || markdown_line_fence(line) != 0 ||
+        markdown_line_setext(delimiter) != 0)
+        return false;
+    return markdown_table_columns(line) == markdown_table_columns(delimiter) &&
+           markdown_table_delimiter(delimiter);
 }
 
 bool markdown_table_native(size_t columns, size_t indent_twips)

@@ -873,8 +873,103 @@ static void verify_new_inline(void)
     expect_fragment("```\na\n``` trailing\nb\n```", "``` trailing\\par\n", "\\cf1 b");
 }
 
+void run_markdown_table_setext_tests(void)
+{
+    expect_body("a\\|b\n---", "\\pard\\sb200\\sa80\\b\\cf2\\fs34 a|b\\b0\\cf1\\fs22\\par\n");
+}
+
+void run_markdown_table_bare_tests(void)
+{
+    expect_fragment("head\n|---|", "\\trowd", "\\cf1 head |---|");
+}
+
+static void verify_table_start_queries(void)
+{
+    struct markdown_line delimiter = markdown_line_read("|---|", 5, 0);
+    static const char *_Nonnull const rejected[] = {"", "  ", "# title|", "***", "~~~lang|"};
+    for (size_t index = 0; index < sizeof rejected / sizeof rejected[0]; ++index)
+        require(!markdown_table_starts(
+                    markdown_line_read(rejected[index], strlen(rejected[index]), 0), delimiter),
+                "blank, heading, thematic and fence cannot start a table");
+    struct markdown_line header_line = markdown_line_read("head", 4, 0);
+    require(markdown_table_starts(header_line, delimiter), "one-column header needs no pipe");
+    delimiter = markdown_line_read(":---:", 5, 0);
+    require(markdown_table_starts(header_line, delimiter), "colon delimiter needs no pipe");
+    delimiter = markdown_line_read("---", 3, 0);
+    require(!markdown_table_starts(markdown_line_read("a\\|b", 4, 0), delimiter) &&
+                !markdown_table_starts(markdown_line_read("|head|", 6, 0), delimiter),
+            "setext delimiter wins independently of header pipe spelling");
+}
+
+static void verify_table_start_headings(void)
+{
+    run_markdown_table_setext_tests();
+    expect_body("|head|\n---", "\\pard\\sb200\\sa80\\b\\cf2\\fs34 |head|\\b0\\cf1\\fs22\\par\n");
+    expect_body("head\n--", "\\pard\\sb200\\sa80\\b\\cf2\\fs34 head\\b0\\cf1\\fs22\\par\n");
+    expect_body("head\n-", "\\pard\\sb200\\sa80\\b\\cf2\\fs34 head\\b0\\cf1\\fs22\\par\n");
+    expect_body("head\n===", "\\pard\\sb200\\sa80\\b\\cf2\\fs44 head\\b0\\cf1\\fs22\\par\n");
+    expect_body("before\n|head|\n---",
+                "\\pard\\sb200\\sa80\\b\\cf2\\fs34 before |head|\\b0\\cf1\\fs22\\par\n");
+    expect_body("before\n---\n|---|",
+                "\\pard\\sb200\\sa80\\b\\cf2\\fs34 before\\b0\\cf1\\fs22\\par\n"
+                "\\pard\\sa80\\sl240\\slmult1\\cf1 |---|\\par\n");
+    expect_body("before\n===\n|---|",
+                "\\pard\\sb200\\sa80\\b\\cf2\\fs44 before\\b0\\cf1\\fs22\\par\n"
+                "\\pard\\sa80\\sl240\\slmult1\\cf1 |---|\\par\n");
+    expect_fragment("===\n|---|", "{\\b ===}\\cell", "\\fs44");
+}
+
+static void verify_table_start_blocks(void)
+{
+    expect_body("# title|\n|---|", "\\pard\\sb200\\sa80\\b\\cf2\\fs44 title|\\b0\\cf1\\fs22\\par\n"
+                                   "\\pard\\sa80\\sl240\\slmult1\\cf1 |---|\\par\n");
+    expect_body("~~~lang|\n|---|\n~~~\ntail",
+                "{\\f1\\fs20\\cf5\\highlight6\\pard\\li180\\ri180\\sb120\\sa0\\sl240\\slmult1 "
+                "|---|\\sa120\\par\n}\\pard\\sa80\\sl240\\slmult1\\cf1 tail\\par\n");
+    expect_body("***\n|---|", "{\\pard\\sb0\\sa0\\sl-20\\slmult0\\fs2\\highlight3\\par}\n"
+                              "\\pard\\sa80\\sb120\\sl240\\slmult1\\cf1 |---|\\par\n");
+    expect_body("\n|---|", "\\pard\\sa80\\sl240\\slmult1\\cf1 |---|\\par\n");
+}
+
+static void verify_table_start_containers(void)
+{
+    expect_body("> a\\|b\n> ---",
+                "\\pard\\sb200\\sa80\\b\\cf2\\fs34\\li480 a|b\\b0\\cf1\\fs22\\par\n");
+    expect_body("- a\\|b\n  ---",
+                "\\pard\\sb0\\sa80\\b\\cf2\\fs34\\li440\\fi-220\\tx440 "
+                "{\\f0\\fs22\\cf1\\b0\\highlight0 \\bullet\\tab }a|b\\b0\\cf1\\fs22\\par\n");
+    expect_body("> quote\nlazy\\|text\n---",
+                "\\pard\\li480\\sa80\\sl240\\slmult1\\cf3 quote lazy|text\\cf1\\par\n"
+                "{\\pard\\sb0\\sa0\\sl-20\\slmult0\\fs2\\highlight3\\par}\n");
+    expect_body("> a\n:---:", "\\pard\\li480\\sa80\\sl240\\slmult1\\cf3 a :---:\\cf1\\par\n");
+    expect_fragment("> head\n> |---|\n> cell", "\\trleft480", "\\cf3 head");
+    expect_fragment("- head\n  |---|\n  cell", "\\trleft440", "{\\b - head}");
+    expect_fragment("> quote\nhead\n|---|", "\\trleft0", "\\trleft480");
+}
+
+void run_markdown_table_start_tests(void)
+{
+    verify_table_start_queries();
+    verify_table_start_headings();
+    verify_table_start_blocks();
+    verify_table_start_containers();
+    run_markdown_table_bare_tests();
+    expect_fragment("head\n:---:", "\\qc {\\b head}\\cell", "\\cf1 head :---:");
+    expect_fragment("a\\|b\n|---|", "{\\b a|b}\\cell", "\\\\|");
+    expect_fragment("a"
+                    "\\\\"
+                    "\\|"
+                    "b\n|---|",
+                    "{\\b a\\\\|b}\\cell", "\\cellx4500");
+    expect_fragment("a\\\\|b\n--- | ---", "{\\b a\\\\}\\cell", "a\\\\|b");
+    expect_fragment("A | B\n--- | ---", "{\\b B}\\cell", "A | B");
+    expect_body("A | B\n:---:", "\\pard\\sa80\\sl240\\slmult1\\cf1 A | B :---:\\par\n");
+    expect_body("head\n|::|", "\\pard\\sa80\\sl240\\slmult1\\cf1 head |::|\\par\n");
+}
+
 static void verify_tables(void)
 {
+    run_markdown_table_start_tests();
     expect_fragment("A | B\n:--- | ---:\nx | y", "\\trowd", ":---");
     expect_fragment("| A | B |\n| :--: | -- |\n| x | y |", "\\qc {\\b A}", "| A");
     expect_fragment("A | B\n--- | ---\nx", "{x}\\cell ", "\\cf1 x");
