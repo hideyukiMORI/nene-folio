@@ -773,6 +773,24 @@ static void verify_new_blocks(void)
     expect_fragment("- [x] done", "\\u9745?\\tab }done", "[x]");
 }
 
+void run_markdown_link_escape_tests(void)
+{
+    expect_fragment("*before [x](foo*) after", "*before {\\cf4\\ul x\\ul0} after", "\\i ");
+    expect_fragment("*before [x](foo) after*", "{\\i before {\\cf4\\ul x\\ul0} after}", "foo");
+    expect_fragment("![alt](url)", "![alt](url)", "\\ul");
+    expect_body("\\![label](url)",
+                "\\pard\\sa80\\sl240\\slmult1\\cf1 !{\\cf4\\ul label\\ul0}\\par\n");
+    expect_body("\\\\![alt](url)", "\\pard\\sa80\\sl240\\slmult1\\cf1 \\\\![alt](url)\\par\n");
+    expect_body("\\\\\\![label](url)",
+                "\\pard\\sa80\\sl240\\slmult1\\cf1 \\\\!{\\cf4\\ul label\\ul0}\\par\n");
+    expect_body("! [label](url)",
+                "\\pard\\sa80\\sl240\\slmult1\\cf1 ! {\\cf4\\ul label\\ul0}\\par\n");
+    expect_body("`\\![label](url)`",
+                "\\pard\\sa80\\sl240\\slmult1\\cf1 {\\f1\\fs20\\cf4 \\\\![label](url)}\\par\n");
+    expect_body("\\![label](url", "\\pard\\sa80\\sl240\\slmult1\\cf1 ![label](url\\par\n");
+    expect_body("\\![label(url)", "\\pard\\sa80\\sl240\\slmult1\\cf1 ![label(url)\\par\n");
+}
+
 static void verify_new_inline(void)
 {
     expect_fragment("*a **b* c**", "*a {\\b b* c}", "\\i ");
@@ -786,9 +804,7 @@ static void verify_new_inline(void)
     expect_fragment("\\`literal", "`literal", "\\f1");
     expect_fragment("``a\nb``", "\\cf4 a b}", "\\line");
     expect_fragment("# **bold** tail", "{\\b bold} tail", "\\b0  tail");
-    expect_fragment("*before [x](foo*) after", "*before {\\cf4\\ul x\\ul0} after", "\\i ");
-    expect_fragment("*before [x](foo) after*", "{\\i before {\\cf4\\ul x\\ul0} after}", "foo");
-    expect_fragment("![alt](url)", "![alt](url)", "\\ul");
+    run_markdown_link_escape_tests();
     expect_fragment("\\~~literal\\~~", "~~literal~~", "\\strike");
     expect_fragment("~~~ lang\nraw\n```\n~~~~", "raw\\par\n", "lang");
     expect_fragment("````\na\n```\nb\n````", "```\\par\n", "\\cf1 b");

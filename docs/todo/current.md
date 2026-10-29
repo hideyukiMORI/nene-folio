@@ -3,9 +3,17 @@
 記録日: 2026-10-29。hideの継続品質改善依頼により、設計Astra・実装SOL/LUNAの分担で調査と修正を進める。
 この分担は今回の作業に適用し、将来の再開では最新のhide指示・実Issue/PR・checkoutを照合する。
 経緯は[日報](../reports/2026-10-29.md)、再開情報は[引き継ぎ](../handoffs/2026-10-29.md)。
-文書整理#414自身の最終CI・統合・作業木整理は、実PRと`D:/NeNeFolio/agents/414-quality-status/completion.json`を照合する。
+文書整理#414 / PR #415は最終head `1726364`のCI `40799073589`成功後、main `815afde`へ統合・作業木整理済み。
+文書のみの変更で、通常exeの再buildは不要。確定値は`D:/NeNeFolio/agents/414-quality-status/completion.json`。
 
 ## 品質改善の現在位置
+
+エスケープした画像印の直後の通常link [#416](https://github.com/hideyukiMORI/nene-folio/issues/416)は、
+既存のescape判定を画像抑止条件へ加えた完成候補。旧sourceの限定red exit1、修正後の対象build/tidy・unit exit0。
+backslash偶奇、通常link、code、未閉じlinkを確認し、main `815afde`へのrebase後も4入力のhashが不変だった。
+[対象記録](../quality/2026-10-29-escaped-image-link.md)。最終head必須CI・統合・通常反映・出力保全の確定値は
+実PRと`D:/NeNeFolio/agents/416-escaped-image-link/integration-completion.json`を照合する。
+文書検査が生成したpycの削除は自動承認レビューに拒否されたため、このworktreeは削除せず保持する。
 
 今回の製品修正#402/#404/#405/#407/#410/#411は、各最終headの必須CI成功後にmainへ統合し、通常exeへ反映済み。
 最新の製品sourceは`bb6dc01`、通常反映は10:07:08 JST、版0.3.0.0。更新後は起動していない。
@@ -64,11 +72,13 @@ portable版はexe隣の`data`を既定とし、両方とも設定から「ノー
 - 大量ノートの初回検索には同期処理と準備待ちが残る。[検索品質記録](../quality/2026-10-25-first-search-responsiveness.md)を参照する。
 - 専用desktopの合成入力/描画と、物理IME・実reader聴取・DWM実画面呈示を区別する。
 - 署名・インストーラ・Store・自動更新は未実装/対象外。日付付き事実は[日報](../reports/2026-10-27.md)と[引き継ぎ](../handoffs/2026-10-27.md)。
-- 下記の旧削除拒否済み作業物は再試行しない。
+- 下記の削除拒否済み作業物は再試行しない。
 
 ## 保持中の旧作業物
 
-下記の28箇所は自動承認レビューが削除を拒否したため未削除。再試行や別手段での削除をしない。
+既存28箇所と、拒否されたpycを含む#416作業木は保持する。再試行や別手段での削除をしない。
+
+- #416: `D:/NeNeFolio/worktrees/416-escaped-image-link`。内部の`eng/__pycache__`と`conformance.cpython-312.pyc`の削除が`blocked by policy`で拒否された。追加理由なし。含む作業木の削除も行わない。出力領域の統合後保全・整理は同taskの`integration-completion.json`を照合する。
 
 - #410/#411と境界診断: `D:/NeNeFolio/worktrees/`と`D:/NeNeFolio/outputs/`それぞれの`410-table-container-indent`、`411-replacement-size`、および`D:/NeNeFolio/outputs/table-indent-boundary-20261029`（5箇所）。統合・通常反映・420ファイルのarchive全hash照合・未保存/ignored/link/稼働参照監査後、削除要求全体が実行前`blocked by policy`で拒否された。追加理由なし。
 - #404/#405/#407: `D:/NeNeFolio/worktrees/`と`D:/NeNeFolio/outputs/`それぞれの`404-markdown-containers`、`405-equal-table-columns`、`407-nullable-allocation`（6箇所）。統合・通常反映・archive全hash照合・未保存/ignored/link/稼働参照監査後、削除要求全体が実行前`blocked by policy`で拒否された。追加理由なし。
