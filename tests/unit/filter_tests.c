@@ -601,7 +601,7 @@ static void verify_corpus_rekey(void)
     note_corpus_destroy(corpus);
 }
 
-void run_filter_tests(void)
+void run_index_filter_tests(void)
 {
     verify_folding();
     verify_sources();
@@ -613,8 +613,13 @@ void run_filter_tests(void)
     verify_match_spans();
     verify_order();
     verify_layout();
-    verify_corpus();
     verify_removed_filter();
+}
+
+void run_filter_tests(void)
+{
+    run_index_filter_tests();
+    verify_corpus();
     verify_removed_corpus();
     verify_corpus_insertion_order();
     verify_corpus_rekey();

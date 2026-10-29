@@ -3,6 +3,7 @@
 #include "ascii_fold.h"
 #include "utf8_text.h"
 
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -163,6 +164,10 @@ enum index_filter_outcome index_filter_create(const struct index_filter_query *_
     if (!well_formed(query->term, query->term_length))
     {
         return INDEX_FILTER_MALFORMED;
+    }
+    if (query->count >= SIZE_MAX / sizeof(size_t))
+    {
+        return INDEX_FILTER_OUT_OF_MEMORY;
     }
     size_t steps[byte_values];
     prepare_steps(query, steps);

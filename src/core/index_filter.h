@@ -22,7 +22,9 @@ index_filter_removed(const struct index_filter *_Nonnull filter, struct note_ref
                      struct index_filter *_Nullable *_Nonnull out);
 
 /* 語が空なら NO_TERM、整形式の UTF-8 でなければ MALFORMED で、どちらも out は触らない
- * （呼び出し側は前の絞り込みを保つ）。一致が 0 件でも集合は作る（索引が空になる）。 */
+ * （呼び出し側は前の絞り込みを保つ）。この順の語検証後、終端用1要素を含むsize_t配列の
+ * byte数を表現できないcountは、確保・entry参照前にOUT_OF_MEMORYで拒否し、outを触らない。
+ * 一致が 0 件でも集合は作る（索引が空になる）。 */
 [[nodiscard]] enum index_filter_outcome
 index_filter_create(const struct index_filter_query *_Nonnull query,
                     struct index_filter *_Nullable *_Nonnull out);
