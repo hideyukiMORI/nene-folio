@@ -227,7 +227,7 @@ static void pair_links(struct markdown_inline_tokens *_Nonnull parser)
         ((&parser->tokens[close]))->kind = MARKDOWN_INLINE_LINK;
         ((&parser->tokens[close]))->opens = false;
         ((&parser->tokens[close]))->after = end + 1;
-        index = close;
+        index = end;
     }
 }
 

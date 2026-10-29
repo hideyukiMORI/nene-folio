@@ -49,7 +49,7 @@ void run_allocation_tests(void);
 void run_nullable_allocation_tests(void);
 void run_replace_preview_allocation_tests(void);
 void run_markdown_tests(void);
-void run_markdown_link_escape_tests(void);
+void run_markdown_link_tests(void);
 void run_markdown_table_indent_tests(void);
 [[nodiscard]] size_t run_markdown_table_allocation_tests(void);
 void run_markdown_source_state_tests(void);
