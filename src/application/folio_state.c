@@ -985,7 +985,16 @@ enum folio_state_outcome folio_state_scroll_drawer(struct folio_state *_Nonnull 
     }
     int limit = drawer_layout_scroll_limit(layout);
     drawer_layout_destroy(layout);
-    state->scroll = clamped(clamped(state->scroll, limit) + delta, limit);
+    int effective = clamped(state->scroll, limit);
+    if (delta < -effective)
+    {
+        delta = -effective;
+    }
+    if (delta > limit - effective)
+    {
+        delta = limit - effective;
+    }
+    state->scroll = effective + delta;
     return FOLIO_STATE_READY;
 }
 

@@ -19,6 +19,7 @@
 #include "ui_font.h"
 #include "unit_tests.h"
 
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -884,6 +885,32 @@ static void verify_scroll_rounding(struct folio_state *_Nonnull state)
             "a large negative delta lands at the top");
 }
 
+/* int 全域の差分でも、有効量から安全に両端へ飽和する。 */
+static void verify_scroll_delta_bounds(struct folio_state *_Nonnull state)
+{
+    require(folio_state_scroll_drawer(state, scroll_metrics, 15) == FOLIO_STATE_READY &&
+                scrolled_top(state) == -15,
+            "an extreme delta starts at a positive effective amount");
+    require(folio_state_scroll_drawer(state, scroll_metrics, INT_MAX) == FOLIO_STATE_READY &&
+                scrolled_top(state) == -40,
+            "INT_MAX saturates at the reach without overflowing the sum");
+    require(folio_state_scroll_drawer(state, scroll_metrics, INT_MIN) == FOLIO_STATE_READY &&
+                scrolled_top(state) == 0,
+            "INT_MIN saturates at the top without negating the delta");
+    require(folio_state_scroll_drawer(state, scroll_metrics, 40) == FOLIO_STATE_READY &&
+                scrolled_top(state) == -40,
+            "an exact positive delta reaches the lower end");
+    require(folio_state_scroll_drawer(state, scroll_metrics, -40) == FOLIO_STATE_READY &&
+                scrolled_top(state) == 0,
+            "an exact negative delta reaches the upper end");
+    require(folio_state_scroll_drawer(state, scroll_metrics, -1) == FOLIO_STATE_READY &&
+                scrolled_top(state) == 0,
+            "at the top another negative step does not move");
+    require(folio_state_scroll_drawer(state, scroll_metrics, 0) == FOLIO_STATE_READY &&
+                scrolled_top(state) == 0,
+            "a zero delta at the top leaves the amount alone");
+}
+
 /* 折り畳みで上限が縮んでも、有効量から数え直すので 1 回で必ず動く（ADR 0009 の決定 3）。 */
 static void verify_scroll_recount(struct folio_state *_Nonnull state)
 {
@@ -912,6 +939,7 @@ static void verify_scroll(void)
     require(folio_state_create(test_ports(&port, &looks, &finder), &state) == FOLIO_STATE_READY,
             "state for scroll");
     verify_scroll_rounding(state);
+    verify_scroll_delta_bounds(state);
     verify_scroll_recount(state);
     require(folio_state_scroll_drawer(state, scroll_metrics, 5) == FOLIO_STATE_READY,
             "scroll a little");
@@ -922,6 +950,12 @@ static void verify_scroll(void)
                 scrolled_top(state) == -5,
             "reordering leaves the amount alone");
     folio_state_destroy(state);
+}
+
+void run_drawer_scroll_delta_tests(void)
+{
+    finder = test_regex_port();
+    verify_scroll();
 }
 
 /* 配置の行の名前を '/' でつないだ 1 行にする。折り畳んだカテゴリのノートは出ない。 */
@@ -5167,7 +5201,7 @@ void run_state_tests(void)
     verify_failures();
     verify_toggle();
     verify_recolor();
-    verify_scroll();
+    run_drawer_scroll_delta_tests();
     verify_move_category();
     verify_move_note();
     verify_move_selection();
