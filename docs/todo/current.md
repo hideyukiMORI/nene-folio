@@ -8,34 +8,24 @@
 
 ## 品質改善の現在位置
 
-#452の最小化/最大化/復元の常設入口はmain`ee65c6d`へ統合・通常反映・13977files保全・作業物整理まで完了した。
-詳細は[品質記録](../quality/2026-10-30-window-controls.md)、#448の現在ノート検索と#451の縁resizeを含む完成履歴は[日報](../reports/2026-10-30.md)へ集約した。
-
-[#456](https://github.com/hideyukiMORI/nene-folio/issues/456)で、狭幅表の可読列幅とnative水平到達の限定診断を受理した。
-現行style/既存rendererでroot3列・各1440twipの左右到達、通常段落wrap、本文状態/実Redo→Undoの29契約は不一致0。
-root63列と深い字下げ/300%の63列は、TOM処理成功・表配置失敗。失敗後は圧縮幅/0幅のままで、横到達まで完遂していない。
-2caseの本文等20契約は不一致0、実exit3・技術失敗2を保持する。初回失敗と欠落画像の記録errorも残す。
-通常段落も横へ動くため、製品方式と最小列幅は採用しない。native総幅上限と内部失敗箇所、利用者の横操作は未確定。
-背景読込の静読も完了したが、#438の保存拒否と現在sourceの一致を確認し、共有設定だけの案は再採用しない。
-PR #457の最終head`cb11317`・必須CI`40999381519`成功後、main`c149fbc`へ文書統合した。
-通常exe hash維持、4107files全hash保全、作業木削除まで完了。出力削除は拒否され、下記48箇所目として保持する。
-詳細は[診断記録](../quality/2026-10-30-table-horizontal-feasibility.md)、確定原本は同taskの`integration-completion.json`。
-
-[#460](https://github.com/hideyukiMORI/nene-folio/issues/460)で、共通UTF-8 decoder内のASCII早期returnを実装した。
-空入力を先に判定し、既存sequence_lengthのASCII分岐を同じdecoder内へ集約する最小案を受理した。
-全8callsiteと本文の不正UTF8→NUL→size優先を静読し、公開API・保存形式を保つ。
-Debug sanitizer/tidyと限定text/NUL/size境界、実Release objectのASCII直接returnを受理した。
+[#460](https://github.com/hideyukiMORI/nene-folio/issues/460)の共通UTF-8 decoder内ASCII早期returnをmain`3dbed2a`へ統合し、通常反映・保全・整理を完了した。
+PR #461の最終head`12b4971`・必須CI`41026891563`成功、Debug sanitizer/tidyと限定text/NUL/size境界も成功。
+公開API・保存形式と全8callsiteの契約を維持し、実Release objectのASCII直接returnを確認した。
 固定Bは検索63.0590→49.3964ms、Large検証32.3232→18.7385ms、最長continue43.3406→30.4207ms。
-13契約に不一致0、実終了/同raw audit/記録は0。初回の別process検出による計時前停止3/125/error8も保持する。
-一回の計装付きASCII標本であり一般的な速度を保証しない。一件の同期準備約30.42msは残る。
-最終CI/統合/通常反映は未実施。詳細は[品質記録](../quality/2026-10-30-ascii-decode.md)。
+13契約不一致0。一回の計装付きASCII標本であり一般速度を保証せず、一件の同期準備約30.42msは残る。
+7612files全hash保全後にworktree/outputを削除し、branch/commit・失敗原本を保持した。
+詳細は[品質記録](../quality/2026-10-30-ascii-decode.md)、確定原本は同taskの`integration-completion.json`。
 
-根拠の[#458](https://github.com/hideyukiMORI/nene-folio/issues/458)では、1,000件×10KiBの初回81.974ms、別語warm15.679ms、
-Anchor+16MiB Largeは63.059ms。Large一件準備43.3398ms中のUTF-8/NUL検証32.3232msを観測した。
-A/Bの27+13契約不一致0。計装込みの一回値で、OS cache/物理入力/DWM完了や速度倍率を保証しない。
-PR #459のhead`a047724`・必須CI`41012681318`成功でmain`7824344`へ文書統合した。
-通常exe hash維持、12932files全hash保全、worktree削除まで完了。出力削除は拒否され49箇所目として保持する。
-詳細は[計測記録](../quality/2026-10-30-search-preparation-profile.md)、確定原本は同taskの`integration-completion.json`。
+[#462](https://github.com/hideyukiMORI/nene-folio/issues/462)で、root63列/100%・90720twip条件の元SET拒否を一回の診断で確認した。
+最初の行cp118のGETはS_OK、63列×1440twipのSETはE_INVALIDARG。元の確認GETと次行へは進んでいない。
+TOM成功、本文等10契約の不一致0、両行の後段readbackは圧縮3816twip、実native/記録/同raw監査は3を保持する。
+記録error0・所有process0を親受理した。数値総幅上限・製品最小幅は未確定で、製品source/方式の変更0。
+最終CI/文書統合へ進む。詳細は[品質記録](../quality/2026-10-30-table-layout-failure.md)。
+
+#456ではroot3列の左右到達・wrap・本文状態/実RedoUndoの29契約が一致したが、63列2条件は配置失敗で横到達未完。
+通常段落も横へ動くため、製品方式・最小列幅は未採用。既存結果は[診断記録](../quality/2026-10-30-table-horizontal-feasibility.md)へ保つ。
+#458の初回検索と準備内訳は[計測記録](../quality/2026-10-30-search-preparation-profile.md)へ、
+#448の現在ノート検索・#451の縁resize・#452の窓操作を含む完成履歴は[日報](../reports/2026-10-30.md)へ集約した。
 
 本文/置換の追加静読は新具体的不具合0。置換4Mの生成片/完成本文の差を新規不具合とせず、既存のedit資源上限を維持した。
 背景読込・極狭幅表は未解決で、#458/#460の限定実測から実UIの一般保証へ広げない。
@@ -54,9 +44,9 @@ Waivers none。
 ## 通常exeとhideの実機確認
 
 hide受理済み合成サンプル`data/サンプル/Markdown構文サンプル.md`は通常dataへ残している。実ノート内容は記録・同梱しない。
-現在の通常`C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`はsource `ee65c6d`・表示版0.3.0/Windows版0.3.0.0。
-通常process0件を確認して正規ツールで反映しexit0、10月30日11:23:10 JST更新済み。更新後は起動していない。
-版・hashは`D:/NeNeFolio/agents/452-window-controls/normal-build-verification.json`。通常dataは操作していない。
+現在の通常`C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`はsource `3dbed2a`・表示版0.3.0/Windows版0.3.0.0。
+通常process0件を確認して正規ツールで反映しexit0、10月30日17:38:56 JST更新済み。更新後は起動していない。
+版・hashは`D:/NeNeFolio/agents/460-ascii-decode/normal-preservation.json`。通常dataは操作していない。
 
 ## 次の予定: ノートの保存先設定（未実装）
 
