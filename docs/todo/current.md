@@ -8,14 +8,8 @@
 
 ## 品質改善の現在位置
 
-[#452](https://github.com/hideyukiMORI/nene-folio/issues/452) / [PR #455](https://github.com/hideyukiMORI/nene-folio/pull/455)の
-最小化/最大化/復元の常設入口を、最終head`5f42f88`・必須CI`40990655449`成功後、main`ee65c6d`へ統合した。
-狭幅では表示3択だけを既存MENUへまとめ、shell操作を常時可視にする。[ADR0075](../adr/0075-window-shell-controls-and-layout-chooser.md)。
-menu unit、placement4ケース/30項目、配置/pointer13幅/523項目、代表8構成の画像、keyboard/MENU/実MTA/native境界を確認した。
-controlsで見つかった設定面の復元不備は、既存root focus正規化で修復。設定/テーマ2ケース15項目は不一致0/技術不備0。
-通常exe反映と13977filesの全hash保全、追加worktree/一時出力の削除まで完了。branch/commitと失敗原本を保持する。
-詳細は[品質記録](../quality/2026-10-30-window-controls.md)、確定原本は`agents/452-window-controls/integration-completion.json`。
-#448の現在ノート検索と#451の縁resizeを含む完成履歴は[日報](../reports/2026-10-30.md)へ集約した。
+#452の最小化/最大化/復元の常設入口はmain`ee65c6d`へ統合・通常反映・13977files保全・作業物整理まで完了した。
+詳細は[品質記録](../quality/2026-10-30-window-controls.md)、#448の現在ノート検索と#451の縁resizeを含む完成履歴は[日報](../reports/2026-10-30.md)へ集約した。
 
 [#456](https://github.com/hideyukiMORI/nene-folio/issues/456)で、狭幅表の可読列幅とnative水平到達の限定診断を受理した。
 現行style/既存rendererでroot3列・各1440twipの左右到達、通常段落wrap、本文状態/実Redo→Undoの29契約は不一致0。
@@ -23,10 +17,21 @@ root63列と深い字下げ/300%の63列は、TOM処理成功・表配置失敗�
 2caseの本文等20契約は不一致0、実exit3・技術失敗2を保持する。初回失敗と欠落画像の記録errorも残す。
 通常段落も横へ動くため、製品方式と最小列幅は採用しない。native総幅上限と内部失敗箇所、利用者の横操作は未確定。
 背景読込の静読も完了したが、#438の保存拒否と現在sourceの一致を確認し、共有設定だけの案は再採用しない。
-詳細は[診断記録](../quality/2026-10-30-table-horizontal-feasibility.md)。
+PR #457の最終head`cb11317`・必須CI`40999381519`成功後、main`c149fbc`へ文書統合した。
+通常exe hash維持、4107files全hash保全、作業木削除まで完了。出力削除は拒否され、下記48箇所目として保持する。
+詳細は[診断記録](../quality/2026-10-30-table-horizontal-feasibility.md)、確定原本は同taskの`integration-completion.json`。
+
+[#458](https://github.com/hideyukiMORI/nene-folio/issues/458)の固定Release計測を受理した。
+1,000件×10KiBの初回検索は81.974ms、同processの別語warm検索は15.679ms。初回/warmのread数は1000/0。
+128byte Anchorと16MiB Largeの検索は63.059ms、最長continue43.3406msだった。
+Large一件準備43.3398msのうちUTF-8/NUL検証32.3232ms、OS API4.8974ms、複製/確保4.8984ms。
+A/Bの27+13契約は不一致0、実終了/最終audit/記録は0。初回compile2回と旧auditの失敗も原本へ保持する。
+計装込みの一回値で、OS cache/物理入力/DWM完了や速度倍率は保証しない。製品変更は0。
+次は文字列検証の契約と処理量を調べる。背景thread/保存方式変更は未採用。
+詳細は[計測記録](../quality/2026-10-30-search-preparation-profile.md)。
 
 本文/置換の追加静読は新具体的不具合0。置換4Mの生成片/完成本文の差を新規不具合とせず、既存のedit資源上限を維持した。
-背景読込・極狭幅表は未解決で、新しい性能値や実UIの一般保証はない。
+背景読込・極狭幅表は未解決で、#458の限定実測から実UIの一般保証へ広げない。
 文書収載#449の統合・通常exe hash維持・安全整理の確定原本は`agents/day-close-20261030/integration-completion.json`。
 Waivers none。
 
@@ -65,7 +70,9 @@ portable版はexe隣の`data`を既定とし、両方とも設定から「ノー
 
 ## 保持中の旧作業物
 
-下記の47箇所は自動承認レビューの削除拒否により保持する。再試行や別手段での削除をしない。
+下記の48箇所は自動承認レビューの削除拒否により保持する。再試行や別手段での削除をしない。
+
+- #456: `D:/NeNeFolio/outputs/456-table-horizontal-feasibility`。文書統合・通常exe hash維持・4107files全hash保全と安全監査後、出力削除要求が実行前に`blocked by policy`で拒否された。追加理由なし。worktreeは削除済み、branch/commit保持。確定原本は同taskの`integration-completion.json`。
 
 - #451: `D:/NeNeFolio/outputs/451-window-edge`。統合・通常反映・5536filesの全hash保全と安全監査後、出力削除要求が実行前に`blocked by policy`で拒否された。追加理由なし。worktreeは削除済み、branch/commit保持。確定原本は同taskの`integration-completion.json`。
 
