@@ -118,8 +118,6 @@ struct folio_window
     size_t surface_pressed;
     bool surface_pressed_inside;
     bool surface_tracking;
-    POINT surface_pointer_position;
-    bool surface_pointer_known;
     /* レイヤーから外した IME の文脈。窓を壊す前に戻す（MSDN の作法） */
     HIMC _Nullable layer_context;
     HWND _Nullable command_input;
@@ -162,7 +160,7 @@ struct folio_window
     struct theme_candidates *_Nullable theme_candidates;
     size_t command_selection;
     size_t command_first;
-    int theme_wheel_remainder; /* delta × 3のうち1行に満たない余り（ADR0061・#469）。 */
+    int theme_wheel_remainder; /* 1候補分の刻みに満たないdelta（ADR0061・#471）。 */
     bool command_keys_visible;
     /* ヘルプが箱に入りきらないときに送り出す先頭の行（PgUp / PgDn・#69）。 */
     size_t command_help_scroll;
@@ -5884,7 +5882,6 @@ static void invalidate_surface_items(struct folio_window *_Nonnull self)
         !preview_theme(self, folio_state_theme_choice(self->state)))
         return false;
     self->surface_tracking = false;
-    self->surface_pointer_known = false;
     bool captured = self->surface_pressed < surface_pointer_count;
     self->surface_hover = surface_pointer_count;
     self->surface_pressed = surface_pointer_count;
@@ -8128,10 +8125,9 @@ static void click_theme_surface(struct folio_window *_Nonnull self, POINT point)
     focus_command_input(self);
 }
 
-static void move_theme_selection(struct folio_window *_Nonnull self, WPARAM key, size_t count)
+static void move_theme_selection(struct folio_window *_Nonnull self, WPARAM key, size_t count,
+                                 size_t step)
 {
-    size_t step = key == VK_PRIOR || key == VK_NEXT ? command_visible_rows(self) : 1;
-    step = step > 0 ? step : 1;
     if (key == VK_UP || key == VK_PRIOR)
     {
         self->command_selection =
@@ -8144,25 +8140,29 @@ static void move_theme_selection(struct folio_window *_Nonnull self, WPARAM key,
     }
 }
 
-static bool theme_navigate(struct folio_window *_Nonnull self, WPARAM key)
+static void navigate_theme_selection(struct folio_window *_Nonnull self, WPARAM key, size_t step)
 {
-    if (key != VK_UP && key != VK_DOWN && key != VK_PRIOR && key != VK_NEXT)
-    {
-        return false;
-    }
     if (prepare_theme_candidates(self) != S_OK)
     {
         report_outcome(self, FOLIO_STATE_OUT_OF_MEMORY);
-        return true;
+        return;
     }
     size_t count = theme_matches_count(self);
     if (count == 0)
     {
-        return true;
+        return;
     }
-    move_theme_selection(self, key, count);
+    move_theme_selection(self, key, count, step);
     reveal_command_selection(self);
     preview_theme_selection(self);
+}
+
+static bool theme_navigate(struct folio_window *_Nonnull self, WPARAM key)
+{
+    if (key != VK_UP && key != VK_DOWN && key != VK_PRIOR && key != VK_NEXT)
+        return false;
+    size_t step = key == VK_PRIOR || key == VK_NEXT ? command_visible_rows(self) : 1;
+    navigate_theme_selection(self, key, step > 0 ? step : 1);
     return true;
 }
 
@@ -9269,47 +9269,23 @@ static void command_help_wheel(struct folio_window *_Nonnull self, WPARAM key)
     move_command_help(self, key == VK_UP ? VK_PRIOR : VK_NEXT);
 }
 
-static int theme_wheel_rows(struct folio_window *_Nonnull self, int delta)
+static int theme_wheel_steps(struct folio_window *_Nonnull self, int delta)
 {
     int remainder = self->theme_wheel_remainder;
     bool reversed = (remainder > 0 && delta < 0) || (remainder < 0 && delta > 0);
-    /* WM_MOUSEWHEELのsigned 16bit delta × 3と余り119はintに収まる。 */
-    int scaled = (reversed ? 0 : remainder) + delta * 3;
+    /* WM_MOUSEWHEELのsigned 16bit deltaと余り119はintに収まる。 */
+    int scaled = (reversed ? 0 : remainder) + delta;
     self->theme_wheel_remainder = scaled % WHEEL_DELTA;
     return -(scaled / WHEEL_DELTA);
 }
 
-static size_t scrolled_theme_first(const struct folio_window *_Nonnull self, int lines)
+static void wheel_theme_selection(struct folio_window *_Nonnull self, int delta)
 {
-    size_t limit = theme_scroll_limit(self);
-    size_t first = self->command_first < limit ? self->command_first : limit;
-    size_t distance = (size_t)(lines > 0 ? lines : -lines);
-    if (lines < 0)
-        return distance < first ? first - distance : 0;
-    return first + (distance < limit - first ? distance : limit - first);
-}
-
-static void scroll_theme_content(struct folio_window *_Nonnull self, int delta)
-{
-    if (prepare_theme_candidates(self) != S_OK)
-    {
-        report_outcome(self, FOLIO_STATE_OUT_OF_MEMORY);
+    int steps = theme_wheel_steps(self, delta);
+    if (steps == 0)
         return;
-    }
-    int lines = theme_wheel_rows(self, delta);
-    if (lines == 0 || theme_matches_count(self) == 0)
-        return;
-    size_t first = scrolled_theme_first(self, lines);
-    self->command_first = first;
-    size_t selected = self->command_selection;
-    size_t rows = theme_window_rows(self);
-    if (self->command_selection < first)
-        self->command_selection = first;
-    if (self->command_selection - first >= rows)
-        self->command_selection = first + rows - 1;
-    if (self->command_selection != selected)
-        preview_theme_selection(self);
-    redraw_command_layer(self);
+    navigate_theme_selection(self, steps < 0 ? VK_UP : VK_DOWN,
+                             (size_t)(steps < 0 ? -steps : steps));
 }
 
 static bool command_wheel(struct folio_window *_Nonnull self, WPARAM wparam)
@@ -9333,7 +9309,7 @@ static bool command_wheel(struct folio_window *_Nonnull self, WPARAM wparam)
     }
     if (self->command_surface == COMMAND_SURFACE_THEMES)
     {
-        scroll_theme_content(self, delta);
+        wheel_theme_selection(self, delta);
         return true;
     }
     if (self->command_surface == COMMAND_SURFACE_SETTINGS)
@@ -10256,37 +10232,8 @@ static void cancel_surface_press(struct folio_window *_Nonnull self)
     }
 }
 
-static void preview_theme_pointer(struct folio_window *_Nonnull self, POINT point)
-{
-    if (self->command_surface != COMMAND_SURFACE_THEMES || self->command_composing)
-        return;
-    RECT rows = theme_rows_rect(self);
-    if (!PtInRect(&rows, point))
-        return;
-    int height = scale(base_theme_row_height, GetDpiForWindow(self->handle));
-    size_t index = self->command_first + (size_t)((point.y - rows.top) / height);
-    if (prepare_theme_candidates(self) != S_OK)
-    {
-        report_outcome(self, FOLIO_STATE_OUT_OF_MEMORY);
-        return;
-    }
-    size_t count = theme_matches_count(self);
-    if (index >= count || index == self->command_selection)
-        return;
-    self->command_selection = index;
-    preview_theme_selection(self);
-}
-
 static void surface_pointer(struct folio_window *_Nonnull self, POINT point)
 {
-    POINT screen = point;
-    ClientToScreen(self->command_layer, &screen);
-    bool moved = self->surface_pointer_known && (screen.x != self->surface_pointer_position.x ||
-                                                 screen.y != self->surface_pointer_position.y);
-    self->surface_pointer_position = screen;
-    self->surface_pointer_known = true;
-    if (moved)
-        preview_theme_pointer(self, point);
     size_t hover = surface_part_at(self, point);
     bool inside = self->surface_pressed < surface_pointer_count && hover == self->surface_pressed;
     bool changed = hover != self->surface_hover || inside != self->surface_pressed_inside;
