@@ -22,10 +22,6 @@ constexpr uint32_t supplementary_base = 0x10000;
 
 static size_t sequence_length(unsigned char lead)
 {
-    if (lead < 0x80)
-    {
-        return 1;
-    }
     if (lead >= 0xC2 && lead < 0xE0)
     {
         return 2;
@@ -69,8 +65,17 @@ static bool well_formed(uint32_t value, size_t count)
 
 size_t utf8_text_decode(const char *_Nonnull bytes, size_t length, uint32_t *_Nonnull code_point)
 {
+    if (length == 0)
+    {
+        return 0;
+    }
     const unsigned char *_Nonnull raw = (const unsigned char *)bytes;
-    size_t count = length == 0 ? 0 : sequence_length(raw[0]);
+    if (raw[0] < 0x80)
+    {
+        *code_point = raw[0];
+        return 1;
+    }
+    size_t count = sequence_length(raw[0]);
     if (count == 0 || count > length)
     {
         return 0;

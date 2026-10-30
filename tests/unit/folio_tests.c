@@ -86,6 +86,17 @@ static bool run_document_settings_target_tests(const char *_Nonnull argument)
     return false;
 }
 
+static bool run_text_validation_target_tests(const char *_Nonnull argument)
+{
+    if (strcmp(argument, "--text-validation") != 0)
+        return false;
+    run_text_tests();
+    run_note_nul_text_tests();
+    run_note_size_text_tests();
+    printf("text validation tests passed\n");
+    return true;
+}
+
 static bool run_note_search_target_tests(const char *_Nonnull argument)
 {
     if (strcmp(argument, "--note-search") != 0)
@@ -399,10 +410,11 @@ static bool run_selected_tests(const char *_Nonnull argument)
         printf("nullable allocation, preview ownership, BOM and template tests passed\n");
         return true;
     }
-    return (run_note_search_target_tests(argument) || run_surface_target_tests(argument) ||
-            run_menu_target_tests(argument) || run_size_overflow_target_tests(argument) ||
-            run_pane_load_target_tests(argument) || run_document_settings_target_tests(argument) ||
-            run_target_tests(argument) || run_filter_target_tests(argument));
+    return (run_text_validation_target_tests(argument) || run_note_search_target_tests(argument) ||
+            run_surface_target_tests(argument) || run_menu_target_tests(argument) ||
+            run_size_overflow_target_tests(argument) || run_pane_load_target_tests(argument) ||
+            run_document_settings_target_tests(argument) || run_target_tests(argument) ||
+            run_filter_target_tests(argument));
 }
 
 static void run_full_suite(void)
