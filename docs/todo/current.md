@@ -8,21 +8,20 @@
 
 ## 品質改善の現在位置
 
-[#448](https://github.com/hideyukiMORI/nene-folio/issues/448) / [PR #453](https://github.com/hideyukiMORI/nene-folio/pull/453)の
-現在ノート検索の無確保線形化を、最終head`47c1333`・必須CI`40968520980`成功後、main`6f20dcc`へ統合した。
-固定36callは結果一致・`2N+5m`以内。Debug/tidy・限定search・比較計数・symbols・最終conformanceが成功した。
-通常exe反映、9051filesの全hash保全、追加worktree削除まで完了。出力削除拒否は下記へ保持する。
-詳細は[品質記録](../quality/2026-10-30-linear-note-search.md)、確定原本は`agents/448-linear-note-search/integration-completion.json`。
-比較量の改善であり、実時間や実UI応答改善の測定ではない。#446以前の完成履歴は日報を参照する。
+[#451](https://github.com/hideyukiMORI/nene-folio/issues/451) / [PR #454](https://github.com/hideyukiMORI/nene-folio/pull/454)の
+子窓が覆う縁のresize修正を、最終head`d3abd69`・必須CI`40971869636`成功後、main`3ef671f`へ統合した。
+候補は73checks/0fail・既知遮断8点を解消。別の合成開始/取消は16checks/0fail。物理dragと実寸法変更は未確認。
+通常exe反映、5536filesの全hash保全、追加worktree削除まで完了。出力削除拒否は下記へ保持する。
+詳細は[品質記録](../quality/2026-10-30-window-edge-routing.md)、確定原本は`agents/451-window-edge/integration-completion.json`。
+直前の#448現在ノート検索を含む完成履歴は[日報](../reports/2026-10-30.md)へ集約した。
 
-[#451](https://github.com/hideyukiMORI/nene-folio/issues/451)はdrawer/backdropが窓縁を遮る経路を修正中。
-旧baselineは73checks/1failure・既知遮断8点、候補は73checks/0fail・8点とも子から親のedgeへ到達した。
-最大化中の親HTLEFT誤判定も修復。合成操作から実nativeリサイズ開始/一回取消まで16checks/0fail、親の原本監査も受理済み。
-物理dragと実寸法変更は未確認、必須CI・統合は未完了。[品質記録](../quality/2026-10-30-window-edge-routing.md)。
-
-[#452](https://github.com/hideyukiMORI/nene-folio/issues/452)は最小化/最大化/復元の常設入口を設計した。
-狭幅では表示3択だけを既存MENUへまとめ、shell操作は常時可視にする。デザインリナの提案と独立静読を受理し、
-一覧中のOS最大化から退出するplacementの2経路を静的fixtureで準備中。製品編集/実行はまだ0。
+[#452](https://github.com/hideyukiMORI/nene-folio/issues/452)の最小化/最大化/復元の常設入口は、候補v5の対象検証を受理した。
+狭幅では表示3択だけを既存MENUへまとめ、shell操作を常時可視にする。[ADR0075](../adr/0075-window-shell-controls-and-layout-chooser.md)。
+menu unit、placement4ケース/30項目、配置/pointer13幅/523項目、代表8構成の画像、keyboard/MENU/実MTA/native境界を確認した。
+controlsで見つかった設定面の復元不備は、既存root focus正規化で修復。設定/テーマ2ケース15項目は不一致0/技術不備0。
+v5のDebug/tidyは3actionsで成功し、親の原本照合も完了した。失敗runは保持し、影響外の成功結果を再利用した。
+最終文書/conformance・最終head必須CI・統合/通常反映/整理はこの後に行い、確定値は同taskの`integration-completion.json`へ残す。
+詳細は[品質記録](../quality/2026-10-30-window-controls.md)。
 
 本文/置換の追加静読は新具体的不具合0。置換4Mの生成片/完成本文の差を新規不具合とせず、既存のedit資源上限を維持した。
 背景読込・極狭幅表は未解決で、新しい性能値や実UIの一般保証はない。
@@ -41,9 +40,9 @@ Waivers none。
 ## 通常exeとhideの実機確認
 
 hide受理済み合成サンプル`data/サンプル/Markdown構文サンプル.md`は通常dataへ残している。実ノート内容は記録・同梱しない。
-現在の通常`C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`はsource `6f20dcc`・表示版0.3.0/Windows版0.3.0.0。
-通常process0件を確認して正規ツールで反映しexit0、10月30日07:55:57 JST更新済み。更新後は起動していない。
-版・hashは`D:/NeNeFolio/agents/448-linear-note-search/normal-build-verification.json`。通常dataは操作していない。
+現在の通常`C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`はsource `3ef671f`・表示版0.3.0/Windows版0.3.0.0。
+通常process0件を確認して正規ツールで反映しexit0、10月30日08:23:35 JST更新済み。更新後は起動していない。
+版・hashは`D:/NeNeFolio/agents/451-window-edge/normal-build-verification.json`。通常dataは操作していない。
 
 ## 次の予定: ノートの保存先設定（未実装）
 
@@ -64,7 +63,9 @@ portable版はexe隣の`data`を既定とし、両方とも設定から「ノー
 
 ## 保持中の旧作業物
 
-下記の46箇所は自動承認レビューの削除拒否により保持する。再試行や別手段での削除をしない。
+下記の47箇所は自動承認レビューの削除拒否により保持する。再試行や別手段での削除をしない。
+
+- #451: `D:/NeNeFolio/outputs/451-window-edge`。統合・通常反映・5536filesの全hash保全と安全監査後、出力削除要求が実行前に`blocked by policy`で拒否された。追加理由なし。worktreeは削除済み、branch/commit保持。確定原本は同taskの`integration-completion.json`。
 
 - #448: `D:/NeNeFolio/outputs/448-linear-note-search`。統合・通常反映・9051filesの全hash保全と安全監査後、出力削除要求が実行前に`blocked by policy`で拒否された。追加理由なし。worktreeは削除済み、branch/commit保持。確定原本は同taskの`integration-completion.json`。
 

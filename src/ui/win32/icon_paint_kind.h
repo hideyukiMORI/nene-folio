@@ -5,8 +5,14 @@
 
 enum icon_paint_kind : unsigned char
 {
-    ICON_PAINT_CLOSE,         /* 頭の右端の閉じる × */
-    ICON_PAINT_SETTINGS,      /* その左隣の歯車 */
+    ICON_PAINT_CLOSE, /* 頭の右端の閉じる × */
+    ICON_PAINT_MINIMIZE,
+    ICON_PAINT_MAXIMIZE,
+    ICON_PAINT_RESTORE,
+    ICON_PAINT_LAYOUT_DRAWER,
+    ICON_PAINT_LAYOUT_BOTH,
+    ICON_PAINT_LAYOUT_NOTE,
+    ICON_PAINT_SETTINGS,      /* 常設の設定の歯車 */
     ICON_PAINT_FOLD_COLLAPSE, /* 展開中のカテゴリ行の − */
     ICON_PAINT_FOLD_EXPAND,   /* 折り畳み中のカテゴリ行の + */
     ICON_PAINT_ADD,           /* 新しいカテゴリを作る + */

@@ -85,3 +85,4 @@ ADR は「なぜそう決めたか」「何を却下したか」を書く。
 | [0072](0072-native-table-container-indent.md) | native表の字下げと残幅を既存container位置へ揃える | 受理 |
 | [0073](0073-bounded-index-matching.md) | 全ノートの一致計算を同じengineの有限workで継続する | 受理 |
 | [0074](0074-linear-index-matching.md) | 部分一致を保持して総比較workを線形に抑える | 受理 |
+| [0075](0075-window-shell-controls-and-layout-chooser.md) | 窓操作を常設し、狭幅の表示選択を同じMENUへまとめる | 受理 |

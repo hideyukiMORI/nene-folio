@@ -13,6 +13,7 @@ struct accessible_view
     char16_t status[64];      /* UIA ItemStatus。保存釦の未保存／保存済み（ADR0060 の決定 8） */
     char16_t access_key[8];
     bool menu;
+    bool layout_chooser; /* HEADERの一回のgeometry表示値。offscreenとは独立。 */
     int position;
     int set_size;
     bool dialog;

@@ -15,6 +15,8 @@ struct accessible_item
     size_t slot; /* 補助面の表示行/操作。note_refへ異なる意味を詰め込まない。 */
 };
 
+[[nodiscard]] bool accessible_item_shell(enum accessible_kind kind);
+[[nodiscard]] bool accessible_item_menu(enum accessible_kind kind);
 [[nodiscard]] bool accessible_item_row(struct accessible_item item);
 [[nodiscard]] bool accessible_item_root(struct accessible_item item);
 [[nodiscard]] bool accessible_item_surface(struct accessible_item item);

@@ -81,3 +81,13 @@ ENVは`syntheticWindowMessages=true`、`sendInput=false`、`sharedCursorApi=fals
 専用非input desktopの同thread queryであり、共有cursor・SendInput・SwitchDesktop・foreground変更を使っていない。
 親hitの直送だけを子を通る入力の証拠にせず、OS queryも物理buttonの配送と呼ばない。
 実reader、物理IME、実96DPI display、monitor跨ぎ、通常data、公開betaは本検証の対象外。
+
+## #451の統合・通常反映・保全
+
+最終文書24参照、候補3hash、全inventory/File APIによるconformance違反0を親が受理した。
+head`d3abd696f3ea6216d98cf11cab330624ca83944d`のPR #454は必須CI`40971869636`のfull-gate/check成功後、main`3ef671f`へ統合済み。
+成功済み対象73checks/16checksは再実行していない。正規prepare-real-machineで08:23:35 JSTに通常exeへ反映し、起動/data操作は0。
+5536files/855,482,924bytesを恒久archiveへ全hash照合し、未保存/未追跡/ignored/link/稼働参照なしを監査した。
+worktree削除成功、branch/commit保持。出力削除は自動承認レビューが実行前`blocked by policy`で拒否し、追加理由は無かった。
+再試行せず47箇所目として保持。確定原本は`agents/451-window-edge/integration-completion.json`、
+SHA256 `31E4FB3ED3453722D1C8643C9F6F868A95367E71B2183F0BBE8BAA291573FCF3`。Waivers none。

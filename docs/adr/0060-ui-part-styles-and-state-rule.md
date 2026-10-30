@@ -441,3 +441,10 @@ DialogBoxのowner有効化だけを、アプリ内の元の欄への復帰の保
 準備失敗・復元失敗の追加通知を含め、最後のnative面が戻ってから復帰する。可視性/有効性/現在の区画の判断は既存経路へ合流し、永続的な第2のfocus状態や個々の設定への修復経路を足さない。
 実製品で本文/設定/Exからの取消・保存失敗を確認し、設定へ戻った後のEscもnative箱を挟まない同じ入口の戻り先と一致することを確認する。
 UIAの設定/保存Invokeは既存の操作入口でrootへfocusを移すため、その前の本文HWNDを無条件の復帰先としない。今回のnative境界で取得したfocusと、既存入口の無失敗baselineを区別する。
+
+## 2026-10-30の補正（#452）
+
+[ADR0075](0075-window-shell-controls-and-layout-chooser.md)で次を補正する。
+header右側はhelp/settings/minimize/maximize-or-restore/closeのC様式とし、どの対応幅でもshell操作を残す。
+狭幅の表示chooserはA様式、MENUの現在mode印は候補highlightと分ける。共通部品の幅・描画・hit・tooltip・UIAは一つの幾何から導く。
+Tabは新規→表示の一slot→help→settings→minimize→maximize/restore→close。既存の余白・header高・本文操作帯は維持する。

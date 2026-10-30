@@ -27,12 +27,19 @@ static const struct folio_menu_action category[] = {
 static const struct folio_menu_action note[] = {
     {FOLIO_MENU_ACTION_COMMAND, FOLIO_COMMAND_RENAME, FOLIO_MENU_GROUP_FIRST, 'R'},
     {FOLIO_MENU_ACTION_COMMAND, FOLIO_COMMAND_TRASH_NOTE, FOLIO_MENU_GROUP_DESTRUCTIVE, 'T'}};
+static const struct folio_menu_action layout[] = {
+    {FOLIO_MENU_ACTION_COMMAND, FOLIO_COMMAND_LAYOUT_DRAWER, FOLIO_MENU_GROUP_FIRST, '1'},
+    {FOLIO_MENU_ACTION_COMMAND, FOLIO_COMMAND_LAYOUT_BOTH, FOLIO_MENU_GROUP_FIRST, '2'},
+    {FOLIO_MENU_ACTION_COMMAND, FOLIO_COMMAND_LAYOUT_NOTE, FOLIO_MENU_GROUP_FIRST, '3'}};
+
 size_t folio_menu_action_count(enum folio_menu_context context)
 {
     switch (context)
     {
     case FOLIO_MENU_OPERATIONS:
         return sizeof operations / sizeof operations[0];
+    case FOLIO_MENU_LAYOUT:
+        return sizeof layout / sizeof layout[0];
     case FOLIO_MENU_CATEGORY:
         return sizeof category / sizeof category[0];
     case FOLIO_MENU_NOTE:
@@ -49,6 +56,8 @@ const struct folio_menu_action *_Nonnull folio_menu_action_at(enum folio_menu_co
     {
     case FOLIO_MENU_OPERATIONS:
         return &operations[index];
+    case FOLIO_MENU_LAYOUT:
+        return &layout[index];
     case FOLIO_MENU_CATEGORY:
         return &category[index];
     case FOLIO_MENU_NOTE:

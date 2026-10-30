@@ -325,5 +325,14 @@ struct ui_part_ink ui_part_draw_menu(HDC _Nonnull device,
     label.left += scaled(16, part->dpi);
     label.right -= scaled(16, part->dpi);
     COLORREF text = part->enabled ? palette->current_text : palette->header_text;
+    if (part->current && part->current_column > 0)
+    {
+        int size = scaled(ui_part_icon, part->dpi);
+        int top = (label.top + label.bottom - size) / 2;
+        RECT mark = {label.left, top, label.left + size, top + size};
+        COLORREF color = selected ? palette->selected_text : text;
+        icon_paint_fill(device, mark, ICON_PAINT_SELECTION, color);
+    }
+    label.left += part->current_column;
     return (struct ui_part_ink){.text = selected ? palette->selected_text : text, .label = label};
 }

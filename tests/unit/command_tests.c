@@ -515,15 +515,49 @@ void run_command_tests(void)
     verify_case_insensitive_palette();
 }
 
+static void verify_layout_menu(void)
+{
+    const enum folio_command commands[] = {FOLIO_COMMAND_LAYOUT_DRAWER, FOLIO_COMMAND_LAYOUT_BOTH,
+                                           FOLIO_COMMAND_LAYOUT_NOTE};
+    for (size_t index = 0; index < sizeof commands / sizeof commands[0]; ++index)
+    {
+        const struct folio_menu_action *action = folio_menu_action_at(FOLIO_MENU_LAYOUT, index);
+        require(folio_menu_action_kind(action) == FOLIO_MENU_ACTION_COMMAND &&
+                    folio_menu_action_command(action) == commands[index] &&
+                    folio_menu_action_group(action) == FOLIO_MENU_GROUP_FIRST,
+                "layout menu preserves three canonical commands in layout order");
+        for (size_t language = 0; language < folio_language_count; ++language)
+        {
+            char actual[1024];
+            char expected[1024];
+            enum folio_language locale = (enum folio_language)language;
+            require(folio_menu_action_caption(action, locale, actual, sizeof actual) ==
+                            UI_TEXT_FORMAT_READY &&
+                        folio_command_caption(commands[index], locale, expected, sizeof expected) ==
+                            UI_TEXT_FORMAT_READY &&
+                        same_text(actual, expected),
+                    "layout menu captions use command metadata");
+            require(folio_menu_action_hint(action, locale, actual, sizeof actual) ==
+                            UI_TEXT_FORMAT_READY &&
+                        same_text(actual, folio_shortcut_command_hint(commands[index], locale)),
+                    "layout menu retains its existing real shortcut in each language");
+        }
+    }
+}
+
 static void verify_menu_catalog(void)
 {
     const enum folio_command commands[] = {FOLIO_COMMAND_SAVE_AS,   FOLIO_COMMAND_RENAME,
                                            FOLIO_COMMAND_VIEW,      FOLIO_COMMAND_REPLACE,
                                            FOLIO_COMMAND_HISTORY,   FOLIO_COMMAND_DISCARD_EDITS,
                                            FOLIO_COMMAND_TRASH_NOTE};
-    const size_t counts[] = {7, 5, 2, 1};
+    const size_t counts[] = {[FOLIO_MENU_OPERATIONS] = 7,
+                             [FOLIO_MENU_LAYOUT] = 3,
+                             [FOLIO_MENU_CATEGORY] = 5,
+                             [FOLIO_MENU_NOTE] = 2,
+                             [FOLIO_MENU_EMPTY] = 1};
     require(folio_command_count() == 25, "stable command IDs and count");
-    for (size_t context = 0; context < 4; ++context)
+    for (size_t context = 0; context < sizeof counts / sizeof counts[0]; ++context)
     {
         require(folio_menu_action_count((enum folio_menu_context)context) == counts[context],
                 "menu membership");
@@ -531,7 +565,7 @@ static void verify_menu_catalog(void)
         {
             const struct folio_menu_action *action =
                 folio_menu_action_at((enum folio_menu_context)context, at);
-            if (context == 0)
+            if (context == FOLIO_MENU_OPERATIONS)
                 require(folio_menu_action_command(action) == commands[at],
                         "seven note commands in intended order");
             for (size_t other = at + 1; other < counts[context]; ++other)
@@ -549,6 +583,7 @@ static void verify_menu_catalog(void)
             "no misleading ellipsis for unconfirmed operations");
     require(folio_command_destructive(FOLIO_COMMAND_TRASH_NOTE),
             "trash is destructive independently of additional input");
+    verify_layout_menu();
     verify_menu_shortcuts();
     verify_menu_captions();
 }

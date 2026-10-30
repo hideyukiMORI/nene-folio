@@ -7,5 +7,7 @@ struct ui_part_menu_paint
     UINT dpi;
     bool selected;
     bool enabled;
+    bool current;
+    int current_column; /* physical px。layout以外は0。 */
 };
 #endif
