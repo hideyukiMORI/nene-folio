@@ -155,3 +155,33 @@ API根拠: [ITextRange::GetPoint](https://learn.microsoft.com/en-us/windows/win3
 実製品fixtureでは安定後の本文位置と最後の行番号描画を照合した。条件と結果は[品質記録](../quality/2026-10-26-view-wheel.md)。
 API根拠: [EM_SHOWSCROLLBAR](https://learn.microsoft.com/en-us/windows/win32/controls/em-showscrollbar)、
 [Rich Edit Control Styles](https://learn.microsoft.com/en-us/windows/win32/controls/rich-edit-control-styles)。
+
+## 2026-10-31 の補正（#473 — 通常ホイールを短い減速で止める）
+
+hideは高速ホイールを止めても端まで長時間動くと報告し、徐々に減速する操作感を指定した。
+同じnative部品へ60入力を送り終えた後も、編集/readonly双方で約4.6秒の移動が残った。
+単発だけの#392試験ではこの境界を確認していなかった。通常ホイールをnativeへ渡す方針と
+「新しいタイマやスクロール量の計算は設けない」は、この入力経路に限り本補正で置き換える。
+
+1. 通常ホイールの余韻は`note_pane`が所有する短命UI状態とする。本文・選択・実スクロール位置は
+   引き続き同じRichEditが所有する。閲覧/編集は同じ入力・減速・位置反映を共有する。
+2. OSのホイール行数とnative表示行の座標から要求画素量を導き、細かなdeltaも比例配分する。
+   ページ指定は本文の可視高を使う。未消化量は可視高1画面分を上限とし、逆方向入力は旧方向の残りを破棄する。
+   最後の入力から240msの二次ease-outで消化し、タイマ間隔は16msとする。画素未満は次のframeへ保持する。
+3. `note_pane`の非表示message-only窓にタイマを所有させ、RichEdit内部のタイマIDと共用しない。
+   UIスレッドの通常message dispatchでだけ進め、入れ子pumpや背景threadを作らない。
+   経過はTIMERPROC引数のtickを入力として使い、UIから時計を読まない。初回frameは16msを使う。
+   OSのtimer配信遅延はあり、240msはアニメーションの期間であってUI停止中の実時間応答保証ではない。
+4. `EM_GETSCROLLPOS`の実位置から相対量を一度だけ`EM_SETSCROLLPOS`へ反映する。nativeの境界に達したら残りを捨てる。
+   通常`WM_MOUSEWHEEL`はnativeへ重ねて送らず、別の慣性処理を同時に動かさない。タイマ作成失敗は警告し残りを破棄する。
+   文書/倍率/配置/文字入力/クリック/明示的な位置操作/無効化/破棄では余韻を取り消し、次の操作を優先する。
+5. 位置反映完了後は既存の`folio_message_pane_scrolled`へ通知し、同じ行番号更新を使う。
+   本文・選択・dirty・Undo/Redo・実focusを動かさない。保存schema・設定項目は増やさない。
+
+公式資料は`EM_GETSCROLLPOS`の値を16bitと記すため、短文だけで長文を保証しない。
+今回環境のnative診断は65535を跨ぐ位置と200000pxまでの7px相対移動を確認した。
+製品候補でも長文位置・端・可変行高・倍率・行番号を対象確認し、観測OSを記録する。
+根拠: [TIMERPROC](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nc-winuser-timerproc)、
+[SetTimer](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-settimer)、
+[EM_GETSCROLLPOS](https://learn.microsoft.com/en-us/windows/win32/controls/em-getscrollpos)、
+[EM_SETSCROLLPOS](https://learn.microsoft.com/en-us/windows/win32/controls/em-setscrollpos)。

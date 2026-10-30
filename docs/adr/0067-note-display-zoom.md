@@ -56,6 +56,11 @@ nativeの未処理ホイールが親へ伝播して戻っても二度nativeへ�
 
 ## 根拠
 
+2026-10-31補正（#473）: 通常wheelのnative配送は[ADR0026の同日補正](0026-line-numbers.md)の
+短い減速経路へ置き換える。Ctrl+wheelは従来の倍率所有とdelta蓄積を維持し、倍率変更前に通常wheelの残りを取り消す。
+本文外の座標振分けと実focusを動かさない契約は維持する。通常wheelをnativeへ送らなくなるため、
+native親伝播だけの再入guardは削除する。
+
 - [EM_SETZOOM](https://learn.microsoft.com/en-us/windows/win32/controls/em-setzoom)：表示倍率を適用し、受理を返す。
 - [EM_GETZOOM](https://learn.microsoft.com/en-us/windows/win32/controls/em-getzoom)：nativeへ適用された倍率の検証に使う。
 - [WM_MOUSEWHEEL](https://learn.microsoft.com/en-us/windows/win32/inputdev/wm-mousewheel)：focus窓への入力と、未処理時の親への伝播。

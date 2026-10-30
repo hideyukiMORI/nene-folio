@@ -8,6 +8,7 @@
 #include "pane_zoom_command.h"
 #include "rtf_stream.h"
 
+#include <limits.h>
 #include <richedit.h>
 #include <stdlib.h>
 #include <string.h>
@@ -27,7 +28,13 @@ struct note_pane
     int zoom_wheel_delta;
     LONG table_width; /* Successful native width in twips; reset on every document load. */
     bool table_layout_active;
-    bool wheel_dispatching; /* nativeの親伝播が同じ本文へ戻っても二度渡さない。 */
+    HWND _Nullable scroll_timer;
+    double scroll_remaining; /* nativeの実位置とは別の、1画面以内の未消化量。 */
+    double scroll_fraction;
+    UINT scroll_left;
+    DWORD scroll_tick;
+    bool scroll_tick_known;
+    bool scroll_projecting;
     ITextSelection *_Nullable selection;
     char16_t *_Nullable taken; /* 最後に取り出した本文（終端付き） */
     size_t capacity;           /* taken のバイト数 */
@@ -43,9 +50,13 @@ struct note_pane
 
 static bool layout_tables(struct note_pane *_Nonnull pane, enum pane_mode mode);
 static bool finish_recolor(struct note_pane *_Nonnull pane, ITextDocument *_Nonnull document);
+static bool display_line_top(const struct note_pane *_Nonnull pane, LRESULT display,
+                             size_t *_Nonnull position, LONG *_Nonnull top);
+static void cancel_scroll(struct note_pane *_Nonnull pane);
 
 static const wchar_t library_name[] = L"Msftedit.dll";
 static const wchar_t class_name[] = L"RICHEDIT50W";
+static const wchar_t scroll_class[] = L"NeNeFolioPaneScroll";
 /* TOMのGUIDはSDKのtom.hとMicrosoftのUse TOM GUIDsに従う（ADR 0019）。 */
 static const IID text_document_id = {
     0x8CC497C0, 0xA1DF, 0x11CE, {0x80, 0x98, 0x00, 0xAA, 0x00, 0x47, 0xBE, 0x5D}};
@@ -78,6 +89,9 @@ constexpr int zoom_normal = 100;
 constexpr int zoom_minimum = 50;
 constexpr int zoom_maximum = 300;
 constexpr int zoom_step = 10;
+constexpr UINT scroll_duration = 240;
+constexpr UINT scroll_interval = 16;
+constexpr UINT_PTR scroll_timer_id = 1;
 
 constexpr LONG editor_height = 220; /* 11pt（twips）。RTF 側の \fs22 と同じ */
 constexpr UINT unicode_codepage = 1200;
@@ -135,7 +149,7 @@ static HRESULT move_caret(ITextSelection *_Nonnull selection, enum caret_command
     return E_INVALIDARG;
 }
 
-static bool navigation_command(const struct note_pane *_Nonnull pane, WPARAM command)
+static bool navigation_command(struct note_pane *_Nonnull pane, WPARAM command)
 {
     if (HIWORD(command) != 1 || pane->selection == nullptr)
     {
@@ -148,6 +162,7 @@ static bool navigation_command(const struct note_pane *_Nonnull pane, WPARAM com
         {
             continue;
         }
+        cancel_scroll(pane);
         if (FAILED(move_caret(pane->selection, navigation_bindings[index].command)))
         {
             MessageBeep(MB_ICONWARNING);
@@ -173,6 +188,213 @@ static bool zoom_available(const struct note_pane *_Nonnull pane)
            IsWindowVisible(pane->handle);
 }
 
+static void finish_scroll(struct note_pane *_Nonnull pane)
+{
+    if (pane->scroll_timer != nullptr)
+        KillTimer(pane->scroll_timer, scroll_timer_id);
+    pane->scroll_left = 0;
+    pane->scroll_remaining = 0;
+    pane->scroll_tick_known = false;
+}
+
+static void cancel_scroll(struct note_pane *_Nonnull pane)
+{
+    finish_scroll(pane);
+    pane->scroll_fraction = 0;
+}
+
+/* EM_SETSCROLLPOSは本文/選択を変更せず、nativeの端で要求を丸める。 */
+static bool project_scroll(struct note_pane *_Nonnull pane, LONG pixels)
+{
+    POINT before = {0};
+    SendMessageW(pane->handle, EM_GETSCROLLPOS, 0, (LPARAM)&before);
+    LONGLONG wanted = (LONGLONG)before.y + pixels;
+    wanted = wanted < 0 ? 0 : wanted;
+    wanted = wanted > LONG_MAX ? LONG_MAX : wanted;
+    POINT target = {.x = before.x, .y = (LONG)wanted};
+    pane->scroll_projecting = true;
+    SendMessageW(pane->handle, EM_SETSCROLLPOS, 0, (LPARAM)&target);
+    pane->scroll_projecting = false;
+    POINT after = {0};
+    SendMessageW(pane->handle, EM_GETSCROLLPOS, 0, (LPARAM)&after);
+    SendMessageW(GetParent(pane->handle), folio_message_pane_scrolled, 0, 0);
+    return after.y != before.y && after.y == target.y && wanted == (LONGLONG)before.y + pixels;
+}
+
+/* 残り時間に対する二次曲線。tickの遅れをframe数に置き換えて引き延ばさない。 */
+static void advance_scroll(struct note_pane *_Nonnull pane, DWORD elapsed)
+{
+    elapsed = elapsed > pane->scroll_left ? pane->scroll_left : elapsed;
+    double ratio = (double)(pane->scroll_left - elapsed) / pane->scroll_left;
+    double remaining = pane->scroll_remaining * ratio * ratio;
+    double movement = pane->scroll_remaining - remaining + pane->scroll_fraction;
+    LONG pixels = (LONG)movement;
+    pane->scroll_fraction = movement - pixels;
+    pane->scroll_remaining = remaining;
+    pane->scroll_left -= elapsed;
+    if (pixels != 0 && !project_scroll(pane, pixels))
+        cancel_scroll(pane);
+    if (pane->scroll_left == 0)
+        finish_scroll(pane);
+}
+
+static void CALLBACK scroll_frame(HWND window, UINT message, UINT_PTR timer, DWORD tick)
+{
+    (void)message;
+    struct note_pane *_Nullable pane = (struct note_pane *)GetWindowLongPtrW(window, GWLP_USERDATA);
+    if (pane == nullptr || timer != scroll_timer_id || pane->scroll_left == 0)
+        return;
+    if (!zoom_available(pane) || IsIconic(GetAncestor(pane->handle, GA_ROOT)))
+    {
+        cancel_scroll(pane);
+        return;
+    }
+    DWORD elapsed = pane->scroll_tick_known ? tick - pane->scroll_tick : scroll_interval;
+    pane->scroll_tick = tick;
+    pane->scroll_tick_known = true;
+    advance_scroll(pane, elapsed);
+}
+
+/* 専用のmessage-only窓にtimerを置き、RichEditの非公開timer IDと衝突させない。 */
+static bool prepare_scroll(struct note_pane *_Nonnull pane)
+{
+    HINSTANCE instance = GetModuleHandleW(nullptr);
+    WNDCLASSW kind = {0};
+    if (!GetClassInfoW(instance, scroll_class, &kind))
+    {
+        kind = (WNDCLASSW){
+            .lpfnWndProc = DefWindowProcW, .hInstance = instance, .lpszClassName = scroll_class};
+        if (RegisterClassW(&kind) == 0)
+            return false;
+    }
+    pane->scroll_timer = CreateWindowExW(0, scroll_class, L"", 0, 0, 0, 0, 0, HWND_MESSAGE, nullptr,
+                                         instance, nullptr);
+    if (pane->scroll_timer == nullptr)
+        return false;
+    SetWindowLongPtrW(pane->scroll_timer, GWLP_USERDATA, (LONG_PTR)pane);
+    return true;
+}
+
+static LONG scroll_page(const struct note_pane *_Nonnull pane)
+{
+    RECT bounds = {0};
+    GetClientRect(pane->handle, &bounds);
+    return bounds.bottom > bounds.top ? bounds.bottom - bounds.top : 0;
+}
+
+static LRESULT scroll_target(LRESULT first, LRESULT count, UINT lines, int delta)
+{
+    LRESULT span = (LRESULT)lines < count ? (LRESULT)lines : count;
+    LRESULT target = delta < 0 ? first + span : first - span;
+    target = target < 0 ? 0 : target;
+    target = target >= count ? count - 1 : target;
+    if (target == first)
+        target = first > 0 ? first - 1 : first + 1;
+    return target;
+}
+
+static LONG scroll_lines(const struct note_pane *_Nonnull pane, UINT lines, int delta, LONG page)
+{
+    LRESULT first = SendMessageW(pane->handle, EM_GETFIRSTVISIBLELINE, 0, 0);
+    LRESULT count = SendMessageW(pane->handle, EM_GETLINECOUNT, 0, 0);
+    if (first < 0 || count <= 1)
+        return 0;
+    LRESULT target = scroll_target(first, count, lines, delta);
+    size_t position = 0;
+    LONG here = 0;
+    LONG there = 0;
+    if (!display_line_top(pane, first, &position, &here) ||
+        !display_line_top(pane, target, &position, &there))
+        return 0;
+    LONGLONG distance = (LONGLONG)there - here;
+    distance = distance < 0 ? -distance : distance;
+    return distance > page ? page : (LONG)distance;
+}
+
+static LONG scroll_unit(const struct note_pane *_Nonnull pane, int delta, LONG page)
+{
+    UINT lines = 0;
+    if (!SystemParametersInfoW(SPI_GETWHEELSCROLLLINES, 0, &lines, 0))
+    {
+        MessageBeep(MB_ICONWARNING);
+        return 0;
+    }
+    if (lines == 0)
+        return 0;
+    if (lines == WHEEL_PAGESCROLL)
+        return page;
+    return scroll_lines(pane, lines, delta, page);
+}
+
+static void scroll_wheel(struct note_pane *_Nonnull pane, int delta)
+{
+    LONG page = scroll_page(pane);
+    if (delta == 0 || page == 0)
+        return;
+    double movement = -(double)delta * scroll_unit(pane, delta, page) / WHEEL_DELTA;
+    if (movement == 0)
+        return;
+    if (movement * (pane->scroll_remaining + pane->scroll_fraction) < 0)
+        cancel_scroll(pane);
+    bool starting = pane->scroll_left == 0;
+    double remaining = pane->scroll_remaining + movement;
+    remaining = remaining < -page ? -page : remaining;
+    pane->scroll_remaining = remaining > page ? page : remaining;
+    pane->scroll_left = scroll_duration;
+    if (starting &&
+        SetTimer(pane->scroll_timer, scroll_timer_id, scroll_interval, scroll_frame) == 0)
+    {
+        cancel_scroll(pane);
+        MessageBeep(MB_ICONWARNING);
+    }
+}
+
+/* 別操作が所有する位置変更や入力へ、以前のホイールの余韻を持ち越さない。 */
+static void interrupt_scroll(struct note_pane *_Nonnull pane, UINT message)
+{
+    switch (message)
+    {
+    case EM_SETSCROLLPOS:
+        if (!pane->scroll_projecting)
+            cancel_scroll(pane);
+        return;
+    case WM_KEYDOWN:
+    case WM_SYSKEYDOWN:
+    case WM_CHAR:
+    case WM_LBUTTONDOWN:
+    case WM_RBUTTONDOWN:
+    case WM_MBUTTONDOWN:
+    case WM_XBUTTONDOWN:
+    case WM_IME_STARTCOMPOSITION:
+    case WM_SIZE:
+    case WM_SHOWWINDOW:
+    case WM_ENABLE:
+    case WM_KILLFOCUS:
+    case WM_DESTROY:
+    case WM_SETTEXT:
+    case WM_SETFONT:
+    case WM_VSCROLL:
+    case WM_HSCROLL:
+    case EM_STREAMIN:
+    case EM_SETTEXTEX:
+    case EM_REPLACESEL:
+    case EM_UNDO:
+    case EM_REDO:
+    case EM_SETZOOM:
+    case EM_SCROLLCARET:
+    case EM_LINESCROLL:
+    case EM_SETCHARFORMAT:
+    case EM_SETPARAFORMAT:
+    case EM_SETRECT:
+    case EM_SETRECTNP:
+    case EM_SETREADONLY:
+        cancel_scroll(pane);
+        return;
+    default:
+        return; /* Win32 messages are an open set. */
+    }
+}
+
 static void zoom_to(struct note_pane *_Nonnull pane, int percent)
 {
     percent = percent < zoom_minimum ? zoom_minimum : percent;
@@ -190,6 +412,7 @@ static void zoom_to(struct note_pane *_Nonnull pane, int percent)
 
 static void zoom_action(struct note_pane *_Nonnull pane, enum pane_zoom_command command)
 {
+    cancel_scroll(pane);
     int percent = pane->zoom_percent;
     switch (command)
     {
@@ -222,18 +445,14 @@ static bool zoom_command(struct note_pane *_Nonnull pane, WPARAM command)
     return false;
 }
 
-/* ポインタが本文外なら主窓の振分けへ戻し、nativeの独立したCtrl+wheel zoomは呼ばない。 */
-static bool zoom_wheel(struct note_pane *_Nonnull pane, UINT message, WPARAM keys, LPARAM position)
+/* 本文外は主窓の同じ振分けへ戻す。通常wheelもCtrl倍率もnativeへ二重に渡さない。 */
+static bool pane_wheel(struct note_pane *_Nonnull pane, UINT message, WPARAM keys, LPARAM position)
 {
     if (message != WM_MOUSEWHEEL)
         return false;
-    if ((GET_KEYSTATE_WPARAM(keys) & MK_CONTROL) == 0)
-    {
-        pane->zoom_wheel_delta = 0;
-        return false;
-    }
     if (!zoom_available(pane))
     {
+        cancel_scroll(pane);
         pane->zoom_wheel_delta = 0;
         return true;
     }
@@ -242,10 +461,18 @@ static bool zoom_wheel(struct note_pane *_Nonnull pane, UINT message, WPARAM key
     POINT point = {GET_X_LPARAM(position), GET_Y_LPARAM(position)};
     if (!PtInRect(&bounds, point))
     {
+        cancel_scroll(pane);
         pane->zoom_wheel_delta = 0;
         SendMessageW(GetParent(pane->handle), message, keys, position);
         return true;
     }
+    if ((GET_KEYSTATE_WPARAM(keys) & MK_CONTROL) == 0)
+    {
+        pane->zoom_wheel_delta = 0;
+        scroll_wheel(pane, GET_WHEEL_DELTA_WPARAM(keys));
+        return true;
+    }
+    cancel_scroll(pane);
     pane->zoom_wheel_delta += GET_WHEEL_DELTA_WPARAM(keys);
     int steps = pane->zoom_wheel_delta / WHEEL_DELTA;
     pane->zoom_wheel_delta %= WHEEL_DELTA;
@@ -257,7 +484,7 @@ static bool pane_input(struct note_pane *_Nonnull pane, UINT message, WPARAM key
 {
     if (message == WM_COMMAND && parameter == 0)
         return zoom_command(pane, keys) || navigation_command(pane, keys);
-    return zoom_wheel(pane, message, keys, parameter);
+    return pane_wheel(pane, message, keys, parameter);
 }
 
 static LRESULT enable_pane(struct note_pane *_Nonnull pane, WPARAM enabled, LPARAM parameter)
@@ -303,21 +530,6 @@ static bool paint_background(const struct note_pane *_Nonnull pane, UINT message
     return message == WM_ERASEBKGND;
 }
 
-static LRESULT native_message(struct note_pane *_Nonnull pane, UINT message, WPARAM wparam,
-                              LPARAM lparam)
-{
-    if (message != WM_MOUSEWHEEL)
-        return CallWindowProcW(pane->original, pane->handle, message, wparam, lparam);
-    if (pane->wheel_dispatching)
-        return 0;
-    pane->wheel_dispatching = true;
-    LRESULT answer = CallWindowProcW(pane->original, pane->handle, message, wparam, lparam);
-    pane->wheel_dispatching = false;
-    /* 同期呼出しの完了を既存通知へ寄せる。非同期の移動は EN_VSCROLL が知らせる。 */
-    SendMessageW(GetParent(pane->handle), folio_message_pane_scrolled, 0, 0);
-    return answer;
-}
-
 static LRESULT CALLBACK pane_procedure(HWND window, UINT message, WPARAM wparam, LPARAM lparam)
 {
     struct note_pane *_Nullable pane = (struct note_pane *)GetWindowLongPtrW(window, GWLP_USERDATA);
@@ -325,6 +537,7 @@ static LRESULT CALLBACK pane_procedure(HWND window, UINT message, WPARAM wparam,
     {
         return DefWindowProcW(window, message, wparam, lparam);
     }
+    interrupt_scroll(pane, message);
     if (message == WM_ENABLE)
         return enable_pane(pane, wparam, lparam);
     if (paint_background(pane, message, wparam, lparam))
@@ -342,7 +555,7 @@ static LRESULT CALLBACK pane_procedure(HWND window, UINT message, WPARAM wparam,
     {
         pane->composing = false;
     }
-    return native_message(pane, message, wparam, lparam);
+    return CallWindowProcW(pane->original, pane->handle, message, wparam, lparam);
 }
 
 static bool subclass_pane(struct note_pane *_Nonnull pane)
@@ -492,7 +705,7 @@ enum note_pane_outcome note_pane_create(HWND _Nonnull parent, COLORREF backgroun
         CreateWindowExW(0, class_name, L"", style, 0, 0, 0, 0, parent,
                         (HMENU)(INT_PTR)note_pane_control_id, GetModuleHandleW(nullptr), nullptr);
     if (pane->handle == nullptr || !subclass_pane(pane) || !prepare_navigation(pane) ||
-        !extend_background(pane))
+        !extend_background(pane) || !prepare_scroll(pane))
     {
         note_pane_destroy(pane);
         return NOTE_PANE_NOT_CREATED;
@@ -1131,6 +1344,13 @@ void note_pane_destroy(struct note_pane *_Nullable pane)
     if (pane == nullptr)
     {
         return;
+    }
+    cancel_scroll(pane);
+    if (pane->scroll_timer != nullptr)
+    {
+        SetWindowLongPtrW(pane->scroll_timer, GWLP_USERDATA, 0);
+        DestroyWindow(pane->scroll_timer);
+        pane->scroll_timer = nullptr;
     }
     if (pane->selection != nullptr)
     {
