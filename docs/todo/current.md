@@ -8,20 +8,22 @@
 
 ## 品質改善の現在位置
 
-[#451](https://github.com/hideyukiMORI/nene-folio/issues/451) / [PR #454](https://github.com/hideyukiMORI/nene-folio/pull/454)の
-子窓が覆う縁のresize修正を、最終head`d3abd69`・必須CI`40971869636`成功後、main`3ef671f`へ統合した。
-候補は73checks/0fail・既知遮断8点を解消。別の合成開始/取消は16checks/0fail。物理dragと実寸法変更は未確認。
-通常exe反映、5536filesの全hash保全、追加worktree削除まで完了。出力削除拒否は下記へ保持する。
-詳細は[品質記録](../quality/2026-10-30-window-edge-routing.md)、確定原本は`agents/451-window-edge/integration-completion.json`。
-直前の#448現在ノート検索を含む完成履歴は[日報](../reports/2026-10-30.md)へ集約した。
-
-[#452](https://github.com/hideyukiMORI/nene-folio/issues/452)の最小化/最大化/復元の常設入口は、候補v5の対象検証を受理した。
+[#452](https://github.com/hideyukiMORI/nene-folio/issues/452) / [PR #455](https://github.com/hideyukiMORI/nene-folio/pull/455)の
+最小化/最大化/復元の常設入口を、最終head`5f42f88`・必須CI`40990655449`成功後、main`ee65c6d`へ統合した。
 狭幅では表示3択だけを既存MENUへまとめ、shell操作を常時可視にする。[ADR0075](../adr/0075-window-shell-controls-and-layout-chooser.md)。
 menu unit、placement4ケース/30項目、配置/pointer13幅/523項目、代表8構成の画像、keyboard/MENU/実MTA/native境界を確認した。
 controlsで見つかった設定面の復元不備は、既存root focus正規化で修復。設定/テーマ2ケース15項目は不一致0/技術不備0。
-v5のDebug/tidyは3actionsで成功し、親の原本照合も完了した。失敗runは保持し、影響外の成功結果を再利用した。
-最終文書/conformance・最終head必須CI・統合/通常反映/整理はこの後に行い、確定値は同taskの`integration-completion.json`へ残す。
-詳細は[品質記録](../quality/2026-10-30-window-controls.md)。
+通常exe反映と13977filesの全hash保全、追加worktree/一時出力の削除まで完了。branch/commitと失敗原本を保持する。
+詳細は[品質記録](../quality/2026-10-30-window-controls.md)、確定原本は`agents/452-window-controls/integration-completion.json`。
+#448の現在ノート検索と#451の縁resizeを含む完成履歴は[日報](../reports/2026-10-30.md)へ集約した。
+
+[#456](https://github.com/hideyukiMORI/nene-folio/issues/456)で、狭幅表の可読列幅とnative水平到達の限定診断を受理した。
+現行style/既存rendererでroot3列・各1440twipの左右到達、通常段落wrap、本文状態/実Redo→Undoの29契約は不一致0。
+root63列と深い字下げ/300%の63列は、TOM処理成功・表配置失敗。失敗後は圧縮幅/0幅のままで、横到達まで完遂していない。
+2caseの本文等20契約は不一致0、実exit3・技術失敗2を保持する。初回失敗と欠落画像の記録errorも残す。
+通常段落も横へ動くため、製品方式と最小列幅は採用しない。native総幅上限と内部失敗箇所、利用者の横操作は未確定。
+背景読込の静読も完了したが、#438の保存拒否と現在sourceの一致を確認し、共有設定だけの案は再採用しない。
+詳細は[診断記録](../quality/2026-10-30-table-horizontal-feasibility.md)。
 
 本文/置換の追加静読は新具体的不具合0。置換4Mの生成片/完成本文の差を新規不具合とせず、既存のedit資源上限を維持した。
 背景読込・極狭幅表は未解決で、新しい性能値や実UIの一般保証はない。
@@ -40,9 +42,9 @@ Waivers none。
 ## 通常exeとhideの実機確認
 
 hide受理済み合成サンプル`data/サンプル/Markdown構文サンプル.md`は通常dataへ残している。実ノート内容は記録・同梱しない。
-現在の通常`C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`はsource `3ef671f`・表示版0.3.0/Windows版0.3.0.0。
-通常process0件を確認して正規ツールで反映しexit0、10月30日08:23:35 JST更新済み。更新後は起動していない。
-版・hashは`D:/NeNeFolio/agents/451-window-edge/normal-build-verification.json`。通常dataは操作していない。
+現在の通常`C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`はsource `ee65c6d`・表示版0.3.0/Windows版0.3.0.0。
+通常process0件を確認して正規ツールで反映しexit0、10月30日11:23:10 JST更新済み。更新後は起動していない。
+版・hashは`D:/NeNeFolio/agents/452-window-controls/normal-build-verification.json`。通常dataは操作していない。
 
 ## 次の予定: ノートの保存先設定（未実装）
 

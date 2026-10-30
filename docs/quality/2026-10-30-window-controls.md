@@ -1,6 +1,6 @@
 # 主窓操作の常設入口と一覧退出時の復元 — #452
 
-2026-10-30。候補v5の対象検証を受理した。controlsで見つかった設定面の復元不備も修復し、設定/テーマ2ケース15項目が一致した。最終headの必須CI・統合は未完了。
+2026-10-30。候補v5の対象検証を受理し、PR #455の最終head必須CI成功後、mainへ統合・通常exe反映・安全整理まで完了した。controlsで見つかった設定面の復元不備も修復し、設定/テーマ2ケース15項目が一致した。
 規則: ARC-001/002/004/011/012、C-002/008/012/014/016/017/018、QLT-008/010/012/013。Waivers none。
 
 ## 範囲と設計
@@ -284,9 +284,16 @@ worker/controller/runnerは実0、timeout無し、workerの全process終了後�
 
 ## 統合条件と残る限界
 
-最終文書参照/空白/製品hash/正典conformanceは`parent-final-record-draft.ps1`から一度まとめて記録する。
-最終PR headの`pwsh -NoProfile -File ./eng/check.ps1`成功を確認するまで統合しない。CI・統合・通常反映・整理の
-確定値は同taskの`integration-completion.json`へ収載し、次のcurrent/日報更新でも照合する。
+最終文書参照/空白/製品hash/正典conformanceを`parent-final-record-draft.ps1`で記録した。
+初回parent-final-01は旧品質文書末尾の余分な空行を検出し失敗。空行だけを訂正したparent-final-02は
+30変更file/132参照/18製品hashを照合し、conformance違反0、child/wrapper0・記録error0だった。旧失敗は保持した。
+最終head`5f42f88272333f22f81f523111b056720a34634f`の必須CI`40990655449`で
+`pwsh -NoProfile -File ./eng/check.ps1`が成功し、PR #455をmain`ee65c6d23f78276a7f83358a59627abc4a02a17d`へ統合した。
+正規`tools/prepare-real-machine.ps1`の通常反映もchild/wrapper0・記録error0。通常exeは11:23:10 JST更新、5,559,296bytes、
+SHA256 `0ADACB5BE97FB89E51B3FE092F3258897E7DE7A3AAFBC6B0E21A567229FD7DAA`。更新後は起動していない。
+13977files/2,187,035,109bytesを恒久archiveへ全hash照合して保全し、dirty/untracked/ignored・link・稼働参照0を確認した。
+追加worktreeと一時出力を削除、branch/commitを保持した。旧削除拒否47箇所は操作していない。
+確定値は`D:/NeNeFolio/agents/452-window-controls/integration-completion.json`。runの旧output pathは同taskの`output-archive`から辿れる。
 保存schema・依存・ゲートの変更なし。Waivers none。
 
 専用desktopの合成入力・UIA受信・PrintWindowの結果であり、物理mouse/IME、reader発話、複数monitor跨ぎ、
