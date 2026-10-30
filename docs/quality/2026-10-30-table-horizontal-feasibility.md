@@ -103,7 +103,7 @@ case3の0幅はnative readbackの観測であり、画像から表の可読性�
 横bar追加だけでは未成立の幅設定を解消できない。別の表示経路や0幅fallbackを追加せず、数値境界/内部失敗原因と
 pointer/keyboard入力、本文の横移動、native UIAを次の設計判断として残す。製品source/config/schema・ゲート・版の変更は0。
 文書は差分/参照/conformanceを対象検査し、統合は最終PR headの必須CIに従う。
-統合・通常exe hash維持・全出力の恒久保全と安全整理の確定原本は同taskの`integration-completion.json`へ残す。
+統合・通常exe hash維持・全出力の恒久保全と安全整理の確定原本は同taskの`integration-completion.json`へ収載した。
 
 一次資料: [EM_SETSCROLLPOS](https://learn.microsoft.com/en-us/windows/win32/controls/em-setscrollpos)はpixel座標をnativeが補正する。
 [EM_GETSCROLLPOS](https://learn.microsoft.com/en-us/windows/win32/controls/em-getscrollpos)には16bitの戻り座標制約がある。
@@ -120,3 +120,14 @@ SOLが32入力を固定して、#438のheld reader中MoveFileExW失敗5→close�
 残る一ノート同期I/O、検証/copy、確定filter保存後の同期修復、入力/結果反映のlayoutをsource位置付きで整理した。
 報告は`D:/NeNeFolio/agents/quality-post452-read/read-investigation-v1.md`。新しい計時や背景化は行っていない。
 共有flagだけの案は再採用せず、必要なら一ノートUI占有の分解計測を別の焦点とする。表の診断と同時に性能計時しない。
+
+## 文書統合と保全
+
+親の最終文書検査は5file/30参照、conformance違反0、759入力不変、child/wrapper0・記録error0。
+PR #457のhead`cb1131714c47a5b0bf47d6c60a1023ff5b98c372`は必須CI`40999381519`のfull-gate/check成功後、
+12:52:52 JSTにmain`c149fbc64f7562a183f0b44838c4548b50c47b32`へ統合。Issue終了・tree一致・clean main/originを照合した。
+通常exeは#452のsource`ee65c6d`・SHA256 `0ADACB5BE97FB89E51B3FE092F3258897E7DE7A3AAFBC6B0E21A567229FD7DAA`を維持し、再build・起動・通常data操作0。
+4107files/1,132,527,854bytesを`agents/456-table-horizontal-feasibility/output-archive`へ全hash照合して保全した。
+未保存/未追跡/ignored・link・稼働参照0の監査後、追加worktreeを削除しbranch/commitを保持した。
+出力`D:/NeNeFolio/outputs/456-table-horizontal-feasibility`の削除は実行前に自動承認レビューが`blocked by policy`で拒否した。
+追加理由は返らず、再試行せず48箇所目として保持する。失敗試行と原本もarchiveへ収載済み。
