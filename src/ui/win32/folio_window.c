@@ -162,6 +162,7 @@ struct folio_window
     struct theme_candidates *_Nullable theme_candidates;
     size_t command_selection;
     size_t command_first;
+    int theme_wheel_remainder; /* delta × 3のうち1行に満たない余り（ADR0061・#469）。 */
     bool command_keys_visible;
     /* ヘルプが箱に入りきらないときに送り出す先頭の行（PgUp / PgDn・#69）。 */
     size_t command_help_scroll;
@@ -1474,6 +1475,7 @@ static RECT command_rows_rect(const struct folio_window *_Nonnull self)
 
 static size_t palette_visible_count(const struct folio_window *_Nonnull self);
 static void reveal_palette_selection(struct folio_window *_Nonnull self);
+static void reveal_theme_selection(struct folio_window *_Nonnull self);
 
 static size_t command_visible_rows(const struct folio_window *_Nonnull self)
 {
@@ -1490,6 +1492,11 @@ static size_t command_visible_rows(const struct folio_window *_Nonnull self)
 
 static void reveal_command_selection(struct folio_window *_Nonnull self)
 {
+    if (self->command_surface == COMMAND_SURFACE_THEMES)
+    {
+        reveal_theme_selection(self);
+        return;
+    }
     if (self->command_surface == COMMAND_SURFACE_PALETTE)
     {
         reveal_palette_selection(self);
@@ -1670,7 +1677,8 @@ static void arrange_surface_selection(struct folio_window *_Nonnull self)
 {
     if (self->command_surface == COMMAND_SURFACE_MENU || command_keys(self))
         return;
-    if (settings_surface(self) || command_surface_listing(self->command_surface))
+    if (self->command_surface != COMMAND_SURFACE_THEMES &&
+        (settings_surface(self) || command_surface_listing(self->command_surface)))
         self->command_first = 0;
     if (self->command_surface == COMMAND_SURFACE_PALETTE || settings_surface(self) ||
         command_surface_listing(self->command_surface))
@@ -3781,6 +3789,33 @@ static size_t theme_matches_count(const struct folio_window *_Nonnull self)
 {
     return prepare_theme_candidates(self) == S_OK ? theme_candidates_count(self->theme_candidates)
                                                   : 0;
+}
+
+static size_t theme_window_rows(const struct folio_window *_Nonnull self)
+{
+    size_t rows = command_visible_rows(self);
+    return rows > 0 ? rows : 1;
+}
+
+static size_t theme_scroll_limit(const struct folio_window *_Nonnull self)
+{
+    size_t count = theme_matches_count(self);
+    size_t rows = theme_window_rows(self);
+    return count > rows ? count - rows : 0;
+}
+
+static void reveal_theme_selection(struct folio_window *_Nonnull self)
+{
+    size_t limit = theme_scroll_limit(self);
+    if (self->command_first > limit)
+        self->command_first = limit;
+    if (self->command_selection >= theme_matches_count(self))
+        return;
+    if (self->command_selection < self->command_first)
+        self->command_first = self->command_selection;
+    size_t rows = theme_window_rows(self);
+    if (self->command_selection - self->command_first >= rows)
+        self->command_first = self->command_selection - rows + 1;
 }
 
 static void draw_theme_sample(HDC device, RECT bounds, COLORREF background, COLORREF foreground)
@@ -6136,6 +6171,7 @@ static void show_theme_surface(struct folio_window *_Nonnull self)
     clear_command_status(self);
     self->command_selection = (size_t)folio_state_theme_choice(self->state);
     self->command_first = 0;
+    self->theme_wheel_remainder = 0;
     rearrange_keeping_line(self);
     focus_command_input(self);
     redraw_command_layer(self);
@@ -8138,6 +8174,7 @@ static void theme_query_changed(struct folio_window *_Nonnull self)
     }
     self->command_selection = 0;
     self->command_first = 0;
+    self->theme_wheel_remainder = 0;
     clear_command_status(self);
     arrange_command_input(self);
     preview_theme_selection(self);
@@ -9232,6 +9269,49 @@ static void command_help_wheel(struct folio_window *_Nonnull self, WPARAM key)
     move_command_help(self, key == VK_UP ? VK_PRIOR : VK_NEXT);
 }
 
+static int theme_wheel_rows(struct folio_window *_Nonnull self, int delta)
+{
+    int remainder = self->theme_wheel_remainder;
+    bool reversed = (remainder > 0 && delta < 0) || (remainder < 0 && delta > 0);
+    /* WM_MOUSEWHEELのsigned 16bit delta × 3と余り119はintに収まる。 */
+    int scaled = (reversed ? 0 : remainder) + delta * 3;
+    self->theme_wheel_remainder = scaled % WHEEL_DELTA;
+    return -(scaled / WHEEL_DELTA);
+}
+
+static size_t scrolled_theme_first(const struct folio_window *_Nonnull self, int lines)
+{
+    size_t limit = theme_scroll_limit(self);
+    size_t first = self->command_first < limit ? self->command_first : limit;
+    size_t distance = (size_t)(lines > 0 ? lines : -lines);
+    if (lines < 0)
+        return distance < first ? first - distance : 0;
+    return first + (distance < limit - first ? distance : limit - first);
+}
+
+static void scroll_theme_content(struct folio_window *_Nonnull self, int delta)
+{
+    if (prepare_theme_candidates(self) != S_OK)
+    {
+        report_outcome(self, FOLIO_STATE_OUT_OF_MEMORY);
+        return;
+    }
+    int lines = theme_wheel_rows(self, delta);
+    if (lines == 0 || theme_matches_count(self) == 0)
+        return;
+    size_t first = scrolled_theme_first(self, lines);
+    self->command_first = first;
+    size_t selected = self->command_selection;
+    size_t rows = theme_window_rows(self);
+    if (self->command_selection < first)
+        self->command_selection = first;
+    if (self->command_selection - first >= rows)
+        self->command_selection = first + rows - 1;
+    if (self->command_selection != selected)
+        preview_theme_selection(self);
+    redraw_command_layer(self);
+}
+
 static bool command_wheel(struct folio_window *_Nonnull self, WPARAM wparam)
 {
     bool listed = self->command_surface == COMMAND_SURFACE_PALETTE || settings_surface(self) ||
@@ -9253,7 +9333,8 @@ static bool command_wheel(struct folio_window *_Nonnull self, WPARAM wparam)
     }
     if (self->command_surface == COMMAND_SURFACE_THEMES)
     {
-        return theme_navigate(self, key);
+        scroll_theme_content(self, delta);
+        return true;
     }
     if (self->command_surface == COMMAND_SURFACE_SETTINGS)
     {
