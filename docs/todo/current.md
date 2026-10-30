@@ -21,17 +21,24 @@ PR #457の最終head`cb11317`・必須CI`40999381519`成功後、main`c149fbc`�
 通常exe hash維持、4107files全hash保全、作業木削除まで完了。出力削除は拒否され、下記48箇所目として保持する。
 詳細は[診断記録](../quality/2026-10-30-table-horizontal-feasibility.md)、確定原本は同taskの`integration-completion.json`。
 
-[#458](https://github.com/hideyukiMORI/nene-folio/issues/458)の固定Release計測を受理した。
-1,000件×10KiBの初回検索は81.974ms、同processの別語warm検索は15.679ms。初回/warmのread数は1000/0。
-128byte Anchorと16MiB Largeの検索は63.059ms、最長continue43.3406msだった。
-Large一件準備43.3398msのうちUTF-8/NUL検証32.3232ms、OS API4.8974ms、複製/確保4.8984ms。
-A/Bの27+13契約は不一致0、実終了/最終audit/記録は0。初回compile2回と旧auditの失敗も原本へ保持する。
-計装込みの一回値で、OS cache/物理入力/DWM完了や速度倍率は保証しない。製品変更は0。
-次は文字列検証の契約と処理量を調べる。背景thread/保存方式変更は未採用。
-詳細は[計測記録](../quality/2026-10-30-search-preparation-profile.md)。
+[#460](https://github.com/hideyukiMORI/nene-folio/issues/460)で、共通UTF-8 decoder内のASCII早期returnを実装した。
+空入力を先に判定し、既存sequence_lengthのASCII分岐を同じdecoder内へ集約する最小案を受理した。
+全8callsiteと本文の不正UTF8→NUL→size優先を静読し、公開API・保存形式を保つ。
+Debug sanitizer/tidyと限定text/NUL/size境界、実Release objectのASCII直接returnを受理した。
+固定Bは検索63.0590→49.3964ms、Large検証32.3232→18.7385ms、最長continue43.3406→30.4207ms。
+13契約に不一致0、実終了/同raw audit/記録は0。初回の別process検出による計時前停止3/125/error8も保持する。
+一回の計装付きASCII標本であり一般的な速度を保証しない。一件の同期準備約30.42msは残る。
+最終CI/統合/通常反映は未実施。詳細は[品質記録](../quality/2026-10-30-ascii-decode.md)。
+
+根拠の[#458](https://github.com/hideyukiMORI/nene-folio/issues/458)では、1,000件×10KiBの初回81.974ms、別語warm15.679ms、
+Anchor+16MiB Largeは63.059ms。Large一件準備43.3398ms中のUTF-8/NUL検証32.3232msを観測した。
+A/Bの27+13契約不一致0。計装込みの一回値で、OS cache/物理入力/DWM完了や速度倍率を保証しない。
+PR #459のhead`a047724`・必須CI`41012681318`成功でmain`7824344`へ文書統合した。
+通常exe hash維持、12932files全hash保全、worktree削除まで完了。出力削除は拒否され49箇所目として保持する。
+詳細は[計測記録](../quality/2026-10-30-search-preparation-profile.md)、確定原本は同taskの`integration-completion.json`。
 
 本文/置換の追加静読は新具体的不具合0。置換4Mの生成片/完成本文の差を新規不具合とせず、既存のedit資源上限を維持した。
-背景読込・極狭幅表は未解決で、#458の限定実測から実UIの一般保証へ広げない。
+背景読込・極狭幅表は未解決で、#458/#460の限定実測から実UIの一般保証へ広げない。
 文書収載#449の統合・通常exe hash維持・安全整理の確定原本は`agents/day-close-20261030/integration-completion.json`。
 Waivers none。
 
@@ -70,7 +77,9 @@ portable版はexe隣の`data`を既定とし、両方とも設定から「ノー
 
 ## 保持中の旧作業物
 
-下記の48箇所は自動承認レビューの削除拒否により保持する。再試行や別手段での削除をしない。
+下記の49箇所は自動承認レビューの削除拒否により保持する。再試行や別手段での削除をしない。
+
+- #458: `D:/NeNeFolio/outputs/458-search-preparation-profile`。文書統合・通常exe hash維持・12932files全hash保全と安全監査後、出力削除要求が実行前に`blocked by policy`で拒否された。追加理由なし。worktreeは削除済み、branch/commit保持。確定原本は同taskの`integration-completion.json`。
 
 - #456: `D:/NeNeFolio/outputs/456-table-horizontal-feasibility`。文書統合・通常exe hash維持・4107files全hash保全と安全監査後、出力削除要求が実行前に`blocked by policy`で拒否された。追加理由なし。worktreeは削除済み、branch/commit保持。確定原本は同taskの`integration-completion.json`。
 

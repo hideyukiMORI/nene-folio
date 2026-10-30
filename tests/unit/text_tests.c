@@ -10,8 +10,26 @@
 #include <stdlib.h>
 #include <string.h>
 
+static void verify_utf8_single_byte(void)
+{
+    for (unsigned lead = 0; lead < 256; ++lead)
+    {
+        const unsigned char byte[] = {(unsigned char)lead};
+        uint32_t code_point = UINT32_MAX;
+        size_t consumed = utf8_text_decode((const char *)byte, sizeof byte, &code_point);
+        require(consumed == (lead < 128 ? 1U : 0U) &&
+                    code_point == (lead < 128 ? lead : UINT32_MAX),
+                "all single bytes preserve ASCII values or reject without changing output");
+    }
+    const char byte[] = {'A'};
+    uint32_t code_point = UINT32_MAX;
+    require(utf8_text_decode(byte + sizeof byte, 0, &code_point) == 0 && code_point == UINT32_MAX,
+            "zero length does not read the one-past input or change output");
+}
+
 static void verify_utf8_decode(void)
 {
+    verify_utf8_single_byte();
     uint32_t code_point = 0;
     require(utf8_text_decode("A", 1, &code_point) == 1 && code_point == 0x41, "ascii");
     require(utf8_text_decode("\xC3\xA9", 2, &code_point) == 2 && code_point == 0xE9, "2 bytes");

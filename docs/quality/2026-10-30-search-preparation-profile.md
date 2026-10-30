@@ -114,3 +114,14 @@ nesting・子区間差引き・恒等式・read/work・identity・本文/Undo・
 文書の差分/参照/conformanceを確認し、最終PR headの必須CIを統合条件にする。通常exeはhash維持で、再build/起動しない。
 統合後の全出力保全と安全監査、作業木/不要出力の整理結果は同taskの`integration-completion.json`へ記録する。
 既に削除拒否された48箇所は再試行しない。実測の一般化、文字列検証の改善実装、背景I/O・保存方式変更は未実施。
+
+## 文書統合と保全の確定
+
+文書5file/31参照/conformance違反0、760入力/1成果物のcurrent/snapshot一致、child/wrapper0・記録error0。
+PR #459の最終head`a0477246b801cb2e2f3032fede6a585f204030d7`は必須CI`41012681318`のfull-gate/check成功後、
+main`78243449af0c5b09199bd88426409099b910b66a`へ統合した。Issue終了・tree一致・clean main/originを照合した。
+通常exeはsource`ee65c6d`・SHA256 `0ADACB5BE97FB89E51B3FE092F3258897E7DE7A3AAFBC6B0E21A567229FD7DAA`を維持し、再build/起動/通常data操作0。
+12932files/741475903bytesを同taskの`agents/output-archive`へ全hash照合して保全した。
+未保存/未追跡/ignored・link・稼働参照0を確認してworktreeを削除し、branch/commitと失敗原本を保持した。
+出力`D:/NeNeFolio/outputs/458-search-preparation-profile`の削除は自動承認レビューが実行前に`blocked by policy`で拒否した。
+追加理由は返らず、再試行せず49箇所目として保持。確定原本は同taskの`integration-completion.json`。
