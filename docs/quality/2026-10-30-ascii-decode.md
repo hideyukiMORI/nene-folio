@@ -131,3 +131,15 @@ configure-debug-01は、tool identity収集でGet-CommandがPython実体とWindo
 実schemaに合わせて訂正し、17組のold/new/patchの実hashと完全差分一致を確認した。製品実行や測定bodyの変更はない。
 親読取補助のinspection metadata所在と任意command keyの想定も、実output path/argv keyへ訂正し補足へ記録した。
 既に成功したsource/artifact照合を再利用し、対象製品やobjdumpを再実行していない。
+
+## 統合・通常反映・保全の確定
+
+PR #461の最終head`12b49718a0d2811da3133f730bc35f3b9dd56a70`は、必須CI`41026891563`のfull-gate/check成功後、
+main`3dbed2ae1e889b893e98721a5da135f76d203632`へ統合した。Issue終了・統合tree一致・clean main/originを照合した。
+`tools/prepare-real-machine.ps1`の正典反映はchild/wrapper0・記録error0、762入力不変と2成果物を照合した。
+通常exeは17:38:56 JST更新、5,560,320bytes、版0.3.0/0.3.0.0、
+SHA256 `DC3B3EE6FDDB8AE1B9BBA10F3828574C264E9737892C27F40AE3B3F32D534AA5`。更新後の起動・通常data操作は0。
+全18stage/72raw hashes/7191snapshotの索引を収載し、7612files/859998785bytesを恒久archiveへ全hash照合して保全した。
+未保存/未追跡/ignored・link・稼働参照0を監査後、作業木と一時outputを削除し、branch/commitと失敗原本を保持した。
+削除拒否済み49pathsは操作していない。原本は同taskの`final-ci-41026891563.json`、`normal-preservation.json`、
+`cleanup-audit.json`、`integration-completion.json`。公開betaの再生成/再公開は行っていない。
