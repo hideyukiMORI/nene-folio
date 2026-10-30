@@ -38,11 +38,11 @@ struct accessibility_node
 
 static bool has_invoke(enum accessible_kind kind)
 {
-    return kind == ACCESSIBLE_SETTINGS || kind == ACCESSIBLE_CLOSE || kind == ACCESSIBLE_MENU ||
-           kind == ACCESSIBLE_NEW_NOTE || kind == ACCESSIBLE_NEW_CATEGORY ||
-           kind == ACCESSIBLE_NOTE || kind == ACCESSIBLE_SAVE || kind == ACCESSIBLE_HELP ||
-           kind == ACCESSIBLE_FIND || kind == ACCESSIBLE_SURFACE_CHOICE ||
-           kind == ACCESSIBLE_SURFACE_BUTTON;
+    return kind == ACCESSIBLE_SETTINGS || accessible_item_shell(kind) ||
+           accessible_item_menu(kind) || kind == ACCESSIBLE_NEW_NOTE ||
+           kind == ACCESSIBLE_NEW_CATEGORY || kind == ACCESSIBLE_NOTE || kind == ACCESSIBLE_SAVE ||
+           kind == ACCESSIBLE_HELP || kind == ACCESSIBLE_FIND ||
+           kind == ACCESSIBLE_SURFACE_CHOICE || kind == ACCESSIBLE_SURFACE_BUTTON;
 }
 
 static bool has_selection(enum accessible_kind kind)
@@ -75,7 +75,7 @@ static bool has_scroll_item(struct accessible_item item)
 
 static bool has_expand(enum accessible_kind kind)
 {
-    return kind == ACCESSIBLE_CATEGORY || kind == ACCESSIBLE_NOTE || kind == ACCESSIBLE_MENU;
+    return kind == ACCESSIBLE_CATEGORY || kind == ACCESSIBLE_NOTE || accessible_item_menu(kind);
 }
 
 static struct accessibility_node *_Nonnull simple_owner(IRawElementProviderSimple *_Nonnull value)
@@ -325,6 +325,9 @@ static const CONTROLTYPEID control_types[] = {
     [ACCESSIBLE_LAYOUT_NOTE] = UIA_RadioButtonControlTypeId,
     [ACCESSIBLE_SETTINGS] = UIA_ButtonControlTypeId,
     [ACCESSIBLE_CLOSE] = UIA_ButtonControlTypeId,
+    [ACCESSIBLE_MINIMIZE] = UIA_ButtonControlTypeId,
+    [ACCESSIBLE_MAXIMIZE] = UIA_ButtonControlTypeId,
+    [ACCESSIBLE_LAYOUT_CHOOSER] = UIA_ButtonControlTypeId,
     [ACCESSIBLE_PANE_TOOLS] = UIA_ToolBarControlTypeId,
     [ACCESSIBLE_BREADCRUMB] = UIA_TextControlTypeId,
     [ACCESSIBLE_MODE_GROUP] = UIA_GroupControlTypeId,
@@ -857,7 +860,7 @@ static HRESULT STDMETHODCALLTYPE selection_item_container(
 static HRESULT STDMETHODCALLTYPE expand_open(IExpandCollapseProvider *_Nonnull self)
 {
     struct accessibility_node *_Nonnull node = expand_owner(self);
-    if (node->item.kind == ACCESSIBLE_MENU)
+    if (accessible_item_menu(node->item.kind))
     {
         struct accessible_request request = {.item = node->item,
                                              .action = ACCESSIBLE_ACTION_EXPAND};

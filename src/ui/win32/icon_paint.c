@@ -309,11 +309,64 @@ static int add_menu_path(struct GpPath *_Nonnull path)
     return add_polygon(path, points, sizeof points / sizeof points[0]);
 }
 
+/* 窓操作と表示の絵も24 viewBoxの閉じた面。palette/資源の所有は既存経路。 */
+static int add_minimize_path(struct GpPath *_Nonnull path)
+{
+    static const float points[] = {4, 16, 20, 16, 20, 18, 4, 18, 4, 16};
+    return add_polygon(path, points, sizeof points / sizeof points[0]);
+}
+
+static int add_maximize_path(struct GpPath *_Nonnull path)
+{
+    static const float outer[] = {4, 4, 20, 4, 20, 20, 4, 20, 4, 4};
+    static const float inner[] = {6, 6, 18, 6, 18, 18, 6, 18, 6, 6};
+    int status = add_polygon(path, outer, sizeof outer / sizeof outer[0]);
+    return first_failure(status, add_polygon(path, inner, sizeof inner / sizeof inner[0]));
+}
+
+static int add_restore_path(struct GpPath *_Nonnull path)
+{
+    static const float back[] = {8,  3,  21, 3,  21, 16, 18, 16, 18, 14, 19,
+                                 14, 19, 5,  10, 5,  10, 6,  8,  6,  8,  3};
+    static const float front[] = {3, 8, 16, 8, 16, 21, 3, 21, 3, 8};
+    static const float hole[] = {5, 10, 14, 10, 14, 19, 5, 19, 5, 10};
+    int status = add_polygon(path, back, sizeof back / sizeof back[0]);
+    status = first_failure(status, add_polygon(path, front, sizeof front / sizeof front[0]));
+    return first_failure(status, add_polygon(path, hole, sizeof hole / sizeof hole[0]));
+}
+
+static int add_layout_path(struct GpPath *_Nonnull path, enum icon_paint_kind kind)
+{
+    static const float outer[] = {3, 4, 21, 4, 21, 20, 3, 20, 3, 4};
+    static const float inner[] = {5, 6, 19, 6, 19, 18, 5, 18, 5, 6};
+    float left = kind == ICON_PAINT_LAYOUT_NOTE ? 12.0f : 5.0f;
+    float right = kind == ICON_PAINT_LAYOUT_DRAWER ? 10.0f : 19.0f;
+    if (kind == ICON_PAINT_LAYOUT_BOTH)
+    {
+        left = 10.0f;
+        right = 12.0f;
+    }
+    const float pane[] = {left, 6, right, 6, right, 18, left, 18, left, 6};
+    int status = add_polygon(path, outer, sizeof outer / sizeof outer[0]);
+    status = first_failure(status, add_polygon(path, inner, sizeof inner / sizeof inner[0]));
+    return first_failure(status, add_polygon(path, pane, sizeof pane / sizeof pane[0]));
+}
+
 /* 形ごとに割る（全値の switch・default は書かない・C-002）。 */
 static int build_path(struct GpPath *_Nonnull path, enum icon_paint_kind kind)
 {
     switch (kind)
     {
+    case ICON_PAINT_MINIMIZE:
+        return add_minimize_path(path);
+    case ICON_PAINT_MAXIMIZE:
+        return add_maximize_path(path);
+    case ICON_PAINT_RESTORE:
+        return add_restore_path(path);
+    case ICON_PAINT_LAYOUT_DRAWER:
+    case ICON_PAINT_LAYOUT_BOTH:
+    case ICON_PAINT_LAYOUT_NOTE:
+        return add_layout_path(path, kind);
     case ICON_PAINT_CLOSE:
         return add_close_path(path);
     case ICON_PAINT_SETTINGS:
@@ -354,6 +407,12 @@ static int fill_mode_for(enum icon_paint_kind kind)
     case ICON_PAINT_SELECTION:
     case ICON_PAINT_MENU:
         return gdiplus_fill_winding;
+    case ICON_PAINT_MINIMIZE:
+    case ICON_PAINT_MAXIMIZE:
+    case ICON_PAINT_RESTORE:
+    case ICON_PAINT_LAYOUT_DRAWER:
+    case ICON_PAINT_LAYOUT_BOTH:
+    case ICON_PAINT_LAYOUT_NOTE:
     case ICON_PAINT_SETTINGS:
     case ICON_PAINT_WARNING:
     case ICON_PAINT_SAVE:

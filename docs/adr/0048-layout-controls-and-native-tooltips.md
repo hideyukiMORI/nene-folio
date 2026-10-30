@@ -74,3 +74,9 @@ UIAの新規の親は共通ヘッダー、F6のヘッダー入口は新規、索
 [ADR0060](0060-ui-part-styles-and-state-rule.md)で決定1の区画54・余白2を区画56・余白4へ、表示群と設定の間12を群間16（一覧のみの320幅では8）へ補正する。
 決定3の「3択自体への新しいTab順を混ぜない」は、Tabが群に1回だけ止まり矢印でfocusだけを動かす形で補正する。
 tooltipは全操作部品に付け、字付きの釦はキーだけ、絵だけの部品は名前＋キーとする。tooltipの経路（OS同梱comctl32）は変えない。
+
+## 2026-10-30の補正（#452）
+
+[ADR0075](0075-window-shell-controls-and-layout-chooser.md)で次を補正する。
+表示3択が移動24を保てない幅では、同じ表示slotを現在modeのiconとchevronを持つchooserへする。
+表示command/shortcutは既存metadataを使い、tooltip/UIA Nameは現在modeを含める。特定modeのshortcutをchooser自身のキーとして表示しない。

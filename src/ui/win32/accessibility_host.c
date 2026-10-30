@@ -30,6 +30,8 @@ struct accessibility_host
     uint64_t surface_revision;
     uint64_t revision;
     unsigned visibility;
+    bool header_observed;
+    bool header_chooser; /* 通知用の前snapshotだけ。現状態はgeometryから読む。 */
     struct accessible_request request;
     char16_t filter_name[1024];
     char16_t body_name[1024];
@@ -244,9 +246,9 @@ static HRESULT action_ready(struct accessibility_host *_Nonnull host,
     {
         return accessibility_node_invalid;
     }
-    if (request->item.kind == ACCESSIBLE_CLOSE && request->action == ACCESSIBLE_ACTION_INVOKE)
+    if (accessible_item_shell(request->item.kind) && request->action == ACCESSIBLE_ACTION_INVOKE)
         return S_OK; /* shell可否はview.enabled。外側の業務実行guardは維持する。 */
-    if (request->item.kind == ACCESSIBLE_MENU && request->action == ACCESSIBLE_ACTION_COLLAPSE &&
+    if (accessible_item_menu(request->item.kind) && request->action == ACCESSIBLE_ACTION_COLLAPSE &&
         view.expanded)
     {
         return S_OK; /* 開いているnative menu自身の終了は、背後の操作ではない。 */
@@ -490,6 +492,23 @@ static void refresh_visibility(struct accessibility_host *_Nonnull host)
     }
 }
 
+static void refresh_header(struct accessibility_host *_Nonnull host)
+{
+    struct accessible_view view = {0};
+    struct accessible_item item = {.kind = ACCESSIBLE_HEADER};
+    if (FAILED(accessibility_host_read(host, &item, &view)))
+        return;
+    bool chooser = view.layout_chooser;
+    bool changed = host->header_observed && host->header_chooser != chooser;
+    host->header_observed = true;
+    host->header_chooser = chooser;
+    if (changed)
+    {
+        raise_structure(host, ACCESSIBLE_HEADER);
+        raise_structure(host, ACCESSIBLE_LAYOUT_GROUP);
+    }
+}
+
 static void observe_selection(struct accessibility_host *_Nonnull host, size_t index)
 {
     const enum accessible_kind groups[] = {ACCESSIBLE_LAYOUT_GROUP, ACCESSIBLE_MODE_GROUP,
@@ -543,8 +562,8 @@ static void observe_focus(struct accessibility_host *_Nonnull host)
 static bool menu_open(struct accessibility_host *_Nonnull host)
 {
     struct accessible_view view = {0};
-    struct accessible_item item = {.kind = ACCESSIBLE_MENU};
-    return SUCCEEDED(accessibility_host_read(host, &item, &view)) && view.expanded;
+    struct accessible_item item = {.kind = ACCESSIBLE_SURFACE};
+    return SUCCEEDED(accessibility_host_read(host, &item, &view)) && view.menu;
 }
 
 static void refresh_snapshot(struct accessibility_host *_Nonnull host)
@@ -557,6 +576,7 @@ static void refresh_snapshot(struct accessibility_host *_Nonnull host)
     host->refreshing = true;
     refresh_structure(host);
     refresh_visibility(host);
+    refresh_header(host);
     refresh_surface(host);
     annotate(host, ACCESSIBLE_FILTER, host->filter_name);
     annotate(host, ACCESSIBLE_BODY, host->body_name);

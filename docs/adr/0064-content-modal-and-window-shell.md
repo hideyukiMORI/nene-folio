@@ -113,3 +113,9 @@ drawerとsettings/nativeのbackdropが窓縁を覆い、親の正しいresize判
 行dragや押下capture、内側client、面のcardは既存入力経路を維持する。子からSC_SIZEやReleaseCaptureを強制せず、
 親へ届いた後は既存Win32のshell経路を使う。内容のguard・modal owner・終了の寿命・保存schemaは変更しない。
 根拠とOS query/合成操作/物理入力の区別は[品質記録](../quality/2026-10-30-window-edge-routing.md)へ残す。
+
+## 2026-10-30の補正（#452）
+
+[ADR0075](0075-window-shell-controls-and-layout-chooser.md)で次を補正する。
+既存の閉じるに加えて最小化・最大化/復元を同じshell集合へ含め、WM_SYSCOMMANDの正典へ合流する。
+child/native modal中の内容guard、modalのTab順とowner/focus/終了寿命は維持し、header操作後も既存のmodal復帰を使う。

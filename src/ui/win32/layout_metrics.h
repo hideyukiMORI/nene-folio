@@ -7,6 +7,7 @@ struct layout_metrics
 {
     int width;
     int gap;
+    bool chooser; /* DPI済み残量から導く表示。保存しない。 */
 };
 
 #endif

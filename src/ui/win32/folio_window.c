@@ -273,6 +273,9 @@ static const struct
                                 UI_TEXT_EMPTY},
     [ACCESSIBLE_LAYOUT_NOTE] = {ACCESSIBLE_LAYOUT_GROUP, UI_TEXT_LAYOUT_BUTTON_NOTE, true,
                                 UI_TEXT_EMPTY},
+    [ACCESSIBLE_LAYOUT_CHOOSER] = {ACCESSIBLE_HEADER, UI_TEXT_LAYOUT_GROUP, true, UI_TEXT_EMPTY},
+    [ACCESSIBLE_MINIMIZE] = {ACCESSIBLE_HEADER, UI_TEXT_TOOLTIP_MINIMIZE, true, UI_TEXT_EMPTY},
+    [ACCESSIBLE_MAXIMIZE] = {ACCESSIBLE_HEADER, UI_TEXT_TOOLTIP_MAXIMIZE, true, UI_TEXT_EMPTY},
     [ACCESSIBLE_HELP] = {ACCESSIBLE_HEADER, UI_TEXT_COMMAND_HELP, true, UI_TEXT_TOOLTIP_HELP},
     [ACCESSIBLE_SETTINGS] = {ACCESSIBLE_HEADER, UI_TEXT_TOOLTIP_SETTINGS, true, UI_TEXT_EMPTY},
     [ACCESSIBLE_CLOSE] = {ACCESSIBLE_HEADER, UI_TEXT_TOOLTIP_CLOSE, true, UI_TEXT_EMPTY},
@@ -327,8 +330,11 @@ static const struct
     {ACCESSIBLE_LAYOUT_DRAWER, UI_PART_STYLE_CHOICE},
     {ACCESSIBLE_LAYOUT_BOTH, UI_PART_STYLE_CHOICE},
     {ACCESSIBLE_LAYOUT_NOTE, UI_PART_STYLE_CHOICE},
+    {ACCESSIBLE_LAYOUT_CHOOSER, UI_PART_STYLE_COMMAND},
     {ACCESSIBLE_HELP, UI_PART_STYLE_ICON},
     {ACCESSIBLE_SETTINGS, UI_PART_STYLE_ICON},
+    {ACCESSIBLE_MINIMIZE, UI_PART_STYLE_ICON},
+    {ACCESSIBLE_MAXIMIZE, UI_PART_STYLE_ICON},
     {ACCESSIBLE_CLOSE, UI_PART_STYLE_ICON},
     {ACCESSIBLE_VIEW, UI_PART_STYLE_CHOICE},
     {ACCESSIBLE_EDIT, UI_PART_STYLE_CHOICE},
@@ -480,7 +486,7 @@ constexpr DWORD corner_round_small = 3;
  * 面のパスで塗る（ADR 0033 の決定 6）ので、放射線の長さの定数は要らない。 */
 /* ---- 共通ヘッダーの寸法（余白の原則: 窓の縁 16・枠の内側 8・4 の倍数。#349 で設計席が確定）----
  * 縁は ui_part_edge（16）。描画・当たり判定・UIA・tooltip は close_rect から順に導く。 */
-constexpr int base_settings_gap = 8;            /* ? と歯車、歯車と × の間 */
+constexpr int base_settings_gap = 8;            /* 常設のC様式5部品の間 */
 constexpr int base_brand_gap = 16;              /* 新しいノートとブランドの間 */
 constexpr int base_layout_help_gap = 16;        /* 表示3択の群とヘルプ「?」の間 */
 constexpr int base_layout_help_compact_gap = 8; /* 狭幅で移動領域が足りないときの群間 */
@@ -500,6 +506,7 @@ constexpr int base_settings_item_height = 32;
 constexpr int base_settings_item_gap = 8;
 constexpr int base_settings_group_gap = 20;
 
+static size_t append_text(char *_Nonnull out, size_t at, const char *_Nonnull text);
 static WPARAM shortcut_character_for(enum folio_command command);
 static bool shortcut_keydown(struct folio_window *_Nonnull self, WPARAM key);
 static bool accessible_command(enum accessible_kind kind, enum folio_command *_Nonnull out);
@@ -539,6 +546,9 @@ static enum folio_state_outcome store_body(struct folio_window *_Nonnull self);
 static enum folio_state_outcome command_save_as(struct folio_window *_Nonnull self,
                                                 const char *_Nonnull argument);
 static void close_command_surface(struct folio_window *_Nonnull self);
+static void cancel_part_press(struct folio_window *_Nonnull self);
+static void normalize_header_target(struct folio_window *_Nonnull self);
+static void close_geometry_menu(struct folio_window *_Nonnull self);
 static void apply_layout_mode(struct folio_window *_Nonnull self, enum folio_layout_mode mode);
 static void show_pane_layout(struct folio_window *_Nonnull self);
 static void show_drawer_layout(struct folio_window *_Nonnull self);
@@ -621,7 +631,7 @@ static bool shell_ready(const struct folio_window *_Nonnull self)
 
 static bool part_enabled(const struct folio_window *_Nonnull self, enum accessible_kind kind)
 {
-    if (kind == ACCESSIBLE_CLOSE || kind == ACCESSIBLE_WINDOW || kind == ACCESSIBLE_HEADER)
+    if (accessible_item_shell(kind) || kind == ACCESSIBLE_WINDOW || kind == ACCESSIBLE_HEADER)
         return shell_ready(self);
     return folio_window_accessible_ready(self) && self->command_surface == COMMAND_SURFACE_CLOSED;
 }
@@ -1990,6 +2000,7 @@ static bool reflow_body(struct folio_window *_Nonnull self)
 static void arrange(struct folio_window *_Nonnull self)
 {
     refresh_part_metrics(self, GetDpiForWindow(self->handle));
+    normalize_header_target(self);
     arrange_command_input(self); /* 帯高を確定してから同じ高さだけ本文を下げる。 */
     struct folio_regions regions = regions_for(self);
     arrange_drawer_region(self, regions.drawer);
@@ -2394,55 +2405,56 @@ static RECT close_rect(const struct folio_window *_Nonnull self)
     return header_part_rect(self, header.right - scale(ui_part_edge, dpi) - size, size);
 }
 
-/* 閉じるアイコンの左隣に置く設定の歯車（ADR 0031 の決定 8(a)）。
- * 描画・当たり判定・札の右端の三つがこの 1 本を共有する。 */
-static RECT settings_rect(const struct folio_window *_Nonnull self)
+/* ×から左へmax/restore、min、設定、helpを同じ寸法で導く（ADR0075）。 */
+static RECT header_offset_rect(const struct folio_window *_Nonnull self, int index)
 {
     RECT bounds = close_rect(self);
-    UINT dpi = GetDpiForWindow(self->handle);
-    int shift = scale(ui_part_height + base_settings_gap, dpi);
-    OffsetRect(&bounds, -shift, 0);
+    int shift = scale(ui_part_height + base_settings_gap, GetDpiForWindow(self->handle));
+    OffsetRect(&bounds, -shift * index, 0);
     return bounds;
 }
 
-/* 設定の歯車の左隣のヘルプ「?」（C 様式・ADR0060 の決定 10）。間は歯車と × の間と同じ 8。 */
+static RECT maximize_rect(const struct folio_window *_Nonnull self)
+{
+    return header_offset_rect(self, 1);
+}
+
+static RECT minimize_rect(const struct folio_window *_Nonnull self)
+{
+    return header_offset_rect(self, 2);
+}
+
+static RECT settings_rect(const struct folio_window *_Nonnull self)
+{
+    return header_offset_rect(self, 3);
+}
+
 static RECT help_rect(const struct folio_window *_Nonnull self)
 {
-    RECT bounds = settings_rect(self);
-    UINT dpi = GetDpiForWindow(self->handle);
-    int shift = scale(ui_part_height + base_settings_gap, dpi);
-    OffsetRect(&bounds, -shift, 0);
-    return bounds;
+    return header_offset_rect(self, 4);
 }
 
-/* 表示3択の区画と、群とヘルプ「?」の間（論理 px）。最小幅 560 以上は 56 と 16。より細い窓
- * （一覧のみ 320）では区画を 44 にし、新しいノート（絵だけ）の右端から群の左端までの移動領域 24
- * （ADR0059）が残らなければ 群間 16→8、それでも足りなければ 区画 44→40 の順に縮める（#349）。 */
+/* 同じDPI済み残量から3択/chooserを決める。移動24は新規の最小icon幅の外側。 */
 static struct layout_metrics layout_metrics_for(const struct folio_window *_Nonnull self)
 {
+    UINT dpi = GetDpiForWindow(self->handle);
     RECT client;
     GetClientRect(self->handle, &client);
-    UINT dpi = GetDpiForWindow(self->handle);
     if (client.right >= scale(base_min_width, dpi))
-    {
-        return (struct layout_metrics){base_layout_button_width, base_layout_help_gap};
-    }
+        return (struct layout_metrics){base_layout_button_width, base_layout_help_gap, false};
     const struct layout_metrics steps[] = {
-        {base_layout_button_compact_width, base_layout_help_gap},
-        {base_layout_button_compact_width, base_layout_help_compact_gap},
-        {base_layout_button_narrow_width, base_layout_help_compact_gap}};
-    int new_note = scale(ui_part_edge + ui_part_height + base_new_note_drag_gap, dpi);
-    size_t last = sizeof steps / sizeof steps[0] - 1;
-    for (size_t at = 0; at < last; ++at)
+        {base_layout_button_compact_width, base_layout_help_gap, false},
+        {base_layout_button_compact_width, base_layout_help_compact_gap, false},
+        {base_layout_button_narrow_width, base_layout_help_compact_gap, false}};
+    int minimum = scale(ui_part_edge + ui_part_height + base_new_note_drag_gap, dpi);
+    for (size_t at = 0; at < sizeof steps / sizeof steps[0]; ++at)
     {
         int left = help_rect(self).left - scale(steps[at].gap, dpi) -
                    scale(steps[at].width, dpi) * (int)layout_button_count();
-        if (left >= new_note)
-        {
+        if (left >= minimum)
             return steps[at];
-        }
     }
-    return steps[last];
+    return (struct layout_metrics){52, base_layout_help_compact_gap, true};
 }
 
 static int layout_button_width(const struct folio_window *_Nonnull self)
@@ -2466,13 +2478,26 @@ static RECT choice_item_rect(RECT group, int width, size_t index)
     return (RECT){left, group.top, left + width, group.bottom};
 }
 
-static RECT layout_group_rect(const struct folio_window *_Nonnull self)
+/* 隠れた群とは別のstateを持たず、現在の表示slotを全利用者へ返す。 */
+static RECT layout_slot_rect(const struct folio_window *_Nonnull self)
 {
     UINT dpi = GetDpiForWindow(self->handle);
     RECT header = regions_for(self).header;
-    int right = help_rect(self).left - scale(layout_metrics_for(self).gap, dpi);
-    int items = layout_button_width(self) * (int)layout_button_count();
-    return choice_group_rect(right, (header.top + header.bottom) / 2, items, dpi);
+    struct layout_metrics metrics = layout_metrics_for(self);
+    int right = help_rect(self).left - scale(metrics.gap, dpi);
+    int count = metrics.chooser ? 1 : (int)layout_button_count();
+    return choice_group_rect(right, (header.top + header.bottom) / 2,
+                             scale(metrics.width, dpi) * count, dpi);
+}
+
+static RECT layout_group_rect(const struct folio_window *_Nonnull self)
+{
+    return layout_metrics_for(self).chooser ? (RECT){0} : layout_slot_rect(self);
+}
+
+static RECT layout_chooser_rect(const struct folio_window *_Nonnull self)
+{
+    return layout_metrics_for(self).chooser ? layout_slot_rect(self) : (RECT){0};
 }
 
 /* 字の幅は描画と同じ等幅の書体と字間で測る。測れなければ 0。 */
@@ -2552,7 +2577,7 @@ static RECT new_note_rect(const struct folio_window *_Nonnull self)
     UINT dpi = GetDpiForWindow(self->handle);
     int size = scale(ui_part_height, dpi);
     int left = scale(ui_part_edge, dpi);
-    int room = layout_group_rect(self).left - left - scale(base_new_note_drag_gap, dpi);
+    int room = layout_slot_rect(self).left - left - scale(base_new_note_drag_gap, dpi);
     int needed = ui_part_command_width(measure_part_text(self, UI_TEXT_COMMAND_NEW), true, dpi);
     return header_part_rect(self, left, needed <= room ? needed : size);
 }
@@ -2565,7 +2590,9 @@ static bool new_note_labeled(const struct folio_window *_Nonnull self)
 
 static RECT layout_button_rect(const struct folio_window *_Nonnull self, size_t index)
 {
-    return choice_item_rect(layout_group_rect(self), layout_button_width(self), index);
+    return layout_metrics_for(self).chooser
+               ? (RECT){0}
+               : choice_item_rect(layout_group_rect(self), layout_button_width(self), index);
 }
 
 /* 2桁の番号。幅測定と描画で同じ文字列を使う。 */
@@ -2634,7 +2661,23 @@ static enum accessible_kind selected_layout_kind(const struct folio_window *_Non
     return ACCESSIBLE_LAYOUT_BOTH;
 }
 
-/* 選択群の項目が選ばれているか。描画・UIA の IsSelected・押下の判定がこの 1 本を使う。 */
+/* 実root focusが隠れた表示入口にいる時だけ写す。他HWNDへは触れない。 */
+static void normalize_header_target(struct folio_window *_Nonnull self)
+{
+    if (GetFocus() != self->handle)
+        return;
+    bool chooser = layout_metrics_for(self).chooser;
+    enum accessible_kind kind = self->keyboard_target;
+    bool hidden_choice = chooser && accessible_controls[kind].parent == ACCESSIBLE_LAYOUT_GROUP;
+    bool hidden_chooser = !chooser && kind == ACCESSIBLE_LAYOUT_CHOOSER;
+    if (!hidden_choice && !hidden_chooser)
+        return;
+    cancel_part_press(self);
+    self->keyboard_target = chooser ? ACCESSIBLE_LAYOUT_CHOOSER : selected_layout_kind(self);
+    accessibility_host_schedule(self->accessibility);
+}
+
+/* 選択群の描画・UIA IsSelected・押下は同じ選択元を使う。 */
 static bool part_selected(const struct folio_window *_Nonnull self, enum accessible_kind kind)
 {
     if (accessible_controls[kind].parent == ACCESSIBLE_LAYOUT_GROUP)
@@ -2855,6 +2898,23 @@ static struct ui_part_paint part_paint(const struct folio_window *_Nonnull self,
     };
 }
 
+static enum ui_text part_label(const struct folio_window *_Nonnull self, enum accessible_kind kind)
+{
+    if (kind == ACCESSIBLE_MAXIMIZE)
+        return IsZoomed(self->handle) ? UI_TEXT_TOOLTIP_RESTORE : UI_TEXT_TOOLTIP_MAXIMIZE;
+    return accessible_controls[kind].label;
+}
+
+static void layout_chooser_name(const struct folio_window *_Nonnull self, char *_Nonnull out)
+{
+    enum folio_language language = folio_state_language(self->state);
+    enum ui_text label = accessible_controls[selected_layout_kind(self)].label;
+    struct ui_text_request request = {
+        .id = UI_TEXT_LAYOUT_CHOOSER, .language = language, .name = ui_text_line(label, language)};
+    if (ui_text_format(&request, out, 1024) != UI_TEXT_FORMAT_READY)
+        out[0] = '\0';
+}
+
 /* 描く字。表示名＝UIA Name の元（accessible_controls）から引き、「操作」だけは表示の記号▾の
  * 付いた字を描く（ADR0060 の補正 2。▾は UIA 名に入れない）。測る経路もこの 1 本を使う。 */
 static enum ui_text part_display_text(enum accessible_kind kind)
@@ -3037,6 +3097,26 @@ static void layout_phrase(const struct folio_window *_Nonnull self, size_t index
     {
         out[0] = '\0';
     }
+}
+
+static void layout_chooser_help(const struct folio_window *_Nonnull self, char *_Nonnull out)
+{
+    size_t used = 0;
+    out[0] = '\0';
+    for (size_t at = 0; at < layout_button_count(); ++at)
+    {
+        char line[draw_unit_limit];
+        layout_phrase(self, at, UI_TEXT_LAYOUT_HELP, line);
+        if (used + strlen(line) + 2 > draw_unit_limit)
+        {
+            out[0] = '\0';
+            return;
+        }
+        if (used != 0)
+            used = append_text(out, used, "\n");
+        used = append_text(out, used, line);
+    }
+    out[used] = '\0';
 }
 
 static void command_help_text(const struct folio_window *_Nonnull self, size_t slot,
@@ -4110,10 +4190,13 @@ static LRESULT hit_test(const struct folio_window *_Nonnull self, LPARAM lparam)
     RECT close = close_rect(self);
     RECT settings = settings_rect(self);
     RECT help = help_rect(self);
-    RECT group = layout_group_rect(self);
+    RECT minimize = minimize_rect(self);
+    RECT maximize = maximize_rect(self);
+    RECT group = layout_slot_rect(self);
     RECT fresh = new_note_rect(self);
     bool button = PtInRect(&fresh, point) || PtInRect(&group, point) || PtInRect(&close, point) ||
-                  PtInRect(&settings, point) || PtInRect(&help, point);
+                  PtInRect(&settings, point) || PtInRect(&help, point) ||
+                  PtInRect(&minimize, point) || PtInRect(&maximize, point);
     return button ? HTCLIENT : HTCAPTION;
 }
 
@@ -4394,13 +4477,31 @@ static void draw_new_note(const struct folio_window *_Nonnull self, HDC device)
     }
 }
 
+static void draw_layout_chooser(const struct folio_window *_Nonnull self, HDC device)
+{
+    static const enum icon_paint_kind icons[] = {[FOLIO_LAYOUT_DRAWER] = ICON_PAINT_LAYOUT_DRAWER,
+                                                 [FOLIO_LAYOUT_BOTH] = ICON_PAINT_LAYOUT_BOTH,
+                                                 [FOLIO_LAYOUT_NOTE] = ICON_PAINT_LAYOUT_NOTE};
+    struct ui_part_paint part = part_paint(self, ACCESSIBLE_LAYOUT_CHOOSER, UI_PART_STYLE_COMMAND);
+    part.labeled = false;
+    struct ui_part_ink ink = ui_part_draw(device, &self->palette, &part);
+    int size = scale(ui_part_icon, part.dpi);
+    int padding = scale(8, part.dpi);
+    int top = (part.bounds.top + part.bounds.bottom - size) / 2;
+    RECT mode = {part.bounds.left + padding, top, part.bounds.left + padding + size, top + size};
+    RECT chevron = {part.bounds.right - padding - size, top, part.bounds.right - padding,
+                    top + size};
+    icon_paint_fill(device, mode, icons[folio_state_layout_mode(self->state)], ink.text);
+    icon_paint_fill(device, chevron, ICON_PAINT_MENU, ink.text);
+}
+
 static void draw_common_header(const struct folio_window *_Nonnull self, HDC device)
 {
     UINT dpi = GetDpiForWindow(self->handle);
     SelectObject(device, self->mono_font);
     SetBkMode(device, TRANSPARENT);
     SetTextCharacterExtra(device, scale(base_tracking, dpi));
-    RECT group = layout_group_rect(self);
+    RECT group = layout_slot_rect(self);
     RECT logo = regions_for(self).header;
     logo.left = new_note_rect(self).right + scale(base_brand_gap, dpi);
     logo.right = group.left - scale(8, dpi);
@@ -4421,14 +4522,20 @@ static void draw_common_header(const struct folio_window *_Nonnull self, HDC dev
         draw_units(device, text, logo, DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
     }
     enum folio_layout_mode mode = folio_state_layout_mode(self->state);
-    for (size_t index = 0; index < layout_button_count(); ++index)
+    if (layout_metrics_for(self).chooser)
+        draw_layout_chooser(self, device);
+    if (!layout_metrics_for(self).chooser)
     {
-        draw_choice_item(self, device, layout_buttons[index].kind,
-                         mode == layout_buttons[index].mode);
+        for (size_t index = 0; index < layout_button_count(); ++index)
+            draw_choice_item(self, device, layout_buttons[index].kind,
+                             mode == layout_buttons[index].mode);
     }
     draw_new_note(self, device);
     draw_icon_part(self, device, ACCESSIBLE_HELP, ICON_PAINT_HELP);
     draw_icon_part(self, device, ACCESSIBLE_SETTINGS, ICON_PAINT_SETTINGS);
+    draw_icon_part(self, device, ACCESSIBLE_MINIMIZE, ICON_PAINT_MINIMIZE);
+    draw_icon_part(self, device, ACCESSIBLE_MAXIMIZE,
+                   IsZoomed(self->handle) ? ICON_PAINT_RESTORE : ICON_PAINT_MAXIMIZE);
     draw_icon_part(self, device, ACCESSIBLE_CLOSE, ICON_PAINT_CLOSE);
     SetTextCharacterExtra(device, 0);
 }
@@ -5616,6 +5723,12 @@ static bool resize_layout_window(struct folio_window *_Nonnull self,
     {
         return SetWindowPlacement(self->handle, &self->wide_placement);
     }
+    if (IsZoomed(self->handle))
+    {
+        ShowWindow(self->handle, SW_SHOWNOACTIVATE);
+        if (IsZoomed(self->handle) || IsIconic(self->handle))
+            return false;
+    }
     return set_layout_width(self, self->wide_width);
 }
 
@@ -5845,6 +5958,15 @@ static void release_history(struct folio_window *_Nonnull self)
         SetFocus(surface_return_target(self, remembered));
     }
     return true;
+}
+
+/* OS幾何入口だけでMENUを失効。hideが実focus所有時だけ復帰する。 */
+static void close_geometry_menu(struct folio_window *_Nonnull self)
+{
+    if (self->command_surface != COMMAND_SURFACE_MENU)
+        return;
+    cancel_part_press(self);
+    (void)hide_command_surface(self);
 }
 
 static void close_command_surface(struct folio_window *_Nonnull self)
@@ -8084,17 +8206,18 @@ static void click_command_surface(struct folio_window *_Nonnull self, POINT poin
     click_palette_surface(self, point);
 }
 
-static void show_operations(struct folio_window *_Nonnull self)
+static void show_part_menu(struct folio_window *_Nonnull self, enum accessible_kind kind)
 {
     if (self->command_surface == COMMAND_SURFACE_MENU)
     {
         close_command_surface(self);
         return;
     }
-    struct menu_request request = {.context = FOLIO_MENU_OPERATIONS,
-                                   .anchor = accessible_main_rect(self, ACCESSIBLE_MENU),
-                                   .keyboard = self->focus_cues};
-    self->keyboard_target = ACCESSIBLE_MENU;
+    struct menu_request request = {
+        .context = kind == ACCESSIBLE_LAYOUT_CHOOSER ? FOLIO_MENU_LAYOUT : FOLIO_MENU_OPERATIONS,
+        .anchor = accessible_main_rect(self, kind),
+        .keyboard = self->focus_cues};
+    self->keyboard_target = kind;
     show_menu_surface(self, &request);
 }
 
@@ -8201,7 +8324,8 @@ static bool dismiss_menu_press(struct folio_window *_Nonnull self, POINT point)
     if (self->command_surface != COMMAND_SURFACE_MENU)
         return false;
     bool opener =
-        PtInRect(&self->menu.anchor, point) != 0 && self->menu.context == FOLIO_MENU_OPERATIONS;
+        PtInRect(&self->menu.anchor, point) != 0 &&
+        (self->menu.context == FOLIO_MENU_OPERATIONS || self->menu.context == FOLIO_MENU_LAYOUT);
     close_command_surface(self);
     return opener;
 }
@@ -8219,7 +8343,7 @@ static void press_part(struct folio_window *_Nonnull self, LPARAM lparam)
     {
         return;
     }
-    if (kind == ACCESSIBLE_MENU)
+    if (accessible_item_menu(kind))
     {
         activate_part(self, kind);
         return;
@@ -8403,7 +8527,8 @@ static LRESULT pane_key(struct folio_window *_Nonnull self, WPARAM key)
 /* 字を出している部品か。絵だけの C 様式と、狭幅で絵へ縮めた A 様式は偽。 */
 static bool part_labeled(const struct folio_window *_Nonnull self, enum accessible_kind kind)
 {
-    if (kind == ACCESSIBLE_SETTINGS || kind == ACCESSIBLE_CLOSE || kind == ACCESSIBLE_HELP)
+    if (kind == ACCESSIBLE_SETTINGS || accessible_item_shell(kind) || kind == ACCESSIBLE_HELP ||
+        kind == ACCESSIBLE_LAYOUT_CHOOSER)
     {
         return false;
     }
@@ -8445,6 +8570,11 @@ static void help_tooltip(enum folio_language language, char *_Nonnull out)
 static void part_tooltip(const struct folio_window *_Nonnull self, enum accessible_kind kind,
                          char *_Nonnull out)
 {
+    if (kind == ACCESSIBLE_LAYOUT_CHOOSER)
+    {
+        layout_chooser_help(self, out);
+        return;
+    }
     if (kind == ACCESSIBLE_NEW_NOTE)
     {
         /* 表示のたびに作成先を組む（ADR0060 の決定 12）。字の有無に依らず同じ 1 行。 */
@@ -8462,7 +8592,7 @@ static void part_tooltip(const struct folio_window *_Nonnull self, enum accessib
     struct ui_text_request request = {
         .id = labeled ? UI_TEXT_TOOLTIP_KEY : UI_TEXT_TOOLTIP_NAMED_KEY,
         .language = language,
-        .name = ui_text_line(accessible_controls[kind].label, language),
+        .name = ui_text_line(part_label(self, kind), language),
         .from = key,
         .to = labeled ? ui_text_line(accessible_controls[kind].hint, language) : ""};
     if (key[0] == '\0')
@@ -9898,6 +10028,7 @@ static LRESULT on_create(HWND window, LPARAM lparam)
 /* OS が勧める矩形へ移し、字の大きさを取り直す（FR-013）。 */
 static void apply_dpi(struct folio_window *_Nonnull self, LPARAM lparam)
 {
+    close_geometry_menu(self);
     const RECT *_Nonnull suggested = (const RECT *)lparam;
     refresh_font(self, GetDpiForWindow(self->handle));
     SetWindowPos(self->handle, nullptr, suggested->left, suggested->top,
@@ -10404,10 +10535,28 @@ static bool pane_notification(struct folio_window *_Nonnull self, WPARAM wparam,
     return false;
 }
 
+/* OSが設定面のrootへ戻した実focusを、既存の有効可視入力へ正規化する。 */
+static void normalize_settings_focus(struct folio_window *_Nonnull self)
+{
+    if (!settings_surface(self) || self->native_modal_depth != 0 || IsIconic(self->handle) ||
+        GetFocus() != self->handle || !IsWindowEnabled(self->handle) ||
+        !IsWindowVisible(self->handle))
+    {
+        return;
+    }
+    HWND _Nullable target = command_focus_target(self);
+    if (target != nullptr && IsWindowEnabled(target) && IsWindowVisible(target))
+    {
+        focus_command_input(self);
+    }
+}
+
 /* OSがNOTEのrootへ戻した実focusだけを、可視paneへ正規化する。文書が無く本文を隠している間は
  * 見えない索引に残さず、F6 の先頭（新しいノート）へ寄せて印を出す（#349）。 */
 static void normalize_root_focus(struct folio_window *_Nonnull self)
 {
+    normalize_settings_focus(self);
+    normalize_header_target(self);
     if (self->keyboard_target != ACCESSIBLE_TREE ||
         folio_state_layout_mode(self->state) != FOLIO_LAYOUT_NOTE ||
         self->command_surface != COMMAND_SURFACE_CLOSED || self->pane == nullptr)
@@ -10454,6 +10603,7 @@ static LRESULT on_window_command(struct folio_window *_Nonnull self, WPARAM wpar
 /* 通常のresizeは本文矩形の変化を保持する。表示切替中の同期WM_SIZEは外側の退避に含める。 */
 static void resize(struct folio_window *_Nonnull self)
 {
+    close_geometry_menu(self);
     if (self->layout_changing)
     {
         arrange(self);
@@ -12220,8 +12370,17 @@ static bool notice_visible(const struct folio_window *_Nonnull self)
            pane_notice_line(self) != UI_TEXT_EMPTY;
 }
 
+/* 同じheader表示slotに属する静的参照。可視判定は単一geometryに任せる。 */
+static bool layout_control(enum accessible_kind kind)
+{
+    return kind == ACCESSIBLE_LAYOUT_CHOOSER || kind == ACCESSIBLE_LAYOUT_GROUP ||
+           accessible_controls[kind].parent == ACCESSIBLE_LAYOUT_GROUP;
+}
+
 static bool accessible_visible(const struct folio_window *_Nonnull self, enum accessible_kind kind)
 {
+    if (layout_control(kind))
+        return layout_metrics_for(self).chooser == (kind == ACCESSIBLE_LAYOUT_CHOOSER);
     if (kind == ACCESSIBLE_NOTICE)
         return notice_visible(self);
     if (kind == ACCESSIBLE_COMMAND_INPUT)
@@ -12290,34 +12449,60 @@ static RECT accessible_pane_rect(const struct folio_window *_Nonnull self,
     return (RECT){0};
 }
 
+static RECT accessible_header_rect(const struct folio_window *_Nonnull self,
+                                   enum accessible_kind kind)
+{
+    if (kind == ACCESSIBLE_HEADER)
+        return regions_for(self).header;
+    const struct
+    {
+        enum accessible_kind kind;
+        RECT (*_Nonnull bounds)(const struct folio_window *_Nonnull);
+    } controls[] = {{ACCESSIBLE_LAYOUT_GROUP, layout_group_rect},
+                    {ACCESSIBLE_LAYOUT_CHOOSER, layout_chooser_rect},
+                    {ACCESSIBLE_MINIMIZE, minimize_rect},
+                    {ACCESSIBLE_MAXIMIZE, maximize_rect},
+                    {ACCESSIBLE_SETTINGS, settings_rect},
+                    {ACCESSIBLE_CLOSE, close_rect},
+                    {ACCESSIBLE_HELP, help_rect},
+                    {ACCESSIBLE_NEW_NOTE, new_note_rect}};
+    for (size_t at = 0; at < sizeof controls / sizeof controls[0]; ++at)
+    {
+        if (controls[at].kind == kind)
+            return controls[at].bounds(self);
+    }
+    for (size_t at = 0; at < layout_button_count(); ++at)
+    {
+        if (layout_buttons[at].kind == kind)
+            return layout_button_rect(self, at);
+    }
+    return (RECT){0};
+}
+
 static RECT accessible_main_rect(const struct folio_window *_Nonnull self,
                                  enum accessible_kind kind)
 {
     switch (kind)
     {
     case ACCESSIBLE_HEADER:
-        return regions_for(self).header;
     case ACCESSIBLE_LAYOUT_GROUP:
-        return layout_group_rect(self);
     case ACCESSIBLE_LAYOUT_DRAWER:
-        return layout_button_rect(self, 0);
     case ACCESSIBLE_LAYOUT_BOTH:
-        return layout_button_rect(self, 1);
     case ACCESSIBLE_LAYOUT_NOTE:
-        return layout_button_rect(self, 2);
+    case ACCESSIBLE_LAYOUT_CHOOSER:
+    case ACCESSIBLE_MINIMIZE:
+    case ACCESSIBLE_MAXIMIZE:
     case ACCESSIBLE_SETTINGS:
-        return settings_rect(self);
     case ACCESSIBLE_CLOSE:
-        return close_rect(self);
+    case ACCESSIBLE_HELP:
+    case ACCESSIBLE_NEW_NOTE:
+        return accessible_header_rect(self, kind);
     case ACCESSIBLE_PANE_TOOLS:
     case ACCESSIBLE_MODE_GROUP:
     case ACCESSIBLE_ACTION_GROUP:
     case ACCESSIBLE_WINDOW:
         return accessible_main_group_rect(self, kind);
-    case ACCESSIBLE_HELP:
-        return help_rect(self);
-    case ACCESSIBLE_NEW_NOTE:
-        return new_note_rect(self);
+
     case ACCESSIBLE_BREADCRUMB:
     case ACCESSIBLE_GUIDE:
     case ACCESSIBLE_VIEW:
@@ -12424,7 +12609,7 @@ static const char *_Nonnull accessible_label_line(const struct folio_window *_No
                                                   enum accessible_kind kind)
 {
     enum ui_text label =
-        kind == ACCESSIBLE_COMMAND_INPUT ? surface_title(self) : accessible_controls[kind].label;
+        kind == ACCESSIBLE_COMMAND_INPUT ? surface_title(self) : part_label(self, kind);
     if (kind == ACCESSIBLE_COMMAND_INPUT && self->command_surface == COMMAND_SURFACE_THEMES)
         label = UI_TEXT_THEME_FILTER;
     if (kind == ACCESSIBLE_NOTICE)
@@ -12441,6 +12626,11 @@ static void accessible_name(const struct folio_window *_Nonnull self, enum acces
     const char *line = accessible_label_line(self, kind);
     struct pane_title_view title = folio_state_pane_title(self->state);
     char body[1024];
+    if (kind == ACCESSIBLE_LAYOUT_CHOOSER)
+    {
+        layout_chooser_name(self, body);
+        line = body;
+    }
     if (kind == ACCESSIBLE_BODY && title.any)
     {
         struct ui_text_request request = {
@@ -12498,6 +12688,12 @@ static void accessible_details(const struct folio_window *_Nonnull self, enum ac
         new_note_destination(self, line);
         (void)wide_units(line, out->help);
     }
+    if (kind == ACCESSIBLE_LAYOUT_CHOOSER)
+    {
+        char line[draw_unit_limit];
+        layout_chooser_help(self, line);
+        (void)wide_units(line, out->help);
+    }
     if (kind == ACCESSIBLE_SAVE)
     {
         save_status(self, out);
@@ -12538,6 +12734,11 @@ static void accessible_accelerator(const struct folio_window *_Nonnull self,
 static void accessible_main_bounds(struct folio_window *_Nonnull self, enum accessible_kind kind,
                                    struct accessible_view *_Nonnull out)
 {
+    if (layout_control(kind) && !accessible_visible(self, kind))
+    {
+        out->bounds = (RECT){0};
+        return;
+    }
     if (kind == ACCESSIBLE_WINDOW)
     {
         GetWindowRect(self->handle, &out->bounds);
@@ -12578,23 +12779,32 @@ static void accessible_selection_view(struct folio_window *_Nonnull self, enum a
     }
 }
 
+static bool part_focusable(const struct folio_window *_Nonnull self, enum accessible_kind kind)
+{
+    if (!accessible_controls[kind].focusable || !accessible_visible(self, kind))
+        return false;
+    return !accessible_item_shell(kind) ||
+           (self->native_modal_depth == 0 && self->command_surface == COMMAND_SURFACE_CLOSED);
+}
+
 static void accessible_availability(const struct folio_window *_Nonnull self,
                                     enum accessible_kind kind, struct accessible_view *_Nonnull out)
 {
     out->enabled = part_enabled(self, kind) && accessible_visible(self, kind);
-    if (kind == ACCESSIBLE_MENU)
+    if (kind == ACCESSIBLE_HEADER)
+        out->layout_chooser = layout_metrics_for(self).chooser;
+    if (accessible_item_menu(kind))
     {
-        out->expanded = self->command_surface == COMMAND_SURFACE_MENU &&
-                        self->menu.context == FOLIO_MENU_OPERATIONS;
+        enum folio_menu_context context =
+            kind == ACCESSIBLE_LAYOUT_CHOOSER ? FOLIO_MENU_LAYOUT : FOLIO_MENU_OPERATIONS;
+        out->expanded =
+            self->command_surface == COMMAND_SURFACE_MENU && self->menu.context == context;
         out->enabled = out->enabled || out->expanded;
     }
     if (kind == ACCESSIBLE_COMMAND_INPUT || kind == ACCESSIBLE_REPLACE_PATTERN ||
         kind == ACCESSIBLE_REPLACE_TEXT)
         out->enabled = folio_window_accessible_ready(self);
-    out->focusable =
-        accessible_controls[kind].focusable &&
-        (kind != ACCESSIBLE_CLOSE ||
-         (self->native_modal_depth == 0 && self->command_surface == COMMAND_SURFACE_CLOSED));
+    out->focusable = part_focusable(self, kind);
 }
 
 HRESULT folio_window_accessible_read(struct folio_window *_Nonnull self,
@@ -12998,21 +13208,32 @@ static HRESULT accessible_select_note(struct folio_window *_Nonnull self,
     return accessible_outcome(self, result);
 }
 
+/* 可否とInvokeの検査後だけ呼ぶ。captureを返して同じOS command経路へ合流する。 */
+static void invoke_shell(struct folio_window *_Nonnull self, enum accessible_kind kind)
+{
+    WPARAM command = kind == ACCESSIBLE_CLOSE      ? SC_CLOSE
+                     : kind == ACCESSIBLE_MINIMIZE ? SC_MINIMIZE
+                     : IsZoomed(self->handle)      ? SC_RESTORE
+                                                   : SC_MAXIMIZE;
+    cancel_part_press(self);
+    SendMessageW(self->handle, WM_SYSCOMMAND, command, 0);
+}
+
 static HRESULT accessible_activate(struct folio_window *_Nonnull self,
                                    const struct accessible_request *_Nonnull request)
 {
-    if (request->item.kind == ACCESSIBLE_CLOSE)
+    if (accessible_item_shell(request->item.kind) && request->action == ACCESSIBLE_ACTION_INVOKE)
     {
-        close_window(self);
+        invoke_shell(self, request->item.kind);
         return S_OK;
     }
     if (request->item.kind == ACCESSIBLE_NOTE)
     {
         return accessible_select_note(self, request);
     }
-    if (request->item.kind == ACCESSIBLE_MENU)
+    if (accessible_item_menu(request->item.kind))
     {
-        show_operations(self);
+        show_part_menu(self, request->item.kind);
         return S_OK;
     }
     enum folio_command command = FOLIO_COMMAND_HELP;
@@ -13033,11 +13254,15 @@ static HRESULT accessible_activate(struct folio_window *_Nonnull self,
 static HRESULT accessible_expand(struct folio_window *_Nonnull self,
                                  const struct accessible_request *_Nonnull request)
 {
-    if (request->item.kind == ACCESSIBLE_MENU)
+    if (accessible_item_menu(request->item.kind))
     {
-        if (request->action == ACCESSIBLE_ACTION_EXPAND)
+        enum folio_menu_context context = request->item.kind == ACCESSIBLE_LAYOUT_CHOOSER
+                                              ? FOLIO_MENU_LAYOUT
+                                              : FOLIO_MENU_OPERATIONS;
+        if (request->action == ACCESSIBLE_ACTION_EXPAND &&
+            !(self->command_surface == COMMAND_SURFACE_MENU && self->menu.context == context))
         {
-            show_operations(self);
+            show_part_menu(self, request->item.kind);
         }
         return S_OK;
     }
@@ -13088,14 +13313,15 @@ static HRESULT accessible_action(struct folio_window *_Nonnull self,
     {
         return result;
     }
-    if (request->item.kind == ACCESSIBLE_MENU && request->action == ACCESSIBLE_ACTION_COLLAPSE &&
+    if (accessible_item_menu(request->item.kind) && request->action == ACCESSIBLE_ACTION_COLLAPSE &&
         view.expanded)
     {
         close_command_surface(self);
         return S_OK;
     }
-    if (!view.enabled ||
-        (request->item.kind != ACCESSIBLE_CLOSE && !folio_window_accessible_ready(self)))
+    bool shell_invoke =
+        accessible_item_shell(request->item.kind) && request->action == ACCESSIBLE_ACTION_INVOKE;
+    if (!view.enabled || (!shell_invoke && !folio_window_accessible_ready(self)))
     {
         return accessibility_node_disabled;
     }
@@ -13170,7 +13396,8 @@ static enum accessible_kind keyboard_entry(const struct folio_window *_Nonnull s
 {
     if (kind == ACCESSIBLE_LAYOUT_DRAWER)
     {
-        return selected_layout_kind(self);
+        return layout_metrics_for(self).chooser ? ACCESSIBLE_LAYOUT_CHOOSER
+                                                : selected_layout_kind(self);
     }
     return kind == ACCESSIBLE_VIEW ? mode_kind(folio_state_pane_mode(self->state)) : kind;
 }
@@ -13247,11 +13474,14 @@ static bool keyboard_same_region(enum accessible_kind left, enum accessible_kind
 static void keyboard_tab_step(struct folio_window *_Nonnull self, bool forward)
 {
     const enum accessible_kind order[] = {
-        ACCESSIBLE_NEW_NOTE, ACCESSIBLE_LAYOUT_DRAWER, ACCESSIBLE_HELP,         ACCESSIBLE_SETTINGS,
-        ACCESSIBLE_CLOSE,    ACCESSIBLE_FILTER,        ACCESSIBLE_NEW_CATEGORY, ACCESSIBLE_TREE,
-        ACCESSIBLE_VIEW,     ACCESSIBLE_SAVE,          ACCESSIBLE_FIND,         ACCESSIBLE_MENU};
+        ACCESSIBLE_NEW_NOTE,     ACCESSIBLE_LAYOUT_DRAWER, ACCESSIBLE_HELP,  ACCESSIBLE_SETTINGS,
+        ACCESSIBLE_MINIMIZE,     ACCESSIBLE_MAXIMIZE,      ACCESSIBLE_CLOSE, ACCESSIBLE_FILTER,
+        ACCESSIBLE_NEW_CATEGORY, ACCESSIBLE_TREE,          ACCESSIBLE_VIEW,  ACCESSIBLE_SAVE,
+        ACCESSIBLE_FIND,         ACCESSIBLE_MENU};
     size_t count = sizeof order / sizeof order[0];
     enum accessible_kind current = keyboard_slot(keyboard_kind(self));
+    if (current == ACCESSIBLE_LAYOUT_CHOOSER)
+        current = ACCESSIBLE_LAYOUT_DRAWER;
     size_t index = 0;
     for (size_t at = 0; at < count; ++at)
     {
@@ -13583,6 +13813,26 @@ static int menu_total_height(const struct folio_window *_Nonnull self)
     return height;
 }
 
+static int menu_current_column(const struct folio_window *_Nonnull self)
+{
+    return self->menu.context == FOLIO_MENU_LAYOUT
+               ? scale(ui_part_icon + 8, GetDpiForWindow(self->handle))
+               : 0;
+}
+
+static bool menu_current(const struct folio_window *_Nonnull self, size_t index)
+{
+    if (self->menu.context != FOLIO_MENU_LAYOUT)
+        return false;
+    enum folio_command command = folio_menu_action_command(menu_action(self, index));
+    for (size_t at = 0; at < layout_button_count(); ++at)
+    {
+        if (layout_buttons[at].command == command)
+            return layout_buttons[at].mode == folio_state_layout_mode(self->state);
+    }
+    return false;
+}
+
 static int menu_width(const struct folio_window *_Nonnull self)
 {
     HDC device = GetDC(self->handle);
@@ -13607,7 +13857,7 @@ static int menu_width(const struct folio_window *_Nonnull self)
         SetTextCharacterExtra(device, tracking);
     ReleaseDC(self->handle, device);
     UINT dpi = GetDpiForWindow(self->handle);
-    width += scale(48, dpi);
+    width += scale(48, dpi) + menu_current_column(self);
     int floor = scale(240, dpi);
     int ceiling = scale(360, dpi);
     width = width < floor ? floor : width;
@@ -13754,7 +14004,9 @@ static void menu_draw_row(const struct folio_window *_Nonnull self, HDC device, 
     if (IsRectEmpty(&row))
         return;
     UINT dpi = GetDpiForWindow(self->handle);
-    struct ui_part_menu_paint part = {.bounds = row,
+    struct ui_part_menu_paint part = {.current = menu_current(self, index),
+                                      .current_column = menu_current_column(self),
+                                      .bounds = row,
                                       .dpi = dpi,
                                       .selected = self->command_selection == index,
                                       .enabled =
@@ -13887,7 +14139,8 @@ static void show_menu_surface(struct folio_window *_Nonnull self,
 static void menu_run_target(struct folio_window *_Nonnull self, enum folio_command command,
                             const struct menu_request *_Nonnull request)
 {
-    if (request->context == FOLIO_MENU_OPERATIONS || request->context == FOLIO_MENU_EMPTY)
+    if (request->context == FOLIO_MENU_OPERATIONS || request->context == FOLIO_MENU_LAYOUT ||
+        request->context == FOLIO_MENU_EMPTY)
     {
         execute_command(self, command, "");
         return;
@@ -14108,6 +14361,10 @@ static void menu_accessible(const struct folio_window *_Nonnull self, size_t ind
         return;
     enum folio_command command = folio_menu_action_command(action);
     menu_command_accelerator(self, command, out);
+    if (menu_current(self, index))
+        (void)wide_units(
+            ui_text_line(UI_TEXT_ACCESSIBLE_CURRENT, folio_state_language(self->state)),
+            out->status);
     if (command == FOLIO_COMMAND_TRASH_NOTE)
         (void)wide_units(ui_text_line(UI_TEXT_HELP_RECYCLE, folio_state_language(self->state)),
                          out->help);

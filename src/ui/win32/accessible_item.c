@@ -1,5 +1,15 @@
 #include "accessible_item.h"
 
+bool accessible_item_shell(enum accessible_kind kind)
+{
+    return kind == ACCESSIBLE_CLOSE || kind == ACCESSIBLE_MINIMIZE || kind == ACCESSIBLE_MAXIMIZE;
+}
+
+bool accessible_item_menu(enum accessible_kind kind)
+{
+    return kind == ACCESSIBLE_MENU || kind == ACCESSIBLE_LAYOUT_CHOOSER;
+}
+
 bool accessible_item_row(struct accessible_item item)
 {
     return item.kind == ACCESSIBLE_CATEGORY || item.kind == ACCESSIBLE_NOTE;
@@ -33,6 +43,9 @@ enum accessible_kind accessible_item_host(struct accessible_item item)
     case ACCESSIBLE_LAYOUT_DRAWER:
     case ACCESSIBLE_LAYOUT_BOTH:
     case ACCESSIBLE_LAYOUT_NOTE:
+    case ACCESSIBLE_LAYOUT_CHOOSER:
+    case ACCESSIBLE_MINIMIZE:
+    case ACCESSIBLE_MAXIMIZE:
     case ACCESSIBLE_SETTINGS:
     case ACCESSIBLE_CLOSE:
     case ACCESSIBLE_PANE_TOOLS:

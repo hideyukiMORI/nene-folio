@@ -183,6 +183,10 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_LAYOUT_HELP] = "{from}  {name}",
     [UI_TEXT_TOOLTIP_SETTINGS] = "設定を開く",
     [UI_TEXT_TOOLTIP_CLOSE] = "閉じる",
+    [UI_TEXT_TOOLTIP_MINIMIZE] = "最小化",
+    [UI_TEXT_TOOLTIP_MAXIMIZE] = "最大化",
+    [UI_TEXT_TOOLTIP_RESTORE] = "元に戻す",
+    [UI_TEXT_LAYOUT_CHOOSER] = "表示: {name}",
     /* #348（ADR0060 の決定 5）で tooltip を名前とキーの 1 つの元から組むために足した。 */
     [UI_TEXT_TOOLTIP_KEY] = "{from}{to}",
     [UI_TEXT_TOOLTIP_OPERATIONS] = "このノートの操作",

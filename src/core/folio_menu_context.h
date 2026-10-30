@@ -3,6 +3,7 @@
 enum folio_menu_context : unsigned char
 {
     FOLIO_MENU_OPERATIONS,
+    FOLIO_MENU_LAYOUT,
     FOLIO_MENU_CATEGORY,
     FOLIO_MENU_NOTE,
     FOLIO_MENU_EMPTY
