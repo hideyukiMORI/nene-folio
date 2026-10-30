@@ -18,9 +18,9 @@ struct note_text
 static enum note_text_outcome validate(const char *_Nonnull bytes, size_t length)
 {
     bool contains_nul = false;
+    uint32_t code_point = 0;
     for (size_t index = 0; index < length;)
     {
-        uint32_t code_point = 0;
         size_t consumed = utf8_text_decode(bytes + index, length - index, &code_point);
         if (consumed == 0)
         {

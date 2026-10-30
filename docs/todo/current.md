@@ -16,11 +16,18 @@ PR #461の最終head`12b4971`・必須CI`41026891563`成功、Debug sanitizer/ti
 7612files全hash保全後にworktree/outputを削除し、branch/commit・失敗原本を保持した。
 詳細は[品質記録](../quality/2026-10-30-ascii-decode.md)、確定原本は同taskの`integration-completion.json`。
 
-[#462](https://github.com/hideyukiMORI/nene-folio/issues/462)で、root63列/100%・90720twip条件の元SET拒否を一回の診断で確認した。
-最初の行cp118のGETはS_OK、63列×1440twipのSETはE_INVALIDARG。元の確認GETと次行へは進んでいない。
-TOM成功、本文等10契約の不一致0、両行の後段readbackは圧縮3816twip、実native/記録/同raw監査は3を保持する。
-記録error0・所有process0を親受理した。数値総幅上限・製品最小幅は未確定で、製品source/方式の変更0。
-最終CI/文書統合へ進む。詳細は[品質記録](../quality/2026-10-30-table-layout-failure.md)。
+現在の焦点は[#464](https://github.com/hideyukiMORI/nene-folio/issues/464)の本文検証の出力変数再利用である。
+#460後もLarge検証18.7385msが残り、計装付きRelease objectで毎scalarのzero storeを確認した。
+private validateの初期化をloop直前へ移す一箇所だけを採り、decoder一経路・UTF8→NUL→sizeの優先を保つ。
+正典Debug/既存text-validationとReleaseを確認し、未計装・計装両objectでloop内zero storeなしを受理した。
+固定Bは検証18.7385→18.0793ms、検索49.3964→47.9622ms、一件準備30.4197→29.9140ms。
+13契約不一致0、Observe/同raw Auditの実0/error0・所有0と全記録を受理した。
+単発値で改善幅を確定せず、同期準備約29.91msは残る。最終CI・統合・通常反映・保全整理へ進む。
+詳細は[品質記録](../quality/2026-10-30-validation-output.md)。
+
+#462の元SET拒否診断は、PR #463のhead`79ae8cb`・必須CI`41036377740`成功後、main`d137e212`へ文書統合した。
+通常exe hash維持、3937files/1609813447bytes全hash保全、worktree削除済み。出力削除は実行前に拒否され50箇所目として保持する。
+確定原本は同taskの`integration-completion.json`、限定結果は[品質記録](../quality/2026-10-30-table-layout-failure.md)。
 
 #456ではroot3列の左右到達・wrap・本文状態/実RedoUndoの29契約が一致したが、63列2条件は配置失敗で横到達未完。
 通常段落も横へ動くため、製品方式・最小列幅は未採用。既存結果は[診断記録](../quality/2026-10-30-table-horizontal-feasibility.md)へ保つ。
@@ -67,7 +74,9 @@ portable版はexe隣の`data`を既定とし、両方とも設定から「ノー
 
 ## 保持中の旧作業物
 
-下記の49箇所は自動承認レビューの削除拒否により保持する。再試行や別手段での削除をしない。
+下記の50箇所は自動承認レビューの削除拒否により保持する。再試行や別手段での削除をしない。
+
+- #462: `D:/NeNeFolio/outputs/462-table-layout-failure`。文書統合・通常exe hash維持・3937files全hash保全と安全監査後、出力削除要求が実行前に`blocked by policy`で拒否された。追加理由なし。worktreeは削除済み、branch/commit保持。確定原本は同taskの`integration-completion.json`。
 
 - #458: `D:/NeNeFolio/outputs/458-search-preparation-profile`。文書統合・通常exe hash維持・12932files全hash保全と安全監査後、出力削除要求が実行前に`blocked by policy`で拒否された。追加理由なし。worktreeは削除済み、branch/commit保持。確定原本は同taskの`integration-completion.json`。
 

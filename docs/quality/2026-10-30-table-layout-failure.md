@@ -115,3 +115,16 @@ Auditはnativeを再実行せず、同rawの元source枝・row/cell対応・実�
 統合対象は品質記録2件・日報・引き継ぎ・currentの5文書で、#460の統合/通常反映/7612files保全・整理の確定事実も収載する。
 対象文書の差分/参照/conformanceを確認し、最終PR headの必須CI成功後に文書統合・通常exe hash維持・全保全・安全整理を行う。
 確定原本は同taskの`integration-completion.json`とし、最終CI/統合/整理の未実施分を実施済みとしない。
+
+## 統合・通常exe維持・保全の確定
+
+親の限定文書検査は5file/37参照、conformance違反0、762入力不変、child/wrapper0・記録error0。
+PR #463のhead`79ae8cbfa02a82b9c64b9399294095e43ad3550e`は、必須CI`41036377740`のfull-gate/check成功後、
+main`d137e212486351355ddec9ee127b17aba68677c2`へ統合した。Issue終了・統合tree一致・clean main/originを照合した。
+通常exeは#460のsource`3dbed2a`、0.3.0/0.3.0.0、5,560,320bytes、17:38:56 JST更新のまま、
+SHA256 `DC3B3EE6FDDB8AE1B9BBA10F3828574C264E9737892C27F40AE3B3F32D534AA5`を維持した。再build・起動・通常data操作0。
+7stage/28raw files/3732snapshotsを索引化し、3937files/1609813447bytesを恒久archiveへ全hash/size照合して保全した。
+未保存/未追跡/ignored・link・稼働参照0の監査後、worktreeを削除しbranch/commitを保持した。
+出力`D:/NeNeFolio/outputs/462-table-layout-failure`の削除は実行前に自動承認レビューが`blocked by policy`で拒否した。
+追加理由は返らず再試行しない。50箇所目として保持し、失敗値を含む原本もarchiveへ収載済み。
+確定原本は`final-ci-41036377740.json`、`normal-preservation.json`、`cleanup-audit.json`、`integration-completion.json`。
