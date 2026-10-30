@@ -1,17 +1,18 @@
 # いまの状態 — NeNe Folio
 
-## 最新の個別修正 — テーマ一覧 #469
+## 最新の個別修正 — テーマ候補操作 #471
 
-10月30日夜、hideの実機報告により[#469](https://github.com/hideyukiMORI/nene-folio/issues/469)を実施。
-NeNeNibの規則を読取参考に、テーマの候補位置と一覧位置を分けた。上下キーは端を跨ぐときだけ一覧を送り、
-ホイールは3行/刻みと端数累積で一覧を動かし、候補が見える間は保持する。既存preview/確定/取消へ合流する。
-修正後の正典Debug/tidyと専用native430checksが成功。UIA、本文選択/dirty/UndoRedo、4描画も確認した。
-物理入力・実reader・DWM呈示は未確認。詳細は[品質記録](../quality/2026-10-30-theme-navigation.md)。Waivers none。
-最終head必須CI・統合・通常exe反映可否・保全整理の確定原本は
-`D:/NeNeFolio/agents/theme-navigation-20261030/integration-completion.json`。
-通常exeは検証時に起動中で、hideへ保存/終了を依頼した。起動中の上書きや終了は行わない。
-停止済みの継続goalと#466は再開しない。#467/PR468はhead47bc103・main66523e3で統合済み。
-同taskのoutput削除拒否を反映し、旧保持は52箇所となる。
+hideの#469反映後の指摘を受け、[#471](https://github.com/hideyukiMORI/nene-folio/issues/471)で
+ホイールを1刻み1候補の移動へ揃え、pointer通過だけで候補を選び直す動作を削除した。
+上下/Page/wheelは同じ移動→reveal→previewを使い、候補が端を跨ぐ時だけ一覧を追従させる。
+小delta累積・逆方向/開閉/検索resetを保持し、クリックは既存の選択・確定を使う。
+同一fixtureで修正前513checks/48fail、修正後513checks/0fail。正典Debug/tidy、UIA、本文状態/実UndoRedo、4描画も確認した。
+物理入力・実reader・DWM呈示は未確認。[品質記録](../quality/2026-10-30-theme-selection.md)、ADR0061補正を参照。Waivers none。
+最終head必須CI・main・通常exe版/hash/起動・保全整理は
+`D:/NeNeFolio/agents/theme-selection-20261030/integration-completion.json`で確定する。通常版は23:10に停止済みを確認した。
+#469/PR470はhead5f1c3a7・必須CI41065632950成功でmain53f71a8へ統合・通常反映済み。
+同taskの9973files全hash保全・worktree削除後、output削除が拒否され旧保持は53箇所となった。
+停止済み継続goalと#466は再開しない。#467/PR468もmain66523e3で統合済み。
 
 ## 継続品質改善の停止記録
 
@@ -77,7 +78,9 @@ portable版はexe隣の`data`を既定とし、両方とも設定から「ノー
 
 ## 保持中の旧作業物
 
-下記の52箇所は自動承認レビューの削除拒否により保持する。再試行や別手段での削除をしない。
+下記の53箇所は自動承認レビューの削除拒否により保持する。再試行や別手段での削除をしない。
+
+- #469: `D:/NeNeFolio/outputs/469-theme-navigation`。統合・通常反映・9973files/2910664589bytes全hash保全と安全監査後、出力削除が実行前`blocked by policy`で拒否された。追加理由なし。worktree削除済み、branch/commit保持。確定原本は`agents/theme-navigation-20261030/integration-completion.json`。
 
 - #467: `D:/NeNeFolio/outputs/467-day-close`。日報/引き継ぎ統合・769files/34928671bytes全hash保全と安全監査後、出力削除が実行前`blocked by policy`で拒否された。追加理由なし。worktree削除済み、branch/commit保持。確定原本は`agents/day-close-20261030-evening/integration-completion.json`。
 
