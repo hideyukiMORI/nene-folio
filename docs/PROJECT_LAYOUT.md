@@ -105,6 +105,8 @@ native同期面のowner境界は`modal_owner`に集約する。主窓のshell操
 EDITの無効時配色も`folio_window`の一つの配色経路へ合流する（ADR0066）。
 本文の実行中の表示倍率は`note_pane`が所有し、キー/ホイールとRTF再投入を同じEM_SETZOOM経路へ渡す。
 主窓の行番号font/幅は本文倍率から導く派生資源であり、本文の書式や操作文字用fontは変えない（ADR0067）。
+通常ホイールの短い減速も`note_pane`が所有し、message-only窓のtimerから同じnative位置へ反映する。
+経過はcallback引数から取り、UIが時計を読んだり別threadで動かしたりしない（ADR0026の#473補正）。
 閲覧表の列幅も`note_pane`が同じ本文幅/倍率からnativeのrow書式へ反映する。RTFを再投入せず、
 native構造を正本として選択・dirty・Undoを保ち、配置失敗は既存の本文準備契約へ戻す（ADR0070）。
 native rowの字下げを引いた非負の残幅を商と余りで均等配分し、列幅0も構造を保つ。
