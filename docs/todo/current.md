@@ -1,42 +1,30 @@
 # いまの状態 — NeNe Folio
 
-記録日: 2026-10-30。06:52 JST頃のhideの依頼で品質改善を再開した。
-この継続作業ではAstraの設計サナが設計・受理、SOL/LUNAの実装サナが調査・実装・検証を分担し、停止指示まで進める。
-今回の明示分担を他案件・次の作業へ自動継承しない。00時台の停止記録は当時の区切りとして保持する。
-最新は[日報](../reports/2026-10-30.md)・[引き継ぎ](../handoffs/2026-10-30.md)、
+記録日: 2026-10-30。20:14 JSTのhideの「区切りのいいところで止めて日報と引き継ぎ書を書いて」で品質改善を停止する。
+#464の完了を確定し、#466は診断未実行の区切りで保持した。新しい改善・診断は始めない。
+06:52頃からのAstra設計/受理・SOL/LUNA調査/実装/検証の分担は今回の継続作業に限った指定で、次回へ自動継承しない。
+日報・引き継ぎの終了整理は[#467](https://github.com/hideyukiMORI/nene-folio/issues/467)。
+最新の[日報](../reports/2026-10-30.md)・[引き継ぎ](../handoffs/2026-10-30.md)を参照し、再開時はhideの新指示と実Issue/PR・checkoutを照合する。
 10月29日の完成成果は[23件の一覧](../reports/2026-10-29.md#一日の成果一覧2026-10-30の終了整理で確定)。
 
-## 品質改善の現在位置
+## 停止時の到達点
 
-[#460](https://github.com/hideyukiMORI/nene-folio/issues/460)の共通UTF-8 decoder内ASCII早期returnをmain`3dbed2a`へ統合し、通常反映・保全・整理を完了した。
-PR #461の最終head`12b4971`・必須CI`41026891563`成功、Debug sanitizer/tidyと限定text/NUL/size境界も成功。
-公開API・保存形式と全8callsiteの契約を維持し、実Release objectのASCII直接returnを確認した。
-固定Bは検索63.0590→49.3964ms、Large検証32.3232→18.7385ms、最長continue43.3406→30.4207ms。
-13契約不一致0。一回の計装付きASCII標本であり一般速度を保証せず、一件の同期準備約30.42msは残る。
-7612files全hash保全後にworktree/outputを削除し、branch/commit・失敗原本を保持した。
-詳細は[品質記録](../quality/2026-10-30-ascii-decode.md)、確定原本は同taskの`integration-completion.json`。
+最新の製品改善は[#464](https://github.com/hideyukiMORI/nene-folio/issues/464)。本文検証の出力変数の初期化を走査前へ移した。
+PR #465のhead`262ff18`・必須CI`41043496466`成功でmain`e4e1823`へ統合し、通常反映・全保全・整理まで確定した。
+未計装/計装Release objectともloop内zero storeなし。Debug/既存text-validationと固定Bの13契約不一致0。
+固定B一回は検索47.9622ms・Large検証18.0793ms・一件準備29.9140msで、改善幅や一般UI速度は保証しない。
+7204files全hash保全後にworktreeを削除。output削除は実行前拒否で51箇所目として保持し、再試行しない。
+確定原本は`D:/NeNeFolio/agents/464-validation-output/integration-completion.json`、詳細は[品質記録](../quality/2026-10-30-validation-output.md)。
 
-現在の焦点は[#464](https://github.com/hideyukiMORI/nene-folio/issues/464)の本文検証の出力変数再利用である。
-#460後もLarge検証18.7385msが残り、計装付きRelease objectで毎scalarのzero storeを確認した。
-private validateの初期化をloop直前へ移す一箇所だけを採り、decoder一経路・UTF8→NUL→sizeの優先を保つ。
-正典Debug/既存text-validationとReleaseを確認し、未計装・計装両objectでloop内zero storeなしを受理した。
-固定Bは検証18.7385→18.0793ms、検索49.3964→47.9622ms、一件準備30.4197→29.9140ms。
-13契約不一致0、Observe/同raw Auditの実0/error0・所有0と全記録を受理した。
-単発値で改善幅を確定せず、同期準備約29.91msは残る。最終CI・統合・通常反映・保全整理へ進む。
-詳細は[品質記録](../quality/2026-10-30-validation-output.md)。
+未完の[#466](https://github.com/hideyukiMORI/nene-folio/issues/466)は、root63列に既存caller幅上端31679twipを一回渡す非製品診断の設計まで。
+この値はnative上限や最小可読幅ではなく、現在製品の不具合再現とも扱わない。
+helper/fixture/manifest作成0、parse/format0、Configure/Build/Inspect/Compile/Probe/Auditすべて0で停止した。
+Issueはopenのまま。D側の`worktrees/466-table-caller-width`と`outputs/466-table-caller-width`を未完作業として保持する。
+原本は同名`agents/`と`agents/quality-post464-table-width/`、再開条件と未実行範囲は[停止記録](../quality/2026-10-30-table-caller-width.md)。
 
-#462の元SET拒否診断は、PR #463のhead`79ae8cb`・必須CI`41036377740`成功後、main`d137e212`へ文書統合した。
-通常exe hash維持、3937files/1609813447bytes全hash保全、worktree削除済み。出力削除は実行前に拒否され50箇所目として保持する。
-確定原本は同taskの`integration-completion.json`、限定結果は[品質記録](../quality/2026-10-30-table-layout-failure.md)。
-
-#456ではroot3列の左右到達・wrap・本文状態/実RedoUndoの29契約が一致したが、63列2条件は配置失敗で横到達未完。
-通常段落も横へ動くため、製品方式・最小列幅は未採用。既存結果は[診断記録](../quality/2026-10-30-table-horizontal-feasibility.md)へ保つ。
-#458の初回検索と準備内訳は[計測記録](../quality/2026-10-30-search-preparation-profile.md)へ、
-#448の現在ノート検索・#451の縁resize・#452の窓操作を含む完成履歴は[日報](../reports/2026-10-30.md)へ集約した。
-
-本文/置換の追加静読は新具体的不具合0。置換4Mの生成片/完成本文の差を新規不具合とせず、既存のedit資源上限を維持した。
-背景読込・極狭幅表は未解決で、#458/#460の限定実測から実UIの一般保証へ広げない。
-文書収載#449の統合・通常exe hash維持・安全整理の確定原本は`agents/day-close-20261030/integration-completion.json`。
+#448の現在ノート検索・#451の縁resize・#452の窓操作・#460のASCII decoderは統合済み。
+#456の水平表診断・#458の検索準備計測・#462の元SET拒否診断も文書統合済み。成果は日報へ集約した。
+背景読込と極狭幅表は未解決。本文/置換の静読は新具体的不具合0で、既存の編集資源上限を維持した。
 Waivers none。
 
 ## 公開済みbeta
@@ -51,9 +39,9 @@ Waivers none。
 ## 通常exeとhideの実機確認
 
 hide受理済み合成サンプル`data/サンプル/Markdown構文サンプル.md`は通常dataへ残している。実ノート内容は記録・同梱しない。
-現在の通常`C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`はsource `3dbed2a`・表示版0.3.0/Windows版0.3.0.0。
-通常process0件を確認して正規ツールで反映しexit0、10月30日17:38:56 JST更新済み。更新後は起動していない。
-版・hashは`D:/NeNeFolio/agents/460-ascii-decode/normal-preservation.json`。通常dataは操作していない。
+現在の通常`C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`はsource `e4e1823`・表示版0.3.0/Windows版0.3.0.0。
+通常process0件を確認して正規ツールで反映しexit0、10月30日19:54:23 JST更新済み。更新後は起動していない。
+版・hashは`D:/NeNeFolio/agents/464-validation-output/normal-preservation.json`。通常dataは操作していない。
 
 ## 次の予定: ノートの保存先設定（未実装）
 
@@ -74,7 +62,9 @@ portable版はexe隣の`data`を既定とし、両方とも設定から「ノー
 
 ## 保持中の旧作業物
 
-下記の50箇所は自動承認レビューの削除拒否により保持する。再試行や別手段での削除をしない。
+下記の51箇所は自動承認レビューの削除拒否により保持する。再試行や別手段での削除をしない。
+
+- #464: `D:/NeNeFolio/outputs/464-validation-output`。統合・通常反映・7204files/3041934805bytes全hash保全と安全監査後、出力削除要求が実行前に`blocked by policy`で拒否された。追加理由なし。worktreeは削除済み、branch/commit保持。確定原本は同taskの`integration-completion.json`。
 
 - #462: `D:/NeNeFolio/outputs/462-table-layout-failure`。文書統合・通常exe hash維持・3937files全hash保全と安全監査後、出力削除要求が実行前に`blocked by policy`で拒否された。追加理由なし。worktreeは削除済み、branch/commit保持。確定原本は同taskの`integration-completion.json`。
 
