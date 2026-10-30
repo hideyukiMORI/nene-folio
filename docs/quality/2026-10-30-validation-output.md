@@ -149,3 +149,22 @@ LargeのMarkdown描画0、固定seed/保存dataの照合も通り、実runtime�
 局所初期化の削減は受理したが、背景I/O・一件準備の時間上限・極狭幅表を解決済みとは扱わない。
 最終headの必須`pwsh -NoProfile -File ./eng/check.ps1`成功後に統合し、通常exeの必要反映と全成果物保全・安全整理を行う。
 確定head/CI/main・通常exe hash・archive/整理結果は同taskの`integration-completion.json`を正本とする。
+
+
+## 統合・通常反映・保全整理の確定
+
+PR #465のhead`262ff18c6a244d060209532e2fec3ea5b42d5f31`、必須CI`41043496466`のfull-gate/checkは成功した。
+main`e4e182313042f1cb533aef829631918dfbcf64ac`へ統合し、Issue #464 closed・main/origin/main clean・受理tree一致を確認した。
+親の最終文書検査は5file/40local links/conformance0、763入力不変・成果物1件一致。
+
+正典prepare-real-machineは3actions、child/wrapper0・記録error0、764入力不変・2成果物一致。
+通常exeは19:54:23.4545428 JST更新、5560320bytes、0.3.0/0.3.0.0。
+SHA256 `9E761171EE75215BA97587CE0C672A3F93431EC93CC9BFD24F81126570AB6E94`。反映前process0、起動/data操作0。
+反映後の親読取utilityはstdout encoding省略で停止した。完了済み全hash照合を保持し、explicit UTF-8で件名を読み直した。
+成功build/反映/hash検証を再実行せず、失敗は`normal-audit-utility-v1-failure.json`へ保持した。
+
+15stage/60raw/6808snapshotを索引化し、7204files/3041934805bytesを同taskの恒久`output-archive`へ全hash照合した。
+未保存/untracked/ignored/link/稼働参照0を監査してworktreeを削除した。branch `refactor/464-validation-output`とcommitを保持する。
+`D:/NeNeFolio/outputs/464-validation-output`の削除は自動承認レビューが実行前に`blocked by policy`で拒否した。
+追加理由なし、再試行0。削除拒否は51箇所となり、旧拒否領域は操作していない。
+確定原本は`D:/NeNeFolio/agents/464-validation-output/integration-completion.json`。残存所有process/session0、Waivers none。
