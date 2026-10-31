@@ -47,7 +47,9 @@ track package validation, saved-data checks, publication, and download verificat
   thematic breaks, setext headings, explicit line breaks, and longer code delimiters.
   The current source also adds angle-bracket URI/email autolinks, numeric character references,
   six basic named references, and more space around thematic breaks (#480). These additions are
-  not included in the published beta. See [Markdown syntax and limits](docs/MARKDOWN.md) (Japanese).
+  not included in the published beta. View-mode HTTP/HTTPS links also open in the default browser
+  with a left click or Ctrl+Enter (#482); dragging to select text and editing do not launch links.
+  See [Markdown syntax and limits](docs/MARKDOWN.md) (Japanese).
 - **Note zoom**: Ctrl+wheel or Ctrl++ / Ctrl+- changes the display from 50% to 300%; Ctrl+0 restores 100%.
   Read and Edit share the zoom while the app runs, and line numbers follow it. Note contents stay unchanged.
 - **Notes**: new untitled note with a first save, save as, rename (recoverable across restarts through

@@ -5,6 +5,7 @@
 #define NENEFOLIO_NOTE_PANE_H
 
 #include "gutter_row.h"
+#include "note_pane_link_outcome.h"
 #include "note_pane_load_outcome.h"
 #include "note_pane_outcome.h"
 #include "note_pane_readiness.h"
@@ -17,7 +18,17 @@
 #include <uchar.h>
 #include <windows.h>
 
+#include <richedit.h>
+
 struct note_pane;
+struct utf8_text;
+/* Target is owned by the caller on READY; absent/guarded input has no side effect. */
+[[nodiscard]] enum note_pane_link_outcome
+note_pane_link_selection(struct note_pane *_Nonnull pane,
+                         struct utf8_text *_Nullable *_Nonnull out);
+[[nodiscard]] enum note_pane_link_outcome
+note_pane_link_click(struct note_pane *_Nonnull pane, const ENLINK *_Nonnull notice,
+                     struct utf8_text *_Nullable *_Nonnull out);
 
 /* 本文の RichEdit の control id。主窓は WM_COMMAND を送り手の HWND と id で振り分ける
  * （#40 の絞り込みの欄の EN_CHANGE と同じ窓に届く・ADR 0026 の決定 4）。 */

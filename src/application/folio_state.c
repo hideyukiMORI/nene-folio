@@ -27,6 +27,8 @@
 #include "rtf_palette.h"
 #include "ui_font.h"
 #include "utf8_text.h"
+#include "web_link_port.h"
+#include "web_uri.h"
 
 #include <stdint.h>
 #include <stdlib.h>
@@ -41,6 +43,7 @@ constexpr size_t initial_matches = 64;
 struct folio_state
 {
     struct persistence_port port;
+    struct web_link_port web_link;
     /* 正規表現ポート（ADR 0028 の決定 1 / 2）。ICU を知るのは adapter だけである */
     struct regex_port regex;
     /* 走査の入れ物。下見が引き取ったら空（null・0）に戻り、次の走査で確保し直す（補正 25）。 */
@@ -125,6 +128,35 @@ static void layout_changed(struct folio_state *_Nonnull state)
     {
         state->index_revision += 1;
     }
+}
+
+enum folio_state_outcome folio_state_open_web_link(struct folio_state *_Nonnull state,
+                                                   const char *_Nonnull bytes, size_t length)
+{
+    if (state->mode != PANE_MODE_VIEW || state->document == FOLIO_DOCUMENT_NONE)
+        return FOLIO_STATE_WEB_LINK_REJECTED;
+    struct web_uri *_Nullable uri = nullptr;
+    switch (web_uri_create(bytes, length, &uri))
+    {
+    case WEB_URI_ACCEPTED:
+        break;
+    case WEB_URI_REJECTED:
+        return FOLIO_STATE_WEB_LINK_REJECTED;
+    case WEB_URI_OUT_OF_MEMORY:
+        return FOLIO_STATE_OUT_OF_MEMORY;
+    }
+    enum web_link_outcome outcome = state->web_link.open(uri);
+    web_uri_destroy(uri);
+    switch (outcome)
+    {
+    case WEB_LINK_OPENED:
+        return FOLIO_STATE_READY;
+    case WEB_LINK_UNAVAILABLE:
+        return FOLIO_STATE_WEB_LINK_UNAVAILABLE;
+    case WEB_LINK_OUT_OF_MEMORY:
+        return FOLIO_STATE_OUT_OF_MEMORY;
+    }
+    return FOLIO_STATE_WEB_LINK_UNAVAILABLE;
 }
 
 static void stored_note(struct folio_state *_Nonnull state)
@@ -569,6 +601,7 @@ enum folio_state_outcome folio_state_create(const struct folio_ports *_Nonnull p
     }
     state->port = *persistence;
     state->regex = *ports->regex;
+    state->web_link = *ports->web_link;
     /* 外観ポートも値で写して持つ（ADR 0031 の決定 3）。adapter の寿命は合成ルートが保証する。 */
     state->appearance = *appearance;
     state->appearance_snapshot.theme = FOLIO_THEME_LIGHT;
@@ -3898,6 +3931,8 @@ enum folio_state_outcome folio_state_restore_history(struct folio_state *_Nonnul
  * ここは outcome と ID の対応だけを持つ。網羅は CNF-009 が守る（ADR 0027 の経路のまま）。
  * READY と CANCELLED は見せる 1 行が無いので UI_TEXT_EMPTY を共有する。 */
 static const enum ui_text failure_lines[] = {
+    [FOLIO_STATE_WEB_LINK_REJECTED] = UI_TEXT_FAILURE_WEB_LINK_REJECTED,
+    [FOLIO_STATE_WEB_LINK_UNAVAILABLE] = UI_TEXT_FAILURE_WEB_LINK_UNAVAILABLE,
     [FOLIO_STATE_READY] = UI_TEXT_EMPTY,
     [FOLIO_STATE_DATA_UNREADABLE] = UI_TEXT_FAILURE_DATA_UNREADABLE,
     [FOLIO_STATE_LEDGER_MALFORMED] = UI_TEXT_FAILURE_LEDGER_MALFORMED,

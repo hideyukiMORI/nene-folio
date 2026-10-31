@@ -52,4 +52,6 @@ constexpr UINT folio_message_pane_zoomed = WM_APP + 19;
 constexpr UINT folio_message_resize_through = WM_APP + 20;
 /* 入れ子のOS面が戻ったとき、既存の終了要求を外側の面の取消へ伝える。状態は主窓だけが持つ。 */
 constexpr UINT folio_message_close_pending = WM_APP + 21;
+/* Explicit Ctrl+Enter from the view pane; parent owns guards and application intent. */
+constexpr UINT folio_message_open_web_link = WM_APP + 22;
 #endif

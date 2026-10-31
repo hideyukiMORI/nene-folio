@@ -13,6 +13,7 @@
 #include "storage_state.h"
 #include "ui_text.h"
 #include "utf16_text.h"
+#include "web_link_adapter.h"
 
 #include <string.h>
 #include <windows.h>
@@ -154,7 +155,9 @@ static int run_from_storage(struct storage_state *_Nonnull storage,
     struct persistence_port files = persistence_adapter_port(persistence);
     struct appearance_port looks = appearance_adapter_port(appearance);
     struct regex_port finder = regex_adapter_port(regex);
-    struct folio_ports ports = {.persistence = &files, .appearance = &looks, .regex = &finder};
+    struct web_link_port links = web_link_adapter_port();
+    struct folio_ports ports = {
+        .persistence = &files, .appearance = &looks, .regex = &finder, .web_link = &links};
     int code = run(&ports, storage, fonts);
     persistence_adapter_destroy(persistence);
     return code;

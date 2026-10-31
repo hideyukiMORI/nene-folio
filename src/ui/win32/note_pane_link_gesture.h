@@ -1,0 +1,9 @@
+#ifndef NENEFOLIO_NOTE_PANE_LINK_GESTURE_H
+#define NENEFOLIO_NOTE_PANE_LINK_GESTURE_H
+enum note_pane_link_gesture : unsigned char
+{
+    NOTE_PANE_LINK_IDLE,
+    NOTE_PANE_LINK_PRESSED,
+    NOTE_PANE_LINK_RELEASING
+};
+#endif

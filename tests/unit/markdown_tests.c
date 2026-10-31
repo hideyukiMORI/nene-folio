@@ -154,7 +154,9 @@ static void verify_lists_quotes_links(void)
     expect_body("> quoted\n>bare",
                 "\\pard\\li480\\sa80\\sl240\\slmult1\\cf3 quoted bare\\cf1\\par\n");
     expect_body("see [docs](https://x.example/) now",
-                "\\pard\\sa80\\sl240\\slmult1\\cf1 see {\\cf4\\ul docs\\ul0} now\\par\n");
+                "\\pard\\sa80\\sl240\\slmult1\\cf1 see "
+                "{\\field{\\*\\fldinst{HYPERLINK \"https://x.example/\"}}"
+                "{\\fldrslt{{\\cf4\\ul docs\\ul0}}}}{\\v  } now\\par\n");
     expect_body("[no url]", "\\pard\\sa80\\sl240\\slmult1\\cf1 [no url]\\par\n");
     expect_body("[open](", "\\pard\\sa80\\sl240\\slmult1\\cf1 [open](\\par\n");
     expect_body("[a]b", "\\pard\\sa80\\sl240\\slmult1\\cf1 [a]b\\par\n");
@@ -1616,7 +1618,8 @@ size_t run_markdown_inline_storage_allocation_tests(void)
 
 static void verify_autolink_rendering(void)
 {
-    expect_same_rendering("<https://example.com/a_b?q=2>", "[https://example.com/a_b?q=2](url)");
+    expect_same_rendering("<https://example.com/a_b?q=2>",
+                          "[https://example.com/a_b?q=2](https://example.com/a_b?q=2)");
     expect_same_rendering("<name+tag@example-domain.org>", "[name+tag@example-domain.org](url)");
     expect_same_rendering("<AB+1.-:>", "[AB+1.-:](url)");
     expect_fragment("<https://example.com/**x**[a](b)>",
@@ -1630,7 +1633,8 @@ static void verify_autolink_rendering(void)
                     "\\ul ");
     expect_fragment("<https://x/`raw>`after`", "{\\f1\\fs20\\cf4 after}", "{\\f1\\fs20\\cf4 raw");
     expect_fragment("`before <https://x/`>", "{\\f1\\fs20\\cf4 before <https://x/}>", "\\ul ");
-    expect_fragment("**<https://x/>**", "{\\b {\\cf4\\ul https://x/\\ul0}}", "<https:");
+    expect_fragment("**<https://x/>**", "{\\fldrslt{{\\cf4\\ul https://x/\\ul0}}}}{\\v  }}",
+                    "<https:");
     expect_fragment("| <https://x/a\\|b> | &amp; |\n| -- | -- |", "https://x/a|b\\ul0}", "a\\\\|b");
     const char *const rejected[] = {"<>",
                                     "<h:x>",
