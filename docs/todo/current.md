@@ -1,12 +1,14 @@
 # いまの状態 — NeNe Folio
 
-## キー操作更新・Store認定結果待ち — #490 / #488
+## キー操作反映済み・Store認定結果待ち — #490 / #492
 
-hideの新依頼でCtrl+Eの閲覧/編集切り替え、Ctrl+Mの操作メニューと、5部品の「説明 (キー)」を追加した。
-既存の保存処理とshortcut記述子へ合流し、Debug/tidy・対象単体・実Win32の88checksが成功。
+#490 / PR #491は最終head `e29cec9`・必須CI `41219791592`成功で製品main `1fb2762`へ統合済み。
+Ctrl+Eの閲覧/編集切り替え、Ctrl+Mの操作メニューと5部品の「説明 (キー)」を追加し、通常exeへ反映・起動した。
+既存の保存処理とshortcut記述子へ合流。Debug/tidy・対象単体・実Win32の88checksが成功。
 [品質記録](../quality/2026-11-01-mode-shortcuts.md)・[キー仕様](../KEY_BINDINGS.md)・[ADR0081](../adr/0081-mode-shortcut-and-action-hints.md)。
-最終head必須CI/main/通常exe反映・全保全/整理は
-`D:/NeNeFolio/agents/mode-shortcuts-20261101/integration-completion.json`で確定する。
+通常版は1.0.0 / 1.0.0.0、反映前後・起動前のノート26files/保存先設定は不変。hideの実機受理は未確認。
+4,060files全hash保全後に追加worktree/outputを削除し、branch/commitを保持した。
+確定原本は`D:/NeNeFolio/agents/mode-shortcuts-20261101/integration-completion.json`。
 保存schema・版入力・依存は不変、Waivers none。これは申請済みMSIXより後の変更で、提出物は差し替えていない。
 
 hideが1.0.0のSubmission 1を提出し、2026-11-01 00:31:51 JSTの画面で「認定中 / 前処理中」を確認した。
@@ -16,9 +18,10 @@ hideが1.0.0のSubmission 1を提出し、2026-11-01 00:31:51 JSTの画面で「
 WACKは22 PASS・任意88 FAIL・必須92 WARNING、総合WARNING。根拠を添えたが全合格や審査受理とは扱わない。
 #486/PR487は必須CI成功でmain統合済み。254files全hash保全後に追加worktreeと2一時出力を削除し、提出原本と15枚の画像を保持した。
 [品質記録](../quality/2026-11-01-msix-installation.md)・[日報](../reports/2026-11-01.md)・[引き継ぎ](../handoffs/2026-11-01.md)。
-実機確認/整理は同agentsの`integration-completion.json`、今回文書の最終CI/main/整理は
-`D:/NeNeFolio/agents/handoff-20261101/integration-completion.json`で確定する。
-次は認定結果と公開画面の確認。AppDataノートroot保持と実Store署名版導入は未確認。製品変更0、Waivers none。
+実機確認/整理は同agentsの`integration-completion.json`、今回#492の文書3件の最終CI/main/整理は
+`D:/NeNeFolio/agents/handoff-shortcuts-20261101/integration-completion.json`で確定する。
+次はキー操作の実機受理と認定結果/公開画面の確認。AppDataノートroot保持と実Store署名版導入は未確認。
+#492は製品変更0、Waivers none。通常アプリは稼働状態を確認し、未保存本文を強制終了しない。
 #479/#466・停止済み継続品質改善は再開しない。構文色分け等は申請後ではなくStore公開後のhide指示と照合する。
 
 ## 直前のMSIX生成 — #484
@@ -120,9 +123,9 @@ Waivers none。
 ## 通常exeとhideの実機確認
 
 hide受理済み合成サンプル`data/サンプル/Markdown構文サンプル.md`は通常dataへ残している。
-実ノート内容は記録・同梱しない。#477前の通常版はsource6232320・表示版0.3.0/Windows版0.3.0.0。
+実ノート内容は記録・同梱しない。最新の通常版は#490のsource `1fb2762`・表示版1.0.0/Windows版1.0.0.0。
 通常exeは`C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`。
-最新の版/hash/反映状態は`D:/NeNeFolio/agents/web-links-20261031/integration-completion.json`を参照する。
+最新の版/hash/反映状態は`D:/NeNeFolio/agents/mode-shortcuts-20261101/integration-completion.json`を参照する。
 起動中なら保存/終了を待ち、強制終了しない。通常dataの保存先を試験のために変更しない。
 
 ## 次に残る配布確認
