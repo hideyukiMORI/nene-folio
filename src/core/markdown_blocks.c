@@ -31,7 +31,6 @@ struct markdown_blocks
     size_t fence_indent;
     size_t code_indent;
     enum markdown_code_state code_state;
-    bool after_rule;
     enum markdown_table_state table_state;
     struct markdown_line delimiter;
 };
@@ -177,15 +176,13 @@ static void paragraph_header(struct markdown_blocks *_Nonnull parser)
         marker_position(parser, parser->paragraph_indent);
     text_buffer_append_text(parser->out,
                             markdown_containers_in_list(parser->containers) ? "\\sa40" : "\\sa80");
-    if (parser->after_rule)
-        text_buffer_append_text(parser->out, "\\sb120");
     text_buffer_append_text(parser->out, "\\sl240\\slmult1");
     text_buffer_append_text(parser->out, parser->paragraph_quote ? "\\cf3 " : "\\cf1 ");
     if (marker)
         marker_label(parser, parser->task);
 }
 
-static bool flush(struct markdown_blocks *_Nonnull parser, bool before_rule)
+static bool flush(struct markdown_blocks *_Nonnull parser)
 {
     if (parser->span_count == 0)
         return true;
@@ -200,12 +197,9 @@ static bool flush(struct markdown_blocks *_Nonnull parser, bool before_rule)
         text_buffer_append_text(parser->out, "\\b0\\cf1\\fs22");
     else if (parser->paragraph_quote)
         text_buffer_append_text(parser->out, "\\cf1");
-    if (before_rule)
-        text_buffer_append_text(parser->out, "\\sa120");
     text_buffer_append_text(parser->out, "\\par\n");
     parser->span_count = parser->inline_length = parser->heading = 0;
     parser->task = MARKDOWN_TASK_KIND_NONE;
-    parser->after_rule = false;
     return true;
 }
 
@@ -319,19 +313,22 @@ static struct markdown_line heading_content(struct markdown_line line, size_t le
 static bool heading_line(struct markdown_blocks *_Nonnull parser, struct markdown_line line,
                          size_t level)
 {
-    if (!flush(parser, false))
+    if (!flush(parser))
         return false;
     parser->heading = level;
-    return add_span(parser, heading_content(line, level)) && flush(parser, false);
+    return add_span(parser, heading_content(line, level)) && flush(parser);
 }
 
 static void rule(struct markdown_blocks *_Nonnull parser)
 {
     outer_markers(parser, 0);
+    /* RichEdit extends the highlight into paragraph spacing. Keep the gaps uncolored. */
+    static const char gap[] = "{\\pard\\sb0\\sa0\\sl-240\\slmult0\\fs2\\highlight0\\par}\n";
+    text_buffer_append_text(parser->out, gap);
     text_buffer_append_text(parser->out, "{\\pard\\sb0\\sa0\\sl-20\\slmult0\\fs2\\highlight3");
     indent(parser->out, markdown_containers_indent(parser->containers));
     text_buffer_append_text(parser->out, "\\par}\n");
-    parser->after_rule = true;
+    text_buffer_append_text(parser->out, gap);
 }
 
 static bool literal_row(struct markdown_blocks *_Nonnull parser, struct markdown_line line)
@@ -345,7 +342,7 @@ static bool literal_row(struct markdown_blocks *_Nonnull parser, struct markdown
 static bool start_table(struct markdown_blocks *_Nonnull parser, struct markdown_line line,
                         struct markdown_line delimiter)
 {
-    if (!flush(parser, false))
+    if (!flush(parser))
         return false;
     parser->delimiter = delimiter;
     size_t indent_twips = markdown_containers_indent(parser->containers);
@@ -383,7 +380,7 @@ static bool special_line(struct markdown_blocks *_Nonnull parser, struct markdow
         return heading_line(parser, line, level);
     if (markdown_line_thematic(line))
     {
-        if (!flush(parser, true))
+        if (!flush(parser))
             return false;
         rule(parser);
         return true;
@@ -391,7 +388,7 @@ static bool special_line(struct markdown_blocks *_Nonnull parser, struct markdow
     size_t fence = markdown_line_fence(line);
     if (fence != 0)
     {
-        if (!flush(parser, false))
+        if (!flush(parser))
             return false;
         return start_fence(parser, line, fence);
     }
@@ -427,7 +424,7 @@ static bool accept_line(struct markdown_blocks *_Nonnull parser, struct markdown
         return false;
     if (markdown_containers_event(parser->containers) == MARKDOWN_CONTAINER_EVENT_FLUSH_REQUIRED)
     {
-        if (!flush(parser, false))
+        if (!flush(parser))
             return false;
         parser->outcome = markdown_containers_accept(parser->containers, raw, next,
                                                      MARKDOWN_PARAGRAPH_STATE_NONE);
@@ -444,7 +441,7 @@ static bool render_line(struct markdown_blocks *_Nonnull parser, struct markdown
     struct markdown_line line = markdown_containers_line(parser->containers);
     if (markdown_line_blank(line))
     {
-        if (!flush(parser, false))
+        if (!flush(parser))
             return false;
         outer_markers(parser, 0);
         return true;
@@ -453,7 +450,7 @@ static bool render_line(struct markdown_blocks *_Nonnull parser, struct markdown
     if (parser->span_count != 0 && setext != 0)
     {
         parser->heading = setext;
-        return flush(parser, false);
+        return flush(parser);
     }
     if (table_candidate(parser, line, next))
     {
@@ -521,7 +518,7 @@ enum markdown_rtf_outcome markdown_blocks_render(struct text_buffer *_Nonnull ou
     if (parser.code_state != MARKDOWN_CODE_STATE_OUTSIDE)
         close_code(&parser);
     if (accepted)
-        accepted = flush(&parser, false);
+        accepted = flush(&parser);
     markdown_blocks_destroy(&parser);
     if (!accepted && parser.outcome == MARKDOWN_RTF_CONVERTED)
         return MARKDOWN_RTF_OUT_OF_MEMORY;

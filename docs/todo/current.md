@@ -1,6 +1,21 @@
 # いまの状態 — NeNe Folio
 
-## 最新の機能追加 — ノート保存先 #477
+## 最新の表示調整 — Markdown #480
+
+hideの依頼で水平線の上下を背景なし12pt余白にし、山括弧付きURI/emailの表示と数値/基本6種の文字参照を追加した。
+[未対応の棚卸し](../quality/2026-10-31-markdown-scope.md)に負担と次候補を整理した。
+言語選択/構文色分けはhide指定でStore公開後、Mermaidは描画基盤が必要なため今回見送り。
+正典Debug/tidy、対象単体/確保失敗、実RichEdit45checksと明暗/狭幅の画像目視が成功。
+[品質記録](../quality/2026-10-31-markdown-light.md)・[ADR0078](../adr/0078-lightweight-markdown-inline-rendering.md)。
+保存schema・版・依存は不変、Waivers none。最終CI/main/通常exe反映と保全整理は
+`D:/NeNeFolio/agents/markdown-light-20261031/integration-completion.json`で確定する。
+
+職場での文字ウェイト混在は[#479](https://github.com/hideyukiMORI/nene-folio/issues/479)へ記録して修正保留。
+合成WM_PASTEで書式混入経路は再現したが、職場の現象との同一性は不明。hide指定で診断を終了し、production変更0。
+未完`worktrees/479-editor-paste`と`outputs/479-editor-paste`は診断原本と未統合記録のため保持する。
+停止済み継続goalと#466は再開しない。
+
+## 直前の機能追加 — ノート保存先 #477
 
 hideが#475の一覧resize・両表示の境界dragを実機受理し、次の保存先設定へ進むよう依頼した。
 [#477](https://github.com/hideyukiMORI/nene-folio/issues/477)で設定の「ノートの保存先…」を追加し、
@@ -62,7 +77,7 @@ Waivers none。
 hide受理済み合成サンプル`data/サンプル/Markdown構文サンプル.md`は通常dataへ残している。
 実ノート内容は記録・同梱しない。#477前の通常版はsource6232320・表示版0.3.0/Windows版0.3.0.0。
 通常exeは`C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`。
-最新の版/hash/反映状態は`D:/NeNeFolio/agents/storage-location-20261031/integration-completion.json`を参照する。
+最新の版/hash/反映状態は`D:/NeNeFolio/agents/markdown-light-20261031/integration-completion.json`を参照する。
 起動中なら保存/終了を待ち、強制終了しない。通常dataの保存先を試験のために変更しない。
 
 ## 次に残る配布確認

@@ -45,7 +45,9 @@ track package validation, saved-data checks, publication, and download verificat
   … `5.md`, and any version can be restored into the editor as an undoable edit.
   The 0.3.0 beta supports tables, nested lists and quotes, task lists, strikethrough,
   thematic breaks, setext headings, explicit line breaks, and longer code delimiters.
-  See [Markdown syntax and limits](docs/MARKDOWN.md) (Japanese).
+  The current source also adds angle-bracket URI/email autolinks, numeric character references,
+  six basic named references, and more space around thematic breaks (#480). These additions are
+  not included in the published beta. See [Markdown syntax and limits](docs/MARKDOWN.md) (Japanese).
 - **Note zoom**: Ctrl+wheel or Ctrl++ / Ctrl+- changes the display from 50% to 300%; Ctrl+0 restores 100%.
   Read and Edit share the zoom while the app runs, and line numbers follow it. Note contents stay unchanged.
 - **Notes**: new untitled note with a first save, save as, rename (recoverable across restarts through
