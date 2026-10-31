@@ -1,5 +1,7 @@
 #include "allocation_probe.h"
 #include "folio_language.h"
+#include "markdown_autolink.h"
+#include "markdown_character_reference.h"
 #include "markdown_containers.h"
 #include "markdown_inline_tokens.h"
 #include "markdown_line.h"
@@ -916,8 +918,10 @@ static void verify_table_start_blocks(void)
     expect_body("~~~lang|\n|---|\n~~~\ntail",
                 "{\\f1\\fs20\\cf5\\highlight6\\pard\\li180\\ri180\\sb120\\sa0\\sl240\\slmult1 "
                 "|---|\\sa120\\par\n}\\pard\\sa80\\sl240\\slmult1\\cf1 tail\\par\n");
-    expect_body("***\n|---|", "{\\pard\\sb0\\sa0\\sl-20\\slmult0\\fs2\\highlight3\\par}\n"
-                              "\\pard\\sa80\\sb120\\sl240\\slmult1\\cf1 |---|\\par\n");
+    expect_body("***\n|---|", "{\\pard\\sb0\\sa0\\sl-240\\slmult0\\fs2\\highlight0\\par}\n{"
+                              "\\pard\\sb0\\sa0\\sl-20\\slmult0\\fs2\\highlight3\\par}\n{"
+                              "\\pard\\sb0\\sa0\\sl-240\\slmult0\\fs2\\highlight0\\par}\n"
+                              "\\pard\\sa80\\sl240\\slmult1\\cf1 |---|\\par\n");
     expect_body("\n|---|", "\\pard\\sa80\\sl240\\slmult1\\cf1 |---|\\par\n");
 }
 
@@ -930,7 +934,9 @@ static void verify_table_start_containers(void)
                 "{\\f0\\fs22\\cf1\\b0\\highlight0 \\bullet\\tab }a|b\\b0\\cf1\\fs22\\par\n");
     expect_body("> quote\nlazy\\|text\n---",
                 "\\pard\\li480\\sa80\\sl240\\slmult1\\cf3 quote lazy|text\\cf1\\par\n"
-                "{\\pard\\sb0\\sa0\\sl-20\\slmult0\\fs2\\highlight3\\par}\n");
+                "{\\pard\\sb0\\sa0\\sl-240\\slmult0\\fs2\\highlight0\\par}\n{\\pard\\sb0\\sa0\\sl-"
+                "20\\slmult0\\fs2\\highlight3\\par}\n{\\pard\\sb0\\sa0\\sl-"
+                "240\\slmult0\\fs2\\highlight0\\par}\n");
     expect_body("> a\n:---:", "\\pard\\li480\\sa80\\sl240\\slmult1\\cf3 a :---:\\cf1\\par\n");
     expect_fragment("> head\n> |---|\n> cell", "\\trleft480", "\\cf3 head");
     expect_fragment("- head\n  |---|\n  cell", "\\trleft440", "{\\b - head}");
@@ -1093,6 +1099,9 @@ static void verify_syntax_allocation(void)
         "paragraph\nline2\nline3\nline4\nline5\nline6\nline7\nline8\nline9\nline10"
         "\n\n- parent\n  - child\n    > > > > > > > > > quote\n\nA | B\n-- | "
         "--\n`x` | ~~y~~\n\ntail");
+    (void)verify_render_allocation("<https://example.com/a_b> **&amp;&#x1F600;**\n\n---\n\n"
+                                   "| <mail@example.org> | &#123; |\n| -- | -- |\n"
+                                   "| `&amp;` | ![&amp;](url) |");
 }
 
 static void verify_borrowed_input(void)
@@ -1605,8 +1614,127 @@ size_t run_markdown_inline_storage_allocation_tests(void)
     return metadata + factory;
 }
 
+static void verify_autolink_rendering(void)
+{
+    expect_same_rendering("<https://example.com/a_b?q=2>", "[https://example.com/a_b?q=2](url)");
+    expect_same_rendering("<name+tag@example-domain.org>", "[name+tag@example-domain.org](url)");
+    expect_same_rendering("<AB+1.-:>", "[AB+1.-:](url)");
+    expect_fragment("<https://example.com/**x**[a](b)>",
+                    "{\\cf4\\ul https://example.com/**x**[a](b)\\ul0}", "{\\b x}");
+    expect_fragment("<https://example.com/\\[\\>", "https://example.com/\\\\[\\\\\\ul0}", "{\\f1");
+    expect_fragment("<https://example.com/&amp;>", "example.com/&amp;\\ul0}",
+                    "example.com/&\\ul0}");
+    expect_fragment("`<https://example.com/>`", "{\\f1\\fs20\\cf4 <https://example.com/>", "\\ul ");
+    expect_fragment("\\<https://example.com/>", "<https://example.com/>", "\\ul ");
+    expect_fragment("![<https://example.com/>](image)", "![<https://example.com/>](image)",
+                    "\\ul ");
+    expect_fragment("<https://x/`raw>`after`", "{\\f1\\fs20\\cf4 after}", "{\\f1\\fs20\\cf4 raw");
+    expect_fragment("`before <https://x/`>", "{\\f1\\fs20\\cf4 before <https://x/}>", "\\ul ");
+    expect_fragment("**<https://x/>**", "{\\b {\\cf4\\ul https://x/\\ul0}}", "<https:");
+    expect_fragment("| <https://x/a\\|b> | &amp; |\n| -- | -- |", "https://x/a|b\\ul0}", "a\\\\|b");
+    const char *const rejected[] = {"<>",
+                                    "<h:x>",
+                                    "<1x:y>",
+                                    "<ab!c:d>",
+                                    "<ab cd:e>",
+                                    "<ab:c\t>",
+                                    "<ab:c\177>",
+                                    "<ab:c",
+                                    "<@example.org>",
+                                    "<x@>",
+                                    "<x@a..b>",
+                                    "<x@-host>",
+                                    "<x@host->",
+                                    "<x@host.>",
+                                    "<x@y_>",
+                                    "https://example.com"};
+    for (size_t index = 0; index < sizeof rejected / sizeof rejected[0]; ++index)
+        expect_fragment(rejected[index], "\\cf1 ", "\\ul ");
+}
+
+static void verify_character_references(void)
+{
+    expect_same_rendering("&amp; &lt; &gt; &quot; &apos; &nbsp;", "& < > \" ' \xC2\xA0");
+    expect_same_rendering("&#65; &#x41; &#X41; &#x65E5; &#128512;",
+                          "A A A \xE6\x97\xA5 \xF0\x9F\x98\x80");
+    expect_same_rendering("&#0; &#55296; &#xDFFF; &#1114112; &#9999999;",
+                          "\xEF\xBF\xBD \xEF\xBF\xBD \xEF\xBF\xBD \xEF\xBF\xBD \xEF\xBF\xBD");
+    expect_same_rendering("&#x10FFFF;", "\xF4\x8F\xBF\xBF");
+    expect_same_rendering("&#123;&#92;&#125;", "{\\\\}");
+    expect_same_rendering("&#42;plain&#42;", "\\*plain\\*");
+    expect_same_rendering("A&#10;&#13;B", "A  B");
+    expect_fragment("**&amp;** [&#65;](url)", "{\\b &} {\\cf4\\ul A\\ul0}", "&#65;");
+    expect_fragment("`&amp;&#65;`", "{\\f1\\fs20\\cf4 &amp;&#65;}", "{\\f1\\fs20\\cf4 &A}");
+    expect_fragment("```\n&amp;&#65;\n```", "&amp;&#65;", "&A");
+    expect_fragment("![&amp;&#65;](image)", "![&amp;&#65;](image)", "![&A]");
+    expect_fragment("\\&amp; &amp;amp;", "&amp; &amp;", "& &");
+    const char *const rejected[] = {"&",     "&#",     "&#;",         "&#x;",        "&#X;",
+                                    "&#xG;", "&#-1;",  "&#12345678;", "&#x1234567;", "&#65",
+                                    "&AMP;", "&copy;", "&am;",        "&amp"};
+    for (size_t index = 0; index < sizeof rejected / sizeof rejected[0]; ++index)
+        expect_fragment(rejected[index], rejected[index], "{\\b ");
+}
+
+static void verify_light_inline_bounds(void)
+{
+    const char *source = "<https://example.com>";
+    struct markdown_span span = {.bytes = source, .length = strlen(source)};
+    struct markdown_view view = {.spans = &span, .count = 1, .length = span.length};
+    uint32_t value = 123;
+    require(markdown_autolink_length(view, view.length) == 0 &&
+                markdown_character_reference_read(view, view.length, &value) == 0 && value == 123,
+            "inline matching at end leaves output unchanged");
+    require(markdown_character_reference_read(view, 0, &value) == 0 && value == 123,
+            "non-reference leaves output unchanged");
+    char buffer[100];
+    memset(buffer, 'a', sizeof buffer);
+    buffer[0] = '<';
+    buffer[33] = ':';
+    buffer[34] = '>';
+    buffer[35] = '\0';
+    expect_fragment(buffer, "{\\cf4\\ul ", "<aaa");
+    buffer[33] = 'a';
+    buffer[34] = ':';
+    buffer[35] = '>';
+    buffer[36] = '\0';
+    expect_fragment(buffer, "<aaa", "\\ul ");
+    memset(buffer, 'a', sizeof buffer);
+    buffer[0] = '<';
+    buffer[1] = 'x';
+    buffer[2] = '@';
+    buffer[66] = '>';
+    buffer[67] = '\0';
+    expect_fragment(buffer, "{\\cf4\\ul x@", "<x@");
+    buffer[66] = 'a';
+    buffer[67] = '>';
+    buffer[68] = '\0';
+    expect_fragment(buffer, "<x@", "\\ul ");
+    struct text_buffer *large = nullptr;
+    require(text_buffer_create(&large) == TEXT_BUFFER_ACCEPTED, "long inline source");
+    for (size_t index = 0; index < 4096; ++index)
+        text_buffer_append_text(large, "<invalid-&unknown; ");
+    text_buffer_append_text(large, "<https://valid/>");
+    expect_fragment(text_buffer_bytes(large), "{\\cf4\\ul https://valid/\\ul0}", "{\\b ");
+    text_buffer_destroy(large);
+}
+
+static void verify_rule_spacing(void)
+{
+    const char *const sources[] = {"***", "before\n\n***\n\nafter", "# Heading\n\n***\n\n## Next",
+                                   "- item\n\n  ***\n\n  next", "***\n***"};
+    for (size_t index = 0; index < sizeof sources / sizeof sources[0]; ++index)
+        expect_fragment(sources[index], "{\\pard\\sb0\\sa0\\sl-240\\slmult0\\fs2\\highlight0\\par}",
+                        "\\sa80\\sb120");
+    expect_same_rendering("before\n***\nafter", "before\n\n***\n\nafter");
+    expect_fragment("## Heading\n\nordinary", "\\sb200\\sa80", "\\sb240");
+}
+
 void run_markdown_tests(void)
 {
+    verify_autolink_rendering();
+    verify_character_references();
+    verify_light_inline_bounds();
+    verify_rule_spacing();
     (void)run_markdown_inline_storage_tests();
     (void)run_markdown_inline_storage_allocation_tests();
     verify_line_endings();

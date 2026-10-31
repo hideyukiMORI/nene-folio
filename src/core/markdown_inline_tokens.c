@@ -1,8 +1,11 @@
 #include "markdown_inline_tokens.h"
+#include "markdown_autolink.h"
+#include "markdown_character_reference.h"
 #include "markdown_delimiter_kind.h"
 #include "markdown_inline_kind.h"
 #include "rtf_text.h"
 #include "text_buffer.h"
+#include "utf8_text.h"
 #include <stdint.h>
 #include <stdlib.h>
 
@@ -69,7 +72,7 @@ static bool literal_boundary(char character)
 {
     return delimiter_character(character) || character == '`' || character == '\\' ||
            character == '[' || character == ']' || character == '(' || character == ')' ||
-           character == '\n';
+           character == '\n' || character == '<' || character == '>';
 }
 
 /* Both counting and emission consume exactly this borrowed lexical extent. */
@@ -191,7 +194,24 @@ static void tokenize(struct markdown_inline_tokens *_Nonnull parser)
         start += tokenize_at(parser, start);
 }
 
-static void pair_codes(struct markdown_inline_tokens *_Nonnull parser, size_t *_Nonnull next)
+static size_t autolink_after(struct markdown_inline_tokens *_Nonnull parser, size_t index)
+{
+    struct markdown_inline_token *token = &parser->tokens[index];
+    if (token->kind == MARKDOWN_INLINE_ESCAPE)
+        return index;
+    size_t length = markdown_autolink_length(parser->view, token->start);
+    if (length == 0)
+        return index;
+    size_t after = index + 1;
+    while (after < parser->count && parser->tokens[after].start < token->start + length)
+        ++after;
+    token->kind = MARKDOWN_INLINE_AUTOLINK;
+    token->length = length;
+    token->after = after;
+    return after;
+}
+
+static void next_codes(struct markdown_inline_tokens *_Nonnull parser, size_t *_Nonnull next)
 {
     for (size_t index = parser->count; index != 0;)
     {
@@ -201,8 +221,19 @@ static void pair_codes(struct markdown_inline_tokens *_Nonnull parser, size_t *_
         token->mate = next[token->length] == 0 ? SIZE_MAX : next[token->length] - 1;
         next[token->length] = index + 1;
     }
+}
+
+static void pair_verbatim(struct markdown_inline_tokens *_Nonnull parser, size_t *_Nonnull next)
+{
+    next_codes(parser, next);
     for (size_t index = 0; index < parser->count; ++index)
     {
+        size_t after = autolink_after(parser, index);
+        if (after != index)
+        {
+            index = after - 1;
+            continue;
+        }
         struct markdown_inline_token *token = (&parser->tokens[index]);
         if (at(parser, token->start) != '`' || token->mate == SIZE_MAX || !token->opens)
             continue;
@@ -214,6 +245,22 @@ static void pair_codes(struct markdown_inline_tokens *_Nonnull parser, size_t *_
         ((&parser->tokens[close]))->opens = false;
         index = close;
     }
+}
+
+static bool skip_literal_range(const struct markdown_inline_token *_Nonnull token,
+                               size_t *_Nonnull index)
+{
+    if (token->kind == MARKDOWN_INLINE_AUTOLINK)
+    {
+        *index = token->after - 1;
+        return true;
+    }
+    if (token->kind == MARKDOWN_INLINE_CODE && token->opens)
+    {
+        *index = token->mate;
+        return true;
+    }
+    return false;
 }
 
 static void pair_bracket(struct markdown_inline_tokens *_Nonnull parser, size_t index,
@@ -241,11 +288,8 @@ static void pair_brackets(struct markdown_inline_tokens *_Nonnull parser)
     for (size_t index = 0; index < parser->count; ++index)
     {
         struct markdown_inline_token *token = (&parser->tokens[index]);
-        if (token->kind == MARKDOWN_INLINE_CODE && token->opens)
-        {
-            index = token->mate;
+        if (skip_literal_range(token, &index))
             continue;
-        }
         if (token->kind == MARKDOWN_INLINE_ESCAPE)
             continue;
         char character = at(parser, token->start);
@@ -294,11 +338,8 @@ static void pair_label_images(struct markdown_inline_tokens *_Nonnull parser, si
     for (size_t index = start + 1; index < close; ++index)
     {
         struct markdown_inline_token *token = &parser->tokens[index];
-        if (token->kind == MARKDOWN_INLINE_CODE && token->opens)
-        {
-            index = token->mate;
+        if (skip_literal_range(token, &index))
             continue;
-        }
         size_t end = closed_link_end(parser, index, close);
         if (end == SIZE_MAX || !image_marker(parser, index))
             continue;
@@ -313,11 +354,8 @@ static void pair_links(struct markdown_inline_tokens *_Nonnull parser)
     for (size_t index = 0; index < parser->count; ++index)
     {
         struct markdown_inline_token *token = &parser->tokens[index];
-        if (token->kind == MARKDOWN_INLINE_CODE && token->opens)
-        {
-            index = token->mate;
+        if (skip_literal_range(token, &index))
             continue;
-        }
         size_t end = closed_link_end(parser, index, parser->count);
         if (end == SIZE_MAX)
             continue;
@@ -357,6 +395,7 @@ static enum markdown_delimiter_kind delimiter_slot(struct markdown_inline_tokens
     case MARKDOWN_INLINE_CODE:
     case MARKDOWN_INLINE_LINK:
     case MARKDOWN_INLINE_IMAGE_LITERAL:
+    case MARKDOWN_INLINE_AUTOLINK:
         return MARKDOWN_DELIMITER_COUNT;
     }
     return MARKDOWN_DELIMITER_COUNT;
@@ -422,12 +461,7 @@ static bool skip_pair_range(const struct markdown_inline_token *token, size_t *_
         *index = token->after - 1;
         return true;
     }
-    if (token->kind == MARKDOWN_INLINE_CODE && token->opens)
-    {
-        *index = token->mate;
-        return true;
-    }
-    return false;
+    return skip_literal_range(token, index);
 }
 
 static void pair_delimiters(struct markdown_inline_tokens *_Nonnull parser)
@@ -482,16 +516,46 @@ static void coherent_pairs(struct markdown_inline_tokens *_Nonnull parser, size_
     }
 }
 
-static void append_range(struct markdown_inline_tokens *_Nonnull parser, size_t start, size_t end)
+static size_t append_reference(struct markdown_inline_tokens *_Nonnull parser, size_t start,
+                               size_t end)
 {
-    for (size_t index = start; index < end; ++index)
+    uint32_t value = 0;
+    size_t length = markdown_character_reference_read(parser->view, start, &value);
+    if (length == 0 || length > end - start)
+        return 0;
+    /* Inline line-ending references remain whitespace, never new block syntax. */
+    if (value == '\r' || value == '\n')
+        value = ' ';
+    char encoded[utf8_text_max_encoded];
+    size_t count = utf8_text_encode(value, encoded);
+    rtf_text_append(parser->out, encoded, count);
+    return length;
+}
+
+static size_t append_character(struct markdown_inline_tokens *_Nonnull parser, size_t index,
+                               char character)
+{
+    size_t length = 1;
+    if (parser->view.table_cell && character == '\\' && at(parser, index + 1) == '|')
+    {
+        character = '|';
+        length = 2;
+    }
+    if (character == '\n')
+        character = ' ';
+    rtf_text_append(parser->out, &character, 1);
+    return length;
+}
+
+static void append_range(struct markdown_inline_tokens *_Nonnull parser, size_t start, size_t end,
+                         bool references)
+{
+    for (size_t index = start; index < end;)
     {
         char character = at(parser, index);
-        if (parser->view.table_cell && character == '\\' && at(parser, index + 1) == '|')
-            character = at(parser, ++index);
-        if (character == '\n')
-            character = ' ';
-        rtf_text_append(parser->out, &character, 1);
+        size_t reference =
+            references && character == '&' ? append_reference(parser, index, end) : 0;
+        index += reference != 0 ? reference : append_character(parser, index, character);
     }
 }
 
@@ -510,7 +574,7 @@ static void emit_code(struct markdown_inline_tokens *_Nonnull parser, size_t ind
         --end;
     }
     text_buffer_append_text(parser->out, "{\\f1\\fs20\\cf4 ");
-    append_range(parser, start, end);
+    append_range(parser, start, end, false);
     text_buffer_append_text(parser->out, "}");
 }
 
@@ -553,18 +617,26 @@ static void emit_style(struct markdown_inline_tokens *_Nonnull parser, size_t in
     case MARKDOWN_INLINE_ESCAPE:
     case MARKDOWN_INLINE_CODE:
     case MARKDOWN_INLINE_IMAGE_LITERAL:
+    case MARKDOWN_INLINE_AUTOLINK:
         return;
     }
 }
 
-static size_t emit_token(struct markdown_inline_tokens *_Nonnull parser, size_t index)
+static size_t emit_range_token(struct markdown_inline_tokens *_Nonnull parser, size_t index)
 {
     const struct markdown_inline_token *token = (&parser->tokens[index]);
+    if (token->kind == MARKDOWN_INLINE_AUTOLINK)
+    {
+        text_buffer_append_text(parser->out, "{\\cf4\\ul ");
+        append_range(parser, token->start + 1, token->start + token->length - 1, false);
+        text_buffer_append_text(parser->out, "\\ul0}");
+        return token->after;
+    }
     if (token->kind == MARKDOWN_INLINE_IMAGE_LITERAL)
     {
         size_t end = token->after - 1;
         const struct markdown_inline_token *last = &parser->tokens[end];
-        append_range(parser, token->start, last->start + last->length);
+        append_range(parser, token->start, last->start + last->length, false);
         return token->after;
     }
     if (token->kind == MARKDOWN_INLINE_CODE && token->opens)
@@ -572,9 +644,18 @@ static size_t emit_token(struct markdown_inline_tokens *_Nonnull parser, size_t 
         emit_code(parser, index);
         return token->mate + 1;
     }
+    return index;
+}
+
+static size_t emit_token(struct markdown_inline_tokens *_Nonnull parser, size_t index)
+{
+    size_t after = emit_range_token(parser, index);
+    if (after != index)
+        return after;
+    const struct markdown_inline_token *token = &parser->tokens[index];
     if (token->kind == MARKDOWN_INLINE_ESCAPE)
     {
-        append_range(parser, token->start + 1, token->start + token->length);
+        append_range(parser, token->start + 1, token->start + token->length, false);
         return index + 1;
     }
     if (token->mate != SIZE_MAX && token->kind != MARKDOWN_INLINE_LITERAL)
@@ -586,7 +667,7 @@ static size_t emit_token(struct markdown_inline_tokens *_Nonnull parser, size_t 
     if (character == '\n')
         emit_break(parser, token->start);
     else if (!trailing_marker(parser, index))
-        append_range(parser, token->start, token->start + token->length);
+        append_range(parser, token->start, token->start + token->length, true);
     return index + 1;
 }
 
@@ -624,7 +705,7 @@ enum markdown_rtf_outcome markdown_inline_tokens_render(struct text_buffer *_Non
     }
     struct markdown_inline_tokens parser = {.view = view, .tokens = tokens, .out = out};
     tokenize(&parser);
-    pair_codes(&parser, next);
+    pair_verbatim(&parser, next);
     pair_links(&parser);
     pair_delimiters(&parser);
     coherent_pairs(&parser, next);
