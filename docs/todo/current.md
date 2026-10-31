@@ -1,6 +1,17 @@
 # いまの状態 — NeNe Folio
 
-## Store提出候補のMSIX生成 — #484
+## Store提出前の実MSIX確認 — #486
+
+1.0.0候補を実インストールし、初回確認/取消、合成ノートの保存/再起動、OS更新、削除後の外部データ保持を確認した。
+試験package・一時証明書の信頼登録は解除済み。提出原本は不変、製品変更0、Waivers none。
+WACKは22 PASS・任意88 FAIL・必須92 WARNING、総合WARNING。全合格とは扱わない。
+フォントCFF内の文字列とHTTP/HTTPS起動APIの根拠、実package窓のPerMonitorV2を別に確認した。
+日英簡体字の掲載文/各5枚の画面を準備し、hideの画面で全6欄完了・Validatedを確認。認定提出/公開はまだ。
+[品質記録](../quality/2026-11-01-msix-installation.md)・[日報](../reports/2026-11-01.md)・[引き継ぎ](../handoffs/2026-11-01.md)。
+最終CI/main・証跡保全/整理は`D:/NeNeFolio/agents/msix-validation-20261031/integration-completion.json`で確定する。
+AppDataをノートrootに選んだ場合の保持と実Store署名版での導入は未確認。#479/#466と停止済み継続品質改善は再開しない。
+
+## 直前のMSIX生成 — #484
 
 hideがStore登録/予約とidentity提供を完了し、初回候補1.0.0と紙/ノートの図案作成を指定した。
 同じ`eng/package-release.ps1`へ`-Format Msix`を追加。CMake一入力の版、共通Release payload、
@@ -9,7 +20,7 @@ hideがStore登録/予約とidentity提供を完了し、初回候補1.0.0と紙
 [手順](../release/MSIX.md)・[品質記録](../quality/2026-10-31-store-msix.md)・[ADR0080](../adr/0080-store-msix-through-release-pipeline.md)。
 最終head必須CI・main・clean mainのMSIX候補・hash・保全/終了整理は
 `D:/NeNeFolio/agents/msix-20261031/integration-completion.json`で確定する。
-実MSIXインストール/更新/アンインストール/WACK、ページ素材と申請/公開は次段階。
+#486で実MSIXとページ素材の段階を確認した。WACK警告と認定提出/公開は上段を参照する。
 通常exeは#482の0.3.0が起動中のため終了・上書きせず、今回の必要反映先は別のMSIX候補とする。
 
 ## 閲覧中のWebリンク起動 — #482
@@ -107,7 +118,7 @@ hide受理済み合成サンプル`data/サンプル/Markdown構文サンプル.
 ## 次に残る配布確認
 
 #390の保存先方針は#477/ADR0077で実装し、MSIX生成は#484/ADR0080で追加した。
-実インストールでの初回/更新/アンインストール/WACK確認とStore申請は未着手。
+実インストールでの初回/更新/アンインストールは#486で確認。WACK警告を記録し、Store申請は未実施。
 package identityを持たないMSI等は今回のinstalled判定対象ではない。
 物理IME・reader・異なるDPI間の確認も合成fixtureとは区別する。次の作業はhideの新指示と照合する。
 
@@ -116,7 +127,7 @@ package identityを持たないMSI等は今回のinstalled判定対象ではな�
 - 表は63列/字下げ32767twipまで、極狭幅可読性は未解消。Webリンクは明示操作で起動。メール等は装飾のみ、HTML/画像等は対応外。
 - 大量ノートの初回検索には同期処理と準備待ちが残る。[検索品質記録](../quality/2026-10-25-first-search-responsiveness.md)を参照する。
 - 専用desktopの合成入力/描画と、物理IME・実reader聴取・DWM実画面呈示を区別する。
-- MSIX生成は#484で対応。署名/実インストール/Store公開は未実施、独自自動更新は対象外。
+- MSIX生成は#484、テスト署名/実インストールは#486で確認。WACK警告とStore公開は未完、独自自動更新は対象外。
 - 下記の削除拒否済み作業物は再試行しない。
 
 ## 保持中の旧作業物
