@@ -13,6 +13,11 @@
  * 列の網羅（訳し忘れと空の列）は CNF-011 が字句で守る。**简体中文は母語話者の確認を
  * 得ていない**（ADR 0032 の決定 3。後日この 1 列だけを直せる）。 */
 static const char *_Nonnull const catalog[][folio_language_count] = {
+    [UI_TEXT_FAILURE_WEB_LINK_REJECTED] = {"このリンクは開けません。",
+                                           "This link cannot be opened.", "无法打开此链接。"},
+    [UI_TEXT_FAILURE_WEB_LINK_UNAVAILABLE] = {"既定のブラウザーでリンクを開けませんでした。",
+                                              "Could not open the link in the default browser.",
+                                              "无法在默认浏览器中打开此链接。"},
     [UI_TEXT_ACCESSIBLE_COMMAND] = {"コマンド入力", "Command input", "命令输入"},
     [UI_TEXT_ACCESSIBLE_PALETTE] = {"コマンド一覧", "Command palette", "命令列表"},
     [UI_TEXT_ACCESSIBLE_PATTERN] = {"検索する正規表現", "Regex pattern", "搜索正则表达式"},

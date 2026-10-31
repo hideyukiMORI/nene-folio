@@ -24,6 +24,8 @@
 
 /* 変更前の文言（機械的に写した）。ui_text.c の表と 1 字も違ってはいけない。 */
 static const char *_Nonnull const expected[] = {
+    [UI_TEXT_FAILURE_WEB_LINK_REJECTED] = "このリンクは開けません。",
+    [UI_TEXT_FAILURE_WEB_LINK_UNAVAILABLE] = "既定のブラウザーでリンクを開けませんでした。",
     [UI_TEXT_ACCESSIBLE_COMMAND] = "コマンド入力",
     [UI_TEXT_ACCESSIBLE_PALETTE] = "コマンド一覧",
     [UI_TEXT_ACCESSIBLE_PATTERN] = "検索する正規表現",
@@ -446,7 +448,7 @@ static size_t utf16_units_of(const char *_Nonnull utf8)
 /* 表の全 ID が、変更前と 1 字も違わないこと（同一性）。 */
 static void verify_identity(void)
 {
-    require(expected_count == UI_TEXT_STORAGE_PICKER_FAILED + 1,
+    require(expected_count == UI_TEXT_FAILURE_WEB_LINK_UNAVAILABLE + 1,
             "the expected table covers every id in the enumeration");
     for (size_t index = 0; index < expected_count; ++index)
     {

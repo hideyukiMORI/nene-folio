@@ -16,6 +16,7 @@ void require(bool condition, const char *_Nonnull description);
 [[nodiscard]] bool same_text(const char *_Nonnull actual, const char *_Nonnull expected);
 
 void run_storage_tests(void);
+void run_web_link_tests(void);
 void run_storage_state_tests(void);
 void run_text_tests(void);
 void run_size_overflow_tests(void);

@@ -46,6 +46,7 @@ nenefolio_target(nenefolio_core core STATIC
     src/core/text_buffer.c src/core/note_text.c src/core/markdown_rtf.c src/core/rtf_palette.c
     src/core/rtf_text.c src/core/markdown_blocks.c src/core/markdown_inline_tokens.c
     src/core/markdown_autolink.c src/core/markdown_character_reference.c
+    src/core/web_uri.c src/core/markdown_web_link.c
     src/core/markdown_line.c src/core/markdown_view.c src/core/markdown_table.c src/core/markdown_containers.c
     src/core/folio_command.c src/core/folio_menu_action.c src/core/folio_shortcut.c src/core/note_name.c src/core/rename_plan.c src/core/rename_journal.c
     src/core/note_search.c src/core/note_corpus.c src/core/index_filter.c src/core/index_filter_build.c
@@ -61,6 +62,7 @@ nenefolio_link(nenefolio_application nenefolio_core)
 
 nenefolio_target(folio_tests unit_tests EXECUTABLE
     tests/unit/storage_tests.c tests/unit/storage_state_tests.c
+    tests/unit/web_link_tests.c
     tests/unit/folio_tests.c tests/unit/text_tests.c tests/unit/json_tests.c
     tests/unit/ledger_tests.c tests/unit/layout_tests.c tests/unit/state_tests.c
     tests/unit/allocation_probe.c tests/unit/allocation_tests.c tests/unit/markdown_tests.c
@@ -78,6 +80,7 @@ nenefolio_target(nenefolio_adapters adapters_win32 STATIC
     src/adapters/win32/storage_adapter.c src/adapters/win32/storage_native_path.c src/adapters/win32/data_lock.c
     src/adapters/win32/file_bytes.c src/adapters/win32/persistence_adapter.c
     src/adapters/win32/appearance_adapter.c src/adapters/win32/regex_adapter.c
+    src/adapters/win32/web_link_adapter.c
     src/adapters/win32/font_bundle.c src/adapters/win32/recycle_item.c)
 nenefolio_link(nenefolio_adapters nenefolio_core)
 nenefolio_link(nenefolio_adapters nenefolio_application)
@@ -95,6 +98,7 @@ nenefolio_system_link(nenefolio_adapters gdi32)
 
 nenefolio_target(nenefolio_window ui_win32 STATIC
     src/ui/win32/storage_prompt.c src/ui/win32/folder_picker.c
+    src/ui/win32/note_pane_links.c
     src/ui/win32/accessible_item.c src/ui/win32/accessibility_host.c src/ui/win32/accessibility_node.c
     src/ui/win32/accessibility_native.c
     src/ui/win32/drawer_window.c src/ui/win32/folio_window.c src/ui/win32/note_pane.c src/ui/win32/note_pane_table.c

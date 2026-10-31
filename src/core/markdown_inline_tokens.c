@@ -3,6 +3,7 @@
 #include "markdown_character_reference.h"
 #include "markdown_delimiter_kind.h"
 #include "markdown_inline_kind.h"
+#include "markdown_web_link.h"
 #include "rtf_text.h"
 #include "text_buffer.h"
 #include "utf8_text.h"
@@ -23,9 +24,12 @@ struct markdown_inline_tokens
         enum markdown_inline_kind kind;
         bool opens;
         bool closes;
+        bool field;
     } *_Nonnull tokens;
     struct text_buffer *_Nonnull out;
     size_t count;
+    enum markdown_rtf_outcome outcome;
+    bool in_link;
 };
 
 static bool whitespace(char character)
@@ -596,6 +600,48 @@ static bool trailing_marker(struct markdown_inline_tokens *_Nonnull parser, size
     return at(parser, token->start + token->length) == '\n';
 }
 
+static bool emit_field(struct markdown_inline_tokens *_Nonnull parser, enum web_uri_outcome outcome,
+                       struct web_uri *_Nullable uri)
+{
+    switch (outcome)
+    {
+    case WEB_URI_ACCEPTED:
+        text_buffer_append_text(parser->out, "{\\field{\\*\\fldinst{HYPERLINK \"");
+        rtf_text_append(parser->out, web_uri_bytes(uri), web_uri_length(uri));
+        text_buffer_append_text(parser->out, "\"}}{\\fldrslt{");
+        web_uri_destroy(uri);
+        return true;
+    case WEB_URI_REJECTED:
+        return false;
+    case WEB_URI_OUT_OF_MEMORY:
+        parser->outcome = MARKDOWN_RTF_OUT_OF_MEMORY;
+        return false;
+    }
+    return false;
+}
+
+static void emit_link(struct markdown_inline_tokens *_Nonnull parser, size_t index)
+{
+    struct markdown_inline_token *token = &parser->tokens[index];
+    if (token->opens)
+    {
+        size_t destination = token->mate + 1;
+        size_t end = parser->tokens[destination].mate;
+        struct web_uri *_Nullable uri = nullptr;
+        enum web_uri_outcome outcome = markdown_web_link_destination(
+            parser->view, parser->tokens[destination].start + 1, parser->tokens[end].start, &uri);
+        token->field = emit_field(parser, outcome, uri);
+        parser->in_link = true;
+        text_buffer_append_text(parser->out, "{\\cf4\\ul ");
+        return;
+    }
+    text_buffer_append_text(parser->out, "\\ul0}");
+    /* A hidden blank keeps adjacent native autoURLs as separate link ranges. */
+    if (parser->tokens[token->mate].field)
+        text_buffer_append_text(parser->out, "}}}{\\v  }");
+    parser->in_link = false;
+}
+
 static void emit_style(struct markdown_inline_tokens *_Nonnull parser, size_t index)
 {
     const struct markdown_inline_token *token = (&parser->tokens[index]);
@@ -611,7 +657,7 @@ static void emit_style(struct markdown_inline_tokens *_Nonnull parser, size_t in
         text_buffer_append_text(parser->out, token->opens ? "{\\strike " : "}");
         return;
     case MARKDOWN_INLINE_LINK:
-        text_buffer_append_text(parser->out, token->opens ? "{\\cf4\\ul " : "\\ul0}");
+        emit_link(parser, index);
         return;
     case MARKDOWN_INLINE_LITERAL:
     case MARKDOWN_INLINE_ESCAPE:
@@ -622,14 +668,28 @@ static void emit_style(struct markdown_inline_tokens *_Nonnull parser, size_t in
     }
 }
 
+static void emit_autolink(struct markdown_inline_tokens *_Nonnull parser,
+                          const struct markdown_inline_token *_Nonnull token)
+{
+    struct web_uri *_Nullable uri = nullptr;
+    enum web_uri_outcome outcome = WEB_URI_REJECTED;
+    if (!parser->in_link)
+        outcome = markdown_web_link_autolink(parser->view, token->start + 1,
+                                             token->start + token->length - 1, &uri);
+    bool field = emit_field(parser, outcome, uri);
+    text_buffer_append_text(parser->out, "{\\cf4\\ul ");
+    append_range(parser, token->start + 1, token->start + token->length - 1, false);
+    text_buffer_append_text(parser->out, "\\ul0}");
+    if (field)
+        text_buffer_append_text(parser->out, "}}}{\\v  }");
+}
+
 static size_t emit_range_token(struct markdown_inline_tokens *_Nonnull parser, size_t index)
 {
     const struct markdown_inline_token *token = (&parser->tokens[index]);
     if (token->kind == MARKDOWN_INLINE_AUTOLINK)
     {
-        text_buffer_append_text(parser->out, "{\\cf4\\ul ");
-        append_range(parser, token->start + 1, token->start + token->length - 1, false);
-        text_buffer_append_text(parser->out, "\\ul0}");
+        emit_autolink(parser, token);
         return token->after;
     }
     if (token->kind == MARKDOWN_INLINE_IMAGE_LITERAL)
@@ -703,14 +763,15 @@ enum markdown_rtf_outcome markdown_inline_tokens_render(struct text_buffer *_Non
         markdown_inline_tokens_destroy(tokens, next);
         return MARKDOWN_RTF_OUT_OF_MEMORY;
     }
-    struct markdown_inline_tokens parser = {.view = view, .tokens = tokens, .out = out};
+    struct markdown_inline_tokens parser = {
+        .view = view, .tokens = tokens, .out = out, .outcome = MARKDOWN_RTF_CONVERTED};
     tokenize(&parser);
     pair_verbatim(&parser, next);
     pair_links(&parser);
     pair_delimiters(&parser);
     coherent_pairs(&parser, next);
-    for (size_t index = 0; index < parser.count;)
+    for (size_t index = 0; index < parser.count && parser.outcome == MARKDOWN_RTF_CONVERTED;)
         index = emit_token(&parser, index);
     markdown_inline_tokens_destroy(tokens, next);
-    return MARKDOWN_RTF_CONVERTED;
+    return parser.outcome;
 }

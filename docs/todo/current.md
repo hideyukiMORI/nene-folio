@@ -1,5 +1,17 @@
 # いまの状態 — NeNe Folio
 
+## 閲覧中のWebリンク起動 — #482
+
+hideの依頼で、閲覧中のHTTP/HTTPSリンクを左クリックまたはリンク内Ctrl+Enterで既定browserへ開く機能を追加した。
+文字選択drag、修飾付きクリック、編集/IME/modal/stream中は開かない。メール・file・裸URLは起動対象外。
+同じURI factoryと明示portへ合流し、native hidden位置と検索/選択を対応した。保存schema/版/依存は不変。
+Debug/tidy・対象単体/確保失敗、実RichEdit89checks・隔離copy81checks・固定example.comの実OS dispatchが成功。
+[品質記録](../quality/2026-10-31-web-links.md)・[ADR0079](../adr/0079-view-web-link-activation.md)。Waivers none。
+最終head必須CI・main・通常exeの版/hash/反映/起動・全保全整理は
+`D:/NeNeFolio/agents/web-links-20261031/integration-completion.json`を確定原本とする。
+物理IME/reader/DWM/異なるDPIとbrowserのページ読込完了は上の確認とは区別する。
+#479/#466・停止済み継続品質改善は再開しない。
+
 ## 最新の表示調整 — Markdown #480
 
 hideの依頼で水平線の上下を背景なし12pt余白にし、山括弧付きURI/emailの表示と数値/基本6種の文字参照を追加した。
@@ -77,7 +89,7 @@ Waivers none。
 hide受理済み合成サンプル`data/サンプル/Markdown構文サンプル.md`は通常dataへ残している。
 実ノート内容は記録・同梱しない。#477前の通常版はsource6232320・表示版0.3.0/Windows版0.3.0.0。
 通常exeは`C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`。
-最新の版/hash/反映状態は`D:/NeNeFolio/agents/markdown-light-20261031/integration-completion.json`を参照する。
+最新の版/hash/反映状態は`D:/NeNeFolio/agents/web-links-20261031/integration-completion.json`を参照する。
 起動中なら保存/終了を待ち、強制終了しない。通常dataの保存先を試験のために変更しない。
 
 ## 次に残る配布確認
@@ -88,7 +100,7 @@ Store申請は未着手。package identityを持たないMSI等は今回のinsta
 
 ## 継続する確認範囲
 
-- 表は63列/字下げ32767twipまで、極狭幅可読性は未解消。リンクは装飾のみ、HTML/画像等は対応外。
+- 表は63列/字下げ32767twipまで、極狭幅可読性は未解消。Webリンクは明示操作で起動。メール等は装飾のみ、HTML/画像等は対応外。
 - 大量ノートの初回検索には同期処理と準備待ちが残る。[検索品質記録](../quality/2026-10-25-first-search-responsiveness.md)を参照する。
 - 専用desktopの合成入力/描画と、物理IME・実reader聴取・DWM実画面呈示を区別する。
 - 署名・インストーラ・Store・自動更新は未実装/対象外。日付付き事実は[日報](../reports/2026-10-27.md)と[引き継ぎ](../handoffs/2026-10-27.md)。

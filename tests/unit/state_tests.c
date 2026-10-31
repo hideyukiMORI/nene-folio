@@ -18,6 +18,7 @@
 #include "rtf_palette.h"
 #include "ui_font.h"
 #include "unit_tests.h"
+#include "web_link_port.h"
 
 #include <limits.h>
 #include <stdio.h>
@@ -2090,6 +2091,8 @@ static void verify_move_while_editing(void)
 /* 表引きへ移す前（ADR 0027）の文言そのもの。1 字でも変わったら落ちる。
  * 列挙の全値がちょうど 1 度ずつ並ぶことは CNF-009 が字句で守る。 */
 static const char *_Nonnull const expected_failure_lines[] = {
+    [FOLIO_STATE_WEB_LINK_REJECTED] = "このリンクは開けません。",
+    [FOLIO_STATE_WEB_LINK_UNAVAILABLE] = "既定のブラウザーでリンクを開けませんでした。",
     [FOLIO_STATE_READY] = "",
     [FOLIO_STATE_DATA_UNREADABLE] = "data/ を読めませんでした。",
     [FOLIO_STATE_LEDGER_MALFORMED] =
@@ -2317,6 +2320,12 @@ void test_adapter_destroy(struct persistence_adapter *_Nullable adapter)
 
 /* 3 つのポートを 1 つの束にする（ADR 0029 の決定 3）。folio_state_create は束を借りるだけで
  * 返ったあとは参照しないので、テストの中だけで生きる 1 つの入れ物を使い回す。 */
+static enum web_link_outcome test_open_link(const struct web_uri *_Nonnull uri)
+{
+    (void)uri;
+    return WEB_LINK_UNAVAILABLE;
+}
+
 const struct folio_ports *_Nonnull test_ports(const struct persistence_port *_Nonnull persistence,
                                               const struct appearance_port *_Nonnull appearance,
                                               const struct regex_port *_Nonnull regex)
@@ -2325,6 +2334,8 @@ const struct folio_ports *_Nonnull test_ports(const struct persistence_port *_No
     ports.persistence = persistence;
     ports.appearance = appearance;
     ports.regex = regex;
+    static const struct web_link_port links = {.open = test_open_link};
+    ports.web_link = &links;
     return &ports;
 }
 

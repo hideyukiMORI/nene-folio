@@ -24,6 +24,7 @@
 #include "note_destination.h"
 #include "note_ref.h"
 #include "pane_mode.h"
+
 #include "pane_title_view.h"
 #include "rename_view.h"
 #include "replace_apply.h"
@@ -43,12 +44,17 @@ struct note_name;
 struct note_text;
 struct replace_edit;
 
+/* View-mode explicit activation; no document or editing rejects without an external effect. */
+[[nodiscard]] enum folio_state_outcome folio_state_open_web_link(struct folio_state *_Nonnull state,
+                                                                 const char *_Nonnull bytes,
+                                                                 size_t length);
+
 /* 実行中だけの表示状態。設定/本文/IOに触れず、値だけを採用する（ADR0047）。 */
 [[nodiscard]] enum folio_layout_mode
 folio_state_layout_mode(const struct folio_state *_Nonnull state);
 void folio_state_set_layout_mode(struct folio_state *_Nonnull state, enum folio_layout_mode mode);
 
-/* ポートは複製して持つ。3 つのポートの adapter は state より長く生きていなければならない。
+/* ポートは複製して持つ。各ポートの adapter は state より長く生きていなければならない。
  * 束（struct folio_ports）は呼び出しの間だけ借り、返ったあとは参照しない（ADR 0029 の決定 3）。 */
 [[nodiscard]] enum folio_state_outcome
 folio_state_create(const struct folio_ports *_Nonnull ports,

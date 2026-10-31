@@ -5038,6 +5038,8 @@ static const bool inline_outcomes[] = {
     [FOLIO_STATE_PANE_UNAVAILABLE] = false,
     [FOLIO_STATE_PANE_LOAD_FAILED] = false,
     [FOLIO_STATE_PANE_RECOLOR_FAILED] = false,
+    [FOLIO_STATE_WEB_LINK_REJECTED] = true,
+    [FOLIO_STATE_WEB_LINK_UNAVAILABLE] = true,
     [FOLIO_STATE_OUT_OF_MEMORY] = false,
     [FOLIO_STATE_NAME_REQUIRED] = true,
     [FOLIO_STATE_INVALID_NAME] = true,
@@ -8695,6 +8697,55 @@ static LRESULT pane_character(struct folio_window *_Nonnull self, WPARAM charact
     return view_character(self, character) ? 1 : 0;
 }
 
+static bool web_link_ready(const struct folio_window *_Nonnull self)
+{
+    return self->pane != nullptr && folio_window_accessible_ready(self) &&
+           self->command_surface == COMMAND_SURFACE_CLOSED &&
+           folio_state_pane_mode(self->state) == PANE_MODE_VIEW &&
+           note_pane_readiness(self->pane) == NOTE_PANE_READINESS_READY;
+}
+
+static void open_web_target(struct folio_window *_Nonnull self, enum note_pane_link_outcome outcome,
+                            struct utf8_text *_Nullable target)
+{
+    switch (outcome)
+    {
+    case NOTE_PANE_LINK_READY:
+        report_outcome(self, folio_state_open_web_link(self->state, utf8_text_bytes(target),
+                                                       utf8_text_length(target)));
+        utf8_text_destroy(target);
+        return;
+    case NOTE_PANE_LINK_ABSENT:
+        return;
+    case NOTE_PANE_LINK_UNAVAILABLE:
+        report_outcome(self, FOLIO_STATE_WEB_LINK_UNAVAILABLE);
+        return;
+    case NOTE_PANE_LINK_OUT_OF_MEMORY:
+        report_outcome(self, FOLIO_STATE_OUT_OF_MEMORY);
+        return;
+    }
+}
+
+static void open_web_selection(struct folio_window *_Nonnull self)
+{
+    if (!web_link_ready(self))
+        return;
+    struct utf8_text *_Nullable target = nullptr;
+    enum note_pane_link_outcome outcome = note_pane_link_selection(self->pane, &target);
+    open_web_target(self, outcome, target);
+}
+
+static LRESULT web_link_notice(struct folio_window *_Nonnull self, const ENLINK *_Nonnull notice)
+{
+    if (!web_link_ready(self) || notice->nmhdr.hwndFrom != note_pane_handle(self->pane))
+        return 1;
+    struct utf8_text *_Nullable target = nullptr;
+    enum note_pane_link_outcome outcome = note_pane_link_click(self->pane, notice, &target);
+    open_web_target(self, outcome, target);
+    /* Native mouse selection proceeds; activation is consumed by the explicit intent. */
+    return notice->msg == WM_LBUTTONUP ? 1 : 0;
+}
+
 static LRESULT pane_key(struct folio_window *_Nonnull self, WPARAM key)
 {
     if (shortcut_keydown(self, key))
@@ -8834,6 +8885,8 @@ static LRESULT tooltip_display(struct folio_window *_Nonnull self, LPARAM lparam
 static LRESULT on_notify(struct folio_window *_Nonnull self, LPARAM lparam)
 {
     const NMHDR *_Nonnull header = (const NMHDR *)lparam;
+    if (header->code == EN_LINK)
+        return web_link_notice(self, (const ENLINK *)lparam);
     if ((session_busy(self) || pane_streaming(self)) && header->code == EN_MSGFILTER)
     {
         return 1;
@@ -11006,6 +11059,9 @@ static LRESULT on_child_request(struct folio_window *_Nonnull self, UINT message
 {
     switch (message)
     {
+    case folio_message_open_web_link:
+        open_web_selection(self);
+        return 0;
     case folio_message_resize_through:
         return resize_through(self, lparam);
     case folio_message_pane_zoomed:

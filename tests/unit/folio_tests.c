@@ -367,6 +367,16 @@ static bool run_surface_target_tests(const char *_Nonnull argument)
     return true;
 }
 
+static bool run_web_link_target_tests(const char *_Nonnull argument)
+{
+    if (strcmp(argument, "--web-links") != 0)
+        return false;
+    run_web_link_tests();
+    run_markdown_tests();
+    run_ui_text_tests();
+    return true;
+}
+
 static bool run_selected_tests(const char *_Nonnull argument)
 {
     if (strcmp(argument, "--storage-location") == 0)
@@ -418,15 +428,16 @@ static bool run_selected_tests(const char *_Nonnull argument)
         printf("nullable allocation, preview ownership, BOM and template tests passed\n");
         return true;
     }
-    return (run_text_validation_target_tests(argument) || run_note_search_target_tests(argument) ||
-            run_surface_target_tests(argument) || run_menu_target_tests(argument) ||
-            run_size_overflow_target_tests(argument) || run_pane_load_target_tests(argument) ||
-            run_document_settings_target_tests(argument) || run_target_tests(argument) ||
-            run_filter_target_tests(argument));
+    return (run_web_link_target_tests(argument) || run_text_validation_target_tests(argument) ||
+            run_note_search_target_tests(argument) || run_surface_target_tests(argument) ||
+            run_menu_target_tests(argument) || run_size_overflow_target_tests(argument) ||
+            run_pane_load_target_tests(argument) || run_document_settings_target_tests(argument) ||
+            run_target_tests(argument) || run_filter_target_tests(argument));
 }
 
 static void run_full_suite(void)
 {
+    run_web_link_tests();
     run_storage_tests();
     run_storage_state_tests();
     run_text_tests();

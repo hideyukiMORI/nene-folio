@@ -3,6 +3,7 @@
 #include "caret_command.h"
 #include "folio_message.h"
 #include "line_index.h"
+#include "note_pane_links.h"
 #include "note_pane_table.h"
 #include "pane_mode.h"
 #include "pane_zoom_command.h"
@@ -24,6 +25,8 @@ struct note_pane
     bool composing;
     HACCEL _Nullable navigation;
     HACCEL _Nullable zoom_keys;
+    HACCEL _Nullable link_keys;
+    struct note_pane_links *_Nullable links; /* Derived native positions, absent while editing. */
     int zoom_percent; /* 表示倍率の唯一の所有値。RTF投入がnative倍率を戻すので再適用する。 */
     int zoom_wheel_delta;
     LONG table_width; /* Successful native width in twips; reset on every document load. */
@@ -86,6 +89,9 @@ static_assert((unsigned short)CARET_COMMAND_RIGHT < (unsigned short)PANE_ZOOM_CO
               "pane accelerator ids do not overlap");
 
 constexpr int zoom_normal = 100;
+constexpr WORD open_link_command = 124;
+static_assert((unsigned short)PANE_ZOOM_COMMAND_RESET < open_link_command,
+              "link and zoom accelerator ids do not overlap");
 constexpr int zoom_minimum = 50;
 constexpr int zoom_maximum = 300;
 constexpr int zoom_step = 10;
@@ -482,6 +488,12 @@ static bool pane_wheel(struct note_pane *_Nonnull pane, UINT message, WPARAM key
 
 static bool pane_input(struct note_pane *_Nonnull pane, UINT message, WPARAM keys, LPARAM parameter)
 {
+    if (message == WM_COMMAND && parameter == 0 && HIWORD(keys) == 1 &&
+        LOWORD(keys) == open_link_command)
+    {
+        SendMessageW(GetParent(pane->handle), folio_message_open_web_link, 0, 0);
+        return true;
+    }
     if (message == WM_COMMAND && parameter == 0)
         return zoom_command(pane, keys) || navigation_command(pane, keys);
     return pane_wheel(pane, message, keys, parameter);
@@ -538,6 +550,7 @@ static LRESULT CALLBACK pane_procedure(HWND window, UINT message, WPARAM wparam,
         return DefWindowProcW(window, message, wparam, lparam);
     }
     interrupt_scroll(pane, message);
+    note_pane_links_input(pane->links, message, lparam);
     if (message == WM_ENABLE)
         return enable_pane(pane, wparam, lparam);
     if (paint_background(pane, message, wparam, lparam))
@@ -555,7 +568,9 @@ static LRESULT CALLBACK pane_procedure(HWND window, UINT message, WPARAM wparam,
     {
         pane->composing = false;
     }
-    return CallWindowProcW(pane->original, pane->handle, message, wparam, lparam);
+    LRESULT result = CallWindowProcW(pane->original, pane->handle, message, wparam, lparam);
+    note_pane_links_finish_input(pane->links, message);
+    return result;
 }
 
 static bool subclass_pane(struct note_pane *_Nonnull pane)
@@ -665,7 +680,10 @@ static bool prepare_navigation(struct note_pane *_Nonnull pane)
                                       .cmd = navigation_bindings[index].command};
     }
     pane->navigation = CreateAcceleratorTableW(accelerators, (int)count);
-    return pane->navigation != nullptr && prepare_selection(pane) && prepare_zoom(pane);
+    ACCEL link = {.fVirt = FVIRTKEY | FCONTROL, .key = VK_RETURN, .cmd = open_link_command};
+    pane->link_keys = CreateAcceleratorTableW(&link, 1);
+    return pane->navigation != nullptr && pane->link_keys != nullptr && prepare_selection(pane) &&
+           prepare_zoom(pane);
 }
 
 static void set_background(struct note_pane *_Nonnull pane, COLORREF background)
@@ -723,7 +741,8 @@ enum note_pane_outcome note_pane_create(HWND _Nonnull parent, COLORREF backgroun
     SendMessageW(pane->handle, EM_SETCHARFORMAT, SCF_DEFAULT, (LPARAM)&format);
     /* 鍵の通知を親の WM_NOTIFY へ上げる（Ctrl+S と Esc）。ENM_KEYEVENTS は消さない。
      * スクロールと本文の増減は番号の帯の契機なので足す（ADR 0026 の決定 4）。 */
-    SendMessageW(pane->handle, EM_SETEVENTMASK, 0, ENM_KEYEVENTS | ENM_SCROLL | ENM_CHANGE);
+    SendMessageW(pane->handle, EM_SETEVENTMASK, 0,
+                 ENM_KEYEVENTS | ENM_SCROLL | ENM_CHANGE | ENM_LINK);
     *out = pane;
     return NOTE_PANE_CREATED;
 }
@@ -748,6 +767,8 @@ bool note_pane_translate(const struct note_pane *_Nonnull pane, const MSG *_Nonn
     MSG translated = *message;
     if (TranslateAcceleratorW(pane->handle, pane->zoom_keys, &translated) != 0)
         return true;
+    if (mode == PANE_MODE_VIEW)
+        return TranslateAcceleratorW(pane->handle, pane->link_keys, &translated) != 0;
     return mode == PANE_MODE_EDIT &&
            TranslateAcceleratorW(pane->handle, pane->navigation, &translated) != 0;
 }
@@ -770,6 +791,18 @@ static bool stream_rtf(struct note_pane *_Nonnull pane, const char *_Nonnull rtf
         SendMessageW(pane->handle, EM_STREAMIN, ((WPARAM)CP_UTF8 << 16) | SF_USECODEPAGE | SF_RTF,
                      (LPARAM)&editing);
     return count >= 0 && editing.dwError == 0 && stream.remaining == 0;
+}
+
+static bool prepare_links(struct note_pane *_Nonnull pane, enum pane_mode mode)
+{
+    if (mode == PANE_MODE_EDIT)
+        return true;
+    ITextDocument *_Nullable document = text_document(pane);
+    if (document == nullptr)
+        return false;
+    enum note_pane_link_outcome outcome = note_pane_links_create(document, &pane->links);
+    document->lpVtbl->Release(document);
+    return outcome == NOTE_PANE_LINK_READY;
 }
 
 /* readonly化自体も失敗したら入力窓を止める。親の既存札から再試行できる。 */
@@ -802,12 +835,14 @@ enum note_pane_load_outcome note_pane_load(struct note_pane *_Nonnull pane,
         return failed_load(pane, SendMessageW(pane->handle, EM_GETMODIFY, 0, 0));
     }
     pane->readiness = NOTE_PANE_READINESS_STREAMING;
+    note_pane_links_destroy(pane->links);
+    pane->links = nullptr;
     pane->table_width = 0;
     LRESULT modified = SendMessageW(pane->handle, EM_GETMODIFY, 0, 0);
     SendMessageW(pane->handle, EM_EXLIMITTEXT, 0, editor_limit);
     if (SendMessageW(pane->handle, EM_SETREADONLY, TRUE, 0) == 0 ||
         !stream_rtf(pane, rtf, length) || !apply_zoom(pane, pane->zoom_percent) ||
-        !layout_tables(pane, mode))
+        !layout_tables(pane, mode) || !prepare_links(pane, mode))
     {
         return failed_load(pane, modified);
     }
@@ -948,7 +983,8 @@ enum note_pane_text_outcome note_pane_text(struct note_pane *_Nonnull pane,
         return outcome;
     }
     *units = pane->taken;
-    *count = taken;
+    *count =
+        pane->links == nullptr ? taken : note_pane_links_compact(pane->links, pane->taken, taken);
     return NOTE_PANE_TEXT_TAKEN;
 }
 
@@ -1166,7 +1202,7 @@ void note_pane_select(struct note_pane *_Nonnull pane, size_t start, size_t end)
     {
         return;
     }
-    CHARRANGE range = {.cpMin = (LONG)start, .cpMax = (LONG)end};
+    CHARRANGE range = note_pane_links_native(pane->links, (struct note_search_span){start, end});
     SendMessageW(pane->handle, EM_EXSETSEL, 0, (LPARAM)&range);
     SendMessageW(pane->handle, EM_SCROLLCARET, 0, 0);
 }
@@ -1178,7 +1214,7 @@ void note_pane_restore_selection(struct note_pane *_Nonnull pane, struct note_se
         return;
     }
     /* EM_SCROLLCARET を送らない。流し直しで保たれた位置を動かさない（ADR 0031 の決定 6）。 */
-    CHARRANGE range = {.cpMin = (LONG)span.start, .cpMax = (LONG)span.end};
+    CHARRANGE range = note_pane_links_native(pane->links, span);
     SendMessageW(pane->handle, EM_EXSETSEL, 0, (LPARAM)&range);
 }
 
@@ -1334,9 +1370,45 @@ bool note_pane_selection(const struct note_pane *_Nonnull pane, size_t *_Nonnull
     }
     CHARRANGE range = {.cpMin = 0, .cpMax = 0};
     SendMessageW(pane->handle, EM_EXGETSEL, 0, (LPARAM)&range);
-    *start = range.cpMin > 0 ? (size_t)range.cpMin : 0;
-    *end = range.cpMax > 0 ? (size_t)range.cpMax : 0;
+    *start = note_pane_links_visible(pane->links, range.cpMin > 0 ? (size_t)range.cpMin : 0);
+    *end = note_pane_links_visible(pane->links, range.cpMax > 0 ? (size_t)range.cpMax : 0);
     return true;
+}
+
+static bool link_available(const struct note_pane *_Nonnull pane)
+{
+    return pane->handle != nullptr && pane->links != nullptr && !pane->composing &&
+           pane->readiness == NOTE_PANE_READINESS_READY && IsWindowEnabled(pane->handle);
+}
+
+static enum note_pane_link_outcome link_target(struct note_pane *_Nonnull pane, CHARRANGE range,
+                                               struct utf8_text *_Nullable *_Nonnull out)
+{
+    ITextDocument *_Nullable document = text_document(pane);
+    if (document == nullptr)
+        return NOTE_PANE_LINK_UNAVAILABLE;
+    enum note_pane_link_outcome outcome = note_pane_links_target(document, range, out);
+    document->lpVtbl->Release(document);
+    return outcome;
+}
+
+enum note_pane_link_outcome note_pane_link_selection(struct note_pane *_Nonnull pane,
+                                                     struct utf8_text *_Nullable *_Nonnull out)
+{
+    if (!link_available(pane))
+        return NOTE_PANE_LINK_ABSENT;
+    CHARRANGE range = {0};
+    SendMessageW(pane->handle, EM_EXGETSEL, 0, (LPARAM)&range);
+    return link_target(pane, range, out);
+}
+
+enum note_pane_link_outcome note_pane_link_click(struct note_pane *_Nonnull pane,
+                                                 const ENLINK *_Nonnull notice,
+                                                 struct utf8_text *_Nullable *_Nonnull out)
+{
+    if (!link_available(pane) || !note_pane_links_clicked(pane->links, pane->handle, notice))
+        return NOTE_PANE_LINK_ABSENT;
+    return link_target(pane, notice->chrg, out);
 }
 
 void note_pane_destroy(struct note_pane *_Nullable pane)
@@ -1362,6 +1434,8 @@ void note_pane_destroy(struct note_pane *_Nullable pane)
     }
     if (pane->zoom_keys != nullptr)
         DestroyAcceleratorTable(pane->zoom_keys);
+    if (pane->link_keys != nullptr)
+        DestroyAcceleratorTable(pane->link_keys);
     if (pane->handle != nullptr && IsWindow(pane->handle))
     {
         DestroyWindow(pane->handle);
@@ -1371,6 +1445,7 @@ void note_pane_destroy(struct note_pane *_Nullable pane)
         FreeLibrary(pane->library);
     }
     line_index_destroy(pane->lines);
+    note_pane_links_destroy(pane->links);
     free(pane->numbered);
     free(pane->taken);
     free(pane);

@@ -106,6 +106,7 @@
 | 両表示の一覧幅 | 実行中に選んだlogical幅と、capture中だけの取消先/offset | ui/win32（`folio_window`） | pointer・鍵・UIAの幅適用から同じregions/arrangeへ渡す。窓縮小では実幅だけを制限し、選択幅を保持する（ADR0076） |
 | 上部の操作説明 | 標準tooltipのHWND・矩形登録・固定UTF-16表示buffer | ui/win32（`folio_window`） | 同じボタン矩形とui_textを参照し、resize/DPI/言語/テーマ・modal境界に追従する。表示状態や文書の別所有者にはしない（ADR0048） |
 | 表示キーのIME抑止 | 主窓・入力欄・本文の変換中状態 | ui/win32（各入力窓の所有者） | WM_IME_STARTCOMPOSITION/ENDCOMPOSITIONから追跡し、表示キーの実行前に確認する。通常のIME処理は維持する（ADR0048） |
+| 閲覧リンクの位置対応 | native書式から導くhidden区間と押下/解放の状態 | ui/win32（`note_pane_links`） | 同じpaneのRTF投入後に生成、差替えで破棄、READY閲覧だけ操作可。検索/選択を表示位置へ対応する（ADR0079） |
 | 編集中の本文 | 保存前の文字列 | ui/win32（RichEdit が所有） | 保存の意図で application へ渡す |
 | 全ノート検索の準備 | 未完了要求の最新語・読込/一致計算の位置・不完全な本文写し・構築ownerのhandle | application（`folio_state`） | 同じUIスレッドで本文を一件ずつ準備し、一致計算は有限workで継続する。完成後だけ最新語の集合を採用する。更新時は進捗を破棄し、未完成本文走査だけを先頭へ戻す。UIは実行可否と通常message待機を担当する（ADR0068/0073） |
 | 一致集合の構築進捗 | 比較phase/数値位置・番号列・scratch。完成後は不変 | core（`index_filter_build`） | 単一matcherのstepで進め、SEALED時にterm借用を解除する。完成filterが所有を引き取り、配列/内部recordを公開しない。入力/初回末尾のidleと確定集合修復の同期driverが同じengineを使う（ADR0073） |
