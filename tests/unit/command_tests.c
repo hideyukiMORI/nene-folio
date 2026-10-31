@@ -588,8 +588,28 @@ static void verify_menu_catalog(void)
     verify_menu_captions();
 }
 
+static void verify_note_shortcut(enum folio_shortcut_action action, enum folio_shortcut_key key)
+{
+    size_t found = 0;
+    for (size_t at = 0; at < folio_shortcut_count(); ++at)
+    {
+        const struct folio_shortcut *binding = folio_shortcut_at(at);
+        if (folio_shortcut_action(binding) == action)
+        {
+            ++found;
+            require(folio_shortcut_key(binding) == key &&
+                        folio_shortcut_modifiers(binding) == FOLIO_SHORTCUT_MOD_CONTROL &&
+                        folio_shortcut_route(binding) == FOLIO_SHORTCUT_HACCEL,
+                    "note action uses a Ctrl key through the accelerator before text input");
+        }
+    }
+    require(found == 1, "note action has exactly one real shortcut");
+}
+
 static void verify_menu_shortcuts(void)
 {
+    verify_note_shortcut(FOLIO_SHORTCUT_ACTION_TOGGLE_MODE, FOLIO_SHORTCUT_KEY_E);
+    verify_note_shortcut(FOLIO_SHORTCUT_ACTION_OPERATIONS, FOLIO_SHORTCUT_KEY_M);
     for (size_t at = 0; at < folio_shortcut_count(); ++at)
     {
         const struct folio_shortcut *binding = folio_shortcut_at(at);
@@ -611,7 +631,7 @@ static void verify_menu_captions(void)
     require(same_text(folio_shortcut_command_hint(FOLIO_COMMAND_RENAME, FOLIO_LANGUAGE_EN), "F2"),
             "rename shortcut unchanged");
     require(same_text(folio_shortcut_command_hint(FOLIO_COMMAND_VIEW, FOLIO_LANGUAGE_JA), ""),
-            "GUI-only view has no false global shortcut");
+            "one-way view does not misrepresent the mode toggle as a direct shortcut");
     for (size_t language = 0; language < folio_language_count; ++language)
     {
         char text[1024];
@@ -632,5 +652,16 @@ static void verify_menu_captions(void)
                                     sizeof text) == UI_TEXT_FORMAT_READY &&
                     strstr(text, "Ctrl+Shift+S") != nullptr && strstr(text, "F2") != nullptr,
                 "help uses actual binding values");
+        require(folio_shortcut_help(UI_TEXT_HELP_NOTE_ACTIONS, (enum folio_language)language, text,
+                                    sizeof text) == UI_TEXT_FORMAT_READY &&
+                    strstr(text, "Ctrl+E") != nullptr && strstr(text, "Ctrl+M") != nullptr,
+                "note help exposes both actual shortcuts in every language");
+        require(same_text(folio_shortcut_action_hint(FOLIO_SHORTCUT_ACTION_TOGGLE_MODE,
+                                                     (enum folio_language)language),
+                          "Ctrl+E") &&
+                    same_text(folio_shortcut_action_hint(FOLIO_SHORTCUT_ACTION_OPERATIONS,
+                                                         (enum folio_language)language),
+                              "Ctrl+M"),
+                "note action hints and execution share the same binding");
     }
 }

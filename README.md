@@ -43,6 +43,9 @@ track package validation, saved-data checks, publication, and download verificat
   pane; Ctrl+S writes the file back atomically, keeps the original line endings, and writes nothing when
   the text is unchanged. The body just before each save is kept as `data/.history/<category>/<note>/1.md`
   … `5.md`, and any version can be restored into the editor as an undoable edit.
+  The current source adds Ctrl+E to switch Read/Edit (saving before returning to Read), and Ctrl+M
+  to open Actions. Mode, Save, Find, and Actions tooltips show their actual shortcuts (#490).
+  These shortcuts are later than the submitted 1.0.0 Store candidate.
   The 0.3.0 beta supports tables, nested lists and quotes, task lists, strikethrough,
   thematic breaks, setext headings, explicit line breaks, and longer code delimiters.
   The current source also adds angle-bracket URI/email autolinks, numeric character references,
