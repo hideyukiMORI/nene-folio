@@ -81,6 +81,8 @@ UI 状態・ファイル・現在時刻を持たない。実行時依存の許�
 
 振る舞いの調整を持つ。ポートの宣言・状態の所有者（`folio_state`）・意図を受ける reducer・表示値の生成・結果型。
 Win32・永続化・ファイル・ネットワークを知らない。
+ノート保存先は`storage_state`が現在/次回/初回・復旧phaseを所有し、`storage_port`へ検証と設定保存を渡す。
+coreの`storage_path`と`startup_settings`がpath検証と版1のcodecを持ち、ノート側の設定版4とは分離する（ADR0077）。
 全文検索の要求・読込位置・corpus・pending build handleと数値cursorは`folio_state`が所有する。
 本文準備は一件、入力/初回末尾のmatchingは有限workで継続し、完成時だけ採用する。
 確定filter修復の同期driverも同じcore engine/entry解決helperを使う（ADR0068/0073）。
@@ -90,10 +92,14 @@ Win32・永続化・ファイル・ネットワークを知らない。
 時刻ポートと永続化ポートの実装を持つ。🔑 **決定性の禁止を適用しない唯一のモジュール**であり（ARC-007）、その差分は
 `eng/symbols.py` と `eng/conformance.py` の区画判定に明示されている。台帳・md・改名記録のファイル形式の版と移行（ARC-009）も DTO もここに閉じる（設定 `data/settings.json` の解析と版は ADR 0025 の決定 3 に従い core の `folio_settings` が持つ）。
 `data/` の走査・`*.md` と `*.json` の読み書き・UTF-8 と UTF-16 の変換はここだけが行う。OS のテーマ（レジストリ）を読む `appearance_adapter` もここ。
+`storage_adapter`は配布形式/Known Folder/起動設定を扱い、`persistence_adapter`は確定rootを明示的に受ける。
+両者の`.nenefolio.lock`取得は`data_lock`、native path変換は`storage_native_path`へ集約する（ADR0077）。
 
 ### `src/ui/win32`
 
 application が作った値を描き、操作を意図として渡す（ARC-011）。可変性の隔離区画（ARC-005）。
+`storage_prompt`が初回/復旧/設定変更を同じnative面へまとめ、`folder_picker`はOSのフォルダー選択だけを担当する。
+初回も成立するようpromptがCOMと`icon_paint`の描画寿命を対で所有する。通常時は既存modal ownerへ合流する（ADR0077）。
 UIAのCOM寿命は`accessibility_host`、自前要素のABIは`accessibility_node`、native入力の名前注釈は
 `accessibility_native`に集約する。主窓・索引・補助面は同じ公開基盤から既存操作を呼ぶ（ADR0056/0058）。
 両表示の一覧幅も`folio_window`が実行中だけ所有し、境界drag・鍵・UIA RangeValueを同じ配置へ渡す。
@@ -133,4 +139,5 @@ UIはMarkdownを再解釈せず、更新後の字下げ・列数・列幅をnati
 | 生成物 | `build/`（CMake・オブジェクト・検証 exe・CMakeから導出したmanifest資源と配布metadata）/ `out/`（Phase 0 の実測・証明 fixture・測定ビルド `out/coverage`・出力）。製品 C/header/RCコードの生成は未採用 |
 | 配布入力 | `src/app/NeNeFolio.rc`と`NeNeFolio.manifest.in`は正典app targetに属する。`docs/release/`に配布案内、`eng/release-layout.json`に固定同梱一覧を置く。版はCMake、書体一覧は`fonts/manifest.json`から導出する（ADR0045） |
 | 配布出力 | `eng/package-release.ps1`に明示した新しいWorkDirectoryとOutputDirectory。開発作業では`D:/NeNeFolio/outputs/`配下に置く。利用者dataや開発用生成物をZIPに入れない |
-| 利用者データ | 実行ファイルと同じ場所の `data/`（カテゴリ = ディレクトリ・`categories.json`・各カテゴリの `index.json`・`*.md`）。リポジトリには入れない |
+| 利用者データ | 選択したroot。portable既定はexe隣の `data/`、package identityを持つ版の候補はDocuments/NeNeFolio（カテゴリ = ディレクトリ・台帳・md・設定・履歴）。リポジトリには入れない |
+| 起動設定 | 版1 `nenefolio-startup.json`。portableはexe隣、package identityを持つ版はLocalAppData/NeNeFolio。ノート側settings版4とは別（ADR0077） |

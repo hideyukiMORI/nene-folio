@@ -91,7 +91,18 @@ Arrow keys preview a choice across the window before it is saved.
 
 ## Where the data lives
 
-Notes and settings live in the `data/` folder next to the executable.
+The current source defaults to the `data/` folder next to the portable executable.
+**Settings → Note storage…** lets you choose another folder, directly or with the Windows folder picker.
+The change takes effect on the next launch; existing notes are never moved automatically.
+The current and next locations remain visible, and unsaved editing and Undo are preserved.
+In the table below, `data/` means the selected folder itself.
+
+The location is stored separately in version 1 `nenefolio-startup.json` next to the portable executable.
+A build with Windows package identity uses Documents/NeNeFolio as its initial suggestion and asks before
+opening notes; its startup setting lives in LocalAppData/NeNeFolio. Package installation, updating and
+uninstalling have not yet been validated. A missing or unavailable selected folder opens a recovery
+choice; an invalid or unknown startup-setting version is reported without overwriting it.
+This feature is in the current source and is not included in the published v0.3.0 ZIP.
 
 | Path | Meaning |
 | --- | --- |

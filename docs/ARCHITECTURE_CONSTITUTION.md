@@ -89,6 +89,9 @@
 | 文書の一覧（索引） | `data/<カテゴリ>/*.md` の存在と順序 | application（`folio_state`） | 起動時の走査と保存後の再読込だけ |
 | カテゴリの色・順序・展開状態 | `data/categories.json` | application | 右クリック・ドラッグ・トグルの意図を受けた reducer |
 | 文書の順序 | `data/<カテゴリ>/index.json` | application | ドラッグの意図を受けた reducer |
+| ノートの保存先 | 現在root・次回設定・初回/復旧/稼働phase | application（`storage_state`） | `storage_port`の検証/保存成功後に採用する。稼働中は次回設定だけ更新し、現在のpersistenceと本文を変えない（ADR0077） |
+| 配布形式と保存先のOS配置 | package identity・Known Folder・起動設定のnative path | adapters/win32（`storage_adapter`） | 起動時に一度解決し、純粋な`storage_path`をapplicationへ渡す（ADR0077） |
+| GDI+の描画寿命 | 窓が所有する起動token | ui/win32（`folio_window` / `storage_prompt`） | `icon_paint_start/stop`の同じ経路で取得/解放し、初回確認も主窓の存在へ依存しない（ADR0077） |
 | 選択中の文書と本文モード（閲覧／編集） | 閉じた enum | application | クリックと編集切替の意図 |
 | 索引cursorと行識別の改訂 | 文書選択から独立した単一の行参照、layout/行識別の改訂番号 | application（`folio_state`） | focus意図はcursorだけを変更する。選択・移動・改名・削除・絞込で整合させ、公開行の同一性変更で行識別を更新する。展開変更はlayoutだけを更新する（ADR0056） |
 | 自前操作のfocus位置 | 実Win32 focusが主窓にある間の操作種類 | ui/win32（`folio_window`） | F6/Tab/クリック/UIAの共通focus経路。行cursorはapplication、native入力focusはHWNDから導く（ADR0056） |

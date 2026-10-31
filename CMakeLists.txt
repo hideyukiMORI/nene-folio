@@ -48,16 +48,18 @@ nenefolio_target(nenefolio_core core STATIC
     src/core/markdown_line.c src/core/markdown_view.c src/core/markdown_table.c src/core/markdown_containers.c
     src/core/folio_command.c src/core/folio_menu_action.c src/core/folio_shortcut.c src/core/note_name.c src/core/rename_plan.c src/core/rename_journal.c
     src/core/note_search.c src/core/note_corpus.c src/core/index_filter.c src/core/index_filter_build.c
+    src/core/storage_path.c src/core/startup_settings.c
     src/core/folio_settings.c src/core/folio_theme.c src/core/folio_theme_choice.c src/core/line_index.c
     src/core/replace_template.c src/core/replace_edit.c src/core/note_replace.c
     src/core/replace_preview.c
     src/core/ascii_fold.c src/core/ui_font.c src/core/ui_font_fallback.c
     src/core/ui_text.c src/core/font_bundle_verdict.c src/core/product_version.c)
 target_compile_definitions(nenefolio_core PRIVATE NENEFOLIO_PRODUCT_VERSION="${PROJECT_VERSION}")
-nenefolio_target(nenefolio_application application STATIC src/application/folio_state.c)
+nenefolio_target(nenefolio_application application STATIC src/application/folio_state.c src/application/storage_state.c)
 nenefolio_link(nenefolio_application nenefolio_core)
 
 nenefolio_target(folio_tests unit_tests EXECUTABLE
+    tests/unit/storage_tests.c tests/unit/storage_state_tests.c
     tests/unit/folio_tests.c tests/unit/text_tests.c tests/unit/json_tests.c
     tests/unit/ledger_tests.c tests/unit/layout_tests.c tests/unit/state_tests.c
     tests/unit/allocation_probe.c tests/unit/allocation_tests.c tests/unit/markdown_tests.c
@@ -72,6 +74,7 @@ nenefolio_link(folio_tests nenefolio_application)
 add_test(NAME folio_unit COMMAND folio_tests)
 
 nenefolio_target(nenefolio_adapters adapters_win32 STATIC
+    src/adapters/win32/storage_adapter.c src/adapters/win32/storage_native_path.c src/adapters/win32/data_lock.c
     src/adapters/win32/file_bytes.c src/adapters/win32/persistence_adapter.c
     src/adapters/win32/appearance_adapter.c src/adapters/win32/regex_adapter.c
     src/adapters/win32/font_bundle.c src/adapters/win32/recycle_item.c)
@@ -90,6 +93,7 @@ nenefolio_system_link(nenefolio_adapters icu)
 nenefolio_system_link(nenefolio_adapters gdi32)
 
 nenefolio_target(nenefolio_window ui_win32 STATIC
+    src/ui/win32/storage_prompt.c src/ui/win32/folder_picker.c
     src/ui/win32/accessible_item.c src/ui/win32/accessibility_host.c src/ui/win32/accessibility_node.c
     src/ui/win32/accessibility_native.c
     src/ui/win32/drawer_window.c src/ui/win32/folio_window.c src/ui/win32/note_pane.c src/ui/win32/note_pane_table.c
@@ -108,6 +112,8 @@ nenefolio_system_link(nenefolio_window comctl32)
 # Windows同梱のUI Automationとnative controlへの名前注釈（ADR0056）。
 nenefolio_system_link(nenefolio_window uiautomationcore)
 nenefolio_system_link(nenefolio_window ole32)
+# OS folder pickerの初期位置をshell itemへ写す（ADR0077）。
+nenefolio_system_link(nenefolio_window shell32)
 nenefolio_system_link(nenefolio_window oleaut32)
 nenefolio_system_link(nenefolio_window oleacc)
 nenefolio_system_link(nenefolio_window uuid)

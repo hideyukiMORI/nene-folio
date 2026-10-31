@@ -27,7 +27,6 @@
 #include "folio_state.h"
 #include "folio_step.h"
 #include "folio_theme_choice.h"
-#include "gdiplus_flat.h"
 #include "history_row_view.h"
 #include "icon_paint.h"
 #include "layout_metrics.h"
@@ -45,6 +44,8 @@
 #include "replace_edit.h"
 #include "session_phase.h"
 #include "settings_row_kind.h"
+#include "storage_prompt.h"
+#include "storage_state.h"
 #include "text_draw_request.h"
 #include "text_wrap.h"
 #include "theme_candidates.h"
@@ -82,6 +83,7 @@ struct folio_window
 {
     HWND _Nullable handle;
     struct folio_state *_Nonnull state;
+    struct storage_state *_Nonnull storage;
     struct accessibility_host *_Nullable accessibility;
     enum accessible_kind keyboard_target;
     bool menu_active;
@@ -239,6 +241,7 @@ static const struct
     {UI_TEXT_SETTINGS_LANGUAGE_EN, SETTINGS_ROW_LANGUAGE, FOLIO_LANGUAGE_EN, 1, 1},
     {UI_TEXT_SETTINGS_LANGUAGE_ZH_HANS, SETTINGS_ROW_LANGUAGE, FOLIO_LANGUAGE_ZH_HANS, 1, 2},
     {UI_TEXT_SETTINGS_NUMBER_CHECK, SETTINGS_ROW_NUMBER, 1, 2, 0},
+    {UI_TEXT_STORAGE_ENTRY, SETTINGS_ROW_STORAGE, 0, 3, 0},
 };
 static const struct
 {
@@ -1232,6 +1235,8 @@ static RECT settings_item_rect(const struct folio_window *_Nonnull self, size_t 
     int theme = label + scale(base_theme_choice_height + base_settings_group_gap, dpi);
     int group = settings_rows[index].group;
     bounds.top += (group > 0 ? theme + (group - 1) * stride : 0) - (int)self->command_first;
+    if (group > 2)
+        bounds.top -= (group - 2) * (stride - height - gap);
     if (settings_rows[index].kind == SETTINGS_ROW_HEADING)
     {
         bounds.bottom = bounds.top + label;
@@ -1243,8 +1248,10 @@ static RECT settings_item_rect(const struct folio_window *_Nonnull self, size_t 
         bounds.bottom = bounds.top + scale(base_theme_choice_height, dpi);
         return bounds;
     }
-    if (settings_rows[index].kind == SETTINGS_ROW_NUMBER)
+    if (settings_rows[index].kind == SETTINGS_ROW_NUMBER ||
+        settings_rows[index].kind == SETTINGS_ROW_STORAGE)
     {
+        bounds.top += settings_rows[index].position * (height + gap);
         bounds.bottom = bounds.top + height;
         return bounds;
     }
@@ -1816,6 +1823,26 @@ static void show_failure_box(struct folio_window *_Nonnull self, enum folio_stat
     (void)begin_native_modal(self);
     failure_box_show(modal_owner_current(self->modal_owner), outcome, self->state, context);
     if (!end_native_modal(self) && outcome != FOLIO_STATE_OUT_OF_MEMORY)
+        native_modal_resource_failure(self);
+    restore_valid_focus(self, focus);
+}
+
+/* 保存先は本文stateを更新しない。既存native owner/dispatchの寿命で包む。 */
+static void show_storage_prompt(struct folio_window *_Nonnull self)
+{
+    HWND focus = GetFocus();
+    bool prepared = begin_native_modal(self);
+    enum storage_prompt_outcome result = STORAGE_PROMPT_UNAVAILABLE;
+    if (prepared)
+    {
+        struct storage_prompt_request request = {.storage = self->storage,
+                                                 .folio = self->state,
+                                                 .language = folio_state_language(self->state)};
+        result =
+            storage_prompt_show(modal_owner_current(self->modal_owner), &request, &self->palette);
+    }
+    bool restored = end_native_modal(self);
+    if (!restored || result == STORAGE_PROMPT_UNAVAILABLE)
         native_modal_resource_failure(self);
     restore_valid_focus(self, focus);
 }
@@ -3700,6 +3727,7 @@ static bool settings_row_current(const struct folio_window *_Nonnull self, size_
     switch (settings_rows[index].kind)
     {
     case SETTINGS_ROW_HEADING:
+    case SETTINGS_ROW_STORAGE:
         return false;
     case SETTINGS_ROW_THEME:
         return false;
@@ -7971,6 +7999,9 @@ static void adopt_settings_row(struct folio_window *_Nonnull self)
     {
     case SETTINGS_ROW_HEADING:
         return;
+    case SETTINGS_ROW_STORAGE:
+        show_storage_prompt(self);
+        return;
     case SETTINGS_ROW_THEME:
         show_theme_surface(self);
         return;
@@ -9261,7 +9292,8 @@ static size_t settings_vertical_choice(const struct folio_window *_Nonnull self,
         }
         if (settings_rows[index].position == settings_rows[from].position ||
             settings_rows[index].kind == SETTINGS_ROW_NUMBER ||
-            settings_rows[index].kind == SETTINGS_ROW_THEME)
+            settings_rows[index].kind == SETTINGS_ROW_THEME ||
+            settings_rows[index].kind == SETTINGS_ROW_STORAGE)
         {
             return index;
         }
@@ -10984,6 +11016,8 @@ static LRESULT on_child_request(struct folio_window *_Nonnull self, UINT message
     case folio_message_close_requested:
         resume_normal_close(self);
         return 0;
+    case folio_message_close_pending:
+        return self->close_phase == CLOSE_PHASE_REQUESTED;
     case folio_message_open_menu:
         show_menu_surface(self, (const struct menu_request *)lparam);
         return 0;
@@ -11186,22 +11220,6 @@ static void decorate(HWND handle, struct folio_palette palette)
     DwmSetWindowAttribute(handle, attribute_border_color, &border, sizeof border);
 }
 
-/* GDI+ を 1 回だけ起動する（ADR 0033 の決定 4）。背景スレッドは既定のままにするので
- * GdiplusStartupOutput は渡さない。失敗したら token を 0 のままにして偽を返す。 */
-static bool start_gdiplus(struct folio_window *_Nonnull self)
-{
-    struct gdiplus_startup_input startup = {.version = gdiplus_version_1,
-                                            .debug_event_callback = nullptr,
-                                            .suppress_background_thread = FALSE,
-                                            .suppress_external_codecs = FALSE};
-    if (GdiplusStartup(&self->gdiplus_token, &startup, nullptr) != gdiplus_ok)
-    {
-        self->gdiplus_token = 0;
-        return false;
-    }
-    return true;
-}
-
 /* 同梱の書体を読めなかったことは、窓が退避の face で最初に描かれたあとに 1 回だけ知らせる
  * （ADR 0036 の決定 5）。folio_window_create からだけ呼び、create は 1 回しか走らないので
  * 「見せたか」の真偽は持たない。 */
@@ -11325,6 +11343,7 @@ static bool shortcut_keydown(struct folio_window *_Nonnull self, WPARAM key)
 }
 
 enum folio_window_outcome folio_window_create(struct folio_state *_Nonnull state,
+                                              struct storage_state *_Nonnull storage,
                                               enum font_bundle_outcome fonts,
                                               struct folio_window *_Nullable *_Nonnull out)
 {
@@ -11346,6 +11365,7 @@ enum folio_window_outcome folio_window_create(struct folio_state *_Nonnull state
         return FOLIO_WINDOW_NOT_CREATED;
     }
     self->state = state;
+    self->storage = storage;
     self->drawer_width = base_drawer_width;
     self->keyboard_target = ACCESSIBLE_TREE;
     if (FAILED(accessibility_host_create(self, &self->accessibility)))
@@ -11356,7 +11376,7 @@ enum folio_window_outcome folio_window_create(struct folio_state *_Nonnull state
     self->palette = folio_palette_from(folio_state_palette(state));
     /* 窓を作る前に GDI+ を起動する。枠なし窓で × が描けないと閉じる入口が見えなくなる
      * （ADR 0013）ので、起動できなければ窓を作らない（ADR 0033 の決定 4）。 */
-    if (!start_gdiplus(self))
+    if (icon_paint_start(&self->gdiplus_token) != ICON_PAINT_STARTED)
     {
         folio_window_destroy(self);
         return FOLIO_WINDOW_NOT_CREATED;
@@ -11526,10 +11546,7 @@ void folio_window_destroy(struct folio_window *_Nullable window)
     }
     /* 子窓の WM_NCDESTROY まで済んだあとに終える（ADR 0033 の決定 4）。
      * 生成の途中で失敗した経路では token が 0 のままなので 1 対 1 が保たれる。 */
-    if (window->gdiplus_token != 0)
-    {
-        GdiplusShutdown(window->gdiplus_token);
-    }
+    icon_paint_stop(window->gdiplus_token);
     free(window);
 }
 
@@ -11627,6 +11644,7 @@ static enum accessible_kind surface_row_kind(const struct folio_window *_Nonnull
     case SETTINGS_ROW_HEADING:
         return ACCESSIBLE_SURFACE_TEXT;
     case SETTINGS_ROW_THEME:
+    case SETTINGS_ROW_STORAGE:
         return ACCESSIBLE_SURFACE_BUTTON;
     case SETTINGS_ROW_LANGUAGE:
         return ACCESSIBLE_SURFACE_LANGUAGE;

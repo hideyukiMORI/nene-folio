@@ -1,0 +1,9 @@
+#ifndef NENEFOLIO_STORAGE_PATH_OUTCOME_H
+#define NENEFOLIO_STORAGE_PATH_OUTCOME_H
+enum storage_path_outcome : unsigned char
+{
+    STORAGE_PATH_READY,
+    STORAGE_PATH_INVALID,
+    STORAGE_PATH_OUT_OF_MEMORY
+};
+#endif

@@ -5,9 +5,14 @@
 #define NENEFOLIO_ICON_PAINT_H
 
 #include "icon_paint_kind.h"
+#include "icon_paint_outcome.h"
 
 #include <windows.h>
 
-void icon_paint_fill(HDC device, RECT bounds, enum icon_paint_kind kind, COLORREF color);
+/* 同期面と主窓がそれぞれ所有する描画寿命。成功したtokenをstopへ一回渡す。 */
+[[nodiscard]] enum icon_paint_outcome icon_paint_start(ULONG_PTR *_Nonnull token);
+void icon_paint_stop(ULONG_PTR token);
+
+void icon_paint_fill(HDC _Nonnull device, RECT bounds, enum icon_paint_kind kind, COLORREF color);
 
 #endif

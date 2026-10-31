@@ -300,7 +300,7 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_SETTINGS_NUMBER_ON] = "表示する",
     [UI_TEXT_SETTINGS_NUMBER_OFF] = "表示しない",
     [UI_TEXT_SETTINGS_GUIDANCE] = "矢印 / Tab 選択 · Enter / Space 採用 · Esc 閉じる",
-    [UI_TEXT_SETTINGS_IMMEDIATE] = "変更はすぐに反映",
+    [UI_TEXT_SETTINGS_IMMEDIATE] = "保存先の変更は次回起動から反映",
     [UI_TEXT_SETTINGS_NUMBER_CHECK] = "行番号を表示",
     [UI_TEXT_SETTINGS_VERSION] = "版 {name}",
     [UI_TEXT_HISTORY_GUIDANCE] = "1 が最新 / ↑↓ 選択 / Enter 戻す / Esc 閉じる",
@@ -392,6 +392,39 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_HELP_GROUP_APP] = "アプリ",
     [UI_TEXT_HELP_GROUP_QUIT] = "終了",
     [UI_TEXT_MENU_EX_HINT] = ":{name}",
+    [UI_TEXT_STORAGE_ENTRY] = "ノートの保存先…",
+    [UI_TEXT_STORAGE_TITLE] = "ノートの保存先",
+    [UI_TEXT_STORAGE_CURRENT] = "現在の保存先",
+    [UI_TEXT_STORAGE_NEXT] = "次回起動の保存先",
+    [UI_TEXT_STORAGE_FIRST_HINT] = "ノートを保存するフォルダーを選んでください。",
+    [UI_TEXT_STORAGE_RUNTIME_HINT] = "変更は次回起動から反映します。既存のノートは移動しません。",
+    [UI_TEXT_STORAGE_BROWSE] = "参照…",
+    [UI_TEXT_STORAGE_DEFAULT] = "既定の場所",
+    [UI_TEXT_STORAGE_ACCEPT] = "次回から使う",
+    [UI_TEXT_STORAGE_FIRST_ACCEPT] = "この場所を使う",
+    [UI_TEXT_STORAGE_PENDING] = "保存先の変更は次回起動から有効です。",
+    [UI_TEXT_STORAGE_INVALID_PATH] =
+        "フォルダーの絶対パスを入力してください。相対パスや「..」は使えません。",
+    [UI_TEXT_STORAGE_LOCATION_UNAVAILABLE] = "保存先の初期位置を取得できませんでした。",
+    [UI_TEXT_STORAGE_DIRECTORY_MISSING] =
+        "保存先が見つかりません。接続を確認するか、使う場所を選んでください。",
+    [UI_TEXT_STORAGE_DIRECTORY_UNREADABLE] =
+        "このフォルダーを読み取れません。権限と接続を確認してください。",
+    [UI_TEXT_STORAGE_DIRECTORY_UNWRITABLE] =
+        "このフォルダーへ保存できません。書き込み権限と親フォルダーを確認してください。",
+    [UI_TEXT_STORAGE_DIRECTORY_IN_USE] =
+        "この保存先は別のNeNe Folioが使用中です。閉じてから選び直してください。",
+    [UI_TEXT_STORAGE_SETTINGS_UNREADABLE] =
+        "nenefolio-startup.jsonを読み取れません。起動設定の権限を確認してください。",
+    [UI_TEXT_STORAGE_SETTINGS_MALFORMED] =
+        "nenefolio-startup.jsonの形式が不正です。ファイルを保全して修復してください。",
+    [UI_TEXT_STORAGE_SETTINGS_UNSUPPORTED] =
+        "nenefolio-startup.jsonは未対応の版です。対応する新しいNeNe Folioで開いてください。",
+    [UI_TEXT_STORAGE_SETTINGS_STORE_FAILED] =
+        "保存先の設定を書き込めませんでした。以前の設定を保っています。",
+    [UI_TEXT_STORAGE_SETTINGS_CHANGED] =
+        "別の起動中アプリが保存先設定を変更しました。上書きせず、再起動して読み直してください。",
+    [UI_TEXT_STORAGE_PICKER_FAILED] = "フォルダー選択を開けませんでした。パスを直接入力できます。",
     [UI_TEXT_HELP_RENAME_KEY] = "{name} / {from} 名前変更",
 
 };
@@ -413,7 +446,7 @@ static size_t utf16_units_of(const char *_Nonnull utf8)
 /* 表の全 ID が、変更前と 1 字も違わないこと（同一性）。 */
 static void verify_identity(void)
 {
-    require(expected_count == UI_TEXT_MENU_EX_HINT + 1,
+    require(expected_count == UI_TEXT_STORAGE_PICKER_FAILED + 1,
             "the expected table covers every id in the enumeration");
     for (size_t index = 0; index < expected_count; ++index)
     {

@@ -5,6 +5,26 @@
 #include <stddef.h>
 #include <windows.h>
 
+enum icon_paint_outcome icon_paint_start(ULONG_PTR *_Nonnull token)
+{
+    struct gdiplus_startup_input startup = {.version = gdiplus_version_1,
+                                            .debug_event_callback = nullptr,
+                                            .suppress_background_thread = FALSE,
+                                            .suppress_external_codecs = FALSE};
+    if (GdiplusStartup(token, &startup, nullptr) != gdiplus_ok)
+    {
+        *token = 0;
+        return ICON_PAINT_UNAVAILABLE;
+    }
+    return ICON_PAINT_STARTED;
+}
+
+void icon_paint_stop(ULONG_PTR token)
+{
+    if (token != 0)
+        GdiplusShutdown(token);
+}
+
 /* 形は画面案 C（Issue #88 で hide が選んだ「面で塗る・角丸の板」）の SVG を 24 の viewBox の
  * まま写したもの。相対座標は実行時ではなくここで絶対へ畳んである（ADR 0033 の決定 3）。
  * 画面案の値は 1 つも変えていない（歯車の外周が中心から +0.05 / +0.10 単位ずれているのも

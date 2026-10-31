@@ -1,21 +1,23 @@
 # いまの状態 — NeNe Folio
 
-## 最新の個別修正 — 一覧の残像と境界幅 #475
+## 最新の機能追加 — ノート保存先 #477
 
-hideの一覧のみresizeで残像が出る報告を受け、[#475](https://github.com/hideyukiMORI/nene-folio/issues/475)で
-一覧WM_SIZEの全面再描画を修復し、両表示の境界drag・キー・UIA RangeValueを同じ配置へ集約した。
-初期幅240・一覧最小200・本文最小320 logical px。選択幅は実行中だけ保持し、窓縮小/表示切替で失わない。
-同じ残像fixtureで10checks/5fail→10checks/0fail。最終候補の幅操作/表/端/連続変更は146checks/0fail、Debug/tidyも成功した。
-本文・選択・実UndoRedo・dirty・論理行・focusと索引位置を保持する。
-物理drag・異なるDPI間移動・実reader/DWM呈示は未確認。[品質記録](../quality/2026-10-31-drawer-resize.md)とADR0076を参照。Waivers none。
-最終head必須CI・main・通常exe版/hash/反映/起動・保全整理は
-`D:/NeNeFolio/agents/drawer-resize-20261031/integration-completion.json`で確定する。
-12:26時点で通常版は停止済み。起動中なら更新せず、保存/終了を待つ。
-#473/PR474はhead8800069・必須CI41085456962成功でmain8bde75cへ統合・通常反映/起動済み。
-ホイールの感触はhideが受理済み。10562files全hash保全・worktree削除後、output削除が拒否され旧保持は55箇所となった。
-今回hideはテーマ選択も受理し、窓のresizeは自然と確認した。
-最新の[日報](../reports/2026-10-31.md)・[引き継ぎ](../handoffs/2026-10-31.md)を参照する。
-停止済み継続goalと#466は再開しない。#467/PR468もmain66523e3で統合済み。
+hideが#475の一覧resize・両表示の境界dragを実機受理し、次の保存先設定へ進むよう依頼した。
+[#477](https://github.com/hideyukiMORI/nene-folio/issues/477)で設定の「ノートの保存先…」を追加し、
+現在の場所と次回起動の場所を分離した。portableの既定はexe隣data、package identityを持つ版は
+Documents/NeNeFolioを初回候補として確認する。ノートを自動移動せず、変更中の本文・Undo・dirtyを保持する。
+起動設定`nenefolio-startup.json`版1を別に置き、ノート側settings版4は変更しない。
+
+Debug/tidy、対象単体/確保失敗、実adapter41checks、UI機能258checks、表示82checks、実exe4casesは成功した。
+詳細と未確認範囲は[品質記録](../quality/2026-10-31-storage-location.md)と[ADR0077](../adr/0077-note-storage-location.md)。
+Waivers none。最終headの必須CI・main・通常exeの版/hash/反映・全保全/整理は
+`D:/NeNeFolio/agents/storage-location-20261031/integration-completion.json`で確定する。
+
+#475/PR476はhead15a578d・必須CI41165338305成功でmain6232320へ統合・通常反映済み。
+hideはテーマ選択・窓resize・本文wheelに続き、一覧resize/境界dragも受理した。
+またhideが保全済み47一時出力を削除し、全対象の不在を読取確認した。旧削除拒否のworktree9箇所は残す。
+[日報](../reports/2026-10-31.md)・[引き継ぎ](../handoffs/2026-10-31.md)を参照する。
+停止済み継続goalと#466は再開しない。
 
 ## 継続品質改善の停止記録
 
@@ -57,20 +59,17 @@ Waivers none。
 公開済み成果物を今回の調査のために再生成していない。
 ## 通常exeとhideの実機確認
 
-hide受理済み合成サンプル`data/サンプル/Markdown構文サンプル.md`は通常dataへ残している。実ノート内容は記録・同梱しない。
-今回修正前の通常`C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`はsource `8bde75c`・表示版0.3.0/Windows版0.3.0.0。
-#475の必要反映は通常版の停止を確認して行う。
-最新の版・hash・反映/起動状態は`D:/NeNeFolio/agents/drawer-resize-20261031/integration-completion.json`を参照する。
-通常dataは操作していない。
+hide受理済み合成サンプル`data/サンプル/Markdown構文サンプル.md`は通常dataへ残している。
+実ノート内容は記録・同梱しない。#477前の通常版はsource6232320・表示版0.3.0/Windows版0.3.0.0。
+通常exeは`C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`。
+最新の版/hash/反映状態は`D:/NeNeFolio/agents/storage-location-20261031/integration-completion.json`を参照する。
+起動中なら保存/終了を待ち、強制終了しない。通常dataの保存先を試験のために変更しない。
 
-## 次の予定: ノートの保存先設定（未実装）
+## 次に残る配布確認
 
-hideの23時台の方針を[#390](https://github.com/hideyukiMORI/nene-folio/issues/390)で文書化した。
-インストール版は初回に保存先を確認し、Windowsのドキュメント内`NeNeFolio`を既定とする。
-portable版はexe隣の`data`を既定とし、両方とも設定から「ノートの保存先」を変更できるようにする予定。
-起動設定の分離、既存ノートを勝手に移動しない切替、書込/ロック確認、未保存本文とアンインストール時のデータ保護を含む。
-詳細と次回の設計事項は[引き継ぎの保存先計画](../handoffs/2026-10-25.md#store-data-directory-plan)を参照する。
-保存先設定・MSIX作成・Store申請は未着手。今回の品質改善では、まず既存機能の不具合と応答性を優先する。
+#390の保存先方針は#477/ADR0077で実装した。MSIX作成、実インストールでの初回/更新/アンインストール確認、
+Store申請は未着手。package identityを持たないMSI等は今回のinstalled判定対象ではない。
+物理IME・reader・異なるDPI間の確認も合成fixtureとは区別する。次の作業はhideの新指示と照合する。
 
 ## 継続する確認範囲
 
@@ -82,72 +81,16 @@ portable版はexe隣の`data`を既定とし、両方とも設定から「ノー
 
 ## 保持中の旧作業物
 
-下記の55箇所は自動承認レビューの削除拒否により保持する。再試行や別手段での削除をしない。
+2026-10-31 17:13、hideが提示済みワンライナーで47一時出力を削除した。対象は350/351系から475までの
+保全済み出力だけで、全47pathの不在を読取確認した。過去の各completion原本の「保持」は当時の事実で、
+現在の追記は`D:/NeNeFolio/agents/storage-location-20261031/prior-cleanup-confirmation.json`が正本。
 
-- #473: `D:/NeNeFolio/outputs/473-body-wheel`。統合・通常反映・hide実機受理・10562files/2648555819bytes全hash保全と安全監査後、出力削除が実行前`blocked by policy`で拒否された。追加理由なし。worktree削除済み、branch/commit保持。確定原本は`agents/body-wheel-20261031/integration-completion.json`。
+旧削除拒否で残るのは`D:/NeNeFolio/worktrees/`配下の次の9箇所。再試行や別手段で削除しない。
 
-- #471: `D:/NeNeFolio/outputs/471-theme-selection`。統合・通常反映・9200files/2633818332bytes全hash保全と安全監査後、出力削除が実行前`blocked by policy`で拒否された。追加理由なし。worktree削除済み、branch/commit保持。確定原本は`agents/theme-selection-20261030/integration-completion.json`。
+- `368-ui-latency`、`373-gui-responsiveness`
+- `402-markdown-line-endings`、`404-markdown-containers`、`405-equal-table-columns`、`407-nullable-allocation`
+- `410-table-container-indent`、`411-replacement-size`、`416-escaped-image-link`
 
-- #469: `D:/NeNeFolio/outputs/469-theme-navigation`。統合・通常反映・9973files/2910664589bytes全hash保全と安全監査後、出力削除が実行前`blocked by policy`で拒否された。追加理由なし。worktree削除済み、branch/commit保持。確定原本は`agents/theme-navigation-20261030/integration-completion.json`。
-
-- #467: `D:/NeNeFolio/outputs/467-day-close`。日報/引き継ぎ統合・769files/34928671bytes全hash保全と安全監査後、出力削除が実行前`blocked by policy`で拒否された。追加理由なし。worktree削除済み、branch/commit保持。確定原本は`agents/day-close-20261030-evening/integration-completion.json`。
-
-- #464: `D:/NeNeFolio/outputs/464-validation-output`。統合・通常反映・7204files/3041934805bytes全hash保全と安全監査後、出力削除要求が実行前に`blocked by policy`で拒否された。追加理由なし。worktreeは削除済み、branch/commit保持。確定原本は同taskの`integration-completion.json`。
-
-- #462: `D:/NeNeFolio/outputs/462-table-layout-failure`。文書統合・通常exe hash維持・3937files全hash保全と安全監査後、出力削除要求が実行前に`blocked by policy`で拒否された。追加理由なし。worktreeは削除済み、branch/commit保持。確定原本は同taskの`integration-completion.json`。
-
-- #458: `D:/NeNeFolio/outputs/458-search-preparation-profile`。文書統合・通常exe hash維持・12932files全hash保全と安全監査後、出力削除要求が実行前に`blocked by policy`で拒否された。追加理由なし。worktreeは削除済み、branch/commit保持。確定原本は同taskの`integration-completion.json`。
-
-- #456: `D:/NeNeFolio/outputs/456-table-horizontal-feasibility`。文書統合・通常exe hash維持・4107files全hash保全と安全監査後、出力削除要求が実行前に`blocked by policy`で拒否された。追加理由なし。worktreeは削除済み、branch/commit保持。確定原本は同taskの`integration-completion.json`。
-
-- #451: `D:/NeNeFolio/outputs/451-window-edge`。統合・通常反映・5536filesの全hash保全と安全監査後、出力削除要求が実行前に`blocked by policy`で拒否された。追加理由なし。worktreeは削除済み、branch/commit保持。確定原本は同taskの`integration-completion.json`。
-
-- #448: `D:/NeNeFolio/outputs/448-linear-note-search`。統合・通常反映・9051filesの全hash保全と安全監査後、出力削除要求が実行前に`blocked by policy`で拒否された。追加理由なし。worktreeは削除済み、branch/commit保持。確定原本は同taskの`integration-completion.json`。
-
-- #446: `D:/NeNeFolio/outputs/446-linear-index-matching`。統合・通常反映・6593filesの全hash保全と安全監査後、出力削除要求が実行前に`blocked by policy`で拒否された。追加理由なし。worktreeは削除済み、branch/commit保持。確定値は同taskの`integration-completion.json`。
-
-- #444: `D:/NeNeFolio/outputs/444-bounded-search-diagnostic`。文書統合・通常exe hash維持・2753ファイル全hash保全と安全監査後、出力削除要求が実行前に`blocked by policy`で拒否された。追加理由なし。worktreeは削除済み、branch/commit保持。確定原本は同taskの`integration-completion.json`。
-
-- #442: `D:/NeNeFolio/outputs/442-inline-spaces`。統合・通常反映・6818ファイル全hash保全と安全監査後、出力削除要求が実行前に`blocked by policy`で拒否された。追加理由なし。worktreeは削除済み、branch/commit保持。確定値は同taskの`integration-completion.json`。
-
-- #440: `D:/NeNeFolio/outputs/440-inline-storage`。統合・通常反映・6180ファイル全hash保全と安全監査後、出力削除要求が実行前に`blocked by policy`で拒否された。追加理由なし。worktreeは削除済み、branch/commit保持。確定原本は同taskの`integration-completion.json`。
-
-- #438: `D:/NeNeFolio/outputs/438-read-sharing-feasibility`。文書統合・通常exe hash保持・2632ファイル全hash保全と安全監査後、出力削除要求が実行前に`blocked by policy`で拒否された。追加理由なし。worktreeは削除済み、branch/commit保持。自作ごみ箱の1組は別途保持してpurgeしない。確定値は同taskの`integration-completion.json`。
-
-- #436: `D:/NeNeFolio/outputs/436-quality-checkpoint`。文書だけの作業で作った空directoryの非再帰削除要求が、実行前に`blocked by policy`で拒否された。追加理由なし。空のまま保持し、検証記録はagentsへ直接残す。確定原本は同taskの`empty-output-cleanup.json`。
-
-- #434: `D:/NeNeFolio/outputs/434-drawer-scroll-delta`。統合・通常反映・2589ファイル全hash保全と安全監査後、出力削除要求が`blocked by policy`で拒否された。追加理由なし。worktreeは削除済み、branch/commit保持。確定値は同taskの`integration-completion.json`。
-
-- #432: `D:/NeNeFolio/outputs/432-run-record-input-list`。統合・通常exe hash維持・2361ファイル全hash保全と安全監査後、出力削除要求が`blocked by policy`で拒否された。追加理由なし。worktreeは削除済み、branch/commit保持。確定値は同taskの`integration-completion.json`。
-
-- #430: `D:/NeNeFolio/outputs/430-task-marker-tab`。統合・通常反映・2319ファイル全hash保全と安全監査後、出力削除要求が`blocked by policy`で拒否された。追加理由なし。worktreeは削除済み、branch/commit保持。確定値は同taskの`integration-completion.json`。
-
-- #428: `D:/NeNeFolio/outputs/428-bounded-index-matching`。統合・通常反映・2564ファイル全hash保全と安全監査後、出力削除要求が`blocked by policy`で拒否された。追加理由なし。worktreeは削除済み、branch/commit保持。確定値は同taskの`integration-completion.json`。
-
-- #426: `D:/NeNeFolio/outputs/426-table-start-priority`。統合・通常反映・1243ファイル全hash保全と安全監査後、出力削除要求が`blocked by policy`で拒否された。追加理由なし。worktreeは削除済み、branch/commit保持。確定値は同taskの`integration-completion.json`。
-
-- #424: `D:/NeNeFolio/outputs/424-run-record`。統合・103ファイル全hash保全と安全監査後、出力削除要求が`blocked by policy`で拒否された。追加理由なし。worktreeは削除済み、branch/commitは保持。確定値は同taskの`integration-completion.json`。
-
-- #422: `D:/NeNeFolio/outputs/422-image-literal`。統合・通常反映・112ファイル全hash保全と安全監査後、出力削除要求が`blocked by policy`で拒否された。追加理由なし。追加worktreeは削除済み、branch/commitは保持。確定値は同taskの`integration-completion.json`。
-
-- #420: `D:/NeNeFolio/outputs/420-link-destination-scope`。統合・通常反映・112ファイル全hash保全と安全監査後、出力削除要求が`blocked by policy`で拒否された。追加理由なし。追加worktreeの削除は成功しbranch/commitを保持。確定値は同taskの`integration-completion.json`。
-
-- #418: `D:/NeNeFolio/outputs/418-index-filter-size`。統合・通常反映・278ファイル全hash保全と安全監査後、出力削除要求が`blocked by policy`で拒否された。追加理由なし。追加worktreeの削除は成功しbranch/commitを保持。確定値は同taskの`integration-completion.json`。
-
-- #416: `D:/NeNeFolio/worktrees/416-escaped-image-link`と`D:/NeNeFolio/outputs/416-escaped-image-link`（2箇所）。作業木内部の`eng/__pycache__`/pyc削除と、統合・通常反映・111ファイル全hash保全・安全監査後の出力削除が`blocked by policy`で拒否された。追加理由なし。含む作業木の削除も行わない。確定値は同taskの`integration-completion.json`。
-
-- #410/#411と境界診断: `D:/NeNeFolio/worktrees/`と`D:/NeNeFolio/outputs/`それぞれの`410-table-container-indent`、`411-replacement-size`、および`D:/NeNeFolio/outputs/table-indent-boundary-20261029`（5箇所）。統合・通常反映・420ファイルのarchive全hash照合・未保存/ignored/link/稼働参照監査後、削除要求全体が実行前`blocked by policy`で拒否された。追加理由なし。
-- #404/#405/#407: `D:/NeNeFolio/worktrees/`と`D:/NeNeFolio/outputs/`それぞれの`404-markdown-containers`、`405-equal-table-columns`、`407-nullable-allocation`（6箇所）。統合・通常反映・archive全hash照合・未保存/ignored/link/稼働参照監査後、削除要求全体が実行前`blocked by policy`で拒否された。追加理由なし。
-- 非製品表診断: `D:/NeNeFolio/outputs/table-indent-20261029`。40ファイルのarchive/hash照合後、削除要求が実行前`blocked by policy`で拒否。追加理由なし。
-
-- #402: `D:/NeNeFolio/worktrees/402-markdown-line-endings`、`D:/NeNeFolio/outputs/402-markdown-line-endings`。統合・通常反映・98ファイルのarchive/hash照合後、削除要求が実行開始前に`blocked by policy`で拒否。追加理由は返っていない。
-- #392: `D:/NeNeFolio/outputs/view-wheel-20261026`（残るのは`runtime`。窓終了後の22ファイルも保管・照合済みだが、削除要求は`blocked by policy`で拒否）。
-- #368: `D:/NeNeFolio/worktrees/368-ui-latency`、`D:/NeNeFolio/outputs/performance-20261024`。
-- #373: `D:/NeNeFolio/worktrees/373-gui-responsiveness`、`D:/NeNeFolio/outputs/gui-responsiveness-20261025`。
-- `D:/NeNeFolio/outputs/`配下の9箇所:
-  `350-menu-surface`、`350-release-20261024`、`351-native-name`、`351-dialog-feasibility`、`351-surface-rules`、
-  `351-release-20261024`、`364-theme-cursor`、`theme-navigation-20261024`、`366-theme-preview`。
-
-旧#336/#338/#340/#342/#348/#349の一時物も今回の更新対象外。
+未完#466のworktree/outputは別に保持し、再開しない。旧336/338/340/342/348/349等の今回指定外の一時物も対象外。
 旧 `check/2026-10-19/349-action-bar` は空状態で固まるため起動しない。
 稼働中アプリや未保存本文を終了しない。今後の実画面操作・追加公開は、その時点のhide指示と照合する。

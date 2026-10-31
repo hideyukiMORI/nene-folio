@@ -2,6 +2,7 @@
 
 #include "category_contents.h"
 #include "category_ledger.h"
+#include "data_lock.h"
 #include "file_bytes.h"
 #include "folio_settings.h"
 #include "json_writer.h"
@@ -15,6 +16,7 @@
 #include "rename_journal.h"
 #include "rename_paths.h"
 #include "rename_plan.h"
+#include "storage_native_path.h"
 #include "utf16_text.h"
 #include "utf8_text.h"
 
@@ -25,20 +27,17 @@
 #include <windows.h>
 
 /* パスの上限（UTF-16 単位・終端込み）。超える場所に置かれた実行ファイルは読めないとして扱う。 */
-constexpr size_t path_capacity = 1024;
+constexpr size_t path_capacity = storage_native_capacity;
 
 struct persistence_adapter
 {
-    wchar_t root[path_capacity]; /* <実行ファイルの場所>\data。終端付き */
+    wchar_t root[path_capacity]; /* 起動時に明示されたroot。終端付き */
     size_t root_length;
     /* data/.nenefolio.lock を共有なしで開いた寿命中のハンドル（ADR 0022 の決定 3）。
      * 取れなかった（読み取り専用・アクセス拒否）ときは nullptr のままで、書込だけが失敗する。 */
-    HANDLE lock;
+    struct data_lock *_Nullable lock;
 };
 
-static const wchar_t data_folder[] = L"data";
-/* 同じ data/ を使うプロセスを 1 つに直列化する錠（ADR 0022 の決定 3）。異常終了で残ってよい。 */
-static const wchar_t lock_leaf[] = L".nenefolio.lock";
 /* 改名の復旧記録（ADR 0022 の決定 5）。`.` 始まりなのでカテゴリの走査には出ない。 */
 static const wchar_t journal_leaf[] = L".rename.json";
 /* 設定（ADR 0025 の決定 1）。data/ の直下で、無ければ既定値で始める。 */
@@ -59,64 +58,20 @@ static_assert(note_history_depth >= 1 && note_history_depth <= 9,
 static enum persistence_adapter_outcome acquire_lock(struct persistence_adapter *_Nonnull adapter);
 static bool writable_data(struct persistence_adapter *_Nonnull adapter);
 
-static bool module_path(wchar_t *_Nonnull out, size_t *_Nonnull length)
-{
-    wchar_t module[path_capacity];
-    DWORD count = GetModuleFileNameW(nullptr, module, (DWORD)path_capacity);
-    if (count == 0 || count >= path_capacity)
-    {
-        return false;
-    }
-    const wchar_t *_Nonnull prefix = L"\\\\?\\";
-    size_t prefix_length = 4;
-    size_t offset = 0;
-    if (count >= 4 && memcmp(module, L"\\\\?\\", 4 * sizeof *module) == 0)
-    {
-        prefix_length = 0;
-    }
-    else if (count >= 2 && module[0] == L'\\' && module[1] == L'\\')
-    {
-        prefix = L"\\\\?\\UNC\\";
-        prefix_length = 8;
-        offset = 2;
-    }
-    *length = prefix_length + count - offset;
-    if (*length >= path_capacity)
-    {
-        return false;
-    }
-    memcpy(out, prefix, prefix_length * sizeof *out);
-    memcpy(out + prefix_length, module + offset, (count - offset + 1) * sizeof *out);
-    return true;
-}
-
 enum persistence_adapter_outcome
-persistence_adapter_create(struct persistence_adapter *_Nullable *_Nonnull out)
+persistence_adapter_create(const struct storage_path *_Nonnull root,
+                           struct persistence_adapter *_Nullable *_Nonnull out)
 {
     struct persistence_adapter *_Nullable adapter = calloc(1, sizeof *adapter);
     if (adapter == nullptr)
     {
         return PERSISTENCE_ADAPTER_OUT_OF_MEMORY;
     }
-    size_t length = 0;
-    if (!module_path(adapter->root, &length))
+    if (!storage_native_path_fill(root, adapter->root, &adapter->root_length))
     {
         free(adapter);
-        return PERSISTENCE_ADAPTER_NO_MODULE_PATH;
+        return PERSISTENCE_ADAPTER_INVALID_PATH;
     }
-    size_t directory = length;
-    while (directory > 0 && adapter->root[directory - 1] != L'\\')
-    {
-        directory -= 1;
-    }
-    size_t folder_length = sizeof data_folder / sizeof data_folder[0] - 1;
-    if (directory == 0 || directory + folder_length + 1 > path_capacity)
-    {
-        free(adapter);
-        return PERSISTENCE_ADAPTER_NO_MODULE_PATH;
-    }
-    memcpy(adapter->root + directory, data_folder, sizeof data_folder);
-    adapter->root_length = directory + folder_length;
     enum persistence_adapter_outcome locked = acquire_lock(adapter);
     if (locked != PERSISTENCE_ADAPTER_CREATED)
     {
@@ -152,6 +107,12 @@ static size_t wide_length(const wchar_t *_Nonnull units)
     return length;
 }
 
+/* ドライブ直下を選んだ場合も、既存の相対配置へ余分な区切りを足さない（ADR0077）。 */
+static bool append_separator(wchar_t *_Nonnull out, size_t *_Nonnull position)
+{
+    return (*position > 0 && out[*position - 1] == L'\\') || append_units(out, position, L"\\", 1);
+}
+
 /* UTF-8 の名前を `\<名前>` として out の position から書き足す（C-014 の変換の境界）。 */
 static bool append_utf8_name(wchar_t *_Nonnull out, size_t *_Nonnull position,
                              const char *_Nonnull name)
@@ -161,7 +122,7 @@ static bool append_utf8_name(wchar_t *_Nonnull out, size_t *_Nonnull position,
     {
         return false;
     }
-    bool fits = append_units(out, position, L"\\", 1) &&
+    bool fits = append_separator(out, position) &&
                 append_units(out, position, utf16_text_units(units), utf16_text_length(units));
     utf16_text_destroy(units);
     return fits;
@@ -181,8 +142,7 @@ static bool compose(const struct persistence_adapter *_Nonnull adapter,
     if (fits && leaf != nullptr)
     {
         size_t leaf_length = wide_length(leaf);
-        fits = append_units(out, &position, L"\\", 1) &&
-               append_units(out, &position, leaf, leaf_length);
+        fits = append_separator(out, &position) && append_units(out, &position, leaf, leaf_length);
     }
     return fits;
 }
@@ -486,7 +446,7 @@ static bool history_directory(const struct persistence_adapter *_Nonnull adapter
 {
     size_t length = 0;
     if (!append_units(out, &length, adapter->root, adapter->root_length) ||
-        !append_units(out, &length, L"\\", 1) ||
+        !append_separator(out, &length) ||
         !append_units(out, &length, history_folder, history_folder_length) ||
         !prepared(out, create))
     {
@@ -806,7 +766,7 @@ static bool compose_history_root(const struct persistence_adapter *_Nonnull adap
 {
     *length = 0;
     return append_units(out, length, adapter->root, adapter->root_length) &&
-           append_units(out, length, L"\\", 1) &&
+           append_separator(out, length) &&
            append_units(out, length, history_folder, history_folder_length);
 }
 
@@ -1415,14 +1375,6 @@ static enum rename_outcome recover_rename(struct persistence_adapter *_Nonnull a
     return outcome;
 }
 
-/* 錠の開き方（読み書き・共有なし・無ければ作る）は起動と書込でこの 1 か所（決定 3）。
- * 開けなければ INVALID_HANDLE_VALUE で、理由は GetLastError に残る。 */
-static HANDLE open_lock(const wchar_t *_Nonnull path)
-{
-    return CreateFileW(path, GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_ALWAYS,
-                       FILE_ATTRIBUTE_NORMAL, nullptr);
-}
-
 /* data/.rename.json が無いと確かめられたら true。在る・照会できない・道を組めないなら false。 */
 static bool journal_absent(const struct persistence_adapter *_Nonnull adapter)
 {
@@ -1437,23 +1389,19 @@ static bool journal_absent(const struct persistence_adapter *_Nonnull adapter)
  * ただし復旧すべき記録があるのに錠を取れないなら、復旧できないので起動しない。 */
 static enum persistence_adapter_outcome acquire_lock(struct persistence_adapter *_Nonnull adapter)
 {
-    wchar_t path[path_capacity];
-    if (!compose(adapter, nullptr, lock_leaf, path))
+    switch (data_lock_open(adapter->root, &adapter->lock))
     {
-        return PERSISTENCE_ADAPTER_NO_MODULE_PATH;
-    }
-    HANDLE lock = open_lock(path);
-    if (lock != INVALID_HANDLE_VALUE)
-    {
-        adapter->lock = lock;
+    case DATA_LOCK_ACQUIRED:
         return PERSISTENCE_ADAPTER_CREATED;
-    }
-    if (GetLastError() == ERROR_SHARING_VIOLATION)
-    {
+    case DATA_LOCK_IN_USE:
         return PERSISTENCE_ADAPTER_DATA_IN_USE;
+    case DATA_LOCK_OUT_OF_MEMORY:
+        return PERSISTENCE_ADAPTER_OUT_OF_MEMORY;
+    case DATA_LOCK_UNAVAILABLE:
+        return journal_absent(adapter) ? PERSISTENCE_ADAPTER_CREATED
+                                       : PERSISTENCE_ADAPTER_RECOVERY_LOCKED;
     }
-    return journal_absent(adapter) ? PERSISTENCE_ADAPTER_CREATED
-                                   : PERSISTENCE_ADAPTER_RECOVERY_LOCKED;
+    return PERSISTENCE_ADAPTER_RECOVERY_LOCKED;
 }
 
 /* 通常の書込前に、錠を持つ data/ を用意する（ADR 0022 の決定 3 と 2026-10-09 の補正）。
@@ -1470,19 +1418,14 @@ static bool writable_data(struct persistence_adapter *_Nonnull adapter)
     {
         return true;
     }
-    wchar_t path[path_capacity];
-    if (!compose(adapter, nullptr, lock_leaf, path))
-    {
-        return false;
-    }
-    HANDLE lock = open_lock(path);
-    if (lock == INVALID_HANDLE_VALUE)
+    struct data_lock *_Nullable lock = nullptr;
+    if (data_lock_open(adapter->root, &lock) != DATA_LOCK_ACQUIRED)
     {
         return false;
     }
     if (!journal_absent(adapter))
     {
-        CloseHandle(lock);
+        data_lock_destroy(lock);
         return false;
     }
     adapter->lock = lock;
@@ -1831,7 +1774,7 @@ void persistence_adapter_destroy(struct persistence_adapter *_Nullable adapter)
     if (adapter != nullptr && adapter->lock != nullptr)
     {
         /* 錠のファイルは残してよい。所有は OS のハンドルで判定する（ADR 0022 の決定 3）。 */
-        CloseHandle(adapter->lock);
+        data_lock_destroy(adapter->lock);
     }
     free(adapter);
 }
