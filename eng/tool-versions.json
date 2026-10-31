@@ -4,5 +4,7 @@
   "cmake": "3.31.6-msvc6",
   "ninja": "1.12.1",
   "python": "3.12.10",
-  "powershellMinimum": "7.4.0"
+  "powershellMinimum": "7.4.0",
+  "windowsPackagingSdk": "10.0.26100.0",
+  "makeappx": "10.0.26100.7705"
 }

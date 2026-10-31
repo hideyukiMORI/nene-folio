@@ -1,5 +1,17 @@
 # いまの状態 — NeNe Folio
 
+## Store提出候補のMSIX生成 — #484
+
+hideがStore登録/予約とidentity提供を完了し、初回候補1.0.0と紙/ノートの図案作成を指定した。
+同じ`eng/package-release.ps1`へ`-Format Msix`を追加。CMake一入力の版、共通Release payload、
+登録値・PNG・SHA256 block mapを検査し、SDK pack/unpack後も全ファイルを照合する。
+23対象proof、正典MSIX生成と展開、既存ZIPの互換確認が成功。保存schema/runtime依存は不変、Waivers none。
+[手順](../release/MSIX.md)・[品質記録](../quality/2026-10-31-store-msix.md)・[ADR0080](../adr/0080-store-msix-through-release-pipeline.md)。
+最終head必須CI・main・clean mainのMSIX候補・hash・保全/終了整理は
+`D:/NeNeFolio/agents/msix-20261031/integration-completion.json`で確定する。
+実MSIXインストール/更新/アンインストール/WACK、ページ素材と申請/公開は次段階。
+通常exeは#482の0.3.0が起動中のため終了・上書きせず、今回の必要反映先は別のMSIX候補とする。
+
 ## 閲覧中のWebリンク起動 — #482
 
 hideの依頼で、閲覧中のHTTP/HTTPSリンクを左クリックまたはリンク内Ctrl+Enterで既定browserへ開く機能を追加した。
@@ -94,8 +106,9 @@ hide受理済み合成サンプル`data/サンプル/Markdown構文サンプル.
 
 ## 次に残る配布確認
 
-#390の保存先方針は#477/ADR0077で実装した。MSIX作成、実インストールでの初回/更新/アンインストール確認、
-Store申請は未着手。package identityを持たないMSI等は今回のinstalled判定対象ではない。
+#390の保存先方針は#477/ADR0077で実装し、MSIX生成は#484/ADR0080で追加した。
+実インストールでの初回/更新/アンインストール/WACK確認とStore申請は未着手。
+package identityを持たないMSI等は今回のinstalled判定対象ではない。
 物理IME・reader・異なるDPI間の確認も合成fixtureとは区別する。次の作業はhideの新指示と照合する。
 
 ## 継続する確認範囲
@@ -103,7 +116,7 @@ Store申請は未着手。package identityを持たないMSI等は今回のinsta
 - 表は63列/字下げ32767twipまで、極狭幅可読性は未解消。Webリンクは明示操作で起動。メール等は装飾のみ、HTML/画像等は対応外。
 - 大量ノートの初回検索には同期処理と準備待ちが残る。[検索品質記録](../quality/2026-10-25-first-search-responsiveness.md)を参照する。
 - 専用desktopの合成入力/描画と、物理IME・実reader聴取・DWM実画面呈示を区別する。
-- 署名・インストーラ・Store・自動更新は未実装/対象外。日付付き事実は[日報](../reports/2026-10-27.md)と[引き継ぎ](../handoffs/2026-10-27.md)。
+- MSIX生成は#484で対応。署名/実インストール/Store公開は未実施、独自自動更新は対象外。
 - 下記の削除拒否済み作業物は再試行しない。
 
 ## 保持中の旧作業物

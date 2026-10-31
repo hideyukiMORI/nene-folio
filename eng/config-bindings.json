@@ -7,5 +7,6 @@
   "eng/coverage-policy.json": ["eng/coverage.py"],
   "eng/conformance-rules.json": ["eng/conformance.py", "eng/prove-gates.py", "eng/release.py"],
   "eng/release-layout.json": ["eng/release.py"],
+  "eng/msix.json": ["eng/release.py"],
   "eng/config-bindings.json": ["eng/conformance.py"]
 }

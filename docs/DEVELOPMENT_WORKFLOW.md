@@ -238,7 +238,14 @@ ZIP内は同名の製品フォルダ一つで、その中は`NeNeFolio.exe`、`R
 
 公開の依頼を受けたら、squash統合後のcleanな`main`から同じコマンドで作り、短い実機起動を確認してから
 `v<version>` の tag と同名 Release へ配布物と `SHA256SUMS` を添付する。公開後に再ダウンロードして照合する。
-署名・インストーラ・自動更新は別の焦点 Issue とする。
+MSIX出力は#484/ADR0080で同じ入口へ追加した。`-Format Msix`を付けると、同一Release buildとpayload検証を使い、
+登録済みStore identity・版・PNGを含めて固定SDKのMakeAppxで作成/展開する。全ファイルとSHA256 block mapを照合し、
+`NeNeFolio-<version>-win-x64.msix`と`SHA256SUMS`を新出力先へ置く。
+版の先頭は1以上、4成分目は0を要求する。identity/PNG一覧は`eng/msix.json`、画像原本は`packaging/windows/`。
+MSIXだけは保存先に合う`README-msix.txt`を`README.txt`として同梱する。
+追加SDKのdirectory版とMakeAppxの実file版は`eng/tool-versions.json`で固定し、ZIPや通常buildには要求しない。
+MSIXは未署名の候補であり、生成コマンドは証明書の信頼登録・インストール・Storeへの送信を行わない。
+実インストール/更新/アンインストール/WACKとStore申請は別段階として記録する。独自自動更新は対象外。
 
 実機で見るときは [`tools/prepare-real-machine.ps1`](../tools/prepare-real-machine.ps1) で main を進めてビルドする（起動は別の 1 行）。
 対象の `build/NeNeFolio.exe` が起動中なら、本文を保存して閉じてから実行する。ツールは対象の起動中や実行パスの確認不能を理由付きで拒否し、アプリを終了しない。別 checkout の同名アプリは操作しない（#217）。

@@ -1,8 +1,9 @@
-"""Single release layout, artifact validation and ZIP path (ADR0045; stdlib only)."""
+"""Shared Release payload and verified ZIP/MSIX outputs (ADR0045/0080; stdlib only)."""
 
 from __future__ import annotations
 
 import argparse
+import base64
 import ctypes
 from ctypes import wintypes
 import hashlib
@@ -51,7 +52,7 @@ def safe_relative(value: str) -> str:
     return value
 
 
-def layout_files(build: Path) -> dict[str, Path]:
+def layout_files(build: Path, format_name: str = "zip") -> dict[str, Path]:
     layout = read_json(ROOT / "eng/release-layout.json")
     result = {}
     for item in layout["files"]:
@@ -71,6 +72,8 @@ def layout_files(build: Path) -> dict[str, Path]:
         result[destination] = ROOT / destination
     if len({name.casefold() for name in result}) != len(result):
         raise ValueError("release: colliding declared destinations")
+    if format_name == "msix":
+        result["README.txt"] = ROOT / safe_relative(read_json(ROOT / "eng/msix.json")["readme"])
     return result
 
 
@@ -289,7 +292,7 @@ def digest(path: Path) -> str:
 def source_inputs() -> dict:
     listing = subprocess.check_output(["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
                                       cwd=ROOT).decode("utf-8").split("\0")
-    prefixes = ("src/", "eng/", "tests/", "fonts/", "cmake/", "docs/release/")
+    prefixes = ("src/", "eng/", "tests/", "fonts/", "cmake/", "docs/release/", "packaging/")
     files = {name: digest(ROOT / name) for name in sorted(set(listing)) if name and (ROOT / name).is_file() and
              (name.startswith(prefixes) or name in {"CMakeLists.txt", ".clang-tidy", ".clang-format", "LICENSE", "THIRD_PARTY_NOTICES.txt"})}
     return {"sourceCommit": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
@@ -314,15 +317,161 @@ def publish_files(archive: Path, checksums: Path, output: Path) -> Path:
     return output
 
 
-def validate_stage(folder: Path, build: Path, value: dict) -> dict:
-    declared = layout_files(build)
-    actual = validate_file_set(folder, set(declared))
+def package_files(build: Path, format_name: str) -> dict[str, Path]:
+    declared = layout_files(build, format_name)
+    if format_name == "msix":
+        assets = msix_assets()
+        if {name.casefold() for name in declared} & {name.casefold() for name in assets}:
+            raise ValueError("release: MSIX assets collide with payload")
+        declared.update(assets)
+    return declared
+
+
+def validate_stage(folder: Path, build: Path, value: dict, format_name: str = "zip",
+                   sdk_block_map: bytes | None = None) -> dict:
+    declared = package_files(build, format_name)
+    generated = {}
+    if format_name == "msix":
+        generated["AppxManifest.xml"] = msix_manifest(value)
+        if sdk_block_map is not None:
+            generated["AppxBlockMap.xml"] = sdk_block_map
+    actual = validate_file_set(folder, set(declared) | set(generated))
     for name, source in declared.items():
         if digest(actual[name]) != digest(source):
             raise ValueError("release: staged file differs from source: " + name)
+    for name, content in generated.items():
+        if actual[name].read_bytes() != content:
+            raise ValueError("release: generated package file differs: " + name)
     validate_fonts(folder)
     artifact = validate_executable(folder / "NeNeFolio.exe", value)
     return {"artifact": artifact, "sha256": {name: digest(path) for name, path in sorted(actual.items())}}
+
+
+def msix_manifest(value: dict) -> bytes:
+    parts = value["windowsVersion"].split(".")
+    if len(parts) != 4 or not all(part.isascii() and part.isdigit() for part in parts):
+        raise ValueError("release: invalid Store version")
+    numbers = [int(part) for part in parts]
+    if any(number > 65535 for number in numbers) or numbers[0] == 0 or numbers[3] != 0:
+        raise ValueError("release: Store version requires major >= 1 and revision 0")
+    configuration = read_json(ROOT / "eng/msix.json")
+    identity = configuration["identity"]
+    if configuration["schema"] != 1 or set(identity) != {"name", "publisher", "publisherDisplayName"}:
+        raise ValueError("release: invalid MSIX identity configuration")
+    if not re.fullmatch(r"[A-Za-z0-9.-]{3,50}", identity["name"]) or not identity["publisher"].startswith("CN="):
+        raise ValueError("release: invalid Store identity")
+    if any(not isinstance(text, str) or not text.strip() for text in identity.values()):
+        raise ValueError("release: empty Store identity")
+    namespaces = {
+        "": "http://schemas.microsoft.com/appx/manifest/foundation/windows10",
+        "uap": "http://schemas.microsoft.com/appx/manifest/uap/windows10",
+        "uap10": "http://schemas.microsoft.com/appx/manifest/uap/windows10/10",
+        "rescap": "http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities",
+    }
+    package = ET.Element("Package", {"xmlns" + (":" + prefix if prefix else ""): uri
+                                    for prefix, uri in namespaces.items()})
+    package.set("IgnorableNamespaces", "uap uap10 rescap")
+    ET.SubElement(package, "Identity", {"Name": identity["name"], "Publisher": identity["publisher"],
+                                       "Version": value["windowsVersion"], "ProcessorArchitecture": "x64"})
+    properties = ET.SubElement(package, "Properties")
+    for name, text in (("DisplayName", configuration["displayName"]),
+                       ("PublisherDisplayName", identity["publisherDisplayName"]),
+                       ("Description", configuration["description"]), ("Logo", "Assets/StoreLogo.png")):
+        ET.SubElement(properties, name).text = text
+    dependencies = ET.SubElement(package, "Dependencies")
+    ET.SubElement(dependencies, "TargetDeviceFamily", {
+        "Name": "Windows.Desktop", "MinVersion": configuration["minimumWindowsVersion"],
+        "MaxVersionTested": configuration["maximumWindowsVersionTested"]})
+    resources = ET.SubElement(package, "Resources")
+    for language in configuration["languages"]:
+        ET.SubElement(resources, "Resource", {"Language": language})
+    applications = ET.SubElement(package, "Applications")
+    application = ET.SubElement(applications, "Application", {
+        "Id": "App", "Executable": "NeNeFolio.exe", "uap10:RuntimeBehavior": "packagedClassicApp",
+        "uap10:TrustLevel": "mediumIL"})
+    ET.SubElement(application, "uap:VisualElements", {
+        "DisplayName": configuration["displayName"], "Description": configuration["description"],
+        "Square150x150Logo": "Assets/Square150x150Logo.png", "Square44x44Logo": "Assets/Square44x44Logo.png",
+        "BackgroundColor": "transparent"})
+    capabilities = ET.SubElement(package, "Capabilities")
+    ET.SubElement(capabilities, "rescap:Capability", {"Name": "runFullTrust"})
+    ET.indent(package, space="  ")
+    return ET.tostring(package, encoding="utf-8", xml_declaration=True) + b"\n"
+
+
+def msix_assets() -> dict[str, Path]:
+    result = {}
+    for item in read_json(ROOT / "eng/msix.json")["assets"]:
+        source = ROOT / safe_relative(item["path"])
+        destination = safe_relative(item["destination"])
+        if destination.casefold() in {name.casefold() for name in result}:
+            raise ValueError("release: duplicate MSIX asset")
+        data = source.read_bytes()
+        if (len(data) < 33 or data[:16] != b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR" or
+                struct.unpack_from(">II", data, 16) != (item["width"], item["height"])):
+            raise ValueError("release: MSIX PNG dimensions differ: " + destination)
+        if hashlib.sha256(data).hexdigest() != item["sha256"]:
+            raise ValueError("release: MSIX PNG hash differs: " + destination)
+        result[destination] = source
+    if set(result) != {"Assets/Square44x44Logo.png", "Assets/Square150x150Logo.png", "Assets/StoreLogo.png"}:
+        raise ValueError("release: MSIX logo set differs")
+    return result
+
+
+def validate_msix_archive(archive: Path, stage: Path) -> None:
+    expected = tree_files(stage)
+    footprints = {"AppxBlockMap.xml", "[Content_Types].xml"}
+    with zipfile.ZipFile(archive) as bundle:
+        names = [entry.filename for entry in bundle.infolist()]
+        if len(names) != len({name.casefold() for name in names}) or set(names) != set(expected) | footprints:
+            raise ValueError("release: MSIX file set differs")
+        for name, path in expected.items():
+            entry = bundle.getinfo(name)
+            if entry.is_dir() or stat.S_ISLNK(entry.external_attr >> 16):
+                raise ValueError("release: unsupported MSIX entry")
+            if hashlib.sha256(bundle.read(entry)).hexdigest() != digest(path):
+                raise ValueError("release: MSIX content differs: " + name)
+        block_map = ET.fromstring(bundle.read("AppxBlockMap.xml"))
+        namespace = "{http://schemas.microsoft.com/appx/2010/blockmap}"
+        if block_map.tag != namespace + "BlockMap" or block_map.get("HashMethod") != "http://www.w3.org/2001/04/xmlenc#sha256":
+            raise ValueError("release: MSIX block map must use SHA256")
+        seen = set()
+        for file in block_map:
+            name = file.get("Name", "").replace("\\", "/")
+            if file.tag != namespace + "File" or name not in expected or name in seen:
+                raise ValueError("release: MSIX block map file set differs")
+            seen.add(name)
+            data = expected[name].read_bytes()
+            if file.get("Size") != str(len(data)):
+                raise ValueError("release: MSIX block map size differs")
+            hashes = [base64.b64encode(hashlib.sha256(data[offset:offset + 65536]).digest()).decode("ascii")
+                      for offset in range(0, len(data), 65536)]
+            blocks = list(file)
+            # SDK 26100 also emits a whole-file digest for files larger than one block.
+            file_hash_tag = "{http://schemas.microsoft.com/appx/2021/blockmap}FileHash"
+            if blocks and blocks[-1].tag == file_hash_tag:
+                file_hash = blocks.pop()
+                wanted = base64.b64encode(hashlib.sha256(data).digest()).decode("ascii")
+                if file_hash.attrib != {"Hash": wanted} or len(file_hash):
+                    raise ValueError("release: MSIX whole-file hash differs")
+            if any(block.tag != namespace + "Block" for block in blocks) or [block.get("Hash") for block in blocks] != hashes:
+                raise ValueError("release: MSIX block map hash differs")
+        if seen != set(expected):
+            raise ValueError("release: MSIX block map file set differs")
+
+
+def package_msix(stage: Path, work: Path, prefix: str, makeappx: Path) -> tuple[Path, Path, dict]:
+    if not makeappx.is_absolute() or not makeappx.is_file():
+        raise ValueError("release: MakeAppx requires an absolute executable path")
+    executable_hash = digest(makeappx)
+    archive = work / (prefix + ".msix")
+    subprocess.run([str(makeappx), "pack", "/d", str(stage), "/p", str(archive), "/h", "SHA256", "/no"], check=True)
+    validate_msix_archive(archive, stage)
+    expanded = work / "expanded"
+    subprocess.run([str(makeappx), "unpack", "/p", str(archive), "/d", str(expanded), "/no"], check=True)
+    if digest(makeappx) != executable_hash:
+        raise ValueError("release: MakeAppx changed during packaging")
+    return archive, expanded, {"makeappx": str(makeappx), "makeappxSHA256": executable_hash, "signed": False}
 
 
 def validate_archive(archive: Path, stage: Path, prefix: str) -> None:
@@ -341,7 +490,7 @@ def validate_archive(archive: Path, stage: Path, prefix: str) -> None:
                 raise ValueError("release: ZIP content differs")
 
 
-def assemble(build: Path, work: Path, output: Path) -> dict:
+def assemble(build: Path, work: Path, output: Path, format_name: str = "zip", makeappx: Path | None = None) -> dict:
     recorded = read_json(work / "source-inputs.json")
     if recorded["sourceInputsSHA256"] != source_inputs()["sourceInputsSHA256"]:
         raise ValueError("release: source inputs changed during build")
@@ -351,28 +500,47 @@ def assemble(build: Path, work: Path, output: Path) -> dict:
     prefix = bundle_name(value)
     stage = work / "stage" / prefix
     stage.mkdir(parents=True)
-    for name, source in layout_files(build).items():
+    declared = package_files(build, format_name)
+    if format_name == "msix":
+        (stage / "AppxManifest.xml").write_bytes(msix_manifest(value))
+    for name, source in declared.items():
         target = stage / name
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(source, target)
-    checks = validate_stage(stage, build, value)
-    archive = work / (prefix + ".zip")
-    with zipfile.ZipFile(archive, "x", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as bundle:
-        for name, path in sorted(tree_files(stage).items()):
-            bundle.write(path, prefix + "/" + name)
-    validate_archive(archive, stage, prefix)
-    expanded = work / "expanded"
-    with zipfile.ZipFile(archive) as bundle:
-        bundle.extractall(expanded)
-    validate_stage(expanded / prefix, build, value)
-    checks.update({"version": value, "bundle": prefix, "zipSHA256": digest(archive), **recorded})
+    checks = validate_stage(stage, build, value, format_name)
+    sdk_block_map = None
+    if format_name == "zip":
+        archive = work / (prefix + ".zip")
+        with zipfile.ZipFile(archive, "x", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as bundle:
+            for name, path in sorted(tree_files(stage).items()):
+                bundle.write(path, prefix + "/" + name)
+        validate_archive(archive, stage, prefix)
+        expanded = work / "expanded"
+        with zipfile.ZipFile(archive) as bundle:
+            bundle.extractall(expanded)
+        expanded = expanded / prefix
+        checks["zipSHA256"] = digest(archive)
+    elif format_name == "msix":
+        if makeappx is None:
+            raise ValueError("release: MSIX packaging requires MakeAppx")
+        archive, expanded, sdk = package_msix(stage, work, prefix, makeappx)
+        with zipfile.ZipFile(archive) as package:
+            sdk_block_map = package.read("AppxBlockMap.xml")
+        checks.update(sdk)
+        checks["msixSHA256"] = digest(archive)
+    else:
+        raise ValueError("release: unsupported package format")
+    validate_stage(expanded, build, value, format_name, sdk_block_map)
+    if recorded["sourceInputsSHA256"] != source_inputs()["sourceInputsSHA256"]:
+        raise ValueError("release: source inputs changed during packaging")
+    checks.update({"version": value, "bundle": prefix, "format": format_name, "archiveSHA256": digest(archive), **recorded})
     (work / "release-evidence.json").write_text(json.dumps(checks, ensure_ascii=False, indent=2) + "\n",
                                                encoding="utf-8")
     checksums = work / "SHA256SUMS"
-    checksums.write_text(checks["zipSHA256"] + "  " + archive.name + "\n", encoding="ascii")
+    checksums.write_text(checks["archiveSHA256"] + "  " + archive.name + "\n", encoding="ascii")
     publish_files(archive, checksums, output)
-    return {"archive": str(output / archive.name), "sha256": checks["zipSHA256"],
-            "stage": str(stage), "expanded": str(expanded / prefix),
+    return {"archive": str(output / archive.name), "sha256": checks["archiveSHA256"],
+            "stage": str(stage), "expanded": str(expanded),
             "evidence": str(work / "release-evidence.json")}
 
 
@@ -381,12 +549,15 @@ def main() -> int:
     parser.add_argument("command", choices=["destinations", "record-inputs", "assemble"])
     parser.add_argument("--work", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--format", choices=["zip", "msix"], default="zip")
+    parser.add_argument("--makeappx", type=Path)
     arguments = parser.parse_args()
     if arguments.command == "destinations":
         fresh_destinations(arguments.work, arguments.output)
         print("Release destinations accepted.")
     if arguments.command == "assemble":
-        print(json.dumps(assemble(arguments.work / "build", arguments.work, arguments.output), indent=2))
+        print(json.dumps(assemble(arguments.work / "build", arguments.work, arguments.output,
+                                  arguments.format, arguments.makeappx), indent=2))
     if arguments.command == "record-inputs":
         (arguments.work / "source-inputs.json").write_text(json.dumps(source_inputs(), indent=2) + "\n",
                                                           encoding="utf-8")

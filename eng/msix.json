@@ -1,0 +1,19 @@
+{
+  "schema": 1,
+  "identity": {
+    "name": "HideyukiMori.NeNeFolio",
+    "publisher": "CN=C37230AA-B52D-403B-9BFD-E7980F088422",
+    "publisherDisplayName": "Hideyuki Mori"
+  },
+  "displayName": "NeNe Folio",
+  "description": "A frameless Markdown notebook for Windows.",
+  "languages": ["ja-JP", "en-US", "zh-CN"],
+  "minimumWindowsVersion": "10.0.19041.0",
+  "maximumWindowsVersionTested": "10.0.26100.0",
+  "readme": "docs/release/README-msix.txt",
+  "assets": [
+    {"path": "packaging/windows/Square44x44Logo.png", "destination": "Assets/Square44x44Logo.png", "width": 44, "height": 44, "sha256": "d1bf90892ef8687d06e0ae5c5ecabc367873f76764799f9d2b5c2b70f5d7f57b"},
+    {"path": "packaging/windows/Square150x150Logo.png", "destination": "Assets/Square150x150Logo.png", "width": 150, "height": 150, "sha256": "0bba5e523efde06a147ccdaa7859a3e76fc3dd459ab04e6f8239674fe06acf8b"},
+    {"path": "packaging/windows/StoreLogo.png", "destination": "Assets/StoreLogo.png", "width": 50, "height": 50, "sha256": "68e03ca18f2a2add1bcc7827fe6657a244f746b76955ebd8c09373d7731cc7d4"}
+  ]
+}
