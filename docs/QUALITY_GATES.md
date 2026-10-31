@@ -338,13 +338,15 @@ CNF-006 が「本文に定義があるのにここに行が無い」を拒否す
 | アーキテクチャ | 宣言グラフ・実ターゲット・ソース所有 | targets.cmake / architecture.json / CMake File API |
 | 規約検査 | NeNe Folio 固有 | `eng/conformance.py` |
 | 検査自身のテスト | 規約検査・シンボル検査・実ツールの正例・反例 | unittest / eng/prove-gates.py |
-| 版と配布検査器 | 実exeの版・manifest・AMD64と、配布ファイル/資産/ZIP/出力先の拒否境界 | `eng/test-release.py`（`eng/release.py`の正例・反例。ゲートが作ったexeを使い、追加ビルドを行わない。ADR0045） |
+| 版と配布検査器 | 実exeの版・manifest・AMD64と、配布ファイル/資産/ZIP/MSIX/出力先の拒否境界 | `eng/test-release.py`（`eng/release.py`の正例・反例。ゲートが作ったexeを使い、追加ビルドを行わない。ADR0045/0080） |
 | 単体テスト | 振る舞い | CTest / tests/unit（ASan / UBSan / nullability 付き・`-fno-sanitize-recover=all`。Debug 構成の全 target を計装） |
 | カバレッジ | 中核の検証密度 | `eng/coverage.py` / `eng/coverage-policy.json`。測定ビルド（ASan 付き・確保失敗の注入）で LLVM の実分岐を 90% 以上要求 |
 | 依存 | 道具の版と実行時依存 0 | tool-versions.json / architecture.json / `/MT`（R1） |
 
 配布時は`eng/package-release.ps1`が別のRelease buildを作り、`eng/release.py`で版・manifest・AMD64に加え、
-OS DLLのimport許可集合、完全な同梱一覧、font manifest、ZIPの実内容を検査する。
+OS DLLのimport許可集合、完全な同梱一覧、font manifest、ZIPまたはMSIXの実内容を検査する。
+MSIXは固定SDKのMakeAppxによるpack/unpackと、全payloadのhash・Store版・identity・PNG・SHA256 block mapを照合する。
+実インストール/更新/アンインストール/WACK/Store受理はこの生成検査とは別の対象確認である（ADR0080）。
 Debugのsanitizerを含むexeのimportをRelease用許可集合に通すものではない。
 配布の正例・反例の実測は[品質記録](quality/2026-10-12-release-prep-checks.md)へ残す。
 この成果物検査は最終headの必須CIを置き換えない。
