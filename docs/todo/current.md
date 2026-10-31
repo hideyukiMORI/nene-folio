@@ -1,6 +1,13 @@
 # いまの状態 — NeNe Folio
 
-## Store申請済み・認定結果待ち — #488
+## キー操作更新・Store認定結果待ち — #490 / #488
+
+hideの新依頼でCtrl+Eの閲覧/編集切り替え、Ctrl+Mの操作メニューと、5部品の「説明 (キー)」を追加した。
+既存の保存処理とshortcut記述子へ合流し、Debug/tidy・対象単体・実Win32の88checksが成功。
+[品質記録](../quality/2026-11-01-mode-shortcuts.md)・[キー仕様](../KEY_BINDINGS.md)・[ADR0081](../adr/0081-mode-shortcut-and-action-hints.md)。
+最終head必須CI/main/通常exe反映・全保全/整理は
+`D:/NeNeFolio/agents/mode-shortcuts-20261101/integration-completion.json`で確定する。
+保存schema・版入力・依存は不変、Waivers none。これは申請済みMSIXより後の変更で、提出物は差し替えていない。
 
 hideが1.0.0のSubmission 1を提出し、2026-11-01 00:31:51 JSTの画面で「認定中 / 前処理中」を確認した。
 認定合格後すぐ自動公開する設定。補足文も保存済み。申請済みだが、合格・Store公開は未確認。

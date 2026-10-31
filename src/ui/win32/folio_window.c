@@ -211,15 +211,16 @@ static const wchar_t edit_class[] = L"EDIT";
 /* 一覧に出すキー操作の行（ADR 0030 の決定 4）。文言は core の ui_text が持ち、
  * ここは並びだけを持つ。1 行 1 ID で、欄分けは単位 C（ADR 0032）。 */
 static const enum ui_text command_shortcuts[] = {
-    UI_TEXT_HELP_PALETTE,       UI_TEXT_HELP_EDITOR_MOTION,   UI_TEXT_HELP_BODY_ZOOM,
-    UI_TEXT_HELP_GLOBAL_KEYS,   UI_TEXT_HELP_GLOBAL_FILTER,   UI_TEXT_HELP_FILTER_FIELD,
-    UI_TEXT_HELP_FILTER_LIMITS, UI_TEXT_HELP_FILE_KEYS,       UI_TEXT_HELP_INDEX_COMMAND,
-    UI_TEXT_HELP_EX_SET_NUMBER, UI_TEXT_HELP_EX_SET_THEME,    UI_TEXT_HELP_EX_SET_LANGUAGE,
-    UI_TEXT_HELP_REPLACE_FIELD, UI_TEXT_HELP_EX_SUBSTITUTE,   UI_TEXT_HELP_SEARCH_KEYS,
-    UI_TEXT_HELP_SEARCH_STEP,   UI_TEXT_HELP_SEARCH_FIELD,    UI_TEXT_HELP_INDEX_MOTION,
-    UI_TEXT_HELP_INDEX_FOLD,    UI_TEXT_HELP_INDEX_SCROLL,    UI_TEXT_HELP_EDITOR_ESCAPE,
-    UI_TEXT_HELP_TRASH_NOTE,    UI_TEXT_HELP_DELETE_CATEGORY, UI_TEXT_HELP_RENAME_CATEGORY,
-    UI_TEXT_HELP_ACCESSIBILITY, UI_TEXT_DRAWER_WIDTH_HELP,    UI_TEXT_HELP_RECYCLE,
+    UI_TEXT_HELP_PALETTE,         UI_TEXT_HELP_EDITOR_MOTION, UI_TEXT_HELP_BODY_ZOOM,
+    UI_TEXT_HELP_GLOBAL_KEYS,     UI_TEXT_HELP_GLOBAL_FILTER, UI_TEXT_HELP_FILTER_FIELD,
+    UI_TEXT_HELP_FILTER_LIMITS,   UI_TEXT_HELP_FILE_KEYS,     UI_TEXT_HELP_NOTE_ACTIONS,
+    UI_TEXT_HELP_INDEX_COMMAND,   UI_TEXT_HELP_EX_SET_NUMBER, UI_TEXT_HELP_EX_SET_THEME,
+    UI_TEXT_HELP_EX_SET_LANGUAGE, UI_TEXT_HELP_REPLACE_FIELD, UI_TEXT_HELP_EX_SUBSTITUTE,
+    UI_TEXT_HELP_SEARCH_KEYS,     UI_TEXT_HELP_SEARCH_STEP,   UI_TEXT_HELP_SEARCH_FIELD,
+    UI_TEXT_HELP_INDEX_MOTION,    UI_TEXT_HELP_INDEX_FOLD,    UI_TEXT_HELP_INDEX_SCROLL,
+    UI_TEXT_HELP_EDITOR_ESCAPE,   UI_TEXT_HELP_TRASH_NOTE,    UI_TEXT_HELP_DELETE_CATEGORY,
+    UI_TEXT_HELP_RENAME_CATEGORY, UI_TEXT_HELP_ACCESSIBILITY, UI_TEXT_DRAWER_WIDTH_HELP,
+    UI_TEXT_HELP_RECYCLE,
 };
 
 /* 設定画面の行（ADR 0031 の決定 7・ADR 0032 の決定 7）。見出しと選択肢を**種別で**持ち、
@@ -292,12 +293,14 @@ static const struct
     [ACCESSIBLE_BREADCRUMB] = {ACCESSIBLE_PANE_TOOLS, UI_TEXT_EMPTY, false, UI_TEXT_EMPTY},
     [ACCESSIBLE_MODE_GROUP] = {ACCESSIBLE_PANE_TOOLS, UI_TEXT_ACCESSIBLE_MODE, false,
                                UI_TEXT_EMPTY},
-    [ACCESSIBLE_VIEW] = {ACCESSIBLE_MODE_GROUP, UI_TEXT_CHIP_VIEW, true, UI_TEXT_COMMAND_VIEW},
-    [ACCESSIBLE_EDIT] = {ACCESSIBLE_MODE_GROUP, UI_TEXT_CHIP_EDIT, true, UI_TEXT_TOOLTIP_EDIT},
+    [ACCESSIBLE_VIEW] = {ACCESSIBLE_MODE_GROUP, UI_TEXT_CHIP_VIEW, true,
+                         UI_TEXT_TOOLTIP_TOGGLE_MODE},
+    [ACCESSIBLE_EDIT] = {ACCESSIBLE_MODE_GROUP, UI_TEXT_CHIP_EDIT, true,
+                         UI_TEXT_TOOLTIP_TOGGLE_MODE},
     [ACCESSIBLE_ACTION_GROUP] = {ACCESSIBLE_PANE_TOOLS, UI_TEXT_ACCESSIBLE_NOTE_ACTIONS, false,
                                  UI_TEXT_EMPTY},
-    [ACCESSIBLE_SAVE] = {ACCESSIBLE_ACTION_GROUP, UI_TEXT_COMMAND_SAVE, true, UI_TEXT_EMPTY},
-    [ACCESSIBLE_FIND] = {ACCESSIBLE_ACTION_GROUP, UI_TEXT_COMMAND_FIND, true, UI_TEXT_EMPTY},
+    [ACCESSIBLE_SAVE] = {ACCESSIBLE_ACTION_GROUP, UI_TEXT_COMMAND_SAVE, true, UI_TEXT_COMMAND_SAVE},
+    [ACCESSIBLE_FIND] = {ACCESSIBLE_ACTION_GROUP, UI_TEXT_COMMAND_FIND, true, UI_TEXT_COMMAND_FIND},
     /* 名前は「操作」。▾は描く字（UI_TEXT_ACTION_OPERATIONS）だけが持つ表示の記号。 */
     [ACCESSIBLE_MENU] = {ACCESSIBLE_ACTION_GROUP, UI_TEXT_ACCESSIBLE_OPERATIONS, true,
                          UI_TEXT_TOOLTIP_OPERATIONS},
@@ -8814,9 +8817,50 @@ static void splitter_tooltip(const struct folio_window *_Nonnull self, char *_No
         out[0] = '\0';
 }
 
+static void note_action_tooltip(const struct folio_window *_Nonnull self, enum accessible_kind kind,
+                                char *_Nonnull out)
+{
+    enum folio_language language = folio_state_language(self->state);
+    struct ui_text_request request = {.id = UI_TEXT_TOOLTIP_DESCRIPTION_KEY,
+                                      .language = language,
+                                      .name =
+                                          ui_text_line(accessible_controls[kind].hint, language),
+                                      .from = part_shortcut(kind, language)};
+    if (ui_text_format(&request, out, draw_unit_limit) != UI_TEXT_FORMAT_READY)
+        out[0] = '\0';
+}
+
+/* 通常の部品は字の有無に応じて名前/キー/補足を同じformatで組む。 */
+static void labeled_part_tooltip(const struct folio_window *_Nonnull self,
+                                 enum accessible_kind kind, char *_Nonnull out)
+{
+    enum folio_language language = folio_state_language(self->state);
+    const char *key = part_shortcut(kind, language);
+    bool labeled = part_labeled(self, kind);
+    struct ui_text_request request = {
+        .id = labeled ? UI_TEXT_TOOLTIP_KEY : UI_TEXT_TOOLTIP_NAMED_KEY,
+        .language = language,
+        .name = ui_text_line(part_label(self, kind), language),
+        .from = key,
+        .to = labeled ? ui_text_line(accessible_controls[kind].hint, language) : ""};
+    if (key[0] == '\0')
+    {
+        request.id = UI_TEXT_TOOLTIP_KEY;
+        request.from = labeled ? "" : request.name;
+    }
+    if (ui_text_format(&request, out, draw_unit_limit) != UI_TEXT_FORMAT_READY)
+        out[0] = '\0';
+}
+
 static void part_tooltip(const struct folio_window *_Nonnull self, enum accessible_kind kind,
                          char *_Nonnull out)
 {
+    enum accessible_kind parent = accessible_controls[kind].parent;
+    if (parent == ACCESSIBLE_MODE_GROUP || parent == ACCESSIBLE_ACTION_GROUP)
+    {
+        note_action_tooltip(self, kind, out);
+        return;
+    }
     if (kind == ACCESSIBLE_SPLITTER)
     {
         splitter_tooltip(self, out);
@@ -8833,29 +8877,12 @@ static void part_tooltip(const struct folio_window *_Nonnull self, enum accessib
         new_note_destination(self, out);
         return;
     }
-    enum folio_language language = folio_state_language(self->state);
-    const char *key = part_shortcut(kind, language);
-    bool labeled = part_labeled(self, kind);
     if (kind == ACCESSIBLE_HELP)
     {
-        help_tooltip(language, out);
+        help_tooltip(folio_state_language(self->state), out);
         return;
     }
-    struct ui_text_request request = {
-        .id = labeled ? UI_TEXT_TOOLTIP_KEY : UI_TEXT_TOOLTIP_NAMED_KEY,
-        .language = language,
-        .name = ui_text_line(part_label(self, kind), language),
-        .from = key,
-        .to = labeled ? ui_text_line(accessible_controls[kind].hint, language) : ""};
-    if (key[0] == '\0')
-    {
-        request.id = UI_TEXT_TOOLTIP_KEY;
-        request.from = labeled ? "" : request.name;
-    }
-    if (ui_text_format(&request, out, draw_unit_limit) != UI_TEXT_FORMAT_READY)
-    {
-        out[0] = '\0';
-    }
+    labeled_part_tooltip(self, kind, out);
 }
 
 static LRESULT tooltip_display(struct folio_window *_Nonnull self, LPARAM lparam)
@@ -10745,7 +10772,7 @@ static void dismiss_command_if_focus_moved(struct folio_window *_Nonnull self)
     }
 }
 
-static bool layout_shortcut_allowed(const struct folio_window *_Nonnull self)
+static bool content_shortcut_allowed(const struct folio_window *_Nonnull self)
 {
     if (settings_surface(self) || self->removal_running || !IsWindowEnabled(self->handle) ||
         self->root_composing || self->command_composing || self->filter_composing ||
@@ -10759,6 +10786,35 @@ static bool layout_shortcut_allowed(const struct folio_window *_Nonnull self)
                                 (pane != nullptr && focus == pane) || command_owns(self, focus));
 }
 
+static bool note_shortcut_allowed(const struct folio_window *_Nonnull self)
+{
+    return content_shortcut_allowed(self) && document_open(self) && self->native_modal_depth == 0 &&
+           !session_busy(self) && !pane_streaming(self) && self->close_phase == CLOSE_PHASE_IDLE;
+}
+
+static void toggle_mode_shortcut(struct folio_window *_Nonnull self)
+{
+    if (!note_shortcut_allowed(self))
+        return;
+    switch (folio_state_pane_mode(self->state))
+    {
+    case PANE_MODE_VIEW:
+        execute_command(self, FOLIO_COMMAND_EDIT, "");
+        return;
+    case PANE_MODE_EDIT:
+        execute_command(self, FOLIO_COMMAND_VIEW, "");
+        return;
+    }
+}
+
+static void operations_shortcut(struct folio_window *_Nonnull self)
+{
+    if (!note_shortcut_allowed(self) || !accessible_visible(self, ACCESSIBLE_MENU))
+        return;
+    show_focus_cues(self, true);
+    show_part_menu(self, ACCESSIBLE_MENU);
+}
+
 static void run_shortcut(struct folio_window *_Nonnull self,
                          const struct folio_shortcut *_Nonnull binding)
 {
@@ -10768,10 +10824,16 @@ static void run_shortcut(struct folio_window *_Nonnull self,
     {
         enum folio_command command = folio_shortcut_command(binding);
         if (folio_command_scope(command) != FOLIO_COMMAND_SCOPE_LAYOUT ||
-            layout_shortcut_allowed(self))
+            content_shortcut_allowed(self))
             execute_command(self, command, "");
         return;
     }
+    case FOLIO_SHORTCUT_ACTION_TOGGLE_MODE:
+        toggle_mode_shortcut(self);
+        return;
+    case FOLIO_SHORTCUT_ACTION_OPERATIONS:
+        operations_shortcut(self);
+        return;
     case FOLIO_SHORTCUT_ACTION_CONTEXT_MENU:
         if (self->drawer != nullptr)
             drawer_window_context_menu(self->drawer);
@@ -11302,6 +11364,10 @@ static WORD shortcut_virtual_key(enum folio_shortcut_key key)
         return 'P';
     case FOLIO_SHORTCUT_KEY_F:
         return 'F';
+    case FOLIO_SHORTCUT_KEY_E:
+        return 'E';
+    case FOLIO_SHORTCUT_KEY_M:
+        return 'M';
     case FOLIO_SHORTCUT_KEY_ONE:
         return '1';
     case FOLIO_SHORTCUT_KEY_TWO:
@@ -11497,11 +11563,44 @@ static bool translate_menu_system_key(const struct folio_window *_Nonnull window
     return false;
 }
 
+static BYTE pressed_shortcut_modifiers(void)
+{
+    BYTE modifiers = FVIRTKEY;
+    if (GetKeyState(VK_CONTROL) < 0)
+        modifiers |= FCONTROL;
+    if (GetKeyState(VK_SHIFT) < 0)
+        modifiers |= FSHIFT;
+    if (GetKeyState(VK_MENU) < 0)
+        modifiers |= FALT;
+    return modifiers;
+}
+
+/* mode/menuは最初のkeydownだけ。繰返しbitはmessageから借り、押下状態を複製しない。 */
+static bool repeated_note_shortcut(const MSG *_Nonnull message)
+{
+    if (message->message != WM_KEYDOWN || (message->lParam & ((LPARAM)1 << 30)) == 0)
+        return false;
+    BYTE modifiers = pressed_shortcut_modifiers();
+    for (size_t at = 0; at < folio_shortcut_count(); ++at)
+    {
+        const struct folio_shortcut *binding = folio_shortcut_at(at);
+        enum folio_shortcut_action action = folio_shortcut_action(binding);
+        if ((action == FOLIO_SHORTCUT_ACTION_TOGGLE_MODE ||
+             action == FOLIO_SHORTCUT_ACTION_OPERATIONS) &&
+            message->wParam == shortcut_virtual_key(folio_shortcut_key(binding)) &&
+            modifiers == shortcut_virtual_modifiers(folio_shortcut_modifiers(binding)))
+            return true;
+    }
+    return false;
+}
+
 static bool translate_command_shortcut(const struct folio_window *_Nonnull window,
                                        const MSG *_Nonnull message)
 {
     if (command_target(window, message->hwnd))
     {
+        if (repeated_note_shortcut(message))
+            return true;
         MSG translated = *message;
         if (TranslateAcceleratorW(window->handle, window->commands, &translated) != 0)
         {
@@ -13037,6 +13136,10 @@ static void accessible_details(const struct folio_window *_Nonnull self, enum ac
 /* AcceleratorKey は tooltip と同じキーの文言から写す（ADR0060 の決定 5）。out は 64 単位。 */
 static const char *_Nonnull part_shortcut(enum accessible_kind kind, enum folio_language language)
 {
+    if (kind == ACCESSIBLE_VIEW || kind == ACCESSIBLE_EDIT)
+        return folio_shortcut_action_hint(FOLIO_SHORTCUT_ACTION_TOGGLE_MODE, language);
+    if (kind == ACCESSIBLE_MENU)
+        return folio_shortcut_action_hint(FOLIO_SHORTCUT_ACTION_OPERATIONS, language);
     enum folio_command command = FOLIO_COMMAND_HELP;
     if (kind == ACCESSIBLE_CLOSE)
         command = FOLIO_COMMAND_QUIT;

@@ -197,6 +197,8 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_TOOLTIP_KEY] = "{from}{to}",
     [UI_TEXT_TOOLTIP_OPERATIONS] = "このノートの操作",
     [UI_TEXT_TOOLTIP_EDIT] = "本文の編集を始める",
+    [UI_TEXT_TOOLTIP_TOGGLE_MODE] = "閲覧・編集を切り替える",
+    [UI_TEXT_TOOLTIP_DESCRIPTION_KEY] = "{name} ({from})",
     [UI_TEXT_KEY_NEW] = "Ctrl+N",
     [UI_TEXT_KEY_SAVE] = "Ctrl+S",
     [UI_TEXT_KEY_HELP] = "F1",
@@ -223,6 +225,8 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_HELP_BODY_ZOOM] = "本文  Ctrl+ホイール / Ctrl++ / Ctrl+- 拡大縮小 / Ctrl+0 100%",
     [UI_TEXT_HELP_GLOBAL_KEYS] = "全区画  {name} ヘルプ / {from} 一覧 / {to} このノート内を検索",
     [UI_TEXT_HELP_GLOBAL_FILTER] = "全区画  {name} すべてのノートを検索（索引を絞り込む）",
+    [UI_TEXT_HELP_NOTE_ACTIONS] =
+        "ノート  {name} 閲覧・編集を切り替え（閲覧へ戻るとき保存） / {from} 操作メニュー",
     [UI_TEXT_HELP_FILTER_FIELD] =
         "絞り込み欄  Esc・Enter 索引へ戻る（絞り込みは残る）/ 空にすると解除",
     [UI_TEXT_HELP_FILTER_LIMITS] =
@@ -365,6 +369,8 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_KEY_SAVE_AS] = "Ctrl+Shift+S",
     [UI_TEXT_KEY_RENAME] = "F2",
     [UI_TEXT_KEY_PALETTE] = "Ctrl+P",
+    [UI_TEXT_KEY_TOGGLE_MODE] = "Ctrl+E",
+    [UI_TEXT_KEY_OPERATIONS] = "Ctrl+M",
     [UI_TEXT_KEY_FILTER] = "Ctrl+Shift+F",
     [UI_TEXT_KEY_SEARCH_FORWARD] = "F3",
     [UI_TEXT_KEY_SEARCH_BACKWARD] = "Shift+F3",

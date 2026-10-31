@@ -25,6 +25,10 @@ static const struct folio_shortcut bindings[] = {
      FOLIO_SHORTCUT_MOD_CONTROL, FOLIO_SHORTCUT_CHARACTER, UI_TEXT_KEY_PALETTE},
     {FOLIO_SHORTCUT_ACTION_COMMAND, FOLIO_COMMAND_FIND, FOLIO_SHORTCUT_KEY_F,
      FOLIO_SHORTCUT_MOD_CONTROL, FOLIO_SHORTCUT_HACCEL, UI_TEXT_KEY_FIND},
+    {FOLIO_SHORTCUT_ACTION_TOGGLE_MODE, FOLIO_COMMAND_EDIT, FOLIO_SHORTCUT_KEY_E,
+     FOLIO_SHORTCUT_MOD_CONTROL, FOLIO_SHORTCUT_HACCEL, UI_TEXT_KEY_TOGGLE_MODE},
+    {FOLIO_SHORTCUT_ACTION_OPERATIONS, FOLIO_COMMAND_HELP, FOLIO_SHORTCUT_KEY_M,
+     FOLIO_SHORTCUT_MOD_CONTROL, FOLIO_SHORTCUT_HACCEL, UI_TEXT_KEY_OPERATIONS},
     {FOLIO_SHORTCUT_ACTION_COMMAND, FOLIO_COMMAND_SAVE_AS, FOLIO_SHORTCUT_KEY_S,
      FOLIO_SHORTCUT_MOD_CONTROL_SHIFT, FOLIO_SHORTCUT_HACCEL, UI_TEXT_KEY_SAVE_AS},
     {FOLIO_SHORTCUT_ACTION_COMMAND, FOLIO_COMMAND_RENAME, FOLIO_SHORTCUT_KEY_F2,
@@ -92,8 +96,8 @@ const char *_Nonnull folio_shortcut_command_hint(enum folio_command command,
     return folio_command_alias_count(command) > 0 ? folio_command_alias(command, 0) : "";
 }
 
-static const char *_Nonnull shortcut_action_label(enum folio_shortcut_action action,
-                                                  enum folio_language language)
+const char *_Nonnull folio_shortcut_action_hint(enum folio_shortcut_action action,
+                                                enum folio_language language)
 {
     for (size_t at = 0; at < folio_shortcut_count(); ++at)
         if (bindings[at].action == action)
@@ -111,7 +115,12 @@ static struct ui_text_request shortcut_help_request(enum ui_text id, enum folio_
         request.to = folio_shortcut_command_hint(FOLIO_COMMAND_FIND, language);
     }
     if (id == UI_TEXT_HELP_GLOBAL_FILTER)
-        request.name = shortcut_action_label(FOLIO_SHORTCUT_ACTION_FILTER, language);
+        request.name = folio_shortcut_action_hint(FOLIO_SHORTCUT_ACTION_FILTER, language);
+    if (id == UI_TEXT_HELP_NOTE_ACTIONS)
+    {
+        request.name = folio_shortcut_action_hint(FOLIO_SHORTCUT_ACTION_TOGGLE_MODE, language);
+        request.from = folio_shortcut_action_hint(FOLIO_SHORTCUT_ACTION_OPERATIONS, language);
+    }
     if (id == UI_TEXT_HELP_FILE_KEYS)
     {
         request.name = folio_shortcut_command_hint(FOLIO_COMMAND_NEW, language);
@@ -120,14 +129,14 @@ static struct ui_text_request shortcut_help_request(enum ui_text id, enum folio_
     }
     if (id == UI_TEXT_HELP_SEARCH_STEP || id == UI_TEXT_HELP_SEARCH_FIELD)
     {
-        request.name = shortcut_action_label(id == UI_TEXT_HELP_SEARCH_STEP
-                                                 ? FOLIO_SHORTCUT_ACTION_SEARCH_FORWARD
-                                                 : FOLIO_SHORTCUT_ACTION_SEARCH_NEXT,
-                                             language);
-        request.from = shortcut_action_label(id == UI_TEXT_HELP_SEARCH_STEP
-                                                 ? FOLIO_SHORTCUT_ACTION_SEARCH_BACKWARD
-                                                 : FOLIO_SHORTCUT_ACTION_SEARCH_PREVIOUS,
-                                             language);
+        request.name = folio_shortcut_action_hint(id == UI_TEXT_HELP_SEARCH_STEP
+                                                      ? FOLIO_SHORTCUT_ACTION_SEARCH_FORWARD
+                                                      : FOLIO_SHORTCUT_ACTION_SEARCH_NEXT,
+                                                  language);
+        request.from = folio_shortcut_action_hint(id == UI_TEXT_HELP_SEARCH_STEP
+                                                      ? FOLIO_SHORTCUT_ACTION_SEARCH_BACKWARD
+                                                      : FOLIO_SHORTCUT_ACTION_SEARCH_PREVIOUS,
+                                                  language);
     }
     return request;
 }
