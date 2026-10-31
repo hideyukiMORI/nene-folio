@@ -1076,6 +1076,10 @@ static LRESULT drawer_message(struct drawer_window *_Nonnull self, UINT message,
     case WM_PAINT:
         paint(self);
         return 0;
+    case WM_SIZE:
+        /* 幅依存の検索枠・右寄せ操作・fadeを古い位置に残さない（#475）。 */
+        InvalidateRect(self->handle, nullptr, FALSE);
+        return 0;
     case WM_ERASEBKGND:
         return 1;
     case WM_LBUTTONDOWN:

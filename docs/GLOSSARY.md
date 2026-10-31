@@ -24,6 +24,7 @@
 | ドロワー（drawer） | 左のペイン。検索窓と索引。自前描画・スクロールバー無し | `src/ui/win32` |
 | ビュー（view）／編集（edit） | 右のペインの 2 つのモード。閉じた enum。ノートを切り替えても保たれ、閲覧へ戻すのは「閲覧」の札と窓を閉じる操作だけ | `enum pane_mode`（application）・ADR 0013 |
 | 表示モード（layout mode） | 一覧／両方／ノートの可視領域。閲覧／編集とは独立し、切替だけでは保存しない。一覧は窓を細くし、戻すと直前の広い幅または最大化へ復元する。実行中だけの状態 | `enum folio_layout_mode`（core）・`folio_state_layout_mode`（application）・ADR0047 |
+| 一覧幅（drawer width） | 両表示で実行中だけ保持するlogical幅。窓縮小では実幅だけを制限し、表示切替でも選択幅を保持する | `folio_window`（ui/win32）・ADR0076 |
 | 名前入力面（name prompt） | 保存・改名・カテゴリ作成で名前を受けるnativeモーダル。無題から離れる種別は保存／保存しない／キャンセルを持つ。`dialog_theme` と `ui_part` の共通外形・状態描画を使い、保存先は通常4行・小窓2行の一覧、改名先カテゴリはコピー可能なreadonly欄 | `name_prompt_show`（ui/win32）・ADR0035/0050/0060（決定22〜23） |
 | 失敗の箱（failure box） | 「知らせて戻る」だけのnativeモーダル。applicationの失敗理由と操作名を、名前入力面と同じ共通外形で見せる。三角の印・表示時のUIA通知を持ち、警告音はI/O失敗だけ。中立の「閉じる」で戻り、作れないときだけ `MessageBoxW` へ退避 | `failure_box_show`（ui/win32）・ADR0035/0060（決定24） |
 | native面の所有境界（modal owner） | 同期DialogBox・色選択・OS退避のownerを束ねる主窓所有の非表示資源。内容操作を止めても主窓の移動・終了要求を残す。入れ子は現在のnative面がownerになる | `modal_owner` / `folio_window`（ui/win32）・ADR0064 |

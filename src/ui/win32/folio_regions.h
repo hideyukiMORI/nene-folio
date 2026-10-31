@@ -8,6 +8,7 @@ struct folio_regions
 {
     RECT header;
     RECT drawer;
+    RECT splitter;
     RECT pane;
 };
 

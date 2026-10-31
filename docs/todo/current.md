@@ -1,18 +1,19 @@
 # いまの状態 — NeNe Folio
 
-## 最新の個別修正 — 本文ホイール #473
+## 最新の個別修正 — 一覧の残像と境界幅 #475
 
-hideの高速wheel後も端まで動き続ける指摘を受け、[#473](https://github.com/hideyukiMORI/nene-folio/issues/473)で
-編集/閲覧の通常wheelを240msの減速へ集約した。未消化量を1画面以内にし、逆転/別操作で捨てる。
-nativeのwheel慣性へ重ねて渡さず、本文・選択・実位置は同じRichEditが所有する。
-同一fixtureで修正前90checks/20fail、修正後90checks/0fail。正典Debug/tidy、表/倍率等の境界24checksも成功した。
-有限burst後の停止は修正前4688〜4812ms、修正後234〜250msの一回観測。一般性能の保証ではない。
-物理wheel・実reader・DWM呈示は未確認。[品質記録](../quality/2026-10-31-body-wheel.md)、ADR0026/0067補正を参照。Waivers none。
-最終head必須CI・main・通常exe版/hash/起動・保全整理は
-`D:/NeNeFolio/agents/body-wheel-20261031/integration-completion.json`で確定する。
-通常版は00:52時点で起動中だったため保存・終了を依頼した。起動中のexeは更新しない。
-#471/PR472はheadaa37de5・必須CI41070341287成功でmain40dc7c4へ統合・通常反映/起動済み。
-同taskの9200files全hash保全・worktree削除後、output削除が拒否され旧保持は54箇所となった。
+hideの一覧のみresizeで残像が出る報告を受け、[#475](https://github.com/hideyukiMORI/nene-folio/issues/475)で
+一覧WM_SIZEの全面再描画を修復し、両表示の境界drag・キー・UIA RangeValueを同じ配置へ集約した。
+初期幅240・一覧最小200・本文最小320 logical px。選択幅は実行中だけ保持し、窓縮小/表示切替で失わない。
+同じ残像fixtureで10checks/5fail→10checks/0fail。最終候補の幅操作/表/端/連続変更は146checks/0fail、Debug/tidyも成功した。
+本文・選択・実UndoRedo・dirty・論理行・focusと索引位置を保持する。
+物理drag・異なるDPI間移動・実reader/DWM呈示は未確認。[品質記録](../quality/2026-10-31-drawer-resize.md)とADR0076を参照。Waivers none。
+最終head必須CI・main・通常exe版/hash/反映/起動・保全整理は
+`D:/NeNeFolio/agents/drawer-resize-20261031/integration-completion.json`で確定する。
+12:26時点で通常版は停止済み。起動中なら更新せず、保存/終了を待つ。
+#473/PR474はhead8800069・必須CI41085456962成功でmain8bde75cへ統合・通常反映/起動済み。
+ホイールの感触はhideが受理済み。10562files全hash保全・worktree削除後、output削除が拒否され旧保持は55箇所となった。
+今回hideはテーマ選択も受理し、窓のresizeは自然と確認した。
 最新の[日報](../reports/2026-10-31.md)・[引き継ぎ](../handoffs/2026-10-31.md)を参照する。
 停止済み継続goalと#466は再開しない。#467/PR468もmain66523e3で統合済み。
 
@@ -57,9 +58,9 @@ Waivers none。
 ## 通常exeとhideの実機確認
 
 hide受理済み合成サンプル`data/サンプル/Markdown構文サンプル.md`は通常dataへ残している。実ノート内容は記録・同梱しない。
-今回修正前の通常`C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`はsource `40dc7c4`・表示版0.3.0/Windows版0.3.0.0。
-10月30日23:55に正規反映・起動済み。#473の反映は通常版の保存・終了を確認して行う。
-最新の版・hash・反映/起動状態は`D:/NeNeFolio/agents/body-wheel-20261031/integration-completion.json`を参照する。
+今回修正前の通常`C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`はsource `8bde75c`・表示版0.3.0/Windows版0.3.0.0。
+#475の必要反映は通常版の停止を確認して行う。
+最新の版・hash・反映/起動状態は`D:/NeNeFolio/agents/drawer-resize-20261031/integration-completion.json`を参照する。
 通常dataは操作していない。
 
 ## 次の予定: ノートの保存先設定（未実装）
@@ -81,7 +82,9 @@ portable版はexe隣の`data`を既定とし、両方とも設定から「ノー
 
 ## 保持中の旧作業物
 
-下記の54箇所は自動承認レビューの削除拒否により保持する。再試行や別手段での削除をしない。
+下記の55箇所は自動承認レビューの削除拒否により保持する。再試行や別手段での削除をしない。
+
+- #473: `D:/NeNeFolio/outputs/473-body-wheel`。統合・通常反映・hide実機受理・10562files/2648555819bytes全hash保全と安全監査後、出力削除が実行前`blocked by policy`で拒否された。追加理由なし。worktree削除済み、branch/commit保持。確定原本は`agents/body-wheel-20261031/integration-completion.json`。
 
 - #471: `D:/NeNeFolio/outputs/471-theme-selection`。統合・通常反映・9200files/2633818332bytes全hash保全と安全監査後、出力削除が実行前`blocked by policy`で拒否された。追加理由なし。worktree削除済み、branch/commit保持。確定原本は`agents/theme-selection-20261030/integration-completion.json`。
 

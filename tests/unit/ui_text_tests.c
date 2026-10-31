@@ -34,6 +34,10 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_ACCESSIBLE_PANE_TOOLS] = "本文の操作帯",
     [UI_TEXT_ACCESSIBLE_MODE] = "ノートのモード",
     [UI_TEXT_ACCESSIBLE_BODY] = "ノート本文",
+    [UI_TEXT_DRAWER_WIDTH] = "一覧の幅",
+    [UI_TEXT_DRAWER_WIDTH_HELP] = "境界をドラッグして幅を調整。F6で一覧、Tabで境界へ。左右キーで微"
+                                  "調整、PageUp/PageDownで大きく移動、Home/Endで最小/"
+                                  "最大。ドラッグ中のEscで取消。幅は起動中だけ保持します。",
     [UI_TEXT_ACCESSIBLE_NAMED_BODY] = "{name} — ノート本文",
     [UI_TEXT_HELP_ACCESSIBILITY] = "F6 / Shift+F6 区画の移動 · Tab / Shift+Tab 区画内の移動",
     [UI_TEXT_EMPTY] = "",

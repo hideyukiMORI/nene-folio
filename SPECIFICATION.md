@@ -21,6 +21,9 @@
 表示は一覧／両方／ノートを切り替えられる（FR-039 / [ADR0047](docs/adr/0047-three-layout-modes.md)）。
 3択を外枠なしの選択群にまとめ、Ctrl+Shift+1/2/3と説明を備える（[ADR0048](docs/adr/0048-layout-controls-and-native-tooltips.md)）。
 これは閲覧／編集とは別で、切替だけでは保存しない。一覧は窓も細くし、他の表示へ戻すと直前の広い幅を復元する。
+両方では境界のドラッグ、一覧区画内のTabからのキー操作、UIA RangeValueで一覧幅を調整できる（#475 / [ADR0076](docs/adr/0076-adjustable-drawer-width.md)）。
+初期240・一覧最小200・本文最小320 logical px。選んだ幅は実行中だけ保持し、窓縮小時の制限と表示切替では失わない。
+幅変更だけでは保存・本文再投入を行わず、本文・選択・Undo・dirty・可視論理行と索引の位置を保つ。
 
 | ID | 要件 | 備考 |
 | --- | --- | --- |

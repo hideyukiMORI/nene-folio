@@ -100,6 +100,7 @@
 | UIAの行layout cache | 既存描画layoutから導く可視行と矩形 | ui/win32（`drawer_window`） | applicationのlayout改訂・DPI・寸法で無効化する。選択・focus・スクロールは現在値を参照する（ADR0056） |
 | 表示モード（一覧／両方／ノート） | `folio_layout_mode`の閉じたenum。実行中だけの可視領域 | application（`folio_state`） | 共通コマンドの表示切替の意図。保存や本文再投入を伴わない（ADR0047） |
 | 一覧窓からの復元寸法 | 直前の広い通常幅・最大化と通常位置 | ui/win32（`folio_window`） | 一覧へ入るときだけ退避し、両方／ノートへ戻すときに適用するUI一時状態（ADR0047） |
+| 両表示の一覧幅 | 実行中に選んだlogical幅と、capture中だけの取消先/offset | ui/win32（`folio_window`） | pointer・鍵・UIAの幅適用から同じregions/arrangeへ渡す。窓縮小では実幅だけを制限し、選択幅を保持する（ADR0076） |
 | 上部の操作説明 | 標準tooltipのHWND・矩形登録・固定UTF-16表示buffer | ui/win32（`folio_window`） | 同じボタン矩形とui_textを参照し、resize/DPI/言語/テーマ・modal境界に追従する。表示状態や文書の別所有者にはしない（ADR0048） |
 | 表示キーのIME抑止 | 主窓・入力欄・本文の変換中状態 | ui/win32（各入力窓の所有者） | WM_IME_STARTCOMPOSITION/ENDCOMPOSITIONから追跡し、表示キーの実行前に確認する。通常のIME処理は維持する（ADR0048） |
 | 編集中の本文 | 保存前の文字列 | ui/win32（RichEdit が所有） | 保存の意図で application へ渡す |
