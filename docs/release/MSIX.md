@@ -36,6 +36,16 @@ Storeページの説明・画像・プライバシーポリシー・サポート
 
 関連: [ADR0080](../adr/0080-store-msix-through-release-pipeline.md)、[保存先ADR0077](../adr/0077-note-storage-location.md)。
 
+## 1.0.0候補の実測（2026-11-01 / #486）
+
+テスト署名した別コピーで実インストール、初回確認/取消、合成ノートの保存/再起動、
+同一binaryの版違いfixtureからのOS更新、削除後のD側データ保持を確認した。
+試験packageと一時証明書の信頼は解除済み。提出原本のhashは変更していない。
+WACKは総合WARNING（22 PASS、任意88 FAIL、必須92 WARNING）で、全合格ではない。
+検出箇所のフォント構造/HTTP・HTTPS起動経路と、実package窓のPerMonitorV2を別に確認した。
+[実測・警告・未確認範囲](../quality/2026-11-01-msix-installation.md)を参照する。
+3言語の掲載欄とpackage validationは完了したが、認定提出・Store公開は別段階として残る。
+
 一次資料: [MSIX要件と署名](https://learn.microsoft.com/en-us/windows/apps/publish/publish-your-app/msix/app-package-requirements)、
 [SDK MakeAppx](https://learn.microsoft.com/en-us/windows/msix/package/create-app-package-with-makeappx-tool)、
 [保存先と仮想化](https://learn.microsoft.com/en-us/windows/msix/desktop/desktop-to-uwp-behind-the-scenes)。
