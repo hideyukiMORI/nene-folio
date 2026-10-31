@@ -37,6 +37,7 @@ enum accessible_kind accessible_item_host(struct accessible_item item)
     case ACCESSIBLE_NOTE:
         return ACCESSIBLE_DRAWER;
     case ACCESSIBLE_WINDOW:
+    case ACCESSIBLE_SPLITTER:
     case ACCESSIBLE_HEADER:
     case ACCESSIBLE_NEW_NOTE:
     case ACCESSIBLE_LAYOUT_GROUP:

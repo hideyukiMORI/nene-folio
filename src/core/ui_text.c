@@ -23,6 +23,16 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
     [UI_TEXT_ACCESSIBLE_PANE_TOOLS] = {"本文の操作帯", "Note toolbar", "笔记工具栏"},
     [UI_TEXT_ACCESSIBLE_MODE] = {"ノートのモード", "Note mode", "笔记模式"},
     [UI_TEXT_ACCESSIBLE_BODY] = {"ノート本文", "Note body", "笔记正文"},
+    [UI_TEXT_DRAWER_WIDTH] = {"一覧の幅", "List width", "列表宽度"},
+    [UI_TEXT_DRAWER_WIDTH_HELP] =
+        {"境界をドラッグして幅を調整。F6で一覧、Tabで境界へ。左右キーで微調整、PageUp/"
+         "PageDownで大きく移動、Home/Endで最小/"
+         "最大。ドラッグ中のEscで取消。幅は起動中だけ保持します。",
+         "Drag the boundary to resize. Use F6 for the list and Tab for the boundary. Left/Right "
+         "adjust the width; PageUp/PageDown take larger steps; Home/End reach the minimum/maximum. "
+         "Esc cancels a drag. The width is kept for this session.",
+         "拖动边界调整宽度。用F6进入列表，Tab移至边界。左右键微调，PageUp/PageDown大幅调整，Home/"
+         "End设为最小/最大。拖动时按Esc取消。宽度仅在本次运行期间保留。"},
     [UI_TEXT_ACCESSIBLE_NAMED_BODY] = {"{name} — ノート本文", "{name} — Note body",
                                        "{name} — 笔记正文"},
     [UI_TEXT_HELP_ACCESSIBILITY] =

@@ -29,6 +29,11 @@ struct accessible_view
     int scroll;
     int scroll_limit;
     int viewport;
+    int width_value;
+    int width_minimum;
+    int width_maximum;
+    int width_small_change;
+    int width_large_change;
 };
 
 #endif

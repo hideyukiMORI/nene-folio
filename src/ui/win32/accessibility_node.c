@@ -28,6 +28,7 @@ struct accessibility_node
     IScrollProvider scroll;
     IScrollItemProvider scroll_item;
     IToggleProvider toggle;
+    IRangeValueProvider width;
     LONG references;
     struct accessibility_host *_Nonnull host;
     struct accessible_item item;
@@ -140,6 +141,12 @@ static struct accessibility_node *_Nonnull toggle_owner(IToggleProvider *_Nonnul
                                          offsetof(struct accessibility_node, toggle));
 }
 
+static struct accessibility_node *_Nonnull width_owner(IRangeValueProvider *_Nonnull value)
+{
+    return (struct accessibility_node *)((char *)value -
+                                         offsetof(struct accessibility_node, width));
+}
+
 static HRESULT read_view(struct accessibility_node *_Nonnull node,
                          struct accessible_view *_Nonnull out)
 {
@@ -183,7 +190,8 @@ static void *_Nullable pattern_interface(struct accessibility_node *_Nonnull nod
                     {&IID_IExpandCollapseProvider, UIA_ExpandCollapsePatternId},
                     {&IID_IScrollProvider, UIA_ScrollPatternId},
                     {&IID_IScrollItemProvider, UIA_ScrollItemPatternId},
-                    {&IID_IToggleProvider, UIA_TogglePatternId}};
+                    {&IID_IToggleProvider, UIA_TogglePatternId},
+                    {&IID_IRangeValueProvider, UIA_RangeValuePatternId}};
     for (size_t index = 0; index < sizeof patterns / sizeof patterns[0]; ++index)
     {
         if (IsEqualIID(id, patterns[index].id))
@@ -285,7 +293,8 @@ static IUnknown *_Nullable pattern_for(struct accessibility_node *_Nonnull node,
         {UIA_ExpandCollapsePatternId, (IUnknown *)&node->expand, has_expand(kind)},
         {UIA_ScrollPatternId, (IUnknown *)&node->scroll, has_scroll(kind)},
         {UIA_ScrollItemPatternId, (IUnknown *)&node->scroll_item, has_scroll_item(node->item)},
-        {UIA_TogglePatternId, (IUnknown *)&node->toggle, kind == ACCESSIBLE_SURFACE_TOGGLE}};
+        {UIA_TogglePatternId, (IUnknown *)&node->toggle, kind == ACCESSIBLE_SURFACE_TOGGLE},
+        {UIA_RangeValuePatternId, (IUnknown *)&node->width, kind == ACCESSIBLE_SPLITTER}};
     for (size_t index = 0; index < sizeof patterns / sizeof patterns[0]; ++index)
     {
         if (patterns[index].id == id && patterns[index].supported)
@@ -318,6 +327,7 @@ static HRESULT STDMETHODCALLTYPE simple_pattern(IRawElementProviderSimple *_Nonn
 static const CONTROLTYPEID control_types[] = {
     [ACCESSIBLE_WINDOW] = UIA_WindowControlTypeId,
     [ACCESSIBLE_DRAWER] = UIA_GroupControlTypeId,
+    [ACCESSIBLE_SPLITTER] = UIA_SliderControlTypeId,
     [ACCESSIBLE_HEADER] = UIA_ToolBarControlTypeId,
     [ACCESSIBLE_LAYOUT_GROUP] = UIA_GroupControlTypeId,
     [ACCESSIBLE_LAYOUT_DRAWER] = UIA_RadioButtonControlTypeId,
@@ -468,6 +478,12 @@ static HRESULT STDMETHODCALLTYPE simple_property(IRawElementProviderSimple *_Non
             out->lVal = UIA_MenuControlTypeId;
         if (view.menu && node->item.kind == ACCESSIBLE_SURFACE_CHOICE)
             out->lVal = UIA_MenuItemControlTypeId;
+        return S_OK;
+    }
+    if (id == UIA_OrientationPropertyId && node->item.kind == ACCESSIBLE_SPLITTER)
+    {
+        out->vt = VT_I4;
+        out->lVal = OrientationType_Horizontal;
         return S_OK;
     }
     return property_value(&view, id, out);
@@ -1191,6 +1207,103 @@ static HRESULT STDMETHODCALLTYPE toggle_get(IToggleProvider *_Nonnull self,
     return result;
 }
 
+static HRESULT STDMETHODCALLTYPE width_query(IRangeValueProvider *_Nonnull self, REFIID id,
+                                             void *_Nullable *_Nullable out)
+{
+    return query(width_owner(self), id, out);
+}
+
+static ULONG STDMETHODCALLTYPE width_add(IRangeValueProvider *_Nonnull self)
+{
+    return add_ref(width_owner(self));
+}
+
+static ULONG STDMETHODCALLTYPE width_release(IRangeValueProvider *_Nonnull self)
+{
+    return release(width_owner(self));
+}
+
+static HRESULT STDMETHODCALLTYPE width_set(IRangeValueProvider *_Nonnull self, double value)
+{
+    struct accessibility_node *_Nonnull node = width_owner(self);
+    struct accessible_view view = {0};
+    HRESULT result = read_view(node, &view);
+    if (FAILED(result))
+        return result;
+    if (!view.enabled)
+        return (HRESULT)UIA_E_ELEMENTNOTENABLED;
+    if (!isfinite(value) || value < view.width_minimum || value > view.width_maximum)
+        return E_INVALIDARG;
+    struct accessible_request request = {.item = node->item,
+                                         .action = ACCESSIBLE_ACTION_SET_WIDTH,
+                                         .drawer_width = (int)(value + 0.5)};
+    return accessibility_host_action(node->host, &request);
+}
+
+static HRESULT STDMETHODCALLTYPE width_value(IRangeValueProvider *_Nonnull self,
+                                             double *_Nonnull out)
+{
+    struct accessible_view view = {0};
+    HRESULT result = read_view(width_owner(self), &view);
+    if (SUCCEEDED(result))
+        *out = view.width_value;
+    return result;
+}
+
+static HRESULT STDMETHODCALLTYPE width_readonly(IRangeValueProvider *_Nonnull self,
+                                                BOOL *_Nonnull out)
+{
+    struct accessible_view view = {0};
+    HRESULT result = read_view(width_owner(self), &view);
+    if (SUCCEEDED(result))
+        *out = !view.enabled;
+    return result;
+}
+
+static HRESULT STDMETHODCALLTYPE width_maximum(IRangeValueProvider *_Nonnull self,
+                                               double *_Nonnull out)
+{
+    struct accessible_view view = {0};
+    HRESULT result = read_view(width_owner(self), &view);
+    if (SUCCEEDED(result))
+        *out = view.width_maximum;
+    return result;
+}
+
+static HRESULT STDMETHODCALLTYPE width_minimum(IRangeValueProvider *_Nonnull self,
+                                               double *_Nonnull out)
+{
+    struct accessible_view view = {0};
+    HRESULT result = read_view(width_owner(self), &view);
+    if (SUCCEEDED(result))
+        *out = view.width_minimum;
+    return result;
+}
+
+static HRESULT STDMETHODCALLTYPE width_large_change(IRangeValueProvider *_Nonnull self,
+                                                    double *_Nonnull out)
+{
+    struct accessible_view view = {0};
+    HRESULT result = read_view(width_owner(self), &view);
+    if (SUCCEEDED(result))
+        *out = view.width_large_change;
+    return result;
+}
+
+static HRESULT STDMETHODCALLTYPE width_small_change(IRangeValueProvider *_Nonnull self,
+                                                    double *_Nonnull out)
+{
+    struct accessible_view view = {0};
+    HRESULT result = read_view(width_owner(self), &view);
+    if (SUCCEEDED(result))
+        *out = view.width_small_change;
+    return result;
+}
+
+static IRangeValueProviderVtbl width_table = {
+    width_query,    width_add,     width_release, width_set,          width_value,
+    width_readonly, width_maximum, width_minimum, width_large_change, width_small_change};
+
 static IToggleProviderVtbl toggle_table = {toggle_query, toggle_add, toggle_release, toggle_run,
                                            toggle_get};
 
@@ -1257,6 +1370,7 @@ HRESULT accessibility_node_create(struct accessibility_host *_Nonnull host,
     node->scroll.lpVtbl = &scroll_table;
     node->scroll_item.lpVtbl = &scroll_item_table;
     node->toggle.lpVtbl = &toggle_table;
+    node->width.lpVtbl = &width_table;
     accessibility_host_add_ref(host);
     *out = node;
     return S_OK;
@@ -1482,6 +1596,20 @@ static void raise_patterns(struct accessibility_node *_Nonnull node,
     }
 }
 
+static void raise_width(struct accessibility_node *_Nonnull node,
+                        const struct accessible_view *_Nonnull before,
+                        const struct accessible_view *_Nonnull after)
+{
+    if (node->item.kind != ACCESSIBLE_SPLITTER)
+        return;
+    raise_number(node, UIA_RangeValueValuePropertyId, before->width_value, after->width_value);
+    raise_number(node, UIA_RangeValueMinimumPropertyId, before->width_minimum,
+                 after->width_minimum);
+    raise_number(node, UIA_RangeValueMaximumPropertyId, before->width_maximum,
+                 after->width_maximum);
+    raise_boolean(node, UIA_RangeValueIsReadOnlyPropertyId, !before->enabled, !after->enabled);
+}
+
 void accessibility_node_refresh(struct accessibility_node *_Nonnull node)
 {
     struct accessible_view view = {0};
@@ -1510,6 +1638,7 @@ void accessibility_node_refresh(struct accessibility_node *_Nonnull node)
     raise_boolean(node, UIA_IsKeyboardFocusablePropertyId, before.focusable, view.focusable);
     raise_boolean(node, UIA_HasKeyboardFocusPropertyId, before.focused, view.focused);
     raise_patterns(node, &before, &view);
+    raise_width(node, &before, &view);
     (void)release(node);
 }
 

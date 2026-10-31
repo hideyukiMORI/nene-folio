@@ -31,6 +31,9 @@ track package validation, saved-data checks, publication, and download verificat
   or Note restores the previous width or maximized state. Switching views keeps unsaved text and Undo.
   The grouped controls also accept Ctrl+Shift+1 / 2 / 3. Tooltips, Actions, the command palette, and Help
   show the shortcuts; they do not switch the layout during IME composition or a modal input.
+  In the current source, drag the boundary in Both view to resize the list. The chosen width is kept
+  for the session, including view switches and temporary window shrinking. F6/Tab reaches the
+  boundary; Left/Right, PageUp/PageDown, and Home/End adjust it. Esc cancels a drag (#475).
 - **The drawer is an index** of `data/<category>/*.md`. Categories fold like an accordion, carry a colour
   and an order, and rows are reordered by drag (notes can move between categories). There is no scrollbar;
   the drawer scrolls by wheel and keys. A search box at the top filters every note by name and body.

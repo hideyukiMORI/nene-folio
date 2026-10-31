@@ -96,6 +96,8 @@ Win32・永続化・ファイル・ネットワークを知らない。
 application が作った値を描き、操作を意図として渡す（ARC-011）。可変性の隔離区画（ARC-005）。
 UIAのCOM寿命は`accessibility_host`、自前要素のABIは`accessibility_node`、native入力の名前注釈は
 `accessibility_native`に集約する。主窓・索引・補助面は同じ公開基盤から既存操作を呼ぶ（ADR0056/0058）。
+両表示の一覧幅も`folio_window`が実行中だけ所有し、境界drag・鍵・UIA RangeValueを同じ配置へ渡す。
+一覧の寸法変更は既存WM_PAINTの全client更新へ合流し、幅ごとの描画経路を作らない（ADR0076）。
 固定UIの派生計測は`folio_window`と`name_prompt_metrics`が入力条件付きで保持する（ADR0063）。
 操作/テーマ候補の対応は主窓所有の`command_candidates`/`theme_candidates`で共有し、描画・hit・鍵・UIAが
 同じ派生列を使う。入力後の可視面の描画は既存通知合流点から既存WM_PAINTへ渡す（ADR0065）。
