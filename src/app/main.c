@@ -2,11 +2,15 @@
  * 出してよいのは「起動できなかった理由」と「起動は続けるが設定を読めなかった知らせ」の 1 行だけ
  * （FR-015 / ADR 0025 の決定 6）。どちらも文言は application が作る。 */
 #include "appearance_adapter.h"
+#include "folio_palette.h"
 #include "folio_state.h"
 #include "folio_window.h"
 #include "font_bundle.h"
 #include "persistence_adapter.h"
 #include "regex_adapter.h"
+#include "storage_adapter.h"
+#include "storage_prompt.h"
+#include "storage_state.h"
 #include "ui_text.h"
 #include "utf16_text.h"
 
@@ -32,7 +36,7 @@ static void report(const char *_Nonnull line)
  * 持ち、ここは対応だけを持つ。全値がちょうど 1 度ずつ並ぶことは CNF-009 が守る。 */
 static const enum ui_text adapter_lines[] = {
     [PERSISTENCE_ADAPTER_CREATED] = UI_TEXT_EMPTY,
-    [PERSISTENCE_ADAPTER_NO_MODULE_PATH] = UI_TEXT_APP_NO_MODULE_PATH,
+    [PERSISTENCE_ADAPTER_INVALID_PATH] = UI_TEXT_STORAGE_INVALID_PATH,
     [PERSISTENCE_ADAPTER_DATA_IN_USE] = UI_TEXT_APP_DATA_IN_USE,
     [PERSISTENCE_ADAPTER_RECOVERY_LOCKED] = UI_TEXT_APP_RECOVERY_LOCKED,
     [PERSISTENCE_ADAPTER_OUT_OF_MEMORY] = UI_TEXT_APP_OUT_OF_MEMORY,
@@ -81,16 +85,11 @@ static void run_message_loop(struct folio_window *_Nonnull window)
 }
 
 /* 状態と窓を作って走らせる。アダプタは状態より長く生きる。 */
-static int run(struct persistence_adapter *_Nonnull persistence,
-               struct appearance_adapter *_Nonnull appearance, struct regex_adapter *_Nonnull regex,
+static int run(const struct folio_ports *_Nonnull ports, struct storage_state *_Nonnull storage,
                enum font_bundle_outcome fonts)
 {
-    struct persistence_port files = persistence_adapter_port(persistence);
-    struct appearance_port looks = appearance_adapter_port(appearance);
-    struct regex_port finder = regex_adapter_port(regex);
-    struct folio_ports ports = {.persistence = &files, .appearance = &looks, .regex = &finder};
     struct folio_state *_Nullable state = nullptr;
-    enum folio_state_outcome loaded = folio_state_create(&ports, &state);
+    enum folio_state_outcome loaded = folio_state_create(ports, &state);
     if (loaded != FOLIO_STATE_READY)
     {
         /* 状態を作れていないので、どの言語で見せるかを尋ねる相手がまだいない（ADR 0030 の補正 7）。
@@ -102,7 +101,7 @@ static int run(struct persistence_adapter *_Nonnull persistence,
      * main は 1 回しか走らないので「見せたか」の真偽はどこにも持たない。 */
     report_initial_notices(state);
     struct folio_window *_Nullable window = nullptr;
-    if (folio_window_create(state, fonts, &window) != FOLIO_WINDOW_CREATED)
+    if (folio_window_create(state, storage, fonts, &window) != FOLIO_WINDOW_CREATED)
     {
         report(ui_text_line(UI_TEXT_APP_NO_WINDOW, folio_state_language(state)));
         folio_state_destroy(state);
@@ -114,6 +113,70 @@ static int run(struct persistence_adapter *_Nonnull persistence,
     return 0;
 }
 
+/* 初回/復旧だけが確認を要求する。色は既存appearance portとcoreの同じ解決経路。 */
+static enum storage_prompt_outcome confirm_storage(struct storage_state *_Nonnull storage,
+                                                   struct appearance_adapter *_Nonnull appearance)
+{
+    if (storage_state_phase(storage) == STORAGE_ACTIVE)
+        return STORAGE_PROMPT_ACCEPTED;
+    struct theme_palette colors = *folio_theme_palette(FOLIO_THEME_LIGHT);
+    struct appearance_port looks = appearance_adapter_port(appearance);
+    struct appearance_snapshot snapshot;
+    if (looks.read(looks.adapter, &snapshot) == APPEARANCE_READY)
+        colors = appearance_snapshot_palette(&snapshot, FOLIO_THEME_CHOICE_SYSTEM);
+    struct folio_palette palette = folio_palette_from(&colors);
+    struct storage_prompt_request request = {.storage = storage, .language = FOLIO_LANGUAGE_JA};
+    return storage_prompt_show(nullptr, &request, &palette);
+}
+
+static int run_from_storage(struct storage_state *_Nonnull storage,
+                            struct appearance_adapter *_Nonnull appearance,
+                            struct regex_adapter *_Nonnull regex, enum font_bundle_outcome fonts)
+{
+    switch (confirm_storage(storage, appearance))
+    {
+    case STORAGE_PROMPT_ACCEPTED:
+        break;
+    case STORAGE_PROMPT_CANCELLED:
+        return 0;
+    case STORAGE_PROMPT_UNAVAILABLE:
+        report(ui_text_line(UI_TEXT_APP_NO_WINDOW, FOLIO_LANGUAGE_JA));
+        return 1;
+    }
+    struct persistence_adapter *_Nullable persistence = nullptr;
+    enum persistence_adapter_outcome created =
+        persistence_adapter_create(storage_state_directory(storage), &persistence);
+    if (created != PERSISTENCE_ADAPTER_CREATED)
+    {
+        report(ui_text_line(adapter_lines[created], FOLIO_LANGUAGE_JA));
+        return 1;
+    }
+    struct persistence_port files = persistence_adapter_port(persistence);
+    struct appearance_port looks = appearance_adapter_port(appearance);
+    struct regex_port finder = regex_adapter_port(regex);
+    struct folio_ports ports = {.persistence = &files, .appearance = &looks, .regex = &finder};
+    int code = run(&ports, storage, fonts);
+    persistence_adapter_destroy(persistence);
+    return code;
+}
+
+static int run_with_storage(struct storage_adapter *_Nonnull adapter,
+                            struct appearance_adapter *_Nonnull appearance,
+                            struct regex_adapter *_Nonnull regex, enum font_bundle_outcome fonts)
+{
+    struct storage_port port = storage_adapter_port(adapter);
+    struct storage_state *_Nullable storage = nullptr;
+    enum storage_outcome loaded = storage_state_create(&port, &storage);
+    if (loaded != STORAGE_READY)
+    {
+        report(storage_state_failure_line(loaded, FOLIO_LANGUAGE_JA));
+        return 1;
+    }
+    int code = run_from_storage(storage, appearance, regex, fonts);
+    storage_state_destroy(storage);
+    return code;
+}
+
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE previous, PWSTR arguments, int show);
 
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE previous, PWSTR arguments, int show)
@@ -122,18 +185,18 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE previous, PWSTR arguments, int
     (void)previous;
     (void)arguments;
     (void)show;
-    struct persistence_adapter *_Nullable adapter = nullptr;
-    enum persistence_adapter_outcome created = persistence_adapter_create(&adapter);
-    if (created != PERSISTENCE_ADAPTER_CREATED)
+    struct storage_adapter *_Nullable adapter = nullptr;
+    enum storage_outcome created = storage_adapter_create(&adapter);
+    if (created != STORAGE_READY)
     {
-        report(ui_text_line(adapter_lines[created], FOLIO_LANGUAGE_JA));
+        report(storage_state_failure_line(created, FOLIO_LANGUAGE_JA));
         return 1;
     }
     struct appearance_adapter *_Nullable appearance = nullptr;
     if (appearance_adapter_create(&appearance) != APPEARANCE_ADAPTER_CREATED)
     {
         report(ui_text_line(UI_TEXT_APP_OUT_OF_MEMORY, FOLIO_LANGUAGE_JA));
-        persistence_adapter_destroy(adapter);
+        storage_adapter_destroy(adapter);
         return 1;
     }
     struct regex_adapter *_Nullable regex = nullptr;
@@ -141,7 +204,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE previous, PWSTR arguments, int
     {
         report(ui_text_line(UI_TEXT_APP_OUT_OF_MEMORY, FOLIO_LANGUAGE_JA));
         appearance_adapter_destroy(appearance);
-        persistence_adapter_destroy(adapter);
+        storage_adapter_destroy(adapter);
         return 1;
     }
     /* 同梱の書体は窓を作る前に登録し、メッセージループのあとに解除する（ADR 0036 の決定 3・
@@ -149,10 +212,10 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE previous, PWSTR arguments, int
      * （決定 5）。 */
     struct font_bundle *_Nullable fonts = nullptr;
     enum font_bundle_outcome bundled = font_bundle_register(&fonts);
-    int code = run(adapter, appearance, regex, bundled);
+    int code = run_with_storage(adapter, appearance, regex, bundled);
     font_bundle_destroy(fonts);
     regex_adapter_destroy(regex);
     appearance_adapter_destroy(appearance);
-    persistence_adapter_destroy(adapter);
+    storage_adapter_destroy(adapter);
     return code;
 }

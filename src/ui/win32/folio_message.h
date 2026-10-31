@@ -50,4 +50,6 @@ constexpr UINT folio_message_pane_zoomed = WM_APP + 19;
 /* 子が覆う点を主窓のresizeへ通せるか同期で問い合わせる。wParamは未使用、lParamはsignedの
  * screen座標。capture中/最大化中/窓縁以外は0、通せるときだけ1。子は寸法を複製しない。 */
 constexpr UINT folio_message_resize_through = WM_APP + 20;
+/* 入れ子のOS面が戻ったとき、既存の終了要求を外側の面の取消へ伝える。状態は主窓だけが持つ。 */
+constexpr UINT folio_message_close_pending = WM_APP + 21;
 #endif

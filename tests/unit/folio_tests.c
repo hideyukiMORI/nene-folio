@@ -369,6 +369,14 @@ static bool run_surface_target_tests(const char *_Nonnull argument)
 
 static bool run_selected_tests(const char *_Nonnull argument)
 {
+    if (strcmp(argument, "--storage-location") == 0)
+    {
+        run_storage_tests();
+        run_storage_state_tests();
+        run_ui_text_tests();
+        printf("storage path, startup codec, state and text tests passed\n");
+        return true;
+    }
     if (strcmp(argument, "--inline-storage-oom") == 0)
     {
         require(run_markdown_inline_storage_allocation_tests() >= 3,
@@ -419,6 +427,8 @@ static bool run_selected_tests(const char *_Nonnull argument)
 
 static void run_full_suite(void)
 {
+    run_storage_tests();
+    run_storage_state_tests();
     run_text_tests();
     run_note_size_text_tests();
     run_size_overflow_tests();

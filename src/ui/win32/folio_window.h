@@ -14,6 +14,7 @@
 #include <windows.h>
 
 struct folio_state;
+struct storage_state;
 struct folio_window;
 /* UIA hostの同期処理（通知・snapshot復元まで）も終了の安全境界へ含める。 */
 void folio_window_begin_dispatch(struct folio_window *_Nonnull self);
@@ -25,8 +26,8 @@ struct accessible_request;
  * fonts は入口が窓を作る前に登録した同梱の書体の結果で、READY 以外なら最初の描画のあとに
  * 失敗の箱を 1 回出す（ADR 0036 の決定 5）。 */
 [[nodiscard]] enum folio_window_outcome
-folio_window_create(struct folio_state *_Nonnull state, enum font_bundle_outcome fonts,
-                    struct folio_window *_Nullable *_Nonnull out);
+folio_window_create(struct folio_state *_Nonnull state, struct storage_state *_Nonnull storage,
+                    enum font_bundle_outcome fonts, struct folio_window *_Nullable *_Nonnull out);
 /* メッセージループのTranslateMessageより前。処理済みの鍵は再dispatchしない。 */
 [[nodiscard]] bool folio_window_translate(const struct folio_window *_Nonnull window,
                                           const MSG *_Nonnull message);

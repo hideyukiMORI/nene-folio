@@ -527,8 +527,9 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
     [UI_TEXT_SETTINGS_GUIDANCE] = {"矢印 / Tab 選択 · Enter / Space 採用 · Esc 閉じる",
                                    "Arrows / Tab select · Enter / Space apply · Esc close",
                                    "方向键 / Tab 选择 · Enter / Space 应用 · Esc 关闭"},
-    [UI_TEXT_SETTINGS_IMMEDIATE] = {"変更はすぐに反映", "Changes apply immediately",
-                                    "更改立即生效"},
+    [UI_TEXT_SETTINGS_IMMEDIATE] = {"保存先の変更は次回起動から反映",
+                                    "Storage changes apply on next launch",
+                                    "保存位置更改将在下次启动时生效"},
     [UI_TEXT_SETTINGS_NUMBER_CHECK] = {"行番号を表示", "Show line numbers", "显示行号"},
     [UI_TEXT_HISTORY_GUIDANCE] = {"1 が最新 / ↑↓ 選択 / Enter 戻す / Esc 閉じる",
                                   "1 is newest / ↑↓ Select / Enter Restore / Esc Close",
@@ -673,6 +674,72 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
     [UI_TEXT_HELP_GROUP_APP] = {"アプリ", "App", "应用"},
     [UI_TEXT_HELP_GROUP_QUIT] = {"終了", "Quit", "退出"},
     [UI_TEXT_MENU_EX_HINT] = {":{name}", ":{name}", ":{name}"},
+    [UI_TEXT_STORAGE_ENTRY] = {"ノートの保存先…", "Note storage…", "笔记保存位置…"},
+    [UI_TEXT_STORAGE_TITLE] = {"ノートの保存先", "Note storage", "笔记保存位置"},
+    [UI_TEXT_STORAGE_CURRENT] = {"現在の保存先", "Current folder", "当前文件夹"},
+    [UI_TEXT_STORAGE_NEXT] = {"次回起動の保存先", "Folder for next launch", "下次启动的文件夹"},
+    [UI_TEXT_STORAGE_FIRST_HINT] = {"ノートを保存するフォルダーを選んでください。",
+                                    "Choose a folder for your notes.", "请选择笔记的保存文件夹。"},
+    [UI_TEXT_STORAGE_RUNTIME_HINT] =
+        {"変更は次回起動から反映します。既存のノートは移動しません。",
+         "Changes take effect on the next launch. Existing notes will stay where they are.",
+         "更改将在下次启动时生效。现有笔记不会被移动。"},
+    [UI_TEXT_STORAGE_BROWSE] = {"参照…", "Browse…", "浏览…"},
+    [UI_TEXT_STORAGE_DEFAULT] = {"既定の場所", "Default folder", "默认文件夹"},
+    [UI_TEXT_STORAGE_ACCEPT] = {"次回から使う", "Use on next launch", "下次启动时使用"},
+    [UI_TEXT_STORAGE_FIRST_ACCEPT] = {"この場所を使う", "Use this folder", "使用此文件夹"},
+    [UI_TEXT_STORAGE_PENDING] = {"保存先の変更は次回起動から有効です。",
+                                 "The new folder will be used on the next launch.",
+                                 "新的保存位置将在下次启动时使用。"},
+    [UI_TEXT_STORAGE_INVALID_PATH] =
+        {"フォルダーの絶対パスを入力してください。相対パスや「..」は使えません。",
+         "Enter an absolute folder path. Relative paths and '..' are not supported.",
+         "请输入文件夹的绝对路径。不支持相对路径和“..”。"},
+    [UI_TEXT_STORAGE_LOCATION_UNAVAILABLE] =
+        {"保存先の初期位置を取得できませんでした。",
+         "The default storage location could not be determined.", "无法获取默认保存位置。"},
+    [UI_TEXT_STORAGE_DIRECTORY_MISSING] =
+        {"保存先が見つかりません。接続を確認するか、使う場所を選んでください。",
+         "The folder is missing. Check its connection or choose another location.",
+         "找不到保存文件夹。请检查连接或选择其他位置。"},
+    [UI_TEXT_STORAGE_DIRECTORY_UNREADABLE] =
+        {"このフォルダーを読み取れません。権限と接続を確認してください。",
+         "This folder cannot be read. Check permissions and the connection.",
+         "无法读取此文件夹。请检查权限和连接。"},
+    [UI_TEXT_STORAGE_DIRECTORY_UNWRITABLE] =
+        {"このフォルダーへ保存できません。書き込み権限と親フォルダーを確認してください。",
+         "This folder is not writable. Check write permissions and its parent folder.",
+         "无法写入此文件夹。请检查写入权限和上级文件夹。"},
+    [UI_TEXT_STORAGE_DIRECTORY_IN_USE] =
+        {"この保存先は別のNeNe Folioが使用中です。閉じてから選び直してください。",
+         "Another NeNe Folio is using this folder. Close it before choosing the folder again.",
+         "另一个NeNe Folio正在使用此文件夹。请先关闭它，再重新选择。"},
+    [UI_TEXT_STORAGE_SETTINGS_UNREADABLE] =
+        {"nenefolio-startup.jsonを読み取れません。起動設定の権限を確認してください。",
+         "nenefolio-startup.json cannot be read. Check its permissions.",
+         "无法读取nenefolio-startup.json。请检查权限。"},
+    [UI_TEXT_STORAGE_SETTINGS_MALFORMED] =
+        {"nenefolio-startup.jsonの形式が不正です。ファイルを保全して修復してください。",
+         "nenefolio-startup.json is invalid. Preserve the file before repairing it.",
+         "nenefolio-startup.json格式无效。请保留文件后再修复。"},
+    [UI_TEXT_STORAGE_SETTINGS_UNSUPPORTED] =
+        {"nenefolio-startup.jsonは未対応の版です。対応する新しいNeNe Folioで開いてください。",
+         "This version of nenefolio-startup.json is not supported. Use a compatible newer NeNe "
+         "Folio.",
+         "不支持此版本的nenefolio-startup.json。请使用兼容的新版NeNe Folio。"},
+    [UI_TEXT_STORAGE_SETTINGS_STORE_FAILED] =
+        {"保存先の設定を書き込めませんでした。以前の設定を保っています。",
+         "The storage setting could not be saved. The previous setting is unchanged.",
+         "无法保存存储设置。原设置未更改。"},
+    [UI_TEXT_STORAGE_SETTINGS_CHANGED] =
+        {"別の起動中アプリが保存先設定を変更しました。上書きせず、再起動して読み直してください。",
+         "Another running instance changed the storage setting. Restart to reload it; it was not "
+         "overwritten.",
+         "另一个实例更改了保存位置。未覆盖该设置，请重启以重新读取。"},
+    [UI_TEXT_STORAGE_PICKER_FAILED] =
+        {"フォルダー選択を開けませんでした。パスを直接入力できます。",
+         "The folder picker could not be opened. You can enter the path directly.",
+         "无法打开文件夹选择窗口。可以直接输入路径。"},
     [UI_TEXT_HELP_RENAME_KEY] = {"{name} / {from} 名前変更", "{name} / {from} Rename",
                                  "{name} / {from} 重命名"},
 

@@ -1,0 +1,10 @@
+#ifndef NENEFOLIO_DATA_LOCK_OUTCOME_H
+#define NENEFOLIO_DATA_LOCK_OUTCOME_H
+enum data_lock_outcome : unsigned char
+{
+    DATA_LOCK_ACQUIRED,
+    DATA_LOCK_IN_USE,
+    DATA_LOCK_UNAVAILABLE,
+    DATA_LOCK_OUT_OF_MEMORY
+};
+#endif
