@@ -1,15 +1,18 @@
 # いまの状態 — NeNe Folio
 
-## Store提出前の実MSIX確認 — #486
+## Store申請済み・認定結果待ち — #488
 
-1.0.0候補を実インストールし、初回確認/取消、合成ノートの保存/再起動、OS更新、削除後の外部データ保持を確認した。
-試験package・一時証明書の信頼登録は解除済み。提出原本は不変、製品変更0、Waivers none。
-WACKは22 PASS・任意88 FAIL・必須92 WARNING、総合WARNING。全合格とは扱わない。
-フォントCFF内の文字列とHTTP/HTTPS起動APIの根拠、実package窓のPerMonitorV2を別に確認した。
-日英簡体字の掲載文/各5枚の画面を準備し、hideの画面で全6欄完了・Validatedを確認。認定提出/公開はまだ。
+hideが1.0.0のSubmission 1を提出し、2026-11-01 00:31:51 JSTの画面で「認定中 / 前処理中」を確認した。
+認定合格後すぐ自動公開する設定。補足文も保存済み。申請済みだが、合格・Store公開は未確認。
+最新証跡は`D:/NeNeFolio/agents/msix-validation-20261031/submission-status.json`。常時監視はしていない。
+#486の実MSIX初回/保存/再起動/OS更新/削除後の外部データ保持は確認済み、試験package・一時信頼・秘密鍵は解除/削除済み。
+WACKは22 PASS・任意88 FAIL・必須92 WARNING、総合WARNING。根拠を添えたが全合格や審査受理とは扱わない。
+#486/PR487は必須CI成功でmain統合済み。254files全hash保全後に追加worktreeと2一時出力を削除し、提出原本と15枚の画像を保持した。
 [品質記録](../quality/2026-11-01-msix-installation.md)・[日報](../reports/2026-11-01.md)・[引き継ぎ](../handoffs/2026-11-01.md)。
-最終CI/main・証跡保全/整理は`D:/NeNeFolio/agents/msix-validation-20261031/integration-completion.json`で確定する。
-AppDataをノートrootに選んだ場合の保持と実Store署名版での導入は未確認。#479/#466と停止済み継続品質改善は再開しない。
+実機確認/整理は同agentsの`integration-completion.json`、今回文書の最終CI/main/整理は
+`D:/NeNeFolio/agents/handoff-20261101/integration-completion.json`で確定する。
+次は認定結果と公開画面の確認。AppDataノートroot保持と実Store署名版導入は未確認。製品変更0、Waivers none。
+#479/#466・停止済み継続品質改善は再開しない。構文色分け等は申請後ではなくStore公開後のhide指示と照合する。
 
 ## 直前のMSIX生成 — #484
 
@@ -21,7 +24,7 @@ hideがStore登録/予約とidentity提供を完了し、初回候補1.0.0と紙
 最終head必須CI・main・clean mainのMSIX候補・hash・保全/終了整理は
 `D:/NeNeFolio/agents/msix-20261031/integration-completion.json`で確定する。
 #486で実MSIXとページ素材の段階を確認した。WACK警告と認定提出/公開は上段を参照する。
-通常exeは#482の0.3.0が起動中のため終了・上書きせず、今回の必要反映先は別のMSIX候補とする。
+通常exeは#482の0.3.0を保持し、当時起動中だったため終了・上書きしなかった。必要反映先は別のMSIX候補とした。
 
 ## 閲覧中のWebリンク起動 — #482
 
@@ -118,7 +121,7 @@ hide受理済み合成サンプル`data/サンプル/Markdown構文サンプル.
 ## 次に残る配布確認
 
 #390の保存先方針は#477/ADR0077で実装し、MSIX生成は#484/ADR0080で追加した。
-実インストールでの初回/更新/アンインストールは#486で確認。WACK警告を記録し、Store申請は未実施。
+実インストールでの初回/更新/アンインストールは#486で確認。WACK警告の補足を添えて申請済み、認定/公開結果は未確認。
 package identityを持たないMSI等は今回のinstalled判定対象ではない。
 物理IME・reader・異なるDPI間の確認も合成fixtureとは区別する。次の作業はhideの新指示と照合する。
 
