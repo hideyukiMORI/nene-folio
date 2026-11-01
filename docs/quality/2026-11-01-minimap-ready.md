@@ -35,18 +35,23 @@ GIT-001〜004、[ADR0084](../adr/0084-bounded-native-minimap.md)・[ADR0068](../
 | 合成文書の計測（compile/run-baseline-01、compile/run-request-01、parent-compile/run-01、repeat-run-01） | 62回、うち新実装53回・旧実装9回。全件描画完了・sample上限・構築1回。`findings.json`参照 |
 | 最終整形後の対象build（test-build-05/06）と`ctest -R '^minimap_scheduling$' -V`（contract-05） | 140checks成功。05はコンパイル成功後、指定inputの生成`build.ninja`がCMake再生成で変わり記録側が失敗。06で入力選定を正し、生成物を変えず完了を再確認 |
 | 台帳順序を明示した対象build/CTest（test-build-07 / contract-06） | 142checks成功。初回CI 41299960444の失敗と同じ症状を逆順fixtureで再現（reversed-order-red-01）。既存台帳が逆順でも準備で正し、同じ期待を通過（reversed-order-green-01） |
+| 段落を明示した対象build/CTest（test-build-08 / contract-07） | 186checks成功。fixtureが256表示行以上あることも固定した |
+| 96 DPIの同じ予約試験（dpi96-build/run-01） | 188checks成功（96 DPIの設定/実窓確認2件を含む）。旧素材は同じ条件で12表示行となり、元と同じ16件取得の期待で失敗した（dpi96-soft-build/red-01） |
 
 予約試験は専用desktop/dataと実RichEditを使い、timer通知を捨てて公開UI/idle境界から操作する。
 文書切替・途中の再切替・閲覧/編集・行番号幅・1回16/合計256・native sample失敗/再試行、
 menu/modal/IME・非表示/復帰、入力/resize待機と本文・選択・Undo・dirty・focusの保持を確認した。
 追加probeは製品ソースを変更せず、生成した翻訳単位とnative subclassだけで観測/失敗注入する。
 旧文書の像はstream開始前に消え、読込失敗時も空。新文書の一部を先に公開しないことをGDI画素hashで比較した。
-初回CIでは予約試験の`long document begins in one slice`が失敗した。テストが走査順序を暗黙に仮定しており、
-逆順の台帳で同じ失敗をローカル再現した。fixture準備で正典codec/portを使って台帳順序を明記した。
-製品実装と16/256等の期待値は変更していない。CI上の実際の走査順序そのものは採取できていない。
+初回CIでは予約試験の`long document begins in one slice`が失敗した。順序の暗黙の仮定を逆順台帳で再現し、
+正典codec/portで順序を明記したが、CI 41300853830でも同じ期待が失敗した。追加ログは15表示行/15取得だった。
+素材の`x\n`はMarkdownの段落内改行であり、1,000原文行でも256表示行を保証しないことが原因だった。
+`x\n\n`の明示段落へ直し、実表示行数256以上を確認した。96 DPIでは旧素材が12行となる同じ失敗を再現し、
+新素材で188checksが通ることも確認した。CI側の実際のDPI/字体/走査順序そのものは採取していない。
+順序の指定はfixtureの決定性のため保持し、製品実装と16/256等の期待値は変更していない。
 追加の5桁確認は`gutter-run-02`の10checks成功。120 DPIで番号欄が実際に5px広がり、その後のpaintでも待機に戻らない。
 最初のgutter fixtureは番号表示の指定漏れで失敗し、その記録も保持した。
-`final-check-01/02`で規約/実依存graph・中核symbol・変更Cの整形・差分を確認する。結果は監査記録へ収載する。
+`final-check-01〜03`で規約/実依存graph・中核symbol・変更Cの整形・差分を確認する。結果は監査記録へ収載する。
 
 ## 実測
 

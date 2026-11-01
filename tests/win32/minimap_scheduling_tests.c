@@ -47,16 +47,17 @@ static void seed_notes(struct persistence_port disk)
     require(created == PERSISTENCE_STORED || created == PERSISTENCE_NAME_TAKEN, "test category");
     const char *names[] = {"00_short", "01_long"};
     const size_t lines[] = {8, 1000};
-    char source[2001];
+    char source[3001];
     for (size_t index = 0; index < 2; ++index)
     {
         for (size_t line = 0; line < lines[index]; ++line)
         {
-            source[line * 2] = 'x';
-            source[line * 2 + 1] = '\n';
+            source[line * 3] = 'x';
+            source[line * 3 + 1] = '\n';
+            source[line * 3 + 2] = '\n';
         }
         struct note_text *_Nullable body = nullptr;
-        require(note_text_create(source, lines[index] * 2, &body) == NOTE_TEXT_ACCEPTED,
+        require(note_text_create(source, lines[index] * 3, &body) == NOTE_TEXT_ACCEPTED,
                 "fixture text");
         require(disk.write_note(disk.adapter, "schedule", names[index], body) == PERSISTENCE_STORED,
                 "fixture note");
@@ -220,6 +221,8 @@ static void verify_switches(struct folio_window *_Nonnull window, HWND body)
     select_note(window, 0);
     finish(window, body);
     select_note(window, 1);
+    require(SendMessageW(body, EM_GETLINECOUNT, 0, 0) >= 256,
+            "fixture has at least 256 native display lines without relying on wrapping");
     size_t first = step(window);
     if (first != 16)
         fprintf(stderr, "long document lines=%lld samples=%zu\n",
