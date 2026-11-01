@@ -1,5 +1,29 @@
 # ADR 0060 — 操作部品を3様式＋選択群と1つの状態規則へ統一する
 
+## 2026-11-01 の補正（#496 — 主操作のhoverで塗りの外形を保つ）
+
+hideの「続けて」による実装判断。製品編集前に決定3のB主操作だけを次の形へ補正する。
+
+- 全PRIMARY（未保存の保存、名前入力の確定、保存先の確定）は同じ`ui_part`で描く。
+  hoverの下辺の棒を廃止し、外周2 logical pxを静止時の未保存色に保って内側の面色を変える。
+  外形・文字位置・アイコン・当たり判定は変えない。他様式のhover規則も維持する。
+- `theme_contrast_primary_hover`が既存paletteから色対だけを純粋に導く。
+  通常の塗りでは静止色へ文字色を1/8混ぜ、文字4.5:1を割る場合は反対側の白/黒を1/8混ぜる。
+  枠へ退避している通常テーマは枠色の面とdialog_surfaceの文字へ切り替える。
+  高コントラストでは混色せずOSのhighlight/highlightText対を使い、静止ですでにhighlightを
+  塗る場合はbuttonFace/buttonText対へ切り替え、buttonFaceも同色ならwindow/windowText対へ移る。
+  静止とhoverの同色化を避ける。全OS役割が同じ色対になる任意設定の可視差は保証しない。
+  固定配色表・設定schemaへtokenを追加せず、UIは結果のRGBをCOLORREFへ写すだけとする。
+- 押下の面と文字は既存のselected対を使い、1 logical px内側に1 logical pxの文字色の枠を足す。
+  hoverと同じ色対になる高コントラストでも押下を識別できる。
+  PRIMARYのkeyboard focusは3 logical px内側に2 logical pxの独立した枠を描き、外周の塗りを残す。
+  hoverのfocus色はhover文字、押下は既存のfocus_selected、静止はfocus_primary。
+  disabledはhover/押下表現を出さず、既存の無効文字色を使う。
+- 全127固定配色のhover文字4.5:1、外周3:1、focus3:1を対象単体で確認する。
+  OS色は明暗の合成snapshotで対の保持を確認し、任意の利用者設定色のコントラストを保証しない。
+  実GDIで下辺を含む外形、文字矩形、状態組合せと代表画面を確認する。
+  通常ノートを試験入力にせず、全件回帰は最終headの必須CIへ集約する。Waivers none。
+
 テーマ候補の移動時プレビューと明示確定は、#366の[ADR0061](0061-theme-live-preview.md)で補正する。
 固定UIの派生計測と重複配置は#373の[ADR0063](0063-derived-ui-metrics-and-surface-arrangement.md)、
 主窓の無効化・暗幕・面の高さと位置は[ADR0064](0064-content-modal-and-window-shell.md)で補正する。

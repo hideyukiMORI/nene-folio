@@ -19,6 +19,9 @@ static void adopt_unsaved(struct folio_palette *_Nonnull out,
     out->unsaved_filled = unsaved.filled;
     out->unsaved_fill = to_color(unsaved.fill);
     out->unsaved_ink = to_color(unsaved.ink);
+    struct theme_primary_hover hover = theme_contrast_primary_hover(palette);
+    out->primary_hover_fill = to_color(hover.fill);
+    out->primary_hover_ink = to_color(hover.ink);
 }
 
 struct folio_palette folio_palette_from(const struct theme_palette *_Nonnull palette)

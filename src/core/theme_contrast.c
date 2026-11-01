@@ -417,3 +417,61 @@ struct theme_unsaved theme_contrast_unsaved(const struct theme_palette *_Nonnull
     struct rgb_color line = theme_contrast_line(palette, THEME_LINE_UNSAVED);
     return (struct theme_unsaved){.filled = false, .fill = line, .ink = line};
 }
+
+/* 元色を7/8保ち、状態差を1/8加える。色の派生もcoreだけが決める（#496）。 */
+static struct rgb_color hover_mix(struct rgb_color base, struct rgb_color toward)
+{
+    return (struct rgb_color){
+        .red = (unsigned char)(((unsigned)base.red * 7U + toward.red) / 8U),
+        .green = (unsigned char)(((unsigned)base.green * 7U + toward.green) / 8U),
+        .blue = (unsigned char)(((unsigned)base.blue * 7U + toward.blue) / 8U),
+    };
+}
+
+static struct theme_primary_hover normal_primary_hover(const struct theme_palette *_Nonnull palette)
+{
+    struct theme_unsaved unsaved = theme_contrast_unsaved(palette);
+    if (!unsaved.filled)
+    {
+        return (struct theme_primary_hover){.fill = unsaved.fill, .ink = palette->dialog_surface};
+    }
+    struct rgb_color fill = hover_mix(unsaved.fill, unsaved.ink);
+    if (theme_contrast_ratio(fill, unsaved.ink) < 4.5)
+    {
+        const struct rgb_color black = {0, 0, 0};
+        const struct rgb_color white = {255, 255, 255};
+        struct rgb_color away = luminance(unsaved.ink) > luminance(unsaved.fill) ? black : white;
+        fill = hover_mix(unsaved.fill, away);
+    }
+    return (struct theme_primary_hover){.fill = fill, .ink = unsaved.ink};
+}
+
+static struct theme_primary_hover system_primary_hover(const struct theme_palette *_Nonnull palette)
+{
+    struct theme_unsaved resting = theme_contrast_unsaved(palette);
+    if (resting.filled && rgb_color_equal(resting.fill, palette->selected_background))
+    {
+        if (rgb_color_equal(resting.fill, palette->chip_background))
+        {
+            return (struct theme_primary_hover){.fill = palette->window,
+                                                .ink = palette->current_text};
+        }
+        return (struct theme_primary_hover){.fill = palette->chip_background,
+                                            .ink = palette->chip_text};
+    }
+    return (struct theme_primary_hover){.fill = palette->selected_background,
+                                        .ink = palette->selected_text};
+}
+
+struct theme_primary_hover
+theme_contrast_primary_hover(const struct theme_palette *_Nonnull palette)
+{
+    switch (palette->contrast)
+    {
+    case FOLIO_CONTRAST_STANDARD:
+        return normal_primary_hover(palette);
+    case FOLIO_CONTRAST_HIGH:
+        return system_primary_hover(palette);
+    }
+    return normal_primary_hover(palette);
+}

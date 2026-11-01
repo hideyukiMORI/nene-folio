@@ -1,5 +1,16 @@
 # いまの状態 — NeNe Folio
 
+## 主操作ボタンのhover — #496
+
+共有PRIMARYの下辺の棒を廃止し、外周を保ってhoverの面色を変える形へ揃えた。
+未保存の保存・名前入力の確定・保存先の確定に適用し、押下とkeyboard focusの内枠を分離した。
+全127固定配色の文字/外周/focus、実GDI438checks、指摘時の配色を使う実保存先面15checksが成功。
+OS高コントラストで静止とhoverが同色になる条件は12件のredから修正した。
+[品質記録](../quality/2026-11-01-primary-hover.md)・[ADR0060補正](../adr/0060-ui-part-styles-and-state-rule.md)。
+保存schema・版・依存は不変、Waivers none。最終head必須CI、main、通常exe反映/起動、全保全と追加作業物整理は
+`D:/NeNeFolio/agents/primary-hover-20261101/integration-completion.json`で確定する。
+通常版が起動中ならhideの保存/終了を待つ。申請済みMSIXは差し替えず、Store結果確認は別件。
+
 ## Markdown取り込み・書き出し — #494
 
 外部UTF-8 `.md`の複数取り込み、現在ノートのMarkdown書き出し、保存済みカテゴリ／全ノートのZIP書き出しを追加した。
@@ -11,8 +22,8 @@ Debug/tidy・対象単体／確保失敗・共有境界の既存試験、実Win3
 検索の0件表示からも保存済みカテゴリ全件を書き出せる。3言語の明暗／狭幅メニューを画像で確認した。
 [操作案内](../TRANSFER.md)・[品質記録](../quality/2026-11-01-markdown-transfer.md)・[ADR0082](../adr/0082-markdown-transfer.md)。
 保存schema・版入力・依存は不変、Waivers none。最終head必須CI、main、通常exe反映と起動、全保全と追加作業物整理は
-`D:/NeNeFolio/agents/transfer-20261101/integration-completion.json`で確定する。hideの実機受理は未確認。
-申請済みMSIXより後の変更で、提出物は差し替えない。Store結果確認と主操作ボタンのhover比較は別件。
+`D:/NeNeFolio/agents/transfer-20261101/integration-completion.json`で確定した。hideは同日に「よさそう」と反映結果を受理。
+申請済みMSIXより後の変更で、提出物は差し替えていない。主操作ボタンのhoverは上段の#496へ進めた。
 
 ## キー操作反映済み・Store認定結果待ち — #490 / #492
 
