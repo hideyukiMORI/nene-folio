@@ -12,6 +12,7 @@
 #include "close_phase.h"
 #include "command_band_layout.h"
 #include "command_candidates.h"
+#include "command_help_fonts.h"
 #include "command_help_metrics.h"
 #include "command_row.h"
 #include "command_surface_metrics.h"
@@ -31,6 +32,7 @@
 #include "folio_theme_choice.h"
 #include "history_row_view.h"
 #include "icon_paint.h"
+#include "key_guide.h"
 #include "layout_metrics.h"
 #include "menu_request.h"
 #include "modal_owner.h"
@@ -107,6 +109,7 @@ struct folio_window
     /* 検索欄にいるあいだだけ使う Enter / Shift+Enter（ADR 0023 の決定 4） */
     HACCEL _Nullable search_keys;
     HFONT _Nullable mono_font;
+    struct command_help_fonts help_fonts;
     HFONT _Nullable gutter_font; /* mono_fontと本文倍率から作る行番号の派生資源（ADR0067）。 */
     HWND _Nullable command_layer;
     HWND _Nullable tooltip;
@@ -211,20 +214,6 @@ static const wchar_t command_layer_class[] = L"NeNeFolioCommandLayer";
 static const wchar_t settings_backdrop_class[] = L"NeNeFolioSettingsBackdrop";
 static const wchar_t mono_face[] = L"Consolas";
 static const wchar_t edit_class[] = L"EDIT";
-/* 一覧に出すキー操作の行（ADR 0030 の決定 4）。文言は core の ui_text が持ち、
- * ここは並びだけを持つ。1 行 1 ID で、欄分けは単位 C（ADR 0032）。 */
-static const enum ui_text command_shortcuts[] = {
-    UI_TEXT_HELP_PALETTE,         UI_TEXT_HELP_EDITOR_MOTION, UI_TEXT_HELP_BODY_ZOOM,
-    UI_TEXT_HELP_GLOBAL_KEYS,     UI_TEXT_HELP_GLOBAL_FILTER, UI_TEXT_HELP_FILTER_FIELD,
-    UI_TEXT_HELP_FILTER_LIMITS,   UI_TEXT_HELP_FILE_KEYS,     UI_TEXT_HELP_NOTE_ACTIONS,
-    UI_TEXT_HELP_INDEX_COMMAND,   UI_TEXT_HELP_EX_SET_NUMBER, UI_TEXT_HELP_EX_SET_THEME,
-    UI_TEXT_HELP_EX_SET_LANGUAGE, UI_TEXT_HELP_REPLACE_FIELD, UI_TEXT_HELP_EX_SUBSTITUTE,
-    UI_TEXT_HELP_SEARCH_KEYS,     UI_TEXT_HELP_SEARCH_STEP,   UI_TEXT_HELP_SEARCH_FIELD,
-    UI_TEXT_HELP_INDEX_MOTION,    UI_TEXT_HELP_INDEX_FOLD,    UI_TEXT_HELP_INDEX_SCROLL,
-    UI_TEXT_HELP_EDITOR_ESCAPE,   UI_TEXT_HELP_TRASH_NOTE,    UI_TEXT_HELP_DELETE_CATEGORY,
-    UI_TEXT_HELP_RENAME_CATEGORY, UI_TEXT_HELP_ACCESSIBILITY, UI_TEXT_DRAWER_WIDTH_HELP,
-    UI_TEXT_HELP_RECYCLE,
-};
 
 /* 設定画面の行（ADR 0031 の決定 7・ADR 0032 の決定 7）。見出しと選択肢を**種別で**持ち、
  * value はその種別の列挙の値（THEME なら folio_theme_choice・LANGUAGE なら folio_language・
@@ -257,10 +246,6 @@ static const struct
     {FOLIO_LAYOUT_BOTH, FOLIO_COMMAND_LAYOUT_BOTH, ACCESSIBLE_LAYOUT_BOTH},
     {FOLIO_LAYOUT_NOTE, FOLIO_COMMAND_LAYOUT_NOTE, ACCESSIBLE_LAYOUT_NOTE},
 };
-
-static_assert(sizeof command_shortcuts / sizeof command_shortcuts[0] +
-                  sizeof layout_buttons / sizeof layout_buttons[0] <=
-              command_help_capacity);
 
 /* 自前操作の親子順・名前・focus可否と、表示名・UIA Name・AcceleratorKey・tooltip の 1 つの元
  * （ADR0060 の決定 5）。key は AcceleratorKey と tooltip に、hint は tooltip だけに出る。
@@ -865,17 +850,14 @@ static int command_surface_rows(const struct folio_window *_Nonnull self)
     return 0;
 }
 
-/* 面が持つヘルプの行数。command_shortcuts[] を数えるのはここだけ（#69）。 */
+/* キー説明の件数は不変catalogから導く。 */
 static int command_help_rows(const struct folio_window *_Nonnull self)
 {
     switch (self->command_surface)
     {
     case COMMAND_SURFACE_CLOSED:
     case COMMAND_SURFACE_PALETTE:
-        return self->command_keys_visible
-                   ? (int)(sizeof command_shortcuts / sizeof command_shortcuts[0] +
-                           layout_button_count())
-                   : 0;
+        return self->command_keys_visible ? (int)key_guide_count() : 0;
     case COMMAND_SURFACE_EX:
     case COMMAND_SURFACE_SEARCH:
     case COMMAND_SURFACE_REPLACE:
@@ -1016,13 +998,20 @@ static void refresh_gutter_font(struct folio_window *_Nonnull self, UINT dpi)
 
 static void refresh_part_metrics(struct folio_window *_Nonnull self, UINT dpi);
 
+static void refresh_help_fonts(struct folio_window *_Nonnull self, UINT dpi)
+{
+    self->help_metrics.valid = false;
+    command_help_fonts_destroy(&self->help_fonts);
+    self->help_fonts = command_help_fonts_create(folio_state_language(self->state), dpi);
+}
+
 static void refresh_font(struct folio_window *_Nonnull self, UINT dpi)
 {
     if (self->native_metrics != nullptr)
         name_prompt_metrics_invalidate(self->native_metrics);
     self->band.valid = false;
     self->settings_metrics.width = 0;
-    self->help_metrics.valid = false;
+    refresh_help_fonts(self, dpi);
     self->part_metrics.valid = false;
     if (self->mono_font != nullptr)
     {
@@ -1093,9 +1082,12 @@ static RECT command_palette_rect(const struct folio_window *_Nonnull self)
     UINT dpi = GetDpiForWindow(self->handle);
     int margin = scale(ui_part_edge, dpi);
     int available = client.right - margin * 2;
-    int width = scale(self->command_surface == COMMAND_SURFACE_HISTORY ? base_settings_width
-                                                                       : base_command_palette_width,
-                      dpi);
+    int surface_width = self->command_surface == COMMAND_SURFACE_HISTORY
+                            ? base_settings_width
+                            : base_command_palette_width;
+    if (self->command_surface == COMMAND_SURFACE_PALETTE)
+        surface_width = 640;
+    int width = scale(surface_width, dpi);
     if (width > available)
     {
         width = available;
@@ -1435,7 +1427,7 @@ static RECT command_body_rect(const struct folio_window *_Nonnull self)
 {
     RECT body = surface_frame_rect(self, UI_PART_SURFACE_CONTENT);
     UINT dpi = GetDpiForWindow(self->handle);
-    body.top = command_keys(self) ? command_tab_rect(self, 0).bottom + scale(8, dpi)
+    body.top = command_keys(self) ? command_tab_rect(self, 0).bottom + scale(40, dpi)
                                   : command_input_rect(self).bottom + scale(8, dpi);
     body.bottom -= scale(base_command_status_height + 8, dpi);
     if (body.bottom < body.top)
@@ -1443,8 +1435,7 @@ static RECT command_body_rect(const struct folio_window *_Nonnull self)
     return body;
 }
 
-/* いま出せるヘルプの行数。操作の一覧に command_row_floor 行を残し、余りをヘルプへ回す。
- * 最小寸法（560×360 と 840×540）では操作 3 行・ヘルプ 6 行になる（#69）。 */
+/* 排他的なキータブの可視高。固定の群見出しとページ操作はこの外に置く。 */
 static RECT command_help_geometry(const struct folio_window *_Nonnull self, size_t slot,
                                   int *_Nullable maximum_line_height);
 static int command_help_total(const struct folio_window *_Nonnull self);
@@ -1457,14 +1448,7 @@ static int command_visible_help(const struct folio_window *_Nonnull self)
     return area.bottom - area.top;
 }
 
-/* 累積pixel位置を現在のviewportへ丸める。全内容が入る場合は先頭へ戻す。 */
-static size_t command_help_offset(const struct folio_window *_Nonnull self)
-{
-    int total = command_help_total(self);
-    int visible = command_visible_help(self);
-    size_t limit = total > visible ? (size_t)(total - visible) : 0;
-    return self->command_help_scroll < limit ? self->command_help_scroll : limit;
-}
+static size_t command_help_offset(const struct folio_window *_Nonnull self);
 
 static RECT command_toggle_rect(const struct folio_window *_Nonnull self)
 {
@@ -3182,35 +3166,100 @@ static void layout_chooser_help(const struct folio_window *_Nonnull self, char *
 static void command_help_text(const struct folio_window *_Nonnull self, size_t slot,
                               char *_Nonnull out)
 {
-    size_t generic = sizeof command_shortcuts / sizeof command_shortcuts[0];
-    out[0] = '\0';
-    if (slot < generic)
+    if (key_guide_name(key_guide_at(slot), folio_state_language(self->state), out,
+                       draw_unit_limit) != UI_TEXT_FORMAT_READY)
+        out[0] = '\0';
+}
+
+static HFONT help_body_font(const struct folio_window *_Nonnull self)
+{
+    return self->help_fonts.body != nullptr ? self->help_fonts.body : self->mono_font;
+}
+
+static HFONT help_key_font(const struct folio_window *_Nonnull self)
+{
+    return self->help_fonts.key != nullptr ? self->help_fonts.key : self->mono_font;
+}
+
+static HFONT help_heading_font(const struct folio_window *_Nonnull self)
+{
+    return self->help_fonts.heading != nullptr ? self->help_fonts.heading : self->mono_font;
+}
+
+static int help_measure(HDC device, const char *_Nonnull text, RECT *_Nonnull bounds,
+                        struct command_help_metrics *_Nonnull metrics)
+{
+    struct text_draw_request request = {.bounds = *bounds,
+                                        .format = DT_CALCRECT,
+                                        .wrapped = true,
+                                        .maximum_line_height = &metrics->maximum_line_height};
+    int height = draw_text(device, text, &request);
+    bounds->bottom = bounds->top + height;
+    return height;
+}
+
+static int help_group_space(const struct folio_window *_Nonnull self, HDC device,
+                            struct command_help_metrics *_Nonnull metrics, size_t index)
+{
+    if (index == 0 ||
+        key_guide_group(key_guide_at(index)) == key_guide_group(key_guide_at(index - 1)))
+        return 0;
+    RECT *heading = &metrics->rows[index].heading;
+    *heading = (RECT){0, scale(16, metrics->dpi), metrics->width, 0};
+    SelectObject(device, help_heading_font(self));
+    (void)help_measure(device,
+                       ui_text_line(key_guide_group(key_guide_at(index)), metrics->language),
+                       heading, metrics);
+    return heading->bottom + scale(8, metrics->dpi);
+}
+
+static RECT help_description_bounds(const struct command_help_metrics *_Nonnull metrics,
+                                    const struct command_help_placement *_Nonnull row, bool stacked)
+{
+    RECT bounds = {0, row->key.top, metrics->width, 0};
+    if (row->key.bottom > row->key.top)
     {
-        if (folio_shortcut_help(command_shortcuts[slot], folio_state_language(self->state), out,
-                                draw_unit_limit) != UI_TEXT_FORMAT_READY)
-            out[0] = '\0';
-        return;
+        if (stacked)
+            bounds.top = row->key.bottom + scale(4, metrics->dpi);
+        if (!stacked)
+            bounds.left = row->key.right + scale(24, metrics->dpi);
     }
-    layout_phrase(self, slot - generic, UI_TEXT_LAYOUT_HELP, out);
+    return bounds;
+}
+
+static bool measure_help_row(const struct folio_window *_Nonnull self, HDC device,
+                             struct command_help_metrics *_Nonnull metrics, size_t index)
+{
+    const struct key_guide *entry = key_guide_at(index);
+    struct command_help_placement *row = &metrics->rows[index];
+    int top = help_group_space(self, device, metrics, index);
+    int column = scale(176, metrics->dpi);
+    char key[draw_unit_limit];
+    if (key_guide_key(entry, metrics->language, key, sizeof key) != UI_TEXT_FORMAT_READY)
+        return false;
+    SelectObject(device, help_key_font(self));
+    bool stacked = metrics->width < scale(480, metrics->dpi) || measure_utf8(device, key) > column;
+    row->key = (RECT){0, top, stacked ? metrics->width : column, top};
+    if (key[0] != '\0' && help_measure(device, key, &row->key, metrics) <= 0)
+        return false;
+    row->description = help_description_bounds(metrics, row, stacked);
+    SelectObject(device, help_body_font(self));
+    if (help_measure(device, key_guide_description(entry, metrics->language), &row->description,
+                     metrics) <= 0)
+        return false;
+    int bottom =
+        row->description.bottom > row->key.bottom ? row->description.bottom : row->key.bottom;
+    row->height = bottom + scale(12, metrics->dpi);
+    metrics->offsets[index + 1] = metrics->offsets[index] + row->height;
+    return true;
 }
 
 static bool measure_help_metrics(const struct folio_window *_Nonnull self, HDC device,
                                  struct command_help_metrics *_Nonnull metrics)
 {
-    RECT bounds = {0, 0, metrics->width, 0};
     for (size_t index = 0; index < metrics->count; ++index)
-    {
-        char text[draw_unit_limit];
-        command_help_text(self, index, text);
-        struct text_draw_request request = {.bounds = bounds,
-                                            .format = DT_CALCRECT,
-                                            .wrapped = true,
-                                            .maximum_line_height = &metrics->maximum_line_height};
-        int height = draw_text(device, text, &request);
-        if (height <= 0)
+        if (!measure_help_row(self, device, metrics, index))
             return false;
-        metrics->offsets[index + 1] = metrics->offsets[index] + height + scale(8, metrics->dpi);
-    }
     return metrics->maximum_line_height > 0;
 }
 
@@ -3219,20 +3268,22 @@ static bool prepare_help_metrics(struct folio_window *_Nonnull self)
     RECT bounds = command_body_rect(self);
     struct command_help_metrics metrics = {.width = bounds.right - bounds.left,
                                            .dpi = GetDpiForWindow(self->handle),
-                                           .font = self->mono_font,
+                                           .font = help_body_font(self),
                                            .language = folio_state_language(self->state),
-                                           .count = (size_t)command_help_rows(self)};
+                                           .count = key_guide_count()};
     if (self->help_metrics.valid && self->help_metrics.width == metrics.width &&
         self->help_metrics.dpi == metrics.dpi && self->help_metrics.font == metrics.font &&
         self->help_metrics.language == metrics.language)
         return true;
+    if (metrics.width <= 0)
+        return false;
     HDC device = GetDC(self->command_layer);
     if (device == nullptr)
         return false;
-    HGDIOBJ previous = SelectObject(device, self->mono_font);
-    SetTextCharacterExtra(device, scale(base_tracking, metrics.dpi));
+    int saved = SaveDC(device);
+    SetTextCharacterExtra(device, 0);
     bool ready = measure_help_metrics(self, device, &metrics);
-    SelectObject(device, previous);
+    RestoreDC(device, saved);
     ReleaseDC(self->command_layer, device);
     if (ready)
     {
@@ -3268,6 +3319,54 @@ static size_t command_help_step(const struct folio_window *_Nonnull self)
 {
     int step = command_visible_help(self) - self->help_metrics.maximum_line_height;
     return step > 0 ? (size_t)step : 1;
+}
+
+/* 通常項目は分割せず、表示高を超える項目だけ一行を重ねて送る。 */
+static size_t next_help_page(const struct folio_window *_Nonnull self, size_t first)
+{
+    size_t visible = (size_t)command_visible_help(self);
+    if (visible == 0 || first + visible >= (size_t)command_help_total(self))
+        return first;
+    for (size_t index = 0; index < self->help_metrics.count; ++index)
+    {
+        size_t top = (size_t)self->help_metrics.offsets[index];
+        size_t bottom = (size_t)self->help_metrics.offsets[index + 1];
+        if (bottom > first + visible)
+            return top > first ? top : first + command_help_step(self);
+    }
+    return first;
+}
+
+/* resizeとUIAの位置指定も同じページ列へ丸める。 */
+static size_t help_page_at(const struct folio_window *_Nonnull self, size_t target)
+{
+    size_t first = 0;
+    size_t next = next_help_page(self, first);
+    while (next > first && next <= target)
+    {
+        first = next;
+        next = next_help_page(self, first);
+    }
+    return first;
+}
+
+static size_t command_help_offset(const struct folio_window *_Nonnull self)
+{
+    return help_page_at(self, self->command_help_scroll);
+}
+
+/* 描画とUIAは、次ページへ送った通常項目を同じく不可視にする。 */
+static RECT visible_help_rect(const struct folio_window *_Nonnull self, size_t index)
+{
+    RECT row = command_help_geometry(self, index, nullptr);
+    OffsetRect(&row, 0, -(int)command_help_offset(self));
+    RECT area = command_body_rect(self);
+    if (row.bottom - row.top <= area.bottom - area.top &&
+        (row.top < area.top || row.bottom > area.bottom))
+        return (RECT){0};
+    RECT visible = {0};
+    IntersectRect(&visible, &row, &area);
+    return visible;
 }
 
 static void draw_layout_command(const struct folio_window *_Nonnull self, HDC device,
@@ -3549,26 +3648,73 @@ static void draw_command_status(const struct folio_window *_Nonnull self, HDC de
     draw_utf8(device, line, bounds);
 }
 
+/* 各ページの先頭にも所属群を残し、途中ページのEnter/Escを別の場所の操作と読ませない。 */
+static enum ui_text visible_help_group(const struct folio_window *_Nonnull self)
+{
+    int offset = (int)command_help_offset(self);
+    size_t index = 0;
+    while (index + 1 < self->help_metrics.count && self->help_metrics.offsets[index + 1] <= offset)
+        ++index;
+    return key_guide_group(key_guide_at(index));
+}
+
+static RECT help_row_rect(RECT relative, RECT origin)
+{
+    OffsetRect(&relative, origin.left, origin.top);
+    return relative;
+}
+
+static void draw_help_row(const struct folio_window *_Nonnull self, HDC device, size_t index)
+{
+    RECT origin = command_help_geometry(self, index, nullptr);
+    OffsetRect(&origin, 0, -(int)command_help_offset(self));
+    const struct command_help_placement *row = &self->help_metrics.rows[index];
+    const struct key_guide *entry = key_guide_at(index);
+    enum folio_language language = folio_state_language(self->state);
+    if (row->heading.bottom > row->heading.top &&
+        key_guide_group(entry) != visible_help_group(self))
+    {
+        SelectObject(device, help_heading_font(self));
+        RECT heading = help_row_rect(row->heading, origin);
+        (void)wrapped_text(device, ui_text_line(key_guide_group(entry), language), heading, true);
+        RECT rule = {heading.left, heading.top - scale(8, self->help_metrics.dpi), heading.right,
+                     heading.top - scale(8, self->help_metrics.dpi) + 1};
+        HBRUSH brush = CreateSolidBrush(self->palette.dialog_border);
+        FillRect(device, &rule, brush);
+        DeleteObject(brush);
+    }
+    char key[draw_unit_limit];
+    if (key_guide_key(entry, language, key, sizeof key) != UI_TEXT_FORMAT_READY)
+        return;
+    SelectObject(device, help_key_font(self));
+    (void)wrapped_text(device, key, help_row_rect(row->key, origin), true);
+    SelectObject(device, help_body_font(self));
+    (void)wrapped_text(device, key_guide_description(entry, language),
+                       help_row_rect(row->description, origin), true);
+}
+
 static void draw_command_shortcuts(const struct folio_window *_Nonnull self, HDC device,
                                    RECT bounds)
 {
     (void)bounds;
-    if (!command_keys(self))
+    if (!command_keys(self) || !self->help_metrics.valid)
         return;
     RECT area = command_body_rect(self);
     int saved = SaveDC(device);
-    IntersectClipRect(device, area.left, area.top, area.right, area.bottom);
-    int offset = (int)command_help_offset(self);
+    SetTextCharacterExtra(device, 0);
     SetTextColor(device, self->palette.current_text);
-    for (size_t index = 0; index < (size_t)command_help_rows(self); ++index)
+    SelectObject(device, help_heading_font(self));
+    RECT heading = area;
+    heading.top -= scale(32, self->help_metrics.dpi);
+    heading.bottom = area.top;
+    draw_utf8(device, ui_text_line(visible_help_group(self), folio_state_language(self->state)),
+              heading);
+    IntersectClipRect(device, area.left, area.top, area.right, area.bottom);
+    for (size_t index = 0; index < self->help_metrics.count; ++index)
     {
-        RECT row = command_help_geometry(self, index, nullptr);
-        OffsetRect(&row, 0, -offset);
-        if (row.bottom <= area.top || row.top >= area.bottom)
-            continue;
-        char text[draw_unit_limit];
-        command_help_text(self, index, text);
-        (void)wrapped_text(device, text, row, true);
+        RECT row = visible_help_rect(self, index);
+        if (!IsRectEmpty(&row))
+            draw_help_row(self, device, index);
     }
     RestoreDC(device, saved);
 }
@@ -3604,13 +3750,24 @@ static void draw_command_pages(const struct folio_window *_Nonnull self, HDC dev
     size_t total = (size_t)command_help_total(self);
     if (visible == 0 || total <= visible)
         return;
-    size_t step = command_help_step(self);
-    size_t limit = total - visible;
+    size_t page = 1;
+    size_t count = 1;
+    size_t current = command_help_offset(self);
+    size_t first = 0;
+    size_t next = next_help_page(self, first);
+    while (next > first)
+    {
+        ++count;
+        if (next <= current)
+            page = count;
+        first = next;
+        next = next_help_page(self, first);
+    }
     char line[command_pages_capacity];
     struct ui_text_request request = {.id = UI_TEXT_STATUS_PALETTE_PAGES,
                                       .language = folio_state_language(self->state),
-                                      .k = (command_help_offset(self) + step - 1) / step + 1,
-                                      .n = (limit + step - 1) / step + 1};
+                                      .k = page,
+                                      .n = count};
     if (ui_text_format(&request, line, sizeof line) == UI_TEXT_FORMAT_READY)
     {
         SetTextColor(device, self->palette.current_text);
@@ -7015,6 +7172,7 @@ static void apply_theme(struct folio_window *_Nonnull self, enum folio_theme_cho
  * 当て直す。メニューは開くたびに作るので触らない。 */
 static void relanguage_window(struct folio_window *_Nonnull self)
 {
+    refresh_help_fonts(self, GetDpiForWindow(self->handle));
     if (self->drawer != nullptr)
     {
         drawer_window_refont(self->drawer);
@@ -9454,12 +9612,10 @@ static void move_command_help(struct folio_window *_Nonnull self, WPARAM key)
     if (visible == 0 || visible >= total)
         return;
     size_t first = command_help_offset(self);
-    size_t last = total - visible;
-    size_t step = command_help_step(self);
     if (key == VK_PRIOR)
-        self->command_help_scroll = first < step ? 0 : first - step;
+        self->command_help_scroll = first == 0 ? 0 : help_page_at(self, first - 1);
     else
-        self->command_help_scroll = first + step > last ? last : first + step;
+        self->command_help_scroll = next_help_page(self, first);
     redraw_command_layer(self);
 }
 
@@ -10969,6 +11125,7 @@ static void window_destroyed(struct folio_window *_Nonnull self)
         DeleteObject(self->gutter_font);
         self->gutter_font = nullptr;
     }
+    command_help_fonts_destroy(&self->help_fonts);
     /* self->handle はここでは消さない。WM_DESTROY の後も WM_NCDESTROY までメッセージは届き、
      * 既定処理はその HWND を要る。手放すのは window_finalized 1 か所（ADR 0014 の補正 1）。 */
     PostQuitMessage(0);
@@ -12591,12 +12748,7 @@ static RECT surface_help_rect(const struct folio_window *_Nonnull self, size_t s
 {
     if (!command_keys(self) || slot >= (size_t)command_help_rows(self))
         return (RECT){0};
-    RECT row = command_help_geometry(self, slot, nullptr);
-    OffsetRect(&row, 0, -(int)command_help_offset(self));
-    RECT viewport = command_body_rect(self);
-    RECT visible = {0};
-    IntersectRect(&visible, &row, &viewport);
-    return visible;
+    return visible_help_rect(self, slot);
 }
 
 static RECT surface_status_rect(const struct folio_window *_Nonnull self)

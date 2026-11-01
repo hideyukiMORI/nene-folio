@@ -1,5 +1,16 @@
 # いまの状態 — NeNe Folio
 
+## ヘルプのキータブ — #500
+
+hideの指摘とGUI/情報設計の独立レビューに基づき、キーを用途別の見出しと1操作1項目へ整理した。
+説明の字体と大きさを見直し、通常は2列、狭幅と長いキーは上下配置にする。
+通常項目はページ内へまとめ、表示高超過項目だけ重ねて送る。描画/UIA/ページ送りは同じ計測を使う。
+3言語の対象unit、実Win32の109＋38＋9checks、明暗/高コントラストと狭幅の画像を確認した。
+[品質記録](../quality/2026-11-01-help-keys.md)・[キー仕様](../KEY_BINDINGS.md)・[ADR0060補正](../adr/0060-ui-part-styles-and-state-rule.md)。
+保存schema・実キー割当・版・依存は不変、Waivers none。最終head必須CI、main、通常exe反映/起動、全保全/整理は
+`D:/NeNeFolio/agents/help-keys-20261101/integration-completion.json`で確定する。
+通常版が起動中ならhideの保存/終了を待つ。申請済みMSIXの差替えとStore結果確認は別件。
+
 ## 有効な操作対象の指先ポインタ — #498
 
 hideの方針指定に従い、主窓/drawer/補助面/検索の×/自前native面の有効な操作を指先へ揃えた。

@@ -24,6 +24,134 @@
 
 /* 変更前の文言（機械的に写した）。ui_text.c の表と 1 字も違ってはいけない。 */
 static const char *_Nonnull const expected[] = {
+    [UI_TEXT_KEYS_GROUP_BASIC] = "よく使う操作",
+    [UI_TEXT_KEYS_DESC_MODE] = "閲覧・編集を切り替える\n閲覧へ戻るときに保存します。",
+    [UI_TEXT_KEYS_DESC_MENU] = "このノートの操作メニューを開く",
+    [UI_TEXT_KEYS_DESC_FILTER] = "すべてのノートを検索\n名前と本文で一覧を絞り込みます。",
+    [UI_TEXT_KEYS_DESC_PALETTE] = "操作を名前で探す",
+    [UI_TEXT_KEYS_DESC_FILE_SCOPE] = "新規・保存・別名保存は、入力欄からも使えます。",
+    [UI_TEXT_KEYS_GROUP_VIEW] = "表示と区画の移動",
+    [UI_TEXT_KEYS_DESC_DRAWER] = "一覧だけを表示\n窓を細くします。",
+    [UI_TEXT_KEYS_KEY_F6] = "F6",
+    [UI_TEXT_KEYS_DESC_F6] = "次の区画へ移る",
+    [UI_TEXT_KEYS_KEY_SHIFT_F6] = "Shift+F6",
+    [UI_TEXT_KEYS_DESC_SHIFT_F6] = "前の区画へ移る",
+    [UI_TEXT_KEYS_KEY_TAB] = "Tab",
+    [UI_TEXT_KEYS_DESC_TAB] = "区画内の次の操作へ移る",
+    [UI_TEXT_KEYS_KEY_SHIFT_TAB] = "Shift+Tab",
+    [UI_TEXT_KEYS_DESC_SHIFT_TAB] = "区画内の前の操作へ移る",
+    [UI_TEXT_KEYS_GROUP_NOTE] = "ノート本文",
+    [UI_TEXT_KEYS_KEY_ESC] = "Esc",
+    [UI_TEXT_KEYS_DESC_ESC] = "保存して一覧へ戻る\n編集モードは維持します。",
+    [UI_TEXT_KEYS_KEY_ZOOM_WHEEL] = "Ctrl+ホイール",
+    [UI_TEXT_KEYS_DESC_ZOOM_WHEEL] = "本文を拡大・縮小する",
+    [UI_TEXT_KEYS_KEY_ZOOM_IN] = "Ctrl++",
+    [UI_TEXT_KEYS_DESC_ZOOM_IN] = "本文を拡大する",
+    [UI_TEXT_KEYS_KEY_ZOOM_OUT] = "Ctrl+-",
+    [UI_TEXT_KEYS_DESC_ZOOM_OUT] = "本文を縮小する",
+    [UI_TEXT_KEYS_KEY_ZOOM_RESET] = "Ctrl+0",
+    [UI_TEXT_KEYS_DESC_ZOOM_RESET] = "本文の倍率を100%に戻す",
+    [UI_TEXT_KEYS_KEY_EDIT_LEFT] = "Ctrl+h",
+    [UI_TEXT_KEYS_DESC_EDIT_LEFT] = "編集中のカーソルを左へ動かす",
+    [UI_TEXT_KEYS_KEY_EDIT_DOWN] = "Ctrl+j",
+    [UI_TEXT_KEYS_DESC_EDIT_DOWN] = "編集中のカーソルを下へ動かす",
+    [UI_TEXT_KEYS_KEY_EDIT_UP] = "Ctrl+k",
+    [UI_TEXT_KEYS_DESC_EDIT_UP] = "編集中のカーソルを上へ動かす",
+    [UI_TEXT_KEYS_KEY_EDIT_RIGHT] = "Ctrl+l",
+    [UI_TEXT_KEYS_DESC_EDIT_RIGHT] = "編集中のカーソルを右へ動かす",
+    [UI_TEXT_KEYS_GROUP_INDEX] = "ノート一覧",
+    [UI_TEXT_KEYS_KEY_INDEX_NEXT] = "j",
+    [UI_TEXT_KEYS_DESC_INDEX_NEXT] = "一覧の次の項目へ",
+    [UI_TEXT_KEYS_KEY_INDEX_PREVIOUS] = "k",
+    [UI_TEXT_KEYS_DESC_INDEX_PREVIOUS] = "一覧の前の項目へ",
+    [UI_TEXT_KEYS_KEY_INDEX_FIRST] = "gg",
+    [UI_TEXT_KEYS_DESC_INDEX_FIRST] = "先頭へ（gを2回）",
+    [UI_TEXT_KEYS_KEY_INDEX_LAST] = "G",
+    [UI_TEXT_KEYS_DESC_INDEX_LAST] = "末尾へ（Shift+g）",
+    [UI_TEXT_KEYS_KEY_INDEX_FOLD] = "h",
+    [UI_TEXT_KEYS_DESC_INDEX_FOLD] = "カテゴリを折り畳む",
+    [UI_TEXT_KEYS_KEY_INDEX_UNFOLD] = "l",
+    [UI_TEXT_KEYS_DESC_INDEX_UNFOLD] = "カテゴリを展開する",
+    [UI_TEXT_KEYS_DESC_BODY] = "一覧から本文へ移る",
+    [UI_TEXT_KEYS_KEY_SCROLL] = "↑ / ↓",
+    [UI_TEXT_KEYS_DESC_SCROLL] = "一覧をスクロールする",
+    [UI_TEXT_KEYS_KEY_PAGES] = "PgUp / PgDn",
+    [UI_TEXT_KEYS_DESC_INDEX_PAGES] = "一覧をページ単位でスクロールする",
+    [UI_TEXT_KEYS_GROUP_SEARCH] = "検索欄と検索結果",
+    [UI_TEXT_KEYS_DESC_NEXT_MATCH] = "次の一致へ\n検索の向きは変えません。",
+    [UI_TEXT_KEYS_DESC_PREVIOUS_MATCH] = "前の一致へ\n検索の向きは変えません。",
+    [UI_TEXT_KEYS_DESC_SEARCH_ENTER] = "ノート内検索欄で、現在の向きの次の一致へ",
+    [UI_TEXT_KEYS_DESC_SEARCH_SHIFT_ENTER] = "ノート内検索欄で、逆向きの一致へ",
+    [UI_TEXT_KEYS_DESC_SEARCH_ESCAPE] = "ノート内検索を閉じる\n一致の選択は残ります。",
+    [UI_TEXT_KEYS_KEY_FILTER_RETURN] = "Esc / Enter",
+    [UI_TEXT_KEYS_DESC_FILTER_RETURN] = "全ノート検索欄から一覧へ戻る\n絞り込みは残ります。",
+    [UI_TEXT_KEYS_DESC_FILTER_CLEAR] =
+        "全ノート検索欄を空にすると絞り込みを解除します。絞り込み中は並び替えと折り畳み・展開ができ"
+        "ません。色の変更・保存・編集は使えます。",
+    [UI_TEXT_KEYS_GROUP_VIEW_KEYS] = "一覧・閲覧中の文字キー",
+    [UI_TEXT_KEYS_KEY_COLON] = ":",
+    [UI_TEXT_KEYS_DESC_COLON] = "コマンド入力を開く",
+    [UI_TEXT_KEYS_KEY_EDIT] = "i",
+    [UI_TEXT_KEYS_DESC_EDIT] = "編集を始める",
+    [UI_TEXT_KEYS_KEY_FIND_FORWARD] = "/",
+    [UI_TEXT_KEYS_DESC_FIND_FORWARD] = "前方へ検索を始める",
+    [UI_TEXT_KEYS_KEY_FIND_BACKWARD] = "?",
+    [UI_TEXT_KEYS_DESC_FIND_BACKWARD] = "後方へ検索を始める",
+    [UI_TEXT_KEYS_KEY_REPEAT] = "n",
+    [UI_TEXT_KEYS_DESC_REPEAT] = "同じ向きで検索を繰り返す",
+    [UI_TEXT_KEYS_KEY_REVERSE] = "N",
+    [UI_TEXT_KEYS_DESC_REVERSE] = "逆向きで検索を繰り返す（Shift+n）",
+    [UI_TEXT_KEYS_GROUP_REPLACE] = "置換欄",
+    [UI_TEXT_KEYS_DESC_REPLACE_TAB] = "パターン欄と置換欄を移る",
+    [UI_TEXT_KEYS_DESC_REPLACE_ONE] = "1件置き換える",
+    [UI_TEXT_KEYS_KEY_REPLACE_ALL] = "Ctrl+Enter",
+    [UI_TEXT_KEYS_DESC_REPLACE_ALL] = "すべて置き換える",
+    [UI_TEXT_KEYS_DESC_REPLACE_CLOSE] = "置換欄を閉じる",
+    [UI_TEXT_KEYS_GROUP_HELP] = "ヘルプ内の操作",
+    [UI_TEXT_KEYS_DESC_HELP_TAB] = "「操作」と「キー」を切り替える",
+    [UI_TEXT_KEYS_DESC_HELP_PAGES] = "「キー」の前・次のページへ",
+    [UI_TEXT_KEYS_DESC_HELP_SELECT] = "「操作」の候補を選ぶ",
+    [UI_TEXT_KEYS_DESC_HELP_RUN] = "「操作」の選んだ候補を実行する",
+    [UI_TEXT_KEYS_DESC_HELP_CLOSE] = "ヘルプを閉じる",
+    [UI_TEXT_KEYS_GROUP_WIDTH] = "一覧と本文の境界",
+    [UI_TEXT_KEYS_DESC_WIDTH_FOCUS] =
+        "「両方」で使えます。F6で一覧へ移り、Tabで境界へ移動します。ドラッグでも幅を変えられます。"
+        "幅は今回の起動中だけ保持します。",
+    [UI_TEXT_KEYS_KEY_WIDTH_ARROWS] = "← / →",
+    [UI_TEXT_KEYS_DESC_WIDTH_ARROWS] = "幅を少しずつ調整する",
+    [UI_TEXT_KEYS_DESC_WIDTH_PAGES] = "幅を大きく調整する",
+    [UI_TEXT_KEYS_KEY_WIDTH_LIMIT] = "Home / End",
+    [UI_TEXT_KEYS_DESC_WIDTH_LIMIT] = "最小・最大の幅へ",
+    [UI_TEXT_KEYS_DESC_WIDTH_CANCEL] = "ドラッグ中の幅変更を取り消す",
+    [UI_TEXT_KEYS_GROUP_EX] = "コマンド入力（Ex）",
+    [UI_TEXT_KEYS_KEY_NUMBER_ON] = ":set number",
+    [UI_TEXT_KEYS_DESC_NUMBER_ON] = "編集本文の行番号を表示する",
+    [UI_TEXT_KEYS_KEY_NUMBER_OFF] = ":set nonumber",
+    [UI_TEXT_KEYS_DESC_NUMBER_OFF] = "編集本文の行番号を隠す",
+    [UI_TEXT_KEYS_KEY_NUMBER_TOGGLE] = ":set nu!",
+    [UI_TEXT_KEYS_DESC_NUMBER_TOGGLE] = "編集本文の行番号を切り替える",
+    [UI_TEXT_KEYS_KEY_THEME_DRACULA] = ":set theme=dracula",
+    [UI_TEXT_KEYS_DESC_THEME_DRACULA] = "テーマをDraculaにする",
+    [UI_TEXT_KEYS_KEY_THEME_SYSTEM] = ":set theme=system",
+    [UI_TEXT_KEYS_DESC_THEME_SYSTEM] = "テーマをOSに合わせる",
+    [UI_TEXT_KEYS_KEY_LANGUAGE_JA] = ":set language=ja",
+    [UI_TEXT_KEYS_DESC_LANGUAGE_JA] = "表示を日本語にする",
+    [UI_TEXT_KEYS_KEY_LANGUAGE_EN] = ":set language=en",
+    [UI_TEXT_KEYS_DESC_LANGUAGE_EN] = "表示を英語にする",
+    [UI_TEXT_KEYS_KEY_LANGUAGE_ZH] = ":set language=zh-Hans",
+    [UI_TEXT_KEYS_DESC_LANGUAGE_ZH] = "表示を簡体字中国語にする",
+    [UI_TEXT_KEYS_KEY_SUBSTITUTE] = ":%s/pattern/replacement/[g]",
+    [UI_TEXT_KEYS_DESC_SUBSTITUTE] =
+        "正規表現で置き換える\ngあり: すべて。gなし: 各行の最初の一致。",
+    [UI_TEXT_KEYS_DESC_RENAME_CATEGORY] =
+        "カテゴリ名を変更する\n名前を続けて入力するか、名前入力面で指定します。",
+    [UI_TEXT_KEYS_DESC_TRASH] = "ノートと履歴をごみ箱へ移す\n確認なしで実行します。",
+    [UI_TEXT_KEYS_DESC_DELETE_CATEGORY] = "空のカテゴリを削除する\n確認なしで実行します。",
+    [UI_TEXT_KEYS_EX_ALIASES] = ":{name} / :{from}",
+    [UI_TEXT_KEYS_VALUE] = "{name}",
+    [UI_TEXT_KEYS_NAME] = "{name} — {from}: {to}",
+    [UI_TEXT_KEYS_NOTE_NAME] = "{name} — {to}",
+
     [UI_TEXT_COMMAND_IMPORT] = "このカテゴリへMarkdownを取り込む",
     [UI_TEXT_COMMAND_EXPORT_NOTE] = "このノートを書き出す",
     [UI_TEXT_COMMAND_EXPORT_CATEGORY] = "保存済みカテゴリをZIPに書き出す",
@@ -60,7 +188,6 @@ static const char *_Nonnull const expected[] = {
                                   "調整、PageUp/PageDownで大きく移動、Home/Endで最小/"
                                   "最大。ドラッグ中のEscで取消。幅は起動中だけ保持します。",
     [UI_TEXT_ACCESSIBLE_NAMED_BODY] = "{name} — ノート本文",
-    [UI_TEXT_HELP_ACCESSIBILITY] = "F6 / Shift+F6 区画の移動 · Tab / Shift+Tab 区画内の移動",
     [UI_TEXT_EMPTY] = "",
     [UI_TEXT_FAILURE_APPEARANCE_UNAVAILABLE] =
         "Windowsの外観を取得できません。前の配色（初回は通常配色）を保ちます。",
@@ -184,7 +311,6 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_COMMAND_RENAME] = "名前を変更",
     [UI_TEXT_COMMAND_RENAME_CATEGORY] = "カテゴリ名を変更",
     [UI_TEXT_MENU_RENAME_CATEGORY] = "カテゴリ名を変更…",
-    [UI_TEXT_HELP_RENAME_CATEGORY] = "Ex  :renamecategory / :rencat 名前 カテゴリ名を変更",
     [UI_TEXT_COMMAND_FIND] = "このノート内を検索",
     [UI_TEXT_COMMAND_SET] = "設定を変える（:set number）",
     [UI_TEXT_COMMAND_TOGGLE_NUMBER] = "行番号の表示を切り替える",
@@ -229,45 +355,14 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_MENU_TRASH_NOTE] = "ごみ箱へ移す",
     [UI_TEXT_TRASH_NOTE_COMPLETED] = "一覧から除きました。",
     [UI_TEXT_NOTE_OPENED_IN_VIEW] = "閲覧で開きました。編集で保てない文字があります。",
-    [UI_TEXT_HELP_TRASH_NOTE] = "Ex  :trashnote / :trash ノートと履歴をごみ箱へ移す（確認なし）",
     [UI_TEXT_COMMAND_DELETE_CATEGORY] = "カテゴリを削除",
     [UI_TEXT_MENU_DELETE_CATEGORY] = "カテゴリを削除",
     [UI_TEXT_FAILURE_CATEGORY_NOT_SELECTED] = "カテゴリを選んでください。",
-    [UI_TEXT_HELP_DELETE_CATEGORY] = "Ex  :deletecategory / :delcat 空カテゴリを削除（確認なし）",
     [UI_TEXT_COMMAND_NEW_CATEGORY] = "新しいカテゴリ",
     [UI_TEXT_MENU_RECOLOR] = "色を変える…",
     [UI_TEXT_MENU_RENAME_NOTE] = "名前を変更…",
     [UI_TEXT_MENU_NEW_CATEGORY] = "新しいカテゴリ…",
     [UI_TEXT_MENU_NEW_NOTE_IN_CATEGORY] = "このカテゴリに新しいノート",
-    [UI_TEXT_HELP_PALETTE] = "一覧  ↑↓ 選択 / Enter 実行 / Esc 閉じる / Tab 説明",
-    [UI_TEXT_HELP_EDITOR_MOTION] = "編集本文  Ctrl+h/j/k/l ←/↓/↑/→",
-    [UI_TEXT_HELP_BODY_ZOOM] = "本文  Ctrl+ホイール / Ctrl++ / Ctrl+- 拡大縮小 / Ctrl+0 100%",
-    [UI_TEXT_HELP_GLOBAL_KEYS] = "全区画  {name} ヘルプ / {from} 一覧 / {to} このノート内を検索",
-    [UI_TEXT_HELP_GLOBAL_FILTER] = "全区画  {name} すべてのノートを検索（索引を絞り込む）",
-    [UI_TEXT_HELP_NOTE_ACTIONS] =
-        "ノート  {name} 閲覧・編集を切り替え（閲覧へ戻るとき保存） / {from} 操作メニュー",
-    [UI_TEXT_HELP_FILTER_FIELD] =
-        "絞り込み欄  Esc・Enter 索引へ戻る（絞り込みは残る）/ 空にすると解除",
-    [UI_TEXT_HELP_FILTER_LIMITS] =
-        "絞り込み中  並び替えと折畳/展開はできない（色・保存・編集は可）",
-    [UI_TEXT_HELP_FILE_KEYS] = "入力欄でも  {name} 新規 / {from} 保存 / {to} 別名保存",
-    [UI_TEXT_HELP_INDEX_COMMAND] = "索引・閲覧本文  : コマンド / i 編集",
-    [UI_TEXT_HELP_EX_SET_NUMBER] =
-        "Ex  :set number / :set nonumber / :set nu!（編集中の原文の行番号）",
-    [UI_TEXT_HELP_EX_SET_THEME] = "Ex  :set theme=dracula / :set theme=system",
-    [UI_TEXT_HELP_EX_SET_LANGUAGE] =
-        "Ex  :set language=ja / :set language=en / :set language=zh-Hans",
-    [UI_TEXT_HELP_REPLACE_FIELD] =
-        "置換欄  Tab 欄を移動 / Enter 1 件 / Ctrl+Enter すべて / Esc 閉じる",
-    [UI_TEXT_HELP_EX_SUBSTITUTE] =
-        "Ex  :%s/pattern/replacement/[g]（g なしは各行の最初の一致・正規表現）",
-    [UI_TEXT_HELP_SEARCH_KEYS] = "索引・閲覧本文  / 次を検索 / ? 前を検索 / n・N 繰り返し",
-    [UI_TEXT_HELP_SEARCH_STEP] = "全区画  {name} 次の一致 / {from} 前の一致（向きは変えない）",
-    [UI_TEXT_HELP_SEARCH_FIELD] = "検索欄  {name} 次 / {from} 逆 / Esc 閉じる（選択は残る）",
-    [UI_TEXT_HELP_INDEX_MOTION] = "索引  j/k 次/前 / gg/G 先頭/末尾",
-    [UI_TEXT_HELP_INDEX_FOLD] = "索引  h/l 折畳/展開 / Enter 本文",
-    [UI_TEXT_HELP_INDEX_SCROLL] = "索引  ↑↓ / PgUp/PgDn スクロール",
-    [UI_TEXT_HELP_EDITOR_ESCAPE] = "本文  Esc 保存して索引へ（編集は維持）",
     [UI_TEXT_SESSION_UNTITLED] = "無題のノートを保存してから終了してください。",
     [UI_TEXT_SESSION_RENAME_PENDING] = "名前変更の復旧を完了してから終了してください。",
     [UI_TEXT_SESSION_COMPOSING] = "文字の変換を確定してから終了してください。",
@@ -452,8 +547,6 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_STORAGE_SETTINGS_CHANGED] =
         "別の起動中アプリが保存先設定を変更しました。上書きせず、再起動して読み直してください。",
     [UI_TEXT_STORAGE_PICKER_FAILED] = "フォルダー選択を開けませんでした。パスを直接入力できます。",
-    [UI_TEXT_HELP_RENAME_KEY] = "{name} / {from} 名前変更",
-
 };
 
 constexpr size_t expected_count = sizeof expected / sizeof expected[0];
@@ -767,10 +860,6 @@ static void verify_language(void)
     {
         verify_vocabulary_of((enum ui_text)id);
     }
-    for (size_t id = UI_TEXT_HELP_PALETTE; id <= UI_TEXT_HELP_EDITOR_ESCAPE; ++id)
-    {
-        verify_vocabulary_of((enum ui_text)id);
-    }
     verify_vocabulary_of(UI_TEXT_SETTINGS_GUIDANCE);
     /* 入力後も残る対象表示は、どの言語でもEnterの動きを明記する（ADR0052）。 */
     verify_vocabulary_of(UI_TEXT_STATUS_SEARCH_FORWARD);
@@ -787,7 +876,7 @@ static void verify_trash_notice(void)
                           lines[column]),
                 "the notice reports removal from the list without asserting a move");
     }
-    verify_vocabulary_of(UI_TEXT_HELP_TRASH_NOTE);
+    verify_vocabulary_of(UI_TEXT_KEYS_DESC_TRASH);
 }
 
 static void verify_opened_in_view_notice(void)
@@ -814,8 +903,8 @@ static void verify_category_not_selected(void)
                           lines[column]),
                 "the targetless category operation asks for a category in each language");
     }
-    verify_vocabulary_of(UI_TEXT_HELP_DELETE_CATEGORY);
-    verify_vocabulary_of(UI_TEXT_HELP_ACCESSIBILITY);
+    verify_vocabulary_of(UI_TEXT_KEYS_DESC_DELETE_CATEGORY);
+    verify_vocabulary_of(UI_TEXT_KEYS_KEY_SHIFT_F6);
 }
 
 static void verify_rename_vocabulary(void)

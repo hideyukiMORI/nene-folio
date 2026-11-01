@@ -48,7 +48,7 @@ nenefolio_target(nenefolio_core core STATIC
     src/core/markdown_autolink.c src/core/markdown_character_reference.c
     src/core/web_uri.c src/core/markdown_web_link.c src/core/note_archive.c
     src/core/markdown_line.c src/core/markdown_view.c src/core/markdown_table.c src/core/markdown_containers.c
-    src/core/folio_command.c src/core/folio_menu_action.c src/core/folio_shortcut.c src/core/note_name.c src/core/rename_plan.c src/core/rename_journal.c
+    src/core/folio_command.c src/core/folio_menu_action.c src/core/folio_shortcut.c src/core/key_guide.c src/core/note_name.c src/core/rename_plan.c src/core/rename_journal.c
     src/core/note_search.c src/core/note_corpus.c src/core/index_filter.c src/core/index_filter_build.c
     src/core/storage_path.c src/core/startup_settings.c
     src/core/folio_settings.c src/core/folio_theme.c src/core/folio_theme_choice.c src/core/line_index.c
@@ -101,7 +101,7 @@ nenefolio_target(nenefolio_window ui_win32 STATIC
     src/ui/win32/note_pane_links.c
     src/ui/win32/accessible_item.c src/ui/win32/accessibility_host.c src/ui/win32/accessibility_node.c
     src/ui/win32/accessibility_native.c
-    src/ui/win32/drawer_window.c src/ui/win32/folio_window.c src/ui/win32/note_pane.c src/ui/win32/note_pane_table.c
+    src/ui/win32/drawer_window.c src/ui/win32/folio_window.c src/ui/win32/command_help_fonts.c src/ui/win32/note_pane.c src/ui/win32/note_pane_table.c
     src/ui/win32/folio_palette.c src/ui/win32/failure_box.c src/ui/win32/name_prompt.c
     src/ui/win32/ui_face.c src/ui/win32/icon_paint.c src/ui/win32/dialog_theme.c
     src/ui/win32/ui_part.c src/ui/win32/ui_pointer.c src/ui/win32/modal_owner.c src/ui/win32/name_prompt_metrics.c

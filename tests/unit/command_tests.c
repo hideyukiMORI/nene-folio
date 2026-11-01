@@ -3,6 +3,7 @@
 #include "folio_language.h"
 #include "folio_menu_action.h"
 #include "folio_shortcut.h"
+#include "key_guide.h"
 #include "unit_tests.h"
 
 #include <string.h>
@@ -498,6 +499,46 @@ static void verify_layout_commands(void)
 
 static void verify_menu_catalog(void);
 static void verify_menu_shortcuts(void);
+static void verify_key_guide_language(enum folio_language language)
+{
+    bool save_as = false;
+    bool mode = false;
+    bool menu = false;
+    bool ex = false;
+    bool note = false;
+    for (size_t index = 0; index < key_guide_count(); ++index)
+    {
+        const struct key_guide *entry = key_guide_at(index);
+        char key[1024];
+        char name[1024];
+        require(key_guide_key(entry, language, key, sizeof key) == UI_TEXT_FORMAT_READY,
+                "a key is complete in every language");
+        require(key_guide_name(entry, language, name, sizeof name) == UI_TEXT_FORMAT_READY &&
+                    strstr(name, ui_text_line(key_guide_group(entry), language)) != nullptr &&
+                    strstr(name, key_guide_description(entry, language)) != nullptr &&
+                    strstr(name, key) != nullptr,
+                "the reader receives scope, key and complete explanation");
+        save_as |= same_text(key, folio_shortcut_command_hint(FOLIO_COMMAND_SAVE_AS, language));
+        mode |=
+            same_text(key, folio_shortcut_action_hint(FOLIO_SHORTCUT_ACTION_TOGGLE_MODE, language));
+        menu |=
+            same_text(key, folio_shortcut_action_hint(FOLIO_SHORTCUT_ACTION_OPERATIONS, language));
+        ex |= same_text(key, ":trashnote / :trash");
+        note |= key[0] == '\0';
+    }
+    require(save_as && mode && menu && ex && note,
+            "structured help retains actual bindings, Ex and standalone conditions");
+    char small[1] = {'x'};
+    require(key_guide_key(key_guide_at(0), language, small, sizeof small) ==
+                    UI_TEXT_FORMAT_TOO_LONG &&
+                small[0] == '\0',
+            "truncated keys are rejected");
+    require(key_guide_name(key_guide_at(0), language, small, sizeof small) ==
+                    UI_TEXT_FORMAT_TOO_LONG &&
+                small[0] == '\0',
+            "truncated reader names are rejected");
+}
+
 static void verify_menu_captions(void);
 
 void run_command_tests(void)
@@ -639,6 +680,7 @@ static void verify_menu_captions(void)
             "one-way view does not misrepresent the mode toggle as a direct shortcut");
     for (size_t language = 0; language < folio_language_count; ++language)
     {
+        verify_key_guide_language((enum folio_language)language);
         char text[1024];
         require(folio_menu_action_hint(folio_menu_action_at(FOLIO_MENU_OPERATIONS, 4),
                                        (enum folio_language)language, text,
@@ -653,14 +695,6 @@ static void verify_menu_captions(void)
                                       sizeof text) == UI_TEXT_FORMAT_READY &&
                     strstr(text, "…") == nullptr,
                 "immediate caption in each language");
-        require(folio_shortcut_help(UI_TEXT_HELP_FILE_KEYS, (enum folio_language)language, text,
-                                    sizeof text) == UI_TEXT_FORMAT_READY &&
-                    strstr(text, "Ctrl+Shift+S") != nullptr && strstr(text, "F2") != nullptr,
-                "help uses actual binding values");
-        require(folio_shortcut_help(UI_TEXT_HELP_NOTE_ACTIONS, (enum folio_language)language, text,
-                                    sizeof text) == UI_TEXT_FORMAT_READY &&
-                    strstr(text, "Ctrl+E") != nullptr && strstr(text, "Ctrl+M") != nullptr,
-                "note help exposes both actual shortcuts in every language");
         require(same_text(folio_shortcut_action_hint(FOLIO_SHORTCUT_ACTION_TOGGLE_MODE,
                                                      (enum folio_language)language),
                           "Ctrl+E") &&
