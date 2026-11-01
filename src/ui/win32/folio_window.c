@@ -35,6 +35,7 @@
 #include "key_guide.h"
 #include "layout_metrics.h"
 #include "menu_request.h"
+#include "minimap_update.h"
 #include "modal_owner.h"
 #include "name_prompt.h"
 #include "name_prompt_metrics.h"
@@ -603,7 +604,7 @@ static enum accessible_kind mode_kind(enum pane_mode mode);
 static bool minimap_visible(const struct folio_window *_Nonnull self);
 static bool minimap_available(const struct folio_window *_Nonnull self);
 static RECT minimap_rect(const struct folio_window *_Nonnull self);
-static void request_minimap(struct folio_window *_Nonnull self);
+static void request_minimap(struct folio_window *_Nonnull self, enum minimap_update update);
 static bool part_focus_shown(const struct folio_window *_Nonnull self, enum accessible_kind kind);
 static bool accessible_visible(const struct folio_window *_Nonnull self, enum accessible_kind kind);
 static HWND _Nullable accessible_input_window(const struct folio_window *_Nonnull self,
@@ -2118,6 +2119,14 @@ static RECT minimap_rect(const struct folio_window *_Nonnull self)
     return bounds;
 }
 
+static bool pane_inset_changed(const struct folio_window *_Nonnull self)
+{
+    if (self->pane == nullptr || !body_shown(self))
+        return false;
+    UINT dpi = GetDpiForWindow(self->handle);
+    return pane_bounds(self).left != regions_for(self).pane.left + pane_inset(self, dpi);
+}
+
 static bool minimap_available(const struct folio_window *_Nonnull self)
 {
     return minimap_visible(self) && folio_window_accessible_ready(self) &&
@@ -2143,7 +2152,7 @@ static bool minimap_paint_for(const struct folio_window *_Nonnull self,
     return true;
 }
 
-static void request_minimap(struct folio_window *_Nonnull self)
+static void request_minimap(struct folio_window *_Nonnull self, enum minimap_update update)
 {
     KillTimer(self->handle, minimap_timer);
     note_minimap_invalidate(self->minimap);
@@ -2152,15 +2161,26 @@ static void request_minimap(struct folio_window *_Nonnull self)
         note_minimap_clear(self->minimap);
         return;
     }
-    if (SetTimer(self->handle, minimap_timer, minimap_delay, nullptr) == 0)
+    switch (update)
+    {
+    case MINIMAP_UPDATE_CLEAR:
+        note_minimap_clear(self->minimap);
+        return;
+    case MINIMAP_UPDATE_SETTLE:
+        if (SetTimer(self->handle, minimap_timer, minimap_delay, nullptr) == 0)
+            note_minimap_begin(self->minimap);
+        return;
+    case MINIMAP_UPDATE_READY:
         note_minimap_begin(self->minimap);
+        return;
+    }
 }
 
 static void arrange_minimap(struct folio_window *_Nonnull self, RECT before, bool was_visible)
 {
     RECT after = pane_bounds(self);
     if (!minimap_visible(self) || !was_visible || !EqualRect(&before, &after))
-        request_minimap(self);
+        request_minimap(self, MINIMAP_UPDATE_SETTLE);
     if (self->keyboard_target == ACCESSIBLE_MINIMAP && !minimap_visible(self))
         self->keyboard_target = mode_kind(folio_state_pane_mode(self->state));
 }
@@ -2215,7 +2235,7 @@ static void arrange_zoomed_pane(struct folio_window *_Nonnull self, size_t first
         return;
     refresh_gutter_font(self, GetDpiForWindow(self->handle));
     arrange(self);
-    request_minimap(self);
+    request_minimap(self, MINIMAP_UPDATE_SETTLE);
     note_pane_scroll_to_line(self->pane, first_line);
     InvalidateRect(self->handle, nullptr, FALSE);
     UpdateWindow(note_pane_handle(self->pane));
@@ -2250,7 +2270,7 @@ static enum folio_state_outcome loaded_pane(struct folio_window *_Nonnull self,
      * 矩形をここで同期して配り直す。フォーカスを本文へ渡す前に済ませる。 */
     HWND body = note_pane_handle(self->pane);
     bool shown = body != nullptr && (GetWindowLongW(body, GWL_STYLE) & WS_VISIBLE) != 0;
-    if (body != nullptr && shown != body_shown(self))
+    if (body != nullptr && (shown != body_shown(self) || pane_inset_changed(self)))
     {
         arrange(self);
     }
@@ -2259,7 +2279,17 @@ static enum folio_state_outcome loaded_pane(struct folio_window *_Nonnull self,
     {
         PostMessageW(self->handle, folio_message_appearance_changed, 0, 0);
     }
-    request_minimap(self);
+    switch (outcome)
+    {
+    case NOTE_PANE_LOAD_READY:
+        request_minimap(self, MINIMAP_UPDATE_READY);
+        break;
+    case NOTE_PANE_LOAD_UNAVAILABLE:
+    case NOTE_PANE_LOAD_FAILED:
+    case NOTE_PANE_LOAD_BUSY:
+        request_minimap(self, MINIMAP_UPDATE_CLEAR);
+        break;
+    }
     return from_pane_load(outcome);
 }
 
@@ -2270,7 +2300,7 @@ static enum folio_state_outcome render_pane(struct folio_window *_Nonnull self)
         return FOLIO_STATE_PANE_UNAVAILABLE;
     }
     bool was_unavailable = pane_unavailable(self);
-    note_minimap_clear(self->minimap);
+    request_minimap(self, MINIMAP_UPDATE_CLEAR);
     enum note_pane_load_outcome outcome =
         note_pane_load(self->pane, folio_state_pane_rtf(self->state),
                        folio_state_pane_rtf_length(self->state), PANE_MODE_VIEW);
@@ -5030,12 +5060,7 @@ static void blit_window(struct folio_window *_Nonnull self, HDC target, RECT cli
  * 空状態で比べると WM_PAINT と配り直しが互いを呼び続ける（#356）。 */
 static void check_pane_inset(const struct folio_window *_Nonnull self)
 {
-    if (self->pane == nullptr || !body_shown(self))
-    {
-        return;
-    }
-    UINT dpi = GetDpiForWindow(self->handle);
-    if (pane_bounds(self).left != regions_for(self).pane.left + pane_inset(self, dpi))
+    if (pane_inset_changed(self))
     {
         PostMessageW(self->handle, folio_message_gutter_resized, 0, 0);
     }
@@ -5098,7 +5123,7 @@ static enum folio_state_outcome pour_edit_rtf(struct folio_window *_Nonnull self
         return FOLIO_STATE_PANE_UNAVAILABLE;
     }
     bool was_unavailable = pane_unavailable(self);
-    note_minimap_clear(self->minimap);
+    request_minimap(self, MINIMAP_UPDATE_CLEAR);
     enum note_pane_load_outcome outcome =
         note_pane_load(self->pane, folio_state_edit_rtf(self->state),
                        folio_state_edit_rtf_length(self->state), PANE_MODE_EDIT);
@@ -7165,7 +7190,7 @@ static void apply_minimap(struct folio_window *_Nonnull self)
         return;
     cancel_part_press(self);
     rearrange_keeping_line(self);
-    request_minimap(self);
+    request_minimap(self, MINIMAP_UPDATE_SETTLE);
     redraw_command_layer(self);
     accessibility_host_schedule(self->accessibility);
 }
@@ -11597,8 +11622,11 @@ static bool pane_notification(struct folio_window *_Nonnull self, WPARAM wparam,
         note_pane_invalidate_lines(self->pane);
         self->body_touched = true;
         if (pane_streaming(self))
+        {
             note_minimap_clear(self->minimap);
-        request_minimap(self);
+            return true; /* loaded_pane publishes the completed document once. */
+        }
+        request_minimap(self, MINIMAP_UPDATE_SETTLE);
         refresh_gutter(self, false);
         return true;
     }
@@ -11890,9 +11918,7 @@ static LRESULT on_minimap_timer(struct folio_window *_Nonnull self, WPARAM timer
 {
     if (timer != minimap_timer)
         return DefWindowProcW(self->handle, WM_TIMER, timer, lparam);
-    KillTimer(self->handle, minimap_timer);
-    if (minimap_visible(self))
-        note_minimap_begin(self->minimap);
+    request_minimap(self, MINIMAP_UPDATE_READY);
     return 0;
 }
 

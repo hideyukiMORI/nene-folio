@@ -1,5 +1,17 @@
 # いまの状態 — NeNe Folio
 
+## 文書投入後のミニマップ待機短縮 — #510
+
+hideの表示待ちの指摘を65回調べた結果から、文書投入成功後の120ms待機とstream中の予約重複を削減した。
+成功後は同じidleで開始し、編集中の120ms・16/idle・最大256・完成像だけの公開は維持する。
+旧timer/像は投入前に破棄し、行番号幅の配置を先に整える。失敗時も旧像を残さない。
+Debug/tidy、実Win32の予約140・構造95・追加31checks、旧UIでのredを確認した。
+同じ通常文書の投入後待ちは約128〜139msから13〜21msへ短縮した。大文書の本文読込時間は残る。
+[品質記録](../quality/2026-11-01-minimap-ready.md)・[ADR0084補正](../adr/0084-bounded-native-minimap.md)。
+保存schema・版・依存は不変、Waivers none。最終CI/main/通常反映/保全整理は
+`D:/NeNeFolio/agents/minimap-ready-20261101/integration-completion.json`で確定する。
+通常版が起動中ならhideの保存/終了を待つ。実ノートの6秒待ちとhideの実機受理は未確認。
+
 ## ミニマップのホイールとコードブロック — #508
 
 hideが#506の実機結果を受理し、レーンwheelとコードブロックの概形を依頼した。

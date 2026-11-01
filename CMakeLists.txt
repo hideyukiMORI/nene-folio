@@ -181,3 +181,24 @@ nenefolio_system_link(minimap_structure_tests user32)
 nenefolio_system_link(minimap_structure_tests ole32)
 add_test(NAME minimap_structure COMMAND minimap_structure_tests)
 set_tests_properties(minimap_structure PROPERTIES TIMEOUT 30)
+
+# #510: document readiness and bounded idle work without timer delivery.
+nenefolio_target(minimap_scheduling_tests win32_tests EXECUTABLE
+    tests/win32/minimap_scheduling_tests.c tests/win32/minimap_scheduling_tests.rc)
+nenefolio_link(minimap_scheduling_tests nenefolio_core)
+nenefolio_link(minimap_scheduling_tests nenefolio_application)
+nenefolio_link(minimap_scheduling_tests nenefolio_adapters)
+nenefolio_link(minimap_scheduling_tests nenefolio_window)
+nenefolio_system_link(minimap_scheduling_tests user32)
+nenefolio_system_link(minimap_scheduling_tests ole32)
+target_link_options(minimap_scheduling_tests PRIVATE /MANIFEST:NO)
+target_include_directories(minimap_scheduling_tests PRIVATE
+    "$<$<COMPILE_LANGUAGE:RC>:${CMAKE_CURRENT_BINARY_DIR}/generated/src/app>")
+set_source_files_properties(tests/win32/minimap_scheduling_tests.rc PROPERTIES
+    OBJECT_DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/generated/src/app/NeNeFolio.manifest")
+set_target_properties(minimap_scheduling_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/verification-minimap")
+add_custom_command(TARGET minimap_scheduling_tests POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/fonts $<TARGET_FILE_DIR:minimap_scheduling_tests>/fonts
+    VERBATIM)
+add_test(NAME minimap_scheduling COMMAND minimap_scheduling_tests)
+set_tests_properties(minimap_scheduling PROPERTIES TIMEOUT 30)
