@@ -331,6 +331,77 @@ static void verify_line_ratio_table(void)
     }
 }
 
+/* hoverは文字の可読性と外形を保ち、塗りのある主操作を下辺の棒だけに変えない（#496）。 */
+static void verify_primary_hover(void)
+{
+    size_t outlined = 0;
+    for (size_t index = 0; index < folio_theme_count(); ++index)
+    {
+        const struct theme_palette *_Nonnull palette = folio_theme_palette(folio_theme_at(index));
+        struct theme_unsaved resting = theme_contrast_unsaved(palette);
+        struct theme_primary_hover hover = theme_contrast_primary_hover(palette);
+        require(theme_contrast_ratio(hover.ink, hover.fill) >= 4.5,
+                "every primary hover keeps readable text and an independent visible focus ring");
+        require(theme_contrast_ratio(resting.fill, palette->window) >= 3.0 &&
+                    theme_contrast_ratio(resting.fill, palette->pane) >= 3.0 &&
+                    theme_contrast_ratio(resting.fill, palette->dialog_surface) >= 3.0,
+                "the retained primary perimeter remains visible on all owning surfaces");
+        if (resting.filled)
+        {
+            require(!rgb_color_equal(resting.fill, hover.fill),
+                    "a filled primary changes its face color on hover");
+            require(rgb_color_equal(resting.ink, hover.ink),
+                    "filled primary text keeps its color through hover");
+        }
+        else
+        {
+            require(!rgb_color_equal(hover.fill, palette->dialog_surface),
+                    "an outlined primary gains a visible face on hover");
+            outlined += 1;
+        }
+    }
+    require(outlined > 0, "the catalog exercises outlined primary hover as well as filled hover");
+}
+
+static void verify_primary_hover_system_pair(void)
+{
+    const struct rgb_color dark = {0, 0, 0};
+    const struct rgb_color light = {255, 255, 255};
+    struct theme_palette palette = {.contrast = FOLIO_CONTRAST_HIGH,
+                                    .window = dark,
+                                    .pane = dark,
+                                    .dialog_surface = dark,
+                                    .chip_background = dark,
+                                    .chip_text = light,
+                                    .selected_background = {255, 255, 0},
+                                    .selected_text = dark};
+    struct theme_primary_hover hover = theme_contrast_primary_hover(&palette);
+    require(rgb_color_equal(hover.fill, dark) && rgb_color_equal(hover.ink, light),
+            "a highlighted resting primary switches to the exact OS button pair on hover");
+    palette.window = light;
+    palette.pane = light;
+    palette.dialog_surface = light;
+    palette.chip_background = light;
+    palette.chip_text = dark;
+    palette.selected_background = (struct rgb_color){0, 0, 128};
+    palette.selected_text = light;
+    hover = theme_contrast_primary_hover(&palette);
+    require(rgb_color_equal(hover.fill, light) && rgb_color_equal(hover.ink, dark),
+            "the reverse OS button pair stays exact and remains different from highlight");
+    palette.chip_background = dark;
+    palette.chip_text = light;
+    hover = theme_contrast_primary_hover(&palette);
+    require(rgb_color_equal(hover.fill, palette.selected_background) &&
+                rgb_color_equal(hover.ink, palette.selected_text),
+            "a button-colored resting primary switches to the exact OS highlight pair");
+    palette.selected_background = palette.chip_background;
+    palette.selected_text = palette.chip_text;
+    palette.current_text = dark;
+    hover = theme_contrast_primary_hover(&palette);
+    require(rgb_color_equal(hover.fill, light) && rgb_color_equal(hover.ink, dark),
+            "identical button and highlight faces use the contrasting OS window pair");
+}
+
 /* 既定の色が届かないテーマでは決まった順の別の文字系トークンへ切り替わる。 */
 static void verify_line_fallback(void)
 {
@@ -400,6 +471,8 @@ void run_theme_tests(void)
     verify_line_ratio_table();
     verify_line_roles();
     verify_unsaved_signal();
+    verify_primary_hover();
+    verify_primary_hover_system_pair();
     verify_line_fallback();
     verify_filter_and_ex();
 }

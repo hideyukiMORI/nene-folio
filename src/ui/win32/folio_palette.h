@@ -45,6 +45,8 @@ struct folio_palette
     bool unsaved_filled;
     COLORREF unsaved_fill;
     COLORREF unsaved_ink;
+    COLORREF primary_hover_fill; /* coreのtheme_contrast_primary_hoverから導く面 */
+    COLORREF primary_hover_ink;  /* 同じ対の文字と内側focus */
 };
 
 [[nodiscard]] struct folio_palette folio_palette_from(const struct theme_palette *_Nonnull palette);

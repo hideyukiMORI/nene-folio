@@ -52,6 +52,10 @@ static COLORREF part_ink(const struct folio_palette *_Nonnull palette,
     {
         return palette->border; /* dialog_theme の既存規則 */
     }
+    if (part->style == UI_PART_STYLE_PRIMARY && part->hovered && !part->pressed)
+    {
+        return palette->primary_hover_ink;
+    }
     return part_lit(part) ? palette->selected_text : resting_ink(palette, part->style);
 }
 
@@ -71,29 +75,48 @@ static void draw_selection_bar(HDC device, const struct folio_palette *_Nonnull 
     fill(device, bar, part->disabled ? palette->border : palette->selected_text);
 }
 
-/* B 主操作の地。塗りが地に 3:1 届くテーマでは塗り、届かないテーマでは同じ色の 2px の枠
- * （theme_contrast_unsaved・#349）。 */
+/* B主操作は外周を保ち、hoverで面色を変える。押下の細枠とfocusは別に描く（#496）。 */
 static void draw_primary(HDC device, const struct folio_palette *_Nonnull palette,
                          const struct ui_part_paint *_Nonnull part)
 {
-    if (palette->unsaved_filled)
+    bool pressed = !part->disabled && part->pressed;
+    bool hovered = !part->disabled && part->hovered;
+    COLORREF face = palette->unsaved_fill;
+    if (pressed)
     {
-        fill(device, part_body(part), palette->unsaved_fill);
-        return;
+        face = palette->selected_background;
     }
-    frame(device, part_body(part), ui_part_focus_width(part->dpi), palette->unsaved_fill);
+    else if (hovered)
+    {
+        face = palette->primary_hover_fill;
+    }
+    RECT body = part_body(part);
+    if (palette->unsaved_filled || hovered || pressed)
+    {
+        fill(device, body, face);
+    }
+    if (!palette->unsaved_filled || hovered || pressed)
+    {
+        frame(device, body, ui_part_focus_width(part->dpi), palette->unsaved_fill);
+    }
+    if (pressed)
+    {
+        int inset = scaled(1, part->dpi);
+        InflateRect(&body, -inset, -inset);
+        frame(device, body, inset, palette->selected_text);
+    }
 }
 
 static void draw_surface(HDC device, const struct folio_palette *_Nonnull palette,
                          const struct ui_part_paint *_Nonnull part)
 {
-    if (part_lit(part))
-    {
-        fill(device, part_body(part), palette->selected_background);
-    }
-    else if (part->style == UI_PART_STYLE_PRIMARY)
+    if (part->style == UI_PART_STYLE_PRIMARY)
     {
         draw_primary(device, palette, part);
+    }
+    else if (part_lit(part))
+    {
+        fill(device, part_body(part), palette->selected_background);
     }
     if (part->style == UI_PART_STYLE_CHOICE && part->selected)
     {
@@ -114,22 +137,15 @@ static void draw_surface(HDC device, const struct folio_palette *_Nonnull palett
     }
 }
 
-/* hover は地を塗らず内側 1px の枠（ADR0060 の決定 3）。押下中・選択中・無効では描かない。
- * B 主操作は塗りの上なので、枠の代わりに下辺へ focus と同じ太さの chip_text の棒を描く。 */
+/* Bはdraw_primaryの面色。他様式は内側1pxの枠。押下中・選択中・無効では描かない。 */
 static void draw_hover(HDC device, const struct folio_palette *_Nonnull palette,
                        const struct ui_part_paint *_Nonnull part)
 {
-    if (!part->hovered || part->disabled || part_lit(part))
+    if (!part->hovered || part->disabled || part_lit(part) || part->style == UI_PART_STYLE_PRIMARY)
     {
         return;
     }
     RECT body = part_body(part);
-    if (part->style == UI_PART_STYLE_PRIMARY)
-    {
-        body.top = body.bottom - ui_part_focus_width(part->dpi);
-        fill(device, body, palette->unsaved_ink);
-        return;
-    }
     if (part->style == UI_PART_STYLE_COMMAND && !part->grouped)
     {
         InflateRect(&body, -1, -1);
@@ -144,11 +160,15 @@ static COLORREF item_focus_color(const struct folio_palette *_Nonnull palette,
     {
         return palette->focus_selected_line;
     }
+    if (part->style == UI_PART_STYLE_PRIMARY && part->hovered && !part->disabled)
+    {
+        return palette->primary_hover_ink;
+    }
     return part->style == UI_PART_STYLE_PRIMARY ? palette->focus_primary_line
                                                 : palette->focus_item_line;
 }
 
-/* focus は 2px の実線。単独部品は 1px 外側、群の項目は内側に、その地の上の字の色で描く。 */
+/* focusは2px。Bは外周と押下枠を残して3px内側、他の単独部品は1px外側、群は内側。 */
 static void draw_focus(HDC device, const struct folio_palette *_Nonnull palette,
                        const struct ui_part_paint *_Nonnull part)
 {
@@ -157,9 +177,16 @@ static void draw_focus(HDC device, const struct folio_palette *_Nonnull palette,
         return;
     }
     int width = ui_part_focus_width(part->dpi);
-    if (part->grouped || part->focus_inside)
+    bool primary = part->style == UI_PART_STYLE_PRIMARY;
+    if (part->grouped || part->focus_inside || primary)
     {
-        frame(device, part_body(part), width, item_focus_color(palette, part));
+        RECT body = part_body(part);
+        if (primary)
+        {
+            int inset = scaled(3, part->dpi);
+            InflateRect(&body, -inset, -inset);
+        }
+        frame(device, body, width, item_focus_color(palette, part));
         return;
     }
     RECT ring = part->bounds;

@@ -5,6 +5,7 @@
 
 #include "rgb_color.h"
 #include "theme_line.h"
+#include "theme_primary_hover.h"
 #include "theme_unsaved.h"
 
 struct theme_palette;
@@ -25,5 +26,10 @@ struct theme_palette;
  * 塗らず、THEME_LINE_UNSAVED の線の色で枠と字と丸を描く。 */
 [[nodiscard]] struct theme_unsaved
 theme_contrast_unsaved(const struct theme_palette *_Nonnull palette);
+
+/* B主操作のhover面と文字。通常は静止色から4.5:1を保つ色対を導き、
+ * 高コントラストではOSのhighlight/button対を保つ。外周は既存unsaved.fillで描く（#496）。 */
+[[nodiscard]] struct theme_primary_hover
+theme_contrast_primary_hover(const struct theme_palette *_Nonnull palette);
 
 #endif
