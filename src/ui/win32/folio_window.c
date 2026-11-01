@@ -75,7 +75,7 @@
 #include <windows.h>
 #include <windowsx.h>
 
-constexpr size_t surface_button_count = 8;
+constexpr size_t surface_button_count = 9;
 constexpr size_t surface_pointer_count = surface_button_count + 2;
 constexpr UINT_PTR surface_tooltip_base = 256;
 /* 1 回の描画・測定で UTF-16 へ写せる単位数（ADR 0030 の決定 5）。表の 1 行（ui_text_unit_limit）・
@@ -236,16 +236,20 @@ static const struct
     unsigned char value;
     unsigned char group;
     unsigned char position;
+    enum accessible_surface_button button;
 } settings_rows[] = {
-    {UI_TEXT_SETTINGS_THEME, SETTINGS_ROW_HEADING, 0, 0, 0},
-    {UI_TEXT_THEME_CHOOSE, SETTINGS_ROW_THEME, 0, 0, 0},
-    {UI_TEXT_SETTINGS_LANGUAGE, SETTINGS_ROW_HEADING, 0, 1, 0},
-    {UI_TEXT_SETTINGS_LANGUAGE_JA, SETTINGS_ROW_LANGUAGE, FOLIO_LANGUAGE_JA, 1, 0},
-    {UI_TEXT_SETTINGS_LANGUAGE_EN, SETTINGS_ROW_LANGUAGE, FOLIO_LANGUAGE_EN, 1, 1},
-    {UI_TEXT_SETTINGS_LANGUAGE_ZH_HANS, SETTINGS_ROW_LANGUAGE, FOLIO_LANGUAGE_ZH_HANS, 1, 2},
-    {UI_TEXT_SETTINGS_NUMBER_CHECK, SETTINGS_ROW_NUMBER, 1, 2, 0},
-    {UI_TEXT_SETTINGS_MINIMAP, SETTINGS_ROW_MINIMAP, 1, 3, 0},
-    {UI_TEXT_STORAGE_ENTRY, SETTINGS_ROW_STORAGE, 0, 4, 0},
+    {UI_TEXT_SETTINGS_THEME, SETTINGS_ROW_HEADING, 0, 0, 0, ACCESSIBLE_SURFACE_CLOSE},
+    {UI_TEXT_THEME_CHOOSE, SETTINGS_ROW_THEME, 0, 0, 0, ACCESSIBLE_SURFACE_THEME},
+    {UI_TEXT_SETTINGS_LANGUAGE, SETTINGS_ROW_HEADING, 0, 1, 0, ACCESSIBLE_SURFACE_CLOSE},
+    {UI_TEXT_SETTINGS_LANGUAGE_JA, SETTINGS_ROW_LANGUAGE, FOLIO_LANGUAGE_JA, 1, 0,
+     ACCESSIBLE_SURFACE_CLOSE},
+    {UI_TEXT_SETTINGS_LANGUAGE_EN, SETTINGS_ROW_LANGUAGE, FOLIO_LANGUAGE_EN, 1, 1,
+     ACCESSIBLE_SURFACE_CLOSE},
+    {UI_TEXT_SETTINGS_LANGUAGE_ZH_HANS, SETTINGS_ROW_LANGUAGE, FOLIO_LANGUAGE_ZH_HANS, 1, 2,
+     ACCESSIBLE_SURFACE_CLOSE},
+    {UI_TEXT_SETTINGS_NUMBER_CHECK, SETTINGS_ROW_NUMBER, 1, 2, 0, ACCESSIBLE_SURFACE_CLOSE},
+    {UI_TEXT_SETTINGS_MINIMAP, SETTINGS_ROW_MINIMAP, 1, 3, 0, ACCESSIBLE_SURFACE_CLOSE},
+    {UI_TEXT_STORAGE_ENTRY, SETTINGS_ROW_STORAGE, 0, 4, 0, ACCESSIBLE_SURFACE_STORAGE},
 };
 static const struct
 {
@@ -383,6 +387,25 @@ constexpr size_t settings_first_choice_row = 1;
 static size_t settings_row_count(void)
 {
     return sizeof settings_rows / sizeof settings_rows[0];
+}
+
+/* 設定buttonの公開IDと実際の行を同じ記述子で往復させる。 */
+static size_t settings_button_index(size_t slot)
+{
+    for (size_t index = 0; index < settings_row_count(); ++index)
+    {
+        enum settings_row_kind kind = settings_rows[index].kind;
+        if ((kind == SETTINGS_ROW_THEME || kind == SETTINGS_ROW_STORAGE) &&
+            settings_rows[index].button == slot)
+            return index;
+    }
+    return settings_row_count();
+}
+
+static bool settings_button_item(struct accessible_item item)
+{
+    return item.kind == ACCESSIBLE_SURFACE_BUTTON &&
+           settings_button_index(item.slot) < settings_row_count();
 }
 
 static bool settings_row_choice(size_t index)
@@ -12582,7 +12605,7 @@ static HRESULT surface_list_child(const struct folio_window *_Nonnull self, size
     if (index >= count)
         return S_FALSE;
     enum accessible_kind kind = surface_row_kind(self, index);
-    size_t slot = kind == ACCESSIBLE_SURFACE_BUTTON ? ACCESSIBLE_SURFACE_THEME : index;
+    size_t slot = kind == ACCESSIBLE_SURFACE_BUTTON ? settings_rows[index].button : index;
     *out = surface_item(self, kind, slot);
     return S_OK;
 }
@@ -12608,7 +12631,7 @@ static enum accessible_kind surface_parent(struct accessible_item item)
         return ACCESSIBLE_SURFACE_TABS;
     if (item.kind == ACCESSIBLE_SURFACE_CHOICE || item.kind == ACCESSIBLE_SURFACE_LANGUAGE ||
         item.kind == ACCESSIBLE_SURFACE_TOGGLE || item.kind == ACCESSIBLE_SURFACE_TEXT ||
-        (item.kind == ACCESSIBLE_SURFACE_BUTTON && item.slot == ACCESSIBLE_SURFACE_THEME))
+        settings_button_item(item))
         return ACCESSIBLE_SURFACE_LIST;
     return ACCESSIBLE_SURFACE;
 }
@@ -12616,7 +12639,8 @@ static enum accessible_kind surface_parent(struct accessible_item item)
 static size_t surface_selection_ordinal(struct accessible_item item)
 {
     if (surface_parent(item) == ACCESSIBLE_SURFACE_LIST)
-        return item.kind == ACCESSIBLE_SURFACE_BUTTON ? settings_first_choice_row : item.slot;
+        return item.kind == ACCESSIBLE_SURFACE_BUTTON ? settings_button_index(item.slot)
+                                                      : item.slot;
     if (item.kind == ACCESSIBLE_SURFACE_LIST)
         return 0;
     if (item.kind == ACCESSIBLE_SURFACE_STATUS)
@@ -12833,6 +12857,9 @@ static HRESULT surface_choice_name(const struct folio_window *_Nonnull self, siz
 
 static enum ui_text surface_button_label(const struct folio_window *_Nonnull self, size_t slot)
 {
+    size_t index = settings_button_index(slot);
+    if (index < settings_row_count())
+        return settings_rows[index].label;
     if (slot == ACCESSIBLE_SURFACE_PREVIOUS)
         return self->command_surface == COMMAND_SURFACE_SEARCH ? UI_TEXT_ACTION_SEARCH_PREVIOUS
                                                                : UI_TEXT_ACTION_PALETTE_PREVIOUS;
@@ -12847,8 +12874,7 @@ static enum ui_text surface_button_label(const struct folio_window *_Nonnull sel
                                    UI_TEXT_EMPTY,
                                    UI_TEXT_EMPTY,
                                    UI_TEXT_ACTION_REPLACE_ONE,
-                                   UI_TEXT_ACTION_REPLACE_ALL,
-                                   UI_TEXT_THEME_CHOOSE};
+                                   UI_TEXT_ACTION_REPLACE_ALL};
     return labels[slot];
 }
 
@@ -12960,8 +12986,9 @@ static RECT accessible_surface_button_rect(const struct folio_window *_Nonnull s
     case ACCESSIBLE_SURFACE_BACK:
         return theme_back_rect(self);
     case ACCESSIBLE_SURFACE_THEME:
+    case ACCESSIBLE_SURFACE_STORAGE:
     {
-        RECT row = settings_item_rect(self, settings_first_choice_row);
+        RECT row = settings_item_rect(self, settings_button_index(slot));
         RECT content = settings_content_rect(self);
         RECT visible = {0};
         IntersectRect(&visible, &row, &content);
@@ -13195,8 +13222,7 @@ static void surface_control_view(const struct folio_window *_Nonnull self,
         return;
     }
     surface_selection_view(self, item, out);
-    out->focusable = surface_row_focusable(item.kind) || (item.kind == ACCESSIBLE_SURFACE_BUTTON &&
-                                                          item.slot == ACCESSIBLE_SURFACE_THEME);
+    out->focusable = surface_row_focusable(item.kind) || settings_button_item(item);
     out->focused = out->focusable && GetFocus() == self->command_layer &&
                    self->command_selection == surface_selection_ordinal(item);
 }
@@ -13364,7 +13390,9 @@ static HRESULT surface_button_action(struct folio_window *_Nonnull self, size_t 
         show_settings_surface(self, "");
         break;
     case ACCESSIBLE_SURFACE_THEME:
-        show_theme_surface(self);
+    case ACCESSIBLE_SURFACE_STORAGE:
+        self->command_selection = settings_button_index(slot);
+        adopt_settings_row(self);
         break;
     case ACCESSIBLE_SURFACE_SHOW_HELP:
         toggle_command_keys(self);
@@ -13473,8 +13501,7 @@ static HRESULT surface_action(struct folio_window *_Nonnull self,
         surface_reveal(self, item);
         return S_OK;
     }
-    bool row = surface_row_focusable(item.kind) ||
-               (item.kind == ACCESSIBLE_SURFACE_BUTTON && item.slot == ACCESSIBLE_SURFACE_THEME);
+    bool row = surface_row_focusable(item.kind) || settings_button_item(item);
     if (!row)
         return accessibility_node_invalid;
     return surface_row_action(self, request);

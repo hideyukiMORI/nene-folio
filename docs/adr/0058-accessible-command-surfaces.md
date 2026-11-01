@@ -48,3 +48,13 @@
 既存host/nodeへS2のSelection groupとRadioButton/SelectionItemを追加し、選択は`command_keys_visible`から読む。候補Listの選択とは別containerにする。
 scope見出しは非選択Text、候補は既存ListItemで、描画と同じ群順・候補写像を参照する。
 キー面では候補と検索EDITを公開・実行せず、切替による既存の世代更新で前の子参照を失効する。独立した選択値・command実行経路・native入力providerは追加しない。
+
+## 2026-11-01 の補正（#504）
+
+設定の保存先行がテーマ行と同じUIA識別を返し、NextSiblingで設定一覧を巡回するとテーマへ戻る循環を実Win32で再現した。
+設定のbutton識別も既存の設定行記述子へ持たせ、列挙・親子/前後移動・名前・矩形・focus・Invokeは同じ行へ対応する。
+一つの行へ二つの設定操作をまとめない。全行の一意性、前後巡回の終了、親子往復、保存先とテーマの操作先を回帰確認する。
+provider/STA/世代失効の経路と設定保存形式は変更しない。利用者processの診断snapshotはローカルだけに保持する。
+回帰は`tests/win32`の専用合成ルートで実windowと公開UI境界を通し、CMake/CTestから必須CIへ接続する。
+製品のprivate実装をテストへ複製せず、同じcore/application/adapters/uiのlibraryをリンクする。
+専用desktopと`build/verification-settings`のportable dataだけを使い、通常版のdata・入力・表示に触れない。

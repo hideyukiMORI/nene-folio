@@ -46,6 +46,9 @@ src/ui/win32
 
 src/app
     -> すべて（明示的な合成のためだけに）
+
+tests/win32（専用desktopと専用portable dataの検証合成ルート）
+    -> core, application, adapters/win32, ui/win32
 ```
 
 ここに無い依存はすべて禁止である。とくに:
@@ -151,7 +154,7 @@ UIはMarkdownを再解釈せず、更新後の字下げ・列数・列幅をnati
 | 種類 | 置き場 |
 | --- | --- |
 | production | `src/core` / `src/application` / `src/adapters/win32` / `src/ui/win32` / `src/app`（2026-09-09 の最初の縦切りで全層を作った。ADR 0004） |
-| テスト | `tests/build`（C23 基盤のスモーク）/ `tests/unit`（OS 非依存の中核。ASan / UBSan / nullability 付き。`allocation_probe` は測定ビルドでだけ効く確保失敗の注入口）/ `tests/conformance`（検査器自身の正例・反例。規約検査の対象外だが決定性の禁止は適用する） |
+| テスト | `tests/build`（C23 基盤のスモーク）/ `tests/unit`（OS 非依存の中核。ASan / UBSan / nullability 付き。`allocation_probe` は測定ビルドでだけ効く確保失敗の注入口）/ `tests/conformance`（検査器自身の正例・反例。規約検査の対象外だが決定性の禁止は適用する）/ `tests/win32`（実windowの公開UI境界。製品libraryとmanifestを共有し、専用desktop/dataで設定の一意な有限巡回を確認する。ADR0058 / #504） |
 | 検査設定 | `.clang-format` / `.clang-tidy` / `eng/*.json`。参照の一覧は `eng/config-bindings.json`（CNF-007） |
 | 作業用ツール | `tools/`。対象実行の証跡は `tools/record-run.py` が明示された新規run-dirへ保存し、境界テストは既存 `tests/conformance` に置く。開発時の出力は `D:/NeNeFolio/outputs/`、恒久証跡は `D:/NeNeFolio/agents/` |
 | 生成物 | `build/`（CMake・オブジェクト・検証 exe・CMakeから導出したmanifest資源と配布metadata）/ `out/`（Phase 0 の実測・証明 fixture・測定ビルド `out/coverage`・出力）。製品 C/header/RCコードの生成は未採用 |
