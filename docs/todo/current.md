@@ -1,303 +1,67 @@
 # いまの状態 — NeNe Folio
 
-## 受理済み改善の1.1.0配布 — #516
+## 1.1.0公開とStore認定待ち（2026-11-01 23:35）
 
-hideは#512/#514の実機改善を受理し、GitHubとStoreの両方のリリース更新を依頼した。
-CMakeの単一版入力を1.1.0（Windows 1.1.0.0）へ上げ、配布READMEと更新手順を現行機能へ揃える。
-生産C・保存schema・依存は不変。成功済み機能試験を再利用し、最終head必須CI後のclean mainから正規ZIP/MSIXを生成する。
+[GitHub 1.1.0 Beta](https://github.com/hideyukiMORI/nene-folio/releases/tag/v1.1.0)を23:25:01 JSTに公開済み。
+#516 / PR #517はhead `9152a45`・必須CI `41315187416`成功でmain `8ef5d03`へ統合した。
+正規ZIP/MSIX生成、配布exeの新規起動/設定版/保存/旧0.3.0データ読込、公開後の全bytes/hash照合が成功。
 [変更一覧](../release/1.1.0.md)・[品質記録](../quality/2026-11-01-release-1.1.0.md)。Waivers none。
-CI/main・配布hash・GitHub公開後再取得・起動/更新・恒久成果物/整理の確定値は
-`D:/NeNeFolio/agents/release-1.1.0-20261101/integration-completion.json`へ記録する。
-Computer Useがbrowser URLを確定できず停止したため、Store操作は未実施。提出用MSIX/変更文を準備する。
-申請済み1.0.0を取り消さない。通常版が稼働中なら終了/上書きせず、反映未実施の理由を記録する。
 
-## 本文変換の連続文字出力 — #514
+Storeの既存Submission 1（提出原本1.0.0）は23:17:25のhide提供画面で公開を確認した。
+続く1.1.0はhideが提出し、日報依頼後に「認定中になった」と報告した。認定中画面の直接確認と新Submission番号は未確認。
+**1.1.0の認定合格・Store公開・実Store署名版導入は未確認。** 常時監視は依頼されていない。
+現在の申請状況は`D:/NeNeFolio/agents/handoff-release-20261101/store-status.json`。
+#516の23:26完了原本にある未提出は、その後のhide報告で更新された時点付きの事実である。
 
-hideの「対応できそうなところは端から対応して」に従い、#512に続いて本文変換の細かな呼出しを削減した。
-既存RTF escape/改行判定へ連続bytesを渡し、行内は最大256byteの固定scratchへまとめる。
-文字参照/Unicode/表の意味と出力bytes、OOM時のout不変を保つ。別parser・全文複製・永続cacheは追加しない。
-正典Debug/tidy、Markdown対象unit/全確保点失敗、7,294件の全bytes一致を確認した。
-合成Debug計測で通常2,000段落の変換は閲覧55.598→47.134ms、編集6.842→1.808ms。
-[品質記録](../quality/2026-11-01-markdown-emission.md)・[ADR0078補正](../adr/0078-lightweight-markdown-inline-rendering.md)。
-保存schema・版・依存は不変、Waivers none。最終CI/main、#512と合わせた通常反映、全保全/整理は
-`D:/NeNeFolio/agents/markdown-emission-20261101/integration-completion.json`で確定する。
-通常版が起動中なら保存/終了を待つ。申請済みMSIXは差し替えない。native投入/表配置の負担は残る。
+配布原本は`D:/NeNeFolio/releases/1.1.0/github/`と`D:/NeNeFolio/releases/1.1.0/store-candidate-20261101/`。
+MSIXと3言語の更新説明をhideへ渡した。配布・通常版・保全整理の確定原本は
+`D:/NeNeFolio/agents/release-1.1.0-20261101/integration-completion.json`。
+次回は審査結果と公開状況を新しい証拠で確認し、新機能や再提出を古い許可だけで始めない。
 
-## ミニマップ表示までの重複処理と順番待ち — #512
+## 通常版と実機受理
 
-hideの「対応できそうなところは端から対応して」に従い、投入中のポインタ再判定、
-更新範囲外の頭/操作描画と字幅参照、索引優先によるミニマップ待ちを削減した。
-既存idleで索引とマップを一単位ずつ交互に進め、入力/paint優先と16/256等の上限を保つ。
-Debug/tidy、予約286checks、実RichEdit/GDI470checks、旧UIでのred、合成82回の計測を確認した。
-最終比較では表3,000行の再判定3,002→0、索引pending例の描画完了28.329→9.403ms。
-本文投入時間は変動しており、全体の一律短縮は主張しない。本文変換/投入は続けて切り分ける。
-[品質記録](../quality/2026-11-01-minimap-pipeline.md)・[ADR0083](../adr/0083-action-pointer-feedback.md)・[ADR0084](../adr/0084-bounded-native-minimap.md)。
-保存schema・版・依存は不変、Waivers none。最終CI/main/通常反映/全保全/整理は
-`D:/NeNeFolio/agents/minimap-pipeline-fix-20261101/integration-completion.json`で確定する。
-通常版が起動中ならhideの保存/終了を待つ。申請済みMSIXは差し替えない。
+#494〜#514の転送・操作表示・ヘルプ・ミニマップ・応答改善はmain統合/通常反映/保全整理済み。
+hideは#512/#514の結果を「かなり良くなってる」と受理し、その状態のリリース更新を依頼した。
+完了履歴・各PR/CI/品質記録は[本日の日報](../reports/2026-11-01.md)、再開手順は[引き継ぎ書](../handoffs/2026-11-01.md)へ集約する。
 
-## 文書投入後のミニマップ待機短縮 — #510
+通常exeは`C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`、改善済みsource `ae37d10`・版1.0.0 / Windows1.0.0.0。
+最新hash/反映/起動は`D:/NeNeFolio/agents/markdown-emission-20261101/integration-completion.json`。
+同原本の実機受理未確認は反映直後の値であり、その後のhide受理を上記へ記録した。
+リリース時はPID48764で稼働していたため、1.1.0への版だけの反映は行わず保持した。
+稼働lockを除く通常data25filesのhashと通常exeはリリース前後で不変、起動設定ファイルなし。
+次回は実稼働状態を確認し、保存/終了前の上書きや強制終了をしない。
 
-hideの表示待ちの指摘を65回調べた結果から、文書投入成功後の120ms待機とstream中の予約重複を削減した。
-成功後は同じidleで開始し、編集中の120ms・16/idle・最大256・完成像だけの公開は維持する。
-旧timer/像は投入前に破棄し、行番号幅の配置を先に整える。失敗時も旧像を残さない。
-Debug/tidy、実Win32の予約186（96 DPI 188）・構造95・追加31＋10checks、旧UIでのredを確認した。
-同じ通常文書の投入後待ちは約128〜139msから13〜21msへ短縮した。大文書の本文読込時間は残る。
-[品質記録](../quality/2026-11-01-minimap-ready.md)・[ADR0084補正](../adr/0084-bounded-native-minimap.md)。
-保存schema・版・依存は不変、Waivers none。最終CI/main/通常反映/保全整理は
-`D:/NeNeFolio/agents/minimap-ready-20261101/integration-completion.json`で確定する。
-hideは反映後の改善を受理し、元の表示待ちの体感を0.3〜0.6秒と訂正した。実測値ではない。
+本日の日報・引き継ぎ・本頁の更新は#518。最終head/必須CI/main・追加worktree整理は
+`D:/NeNeFolio/agents/handoff-release-20261101/integration-completion.json`で確定する。
+文書3件のみで、製品・schema・版・依存を変えず、対象試験を再実行しない。Waivers none。
 
-## ミニマップのホイールとコードブロック — #508
+## 継続保留と確認範囲
 
-hideが#506の実機結果を受理し、レーンwheelとコードブロックの概形を依頼した。
-レーン上のwheelは既存本文の減速/scrollへ合流し、現在位置枠と連動する。Ctrl併用でも倍率を変えない。
-コードブロックは取得済みnative背景を帯/左辺で示し、空行も保持する。別parserや文字列取得を増やさない。
-Debug/tidy、実RichEdit95checks、実主窓104＋20＋10checksと明暗/HC/狭幅画像を確認した。
-[品質記録](../quality/2026-11-01-minimap-wheel-code.md)・[ADR0084補正](../adr/0084-bounded-native-minimap.md)。
-保存schema・版・依存は不変、Waivers none。最終CI/main/通常反映/保全整理は
-`D:/NeNeFolio/agents/minimap-wheel-code-20261101/integration-completion.json`で確定する。
-通常版が起動中ならhideの保存/終了を待つ。
-
-## ミニマップの右余白と文書構造 — #506
-
-hideの実機指摘に合わせ、表示中の右余白を12 logical px・本文との間隔を8へ縮小した。
-hideは18:10頃の後続依頼で表示結果を受理した。
-既存RichEdit/TOMの字体/段落/表からh1〜4、hr、リストの字下げ/印、表格子を簡易表示する。
-最大256sample・16/idle・120msを維持し、本文の再解析・全体複製・背景threadは追加しない。
-Debug/tidy、実RichEdit81checks、実主窓の232＋43checks、明暗/高コントラスト/狭幅画像を確認した。
-[品質記録](../quality/2026-11-01-minimap-structure.md)・[ADR0084補正](../adr/0084-bounded-native-minimap.md)。
-保存schema・版・依存は不変、Waivers none。最終CI/main/通常反映/保全整理は
-`D:/NeNeFolio/agents/minimap-shape-20261101/integration-completion.json`で確定する。
-通常版が起動中ならhideの保存/終了を待つ。#504の設定UIA循環修正は統合・通常反映済み。
-
-## 設定を開いた直後の応答停止 — #504
-
-hideがミニマップの切替前、設定を開いた直後の停止を報告した。通常版を終了せず採取したsnapshotと、
-隔離Win32の有限巡回で、保存先行がテーマと同一のUIA要素を返す循環を確認した。
-設定行記述子へbutton識別を結び、名前・矩形・前後巡回・focus・Invokeを同じ行と共通操作へ修正した。
-CTestへ3言語318checksを追加し、旧UI libraryでは重複で失敗することを確認。
-別processの実UIA FindAll・保存先Invoke/取消・テーマInvokeも成功した。
-[品質記録](../quality/2026-11-01-settings-uia-cycle.md)・[ADR0058補正](../adr/0058-accessible-command-surfaces.md)。
-保存schema・版・依存は不変、Waivers none。最終CI/main/通常反映/保全整理は
-`D:/NeNeFolio/agents/minimap-hang-20261101/integration-completion.json`で確定する。
-hideは未保存入力なしと回答済み。停止中通常版を勝手に終了せず、反映時点の終了状態と指示を照合する。
-続くミニマップ右余白の縮小とh1〜4/hr/リスト/表の概形は上段#506で扱う。
-
-## 簡易ミニマップ — #502
-
-hide指定の速度・安定性・デザイン優先で、閲覧/編集右側へ行の分量と現在範囲を追加した。
-設定・Ctrl+Shift+M・操作メニュー/パレットで表示を切替え、設定版5のminimapへ保存する。旧1〜4は移行できる。
-本文複製/別解析なし。120msで入力をまとめ、同じUI threadのidleで16sampleずつ、最大256行を参照する。
-click/drag/keyboard/UIAを同じnative scrollへ渡し、本文・選択・Undo・dirtyを保つ。狭幅は設定を保持して隠す。
-対象unit/確保失敗、実Win32の上限・復帰・可変行高・入力保護・操作/UIAと明暗/HC画像を確認した。
-[品質記録](../quality/2026-11-01-minimap.md)・[ADR0084](../adr/0084-bounded-native-minimap.md)。
-版入力・依存は不変、Waivers none。最終head必須CI、main、通常exe反映/起動、全保全/整理は
-`D:/NeNeFolio/agents/minimap-20261101/integration-completion.json`で確定する。
-申請済みMSIXは差し替えず、Store結果確認は別件。停止中のAppHang調査や既存課題は再開しない。
-
-## ヘルプのキータブ — #500
-
-hideの指摘とGUI/情報設計の独立レビューに基づき、キーを用途別の見出しと1操作1項目へ整理した。
-説明の字体と大きさを見直し、通常は2列、狭幅と長いキーは上下配置にする。
-通常項目はページ内へまとめ、表示高超過項目だけ重ねて送る。描画/UIA/ページ送りは同じ計測を使う。
-3言語の対象unit、実Win32の109＋38＋9checks、明暗/高コントラストと狭幅の画像を確認した。
-[品質記録](../quality/2026-11-01-help-keys.md)・[キー仕様](../KEY_BINDINGS.md)・[ADR0060補正](../adr/0060-ui-part-styles-and-state-rule.md)。
-保存schema・実キー割当・版・依存は不変、Waivers none。最終head必須CI、main、通常exe反映/起動、全保全/整理は
-`D:/NeNeFolio/agents/help-keys-20261101/integration-completion.json`で確定する。
-通常版が起動中ならhideの保存/終了を待つ。申請済みMSIXの差替えとStore結果確認は別件。
-
-## 有効な操作対象の指先ポインタ — #498
-
-hideの方針指定に従い、主窓/drawer/補助面/検索の×/自前native面の有効な操作を指先へ揃えた。
-選択済みでも有効なら指先、無効/見出し/余白は矢印。文字選択と幅変更/dragは元の形を保つ。
-既存hit/描画/UIA/業務可否へ合流し、状態変更後に同じrootの通知位置だけを再評価する。
-Debug/tidy、主面111・native面92・Web通知/capture12・履歴等12・検索EDITのIME13checksが成功した。
-[品質記録](../quality/2026-11-01-action-pointer.md)・[ADR0083](../adr/0083-action-pointer-feedback.md)。
-保存schema・版・配色・依存は不変、Waivers none。最終head必須CI、main、通常exe反映/起動と全保全/整理は
-`D:/NeNeFolio/agents/hand-pointer-20261101/integration-completion.json`で確定する。
-通常版が起動中ならhideの保存/終了を待つ。申請済みMSIXは差し替えず、Store結果確認は別件。
-
-## 主操作ボタンのhover — #496
-
-共有PRIMARYの下辺の棒を廃止し、外周を保ってhoverの面色を変える形へ揃えた。
-未保存の保存・名前入力の確定・保存先の確定に適用し、押下とkeyboard focusの内枠を分離した。
-全127固定配色の文字/外周/focus、実GDI438checks、指摘時の配色を使う実保存先面15checksが成功。
-OS高コントラストで静止とhoverが同色になる条件は12件のredから修正した。
-[品質記録](../quality/2026-11-01-primary-hover.md)・[ADR0060補正](../adr/0060-ui-part-styles-and-state-rule.md)。
-保存schema・版・依存は不変、Waivers none。最終head必須CI、main、通常exe反映/起動、全保全と追加作業物整理は
-`D:/NeNeFolio/agents/primary-hover-20261101/integration-completion.json`で確定する。
-通常版が起動中ならhideの保存/終了を待つ。申請済みMSIXは差し替えず、Store結果確認は別件。
-
-## Markdown取り込み・書き出し — #494
-
-外部UTF-8 `.md`の複数取り込み、現在ノートのMarkdown書き出し、保存済みカテゴリ／全ノートのZIP書き出しを追加した。
-取り込みは元・同名ノートを保持し、追加済み／同名／未処理を報告する。単票は未保存本文を含み、ZIPは保存済み本文だけ。
-元ノートの保存・選択・Undo・dirtyを変えず、既存出力を上書きしない。初回保存の公開、本文検証、file_bytesの原子公開へ合流した。
-ZIP32 STOREは65,534件／128 MiBまで。設定・履歴・台帳を含む完全復元形式ではない。
-
-Debug/tidy・対象単体／確保失敗・共有境界の既存試験、実Win32 40＋9checks、独立ZIP/保全32＋3checksが成功。
-検索の0件表示からも保存済みカテゴリ全件を書き出せる。3言語の明暗／狭幅メニューを画像で確認した。
-[操作案内](../TRANSFER.md)・[品質記録](../quality/2026-11-01-markdown-transfer.md)・[ADR0082](../adr/0082-markdown-transfer.md)。
-保存schema・版入力・依存は不変、Waivers none。最終head必須CI、main、通常exe反映と起動、全保全と追加作業物整理は
-`D:/NeNeFolio/agents/transfer-20261101/integration-completion.json`で確定した。hideは同日に「よさそう」と反映結果を受理。
-申請済みMSIXより後の変更で、提出物は差し替えていない。主操作ボタンのhoverは上段の#496へ進めた。
-
-## キー操作反映済み・Store認定結果待ち — #490 / #492
-
-#490 / PR #491は最終head `e29cec9`・必須CI `41219791592`成功で製品main `1fb2762`へ統合済み。
-Ctrl+Eの閲覧/編集切り替え、Ctrl+Mの操作メニューと5部品の「説明 (キー)」を追加し、通常exeへ反映・起動した。
-既存の保存処理とshortcut記述子へ合流。Debug/tidy・対象単体・実Win32の88checksが成功。
-[品質記録](../quality/2026-11-01-mode-shortcuts.md)・[キー仕様](../KEY_BINDINGS.md)・[ADR0081](../adr/0081-mode-shortcut-and-action-hints.md)。
-通常版は1.0.0 / 1.0.0.0、反映前後・起動前のノート26files/保存先設定は不変。hideの実機受理は未確認。
-4,060files全hash保全後に追加worktree/outputを削除し、branch/commitを保持した。
-確定原本は`D:/NeNeFolio/agents/mode-shortcuts-20261101/integration-completion.json`。
-保存schema・版入力・依存は不変、Waivers none。これは申請済みMSIXより後の変更で、提出物は差し替えていない。
-
-hideが1.0.0のSubmission 1を提出し、2026-11-01 00:31:51 JSTの画面で「認定中 / 前処理中」を確認した。
-認定合格後すぐ自動公開する設定。補足文も保存済み。申請済みだが、合格・Store公開は未確認。
-最新証跡は`D:/NeNeFolio/agents/msix-validation-20261031/submission-status.json`。常時監視はしていない。
-#486の実MSIX初回/保存/再起動/OS更新/削除後の外部データ保持は確認済み、試験package・一時信頼・秘密鍵は解除/削除済み。
-WACKは22 PASS・任意88 FAIL・必須92 WARNING、総合WARNING。根拠を添えたが全合格や審査受理とは扱わない。
-#486/PR487は必須CI成功でmain統合済み。254files全hash保全後に追加worktreeと2一時出力を削除し、提出原本と15枚の画像を保持した。
-[品質記録](../quality/2026-11-01-msix-installation.md)・[日報](../reports/2026-11-01.md)・[引き継ぎ](../handoffs/2026-11-01.md)。
-実機確認/整理は同agentsの`integration-completion.json`、今回#492の文書3件の最終CI/main/整理は
-`D:/NeNeFolio/agents/handoff-shortcuts-20261101/integration-completion.json`で確定する。
-次はキー操作の実機受理と認定結果/公開画面の確認。AppDataノートroot保持と実Store署名版導入は未確認。
-#492は製品変更0、Waivers none。通常アプリは稼働状態を確認し、未保存本文を強制終了しない。
-#479/#466・停止済み継続品質改善は再開しない。構文色分け等は申請後ではなくStore公開後のhide指示と照合する。
-
-## 直前のMSIX生成 — #484
-
-hideがStore登録/予約とidentity提供を完了し、初回候補1.0.0と紙/ノートの図案作成を指定した。
-同じ`eng/package-release.ps1`へ`-Format Msix`を追加。CMake一入力の版、共通Release payload、
-登録値・PNG・SHA256 block mapを検査し、SDK pack/unpack後も全ファイルを照合する。
-23対象proof、正典MSIX生成と展開、既存ZIPの互換確認が成功。保存schema/runtime依存は不変、Waivers none。
-[手順](../release/MSIX.md)・[品質記録](../quality/2026-10-31-store-msix.md)・[ADR0080](../adr/0080-store-msix-through-release-pipeline.md)。
-最終head必須CI・main・clean mainのMSIX候補・hash・保全/終了整理は
-`D:/NeNeFolio/agents/msix-20261031/integration-completion.json`で確定する。
-#486で実MSIXとページ素材の段階を確認した。WACK警告と認定提出/公開は上段を参照する。
-通常exeは#482の0.3.0を保持し、当時起動中だったため終了・上書きしなかった。必要反映先は別のMSIX候補とした。
-
-## 閲覧中のWebリンク起動 — #482
-
-hideの依頼で、閲覧中のHTTP/HTTPSリンクを左クリックまたはリンク内Ctrl+Enterで既定browserへ開く機能を追加した。
-文字選択drag、修飾付きクリック、編集/IME/modal/stream中は開かない。メール・file・裸URLは起動対象外。
-同じURI factoryと明示portへ合流し、native hidden位置と検索/選択を対応した。保存schema/版/依存は不変。
-Debug/tidy・対象単体/確保失敗、実RichEdit89checks・隔離copy81checks・固定example.comの実OS dispatchが成功。
-[品質記録](../quality/2026-10-31-web-links.md)・[ADR0079](../adr/0079-view-web-link-activation.md)。Waivers none。
-最終head必須CI・main・通常exeの版/hash/反映/起動・全保全整理は
-`D:/NeNeFolio/agents/web-links-20261031/integration-completion.json`を確定原本とする。
-物理IME/reader/DWM/異なるDPIとbrowserのページ読込完了は上の確認とは区別する。
-#479/#466・停止済み継続品質改善は再開しない。
-
-## 最新の表示調整 — Markdown #480
-
-hideの依頼で水平線の上下を背景なし12pt余白にし、山括弧付きURI/emailの表示と数値/基本6種の文字参照を追加した。
-[未対応の棚卸し](../quality/2026-10-31-markdown-scope.md)に負担と次候補を整理した。
-言語選択/構文色分けはhide指定でStore公開後、Mermaidは描画基盤が必要なため今回見送り。
-正典Debug/tidy、対象単体/確保失敗、実RichEdit45checksと明暗/狭幅の画像目視が成功。
-[品質記録](../quality/2026-10-31-markdown-light.md)・[ADR0078](../adr/0078-lightweight-markdown-inline-rendering.md)。
-保存schema・版・依存は不変、Waivers none。最終CI/main/通常exe反映と保全整理は
-`D:/NeNeFolio/agents/markdown-light-20261031/integration-completion.json`で確定する。
-
-職場での文字ウェイト混在は[#479](https://github.com/hideyukiMORI/nene-folio/issues/479)へ記録して修正保留。
-合成WM_PASTEで書式混入経路は再現したが、職場の現象との同一性は不明。hide指定で診断を終了し、production変更0。
-未完`worktrees/479-editor-paste`と`outputs/479-editor-paste`は診断原本と未統合記録のため保持する。
-停止済み継続goalと#466は再開しない。
-
-## 直前の機能追加 — ノート保存先 #477
-
-hideが#475の一覧resize・両表示の境界dragを実機受理し、次の保存先設定へ進むよう依頼した。
-[#477](https://github.com/hideyukiMORI/nene-folio/issues/477)で設定の「ノートの保存先…」を追加し、
-現在の場所と次回起動の場所を分離した。portableの既定はexe隣data、package identityを持つ版は
-Documents/NeNeFolioを初回候補として確認する。ノートを自動移動せず、変更中の本文・Undo・dirtyを保持する。
-起動設定`nenefolio-startup.json`版1を別に置き、ノート側settings版4は変更しない。
-
-Debug/tidy、対象単体/確保失敗、実adapter41checks、UI機能258checks、表示82checks、実exe4casesは成功した。
-詳細と未確認範囲は[品質記録](../quality/2026-10-31-storage-location.md)と[ADR0077](../adr/0077-note-storage-location.md)。
-Waivers none。最終headの必須CI・main・通常exeの版/hash/反映・全保全/整理は
-`D:/NeNeFolio/agents/storage-location-20261031/integration-completion.json`で確定する。
-
-#475/PR476はhead15a578d・必須CI41165338305成功でmain6232320へ統合・通常反映済み。
-hideはテーマ選択・窓resize・本文wheelに続き、一覧resize/境界dragも受理した。
-またhideが保全済み47一時出力を削除し、全対象の不在を読取確認した。旧削除拒否のworktree9箇所は残す。
-[日報](../reports/2026-10-31.md)・[引き継ぎ](../handoffs/2026-10-31.md)を参照する。
-停止済み継続goalと#466は再開しない。
-
-## 継続品質改善の停止記録
-
-記録日: 2026-10-30。20:14 JSTのhideの「区切りのいいところで止めて日報と引き継ぎ書を書いて」で品質改善を停止する。
-#464の完了を確定し、#466は診断未実行の区切りで保持した。新しい改善・診断は始めない。
-06:52頃からのAstra設計/受理・SOL/LUNA調査/実装/検証の分担は今回の継続作業に限った指定で、次回へ自動継承しない。
-日報・引き継ぎの終了整理は[#467](https://github.com/hideyukiMORI/nene-folio/issues/467)。
-最新の[日報](../reports/2026-10-30.md)・[引き継ぎ](../handoffs/2026-10-30.md)を参照し、再開時はhideの新指示と実Issue/PR・checkoutを照合する。
-10月29日の完成成果は[23件の一覧](../reports/2026-10-29.md#一日の成果一覧2026-10-30の終了整理で確定)。
-
-## 停止時の到達点
-
-最新の製品改善は[#464](https://github.com/hideyukiMORI/nene-folio/issues/464)。本文検証の出力変数の初期化を走査前へ移した。
-PR #465のhead`262ff18`・必須CI`41043496466`成功でmain`e4e1823`へ統合し、通常反映・全保全・整理まで確定した。
-未計装/計装Release objectともloop内zero storeなし。Debug/既存text-validationと固定Bの13契約不一致0。
-固定B一回は検索47.9622ms・Large検証18.0793ms・一件準備29.9140msで、改善幅や一般UI速度は保証しない。
-7204files全hash保全後にworktreeを削除。output削除は実行前拒否で51箇所目として保持し、再試行しない。
-確定原本は`D:/NeNeFolio/agents/464-validation-output/integration-completion.json`、詳細は[品質記録](../quality/2026-10-30-validation-output.md)。
-
-未完の[#466](https://github.com/hideyukiMORI/nene-folio/issues/466)は、root63列に既存caller幅上端31679twipを一回渡す非製品診断の設計まで。
-この値はnative上限や最小可読幅ではなく、現在製品の不具合再現とも扱わない。
-helper/fixture/manifest作成0、parse/format0、Configure/Build/Inspect/Compile/Probe/Auditすべて0で停止した。
-Issueはopenのまま。D側の`worktrees/466-table-caller-width`と`outputs/466-table-caller-width`を未完作業として保持する。
-原本は同名`agents/`と`agents/quality-post464-table-width/`、再開条件と未実行範囲は[停止記録](../quality/2026-10-30-table-caller-width.md)。
-
-#448の現在ノート検索・#451の縁resize・#452の窓操作・#460のASCII decoderは統合済み。
-#456の水平表診断・#458の検索準備計測・#462の元SET拒否診断も文書統合済み。成果は日報へ集約した。
-背景読込と極狭幅表は未解決。本文/置換の静読は新具体的不具合0で、既存の編集資源上限を維持した。
-Waivers none。
-
-## 公開済みbeta
-
-[v0.3.0 Beta](https://github.com/hideyukiMORI/nene-folio/releases/tag/v0.3.0)は2026-10-27 01:14:32 JST公開済み。
-配布・専用smoke・再取得照合まで成功した。[変更履歴](../release/0.3.0.md)、
-[Markdownの範囲](../MARKDOWN.md)、[品質記録](../quality/2026-10-27-beta-release.md)を参照する。
-#398 / PR #399に続く文書#400 / [PR #401](https://github.com/hideyukiMORI/nene-folio/pull/401)も
-最終head `499984d135ae6b27e13a8276b33f66ee706aac57`の必須CI成功後、main `1845f9f`へ統合・整理済みと照合した。
-確定値は `D:/NeNeFolio/agents/beta-release-20261027/docs-completion.json`。
-公開済み成果物を今回の調査のために再生成していない。
-## 通常exeとhideの実機確認
-
-hide受理済み合成サンプル`data/サンプル/Markdown構文サンプル.md`は通常dataへ残している。
-実ノート内容は記録・同梱しない。最新の通常版は#490のsource `1fb2762`・表示版1.0.0/Windows版1.0.0.0。
-通常exeは`C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`。
-最新の版/hash/反映状態は`D:/NeNeFolio/agents/mode-shortcuts-20261101/integration-completion.json`を参照する。
-起動中なら保存/終了を待ち、強制終了しない。通常dataの保存先を試験のために変更しない。
-
-## 次に残る配布確認
-
-#390の保存先方針は#477/ADR0077で実装し、MSIX生成は#484/ADR0080で追加した。
-実インストールでの初回/更新/アンインストールは#486で確認。WACK警告の補足を添えて申請済み、認定/公開結果は未確認。
-package identityを持たないMSI等は今回のinstalled判定対象ではない。
-物理IME・reader・異なるDPI間の確認も合成fixtureとは区別する。次の作業はhideの新指示と照合する。
-
-## 継続する確認範囲
-
-- 表は63列/字下げ32767twipまで、極狭幅可読性は未解消。Webリンクは明示操作で起動。メール等は装飾のみ、HTML/画像等は対応外。
-- 大量ノートの初回検索には同期処理と準備待ちが残る。[検索品質記録](../quality/2026-10-25-first-search-responsiveness.md)を参照する。
-- 専用desktopの合成入力/描画と、物理IME・実reader聴取・DWM実画面呈示を区別する。
-- MSIX生成は#484、テスト署名/実インストールは#486で確認。WACK警告とStore公開は未完、独自自動更新は対象外。
-- 下記の削除拒否済み作業物は再試行しない。
+- #479の職場での文字ウェイト混在はhide指定で診断終了・修正保留。
+  `D:/NeNeFolio/worktrees/479-editor-paste`と`D:/NeNeFolio/outputs/479-editor-paste`を未統合診断原本として保持する。
+- #466の表幅診断と停止済み継続品質改善は再開しない。
+  `D:/NeNeFolio/worktrees/466-table-caller-width`と`D:/NeNeFolio/outputs/466-table-caller-width`を未完として保持する。
+- 構文色分け/言語選択はStore公開後の候補だが、自動着手せずhideの新指示を待つ。
+  [未対応の棚卸し](../quality/2026-10-31-markdown-scope.md)を参照する。Mermaid等も今回開始しない。
+- 大文書のRichEdit投入/表配置・大量ノートの検索準備・極狭幅表の可読性は残る。
+  合成入力/専用desktopの検証を物理IME・実reader・全DPI/OSの保証と混同しない。
+- 1.0.0テスト署名版の実MSIX lifecycleは確認済み。一時信頼/秘密鍵/packageは解除済み。
+  WACKの総合WARNINGとAppDataノートroot保持の未検証は[品質記録](../quality/2026-11-01-msix-installation.md)へ。
+  1.1.0のStore署名版導入、認定合格/公開は別に確認する。
 
 ## 保持中の旧作業物
 
-2026-10-31 17:13、hideが提示済みワンライナーで47一時出力を削除した。対象は350/351系から475までの
-保全済み出力だけで、全47pathの不在を読取確認した。過去の各completion原本の「保持」は当時の事実で、
-現在の追記は`D:/NeNeFolio/agents/storage-location-20261031/prior-cleanup-confirmation.json`が正本。
+#494〜#516の完了worktree/outputは全hash保全後に削除し、branch/commitと恒久成果物を保持した。
+10月31日にhideが削除した保全済み47出力の不在確認は
+`D:/NeNeFolio/agents/storage-location-20261031/prior-cleanup-confirmation.json`が正本。
+古いcompletionの保持記録だけで現存扱いに戻さない。
 
-旧削除拒否で残るのは`D:/NeNeFolio/worktrees/`配下の次の9箇所。再試行や別手段で削除しない。
+旧削除拒否で残るのは`D:/NeNeFolio/worktrees/`配下の9件。再試行や別手段で削除しない。
 
 - `368-ui-latency`、`373-gui-responsiveness`
 - `402-markdown-line-endings`、`404-markdown-containers`、`405-equal-table-columns`、`407-nullable-allocation`
 - `410-table-container-indent`、`411-replacement-size`、`416-escaped-image-link`
 
-未完#466のworktree/outputは別に保持し、再開しない。旧336/338/340/342/348/349等の今回指定外の一時物も対象外。
-旧 `check/2026-10-19/349-action-bar` は空状態で固まるため起動しない。
-稼働中アプリや未保存本文を終了しない。今後の実画面操作・追加公開は、その時点のhide指示と照合する。
+未完#466/#479は上記と別に保持する。旧336/338/340/342/348/349等の指定外一時物も対象外。
+旧`check/2026-10-19/349-action-bar`は空状態で固まるため起動しない。
+既定は単体実行。次回は現在のhide指示・正本・実Issue/PR・checkoutを照合する（ADR0043）。
