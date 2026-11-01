@@ -4,6 +4,8 @@
 #include "accessible_request.h"
 #include "accessible_surface_button.h"
 #include "accessible_view.h"
+#include "file_picker.h"
+#include "storage_path.h"
 
 #include "breadcrumb_layout.h"
 #include "category_name.h"
@@ -5043,6 +5045,11 @@ static const bool inline_outcomes[] = {
     [FOLIO_STATE_PANE_RECOLOR_FAILED] = false,
     [FOLIO_STATE_WEB_LINK_REJECTED] = true,
     [FOLIO_STATE_WEB_LINK_UNAVAILABLE] = true,
+    [FOLIO_STATE_EXPORT_TOO_LARGE] = true,
+    [FOLIO_STATE_EXPORT_EXISTS] = true,
+    [FOLIO_STATE_EXPORT_FAILED] = true,
+    [FOLIO_STATE_TRANSFER_UNAVAILABLE] = true,
+
     [FOLIO_STATE_OUT_OF_MEMORY] = false,
     [FOLIO_STATE_NAME_REQUIRED] = true,
     [FOLIO_STATE_INVALID_NAME] = true,
@@ -7526,6 +7533,179 @@ static bool category_command_target(const struct folio_window *_Nonnull self,
     return false;
 }
 
+static void show_transfer_notice(struct folio_window *_Nonnull self,
+                                 const struct ui_text_request *_Nonnull request)
+{
+    HWND focus = GetFocus();
+    (void)begin_native_modal(self);
+    failure_box_notice(modal_owner_current(self->modal_owner), self->state, request);
+    if (!end_native_modal(self))
+        native_modal_resource_failure(self);
+    restore_valid_focus(self, focus);
+}
+
+static void import_at(struct folio_window *_Nonnull self, size_t category)
+{
+    if (category >= folio_state_category_count(self->state))
+    {
+        report_outcome(self, FOLIO_STATE_NO_SUCH_CATEGORY);
+        return;
+    }
+    HWND focus = GetFocus();
+    struct file_picker_request request = {.language = folio_state_language(self->state),
+                                          .title = UI_TEXT_IMPORT_TITLE,
+                                          .name = folio_state_category_name(self->state, category),
+                                          .extension = "md"};
+    struct file_picker *_Nullable picker = nullptr;
+    enum file_picker_outcome picked = FILE_PICKER_UNAVAILABLE;
+    if (begin_native_modal(self))
+        picked = file_picker_open(modal_owner_current(self->modal_owner), &request, &picker);
+    if (!end_native_modal(self))
+        native_modal_resource_failure(self);
+    restore_valid_focus(self, focus);
+    if (picked == FILE_PICKER_UNAVAILABLE)
+        report_outcome(self, FOLIO_STATE_TRANSFER_UNAVAILABLE);
+    if (picked == FILE_PICKER_SELECTED && self->close_phase != CLOSE_PHASE_REQUESTED)
+    {
+        struct note_import_request batch = {.category = category,
+                                            .paths = file_picker_paths(picker),
+                                            .count = file_picker_count(picker)};
+        struct note_import_result result = folio_state_import_notes(self->state, &batch);
+        redraw_drawer(self);
+        struct ui_text_request notice = {
+            .id = UI_TEXT_IMPORT_RESULT,
+            .language = folio_state_language(self->state),
+            .n = result.added,
+            .k = result.skipped,
+            .offset = result.remaining,
+            .from = folio_state_failure_line(result.outcome, folio_state_language(self->state))};
+        show_transfer_notice(self, &notice);
+    }
+    file_picker_destroy(picker);
+}
+
+static void execute_import_command(struct folio_window *_Nonnull self,
+                                   const char *_Nonnull argument)
+{
+    (void)argument;
+    size_t category = 0;
+    if (!category_command_target(self, &category))
+    {
+        report_outcome(self, FOLIO_STATE_CATEGORY_NOT_SELECTED);
+        return;
+    }
+    if (hide_command_surface(self))
+        import_at(self, category);
+}
+
+static const char *_Nonnull export_name(const struct folio_window *_Nonnull self,
+                                        enum note_export_scope scope, size_t category)
+{
+    switch (scope)
+    {
+    case NOTE_EXPORT_CURRENT:
+        return folio_state_document_kind(self->state) == FOLIO_DOCUMENT_NAMED
+                   ? folio_state_pane_title(self->state).note
+                   : "Note";
+    case NOTE_EXPORT_CATEGORY:
+        return folio_state_category_name(self->state, category);
+    case NOTE_EXPORT_ALL:
+        return "NeNeFolio";
+    }
+    return "NeNeFolio";
+}
+
+static enum folio_state_outcome export_to(struct folio_window *_Nonnull self,
+                                          struct note_export_request *_Nonnull request)
+{
+    if (request->scope == NOTE_EXPORT_CURRENT &&
+        folio_state_pane_mode(self->state) == PANE_MODE_EDIT)
+    {
+        enum folio_state_outcome taken = take_text(self, &request->units, &request->count);
+        if (taken != FOLIO_STATE_READY)
+            return taken;
+    }
+    return folio_state_export_notes(self->state, request);
+}
+
+static void report_export(struct folio_window *_Nonnull self,
+                          struct note_export_request *_Nonnull request)
+{
+    enum folio_state_outcome outcome = export_to(self, request);
+    if (outcome != FOLIO_STATE_READY)
+    {
+        report_outcome(self, outcome);
+        return;
+    }
+    struct ui_text_request notice = {.id = UI_TEXT_EXPORT_DONE,
+                                     .language = folio_state_language(self->state)};
+    show_transfer_notice(self, &notice);
+}
+
+static void export_at(struct folio_window *_Nonnull self, enum note_export_scope scope,
+                      size_t category)
+{
+    HWND focus = GetFocus();
+    struct file_picker_request picker = {.language = folio_state_language(self->state),
+                                         .title = scope == NOTE_EXPORT_CURRENT
+                                                      ? UI_TEXT_EXPORT_NOTE_TITLE
+                                                      : UI_TEXT_EXPORT_ZIP_TITLE,
+                                         .name = export_name(self, scope, category),
+                                         .extension = scope == NOTE_EXPORT_CURRENT ? "md" : "zip"};
+    struct storage_path *_Nullable destination = nullptr;
+    enum file_picker_outcome picked = FILE_PICKER_UNAVAILABLE;
+    if (begin_native_modal(self))
+        picked = file_picker_save(modal_owner_current(self->modal_owner), &picker, &destination);
+    if (!end_native_modal(self))
+        native_modal_resource_failure(self);
+    restore_valid_focus(self, focus);
+    if (picked == FILE_PICKER_UNAVAILABLE)
+        report_outcome(self, FOLIO_STATE_TRANSFER_UNAVAILABLE);
+    if (picked == FILE_PICKER_SELECTED && self->close_phase != CLOSE_PHASE_REQUESTED)
+    {
+        struct note_export_request request = {.scope = scope,
+                                              .category = category,
+                                              .destination = destination,
+                                              .units = u"",
+                                              .count = 0};
+        report_export(self, &request);
+    }
+    storage_path_destroy(destination);
+}
+
+static void execute_export_note(struct folio_window *_Nonnull self, const char *_Nonnull argument)
+{
+    (void)argument;
+    if (folio_state_document_kind(self->state) == FOLIO_DOCUMENT_NONE)
+    {
+        report_outcome(self, FOLIO_STATE_NOTHING_SELECTED);
+        return;
+    }
+    if (hide_command_surface(self))
+        export_at(self, NOTE_EXPORT_CURRENT, 0);
+}
+
+static void execute_export_category(struct folio_window *_Nonnull self,
+                                    const char *_Nonnull argument)
+{
+    (void)argument;
+    size_t category = 0;
+    if (!category_command_target(self, &category))
+    {
+        report_outcome(self, FOLIO_STATE_CATEGORY_NOT_SELECTED);
+        return;
+    }
+    if (hide_command_surface(self))
+        export_at(self, NOTE_EXPORT_CATEGORY, category);
+}
+
+static void execute_export_all(struct folio_window *_Nonnull self, const char *_Nonnull argument)
+{
+    (void)argument;
+    if (hide_command_surface(self))
+        export_at(self, NOTE_EXPORT_ALL, 0);
+}
+
 static void execute_delete_category_command(struct folio_window *_Nonnull self,
                                             const char *_Nonnull argument)
 {
@@ -7668,6 +7848,10 @@ static void execute_layout_note(struct folio_window *_Nonnull self, const char *
  * enum の外の値は作られないので添字の範囲検査は書かない。 */
 static void (*_Nonnull const command_runs[])(struct folio_window *_Nonnull self,
                                              const char *_Nonnull argument) = {
+    [FOLIO_COMMAND_IMPORT] = execute_import_command,
+    [FOLIO_COMMAND_EXPORT_NOTE] = execute_export_note,
+    [FOLIO_COMMAND_EXPORT_CATEGORY] = execute_export_category,
+    [FOLIO_COMMAND_EXPORT_ALL] = execute_export_all,
     [FOLIO_COMMAND_SAVE] = execute_save_command,
     [FOLIO_COMMAND_SAVE_AS] = execute_save_as_command,
     [FOLIO_COMMAND_QUIT] = execute_quit_command,
@@ -14610,6 +14794,10 @@ static void menu_run_target(struct folio_window *_Nonnull self, enum folio_comma
         delete_category_at(self, request->target.category);
     if (command == FOLIO_COMMAND_NEW_CATEGORY)
         execute_new_category_command(self, "");
+    if (command == FOLIO_COMMAND_IMPORT)
+        import_at(self, request->target.category);
+    if (command == FOLIO_COMMAND_EXPORT_CATEGORY)
+        export_at(self, NOTE_EXPORT_CATEGORY, request->target.category);
     self->command_context = previous;
     self->reporting_command = previous_command;
 }

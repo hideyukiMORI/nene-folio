@@ -151,4 +151,7 @@ struct folio_ports;
 void run_accessibility_state_tests(void);
 
 void run_menu_availability_tests(void);
+struct transfer_port;
+[[nodiscard]] const struct transfer_port *_Nonnull test_transfer_port(void);
+void run_transfer_tests(void);
 #endif

@@ -1,4 +1,5 @@
-/* ノートrootの絶対DOS/UNCパス。環境や存在は読まず、形とUTF-8だけを検証する（ADR0077）。 */
+/* 保存資源の絶対DOS/UNCパス。rootと外部ファイルで同じ形/UTF-8検証を使う（ADR0077/0082）。
+ * 環境・存在・ファイル種別は読まない。 */
 #ifndef NENEFOLIO_STORAGE_PATH_H
 #define NENEFOLIO_STORAGE_PATH_H
 #include "storage_path_outcome.h"

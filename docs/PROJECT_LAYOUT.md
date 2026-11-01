@@ -72,6 +72,7 @@ Markdown生成物は`markdown_rtf`、leafと段落spanは`markdown_blocks`、順
 `markdown_containers`が所有する。通常受理は旧段落のflushを要求でき、fence/tableの所属先読みは同ownerへの純粋な厳密照合を使う。
 inline、tableの解釈も同じcore内の処理へ分け、RTF文字escapeは`rtf_text`へ集約する。
 `web_uri`がWeb起動対象の条件を所有し、`markdown_web_link`は既存字句処理でdestinationを展開して同じfactoryへ渡す（ADR0079）。
+`note_archive`は検証済み本文のsnapshotから、UTF-8名・固定日時・CRC32を持つZIP32 STOREを純粋に生成する（ADR0082）。
 表の借用表示入力`markdown_table_format`はkindとcontainer owner由来のtwip字下げを持つ。
 `markdown_table_native`の純粋な対応判定（1〜63列・字下げ32767twip以下）をblocksと直接row入力で共有し、
 範囲外は同じ全行literal経路へ渡す。nativeの`trleft`と絶対`cellx`もtableが生成する（ADR0072）。
@@ -83,6 +84,8 @@ UI 状態・ファイル・現在時刻を持たない。実行時依存の許�
 振る舞いの調整を持つ。ポートの宣言・状態の所有者（`folio_state`）・意図を受ける reducer・表示値の生成・結果型。
 Win32・永続化・ファイル・ネットワークを知らない。
 Webリンク起動は`folio_state`の意図から`web_link_port`へ渡し、合成rootが必須portを明示する（ADR0079）。
+取り込み/書き出しも`folio_state`が所有し、`transfer_port`で外部ファイルを扱う。取り込みは既存create_note/台帳同期、
+単票書き出しは既存copied_text、ZIPは保存済み本文の読込とcore archiveへ渡す（ADR0082）。
 ノート保存先は`storage_state`が現在/次回/初回・復旧phaseを所有し、`storage_port`へ検証と設定保存を渡す。
 coreの`storage_path`と`startup_settings`がpath検証と版1のcodecを持ち、ノート側の設定版4とは分離する（ADR0077）。
 全文検索の要求・読込位置・corpus・pending build handleと数値cursorは`folio_state`が所有する。
@@ -97,6 +100,7 @@ coreの`storage_path`と`startup_settings`がpath検証と版1のcodecを持ち�
 `storage_adapter`は配布形式/Known Folder/起動設定を扱い、`persistence_adapter`は確定rootを明示的に受ける。
 両者の`.nenefolio.lock`取得は`data_lock`、native path変換は`storage_native_path`へ集約する（ADR0077）。
 `web_link_adapter`だけが検証済みURIをShellExecuteExWへ渡し、COM初期化/解放とOS失敗を扱う（ADR0079）。
+`transfer_adapter`は外部Markdownの読込と検証済み本文/ZIPの新規公開だけを扱い、`file_bytes`の原子的な公開へ合流する（ADR0082）。
 
 ### `src/ui/win32`
 
@@ -104,6 +108,7 @@ application が作った値を描き、操作を意図として渡す（ARC-011�
 `note_pane_links`はnative書式由来のhidden/visible位置対応とクリック状態をpane寿命内で所有する。
 TOMのリンク先をapplicationへ渡し、検索/選択とnative表配置の座標を混同しない（ADR0079）。
 `storage_prompt`が初回/復旧/設定変更を同じnative面へまとめ、`folder_picker`はOSのフォルダー選択だけを担当する。
+`file_picker`は複数Markdown/出力先のOS選択を担当し、同じmodal_ownerと内容入力guardを使う（ADR0082）。
 初回も成立するようpromptがCOMと`icon_paint`の描画寿命を対で所有する。通常時は既存modal ownerへ合流する（ADR0077）。
 UIAのCOM寿命は`accessibility_host`、自前要素のABIは`accessibility_node`、native入力の名前注釈は
 `accessibility_native`に集約する。主窓・索引・補助面は同じ公開基盤から既存操作を呼ぶ（ADR0056/0058）。

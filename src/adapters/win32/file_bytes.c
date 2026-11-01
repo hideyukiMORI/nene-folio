@@ -1,5 +1,6 @@
 #include "file_bytes.h"
 #include "file_write_kind.h"
+#include "note_archive.h"
 #include "persisted_size_limit.h"
 
 #include <stdint.h>
@@ -195,11 +196,6 @@ static enum persistence_outcome publish(const wchar_t *_Nonnull temporary,
 static enum persistence_outcome store(const wchar_t *_Nonnull path, const char *_Nonnull data,
                                       size_t length, enum file_write_kind kind)
 {
-    /* JSON/記録も自身で読めるraw長だけ公開する。一時ファイルより先に断る。 */
-    if (length > persisted_size_limit)
-    {
-        return PERSISTENCE_UNWRITABLE;
-    }
     wchar_t temporary[MAX_PATH * 4];
     HANDLE file = temporary_file(path, temporary, sizeof temporary / sizeof temporary[0]);
     if (file == INVALID_HANDLE_VALUE)
@@ -219,13 +215,24 @@ static enum persistence_outcome store(const wchar_t *_Nonnull path, const char *
 enum persistence_outcome file_bytes_store(const wchar_t *_Nonnull path, const char *_Nonnull data,
                                           size_t length)
 {
+    if (length > persisted_size_limit)
+        return PERSISTENCE_UNWRITABLE;
     return store(path, data, length, FILE_WRITE_REPLACE);
 }
 
 enum persistence_outcome file_bytes_create(const wchar_t *_Nonnull path, const char *_Nonnull data,
                                            size_t length)
 {
+    if (length > persisted_size_limit)
+        return PERSISTENCE_UNWRITABLE;
     return store(path, data, length, FILE_WRITE_CREATE);
+}
+
+enum persistence_outcome file_bytes_export_archive(const wchar_t *_Nonnull path,
+                                                   const struct note_archive *_Nonnull archive)
+{
+    return store(path, note_archive_bytes(archive), note_archive_length(archive),
+                 FILE_WRITE_CREATE);
 }
 
 const char *_Nonnull file_bytes_data(const struct file_bytes *_Nonnull bytes)

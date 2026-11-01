@@ -10,6 +10,7 @@ struct appearance_port;
 struct persistence_port;
 struct regex_port;
 struct web_link_port;
+struct transfer_port;
 
 struct folio_ports
 {
@@ -17,6 +18,7 @@ struct folio_ports
     const struct appearance_port *_Nonnull appearance;
     const struct regex_port *_Nonnull regex;
     const struct web_link_port *_Nonnull web_link;
+    const struct transfer_port *_Nonnull transfer;
 };
 
 #endif
