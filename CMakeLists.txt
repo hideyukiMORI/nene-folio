@@ -98,7 +98,7 @@ nenefolio_system_link(nenefolio_adapters gdi32)
 
 nenefolio_target(nenefolio_window ui_win32 STATIC
     src/ui/win32/storage_prompt.c src/ui/win32/folder_picker.c src/ui/win32/file_picker.c
-    src/ui/win32/note_pane_links.c src/ui/win32/note_minimap.c
+    src/ui/win32/note_pane_links.c src/ui/win32/note_minimap.c src/ui/win32/note_pane_sample.c
     src/ui/win32/accessible_item.c src/ui/win32/accessibility_host.c src/ui/win32/accessibility_node.c
     src/ui/win32/accessibility_native.c
     src/ui/win32/drawer_window.c src/ui/win32/folio_window.c src/ui/win32/command_help_fonts.c src/ui/win32/note_pane.c src/ui/win32/note_pane_table.c
@@ -172,3 +172,12 @@ add_custom_command(TARGET settings_accessibility_tests POST_BUILD
     VERBATIM)
 add_test(NAME settings_accessibility COMMAND settings_accessibility_tests)
 set_tests_properties(settings_accessibility PROPERTIES TIMEOUT 30)
+
+nenefolio_target(minimap_structure_tests win32_tests EXECUTABLE tests/win32/minimap_structure_tests.c)
+nenefolio_link(minimap_structure_tests nenefolio_core)
+nenefolio_link(minimap_structure_tests nenefolio_application)
+nenefolio_link(minimap_structure_tests nenefolio_window)
+nenefolio_system_link(minimap_structure_tests user32)
+nenefolio_system_link(minimap_structure_tests ole32)
+add_test(NAME minimap_structure COMMAND minimap_structure_tests)
+set_tests_properties(minimap_structure PROPERTIES TIMEOUT 30)

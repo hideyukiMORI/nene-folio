@@ -1,5 +1,16 @@
 # いまの状態 — NeNe Folio
 
+## ミニマップの右余白と文書構造 — #506
+
+hideの実機指摘に合わせ、表示中の右余白を12 logical px・本文との間隔を8へ縮小した。
+既存RichEdit/TOMの字体/段落/表からh1〜4、hr、リストの字下げ/印、表格子を簡易表示する。
+最大256sample・16/idle・120msを維持し、本文の再解析・全体複製・背景threadは追加しない。
+Debug/tidy、実RichEdit81checks、実主窓の232＋43checks、明暗/高コントラスト/狭幅画像を確認した。
+[品質記録](../quality/2026-11-01-minimap-structure.md)・[ADR0084補正](../adr/0084-bounded-native-minimap.md)。
+保存schema・版・依存は不変、Waivers none。最終CI/main/通常反映/保全整理は
+`D:/NeNeFolio/agents/minimap-shape-20261101/integration-completion.json`で確定する。
+通常版が起動中ならhideの保存/終了を待つ。#504の設定UIA循環修正は統合・通常反映済み。
+
 ## 設定を開いた直後の応答停止 — #504
 
 hideがミニマップの切替前、設定を開いた直後の停止を報告した。通常版を終了せず採取したsnapshotと、
@@ -11,7 +22,7 @@ CTestへ3言語318checksを追加し、旧UI libraryでは重複で失敗する�
 保存schema・版・依存は不変、Waivers none。最終CI/main/通常反映/保全整理は
 `D:/NeNeFolio/agents/minimap-hang-20261101/integration-completion.json`で確定する。
 hideは未保存入力なしと回答済み。停止中通常版を勝手に終了せず、反映時点の終了状態と指示を照合する。
-続く依頼はミニマップ右余白の縮小とh1〜4/hr/リスト/表の概形。今回の修正とは別の焦点で進める。
+続くミニマップ右余白の縮小とh1〜4/hr/リスト/表の概形は上段#506で扱う。
 
 ## 簡易ミニマップ — #502
 

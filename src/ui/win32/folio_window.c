@@ -216,7 +216,8 @@ struct folio_window
 constexpr UINT_PTR minimap_timer = 84;
 constexpr UINT minimap_delay = 120;
 constexpr int base_minimap_width = 64;
-constexpr int base_minimap_gap = 12;
+constexpr int base_minimap_gap = 8;
+constexpr int base_minimap_right = 12;
 constexpr int base_minimap_minimum_body = 320;
 
 static const wchar_t class_name[] = L"NeNeFolioWindow";
@@ -2073,7 +2074,8 @@ static void arrange_drawer_region(struct folio_window *_Nonnull self, RECT bound
     arrange_drawer(self, bounds);
 }
 
-static RECT body_available_rect(const struct folio_window *_Nonnull self, RECT pane, UINT dpi)
+static RECT body_available_rect(const struct folio_window *_Nonnull self, RECT pane, UINT dpi,
+                                int right)
 {
     int top = command_band(self) ? self->band.pane_top : scale(base_pane_top, dpi);
     int bottom = command_band(self) ? self->band.pane_bottom : scale(base_pane_bottom, dpi);
@@ -2081,8 +2083,7 @@ static RECT body_available_rect(const struct folio_window *_Nonnull self, RECT p
     top += command_band(self) ? self->band.height : 0;
     int left = scale(base_pane_left, dpi);
     left = self->body_left_inset > left ? self->body_left_inset : left;
-    return (RECT){pane.left + left, top, pane.right - scale(base_pane_right, dpi),
-                  pane.bottom - bottom};
+    return (RECT){pane.left + left, top, pane.right - scale(right, dpi), pane.bottom - bottom};
 }
 
 static bool minimap_visible(const struct folio_window *_Nonnull self)
@@ -2090,7 +2091,7 @@ static bool minimap_visible(const struct folio_window *_Nonnull self)
     if (!body_shown(self) || self->pane == nullptr || !folio_state_minimap(self->state))
         return false;
     UINT dpi = GetDpiForWindow(self->handle);
-    RECT area = body_available_rect(self, regions_for(self).pane, dpi);
+    RECT area = body_available_rect(self, regions_for(self).pane, dpi, base_minimap_right);
     return area.right - area.left >=
                scale(base_minimap_minimum_body + base_minimap_width + base_minimap_gap, dpi) &&
            area.bottom - area.top >= scale(32, dpi);
@@ -2099,8 +2100,10 @@ static bool minimap_visible(const struct folio_window *_Nonnull self)
 static RECT body_content_rect(struct folio_window *_Nonnull self, RECT pane, UINT dpi)
 {
     self->body_left_inset = pane_inset(self, dpi);
-    RECT bounds = body_available_rect(self, pane, dpi);
-    if (minimap_visible(self))
+    bool minimap = minimap_visible(self);
+    RECT bounds =
+        body_available_rect(self, pane, dpi, minimap ? base_minimap_right : base_pane_right);
+    if (minimap)
         bounds.right -= scale(base_minimap_width + base_minimap_gap, dpi);
     return bounds;
 }
@@ -2110,7 +2113,7 @@ static RECT minimap_rect(const struct folio_window *_Nonnull self)
     if (!minimap_visible(self))
         return (RECT){0};
     UINT dpi = GetDpiForWindow(self->handle);
-    RECT bounds = body_available_rect(self, regions_for(self).pane, dpi);
+    RECT bounds = body_available_rect(self, regions_for(self).pane, dpi, base_minimap_right);
     bounds.left = bounds.right - scale(base_minimap_width, dpi);
     return bounds;
 }
@@ -14926,7 +14929,7 @@ void folio_window_continue_idle_work(struct folio_window *_Nonnull self)
         return;
     if (!folio_state_index_filter_pending(self->state))
     {
-        if (note_minimap_step(self->minimap, note_pane_handle(self->pane)))
+        if (note_minimap_step(self->minimap, self->pane))
             refresh_gutter(self, false);
         return;
     }

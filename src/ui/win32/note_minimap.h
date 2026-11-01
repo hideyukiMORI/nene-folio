@@ -5,6 +5,7 @@
 #include "note_minimap_paint.h"
 
 struct note_minimap;
+struct note_pane;
 [[nodiscard]] enum note_minimap_outcome
 note_minimap_create(struct note_minimap *_Nullable *_Nonnull out);
 void note_minimap_destroy(struct note_minimap *_Nullable map);
@@ -15,7 +16,8 @@ void note_minimap_clear(struct note_minimap *_Nonnull map);
 void note_minimap_begin(struct note_minimap *_Nonnull map);
 [[nodiscard]] bool note_minimap_pending(const struct note_minimap *_Nonnull map);
 /* 一回16sample以下。完成または失敗でtrueを返し、pendingを下ろす。 */
-[[nodiscard]] bool note_minimap_step(struct note_minimap *_Nonnull map, HWND _Nonnull pane);
+[[nodiscard]] bool note_minimap_step(struct note_minimap *_Nonnull map,
+                                     struct note_pane *_Nonnull pane);
 /* 呼出元は本文READY/可視を確認する。いずれも本文/選択を変更しない。 */
 [[nodiscard]] bool note_minimap_viewport(HWND _Nonnull pane,
                                          struct note_minimap_view *_Nonnull out);

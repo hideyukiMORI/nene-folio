@@ -17,6 +17,16 @@ static enum note_pane_table_scan query_row(HWND _Nonnull handle, LONG start,
                                                                        : NOTE_PANE_TABLE_NONE;
 }
 
+enum note_pane_table_scan note_pane_table_columns(HWND handle, LONG start, int *_Nonnull columns)
+{
+    TABLECELLPARMS cells[63] = {0};
+    TABLEROWPARMS row = {0};
+    enum note_pane_table_scan scanned = query_row(handle, start, cells, &row);
+    if (scanned == NOTE_PANE_TABLE_PRESENT)
+        *columns = row.cCell;
+    return scanned;
+}
+
 enum note_pane_table_scan note_pane_table_scan(HWND _Nonnull handle, const char16_t *_Nonnull units,
                                                size_t length)
 {

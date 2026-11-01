@@ -7,6 +7,9 @@
 #include <windows.h>
 [[nodiscard]] enum note_pane_table_scan
 note_pane_table_scan(HWND _Nonnull handle, const char16_t *_Nonnull units, size_t length);
+/* Read only at a native row-start marker; no selection or layout changes. */
+[[nodiscard]] enum note_pane_table_scan note_pane_table_columns(HWND _Nonnull handle, LONG start,
+                                                                int *_Nonnull columns);
 /* Native row/cell structures are transient; raw positions remain authoritative. */
 [[nodiscard]] enum note_pane_load_outcome note_pane_table_layout(HWND _Nonnull handle,
                                                                  const char16_t *_Nonnull units,
