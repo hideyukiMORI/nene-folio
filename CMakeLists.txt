@@ -151,3 +151,24 @@ nenefolio_system_link(nenefolio user32)
 add_custom_command(TARGET nenefolio POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/fonts $<TARGET_FILE_DIR:nenefolio>/fonts
     VERBATIM)
+
+# #504: 設定のUIA巡回が有限で一意なことを実windowの公開境界で固定する。
+nenefolio_target(settings_accessibility_tests win32_tests EXECUTABLE
+    tests/win32/settings_accessibility_tests.c tests/win32/settings_accessibility_tests.rc)
+nenefolio_link(settings_accessibility_tests nenefolio_core)
+nenefolio_link(settings_accessibility_tests nenefolio_application)
+nenefolio_link(settings_accessibility_tests nenefolio_adapters)
+nenefolio_link(settings_accessibility_tests nenefolio_window)
+nenefolio_system_link(settings_accessibility_tests user32)
+nenefolio_system_link(settings_accessibility_tests ole32)
+target_link_options(settings_accessibility_tests PRIVATE /MANIFEST:NO)
+target_include_directories(settings_accessibility_tests PRIVATE
+    "$<$<COMPILE_LANGUAGE:RC>:${CMAKE_CURRENT_BINARY_DIR}/generated/src/app>")
+set_source_files_properties(tests/win32/settings_accessibility_tests.rc PROPERTIES
+    OBJECT_DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/generated/src/app/NeNeFolio.manifest")
+set_target_properties(settings_accessibility_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/verification-settings")
+add_custom_command(TARGET settings_accessibility_tests POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/fonts $<TARGET_FILE_DIR:settings_accessibility_tests>/fonts
+    VERBATIM)
+add_test(NAME settings_accessibility COMMAND settings_accessibility_tests)
+set_tests_properties(settings_accessibility PROPERTIES TIMEOUT 30)

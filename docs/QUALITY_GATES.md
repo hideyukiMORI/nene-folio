@@ -67,6 +67,11 @@ CI で必要なゲートは、すべてローカルで実行できる。検査�
 実装の行をなぞるだけのassertionや件数の水増しを目的にしない。不具合の修正は、可能なら**先に落ちる回帰テスト**で再現してから直す。
 既存テストの整理は守る契約を調べた焦点Issueで行い、本方針を一括削除の根拠にしない。実行時点はQLT-012に従う。
 
+#504の設定UIA循環はCTestの`settings_accessibility`で固定する。全3言語の前後巡回が同じ一意な全行を訪れて終了し、
+名前・親子・buttonのfocus/矩形・閉鎖後の失効を実windowで確認する。修正前UI libraryで重複を検出してexit1、
+修正版で318checks成功を確認した。専用desktopと`build/verification-settings`だけを使い、30秒timeoutを設ける。
+[品質記録](quality/2026-11-01-settings-uia-cycle.md)に対象・反例・外部UIA確認を残す。
+
 - 機械強制: **不能**（テストの有意味性・契約の充足は判断であり、記録とレビューで確認する。QLT-009のカバレッジ下限だけでは代替できない）
 
 ### QLT-009 — カバレッジは下げられない
@@ -340,6 +345,7 @@ CNF-006 が「本文に定義があるのにここに行が無い」を拒否す
 | 検査自身のテスト | 規約検査・シンボル検査・実ツールの正例・反例 | unittest / eng/prove-gates.py |
 | 版と配布検査器 | 実exeの版・manifest・AMD64と、配布ファイル/資産/ZIP/MSIX/出力先の拒否境界 | `eng/test-release.py`（`eng/release.py`の正例・反例。ゲートが作ったexeを使い、追加ビルドを行わない。ADR0045/0080） |
 | 単体テスト | 振る舞い | CTest / tests/unit（ASan / UBSan / nullability 付き・`-fno-sanitize-recover=all`。Debug 構成の全 target を計装） |
+| 設定UIAの回帰 | 重複・循環・名前/矩形/focus・失効 | CTest / tests/win32（同じDebug計装・製品library/manifest、専用desktop/data。#504） |
 | カバレッジ | 中核の検証密度 | `eng/coverage.py` / `eng/coverage-policy.json`。測定ビルド（ASan 付き・確保失敗の注入）で LLVM の実分岐を 90% 以上要求 |
 | 依存 | 道具の版と実行時依存 0 | tool-versions.json / architecture.json / `/MT`（R1） |
 

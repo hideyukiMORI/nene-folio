@@ -530,7 +530,7 @@ def architecture_checks(root: Path, paths: list[Path], build_dir: Path | None) -
                 if destination not in modules[module]["dependencies"]:
                     findings.append(Finding("ARC-002", target["name"], f"forbidden target dependency {destination}"))
     for source in source_paths:
-        if source.startswith(("src/", "tests/build/", "tests/unit/")) and Path(source).suffix == ".c" and source not in compiled:
+        if source.startswith(("src/", "tests/build/", "tests/unit/", "tests/win32/")) and Path(source).suffix == ".c" and source not in compiled:
             findings.append(Finding("ARC-002", source, "translation unit is absent from the build"))
     return findings
 

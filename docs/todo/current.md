@@ -1,5 +1,18 @@
 # いまの状態 — NeNe Folio
 
+## 設定を開いた直後の応答停止 — #504
+
+hideがミニマップの切替前、設定を開いた直後の停止を報告した。通常版を終了せず採取したsnapshotと、
+隔離Win32の有限巡回で、保存先行がテーマと同一のUIA要素を返す循環を確認した。
+設定行記述子へbutton識別を結び、名前・矩形・前後巡回・focus・Invokeを同じ行と共通操作へ修正した。
+CTestへ3言語318checksを追加し、旧UI libraryでは重複で失敗することを確認。
+別processの実UIA FindAll・保存先Invoke/取消・テーマInvokeも成功した。
+[品質記録](../quality/2026-11-01-settings-uia-cycle.md)・[ADR0058補正](../adr/0058-accessible-command-surfaces.md)。
+保存schema・版・依存は不変、Waivers none。最終CI/main/通常反映/保全整理は
+`D:/NeNeFolio/agents/minimap-hang-20261101/integration-completion.json`で確定する。
+hideは未保存入力なしと回答済み。停止中通常版を勝手に終了せず、反映時点の終了状態と指示を照合する。
+続く依頼はミニマップ右余白の縮小とh1〜4/hr/リスト/表の概形。今回の修正とは別の焦点で進める。
+
 ## 簡易ミニマップ — #502
 
 hide指定の速度・安定性・デザイン優先で、閲覧/編集右側へ行の分量と現在範囲を追加した。
