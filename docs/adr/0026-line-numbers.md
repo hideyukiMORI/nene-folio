@@ -185,3 +185,11 @@ hideは高速ホイールを止めても端まで長時間動くと報告し、�
 [SetTimer](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-settimer)、
 [EM_GETSCROLLPOS](https://learn.microsoft.com/en-us/windows/win32/controls/em-getscrollpos)、
 [EM_SETSCROLLPOS](https://learn.microsoft.com/en-us/windows/win32/controls/em-setscrollpos)。
+
+
+## 2026-11-01 の補正（#508 — ミニマップのwheelを共有する）
+
+レーン上のwheelも`note_pane_scroll_wheel`から上記#473の一つの減速/位置反映へ入れる。
+本文に届いたレーン上の入力は、余韻を先に破棄せず主窓で配送先を決める。本文/レーン以外への
+wheelは`note_pane_cancel_wheel`で本文の余韻と倍率deltaの残りを止める。focus/本文/選択/Undo/dirtyを保つ。
+新しいtimer・実位置・減速状態は持たない。[ADR0084](0084-bounded-native-minimap.md)の#508補正を参照する。

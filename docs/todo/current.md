@@ -1,8 +1,20 @@
 # いまの状態 — NeNe Folio
 
+## ミニマップのホイールとコードブロック — #508
+
+hideが#506の実機結果を受理し、レーンwheelとコードブロックの概形を依頼した。
+レーン上のwheelは既存本文の減速/scrollへ合流し、現在位置枠と連動する。Ctrl併用でも倍率を変えない。
+コードブロックは取得済みnative背景を帯/左辺で示し、空行も保持する。別parserや文字列取得を増やさない。
+Debug/tidy、実RichEdit95checks、実主窓104＋20＋10checksと明暗/HC/狭幅画像を確認した。
+[品質記録](../quality/2026-11-01-minimap-wheel-code.md)・[ADR0084補正](../adr/0084-bounded-native-minimap.md)。
+保存schema・版・依存は不変、Waivers none。最終CI/main/通常反映/保全整理は
+`D:/NeNeFolio/agents/minimap-wheel-code-20261101/integration-completion.json`で確定する。
+通常版が起動中ならhideの保存/終了を待つ。
+
 ## ミニマップの右余白と文書構造 — #506
 
 hideの実機指摘に合わせ、表示中の右余白を12 logical px・本文との間隔を8へ縮小した。
+hideは18:10頃の後続依頼で表示結果を受理した。
 既存RichEdit/TOMの字体/段落/表からh1〜4、hr、リストの字下げ/印、表格子を簡易表示する。
 最大256sample・16/idle・120msを維持し、本文の再解析・全体複製・背景threadは追加しない。
 Debug/tidy、実RichEdit81checks、実主窓の232＋43checks、明暗/高コントラスト/狭幅画像を確認した。

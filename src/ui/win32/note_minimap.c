@@ -229,13 +229,19 @@ static void draw_text(HDC device, const struct note_pane_sample *_Nonnull sample
         fill(device, (RECT){row.left - 3, row.top, row.left - 2, row.bottom}, color);
 }
 
-static void draw_sample(HDC device, const struct note_pane_sample *_Nonnull sample, RECT row,
-                        COLORREF color)
+static RECT sample_rect(const struct note_pane_sample *_Nonnull sample, RECT row)
 {
     int width = row.right - row.left;
     int indent = (int)(sample->indent * (float)width / 440.0F);
     indent = indent > width * 3 / 4 ? width * 3 / 4 : indent;
     row.left += indent;
+    return row;
+}
+
+static void draw_sample(HDC device, const struct note_pane_sample *_Nonnull sample, RECT row,
+                        COLORREF color)
+{
+    row = sample_rect(sample, row);
     if (sample->cells > 0)
     {
         draw_table(device, row, sample->cells, color);
@@ -251,6 +257,39 @@ static void draw_sample(HDC device, const struct note_pane_sample *_Nonnull samp
         row.bottom = row.top + 1;
         fill(device, row, color);
     }
+}
+
+static bool code_background(const struct note_pane_sample *_Nonnull sample)
+{
+    return sample->cells == 0 && sample->background <= 0xFFFFFF && sample->points > 2;
+}
+
+static void draw_code(HDC device, const struct note_pane_sample *_Nonnull sample, RECT row,
+                      const struct folio_palette *_Nonnull palette)
+{
+    row = sample_rect(sample, row);
+    COLORREF background = sample->background;
+    COLORREF foreground = sample->foreground;
+    if (palette->contrast == FOLIO_CONTRAST_HIGH || foreground > 0xFFFFFF)
+    {
+        background = palette->pane;
+        foreground = palette->editor_text;
+    }
+    fill(device, row, background);
+    fill(device, (RECT){row.left, row.top, row.left + 1, row.bottom}, foreground);
+    row.left += 3;
+    if (sample->columns > 0 && !IsRectEmpty(&row))
+        draw_text(device, sample, row, foreground);
+}
+
+static COLORREF sample_ink(const struct note_pane_sample *_Nonnull sample,
+                           const struct folio_palette *_Nonnull palette, bool selected)
+{
+    if (selected)
+        return palette->selected_text;
+    return sample->foreground <= 0xFFFFFF && palette->contrast == FOLIO_CONTRAST_STANDARD
+               ? sample->foreground
+               : palette->gutter_text;
 }
 
 static void draw_lines(const struct note_minimap *_Nonnull map, HDC device,
@@ -269,13 +308,13 @@ static void draw_lines(const struct note_minimap *_Nonnull map, HDC device,
         if (IsRectEmpty(&row))
             continue;
         const struct note_pane_sample *sample = &map->samples[at];
-        COLORREF color =
-            sample->foreground <= 0xFFFFFF && palette->contrast == FOLIO_CONTRAST_STANDARD
-                ? sample->foreground
-                : palette->gutter_text;
-        if (y >= thumb.top && y < thumb.bottom)
-            color = palette->selected_text;
-        draw_sample(device, sample, row, color);
+        if (code_background(sample))
+        {
+            draw_code(device, sample, row, palette);
+            continue;
+        }
+        draw_sample(device, sample, row,
+                    sample_ink(sample, palette, y >= thumb.top && y < thumb.bottom));
     }
 }
 

@@ -74,3 +74,19 @@ API根拠: [表示行数](https://learn.microsoft.com/en-us/windows/win32/contro
 [行の先頭](https://learn.microsoft.com/en-us/windows/win32/controls/em-lineindex)、
 [行長](https://learn.microsoft.com/en-us/windows/win32/controls/em-linelength)、
 [表示行scroll](https://learn.microsoft.com/en-us/windows/win32/controls/em-linescroll)。
+
+
+## #508補正 — レーンのホイールとコードブロック
+
+レーン上の上下wheelは、本文と現在位置枠を一緒に動かす。ミニマップ独立の位置や減速状態を増やさず、
+`note_pane`の既存wheel要求・OS行数/ページ設定・240ms減速・native位置反映/通知へ合流する。
+root/本文/他の自前childに配送されたqueue入力も、レーンの共通矩形から同じ入口へ送る。
+本文から親へ戻る入力で余韻を先に消さず、親の配送先が本文/ミニマップ以外と決まった時点で取り消す。
+focus・選択・Undo・dirtyを変えない。レーン上ではCtrl併用でも倍率を変えず、本文上のCtrl倍率は従来通り。
+IME・modal・hidden・未準備のguardと、drag中のwheel取消を維持する。
+
+コードブロックは既にsampleへ取得しているnative背景の付いた通常サイズ行を、面と左辺で示す。
+文字列の追加読取・言語分類・別parserは作らない。inline codeには背景が無く、hrは小さい空段落、表は
+既存の行構造を優先する。空行も背景があれば帯を保つ。明暗はnativeの背景/文字色を対で使い、
+高コントラストでは実効paletteの地/文字色と左辺で区別する。現在位置枠の外周/左右余白は残す。
+最大256sample・16/idle・120ms、編集のnative平文、保存schema/版/依存を維持する。

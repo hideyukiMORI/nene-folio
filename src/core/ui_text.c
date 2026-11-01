@@ -573,11 +573,12 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
     [UI_TEXT_SETTINGS_MINIMAP] = {"ミニマップを表示", "Show minimap", "显示缩略图"},
     [UI_TEXT_MINIMAP] = {"ミニマップ", "Minimap", "缩略图"},
     [UI_TEXT_MINIMAP_HELP] =
-        {"クリックやドラッグで移動。↑↓、PageUp/Down、Home/"
+        {"クリック・ドラッグ・ホイールで移動。↑↓、PageUp/Down、Home/"
          "Endでも移動できます。狭い窓では自動で隠れます。",
-         "Click or drag to scroll. Use ↑↓, PageUp/Down or Home/End. Hidden automatically "
+         "Click, drag or use the wheel to scroll. Use ↑↓, PageUp/Down or Home/End. Hidden "
+         "automatically "
          "in narrow windows.",
-         "单击或拖动以滚动。也可使用 ↑↓、PageUp/Down 或 Home/End。窄窗口中自动隐藏。"},
+         "单击、拖动或使用滚轮以滚动。也可使用 ↑↓、PageUp/Down 或 Home/End。窄窗口中自动隐藏。"},
     [UI_TEXT_COMMAND_TOGGLE_NUMBER] = {"行番号の表示を切り替える", "Toggle line numbers",
                                        "切换行号显示"},
     [UI_TEXT_COMMAND_REPLACE] = {"置換", "Replace", "替换"},

@@ -121,6 +121,10 @@ void note_pane_invalidate_lines(struct note_pane *_Nonnull pane);
 void note_pane_scroll_to_line(struct note_pane *_Nonnull pane, size_t number);
 /* 表示行へ移動。wheelの余韻を止め、本文/選択/Undoは変更しない（ADR0084）。 */
 void note_pane_scroll_display(struct note_pane *_Nonnull pane, int display);
+/* Body and minimap share this wheel motion; position, focus and text stay native-owned. */
+void note_pane_scroll_wheel(struct note_pane *_Nonnull pane, int delta);
+/* A wheel routed to another region must not retain body motion or a zoom remainder. */
+void note_pane_cancel_wheel(struct note_pane *_Nonnull pane);
 void note_pane_destroy(struct note_pane *_Nullable pane);
 
 #endif

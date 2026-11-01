@@ -9571,12 +9571,36 @@ static bool forward_body_wheel(const struct folio_window *_Nonnull self, WPARAM 
     return true;
 }
 
-/* 本文上のwheelは本文へ、ドロワー上のwheelは従来の索引へ渡す。
+static bool minimap_wheel_target(const struct folio_window *_Nonnull self, LPARAM position)
+{
+    RECT bounds = minimap_rect(self);
+    POINT point = {GET_X_LPARAM(position), GET_Y_LPARAM(position)};
+    return ScreenToClient(self->handle, &point) && PtInRect(&bounds, point);
+}
+
+static bool forward_minimap_wheel(const struct folio_window *_Nonnull self, WPARAM keys,
+                                  LPARAM position)
+{
+    if (!minimap_wheel_target(self, position))
+        return false;
+    if (minimap_available(self))
+    {
+        note_pane_scroll_wheel(self->pane, GET_WHEEL_DELTA_WPARAM(keys));
+        return true;
+    }
+    if (self->pane != nullptr)
+        note_pane_cancel_wheel(self->pane);
+    return true;
+}
+
+/* 本文とminimapのwheelは同じ本文位置へ、ドロワー上は従来の索引へ渡す。
  * lparam はスクリーン座標なので、位置を読むために OS へ問い合わせない（ARC-007）。 */
 static void forward_wheel(const struct folio_window *_Nonnull self, WPARAM wparam, LPARAM lparam)
 {
-    if (forward_body_wheel(self, wparam, lparam))
+    if (forward_minimap_wheel(self, wparam, lparam) || forward_body_wheel(self, wparam, lparam))
         return;
+    if (self->pane != nullptr)
+        note_pane_cancel_wheel(self->pane);
     HWND drawer = self->drawer == nullptr ? nullptr : drawer_window_handle(self->drawer);
     if (drawer == nullptr || !drawer_visible(self))
     {
@@ -12333,6 +12357,28 @@ static bool cancel_drawer_input(const struct folio_window *_Nonnull window,
     return message->message == WM_KEYDOWN && message->wParam == VK_ESCAPE;
 }
 
+/* Focus may still belong to a child while the pointer is over the minimap lane. */
+static bool translate_minimap_wheel(const struct folio_window *_Nonnull window,
+                                    const MSG *_Nonnull message)
+{
+    if (message->message != WM_MOUSEWHEEL || !minimap_available(window) ||
+        !minimap_wheel_target(window, message->lParam))
+        return false;
+    if (message->hwnd != window->handle && !IsChild(window->handle, message->hwnd))
+        return false;
+    SendMessageW(window->handle, WM_MOUSEWHEEL, message->wParam, message->lParam);
+    return true;
+}
+
+static bool translate_search_shortcut(const struct folio_window *_Nonnull window,
+                                      const MSG *_Nonnull message)
+{
+    if (!search_target(window, message->hwnd))
+        return false;
+    MSG translated = *message;
+    return TranslateAcceleratorW(window->handle, window->search_keys, &translated) != 0;
+}
+
 bool folio_window_translate(const struct folio_window *_Nonnull window, const MSG *_Nonnull message)
 {
     if (cancel_drawer_input(window, message))
@@ -12341,20 +12387,16 @@ bool folio_window_translate(const struct folio_window *_Nonnull window, const MS
     {
         return true;
     }
+    if (translate_minimap_wheel(window, message))
+        return true;
     if (translate_menu_system_key(window, message))
         return true;
     if (translate_keyboard(window, message))
     {
         return true;
     }
-    if (search_target(window, message->hwnd))
-    {
-        MSG stepping = *message;
-        if (TranslateAcceleratorW(window->handle, window->search_keys, &stepping) != 0)
-        {
-            return true;
-        }
-    }
+    if (translate_search_shortcut(window, message))
+        return true;
     if (translate_command_shortcut(window, message))
         return true;
     if (window->pane == nullptr || !command_target(window, message->hwnd))
