@@ -69,7 +69,9 @@
 
 | FR-040 | 設定の「ノートの保存先…」で、現在と次回起動の場所を確認し、直接入力またはWindowsのフォルダー選択で変更できる | 変更は次回起動から反映し、ノートを自動移動/複製/削除しない。編集中の本文・Undo・dirtyは保持する。package identityを持つ版は初回に候補を確認し、取消は設定を書かず終了する。指定済み保存先の消失/読書き不能/使用中は理由を示して選択へ戻し、黙って別の場所へ切り替えない。未知版/壊れた起動設定は上書きせず起動を断る。#477 / ADR0077。実MSIX配布・更新/アンインストールの確認は別途 |
 
+
 | FR-041 | 複数のUTF-8 Markdownを指定カテゴリへ追加し、現在ノート・保存済みカテゴリ・全ノートを書き出せる | 取り込みは元と既存ノートを保持し、同名をスキップする。途中失敗は追加済み/同名/未処理を示す。1枚は未保存の編集を含むMarkdown原文、カテゴリ/全件は保存済み本文だけのZIP。出力同名は上書きせず拒否。設定・履歴・台帳は含めず、完全復元形式とはしない。選択・Undo・dirty・元ノートの保存状態を保つ。#494 / [ADR0082](docs/adr/0082-markdown-transfer.md)・[操作案内](docs/TRANSFER.md) |
+| FR-042 | 閲覧/編集の右側に簡易ミニマップを表示し、設定・Ctrl+Shift+M・操作メニュー・パレットで切り替えられる | 最大256表示行の分量を線にし、現在範囲を枠で示す。クリック/drag、focus時の↑↓/PageUp/Down/Home/End、UIA RangeValueをnative scrollへ渡す。本文・選択・Undo・dirtyを保つ。入力を120msまとめ、queueが空のとき16sampleずつ進める。別本文/解析を持たず、非表示/IME/modal/投入中は停止。本文320 logical pxを確保できなければ自動非表示にし設定値は保持する。#502 / [ADR0084](docs/adr/0084-bounded-native-minimap.md) |
 
 OS終了通知（WM_QUERYENDSESSION / WM_ENDSESSION）は[ADR0053](docs/adr/0053-session-end-and-exit-contract.md)に従う。
 名前付き文書は既存保存の完了後に同意し、承認待ちの追加入力を止める。無題・改名保留・未確定IME・
@@ -93,25 +95,27 @@ OS終了通知（WM_QUERYENDSESSION / WM_ENDSESSION）は[ADR0053](docs/adr/0053
 | テーマの切り替え | 決めた（Issue #294）。設定の版4で125種類の名前を追加し、旧3語を保持する | ADR0049が固定catalogと検索面を定める。動的再着色はADR0031を維持する |
 | 表示言語 | 決めた（Issue #76 で実装済み）。設定の版 3 に `"language": "ja" \| "en" \| "zh-Hans"` を持つ | 初期は `ja`。OS の表示言語への追従は対象外（ADR 0032 の決定 9） |
 
-### 2-1. `data/settings.json`（版 4）
+### 2-1. `data/settings.json`（版 5）
 
 効果を実装したキーだけが入る。**キーの順序も形のうち**で、違えば既定値へ黙って落ちずに拒む（ARC-009）。
 
 ```json
 {
-  "version": 4,
+  "version": 5,
   "number": false,
   "theme": "system",
-  "language": "ja"
+  "language": "ja",
+  "minimap": true
 }
 ```
 
 - `number`（FR-021 / 版 1 から）・`theme`（FR-016 / 版 2 で追加。`"system"` / `"light"` / `"dark"`と、版4からの125テーマID。出典は[theme-sources.json](docs/theme-sources.json)）・
-  `language`（FR-024 / 版 3 で追加。`"ja"` / `"en"` / `"zh-Hans"`。綴りは BCP 47 のまま）。
+  `language`（FR-024 / 版 3 で追加。`"ja"` / `"en"` / `"zh-Hans"`。綴りは BCP 47 のまま）・
+  `minimap`（FR-042 / 版5で追加、bool、既定true）。
 - **版 1 の形 `{"version": 1, "number": <bool>}` と版 2 の形
   `{"version": 2, "number": <bool>, "theme": "…"}` も読めて**、足りないキーに既定値
   （`theme` は `"system"`・`language` は `"ja"`）を埋める（移行）。
-  版3も旧3語のthemeと言語をそのまま読む。書くのは常に版4なので、旧版は次の明示的な設定変更で版4になる。起動だけでは書き換えない。未知のテーマ名は不正として上書きしない。
+  版3も旧3語のthemeと言語をそのまま読み、版4の全themeも保持する。版1〜4にはminimap=trueを補う。書くのは常に版5なので、旧版は次の明示的な設定変更で版5になる。起動だけでは書き換えない。未知のテーマ名は不正として上書きしない。
 - ファイルが無ければ既定値で始め、**起動時には作らない**。未知の版・壊れた値は既定値で起動して理由を 1 回見せ、
   そのセッションは設定を変えず**上書きもしない**（ADR 0025 の決定 6）。
 - 変更は**先に書いてから採用する**ので、表示と保存が食い違わない。

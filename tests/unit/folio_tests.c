@@ -86,6 +86,26 @@ static bool run_document_settings_target_tests(const char *_Nonnull argument)
     return false;
 }
 
+static bool run_minimap_target_tests(const char *_Nonnull argument)
+{
+    if (strcmp(argument, "--minimap") == 0)
+    {
+        run_settings_tests();
+        run_minimap_state_tests();
+        run_command_tests();
+        run_ui_text_tests();
+        printf("minimap settings, state, command and UI text tests passed\n");
+        return true;
+    }
+    if (strcmp(argument, "--minimap-oom") == 0)
+    {
+        run_minimap_allocation_tests();
+        printf("minimap allocation tests passed\n");
+        return true;
+    }
+    return false;
+}
+
 static bool run_transfer_target_tests(const char *_Nonnull argument)
 {
     if (strcmp(argument, "--transfer") != 0)
@@ -439,12 +459,12 @@ static bool run_selected_tests(const char *_Nonnull argument)
         printf("nullable allocation, preview ownership, BOM and template tests passed\n");
         return true;
     }
-    return (run_transfer_target_tests(argument) || run_web_link_target_tests(argument) ||
-            run_text_validation_target_tests(argument) || run_note_search_target_tests(argument) ||
-            run_surface_target_tests(argument) || run_menu_target_tests(argument) ||
-            run_size_overflow_target_tests(argument) || run_pane_load_target_tests(argument) ||
-            run_document_settings_target_tests(argument) || run_target_tests(argument) ||
-            run_filter_target_tests(argument));
+    return (run_minimap_target_tests(argument) || run_transfer_target_tests(argument) ||
+            run_web_link_target_tests(argument) || run_text_validation_target_tests(argument) ||
+            run_note_search_target_tests(argument) || run_surface_target_tests(argument) ||
+            run_menu_target_tests(argument) || run_size_overflow_target_tests(argument) ||
+            run_pane_load_target_tests(argument) || run_document_settings_target_tests(argument) ||
+            run_target_tests(argument) || run_filter_target_tests(argument));
 }
 
 static void run_full_suite(void)

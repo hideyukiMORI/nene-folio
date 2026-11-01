@@ -104,7 +104,8 @@ struct persistence_adapter
     const char *_Nonnull settings_text;
     size_t settings_reads;
     enum persistence_outcome settings_write_outcome;
-    size_t settings_writes;                /* write_settings が呼ばれた回数 */
+    size_t settings_writes; /* write_settings が呼ばれた回数 */
+    bool written_minimap;
     bool written_number;                   /* 最後に書かれた設定の number */
     enum folio_theme_choice written_theme; /* 最後に書かれた設定の theme */
     enum folio_language written_language;  /* 最後に書かれた設定の language */
@@ -566,6 +567,7 @@ static enum persistence_outcome fake_write_settings(struct persistence_adapter *
     {
         return adapter->settings_write_outcome;
     }
+    adapter->written_minimap = folio_settings_minimap(settings);
     adapter->written_number = folio_settings_number(settings);
     adapter->written_theme = folio_settings_theme(settings);
     adapter->written_language = folio_settings_language(settings);
@@ -3450,6 +3452,9 @@ static void verify_settings_unreadable(enum persistence_outcome read,
     require(folio_state_set_theme(state, FOLIO_THEME_CHOICE_LIGHT) ==
                 FOLIO_STATE_SETTINGS_UNREADABLE,
             "the theme is refused with the same value as the line numbers");
+    require(folio_state_set_minimap(state, false) == FOLIO_STATE_SETTINGS_UNREADABLE &&
+                folio_state_minimap(state),
+            "unreadable settings refuse minimap changes");
     require(adapter.settings_writes == 0, "a file nobody could read is never overwritten");
     require(!folio_state_number(state), "the refused change left the value alone");
     require(folio_state_theme_choice(state) == FOLIO_THEME_CHOICE_SYSTEM,
@@ -4073,9 +4078,74 @@ static void verify_theme_preview_contrast(void)
     folio_state_destroy(state);
 }
 
+static void verify_set_minimap(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_minimap(state), "default minimap is visible");
+    require(folio_state_set_minimap(state, true) == FOLIO_STATE_READY &&
+                adapter.settings_writes == 0,
+            "unchanged minimap is not written");
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
+                folio_state_begin_edit(state) == FOLIO_STATE_READY,
+            "editable note");
+    const char *pane = folio_state_pane_rtf(state);
+    require(folio_state_set_minimap(state, false) == FOLIO_STATE_READY &&
+                !folio_state_minimap(state) && !adapter.written_minimap &&
+                adapter.settings_writes == 1 && folio_state_pane_rtf(state) == pane,
+            "hiding commits once without rebuilding the body");
+    require(folio_state_set_number(state, true) == FOLIO_STATE_READY &&
+                !folio_state_minimap(state) && !adapter.written_minimap && adapter.written_number,
+            "number change preserves hidden preference");
+    require(folio_state_set_minimap(state, true) == FOLIO_STATE_READY &&
+                folio_state_number(state) && adapter.written_minimap &&
+                adapter.settings_writes == 3 && folio_state_pane_rtf(state) == pane,
+            "showing preserves existing settings and body");
+    folio_state_destroy(state);
+}
+
+static void verify_minimap_write_failure(enum persistence_outcome failure,
+                                         enum folio_state_outcome expected)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    adapter.settings_write_outcome = failure;
+    require(folio_state_set_minimap(state, false) == expected && folio_state_minimap(state) &&
+                adapter.settings_writes == 1,
+            "failed storage preserves visible preference");
+    folio_state_destroy(state);
+}
+
+static void verify_minimap_restart(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    adapter.settings_outcome = PERSISTENCE_LOADED;
+    adapter.settings_text = "{\"version\":5,\"number\":true,\"theme\":\"dracula\","
+                            "\"language\":\"en\",\"minimap\":false}";
+    struct folio_state *state = ready_state(&adapter);
+    require(!folio_state_minimap(state) && folio_state_number(state) &&
+                folio_state_language(state) == FOLIO_LANGUAGE_EN && adapter.settings_writes == 0,
+            "restart adopts hidden preference without writing");
+    folio_state_destroy(state);
+}
+
+void run_minimap_state_tests(void)
+{
+    verify_set_minimap();
+    verify_minimap_restart();
+    verify_minimap_write_failure(PERSISTENCE_UNWRITABLE, FOLIO_STATE_SETTINGS_STORE_FAILED);
+    verify_minimap_write_failure(PERSISTENCE_OUT_OF_MEMORY, FOLIO_STATE_OUT_OF_MEMORY);
+    verify_settings_unreadable(PERSISTENCE_MALFORMED, "malformed settings protect map preference");
+    verify_settings_unreadable(PERSISTENCE_UNREADABLE,
+                               "unreadable settings protect map preference");
+    verify_set_number();
+    verify_set_number_unwritable();
+}
+
 static void verify_settings(void)
 {
     run_system_contrast_tests();
+    run_minimap_state_tests();
     verify_theme_preview_transaction();
     verify_theme_preview_failures();
     verify_theme_preview_contrast();

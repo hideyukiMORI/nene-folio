@@ -94,6 +94,8 @@ void run_filter_lookup_state_tests(void);
 void run_corpus_allocation_tests(void);
 void run_filter_allocation_tests(void);
 void run_settings_tests(void);
+void run_minimap_state_tests(void);
+void run_minimap_allocation_tests(void);
 void run_theme_tests(void);
 void run_theme_state_tests(void);
 void run_system_contrast_tests(void);

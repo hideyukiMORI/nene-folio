@@ -80,7 +80,7 @@ static void run_message_loop(struct folio_window *_Nonnull window)
             continue;
         }
         if (folio_window_idle_work_ready(window))
-            folio_window_continue_index_filter(window);
+            folio_window_continue_idle_work(window);
         else if (!WaitMessage())
             break;
     }

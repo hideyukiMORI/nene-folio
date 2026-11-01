@@ -53,6 +53,11 @@ track package validation, saved-data checks, publication, and download verificat
   not included in the published beta. View-mode HTTP/HTTPS links also open in the default browser
   with a left click or Ctrl+Enter (#482); dragging to select text and editing do not launch links.
   See [Markdown syntax and limits](docs/MARKDOWN.md) (Japanese).
+- **Simple minimap**: the current source shows a bounded overview of native display lines beside
+  Read/Edit, with a current-position frame and click/drag navigation. Settings, Ctrl+Shift+M,
+  Actions and the command palette toggle it; the preference survives restart. Narrow panes hide it
+  automatically. The overview samples at most 256 lines and is not a complete text miniature (#502).
+  This change is later than the submitted 1.0.0 Store candidate.
 - **Note zoom**: Ctrl+wheel or Ctrl++ / Ctrl+- changes the display from 50% to 300%; Ctrl+0 restores 100%.
   Read and Edit share the zoom while the app runs, and line numbers follow it. Note contents stay unchanged.
 - **Notes**: new untitled note with a first save, save as, rename (recoverable across restarts through
@@ -122,7 +127,7 @@ This feature is in the current source and is not included in the published v0.3.
 | `data/<category>/index.json` | note order inside the category |
 | `data/<category>/<note>.md` | the note itself, written back as-is |
 | `data/.history/<category>/<note>/1.md` … `5.md` | the last five bodies before a save (1 is newest) |
-| `data/settings.json` | line numbers, theme, language (version 4; versions 1–3 are read) |
+| `data/settings.json` | line numbers, theme, language, minimap (version 5; versions 1–4 are read) |
 | `data/.rename.json` | an in-flight rename, replayed on the next start |
 | `data/.nenefolio.lock` | refuses a second instance on the same `data/` |
 

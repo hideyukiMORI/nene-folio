@@ -115,6 +115,8 @@ void note_pane_invalidate_lines(struct note_pane *_Nonnull pane);
 /* その論理行が最初に見えるところまで戻す。本文・Undo・選択は触らない（決定 6 の後半）。
  * 折り返しの途中から見えていた場合は、その論理行の先頭へ寄る。 */
 void note_pane_scroll_to_line(struct note_pane *_Nonnull pane, size_t number);
+/* 表示行へ移動。wheelの余韻を止め、本文/選択/Undoは変更しない（ADR0084）。 */
+void note_pane_scroll_display(struct note_pane *_Nonnull pane, int display);
 void note_pane_destroy(struct note_pane *_Nullable pane);
 
 #endif

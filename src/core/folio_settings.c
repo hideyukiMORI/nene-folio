@@ -9,11 +9,13 @@
 struct folio_settings
 {
     bool number;
+    bool minimap;
     enum folio_theme_choice theme;
     enum folio_language language;
 };
 
-constexpr uint32_t settings_version = 4;
+constexpr uint32_t settings_version = 5;
+constexpr uint32_t settings_version_4 = 4;
 constexpr uint32_t settings_version_1 = 1;
 constexpr uint32_t settings_version_2 = 2;
 constexpr uint32_t settings_version_3 = 3;
@@ -44,8 +46,10 @@ static enum folio_settings_outcome create(const struct folio_settings *_Nonnull 
 /* ファイルが無いときと、解析を始めるときの初期値。既定値を書く場所はここだけである。 */
 static struct folio_settings defaults(void)
 {
-    struct folio_settings values = {
-        .number = false, .theme = FOLIO_THEME_CHOICE_SYSTEM, .language = FOLIO_LANGUAGE_JA};
+    struct folio_settings values = {.number = false,
+                                    .minimap = true,
+                                    .theme = FOLIO_THEME_CHOICE_SYSTEM,
+                                    .language = FOLIO_LANGUAGE_JA};
     return values;
 }
 
@@ -62,6 +66,15 @@ folio_settings_with_number(const struct folio_settings *_Nonnull settings, bool 
     /* 元の設定を写してから number だけを変える。写す値が増えても写す場所はここだけである。 */
     struct folio_settings values = *settings;
     values.number = number;
+    return create(&values, out);
+}
+
+enum folio_settings_outcome
+folio_settings_with_minimap(const struct folio_settings *_Nonnull settings, bool minimap,
+                            struct folio_settings *_Nullable *_Nonnull out)
+{
+    struct folio_settings values = *settings;
+    values.minimap = minimap;
     return create(&values, out);
 }
 
@@ -115,7 +128,7 @@ static bool read_theme(struct json_reader *_Nonnull reader, uint32_t version,
         return false;
     }
     /* Old schemas retain their three-word vocabulary; only version 4 expands it. */
-    return version == settings_version || *value <= FOLIO_THEME_CHOICE_DARK;
+    return version >= settings_version_4 || *value <= FOLIO_THEME_CHOICE_DARK;
 }
 
 static bool read_language(struct json_reader *_Nonnull reader, enum folio_language *_Nonnull value)
@@ -167,7 +180,7 @@ static enum folio_settings_outcome parse_version_2(struct json_reader *_Nonnull 
     return FOLIO_SETTINGS_READY;
 }
 
-/* 版 3 / 4 の本体（`"number", "theme", "language"` まで）。順序も形のうち（ADR 0032 の決定 1）。 */
+/* 版 3〜5 の本体（`"number", "theme", "language"` まで）。順序も形のうち（ADR 0032 の決定 1）。 */
 static enum folio_settings_outcome parse_localized(struct json_reader *_Nonnull reader,
                                                    struct folio_settings *_Nonnull values,
                                                    uint32_t version)
@@ -175,6 +188,8 @@ static enum folio_settings_outcome parse_localized(struct json_reader *_Nonnull 
     if (!expect_key(reader, "number") || !read_boolean(reader, &values->number) ||
         !expect_key(reader, "theme") || !read_theme(reader, version, &values->theme) ||
         !expect_key(reader, "language") || !read_language(reader, &values->language) ||
+        (version == settings_version &&
+         (!expect_key(reader, "minimap") || !read_boolean(reader, &values->minimap))) ||
         !document_end(reader))
     {
         return FOLIO_SETTINGS_MALFORMED;
@@ -200,7 +215,8 @@ static enum folio_settings_outcome parse_document(struct json_reader *_Nonnull r
     {
         return parse_version_2(reader, values);
     }
-    if (version == settings_version_3 || version == settings_version)
+    if (version == settings_version_3 || version == settings_version_4 ||
+        version == settings_version)
     {
         return parse_localized(reader, values, version);
     }
@@ -237,12 +253,19 @@ void folio_settings_write(const struct folio_settings *_Nonnull settings,
     json_writer_string(writer, folio_theme_choice_name(settings->theme));
     json_writer_key(writer, "language");
     json_writer_string(writer, language_names[settings->language]);
+    json_writer_key(writer, "minimap");
+    json_writer_boolean(writer, settings->minimap);
     json_writer_object_end(writer);
 }
 
 bool folio_settings_number(const struct folio_settings *_Nonnull settings)
 {
     return settings->number;
+}
+
+bool folio_settings_minimap(const struct folio_settings *_Nonnull settings)
+{
+    return settings->minimap;
 }
 
 enum folio_theme_choice folio_settings_theme(const struct folio_settings *_Nonnull settings)

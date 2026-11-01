@@ -547,6 +547,12 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_STORAGE_SETTINGS_CHANGED] =
         "別の起動中アプリが保存先設定を変更しました。上書きせず、再起動して読み直してください。",
     [UI_TEXT_STORAGE_PICKER_FAILED] = "フォルダー選択を開けませんでした。パスを直接入力できます。",
+    [UI_TEXT_COMMAND_TOGGLE_MINIMAP] = "ミニマップの表示を切り替える",
+    [UI_TEXT_KEY_MINIMAP] = "Ctrl+Shift+M",
+    [UI_TEXT_SETTINGS_MINIMAP] = "ミニマップを表示",
+    [UI_TEXT_MINIMAP] = "ミニマップ",
+    [UI_TEXT_MINIMAP_HELP] = "クリックやドラッグで移動。↑↓、PageUp/Down、Home/"
+                             "Endでも移動できます。狭い窓では自動で隠れます。",
 };
 
 constexpr size_t expected_count = sizeof expected / sizeof expected[0];
@@ -752,6 +758,7 @@ static const char *_Nonnull const key_names[] = {
     "Ctrl+N",
     "Ctrl+S",
     "Ctrl+Shift+S",
+    "Ctrl+Shift+M",
     "Ctrl+Enter",
     "F1",
     "F2",

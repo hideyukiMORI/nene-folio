@@ -49,6 +49,10 @@ static const struct
     [FOLIO_COMMAND_FIND] = {FOLIO_COMMAND_FIND, UI_TEXT_COMMAND_FIND, 0, {"", ""}},
     /* 語を要る Ex の文法（ADR 0026 の決定 8）。パレットとメニューには出ない。 */
     [FOLIO_COMMAND_SET] = {FOLIO_COMMAND_SET, UI_TEXT_COMMAND_SET, 2, {"set", "se"}},
+    [FOLIO_COMMAND_TOGGLE_MINIMAP] = {FOLIO_COMMAND_TOGGLE_MINIMAP,
+                                      UI_TEXT_COMMAND_TOGGLE_MINIMAP,
+                                      0,
+                                      {"", ""}},
     [FOLIO_COMMAND_TOGGLE_NUMBER] = {FOLIO_COMMAND_TOGGLE_NUMBER,
                                      UI_TEXT_COMMAND_TOGGLE_NUMBER,
                                      0,
@@ -150,6 +154,7 @@ static enum folio_argument_kind argument_kind(enum folio_command command)
     case FOLIO_COMMAND_VIEW:
     case FOLIO_COMMAND_NEW:
     case FOLIO_COMMAND_FIND:
+    case FOLIO_COMMAND_TOGGLE_MINIMAP:
     case FOLIO_COMMAND_TOGGLE_NUMBER:
     case FOLIO_COMMAND_REPLACE:
     case FOLIO_COMMAND_SETTINGS:
@@ -187,6 +192,7 @@ bool folio_command_listed(enum folio_command command)
     case FOLIO_COMMAND_SAVE_AS:
     case FOLIO_COMMAND_RENAME:
     case FOLIO_COMMAND_FIND:
+    case FOLIO_COMMAND_TOGGLE_MINIMAP:
     case FOLIO_COMMAND_TOGGLE_NUMBER:
     case FOLIO_COMMAND_REPLACE:
     case FOLIO_COMMAND_SETTINGS:
@@ -535,6 +541,7 @@ enum folio_command_scope folio_command_scope(enum folio_command command)
     case FOLIO_COMMAND_HELP:
     case FOLIO_COMMAND_SET:
     case FOLIO_COMMAND_SETTINGS:
+    case FOLIO_COMMAND_TOGGLE_MINIMAP:
     case FOLIO_COMMAND_TOGGLE_NUMBER:
         return FOLIO_COMMAND_SCOPE_APP;
     case FOLIO_COMMAND_IMPORT:
