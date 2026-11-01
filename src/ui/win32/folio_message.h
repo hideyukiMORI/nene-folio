@@ -54,4 +54,6 @@ constexpr UINT folio_message_resize_through = WM_APP + 20;
 constexpr UINT folio_message_close_pending = WM_APP + 21;
 /* Explicit Ctrl+Enter from the view pane; parent owns guards and application intent. */
 constexpr UINT folio_message_open_web_link = WM_APP + 22;
+/* 子のpointer表示が親の既存入力guardを同期で尋ねる。遮断中は非zero、状態は親だけが持つ。 */
+constexpr UINT folio_message_pointer_blocked = WM_APP + 23;
 #endif

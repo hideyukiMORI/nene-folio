@@ -15,6 +15,7 @@
 #include "note_ref.h"
 #include "ui_face.h"
 #include "ui_part.h"
+#include "ui_pointer.h"
 #include "ui_text.h"
 #include "ui_text_request.h"
 #include "utf16_text.h"
@@ -626,16 +627,27 @@ static enum folio_state_outcome select_note(struct drawer_window *_Nonnull self,
 /* 行への意図を application へ渡し、結果を写す。
  * 絞り込み中の開閉は application が `FOLIO_STATE_FILTERED` で断るが、クリックのたびに
  * モーダルの失敗箱を出さず、ここで静かに戻る（ADR 0024 の補正 1）。 */
+static bool row_action_available(const struct drawer_window *_Nonnull self,
+                                 enum drawer_row_kind kind)
+{
+    switch (kind)
+    {
+    case DRAWER_ROW_CATEGORY:
+        return !folio_state_filtering(self->state);
+    case DRAWER_ROW_NOTE:
+        return true;
+    }
+    return false;
+}
+
 static void act_on_row(struct drawer_window *_Nonnull self, struct drawer_row row)
 {
+    if (!row_action_available(self, row.kind))
+        return;
     enum folio_state_outcome outcome = FOLIO_STATE_READY;
     switch (row.kind)
     {
     case DRAWER_ROW_CATEGORY:
-        if (folio_state_filtering(self->state))
-        {
-            return;
-        }
         outcome = folio_state_toggle_category(self->state, row.category);
         break;
     case DRAWER_ROW_NOTE:
@@ -1062,11 +1074,18 @@ static struct drawer_window *_Nullable self_of(HWND window)
     return (struct drawer_window *)GetWindowLongPtrW(window, GWLP_USERDATA);
 }
 
+static enum ui_pointer_kind drawer_cursor(struct drawer_window *_Nonnull self, POINT point);
+
 static LRESULT drawer_message(struct drawer_window *_Nonnull self, UINT message, WPARAM wparam,
                               LPARAM lparam)
 {
     switch (message)
     {
+    case WM_SETCURSOR:
+        if (!ui_pointer_client(self->handle, wparam, lparam))
+            return DefWindowProcW(self->handle, message, wparam, lparam);
+        ui_pointer_show(drawer_cursor(self, ui_pointer_message_point(self->handle)));
+        return TRUE;
     case WM_NCHITTEST:
         if (SendMessageW(GetParent(self->handle), folio_message_resize_through, 0, lparam) != 0)
         {
@@ -1088,6 +1107,7 @@ static LRESULT drawer_message(struct drawer_window *_Nonnull self, UINT message,
     case WM_MOUSEMOVE:
         track_header(self, (POINT){GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)});
         drag(self, GET_Y_LPARAM(lparam));
+        ui_pointer_show(drawer_cursor(self, (POINT){GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)}));
         return 0;
     case WM_MOUSELEAVE:
         leave_header(self);
@@ -1149,7 +1169,9 @@ static LRESULT CALLBACK drawer_procedure(HWND window, UINT message, WPARAM wpara
     {
         return SendMessageW(GetParent(window), message, wparam, lparam);
     }
-    return drawer_message(self, message, wparam, lparam);
+    LRESULT result = drawer_message(self, message, wparam, lparam);
+    ui_pointer_after(window, message);
+    return result;
 }
 
 static bool ensure_class(HINSTANCE instance)
@@ -1311,6 +1333,27 @@ static HRESULT accessible_layout(struct drawer_window *_Nonnull self)
     }
     drawer_layout_scroll(self->accessible_layout, folio_state_drawer_scroll(self->state));
     return S_OK;
+}
+
+static enum ui_pointer_kind drawer_cursor(struct drawer_window *_Nonnull self, POINT point)
+{
+    RECT client;
+    GetClientRect(self->handle, &client);
+    if (!IsWindowEnabled(self->handle) || !IsWindowEnabled(GetAncestor(self->handle, GA_ROOT)) ||
+        !PtInRect(&client, point) || (self->pressed && self->moved) ||
+        SendMessageW(GetParent(self->handle), folio_message_pointer_blocked, 0, 0) != 0)
+        return UI_POINTER_ARROW;
+    RECT button = new_category_rect(self);
+    if (PtInRect(&button, point))
+        return UI_POINTER_ACTION;
+    if (self->header_pressed != DRAWER_HEADER_NONE || point.y < band_height(self) ||
+        FAILED(accessible_layout(self)))
+        return UI_POINTER_ARROW;
+    size_t at = 0;
+    if (!drawer_layout_hit(self->accessible_layout, point.y, &at))
+        return UI_POINTER_ARROW;
+    struct drawer_row row = drawer_layout_row(self->accessible_layout, at);
+    return row_action_available(self, row.kind) ? UI_POINTER_ACTION : UI_POINTER_ARROW;
 }
 
 static int accessible_compare(struct drawer_row row, const struct accessible_item *_Nonnull item)

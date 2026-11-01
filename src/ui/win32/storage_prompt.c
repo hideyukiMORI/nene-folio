@@ -11,6 +11,7 @@
 #include "storage_state.h"
 #include "ui_face.h"
 #include "ui_part.h"
+#include "ui_pointer.h"
 #include "ui_text.h"
 #include "utf16_text.h"
 #include "utf8_text.h"
@@ -91,7 +92,7 @@ static HWND _Nullable button(struct storage_prompt *_Nonnull prompt, enum ui_tex
     if (window == nullptr)
         return nullptr;
     SetWindowLongPtrW(window, GWLP_ID, id);
-    if (dialog_theme_track_button(window) != DIALOG_THEME_CONTROL_READY)
+    if (dialog_theme_track_control(window, DIALOG_POINTER_BUTTON) != DIALOG_THEME_CONTROL_READY)
     {
         DestroyWindow(window);
         return nullptr;
@@ -191,7 +192,9 @@ static LRESULT CALLBACK input_procedure(HWND window, UINT message, WPARAM wparam
         prompt->composing = false;
     if (select_all(window, message, wparam))
         return 0;
-    return CallWindowProcW(original, window, message, wparam, lparam);
+    LRESULT result = CallWindowProcW(original, window, message, wparam, lparam);
+    ui_pointer_after(window, message);
+    return result;
 }
 
 static bool name_input(struct storage_prompt *_Nonnull prompt, HWND window, enum ui_text name,
@@ -545,6 +548,11 @@ static INT_PTR CALLBACK procedure(HWND dialog, UINT message, WPARAM wparam, LPAR
         (struct storage_prompt *)GetWindowLongPtrW(dialog, DWLP_USER);
     if (prompt == nullptr)
         return FALSE;
+    if (message == folio_message_pointer_blocked)
+    {
+        SetWindowLongPtrW(dialog, DWLP_MSGRESULT, prompt->composing);
+        return TRUE;
+    }
     if (message == folio_message_modal_cancel || message == WM_CLOSE)
     {
         SetWindowLongPtrW(dialog, DWLP_MSGRESULT, 1);
