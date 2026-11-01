@@ -1,6 +1,5 @@
 #include "folio_shortcut.h"
 #include "ui_text.h"
-#include "ui_text_request.h"
 struct folio_shortcut
 {
     enum folio_shortcut_action action;
@@ -103,57 +102,4 @@ const char *_Nonnull folio_shortcut_action_hint(enum folio_shortcut_action actio
         if (bindings[at].action == action)
             return folio_shortcut_label(&bindings[at], language);
     return "";
-}
-
-static struct ui_text_request shortcut_help_request(enum ui_text id, enum folio_language language)
-{
-    struct ui_text_request request = {.id = id, .language = language};
-    if (id == UI_TEXT_HELP_GLOBAL_KEYS)
-    {
-        request.name = folio_shortcut_command_hint(FOLIO_COMMAND_HELP, language);
-        request.from = ui_text_line(UI_TEXT_KEY_PALETTE, language);
-        request.to = folio_shortcut_command_hint(FOLIO_COMMAND_FIND, language);
-    }
-    if (id == UI_TEXT_HELP_GLOBAL_FILTER)
-        request.name = folio_shortcut_action_hint(FOLIO_SHORTCUT_ACTION_FILTER, language);
-    if (id == UI_TEXT_HELP_NOTE_ACTIONS)
-    {
-        request.name = folio_shortcut_action_hint(FOLIO_SHORTCUT_ACTION_TOGGLE_MODE, language);
-        request.from = folio_shortcut_action_hint(FOLIO_SHORTCUT_ACTION_OPERATIONS, language);
-    }
-    if (id == UI_TEXT_HELP_FILE_KEYS)
-    {
-        request.name = folio_shortcut_command_hint(FOLIO_COMMAND_NEW, language);
-        request.from = folio_shortcut_command_hint(FOLIO_COMMAND_SAVE, language);
-        request.to = folio_shortcut_command_hint(FOLIO_COMMAND_SAVE_AS, language);
-    }
-    if (id == UI_TEXT_HELP_SEARCH_STEP || id == UI_TEXT_HELP_SEARCH_FIELD)
-    {
-        request.name = folio_shortcut_action_hint(id == UI_TEXT_HELP_SEARCH_STEP
-                                                      ? FOLIO_SHORTCUT_ACTION_SEARCH_FORWARD
-                                                      : FOLIO_SHORTCUT_ACTION_SEARCH_NEXT,
-                                                  language);
-        request.from = folio_shortcut_action_hint(id == UI_TEXT_HELP_SEARCH_STEP
-                                                      ? FOLIO_SHORTCUT_ACTION_SEARCH_BACKWARD
-                                                      : FOLIO_SHORTCUT_ACTION_SEARCH_PREVIOUS,
-                                                  language);
-    }
-    return request;
-}
-
-enum ui_text_format_outcome folio_shortcut_help(enum ui_text id, enum folio_language language,
-                                                char *_Nonnull out, size_t capacity)
-{
-    struct ui_text_request request = shortcut_help_request(id, language);
-    if (id != UI_TEXT_HELP_FILE_KEYS)
-        return ui_text_format(&request, out, capacity);
-    char prefix[1024];
-    if (ui_text_format(&request, prefix, sizeof prefix) != UI_TEXT_FORMAT_READY)
-        return UI_TEXT_FORMAT_TOO_LONG;
-    struct ui_text_request joined = {
-        .id = UI_TEXT_HELP_RENAME_KEY,
-        .language = language,
-        .name = prefix,
-        .from = folio_shortcut_command_hint(FOLIO_COMMAND_RENAME, language)};
-    return ui_text_format(&joined, out, capacity);
 }

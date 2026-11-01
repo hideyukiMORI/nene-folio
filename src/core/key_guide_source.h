@@ -1,0 +1,12 @@
+#ifndef NENEFOLIO_KEY_GUIDE_SOURCE_H
+#define NENEFOLIO_KEY_GUIDE_SOURCE_H
+
+enum key_guide_source
+{
+    KEY_GUIDE_TEXT,
+    KEY_GUIDE_COMMAND,
+    KEY_GUIDE_ACTION,
+    KEY_GUIDE_EX,
+};
+
+#endif

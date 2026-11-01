@@ -27,7 +27,4 @@ folio_shortcut_command(const struct folio_shortcut *_Nonnull shortcut);
 /* actionの第一binding。無ければ空文字。command専用キーとは区別する。 */
 [[nodiscard]] const char *_Nonnull folio_shortcut_action_hint(enum folio_shortcut_action action,
                                                               enum folio_language language);
-[[nodiscard]] enum ui_text_format_outcome folio_shortcut_help(enum ui_text id,
-                                                              enum folio_language language,
-                                                              char *_Nonnull out, size_t capacity);
 #endif
