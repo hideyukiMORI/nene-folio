@@ -36,6 +36,16 @@ VS Codeのbutton/actionbar/listは有効項目にpointer、無効部品にdefaul
 有効/無効/選択済み/filtered/IME/modal/capture/scroll/面切替を確認する。入力本文・選択・dirtyを操作表示だけで変えない。
 物理pointer移動、実reader聴取、異なるmonitorのDPI遷移とは区別する。最終headの必須CIを要求する。Waivers none。
 
+## #512補正 — 文書投入中の変更通知を最終描画へ集約する
+
+3,000行の表で3,002回のEN_CHANGEが届き、共通cursor再判定だけで中央値42.740msを要した。
+主窓は、同じ本文HWND/control idから届いたEN_CHANGEで、本文がSTREAMINGの間だけ
+通知後の`ui_pointer_after`を省く。通常編集・別入力欄・scroll・enable・capture等は従来通り通す。
+本文投入の成功/失敗は既存`loaded_pane`が必ず主窓を無効化し、その完成描画の通常後処理で
+現在の可否と通知位置からcursorを再判定する。新しいtimer、pending状態、別のhit経路を作らない。
+本文を隠した場合も、復帰時の既存show/size/paintが同じ再判定を行う。
+通常入力のcursorと、成功/失敗後の最終再判定を実Win32で確認する。Waivers none。
+
 ## 参照
 
 - [VS Code button](https://github.com/microsoft/vscode/blob/main/src/vs/base/browser/ui/button/button.css)
