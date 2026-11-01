@@ -9,6 +9,7 @@
 #include "markdown_table.h"
 #include "note_text.h"
 #include "rtf_palette.h"
+#include "rtf_text.h"
 #include "text_buffer.h"
 #include "ui_font.h"
 #include "unit_tests.h"
@@ -1343,6 +1344,92 @@ static void append_inline_run(struct text_buffer *_Nonnull buffer, char characte
         text_buffer_append(buffer, &character, 1);
 }
 
+static void verify_plain_emission_allocation(const char *_Nonnull source)
+{
+    struct note_text *text = nullptr;
+    struct markdown_rtf *kept = nullptr;
+    struct rtf_palette palette = rtf_palette_for(FOLIO_THEME_LIGHT);
+    require(note_text_create(source, strlen(source), &text) == NOTE_TEXT_ACCEPTED &&
+                markdown_rtf_empty(palette, ui_font_face(FOLIO_LANGUAGE_JA), &kept) ==
+                    MARKDOWN_RTF_CONVERTED,
+            "plain emission allocation inputs");
+    bool completed = false;
+    for (size_t fail = 1; fail < 64 && !completed; ++fail)
+    {
+        struct markdown_rtf *actual = kept;
+        allocation_probe_fail_at(fail);
+        enum markdown_rtf_outcome outcome =
+            markdown_rtf_plain(text, palette, ui_font_face(FOLIO_LANGUAGE_JA), &actual);
+        size_t calls = allocation_probe_calls();
+        allocation_probe_fail_at(0);
+        if (outcome == MARKDOWN_RTF_CONVERTED)
+        {
+            require(actual != kept, "complete plain emission adopts new output");
+            markdown_rtf_destroy(actual);
+            completed = true;
+            printf("Plain emission OOM: %zu failed points, active=%d\n", fail - 1, calls != 0);
+        }
+        if (outcome == MARKDOWN_RTF_OUT_OF_MEMORY)
+            require(actual == kept && markdown_rtf_length(kept) == strlen(header) + 1,
+                    "failed plain emission retains the previous output");
+        require(outcome == MARKDOWN_RTF_CONVERTED || outcome == MARKDOWN_RTF_OUT_OF_MEMORY,
+                "plain emission has a typed allocation result");
+    }
+    require(completed, "all plain emission allocation points finish");
+    markdown_rtf_destroy(kept);
+    note_text_destroy(text);
+}
+
+static void verify_emission_boundaries(void)
+{
+    const size_t lengths[] = {0, 1, 254, 255, 256, 257, 511, 512, 513};
+    for (size_t index = 0; index < sizeof lengths / sizeof lengths[0]; ++index)
+    {
+        size_t length = lengths[index];
+        char source[1024];
+        char expected[1024];
+        memset(source, 'a', length);
+        memset(expected, 'a', length);
+        snprintf(source + length, sizeof source - length, "%s",
+                 "\xE6\x97\xA5&#123;&amp;&unknown;{x}\\q");
+        snprintf(expected + length, sizeof expected - length, "%s",
+                 "\xE6\x97\xA5\\{&&unknown;\\{x\\}\\\\q");
+        expect_inline_text(source, expected);
+        if (length == 513)
+            (void)verify_render_allocation(source);
+
+        snprintf(source + length, sizeof source - length, "%s", "\xF0\x9F\x98\x80\\{x}\r\nA\rB\n");
+        snprintf(expected + length, sizeof expected - length, "%s",
+                 "\xF0\x9F\x98\x80\\\\\\{x\\}\\par A\\par B\\par \\par }");
+        expect_plain(source, strlen(source), expected);
+        if (length == 513)
+            verify_plain_emission_allocation(source);
+
+        snprintf(source + length, sizeof source - length, "%s", "\\\r{}\r\n\xE6\x97\xA5");
+        snprintf(expected + length, sizeof expected - length, "%s", "\\\\\\{\\}\n\xE6\x97\xA5");
+        struct text_buffer *out = nullptr;
+        require(text_buffer_create(&out) == TEXT_BUFFER_ACCEPTED, "literal output buffer");
+        rtf_text_append(out, source, strlen(source));
+        require(text_buffer_finish(out) == TEXT_BUFFER_ACCEPTED &&
+                    same_text(text_buffer_bytes(out), expected),
+                "literal runs retain escaping, CR removal and UTF-8 bytes");
+        text_buffer_destroy(out);
+
+        source[0] = '`';
+        memset(source + 1, 'a', length);
+        snprintf(source + length + 1, sizeof source - length - 1, "%s", "\\|{x}&amp;`");
+        const char *code = "{\\f1\\fs20\\cf4 ";
+        snprintf(expected, sizeof expected, "%s", code);
+        memset(expected + strlen(code), 'a', length);
+        snprintf(expected + strlen(code) + length, sizeof expected - strlen(code) - length, "%s",
+                 "|\\{x\\}&amp;}");
+        struct markdown_span span = {.bytes = source, .length = strlen(source)};
+        struct markdown_view view = {
+            .spans = &span, .count = 1, .length = span.length, .table_cell = true};
+        expect_inline_view(view, expected, strlen(expected));
+    }
+}
+
 static void verify_inline_backtick_storage(void)
 {
     struct text_buffer *source = nullptr;
@@ -1735,6 +1822,7 @@ static void verify_rule_spacing(void)
 
 void run_markdown_tests(void)
 {
+    verify_emission_boundaries();
     verify_autolink_rendering();
     verify_character_references();
     verify_light_inline_bounds();
