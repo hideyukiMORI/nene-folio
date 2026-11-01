@@ -67,3 +67,11 @@ native親伝播だけの再入guardは削除する。
 - `D:/NeNeFolio/agents/note-zoom-20261025/native-zoom-probe.log`：倍率変更で文字/選択/dirty/Undoを保ち、RTF投入で倍率が戻る実測。
 
 Waivers: none
+
+
+## 2026-11-01 の補正（#508 — ミニマップのwheel境界）
+
+ミニマップレーンはCtrlを併用しても倍率変更の対象にせず、本文と共通の通常スクロールへ渡す。
+レーン操作では細かい倍率deltaの残りを破棄し、後の本文Ctrl+wheelへ持ち越さない。
+本文外から親へ戻ったwheelは配送先を決めてから余韻を止めるため、本文/レーン間の細かなdeltaが失われない。
+本文上のCtrl+wheelとキー倍率、IME/modal guardは不変。[ADR0084](0084-bounded-native-minimap.md)を参照する。

@@ -356,6 +356,23 @@ static void scroll_wheel(struct note_pane *_Nonnull pane, int delta)
     }
 }
 
+void note_pane_cancel_wheel(struct note_pane *_Nonnull pane)
+{
+    cancel_scroll(pane);
+    pane->zoom_wheel_delta = 0;
+}
+
+void note_pane_scroll_wheel(struct note_pane *_Nonnull pane, int delta)
+{
+    pane->zoom_wheel_delta = 0;
+    if (!zoom_available(pane))
+    {
+        cancel_scroll(pane);
+        return;
+    }
+    scroll_wheel(pane, delta);
+}
+
 /* 別操作が所有する位置変更や入力へ、以前のホイールの余韻を持ち越さない。 */
 static void interrupt_scroll(struct note_pane *_Nonnull pane, UINT message)
 {
@@ -459,8 +476,7 @@ static bool pane_wheel(struct note_pane *_Nonnull pane, UINT message, WPARAM key
         return false;
     if (!zoom_available(pane))
     {
-        cancel_scroll(pane);
-        pane->zoom_wheel_delta = 0;
+        note_pane_cancel_wheel(pane);
         return true;
     }
     RECT bounds;
@@ -468,15 +484,13 @@ static bool pane_wheel(struct note_pane *_Nonnull pane, UINT message, WPARAM key
     POINT point = {GET_X_LPARAM(position), GET_Y_LPARAM(position)};
     if (!PtInRect(&bounds, point))
     {
-        cancel_scroll(pane);
-        pane->zoom_wheel_delta = 0;
+        /* The parent decides whether this continues the same motion over the minimap. */
         SendMessageW(GetParent(pane->handle), message, keys, position);
         return true;
     }
     if ((GET_KEYSTATE_WPARAM(keys) & MK_CONTROL) == 0)
     {
-        pane->zoom_wheel_delta = 0;
-        scroll_wheel(pane, GET_WHEEL_DELTA_WPARAM(keys));
+        note_pane_scroll_wheel(pane, GET_WHEEL_DELTA_WPARAM(keys));
         return true;
     }
     cancel_scroll(pane);

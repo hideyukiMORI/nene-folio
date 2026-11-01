@@ -55,6 +55,8 @@ struct sample_tally
     unsigned rules;
     unsigned markers;
     unsigned tables;
+    unsigned code;
+    unsigned empty_code;
 };
 
 static void inspect_sample(const struct note_pane_sample *_Nonnull sample,
@@ -154,6 +156,44 @@ static void wrapped_list(struct note_pane *_Nonnull pane)
     MoveWindow(note_pane_handle(pane), 0, 0, 600, 600, FALSE);
 }
 
+static void inspect_code(const struct note_pane_sample *_Nonnull sample,
+                         struct sample_tally *_Nonnull tally)
+{
+    if (sample->background > 0xFFFFFF)
+        return;
+    if (sample->points <= 2)
+    {
+        ++tally->rules;
+        return;
+    }
+    ++tally->code;
+    if (sample->columns == 0)
+        ++tally->empty_code;
+}
+
+static void code_blocks(struct note_pane *_Nonnull pane)
+{
+    const char content[] =
+        "Plain\n\n`inline` after\n\n```c\nint a = 1;\n\nreturn a;\n```\n\n---\n\nTail\n";
+    load(pane, PANE_MODE_VIEW, content);
+    int count = (int)SendMessageW(note_pane_handle(pane), EM_GETLINECOUNT, 0, 0);
+    struct sample_tally tally = {0};
+    for (int line = 0; line < count; ++line)
+    {
+        struct note_pane_sample sample;
+        require(note_pane_samples(pane, &line, 1, &sample), "code native sample");
+        inspect_code(&sample, &tally);
+    }
+    printf("native code=%u empty=%u rules=%u\n", tally.code, tally.empty_code, tally.rules);
+    require(tally.code == 3 && tally.empty_code == 1 && tally.rules == 1,
+            "code background includes its empty line only");
+    int inline_line = 1;
+    struct note_pane_sample sample;
+    require(note_pane_samples(pane, &inline_line, 1, &sample) && sample.points == 10 &&
+                sample.background > 0xFFFFFF,
+            "inline code is not a shaded block");
+}
+
 static void boundaries(struct note_pane *_Nonnull pane)
 {
     int lines[17] = {0};
@@ -188,6 +228,7 @@ int main(void)
     load(pane, PANE_MODE_VIEW, source);
     view_structure(pane);
     wrapped_list(pane);
+    code_blocks(pane);
     load(pane, PANE_MODE_EDIT, source);
     boundaries(pane);
     preservation(pane);
