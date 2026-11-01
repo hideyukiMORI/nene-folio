@@ -38,6 +38,7 @@
 #include "modal_owner.h"
 #include "name_prompt.h"
 #include "name_prompt_metrics.h"
+#include "note_minimap.h"
 #include "note_name.h"
 #include "note_pane.h"
 #include "note_ref.h"
@@ -105,6 +106,9 @@ struct folio_window
     bool appearance_recolor_pending; /* 色が同じでも失敗した本文の再着色は再試行する。 */
     struct drawer_window *_Nullable drawer;
     struct note_pane *_Nullable pane;
+    struct note_minimap *_Nullable minimap;
+    int minimap_pointer_offset;
+    int body_left_inset; /* 配置時に確定した行番号込みの左余白。通知中は再計測しない。 */
     HACCEL _Nullable commands;
     /* 検索欄にいるあいだだけ使う Enter / Shift+Enter（ADR 0023 の決定 4） */
     HACCEL _Nullable search_keys;
@@ -209,6 +213,12 @@ struct folio_window
     ULONG_PTR gdiplus_token;
 };
 
+constexpr UINT_PTR minimap_timer = 84;
+constexpr UINT minimap_delay = 120;
+constexpr int base_minimap_width = 64;
+constexpr int base_minimap_gap = 12;
+constexpr int base_minimap_minimum_body = 320;
+
 static const wchar_t class_name[] = L"NeNeFolioWindow";
 static const wchar_t command_layer_class[] = L"NeNeFolioCommandLayer";
 static const wchar_t settings_backdrop_class[] = L"NeNeFolioSettingsBackdrop";
@@ -234,7 +244,8 @@ static const struct
     {UI_TEXT_SETTINGS_LANGUAGE_EN, SETTINGS_ROW_LANGUAGE, FOLIO_LANGUAGE_EN, 1, 1},
     {UI_TEXT_SETTINGS_LANGUAGE_ZH_HANS, SETTINGS_ROW_LANGUAGE, FOLIO_LANGUAGE_ZH_HANS, 1, 2},
     {UI_TEXT_SETTINGS_NUMBER_CHECK, SETTINGS_ROW_NUMBER, 1, 2, 0},
-    {UI_TEXT_STORAGE_ENTRY, SETTINGS_ROW_STORAGE, 0, 3, 0},
+    {UI_TEXT_SETTINGS_MINIMAP, SETTINGS_ROW_MINIMAP, 1, 3, 0},
+    {UI_TEXT_STORAGE_ENTRY, SETTINGS_ROW_STORAGE, 0, 4, 0},
 };
 static const struct
 {
@@ -299,6 +310,7 @@ static const struct
     [ACCESSIBLE_NOTE] = {ACCESSIBLE_CATEGORY, UI_TEXT_EMPTY, true, UI_TEXT_EMPTY},
     [ACCESSIBLE_FILTER] = {ACCESSIBLE_WINDOW, UI_TEXT_PLACEHOLDER_FILTER, true, UI_TEXT_EMPTY},
     [ACCESSIBLE_BODY] = {ACCESSIBLE_WINDOW, UI_TEXT_ACCESSIBLE_BODY, true, UI_TEXT_EMPTY},
+    [ACCESSIBLE_MINIMAP] = {ACCESSIBLE_WINDOW, UI_TEXT_MINIMAP, true, UI_TEXT_MINIMAP_HELP},
     [ACCESSIBLE_NOTICE] = {ACCESSIBLE_WINDOW, UI_TEXT_EMPTY, false, UI_TEXT_EMPTY},
     [ACCESSIBLE_GUIDE] = {ACCESSIBLE_WINDOW, UI_TEXT_EMPTY_HEADING, false, UI_TEXT_EMPTY},
     [ACCESSIBLE_SURFACE] = {ACCESSIBLE_WINDOW, UI_TEXT_EMPTY, false, UI_TEXT_EMPTY},
@@ -326,7 +338,7 @@ static const enum accessible_kind main_parts[] = {
     ACCESSIBLE_SETTINGS,    ACCESSIBLE_MINIMIZE,       ACCESSIBLE_MAXIMIZE,
     ACCESSIBLE_CLOSE,       ACCESSIBLE_VIEW,           ACCESSIBLE_EDIT,
     ACCESSIBLE_SAVE,        ACCESSIBLE_FIND,           ACCESSIBLE_MENU,
-    ACCESSIBLE_SPLITTER,
+    ACCESSIBLE_SPLITTER,    ACCESSIBLE_MINIMAP,
 };
 
 static size_t main_part_count(void)
@@ -487,7 +499,7 @@ constexpr int base_layout_button_narrow_width = 40;
 constexpr int base_settings_mark_inset = 4;
 constexpr int base_settings_mark_box = 24;
 constexpr int base_settings_width = 480;
-constexpr int base_settings_height = 384;
+constexpr int base_settings_height = 440;
 constexpr int base_theme_height = 560;
 constexpr int base_theme_row_height = 32;
 constexpr int base_theme_choice_height = 32;
@@ -563,6 +575,12 @@ static void pointer_focus(struct folio_window *_Nonnull self, POINT point);
 static void accessible_command_invoked(struct folio_window *_Nonnull self,
                                        enum folio_command command);
 static bool pane_streaming(const struct folio_window *_Nonnull self);
+static enum accessible_kind mode_kind(enum pane_mode mode);
+static bool minimap_visible(const struct folio_window *_Nonnull self);
+static bool minimap_available(const struct folio_window *_Nonnull self);
+static RECT minimap_rect(const struct folio_window *_Nonnull self);
+static void request_minimap(struct folio_window *_Nonnull self);
+static bool part_focus_shown(const struct folio_window *_Nonnull self, enum accessible_kind kind);
 static bool accessible_visible(const struct folio_window *_Nonnull self, enum accessible_kind kind);
 static HWND _Nullable accessible_input_window(const struct folio_window *_Nonnull self,
                                               enum accessible_kind kind);
@@ -626,6 +644,8 @@ static bool shell_ready(const struct folio_window *_Nonnull self)
 
 static bool part_enabled(const struct folio_window *_Nonnull self, enum accessible_kind kind)
 {
+    if (kind == ACCESSIBLE_MINIMAP)
+        return minimap_available(self);
     if (accessible_item_shell(kind) || kind == ACCESSIBLE_WINDOW || kind == ACCESSIBLE_HEADER)
         return shell_ready(self);
     return folio_window_accessible_ready(self) && self->command_surface == COMMAND_SURFACE_CLOSED;
@@ -1248,6 +1268,7 @@ static RECT settings_item_rect(const struct folio_window *_Nonnull self, size_t 
         return bounds;
     }
     if (settings_rows[index].kind == SETTINGS_ROW_NUMBER ||
+        settings_rows[index].kind == SETTINGS_ROW_MINIMAP ||
         settings_rows[index].kind == SETTINGS_ROW_STORAGE)
     {
         bounds.top += settings_rows[index].position * (height + gap);
@@ -1985,6 +2006,12 @@ static void refresh_gutter(const struct folio_window *_Nonnull self, bool immedi
     }
     RECT band = gutter_rect(self);
     InvalidateRect(self->handle, &band, FALSE);
+    if (minimap_visible(self))
+    {
+        RECT map = minimap_rect(self);
+        InvalidateRect(self->handle, &map, FALSE);
+        accessibility_host_schedule(self->accessibility);
+    }
     if (immediate)
     {
         UpdateWindow(self->handle);
@@ -2023,14 +2050,93 @@ static void arrange_drawer_region(struct folio_window *_Nonnull self, RECT bound
     arrange_drawer(self, bounds);
 }
 
-static RECT body_content_rect(const struct folio_window *_Nonnull self, RECT pane, UINT dpi)
+static RECT body_available_rect(const struct folio_window *_Nonnull self, RECT pane, UINT dpi)
 {
     int top = command_band(self) ? self->band.pane_top : scale(base_pane_top, dpi);
     int bottom = command_band(self) ? self->band.pane_bottom : scale(base_pane_bottom, dpi);
     top += pane.top + scale(base_caption_height + base_action_height, dpi);
     top += command_band(self) ? self->band.height : 0;
-    return (RECT){pane.left + pane_inset(self, dpi), top, pane.right - scale(base_pane_right, dpi),
+    int left = scale(base_pane_left, dpi);
+    left = self->body_left_inset > left ? self->body_left_inset : left;
+    return (RECT){pane.left + left, top, pane.right - scale(base_pane_right, dpi),
                   pane.bottom - bottom};
+}
+
+static bool minimap_visible(const struct folio_window *_Nonnull self)
+{
+    if (!body_shown(self) || self->pane == nullptr || !folio_state_minimap(self->state))
+        return false;
+    UINT dpi = GetDpiForWindow(self->handle);
+    RECT area = body_available_rect(self, regions_for(self).pane, dpi);
+    return area.right - area.left >=
+               scale(base_minimap_minimum_body + base_minimap_width + base_minimap_gap, dpi) &&
+           area.bottom - area.top >= scale(32, dpi);
+}
+
+static RECT body_content_rect(struct folio_window *_Nonnull self, RECT pane, UINT dpi)
+{
+    self->body_left_inset = pane_inset(self, dpi);
+    RECT bounds = body_available_rect(self, pane, dpi);
+    if (minimap_visible(self))
+        bounds.right -= scale(base_minimap_width + base_minimap_gap, dpi);
+    return bounds;
+}
+
+static RECT minimap_rect(const struct folio_window *_Nonnull self)
+{
+    if (!minimap_visible(self))
+        return (RECT){0};
+    UINT dpi = GetDpiForWindow(self->handle);
+    RECT bounds = body_available_rect(self, regions_for(self).pane, dpi);
+    bounds.left = bounds.right - scale(base_minimap_width, dpi);
+    return bounds;
+}
+
+static bool minimap_available(const struct folio_window *_Nonnull self)
+{
+    return minimap_visible(self) && folio_window_accessible_ready(self) &&
+           self->command_surface == COMMAND_SURFACE_CLOSED &&
+           note_pane_readiness(self->pane) == NOTE_PANE_READINESS_READY;
+}
+
+static bool minimap_paint_for(const struct folio_window *_Nonnull self,
+                              struct note_minimap_paint *_Nonnull out)
+{
+    if (!minimap_visible(self) || note_pane_readiness(self->pane) != NOTE_PANE_READINESS_READY)
+        return false;
+    struct note_minimap_view view;
+    HWND pane = note_pane_handle(self->pane);
+    if (pane == nullptr || !note_minimap_viewport(pane, &view))
+        return false;
+    *out = (struct note_minimap_paint){.bounds = minimap_rect(self),
+                                       .dpi = GetDpiForWindow(self->handle),
+                                       .view = view,
+                                       .focused = part_focus_shown(self, ACCESSIBLE_MINIMAP),
+                                       .active = self->hover_part == ACCESSIBLE_MINIMAP ||
+                                                 self->pressed_part == ACCESSIBLE_MINIMAP};
+    return true;
+}
+
+static void request_minimap(struct folio_window *_Nonnull self)
+{
+    KillTimer(self->handle, minimap_timer);
+    note_minimap_invalidate(self->minimap);
+    if (!minimap_visible(self))
+    {
+        note_minimap_clear(self->minimap);
+        return;
+    }
+    if (SetTimer(self->handle, minimap_timer, minimap_delay, nullptr) == 0)
+        note_minimap_begin(self->minimap);
+}
+
+static void arrange_minimap(struct folio_window *_Nonnull self, RECT before, bool was_visible)
+{
+    RECT after = pane_bounds(self);
+    if (!minimap_visible(self) || !was_visible || !EqualRect(&before, &after))
+        request_minimap(self);
+    if (self->keyboard_target == ACCESSIBLE_MINIMAP && !minimap_visible(self))
+        self->keyboard_target = mode_kind(folio_state_pane_mode(self->state));
 }
 
 static bool reflow_body(struct folio_window *_Nonnull self)
@@ -2043,6 +2149,8 @@ static bool reflow_body(struct folio_window *_Nonnull self)
 
 static void arrange(struct folio_window *_Nonnull self)
 {
+    RECT previous_body = pane_bounds(self);
+    bool was_visible = self->pane != nullptr && IsWindowVisible(note_pane_handle(self->pane));
     refresh_part_metrics(self, GetDpiForWindow(self->handle));
     normalize_header_target(self);
     arrange_command_input(self); /* 帯高を確定してから同じ高さだけ本文を下げる。 */
@@ -2070,6 +2178,7 @@ static void arrange(struct folio_window *_Nonnull self)
         InvalidateRect(self->handle, nullptr, FALSE);
         return;
     }
+    arrange_minimap(self, previous_body, was_visible);
     refresh_gutter(self, false);
     refresh_tooltip_rects(self);
 }
@@ -2080,6 +2189,7 @@ static void arrange_zoomed_pane(struct folio_window *_Nonnull self, size_t first
         return;
     refresh_gutter_font(self, GetDpiForWindow(self->handle));
     arrange(self);
+    request_minimap(self);
     note_pane_scroll_to_line(self->pane, first_line);
     InvalidateRect(self->handle, nullptr, FALSE);
     UpdateWindow(note_pane_handle(self->pane));
@@ -2123,6 +2233,7 @@ static enum folio_state_outcome loaded_pane(struct folio_window *_Nonnull self,
     {
         PostMessageW(self->handle, folio_message_appearance_changed, 0, 0);
     }
+    request_minimap(self);
     return from_pane_load(outcome);
 }
 
@@ -2133,6 +2244,7 @@ static enum folio_state_outcome render_pane(struct folio_window *_Nonnull self)
         return FOLIO_STATE_PANE_UNAVAILABLE;
     }
     bool was_unavailable = pane_unavailable(self);
+    note_minimap_clear(self->minimap);
     enum note_pane_load_outcome outcome =
         note_pane_load(self->pane, folio_state_pane_rtf(self->state),
                        folio_state_pane_rtf_length(self->state), PANE_MODE_VIEW);
@@ -3873,12 +3985,13 @@ static RECT settings_mark_rect(const struct folio_window *_Nonnull self, RECT ro
 }
 
 /* 採用済みの印とキーボードの注目の輪郭は別にする。 */
-static void draw_settings_mark(const struct folio_window *_Nonnull self, HDC device, RECT row)
+static void draw_settings_mark(const struct folio_window *_Nonnull self, HDC device, RECT row,
+                               bool selected)
 {
     UINT dpi = GetDpiForWindow(self->handle);
     RECT bounds = settings_mark_rect(self, row);
     frame_settings_rect(device, bounds, self->palette.dialog_border);
-    if (folio_state_number(self->state))
+    if (selected)
     {
         InflateRect(&bounds, -scale(4, dpi), -scale(4, dpi));
         icon_paint_fill(device, bounds, ICON_PAINT_SELECTION, self->palette.current_text);
@@ -3897,6 +4010,8 @@ static bool settings_row_current(const struct folio_window *_Nonnull self, size_
         return false;
     case SETTINGS_ROW_LANGUAGE:
         return (unsigned char)folio_state_language(self->state) == settings_rows[index].value;
+    case SETTINGS_ROW_MINIMAP:
+        return folio_state_minimap(self->state);
     case SETTINGS_ROW_NUMBER:
         return (unsigned char)folio_state_number(self->state) == settings_rows[index].value;
     }
@@ -3915,6 +4030,12 @@ static void draw_settings_theme(const struct folio_window *_Nonnull self, HDC de
                row, DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
 }
 
+static bool settings_row_toggle(size_t index)
+{
+    return settings_rows[index].kind == SETTINGS_ROW_NUMBER ||
+           settings_rows[index].kind == SETTINGS_ROW_MINIMAP;
+}
+
 static void draw_settings_row(const struct folio_window *_Nonnull self, HDC device, RECT row,
                               size_t index)
 {
@@ -3931,11 +4052,11 @@ static void draw_settings_row(const struct folio_window *_Nonnull self, HDC devi
                                                 GetFocus() == self->command_layer &&
                                                 index == self->command_selection};
         ui_part_draw(device, &self->palette, &part);
-        if (settings_rows[index].kind == SETTINGS_ROW_NUMBER)
+        if (settings_row_toggle(index))
         {
-            draw_settings_mark(self, device, row);
+            draw_settings_mark(self, device, row, settings_row_current(self, index));
         }
-        if (settings_rows[index].kind != SETTINGS_ROW_NUMBER && settings_row_current(self, index))
+        if (!settings_row_toggle(index) && settings_row_current(self, index))
         {
             RECT mark = settings_mark_rect(self, row);
             icon_paint_fill(device, mark, ICON_PAINT_SELECTION, self->palette.current_text);
@@ -4807,6 +4928,17 @@ static void draw_splitter(const struct folio_window *_Nonnull self, HDC device)
     DeleteObject(brush);
 }
 
+static void draw_minimap(const struct folio_window *_Nonnull self, HDC device, RECT damage)
+{
+    RECT bounds = minimap_rect(self);
+    RECT touched = {0};
+    if (!IntersectRect(&touched, &bounds, &damage))
+        return;
+    struct note_minimap_paint paint;
+    if (minimap_paint_for(self, &paint))
+        note_minimap_draw(self->minimap, device, &self->palette, &paint);
+}
+
 /* 右ペインの地と頭。本文は note_pane が持つ。 */
 static void draw_pane(const struct folio_window *_Nonnull self, HDC device, RECT damage)
 {
@@ -4829,6 +4961,7 @@ static void draw_pane(const struct folio_window *_Nonnull self, HDC device, RECT
     {
         draw_guide(self, device);
     }
+    draw_minimap(self, device, damage);
     draw_gutter(self, device, damage);
     draw_splitter(self, device);
 }
@@ -4939,6 +5072,7 @@ static enum folio_state_outcome pour_edit_rtf(struct folio_window *_Nonnull self
         return FOLIO_STATE_PANE_UNAVAILABLE;
     }
     bool was_unavailable = pane_unavailable(self);
+    note_minimap_clear(self->minimap);
     enum note_pane_load_outcome outcome =
         note_pane_load(self->pane, folio_state_edit_rtf(self->state),
                        folio_state_edit_rtf_length(self->state), PANE_MODE_EDIT);
@@ -6990,6 +7124,26 @@ static void apply_number(struct folio_window *_Nonnull self, bool number)
     redraw_command_layer(self);
 }
 
+static void apply_minimap(struct folio_window *_Nonnull self)
+{
+    enum folio_state_outcome outcome =
+        folio_state_set_minimap(self->state, !folio_state_minimap(self->state));
+    if (outcome != FOLIO_STATE_READY)
+    {
+        report_outcome(self, outcome);
+        return;
+    }
+    if (settings_surface(self))
+        clear_command_status(self);
+    else if (!hide_command_surface(self))
+        return;
+    cancel_part_press(self);
+    rearrange_keeping_line(self);
+    request_minimap(self);
+    redraw_command_layer(self);
+    accessibility_host_schedule(self->accessibility);
+}
+
 /* 閲覧の本文を新しい RTF で流し直し、選択を戻す（ADR 0031 の決定 6 の補正 1）。
  * **実測の補正**: EM_EXSETSEL は EM_SCROLLCARET を送らなくても選択を見える位置へ寄せる。
  * 空の選択を戻すと先頭へ飛ぶので、選んでいる一致があるときだけ戻す（ADR 0023 の
@@ -7971,6 +8125,13 @@ static void execute_find_command(struct folio_window *_Nonnull self, const char 
     begin_search(self);
 }
 
+static void execute_toggle_minimap_command(struct folio_window *_Nonnull self,
+                                           const char *_Nonnull argument)
+{
+    (void)argument;
+    apply_minimap(self);
+}
+
 static void execute_toggle_number_command(struct folio_window *_Nonnull self,
                                           const char *_Nonnull argument)
 {
@@ -8024,6 +8185,7 @@ static void (*_Nonnull const command_runs[])(struct folio_window *_Nonnull self,
     [FOLIO_COMMAND_RENAME] = execute_rename_command,
     [FOLIO_COMMAND_FIND] = execute_find_command,
     [FOLIO_COMMAND_SET] = execute_set_command,
+    [FOLIO_COMMAND_TOGGLE_MINIMAP] = execute_toggle_minimap_command,
     [FOLIO_COMMAND_TOGGLE_NUMBER] = execute_toggle_number_command,
     [FOLIO_COMMAND_REPLACE] = begin_replace,
     [FOLIO_COMMAND_SUBSTITUTE] = execute_substitute_command,
@@ -8356,6 +8518,9 @@ static void adopt_settings_row(struct folio_window *_Nonnull self)
         return;
     case SETTINGS_ROW_LANGUAGE:
         apply_language(self, (enum folio_language)settings_rows[index].value);
+        return;
+    case SETTINGS_ROW_MINIMAP:
+        apply_minimap(self);
         return;
     case SETTINGS_ROW_NUMBER:
         apply_number(self, !folio_state_number(self->state));
@@ -8836,6 +9001,63 @@ static void drag_drawer_width(struct folio_window *_Nonnull self, int x)
     apply_drawer_width(self, width);
 }
 
+static void scroll_minimap(struct folio_window *_Nonnull self, int first)
+{
+    if (!minimap_available(self))
+        return;
+    note_pane_scroll_display(self->pane, first);
+    refresh_gutter(self, true);
+}
+
+static void begin_minimap_drag(struct folio_window *_Nonnull self, POINT point)
+{
+    struct note_minimap_paint paint;
+    if (!minimap_available(self) || !minimap_paint_for(self, &paint))
+        return;
+    RECT track = note_minimap_track(&paint);
+    if (!PtInRect(&track, point))
+        return;
+    RECT thumb = note_minimap_thumb(&paint);
+    if (!PtInRect(&thumb, point))
+    {
+        scroll_minimap(self, note_minimap_jump(&paint, point.y));
+        if (!minimap_paint_for(self, &paint))
+            return;
+        thumb = note_minimap_thumb(&paint);
+    }
+    begin_part_press(self, ACCESSIBLE_MINIMAP, false);
+    self->minimap_pointer_offset = point.y - thumb.top;
+    SetCapture(self->handle);
+    if (GetCapture() != self->handle)
+        clear_part_press(self);
+}
+
+static void drag_minimap(struct folio_window *_Nonnull self, int y)
+{
+    struct note_minimap_paint paint;
+    if (!minimap_available(self) || !minimap_paint_for(self, &paint))
+    {
+        clear_part_press(self);
+        return;
+    }
+    scroll_minimap(self, note_minimap_drag(&paint, y, self->minimap_pointer_offset));
+}
+
+static bool press_range(struct folio_window *_Nonnull self, enum accessible_kind kind, POINT point)
+{
+    if (kind == ACCESSIBLE_MINIMAP)
+    {
+        begin_minimap_drag(self, point);
+        return true;
+    }
+    if (kind == ACCESSIBLE_SPLITTER && part_enabled(self, kind))
+    {
+        begin_drawer_resize(self, point);
+        return true;
+    }
+    return false;
+}
+
 static void press_part(struct folio_window *_Nonnull self, LPARAM lparam)
 {
     POINT point = {GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
@@ -8843,11 +9065,8 @@ static void press_part(struct folio_window *_Nonnull self, LPARAM lparam)
         return;
     show_focus_cues(self, false);
     enum accessible_kind kind = part_at(self, point);
-    if (kind == ACCESSIBLE_SPLITTER && part_enabled(self, kind))
-    {
-        begin_drawer_resize(self, point);
+    if (press_range(self, kind, point))
         return;
-    }
     if (self->native_modal_depth == 0 && self->command_surface == COMMAND_SURFACE_CLOSED)
         pointer_focus(self, point);
     if (kind == ACCESSIBLE_WINDOW || !part_enabled(self, kind))
@@ -8876,6 +9095,12 @@ static void release_part(struct folio_window *_Nonnull self, LPARAM lparam)
         return;
     }
     POINT point = {GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
+    if (kind == ACCESSIBLE_MINIMAP)
+    {
+        drag_minimap(self, point.y);
+        clear_part_press(self);
+        return;
+    }
     if (kind == ACCESSIBLE_SPLITTER)
     {
         drag_drawer_width(self, point.x);
@@ -8908,8 +9133,8 @@ static void set_hover(struct folio_window *_Nonnull self, enum accessible_kind k
 static void refresh_pointer_cursor(const struct folio_window *_Nonnull self, POINT point)
 {
     enum accessible_kind kind = part_at(self, point);
-    if (self->pressed_part == ACCESSIBLE_SPLITTER)
-        kind = ACCESSIBLE_SPLITTER;
+    if (self->pressed_part == ACCESSIBLE_SPLITTER || self->pressed_part == ACCESSIBLE_MINIMAP)
+        kind = self->pressed_part;
     if (self->pressed_part != ACCESSIBLE_WINDOW && !self->pressed_by_key &&
         kind != self->pressed_part)
         kind = ACCESSIBLE_WINDOW;
@@ -8923,6 +9148,12 @@ static void refresh_pointer_cursor(const struct folio_window *_Nonnull self, POI
 static void track_pointer(struct folio_window *_Nonnull self, LPARAM lparam)
 {
     POINT point = {GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
+    if (self->pressed_part == ACCESSIBLE_MINIMAP)
+    {
+        drag_minimap(self, point.y);
+        refresh_pointer_cursor(self, point);
+        return;
+    }
     if (self->pressed_part == ACCESSIBLE_SPLITTER)
     {
         drag_drawer_width(self, point.x);
@@ -9339,7 +9570,7 @@ static void forward_wheel(const struct folio_window *_Nonnull self, WPARAM wpara
  * 繰り返しの打鍵は捨てる（ADR0060 の決定 4）。索引の行では Space を使わない。 */
 static bool press_activation(struct folio_window *_Nonnull self, WPARAM key, LPARAM lparam)
 {
-    if (self->keyboard_target == ACCESSIBLE_SPLITTER)
+    if (self->keyboard_target == ACCESSIBLE_SPLITTER || self->keyboard_target == ACCESSIBLE_MINIMAP)
         return false;
     if (key != VK_RETURN && (key != VK_SPACE || self->keyboard_target == ACCESSIBLE_TREE))
     {
@@ -9363,6 +9594,45 @@ static bool press_activation(struct folio_window *_Nonnull self, WPARAM key, LPA
 /* 索引の鍵（ADR 0013 の決定 2）。Enter で本文へ（カーソルがカテゴリ行なら何もしない・
  * ADR 0015 の決定 4）、↑↓ / PgUp / PgDn はドロワーのスクロールへ渡す（ADR 0009 の決定 5）。
  * Escape はここでは何もしない（窓を閉じるのは Alt+F4 と閉じる操作だけ）。 */
+static bool minimap_key(struct folio_window *_Nonnull self, WPARAM key)
+{
+    if (self->keyboard_target != ACCESSIBLE_MINIMAP || !minimap_available(self))
+        return false;
+    struct note_minimap_paint paint;
+    if (!minimap_paint_for(self, &paint))
+        return false;
+    int target = paint.view.first;
+    switch (key)
+    {
+    case VK_UP:
+        target -= 1;
+        break;
+    case VK_DOWN:
+        target += 1;
+        break;
+    case VK_PRIOR:
+        target -= paint.view.visible;
+        break;
+    case VK_NEXT:
+        target += paint.view.visible;
+        break;
+    case VK_HOME:
+        target = 0;
+        break;
+    case VK_END:
+        target = note_minimap_limit(paint.view);
+        break;
+    default:
+        return false;
+    }
+    int limit = note_minimap_limit(paint.view);
+    target = target < 0 ? 0 : target;
+    target = target > limit ? limit : target;
+    scroll_minimap(self, target);
+    show_focus_cues(self, true);
+    return true;
+}
+
 static bool splitter_key(struct folio_window *_Nonnull self, WPARAM key)
 {
     if (self->pressed_part == ACCESSIBLE_SPLITTER)
@@ -9405,9 +9675,14 @@ static bool splitter_key(struct folio_window *_Nonnull self, WPARAM key)
     return true;
 }
 
+static bool range_key(struct folio_window *_Nonnull self, WPARAM key)
+{
+    return minimap_key(self, key) || splitter_key(self, key);
+}
+
 static void press_key(struct folio_window *_Nonnull self, WPARAM key, LPARAM lparam)
 {
-    if (splitter_key(self, key))
+    if (range_key(self, key))
         return;
     if (shortcut_keydown(self, key))
         return;
@@ -9728,6 +10003,7 @@ static size_t settings_vertical_choice(const struct folio_window *_Nonnull self,
         }
         if (settings_rows[index].position == settings_rows[from].position ||
             settings_rows[index].kind == SETTINGS_ROW_NUMBER ||
+            settings_rows[index].kind == SETTINGS_ROW_MINIMAP ||
             settings_rows[index].kind == SETTINGS_ROW_THEME ||
             settings_rows[index].kind == SETTINGS_ROW_STORAGE)
         {
@@ -11212,7 +11488,8 @@ static void run_shortcut(struct folio_window *_Nonnull self,
     case FOLIO_SHORTCUT_ACTION_COMMAND:
     {
         enum folio_command command = folio_shortcut_command(binding);
-        if (folio_command_scope(command) != FOLIO_COMMAND_SCOPE_LAYOUT ||
+        if ((folio_command_scope(command) != FOLIO_COMMAND_SCOPE_LAYOUT &&
+             command != FOLIO_COMMAND_TOGGLE_MINIMAP) ||
             content_shortcut_allowed(self))
             execute_command(self, command, "");
         return;
@@ -11269,6 +11546,9 @@ static bool pane_notification(struct folio_window *_Nonnull self, WPARAM wparam,
         /* 印と無効化だけ。EM_STREAMIN の最中に本文へ問い合わせない（決定 4）。 */
         note_pane_invalidate_lines(self->pane);
         self->body_touched = true;
+        if (pane_streaming(self))
+            note_minimap_clear(self->minimap);
+        request_minimap(self);
         refresh_gutter(self, false);
         return true;
     }
@@ -11556,11 +11836,23 @@ static bool client_pointer_cursor(const struct folio_window *_Nonnull self, WPAR
     return true;
 }
 
+static LRESULT on_minimap_timer(struct folio_window *_Nonnull self, WPARAM timer, LPARAM lparam)
+{
+    if (timer != minimap_timer)
+        return DefWindowProcW(self->handle, WM_TIMER, timer, lparam);
+    KillTimer(self->handle, minimap_timer);
+    if (minimap_visible(self))
+        note_minimap_begin(self->minimap);
+    return 0;
+}
+
 static LRESULT on_shell_message(struct folio_window *_Nonnull self, UINT message, WPARAM wparam,
                                 LPARAM lparam)
 {
     switch (message)
     {
+    case WM_TIMER:
+        return on_minimap_timer(self, wparam, lparam);
     case WM_SETCURSOR:
         if (client_pointer_cursor(self, wparam, lparam))
             return TRUE;
@@ -11870,7 +12162,8 @@ enum folio_window_outcome folio_window_create(struct folio_state *_Nonnull state
     }
     self->surface_hover = surface_pointer_count;
     self->surface_pressed = surface_pointer_count;
-    if (!create_accelerators(self) || !create_keyboard_accelerators(self))
+    if (note_minimap_create(&self->minimap) != NOTE_MINIMAP_READY || !create_accelerators(self) ||
+        !create_keyboard_accelerators(self))
     {
         folio_window_destroy(self);
         return FOLIO_WINDOW_NOT_CREATED;
@@ -11975,7 +12268,8 @@ static bool repeated_note_shortcut(const MSG *_Nonnull message)
         const struct folio_shortcut *binding = folio_shortcut_at(at);
         enum folio_shortcut_action action = folio_shortcut_action(binding);
         if ((action == FOLIO_SHORTCUT_ACTION_TOGGLE_MODE ||
-             action == FOLIO_SHORTCUT_ACTION_OPERATIONS) &&
+             action == FOLIO_SHORTCUT_ACTION_OPERATIONS ||
+             folio_shortcut_command(binding) == FOLIO_COMMAND_TOGGLE_MINIMAP) &&
             message->wParam == shortcut_virtual_key(folio_shortcut_key(binding)) &&
             modifiers == shortcut_virtual_modifiers(folio_shortcut_modifiers(binding)))
             return true;
@@ -12003,7 +12297,9 @@ static bool translate_command_shortcut(const struct folio_window *_Nonnull windo
 static bool cancel_drawer_input(const struct folio_window *_Nonnull window,
                                 const MSG *_Nonnull message)
 {
-    if (window->pressed_part != ACCESSIBLE_SPLITTER || !command_target(window, message->hwnd))
+    if ((window->pressed_part != ACCESSIBLE_SPLITTER &&
+         window->pressed_part != ACCESSIBLE_MINIMAP) ||
+        !command_target(window, message->hwnd))
         return false;
     if (message->message != WM_KEYDOWN && message->message != WM_MOUSEWHEEL)
         return false;
@@ -12070,6 +12366,7 @@ void folio_window_destroy(struct folio_window *_Nullable window)
     modal_owner_destroy(window->modal_owner);
     name_prompt_metrics_destroy(window->native_metrics);
     note_pane_destroy(window->pane);
+    note_minimap_destroy(window->minimap);
     drawer_window_destroy(window->drawer);
     if (window->accessibility != nullptr)
     {
@@ -12192,6 +12489,7 @@ static enum accessible_kind surface_row_kind(const struct folio_window *_Nonnull
         return ACCESSIBLE_SURFACE_BUTTON;
     case SETTINGS_ROW_LANGUAGE:
         return ACCESSIBLE_SURFACE_LANGUAGE;
+    case SETTINGS_ROW_MINIMAP:
     case SETTINGS_ROW_NUMBER:
         return ACCESSIBLE_SURFACE_TOGGLE;
     }
@@ -13187,13 +13485,15 @@ static bool accessible_pane_control(enum accessible_kind kind)
     enum accessible_kind parent = accessible_controls[kind].parent;
     return kind == ACCESSIBLE_PANE_TOOLS || parent == ACCESSIBLE_PANE_TOOLS ||
            parent == ACCESSIBLE_MODE_GROUP || parent == ACCESSIBLE_ACTION_GROUP ||
-           kind == ACCESSIBLE_BODY;
+           kind == ACCESSIBLE_BODY || kind == ACCESSIBLE_MINIMAP;
 }
 
 /* 空状態では操作帯・閲覧/編集・本文を描かず、hit と UIA にも出さない（ADR0060 の決定 13）。 */
 static bool pane_control_visible(const struct folio_window *_Nonnull self,
                                  enum accessible_kind kind)
 {
+    if (kind == ACCESSIBLE_MINIMAP)
+        return minimap_visible(self);
     if (kind == ACCESSIBLE_BREADCRUMB && !folio_state_pane_title(self->state).any)
     {
         return false;
@@ -13323,6 +13623,8 @@ static RECT accessible_main_rect(const struct folio_window *_Nonnull self,
 {
     switch (kind)
     {
+    case ACCESSIBLE_MINIMAP:
+        return minimap_rect(self);
     case ACCESSIBLE_SPLITTER:
         return regions_for(self).splitter;
     case ACCESSIBLE_HEADER:
@@ -13520,17 +13822,34 @@ static void save_status(const struct folio_window *_Nonnull self,
     }
 }
 
+static void accessible_minimap_details(const struct folio_window *_Nonnull self,
+                                       struct accessible_view *_Nonnull out)
+{
+    struct note_minimap_paint paint;
+    if (minimap_paint_for(self, &paint))
+    {
+        out->range_value = paint.view.first;
+        out->range_maximum = note_minimap_limit(paint.view);
+        out->range_small_change = 1;
+        out->range_large_change = paint.view.visible;
+    }
+    (void)wide_units(ui_text_line(UI_TEXT_MINIMAP_HELP, folio_state_language(self->state)),
+                     out->help);
+}
+
 static void accessible_details(const struct folio_window *_Nonnull self, enum accessible_kind kind,
                                struct accessible_view *_Nonnull out)
 {
+    if (kind == ACCESSIBLE_MINIMAP)
+        accessible_minimap_details(self, out);
     if (kind == ACCESSIBLE_SPLITTER)
     {
         struct drawer_width_range range = drawer_width_for(self);
-        out->width_value = range.value;
-        out->width_minimum = range.minimum;
-        out->width_maximum = range.maximum;
-        out->width_small_change = base_splitter_small_change;
-        out->width_large_change = base_splitter_large_change;
+        out->range_value = range.value;
+        out->range_minimum = range.minimum;
+        out->range_maximum = range.maximum;
+        out->range_small_change = base_splitter_small_change;
+        out->range_large_change = base_splitter_large_change;
         (void)wide_units(ui_text_line(UI_TEXT_DRAWER_WIDTH_HELP, folio_state_language(self->state)),
                          out->help);
     }
@@ -13601,7 +13920,8 @@ static void accessible_native_bounds(struct folio_window *_Nonnull self, enum ac
 static void accessible_main_bounds(struct folio_window *_Nonnull self, enum accessible_kind kind,
                                    struct accessible_view *_Nonnull out)
 {
-    if ((layout_control(kind) || kind == ACCESSIBLE_SPLITTER) && !accessible_visible(self, kind))
+    if ((layout_control(kind) || kind == ACCESSIBLE_SPLITTER || kind == ACCESSIBLE_MINIMAP) &&
+        !accessible_visible(self, kind))
     {
         out->bounds = (RECT){0};
         return;
@@ -14139,6 +14459,26 @@ static HRESULT accessible_expand(struct folio_window *_Nonnull self,
     return result;
 }
 
+static HRESULT accessible_set_range(struct folio_window *_Nonnull self,
+                                    const struct accessible_request *_Nonnull request)
+{
+    if (request->item.kind == ACCESSIBLE_MINIMAP)
+    {
+        struct note_minimap_paint paint;
+        if (!minimap_available(self) || !minimap_paint_for(self, &paint) ||
+            request->range_value < 0 || request->range_value > note_minimap_limit(paint.view))
+            return E_INVALIDARG;
+        scroll_minimap(self, request->range_value);
+        return S_OK;
+    }
+    struct drawer_width_range range = drawer_width_for(self);
+    if (request->item.kind != ACCESSIBLE_SPLITTER || request->range_value < range.minimum ||
+        request->range_value > range.maximum)
+        return E_INVALIDARG;
+    apply_drawer_width(self, request->range_value);
+    return S_OK;
+}
+
 static HRESULT accessible_dispatch(struct folio_window *_Nonnull self,
                                    const struct accessible_request *_Nonnull request, bool selected)
 {
@@ -14163,15 +14503,8 @@ static HRESULT accessible_dispatch(struct folio_window *_Nonnull self,
     case ACCESSIBLE_ACTION_REVEAL:
     case ACCESSIBLE_ACTION_SCROLL:
         return accessible_outcome(self, drawer_window_accessible_scroll(self->drawer, request));
-    case ACCESSIBLE_ACTION_SET_WIDTH:
-    {
-        struct drawer_width_range range = drawer_width_for(self);
-        if (request->item.kind != ACCESSIBLE_SPLITTER || request->drawer_width < range.minimum ||
-            request->drawer_width > range.maximum)
-            return E_INVALIDARG;
-        apply_drawer_width(self, request->drawer_width);
-        return S_OK;
-    }
+    case ACCESSIBLE_ACTION_SET_RANGE:
+        return accessible_set_range(self, request);
     }
     return accessibility_node_invalid;
 }
@@ -14349,7 +14682,7 @@ static void keyboard_tab_step(struct folio_window *_Nonnull self, bool forward)
         ACCESSIBLE_NEW_NOTE,     ACCESSIBLE_LAYOUT_DRAWER, ACCESSIBLE_HELP,     ACCESSIBLE_SETTINGS,
         ACCESSIBLE_MINIMIZE,     ACCESSIBLE_MAXIMIZE,      ACCESSIBLE_CLOSE,    ACCESSIBLE_FILTER,
         ACCESSIBLE_NEW_CATEGORY, ACCESSIBLE_TREE,          ACCESSIBLE_SPLITTER, ACCESSIBLE_VIEW,
-        ACCESSIBLE_SAVE,         ACCESSIBLE_FIND,          ACCESSIBLE_MENU};
+        ACCESSIBLE_SAVE,         ACCESSIBLE_FIND,          ACCESSIBLE_MENU,     ACCESSIBLE_MINIMAP};
     size_t count = sizeof order / sizeof order[0];
     enum accessible_kind current = keyboard_slot(keyboard_kind(self));
     if (current == ACCESSIBLE_LAYOUT_CHOOSER)
@@ -14553,14 +14886,23 @@ static void refresh_after_input(struct folio_window *_Nonnull self)
 /* 空queueとWaitMessageの間でも呼ぶため、副作用/queue確認を持たない（ADR0068）。 */
 bool folio_window_idle_work_ready(const struct folio_window *_Nonnull self)
 {
-    return folio_state_index_filter_pending(self->state) && !self->filter_saving &&
-           self->command_surface == COMMAND_SURFACE_CLOSED && folio_window_accessible_ready(self);
+    return (folio_state_index_filter_pending(self->state) ||
+            (note_minimap_pending(self->minimap) && minimap_available(self) &&
+             !IsIconic(self->handle))) &&
+           !self->filter_saving && self->command_surface == COMMAND_SURFACE_CLOSED &&
+           folio_window_accessible_ready(self);
 }
 
-void folio_window_continue_index_filter(struct folio_window *_Nonnull self)
+void folio_window_continue_idle_work(struct folio_window *_Nonnull self)
 {
     if (!folio_window_idle_work_ready(self))
         return;
+    if (!folio_state_index_filter_pending(self->state))
+    {
+        if (note_minimap_step(self->minimap, note_pane_handle(self->pane)))
+            refresh_gutter(self, false);
+        return;
+    }
     folio_window_begin_dispatch(self);
     bool was_filtering = folio_state_filtering(self->state);
     enum folio_state_outcome outcome = folio_state_continue_index_filter(self->state);

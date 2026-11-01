@@ -1189,6 +1189,28 @@ size_t note_pane_first_visible_line(struct note_pane *_Nonnull pane)
     return mark.number;
 }
 
+/* 論理行の復元とミニマップの表示行操作は、同じnative移動へ渡す。 */
+static void scroll_native_line(HWND pane, LRESULT target)
+{
+    LRESULT now = SendMessageW(pane, EM_GETFIRSTVISIBLELINE, 0, 0);
+    if (target < 0 || now < 0)
+        return;
+    SendMessageW(pane, EM_LINESCROLL, 0, (LPARAM)(target - now));
+}
+
+void note_pane_scroll_display(struct note_pane *_Nonnull pane, int display)
+{
+    if (pane->handle == nullptr || pane->readiness != NOTE_PANE_READINESS_READY ||
+        pane->composing || !IsWindowEnabled(pane->handle))
+        return;
+    LRESULT count = SendMessageW(pane->handle, EM_GETLINECOUNT, 0, 0);
+    if (count < 1)
+        return;
+    LRESULT target = display < 0 ? 0 : display;
+    target = target >= count ? count - 1 : target;
+    scroll_native_line(pane->handle, target);
+}
+
 void note_pane_scroll_to_line(struct note_pane *_Nonnull pane, size_t number)
 {
     size_t position = 0;
@@ -1198,8 +1220,7 @@ void note_pane_scroll_to_line(struct note_pane *_Nonnull pane, size_t number)
         return;
     }
     LRESULT wanted = SendMessageW(pane->handle, EM_EXLINEFROMCHAR, 0, (LPARAM)position);
-    LRESULT now = SendMessageW(pane->handle, EM_GETFIRSTVISIBLELINE, 0, 0);
-    SendMessageW(pane->handle, EM_LINESCROLL, 0, (LPARAM)(wanted - now));
+    scroll_native_line(pane->handle, wanted);
 }
 
 void note_pane_select(struct note_pane *_Nonnull pane, size_t start, size_t end)

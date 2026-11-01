@@ -61,6 +61,7 @@ enum accessible_kind accessible_item_host(struct accessible_item item)
     case ACCESSIBLE_FIND:
     case ACCESSIBLE_FILTER:
     case ACCESSIBLE_BODY:
+    case ACCESSIBLE_MINIMAP:
     case ACCESSIBLE_NOTICE:
     case ACCESSIBLE_GUIDE:
     case ACCESSIBLE_COMMAND_INPUT:

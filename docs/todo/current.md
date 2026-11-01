@@ -1,5 +1,17 @@
 # いまの状態 — NeNe Folio
 
+## 簡易ミニマップ — #502
+
+hide指定の速度・安定性・デザイン優先で、閲覧/編集右側へ行の分量と現在範囲を追加した。
+設定・Ctrl+Shift+M・操作メニュー/パレットで表示を切替え、設定版5のminimapへ保存する。旧1〜4は移行できる。
+本文複製/別解析なし。120msで入力をまとめ、同じUI threadのidleで16sampleずつ、最大256行を参照する。
+click/drag/keyboard/UIAを同じnative scrollへ渡し、本文・選択・Undo・dirtyを保つ。狭幅は設定を保持して隠す。
+対象unit/確保失敗、実Win32の上限・復帰・可変行高・入力保護・操作/UIAと明暗/HC画像を確認した。
+[品質記録](../quality/2026-11-01-minimap.md)・[ADR0084](../adr/0084-bounded-native-minimap.md)。
+版入力・依存は不変、Waivers none。最終head必須CI、main、通常exe反映/起動、全保全/整理は
+`D:/NeNeFolio/agents/minimap-20261101/integration-completion.json`で確定する。
+申請済みMSIXは差し替えず、Store結果確認は別件。停止中のAppHang調査や既存課題は再開しない。
+
 ## ヘルプのキータブ — #500
 
 hideの指摘とGUI/情報設計の独立レビューに基づき、キーを用途別の見出しと1操作1項目へ整理した。

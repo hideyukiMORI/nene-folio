@@ -87,10 +87,13 @@ Webリンク起動は`folio_state`の意図から`web_link_port`へ渡し、合�
 取り込み/書き出しも`folio_state`が所有し、`transfer_port`で外部ファイルを扱う。取り込みは既存create_note/台帳同期、
 単票書き出しは既存copied_text、ZIPは保存済み本文の読込とcore archiveへ渡す（ADR0082）。
 ノート保存先は`storage_state`が現在/次回/初回・復旧phaseを所有し、`storage_port`へ検証と設定保存を渡す。
-coreの`storage_path`と`startup_settings`がpath検証と版1のcodecを持ち、ノート側の設定版4とは分離する（ADR0077）。
+coreの`storage_path`と`startup_settings`がpath検証と版1のcodecを持ち、ノート側の設定版5とは分離する（ADR0077）。
 全文検索の要求・読込位置・corpus・pending build handleと数値cursorは`folio_state`が所有する。
 本文準備は一件、入力/初回末尾のmatchingは有限workで継続し、完成時だけ採用する。
 確定filter修復の同期driverも同じcore engine/entry解決helperを使う（ADR0068/0073）。
+
+表示だけの設定変更（行番号/ミニマップ）は同じ保存成功後の採用へ渡す。設定版5の`minimap`を
+既存codecが読み書きし、旧1〜4はtrueを補う（ADR0084）。
 
 ### `src/adapters/win32`
 
@@ -103,6 +106,11 @@ coreの`storage_path`と`startup_settings`がpath検証と版1のcodecを持ち�
 `transfer_adapter`は外部Markdownの読込と検証済み本文/ZIPの新規公開だけを扱い、`file_bytes`の原子的な公開へ合流する（ADR0082）。
 
 ### `src/ui/win32`
+
+`note_minimap`はRichEdit表示行の最大256sampleと構築進捗だけを持つ。主窓の120ms timerと
+入力優先のidleで16sampleずつ更新し、完成像だけ描く。本文・位置はRichEditが所有し、
+`note_pane_scroll_display`から既存native scrollへ渡す。主窓の同一geometryとpaletteを
+描画/pointer/focus/UIAで共有し、RangeValue providerは一覧幅と共用する（ADR0084）。
 
 application が作った値を描き、操作を意図として渡す（ARC-011）。可変性の隔離区画（ARC-005）。
 `note_pane_links`はnative書式由来のhidden/visible位置対応とクリック状態をpane寿命内で所有する。
@@ -150,4 +158,4 @@ UIはMarkdownを再解釈せず、更新後の字下げ・列数・列幅をnati
 | 配布入力 | `src/app/NeNeFolio.rc`と`NeNeFolio.manifest.in`は正典app targetに属する。`docs/release/`に配布案内、`eng/release-layout.json`に固定同梱一覧を置く。版はCMake、書体一覧は`fonts/manifest.json`から導出する（ADR0045）。MSIXのidentity/表示情報/画像hashは`eng/msix.json`、図案原本とPNGは`packaging/windows/`（ADR0080） |
 | 配布出力 | `eng/package-release.ps1`に明示した新しいWorkDirectoryとOutputDirectory。既定ZIPまたは`-Format Msix`。開発作業では`D:/NeNeFolio/outputs/`配下に置く。利用者dataや開発用生成物を配布物に入れない |
 | 利用者データ | 選択したroot。portable既定はexe隣の `data/`、package identityを持つ版の候補はDocuments/NeNeFolio（カテゴリ = ディレクトリ・台帳・md・設定・履歴）。リポジトリには入れない |
-| 起動設定 | 版1 `nenefolio-startup.json`。portableはexe隣、package identityを持つ版はLocalAppData/NeNeFolio。ノート側settings版4とは別（ADR0077） |
+| 起動設定 | 版1 `nenefolio-startup.json`。portableはexe隣、package identityを持つ版はLocalAppData/NeNeFolio。ノート側settings版5とは別（ADR0077） |

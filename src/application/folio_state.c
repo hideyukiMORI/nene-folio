@@ -1133,6 +1133,23 @@ static enum folio_state_outcome from_settings_store(enum persistence_outcome sto
                                                : FOLIO_STATE_SETTINGS_STORE_FAILED;
 }
 
+/* 表示だけの設定変更は、同じ保存成功後の採用へ合流する。 */
+static enum folio_state_outcome store_settings_change(struct folio_state *_Nonnull state,
+                                                      struct folio_settings *_Nonnull changed)
+{
+    /* 先に書いてから採用する。書けなければ値を変えない（ADR 0025 の決定 5）。 */
+    enum folio_state_outcome stored =
+        from_settings_store(state->port.write_settings(state->port.adapter, changed));
+    if (stored != FOLIO_STATE_READY)
+    {
+        folio_settings_destroy(changed);
+        return stored;
+    }
+    folio_settings_destroy(state->settings);
+    state->settings = changed;
+    return FOLIO_STATE_READY;
+}
+
 enum folio_state_outcome folio_state_set_number(struct folio_state *_Nonnull state, bool number)
 {
     if (state->settings_notice != FOLIO_STATE_READY)
@@ -1148,17 +1165,24 @@ enum folio_state_outcome folio_state_set_number(struct folio_state *_Nonnull sta
     {
         return FOLIO_STATE_OUT_OF_MEMORY;
     }
-    /* 先に書いてから採用する。書けなければ値を変えない（ADR 0025 の決定 5）。 */
-    enum folio_state_outcome stored =
-        from_settings_store(state->port.write_settings(state->port.adapter, changed));
-    if (stored != FOLIO_STATE_READY)
-    {
-        folio_settings_destroy(changed);
-        return stored;
-    }
-    folio_settings_destroy(state->settings);
-    state->settings = changed;
-    return FOLIO_STATE_READY;
+    return store_settings_change(state, changed);
+}
+
+bool folio_state_minimap(const struct folio_state *_Nonnull state)
+{
+    return folio_settings_minimap(state->settings);
+}
+
+enum folio_state_outcome folio_state_set_minimap(struct folio_state *_Nonnull state, bool minimap)
+{
+    if (state->settings_notice != FOLIO_STATE_READY)
+        return state->settings_notice;
+    if (folio_settings_minimap(state->settings) == minimap)
+        return FOLIO_STATE_READY;
+    struct folio_settings *_Nullable changed = nullptr;
+    if (folio_settings_with_minimap(state->settings, minimap, &changed) != FOLIO_SETTINGS_READY)
+        return FOLIO_STATE_OUT_OF_MEMORY;
+    return store_settings_change(state, changed);
 }
 
 /* 設定と閲覧文書を両方先に作ってから書き、書けたときだけ差し替える（ADR 0031 の決定 3）。

@@ -116,10 +116,16 @@ static void verify_font_pick(void)
 
 /* 書いた文書をもう一度読んで同じ値になるか（キーの順序と整形も版 3 の形のまま）。 */
 static void verify_round_trip(bool number, enum folio_theme_choice theme,
-                              enum folio_language language)
+                              enum folio_language language, bool minimap)
 {
     struct folio_settings *settings = nullptr;
     require(folio_settings_default(&settings) == FOLIO_SETTINGS_READY, "default");
+    struct folio_settings *mapped = nullptr;
+    require(folio_settings_with_minimap(settings, minimap, &mapped) == FOLIO_SETTINGS_READY &&
+                folio_settings_minimap(settings),
+            "derived map leaves original preference unchanged");
+    folio_settings_destroy(settings);
+    settings = mapped;
     struct folio_settings *numbered = nullptr;
     require(folio_settings_with_number(settings, number, &numbered) == FOLIO_SETTINGS_READY,
             "a derived copy carries the new value");
@@ -150,7 +156,8 @@ static void verify_round_trip(bool number, enum folio_theme_choice theme,
                 FOLIO_SETTINGS_READY,
             "what was written parses back");
     require(folio_settings_number(reread) == number && folio_settings_theme(reread) == theme &&
-                folio_settings_language(reread) == language,
+                folio_settings_language(reread) == language &&
+                folio_settings_minimap(reread) == minimap,
             "the values survive the round trip");
     folio_settings_destroy(reread);
     json_writer_destroy(writer);
@@ -170,9 +177,9 @@ static void expect_migration(const char *_Nonnull text, const char *_Nonnull des
     folio_settings_write(settings, writer);
     folio_settings_destroy(settings);
     require(json_writer_finish(writer) == JSON_WRITER_ACCEPTED, "the document is complete");
-    require(strstr(json_writer_text(writer), "\"version\": 4") != nullptr &&
+    require(strstr(json_writer_text(writer), "\"version\": 5") != nullptr &&
                 strstr(json_writer_text(writer), "\"language\": \"ja\"") != nullptr,
-            "writing always produces version 4");
+            "writing always produces version 5");
     json_writer_destroy(writer);
 }
 
@@ -240,7 +247,7 @@ static void verify_parse(void)
 /* 黙って既定値へ落とさない形（決定 1）。無い・壊れているは呼び出し側が区別する。 */
 static void verify_refusals(void)
 {
-    expect_refusal("{\"version\": 5, \"number\": true, \"theme\": \"dark\", "
+    expect_refusal("{\"version\": 6, \"number\": true, \"theme\": \"dark\", "
                    "\"language\": \"ja\"}",
                    FOLIO_SETTINGS_UNSUPPORTED_VERSION,
                    "a newer version is refused, not downgraded");
@@ -333,14 +340,43 @@ static void verify_catalog_schema(void)
     folio_settings_write(settings, writer);
     folio_settings_destroy(settings);
     require(json_writer_finish(writer) == JSON_WRITER_ACCEPTED &&
-                strstr(json_writer_text(writer), "\"version\": 4") != nullptr &&
+                strstr(json_writer_text(writer), "\"version\": 5") != nullptr &&
                 strstr(json_writer_text(writer), "\"language\": \"en\"") != nullptr,
-            "writing migrated version 3 preserves its language in version 4");
+            "writing migrated version 3 preserves its language in version 5");
     json_writer_destroy(writer);
+}
+
+static void verify_minimap_schema(void)
+{
+    const char *legacy[] = {
+        version_one, version_two, version_three,
+        "{\"version\":4,\"number\":true,\"theme\":\"dracula\",\"language\":\"en\"}"};
+    for (size_t at = 0; at < sizeof legacy / sizeof legacy[0]; ++at)
+    {
+        struct folio_settings *settings = nullptr;
+        require(folio_settings_parse(legacy[at], strlen(legacy[at]), &settings) ==
+                        FOLIO_SETTINGS_READY &&
+                    folio_settings_minimap(settings),
+                "each legacy schema gains the visible minimap preference");
+        folio_settings_destroy(settings);
+    }
+    const char *bad[] = {
+        "{\"version\":5,\"number\":true,\"theme\":\"dark\",\"language\":\"ja\"}",
+        "{\"version\":5,\"number\":true,\"theme\":\"dark\",\"language\":\"ja\",\"minimap\":1}",
+        "{\"version\":5,\"number\":true,\"theme\":\"dark\",\"language\":\"ja\",\"minimap\":null}",
+        "{\"version\":5,\"number\":true,\"theme\":\"dark\",\"language\":\"ja\",\"minimap\":true,"
+        "\"minimap\":false}",
+        "{\"version\":5,\"number\":true,\"theme\":\"dark\",\"language\":\"ja\",\"minimap\":true,"
+        "\"extra\":true}",
+        "{\"version\":4,\"number\":true,\"theme\":\"dark\",\"language\":\"ja\",\"minimap\":true}"};
+    for (size_t at = 0; at < sizeof bad / sizeof bad[0]; ++at)
+        expect_refusal(bad[at], FOLIO_SETTINGS_MALFORMED,
+                       "minimap is required only in version 5 with exact boolean shape");
 }
 
 void run_settings_tests(void)
 {
+    verify_minimap_schema();
     verify_catalog_schema();
     verify_default();
     verify_language_count();
@@ -348,12 +384,12 @@ void run_settings_tests(void)
     verify_font_pick();
     verify_parse();
     verify_migration();
-    verify_round_trip(true, FOLIO_THEME_CHOICE_DARK, FOLIO_LANGUAGE_ZH_HANS);
-    verify_round_trip(false, FOLIO_THEME_CHOICE_LIGHT, FOLIO_LANGUAGE_EN);
-    verify_round_trip(true, FOLIO_THEME_CHOICE_SYSTEM, FOLIO_LANGUAGE_JA);
+    verify_round_trip(true, FOLIO_THEME_CHOICE_DARK, FOLIO_LANGUAGE_ZH_HANS, false);
+    verify_round_trip(false, FOLIO_THEME_CHOICE_LIGHT, FOLIO_LANGUAGE_EN, true);
+    verify_round_trip(true, FOLIO_THEME_CHOICE_SYSTEM, FOLIO_LANGUAGE_JA, false);
     for (size_t index = 0; index < folio_theme_choice_count(); ++index)
     {
-        verify_round_trip(true, folio_theme_choice_at(index), FOLIO_LANGUAGE_EN);
+        verify_round_trip(true, folio_theme_choice_at(index), FOLIO_LANGUAGE_EN, index % 2 == 0);
     }
     verify_refusals();
     verify_resolve();

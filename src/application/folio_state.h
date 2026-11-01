@@ -122,6 +122,10 @@ folio_state_settings_notice(const struct folio_state *_Nonnull state);
 folio_state_select_notice(const struct folio_state *_Nonnull state);
 /* 編集中の本文の左に原文の行番号を出すか（FR-021 / ADR 0026 の決定 5）。
  * 値の所有者はここ 1 つで、UI は第 2 の真偽を持たない（ARC-004）。 */
+/* ミニマップ表示設定。書込成功後だけ採用する（ADR0084）。 */
+[[nodiscard]] bool folio_state_minimap(const struct folio_state *_Nonnull state);
+[[nodiscard]] enum folio_state_outcome folio_state_set_minimap(struct folio_state *_Nonnull state,
+                                                               bool minimap);
 [[nodiscard]] bool folio_state_number(const struct folio_state *_Nonnull state);
 /* 行番号の表示を変える意図（ADR 0025 の決定 5）。**先に data/settings.json へ書いてから採用する**
  * ので、表示と保存が食い違わない。いまと同じ値なら書かずに READY。

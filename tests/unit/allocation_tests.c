@@ -1698,6 +1698,39 @@ void run_nullable_allocation_tests(void)
     run_replace_factory_allocation_tests();
 }
 
+static bool minimap_scenario(void)
+{
+    struct persistence_adapter *adapter = test_adapter_create(categories_text, notes_text);
+    struct persistence_port port = test_adapter_port(adapter);
+    struct appearance_port looks = test_appearance_port();
+    struct regex_port finder = test_regex_port();
+    struct folio_state *state = nullptr;
+    enum folio_state_outcome result =
+        folio_state_create(test_ports(&port, &looks, &finder), &state);
+    if (result == FOLIO_STATE_READY)
+    {
+        const char *pane = folio_state_pane_rtf(state);
+        result = folio_state_set_minimap(state, false);
+        require(result == FOLIO_STATE_READY || result == FOLIO_STATE_OUT_OF_MEMORY,
+                "minimap allocation failure is typed");
+        require(folio_state_pane_rtf(state) == pane &&
+                    folio_state_minimap(state) == (result == FOLIO_STATE_OUT_OF_MEMORY),
+                "failed copy keeps preference and body, success commits hidden preference");
+        folio_state_destroy(state);
+    }
+    test_adapter_destroy(adapter);
+    require(result == FOLIO_STATE_READY || result == FOLIO_STATE_OUT_OF_MEMORY,
+            "startup allocation failure is typed");
+    return result == FOLIO_STATE_READY;
+}
+
+void run_minimap_allocation_tests(void)
+{
+    require(probe_active(), "minimap allocation selector requires active injection");
+    exhaust(minimap_scenario, "minimap scenario never completed");
+    exhaust(settings_scenario, "settings scenario never completed");
+}
+
 void run_allocation_tests(void)
 {
     if (!probe_active())
@@ -1715,7 +1748,7 @@ void run_allocation_tests(void)
     exhaust(layout_scenario, "layout scenario never completed");
     exhaust(state_scenario, "state scenario never completed");
     exhaust(line_index_scenario, "line index scenario never completed");
-    exhaust(settings_scenario, "settings scenario never completed");
+    run_minimap_allocation_tests();
     run_rename_allocation_tests();
     exhaust(history_scenario, "history scenario never completed");
     exhaust(edit_rtf_scenario, "edit rtf scenario never completed");

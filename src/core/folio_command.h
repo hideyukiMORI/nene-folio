@@ -46,6 +46,7 @@ enum folio_command : unsigned char
     FOLIO_COMMAND_EXPORT_NOTE,
     FOLIO_COMMAND_EXPORT_CATEGORY,
     FOLIO_COMMAND_EXPORT_ALL,
+    FOLIO_COMMAND_TOGGLE_MINIMAP,
 };
 
 [[nodiscard]] size_t folio_command_count(void);
