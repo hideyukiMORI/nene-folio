@@ -34,13 +34,19 @@ GIT-001〜004、[ADR0084](../adr/0084-bounded-native-minimap.md)・[ADR0068](../
 | 正典UI翻訳単位の隔離probe（state-compile-01 / state-run-01） | 実RichEdit/GDIの31checks成功。602回のstream通知、旧timer消去、stream失敗/再試行、像の空/完成、狭幅/最小化 |
 | 合成文書の計測（compile/run-baseline-01、compile/run-request-01、parent-compile/run-01、repeat-run-01） | 62回、うち新実装53回・旧実装9回。全件描画完了・sample上限・構築1回。`findings.json`参照 |
 | 最終整形後の対象build（test-build-05/06）と`ctest -R '^minimap_scheduling$' -V`（contract-05） | 140checks成功。05はコンパイル成功後、指定inputの生成`build.ninja`がCMake再生成で変わり記録側が失敗。06で入力選定を正し、生成物を変えず完了を再確認 |
+| 台帳順序を明示した対象build/CTest（test-build-07 / contract-06） | 142checks成功。初回CI 41299960444の失敗と同じ症状を逆順fixtureで再現（reversed-order-red-01）。既存台帳が逆順でも準備で正し、同じ期待を通過（reversed-order-green-01） |
 
 予約試験は専用desktop/dataと実RichEditを使い、timer通知を捨てて公開UI/idle境界から操作する。
 文書切替・途中の再切替・閲覧/編集・行番号幅・1回16/合計256・native sample失敗/再試行、
 menu/modal/IME・非表示/復帰、入力/resize待機と本文・選択・Undo・dirty・focusの保持を確認した。
 追加probeは製品ソースを変更せず、生成した翻訳単位とnative subclassだけで観測/失敗注入する。
 旧文書の像はstream開始前に消え、読込失敗時も空。新文書の一部を先に公開しないことをGDI画素hashで比較した。
-`final-check-01`で規約/実依存graph・中核symbol・変更Cの整形・差分を確認する。結果は監査記録へ収載する。
+初回CIでは予約試験の`long document begins in one slice`が失敗した。テストが走査順序を暗黙に仮定しており、
+逆順の台帳で同じ失敗をローカル再現した。fixture準備で正典codec/portを使って台帳順序を明記した。
+製品実装と16/256等の期待値は変更していない。CI上の実際の走査順序そのものは採取できていない。
+追加の5桁確認は`gutter-run-02`の10checks成功。120 DPIで番号欄が実際に5px広がり、その後のpaintでも待機に戻らない。
+最初のgutter fixtureは番号表示の指定漏れで失敗し、その記録も保持した。
+`final-check-01/02`で規約/実依存graph・中核symbol・変更Cの整形・差分を確認する。結果は監査記録へ収載する。
 
 ## 実測
 

@@ -4,6 +4,7 @@
 #include "folio_state.h"
 #include "folio_window.h"
 #include "font_bundle.h"
+#include "note_ledger.h"
 #include "note_text.h"
 #include "persistence_adapter.h"
 #include "regex_adapter.h"
@@ -61,6 +62,14 @@ static void seed_notes(struct persistence_port disk)
                 "fixture note");
         note_text_destroy(body);
     }
+    /* Native directory enumeration is unordered; select slots from an explicit fixture ledger. */
+    const char order[] = "{\"version\":1,\"notes\":[\"00_short\",\"01_long\"]}";
+    struct note_ledger *_Nullable ledger = nullptr;
+    require(note_ledger_parse(order, sizeof order - 1, &ledger) == NOTE_LEDGER_ACCEPTED,
+            "fixture note order");
+    require(disk.write_note_ledger(disk.adapter, "schedule", ledger) == PERSISTENCE_STORED,
+            "explicit fixture note order");
+    note_ledger_destroy(ledger);
 }
 
 static void create_fixture(struct native_fixture *_Nonnull fixture)
@@ -211,7 +220,11 @@ static void verify_switches(struct folio_window *_Nonnull window, HWND body)
     select_note(window, 0);
     finish(window, body);
     select_note(window, 1);
-    require(step(window) == 16, "long document begins in one slice");
+    size_t first = step(window);
+    if (first != 16)
+        fprintf(stderr, "long document lines=%lld samples=%zu\n",
+                (long long)SendMessageW(body, EM_GETLINECOUNT, 0, 0), first);
+    require(first == 16, "long document begins in one slice");
     select_note(window, 0);
     finish(window, body);
     select_note(window, 1);
