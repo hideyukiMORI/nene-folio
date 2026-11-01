@@ -1,0 +1,11 @@
+#ifndef NENEFOLIO_MINIMAP_UPDATE_H
+#define NENEFOLIO_MINIMAP_UPDATE_H
+
+enum minimap_update : unsigned char
+{
+    MINIMAP_UPDATE_CLEAR,
+    MINIMAP_UPDATE_SETTLE,
+    MINIMAP_UPDATE_READY
+};
+
+#endif
