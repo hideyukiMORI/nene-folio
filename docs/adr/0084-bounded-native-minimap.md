@@ -46,6 +46,30 @@
 256sample/16workは問い合わせ数の上限で、RichEdit内部処理の実時間上限ではない。
 版/依存/ゲート/申請済みMSIXを変えない。Waivers none。
 
+## #506補正 — 右余白とnative書式の概形
+
+hideの2026-11-01の実機指摘に合わせ、表示中の右余白は56から12 logical pxへ、
+本文との間隔は12から8 logical pxへ詰める。ミニマップ幅64と本文最小幅320を保ち、
+非表示時は従来の本文右余白を使う。描画・hit・UIA・本文配置は同じ矩形から導出する。
+
+行長だけだった派生cacheへ、nativeの文字サイズ・色・段落の字下げ・行頭の印・水平線・表の列数を加える。
+閲覧のh1〜4は既存RTFの文字サイズ/色/段落間隔、リストはnativeのhanging indentと行頭、
+水平線は空段落の書式、表は既存`note_pane_table`の行構造取得を使う。別のMarkdown parserや
+文書全体の縮小描画を追加しない。編集時は編集中のnative表示に従う。
+
+`note_pane`の既存ITextDocument取得から一回16行用の独立したTOM rangeを作り、選択を動かさずに読む。
+文字列読取は各sampleの行頭1 UTF-16単位だけに限定し、全文/AST/RTFを保持しない。
+表の行頭はnativeのU+FFF9と既存EM_GETTABLEPARMSで確認する。長い表と折り返しの全セル再現は保証しない。
+256sample/16work/120msの制限、非表示・IME・modal中の停止、失効と完成像の公開、失敗時の有限終了を維持する。
+native書式の問い合わせも含めて対象検証し、本文・選択・Undo・dirty・scrollが変わらないことを確認する。
+
+根拠: 実RichEdit診断でh1〜4の22/17/14/11pt、水平線の1ptと背景、リストのhanging indent、
+表行頭U+FFF9と既存行構造の列数取得を確認した。ITextRange2::GetRowは対象環境では表でもE_FAILだったため採用しない。
+TOM rangeと書式の参照は呼出し内で解放し、cacheへCOM参照を保持しない。
+リストの先頭はStartOfの移動量ではなく段落開始位置との一致で決め、折り返しの継続行で印を重ねない。
+高コントラスト時はOSの実効配色、現在範囲内は選択面の文字色を使う。
+[対象検証](../quality/2026-11-01-minimap-structure.md)に実RichEdit/主窓/画像と限界を記録した。
+
 API根拠: [表示行数](https://learn.microsoft.com/en-us/windows/win32/controls/em-getlinecount)、
 [行の先頭](https://learn.microsoft.com/en-us/windows/win32/controls/em-lineindex)、
 [行長](https://learn.microsoft.com/en-us/windows/win32/controls/em-linelength)、

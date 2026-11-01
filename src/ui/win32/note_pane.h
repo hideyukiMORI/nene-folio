@@ -10,6 +10,7 @@
 #include "note_pane_outcome.h"
 #include "note_pane_readiness.h"
 #include "note_pane_recolor_outcome.h"
+#include "note_pane_sample.h"
 #include "note_pane_text_outcome.h"
 #include "note_search_span.h"
 #include "pane_mode.h"
@@ -21,6 +22,9 @@
 #include <richedit.h>
 
 struct note_pane;
+/* At most 16 display rows per call, using one independent TOM range. */
+[[nodiscard]] bool note_pane_samples(struct note_pane *_Nonnull pane, const int *_Nonnull lines,
+                                     size_t count, struct note_pane_sample *_Nonnull out);
 /* 既存の閲覧リンクが準備済みで、IME/無効化に遮断されていない。 */
 [[nodiscard]] bool note_pane_link_available(const struct note_pane *_Nonnull pane);
 struct utf8_text;

@@ -1082,6 +1082,22 @@ static ITextRange *_Nullable measuring_range(struct note_pane *_Nonnull pane)
     return SUCCEEDED(made) ? range : nullptr;
 }
 
+bool note_pane_samples(struct note_pane *_Nonnull pane, const int *_Nonnull lines, size_t count,
+                       struct note_pane_sample *_Nonnull out)
+{
+    if (count > note_pane_sample_work || pane->handle == nullptr || pane->composing ||
+        pane->readiness != NOTE_PANE_READINESS_READY)
+        return false;
+    ITextRange *_Nullable range = measuring_range(pane);
+    if (range == nullptr)
+        return false;
+    bool ready = true;
+    for (size_t at = 0; at < count && ready; ++at)
+        ready = note_pane_sample_read(pane->handle, range, lines[at], &out[at]);
+    range->lpVtbl->Release(range);
+    return ready;
+}
+
 static bool row_baseline(ITextRange *_Nonnull range, size_t position, LONG *_Nonnull baseline)
 {
     if (FAILED(range->lpVtbl->SetRange(range, (LONG)position, (LONG)position)))
