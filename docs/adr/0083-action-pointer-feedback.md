@@ -16,6 +16,8 @@ VS Codeのbutton/actionbar/listは有効項目にpointer、無効部品にdefaul
 - 説明/見出し/余白/暗幕/無効操作と、絞り込み中のカテゴリ見出しは矢印。入力・選択可能な本文はnativeの
   文字ポインタ、splitter/窓縁はresize、並び替えdragは既存の矢印と挿入線を保つ。OS標準picker/色選択はOSへ委ねる。
   閲覧WebリンクはADR0079のfield/既存起動可否と一致させ、本文選択・編集・IME・modalでは手形を強制しない。
+- 検索EDITは既存の入力門へ揃え、IME中も文字入力と消去が通る状態を別面の操作可否で無効扱いしない。
+  入力欄はI字、消去×は指先、文字選択capture中はI字。session/modal/無効化は既存の入力遮断に従う。
 - 指先の範囲は既存の描画/クリック/UIAの矩形と可否を使う。ポインタだけの候補列・業務状態・別のクリック処理を作らない。
   `ui_pointer`はOS標準cursorへの投影、WM_SETCURSORの所有HWND/client確認、通知位置からの再評価だけを共有する。
   各面のhit/可否は各所有者の既存経路に残す。parentが子EDIT/RichEdit/scrollbarのcursorを横取りしない。

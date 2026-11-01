@@ -20,6 +20,7 @@ WM_MOUSEMOVEは通知座標、その他はGetMessagePosを使い、共有pointer
 nativeの既存BUTTON subclassをLISTBOXにも共用し、寿命は子HWND、解放はWM_NCDESTROY。
 名前/保存先入力のIME可否は各dialogの既存composingから答える。Webリンクは既存の起動可否を共有し、
 cursor通知だけはRichEdit capture中にI字を返す。クリックのgesture/URI検証/portは不変。
+検索EDITは自分の既存入力門を使い、IME中も入力欄のI字と実際に使える消去×の指先を保つ。
 schema・版入力・配色・依存・品質ゲート・申請済みStore MSIXは変更しない。
 
 ## 対象検証
@@ -27,7 +28,7 @@ schema・版入力・配色・依存・品質ゲート・申請済みStore MSIX�
 script/fixtureと完了記録は`D:/NeNeFolio/agents/hand-pointer-20261101/`、
 実行原本は`D:/NeNeFolio/outputs/498-hand-pointer/`。`tools/record-run.py`で入力snapshot、hash、raw出力、終了値を記録した。
 
-- `build.ps1`（build-05）: 正典Debug/tidy成功。抑制・除外・警告の緩和なし。
+- `build.ps1`（build-06）: 正典Debug/tidy成功。抑制・除外・警告の緩和なし。
 - `probe.ps1 compile ui-06` / `probe.ps1 run ui-06`: **111 checks / 0 failures**。
   主窓14操作、選択済み項目、splitter capture/取消、子/nonclient境界、modal/session、drawerの行/blank/drag、
   SEARCH帯を開いたままの行hover/実click、filteredカテゴリ/ノート、検索EDITの実選択captureと消去を確認。
@@ -42,13 +43,17 @@ script/fixtureと完了記録は`D:/NeNeFolio/agents/hand-pointer-20261101/`、
   文字選択capture時の1 redをcursor通知の条件で修正し、同じ境界がgreenになった。
 - `probe.ps1 compile ui-12` / `probe.ps1 run ui-12 -Remaining`: **12 checks / 0 failures**。
   実保存履歴の選択行、履歴操作、パレット候補/群見出し/別tab/IME、設定暗幕を補完した。
-- `final-check.ps1`: conformance/File API、core/applicationのsymbol境界、変更C/Hのclang-format、git diffを確認する。
+- `probe.ps1 compile ui-14` / `probe.ps1 run ui-14 -FilterIme`: **13 checks / 0 failures**。
+  検索EDITのIME中の入力/消去と実click、確定後の反映、modal/session/無効化の境界を確認。
+  ui-13で文字入力と消去×の2 redを記録し、同じ入力門を使う表示へ修正した。
+- `final-check.ps1`（final-check-02）: conformance/File API、core/applicationのsymbol境界、変更C/Hのclang-format、git diffを確認する。
   最終結果は同agentsの`pre-integration-audit.json`へ固定する。
 
 fixtureは正典のcompile/link vectorとASan/UBSan/nullabilityを保持し、製品libへ結ぶ。
 主窓fixtureだけは製品`folio_window.c`の無改変bytesへ試験コードを連結し、元objectの重複linkを拒否する。
-最後の製品補正はEN_LINK cursor通知のcapture条件だけ。ui-06の非capture時の結果と、
-folio_window objectを使わないnative-09は影響を受けないため再利用した。合計227項目。
+後段の製品補正はEN_LINK cursor通知のcapture条件と検索EDITの入力可否だけ。
+ui-06の非capture/非IME時、ui-11/12の検索EDIT外の結果と、folio_window objectを使わないnative-09は
+影響を受けないため再利用した。最終差分は入力snapshotとの機械照合でこの2箇所に限定した。合計240項目。
 
 ## 途中の失敗と範囲
 
@@ -63,6 +68,8 @@ native初期実行はCOM初期化不足、およびmodal ownerの範囲/DPIに�
 COMを初期化し、ownerとdialogを同じ通知位置へ整列してnative-09で確認。製品の配置処理は変更していない。
 背景desktopでRichEditへWM_SETCURSORだけを送る試験はネイティブのEN_LINK発行を再現できず、
 実HWNDの通知/capture境界を明示するui-10/11へ置き換えた。そのui-10のcapture時1失敗は製品側で修正した。
+最終静読で検索EDITのIME入力とポインタの不一致を見つけ、PRをDraftへ戻して旧headのCIを取消した。
+ui-13/14のred/green後に最終headを確定し、そのheadの必須CIを改めて要求する。
 
 専用desktop上の同一UI threadに合成通知を送り、通常ノート・input desktop切替・SendInput・OS標準pickerには触れていない。
 物理pointerによるRichEditの通知発行、実reader聴取、DWM実画面呈示、全monitor間のDPI遷移を保証する試験とは区別する。

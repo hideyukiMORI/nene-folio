@@ -5,7 +5,7 @@
 hideの方針指定に従い、主窓/drawer/補助面/検索の×/自前native面の有効な操作を指先へ揃えた。
 選択済みでも有効なら指先、無効/見出し/余白は矢印。文字選択と幅変更/dragは元の形を保つ。
 既存hit/描画/UIA/業務可否へ合流し、状態変更後に同じrootの通知位置だけを再評価する。
-Debug/tidy、主面111・native面92・Web通知/capture12・履歴等12checksが成功した。
+Debug/tidy、主面111・native面92・Web通知/capture12・履歴等12・検索EDITのIME13checksが成功した。
 [品質記録](../quality/2026-11-01-action-pointer.md)・[ADR0083](../adr/0083-action-pointer-feedback.md)。
 保存schema・版・配色・依存は不変、Waivers none。最終head必須CI、main、通常exe反映/起動と全保全/整理は
 `D:/NeNeFolio/agents/hand-pointer-20261101/integration-completion.json`で確定する。

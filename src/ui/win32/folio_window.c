@@ -10074,7 +10074,9 @@ static bool filter_clear_pressed(struct folio_window *_Nonnull self, HWND window
 static void filter_pointer(const struct folio_window *_Nonnull self, HWND window, POINT point)
 {
     enum ui_pointer_kind cursor = UI_POINTER_ARROW;
-    if (IsWindowEnabled(window) && folio_window_accessible_ready(self))
+    /* EDIT自身の入力門と揃える。IME中も文字入力と消去は既定の入力経路へ通る。 */
+    if (IsWindowEnabled(window) && IsWindowEnabled(self->handle) &&
+        !session_blocks_message(self, WM_LBUTTONDOWN))
         cursor = GetCapture() != window && filter_clear_at(self, window, point) ? UI_POINTER_ACTION
                                                                                 : UI_POINTER_TEXT;
     ui_pointer_show(cursor);
