@@ -33,6 +33,7 @@ ADR0084・0026・0067を補正。保存schema・版・依存・申請済みMSIX�
 | `paint.ps1 -Stage run -Label paint-01 -Case wheel` / `wheel-run-01` | 104checks成功。root/本文/drawer宛queue、focus維持、現在範囲追随、停止・反転、直接配送の非循環、小delta、Ctrl、IME/settings/hidden、本文wheel/zoom、余白取消、drag取消、編集本文/Undo/dirty/選択保持 |
 | `paint.ps1 -Stage run -Label paint-code-01 -Case code` / `code-run-01` | 20checks成功。明暗/HC/狭幅画像、256/16上限と全文取得なし、DPI矩形 |
 | `paint.ps1 -Stage run -Label paint-edge-04 -Case edge` / `edge-run-04` | 10checks成功。部分Ctrl deltaの破棄、drawer二重配送なし、実drawer側の配送維持、先頭/末尾のnative境界 |
+| `catalog-check.ps1` / `catalog-check-01` | 正典`folio_tests` build/tidy・`folio_tests.exe --minimap`成功。設定・state・command・3言語文言/長さと日本語固定期待値を確認 |
 
 実主窓fixtureは専用desktop・合成ノートだけで実行。製品`folio_window.c`と同じcompile/link vectorとlibraryを使い、
 元objectの重複linkをmapで拒否する。wheelのOS設定は読取のみ（この環境では3行）。
@@ -50,6 +51,10 @@ code集計と検索キーの翻訳をそれぞれの責務へ分け、閾値・�
 edgeの最初の期待は行単位Endと画素単位末尾を同一視して失敗した。実値は81959からwheelで81999、82000、
 82000、82000へ収束し、最終表示行1999/2000を保った。固定回数で停止と最終行を確認するfixtureへ補正し、
 スクロール実装は変更していない。途中の失敗記録も保持する。
+
+最初のCI `41293410321`は、日本語操作案内の固定期待値がホイール追加前のままで1件失敗した。
+`ui_text_tests.c`の期待文言を更新し、製品コードを変えずに既存`--minimap`対象が成功した。
+同じ旧headへ統合helperが自動再送したCI `41293717957`は中止し、修正後のheadで必須CIを確認する。
 
 ## 限界と完了証跡
 

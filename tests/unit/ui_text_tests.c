@@ -551,7 +551,7 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_KEY_MINIMAP] = "Ctrl+Shift+M",
     [UI_TEXT_SETTINGS_MINIMAP] = "ミニマップを表示",
     [UI_TEXT_MINIMAP] = "ミニマップ",
-    [UI_TEXT_MINIMAP_HELP] = "クリックやドラッグで移動。↑↓、PageUp/Down、Home/"
+    [UI_TEXT_MINIMAP_HELP] = "クリック・ドラッグ・ホイールで移動。↑↓、PageUp/Down、Home/"
                              "Endでも移動できます。狭い窓では自動で隠れます。",
 };
 
