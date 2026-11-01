@@ -1,5 +1,18 @@
 # いまの状態 — NeNe Folio
 
+## ミニマップ表示までの重複処理と順番待ち — #512
+
+hideの「対応できそうなところは端から対応して」に従い、投入中のポインタ再判定、
+更新範囲外の頭/操作描画と字幅参照、索引優先によるミニマップ待ちを削減した。
+既存idleで索引とマップを一単位ずつ交互に進め、入力/paint優先と16/256等の上限を保つ。
+Debug/tidy、予約286checks、実RichEdit/GDI470checks、旧UIでのred、合成82回の計測を確認した。
+最終比較では表3,000行の再判定3,002→0、索引pending例の描画完了28.329→9.403ms。
+本文投入時間は変動しており、全体の一律短縮は主張しない。本文変換/投入は続けて切り分ける。
+[品質記録](../quality/2026-11-01-minimap-pipeline.md)・[ADR0083](../adr/0083-action-pointer-feedback.md)・[ADR0084](../adr/0084-bounded-native-minimap.md)。
+保存schema・版・依存は不変、Waivers none。最終CI/main/通常反映/全保全/整理は
+`D:/NeNeFolio/agents/minimap-pipeline-fix-20261101/integration-completion.json`で確定する。
+通常版が起動中ならhideの保存/終了を待つ。申請済みMSIXは差し替えない。
+
 ## 文書投入後のミニマップ待機短縮 — #510
 
 hideの表示待ちの指摘を65回調べた結果から、文書投入成功後の120ms待機とstream中の予約重複を削減した。
@@ -10,7 +23,7 @@ Debug/tidy、実Win32の予約186（96 DPI 188）・構造95・追加31＋10chec
 [品質記録](../quality/2026-11-01-minimap-ready.md)・[ADR0084補正](../adr/0084-bounded-native-minimap.md)。
 保存schema・版・依存は不変、Waivers none。最終CI/main/通常反映/保全整理は
 `D:/NeNeFolio/agents/minimap-ready-20261101/integration-completion.json`で確定する。
-通常版が起動中ならhideの保存/終了を待つ。実ノートの6秒待ちとhideの実機受理は未確認。
+hideは反映後の改善を受理し、元の表示待ちの体感を0.3〜0.6秒と訂正した。実測値ではない。
 
 ## ミニマップのホイールとコードブロック — #508
 

@@ -22,6 +22,7 @@
 #include "drawer_window.h"
 #include "failure_box.h"
 #include "folio_command.h"
+#include "folio_idle_work.h"
 #include "folio_menu_action.h"
 #include "folio_message.h"
 #include "folio_palette.h"
@@ -108,6 +109,7 @@ struct folio_window
     struct drawer_window *_Nullable drawer;
     struct note_pane *_Nullable pane;
     struct note_minimap *_Nullable minimap;
+    enum folio_idle_work next_idle_work;
     int minimap_pointer_offset;
     int body_left_inset; /* 配置時に確定した行番号込みの左余白。通知中は再計測しない。 */
     HACCEL _Nullable commands;
@@ -4622,6 +4624,16 @@ static LRESULT hit_test(const struct folio_window *_Nonnull self, LPARAM lparam)
     return button ? HTCLIENT : HTCAPTION;
 }
 
+/* 操作帯の配置と更新判定が共有する外枠。更新範囲外なら字面の計測もしない。 */
+static RECT action_band_rect(const struct folio_window *_Nonnull self)
+{
+    UINT dpi = GetDpiForWindow(self->handle);
+    RECT band = regions_for(self).pane;
+    band.top += scale(base_caption_height, dpi);
+    band.bottom = band.top + scale(base_action_height, dpi);
+    return band;
+}
+
 /* 本文操作帯の A 様式の群（帯 36 = 4+28+4）。幅は現在の言語の字面を頭と同じ等幅の書体と字間で
  * 測る（#122）。字を出すと窓の縁 16 に収まらないときだけ、絵を持つ項目を検索・保存の順に
  * 絵だけへ縮め、消さない（ADR0060 の決定 1）。描画・当たり判定・UIA・メニューの位置が共有する。 */
@@ -4629,13 +4641,12 @@ static void action_layout(const struct folio_window *_Nonnull self, RECT *_Nonnu
                           bool *_Nonnull labeled)
 {
     UINT dpi = GetDpiForWindow(self->handle);
-    RECT pane = regions_for(self).pane;
+    RECT band = action_band_rect(self);
     RECT client;
     GetClientRect(self->handle, &client);
-    int left = pane.left + scale(base_pane_left, dpi);
+    int left = band.left + scale(base_pane_left, dpi);
     int height = scale(ui_part_height, dpi);
-    int top =
-        pane.top + scale(base_caption_height, dpi) + (scale(base_action_height, dpi) - height) / 2;
+    int top = band.top + (band.bottom - band.top - height) / 2;
     int widths[action_count] = {};
     int total = 0;
     for (size_t index = 0; index < action_count; ++index)
@@ -4733,6 +4744,12 @@ static int number_units(size_t value, wchar_t *_Nonnull out, int capacity)
     return length;
 }
 
+static bool paint_intersects(RECT bounds, RECT damage)
+{
+    RECT touched = {0};
+    return IntersectRect(&touched, &bounds, &damage) != 0;
+}
+
 /* 本文の左の空きに、見えている論理行の番号を右寄せで描く（ADR 0026 の決定 1 / 3）。
  * y は note_pane が主窓の client 座標へ直して返す。
  * 帯に掛からない更新矩形では番号の一巡（EM_LINEINDEX / EM_POSFROMCHAR）ごと飛ばし、
@@ -4740,8 +4757,7 @@ static int number_units(size_t value, wchar_t *_Nonnull out, int capacity)
 static void draw_gutter(const struct folio_window *_Nonnull self, HDC device, RECT damage)
 {
     RECT band = gutter_rect(self);
-    RECT touched = {0, 0, 0, 0};
-    if (!gutter_visible(self) || !IntersectRect(&touched, &band, &damage))
+    if (!gutter_visible(self) || !paint_intersects(band, damage))
     {
         return;
     }
@@ -4987,8 +5003,7 @@ static void draw_splitter(const struct folio_window *_Nonnull self, HDC device)
 static void draw_minimap(const struct folio_window *_Nonnull self, HDC device, RECT damage)
 {
     RECT bounds = minimap_rect(self);
-    RECT touched = {0};
-    if (!IntersectRect(&touched, &bounds, &damage))
+    if (!paint_intersects(bounds, damage))
         return;
     struct note_minimap_paint paint;
     if (minimap_paint_for(self, &paint))
@@ -5008,9 +5023,14 @@ static void draw_pane(const struct folio_window *_Nonnull self, HDC device, RECT
     SetTextCharacterExtra(device, scale(base_tracking, dpi));
     if (document_open(self))
     {
-        draw_breadcrumb(self, device, caption_rect(self));
-        draw_mode_group(self, device);
-        draw_actions(self, device);
+        RECT caption = caption_rect(self);
+        if (paint_intersects(caption, damage))
+        {
+            draw_breadcrumb(self, device, caption);
+            draw_mode_group(self, device);
+        }
+        if (paint_intersects(action_band_rect(self), damage))
+            draw_actions(self, device);
     }
     SetTextCharacterExtra(device, 0);
     if (!document_open(self))
@@ -5036,7 +5056,8 @@ static void blit_window(struct folio_window *_Nonnull self, HDC target, RECT cli
         HBRUSH brush = CreateSolidBrush(self->palette.window);
         FillRect(memory, &damage, brush);
         DeleteObject(brush);
-        draw_common_header(self, memory);
+        if (paint_intersects(regions_for(self).header, damage))
+            draw_common_header(self, memory);
         if (pane_visible(self))
         {
             draw_pane(self, memory, damage);
@@ -11609,10 +11630,16 @@ static void execute_accelerator(struct folio_window *_Nonnull self, WPARAM wpara
 /* 主窓の WM_COMMAND には HACCEL と、常設の欄の EN_CHANGE の 2 つが届く。 */
 /* 本文の RichEdit からの通知。#40 の絞り込みの欄と同じ窓に届くので、送り手の HWND と
  * control id で振り分ける（ADR 0026 の決定 4）。 */
-static bool pane_notification(struct folio_window *_Nonnull self, WPARAM wparam, LPARAM lparam)
+static bool pane_notification_source(const struct folio_window *_Nonnull self, WPARAM wparam,
+                                     LPARAM lparam)
 {
     HWND pane = self->pane == nullptr ? nullptr : note_pane_handle(self->pane);
-    if (pane == nullptr || (HWND)lparam != pane || LOWORD(wparam) != note_pane_control_id)
+    return pane != nullptr && (HWND)lparam == pane && LOWORD(wparam) == note_pane_control_id;
+}
+
+static bool pane_notification(struct folio_window *_Nonnull self, WPARAM wparam, LPARAM lparam)
+{
+    if (!pane_notification_source(self, wparam, lparam))
     {
         return false;
     }
@@ -12238,6 +12265,7 @@ enum folio_window_outcome folio_window_create(struct folio_state *_Nonnull state
     }
     self->surface_hover = surface_pointer_count;
     self->surface_pressed = surface_pointer_count;
+    self->next_idle_work = FOLIO_IDLE_WORK_MINIMAP;
     if (note_minimap_create(&self->minimap) != NOTE_MINIMAP_READY || !create_accelerators(self) ||
         !create_keyboard_accelerators(self))
     {
@@ -14982,25 +15010,30 @@ static void refresh_after_input(struct folio_window *_Nonnull self)
 }
 
 /* 空queueとWaitMessageの間でも呼ぶため、副作用/queue確認を持たない（ADR0068）。 */
+static bool minimap_idle_ready(const struct folio_window *_Nonnull self)
+{
+    return note_minimap_pending(self->minimap) && minimap_available(self) &&
+           !IsIconic(self->handle);
+}
+
 bool folio_window_idle_work_ready(const struct folio_window *_Nonnull self)
 {
-    return (folio_state_index_filter_pending(self->state) ||
-            (note_minimap_pending(self->minimap) && minimap_available(self) &&
-             !IsIconic(self->handle))) &&
+    return (folio_state_index_filter_pending(self->state) || minimap_idle_ready(self)) &&
            !self->filter_saving && self->command_surface == COMMAND_SURFACE_CLOSED &&
            folio_window_accessible_ready(self);
 }
 
-void folio_window_continue_idle_work(struct folio_window *_Nonnull self)
+static enum folio_idle_work ready_idle_work(const struct folio_window *_Nonnull self)
 {
-    if (!folio_window_idle_work_ready(self))
-        return;
+    if (!minimap_idle_ready(self))
+        return FOLIO_IDLE_WORK_INDEX;
     if (!folio_state_index_filter_pending(self->state))
-    {
-        if (note_minimap_step(self->minimap, self->pane))
-            refresh_gutter(self, false);
-        return;
-    }
+        return FOLIO_IDLE_WORK_MINIMAP;
+    return self->next_idle_work;
+}
+
+static void continue_index_filter(struct folio_window *_Nonnull self)
+{
     folio_window_begin_dispatch(self);
     bool was_filtering = folio_state_filtering(self->state);
     enum folio_state_outcome outcome = folio_state_continue_index_filter(self->state);
@@ -15013,6 +15046,24 @@ void folio_window_continue_idle_work(struct folio_window *_Nonnull self)
             report_outcome(self, outcome);
     }
     folio_window_end_dispatch(self);
+}
+
+void folio_window_continue_idle_work(struct folio_window *_Nonnull self)
+{
+    if (!folio_window_idle_work_ready(self))
+        return;
+    switch (ready_idle_work(self))
+    {
+    case FOLIO_IDLE_WORK_MINIMAP:
+        self->next_idle_work = FOLIO_IDLE_WORK_INDEX;
+        if (note_minimap_step(self->minimap, self->pane))
+            refresh_gutter(self, false);
+        break;
+    case FOLIO_IDLE_WORK_INDEX:
+        self->next_idle_work = FOLIO_IDLE_WORK_MINIMAP;
+        continue_index_filter(self);
+        break;
+    }
 }
 
 static LRESULT on_accessibility_message(struct folio_window *_Nonnull self, UINT message,
@@ -15752,9 +15803,13 @@ static LRESULT CALLBACK window_procedure(HWND window, UINT message, WPARAM wpara
     struct folio_window *self = self_of(window);
     if (self == nullptr)
         return window_message(window, message, wparam, lparam);
+    bool stream_change = message == WM_COMMAND && HIWORD(wparam) == EN_CHANGE &&
+                         pane_notification_source(self, wparam, lparam) && pane_streaming(self);
     self->dispatch_depth += 1;
     LRESULT result = window_message(window, message, wparam, lparam);
     dispatch_finished(self);
-    ui_pointer_after(window, message);
+    /* loaded_pane invalidates the finished surface, whose paint refreshes the final pointer. */
+    if (!stream_change)
+        ui_pointer_after(window, message);
     return result;
 }

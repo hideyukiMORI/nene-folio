@@ -1,0 +1,10 @@
+#ifndef NENEFOLIO_FOLIO_IDLE_WORK_H
+#define NENEFOLIO_FOLIO_IDLE_WORK_H
+
+enum folio_idle_work
+{
+    FOLIO_IDLE_WORK_MINIMAP,
+    FOLIO_IDLE_WORK_INDEX
+};
+
+#endif
