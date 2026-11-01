@@ -1,7 +1,7 @@
 # 設定のUIA循環と応答停止 — #504
 
 hideが2026-11-01 16:48 JSTに、設定を開きミニマップを切り替える前の応答停止を報告した。
-規則: ARC-001/002/004/008/011/012、C-002/008/012/016/017/018、QLT-008/012/013、GIT-001〜004。
+規則: ARC-001/002/004/008/011/012、C-002/008/012/016/017/018、QLT-007/008/012/013、GIT-001〜004。
 [ADR0058補正](../adr/0058-accessible-command-surfaces.md)。Waivers none。
 
 ## 原因と修正
@@ -37,6 +37,13 @@ focus・Invokeを実際の行へ結ぶ。Invokeも既存adopt_settings_rowへ合
 side-by-side構成エラー14001になったため、`contract-04`は未起動。製品と同じ生成manifestをRCへ結ぶと解消した。
 UIA clientの初回2件はFindWindowのdesktop選択による対象不一致、3件目はdialog探索の同じ問題。
 明示desktopのEnumDesktopWindowsとPID照合へ直した。これらを製品検証成功とは数えない。
+
+最初のCI `41288047946`ではDebug/tidy・新設を含む3つのCTest・coverageが成功したが、
+QLT-007の隔離コピーに`tests/win32`が含まれず、反例検証前のCMake configureで失敗した。
+同フォルダをコピー対象とARC-002のビルド未登録検査へ加えた。検査の除外・抑制は追加しない。
+`proof-copy-run-03`で実際のコピーからCMake configure/toolchain_smoke buildが成功し、
+ARC-002の正例と未登録Win32 translation unitの反例も成功。修正後のconformanceは違反0。
+補助driverの初回は相対inputで起動前拒否、2回目は検査結果の属性名の誤記で失敗し、3回目で訂正した。
 
 ## 恒久回帰・限界
 
