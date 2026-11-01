@@ -66,6 +66,11 @@ track package validation, saved-data checks, publication, and download verificat
 - **Categories**: create, rename, change colour, or delete when empty from the right-click menu.
   A fixed **+** beside the Categories heading creates a category; the command palette and Ex commands
   also provide category creation, renaming, and deletion.
+- **Markdown transfer (current source, #494)**: import multiple UTF-8 `.md` files into a category,
+  skipping existing names. Export the current note (including unsaved edits) as Markdown, or saved
+  category/all notes as a ZIP. Export keeps the original note and refuses existing output files.
+  ZIP contains note bodies only, excluding settings, order and history. See [formats and limits](docs/TRANSFER.md).
+  This feature is later than the published beta and the submitted 1.0.0 Store candidate.
 - **Find**: search inside the open note (Ctrl+F, `/`, `?`, `n`, `N`, F3), filter all notes
   (Ctrl+Shift+F), and regular-expression replace in the edited body (a replace field or `:%s/…/…/g`).
   In-note search sits above the body with its match count, Previous / Next, and Close controls.

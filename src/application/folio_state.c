@@ -11,6 +11,7 @@
 #include "index_filter_build.h"
 #include "markdown_rtf.h"
 #include "name_list.h"
+#include "note_archive.h"
 #include "note_corpus.h"
 #include "note_history.h"
 #include "note_ledger.h"
@@ -25,6 +26,8 @@
 #include "replace_edit.h"
 #include "replace_preview.h"
 #include "rtf_palette.h"
+#include "storage_path.h"
+#include "transfer_port.h"
 #include "ui_font.h"
 #include "utf8_text.h"
 #include "web_link_port.h"
@@ -44,6 +47,7 @@ struct folio_state
 {
     struct persistence_port port;
     struct web_link_port web_link;
+    struct transfer_port transfer;
     /* 正規表現ポート（ADR 0028 の決定 1 / 2）。ICU を知るのは adapter だけである */
     struct regex_port regex;
     /* 走査の入れ物。下見が引き取ったら空（null・0）に戻り、次の走査で確保し直す（補正 25）。 */
@@ -602,6 +606,7 @@ enum folio_state_outcome folio_state_create(const struct folio_ports *_Nonnull p
     state->port = *persistence;
     state->regex = *ports->regex;
     state->web_link = *ports->web_link;
+    state->transfer = *ports->transfer;
     /* 外観ポートも値で写して持つ（ADR 0031 の決定 3）。adapter の寿命は合成ルートが保証する。 */
     state->appearance = *appearance;
     state->appearance_snapshot.theme = FOLIO_THEME_LIGHT;
@@ -2471,6 +2476,27 @@ static enum folio_state_outcome unpublished(enum folio_state_outcome prepared,
     return stored == PERSISTENCE_UNWRITABLE ? FOLIO_STATE_NOTE_STORE_FAILED : translate(stored);
 }
 
+/* First save and import share publication and ledger ownership. Caller prepared the ledger. */
+static enum persistence_outcome publish_created(struct folio_state *_Nonnull state,
+                                                const struct note_destination *_Nonnull destination,
+                                                struct note_ledger *_Nonnull ledger,
+                                                const struct note_text *_Nonnull body)
+{
+    size_t category = destination->category;
+    enum persistence_outcome stored = state->port.create_note(
+        state->port.adapter, category_ledger_name(state->categories, category),
+        note_name_stem(destination->name), body);
+    if (stored != PERSISTENCE_STORED)
+        return stored;
+    note_ledger_destroy(state->notes[category]);
+    state->notes[category] = ledger;
+    index_changed(state);
+    stored_note(state);
+    state->index_pending = true;
+    state->pending_category = category;
+    return PERSISTENCE_STORED;
+}
+
 /* 副作用より先に表示と台帳を確保。md公開後の表示採用は確保せず、
  *
  * 検索写しの失敗は保留して再試行する（#219）。 */
@@ -2497,8 +2523,7 @@ static enum folio_state_outcome create_edited(struct folio_state *_Nonnull state
     enum persistence_outcome stored = PERSISTENCE_UNWRITABLE;
     if (prepared == FOLIO_STATE_READY)
     {
-        stored = state->port.create_note(
-            state->port.adapter, category_ledger_name(state->categories, category), name, edited);
+        stored = publish_created(state, destination, ledger, edited);
     }
     if (stored != PERSISTENCE_STORED)
     {
@@ -2507,10 +2532,6 @@ static enum folio_state_outcome create_edited(struct folio_state *_Nonnull state
         note_text_destroy(edited);
         return unpublished(prepared, stored);
     }
-    note_ledger_destroy(state->notes[category]);
-    state->notes[category] = ledger;
-    index_changed(state);
-    stored_note(state);
     markdown_rtf_destroy(state->pane);
     state->pane = rendered;
     note_text_destroy(state->body);
@@ -2523,8 +2544,6 @@ static enum folio_state_outcome create_edited(struct folio_state *_Nonnull state
     {
         cursor_to_selection(state);
     }
-    state->index_pending = true;
-    state->pending_category = category;
     enum folio_state_outcome synced = published_index(synchronize_index(state));
     /* 新しく公開したノートも写しと一致集合に入れる（ADR 0024 の決定 4）。 */
     enum folio_state_outcome copied = refresh_copy(state);
@@ -2605,6 +2624,310 @@ static bool holds_folded_name(const struct note_ledger *_Nonnull ledger, const c
         }
     }
     return false;
+}
+
+static enum folio_state_outcome import_name(const struct storage_path *_Nonnull path,
+                                            struct note_name *_Nullable *_Nonnull out)
+{
+    const char *text = storage_path_text(path);
+    const char *leaf = text;
+    for (size_t index = 0; text[index] != '\0'; ++index)
+    {
+        if (text[index] == '\\')
+            leaf = text + index + 1;
+    }
+    size_t length = strlen(leaf);
+    if (length <= 3 || !same_folded(leaf + length - 3, ".md"))
+        return FOLIO_STATE_INVALID_NAME;
+    switch (note_name_create(leaf, length, out))
+    {
+    case NOTE_NAME_ACCEPTED:
+        return FOLIO_STATE_READY;
+    case NOTE_NAME_INVALID:
+        return FOLIO_STATE_INVALID_NAME;
+    case NOTE_NAME_OUT_OF_MEMORY:
+        return FOLIO_STATE_OUT_OF_MEMORY;
+    }
+    return FOLIO_STATE_INVALID_NAME;
+}
+
+static enum folio_state_outcome transfer_read_outcome(enum persistence_outcome read)
+{
+    switch (read)
+    {
+    case PERSISTENCE_LOADED:
+        return FOLIO_STATE_READY;
+    case PERSISTENCE_OUT_OF_MEMORY:
+        return FOLIO_STATE_OUT_OF_MEMORY;
+    case PERSISTENCE_MALFORMED:
+        return FOLIO_STATE_NOTE_MALFORMED;
+    case PERSISTENCE_ABSENT:
+    case PERSISTENCE_UNREADABLE:
+    case PERSISTENCE_STORED:
+    case PERSISTENCE_UNWRITABLE:
+    case PERSISTENCE_NAME_TAKEN:
+        return FOLIO_STATE_NOTE_UNREADABLE;
+    }
+    return FOLIO_STATE_NOTE_UNREADABLE;
+}
+
+static enum folio_state_outcome import_body(struct folio_state *_Nonnull state,
+                                            const struct note_destination *_Nonnull destination,
+                                            const struct note_text *_Nonnull body)
+{
+    size_t category = destination->category;
+    const char *name = note_name_stem(destination->name);
+    const char *folder = category_ledger_name(state->categories, category);
+    struct note_ledger *_Nullable ledger = nullptr;
+    enum folio_state_outcome prepared = from_note_ledger(note_ledger_inserted(
+        state->notes[category], note_ledger_count(state->notes[category]), name, &ledger));
+    if (prepared != FOLIO_STATE_READY)
+        return prepared;
+    if (state->corpus_loaded &&
+        note_corpus_put(state->corpus, folder, name, body) != NOTE_CORPUS_ACCEPTED)
+    {
+        note_ledger_destroy(ledger);
+        return FOLIO_STATE_OUT_OF_MEMORY;
+    }
+    enum persistence_outcome published = publish_created(state, destination, ledger, body);
+    if (published != PERSISTENCE_STORED)
+    {
+        note_corpus_remove(state->corpus, folder, name);
+        note_ledger_destroy(ledger);
+        return unpublished(FOLIO_STATE_READY, published);
+    }
+    return published_index(synchronize_index(state));
+}
+
+static enum folio_state_outcome import_file(struct folio_state *_Nonnull state, size_t category,
+                                            const struct storage_path *_Nonnull path)
+{
+    struct note_name *_Nullable name = nullptr;
+    enum folio_state_outcome result = import_name(path, &name);
+    if (result != FOLIO_STATE_READY)
+        return result;
+    if (holds_folded_name(state->notes[category], note_name_stem(name)))
+    {
+        note_name_destroy(name);
+        return FOLIO_STATE_NAME_TAKEN;
+    }
+    struct note_text *_Nullable body = nullptr;
+    result = transfer_read_outcome(state->transfer.read(path, &body));
+    if (result == FOLIO_STATE_READY)
+    {
+        struct note_destination destination = {.category = category, .name = name};
+        result = import_body(state, &destination, body);
+    }
+    note_text_destroy(body);
+    note_name_destroy(name);
+    return result;
+}
+
+static void record_import(struct note_import_result *_Nonnull result,
+                          enum folio_state_outcome imported)
+{
+    if (imported == FOLIO_STATE_NAME_TAKEN)
+    {
+        result->skipped += 1;
+        result->remaining -= 1;
+        return;
+    }
+    if (imported == FOLIO_STATE_READY || imported == FOLIO_STATE_LEDGER_STALE)
+    {
+        result->added += 1;
+        result->remaining -= 1;
+    }
+    result->outcome = imported;
+}
+
+struct note_import_result
+folio_state_import_notes(struct folio_state *_Nonnull state,
+                         const struct note_import_request *_Nonnull request)
+{
+    struct note_import_result result = {.remaining = request->count, .outcome = synchronize(state)};
+    if (result.outcome != FOLIO_STATE_READY)
+        return result;
+    if (folio_state_filtering(state))
+        result.outcome = FOLIO_STATE_FILTERED;
+    else if (!holds_category(state, request->category))
+        result.outcome = FOLIO_STATE_NO_SUCH_CATEGORY;
+    if (result.outcome != FOLIO_STATE_READY)
+        return result;
+    for (size_t index = 0; index < request->count; ++index)
+    {
+        enum folio_state_outcome imported =
+            import_file(state, request->category, request->paths[index]);
+        record_import(&result, imported);
+        if (result.outcome != FOLIO_STATE_READY)
+            break;
+    }
+    return result;
+}
+
+static bool export_category(const struct note_export_request *_Nonnull request, size_t category)
+{
+    switch (request->scope)
+    {
+    case NOTE_EXPORT_CURRENT:
+        return false;
+    case NOTE_EXPORT_CATEGORY:
+        return request->category == category;
+    case NOTE_EXPORT_ALL:
+        return true;
+    }
+    return false;
+}
+
+static size_t export_count(const struct folio_state *_Nonnull state,
+                           const struct note_export_request *_Nonnull request)
+{
+    size_t count = 0;
+    for (size_t category = 0; category < state->notes_count; ++category)
+    {
+        if (export_category(request, category))
+            count += note_ledger_count(state->notes[category]);
+    }
+    return count;
+}
+
+static enum folio_state_outcome read_export_entry(struct folio_state *_Nonnull state,
+                                                  struct note_ref ref,
+                                                  struct archive_note *_Nonnull entry,
+                                                  struct note_text *_Nullable *_Nonnull body)
+{
+    const char *category = category_ledger_name(state->categories, ref.category);
+    const char *name = note_ledger_name(state->notes[ref.category], ref.note);
+    enum folio_state_outcome result =
+        transfer_read_outcome(state->port.read_note(state->port.adapter, category, name, body));
+    if (result == FOLIO_STATE_READY)
+        *entry = (struct archive_note){.category = category, .name = name, .body = *body};
+    return result;
+}
+
+static enum folio_state_outcome collect_archive(struct folio_state *_Nonnull state,
+                                                const struct note_export_request *_Nonnull request,
+                                                struct archive_note *_Nonnull entries,
+                                                struct note_text *_Nullable *_Nonnull bodies)
+{
+    size_t used = 0;
+    size_t bytes = 22;
+    size_t first = 0;
+    size_t limit = state->notes_count;
+    if (request->scope == NOTE_EXPORT_CATEGORY)
+    {
+        first = request->category;
+        limit = first + 1;
+    }
+    for (size_t category = first; category < limit; ++category)
+    {
+        for (size_t note = 0; note < note_ledger_count(state->notes[category]); ++note)
+        {
+            struct note_ref ref = {.category = category, .note = note};
+            enum folio_state_outcome read =
+                read_export_entry(state, ref, &entries[used], &bodies[used]);
+            if (read != FOLIO_STATE_READY)
+                return read;
+            size_t size = note_text_file_length(bodies[used]);
+            if (size > note_archive_byte_limit - bytes)
+                return FOLIO_STATE_EXPORT_TOO_LARGE;
+            bytes += size;
+            used += 1;
+        }
+    }
+    return FOLIO_STATE_READY;
+}
+
+static void destroy_export_entries(struct archive_note *_Nullable entries,
+                                   struct note_text *_Nullable *_Nullable bodies, size_t count)
+{
+    if (bodies != nullptr)
+    {
+        for (size_t index = 0; index < count; ++index)
+            note_text_destroy(bodies[index]);
+    }
+    free(bodies);
+    free(entries);
+}
+
+static enum folio_state_outcome archive_outcome(enum note_archive_outcome outcome)
+{
+    switch (outcome)
+    {
+    case NOTE_ARCHIVE_READY:
+        return FOLIO_STATE_READY;
+    case NOTE_ARCHIVE_INVALID:
+        return FOLIO_STATE_INVALID_NAME;
+    case NOTE_ARCHIVE_TOO_LARGE:
+        return FOLIO_STATE_EXPORT_TOO_LARGE;
+    case NOTE_ARCHIVE_OUT_OF_MEMORY:
+        return FOLIO_STATE_OUT_OF_MEMORY;
+    }
+    return FOLIO_STATE_INVALID_NAME;
+}
+
+static enum folio_state_outcome exported(enum persistence_outcome outcome)
+{
+    switch (outcome)
+    {
+    case PERSISTENCE_STORED:
+        return FOLIO_STATE_READY;
+    case PERSISTENCE_NAME_TAKEN:
+        return FOLIO_STATE_EXPORT_EXISTS;
+    case PERSISTENCE_OUT_OF_MEMORY:
+        return FOLIO_STATE_OUT_OF_MEMORY;
+    case PERSISTENCE_ABSENT:
+    case PERSISTENCE_LOADED:
+    case PERSISTENCE_UNREADABLE:
+    case PERSISTENCE_MALFORMED:
+    case PERSISTENCE_UNWRITABLE:
+        return FOLIO_STATE_EXPORT_FAILED;
+    }
+    return FOLIO_STATE_EXPORT_FAILED;
+}
+
+static enum folio_state_outcome export_archive(struct folio_state *_Nonnull state,
+                                               const struct note_export_request *_Nonnull request)
+{
+    size_t count = export_count(state, request);
+    if (count > note_archive_count_limit)
+        return FOLIO_STATE_EXPORT_TOO_LARGE;
+    struct archive_note *_Nullable entries = calloc(count == 0 ? 1 : count, sizeof *entries);
+    struct note_text *_Nullable *_Nullable bodies = calloc(count == 0 ? 1 : count, sizeof *bodies);
+    if (entries == nullptr || bodies == nullptr)
+    {
+        destroy_export_entries(entries, bodies, count);
+        return FOLIO_STATE_OUT_OF_MEMORY;
+    }
+    enum folio_state_outcome result = collect_archive(state, request, entries, bodies);
+    struct note_archive *_Nullable archive = nullptr;
+    if (result == FOLIO_STATE_READY)
+        result = archive_outcome(note_archive_create(entries, count, &archive));
+    if (result == FOLIO_STATE_READY)
+        result = exported(state->transfer.write_archive(request->destination, archive));
+    note_archive_destroy(archive);
+    destroy_export_entries(entries, bodies, count);
+    return result;
+}
+
+enum folio_state_outcome
+folio_state_export_notes(struct folio_state *_Nonnull state,
+                         const struct note_export_request *_Nonnull request)
+{
+    enum folio_state_outcome synced = synchronize(state);
+    if (synced != FOLIO_STATE_READY)
+        return synced;
+    if (request->scope == NOTE_EXPORT_CATEGORY && request->category >= state->notes_count)
+        return FOLIO_STATE_NO_SUCH_CATEGORY;
+    if (request->scope != NOTE_EXPORT_CURRENT)
+        return export_archive(state, request);
+    if (state->document == FOLIO_DOCUMENT_NONE)
+        return FOLIO_STATE_NOTHING_SELECTED;
+    struct note_text *_Nullable body = nullptr;
+    enum folio_state_outcome result = copied_text(state, request->units, request->count, &body);
+    if (result == FOLIO_STATE_READY)
+        result = exported(state->transfer.write_note(request->destination, body));
+    note_text_destroy(body);
+    return result;
 }
 
 static enum folio_state_outcome from_note_rename(enum rename_plan_outcome outcome)
@@ -3931,6 +4254,11 @@ enum folio_state_outcome folio_state_restore_history(struct folio_state *_Nonnul
  * ここは outcome と ID の対応だけを持つ。網羅は CNF-009 が守る（ADR 0027 の経路のまま）。
  * READY と CANCELLED は見せる 1 行が無いので UI_TEXT_EMPTY を共有する。 */
 static const enum ui_text failure_lines[] = {
+    [FOLIO_STATE_EXPORT_TOO_LARGE] = UI_TEXT_FAILURE_EXPORT_TOO_LARGE,
+    [FOLIO_STATE_EXPORT_EXISTS] = UI_TEXT_FAILURE_EXPORT_EXISTS,
+    [FOLIO_STATE_EXPORT_FAILED] = UI_TEXT_FAILURE_EXPORT_FAILED,
+    [FOLIO_STATE_TRANSFER_UNAVAILABLE] = UI_TEXT_FAILURE_TRANSFER_UNAVAILABLE,
+
     [FOLIO_STATE_WEB_LINK_REJECTED] = UI_TEXT_FAILURE_WEB_LINK_REJECTED,
     [FOLIO_STATE_WEB_LINK_UNAVAILABLE] = UI_TEXT_FAILURE_WEB_LINK_UNAVAILABLE,
     [FOLIO_STATE_READY] = UI_TEXT_EMPTY,
@@ -4063,14 +4391,14 @@ static enum folio_state_outcome query_category_command(const struct folio_state 
                                                        enum folio_command_target target_kind,
                                                        struct note_ref target)
 {
-    if (folio_state_filtering(state))
+    if (folio_state_filtering(state) && command != FOLIO_COMMAND_EXPORT_CATEGORY)
         return FOLIO_STATE_FILTERED;
     if (command == FOLIO_COMMAND_NEW_CATEGORY)
         return FOLIO_STATE_READY;
     if (target_kind == FOLIO_COMMAND_TARGET_CURRENT &&
         !query_category_target(state, &target.category))
         return FOLIO_STATE_CATEGORY_NOT_SELECTED;
-    if (!holds_category(state, target.category))
+    if (target.category >= state->notes_count)
         return FOLIO_STATE_NO_SUCH_CATEGORY;
     if (command == FOLIO_COMMAND_DELETE_CATEGORY &&
         (note_ledger_count(state->notes[target.category]) != 0 ||

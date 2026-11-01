@@ -15,6 +15,20 @@ static const struct
     size_t aliases;
     const char *_Nonnull names[alias_limit];
 } catalog[] = {
+    [FOLIO_COMMAND_IMPORT] = {FOLIO_COMMAND_IMPORT, UI_TEXT_COMMAND_IMPORT, 0, {"", ""}},
+    [FOLIO_COMMAND_EXPORT_NOTE] = {FOLIO_COMMAND_EXPORT_NOTE,
+                                   UI_TEXT_COMMAND_EXPORT_NOTE,
+                                   0,
+                                   {"", ""}},
+    [FOLIO_COMMAND_EXPORT_CATEGORY] = {FOLIO_COMMAND_EXPORT_CATEGORY,
+                                       UI_TEXT_COMMAND_EXPORT_CATEGORY,
+                                       0,
+                                       {"", ""}},
+    [FOLIO_COMMAND_EXPORT_ALL] = {FOLIO_COMMAND_EXPORT_ALL,
+                                  UI_TEXT_COMMAND_EXPORT_ALL,
+                                  0,
+                                  {"", ""}},
+
     [FOLIO_COMMAND_SAVE] = {FOLIO_COMMAND_SAVE, UI_TEXT_COMMAND_SAVE, 2, {"w", "write"}},
     [FOLIO_COMMAND_QUIT] = {FOLIO_COMMAND_QUIT, UI_TEXT_COMMAND_QUIT, 2, {"q", "quit"}},
     [FOLIO_COMMAND_SAVE_QUIT] = {FOLIO_COMMAND_SAVE_QUIT,
@@ -124,6 +138,10 @@ static enum folio_argument_kind argument_kind(enum folio_command command)
         return FOLIO_ARGUMENT_OPTION;
     case FOLIO_COMMAND_SUBSTITUTE:
         return FOLIO_ARGUMENT_SUBSTITUTE;
+    case FOLIO_COMMAND_IMPORT:
+    case FOLIO_COMMAND_EXPORT_NOTE:
+    case FOLIO_COMMAND_EXPORT_CATEGORY:
+    case FOLIO_COMMAND_EXPORT_ALL:
     case FOLIO_COMMAND_QUIT:
     case FOLIO_COMMAND_SAVE_QUIT:
     case FOLIO_COMMAND_FORCE_QUIT:
@@ -155,6 +173,10 @@ bool folio_command_listed(enum folio_command command)
     case FOLIO_COMMAND_SUBSTITUTE:
         return false;
     case FOLIO_COMMAND_SAVE:
+    case FOLIO_COMMAND_IMPORT:
+    case FOLIO_COMMAND_EXPORT_NOTE:
+    case FOLIO_COMMAND_EXPORT_CATEGORY:
+    case FOLIO_COMMAND_EXPORT_ALL:
     case FOLIO_COMMAND_QUIT:
     case FOLIO_COMMAND_SAVE_QUIT:
     case FOLIO_COMMAND_FORCE_QUIT:
@@ -509,11 +531,14 @@ enum folio_command_scope folio_command_scope(enum folio_command command)
     case FOLIO_COMMAND_SAVE_QUIT:
     case FOLIO_COMMAND_FORCE_QUIT:
         return FOLIO_COMMAND_SCOPE_QUIT;
+    case FOLIO_COMMAND_EXPORT_ALL:
     case FOLIO_COMMAND_HELP:
     case FOLIO_COMMAND_SET:
     case FOLIO_COMMAND_SETTINGS:
     case FOLIO_COMMAND_TOGGLE_NUMBER:
         return FOLIO_COMMAND_SCOPE_APP;
+    case FOLIO_COMMAND_IMPORT:
+    case FOLIO_COMMAND_EXPORT_CATEGORY:
     case FOLIO_COMMAND_NEW_CATEGORY:
     case FOLIO_COMMAND_DELETE_CATEGORY:
     case FOLIO_COMMAND_RENAME_CATEGORY:
@@ -522,6 +547,7 @@ enum folio_command_scope folio_command_scope(enum folio_command command)
     case FOLIO_COMMAND_LAYOUT_BOTH:
     case FOLIO_COMMAND_LAYOUT_NOTE:
         return FOLIO_COMMAND_SCOPE_LAYOUT;
+    case FOLIO_COMMAND_EXPORT_NOTE:
     case FOLIO_COMMAND_SAVE:
     case FOLIO_COMMAND_EDIT:
     case FOLIO_COMMAND_VIEW:
@@ -547,7 +573,9 @@ bool folio_command_destructive(enum folio_command command)
 
 bool folio_command_needs_input(enum folio_command command)
 {
-    return command == FOLIO_COMMAND_SAVE_AS || command == FOLIO_COMMAND_RENAME ||
+    return command == FOLIO_COMMAND_IMPORT || command == FOLIO_COMMAND_EXPORT_NOTE ||
+           command == FOLIO_COMMAND_EXPORT_CATEGORY || command == FOLIO_COMMAND_EXPORT_ALL ||
+           command == FOLIO_COMMAND_SAVE_AS || command == FOLIO_COMMAND_RENAME ||
            command == FOLIO_COMMAND_REPLACE || command == FOLIO_COMMAND_HISTORY ||
            command == FOLIO_COMMAND_NEW_CATEGORY || command == FOLIO_COMMAND_RENAME_CATEGORY;
 }

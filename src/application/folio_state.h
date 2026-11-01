@@ -22,6 +22,9 @@
 #include "folio_untitled_policy.h"
 #include "history_row_view.h"
 #include "note_destination.h"
+#include "note_export_request.h"
+#include "note_import_request.h"
+#include "note_import_result.h"
 #include "note_ref.h"
 #include "pane_mode.h"
 
@@ -43,6 +46,14 @@ struct folio_state;
 struct note_name;
 struct note_text;
 struct replace_edit;
+
+[[nodiscard]] struct note_import_result
+folio_state_import_notes(struct folio_state *_Nonnull state,
+                         const struct note_import_request *_Nonnull request);
+/* Current exports the editor snapshot without saving; ZIP scopes read saved originals. */
+[[nodiscard]] enum folio_state_outcome
+folio_state_export_notes(struct folio_state *_Nonnull state,
+                         const struct note_export_request *_Nonnull request);
 
 /* View-mode explicit activation; no document or editing rejects without an external effect. */
 [[nodiscard]] enum folio_state_outcome folio_state_open_web_link(struct folio_state *_Nonnull state,

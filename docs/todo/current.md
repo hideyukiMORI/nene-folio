@@ -1,5 +1,19 @@
 # いまの状態 — NeNe Folio
 
+## Markdown取り込み・書き出し — #494
+
+外部UTF-8 `.md`の複数取り込み、現在ノートのMarkdown書き出し、保存済みカテゴリ／全ノートのZIP書き出しを追加した。
+取り込みは元・同名ノートを保持し、追加済み／同名／未処理を報告する。単票は未保存本文を含み、ZIPは保存済み本文だけ。
+元ノートの保存・選択・Undo・dirtyを変えず、既存出力を上書きしない。初回保存の公開、本文検証、file_bytesの原子公開へ合流した。
+ZIP32 STOREは65,534件／128 MiBまで。設定・履歴・台帳を含む完全復元形式ではない。
+
+Debug/tidy・対象単体／確保失敗・共有境界の既存試験、実Win32 40＋9checks、独立ZIP/保全32＋3checksが成功。
+検索の0件表示からも保存済みカテゴリ全件を書き出せる。3言語の明暗／狭幅メニューを画像で確認した。
+[操作案内](../TRANSFER.md)・[品質記録](../quality/2026-11-01-markdown-transfer.md)・[ADR0082](../adr/0082-markdown-transfer.md)。
+保存schema・版入力・依存は不変、Waivers none。最終head必須CI、main、通常exe反映と起動、全保全と追加作業物整理は
+`D:/NeNeFolio/agents/transfer-20261101/integration-completion.json`で確定する。hideの実機受理は未確認。
+申請済みMSIXより後の変更で、提出物は差し替えない。Store結果確認と主操作ボタンのhover比較は別件。
+
 ## キー操作反映済み・Store認定結果待ち — #490 / #492
 
 #490 / PR #491は最終head `e29cec9`・必須CI `41219791592`成功で製品main `1fb2762`へ統合済み。

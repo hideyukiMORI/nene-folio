@@ -17,6 +17,7 @@
 enum folio_command : unsigned char
 {
     FOLIO_COMMAND_SAVE,
+
     FOLIO_COMMAND_QUIT,
     FOLIO_COMMAND_SAVE_QUIT,
     FOLIO_COMMAND_FORCE_QUIT,
@@ -40,7 +41,11 @@ enum folio_command : unsigned char
     FOLIO_COMMAND_RENAME_CATEGORY, /* 明示対象のカテゴリ名を変更する（ADR0041） */
     FOLIO_COMMAND_LAYOUT_DRAWER,
     FOLIO_COMMAND_LAYOUT_BOTH,
-    FOLIO_COMMAND_LAYOUT_NOTE
+    FOLIO_COMMAND_LAYOUT_NOTE,
+    FOLIO_COMMAND_IMPORT,
+    FOLIO_COMMAND_EXPORT_NOTE,
+    FOLIO_COMMAND_EXPORT_CATEGORY,
+    FOLIO_COMMAND_EXPORT_ALL,
 };
 
 [[nodiscard]] size_t folio_command_count(void);

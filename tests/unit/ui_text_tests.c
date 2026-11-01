@@ -24,6 +24,25 @@
 
 /* 変更前の文言（機械的に写した）。ui_text.c の表と 1 字も違ってはいけない。 */
 static const char *_Nonnull const expected[] = {
+    [UI_TEXT_COMMAND_IMPORT] = "このカテゴリへMarkdownを取り込む",
+    [UI_TEXT_COMMAND_EXPORT_NOTE] = "このノートを書き出す",
+    [UI_TEXT_COMMAND_EXPORT_CATEGORY] = "保存済みカテゴリをZIPに書き出す",
+    [UI_TEXT_COMMAND_EXPORT_ALL] = "保存済み全ノートをZIPに書き出す",
+    [UI_TEXT_IMPORT_TITLE] = "「{name}」へ取り込み（同名はスキップ）",
+    [UI_TEXT_EXPORT_NOTE_TITLE] = "Markdownを書き出す（編集中の内容を含む）",
+    [UI_TEXT_EXPORT_ZIP_TITLE] = "保存済みノートを書き出す（設定・履歴を除く）",
+    [UI_TEXT_IMPORT_RESULT] = "{n}件を追加、同名{k}件をスキップ、残り{offset}件。\n{from}",
+    [UI_TEXT_EXPORT_DONE] = "書き出しました。元のノートはそのままです。",
+    [UI_TEXT_FAILURE_EXPORT_TOO_LARGE] =
+        "ZIPの上限は128MiB・65,534件です。カテゴリごとに書き出してください。",
+    [UI_TEXT_FAILURE_EXPORT_EXISTS] = "その名前のファイルがあります。別の名前を指定してください。",
+    [UI_TEXT_FAILURE_EXPORT_FAILED] =
+        "書き出せませんでした。保存先の場所と書き込み権限を確認してください。",
+    [UI_TEXT_FAILURE_TRANSFER_UNAVAILABLE] =
+        "ファイル選択画面を開けないか、選んだ場所を扱えませんでした。",
+    [UI_TEXT_FILTER_MARKDOWN] = "Markdown (*.md)",
+    [UI_TEXT_FILTER_ZIP] = "ZIP (*.zip)",
+
     [UI_TEXT_FAILURE_WEB_LINK_REJECTED] = "このリンクは開けません。",
     [UI_TEXT_FAILURE_WEB_LINK_UNAVAILABLE] = "既定のブラウザーでリンクを開けませんでした。",
     [UI_TEXT_ACCESSIBLE_COMMAND] = "コマンド入力",

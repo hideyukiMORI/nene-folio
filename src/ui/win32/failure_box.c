@@ -30,6 +30,7 @@ struct failure_box
     bool ready;
     bool announced;
     bool io_failure;
+    bool warning;
 };
 
 static const struct
@@ -43,6 +44,11 @@ static const struct
 
 /* 入力/前提/形式判定は無音。既存resultが束ねる読込・公開操作単位で分類する。 */
 static constexpr bool io_sounds[] = {
+    [FOLIO_STATE_EXPORT_TOO_LARGE] = false,
+    [FOLIO_STATE_EXPORT_EXISTS] = false,
+    [FOLIO_STATE_EXPORT_FAILED] = true,
+    [FOLIO_STATE_TRANSFER_UNAVAILABLE] = false,
+
     [FOLIO_STATE_READY] = false,
     [FOLIO_STATE_DATA_UNREADABLE] = true,
     [FOLIO_STATE_LEDGER_MALFORMED] = false,
@@ -265,7 +271,8 @@ static void announce(struct failure_box *_Nonnull box)
 static void paint_contents(const struct failure_box *_Nonnull box, HDC device)
 {
     dialog_theme_draw_title(box->theme, box->dialog, device, box->font);
-    dialog_theme_draw_warning(box->theme, device, box->mark);
+    if (box->warning)
+        dialog_theme_draw_warning(box->theme, device, box->mark);
 }
 
 static void paint_box(const struct failure_box *_Nonnull box)
@@ -394,21 +401,19 @@ static const char *_Nonnull failure_line(enum folio_state_outcome outcome,
                : reason;
 }
 
-void failure_box_show(HWND _Nullable owner, enum folio_state_outcome outcome,
-                      const struct folio_state *_Nonnull state,
-                      const enum folio_command *_Nullable command)
+static void show_line(HWND _Nullable owner, const struct folio_state *_Nonnull state,
+                      const char *_Nonnull line, const enum folio_state_outcome *_Nullable outcome)
 {
-    if (outcome == FOLIO_STATE_CANCELLED)
-        return;
     enum folio_language language = folio_state_language(state);
-    char message[ui_text_unit_limit * 8 + 2];
-    const char *_Nonnull line = failure_line(outcome, state, command, message);
     char16_t units[ui_text_unit_limit * 2];
     size_t written = 0;
     if (utf16_text_fill(line, units, ui_text_unit_limit * 2, &written) != UTF16_TEXT_FILL_READY)
         return;
-    struct failure_box box = {
-        .units = units, .language = language, .state = state, .io_failure = io_failure(outcome)};
+    struct failure_box box = {.units = units,
+                              .language = language,
+                              .state = state,
+                              .io_failure = outcome != nullptr && io_failure(*outcome),
+                              .warning = outcome != nullptr};
     enum failure_box_outcome shown = show_themed(owner, &box);
     dialog_theme_destroy(box.theme);
     if (box.font != nullptr)
@@ -423,4 +428,22 @@ void failure_box_show(HWND _Nullable owner, enum folio_state_outcome outcome,
                     MB_OK | (box.io_failure && !box.announced ? MB_ICONWARNING : 0));
         break;
     }
+}
+
+void failure_box_show(HWND _Nullable owner, enum folio_state_outcome outcome,
+                      const struct folio_state *_Nonnull state,
+                      const enum folio_command *_Nullable command)
+{
+    if (outcome == FOLIO_STATE_CANCELLED)
+        return;
+    char message[ui_text_unit_limit * 8 + 2];
+    show_line(owner, state, failure_line(outcome, state, command, message), &outcome);
+}
+
+void failure_box_notice(HWND _Nullable owner, const struct folio_state *_Nonnull state,
+                        const struct ui_text_request *_Nonnull request)
+{
+    char message[ui_text_unit_limit * 8 + 2];
+    if (ui_text_format(request, message, sizeof message) == UI_TEXT_FORMAT_READY)
+        show_line(owner, state, message, nullptr);
 }

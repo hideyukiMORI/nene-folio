@@ -1,0 +1,9 @@
+#ifndef NENEFOLIO_NOTE_EXPORT_SCOPE_H
+#define NENEFOLIO_NOTE_EXPORT_SCOPE_H
+enum note_export_scope
+{
+    NOTE_EXPORT_CURRENT,
+    NOTE_EXPORT_CATEGORY,
+    NOTE_EXPORT_ALL
+};
+#endif

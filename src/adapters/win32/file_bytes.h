@@ -9,6 +9,10 @@
 #include <stddef.h>
 
 struct file_bytes;
+struct note_archive;
+[[nodiscard]] enum persistence_outcome
+file_bytes_export_archive(const wchar_t *_Nonnull path,
+                          const struct note_archive *_Nonnull archive);
 
 /* 無ければ ABSENT、開けない・大きすぎる・読み切れないなら UNREADABLE。 */
 [[nodiscard]] enum persistence_outcome file_bytes_read(const wchar_t *_Nonnull path,

@@ -9,6 +9,10 @@
 #include <windows.h>
 
 struct folio_state;
+struct ui_text_request;
+/* Neutral transfer completion uses the same themed, accessible notification surface. */
+void failure_box_notice(HWND _Nullable owner, const struct folio_state *_Nonnull state,
+                        const struct ui_text_request *_Nonnull request);
 
 /* 箱の中で言語（folio_state_language）と palette（folio_state_palette）を引き、
  * dialog_theme で塗る自前のモーダルに 1 行を出す（ADR 0035 の決定 4）。state は読むだけ。
