@@ -1,6 +1,6 @@
 #include "dialog_theme.h"
 
-#include "button_pointer_state.h"
+#include "dialog_pointer_state.h"
 #include "folio_message.h"
 #include "folio_palette.h"
 #include "folio_shortcut.h"
@@ -8,6 +8,7 @@
 #include "icon_paint.h"
 #include "modal_owner.h"
 #include "ui_part.h"
+#include "ui_pointer.h"
 #include "ui_text.h"
 #include "ui_text_request.h"
 #include "utf16_text.h"
@@ -29,10 +30,10 @@ struct dialog_theme
 
 /* コンボの項目の字を左の縁から離す量（96 DPI）。 */
 constexpr int base_item_indent = 4;
-static const wchar_t pointer_property[] = L"NeNeFolio.DialogButtonPointer";
+static const wchar_t pointer_property[] = L"NeNeFolio.DialogControlPointer";
 constexpr UINT tooltip_info_size = offsetof(TOOLINFOW, lParam) + sizeof(LPARAM);
 
-static LRESULT CALLBACK button_pointer(HWND, UINT, WPARAM, LPARAM);
+static LRESULT CALLBACK control_pointer(HWND, UINT, WPARAM, LPARAM);
 
 static int scale(int value, UINT dpi)
 {
@@ -180,7 +181,7 @@ static enum ui_part_style button_style(enum dialog_theme_button kind)
 
 static bool button_hovered(HWND window)
 {
-    const struct button_pointer_state *pointer = GetPropW(window, pointer_property);
+    const struct dialog_pointer_state *pointer = GetPropW(window, pointer_property);
     return pointer != nullptr && pointer->hovered;
 }
 
@@ -258,12 +259,12 @@ void dialog_theme_decorate(const struct dialog_theme *_Nonnull theme, HWND _Nonn
     DwmSetWindowAttribute(dialog, DWMWA_TEXT_COLOR, &text, sizeof text);
 }
 
-static void pointer_destroy(struct button_pointer_state *_Nullable pointer)
+static void pointer_destroy(struct dialog_pointer_state *_Nullable pointer)
 {
     free(pointer);
 }
 
-static void pointer_move(HWND window, struct button_pointer_state *_Nonnull pointer)
+static void pointer_move(HWND window, struct dialog_pointer_state *_Nonnull pointer)
 {
     if (pointer->hovered)
         return;
@@ -276,12 +277,48 @@ static void pointer_move(HWND window, struct button_pointer_state *_Nonnull poin
     }
 }
 
-static LRESULT CALLBACK button_pointer(HWND window, UINT message, WPARAM wparam, LPARAM lparam)
+static bool choice_at(HWND window, POINT point)
 {
-    struct button_pointer_state *pointer = GetPropW(window, pointer_property);
+    LRESULT hit = SendMessageW(window, LB_ITEMFROMPOINT, 0, MAKELPARAM(point.x, point.y));
+    RECT bounds = {0};
+    return HIWORD(hit) == 0 &&
+           SendMessageW(window, LB_GETITEMRECT, LOWORD(hit), (LPARAM)&bounds) != LB_ERR &&
+           PtInRect(&bounds, point);
+}
+
+static void control_cursor(HWND window, enum dialog_pointer_kind kind, POINT point)
+{
+    RECT client;
+    GetClientRect(window, &client);
+    if (!IsWindowEnabled(window) || !IsWindowEnabled(GetAncestor(window, GA_ROOT)) ||
+        !PtInRect(&client, point) ||
+        SendMessageW(GetParent(window), folio_message_pointer_blocked, 0, 0) != 0)
+    {
+        ui_pointer_show(UI_POINTER_ARROW);
+        return;
+    }
+    switch (kind)
+    {
+    case DIALOG_POINTER_BUTTON:
+        ui_pointer_show(UI_POINTER_ACTION);
+        return;
+    case DIALOG_POINTER_CHOICES:
+        ui_pointer_show(choice_at(window, point) ? UI_POINTER_ACTION : UI_POINTER_ARROW);
+        return;
+    }
+}
+
+static LRESULT CALLBACK control_pointer(HWND window, UINT message, WPARAM wparam, LPARAM lparam)
+{
+    struct dialog_pointer_state *pointer = GetPropW(window, pointer_property);
     if (pointer == nullptr)
         return DefWindowProcW(window, message, wparam, lparam);
-    if (message == WM_MOUSEMOVE)
+    if (message == WM_SETCURSOR && ui_pointer_client(window, wparam, lparam))
+    {
+        control_cursor(window, pointer->kind, ui_pointer_message_point(window));
+        return TRUE;
+    }
+    if (message == WM_MOUSEMOVE && pointer->kind == DIALOG_POINTER_BUTTON)
         pointer_move(window, pointer);
     if (message == WM_MOUSELEAVE)
     {
@@ -289,6 +326,9 @@ static LRESULT CALLBACK button_pointer(HWND window, UINT message, WPARAM wparam,
         InvalidateRect(window, nullptr, FALSE);
     }
     LRESULT result = CallWindowProcW(pointer->original, window, message, wparam, lparam);
+    if (message == WM_MOUSEMOVE)
+        control_cursor(window, pointer->kind, (POINT){GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)});
+    ui_pointer_after(window, message);
     if (message == WM_NCDESTROY)
     {
         RemovePropW(window, pointer_property);
@@ -297,20 +337,22 @@ static LRESULT CALLBACK button_pointer(HWND window, UINT message, WPARAM wparam,
     return result;
 }
 
-enum dialog_theme_control_outcome dialog_theme_track_button(HWND _Nonnull button)
+enum dialog_theme_control_outcome dialog_theme_track_control(HWND _Nonnull control,
+                                                             enum dialog_pointer_kind kind)
 {
-    struct button_pointer_state *pointer = calloc(1, sizeof *pointer);
+    struct dialog_pointer_state *pointer = calloc(1, sizeof *pointer);
     if (pointer == nullptr)
         return DIALOG_THEME_CONTROL_UNAVAILABLE;
-    pointer->original = (WNDPROC)GetWindowLongPtrW(button, GWLP_WNDPROC);
-    if (!SetPropW(button, pointer_property, pointer))
+    pointer->kind = kind;
+    pointer->original = (WNDPROC)GetWindowLongPtrW(control, GWLP_WNDPROC);
+    if (!SetPropW(control, pointer_property, pointer))
     {
         pointer_destroy(pointer);
         return DIALOG_THEME_CONTROL_UNAVAILABLE;
     }
-    if (SetWindowLongPtrW(button, GWLP_WNDPROC, (LONG_PTR)button_pointer) == 0)
+    if (SetWindowLongPtrW(control, GWLP_WNDPROC, (LONG_PTR)control_pointer) == 0)
     {
-        RemovePropW(button, pointer_property);
+        RemovePropW(control, pointer_property);
         pointer_destroy(pointer);
         return DIALOG_THEME_CONTROL_UNAVAILABLE;
     }
@@ -369,7 +411,7 @@ enum dialog_theme_control_outcome dialog_theme_create_close(HWND _Nonnull dialog
     {
         return DIALOG_THEME_CONTROL_UNAVAILABLE;
     }
-    if (dialog_theme_track_button(button) != DIALOG_THEME_CONTROL_READY ||
+    if (dialog_theme_track_control(button, DIALOG_POINTER_BUTTON) != DIALOG_THEME_CONTROL_READY ||
         close_tooltip(dialog, button, language) == nullptr)
     {
         DestroyWindow(button);

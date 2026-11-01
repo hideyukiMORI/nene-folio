@@ -12,6 +12,7 @@
 #include "note_name.h"
 #include "ui_face.h"
 #include "ui_part.h"
+#include "ui_pointer.h"
 #include "ui_text.h"
 #include "ui_text_request.h"
 #include "utf16_text.h"
@@ -107,7 +108,7 @@ static HWND _Nullable control(struct name_prompt *_Nonnull prompt, const wchar_t
         SendMessageW(window, WM_SETFONT, (WPARAM)prompt->font, TRUE);
     }
     if (window != nullptr && wcscmp(kind, L"BUTTON") == 0 &&
-        dialog_theme_track_button(window) != DIALOG_THEME_CONTROL_READY)
+        dialog_theme_track_control(window, DIALOG_POINTER_BUTTON) != DIALOG_THEME_CONTROL_READY)
     {
         DestroyWindow(window);
         return nullptr;
@@ -185,7 +186,9 @@ static LRESULT CALLBACK input_procedure(HWND window, UINT message, WPARAM wparam
         prompt->composing = false;
         InvalidateRect(prompt->dialog, nullptr, FALSE);
     }
-    return CallWindowProcW(prompt->original, window, message, wparam, lparam);
+    LRESULT result = CallWindowProcW(prompt->original, window, message, wparam, lparam);
+    ui_pointer_after(window, message);
+    return result;
 }
 
 static bool fill_categories(struct name_prompt *_Nonnull prompt)
@@ -484,7 +487,10 @@ static bool inputs(struct name_prompt *_Nonnull prompt)
         prompt->category = control(prompt, L"LISTBOX", L"",
                                    WS_TABSTOP | LBS_OWNERDRAWFIXED | LBS_HASSTRINGS | LBS_NOTIFY |
                                        LBS_NOINTEGRALHEIGHT | WS_VSCROLL);
-        if (prompt->category == nullptr || !fill_categories(prompt))
+        if (prompt->category == nullptr ||
+            dialog_theme_track_control(prompt->category, DIALOG_POINTER_CHOICES) !=
+                DIALOG_THEME_CONTROL_READY ||
+            !fill_categories(prompt))
             return false;
     }
     if (prompt->kind == NAME_PROMPT_RENAME)
@@ -1464,6 +1470,11 @@ static INT_PTR cancel_from_owner(struct name_prompt *_Nonnull prompt)
 static INT_PTR operation_message(struct name_prompt *_Nonnull prompt, UINT message, WPARAM wparam,
                                  LPARAM lparam)
 {
+    if (message == folio_message_pointer_blocked)
+    {
+        SetWindowLongPtrW(prompt->dialog, DWLP_MSGRESULT, prompt->composing);
+        return TRUE;
+    }
     if (message == folio_message_modal_cancel)
         return cancel_from_owner(prompt);
     if (message == WM_COMMAND && field_focus_changed(prompt, wparam, lparam))

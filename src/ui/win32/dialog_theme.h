@@ -6,6 +6,7 @@
 #ifndef NENEFOLIO_DIALOG_THEME_H
 #define NENEFOLIO_DIALOG_THEME_H
 
+#include "dialog_pointer_kind.h"
 #include "dialog_theme_button.h"
 #include "dialog_theme_control_outcome.h"
 #include "dialog_theme_outcome.h"
@@ -48,8 +49,9 @@ void dialog_theme_decorate(const struct dialog_theme *_Nonnull theme, HWND _Nonn
 [[nodiscard]] bool dialog_theme_native_message(HWND _Nonnull dialog, UINT message, WPARAM wparam,
                                                LPARAM lparam);
 [[nodiscard]] RECT dialog_theme_popup_bounds(HWND _Nullable owner, SIZE wanted_client);
-/* BUTTONのpointer表示だけを追跡する。dialog managerのkey/click/styleは変えない。 */
-[[nodiscard]] enum dialog_theme_control_outcome dialog_theme_track_button(HWND _Nonnull button);
+/* BUTTON/選択LISTBOXのpointer表示だけを追跡する。nativeのkey/click/styleは変えない。 */
+[[nodiscard]] enum dialog_theme_control_outcome
+dialog_theme_track_control(HWND _Nonnull control, enum dialog_pointer_kind kind);
 /* ×とowned標準tooltipを一緒に作る。失敗時は両方を破棄し*outをnullptrに保つ。 */
 [[nodiscard]] enum dialog_theme_control_outcome
 dialog_theme_create_close(HWND _Nonnull dialog, HFONT _Nonnull font, enum folio_language language,

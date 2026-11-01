@@ -21,6 +21,8 @@
 #include <richedit.h>
 
 struct note_pane;
+/* 既存の閲覧リンクが準備済みで、IME/無効化に遮断されていない。 */
+[[nodiscard]] bool note_pane_link_available(const struct note_pane *_Nonnull pane);
 struct utf8_text;
 /* Target is owned by the caller on READY; absent/guarded input has no side effect. */
 [[nodiscard]] enum note_pane_link_outcome

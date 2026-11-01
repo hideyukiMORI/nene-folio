@@ -8,6 +8,7 @@
 #include "pane_mode.h"
 #include "pane_zoom_command.h"
 #include "rtf_stream.h"
+#include "ui_pointer.h"
 
 #include <limits.h>
 #include <richedit.h>
@@ -552,7 +553,11 @@ static LRESULT CALLBACK pane_procedure(HWND window, UINT message, WPARAM wparam,
     interrupt_scroll(pane, message);
     note_pane_links_input(pane->links, message, lparam);
     if (message == WM_ENABLE)
-        return enable_pane(pane, wparam, lparam);
+    {
+        LRESULT result = enable_pane(pane, wparam, lparam);
+        ui_pointer_after(window, message);
+        return result;
+    }
     if (paint_background(pane, message, wparam, lparam))
         return 1;
     if (pane_input(pane, message, wparam, lparam))
@@ -570,6 +575,7 @@ static LRESULT CALLBACK pane_procedure(HWND window, UINT message, WPARAM wparam,
     }
     LRESULT result = CallWindowProcW(pane->original, pane->handle, message, wparam, lparam);
     note_pane_links_finish_input(pane->links, message);
+    ui_pointer_after(window, message);
     return result;
 }
 
@@ -1375,7 +1381,7 @@ bool note_pane_selection(const struct note_pane *_Nonnull pane, size_t *_Nonnull
     return true;
 }
 
-static bool link_available(const struct note_pane *_Nonnull pane)
+bool note_pane_link_available(const struct note_pane *_Nonnull pane)
 {
     return pane->handle != nullptr && pane->links != nullptr && !pane->composing &&
            pane->readiness == NOTE_PANE_READINESS_READY && IsWindowEnabled(pane->handle);
@@ -1395,7 +1401,7 @@ static enum note_pane_link_outcome link_target(struct note_pane *_Nonnull pane, 
 enum note_pane_link_outcome note_pane_link_selection(struct note_pane *_Nonnull pane,
                                                      struct utf8_text *_Nullable *_Nonnull out)
 {
-    if (!link_available(pane))
+    if (!note_pane_link_available(pane))
         return NOTE_PANE_LINK_ABSENT;
     CHARRANGE range = {0};
     SendMessageW(pane->handle, EM_EXGETSEL, 0, (LPARAM)&range);
@@ -1406,7 +1412,8 @@ enum note_pane_link_outcome note_pane_link_click(struct note_pane *_Nonnull pane
                                                  const ENLINK *_Nonnull notice,
                                                  struct utf8_text *_Nullable *_Nonnull out)
 {
-    if (!link_available(pane) || !note_pane_links_clicked(pane->links, pane->handle, notice))
+    if (!note_pane_link_available(pane) ||
+        !note_pane_links_clicked(pane->links, pane->handle, notice))
         return NOTE_PANE_LINK_ABSENT;
     return link_target(pane, notice->chrg, out);
 }

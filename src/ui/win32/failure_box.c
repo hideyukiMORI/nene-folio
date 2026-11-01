@@ -166,7 +166,8 @@ static bool make_controls(struct failure_box *_Nonnull box)
         0, L"BUTTON", label, WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW, 0, 0, 0, 0,
         box->dialog, (HMENU)(INT_PTR)IDOK, GetModuleHandleW(nullptr), nullptr);
     if (box->body == nullptr || box->accept == nullptr ||
-        dialog_theme_track_button(box->accept) != DIALOG_THEME_CONTROL_READY ||
+        dialog_theme_track_control(box->accept, DIALOG_POINTER_BUTTON) !=
+            DIALOG_THEME_CONTROL_READY ||
         dialog_theme_create_close(box->dialog, box->font, box->language, &box->close) !=
             DIALOG_THEME_CONTROL_READY)
         return false;

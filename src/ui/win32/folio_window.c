@@ -55,6 +55,7 @@
 #include "ui_face.h"
 #include "ui_part.h"
 #include "ui_part_metrics.h"
+#include "ui_pointer.h"
 #include "ui_text.h"
 #include "ui_text_request.h"
 #include "utf16_text.h"
@@ -539,6 +540,7 @@ static void report_outcome(struct folio_window *_Nonnull self, enum folio_state_
 static bool refresh_band_layout(struct folio_window *_Nonnull self);
 static enum ui_text surface_button_label(const struct folio_window *_Nonnull self, size_t slot);
 static bool surface_button_visible(const struct folio_window *_Nonnull self, size_t slot);
+static enum ui_pointer_kind surface_cursor(const struct folio_window *_Nonnull self, POINT point);
 static RECT accessible_surface_button_rect(const struct folio_window *_Nonnull self, size_t slot);
 static HRESULT surface_button_action(struct folio_window *_Nonnull self, size_t slot);
 static struct name_prompt_result
@@ -8745,13 +8747,18 @@ static void set_hover(struct folio_window *_Nonnull self, enum accessible_kind k
 }
 
 /* 共有pointerの現在位置を読まず、届いた通知から決めた押下/hoverを表示する。 */
-static void refresh_pointer_cursor(const struct folio_window *_Nonnull self)
+static void refresh_pointer_cursor(const struct folio_window *_Nonnull self, POINT point)
 {
-    enum accessible_kind kind =
-        self->pressed_part != ACCESSIBLE_WINDOW ? self->pressed_part : self->hover_part;
-    bool resizing =
-        kind == ACCESSIBLE_SPLITTER && part_enabled(self, kind) && accessible_visible(self, kind);
-    SetCursor(LoadCursorW(nullptr, resizing ? IDC_SIZEWE : IDC_ARROW));
+    enum accessible_kind kind = part_at(self, point);
+    if (self->pressed_part == ACCESSIBLE_SPLITTER)
+        kind = ACCESSIBLE_SPLITTER;
+    if (self->pressed_part != ACCESSIBLE_WINDOW && !self->pressed_by_key &&
+        kind != self->pressed_part)
+        kind = ACCESSIBLE_WINDOW;
+    enum ui_pointer_kind cursor = UI_POINTER_ARROW;
+    if (kind != ACCESSIBLE_WINDOW && part_enabled(self, kind) && accessible_visible(self, kind))
+        cursor = kind == ACCESSIBLE_SPLITTER ? UI_POINTER_RESIZE : UI_POINTER_ACTION;
+    ui_pointer_show(cursor);
 }
 
 /* capture 中は押下の内外だけを写す（外へ出たら押していない見た目に戻す）。それ以外は hover。 */
@@ -8761,7 +8768,7 @@ static void track_pointer(struct folio_window *_Nonnull self, LPARAM lparam)
     if (self->pressed_part == ACCESSIBLE_SPLITTER)
     {
         drag_drawer_width(self, point.x);
-        refresh_pointer_cursor(self);
+        refresh_pointer_cursor(self, point);
         return;
     }
     if (self->pressed_part != ACCESSIBLE_WINDOW && !self->pressed_by_key)
@@ -8773,6 +8780,7 @@ static void track_pointer(struct folio_window *_Nonnull self, LPARAM lparam)
             self->pressed_inside = inside;
             invalidate_part(self, self->pressed_part);
         }
+        refresh_pointer_cursor(self, point);
         return;
     }
     if (!self->hover_tracking)
@@ -8784,7 +8792,7 @@ static void track_pointer(struct folio_window *_Nonnull self, LPARAM lparam)
     bool open =
         folio_window_accessible_ready(self) && self->command_surface == COMMAND_SURFACE_CLOSED;
     set_hover(self, open ? part_at(self, point) : ACCESSIBLE_WINDOW);
-    refresh_pointer_cursor(self);
+    refresh_pointer_cursor(self, point);
 }
 
 static void leave_pointer(struct folio_window *_Nonnull self)
@@ -8889,7 +8897,7 @@ static bool web_link_ready(const struct folio_window *_Nonnull self)
     return self->pane != nullptr && folio_window_accessible_ready(self) &&
            self->command_surface == COMMAND_SURFACE_CLOSED &&
            folio_state_pane_mode(self->state) == PANE_MODE_VIEW &&
-           note_pane_readiness(self->pane) == NOTE_PANE_READINESS_READY;
+           note_pane_link_available(self->pane);
 }
 
 static void open_web_target(struct folio_window *_Nonnull self, enum note_pane_link_outcome outcome,
@@ -8924,7 +8932,15 @@ static void open_web_selection(struct folio_window *_Nonnull self)
 
 static LRESULT web_link_notice(struct folio_window *_Nonnull self, const ENLINK *_Nonnull notice)
 {
-    if (!web_link_ready(self) || notice->nmhdr.hwndFrom != note_pane_handle(self->pane))
+    if (self->pane == nullptr || notice->nmhdr.hwndFrom != note_pane_handle(self->pane))
+        return 1;
+    if (notice->msg == WM_SETCURSOR)
+    {
+        bool action = web_link_ready(self) && GetCapture() != note_pane_handle(self->pane);
+        ui_pointer_show(action ? UI_POINTER_ACTION : UI_POINTER_TEXT);
+        return 1;
+    }
+    if (!web_link_ready(self))
         return 1;
     struct utf8_text *_Nullable target = nullptr;
     enum note_pane_link_outcome outcome = note_pane_link_click(self->pane, notice, &target);
@@ -10036,24 +10052,46 @@ static void paint_filter_clear(const struct folio_window *_Nonnull self, HWND wi
 
 /* 「×」を押したら語を空にする。解くのは欄を手で空にするのと同じ経路で、
  * 空にした EN_CHANGE が filter_input_changed を通って絞り込みが解ける（補正 6）。 */
+static bool filter_clear_at(const struct folio_window *_Nonnull self, HWND window, POINT point)
+{
+    RECT bounds = filter_clear_rect(self, window);
+    return folio_state_filtering(self->state) && PtInRect(&bounds, point);
+}
+
 static bool filter_clear_pressed(struct folio_window *_Nonnull self, HWND window, LPARAM lparam)
 {
-    if (!folio_state_filtering(self->state))
-    {
-        return false;
-    }
     POINT point = {GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
-    RECT bounds = filter_clear_rect(self, window);
-    if (!PtInRect(&bounds, point))
-    {
+    if (!filter_clear_at(self, window, point))
         return false;
-    }
     SetFocus(window);
     if (GetFocus() == window)
     {
         SetWindowTextW(window, L"");
     }
     return true;
+}
+
+static void filter_pointer(const struct folio_window *_Nonnull self, HWND window, POINT point)
+{
+    enum ui_pointer_kind cursor = UI_POINTER_ARROW;
+    if (IsWindowEnabled(window) && folio_window_accessible_ready(self))
+        cursor = GetCapture() != window && filter_clear_at(self, window, point) ? UI_POINTER_ACTION
+                                                                                : UI_POINTER_TEXT;
+    ui_pointer_show(cursor);
+}
+
+static bool filter_pointer_message(const struct folio_window *_Nonnull self, UINT message,
+                                   WPARAM wparam, LPARAM lparam)
+{
+    HWND window = self->filter_input;
+    if (message == WM_SETCURSOR && ui_pointer_client(window, wparam, lparam))
+    {
+        filter_pointer(self, window, ui_pointer_message_point(window));
+        return true;
+    }
+    if (message == WM_MOUSEMOVE)
+        filter_pointer(self, window, (POINT){GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)});
+    return false;
 }
 
 /* 検索は保存済み本文だけを見る。名前付きEDITのfocus入口で共通保存を先に通す。 */
@@ -10107,6 +10145,8 @@ static LRESULT CALLBACK filter_input_message(HWND window, UINT message, WPARAM w
     {
         return DefWindowProcW(window, message, wparam, lparam);
     }
+    if (filter_pointer_message(self, message, wparam, lparam))
+        return TRUE;
     if (session_blocks_message(self, message))
     {
         return 0;
@@ -10723,6 +10763,7 @@ static void surface_pointer(struct folio_window *_Nonnull self, POINT point)
     }
     if (changed)
         redraw_command_layer(self);
+    ui_pointer_show(surface_cursor(self, point));
 }
 
 static bool press_surface_button(struct folio_window *_Nonnull self, POINT point)
@@ -10801,6 +10842,11 @@ static LRESULT CALLBACK command_layer_message(HWND window, UINT message, WPARAM 
     if (self == nullptr)
     {
         return DefWindowProcW(window, message, wparam, lparam);
+    }
+    if (message == WM_SETCURSOR && ui_pointer_client(window, wparam, lparam))
+    {
+        ui_pointer_show(surface_cursor(self, ui_pointer_message_point(window)));
+        return TRUE;
     }
     if (layer_input_handled(self, message, wparam, lparam))
         return 0;
@@ -11345,9 +11391,9 @@ static LRESULT shell_system_action(struct folio_window *_Nonnull self, WPARAM wp
 static bool client_pointer_cursor(const struct folio_window *_Nonnull self, WPARAM wparam,
                                   LPARAM lparam)
 {
-    if ((HWND)wparam != self->handle || LOWORD(lparam) != HTCLIENT)
+    if (!ui_pointer_client(self->handle, wparam, lparam))
         return false;
-    refresh_pointer_cursor(self);
+    refresh_pointer_cursor(self, ui_pointer_message_point(self->handle));
     return true;
 }
 
@@ -12570,6 +12616,45 @@ static RECT surface_list_bounds(const struct folio_window *_Nonnull self)
 {
     return self->command_surface == COMMAND_SURFACE_SETTINGS ? settings_content_rect(self)
                                                              : command_rows_rect(self);
+}
+
+static bool surface_row_actionable(const struct folio_window *_Nonnull self, size_t at)
+{
+    if (self->command_surface == COMMAND_SURFACE_SETTINGS)
+        return settings_row_choice(at);
+    if (self->command_surface == COMMAND_SURFACE_MENU)
+        return menu_availability(self, at) == FOLIO_STATE_READY;
+    return true;
+}
+
+/* 描画/UIAと同じ可視行矩形。見出しと無効menuは操作対象に含めない。 */
+static bool surface_row_action_at(const struct folio_window *_Nonnull self, POINT point)
+{
+    if (!surface_has_list(self) || self->command_composing)
+        return false;
+    RECT rows = surface_list_bounds(self);
+    size_t count = 0;
+    if (!PtInRect(&rows, point) || surface_row_count(self, &count) != S_OK)
+        return false;
+    for (size_t at = 0; at < count; ++at)
+    {
+        RECT row = surface_row_rect(self, at);
+        if (!PtInRect(&row, point))
+            continue;
+        return surface_row_actionable(self, at);
+    }
+    return false;
+}
+
+static enum ui_pointer_kind surface_cursor(const struct folio_window *_Nonnull self, POINT point)
+{
+    if (!folio_window_accessible_ready(self) || !IsWindowEnabled(self->command_layer))
+        return UI_POINTER_ARROW;
+    size_t slot = surface_part_at(self, point);
+    if (self->surface_pressed < surface_pointer_count && slot != self->surface_pressed)
+        return UI_POINTER_ARROW;
+    return slot < surface_pointer_count || surface_row_action_at(self, point) ? UI_POINTER_ACTION
+                                                                              : UI_POINTER_ARROW;
 }
 
 static RECT surface_bounds(const struct folio_window *_Nonnull self, struct accessible_item item)
@@ -14358,6 +14443,8 @@ static LRESULT on_accessibility_message(struct folio_window *_Nonnull self, UINT
         return 0;
     case folio_message_index_focused:
         return GetFocus() == self->handle && self->keyboard_target == ACCESSIBLE_TREE;
+    case folio_message_pointer_blocked:
+        return !folio_window_accessible_ready(self);
     case folio_message_focus_cues:
         return self->focus_cues || self->focus_cues_always;
     case folio_message_filter_focused:
@@ -14869,6 +14956,7 @@ static bool menu_key_down(struct folio_window *_Nonnull self, WPARAM key, LPARAM
 
 static void menu_mouse(struct folio_window *_Nonnull self, UINT message, POINT point)
 {
+    ui_pointer_show(surface_cursor(self, point));
     size_t hit = menu_hit(self, point);
     if (message == WM_LBUTTONDOWN)
     {
@@ -15032,6 +15120,7 @@ static LRESULT CALLBACK command_input_procedure(HWND window, UINT message, WPARA
     self->dispatch_depth += 1;
     LRESULT result = command_input_message(window, message, wparam, lparam);
     dispatch_finished(self);
+    ui_pointer_after(window, message);
     return result;
 }
 
@@ -15045,6 +15134,7 @@ static LRESULT CALLBACK filter_input_procedure(HWND window, UINT message, WPARAM
     self->dispatch_depth += 1;
     LRESULT result = filter_input_message(window, message, wparam, lparam);
     dispatch_finished(self);
+    ui_pointer_after(window, message);
     return result;
 }
 
@@ -15058,6 +15148,7 @@ static LRESULT CALLBACK command_layer_procedure(HWND window, UINT message, WPARA
     self->dispatch_depth += 1;
     LRESULT result = command_layer_message(window, message, wparam, lparam);
     dispatch_finished(self);
+    ui_pointer_after(window, message);
     return result;
 }
 
@@ -15070,5 +15161,6 @@ static LRESULT CALLBACK window_procedure(HWND window, UINT message, WPARAM wpara
     self->dispatch_depth += 1;
     LRESULT result = window_message(window, message, wparam, lparam);
     dispatch_finished(self);
+    ui_pointer_after(window, message);
     return result;
 }
