@@ -9,7 +9,9 @@ live in the selected folder. Back up that entire folder.
 The gear menu shows the current folder and lets you choose a folder for
 the next launch. Changing the location does not copy or move existing notes.
 
-Use the gear icon for theme, language, line numbers and product version.
+Use the gear icon for theme, language, line numbers, minimap and version.
+Ctrl+E switches Read/Edit; Ctrl+M opens Actions; Ctrl+Shift+M toggles the minimap.
+Markdown ZIP export contains note bodies only and is not a complete backup.
 F1 or Ctrl+P lists commands and keys. Ctrl+S saves; Alt+F4 saves and closes.
 Do not use an older binary while the note folder contains unfinished
 .rename.json work. Close the app before updating it.
