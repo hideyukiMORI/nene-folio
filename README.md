@@ -2,16 +2,17 @@
 
 A frameless Markdown notebook for Windows with a category drawer. Plain C (C23), Win32, no UI library.
 
-> **Status (2026-10-27):** [v0.3.0 is available as a beta release](https://github.com/hideyukiMORI/nene-folio/releases/tag/v0.3.0) for Windows x64.
-> [Release page and assets](https://github.com/hideyukiMORI/nene-folio/releases/tag/v0.3.0).
+> **Status (2026-11-01):** [v1.1.0 Beta release](https://github.com/hideyukiMORI/nene-folio/releases/tag/v1.1.0) for Windows x64.
+> [Release page and assets](https://github.com/hideyukiMORI/nene-folio/releases/tag/v1.1.0).
 > It views and edits notes, keeps a short
 > history of every save, searches, filters, replaces, and manages categories, with settings for theme,
-> language and line numbers. Download `NeNeFolio-0.3.0-win-x64.zip` and `SHA256SUMS` from the release's Assets.
+> language and line numbers. Download `NeNeFolio-1.1.0-win-x64.zip` and `SHA256SUMS` from the release's Assets.
 > Run `NeNeFolio.exe` after extracting the whole package. The portable beta is unsigned.
-> It starts with no `data/` folder; saved notes and settings stay next to the executable.
+> It starts with no `data/` folder. Notes and settings use that folder by default; Settings can select another location.
+> A separate 1.1.0 Store submission candidate is prepared; Store approval and availability are not confirmed.
 
-[Download Windows x64 ZIP](https://github.com/hideyukiMORI/nene-folio/releases/download/v0.3.0/NeNeFolio-0.3.0-win-x64.zip)
-· [SHA256SUMS](https://github.com/hideyukiMORI/nene-folio/releases/download/v0.3.0/SHA256SUMS)
+[Download Windows x64 ZIP](https://github.com/hideyukiMORI/nene-folio/releases/download/v1.1.0/NeNeFolio-1.1.0-win-x64.zip)
+· [SHA256SUMS](https://github.com/hideyukiMORI/nene-folio/releases/download/v1.1.0/SHA256SUMS)
 · Windows 10 version 2004 or later
 
 ![NeNe Folio 0.2.0 showing categories and a rendered Markdown note](docs/images/0.2.0-main.png)
@@ -20,10 +21,10 @@ v0.2.0 with the Japanese UI, Light theme, and sample notes.
 
 ## What it does
 
-The [0.3.0 beta release notes](docs/release/0.3.0.md) cover working note-wheel scrolling,
-more compact Markdown spacing and code blocks, and the added syntax below.
-They include update instructions and known limitations. The [release checks](docs/quality/2026-10-27-beta-release.md)
-track package validation, saved-data checks, publication, and download verification.
+The [1.1.0 release notes](docs/release/1.1.0.md) cover the minimap, Markdown import/export,
+keyboard actions, note storage selection, and rendering and responsiveness improvements.
+They include update instructions and known limitations. The [release record](docs/quality/2026-11-01-release-1.1.0.md)
+tracks validation and the evidence for publication and download verification.
 
 - **A borderless window** with a drawer on the left and a Markdown view/editor on the right. It follows
   the OS light/dark theme (or a fixed one) and Per-Monitor v2 DPI.
@@ -31,7 +32,7 @@ track package validation, saved-data checks, publication, and download verificat
   or Note restores the previous width or maximized state. Switching views keeps unsaved text and Undo.
   The grouped controls also accept Ctrl+Shift+1 / 2 / 3. Tooltips, Actions, the command palette, and Help
   show the shortcuts; they do not switch the layout during IME composition or a modal input.
-  In the current source, drag the boundary in Both view to resize the list. The chosen width is kept
+  Drag the boundary in Both view to resize the list. The chosen width is kept
   for the session, including view switches and temporary window shrinking. F6/Tab reaches the
   boundary; Left/Right, PageUp/PageDown, and Home/End adjust it. Esc cancels a drag (#475).
 - **The drawer is an index** of `data/<category>/*.md`. Categories fold like an accordion, carry a colour
@@ -43,21 +44,20 @@ track package validation, saved-data checks, publication, and download verificat
   pane; Ctrl+S writes the file back atomically, keeps the original line endings, and writes nothing when
   the text is unchanged. The body just before each save is kept as `data/.history/<category>/<note>/1.md`
   … `5.md`, and any version can be restored into the editor as an undoable edit.
-  The current source adds Ctrl+E to switch Read/Edit (saving before returning to Read), and Ctrl+M
-  to open Actions. Mode, Save, Find, and Actions tooltips show their actual shortcuts (#490).
-  These shortcuts are later than the submitted 1.0.0 Store candidate.
-  The 0.3.0 beta supports tables, nested lists and quotes, task lists, strikethrough,
+  Ctrl+E switches between Read/Edit; it saves before returning to Read. Ctrl+M opens Actions.
+  Mode, Save, Find, and Actions tooltips show their actual shortcuts (#490).
+  The renderer supports tables, nested lists and quotes, task lists, strikethrough,
   thematic breaks, setext headings, explicit line breaks, and longer code delimiters.
-  The current source also adds angle-bracket URI/email autolinks, numeric character references,
-  six basic named references, and more space around thematic breaks (#480). These additions are
-  not included in the published beta. View-mode HTTP/HTTPS links also open in the default browser
+  It also supports angle-bracket URI/email autolinks, numeric character references,
+  six basic named references, and more space around thematic breaks (#480).
+  View-mode HTTP/HTTPS links open in the default browser
   with a left click or Ctrl+Enter (#482); dragging to select text and editing do not launch links.
   See [Markdown syntax and limits](docs/MARKDOWN.md) (Japanese).
-- **Simple minimap**: the current source shows a bounded overview of native display lines beside
-  Read/Edit, with a current-position frame and click/drag navigation. Settings, Ctrl+Shift+M,
-  Actions and the command palette toggle it; the preference survives restart. Narrow panes hide it
-  automatically. The overview samples at most 256 lines and is not a complete text miniature (#502).
-  This change is later than the submitted 1.0.0 Store candidate.
+- **Simple minimap**: a bounded overview of native display lines beside
+  Read/Edit shows a current-position frame with click/drag and wheel navigation.
+  Headings, lists, tables, rules and code blocks have simplified shapes.
+  Settings, Ctrl+Shift+M, Actions and the command palette toggle it; the preference survives restart.
+  Narrow panes hide it automatically. It samples at most 256 lines rather than duplicating the full text (#502).
 - **Note zoom**: Ctrl+wheel or Ctrl++ / Ctrl+- changes the display from 50% to 300%; Ctrl+0 restores 100%.
   Read and Edit share the zoom while the app runs, and line numbers follow it. Note contents stay unchanged.
 - **Notes**: new untitled note with a first save, save as, rename (recoverable across restarts through
@@ -71,11 +71,10 @@ track package validation, saved-data checks, publication, and download verificat
 - **Categories**: create, rename, change colour, or delete when empty from the right-click menu.
   A fixed **+** beside the Categories heading creates a category; the command palette and Ex commands
   also provide category creation, renaming, and deletion.
-- **Markdown transfer (current source, #494)**: import multiple UTF-8 `.md` files into a category,
+- **Markdown transfer**: import multiple UTF-8 `.md` files into a category,
   skipping existing names. Export the current note (including unsaved edits) as Markdown, or saved
   category/all notes as a ZIP. Export keeps the original note and refuses existing output files.
   ZIP contains note bodies only, excluding settings, order and history. See [formats and limits](docs/TRANSFER.md).
-  This feature is later than the published beta and the submitted 1.0.0 Store candidate.
 - **Find**: search inside the open note (Ctrl+F, `/`, `?`, `n`, `N`, F3), filter all notes
   (Ctrl+Shift+F), and regular-expression replace in the edited body (a replace field or `:%s/…/…/g`).
   In-note search sits above the body with its match count, Previous / Next, and Close controls.
@@ -108,7 +107,7 @@ Arrow keys preview a choice across the window before it is saved.
 
 ## Where the data lives
 
-The current source defaults to the `data/` folder next to the portable executable.
+The portable package defaults to the `data/` folder next to the portable executable.
 **Settings → Note storage…** lets you choose another folder, directly or with the Windows folder picker.
 The change takes effect on the next launch; existing notes are never moved automatically.
 The current and next locations remain visible, and unsaved editing and Undo are preserved.
@@ -116,10 +115,9 @@ In the table below, `data/` means the selected folder itself.
 
 The location is stored separately in version 1 `nenefolio-startup.json` next to the portable executable.
 A build with Windows package identity uses Documents/NeNeFolio as its initial suggestion and asks before
-opening notes; its startup setting lives in LocalAppData/NeNeFolio. Package installation, updating and
-uninstalling have not yet been validated. A missing or unavailable selected folder opens a recovery
-choice; an invalid or unknown startup-setting version is reported without overwriting it.
-This feature is in the current source and is not included in the published v0.3.0 ZIP.
+opening notes; its startup setting lives in LocalAppData/NeNeFolio. The 1.0.0 candidate passed local
+installation/update/removal checks; Store-signed delivery is not yet verified.
+A missing or unavailable selected folder opens a recovery choice; an invalid or unknown startup-setting version is reported without overwriting it.
 
 | Path | Meaning |
 | --- | --- |

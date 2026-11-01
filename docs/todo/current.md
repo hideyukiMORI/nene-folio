@@ -1,5 +1,16 @@
 # いまの状態 — NeNe Folio
 
+## 受理済み改善の1.1.0配布 — #516
+
+hideは#512/#514の実機改善を受理し、GitHubとStoreの両方のリリース更新を依頼した。
+CMakeの単一版入力を1.1.0（Windows 1.1.0.0）へ上げ、配布READMEと更新手順を現行機能へ揃える。
+生産C・保存schema・依存は不変。成功済み機能試験を再利用し、最終head必須CI後のclean mainから正規ZIP/MSIXを生成する。
+[変更一覧](../release/1.1.0.md)・[品質記録](../quality/2026-11-01-release-1.1.0.md)。Waivers none。
+CI/main・配布hash・GitHub公開後再取得・起動/更新・恒久成果物/整理の確定値は
+`D:/NeNeFolio/agents/release-1.1.0-20261101/integration-completion.json`へ記録する。
+Computer Useがbrowser URLを確定できず停止したため、Store操作は未実施。提出用MSIX/変更文を準備する。
+申請済み1.0.0を取り消さない。通常版が稼働中なら終了/上書きせず、反映未実施の理由を記録する。
+
 ## 本文変換の連続文字出力 — #514
 
 hideの「対応できそうなところは端から対応して」に従い、#512に続いて本文変換の細かな呼出しを削減した。
