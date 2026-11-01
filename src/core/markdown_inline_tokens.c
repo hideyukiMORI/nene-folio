@@ -536,31 +536,49 @@ static size_t append_reference(struct markdown_inline_tokens *_Nonnull parser, s
     return length;
 }
 
-static size_t append_character(struct markdown_inline_tokens *_Nonnull parser, size_t index,
-                               char character)
+static size_t literal_character(const struct markdown_inline_tokens *_Nonnull parser, size_t index,
+                                char *_Nonnull character)
 {
     size_t length = 1;
-    if (parser->view.table_cell && character == '\\' && at(parser, index + 1) == '|')
+    if (parser->view.table_cell && *character == '\\' && at(parser, index + 1) == '|')
     {
-        character = '|';
+        *character = '|';
         length = 2;
     }
-    if (character == '\n')
-        character = ' ';
-    rtf_text_append(parser->out, &character, 1);
+    if (*character == '\n')
+        *character = ' ';
     return length;
 }
 
 static void append_range(struct markdown_inline_tokens *_Nonnull parser, size_t start, size_t end,
                          bool references)
 {
+    char literal[256];
+    size_t count = 0;
     for (size_t index = start; index < end;)
     {
         char character = at(parser, index);
-        size_t reference =
-            references && character == '&' ? append_reference(parser, index, end) : 0;
-        index += reference != 0 ? reference : append_character(parser, index, character);
+        size_t reference = 0;
+        if (references && character == '&')
+        {
+            rtf_text_append(parser->out, literal, count);
+            count = 0;
+            reference = append_reference(parser, index, end);
+        }
+        if (reference != 0)
+        {
+            index += reference;
+            continue;
+        }
+        index += literal_character(parser, index, &character);
+        literal[count++] = character;
+        if (count == sizeof literal)
+        {
+            rtf_text_append(parser->out, literal, count);
+            count = 0;
+        }
     }
+    rtf_text_append(parser->out, literal, count);
 }
 
 static void emit_code(struct markdown_inline_tokens *_Nonnull parser, size_t index)

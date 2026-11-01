@@ -39,3 +39,14 @@ hideは水平線の上下の余白を少し増やすことと、未対応Markdow
 
 最初の候補で線へ`sb240/sa240`を直接付けたところ、native値検査は成功したが画像では太い帯になった。
 その候補は不採用とし、背景なしの空段落へ修正した。単体とnative属性だけで視覚品質を受理しない。
+
+## #514補正 — 同じ文字出力へ連続部分をまとめて渡す
+
+構文判定・token・borrowed viewは変更しない。行内の文字参照とtableのescaped pipe、改行の空白化を
+従来と同じ順で処理し、通常文字だけを呼出し内の最大256byte固定scratchへまとめる。
+文字参照の出力前とscratchの満杯/末尾で、同じ`rtf_text_append`へ渡す。本文全体の写し・heap確保・永続cacheを増やさない。
+RTF escapeは同じ関数でCR除去/backslash/braceの境界を扱い、その他の連続bytesを`text_buffer`へ一度に渡す。
+編集RTFも既存CR/LF/CRLF判定の間にある連続bytesを同じescapeへ渡す。末尾の段落記号を維持する。
+Unicode bytesをまとめる境界は文字境界を要求せず、完成RTFのbytesが親実装と同一であることを確認する。
+確保失敗は既存bufferのexhaustedと生成物破棄/out不変へ合流し、公開API・schema・版・依存は変えない。
+対象unit/全確保点失敗、親実装とのbytes照合、処理回数と変換時間の比較を行う。Waivers none。

@@ -67,19 +67,22 @@ static void append_header(struct text_buffer *_Nonnull out, struct rtf_palette p
 static void render_plain(struct text_buffer *_Nonnull out, const char *_Nonnull text, size_t length)
 {
     text_buffer_append_text(out, "\\pard\\sb0\\sa0\\sl240\\slmult1\\cf1 ");
+    size_t start = 0;
     for (size_t index = 0; index < length; ++index)
     {
         if (text[index] != '\r' && text[index] != '\n')
         {
-            rtf_text_append(out, text + index, 1);
             continue;
         }
+        rtf_text_append(out, text + start, index - start);
         if (text[index] == '\r' && index + 1 < length && text[index + 1] == '\n')
         {
             ++index;
         }
         text_buffer_append_text(out, "\\par ");
+        start = index + 1;
     }
+    rtf_text_append(out, text + start, length - start);
     text_buffer_append_text(out, "\\par ");
     text_buffer_append_text(out, document_footer);
 }

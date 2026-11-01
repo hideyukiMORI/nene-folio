@@ -1,5 +1,17 @@
 # いまの状態 — NeNe Folio
 
+## 本文変換の連続文字出力 — #514
+
+hideの「対応できそうなところは端から対応して」に従い、#512に続いて本文変換の細かな呼出しを削減した。
+既存RTF escape/改行判定へ連続bytesを渡し、行内は最大256byteの固定scratchへまとめる。
+文字参照/Unicode/表の意味と出力bytes、OOM時のout不変を保つ。別parser・全文複製・永続cacheは追加しない。
+正典Debug/tidy、Markdown対象unit/全確保点失敗、7,294件の全bytes一致を確認した。
+合成Debug計測で通常2,000段落の変換は閲覧55.598→47.134ms、編集6.842→1.808ms。
+[品質記録](../quality/2026-11-01-markdown-emission.md)・[ADR0078補正](../adr/0078-lightweight-markdown-inline-rendering.md)。
+保存schema・版・依存は不変、Waivers none。最終CI/main、#512と合わせた通常反映、全保全/整理は
+`D:/NeNeFolio/agents/markdown-emission-20261101/integration-completion.json`で確定する。
+通常版が起動中なら保存/終了を待つ。申請済みMSIXは差し替えない。native投入/表配置の負担は残る。
+
 ## ミニマップ表示までの重複処理と順番待ち — #512
 
 hideの「対応できそうなところは端から対応して」に従い、投入中のポインタ再判定、
