@@ -2100,7 +2100,7 @@ static const char *_Nonnull const expected_failure_lines[] = {
     [FOLIO_STATE_WEB_LINK_REJECTED] = "このリンクは開けません。",
     [FOLIO_STATE_WEB_LINK_UNAVAILABLE] = "既定のブラウザーでリンクを開けませんでした。",
     [FOLIO_STATE_EXPORT_TOO_LARGE] =
-        "ZIPの上限は128MiB・65,534件です。カテゴリごとに書き出してください。",
+        "ZIPの上限は128MiB・65,534ファイル・画像参照4,096件です。画像1枚は16MiBまでです。",
     [FOLIO_STATE_EXPORT_EXISTS] = "その名前のファイルがあります。別の名前を指定してください。",
     [FOLIO_STATE_EXPORT_FAILED] =
         "書き出せませんでした。保存先の場所と書き込み権限を確認してください。",
