@@ -119,7 +119,16 @@ static void source_contract(void)
         {"./images/a%20b.png", "./images/a b.png", IMAGE_SOURCE_LOCAL, true},
         {"images/x%2520.png", "images/x%20.png", IMAGE_SOURCE_LOCAL, true},
         {"images/../a.png", "images/../a.png", IMAGE_SOURCE_LOCAL, false},
+        {"images/..", "images/..", IMAGE_SOURCE_LOCAL, false},
+        {"images/..a.png", "images/..a.png", IMAGE_SOURCE_LOCAL, true},
+        {"images/", "images/", IMAGE_SOURCE_LOCAL, false},
+        {"images/%", "images/%", IMAGE_SOURCE_LOCAL, true},
+        {"images/%2", "images/%2", IMAGE_SOURCE_LOCAL, true},
+        {"images/%g0.png", "images/%g0.png", IMAGE_SOURCE_LOCAL, true},
+        {"images/%0g.png", "images/%0g.png", IMAGE_SOURCE_LOCAL, true},
+        {"images/a%2fb.png", "images/a/b.png", IMAGE_SOURCE_LOCAL, true},
         {"C:/pics/a.png", "C:/pics/a.png", IMAGE_SOURCE_LOCAL, false},
+        {"c:\\pics\\a.png", "c:/pics/a.png", IMAGE_SOURCE_LOCAL, false},
         {"https://example.com/a.png?q=1", "https://example.com/a.png?q=1", IMAGE_SOURCE_HTTPS,
          false},
         {"http://example.com/a.png", "http://example.com/a.png", IMAGE_SOURCE_UNSUPPORTED, false},
@@ -143,6 +152,72 @@ static void source_contract(void)
                 "copy decodes percent only once");
         image_source_destroy(copy);
     }
+}
+static void source_rejections(void)
+{
+    const char *invalid[] = {"1:/a.png",        "[:/a.png",        "{:/a.png",
+                             "\\root.png",      "images/\xFF.png", "images/\n.png",
+                             "images/\x7F.png", "images/\".png",   "images/<.png",
+                             "images/>.png",    "images/|.png",    "images/*.png",
+                             "images/?.png",    "images/%00.png",  "%2F%2Fserver/a.png",
+                             "images/%3a.png",  "images/%3f.png"};
+    for (size_t index = 0; index < sizeof invalid / sizeof invalid[0]; ++index)
+    {
+        struct image_source *_Nullable source = nullptr;
+        require(image_source_create(invalid[index], (struct note_search_span){0, 1}, &source) ==
+                        IMAGE_READY &&
+                    image_source_kind(source) == IMAGE_SOURCE_UNSUPPORTED &&
+                    !image_source_recommended(source),
+                "invalid local and percent-decoded paths remain unsupported metadata");
+        image_source_destroy(source);
+    }
+    const char *rejected[] = {"", "https://", "https://user:password@example.com/a.png"};
+    for (size_t index = 0; index < sizeof rejected / sizeof rejected[0]; ++index)
+    {
+        struct image_source *_Nullable source = nullptr;
+        require(image_source_create(rejected[index], (struct note_search_span){0, 1}, &source) ==
+                        IMAGE_UNSUPPORTED &&
+                    source == nullptr,
+                "empty and invalid HTTPS references expose no request");
+    }
+    struct image_source *_Nullable source = nullptr;
+    require(image_source_create("a.png", (struct note_search_span){2, 1}, &source) ==
+                    IMAGE_UNSUPPORTED &&
+                source == nullptr,
+            "reversed source span rejected");
+    char *oversized = malloc(image_source_byte_limit + 2);
+    require(oversized != nullptr, "oversized path fixture");
+    memset(oversized, 'a', image_source_byte_limit + 1);
+    oversized[image_source_byte_limit + 1] = '\0';
+    require(image_source_create(oversized, (struct note_search_span){0, 1}, &source) ==
+                    IMAGE_UNSUPPORTED &&
+                source == nullptr,
+            "oversized path rejected before request allocation");
+    free(oversized);
+}
+static void copy_rejections(void)
+{
+    struct note_text *body = text("![a](a.png) ![b](b.png)");
+    const struct image_relocation invalid[][2] = {
+        {{{5, 10}, "images/a.png"}, {{8, 10}, "images/b.png"}},
+        {{{5, 5}, "images/a.png"}, {{16, 21}, "images/b.png"}},
+        {{{5, 99}, "images/a.png"}, {{16, 21}, "images/b.png"}}};
+    for (size_t index = 0; index < sizeof invalid / sizeof invalid[0]; ++index)
+    {
+        struct note_text *_Nullable copy = nullptr;
+        require(markdown_image_copy_create(body, invalid[index], 2, &copy) == NOTE_TEXT_TOO_LARGE &&
+                    copy == nullptr,
+                "overlapping, empty and outside spans never expose a partial export copy");
+    }
+    const struct image_relocation relocation = {{5, 10}, "images/a#(b).png"};
+    struct note_text *_Nullable copy = nullptr;
+    require(markdown_image_copy_create(body, &relocation, 1, &copy) == NOTE_TEXT_ACCEPTED &&
+                strcmp(note_text_bytes(copy), "![a](images/a%23%28b%29.png) ![b](b.png)") == 0,
+            "reserved destination characters are encoded without changing neighboring text");
+    require(strcmp(note_text_bytes(body), "![a](a.png) ![b](b.png)") == 0,
+            "invalid and valid relocation attempts preserve original Markdown");
+    note_text_destroy(copy);
+    note_text_destroy(body);
 }
 static void parser_contract(void)
 {
@@ -415,6 +490,8 @@ static void allocation_contract(void)
 void run_image_tests(void)
 {
     source_contract();
+    source_rejections();
+    copy_rejections();
     parser_contract();
     image_limits();
     export_contract();
