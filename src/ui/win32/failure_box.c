@@ -47,6 +47,8 @@ static constexpr bool io_sounds[] = {
     [FOLIO_STATE_EXPORT_TOO_LARGE] = false,
     [FOLIO_STATE_EXPORT_EXISTS] = false,
     [FOLIO_STATE_EXPORT_FAILED] = true,
+    [FOLIO_STATE_EXPORT_EXTERNAL_IMAGES] = false,
+    [FOLIO_STATE_EXPORT_IMAGE_UNREADABLE] = true,
     [FOLIO_STATE_TRANSFER_UNAVAILABLE] = false,
 
     [FOLIO_STATE_READY] = false,

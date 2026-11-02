@@ -108,6 +108,16 @@ static bool run_minimap_target_tests(const char *_Nonnull argument)
 
 static bool run_transfer_target_tests(const char *_Nonnull argument)
 {
+    if (strcmp(argument, "--images") == 0)
+    {
+        run_image_tests();
+        run_markdown_tests();
+        run_web_link_tests();
+        run_transfer_tests();
+        run_ui_text_tests();
+        printf("image, Markdown, link, transfer and UI text tests passed\n");
+        return true;
+    }
     if (strcmp(argument, "--transfer") != 0)
         return false;
     run_transfer_tests();
@@ -469,6 +479,7 @@ static bool run_selected_tests(const char *_Nonnull argument)
 
 static void run_full_suite(void)
 {
+    run_image_tests();
     run_transfer_tests();
     run_web_link_tests();
     run_storage_tests();

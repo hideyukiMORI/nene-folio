@@ -2093,6 +2093,10 @@ static void verify_move_while_editing(void)
 /* 表引きへ移す前（ADR 0027）の文言そのもの。1 字でも変わったら落ちる。
  * 列挙の全値がちょうど 1 度ずつ並ぶことは CNF-009 が字句で守る。 */
 static const char *_Nonnull const expected_failure_lines[] = {
+    [FOLIO_STATE_EXPORT_EXTERNAL_IMAGES] =
+        "images/ 外のローカル画像もZIPへ同梱しますか？参照の変更は書き出すコピーだけに適用します。",
+    [FOLIO_STATE_EXPORT_IMAGE_UNREADABLE] =
+        "画像を同梱できませんでした。画像の参照先と読み取り権限を確認してください。",
     [FOLIO_STATE_WEB_LINK_REJECTED] = "このリンクは開けません。",
     [FOLIO_STATE_WEB_LINK_UNAVAILABLE] = "既定のブラウザーでリンクを開けませんでした。",
     [FOLIO_STATE_EXPORT_TOO_LARGE] =
@@ -2347,6 +2351,7 @@ const struct folio_ports *_Nonnull test_ports(const struct persistence_port *_No
     static const struct web_link_port links = {.open = test_open_link};
     ports.web_link = &links;
     ports.transfer = test_transfer_port();
+    ports.images = test_image_port();
     return &ports;
 }
 

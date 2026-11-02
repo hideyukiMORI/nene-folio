@@ -88,6 +88,14 @@
 | 置換子（placeholder） | 句の中に語や数を差し込む綴り。`{k}` `{n}` `{offset}` `{name}` `{from}` `{to}` の 6 つだけで、埋めた内容は再走査しない（`{k}` という名前のノートが壊れない）。語や数を連結して句を作らない | `ui_text_format` / `struct ui_text_request`（core）・ADR 0030 の決定 3 |
 | 表示に使う言語（folio_language） | 文言をどの列から引くかの閉じた選択肢。core は「いまの言語」を可変状態として持たず、呼ぶたびに引数で受ける。値は application が答える | `enum folio_language`（core）・`folio_state_language`（application）・ADR 0030 の決定 1 |
 
+## #520で足した語
+
+| 語 | 意味 |
+| --- | --- |
+| 画像参照 | 同じMarkdown parserが収集する宛先と原文内byte範囲。`markdown_images`が所有し、表示とZIPで共有する |
+| 画像基準の改訂 | ノートのカテゴリ移動・カテゴリ改名で旧画像要求を失効させ、現在のmd所在directoryから再準備するためのapplication値 |
+| 画像キャッシュ | セッション内の復号/縮小結果。原本の取り込みではなく、容量/件数上限付きで再利用するもの |
+
 ## 使ってはいけない語
 
 `manager` / `helper` / `util` / `utils` / `common` を型名の語尾に使わない（C-010）。

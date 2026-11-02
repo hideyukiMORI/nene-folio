@@ -6,6 +6,7 @@
 #include "folio_state.h"
 #include "folio_window.h"
 #include "font_bundle.h"
+#include "image_adapter.h"
 #include "persistence_adapter.h"
 #include "regex_adapter.h"
 #include "storage_adapter.h"
@@ -158,12 +159,22 @@ static int run_from_storage(struct storage_state *_Nonnull storage,
     struct regex_port finder = regex_adapter_port(regex);
     struct web_link_port links = web_link_adapter_port();
     struct transfer_port transfer = transfer_adapter_port();
+    struct image_adapter *_Nullable images = nullptr;
+    if (image_adapter_create(storage_state_directory(storage), &images) != IMAGE_READY)
+    {
+        persistence_adapter_destroy(persistence);
+        report(ui_text_line(UI_TEXT_APP_OUT_OF_MEMORY, FOLIO_LANGUAGE_JA));
+        return 1;
+    }
+    struct image_port pictures = image_adapter_port(images);
     struct folio_ports ports = {.persistence = &files,
                                 .appearance = &looks,
                                 .regex = &finder,
                                 .web_link = &links,
-                                .transfer = &transfer};
+                                .transfer = &transfer,
+                                .images = &pictures};
     int code = run(&ports, storage, fonts);
+    image_adapter_destroy(images);
     persistence_adapter_destroy(persistence);
     return code;
 }

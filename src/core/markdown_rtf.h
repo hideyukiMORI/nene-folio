@@ -9,6 +9,9 @@
 #include <stddef.h>
 
 struct markdown_rtf;
+struct markdown_images;
+[[nodiscard]] const struct markdown_images *_Nullable markdown_rtf_images(
+    const struct markdown_rtf *_Nonnull rtf);
 struct note_text;
 
 /* face は本文のフォント名（ui_font_face が答える ASCII。`{` `}` `\` `;` を含まない）で、

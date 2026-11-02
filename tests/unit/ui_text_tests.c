@@ -162,7 +162,7 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_IMPORT_RESULT] = "{n}件を追加、同名{k}件をスキップ、残り{offset}件。\n{from}",
     [UI_TEXT_EXPORT_DONE] = "書き出しました。元のノートはそのままです。",
     [UI_TEXT_FAILURE_EXPORT_TOO_LARGE] =
-        "ZIPの上限は128MiB・65,534件です。カテゴリごとに書き出してください。",
+        "ZIPの上限は128MiB・65,534ファイル・画像参照4,096件です。画像1枚は16MiBまでです。",
     [UI_TEXT_FAILURE_EXPORT_EXISTS] = "その名前のファイルがあります。別の名前を指定してください。",
     [UI_TEXT_FAILURE_EXPORT_FAILED] =
         "書き出せませんでした。保存先の場所と書き込み権限を確認してください。",
@@ -189,6 +189,15 @@ static const char *_Nonnull const expected[] = {
                                   "最大。ドラッグ中のEscで取消。幅は起動中だけ保持します。",
     [UI_TEXT_ACCESSIBLE_NAMED_BODY] = "{name} — ノート本文",
     [UI_TEXT_EMPTY] = "",
+    [UI_TEXT_FAILURE_EXPORT_IMAGES] =
+        "画像を同梱できませんでした。画像の参照先と読み取り権限を確認してください。",
+    [UI_TEXT_IMAGES_READING] = "画像を読み込んでいます",
+    [UI_TEXT_IMAGES_RESIZING] = "画像を加工しています",
+    [UI_TEXT_IMAGES_ADVISORY] =
+        "ローカル画像は、このノートのフォルダー内の images/ に置くと持ち出しやすくなります。",
+    [UI_TEXT_IMAGES_FAILED] = "一部の画像を表示できません。編集から閲覧へ戻ると再試行します。",
+    [UI_TEXT_IMAGES_EXPORT_EXTERNAL] =
+        "images/ 外のローカル画像もZIPへ同梱しますか？参照の変更は書き出すコピーだけに適用します。",
     [UI_TEXT_FAILURE_APPEARANCE_UNAVAILABLE] =
         "Windowsの外観を取得できません。前の配色（初回は通常配色）を保ちます。",
     [UI_TEXT_HIGH_CONTRAST_ACTIVE] = "Windowsの高コントラストを適用中",

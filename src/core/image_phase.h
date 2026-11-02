@@ -1,0 +1,10 @@
+#ifndef NENEFOLIO_IMAGE_PHASE_H
+#define NENEFOLIO_IMAGE_PHASE_H
+enum image_phase : unsigned char
+{
+    IMAGE_PHASE_IDLE,
+    IMAGE_PHASE_READING,
+    IMAGE_PHASE_DECODING,
+    IMAGE_PHASE_RESIZING
+};
+#endif

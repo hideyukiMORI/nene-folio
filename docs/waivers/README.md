@@ -36,4 +36,4 @@ WVR-NNNN-short-kebab-title.md
 
 | Waiver | 規則 | Scope | 解除条件 | 期限 |
 | --- | --- | --- | --- | --- |
-| — | — | — | 有効な waiver は無い | — |
+| [WVR-0001](WVR-0001-winhttp-callback-abi.md) | C-012 | `src/adapters/win32/image_download.c#status_callback` | OS ABI引数のみの検査へ置換/当該callback廃止 | 2026-12-02 |

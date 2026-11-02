@@ -72,6 +72,7 @@
 
 | FR-041 | 複数のUTF-8 Markdownを指定カテゴリへ追加し、現在ノート・保存済みカテゴリ・全ノートを書き出せる | 取り込みは元と既存ノートを保持し、同名をスキップする。途中失敗は追加済み/同名/未処理を示す。1枚は未保存の編集を含むMarkdown原文、カテゴリ/全件は保存済み本文だけのZIP。出力同名は上書きせず拒否。設定・履歴・台帳は含めず、完全復元形式とはしない。選択・Undo・dirty・元ノートの保存状態を保つ。#494 / [ADR0082](docs/adr/0082-markdown-transfer.md)・[操作案内](docs/TRANSFER.md) |
 | FR-042 | 閲覧/編集の右側に簡易ミニマップを表示し、設定・Ctrl+Shift+M・操作メニュー・パレットで切り替えられる | 最大256表示行の分量を線にし、現在範囲を枠で示す。クリック/drag、focus時の↑↓/PageUp/Down/Home/End、UIA RangeValueをnative scrollへ渡す。本文・選択・Undo・dirtyを保つ。入力を120msまとめ、queueが空のとき16sampleずつ進める。別本文/解析を持たず、非表示/IME/modal/投入中は停止。本文320 logical pxを確保できなければ自動非表示にし設定値は保持する。#502 / [ADR0084](docs/adr/0084-bounded-native-minimap.md) |
+| FR-043 | Markdown内のローカル/HTTPS画像を本文の後から表示し、画像付きZIPを書き出せる | PNG/JPEG、長辺2048px、入力16MiB/64M画素、先頭256画像。画面付近から取得し、加工中のステータスと動くメーターを示す。原文/元画像を保持し、images/外のローカル参照へ配置を案内。ZIPはimages/内画像を同梱し、外部ローカル画像は明示選択、参照調整は出力コピーだけ。HTTPSはURLのまま。#520 / [ADR0085](docs/adr/0085-lazy-markdown-images.md) |
 
 OS終了通知（WM_QUERYENDSESSION / WM_ENDSESSION）は[ADR0053](docs/adr/0053-session-end-and-exit-contract.md)に従う。
 名前付き文書は既存保存の完了後に同意し、承認待ちの追加入力を止める。無題・改名保留・未確定IME・
@@ -140,7 +141,7 @@ WindowsのLocalAppData/NeNeFolioへ置く。Known Folderはpackage向け転送�
 
 ## 3. 非要件（やらないこと）
 
-- CommonMark 完全対応・HTML の描画・画像の埋め込み
+- CommonMark 完全対応・HTML の描画・メディアライブラリ・画像の自動取り込み
 - 複数ウィンドウ・タブ・分割表示
 - 同期・クラウド・ファイル監視（外部で変わった md は再起動で拾う）
 - 常駐・ホットキー・トレイ

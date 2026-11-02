@@ -1,6 +1,7 @@
 #ifndef NENEFOLIO_MARKDOWN_TABLE_H
 #define NENEFOLIO_MARKDOWN_TABLE_H
 #include "markdown_line.h"
+#include "markdown_render.h"
 #include "markdown_rtf_outcome.h"
 #include "markdown_table_format.h"
 struct text_buffer;
@@ -10,7 +11,7 @@ struct text_buffer;
 [[nodiscard]] bool markdown_table_starts(struct markdown_line line, struct markdown_line delimiter);
 /* Product representation range, not a RichEdit implementation maximum. */
 [[nodiscard]] bool markdown_table_native(size_t columns, size_t indent_twips);
-[[nodiscard]] enum markdown_rtf_outcome markdown_table_row(struct text_buffer *_Nonnull out,
+[[nodiscard]] enum markdown_rtf_outcome markdown_table_row(struct markdown_render render,
                                                            struct markdown_line line,
                                                            struct markdown_line delimiter,
                                                            struct markdown_table_format format);

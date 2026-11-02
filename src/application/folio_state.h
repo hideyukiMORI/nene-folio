@@ -21,6 +21,7 @@
 #include "folio_theme_choice.h"
 #include "folio_untitled_policy.h"
 #include "history_row_view.h"
+#include "image_port.h"
 #include "note_destination.h"
 #include "note_export_request.h"
 #include "note_import_request.h"
@@ -46,6 +47,17 @@ struct folio_state;
 struct note_name;
 struct note_text;
 struct replace_edit;
+struct markdown_images;
+[[nodiscard]] const struct markdown_images *_Nullable folio_state_images(
+    const struct folio_state *_Nonnull state);
+[[nodiscard]] enum image_outcome folio_state_request_image(struct folio_state *_Nonnull state,
+                                                           size_t index, uint64_t *_Nonnull ticket);
+[[nodiscard]] enum image_outcome
+folio_state_poll_image(struct folio_state *_Nonnull state, uint64_t ticket,
+                       struct image_bitmap *_Nullable *_Nonnull out);
+[[nodiscard]] enum image_phase folio_state_image_phase(const struct folio_state *_Nonnull state);
+[[nodiscard]] uint64_t folio_state_image_origin_revision(const struct folio_state *_Nonnull state);
+void folio_state_cancel_images(struct folio_state *_Nonnull state);
 
 [[nodiscard]] struct note_import_result
 folio_state_import_notes(struct folio_state *_Nonnull state,

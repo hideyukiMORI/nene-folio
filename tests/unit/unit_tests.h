@@ -156,4 +156,7 @@ void run_menu_availability_tests(void);
 struct transfer_port;
 [[nodiscard]] const struct transfer_port *_Nonnull test_transfer_port(void);
 void run_transfer_tests(void);
+struct image_port;
+[[nodiscard]] const struct image_port *_Nonnull test_image_port(void);
+void run_image_tests(void);
 #endif

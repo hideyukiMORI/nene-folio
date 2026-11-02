@@ -13,6 +13,26 @@
  * 列の網羅（訳し忘れと空の列）は CNF-011 が字句で守る。**简体中文は母語話者の確認を
  * 得ていない**（ADR 0032 の決定 3。後日この 1 列だけを直せる）。 */
 static const char *_Nonnull const catalog[][folio_language_count] = {
+    [UI_TEXT_FAILURE_EXPORT_IMAGES] =
+        {"画像を同梱できませんでした。画像の参照先と読み取り権限を確認してください。",
+         "Images could not be included. Check their locations and read permissions.",
+         "无法包含图片。请检查图片路径和读取权限。"},
+    [UI_TEXT_IMAGES_READING] = {"画像を読み込んでいます", "Loading images", "正在读取图片"},
+    [UI_TEXT_IMAGES_RESIZING] = {"画像を加工しています", "Resizing images", "正在缩放图片"},
+    [UI_TEXT_IMAGES_ADVISORY] =
+        {"ローカル画像は、このノートのフォルダー内の images/ に置くと持ち出しやすくなります。",
+         "Keep local images in images/ beside the note for portable exports.",
+         "将本地图片放在笔记旁的 images/ 文件夹中，便于导出。"},
+    [UI_TEXT_IMAGES_FAILED] =
+        {"一部の画像を表示できません。編集から閲覧へ戻ると再試行します。",
+         "Some images could not be shown. Switch to Edit and back to Read to retry.",
+         "部分图片无法显示。切换到编辑再返回阅读可重试。"},
+    [UI_TEXT_IMAGES_EXPORT_EXTERNAL] =
+        {"images/ "
+         "外のローカル画像もZIPへ同梱しますか？参照の変更は書き出すコピーだけに適用します。",
+         "Include local images outside images/ in the ZIP? Only exported copies will have their "
+         "references updated.",
+         "是否将 images/ 之外的本地图片也包含在 ZIP 中？仅修改导出副本中的引用。"},
     [UI_TEXT_KEYS_GROUP_BASIC] = {"よく使う操作", "Everyday actions", "常用操作"},
     [UI_TEXT_KEYS_DESC_MODE] = {"閲覧・編集を切り替える\n閲覧へ戻るときに保存します。",
                                 "Switch between Read and Edit.\nReturning to Read saves the note.",
@@ -255,9 +275,9 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
                              "Exported. The original notes are unchanged.",
                              "已导出，原笔记保持不变。"},
     [UI_TEXT_FAILURE_EXPORT_TOO_LARGE] =
-        {"ZIPの上限は128MiB・65,534件です。カテゴリごとに書き出してください。",
-         "ZIP export is limited to 128 MiB and 65,534 notes. Export individual categories.",
-         "ZIP 导出上限为 128 MiB、65,534 条笔记，请按分类导出。"},
+        {"ZIPの上限は128MiB・65,534ファイル・画像参照4,096件です。画像1枚は16MiBまでです。",
+         "ZIP limits: 128 MiB, 65,534 files, 4,096 image references; 16 MiB per image.",
+         "ZIP 上限：128 MiB、65,534 个文件、4,096 个图片引用；每张图片最多 16 MiB。"},
     [UI_TEXT_FAILURE_EXPORT_EXISTS] = {"その名前のファイルがあります。別の名前を指定してください。",
                                        "A file with that name exists. Choose a different name.",
                                        "同名文件已存在，请使用其他名称。"},

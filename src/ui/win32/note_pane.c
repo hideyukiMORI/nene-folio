@@ -3,6 +3,7 @@
 #include "caret_command.h"
 #include "folio_message.h"
 #include "line_index.h"
+#include "note_pane_images.h"
 #include "note_pane_links.h"
 #include "note_pane_table.h"
 #include "pane_mode.h"
@@ -28,6 +29,7 @@ struct note_pane
     HACCEL _Nullable zoom_keys;
     HACCEL _Nullable link_keys;
     struct note_pane_links *_Nullable links; /* Derived native positions, absent while editing. */
+    struct note_pane_images *_Nullable images;
     int zoom_percent; /* 表示倍率の唯一の所有値。RTF投入がnative倍率を戻すので再適用する。 */
     int zoom_wheel_delta;
     LONG table_width; /* Successful native width in twips; reset on every document load. */
@@ -855,12 +857,14 @@ enum note_pane_load_outcome note_pane_load(struct note_pane *_Nonnull pane,
         return failed_load(pane, SendMessageW(pane->handle, EM_GETMODIFY, 0, 0));
     }
     pane->readiness = NOTE_PANE_READINESS_STREAMING;
+    note_pane_images_destroy(pane->images);
+    pane->images = nullptr;
     note_pane_links_destroy(pane->links);
     pane->links = nullptr;
     pane->table_width = 0;
     LRESULT modified = SendMessageW(pane->handle, EM_GETMODIFY, 0, 0);
     SendMessageW(pane->handle, EM_EXLIMITTEXT, 0, editor_limit);
-    if (SendMessageW(pane->handle, EM_SETREADONLY, TRUE, 0) == 0 ||
+    if (SendMessageW(pane->handle, EM_SETREADONLY, FALSE, 0) == 0 ||
         !stream_rtf(pane, rtf, length) || !apply_zoom(pane, pane->zoom_percent) ||
         !layout_tables(pane, mode) || !prepare_links(pane, mode))
     {
@@ -876,6 +880,8 @@ enum note_pane_load_outcome note_pane_load(struct note_pane *_Nonnull pane,
         SendMessageW(pane->handle, EM_SETMODIFY, FALSE, 0);
         break;
     case PANE_MODE_VIEW:
+        if (SendMessageW(pane->handle, EM_SETREADONLY, TRUE, 0) == 0)
+            return failed_load(pane, modified);
         break;
     }
     EnableWindow(pane->handle, TRUE);
@@ -967,7 +973,11 @@ static bool layout_tables(struct note_pane *_Nonnull pane, enum pane_mode mode)
     }
     pane->table_layout_active = false;
     if (placed)
+    {
         pane->table_width = width;
+        if (pane->images != nullptr)
+            note_pane_images_reflow(pane->images);
+    }
     return placed;
 }
 
@@ -1469,6 +1479,93 @@ enum note_pane_link_outcome note_pane_link_click(struct note_pane *_Nonnull pane
     return link_target(pane, notice->chrg, out);
 }
 
+enum image_outcome note_pane_prepare_images(struct note_pane *_Nonnull pane, size_t count)
+{
+    note_pane_images_destroy(pane->images);
+    pane->images = nullptr;
+    if (pane->handle == nullptr || pane->readiness != NOTE_PANE_READINESS_READY)
+        return IMAGE_FAILED;
+    if (count == 0)
+        return IMAGE_READY;
+    ITextDocument *_Nullable document = text_document(pane);
+    if (document == nullptr)
+        return IMAGE_FAILED;
+    enum image_outcome result =
+        note_pane_images_create(pane->handle, document, count, &pane->images);
+    document->lpVtbl->Release(document);
+    return result;
+}
+bool note_pane_next_image(const struct note_pane *_Nonnull pane, size_t *_Nonnull index)
+{
+    return pane->images != nullptr && pane->handle != nullptr &&
+           pane->readiness == NOTE_PANE_READINESS_READY &&
+           note_pane_images_next(pane->images, pane->handle, index);
+}
+void note_pane_finish_image(struct note_pane *_Nonnull pane, size_t index)
+{
+    if (pane->images != nullptr)
+        note_pane_images_finish(pane->images, index);
+}
+static enum image_outcome insert_image(struct note_pane *_Nonnull pane,
+                                       ITextDocument *_Nonnull document, size_t index,
+                                       const struct image_bitmap *_Nonnull bitmap)
+{
+    CHARRANGE selection;
+    SendMessageW(pane->handle, EM_EXGETSEL, 0, (LPARAM)&selection);
+    LRESULT first = SendMessageW(pane->handle, EM_GETFIRSTVISIBLELINE, 0, 0);
+    LRESULT anchor = SendMessageW(pane->handle, EM_LINEINDEX, (WPARAM)first, 0);
+    POINTL before = {0};
+    POINT scroll = {0};
+    SendMessageW(pane->handle, EM_POSFROMCHAR, (WPARAM)&before, anchor);
+    SendMessageW(pane->handle, EM_GETSCROLLPOS, 0, (LPARAM)&scroll);
+    LRESULT modified = SendMessageW(pane->handle, EM_GETMODIFY, 0, 0);
+    pane->readiness = NOTE_PANE_READINESS_STREAMING;
+    enum image_outcome outcome = IMAGE_FAILED;
+    if (SendMessageW(pane->handle, EM_SETREADONLY, FALSE, 0) != 0)
+        outcome = note_pane_images_insert(pane->images, document, index, bitmap);
+    bool readonly = SendMessageW(pane->handle, EM_SETREADONLY, TRUE, 0) != 0;
+    bool resumed = finish_recolor(pane, document);
+    SendMessageW(pane->handle, EM_EXSETSEL, 0, (LPARAM)&selection);
+    POINTL after = {0};
+    SendMessageW(pane->handle, EM_POSFROMCHAR, (WPARAM)&after, anchor);
+    scroll.y += after.y - before.y;
+    SendMessageW(pane->handle, EM_SETSCROLLPOS, 0, (LPARAM)&scroll);
+    SendMessageW(pane->handle, EM_SETMODIFY, (WPARAM)(modified != 0), 0);
+    pane->readiness = NOTE_PANE_READINESS_READY;
+    if (!readonly)
+    {
+        EnableWindow(pane->handle, FALSE);
+        pane->readiness = NOTE_PANE_READINESS_UNAVAILABLE;
+    }
+    return readonly && resumed ? outcome : IMAGE_FAILED;
+}
+enum image_outcome note_pane_insert_image(struct note_pane *_Nonnull pane, size_t index,
+                                          const struct image_bitmap *_Nonnull bitmap)
+{
+    if (pane->images == nullptr || pane->handle == nullptr ||
+        pane->readiness != NOTE_PANE_READINESS_READY || pane->composing)
+        return IMAGE_FAILED;
+    ITextDocument *_Nullable document = text_document(pane);
+    if (document == nullptr)
+        return IMAGE_FAILED;
+    enum image_outcome result = IMAGE_FAILED;
+    if (resume_recolor(pane, document, PANE_MODE_VIEW) &&
+        SUCCEEDED(document->lpVtbl->Undo(document, tomSuspend, nullptr)))
+        result = insert_image(pane, document, index, bitmap);
+    document->lpVtbl->Release(document);
+    return result;
+}
+enum image_outcome note_pane_resize_image(struct note_pane *_Nonnull pane)
+{
+    if (pane->images == nullptr)
+        return IMAGE_READY;
+    size_t index = 0;
+    const struct image_bitmap *bitmap = note_pane_images_resize_next(pane->images, &index);
+    if (bitmap == nullptr)
+        return IMAGE_READY;
+    enum image_outcome result = note_pane_insert_image(pane, index, bitmap);
+    return result == IMAGE_READY ? IMAGE_PENDING : result;
+}
 void note_pane_destroy(struct note_pane *_Nullable pane)
 {
     if (pane == nullptr)
@@ -1504,6 +1601,7 @@ void note_pane_destroy(struct note_pane *_Nullable pane)
     }
     line_index_destroy(pane->lines);
     note_pane_links_destroy(pane->links);
+    note_pane_images_destroy(pane->images);
     free(pane->numbered);
     free(pane->taken);
     free(pane);

@@ -5,6 +5,7 @@
 #define NENEFOLIO_NOTE_PANE_H
 
 #include "gutter_row.h"
+#include "image_bitmap.h"
 #include "note_pane_link_outcome.h"
 #include "note_pane_load_outcome.h"
 #include "note_pane_outcome.h"
@@ -22,6 +23,16 @@
 #include <richedit.h>
 
 struct note_pane;
+[[nodiscard]] enum image_outcome note_pane_prepare_images(struct note_pane *_Nonnull pane,
+                                                          size_t count);
+[[nodiscard]] bool note_pane_next_image(const struct note_pane *_Nonnull pane,
+                                        size_t *_Nonnull index);
+[[nodiscard]] enum image_outcome note_pane_insert_image(struct note_pane *_Nonnull pane,
+                                                        size_t index,
+                                                        const struct image_bitmap *_Nonnull bitmap);
+void note_pane_finish_image(struct note_pane *_Nonnull pane, size_t index);
+/* One already-decoded image per idle tick after native width changes. */
+[[nodiscard]] enum image_outcome note_pane_resize_image(struct note_pane *_Nonnull pane);
 /* At most 16 display rows per call, using one independent TOM range. */
 [[nodiscard]] bool note_pane_samples(struct note_pane *_Nonnull pane, const int *_Nonnull lines,
                                      size_t count, struct note_pane_sample *_Nonnull out);

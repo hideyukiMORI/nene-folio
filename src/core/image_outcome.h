@@ -1,0 +1,14 @@
+#ifndef NENEFOLIO_IMAGE_OUTCOME_H
+#define NENEFOLIO_IMAGE_OUTCOME_H
+enum image_outcome : unsigned char
+{
+    IMAGE_READY,
+    IMAGE_PENDING,
+    IMAGE_FAILED,
+    IMAGE_UNSUPPORTED,
+    IMAGE_TOO_LARGE,
+    IMAGE_OUT_OF_MEMORY,
+    IMAGE_CANCELLED,
+    IMAGE_SKIPPED
+};
+#endif

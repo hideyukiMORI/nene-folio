@@ -10,5 +10,5 @@
     "win32_tests": {"path": "tests/win32", "dependencies": ["core", "application", "adapters_win32", "ui_win32"]}
   },
   "runtimeDependencies": [],
-  "platformLibraries": {"adapters_win32": ["kernel32", "user32", "shell32", "advapi32", "icu", "gdi32", "ole32", "uuid"], "ui_win32": ["user32", "gdi32", "dwmapi", "comdlg32", "comctl32", "imm32", "gdiplus", "uiautomationcore", "ole32", "oleaut32", "oleacc", "uuid", "shell32"], "app": ["user32"], "win32_tests": ["user32", "ole32"]}
+  "platformLibraries": {"adapters_win32": ["kernel32", "user32", "shell32", "advapi32", "icu", "gdi32", "ole32", "uuid", "windowscodecs", "winhttp"], "ui_win32": ["user32", "gdi32", "dwmapi", "comdlg32", "comctl32", "imm32", "gdiplus", "uiautomationcore", "ole32", "oleaut32", "oleacc", "uuid", "shell32"], "app": ["user32"], "win32_tests": ["user32", "ole32"]}
 }

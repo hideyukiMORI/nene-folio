@@ -27,6 +27,39 @@ enum note_pane_table_scan note_pane_table_columns(HWND handle, LONG start, int *
     return scanned;
 }
 
+LONG note_pane_table_image_row(HWND _Nonnull handle, const char16_t *_Nonnull units,
+                               size_t position)
+{
+    while (position > 0)
+    {
+        --position;
+        if ((units[position] != 0xFFF9 && units[position] != 0xFFFB) || position > LONG_MAX)
+            continue;
+        TABLECELLPARMS cells[63] = {0};
+        TABLEROWPARMS row = {0};
+        if (query_row(handle, (LONG)position, cells, &row) == NOTE_PANE_TABLE_PRESENT)
+            return units[position] == 0xFFF9 ? (LONG)position : -1;
+    }
+    return -1;
+}
+
+LONG note_pane_table_image_width(HWND _Nonnull handle, LONG start)
+{
+    if (start < 0)
+        return -1;
+    TABLECELLPARMS cells[63] = {0};
+    TABLEROWPARMS row = {0};
+    if (query_row(handle, start, cells, &row) != NOTE_PANE_TABLE_PRESENT)
+        return -1;
+    /* Canonical layout uses equal columns; the one-twip remainder uses the smaller width. */
+    LONG width = cells[0].dxWidth;
+    for (size_t index = 1; index < row.cCell; ++index)
+        if (cells[index].dxWidth < width)
+            width = cells[index].dxWidth;
+    LONG inner = width - 2 * row.dxCellMargin;
+    return inner > 0 ? inner : 1;
+}
+
 enum note_pane_table_scan note_pane_table_scan(HWND _Nonnull handle, const char16_t *_Nonnull units,
                                                size_t length)
 {

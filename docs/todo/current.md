@@ -1,5 +1,15 @@
 # いまの状態 — NeNe Folio
 
+## 画像表示と持ち出し — #520（2026-11-02、作業中）
+
+hideの新依頼でローカル/HTTPS画像の遅延表示を開始した。Markdown/パスを自動変更せず、
+images/への配置案内とZIP同梱を整える。方針は[ADR0085](../adr/0085-lazy-markdown-images.md)。
+実装と対象検証は[品質記録](../quality/2026-11-02-markdown-images.md)へ。原文/画像表示/ZIP、加工表示、
+移動/改名取消、HTTPSの期限/取消/証明書/容量を確認した。最終headの必須CI・統合・通常反映・整理は
+`D:/NeNeFolio/agents/markdown-images-20261102/integration-completion.json`の確定結果を参照する。
+作業木は`D:/NeNeFolio/worktrees/520-markdown-images`、原本は同outputsと
+`D:/NeNeFolio/agents/markdown-images-20261102`。下記のStore確認待ち・#466/#479の保留は継続する。
+
 ## 1.1.0公開とStore認定待ち（2026-11-01 23:35）
 
 [GitHub 1.1.0 Beta](https://github.com/hideyukiMORI/nene-folio/releases/tag/v1.1.0)を23:25:01 JSTに公開済み。

@@ -3,6 +3,7 @@
 #include "markdown_autolink.h"
 #include "markdown_character_reference.h"
 #include "markdown_containers.h"
+#include "markdown_images.h"
 #include "markdown_inline_tokens.h"
 #include "markdown_line.h"
 #include "markdown_rtf.h"
@@ -17,6 +18,14 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+
+#define IMAGE0                                                                                     \
+    "{\\v <nenefolio:image:0>}{\\pict\\pngblip\\picw16\\pich16\\picwgoal240\\pichgoal240 "         \
+    "89504e470d0a1a0a0000000d49484452000000100000001008060000001ff3ff610000003f49444154789c6360a0" \
+    "06c8"                                                                                         \
+    "ab68fa4f0e4631801c4b470da08501a41884d300428660b50cdd005c8620cb113400dd107471a20cc06730f56381" \
+    "a2cc"                                                                                         \
+    "44090000b793b8fce98c622c0000000049454e44ae426082} "
 
 static const char header[] =
     "{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0\\fnil Noto Sans JP;}{\\f1\\fmodern Consolas;}}"
@@ -701,6 +710,10 @@ static void verify_table_query_rejections(void)
     struct text_buffer *out = nullptr;
     require(text_buffer_create(&out) == TEXT_BUFFER_ACCEPTED, "table rejection output");
     struct markdown_line header_line = markdown_line_read("A | B", 5, 0);
+    struct markdown_images *images = nullptr;
+    require(markdown_images_create(header_line.bytes, &images) == IMAGE_READY,
+            "direct image collector");
+    struct markdown_render render = {.text = out, .images = images};
     struct markdown_line delimiter = markdown_line_read("-- | --", 7, 0);
     struct markdown_line invalid = {.bytes = "x", .length = 1, .content = 2};
     require(markdown_table_columns(invalid) == 0 && !markdown_table_delimiter(invalid) &&
@@ -708,10 +721,10 @@ static void verify_table_query_rejections(void)
                 !markdown_table_starts(header_line, invalid),
             "borrowed table classifiers reject malformed header and delimiter queries");
     require(
-        markdown_table_row(out, invalid, delimiter,
+        markdown_table_row(render, invalid, delimiter,
                            (struct markdown_table_format){.kind = MARKDOWN_ROW_KIND_HEADER}) ==
                 MARKDOWN_RTF_INVALID_INPUT &&
-            markdown_table_row(out, header_line, invalid,
+            markdown_table_row(render, header_line, invalid,
                                (struct markdown_table_format){.kind = MARKDOWN_ROW_KIND_BODY}) ==
                 MARKDOWN_RTF_INVALID_INPUT &&
             text_buffer_length(out) == 0,
@@ -722,12 +735,13 @@ static void verify_table_query_rejections(void)
         text_buffer_append_text(wide, "| -- ");
     text_buffer_append_text(wide, "|");
     delimiter = markdown_line_read(text_buffer_bytes(wide), text_buffer_length(wide), 0);
-    require(markdown_table_row(out, header_line, delimiter,
+    require(markdown_table_row(render, header_line, delimiter,
                                (struct markdown_table_format){.kind = MARKDOWN_ROW_KIND_HEADER}) ==
                     MARKDOWN_RTF_INVALID_INPUT &&
                 text_buffer_length(out) == 0,
             "native row API rejects more than sixty-three columns rather than truncating");
     text_buffer_destroy(wide);
+    markdown_images_destroy(images);
     text_buffer_destroy(out);
 }
 
@@ -768,32 +782,33 @@ static void verify_new_blocks(void)
     expect_fragment("> > ## nested", "\\fs34\\li960 nested", "> ##");
 }
 
-static void verify_image_literal(void)
+static void verify_image_alt_literal(void)
 {
     expect_body("![**alt**](**destination**)",
-                "\\pard\\sa80\\sl240\\slmult1\\cf1 ![**alt**](**destination**)\\par\n");
+                "\\pard\\sa80\\sl240\\slmult1\\cf1 " IMAGE0 "**alt**\\par\n");
     expect_body("![**alt**](destination)",
-                "\\pard\\sa80\\sl240\\slmult1\\cf1 ![**alt**](destination)\\par\n");
+                "\\pard\\sa80\\sl240\\slmult1\\cf1 " IMAGE0 "**alt**\\par\n");
     expect_body("![alt](**destination**)",
-                "\\pard\\sa80\\sl240\\slmult1\\cf1 ![alt](**destination**)\\par\n");
+                "\\pard\\sa80\\sl240\\slmult1\\cf1 " IMAGE0 "alt\\par\n");
     expect_body("![**alt** and ~~strike~~ and `code` and [link](url)](destination)",
-                "\\pard\\sa80\\sl240\\slmult1\\cf1 ![**alt** and ~~strike~~ and `code` and "
-                "[link](url)](destination)\\par\n");
+                "\\pard\\sa80\\sl240\\slmult1\\cf1 " IMAGE0 "**alt** and ~~strike~~ and `code` and "
+                "[link](url)\\par\n");
     expect_body("**before   ![**inside**](url) after**",
-                "\\pard\\sa80\\sl240\\slmult1\\cf1 {\\b before   ![**inside**](url) after}\\par\n");
+                "\\pard\\sa80\\sl240\\slmult1\\cf1 {\\b before   " IMAGE0
+                "**inside** after}\\par\n");
     expect_body("**outside ![inside**](url) tail**",
-                "\\pard\\sa80\\sl240\\slmult1\\cf1 {\\b outside ![inside**](url) tail}\\par\n");
+                "\\pard\\sa80\\sl240\\slmult1\\cf1 {\\b outside " IMAGE0 "inside** tail}\\par\n");
     expect_body("[before   ![**inside**](url) after](outer)",
-                "\\pard\\sa80\\sl240\\slmult1\\cf1 {\\cf4\\ul before   ![**inside**](url) "
+                "\\pard\\sa80\\sl240\\slmult1\\cf1 {\\cf4\\ul before   " IMAGE0 "**inside** "
                 "after\\ul0}\\par\n");
-    expect_body(
-        "![escaped \\*mark* and 日本 {x}](url)",
-        "\\pard\\sa80\\sl240\\slmult1\\cf1 ![escaped \\\\*mark* and 日本 \\{x\\}](url)\\par\n");
+    expect_body("![escaped \\*mark* and 日本 {x}](url)",
+                "\\pard\\sa80\\sl240\\slmult1\\cf1 " IMAGE0
+                "escaped \\\\*mark* and 日本 \\{x\\}\\par\n");
     expect_body("![line\nbreak](url)",
-                "\\pard\\sa80\\sl240\\slmult1\\cf1 ![line break](url)\\par\n");
-    expect_body("![**a](u)**", "\\pard\\sa80\\sl240\\slmult1\\cf1 ![**a](u)**\\par\n");
+                "\\pard\\sa80\\sl240\\slmult1\\cf1 " IMAGE0 "line break\\par\n");
+    expect_body("![**a](u)**", "\\pard\\sa80\\sl240\\slmult1\\cf1 " IMAGE0 "**a**\\par\n");
     expect_fragment("![**open**](url", "{\\b open}", "![**open**](url)");
-    expect_fragment("| ![a\\|b](url) |\n|---|\n| c |", "![a|b](url)", "\\\\|");
+    expect_fragment("| ![a\\|b](url) |\n|---|\n| c |", "" IMAGE0 "a|b", "\\\\|");
 }
 
 static void verify_image_boundaries(void)
@@ -801,13 +816,13 @@ static void verify_image_boundaries(void)
     expect_body("[\\![**a**](u)](v)",
                 "\\pard\\sa80\\sl240\\slmult1\\cf1 {\\cf4\\ul ![{\\b a}](u)\\ul0}\\par\n");
     expect_body("[\\\\![**a**](u)](v)",
-                "\\pard\\sa80\\sl240\\slmult1\\cf1 {\\cf4\\ul \\\\![**a**](u)\\ul0}\\par\n");
+                "\\pard\\sa80\\sl240\\slmult1\\cf1 {\\cf4\\ul \\\\" IMAGE0 "**a**\\ul0}\\par\n");
     expect_body("[![a](b](c))",
                 "\\pard\\sa80\\sl240\\slmult1\\cf1 {\\cf4\\ul ![a](b\\ul0})\\par\n");
     expect_body("[label]( ![hidden](url) )",
                 "\\pard\\sa80\\sl240\\slmult1\\cf1 {\\cf4\\ul label\\ul0}\\par\n");
     expect_body("![`[code](url)`](destination)",
-                "\\pard\\sa80\\sl240\\slmult1\\cf1 ![`[code](url)`](destination)\\par\n");
+                "\\pard\\sa80\\sl240\\slmult1\\cf1 " IMAGE0 "`[code](url)`\\par\n");
     expect_body("[label `![x](url)` after](outer)",
                 "\\pard\\sa80\\sl240\\slmult1\\cf1 {\\cf4\\ul label "
                 "{\\f1\\fs20\\cf4 ![x](url)} after\\ul0}\\par\n");
@@ -815,7 +830,7 @@ static void verify_image_boundaries(void)
 
 void run_markdown_link_tests(void)
 {
-    verify_image_literal();
+    verify_image_alt_literal();
     verify_image_boundaries();
     expect_body("[a]([b) [x](v)](u)", "\\pard\\sa80\\sl240\\slmult1\\cf1 {\\cf4\\ul a\\ul0} "
                                       "{\\cf4\\ul x\\ul0}](u)\\par\n");
@@ -833,10 +848,10 @@ void run_markdown_link_tests(void)
                                          "{\\cf4\\ul x\\ul0}\\par\n");
     expect_fragment("*before [x](foo*) after", "*before {\\cf4\\ul x\\ul0} after", "\\i ");
     expect_fragment("*before [x](foo) after*", "{\\i before {\\cf4\\ul x\\ul0} after}", "foo");
-    expect_fragment("![alt](url)", "![alt](url)", "\\ul");
+    expect_fragment("![alt](url)", "" IMAGE0 "alt", "\\ul");
     expect_body("\\![label](url)",
                 "\\pard\\sa80\\sl240\\slmult1\\cf1 !{\\cf4\\ul label\\ul0}\\par\n");
-    expect_body("\\\\![alt](url)", "\\pard\\sa80\\sl240\\slmult1\\cf1 \\\\![alt](url)\\par\n");
+    expect_body("\\\\![alt](url)", "\\pard\\sa80\\sl240\\slmult1\\cf1 \\\\" IMAGE0 "alt\\par\n");
     expect_body("\\\\\\![label](url)",
                 "\\pard\\sa80\\sl240\\slmult1\\cf1 \\\\!{\\cf4\\ul label\\ul0}\\par\n");
     expect_body("! [label](url)",
@@ -1113,7 +1128,10 @@ static void verify_borrowed_input(void)
     struct markdown_view view = {.spans = &span, .count = 1, .length = 1};
     struct text_buffer *out = nullptr;
     require(text_buffer_create(&out) == TEXT_BUFFER_ACCEPTED, "invalid input output");
-    require(markdown_inline_tokens_render(out, view) == MARKDOWN_RTF_INVALID_INPUT &&
+    struct markdown_images *images = nullptr;
+    require(markdown_images_create(span.bytes, &images) == IMAGE_READY, "direct image collector");
+    struct markdown_render render = {.text = out, .images = images};
+    require(markdown_inline_tokens_render(render, view) == MARKDOWN_RTF_INVALID_INPUT &&
                 text_buffer_length(out) == 0,
             "inconsistent borrowed offsets are typed invalid input");
     view.count = 0;
@@ -1125,11 +1143,12 @@ static void verify_borrowed_input(void)
     struct markdown_line header_line = markdown_line_read("A | B", 5, 0);
     struct markdown_line delimiter = markdown_line_read("-- | --", 7, 0);
     require(
-        markdown_table_row(out, header_line, delimiter,
+        markdown_table_row(render, header_line, delimiter,
                            (struct markdown_table_format){.kind = (enum markdown_row_kind)99}) ==
                 MARKDOWN_RTF_INVALID_INPUT &&
             text_buffer_length(out) == 0,
         "invalid row enum is rejected before any RTF is appended");
+    markdown_images_destroy(images);
     text_buffer_destroy(out);
 }
 
@@ -1177,24 +1196,28 @@ static void verify_table_format_limits(void)
     require(text_buffer_create(&out) == TEXT_BUFFER_ACCEPTED, "table format boundary output");
     struct markdown_line line = markdown_line_read("A | B", 5, 0);
     struct markdown_line delimiter = markdown_line_read("-- | --", 7, 0);
+    struct markdown_images *images = nullptr;
+    require(markdown_images_create(line.bytes, &images) == IMAGE_READY, "table image collector");
+    struct markdown_render render = {.text = out, .images = images};
     struct markdown_table_format format = {.kind = MARKDOWN_ROW_KIND_HEADER, .indent_twips = 32768};
-    require(markdown_table_row(out, line, delimiter, format) == MARKDOWN_RTF_INVALID_INPUT &&
+    require(markdown_table_row(render, line, delimiter, format) == MARKDOWN_RTF_INVALID_INPUT &&
                 text_buffer_length(out) == 0,
             "above-policy indent is rejected before output or overflow");
     format.indent_twips = SIZE_MAX;
-    require(markdown_table_row(out, line, delimiter, format) == MARKDOWN_RTF_INVALID_INPUT &&
+    require(markdown_table_row(render, line, delimiter, format) == MARKDOWN_RTF_INVALID_INPUT &&
                 text_buffer_length(out) == 0,
             "an unrepresentable direct indent cannot wrap during cell edge addition");
     format.indent_twips = 32767;
     struct markdown_line malformed = markdown_line_read("bad | --", 8, 0);
-    require(markdown_table_row(out, line, malformed, format) == MARKDOWN_RTF_INVALID_INPUT &&
+    require(markdown_table_row(render, line, malformed, format) == MARKDOWN_RTF_INVALID_INPUT &&
                 text_buffer_length(out) == 0,
             "direct row input requires actual delimiter syntax");
-    require(markdown_table_row(out, line, delimiter, format) == MARKDOWN_RTF_CONVERTED &&
+    require(markdown_table_row(render, line, delimiter, format) == MARKDOWN_RTF_CONVERTED &&
                 strstr(text_buffer_bytes(out), "\\trleft32767\\") != nullptr &&
                 strstr(text_buffer_bytes(out), "\\cellx37267\\") != nullptr &&
                 strstr(text_buffer_bytes(out), "\\cellx41767\\") != nullptr,
             "inclusive policy boundary safely emits indent plus initial edges");
+    markdown_images_destroy(images);
     text_buffer_destroy(out);
 }
 
@@ -1323,11 +1346,19 @@ static void expect_inline_view(struct markdown_view view, const char *_Nonnull e
 {
     struct text_buffer *out = nullptr;
     require(text_buffer_create(&out) == TEXT_BUFFER_ACCEPTED, "direct inline output");
-    require(markdown_inline_tokens_render(out, view) == MARKDOWN_RTF_CONVERTED &&
-                text_buffer_finish(out) == TEXT_BUFFER_ACCEPTED &&
-                text_buffer_length(out) == length &&
-                memcmp(text_buffer_bytes(out), expected, length) == 0,
-            "direct inline bytes match expected RTF");
+    struct markdown_images *images = nullptr;
+    require(markdown_images_create(view.spans[0].bytes, &images) == IMAGE_READY,
+            "direct image collector");
+    struct markdown_render render = {.text = out, .images = images};
+    require(markdown_inline_tokens_render(render, view) == MARKDOWN_RTF_CONVERTED &&
+                text_buffer_finish(out) == TEXT_BUFFER_ACCEPTED,
+            "direct inline render");
+    if (text_buffer_length(out) != length || memcmp(text_buffer_bytes(out), expected, length) != 0)
+    {
+        fprintf(stderr, "inline expected=%s\nactual=%s\n", expected, text_buffer_bytes(out));
+        require(false, "direct inline bytes match expected RTF");
+    }
+    markdown_images_destroy(images);
     text_buffer_destroy(out);
 }
 
@@ -1500,7 +1531,7 @@ static void verify_inline_coherent_storage(void)
 
 static void verify_inline_literal_boundaries(void)
 {
-    expect_inline_text("ab![cd](u)ef", "ab![cd](u)ef");
+    expect_inline_text("ab![cd](u)ef", "ab" IMAGE0 "cdef");
     expect_inline_text("ab!/[cd](u)ef", "ab!/{\\cf4\\ul cd\\ul0}ef");
     expect_inline_text("日本!/{x}\\a", "日本!/\\{x\\}\\\\a");
     expect_inline_text("a\tb\rc", "a\tbc");
@@ -1521,7 +1552,7 @@ static void verify_inline_borrowed_storage(void)
     struct markdown_span cell = {.bytes = "![a\\|b](u)", .length = strlen("![a\\|b](u)")};
     view = (struct markdown_view){
         .spans = &cell, .count = 1, .length = cell.length, .table_cell = true};
-    expect_inline_view(view, "![a|b](u)", strlen("![a|b](u)"));
+    expect_inline_view(view, "" IMAGE0 "a|b", strlen(IMAGE0 "a|b"));
     cell = (struct markdown_span){.bytes = "`a\\|b`", .length = strlen("`a\\|b`")};
     view.length = cell.length;
     expect_inline_view(view, "{\\f1\\fs20\\cf4 a|b}", strlen("{\\f1\\fs20\\cf4 a|b}"));
@@ -1548,7 +1579,7 @@ static void verify_inline_space_borrowed(void)
     struct markdown_span cell = {.bytes = "![a b\\|c](u)", .length = strlen("![a b\\|c](u)")};
     view = (struct markdown_view){
         .spans = &cell, .count = 1, .length = cell.length, .table_cell = true};
-    expect_inline_view(view, "![a b|c](u)", strlen("![a b|c](u)"));
+    expect_inline_view(view, "" IMAGE0 "a b|c", strlen(IMAGE0 "a b|c"));
     cell = (struct markdown_span){.bytes = "`a b\\|c`", .length = strlen("`a b\\|c`")};
     view.length = cell.length;
     expect_inline_view(view, "{\\f1\\fs20\\cf4 a b|c}", strlen("{\\f1\\fs20\\cf4 a b|c}"));
@@ -1561,25 +1592,29 @@ static void verify_inline_storage_guards(void)
     text_buffer_append_text(out, "kept");
     struct markdown_span span = {.bytes = "", .length = 0};
     struct markdown_view view = {.spans = &span, .count = 0, .length = 0};
+    struct markdown_images *images = nullptr;
+    require(markdown_images_create(span.bytes, &images) == IMAGE_READY, "direct image collector");
+    struct markdown_render render = {.text = out, .images = images};
     allocation_probe_fail_at(0);
-    require(markdown_inline_tokens_render(out, view) == MARKDOWN_RTF_CONVERTED,
+    require(markdown_inline_tokens_render(render, view) == MARKDOWN_RTF_CONVERTED,
             "empty view does not require token storage");
     view.count = 1;
     span.length = view.length = SIZE_MAX;
-    require(markdown_inline_tokens_render(out, view) == MARKDOWN_RTF_OUT_OF_MEMORY,
+    require(markdown_inline_tokens_render(render, view) == MARKDOWN_RTF_OUT_OF_MEMORY,
             "SIZE_MAX guard precedes borrowed source scanning");
     span.length = view.length = SIZE_MAX - 1;
-    require(markdown_inline_tokens_render(out, view) == MARKDOWN_RTF_OUT_OF_MEMORY,
+    require(markdown_inline_tokens_render(render, view) == MARKDOWN_RTF_OUT_OF_MEMORY,
             "existing allocation length ceiling precedes source scanning");
     span.length = 0;
     span.offset = 1;
     view.length = 0;
-    require(markdown_inline_tokens_render(out, view) == MARKDOWN_RTF_INVALID_INPUT,
+    require(markdown_inline_tokens_render(render, view) == MARKDOWN_RTF_INVALID_INPUT,
             "invalid offsets remain invalid input before planning");
     require(allocation_probe_calls() == 0 && text_buffer_length(out) == 4 &&
                 same_text(text_buffer_bytes(out), "kept"),
             "empty and rejected views allocate nothing or change existing output");
     allocation_probe_fail_at(0);
+    markdown_images_destroy(images);
     text_buffer_destroy(out);
 }
 
@@ -1598,8 +1633,11 @@ static bool verify_inline_literal_storage(size_t length, const char *_Nonnull la
     require(text_buffer_finish(source) == TEXT_BUFFER_ACCEPTED, "inline literal source complete");
     struct markdown_span span = {.bytes = text_buffer_bytes(source), .length = length};
     struct markdown_view view = {.spans = &span, .count = 1, .length = length};
+    struct markdown_images *images = nullptr;
+    require(markdown_images_create(span.bytes, &images) == IMAGE_READY, "direct image collector");
+    struct markdown_render render = {.text = out, .images = images};
     allocation_probe_fail_at(0);
-    enum markdown_rtf_outcome rendered = markdown_inline_tokens_render(out, view);
+    enum markdown_rtf_outcome rendered = markdown_inline_tokens_render(render, view);
     size_t calls = allocation_probe_calls();
     size_t maximum = allocation_probe_calloc_max_bytes();
     allocation_probe_fail_at(0);
@@ -1612,6 +1650,7 @@ static bool verify_inline_literal_storage(size_t length, const char *_Nonnull la
                 text_buffer_length(out) == length &&
                 memcmp(text_buffer_bytes(out), text_buffer_bytes(source), length) == 0,
             "direct literal RTF is exactly the unchanged source bytes");
+    markdown_images_destroy(images);
     text_buffer_destroy(out);
     text_buffer_destroy(source);
     if (observed)
@@ -1670,8 +1709,11 @@ static size_t verify_inline_metadata_allocation(void)
         struct text_buffer *out = nullptr;
         require(text_buffer_create(&out) == TEXT_BUFFER_ACCEPTED, "metadata OOM output");
         text_buffer_append_text(out, "kept");
+        struct markdown_images *images = nullptr;
+        require(markdown_images_create(source, &images) == IMAGE_READY, "direct image collector");
+        struct markdown_render render = {.text = out, .images = images};
         allocation_probe_fail_at(fail);
-        enum markdown_rtf_outcome result = markdown_inline_tokens_render(out, view);
+        enum markdown_rtf_outcome result = markdown_inline_tokens_render(render, view);
         size_t calls = allocation_probe_calls();
         allocation_probe_fail_at(0);
         if (calls == 0)
@@ -1679,12 +1721,14 @@ static size_t verify_inline_metadata_allocation(void)
             require(result == MARKDOWN_RTF_CONVERTED &&
                         text_buffer_finish(out) == TEXT_BUFFER_ACCEPTED,
                     "unhooked direct render completes");
+            markdown_images_destroy(images);
             text_buffer_destroy(out);
             return 0;
         }
         require(result == MARKDOWN_RTF_OUT_OF_MEMORY && text_buffer_length(out) == 4 &&
                     same_text(text_buffer_bytes(out), "kept"),
                 "each inline metadata allocation failure keeps existing buffer bytes");
+        markdown_images_destroy(images);
         text_buffer_destroy(out);
         ++rejected;
     }
@@ -1716,7 +1760,7 @@ static void verify_autolink_rendering(void)
                     "example.com/&\\ul0}");
     expect_fragment("`<https://example.com/>`", "{\\f1\\fs20\\cf4 <https://example.com/>", "\\ul ");
     expect_fragment("\\<https://example.com/>", "<https://example.com/>", "\\ul ");
-    expect_fragment("![<https://example.com/>](image)", "![<https://example.com/>](image)",
+    expect_fragment("![<https://example.com/>](image)", "" IMAGE0 "<https://example.com/>",
                     "\\ul ");
     expect_fragment("<https://x/`raw>`after`", "{\\f1\\fs20\\cf4 after}", "{\\f1\\fs20\\cf4 raw");
     expect_fragment("`before <https://x/`>", "{\\f1\\fs20\\cf4 before <https://x/}>", "\\ul ");
@@ -1757,7 +1801,7 @@ static void verify_character_references(void)
     expect_fragment("**&amp;** [&#65;](url)", "{\\b &} {\\cf4\\ul A\\ul0}", "&#65;");
     expect_fragment("`&amp;&#65;`", "{\\f1\\fs20\\cf4 &amp;&#65;}", "{\\f1\\fs20\\cf4 &A}");
     expect_fragment("```\n&amp;&#65;\n```", "&amp;&#65;", "&A");
-    expect_fragment("![&amp;&#65;](image)", "![&amp;&#65;](image)", "![&A]");
+    expect_fragment("![&amp;&#65;](image)", "" IMAGE0 "&amp;&#65;", "![&A]");
     expect_fragment("\\&amp; &amp;amp;", "&amp; &amp;", "& &");
     const char *const rejected[] = {"&",     "&#",     "&#;",         "&#x;",        "&#X;",
                                     "&#xG;", "&#-1;",  "&#12345678;", "&#x1234567;", "&#65",
