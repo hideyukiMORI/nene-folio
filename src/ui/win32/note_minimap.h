@@ -19,9 +19,6 @@ void note_minimap_begin(struct note_minimap *_Nonnull map);
 [[nodiscard]] bool note_minimap_step(struct note_minimap *_Nonnull map,
                                      struct note_pane *_Nonnull pane);
 /* 呼出元は本文READY/可視を確認する。いずれも本文/選択を変更しない。 */
-[[nodiscard]] bool note_minimap_viewport(HWND _Nonnull pane,
-                                         struct note_minimap_view *_Nonnull out);
-[[nodiscard]] int note_minimap_limit(struct note_minimap_view view);
 [[nodiscard]] RECT note_minimap_track(const struct note_minimap_paint *_Nonnull paint);
 [[nodiscard]] RECT note_minimap_thumb(const struct note_minimap_paint *_Nonnull paint);
 /* pointerは主窓clientのy。offsetはthumb内の掴んだ位置。 */

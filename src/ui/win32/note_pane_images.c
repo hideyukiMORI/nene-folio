@@ -1,5 +1,6 @@
 #include "note_pane_images.h"
 #include "markdown_images.h"
+#include "note_pane_geometry.h"
 #include "note_pane_table.h"
 #include <commdlg.h>
 #include <richedit.h>
@@ -246,6 +247,19 @@ void note_pane_images_destroy(struct note_pane_images *_Nullable images)
 void note_pane_images_reflow(struct note_pane_images *_Nonnull images)
 {
     images->resizing = 0;
+}
+size_t note_pane_images_count(const struct note_pane_images *_Nonnull images)
+{
+    return images->count;
+}
+bool note_pane_images_bounds(const struct note_pane_images *_Nonnull images,
+                             ITextRange *_Nonnull range, size_t index, RECT *_Nonnull out)
+{
+    if (index >= images->count)
+        return false;
+    LONG position = images->positions[index];
+    return SUCCEEDED(range->lpVtbl->SetRange(range, position, position + 1)) &&
+           note_pane_geometry_bounds(images->window, range, out);
 }
 const struct image_bitmap *_Nullable note_pane_images_resize_next(
     struct note_pane_images *_Nonnull images, size_t *_Nonnull index)

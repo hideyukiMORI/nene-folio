@@ -1,5 +1,6 @@
 /* #510: public window/idle boundaries; no real clock or delivered timer is needed. */
 #include "accessible_request.h"
+#include "accessible_view.h"
 #include "appearance_adapter.h"
 #include "folio_state.h"
 #include "folio_window.h"
@@ -378,6 +379,44 @@ static void verify_edit(struct folio_window *_Nonnull window, HWND root, HWND bo
     finish(window, body);
 }
 
+static void verify_minimap_coordinates(struct folio_window *_Nonnull window, HWND root, HWND body)
+{
+    struct accessible_item item = {.kind = ACCESSIBLE_MINIMAP};
+    struct accessible_view view;
+    require(folio_window_accessible_read(window, &item, &view) == S_OK,
+            "minimap accessible geometry");
+    RECT client;
+    require(GetClientRect(body, &client), "native body size");
+    require(view.range_maximum > 1000 && view.range_small_change > 1 &&
+                view.range_large_change == client.bottom - client.top,
+            "UIA range and increments use document pixels");
+    struct accessible_request request = {
+        .item = item, .action = ACCESSIBLE_ACTION_SET_RANGE, .range_value = view.range_maximum};
+    require(folio_window_accessible_action(window, &request) == S_OK, "UIA bottom");
+    POINT point = {0};
+    SendMessageW(body, EM_GETSCROLLPOS, 0, (LPARAM)&point);
+    require(point.y == view.range_maximum, "UIA maximum is real native bottom");
+    request.action = ACCESSIBLE_ACTION_FOCUS;
+    require(folio_window_accessible_action(window, &request) == S_OK, "focus minimap");
+    SendMessageW(root, WM_KEYDOWN, VK_HOME, 0);
+    SendMessageW(body, EM_GETSCROLLPOS, 0, (LPARAM)&point);
+    require(point.y == 0, "Home reaches native top");
+    SendMessageW(root, WM_KEYDOWN, VK_DOWN, 0);
+    SendMessageW(body, EM_GETSCROLLPOS, 0, (LPARAM)&point);
+    require(point.y == view.range_small_change, "arrow uses native text height");
+    SendMessageW(root, WM_KEYDOWN, VK_NEXT, 0);
+    SendMessageW(body, EM_GETSCROLLPOS, 0, (LPARAM)&point);
+    require(point.y == view.range_small_change + view.range_large_change,
+            "PageDown uses native viewport height");
+    SendMessageW(root, WM_KEYDOWN, VK_END, 0);
+    SendMessageW(body, EM_GETSCROLLPOS, 0, (LPARAM)&point);
+    require(point.y == view.range_maximum, "End and UIA use same bottom");
+    request.action = ACCESSIBLE_ACTION_SET_RANGE;
+    request.range_value = view.range_maximum + 1;
+    require(folio_window_accessible_action(window, &request) == E_INVALIDARG,
+            "UIA rejects target beyond document bottom");
+}
+
 int main(void)
 {
     HDESK desktop = CreateDesktopW(L"NeNeFolioMinimapScheduling", nullptr, nullptr, 0,
@@ -404,6 +443,7 @@ int main(void)
     verify_idle_cancel(window, fixture.state, root, body);
     verify_guards(window, root, body);
     verify_edit(window, root, body);
+    verify_minimap_coordinates(window, root, body);
     SetWindowLongPtrW(body, GWLP_WNDPROC, (LONG_PTR)original_body);
     folio_window_destroy(window);
     destroy_fixture(&fixture);

@@ -1,4 +1,5 @@
 #include "note_minimap.h"
+#include "markdown_images.h"
 #include "note_pane.h"
 #include <limits.h>
 #include <richedit.h>
@@ -11,6 +12,11 @@ struct note_minimap
 {
     struct note_pane_sample samples[sample_capacity];
     struct note_pane_sample scratch[sample_capacity];
+    RECT images[markdown_images_display_limit];
+    RECT image_scratch[markdown_images_display_limit];
+    size_t images_shown;
+    size_t image_count;
+    size_t image_cursor;
     size_t shown;
     size_t count;
     size_t cursor;
@@ -37,12 +43,15 @@ void note_minimap_invalidate(struct note_minimap *_Nonnull map)
     map->pending = false;
     map->count = 0;
     map->cursor = 0;
+    map->image_cursor = 0;
+    map->image_count = 0;
 }
 
 void note_minimap_clear(struct note_minimap *_Nonnull map)
 {
     note_minimap_invalidate(map);
     map->shown = 0;
+    map->images_shown = 0;
 }
 
 void note_minimap_begin(struct note_minimap *_Nonnull map)
@@ -56,13 +65,28 @@ bool note_minimap_pending(const struct note_minimap *_Nonnull map)
     return map->pending;
 }
 
-static bool begin_samples(struct note_minimap *_Nonnull map, HWND pane)
+static bool begin_samples(struct note_minimap *_Nonnull map, struct note_pane *_Nonnull pane)
 {
-    LRESULT lines = SendMessageW(pane, EM_GETLINECOUNT, 0, 0);
+    LRESULT lines = SendMessageW(note_pane_handle(pane), EM_GETLINECOUNT, 0, 0);
     if (lines < 1 || lines > INT_MAX)
         return false;
     map->lines = (int)lines;
     map->count = (size_t)lines < sample_capacity ? (size_t)lines : sample_capacity;
+    map->image_count = note_pane_image_count(pane);
+    return true;
+}
+
+static bool image_batch(struct note_minimap *_Nonnull map, struct note_pane *_Nonnull pane)
+{
+    size_t count = map->image_count - map->image_cursor;
+    count = count > note_pane_sample_work ? note_pane_sample_work : count;
+    for (size_t at = 0; at < count; ++at)
+    {
+        size_t index = map->image_cursor + at;
+        if (!note_pane_image_bounds(pane, index, &map->image_scratch[index]))
+            return false;
+    }
+    map->image_cursor += count;
     return true;
 }
 
@@ -86,49 +110,25 @@ bool note_minimap_step(struct note_minimap *_Nonnull map, struct note_pane *_Non
     if (!map->pending)
         return false;
     HWND handle = note_pane_handle(pane);
-    if (handle == nullptr || (map->count == 0 && !begin_samples(map, handle)))
+    if (handle == nullptr || (map->count == 0 && !begin_samples(map, pane)))
     {
         note_minimap_clear(map);
         return true;
     }
-    if (!sample_batch(map, pane))
+    bool ready = map->cursor < map->count ? sample_batch(map, pane) : image_batch(map, pane);
+    if (!ready)
     {
         note_minimap_clear(map);
         return true;
     }
-    if (map->cursor != map->count)
+    if (map->cursor != map->count || map->image_cursor != map->image_count)
         return false;
     memcpy(map->samples, map->scratch, map->count * sizeof map->samples[0]);
     map->shown = map->count;
+    memcpy(map->images, map->image_scratch, map->image_count * sizeof map->images[0]);
+    map->images_shown = map->image_count;
     map->pending = false;
     return true;
-}
-
-bool note_minimap_viewport(HWND pane, struct note_minimap_view *_Nonnull out)
-{
-    LRESULT lines = SendMessageW(pane, EM_GETLINECOUNT, 0, 0);
-    LRESULT first = SendMessageW(pane, EM_GETFIRSTVISIBLELINE, 0, 0);
-    if (lines < 1 || lines > INT_MAX || first < 0 || first >= lines)
-        return false;
-    RECT rect = {0};
-    SendMessageW(pane, EM_GETRECT, 0, (LPARAM)&rect);
-    if (IsRectEmpty(&rect))
-        return false;
-    POINTL point = {.x = rect.right - 1, .y = rect.bottom - 1};
-    LRESULT at = SendMessageW(pane, EM_CHARFROMPOS, 0, (LPARAM)&point);
-    if (at < 0)
-        return false;
-    LRESULT last = SendMessageW(pane, EM_EXLINEFROMCHAR, 0, at);
-    if (last < first || last >= lines)
-        return false;
-    *out = (struct note_minimap_view){
-        .lines = (int)lines, .first = (int)first, .visible = (int)(last - first + 1)};
-    return true;
-}
-
-int note_minimap_limit(struct note_minimap_view view)
-{
-    return view.lines > 0 ? view.lines - 1 : 0;
 }
 
 RECT note_minimap_track(const struct note_minimap_paint *_Nonnull paint)
@@ -138,7 +138,8 @@ RECT note_minimap_track(const struct note_minimap_paint *_Nonnull paint)
     InflateRect(&track, -pad, -pad);
     int maximum = track.bottom - track.top;
     int row = MulDiv(3, (int)paint->dpi, 96);
-    LONGLONG wanted = (LONGLONG)paint->view.lines * row;
+    LONGLONG wanted =
+        paint->view.step > 0 ? (LONGLONG)paint->view.height * row / paint->view.step : 0;
     int height = wanted < maximum ? (int)wanted : maximum;
     int minimum = MulDiv(18, (int)paint->dpi, 96);
     if (height < minimum)
@@ -151,14 +152,15 @@ RECT note_minimap_thumb(const struct note_minimap_paint *_Nonnull paint)
 {
     RECT thumb = note_minimap_track(paint);
     int height = thumb.bottom - thumb.top;
-    if (height <= 0 || paint->view.lines <= 0)
+    if (height <= 0 || paint->view.height <= 0)
         return thumb;
-    int length = (int)((LONGLONG)height * paint->view.visible / paint->view.lines);
+    int length = (int)((LONGLONG)height * paint->view.visible / paint->view.height);
     int minimum = MulDiv(18, (int)paint->dpi, 96);
     length = length < minimum ? minimum : length;
     length = length > height ? height : length;
-    int position = (int)((LONGLONG)height * paint->view.first / paint->view.lines);
     int travel = height - length;
+    int limit = note_pane_geometry_limit(paint->view);
+    int position = limit > 0 ? (int)((LONGLONG)travel * paint->view.first / limit) : 0;
     thumb.top += position < travel ? position : travel;
     thumb.bottom = thumb.top + length;
     return thumb;
@@ -174,9 +176,7 @@ int note_minimap_drag(const struct note_minimap_paint *_Nonnull paint, int y, in
     distance = distance > travel ? travel : distance;
     if (travel <= 0)
         return 0;
-    if (distance == travel)
-        return note_minimap_limit(paint->view);
-    return (int)((LONGLONG)distance * paint->view.lines / (track.bottom - track.top));
+    return (int)((LONGLONG)distance * note_pane_geometry_limit(paint->view) / travel);
 }
 
 int note_minimap_jump(const struct note_minimap_paint *_Nonnull paint, int y)
@@ -302,12 +302,14 @@ static void draw_lines(const struct note_minimap *_Nonnull map, HDC device,
     int pad = MulDiv(4, (int)paint->dpi, 96);
     for (size_t at = 0; at < map->shown && height > 0; ++at)
     {
-        int y = track.top + (int)((LONGLONG)at * height / (LONGLONG)map->shown);
-        int bottom = track.top + (int)((LONGLONG)(at + 1) * height / (LONGLONG)map->shown);
+        const struct note_pane_sample *sample = &map->samples[at];
+        int y = track.top + (int)((LONGLONG)sample->bounds.top * height / paint->view.height);
+        int bottom =
+            track.top + (int)((LONGLONG)sample->bounds.bottom * height / paint->view.height);
+        bottom = bottom <= y ? y + 1 : bottom;
         RECT row = {track.left + pad, y, track.right - pad, bottom};
         if (IsRectEmpty(&row))
             continue;
-        const struct note_pane_sample *sample = &map->samples[at];
         if (code_background(sample))
         {
             draw_code(device, sample, row, palette);
@@ -315,6 +317,30 @@ static void draw_lines(const struct note_minimap *_Nonnull map, HDC device,
         }
         draw_sample(device, sample, row,
                     sample_ink(sample, palette, y >= thumb.top && y < thumb.bottom));
+    }
+}
+
+static void draw_images(const struct note_minimap *_Nonnull map, HDC device,
+                        const struct folio_palette *_Nonnull palette,
+                        const struct note_minimap_paint *_Nonnull paint)
+{
+    RECT track = note_minimap_track(paint);
+    int pad = MulDiv(4, (int)paint->dpi, 96);
+    int width = track.right - track.left - 2 * pad;
+    int height = track.bottom - track.top;
+    if (paint->view.height <= 0 || paint->view.width <= 0 || width <= 0 || height <= 0)
+        return;
+    for (size_t at = 0; at < map->images_shown; ++at)
+    {
+        RECT native = map->images[at];
+        RECT block = {track.left + pad + (LONG)((LONGLONG)native.left * width / paint->view.width),
+                      track.top + (LONG)((LONGLONG)native.top * height / paint->view.height),
+                      track.left + pad + (LONG)((LONGLONG)native.right * width / paint->view.width),
+                      track.top + (LONG)((LONGLONG)native.bottom * height / paint->view.height)};
+        block.right = block.right <= block.left ? block.left + 1 : block.right;
+        block.bottom = block.bottom <= block.top ? block.top + 1 : block.bottom;
+        fill(device, block, palette->dialog_control);
+        frame(device, block, palette->gutter_text);
     }
 }
 
@@ -331,6 +357,7 @@ void note_minimap_draw(const struct note_minimap *_Nonnull map, HDC device,
     RECT thumb = note_minimap_thumb(paint);
     fill(device, thumb, palette->selected_background);
     draw_lines(map, device, palette, paint);
+    draw_images(map, device, palette, paint);
     frame(device, thumb, paint->active ? palette->focus_line : palette->hover_line);
     if (paint->focused)
     {

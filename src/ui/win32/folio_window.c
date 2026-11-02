@@ -2152,9 +2152,8 @@ static bool minimap_paint_for(const struct folio_window *_Nonnull self,
 {
     if (!minimap_visible(self) || note_pane_readiness(self->pane) != NOTE_PANE_READINESS_READY)
         return false;
-    struct note_minimap_view view;
-    HWND pane = note_pane_handle(self->pane);
-    if (pane == nullptr || !note_minimap_viewport(pane, &view))
+    struct note_pane_geometry view;
+    if (!note_pane_viewport(self->pane, &view))
         return false;
     *out = (struct note_minimap_paint){.bounds = minimap_rect(self),
                                        .dpi = GetDpiForWindow(self->handle),
@@ -9161,7 +9160,7 @@ static void scroll_minimap(struct folio_window *_Nonnull self, int first)
 {
     if (!minimap_available(self))
         return;
-    note_pane_scroll_display(self->pane, first);
+    note_pane_scroll_pixels(self->pane, first);
     refresh_gutter(self, true);
 }
 
@@ -9781,14 +9780,14 @@ static bool minimap_key(struct folio_window *_Nonnull self, WPARAM key)
     struct note_minimap_paint paint;
     if (!minimap_paint_for(self, &paint))
         return false;
-    int target = paint.view.first;
+    LONGLONG target = paint.view.first;
     switch (key)
     {
     case VK_UP:
-        target -= 1;
+        target -= paint.view.step;
         break;
     case VK_DOWN:
-        target += 1;
+        target += paint.view.step;
         break;
     case VK_PRIOR:
         target -= paint.view.visible;
@@ -9800,15 +9799,15 @@ static bool minimap_key(struct folio_window *_Nonnull self, WPARAM key)
         target = 0;
         break;
     case VK_END:
-        target = note_minimap_limit(paint.view);
+        target = note_pane_geometry_limit(paint.view);
         break;
     default:
         return false;
     }
-    int limit = note_minimap_limit(paint.view);
+    int limit = note_pane_geometry_limit(paint.view);
     target = target < 0 ? 0 : target;
     target = target > limit ? limit : target;
-    scroll_minimap(self, target);
+    scroll_minimap(self, (int)target);
     show_focus_cues(self, true);
     return true;
 }
@@ -14124,8 +14123,8 @@ static void accessible_minimap_details(const struct folio_window *_Nonnull self,
     if (minimap_paint_for(self, &paint))
     {
         out->range_value = paint.view.first;
-        out->range_maximum = note_minimap_limit(paint.view);
-        out->range_small_change = 1;
+        out->range_maximum = note_pane_geometry_limit(paint.view);
+        out->range_small_change = paint.view.step;
         out->range_large_change = paint.view.visible;
     }
     (void)wide_units(ui_text_line(UI_TEXT_MINIMAP_HELP, folio_state_language(self->state)),
@@ -14761,7 +14760,7 @@ static HRESULT accessible_set_range(struct folio_window *_Nonnull self,
     {
         struct note_minimap_paint paint;
         if (!minimap_available(self) || !minimap_paint_for(self, &paint) ||
-            request->range_value < 0 || request->range_value > note_minimap_limit(paint.view))
+            request->range_value < 0 || request->range_value > note_pane_geometry_limit(paint.view))
             return E_INVALIDARG;
         scroll_minimap(self, request->range_value);
         return S_OK;

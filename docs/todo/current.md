@@ -1,13 +1,25 @@
 # いまの状態 — NeNe Folio
 
-## 画像表示と持ち出し — #520（2026-11-02、作業中）
+## 画像の高さ・wheel・ミニマップ — #522（2026-11-03）
 
-hideの新依頼でローカル/HTTPS画像の遅延表示を開始した。Markdown/パスを自動変更せず、
+hideの実機指摘を受け、実RichEditの文書高からwheel上限とミニマップ座標を揃えた。
+画像付近のwheel量が跳ねず、ミニマップに画像の実寸ブロックを描く。対象検証は
+[品質記録](../quality/2026-11-03-image-geometry.md)の173/95/298checks。
+最終headの必須CI・統合・通常反映・保全整理は
+`D:/NeNeFolio/agents/image-geometry-20261103/integration-completion.json`の確定結果を参照する。
+作業木は`D:/NeNeFolio/worktrees/522-image-geometry`。hideから、この修正後に
+コードシンタックスカラーと言語指定の対応を別Issueで続ける新指示を受けている。
+
+## 画像表示と持ち出し — #520（2026-11-02、統合済み）
+
+hideの依頼でローカル/HTTPS画像の遅延表示を追加した。Markdown/パスを自動変更せず、
 images/への配置案内とZIP同梱を整える。方針は[ADR0085](../adr/0085-lazy-markdown-images.md)。
 実装と対象検証は[品質記録](../quality/2026-11-02-markdown-images.md)へ。原文/画像表示/ZIP、加工表示、
 移動/改名取消、HTTPSの期限/取消/証明書/容量を確認した。最終headの必須CI・統合・通常反映・整理は
 `D:/NeNeFolio/agents/markdown-images-20261102/integration-completion.json`の確定結果を参照する。
-作業木は`D:/NeNeFolio/worktrees/520-markdown-images`、原本は同outputsと
+PR #521の最終head `539c214`・必須CI `41464892662`成功でmain `ddcf151`へ統合した。
+通常版へ反映し、画像入りサンプル2枚を追加してhideが実機確認した。
+追加worktree/outputは全hash保全後に削除済み。恒久原本は
 `D:/NeNeFolio/agents/markdown-images-20261102`。下記のStore確認待ち・#466/#479の保留は継続する。
 
 ## 1.1.0公開とStore認定待ち（2026-11-01 23:35）
@@ -34,12 +46,9 @@ MSIXと3言語の更新説明をhideへ渡した。配布・通常版・保全�
 hideは#512/#514の結果を「かなり良くなってる」と受理し、その状態のリリース更新を依頼した。
 完了履歴・各PR/CI/品質記録は[本日の日報](../reports/2026-11-01.md)、再開手順は[引き継ぎ書](../handoffs/2026-11-01.md)へ集約する。
 
-通常exeは`C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`、改善済みsource `ae37d10`・版1.0.0 / Windows1.0.0.0。
-最新hash/反映/起動は`D:/NeNeFolio/agents/markdown-emission-20261101/integration-completion.json`。
-同原本の実機受理未確認は反映直後の値であり、その後のhide受理を上記へ記録した。
-リリース時はPID48764で稼働していたため、1.1.0への版だけの反映は行わず保持した。
-稼働lockを除く通常data25filesのhashと通常exeはリリース前後で不変、起動設定ファイルなし。
-次回は実稼働状態を確認し、保存/終了前の上書きや強制終了をしない。
+通常exeは`C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`。#520でsource `ddcf151`・版1.1.0へ反映済み。
+続く#522の最新反映/hash/data保持は冒頭の確定原本を参照する。
+00:40時点では通常アプリの稼働なし。反映の直前にも実状態を確認し、保存/終了前の上書きや強制終了をしない。
 
 本日の日報・引き継ぎ・本頁の更新は#518。最終head/必須CI/main・追加worktree整理は
 `D:/NeNeFolio/agents/handoff-release-20261101/integration-completion.json`で確定する。
@@ -51,8 +60,8 @@ hideは#512/#514の結果を「かなり良くなってる」と受理し、そ�
   `D:/NeNeFolio/worktrees/479-editor-paste`と`D:/NeNeFolio/outputs/479-editor-paste`を未統合診断原本として保持する。
 - #466の表幅診断と停止済み継続品質改善は再開しない。
   `D:/NeNeFolio/worktrees/466-table-caller-width`と`D:/NeNeFolio/outputs/466-table-caller-width`を未完として保持する。
-- 構文色分け/言語選択はStore公開後の候補だが、自動着手せずhideの新指示を待つ。
-  [未対応の棚卸し](../quality/2026-10-31-markdown-scope.md)を参照する。Mermaid等も今回開始しない。
+- 構文色分け/言語指定は11月3日のhideの新指示で#522後に着手する。
+  [未対応の棚卸し](../quality/2026-10-31-markdown-scope.md)は指示前の参考情報。Mermaid等は今回開始しない。
 - 大文書のRichEdit投入/表配置・大量ノートの検索準備・極狭幅表の可読性は残る。
   合成入力/専用desktopの検証を物理IME・実reader・全DPI/OSの保証と混同しない。
 - 1.0.0テスト署名版の実MSIX lifecycleは確認済み。一時信頼/秘密鍵/packageは解除済み。
