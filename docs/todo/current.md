@@ -1,5 +1,13 @@
 # いまの状態 — NeNe Folio
 
+## 画像読込通知の消去とコードサンプル — #526（2026-11-03）
+
+hideの実機指摘により、画像の成功完了後に古い読み込み通知が残る再描画漏れを修正した。
+内部状態が非表示でも以前の通知領域が更新されないことを再現し、変更前後の矩形を同じpaint経路へ渡す。
+実主窓の対象検証は65checks成功。[品質記録](../quality/2026-11-03-image-status.md)に原因・再現・修正を記した。
+hideの追加依頼の`シンタックスカラーサンプル.md`も通常dataの「サンプル」へ新規作成済み。
+最終headの必須CI・統合・通常反映・保全整理は
+`D:/NeNeFolio/agents/image-status-20261103/integration-completion.json`で確定する。
 ## コードの言語指定と色分け — #524（2026-11-03）
 
 hideの依頼で、画像修正に続きfenceの言語指定と基本字句色分けを追加した。
@@ -7,7 +15,8 @@ C/C++・JS/TS・Python・JSON・Shell・PowerShell・SQLに対応し、未知語
 設計は[ADR0086](../adr/0086-fenced-code-syntax.md)、対象検証は[品質記録](../quality/2026-11-03-code-syntax.md)。
 unit3件と実RichEdit168checksが成功。最終headの必須CI・統合・通常反映・保全整理は
 `D:/NeNeFolio/agents/code-syntax-20261103/integration-completion.json`で確定する。
-作業木は`D:/NeNeFolio/worktrees/524-code-syntax`。下記のStore確認待ち・#466/#479の保留は継続する。
+PR #525・head `c671e14`の必須CI `41486033307`成功でmain `6e50522`へ統合・通常反映済み。
+追加作業木/出力は全hash保全後に削除した。下記のStore確認待ち・#466/#479の保留は継続する。
 
 ## 画像の高さ・wheel・ミニマップ — #522（統合済み）
 
@@ -54,8 +63,8 @@ hideは#512/#514の結果を「かなり良くなってる」と受理し、そ�
 完了履歴・各PR/CI/品質記録は[本日の日報](../reports/2026-11-01.md)、再開手順は[引き継ぎ書](../handoffs/2026-11-01.md)へ集約する。
 
 通常exeは`C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`。#520でsource `ddcf151`・版1.1.0へ反映済み。
-続く#522/#524の最新反映/hash/data保持は冒頭の各確定原本を参照する。
-00:40時点では通常アプリの稼働なし。反映の直前にも実状態を確認し、保存/終了前の上書きや強制終了をしない。
+続く#522/#524/#526の最新反映/hash/data保持は冒頭の各確定原本を参照する。
+03:01にhideの依頼で通常版を起動し、03:11の確認では停止済み。反映の直前にも実状態を確認し、保存/終了前の上書きや強制終了をしない。
 
 本日の日報・引き継ぎ・本頁の更新は#518。最終head/必須CI/main・追加worktree整理は
 `D:/NeNeFolio/agents/handoff-release-20261101/integration-completion.json`で確定する。

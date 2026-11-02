@@ -12026,6 +12026,9 @@ static bool client_pointer_cursor(const struct folio_window *_Nonnull self, WPAR
 
 static void image_progress(struct folio_window *_Nonnull self)
 {
+    RECT client;
+    GetClientRect(self->handle, &client);
+    RECT previous = pane_notice_rect(self, client);
     enum ui_text line = UI_TEXT_EMPTY;
     if (self->image_advisory)
         line = UI_TEXT_IMAGES_ADVISORY;
@@ -12040,9 +12043,9 @@ static void image_progress(struct folio_window *_Nonnull self)
     ++self->image_meter;
     if (boundary)
         arrange_command_contents(self);
-    RECT client;
-    GetClientRect(self->handle, &client);
     RECT notice = pane_notice_rect(self, client);
+    /* Completion removes the row; its previous pixels still need the ordinary paint path. */
+    UnionRect(&notice, &previous, &notice);
     InvalidateRect(self->handle, &notice, FALSE);
 }
 static void receive_image(struct folio_window *_Nonnull self)

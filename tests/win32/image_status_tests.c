@@ -5,6 +5,7 @@
 #include "folio_state.h"
 #include "folio_window.h"
 #include "font_bundle.h"
+#include "image_bitmap.h"
 #include "image_port.h"
 #include "note_ledger.h"
 #include "note_text.h"
@@ -50,7 +51,7 @@ static void seed_notes(struct persistence_port disk)
     require(created == PERSISTENCE_STORED || created == PERSISTENCE_NAME_TAKEN, "test category");
     created = disk.create_category(disk.adapter, "target");
     require(created == PERSISTENCE_STORED || created == PERSISTENCE_NAME_TAKEN, "move category");
-    const char source[] = "Body before images\n\n![alt](outside.png)\n\nBody after images\n";
+    const char source[] = "Body before images\n\n![alt](images/one.png)\n\nBody after images\n";
     struct note_text *_Nullable body = nullptr;
     require(note_text_create(source, sizeof source - 1, &body) == NOTE_TEXT_ACCEPTED, "image note");
     require(disk.write_note(disk.adapter, "schedule", "one", body) == PERSISTENCE_STORED,
@@ -62,6 +63,7 @@ struct image_adapter
     uint64_t ticket;
     size_t requests;
     enum image_phase phase;
+    enum image_outcome outcome;
     char category[64];
 };
 static struct image_adapter controlled;
@@ -74,13 +76,18 @@ static enum image_outcome request_image(struct image_adapter *_Nonnull adapter,
     *ticket = ++adapter->ticket;
     ++adapter->requests;
     adapter->phase = IMAGE_PHASE_READING;
+    adapter->outcome = IMAGE_PENDING;
     return IMAGE_PENDING;
 }
 static enum image_outcome poll_image(struct image_adapter *_Nonnull adapter, uint64_t ticket,
                                      struct image_bitmap *_Nullable *_Nonnull out)
 {
-    (void)out;
-    return ticket == adapter->ticket ? IMAGE_PENDING : IMAGE_CANCELLED;
+    if (ticket != adapter->ticket)
+        return IMAGE_CANCELLED;
+    if (adapter->outcome != IMAGE_READY)
+        return adapter->outcome;
+    static const unsigned char pixel[] = {0x40, 0x90, 0xE0, 0xFF};
+    return image_bitmap_create(pixel, (struct image_size){1, 1}, out);
 }
 static enum image_phase image_phase(struct image_adapter *_Nonnull adapter)
 {
@@ -215,7 +222,7 @@ static void body_first(struct folio_window *_Nonnull window)
     require(controlled.ticket > ticket && controlled.phase == IMAGE_PHASE_IDLE,
             "edit cancels pending processing");
     GetWindowTextW(body, text, 1024);
-    require(wcsstr(text, L"![alt](outside.png)") != nullptr, "edit contains original path");
+    require(wcsstr(text, L"![alt](images/one.png)") != nullptr, "edit contains original path");
     action(window, ACCESSIBLE_VIEW);
     require(controlled.requests == 1, "retry waits for next idle interval");
     SendMessageW(root, WM_TIMER, 85, 0);
@@ -246,6 +253,65 @@ static void move_origin(struct folio_window *_Nonnull window, struct folio_state
                 FOLIO_STATE_READY,
             "restore isolated fixture location");
 }
+
+static RECT loading_notice(struct folio_window *_Nonnull window, bool resizing)
+{
+    action(window, ACCESSIBLE_EDIT);
+    action(window, ACCESSIBLE_VIEW);
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    SendMessageW(root, WM_TIMER, 85, 0);
+    controlled.phase = resizing ? IMAGE_PHASE_RESIZING : IMAGE_PHASE_READING;
+    SendMessageW(root, WM_TIMER, 85, 0);
+    pump(window);
+    expect_notice(window, resizing ? L"画像を加工しています" : L"画像を読み込んでいます");
+    struct accessible_item item = {.kind = ACCESSIBLE_NOTICE};
+    struct accessible_view view;
+    require(folio_window_accessible_read(window, &item, &view) == S_OK, "loading notice bounds");
+    POINT points[] = {{view.bounds.left, view.bounds.top}, {view.bounds.right, view.bounds.bottom}};
+    MapWindowPoints(HWND_DESKTOP, root, points, 2);
+    return (RECT){points[0].x, points[0].y, points[1].x, points[1].y};
+}
+
+static void completed_image(struct folio_window *_Nonnull window, bool resizing)
+{
+    RECT notice = loading_notice(window, resizing);
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    CHARRANGE selected = {0, 4}, actual = {0};
+    SendMessageW(body, EM_EXSETSEL, 0, (LPARAM)&selected);
+    LRESULT dirty = SendMessageW(body, EM_GETMODIFY, 0, 0);
+    LRESULT undo = SendMessageW(body, EM_CANUNDO, 0, 0);
+    wchar_t before[1024], after[1024];
+    int length = GetWindowTextW(body, before, 1024);
+    RECT body_before, body_after;
+    GetWindowRect(body, &body_before);
+    ValidateRect(root, nullptr);
+    controlled.phase = IMAGE_PHASE_IDLE;
+    controlled.outcome = IMAGE_READY;
+    SendMessageW(root, WM_TIMER, 85, 0);
+    struct accessible_item item = {.kind = ACCESSIBLE_NOTICE};
+    struct accessible_view view;
+    require(folio_window_accessible_read(window, &item, &view) == S_OK && view.offscreen,
+            "completed image removes loading notice state");
+    RECT damage;
+    require(GetUpdateRect(root, &damage, FALSE) && damage.left <= notice.left &&
+                damage.top <= notice.top && damage.right >= notice.right &&
+                damage.bottom >= notice.bottom,
+            "completed image repaints the entire old notice area");
+    SendMessageW(body, EM_EXGETSEL, 0, (LPARAM)&actual);
+    GetWindowRect(body, &body_after);
+    require(EqualRect(&body_before, &body_after), "completion does not move the body window");
+    require(selected.cpMin == actual.cpMin && selected.cpMax == actual.cpMax,
+            "completion preserves selection");
+    require(SendMessageW(body, EM_GETMODIFY, 0, 0) == dirty &&
+                SendMessageW(body, EM_CANUNDO, 0, 0) == undo,
+            "completion preserves dirty and Undo");
+    require(GetWindowTextW(body, after, 1024) == length &&
+                memcmp(before, after, ((size_t)length + 1) * sizeof before[0]) == 0,
+            "completion preserves displayed text");
+    UpdateWindow(root);
+    require(!GetUpdateRect(root, &damage, FALSE), "completion damage was painted");
+}
 int main(void)
 {
     HDESK desktop = CreateDesktopW(L"NeNeFolioImageStatus520", nullptr, nullptr, 0,
@@ -262,6 +328,8 @@ int main(void)
             "real main window");
     body_first(window);
     move_origin(window, fixture.state);
+    completed_image(window, false);
+    completed_image(window, true);
     folio_window_destroy(window);
     destroy_fixture(&fixture);
     OleUninitialize();
