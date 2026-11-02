@@ -128,7 +128,10 @@ UI と application の状態遷移は単一の UI スレッドで行う。背景
 確定した集合の保存/改名後の修復は、同じcore engineとentry解決helperを同期で完了する。別matcherを持たない。
 比較workは実時間上限ではなく、語変換・初期集計・確保・lookup・同期UI等の費用は残る（ADR0024/0068/0073・FR-032）。
 入れ子のmessage pumpは作らない。
-背景スレッドが要る計測が出たら新しい ADR。
+画像のI/O・WIC復号/縮小に限り、adapterが単一workerを所有する（#520・ADR0085）。
+合成8192×8192 PNGの同期縮小125msを根拠とし、UI/application/core状態・HWND/TOMは渡さない。
+要求/結果の有界な受渡しと取消/終了回収をadapterへ閉じる。他の背景スレッドが要る計測が出たら新しいADR。
+WinHTTPのOS callbackはadapter内の通信完了通知だけを渡す。通信操作とhandle終了は同じ画像workerが所有する（ADR0085）。
 
 - 機械強制: **planned** → `CreateThread` / `_beginthreadex` / `thrd_create` を `eng/symbols.py` の許可リスト外とし、中核では落ちる。UI 層はレビュー事項
 

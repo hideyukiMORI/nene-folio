@@ -1,0 +1,9 @@
+#ifndef NENEFOLIO_IMAGE_SOURCE_KIND_H
+#define NENEFOLIO_IMAGE_SOURCE_KIND_H
+enum image_source_kind : unsigned char
+{
+    IMAGE_SOURCE_LOCAL,
+    IMAGE_SOURCE_HTTPS,
+    IMAGE_SOURCE_UNSUPPORTED
+};
+#endif

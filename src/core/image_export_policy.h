@@ -1,0 +1,9 @@
+#ifndef NENEFOLIO_IMAGE_EXPORT_POLICY_H
+#define NENEFOLIO_IMAGE_EXPORT_POLICY_H
+enum image_export_policy : unsigned char
+{
+    IMAGE_EXPORT_UNDECIDED,
+    IMAGE_EXPORT_CONTAINED,
+    IMAGE_EXPORT_ALL_LOCAL
+};
+#endif

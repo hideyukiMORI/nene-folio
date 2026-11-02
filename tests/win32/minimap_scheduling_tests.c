@@ -4,6 +4,7 @@
 #include "folio_state.h"
 #include "folio_window.h"
 #include "font_bundle.h"
+#include "image_adapter.h"
 #include "note_ledger.h"
 #include "note_text.h"
 #include "persistence_adapter.h"
@@ -25,6 +26,7 @@ struct native_fixture
     struct persistence_adapter *_Nullable files;
     struct appearance_adapter *_Nullable appearance;
     struct regex_adapter *_Nullable regex;
+    struct image_adapter *_Nullable images;
     struct font_bundle *_Nullable fonts;
     struct folio_state *_Nullable state;
 };
@@ -92,11 +94,16 @@ static void create_fixture(struct native_fixture *_Nonnull fixture)
     struct regex_port regex = regex_adapter_port(fixture->regex);
     struct web_link_port web = web_link_adapter_port();
     struct transfer_port transfer = transfer_adapter_port();
+    require(image_adapter_create(storage_state_directory(fixture->location), &fixture->images) ==
+                IMAGE_READY,
+            "image adapter");
+    struct image_port images = image_adapter_port(fixture->images);
     struct folio_ports ports = {.persistence = &disk,
                                 .appearance = &appearance,
                                 .regex = &regex,
                                 .web_link = &web,
-                                .transfer = &transfer};
+                                .transfer = &transfer,
+                                .images = &images};
     require(folio_state_create(&ports, &fixture->state) == FOLIO_STATE_READY, "application state");
     require(folio_state_set_minimap(fixture->state, true) == FOLIO_STATE_READY, "minimap enabled");
     require(folio_state_set_number(fixture->state, true) == FOLIO_STATE_READY,
@@ -109,6 +116,7 @@ static void create_fixture(struct native_fixture *_Nonnull fixture)
 static void destroy_fixture(struct native_fixture *_Nonnull fixture)
 {
     folio_state_destroy(fixture->state);
+    image_adapter_destroy(fixture->images);
     font_bundle_destroy(fixture->fonts);
     regex_adapter_destroy(fixture->regex);
     appearance_adapter_destroy(fixture->appearance);

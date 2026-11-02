@@ -143,7 +143,8 @@ static struct folio_state *_Nonnull create_state(struct persistence_adapter *_No
                                 .appearance = &appearance,
                                 .regex = &regex,
                                 .web_link = &links,
-                                .transfer = test_transfer_port()};
+                                .transfer = test_transfer_port(),
+                                .images = test_image_port()};
     struct folio_state *state = nullptr;
     require(folio_state_create(&ports, &state) == FOLIO_STATE_READY, "state for link intents");
     return state;

@@ -35,6 +35,7 @@
 #include "icon_paint.h"
 #include "key_guide.h"
 #include "layout_metrics.h"
+#include "markdown_images.h"
 #include "menu_request.h"
 #include "minimap_update.h"
 #include "modal_owner.h"
@@ -110,6 +111,14 @@ struct folio_window
     struct note_pane *_Nullable pane;
     struct note_minimap *_Nullable minimap;
     enum folio_idle_work next_idle_work;
+    uint64_t image_ticket;
+    uint64_t image_origin_revision;
+    size_t image_index;
+    bool image_pending;
+    bool image_failed;
+    bool image_advisory;
+    enum ui_text image_line;
+    unsigned image_meter;
     int minimap_pointer_offset;
     int body_left_inset; /* 配置時に確定した行番号込みの左余白。通知中は再計測しない。 */
     HACCEL _Nullable commands;
@@ -217,6 +226,7 @@ struct folio_window
 };
 
 constexpr UINT_PTR minimap_timer = 84;
+constexpr UINT_PTR image_timer = 85;
 constexpr UINT minimap_delay = 120;
 constexpr int base_minimap_width = 64;
 constexpr int base_minimap_gap = 8;
@@ -1117,7 +1127,8 @@ static int pane_notice_height(const struct folio_window *_Nonnull self)
 {
     return (self->notice == PANE_NOTICE_COMMAND_RESULT ||
             (folio_state_layout_mode(self->state) != FOLIO_LAYOUT_DRAWER &&
-             (self->notice != PANE_NOTICE_NONE || pane_unavailable(self))))
+             (self->notice != PANE_NOTICE_NONE || self->image_line != UI_TEXT_EMPTY ||
+              pane_unavailable(self))))
                ? scale(base_command_status_height, GetDpiForWindow(self->handle))
                : 0;
 }
@@ -2295,6 +2306,31 @@ static enum folio_state_outcome loaded_pane(struct folio_window *_Nonnull self,
     return from_pane_load(outcome);
 }
 
+static void clear_images(struct folio_window *_Nonnull self)
+{
+    KillTimer(self->handle, image_timer);
+    folio_state_cancel_images(self->state);
+    self->image_pending = false;
+    self->image_failed = false;
+    self->image_advisory = false;
+    self->image_line = UI_TEXT_EMPTY;
+}
+static void prepare_images(struct folio_window *_Nonnull self)
+{
+    self->image_origin_revision = folio_state_image_origin_revision(self->state);
+    const struct markdown_images *images = folio_state_images(self->state);
+    if (images == nullptr)
+        return;
+    size_t count = markdown_images_count(images);
+    self->image_advisory = markdown_images_advisory(images);
+    self->image_failed = count > markdown_images_display_limit || markdown_images_overflow(images);
+    if (count > markdown_images_display_limit)
+        count = markdown_images_display_limit;
+    if (note_pane_prepare_images(self->pane, count) != IMAGE_READY)
+        self->image_failed = true;
+    if (count != 0)
+        SetTimer(self->handle, image_timer, 100, nullptr);
+}
 static enum folio_state_outcome render_pane(struct folio_window *_Nonnull self)
 {
     if (self->pane == nullptr)
@@ -2302,10 +2338,13 @@ static enum folio_state_outcome render_pane(struct folio_window *_Nonnull self)
         return FOLIO_STATE_PANE_UNAVAILABLE;
     }
     bool was_unavailable = pane_unavailable(self);
+    clear_images(self);
     request_minimap(self, MINIMAP_UPDATE_CLEAR);
     enum note_pane_load_outcome outcome =
         note_pane_load(self->pane, folio_state_pane_rtf(self->state),
                        folio_state_pane_rtf_length(self->state), PANE_MODE_VIEW);
+    if (outcome == NOTE_PANE_LOAD_READY)
+        prepare_images(self);
     return loaded_pane(self, was_unavailable, outcome);
 }
 
@@ -4797,7 +4836,7 @@ static enum ui_text pane_notice_line(const struct folio_window *_Nonnull self)
         switch (self->notice)
         {
         case PANE_NOTICE_NONE:
-            return UI_TEXT_EMPTY;
+            return self->image_line;
         case PANE_NOTICE_COMMAND_RESULT:
             line = UI_TEXT_COMMAND_CAPTION;
             break;
@@ -4829,11 +4868,25 @@ static void draw_pane_notice(const struct folio_window *_Nonnull self, HDC devic
     SelectObject(device, self->mono_font);
     SetBkMode(device, TRANSPARENT);
     SetTextColor(device, self->palette.header_text);
+    RECT bounds = pane_notice_rect(self, client);
+    if (self->image_pending && self->notice == PANE_NOTICE_NONE)
+    {
+        RECT track = bounds;
+        track.left = track.right - scale(80, GetDpiForWindow(self->handle));
+        track.top = (bounds.top + bounds.bottom) / 2 - 2;
+        track.bottom = track.top + 4;
+        fill_settings_rect(device, track, self->palette.dialog_border);
+        LONG width = (track.right - track.left) / 4;
+        track.left += (LONG)(self->image_meter % 24) * (track.right - track.left - width) / 23;
+        track.right = track.left + width;
+        fill_settings_rect(device, track, self->palette.header_text);
+        bounds.right -= scale(90, GetDpiForWindow(self->handle));
+    }
     draw_utf8(device,
               self->notice == PANE_NOTICE_COMMAND_RESULT
                   ? self->result_line
                   : ui_text_line(line, folio_state_language(self->state)),
-              pane_notice_rect(self, client));
+              bounds);
 }
 
 /* 新しいノートの作成先の 1 行（ADR0060 の決定 12・13）。作成先の規則は Ctrl+N と同じ
@@ -5144,6 +5197,7 @@ static enum folio_state_outcome pour_edit_rtf(struct folio_window *_Nonnull self
         return FOLIO_STATE_PANE_UNAVAILABLE;
     }
     bool was_unavailable = pane_unavailable(self);
+    clear_images(self);
     request_minimap(self, MINIMAP_UPDATE_CLEAR);
     enum note_pane_load_outcome outcome =
         note_pane_load(self->pane, folio_state_edit_rtf(self->state),
@@ -5413,6 +5467,8 @@ static const bool inline_outcomes[] = {
     [FOLIO_STATE_EXPORT_TOO_LARGE] = true,
     [FOLIO_STATE_EXPORT_EXISTS] = true,
     [FOLIO_STATE_EXPORT_FAILED] = true,
+    [FOLIO_STATE_EXPORT_EXTERNAL_IMAGES] = false,
+    [FOLIO_STATE_EXPORT_IMAGE_UNREADABLE] = true,
     [FOLIO_STATE_TRANSFER_UNAVAILABLE] = true,
 
     [FOLIO_STATE_OUT_OF_MEMORY] = false,
@@ -8014,10 +8070,38 @@ static enum folio_state_outcome export_to(struct folio_window *_Nonnull self,
     return folio_state_export_notes(self->state, request);
 }
 
+static bool choose_export_images(struct folio_window *_Nonnull self,
+                                 struct note_export_request *_Nonnull request)
+{
+    char16_t units[ui_text_unit_limit];
+    size_t written = 0;
+    const char *line =
+        ui_text_line(UI_TEXT_IMAGES_EXPORT_EXTERNAL, folio_state_language(self->state));
+    if (utf16_text_fill(line, units, ui_text_unit_limit, &written) != UTF16_TEXT_FILL_READY ||
+        !begin_native_modal(self))
+        return false;
+    int choice = MessageBoxW(modal_owner_current(self->modal_owner), units, L"NeNe Folio",
+                             MB_YESNOCANCEL | MB_ICONQUESTION | MB_DEFBUTTON2);
+    if (!end_native_modal(self))
+        native_modal_resource_failure(self);
+    if (self->close_phase == CLOSE_PHASE_REQUESTED)
+        return false;
+    if (choice == IDYES)
+        request->images = IMAGE_EXPORT_ALL_LOCAL;
+    if (choice == IDNO)
+        request->images = IMAGE_EXPORT_CONTAINED;
+    return choice == IDYES || choice == IDNO;
+}
 static void report_export(struct folio_window *_Nonnull self,
                           struct note_export_request *_Nonnull request)
 {
     enum folio_state_outcome outcome = export_to(self, request);
+    if (outcome == FOLIO_STATE_EXPORT_EXTERNAL_IMAGES)
+    {
+        if (!choose_export_images(self, request))
+            return;
+        outcome = export_to(self, request);
+    }
     if (outcome != FOLIO_STATE_READY)
     {
         report_outcome(self, outcome);
@@ -11941,8 +12025,93 @@ static bool client_pointer_cursor(const struct folio_window *_Nonnull self, WPAR
     return true;
 }
 
+static void image_progress(struct folio_window *_Nonnull self)
+{
+    enum ui_text line = UI_TEXT_EMPTY;
+    if (self->image_advisory)
+        line = UI_TEXT_IMAGES_ADVISORY;
+    if (self->image_failed)
+        line = UI_TEXT_IMAGES_FAILED;
+    if (self->image_pending)
+        line = folio_state_image_phase(self->state) == IMAGE_PHASE_RESIZING
+                   ? UI_TEXT_IMAGES_RESIZING
+                   : UI_TEXT_IMAGES_READING;
+    bool boundary = (self->image_line == UI_TEXT_EMPTY) != (line == UI_TEXT_EMPTY);
+    self->image_line = line;
+    ++self->image_meter;
+    if (boundary)
+        arrange_command_contents(self);
+    RECT client;
+    GetClientRect(self->handle, &client);
+    RECT notice = pane_notice_rect(self, client);
+    InvalidateRect(self->handle, &notice, FALSE);
+}
+static void receive_image(struct folio_window *_Nonnull self)
+{
+    struct image_bitmap *_Nullable bitmap = nullptr;
+    enum image_outcome outcome = folio_state_poll_image(self->state, self->image_ticket, &bitmap);
+    if (outcome == IMAGE_PENDING)
+        return;
+    if (outcome == IMAGE_READY)
+        outcome = note_pane_insert_image(self->pane, self->image_index, bitmap);
+    image_bitmap_destroy(bitmap);
+    note_pane_finish_image(self->pane, self->image_index);
+    self->image_pending = false;
+    if (outcome != IMAGE_READY)
+        self->image_failed = true;
+    request_minimap(self, MINIMAP_UPDATE_READY);
+}
+static bool refresh_image_origin(struct folio_window *_Nonnull self)
+{
+    if (self->image_origin_revision == folio_state_image_origin_revision(self->state))
+        return false;
+    size_t start = 0;
+    size_t end = 0;
+    bool selected = note_pane_selection(self->pane, &start, &end);
+    size_t line = note_pane_first_visible_line(self->pane);
+    enum folio_state_outcome outcome = render_pane(self);
+    if (outcome == FOLIO_STATE_READY)
+    {
+        if (selected)
+            note_pane_restore_selection(self->pane, (struct note_search_span){start, end});
+        note_pane_scroll_to_line(self->pane, line);
+    }
+    report_outcome(self, outcome);
+    return true;
+}
+static void continue_images(struct folio_window *_Nonnull self)
+{
+    if (folio_state_pane_mode(self->state) != PANE_MODE_VIEW || IsIconic(self->handle) ||
+        !folio_window_accessible_ready(self) || self->command_surface != COMMAND_SURFACE_CLOSED ||
+        refresh_image_origin(self))
+        return;
+    enum image_outcome resized = note_pane_resize_image(self->pane);
+    if (resized == IMAGE_PENDING)
+        request_minimap(self, MINIMAP_UPDATE_READY);
+    if (resized != IMAGE_PENDING && resized != IMAGE_READY)
+        self->image_failed = true;
+    if (self->image_pending)
+        receive_image(self);
+    if (!self->image_pending && note_pane_next_image(self->pane, &self->image_index))
+    {
+        enum image_outcome outcome =
+            folio_state_request_image(self->state, self->image_index, &self->image_ticket);
+        self->image_pending = outcome == IMAGE_PENDING;
+        if (!self->image_pending)
+        {
+            note_pane_finish_image(self->pane, self->image_index);
+            self->image_failed = true;
+        }
+    }
+    image_progress(self);
+}
 static LRESULT on_minimap_timer(struct folio_window *_Nonnull self, WPARAM timer, LPARAM lparam)
 {
+    if (timer == image_timer)
+    {
+        continue_images(self);
+        return 0;
+    }
     if (timer != minimap_timer)
         return DefWindowProcW(self->handle, WM_TIMER, timer, lparam);
     request_minimap(self, MINIMAP_UPDATE_READY);

@@ -172,11 +172,12 @@ static bool row_kind_valid(enum markdown_row_kind kind)
     return false;
 }
 
-enum markdown_rtf_outcome markdown_table_row(struct text_buffer *_Nonnull out,
+enum markdown_rtf_outcome markdown_table_row(struct markdown_render render,
                                              struct markdown_line line,
                                              struct markdown_line delimiter,
                                              struct markdown_table_format format)
 {
+    struct text_buffer *out = render.text;
     if (!row_kind_valid(format.kind) || !markdown_line_valid(line) ||
         !markdown_line_valid(delimiter) || !markdown_table_delimiter(delimiter))
         return MARKDOWN_RTF_INVALID_INPUT;
@@ -193,7 +194,7 @@ enum markdown_rtf_outcome markdown_table_row(struct text_buffer *_Nonnull out,
         cell_header(out, delimiters.spans[index], format.kind);
         struct markdown_view view = {
             .spans = &cell, .count = 1, .length = cell.length, .table_cell = true};
-        enum markdown_rtf_outcome rendered = markdown_inline_tokens_render(out, view);
+        enum markdown_rtf_outcome rendered = markdown_inline_tokens_render(render, view);
         if (rendered != MARKDOWN_RTF_CONVERTED)
             return rendered;
         text_buffer_append_text(out, "}\\cell ");

@@ -139,7 +139,7 @@ static void verify_archive(void)
     require(note_text_create("123456789", 9, &body) == NOTE_TEXT_ACCEPTED, "CRC reference body");
     struct archive_note note = {.category = "旅", .name = "予定", .body = body};
     struct note_archive *archive = nullptr;
-    require(note_archive_create(&note, 1, &archive) == NOTE_ARCHIVE_READY, "Unicode ZIP");
+    require(note_archive_create(&note, 1, nullptr, &archive) == NOTE_ARCHIVE_READY, "Unicode ZIP");
     const char *bytes = note_archive_bytes(archive);
     require(number(bytes) == UINT32_C(0x04034b50) && number(bytes + 14) == UINT32_C(0xcbf43926),
             "ZIP local record and independent CRC check vector");
@@ -150,20 +150,21 @@ static void verify_archive(void)
             "ZIP complete central directory");
     note_archive_destroy(archive);
     archive = nullptr;
-    require(note_archive_create(&note, 0, &archive) == NOTE_ARCHIVE_READY &&
+    require(note_archive_create(&note, 0, nullptr, &archive) == NOTE_ARCHIVE_READY &&
                 note_archive_length(archive) == 22,
             "empty export is an empty ZIP");
     note_archive_destroy(archive);
     archive = nullptr;
-    require(note_archive_create(&note, 65535, &archive) == NOTE_ARCHIVE_TOO_LARGE &&
+    require(note_archive_create(&note, 65535, nullptr, &archive) == NOTE_ARCHIVE_TOO_LARGE &&
                 archive == nullptr,
             "ZIP32 count limit checked before entries are read");
     note.category = "../escape";
-    require(note_archive_create(&note, 1, &archive) == NOTE_ARCHIVE_INVALID && archive == nullptr,
+    require(note_archive_create(&note, 1, nullptr, &archive) == NOTE_ARCHIVE_INVALID &&
+                archive == nullptr,
             "no path traversal in archive");
     note.category = "A";
     note.name = "NUL";
-    require(note_archive_create(&note, 1, &archive) == NOTE_ARCHIVE_INVALID,
+    require(note_archive_create(&note, 1, nullptr, &archive) == NOTE_ARCHIVE_INVALID,
             "unsafe note rejected");
     note_text_destroy(body);
 }
@@ -181,7 +182,8 @@ static void verify_archive_byte_limit(void)
     for (size_t index = 0; index < 8; ++index)
         notes[index] = (struct archive_note){.category = "A", .name = "one", .body = body};
     struct note_archive *archive = nullptr;
-    require(note_archive_create(notes, 8, &archive) == NOTE_ARCHIVE_TOO_LARGE && archive == nullptr,
+    require(note_archive_create(notes, 8, nullptr, &archive) == NOTE_ARCHIVE_TOO_LARGE &&
+                archive == nullptr,
             "ZIP byte limit includes framing in addition to eight 16MiB bodies");
     note_text_destroy(body);
 }
@@ -196,7 +198,7 @@ static void verify_archive_allocation(void)
     {
         struct note_archive *archive = nullptr;
         allocation_probe_fail_at(nth);
-        enum note_archive_outcome result = note_archive_create(&note, 1, &archive);
+        enum note_archive_outcome result = note_archive_create(&note, 1, nullptr, &archive);
         if (nth == 0)
             allocations = allocation_probe_calls();
         allocation_probe_fail_at(0);

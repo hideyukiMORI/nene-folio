@@ -7,8 +7,10 @@
 #include "category_name.h"
 #include "drawer_layout.h"
 #include "folio_settings.h"
+#include "image_export.h"
 #include "index_filter.h"
 #include "index_filter_build.h"
+#include "markdown_images.h"
 #include "markdown_rtf.h"
 #include "name_list.h"
 #include "note_archive.h"
@@ -48,6 +50,8 @@ struct folio_state
     struct persistence_port port;
     struct web_link_port web_link;
     struct transfer_port transfer;
+    struct image_port images;
+    uint64_t image_origin_revision;
     /* 正規表現ポート（ADR 0028 の決定 1 / 2）。ICU を知るのは adapter だけである */
     struct regex_port regex;
     /* 走査の入れ物。下見が引き取ったら空（null・0）に戻り、次の走査で確保し直す（補正 25）。 */
@@ -126,6 +130,17 @@ static bool holds_category(const struct folio_state *_Nonnull state, size_t cate
 static struct drawer_cursor first_stop_in(const struct folio_state *_Nonnull state,
                                           size_t category);
 
+static void discard_view(struct folio_state *_Nonnull state)
+{
+    state->images.cancel(state->images.adapter);
+    markdown_rtf_destroy(state->pane);
+    state->pane = nullptr;
+}
+static void image_origin_changed(struct folio_state *_Nonnull state)
+{
+    state->images.cancel(state->images.adapter);
+    ++state->image_origin_revision;
+}
 static void layout_changed(struct folio_state *_Nonnull state)
 {
     if (state->index_revision != UINT64_MAX)
@@ -315,6 +330,7 @@ static enum folio_state_outcome adopt_note_rename(struct folio_state *_Nonnull s
 
 static enum folio_state_outcome adopt_category_rename(struct folio_state *_Nonnull state)
 {
+    image_origin_changed(state);
     struct rename_plan *_Nonnull intent = state->rename;
     category_ledger_destroy(state->categories);
     state->categories = rename_plan_take_category_ledger(intent);
@@ -586,7 +602,7 @@ static enum folio_state_outcome adopt_theme_choice(struct folio_state *_Nonnull 
     {
         return FOLIO_STATE_OUT_OF_MEMORY;
     }
-    markdown_rtf_destroy(state->pane);
+    discard_view(state);
     state->pane = pane;
     state->palette = palette;
     state->display_theme_choice = choice;
@@ -607,6 +623,7 @@ enum folio_state_outcome folio_state_create(const struct folio_ports *_Nonnull p
     state->regex = *ports->regex;
     state->web_link = *ports->web_link;
     state->transfer = *ports->transfer;
+    state->images = *ports->images;
     /* 外観ポートも値で写して持つ（ADR 0031 の決定 3）。adapter の寿命は合成ルートが保証する。 */
     state->appearance = *appearance;
     state->appearance_snapshot.theme = FOLIO_THEME_LIGHT;
@@ -1209,7 +1226,7 @@ static enum folio_state_outcome adopt_settings_change(struct folio_state *_Nonnu
     }
     folio_settings_destroy(state->settings);
     state->settings = changed;
-    markdown_rtf_destroy(state->pane);
+    discard_view(state);
     state->pane = pane;
     adopt_palette(state, palette);
     return FOLIO_STATE_READY;
@@ -1228,7 +1245,7 @@ static enum folio_state_outcome adopt_display_palette(struct folio_state *_Nonnu
     {
         return FOLIO_STATE_OUT_OF_MEMORY;
     }
-    markdown_rtf_destroy(state->pane);
+    discard_view(state);
     state->pane = pane;
     adopt_palette(state, palette);
     return FOLIO_STATE_READY;
@@ -1762,6 +1779,9 @@ static enum folio_state_outcome transfer_note(struct folio_state *_Nonnull state
         note_ledger_destroy(pair[0]);
         return from_store(moved);
     }
+    if (state->document == FOLIO_DOCUMENT_NAMED && state->selected_category == from.category &&
+        state->selected_note == from.note)
+        image_origin_changed(state);
     enum folio_state_outcome copied = recopy_move(state, from, to.category);
     note_ledger_destroy(state->notes[from.category]);
     state->notes[from.category] = pair[0];
@@ -1846,7 +1866,7 @@ static enum folio_state_outcome render_note(struct folio_state *_Nonnull state,
         markdown_rtf_destroy(rendered);
         return ready;
     }
-    markdown_rtf_destroy(state->pane);
+    discard_view(state);
     markdown_rtf_destroy(state->edit);
     note_text_destroy(state->body);
     state->pane = rendered;
@@ -2238,6 +2258,7 @@ enum folio_state_outcome folio_state_begin_edit(struct folio_state *_Nonnull sta
     {
         return FOLIO_STATE_NOTE_UNEDITABLE;
     }
+    state->images.cancel(state->images.adapter);
     state->mode = PANE_MODE_EDIT;
     return FOLIO_STATE_READY;
 }
@@ -2322,13 +2343,14 @@ enum folio_state_outcome folio_state_new_note(struct folio_state *_Nonnull state
         return FOLIO_STATE_OUT_OF_MEMORY;
     }
     note_text_destroy(state->body);
-    markdown_rtf_destroy(state->pane);
+    discard_view(state);
     markdown_rtf_destroy(state->edit);
     state->body = body;
     state->pane = pane;
     state->edit = edit;
     state->document = FOLIO_DOCUMENT_UNTITLED;
     state->selected_category = category;
+    state->images.cancel(state->images.adapter);
     state->mode = PANE_MODE_EDIT;
     state->cursor_any = false;
     folio_state_close_history(state);
@@ -2410,7 +2432,7 @@ static enum folio_state_outcome store_edited(struct folio_state *_Nonnull state,
                                                    : FOLIO_STATE_NOTE_STORE_FAILED;
     }
     stored_note(state);
-    markdown_rtf_destroy(state->pane);
+    discard_view(state);
     state->pane = rendered;
     note_text_destroy(state->body);
     state->body = edited;
@@ -2556,7 +2578,7 @@ static enum folio_state_outcome create_edited(struct folio_state *_Nonnull state
         note_text_destroy(edited);
         return unpublished(prepared, stored);
     }
-    markdown_rtf_destroy(state->pane);
+    discard_view(state);
     state->pane = rendered;
     note_text_destroy(state->body);
     state->body = edited;
@@ -2909,6 +2931,21 @@ static enum folio_state_outcome exported(enum persistence_outcome outcome)
     return FOLIO_STATE_EXPORT_FAILED;
 }
 
+static enum folio_state_outcome prepare_archive_images(struct image_export *_Nonnull images,
+                                                       struct archive_note *_Nonnull entries,
+                                                       size_t count,
+                                                       enum image_export_policy policy)
+{
+    for (size_t index = 0; index < count; ++index)
+    {
+        enum folio_state_outcome result = image_export_append(images, &entries[index]);
+        if (result != FOLIO_STATE_READY)
+            return result;
+    }
+    if (policy == IMAGE_EXPORT_UNDECIDED && image_export_external(images))
+        return FOLIO_STATE_EXPORT_EXTERNAL_IMAGES;
+    return FOLIO_STATE_READY;
+}
 static enum folio_state_outcome export_archive(struct folio_state *_Nonnull state,
                                                const struct note_export_request *_Nonnull request)
 {
@@ -2923,12 +2960,19 @@ static enum folio_state_outcome export_archive(struct folio_state *_Nonnull stat
         return FOLIO_STATE_OUT_OF_MEMORY;
     }
     enum folio_state_outcome result = collect_archive(state, request, entries, bodies);
+    struct image_export *_Nullable images = nullptr;
+    if (result == FOLIO_STATE_READY)
+        result = image_export_create(&state->images, request->images, count, &images);
+    if (result == FOLIO_STATE_READY)
+        result = prepare_archive_images(images, entries, count, request->images);
     struct note_archive *_Nullable archive = nullptr;
     if (result == FOLIO_STATE_READY)
-        result = archive_outcome(note_archive_create(entries, count, &archive));
+        result = archive_outcome(
+            note_archive_create(entries, count, image_export_assets(images), &archive));
     if (result == FOLIO_STATE_READY)
         result = exported(state->transfer.write_archive(request->destination, archive));
     note_archive_destroy(archive);
+    image_export_destroy(images);
     destroy_export_entries(entries, bodies, count);
     return result;
 }
@@ -2985,6 +3029,8 @@ static enum folio_state_outcome apply_prepared_rename(struct folio_state *_Nonnu
         /* 記録を公開した後の失敗はどちらも意図を保持する（決定 2 / 決定 7）。 */
         state->rename = intent;
         state->rename_category = category;
+        if (rename_plan_kind(intent) == RENAME_KIND_CATEGORY)
+            image_origin_changed(state);
         return from_rename(moved);
     }
     enum rename_kind kind = rename_plan_kind(intent);
@@ -3141,7 +3187,7 @@ static enum folio_state_outcome finish_trash(struct folio_state *_Nonnull state,
     if (current && (outcome == FOLIO_STATE_READY || outcome == FOLIO_STATE_LEDGER_STALE))
     {
         note_text_destroy(state->body);
-        markdown_rtf_destroy(state->pane);
+        discard_view(state);
         state->body = body;
         state->pane = pane;
         state->document = FOLIO_DOCUMENT_NONE;
@@ -4281,6 +4327,8 @@ static const enum ui_text failure_lines[] = {
     [FOLIO_STATE_EXPORT_TOO_LARGE] = UI_TEXT_FAILURE_EXPORT_TOO_LARGE,
     [FOLIO_STATE_EXPORT_EXISTS] = UI_TEXT_FAILURE_EXPORT_EXISTS,
     [FOLIO_STATE_EXPORT_FAILED] = UI_TEXT_FAILURE_EXPORT_FAILED,
+    [FOLIO_STATE_EXPORT_EXTERNAL_IMAGES] = UI_TEXT_IMAGES_EXPORT_EXTERNAL,
+    [FOLIO_STATE_EXPORT_IMAGE_UNREADABLE] = UI_TEXT_FAILURE_EXPORT_IMAGES,
     [FOLIO_STATE_TRANSFER_UNAVAILABLE] = UI_TEXT_FAILURE_TRANSFER_UNAVAILABLE,
 
     [FOLIO_STATE_WEB_LINK_REJECTED] = UI_TEXT_FAILURE_WEB_LINK_REJECTED,
@@ -4375,7 +4423,7 @@ void folio_state_destroy(struct folio_state *_Nullable state)
     rename_plan_destroy(state->rename);
     note_corpus_destroy(state->rename_corpus);
     category_ledger_destroy(state->categories);
-    markdown_rtf_destroy(state->pane);
+    discard_view(state);
     markdown_rtf_destroy(state->edit);
     note_text_destroy(state->body);
     utf8_text_destroy(state->search_term);
@@ -4408,6 +4456,41 @@ static bool query_category_target(const struct folio_state *_Nonnull state,
         return true;
     }
     return false;
+}
+
+const struct markdown_images *_Nullable folio_state_images(const struct folio_state *_Nonnull state)
+{
+    return state->pane == nullptr ? nullptr : markdown_rtf_images(state->pane);
+}
+uint64_t folio_state_image_origin_revision(const struct folio_state *_Nonnull state)
+{
+    return state->image_origin_revision;
+}
+enum image_outcome folio_state_request_image(struct folio_state *_Nonnull state, size_t index,
+                                             uint64_t *_Nonnull ticket)
+{
+    const struct markdown_images *images = folio_state_images(state);
+    if (state->mode != PANE_MODE_VIEW || state->document != FOLIO_DOCUMENT_NAMED ||
+        images == nullptr || index >= markdown_images_count(images) ||
+        category_rename_pending(state))
+        return IMAGE_CANCELLED;
+    struct image_request request = {
+        .category = category_ledger_name(state->categories, state->selected_category),
+        .source = markdown_images_at(images, index)};
+    return state->images.request(state->images.adapter, &request, ticket);
+}
+enum image_outcome folio_state_poll_image(struct folio_state *_Nonnull state, uint64_t ticket,
+                                          struct image_bitmap *_Nullable *_Nonnull out)
+{
+    return state->images.poll(state->images.adapter, ticket, out);
+}
+enum image_phase folio_state_image_phase(const struct folio_state *_Nonnull state)
+{
+    return state->images.phase(state->images.adapter);
+}
+void folio_state_cancel_images(struct folio_state *_Nonnull state)
+{
+    state->images.cancel(state->images.adapter);
 }
 
 static enum folio_state_outcome query_category_command(const struct folio_state *_Nonnull state,

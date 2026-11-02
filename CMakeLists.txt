@@ -45,6 +45,8 @@ nenefolio_target(nenefolio_core core STATIC
     src/core/category_ledger.c src/core/category_name.c src/core/note_ledger.c src/core/drawer_layout.c
     src/core/text_buffer.c src/core/note_text.c src/core/markdown_rtf.c src/core/rtf_palette.c
     src/core/rtf_text.c src/core/markdown_blocks.c src/core/markdown_inline_tokens.c
+    src/core/image_source.c src/core/image_bitmap.c src/core/markdown_images.c src/core/markdown_destination.c
+    src/core/image_asset.c src/core/archive_assets.c src/core/markdown_image_copy.c
     src/core/markdown_autolink.c src/core/markdown_character_reference.c
     src/core/web_uri.c src/core/markdown_web_link.c src/core/note_archive.c
     src/core/markdown_line.c src/core/markdown_view.c src/core/markdown_table.c src/core/markdown_containers.c
@@ -57,12 +59,13 @@ nenefolio_target(nenefolio_core core STATIC
     src/core/ascii_fold.c src/core/ui_font.c src/core/ui_font_fallback.c
     src/core/ui_text.c src/core/font_bundle_verdict.c src/core/product_version.c)
 target_compile_definitions(nenefolio_core PRIVATE NENEFOLIO_PRODUCT_VERSION="${PROJECT_VERSION}")
-nenefolio_target(nenefolio_application application STATIC src/application/folio_state.c src/application/storage_state.c)
+nenefolio_target(nenefolio_application application STATIC src/application/folio_state.c src/application/storage_state.c
+    src/application/image_export.c)
 nenefolio_link(nenefolio_application nenefolio_core)
 
 nenefolio_target(folio_tests unit_tests EXECUTABLE
     tests/unit/storage_tests.c tests/unit/storage_state_tests.c
-    tests/unit/web_link_tests.c tests/unit/transfer_tests.c
+    tests/unit/web_link_tests.c tests/unit/transfer_tests.c tests/unit/image_tests.c
     tests/unit/folio_tests.c tests/unit/text_tests.c tests/unit/json_tests.c
     tests/unit/ledger_tests.c tests/unit/layout_tests.c tests/unit/state_tests.c
     tests/unit/allocation_probe.c tests/unit/allocation_tests.c tests/unit/markdown_tests.c
@@ -81,6 +84,8 @@ nenefolio_target(nenefolio_adapters adapters_win32 STATIC
     src/adapters/win32/file_bytes.c src/adapters/win32/persistence_adapter.c
     src/adapters/win32/appearance_adapter.c src/adapters/win32/regex_adapter.c
     src/adapters/win32/web_link_adapter.c src/adapters/win32/transfer_adapter.c
+    src/adapters/win32/image_adapter.c src/adapters/win32/image_job.c src/adapters/win32/image_cache.c
+    src/adapters/win32/image_decode.c src/adapters/win32/image_download.c src/adapters/win32/image_file.c
     src/adapters/win32/font_bundle.c src/adapters/win32/recycle_item.c)
 nenefolio_link(nenefolio_adapters nenefolio_core)
 nenefolio_link(nenefolio_adapters nenefolio_application)
@@ -88,6 +93,8 @@ nenefolio_system_link(nenefolio_adapters kernel32)
 nenefolio_system_link(nenefolio_adapters shell32)
 nenefolio_system_link(nenefolio_adapters ole32)
 nenefolio_system_link(nenefolio_adapters uuid)
+nenefolio_system_link(nenefolio_adapters windowscodecs)
+nenefolio_system_link(nenefolio_adapters winhttp)
 nenefolio_system_link(nenefolio_adapters advapi32)
 # OS高コントラストと利用者のシステム色は外観adapterだけが読む（ADR0057）。
 nenefolio_system_link(nenefolio_adapters user32)
@@ -98,7 +105,7 @@ nenefolio_system_link(nenefolio_adapters gdi32)
 
 nenefolio_target(nenefolio_window ui_win32 STATIC
     src/ui/win32/storage_prompt.c src/ui/win32/folder_picker.c src/ui/win32/file_picker.c
-    src/ui/win32/note_pane_links.c src/ui/win32/note_minimap.c src/ui/win32/note_pane_sample.c
+    src/ui/win32/note_pane_links.c src/ui/win32/note_pane_images.c src/ui/win32/note_minimap.c src/ui/win32/note_pane_sample.c
     src/ui/win32/accessible_item.c src/ui/win32/accessibility_host.c src/ui/win32/accessibility_node.c
     src/ui/win32/accessibility_native.c
     src/ui/win32/drawer_window.c src/ui/win32/folio_window.c src/ui/win32/command_help_fonts.c src/ui/win32/note_pane.c src/ui/win32/note_pane_table.c
@@ -202,3 +209,42 @@ add_custom_command(TARGET minimap_scheduling_tests POST_BUILD
     VERBATIM)
 add_test(NAME minimap_scheduling COMMAND minimap_scheduling_tests)
 set_tests_properties(minimap_scheduling PROPERTIES TIMEOUT 30)
+
+# #520: product image path on isolated native controls.
+nenefolio_target(image_display_tests win32_tests EXECUTABLE tests/win32/image_display_tests.c)
+nenefolio_link(image_display_tests nenefolio_core)
+nenefolio_link(image_display_tests nenefolio_application)
+nenefolio_link(image_display_tests nenefolio_window)
+nenefolio_system_link(image_display_tests user32)
+nenefolio_system_link(image_display_tests ole32)
+add_test(NAME image_display COMMAND image_display_tests)
+set_tests_properties(image_display PROPERTIES TIMEOUT 30)
+
+nenefolio_target(image_adapter_tests win32_tests EXECUTABLE tests/win32/image_adapter_tests.c)
+nenefolio_link(image_adapter_tests nenefolio_core)
+nenefolio_link(image_adapter_tests nenefolio_application)
+nenefolio_link(image_adapter_tests nenefolio_adapters)
+nenefolio_system_link(image_adapter_tests ole32)
+add_test(NAME image_adapter COMMAND image_adapter_tests)
+set_tests_properties(image_adapter PROPERTIES TIMEOUT 60)
+
+# #520: main-window progress and cancellation on an isolated desktop.
+nenefolio_target(image_status_tests win32_tests EXECUTABLE
+    tests/win32/image_status_tests.c tests/win32/image_status_tests.rc)
+nenefolio_link(image_status_tests nenefolio_core)
+nenefolio_link(image_status_tests nenefolio_application)
+nenefolio_link(image_status_tests nenefolio_adapters)
+nenefolio_link(image_status_tests nenefolio_window)
+nenefolio_system_link(image_status_tests user32)
+nenefolio_system_link(image_status_tests ole32)
+target_link_options(image_status_tests PRIVATE /MANIFEST:NO)
+target_include_directories(image_status_tests PRIVATE
+    "$<$<COMPILE_LANGUAGE:RC>:${CMAKE_CURRENT_BINARY_DIR}/generated/src/app>")
+set_source_files_properties(tests/win32/image_status_tests.rc PROPERTIES
+    OBJECT_DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/generated/src/app/NeNeFolio.manifest")
+set_target_properties(image_status_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/verification-images")
+add_custom_command(TARGET image_status_tests POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/fonts $<TARGET_FILE_DIR:image_status_tests>/fonts
+    VERBATIM)
+add_test(NAME image_status COMMAND image_status_tests)
+set_tests_properties(image_status PROPERTIES TIMEOUT 30)

@@ -11,6 +11,7 @@ struct persistence_port;
 struct regex_port;
 struct web_link_port;
 struct transfer_port;
+struct image_port;
 
 struct folio_ports
 {
@@ -19,6 +20,7 @@ struct folio_ports
     const struct regex_port *_Nonnull regex;
     const struct web_link_port *_Nonnull web_link;
     const struct transfer_port *_Nonnull transfer;
+    const struct image_port *_Nonnull images;
 };
 
 #endif

@@ -13,6 +13,7 @@
 struct markdown_blocks
 {
     struct text_buffer *_Nonnull out;
+    struct markdown_images *_Nonnull images;
     const char *_Nonnull source;
     size_t length;
     enum markdown_rtf_outcome outcome;
@@ -190,7 +191,8 @@ static bool flush(struct markdown_blocks *_Nonnull parser)
     paragraph_header(parser);
     struct markdown_view view = {
         .spans = parser->spans, .count = parser->span_count, .length = parser->inline_length};
-    parser->outcome = markdown_inline_tokens_render(parser->out, view);
+    parser->outcome =
+        markdown_inline_tokens_render((struct markdown_render){parser->out, parser->images}, view);
     if (parser->outcome != MARKDOWN_RTF_CONVERTED)
         return false;
     if (parser->heading != 0)
@@ -358,7 +360,8 @@ static bool start_table(struct markdown_blocks *_Nonnull parser, struct markdown
     outer_markers(parser, 0);
     struct markdown_table_format format = {.kind = MARKDOWN_ROW_KIND_HEADER,
                                            .indent_twips = indent_twips};
-    parser->outcome = markdown_table_row(parser->out, line, delimiter, format);
+    parser->outcome = markdown_table_row((struct markdown_render){parser->out, parser->images},
+                                         line, delimiter, format);
     return parser->outcome == MARKDOWN_RTF_CONVERTED;
 }
 
@@ -369,7 +372,8 @@ static bool table_body(struct markdown_blocks *_Nonnull parser, struct markdown_
     struct markdown_table_format format = {.kind = MARKDOWN_ROW_KIND_BODY,
                                            .indent_twips =
                                                markdown_containers_indent(parser->containers)};
-    parser->outcome = markdown_table_row(parser->out, line, parser->delimiter, format);
+    parser->outcome = markdown_table_row((struct markdown_render){parser->out, parser->images},
+                                         line, parser->delimiter, format);
     return parser->outcome == MARKDOWN_RTF_CONVERTED;
 }
 
@@ -503,11 +507,14 @@ static void markdown_blocks_destroy(struct markdown_blocks *_Nonnull parser)
     markdown_containers_destroy(parser->containers);
 }
 
-enum markdown_rtf_outcome markdown_blocks_render(struct text_buffer *_Nonnull out,
+enum markdown_rtf_outcome markdown_blocks_render(struct markdown_render render,
                                                  const char *_Nonnull text, size_t length)
 {
-    struct markdown_blocks parser = {
-        .out = out, .source = text, .length = length, .outcome = MARKDOWN_RTF_CONVERTED};
+    struct markdown_blocks parser = {.out = render.text,
+                                     .images = render.images,
+                                     .source = text,
+                                     .length = length,
+                                     .outcome = MARKDOWN_RTF_CONVERTED};
     parser.outcome = markdown_containers_create(&parser.containers);
     if (parser.outcome != MARKDOWN_RTF_CONVERTED)
         return parser.outcome;
