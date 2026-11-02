@@ -149,11 +149,17 @@ static bool run_note_search_target_tests(const char *_Nonnull argument)
     return true;
 }
 
+static void run_markdown_suite(void)
+{
+    run_code_syntax_tests();
+    run_markdown_tests();
+}
+
 static bool run_target_tests(const char *_Nonnull argument)
 {
     if (strcmp(argument, "--markdown-rtf") == 0)
     {
-        run_markdown_tests();
+        run_markdown_suite();
         return true;
     }
     if (strcmp(argument, "--commands-ui") == 0)
@@ -500,7 +506,7 @@ static void run_full_suite(void)
     run_json_tests();
     run_ledger_tests();
     run_layout_tests();
-    run_markdown_tests();
+    run_markdown_suite();
     run_command_tests();
     run_menu_availability_tests();
     run_note_name_tests();

@@ -95,7 +95,22 @@ URL・メールアドレスの自動リンクは`<`と`>`で囲みます。空�
 
 backtickまたはtildeを3個以上並べて囲みます。開いた記号と同じ種類を、同じ個数以上並べた行で閉じます。
 短い記号列や別の種類の記号列はコード内に残ります。空行や字下げを保持します。
-先頭に書いた言語名による色分けは行いません。
+開始行の記号の直後へ言語名を書くと、閲覧時にキーワード・文字列・コメント・数値を色分けします。
+言語名の英字は大小を区別せず、先頭の空白区切り語を使います。編集時は元のMarkdownです。
+
+| 言語 | 指定できる名前 |
+| --- | --- |
+| C / C++ | `c` / `cpp`, `c++`, `cc`, `cxx` |
+| JavaScript / TypeScript | `javascript`, `js` / `typescript`, `ts` |
+| Python | `python`, `py`, `python3` |
+| JSON | `json` |
+| Shell / Bash | `sh`, `shell`, `bash`, `zsh` |
+| PowerShell | `powershell`, `ps1`, `pwsh` |
+| SQL | `sql` |
+
+未指定・`text`・`plaintext`・`txt`・未知の言語名は単色で表示します。
+基本的な字句の色分けであり、補間式の内側、JavaScriptの正規表現、C++のraw文字列、Shellのhere-document、
+SQL方言固有の引用などは厳密に区別しません。原文は保持します。高コントラストではOSの文字色に揃えます。
 
 ````markdown
 ```c
@@ -187,7 +202,7 @@ SVG・GIF・WebP・動画・参照形式の画像は対象外です。ファイ�
 ## 対応範囲
 
 CommonMark/GFMの全構文への完全互換は保証しません。HTML描画、数式、脚注、独自wiki記法、
-参照形式のリンク、上記6種以外のHTML named参照、言語別syntax highlightingは未対応です。
+参照形式のリンク、上記6種以外のHTML named参照は未対応です。
 未対応の記法は原文を編集・保存できます。表示上の制限や構文の取り違えがあれば、そのMarkdownを添えて報告してください。
 
 リンクの表示文字内では、その内側で閉じる画像記法を対象にします。閉じていない場合や外側リンクの括弧を跨ぐ場合は、通常の行内記法として扱います。
@@ -195,7 +210,7 @@ CommonMark/GFMの全構文への完全互換は保証しません。HTML描画�
 
 設計と検証の根拠: [ADR0070](adr/0070-markdown-syntax-and-native-tables.md)、
 [ADR0071](adr/0071-ordered-markdown-containers.md)、[ADR0072](adr/0072-native-table-container-indent.md)、
-[ADR0085](adr/0085-lazy-markdown-images.md)。
+[ADR0085](adr/0085-lazy-markdown-images.md)、[ADR0086](adr/0086-fenced-code-syntax.md)。
 
 今回の軽い拡張は[ADR0078](adr/0078-lightweight-markdown-inline-rendering.md)、
 未対応項目と公開後の候補は[Markdown対応の整理](quality/2026-10-31-markdown-scope.md)を参照してください。

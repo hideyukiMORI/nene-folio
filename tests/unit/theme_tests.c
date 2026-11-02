@@ -233,6 +233,10 @@ static void verify_readable_roles(void)
         readable(palette->rtf.muted, palette->pane);
         readable(palette->rtf.link, palette->pane);
         readable(palette->rtf.code_text, palette->rtf.code_background);
+        readable(palette->rtf.code_keyword, palette->rtf.code_background);
+        readable(palette->rtf.code_string, palette->rtf.code_background);
+        readable(palette->rtf.code_comment, palette->rtf.code_background);
+        readable(palette->rtf.code_number, palette->rtf.code_background);
     }
 }
 

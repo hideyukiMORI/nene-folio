@@ -74,6 +74,8 @@ step自体を純関数とは呼ばず、同じ構築状態・入力・work列か
 Markdown生成物は`markdown_rtf`、leafと段落spanは`markdown_blocks`、順序付きquote/list pathとitem連番・未表示の印は
 `markdown_containers`が所有する。通常受理は旧段落のflushを要求でき、fence/tableの所属先読みは同ownerへの純粋な厳密照合を使う。
 inline、tableの解釈も同じcore内の処理へ分け、RTF文字escapeは`rtf_text`へ集約する。
+fenceの言語・aliases・字句規則は`code_language`、ブロック内の色分けと継続状態は`code_syntax`が所有し、
+同じ`markdown_blocks`の行入力とRTF出力へ合流する。配色は既存の`folio_theme`表だけに置く（ADR0086）。
 `web_uri`がWeb起動対象の条件を所有し、`markdown_web_link`は既存字句処理でdestinationを展開して同じfactoryへ渡す（ADR0079）。
 `note_archive`は検証済み本文のsnapshotから、UTF-8名・固定日時・CRC32を持つZIP32 STOREを純粋に生成する（ADR0082）。
 同じparserの`markdown_images`が画像参照と原文destination範囲を収集する。`markdown_destination`の展開をリンクと共有し、

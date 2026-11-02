@@ -30,7 +30,9 @@
 static const char header[] =
     "{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0\\fnil Noto Sans JP;}{\\f1\\fmodern Consolas;}}"
     "{\\colortbl;\\red36\\green19\\blue24;\\red44\\green0\\blue30;\\red106\\green96\\blue92;"
-    "\\red178\\green60\\blue18;\\red237\\green225\\blue232;\\red44\\green0\\blue30;}"
+    "\\red178\\green60\\blue18;\\red237\\green225\\blue232;\\red44\\green0\\blue30;"
+    "\\red198\\green152\\blue236;\\red164\\green217\\blue163;"
+    "\\red154\\green165\\blue181;\\red240\\green198\\blue125;}"
     "\\f0\\fs22\\cf1";
 
 /* markdown を変換し、文書の頭と末尾を除いた本体が expected と同じか。 */
@@ -1113,6 +1115,8 @@ static size_t verify_render_allocation(const char *_Nonnull source)
 
 static void verify_syntax_allocation(void)
 {
+    (void)verify_render_allocation("```python\ndef f():\n    return \"text\" # comment\n```\n\n"
+                                   "```c\nint n = 42; /* block */\n```\n");
     (void)verify_render_allocation(
         "paragraph\nline2\nline3\nline4\nline5\nline6\nline7\nline8\nline9\nline10"
         "\n\n- parent\n  - child\n    > > > > > > > > > quote\n\nA | B\n-- | "

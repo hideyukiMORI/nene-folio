@@ -31,7 +31,11 @@ static struct theme_palette high_palette(const struct appearance_snapshot *_Nonn
                 .muted = snapshot->window_text,
                 .link = snapshot->window_text,
                 .code_text = snapshot->window_text,
-                .code_background = snapshot->window},
+                .code_background = snapshot->window,
+                .code_keyword = snapshot->window_text,
+                .code_string = snapshot->window_text,
+                .code_comment = snapshot->window_text,
+                .code_number = snapshot->window_text},
     };
 }
 

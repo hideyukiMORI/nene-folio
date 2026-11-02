@@ -45,6 +45,7 @@ nenefolio_target(nenefolio_core core STATIC
     src/core/category_ledger.c src/core/category_name.c src/core/note_ledger.c src/core/drawer_layout.c
     src/core/text_buffer.c src/core/note_text.c src/core/markdown_rtf.c src/core/rtf_palette.c
     src/core/rtf_text.c src/core/markdown_blocks.c src/core/markdown_inline_tokens.c
+    src/core/code_language.c src/core/code_syntax.c
     src/core/image_source.c src/core/image_bitmap.c src/core/markdown_images.c src/core/markdown_destination.c
     src/core/image_asset.c src/core/archive_assets.c src/core/markdown_image_copy.c
     src/core/markdown_autolink.c src/core/markdown_character_reference.c
@@ -69,6 +70,7 @@ nenefolio_target(folio_tests unit_tests EXECUTABLE
     tests/unit/folio_tests.c tests/unit/text_tests.c tests/unit/json_tests.c
     tests/unit/ledger_tests.c tests/unit/layout_tests.c tests/unit/state_tests.c
     tests/unit/allocation_probe.c tests/unit/allocation_tests.c tests/unit/markdown_tests.c
+    tests/unit/code_syntax_tests.c
     tests/unit/command_tests.c tests/unit/note_name_tests.c tests/unit/rename_tests.c
     tests/unit/category_name_tests.c
     tests/unit/search_tests.c tests/unit/filter_tests.c tests/unit/settings_tests.c

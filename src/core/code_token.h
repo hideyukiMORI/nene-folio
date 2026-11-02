@@ -1,0 +1,11 @@
+#ifndef NENEFOLIO_CODE_TOKEN_H
+#define NENEFOLIO_CODE_TOKEN_H
+enum code_token : unsigned char
+{
+    CODE_TOKEN_TEXT,
+    CODE_TOKEN_KEYWORD,
+    CODE_TOKEN_STRING,
+    CODE_TOKEN_COMMENT,
+    CODE_TOKEN_NUMBER
+};
+#endif

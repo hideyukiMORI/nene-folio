@@ -16,7 +16,7 @@ struct markdown_rtf
 };
 
 /* フォント 0 が本文、1 がコード。色は 1 本文・2 見出し・3 薄字・4 リンク（インラインコードも）・
- * 5 コード文字・6 コード地（rtf_palette の順）。単位は半ポイント。 */
+ * 5 コード文字・6 コード地・7 keyword・8 string・9 comment・10 number。単位は半ポイント。 */
 static const char document_header_open[] = "{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0\\fnil ";
 static const char document_header_close[] = ";}{\\f1\\fmodern Consolas;}}";
 static const char document_body_start[] = "\\f0\\fs22\\cf1";
@@ -48,8 +48,10 @@ static void append_color(struct text_buffer *_Nonnull out, struct rgb_color colo
 static void append_header(struct text_buffer *_Nonnull out, struct rtf_palette palette,
                           const char *_Nonnull face)
 {
-    const struct rgb_color colors[] = {palette.text, palette.heading,   palette.muted,
-                                       palette.link, palette.code_text, palette.code_background};
+    const struct rgb_color colors[] = {
+        palette.text,         palette.heading,         palette.muted,        palette.link,
+        palette.code_text,    palette.code_background, palette.code_keyword, palette.code_string,
+        palette.code_comment, palette.code_number};
     /* fonttbl の face は実行時に挟む。文言ではないので ui_text には置かない（決定 5）。 */
     text_buffer_append_text(out, document_header_open);
     text_buffer_append_text(out, face);

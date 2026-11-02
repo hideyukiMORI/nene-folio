@@ -3854,6 +3854,11 @@ static void verify_contrast_pairs(const struct folio_state *_Nonnull state,
                 rgb_color_equal(palette->rtf.code_text, expected.window_text) &&
                 rgb_color_equal(palette->rtf.code_background, expected.window),
             "Markdown decoration cannot introduce a second contrast palette");
+    require(rgb_color_equal(palette->rtf.code_keyword, expected.window_text) &&
+                rgb_color_equal(palette->rtf.code_string, expected.window_text) &&
+                rgb_color_equal(palette->rtf.code_comment, expected.window_text) &&
+                rgb_color_equal(palette->rtf.code_number, expected.window_text),
+            "code syntax colors respect the system window text");
     require(rgb_color_equal(palette->dialog_surface, expected.window) &&
                 rgb_color_equal(palette->dialog_secondary, expected.window_text) &&
                 palette->dialog_backdrop_alpha == 255,

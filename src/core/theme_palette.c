@@ -41,7 +41,11 @@ static bool same_rtf(struct rtf_palette left, struct rtf_palette right)
     return rgb_color_equal(left.text, right.text) && rgb_color_equal(left.heading, right.heading) &&
            rgb_color_equal(left.muted, right.muted) && rgb_color_equal(left.link, right.link) &&
            rgb_color_equal(left.code_text, right.code_text) &&
-           rgb_color_equal(left.code_background, right.code_background);
+           rgb_color_equal(left.code_background, right.code_background) &&
+           rgb_color_equal(left.code_keyword, right.code_keyword) &&
+           rgb_color_equal(left.code_string, right.code_string) &&
+           rgb_color_equal(left.code_comment, right.code_comment) &&
+           rgb_color_equal(left.code_number, right.code_number);
 }
 
 bool theme_palette_equal(const struct theme_palette *_Nonnull left,

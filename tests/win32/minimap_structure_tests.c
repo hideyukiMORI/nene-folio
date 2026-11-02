@@ -3,6 +3,7 @@
 #include "note_minimap.h"
 #include "note_pane.h"
 #include "note_text.h"
+#include <commdlg.h>
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -25,12 +26,12 @@ static void require(bool condition, const char *_Nonnull label)
     }
 }
 
-static void load(struct note_pane *_Nonnull pane, enum pane_mode mode, const char *_Nonnull content)
+static void load_palette(struct note_pane *_Nonnull pane, enum pane_mode mode,
+                         const char *_Nonnull content, struct rtf_palette palette)
 {
     struct note_text *_Nullable text = nullptr;
     struct markdown_rtf *_Nullable rtf = nullptr;
     require(note_text_create(content, strlen(content), &text) == NOTE_TEXT_ACCEPTED, "source");
-    struct rtf_palette palette = rtf_palette_for(FOLIO_THEME_LIGHT);
     enum markdown_rtf_outcome made = MARKDOWN_RTF_OUT_OF_MEMORY;
     switch (mode)
     {
@@ -47,6 +48,11 @@ static void load(struct note_pane *_Nonnull pane, enum pane_mode mode, const cha
             "native document");
     markdown_rtf_destroy(rtf);
     note_text_destroy(text);
+}
+
+static void load(struct note_pane *_Nonnull pane, enum pane_mode mode, const char *_Nonnull content)
+{
+    load_palette(pane, mode, content, rtf_palette_for(FOLIO_THEME_LIGHT));
 }
 
 struct sample_tally
@@ -210,6 +216,89 @@ static void boundaries(struct note_pane *_Nonnull pane)
                 "editing uses plain native appearance");
 }
 
+static void token_color(HWND handle, const wchar_t *_Nonnull word, struct rgb_color color)
+{
+    FINDTEXTEXW find = {{0, -1}, word, {0, 0}};
+    require(SendMessageW(handle, EM_FINDTEXTEXW, FR_DOWN, (LPARAM)&find) >= 0,
+            "native syntax text is searchable");
+    SendMessageW(handle, EM_EXSETSEL, 0, (LPARAM)&find.chrgText);
+    CHARFORMAT2W format = {.cbSize = sizeof format};
+    SendMessageW(handle, EM_GETCHARFORMAT, SCF_SELECTION, (LPARAM)&format);
+    require((format.dwMask & CFM_COLOR) != 0 &&
+                format.crTextColor == RGB(color.red, color.green, color.blue),
+            "RichEdit uses the canonical syntax color");
+}
+
+static void syntax_preserved(struct note_pane *_Nonnull pane)
+{
+    HWND handle = note_pane_handle(pane);
+    CHARRANGE before = {0}, after = {0};
+    SendMessageW(handle, EM_EXGETSEL, 0, (LPARAM)&before);
+    LRESULT dirty = SendMessageW(handle, EM_GETMODIFY, 0, 0);
+    LRESULT undo = SendMessageW(handle, EM_CANUNDO, 0, 0);
+    wchar_t text[512], actual[512];
+    int length = GetWindowTextW(handle, text, 512);
+    struct note_minimap *_Nullable map = nullptr;
+    require(note_minimap_create(&map) == NOTE_MINIMAP_READY, "syntax map");
+    note_minimap_begin(map);
+    unsigned slices = 0;
+    while (note_minimap_pending(map) && slices++ < 16)
+    {
+        bool finished = note_minimap_step(map, pane);
+        require(finished == !note_minimap_pending(map), "syntax map completion");
+    }
+    require(!note_minimap_pending(map), "syntax map bounded");
+    SendMessageW(handle, EM_EXGETSEL, 0, (LPARAM)&after);
+    require(before.cpMin == after.cpMin && before.cpMax == after.cpMax,
+            "syntax sampling preserves selection");
+    require(SendMessageW(handle, EM_GETMODIFY, 0, 0) == dirty &&
+                SendMessageW(handle, EM_CANUNDO, 0, 0) == undo,
+            "syntax sampling preserves dirty and Undo");
+    require(GetWindowTextW(handle, actual, 512) == length &&
+                memcmp(text, actual, ((size_t)length + 1) * sizeof text[0]) == 0,
+            "syntax sampling preserves displayed text");
+    note_minimap_destroy(map);
+}
+
+static void syntax_palette(struct note_pane *_Nonnull pane, const char *_Nonnull content,
+                           struct rtf_palette palette)
+{
+    load_palette(pane, PANE_MODE_VIEW, content, palette);
+    HWND handle = note_pane_handle(pane);
+    wchar_t text[512];
+    GetWindowTextW(handle, text, 512);
+    require(
+        wcscmp(text, L"int value = 42; // comment\r\n\r\nconst char *s = \"{日本語}\\path\";") == 0,
+        "syntax preserves braces, slash, Unicode, spaces and empty line");
+    token_color(handle, L"int", palette.code_keyword);
+    token_color(handle, L"value", palette.code_text);
+    token_color(handle, L"42", palette.code_number);
+    token_color(handle, L"// comment", palette.code_comment);
+    token_color(handle, L"\"{日本語}\\path\"", palette.code_string);
+    syntax_preserved(pane);
+}
+
+static void code_syntax(struct note_pane *_Nonnull pane)
+{
+    const char content[] = "```c\nint value = 42; // comment\n\n"
+                           "const char *s = \"{日本語}\\path\";\n```\n";
+    syntax_palette(pane, content, rtf_palette_for(FOLIO_THEME_LIGHT));
+    syntax_palette(pane, content, rtf_palette_for(FOLIO_THEME_DARK));
+    struct rtf_palette contrast = rtf_palette_for(FOLIO_THEME_LIGHT);
+    contrast.code_text = contrast.code_keyword = contrast.code_string = contrast.code_comment =
+        contrast.code_number = (struct rgb_color){255, 255, 0};
+    contrast.code_background = (struct rgb_color){0, 0, 0};
+    syntax_palette(pane, content, contrast);
+    load(pane, PANE_MODE_EDIT, content);
+    wchar_t text[512];
+    GetWindowTextW(note_pane_handle(pane), text, 512);
+    require(wcsstr(text, L"```c\r\nint value = 42;") != nullptr &&
+                wcsstr(text, L";\r\n```") != nullptr,
+            "editing returns to source fences");
+    token_color(note_pane_handle(pane), L"int", rtf_palette_for(FOLIO_THEME_LIGHT).text);
+    preservation(pane);
+}
+
 int main(void)
 {
     HDESK desktop = CreateDesktopW(L"NeNeFolioMinimap506", nullptr, nullptr, 0,
@@ -229,6 +318,7 @@ int main(void)
     view_structure(pane);
     wrapped_list(pane);
     code_blocks(pane);
+    code_syntax(pane);
     load(pane, PANE_MODE_EDIT, source);
     boundaries(pane);
     preservation(pane);
