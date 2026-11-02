@@ -14,6 +14,10 @@ struct rtf_palette
     struct rgb_color link;            /* リンクとインラインコードの文字 */
     struct rgb_color code_text;       /* コードブロックの文字 */
     struct rgb_color code_background; /* コードブロックの地 */
+    struct rgb_color code_keyword;
+    struct rgb_color code_string;
+    struct rgb_color code_comment;
+    struct rgb_color code_number;
 };
 
 [[nodiscard]] struct rtf_palette rtf_palette_for(enum folio_theme theme);

@@ -1,14 +1,21 @@
 # いまの状態 — NeNe Folio
 
-## 画像の高さ・wheel・ミニマップ — #522（2026-11-03）
+## コードの言語指定と色分け — #524（2026-11-03）
 
-hideの実機指摘を受け、実RichEditの文書高からwheel上限とミニマップ座標を揃えた。
-画像付近のwheel量が跳ねず、ミニマップに画像の実寸ブロックを描く。対象検証は
-[品質記録](../quality/2026-11-03-image-geometry.md)の173/95/298checks。
-最終headの必須CI・統合・通常反映・保全整理は
-`D:/NeNeFolio/agents/image-geometry-20261103/integration-completion.json`の確定結果を参照する。
-作業木は`D:/NeNeFolio/worktrees/522-image-geometry`。hideから、この修正後に
-コードシンタックスカラーと言語指定の対応を別Issueで続ける新指示を受けている。
+hideの依頼で、画像修正に続きfenceの言語指定と基本字句色分けを追加した。
+C/C++・JS/TS・Python・JSON・Shell・PowerShell・SQLに対応し、未知語は単色、編集は原文を保つ。
+設計は[ADR0086](../adr/0086-fenced-code-syntax.md)、対象検証は[品質記録](../quality/2026-11-03-code-syntax.md)。
+unit3件と実RichEdit168checksが成功。最終headの必須CI・統合・通常反映・保全整理は
+`D:/NeNeFolio/agents/code-syntax-20261103/integration-completion.json`で確定する。
+作業木は`D:/NeNeFolio/worktrees/524-code-syntax`。下記のStore確認待ち・#466/#479の保留は継続する。
+
+## 画像の高さ・wheel・ミニマップ — #522（統合済み）
+
+実RichEditの文書高からwheel上限とミニマップ座標を揃え、画像付近のwheel量と画像の実寸ブロックを修正した。
+PR #523のhead `f285e9e`・必須CI `41475784053`成功でmain `f4ae9e6`へ統合済み。
+対象検証は[品質記録](../quality/2026-11-03-image-geometry.md)の173/95/298checks。
+通常版へ反映し、data31files不変。追加worktree/outputは全hash保全後に削除した。
+確定原本は`D:/NeNeFolio/agents/image-geometry-20261103/integration-completion.json`。
 
 ## 画像表示と持ち出し — #520（2026-11-02、統合済み）
 
@@ -47,7 +54,7 @@ hideは#512/#514の結果を「かなり良くなってる」と受理し、そ�
 完了履歴・各PR/CI/品質記録は[本日の日報](../reports/2026-11-01.md)、再開手順は[引き継ぎ書](../handoffs/2026-11-01.md)へ集約する。
 
 通常exeは`C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`。#520でsource `ddcf151`・版1.1.0へ反映済み。
-続く#522の最新反映/hash/data保持は冒頭の確定原本を参照する。
+続く#522/#524の最新反映/hash/data保持は冒頭の各確定原本を参照する。
 00:40時点では通常アプリの稼働なし。反映の直前にも実状態を確認し、保存/終了前の上書きや強制終了をしない。
 
 本日の日報・引き継ぎ・本頁の更新は#518。最終head/必須CI/main・追加worktree整理は
@@ -60,7 +67,7 @@ hideは#512/#514の結果を「かなり良くなってる」と受理し、そ�
   `D:/NeNeFolio/worktrees/479-editor-paste`と`D:/NeNeFolio/outputs/479-editor-paste`を未統合診断原本として保持する。
 - #466の表幅診断と停止済み継続品質改善は再開しない。
   `D:/NeNeFolio/worktrees/466-table-caller-width`と`D:/NeNeFolio/outputs/466-table-caller-width`を未完として保持する。
-- 構文色分け/言語指定は11月3日のhideの新指示で#522後に着手する。
+- 構文色分け/言語指定は11月3日のhideの新指示により上記#524で対応した。
   [未対応の棚卸し](../quality/2026-10-31-markdown-scope.md)は指示前の参考情報。Mermaid等は今回開始しない。
 - 大文書のRichEdit投入/表配置・大量ノートの検索準備・極狭幅表の可読性は残る。
   合成入力/専用desktopの検証を物理IME・実reader・全DPI/OSの保証と混同しない。

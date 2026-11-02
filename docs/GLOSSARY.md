@@ -10,6 +10,8 @@
 | ポート（port） | 中核がプラットフォームを使うための型のある窓口（関数ポインタの束） | `*_port`（application） |
 | ポートの束（folio ports） | `folio_state` を作るときに渡す永続化・外観・正規表現・Web起動のポートの束。引数の数が C-012 の 4 つで飽和したので、ポートが増える側はこの型で、`folio_state_create` の署名は変わらない。借りるだけで、呼び出しの間しか生きなくてよい | `struct folio_ports`（application）・ADR 0029 の決定 3 / ADR0079 |
 | 検証済みWeb URI | HTTP/HTTPSと文字・長さ条件を満たす不変のUTF-8リンク先。描画と起動で同じfactoryを使う | `web_uri`（core）・ADR0079 |
+| コード言語 | fenceのinfo先頭語から選ぶ字句規則の閉じた集合。画面の表示言語とは独立し、未知語は単色になる | `code_language`（core）・ADR0086 |
+| コード色分け | 既存parserが認識したfence本文だけを、ブロック寿命の状態でRTFへ着色する基本字句処理。原文・保存表現は変更しない | `code_syntax`（core）・ADR0086 |
 | アダプタ（adapter） | ポートの実装。プラットフォームに触れてよい唯一の場所 | `*_adapter`（adapters/win32） |
 | 合成ルート | 依存を結ぶ唯一の場所。端末と終了コードを持つ | `src/app` |
 | 反映（render） | 決まった値を UI 部品へ写す操作。UI 状態を変えてよい唯一の場所 | `render*`（UI） |

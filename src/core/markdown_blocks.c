@@ -1,4 +1,5 @@
 #include "markdown_blocks.h"
+#include "code_syntax.h"
 #include "markdown_code_state.h"
 #include "markdown_containers.h"
 #include "markdown_inline_tokens.h"
@@ -32,6 +33,7 @@ struct markdown_blocks
     size_t fence_indent;
     size_t code_indent;
     enum markdown_code_state code_state;
+    struct code_syntax *_Nullable syntax;
     enum markdown_table_state table_state;
     struct markdown_line delimiter;
 };
@@ -211,6 +213,8 @@ static void close_code(struct markdown_blocks *_Nonnull parser)
         text_buffer_append_text(parser->out, "\\sa120\\par\n");
     text_buffer_append_text(parser->out, "}");
     parser->code_state = MARKDOWN_CODE_STATE_OUTSIDE;
+    code_syntax_destroy(parser->syntax);
+    parser->syntax = nullptr;
 }
 
 static bool fence_closes(struct markdown_blocks *_Nonnull parser, struct markdown_line line)
@@ -257,7 +261,9 @@ static bool code_line(struct markdown_blocks *_Nonnull parser, struct markdown_l
     text_buffer_append_text(parser->out, "\\sa0\\sl240\\slmult1 ");
     for (size_t index = 0; index < line.padding; ++index)
         text_buffer_append_text(parser->out, " ");
-    rtf_text_append(parser->out, line.bytes + line.prefix, line.length - line.prefix);
+    if (parser->syntax == nullptr)
+        return false;
+    code_syntax_append(parser->syntax, line.bytes + line.prefix, line.length - line.prefix);
     parser->code_state = MARKDOWN_CODE_STATE_PARAGRAPH;
     return true;
 }
@@ -276,6 +282,11 @@ static bool start_fence(struct markdown_blocks *_Nonnull parser, struct markdown
         parser->outcome = MARKDOWN_RTF_INVALID_INPUT;
         return false;
     }
+    size_t info = line.content + length;
+    enum code_language language = code_language_parse(line.bytes + info, line.length - info);
+    parser->outcome = code_syntax_create(language, parser->out, &parser->syntax);
+    if (parser->outcome != MARKDOWN_RTF_CONVERTED)
+        return false;
     text_buffer_append_text(parser->out, "{\\f1\\fs20\\cf5\\highlight6");
     return true;
 }
@@ -503,6 +514,7 @@ static bool render_next(struct markdown_blocks *_Nonnull parser, size_t *_Nonnul
 
 static void markdown_blocks_destroy(struct markdown_blocks *_Nonnull parser)
 {
+    code_syntax_destroy(parser->syntax);
     free(parser->spans);
     markdown_containers_destroy(parser->containers);
 }

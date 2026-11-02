@@ -1,0 +1,10 @@
+#ifndef NENEFOLIO_CODE_SYNTAX_PHASE_H
+#define NENEFOLIO_CODE_SYNTAX_PHASE_H
+enum code_syntax_phase : unsigned char
+{
+    CODE_SYNTAX_TEXT,
+    CODE_SYNTAX_COMMENT,
+    CODE_SYNTAX_QUOTED,
+    CODE_SYNTAX_HERE
+};
+#endif
