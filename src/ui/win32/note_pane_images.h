@@ -14,6 +14,10 @@ note_pane_images_insert(struct note_pane_images *_Nonnull images, ITextDocument 
                         size_t index, const struct image_bitmap *_Nonnull bitmap);
 void note_pane_images_finish(struct note_pane_images *_Nonnull images, size_t index);
 void note_pane_images_reflow(struct note_pane_images *_Nonnull images);
+[[nodiscard]] size_t note_pane_images_count(const struct note_pane_images *_Nonnull images);
+[[nodiscard]] bool note_pane_images_bounds(const struct note_pane_images *_Nonnull images,
+                                           ITextRange *_Nonnull range, size_t index,
+                                           RECT *_Nonnull out);
 [[nodiscard]] const struct image_bitmap *_Nullable note_pane_images_resize_next(
     struct note_pane_images *_Nonnull images, size_t *_Nonnull index);
 void note_pane_images_destroy(struct note_pane_images *_Nullable images);

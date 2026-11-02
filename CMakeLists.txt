@@ -106,6 +106,7 @@ nenefolio_system_link(nenefolio_adapters gdi32)
 nenefolio_target(nenefolio_window ui_win32 STATIC
     src/ui/win32/storage_prompt.c src/ui/win32/folder_picker.c src/ui/win32/file_picker.c
     src/ui/win32/note_pane_links.c src/ui/win32/note_pane_images.c src/ui/win32/note_minimap.c src/ui/win32/note_pane_sample.c
+    src/ui/win32/note_pane_geometry.c
     src/ui/win32/accessible_item.c src/ui/win32/accessibility_host.c src/ui/win32/accessibility_node.c
     src/ui/win32/accessibility_native.c
     src/ui/win32/drawer_window.c src/ui/win32/folio_window.c src/ui/win32/command_help_fonts.c src/ui/win32/note_pane.c src/ui/win32/note_pane_table.c

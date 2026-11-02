@@ -116,9 +116,9 @@ PNG/JPEGのWIC復号/縮小は`image_decode`へ閉じる。WinHTTP callbackは�
 
 ### `src/ui/win32`
 
-`note_minimap`はRichEdit表示行の最大256sampleと構築進捗だけを持つ。主窓の120ms timerと
-入力優先のidleで16sampleずつ更新し、完成像だけ描く。本文・位置はRichEditが所有し、
-`note_pane_scroll_display`から既存native scrollへ渡す。主窓の同一geometryとpaletteを
+`note_minimap`はRichEdit表示行の最大256sample・画像最大256矩形と構築進捗を持つ。主窓の120ms timerと
+入力優先のidleで16件ずつ更新し、完成像だけ描く。`note_pane_geometry`は同じnative範囲から文書pixel座標を導く。
+本文・位置はRichEditが所有し、`note_pane_scroll_pixels`から同じ全高/可視高の上限でnative scrollへ渡す。同一geometryとpaletteを
 描画/pointer/focus/UIAで共有し、RangeValue providerは一覧幅と共用する（ADR0084）。
 
 application が作った値を描き、操作を意図として渡す（ARC-011）。可変性の隔離区画（ARC-005）。

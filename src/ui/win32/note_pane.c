@@ -59,6 +59,7 @@ static bool finish_recolor(struct note_pane *_Nonnull pane, ITextDocument *_Nonn
 static bool display_line_top(const struct note_pane *_Nonnull pane, LRESULT display,
                              size_t *_Nonnull position, LONG *_Nonnull top);
 static void cancel_scroll(struct note_pane *_Nonnull pane);
+static ITextRange *_Nullable measuring_range(struct note_pane *_Nonnull pane);
 
 static const wchar_t library_name[] = L"Msftedit.dll";
 static const wchar_t class_name[] = L"RICHEDIT50W";
@@ -217,9 +218,13 @@ static bool project_scroll(struct note_pane *_Nonnull pane, LONG pixels)
 {
     POINT before = {0};
     SendMessageW(pane->handle, EM_GETSCROLLPOS, 0, (LPARAM)&before);
+    struct note_pane_geometry geometry;
+    if (!note_pane_viewport(pane, &geometry))
+        return false;
     LONGLONG wanted = (LONGLONG)before.y + pixels;
     wanted = wanted < 0 ? 0 : wanted;
-    wanted = wanted > LONG_MAX ? LONG_MAX : wanted;
+    int limit = note_pane_geometry_limit(geometry);
+    wanted = wanted > limit ? limit : wanted;
     POINT target = {.x = before.x, .y = (LONG)wanted};
     pane->scroll_projecting = true;
     SendMessageW(pane->handle, EM_SETSCROLLPOS, 0, (LPARAM)&target);
@@ -291,36 +296,7 @@ static LONG scroll_page(const struct note_pane *_Nonnull pane)
     return bounds.bottom > bounds.top ? bounds.bottom - bounds.top : 0;
 }
 
-static LRESULT scroll_target(LRESULT first, LRESULT count, UINT lines, int delta)
-{
-    LRESULT span = (LRESULT)lines < count ? (LRESULT)lines : count;
-    LRESULT target = delta < 0 ? first + span : first - span;
-    target = target < 0 ? 0 : target;
-    target = target >= count ? count - 1 : target;
-    if (target == first)
-        target = first > 0 ? first - 1 : first + 1;
-    return target;
-}
-
-static LONG scroll_lines(const struct note_pane *_Nonnull pane, UINT lines, int delta, LONG page)
-{
-    LRESULT first = SendMessageW(pane->handle, EM_GETFIRSTVISIBLELINE, 0, 0);
-    LRESULT count = SendMessageW(pane->handle, EM_GETLINECOUNT, 0, 0);
-    if (first < 0 || count <= 1)
-        return 0;
-    LRESULT target = scroll_target(first, count, lines, delta);
-    size_t position = 0;
-    LONG here = 0;
-    LONG there = 0;
-    if (!display_line_top(pane, first, &position, &here) ||
-        !display_line_top(pane, target, &position, &there))
-        return 0;
-    LONGLONG distance = (LONGLONG)there - here;
-    distance = distance < 0 ? -distance : distance;
-    return distance > page ? page : (LONG)distance;
-}
-
-static LONG scroll_unit(const struct note_pane *_Nonnull pane, int delta, LONG page)
+static LONG scroll_unit(const struct note_pane *_Nonnull pane, LONG page)
 {
     UINT lines = 0;
     if (!SystemParametersInfoW(SPI_GETWHEELSCROLLLINES, 0, &lines, 0))
@@ -332,7 +308,8 @@ static LONG scroll_unit(const struct note_pane *_Nonnull pane, int delta, LONG p
         return 0;
     if (lines == WHEEL_PAGESCROLL)
         return page;
-    return scroll_lines(pane, lines, delta, page);
+    LONGLONG distance = (LONGLONG)note_pane_geometry_line(pane->handle) * lines;
+    return distance > page ? page : (LONG)distance;
 }
 
 static void scroll_wheel(struct note_pane *_Nonnull pane, int delta)
@@ -340,7 +317,7 @@ static void scroll_wheel(struct note_pane *_Nonnull pane, int delta)
     LONG page = scroll_page(pane);
     if (delta == 0 || page == 0)
         return;
-    double movement = -(double)delta * scroll_unit(pane, delta, page) / WHEEL_DELTA;
+    double movement = -(double)delta * scroll_unit(pane, page) / WHEEL_DELTA;
     if (movement == 0)
         return;
     if (movement * (pane->scroll_remaining + pane->scroll_fraction) < 0)
@@ -378,6 +355,8 @@ void note_pane_scroll_wheel(struct note_pane *_Nonnull pane, int delta)
 /* 別操作が所有する位置変更や入力へ、以前のホイールの余韻を持ち越さない。 */
 static void interrupt_scroll(struct note_pane *_Nonnull pane, UINT message)
 {
+    if (pane->readiness == NOTE_PANE_READINESS_STREAMING)
+        return;
     switch (message)
     {
     case EM_SETSCROLLPOS:
@@ -856,6 +835,7 @@ enum note_pane_load_outcome note_pane_load(struct note_pane *_Nonnull pane,
         /* applicationは既に次の対象を採用し得る。旧本文を次の保存対象へ渡してはいけない。 */
         return failed_load(pane, SendMessageW(pane->handle, EM_GETMODIFY, 0, 0));
     }
+    cancel_scroll(pane);
     pane->readiness = NOTE_PANE_READINESS_STREAMING;
     note_pane_images_destroy(pane->images);
     pane->images = nullptr;
@@ -1238,17 +1218,48 @@ static void scroll_native_line(HWND pane, LRESULT target)
     SendMessageW(pane, EM_LINESCROLL, 0, (LPARAM)(target - now));
 }
 
-void note_pane_scroll_display(struct note_pane *_Nonnull pane, int display)
+void note_pane_scroll_pixels(struct note_pane *_Nonnull pane, int position)
 {
     if (pane->handle == nullptr || pane->readiness != NOTE_PANE_READINESS_READY ||
         pane->composing || !IsWindowEnabled(pane->handle))
         return;
-    LRESULT count = SendMessageW(pane->handle, EM_GETLINECOUNT, 0, 0);
-    if (count < 1)
-        return;
-    LRESULT target = display < 0 ? 0 : display;
-    target = target >= count ? count - 1 : target;
-    scroll_native_line(pane->handle, target);
+    cancel_scroll(pane);
+    POINT current = {0};
+    SendMessageW(pane->handle, EM_GETSCROLLPOS, 0, (LPARAM)&current);
+    LONGLONG distance = (LONGLONG)position - current.y;
+    distance = distance < LONG_MIN ? LONG_MIN : distance;
+    distance = distance > LONG_MAX ? LONG_MAX : distance;
+    bool moved = project_scroll(pane, (LONG)distance);
+    (void)moved;
+}
+
+bool note_pane_viewport(struct note_pane *_Nonnull pane, struct note_pane_geometry *_Nonnull out)
+{
+    if (pane->handle == nullptr || pane->readiness != NOTE_PANE_READINESS_READY || pane->composing)
+        return false;
+    ITextRange *_Nullable range = measuring_range(pane);
+    if (range == nullptr)
+        return false;
+    bool ready = note_pane_geometry_read(pane->handle, range, out);
+    range->lpVtbl->Release(range);
+    return ready;
+}
+
+size_t note_pane_image_count(const struct note_pane *_Nonnull pane)
+{
+    return pane->images == nullptr ? 0 : note_pane_images_count(pane->images);
+}
+
+bool note_pane_image_bounds(struct note_pane *_Nonnull pane, size_t index, RECT *_Nonnull out)
+{
+    if (pane->images == nullptr || pane->readiness != NOTE_PANE_READINESS_READY)
+        return false;
+    ITextRange *_Nullable range = measuring_range(pane);
+    if (range == nullptr)
+        return false;
+    bool ready = note_pane_images_bounds(pane->images, range, index, out);
+    range->lpVtbl->Release(range);
+    return ready;
 }
 
 void note_pane_scroll_to_line(struct note_pane *_Nonnull pane, size_t number)
@@ -1515,9 +1526,7 @@ static enum image_outcome insert_image(struct note_pane *_Nonnull pane,
     LRESULT first = SendMessageW(pane->handle, EM_GETFIRSTVISIBLELINE, 0, 0);
     LRESULT anchor = SendMessageW(pane->handle, EM_LINEINDEX, (WPARAM)first, 0);
     POINTL before = {0};
-    POINT scroll = {0};
     SendMessageW(pane->handle, EM_POSFROMCHAR, (WPARAM)&before, anchor);
-    SendMessageW(pane->handle, EM_GETSCROLLPOS, 0, (LPARAM)&scroll);
     LRESULT modified = SendMessageW(pane->handle, EM_GETMODIFY, 0, 0);
     pane->readiness = NOTE_PANE_READINESS_STREAMING;
     enum image_outcome outcome = IMAGE_FAILED;
@@ -1528,10 +1537,13 @@ static enum image_outcome insert_image(struct note_pane *_Nonnull pane,
     SendMessageW(pane->handle, EM_EXSETSEL, 0, (LPARAM)&selection);
     POINTL after = {0};
     SendMessageW(pane->handle, EM_POSFROMCHAR, (WPARAM)&after, anchor);
-    scroll.y += after.y - before.y;
-    SendMessageW(pane->handle, EM_SETSCROLLPOS, 0, (LPARAM)&scroll);
     SendMessageW(pane->handle, EM_SETMODIFY, (WPARAM)(modified != 0), 0);
     pane->readiness = NOTE_PANE_READINESS_READY;
+    LONGLONG shift = (LONGLONG)after.y - before.y;
+    shift = shift < LONG_MIN ? LONG_MIN : shift;
+    shift = shift > LONG_MAX ? LONG_MAX : shift;
+    bool moved = project_scroll(pane, (LONG)shift);
+    (void)moved;
     if (!readonly)
     {
         EnableWindow(pane->handle, FALSE);

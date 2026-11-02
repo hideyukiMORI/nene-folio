@@ -1,4 +1,5 @@
 #include "note_pane_sample.h"
+#include "note_pane_geometry.h"
 #include "note_pane_table.h"
 #include <limits.h>
 #include <richedit.h>
@@ -81,6 +82,6 @@ bool note_pane_sample_read(HWND handle, ITextRange *_Nonnull range, int line,
         return false;
     *out = (struct note_pane_sample){
         .columns = length > note_pane_sample_columns ? note_pane_sample_columns : (int)length};
-    return font_style(range, out) && native_cell_count(handle, range, (LONG)at, &out->cells) &&
-           paragraph_style(range, out);
+    return note_pane_geometry_bounds(handle, range, &out->bounds) && font_style(range, out) &&
+           native_cell_count(handle, range, (LONG)at, &out->cells) && paragraph_style(range, out);
 }

@@ -6,6 +6,7 @@
 
 #include "gutter_row.h"
 #include "image_bitmap.h"
+#include "note_pane_geometry.h"
 #include "note_pane_link_outcome.h"
 #include "note_pane_load_outcome.h"
 #include "note_pane_outcome.h"
@@ -131,7 +132,12 @@ void note_pane_invalidate_lines(struct note_pane *_Nonnull pane);
  * 折り返しの途中から見えていた場合は、その論理行の先頭へ寄る。 */
 void note_pane_scroll_to_line(struct note_pane *_Nonnull pane, size_t number);
 /* 表示行へ移動。wheelの余韻を止め、本文/選択/Undoは変更しない（ADR0084）。 */
-void note_pane_scroll_display(struct note_pane *_Nonnull pane, int display);
+void note_pane_scroll_pixels(struct note_pane *_Nonnull pane, int position);
+[[nodiscard]] bool note_pane_viewport(struct note_pane *_Nonnull pane,
+                                      struct note_pane_geometry *_Nonnull out);
+[[nodiscard]] size_t note_pane_image_count(const struct note_pane *_Nonnull pane);
+[[nodiscard]] bool note_pane_image_bounds(struct note_pane *_Nonnull pane, size_t index,
+                                          RECT *_Nonnull out);
 /* Body and minimap share this wheel motion; position, focus and text stay native-owned. */
 void note_pane_scroll_wheel(struct note_pane *_Nonnull pane, int delta);
 /* A wheel routed to another region must not retain body motion or a zoom remainder. */

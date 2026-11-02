@@ -6,6 +6,7 @@
 #include "note_text.h"
 #include "utf8_text.h"
 #include <commdlg.h>
+#include <limits.h>
 #include <richole.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -269,7 +270,236 @@ static void table_image(struct note_pane *_Nonnull pane, const struct image_bitm
     LONG height = line_height(note_pane_handle(pane), image_position(note_pane_handle(pane)));
     printf("native table image height=%ld\n", height);
     require(height > 40 && height < 190, "image fits half-width table cell");
+    RECT bounds;
+    require(note_pane_image_bounds(pane, 0, &bounds) && bounds.right - bounds.left < 400 &&
+                bounds.bottom - bounds.top > 40,
+            "table image native geometry follows cell width");
+    minimap(pane);
 }
+static void settle_wheel(void)
+{
+    HANDLE timer = CreateWaitableTimerW(nullptr, TRUE, nullptr);
+    require(timer != nullptr, "wheel completion timer");
+    LARGE_INTEGER due = {.QuadPart = -4000000};
+    require(SetWaitableTimer(timer, &due, 0, nullptr, nullptr, FALSE), "relative wheel interval");
+    DWORD result = WAIT_FAILED;
+    for (unsigned batch = 0; batch < 1000; ++batch)
+    {
+        result = MsgWaitForMultipleObjects(1, &timer, FALSE, INFINITE, QS_ALLINPUT);
+        if (result != WAIT_OBJECT_0 + 1)
+            break;
+        MSG message;
+        for (unsigned at = 0; at < 1000 && PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE); ++at)
+            DispatchMessageW(&message);
+    }
+    CloseHandle(timer);
+    require(result == WAIT_OBJECT_0, "wheel settled within bounded message batches");
+}
+
+static LONG scroll_y(HWND window)
+{
+    POINT point = {0};
+    SendMessageW(window, EM_GETSCROLLPOS, 0, (LPARAM)&point);
+    return point.y;
+}
+
+static void wheel_geometry(struct note_pane *_Nonnull pane,
+                           const struct image_bitmap *_Nonnull image)
+{
+    HWND window = note_pane_handle(pane);
+    MoveWindow(window, 0, 0, 600, 240, FALSE);
+    ShowWindow(GetParent(window), SW_SHOWNOACTIVATE);
+    char source[8192] = "before\n\n![image](images/a.png)\n\nafter\n\n";
+    for (size_t at = 0; at < 80; ++at)
+        strcat_s(source, sizeof source, "body\n\n");
+    load(pane, source, PANE_MODE_VIEW);
+    require(note_pane_insert_image(pane, 0, image) == IMAGE_READY, "wheel image fixture");
+    struct note_pane_geometry view;
+    require(note_pane_viewport(pane, &view), "native document geometry");
+    RECT bounds;
+    require(note_pane_image_bounds(pane, 0, &bounds), "native image bounds");
+    printf("geometry height=%d visible=%d step=%d image=%ld,%ld..%ld,%ld\n", view.height,
+           view.visible, view.step, bounds.left, bounds.top, bounds.right, bounds.bottom);
+    require(bounds.right - bounds.left > 500 && bounds.bottom - bounds.top > 250,
+            "image rectangle includes native width and height");
+    int height = view.height;
+    UINT lines = 0;
+    require(SystemParametersInfoW(SPI_GETWHEELSCROLLLINES, 0, &lines, 0), "OS wheel setting");
+    LONGLONG expected = lines == WHEEL_PAGESCROLL ? view.visible : (LONGLONG)view.step * lines;
+    expected = expected > view.visible ? view.visible : expected;
+    for (int start = 0; start <= 400; start += 100)
+    {
+        note_pane_scroll_pixels(pane, start);
+        note_pane_scroll_wheel(pane, -WHEEL_DELTA);
+        settle_wheel();
+        LONG distance = scroll_y(window) - start;
+        printf("wheel start=%d distance=%ld expected=%lld\n", start, distance, expected);
+        require(llabs(distance - expected) <= 1, "same wheel amount before inside and after image");
+        require(note_pane_viewport(pane, &view) && view.height == height,
+                "document extent does not change while scrolling");
+    }
+    note_pane_scroll_pixels(pane, INT_MAX);
+    require(scroll_y(window) == note_pane_geometry_limit(view), "bottom does not scroll to blank");
+    note_pane_scroll_wheel(pane, -WHEEL_DELTA);
+    settle_wheel();
+    require(scroll_y(window) == note_pane_geometry_limit(view), "wheel stops at real bottom");
+    note_pane_scroll_pixels(pane, -1);
+    require(scroll_y(window) == 0, "negative target clamps to top");
+}
+
+static void image_map_geometry(struct note_pane *_Nonnull pane)
+{
+    struct note_minimap *_Nullable map = nullptr;
+    require(note_minimap_create(&map) == NOTE_MINIMAP_READY, "image map");
+    note_minimap_begin(map);
+    for (size_t at = 0; at < 32 && note_minimap_pending(map); ++at)
+    {
+        bool finished = note_minimap_step(map, pane);
+        require(finished == !note_minimap_pending(map), "bounded image map progress");
+    }
+    require(!note_minimap_pending(map), "image and text map complete");
+    struct note_minimap_paint paint = {.bounds = {0, 0, 100, 400}, .dpi = 96};
+    require(note_pane_viewport(pane, &paint.view), "map geometry");
+    RECT track = note_minimap_track(&paint);
+    RECT thumb = note_minimap_thumb(&paint);
+    require(note_minimap_drag(&paint, track.bottom, 0) == note_pane_geometry_limit(paint.view),
+            "drag reaches document bottom");
+    paint.view.first = note_pane_geometry_limit(paint.view);
+    thumb = note_minimap_thumb(&paint);
+    require(thumb.bottom == track.bottom &&
+                note_minimap_drag(&paint, thumb.top, 0) == paint.view.first,
+            "bottom thumb and drag share pixel coordinate");
+    paint.view.first /= 2;
+    thumb = note_minimap_thumb(&paint);
+    int mapped = note_minimap_drag(&paint, thumb.top, 0);
+    int tolerance = 1 + paint.view.height / (track.bottom - track.top - (thumb.bottom - thumb.top));
+    require(abs(mapped - paint.view.first) <= tolerance, "middle thumb maps to same document area");
+    struct folio_palette palette = {.pane = RGB(255, 255, 255),
+                                    .dialog_control = RGB(12, 34, 56),
+                                    .gutter_text = RGB(44, 55, 66)};
+    HDC device = CreateCompatibleDC(nullptr);
+    HBITMAP bitmap = CreateBitmap(100, 400, 1, 32, nullptr);
+    require(device != nullptr && bitmap != nullptr, "map bitmap");
+    HGDIOBJ previous = SelectObject(device, bitmap);
+    note_minimap_draw(map, device, &palette, &paint);
+    RECT native;
+    require(note_pane_image_bounds(pane, 0, &native), "mapped image bounds");
+    int y = track.top +
+            MulDiv(native.top + native.bottom, track.bottom - track.top, 2 * paint.view.height);
+    require(GetPixel(device, 25, y) == palette.dialog_control,
+            "minimap paints image block at native document height");
+    SelectObject(device, previous);
+    DeleteObject(bitmap);
+    DeleteDC(device);
+    note_minimap_destroy(map);
+}
+
+static void image_anchor(struct note_pane *_Nonnull pane, const struct image_bitmap *_Nonnull image)
+{
+    HWND window = note_pane_handle(pane);
+    char source[4096] = "![image](images/a.png)\n\n";
+    for (size_t at = 0; at < 80; ++at)
+        strcat_s(source, sizeof source, "body\n\n");
+    load(pane, source, PANE_MODE_VIEW);
+    LONG body = find(window, L"body");
+    CHARRANGE selected = {body + 1, body + 3}, actual;
+    SendMessageW(window, EM_EXSETSEL, 0, (LPARAM)&selected);
+    note_pane_scroll_pixels(pane, 250);
+    LRESULT first = SendMessageW(window, EM_GETFIRSTVISIBLELINE, 0, 0);
+    LRESULT anchor = SendMessageW(window, EM_LINEINDEX, (WPARAM)first, 0);
+    POINTL before = {0}, after = {0};
+    SendMessageW(window, EM_POSFROMCHAR, (WPARAM)&before, anchor);
+    require(note_pane_insert_image(pane, 0, image) == IMAGE_READY, "image above viewport arrives");
+    SendMessageW(window, EM_POSFROMCHAR, (WPARAM)&after, anchor);
+    require(before.y == after.y, "asynchronous image keeps the visible text anchor");
+    wchar_t text[8192], changed[8192];
+    LRESULT length = raw(window, text);
+    LRESULT dirty = SendMessageW(window, EM_GETMODIFY, 0, 0);
+    LRESULT undo = SendMessageW(window, EM_CANUNDO, 0, 0);
+    note_pane_scroll_pixels(pane, 100);
+    note_pane_scroll_wheel(pane, -WHEEL_DELTA);
+    require(note_pane_insert_image(pane, 0, image) == IMAGE_READY,
+            "image replacement while wheel is active");
+    settle_wheel();
+    UINT lines = 0;
+    require(SystemParametersInfoW(SPI_GETWHEELSCROLLLINES, 0, &lines, 0), "wheel lines");
+    require(lines == 0 || scroll_y(window) > 100, "image arrival retains active wheel movement");
+    SendMessageW(window, EM_EXGETSEL, 0, (LPARAM)&actual);
+    require(actual.cpMin == selected.cpMin && actual.cpMax == selected.cpMax,
+            "image and pixel scroll retain selection");
+    require(raw(window, changed) == length &&
+                memcmp(text, changed, (size_t)length * sizeof(wchar_t)) == 0 &&
+                SendMessageW(window, EM_GETMODIFY, 0, 0) == dirty &&
+                SendMessageW(window, EM_CANUNDO, 0, 0) == undo,
+            "pixel scroll and image arrival preserve text dirty and Undo");
+}
+
+static void image_only(struct note_pane *_Nonnull pane, const struct image_bitmap *_Nonnull image)
+{
+    HWND window = note_pane_handle(pane);
+    MoveWindow(window, 0, 0, 600, 120, FALSE);
+    load(pane, "![](images/a.png)", PANE_MODE_VIEW);
+    require(note_pane_insert_image(pane, 0, image) == IMAGE_READY, "single image document");
+    struct note_pane_geometry view;
+    require(note_pane_viewport(pane, &view) && view.height > view.visible,
+            "one image line has scrollable document height");
+    require(SendMessageW(window, EM_GETLINECOUNT, 0, 0) == 1, "single display line fixture");
+    note_pane_scroll_pixels(pane, INT_MAX);
+    require(scroll_y(window) == note_pane_geometry_limit(view),
+            "single image can scroll to bottom");
+    int height = view.height;
+    require(SendMessageW(window, EM_SETZOOM, 2, 1), "native zoom");
+    require(note_pane_viewport(pane, &view) && view.height > height, "zoom changes native extent");
+    require(SendMessageW(window, EM_SETZOOM, 1, 1), "zoom reset");
+    MoveWindow(window, 0, 0, 300, 120, FALSE);
+    require(note_pane_reflow(pane, PANE_MODE_VIEW) == NOTE_PANE_LOAD_READY &&
+                note_pane_resize_image(pane) == IMAGE_PENDING,
+            "single image resize");
+    require(note_pane_viewport(pane, &view) && view.height < height &&
+                scroll_y(window) <= note_pane_geometry_limit(view),
+            "resize recalculates height and clamps native position");
+}
+
+static void geometry_boundaries(struct note_pane *_Nonnull pane,
+                                const struct image_bitmap *_Nonnull image)
+{
+    HWND window = note_pane_handle(pane);
+    MoveWindow(window, 0, 0, 600, 240, FALSE);
+    char source[12000] = "";
+    for (size_t at = 0; at < 20; ++at)
+        strcat_s(source, sizeof source, "![](images/a.png)\n\n");
+    for (size_t at = 0; at < 3000; ++at)
+        strcat_s(source, sizeof source, "x\n\n");
+    load(pane, source, PANE_MODE_VIEW);
+    require(note_pane_insert_image(pane, 19, image) == IMAGE_READY,
+            "offscreen image uses same native geometry");
+    require(note_pane_image_count(pane) == 20, "all image slots are represented");
+    struct note_pane_geometry before, after;
+    require(note_pane_viewport(pane, &before) && before.height > 70000,
+            "long document exceeds sixteen bit coordinates");
+    RECT bounds;
+    require(!note_pane_image_bounds(pane, 20, &bounds), "image index boundary");
+    note_pane_scroll_pixels(pane, 70000);
+    require(scroll_y(window) == 70000 && note_pane_viewport(pane, &after) &&
+                after.height == before.height && after.first == 70000,
+            "long document position and extent remain exact");
+    note_pane_scroll_pixels(pane, INT_MAX);
+    require(scroll_y(window) == note_pane_geometry_limit(before), "long document bottom clamp");
+    struct note_minimap *_Nullable map = nullptr;
+    require(note_minimap_create(&map) == NOTE_MINIMAP_READY, "bounded image map");
+    note_minimap_begin(map);
+    unsigned batches = 0;
+    while (note_minimap_pending(map) && batches < 32)
+    {
+        bool finished = note_minimap_step(map, pane);
+        require(finished == !note_minimap_pending(map), "large image map progress");
+        ++batches;
+    }
+    require(!note_minimap_pending(map) && batches == 18,
+            "256 text samples and 20 images use separate sixteen item batches");
+    note_minimap_destroy(map);
+}
+
 int main(void)
 {
     HDESK desktop = CreateDesktopW(L"NeNeFolioImages520", nullptr, nullptr, 0,
@@ -288,6 +518,11 @@ int main(void)
     struct image_bitmap *image = bitmap();
     preservation(pane, image);
     table_image(pane, image);
+    wheel_geometry(pane, image);
+    image_map_geometry(pane);
+    image_anchor(pane, image);
+    image_only(pane, image);
+    geometry_boundaries(pane, image);
     image_bitmap_destroy(image);
     note_pane_destroy(pane);
     DestroyWindow(parent);

@@ -6,6 +6,7 @@
 /* Transient native appearance, never text or a retained COM object. */
 struct note_pane_sample
 {
+    RECT bounds;
     int columns;
     float points;
     float indent;
