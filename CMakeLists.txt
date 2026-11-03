@@ -251,6 +251,14 @@ nenefolio_system_link(image_adapter_tests ole32)
 add_test(NAME image_adapter COMMAND image_adapter_tests)
 set_tests_properties(image_adapter PROPERTIES TIMEOUT 60)
 
+# #544: shared cache eviction and ownership, isolated from network and native windows.
+nenefolio_target(image_cache_tests win32_tests EXECUTABLE tests/win32/image_cache_tests.c)
+nenefolio_link(image_cache_tests nenefolio_core)
+nenefolio_link(image_cache_tests nenefolio_application)
+nenefolio_link(image_cache_tests nenefolio_adapters)
+add_test(NAME image_cache COMMAND image_cache_tests)
+set_tests_properties(image_cache PROPERTIES TIMEOUT 30)
+
 # #539: native font measurement, raster, shared worker and exact cache keys.
 nenefolio_target(diagram_render_tests win32_tests EXECUTABLE tests/win32/diagram_render_tests.c)
 nenefolio_link(diagram_render_tests nenefolio_core)
