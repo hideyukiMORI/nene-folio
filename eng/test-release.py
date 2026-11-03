@@ -257,7 +257,7 @@ class ReleaseProofs(unittest.TestCase):
     def test_native_icon_matches_canonical_asset(self):
         spec, frames = release.checked_icon()
         self.assertEqual(release.validate_icon_resources(self.artifact)["sizes"], spec["iconSizes"])
-        self.assertEqual(len(frames), 8)
+        self.assertEqual(len(frames), 16)
         groups = release.executable_resources(self.artifact, 14)
         images = release.executable_resources(self.artifact, 3)
         with self.assertRaisesRegex(ValueError, "unique application icon"):

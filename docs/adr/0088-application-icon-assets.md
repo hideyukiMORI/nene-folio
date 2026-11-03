@@ -1,6 +1,6 @@
 # ADR 0088 — アプリアイコンを一つのSVGからWindows資産へ派生させる
 
-- 状態: 受理（設計、実装前）
+- 状態: 受理
 - 日付: 2026-11-03
 - Issue: #533
 - 規則: ARC-001/002/004/009/012、C-008/016/017、QLT-007/008/010/011/012/013、GIT-001〜004
@@ -21,11 +21,12 @@ Claudeのdesign:design-critique/design-handoffと[canvas](https://claude.ai/arti
    指定した未作成のD側出力へ、固定rendererで各寸法のSVGを一枚のsheetに描画し、Windows GDI+で等寸切出しする。
    PNG・ICO・更新用eng/msix.json候補と生成証跡を出す。通常build/CIはrendererを起動せず、追跡した資産とhashを検証する。
    新たな製品実行時依存やPython package依存は増やさない。
-3. ICOは16/20/24/32/48/64/128/256pxの32bit alpha。256はPNG、他はDIBと透明AND mask。
+3. ICOは16/20/24/28/32/36/40/48/56/64/72/80/96/112/128/256pxの32bit alpha。256はPNG、他はDIBと透明AND mask。
    native exeへ同じICOを一つの名前付きgroup resourceとして埋め込み、実主窓が大小のHICONを所有する。
-   LoadIconWithScaleDownでサイズごとの専有handleを取得し、両方成功してからWM_SETICONで渡す。
-   実測でLoadImageWの中間サイズでは中央alphaが254となったため、次に大きい画像を縮小するAPIへ統一する。
-   18/28/30/36/40/60/72/96pxで中央alpha255と角の透過を確認した。既存comctl32依存の範囲内である。
+   LoadImageWでサイズごとの専有handleを取得し、両方成功してからWM_SETICONで渡す。
+   Windows標準の100/125/150/175/200/225/250/300/350/400%で大小とも実寸frameを供給する。
+   既存manifestのCommon Controls版を変更せず、画像の拡縮によるalpha丸めと表示のぼけを避ける。
+   任意のcustom DPIではOSによる補間があり得る。元画像の不透明部分はalpha255、角は部分/完全透過を保つ。
    DPI変更では両方取得できたときだけ置換し、旧handleを解放する。破棄は窓を壊した後にDestroyIconを行う。
    LR_SHAREDのresource名cacheで大小が同じhandleになる経路は使わない。class/globalの可変所有状態は追加しない。
 4. MSIXは既存3baseのscale100/125/150/200/400と、Square44のtarget16/20/24/30/32/36/40/48/60/64/72/80/96/256を用意する。

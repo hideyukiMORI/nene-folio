@@ -563,7 +563,7 @@ static void window_icons(struct native_fixture *_Nonnull fixture)
     RECT bounds;
     require(GetWindowRect(root, &bounds), "icon DPI rectangle");
     ICONINFO released = {0};
-    static const UINT scales[] = {96, 120, 144, 168, 192};
+    static const UINT scales[] = {96, 120, 144, 168, 192, 216, 240, 288, 336, 384};
     for (size_t index = 0; index < sizeof scales / sizeof scales[0]; ++index)
     {
         HICON previous = (HICON)SendMessageW(root, WM_GETICON, ICON_BIG, 0);

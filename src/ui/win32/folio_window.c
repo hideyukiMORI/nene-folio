@@ -11330,14 +11330,15 @@ static LRESULT on_create(HWND window, LPARAM lparam)
 static bool refresh_window_icons(struct folio_window *_Nonnull self, UINT dpi)
 {
     HINSTANCE instance = GetModuleHandleW(nullptr);
-    HICON large_icon = nullptr;
-    if (FAILED(LoadIconWithScaleDown(instance, L"NENEFOLIO", GetSystemMetricsForDpi(SM_CXICON, dpi),
-                                     GetSystemMetricsForDpi(SM_CYICON, dpi), &large_icon)))
+    HICON large_icon =
+        LoadImageW(instance, L"NENEFOLIO", IMAGE_ICON, GetSystemMetricsForDpi(SM_CXICON, dpi),
+                   GetSystemMetricsForDpi(SM_CYICON, dpi), LR_DEFAULTCOLOR);
+    if (large_icon == nullptr)
         return false;
-    HICON small_icon = nullptr;
-    if (FAILED(LoadIconWithScaleDown(instance, L"NENEFOLIO",
-                                     GetSystemMetricsForDpi(SM_CXSMICON, dpi),
-                                     GetSystemMetricsForDpi(SM_CYSMICON, dpi), &small_icon)))
+    HICON small_icon =
+        LoadImageW(instance, L"NENEFOLIO", IMAGE_ICON, GetSystemMetricsForDpi(SM_CXSMICON, dpi),
+                   GetSystemMetricsForDpi(SM_CYSMICON, dpi), LR_DEFAULTCOLOR);
+    if (small_icon == nullptr)
     {
         DestroyIcon(large_icon);
         return false;
