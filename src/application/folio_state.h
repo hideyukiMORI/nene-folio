@@ -27,6 +27,7 @@
 #include "note_import_request.h"
 #include "note_import_result.h"
 #include "note_ref.h"
+#include "note_times_view.h"
 #include "pane_mode.h"
 
 #include "pane_title_view.h"
@@ -48,6 +49,10 @@ struct note_name;
 struct note_text;
 struct replace_edit;
 struct markdown_images;
+/* Explicit observation intent; the view query itself never performs I/O. */
+void folio_state_refresh_note_times(struct folio_state *_Nonnull state);
+[[nodiscard]] struct note_times_view
+folio_state_note_times(const struct folio_state *_Nonnull state);
 [[nodiscard]] const struct markdown_images *_Nullable folio_state_images(
     const struct folio_state *_Nonnull state);
 [[nodiscard]] enum image_outcome folio_state_request_image(struct folio_state *_Nonnull state,

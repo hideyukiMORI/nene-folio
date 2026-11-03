@@ -30,6 +30,8 @@ struct folio_palette folio_palette_from(const struct theme_palette *_Nonnull pal
         .contrast = palette->contrast,
         .window = to_color(palette->window),
         .pane = to_color(palette->pane),
+        .status_background = to_color(palette->status_background),
+        .status_text = to_color(palette->status_text),
         .header_text = to_color(palette->header_text),
         .category_text = to_color(palette->category_text),
         .note_text = to_color(palette->note_text),

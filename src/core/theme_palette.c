@@ -16,6 +16,8 @@ static bool same_surfaces(const struct theme_palette *_Nonnull left,
 {
     return rgb_color_equal(left->window, right->window) &&
            rgb_color_equal(left->pane, right->pane) &&
+           rgb_color_equal(left->status_background, right->status_background) &&
+           rgb_color_equal(left->status_text, right->status_text) &&
            rgb_color_equal(left->selected_background, right->selected_background) &&
            rgb_color_equal(left->selected_text, right->selected_text) &&
            rgb_color_equal(left->chip_background, right->chip_background) &&

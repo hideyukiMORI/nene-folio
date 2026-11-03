@@ -215,6 +215,9 @@ static void verify_readable_roles(void)
     {
         const struct theme_palette *_Nonnull palette = folio_theme_palette(folio_theme_at(index));
         readable(palette->editor_text, palette->pane);
+        readable(palette->status_text, palette->status_background);
+        require(!rgb_color_equal(palette->status_background, palette->pane),
+                "status surface differs from the body in every fixed palette");
         readable(palette->category_text, palette->window);
         readable(palette->note_text, palette->window);
         readable(palette->current_text, palette->window);

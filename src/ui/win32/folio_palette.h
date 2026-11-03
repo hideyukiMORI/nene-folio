@@ -10,8 +10,10 @@
 struct folio_palette
 {
     enum folio_contrast contrast;
-    COLORREF window;                /* 窓とドロワーの地 */
-    COLORREF pane;                  /* 右ペインの地 */
+    COLORREF window; /* 窓とドロワーの地 */
+    COLORREF pane;   /* 右ペインの地 */
+    COLORREF status_background;
+    COLORREF status_text;
     COLORREF header_text;           /* ドロワーの頭・右ペインの頭の薄い文字 */
     COLORREF category_text;         /* カテゴリ名 */
     COLORREF note_text;             /* ノート名 */

@@ -71,6 +71,7 @@ tests/win32（専用desktopと専用portable dataの検証合成ルート）
 全文検索は`index_filter_build`だけに非公開の継続状態を認め、有限workの同一matcherから不変の`index_filter`を作る（ADR0073）。
 step自体を純関数とは呼ばず、同じ構築状態・入力・work列から同じ結果になる決定性を守る。
 テーマの固定ID/名前/UI・RTF配色は `folio_theme` の一表、systemを含む名前の解析・解決は `folio_theme_choice` が持つ（ADR0049）。
+`note_file_times`はadapterが得たローカルの作成・更新日時を検証した不変の表示値で、時計やファイルを読まない（ADR0087）。
 Markdown生成物は`markdown_rtf`、leafと段落spanは`markdown_blocks`、順序付きquote/list pathとitem連番・未表示の印は
 `markdown_containers`が所有する。通常受理は旧段落のflushを要求でき、fence/tableの所属先読みは同ownerへの純粋な厳密照合を使う。
 inline、tableの解釈も同じcore内の処理へ分け、RTF文字escapeは`rtf_text`へ集約する。
@@ -95,6 +96,8 @@ Webリンク起動は`folio_state`の意図から`web_link_port`へ渡し、合�
 単票書き出しは既存copied_text、ZIPは保存済み本文の読込とcore archiveへ渡す（ADR0082）。
 画像の要求/取消/結果は必須`image_port`へ渡し、`image_export`が同じ解析情報とportでZIP素材を揃える。
 カテゴリ移動/改名の画像基準の改訂も`folio_state`が所有する（ADR0085）。
+現在ノートの日時snapshotも`folio_state`が所有し、既存`persistence_port.read_note_times`から取得する。
+未選択・未保存・取得不能・取得済みを`note_times_state`で区別し、描画への借用値は`note_times_view`で渡す（ADR0087）。
 ノート保存先は`storage_state`が現在/次回/初回・復旧phaseを所有し、`storage_port`へ検証と設定保存を渡す。
 coreの`storage_path`と`startup_settings`がpath検証と版1のcodecを持ち、ノート側の設定版5とは分離する（ADR0077）。
 全文検索の要求・読込位置・corpus・pending build handleと数値cursorは`folio_state`が所有する。

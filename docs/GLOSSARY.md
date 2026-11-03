@@ -57,6 +57,7 @@
 | OS外観snapshot | OS明暗、高コントラスト状態、window/button/highlightの前景・背景RGB対。取得失敗と通常状態を区別する | `appearance_snapshot`（core）・`appearance_port`（application）・ADR0057 |
 | 設定画面（settings surface） | 頭の歯車・「操作」メニュー・パレットの「設定」が開く入力面。EDIT を持たずレイヤー自身がフォーカスと鍵を受ける | `COMMAND_SURFACE_SETTINGS`（ui/win32）・ADR 0031 の決定 7 |
 | パレット（palette） | UIとRTFを含む一つの実効色の束。固定表かOS色からcoreで解決しapplicationが所有する。UIはCOLORREFへ変換するだけ | `theme_palette`・`appearance_snapshot_palette`（core）・`folio_state_palette`（application）・`folio_palette_from`（ui/win32） |
+| ノート日時（note file times） | 保存ファイルの作成・最終更新属性を取得時のローカル時刻にした表示値。最初に文章を書いた時刻ではなく、無題には日時を作らない。通常保存は作成日時を保持する | `note_file_times`（core）・`note_times_view`（application）・ADR0087 |
 | 操作 ID（command ID） | Ex・操作パレット・既存ショートカットが共通して実行する、表示名から独立した閉じた値 | `enum folio_command`（core） |
 | 操作パレット（command palette） | Ctrl+P で開き、登録済みの操作を表示名または Ex 別名で絞り込んで実行する一時的な入力面 | `folio_command`（core）の登録表・`folio_window`（ui/win32）の入力面 |
 | 編集の破棄（`:e!`） | 編集を破棄して保存済みの本文に戻す。ディスクは読み直さない（vim と違う）。別名 `:edit!`・パレットと「操作」メニューの「編集を破棄して読み直す」も同じ意図を通る | `folio_state_discard_edits`（application）・ADR 0016 の補正 4 |
