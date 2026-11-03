@@ -1,28 +1,31 @@
 # いまの状態 — NeNe Folio
 
-## 11月3日午後の続き
+## 11月3日夕方の続き
 
-hideの「日報と引き継ぎを読んで続ける」、続く「ステータスバー改善まで進める」指定に基づく作業。
-日報・引き継ぎPR #529は必須CI成功後にmain `4586ef9`へ統合し、#528の追加作業物は保全整理済み。
-原本は`D:/NeNeFolio/agents/handoff-20261103/integration-completion.json`。
+hideの追加指定で、#532のコード言語ラベルを実装する。
+fence info先頭語をコード面の左上に本文書体9pt、既存code_comment色で表示し、本文との間は4pt。
+未知語・大小文字・aliasは入力どおり、未指定は表示せず、原文と保存schema・版1.1.0を保つ。
+Claudeのdesignプラグインで[比較canvas](https://claude.ai/artifact/4hmz67GuzYjexqiXyScUoN)を作り、D案を採用した。
+設計は[ADR0086](../adr/0086-fenced-code-syntax.md)、検証は[品質記録](../quality/2026-11-03-code-label.md)。
+最終PR head・必須CI・main・通常反映・保全整理の確定原本は
+`D:/NeNeFolio/agents/code-label-20261103/integration-completion.json`とする。
 
-#530は常設の下端バーに本文と異なる配色、保存ファイルの更新・作成日時、既存キー案内をまとめる。
-日時はファイル属性であり、無題は未保存、取得失敗と改名途中は取得不能として扱う。
-狭幅では表示を短縮し、全文は同じUIAとtooltipへ渡す。通知を優先し、消えたら通常情報へ戻す。
-通常保存で作成時刻を保持し、本文と保存schema、表示版1.1.0は維持する。
-設計は[ADR0087](../adr/0087-note-status-bar.md)、検証と限界は[品質記録](../quality/2026-11-03-note-status.md)。
+続く#533はhideの指定でClaudeにClock/Loupeと揃うアプリアイコン制作を依頼している。
+原本・canvas・明暗小サイズpreviewを確認後、通常exeとMSIX用画像を同じ原本から派生させる。
+Storeへの公開/再提出やバージョン更新は依頼されていない。
 
-最終PR head・必須CI・main・通常反映・data不変・保全整理の確定原本は
-`D:/NeNeFolio/agents/status-bar-20261103/integration-completion.json`。
-技術統合とhideの実機受理は分け、#530についてhideの受理返答はまだない。
-新設タグ、新規コマンドパレット、Store/配布更新、保留案件の再開は今回の対象外。
+#530の常設ステータスバーはPR #531、main `047c000`へ統合・通常版へ反映済み。
+hideは16:09に「全部問題ない。」と実機受理した。受理原本は
+`D:/NeNeFolio/agents/status-bar-20261103/user-acceptance.json`。
+保全後の削除は自動承認審査に拒否されたため、`530-status-bar`のworktree/outputを保持する。
+今回その削除を再試行しない。日報・引き継ぎ#528/PR #529は統合・整理済み。
 追加waiverはnone。既存WVR-0001は継続する。
 
 ## 通常版と配布
 
 通常exeは`C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`、通常dataは隣の`data`。
-今回の反映直前までは製品source `c17928d`、1.1.0。03:31の画像・色分け版はhideが実機受理済み。
-#530の反映source/hash・反映前後のdata照合と起動状態は上記確定原本を参照する。
+言語ラベル反映前の通常版は製品source `047c000`、1.1.0。ステータスバーまでhideが実機受理済み。
+#532の反映source/hash・data照合と起動状態は上記確定原本を参照する。
 次回も実稼働と保存状態を確認し、保存前の強制終了や起動中の上書きをしない。
 
 GitHubの1.1.0 BetaとStore提出原本は11月1日のsource `8ef5d03`。

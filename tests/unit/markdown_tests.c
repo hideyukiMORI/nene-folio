@@ -129,8 +129,10 @@ static void verify_code(void)
         "\\pard\\li180\\ri180\\sb0\\sa0\\sl240\\slmult1 \\par\n"
         "\\pard\\li180\\ri180\\sb0\\sa0\\sl240\\slmult1   b\\sa120\\par\n}"
         "\\pard\\sa80\\sl240\\slmult1\\cf1 after\\par\n");
-    expect_body("```c\n*raw*\n", "{\\f1\\fs20\\cf5\\highlight6\\pard\\li180\\ri180\\sb120\\sa0\\sl2"
-                                 "40\\slmult1 *raw*\\sa120\\par\n}");
+    expect_body("```c\n*raw*\n", "{\\f1\\fs20\\cf5\\highlight6\\pard\\li180\\ri180\\sb120"
+                                 "\\sa80\\sl240\\slmult1 {\\f0\\fs18\\cf9 c}\\par\n"
+                                 "\\pard\\li180\\ri180\\sb0\\sa0\\sl240\\slmult1 *raw*"
+                                 "\\sa120\\par\n}");
     expect_body("text\n```\ncode\n```", "\\pard\\sa80\\sl240\\slmult1\\cf1 text\\par\n"
                                         "{\\f1\\fs20\\cf5\\highlight6\\pard\\li180\\ri180\\sb120\\s"
                                         "a0\\sl240\\slmult1 code\\sa120\\par\n}");
@@ -879,7 +881,7 @@ static void verify_new_inline(void)
     expect_fragment("# **bold** tail", "{\\b bold} tail", "\\b0  tail");
     run_markdown_link_tests();
     expect_fragment("\\~~literal\\~~", "~~literal~~", "\\strike");
-    expect_fragment("~~~ lang\nraw\n```\n~~~~", "raw\\par\n", "lang");
+    expect_fragment("~~~ lang\nraw\n```\n~~~~", "raw\\par\n", "~~~~");
     expect_fragment("````\na\n```\nb\n````", "```\\par\n", "\\cf1 b");
     expect_fragment("- item\n  ```\n  code\noutside", "\\cf1 outside", "code outside");
     expect_fragment("```\na\n``` trailing\nb\n```", "``` trailing\\par\n", "\\cf1 b");
@@ -936,7 +938,8 @@ static void verify_table_start_blocks(void)
     expect_body("# title|\n|---|", "\\pard\\sb200\\sa80\\b\\cf2\\fs44 title|\\b0\\cf1\\fs22\\par\n"
                                    "\\pard\\sa80\\sl240\\slmult1\\cf1 |---|\\par\n");
     expect_body("~~~lang|\n|---|\n~~~\ntail",
-                "{\\f1\\fs20\\cf5\\highlight6\\pard\\li180\\ri180\\sb120\\sa0\\sl240\\slmult1 "
+                "{\\f1\\fs20\\cf5\\highlight6\\pard\\li180\\ri180\\sb120\\sa80\\sl240\\slmult1 "
+                "{\\f0\\fs18\\cf9 lang|}\\par\n\\pard\\li180\\ri180\\sb0\\sa0\\sl240\\slmult1 "
                 "|---|\\sa120\\par\n}\\pard\\sa80\\sl240\\slmult1\\cf1 tail\\par\n");
     expect_body("***\n|---|", "{\\pard\\sb0\\sa0\\sl-240\\slmult0\\fs2\\highlight0\\par}\n{"
                               "\\pard\\sb0\\sa0\\sl-20\\slmult0\\fs2\\highlight3\\par}\n{"

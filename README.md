@@ -50,6 +50,8 @@ tracks validation and the evidence for publication and download verification.
   thematic breaks, setext headings, explicit line breaks, and longer code delimiters.
   It also supports angle-bracket URI/email autolinks, numeric character references,
   six basic named references, and more space around thematic breaks (#480).
+  Fenced code shows its specified language above the code and uses basic syntax colors
+  for supported languages. Unknown names remain visible; an omitted name has no label.
   View-mode HTTP/HTTPS links open in the default browser
   with a left click or Ctrl+Enter (#482); dragging to select text and editing do not launch links.
   See [Markdown syntax and limits](docs/MARKDOWN.md) (Japanese).
