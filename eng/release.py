@@ -221,7 +221,7 @@ def windows_versions(path: Path) -> dict:
             **strings}
 
 
-def embedded_manifest(path: Path) -> bytes:
+def executable_resources(path: Path, kind: int) -> dict[int | str, bytes]:
     api = ctypes.WinDLL("kernel32", use_last_error=True)
     api.LoadLibraryExW.argtypes = [wintypes.LPCWSTR, wintypes.HANDLE, wintypes.DWORD]
     api.LoadLibraryExW.restype = wintypes.HMODULE
@@ -243,17 +243,29 @@ def embedded_manifest(path: Path) -> bytes:
         raise ValueError("release: cannot read executable resources")
     try:
         names = []
-        callback = callback_type(lambda module, kind, name, context: names.append(name) is None)
-        if not api.EnumResourceNamesW(module, 24, callback, 0) or names != [1]:
-            raise ValueError("release: manifest must be the unique resource ID 1")
-        resource = api.FindResourceW(module, 1, 24)
-        size = api.SizeofResource(module, resource)
-        address = api.LockResource(api.LoadResource(module, resource))
-        if not resource or not size or not address:
-            raise ValueError("release: embedded manifest is unreadable")
-        return ctypes.string_at(address, size)
+        callback = callback_type(lambda module, kind, name, context:
+                                 names.append(name if name <= 65535 else ctypes.wstring_at(name)) is None)
+        if not api.EnumResourceNamesW(module, kind, callback, 0):
+            return {}
+        result = {}
+        for name in names:
+            pointer = name if isinstance(name, int) else ctypes.cast(ctypes.c_wchar_p(name), ctypes.c_void_p)
+            resource = api.FindResourceW(module, pointer, kind)
+            size = api.SizeofResource(module, resource)
+            address = api.LockResource(api.LoadResource(module, resource))
+            if not resource or not size or not address or name in result:
+                raise ValueError("release: executable resource is unreadable or duplicated")
+            result[name] = ctypes.string_at(address, size)
+        return result
     finally:
         api.FreeLibrary(module)
+
+
+def embedded_manifest(path: Path) -> bytes:
+    resources = executable_resources(path, 24)
+    if set(resources) != {1}:
+        raise ValueError("release: manifest must be the unique resource ID 1")
+    return resources[1]
 
 
 def validate_versions(actual: dict, value: dict) -> None:
@@ -281,6 +293,7 @@ def validate_identity(path: Path, value: dict) -> dict:
 def validate_executable(path: Path, value: dict) -> dict:
     result = validate_identity(path, value)
     validate_imports(result["imports"])
+    result["icon"] = validate_icon_resources(path)
     return result
 
 
@@ -328,11 +341,14 @@ def package_files(build: Path, format_name: str) -> dict[str, Path]:
 
 
 def validate_stage(folder: Path, build: Path, value: dict, format_name: str = "zip",
-                   sdk_block_map: bytes | None = None) -> dict:
+                   sdk_block_map: bytes | None = None, resource_index: bytes | None = None) -> dict:
     declared = package_files(build, format_name)
     generated = {}
     if format_name == "msix":
         generated["AppxManifest.xml"] = msix_manifest(value)
+        if not resource_index:
+            raise ValueError("release: expected resource index is required")
+        generated["resources.pri"] = resource_index
         if sdk_block_map is not None:
             generated["AppxBlockMap.xml"] = sdk_block_map
     actual = validate_file_set(folder, set(declared) | set(generated))
@@ -399,7 +415,114 @@ def msix_manifest(value: dict) -> bytes:
     return ET.tostring(package, encoding="utf-8", xml_declaration=True) + b"\n"
 
 
+def icon_specification() -> dict:
+    spec = read_json(ROOT / "eng/windows-icons.json")
+    if spec["schema"] != 1 or spec["resourceName"] != "NENEFOLIO":
+        raise ValueError("release: invalid Windows icon specification")
+    return spec
+
+
+def icon_asset_plan() -> dict[str, tuple[int, str, dict[str, str]]]:
+    spec = icon_specification()
+    result = {}
+    for base, size in spec["bases"].items():
+        for scale in spec["scales"]:
+            result[f"Assets/{base}.scale-{scale}.png"] = (
+                (size * scale + 50) // 100, base + ".png", {"Scale": str(scale)})
+    for size in spec["targetSizes"]:
+        for form in ("", "unplated", "lightunplated"):
+            suffix = "_altform-" + form if form else ""
+            qualifiers = {"TargetSize": str(size)}
+            if form:
+                qualifiers["AlternateForm"] = form.upper()
+            result[f"Assets/Square44x44Logo.targetsize-{size}{suffix}.png"] = (
+                size, "Square44x44Logo.png", qualifiers)
+    return result
+
+
+def png_dimensions(data: bytes) -> tuple[int, int]:
+    if (len(data) < 33 or data[:16] != b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR" or
+            data[24:29] != bytes((8, 6, 0, 0, 0))):
+        raise ValueError("release: icon requires a non-interlaced RGBA PNG")
+    return struct.unpack_from(">II", data, 16)
+
+
+def ico_frames(data: bytes, sizes: list[int]) -> list[tuple[bytes, bytes]]:
+    if len(data) < 6 + 16 * len(sizes) or struct.unpack_from("<HHH", data) != (0, 1, len(sizes)):
+        raise ValueError("release: ICO directory differs")
+    frames = []
+    expected_offset = 6 + 16 * len(sizes)
+    for index, size in enumerate(sizes):
+        entry = data[6 + 16 * index:22 + 16 * index]
+        width, height, colors, reserved, planes, depth, count, offset = struct.unpack("<BBBBHHII", entry)
+        encoded = 0 if size == 256 else size
+        if ((width, height, colors, reserved, planes, depth) != (encoded, encoded, 0, 0, 1, 32) or
+                offset != expected_offset or count == 0 or offset + count > len(data)):
+            raise ValueError("release: ICO frame declaration differs")
+        frame = data[offset:offset + count]
+        if size == 256:
+            if png_dimensions(frame) != (size, size):
+                raise ValueError("release: ICO PNG dimensions differ")
+        else:
+            mask_stride = ((size + 31) // 32) * 4
+            if (len(frame) != 40 + size * size * 4 + size * mask_stride or
+                    struct.unpack_from("<IiiHHI", frame) != (40, size, size * 2, 1, 32, 0)):
+                raise ValueError("release: ICO DIB layout differs")
+            alpha = frame[43:40 + size * size * 4:4]
+            corners = (0, size - 1, size * (size - 1), size * size - 1)
+            if any(alpha[at] == 255 for at in corners) or max(alpha) != 255:
+                raise ValueError("release: ICO requires transparent corners and opaque content")
+            mask = frame[40 + size * size * 4:]
+            for y in range(size):
+                for x in range(size):
+                    masked = bool(mask[y * mask_stride + x // 8] & (0x80 >> (x % 8)))
+                    if masked != (alpha[y * size + x] == 0):
+                        raise ValueError("release: ICO alpha and AND mask differ")
+        frames.append((entry[:12], frame))
+        expected_offset += count
+    if expected_offset != len(data):
+        raise ValueError("release: ICO has trailing data")
+    return frames
+
+
+def checked_icon() -> tuple[dict, list[tuple[bytes, bytes]]]:
+    spec = icon_specification()
+    artwork = read_json(ROOT / "eng/msix.json")["artwork"]
+    if (digest(ROOT / safe_relative(spec["source"])) != artwork["sourceSHA256"] or
+            digest(ROOT / safe_relative(spec["icon"])) != artwork["iconSHA256"] or
+            spec["renderer"]["sha256"] != artwork["rendererSHA256"]):
+        raise ValueError("release: icon master, native asset or renderer hash differs")
+    return spec, ico_frames((ROOT / spec["icon"]).read_bytes(), spec["iconSizes"])
+
+
+def validate_icon_group(groups: dict, images: dict, spec: dict, frames: list) -> None:
+    if set(groups) != {spec["resourceName"]}:
+        raise ValueError("release: unique application icon group is missing")
+    group = groups[spec["resourceName"]]
+    if (len(group) != 6 + 14 * len(frames) or
+            struct.unpack_from("<HHH", group) != (0, 1, len(frames))):
+        raise ValueError("release: application icon group directory differs")
+    used = set()
+    for index, (declaration, frame) in enumerate(frames):
+        entry = group[6 + 14 * index:20 + 14 * index]
+        identifier = struct.unpack_from("<H", entry, 12)[0]
+        if entry[:12] != declaration or identifier in used or images.get(identifier) != frame:
+            raise ValueError("release: embedded icon differs from canonical ICO")
+        used.add(identifier)
+    if used != set(images):
+        raise ValueError("release: unexpected embedded icon image")
+
+
+def validate_icon_resources(path: Path) -> dict:
+    spec, frames = checked_icon()
+    validate_icon_group(executable_resources(path, 14), executable_resources(path, 3), spec, frames)
+    return {"resource": spec["resourceName"], "sizes": spec["iconSizes"],
+            "sha256": digest(ROOT / spec["icon"])}
+
+
 def msix_assets() -> dict[str, Path]:
+    checked_icon()
+    plan = icon_asset_plan()
     result = {}
     for item in read_json(ROOT / "eng/msix.json")["assets"]:
         source = ROOT / safe_relative(item["path"])
@@ -407,13 +530,14 @@ def msix_assets() -> dict[str, Path]:
         if destination.casefold() in {name.casefold() for name in result}:
             raise ValueError("release: duplicate MSIX asset")
         data = source.read_bytes()
-        if (len(data) < 33 or data[:16] != b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR" or
-                struct.unpack_from(">II", data, 16) != (item["width"], item["height"])):
+        if png_dimensions(data) != (item["width"], item["height"]):
             raise ValueError("release: MSIX PNG dimensions differ: " + destination)
         if hashlib.sha256(data).hexdigest() != item["sha256"]:
             raise ValueError("release: MSIX PNG hash differs: " + destination)
+        if destination not in plan or (item["width"], item["height"]) != (plan[destination][0],) * 2:
+            raise ValueError("release: MSIX logo set or qualified dimensions differ")
         result[destination] = source
-    if set(result) != {"Assets/Square44x44Logo.png", "Assets/Square150x150Logo.png", "Assets/StoreLogo.png"}:
+    if set(result) != set(plan):
         raise ValueError("release: MSIX logo set differs")
     return result
 
@@ -460,6 +584,62 @@ def validate_msix_archive(archive: Path, stage: Path) -> None:
             raise ValueError("release: MSIX block map file set differs")
 
 
+def validate_pri_dump(data: bytes) -> None:
+    tree = ET.fromstring(data)
+    identity = read_json(ROOT / "eng/msix.json")["identity"]["name"]
+    maps = tree.findall("ResourceMap")
+    if len(maps) != 1 or maps[0].get("name") != identity or maps[0].get("primary") != "true":
+        raise ValueError("release: PRI identity differs")
+    assets = maps[0].find("ResourceMapSubtree[@name='Files']/ResourceMapSubtree[@name='Assets']")
+    if assets is None or any(node.tag != "NamedResource" for node in assets):
+        raise ValueError("release: PRI asset subtree differs")
+    plan = icon_asset_plan()
+    seen = set()
+    for resource in assets:
+        for candidate in resource.findall("Candidate"):
+            path = candidate.findtext("Value", "").replace("\\", "/")
+            if candidate.get("type") != "Path" or path not in plan or path in seen:
+                raise ValueError("release: PRI asset candidate differs")
+            qualifiers = candidate.findall("QualifierSet/Qualifier")
+            actual = {item.get("name"): item.get("value") for item in qualifiers}
+            _, base, expected = plan[path]
+            if resource.get("name") != base or len(actual) != len(qualifiers) or actual != expected:
+                raise ValueError("release: PRI asset qualifiers differ")
+            seen.add(path)
+    if seen != set(plan):
+        raise ValueError("release: PRI asset candidates are incomplete")
+
+
+def build_pri(stage: Path, work: Path, makepri: Path) -> tuple[bytes, dict]:
+    if not makepri.is_absolute() or not makepri.is_file():
+        raise ValueError("release: MakePRI requires an absolute executable path")
+    tool_hash = digest(makepri)
+    config_path = work / "pri-config.xml"
+    language = read_json(ROOT / "eng/msix.json")["languages"][0]
+    subprocess.run([str(makepri), "createconfig", "/cf", str(config_path), "/dq", language,
+                    "/pv", "10.0.0", "/o"], check=True)
+    configuration = ET.parse(config_path)
+    packaging = configuration.getroot().findall("packaging")
+    if len(packaging) != 1:
+        raise ValueError("release: unexpected MakePRI resource packaging configuration")
+    configuration.getroot().remove(packaging[0])
+    configuration.write(config_path, encoding="utf-8", xml_declaration=True)
+    index = stage / "resources.pri"
+    subprocess.run([str(makepri), "new", "/pr", str(stage), "/cf", str(config_path),
+                    "/mn", str(stage / "AppxManifest.xml"), "/of", str(index), "/o"], check=True)
+    dump = work / "pri-dump.xml"
+    subprocess.run([str(makepri), "dump", "/if", str(index), "/of", str(dump),
+                    "/dt", "detailed", "/o"], check=True)
+    validate_pri_dump(dump.read_bytes())
+    if digest(makepri) != tool_hash:
+        raise ValueError("release: MakePRI changed during indexing")
+    content = index.read_bytes()
+    if not content:
+        raise ValueError("release: empty resource index")
+    return content, {"makepri": str(makepri), "makepriSHA256": tool_hash,
+                     "resourceIndexSHA256": digest(index), "resourceIndexDump": str(dump)}
+
+
 def package_msix(stage: Path, work: Path, prefix: str, makeappx: Path) -> tuple[Path, Path, dict]:
     if not makeappx.is_absolute() or not makeappx.is_file():
         raise ValueError("release: MakeAppx requires an absolute executable path")
@@ -490,7 +670,8 @@ def validate_archive(archive: Path, stage: Path, prefix: str) -> None:
                 raise ValueError("release: ZIP content differs")
 
 
-def assemble(build: Path, work: Path, output: Path, format_name: str = "zip", makeappx: Path | None = None) -> dict:
+def assemble(build: Path, work: Path, output: Path, format_name: str = "zip", makeappx: Path | None = None,
+             makepri: Path | None = None) -> dict:
     recorded = read_json(work / "source-inputs.json")
     if recorded["sourceInputsSHA256"] != source_inputs()["sourceInputsSHA256"]:
         raise ValueError("release: source inputs changed during build")
@@ -507,7 +688,14 @@ def assemble(build: Path, work: Path, output: Path, format_name: str = "zip", ma
         target = stage / name
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(source, target)
-    checks = validate_stage(stage, build, value, format_name)
+    resource_index = None
+    resource_checks = {}
+    if format_name == "msix":
+        if makepri is None:
+            raise ValueError("release: MSIX packaging requires MakePRI")
+        resource_index, resource_checks = build_pri(stage, work, makepri)
+    checks = validate_stage(stage, build, value, format_name, resource_index=resource_index)
+    checks.update(resource_checks)
     sdk_block_map = None
     if format_name == "zip":
         archive = work / (prefix + ".zip")
@@ -530,7 +718,7 @@ def assemble(build: Path, work: Path, output: Path, format_name: str = "zip", ma
         checks["msixSHA256"] = digest(archive)
     else:
         raise ValueError("release: unsupported package format")
-    validate_stage(expanded, build, value, format_name, sdk_block_map)
+    validate_stage(expanded, build, value, format_name, sdk_block_map, resource_index)
     if recorded["sourceInputsSHA256"] != source_inputs()["sourceInputsSHA256"]:
         raise ValueError("release: source inputs changed during packaging")
     checks.update({"version": value, "bundle": prefix, "format": format_name, "archiveSHA256": digest(archive), **recorded})
@@ -551,13 +739,14 @@ def main() -> int:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--format", choices=["zip", "msix"], default="zip")
     parser.add_argument("--makeappx", type=Path)
+    parser.add_argument("--makepri", type=Path)
     arguments = parser.parse_args()
     if arguments.command == "destinations":
         fresh_destinations(arguments.work, arguments.output)
         print("Release destinations accepted.")
     if arguments.command == "assemble":
         print(json.dumps(assemble(arguments.work / "build", arguments.work, arguments.output,
-                                  arguments.format, arguments.makeappx), indent=2))
+                                  arguments.format, arguments.makeappx, arguments.makepri), indent=2))
     if arguments.command == "record-inputs":
         (arguments.work / "source-inputs.json").write_text(json.dumps(source_inputs(), indent=2) + "\n",
                                                           encoding="utf-8")

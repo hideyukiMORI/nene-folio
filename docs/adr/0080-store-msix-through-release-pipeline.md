@@ -46,3 +46,10 @@ Waivers: none。
 - [手動MSIX構成](https://learn.microsoft.com/en-us/windows/msix/desktop/desktop-to-uwp-manual-conversion)
 - [MakeAppx](https://learn.microsoft.com/en-us/windows/msix/package/create-app-package-with-makeappx-tool)
 - [packaged desktopの動作と仮想化](https://learn.microsoft.com/en-us/windows/msix/desktop/desktop-to-uwp-behind-the-scenes)
+
+## #533による更新（2026-11-03）
+
+[ADR0088](0088-application-icon-assets.md)により決定3/4の画像構成を更新する。
+単一SVGからnative ICOとqualifier付きPNGを派生させ、固定SDKのMakePRIでresources.priを生成する。
+既存MakeAppx・payload・block map・入力照合は維持し、PRIの候補と生成bytesも検査する。
+Store公開/再提出・identity・保存schema・製品版は変えない。

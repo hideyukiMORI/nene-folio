@@ -12,10 +12,12 @@ Push-Location $repoRoot
 try {
     $formatArguments = @('--format', $Format.ToLowerInvariant())
     if ($Format -eq 'Msix') {
-        $makeAppx = Join-Path ${env:ProgramFiles(x86)} "Windows Kits/10/bin/$($versions.windowsPackagingSdk)/x64/makeappx.exe"
-        $makeAppxVersion = (Get-Item -LiteralPath $makeAppx).VersionInfo.FileVersion.Split(' ')[0]
-        if ($makeAppxVersion -ne $versions.makeappx) { throw "QLT-011: MakeAppx must be $($versions.makeappx); actual: $makeAppxVersion" }
-        $formatArguments += @('--makeappx', $makeAppx)
+        foreach ($toolName in @('makeappx', 'makepri')) {
+            $toolPath = Join-Path ${env:ProgramFiles(x86)} "Windows Kits/10/bin/$($versions.windowsPackagingSdk)/x64/$toolName.exe"
+            $toolVersion = (Get-Item -LiteralPath $toolPath).VersionInfo.FileVersion.Split(' ')[0]
+            if ($toolVersion -ne $versions.$toolName) { throw "QLT-011: $toolName must be $($versions.$toolName); actual: $toolVersion" }
+            $formatArguments += @("--$toolName", $toolPath)
+        }
     }
     & python eng/release.py destinations --work $WorkDirectory --output $OutputDirectory
     if ($LASTEXITCODE -ne 0) { throw 'Release destinations rejected.' }

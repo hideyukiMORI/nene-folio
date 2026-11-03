@@ -91,6 +91,8 @@ constexpr UINT tooltip_info_size = offsetof(TOOLINFOW, lParam) + sizeof(LPARAM);
 struct folio_window
 {
     HWND _Nullable handle;
+    HICON _Nullable icon_large;
+    HICON _Nullable icon_small;
     struct folio_state *_Nonnull state;
     struct storage_state *_Nonnull storage;
     struct accessibility_host *_Nullable accessibility;
@@ -11324,6 +11326,34 @@ static LRESULT on_create(HWND window, LPARAM lparam)
     return render_pane(self) == FOLIO_STATE_READY ? 0 : -1;
 }
 
+/* 大小のhandleはこの窓が所有し、両方取得してから公開して旧pairを解放する。 */
+static bool refresh_window_icons(struct folio_window *_Nonnull self, UINT dpi)
+{
+    HINSTANCE instance = GetModuleHandleW(nullptr);
+    HICON large_icon =
+        LoadImageW(instance, L"NENEFOLIO", IMAGE_ICON, GetSystemMetricsForDpi(SM_CXICON, dpi),
+                   GetSystemMetricsForDpi(SM_CYICON, dpi), LR_DEFAULTCOLOR);
+    if (large_icon == nullptr)
+        return false;
+    HICON small_icon =
+        LoadImageW(instance, L"NENEFOLIO", IMAGE_ICON, GetSystemMetricsForDpi(SM_CXSMICON, dpi),
+                   GetSystemMetricsForDpi(SM_CYSMICON, dpi), LR_DEFAULTCOLOR);
+    if (small_icon == nullptr)
+    {
+        DestroyIcon(large_icon);
+        return false;
+    }
+    SendMessageW(self->handle, WM_SETICON, ICON_BIG, (LPARAM)large_icon);
+    SendMessageW(self->handle, WM_SETICON, ICON_SMALL, (LPARAM)small_icon);
+    if (self->icon_large != nullptr)
+        DestroyIcon(self->icon_large);
+    if (self->icon_small != nullptr)
+        DestroyIcon(self->icon_small);
+    self->icon_large = large_icon;
+    self->icon_small = small_icon;
+    return true;
+}
+
 /* OS が勧める矩形へ移し、字の大きさを取り直す（FR-013）。 */
 static void apply_dpi(struct folio_window *_Nonnull self, LPARAM lparam)
 {
@@ -12298,6 +12328,7 @@ static LRESULT on_message(struct folio_window *_Nonnull self, UINT message, WPAR
         resize(self);
         return 0;
     case WM_DPICHANGED:
+        (void)refresh_window_icons(self, HIWORD(wparam));
         apply_dpi(self, lparam);
         return 0;
     case WM_SETTINGCHANGE:
@@ -12544,6 +12575,21 @@ static bool shortcut_keydown(struct folio_window *_Nonnull self, WPARAM key)
     return false;
 }
 
+static bool create_main_window(struct folio_window *_Nonnull self, HINSTANCE instance)
+{
+    UINT dpi = GetDpiForSystem();
+    DWORD style =
+        WS_POPUP | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU | WS_CLIPCHILDREN;
+    HWND handle = CreateWindowExW(0, class_name, L"NeNe Folio", style, CW_USEDEFAULT, CW_USEDEFAULT,
+                                  scale(base_width, dpi), scale(base_height, dpi), nullptr, nullptr,
+                                  instance, self);
+    if (handle == nullptr || !refresh_window_icons(self, GetDpiForWindow(handle)))
+        return false;
+    decorate(handle, self->palette);
+    ShowWindow(handle, SW_SHOW);
+    return true;
+}
+
 enum folio_window_outcome folio_window_create(struct folio_state *_Nonnull state,
                                               struct storage_state *_Nonnull storage,
                                               enum font_bundle_outcome fonts,
@@ -12585,19 +12631,11 @@ enum folio_window_outcome folio_window_create(struct folio_state *_Nonnull state
         folio_window_destroy(self);
         return FOLIO_WINDOW_NOT_CREATED;
     }
-    UINT dpi = GetDpiForSystem();
-    DWORD style =
-        WS_POPUP | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU | WS_CLIPCHILDREN;
-    HWND handle = CreateWindowExW(0, class_name, L"NeNe Folio", style, CW_USEDEFAULT, CW_USEDEFAULT,
-                                  scale(base_width, dpi), scale(base_height, dpi), nullptr, nullptr,
-                                  instance, self);
-    if (handle == nullptr)
+    if (!create_main_window(self, instance))
     {
         folio_window_destroy(self);
         return FOLIO_WINDOW_NOT_CREATED;
     }
-    decorate(handle, self->palette);
-    ShowWindow(handle, SW_SHOW);
     accessibility_host_schedule(self->accessibility);
     *out = self;
     self->dispatch_depth += 1;
@@ -12780,6 +12818,10 @@ void folio_window_destroy(struct folio_window *_Nullable window)
         clear_session_reason(window);
         DestroyWindow(window->handle);
     }
+    if (window->icon_large != nullptr)
+        DestroyIcon(window->icon_large);
+    if (window->icon_small != nullptr)
+        DestroyIcon(window->icon_small);
     release_accelerators(window);
     modal_owner_destroy(window->modal_owner);
     name_prompt_metrics_destroy(window->native_metrics);

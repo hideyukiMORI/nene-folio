@@ -232,3 +232,5 @@ on completion. History closes if the required save clears its rows. There is no 
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+The current development build uses one [application icon master](docs/design/app-icon.md) for native Windows and MSIX assets. This does not update the already published 1.1.0 Beta or its Store submission.

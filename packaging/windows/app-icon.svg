@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <title>NeNe Folio application icon</title>
+  <desc>NeNe Folio application icon: a notebook page with a spine, three rules and a category tab on a rounded tile. Corners outside rx=24 are fully transparent.</desc>
+  <rect width="256" height="256" rx="24" fill="#D08C3F"/>
+  <rect x="1.5" y="1.5" width="253" height="253" rx="22.5" fill="none" stroke="#1A1917" stroke-width="3"/>
+  <rect x="184" y="64" width="30" height="36" rx="6" fill="#1A1917"/>
+  <rect x="60" y="40" width="136" height="176" rx="12" fill="#F5F2EB"/>
+  <path d="M72 40 H88 V216 H72 A12 12 0 0 1 60 204 V52 A12 12 0 0 1 72 40 Z" fill="#1A1917"/>
+  <g stroke="#1A1917" stroke-width="12" stroke-linecap="round">
+    <line x1="104" y1="92" x2="176" y2="92"/>
+    <line x1="104" y1="128" x2="176" y2="128"/>
+    <line x1="104" y1="164" x2="148" y2="164"/>
+  </g>
+</svg>

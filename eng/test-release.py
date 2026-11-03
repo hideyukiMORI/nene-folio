@@ -30,6 +30,11 @@ class ReleaseProofs(unittest.TestCase):
         self.addCleanup(self.temporary.cleanup)
         self.folder = Path(self.temporary.name)
 
+    def msix_configuration(self, configuration):
+        original = release.read_json
+        return patch.object(release, "read_json", side_effect=lambda path:
+                            configuration if path == release.ROOT / "eng/msix.json" else original(path))
+
     def test_actual_artifact(self):
         result = release.validate_identity(self.artifact, self.version)
         self.assertEqual(result["machine"], "AMD64")
@@ -235,19 +240,137 @@ class ReleaseProofs(unittest.TestCase):
                          configuration["identity"]["publisherDisplayName"])
 
     def test_msix_asset_integrity_and_dimensions(self):
-        self.assertEqual(len(release.msix_assets()), 3)
+        self.assertEqual(len(release.msix_assets()), 57)
         configuration = release.read_json(release.ROOT / "eng/msix.json")
         for field, value, message in (("width", 43, "dimensions differ"), ("sha256", "0" * 64, "hash differs")):
             changed = copy.deepcopy(configuration)
             changed["assets"][0][field] = value
-            with patch.object(release, "read_json", return_value=changed):
+            with self.msix_configuration(changed):
                 with self.assertRaisesRegex(ValueError, message):
                     release.msix_assets()
         changed = copy.deepcopy(configuration)
         changed["assets"].append(changed["assets"][0])
-        with patch.object(release, "read_json", return_value=changed):
+        with self.msix_configuration(changed):
             with self.assertRaisesRegex(ValueError, "duplicate MSIX asset"):
                 release.msix_assets()
+
+    def test_native_icon_matches_canonical_asset(self):
+        spec, frames = release.checked_icon()
+        self.assertEqual(release.validate_icon_resources(self.artifact)["sizes"], spec["iconSizes"])
+        self.assertEqual(len(frames), 16)
+        groups = release.executable_resources(self.artifact, 14)
+        images = release.executable_resources(self.artifact, 3)
+        with self.assertRaisesRegex(ValueError, "unique application icon"):
+            release.validate_icon_group({}, images, spec, frames)
+        corrupt = dict(images)
+        identifier = next(iter(corrupt))
+        corrupt[identifier] = corrupt[identifier][:-1] + bytes([corrupt[identifier][-1] ^ 1])
+        with self.assertRaisesRegex(ValueError, "embedded icon differs"):
+            release.validate_icon_group(groups, corrupt, spec, frames)
+        with self.assertRaisesRegex(ValueError, "unexpected embedded icon"):
+            release.validate_icon_group(groups, {**images, 65000: b"extra"}, spec, frames)
+        with self.assertRaisesRegex(ValueError, "group directory differs"):
+            release.validate_icon_group({spec["resourceName"]: b"short"}, images, spec, frames)
+
+    def test_icon_master_integrity_and_alpha_rejections(self):
+        spec, _ = release.checked_icon()
+        configuration = release.read_json(release.ROOT / "eng/msix.json")
+        for field in ("sourceSHA256", "iconSHA256", "rendererSHA256"):
+            changed = copy.deepcopy(configuration)
+            changed["artwork"][field] = "0" * 64
+            with self.msix_configuration(changed), self.assertRaisesRegex(ValueError, "hash differs"):
+                release.checked_icon()
+        original = (release.ROOT / spec["icon"]).read_bytes()
+        frame = struct.unpack_from("<I", original, 18)[0]
+        corrupt = bytearray(original)
+        corrupt[frame + 43] = 255
+        with self.assertRaisesRegex(ValueError, "transparent corners"):
+            release.ico_frames(corrupt, spec["iconSizes"])
+        corrupt = bytearray(original)
+        size = spec["iconSizes"][0]
+        corrupt[frame + 40 + size * size * 4] ^= 0x80
+        with self.assertRaisesRegex(ValueError, "AND mask"):
+            release.ico_frames(corrupt, spec["iconSizes"])
+        with self.assertRaisesRegex(ValueError, "trailing data"):
+            release.ico_frames(original + b"extra", spec["iconSizes"])
+        corrupt = bytearray(original)
+        corrupt[6] ^= 1
+        with self.assertRaisesRegex(ValueError, "frame declaration"):
+            release.ico_frames(corrupt, spec["iconSizes"])
+
+    def test_msix_missing_extra_and_rgb_assets_are_rejected(self):
+        configuration = release.read_json(release.ROOT / "eng/msix.json")
+        changed = copy.deepcopy(configuration)
+        changed["assets"].pop()
+        with self.msix_configuration(changed), self.assertRaisesRegex(ValueError, "logo set differs"):
+            release.msix_assets()
+        changed = copy.deepcopy(configuration)
+        changed["assets"][-1]["destination"] = "Assets/Unexpected.png"
+        with self.msix_configuration(changed), self.assertRaisesRegex(ValueError, "logo set"):
+            release.msix_assets()
+        source = release.ROOT / configuration["assets"][0]["path"]
+        data = bytearray(source.read_bytes())
+        data[25] = 2
+        with self.assertRaisesRegex(ValueError, "RGBA PNG"):
+            release.png_dimensions(data)
+
+    def pri_fixture(self):
+        tree = ET.Element("PriInfo")
+        identity = release.read_json(release.ROOT / "eng/msix.json")["identity"]["name"]
+        resource_map = ET.SubElement(tree, "ResourceMap", {"name": identity, "primary": "true"})
+        files = ET.SubElement(resource_map, "ResourceMapSubtree", {"name": "Files"})
+        assets = ET.SubElement(files, "ResourceMapSubtree", {"name": "Assets"})
+        resources = {}
+        for path, (_, base, qualifiers) in release.icon_asset_plan().items():
+            if base not in resources:
+                resources[base] = ET.SubElement(assets, "NamedResource", {"name": base})
+            candidate = ET.SubElement(resources[base], "Candidate", {"type": "Path"})
+            group = ET.SubElement(candidate, "QualifierSet")
+            for name, value in qualifiers.items():
+                ET.SubElement(group, "Qualifier", {"name": name, "value": value})
+            ET.SubElement(candidate, "Value").text = path.replace("/", "\\")
+        return tree
+
+    def test_pri_candidates_qualifiers_and_identity(self):
+        tree = self.pri_fixture()
+        release.validate_pri_dump(ET.tostring(tree))
+        changed = copy.deepcopy(tree)
+        changed.find("ResourceMap").set("name", "different.app")
+        with self.assertRaisesRegex(ValueError, "PRI identity"):
+            release.validate_pri_dump(ET.tostring(changed))
+        changed = copy.deepcopy(tree)
+        changed.find(".//Candidate/Value").text = "Assets/missing.png"
+        with self.assertRaisesRegex(ValueError, "PRI asset candidate"):
+            release.validate_pri_dump(ET.tostring(changed))
+        changed = copy.deepcopy(tree)
+        changed.find(".//Qualifier[@name='AlternateForm']").set("value", "PLATED")
+        with self.assertRaisesRegex(ValueError, "PRI asset qualifiers"):
+            release.validate_pri_dump(ET.tostring(changed))
+        changed = copy.deepcopy(tree)
+        resource = changed.find(".//NamedResource")
+        resource.remove(resource.find("Candidate"))
+        with self.assertRaisesRegex(ValueError, "incomplete"):
+            release.validate_pri_dump(ET.tostring(changed))
+        changed = copy.deepcopy(tree)
+        resource = changed.find(".//NamedResource")
+        resource.append(copy.deepcopy(resource.find("Candidate")))
+        with self.assertRaisesRegex(ValueError, "PRI asset candidate"):
+            release.validate_pri_dump(ET.tostring(changed))
+
+    def test_pri_bytes_are_required_and_preserved_in_stage(self):
+        stage = self.folder / "stage"
+        stage.mkdir()
+        manifest = release.msix_manifest(self.version)
+        (stage / "AppxManifest.xml").write_bytes(manifest)
+        (stage / "resources.pri").write_bytes(b"expected index")
+        with patch.object(release, "package_files", return_value={}), \
+                patch.object(release, "validate_fonts"), patch.object(release, "validate_executable", return_value={}):
+            release.validate_stage(stage, self.folder, self.version, "msix", resource_index=b"expected index")
+            with self.assertRaisesRegex(ValueError, "expected resource index"):
+                release.validate_stage(stage, self.folder, self.version, "msix")
+            (stage / "resources.pri").write_bytes(b"changed index")
+            with self.assertRaisesRegex(ValueError, "generated package file differs"):
+                release.validate_stage(stage, self.folder, self.version, "msix", resource_index=b"expected index")
 
     def test_msix_archive_content_and_block_map_rejections(self):
         stage = self.folder / "stage"

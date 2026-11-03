@@ -1,8 +1,8 @@
 # いまの状態 — NeNe Folio
 
-## 11月3日夕方の続き
+## 11月3日夕方 — 言語ラベルとアプリアイコン
 
-hideの追加指定で、#532のコード言語ラベルを実装する。
+hideの追加指定による#532のコード言語ラベルはPR #534、main `02060d3`へ統合済み。
 fence info先頭語をコード面の左上に本文書体9pt、既存code_comment色で表示し、本文との間は4pt。
 未知語・大小文字・aliasは入力どおり、未指定は表示せず、原文と保存schema・版1.1.0を保つ。
 Claudeのdesignプラグインで[比較canvas](https://claude.ai/artifact/4hmz67GuzYjexqiXyScUoN)を作り、D案を採用した。
@@ -10,9 +10,12 @@ Claudeのdesignプラグインで[比較canvas](https://claude.ai/artifact/4hmz6
 最終PR head・必須CI・main・通常反映・保全整理の確定原本は
 `D:/NeNeFolio/agents/code-label-20261103/integration-completion.json`とする。
 
-続く#533はhideの指定でClaudeにClock/Loupeと揃うアプリアイコン制作を依頼している。
-原本・canvas・明暗小サイズpreviewを確認後、通常exeとMSIX用画像を同じ原本から派生させる。
-Storeへの公開/再提出やバージョン更新は依頼されていない。
+#533はClaudeの[比較canvas](https://claude.ai/artifact/BcA7CRegGBHzcQrZco58Lc)でアンバー地のB案を採用した。
+角外の透過を持つ単一SVGから通常exe用ICOと57枚のMSIX画像を生成し、DPIごとの窓アイコンとPRI索引を追加する。
+設計は[ADR0088](../adr/0088-application-icon-assets.md)、対象検証と限界は[品質記録](../quality/2026-11-03-app-icon.md)。
+最終PR head・必須CI・main・#532と一緒の通常反映・保全整理は
+`D:/NeNeFolio/agents/app-icon-20261103/integration-completion.json`を確定原本とする。
+Storeへの公開/再提出・インストール・バージョン更新は行わない。
 
 #530の常設ステータスバーはPR #531、main `047c000`へ統合・通常版へ反映済み。
 hideは16:09に「全部問題ない。」と実機受理した。受理原本は
