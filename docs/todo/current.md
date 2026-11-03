@@ -6,14 +6,17 @@ hideの新指示で、停止まで調査・試験・計測・必要な修正を�
 現行規約の対象検証・最終head必須CI・正典統合・必要反映・整理まで進める。
 開始時mainは`ab7b732`、origin/main一致・clean、open PRなし。#541/PR542のCI41660944733は成功。
 
-#543のMermaid形状境界はPR545の最終head2a8473cでCI41731390145成功、main932bc18へ統合・通常反映済み。
-32ファイルの通常dataは内容/hash/作成/更新日時が一致。5434ファイルの証跡を全hash照合して保全した。
-確定原本はD:/NeNeFolio/agents/543-mermaid-shape-end/integration-completion.json。
+#543のMermaid形状境界はPR545の最終CI成功・main統合・通常反映・5434ファイル保全と作業木整理まで完了。
+確定原本は`D:/NeNeFolio/agents/543-mermaid-shape-end/integration-completion.json`。
 
-現在の焦点は#544。画像cacheの満杯時に全4件を消す問題を修正し、同じ9要求のmissは8から5へ減った。
-容量/byte/空き枠/所有の273checksと独立R/Oレビューが成功。詳細は[品質記録](../quality/2026-11-04-image-cache-eviction.md)。
-最終head/CI/main/通常反映/整理はD:/NeNeFolio/agents/544-image-cache-eviction/integration-completion.jsonへ収載する。
-次の焦点は#546の引用pipe辺ラベル。
+#544の画像cache退去はPR547/CI41734856635成功、main`786d6d5`へ統合・通常反映済み。
+同じ9要求のmissは8から5へ減り、273checks成功。通常data32ファイルも反映前後で一致した。
+完了原本は`D:/NeNeFolio/agents/544-image-cache-eviction/integration-completion.json`へ。
+
+現在の焦点は#546。引用pipeの修正前redと、修正後の9正例/4拒否例・関連diagram対象の成功を確認した。
+独立R/Oレビューは追加指摘なし。詳細は[品質記録](../quality/2026-11-04-mermaid-quoted-pipe.md)。
+最終head/CI/main/通常反映/整理は`D:/NeNeFolio/agents/546-mermaid-quoted-pipe/integration-completion.json`へ収載する。
+次は深いsequence activationの幅不足候補を実行で確認する。
 
 日報・次回の詳細は[11月4日の日報](../reports/2026-11-04.md)と[引き継ぎ書](../handoffs/2026-11-04.md)。
 全体journalは`D:/NeNeFolio/agents/quality-20261104/journal.md`。
