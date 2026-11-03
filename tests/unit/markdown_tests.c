@@ -3,9 +3,9 @@
 #include "markdown_autolink.h"
 #include "markdown_character_reference.h"
 #include "markdown_containers.h"
-#include "markdown_images.h"
 #include "markdown_inline_tokens.h"
 #include "markdown_line.h"
+#include "markdown_media.h"
 #include "markdown_rtf.h"
 #include "markdown_table.h"
 #include "note_text.h"
@@ -714,10 +714,10 @@ static void verify_table_query_rejections(void)
     struct text_buffer *out = nullptr;
     require(text_buffer_create(&out) == TEXT_BUFFER_ACCEPTED, "table rejection output");
     struct markdown_line header_line = markdown_line_read("A | B", 5, 0);
-    struct markdown_images *images = nullptr;
-    require(markdown_images_create(header_line.bytes, &images) == IMAGE_READY,
+    struct markdown_media *images = nullptr;
+    require(markdown_media_create(header_line.bytes, &images) == IMAGE_READY,
             "direct image collector");
-    struct markdown_render render = {.text = out, .images = images};
+    struct markdown_render render = {.text = out, .media = images};
     struct markdown_line delimiter = markdown_line_read("-- | --", 7, 0);
     struct markdown_line invalid = {.bytes = "x", .length = 1, .content = 2};
     require(markdown_table_columns(invalid) == 0 && !markdown_table_delimiter(invalid) &&
@@ -745,7 +745,7 @@ static void verify_table_query_rejections(void)
                 text_buffer_length(out) == 0,
             "native row API rejects more than sixty-three columns rather than truncating");
     text_buffer_destroy(wide);
-    markdown_images_destroy(images);
+    markdown_media_destroy(images);
     text_buffer_destroy(out);
 }
 
@@ -1135,9 +1135,9 @@ static void verify_borrowed_input(void)
     struct markdown_view view = {.spans = &span, .count = 1, .length = 1};
     struct text_buffer *out = nullptr;
     require(text_buffer_create(&out) == TEXT_BUFFER_ACCEPTED, "invalid input output");
-    struct markdown_images *images = nullptr;
-    require(markdown_images_create(span.bytes, &images) == IMAGE_READY, "direct image collector");
-    struct markdown_render render = {.text = out, .images = images};
+    struct markdown_media *images = nullptr;
+    require(markdown_media_create(span.bytes, &images) == IMAGE_READY, "direct image collector");
+    struct markdown_render render = {.text = out, .media = images};
     require(markdown_inline_tokens_render(render, view) == MARKDOWN_RTF_INVALID_INPUT &&
                 text_buffer_length(out) == 0,
             "inconsistent borrowed offsets are typed invalid input");
@@ -1155,7 +1155,7 @@ static void verify_borrowed_input(void)
                 MARKDOWN_RTF_INVALID_INPUT &&
             text_buffer_length(out) == 0,
         "invalid row enum is rejected before any RTF is appended");
-    markdown_images_destroy(images);
+    markdown_media_destroy(images);
     text_buffer_destroy(out);
 }
 
@@ -1203,9 +1203,9 @@ static void verify_table_format_limits(void)
     require(text_buffer_create(&out) == TEXT_BUFFER_ACCEPTED, "table format boundary output");
     struct markdown_line line = markdown_line_read("A | B", 5, 0);
     struct markdown_line delimiter = markdown_line_read("-- | --", 7, 0);
-    struct markdown_images *images = nullptr;
-    require(markdown_images_create(line.bytes, &images) == IMAGE_READY, "table image collector");
-    struct markdown_render render = {.text = out, .images = images};
+    struct markdown_media *images = nullptr;
+    require(markdown_media_create(line.bytes, &images) == IMAGE_READY, "table image collector");
+    struct markdown_render render = {.text = out, .media = images};
     struct markdown_table_format format = {.kind = MARKDOWN_ROW_KIND_HEADER, .indent_twips = 32768};
     require(markdown_table_row(render, line, delimiter, format) == MARKDOWN_RTF_INVALID_INPUT &&
                 text_buffer_length(out) == 0,
@@ -1224,7 +1224,7 @@ static void verify_table_format_limits(void)
                 strstr(text_buffer_bytes(out), "\\cellx37267\\") != nullptr &&
                 strstr(text_buffer_bytes(out), "\\cellx41767\\") != nullptr,
             "inclusive policy boundary safely emits indent plus initial edges");
-    markdown_images_destroy(images);
+    markdown_media_destroy(images);
     text_buffer_destroy(out);
 }
 
@@ -1353,10 +1353,10 @@ static void expect_inline_view(struct markdown_view view, const char *_Nonnull e
 {
     struct text_buffer *out = nullptr;
     require(text_buffer_create(&out) == TEXT_BUFFER_ACCEPTED, "direct inline output");
-    struct markdown_images *images = nullptr;
-    require(markdown_images_create(view.spans[0].bytes, &images) == IMAGE_READY,
+    struct markdown_media *images = nullptr;
+    require(markdown_media_create(view.spans[0].bytes, &images) == IMAGE_READY,
             "direct image collector");
-    struct markdown_render render = {.text = out, .images = images};
+    struct markdown_render render = {.text = out, .media = images};
     require(markdown_inline_tokens_render(render, view) == MARKDOWN_RTF_CONVERTED &&
                 text_buffer_finish(out) == TEXT_BUFFER_ACCEPTED,
             "direct inline render");
@@ -1365,7 +1365,7 @@ static void expect_inline_view(struct markdown_view view, const char *_Nonnull e
         fprintf(stderr, "inline expected=%s\nactual=%s\n", expected, text_buffer_bytes(out));
         require(false, "direct inline bytes match expected RTF");
     }
-    markdown_images_destroy(images);
+    markdown_media_destroy(images);
     text_buffer_destroy(out);
 }
 
@@ -1599,9 +1599,9 @@ static void verify_inline_storage_guards(void)
     text_buffer_append_text(out, "kept");
     struct markdown_span span = {.bytes = "", .length = 0};
     struct markdown_view view = {.spans = &span, .count = 0, .length = 0};
-    struct markdown_images *images = nullptr;
-    require(markdown_images_create(span.bytes, &images) == IMAGE_READY, "direct image collector");
-    struct markdown_render render = {.text = out, .images = images};
+    struct markdown_media *images = nullptr;
+    require(markdown_media_create(span.bytes, &images) == IMAGE_READY, "direct image collector");
+    struct markdown_render render = {.text = out, .media = images};
     allocation_probe_fail_at(0);
     require(markdown_inline_tokens_render(render, view) == MARKDOWN_RTF_CONVERTED,
             "empty view does not require token storage");
@@ -1621,7 +1621,7 @@ static void verify_inline_storage_guards(void)
                 same_text(text_buffer_bytes(out), "kept"),
             "empty and rejected views allocate nothing or change existing output");
     allocation_probe_fail_at(0);
-    markdown_images_destroy(images);
+    markdown_media_destroy(images);
     text_buffer_destroy(out);
 }
 
@@ -1640,9 +1640,9 @@ static bool verify_inline_literal_storage(size_t length, const char *_Nonnull la
     require(text_buffer_finish(source) == TEXT_BUFFER_ACCEPTED, "inline literal source complete");
     struct markdown_span span = {.bytes = text_buffer_bytes(source), .length = length};
     struct markdown_view view = {.spans = &span, .count = 1, .length = length};
-    struct markdown_images *images = nullptr;
-    require(markdown_images_create(span.bytes, &images) == IMAGE_READY, "direct image collector");
-    struct markdown_render render = {.text = out, .images = images};
+    struct markdown_media *images = nullptr;
+    require(markdown_media_create(span.bytes, &images) == IMAGE_READY, "direct image collector");
+    struct markdown_render render = {.text = out, .media = images};
     allocation_probe_fail_at(0);
     enum markdown_rtf_outcome rendered = markdown_inline_tokens_render(render, view);
     size_t calls = allocation_probe_calls();
@@ -1657,7 +1657,7 @@ static bool verify_inline_literal_storage(size_t length, const char *_Nonnull la
                 text_buffer_length(out) == length &&
                 memcmp(text_buffer_bytes(out), text_buffer_bytes(source), length) == 0,
             "direct literal RTF is exactly the unchanged source bytes");
-    markdown_images_destroy(images);
+    markdown_media_destroy(images);
     text_buffer_destroy(out);
     text_buffer_destroy(source);
     if (observed)
@@ -1716,9 +1716,9 @@ static size_t verify_inline_metadata_allocation(void)
         struct text_buffer *out = nullptr;
         require(text_buffer_create(&out) == TEXT_BUFFER_ACCEPTED, "metadata OOM output");
         text_buffer_append_text(out, "kept");
-        struct markdown_images *images = nullptr;
-        require(markdown_images_create(source, &images) == IMAGE_READY, "direct image collector");
-        struct markdown_render render = {.text = out, .images = images};
+        struct markdown_media *images = nullptr;
+        require(markdown_media_create(source, &images) == IMAGE_READY, "direct image collector");
+        struct markdown_render render = {.text = out, .media = images};
         allocation_probe_fail_at(fail);
         enum markdown_rtf_outcome result = markdown_inline_tokens_render(render, view);
         size_t calls = allocation_probe_calls();
@@ -1728,14 +1728,14 @@ static size_t verify_inline_metadata_allocation(void)
             require(result == MARKDOWN_RTF_CONVERTED &&
                         text_buffer_finish(out) == TEXT_BUFFER_ACCEPTED,
                     "unhooked direct render completes");
-            markdown_images_destroy(images);
+            markdown_media_destroy(images);
             text_buffer_destroy(out);
             return 0;
         }
         require(result == MARKDOWN_RTF_OUT_OF_MEMORY && text_buffer_length(out) == 4 &&
                     same_text(text_buffer_bytes(out), "kept"),
                 "each inline metadata allocation failure keeps existing buffer bytes");
-        markdown_images_destroy(images);
+        markdown_media_destroy(images);
         text_buffer_destroy(out);
         ++rejected;
     }

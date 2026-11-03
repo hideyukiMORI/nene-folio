@@ -35,7 +35,7 @@
 #include "icon_paint.h"
 #include "key_guide.h"
 #include "layout_metrics.h"
-#include "markdown_images.h"
+#include "markdown_media.h"
 #include "menu_request.h"
 #include "minimap_update.h"
 #include "modal_owner.h"
@@ -120,6 +120,7 @@ struct folio_window
     bool image_failed;
     bool image_advisory;
     enum ui_text image_line;
+    enum ui_text diagram_failure;
     unsigned image_meter;
     int minimap_pointer_offset;
     int body_left_inset; /* 配置時に確定した行番号込みの左余白。通知中は再計測しない。 */
@@ -2307,18 +2308,18 @@ static void clear_images(struct folio_window *_Nonnull self)
     self->image_failed = false;
     self->image_advisory = false;
     self->image_line = UI_TEXT_EMPTY;
+    self->diagram_failure = UI_TEXT_EMPTY;
 }
 static void prepare_images(struct folio_window *_Nonnull self)
 {
     self->image_origin_revision = folio_state_image_origin_revision(self->state);
-    const struct markdown_images *images = folio_state_images(self->state);
-    if (images == nullptr)
+    const struct markdown_media *media = folio_state_media(self->state);
+    if (media == nullptr)
         return;
-    size_t count = markdown_images_count(images);
-    self->image_advisory = markdown_images_advisory(images);
-    self->image_failed = count > markdown_images_display_limit || markdown_images_overflow(images);
-    if (count > markdown_images_display_limit)
-        count = markdown_images_display_limit;
+    size_t count = markdown_media_count(media);
+    self->image_advisory = markdown_images_advisory(markdown_media_images(media));
+    if (markdown_media_overflow(media))
+        self->diagram_failure = UI_TEXT_MEDIA_LIMIT;
     if (note_pane_prepare_images(self->pane, count) != IMAGE_READY)
         self->image_failed = true;
     if (count != 0)
@@ -12179,6 +12180,53 @@ static bool client_pointer_cursor(const struct folio_window *_Nonnull self, WPAR
     return true;
 }
 
+static enum ui_text media_phase_text(enum image_phase phase)
+{
+    switch (phase)
+    {
+    case IMAGE_PHASE_IDLE:
+    case IMAGE_PHASE_READING:
+    case IMAGE_PHASE_DECODING:
+        return UI_TEXT_IMAGES_READING;
+    case IMAGE_PHASE_RESIZING:
+        return UI_TEXT_IMAGES_RESIZING;
+    case IMAGE_PHASE_DIAGRAM_PARSING:
+        return UI_TEXT_DIAGRAM_PARSING;
+    case IMAGE_PHASE_DIAGRAM_LAYOUT:
+        return UI_TEXT_DIAGRAM_LAYOUT;
+    case IMAGE_PHASE_DIAGRAM_DRAWING:
+        return UI_TEXT_DIAGRAM_DRAWING;
+    }
+    return UI_TEXT_EMPTY;
+}
+static void media_failure(struct folio_window *_Nonnull self, enum image_outcome outcome)
+{
+    const struct markdown_media *media = folio_state_media(self->state);
+    if (media == nullptr || self->image_index >= markdown_media_count(media) ||
+        markdown_media_kind(media, self->image_index) == MARKDOWN_MEDIA_IMAGE)
+    {
+        self->image_failed = true;
+        return;
+    }
+    switch (outcome)
+    {
+    case IMAGE_READY:
+    case IMAGE_PENDING:
+    case IMAGE_CANCELLED:
+    case IMAGE_SKIPPED:
+        break;
+    case IMAGE_FAILED:
+    case IMAGE_OUT_OF_MEMORY:
+        self->diagram_failure = UI_TEXT_DIAGRAM_FAILED;
+        break;
+    case IMAGE_UNSUPPORTED:
+        self->diagram_failure = UI_TEXT_DIAGRAM_UNSUPPORTED;
+        break;
+    case IMAGE_TOO_LARGE:
+        self->diagram_failure = UI_TEXT_DIAGRAM_TOO_LARGE;
+        break;
+    }
+}
 static void image_progress(struct folio_window *_Nonnull self)
 {
     RECT client;
@@ -12189,10 +12237,10 @@ static void image_progress(struct folio_window *_Nonnull self)
         line = UI_TEXT_IMAGES_ADVISORY;
     if (self->image_failed)
         line = UI_TEXT_IMAGES_FAILED;
+    if (self->diagram_failure != UI_TEXT_EMPTY)
+        line = self->diagram_failure;
     if (self->image_pending)
-        line = folio_state_image_phase(self->state) == IMAGE_PHASE_RESIZING
-                   ? UI_TEXT_IMAGES_RESIZING
-                   : UI_TEXT_IMAGES_READING;
+        line = media_phase_text(folio_state_image_phase(self->state));
     bool boundary = (self->image_line == UI_TEXT_EMPTY) != (line == UI_TEXT_EMPTY);
     self->image_line = line;
     ++self->image_meter;
@@ -12215,7 +12263,7 @@ static void receive_image(struct folio_window *_Nonnull self)
     note_pane_finish_image(self->pane, self->image_index);
     self->image_pending = false;
     if (outcome != IMAGE_READY)
-        self->image_failed = true;
+        media_failure(self, outcome);
     request_minimap(self, MINIMAP_UPDATE_READY);
 }
 static bool refresh_image_origin(struct folio_window *_Nonnull self)
@@ -12257,7 +12305,7 @@ static void continue_images(struct folio_window *_Nonnull self)
         if (!self->image_pending)
         {
             note_pane_finish_image(self->pane, self->image_index);
-            self->image_failed = true;
+            media_failure(self, outcome);
         }
     }
     image_progress(self);

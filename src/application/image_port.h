@@ -1,5 +1,6 @@
 #ifndef NENEFOLIO_IMAGE_PORT_H
 #define NENEFOLIO_IMAGE_PORT_H
+#include "diagram_request.h"
 #include "image_asset.h"
 #include "image_export_policy.h"
 #include "image_outcome.h"
@@ -13,6 +14,9 @@ struct image_port
     struct image_adapter *_Nonnull adapter;
     enum image_outcome (*_Nonnull request)(struct image_adapter *_Nonnull adapter,
                                            const struct image_request *_Nonnull request,
+                                           uint64_t *_Nonnull ticket);
+    enum image_outcome (*_Nonnull diagram)(struct image_adapter *_Nonnull adapter,
+                                           const struct diagram_request *_Nonnull request,
                                            uint64_t *_Nonnull ticket);
     enum image_outcome (*_Nonnull poll)(struct image_adapter *_Nonnull adapter, uint64_t ticket,
                                         struct image_bitmap *_Nullable *_Nonnull out);

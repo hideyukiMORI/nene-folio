@@ -63,6 +63,7 @@ void run_nullable_allocation_tests(void);
 void run_replace_preview_allocation_tests(void);
 void run_markdown_tests(void);
 void run_code_syntax_tests(void);
+void run_diagram_tests(void);
 [[nodiscard]] bool run_markdown_inline_storage_tests(void);
 [[nodiscard]] bool run_markdown_inline_phrase_tests(void);
 [[nodiscard]] size_t run_markdown_inline_storage_allocation_tests(void);

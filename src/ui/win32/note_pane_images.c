@@ -1,5 +1,5 @@
 #include "note_pane_images.h"
-#include "markdown_images.h"
+#include "markdown_media.h"
 #include "note_pane_geometry.h"
 #include "note_pane_table.h"
 #include <commdlg.h>
@@ -11,9 +11,9 @@ struct note_pane_images
 {
     HWND _Nonnull window;
     LONG positions[markdown_images_reference_limit];
-    LONG rows[markdown_images_display_limit];
+    LONG rows[markdown_media_display_limit];
     bool finished[markdown_images_reference_limit];
-    struct image_bitmap *_Nullable bitmaps[markdown_images_display_limit];
+    struct image_bitmap *_Nullable bitmaps[markdown_media_display_limit];
     size_t resizing;
     size_t count;
     size_t bytes;
@@ -93,7 +93,7 @@ enum image_outcome note_pane_images_create(HWND _Nonnull window, ITextDocument *
                                            size_t count,
                                            struct note_pane_images *_Nullable *_Nonnull out)
 {
-    if (count > markdown_images_display_limit)
+    if (count > markdown_media_display_limit)
         return IMAGE_TOO_LARGE;
     struct note_pane_images *_Nullable images = calloc(1, sizeof *images);
     if (images == nullptr)

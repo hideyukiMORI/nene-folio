@@ -1,7 +1,7 @@
 #include "markdown_rtf.h"
 
 #include "markdown_blocks.h"
-#include "markdown_images.h"
+#include "markdown_media.h"
 #include "note_text.h"
 #include "rtf_text.h"
 #include "text_buffer.h"
@@ -12,7 +12,7 @@
 struct markdown_rtf
 {
     struct text_buffer *_Nonnull buffer;
-    struct markdown_images *_Nullable images;
+    struct markdown_media *_Nullable media;
 };
 
 /* フォント 0 が本文、1 がコード。色は 1 本文・2 見出し・3 薄字・4 リンク（インラインコードも）・
@@ -130,13 +130,13 @@ enum markdown_rtf_outcome markdown_rtf_create(const struct note_text *_Nonnull t
     {
         return MARKDOWN_RTF_OUT_OF_MEMORY;
     }
-    if (markdown_images_create(note_text_bytes(text), &rtf->images) != IMAGE_READY)
+    if (markdown_media_create(note_text_bytes(text), &rtf->media) != IMAGE_READY)
     {
         markdown_rtf_destroy(rtf);
         return MARKDOWN_RTF_OUT_OF_MEMORY;
     }
     enum markdown_rtf_outcome rendered =
-        markdown_blocks_render((struct markdown_render){rtf->buffer, rtf->images},
+        markdown_blocks_render((struct markdown_render){rtf->buffer, rtf->media},
                                note_text_bytes(text), note_text_length(text));
     if (rendered != MARKDOWN_RTF_CONVERTED)
     {
@@ -188,12 +188,16 @@ void markdown_rtf_destroy(struct markdown_rtf *_Nullable rtf)
     {
         return;
     }
-    markdown_images_destroy(rtf->images);
+    markdown_media_destroy(rtf->media);
     text_buffer_destroy(rtf->buffer);
     free(rtf);
 }
 
 const struct markdown_images *_Nullable markdown_rtf_images(const struct markdown_rtf *_Nonnull rtf)
 {
-    return rtf->images;
+    return rtf->media == nullptr ? nullptr : markdown_media_images(rtf->media);
+}
+const struct markdown_media *_Nullable markdown_rtf_media(const struct markdown_rtf *_Nonnull rtf)
+{
+    return rtf->media;
 }

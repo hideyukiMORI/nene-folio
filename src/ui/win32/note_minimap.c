@@ -1,5 +1,5 @@
 #include "note_minimap.h"
-#include "markdown_images.h"
+#include "markdown_media.h"
 #include "note_pane.h"
 #include <limits.h>
 #include <richedit.h>
@@ -12,8 +12,8 @@ struct note_minimap
 {
     struct note_pane_sample samples[sample_capacity];
     struct note_pane_sample scratch[sample_capacity];
-    RECT images[markdown_images_display_limit];
-    RECT image_scratch[markdown_images_display_limit];
+    RECT images[markdown_media_display_limit];
+    RECT image_scratch[markdown_media_display_limit];
     size_t images_shown;
     size_t image_count;
     size_t image_cursor;

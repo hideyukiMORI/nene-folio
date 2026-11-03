@@ -1,0 +1,8 @@
+#ifndef NENEFOLIO_DIAGRAM_TEXT_ALIGNMENT_H
+#define NENEFOLIO_DIAGRAM_TEXT_ALIGNMENT_H
+enum diagram_text_alignment
+{
+    DIAGRAM_TEXT_CENTER,
+    DIAGRAM_TEXT_LEFT
+};
+#endif

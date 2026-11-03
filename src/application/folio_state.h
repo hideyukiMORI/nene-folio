@@ -49,6 +49,9 @@ struct note_name;
 struct note_text;
 struct replace_edit;
 struct markdown_images;
+struct markdown_media;
+[[nodiscard]] const struct markdown_media *_Nullable folio_state_media(
+    const struct folio_state *_Nonnull state);
 /* Explicit observation intent; the view query itself never performs I/O. */
 void folio_state_refresh_note_times(struct folio_state *_Nonnull state);
 [[nodiscard]] struct note_times_view

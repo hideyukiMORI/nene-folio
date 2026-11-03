@@ -46,6 +46,22 @@ nenefolio_target(nenefolio_core core STATIC
     src/core/text_buffer.c src/core/note_text.c src/core/note_file_times.c src/core/markdown_rtf.c src/core/rtf_palette.c
     src/core/rtf_text.c src/core/markdown_blocks.c src/core/markdown_inline_tokens.c
     src/core/code_language.c src/core/code_syntax.c
+    src/core/diagram_flow_layout.c
+    src/core/diagram_geometry.c
+    src/core/diagram_label.c
+    src/core/diagram_layout.c
+    src/core/diagram_metrics.c
+    src/core/diagram_model.c
+    src/core/diagram_palette.c
+    src/core/diagram_ranks.c
+    src/core/diagram_scene.c
+    src/core/diagram_sequence_layout.c
+    src/core/diagram_statement.c
+    src/core/diagram_text.c
+    src/core/markdown_media.c
+    src/core/mermaid_diagram.c
+    src/core/mermaid_flow.c
+    src/core/mermaid_sequence.c
     src/core/image_source.c src/core/image_bitmap.c src/core/markdown_images.c src/core/markdown_destination.c
     src/core/image_asset.c src/core/archive_assets.c src/core/markdown_image_copy.c
     src/core/markdown_autolink.c src/core/markdown_character_reference.c
@@ -71,6 +87,7 @@ nenefolio_target(folio_tests unit_tests EXECUTABLE
     tests/unit/ledger_tests.c tests/unit/layout_tests.c tests/unit/state_tests.c
     tests/unit/allocation_probe.c tests/unit/allocation_tests.c tests/unit/markdown_tests.c
     tests/unit/code_syntax_tests.c
+    tests/unit/diagram_tests.c
     tests/unit/command_tests.c tests/unit/note_name_tests.c tests/unit/rename_tests.c
     tests/unit/category_name_tests.c
     tests/unit/search_tests.c tests/unit/filter_tests.c tests/unit/settings_tests.c
@@ -86,6 +103,9 @@ nenefolio_target(nenefolio_adapters adapters_win32 STATIC
     src/adapters/win32/file_bytes.c src/adapters/win32/file_times.c src/adapters/win32/persistence_adapter.c
     src/adapters/win32/appearance_adapter.c src/adapters/win32/regex_adapter.c
     src/adapters/win32/web_link_adapter.c src/adapters/win32/transfer_adapter.c
+    src/adapters/win32/diagram_canvas.c
+    src/adapters/win32/diagram_native_shape.c
+    src/adapters/win32/diagram_render.c
     src/adapters/win32/image_adapter.c src/adapters/win32/image_job.c src/adapters/win32/image_cache.c
     src/adapters/win32/image_decode.c src/adapters/win32/image_download.c src/adapters/win32/image_file.c
     src/adapters/win32/font_bundle.c src/adapters/win32/recycle_item.c)
@@ -231,6 +251,18 @@ nenefolio_system_link(image_adapter_tests ole32)
 add_test(NAME image_adapter COMMAND image_adapter_tests)
 set_tests_properties(image_adapter PROPERTIES TIMEOUT 60)
 
+# #539: native font measurement, raster, shared worker and exact cache keys.
+nenefolio_target(diagram_render_tests win32_tests EXECUTABLE tests/win32/diagram_render_tests.c)
+nenefolio_link(diagram_render_tests nenefolio_core)
+nenefolio_link(diagram_render_tests nenefolio_application)
+nenefolio_link(diagram_render_tests nenefolio_adapters)
+nenefolio_system_link(diagram_render_tests ole32)
+add_custom_command(TARGET diagram_render_tests POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/fonts $<TARGET_FILE_DIR:diagram_render_tests>/fonts
+    VERBATIM)
+add_test(NAME diagram_render COMMAND diagram_render_tests)
+set_tests_properties(diagram_render PROPERTIES TIMEOUT 60)
+
 # #520: main-window progress and cancellation on an isolated desktop.
 nenefolio_target(image_status_tests win32_tests EXECUTABLE
     tests/win32/image_status_tests.c tests/win32/image_status_tests.rc)
@@ -251,6 +283,8 @@ add_custom_command(TARGET image_status_tests POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/fonts $<TARGET_FILE_DIR:image_status_tests>/fonts
     VERBATIM)
 add_test(NAME image_status COMMAND image_status_tests)
+add_test(NAME diagram_status COMMAND image_status_tests --mermaid)
+set_tests_properties(diagram_status PROPERTIES TIMEOUT 30 RESOURCE_LOCK image_status_data)
 set_tests_properties(image_status PROPERTIES TIMEOUT 30)
 foreach(status_case ja en zh find replace)
     add_test(NAME note_status_${status_case} COMMAND image_status_tests --status-${status_case})

@@ -1,0 +1,53 @@
+#ifndef NENEFOLIO_DIAGRAM_STYLE_H
+#define NENEFOLIO_DIAGRAM_STYLE_H
+/* Logical scene pixels: the B design in ADR0089. Raster scaling belongs to the adapter. */
+constexpr int diagram_body_font = 14;
+constexpr int diagram_caption_font = 13;
+constexpr int diagram_text_wrap = 200;
+constexpr int diagram_node_padding_x = 16;
+constexpr int diagram_node_padding_y = 12;
+constexpr int diagram_node_min_width = 64;
+constexpr int diagram_node_min_height = 40;
+constexpr int diagram_node_radius = 6;
+constexpr int diagram_group_radius = 8;
+constexpr int diagram_group_padding = 16;
+constexpr int diagram_group_title_padding = 8;
+constexpr int diagram_group_title_inset = 12;
+constexpr int diagram_outer_margin = 16;
+constexpr int diagram_flow_gap = 56;
+constexpr int diagram_node_gap = 32;
+constexpr int diagram_edge_padding_x = 6;
+constexpr int diagram_edge_padding_y = 2;
+constexpr int diagram_stroke_width = 1;
+constexpr int diagram_thick_width = 3;
+constexpr int diagram_dash_length = 6;
+constexpr int diagram_dash_gap = 4;
+constexpr int diagram_arrow_size = 10;
+constexpr int diagram_thick_arrow_size = 12;
+constexpr int diagram_endpoint_size = 8;
+constexpr int diagram_subroutine_inset = 8;
+constexpr int diagram_double_circle_inset = 4;
+constexpr int diagram_circle_padding = 24;
+constexpr int diagram_cylinder_extra = 24;
+constexpr int diagram_cylinder_curve_max = 11;
+constexpr int diagram_actor_width = 28;
+constexpr int diagram_actor_height = 48;
+constexpr int diagram_actor_head = 14;
+constexpr int diagram_actor_shoulder = 20;
+constexpr int diagram_actor_waist = 32;
+constexpr int diagram_actor_foot = 12;
+constexpr int diagram_actor_name_gap = 8;
+constexpr int diagram_participant_min_width = 80;
+constexpr int diagram_message_line_gap = 4;
+constexpr int diagram_message_gap = 24;
+constexpr int diagram_self_width = 40;
+constexpr int diagram_self_height = 24;
+constexpr int diagram_note_padding_x = 12;
+constexpr int diagram_note_padding_y = 8;
+constexpr int diagram_note_gap = 16;
+constexpr int diagram_frame_padding_x = 8;
+constexpr int diagram_frame_padding_y = 4;
+constexpr int diagram_frame_heading_gap = 12;
+constexpr int diagram_activation_width = 12;
+constexpr int diagram_activation_step = 6;
+#endif

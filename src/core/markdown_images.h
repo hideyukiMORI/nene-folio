@@ -4,7 +4,6 @@
 #include "markdown_view.h"
 struct markdown_images;
 struct text_buffer;
-constexpr size_t markdown_images_display_limit = 256;
 constexpr size_t markdown_images_reference_limit = 4096;
 [[nodiscard]] enum image_outcome
 markdown_images_create(const char *_Nonnull source,
@@ -18,6 +17,5 @@ markdown_images_create(const char *_Nonnull source,
 [[nodiscard]] bool markdown_images_advisory(const struct markdown_images *_Nonnull images);
 [[nodiscard]] const struct image_source *_Nonnull markdown_images_at(
     const struct markdown_images *_Nonnull images, size_t index);
-void markdown_images_placeholder(struct text_buffer *_Nonnull output, size_t index);
 void markdown_images_destroy(struct markdown_images *_Nullable images);
 #endif

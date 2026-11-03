@@ -4,7 +4,7 @@
 #include "image_size.h"
 #include <stddef.h>
 struct image_bitmap;
-constexpr uint32_t image_bitmap_edge_limit = 2048;
+constexpr uint32_t image_bitmap_edge_limit = 8192;
 constexpr size_t image_bitmap_total_limit = 64 * 1024 * 1024;
 /* BGRA pixels, tightly packed and top-down, produced by the platform decoder. */
 [[nodiscard]] enum image_outcome image_bitmap_create(const unsigned char *_Nonnull pixels,

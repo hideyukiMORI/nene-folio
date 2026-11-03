@@ -199,6 +199,14 @@ static const char *_Nonnull const expected[] = {
         "画像を同梱できませんでした。画像の参照先と読み取り権限を確認してください。",
     [UI_TEXT_IMAGES_READING] = "画像を読み込んでいます",
     [UI_TEXT_IMAGES_RESIZING] = "画像を加工しています",
+    [UI_TEXT_DIAGRAM_PARSING] = "図を読み取っています",
+    [UI_TEXT_DIAGRAM_LAYOUT] = "図を配置しています",
+    [UI_TEXT_DIAGRAM_DRAWING] = "図を描画しています",
+    [UI_TEXT_DIAGRAM_FAILED] = "図を表示できません。編集でMermaidの原文を確認できます。",
+    [UI_TEXT_DIAGRAM_UNSUPPORTED] =
+        "図に未対応の種類または構文があります。対応範囲はMarkdownの利用案内を参照してください。",
+    [UI_TEXT_DIAGRAM_TOO_LARGE] = "図が表示上限を超えています。いくつかの図に分けてください。",
+    [UI_TEXT_MEDIA_LIMIT] = "画像と図の表示数が上限を超えています。ノートを分けてください。",
     [UI_TEXT_IMAGES_ADVISORY] =
         "ローカル画像は、このノートのフォルダー内の images/ に置くと持ち出しやすくなります。",
     [UI_TEXT_IMAGES_FAILED] = "一部の画像を表示できません。編集から閲覧へ戻ると再試行します。",

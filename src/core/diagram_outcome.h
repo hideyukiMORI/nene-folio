@@ -1,0 +1,11 @@
+#ifndef NENEFOLIO_DIAGRAM_OUTCOME_H
+#define NENEFOLIO_DIAGRAM_OUTCOME_H
+enum diagram_outcome : unsigned char
+{
+    DIAGRAM_ACCEPTED,
+    DIAGRAM_INVALID,
+    DIAGRAM_UNSUPPORTED,
+    DIAGRAM_TOO_LARGE,
+    DIAGRAM_OUT_OF_MEMORY
+};
+#endif

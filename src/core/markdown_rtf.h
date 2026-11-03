@@ -10,6 +10,9 @@
 
 struct markdown_rtf;
 struct markdown_images;
+struct markdown_media;
+[[nodiscard]] const struct markdown_media *_Nullable markdown_rtf_media(
+    const struct markdown_rtf *_Nonnull rtf);
 [[nodiscard]] const struct markdown_images *_Nullable markdown_rtf_images(
     const struct markdown_rtf *_Nonnull rtf);
 struct note_text;
