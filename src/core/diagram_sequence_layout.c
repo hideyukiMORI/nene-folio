@@ -94,13 +94,16 @@ static void reserve_note(struct diagram_sequence_layout *_Nonnull layout,
     }
 }
 static void measure_event(struct diagram_sequence_layout *_Nonnull layout,
-                          struct diagram_event event)
+                          struct diagram_event event, size_t depth)
 {
     struct diagram_size size = event_size(layout, event);
     if (event.kind == DIAGRAM_NOTE)
         reserve_note(layout, event, size);
     if (event.kind == DIAGRAM_MESSAGE && event.link.from == event.link.to)
         reserve(&layout->right[event.link.from], size.width + 64);
+    if (event.kind == DIAGRAM_ACTIVATE)
+        reserve(&layout->right[event.link.from],
+                diagram_activation_width / 2 + (int)depth * diagram_activation_step);
 }
 static void measure_events(struct diagram_sequence_layout *_Nonnull layout)
 {
@@ -108,7 +111,7 @@ static void measure_events(struct diagram_sequence_layout *_Nonnull layout)
     for (size_t index = 0; index < diagram_model_event_count(layout->model); ++index)
     {
         struct diagram_event event = diagram_model_event_at(layout->model, index);
-        measure_event(layout, event);
+        measure_event(layout, event, layout->depth[index]);
         if (event.kind == DIAGRAM_FRAME_OPEN)
         {
             ++depth;
@@ -442,9 +445,9 @@ static void emit_backgrounds(struct diagram_sequence_layout *_Nonnull layout)
 static enum diagram_outcome construct(struct diagram_sequence_layout *_Nonnull layout)
 {
     measure_actors(layout);
+    place_events(layout);
     measure_events(layout);
     place_actors(layout);
-    place_events(layout);
     if (layout->extent.width > diagram_coordinate_limit ||
         layout->extent.height > diagram_coordinate_limit)
         return DIAGRAM_TOO_LARGE;
