@@ -580,8 +580,349 @@ static void palette_contrast(void)
                 "supporting lines remain visible against every diagram fill");
     }
 }
+static void model_construction_contract(void)
+{
+    struct diagram_model *_Nullable model = nullptr;
+    require(diagram_model_create(DIAGRAM_FLOWCHART, &model) == DIAGRAM_ACCEPTED,
+            "model construction begins privately");
+    size_t text = 0;
+    require(diagram_model_text(model, "A", 1, &text) == DIAGRAM_ACCEPTED,
+            "model owns its first identifier");
+    const char *invalid[] = {"\xFF", "\0", "\x01"};
+    for (size_t index = 0; index < sizeof invalid / sizeof invalid[0]; ++index)
+        require(diagram_model_text(model, invalid[index], 1, &text) == DIAGRAM_INVALID,
+                "invalid UTF8, NUL and controls cannot become labels");
+    struct diagram_node node = {.id = 0, .label = 0, .group = diagram_none};
+    require(diagram_model_node(model, 1, node) == DIAGRAM_INVALID &&
+                diagram_model_node(model, 0, node) == DIAGRAM_ACCEPTED,
+            "node construction cannot leave an uninitialized index hole");
+    struct diagram_group group = {.id = 0, .label = 0, .parent = diagram_none};
+    require(diagram_model_group(model, 1, group) == DIAGRAM_INVALID &&
+                diagram_model_group(model, 0, group) == DIAGRAM_ACCEPTED,
+            "groups also require contiguous construction");
+    group.parent = 0;
+    require(diagram_model_group(model, 0, group) == DIAGRAM_INVALID,
+            "a group cannot contain itself");
+    diagram_model_title(model, diagram_none);
+    require(diagram_model_title_text(model) == diagram_none, "unknown title is not adopted");
+    diagram_model_title(model, 0);
+    diagram_model_seal(model);
+    diagram_model_direction(model, DIAGRAM_RIGHT_LEFT);
+    diagram_model_title(model, diagram_none);
+    struct diagram_link link = {.from = 0, .to = 0, .label = 0, .length = 1};
+    struct diagram_event event = {.kind = DIAGRAM_MESSAGE, .link = link};
+    require(diagram_model_text(model, "changed", 7, &text) == DIAGRAM_INVALID &&
+                diagram_model_node(model, 0, node) == DIAGRAM_INVALID &&
+                diagram_model_group(model, 0, group) == DIAGRAM_INVALID &&
+                diagram_model_link(model, link) == DIAGRAM_INVALID &&
+                diagram_model_event(model, event) == DIAGRAM_INVALID,
+            "every construction entry rejects writes after publication");
+    require(diagram_model_flow(model) == DIAGRAM_TOP_BOTTOM &&
+                diagram_model_title_text(model) == 0 &&
+                strcmp(diagram_model_text_at(model, diagram_none), "") == 0,
+            "published direction and title remain immutable and unknown text is empty");
+    diagram_model_destroy(model);
+}
+static void model_reference_contract(void)
+{
+    struct diagram_model *_Nullable model = nullptr;
+    require(diagram_model_create(DIAGRAM_SEQUENCE, &model) == DIAGRAM_ACCEPTED,
+            "reference validation fixture");
+    size_t text = 0;
+    require(diagram_model_text(model, "A", 1, &text) == DIAGRAM_ACCEPTED,
+            "reference fixture identifier");
+    struct diagram_node node = {.id = 0, .label = 0, .group = diagram_none};
+    require(diagram_model_node(model, 0, node) == DIAGRAM_ACCEPTED, "known participant");
+    const struct diagram_node bad_nodes[] = {{1, 0, diagram_none, DIAGRAM_RECTANGLE},
+                                             {0, 1, diagram_none, DIAGRAM_RECTANGLE},
+                                             {0, 0, 0, DIAGRAM_RECTANGLE}};
+    for (size_t index = 0; index < sizeof bad_nodes / sizeof bad_nodes[0]; ++index)
+        require(diagram_model_node(model, 0, bad_nodes[index]) == DIAGRAM_INVALID,
+                "unresolved node text and group references are rejected");
+    const struct diagram_link bad_links[] = {{.from = 1, .to = 0, .label = 0, .length = 1},
+                                             {.from = 0, .to = 1, .label = 0, .length = 1},
+                                             {.from = 0, .to = 0, .label = 1, .length = 1},
+                                             {.from = 0, .to = 0, .label = 0, .length = 0},
+                                             {.from = 0, .to = 0, .label = 0, .length = 17}};
+    for (size_t index = 0; index < sizeof bad_links / sizeof bad_links[0]; ++index)
+        require(diagram_model_link(model, bad_links[index]) == DIAGRAM_INVALID,
+                "unresolved endpoints and out-of-range rank lengths are rejected");
+    for (size_t index = 0; index < 3; ++index)
+    {
+        struct diagram_event event = {.kind = DIAGRAM_MESSAGE, .link = bad_links[index]};
+        require(diagram_model_event(model, event) == DIAGRAM_INVALID,
+                "sequence events cannot publish unresolved references");
+    }
+    struct diagram_group group = {.id = 1, .label = 0, .parent = diagram_none};
+    require(diagram_model_group(model, 0, group) == DIAGRAM_INVALID, "unknown group identifier");
+    group.id = 0;
+    group.label = 1;
+    require(diagram_model_group(model, 0, group) == DIAGRAM_INVALID, "unknown group label");
+    require(diagram_model_node_count(model) == 1 && diagram_model_link_count(model) == 0 &&
+                diagram_model_event_count(model) == 0 && diagram_model_group_count(model) == 0,
+            "rejected references never change published counts");
+    diagram_model_destroy(model);
+}
+static void metric_input_contract(void)
+{
+    const struct diagram_size bad[] = {{-1, 18}, {1, 0}, {4097, 18}, {1, 4097}};
+    for (size_t index = 0; index < sizeof bad / sizeof bad[0]; ++index)
+        for (size_t role = 0; role < 2; ++role)
+        {
+            struct diagram_label_metrics pair = {{10, 18}, {9, 16}};
+            if (role == 0)
+                pair.body = bad[index];
+            else
+                pair.caption = bad[index];
+            struct diagram_metrics *_Nullable metrics = nullptr;
+            require(diagram_metrics_create(&pair, 1, &metrics) == DIAGRAM_TOO_LARGE &&
+                        metrics == nullptr,
+                    "invalid native measurements fail before layout for either text role");
+        }
+    struct diagram_label_metrics pair = {{10, 18}, {9, 16}};
+    struct diagram_metrics *_Nullable metrics = nullptr;
+    require(diagram_metrics_create(&pair, diagram_text_limit + 1, &metrics) == DIAGRAM_TOO_LARGE,
+            "oversized measurement lists are rejected before reading their elements");
+    require(diagram_metrics_create(&pair, 1, &metrics) == DIAGRAM_ACCEPTED,
+            "valid measurement snapshot");
+    pair.body.width = 100;
+    require(diagram_metrics_at(metrics, 0, DIAGRAM_TEXT_BODY).width == 10 &&
+                diagram_metrics_at(metrics, 1, DIAGRAM_TEXT_BODY).height == 0,
+            "measurements are copied and unavailable indices have no size");
+    struct diagram_model *model = parsed("flowchart TB\nA --> B");
+    struct diagram_scene *_Nullable scene = nullptr;
+    require(diagram_layout_create(model, metrics, &scene) == DIAGRAM_INVALID && scene == nullptr,
+            "layout refuses measurements from a different model");
+    diagram_model_destroy(model);
+    diagram_metrics_destroy(metrics);
+}
+static void rejected_scene(struct diagram_primitive item)
+{
+    struct diagram_scene *_Nullable scene = nullptr;
+    require(diagram_scene_create(&scene) == DIAGRAM_ACCEPTED &&
+                diagram_scene_append(scene, &item) == DIAGRAM_ACCEPTED,
+            "private scene can collect geometry before its extent is known");
+    require(diagram_scene_seal(scene, (struct diagram_size){100, 100}) == DIAGRAM_TOO_LARGE,
+            "out-of-bounds geometry cannot be published to the raster adapter");
+    diagram_scene_destroy(scene);
+}
+static void scene_publication_contract(void)
+{
+    const struct diagram_rect bad[] = {{-1, 0, 1, 1}, {0, -1, 1, 1},  {0, 0, -1, 1},
+                                       {0, 0, 1, -1}, {0, 0, 101, 1}, {0, 0, 1, 101},
+                                       {99, 0, 2, 1}, {0, 99, 1, 2}};
+    for (size_t index = 0; index < sizeof bad / sizeof bad[0]; ++index)
+        rejected_scene(
+            (struct diagram_primitive){.kind = DIAGRAM_PRIMITIVE_SHAPE, .bounds = bad[index]});
+    const struct diagram_point points[] = {{-1, 0}, {0, -1}, {101, 0}, {0, 101}};
+    for (size_t index = 0; index < sizeof points / sizeof points[0]; ++index)
+        rejected_scene((struct diagram_primitive){
+            .kind = DIAGRAM_PRIMITIVE_PATH, .count = 2, .points = {{0, 0}, points[index]}});
+    rejected_scene((struct diagram_primitive){.kind = DIAGRAM_PRIMITIVE_PATH, .count = 1});
+    struct diagram_scene *_Nullable scene = nullptr;
+    require(diagram_scene_create(&scene) == DIAGRAM_ACCEPTED, "scene publication fixture");
+    struct diagram_primitive item = {.kind = DIAGRAM_PRIMITIVE_PATH, .count = 9};
+    require(diagram_scene_append(scene, &item) == DIAGRAM_INVALID,
+            "path point count cannot exceed the stored point array");
+    const struct diagram_size sizes[] = {{0, 1}, {1, 0}, {32769, 1}, {1, 32769}};
+    for (size_t index = 0; index < sizeof sizes / sizeof sizes[0]; ++index)
+        require(diagram_scene_seal(scene, sizes[index]) == DIAGRAM_TOO_LARGE,
+                "invalid canvas extents do not publish a scene");
+    item = (struct diagram_primitive){.kind = DIAGRAM_PRIMITIVE_SHAPE, .bounds = {0, 0, 1, 1}};
+    require(diagram_scene_append(scene, &item) == DIAGRAM_ACCEPTED &&
+                diagram_scene_seal(scene, (struct diagram_size){1, 1}) == DIAGRAM_ACCEPTED,
+            "a boundary-touching valid scene is publishable");
+    require(diagram_scene_append(scene, &item) == DIAGRAM_INVALID &&
+                diagram_scene_seal(scene, (struct diagram_size){2, 2}) == DIAGRAM_INVALID &&
+                diagram_scene_count(scene) == 1 && diagram_scene_size(scene).width == 1,
+            "published geometry and extent cannot be mutated");
+    diagram_scene_destroy(scene);
+}
+static void palette_key_contract(void)
+{
+    struct diagram_palette original = diagram_palette_for(folio_theme_palette(FOLIO_THEME_LIGHT));
+    require(diagram_palette_equal(&original, &original), "identical appearance can reuse a bitmap");
+    struct diagram_palette variants[7];
+    for (size_t index = 0; index < 7; ++index)
+        variants[index] = original;
+    variants[0].background.red ^= 1;
+    variants[1].text.red ^= 1;
+    variants[2].muted.red ^= 1;
+    variants[3].accent.red ^= 1;
+    variants[4].node.red ^= 1;
+    variants[5].group.red ^= 1;
+    variants[6].note.red ^= 1;
+    for (size_t index = 0; index < 7; ++index)
+        require(!diagram_palette_equal(&original, &variants[index]),
+                "a change to any rendered color invalidates bitmap reuse");
+    struct diagram_model *model = parsed(sequence_source);
+    struct diagram_scene *scene = laid_out(model);
+    for (size_t index = 0; index < diagram_scene_count(scene); ++index)
+    {
+        const struct diagram_primitive *item = diagram_scene_at(scene, index);
+        struct rgb_color ink = diagram_palette_ink(&original, item->ink);
+        struct rgb_color fill = diagram_palette_ink(&original, item->fill);
+        if (item->kind == DIAGRAM_PRIMITIVE_TEXT)
+            require(theme_contrast_ratio(ink, fill) >= 4.5,
+                    "the actual scene's role-selected text colors retain readable contrast");
+    }
+    diagram_scene_destroy(scene);
+    diagram_model_destroy(model);
+}
+static void low_contrast_appearance(void)
+{
+    const unsigned char levels[] = {0, 64, 127, 192, 255};
+    for (size_t background = 0; background < sizeof levels; ++background)
+        for (size_t accent = 0; accent < sizeof levels; ++accent)
+        {
+            struct theme_palette theme = *folio_theme_palette(FOLIO_THEME_LIGHT);
+            unsigned char value = levels[background];
+            theme.pane = theme.rtf.text = (struct rgb_color){value, value, value};
+            value = levels[accent];
+            theme.rtf.link = (struct rgb_color){value, value, value};
+            struct diagram_palette palette = diagram_palette_for(&theme);
+            require(theme_contrast_ratio(palette.text, palette.background) >= 4.5 &&
+                        theme_contrast_ratio(palette.text, palette.node) >= 4.5 &&
+                        theme_contrast_ratio(palette.text, palette.group) >= 4.5 &&
+                        theme_contrast_ratio(palette.text, palette.note) >= 4.5,
+                    "unreadable imported colors fall back to readable text and fills");
+            require(theme_contrast_ratio(palette.accent, palette.node) >= 3.0 &&
+                        theme_contrast_ratio(palette.muted, palette.note) >= 3.0,
+                    "outline and background-line fallbacks remain visible");
+        }
+}
+static void additional_sequence_contract(void)
+{
+    const char source[] = "sequenceDiagram\nparticipant A\nparticipant B\nparticipant C\n"
+                          "autonumber\nA<<-->>B: first\nautonumber off\nB-xA: plain\n"
+                          "activate A\nactivate A\nNote over A: local\nNote over C,A: wide note\n"
+                          "opt\nA--xC: stopped\nend\npar work\nA<<->>B: sync\nand other\n"
+                          "B--)C: async\nend\ncritical commit\nC->>A: result\noption unavailable\n"
+                          "break exit\nA->>A: done\nend\nend\ndeactivate A\n";
+    struct diagram_model *model = parsed(source);
+    require(strcmp(diagram_model_text_at(model, diagram_model_event_at(model, 0).link.label),
+                   "1. first") == 0 &&
+                strcmp(diagram_model_text_at(model, diagram_model_event_at(model, 1).link.label),
+                       "plain") == 0,
+            "autonumber off resumes unnumbered messages without changing earlier labels");
+    struct diagram_scene *scene = laid_out(model);
+    require(label_bounds(scene, model, "local").width > 0 &&
+                label_bounds(scene, model, "wide note").width > 0 &&
+                label_bounds(scene, model, "option  [unavailable]").width > 0,
+            "single and reversed-span notes and critical sections are all rendered");
+    diagram_scene_destroy(scene);
+    diagram_model_destroy(model);
+}
+static void malformed_sequence_contract(void)
+{
+    const char *invalid[] = {"sequenceDiagram extra\nparticipant A",
+                             "sequenceDiagram\nparticipant",
+                             "sequenceDiagram\nA->>: missing",
+                             "sequenceDiagram\nactivate",
+                             "sequenceDiagram\nactivate A extra",
+                             "sequenceDiagram\nNote middle A: wrong",
+                             "sequenceDiagram\nNote left A: wrong",
+                             "sequenceDiagram\nNote left of A,B: wrong",
+                             "sequenceDiagram\nNote over : wrong",
+                             "sequenceDiagram\nNote over A,B missing",
+                             "sequenceDiagram\nloop x\nand y\nend",
+                             "sequenceDiagram\npar x\nelse y\nend",
+                             "sequenceDiagram\ncritical x\noption y\nend extra",
+                             "sequenceDiagram\nautonumber x",
+                             "sequenceDiagram\nautonumber 1000001",
+                             "sequenceDiagram\nautonumber 1 x",
+                             "sequenceDiagram\nautonumber 1 2 extra",
+                             "sequenceDiagram\nparticipant A\nend extra"};
+    for (size_t index = 0; index < sizeof invalid / sizeof invalid[0]; ++index)
+        reject_source(invalid[index], DIAGRAM_INVALID);
+    reject_source("sequenceDiagram\nparticipant A named Person", DIAGRAM_UNSUPPORTED);
+    reject_source("sequenceDiagram\nA==>B: unknown arrow", DIAGRAM_UNSUPPORTED);
+}
+static void flow_statement_contract(void)
+{
+    struct diagram_model *model = parsed(
+        " \t\r\n%% heading\r\nflowchart TB; A[\"quoted; %% literal\"] --> B[\"unknown &Bogus; "
+        "#NotAnEntity; \\\\ path\"] %% trailing comment\r\n\r\nsubgraph Empty\nend\n");
+    require(diagram_model_node_count(model) == 2 && diagram_model_link_count(model) == 1 &&
+                strcmp(diagram_model_text_at(model, diagram_model_node_at(model, 0).label),
+                       "quoted; %% literal") == 0,
+            "comments and statement separators do not consume quoted label contents");
+    struct diagram_scene *scene = laid_out(model);
+    require(label_bounds(scene, model, "Empty").width > 0,
+            "an empty subgraph retains its visible title beside ordinary nodes");
+    diagram_scene_destroy(scene);
+    diagram_model_destroy(model);
+    const char *invalid[] = {"flowchart TB",
+                             "flowchart TB\nsubgraph []\nend",
+                             "flowchart TB\nA\nsubgraph A\nend",
+                             "flowchart TB\nsubgraph G\nA\nend\nsubgraph G\nend",
+                             "flowchart TB\nsubgraph G\nA\nend extra",
+                             "flowchart TB\nA->B",
+                             "flowchart TB\nA-..->B",
+                             "flowchart TB\nA -==> B",
+                             "flowchart TB\nA==.=>B",
+                             "flowchart TB\nA-- label B",
+                             "flowchart TB\nA -->|unclosed B"};
+    for (size_t index = 0; index < sizeof invalid / sizeof invalid[0]; ++index)
+        reject_source(invalid[index], DIAGRAM_INVALID);
+    reject_source("flowchart TB\nsubgraph G\nA\nend\nG-->A", DIAGRAM_UNSUPPORTED);
+    reject_source("flowchart TB\nA-->B %%{init: {}}%%", DIAGRAM_UNSUPPORTED);
+    reject_source("flowchart TB\nA-------------------->B", DIAGRAM_TOO_LARGE);
+    struct text_buffer *_Nullable nested = nullptr;
+    require(text_buffer_create(&nested) == TEXT_BUFFER_ACCEPTED, "nested group boundary fixture");
+    text_buffer_append_text(nested, "flowchart TB\n");
+    for (size_t index = 0; index <= diagram_depth_limit; ++index)
+    {
+        char line[32];
+        int length = snprintf(line, sizeof line, "subgraph G%zu\n", index);
+        require(length > 0 && (size_t)length < sizeof line, "nested group identifier fits");
+        text_buffer_append(nested, line, (size_t)length);
+    }
+    reject_source(text_buffer_bytes(nested), DIAGRAM_TOO_LARGE);
+    text_buffer_destroy(nested);
+}
+static void collection_capacity_contract(void)
+{
+    struct diagram_model *_Nullable model = nullptr;
+    require(diagram_model_create(DIAGRAM_FLOWCHART, &model) == DIAGRAM_ACCEPTED,
+            "bounded text intern table");
+    size_t id = 0;
+    for (size_t index = 0; index < diagram_text_limit; ++index)
+    {
+        char label[24];
+        int length = snprintf(label, sizeof label, "label%zu", index);
+        require(length > 0 && (size_t)length < sizeof label &&
+                    diagram_model_text(model, label, (size_t)length, &id) == DIAGRAM_ACCEPTED,
+                "all allowed distinct labels can be interned");
+    }
+    require(diagram_model_text(model, "overflow", 8, &id) == DIAGRAM_TOO_LARGE &&
+                diagram_model_text(model, "label0", 6, &id) == DIAGRAM_ACCEPTED && id == 0,
+            "a full text table refuses new strings but still reuses existing strings");
+    diagram_model_destroy(model);
+    struct diagram_scene *_Nullable scene = nullptr;
+    require(diagram_scene_create(&scene) == DIAGRAM_ACCEPTED, "bounded scene fixture");
+    struct diagram_primitive item = {.kind = DIAGRAM_PRIMITIVE_SHAPE, .bounds = {0, 0, 1, 1}};
+    for (size_t index = 0; index < diagram_primitive_limit; ++index)
+        require(diagram_scene_append(scene, &item) == DIAGRAM_ACCEPTED,
+                "scene grows through all allowed primitive capacities");
+    require(diagram_scene_append(scene, &item) == DIAGRAM_TOO_LARGE &&
+                diagram_scene_count(scene) == diagram_primitive_limit &&
+                diagram_scene_seal(scene, (struct diagram_size){1, 1}) == DIAGRAM_ACCEPTED,
+            "overflow preserves the complete accepted scene without appending a partial item");
+    diagram_scene_destroy(scene);
+}
 void run_diagram_tests(void)
 {
+    flow_statement_contract();
+    collection_capacity_contract();
+    model_construction_contract();
+    model_reference_contract();
+    metric_input_contract();
+    scene_publication_contract();
+    palette_key_contract();
+    low_contrast_appearance();
+    additional_sequence_contract();
+    malformed_sequence_contract();
     palette_contrast();
     autonumber_boundary();
     flow_directions();

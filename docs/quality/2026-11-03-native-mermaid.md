@@ -44,6 +44,15 @@ Cのparser/不変model/実フォント計測/有限layout/GDI描画が唯一の�
   明暗のflow/sequence/多行部品6枚のBMPは、検査済みDebug出力とSHA256がすべて一致した。
 - allocation-target-03: B案反映後の確保失敗注入付き`folio_coverage.exe --diagram`が成功。
   同じ原文収集・解析・役割別metrics・配置の全確保点を対象にし、無関係な製品テストは実行していない。
+- 初回CI（run 41653947418）は全16テスト成功後、分岐網羅率88.85%が90%未満として失敗した。
+  統合ツールが始めた同一headの再試行41654913727は取消し、PRをDraftへ戻して不足条件を追補した。
+- contracts-target-02 / allocation-target-04: `folio_tests.exe --diagram`と確保失敗注入付き同じ対象が成功。
+  公開後モデル/sceneの不変性、不正な参照/寸法/範囲外座標、文字表/primitive上限、低contrast配色のfallback、
+  全描画色によるcache失効、comment/引用の区別、空group、誤ったsequence枠/note/番号指定を確認する。
+  対象16翻訳単位は1433/1578分岐を通過した。これは対象測定であり、全体ゲート成功とは扱わない。
+  `contracts-target-01`は有効な末尾ハイフン付きIDを誤入力としたfixtureで失敗したため、
+  IDと辺を空白で分けて意図した不正な辺を検証した。製品コードと閾値はこの追補で変更していない。
+  確保失敗測定には従来と同じASan interception通知がある。最終headのCIで全体の90%を再確認する。
 
 build-01はtarget名、build-02は9関数の複雑度、build-04はnativeテストのCOM宣言不足で失敗した。
 target名修正、意味を分けたhelper化、必要header追加で解消し、ゲートを弱めていない。
