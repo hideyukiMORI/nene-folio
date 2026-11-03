@@ -7,13 +7,418 @@
   },
   "displayName": "NeNe Folio",
   "description": "A frameless Markdown notebook for Windows.",
-  "languages": ["ja-JP", "en-US", "zh-CN"],
+  "languages": [
+    "ja-JP",
+    "en-US",
+    "zh-CN"
+  ],
   "minimumWindowsVersion": "10.0.19041.0",
   "maximumWindowsVersionTested": "10.0.26100.0",
   "readme": "docs/release/README-msix.txt",
   "assets": [
-    {"path": "packaging/windows/Square44x44Logo.png", "destination": "Assets/Square44x44Logo.png", "width": 44, "height": 44, "sha256": "d1bf90892ef8687d06e0ae5c5ecabc367873f76764799f9d2b5c2b70f5d7f57b"},
-    {"path": "packaging/windows/Square150x150Logo.png", "destination": "Assets/Square150x150Logo.png", "width": 150, "height": 150, "sha256": "0bba5e523efde06a147ccdaa7859a3e76fc3dd459ab04e6f8239674fe06acf8b"},
-    {"path": "packaging/windows/StoreLogo.png", "destination": "Assets/StoreLogo.png", "width": 50, "height": 50, "sha256": "68e03ca18f2a2add1bcc7827fe6657a244f746b76955ebd8c09373d7731cc7d4"}
-  ]
+    {
+      "path": "packaging/windows/Square44x44Logo.scale-100.png",
+      "destination": "Assets/Square44x44Logo.scale-100.png",
+      "width": 44,
+      "height": 44,
+      "sha256": "8dcf368b646e1b3acb0b6a8dd5709bd917bdea8997cfcc25b9a2e2e5d0f77f1d"
+    },
+    {
+      "path": "packaging/windows/Square44x44Logo.scale-125.png",
+      "destination": "Assets/Square44x44Logo.scale-125.png",
+      "width": 55,
+      "height": 55,
+      "sha256": "bb226a4e63671821318313103e52122048fa6854d08fea46e9d1afdd1f6f9d01"
+    },
+    {
+      "path": "packaging/windows/Square44x44Logo.scale-150.png",
+      "destination": "Assets/Square44x44Logo.scale-150.png",
+      "width": 66,
+      "height": 66,
+      "sha256": "d818d7fa7988319fe86e9199dff6535a1c508a9fff76b64a2c07e59cbb179246"
+    },
+    {
+      "path": "packaging/windows/Square44x44Logo.scale-200.png",
+      "destination": "Assets/Square44x44Logo.scale-200.png",
+      "width": 88,
+      "height": 88,
+      "sha256": "c0ba12f21a95f339ca55e4fe54e0f7daab4b1975eca52204df1bbfe1e8325991"
+    },
+    {
+      "path": "packaging/windows/Square44x44Logo.scale-400.png",
+      "destination": "Assets/Square44x44Logo.scale-400.png",
+      "width": 176,
+      "height": 176,
+      "sha256": "781fd6fe9e8236ac689a19acbc09e6936f2bf2b53e9a254ce82db0cafbbbbade"
+    },
+    {
+      "path": "packaging/windows/Square150x150Logo.scale-100.png",
+      "destination": "Assets/Square150x150Logo.scale-100.png",
+      "width": 150,
+      "height": 150,
+      "sha256": "3c7b54e743e43cd0be53cf1e65277b070560922edc706fa8196b3c6893e79718"
+    },
+    {
+      "path": "packaging/windows/Square150x150Logo.scale-125.png",
+      "destination": "Assets/Square150x150Logo.scale-125.png",
+      "width": 188,
+      "height": 188,
+      "sha256": "ed4dedb3744a54f230481f1ce37767489d0645794392a20190ea3ed9e2018f4c"
+    },
+    {
+      "path": "packaging/windows/Square150x150Logo.scale-150.png",
+      "destination": "Assets/Square150x150Logo.scale-150.png",
+      "width": 225,
+      "height": 225,
+      "sha256": "87b361d498a10a4add52328d2040a96101cdb0a9a82b4d2915f0775f60ce78c2"
+    },
+    {
+      "path": "packaging/windows/Square150x150Logo.scale-200.png",
+      "destination": "Assets/Square150x150Logo.scale-200.png",
+      "width": 300,
+      "height": 300,
+      "sha256": "301ccb3ac625379636084cd34c1d3eedf4e80f53a1aff6c29ce8cf4f0c07299d"
+    },
+    {
+      "path": "packaging/windows/Square150x150Logo.scale-400.png",
+      "destination": "Assets/Square150x150Logo.scale-400.png",
+      "width": 600,
+      "height": 600,
+      "sha256": "8b0d60384ad8f7a9a32567d7260b3bd29cc83f848d65301b3a0270d6170cd4f2"
+    },
+    {
+      "path": "packaging/windows/StoreLogo.scale-100.png",
+      "destination": "Assets/StoreLogo.scale-100.png",
+      "width": 50,
+      "height": 50,
+      "sha256": "261f49cc9502ca06b0fd21def9786d835a1d3b61cb0b650bcb2a7c13b7bbf255"
+    },
+    {
+      "path": "packaging/windows/StoreLogo.scale-125.png",
+      "destination": "Assets/StoreLogo.scale-125.png",
+      "width": 63,
+      "height": 63,
+      "sha256": "f318b6465587786a1a6d8be651e5e279eec34817c23398637ebe0a58bed7940b"
+    },
+    {
+      "path": "packaging/windows/StoreLogo.scale-150.png",
+      "destination": "Assets/StoreLogo.scale-150.png",
+      "width": 75,
+      "height": 75,
+      "sha256": "617157c594c7f9543588efacf71ca9b909b161144dfeafd3dc34f8704905b95b"
+    },
+    {
+      "path": "packaging/windows/StoreLogo.scale-200.png",
+      "destination": "Assets/StoreLogo.scale-200.png",
+      "width": 100,
+      "height": 100,
+      "sha256": "6a68d0898fbf1ffba7c2b96254ea27e970647588a57f6bafe0308d425f6c3c0c"
+    },
+    {
+      "path": "packaging/windows/StoreLogo.scale-400.png",
+      "destination": "Assets/StoreLogo.scale-400.png",
+      "width": 200,
+      "height": 200,
+      "sha256": "884b838a0caee674c2f43b8349d220ced248c03abd11048157283dea1bc9939f"
+    },
+    {
+      "path": "packaging/windows/Square44x44Logo.targetsize-16.png",
+      "destination": "Assets/Square44x44Logo.targetsize-16.png",
+      "width": 16,
+      "height": 16,
+      "sha256": "20d0e69802a65fb20e7d8bbab347afc4a9d0ac1922b0d7c0cab94bbfe3d977fd"
+    },
+    {
+      "path": "packaging/windows/Square44x44Logo.targetsize-16_altform-unplated.png",
+      "destination": "Assets/Square44x44Logo.targetsize-16_altform-unplated.png",
+      "width": 16,
+      "height": 16,
+      "sha256": "20d0e69802a65fb20e7d8bbab347afc4a9d0ac1922b0d7c0cab94bbfe3d977fd"
+    },
+    {
+      "path": "packaging/windows/Square44x44Logo.targetsize-16_altform-lightunplated.png",
+      "destination": "Assets/Square44x44Logo.targetsize-16_altform-lightunplated.png",
+      "width": 16,
+      "height": 16,
+      "sha256": "20d0e69802a65fb20e7d8bbab347afc4a9d0ac1922b0d7c0cab94bbfe3d977fd"
+    },
+    {
+      "path": "packaging/windows/Square44x44Logo.targetsize-20.png",
+      "destination": "Assets/Square44x44Logo.targetsize-20.png",
+      "width": 20,
+      "height": 20,
+      "sha256": "7ff3050f2500a233c5c566bf19bd1dea4616df04bdd6d43c8bfdb30f95f24d40"
+    },
+    {
+      "path": "packaging/windows/Square44x44Logo.targetsize-20_altform-unplated.png",
+      "destination": "Assets/Square44x44Logo.targetsize-20_altform-unplated.png",
+      "width": 20,
+      "height": 20,
+      "sha256": "7ff3050f2500a233c5c566bf19bd1dea4616df04bdd6d43c8bfdb30f95f24d40"
+    },
+    {
+      "path": "packaging/windows/Square44x44Logo.targetsize-20_altform-lightunplated.png",
+      "destination": "Assets/Square44x44Logo.targetsize-20_altform-lightunplated.png",
+      "width": 20,
+      "height": 20,
+      "sha256": "7ff3050f2500a233c5c566bf19bd1dea4616df04bdd6d43c8bfdb30f95f24d40"
+    },
+    {
+      "path": "packaging/windows/Square44x44Logo.targetsize-24.png",
+      "destination": "Assets/Square44x44Logo.targetsize-24.png",
+      "width": 24,
+      "height": 24,
+      "sha256": "d88ad0db253fcb9091c97ad9b0d98a7d8cfc0efafa8b05c10023e61cafb8ebf3"
+    },
+    {
+      "path": "packaging/windows/Square44x44Logo.targetsize-24_altform-unplated.png",
+      "destination": "Assets/Square44x44Logo.targetsize-24_altform-unplated.png",
+      "width": 24,
+      "height": 24,
+      "sha256": "d88ad0db253fcb9091c97ad9b0d98a7d8cfc0efafa8b05c10023e61cafb8ebf3"
+    },
+    {
+      "path": "packaging/windows/Square44x44Logo.targetsize-24_altform-lightunplated.png",
+      "destination": "Assets/Square44x44Logo.targetsize-24_altform-lightunplated.png",
+      "width": 24,
+      "height": 24,
+      "sha256": "d88ad0db253fcb9091c97ad9b0d98a7d8cfc0efafa8b05c10023e61cafb8ebf3"
+    },
+    {
+      "path": "packaging/windows/Square44x44Logo.targetsize-30.png",
+      "destination": "Assets/Square44x44Logo.targetsize-30.png",
+      "width": 30,
+      "height": 30,
+      "sha256": "298bac2eba62a4e6c6e99d931504fa466fbec31ae9ff7da0b7a73cb6c1f2fb9e"
+    },
+    {
+      "path": "packaging/windows/Square44x44Logo.targetsize-30_altform-unplated.png",
+      "destination": "Assets/Square44x44Logo.targetsize-30_altform-unplated.png",
+      "width": 30,
+      "height": 30,
+      "sha256": "298bac2eba62a4e6c6e99d931504fa466fbec31ae9ff7da0b7a73cb6c1f2fb9e"
+    },
+    {
+      "path": "packaging/windows/Square44x44Logo.targetsize-30_altform-lightunplated.png",
+      "destination": "Assets/Square44x44Logo.targetsize-30_altform-lightunplated.png",
+      "width": 30,
+      "height": 30,
+      "sha256": "298bac2eba62a4e6c6e99d931504fa466fbec31ae9ff7da0b7a73cb6c1f2fb9e"
+    },
+    {
+      "path": "packaging/windows/Square44x44Logo.targetsize-32.png",
+      "destination": "Assets/Square44x44Logo.targetsize-32.png",
+      "width": 32,
+      "height": 32,
+      "sha256": "d3d1acd2963f789cd2ac7f85736d38440fb8de6f08044d536f967cf86576b17a"
+    },
+    {
+      "path": "packaging/windows/Square44x44Logo.targetsize-32_altform-unplated.png",
+      "destination": "Assets/Square44x44Logo.targetsize-32_altform-unplated.png",
+      "width": 32,
+      "height": 32,
+      "sha256": "d3d1acd2963f789cd2ac7f85736d38440fb8de6f08044d536f967cf86576b17a"
+    },
+    {
+      "path": "packaging/windows/Square44x44Logo.targetsize-32_altform-lightunplated.png",
+      "destination": "Assets/Square44x44Logo.targetsize-32_altform-lightunplated.png",
+      "width": 32,
+      "height": 32,
+      "sha256": "d3d1acd2963f789cd2ac7f85736d38440fb8de6f08044d536f967cf86576b17a"
+    },
+    {
+      "path": "packaging/windows/Square44x44Logo.targetsize-36.png",
+      "destination": "Assets/Square44x44Logo.targetsize-36.png",
+      "width": 36,
+      "height": 36,
+      "sha256": "a9dacf6540ce78da720ac3228a16ec64880620bb50d35377dc171d8e8fbe173a"
+    },
+    {
+      "path": "packaging/windows/Square44x44Logo.targetsize-36_altform-unplated.png",
+      "destination": "Assets/Square44x44Logo.targetsize-36_altform-unplated.png",
+      "width": 36,
+      "height": 36,
+      "sha256": "a9dacf6540ce78da720ac3228a16ec64880620bb50d35377dc171d8e8fbe173a"
+    },
+    {
+      "path": "packaging/windows/Square44x44Logo.targetsize-36_altform-lightunplated.png",
+      "destination": "Assets/Square44x44Logo.targetsize-36_altform-lightunplated.png",
+      "width": 36,
+      "height": 36,
+      "sha256": "a9dacf6540ce78da720ac3228a16ec64880620bb50d35377dc171d8e8fbe173a"
+    },
+    {
+      "path": "packaging/windows/Square44x44Logo.targetsize-40.png",
+      "destination": "Assets/Square44x44Logo.targetsize-40.png",
+      "width": 40,
+      "height": 40,
+      "sha256": "96b23c449685e6415567908fa7b62370994f74a28447ebcd8fbe43a83a4544de"
+    },
+    {
+      "path": "packaging/windows/Square44x44Logo.targetsize-40_altform-unplated.png",
+      "destination": "Assets/Square44x44Logo.targetsize-40_altform-unplated.png",
+      "width": 40,
+      "height": 40,
+      "sha256": "96b23c449685e6415567908fa7b62370994f74a28447ebcd8fbe43a83a4544de"
+    },
+    {
+      "path": "packaging/windows/Square44x44Logo.targetsize-40_altform-lightunplated.png",
+      "destination": "Assets/Square44x44Logo.targetsize-40_altform-lightunplated.png",
+      "width": 40,
+      "height": 40,
+      "sha256": "96b23c449685e6415567908fa7b62370994f74a28447ebcd8fbe43a83a4544de"
+    },
+    {
+      "path": "packaging/windows/Square44x44Logo.targetsize-48.png",
+      "destination": "Assets/Square44x44Logo.targetsize-48.png",
+      "width": 48,
+      "height": 48,
+      "sha256": "d25cba8192b5591bdbdbe4f37bdb3f316245d27fc7c6cc19e5523a99a8262a2b"
+    },
+    {
+      "path": "packaging/windows/Square44x44Logo.targetsize-48_altform-unplated.png",
+      "destination": "Assets/Square44x44Logo.targetsize-48_altform-unplated.png",
+      "width": 48,
+      "height": 48,
+      "sha256": "d25cba8192b5591bdbdbe4f37bdb3f316245d27fc7c6cc19e5523a99a8262a2b"
+    },
+    {
+      "path": "packaging/windows/Square44x44Logo.targetsize-48_altform-lightunplated.png",
+      "destination": "Assets/Square44x44Logo.targetsize-48_altform-lightunplated.png",
+      "width": 48,
+      "height": 48,
+      "sha256": "d25cba8192b5591bdbdbe4f37bdb3f316245d27fc7c6cc19e5523a99a8262a2b"
+    },
+    {
+      "path": "packaging/windows/Square44x44Logo.targetsize-60.png",
+      "destination": "Assets/Square44x44Logo.targetsize-60.png",
+      "width": 60,
+      "height": 60,
+      "sha256": "fd89bc8246acf8a6a970928972347ffdf3a786913f76046726256131df37a438"
+    },
+    {
+      "path": "packaging/windows/Square44x44Logo.targetsize-60_altform-unplated.png",
+      "destination": "Assets/Square44x44Logo.targetsize-60_altform-unplated.png",
+      "width": 60,
+      "height": 60,
+      "sha256": "fd89bc8246acf8a6a970928972347ffdf3a786913f76046726256131df37a438"
+    },
+    {
+      "path": "packaging/windows/Square44x44Logo.targetsize-60_altform-lightunplated.png",
+      "destination": "Assets/Square44x44Logo.targetsize-60_altform-lightunplated.png",
+      "width": 60,
+      "height": 60,
+      "sha256": "fd89bc8246acf8a6a970928972347ffdf3a786913f76046726256131df37a438"
+    },
+    {
+      "path": "packaging/windows/Square44x44Logo.targetsize-64.png",
+      "destination": "Assets/Square44x44Logo.targetsize-64.png",
+      "width": 64,
+      "height": 64,
+      "sha256": "4b2cf16f8abc7878a386ebfe035d5f5d40131256df52153f4b7e4753fe368ee3"
+    },
+    {
+      "path": "packaging/windows/Square44x44Logo.targetsize-64_altform-unplated.png",
+      "destination": "Assets/Square44x44Logo.targetsize-64_altform-unplated.png",
+      "width": 64,
+      "height": 64,
+      "sha256": "4b2cf16f8abc7878a386ebfe035d5f5d40131256df52153f4b7e4753fe368ee3"
+    },
+    {
+      "path": "packaging/windows/Square44x44Logo.targetsize-64_altform-lightunplated.png",
+      "destination": "Assets/Square44x44Logo.targetsize-64_altform-lightunplated.png",
+      "width": 64,
+      "height": 64,
+      "sha256": "4b2cf16f8abc7878a386ebfe035d5f5d40131256df52153f4b7e4753fe368ee3"
+    },
+    {
+      "path": "packaging/windows/Square44x44Logo.targetsize-72.png",
+      "destination": "Assets/Square44x44Logo.targetsize-72.png",
+      "width": 72,
+      "height": 72,
+      "sha256": "858c5453695987df4f1fd5e88f0c2d0ee2f73e78a9f5e9c78a8047e4c66c5b18"
+    },
+    {
+      "path": "packaging/windows/Square44x44Logo.targetsize-72_altform-unplated.png",
+      "destination": "Assets/Square44x44Logo.targetsize-72_altform-unplated.png",
+      "width": 72,
+      "height": 72,
+      "sha256": "858c5453695987df4f1fd5e88f0c2d0ee2f73e78a9f5e9c78a8047e4c66c5b18"
+    },
+    {
+      "path": "packaging/windows/Square44x44Logo.targetsize-72_altform-lightunplated.png",
+      "destination": "Assets/Square44x44Logo.targetsize-72_altform-lightunplated.png",
+      "width": 72,
+      "height": 72,
+      "sha256": "858c5453695987df4f1fd5e88f0c2d0ee2f73e78a9f5e9c78a8047e4c66c5b18"
+    },
+    {
+      "path": "packaging/windows/Square44x44Logo.targetsize-80.png",
+      "destination": "Assets/Square44x44Logo.targetsize-80.png",
+      "width": 80,
+      "height": 80,
+      "sha256": "44312b9c518093c4f1a554b9e67553d22c455e2ab6a4bd451f4c2607f3686cbd"
+    },
+    {
+      "path": "packaging/windows/Square44x44Logo.targetsize-80_altform-unplated.png",
+      "destination": "Assets/Square44x44Logo.targetsize-80_altform-unplated.png",
+      "width": 80,
+      "height": 80,
+      "sha256": "44312b9c518093c4f1a554b9e67553d22c455e2ab6a4bd451f4c2607f3686cbd"
+    },
+    {
+      "path": "packaging/windows/Square44x44Logo.targetsize-80_altform-lightunplated.png",
+      "destination": "Assets/Square44x44Logo.targetsize-80_altform-lightunplated.png",
+      "width": 80,
+      "height": 80,
+      "sha256": "44312b9c518093c4f1a554b9e67553d22c455e2ab6a4bd451f4c2607f3686cbd"
+    },
+    {
+      "path": "packaging/windows/Square44x44Logo.targetsize-96.png",
+      "destination": "Assets/Square44x44Logo.targetsize-96.png",
+      "width": 96,
+      "height": 96,
+      "sha256": "cfa0192aa2678bfc3f007faaeb44a33ea1e5e90cbae02f710e0f0f14259f5e71"
+    },
+    {
+      "path": "packaging/windows/Square44x44Logo.targetsize-96_altform-unplated.png",
+      "destination": "Assets/Square44x44Logo.targetsize-96_altform-unplated.png",
+      "width": 96,
+      "height": 96,
+      "sha256": "cfa0192aa2678bfc3f007faaeb44a33ea1e5e90cbae02f710e0f0f14259f5e71"
+    },
+    {
+      "path": "packaging/windows/Square44x44Logo.targetsize-96_altform-lightunplated.png",
+      "destination": "Assets/Square44x44Logo.targetsize-96_altform-lightunplated.png",
+      "width": 96,
+      "height": 96,
+      "sha256": "cfa0192aa2678bfc3f007faaeb44a33ea1e5e90cbae02f710e0f0f14259f5e71"
+    },
+    {
+      "path": "packaging/windows/Square44x44Logo.targetsize-256.png",
+      "destination": "Assets/Square44x44Logo.targetsize-256.png",
+      "width": 256,
+      "height": 256,
+      "sha256": "01d15c5cb6d1552f8ea0dd92da4eadb415de50b2a437c152057e0720b80cc3a0"
+    },
+    {
+      "path": "packaging/windows/Square44x44Logo.targetsize-256_altform-unplated.png",
+      "destination": "Assets/Square44x44Logo.targetsize-256_altform-unplated.png",
+      "width": 256,
+      "height": 256,
+      "sha256": "01d15c5cb6d1552f8ea0dd92da4eadb415de50b2a437c152057e0720b80cc3a0"
+    },
+    {
+      "path": "packaging/windows/Square44x44Logo.targetsize-256_altform-lightunplated.png",
+      "destination": "Assets/Square44x44Logo.targetsize-256_altform-lightunplated.png",
+      "width": 256,
+      "height": 256,
+      "sha256": "01d15c5cb6d1552f8ea0dd92da4eadb415de50b2a437c152057e0720b80cc3a0"
+    }
+  ],
+  "artwork": {
+    "sourceSHA256": "4bfbfa630c3792ec767c123059053fe9b043dd43053de7b2693b311fdd8726b5",
+    "iconSHA256": "0a837e050aa9465d92f595675d2cc9c9548fa5a3eed5049f06878f8e6b9dcd4d",
+    "rendererSHA256": "3375c0e426a9c54cfe9184f7977bc7a08d553fe07862a0a2bc141711089cd15d"
+  }
 }

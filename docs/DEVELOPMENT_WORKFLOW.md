@@ -239,11 +239,12 @@ ZIP内は同名の製品フォルダ一つで、その中は`NeNeFolio.exe`、`R
 公開の依頼を受けたら、squash統合後のcleanな`main`から同じコマンドで作り、短い実機起動を確認してから
 `v<version>` の tag と同名 Release へ配布物と `SHA256SUMS` を添付する。公開後に再ダウンロードして照合する。
 MSIX出力は#484/ADR0080で同じ入口へ追加した。`-Format Msix`を付けると、同一Release buildとpayload検証を使い、
-登録済みStore identity・版・PNGを含めて固定SDKのMakeAppxで作成/展開する。全ファイルとSHA256 block mapを照合し、
+登録済みStore identity・版・PNGと、固定SDKのMakePRIが生成したresources.priを含め、MakeAppxで作成/展開する。
+PRIの全画像候補/qualifierと生成bytes、全ファイルとSHA256 block mapを照合し、
 `NeNeFolio-<version>-win-x64.msix`と`SHA256SUMS`を新出力先へ置く。
 版の先頭は1以上、4成分目は0を要求する。identity/PNG一覧は`eng/msix.json`、画像原本は`packaging/windows/`。
 MSIXだけは保存先に合う`README-msix.txt`を`README.txt`として同梱する。
-追加SDKのdirectory版とMakeAppxの実file版は`eng/tool-versions.json`で固定し、ZIPや通常buildには要求しない。
+追加SDKのdirectory版とMakeAppx/MakePRIの実file版は`eng/tool-versions.json`で固定し、ZIPや通常buildには要求しない。
 MSIXは未署名の候補であり、生成コマンドは証明書の信頼登録・インストール・Storeへの送信を行わない。
 実インストール/更新/アンインストール/WACKとStore申請は別段階として記録する。独自自動更新は対象外。
 
@@ -278,3 +279,13 @@ MSIXは未署名の候補であり、生成コマンドは証明書の信頼登�
   旧C側41作業木とD側`210-rename-state`は2026-10-17に取込/変更/稼働参照を確認し、証跡収載後に整理済み（#321の品質記録）。
 - 繰り返しの手作業は既存の `tools/` を先に探す。自動化を足すのは具体的な効果がある場合に限り、
   既存の品質ゲートを弱めたり、同じ意味の別経路を増やしたりしない。
+
+### アプリアイコンの再生成（#533 / ADR0088）
+
+`packaging/windows/app-icon.svg`を唯一の図案原本とする。`eng/windows-icons.json`の寸法・名前と固定rendererを使い、
+`pwsh -NoProfile -File packaging/windows/render-icons.ps1 -OutputDirectory D:/NeNeFolio/outputs/icon-assets-<task-id> -Chrome <absolute-chrome.exe>`
+で未作成のrepo外出力へ生成する。透明なsheet上に各サイズのSVGを描き、同寸切出ししてPNG/ICOへ派生させる。
+PNG/ICOと明暗・小サイズの外観を確認し、出力msix.jsonの宣言画像・ICO・metadataを同時に収載する。
+図形の手描きコピーやサイズ別の別原本を増やさない。生成失敗の出力は診断用に残す。
+通常buildとCIはrendererを要求せず、追跡済み資産/hash・native resourceを既存release proofで検査する。
+rendererを更新する場合は版とbinary hashを明示更新し、再生成・外観・対象検証を行う。

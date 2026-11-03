@@ -2,3 +2,4 @@
 
 LANGUAGE LANG_NEUTRAL, SUBLANG_NEUTRAL
 1 RT_MANIFEST "NeNeFolio.manifest"
+#include "app-icon.rc"

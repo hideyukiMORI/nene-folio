@@ -258,3 +258,18 @@ foreach(status_case ja en zh find replace)
 endforeach()
 set_tests_properties(image_status note_status_ja note_status_en note_status_zh
     note_status_find note_status_replace PROPERTIES RESOURCE_LOCK image_status_data)
+
+# The same icon resource is used by the product and real-window verification hosts (ADR0088).
+foreach(icon_target nenefolio image_status_tests minimap_scheduling_tests settings_accessibility_tests)
+    target_include_directories(${icon_target} PRIVATE
+        "$<$<COMPILE_LANGUAGE:RC>:${CMAKE_CURRENT_SOURCE_DIR}/packaging/windows>")
+endforeach()
+foreach(icon_resource src/app/NeNeFolio.rc tests/win32/image_status_tests.rc
+        tests/win32/minimap_scheduling_tests.rc tests/win32/settings_accessibility_tests.rc)
+    set_property(SOURCE ${icon_resource} APPEND PROPERTY OBJECT_DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/packaging/windows/app-icon.rc"
+        "${CMAKE_CURRENT_SOURCE_DIR}/packaging/windows/NeNeFolio.ico")
+endforeach()
+
+add_test(NAME window_icon COMMAND image_status_tests --icon)
+set_tests_properties(window_icon PROPERTIES TIMEOUT 30 RESOURCE_LOCK image_status_data)

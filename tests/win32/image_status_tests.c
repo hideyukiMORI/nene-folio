@@ -510,6 +510,75 @@ static void normal_status(struct native_fixture *_Nonnull fixture, enum folio_la
     folio_window_destroy(window);
 }
 
+static void verify_icon(HICON icon, int size)
+{
+    ICONINFO info = {0};
+    require(icon != nullptr && GetIconInfo(icon, &info), "window icon is a valid image");
+    BITMAP bitmap = {0};
+    require(GetObjectW(info.hbmColor, (int)sizeof bitmap, &bitmap) == (int)sizeof bitmap &&
+                bitmap.bmWidth == size && bitmap.bmHeight == size && bitmap.bmBitsPixel == 32,
+            "window icon uses its requested native size and 32-bit alpha");
+    size_t bytes = (size_t)size * (size_t)size * 4;
+    unsigned char *pixels = malloc(bytes);
+    require(pixels != nullptr, "icon pixel buffer");
+    HDC device = CreateCompatibleDC(nullptr);
+    require(device != nullptr, "icon read device");
+    BITMAPINFO format = {.bmiHeader = {.biSize = sizeof(BITMAPINFOHEADER),
+                                       .biWidth = size,
+                                       .biHeight = -size,
+                                       .biPlanes = 1,
+                                       .biBitCount = 32,
+                                       .biCompression = BI_RGB}};
+    require(GetDIBits(device, info.hbmColor, 0, (UINT)size, pixels, &format, DIB_RGB_COLORS) ==
+                size,
+            "icon alpha pixels are readable");
+    size_t center = ((size_t)(size / 2) * (size_t)size + (size_t)(size / 2)) * 4 + 3;
+    require(pixels[3] < 255 && pixels[(size_t)size * 4 - 1] < 255 &&
+                pixels[(size_t)(size - 1) * (size_t)size * 4 + 3] < 255 &&
+                pixels[bytes - 1] < 255 && pixels[center] == 255,
+            "embedded icon retains antialiased transparent corners and opaque content");
+    free(pixels);
+    DeleteDC(device);
+    DeleteObject(info.hbmColor);
+    DeleteObject(info.hbmMask);
+}
+
+static void icon_pair(HWND root, UINT dpi)
+{
+    HICON large_icon = (HICON)SendMessageW(root, WM_GETICON, ICON_BIG, 0);
+    HICON small_icon = (HICON)SendMessageW(root, WM_GETICON, ICON_SMALL, 0);
+    require(large_icon != small_icon, "large and small icons have independent owned handles");
+    verify_icon(large_icon, GetSystemMetricsForDpi(SM_CXICON, dpi));
+    verify_icon(small_icon, GetSystemMetricsForDpi(SM_CXSMICON, dpi));
+}
+
+static void window_icons(struct native_fixture *_Nonnull fixture)
+{
+    struct folio_window *window = nullptr;
+    require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
+                FOLIO_WINDOW_CREATED,
+            "real window with application icons");
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    icon_pair(root, GetDpiForWindow(root));
+    RECT bounds;
+    require(GetWindowRect(root, &bounds), "icon DPI rectangle");
+    ICONINFO released = {0};
+    static const UINT scales[] = {96, 120, 144, 168, 192};
+    for (size_t index = 0; index < sizeof scales / sizeof scales[0]; ++index)
+    {
+        HICON previous = (HICON)SendMessageW(root, WM_GETICON, ICON_BIG, 0);
+        SendMessageW(root, WM_DPICHANGED, MAKEWPARAM(scales[index], scales[index]),
+                     (LPARAM)&bounds);
+        icon_pair(root, scales[index]);
+        require(!GetIconInfo(previous, &released), "DPI replacement releases the old icon");
+    }
+    HICON large_icon = (HICON)SendMessageW(root, WM_GETICON, ICON_BIG, 0);
+    HICON small_icon = (HICON)SendMessageW(root, WM_GETICON, ICON_SMALL, 0);
+    folio_window_destroy(window);
+    require(!GetIconInfo(large_icon, &released) && !GetIconInfo(small_icon, &released),
+            "window destruction releases both icon handles");
+}
+
 static void run_status_case(struct native_fixture *_Nonnull fixture, const char *_Nonnull selector)
 {
     require(folio_state_select_note(fixture->state, 0, 0, FOLIO_UNTITLED_PROTECT) ==
@@ -553,7 +622,9 @@ int main(int argc, char *_Nonnull *_Nonnull argv)
     require(SUCCEEDED(OleInitialize(nullptr)), "COM apartment");
     struct native_fixture fixture = {0};
     create_fixture(&fixture);
-    if (argc == 2)
+    if (argc == 2 && strcmp(argv[1], "--icon") == 0)
+        window_icons(&fixture);
+    else if (argc == 2)
         run_status_case(&fixture, argv[1]);
     else
     {

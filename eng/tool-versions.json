@@ -6,5 +6,6 @@
   "python": "3.12.10",
   "powershellMinimum": "7.4.0",
   "windowsPackagingSdk": "10.0.26100.0",
-  "makeappx": "10.0.26100.7705"
+  "makeappx": "10.0.26100.7705",
+  "makepri": "10.0.26100.7705"
 }
