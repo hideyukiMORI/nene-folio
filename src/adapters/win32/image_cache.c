@@ -57,10 +57,12 @@ void image_cache_store(struct image_cache *_Nonnull cache, const struct image_jo
     size_t length = image_bitmap_length(bitmap) + encoded_length + image_job_bytes(job);
     if (length > byte_limit)
         return;
-    while (cache->bytes + length > byte_limit || cache->bitmaps[cache->next] != nullptr)
+    destroy_entry(cache, cache->next);
+    size_t oldest = (cache->next + 1) % capacity;
+    while (cache->bytes + length > byte_limit)
     {
-        destroy_entry(cache, cache->next);
-        cache->next = (cache->next + 1) % capacity;
+        destroy_entry(cache, oldest);
+        oldest = (oldest + 1) % capacity;
     }
     unsigned char *_Nullable bytes = nullptr;
     if (encoded != nullptr && encoded_length != 0)
