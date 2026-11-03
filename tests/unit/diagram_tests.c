@@ -949,6 +949,45 @@ static void flow_statement_contract(void)
     reject_source(text_buffer_bytes(nested), DIAGRAM_TOO_LARGE);
     text_buffer_destroy(nested);
 }
+static void quoted_pipe_labels(void)
+{
+    const struct
+    {
+        const char *source;
+        const char *expected;
+    } labels[] = {{"\"a|b\"", "a|b"},
+                  {"\"ab\"", "ab"},
+                  {"\"a|b|c\"", "a|b|c"},
+                  {"\"a|\\\"b\\\"|c\"", "a|\"b\"|c"},
+                  {"\"a|b; c\n[)} %%{literal}\"", "a|b; c\n[)} %%{literal}"},
+                  {"\"a|b\\nnext\"", "a|b\nnext"},
+                  {"\"a|b #59; &amp;\"", "a|b ; &"},
+                  {"\"a|b\\\\end\"", "a|b\\end"},
+                  {"plain [)}; %% literal", "plain [)}; %% literal"}};
+    for (size_t index = 0; index < sizeof labels / sizeof labels[0]; ++index)
+    {
+        char source[256];
+        int length = snprintf(source, sizeof source,
+                              "flowchart TB\nA -->|%s| B -->|plain| C;\nC --> D[\"tail|x\"]\n",
+                              labels[index].source);
+        require(length > 0 && (size_t)length < sizeof source, "quoted pipe fixture fits");
+        struct diagram_model *model = parsed(source);
+        require(diagram_model_node_count(model) == 4 && diagram_model_link_count(model) == 3 &&
+                    same_text(diagram_model_text_at(model, diagram_model_link_at(model, 0).label),
+                              labels[index].expected) &&
+                    same_text(diagram_model_text_at(model, diagram_model_link_at(model, 1).label),
+                              "plain") &&
+                    same_text(diagram_model_text_at(model, diagram_model_node_at(model, 3).label),
+                              "tail|x"),
+                "pipe labels retain content and do not consume later edges or node labels");
+        diagram_model_destroy(model);
+    }
+    const char *invalid[] = {"flowchart TB\nA -->|\"a|b\" B", "flowchart TB\nA -->|\"a|b| B",
+                             "flowchart TB\nA -->|\"a|b\\\"| B",
+                             "flowchart TB\nA -->|\"a|b\"| B -->|tail C"};
+    for (size_t index = 0; index < sizeof invalid / sizeof invalid[0]; ++index)
+        reject_source(invalid[index], DIAGRAM_INVALID);
+}
 static void collection_capacity_contract(void)
 {
     struct diagram_model *_Nullable model = nullptr;
@@ -983,6 +1022,7 @@ void run_diagram_tests(void)
 {
     connected_shape_delimiters();
     quoted_shape_delimiters();
+    quoted_pipe_labels();
     flow_statement_contract();
     collection_capacity_contract();
     model_construction_contract();

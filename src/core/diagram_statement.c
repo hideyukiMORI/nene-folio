@@ -67,8 +67,12 @@ static enum diagram_outcome flow_character(struct diagram_statement_scan *_Nonnu
         quoted_character(scan, text);
         return DIAGRAM_ACCEPTED;
     }
-    if (value == '"' || value == '|')
+    if (value == '"')
         scan->quote = value;
+    if (value == '|')
+        scan->pipe = !scan->pipe;
+    if (scan->pipe || value == '|')
+        return DIAGRAM_ACCEPTED;
     if (diagram_text_character_in(value, "[({"))
         ++scan->brackets;
     if (diagram_text_character_in(value, "])}") && scan->brackets != 0)
@@ -77,7 +81,7 @@ static enum diagram_outcome flow_character(struct diagram_statement_scan *_Nonnu
 }
 static bool boundary(const struct diagram_statement_scan *_Nonnull scan, struct diagram_text text)
 {
-    if (scan->quote != 0 || scan->brackets != 0)
+    if (scan->quote != 0 || scan->pipe || scan->brackets != 0)
         return false;
     return line_end(text.bytes[scan->cursor]) ||
            diagram_text_starts(diagram_text_skip(text, scan->cursor), "%%");
@@ -110,7 +114,8 @@ static enum diagram_outcome scan_statement(struct diagram_statement_scan *_Nonnu
     if (scan->cursor < input.text.length &&
         diagram_text_starts(diagram_text_skip(input.text, scan->cursor), "%%{"))
         return DIAGRAM_UNSUPPORTED;
-    return scan->quote != 0 || scan->brackets != 0 ? DIAGRAM_INVALID : DIAGRAM_ACCEPTED;
+    return scan->quote != 0 || scan->pipe || scan->brackets != 0 ? DIAGRAM_INVALID
+                                                                 : DIAGRAM_ACCEPTED;
 }
 enum diagram_outcome diagram_statement_read(struct diagram_input input, size_t start,
                                             struct diagram_statement *_Nonnull out)

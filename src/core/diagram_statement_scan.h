@@ -6,5 +6,6 @@ struct diagram_statement_scan
     size_t cursor;
     size_t brackets;
     char quote;
+    bool pipe;
 };
 #endif
