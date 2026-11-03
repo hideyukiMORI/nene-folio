@@ -141,7 +141,7 @@ static bool listed(const char *_Nonnull word, size_t length, const char *_Nonnul
     return false;
 }
 
-enum code_language code_language_parse(const char *_Nonnull info, size_t length)
+struct markdown_span code_language_word(const char *_Nonnull info, size_t length)
 {
     size_t start = 0;
     while (start < length && (info[start] == ' ' || info[start] == '\t'))
@@ -149,13 +149,19 @@ enum code_language code_language_parse(const char *_Nonnull info, size_t length)
     size_t end = start;
     while (end < length && info[end] != ' ' && info[end] != '\t')
         ++end;
+    return (struct markdown_span){.bytes = info + start, .length = end - start, .offset = start};
+}
+
+enum code_language code_language_parse(const char *_Nonnull info, size_t length)
+{
+    struct markdown_span word = code_language_word(info, length);
     static const enum code_language ids[] = {CODE_LANGUAGE_PLAIN,      CODE_LANGUAGE_C,
                                              CODE_LANGUAGE_CPP,        CODE_LANGUAGE_JAVASCRIPT,
                                              CODE_LANGUAGE_TYPESCRIPT, CODE_LANGUAGE_PYTHON,
                                              CODE_LANGUAGE_JSON,       CODE_LANGUAGE_SHELL,
                                              CODE_LANGUAGE_POWERSHELL, CODE_LANGUAGE_SQL};
     for (size_t at = 0; at < sizeof ids / sizeof ids[0]; ++at)
-        if (listed(info + start, end - start, languages[slot(ids[at])].aliases, true))
+        if (listed(word.bytes, word.length, languages[slot(ids[at])].aliases, true))
             return ids[at];
     return CODE_LANGUAGE_PLAIN;
 }

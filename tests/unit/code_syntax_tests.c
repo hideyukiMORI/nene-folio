@@ -115,6 +115,21 @@ static void basic_languages(void)
     expect("json", "// # /* hi */", "// # /* hi */");
 }
 
+static void language_words(void)
+{
+    const char info[] = " \tPyThOn extra";
+    struct markdown_span word = code_language_word(info, sizeof info - 1);
+    require(word.offset == 2 && word.bytes == info + 2 && word.length == 6 &&
+                memcmp(word.bytes, "PyThOn", word.length) == 0,
+            "label and lexer share a borrowed first word without normalizing case");
+    word = code_language_word(info, 4);
+    require(word.length == 2 && word.offset == 2, "label honors explicit byte length");
+    word = code_language_word(info, 2);
+    require(word.length == 0 && word.offset == 2, "all whitespace has no label");
+    word = code_language_word(info, 0);
+    require(word.length == 0 && word.offset == 0, "empty info has no label");
+}
+
 static void continued_tokens(void)
 {
     expect("c", "/* \"first\nsecond */ int", "{\\cf9 /* \"first}\n{\\cf9 second */} {\\cf7 int}");
@@ -165,6 +180,9 @@ static void markdown_case(const char *_Nonnull source, const char *_Nonnull pres
     require(markdown_rtf_create(text, rtf_palette_for(FOLIO_THEME_LIGHT), "Consolas", &rtf) ==
                 MARKDOWN_RTF_CONVERTED,
             "fence syntax conversion");
+    if (strstr(markdown_rtf_text(rtf), present) == nullptr)
+        fprintf(stderr, "source: %s\nexpected fragment: %s\nactual: %s\n", source, present,
+                markdown_rtf_text(rtf));
     require(strstr(markdown_rtf_text(rtf), present) != nullptr, "fence recognizes language");
     require(strstr(markdown_rtf_text(rtf), absent) == nullptr, "fence does not leak syntax");
     require(same_text(note_text_bytes(text), source), "render preserves original Markdown");
@@ -212,13 +230,35 @@ static void large_input(void)
     text_buffer_destroy(output);
 }
 
+static void language_labels(void)
+{
+    markdown_case("``` \tPyThOn extra\nreturn 1\n```", "{\\f0\\fs18\\cf9 PyThOn}", "extra");
+    markdown_case("~~~ C++\nint\n~~~", "{\\f0\\fs18\\cf9 C++}", "{\\f0\\fs18\\cf9 cpp}");
+    markdown_case("~~~ {未知}\\name extra\nraw\n~~~", "{\\f0\\fs18\\cf9 \\{未知\\}\\\\name}",
+                  "extra");
+    markdown_case("```text\n```", "{\\f0\\fs18\\cf9 text}\\sa120\\par\n}", "\\sb0");
+    markdown_case("```unknown", "{\\f0\\fs18\\cf9 unknown}\\sa120\\par\n}", "\\sb0");
+    markdown_case("``` \t\nraw\n```", "\\sb120\\sa0", "\\fs18");
+    markdown_case("- > ```py\n  > return 1\n  > ```\n\ntail", "\\li1100\\ri180\\sb120\\sa80",
+                  "\\cf9 tail");
+    markdown_case("```c\nint\n```\n```json\ntrue\n```", "{\\f0\\fs18\\cf9 json}", "{\\cf7 json}");
+    char source[4096];
+    char label[3001];
+    memset(label, 'x', sizeof label - 1);
+    label[sizeof label - 1] = '\0';
+    snprintf(source, sizeof source, "~~~%s extra\nraw\n~~~", label);
+    markdown_case(source, label, "extra");
+}
+
 void run_code_syntax_tests(void)
 {
     aliases();
+    language_words();
     basic_languages();
     continued_tokens();
     colors();
     fence_boundaries();
+    language_labels();
     large_input();
     code_syntax_destroy(nullptr);
     puts("code syntax tests passed");

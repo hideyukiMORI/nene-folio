@@ -51,3 +51,26 @@ fence/container境界・出力文字保持・確保失敗をunitで確認する�
 - [Python lexical analysis](https://docs.python.org/3/reference/lexical_analysis.html)
 - [ECMAScript lexical grammar](https://tc39.es/ecma262/#sec-ecmascript-language-lexical-grammar)
 - [PowerShell quoting rules](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_quoting_rules?view=powershell-7.5)
+
+## #532 — 指定言語の表示（2026-11-03）
+
+hideの追加依頼により、決定1の「表示用見出しを追加しない」とADR0069の言語ラベル範囲外だけを更新する。
+色分け対応範囲・原文保持・単一RTF経路・依存・保存schema・版は維持する。
+
+- `code_language_word`がinfo先頭語を長さ付きの借用`markdown_span`として返す。offsetはinfo内の開始byte。
+  既存`code_language_parse`と`markdown_blocks`が同じ抽出を使い、別のinfo解析を持たない。
+- 先頭語を大小文字・alias・未知語も原文どおり表示する。空白だけ/未指定なら表示しない。
+  後続infoは表示せず、RTF文字escapeは既存`rtf_text_append`だけを通す。言語名の翻訳や推測はしない。
+- 同じコードgroupの先頭段落を本文書体（`\f0`）9pt・既存code_comment色・同じcode背景で描く。
+  左右9pt、上6pt、本文まで4ptの余白とし、本文は既存10pt、最終段落後6ptを維持する。
+  指定付き空fenceはラベルだけ表示する。未指定の空fenceは従来どおり段落を足さない。
+  狭幅はRichEditの折返し、倍率は既存zoom、HCは既存windowText/window対へ従う。
+- 表示ラベルは通常の閲覧テキストなので検索・選択・nativeアクセシビリティにも含まれる。
+  ラベルを含めた選択コピーはラベルも含む。コード本文だけの選択は元のコード文字を維持し、
+  ノート全体のコピー/書出し/保存/編集は既存のMarkdown原文を使う。位置の別索引やoverlayを作らない。
+- 既存の段落保留状態でラベル/本文/空fenceの終端を処理し、新しい永続状態を増やさない。
+  unitでinfo・RTF escape・container/EOF・原文、実RichEditで書式/文字・検索/選択・編集復帰・
+  狭幅/倍率・明暗/合成HC・後続段落への漏れを確認する。追加waiverはnone。
+
+採用図案はClaudeのdesign:design-critique/design-handoffによる[比較canvas](https://claude.ai/artifact/4hmz67GuzYjexqiXyScUoN)のD案。
+左上の位置と既存色を保ち、本文書体と4pt余白でコード行と区別する。右寄せと別色帯は採用しない。

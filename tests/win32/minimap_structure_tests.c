@@ -191,8 +191,8 @@ static void code_blocks(struct note_pane *_Nonnull pane)
         inspect_code(&sample, &tally);
     }
     printf("native code=%u empty=%u rules=%u\n", tally.code, tally.empty_code, tally.rules);
-    require(tally.code == 3 && tally.empty_code == 1 && tally.rules == 1,
-            "code background includes its empty line only");
+    require(tally.code == 4 && tally.empty_code == 1 && tally.rules == 1,
+            "code background includes its language label and empty line only");
     int inline_line = 1;
     struct note_pane_sample sample;
     require(note_pane_samples(pane, &inline_line, 1, &sample) && sample.points == 10 &&
@@ -267,11 +267,26 @@ static void syntax_palette(struct note_pane *_Nonnull pane, const char *_Nonnull
     HWND handle = note_pane_handle(pane);
     wchar_t text[512];
     GetWindowTextW(handle, text, 512);
-    require(
-        wcscmp(text, L"int value = 42; // comment\r\n\r\nconst char *s = \"{日本語}\\path\";") == 0,
-        "syntax preserves braces, slash, Unicode, spaces and empty line");
+    require(wcscmp(text,
+                   L"c\r\nint value = 42; // comment\r\n\r\nconst char *s = \"{日本語}\\path\";") ==
+                0,
+            "syntax preserves braces, slash, Unicode, spaces and empty line");
     token_color(handle, L"int", palette.code_keyword);
+    token_color(handle, L"c", palette.code_comment);
+    CHARFORMAT2W format = {.cbSize = sizeof format};
+    SendMessageW(handle, EM_GETCHARFORMAT, SCF_SELECTION, (LPARAM)&format);
+    require((format.dwMask & (CFM_SIZE | CFM_BACKCOLOR)) == (CFM_SIZE | CFM_BACKCOLOR) &&
+                format.yHeight == 180 &&
+                format.crBackColor == RGB(palette.code_background.red,
+                                          palette.code_background.green,
+                                          palette.code_background.blue),
+            "label uses nine points and the same code background in every palette");
+    require((format.dwMask & CFM_FACE) != 0 && wcscmp(format.szFaceName, L"Consolas") != 0,
+            "label uses the proportional body face");
     token_color(handle, L"value", palette.code_text);
+    SendMessageW(handle, EM_GETCHARFORMAT, SCF_SELECTION, (LPARAM)&format);
+    require((format.dwMask & CFM_FACE) != 0 && wcscmp(format.szFaceName, L"Consolas") == 0,
+            "code body restores Consolas after the label");
     token_color(handle, L"42", palette.code_number);
     token_color(handle, L"// comment", palette.code_comment);
     token_color(handle, L"\"{日本語}\\path\"", palette.code_string);
@@ -299,6 +314,67 @@ static void code_syntax(struct note_pane *_Nonnull pane)
     preservation(pane);
 }
 
+static void code_label_boundaries(struct note_pane *_Nonnull pane)
+{
+    const char content[] = "Before\n\n``` \tPyThOn ignored\nreturn 42\n```\n\n"
+                           "```mystery\n```\n\n```\nplain\n```\n\nTail";
+    load(pane, PANE_MODE_VIEW, content);
+    HWND handle = note_pane_handle(pane);
+    wchar_t actual[512];
+    GetWindowTextW(handle, actual, 512);
+    require(wcscmp(actual, L"Before\r\nPyThOn\r\nreturn 42\r\nmystery\r\nplain\r\nTail") == 0,
+            "labels include unknown and empty fences, omit absent info and extra attributes");
+    FINDTEXTEXW find = {{0, -1}, L"return 42", {0, 0}};
+    require(SendMessageW(handle, EM_FINDTEXTEXW, FR_DOWN, (LPARAM)&find) >= 0,
+            "code after label remains searchable");
+    note_pane_select(pane, (size_t)find.chrgText.cpMin, (size_t)find.chrgText.cpMax);
+    SendMessageW(handle, EM_GETSELTEXT, 0, (LPARAM)actual);
+    require(wcscmp(actual, L"return 42") == 0, "body selection does not acquire label text");
+    const char16_t *visible = nullptr;
+    size_t length = 0;
+    require(note_pane_text(pane, &visible, &length) == NOTE_PANE_TEXT_TAKEN && length > 15 &&
+                visible[7] == u'P' && visible[14] == u'r',
+            "search projection includes the visible label and correct body offset");
+    token_color(handle, L"PyThOn", rtf_palette_for(FOLIO_THEME_LIGHT).code_comment);
+    CHARFORMAT2W label_format = {.cbSize = sizeof label_format};
+    SendMessageW(handle, EM_GETCHARFORMAT, SCF_SELECTION, (LPARAM)&label_format);
+    token_color(handle, L"Tail", rtf_palette_for(FOLIO_THEME_LIGHT).text);
+    CHARFORMAT2W format = {.cbSize = sizeof format};
+    SendMessageW(handle, EM_GETCHARFORMAT, SCF_SELECTION, (LPARAM)&format);
+    require(wcscmp(format.szFaceName, label_format.szFaceName) == 0,
+            "label and following prose share the body font");
+    require(format.yHeight == 220 && (format.dwEffects & CFE_AUTOBACKCOLOR) != 0,
+            "label font and code background do not leak to following prose");
+    syntax_preserved(pane);
+}
+
+static void code_label_wrap(struct note_pane *_Nonnull pane)
+{
+    const char content[] = "~~~VeryLongUnknownLanguageNameThatMustWrapWithoutLosingAnyCharacters"
+                           " extra\npayload\n~~~\nTail";
+    load(pane, PANE_MODE_VIEW, content);
+    HWND handle = note_pane_handle(pane);
+    wchar_t before[512], after[512];
+    GetWindowTextW(handle, before, 512);
+    MoveWindow(handle, 0, 0, 160, 600, FALSE);
+    ShowWindow(GetParent(handle), SW_SHOWNOACTIVATE);
+    RECT bounds;
+    GetWindowRect(handle, &bounds);
+    LPARAM pointer = MAKELPARAM(bounds.left + 8, bounds.top + 8);
+    SendMessageW(handle, WM_MOUSEWHEEL, MAKEWPARAM(MK_CONTROL, 5 * WHEEL_DELTA), pointer);
+    require(note_pane_zoom_percent(pane) == 150, "label uses canonical zoom path");
+    FINDTEXTEXW find = {{0, -1}, L"payload", {0, 0}};
+    require(SendMessageW(handle, EM_FINDTEXTEXW, FR_DOWN, (LPARAM)&find) >= 0 &&
+                SendMessageW(handle, EM_EXLINEFROMCHAR, 0, find.chrgText.cpMin) > 1,
+            "long language label wraps above its code at narrow enlarged width");
+    GetWindowTextW(handle, after, 512);
+    require(wcscmp(before, after) == 0, "wrapping and zoom do not truncate label or body");
+    SendMessageW(handle, WM_MOUSEWHEEL, MAKEWPARAM(MK_CONTROL, (WORD)(-5 * WHEEL_DELTA)), pointer);
+    require(note_pane_zoom_percent(pane) == 100, "zoom restored");
+    MoveWindow(handle, 0, 0, 600, 600, FALSE);
+    ShowWindow(GetParent(handle), SW_HIDE);
+}
+
 int main(void)
 {
     HDESK desktop = CreateDesktopW(L"NeNeFolioMinimap506", nullptr, nullptr, 0,
@@ -319,6 +395,8 @@ int main(void)
     wrapped_list(pane);
     code_blocks(pane);
     code_syntax(pane);
+    code_label_boundaries(pane);
+    code_label_wrap(pane);
     load(pane, PANE_MODE_EDIT, source);
     boundaries(pane);
     preservation(pane);

@@ -268,6 +268,18 @@ static bool code_line(struct markdown_blocks *_Nonnull parser, struct markdown_l
     return true;
 }
 
+static void code_label(struct markdown_blocks *_Nonnull parser, struct markdown_span word)
+{
+    if (word.length == 0)
+        return;
+    text_buffer_append_text(parser->out, "\\pard\\li");
+    rtf_text_number(parser->out, parser->code_indent + 180);
+    text_buffer_append_text(parser->out, "\\ri180\\sb120\\sa80\\sl240\\slmult1 {\\f0\\fs18\\cf9 ");
+    rtf_text_append(parser->out, word.bytes, word.length);
+    text_buffer_append_text(parser->out, "}");
+    parser->code_state = MARKDOWN_CODE_STATE_PARAGRAPH;
+}
+
 static bool start_fence(struct markdown_blocks *_Nonnull parser, struct markdown_line line,
                         size_t length)
 {
@@ -288,6 +300,7 @@ static bool start_fence(struct markdown_blocks *_Nonnull parser, struct markdown
     if (parser->outcome != MARKDOWN_RTF_CONVERTED)
         return false;
     text_buffer_append_text(parser->out, "{\\f1\\fs20\\cf5\\highlight6");
+    code_label(parser, code_language_word(line.bytes + info, line.length - info));
     return true;
 }
 
