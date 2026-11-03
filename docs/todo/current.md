@@ -13,10 +13,15 @@ hideの新指示で、停止まで調査・試験・計測・必要な修正を�
 同じ9要求のmissは8から5へ減り、273checks成功。通常data32ファイルも反映前後で一致した。
 完了原本は`D:/NeNeFolio/agents/544-image-cache-eviction/integration-completion.json`へ。
 
-現在の焦点は#546。引用pipeの修正前redと、修正後の9正例/4拒否例・関連diagram対象の成功を確認した。
-独立R/Oレビューは追加指摘なし。詳細は[品質記録](../quality/2026-11-04-mermaid-quoted-pipe.md)。
-最終head/CI/main/通常反映/整理は`D:/NeNeFolio/agents/546-mermaid-quoted-pipe/integration-completion.json`へ収載する。
-次は深いsequence activationの幅不足候補を実行で確認する。
+#546の引用pipeはPR549/CI41737219656成功、main`61dbfbb`へ統合・通常反映済み。
+通常data32ファイルは反映前後で一致。保全整理の原本は
+`D:/NeNeFolio/agents/546-mermaid-quoted-pipe/integration-completion.json`へ。
+
+現在の焦点は#548。16段activationの幅不足を再現し、既存depthを幅予約でも使う修正を入れた。
+最新mainで66正例・17段拒否と関連diagram対象が成功、独立R/Oレビューは追加指摘なし。
+詳細は[品質記録](../quality/2026-11-04-sequence-activation-width.md)、最終head/CI/通常反映/整理は
+`D:/NeNeFolio/agents/548-sequence-activation-width/integration-completion.json`へ収載する。
+次は複数行ラベルが各形状内に収まるかを確認する。現時点では静的な候補。
 
 日報・次回の詳細は[11月4日の日報](../reports/2026-11-04.md)と[引き継ぎ書](../handoffs/2026-11-04.md)。
 全体journalは`D:/NeNeFolio/agents/quality-20261104/journal.md`。

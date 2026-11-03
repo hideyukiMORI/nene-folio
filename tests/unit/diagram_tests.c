@@ -2,6 +2,7 @@
 #include "diagram_geometry.h"
 #include "diagram_layout.h"
 #include "diagram_palette.h"
+#include "diagram_style.h"
 #include "folio_theme.h"
 #include "markdown_media.h"
 #include "markdown_rtf.h"
@@ -415,6 +416,78 @@ static void self_activation_arrival(void)
             "self activation starts and ends at message arrival");
     diagram_scene_destroy(scene);
     diagram_model_destroy(model);
+}
+static void activation_command(struct text_buffer *_Nonnull source, const char *_Nonnull command,
+                               const char *_Nonnull actor)
+{
+    text_buffer_append_text(source, command);
+    text_buffer_append_text(source, " ");
+    text_buffer_append_text(source, actor);
+    text_buffer_append_text(source, "\n");
+}
+static struct text_buffer *_Nonnull activation_fixture(size_t depth, bool single, bool closed,
+                                                       bool framed)
+{
+    struct text_buffer *_Nullable source = nullptr;
+    require(text_buffer_create(&source) == TEXT_BUFFER_ACCEPTED, "activation extent fixture");
+    text_buffer_append_text(source, "sequenceDiagram\nparticipant A\n");
+    if (!single)
+        text_buffer_append_text(source, "participant B\nparticipant C\n");
+    if (framed)
+        text_buffer_append_text(source, "loop work\n");
+    const char *actor = single ? "A" : "C";
+    for (size_t index = 0; index < depth; ++index)
+        activation_command(source, "activate", actor);
+    text_buffer_append_text(source, "Note left of ");
+    text_buffer_append_text(source, actor);
+    text_buffer_append_text(source, ": working\n");
+    if (!single)
+        text_buffer_append_text(source, "A->>C: work\n");
+    if (closed)
+        for (size_t index = 0; index < depth; ++index)
+            activation_command(source, "deactivate", actor);
+    if (framed)
+        text_buffer_append_text(source, "end\n");
+    require(text_buffer_finish(source) == TEXT_BUFFER_ACCEPTED, "activation fixture complete");
+    return source;
+}
+static void activation_extent(size_t depth, bool single, bool closed, bool framed)
+{
+    struct text_buffer *source = activation_fixture(depth, single, closed, framed);
+    struct diagram_model *model = parsed(text_buffer_bytes(source));
+    struct diagram_scene *scene = laid_out(model);
+    struct diagram_size size = diagram_scene_size(scene);
+    size_t activations = 0;
+    for (size_t index = 0; index < diagram_scene_count(scene); ++index)
+    {
+        const struct diagram_primitive *item = diagram_scene_at(scene, index);
+        if (item->kind == DIAGRAM_PRIMITIVE_SHAPE &&
+            item->bounds.width == diagram_activation_width && item->fill == DIAGRAM_INK_NODE)
+        {
+            ++activations;
+            require(item->bounds.x + item->bounds.width <= size.width - diagram_outer_margin,
+                    "every nested activation fits inside the scene's outer margin");
+        }
+    }
+    require(activations == depth, "all supported activation levels reach the published scene");
+    diagram_scene_destroy(scene);
+    diagram_model_destroy(model);
+    text_buffer_destroy(source);
+}
+static void sequence_activation_extents(void)
+{
+    for (size_t depth = diagram_depth_limit; depth != 0; --depth)
+    {
+        activation_extent(depth, true, true, false);
+        activation_extent(depth, true, false, false);
+        activation_extent(depth, false, true, false);
+        activation_extent(depth, false, false, false);
+    }
+    activation_extent(diagram_depth_limit, true, true, true);
+    activation_extent(diagram_depth_limit, false, false, true);
+    struct text_buffer *source = activation_fixture(diagram_depth_limit + 1, true, false, false);
+    reject_source(text_buffer_bytes(source), DIAGRAM_TOO_LARGE);
+    text_buffer_destroy(source);
 }
 static void rejected_grammar(void)
 {
@@ -1046,6 +1119,7 @@ void run_diagram_tests(void)
     sequence_features();
     sequence_arrow_meaning();
     self_activation_arrival();
+    sequence_activation_extents();
     rejected_grammar();
     escaped_labels();
     bounded_input();
