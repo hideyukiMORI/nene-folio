@@ -19,6 +19,8 @@ static const struct
                     {
                         .window = {0xF7, 0xF7, 0xF7},
                         .pane = {0xFF, 0xFF, 0xFF},
+                        .status_background = {0xEB, 0xEA, 0xEA},
+                        .status_text = {0x24, 0x13, 0x18},
                         .header_text = {0x74, 0x6B, 0x66},
                         .category_text = {0x1A, 0x0F, 0x14},
                         .note_text = {0x58, 0x4E, 0x4A},
@@ -60,6 +62,8 @@ static const struct
                     {
                         .window = {0x1A, 0x00, 0x11},
                         .pane = {0x2C, 0x00, 0x1E},
+                        .status_background = {0x3E, 0x15, 0x30},
+                        .status_text = {0xEF, 0xE4, 0xEA},
                         .header_text = {0x9C, 0x85, 0x93},
                         .category_text = {0xF4, 0xEA, 0xEF},
                         .note_text = {0xC4, 0xAE, 0xBC},
@@ -101,6 +105,8 @@ static const struct
                     {
                         .window = {0x1E, 0x05, 0x16},
                         .pane = {0x30, 0x0A, 0x24},
+                        .status_background = {0x41, 0x1F, 0x36},
+                        .status_text = {0xEE, 0xEE, 0xEC},
                         .header_text = {0xB5, 0xAA, 0xB0},
                         .category_text = {0xEE, 0xEE, 0xEC},
                         .note_text = {0xB5, 0xAA, 0xB0},
@@ -142,6 +148,8 @@ static const struct
                     {
                         .window = {0xE1, 0xE4, 0xE9},
                         .pane = {0xF4, 0xF5, 0xF7},
+                        .status_background = {0xE0, 0xE2, 0xE4},
+                        .status_text = {0x1B, 0x1F, 0x24},
                         .header_text = {0x5C, 0x5F, 0x63},
                         .category_text = {0x1B, 0x1F, 0x24},
                         .note_text = {0x5C, 0x5F, 0x63},
@@ -183,6 +191,8 @@ static const struct
                     {
                         .window = {0x00, 0x1B, 0x22},
                         .pane = {0x00, 0x2B, 0x36},
+                        .status_background = {0x0C, 0x34, 0x3F},
+                        .status_text = {0xFF, 0xFF, 0xFF},
                         .header_text = {0x85, 0x96, 0x98},
                         .category_text = {0x85, 0x96, 0x98},
                         .note_text = {0x85, 0x96, 0x98},
@@ -224,6 +234,8 @@ static const struct
                     {
                         .window = {0xE9, 0xE3, 0xD1},
                         .pane = {0xFD, 0xF6, 0xE3},
+                        .status_background = {0xEE, 0xEA, 0xD9},
+                        .status_text = {0x00, 0x00, 0x00},
                         .header_text = {0x54, 0x69, 0x70},
                         .category_text = {0x54, 0x69, 0x70},
                         .note_text = {0x54, 0x69, 0x70},
@@ -265,6 +277,8 @@ static const struct
                     {
                         .window = {0x19, 0x19, 0x16},
                         .pane = {0x27, 0x28, 0x22},
+                        .status_background = {0x3A, 0x3B, 0x35},
+                        .status_text = {0xF8, 0xF8, 0xF2},
                         .header_text = {0xBA, 0xBA, 0xB4},
                         .category_text = {0xF8, 0xF8, 0xF2},
                         .note_text = {0xBA, 0xBA, 0xB4},
@@ -306,6 +320,8 @@ static const struct
                     {
                         .window = {0x19, 0x1B, 0x22},
                         .pane = {0x28, 0x2A, 0x36},
+                        .status_background = {0x3B, 0x3D, 0x47},
+                        .status_text = {0xF8, 0xF8, 0xF2},
                         .header_text = {0xBA, 0xBB, 0xBA},
                         .category_text = {0xF8, 0xF8, 0xF2},
                         .note_text = {0xBA, 0xBB, 0xBA},
@@ -347,6 +363,8 @@ static const struct
                     {
                         .window = {0x19, 0x1C, 0x21},
                         .pane = {0x28, 0x2C, 0x34},
+                        .status_background = {0x34, 0x38, 0x41},
+                        .status_text = {0xAB, 0xB2, 0xBF},
                         .header_text = {0x95, 0x9C, 0xA8},
                         .category_text = {0xAB, 0xB2, 0xBF},
                         .note_text = {0x95, 0x9C, 0xA8},
@@ -388,6 +406,8 @@ static const struct
                     {
                         .window = {0x01, 0x0E, 0x19},
                         .pane = {0x01, 0x16, 0x27},
+                        .status_background = {0x14, 0x28, 0x39},
+                        .status_text = {0xD6, 0xDE, 0xEB},
                         .header_text = {0x97, 0xA2, 0xB1},
                         .category_text = {0xD6, 0xDE, 0xEB},
                         .note_text = {0x97, 0xA2, 0xB1},
@@ -429,6 +449,8 @@ static const struct
                     {
                         .window = {0xE7, 0xE7, 0xE7},
                         .pane = {0xFB, 0xFB, 0xFB},
+                        .status_background = {0xEA, 0xEA, 0xEC},
+                        .status_text = {0x40, 0x3F, 0x53},
                         .header_text = {0x67, 0x66, 0x76},
                         .category_text = {0x40, 0x3F, 0x53},
                         .note_text = {0x67, 0x66, 0x76},
@@ -470,6 +492,8 @@ static const struct
                     {
                         .window = {0x00, 0x00, 0x54},
                         .pane = {0x00, 0x00, 0x87},
+                        .status_background = {0x17, 0x13, 0x7B},
+                        .status_text = {0xFF, 0xD7, 0x00},
                         .header_text = {0xB3, 0x97, 0x28},
                         .category_text = {0xFF, 0xD7, 0x00},
                         .note_text = {0xB3, 0x97, 0x28},
@@ -511,6 +535,8 @@ static const struct
                     {
                         .window = {0x13, 0x13, 0x1D},
                         .pane = {0x1E, 0x1E, 0x2E},
+                        .status_background = {0x2E, 0x2F, 0x40},
+                        .status_text = {0xCD, 0xD6, 0xF4},
                         .header_text = {0x99, 0x9F, 0xB9},
                         .category_text = {0xCD, 0xD6, 0xF4},
                         .note_text = {0x99, 0x9F, 0xB9},
@@ -552,6 +578,8 @@ static const struct
                     {
                         .window = {0x00, 0x00, 0x28},
                         .pane = {0x00, 0x00, 0x40},
+                        .status_background = {0x11, 0x11, 0x4C},
+                        .status_text = {0xC0, 0xC0, 0xC0},
                         .header_text = {0x87, 0x87, 0x9A},
                         .category_text = {0xC0, 0xC0, 0xC0},
                         .note_text = {0x87, 0x87, 0x9A},
@@ -593,6 +621,8 @@ static const struct
                     {
                         .window = {0x00, 0x00, 0x00},
                         .pane = {0x00, 0x00, 0x00},
+                        .status_background = {0x17, 0x17, 0x17},
+                        .status_text = {0xFF, 0xFF, 0xFF},
                         .header_text = {0xB3, 0xB3, 0xB3},
                         .category_text = {0xFF, 0xFF, 0xFF},
                         .note_text = {0xB3, 0xB3, 0xB3},
@@ -634,6 +664,8 @@ static const struct
                     {
                         .window = {0xEB, 0xEB, 0xEB},
                         .pane = {0xFF, 0xFF, 0xFF},
+                        .status_background = {0xE8, 0xE8, 0xE8},
+                        .status_text = {0x00, 0x00, 0x00},
                         .header_text = {0x4C, 0x4C, 0x4C},
                         .category_text = {0x00, 0x00, 0x00},
                         .note_text = {0x4C, 0x4C, 0x4C},
@@ -675,6 +707,8 @@ static const struct
                     {
                         .window = {0x20, 0x20, 0x20},
                         .pane = {0x33, 0x33, 0x33},
+                        .status_background = {0x45, 0x45, 0x45},
+                        .status_text = {0xFF, 0xFF, 0xFF},
                         .header_text = {0xC2, 0xC2, 0xC2},
                         .category_text = {0xFF, 0xFF, 0xFF},
                         .note_text = {0xC2, 0xC2, 0xC2},
@@ -716,6 +750,8 @@ static const struct
                     {
                         .window = {0x00, 0x00, 0x00},
                         .pane = {0x00, 0x00, 0x00},
+                        .status_background = {0x00, 0x17, 0x17},
+                        .status_text = {0x00, 0xFF, 0xFF},
                         .header_text = {0x00, 0xB3, 0xB3},
                         .category_text = {0x00, 0xFF, 0xFF},
                         .note_text = {0x00, 0xB3, 0xB3},
@@ -757,6 +793,8 @@ static const struct
                     {
                         .window = {0x20, 0x20, 0x20},
                         .pane = {0x33, 0x33, 0x33},
+                        .status_background = {0x45, 0x45, 0x45},
+                        .status_text = {0xFF, 0xFF, 0xFF},
                         .header_text = {0xC2, 0xC2, 0xC2},
                         .category_text = {0xFF, 0xFF, 0xFF},
                         .note_text = {0xC2, 0xC2, 0xC2},
@@ -798,6 +836,8 @@ static const struct
                     {
                         .window = {0x12, 0x12, 0x12},
                         .pane = {0x1C, 0x1C, 0x1C},
+                        .status_background = {0x2B, 0x2B, 0x2B},
+                        .status_text = {0xC7, 0xC7, 0xC7},
                         .header_text = {0x94, 0x94, 0x94},
                         .category_text = {0xC7, 0xC7, 0xC7},
                         .note_text = {0x94, 0x94, 0x94},
@@ -839,6 +879,8 @@ static const struct
                     {
                         .window = {0x00, 0x00, 0x00},
                         .pane = {0x00, 0x00, 0x00},
+                        .status_background = {0x14, 0x14, 0x14},
+                        .status_text = {0xDA, 0xDA, 0xDA},
                         .header_text = {0x99, 0x99, 0x99},
                         .category_text = {0xDA, 0xDA, 0xDA},
                         .note_text = {0x99, 0x99, 0x99},
@@ -880,6 +922,8 @@ static const struct
                     {
                         .window = {0x00, 0x00, 0x00},
                         .pane = {0x00, 0x00, 0x00},
+                        .status_background = {0x17, 0x17, 0x17},
+                        .status_text = {0xFF, 0xFF, 0xFF},
                         .header_text = {0xB3, 0xB3, 0xB3},
                         .category_text = {0xFF, 0xFF, 0xFF},
                         .note_text = {0xB3, 0xB3, 0xB3},
@@ -921,6 +965,8 @@ static const struct
                     {
                         .window = {0x00, 0x00, 0x00},
                         .pane = {0x00, 0x00, 0x00},
+                        .status_background = {0x12, 0x12, 0x12},
+                        .status_text = {0xC6, 0xC6, 0xC6},
                         .header_text = {0x8B, 0x8B, 0x8B},
                         .category_text = {0xC6, 0xC6, 0xC6},
                         .note_text = {0x8B, 0x8B, 0x8B},
@@ -962,6 +1008,8 @@ static const struct
                     {
                         .window = {0xD2, 0xD2, 0xD2},
                         .pane = {0xE4, 0xE4, 0xE4},
+                        .status_background = {0xCF, 0xCF, 0xCF},
+                        .status_text = {0x00, 0x00, 0x00},
                         .header_text = {0x44, 0x44, 0x44},
                         .category_text = {0x00, 0x00, 0x00},
                         .note_text = {0x44, 0x44, 0x44},
@@ -1003,6 +1051,8 @@ static const struct
                     {
                         .window = {0x00, 0x00, 0x00},
                         .pane = {0x00, 0x00, 0x00},
+                        .status_background = {0x0C, 0x17, 0x0C},
+                        .status_text = {0x87, 0xFF, 0x87},
                         .header_text = {0x5F, 0xB3, 0x5F},
                         .category_text = {0x87, 0xFF, 0x87},
                         .note_text = {0x5F, 0xB3, 0x5F},
@@ -1044,6 +1094,8 @@ static const struct
                     {
                         .window = {0x0D, 0x0E, 0x11},
                         .pane = {0x14, 0x16, 0x1B},
+                        .status_background = {0x26, 0x28, 0x2E},
+                        .status_text = {0xE0, 0xE2, 0xEA},
                         .header_text = {0xA3, 0xA5, 0xAC},
                         .category_text = {0xE0, 0xE2, 0xEA},
                         .note_text = {0xA3, 0xA5, 0xAC},
@@ -1085,6 +1137,8 @@ static const struct
                     {
                         .window = {0x00, 0x00, 0x00},
                         .pane = {0x00, 0x00, 0x00},
+                        .status_background = {0x17, 0x17, 0x17},
+                        .status_text = {0xFF, 0xFF, 0xFF},
                         .header_text = {0xB3, 0xB3, 0xB3},
                         .category_text = {0xFF, 0xFF, 0xFF},
                         .note_text = {0xB3, 0xB3, 0xB3},
@@ -1126,6 +1180,8 @@ static const struct
                     {
                         .window = {0xEB, 0xC9, 0xAB},
                         .pane = {0xFF, 0xDA, 0xB9},
+                        .status_background = {0xE8, 0xC6, 0xA8},
+                        .status_text = {0x00, 0x00, 0x00},
                         .header_text = {0x4C, 0x41, 0x37},
                         .category_text = {0x00, 0x00, 0x00},
                         .note_text = {0x4C, 0x41, 0x37},
@@ -1167,6 +1223,8 @@ static const struct
                     {
                         .window = {0x00, 0x00, 0x00},
                         .pane = {0x00, 0x00, 0x00},
+                        .status_background = {0x14, 0x14, 0x14},
+                        .status_text = {0xDA, 0xDA, 0xDA},
                         .header_text = {0x99, 0x99, 0x99},
                         .category_text = {0xDA, 0xDA, 0xDA},
                         .note_text = {0x99, 0x99, 0x99},
@@ -1208,6 +1266,8 @@ static const struct
                     {
                         .window = {0x12, 0x12, 0x12},
                         .pane = {0x1C, 0x1C, 0x1C},
+                        .status_background = {0x2F, 0x2D, 0x2A},
+                        .status_text = {0xEB, 0xDB, 0xB2},
                         .header_text = {0xAD, 0xA2, 0x85},
                         .category_text = {0xEB, 0xDB, 0xB2},
                         .note_text = {0xAD, 0xA2, 0x85},
@@ -1249,6 +1309,8 @@ static const struct
                     {
                         .window = {0x00, 0x00, 0x00},
                         .pane = {0x00, 0x00, 0x00},
+                        .status_background = {0x00, 0x17, 0x17},
+                        .status_text = {0x00, 0xFF, 0xFF},
                         .header_text = {0x00, 0xB3, 0xB3},
                         .category_text = {0x00, 0xFF, 0xFF},
                         .note_text = {0x00, 0xB3, 0xB3},
@@ -1290,6 +1352,8 @@ static const struct
                     {
                         .window = {0xEB, 0xEB, 0xEB},
                         .pane = {0xFF, 0xFF, 0xFF},
+                        .status_background = {0xE8, 0xE8, 0xE8},
+                        .status_text = {0x00, 0x00, 0x00},
                         .header_text = {0x4C, 0x4C, 0x4C},
                         .category_text = {0x00, 0x00, 0x00},
                         .note_text = {0x4C, 0x4C, 0x4C},
@@ -1331,6 +1395,8 @@ static const struct
                     {
                         .window = {0x18, 0x18, 0x18},
                         .pane = {0x26, 0x26, 0x26},
+                        .status_background = {0x3A, 0x3A, 0x3A},
+                        .status_text = {0xFF, 0xFF, 0xFF},
                         .header_text = {0xBE, 0xBE, 0xBE},
                         .category_text = {0xFF, 0xFF, 0xFF},
                         .note_text = {0xBE, 0xBE, 0xBE},
@@ -1372,6 +1438,8 @@ static const struct
                     {
                         .window = {0x0E, 0x0F, 0x15},
                         .pane = {0x16, 0x18, 0x21},
+                        .status_background = {0x28, 0x29, 0x32},
+                        .status_text = {0xDA, 0xDA, 0xDA},
                         .header_text = {0xA0, 0xA0, 0xA3},
                         .category_text = {0xDA, 0xDA, 0xDA},
                         .note_text = {0xA0, 0xA0, 0xA3},
@@ -1413,6 +1481,8 @@ static const struct
                     {
                         .window = {0x00, 0x00, 0x00},
                         .pane = {0x00, 0x00, 0x00},
+                        .status_background = {0x12, 0x12, 0x12},
+                        .status_text = {0xCC, 0xCC, 0xCC},
                         .header_text = {0x8F, 0x8F, 0x8F},
                         .category_text = {0xCC, 0xCC, 0xCC},
                         .note_text = {0x8F, 0x8F, 0x8F},
@@ -1454,6 +1524,8 @@ static const struct
                     {
                         .window = {0x19, 0x1A, 0x16},
                         .pane = {0x28, 0x29, 0x23},
+                        .status_background = {0x3B, 0x3C, 0x36},
+                        .status_text = {0xF8, 0xF8, 0xF2},
                         .header_text = {0xBA, 0xBA, 0xB4},
                         .category_text = {0xF8, 0xF8, 0xF2},
                         .note_text = {0xBA, 0xBA, 0xB4},
@@ -1495,6 +1567,8 @@ static const struct
                     {
                         .window = {0x00, 0x00, 0x00},
                         .pane = {0x00, 0x00, 0x00},
+                        .status_background = {0x13, 0x13, 0x13},
+                        .status_text = {0xD0, 0xD0, 0xD0},
                         .header_text = {0x92, 0x92, 0x92},
                         .category_text = {0xD0, 0xD0, 0xD0},
                         .note_text = {0x92, 0x92, 0x92},
@@ -1536,6 +1610,8 @@ static const struct
                     {
                         .window = {0x09, 0x00, 0x17},
                         .pane = {0x0E, 0x00, 0x24},
+                        .status_background = {0x24, 0x17, 0x38},
+                        .status_text = {0xFF, 0xFF, 0xFF},
                         .header_text = {0xB7, 0xB3, 0xBE},
                         .category_text = {0xFF, 0xFF, 0xFF},
                         .note_text = {0xB7, 0xB3, 0xBE},
@@ -1577,6 +1653,8 @@ static const struct
                     {
                         .window = {0xEB, 0xEB, 0xEB},
                         .pane = {0xFF, 0xFF, 0xFF},
+                        .status_background = {0xE8, 0xE8, 0xE8},
+                        .status_text = {0x00, 0x00, 0x00},
                         .header_text = {0x4C, 0x4C, 0x4C},
                         .category_text = {0x00, 0x00, 0x00},
                         .note_text = {0x4C, 0x4C, 0x4C},
@@ -1618,6 +1696,8 @@ static const struct
                     {
                         .window = {0x00, 0x08, 0x0F},
                         .pane = {0x00, 0x0C, 0x18},
+                        .status_background = {0x09, 0x17, 0x28},
+                        .status_text = {0x66, 0x88, 0xCC},
                         .header_text = {0x5D, 0x7C, 0xBB},
                         .category_text = {0x66, 0x88, 0xCC},
                         .note_text = {0x5D, 0x7C, 0xBB},
@@ -1659,6 +1739,8 @@ static const struct
                     {
                         .window = {0x0C, 0x0C, 0x0D},
                         .pane = {0x12, 0x13, 0x14},
+                        .status_background = {0x21, 0x22, 0x23},
+                        .status_text = {0xBB, 0xBE, 0xBF},
                         .header_text = {0x89, 0x8B, 0x8C},
                         .category_text = {0xBB, 0xBE, 0xBF},
                         .note_text = {0x89, 0x8B, 0x8C},
@@ -1700,6 +1782,8 @@ static const struct
                     {
                         .window = {0xEB, 0xEB, 0xEB},
                         .pane = {0xFF, 0xFF, 0xFF},
+                        .status_background = {0xEB, 0xEB, 0xEB},
+                        .status_text = {0x20, 0x20, 0x20},
                         .header_text = {0x62, 0x62, 0x62},
                         .category_text = {0x20, 0x20, 0x20},
                         .note_text = {0x62, 0x62, 0x62},
@@ -1741,6 +1825,8 @@ static const struct
                     {
                         .window = {0x14, 0x14, 0x14},
                         .pane = {0x1F, 0x1F, 0x1F},
+                        .status_background = {0x2F, 0x2F, 0x2F},
+                        .status_text = {0xCC, 0xCC, 0xCC},
                         .header_text = {0x99, 0x99, 0x99},
                         .category_text = {0xCC, 0xCC, 0xCC},
                         .note_text = {0x99, 0x99, 0x99},
@@ -1782,6 +1868,8 @@ static const struct
                     {
                         .window = {0x13, 0x13, 0x13},
                         .pane = {0x1E, 0x1E, 0x1E},
+                        .status_background = {0x2E, 0x2E, 0x2E},
+                        .status_text = {0xD4, 0xD4, 0xD4},
                         .header_text = {0x9E, 0x9E, 0x9E},
                         .category_text = {0xD4, 0xD4, 0xD4},
                         .note_text = {0x9E, 0x9E, 0x9E},
@@ -1823,6 +1911,8 @@ static const struct
                     {
                         .window = {0x13, 0x13, 0x13},
                         .pane = {0x1E, 0x1E, 0x1E},
+                        .status_background = {0x2E, 0x2E, 0x2E},
+                        .status_text = {0xD4, 0xD4, 0xD4},
                         .header_text = {0x9E, 0x9E, 0x9E},
                         .category_text = {0xD4, 0xD4, 0xD4},
                         .note_text = {0x9E, 0x9E, 0x9E},
@@ -1864,6 +1954,8 @@ static const struct
                     {
                         .window = {0x00, 0x00, 0x00},
                         .pane = {0x00, 0x00, 0x00},
+                        .status_background = {0x17, 0x17, 0x17},
+                        .status_text = {0xFF, 0xFF, 0xFF},
                         .header_text = {0xB3, 0xB3, 0xB3},
                         .category_text = {0xFF, 0xFF, 0xFF},
                         .note_text = {0xB3, 0xB3, 0xB3},
@@ -1905,6 +1997,8 @@ static const struct
                     {
                         .window = {0x13, 0x13, 0x13},
                         .pane = {0x1E, 0x1E, 0x1E},
+                        .status_background = {0x2E, 0x2E, 0x2E},
+                        .status_text = {0xD4, 0xD4, 0xD4},
                         .header_text = {0x9E, 0x9E, 0x9E},
                         .category_text = {0xD4, 0xD4, 0xD4},
                         .note_text = {0x9E, 0x9E, 0x9E},
@@ -1946,6 +2040,8 @@ static const struct
                     {
                         .window = {0xEB, 0xEB, 0xEB},
                         .pane = {0xFF, 0xFF, 0xFF},
+                        .status_background = {0xED, 0xED, 0xED},
+                        .status_text = {0x3B, 0x3B, 0x3B},
                         .header_text = {0x6A, 0x6A, 0x6A},
                         .category_text = {0x3B, 0x3B, 0x3B},
                         .note_text = {0x6A, 0x6A, 0x6A},
@@ -1987,6 +2083,8 @@ static const struct
                     {
                         .window = {0xEB, 0xEB, 0xEB},
                         .pane = {0xFF, 0xFF, 0xFF},
+                        .status_background = {0xE8, 0xE8, 0xE8},
+                        .status_text = {0x00, 0x00, 0x00},
                         .header_text = {0x4C, 0x4C, 0x4C},
                         .category_text = {0x00, 0x00, 0x00},
                         .note_text = {0x4C, 0x4C, 0x4C},
@@ -2028,6 +2126,8 @@ static const struct
                     {
                         .window = {0xEB, 0xEB, 0xEB},
                         .pane = {0xFF, 0xFF, 0xFF},
+                        .status_background = {0xE8, 0xE8, 0xE8},
+                        .status_text = {0x00, 0x00, 0x00},
                         .header_text = {0x4C, 0x4C, 0x4C},
                         .category_text = {0x00, 0x00, 0x00},
                         .note_text = {0x4C, 0x4C, 0x4C},
@@ -2069,6 +2169,8 @@ static const struct
                     {
                         .window = {0x16, 0x11, 0x0A},
                         .pane = {0x22, 0x1A, 0x0F},
+                        .status_background = {0x32, 0x27, 0x1A},
+                        .status_text = {0xD3, 0xAF, 0x86},
                         .header_text = {0xA1, 0x86, 0x65},
                         .category_text = {0xD3, 0xAF, 0x86},
                         .note_text = {0xA1, 0x86, 0x65},
@@ -2110,6 +2212,8 @@ static const struct
                     {
                         .window = {0x13, 0x13, 0x13},
                         .pane = {0x1E, 0x1E, 0x1E},
+                        .status_background = {0x2D, 0x2D, 0x2D},
+                        .status_text = {0xC5, 0xC8, 0xC6},
                         .header_text = {0x93, 0x95, 0x94},
                         .category_text = {0xC5, 0xC8, 0xC6},
                         .note_text = {0x93, 0x95, 0x94},
@@ -2151,6 +2255,8 @@ static const struct
                     {
                         .window = {0xE2, 0xE2, 0xE2},
                         .pane = {0xF5, 0xF5, 0xF5},
+                        .status_background = {0xE4, 0xE4, 0xE4},
+                        .status_text = {0x33, 0x33, 0x33},
                         .header_text = {0x64, 0x64, 0x64},
                         .category_text = {0x33, 0x33, 0x33},
                         .note_text = {0x64, 0x64, 0x64},
@@ -2192,6 +2298,8 @@ static const struct
                     {
                         .window = {0x24, 0x00, 0x00},
                         .pane = {0x39, 0x00, 0x00},
+                        .status_background = {0x4A, 0x16, 0x16},
+                        .status_text = {0xF8, 0xF8, 0xF8},
                         .header_text = {0xBF, 0xAE, 0xAE},
                         .category_text = {0xF8, 0xF8, 0xF8},
                         .note_text = {0xBF, 0xAE, 0xAE},
@@ -2233,6 +2341,8 @@ static const struct
                     {
                         .window = {0x00, 0x17, 0x33},
                         .pane = {0x00, 0x24, 0x51},
+                        .status_background = {0x17, 0x38, 0x61},
+                        .status_text = {0xFF, 0xFF, 0xFF},
                         .header_text = {0xB3, 0xBE, 0xCB},
                         .category_text = {0xFF, 0xFF, 0xFF},
                         .note_text = {0xB3, 0xBE, 0xCB},
@@ -2274,6 +2384,8 @@ static const struct
                     {
                         .window = {0x0C, 0x07, 0x09},
                         .pane = {0x12, 0x0B, 0x0D},
+                        .status_background = {0x27, 0x1D, 0x15},
+                        .status_text = {0xF6, 0xD6, 0x66},
                         .header_text = {0xB2, 0x9A, 0x4C},
                         .category_text = {0xF6, 0xD6, 0x66},
                         .note_text = {0xB2, 0x9A, 0x4C},
@@ -2315,6 +2427,8 @@ static const struct
                     {
                         .window = {0xDC, 0xDE, 0xE2},
                         .pane = {0xEF, 0xF1, 0xF5},
+                        .status_background = {0xE0, 0xE2, 0xE8},
+                        .status_text = {0x4C, 0x4F, 0x69},
                         .header_text = {0x5E, 0x61, 0x79},
                         .category_text = {0x4C, 0x4F, 0x69},
                         .note_text = {0x5E, 0x61, 0x79},
@@ -2356,6 +2470,8 @@ static const struct
                     {
                         .window = {0x1E, 0x21, 0x2C},
                         .pane = {0x30, 0x34, 0x46},
+                        .status_background = {0x3E, 0x42, 0x56},
+                        .status_text = {0xC6, 0xD0, 0xF5},
                         .header_text = {0x9F, 0xA8, 0xC8},
                         .category_text = {0xC6, 0xD0, 0xF5},
                         .note_text = {0x9F, 0xA8, 0xC8},
@@ -2397,6 +2513,8 @@ static const struct
                     {
                         .window = {0x17, 0x19, 0x24},
                         .pane = {0x24, 0x27, 0x3A},
+                        .status_background = {0x33, 0x36, 0x4B},
+                        .status_text = {0xCA, 0xD3, 0xF5},
                         .header_text = {0x99, 0xA0, 0xBD},
                         .category_text = {0xCA, 0xD3, 0xF5},
                         .note_text = {0x99, 0xA0, 0xBD},
@@ -2438,6 +2556,8 @@ static const struct
                     {
                         .window = {0x1D, 0x21, 0x28},
                         .pane = {0x2E, 0x34, 0x40},
+                        .status_background = {0x3D, 0x43, 0x4F},
+                        .status_text = {0xD8, 0xDE, 0xE9},
                         .header_text = {0xA5, 0xAB, 0xB7},
                         .category_text = {0xD8, 0xDE, 0xE9},
                         .note_text = {0xA5, 0xAB, 0xB7},
@@ -2479,6 +2599,8 @@ static const struct
                     {
                         .window = {0x19, 0x19, 0x19},
                         .pane = {0x28, 0x28, 0x28},
+                        .status_background = {0x3A, 0x38, 0x34},
+                        .status_text = {0xEB, 0xDB, 0xB2},
                         .header_text = {0xB1, 0xA6, 0x89},
                         .category_text = {0xEB, 0xDB, 0xB2},
                         .note_text = {0xB1, 0xA6, 0x89},
@@ -2520,6 +2642,8 @@ static const struct
                     {
                         .window = {0xE7, 0xDE, 0xB8},
                         .pane = {0xFB, 0xF1, 0xC7},
+                        .status_background = {0xEA, 0xE0, 0xBA},
+                        .status_text = {0x3C, 0x38, 0x36},
                         .header_text = {0x67, 0x61, 0x56},
                         .category_text = {0x3C, 0x38, 0x36},
                         .note_text = {0x67, 0x61, 0x56},
@@ -2561,6 +2685,8 @@ static const struct
                     {
                         .window = {0x11, 0x11, 0x18},
                         .pane = {0x1A, 0x1B, 0x26},
+                        .status_background = {0x29, 0x2B, 0x39},
+                        .status_text = {0xC0, 0xCA, 0xF5},
                         .header_text = {0x8F, 0x96, 0xB7},
                         .category_text = {0xC0, 0xCA, 0xF5},
                         .note_text = {0x8F, 0x96, 0xB7},
@@ -2602,6 +2728,8 @@ static const struct
                     {
                         .window = {0x17, 0x19, 0x25},
                         .pane = {0x24, 0x28, 0x3B},
+                        .status_background = {0x32, 0x37, 0x4C},
+                        .status_text = {0xC0, 0xCA, 0xF5},
                         .header_text = {0x92, 0x9A, 0xBE},
                         .category_text = {0xC0, 0xCA, 0xF5},
                         .note_text = {0x92, 0x9A, 0xBE},
@@ -2643,6 +2771,8 @@ static const struct
                     {
                         .window = {0x16, 0x17, 0x22},
                         .pane = {0x22, 0x24, 0x36},
+                        .status_background = {0x31, 0x34, 0x47},
+                        .status_text = {0xC8, 0xD3, 0xF5},
                         .header_text = {0x97, 0x9F, 0xBC},
                         .category_text = {0xC8, 0xD3, 0xF5},
                         .note_text = {0x97, 0x9F, 0xBC},
@@ -2684,6 +2814,8 @@ static const struct
                     {
                         .window = {0xD4, 0xD5, 0xDB},
                         .pane = {0xE6, 0xE7, 0xED},
+                        .status_background = {0xD6, 0xD8, 0xE0},
+                        .status_text = {0x34, 0x3B, 0x59},
                         .header_text = {0x56, 0x5C, 0x75},
                         .category_text = {0x34, 0x3B, 0x59},
                         .note_text = {0x56, 0x5C, 0x75},
@@ -2725,6 +2857,8 @@ static const struct
                     {
                         .window = {0x09, 0x0B, 0x0F},
                         .pane = {0x0D, 0x11, 0x17},
+                        .status_background = {0x1E, 0x22, 0x28},
+                        .status_text = {0xC9, 0xD1, 0xD9},
                         .header_text = {0x91, 0x98, 0x9F},
                         .category_text = {0xC9, 0xD1, 0xD9},
                         .note_text = {0x91, 0x98, 0x9F},
@@ -2766,6 +2900,8 @@ static const struct
                     {
                         .window = {0xEB, 0xEB, 0xEB},
                         .pane = {0xFF, 0xFF, 0xFF},
+                        .status_background = {0xEB, 0xEC, 0xEC},
+                        .status_text = {0x24, 0x29, 0x2F},
                         .header_text = {0x65, 0x69, 0x6D},
                         .category_text = {0x24, 0x29, 0x2F},
                         .note_text = {0x65, 0x69, 0x6D},
@@ -2807,6 +2943,8 @@ static const struct
                     {
                         .window = {0x16, 0x19, 0x1D},
                         .pane = {0x22, 0x27, 0x2E},
+                        .status_background = {0x2F, 0x34, 0x3C},
+                        .status_text = {0xAD, 0xBA, 0xC7},
                         .header_text = {0x8C, 0x97, 0xA3},
                         .category_text = {0xAD, 0xBA, 0xC7},
                         .note_text = {0x8C, 0x97, 0xA3},
@@ -2848,6 +2986,8 @@ static const struct
                     {
                         .window = {0xE6, 0xE6, 0xE6},
                         .pane = {0xFA, 0xFA, 0xFA},
+                        .status_background = {0xE9, 0xE9, 0xE9},
+                        .status_text = {0x38, 0x3A, 0x42},
                         .header_text = {0x66, 0x67, 0x6D},
                         .category_text = {0x38, 0x3A, 0x42},
                         .note_text = {0x66, 0x67, 0x6D},
@@ -2889,6 +3029,8 @@ static const struct
                     {
                         .window = {0xEB, 0xEB, 0xEB},
                         .pane = {0xFF, 0xFF, 0xFF},
+                        .status_background = {0xE8, 0xE8, 0xE8},
+                        .status_text = {0x00, 0x00, 0x00},
                         .header_text = {0x4C, 0x4C, 0x4C},
                         .category_text = {0x00, 0x00, 0x00},
                         .note_text = {0x4C, 0x4C, 0x4C},
@@ -2930,6 +3072,8 @@ static const struct
                     {
                         .window = {0x1B, 0x1B, 0x1B},
                         .pane = {0x2B, 0x2B, 0x2B},
+                        .status_background = {0x36, 0x38, 0x39},
+                        .status_text = {0xA9, 0xB7, 0xC6},
                         .header_text = {0x91, 0x9C, 0xA8},
                         .category_text = {0xA9, 0xB7, 0xC6},
                         .note_text = {0x91, 0x9C, 0xA8},
@@ -2971,6 +3115,8 @@ static const struct
                     {
                         .window = {0x10, 0x0F, 0x17},
                         .pane = {0x19, 0x17, 0x24},
+                        .status_background = {0x2B, 0x29, 0x37},
+                        .status_text = {0xE0, 0xDE, 0xF4},
                         .header_text = {0xA5, 0xA3, 0xB6},
                         .category_text = {0xE0, 0xDE, 0xF4},
                         .note_text = {0xA5, 0xA3, 0xB6},
@@ -3012,6 +3158,8 @@ static const struct
                     {
                         .window = {0x16, 0x15, 0x22},
                         .pane = {0x23, 0x21, 0x36},
+                        .status_background = {0x34, 0x32, 0x47},
+                        .status_text = {0xE0, 0xDE, 0xF4},
                         .header_text = {0xA8, 0xA6, 0xBB},
                         .category_text = {0xE0, 0xDE, 0xF4},
                         .note_text = {0xA8, 0xA6, 0xBB},
@@ -3053,6 +3201,8 @@ static const struct
                     {
                         .window = {0xE6, 0xE1, 0xDB},
                         .pane = {0xFA, 0xF4, 0xED},
+                        .status_background = {0xEA, 0xE4, 0xE0},
+                        .status_text = {0x46, 0x42, 0x61},
                         .header_text = {0x66, 0x61, 0x7A},
                         .category_text = {0x46, 0x42, 0x61},
                         .note_text = {0x66, 0x61, 0x7A},
@@ -3094,6 +3244,8 @@ static const struct
                     {
                         .window = {0x1C, 0x21, 0x25},
                         .pane = {0x2D, 0x35, 0x3B},
+                        .status_background = {0x3C, 0x42, 0x45},
+                        .status_text = {0xD3, 0xC6, 0xAA},
                         .header_text = {0xAD, 0xA5, 0x90},
                         .category_text = {0xD3, 0xC6, 0xAA},
                         .note_text = {0xAD, 0xA5, 0x90},
@@ -3135,6 +3287,8 @@ static const struct
                     {
                         .window = {0xE9, 0xE3, 0xD1},
                         .pane = {0xFD, 0xF6, 0xE3},
+                        .status_background = {0xEF, 0xE9, 0xD9},
+                        .status_text = {0x5C, 0x6A, 0x72},
                         .header_text = {0x5A, 0x67, 0x6F},
                         .category_text = {0x5A, 0x67, 0x6F},
                         .note_text = {0x5A, 0x67, 0x6F},
@@ -3176,6 +3330,8 @@ static const struct
                     {
                         .window = {0x14, 0x14, 0x19},
                         .pane = {0x1F, 0x1F, 0x28},
+                        .status_background = {0x30, 0x30, 0x35},
+                        .status_text = {0xDC, 0xD7, 0xBA},
                         .header_text = {0xA4, 0xA0, 0x8F},
                         .category_text = {0xDC, 0xD7, 0xBA},
                         .note_text = {0xA4, 0xA0, 0x8F},
@@ -3217,6 +3373,8 @@ static const struct
                     {
                         .window = {0x0F, 0x0E, 0x0E},
                         .pane = {0x18, 0x16, 0x16},
+                        .status_background = {0x28, 0x26, 0x26},
+                        .status_text = {0xC5, 0xC9, 0xC5},
                         .header_text = {0x92, 0x94, 0x91},
                         .category_text = {0xC5, 0xC9, 0xC5},
                         .note_text = {0x92, 0x94, 0x91},
@@ -3258,6 +3416,8 @@ static const struct
                     {
                         .window = {0xDF, 0xDA, 0xAD},
                         .pane = {0xF2, 0xEC, 0xBC},
+                        .status_background = {0xE4, 0xDE, 0xB4},
+                        .status_text = {0x54, 0x54, 0x64},
                         .header_text = {0x5E, 0x5D, 0x6A},
                         .category_text = {0x54, 0x54, 0x64},
                         .note_text = {0x5E, 0x5D, 0x6A},
@@ -3299,6 +3459,8 @@ static const struct
                     {
                         .window = {0x18, 0x1F, 0x23},
                         .pane = {0x26, 0x32, 0x38},
+                        .status_background = {0x32, 0x3F, 0x45},
+                        .status_text = {0xB0, 0xBE, 0xC5},
                         .header_text = {0x95, 0xA3, 0xAA},
                         .category_text = {0xB0, 0xBE, 0xC5},
                         .note_text = {0x95, 0xA3, 0xAA},
@@ -3340,6 +3502,8 @@ static const struct
                     {
                         .window = {0x15, 0x15, 0x15},
                         .pane = {0x21, 0x21, 0x21},
+                        .status_background = {0x2E, 0x2F, 0x30},
+                        .status_text = {0xB0, 0xBE, 0xC5},
                         .header_text = {0x88, 0x92, 0x97},
                         .category_text = {0xB0, 0xBE, 0xC5},
                         .note_text = {0x88, 0x92, 0x97},
@@ -3381,6 +3545,8 @@ static const struct
                     {
                         .window = {0xE6, 0xE6, 0xE6},
                         .pane = {0xFA, 0xFA, 0xFA},
+                        .status_background = {0xEB, 0xED, 0xEE},
+                        .status_text = {0x54, 0x6E, 0x7A},
                         .header_text = {0x52, 0x6B, 0x77},
                         .category_text = {0x52, 0x6B, 0x77},
                         .note_text = {0x52, 0x6B, 0x77},
@@ -3422,6 +3588,8 @@ static const struct
                     {
                         .window = {0x1A, 0x1C, 0x27},
                         .pane = {0x29, 0x2D, 0x3E},
+                        .status_background = {0x34, 0x38, 0x4B},
+                        .status_text = {0xA6, 0xAC, 0xCD},
                         .header_text = {0x95, 0x9B, 0xBA},
                         .category_text = {0xA6, 0xAC, 0xCD},
                         .note_text = {0x95, 0x9B, 0xBA},
@@ -3463,6 +3631,8 @@ static const struct
                     {
                         .window = {0x0A, 0x0B, 0x11},
                         .pane = {0x0F, 0x11, 0x1A},
+                        .status_background = {0x1B, 0x1D, 0x26},
+                        .status_text = {0x8F, 0x93, 0xA2},
                         .header_text = {0x7D, 0x80, 0x8F},
                         .category_text = {0x8F, 0x93, 0xA2},
                         .note_text = {0x7D, 0x80, 0x8F},
@@ -3504,6 +3674,8 @@ static const struct
                     {
                         .window = {0x0A, 0x0D, 0x12},
                         .pane = {0x10, 0x14, 0x1C},
+                        .status_background = {0x20, 0x23, 0x2A},
+                        .status_text = {0xBF, 0xBD, 0xB6},
                         .header_text = {0x8B, 0x8B, 0x88},
                         .category_text = {0xBF, 0xBD, 0xB6},
                         .note_text = {0x8B, 0x8B, 0x88},
@@ -3545,6 +3717,8 @@ static const struct
                     {
                         .window = {0x17, 0x1A, 0x22},
                         .pane = {0x24, 0x29, 0x36},
+                        .status_background = {0x33, 0x37, 0x43},
+                        .status_text = {0xCC, 0xCA, 0xC2},
                         .header_text = {0x9A, 0x9A, 0x98},
                         .category_text = {0xCC, 0xCA, 0xC2},
                         .note_text = {0x9A, 0x9A, 0x98},
@@ -3586,6 +3760,8 @@ static const struct
                     {
                         .window = {0xE8, 0xE8, 0xE8},
                         .pane = {0xFC, 0xFC, 0xFC},
+                        .status_background = {0xEE, 0xEE, 0xEF},
+                        .status_text = {0x5C, 0x61, 0x66},
                         .header_text = {0x65, 0x69, 0x6E},
                         .category_text = {0x5C, 0x61, 0x66},
                         .note_text = {0x65, 0x69, 0x6E},
@@ -3627,6 +3803,8 @@ static const struct
                     {
                         .window = {0x10, 0x21, 0x2E},
                         .pane = {0x19, 0x35, 0x49},
+                        .status_background = {0x2E, 0x47, 0x59},
+                        .status_text = {0xFF, 0xFF, 0xFF},
                         .header_text = {0xBA, 0xC3, 0xC9},
                         .category_text = {0xFF, 0xFF, 0xFF},
                         .note_text = {0xBA, 0xC3, 0xC9},
@@ -3668,6 +3846,8 @@ static const struct
                     {
                         .window = {0x18, 0x16, 0x21},
                         .pane = {0x26, 0x23, 0x35},
+                        .status_background = {0x36, 0x33, 0x43},
+                        .status_text = {0xD4, 0xD4, 0xD4},
                         .header_text = {0xA0, 0x9F, 0xA5},
                         .category_text = {0xD4, 0xD4, 0xD4},
                         .note_text = {0xA0, 0x9F, 0xA5},
@@ -3709,6 +3889,8 @@ static const struct
                     {
                         .window = {0x10, 0x0E, 0x11},
                         .pane = {0x19, 0x15, 0x1B},
+                        .status_background = {0x2D, 0x28, 0x2C},
+                        .status_text = {0xF3, 0xE9, 0xDC},
                         .header_text = {0xB2, 0xAA, 0xA3},
                         .category_text = {0xF3, 0xE9, 0xDC},
                         .note_text = {0xB2, 0xAA, 0xA3},
@@ -3750,6 +3932,8 @@ static const struct
                     {
                         .window = {0x0D, 0x14, 0x11},
                         .pane = {0x14, 0x20, 0x1B},
+                        .status_background = {0x27, 0x32, 0x2C},
+                        .status_text = {0xE4, 0xEC, 0xD9},
                         .header_text = {0xA6, 0xAF, 0xA0},
                         .category_text = {0xE4, 0xEC, 0xD9},
                         .note_text = {0xA6, 0xAF, 0xA0},
@@ -3791,6 +3975,8 @@ static const struct
                     {
                         .window = {0x0C, 0x12, 0x1F},
                         .pane = {0x12, 0x1C, 0x31},
+                        .status_background = {0x25, 0x2F, 0x42},
+                        .status_text = {0xE8, 0xEC, 0xF3},
                         .header_text = {0xA8, 0xAE, 0xB9},
                         .category_text = {0xE8, 0xEC, 0xF3},
                         .note_text = {0xA8, 0xAE, 0xB9},
@@ -3832,6 +4018,8 @@ static const struct
                     {
                         .window = {0xDE, 0xD2, 0xB7},
                         .pane = {0xF1, 0xE4, 0xC6},
+                        .status_background = {0xE1, 0xD3, 0xB7},
+                        .status_text = {0x3A, 0x2C, 0x20},
                         .header_text = {0x66, 0x59, 0x48},
                         .category_text = {0x3A, 0x2C, 0x20},
                         .note_text = {0x66, 0x59, 0x48},
@@ -3873,6 +4061,8 @@ static const struct
                     {
                         .window = {0x11, 0x17, 0x17},
                         .pane = {0x1B, 0x25, 0x24},
+                        .status_background = {0x2D, 0x37, 0x34},
+                        .status_text = {0xE1, 0xE8, 0xD6},
                         .header_text = {0xA6, 0xAE, 0xA1},
                         .category_text = {0xE1, 0xE8, 0xD6},
                         .note_text = {0xA6, 0xAE, 0xA1},
@@ -3914,6 +4104,8 @@ static const struct
                     {
                         .window = {0x05, 0x0C, 0x09},
                         .pane = {0x08, 0x13, 0x0E},
+                        .status_background = {0x19, 0x26, 0x1F},
+                        .status_text = {0xC9, 0xE9, 0xCD},
                         .header_text = {0x90, 0xA9, 0x94},
                         .category_text = {0xC9, 0xE9, 0xCD},
                         .note_text = {0x90, 0xA9, 0x94},
@@ -3955,6 +4147,8 @@ static const struct
                     {
                         .window = {0x0F, 0x11, 0x1E},
                         .pane = {0x18, 0x1B, 0x30},
+                        .status_background = {0x2B, 0x2D, 0x3E},
+                        .status_text = {0xEA, 0xE2, 0xD1},
                         .header_text = {0xAB, 0xA7, 0xA1},
                         .category_text = {0xEA, 0xE2, 0xD1},
                         .note_text = {0xAB, 0xA7, 0xA1},
@@ -3996,6 +4190,8 @@ static const struct
                     {
                         .window = {0x0B, 0x09, 0x12},
                         .pane = {0x11, 0x0E, 0x1C},
+                        .status_background = {0x24, 0x21, 0x2F},
+                        .status_text = {0xE6, 0xDF, 0xF3},
                         .header_text = {0xA7, 0xA1, 0xB3},
                         .category_text = {0xE6, 0xDF, 0xF3},
                         .note_text = {0xA7, 0xA1, 0xB3},
@@ -4037,6 +4233,8 @@ static const struct
                     {
                         .window = {0x10, 0x1C, 0x1A},
                         .pane = {0x19, 0x2C, 0x29},
+                        .status_background = {0x2C, 0x3D, 0x38},
+                        .status_text = {0xEC, 0xE8, 0xCF},
                         .header_text = {0xAD, 0xB0, 0x9E},
                         .category_text = {0xEC, 0xE8, 0xCF},
                         .note_text = {0xAD, 0xB0, 0x9E},
@@ -4078,6 +4276,8 @@ static const struct
                     {
                         .window = {0x17, 0x0E, 0x1E},
                         .pane = {0x25, 0x16, 0x30},
+                        .status_background = {0x37, 0x28, 0x42},
+                        .status_text = {0xEE, 0xE0, 0xF5},
                         .header_text = {0xB2, 0xA4, 0xBA},
                         .category_text = {0xEE, 0xE0, 0xF5},
                         .note_text = {0xB2, 0xA4, 0xBA},
@@ -4119,6 +4319,8 @@ static const struct
                     {
                         .window = {0x0A, 0x19, 0x17},
                         .pane = {0x10, 0x28, 0x25},
+                        .status_background = {0x24, 0x39, 0x35},
+                        .status_text = {0xE9, 0xE9, 0xD7},
                         .header_text = {0xA8, 0xB0, 0xA2},
                         .category_text = {0xE9, 0xE9, 0xD7},
                         .note_text = {0xA8, 0xB0, 0xA2},
@@ -4160,6 +4362,8 @@ static const struct
                     {
                         .window = {0x0D, 0x17, 0x1F},
                         .pane = {0x14, 0x24, 0x31},
+                        .status_background = {0x26, 0x36, 0x42},
+                        .status_text = {0xDD, 0xE8, 0xEF},
                         .header_text = {0xA1, 0xAE, 0xB6},
                         .category_text = {0xDD, 0xE8, 0xEF},
                         .note_text = {0xA1, 0xAE, 0xB6},
@@ -4201,6 +4405,8 @@ static const struct
                     {
                         .window = {0x1C, 0x12, 0x1F},
                         .pane = {0x2C, 0x1D, 0x32},
+                        .status_background = {0x3E, 0x2F, 0x42},
+                        .status_text = {0xF0, 0xE2, 0xE8},
                         .header_text = {0xB6, 0xA7, 0xB2},
                         .category_text = {0xF0, 0xE2, 0xE8},
                         .note_text = {0xB6, 0xA7, 0xB2},
@@ -4242,6 +4448,8 @@ static const struct
                     {
                         .window = {0x0D, 0x13, 0x21},
                         .pane = {0x14, 0x1E, 0x35},
+                        .status_background = {0x28, 0x30, 0x44},
+                        .status_text = {0xED, 0xE7, 0xD9},
                         .header_text = {0xAC, 0xAB, 0xA8},
                         .category_text = {0xED, 0xE7, 0xD9},
                         .note_text = {0xAC, 0xAB, 0xA8},
@@ -4283,6 +4491,8 @@ static const struct
                     {
                         .window = {0x19, 0x16, 0x0F},
                         .pane = {0x28, 0x22, 0x18},
+                        .status_background = {0x3A, 0x34, 0x29},
+                        .status_text = {0xEE, 0xE6, 0xD3},
                         .header_text = {0xB3, 0xAC, 0x9B},
                         .category_text = {0xEE, 0xE6, 0xD3},
                         .note_text = {0xB3, 0xAC, 0x9B},
@@ -4324,6 +4534,8 @@ static const struct
                     {
                         .window = {0x19, 0x0E, 0x11},
                         .pane = {0x27, 0x16, 0x1B},
+                        .status_background = {0x39, 0x28, 0x2C},
+                        .status_text = {0xED, 0xE1, 0xDC},
                         .header_text = {0xB2, 0xA5, 0xA3},
                         .category_text = {0xED, 0xE1, 0xDC},
                         .note_text = {0xB2, 0xA5, 0xA3},
@@ -4365,6 +4577,8 @@ static const struct
                     {
                         .window = {0x1B, 0x16, 0x12},
                         .pane = {0x2A, 0x22, 0x1C},
+                        .status_background = {0x3B, 0x33, 0x2C},
+                        .status_text = {0xE8, 0xDD, 0xC9},
                         .header_text = {0xAF, 0xA5, 0x96},
                         .category_text = {0xE8, 0xDD, 0xC9},
                         .note_text = {0xAF, 0xA5, 0x96},
@@ -4406,6 +4620,8 @@ static const struct
                     {
                         .window = {0xDF, 0xDC, 0xD6},
                         .pane = {0xF2, 0xEF, 0xE8},
+                        .status_background = {0xE1, 0xDE, 0xD8},
+                        .status_text = {0x31, 0x36, 0x3B},
                         .header_text = {0x5E, 0x61, 0x63},
                         .category_text = {0x31, 0x36, 0x3B},
                         .note_text = {0x5E, 0x61, 0x63},
@@ -4447,6 +4663,8 @@ static const struct
                     {
                         .window = {0xDB, 0xD6, 0xC7},
                         .pane = {0xEE, 0xE8, 0xD8},
+                        .status_background = {0xDD, 0xD8, 0xC9},
+                        .status_text = {0x34, 0x36, 0x31},
                         .header_text = {0x5D, 0x5E, 0x56},
                         .category_text = {0x34, 0x36, 0x31},
                         .note_text = {0x5D, 0x5E, 0x56},
@@ -4488,6 +4706,8 @@ static const struct
                     {
                         .window = {0x1E, 0x12, 0x0F},
                         .pane = {0x30, 0x1C, 0x18},
+                        .status_background = {0x41, 0x2E, 0x28},
+                        .status_text = {0xF1, 0xE0, 0xCF},
                         .header_text = {0xB8, 0xA6, 0x99},
                         .category_text = {0xF1, 0xE0, 0xCF},
                         .note_text = {0xB8, 0xA6, 0x99},
@@ -4529,6 +4749,8 @@ static const struct
                     {
                         .window = {0xD9, 0xCF, 0xB9},
                         .pane = {0xEB, 0xE0, 0xC9},
+                        .status_background = {0xDC, 0xD1, 0xBB},
+                        .status_text = {0x46, 0x3C, 0x31},
                         .header_text = {0x62, 0x58, 0x4B},
                         .category_text = {0x46, 0x3C, 0x31},
                         .note_text = {0x62, 0x58, 0x4B},
@@ -4570,6 +4792,8 @@ static const struct
                     {
                         .window = {0x17, 0x1F, 0x24},
                         .pane = {0x25, 0x32, 0x39},
+                        .status_background = {0x37, 0x42, 0x46},
+                        .status_text = {0xE8, 0xE0, 0xC9},
                         .header_text = {0xAE, 0xAC, 0x9E},
                         .category_text = {0xE8, 0xE0, 0xC9},
                         .note_text = {0xAE, 0xAC, 0x9E},
@@ -4611,6 +4835,8 @@ static const struct
                     {
                         .window = {0x04, 0x12, 0x19},
                         .pane = {0x06, 0x1D, 0x27},
+                        .status_background = {0x19, 0x30, 0x39},
+                        .status_text = {0xD9, 0xF0, 0xF2},
                         .header_text = {0x9A, 0xB1, 0xB6},
                         .category_text = {0xD9, 0xF0, 0xF2},
                         .note_text = {0x9A, 0xB1, 0xB6},
@@ -4652,6 +4878,8 @@ static const struct
                     {
                         .window = {0x08, 0x14, 0x23},
                         .pane = {0x0C, 0x20, 0x38},
+                        .status_background = {0x1E, 0x32, 0x49},
+                        .status_text = {0xD5, 0xE8, 0xF1},
                         .header_text = {0x99, 0xAC, 0xBA},
                         .category_text = {0xD5, 0xE8, 0xF1},
                         .note_text = {0x99, 0xAC, 0xBA},
@@ -4693,6 +4921,8 @@ static const struct
                     {
                         .window = {0xE3, 0xD5, 0xD4},
                         .pane = {0xF6, 0xE7, 0xE6},
+                        .status_background = {0xE7, 0xD8, 0xD8},
+                        .status_text = {0x54, 0x3D, 0x4C},
                         .header_text = {0x6D, 0x58, 0x64},
                         .category_text = {0x54, 0x3D, 0x4C},
                         .note_text = {0x6D, 0x58, 0x64},
@@ -4734,6 +4964,8 @@ static const struct
                     {
                         .window = {0x12, 0x15, 0x2C},
                         .pane = {0x1C, 0x21, 0x46},
+                        .status_background = {0x2E, 0x33, 0x55},
+                        .status_text = {0xE9, 0xE4, 0xF2},
                         .header_text = {0xAC, 0xAA, 0xBF},
                         .category_text = {0xE9, 0xE4, 0xF2},
                         .note_text = {0xAC, 0xAA, 0xBF},
@@ -4775,6 +5007,8 @@ static const struct
                     {
                         .window = {0x12, 0x0F, 0x11},
                         .pane = {0x1D, 0x18, 0x1A},
+                        .status_background = {0x2F, 0x2A, 0x2C},
+                        .status_text = {0xE5, 0xDC, 0xDD},
                         .header_text = {0xA9, 0xA2, 0xA3},
                         .category_text = {0xE5, 0xDC, 0xDD},
                         .note_text = {0xA9, 0xA2, 0xA3},
@@ -4816,6 +5050,8 @@ static const struct
                     {
                         .window = {0x14, 0x20, 0x1B},
                         .pane = {0x20, 0x33, 0x2A},
+                        .status_background = {0x32, 0x43, 0x39},
+                        .status_text = {0xE3, 0xE5, 0xCF},
                         .header_text = {0xA9, 0xB0, 0x9E},
                         .category_text = {0xE3, 0xE5, 0xCF},
                         .note_text = {0xA9, 0xB0, 0x9E},
@@ -4857,6 +5093,8 @@ static const struct
                     {
                         .window = {0xD9, 0xDD, 0xE0},
                         .pane = {0xEB, 0xF0, 0xF3},
+                        .status_background = {0xDB, 0xE0, 0xE4},
+                        .status_text = {0x35, 0x43, 0x4E},
                         .header_text = {0x57, 0x63, 0x6D},
                         .category_text = {0x35, 0x43, 0x4E},
                         .note_text = {0x57, 0x63, 0x6D},
@@ -4898,6 +5136,8 @@ static const struct
                     {
                         .window = {0x14, 0x1E, 0x24},
                         .pane = {0x20, 0x2F, 0x3A},
+                        .status_background = {0x31, 0x40, 0x4A},
+                        .status_text = {0xDE, 0xE8, 0xEB},
                         .header_text = {0xA5, 0xB1, 0xB6},
                         .category_text = {0xDE, 0xE8, 0xEB},
                         .note_text = {0xA5, 0xB1, 0xB6},
@@ -4939,6 +5179,8 @@ static const struct
                     {
                         .window = {0x0C, 0x21, 0x26},
                         .pane = {0x12, 0x34, 0x3C},
+                        .status_background = {0x25, 0x44, 0x4A},
+                        .status_text = {0xE7, 0xE6, 0xD3},
                         .header_text = {0xA8, 0xB1, 0xA6},
                         .category_text = {0xE7, 0xE6, 0xD3},
                         .note_text = {0xA8, 0xB1, 0xA6},
@@ -4980,6 +5222,8 @@ static const struct
                     {
                         .window = {0xD3, 0xDB, 0xD5},
                         .pane = {0xE5, 0xED, 0xE7},
+                        .status_background = {0xD5, 0xDE, 0xD9},
+                        .status_text = {0x36, 0x4A, 0x48},
                         .header_text = {0x50, 0x62, 0x60},
                         .category_text = {0x36, 0x4A, 0x48},
                         .note_text = {0x50, 0x62, 0x60},
@@ -5021,6 +5265,8 @@ static const struct
                     {
                         .window = {0xDC, 0xDB, 0xD8},
                         .pane = {0xEF, 0xED, 0xEA},
+                        .status_background = {0xDE, 0xDC, 0xDB},
+                        .status_text = {0x33, 0x2B, 0x40},
                         .header_text = {0x64, 0x5E, 0x6D},
                         .category_text = {0x33, 0x2B, 0x40},
                         .note_text = {0x64, 0x5E, 0x6D},
@@ -5062,6 +5308,8 @@ static const struct
                     {
                         .window = {0xD5, 0xDB, 0xCC},
                         .pane = {0xE7, 0xEE, 0xDD},
+                        .status_background = {0xD7, 0xDF, 0xCF},
+                        .status_text = {0x3A, 0x48, 0x40},
                         .header_text = {0x56, 0x62, 0x59},
                         .category_text = {0x3A, 0x48, 0x40},
                         .note_text = {0x56, 0x62, 0x59},
@@ -5103,6 +5351,8 @@ static const struct
                     {
                         .window = {0x1A, 0x1B, 0x16},
                         .pane = {0x29, 0x2B, 0x23},
+                        .status_background = {0x3A, 0x3B, 0x32},
+                        .status_text = {0xE9, 0xDF, 0xC7},
                         .header_text = {0xB0, 0xA9, 0x96},
                         .category_text = {0xE9, 0xDF, 0xC7},
                         .note_text = {0xB0, 0xA9, 0x96},
@@ -5144,6 +5394,8 @@ static const struct
                     {
                         .window = {0x21, 0x0F, 0x14},
                         .pane = {0x35, 0x18, 0x20},
+                        .status_background = {0x46, 0x2A, 0x30},
+                        .status_text = {0xF1, 0xDE, 0xD5},
                         .header_text = {0xB9, 0xA3, 0x9F},
                         .category_text = {0xF1, 0xDE, 0xD5},
                         .note_text = {0xB9, 0xA3, 0x9F},
@@ -5185,6 +5437,8 @@ static const struct
                     {
                         .window = {0x0A, 0x21, 0x23},
                         .pane = {0x10, 0x34, 0x37},
+                        .status_background = {0x22, 0x44, 0x46},
+                        .status_text = {0xDB, 0xE9, 0xDF},
                         .header_text = {0x9F, 0xB3, 0xAD},
                         .category_text = {0xDB, 0xE9, 0xDF},
                         .note_text = {0x9F, 0xB3, 0xAD},

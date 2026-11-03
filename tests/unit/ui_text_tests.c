@@ -24,6 +24,12 @@
 
 /* 変更前の文言（機械的に写した）。ui_text.c の表と 1 字も違ってはいけない。 */
 static const char *_Nonnull const expected[] = {
+    [UI_TEXT_STATUS_NOTE_TIMES] = "更新 {from}  ·  作成 {to}",
+    [UI_TEXT_STATUS_NOTE_UPDATED] = "更新 {from}",
+    [UI_TEXT_STATUS_TIMES_UNAVAILABLE] = "日時を取得できません",
+    [UI_TEXT_STATUS_KEYS] = "{from} ヘルプ  ·  {to} コマンド",
+    [UI_TEXT_STATUS_HELP] = "{from} ヘルプ",
+    [UI_TEXT_STATUS_CONTENT] = "{name}  |  {from}",
     [UI_TEXT_KEYS_GROUP_BASIC] = "よく使う操作",
     [UI_TEXT_KEYS_DESC_MODE] = "閲覧・編集を切り替える\n閲覧へ戻るときに保存します。",
     [UI_TEXT_KEYS_DESC_MENU] = "このノートの操作メニューを開く",

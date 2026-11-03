@@ -43,7 +43,7 @@ nenefolio_target(nenefolio_core core STATIC
     src/core/utf8_text.c src/core/utf16_text.c
     src/core/json_reader.c src/core/json_writer.c src/core/name_list.c
     src/core/category_ledger.c src/core/category_name.c src/core/note_ledger.c src/core/drawer_layout.c
-    src/core/text_buffer.c src/core/note_text.c src/core/markdown_rtf.c src/core/rtf_palette.c
+    src/core/text_buffer.c src/core/note_text.c src/core/note_file_times.c src/core/markdown_rtf.c src/core/rtf_palette.c
     src/core/rtf_text.c src/core/markdown_blocks.c src/core/markdown_inline_tokens.c
     src/core/code_language.c src/core/code_syntax.c
     src/core/image_source.c src/core/image_bitmap.c src/core/markdown_images.c src/core/markdown_destination.c
@@ -83,7 +83,7 @@ add_test(NAME folio_unit COMMAND folio_tests)
 
 nenefolio_target(nenefolio_adapters adapters_win32 STATIC
     src/adapters/win32/storage_adapter.c src/adapters/win32/storage_native_path.c src/adapters/win32/data_lock.c
-    src/adapters/win32/file_bytes.c src/adapters/win32/persistence_adapter.c
+    src/adapters/win32/file_bytes.c src/adapters/win32/file_times.c src/adapters/win32/persistence_adapter.c
     src/adapters/win32/appearance_adapter.c src/adapters/win32/regex_adapter.c
     src/adapters/win32/web_link_adapter.c src/adapters/win32/transfer_adapter.c
     src/adapters/win32/image_adapter.c src/adapters/win32/image_job.c src/adapters/win32/image_cache.c
@@ -239,6 +239,7 @@ nenefolio_link(image_status_tests nenefolio_application)
 nenefolio_link(image_status_tests nenefolio_adapters)
 nenefolio_link(image_status_tests nenefolio_window)
 nenefolio_system_link(image_status_tests user32)
+nenefolio_system_link(image_status_tests gdi32)
 nenefolio_system_link(image_status_tests ole32)
 target_link_options(image_status_tests PRIVATE /MANIFEST:NO)
 target_include_directories(image_status_tests PRIVATE
@@ -251,3 +252,9 @@ add_custom_command(TARGET image_status_tests POST_BUILD
     VERBATIM)
 add_test(NAME image_status COMMAND image_status_tests)
 set_tests_properties(image_status PROPERTIES TIMEOUT 30)
+foreach(status_case ja en zh find replace)
+    add_test(NAME note_status_${status_case} COMMAND image_status_tests --status-${status_case})
+    set_tests_properties(note_status_${status_case} PROPERTIES TIMEOUT 30)
+endforeach()
+set_tests_properties(image_status note_status_ja note_status_en note_status_zh
+    note_status_find note_status_replace PROPERTIES RESOURCE_LOCK image_status_data)

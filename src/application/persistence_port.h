@@ -6,6 +6,8 @@
 #ifndef NENEFOLIO_PERSISTENCE_PORT_H
 #define NENEFOLIO_PERSISTENCE_PORT_H
 
+struct note_file_times;
+
 #include "category_remove_outcome.h"
 #include "history_version.h"
 #include "persistence_outcome.h"
@@ -44,6 +46,10 @@ struct persistence_port
                                                    const char *_Nonnull category,
                                                    const char *_Nonnull note,
                                                    struct note_text *_Nullable *_Nonnull out);
+    /* File attributes only. No body read or write; unavailable attributes do not fail a save. */
+    enum persistence_outcome (*_Nonnull read_note_times)(
+        struct persistence_adapter *_Nonnull adapter, const char *_Nonnull category,
+        const char *_Nonnull note, struct note_file_times *_Nullable *_Nonnull out);
     /* いま data/<category>/<note>.md にある本文を data/.history/<category>/<note>/1.md へ写し、
      * 前の版を 1 つずつ後ろへずらす（FR-017 / ADR 0012 の決定 3）。写せたら STORED、
      * 元の md が無ければ ABSENT（写すものが無い）、履歴を書けなければ UNWRITABLE。 */

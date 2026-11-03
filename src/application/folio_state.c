@@ -15,6 +15,7 @@
 #include "name_list.h"
 #include "note_archive.h"
 #include "note_corpus.h"
+#include "note_file_times.h"
 #include "note_history.h"
 #include "note_ledger.h"
 #include "note_name.h"
@@ -47,6 +48,8 @@ constexpr size_t initial_matches = 64;
 
 struct folio_state
 {
+    struct note_file_times *_Nullable file_times;
+    enum note_times_state times_state;
     struct persistence_port port;
     struct web_link_port web_link;
     struct transfer_port transfer;
@@ -129,6 +132,46 @@ static enum folio_state_outcome refresh_copy(struct folio_state *_Nonnull state)
 static bool holds_category(const struct folio_state *_Nonnull state, size_t category);
 static struct drawer_cursor first_stop_in(const struct folio_state *_Nonnull state,
                                           size_t category);
+
+void folio_state_refresh_note_times(struct folio_state *_Nonnull state)
+{
+    note_file_times_destroy(state->file_times);
+    state->file_times = nullptr;
+    switch (state->document)
+    {
+    case FOLIO_DOCUMENT_NONE:
+        state->times_state = NOTE_TIMES_NONE;
+        return;
+    case FOLIO_DOCUMENT_UNTITLED:
+        state->times_state = NOTE_TIMES_UNSAVED;
+        return;
+    case FOLIO_DOCUMENT_NAMED:
+        break;
+    }
+    state->times_state = NOTE_TIMES_UNAVAILABLE;
+    if (state->rename != nullptr)
+        return;
+    struct note_file_times *_Nullable times = nullptr;
+    enum persistence_outcome read = state->port.read_note_times(
+        state->port.adapter, category_ledger_name(state->categories, state->selected_category),
+        note_ledger_name(state->notes[state->selected_category], state->selected_note), &times);
+    if (read == PERSISTENCE_LOADED)
+    {
+        state->file_times = times;
+        state->times_state = NOTE_TIMES_READY;
+    }
+}
+
+struct note_times_view folio_state_note_times(const struct folio_state *_Nonnull state)
+{
+    enum note_times_state kind = state->rename != nullptr && state->document == FOLIO_DOCUMENT_NAMED
+                                     ? NOTE_TIMES_UNAVAILABLE
+                                     : state->times_state;
+    return (struct note_times_view){
+        .state = kind,
+        .created = kind == NOTE_TIMES_READY ? note_file_times_created(state->file_times) : "",
+        .updated = kind == NOTE_TIMES_READY ? note_file_times_updated(state->file_times) : ""};
+}
 
 static void discard_view(struct folio_state *_Nonnull state)
 {
@@ -325,6 +368,7 @@ static enum folio_state_outcome adopt_note_rename(struct folio_state *_Nonnull s
     index_changed(state);
     state->rename = nullptr;
     rename_plan_destroy(intent);
+    folio_state_refresh_note_times(state);
     return copied != FOLIO_STATE_READY ? copied : refresh_filter(state);
 }
 
@@ -347,6 +391,7 @@ static enum folio_state_outcome adopt_category_rename(struct folio_state *_Nonnu
     }
     state->rename = nullptr;
     rename_plan_destroy(intent);
+    folio_state_refresh_note_times(state);
     return FOLIO_STATE_READY;
 }
 
@@ -1789,6 +1834,7 @@ static enum folio_state_outcome transfer_note(struct folio_state *_Nonnull state
     state->notes[to.category] = pair[1];
     index_changed(state);
     renumber_selection(state, from, to);
+    folio_state_refresh_note_times(state);
     enum folio_state_outcome stored = store_both(state, to.category, from.category);
     return stored != FOLIO_STATE_READY ? stored : copied;
 }
@@ -1934,6 +1980,7 @@ enum folio_state_outcome folio_state_select_note(struct folio_state *_Nonnull st
         state->document = FOLIO_DOCUMENT_NAMED;
         state->selected_category = category;
         state->selected_note = note;
+        folio_state_refresh_note_times(state);
         cursor_to_selection(state);
         folio_state_close_history(state);
         open_uneditable_in_view(state);
@@ -2350,6 +2397,7 @@ enum folio_state_outcome folio_state_new_note(struct folio_state *_Nonnull state
     state->edit = edit;
     state->document = FOLIO_DOCUMENT_UNTITLED;
     state->selected_category = category;
+    folio_state_refresh_note_times(state);
     state->images.cancel(state->images.adapter);
     state->mode = PANE_MODE_EDIT;
     state->cursor_any = false;
@@ -2433,6 +2481,7 @@ static enum folio_state_outcome store_edited(struct folio_state *_Nonnull state,
     }
     stored_note(state);
     discard_view(state);
+    folio_state_refresh_note_times(state);
     state->pane = rendered;
     note_text_destroy(state->body);
     state->body = edited;
@@ -2585,6 +2634,7 @@ static enum folio_state_outcome create_edited(struct folio_state *_Nonnull state
     state->document = FOLIO_DOCUMENT_NAMED;
     state->selected_category = category;
     state->selected_note = index;
+    folio_state_refresh_note_times(state);
     folio_state_close_history(state);
     if (follow)
     {
@@ -3191,6 +3241,7 @@ static enum folio_state_outcome finish_trash(struct folio_state *_Nonnull state,
         state->body = body;
         state->pane = pane;
         state->document = FOLIO_DOCUMENT_NONE;
+        folio_state_refresh_note_times(state);
         state->mode = PANE_MODE_VIEW;
         settle_cursor(state);
         replace_preview_destroy(state->preview);
@@ -4419,6 +4470,7 @@ void folio_state_destroy(struct folio_state *_Nullable state)
         note_ledger_destroy(state->notes[index]);
     }
     free(state->notes);
+    note_file_times_destroy(state->file_times);
     /* 未完了の意図は永続的な記録の側に残る。ここで捨てるのはメモリだけ（ADR 0022 の決定 7）。 */
     rename_plan_destroy(state->rename);
     note_corpus_destroy(state->rename_corpus);

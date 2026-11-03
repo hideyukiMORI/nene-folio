@@ -7,6 +7,8 @@ static struct theme_palette high_palette(const struct appearance_snapshot *_Nonn
         .contrast = FOLIO_CONTRAST_HIGH,
         .window = snapshot->window,
         .pane = snapshot->window,
+        .status_background = snapshot->button,
+        .status_text = snapshot->button_text,
         .header_text = snapshot->window_text,
         .category_text = snapshot->window_text,
         .note_text = snapshot->window_text,

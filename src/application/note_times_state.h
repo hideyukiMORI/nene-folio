@@ -1,0 +1,12 @@
+#ifndef NENEFOLIO_NOTE_TIMES_STATE_H
+#define NENEFOLIO_NOTE_TIMES_STATE_H
+
+enum note_times_state
+{
+    NOTE_TIMES_NONE,
+    NOTE_TIMES_UNSAVED,
+    NOTE_TIMES_UNAVAILABLE,
+    NOTE_TIMES_READY
+};
+
+#endif

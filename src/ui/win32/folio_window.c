@@ -487,7 +487,6 @@ constexpr int base_breadcrumb_tip = 10;
 constexpr int base_breadcrumb_compact_width = 320;
 constexpr int base_breadcrumb_compact_padding = 4;
 constexpr int base_breadcrumb_compact_tip = 6;
-constexpr int base_close_margin = 16;
 constexpr int base_command_gap = 8;
 constexpr int base_command_input_height = 28;
 constexpr int base_command_palette_width = 460;
@@ -827,9 +826,10 @@ static struct folio_regions regions_for(const struct folio_window *_Nonnull self
     GetClientRect(self->handle, &client);
     UINT dpi = GetDpiForWindow(self->handle);
     int top = scale(base_common_header_height, dpi);
-    struct folio_regions regions = {.header = {0, 0, client.right, top},
-                                    .drawer = {0, top, 0, client.bottom},
-                                    .pane = {0, top, client.right, client.bottom}};
+    struct folio_regions regions = {
+        .header = {0, 0, client.right, top},
+        .drawer = {0, top, 0, client.bottom - scale(base_pane_bottom, dpi)},
+        .pane = {0, top, client.right, client.bottom}};
     switch (folio_state_layout_mode(self->state))
     {
     case FOLIO_LAYOUT_BOTH:
@@ -837,7 +837,7 @@ static struct folio_regions regions_for(const struct folio_window *_Nonnull self
         regions.pane.left = regions.drawer.right;
         regions.splitter =
             (RECT){regions.pane.left, top, regions.pane.left + scale(base_splitter_width, dpi),
-                   client.bottom};
+                   regions.drawer.bottom};
         if (regions.splitter.right > client.right)
             regions.splitter.right = client.right;
         break;
@@ -1125,12 +1125,7 @@ static bool load_blocks_input(const struct folio_window *_Nonnull self, UINT mes
 
 static int pane_notice_height(const struct folio_window *_Nonnull self)
 {
-    return (self->notice == PANE_NOTICE_COMMAND_RESULT ||
-            (folio_state_layout_mode(self->state) != FOLIO_LAYOUT_DRAWER &&
-             (self->notice != PANE_NOTICE_NONE || self->image_line != UI_TEXT_EMPTY ||
-              pane_unavailable(self))))
-               ? scale(base_command_status_height, GetDpiForWindow(self->handle))
-               : 0;
+    return scale(base_pane_bottom, GetDpiForWindow(self->handle));
 }
 
 static RECT command_palette_rect(const struct folio_window *_Nonnull self)
@@ -2082,9 +2077,6 @@ static bool body_shown(const struct folio_window *_Nonnull self)
 
 static void arrange_drawer_region(struct folio_window *_Nonnull self, RECT bounds)
 {
-    if (folio_state_layout_mode(self->state) == FOLIO_LAYOUT_DRAWER &&
-        self->notice == PANE_NOTICE_COMMAND_RESULT)
-        bounds.bottom -= pane_notice_height(self);
     arrange_drawer(self, bounds);
 }
 
@@ -4852,33 +4844,123 @@ static enum ui_text pane_notice_line(const struct folio_window *_Nonnull self)
 static RECT pane_notice_rect(const struct folio_window *_Nonnull self, RECT client)
 {
     UINT dpi = GetDpiForWindow(self->handle);
-    return (RECT){folio_state_layout_mode(self->state) == FOLIO_LAYOUT_DRAWER
-                      ? scale(16, dpi)
-                      : pane_bounds(self).left,
-                  client.bottom - pane_notice_height(self),
-                  client.right - scale(base_close_margin, dpi), client.bottom};
+    return (RECT){scale(16, dpi), client.bottom - pane_notice_height(self),
+                  client.right - scale(16, dpi), client.bottom};
 }
 
-static void draw_pane_notice(const struct folio_window *_Nonnull self, HDC device, RECT client)
+static void help_hint(enum folio_language language, enum ui_text id, char *_Nonnull out)
+{
+    const char *palette = "";
+    for (size_t at = 0; at < folio_shortcut_count(); ++at)
+    {
+        const struct folio_shortcut *binding = folio_shortcut_at(at);
+        if (folio_shortcut_route(binding) == FOLIO_SHORTCUT_CHARACTER &&
+            folio_shortcut_command(binding) == FOLIO_COMMAND_HELP)
+            palette = folio_shortcut_label(binding, language);
+    }
+    struct ui_text_request request = {.id = id,
+                                      .language = language,
+                                      .from =
+                                          folio_shortcut_command_hint(FOLIO_COMMAND_HELP, language),
+                                      .to = palette};
+    if (ui_text_format(&request, out, draw_unit_limit) != UI_TEXT_FORMAT_READY)
+        out[0] = '\0';
+}
+
+static void status_note_text(const struct folio_window *_Nonnull self, enum ui_text id,
+                             char *_Nonnull out)
+{
+    struct note_times_view times = folio_state_note_times(self->state);
+    struct ui_text_request request = {.id = id,
+                                      .language = folio_state_language(self->state),
+                                      .from = times.updated,
+                                      .to = times.created};
+    switch (times.state)
+    {
+    case NOTE_TIMES_NONE:
+        request.id = UI_TEXT_EMPTY;
+        break;
+    case NOTE_TIMES_UNSAVED:
+        request.id = UI_TEXT_STATUS_UNSAVED;
+        break;
+    case NOTE_TIMES_UNAVAILABLE:
+        request.id = UI_TEXT_STATUS_TIMES_UNAVAILABLE;
+        break;
+    case NOTE_TIMES_READY:
+        break;
+    }
+    if (ui_text_format(&request, out, draw_unit_limit) != UI_TEXT_FORMAT_READY)
+        out[0] = '\0';
+}
+
+/* The tooltip and UIA retain full information even when the painted row is narrower. */
+static void status_text(const struct folio_window *_Nonnull self, char *_Nonnull out)
+{
+    enum folio_language language = folio_state_language(self->state);
+    enum ui_text notice = pane_notice_line(self);
+    if (notice != UI_TEXT_EMPTY)
+    {
+        (void)strcpy_s(out, draw_unit_limit,
+                       self->notice == PANE_NOTICE_COMMAND_RESULT ? self->result_line
+                                                                  : ui_text_line(notice, language));
+        return;
+    }
+    char note[draw_unit_limit];
+    char keys[draw_unit_limit];
+    status_note_text(self, UI_TEXT_STATUS_NOTE_TIMES, note);
+    help_hint(language, UI_TEXT_STATUS_KEYS, keys);
+    if (note[0] == '\0')
+    {
+        (void)strcpy_s(out, draw_unit_limit, keys);
+        return;
+    }
+    struct ui_text_request request = {
+        .id = UI_TEXT_STATUS_CONTENT, .language = language, .name = note, .from = keys};
+    if (ui_text_format(&request, out, draw_unit_limit) != UI_TEXT_FORMAT_READY)
+        out[0] = '\0';
+}
+
+static void draw_status_information(const struct folio_window *_Nonnull self, HDC device,
+                                    RECT bounds)
+{
+    char note[draw_unit_limit];
+    char keys[draw_unit_limit];
+    status_note_text(self, UI_TEXT_STATUS_NOTE_TIMES, note);
+    help_hint(folio_state_language(self->state), UI_TEXT_STATUS_KEYS, keys);
+    int gap = scale(24, GetDpiForWindow(self->handle));
+    int width = bounds.right - bounds.left;
+    int key_width = measure_utf8(device, keys);
+    if (measure_utf8(device, note) + key_width + gap > width)
+        status_note_text(self, UI_TEXT_STATUS_NOTE_UPDATED, note);
+    if (measure_utf8(device, note) + key_width + gap > width)
+    {
+        help_hint(folio_state_language(self->state), UI_TEXT_STATUS_HELP, keys);
+        key_width = measure_utf8(device, keys);
+    }
+    RECT key_rect = bounds;
+    key_rect.left = bounds.right - key_width;
+    if (key_rect.left < bounds.left)
+        key_rect.left = bounds.left;
+    draw_utf8(device, keys, key_rect);
+    bounds.right = key_rect.left - gap;
+    if (bounds.right > bounds.left)
+        draw_utf8(device, note, bounds);
+}
+
+static void draw_status_notice(const struct folio_window *_Nonnull self, HDC device, RECT bounds)
 {
     enum ui_text line = pane_notice_line(self);
-    if (line == UI_TEXT_EMPTY)
-        return;
-    SelectObject(device, self->mono_font);
-    SetBkMode(device, TRANSPARENT);
-    SetTextColor(device, self->palette.header_text);
-    RECT bounds = pane_notice_rect(self, client);
     if (self->image_pending && self->notice == PANE_NOTICE_NONE)
     {
         RECT track = bounds;
         track.left = track.right - scale(80, GetDpiForWindow(self->handle));
         track.top = (bounds.top + bounds.bottom) / 2 - 2;
         track.bottom = track.top + 4;
-        fill_settings_rect(device, track, self->palette.dialog_border);
+        fill_settings_rect(device, track, self->palette.status_text);
         LONG width = (track.right - track.left) / 4;
         track.left += (LONG)(self->image_meter % 24) * (track.right - track.left - width) / 23;
         track.right = track.left + width;
-        fill_settings_rect(device, track, self->palette.header_text);
+        fill_settings_rect(device, track, self->palette.status_background);
         bounds.right -= scale(90, GetDpiForWindow(self->handle));
     }
     draw_utf8(device,
@@ -4886,6 +4968,26 @@ static void draw_pane_notice(const struct folio_window *_Nonnull self, HDC devic
                   ? self->result_line
                   : ui_text_line(line, folio_state_language(self->state)),
               bounds);
+}
+
+static void draw_pane_notice(const struct folio_window *_Nonnull self, HDC device, RECT client)
+{
+    RECT band = {0, client.bottom - pane_notice_height(self), client.right, client.bottom};
+    fill_settings_rect(device, band, self->palette.status_background);
+    RECT edge = band;
+    edge.bottom = edge.top + 1;
+    fill_settings_rect(device, edge,
+                       self->palette.contrast == FOLIO_CONTRAST_HIGH ? self->palette.status_text
+                                                                     : self->palette.dialog_border);
+    SelectObject(device, self->mono_font);
+    SetBkMode(device, TRANSPARENT);
+    SetTextCharacterExtra(device, 0);
+    SetTextColor(device, self->palette.status_text);
+    RECT bounds = pane_notice_rect(self, client);
+    if (pane_notice_line(self) == UI_TEXT_EMPTY)
+        draw_status_information(self, device, bounds);
+    else
+        draw_status_notice(self, device, bounds);
 }
 
 /* 新しいノートの作成先の 1 行（ADR0060 の決定 12・13）。作成先の規則は Ctrl+N と同じ
@@ -5773,7 +5875,7 @@ static void fit_band_height(struct command_band_layout *_Nonnull layout)
     int body = layout->available_height - layout->result.bottom - trailing - layout->pane_top -
                layout->pane_bottom;
     int shortage = minimum > body ? minimum - body : 0;
-    reduce_band_spacing(&layout->pane_bottom, scale(8, dpi), &shortage);
+    /* The permanent status bar owns the entire bottom inset (ADR0087). */
     reduce_band_spacing(&layout->pane_top, scale(8, dpi), &shortage);
     reduce_band_spacing(&trailing, scale(8, dpi), &shortage);
     if (layout->narrow)
@@ -9534,20 +9636,7 @@ static bool part_labeled(const struct folio_window *_Nonnull self, enum accessib
 
 static void help_tooltip(enum folio_language language, char *_Nonnull out)
 {
-    const char *key = part_shortcut(ACCESSIBLE_HELP, language);
-
-    const char *palette = "";
-    for (size_t at = 0; at < folio_shortcut_count(); ++at)
-    {
-        const struct folio_shortcut *binding = folio_shortcut_at(at);
-        if (folio_shortcut_route(binding) == FOLIO_SHORTCUT_CHARACTER &&
-            folio_shortcut_command(binding) == FOLIO_COMMAND_HELP)
-            palette = folio_shortcut_label(binding, language);
-    }
-    struct ui_text_request help = {
-        .id = UI_TEXT_TOOLTIP_HELP_KEYS, .language = language, .from = key, .to = palette};
-    if (ui_text_format(&help, out, draw_unit_limit) != UI_TEXT_FORMAT_READY)
-        out[0] = '\0';
+    help_hint(language, UI_TEXT_TOOLTIP_HELP_KEYS, out);
 }
 
 static void splitter_tooltip(const struct folio_window *_Nonnull self, char *_Nonnull out)
@@ -9633,6 +9722,12 @@ static LRESULT tooltip_display(struct folio_window *_Nonnull self, LPARAM lparam
 {
     NMTTDISPINFOW *_Nonnull notice = (NMTTDISPINFOW *)lparam;
     self->tooltip_text[0] = u'\0';
+    if (notice->hdr.idFrom == ACCESSIBLE_NOTICE)
+    {
+        char text[draw_unit_limit];
+        status_text(self, text);
+        (void)wide_units(text, self->tooltip_text);
+    }
     if (notice->hdr.idFrom >= surface_tooltip_base &&
         notice->hdr.idFrom - surface_tooltip_base < surface_button_count)
     {
@@ -11062,6 +11157,21 @@ static bool create_surface_tooltips(const struct folio_window *_Nonnull self)
     return true;
 }
 
+static TOOLINFOW status_tool(const struct folio_window *_Nonnull self)
+{
+    RECT client;
+    GetClientRect(self->handle, &client);
+    RECT bounds = self->command_surface == COMMAND_SURFACE_CLOSED && self->native_modal_depth == 0
+                      ? pane_notice_rect(self, client)
+                      : (RECT){0};
+    return (TOOLINFOW){.cbSize = tooltip_info_size,
+                       .uFlags = TTF_SUBCLASS,
+                       .hwnd = self->handle,
+                       .uId = ACCESSIBLE_NOTICE,
+                       .rect = bounds,
+                       .lpszText = LPSTR_TEXTCALLBACKW};
+}
+
 static void refresh_tooltip_rects(const struct folio_window *_Nonnull self)
 {
     if (self->tooltip == nullptr)
@@ -11076,6 +11186,8 @@ static void refresh_tooltip_rects(const struct folio_window *_Nonnull self)
         SendMessageW(self->tooltip, TTM_UPDATETIPTEXTW, 0, (LPARAM)&drawer);
     }
     SendMessageW(self->tooltip, TTM_POP, 0, 0);
+    TOOLINFOW status = status_tool(self);
+    SendMessageW(self->tooltip, TTM_NEWTOOLRECTW, 0, (LPARAM)&status);
     for (size_t index = 0; index < main_part_count(); ++index)
     {
         TOOLINFOW tool = {.cbSize = tooltip_info_size,
@@ -11123,7 +11235,9 @@ static bool create_tooltip(struct folio_window *_Nonnull self)
     }
     refresh_tooltip_style(self);
     activate_tooltip(self);
-    return create_surface_tooltips(self);
+    TOOLINFOW status = status_tool(self);
+    return SendMessageW(self->tooltip, TTM_ADDTOOLW, 0, (LPARAM)&status) != 0 &&
+           create_surface_tooltips(self);
 }
 
 static bool create_settings_backdrop(struct folio_window *_Nonnull self)
@@ -11865,7 +11979,18 @@ static void resume_appearance(struct folio_window *_Nonnull self)
 static void window_activation(struct folio_window *_Nonnull self, WPARAM wparam, LPARAM lparam)
 {
     if (LOWORD(wparam) != WA_INACTIVE)
+    {
+        if (self->native_modal_depth == 0 && !pane_streaming(self) && !session_busy(self))
+        {
+            folio_state_refresh_note_times(self->state);
+            RECT client;
+            GetClientRect(self->handle, &client);
+            RECT status = pane_notice_rect(self, client);
+            InvalidateRect(self->handle, &status, FALSE);
+            accessibility_host_schedule(self->accessibility);
+        }
         return;
+    }
     if (self->native_modal_depth > 0 && lparam != 0)
         modal_owner_anchor(self->handle, (HWND)lparam);
     cancel_part_press(self);
@@ -13800,8 +13925,7 @@ static bool pane_control_visible(const struct folio_window *_Nonnull self,
 
 static bool notice_visible(const struct folio_window *_Nonnull self)
 {
-    return (pane_visible(self) || self->notice == PANE_NOTICE_COMMAND_RESULT) &&
-           pane_notice_line(self) != UI_TEXT_EMPTY;
+    return self->handle != nullptr;
 }
 
 /* 同じheader表示slotに属する静的参照。可視判定は単一geometryに任せる。 */
@@ -14066,6 +14190,11 @@ static void accessible_name(const struct folio_window *_Nonnull self, enum acces
     const char *line = accessible_label_line(self, kind);
     struct pane_title_view title = folio_state_pane_title(self->state);
     char body[1024];
+    if (kind == ACCESSIBLE_NOTICE)
+    {
+        status_text(self, body);
+        line = body;
+    }
     if (kind == ACCESSIBLE_LAYOUT_CHOOSER)
     {
         layout_chooser_name(self, body);
@@ -14239,7 +14368,7 @@ static void accessible_main_bounds(struct folio_window *_Nonnull self, enum acce
         RECT client;
         GetClientRect(self->handle, &client);
         out->bounds = pane_notice_rect(self, client);
-        out->live = true;
+        out->live = pane_notice_line(self) != UI_TEXT_EMPTY;
     }
     else
         out->bounds = accessible_main_rect(self, kind);
@@ -15135,6 +15264,13 @@ static bool settle_save_state(struct folio_window *_Nonnull self)
     }
     /* md を書いた（世代が進んだ）ことだけで知らせる。Ctrl+N の離脱保存の後に無題が開いても出す。 */
     bool saved = revision != self->store_revision;
+    if (saved)
+    {
+        RECT client;
+        GetClientRect(self->handle, &client);
+        RECT status = pane_notice_rect(self, client);
+        InvalidateRect(self->handle, &status, FALSE);
+    }
     self->store_revision = revision;
     self->body_touched = false;
     self->settled_kind = folio_state_document_kind(self->state);

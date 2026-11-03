@@ -60,6 +60,11 @@ tracks validation and the evidence for publication and download verification.
   Narrow panes hide it automatically. It samples at most 256 lines rather than duplicating the full text (#502).
 - **Note zoom**: Ctrl+wheel or Ctrl++ / Ctrl+- changes the display from 50% to 300%; Ctrl+0 restores 100%.
   Read and Edit share the zoom while the app runs, and line numbers follow it. Note contents stay unchanged.
+- **Status bar**: a distinct bottom surface shows the saved file's updated and created times in local
+  `YYYY-MM-DD HH:mm` form, plus the existing Help and Commands shortcuts. Regular saves preserve file
+  creation time. Untitled notes show Unsaved, and unavailable attributes are reported explicitly.
+  Narrow windows shorten the painted text; the tooltip and screen-reader name retain the full information.
+  Loading and error notices take priority, then the normal status returns (#530).
 - **Notes**: new untitled note with a first save, save as, rename (recoverable across restarts through
   `data/.rename.json`), move to the Windows Recycle Bin together with its history.
   Leaving an untitled note for another note, a new note, or the window's Close action offers

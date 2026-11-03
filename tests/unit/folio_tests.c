@@ -424,6 +424,17 @@ static bool run_web_link_target_tests(const char *_Nonnull argument)
     return true;
 }
 
+static bool run_status_target_tests(const char *_Nonnull argument)
+{
+    if (strcmp(argument, "--status") != 0)
+        return false;
+    run_status_tests();
+    run_theme_tests();
+    run_ui_text_tests();
+    printf("status time, palette and text tests passed\n");
+    return true;
+}
+
 static bool run_selected_tests(const char *_Nonnull argument)
 {
     if (strcmp(argument, "--storage-location") == 0)
@@ -480,7 +491,8 @@ static bool run_selected_tests(const char *_Nonnull argument)
             run_note_search_target_tests(argument) || run_surface_target_tests(argument) ||
             run_menu_target_tests(argument) || run_size_overflow_target_tests(argument) ||
             run_pane_load_target_tests(argument) || run_document_settings_target_tests(argument) ||
-            run_target_tests(argument) || run_filter_target_tests(argument));
+            run_target_tests(argument) || run_filter_target_tests(argument) ||
+            run_status_target_tests(argument));
 }
 
 static void run_full_suite(void)
@@ -519,6 +531,7 @@ static void run_full_suite(void)
     run_line_index_tests();
     run_replace_tests();
     run_state_tests();
+    run_status_tests();
     run_accessibility_state_tests();
     run_unsaved_departure_tests();
     run_index_preparation_tests();

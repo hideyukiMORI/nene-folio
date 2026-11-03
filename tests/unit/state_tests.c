@@ -7,6 +7,7 @@
 #include "folio_state.h"
 #include "markdown_rtf.h"
 #include "name_list.h"
+#include "note_file_times.h"
 #include "note_ledger.h"
 #include "note_name.h"
 #include "note_text.h"
@@ -28,6 +29,9 @@
 /* テスト用のポート実装。application が不完全型として知る persistence_adapter をここで定義する。 */
 struct persistence_adapter
 {
+    bool times_ready;
+    const char *_Nullable updated_time;
+    size_t times_reads;
     enum persistence_outcome categories_outcome;
     const char *_Nonnull categories_text;
     enum persistence_outcome scan_outcome;
@@ -651,6 +655,21 @@ static struct persistence_adapter healthy_adapter(void)
     return adapter;
 }
 
+static enum persistence_outcome
+fake_read_note_times(struct persistence_adapter *_Nonnull adapter, const char *_Nonnull category,
+                     const char *_Nonnull note, struct note_file_times *_Nullable *_Nonnull out)
+{
+    (void)category;
+    ++adapter->times_reads;
+    if (!adapter->times_ready)
+        return PERSISTENCE_UNREADABLE;
+    const char *created = strcmp(note, "one") == 0 ? "2020-01-02 03:04" : "2021-02-03 04:05";
+    const char *updated = adapter->updated_time == nullptr ? created : adapter->updated_time;
+    return note_file_times_create(created, updated, out) == NOTE_FILE_TIMES_ACCEPTED
+               ? PERSISTENCE_LOADED
+               : PERSISTENCE_OUT_OF_MEMORY;
+}
+
 static struct persistence_port port_for(struct persistence_adapter *_Nonnull adapter)
 {
     struct persistence_port port = {
@@ -660,6 +679,7 @@ static struct persistence_port port_for(struct persistence_adapter *_Nonnull ada
         .read_category_ledger = fake_read_category_ledger,
         .write_category_ledger = fake_write_category_ledger,
         .read_note = fake_read_note,
+        .read_note_times = fake_read_note_times,
         .archive_note = fake_archive_note,
         .read_history = fake_read_history,
         .write_note = fake_write_note,
@@ -3845,6 +3865,8 @@ static void verify_contrast_pairs(const struct folio_state *_Nonnull state,
             "body and category labels use the user window pair");
     require(rgb_color_equal(palette->chip_background, expected.button) &&
                 rgb_color_equal(palette->chip_text, expected.button_text) &&
+                rgb_color_equal(palette->status_background, expected.button) &&
+                rgb_color_equal(palette->status_text, expected.button_text) &&
                 rgb_color_equal(palette->selected_background, expected.highlight) &&
                 rgb_color_equal(palette->selected_text, expected.highlight_text),
             "buttons and selected rows retain their own OS foreground/background pairs");
@@ -5289,6 +5311,120 @@ void run_pane_load_state_tests(void)
 {
     verify_pane_edit_rtf();
     verify_failure_lines();
+}
+
+static void verify_time_value(void)
+{
+    struct note_file_times *times = nullptr;
+    const char *invalid[] = {"",
+                             "2020/01-02 03:04",
+                             "2020-01-02 03:0x",
+                             "1600-01-01 00:00",
+                             "2020-00-01 00:00",
+                             "2020-13-01 00:00",
+                             "2020-02-30 00:00",
+                             "1900-02-29 00:00",
+                             "2020-01-00 00:00",
+                             "2020-01-01 24:00",
+                             "2020-01-01 00:60"};
+    for (size_t at = 0; at < sizeof invalid / sizeof invalid[0]; ++at)
+        require(note_file_times_create(invalid[at], "2000-02-29 00:00", &times) ==
+                        NOTE_FILE_TIMES_INVALID &&
+                    times == nullptr,
+                "invalid calendar display value leaves output alone");
+    require(note_file_times_create("2000-02-29 00:00", "invalid", &times) ==
+                NOTE_FILE_TIMES_INVALID,
+            "updated time is also checked");
+    allocation_probe_fail_at(1);
+    enum note_file_times_outcome made =
+        note_file_times_create("2000-02-29 00:00", "2024-02-29 23:59", &times);
+    require(made == (allocation_probe_calls() == 0 ? NOTE_FILE_TIMES_ACCEPTED
+                                                   : NOTE_FILE_TIMES_OUT_OF_MEMORY),
+            "time snapshot allocation has an explicit failure");
+    allocation_probe_fail_at(0);
+    note_file_times_destroy(times);
+}
+
+static void verify_time_transitions(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    adapter.times_ready = true;
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_note_times(state).state == NOTE_TIMES_NONE && adapter.times_reads == 0,
+            "no file attributes before selection");
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
+                same_text(folio_state_note_times(state).created, "2020-01-02 03:04"),
+            "selected file owns its creation snapshot");
+    require(folio_state_select_note(state, 0, 1, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
+                same_text(folio_state_note_times(state).created, "2021-02-03 04:05"),
+            "switching files replaces the previous time");
+    size_t reads = adapter.times_reads;
+    (void)folio_state_note_times(state);
+    require(adapter.times_reads == reads, "display queries perform no file I/O");
+    adapter.times_ready = false;
+    folio_state_refresh_note_times(state);
+    require(folio_state_note_times(state).state == NOTE_TIMES_UNAVAILABLE &&
+                same_text(folio_state_note_times(state).created, ""),
+            "attribute failure clears stale values");
+    require(folio_state_new_note(state, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
+                folio_state_note_times(state).state == NOTE_TIMES_UNSAVED,
+            "untitled has no fabricated time");
+    struct note_name *name = accepted_note_name("fresh");
+    struct note_destination destination = {.category = 0, .name = name};
+    adapter.times_ready = true;
+    require(folio_state_store_new(state, &destination, u"fresh", 5) == FOLIO_STATE_READY &&
+                folio_state_note_times(state).state == NOTE_TIMES_READY,
+            "first save reads the new file attributes");
+    note_name_destroy(name);
+    require(folio_state_trash_note(state, (struct note_ref){0, 3}, u"fresh", 5) ==
+                    FOLIO_STATE_READY &&
+                folio_state_note_times(state).state == NOTE_TIMES_NONE,
+            "deleting the selected file clears its time");
+    folio_state_destroy(state);
+}
+
+static void verify_time_save_rename(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    adapter.times_ready = true;
+    adapter.note_body = "# Hello\r\n\r\nbody";
+    struct folio_state *state = edited_state(&adapter);
+    size_t reads = adapter.times_reads;
+    require(folio_state_store_note(state, u"# Hello\r\n\r\nbody", 15) == FOLIO_STATE_READY &&
+                adapter.times_reads == reads,
+            "unchanged save does not refresh attributes");
+    adapter.updated_time = "2026-11-03 13:00";
+    require(folio_state_store_note(state, u"changed", 7) == FOLIO_STATE_READY &&
+                same_text(folio_state_note_times(state).updated, adapter.updated_time) &&
+                same_text(folio_state_note_times(state).created, "2021-02-03 04:05"),
+            "successful save refreshes the timestamp snapshot");
+    adapter.times_ready = false;
+    require(folio_state_store_note(state, u"changed again", 13) == FOLIO_STATE_READY &&
+                folio_state_note_times(state).state == NOTE_TIMES_UNAVAILABLE,
+            "attribute failure does not turn saved bytes into a save failure");
+    adapter.times_ready = true;
+    folio_state_refresh_note_times(state);
+    struct note_name *name = accepted_note_name("renamed");
+    adapter.rename_outcome = RENAME_PENDING;
+    require(folio_state_rename_note(state, name, u"changed again", 13) ==
+                    FOLIO_STATE_RENAME_PENDING &&
+                folio_state_note_times(state).state == NOTE_TIMES_UNAVAILABLE,
+            "pending rename cannot display a timestamp for an uncertain path");
+    adapter.rename_outcome = RENAME_COMPLETED;
+    require(folio_state_retry_rename(state) == FOLIO_STATE_READY &&
+                folio_state_note_times(state).state == NOTE_TIMES_READY,
+            "completed rename reads the adopted path");
+    note_name_destroy(name);
+    folio_state_destroy(state);
+}
+
+void run_status_tests(void)
+{
+    finder = test_regex_port();
+    run_system_contrast_tests();
+    verify_time_value();
+    verify_time_transitions();
+    verify_time_save_rename();
 }
 
 void run_state_tests(void)

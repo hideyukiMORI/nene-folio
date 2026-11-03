@@ -2,11 +2,15 @@
 #include "accessible_request.h"
 #include "accessible_view.h"
 #include "appearance_adapter.h"
+#include "file_bytes.h"
+#include "file_times.h"
+#include "folio_menu_action.h"
 #include "folio_state.h"
 #include "folio_window.h"
 #include "font_bundle.h"
 #include "image_bitmap.h"
 #include "image_port.h"
+#include "note_file_times.h"
 #include "note_ledger.h"
 #include "note_text.h"
 #include "persistence_adapter.h"
@@ -15,6 +19,7 @@
 #include "storage_state.h"
 #include "transfer_adapter.h"
 #include "web_link_adapter.h"
+#include <commctrl.h>
 #include <richedit.h>
 
 #include <stdio.h>
@@ -291,8 +296,9 @@ static void completed_image(struct folio_window *_Nonnull window, bool resizing)
     SendMessageW(root, WM_TIMER, 85, 0);
     struct accessible_item item = {.kind = ACCESSIBLE_NOTICE};
     struct accessible_view view;
-    require(folio_window_accessible_read(window, &item, &view) == S_OK && view.offscreen,
-            "completed image removes loading notice state");
+    require(folio_window_accessible_read(window, &item, &view) == S_OK && !view.offscreen &&
+                wcsstr(view.name, L"画像") == nullptr && wcsstr(view.name, L"F1") != nullptr,
+            "completed image replaces loading notice with normal status");
     RECT damage;
     require(GetUpdateRect(root, &damage, FALSE) && damage.left <= notice.left &&
                 damage.top <= notice.top && damage.right >= notice.right &&
@@ -312,7 +318,232 @@ static void completed_image(struct folio_window *_Nonnull window, bool resizing)
     UpdateWindow(root);
     require(!GetUpdateRect(root, &damage, FALSE), "completion damage was painted");
 }
-int main(void)
+static void file_timestamp_roundtrip(void)
+{
+    const wchar_t *path = L"status-530-attributes.md";
+    require(file_bytes_store(path, "before", 6) == PERSISTENCE_STORED, "attribute fixture");
+    HANDLE file = CreateFileW(path, GENERIC_READ | FILE_WRITE_ATTRIBUTES, FILE_SHARE_READ, nullptr,
+                              OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    SYSTEMTIME fixed = {.wYear = 2020, .wMonth = 2, .wDay = 29, .wHour = 12};
+    FILETIME created, updated, observed;
+    require(file != INVALID_HANDLE_VALUE && SystemTimeToFileTime(&fixed, &created) &&
+                SetFileTime(file, &created, nullptr, &created),
+            "fixed file attributes");
+    CloseHandle(file);
+    require(file_bytes_store(path, "after", 5) == PERSISTENCE_STORED, "atomic replacement");
+    file = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING,
+                       FILE_ATTRIBUTE_NORMAL, nullptr);
+    require(file != INVALID_HANDLE_VALUE && GetFileTime(file, &observed, nullptr, &updated) &&
+                CompareFileTime(&created, &observed) == 0 &&
+                CompareFileTime(&created, &updated) < 0,
+            "replacement preserves creation and advances the last write");
+    struct note_file_times *times = nullptr;
+    require(file_times_read(path, &times) == PERSISTENCE_LOADED &&
+                strncmp(note_file_times_created(times), "2020-", 5) == 0,
+            "adapter converts filesystem values into local display values");
+    note_file_times_destroy(times);
+    require(file_bytes_store(path, "blocked", 7) == PERSISTENCE_UNWRITABLE,
+            "a locked destination refuses replacement");
+    CloseHandle(file);
+    struct file_bytes *bytes = nullptr;
+    require(file_bytes_read(path, &bytes) == PERSISTENCE_LOADED && file_bytes_length(bytes) == 5 &&
+                memcmp(file_bytes_data(bytes), "after", 5) == 0,
+            "failed publication retains the previous bytes");
+    file_bytes_destroy(bytes);
+    require(DeleteFileW(path), "remove attribute fixture");
+    times = nullptr;
+    require(file_times_read(path, &times) == PERSISTENCE_UNREADABLE && times == nullptr,
+            "absent attributes leave output untouched");
+}
+
+static void status_pixels(HWND root, const char *_Nonnull path,
+                          const struct theme_palette *_Nonnull palette)
+{
+    RECT client;
+    GetClientRect(root, &client);
+    HDC source = GetDC(root);
+    HDC dc = CreateCompatibleDC(source);
+    HBITMAP bitmap = CreateCompatibleBitmap(source, client.right, client.bottom);
+    HGDIOBJ old = SelectObject(dc, bitmap);
+    require(PrintWindow(root, dc, PW_CLIENTONLY), "render real status pixels");
+    struct rgb_color background = palette->status_background;
+    require(GetPixel(dc, 2, client.bottom - 12) ==
+                RGB(background.red, background.green, background.blue),
+            "status background uses the canonical palette role");
+    SelectObject(dc, old);
+    BITMAPINFO info = {.bmiHeader = {.biSize = sizeof(BITMAPINFOHEADER),
+                                     .biWidth = client.right,
+                                     .biHeight = -client.bottom,
+                                     .biPlanes = 1,
+                                     .biBitCount = 32,
+                                     .biCompression = BI_RGB}};
+    size_t length = (size_t)client.right * (size_t)client.bottom * 4;
+    void *pixels = malloc(length);
+    require(pixels != nullptr && GetDIBits(dc, bitmap, 0, (UINT)client.bottom, pixels, &info,
+                                           DIB_RGB_COLORS) == (int)client.bottom,
+            "capture status evidence");
+    BITMAPFILEHEADER header = {.bfType = 0x4D42,
+                               .bfSize = (DWORD)(sizeof header + sizeof info.bmiHeader + length),
+                               .bfOffBits = sizeof header + sizeof info.bmiHeader};
+    FILE *output = nullptr;
+    require(fopen_s(&output, path, "wb") == 0 && output != nullptr, "open status evidence");
+    require(fwrite(&header, sizeof header, 1, output) == 1 &&
+                fwrite(&info.bmiHeader, sizeof info.bmiHeader, 1, output) == 1 &&
+                fwrite(pixels, length, 1, output) == 1,
+            "write status evidence");
+    fclose(output);
+    free(pixels);
+    DeleteObject(bitmap);
+    DeleteDC(dc);
+    ReleaseDC(root, source);
+}
+
+static HWND status_tooltip(HWND root)
+{
+    for (HWND candidate = GetWindow(root, GW_HWNDFIRST); candidate != nullptr;
+         candidate = GetWindow(candidate, GW_HWNDNEXT))
+    {
+        wchar_t name[64];
+        if (GetWindow(candidate, GW_OWNER) == root && GetClassNameW(candidate, name, 64) > 0 &&
+            wcscmp(name, TOOLTIPS_CLASSW) == 0)
+            return candidate;
+    }
+    return nullptr;
+}
+
+static void invoke_operation(struct folio_window *_Nonnull window, enum folio_command command)
+{
+    struct accessible_request request = {.item = {.kind = ACCESSIBLE_MENU},
+                                         .action = ACCESSIBLE_ACTION_INVOKE};
+    if (command == FOLIO_COMMAND_FIND)
+    {
+        request.item.kind = ACCESSIBLE_FIND;
+        require(folio_window_accessible_action(window, &request) == S_OK, "open Find");
+        return;
+    }
+    require(folio_window_accessible_action(window, &request) == S_OK, "open operations menu");
+    for (size_t at = 0; at < folio_menu_action_count(FOLIO_MENU_OPERATIONS); ++at)
+    {
+        const struct folio_menu_action *entry = folio_menu_action_at(FOLIO_MENU_OPERATIONS, at);
+        if (folio_menu_action_kind(entry) == FOLIO_MENU_ACTION_COMMAND &&
+            folio_menu_action_command(entry) == command)
+        {
+            request.item = (struct accessible_item){
+                .kind = ACCESSIBLE_SURFACE_CHOICE,
+                .slot = at,
+                .revision = folio_window_accessible_surface_revision(window)};
+            require(folio_window_accessible_action(window, &request) == S_OK,
+                    "invoke the existing command from operations");
+            return;
+        }
+    }
+    require(false, "requested operation exists");
+}
+
+static void short_window_band(struct native_fixture *_Nonnull fixture, enum folio_command command)
+{
+    require(folio_state_begin_edit(fixture->state) == FOLIO_STATE_READY, "geometry edit state");
+    struct folio_window *window = nullptr;
+    require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
+                FOLIO_WINDOW_CREATED,
+            "geometry window");
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    SetWindowPos(root, nullptr, 20, 20, 420, 360, SWP_NOZORDER | SWP_NOACTIVATE);
+    invoke_operation(window, command);
+    pump(window);
+    struct accessible_item item = {.kind = ACCESSIBLE_NOTICE};
+    struct accessible_view status;
+    RECT body_rect;
+    require(folio_window_accessible_read(window, &item, &status) == S_OK &&
+                GetWindowRect(body, &body_rect) && body_rect.bottom <= status.bounds.top,
+            "minimum-height search and replace keep the body above the status bar");
+    SendMessageW(root, WM_KEYDOWN, VK_ESCAPE, 0);
+    pump(window);
+    struct accessible_item surface = {.kind = ACCESSIBLE_SURFACE};
+    struct accessible_view closed;
+    require(FAILED(folio_window_accessible_read(window, &surface, &closed)) || closed.offscreen,
+            "Escape closes the command band through the normal key handler");
+    folio_window_destroy(window);
+}
+
+static void normal_status(struct native_fixture *_Nonnull fixture, enum folio_language language,
+                          enum folio_theme_choice theme, int width)
+{
+    if (language == FOLIO_LANGUAGE_ZH_HANS)
+        folio_state_set_layout_mode(fixture->state, FOLIO_LAYOUT_DRAWER);
+    require(folio_state_set_language(fixture->state, language) == FOLIO_STATE_READY &&
+                folio_state_set_theme(fixture->state, theme) == FOLIO_STATE_READY,
+            "status language and theme");
+    struct folio_window *window = nullptr;
+    require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
+                FOLIO_WINDOW_CREATED,
+            "status window");
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    SetWindowPos(root, nullptr, 20, 20, width, 600, SWP_NOZORDER | SWP_NOACTIVATE);
+    pump(window);
+    struct accessible_item item = {.kind = ACCESSIBLE_NOTICE};
+    struct accessible_view view;
+    require(folio_window_accessible_read(window, &item, &view) == S_OK && !view.offscreen &&
+                !view.live && wcsstr(view.name, L"F1") != nullptr &&
+                wcsstr(view.name, L":") != nullptr,
+            "normal status is visible, complete and not a live announcement");
+    wchar_t created[17];
+    require(MultiByteToWideChar(CP_UTF8, 0, folio_state_note_times(fixture->state).created, -1,
+                                created, 17) == 17 &&
+                wcsstr(view.name, created) != nullptr,
+            "even narrow UIA retains the complete creation time");
+    HWND tooltip = status_tooltip(root);
+    wchar_t text[1024] = {0};
+    TOOLINFOW tool = {.cbSize = offsetof(TOOLINFOW, lParam) + sizeof(LPARAM),
+                      .hwnd = root,
+                      .uId = ACCESSIBLE_NOTICE,
+                      .lpszText = text};
+    require(tooltip != nullptr, "real status tooltip");
+    SendMessageW(tooltip, TTM_GETTEXTW, 1024, (LPARAM)&tool);
+    if (wcscmp(text, view.name) != 0)
+        fwprintf(stderr, L"tooltip=[%ls] UIA=[%ls]\n", text, view.name);
+    require(wcscmp(text, view.name) == 0,
+            "tooltip and UIA expose the same full status information");
+    const char *paths[] = {"status-ja-light.bmp", "status-en-dark.bmp", "status-zh-narrow.bmp"};
+    status_pixels(root, paths[language], folio_state_palette(fixture->state));
+    folio_window_destroy(window);
+}
+
+static void run_status_case(struct native_fixture *_Nonnull fixture, const char *_Nonnull selector)
+{
+    require(folio_state_select_note(fixture->state, 0, 0, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
+            "select status fixture note");
+    if (strcmp(selector, "--status-ja") == 0)
+        normal_status(fixture, FOLIO_LANGUAGE_JA, FOLIO_THEME_CHOICE_LIGHT, 1100);
+    else if (strcmp(selector, "--status-en") == 0)
+        normal_status(fixture, FOLIO_LANGUAGE_EN, FOLIO_THEME_CHOICE_DARK, 650);
+    else if (strcmp(selector, "--status-zh") == 0)
+        normal_status(fixture, FOLIO_LANGUAGE_ZH_HANS, FOLIO_THEME_CHOICE_LIGHT, 320);
+    else if (strcmp(selector, "--status-find") == 0)
+        short_window_band(fixture, FOLIO_COMMAND_FIND);
+    else if (strcmp(selector, "--status-replace") == 0)
+        short_window_band(fixture, FOLIO_COMMAND_REPLACE);
+    else
+        require(false, "known native status selector");
+}
+
+static void run_image_case(struct native_fixture *_Nonnull fixture)
+{
+    struct folio_window *window = nullptr;
+    require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
+                FOLIO_WINDOW_CREATED,
+            "real main window");
+    body_first(window);
+    move_origin(window, fixture->state);
+    completed_image(window, false);
+    completed_image(window, true);
+    folio_window_destroy(window);
+    file_timestamp_roundtrip();
+}
+
+int main(int argc, char *_Nonnull *_Nonnull argv)
 {
     HDESK desktop = CreateDesktopW(L"NeNeFolioImageStatus520", nullptr, nullptr, 0,
                                    DESKTOP_CREATEWINDOW | DESKTOP_CREATEMENU | DESKTOP_READOBJECTS |
@@ -322,18 +553,16 @@ int main(void)
     require(SUCCEEDED(OleInitialize(nullptr)), "COM apartment");
     struct native_fixture fixture = {0};
     create_fixture(&fixture);
-    struct folio_window *_Nullable window = nullptr;
-    require(folio_window_create(fixture.state, fixture.location, FONT_BUNDLE_READY, &window) ==
-                FOLIO_WINDOW_CREATED,
-            "real main window");
-    body_first(window);
-    move_origin(window, fixture.state);
-    completed_image(window, false);
-    completed_image(window, true);
-    folio_window_destroy(window);
+    if (argc == 2)
+        run_status_case(&fixture, argv[1]);
+    else
+    {
+        require(argc == 1, "valid argument count");
+        run_image_case(&fixture);
+    }
     destroy_fixture(&fixture);
     OleUninitialize();
     CloseDesktop(desktop);
-    printf("image status: %u checks passed\n", checks);
+    printf("image/status: %u checks passed\n", checks);
     return EXIT_SUCCESS;
 }

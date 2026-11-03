@@ -12,6 +12,8 @@ struct theme_palette
     enum folio_contrast contrast;
     struct rgb_color window;
     struct rgb_color pane;
+    struct rgb_color status_background;
+    struct rgb_color status_text;
     struct rgb_color header_text;
     struct rgb_color category_text;
     struct rgb_color note_text;

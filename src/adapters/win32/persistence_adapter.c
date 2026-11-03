@@ -4,6 +4,7 @@
 #include "category_ledger.h"
 #include "data_lock.h"
 #include "file_bytes.h"
+#include "file_times.h"
 #include "folio_settings.h"
 #include "json_writer.h"
 #include "name_list.h"
@@ -423,6 +424,18 @@ static enum persistence_outcome read_note(struct persistence_adapter *_Nonnull a
         return PERSISTENCE_UNREADABLE;
     }
     return read_text(path, out);
+}
+
+static enum persistence_outcome read_note_times(struct persistence_adapter *_Nonnull adapter,
+                                                const char *_Nonnull category,
+                                                const char *_Nonnull note,
+                                                struct note_file_times *_Nullable *_Nonnull out)
+{
+    wchar_t leaf[MAX_PATH];
+    wchar_t path[path_capacity];
+    if (!note_leaf(note, leaf, MAX_PATH) || !compose(adapter, category, leaf, path))
+        return PERSISTENCE_UNREADABLE;
+    return file_times_read(path, out);
 }
 
 /* 無ければ作る。既にあれば作れたものとして扱う。 */
@@ -1753,6 +1766,7 @@ struct persistence_port persistence_adapter_port(struct persistence_adapter *_No
         .read_settings = read_settings,
         .write_settings = write_settings,
         .read_note = read_note,
+        .read_note_times = read_note_times,
         .archive_note = archive_note,
         .read_history = read_history,
         .write_note = write_note,

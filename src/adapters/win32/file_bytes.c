@@ -193,6 +193,19 @@ static enum persistence_outcome publish(const wchar_t *_Nonnull temporary,
                : PERSISTENCE_UNWRITABLE;
 }
 
+/* Preserve creation across the existing atomic replacement, before publishing any bytes. */
+static bool preserve_creation(const wchar_t *_Nonnull path, HANDLE temporary,
+                              enum file_write_kind kind)
+{
+    if (kind == FILE_WRITE_CREATE)
+        return true;
+    WIN32_FILE_ATTRIBUTE_DATA attributes;
+    if (GetFileAttributesExW(path, GetFileExInfoStandard, &attributes))
+        return SetFileTime(temporary, &attributes.ftCreationTime, nullptr, nullptr) != 0;
+    DWORD error = GetLastError();
+    return error == ERROR_FILE_NOT_FOUND || error == ERROR_PATH_NOT_FOUND;
+}
+
 static enum persistence_outcome store(const wchar_t *_Nonnull path, const char *_Nonnull data,
                                       size_t length, enum file_write_kind kind)
 {
@@ -202,7 +215,8 @@ static enum persistence_outcome store(const wchar_t *_Nonnull path, const char *
     {
         return PERSISTENCE_UNWRITABLE;
     }
-    bool written = write_all(file, data, length) && FlushFileBuffers(file);
+    bool written = write_all(file, data, length) && preserve_creation(path, file, kind) &&
+                   FlushFileBuffers(file);
     CloseHandle(file);
     if (!written)
     {
