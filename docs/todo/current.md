@@ -1,41 +1,34 @@
 # いまの状態 — NeNe Folio
 
-## 11月4日未明 — Mermaid統合・通常反映・整理済み
+## 11月4日朝 — 品質改善を継続中
 
-#539は[PR #540](https://github.com/hideyukiMORI/nene-folio/pull/540)、製品main `cc84e45`へ統合済み。
-フローチャートとシーケンス図をCで生成し、本文先行の遅延表示・既存画像worker・進捗・取消へ合流した。
-Claude designのB案を反映し、[最終CI](https://github.com/hideyukiMORI/nene-folio/actions/runs/41656331551)は成功、
-分岐網羅率90.6157%。対応構文と未対応項目は[利用案内](../MARKDOWN.md#mermaidの図)、
-判断は[ADR0089](../adr/0089-native-lazy-mermaid.md)、対象検証は[品質記録](../quality/2026-11-03-native-mermaid.md)。
+hideの新指示で、停止まで調査・試験・計測・必要な修正を継続する。試行と判断をすべて文書化し、
+現行規約の対象検証・最終head必須CI・正典統合・必要反映・整理まで進める。
+開始時mainは`ab7b732`、origin/main一致・clean、open PRなし。#541/PR542のCI41660944733は成功。
 
-通常exeは`C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`、1.2.0 / Windows1.2.0.0。
-11月3日23:53に反映し、隣のdata32ファイルは内容・作成/更新日時まで前後一致した。
-22:33のhideのEsc以降は画面操作と自動起動を行っていない。更新版の実機受理は未確認。
-32,293ファイル保全後、#539のworktree/outputと参照用clone出力を11月4日00:00に削除した。
-確定原本は`D:/NeNeFolio/agents/mermaid-20261103/integration-completion.json`。
+最初の焦点は#543。台形等の連鎖が後続ノードと辺をラベルへ吸収する問題を修正前に再現し、
+既存parserの開始/終端選択と不適合括弧の拒否を修正した。14形状の連鎖196通りと関連diagram対象は成功。
+独立R/Oレビューの追加指摘も解消。詳細は[品質記録](../quality/2026-11-04-mermaid-shape-boundaries.md)。
+最終head/CI/main/通常反映/保全整理は`D:/NeNeFolio/agents/543-mermaid-shape-end/integration-completion.json`で確定する。
+次は画像cacheの満杯時消去と引用pipe辺ラベルの条件を、個別の焦点で再現する。
 
-今回の日報・引き継ぎ作成は#541。詳細は[11月4日の日報](../reports/2026-11-04.md)と
-[引き継ぎ書](../handoffs/2026-11-04.md)へ。文書統合でmainが進んでも、製品入力が同じなら通常exeを再生成しない。
-この文書taskの最終head/CI/main/保全整理は`D:/NeNeFolio/agents/handoff-20261104/integration-completion.json`で確定する。
+日報・次回の詳細は[11月4日の日報](../reports/2026-11-04.md)と[引き継ぎ書](../handoffs/2026-11-04.md)。
+全体journalは`D:/NeNeFolio/agents/quality-20261104/journal.md`。
+追加waiverはnone、既存WVR-0001はWinHTTP callbackのみで継続する。
 
-## 配布と受理状態
+## 実行中アプリと配布
 
-Store 1.2.0は#536/PR #538、source `eb10419`の提出原本。Mermaidは含まない。
-hideの最新報告は11月3日20:19:59の「Pre-processing」で、認定完了・公開・Store署名版導入は未確認。
-最新原本は`D:/NeNeFolio/agents/release-1.2.0-20261103/store-status.json`。
-通常版と提出物は同じ1.2.0表記でもsourceが異なる。GitHub公開版は1.1.0 Betaを維持する。
-新しい報告・指示なしにStore監視や再提出を始めない。
+開始時に稼働していたPID18964はWindowsApps配下のStore版1.2.0。起動pathの観測のみで、終了/操作していない。
+通常exeは`C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`、朝の開始時sourceは`cc84e45`（Mermaid統合済み）。
+#543以後の反映は各完了原本に従う。保存前強制終了・起動中上書きをせず、試験へ実ノートを使わない。
 
-常設ステータスバー#530は11月3日16:09、言語ラベル#532とアイコン#533は同日19:24にhideが受理済み。
-経過と各完了原本は[11月3日の日報](../reports/2026-11-03.md)から参照する。
+Store提出1.2.0は#536/PR538、source `eb10419`でMermaidを含まない。hideの前回報告は11月3日20:19:59の
+「Pre-processing」。今朝の起動観測を認定/公開の独立確認へ拡張しない。GitHub公開版は1.1.0 Beta。
+新しい配布指示なしに再提出/公開は行わない。提出原本は`D:/NeNeFolio/agents/release-1.2.0-20261103/store-status.json`。
 
-## 継続保留と保持物
+## 保留・保持物
 
-#466の表幅診断と#479の職場での文字ウェイト混在は保留。
-#530と旧削除拒否9作業木は保持し、削除を再試行しない。正確な所在・理由は[引き継ぎ書](../handoffs/2026-11-04.md)へ。
-10月31日にhideが削除した47出力を古い記録だけで現存扱いに戻さない。
+#466の表幅診断と#479の職場での文字ウェイト混在は保留。#530と旧削除拒否9作業木は保持し、削除を再試行しない。
+正確な所在・理由は引き継ぎ書へ。10月31日にhideが削除した47出力を古い記録だけで現存扱いに戻さない。
 大文書の投入/表配置、大量ノート検索準備、極狭幅表、flow/sequence以外のMermaidは未対応/保留。
-WACKとAppDataノートroot、Store署名版導入の限界は[MSIX品質記録](../quality/2026-11-01-msix-installation.md)を参照する。
-
-追加waiverはnone、既存WVR-0001は継続。単体実行が既定。
-次回は新しいhide指示・実Issue/PR・checkout・通常アプリの稼働pathを照合し、保存前の強制終了や起動中上書きをしない。
+WACKとAppDataノートroot、Store署名版導入の従前の検証限界は[MSIX品質記録](../quality/2026-11-01-msix-installation.md)を参照する。

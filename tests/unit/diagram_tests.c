@@ -151,6 +151,74 @@ static void flow_shapes(void)
     diagram_scene_destroy(scene);
     diagram_model_destroy(model);
 }
+static void connected_shape_delimiters(void)
+{
+    static const struct
+    {
+        const char *text;
+        enum diagram_shape shape;
+    } cases[] = {{"[label]", DIAGRAM_RECTANGLE},
+                 {"(label)", DIAGRAM_ROUNDED},
+                 {"([label])", DIAGRAM_STADIUM},
+                 {"[[label]]", DIAGRAM_SUBROUTINE},
+                 {"[(label)]", DIAGRAM_CYLINDER},
+                 {"((label))", DIAGRAM_CIRCLE},
+                 {"(((label)))", DIAGRAM_DOUBLE_CIRCLE},
+                 {"{label}", DIAGRAM_DIAMOND},
+                 {"{{label}}", DIAGRAM_HEXAGON},
+                 {"[/label/]", DIAGRAM_PARALLELOGRAM},
+                 {"[\\label\\]", DIAGRAM_PARALLELOGRAM_REVERSE},
+                 {"[/label\\]", DIAGRAM_TRAPEZOID},
+                 {"[\\label/]", DIAGRAM_TRAPEZOID_REVERSE},
+                 {">label]", DIAGRAM_ASYMMETRIC}};
+    size_t count = sizeof cases / sizeof cases[0];
+    for (size_t first = 0; first < count; ++first)
+        for (size_t second = 0; second < count; ++second)
+        {
+            char source[128];
+            int length = snprintf(source, sizeof source, "flowchart TB\nA%s --> B%s",
+                                  cases[first].text, cases[second].text);
+            require(length > 0 && (size_t)length < sizeof source, "connected shape fixture fits");
+            struct diagram_model *model = parsed(source);
+            if (diagram_model_node_count(model) != 2 || diagram_model_link_count(model) != 1)
+                fprintf(stderr, "shape chain lost an endpoint or edge: %s\n", source);
+            require(diagram_model_node_count(model) == 2 && diagram_model_link_count(model) == 1,
+                    "each connected shape preserves both endpoints and their edge");
+            struct diagram_node left = diagram_model_node_at(model, 0);
+            struct diagram_node right = diagram_model_node_at(model, 1);
+            struct diagram_link link = diagram_model_link_at(model, 0);
+            require(left.shape == cases[first].shape && right.shape == cases[second].shape &&
+                        same_text(diagram_model_text_at(model, left.label), "label") &&
+                        same_text(diagram_model_text_at(model, right.label), "label") &&
+                        link.from == 0 && link.to == 1,
+                    "a closing delimiter belongs to its node and preserves shape and label");
+            diagram_model_destroy(model);
+        }
+}
+static void quoted_shape_delimiters(void)
+{
+    struct diagram_model *model = parsed(
+        "flowchart TB\nA[/\"literal /] ) } and \\\"quoted\\\"\"\\] --> B[\\\"literal \\] end\"/]\n"
+        "B --> C[/c/] --> D[\\d\\]");
+    require(diagram_model_node_count(model) == 4 && diagram_model_link_count(model) == 3,
+            "quoted closing sequences do not terminate a node");
+    struct diagram_node first = diagram_model_node_at(model, 0);
+    struct diagram_node second = diagram_model_node_at(model, 1);
+    require(
+        first.shape == DIAGRAM_TRAPEZOID && second.shape == DIAGRAM_TRAPEZOID_REVERSE &&
+            same_text(diagram_model_text_at(model, first.label), "literal /] ) } and \"quoted\"") &&
+            same_text(diagram_model_text_at(model, second.label), "literal \\] end"),
+        "quoted text and escaped quotes retain their content independently of shape");
+    diagram_model_destroy(model);
+    reject_source("flowchart TB\nA[/missing]", DIAGRAM_INVALID);
+    reject_source("flowchart TB\nA[\\missing]", DIAGRAM_INVALID);
+    reject_source("flowchart TB\nA[/missing] --> B[/label/]", DIAGRAM_INVALID);
+    reject_source("flowchart TB\nA[\\missing] --> B[\\label\\]", DIAGRAM_INVALID);
+    reject_source("flowchart TB\nA[/missing) --> B[/label/]", DIAGRAM_INVALID);
+    reject_source("flowchart TB\nA[\\missing} --> B[\\label\\]", DIAGRAM_INVALID);
+    reject_source("flowchart TB\nA(((missing)) --> B(((label)))", DIAGRAM_INVALID);
+    reject_source("flowchart TB\nA([missing) --> B([label])", DIAGRAM_INVALID);
+}
 static void groups_and_cycles(void)
 {
     struct diagram_model *model = parsed(flow_source);
@@ -913,6 +981,8 @@ static void collection_capacity_contract(void)
 }
 void run_diagram_tests(void)
 {
+    connected_shape_delimiters();
+    quoted_shape_delimiters();
     flow_statement_contract();
     collection_capacity_contract();
     model_construction_contract();
