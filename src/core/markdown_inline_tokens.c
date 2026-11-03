@@ -2,8 +2,8 @@
 #include "markdown_autolink.h"
 #include "markdown_character_reference.h"
 #include "markdown_delimiter_kind.h"
-#include "markdown_images.h"
 #include "markdown_inline_kind.h"
+#include "markdown_media.h"
 #include "markdown_web_link.h"
 #include "rtf_text.h"
 #include "text_buffer.h"
@@ -29,7 +29,7 @@ struct markdown_inline_tokens
         bool field;
     } *_Nonnull tokens;
     struct text_buffer *_Nonnull out;
-    struct markdown_images *_Nonnull images;
+    struct markdown_media *_Nonnull media;
     size_t count;
     enum markdown_rtf_outcome outcome;
     bool in_link;
@@ -340,9 +340,9 @@ static void mark_image_literal(struct markdown_inline_tokens *_Nonnull parser, s
     size_t destination = open->mate + 1;
     struct note_search_span span = {.start = parser->tokens[destination].start + 1,
                                     .end = parser->tokens[end].start};
-    open->image = markdown_images_count(parser->images);
-    enum image_outcome result = markdown_images_append(parser->images, parser->view, span);
-    if (result == IMAGE_READY && open->image < markdown_images_display_limit)
+    enum image_outcome result =
+        markdown_media_image(parser->media, parser->view, span, &open->image);
+    if (result == IMAGE_READY)
         open->kind = MARKDOWN_INLINE_IMAGE;
     if (result == IMAGE_OUT_OF_MEMORY)
         parser->outcome = MARKDOWN_RTF_OUT_OF_MEMORY;
@@ -728,7 +728,7 @@ static size_t emit_range_token(struct markdown_inline_tokens *_Nonnull parser, s
     {
         if (token->kind == MARKDOWN_INLINE_IMAGE)
         {
-            markdown_images_placeholder(parser->out, token->image);
+            markdown_media_placeholder(parser->out, token->image);
             text_buffer_append_text(parser->out, " ");
             append_range(parser, token->start + 1, parser->tokens[token->mate].start, false);
             return token->after;
@@ -815,7 +815,7 @@ enum markdown_rtf_outcome markdown_inline_tokens_render(struct markdown_render r
     struct markdown_inline_tokens parser = {.view = view,
                                             .tokens = tokens,
                                             .out = render.text,
-                                            .images = render.images,
+                                            .media = render.media,
                                             .outcome = MARKDOWN_RTF_CONVERTED};
     tokenize(&parser);
     pair_verbatim(&parser, next);

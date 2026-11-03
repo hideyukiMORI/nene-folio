@@ -1,4 +1,5 @@
 #include "image_adapter.h"
+#include "diagram_render.h"
 #include "image_cache.h"
 #include "image_decode.h"
 #include "image_download.h"
@@ -73,24 +74,23 @@ static enum image_outcome https_image(const struct image_job *_Nonnull job,
     image_download_destroy(download);
     return outcome;
 }
-static enum image_outcome load(struct image_adapter *_Nonnull adapter,
-                               const struct image_job *_Nonnull job,
-                               struct image_bitmap *_Nullable *_Nonnull out)
+static enum image_outcome load_file(struct image_adapter *_Nonnull adapter,
+                                    const struct image_job *_Nonnull job,
+                                    const struct image_work *_Nonnull work,
+                                    struct image_bitmap *_Nullable *_Nonnull out)
 {
-    struct image_work work = {
-        .adapter = adapter, .ticket = job->ticket, .cancelled = cancelled, .progress = progress};
     enum image_outcome result = IMAGE_UNSUPPORTED;
     switch (image_source_kind(job->source))
     {
     case IMAGE_SOURCE_LOCAL:
-        result = local_image(adapter, job, &work, out);
+        result = local_image(adapter, job, work, out);
         break;
     case IMAGE_SOURCE_HTTPS:
         result = image_cache_get(adapter->cache, job, nullptr, out);
         if (result == IMAGE_PENDING)
         {
-            result = https_image(job, &work, out);
-            if (result == IMAGE_READY && !cancelled(&work))
+            result = https_image(job, work, out);
+            if (result == IMAGE_READY && !cancelled(work))
                 image_cache_store(adapter->cache, job, nullptr, *out);
         }
         break;
@@ -99,12 +99,44 @@ static enum image_outcome load(struct image_adapter *_Nonnull adapter,
     }
     return result;
 }
+static enum image_outcome load_diagram(struct image_adapter *_Nonnull adapter,
+                                       const struct image_job *_Nonnull job,
+                                       const struct image_work *_Nonnull work,
+                                       struct image_bitmap *_Nullable *_Nonnull out)
+{
+    enum image_outcome result = image_cache_get(adapter->cache, job, nullptr, out);
+    if (result == IMAGE_PENDING)
+    {
+        struct diagram_request request = {job->diagram, job->palette, job->face};
+        result = diagram_render_read(&request, work, out);
+        if (result == IMAGE_READY && !cancelled(work))
+            image_cache_store(adapter->cache, job, nullptr, *out);
+    }
+    return result;
+}
+static enum image_outcome load(struct image_adapter *_Nonnull adapter,
+                               const struct image_job *_Nonnull job,
+                               struct image_bitmap *_Nullable *_Nonnull out)
+{
+    struct image_work work = {
+        .adapter = adapter, .ticket = job->ticket, .cancelled = cancelled, .progress = progress};
+    switch (job->kind)
+    {
+    case IMAGE_JOB_EMPTY:
+        return IMAGE_CANCELLED;
+    case IMAGE_JOB_FILE:
+        return load_file(adapter, job, &work, out);
+    case IMAGE_JOB_DIAGRAM:
+        return load_diagram(adapter, job, &work, out);
+    }
+    return IMAGE_FAILED;
+}
 static bool take_job(struct image_adapter *_Nonnull adapter, struct image_job *_Nonnull job)
 {
     AcquireSRWLockExclusive(&adapter->lock);
     bool running = !adapter->stopping;
     *job = adapter->queued;
-    adapter->queued.source = nullptr;
+    adapter->queued = (struct image_job){0};
     ReleaseSRWLockExclusive(&adapter->lock);
     return running;
 }
@@ -139,7 +171,7 @@ static DWORD WINAPI worker(void *_Nullable context)
             break;
         struct image_job job = {0};
         bool running = take_job(adapter, &job);
-        if (running && job.source != nullptr)
+        if (running && job.kind != IMAGE_JOB_EMPTY)
             complete_job(adapter, &job, initialized);
         image_job_destroy(&job);
         if (!running)
@@ -160,24 +192,36 @@ static void cancel(struct image_adapter *_Nonnull adapter)
     adapter->phase = IMAGE_PHASE_IDLE;
     ReleaseSRWLockExclusive(&adapter->lock);
 }
+static enum image_outcome submit(struct image_adapter *_Nonnull adapter, struct image_job job,
+                                 uint64_t *_Nonnull ticket)
+{
+    cancel(adapter);
+    AcquireSRWLockExclusive(&adapter->lock);
+    job.ticket = adapter->ticket;
+    adapter->queued = job;
+    adapter->outcome = IMAGE_PENDING;
+    adapter->phase =
+        job.kind == IMAGE_JOB_DIAGRAM ? IMAGE_PHASE_DIAGRAM_PARSING : IMAGE_PHASE_READING;
+    *ticket = job.ticket;
+    ReleaseSRWLockExclusive(&adapter->lock);
+    SetEvent(adapter->wake);
+    return IMAGE_PENDING;
+}
 static enum image_outcome request(struct image_adapter *_Nonnull adapter,
                                   const struct image_request *_Nonnull input,
                                   uint64_t *_Nonnull ticket)
 {
     struct image_job job = {0};
     enum image_outcome copied = image_job_copy(&job, input);
-    if (copied != IMAGE_READY)
-        return copied;
-    cancel(adapter);
-    AcquireSRWLockExclusive(&adapter->lock);
-    job.ticket = adapter->ticket;
-    adapter->queued = job;
-    adapter->outcome = IMAGE_PENDING;
-    adapter->phase = IMAGE_PHASE_READING;
-    *ticket = job.ticket;
-    ReleaseSRWLockExclusive(&adapter->lock);
-    SetEvent(adapter->wake);
-    return IMAGE_PENDING;
+    return copied == IMAGE_READY ? submit(adapter, job, ticket) : copied;
+}
+static enum image_outcome diagram(struct image_adapter *_Nonnull adapter,
+                                  const struct diagram_request *_Nonnull input,
+                                  uint64_t *_Nonnull ticket)
+{
+    struct image_job job = {0};
+    enum image_outcome copied = image_job_diagram(&job, input);
+    return copied == IMAGE_READY ? submit(adapter, job, ticket) : copied;
 }
 static enum image_outcome poll(struct image_adapter *_Nonnull adapter, uint64_t ticket,
                                struct image_bitmap *_Nullable *_Nonnull out)
@@ -248,6 +292,7 @@ struct image_port image_adapter_port(struct image_adapter *_Nonnull adapter)
 {
     return (struct image_port){.adapter = adapter,
                                .request = request,
+                               .diagram = diagram,
                                .poll = poll,
                                .phase = phase,
                                .cancel = cancel,

@@ -1,5 +1,5 @@
 /* #520: real RichEdit image replacement on an isolated desktop. */
-#include "markdown_images.h"
+#include "markdown_media.h"
 #include "markdown_rtf.h"
 #include "note_minimap.h"
 #include "note_pane.h"
@@ -39,7 +39,7 @@ static void load(struct note_pane *_Nonnull pane, const char *_Nonnull source, e
     if (mode == PANE_MODE_VIEW)
     {
         enum image_outcome prepared =
-            note_pane_prepare_images(pane, markdown_images_count(markdown_rtf_images(rtf)));
+            note_pane_prepare_images(pane, markdown_media_count(markdown_rtf_media(rtf)));
         if (prepared != IMAGE_READY)
         {
             wchar_t native[2048];
@@ -500,6 +500,41 @@ static void geometry_boundaries(struct note_pane *_Nonnull pane,
     note_minimap_destroy(map);
 }
 
+static void mixed_media(struct note_pane *_Nonnull pane, const struct image_bitmap *_Nonnull image)
+{
+    const char source[] = "Before\n\n```mermaid\nflowchart LR\nA --> B\n```\n\n"
+                          "![image](images/a.png)\n\n"
+                          "```mermaid\nsequenceDiagram\nA->>B: hello\n```\n\nAfter\n";
+    MoveWindow(note_pane_handle(pane), 0, 0, 600, 600, FALSE);
+    load(pane, source, PANE_MODE_VIEW);
+    HWND window = note_pane_handle(pane);
+    require(note_pane_image_count(pane) == 3, "diagrams and images share ordered display slots");
+    wchar_t before[8192], after[8192];
+    LRESULT length = raw(window, before);
+    CHARRANGE selected = {1, 4}, actual;
+    SendMessageW(window, EM_EXSETSEL, 0, (LPARAM)&selected);
+    LRESULT dirty = SendMessageW(window, EM_GETMODIFY, 0, 0);
+    LRESULT undo = SendMessageW(window, EM_CANUNDO, 0, 0);
+    for (size_t index = 0; index < 3; ++index)
+    {
+        require(note_pane_insert_image(pane, index, image) == IMAGE_READY,
+                "mixed native insertion");
+        note_pane_finish_image(pane, index);
+    }
+    SendMessageW(window, EM_EXGETSEL, 0, (LPARAM)&actual);
+    require(actual.cpMin == selected.cpMin && actual.cpMax == selected.cpMax &&
+                SendMessageW(window, EM_GETMODIFY, 0, 0) == dirty &&
+                SendMessageW(window, EM_CANUNDO, 0, 0) == undo,
+            "mixed insertion preserves selection dirty and Undo");
+    require(raw(window, after) == length &&
+                memcmp(before, after, (size_t)length * sizeof(wchar_t)) == 0,
+            "mixed insertion preserves all native text and hidden markers");
+    size_t index = 99;
+    require(!note_pane_next_image(pane, &index), "all mixed slots completed");
+    minimap(pane);
+    original_edit(pane, source);
+}
+
 int main(void)
 {
     HDESK desktop = CreateDesktopW(L"NeNeFolioImages520", nullptr, nullptr, 0,
@@ -516,6 +551,7 @@ int main(void)
             "pane");
     MoveWindow(note_pane_handle(pane), 0, 0, 600, 600, FALSE);
     struct image_bitmap *image = bitmap();
+    mixed_media(pane, image);
     preservation(pane, image);
     table_image(pane, image);
     wheel_geometry(pane, image);

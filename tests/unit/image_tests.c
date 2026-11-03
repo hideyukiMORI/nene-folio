@@ -27,6 +27,8 @@ struct image_adapter
     enum image_outcome asset_failure;
     size_t requests;
     size_t assets;
+    char face[64];
+    struct diagram_palette palette;
 };
 static struct image_adapter fake;
 static const char *request_category = "A";
@@ -49,6 +51,19 @@ static enum image_outcome poll(struct image_adapter *_Nonnull adapter, uint64_t 
 {
     (void)out;
     return ticket == adapter->ticket ? IMAGE_PENDING : IMAGE_CANCELLED;
+}
+static enum image_outcome diagram(struct image_adapter *_Nonnull adapter,
+                                  const struct diagram_request *_Nonnull input,
+                                  uint64_t *_Nonnull ticket)
+{
+    require(note_text_length(input->source) != 0 && input->face[0] != '\0',
+            "owned diagram request values");
+    strcpy_s(adapter->face, sizeof adapter->face, input->face);
+    adapter->palette = input->palette;
+    *ticket = ++adapter->ticket;
+    adapter->phase = IMAGE_PHASE_DIAGRAM_PARSING;
+    ++adapter->requests;
+    return IMAGE_PENDING;
 }
 static enum image_phase phase(struct image_adapter *_Nonnull adapter)
 {
@@ -84,6 +99,7 @@ const struct image_port *_Nonnull test_image_port(void)
 {
     static const struct image_port port = {.adapter = &fake,
                                            .request = request,
+                                           .diagram = diagram,
                                            .poll = poll,
                                            .phase = phase,
                                            .cancel = cancel,
@@ -269,7 +285,8 @@ static void image_limits(void)
     require(image_bitmap_create(pixels, (struct image_size){0, 1}, &bitmap) == IMAGE_TOO_LARGE &&
                 bitmap == nullptr,
             "zero dimension rejected");
-    require(image_bitmap_create(pixels, (struct image_size){2049, 1}, &bitmap) == IMAGE_TOO_LARGE,
+    require(image_bitmap_create(pixels, (struct image_size){image_bitmap_edge_limit + 1, 1},
+                                &bitmap) == IMAGE_TOO_LARGE,
             "display dimension cap");
     require(image_bitmap_create(pixels, (struct image_size){2, 1}, &bitmap) == IMAGE_READY,
             "BGRA bitmap");
@@ -454,6 +471,76 @@ static void state_cancellation(void)
     folio_state_destroy(state);
     test_adapter_destroy(adapter);
 }
+static enum persistence_outcome read_mixed_note(struct persistence_adapter *_Nonnull adapter,
+                                                const char *_Nonnull category,
+                                                const char *_Nonnull name,
+                                                struct note_text *_Nullable *_Nonnull out)
+{
+    (void)adapter;
+    (void)category;
+    (void)name;
+    const char source[] = "```mermaid\nflowchart LR\nA --> B\n```\n\n"
+                          "![x](images/a.png)\n\n"
+                          "```mermaid\nsequenceDiagram\nA->>B: hello\n```\n";
+    return note_text_create(source, sizeof source - 1, out) == NOTE_TEXT_ACCEPTED
+               ? PERSISTENCE_LOADED
+               : PERSISTENCE_OUT_OF_MEMORY;
+}
+static void diagram_state_changes(struct folio_state *_Nonnull state, uint64_t ticket)
+{
+    struct image_bitmap *_Nullable bitmap = nullptr;
+    require(folio_state_set_theme(state, FOLIO_THEME_CHOICE_DARK) == FOLIO_STATE_READY &&
+                folio_state_poll_image(state, ticket, &bitmap) == IMAGE_CANCELLED,
+            "palette change rejects the previous diagram generation");
+    require(folio_state_request_image(state, 0, &ticket) == IMAGE_PENDING,
+            "diagram resubmitted for new palette");
+    struct diagram_palette palette = diagram_palette_for(folio_state_palette(state));
+    require(diagram_palette_equal(&fake.palette, &palette), "effective palette passed to worker");
+    require(folio_state_set_language(state, FOLIO_LANGUAGE_ZH_HANS) == FOLIO_STATE_READY &&
+                folio_state_poll_image(state, ticket, &bitmap) == IMAGE_CANCELLED,
+            "language and font change reject the previous generation");
+    require(folio_state_request_image(state, 0, &ticket) == IMAGE_PENDING &&
+                strcmp(fake.face, ui_font_face(FOLIO_LANGUAGE_ZH_HANS)) == 0,
+            "new bundled font passed to diagram worker");
+    require(folio_state_select_note(state, 0, 1, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
+                folio_state_poll_image(state, ticket, &bitmap) == IMAGE_CANCELLED,
+            "note change rejects an old diagram");
+    require(folio_state_request_image(state, 0, &ticket) == IMAGE_PENDING &&
+                folio_state_begin_edit(state) == FOLIO_STATE_READY &&
+                folio_state_poll_image(state, ticket, &bitmap) == IMAGE_CANCELLED &&
+                folio_state_request_image(state, 0, &ticket) == IMAGE_CANCELLED,
+            "edit mode rejects diagram work");
+}
+static void diagram_state(void)
+{
+    struct persistence_adapter *adapter = test_adapter_create(
+        "{\"version\":1,\"categories\":[{\"name\":\"A\",\"color\":\"#112233\",\"expanded\":true}]}",
+        "{\"version\":1,\"notes\":[\"one\",\"two\"]}");
+    struct persistence_port disk = test_adapter_port(adapter);
+    disk.read_note = read_mixed_note;
+    struct appearance_port appearance = test_appearance_port();
+    struct regex_port regex = test_regex_port();
+    struct folio_state *_Nullable state = nullptr;
+    require(folio_state_create(test_ports(&disk, &appearance, &regex), &state) ==
+                    FOLIO_STATE_READY &&
+                folio_state_set_theme(state, FOLIO_THEME_CHOICE_LIGHT) == FOLIO_STATE_READY &&
+                folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "mixed-media application fixture");
+    uint64_t ticket = 0;
+    require(folio_state_request_image(state, 0, &ticket) == IMAGE_PENDING &&
+                folio_state_image_phase(state) == IMAGE_PHASE_DIAGRAM_PARSING,
+            "first slot dispatches a diagram");
+    require(folio_state_request_image(state, 1, &ticket) == IMAGE_PENDING &&
+                folio_state_image_phase(state) == IMAGE_PHASE_READING,
+            "middle slot dispatches the real image reference");
+    require(folio_state_request_image(state, 2, &ticket) == IMAGE_PENDING &&
+                folio_state_image_phase(state) == IMAGE_PHASE_DIAGRAM_PARSING &&
+                folio_state_request_image(state, 3, &ticket) == IMAGE_CANCELLED,
+            "last diagram slot and display boundary remain distinct");
+    diagram_state_changes(state, ticket);
+    folio_state_destroy(state);
+    test_adapter_destroy(adapter);
+}
 static enum folio_state_outcome allocation_export(const struct note_text *_Nonnull body)
 {
     struct image_export *_Nullable images = nullptr;
@@ -497,5 +584,6 @@ void run_image_tests(void)
     export_contract();
     export_failures();
     state_cancellation();
+    diagram_state();
     allocation_contract();
 }

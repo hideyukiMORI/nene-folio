@@ -28,8 +28,7 @@ enum image_outcome image_cache_get(const struct image_cache *_Nonnull cache,
     for (size_t index = 0; index < capacity; ++index)
     {
         const struct image_job *key = &cache->keys[index];
-        if (key->source != nullptr && strcmp(key->category, job->category) == 0 &&
-            strcmp(image_source_target(key->source), image_source_target(job->source)) == 0 &&
+        if (image_job_equal(key, job) &&
             (encoded == nullptr ||
              (cache->encoded[index] != nullptr && cache->lengths[index] == encoded->length &&
               memcmp(cache->encoded[index], encoded->bytes, encoded->length) == 0)))
@@ -47,6 +46,7 @@ static void destroy_entry(struct image_cache *_Nonnull cache, size_t index)
     free(cache->encoded[index]);
     cache->encoded[index] = nullptr;
     cache->lengths[index] = 0;
+    cache->bytes -= image_job_bytes(&cache->keys[index]);
     image_job_destroy(&cache->keys[index]);
 }
 void image_cache_store(struct image_cache *_Nonnull cache, const struct image_job *_Nonnull job,
@@ -54,7 +54,7 @@ void image_cache_store(struct image_cache *_Nonnull cache, const struct image_jo
                        const struct image_bitmap *_Nonnull bitmap)
 {
     size_t encoded_length = encoded == nullptr ? 0 : encoded->length;
-    size_t length = image_bitmap_length(bitmap) + encoded_length;
+    size_t length = image_bitmap_length(bitmap) + encoded_length + image_job_bytes(job);
     if (length > byte_limit)
         return;
     while (cache->bytes + length > byte_limit || cache->bitmaps[cache->next] != nullptr)
@@ -70,8 +70,7 @@ void image_cache_store(struct image_cache *_Nonnull cache, const struct image_jo
             return;
         memcpy(bytes, encoded->bytes, encoded_length);
     }
-    struct image_request request = {.category = job->category, .source = job->source};
-    if (image_job_copy(&cache->keys[cache->next], &request) != IMAGE_READY)
+    if (image_job_clone(&cache->keys[cache->next], job) != IMAGE_READY)
     {
         free(bytes);
         return;

@@ -1,5 +1,17 @@
 # いまの状態 — NeNe Folio
 
+## 11月3日夜 — native Mermaid
+
+hideの依頼で#539を開始した。今回の完成対象はフローチャートとシーケンス図。
+本文を先に表示し、図を既存画像worker/取消/進捗/native差替えへ合流させる。
+設計は[ADR0089](../adr/0089-native-lazy-mermaid.md)、対象検証と測定は[品質記録](../quality/2026-11-03-native-mermaid.md)。
+22:30のhide指定でClaudeのdesignプラグインと[比較canvas](https://claude.ai/artifact/CxHhi1aBQuF2WGa9PAxnbe)を使い、
+B案の部品/文字組みと追加相談した多行円柱の補正を反映した。対象core/native/確保失敗検証とRelease測定を記録した。
+最終PR head・必須CI・main・通常反映/data照合・保全整理の確定原本は
+`D:/NeNeFolio/agents/mermaid-20261103/integration-completion.json`。
+22:33にhideのEscで画面操作を停止したため、その後の実出力確認は専用の描画テストで行った。
+Store更新は今回の対象ではない。作業木/outputの最終所在も確定原本を参照する。
+
 ## 11月3日夜 — Store更新候補1.2.0
 
 hideは19:24に言語ラベルと新アイコンを実機受理し、Microsoft Storeのパッケージアップロード画面へ進んだ。
@@ -57,7 +69,7 @@ Store 1.1.0は11月1日のhide報告「認定中」が最後の情報。認定�
   `D:/NeNeFolio/worktrees/466-table-caller-width`と`D:/NeNeFolio/outputs/466-table-caller-width`を未完として保持。
 - 旧削除拒否9作業木は再試行・別手段削除をしない。所在一覧は[今回の引き継ぎ](../handoffs/2026-11-03.md)へ。
   10月31日にhideが削除した47出力を古い保持記録だけで現存扱いに戻さない。
-- 大文書のRichEdit投入/表配置、大量ノートの検索準備、極狭幅表、Mermaid等は未対応/範囲外として残る。
+- 大文書のRichEdit投入/表配置、大量ノートの検索準備、極狭幅表、flow/sequence以外のMermaidは未対応/範囲外として残る。
 - WACKの総合WARNING、AppDataノートroot保持の未検証、Store署名版の導入は
   [MSIX品質記録](../quality/2026-11-01-msix-installation.md)と今回の引き継ぎを参照する。
 

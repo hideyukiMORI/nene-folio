@@ -188,7 +188,7 @@ ATX見出し、水平区切り、コードブロックの開始行を表の見�
 
 表示用の画像は縦横比を保って長辺2048画素以下へ縮小し、本文幅や表セル幅に収めます。拡大はしません。
 ミニマップには画像の位置と表示サイズに応じたブロックを表示します。画像が大きい箇所でも、ホイール一回の移動量は本文の文字サイズに合わせます。
-1枚の入力は16MiB・元画像64M画素まで、1文書で表示する画像は先頭256件までです。
+1枚の入力は16MiB・元画像64M画素まで、1文書で表示する画像と図は合わせて先頭256件までです。
 元画像や入力したMarkdownを変更せず、画像を自動移動・取り込みすることもありません。
 `images/`以外のローカル参照には、持ち出しやすい配置をステータス行で控えめに案内します。
 HTTPS画像は外部のURLへアクセスして表示し、通常のデータフォルダーへ保存しません。
@@ -203,6 +203,55 @@ SVG・GIF・WebP・動画・参照形式の画像は対象外です。ファイ�
 通常本文で感嘆符をbackslashでescapeした場合は画像とせず、後続をリンクとして扱います。
 書き出し時の画像の扱いは[取り込みと書き出し](TRANSFER.md)を参照してください。
 
+## Mermaidの図
+
+`mermaid`と小文字で指定したコードブロックは、閲覧時に図として表示します（#539）。
+本文を先に表示し、画面の近くにある図から読み取り・配置・描画を進めます。
+画像と同じ通知行の動くメーターを使い、処理中も本文を操作できます。メーターは完了率を表しません。
+配色は現在のテーマ、文字は本文と同じ言語の書体を使います。幅と倍率の変更は画像と同じ再配置へ渡します。
+編集・保存・単票/ZIP書き出しにはMermaidの原文を保ちます。生成した図の画像をノートへ保存しません。
+
+````markdown
+```mermaid
+flowchart LR
+    A[入力] --> B{確認}
+    B -->|成功| C[保存]
+    B -->|修正| A
+```
+
+```mermaid
+sequenceDiagram
+    actor User as 利用者
+    participant App as ノート
+    User->>+App: 保存
+    Note over App: Markdown原文を保存
+    App-->>-User: 完了
+```
+````
+
+今回の対応範囲はフローチャートとシーケンス図です。Mermaid.jsと同じ位置や曲線になる保証はありません。
+
+| 種類 | 対応する記法 |
+| --- | --- |
+| フローチャート | `flowchart` / `graph`、`TB` / `TD` / `BT` / `LR` / `RL`、ノードIDとラベル、辺の連鎖、戻り辺・自己辺 |
+| ノードの形 | 四角、角丸、stadium、subroutine、cylinder、circle、double circle、diamond、hexagon、左右parallelogram、上下trapezoid、asymmetric。従来の括弧記法を使用 |
+| 辺 | 実線・破線・太線・非表示、矢印・丸・×、pipeで囲むラベルと辺の途中のラベル |
+| サブグラフ | `subgraph ID [見出し]`〜`end`、入れ子。図全体と異なる`direction`、サブグラフそのものを端点にする辺は未対応 |
+| シーケンス図 | `sequenceDiagram`、`participant` / `actor`と`as`、暗黙の参加者、メッセージ・自己メッセージ・双方向矢印 |
+| 注釈・処理区間 | `Note over` / `left of` / `right of`、`activate` / `deactivate`、メッセージの`+` / `-`、`autonumber`（開始値・増分・`off`）、`title` |
+| 分岐・反復の枠 | `loop` / `alt` / `opt` / `par` / `critical` / `break`〜`end`。対応する`else` / `and` / `option` |
+
+日本語ラベル、引用符付きラベル、`<br>` / `<br/>` / `<br />` / `\n`での改行、基本の文字参照を使えます。
+`%%`のコメントは図へ表示しません。未対応の種類・構文、壊れた構文、大きすぎる図は通知行へ案内を出します。
+原文は編集画面で確認できます。`classDef` / `style` / `click`、設定directive、HTML装飾、Markdownラベル、
+`&`でノードを束ねる省略記法、`@{...}`の新しい形指定、`box` / `rect` / `create` / `destroy`等は未対応です。
+JavaScript・callbackを実行せず、図から外部の画像やURLを取得しません。
+
+1図の原文は256KiB、ラベルは2048 UTF-8 bytes、ノード/参加者は256、辺は1024、
+sequenceイベントは2048、サブグラフは64、入れ子は16段までです。1ノートの図原文の収集は合計4MiBまでです。
+配置は各辺32768単位、表示bitmapは各辺8192画素・合計4M画素までとし、超える場合は図の分割を案内します。
+幅に合わせた縮小で細部が読みにくくなる場合も、図を分けてください。
+
 ## 対応範囲
 
 CommonMark/GFMの全構文への完全互換は保証しません。HTML描画、数式、脚注、独自wiki記法、
@@ -214,7 +263,8 @@ CommonMark/GFMの全構文への完全互換は保証しません。HTML描画�
 
 設計と検証の根拠: [ADR0070](adr/0070-markdown-syntax-and-native-tables.md)、
 [ADR0071](adr/0071-ordered-markdown-containers.md)、[ADR0072](adr/0072-native-table-container-indent.md)、
-[ADR0085](adr/0085-lazy-markdown-images.md)、[ADR0086](adr/0086-fenced-code-syntax.md)。
+[ADR0085](adr/0085-lazy-markdown-images.md)、[ADR0086](adr/0086-fenced-code-syntax.md)、
+[ADR0089](adr/0089-native-lazy-mermaid.md)。
 
 今回の軽い拡張は[ADR0078](adr/0078-lightweight-markdown-inline-rendering.md)、
 未対応項目と公開後の候補は[Markdown対応の整理](quality/2026-10-31-markdown-scope.md)を参照してください。

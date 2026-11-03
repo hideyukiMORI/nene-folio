@@ -1,0 +1,10 @@
+#ifndef NENEFOLIO_DIAGRAM_DIRECTION_H
+#define NENEFOLIO_DIAGRAM_DIRECTION_H
+enum diagram_direction : unsigned char
+{
+    DIAGRAM_TOP_BOTTOM,
+    DIAGRAM_BOTTOM_TOP,
+    DIAGRAM_LEFT_RIGHT,
+    DIAGRAM_RIGHT_LEFT
+};
+#endif

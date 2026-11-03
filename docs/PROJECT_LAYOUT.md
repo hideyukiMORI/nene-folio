@@ -82,6 +82,10 @@ fenceの言語・aliases・字句規則は`code_language`、ブロック内の�
 `note_archive`は検証済み本文のsnapshotから、UTF-8名・固定日時・CRC32を持つZIP32 STOREを純粋に生成する（ADR0082）。
 同じparserの`markdown_images`が画像参照と原文destination範囲を収集する。`markdown_destination`の展開をリンクと共有し、
 `markdown_image_copy`は出力コピーの該当範囲だけを変更する。`archive_assets`の画像bytesも同じZIP writerへ渡す（ADR0085）。
+`markdown_media`は同じ走査で画像参照とMermaid原文の表示slotを所有し、画像の書き出しcollectionを分離して保つ。
+`mermaid_diagram`が種類を判定し、`mermaid_flow` / `mermaid_sequence`が一時的なcollectorから不変`diagram_model`を作る。
+実文字計測の`diagram_metrics`を受け、`diagram_layout`からflow/sequenceの有界な配置を一回生成し、
+不変`diagram_scene`を返す。`diagram_ranks`の循環除去・順位付け、`diagram_geometry`の向き変換を共有する（ADR0089）。
 表の借用表示入力`markdown_table_format`はkindとcontainer owner由来のtwip字下げを持つ。
 `markdown_table_native`の純粋な対応判定（1〜63列・字下げ32767twip以下）をblocksと直接row入力で共有し、
 範囲外は同じ全行literal経路へ渡す。nativeの`trleft`と絶対`cellx`もtableが生成する（ADR0072）。
@@ -97,6 +101,7 @@ Webリンク起動は`folio_state`の意図から`web_link_port`へ渡し、合�
 単票書き出しは既存copied_text、ZIPは保存済み本文の読込とcore archiveへ渡す（ADR0082）。
 画像の要求/取消/結果は必須`image_port`へ渡し、`image_export`が同じ解析情報とportでZIP素材を揃える。
 カテゴリ移動/改名の画像基準の改訂も`folio_state`が所有する（ADR0085）。
+図は同じ`image_port`の`diagram_request`から原文・実効配色・書体を渡す。取消・結果・完了は画像と共通（ADR0089）。
 現在ノートの日時snapshotも`folio_state`が所有し、既存`persistence_port.read_note_times`から取得する。
 未選択・未保存・取得不能・取得済みを`note_times_state`で区別し、描画への借用値は`note_times_view`で渡す（ADR0087）。
 ノート保存先は`storage_state`が現在/次回/初回・復旧phaseを所有し、`storage_port`へ検証と設定保存を渡す。
@@ -119,6 +124,9 @@ coreの`storage_path`と`startup_settings`がpath検証と版1のcodecを持ち�
 `transfer_adapter`は外部Markdownの読込と検証済み本文/ZIPの新規公開だけを扱い、`file_bytes`の原子的な公開へ合流する（ADR0082）。
 `image_adapter`だけが画像workerと有界cacheを所有する。通常ファイルのreadは`image_file`、HTTPSは`image_download`、
 PNG/JPEGのWIC復号/縮小は`image_decode`へ閉じる。WinHTTP callbackは通知だけを渡す（ADR0085）。
+同じworkerの図要求は`diagram_render`が解析・計測・配置・描画を順に行う。`diagram_canvas`だけがGDI資源と
+2倍のDIB/縮小bufferを所有し、`diagram_native_shape`は選択済みDCへ幾何を写す。cacheは原文・配色・書体の一致で再利用する。
+図に別worker・ブラウザー・JavaScript実行時依存を持たせない（ADR0089）。
 
 ### `src/ui/win32`
 

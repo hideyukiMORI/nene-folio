@@ -39,6 +39,7 @@ struct native_fixture
 };
 
 static unsigned checks;
+static bool diagram_case;
 
 static void require(bool condition, const char *_Nonnull message)
 {
@@ -56,9 +57,11 @@ static void seed_notes(struct persistence_port disk)
     require(created == PERSISTENCE_STORED || created == PERSISTENCE_NAME_TAKEN, "test category");
     created = disk.create_category(disk.adapter, "target");
     require(created == PERSISTENCE_STORED || created == PERSISTENCE_NAME_TAKEN, "move category");
-    const char source[] = "Body before images\n\n![alt](images/one.png)\n\nBody after images\n";
+    const char *source =
+        diagram_case ? "Body before diagrams\n\n```mermaid\nflowchart LR\nA --> B\n```\n\nAfter\n"
+                     : "Body before images\n\n![alt](images/one.png)\n\nBody after images\n";
     struct note_text *_Nullable body = nullptr;
-    require(note_text_create(source, sizeof source - 1, &body) == NOTE_TEXT_ACCEPTED, "image note");
+    require(note_text_create(source, strlen(source), &body) == NOTE_TEXT_ACCEPTED, "media note");
     require(disk.write_note(disk.adapter, "schedule", "one", body) == PERSISTENCE_STORED,
             "image note stored");
     note_text_destroy(body);
@@ -93,6 +96,17 @@ static enum image_outcome poll_image(struct image_adapter *_Nonnull adapter, uin
         return adapter->outcome;
     static const unsigned char pixel[] = {0x40, 0x90, 0xE0, 0xFF};
     return image_bitmap_create(pixel, (struct image_size){1, 1}, out);
+}
+static enum image_outcome request_diagram(struct image_adapter *_Nonnull adapter,
+                                          const struct diagram_request *_Nonnull request,
+                                          uint64_t *_Nonnull ticket)
+{
+    (void)request;
+    *ticket = ++adapter->ticket;
+    ++adapter->requests;
+    adapter->phase = IMAGE_PHASE_DIAGRAM_PARSING;
+    adapter->outcome = IMAGE_PENDING;
+    return IMAGE_PENDING;
 }
 static enum image_phase image_phase(struct image_adapter *_Nonnull adapter)
 {
@@ -136,6 +150,7 @@ static void create_fixture(struct native_fixture *_Nonnull fixture)
     fixture->images = &controlled;
     struct image_port images = {.adapter = &controlled,
                                 .request = request_image,
+                                .diagram = request_diagram,
                                 .poll = poll_image,
                                 .phase = image_phase,
                                 .cancel = cancel_image,
@@ -612,6 +627,54 @@ static void run_image_case(struct native_fixture *_Nonnull fixture)
     file_timestamp_roundtrip();
 }
 
+static void run_diagram_case(struct native_fixture *_Nonnull fixture)
+{
+    struct folio_window *window = nullptr;
+    require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
+                FOLIO_WINDOW_CREATED,
+            "real diagram window");
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    SetWindowPos(root, nullptr, 20, 20, 1000, 750, SWP_NOZORDER | SWP_NOACTIVATE);
+    struct accessible_request selection = {
+        .item = {.kind = ACCESSIBLE_NOTE,
+                 .ref = {.category = 0, .note = 0},
+                 .revision = folio_window_accessible_revision(window)},
+        .action = ACCESSIBLE_ACTION_SELECT};
+    require(folio_window_accessible_action(window, &selection) == S_OK, "select diagram note");
+    pump(window);
+    wchar_t text[1024];
+    GetWindowTextW(body, text, 1024);
+    require(wcsstr(text, L"Body before diagrams") != nullptr && controlled.requests == 0,
+            "body visible before diagram request");
+    SendMessageW(root, WM_TIMER, 85, 0);
+    expect_notice(window, L"図を読み取っています");
+    controlled.phase = IMAGE_PHASE_DIAGRAM_LAYOUT;
+    SendMessageW(root, WM_TIMER, 85, 0);
+    expect_notice(window, L"図を配置しています");
+    controlled.phase = IMAGE_PHASE_DIAGRAM_DRAWING;
+    SendMessageW(root, WM_TIMER, 85, 0);
+    expect_notice(window, L"図を描画しています");
+    uint64_t ticket = controlled.ticket;
+    action(window, ACCESSIBLE_EDIT);
+    require(controlled.ticket > ticket && controlled.phase == IMAGE_PHASE_IDLE,
+            "edit cancels native diagram request");
+    GetWindowTextW(body, text, 1024);
+    require(wcsstr(text, L"```mermaid") != nullptr && wcsstr(text, L"A --> B") != nullptr,
+            "editing restores exact diagram source");
+    action(window, ACCESSIBLE_VIEW);
+    SendMessageW(root, WM_TIMER, 85, 0);
+    require(controlled.requests == 2, "view starts a fresh diagram request");
+    controlled.outcome = IMAGE_READY;
+    SendMessageW(root, WM_TIMER, 85, 0);
+    struct accessible_item item = {.kind = ACCESSIBLE_NOTICE};
+    struct accessible_view view;
+    require(folio_window_accessible_read(window, &item, &view) == S_OK &&
+                wcsstr(view.name, L"F1") != nullptr,
+            "diagram completion restores normal status");
+    folio_window_destroy(window);
+}
+
 int main(int argc, char *_Nonnull *_Nonnull argv)
 {
     HDESK desktop = CreateDesktopW(L"NeNeFolioImageStatus520", nullptr, nullptr, 0,
@@ -620,9 +683,12 @@ int main(int argc, char *_Nonnull *_Nonnull argv)
                                    nullptr);
     require(desktop != nullptr && SetThreadDesktop(desktop), "isolated desktop");
     require(SUCCEEDED(OleInitialize(nullptr)), "COM apartment");
+    diagram_case = argc == 2 && strcmp(argv[1], "--mermaid") == 0;
     struct native_fixture fixture = {0};
     create_fixture(&fixture);
-    if (argc == 2 && strcmp(argv[1], "--icon") == 0)
+    if (diagram_case)
+        run_diagram_case(&fixture);
+    else if (argc == 2 && strcmp(argv[1], "--icon") == 0)
         window_icons(&fixture);
     else if (argc == 2)
         run_status_case(&fixture, argv[1]);

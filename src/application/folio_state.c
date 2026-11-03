@@ -11,6 +11,7 @@
 #include "index_filter.h"
 #include "index_filter_build.h"
 #include "markdown_images.h"
+#include "markdown_media.h"
 #include "markdown_rtf.h"
 #include "name_list.h"
 #include "note_archive.h"
@@ -4514,6 +4515,10 @@ const struct markdown_images *_Nullable folio_state_images(const struct folio_st
 {
     return state->pane == nullptr ? nullptr : markdown_rtf_images(state->pane);
 }
+const struct markdown_media *_Nullable folio_state_media(const struct folio_state *_Nonnull state)
+{
+    return state->pane == nullptr ? nullptr : markdown_rtf_media(state->pane);
+}
 uint64_t folio_state_image_origin_revision(const struct folio_state *_Nonnull state)
 {
     return state->image_origin_revision;
@@ -4521,15 +4526,32 @@ uint64_t folio_state_image_origin_revision(const struct folio_state *_Nonnull st
 enum image_outcome folio_state_request_image(struct folio_state *_Nonnull state, size_t index,
                                              uint64_t *_Nonnull ticket)
 {
-    const struct markdown_images *images = folio_state_images(state);
+    const struct markdown_media *media = folio_state_media(state);
     if (state->mode != PANE_MODE_VIEW || state->document != FOLIO_DOCUMENT_NAMED ||
-        images == nullptr || index >= markdown_images_count(images) ||
-        category_rename_pending(state))
+        media == nullptr || index >= markdown_media_count(media) || category_rename_pending(state))
         return IMAGE_CANCELLED;
-    struct image_request request = {
-        .category = category_ledger_name(state->categories, state->selected_category),
-        .source = markdown_images_at(images, index)};
-    return state->images.request(state->images.adapter, &request, ticket);
+    enum image_outcome status = markdown_media_status(media, index);
+    if (status != IMAGE_READY)
+        return status;
+    switch (markdown_media_kind(media, index))
+    {
+    case MARKDOWN_MEDIA_IMAGE:
+    {
+        struct image_request request = {
+            .category = category_ledger_name(state->categories, state->selected_category),
+            .source = markdown_images_at(markdown_media_images(media),
+                                         markdown_media_image_index(media, index))};
+        return state->images.request(state->images.adapter, &request, ticket);
+    }
+    case MARKDOWN_MEDIA_DIAGRAM:
+    {
+        struct diagram_request request = {.source = markdown_media_diagram(media, index),
+                                          .palette = diagram_palette_for(&state->palette),
+                                          .face = ui_font_face(folio_state_language(state))};
+        return state->images.diagram(state->images.adapter, &request, ticket);
+    }
+    }
+    return IMAGE_CANCELLED;
 }
 enum image_outcome folio_state_poll_image(struct folio_state *_Nonnull state, uint64_t ticket,
                                           struct image_bitmap *_Nullable *_Nonnull out)

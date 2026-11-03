@@ -1,0 +1,8 @@
+#ifndef NENEFOLIO_DIAGRAM_TEXT_ROLE_H
+#define NENEFOLIO_DIAGRAM_TEXT_ROLE_H
+enum diagram_text_role
+{
+    DIAGRAM_TEXT_BODY,
+    DIAGRAM_TEXT_CAPTION
+};
+#endif

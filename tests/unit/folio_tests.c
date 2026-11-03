@@ -108,6 +108,21 @@ static bool run_minimap_target_tests(const char *_Nonnull argument)
 
 static bool run_transfer_target_tests(const char *_Nonnull argument)
 {
+    if (strcmp(argument, "--diagram") == 0)
+    {
+        run_diagram_tests();
+        printf("diagram parsing, layout and deferred-media tests passed\n");
+        return true;
+    }
+    if (strcmp(argument, "--mermaid") == 0)
+    {
+        run_diagram_tests();
+        run_image_tests();
+        run_markdown_tests();
+        run_ui_text_tests();
+        printf("Mermaid, shared media, Markdown and UI text tests passed\n");
+        return true;
+    }
     if (strcmp(argument, "--images") == 0)
     {
         run_image_tests();
@@ -151,6 +166,7 @@ static bool run_note_search_target_tests(const char *_Nonnull argument)
 
 static void run_markdown_suite(void)
 {
+    run_diagram_tests();
     run_code_syntax_tests();
     run_markdown_tests();
 }

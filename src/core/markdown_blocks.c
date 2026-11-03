@@ -1,8 +1,10 @@
 #include "markdown_blocks.h"
 #include "code_syntax.h"
+#include "diagram_limits.h"
 #include "markdown_code_state.h"
 #include "markdown_containers.h"
 #include "markdown_inline_tokens.h"
+#include "markdown_media.h"
 #include "markdown_table.h"
 #include "markdown_table_state.h"
 #include "markdown_task_kind.h"
@@ -10,11 +12,12 @@
 #include "text_buffer.h"
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 
 struct markdown_blocks
 {
     struct text_buffer *_Nonnull out;
-    struct markdown_images *_Nonnull images;
+    struct markdown_media *_Nonnull media;
     const char *_Nonnull source;
     size_t length;
     enum markdown_rtf_outcome outcome;
@@ -34,6 +37,8 @@ struct markdown_blocks
     size_t code_indent;
     enum markdown_code_state code_state;
     struct code_syntax *_Nullable syntax;
+    bool diagram;
+    size_t diagram_slot;
     enum markdown_table_state table_state;
     struct markdown_line delimiter;
 };
@@ -194,7 +199,7 @@ static bool flush(struct markdown_blocks *_Nonnull parser)
     struct markdown_view view = {
         .spans = parser->spans, .count = parser->span_count, .length = parser->inline_length};
     parser->outcome =
-        markdown_inline_tokens_render((struct markdown_render){parser->out, parser->images}, view);
+        markdown_inline_tokens_render((struct markdown_render){parser->out, parser->media}, view);
     if (parser->outcome != MARKDOWN_RTF_CONVERTED)
         return false;
     if (parser->heading != 0)
@@ -207,14 +212,23 @@ static bool flush(struct markdown_blocks *_Nonnull parser)
     return true;
 }
 
-static void close_code(struct markdown_blocks *_Nonnull parser)
+static bool close_code(struct markdown_blocks *_Nonnull parser)
 {
+    if (parser->diagram)
+    {
+        if (markdown_media_end_diagram(parser->media, parser->diagram_slot) != IMAGE_READY)
+            parser->outcome = MARKDOWN_RTF_OUT_OF_MEMORY;
+        parser->diagram = false;
+        parser->code_state = MARKDOWN_CODE_STATE_OUTSIDE;
+        return parser->outcome == MARKDOWN_RTF_CONVERTED;
+    }
     if (parser->code_state == MARKDOWN_CODE_STATE_PARAGRAPH)
         text_buffer_append_text(parser->out, "\\sa120\\par\n");
     text_buffer_append_text(parser->out, "}");
     parser->code_state = MARKDOWN_CODE_STATE_OUTSIDE;
     code_syntax_destroy(parser->syntax);
     parser->syntax = nullptr;
+    return true;
 }
 
 static bool fence_closes(struct markdown_blocks *_Nonnull parser, struct markdown_line line)
@@ -251,6 +265,11 @@ static bool code_line(struct markdown_blocks *_Nonnull parser, struct markdown_l
     {
         parser->outcome = MARKDOWN_RTF_INVALID_INPUT;
         return false;
+    }
+    if (parser->diagram)
+    {
+        markdown_media_diagram_line(parser->media, parser->diagram_slot, line);
+        return true;
     }
     if (parser->code_state == MARKDOWN_CODE_STATE_PARAGRAPH)
         text_buffer_append_text(parser->out, "\\par\n");
@@ -295,6 +314,23 @@ static bool start_fence(struct markdown_blocks *_Nonnull parser, struct markdown
         return false;
     }
     size_t info = line.content + length;
+    struct markdown_span word = code_language_word(line.bytes + info, line.length - info);
+    if (word.length == 7 && memcmp(word.bytes, "mermaid", 7) == 0)
+    {
+        parser->diagram = true;
+        parser->diagram_slot = diagram_none;
+        enum image_outcome result =
+            markdown_media_begin_diagram(parser->media, &parser->diagram_slot);
+        if (result == IMAGE_OUT_OF_MEMORY || result == IMAGE_FAILED)
+            return false;
+        text_buffer_append_text(parser->out, "{\\pard\\sb120\\sa120\\sl240\\slmult1\\highlight0");
+        indent(parser->out, parser->code_indent);
+        text_buffer_append_text(parser->out, " ");
+        if (result == IMAGE_READY)
+            markdown_media_placeholder(parser->out, parser->diagram_slot);
+        text_buffer_append_text(parser->out, "\\par}\n");
+        return true;
+    }
     enum code_language language = code_language_parse(line.bytes + info, line.length - info);
     parser->outcome = code_syntax_create(language, parser->out, &parser->syntax);
     if (parser->outcome != MARKDOWN_RTF_CONVERTED)
@@ -384,8 +420,8 @@ static bool start_table(struct markdown_blocks *_Nonnull parser, struct markdown
     outer_markers(parser, 0);
     struct markdown_table_format format = {.kind = MARKDOWN_ROW_KIND_HEADER,
                                            .indent_twips = indent_twips};
-    parser->outcome = markdown_table_row((struct markdown_render){parser->out, parser->images},
-                                         line, delimiter, format);
+    parser->outcome = markdown_table_row((struct markdown_render){parser->out, parser->media}, line,
+                                         delimiter, format);
     return parser->outcome == MARKDOWN_RTF_CONVERTED;
 }
 
@@ -396,8 +432,8 @@ static bool table_body(struct markdown_blocks *_Nonnull parser, struct markdown_
     struct markdown_table_format format = {.kind = MARKDOWN_ROW_KIND_BODY,
                                            .indent_twips =
                                                markdown_containers_indent(parser->containers)};
-    parser->outcome = markdown_table_row((struct markdown_render){parser->out, parser->images},
-                                         line, parser->delimiter, format);
+    parser->outcome = markdown_table_row((struct markdown_render){parser->out, parser->media}, line,
+                                         parser->delimiter, format);
     return parser->outcome == MARKDOWN_RTF_CONVERTED;
 }
 
@@ -494,10 +530,7 @@ static bool render_line(struct markdown_blocks *_Nonnull parser, struct markdown
 static bool render_fenced_line(struct markdown_blocks *_Nonnull parser, struct markdown_line line)
 {
     if (fence_closes(parser, line))
-    {
-        close_code(parser);
-        return true;
-    }
+        return close_code(parser);
     return code_line(parser, line);
 }
 
@@ -511,7 +544,8 @@ static bool render_next(struct markdown_blocks *_Nonnull parser, size_t *_Nonnul
         if (markdown_containers_match(parser->containers, &line) ==
             MARKDOWN_CONTAINER_MATCH_MATCHED)
             return render_fenced_line(parser, line);
-        close_code(parser);
+        if (!close_code(parser))
+            return false;
     }
     line = raw;
     if (parser->table_state != MARKDOWN_TABLE_STATE_NONE)
@@ -536,7 +570,7 @@ enum markdown_rtf_outcome markdown_blocks_render(struct markdown_render render,
                                                  const char *_Nonnull text, size_t length)
 {
     struct markdown_blocks parser = {.out = render.text,
-                                     .images = render.images,
+                                     .media = render.media,
                                      .source = text,
                                      .length = length,
                                      .outcome = MARKDOWN_RTF_CONVERTED};
@@ -548,7 +582,7 @@ enum markdown_rtf_outcome markdown_blocks_render(struct markdown_render render,
     while (cursor < length && accepted)
         accepted = render_next(&parser, &cursor);
     if (parser.code_state != MARKDOWN_CODE_STATE_OUTSIDE)
-        close_code(&parser);
+        accepted = close_code(&parser) && accepted;
     if (accepted)
         accepted = flush(&parser);
     markdown_blocks_destroy(&parser);

@@ -1,0 +1,9 @@
+#ifndef NENEFOLIO_DIAGRAM_PRIMITIVE_KIND_H
+#define NENEFOLIO_DIAGRAM_PRIMITIVE_KIND_H
+enum diagram_primitive_kind : unsigned char
+{
+    DIAGRAM_PRIMITIVE_SHAPE,
+    DIAGRAM_PRIMITIVE_PATH,
+    DIAGRAM_PRIMITIVE_TEXT
+};
+#endif

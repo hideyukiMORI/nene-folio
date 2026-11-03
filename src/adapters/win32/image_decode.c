@@ -81,11 +81,12 @@ static enum image_outcome prepare_frame(struct image_decode *_Nonnull decoder,
 static void constrain(struct image_size *_Nonnull size, const struct image_work *_Nonnull work)
 {
     uint32_t longest = size->width > size->height ? size->width : size->height;
-    if (longest <= image_bitmap_edge_limit)
+    constexpr uint32_t decoded_edge_limit = 2048;
+    if (longest <= decoded_edge_limit)
         return;
     work->progress(work, IMAGE_PHASE_RESIZING);
-    size->width = (uint32_t)((uint64_t)size->width * image_bitmap_edge_limit / longest);
-    size->height = (uint32_t)((uint64_t)size->height * image_bitmap_edge_limit / longest);
+    size->width = (uint32_t)((uint64_t)size->width * decoded_edge_limit / longest);
+    size->height = (uint32_t)((uint64_t)size->height * decoded_edge_limit / longest);
     if (size->width == 0)
         size->width = 1;
     if (size->height == 0)

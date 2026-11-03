@@ -19,6 +19,26 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
          "无法包含图片。请检查图片路径和读取权限。"},
     [UI_TEXT_IMAGES_READING] = {"画像を読み込んでいます", "Loading images", "正在读取图片"},
     [UI_TEXT_IMAGES_RESIZING] = {"画像を加工しています", "Resizing images", "正在缩放图片"},
+    [UI_TEXT_DIAGRAM_PARSING] = {"図を読み取っています", "Reading diagram", "正在解析图表"},
+    [UI_TEXT_DIAGRAM_LAYOUT] = {"図を配置しています", "Laying out diagram", "正在布局图表"},
+    [UI_TEXT_DIAGRAM_DRAWING] = {"図を描画しています", "Drawing diagram", "正在绘制图表"},
+    [UI_TEXT_DIAGRAM_FAILED] =
+        {"図を表示できません。編集でMermaidの原文を確認できます。",
+         "A diagram could not be shown. Its Mermaid source is available in Edit.",
+         "无法显示图表。可在编辑模式查看 Mermaid 源码。"},
+    [UI_TEXT_DIAGRAM_UNSUPPORTED] =
+        {"図に未対応の種類または構文があります。対応範囲はMarkdownの利用案内を参照してください。",
+         "A diagram uses an unsupported type or syntax. See the Markdown guide for supported "
+         "features.",
+         "图表包含不支持的类型或语法。支持范围请参阅 Markdown 使用指南。"},
+    [UI_TEXT_DIAGRAM_TOO_LARGE] =
+        {"図が表示上限を超えています。いくつかの図に分けてください。",
+         "A diagram exceeds the display limits. Split it into smaller diagrams.",
+         "图表超出显示限制。请将其拆分为较小的图表。"},
+    [UI_TEXT_MEDIA_LIMIT] =
+        {"画像と図の表示数が上限を超えています。ノートを分けてください。",
+         "This note exceeds the image and diagram display limit. Split it into separate notes.",
+         "此笔记的图片和图表数量超出显示限制。请拆分笔记。"},
     [UI_TEXT_IMAGES_ADVISORY] =
         {"ローカル画像は、このノートのフォルダー内の images/ に置くと持ち出しやすくなります。",
          "Keep local images in images/ beside the note for portable exports.",

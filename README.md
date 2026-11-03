@@ -16,6 +16,10 @@ code syntax colors and language labels, a permanent status bar, and the new appl
 The [1.2.0 preparation record](docs/quality/2026-11-03-store-release-1.2.0.md) distinguishes the verified
 submission package from Store certification and publication. The GitHub download above remains 1.1.0.
 
+The subsequent development source adds native Mermaid flowcharts and sequence diagrams, rendered after
+the body through the existing image worker. See the [supported syntax and limits](docs/MARKDOWN.md#mermaidの図).
+This change is not included in the already prepared 1.2.0 Store submission package.
+
 [Download Windows x64 ZIP](https://github.com/hideyukiMORI/nene-folio/releases/download/v1.1.0/NeNeFolio-1.1.0-win-x64.zip)
 · [SHA256SUMS](https://github.com/hideyukiMORI/nene-folio/releases/download/v1.1.0/SHA256SUMS)
 · Windows 10 version 2004 or later

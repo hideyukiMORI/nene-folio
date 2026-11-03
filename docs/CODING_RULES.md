@@ -132,6 +132,9 @@ UI と application の状態遷移は単一の UI スレッドで行う。背景
 合成8192×8192 PNGの同期縮小125msを根拠とし、UI/application/core状態・HWND/TOMは渡さない。
 要求/結果の有界な受渡しと取消/終了回収をadapterへ閉じる。他の背景スレッドが要る計測が出たら新しいADR。
 WinHTTPのOS callbackはadapter内の通信完了通知だけを渡す。通信操作とhandle終了は同じ画像workerが所有する（ADR0085）。
+同じ単一workerへ、コピーしたMermaid原文の解析・有限な配置・文字計測・bitmap生成を追加する（#539・ADR0089）。
+原文・要素数・配置反復・描画資源に上限を持たせ、UI/applicationの状態やHWND/TOMを渡さない。
+要求/取消/結果/終了回収は画像と同じ所有境界を使い、workerや入れ子message pumpを増やさない。
 
 - 機械強制: **planned** → `CreateThread` / `_beginthreadex` / `thrd_create` を `eng/symbols.py` の許可リスト外とし、中核では落ちる。UI 層はレビュー事項
 

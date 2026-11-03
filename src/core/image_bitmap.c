@@ -44,6 +44,8 @@ enum image_outcome image_bitmap_create(const unsigned char *_Nonnull pixels, str
         size.height > image_bitmap_edge_limit)
         return IMAGE_TOO_LARGE;
     size_t length = header_size + (size_t)size.width * size.height * 4;
+    if (length > image_bitmap_total_limit)
+        return IMAGE_TOO_LARGE;
     struct image_bitmap *_Nullable bitmap = malloc(sizeof *bitmap);
     unsigned char *_Nullable bytes = calloc(length, 1);
     if (bitmap == nullptr || bytes == nullptr)
