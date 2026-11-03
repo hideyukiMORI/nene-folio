@@ -11,6 +11,11 @@ A frameless Markdown notebook for Windows with a category drawer. Plain C (C23),
 > It starts with no `data/` folder. Notes and settings use that folder by default; Settings can select another location.
 > A separate 1.1.0 Store submission candidate is prepared; Store approval and availability are not confirmed.
 
+The current source targets the [1.2.0 Store update](docs/release/1.2.0.md), including Markdown images,
+code syntax colors and language labels, a permanent status bar, and the new application icon.
+The [1.2.0 preparation record](docs/quality/2026-11-03-store-release-1.2.0.md) distinguishes the verified
+submission package from Store certification and publication. The GitHub download above remains 1.1.0.
+
 [Download Windows x64 ZIP](https://github.com/hideyukiMORI/nene-folio/releases/download/v1.1.0/NeNeFolio-1.1.0-win-x64.zip)
 · [SHA256SUMS](https://github.com/hideyukiMORI/nene-folio/releases/download/v1.1.0/SHA256SUMS)
 · Windows 10 version 2004 or later

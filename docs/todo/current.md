@@ -1,5 +1,16 @@
 # いまの状態 — NeNe Folio
 
+## 11月3日夜 — Store更新候補1.2.0
+
+hideは19:24に言語ラベルと新アイコンを実機受理し、Microsoft Storeのパッケージアップロード画面へ進んだ。
+#536で唯一の版入力を1.2.0（Windows版1.2.0.0）へ上げ、受理済み改善をStore提出原本へまとめる。
+[変更一覧](../release/1.2.0.md)、[3言語の更新説明](../release/1.2.0-store-notes.txt)、
+[品質記録](../quality/2026-11-03-store-release-1.2.0.md)を参照する。
+最終PR head・必須CI・main・提出MSIX/hash・起動表示・保全整理の確定原本は
+`D:/NeNeFolio/agents/release-1.2.0-20261103/integration-completion.json`。
+Storeへの実際のアップロード・認定・公開は、候補生成と区別して新しい報告から記録する。
+GitHubの公開版は1.1.0 Betaを維持する。
+
 ## 11月3日夕方 — 言語ラベルとアプリアイコン
 
 hideの追加指定による#532のコード言語ラベルはPR #534、main `02060d3`へ統合済み。
@@ -15,7 +26,9 @@ Claudeのdesignプラグインで[比較canvas](https://claude.ai/artifact/4hmz6
 設計は[ADR0088](../adr/0088-application-icon-assets.md)、対象検証と限界は[品質記録](../quality/2026-11-03-app-icon.md)。
 最終PR head・必須CI・main・#532と一緒の通常反映・保全整理は
 `D:/NeNeFolio/agents/app-icon-20261103/integration-completion.json`を確定原本とする。
-Storeへの公開/再提出・インストール・バージョン更新は行わない。
+#533はPR #535、main `564b1f7`へ統合・通常反映・保全整理済み。
+#532/#533の実機受理原本は両agentsのuser-acceptance.json。両作業木/outputは保全後に整理した。
+これらの機能作業ではStore更新を行わず、上記#536で新たにStore提出原本を準備する。
 
 #530の常設ステータスバーはPR #531、main `047c000`へ統合・通常版へ反映済み。
 hideは16:09に「全部問題ない。」と実機受理した。受理原本は
@@ -27,8 +40,8 @@ hideは16:09に「全部問題ない。」と実機受理した。受理原本�
 ## 通常版と配布
 
 通常exeは`C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`、通常dataは隣の`data`。
-言語ラベル反映前の通常版は製品source `047c000`、1.1.0。ステータスバーまでhideが実機受理済み。
-#532の反映source/hash・data照合と起動状態は上記確定原本を参照する。
+今回のStore準備前の通常版は製品source `564b1f7`、1.1.0。言語ラベル・アイコンまでhideが実機受理済み。
+#532/#533の反映source/hash・data照合と起動状態は上記確定原本を参照する。
 次回も実稼働と保存状態を確認し、保存前の強制終了や起動中の上書きをしない。
 
 GitHubの1.1.0 BetaとStore提出原本は11月1日のsource `8ef5d03`。

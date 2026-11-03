@@ -1,0 +1,26 @@
+日本語 (ja-JP)
+
+1.2.0 の更新内容
+・Markdown内のPNG/JPEG画像を表示できるようになりました。ローカル画像とHTTPS画像に対応します。
+・コードブロックに基本的な構文色分けと、指定した言語名の表示を追加しました。
+・ステータスバーにノートの更新日時・作成日時とキー操作の案内を表示します。
+・画像を含むノートのスクロールとミニマップ、読み込み後の通知表示を改善しました。
+・アプリアイコンを新しいデザインに更新しました。
+
+English (en-US)
+
+What's new in 1.2.0
+・View PNG/JPEG images in Markdown notes, from local files or HTTPS URLs.
+・Read code blocks with basic syntax highlighting and the specified language name.
+・See saved-note modification and creation dates, plus keyboard hints, in the status bar.
+・Improved scrolling, the minimap and loading notifications in notes with images.
+・Updated the application icon.
+
+简体中文 (zh-CN)
+
+1.2.0 更新内容
+・支持在 Markdown 笔记中显示本地文件或 HTTPS 链接的 PNG/JPEG 图片。
+・为代码块添加基础语法高亮，并显示指定的语言名称。
+・在状态栏中显示已保存笔记的修改时间、创建时间和快捷键提示。
+・改进了含图片笔记的滚动、小地图和加载提示。
+・更新了应用图标。

@@ -13,6 +13,10 @@ Use the gear icon for theme, language, line numbers, minimap and version.
 Ctrl+E switches Read/Edit; Ctrl+M opens Actions; Ctrl+Shift+M toggles the minimap.
 Markdown ZIP export contains note bodies only and is not a complete backup.
 F1 or Ctrl+P lists commands and keys. Ctrl+S saves; Alt+F4 saves and closes.
+Read mode displays local or HTTPS PNG/JPEG images, basic code syntax colors
+and the specified code language. The bottom status bar shows saved-file dates.
+Remote images access their HTTPS host. Image files are not copied into notes
+or included in Markdown ZIP exports; keep local images with the note folder.
 Do not use an older binary while the note folder contains unfinished
 .rename.json work. Close the app before updating it.
 
