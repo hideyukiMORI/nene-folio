@@ -59,7 +59,8 @@ static bool shaped_label(struct mermaid_flow *_Nonnull parser, struct diagram_te
 {
     struct diagram_text body = diagram_text_skip(*text, strlen(shape->opening));
     size_t end = closing_at(body, shape->closing);
-    if (end == diagram_none)
+    if (end == diagram_none || end > closing_at(body, "]") || end > closing_at(body, ")") ||
+        end > closing_at(body, "}"))
         return reject(parser, DIAGRAM_INVALID);
     parser->outcome =
         diagram_label_store(parser->model, (struct diagram_text){body.bytes, end}, &node->label);
@@ -69,8 +70,7 @@ static bool shaped_label(struct mermaid_flow *_Nonnull parser, struct diagram_te
     *text = diagram_text_trim(diagram_text_skip(body, end + strlen(shape->closing)));
     return true;
 }
-static bool node_shape(struct mermaid_flow *_Nonnull parser, struct diagram_text *_Nonnull text,
-                       struct diagram_node *_Nonnull node)
+static const struct mermaid_shape *_Nullable shape_for(struct diagram_text text)
 {
     static const struct mermaid_shape shapes[] = {
         {"(((", ")))", DIAGRAM_DOUBLE_CIRCLE}, {"([", "])", DIAGRAM_STADIUM},
@@ -80,17 +80,30 @@ static bool node_shape(struct mermaid_flow *_Nonnull parser, struct diagram_text
         {"[/", "\\]", DIAGRAM_TRAPEZOID},      {"[\\", "/]", DIAGRAM_TRAPEZOID_REVERSE},
         {"[", "]", DIAGRAM_RECTANGLE},         {"(", ")", DIAGRAM_ROUNDED},
         {"{", "}", DIAGRAM_DIAMOND},           {">", "]", DIAGRAM_ASYMMETRIC}};
+    const struct mermaid_shape *_Nullable selected = nullptr;
+    size_t opening = 0;
+    size_t ending = diagram_none;
     for (size_t index = 0; index < sizeof shapes / sizeof shapes[0]; ++index)
     {
         const struct mermaid_shape *shape = &shapes[index];
-        if (diagram_text_starts(*text, shape->opening) &&
-            closing_at(diagram_text_skip(*text, strlen(shape->opening)), shape->closing) !=
-                diagram_none)
-            return shaped_label(parser, text, shape, node);
+        size_t length = strlen(shape->opening);
+        if (length < opening || !diagram_text_starts(text, shape->opening))
+            continue;
+        size_t end = closing_at(diagram_text_skip(text, length), shape->closing);
+        if (length > opening || end < ending)
+        {
+            selected = shape;
+            opening = length;
+            ending = end;
+        }
     }
-    if (text->length != 0 && diagram_text_character_in(text->bytes[0], "[({"))
-        return reject(parser, DIAGRAM_INVALID);
-    return true;
+    return selected;
+}
+static bool node_shape(struct mermaid_flow *_Nonnull parser, struct diagram_text *_Nonnull text,
+                       struct diagram_node *_Nonnull node)
+{
+    const struct mermaid_shape *_Nullable shape = shape_for(*text);
+    return shape == nullptr || shaped_label(parser, text, shape, node);
 }
 static bool new_node(struct mermaid_flow *_Nonnull parser, struct diagram_text id,
                      struct diagram_node *_Nonnull node)
