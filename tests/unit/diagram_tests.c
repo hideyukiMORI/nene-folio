@@ -11,6 +11,7 @@
 #include "theme_contrast.h"
 #include "ui_font.h"
 #include "unit_tests.h"
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -356,6 +357,46 @@ static void shaped_label_clearance(void)
     circle = diagram_geometry_node((struct diagram_size){1, 18}, DIAGRAM_DOUBLE_CIRCLE);
     require(circle.width == circle.height && circle.width >= 64,
             "small circular nodes do not become ellipses after minimum sizing");
+}
+static void stadium_corners(struct diagram_rect box, struct diagram_rect label)
+{
+    /* Doubled coordinates keep half-pixel centers exact, including odd dimensions. */
+    const int xs[] = {label.x * 2, (label.x + label.width) * 2};
+    const int ys[] = {label.y * 2, (label.y + label.height) * 2};
+    int left = box.x * 2 + box.height;
+    int right = (box.x + box.width) * 2 - box.height;
+    int middle = box.y * 2 + box.height;
+    int64_t radius = box.height - 2;
+    for (size_t x = 0; x < 2; ++x)
+        for (size_t y = 0; y < 2; ++y)
+        {
+            int64_t dx = xs[x] < left ? left - xs[x] : 0;
+            if (xs[x] > right)
+                dx = xs[x] - right;
+            int64_t dy = ys[y] - middle;
+            require(dx * dx + dy * dy <= radius * radius,
+                    "label corners stay inside the capsule with border clearance");
+        }
+}
+static void stadium_label_clearance(void)
+{
+    const int widths[] = {0, 1, 196, 200, 4096};
+    const int heights[] = {1, 18, 32, 33, 42, 164, 4096};
+    for (size_t width = 0; width < sizeof widths / sizeof widths[0]; ++width)
+        for (size_t height = 0; height < sizeof heights / sizeof heights[0]; ++height)
+        {
+            struct diagram_size text = {widths[width], heights[height]};
+            struct diagram_size size = diagram_geometry_node(text, DIAGRAM_STADIUM);
+            struct diagram_rect box = {10, 20, size.width, size.height};
+            struct diagram_rect label = diagram_geometry_label(box, text, DIAGRAM_STADIUM);
+            require(size.width >= 64 && size.height >= 40 && size.width >= size.height,
+                    "stadium retains minimum size and circular end caps for tall labels");
+            stadium_corners(box, label);
+        }
+    struct diagram_size compact =
+        diagram_geometry_node((struct diagram_size){196, 18}, DIAGRAM_STADIUM);
+    require(compact.width == 252 && compact.height == 42,
+            "a one-line stadium retains its established compact dimensions");
 }
 static void shared_text_roles(void)
 {
@@ -1115,6 +1156,7 @@ void run_diagram_tests(void)
     horizontal_group_heading();
     group_heading_clearance();
     shaped_label_clearance();
+    stadium_label_clearance();
     shared_text_roles();
     sequence_features();
     sequence_arrow_meaning();

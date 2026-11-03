@@ -6,22 +6,14 @@ hideの新指示で、停止まで調査・試験・計測・必要な修正を�
 現行規約の対象検証・最終head必須CI・正典統合・必要反映・整理まで進める。
 開始時mainは`ab7b732`、origin/main一致・clean、open PRなし。#541/PR542のCI41660944733は成功。
 
-#543のMermaid形状境界はPR545の最終CI成功・main統合・通常反映・5434ファイル保全と作業木整理まで完了。
-確定原本は`D:/NeNeFolio/agents/543-mermaid-shape-end/integration-completion.json`。
+今朝の#543/#544/#546/#548は、それぞれ最終headの必須CI成功・main統合・通常反映・data照合・
+成果物保全・追加作業木/output整理まで完了。各`D:/NeNeFolio/agents/<task>/integration-completion.json`を
+確定原本とし、詳細と失敗履歴は下記の日報・引き継ぎを参照する。最新完了は#548/PR550、main`7fef552`。
 
-#544の画像cache退去はPR547/CI41734856635成功、main`786d6d5`へ統合・通常反映済み。
-同じ9要求のmissは8から5へ減り、273checks成功。通常data32ファイルも反映前後で一致した。
-完了原本は`D:/NeNeFolio/agents/544-image-cache-eviction/integration-completion.json`へ。
-
-#546の引用pipeはPR549/CI41737219656成功、main`61dbfbb`へ統合・通常反映済み。
-通常data32ファイルは反映前後で一致。保全整理の原本は
-`D:/NeNeFolio/agents/546-mermaid-quoted-pipe/integration-completion.json`へ。
-
-現在の焦点は#548。16段activationの幅不足を再現し、既存depthを幅予約でも使う修正を入れた。
-最新mainで66正例・17段拒否と関連diagram対象が成功、独立R/Oレビューは追加指摘なし。
-詳細は[品質記録](../quality/2026-11-04-sequence-activation-width.md)、最終head/CI/通常反映/整理は
-`D:/NeNeFolio/agents/548-sequence-activation-width/integration-completion.json`へ収載する。
-次は複数行ラベルが各形状内に収まるかを確認する。現時点では静的な候補。
+現在の焦点は#551。実fontの8行stadiumラベルのはみ出しを再現し、既存geometryで丸い両端の幅を予約した。
+1行寸法を保ち、35組のcore境界と関連diagram対象、明暗6枚・native82checksが成功。
+高いラベルでは図幅が増える。詳細は[品質記録](../quality/2026-11-04-stadium-label-clearance.md)。
+最終head/CI/通常反映/整理は`D:/NeNeFolio/agents/551-stadium-label/integration-completion.json`へ収載する。
 
 日報・次回の詳細は[11月4日の日報](../reports/2026-11-04.md)と[引き継ぎ書](../handoffs/2026-11-04.md)。
 全体journalは`D:/NeNeFolio/agents/quality-20261104/journal.md`。

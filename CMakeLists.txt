@@ -265,6 +265,7 @@ nenefolio_link(diagram_render_tests nenefolio_core)
 nenefolio_link(diagram_render_tests nenefolio_application)
 nenefolio_link(diagram_render_tests nenefolio_adapters)
 nenefolio_system_link(diagram_render_tests ole32)
+nenefolio_system_link(diagram_render_tests gdi32)
 add_custom_command(TARGET diagram_render_tests POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/fonts $<TARGET_FILE_DIR:diagram_render_tests>/fonts
     VERBATIM)

@@ -905,3 +905,12 @@ desktop切替や前景奪取は行わず、通常のdataは使っていない。
 通常85、カテゴリ0件16、絞り込み/最小寸法の補完44 assertion成功。3言語・明暗の実画像を確認。
 Debug build/tidyと関係するunit、規約検査も成功。試験helperの初回失敗・修正と未測定条件を含む
 詳細は[対象品質記録](2026-10-14-drawer-new-note-checks.md)、証跡は`D:/NeNeFolio/agents/302-drawer-new-note/`。
+
+## 2026-11-04 — stadiumの複数行ラベル（#551）
+
+Windows x64、固定toolchainのDebug/clang-tidy/ASan/UBSan/nullability、同梱Noto Sans JPで確認した。
+`diagram_render_tests.exe --stadium <出力先>`が既存のnative描画・計測経路を使い、実appや実ノートは操作しない。
+製品未変更の8行ラベルはbitmapで輪郭外へ出て、GDIの内側領域との差分も空でなかった（exit1）。
+修正後は1行/8行/縦長の明暗6条件が82checks成功し、全6枚を視認した。GDI差分もすべて空。
+入力・raw出力・bitmap・修正中の失敗と検証限界は[品質記録](2026-11-04-stadium-label-clearance.md)へ。
+これは実font/GDI描画の確認で、hideによる通常版の実機受理や全DPIの検証とは区別する。

@@ -1,5 +1,6 @@
 /* #539: real GDI metrics, bitmap output, cancellation and shared cache. */
 #include "diagram_canvas.h"
+#include "diagram_geometry.h"
 #include "diagram_render.h"
 #include "folio_theme.h"
 #include "font_bundle.h"
@@ -148,6 +149,77 @@ static void measured_roles(const struct image_work *_Nonnull work)
     diagram_model_destroy(model);
     note_text_destroy(source);
 }
+static bool stadium_contains(struct diagram_rect box, struct diagram_rect label)
+{
+    /* Match the native 2x raster and exclude one logical pixel of border. */
+    HRGN shape =
+        CreateRoundRectRgn(box.x * 2 + 2, box.y * 2 + 2, (box.x + box.width) * 2 - 2,
+                           (box.y + box.height) * 2 - 2, box.height * 2 - 4, box.height * 2 - 4);
+    HRGN text = CreateRectRgn(label.x * 2, label.y * 2, (label.x + label.width) * 2,
+                              (label.y + label.height) * 2);
+    HRGN difference = CreateRectRgn(0, 0, 0, 0);
+    require(shape != nullptr && text != nullptr && difference != nullptr, "stadium regions");
+    int result = CombineRgn(difference, text, shape, RGN_DIFF);
+    RECT outside = {0};
+    require(result != ERROR && GetRgnBox(difference, &outside) != ERROR,
+            "stadium region difference");
+    printf("stadium box=%dx%d label=(%d,%d,%d,%d) outside=(%ld,%ld,%ld,%ld) region=%d\n", box.width,
+           box.height, label.x, label.y, label.width, label.height, outside.left, outside.top,
+           outside.right, outside.bottom, result);
+    DeleteObject(difference);
+    DeleteObject(text);
+    DeleteObject(shape);
+    return result == NULLREGION;
+}
+static void stadium_label(const struct diagram_request *_Nonnull request,
+                          const struct image_work *_Nonnull work, const char *_Nullable output,
+                          const char *_Nonnull name)
+{
+    struct image_bitmap *bitmap = render(request, work);
+    if (output != nullptr)
+        write_bitmap(bitmap, output, name);
+    image_bitmap_destroy(bitmap);
+    struct diagram_model *_Nullable model = nullptr;
+    require(mermaid_diagram_create(request->source, &model) == DIAGRAM_ACCEPTED, "stadium model");
+    struct diagram_canvas *_Nullable canvas = nullptr;
+    require(diagram_canvas_create(request, &canvas) == IMAGE_READY, "stadium native font");
+    struct diagram_metrics *_Nullable metrics = nullptr;
+    require(diagram_canvas_measure(canvas, model, work, &metrics) == IMAGE_READY,
+            "stadium actual multiline metrics");
+    struct diagram_size text =
+        diagram_metrics_at(metrics, diagram_model_node_at(model, 0).label, DIAGRAM_TEXT_BODY);
+    struct diagram_size size = diagram_geometry_node(text, DIAGRAM_STADIUM);
+    struct diagram_rect box = {0, 0, size.width, size.height};
+    struct diagram_rect label = diagram_geometry_label(box, text, DIAGRAM_STADIUM);
+    bool contained = stadium_contains(box, label);
+    diagram_metrics_destroy(metrics);
+    diagram_canvas_destroy(canvas);
+    diagram_model_destroy(model);
+    require(contained, "multiline stadium label stays inside the curved border");
+}
+static void stadium_labels(const struct image_work *_Nonnull work, const char *_Nullable output)
+{
+    const char *sources[] = {
+        "flowchart TB\nA([\"あいうえおかきくけこさしすせ\"])",
+        "flowchart TB\nA([\"あいうえおかきくけこさしすせ<br/>あいうえおかきくけこさしすせ<br/>"
+        "あいうえおかきくけこさしすせ<br/>あいうえおかきくけこさしすせ<br/>"
+        "あいうえおかきくけこさしすせ<br/>あいうえおかきくけこさしすせ<br/>"
+        "あいうえおかきくけこさしすせ<br/>あいうえおかきくけこさしすせ\"])",
+        "flowchart TB\nA([\"あ<br/>い<br/>う<br/>え<br/>お<br/>か<br/>き<br/>く<br/>け<br/>こ\"])"};
+    const char *names[] = {"stadium-single-light", "stadium-single-dark", "stadium-light",
+                           "stadium-dark",         "stadium-tall-light",  "stadium-tall-dark"};
+    const enum folio_theme themes[] = {FOLIO_THEME_LIGHT, FOLIO_THEME_DARK};
+    for (size_t index = 0; index < sizeof sources / sizeof sources[0]; ++index)
+    {
+        struct note_text *source = text_for(sources[index]);
+        for (size_t theme = 0; theme < 2; ++theme)
+        {
+            struct diagram_request request = request_for(source, themes[theme]);
+            stadium_label(&request, work, output, names[index * 2 + theme]);
+        }
+        note_text_destroy(source);
+    }
+}
 static void cancellation(const struct image_work *_Nonnull work)
 {
     struct note_text *source = text_for(sequence);
@@ -272,11 +344,16 @@ int main(int argc, char *_Nonnull *_Nonnull argv)
     require(image_adapter_create(root, &adapter) == IMAGE_READY, "single media worker");
     struct image_port port = image_adapter_port(adapter);
     struct image_work work = {.adapter = adapter, .cancelled = cancelled, .progress = progress};
-    measured_roles(&work);
-    render_cases(&work, argc == 2 ? argv[1] : nullptr);
-    cancellation(&work);
-    worker_contract(&port);
-    cache_contract(&work);
+    bool stadium_only = argc >= 2 && strcmp(argv[1], "--stadium") == 0;
+    stadium_labels(&work, stadium_only && argc == 3 ? argv[2] : nullptr);
+    if (!stadium_only)
+    {
+        measured_roles(&work);
+        render_cases(&work, argc == 2 ? argv[1] : nullptr);
+        cancellation(&work);
+        worker_contract(&port);
+        cache_contract(&work);
+    }
     image_adapter_destroy(adapter);
     storage_path_destroy(root);
     font_bundle_destroy(fonts);

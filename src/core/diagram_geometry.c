@@ -15,6 +15,12 @@ static int diagonal(struct diagram_size text)
     }
     return lower;
 }
+static int stadium_width(struct diagram_size text, int height)
+{
+    int ends = diagram_node_padding_x * 2 + 24;
+    /* Tall labels need the full end caps outside the text's central strip. */
+    return text.width + (ends > height ? ends : height);
+}
 struct diagram_size diagram_geometry_node(struct diagram_size text, enum diagram_shape shape)
 {
     struct diagram_size size = {text.width + diagram_node_padding_x * 2,
@@ -25,6 +31,8 @@ struct diagram_size diagram_geometry_node(struct diagram_size text, enum diagram
     case DIAGRAM_ROUNDED:
         break;
     case DIAGRAM_STADIUM:
+        size.width = stadium_width(text, size.height);
+        break;
     case DIAGRAM_SUBROUTINE:
     case DIAGRAM_HEXAGON:
     case DIAGRAM_PARALLELOGRAM:
