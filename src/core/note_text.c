@@ -139,6 +139,35 @@ static size_t break_width(const char *_Nonnull bytes, size_t length, size_t inde
     return pair ? 2 : 1;
 }
 
+/* CR/LF のない範囲をまとめて進める。末尾の読み取りは残長で制限する。 */
+static size_t unbroken_width(const char *_Nonnull bytes, size_t length)
+{
+    constexpr uint64_t high_bits = UINT64_C(0x8080808080808080);
+    constexpr uint64_t low_bits = UINT64_C(0x0101010101010101);
+    size_t count = 0;
+    while (length - count >= sizeof(uint64_t))
+    {
+        if (bytes[count] == '\r' || bytes[count] == '\n')
+        {
+            return count;
+        }
+        uint64_t word = 0;
+        memcpy(&word, bytes + count, sizeof word);
+        uint64_t cr = word ^ UINT64_C(0x0d0d0d0d0d0d0d0d);
+        uint64_t lf = word ^ UINT64_C(0x0a0a0a0a0a0a0a0a);
+        if ((((cr - low_bits) & ~cr) | ((lf - low_bits) & ~lf)) & high_bits)
+        {
+            break;
+        }
+        count += sizeof word;
+    }
+    while (count < length && bytes[count] != '\r' && bytes[count] != '\n')
+    {
+        count += 1;
+    }
+    return count;
+}
+
 /* UTF-8検証後に呼ぶ。raw長では断らず、出力byte数を上限内で数える。 */
 static bool normalized_within_limit(const char *_Nonnull bytes, size_t length,
                                     enum line_ending ending)
@@ -148,13 +177,18 @@ static bool normalized_within_limit(const char *_Nonnull bytes, size_t length,
     for (size_t index = 0; index < length;)
     {
         size_t input_width = break_width(bytes, length, index);
-        size_t output_width = input_width == 0 ? 1 : ending_width;
+        size_t output_width = ending_width;
+        if (input_width == 0)
+        {
+            input_width = unbroken_width(bytes + index, length - index);
+            output_width = input_width;
+        }
         if (output_width > persisted_size_limit - total)
         {
             return false;
         }
         total += output_width;
-        index += input_width == 0 ? 1 : input_width;
+        index += input_width;
     }
     return true;
 }
@@ -171,7 +205,7 @@ static void fold(const char *_Nonnull bytes, size_t length, enum line_ending end
         size_t width = break_width(bytes, length, index);
         if (width == 0)
         {
-            index += 1;
+            index += unbroken_width(bytes + index, length - index);
             continue;
         }
         text_buffer_append(out, bytes + start, index - start);

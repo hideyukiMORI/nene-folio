@@ -166,6 +166,98 @@ static void verify_from_editor(void)
             "surrogate from the editor");
 }
 
+static char *_Nonnull validation_bytes(size_t length)
+{
+    char *bytes = malloc(length == 0 ? 1 : length);
+    if (bytes == nullptr)
+    {
+        test_failure("validation fixture allocation");
+        exit(1);
+    }
+    memset(bytes, 'x', length);
+    return bytes;
+}
+
+static void verify_normalized_slice(const char *_Nonnull bytes, size_t length,
+                                    enum line_ending ending, const char *_Nonnull expected)
+{
+    char original[96];
+    require(length <= sizeof original, "bounded normalization fixture");
+    memcpy(original, bytes, length);
+    struct note_text *text = nullptr;
+    require(note_text_from_editor(bytes, length, ending, &text) == NOTE_TEXT_ACCEPTED,
+            "unterminated editor slice accepted");
+    require(note_text_length(text) == strlen(expected) &&
+                memcmp(note_text_bytes(text), expected, strlen(expected) + 1) == 0,
+            "normalization matches independent bytes and terminator");
+    require(memcmp(original, bytes, length) == 0, "normalization leaves input unchanged");
+    note_text_destroy(text);
+}
+
+static void verify_normalized_offsets(const char *_Nonnull raw, const char *_Nonnull expected,
+                                      enum line_ending ending, size_t prefix)
+{
+    for (size_t suffix = 0; suffix <= 9; suffix += 9)
+    {
+        char output[96];
+        size_t length = prefix + strlen(raw) + suffix;
+        size_t expected_length = prefix + strlen(expected) + suffix;
+        require(length < sizeof output && expected_length < sizeof output,
+                "normalization fixture fits");
+        memset(output, 'X', prefix);
+        memcpy(output + prefix, expected, strlen(expected));
+        memset(output + prefix + strlen(expected), 'Y', suffix);
+        output[expected_length] = '\0';
+        for (size_t offset = 0; offset < 8; ++offset)
+        {
+            char *storage = validation_bytes(offset + (length == 0 ? 1 : length));
+            char *bytes = storage + offset;
+            memset(bytes, 'X', prefix);
+            memcpy(bytes + prefix, raw, strlen(raw));
+            memset(bytes + prefix + strlen(raw), 'Y', suffix);
+            verify_normalized_slice(bytes, length, ending, output);
+            free(storage);
+        }
+    }
+}
+
+/* CR/LF/CRLF を各byte位置へ置き、短い末尾と非整列の読み過ぎを検出する。 */
+static void verify_normalization_boundaries(void)
+{
+    const char *raw[] = {"",
+                         "\r",
+                         "\n",
+                         "\r\n",
+                         "\r\r\n\n\r",
+                         "\x01\x0b\x0c\x0e\x0f\x7f",
+                         "\xE6\x97\xA5\r\n\xE6\x9C\xAC",
+                         "\xEF\xBB\xBF\r\xEF\xBB\xBF"};
+    const char *lf[] = {"",
+                        "\n",
+                        "\n",
+                        "\n",
+                        "\n\n\n\n",
+                        "\x01\x0b\x0c\x0e\x0f\x7f",
+                        "\xE6\x97\xA5\n\xE6\x9C\xAC",
+                        "\xEF\xBB\xBF\n\xEF\xBB\xBF"};
+    const char *crlf[] = {"",
+                          "\r\n",
+                          "\r\n",
+                          "\r\n",
+                          "\r\n\r\n\r\n\r\n",
+                          "\x01\x0b\x0c\x0e\x0f\x7f",
+                          "\xE6\x97\xA5\r\n\xE6\x9C\xAC",
+                          "\xEF\xBB\xBF\r\n\xEF\xBB\xBF"};
+    for (size_t pattern = 0; pattern < sizeof raw / sizeof raw[0]; ++pattern)
+    {
+        for (size_t prefix = 0; prefix <= 24; ++prefix)
+        {
+            verify_normalized_offsets(raw[pattern], lf[pattern], LINE_ENDING_LF, prefix);
+            verify_normalized_offsets(raw[pattern], crlf[pattern], LINE_ENDING_CRLF, prefix);
+        }
+    }
+}
+
 static void expect_first_line(const char *_Nonnull source, const char *_Nonnull expected,
                               const char *_Nonnull description)
 {
@@ -423,18 +515,6 @@ static void verify_validation_result(const char *_Nonnull bytes, size_t length,
     note_text_destroy(sentinel);
 }
 
-static char *_Nonnull validation_bytes(size_t length)
-{
-    char *bytes = malloc(length == 0 ? 1 : length);
-    if (bytes == nullptr)
-    {
-        test_failure("validation fixture allocation");
-        exit(1);
-    }
-    memset(bytes, 'x', length);
-    return bytes;
-}
-
 /* 終端を置かない正確な確保長と非整列先頭で、短い入力と末端の読越しを検出する。 */
 static void verify_validation_bounds(void)
 {
@@ -532,6 +612,7 @@ void run_text_tests(void)
     verify_utf8_from_utf16();
     verify_line_ending();
     verify_from_editor();
+    verify_normalization_boundaries();
     verify_bom_boundary();
     verify_note_equals();
     verify_editability();
