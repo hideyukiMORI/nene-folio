@@ -1,29 +1,34 @@
 # いまの状態 — NeNe Folio
 
-## 11月4日21時 — 1.3.0リリース対応
+## 11月4日21時 — 1.3.0 Beta公開済み
 
-hideのリリース依頼により#610で1.3.0を準備する。最新製品mainは#605の3a40067、
-#608/PR609の文書統合を含む開始mainは4c3190d。両taskのCI・必要反映・保全整理は完了済み。
-本日の品質改善は追加調査へ広げず、Mermaidと統合済み修正を配布物へまとめる。
+hideのリリース依頼により#610/PR611を統合し、**[GitHub 1.3.0 Beta](https://github.com/hideyukiMORI/nene-folio/releases/tag/v1.3.0)を公開した**。
+配布source/tagは`4359e9e2268bdeef135a4630dbaa241d57c3063d`。Mermaidと本日までの統合済み修正を含む。
+最終head必須CI、正規ZIP/MSIX生成、payload起動・1.3.0表示・正常終了、公開後再取得/全11ZIP member照合が完了。
+5,584fileを全保全/hash照合し、610の追加worktree/outputを整理済み。branch/commitは保持。
 
-唯一の版入力と配布説明を更新し、最終head必須CI・正典統合後にclean mainからZIP/MSIXを生成する。
-配布payloadの起動/版表示、公開後照合、Store提出原本/更新文の引渡しと実状態の記録へ進む。
-確定原本は`D:/NeNeFolio/agents/release-1.3.0-20261104/integration-completion.json`。
-[変更一覧](../release/1.3.0.md)、[品質記録](../quality/2026-11-04-release-1.3.0.md)を参照。
-hideは必要なら実機確認できると申し出ている。完成配布物から必要な手順を絞って案内する。
+Store提出用MSIXと3言語更新文は`D:/NeNeFolio/releases/1.3.0/store-candidate-20261104/`。
+**hideがStoreへ提出する**と明示しており、サナはStoreへのupload/申請を行っていない。
+候補のWindows版は1.3.0.0。提出・認定・公開の新しい状態はhideの報告を得てから記録する。
 
-単体実行。追加waiver none、既存WVR-0001継続。実app/実ノートを試験に使わない。
-以前の全体journalは`D:/NeNeFolio/agents/quality-20261104/journal.md`。
+リリース完了原本: `D:/NeNeFolio/agents/release-1.3.0-20261104/integration-completion.json`。
+文書収載#612の原本: `D:/NeNeFolio/agents/release-1.3.0-final-20261104/integration-completion.json`。
+[変更一覧](../release/1.3.0.md)・[品質記録](../quality/2026-11-04-release-1.3.0.md)・[日報](../reports/2026-11-04.md)・[引き継ぎ](../handoffs/2026-11-04.md)。
+単体実行。追加waiver none、既存WVR-0001（WinHTTP callback）継続。
 
-## 実行中アプリと配布
+## 通常版と実機確認の範囲
 
-開始時に稼働していたPID18964はWindowsApps配下のStore版1.2.0。起動pathの観測のみで、終了/操作していない。
-通常exeは`C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`、朝の開始時sourceは`cc84e45`（Mermaid統合済み）。
-#543以後の反映は各完了原本に従う。保存前強制終了・起動中上書きをせず、試験へ実ノートを使わない。
+通常exeは`C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`、sourceは#605の`3a40067`。
+今回のリリースは正規の別Release buildから生成し、通常exeは再ビルドしていない（版入力は1.2.0の時点）。
+通常exeのSHAは`329960e4eada9829e2941ff2a703a9b045116ff3f7e70de2796c13d59f2d137b`のまま。
+通常app/実ノートは試験に使っていない。hideによる1.3.0の実機受理は未確認。
+今回のUI確認は専用コピーでの起動/設定版/正常終了に限定し、MSIXの実インストールやStore署名版導入の試験ではない。
 
-Store提出1.2.0は#536/PR538、source `eb10419`でMermaidを含まない。hideの前回報告は11月3日20:19:59の
-「Pre-processing」。今朝の起動観測を認定/公開の独立確認へ拡張しない。GitHub公開版は1.1.0 Beta。
-今回の1.3.0リリース依頼では新しい成果物を使い、1.2.0原本は上書きしない。提出原本は`D:/NeNeFolio/agents/release-1.2.0-20261103/store-status.json`。
+以前のStore1.2.0は#536/PR538、source`eb10419`でMermaidを含まない。
+hideによる11月3日20:19:59の「Pre-processing」を、現在の1.2.0/1.3.0の認定/公開状態へ流用しない。
+旧提出原本は`D:/NeNeFolio/agents/release-1.2.0-20261103/store-status.json`。新しい1.3.0原本とは別に保持する。
+WACKとAppDataノートroot、Store署名版導入の従前の検証限界は[MSIX品質記録](../quality/2026-11-01-msix-installation.md)を参照。
+全体品質journalは`D:/NeNeFolio/agents/quality-20261104/journal.md`。今回の依頼はリリース対応として完了し、追加の製品変更は始めていない。
 
 ## 保留・保持物
 

@@ -1164,3 +1164,11 @@ containedは旧6.342/6.81765、新7.0461/7.0204ms（同6.579825→7.03325ms、6.
 この範囲で新しい修正根拠は得られず、製品変更を追加しない。ファイル読込・公開・実UI・一般速度を保証しない。
 詳細は[品質記録](2026-11-04-archive-entry-count.md)。文書5件だけ、追加waiverなし、通常exeは#605から再生成しない。
 最終head必須CI→正典統合→通常exe SHA不変→全保全整理へ。確定原本はagents/archive-entry-scale-20261104/integration-completion.json。
+
+## #610 / #612 — 1.3.0の配布と公開結果
+
+PR611最終headの必須CI41828131706 full-gate/check成功。clean main4359e9eから正規ZIP/MSIX生成・payload検査、
+fresh起動/設定1.3.0/正常終了を確認。MSIX初回画像は判定不能のまま保持し、2回目の視覚証拠を分離。
+GitHub v1.3.0 Betaを公開、再取得2asset/全11ZIPmember一致。全10run子/記録0、24artifact再hash。
+5,584file全保全後に610のworktree/output整理済み。Storeはhideへ提出原本/更新文を引渡し、認定/公開未確認。
+詳細とhash・境界は[品質記録](2026-11-04-release-1.3.0.md)。#612は文書のみ、成功済み製品検証/配布物/通常exeを再利用する。
