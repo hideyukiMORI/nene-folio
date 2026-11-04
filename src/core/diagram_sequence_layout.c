@@ -401,6 +401,7 @@ static void emit_message(struct diagram_sequence_layout *_Nonnull layout, size_t
          (struct diagram_primitive){
              .kind = DIAGRAM_PRIMITIVE_TEXT,
              .ink = DIAGRAM_INK_TEXT,
+             .fill = DIAGRAM_INK_BACKGROUND,
              .text = link.label,
              .alignment = link.from == link.to ? DIAGRAM_TEXT_LEFT : DIAGRAM_TEXT_CENTER,
              .bounds = {center - text.width / 2, layout->y[index], text.width, text.height}});

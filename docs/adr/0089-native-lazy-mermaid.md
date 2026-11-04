@@ -133,3 +133,15 @@ flow layoutは方向変換後の物理矩形・端点を渡し、同じpathの�
 公開するのは製品layoutから使う座標queryだけで、新たなowner・router・描画後補線は作らない。
 描画の点列や輪郭比率、辺label/矢頭/線種/非表示辺、scene上限、保存schemaは変えない。
 GDIの実描画pathを独立oracleにし、規則を複写した期待値だけで成功にしない。
+
+## 2026-11-04 — sequenceメッセージ文字の背景（#565、製品編集前）
+
+実font/GDIの明暗6組で、離れた参加者を結ぶmessageの文字領域を、中間参加者の生命線やactivationが
+横切ることを確認した。同じsceneのmessage文字だけを描いた参照と比較し、18ラベル中12件で計2,212pxの差が出た。
+隣接参加者と自己messageの対照6ラベルは差0だった。実bitmapでも複数行の文字と線の重なりを確認した。
+
+既存sequence layoutが出すmessageの文字primitiveへ、flowの辺ラベルでも使う`DIAGRAM_INK_BACKGROUND`を指定する。
+既存canvasの塗り→文字の経路で、文字の実測矩形内だけ生命線/activationを背景色で隠す。
+新しい意匠・padding・座標・寸法・矢印・生命線・activationの配置は加えず、sceneの数や順序も維持する。
+message以外の文字、保存schema、版、依存、公開API、上限、ゲートは変えない。
+文字矩形の外の全pixelと隣接/自己message対照のbitmapを前後比較し、意図した範囲だけの変化を確認する。
