@@ -440,6 +440,23 @@ static bool run_web_link_target_tests(const char *_Nonnull argument)
     return true;
 }
 
+static bool run_save_target_tests(const char *_Nonnull argument)
+{
+    if (strcmp(argument, "--save-preparation-oom") == 0)
+    {
+        size_t failed = run_save_preparation_allocation_tests();
+        require(failed != 0,
+                "save preparation selector requires actual allocation failure injection");
+        printf("save preparation: %zu allocation failures and successful retries passed\n", failed);
+        return true;
+    }
+    if (strcmp(argument, "--save-state") != 0)
+        return false;
+    run_save_state_tests();
+    printf("save state and history ordering tests passed\n");
+    return true;
+}
+
 static bool run_status_target_tests(const char *_Nonnull argument)
 {
     if (strcmp(argument, "--status") != 0)
@@ -508,7 +525,7 @@ static bool run_selected_tests(const char *_Nonnull argument)
             run_menu_target_tests(argument) || run_size_overflow_target_tests(argument) ||
             run_pane_load_target_tests(argument) || run_document_settings_target_tests(argument) ||
             run_target_tests(argument) || run_filter_target_tests(argument) ||
-            run_status_target_tests(argument));
+            run_status_target_tests(argument) || run_save_target_tests(argument));
 }
 
 static void run_full_suite(void)

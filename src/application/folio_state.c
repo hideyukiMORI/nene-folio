@@ -2457,18 +2457,20 @@ static enum folio_state_outcome store_edited(struct folio_state *_Nonnull state,
         note_text_destroy(edited);
         return FOLIO_STATE_READY;
     }
-    enum folio_state_outcome archived = archive_before_store(state);
-    if (archived != FOLIO_STATE_READY)
-    {
-        note_text_destroy(edited);
-        return archived;
-    }
     struct markdown_rtf *_Nullable rendered = nullptr;
     if (markdown_rtf_create(edited, state->palette.rtf, ui_font_face(folio_state_language(state)),
                             &rendered) != MARKDOWN_RTF_CONVERTED)
     {
         note_text_destroy(edited);
         return FOLIO_STATE_OUT_OF_MEMORY;
+    }
+    /* 表示の準備だけで失敗する間は履歴を回転させない（#617）。 */
+    enum folio_state_outcome archived = archive_before_store(state);
+    if (archived != FOLIO_STATE_READY)
+    {
+        markdown_rtf_destroy(rendered);
+        note_text_destroy(edited);
+        return archived;
     }
     enum persistence_outcome stored = state->port.write_note(
         state->port.adapter, category_ledger_name(state->categories, state->selected_category),

@@ -48,6 +48,8 @@ void run_json_tests(void);
 void run_ledger_tests(void);
 void run_layout_tests(void);
 void run_state_tests(void);
+void run_save_state_tests(void);
+[[nodiscard]] size_t run_save_preparation_allocation_tests(void);
 void run_status_tests(void);
 void run_drawer_scroll_delta_tests(void);
 void run_name_unchanged_state_tests(void);
