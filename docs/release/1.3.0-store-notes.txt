@@ -1,0 +1,8 @@
+日本語
+Mermaidのフローチャートとシーケンス図をノート内に表示できるようになりました。テーマに合わせて図を描画し、編集・保存では原文を保持します。図の文字や接続線、画像を含むMarkdownの表示・書き出しを改善しました。ZIP書き出しでは参照するローカル画像をまとめられ、多数の画像や大きなZIPの処理も改善しています。対応する図の構文とサイズには制限があります。
+
+English
+Display Mermaid flowcharts and sequence diagrams inside notes, using the current theme while preserving the source when editing and saving. This update improves diagram labels and connections, image Markdown rendering and export, and ZIP export with referenced local images. It also reduces work when exporting many images or building large ZIP files. Supported diagram syntax and sizes are limited.
+
+简体中文
+现在可以在笔记中显示 Mermaid 流程图和时序图。图表会使用当前主题，编辑和保存时保留原始文本。本次更新改进了图表文字与连线、Markdown 图片显示与导出，并支持将引用的本地图片一起导出为 ZIP。同时优化了大量图片和较大 ZIP 文件的导出处理。支持的图表语法和大小有限制。
