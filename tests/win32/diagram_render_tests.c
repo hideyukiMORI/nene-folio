@@ -1291,6 +1291,155 @@ static bool activation_attachment_tests(const struct image_work *_Nonnull work, 
     return selected;
 }
 
+static size_t edge_label_occurrences(const struct diagram_scene *_Nonnull scene, size_t text)
+{
+    size_t count = 0;
+    for (size_t index = 0; index < diagram_scene_count(scene); ++index)
+    {
+        const struct diagram_primitive *item = diagram_scene_at(scene, index);
+        if (flow_label(item) && item->text == text)
+            ++count;
+    }
+    return count;
+}
+static size_t missing_edge_labels(const struct diagram_model *_Nonnull model,
+                                  const struct diagram_scene *_Nonnull scene)
+{
+    size_t missing = 0;
+    for (size_t index = 0; index < diagram_model_link_count(model); ++index)
+    {
+        struct diagram_link link = diagram_model_link_at(model, index);
+        if (strlen(diagram_model_text_at(model, link.label)) != 0 &&
+            edge_label_occurrences(scene, link.label) != 1)
+            ++missing;
+    }
+    return missing;
+}
+static size_t expected_edge_paths(const struct diagram_model *_Nonnull model)
+{
+    size_t count = 0;
+    for (size_t index = 0; index < diagram_model_link_count(model); ++index)
+        count += diagram_model_link_at(model, index).stroke != DIAGRAM_INVISIBLE;
+    return count;
+}
+static size_t visible_edge_paths(const struct diagram_scene *_Nonnull scene)
+{
+    size_t count = 0;
+    for (size_t index = 0; index < diagram_scene_count(scene); ++index)
+    {
+        const struct diagram_primitive *item = diagram_scene_at(scene, index);
+        if (item->kind == DIAGRAM_PRIMITIVE_PATH)
+        {
+            require(item->stroke != DIAGRAM_INVISIBLE, "invisible paths are not emitted");
+            ++count;
+        }
+    }
+    return count;
+}
+static size_t unobstructed_edge_labels(const struct diagram_scene *_Nonnull scene,
+                                       struct diagram_canvas *_Nonnull canvas,
+                                       const struct image_work *_Nonnull work,
+                                       const struct image_bitmap *_Nonnull actual)
+{
+    bool any = false;
+    for (size_t index = 0; index < diagram_scene_count(scene); ++index)
+        any = any || flow_label(diagram_scene_at(scene, index));
+    if (!any)
+        return 0;
+    struct diagram_scene *labels = flow_label_scene(scene);
+    struct image_bitmap *_Nullable reference = nullptr;
+    require(diagram_canvas_draw(canvas, labels, work, &reference) == IMAGE_READY,
+            "invisible edge labels use the same native canvas");
+    size_t changed = 0;
+    for (size_t index = 0; index < diagram_scene_count(labels); ++index)
+        changed += text_pixels(actual, reference, diagram_scene_at(labels, index)->bounds);
+    image_bitmap_destroy(reference);
+    diagram_scene_destroy(labels);
+    return changed;
+}
+static size_t invisible_edge_case(const struct diagram_request *_Nonnull request,
+                                  const struct image_work *_Nonnull work,
+                                  const char *_Nullable output, const char *_Nonnull name)
+{
+    struct diagram_model *_Nullable model = nullptr;
+    require(mermaid_diagram_create(request->source, &model) == DIAGRAM_ACCEPTED,
+            "invisible edge labels remain in the parsed model");
+    struct diagram_canvas *_Nullable canvas = nullptr;
+    require(diagram_canvas_create(request, &canvas) == IMAGE_READY, "invisible edge native fonts");
+    struct diagram_metrics *_Nullable metrics = nullptr;
+    require(diagram_canvas_measure(canvas, model, work, &metrics) == IMAGE_READY,
+            "invisible edge actual measurements");
+    struct diagram_scene *_Nullable scene = nullptr;
+    require(diagram_layout_create(model, metrics, &scene) == DIAGRAM_ACCEPTED,
+            "invisible edge layout");
+    struct image_bitmap *actual = render(request, work);
+    if (output != nullptr)
+        write_bitmap(actual, output, name);
+    size_t missing = missing_edge_labels(model, scene);
+    size_t changed = unobstructed_edge_labels(scene, canvas, work, actual);
+    require(visible_edge_paths(scene) == expected_edge_paths(model),
+            "only visible edge paths and their arrowheads remain");
+    printf("invisible edge case=%s missing=%zu overwritten=%zu\n", name, missing, changed);
+    image_bitmap_destroy(actual);
+    diagram_scene_destroy(scene);
+    diagram_metrics_destroy(metrics);
+    diagram_canvas_destroy(canvas);
+    diagram_model_destroy(model);
+    return missing + changed;
+}
+static struct note_text *_Nonnull invisible_edge_source(size_t index,
+                                                        const char *_Nonnull direction)
+{
+    const char *sources[] = {
+        "flowchart %s\nA[始点] ~~~|線を消しても文字を残す<br>二行目も表示する| B[終点]",
+        "flowchart %s\nA[始点] --> B[終点]\nB ~~~|戻りの文字| A",
+        "flowchart %s\nA[自己] ~~~|自分へ戻る文字| A",
+        ("flowchart %s\nA[始点] ~~~|最初の文字| B[終点]\n"
+         "A ~~~|並行する文字| B\nA -->|見える辺の文字| B"),
+        "flowchart %s\nA[始点] ~~~ B[終点]\nB ~~~ B",
+        "flowchart %s\nA[始点] -->|見える辺の対照| B[終点]"};
+    char source[4096];
+    require(sprintf_s(source, sizeof source, sources[index], direction) > 0,
+            "invisible edge direction fixture");
+    return text_for(source);
+}
+static size_t invisible_edge_directions(const struct image_work *_Nonnull work,
+                                        const char *_Nullable output, size_t index)
+{
+    const char *directions[] = {"TB", "BT", "LR", "RL"};
+    const enum folio_theme themes[] = {FOLIO_THEME_LIGHT, FOLIO_THEME_DARK};
+    size_t failed = 0;
+    for (size_t direction = 0; direction < 4; ++direction)
+    {
+        struct note_text *source = invisible_edge_source(index, directions[direction]);
+        for (size_t theme = 0; theme < 2; ++theme)
+        {
+            struct diagram_request request = request_for(source, themes[theme]);
+            char name[64];
+            require(sprintf_s(name, sizeof name, "invisible-%zu-%zu-%zu", index, direction, theme) >
+                        0,
+                    "invisible edge artifact name");
+            failed += invisible_edge_case(&request, work, output, name);
+        }
+        note_text_destroy(source);
+    }
+    return failed;
+}
+static bool invisible_edge_tests(const struct image_work *_Nonnull work, int argc,
+                                 char *_Nonnull *_Nonnull argv)
+{
+    bool selected = argc >= 2 && strcmp(argv[1], "--invisible-labels") == 0;
+    if (argc >= 2 && !selected)
+        return false;
+    const char *output = selected && argc == 3 ? argv[2] : nullptr;
+    size_t failed = 0;
+    for (size_t index = 0; index < 6; ++index)
+        failed += invisible_edge_directions(work, output, index);
+    printf("invisible edge missing labels or overwritten pixels: %zu\n", failed);
+    require(failed == 0, "all edge label text remains visible independently of the edge stroke");
+    return selected;
+}
+
 static void cancellation(const struct image_work *_Nonnull work)
 {
     struct note_text *source = text_for(sequence);
@@ -1415,7 +1564,8 @@ int main(int argc, char *_Nonnull *_Nonnull argv)
     require(image_adapter_create(root, &adapter) == IMAGE_READY, "single media worker");
     struct image_port port = image_adapter_port(adapter);
     struct image_work work = {.adapter = adapter, .cancelled = cancelled, .progress = progress};
-    if (!activation_attachment_tests(&work, argc, argv) &&
+    if (!invisible_edge_tests(&work, argc, argv) &&
+        !activation_attachment_tests(&work, argc, argv) &&
         !group_heading_tests(&work, argc, argv) && !flow_label_tests(&work, argc, argv) &&
         !message_label_tests(&work, argc, argv) && !frame_heading_tests(&work, argc, argv) &&
         !lifeline_tests(&work, argc, argv) && !attachment_tests(&work, argc, argv) &&

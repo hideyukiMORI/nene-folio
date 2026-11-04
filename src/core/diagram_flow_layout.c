@@ -393,6 +393,12 @@ static void emit_node(struct diagram_flow_layout *_Nonnull layout, size_t index)
                                             .bounds = bounds,
                                             .text = node.label});
 }
+static bool has_edge_content(const struct diagram_flow_layout *_Nonnull layout,
+                             struct diagram_link link)
+{
+    return link.stroke != DIAGRAM_INVISIBLE ||
+           diagram_metrics_at(layout->metrics, link.label, DIAGRAM_TEXT_CAPTION).width != 0;
+}
 static bool parallel_edge(const struct diagram_flow_layout *_Nonnull layout,
                           struct diagram_link link, size_t edge)
 {
@@ -418,7 +424,7 @@ static void reserve_tracks(struct diagram_flow_layout *_Nonnull layout)
     for (size_t edge = 0; edge < diagram_model_link_count(layout->model); ++edge)
     {
         struct diagram_link link = diagram_model_link_at(layout->model, edge);
-        if (link.stroke == DIAGRAM_INVISIBLE || channel_needed(layout, link, edge))
+        if (!has_edge_content(layout, link) || channel_needed(layout, link, edge))
             continue;
         size_t rank = diagram_ranks_at(layout->ranks, link.from);
         layout->edge_level[edge] = layout->tracks[rank]++;
@@ -476,7 +482,7 @@ static struct diagram_point attach(const struct diagram_flow_layout *_Nonnull la
 static void emit_link(struct diagram_flow_layout *_Nonnull layout, size_t index)
 {
     struct diagram_link link = diagram_model_link_at(layout->model, index);
-    if (link.stroke == DIAGRAM_INVISIBLE)
+    if (!has_edge_content(layout, link))
         return;
     struct diagram_primitive path = {.kind = DIAGRAM_PRIMITIVE_PATH,
                                      .stroke = link.stroke,
@@ -491,19 +497,19 @@ static void emit_link(struct diagram_flow_layout *_Nonnull layout, size_t index)
     size_t segment = path.count == 6 ? 2 : 1;
     struct diagram_point label = {(path.points[segment].x + path.points[segment + 1].x) / 2,
                                   (path.points[segment].y + path.points[segment + 1].y) / 2};
+    layout->labels[index] = diagram_geometry_point(label, layout->direction, layout->extent);
+    if (link.stroke == DIAGRAM_INVISIBLE)
+        return;
     for (size_t point = 0; point < path.count; ++point)
         path.points[point] =
             diagram_geometry_point(path.points[point], layout->direction, layout->extent);
     path.points[0] = attach(layout, link.from, path.points[0]);
     path.points[path.count - 1] = attach(layout, link.to, path.points[path.count - 1]);
     emit(layout, path);
-    layout->labels[index] = diagram_geometry_point(label, layout->direction, layout->extent);
 }
 static void emit_link_label(struct diagram_flow_layout *_Nonnull layout, size_t index)
 {
     struct diagram_link link = diagram_model_link_at(layout->model, index);
-    if (link.stroke == DIAGRAM_INVISIBLE)
-        return;
     struct diagram_size size =
         diagram_metrics_at(layout->metrics, link.label, DIAGRAM_TEXT_CAPTION);
     if (size.width == 0)
@@ -527,7 +533,7 @@ static void reserve_channels(struct diagram_flow_layout *_Nonnull layout)
     for (size_t index = 0; index < diagram_model_link_count(layout->model); ++index)
     {
         struct diagram_link link = diagram_model_link_at(layout->model, index);
-        if (link.stroke != DIAGRAM_INVISIBLE && channel_needed(layout, link, index))
+        if (has_edge_content(layout, link) && channel_needed(layout, link, index))
             ++count;
         int width =
             axis_size(layout, diagram_metrics_at(layout->metrics, link.label, DIAGRAM_TEXT_CAPTION))
