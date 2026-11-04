@@ -943,3 +943,12 @@ sceneの実headerと始端/終端を対応付け、修正前3枚・修正後6枚
 coreの7組の開始位置・共通footer/message行を含むdiagram対象も成功。全DPIやhideの実機受理とは区別する。
 試行と統合競合の解消は[品質記録](2026-11-04-sequence-lifelines.md)、原本は
 `D:/NeNeFolio/agents/557-sequence-lifelines/`へ収載する。
+
+## 2026-11-04 — 品質修正後のMermaid性能（#559）
+
+Windows11 build26300、固定CMake Release、実Noto Sans JPで旧3入力と修正対象3入力を計測した。
+初回を分けた20回中央値とcacheコピーを記録し、6bitmapを視認、修正対象3枚は以前の成功画像と全hash一致。
+最初の小さいflowの増加を切り分けるため、保存済み旧exeと現行を交互6組で比較した。全12process成功、
+現行18bitmapは初回と全hash一致。負荷変動を含むため一般的な速度倍率や差なしは保証しない。
+原本・全試行・測定範囲・CPU観測の限界は[性能記録](2026-11-04-mermaid-performance.md)へ。
+製品codeの変更・実app/実ノートの操作はなく、文書最終CIと保全整理を行う。
