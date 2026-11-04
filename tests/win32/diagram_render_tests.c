@@ -4,6 +4,7 @@
 #include "diagram_layout.h"
 #include "diagram_native_shape.h"
 #include "diagram_render.h"
+#include "diagram_style.h"
 #include "folio_theme.h"
 #include "font_bundle.h"
 #include "image_adapter.h"
@@ -1106,6 +1107,190 @@ static bool group_heading_tests(const struct image_work *_Nonnull work, int argc
     return selected;
 }
 
+static int sequence_axis(const struct diagram_scene *_Nonnull scene, size_t actor)
+{
+    size_t found = 0;
+    for (size_t index = 0; index < diagram_scene_count(scene); ++index)
+    {
+        const struct diagram_primitive *item = diagram_scene_at(scene, index);
+        if (item->kind != DIAGRAM_PRIMITIVE_PATH || item->ink != DIAGRAM_INK_MUTED ||
+            item->stroke != DIAGRAM_DASHED || item->count != 2 ||
+            item->points[0].x != item->points[1].x)
+            continue;
+        if (found++ == actor)
+            return item->points[0].x;
+    }
+    require(false, "message endpoint participant has an actual lifeline");
+    exit(EXIT_FAILURE);
+}
+static const struct diagram_primitive *_Nullable endpoint_bar(
+    const struct diagram_scene *_Nonnull scene, int axis, struct diagram_point point, bool right)
+{
+    const struct diagram_primitive *_Nullable selected = nullptr;
+    int first = axis - diagram_activation_width / 2;
+    int last = first + (int)(diagram_depth_limit - 1) * diagram_activation_step;
+    for (size_t index = 0; index < diagram_scene_count(scene); ++index)
+    {
+        const struct diagram_primitive *item = diagram_scene_at(scene, index);
+        struct diagram_rect b = item->bounds;
+        if (item->kind != DIAGRAM_PRIMITIVE_SHAPE || item->shape != DIAGRAM_RECTANGLE ||
+            item->fill != DIAGRAM_INK_NODE || b.width != diagram_activation_width || b.x < first ||
+            b.x > last || point.y < b.y || point.y > b.y + b.height)
+            continue;
+        if (selected == nullptr || (right && b.x > selected->bounds.x) ||
+            (!right && b.x < selected->bounds.x))
+            selected = item;
+    }
+    return selected;
+}
+static bool sequence_endpoint(const struct diagram_scene *_Nonnull scene, size_t actor,
+                              struct diagram_point point, bool right)
+{
+    int axis = sequence_axis(scene, actor);
+    const struct diagram_primitive *bar = endpoint_bar(scene, axis, point, right);
+    if (bar == nullptr)
+    {
+        printf("inactive axis=%d endpoint=(%d,%d)\n", axis, point.x, point.y);
+        return point.x == axis;
+    }
+    int edge = bar->bounds.x + (right ? bar->bounds.width : 0);
+    bool contact = endpoint_on_shape(bar, point);
+    printf("active axis=%d expected-side=%d endpoint-x=%d\n", axis, edge, point.x);
+    return contact && point.x >= edge - 1 && point.x <= edge + 1;
+}
+static struct diagram_link sequence_message(const struct diagram_model *_Nonnull model,
+                                            size_t *_Nonnull cursor)
+{
+    while (*cursor < diagram_model_event_count(model))
+    {
+        struct diagram_event event = diagram_model_event_at(model, (*cursor)++);
+        if (event.kind == DIAGRAM_MESSAGE)
+            return event.link;
+    }
+    require(false, "each rendered message has a model event");
+    exit(EXIT_FAILURE);
+}
+static size_t sequence_attachments(const struct diagram_model *_Nonnull model,
+                                   const struct diagram_scene *_Nonnull scene)
+{
+    size_t cursor = 0, messages = 0, expected = 0, missed = 0;
+    for (size_t index = 0; index < diagram_model_event_count(model); ++index)
+        expected += diagram_model_event_at(model, index).kind == DIAGRAM_MESSAGE;
+    for (size_t index = 0; index < diagram_scene_count(scene); ++index)
+    {
+        const struct diagram_primitive *item = diagram_scene_at(scene, index);
+        if (item->kind != DIAGRAM_PRIMITIVE_PATH || item->ink != DIAGRAM_INK_TEXT)
+            continue;
+        struct diagram_link link = sequence_message(model, &cursor);
+        require(item->start == link.start && item->end == link.end && item->stroke == link.stroke &&
+                    item->count == (link.from == link.to ? 4 : 2),
+                "message retains its markers, stroke and self path shape");
+        missed += !sequence_endpoint(scene, link.from, item->points[0], link.from <= link.to);
+        missed +=
+            !sequence_endpoint(scene, link.to, item->points[item->count - 1], link.from >= link.to);
+        ++messages;
+    }
+    require(messages == expected, "all message events reach the native scene");
+    printf("sequence endpoints checked=%zu missed=%zu\n", messages * 2, missed);
+    return missed;
+}
+static size_t activation_attachment_case(const struct diagram_request *_Nonnull request,
+                                         const struct image_work *_Nonnull work,
+                                         const char *_Nullable output, const char *_Nonnull name)
+{
+    struct image_bitmap *bitmap = render(request, work);
+    if (output != nullptr)
+        write_bitmap(bitmap, output, name);
+    image_bitmap_destroy(bitmap);
+    struct diagram_model *_Nullable model = nullptr;
+    require(mermaid_diagram_create(request->source, &model) == DIAGRAM_ACCEPTED,
+            "attachment model");
+    struct diagram_canvas *_Nullable canvas = nullptr;
+    require(diagram_canvas_create(request, &canvas) == IMAGE_READY, "attachment native font");
+    struct diagram_metrics *_Nullable metrics = nullptr;
+    require(diagram_canvas_measure(canvas, model, work, &metrics) == IMAGE_READY,
+            "attachment actual metrics");
+    struct diagram_scene *_Nullable scene = nullptr;
+    require(diagram_layout_create(model, metrics, &scene) == DIAGRAM_ACCEPTED,
+            "attachment complete scene");
+    printf("%s:\n", name);
+    size_t missed = sequence_attachments(model, scene);
+    diagram_scene_destroy(scene);
+    diagram_metrics_destroy(metrics);
+    diagram_canvas_destroy(canvas);
+    diagram_model_destroy(model);
+    return missed;
+}
+
+static struct note_text *_Nonnull deep_activation_source(const char *_Nonnull header, bool both)
+{
+    char source[8192];
+    require(strcpy_s(source, sizeof source, header) == 0, "activation fixture header");
+    for (size_t depth = 0; depth < diagram_depth_limit; ++depth)
+        require(strcat_s(source, sizeof source,
+                         both ? "activate A\nactivate B\n" : "activate A\n") == 0,
+                "nested activation fixture");
+    require(strcat_s(source, sizeof source,
+                     both ? "A->>B: 十六段の活性区間の間をつなぐ長いメッセージを確認する\n"
+                            "B-->>A: 逆向きの返信も確認する\n"
+                          : "A->>A: 十六段の活性区間でも長い自己メッセージの文字を切らずに描く\n"
+                            "A-->>A: 自己の返信<br>二行目も確認\nNote left of A: 左の注記\n") == 0,
+            "deep activation messages");
+    if (both)
+        for (size_t depth = 0; depth < diagram_depth_limit; ++depth)
+            require(strcat_s(source, sizeof source, "deactivate A\ndeactivate B\n") == 0,
+                    "deep activations close in the same fixture");
+    return text_for(source);
+}
+static struct note_text *_Nonnull activation_attachment_source(size_t index)
+{
+    const char *sources[] = {
+        ("sequenceDiagram\nparticipant A\nparticipant B\n"
+         "A->>+B: 呼び出す\nB-->>-A: 返す"),
+        ("sequenceDiagram\nactor A\nparticipant B\nactivate A\n"
+         "B->>A: 逆向きに呼ぶ\nA-->>B: 返信\ndeactivate A"),
+        ("sequenceDiagram\nparticipant A\nA->>+A: 自己開始\nA->>+A: 自己入れ子\n"
+         "A-->>-A: 内側から返信\nA-->>-A: 外側から返信"),
+        ("sequenceDiagram\nparticipant A\nparticipant B\nactivate A\nactivate B\n"
+         "A<<->>B: 両側\nactivate A\nactivate B\nB<<-->>A: 両側入れ子\n"
+         "deactivate A\ndeactivate B\nA-)B: 開いた矢頭\nB-xA: 終端記号\n"
+         "deactivate A\ndeactivate B"),
+        "sequenceDiagram\nparticipant A\n",
+        ("sequenceDiagram\nparticipant A\nparticipant B\nA->>B: 活性なし対照\n"
+         "B-->>A: 返信の対照\nA->>A: 自己の対照"),
+        "sequenceDiagram\nparticipant A\nparticipant B\n"};
+    if (index == 4 || index == 6)
+        return deep_activation_source(sources[index], index == 6);
+    return text_for(sources[index]);
+}
+static bool activation_attachment_tests(const struct image_work *_Nonnull work, int argc,
+                                        char *_Nonnull *_Nonnull argv)
+{
+    bool selected = argc >= 2 && strcmp(argv[1], "--activation-attachments") == 0;
+    if (argc >= 2 && !selected)
+        return false;
+    const char *output = selected && argc == 3 ? argv[2] : nullptr;
+    const enum folio_theme themes[] = {FOLIO_THEME_LIGHT, FOLIO_THEME_DARK};
+    size_t missed = 0;
+    for (size_t index = 0; index < 7; ++index)
+    {
+        struct note_text *source = activation_attachment_source(index);
+        for (size_t theme = 0; theme < 2; ++theme)
+        {
+            char name[64];
+            require(sprintf_s(name, sizeof name, "activation-attachment-%zu-%zu", index, theme) > 0,
+                    "activation attachment artifact name");
+            struct diagram_request request = request_for(source, themes[theme]);
+            missed += activation_attachment_case(&request, work, output, name);
+        }
+        note_text_destroy(source);
+    }
+    printf("message endpoints away from visible activation edge: %zu\n", missed);
+    require(missed == 0,
+            "message endpoints touch the visible activation side or inactive lifeline");
+    return selected;
+}
+
 static void cancellation(const struct image_work *_Nonnull work)
 {
     struct note_text *source = text_for(sequence);
@@ -1230,7 +1415,8 @@ int main(int argc, char *_Nonnull *_Nonnull argv)
     require(image_adapter_create(root, &adapter) == IMAGE_READY, "single media worker");
     struct image_port port = image_adapter_port(adapter);
     struct image_work work = {.adapter = adapter, .cancelled = cancelled, .progress = progress};
-    if (!group_heading_tests(&work, argc, argv) && !flow_label_tests(&work, argc, argv) &&
+    if (!activation_attachment_tests(&work, argc, argv) &&
+        !group_heading_tests(&work, argc, argv) && !flow_label_tests(&work, argc, argv) &&
         !message_label_tests(&work, argc, argv) && !frame_heading_tests(&work, argc, argv) &&
         !lifeline_tests(&work, argc, argv) && !attachment_tests(&work, argc, argv) &&
         !label_tests(&work, argc, argv))
