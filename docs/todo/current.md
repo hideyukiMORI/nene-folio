@@ -6,17 +6,14 @@ hideの新指示で、停止まで調査・試験・計測・必要な修正を�
 現行規約の対象検証・最終head必須CI・正典統合・必要反映・整理まで進める。
 開始時mainは`ab7b732`、origin/main一致・clean、open PRなし。#541/PR542のCI41660944733は成功。
 
-今朝のMermaid構文・cache・輪郭/接続・文字の重なりの修正は、#571まで必須CI成功・main統合・通常反映・data照合・保全整理が完了。
-性能記録#559/#569と資源記録#561も完了した。最新mainと通常exeのsourceは`5fe5c24`。
+今朝のMermaid構文・cache・輪郭/接続・文字の重なりの修正は、#573まで必須CI成功・main統合・通常反映・data照合・保全整理が完了。
+性能記録#559/#569と資源記録#561も完了した。最新mainと通常exeのsourceは`2c4768a`。
 各案件の`D:/NeNeFolio/agents/<task>/integration-completion.json`を確定原本とし、詳細は日報・引き継ぎを参照する。
 
-現在の焦点は#573。活性中のmessage76端点中54件の不接触を再現し、既存sequence layoutの確定した棒外縁へ接続する修正を実施。
-幅予約と出力が同じ相対xを使い、深い自己messageの折返しと長い文字の余白を保つ。
-native435checks・全76端点接触、core図対象（追加64条件）、関連枠/文字画像比較と規約検査が成功。
-無活性対照2枚のhash不変。固定Release5入力×交互6組の生成/cache各1260sample・60画像を確認した。
-全試行と性能判断は[品質記録](../quality/2026-11-04-sequence-activation-attachment.md)。
-最終CI/統合/通常反映/data照合・保全整理へ進み、確定値を
-`D:/NeNeFolio/agents/573-activation-attachment/integration-completion.json`へ収載する。
+現在は#575の調査記録。8図×8区切り×明暗で、LF基準16画像に対する変形112画像の全hashが一致した。
+CRLF/CR/セミコロン/外側空白/空文/コメントを確認。この範囲では欠陥が見つからず、製品/test変更はない。
+全試行と限界は[品質記録](../quality/2026-11-04-statement-separators.md)。文書の最終CI/統合、通常exeのhash照合、証跡保全・整理へ進み、
+確定値を`D:/NeNeFolio/agents/statement-separators-20261104/integration-completion.json`へ収載する。
 停止指示まで品質改善を継続する。実app/実ノートを試験へ使わず、新候補は実行再現してから修正を判断する。
 
 日報・次回の詳細は[11月4日の日報](../reports/2026-11-04.md)と[引き継ぎ書](../handoffs/2026-11-04.md)。
