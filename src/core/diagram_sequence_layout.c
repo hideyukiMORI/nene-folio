@@ -14,6 +14,8 @@ struct diagram_sequence_layout
     int x[diagram_node_limit];
     int y[diagram_event_limit];
     int end[diagram_event_limit];
+    int from_offset[diagram_event_limit];
+    int to_offset[diagram_event_limit];
     size_t depth[diagram_event_limit];
     size_t active[diagram_node_limit][diagram_depth_limit];
     size_t active_count[diagram_node_limit];
@@ -25,6 +27,7 @@ struct diagram_sequence_layout
     int bottom;
     int content_left;
     int content_right;
+    bool has_activation;
     struct diagram_size extent;
 };
 static struct diagram_size event_size(const struct diagram_sequence_layout *_Nonnull layout,
@@ -54,6 +57,49 @@ static void reserve(int *_Nonnull extent, int required)
 {
     if (*extent < required)
         *extent = required;
+}
+static struct diagram_rect activation_bounds(const struct diagram_sequence_layout *_Nonnull layout,
+                                             size_t index)
+{
+    int bottom = layout->end[index] == 0 ? layout->bottom : layout->end[index];
+    int height = bottom - layout->y[index];
+    if (height < 8)
+        height = 8;
+    /* x is relative to the participant's lifeline; y is already placed. */
+    return (struct diagram_rect){-diagram_activation_width / 2 +
+                                     (int)layout->depth[index] * diagram_activation_step,
+                                 layout->y[index], diagram_activation_width, height};
+}
+static bool activation_at(const struct diagram_sequence_layout *_Nonnull layout, size_t index,
+                          size_t actor, int y)
+{
+    struct diagram_event event = diagram_model_event_at(layout->model, index);
+    if (event.kind != DIAGRAM_ACTIVATE || event.link.from != actor)
+        return false;
+    struct diagram_rect bounds = activation_bounds(layout, index);
+    return y >= bounds.y && y <= bounds.y + bounds.height;
+}
+static int message_offset(const struct diagram_sequence_layout *_Nonnull layout, size_t actor,
+                          int y, bool right)
+{
+    if (!layout->has_activation)
+        return 0;
+    int side_width = right ? diagram_activation_width : 0;
+    int offset = 0;
+    bool found = false;
+    for (size_t index = 0; index < diagram_model_event_count(layout->model); ++index)
+    {
+        if (!activation_at(layout, index, actor, y))
+            continue;
+        struct diagram_rect bounds = activation_bounds(layout, index);
+        int edge = bounds.x + side_width;
+        if (!found || (right ? edge > offset : edge < offset))
+        {
+            offset = edge;
+            found = true;
+        }
+    }
+    return offset;
 }
 static void measure_actors(struct diagram_sequence_layout *_Nonnull layout)
 {
@@ -93,17 +139,34 @@ static void reserve_note(struct diagram_sequence_layout *_Nonnull layout,
         break;
     }
 }
+static void measure_message(struct diagram_sequence_layout *_Nonnull layout,
+                            struct diagram_event event, size_t index, struct diagram_size size)
+{
+    bool self = event.link.from == event.link.to;
+    int from_y = layout->y[index] + size.height + diagram_message_line_gap;
+    int to_y = from_y + (self ? diagram_self_height : 0);
+    layout->from_offset[index] =
+        message_offset(layout, event.link.from, from_y, event.link.from <= event.link.to);
+    layout->to_offset[index] =
+        message_offset(layout, event.link.to, to_y, event.link.from >= event.link.to);
+    if (self)
+    {
+        int right = layout->from_offset[index];
+        reserve(&right, layout->to_offset[index]);
+        reserve(&layout->right[event.link.from], right + size.width + 64);
+    }
+}
 static void measure_event(struct diagram_sequence_layout *_Nonnull layout,
-                          struct diagram_event event, size_t depth)
+                          struct diagram_event event, size_t index)
 {
     struct diagram_size size = event_size(layout, event);
     if (event.kind == DIAGRAM_NOTE)
         reserve_note(layout, event, size);
-    if (event.kind == DIAGRAM_MESSAGE && event.link.from == event.link.to)
-        reserve(&layout->right[event.link.from], size.width + 64);
+    if (event.kind == DIAGRAM_MESSAGE)
+        measure_message(layout, event, index, size);
     if (event.kind == DIAGRAM_ACTIVATE)
         reserve(&layout->right[event.link.from],
-                diagram_activation_width / 2 + (int)depth * diagram_activation_step);
+                diagram_activation_width / 2 + (int)layout->depth[index] * diagram_activation_step);
 }
 static void measure_events(struct diagram_sequence_layout *_Nonnull layout)
 {
@@ -111,7 +174,7 @@ static void measure_events(struct diagram_sequence_layout *_Nonnull layout)
     for (size_t index = 0; index < diagram_model_event_count(layout->model); ++index)
     {
         struct diagram_event event = diagram_model_event_at(layout->model, index);
-        measure_event(layout, event, layout->depth[index]);
+        measure_event(layout, event, index);
         if (event.kind == DIAGRAM_FRAME_OPEN)
         {
             ++depth;
@@ -122,13 +185,18 @@ static void measure_events(struct diagram_sequence_layout *_Nonnull layout)
             --depth;
     }
 }
-static void widen_span(struct diagram_sequence_layout *_Nonnull layout, struct diagram_event event)
+static void widen_span(struct diagram_sequence_layout *_Nonnull layout, struct diagram_event event,
+                       size_t index)
 {
     if (event.link.from == event.link.to)
         return;
     size_t first = event.link.from < event.link.to ? event.link.from : event.link.to;
     size_t last = event.link.from > event.link.to ? event.link.from : event.link.to;
     int width = event_size(layout, event).width + 32;
+    if (event.kind == DIAGRAM_MESSAGE)
+        width += event.link.from < event.link.to
+                     ? layout->from_offset[index] - layout->to_offset[index]
+                     : layout->to_offset[index] - layout->from_offset[index];
     int missing = width - (layout->x[last] - layout->x[first]);
     if (missing <= 0)
         return;
@@ -153,7 +221,7 @@ static void place_actors(struct diagram_sequence_layout *_Nonnull layout)
     {
         struct diagram_event event = diagram_model_event_at(layout->model, index);
         if (event.kind == DIAGRAM_MESSAGE || event.kind == DIAGRAM_NOTE)
-            widen_span(layout, event);
+            widen_span(layout, event, index);
     }
     layout->content_left = margin;
     layout->content_right = layout->x[count - 1] + layout->right[count - 1];
@@ -185,6 +253,7 @@ static void activate(struct diagram_sequence_layout *_Nonnull layout, size_t ind
         }
         layout->depth[index] = depth;
         layout->active[actor][layout->active_count[actor]++] = index;
+        layout->has_activation = true;
     }
     if (event.kind == DIAGRAM_DEACTIVATE)
     {
@@ -356,28 +425,23 @@ static void emit_frame_heading(struct diagram_sequence_layout *_Nonnull layout, 
 static void emit_activation(struct diagram_sequence_layout *_Nonnull layout, size_t index)
 {
     struct diagram_event event = diagram_model_event_at(layout->model, index);
-    int bottom = layout->end[index] == 0 ? layout->bottom : layout->end[index];
-    int height = bottom - layout->y[index];
-    if (height < 8)
-        height = 8;
-    emit(layout, (struct diagram_primitive){
-                     .kind = DIAGRAM_PRIMITIVE_SHAPE,
-                     .shape = DIAGRAM_RECTANGLE,
-                     .stroke = DIAGRAM_SOLID,
-                     .ink = DIAGRAM_INK_ACCENT,
-                     .fill = DIAGRAM_INK_NODE,
-                     .text = diagram_none,
-                     .bounds = {layout->x[event.link.from] - diagram_activation_width / 2 +
-                                    (int)layout->depth[index] * diagram_activation_step,
-                                layout->y[index], diagram_activation_width, height}});
+    struct diagram_rect bounds = activation_bounds(layout, index);
+    bounds.x += layout->x[event.link.from];
+    emit(layout, (struct diagram_primitive){.kind = DIAGRAM_PRIMITIVE_SHAPE,
+                                            .shape = DIAGRAM_RECTANGLE,
+                                            .stroke = DIAGRAM_SOLID,
+                                            .ink = DIAGRAM_INK_ACCENT,
+                                            .fill = DIAGRAM_INK_NODE,
+                                            .text = diagram_none,
+                                            .bounds = bounds});
 }
 static void emit_message(struct diagram_sequence_layout *_Nonnull layout, size_t index)
 {
     struct diagram_event event = diagram_model_event_at(layout->model, index);
     struct diagram_link link = event.link;
     struct diagram_size text = diagram_metrics_at(layout->metrics, link.label, DIAGRAM_TEXT_BODY);
-    int from = layout->x[link.from];
-    int to = layout->x[link.to];
+    int from = layout->x[link.from] + layout->from_offset[index];
+    int to = layout->x[link.to] + layout->to_offset[index];
     int y = layout->y[index] + text.height + diagram_message_line_gap;
     struct diagram_primitive path = {.kind = DIAGRAM_PRIMITIVE_PATH,
                                      .stroke = link.stroke,
@@ -390,11 +454,13 @@ static void emit_message(struct diagram_sequence_layout *_Nonnull layout, size_t
     int center = (from + to) / 2;
     if (link.from == link.to)
     {
-        path.points[1].x += diagram_self_width;
-        path.points[2] = (struct diagram_point){from + diagram_self_width, y + diagram_self_height};
-        path.points[3] = (struct diagram_point){from, y + diagram_self_height};
+        int right = from > to ? from : to;
+        path.points[1].x = right + diagram_self_width;
+        path.points[2] =
+            (struct diagram_point){right + diagram_self_width, y + diagram_self_height};
+        path.points[3] = (struct diagram_point){to, y + diagram_self_height};
         path.count = 4;
-        center = from + 24 + text.width / 2;
+        center = right + 24 + text.width / 2;
     }
     emit(layout, path);
     emit(layout,

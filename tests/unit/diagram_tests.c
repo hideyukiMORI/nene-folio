@@ -605,6 +605,128 @@ static void sequence_activation_extents(void)
     reject_source(text_buffer_bytes(source), DIAGRAM_TOO_LARGE);
     text_buffer_destroy(source);
 }
+
+static void activation_pair(struct text_buffer *_Nonnull source, const char *_Nonnull command,
+                            bool both)
+{
+    activation_command(source, command, "A");
+    if (both)
+        activation_command(source, command, "B");
+}
+static struct text_buffer *_Nonnull activated_message_fixture(size_t depth, bool self, bool closed)
+{
+    struct text_buffer *_Nullable source = nullptr;
+    require(text_buffer_create(&source) == TEXT_BUFFER_ACCEPTED, "activated message fixture");
+    text_buffer_append_text(source, "sequenceDiagram\nparticipant A\n");
+    if (!self)
+        text_buffer_append_text(source, "participant B\n");
+    for (size_t index = 0; index < depth; ++index)
+        activation_pair(source, "activate", !self);
+    text_buffer_append_text(source, self ? "A->>A: " : "A->>B: ");
+    text_buffer_append_text(source,
+                            "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz\n");
+    text_buffer_append_text(source, self ? "A-->>A: reply\n" : "B-->>A: reply\n");
+    if (closed)
+    {
+        for (size_t index = 0; index < depth; ++index)
+            activation_pair(source, "deactivate", !self);
+        text_buffer_append_text(source, self ? "A->>A: after\n" : "A->>B: after\n");
+    }
+    require(text_buffer_finish(source) == TEXT_BUFFER_ACCEPTED,
+            "activated message fixture complete");
+    return source;
+}
+static bool activation_shape(const struct diagram_primitive *_Nonnull item)
+{
+    return item->kind == DIAGRAM_PRIMITIVE_SHAPE && item->fill == DIAGRAM_INK_NODE &&
+           item->bounds.width == diagram_activation_width;
+}
+static void activated_label_clearance(const struct diagram_scene *_Nonnull scene,
+                                      const struct diagram_model *_Nonnull model)
+{
+    struct diagram_rect call = label_bounds(
+        scene, model, "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz");
+    struct diagram_rect reply = label_bounds(scene, model, "reply");
+    struct diagram_size size = diagram_scene_size(scene);
+    require(call.x + call.width <= size.width - diagram_outer_margin &&
+                reply.x + reply.width <= size.width - diagram_outer_margin,
+            "activated message labels keep the outer margin");
+    for (size_t index = 0; index < diagram_scene_count(scene); ++index)
+    {
+        const struct diagram_primitive *item = diagram_scene_at(scene, index);
+        if (activation_shape(item))
+            require(separated(call, item->bounds) && separated(reply, item->bounds),
+                    "long call and reply text stay outside every active bar");
+    }
+}
+static void activated_self_turns(const struct diagram_scene *_Nonnull scene)
+{
+    int right = 0;
+    for (size_t index = 0; index < diagram_scene_count(scene); ++index)
+    {
+        const struct diagram_primitive *item = diagram_scene_at(scene, index);
+        if (activation_shape(item) && right < item->bounds.x + item->bounds.width)
+            right = item->bounds.x + item->bounds.width;
+    }
+    size_t active_turns = 0;
+    for (size_t index = 0; index < diagram_scene_count(scene) && active_turns < 2; ++index)
+    {
+        const struct diagram_primitive *item = diagram_scene_at(scene, index);
+        if (item->kind == DIAGRAM_PRIMITIVE_PATH && item->ink == DIAGRAM_INK_TEXT)
+        {
+            require(item->count == 4 && item->points[1].x > right && item->points[2].x > right,
+                    "self message turns remain visible beyond the active bar envelope");
+            ++active_turns;
+        }
+    }
+    require(active_turns == 2, "both active self message turns are present");
+}
+static void inactive_message_tail(const struct diagram_scene *_Nonnull scene,
+                                  const struct diagram_model *_Nonnull model)
+{
+    struct diagram_rect from = label_bounds(scene, model, "A");
+    struct diagram_rect to =
+        diagram_model_node_count(model) == 1 ? from : label_bounds(scene, model, "B");
+    const struct diagram_primitive *_Nullable last = nullptr;
+    size_t messages = 0;
+    for (size_t index = 0; index < diagram_scene_count(scene); ++index)
+    {
+        const struct diagram_primitive *item = diagram_scene_at(scene, index);
+        if (item->kind == DIAGRAM_PRIMITIVE_PATH && item->ink == DIAGRAM_INK_TEXT)
+        {
+            last = item;
+            ++messages;
+        }
+    }
+    require(last != nullptr && messages == 3 && last->points[0].x == from.x + from.width / 2 &&
+                last->points[last->count - 1].x == to.x + to.width / 2,
+            "a later message returns to both lifelines after activations close");
+}
+static void activated_message_extent(size_t depth, bool self, bool closed)
+{
+    struct text_buffer *source = activated_message_fixture(depth, self, closed);
+    struct diagram_model *model = parsed(text_buffer_bytes(source));
+    struct diagram_scene *scene = laid_out(model);
+    activated_label_clearance(scene, model);
+    if (self)
+        activated_self_turns(scene);
+    if (closed)
+        inactive_message_tail(scene, model);
+    diagram_scene_destroy(scene);
+    diagram_model_destroy(model);
+    text_buffer_destroy(source);
+}
+static void sequence_activation_connections(void)
+{
+    for (size_t depth = 1; depth <= diagram_depth_limit; ++depth)
+    {
+        activated_message_extent(depth, true, false);
+        activated_message_extent(depth, true, true);
+        activated_message_extent(depth, false, false);
+        activated_message_extent(depth, false, true);
+    }
+}
+
 static void rejected_grammar(void)
 {
     static const char *const invalid[] = {"graph sideways\nA-->B",
@@ -1278,6 +1400,7 @@ void run_diagram_tests(void)
     sequence_arrow_meaning();
     self_activation_arrival();
     sequence_activation_extents();
+    sequence_activation_connections();
     rejected_grammar();
     escaped_labels();
     bounded_input();
