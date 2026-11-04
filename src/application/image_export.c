@@ -1,5 +1,6 @@
 #include "image_export.h"
 #include "archive_assets.h"
+#include "ascii_fold.h"
 #include "folio_theme.h"
 #include "image_asset.h"
 #include "image_port.h"
@@ -19,6 +20,7 @@ struct image_export
     struct archive_assets *_Nullable files;
     struct image_asset *_Nullable owners[markdown_images_reference_limit];
     const char *_Nullable categories[markdown_images_reference_limit];
+    size_t generated_numbers[markdown_images_reference_limit];
     size_t count;
     size_t references;
     struct note_text *_Nullable *_Nullable copies;
@@ -122,9 +124,32 @@ static const char *_Nonnull extension(const struct image_asset_input *_Nonnull i
         return ".img";
     return last;
 }
-static bool asset_path(const struct image_export *_Nonnull export, const char *_Nonnull category,
+static bool same_spelling(const char *_Nonnull first, const char *_Nonnull second)
+{
+    size_t index = 0;
+    while (first[index] != '\0' && ascii_fold_byte(first[index]) == ascii_fold_byte(second[index]))
+        ++index;
+    return first[index] == '\0' && second[index] == '\0';
+}
+static size_t next_number(const struct image_export *_Nonnull export, const char *_Nonnull category,
+                          const char *_Nonnull suffix)
+{
+    for (size_t cursor = export->count; cursor != 0; --cursor)
+    {
+        size_t index = cursor - 1;
+        if (export->generated_numbers[index] == 0 ||
+            !same_spelling(export->categories[index], category))
+            continue;
+        const struct image_asset_input *existing = image_asset_content(export->owners[index]);
+        if (same_spelling(extension(existing), suffix))
+            return export->generated_numbers[index] + 1;
+    }
+    return 1;
+}
+static bool asset_path(struct image_export *_Nonnull export, const char *_Nonnull category,
                        const struct image_asset_input *_Nonnull input, char *_Nonnull path)
 {
+    export->generated_numbers[export->count] = 0;
     size_t category_length = strlen(category);
     size_t relative_length = strlen(input->relative);
     if (category_length + relative_length + 2 > image_source_byte_limit + 256)
@@ -137,14 +162,18 @@ static bool asset_path(const struct image_export *_Nonnull export, const char *_
         memcpy(relative, input->relative, relative_length + 1);
         return true;
     }
-    for (size_t number = 1; number <= markdown_images_reference_limit; ++number)
+    const char *suffix = extension(input);
+    size_t first = next_number(export, category, suffix);
+    for (size_t number = first; number <= markdown_images_reference_limit; ++number)
     {
         memcpy(relative, "images/_nenefolio/", sizeof "images/_nenefolio/");
         append_number(relative, number);
-        const char *suffix = extension(input);
         memcpy(relative + strlen(relative), suffix, strlen(suffix) + 1);
         if (!archive_assets_contains(export->files, path))
+        {
+            export->generated_numbers[export->count] = number;
             return true;
+        }
     }
     return false;
 }

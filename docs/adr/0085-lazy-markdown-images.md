@@ -105,3 +105,24 @@ Waiver: [WVR-0001](../waivers/WVR-0001-winhttp-callback-abi.md)（WinHTTPの固�
 applicationは既存の`NOTE_ARCHIVE_INVALID`→画像書き出し失敗へ渡し、ZIP公開前に中止する。
 出力先を自動で改名する別方式は追加せず、原文/画像・公開API・owner・上限・schemaは不変。
 両追加順・大小文字・UTF-8・非衝突対照と、原文保持/失敗後の正常追加を既存`--images`回帰へ組み込む。
+
+## 2026-11-04: 外部画像の使用済み番号を再探索しない（#603、製品編集前）
+
+外部画像ごとに番号1から完全同名queryを繰り返すと、同じカテゴリの512画像で
+`image_export_append`がRelease中央値1648.143msになった（決定的な偽asset port、実I/O/WIC/ZIP/UIなし）。
+名前の生成は既存`image_export`に維持し、採用素材と同じindexへ生成番号を所有させる。
+contained素材は0、外部素材は1〜4096。同じカテゴリ/拡張子の最後の採用番号+1から、
+既存`archive_assets_contains`による候補探索を続ける。比較は既存`ascii_fold_byte`に従う。
+拡張子は今までどおりidentityから導出し、元表記、16byte境界、`.img` fallbackを変えない。
+
+ある番号kを採用した時点で1〜kはすべて使用済みであり、出力中に素材を削除しないため後で空かない。
+同じgroupの採用番号は単調に増えるので、後ろから最初に見つかる番号が最大である。
+後から入るcontained素材による占有は既存queryで確認する。このため現在と同じ最小空き番号になる。
+生成番号は未採用slotへ準備し、archive追加成功後の既存count更新でowner/categoryと同時に採用する。
+探索はcount未満だけを見るので、失敗したslotは次の名前決定に影響しない。contained追加時もslotを0に戻す。
+
+private ownerが最大4096個のsize_t（x64で32KiB）を追加所有し、確保回数・公開API・参照上限・
+同identityのbytes検証・ZIP衝突規則・原文/コピー・schemaは維持する。一般hash索引や別配置方式は追加しない。
+既存素材の探索と衝突検査は線形のままで、全体を線形時間とは主張しない。
+連番/穴/途中の占有/カテゴリと拡張子の交互・ASCII大小/再利用・失敗/番号上限を対象回帰で固定し、
+同じRelease診断で出力bytesと費用を比較する。時間閾値はCIへ導入しない。
