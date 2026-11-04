@@ -26,6 +26,7 @@ constexpr int diagram_arrow_size = 10;
 constexpr int diagram_thick_arrow_size = 12;
 constexpr int diagram_endpoint_size = 8;
 constexpr int diagram_subroutine_inset = 8;
+constexpr int diagram_polygon_slope_divisor = 7;
 constexpr int diagram_double_circle_inset = 4;
 constexpr int diagram_circle_padding = 24;
 constexpr int diagram_cylinder_extra = 24;

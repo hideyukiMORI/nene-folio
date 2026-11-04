@@ -21,6 +21,13 @@ static int stadium_width(struct diagram_size text, int height)
     /* Tall labels need the full end caps outside the text's central strip. */
     return text.width + (ends > height ? ends : height);
 }
+static int sloped_width(int padded)
+{
+    int central = diagram_polygon_slope_divisor - 2;
+    int width = (padded * diagram_polygon_slope_divisor + central - 1) / central;
+    int compact = padded + 24;
+    return width > compact ? width : compact;
+}
 struct diagram_size diagram_geometry_node(struct diagram_size text, enum diagram_shape shape)
 {
     struct diagram_size size = {text.width + diagram_node_padding_x * 2,
@@ -34,13 +41,15 @@ struct diagram_size diagram_geometry_node(struct diagram_size text, enum diagram
         size.width = stadium_width(text, size.height);
         break;
     case DIAGRAM_SUBROUTINE:
+        size.width += 24;
+        break;
     case DIAGRAM_HEXAGON:
     case DIAGRAM_PARALLELOGRAM:
     case DIAGRAM_PARALLELOGRAM_REVERSE:
     case DIAGRAM_TRAPEZOID:
     case DIAGRAM_TRAPEZOID_REVERSE:
     case DIAGRAM_ASYMMETRIC:
-        size.width += 24;
+        size.width = sloped_width(size.width);
         break;
     case DIAGRAM_CYLINDER:
         size.height += diagram_cylinder_extra;

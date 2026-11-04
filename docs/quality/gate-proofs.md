@@ -914,3 +914,13 @@ Windows x64、固定toolchainのDebug/clang-tidy/ASan/UBSan/nullability、同梱
 修正後は1行/8行/縦長の明暗6条件が82checks成功し、全6枚を視認した。GDI差分もすべて空。
 入力・raw出力・bitmap・修正中の失敗と検証限界は[品質記録](2026-11-04-stadium-label-clearance.md)へ。
 これは実font/GDI描画の確認で、hideによる通常版の実機受理や全DPIの検証とは区別する。
+
+## 2026-11-04 — 斜辺付きノードのラベル（#553）
+
+Windows x64、固定Debug/tidy/ASan/UBSan/nullability、同梱Noto Sans JPを使用した。
+`diagram_render_tests.exe --polygons <出力先>`で既存native描画pathをGDI regionへ変換し、
+文字矩形を1logical px広げた領域との包含を検査。production未変更では24条件中18条件が不足してexit1、
+修正後は24条件476checks成功、代表14枚を視認した。実glyphのはみ出しと余白だけの不足を区別している。
+共通の輪郭検査へ替えたstadiumも6条件94checks成功し、#551の保存画像と全hash一致。
+入力・raw出力・bitmap・再利用の根拠・限界は[品質記録](2026-11-04-polygon-label-clearance.md)へ。
+実app/実ノートは操作せず、hideによる通常版の受理や全DPIの検証とは区別する。
