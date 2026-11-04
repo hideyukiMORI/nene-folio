@@ -1115,3 +1115,11 @@ contained参照の元Markdownと合成PNG5枚は不変、正常対照8ZIPは旧�
 旧2fixtureの期待は独立固定CommonMarkと設計変更を根拠に明示訂正し、完全一致assertを維持。独立レビューの範囲/全失敗も記録する。
 Release費用は6系列×4段階、旧/初案/最終を逆順も含む6processで比較。24条件の初回RTFは全SHA一致、性能一般化/実UI保証とは区別する。
 詳細・全run・環境と限界は[品質記録](2026-11-04-markdown-code-boundary.md)。最終headの必須CIを統合条件とし、waiver追加なし。
+
+
+## #599 — 画像パス置換の変異入力
+
+6seed/21tokenから11703入力（最大58bytes）を生成し、#597正規Debugのrender→画像参照→copy→再renderを外部helperで実行。
+span範囲/順序/原文不変/画像数と新targetが全件成立し、Python独立copy本文も全bytes一致。子/記録側0、stderr/記録エラー空。
+構文受理/拒否oracle・任意長/全Unicode/全heap/実UI/性能の証明ではない。製品/test/gate変更なし。
+生成/実行/独立照合/制限は[品質記録](2026-11-04-markdown-relocation-mutations.md)、原本はagents/markdown-relocation-mutations-20261104。
