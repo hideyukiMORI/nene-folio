@@ -1,6 +1,6 @@
 # いまの状態 — NeNe Folio
 
-## 11月4日21時 — 1.3.0 Beta公開済み
+## 11月4日22時 — 1.3.0 Store申請済み（hide報告）
 
 hideのリリース依頼により#610/PR611を統合し、**[GitHub 1.3.0 Beta](https://github.com/hideyukiMORI/nene-folio/releases/tag/v1.3.0)を公開した**。
 配布source/tagは`4359e9e2268bdeef135a4630dbaa241d57c3063d`。Mermaidと本日までの統合済み修正を含む。
@@ -8,8 +8,10 @@ hideのリリース依頼により#610/PR611を統合し、**[GitHub 1.3.0 Beta]
 5,584fileを全保全/hash照合し、610の追加worktree/outputを整理済み。branch/commitは保持。
 
 Store提出用MSIXと3言語更新文は`D:/NeNeFolio/releases/1.3.0/store-candidate-20261104/`。
-**hideがStoreへ提出する**と明示しており、サナはStoreへのupload/申請を行っていない。
-候補のWindows版は1.3.0.0。提出・認定・公開の新しい状態はhideの報告を得てから記録する。
+**22:30頃、hideが「申請した」と報告したため、1.3.0（Windows1.3.0.0）は申請済みとして記録する。**
+根拠はhideの報告であり、画面の独立確認ではない。申請番号・正確な申請時刻・審査段階・認定/公開は未確認。
+申請記録は`D:/NeNeFolio/agents/release-1.3.0-20261104/store-status.json`。次はhideの審査結果/公開の報告を待つ。
+記録更新#614の原本は`D:/NeNeFolio/agents/store-submission-20261104/integration-completion.json`。
 
 リリース完了原本: `D:/NeNeFolio/agents/release-1.3.0-20261104/integration-completion.json`。
 文書収載#612の原本: `D:/NeNeFolio/agents/release-1.3.0-final-20261104/integration-completion.json`。
