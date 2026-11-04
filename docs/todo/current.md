@@ -6,16 +6,16 @@ hideの新指示で、停止まで調査・試験・計測・必要な修正を�
 現行規約の対象検証・最終head必須CI・正典統合・必要反映・整理まで進める。
 開始時mainは`ab7b732`、origin/main一致・clean、open PRなし。#541/PR542のCI41660944733は成功。
 
-今朝の#543/#544/#546/#548/#551は、それぞれ最終headの必須CI成功・main統合・通常反映・data照合・
+今朝の#543/#544/#546/#548/#551/#553は、それぞれ最終headの必須CI成功・main統合・通常反映・data照合・
 成果物保全・追加作業木/output整理まで完了。各`D:/NeNeFolio/agents/<task>/integration-completion.json`を
-確定原本とし、詳細と失敗履歴は下記の日報・引き継ぎを参照する。最新完了は#551/PR552、main`fd793da`。
+確定原本とし、詳細と失敗履歴は下記の日報・引き継ぎを参照する。最新完了は#553/PR555、main`735575f`。
 
-現在の焦点は#553。斜辺付き6形状のlabel余白不足を実font/GDIで再現し、同じ斜辺定義を
-描画と幅予約で使うよう修正した。24条件476checksと72組のcore境界を含むdiagram対象が成功。
-新しい輪郭検査を使うstadium6条件も成功し、#551の画像と全hashが一致した。
-詳細は[品質記録](../quality/2026-11-04-polygon-label-clearance.md)、最終head/CI/通常反映/整理は
-`D:/NeNeFolio/agents/553-polygon-label/integration-completion.json`へ収載する。
-次は#554の横向きの辺と斜辺の接続を確認する。現時点では静的候補で、実行再現は未着手。
+現在の焦点は#554。横向きの辺が斜辺から離れる問題を48枚/288端点中108不接触として再現した。
+方向変換後の端点を既存geometryで補正し、288端点と丸め境界420端点・3045checks、core対象が成功。
+独立R/Oレビューは追加指摘なし。実bitmapの10枚を視認し、変更対象外の28枚は修正前と全hash一致。
+詳細は[品質記録](../quality/2026-11-04-flow-attachment.md)、最終head/CI/通常反映/整理は
+`D:/NeNeFolio/agents/554-flow-attachment/integration-completion.json`へ収載する。
+停止指示まで品質改善を継続する。実app/実ノートを試験へ使わず、新候補は実行再現してから修正を判断する。
 
 日報・次回の詳細は[11月4日の日報](../reports/2026-11-04.md)と[引き継ぎ書](../handoffs/2026-11-04.md)。
 全体journalは`D:/NeNeFolio/agents/quality-20261104/journal.md`。
