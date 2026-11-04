@@ -288,6 +288,74 @@ static void pair_bracket(struct markdown_inline_tokens *_Nonnull parser, size_t 
     }
 }
 
+static bool destination_head(struct markdown_inline_tokens *_Nonnull parser, size_t head)
+{
+    if (head == SIZE_MAX || head == 0)
+        return false;
+    const struct markdown_inline_token *label = &parser->tokens[head - 1];
+    return at(parser, label->start) == ']' && label->mate < head - 1;
+}
+
+static bool destination_start(struct markdown_inline_tokens *_Nonnull parser, size_t start,
+                              size_t head)
+{
+    size_t first = parser->tokens[head].start + 1;
+    while (start > first && whitespace(at(parser, start - 1)))
+        --start;
+    return start == first;
+}
+
+static char destination_delimiter(struct markdown_inline_tokens *_Nonnull parser, size_t start,
+                                  size_t head)
+{
+    char character = at(parser, start);
+    if (character == '<' && destination_start(parser, start, head))
+        return '>';
+    if ((character == '"' || character == '\'') && whitespace(at(parser, start - 1)))
+        return character;
+    return '\0';
+}
+
+static size_t destination_literal_end(struct markdown_inline_tokens *_Nonnull parser, size_t start,
+                                      char closing)
+{
+    for (size_t cursor = start + 1; cursor < parser->view.length; ++cursor)
+    {
+        char character = at(parser, cursor);
+        if (character == '\\' && cursor + 1 < parser->view.length)
+        {
+            ++cursor;
+            continue;
+        }
+        if (character == closing)
+            return cursor;
+        if (closing == '>' && (character == '<' || character == '\n' || character == '\r'))
+            return SIZE_MAX;
+    }
+    return SIZE_MAX;
+}
+
+static bool skip_destination_literal(struct markdown_inline_tokens *_Nonnull parser,
+                                     size_t *_Nonnull index, size_t head)
+{
+    if (!destination_head(parser, head))
+        return false;
+    const struct markdown_inline_token *token = &parser->tokens[*index];
+    for (size_t cursor = token->start; cursor < token->start + token->length; ++cursor)
+    {
+        char closing = destination_delimiter(parser, cursor, head);
+        if (closing == '\0')
+            continue;
+        size_t end = destination_literal_end(parser, cursor, closing);
+        if (end == SIZE_MAX)
+            continue;
+        while (*index + 1 < parser->count && parser->tokens[*index + 1].start <= end)
+            ++*index;
+        return true;
+    }
+    return false;
+}
+
 static void pair_brackets(struct markdown_inline_tokens *_Nonnull parser)
 {
     size_t brackets = SIZE_MAX;
@@ -298,6 +366,8 @@ static void pair_brackets(struct markdown_inline_tokens *_Nonnull parser)
         if (skip_literal_range(token, &index))
             continue;
         if (token->kind == MARKDOWN_INLINE_ESCAPE)
+            continue;
+        if (skip_destination_literal(parser, &index, parentheses))
             continue;
         char character = at(parser, token->start);
         size_t *head = character == '[' || character == ']' ? &brackets : &parentheses;
