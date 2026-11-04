@@ -1056,3 +1056,14 @@ native1112checks、core図対象、規約確認成功。線/矢頭非表示を�
 全試行/対象/限界は[品質記録](2026-11-04-solid-diagram-markers.md)。性能/失敗注入/任意DPI/実UIは未保証。
 原本は`D:/NeNeFolio/agents/587-solid-markers`。最終CI/統合/通常exe反映/data照合/保全整理の確定値はintegration-completion.jsonへ。
 実app/実ノート/Store操作なし。停止まで品質改善を続ける。
+
+## 端点記号の対象性能 — #589
+
+各96messageの開矢頭/×/塗りつぶし破線と実線対照を旧/現行Releaseで交互6組・12process測定した。
+生成/cache各1008sample、48画像、phase和/寸法/SHAを照合し、build/link/paired/auditは全子/記録0、stderr/記録エラー空。
+生成の旧→現行中央値は開16.589→16.405ms、×16.612→16.921ms、塗り16.353→16.571ms、実線15.623→15.724ms。
+組差中央値は-1.77/+1.72/+1.33/+0.61%、増加は2/4/6/5組。塗りの小増加と実線対照の変動を残し、無費用/高速化を断定しない。
+CPU7.04〜15.57%、初回最大27.1824ms/非初回最大25.6826msも保持。全寸法232×4858、実線対照12画像同SHA。
+全raw/比較根拠/限界は[品質記録](2026-11-04-marker-performance.md)。製品/test変更なし、追加性能修正なし。
+原本は`D:/NeNeFolio/agents/marker-performance-20261104`。最終CI/統合/通常exe照合/保全整理の確定値はintegration-completion.jsonへ。
+追加waiverなし（WVR-0001既存範囲のみ）、実app/実ノート/Store操作なし。停止まで品質改善を継続する。
