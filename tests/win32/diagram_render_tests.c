@@ -1537,6 +1537,118 @@ static void cache_contract(const struct image_work *_Nonnull work)
     image_job_destroy(&original);
     note_text_destroy(source);
 }
+
+/* #587: dash phase belongs to the shaft, never to the endpoint symbol. */
+static struct diagram_primitive marker_path(size_t index)
+{
+    const enum diagram_arrow arrows[] = {DIAGRAM_ARROW_NONE, DIAGRAM_ARROW_OPEN,
+                                         DIAGRAM_ARROW_CROSS, DIAGRAM_ARROW_CLOSED,
+                                         DIAGRAM_ARROW_CIRCLE};
+    const struct diagram_point starts[] = {{35, 80}, {125, 80}, {80, 35}, {80, 125}};
+    const struct diagram_point ends[] = {{125, 80}, {35, 80}, {80, 125}, {80, 35}};
+    return (struct diagram_primitive){.kind = DIAGRAM_PRIMITIVE_PATH,
+                                      .stroke = DIAGRAM_SOLID,
+                                      .start = arrows[index / 4],
+                                      .end = arrows[index / 4],
+                                      .ink = DIAGRAM_INK_TEXT,
+                                      .fill = DIAGRAM_INK_NONE,
+                                      .points = {starts[index % 4], ends[index % 4]},
+                                      .count = 2};
+}
+static struct image_bitmap *_Nonnull marker_bitmap(const struct diagram_request *_Nonnull request,
+                                                   const struct image_work *_Nonnull work,
+                                                   const struct diagram_primitive *_Nonnull path)
+{
+    struct diagram_canvas *_Nullable canvas = nullptr;
+    require(diagram_canvas_create(request, &canvas) == IMAGE_READY, "marker canvas");
+    struct diagram_scene *_Nullable scene = nullptr;
+    require(diagram_scene_create(&scene) == DIAGRAM_ACCEPTED, "marker scene");
+    require(diagram_scene_append(scene, path) == DIAGRAM_ACCEPTED &&
+                diagram_scene_seal(scene, (struct diagram_size){160, 160}) == DIAGRAM_ACCEPTED,
+            "marker geometry and extent");
+    struct image_bitmap *_Nullable bitmap = nullptr;
+    require(diagram_canvas_draw(canvas, scene, work, &bitmap) == IMAGE_READY, "marker bitmap");
+    diagram_scene_destroy(scene);
+    diagram_canvas_destroy(canvas);
+    return bitmap;
+}
+static size_t marker_pixel_difference(const struct image_bitmap *_Nonnull actual,
+                                      const struct image_bitmap *_Nonnull reference, bool vertical)
+{
+    struct image_size size = image_bitmap_size(actual);
+    struct image_size expected = image_bitmap_size(reference);
+    require(size.width == 160 && size.height == 160 && expected.width == 160 &&
+                expected.height == 160,
+            "marker image extent");
+    const unsigned char *pixels = bitmap_pixels(actual), *baseline = bitmap_pixels(reference);
+    size_t changed = 0;
+    for (size_t pixel = 0; pixel < 160 * 160; ++pixel)
+    {
+        size_t across = vertical ? pixel % 160 : pixel / 160;
+        if ((across < 79 || across > 81) &&
+            memcmp(pixels + pixel * 4, baseline + pixel * 4, 4) != 0)
+            ++changed;
+    }
+    return changed;
+}
+static void marker_shaft(const struct image_bitmap *_Nonnull actual,
+                         const struct image_bitmap *_Nonnull reference, bool vertical)
+{
+    const unsigned char *pixels = bitmap_pixels(actual), *baseline = bitmap_pixels(reference);
+    size_t same = 0, gaps = 0;
+    for (size_t point = 55; point < 105; ++point)
+    {
+        size_t offset = (vertical ? point * 160 + 80 : 80 * 160 + point) * 4;
+        same += memcmp(pixels + offset, baseline + offset, 4) == 0;
+        gaps += memcmp(pixels + offset, pixels, 4) == 0;
+    }
+    require(same > 0 && gaps > 0 && same + gaps == 50, "shaft keeps solid dashes and clear gaps");
+}
+static size_t marker_case(const struct image_work *_Nonnull work, const char *_Nullable output,
+                          size_t index, enum folio_theme theme)
+{
+    struct note_text *source = text_for("sequenceDiagram\nA->>B: test\n");
+    struct diagram_request request = request_for(source, theme);
+    struct diagram_primitive path = marker_path(index);
+    const enum diagram_stroke strokes[] = {DIAGRAM_SOLID, DIAGRAM_DASHED, DIAGRAM_THICK};
+    struct image_bitmap *_Nullable bitmaps[3] = {nullptr, nullptr, nullptr};
+    for (size_t stroke = 0; stroke < 3; ++stroke)
+    {
+        path.stroke = strokes[stroke];
+        bitmaps[stroke] = marker_bitmap(&request, work, &path);
+        char name[80];
+        require(sprintf_s(name, sizeof name, "marker-%zu-%d-%zu", index, (int)theme, stroke) > 0,
+                "marker artifact name");
+        if (output != nullptr)
+            write_bitmap(bitmaps[stroke], output, name);
+    }
+    bool vertical = index % 4 >= 2;
+    size_t changed = marker_pixel_difference(bitmaps[1], bitmaps[0], vertical);
+    marker_shaft(bitmaps[1], bitmaps[0], vertical);
+    printf("marker case=%zu theme=%d symbol-pixels-different=%zu\n", index, (int)theme, changed);
+    for (size_t stroke = 0; stroke < 3; ++stroke)
+        image_bitmap_destroy(bitmaps[stroke]);
+    note_text_destroy(source);
+    return changed;
+}
+static bool marker_tests(const struct image_work *_Nonnull work, int argc,
+                         char *_Nonnull *_Nonnull argv)
+{
+    bool selected = argc >= 2 && strcmp(argv[1], "--markers") == 0;
+    if (argc >= 2 && !selected)
+        return false;
+    DWORD resources = GetGuiResources(GetCurrentProcess(), GR_GDIOBJECTS);
+    size_t changed = 0;
+    const enum folio_theme themes[] = {FOLIO_THEME_LIGHT, FOLIO_THEME_DARK};
+    for (size_t index = 0; index < 20; ++index)
+        for (size_t theme = 0; theme < 2; ++theme)
+            changed += marker_case(work, argc > 2 ? argv[2] : nullptr, index, themes[theme]);
+    require(changed == 0, "dashed paths keep solid endpoint symbols in all four directions");
+    require(GetGuiResources(GetCurrentProcess(), GR_GDIOBJECTS) == resources,
+            "marker rendering releases all GDI objects");
+    return selected;
+}
+
 static struct storage_path *_Nonnull root_path(void)
 {
     wchar_t path[2048];
@@ -1564,7 +1676,7 @@ int main(int argc, char *_Nonnull *_Nonnull argv)
     require(image_adapter_create(root, &adapter) == IMAGE_READY, "single media worker");
     struct image_port port = image_adapter_port(adapter);
     struct image_work work = {.adapter = adapter, .cancelled = cancelled, .progress = progress};
-    if (!invisible_edge_tests(&work, argc, argv) &&
+    if (!marker_tests(&work, argc, argv) && !invisible_edge_tests(&work, argc, argv) &&
         !activation_attachment_tests(&work, argc, argv) &&
         !group_heading_tests(&work, argc, argv) && !flow_label_tests(&work, argc, argv) &&
         !message_label_tests(&work, argc, argv) && !frame_heading_tests(&work, argc, argv) &&

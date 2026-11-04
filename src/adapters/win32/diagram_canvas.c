@@ -189,31 +189,48 @@ static DWORD stroke_style(enum diagram_stroke stroke)
     return PS_SOLID;
 }
 static HPEN _Nullable create_pen(const struct diagram_canvas *_Nonnull canvas,
-                                 const struct diagram_primitive *_Nonnull primitive)
+                                 enum diagram_ink pen_ink, enum diagram_stroke stroke)
 {
-    LOGBRUSH brush = {.lbStyle = BS_SOLID, .lbColor = ink(canvas, primitive->ink)};
+    LOGBRUSH brush = {.lbStyle = BS_SOLID, .lbColor = ink(canvas, pen_ink)};
     DWORD width =
-        (DWORD)(primitive->stroke == DIAGRAM_THICK ? diagram_thick_width : diagram_stroke_width) *
-        scale;
+        (DWORD)(stroke == DIAGRAM_THICK ? diagram_thick_width : diagram_stroke_width) * scale;
     DWORD dashes[2] = {diagram_dash_length * scale, diagram_dash_gap * scale};
-    bool dashed = primitive->stroke == DIAGRAM_DASHED;
-    return ExtCreatePen(PS_GEOMETRIC | PS_ENDCAP_FLAT | PS_JOIN_ROUND |
-                            stroke_style(primitive->stroke),
-                        width, &brush, dashed ? 2 : 0, dashed ? dashes : nullptr);
+    bool dashed = stroke == DIAGRAM_DASHED;
+    return ExtCreatePen(PS_GEOMETRIC | PS_ENDCAP_FLAT | PS_JOIN_ROUND | stroke_style(stroke), width,
+                        &brush, dashed ? 2 : 0, dashed ? dashes : nullptr);
 }
-static void draw_path(struct diagram_canvas *_Nonnull canvas,
-                      const struct diagram_primitive *_Nonnull primitive)
+static enum image_outcome draw_markers(struct diagram_canvas *_Nonnull canvas,
+                                       const struct diagram_primitive *_Nonnull primitive)
+{
+    if (primitive->start == DIAGRAM_ARROW_NONE && primitive->end == DIAGRAM_ARROW_NONE)
+        return IMAGE_READY;
+    if (primitive->stroke != DIAGRAM_DASHED)
+    {
+        diagram_native_shape_arrows(canvas->dc, primitive, scale);
+        return IMAGE_READY;
+    }
+    HPEN _Nullable pen = create_pen(canvas, primitive->ink, DIAGRAM_SOLID);
+    if (pen == nullptr)
+        return IMAGE_OUT_OF_MEMORY;
+    HGDIOBJ previous = SelectObject(canvas->dc, pen);
+    diagram_native_shape_arrows(canvas->dc, primitive, scale);
+    SelectObject(canvas->dc, previous);
+    DeleteObject(pen);
+    return IMAGE_READY;
+}
+static enum image_outcome draw_path(struct diagram_canvas *_Nonnull canvas,
+                                    const struct diagram_primitive *_Nonnull primitive)
 {
     POINT points[8];
     for (size_t index = 0; index < primitive->count; ++index)
         points[index] =
             (POINT){primitive->points[index].x * scale, primitive->points[index].y * scale};
     if (primitive->count < 2)
-        return;
+        return IMAGE_READY;
     Polyline(canvas->dc, points, (int)primitive->count);
     SelectObject(canvas->dc, GetStockObject(DC_BRUSH));
     SetDCBrushColor(canvas->dc, ink(canvas, primitive->ink));
-    diagram_native_shape_arrows(canvas->dc, primitive, scale);
+    return draw_markers(canvas, primitive);
 }
 static struct diagram_size select_text_role(struct diagram_canvas *_Nonnull canvas,
                                             const struct diagram_primitive *_Nonnull primitive)
@@ -283,17 +300,18 @@ static enum image_outcome draw_primitive(struct diagram_canvas *_Nonnull canvas,
 {
     if (primitive->kind == DIAGRAM_PRIMITIVE_TEXT)
         return draw_text(canvas, primitive);
-    HPEN _Nullable pen = create_pen(canvas, primitive);
+    HPEN _Nullable pen = create_pen(canvas, primitive->ink, primitive->stroke);
     if (pen == nullptr)
         return IMAGE_OUT_OF_MEMORY;
     HGDIOBJ previous_pen = SelectObject(canvas->dc, pen);
     HGDIOBJ previous_brush = SelectObject(
         canvas->dc, GetStockObject(primitive->fill == DIAGRAM_INK_NONE ? HOLLOW_BRUSH : DC_BRUSH));
     SetDCBrushColor(canvas->dc, ink(canvas, primitive->fill));
+    enum image_outcome result = IMAGE_READY;
     switch (primitive->kind)
     {
     case DIAGRAM_PRIMITIVE_PATH:
-        draw_path(canvas, primitive);
+        result = draw_path(canvas, primitive);
         break;
     case DIAGRAM_PRIMITIVE_SHAPE:
         diagram_native_shape_draw(canvas->dc, primitive, rectangle(primitive->bounds), scale);
@@ -304,7 +322,7 @@ static enum image_outcome draw_primitive(struct diagram_canvas *_Nonnull canvas,
     SelectObject(canvas->dc, previous_brush);
     SelectObject(canvas->dc, previous_pen);
     DeleteObject(pen);
-    return IMAGE_READY;
+    return result;
 }
 static void reduce_row(struct diagram_canvas *_Nonnull canvas, struct diagram_size size, int row)
 {

@@ -1043,3 +1043,16 @@ native1112checks、core図対象、規約確認成功。線/矢頭非表示を�
 9用途×7表記×明暗で126件の実model labelを期待UTF-8と照合し、基準18画像に対する変形108画像の全SHA一致を確認した。
 数値/基本6名の文字参照、quote/backslash/newlineの表記を比較。native/子/記録側0、診断/記録エラーなし、3画像視認。
 製品/test/gate変更なし。全63原文/9期待文字列/126画像と保証範囲は[品質記録](2026-11-04-diagram-label-equivalence.md)へ。
+
+## 破線の端点記号を連続した輪郭へ — #587
+
+4方向・両端・明暗のnative40条件中、記号付き32条件の536画素差を製品未変更で再現した。
+既存canvasで破線pathの記号だけ同色/同幅の実線penを局所所有し、元のpenへ復元/破棄する。
+修正後1529checks、全条件でshaft外の記号差0、破線のdash/gap維持、GDI数復帰。
+前後120組のうち実線/太線/無記号88画像は全SHA一致。32画像の858変更画素は端点±12pixel以内、範囲外0。
+実sequence6入力×明暗でも全寸法一致・実線6画像不変、開矢頭と×印の修正後画像を視認した。
+固定Debug/tidy・sanitizer・対象規約・264画像hash監査が成功。build-red-01の複雑度12/10とartifact path誤り等の失敗も保持。
+製品1/native1と6docsを変更。API/schema/版/依存/gateは不変、追加waiverなし（WVR-0001既存範囲のみ）。
+全試行/対象/限界は[品質記録](2026-11-04-solid-diagram-markers.md)。性能/失敗注入/任意DPI/実UIは未保証。
+原本は`D:/NeNeFolio/agents/587-solid-markers`。最終CI/統合/通常exe反映/data照合/保全整理の確定値はintegration-completion.jsonへ。
+実app/実ノート/Store操作なし。停止まで品質改善を続ける。
