@@ -1181,3 +1181,11 @@ GitHub v1.3.0 Betaを公開、再取得2asset/全11ZIPmember一致。全10run子
 テストは既存state suiteへ結び、全体と対象selectorで同じfixtureを使う。追加のゲートや閾値変更はない。
 測定exeのASan interception通知と、履歴回転/実write失敗の非原子性という残る限界は[品質記録](2026-11-05-save-preparation.md)へ。
 最終head必須CI/統合/反映/保全整理の確定原本は`D:/NeNeFolio/agents/617-save-preparation/integration-completion.json`。
+
+## #620 — 改行間の走査と正規化境界
+
+既存note_text_from_editorでCR/LFのないrunをまとめ、保存上限/append/確保順を維持する。
+明示期待8patternの6,400入力で正確確保長・非整列・改行位置・UTF8/BOM・出力終端・入力不変を確認。
+Debug/tidyと既存--text-validationが成功、初回test nesting違反は既存確保fixture再利用で解消し閾値/抑制は不変。
+固定Releaseの30case×3候補は[品質記録](2026-11-05-editor-normalization.md)へ。短い混在行の約6%増を含み、一般速度は保証しない。
+最終head必須CI/統合/反映/保全整理はD:/NeNeFolio/agents/620-editor-normalization/integration-completion.jsonで確定する。

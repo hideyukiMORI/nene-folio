@@ -129,3 +129,11 @@ Debugのformat/tidy/ASan/UBSan/nullability付き対象buildと単体結果は、
 `text-validation-01`は`folio_tests.exe --text-validation`を実行し、子/記録0、stdoutは`text validation tests passed`、stderr空。
 両成功runの入力は終了時も不変、記録error0。新規確保や公開selectorは追加していない。
 文書/規約検査と最終CIの確定結果は同taskの実run・完了原本を参照する。
+
+## 08:12 — #616の統合・反映・整理を完了
+
+PR619最終head`a7295603`の必須CI41930597783 full-gate/checkが成功し、main`2c2f0be`へ正典統合した。
+通常版buildとdata32fileのbytes/hash/作成更新日時不変を確認。通常app起動0。
+1,378fileをZIPへ全hash照合し、取込tree/dirty/ignored/リンク/稼働参照の監査後に専用worktree/outputを削除した。
+branch/commit保持。Issueはmerge後30秒でもOPENだったが、closingIssuesReferences/merge済みを照合して完了として閉じた。
+確定原本はD:/NeNeFolio/agents/616-text-validation/integration-completion.json。

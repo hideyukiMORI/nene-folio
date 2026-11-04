@@ -3,21 +3,22 @@
 ## 11月5日 — hide不在中の品質改善を継続
 
 hideの現在指示は、停止の指示まで調査・試験・計測・必要な修正を続け、全試行と変更を記録すること。
-主担当は単体で実行し、必要な保存系/本文検証の独立静読だけを委任した。古い停止・固定分担は持ち込まない。
+主担当は単体で実行し、必要な保存系/本文処理の独立静読だけを委任した。古い停止・固定分担は持ち込まない。
 
-**#616は全文ASCIIの本文検証を短縮する候補。** 5候補を比較し、非ASCIIの各文字へ追加処理を持ち込まない案を選んだ。
-固定ReleaseのASCII16MiB読込は中央値21.881850→4.093825ms、編集43.298025→26.567100ms。
-末尾だけ日本語の対照は約1〜6%増える。一般倍率や全入力の改善を主張しない。
-Debug/tidyと既存`--text-validation`（追加境界を含む）は成功。最終head必須CI/統合/通常反映/保全整理は
-`D:/NeNeFolio/agents/616-text-validation/integration-completion.json`で確定する。対象成功だけを統合完了とは扱わない。
+**#620は改行間の走査をまとめる候補。** 3案を比較し、改行の分岐と確保順を保つ案2を採用。
+固定Releaseの16MiB LF編集入口はASCII26.95035→14.92035ms、日本語46.44125→34.84095ms。
+連続改行はほぼ同等、数文字ごとの混在改行は約6%増える。実UIや全入力の改善を主張しない。
+Debug/tidyと既存--text-validationは成功。最終head必須CI/統合/通常反映/保全整理の確定は
+`D:/NeNeFolio/agents/620-editor-normalization/integration-completion.json`と実runへ記録する。
 
-#617の保存準備失敗による履歴消費はPR618でmain`038b8b7`へ統合済み。必須CI41924699377成功、
-通常版反映後もportable data32fileの内容・作成更新日時は不変。1,573file全保全後に専用作業木/outputを整理済み。
-確定原本は`D:/NeNeFolio/agents/617-save-preparation/integration-completion.json`。
+#616はPR619/必須CI41930597783成功後、main`2c2f0be`へ統合済み。通常版反映・data32file不変、
+1,378file全保全と専用worktree/output整理を完了した。原本は同agents/616-text-validation/integration-completion.json。
+#617はPR618/main`038b8b7`、必須CI41924699377・通常反映・1,573file全保全・専用領域整理まで完了。
+原本は同agents/617-save-preparation/integration-completion.json。branch/commitは保持する。
 
 全体journalは`D:/NeNeFolio/agents/quality-20261105/journal.md`。
-[本文検証の品質記録](../quality/2026-11-05-ascii-validation.md)・[保存の品質記録](../quality/2026-11-05-save-preparation.md)・
-[日報](../reports/2026-11-05.md)・[引き継ぎ](../handoffs/2026-11-05.md)。
+[改行正規化](../quality/2026-11-05-editor-normalization.md)・[本文検証](../quality/2026-11-05-ascii-validation.md)・
+[保存](../quality/2026-11-05-save-preparation.md)・[日報](../reports/2026-11-05.md)・[引き継ぎ](../handoffs/2026-11-05.md)。
 追加waiver none、既存WVR-0001継続。実app/実ノート/Storeは試験に使っていない。
 
 ## 11月4日22時 — 1.3.0 Store申請済み（hide報告）
@@ -40,11 +41,10 @@ Store提出用MSIXと3言語更新文は`D:/NeNeFolio/releases/1.3.0/store-candi
 
 ## 通常版と実機確認の範囲
 
-通常exeは`C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`、#617反映時sourceは`038b8b7`。
-SHA256は`1d0dbb9cc67b77e782e95bc2b56cd87bda4879193119f0c1e6c970c1c217b514`。
-#616統合後の必要反映は同taskの完了原本へ記録する。GitHub/Store配布の1.3.0 source`4359e9e`とは区別する。
+通常exeは`C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`、#616反映時sourceは`2c2f0be`。
+SHA256は`7e2fe53a271d474866ce34379c71b341e7c0217a159780799068b679f44548b3`。
+#620後の必要反映は同taskの完了原本へ記録する。GitHub/Store配布1.3.0のsource`4359e9e`とは区別する。
 通常app/実ノートは試験に使っていない。hideによる1.3.0の実機受理は未確認。
-今回のUI確認は専用コピーでの起動/設定版/正常終了に限定し、MSIXの実インストールやStore署名版導入の試験ではない。
 
 以前のStore1.2.0は#536/PR538、source`eb10419`でMermaidを含まない。
 hideによる11月3日20:19:59の「Pre-processing」を、現在の1.2.0/1.3.0の認定/公開状態へ流用しない。
