@@ -106,6 +106,19 @@ static void expect_field(const char *_Nonnull source, const char *_Nonnull expec
 
 static void verify_fields(void)
 {
+    expect_field("[![a](b[c)](https://example.com/outer)",
+                 "HYPERLINK \"https://example.com/outer\"", "](https");
+    expect_field("[![a](b (title]x))](https://example.com/outer)",
+                 "HYPERLINK \"https://example.com/outer\"", "title]x");
+    expect_field("[label](https://example.com/a`b) `code`", "HYPERLINK \"https://example.com/a`b\"",
+                 "a`b){");
+    expect_field("[label](<https://example.com/a`b>) `code`",
+                 "HYPERLINK \"https://example.com/a`b\"", "<https");
+    expect_field("[label](https://example.com/plain \"a`b\") `code`", "{\\f1\\fs20\\cf4 code}",
+                 "a`b");
+    expect_field("[label](https://example.com/plain (a`b)) `code`",
+                 "HYPERLINK \"https://example.com/plain\"", "a`b");
+
     expect_field("[label](https://example.com/plain \"caption(\")",
                  "HYPERLINK \"https://example.com/plain\"", "caption");
     expect_field("[label](https://example.com/plain \"caption)\")",

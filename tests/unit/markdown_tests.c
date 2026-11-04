@@ -821,8 +821,14 @@ static void verify_image_boundaries(void)
                 "\\pard\\sa80\\sl240\\slmult1\\cf1 {\\cf4\\ul ![{\\b a}](u)\\ul0}\\par\n");
     expect_body("[\\\\![**a**](u)](v)",
                 "\\pard\\sa80\\sl240\\slmult1\\cf1 {\\cf4\\ul \\\\" IMAGE0 "**a**\\ul0}\\par\n");
-    expect_body("[![a](b](c))",
-                "\\pard\\sa80\\sl240\\slmult1\\cf1 {\\cf4\\ul ![a](b\\ul0})\\par\n");
+    expect_body("[![a](b](c))", "\\pard\\sa80\\sl240\\slmult1\\cf1 [" IMAGE0 "a\\par\n");
+    expect_body("[![a](b]x)", "\\pard\\sa80\\sl240\\slmult1\\cf1 [" IMAGE0 "a\\par\n");
+    expect_body("[![a](b[c)](v)",
+                "\\pard\\sa80\\sl240\\slmult1\\cf1 {\\cf4\\ul " IMAGE0 "a\\ul0}\\par\n");
+    expect_body("[![a](b (title]x))](v)",
+                "\\pard\\sa80\\sl240\\slmult1\\cf1 {\\cf4\\ul " IMAGE0 "a\\ul0}\\par\n");
+    expect_body("[![a](b`x](c)) tail`",
+                "\\pard\\sa80\\sl240\\slmult1\\cf1 [" IMAGE0 "a tail`\\par\n");
     expect_body("[label]( ![hidden](url) )",
                 "\\pard\\sa80\\sl240\\slmult1\\cf1 {\\cf4\\ul label\\ul0}\\par\n");
     expect_body("![`[code](url)`](destination)",
@@ -849,7 +855,7 @@ void run_markdown_link_tests(void)
     expect_body("`[a](u)` [x](v)", "\\pard\\sa80\\sl240\\slmult1\\cf1 {\\f1\\fs20\\cf4 [a](u)} "
                                    "{\\cf4\\ul x\\ul0}\\par\n");
     expect_body("[a](`u) tail`) [x](v)", "\\pard\\sa80\\sl240\\slmult1\\cf1 {\\cf4\\ul a\\ul0} "
-                                         "{\\cf4\\ul x\\ul0}\\par\n");
+                                         "tail`) {\\cf4\\ul x\\ul0}\\par\n");
     expect_fragment("*before [x](foo*) after", "*before {\\cf4\\ul x\\ul0} after", "\\i ");
     expect_fragment("*before [x](foo) after*", "{\\i before {\\cf4\\ul x\\ul0} after}", "foo");
     expect_fragment("![alt](url)", "" IMAGE0 "alt", "\\ul");
@@ -1549,6 +1555,34 @@ static void verify_inline_literal_boundaries(void)
     expect_inline_text("\\`literal", "`literal");
 }
 
+static void verify_inline_destination_code(void)
+{
+    const char *sources[] = {
+        "![x](images/a`b.png) `code`",           "![x](<images/a`b.png>) `code`",
+        "![x](images/plain.png \"a`b\") `code`", "![x](images/plain.png 'a`b') `code`",
+        "![x](images/plain.png (a`b)) `code`",   "![x](images/a``b.png) ``code``",
+        "![x](images/a%60b.png) `code`",         "![x](images/a\\`b.png) `code`",
+        "![x](images/a(`b).png) `code`",         "![x](images/日本`語.png) `code`",
+    };
+    for (size_t index = 0; index < sizeof sources / sizeof sources[0]; ++index)
+        expect_inline_text(sources[index], IMAGE0 "x {\\f1\\fs20\\cf4 code}");
+    expect_inline_text("![x](images/a`b.png) tail`", IMAGE0 "x tail`");
+    expect_inline_text("![x](images/a`b.png) `![hidden](images/b.png)`",
+                       IMAGE0 "x {\\f1\\fs20\\cf4 ![hidden](images/b.png)}");
+    expect_inline_text("![x](images/a`b.png) `code` [y](u) `later`",
+                       IMAGE0 "x {\\f1\\fs20\\cf4 code} {\\cf4\\ul y\\ul0} "
+                              "{\\f1\\fs20\\cf4 later}");
+    expect_inline_text("[x](u`v) `code`", "{\\cf4\\ul x\\ul0} {\\f1\\fs20\\cf4 code}");
+    expect_inline_text("[x](u \"a`b\") `code`", "{\\cf4\\ul x\\ul0} {\\f1\\fs20\\cf4 code}");
+    expect_inline_text("![x](images/unclosed `code`",
+                       "![x](images/unclosed {\\f1\\fs20\\cf4 code}");
+    expect_inline_text("![x](<images/unclosed `code`",
+                       "![x](<images/unclosed {\\f1\\fs20\\cf4 code}");
+    expect_inline_text("![x](images/plain.png \"unclosed `code`",
+                       "![x](images/plain.png \"unclosed {\\f1\\fs20\\cf4 code}");
+    expect_inline_text("![x`label](images/a.png) tail`",
+                       "![x{\\f1\\fs20\\cf4 label](images/a.png) tail}");
+}
 static void verify_inline_borrowed_storage(void)
 {
     const struct markdown_span spans[] = {{.bytes = "a  ", .length = 3},
@@ -1696,6 +1730,7 @@ bool run_markdown_inline_storage_tests(void)
     verify_inline_delimiter_storage();
     verify_inline_coherent_storage();
     verify_inline_literal_boundaries();
+    verify_inline_destination_code();
     verify_inline_borrowed_storage();
     verify_inline_space_boundaries();
     verify_inline_space_borrowed();

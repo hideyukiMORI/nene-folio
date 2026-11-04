@@ -1105,3 +1105,13 @@ JPEG診断2858行/46種とFAIL2行も各版rawに残し、失敗を成功へ書�
 製品1/unit2と7docs、公開API/schema/版/依存/gate不変。追加waiverなし、WVR-0001既存範囲のみ。
 原本は`D:/NeNeFolio/agents/595-markdown-destination`、最終CI/統合/通常反映/保全整理はintegration-completion.jsonへ。
 実app/実ノート/Store操作なし。停止指示まで品質改善を継続する。
+
+
+## 2026-11-04 #597 — destination内backtickと後続code
+
+既存`folio_tests.exe --images`へ画像target/span・inline完全一致・連続画像・Web fieldの回帰を追加し、redと最終greenを確認。
+固定Debug/tidy最終build-green-04/green-04、実image_adapter export→ZIP→コピーRTF12入力、独立24ZIP/member bytes照合が成功。
+contained参照の元Markdownと合成PNG5枚は不変、正常対照8ZIPは旧版と全bytes一致。実ノート/実app/Storeは操作していない。
+旧2fixtureの期待は独立固定CommonMarkと設計変更を根拠に明示訂正し、完全一致assertを維持。独立レビューの範囲/全失敗も記録する。
+Release費用は6系列×4段階、旧/初案/最終を逆順も含む6processで比較。24条件の初回RTFは全SHA一致、性能一般化/実UI保証とは区別する。
+詳細・全run・環境と限界は[品質記録](2026-11-04-markdown-code-boundary.md)。最終headの必須CIを統合条件とし、waiver追加なし。

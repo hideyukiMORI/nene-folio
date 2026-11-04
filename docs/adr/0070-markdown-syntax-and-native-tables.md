@@ -127,6 +127,36 @@ literalな範囲として飛ばす。既存literal token内の引用符を調べ
 既存markdown_destinationへ、ローカルpercent展開は既存image_sourceへ渡す。
 画像とWebリンクで共用し、quotedtitleの括弧で隣の画像/リンクを吸収しない。
 外側codeの優先順位、未閉じの原文保持、通常の入れ子丸括弧とescape/percent表記を維持する。
+
+## 2026-11-04: destinationを外側codeの対応付けから分ける（#597）
+
+パス/title中のbacktickが後続本文のbacktickと先に対応付けられ、画像参照または後続codeの書式を失う反例を確認した。
+CommonMark 0.31.2のdestination/titleとlabelの境界、および固定した公式参照実装の同一入力で優先順位を照合した。
+
+inlineのcode/autolinkとlabel/destinationの範囲を、同じ左からの走査で確定する。
+label内から始まるcodeは従来どおり優先し、成立したdestinationの内側は外側codeの候補へ渡さない。
+失敗したdestination候補では通常のinline走査を続け、再帰・全体の再解析・固定の新しい深さ上限を追加しない。
+既存tokenの括弧対応と既存scratchへ計算する裸pathのsuffix境界を利用し、深い未閉じ候補から毎回末尾を走査しない。
+先頭の空白と成立して消費する範囲はtokenを前へ進め、parenthesized titleの先読みだけ有界な二分探索を使う。
+文字列のコピーや新たな所有者/公開APIを増やさない。
+この前計算はinlineの構造候補だけであり、値の妥当性・元bytesspan・escape/entity展開は既存markdown_destination、
+local percent展開はimage_sourceが引き続き担当する。元の全体code先行処理を残した別経路は作らない。
+
+既存の画像altの文字保持、autolink/ラベル内code/入れ子画像、未閉じと後続書式、長い通常文と深い失敗入力を対象に確認する。
+外部参照parserは検証用D側にだけ保管し、製品依存には加えない。新しいschema/waiver/gate変更はない。
+
+この走査順に伴い、#422の親label交差fixture一例を含む境界の表示契約を変更する。
+旧期待は当時の画像literal保持の設計に合わせたouter-link優先であり、後から成立する外側label候補の終端へ
+画像の裸path内の角括弧を流用していた。今回は左から成立した画像destinationをliteralとして消費するため、
+その角括弧は外側labelを閉じず、外側linkが成立しない場合は未閉じの文字と画像として表示する。
+固定CommonMark 0.31.2の独立結果と、旧/候補の追加14入力を照合して採用した。
+単なる未決の外側括弧で内側画像を拒否する案は正常画像も失い、候補ごとの再走査も深い入力で二乗化し得るため採らない。
+旧fixtureは削除せず完全RTF一致の新しい期待へ変更し、外側link不成立/成立・path内角括弧・codeの対照も固定する。
+成立した通常linkのlabel内に完全に収まる画像だけを含める制約は継続するが、この交差入力の表示は互換不変とは報告しない。
+裸pathの開き角括弧とparenthesized titleの閉じ角括弧で壊れていた外側linkの書式も回復する。
+画像参照が新たに成立する入力は、既存の遅延読込とZIP同梱の対象にもなるため、表示だけの変更とは扱わない。
+既存のbacktick付きリンク先のfixtureでも、最初の閉じ丸括弧の後の本文をdestinationへ吸収する期待を訂正する。
+同じ固定参照で本文が残ることを確認し、RTF完全一致を保ったまま後続文字の保持を要求する。
 新しい公開API/owner/持続状態/schema/依存/gateを追加しない。
 根拠は既存採用範囲のCommonMark0.31.2 §6.3 destination（例499）とtitleの境界。
 
