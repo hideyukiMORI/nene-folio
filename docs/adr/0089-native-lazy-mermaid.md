@@ -145,3 +145,16 @@ GDIの実描画pathを独立oracleにし、規則を複写した期待値だけ�
 新しい意匠・padding・座標・寸法・矢印・生命線・activationの配置は加えず、sceneの数や順序も維持する。
 message以外の文字、保存schema、版、依存、公開API、上限、ゲートは変えない。
 文字矩形の外の全pixelと隣接/自己message対照のbitmapを前後比較し、意図した範囲だけの変化を確認する。
+
+## 2026-11-04 — flowの辺ラベルを保護する描画順（#567、製品編集前）
+
+4方向・明暗24図の実font/GDIで、辺ごとにpath→labelを出すと、後続pathが先行labelを上書きすることを確認した。
+48ラベル中16件、計4,950pxの差を実sceneの文字単独描画との比較で再現し、実bitmapも確認した。
+単一辺の対照8ラベルと、後続pathが重ならない24ラベルは差0だった。
+
+既存flow layoutで、pathを構築する時に計算済みの物理label座標を、同ownerの一時workspaceへ辺ごとに保持する。
+すべての辺pathをemitした後、同じ座標・metrics・塗り・paddingで全labelをemitし、その後にnodeを描く。
+workspaceの追加は上限1024辺の座標配列だけで、sceneの完成時に従来どおり破棄する。確保回数や公開APIは増やさない。
+経路・接続点・矢頭・線種・非表示辺・node/group・文字の位置/寸法とprimitive数は維持する。
+別router、経路の再計算、sceneの並替API、描画後の補線は加えず、schema/版/依存/上限/ゲートも変えない。
+文字矩形外の全pixelと単一辺対照のbitmap、文字だけの参照画像の不変を確認する。

@@ -812,6 +812,118 @@ static bool message_label_tests(const struct image_work *_Nonnull work, int argc
     return selected;
 }
 
+static bool flow_label(const struct diagram_primitive *_Nonnull primitive)
+{
+    return primitive->kind == DIAGRAM_PRIMITIVE_TEXT && primitive->fill == DIAGRAM_INK_BACKGROUND &&
+           primitive->role == DIAGRAM_TEXT_CAPTION;
+}
+static struct diagram_scene *_Nonnull flow_label_scene(const struct diagram_scene *_Nonnull source)
+{
+    struct diagram_scene *_Nullable result = nullptr;
+    require(diagram_scene_create(&result) == DIAGRAM_ACCEPTED, "isolated flow label scene");
+    for (size_t index = 0; index < diagram_scene_count(source); ++index)
+    {
+        const struct diagram_primitive *primitive = diagram_scene_at(source, index);
+        if (flow_label(primitive))
+            require(diagram_scene_append(result, primitive) == DIAGRAM_ACCEPTED,
+                    "copy the actual flow label primitive");
+    }
+    require(diagram_scene_count(result) > 0 &&
+                diagram_scene_seal(result, diagram_scene_size(source)) == DIAGRAM_ACCEPTED,
+            "flow label scene keeps actual coordinates and canvas extent");
+    return result;
+}
+static size_t flow_label_case(const struct diagram_request *_Nonnull request,
+                              const struct image_work *_Nonnull work, const char *_Nullable output,
+                              const char *_Nonnull name)
+{
+    struct diagram_model *_Nullable model = nullptr;
+    require(mermaid_diagram_create(request->source, &model) == DIAGRAM_ACCEPTED,
+            "edge label model");
+    struct diagram_canvas *_Nullable canvas = nullptr;
+    require(diagram_canvas_create(request, &canvas) == IMAGE_READY, "edge label actual fonts");
+    struct diagram_metrics *_Nullable metrics = nullptr;
+    require(diagram_canvas_measure(canvas, model, work, &metrics) == IMAGE_READY,
+            "edge label actual measurements");
+    struct diagram_scene *_Nullable scene = nullptr;
+    require(diagram_layout_create(model, metrics, &scene) == DIAGRAM_ACCEPTED, "edge label layout");
+    struct diagram_scene *labels = flow_label_scene(scene);
+    struct image_bitmap *_Nullable reference = nullptr;
+    require(diagram_canvas_draw(canvas, labels, work, &reference) == IMAGE_READY,
+            "isolated labels use the same GDI canvas");
+    struct image_bitmap *actual = render(request, work);
+    if (output != nullptr)
+    {
+        write_bitmap(actual, output, name);
+        char isolated_name[96];
+        require(sprintf_s(isolated_name, sizeof isolated_name, "%s-isolated", name) > 0,
+                "isolated edge label artifact name");
+        write_bitmap(reference, output, isolated_name);
+    }
+    size_t changed = 0;
+    printf("edge case=%s count=%zu\n", name, diagram_scene_count(labels));
+    for (size_t index = 0; index < diagram_scene_count(labels); ++index)
+        changed += text_pixels(actual, reference, diagram_scene_at(labels, index)->bounds);
+    image_bitmap_destroy(actual);
+    image_bitmap_destroy(reference);
+    diagram_scene_destroy(labels);
+    diagram_scene_destroy(scene);
+    diagram_metrics_destroy(metrics);
+    diagram_canvas_destroy(canvas);
+    diagram_model_destroy(model);
+    return changed;
+}
+
+static struct note_text *_Nonnull flow_label_source(size_t index, const char *_Nonnull direction)
+{
+    const char *sources[] = {
+        ("flowchart %s\nA[始点] -->|後から描く別の辺が横切る長い分岐ラベル| B[左側]\n"
+         "A -->|別の分岐| C[右側]"),
+        ("flowchart %s\nA[開始] -->|先行する辺の複数行ラベル<br>二行目の文字も保護する| B[終了]\n"
+         "B -.->|戻り経路| A\nA ==>|同じ行先の別経路| B\nA ~~~ C[非表示の対照]"),
+        "flowchart %s\nA[始点] -->|単一辺の対照| B[終点]"};
+    char source[4096];
+    require(sprintf_s(source, sizeof source, sources[index], direction) > 0,
+            "flow label direction fixture");
+    return text_for(source);
+}
+static size_t flow_label_directions(const struct image_work *_Nonnull work,
+                                    const char *_Nullable output, size_t index)
+{
+    const char *directions[] = {"TB", "BT", "LR", "RL"};
+    const enum folio_theme themes[] = {FOLIO_THEME_LIGHT, FOLIO_THEME_DARK};
+    size_t changed = 0;
+    for (size_t direction = 0; direction < 4; ++direction)
+    {
+        struct note_text *source = flow_label_source(index, directions[direction]);
+        for (size_t theme = 0; theme < 2; ++theme)
+        {
+            struct diagram_request request = request_for(source, themes[theme]);
+            char name[64];
+            require(
+                sprintf_s(name, sizeof name, "flow-label-%zu-%zu-%zu", index, direction, theme) > 0,
+                "flow label artifact name");
+            changed += flow_label_case(&request, work, output, name);
+        }
+        note_text_destroy(source);
+    }
+    return changed;
+}
+static bool flow_label_tests(const struct image_work *_Nonnull work, int argc,
+                             char *_Nonnull *_Nonnull argv)
+{
+    bool selected = argc >= 2 && strcmp(argv[1], "--flow-labels") == 0;
+    if (argc >= 2 && !selected)
+        return false;
+    const char *output = selected && argc == 3 ? argv[2] : nullptr;
+    size_t changed = 0;
+    for (size_t index = 0; index < 3; ++index)
+        changed += flow_label_directions(work, output, index);
+    printf("flow edge label overwritten pixels: %zu\n", changed);
+    require(changed == 0, "flow edge label interiors match their unobstructed native rendering");
+    return selected;
+}
+
 static void cancellation(const struct image_work *_Nonnull work)
 {
     struct note_text *source = text_for(sequence);
@@ -936,9 +1048,9 @@ int main(int argc, char *_Nonnull *_Nonnull argv)
     require(image_adapter_create(root, &adapter) == IMAGE_READY, "single media worker");
     struct image_port port = image_adapter_port(adapter);
     struct image_work work = {.adapter = adapter, .cancelled = cancelled, .progress = progress};
-    if (!message_label_tests(&work, argc, argv) && !frame_heading_tests(&work, argc, argv) &&
-        !lifeline_tests(&work, argc, argv) && !attachment_tests(&work, argc, argv) &&
-        !label_tests(&work, argc, argv))
+    if (!flow_label_tests(&work, argc, argv) && !message_label_tests(&work, argc, argv) &&
+        !frame_heading_tests(&work, argc, argv) && !lifeline_tests(&work, argc, argv) &&
+        !attachment_tests(&work, argc, argv) && !label_tests(&work, argc, argv))
     {
         measured_roles(&work);
         render_cases(&work, argc == 2 ? argv[1] : nullptr);
