@@ -455,6 +455,114 @@ static bool attachment_tests(const struct image_work *_Nonnull work, int argc,
     require(missed == 0, "odd and extreme dimensions retain native endpoint contact");
     return selected;
 }
+static bool lifeline_connected(const struct diagram_scene *_Nonnull scene,
+                               const struct diagram_primitive *_Nonnull path)
+{
+    int top = diagram_scene_size(scene).height, start = 0, bottom = 0;
+    size_t headers = 0;
+    for (size_t index = 0; index < diagram_scene_count(scene); ++index)
+    {
+        const struct diagram_primitive *item = diagram_scene_at(scene, index);
+        if (item->kind != DIAGRAM_PRIMITIVE_SHAPE || item->ink != DIAGRAM_INK_ACCENT ||
+            item->bounds.x + item->bounds.width / 2 != path->points[0].x)
+            continue;
+        ++headers;
+        if (item->bounds.y < top)
+        {
+            top = item->bounds.y;
+            start = top + item->bounds.height;
+        }
+        if (bottom < item->bounds.y)
+            bottom = item->bounds.y;
+    }
+    require(headers >= 2 && top < bottom, "lifeline has matching top and bottom headers");
+    printf("lifeline x=%d top-bottom=%d start=%d gap=%d end=%d bottom-top=%d\n", path->points[0].x,
+           start, path->points[0].y, path->points[0].y - start, path->points[1].y, bottom);
+    return path->points[0].y == start && path->points[1].y == bottom;
+}
+static size_t lifeline_connections(const struct diagram_scene *_Nonnull scene, size_t actors)
+{
+    size_t found = 0, missed = 0;
+    for (size_t index = 0; index < diagram_scene_count(scene); ++index)
+    {
+        const struct diagram_primitive *item = diagram_scene_at(scene, index);
+        if (item->kind != DIAGRAM_PRIMITIVE_PATH || item->ink != DIAGRAM_INK_MUTED ||
+            item->count != 2 || item->points[0].x != item->points[1].x)
+            continue;
+        require(item->stroke == DIAGRAM_DASHED, "lifeline retains its dashed stroke");
+        ++found;
+        missed += !lifeline_connected(scene, item);
+    }
+    require(found == actors, "each participant has one vertical lifeline");
+    return missed;
+}
+static size_t lifeline_case(const struct diagram_request *_Nonnull request,
+                            const struct image_work *_Nonnull work, const char *_Nullable output,
+                            const char *_Nonnull name)
+{
+    struct image_bitmap *bitmap = render(request, work);
+    if (output != nullptr)
+        write_bitmap(bitmap, output, name);
+    image_bitmap_destroy(bitmap);
+    struct diagram_model *_Nullable model = nullptr;
+    require(mermaid_diagram_create(request->source, &model) == DIAGRAM_ACCEPTED, "lifeline model");
+    struct diagram_canvas *_Nullable canvas = nullptr;
+    require(diagram_canvas_create(request, &canvas) == IMAGE_READY, "lifeline native font");
+    struct diagram_metrics *_Nullable metrics = nullptr;
+    require(diagram_canvas_measure(canvas, model, work, &metrics) == IMAGE_READY,
+            "lifeline actual header metrics");
+    struct diagram_scene *_Nullable scene = nullptr;
+    require(diagram_layout_create(model, metrics, &scene) == DIAGRAM_ACCEPTED,
+            "lifeline complete scene");
+    printf("%s:\n", name);
+    size_t missed = lifeline_connections(scene, diagram_model_node_count(model));
+    diagram_scene_destroy(scene);
+    diagram_metrics_destroy(metrics);
+    diagram_canvas_destroy(canvas);
+    diagram_model_destroy(model);
+    return missed;
+}
+static size_t lifeline_themes(const struct image_work *_Nonnull work, const char *_Nullable output,
+                              size_t index)
+{
+    const char *sources[] = {
+        "sequenceDiagram\ntitle 見出しの混在\nactor U as 利用者\nparticipant A as 受付\n"
+        "participant D as 保存先\nloop 処理\nU->>+A: 開く\nA->>D: 読む\nA-->>-U: 完了\nend\n",
+        "sequenceDiagram\nparticipant A as 短い\nparticipant B as 長い<br/>二行目<br/>三行目\n"
+        "A->>B: 送る\nB-->>A: 戻す\n",
+        "sequenceDiagram\nactor A as 短い\nactor B as 長い<br/>二行目<br/>三行目\n"
+        "A->>B: 送る\nB-->>A: 戻す\n",
+        "sequenceDiagram\nparticipant A as 受付\nparticipant B as 保存\nA->>B: 送る\n",
+        "sequenceDiagram\nactor A as 利用者\nactor B as 管理者\nA->>B: 送る\n",
+        "sequenceDiagram\nactor A as 利用者\nA->>+A: 自分へ\nA-->>-A: 完了\n"};
+    struct note_text *source = text_for(sources[index]);
+    const enum folio_theme themes[] = {FOLIO_THEME_LIGHT, FOLIO_THEME_DARK};
+    size_t missed = 0;
+    for (size_t theme = 0; theme < 2; ++theme)
+    {
+        char name[64];
+        require(sprintf_s(name, sizeof name, "lifeline-%zu-%zu", index, theme) > 0,
+                "lifeline artifact name");
+        struct diagram_request request = request_for(source, themes[theme]);
+        missed += lifeline_case(&request, work, output, name);
+    }
+    note_text_destroy(source);
+    return missed;
+}
+static bool lifeline_tests(const struct image_work *_Nonnull work, int argc,
+                           char *_Nonnull *_Nonnull argv)
+{
+    bool selected = argc >= 2 && strcmp(argv[1], "--lifelines") == 0;
+    if (argc >= 2 && !selected)
+        return false;
+    const char *output = selected && argc == 3 ? argv[2] : nullptr;
+    size_t missed = 0;
+    for (size_t index = 0; index < 6; ++index)
+        missed += lifeline_themes(work, output, index);
+    printf("lifelines detached from a participant header: %zu of 24\n", missed);
+    require(missed == 0, "lifelines connect their own participant headers");
+    return selected;
+}
 static void cancellation(const struct image_work *_Nonnull work)
 {
     struct note_text *source = text_for(sequence);
@@ -579,7 +687,8 @@ int main(int argc, char *_Nonnull *_Nonnull argv)
     require(image_adapter_create(root, &adapter) == IMAGE_READY, "single media worker");
     struct image_port port = image_adapter_port(adapter);
     struct image_work work = {.adapter = adapter, .cancelled = cancelled, .progress = progress};
-    if (!attachment_tests(&work, argc, argv) && !label_tests(&work, argc, argv))
+    if (!lifeline_tests(&work, argc, argv) && !attachment_tests(&work, argc, argv) &&
+        !label_tests(&work, argc, argv))
     {
         measured_roles(&work);
         render_cases(&work, argc == 2 ? argv[1] : nullptr);
