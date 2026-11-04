@@ -6,16 +6,16 @@ hideの新指示で、停止まで調査・試験・計測・必要な修正を�
 現行規約の対象検証・最終head必須CI・正典統合・必要反映・整理まで進める。
 開始時mainは`ab7b732`、origin/main一致・clean、open PRなし。#541/PR542のCI41660944733は成功。
 
-今朝の#543/#544/#546/#548/#551/#553/#554/#557は、必須CI成功・main統合・通常反映・data照合・保全整理まで完了。
-性能記録#559と資源記録#561も最終head必須CI成功・main統合・保全整理まで完了した。最新mainは`43e725c`。
-文書だけの2件は通常exeの#557成果物をhash照合して再利用した。各案件の
-`D:/NeNeFolio/agents/<task>/integration-completion.json`を確定原本とし、履歴は日報・引き継ぎを参照する。
+今朝の修正#543/#544/#546/#548/#551/#553/#554/#557/#563は、必須CI成功・main統合・通常反映・data照合・保全整理まで完了。
+性能記録#559と資源記録#561も最終head必須CI成功・main統合・保全整理まで完了した。最新mainは`c063a60`。
+通常exeは#563の反映済み。各案件の`D:/NeNeFolio/agents/<task>/integration-completion.json`を確定原本とし、
+履歴は日報・引き継ぎを参照する。
 
-現在の焦点は#563。sequence枠見出しが生命線/activationに隠れる問題を、24見出し中22件/1880pxで再現した。
-同じsequence layoutで見出しだけを後へ出し、native386checks/全24見出しの差0とcore図対象が成功した。
-見出し領域外の全pixel、参照12枚、対照2枚は修正前後で不変。修正後の6全図を視認し、規約検査も成功。
-詳細は[品質記録](../quality/2026-11-04-sequence-frame-headings.md)。最終CI/統合/通常反映/data照合・保全整理へ進む。
-確定値は`D:/NeNeFolio/agents/563-sequence-frame-headings/integration-completion.json`へ収載する。
+現在の焦点は#565。中間参加者の生命線/activationがmessage文字を横切る問題を、18ラベル中12件/2212pxで再現した。
+既存messageの文字へ背景塗りを指定し、native350checks/全18ラベル差0、core図対象と枠見出し278checksが成功。
+全図の文字矩形外pixel、参照12枚、隣接/自己対照2全図は不変。修正後6枚の視認と規約検査も成功した。
+詳細は[品質記録](../quality/2026-11-04-sequence-message-labels.md)。最終CI/統合/通常反映/data照合・保全整理へ進む。
+確定値は`D:/NeNeFolio/agents/565-sequence-message-labels/integration-completion.json`へ収載する。
 停止指示まで品質改善を継続する。実app/実ノートを試験へ使わず、新候補は実行再現してから修正を判断する。
 
 日報・次回の詳細は[11月4日の日報](../reports/2026-11-04.md)と[引き継ぎ書](../handoffs/2026-11-04.md)。
