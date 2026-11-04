@@ -1031,3 +1031,9 @@ native1112checks、core図対象、規約確認成功。線/矢頭非表示を�
 3拒否×2図種×明暗×直前PENDING/未受取IDLE×2回の48条件で、先行画像の基準一致/拒否側ticket変数不変/二重受取なしを確認した。
 初回は外部Debug linkのASan診断1行で評価1。正規lld-link/runtime条件での追加確認は48条件成功・stderr空。
 初回を含む104画像と全入力/rawを保持し、製品/test/gate変更なし。有限な観測の境界と全試行は[品質記録](2026-11-04-diagram-admission.md)へ。
+
+## 2026-11-04 — Mermaidの単字変異corpus（#583）
+
+4seedと20tokenのcodepoint境界挿入/置換/削除/切断から、重複を除いた15,642入力を固定Debug corelibで解析した。
+4,681受理/4,599不正構文/6,362未対応。部分model公開・原文変更・公開参照範囲違反・sanitizer診断なし、native/評価/記録側0。
+全recipe/corpus/全行を保存。個別の文法分類の正しさ・layout・全heap等へ保証を拡張しない。製品/test/gate変更なし。[品質記録](2026-11-04-diagram-mutations.md)へ。
