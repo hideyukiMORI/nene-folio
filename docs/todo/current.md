@@ -2,20 +2,20 @@
 
 ## 11月4日20時 — 品質改善を継続中
 
-hideのチェックポイント再開依頼により、停止まで調査・試験・計測・必要修正と全記録を継続する。
-#603/PR604は最終head必須CI・main統合・通常反映/data32内容と日時不変・全保全整理まで完了。
-開始mainは9de90fd、origin/main一致clean。通常exe sourceも9de90fd。
+hideの再開依頼により、停止まで調査・試験・計測・必要修正と全記録を継続する。
+#605/PR607まで最終head必須CI・main統合・通常反映/data32内容と日時不変・全保全整理が完了。
+最新の製品main/通常exe sourceは3a40067。通常版は自動起動しておらず、hideの実機受理は未確認。
+当日製品修正は20件。詳細と測定範囲は[日報](../reports/2026-11-04.md)と[引き継ぎ](../handoffs/2026-11-04.md)。
 
-現在は#605のZIP CRC計算を1byte表へ変更し、対象Debug/unit・規約検査・Release比較が成功。
-全256singlebyte/14境界、全8ZIP旧版bytes一致・独立CRC/member照合を確認。
-64MiBの反転順比較は旧222.764875→候補123.9672ms、44.35%短縮。表960bytes増、API/形式/上限不変。
-最終head必須CI・正典統合・通常反映/data照合・3root全保全整理へ進む。
-確定原本は`D:/NeNeFolio/agents/605-archive-crc/integration-completion.json`。
-初期archive-generation-scale outputは完了まで保持し、同taskで保全整理する。
+現在は#608の小ノートZIP件数診断を文書へ収載した。65534件を有効ZIPとして生成し、65535件を拒否、
+全6ZIPの独立照合と18成果物再hash成功。対象条件の上限生成中央値20.39865msで、新たな製品修正根拠はない。
+文書5件のみ、通常exeと成功済み製品検証を再利用。最終head必須CI・正典統合・exe SHA不変・全保全整理へ進む。
+確定原本は`D:/NeNeFolio/agents/archive-entry-scale-20261104/integration-completion.json`。
+診断outputは完了まで保持する。品質記録は[こちら](../quality/2026-11-04-archive-entry-count.md)。
 
-詳細は[日報](../reports/2026-11-04.md)、[引き継ぎ](../handoffs/2026-11-04.md)、[品質記録](../quality/2026-11-04-archive-crc.md)。
 全体journalは`D:/NeNeFolio/agents/quality-20261104/journal.md`。
-追加waiverはnone、既存WVR-0001はWinHTTP callbackのみ継続。単体実行、実app/実ノートは試験へ使わない。
+追加waiverはnone、既存WVR-0001はWinHTTP callbackのみ継続。単体実行、実app/実ノートを試験へ使わない。
+hideは必要なら実機試験できると申し出ている。実機でしか確認できない境界が生じたら手順と期待結果を絞って依頼する。
 
 ## 実行中アプリと配布
 
