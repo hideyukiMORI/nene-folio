@@ -7,15 +7,16 @@ hideの新指示で、停止まで調査・試験・計測・必要な修正を�
 開始時mainは`ab7b732`、origin/main一致・clean、open PRなし。#541/PR542のCI41660944733は成功。
 
 今朝のMermaid構文・cache・輪郭/接続・文字の重なりの修正は、#567まで必須CI成功・main統合・通常反映・data照合・保全整理が完了。
-性能記録#559と資源記録#561も完了した。最新mainは`be19334`、通常exeは#567の反映済み。
+性能記録#559/#569と資源記録#561も完了した。最新mainは`e564d0b`、通常exeは#567の反映済み。
 各案件の`D:/NeNeFolio/agents/<task>/integration-completion.json`を確定原本とし、詳細は日報・引き継ぎを参照する。
 
-現在の焦点は#569。重なり修正の4入力を旧/現行交互6組測り、12process/48画像が成功した。
-5参加者messageの増加傾向へ、その1入力だけ追加6組を測り、12process/12画像も成功。
-組差中央値は初回+3.79%、追加+0.75%で、ともに5/6組が増加。追加CPU98.81〜100%で原因を製品だけに断定せず、性能修正は加えない。
-全sample/初回/最大値を保持し、速度向上・差なしの保証にはしない。詳細は[品質記録](../quality/2026-11-04-layering-performance.md)。
-文書の最終CI/統合・保全整理へ進み、製品不変なので通常exeは#567成果物のhash照合で再利用する。
-確定値は`D:/NeNeFolio/agents/569-layering-performance/integration-completion.json`へ収載する。
+現在の焦点は#571。subgraph見出しへの後続辺の上書きを、48見出し中14件/2186pxで再現した。
+group背景と見出しを分け、全path/辺label後に実文字矩形だけをgroup色で保護して描く。
+最終native1208checks・48見出し/16辺文字全差0、core図対象と規約検査が成功。
+全32図の文字矩形外pixel・参照32枚・辺なし対照8全図は不変、最終6枚視認。
+途中の複雑度失敗と2件/46px残差も保存。詳細は[品質記録](../quality/2026-11-04-flow-group-headings.md)。
+最終CI/統合/通常反映/data照合・保全整理へ進み、確定値を
+`D:/NeNeFolio/agents/571-flow-group-headings/integration-completion.json`へ収載する。
 停止指示まで品質改善を継続する。実app/実ノートを試験へ使わず、新候補は実行再現してから修正を判断する。
 
 日報・次回の詳細は[11月4日の日報](../reports/2026-11-04.md)と[引き継ぎ書](../handoffs/2026-11-04.md)。

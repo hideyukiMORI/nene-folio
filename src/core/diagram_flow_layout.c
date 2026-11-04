@@ -350,7 +350,6 @@ static struct diagram_rect physical(const struct diagram_flow_layout *_Nonnull l
 }
 static void emit_group(struct diagram_flow_layout *_Nonnull layout, size_t index)
 {
-    struct diagram_group group = diagram_model_group_at(layout->model, index);
     struct diagram_rect bounds = physical(layout, layout->groups[index]);
     emit(layout, (struct diagram_primitive){.kind = DIAGRAM_PRIMITIVE_SHAPE,
                                             .shape = DIAGRAM_ROUNDED,
@@ -360,12 +359,17 @@ static void emit_group(struct diagram_flow_layout *_Nonnull layout, size_t index
                                             .radius = diagram_group_radius,
                                             .bounds = bounds,
                                             .text = diagram_none});
+}
+static void emit_group_heading(struct diagram_flow_layout *_Nonnull layout, size_t index)
+{
+    struct diagram_group group = diagram_model_group_at(layout->model, index);
+    struct diagram_rect bounds = physical(layout, layout->groups[index]);
     struct diagram_size size = diagram_metrics_at(layout->metrics, group.label, DIAGRAM_TEXT_BODY);
     bounds = (struct diagram_rect){bounds.x + diagram_group_title_inset,
-                                   bounds.y + diagram_group_title_padding,
-                                   bounds.width - diagram_group_title_inset * 2, size.height};
+                                   bounds.y + diagram_group_title_padding, size.width, size.height};
     emit(layout, (struct diagram_primitive){.kind = DIAGRAM_PRIMITIVE_TEXT,
                                             .ink = DIAGRAM_INK_TEXT,
+                                            .fill = DIAGRAM_INK_GROUP,
                                             .alignment = DIAGRAM_TEXT_LEFT,
                                             .bounds = bounds,
                                             .text = group.label});
@@ -534,6 +538,19 @@ static void reserve_channels(struct diagram_flow_layout *_Nonnull layout)
     layout->extent.width = layout->content_width + (int)count * layout->channel_width +
                            label_width / 2 + diagram_outer_margin * 2;
 }
+static void emit_scene(struct diagram_flow_layout *_Nonnull layout)
+{
+    for (size_t group = 0; group < diagram_model_group_count(layout->model); ++group)
+        emit_group(layout, group);
+    for (size_t link = 0; link < diagram_model_link_count(layout->model); ++link)
+        emit_link(layout, link);
+    for (size_t link = 0; link < diagram_model_link_count(layout->model); ++link)
+        emit_link_label(layout, link);
+    for (size_t group = 0; group < diagram_model_group_count(layout->model); ++group)
+        emit_group_heading(layout, group);
+    for (size_t node = 0; node < diagram_model_node_count(layout->model); ++node)
+        emit_node(layout, node);
+}
 static enum diagram_outcome construct(struct diagram_flow_layout *_Nonnull layout)
 {
     measure_nodes(layout);
@@ -554,14 +571,7 @@ static enum diagram_outcome construct(struct diagram_flow_layout *_Nonnull layou
         place_node(layout, node);
     for (size_t group = diagram_model_group_count(layout->model); group != 0; --group)
         place_group(layout, group - 1);
-    for (size_t group = 0; group < diagram_model_group_count(layout->model); ++group)
-        emit_group(layout, group);
-    for (size_t link = 0; link < diagram_model_link_count(layout->model); ++link)
-        emit_link(layout, link);
-    for (size_t link = 0; link < diagram_model_link_count(layout->model); ++link)
-        emit_link_label(layout, link);
-    for (size_t node = 0; node < diagram_model_node_count(layout->model); ++node)
-        emit_node(layout, node);
+    emit_scene(layout);
     if (layout->outcome == DIAGRAM_ACCEPTED)
         layout->outcome = diagram_scene_seal(layout->scene, axis_size(layout, layout->extent));
     return layout->outcome;
