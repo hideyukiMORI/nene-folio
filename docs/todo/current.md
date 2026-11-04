@@ -6,16 +6,16 @@ hideの新指示で、停止まで調査・試験・計測・必要な修正を�
 現行規約の対象検証・最終head必須CI・正典統合・必要反映・整理まで進める。
 開始時mainは`ab7b732`、origin/main一致・clean、open PRなし。#541/PR542のCI41660944733は成功。
 
-今朝の修正#543/#544/#546/#548/#551/#553/#554/#557/#563/#565は、必須CI成功・main統合・通常反映・data照合・保全整理まで完了。
-性能記録#559と資源記録#561も最終head必須CI成功・main統合・保全整理まで完了した。最新mainは`7ea0e1c`。
-通常exeは#565の反映済み。各案件の`D:/NeNeFolio/agents/<task>/integration-completion.json`を確定原本とし、
-履歴は日報・引き継ぎを参照する。
+今朝のMermaid構文・cache・輪郭/接続・文字の重なりの修正は、#567まで必須CI成功・main統合・通常反映・data照合・保全整理が完了。
+性能記録#559と資源記録#561も完了した。最新mainは`be19334`、通常exeは#567の反映済み。
+各案件の`D:/NeNeFolio/agents/<task>/integration-completion.json`を確定原本とし、詳細は日報・引き継ぎを参照する。
 
-現在の焦点は#567。後続のflow辺が先行labelを上書きする問題を、4方向・明暗48ラベル中16件/4950pxで再現した。
-同じflow ownerで計算済みlabel座標を保持し、全path後にlabelをemitして全48ラベル差0・native776checksが成功。
-全図の文字矩形外pixel、参照24枚、単一辺対照8全図は不変。修正後6枚の視認・core図対象・規約検査も成功した。
-詳細は[品質記録](../quality/2026-11-04-flow-edge-labels.md)。最終CI/統合/通常反映/data照合・保全整理へ進む。
-確定値は`D:/NeNeFolio/agents/567-flow-edge-labels/integration-completion.json`へ収載する。
+現在の焦点は#569。重なり修正の4入力を旧/現行交互6組測り、12process/48画像が成功した。
+5参加者messageの増加傾向へ、その1入力だけ追加6組を測り、12process/12画像も成功。
+組差中央値は初回+3.79%、追加+0.75%で、ともに5/6組が増加。追加CPU98.81〜100%で原因を製品だけに断定せず、性能修正は加えない。
+全sample/初回/最大値を保持し、速度向上・差なしの保証にはしない。詳細は[品質記録](../quality/2026-11-04-layering-performance.md)。
+文書の最終CI/統合・保全整理へ進み、製品不変なので通常exeは#567成果物のhash照合で再利用する。
+確定値は`D:/NeNeFolio/agents/569-layering-performance/integration-completion.json`へ収載する。
 停止指示まで品質改善を継続する。実app/実ノートを試験へ使わず、新候補は実行再現してから修正を判断する。
 
 日報・次回の詳細は[11月4日の日報](../reports/2026-11-04.md)と[引き継ぎ書](../handoffs/2026-11-04.md)。
