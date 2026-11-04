@@ -60,19 +60,38 @@ static enum note_archive_outcome validate_path(const char *_Nonnull path)
         return NOTE_ARCHIVE_OUT_OF_MEMORY;
     return valid == NAME_LIST_ACCEPTED ? NOTE_ARCHIVE_READY : NOTE_ARCHIVE_INVALID;
 }
+static size_t common_path_length(const char *_Nonnull first, const char *_Nonnull second)
+{
+    size_t cursor = 0;
+    while (first[cursor] != '\0' &&
+           ascii_fold_byte(first[cursor]) == ascii_fold_byte(second[cursor]))
+        ++cursor;
+    return cursor;
+}
 bool archive_assets_contains(const struct archive_assets *_Nonnull assets,
                              const char *_Nonnull path)
 {
     for (size_t index = 0; index < assets->count; ++index)
     {
         const char *existing = assets->files[index].path;
-        size_t cursor = 0;
-        while (existing[cursor] != '\0' &&
-               ascii_fold_byte(existing[cursor]) == ascii_fold_byte(path[cursor]))
-            ++cursor;
+        size_t cursor = common_path_length(existing, path);
         if (existing[cursor] == '\0' && path[cursor] == '\0')
             return true;
     }
+    return false;
+}
+static bool paths_conflict(const char *_Nonnull first, const char *_Nonnull second)
+{
+    size_t cursor = common_path_length(first, second);
+    return (first[cursor] == '\0' && (second[cursor] == '\0' || second[cursor] == '/')) ||
+           (second[cursor] == '\0' && first[cursor] == '/');
+}
+static bool has_path_conflict(const struct archive_assets *_Nonnull assets,
+                              const char *_Nonnull path)
+{
+    for (size_t index = 0; index < assets->count; ++index)
+        if (paths_conflict(assets->files[index].path, path))
+            return true;
     return false;
 }
 static bool grow(struct archive_assets *_Nonnull assets)
@@ -100,7 +119,7 @@ enum note_archive_outcome archive_assets_append(struct archive_assets *_Nonnull 
     enum note_archive_outcome valid = validate_path(file.path);
     if (valid != NOTE_ARCHIVE_READY)
         return valid;
-    if (archive_assets_contains(assets, file.path))
+    if (has_path_conflict(assets, file.path))
         return NOTE_ARCHIVE_INVALID;
     if (!grow(assets))
         return NOTE_ARCHIVE_OUT_OF_MEMORY;

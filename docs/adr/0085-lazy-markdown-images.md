@@ -93,3 +93,15 @@ ADR0002/0070の画像埋込み非要件・ネットワーク取得なしを上�
 一次資料: [InsertImage](https://learn.microsoft.com/en-us/windows/win32/api/tom/nf-tom-itextrange2-insertimage)、
 [WIC縮小](https://learn.microsoft.com/en-us/windows/win32/wic/-wic-bitmapsources-howto-scale)。
 Waiver: [WVR-0001](../waivers/WVR-0001-winhttp-callback-abi.md)（WinHTTPの固定5引数callbackだけ）。
+
+## 2026-11-04: ZIP内のファイルとディレクトリの衝突を拒否する（#593）
+
+合成画像`images/_nenefolio`と外部画像を同梱すると、ZIP内の同じ場所がファイルと
+`images/_nenefolio/1.png`の親ディレクトリを兼ね、参照の両順序で展開に失敗した。
+`archive_assets`の唯一の追加経路で、完全同名に加えて区切り`/`の位置で一致するファイル祖先/子孫を拒否する。
+既存のASCII大小文字同一視を維持し、完全同名queryと追加時の衝突検査は同じprefix走査を共有する。
+共通親の兄弟ファイルや区切りでない名前prefixは衝突にしない。拒否時は既存の素材集合を変えない。
+
+applicationは既存の`NOTE_ARCHIVE_INVALID`→画像書き出し失敗へ渡し、ZIP公開前に中止する。
+出力先を自動で改名する別方式は追加せず、原文/画像・公開API・owner・上限・schemaは不変。
+両追加順・大小文字・UTF-8・非衝突対照と、原文保持/失敗後の正常追加を既存`--images`回帰へ組み込む。
