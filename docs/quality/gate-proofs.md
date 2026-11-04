@@ -1131,3 +1131,17 @@ file_bytesの置換/新規/ZIPを0/1/255/256候補の排他保持と同名宛先
 拒否対象のbytes/作成更新日時と、置換成功時の作成日時を保持。最終2063file再hashと4ZIP独立読取も成功。
 初回include方式のcompile失敗を保存し、抑制せず正規libraryを再利用。原子性一般/任意I/O競合/全heap/性能を保証しない。
 製品/test/gate変更なし。[品質記録](2026-11-04-atomic-publication.md)、原本agents/atomic-publication-20261104。
+
+## #603 — 外部画像の使用済み番号の再探索を省く
+
+`image_export`の名前候補が各素材で1から全既存素材を探索し直すことを、64〜512件のRelease診断で確認。
+既存ownerへ採用番号を記録し、同ASCIIカテゴリ/拡張子の最後の番号+1から同じ完全同名queryを続ける。
+素材は削除されず、過去の番号は空かないため最小空き番号と出力bytesを維持する。新API/配置方式/確保回数は増やさず、private metadataは32KiB増。
+Debug/tidy・既存--images（混在20入力/同identity3呼出しを追加）・関連規約が成功。実画像9file/12notesの旧/候補ZIPは3726bytes全一致、23memberのCRC/bytesを独立照合。
+Release64/128/256/512の8条件は全コピーbytes一致。初期外部512は1648.1433→16.56495msだが、対照も約43%変動したので512だけ旧→新→新→旧の順で追加比較。
+外部の各process中央値は旧1128.6131/1136.596、新23.2856/18.16735ms（中央値同士1132.60455→20.726475ms、98.17%減）。
+containedは旧6.342/6.81765、新7.0461/7.0204ms（同6.579825→7.03325ms、6.89%増）。OS負荷/周波数等は未分離で単一原因や全入力の性能は断定しない。
+4096外部素材の番号/bytes、次の1参照と4097一括参照のport前拒否を確認。138157byteコピーをPython独立構築と照合。
+製品1/unit1・6docs、追加waiverなし、既存WVR-0001不変。全試行/準備失敗と限界は[品質記録](2026-11-04-export-name-search.md)。
+最終head必須CI→正典merge→通常反映/data32照合→全保全/整理へ進む。確定原本は`D:/NeNeFolio/agents/603-export-name-search/integration-completion.json`。
+実app/実ノート/Store操作なし。停止指示まで品質改善を続行する。

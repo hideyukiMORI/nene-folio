@@ -27,6 +27,7 @@ struct image_adapter
     enum image_outcome asset_failure;
     size_t requests;
     size_t assets;
+    unsigned char asset_version;
     char face[64];
     struct diagram_palette palette;
 };
@@ -88,7 +89,8 @@ static enum image_outcome asset(struct image_adapter *_Nonnull adapter,
     bool contained = image_source_recommended(input->source);
     if (!contained && policy != IMAGE_EXPORT_ALL_LOCAL)
         return IMAGE_SKIPPED;
-    static const unsigned char bytes[] = {137, 'P', 'N', 'G', 0, 1, 2, 3};
+    const unsigned char bytes[] = {137, 'P', 'N', 'G',
+                                   0,   1,   2,   (unsigned char)(3 + adapter->asset_version)};
     struct image_asset_input source = {.bytes = bytes,
                                        .length = sizeof bytes,
                                        .identity = target,
@@ -483,6 +485,87 @@ static void export_contract(void)
     image_export_destroy(images);
     note_text_destroy(body);
 }
+static void export_named(struct image_export *_Nonnull images, const char *_Nonnull category,
+                         const char *_Nonnull source, const char *_Nonnull relative)
+{
+    struct note_text *body = text(source);
+    struct archive_note entry = {.category = category, .name = "one", .body = body};
+    require(image_export_append(images, &entry) == FOLIO_STATE_READY,
+            "numbered image export succeeds");
+    char expected[256] = "![x](";
+    strcat_s(expected, sizeof expected, relative);
+    strcat_s(expected, sizeof expected, ")");
+    require(strcmp(note_text_bytes(entry.body), expected) == 0,
+            "copy keeps the smallest available number and extension spelling");
+    require(strcmp(note_text_bytes(body), source) == 0, "number search preserves source bytes");
+    char path[256] = "";
+    strcat_s(path, sizeof path, category);
+    strcat_s(path, sizeof path, "/");
+    strcat_s(path, sizeof path, relative);
+    require(archive_assets_contains(image_export_assets(images), path),
+            "copy points to an adopted archive file");
+    note_text_destroy(body);
+}
+static void export_number_groups(void)
+{
+    static const struct
+    {
+        const char *category;
+        const char *source;
+        const char *relative;
+    } cases[] = {
+        {"A", "![x](images/_nenefolio/3.png)", "images/_nenefolio/3.png"},
+        {"A", "![x](../one.png)", "images/_nenefolio/1.png"},
+        {"A", "![x](images/_nenefolio/2.png)", "images/_nenefolio/2.png"},
+        {"A", "![x](../two.png)", "images/_nenefolio/4.png"},
+        {"A", "![x](../one.png)", "images/_nenefolio/1.png"},
+        {"B", "![x](../one.png)", "images/_nenefolio/1.png"},
+        {"a", "![x](../upper.PNG)", "images/_nenefolio/5.PNG"},
+        {"A", "![x](../photo.jpg)", "images/_nenefolio/1.jpg"},
+        {"a", "![x](../upper.JPG)", "images/_nenefolio/2.JPG"},
+        {"A", "![x](../no-extension)", "images/_nenefolio/1.img"},
+        {"A", "![x](../long.1234567890123456)", "images/_nenefolio/2.img"},
+        {"A", "![x](../literal.img)", "images/_nenefolio/3.img"},
+        {"A", "![x](../edge.123456789012345)", "images/_nenefolio/1.123456789012345"},
+        {"A", "![x](../dir.dot/no-extension)", "images/_nenefolio/4.img"},
+        {"A", "![x](../three.png)", "images/_nenefolio/6.png"},
+        {"B", "![x](../two.png)", "images/_nenefolio/2.png"},
+        {"Ä", "![x](../one.png)", "images/_nenefolio/1.png"},
+        {"ä", "![x](../two.png)", "images/_nenefolio/1.png"},
+        {"A", "![x](../one.Ä)", "images/_nenefolio/1.Ä"},
+        {"A", "![x](../two.ä)", "images/_nenefolio/1.ä"},
+    };
+    size_t count = sizeof cases / sizeof cases[0];
+    struct image_export *_Nullable images = nullptr;
+    require(image_export_create(test_image_port(), IMAGE_EXPORT_ALL_LOCAL, count, &images) ==
+                FOLIO_STATE_READY,
+            "mixed extension and category export");
+    for (size_t index = 0; index < count; ++index)
+        export_named(images, cases[index].category, cases[index].source, cases[index].relative);
+    require(archive_assets_count(image_export_assets(images)) == count - 1,
+            "same identity and bytes reuse the earlier asset without consuming a number");
+    image_export_destroy(images);
+}
+static void export_identity_change(void)
+{
+    struct image_export *_Nullable images = nullptr;
+    require(image_export_create(test_image_port(), IMAGE_EXPORT_ALL_LOCAL, 3, &images) ==
+                FOLIO_STATE_READY,
+            "identity consistency export");
+    export_named(images, "A", "![x](../one.png)", "images/_nenefolio/1.png");
+    struct note_text *body = text("![x](../one.png)");
+    struct archive_note entry = {.category = "A", .name = "one", .body = body};
+    fake.asset_version = 1;
+    require(image_export_append(images, &entry) == FOLIO_STATE_EXPORT_IMAGE_UNREADABLE &&
+                entry.body == body && archive_assets_count(image_export_assets(images)) == 1,
+            "changed bytes under the same identity refuse adoption");
+    fake.asset_version = 0;
+    note_text_destroy(body);
+    export_named(images, "A", "![x](../two.png)", "images/_nenefolio/2.png");
+    require(archive_assets_at(image_export_assets(images), 0)->bytes[7] == 3,
+            "refused identity preserves earlier owned bytes");
+    image_export_destroy(images);
+}
 static void archive_path_pair(const char *_Nonnull first, const char *_Nonnull second,
                               enum note_archive_outcome expected)
 {
@@ -782,6 +865,8 @@ void run_image_tests(void)
     destination_backtick_neighbors();
     image_limits();
     export_contract();
+    export_number_groups();
+    export_identity_change();
     export_failures();
     archive_path_conflicts();
     export_path_conflicts();
