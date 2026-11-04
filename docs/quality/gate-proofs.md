@@ -924,3 +924,13 @@ Windows x64、固定Debug/tidy/ASan/UBSan/nullability、同梱Noto Sans JPを使
 共通の輪郭検査へ替えたstadiumも6条件94checks成功し、#551の保存画像と全hash一致。
 入力・raw出力・bitmap・再利用の根拠・限界は[品質記録](2026-11-04-polygon-label-clearance.md)へ。
 実app/実ノートは操作せず、hideによる通常版の受理や全DPIの検証とは区別する。
+
+## 2026-11-04 — 斜辺ノードへのflow接続（#554）
+
+Windows実Noto Sans JP/GDIで6形状×LR/RL/TB/BT×明暗48条件を描画した。
+`diagram_render_tests --attachments`は修正前288端点中108不接触、修正後は288端点と
+幅/高さ/丸め境界420端点の全接触、3045checks成功。実native pathの2D1logical px近傍に
+内外両方があることを確認し、修正前2枚/修正後10枚を視認した。対象外の28枚は全SHA256一致。
+coreのdiagram対象と独立R/Oレビューも成功。同じy上の厳密交点や全DPI/実機受理とは区別する。
+試行とレビューで撤回された仮説は[品質記録](2026-11-04-flow-attachment.md)、原本は
+`D:/NeNeFolio/agents/554-flow-attachment/`へ収載する。

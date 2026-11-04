@@ -1129,6 +1129,44 @@ static void quoted_pipe_labels(void)
     for (size_t index = 0; index < sizeof invalid / sizeof invalid[0]; ++index)
         reject_source(invalid[index], DIAGRAM_INVALID);
 }
+static void attachment_geometry(void)
+{
+    const enum diagram_shape shapes[] = {DIAGRAM_RECTANGLE,
+                                         DIAGRAM_ROUNDED,
+                                         DIAGRAM_STADIUM,
+                                         DIAGRAM_SUBROUTINE,
+                                         DIAGRAM_CYLINDER,
+                                         DIAGRAM_CIRCLE,
+                                         DIAGRAM_DOUBLE_CIRCLE,
+                                         DIAGRAM_DIAMOND,
+                                         DIAGRAM_HEXAGON,
+                                         DIAGRAM_PARALLELOGRAM,
+                                         DIAGRAM_PARALLELOGRAM_REVERSE,
+                                         DIAGRAM_TRAPEZOID,
+                                         DIAGRAM_TRAPEZOID_REVERSE,
+                                         DIAGRAM_ASYMMETRIC,
+                                         DIAGRAM_ACTOR};
+    const int left_x[] = {17, 17, 17, 17, 17, 17, 17, 17, 17, 68, 66, 68, 66, 115, 17};
+    const int right_x[] = {717, 717, 717, 717, 717, 717, 717, 717,
+                           717, 668, 666, 666, 668, 717, 717};
+    struct diagram_rect bounds = {17, 23, 700, 41};
+    for (size_t index = 0; index < sizeof shapes / sizeof shapes[0]; ++index)
+    {
+        struct diagram_point left =
+            diagram_geometry_attachment(bounds, shapes[index], (struct diagram_point){17, 43});
+        struct diagram_point right =
+            diagram_geometry_attachment(bounds, shapes[index], (struct diagram_point){717, 43});
+        require(left.x == left_x[index] && right.x == right_x[index] && left.y == 43 &&
+                    right.y == 43,
+                "odd-height physical attachment follows each shape's contour");
+        struct diagram_point top =
+            diagram_geometry_attachment(bounds, shapes[index], (struct diagram_point){367, 23});
+        struct diagram_point bottom =
+            diagram_geometry_attachment(bounds, shapes[index], (struct diagram_point){367, 64});
+        require(top.x == 367 && top.y == 23 && bottom.x == 367 && bottom.y == 64,
+                "vertical side midpoints retain their established positions");
+    }
+}
 static void collection_capacity_contract(void)
 {
     struct diagram_model *_Nullable model = nullptr;
@@ -1185,6 +1223,7 @@ void run_diagram_tests(void)
     shaped_label_clearance();
     stadium_label_clearance();
     sloped_label_clearance();
+    attachment_geometry();
     shared_text_roles();
     sequence_features();
     sequence_arrow_meaning();

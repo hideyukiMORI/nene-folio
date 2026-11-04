@@ -83,6 +83,47 @@ int diagram_geometry_cylinder_curve(int height)
     int curve = height / 6;
     return curve < diagram_cylinder_curve_max ? curve : diagram_cylinder_curve_max;
 }
+static int attachment_progress(enum diagram_shape shape, int y, int height, bool left)
+{
+    switch (shape)
+    {
+    case DIAGRAM_RECTANGLE:
+    case DIAGRAM_ROUNDED:
+    case DIAGRAM_STADIUM:
+    case DIAGRAM_SUBROUTINE:
+    case DIAGRAM_CYLINDER:
+    case DIAGRAM_CIRCLE:
+    case DIAGRAM_DOUBLE_CIRCLE:
+    case DIAGRAM_DIAMOND:
+    case DIAGRAM_HEXAGON:
+    case DIAGRAM_ACTOR:
+        return 0;
+    case DIAGRAM_PARALLELOGRAM:
+        return left ? height - y : y;
+    case DIAGRAM_PARALLELOGRAM_REVERSE:
+        return left ? y : height - y;
+    case DIAGRAM_TRAPEZOID:
+        return height - y;
+    case DIAGRAM_TRAPEZOID_REVERSE:
+        return y;
+    case DIAGRAM_ASYMMETRIC:
+        return left ? 2 * (y < height - y ? y : height - y) : 0;
+    }
+    return 0;
+}
+struct diagram_point diagram_geometry_attachment(struct diagram_rect bounds,
+                                                 enum diagram_shape shape,
+                                                 struct diagram_point point)
+{
+    bool left = point.x == bounds.x;
+    if (!left && point.x != bounds.x + bounds.width)
+        return point;
+    int progress = attachment_progress(shape, point.y - bounds.y, bounds.height, left);
+    int64_t denominator = (int64_t)diagram_polygon_slope_divisor * bounds.height;
+    int inset = (int)(((int64_t)bounds.width * progress + denominator / 2) / denominator);
+    point.x += left ? inset : -inset;
+    return point;
+}
 struct diagram_rect diagram_geometry_label(struct diagram_rect bounds, struct diagram_size text,
                                            enum diagram_shape shape)
 {

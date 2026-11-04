@@ -8,6 +8,10 @@
 [[nodiscard]] struct diagram_size diagram_geometry_node(struct diagram_size text,
                                                         enum diagram_shape shape);
 [[nodiscard]] int diagram_geometry_cylinder_curve(int height);
+/* Map a side midpoint of a positive layout box to its physical shape contour. */
+[[nodiscard]] struct diagram_point diagram_geometry_attachment(struct diagram_rect bounds,
+                                                               enum diagram_shape shape,
+                                                               struct diagram_point point);
 [[nodiscard]] struct diagram_rect diagram_geometry_label(struct diagram_rect bounds,
                                                          struct diagram_size text,
                                                          enum diagram_shape shape);

@@ -462,6 +462,12 @@ static void forward_path(const struct diagram_flow_layout *_Nonnull layout, size
     path->points[3] = (struct diagram_point){path->points[2].x, to.y};
     path->count = 4;
 }
+static struct diagram_point attach(const struct diagram_flow_layout *_Nonnull layout, size_t node,
+                                   struct diagram_point point)
+{
+    return diagram_geometry_attachment(physical(layout, layout->nodes[node]),
+                                       diagram_model_node_at(layout->model, node).shape, point);
+}
 static void emit_link(struct diagram_flow_layout *_Nonnull layout, size_t index)
 {
     struct diagram_link link = diagram_model_link_at(layout->model, index);
@@ -483,6 +489,8 @@ static void emit_link(struct diagram_flow_layout *_Nonnull layout, size_t index)
     for (size_t point = 0; point < path.count; ++point)
         path.points[point] =
             diagram_geometry_point(path.points[point], layout->direction, layout->extent);
+    path.points[0] = attach(layout, link.from, path.points[0]);
+    path.points[path.count - 1] = attach(layout, link.to, path.points[path.count - 1]);
     emit(layout, path);
     struct diagram_size size =
         diagram_metrics_at(layout->metrics, link.label, DIAGRAM_TEXT_CAPTION);

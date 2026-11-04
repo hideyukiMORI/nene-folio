@@ -1,6 +1,7 @@
 /* #539: real GDI metrics, bitmap output, cancellation and shared cache. */
 #include "diagram_canvas.h"
 #include "diagram_geometry.h"
+#include "diagram_layout.h"
 #include "diagram_native_shape.h"
 #include "diagram_render.h"
 #include "folio_theme.h"
@@ -291,6 +292,169 @@ static bool label_tests(const struct image_work *_Nonnull work, int argc,
         polygon_labels(work, output);
     return selected;
 }
+static const struct diagram_primitive *_Nonnull scene_node(
+    const struct diagram_scene *_Nonnull scene, size_t node)
+{
+    size_t found = 0;
+    for (size_t index = 0; index < diagram_scene_count(scene); ++index)
+    {
+        const struct diagram_primitive *item = diagram_scene_at(scene, index);
+        if (item->kind != DIAGRAM_PRIMITIVE_SHAPE)
+            continue;
+        if (found++ == node)
+            return item;
+    }
+    require(false, "attachment scene node exists");
+    exit(EXIT_FAILURE);
+}
+static bool endpoint_on_shape(const struct diagram_primitive *_Nonnull node,
+                              struct diagram_point point)
+{
+    HDC dc = CreateCompatibleDC(nullptr);
+    require(dc != nullptr && BeginPath(dc), "attachment native path");
+    struct diagram_rect b = node->bounds;
+    RECT bounds = {b.x * 2, b.y * 2, (b.x + b.width) * 2, (b.y + b.height) * 2};
+    diagram_native_shape_draw(dc, node, bounds, 2);
+    require(EndPath(dc), "attachment closed path");
+    HRGN outline = PathToRegion(dc);
+    DeleteDC(dc);
+    require(outline != nullptr, "attachment native region");
+    bool inside = false, outside = false;
+    /* A one-logical-pixel neighborhood allows only native integer/stroke rounding. */
+    for (int y = point.y * 2 - 2; y <= point.y * 2 + 2; ++y)
+        for (int x = point.x * 2 - 2; x <= point.x * 2 + 2; ++x)
+        {
+            bool contained = PtInRegion(outline, x, y) != 0;
+            inside |= contained;
+            outside |= !contained;
+        }
+    DeleteObject(outline);
+    printf("shape=%u box=(%d,%d,%d,%d) endpoint=(%d,%d) inside=%d outside=%d\n",
+           (unsigned)node->shape, b.x, b.y, b.width, b.height, point.x, point.y, inside, outside);
+    return inside && outside;
+}
+static size_t scene_attachments(const struct diagram_model *_Nonnull model,
+                                const struct diagram_scene *_Nonnull scene)
+{
+    size_t link_index = 0, missed = 0;
+    for (size_t index = 0; index < diagram_scene_count(scene); ++index)
+    {
+        const struct diagram_primitive *item = diagram_scene_at(scene, index);
+        if (item->kind != DIAGRAM_PRIMITIVE_PATH)
+            continue;
+        struct diagram_link link = diagram_model_link_at(model, link_index++);
+        require(item->count >= 4 && item->start == link.start && item->end == link.end &&
+                    item->stroke == link.stroke,
+                "attachment preserves link markers and stroke");
+        require(item->count == (link_index == 1 ? 4 : 6),
+                "attachment covers the forward router and both channel paths");
+        missed += !endpoint_on_shape(scene_node(scene, link.from), item->points[0]);
+        missed += !endpoint_on_shape(scene_node(scene, link.to), item->points[item->count - 1]);
+    }
+    require(link_index == 3 && diagram_model_link_count(model) == 4,
+            "forward return and self links render; trailing invisible link does not");
+    return missed;
+}
+static size_t attachment_case(const struct diagram_request *_Nonnull request,
+                              const struct image_work *_Nonnull work, const char *_Nullable output,
+                              const char *_Nonnull name)
+{
+    struct image_bitmap *bitmap = render(request, work);
+    if (output != nullptr)
+        write_bitmap(bitmap, output, name);
+    image_bitmap_destroy(bitmap);
+    struct diagram_model *_Nullable model = nullptr;
+    require(mermaid_diagram_create(request->source, &model) == DIAGRAM_ACCEPTED,
+            "attachment model");
+    struct diagram_canvas *_Nullable canvas = nullptr;
+    require(diagram_canvas_create(request, &canvas) == IMAGE_READY, "attachment native font");
+    struct diagram_metrics *_Nullable metrics = nullptr;
+    require(diagram_canvas_measure(canvas, model, work, &metrics) == IMAGE_READY,
+            "attachment actual metrics");
+    struct diagram_scene *_Nullable scene = nullptr;
+    require(diagram_layout_create(model, metrics, &scene) == DIAGRAM_ACCEPTED,
+            "attachment complete scene");
+    printf("%s:\n", name);
+    size_t missed = scene_attachments(model, scene);
+    diagram_scene_destroy(scene);
+    diagram_metrics_destroy(metrics);
+    diagram_canvas_destroy(canvas);
+    diagram_model_destroy(model);
+    return missed;
+}
+static struct note_text *_Nonnull attachment_source(size_t shape, size_t direction)
+{
+    const char *openings[] = {"{{", "[/", "[\\", "[/", "[\\", ">"};
+    const char *closings[] = {"}}", "/]", "\\]", "\\]", "/]", "]"};
+    const char *directions[] = {"LR", "RL", "TB", "BT"};
+    char source[1024];
+    require(sprintf_s(source, sizeof source,
+                      "flowchart %s\nA%sあいうえおかきくけこさしすせ%s\n"
+                      "B%sかきくけこさしすせあいうえお%s\n"
+                      "A -->|進む| B\nB o--o A\nA ==>|自己| A\nA ~~~ B\n",
+                      directions[direction], openings[shape], closings[shape], openings[shape],
+                      closings[shape]) > 0,
+            "attachment fixture source");
+    return text_for(source);
+}
+static size_t attachment_themes(const struct image_work *_Nonnull work,
+                                const char *_Nullable output, size_t shape, size_t direction)
+{
+    struct note_text *source = attachment_source(shape, direction);
+    const enum folio_theme themes[] = {FOLIO_THEME_LIGHT, FOLIO_THEME_DARK};
+    size_t missed = 0;
+    for (size_t theme = 0; theme < 2; ++theme)
+    {
+        char name[64];
+        require(sprintf_s(name, sizeof name, "attachment-%zu-%zu-%zu", shape, direction, theme) > 0,
+                "attachment artifact name");
+        struct diagram_request request = request_for(source, themes[theme]);
+        missed += attachment_case(&request, work, output, name);
+    }
+    note_text_destroy(source);
+    return missed;
+}
+static size_t attachment_rounding(enum diagram_shape shape)
+{
+    const int widths[] = {64, 65, 319, 320, 321, 5779, 5780};
+    const int heights[] = {40, 41, 45, 188, 4097};
+    size_t missed = 0;
+    for (size_t x = 0; x < sizeof widths / sizeof widths[0]; ++x)
+        for (size_t y = 0; y < sizeof heights / sizeof heights[0]; ++y)
+        {
+            struct diagram_primitive node = {.shape = shape,
+                                             .bounds = {17, 23, widths[x], heights[y]}};
+            struct diagram_point left = {17, 23 + heights[y] / 2};
+            struct diagram_point right = {17 + widths[x], left.y};
+            left = diagram_geometry_attachment(node.bounds, shape, left);
+            right = diagram_geometry_attachment(node.bounds, shape, right);
+            missed += !endpoint_on_shape(&node, left);
+            missed += !endpoint_on_shape(&node, right);
+        }
+    return missed;
+}
+static bool attachment_tests(const struct image_work *_Nonnull work, int argc,
+                             char *_Nonnull *_Nonnull argv)
+{
+    bool selected = argc >= 2 && strcmp(argv[1], "--attachments") == 0;
+    if (argc >= 2 && !selected)
+        return false;
+    const char *output = selected && argc == 3 ? argv[2] : nullptr;
+    size_t missed = 0;
+    for (size_t shape = 0; shape < 6; ++shape)
+        for (size_t direction = 0; direction < 4; ++direction)
+            missed += attachment_themes(work, output, shape, direction);
+    printf("endpoints away from the native border: %zu of 288\n", missed);
+    require(missed == 0, "flow endpoints reach the native shape border");
+    const enum diagram_shape shapes[] = {
+        DIAGRAM_HEXAGON,   DIAGRAM_PARALLELOGRAM,     DIAGRAM_PARALLELOGRAM_REVERSE,
+        DIAGRAM_TRAPEZOID, DIAGRAM_TRAPEZOID_REVERSE, DIAGRAM_ASYMMETRIC};
+    for (size_t index = 0; index < sizeof shapes / sizeof shapes[0]; ++index)
+        missed += attachment_rounding(shapes[index]);
+    printf("rounded endpoints away from the native border: %zu of 420\n", missed);
+    require(missed == 0, "odd and extreme dimensions retain native endpoint contact");
+    return selected;
+}
 static void cancellation(const struct image_work *_Nonnull work)
 {
     struct note_text *source = text_for(sequence);
@@ -415,7 +579,7 @@ int main(int argc, char *_Nonnull *_Nonnull argv)
     require(image_adapter_create(root, &adapter) == IMAGE_READY, "single media worker");
     struct image_port port = image_adapter_port(adapter);
     struct image_work work = {.adapter = adapter, .cancelled = cancelled, .progress = progress};
-    if (!label_tests(&work, argc, argv))
+    if (!attachment_tests(&work, argc, argv) && !label_tests(&work, argc, argv))
     {
         measured_roles(&work);
         render_cases(&work, argc == 2 ? argv[1] : nullptr);
