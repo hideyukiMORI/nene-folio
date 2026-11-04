@@ -1145,3 +1145,13 @@ containedは旧6.342/6.81765、新7.0461/7.0204ms（同6.579825→7.03325ms、6.
 製品1/unit1・6docs、追加waiverなし、既存WVR-0001不変。全試行/準備失敗と限界は[品質記録](2026-11-04-export-name-search.md)。
 最終head必須CI→正典merge→通常反映/data32照合→全保全/整理へ進む。確定原本は`D:/NeNeFolio/agents/603-export-name-search/integration-completion.json`。
 実app/実ノート/Store操作なし。停止指示まで品質改善を続行する。
+
+## #605 — ZIPのCRC生成費用
+
+唯一のprivate CRC32を2nibbleから1byte表へ変更し、immutable表960bytes増で公開API/形式/上限/確保は維持。
+全256singlebyte+14境界を公開ZIPのlocal/centralとtable-free oracleで照合。Debug/tidy・既存--images・関連規約が成功。
+実Release生成の1/8/32/64MiBと64MiB順序反転で全8ZIPが旧版全bytes一致、Python zipfile/zlib独立照合成功。
+64MiB process中央値同士222.764875→123.9672ms（44.35%短縮）。画像復号/ディスク公開/UIは含まず、一般倍率は保証しない。
+全試行/準備失敗/範囲は[品質記録](2026-11-04-archive-crc.md)。追加waiverなし、既存WVR-0001継続。
+最終head必須CI→正典統合→通常反映/data照合→3root全保全整理へ進む。確定原本はagents/605-archive-crc/integration-completion.json。
+実app/実ノート/Storeは操作していない。hideの実機試験申し出は必要な境界の手順を絞って依頼する。

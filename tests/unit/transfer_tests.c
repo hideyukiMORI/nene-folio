@@ -1,5 +1,6 @@
 #include "allocation_probe.h"
 #include "appearance_port.h"
+#include "archive_assets.h"
 #include "folio_state.h"
 #include "note_archive.h"
 #include "note_text.h"
@@ -166,6 +167,63 @@ static void verify_archive(void)
     note.name = "NUL";
     require(note_archive_create(&note, 1, nullptr, &archive) == NOTE_ARCHIVE_INVALID,
             "unsafe note rejected");
+    note_text_destroy(body);
+}
+
+/* Table-free reference keeps archive checksum checks independent of the byte table. */
+static uint32_t reference_crc(const char *_Nonnull bytes, size_t length)
+{
+    uint32_t crc = UINT32_MAX;
+    for (size_t index = 0; index < length; ++index)
+    {
+        crc ^= (unsigned char)bytes[index];
+        for (size_t bit = 0; bit < 8; ++bit)
+        {
+            uint32_t low = crc & 1;
+            crc >>= 1;
+            if (low != 0)
+                crc ^= UINT32_C(0xedb88320);
+        }
+    }
+    return ~crc;
+}
+
+static void verify_binary_crc(const struct archive_note *_Nonnull note,
+                              const char *_Nonnull payload, size_t length)
+{
+    struct archive_assets *assets = nullptr;
+    require(archive_assets_create(&assets) == NOTE_ARCHIVE_READY, "CRC binary collection");
+    struct archive_file file = {.path = "A/bytes.bin", .bytes = payload, .length = length};
+    require(archive_assets_append(assets, file) == NOTE_ARCHIVE_READY, "CRC binary member");
+    struct note_archive *archive = nullptr;
+    require(note_archive_create(note, 0, assets, &archive) == NOTE_ARCHIVE_READY,
+            "binary-only ZIP through the public archive factory");
+    const char *bytes = note_archive_bytes(archive);
+    uint32_t expected = reference_crc(payload, length);
+    size_t central = 30 + strlen(file.path) + length;
+    require(number(bytes + 14) == expected && number(bytes + central) == UINT32_C(0x02014b50) &&
+                number(bytes + central + 16) == expected,
+            "local and central CRC match the table-free binary reference");
+    require(memcmp(bytes + 30 + strlen(file.path), payload, length) == 0,
+            "binary payload including NUL and high bytes stays unchanged");
+    note_archive_destroy(archive);
+    archive_assets_destroy(assets);
+}
+
+static void verify_binary_checksums(void)
+{
+    char payload[4097];
+    for (size_t index = 0; index < sizeof payload; ++index)
+        payload[index] = (char)(index % 256);
+    struct note_text *body = nullptr;
+    require(note_text_create("", 0, &body) == NOTE_TEXT_ACCEPTED, "empty CRC fixture body");
+    struct archive_note note = {.category = "A", .name = "unused", .body = body};
+    for (size_t index = 0; index < 256; ++index)
+        verify_binary_crc(&note, payload + index, 1);
+    static constexpr size_t lengths[] = {0,  2,   3,   7,   8,    15,   16,
+                                         17, 255, 256, 257, 4095, 4096, 4097};
+    for (size_t index = 0; index < sizeof lengths / sizeof lengths[0]; ++index)
+        verify_binary_crc(&note, payload, lengths[index]);
     note_text_destroy(body);
 }
 
@@ -469,6 +527,7 @@ static void verify_export_allocation(void)
 void run_transfer_tests(void)
 {
     verify_archive();
+    verify_binary_checksums();
     verify_archive_byte_limit();
     verify_archive_allocation();
     verify_import();
