@@ -1092,3 +1092,16 @@ JPEG診断2858行/46種とFAIL2行も各版rawに残し、失敗を成功へ書�
 製品1/unit1と7docsを変更、公開API/schema/版/依存/gate不変。追加waiverなし（WVR-0001既存範囲のみ）。
 原本は`D:/NeNeFolio/agents/593-archive-path-conflicts`。最終CI/統合/通常反映/data照合/保全整理はintegration-completion.jsonへ。
 任意reader/Unicode比較/全heap/性能/実UIは未保証。停止指示まで品質改善を続ける。
+
+## 画像パスとtitleの丸括弧を記法から分ける — #595
+
+山括弧pathとquotedtitle内の片側丸括弧で画像参照が消え、4ZIPがMarkdownだけになる反例を確認した。
+既存inlineの対応付けだけを修正し、最終unit22positive/5excluded/連続画像/Web6fieldと実画像6件が成功。
+全ZIPのmember bytesを独立照合、正常対照2ZIPは修正前全bytes一致、元Markdown6/画像3不変。
+初案は通常文の引用符を全体でtoken分割して遅くなったため不採用。既存token内のdestinationだけへ絞った。
+409600byte通常文のDebug診断中央値は旧50.205/初案178.793/最終51.282ms、16条件のRTF全bytes一致。
+計測専用exeのASan初期化診断とscale-01/02の評価1/記録125を保持し、計測のsanitizer成功は認定しない。
+通常unit/nativeと関連規約は診断なしで成功。全試行/数値/限界は[品質記録](2026-11-04-markdown-destination.md)。
+製品1/unit2と7docs、公開API/schema/版/依存/gate不変。追加waiverなし、WVR-0001既存範囲のみ。
+原本は`D:/NeNeFolio/agents/595-markdown-destination`、最終CI/統合/通常反映/保全整理はintegration-completion.jsonへ。
+実app/実ノート/Store操作なし。停止指示まで品質改善を継続する。

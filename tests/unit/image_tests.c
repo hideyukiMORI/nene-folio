@@ -278,6 +278,92 @@ static void parser_contract(void)
     markdown_rtf_destroy(rendered);
     note_text_destroy(body);
 }
+static void destination_literal_case(const char *_Nonnull source, const char *_Nonnull raw,
+                                     const char *_Nonnull target)
+{
+    struct note_text *body = text(source);
+    struct markdown_rtf *rendered = render(body);
+    const struct markdown_images *images = markdown_rtf_images(rendered);
+    require(markdown_images_count(images) == 1,
+            "angle destination and quoted title parentheses do not close the image");
+    const struct image_source *image = markdown_images_at(images, 0);
+    struct note_search_span span = image_source_span(image);
+    const char *start = strstr(source, raw);
+    require(start != nullptr && span.start == (size_t)(start - source) &&
+                span.end - span.start == strlen(raw),
+            "destination span excludes angle brackets and the complete quoted title");
+    require(strcmp(image_source_target(image), target) == 0,
+            "literal destination punctuation and percent decoding remain exact");
+    require(strcmp(note_text_bytes(body), source) == 0, "destination parsing preserves source");
+    markdown_rtf_destroy(rendered);
+    note_text_destroy(body);
+}
+static void destination_literals(void)
+{
+    static const struct
+    {
+        const char *source;
+        const char *raw;
+        const char *target;
+    } cases[] = {
+        {"![x](<images/open(.png>)", "images/open(.png", "images/open(.png"},
+        {"![x](<images/close).png>)", "images/close).png", "images/close).png"},
+        {"![x](images/plain.png \"caption(\")", "images/plain.png", "images/plain.png"},
+        {"![x](images/plain.png \"caption)\")", "images/plain.png", "images/plain.png"},
+        {"![x](images/plain.png 'caption(')", "images/plain.png", "images/plain.png"},
+        {"![x](images/plain.png 'caption)')", "images/plain.png", "images/plain.png"},
+        {"![x](images/plain.png \"caption\\\"(\")", "images/plain.png", "images/plain.png"},
+        {"![x](images/plain.png 'caption\\\')')", "images/plain.png", "images/plain.png"},
+        {"![x](<images/open\\(.png>)", "images/open\\(.png", "images/open(.png"},
+        {"![x](<images/close\\).png>)", "images/close\\).png", "images/close).png"},
+        {"![x](<images/open%28.png>)", "images/open%28.png", "images/open(.png"},
+        {"![x](<images/close%29.png>)", "images/close%29.png", "images/close).png"},
+        {"![x](<images/o'(.png>)", "images/o'(.png", "images/o'(.png"},
+        {"![x](<images/日本(.png>)", "images/日本(.png", "images/日本(.png"},
+        {"![x](<images/open[[.png>)", "images/open[[.png", "images/open[[.png"},
+        {"[![x](<images/close]].png>)](https://example.com)", "images/close]].png",
+         "images/close]].png"},
+        {"![x](  <images/(((.png>  'title)')", "images/(((.png", "images/(((.png"},
+        {"![x](images/a(b).png \"(balanced)\")", "images/a(b).png", "images/a(b).png"},
+        {"![x](<https://example.com/close).png>)", "https://example.com/close).png",
+         "https://example.com/close).png"},
+        {"`![code](<images/skip(.png>)` ![x](<images/use).png>)", "images/use).png",
+         "images/use).png"},
+        {"> - ![x](<images/use(.png> 'title)')\r\n", "images/use(.png", "images/use(.png"},
+        {"| A | B |\n| --- | --- |\n| ![x](<images/use).png> \"title(\") | end |",
+         "images/use).png", "images/use).png"},
+    };
+    for (size_t index = 0; index < sizeof cases / sizeof cases[0]; ++index)
+        destination_literal_case(cases[index].source, cases[index].raw, cases[index].target);
+}
+static void destination_boundaries(void)
+{
+    const char *sources[] = {"![x](<images/unclosed(.png)", "![x](images/plain.png \"unclosed)",
+                             "![x](images/plain.png 'unclosed)", "`![x](<images/code(.png>)`",
+                             "\\![x](<images/escaped).png>)"};
+    for (size_t index = 0; index < sizeof sources / sizeof sources[0]; ++index)
+    {
+        struct note_text *body = text(sources[index]);
+        struct markdown_rtf *rendered = render(body);
+        require(markdown_images_count(markdown_rtf_images(rendered)) == 0,
+                "unclosed destinations and code remain outside image metadata");
+        require(strcmp(note_text_bytes(body), sources[index]) == 0,
+                "unclosed and code source remain exact");
+        markdown_rtf_destroy(rendered);
+        note_text_destroy(body);
+    }
+    struct note_text *body =
+        text("![a](<images/a(.png>) ![b](<images/b).png> \"title(\") ![c](images/c.png)");
+    struct markdown_rtf *rendered = render(body);
+    const struct markdown_images *images = markdown_rtf_images(rendered);
+    require(markdown_images_count(images) == 3, "adjacent image destinations stay independent");
+    const char *targets[] = {"images/a(.png", "images/b).png", "images/c.png"};
+    for (size_t index = 0; index < 3; ++index)
+        require(strcmp(image_source_target(markdown_images_at(images, index)), targets[index]) == 0,
+                "each adjacent image retains its own complete target");
+    markdown_rtf_destroy(rendered);
+    note_text_destroy(body);
+}
 static void image_limits(void)
 {
     static const unsigned char pixels[] = {0, 32, 64, 255, 128, 64, 32, 128};
@@ -651,6 +737,8 @@ void run_image_tests(void)
     source_rejections();
     copy_rejections();
     parser_contract();
+    destination_literals();
+    destination_boundaries();
     image_limits();
     export_contract();
     export_failures();

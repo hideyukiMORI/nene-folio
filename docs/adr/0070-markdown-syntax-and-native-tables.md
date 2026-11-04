@@ -113,3 +113,24 @@ Waivers: none。
 - [GETTEXTEX / GT_RAWTEXT](https://learn.microsoft.com/en-us/windows/win32/api/richedit/ns-richedit-gettextex)
 - [EM_SETTABLEPARMS](https://learn.microsoft.com/en-us/windows/win32/controls/em-settableparms)
 - [ITextDocument::Undo](https://learn.microsoft.com/en-us/windows/win32/api/tom/nf-tom-itextdocument-undo)
+
+## 2026-11-04: パスとタイトルの丸括弧を外側記法へ数えない（#595）
+
+山括弧で囲んだ画像パスの片側丸括弧と引用符title内の丸括弧を一般の括弧対応付けへ数え、
+画像参照を見失う反例を確認した。実画像の同梱も成功扱いのまま欠落する。
+inline tokenの既存対応付けで、認識済みの`[... ](`に属する山括弧内と空白後の引用符titleを
+literalな範囲として飛ばす。既存literal token内の引用符を調べ、対応付けは同じtoken所有者の中に保つ。
+山括弧はnested `<`/改行で打切り、escapeされた閉じ文字は終端にしない。
+成功したliteral範囲を一度だけ飛ばし、未閉じの入力へ全suffix再探索を重ねない。
+
+この処理は構造括弧の候補を選ぶだけで、destinationの妥当性・原文span・escape/entity展開は
+既存markdown_destinationへ、ローカルpercent展開は既存image_sourceへ渡す。
+画像とWebリンクで共用し、quotedtitleの括弧で隣の画像/リンクを吸収しない。
+外側codeの優先順位、未閉じの原文保持、通常の入れ子丸括弧とescape/percent表記を維持する。
+新しい公開API/owner/持続状態/schema/依存/gateを追加しない。
+根拠は既存採用範囲のCommonMark0.31.2 §6.3 destination（例499）とtitleの境界。
+
+初回の引用符全体を字句境界へ加える案は、Debug診断で引用符の多い通常文409600bytesが
+旧50.205ms→178.793ms（4定常sample中央値、起動診断あり）となったため採用しない。
+元の字句分割を維持し、対応付け中のdestination内にある既存literal tokenだけを走査して
+titleの開始引用符を見つける。通常本文の引用符へtoken増加を波及させない。
