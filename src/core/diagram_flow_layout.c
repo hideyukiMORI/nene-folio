@@ -23,6 +23,7 @@ struct diagram_flow_layout
     int row_gap[rank_limit + 1];
     size_t tracks[rank_limit + 1];
     size_t edge_level[diagram_link_limit];
+    struct diagram_point labels[diagram_link_limit];
     int direct_width[diagram_group_limit + 1];
     int band_width[diagram_group_limit + 1];
     int band_x[diagram_group_limit + 1];
@@ -492,11 +493,18 @@ static void emit_link(struct diagram_flow_layout *_Nonnull layout, size_t index)
     path.points[0] = attach(layout, link.from, path.points[0]);
     path.points[path.count - 1] = attach(layout, link.to, path.points[path.count - 1]);
     emit(layout, path);
+    layout->labels[index] = diagram_geometry_point(label, layout->direction, layout->extent);
+}
+static void emit_link_label(struct diagram_flow_layout *_Nonnull layout, size_t index)
+{
+    struct diagram_link link = diagram_model_link_at(layout->model, index);
+    if (link.stroke == DIAGRAM_INVISIBLE)
+        return;
     struct diagram_size size =
         diagram_metrics_at(layout->metrics, link.label, DIAGRAM_TEXT_CAPTION);
     if (size.width == 0)
         return;
-    label = diagram_geometry_point(label, layout->direction, layout->extent);
+    struct diagram_point label = layout->labels[index];
     emit(layout,
          (struct diagram_primitive){.kind = DIAGRAM_PRIMITIVE_TEXT,
                                     .ink = DIAGRAM_INK_TEXT,
@@ -550,6 +558,8 @@ static enum diagram_outcome construct(struct diagram_flow_layout *_Nonnull layou
         emit_group(layout, group);
     for (size_t link = 0; link < diagram_model_link_count(layout->model); ++link)
         emit_link(layout, link);
+    for (size_t link = 0; link < diagram_model_link_count(layout->model); ++link)
+        emit_link_label(layout, link);
     for (size_t node = 0; node < diagram_model_node_count(layout->model); ++node)
         emit_node(layout, node);
     if (layout->outcome == DIAGRAM_ACCEPTED)
