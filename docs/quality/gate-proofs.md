@@ -952,3 +952,12 @@ Windows11 build26300、固定CMake Release、実Noto Sans JPで旧3入力と修�
 現行18bitmapは初回と全hash一致。負荷変動を含むため一般的な速度倍率や差なしは保証しない。
 原本・全試行・測定範囲・CPU観測の限界は[性能記録](2026-11-04-mermaid-performance.md)へ。
 製品codeの変更・実app/実ノートの操作はなく、文書最終CIと保全整理を行う。
+
+## 2026-11-04 — 反復生成・取消後の描画資源（#561）
+
+固定Release libraryを再利用し、自processのGDI/USER/kernel handleを観測した。
+正常生成と4種類の取消×3fixture、layout上限拒否、idle workerの生成/破棄の17条件各128回で、
+各batch終了後の資源数は基準値と一致。pen/eventの感度確認も成功した。
+resources-01は15条件完了後に診断入力の想定違いで終了1、未完2条件だけのresources-02は終了0。
+完了済み条件のraw記録を明示して再利用し、run全体の失敗を成功へ読み替えない。
+全heapや任意入力/競合の保証へ広げない。全試行・観測範囲は[資源記録](2026-11-04-mermaid-resources.md)へ。

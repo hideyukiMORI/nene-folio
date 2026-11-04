@@ -6,16 +6,17 @@ hideの新指示で、停止まで調査・試験・計測・必要な修正を�
 現行規約の対象検証・最終head必須CI・正典統合・必要反映・整理まで進める。
 開始時mainは`ab7b732`、origin/main一致・clean、open PRなし。#541/PR542のCI41660944733は成功。
 
-今朝の#543/#544/#546/#548/#551/#553/#554/#557は、最終headの必須CI成功・main統合・通常反映・data照合・
-成果物保全・追加作業木/output整理まで完了。各`D:/NeNeFolio/agents/<task>/integration-completion.json`を
-確定原本とし、詳細と失敗履歴は日報・引き継ぎを参照する。最新完了は#557/PR558、main`8725102`。
+今朝の#543/#544/#546/#548/#551/#553/#554/#557は、必須CI成功・main統合・通常反映・data照合・保全整理まで完了。
+性能記録#559/PR560も最終headのCI41754477947成功・main`ab3d187`への統合・保全整理まで完了した。
+文書だけの#559では通常exeの#557成果物をhash照合して再利用した。各案件の
+`D:/NeNeFolio/agents/<task>/integration-completion.json`を確定原本とし、履歴は日報・引き継ぎを参照する。
 
-現在の焦点は#559。統合済みReleaseで6例を計測し、修正対象3bitmapは以前の成功画像と全hash一致した。
-最初の小さいflowの昨日比増加を旧/現行交互6組で切り分け、現行だけが一貫して遅い結果は再現しなかった。
-負荷変動が大きいため速度向上や差なしを保証せず、性能修正は追加しない。全sampleとCPU観測を保持する。
-詳細は[性能記録](../quality/2026-11-04-mermaid-performance.md)。文書の最終CI/統合と保全整理へ進む。
+現在の焦点は#561。正常生成/4段階取消×3入力と、layout上限拒否、idle worker生成/破棄の17条件を測った。
+各128回の測定区間で、全batch終了後のGDI/USER/kernel handle数は基準値に戻り、製品修正は追加しない。
+初回runは15条件の完了後に診断入力の想定違いで終了1。未完2条件だけの別runは終了0で、失敗も保持する。
+詳細は[資源記録](../quality/2026-11-04-mermaid-resources.md)。文書の最終CI/統合・保全整理へ進む。
 製品入力は不変なので通常exeは#557の反映を再利用する。確定値は
-`D:/NeNeFolio/agents/559-mermaid-performance/integration-completion.json`へ収載する。
+`D:/NeNeFolio/agents/561-mermaid-resources/integration-completion.json`へ収載する。
 停止指示まで品質改善を継続する。実app/実ノートを試験へ使わず、新候補は実行再現してから修正を判断する。
 
 日報・次回の詳細は[11月4日の日報](../reports/2026-11-04.md)と[引き継ぎ書](../handoffs/2026-11-04.md)。
