@@ -1067,3 +1067,17 @@ CPU7.04〜15.57%、初回最大27.1824ms/非初回最大25.6826msも保持。全
 全raw/比較根拠/限界は[品質記録](2026-11-04-marker-performance.md)。製品/test変更なし、追加性能修正なし。
 原本は`D:/NeNeFolio/agents/marker-performance-20261104`。最終CI/統合/通常exe照合/保全整理の確定値はintegration-completion.jsonへ。
 追加waiverなし（WVR-0001既存範囲のみ）、実app/実ノート/Store操作なし。停止まで品質改善を継続する。
+
+## PNG/JPEG変異入力の復帰と検証限界 — #591
+
+合成PNG/JPEGの各byte切断/bit7反転と寸法/取消/上限等3,605入力をDebug/Releaseで各2周観測した。
+全14,420条件で型付き結果/拒否out保持/直後の正常画像全bytes一致/原bytes不変を確認。
+各周READY2760/FAILED836/TOO_LARGE4/UNSUPPORTED2/CANCELLED3、版間/周回間の構造化結果も一致した。
+11,044画像を再hash照合し、版間5522組・各版の周回間2760組すべてSHA一致。audit-01は子/記録0。
+nativeのcheck-01/trace-01は各1で、handle117→118→118の復帰assert失敗を保持した。最初のGIFだけ+1。
+製品を通さないWIC直接診断もGIF初回107→108、後続3回は増加なし、Release戻り参照数は全0だった。
+DebugのASan初期化診断1行は復号前の起動だけで再現し、mapからCRT frexp+4と特定。sanitizer成功とは扱わない。
+JPEG診断2858行/46種とFAIL2行も各版rawに残し、失敗を成功へ書き換えていない。製品/test修正なし。
+全試行/原本/限界は[品質記録](2026-11-04-image-decode-mutations.md)。原本は`D:/NeNeFolio/agents/image-decode-mutations-20261104`。
+最終CI/統合/通常exe照合/保全整理の確定値はintegration-completion.jsonへ。
+追加waiverなし（WVR-0001既存範囲のみ）、実app/実ノート/Store操作なし。停止まで品質改善を続ける。

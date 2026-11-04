@@ -7,13 +7,13 @@ hideの新指示で、停止まで調査・試験・計測・必要な修正を�
 開始時mainは`ab7b732`、origin/main一致・clean、open PRなし。#541/PR542のCI41660944733は成功。
 
 今朝のMermaid修正は#587まで必須CI成功・main統合・通常反映・data照合・保全整理が完了。
-性能/資源/文区切り/拒否復帰/字句変異/ラベル同値性の記録も統合済み。最新mainと通常exe sourceは`265b36a`。
+性能/資源/文区切り/拒否復帰/字句変異/ラベル同値性の記録も統合済み。最新mainは`91624c8`、通常exe sourceは`265b36a`。
 各案件の`D:/NeNeFolio/agents/<task>/integration-completion.json`を確定原本とし、詳細は日報・引き継ぎを参照する。
 
-現在は#589の端点記号の性能記録。各96messageの4入力×旧/現行交互6組を測定し、生成/cache各1008sampleと48画像を照合した。
-小さな増減と実線対照の変動を残し、追加性能修正なし。全試行と限界は[品質記録](../quality/2026-11-04-marker-performance.md)。
-最終CI/統合・通常exe照合・保全整理へ進む。確定値は`D:/NeNeFolio/agents/marker-performance-20261104/integration-completion.json`へ。
-予約名の空白候補は現在hostでalias化を再現せず修正見送り、観測と保全整理は日報へ収載した。
+現在は#591のPNG/JPEG変異入力記録。3,605入力×Debug/Release×2周で正常復帰と結果保持を観測し、11,044画像を照合した。
+native失敗（GIF初回handle+1、DebugのASan初期化診断）を独立診断で分離し、成功へ書き換えず保存。製品修正なし。
+全試行と限界は[品質記録](../quality/2026-11-04-image-decode-mutations.md)。最終CI/統合・通常exe照合・保全整理へ進む。
+確定値は`D:/NeNeFolio/agents/image-decode-mutations-20261104/integration-completion.json`へ。
 停止指示まで品質改善を継続する。実app/実ノートを試験へ使わず、新候補は実行再現してから修正を判断する。
 
 日報・次回の詳細は[11月4日の日報](../reports/2026-11-04.md)と[引き継ぎ書](../handoffs/2026-11-04.md)。
