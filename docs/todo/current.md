@@ -7,13 +7,13 @@ hideの新指示で、停止まで調査・試験・計測・必要な修正を�
 開始時mainは`ab7b732`、origin/main一致・clean、open PRなし。#541/PR542のCI41660944733は成功。
 
 今朝のMermaid修正は#577まで必須CI成功・main統合・通常反映・data照合・保全整理が完了。
-性能/資源/文区切り/拒否復帰/字句変異の記録も統合済み。最新mainは`fb5c949`、通常exe sourceは`7230e88`。
+性能/資源/文区切り/拒否復帰/字句変異/ラベル同値性の記録も統合済み。最新mainは`a70f016`、通常exe sourceは`7230e88`。
 各案件の`D:/NeNeFolio/agents/<task>/integration-completion.json`を確定原本とし、詳細は日報・引き継ぎを参照する。
 
-現在は#585のラベル表記同値性記録。9用途×7表記×明暗126件の実model labelが期待UTF-8と一致した。
-基準18画像に対する変形108画像は全SHA一致、native診断なし。製品/test変更なし。
-全試行と限界は[品質記録](../quality/2026-11-04-diagram-label-equivalence.md)。最終CI/統合・通常exe照合・保全整理へ進む。
-確定値は`D:/NeNeFolio/agents/diagram-label-equivalence-20261104/integration-completion.json`へ。
+現在は#587の破線端点記号修正。製品未変更で32条件/536画素の輪郭差を再現し、修正後は全40条件で差0。
+実線/太線/無記号88画像は全SHA不変、変更画素は端点周囲だけ。GDI数復帰と実sequence12画像も確認した。
+全試行と限界は[品質記録](../quality/2026-11-04-solid-diagram-markers.md)。最終CI/統合・通常反映・data照合・保全整理へ進む。
+確定値は`D:/NeNeFolio/agents/587-solid-markers/integration-completion.json`へ。
 停止指示まで品質改善を継続する。実app/実ノートを試験へ使わず、新候補は実行再現してから修正を判断する。
 
 日報・次回の詳細は[11月4日の日報](../reports/2026-11-04.md)と[引き継ぎ書](../handoffs/2026-11-04.md)。
