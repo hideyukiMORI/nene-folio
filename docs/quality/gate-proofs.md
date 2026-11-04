@@ -1155,3 +1155,12 @@ containedは旧6.342/6.81765、新7.0461/7.0204ms（同6.579825→7.03325ms、6.
 全試行/準備失敗/範囲は[品質記録](2026-11-04-archive-crc.md)。追加waiverなし、既存WVR-0001継続。
 最終head必須CI→正典統合→通常反映/data照合→3root全保全整理へ進む。確定原本はagents/605-archive-crc/integration-completion.json。
 実app/実ノート/Storeは操作していない。hideの実機試験申し出は必要な境界の手順を絞って依頼する。
+
+## #608 — 小ノートのZIP件数上限と生成費用
+
+実archive入口を0/1/128/1024/8192/65534件の1byte本文・一意な合成名で各5sample計測。
+上限65534件は6,465,668bytesの有効ZIPを中央値20.39865msで生成、65535件は期待どおり拒否。
+全6ZIPのmember/CRC/順序/STORE/UTF-8/固定日時と独立サイズ式、本文/entry不変を確認。link/check子・記録0、18成果物再hash成功。
+この範囲で新しい修正根拠は得られず、製品変更を追加しない。ファイル読込・公開・実UI・一般速度を保証しない。
+詳細は[品質記録](2026-11-04-archive-entry-count.md)。文書5件だけ、追加waiverなし、通常exeは#605から再生成しない。
+最終head必須CI→正典統合→通常exe SHA不変→全保全整理へ。確定原本はagents/archive-entry-scale-20261104/integration-completion.json。
