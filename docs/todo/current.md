@@ -7,13 +7,13 @@ hideの新指示で、停止まで調査・試験・計測・必要な修正を�
 開始時mainは`ab7b732`、origin/main一致・clean、open PRなし。#541/PR542のCI41660944733は成功。
 
 今朝のMermaid修正は#577まで必須CI成功・main統合・通常反映・data照合・保全整理が完了。
-性能/資源/文区切り/拒否後復帰の記録も統合済み。最新の製品main・通常exe sourceは`7230e88`。
+性能/資源/文区切り/拒否後復帰/同期拒否の記録も統合済み。最新mainは`2f07266`、通常exe sourceは`7230e88`。
 各案件の`D:/NeNeFolio/agents/<task>/integration-completion.json`を確定原本とし、詳細は日報・引き継ぎを参照する。
 
-現在は#581の同期拒否と先行画像の保持記録。48条件で画像/ticket保持と二重受取なしを確認した。
-初回外部linkのASan診断を失敗として残し、正規link条件での追加48条件は成功・診断なし。
-製品/test変更なし。全試行と限界は[品質記録](../quality/2026-11-04-diagram-admission.md)。最終CI/統合・通常exe照合・保全整理へ進む。
-確定値は`D:/NeNeFolio/agents/diagram-admission-20261104/integration-completion.json`へ。
+現在は#583の字句変異記録。4seedからの15,642入力を解析し、部分model公開・原文変更・参照範囲違反・sanitizer診断なし。
+4,681受理/4,599不正構文/6,362未対応。製品/test変更なし、変異ごとの構文分類の正しさを保証する試験ではない。
+全試行と限界は[品質記録](../quality/2026-11-04-diagram-mutations.md)。最終CI/統合・通常exe照合・保全整理へ進む。
+確定値は`D:/NeNeFolio/agents/diagram-mutations-20261104/integration-completion.json`へ。
 停止指示まで品質改善を継続する。実app/実ノートを試験へ使わず、新候補は実行再現してから修正を判断する。
 
 日報・次回の詳細は[11月4日の日報](../reports/2026-11-04.md)と[引き継ぎ書](../handoffs/2026-11-04.md)。
