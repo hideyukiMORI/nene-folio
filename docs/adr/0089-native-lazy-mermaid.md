@@ -98,3 +98,21 @@ hideの指定で背景Claudeがdesign:design-critique / design:design-system / d
   GDIのdevice座標へ渡す箇所だけで2倍する。計測/配置/描画へ別々の値を書かない。
 
 取り込み後に実bitmapの多行ラベル・形状・明暗と対象境界を確認し、同じ入力のRelease生成時間を再測定する。
+
+## 2026-11-04 — 斜辺付きノードの文字領域（#553、製品編集前）
+
+実fontのbitmapでasymmetricの切込みが1行の文字に重なり、複数行ではhexagon・parallelogram・
+trapezoidの斜辺から文字がはみ出すことを確認した。実native描画pathと文字矩形に1pxの余裕を
+足した領域の差分は、1行/8行・明暗の24条件中18条件で空にならなかった。
+1px余白だけの不足と、実際の文字領域のはみ出しは区別して品質記録へ残す。
+
+斜辺の張出し比率1/7は維持し、除数を既存coreの`diagram_style.h`で一度だけ定義する。
+nativeの2か所の整数除算とcoreの幅予約が同じ定義を使う。描画のdevice座標での丸めは維持する。
+幅Wの中央帯は少なくともW×(7−2)/7あるので、文字幅と左右16pxを含む幅Pに対して
+`ceil(P×7/(7−2))`を予約する。従来のP+24より狭くはせず、最低64×40も維持する。
+既存のgeometry→layout→scene→native描画へ収め、新しい状態ownerや配置経路は加えない。
+
+輪郭の比率を変えて細く見せたり、文字を縮小/切捨てしたりせず、長い文字のnodeを広げる。
+subroutine、stadium等の別形状はこの幅予約へ混ぜない。保存schema・版・公開関数の変更はない。
+新しいstyle定数は既存の寸法ownerの中に置き、図形点列を試験側へ複写しない。
+GDIのBeginPath/EndPath/PathToRegionで実描画pathを取得し、文字との包含を独立に検査する。

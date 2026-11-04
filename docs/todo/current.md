@@ -6,14 +6,16 @@ hideの新指示で、停止まで調査・試験・計測・必要な修正を�
 現行規約の対象検証・最終head必須CI・正典統合・必要反映・整理まで進める。
 開始時mainは`ab7b732`、origin/main一致・clean、open PRなし。#541/PR542のCI41660944733は成功。
 
-今朝の#543/#544/#546/#548は、それぞれ最終headの必須CI成功・main統合・通常反映・data照合・
+今朝の#543/#544/#546/#548/#551は、それぞれ最終headの必須CI成功・main統合・通常反映・data照合・
 成果物保全・追加作業木/output整理まで完了。各`D:/NeNeFolio/agents/<task>/integration-completion.json`を
-確定原本とし、詳細と失敗履歴は下記の日報・引き継ぎを参照する。最新完了は#548/PR550、main`7fef552`。
+確定原本とし、詳細と失敗履歴は下記の日報・引き継ぎを参照する。最新完了は#551/PR552、main`fd793da`。
 
-現在の焦点は#551。実fontの8行stadiumラベルのはみ出しを再現し、既存geometryで丸い両端の幅を予約した。
-1行寸法を保ち、35組のcore境界と関連diagram対象、明暗6枚・native82checksが成功。
-高いラベルでは図幅が増える。詳細は[品質記録](../quality/2026-11-04-stadium-label-clearance.md)。
-最終head/CI/通常反映/整理は`D:/NeNeFolio/agents/551-stadium-label/integration-completion.json`へ収載する。
+現在の焦点は#553。斜辺付き6形状のlabel余白不足を実font/GDIで再現し、同じ斜辺定義を
+描画と幅予約で使うよう修正した。24条件476checksと72組のcore境界を含むdiagram対象が成功。
+新しい輪郭検査を使うstadium6条件も成功し、#551の画像と全hashが一致した。
+詳細は[品質記録](../quality/2026-11-04-polygon-label-clearance.md)、最終head/CI/通常反映/整理は
+`D:/NeNeFolio/agents/553-polygon-label/integration-completion.json`へ収載する。
+次は#554の横向きの辺と斜辺の接続を確認する。現時点では静的候補で、実行再現は未着手。
 
 日報・次回の詳細は[11月4日の日報](../reports/2026-11-04.md)と[引き継ぎ書](../handoffs/2026-11-04.md)。
 全体journalは`D:/NeNeFolio/agents/quality-20261104/journal.md`。

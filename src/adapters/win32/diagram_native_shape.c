@@ -41,7 +41,7 @@ static void actor(HDC _Nonnull dc, RECT r, int scale)
 }
 static void quadrilateral(HDC _Nonnull dc, enum diagram_shape shape, RECT r)
 {
-    int slope = (r.right - r.left) / 7;
+    int slope = (r.right - r.left) / diagram_polygon_slope_divisor;
     POINT points[4] = {{r.left, r.top}, {r.right, r.top}, {r.right, r.bottom}, {r.left, r.bottom}};
     if (shape == DIAGRAM_PARALLELOGRAM || shape == DIAGRAM_TRAPEZOID)
         points[0].x += slope;
@@ -64,7 +64,7 @@ static void angular(HDC _Nonnull dc, enum diagram_shape shape, RECT r)
         Polygon(dc, points, 4);
         return;
     }
-    int slope = (r.right - r.left) / 7;
+    int slope = (r.right - r.left) / diagram_polygon_slope_divisor;
     POINT points[6] = {{r.left + slope, r.top},     {r.right - slope, r.top},   {r.right, center_y},
                        {r.right - slope, r.bottom}, {r.left + slope, r.bottom}, {r.left, center_y}};
     if (shape == DIAGRAM_ASYMMETRIC)

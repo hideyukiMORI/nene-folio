@@ -1,6 +1,7 @@
 /* #539: real GDI metrics, bitmap output, cancellation and shared cache. */
 #include "diagram_canvas.h"
 #include "diagram_geometry.h"
+#include "diagram_native_shape.h"
 #include "diagram_render.h"
 #include "folio_theme.h"
 #include "font_bundle.h"
@@ -149,53 +150,60 @@ static void measured_roles(const struct image_work *_Nonnull work)
     diagram_model_destroy(model);
     note_text_destroy(source);
 }
-static bool stadium_contains(struct diagram_rect box, struct diagram_rect label)
+static bool label_inside_shape(enum diagram_shape shape, struct diagram_rect box,
+                               struct diagram_rect label)
 {
-    /* Match the native 2x raster and exclude one logical pixel of border. */
-    HRGN shape =
-        CreateRoundRectRgn(box.x * 2 + 2, box.y * 2 + 2, (box.x + box.width) * 2 - 2,
-                           (box.y + box.height) * 2 - 2, box.height * 2 - 4, box.height * 2 - 4);
-    HRGN text = CreateRectRgn(label.x * 2, label.y * 2, (label.x + label.width) * 2,
-                              (label.y + label.height) * 2);
+    HDC dc = CreateCompatibleDC(nullptr);
+    require(dc != nullptr && BeginPath(dc), "native shape path");
+    struct diagram_primitive primitive = {.shape = shape};
+    RECT bounds = {box.x * 2, box.y * 2, (box.x + box.width) * 2, (box.y + box.height) * 2};
+    diagram_native_shape_draw(dc, &primitive, bounds, 2);
+    require(EndPath(dc), "closed native shape path");
+    HRGN outline = PathToRegion(dc);
+    DeleteDC(dc);
+    /* Expand the label by one logical pixel to require clearance from the native stroke. */
+    HRGN text = CreateRectRgn((label.x - 1) * 2, (label.y - 1) * 2, (label.x + label.width + 1) * 2,
+                              (label.y + label.height + 1) * 2);
     HRGN difference = CreateRectRgn(0, 0, 0, 0);
-    require(shape != nullptr && text != nullptr && difference != nullptr, "stadium regions");
-    int result = CombineRgn(difference, text, shape, RGN_DIFF);
+    require(outline != nullptr && text != nullptr && difference != nullptr, "native shape regions");
+    int result = CombineRgn(difference, text, outline, RGN_DIFF);
     RECT outside = {0};
     require(result != ERROR && GetRgnBox(difference, &outside) != ERROR,
-            "stadium region difference");
-    printf("stadium box=%dx%d label=(%d,%d,%d,%d) outside=(%ld,%ld,%ld,%ld) region=%d\n", box.width,
-           box.height, label.x, label.y, label.width, label.height, outside.left, outside.top,
-           outside.right, outside.bottom, result);
+            "native shape region difference");
+    printf("shape=%u box=%dx%d label=(%d,%d,%d,%d) outside=(%ld,%ld,%ld,%ld) region=%d\n",
+           (unsigned)shape, box.width, box.height, label.x, label.y, label.width, label.height,
+           outside.left, outside.top, outside.right, outside.bottom, result);
     DeleteObject(difference);
     DeleteObject(text);
-    DeleteObject(shape);
+    DeleteObject(outline);
     return result == NULLREGION;
 }
-static void stadium_label(const struct diagram_request *_Nonnull request,
-                          const struct image_work *_Nonnull work, const char *_Nullable output,
-                          const char *_Nonnull name)
+static bool shape_label(const struct diagram_request *_Nonnull request,
+                        const struct image_work *_Nonnull work, const char *_Nullable output,
+                        const char *_Nonnull name)
 {
     struct image_bitmap *bitmap = render(request, work);
     if (output != nullptr)
         write_bitmap(bitmap, output, name);
     image_bitmap_destroy(bitmap);
     struct diagram_model *_Nullable model = nullptr;
-    require(mermaid_diagram_create(request->source, &model) == DIAGRAM_ACCEPTED, "stadium model");
+    require(mermaid_diagram_create(request->source, &model) == DIAGRAM_ACCEPTED, "shape model");
     struct diagram_canvas *_Nullable canvas = nullptr;
-    require(diagram_canvas_create(request, &canvas) == IMAGE_READY, "stadium native font");
+    require(diagram_canvas_create(request, &canvas) == IMAGE_READY, "shape native font");
     struct diagram_metrics *_Nullable metrics = nullptr;
     require(diagram_canvas_measure(canvas, model, work, &metrics) == IMAGE_READY,
-            "stadium actual multiline metrics");
-    struct diagram_size text =
-        diagram_metrics_at(metrics, diagram_model_node_at(model, 0).label, DIAGRAM_TEXT_BODY);
-    struct diagram_size size = diagram_geometry_node(text, DIAGRAM_STADIUM);
+            "shape actual multiline metrics");
+    struct diagram_node node = diagram_model_node_at(model, 0);
+    struct diagram_size text = diagram_metrics_at(metrics, node.label, DIAGRAM_TEXT_BODY);
+    struct diagram_size size = diagram_geometry_node(text, node.shape);
     struct diagram_rect box = {0, 0, size.width, size.height};
-    struct diagram_rect label = diagram_geometry_label(box, text, DIAGRAM_STADIUM);
-    bool contained = stadium_contains(box, label);
+    struct diagram_rect label = diagram_geometry_label(box, text, node.shape);
+    printf("%s: ", name);
+    bool contained = label_inside_shape(node.shape, box, label);
     diagram_metrics_destroy(metrics);
     diagram_canvas_destroy(canvas);
     diagram_model_destroy(model);
-    require(contained, "multiline stadium label stays inside the curved border");
+    return contained;
 }
 static void stadium_labels(const struct image_work *_Nonnull work, const char *_Nullable output)
 {
@@ -215,10 +223,73 @@ static void stadium_labels(const struct image_work *_Nonnull work, const char *_
         for (size_t theme = 0; theme < 2; ++theme)
         {
             struct diagram_request request = request_for(source, themes[theme]);
-            stadium_label(&request, work, output, names[index * 2 + theme]);
+            require(shape_label(&request, work, output, names[index * 2 + theme]),
+                    "multiline stadium label stays inside the curved border");
         }
         note_text_destroy(source);
     }
+}
+static struct note_text *_Nonnull polygon_source(size_t shape, size_t lines)
+{
+    const char *openings[] = {"{{", "[/", "[\\", "[/", "[\\", ">"};
+    const char *closings[] = {"}}", "/]", "\\]", "\\]", "/]", "]"};
+    char source[1024] = "flowchart TB\nA";
+    require(strcat_s(source, sizeof source, openings[shape]) == 0 &&
+                strcat_s(source, sizeof source, "\"") == 0,
+            "polygon fixture opening");
+    for (size_t line = 0; line < lines; ++line)
+    {
+        require(strcat_s(source, sizeof source, "あいうえおかきくけこさしすせ") == 0,
+                "polygon fixture line");
+        if (line + 1 < lines)
+            require(strcat_s(source, sizeof source, "<br/>") == 0, "polygon fixture break");
+    }
+    require(strcat_s(source, sizeof source, "\"") == 0 &&
+                strcat_s(source, sizeof source, closings[shape]) == 0,
+            "polygon fixture closing");
+    return text_for(source);
+}
+static size_t polygon_label(const struct image_work *_Nonnull work, const char *_Nullable output,
+                            size_t shape, size_t lines)
+{
+    struct note_text *source = polygon_source(shape, lines);
+    const enum folio_theme themes[] = {FOLIO_THEME_LIGHT, FOLIO_THEME_DARK};
+    size_t outside = 0;
+    for (size_t theme = 0; theme < 2; ++theme)
+    {
+        char name[64];
+        require(sprintf_s(name, sizeof name, "polygon-%zu-%zu-%zu", shape, lines, theme) > 0,
+                "polygon artifact name");
+        struct diagram_request request = request_for(source, themes[theme]);
+        if (!shape_label(&request, work, output, name))
+            ++outside;
+    }
+    note_text_destroy(source);
+    return outside;
+}
+static void polygon_labels(const struct image_work *_Nonnull work, const char *_Nullable output)
+{
+    size_t outside = 0;
+    for (size_t shape = 0; shape < 6; ++shape)
+    {
+        outside += polygon_label(work, output, shape, 1);
+        outside += polygon_label(work, output, shape, 8);
+    }
+    printf("polygon labels outside the native border: %zu of 24\n", outside);
+    require(outside == 0, "polygon labels stay inside the sloping native border");
+}
+static bool label_tests(const struct image_work *_Nonnull work, int argc,
+                        char *_Nonnull *_Nonnull argv)
+{
+    bool stadium_only = argc >= 2 && strcmp(argv[1], "--stadium") == 0;
+    bool polygons_only = argc >= 2 && strcmp(argv[1], "--polygons") == 0;
+    bool selected = stadium_only || polygons_only;
+    const char *output = selected && argc == 3 ? argv[2] : nullptr;
+    if (!polygons_only)
+        stadium_labels(work, output);
+    if (!stadium_only)
+        polygon_labels(work, output);
+    return selected;
 }
 static void cancellation(const struct image_work *_Nonnull work)
 {
@@ -344,9 +415,7 @@ int main(int argc, char *_Nonnull *_Nonnull argv)
     require(image_adapter_create(root, &adapter) == IMAGE_READY, "single media worker");
     struct image_port port = image_adapter_port(adapter);
     struct image_work work = {.adapter = adapter, .cancelled = cancelled, .progress = progress};
-    bool stadium_only = argc >= 2 && strcmp(argv[1], "--stadium") == 0;
-    stadium_labels(&work, stadium_only && argc == 3 ? argv[2] : nullptr);
-    if (!stadium_only)
+    if (!label_tests(&work, argc, argv))
     {
         measured_roles(&work);
         render_cases(&work, argc == 2 ? argv[1] : nullptr);

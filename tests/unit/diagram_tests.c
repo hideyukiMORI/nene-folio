@@ -398,6 +398,33 @@ static void stadium_label_clearance(void)
     require(compact.width == 252 && compact.height == 42,
             "a one-line stadium retains its established compact dimensions");
 }
+static void sloped_label_clearance(void)
+{
+    const enum diagram_shape shapes[] = {
+        DIAGRAM_HEXAGON,   DIAGRAM_PARALLELOGRAM,     DIAGRAM_PARALLELOGRAM_REVERSE,
+        DIAGRAM_TRAPEZOID, DIAGRAM_TRAPEZOID_REVERSE, DIAGRAM_ASYMMETRIC};
+    const int widths[] = {0, 1, 14, 28, 29, 30, 31, 32, 33, 196, 200, 4096};
+    for (size_t shape = 0; shape < sizeof shapes / sizeof shapes[0]; ++shape)
+        for (size_t width = 0; width < sizeof widths / sizeof widths[0]; ++width)
+        {
+            struct diagram_size text = {widths[width], 164};
+            struct diagram_size size = diagram_geometry_node(text, shapes[shape]);
+            int padded = text.width + diagram_node_padding_x * 2;
+            require(size.width * (diagram_polygon_slope_divisor - 2) >=
+                        padded * diagram_polygon_slope_divisor,
+                    "the straight central band reserves the label and horizontal padding");
+            require(size.width >= 64 && size.height == 188,
+                    "sloped shapes preserve minimum width and measured vertical padding");
+        }
+    struct diagram_size small =
+        diagram_geometry_node((struct diagram_size){14, 1}, DIAGRAM_HEXAGON);
+    require(small.width == 70 && small.height == 40,
+            "compact sloped nodes preserve their existing width and minimum height");
+    struct diagram_size subroutine =
+        diagram_geometry_node((struct diagram_size){196, 164}, DIAGRAM_SUBROUTINE);
+    require(subroutine.width == 252 && subroutine.height == 188,
+            "subroutine separators retain their distinct existing width reservation");
+}
 static void shared_text_roles(void)
 {
     struct diagram_model *model = parsed("flowchart TB\nA[shared] -->|shared| B[next]");
@@ -1157,6 +1184,7 @@ void run_diagram_tests(void)
     group_heading_clearance();
     shaped_label_clearance();
     stadium_label_clearance();
+    sloped_label_clearance();
     shared_text_roles();
     sequence_features();
     sequence_arrow_meaning();
