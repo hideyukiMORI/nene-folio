@@ -7,14 +7,13 @@ hideの新指示で、停止まで調査・試験・計測・必要な修正を�
 開始時mainは`ab7b732`、origin/main一致・clean、open PRなし。#541/PR542のCI41660944733は成功。
 
 今朝のMermaid構文・cache・輪郭/接続・文字の重なりの修正は、#573まで必須CI成功・main統合・通常反映・data照合・保全整理が完了。
-性能記録#559/#569、資源記録#561、文区切り記録#575も完了した。最新mainは`6deb9b6`、通常exeのsourceは`2c4768a`。
+性能記録#559/#569、資源記録#561、文区切り記録#575、拒否/復帰記録#578も完了した。最新mainは`6e11fb9`、通常exeのsourceは`2c4768a`。
 各案件の`D:/NeNeFolio/agents/<task>/integration-completion.json`を確定原本とし、詳細は日報・引き継ぎを参照する。
 
-現在は#578の拒否/復帰記録。22入力と訂正1入力の直接生成46件・拒否要求92件を観測し、
-直後の正常生成92件は基準とbytes/hash一致した。初回試験側の期待誤りと面積fixture訂正を分離して記録。
-製品/test変更なし。全試行と限界は[品質記録](../quality/2026-11-04-diagram-rejections.md)。最終CI/統合・通常exe照合・保全整理へ進む。
-確定値は`D:/NeNeFolio/agents/diagram-rejections-20261104/integration-completion.json`へ。
-次の#577は非表示辺のラベル欠落。製品未変更の観測とIssue/clean作業木まで準備済みで、回帰再現と必要な修正が残る。
+現在は#577。非表示辺のラベル40件の欠落を48図で再現し、線を隠したまま文字を描く修正を実施した。
+native1112checks・全56ラベル欠落/上書き0、core図対象・規約確認成功。対照16画像は前後hash一致。
+全試行と限界は[品質記録](../quality/2026-11-04-invisible-edge-labels.md)。最終CI/統合・通常反映・data照合・保全整理へ進む。
+確定値は`D:/NeNeFolio/agents/577-invisible-edge-labels/integration-completion.json`へ。
 停止指示まで品質改善を継続する。実app/実ノートを試験へ使わず、新候補は実行再現してから修正を判断する。
 
 日報・次回の詳細は[11月4日の日報](../reports/2026-11-04.md)と[引き継ぎ書](../handoffs/2026-11-04.md)。
