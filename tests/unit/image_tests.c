@@ -306,6 +306,23 @@ static void destination_literals(void)
         const char *raw;
         const char *target;
     } cases[] = {
+        {"[![a](b](c))", "b](c)", "b](c)"},
+        {"[![a](b]x)", "b]x", "b]x"},
+        {"[![a](b[c)](v)", "b[c", "b[c"},
+        {"[![a](b (title]x))](v)", "b", "b"},
+        {"![x](images/a`b.png) `code`", "images/a`b.png", "images/a`b.png"},
+        {"![x](<images/a`b.png>) `code`", "images/a`b.png", "images/a`b.png"},
+        {"![x](images/plain.png \"a`b\") `code`", "images/plain.png", "images/plain.png"},
+        {"![x](images/plain.png 'a`b') `code`", "images/plain.png", "images/plain.png"},
+        {"![x](images/plain.png (a`b)) `code`", "images/plain.png", "images/plain.png"},
+        {"![x](images/a``b.png) ``code``", "images/a``b.png", "images/a``b.png"},
+        {"![x](images/a%60b.png) `code`", "images/a%60b.png", "images/a`b.png"},
+        {"![x](images/a\\`b.png) `code`", "images/a\\`b.png", "images/a`b.png"},
+        {"![x](images/日本`語.png) `code`", "images/日本`語.png", "images/日本`語.png"},
+        {"[![x](images/a`b.png)](https://example.com) `code`", "images/a`b.png", "images/a`b.png"},
+        {"> - ![x](images/a`b.png) `code`\r\n", "images/a`b.png", "images/a`b.png"},
+        {"| A | B |\n| -- | -- |\n| ![x](images/a`b.png) `code` | end |", "images/a`b.png",
+         "images/a`b.png"},
         {"![x](<images/open(.png>)", "images/open(.png", "images/open(.png"},
         {"![x](<images/close).png>)", "images/close).png", "images/close).png"},
         {"![x](images/plain.png \"caption(\")", "images/plain.png", "images/plain.png"},
@@ -361,6 +378,29 @@ static void destination_boundaries(void)
     for (size_t index = 0; index < 3; ++index)
         require(strcmp(image_source_target(markdown_images_at(images, index)), targets[index]) == 0,
                 "each adjacent image retains its own complete target");
+    markdown_rtf_destroy(rendered);
+    note_text_destroy(body);
+}
+static void destination_backtick_neighbors(void)
+{
+    const char *source = "![x](images/a`b.png) ![y](images/c`d.png) `code`";
+    struct note_text *body = text(source);
+    struct markdown_rtf *rendered = render(body);
+    const struct markdown_images *images = markdown_rtf_images(rendered);
+    require(markdown_images_count(images) == 2, "backticks in separate paths never pair together");
+    const char *targets[] = {"images/a`b.png", "images/c`d.png"};
+    for (size_t index = 0; index < 2; ++index)
+    {
+        const struct image_source *image = markdown_images_at(images, index);
+        struct note_search_span span = image_source_span(image);
+        require(strcmp(image_source_target(image), targets[index]) == 0 &&
+                    span.end - span.start == strlen(targets[index]) &&
+                    memcmp(source + span.start, targets[index], span.end - span.start) == 0,
+                "each image retains its target and original source extent");
+    }
+    require(strstr(markdown_rtf_text(rendered), "{\\f1\\fs20\\cf4 code}") != nullptr,
+            "code following both images keeps its own paired delimiters");
+    require(strcmp(note_text_bytes(body), source) == 0, "neighbor image source is unchanged");
     markdown_rtf_destroy(rendered);
     note_text_destroy(body);
 }
@@ -739,6 +779,7 @@ void run_image_tests(void)
     parser_contract();
     destination_literals();
     destination_boundaries();
+    destination_backtick_neighbors();
     image_limits();
     export_contract();
     export_failures();
