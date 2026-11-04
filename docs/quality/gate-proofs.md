@@ -1037,3 +1037,9 @@ native1112checks、core図対象、規約確認成功。線/矢頭非表示を�
 4seedと20tokenのcodepoint境界挿入/置換/削除/切断から、重複を除いた15,642入力を固定Debug corelibで解析した。
 4,681受理/4,599不正構文/6,362未対応。部分model公開・原文変更・公開参照範囲違反・sanitizer診断なし、native/評価/記録側0。
 全recipe/corpus/全行を保存。個別の文法分類の正しさ・layout・全heap等へ保証を拡張しない。製品/test/gate変更なし。[品質記録](2026-11-04-diagram-mutations.md)へ。
+
+## 2026-11-04 — Mermaidラベルの表記同値性（#585）
+
+9用途×7表記×明暗で126件の実model labelを期待UTF-8と照合し、基準18画像に対する変形108画像の全SHA一致を確認した。
+数値/基本6名の文字参照、quote/backslash/newlineの表記を比較。native/子/記録側0、診断/記録エラーなし、3画像視認。
+製品/test/gate変更なし。全63原文/9期待文字列/126画像と保証範囲は[品質記録](2026-11-04-diagram-label-equivalence.md)へ。
