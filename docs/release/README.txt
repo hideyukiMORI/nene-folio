@@ -21,8 +21,14 @@ Do not overwrite an open app.
 
 Use the gear icon for theme, language, line numbers, minimap and version.
 Ctrl+E switches Read/Edit; Ctrl+M opens Actions; Ctrl+Shift+M toggles the minimap.
-Markdown import/export is in category menus and Actions. ZIP export contains
-note bodies only; it is not a backup of settings, order or history.
+Markdown import/export is in category menus and Actions. ZIP export includes
+saved note bodies and referenced category images/ files. Other local images
+can be collected after confirmation; HTTPS URLs remain references. A single
+Markdown export keeps image references without copying images. ZIP is not a
+backup of settings, order or history.
+Read mode displays PNG/JPEG images, basic code syntax colors, and native
+Mermaid flowcharts and sequence diagrams. Diagram sources stay in Markdown;
+unsupported syntax is reported. Remote images access their HTTPS host.
 F1 or Ctrl+P lists commands and keys. Ctrl+S saves; Alt+F4 saves and closes.
 Do not use an older binary while data/.rename.json contains unfinished work.
 

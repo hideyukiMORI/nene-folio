@@ -2,27 +2,22 @@
 
 A frameless Markdown notebook for Windows with a category drawer. Plain C (C23), Win32, no UI library.
 
-> **Status (2026-11-01):** [v1.1.0 Beta release](https://github.com/hideyukiMORI/nene-folio/releases/tag/v1.1.0) for Windows x64.
-> [Release page and assets](https://github.com/hideyukiMORI/nene-folio/releases/tag/v1.1.0).
-> It views and edits notes, keeps a short
-> history of every save, searches, filters, replaces, and manages categories, with settings for theme,
-> language and line numbers. Download `NeNeFolio-1.1.0-win-x64.zip` and `SHA256SUMS` from the release's Assets.
-> Run `NeNeFolio.exe` after extracting the whole package. The portable beta is unsigned.
-> It starts with no `data/` folder. Notes and settings use that folder by default; Settings can select another location.
-> A separate 1.1.0 Store submission candidate is prepared; Store approval and availability are not confirmed.
+> **Windows x64 portable beta:** Download the ZIP and `SHA256SUMS` from
+> [GitHub Releases](https://github.com/hideyukiMORI/nene-folio/releases).
+> Extract the whole product folder and run `NeNeFolio.exe`. The portable package is unsigned.
+> Windows 10 version 2004 or later is required. Notes and settings use `data/` beside the executable
+> by default; Settings can select another location.
 
-The current source targets the [1.2.0 Store update](docs/release/1.2.0.md), including Markdown images,
-code syntax colors and language labels, a permanent status bar, and the new application icon.
-The [1.2.0 preparation record](docs/quality/2026-11-03-store-release-1.2.0.md) distinguishes the verified
-submission package from Store certification and publication. The GitHub download above remains 1.1.0.
+The current source is **1.3.0**, including native Mermaid flowcharts and sequence diagrams,
+PNG/JPEG images, image-aware ZIP export, syntax colors, a status bar, and the new application icon.
+See the [1.3.0 changes and update instructions](docs/release/1.3.0.md) and
+[release verification record](docs/quality/2026-11-04-release-1.3.0.md).
+Package creation, GitHub publication, and Microsoft Store certification are tracked separately.
+The unsigned MSIX is a Store submission artifact, not a portable installer.
 
-The subsequent development source adds native Mermaid flowcharts and sequence diagrams, rendered after
-the body through the existing image worker. See the [supported syntax and limits](docs/MARKDOWN.md#mermaidの図).
-This change is not included in the already prepared 1.2.0 Store submission package.
-
-[Download Windows x64 ZIP](https://github.com/hideyukiMORI/nene-folio/releases/download/v1.1.0/NeNeFolio-1.1.0-win-x64.zip)
-· [SHA256SUMS](https://github.com/hideyukiMORI/nene-folio/releases/download/v1.1.0/SHA256SUMS)
-· Windows 10 version 2004 or later
+[Download and checksums](https://github.com/hideyukiMORI/nene-folio/releases)
+· [Supported Markdown and Mermaid syntax](docs/MARKDOWN.md)
+· [Import and export](docs/TRANSFER.md)
 
 ![NeNe Folio 0.2.0 showing categories and a rendered Markdown note](docs/images/0.2.0-main.png)
 
@@ -30,10 +25,9 @@ v0.2.0 with the Japanese UI, Light theme, and sample notes.
 
 ## What it does
 
-The [1.1.0 release notes](docs/release/1.1.0.md) cover the minimap, Markdown import/export,
-keyboard actions, note storage selection, and rendering and responsiveness improvements.
-They include update instructions and known limitations. The [release record](docs/quality/2026-11-01-release-1.1.0.md)
-tracks validation and the evidence for publication and download verification.
+The [1.3.0 release notes](docs/release/1.3.0.md) describe the current changes, update steps,
+and limitations. Earlier changes are retained in the [1.2.0 Store notes](docs/release/1.2.0.md)
+and [1.1.0 notes](docs/release/1.1.0.md).
 
 - **A borderless window** with a drawer on the left and a Markdown view/editor on the right. It follows
   the OS light/dark theme (or a fixed one) and Per-Monitor v2 DPI.
@@ -64,6 +58,10 @@ tracks validation and the evidence for publication and download verification.
   View-mode HTTP/HTTPS links open in the default browser
   with a left click or Ctrl+Enter (#482); dragging to select text and editing do not launch links.
   See [Markdown syntax and limits](docs/MARKDOWN.md) (Japanese).
+- **Images and diagrams**: local and HTTPS PNG/JPEG images load after the note body.
+  Lowercase `mermaid` fences render native flowcharts and sequence diagrams in the current theme.
+  Diagram sources stay as Markdown; no JavaScript runs and diagrams fetch no external resources.
+  Supported syntax and size limits are documented in [Markdown](docs/MARKDOWN.md).
 - **Simple minimap**: a bounded overview of native display lines beside
   Read/Edit shows a current-position frame with click/drag and wheel navigation.
   Headings, lists, tables, rules and code blocks have simplified shapes.
@@ -90,7 +88,8 @@ tracks validation and the evidence for publication and download verification.
 - **Markdown transfer**: import multiple UTF-8 `.md` files into a category,
   skipping existing names. Export the current note (including unsaved edits) as Markdown, or saved
   category/all notes as a ZIP. Export keeps the original note and refuses existing output files.
-  ZIP contains note bodies only, excluding settings, order and history. See [formats and limits](docs/TRANSFER.md).
+  ZIP includes referenced category `images/` files and can collect other local images after confirmation.
+  HTTPS references remain URLs. Settings, order and history are excluded. See [formats and limits](docs/TRANSFER.md).
 - **Find**: search inside the open note (Ctrl+F, `/`, `?`, `n`, `N`, F3), filter all notes
   (Ctrl+Shift+F), and regular-expression replace in the edited body (a replace field or `:%s/…/…/g`).
   In-note search sits above the body with its match count, Previous / Next, and Close controls.
@@ -242,4 +241,4 @@ on completion. History closes if the required save clears its rows. There is no 
 
 MIT. See [LICENSE](LICENSE).
 
-The current development build uses one [application icon master](docs/design/app-icon.md) for native Windows and MSIX assets. This does not update the already published 1.1.0 Beta or its Store submission.
+The application uses one [icon master](docs/design/app-icon.md) for native Windows and MSIX assets.

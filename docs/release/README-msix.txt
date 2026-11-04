@@ -11,12 +11,17 @@ the next launch. Changing the location does not copy or move existing notes.
 
 Use the gear icon for theme, language, line numbers, minimap and version.
 Ctrl+E switches Read/Edit; Ctrl+M opens Actions; Ctrl+Shift+M toggles the minimap.
-Markdown ZIP export contains note bodies only and is not a complete backup.
+Markdown ZIP export includes saved note bodies and referenced category
+images/ files. Other local images can be collected after confirmation;
+HTTPS URLs remain references. ZIP is not a complete backup of settings,
+category order or history. Single Markdown export keeps image references.
 F1 or Ctrl+P lists commands and keys. Ctrl+S saves; Alt+F4 saves and closes.
 Read mode displays local or HTTPS PNG/JPEG images, basic code syntax colors
 and the specified code language. The bottom status bar shows saved-file dates.
-Remote images access their HTTPS host. Image files are not copied into notes
-or included in Markdown ZIP exports; keep local images with the note folder.
+Remote images access their HTTPS host. Native Mermaid flowcharts and
+sequence diagrams render in Read mode; diagram sources remain in Markdown.
+Unsupported diagram syntax is reported. Keep local images with the notes;
+viewing images does not automatically copy them into the note folder.
 Do not use an older binary while the note folder contains unfinished
 .rename.json work. Close the app before updating it.
 
