@@ -357,6 +357,77 @@ static void export_contract(void)
     image_export_destroy(images);
     note_text_destroy(body);
 }
+static void archive_path_pair(const char *_Nonnull first, const char *_Nonnull second,
+                              enum note_archive_outcome expected)
+{
+    struct archive_assets *_Nullable files = nullptr;
+    require(archive_assets_create(&files) == NOTE_ARCHIVE_READY, "path conflict collection");
+    struct archive_file file = {.path = first, .bytes = "x", .length = 1};
+    require(archive_assets_append(files, file) == NOTE_ARCHIVE_READY, "first ZIP file");
+    file = (struct archive_file){.path = second, .bytes = "y", .length = 1};
+    require(archive_assets_append(files, file) == expected,
+            "ZIP files cannot occupy an ancestor or descendant file path");
+    size_t count = expected == NOTE_ARCHIVE_READY ? 2 : 1;
+    require(archive_assets_count(files) == count &&
+                strcmp(archive_assets_at(files, 0)->path, first) == 0 &&
+                archive_assets_at(files, 0)->length == 1 &&
+                archive_assets_at(files, 0)->bytes[0] == 'x',
+            "conflict preserves earlier file ownership and bytes");
+    file = (struct archive_file){.path = "Z/after.png", .bytes = "z", .length = 1};
+    require(archive_assets_append(files, file) == NOTE_ARCHIVE_READY &&
+                archive_assets_count(files) == count + 1,
+            "normal append remains usable after a refused path");
+    archive_assets_destroy(files);
+}
+static void archive_path_conflicts(void)
+{
+    static const struct
+    {
+        const char *first;
+        const char *second;
+        enum note_archive_outcome expected;
+    } cases[] = {
+        {"A/images/_nenefolio", "A/images/_nenefolio/1.png", NOTE_ARCHIVE_INVALID},
+        {"A/images/_nenefolio/1.png", "A/images/_nenefolio", NOTE_ARCHIVE_INVALID},
+        {"A/IMAGES/_NeNeFolio", "a/images/_nenefolio/1.png", NOTE_ARCHIVE_INVALID},
+        {"a/images/_nenefolio/1.png", "A/IMAGES/_NeNeFolio", NOTE_ARCHIVE_INVALID},
+        {"A/images/folder/file.png", "A/images", NOTE_ARCHIVE_INVALID},
+        {"A", "A/images/a.png", NOTE_ARCHIVE_INVALID},
+        {"A/images/a.png", "a/IMAGES/A.PNG", NOTE_ARCHIVE_INVALID},
+        {"作品/画像/図", "作品/画像/図/一.png", NOTE_ARCHIVE_INVALID},
+        {"A/images/foo", "A/images/foobar.png", NOTE_ARCHIVE_READY},
+        {"A/images/foobar.png", "A/images/foo", NOTE_ARCHIVE_READY},
+        {"A/images/a.png", "A/images/b.png", NOTE_ARCHIVE_READY},
+        {"A/images/_nenefolio/1.png", "A/images/_nenefolio/2.png", NOTE_ARCHIVE_READY},
+        {"A/images/a.png", "B/images/a.png", NOTE_ARCHIVE_READY},
+        {"作品/画像/図", "作品/画像/図表.png", NOTE_ARCHIVE_READY},
+    };
+    for (size_t index = 0; index < sizeof cases / sizeof cases[0]; ++index)
+        archive_path_pair(cases[index].first, cases[index].second, cases[index].expected);
+}
+static void export_path_conflicts(void)
+{
+    static const char *sources[] = {
+        "![inside](images/_nenefolio)\n![outside](../outside.png)",
+        "![outside](../outside.png)\n![inside](images/_nenefolio)",
+        "![inside](images/_NeNeFolio)\n![outside](../outside.png)",
+    };
+    for (size_t index = 0; index < sizeof sources / sizeof sources[0]; ++index)
+    {
+        struct note_text *body = text(sources[index]);
+        struct archive_note entry = {.category = "A", .name = "one", .body = body};
+        struct image_export *_Nullable images = nullptr;
+        require(image_export_create(test_image_port(), IMAGE_EXPORT_ALL_LOCAL, 1, &images) ==
+                    FOLIO_STATE_READY,
+                "prepare potentially conflicting images");
+        require(image_export_append(images, &entry) == FOLIO_STATE_EXPORT_IMAGE_UNREADABLE,
+                "conflicting ZIP paths reject the export before publishing an archive");
+        require(entry.body == body && strcmp(note_text_bytes(body), sources[index]) == 0,
+                "failed image export leaves the source Markdown untouched");
+        image_export_destroy(images);
+        note_text_destroy(body);
+    }
+}
 static void export_failures(void)
 {
     struct note_text *body = text("![lost](images/missing.png)");
@@ -583,6 +654,8 @@ void run_image_tests(void)
     image_limits();
     export_contract();
     export_failures();
+    archive_path_conflicts();
+    export_path_conflicts();
     state_cancellation();
     diagram_state();
     allocation_contract();

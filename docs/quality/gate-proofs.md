@@ -1081,3 +1081,14 @@ JPEG診断2858行/46種とFAIL2行も各版rawに残し、失敗を成功へ書�
 全試行/原本/限界は[品質記録](2026-11-04-image-decode-mutations.md)。原本は`D:/NeNeFolio/agents/image-decode-mutations-20261104`。
 最終CI/統合/通常exe照合/保全整理の確定値はintegration-completion.jsonへ。
 追加waiverなし（WVR-0001既存範囲のみ）、実app/実ノート/Store操作なし。停止まで品質改善を続ける。
+
+## ZIP内のファイルとフォルダーのパス衝突を拒否 — #593
+
+画像`images/_nenefolio`と外部画像の同梱で、同じパスがファイルとフォルダーを兼ねるZIPを両参照順序で再現した。
+既存archive_assetsの追加時にASCII同一視で完全同名/祖先/子孫を拒否し、既存の画像書き出し失敗へ返す。
+対象unitは14path対とapplication3入力、修正前red/修正後green。元集合/原文保持と拒否後正常追加も確認した。
+固定Debug/tidy、関連規約、実画像nativeと独立ZIP確認が成功。衝突2件はZIPなし、正常対照は修正前と全bytes/SHA一致。
+初期の未生成exe記録125と展開例外捕捉不足も失敗のまま保持。全試行と限界は[品質記録](2026-11-04-archive-path-conflicts.md)。
+製品1/unit1と7docsを変更、公開API/schema/版/依存/gate不変。追加waiverなし（WVR-0001既存範囲のみ）。
+原本は`D:/NeNeFolio/agents/593-archive-path-conflicts`。最終CI/統合/通常反映/data照合/保全整理はintegration-completion.jsonへ。
+任意reader/Unicode比較/全heap/性能/実UIは未保証。停止指示まで品質改善を続ける。
