@@ -961,3 +961,11 @@ Windows11 build26300、固定CMake Release、実Noto Sans JPで旧3入力と修�
 resources-01は15条件完了後に診断入力の想定違いで終了1、未完2条件だけのresources-02は終了0。
 完了済み条件のraw記録を明示して再利用し、run全体の失敗を成功へ読み替えない。
 全heapや任意入力/競合の保証へ広げない。全試行・観測範囲は[資源記録](2026-11-04-mermaid-resources.md)へ。
+
+## 2026-11-04 — sequence枠見出しの重なり（#563）
+
+Windows実Noto Sans JP/GDIで6図×明暗12全図と同じscene/font/座標の見出し単独画像を比較した。
+`diagram_render_tests --frame-headings`は修正前22/24見出しで1880px上書き、修正後は24件すべて差0、386checks成功。
+見出し境界1logical pxを除く内部を検査し、見出し領域外の全pixelと参照12枚/短い対照2枚は修正前後で不変。
+修正前3全図+参照1枚、修正後6全図を視認し、背景線/activationが文字を隠さないことを確認した。
+core図対象も成功。全DPI/書体や実機受理へは広げない。全試行と範囲は[品質記録](2026-11-04-sequence-frame-headings.md)へ。
