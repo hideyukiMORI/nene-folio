@@ -563,6 +563,144 @@ static bool lifeline_tests(const struct image_work *_Nonnull work, int argc,
     require(missed == 0, "lifelines connect their own participant headers");
     return selected;
 }
+static bool frame_heading(const struct diagram_primitive *_Nonnull primitive)
+{
+    return primitive->kind == DIAGRAM_PRIMITIVE_TEXT && primitive->fill == DIAGRAM_INK_GROUP &&
+           primitive->role == DIAGRAM_TEXT_CAPTION;
+}
+static struct diagram_scene *_Nonnull heading_scene(const struct diagram_scene *_Nonnull source)
+{
+    struct diagram_scene *_Nullable result = nullptr;
+    require(diagram_scene_create(&result) == DIAGRAM_ACCEPTED, "isolated heading scene");
+    for (size_t index = 0; index < diagram_scene_count(source); ++index)
+    {
+        const struct diagram_primitive *primitive = diagram_scene_at(source, index);
+        if (frame_heading(primitive))
+            require(diagram_scene_append(result, primitive) == DIAGRAM_ACCEPTED,
+                    "copy the actual heading primitive");
+    }
+    require(diagram_scene_count(result) > 0 &&
+                diagram_scene_seal(result, diagram_scene_size(source)) == DIAGRAM_ACCEPTED,
+            "heading scene keeps actual coordinates and canvas extent");
+    return result;
+}
+static const unsigned char *_Nonnull bitmap_pixels(const struct image_bitmap *_Nonnull bitmap)
+{
+    const unsigned char *bytes = image_bitmap_bytes(bitmap);
+    require(image_bitmap_length(bitmap) >= 14 && bytes[0] == 'B' && bytes[1] == 'M',
+            "bitmap file header");
+    size_t offset = 0;
+    for (size_t index = 0; index < 4; ++index)
+        offset |= (size_t)bytes[10 + index] << (index * 8);
+    struct image_size size = image_bitmap_size(bitmap);
+    require(offset <= image_bitmap_length(bitmap) &&
+                image_bitmap_length(bitmap) - offset == (size_t)size.width * size.height * 4,
+            "packed BGRA bitmap body");
+    return bytes + offset;
+}
+static size_t heading_pixels(const struct image_bitmap *_Nonnull actual,
+                             const struct image_bitmap *_Nonnull reference,
+                             struct diagram_rect bounds)
+{
+    struct image_size size = image_bitmap_size(actual);
+    struct image_size expected_size = image_bitmap_size(reference);
+    require(size.width == expected_size.width && size.height == expected_size.height &&
+                bounds.x >= 0 && bounds.y >= 0 && bounds.width > 2 && bounds.height > 2 &&
+                bounds.x + bounds.width <= (int)size.width &&
+                bounds.y + bounds.height <= (int)size.height,
+            "heading pixel bounds");
+    const unsigned char *pixels = bitmap_pixels(actual);
+    const unsigned char *expected = bitmap_pixels(reference);
+    size_t changed = 0;
+    for (int y = bounds.y + 1; y < bounds.y + bounds.height - 1; ++y)
+        for (int x = bounds.x + 1; x < bounds.x + bounds.width - 1; ++x)
+        {
+            size_t offset = ((size_t)y * size.width + (size_t)x) * 4;
+            if (memcmp(pixels + offset, expected + offset, 4) != 0)
+                ++changed;
+        }
+    printf("heading box=(%d,%d,%d,%d) overwritten-pixels=%zu\n", bounds.x, bounds.y, bounds.width,
+           bounds.height, changed);
+    return changed;
+}
+static size_t frame_heading_case(const struct diagram_request *_Nonnull request,
+                                 const struct image_work *_Nonnull work,
+                                 const char *_Nullable output, const char *_Nonnull name)
+{
+    struct diagram_model *_Nullable model = nullptr;
+    require(mermaid_diagram_create(request->source, &model) == DIAGRAM_ACCEPTED, "heading model");
+    struct diagram_canvas *_Nullable canvas = nullptr;
+    require(diagram_canvas_create(request, &canvas) == IMAGE_READY, "heading actual fonts");
+    struct diagram_metrics *_Nullable metrics = nullptr;
+    require(diagram_canvas_measure(canvas, model, work, &metrics) == IMAGE_READY,
+            "heading actual measurements");
+    struct diagram_scene *_Nullable scene = nullptr;
+    require(diagram_layout_create(model, metrics, &scene) == DIAGRAM_ACCEPTED, "heading layout");
+    struct diagram_scene *headings = heading_scene(scene);
+    struct image_bitmap *_Nullable reference = nullptr;
+    require(diagram_canvas_draw(canvas, headings, work, &reference) == IMAGE_READY,
+            "isolated headings use the same GDI canvas");
+    struct image_bitmap *actual = render(request, work);
+    if (output != nullptr)
+    {
+        write_bitmap(actual, output, name);
+        char isolated_name[96];
+        require(sprintf_s(isolated_name, sizeof isolated_name, "%s-isolated", name) > 0,
+                "isolated heading artifact name");
+        write_bitmap(reference, output, isolated_name);
+    }
+    size_t changed = 0;
+    printf("heading case=%s count=%zu\n", name, diagram_scene_count(headings));
+    for (size_t index = 0; index < diagram_scene_count(headings); ++index)
+        changed += heading_pixels(actual, reference, diagram_scene_at(headings, index)->bounds);
+    image_bitmap_destroy(actual);
+    image_bitmap_destroy(reference);
+    diagram_scene_destroy(headings);
+    diagram_scene_destroy(scene);
+    diagram_metrics_destroy(metrics);
+    diagram_canvas_destroy(canvas);
+    diagram_model_destroy(model);
+    return changed;
+}
+static bool frame_heading_tests(const struct image_work *_Nonnull work, int argc,
+                                char *_Nonnull *_Nonnull argv)
+{
+    bool selected = argc >= 2 && strcmp(argv[1], "--frame-headings") == 0;
+    if (argc >= 2 && !selected)
+        return false;
+    const char *sources[] = {
+        sequence,
+        ("sequenceDiagram\nparticipant A\nloop 長い条件の見出しを生命線から保護する\n"
+         "A->>A: 実行\nend"),
+        ("sequenceDiagram\nparticipant A\nA->>+A: 開始\nloop 活性区間が見出しに重なる条件\n"
+         "A->>A: 処理\nend\nA-->>-A: 終了"),
+        ("sequenceDiagram\nparticipant A\nparticipant B\nloop 外側の見出し\n"
+         "alt 内側の分岐条件\nA->>B: 成功\nelse 代わりの分岐条件\nB-->>A: 失敗\nend\nend"),
+        ("sequenceDiagram\nparticipant A\nparticipant B\npar 並行処理の見出し\nA->>B: 一番\n"
+         "and 別の並行処理\nB-->>A: 二番\nend\ncritical 保護する処理の見出し\n"
+         "A->>B: 保存\noption 代替手順の見出し\nB-->>A: 再試行\nend"),
+        ("sequenceDiagram\nparticipant A as 左端を十分に広げる長い参加者名\n"
+         "opt x\nA->>A: 対照\nend")};
+    const enum folio_theme themes[] = {FOLIO_THEME_LIGHT, FOLIO_THEME_DARK};
+    const char *output = selected && argc == 3 ? argv[2] : nullptr;
+    size_t changed = 0;
+    for (size_t index = 0; index < 6; ++index)
+    {
+        struct note_text *source = text_for(sources[index]);
+        for (size_t theme = 0; theme < 2; ++theme)
+        {
+            struct diagram_request request = request_for(source, themes[theme]);
+            char name[64];
+            require(sprintf_s(name, sizeof name, "frame-heading-%zu-%zu", index, theme) > 0,
+                    "frame heading artifact name");
+            changed += frame_heading_case(&request, work, output, name);
+        }
+        note_text_destroy(source);
+    }
+    printf("frame heading overwritten pixels: %zu\n", changed);
+    require(changed == 0, "frame heading interiors match their unobstructed native rendering");
+    return selected;
+}
 static void cancellation(const struct image_work *_Nonnull work)
 {
     struct note_text *source = text_for(sequence);
@@ -687,8 +825,8 @@ int main(int argc, char *_Nonnull *_Nonnull argv)
     require(image_adapter_create(root, &adapter) == IMAGE_READY, "single media worker");
     struct image_port port = image_adapter_port(adapter);
     struct image_work work = {.adapter = adapter, .cancelled = cancelled, .progress = progress};
-    if (!lifeline_tests(&work, argc, argv) && !attachment_tests(&work, argc, argv) &&
-        !label_tests(&work, argc, argv))
+    if (!frame_heading_tests(&work, argc, argv) && !lifeline_tests(&work, argc, argv) &&
+        !attachment_tests(&work, argc, argv) && !label_tests(&work, argc, argv))
     {
         measured_roles(&work);
         render_cases(&work, argc == 2 ? argv[1] : nullptr);

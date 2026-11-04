@@ -310,12 +310,17 @@ static void emit_lifelines(struct diagram_sequence_layout *_Nonnull layout)
                  .points = {{layout->x[actor], layout->header_y + layout->actors[actor].height},
                             {layout->x[actor], layout->bottom}}});
 }
+static struct diagram_rect frame_bounds(const struct diagram_sequence_layout *_Nonnull layout,
+                                        size_t index)
+{
+    int inset = 12 + (int)layout->depth[index] * 12;
+    return (struct diagram_rect){inset, layout->y[index], layout->extent.width - inset * 2,
+                                 layout->end[index] - layout->y[index]};
+}
 static void emit_frame(struct diagram_sequence_layout *_Nonnull layout, size_t index)
 {
     struct diagram_event event = diagram_model_event_at(layout->model, index);
-    int inset = 12 + (int)layout->depth[index] * 12;
-    struct diagram_rect bounds = {inset, layout->y[index], layout->extent.width - inset * 2,
-                                  layout->end[index] - layout->y[index]};
+    struct diagram_rect bounds = frame_bounds(layout, index);
     if (event.kind == DIAGRAM_FRAME_OPEN)
         emit(layout, (struct diagram_primitive){.kind = DIAGRAM_PRIMITIVE_SHAPE,
                                                 .shape = DIAGRAM_RECTANGLE,
@@ -331,6 +336,11 @@ static void emit_frame(struct diagram_sequence_layout *_Nonnull layout, size_t i
                          .text = diagram_none,
                          .count = 2,
                          .points = {{bounds.x, bounds.y}, {bounds.x + bounds.width, bounds.y}}});
+}
+static void emit_frame_heading(struct diagram_sequence_layout *_Nonnull layout, size_t index)
+{
+    struct diagram_event event = diagram_model_event_at(layout->model, index);
+    struct diagram_rect bounds = frame_bounds(layout, index);
     struct diagram_size text = event_size(layout, event);
     emit(layout, (struct diagram_primitive){.kind = DIAGRAM_PRIMITIVE_TEXT,
                                             .ink = DIAGRAM_INK_TEXT,
@@ -443,6 +453,15 @@ static void emit_backgrounds(struct diagram_sequence_layout *_Nonnull layout)
         if (diagram_model_event_at(layout->model, index).kind == DIAGRAM_ACTIVATE)
             emit_activation(layout, index);
 }
+static void emit_frame_headings(struct diagram_sequence_layout *_Nonnull layout)
+{
+    for (size_t index = 0; index < diagram_model_event_count(layout->model); ++index)
+    {
+        struct diagram_event event = diagram_model_event_at(layout->model, index);
+        if (event.kind == DIAGRAM_FRAME_OPEN || event.kind == DIAGRAM_FRAME_SECTION)
+            emit_frame_heading(layout, index);
+    }
+}
 static enum diagram_outcome construct(struct diagram_sequence_layout *_Nonnull layout)
 {
     measure_actors(layout);
@@ -456,6 +475,7 @@ static enum diagram_outcome construct(struct diagram_sequence_layout *_Nonnull l
         return layout->outcome;
     emit_title(layout);
     emit_backgrounds(layout);
+    emit_frame_headings(layout);
     for (size_t index = 0; index < diagram_model_event_count(layout->model); ++index)
     {
         struct diagram_event event = diagram_model_event_at(layout->model, index);
