@@ -277,6 +277,54 @@ static void sequence_features(void)
     diagram_scene_destroy(scene);
     diagram_model_destroy(model);
 }
+static void lifeline_positions(const char *_Nonnull source, const int *_Nonnull starts,
+                               int message_y)
+{
+    struct diagram_model *model = parsed(source);
+    struct diagram_scene *scene = laid_out(model);
+    size_t found = 0, messages = 0;
+    for (size_t index = 0; index < diagram_scene_count(scene); ++index)
+    {
+        const struct diagram_primitive *item = diagram_scene_at(scene, index);
+        if (item->kind != DIAGRAM_PRIMITIVE_PATH)
+            continue;
+        if (item->ink == DIAGRAM_INK_MUTED)
+        {
+            require(found < 2 && item->count == 2 && item->stroke == DIAGRAM_DASHED &&
+                        item->points[0].y == starts[found] &&
+                        item->points[0].x == item->points[1].x &&
+                        item->points[1].y == message_y + diagram_message_gap,
+                    "lifeline connects its own header while retaining the common footer");
+            ++found;
+        }
+        if (item->ink == DIAGRAM_INK_TEXT)
+        {
+            require(item->points[0].y == message_y && item->points[1].y == message_y,
+                    "lifeline extension does not move the shared message row");
+            ++messages;
+        }
+    }
+    require(found == 2 && messages == 1, "mixed header fixture keeps both lifelines and message");
+    diagram_scene_destroy(scene);
+    diagram_model_destroy(model);
+}
+static void sequence_lifeline_headers(void)
+{
+    const char *sources[] = {
+        "sequenceDiagram\nA->>B: call\n",
+        "sequenceDiagram\nactor A\nparticipant B\nA->>B: call\n",
+        "sequenceDiagram\nparticipant A\nactor B\nA->>B: call\n",
+        "sequenceDiagram\nparticipant A\nparticipant B as B<br/>B<br/>B\nA->>B: call\n",
+        "sequenceDiagram\nactor A\nactor B as B<br/>B<br/>B\nA->>B: call\n",
+        "sequenceDiagram\ntitle Report\nactor A\nparticipant B\nA->>B: call\n",
+        ("sequenceDiagram\nparticipant A as A<br/>A<br/>A\n"
+         "participant B as B<br/>B<br/>B\nA->>B: call\n")};
+    const int starts[][2] = {{58, 58},  {90, 58},  {58, 90}, {58, 94},
+                             {90, 126}, {124, 92}, {94, 94}};
+    const int messages[] = {112, 144, 144, 148, 180, 178, 148};
+    for (size_t index = 0; index < sizeof sources / sizeof sources[0]; ++index)
+        lifeline_positions(sources[index], starts[index], messages[index]);
+}
 static bool separated(struct diagram_rect first, struct diagram_rect second)
 {
     return first.x + first.width <= second.x || second.x + second.width <= first.x ||
@@ -1226,6 +1274,7 @@ void run_diagram_tests(void)
     attachment_geometry();
     shared_text_roles();
     sequence_features();
+    sequence_lifeline_headers();
     sequence_arrow_meaning();
     self_activation_arrival();
     sequence_activation_extents();

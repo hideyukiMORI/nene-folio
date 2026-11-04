@@ -300,14 +300,15 @@ static void emit_actor(struct diagram_sequence_layout *_Nonnull layout, size_t a
 static void emit_lifelines(struct diagram_sequence_layout *_Nonnull layout)
 {
     for (size_t actor = 0; actor < diagram_model_node_count(layout->model); ++actor)
-        emit(layout, (struct diagram_primitive){
-                         .kind = DIAGRAM_PRIMITIVE_PATH,
-                         .stroke = DIAGRAM_DASHED,
-                         .ink = DIAGRAM_INK_MUTED,
-                         .text = diagram_none,
-                         .count = 2,
-                         .points = {{layout->x[actor], layout->header_y + layout->header_height},
-                                    {layout->x[actor], layout->bottom}}});
+        emit(layout,
+             (struct diagram_primitive){
+                 .kind = DIAGRAM_PRIMITIVE_PATH,
+                 .stroke = DIAGRAM_DASHED,
+                 .ink = DIAGRAM_INK_MUTED,
+                 .text = diagram_none,
+                 .count = 2,
+                 .points = {{layout->x[actor], layout->header_y + layout->actors[actor].height},
+                            {layout->x[actor], layout->bottom}}});
 }
 static void emit_frame(struct diagram_sequence_layout *_Nonnull layout, size_t index)
 {

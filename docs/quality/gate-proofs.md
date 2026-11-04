@@ -934,3 +934,12 @@ Windows実Noto Sans JP/GDIで6形状×LR/RL/TB/BT×明暗48条件を描画した
 coreのdiagram対象と独立R/Oレビューも成功。同じy上の厳密交点や全DPI/実機受理とは区別する。
 試行とレビューで撤回された仮説は[品質記録](2026-11-04-flow-attachment.md)、原本は
 `D:/NeNeFolio/agents/554-flow-attachment/`へ収載する。
+
+## 2026-11-04 — 見出しに接続する生命線（#557）
+
+Windows実Noto Sans JP/GDIでactor/participant混在、複数行、同高、単独selfの6組×明暗を確認した。
+`diagram_render_tests --lifelines`は修正前24本中8本に32/41pxの空白を検出し、修正後は206checks/24本全接続。
+sceneの実headerと始端/終端を対応付け、修正前3枚・修正後6枚を視認した。同高の対照6枚は全SHA256一致。
+coreの7組の開始位置・共通footer/message行を含むdiagram対象も成功。全DPIやhideの実機受理とは区別する。
+試行と統合競合の解消は[品質記録](2026-11-04-sequence-lifelines.md)、原本は
+`D:/NeNeFolio/agents/557-sequence-lifelines/`へ収載する。
