@@ -6,13 +6,13 @@ hideの新指示で、停止まで調査・試験・計測・必要な修正を�
 現行規約の対象検証・最終head必須CI・正典統合・必要反映・整理まで進める。
 開始時mainは`ab7b732`、origin/main一致・clean、open PRなし。#541/PR542のCI41660944733は成功。
 
-今朝の修正は#597まで必須CI成功・main統合・通常反映・data照合・保全整理が完了。
-最新mainは`9124d51`、通常exe sourceも`9124d51`。#597の確定原本は同taskのintegration-completion.json。
+今朝の修正は#597まで、記録は#599まで必須CI・main統合・必要反映・保全整理が完了。
+最新mainは`a702f51`、通常exe sourceは製品入力不変の`9124d51`。確定値は各taskのintegration-completion.json。
 
-現在は#599の画像パス置換の変異診断を文書化中。6seedから11703入力を実行し、span/原文不変/画像数/新target、
-Python独立copy本文の全bytesが一致した。製品/test変更なし、5docsのみ。
-全条件と限界は[品質記録](../quality/2026-11-04-markdown-relocation-mutations.md)。最終CI/統合・通常exe不変照合・保全整理へ進む。
-確定原本は`D:/NeNeFolio/agents/markdown-relocation-mutations-20261104/integration-completion.json`へ。
+現在は#601の保存用一時名上限と公開復帰を文書化中。初回16/復帰3呼出しが期待どおり、2046占有fileと拒否対象を保持し、
+最終2063file再hash・4ZIP独立読取も成功。製品/test変更なし、5docsのみ。
+試行と限界は[品質記録](../quality/2026-11-04-atomic-publication.md)。最終CI/統合・通常exe不変照合・保全整理へ進む。
+確定原本は`D:/NeNeFolio/agents/atomic-publication-20261104/integration-completion.json`へ。
 停止指示まで品質改善を継続する。実app/実ノートを試験へ使わず、新候補は実行再現してから修正を判断する。
 
 日報・次回の詳細は[11月4日の日報](../reports/2026-11-04.md)と[引き継ぎ書](../handoffs/2026-11-04.md)。

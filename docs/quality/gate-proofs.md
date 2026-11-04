@@ -1123,3 +1123,11 @@ Release費用は6系列×4段階、旧/初案/最終を逆順も含む6process�
 span範囲/順序/原文不変/画像数と新targetが全件成立し、Python独立copy本文も全bytes一致。子/記録側0、stderr/記録エラー空。
 構文受理/拒否oracle・任意長/全Unicode/全heap/実UI/性能の証明ではない。製品/test/gate変更なし。
 生成/実行/独立照合/制限は[品質記録](2026-11-04-markdown-relocation-mutations.md)、原本はagents/markdown-relocation-mutations-20261104。
+
+
+## #601 — 一時候補上限での拒否と復帰
+
+file_bytesの置換/新規/ZIPを0/1/255/256候補の排他保持と同名宛先で観測。16初回＋3復帰すべて期待どおり、2046占有file保持。
+拒否対象のbytes/作成更新日時と、置換成功時の作成日時を保持。最終2063file再hashと4ZIP独立読取も成功。
+初回include方式のcompile失敗を保存し、抑制せず正規libraryを再利用。原子性一般/任意I/O競合/全heap/性能を保証しない。
+製品/test/gate変更なし。[品質記録](2026-11-04-atomic-publication.md)、原本agents/atomic-publication-20261104。
