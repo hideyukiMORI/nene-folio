@@ -3,16 +3,21 @@
 ## 11月5日 — hide不在中の品質改善を継続
 
 hideの現在指示は、停止の指示まで調査・試験・計測・必要な修正を続け、全試行と変更を記録すること。
-主担当は単体で実行し、保存系だけ独立読取レビューを使用した。古い停止・固定分担を新指示へ持ち込まない。
+主担当は単体で実行し、必要な保存系/本文検証の独立静読だけを委任した。古い停止・固定分担は持ち込まない。
 
-**#617は保存前の表示準備失敗で履歴を消費する問題を修正した候補。** 旧版は7番目の確保失敗でarchives1/writes0、
-候補は16確保失敗で双方0・状態保持・反復拒否・正常retryを確認した。Debug/tidyと既存保存8fixtureも成功。
-最終head必須CI・正典統合・通常反映・全保全/整理の確定状態は
-`D:/NeNeFolio/agents/617-save-preparation/integration-completion.json`へ記録する。対象検証だけで統合完了とは扱わない。
+**#616は全文ASCIIの本文検証を短縮する候補。** 5候補を比較し、非ASCIIの各文字へ追加処理を持ち込まない案を選んだ。
+固定ReleaseのASCII16MiB読込は中央値21.881850→4.093825ms、編集43.298025→26.567100ms。
+末尾だけ日本語の対照は約1〜6%増える。一般倍率や全入力の改善を主張しない。
+Debug/tidyと既存`--text-validation`（追加境界を含む）は成功。最終head必須CI/統合/通常反映/保全整理は
+`D:/NeNeFolio/agents/616-text-validation/integration-completion.json`で確定する。対象成功だけを統合完了とは扱わない。
 
-次は#616の本文検証性能調査。Issue作成までで実装/計測未着手。#458後の#460/#464も基点へ含め、過去値を現実測にしない。
+#617の保存準備失敗による履歴消費はPR618でmain`038b8b7`へ統合済み。必須CI41924699377成功、
+通常版反映後もportable data32fileの内容・作成更新日時は不変。1,573file全保全後に専用作業木/outputを整理済み。
+確定原本は`D:/NeNeFolio/agents/617-save-preparation/integration-completion.json`。
+
 全体journalは`D:/NeNeFolio/agents/quality-20261105/journal.md`。
-[品質記録](../quality/2026-11-05-save-preparation.md)・[日報](../reports/2026-11-05.md)・[引き継ぎ](../handoffs/2026-11-05.md)。
+[本文検証の品質記録](../quality/2026-11-05-ascii-validation.md)・[保存の品質記録](../quality/2026-11-05-save-preparation.md)・
+[日報](../reports/2026-11-05.md)・[引き継ぎ](../handoffs/2026-11-05.md)。
 追加waiver none、既存WVR-0001継続。実app/実ノート/Storeは試験に使っていない。
 
 ## 11月4日22時 — 1.3.0 Store申請済み（hide報告）
@@ -35,9 +40,9 @@ Store提出用MSIXと3言語更新文は`D:/NeNeFolio/releases/1.3.0/store-candi
 
 ## 通常版と実機確認の範囲
 
-通常exeは`C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`、sourceは#605の`3a40067`。
-今回のリリースは正規の別Release buildから生成し、通常exeは再ビルドしていない（版入力は1.2.0の時点）。
-通常exeのSHAは`329960e4eada9829e2941ff2a703a9b045116ff3f7e70de2796c13d59f2d137b`のまま。
+通常exeは`C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`、#617反映時sourceは`038b8b7`。
+SHA256は`1d0dbb9cc67b77e782e95bc2b56cd87bda4879193119f0c1e6c970c1c217b514`。
+#616統合後の必要反映は同taskの完了原本へ記録する。GitHub/Store配布の1.3.0 source`4359e9e`とは区別する。
 通常app/実ノートは試験に使っていない。hideによる1.3.0の実機受理は未確認。
 今回のUI確認は専用コピーでの起動/設定版/正常終了に限定し、MSIXの実インストールやStore署名版導入の試験ではない。
 

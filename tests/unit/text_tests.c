@@ -386,6 +386,144 @@ static void verify_bom_boundary(void)
     expect_first_line(raw, raw + 3, "first line uses body offsets after one signature");
 }
 
+static void verify_validation_result(const char *_Nonnull bytes, size_t length,
+                                     enum note_text_outcome expected)
+{
+    char original[64];
+    require(length <= sizeof original, "bounded validation fixture");
+    memcpy(original, bytes, length);
+    struct note_text *sentinel = nullptr;
+    require(note_text_create("kept", 4, &sentinel) == NOTE_TEXT_ACCEPTED, "validation sentinel");
+    struct note_text *text = sentinel;
+    require(note_text_create(bytes, length, &text) == expected, "file validation outcome");
+    if (expected == NOTE_TEXT_ACCEPTED)
+    {
+        require(note_text_length(text) == length &&
+                    memcmp(note_text_bytes(text), bytes, length) == 0,
+                "accepted file bytes are unchanged");
+        note_text_destroy(text);
+    }
+    if (expected != NOTE_TEXT_ACCEPTED)
+    {
+        require(text == sentinel, "rejected file preserves output");
+    }
+    text = sentinel;
+    require(note_text_from_editor(bytes, length, LINE_ENDING_LF, &text) == expected,
+            "editor validation outcome");
+    if (expected == NOTE_TEXT_ACCEPTED)
+    {
+        note_text_destroy(text);
+    }
+    if (expected != NOTE_TEXT_ACCEPTED)
+    {
+        require(text == sentinel, "rejected editor preserves output");
+    }
+    require(memcmp(bytes, original, length) == 0 && same_text(note_text_bytes(sentinel), "kept"),
+            "validation does not change input or previous output");
+    note_text_destroy(sentinel);
+}
+
+static char *_Nonnull validation_bytes(size_t length)
+{
+    char *bytes = malloc(length == 0 ? 1 : length);
+    if (bytes == nullptr)
+    {
+        test_failure("validation fixture allocation");
+        exit(1);
+    }
+    memset(bytes, 'x', length);
+    return bytes;
+}
+
+/* 終端を置かない正確な確保長と非整列先頭で、短い入力と末端の読越しを検出する。 */
+static void verify_validation_bounds(void)
+{
+    for (size_t offset = 0; offset < 8; ++offset)
+    {
+        for (size_t length = 0; length <= 40; ++length)
+        {
+            char *storage = validation_bytes(offset + length);
+            verify_validation_result(storage + offset, length, NOTE_TEXT_ACCEPTED);
+            free(storage);
+        }
+    }
+}
+
+static enum note_text_outcome single_byte_outcome(unsigned value)
+{
+    if (value == 0)
+    {
+        return NOTE_TEXT_EMBEDDED_NUL;
+    }
+    return value < 128 ? NOTE_TEXT_ACCEPTED : NOTE_TEXT_INVALID_UTF8;
+}
+
+static void verify_byte_replacements(char *_Nonnull bytes, size_t length)
+{
+    for (size_t position = 0; position < length; ++position)
+    {
+        for (unsigned value = 0; value < 256; ++value)
+        {
+            bytes[position] = (char)value;
+            verify_validation_result(bytes, length, single_byte_outcome(value));
+        }
+        bytes[position] = 'x';
+    }
+}
+
+static void verify_validation_byte_positions(void)
+{
+    for (size_t offset = 0; offset < 8; ++offset)
+    {
+        char *storage = validation_bytes(offset + 25);
+        verify_byte_replacements(storage + offset, 25);
+        free(storage);
+    }
+}
+
+static void verify_validation_sequence(const char *_Nonnull sequence, size_t width,
+                                       enum note_text_outcome expected)
+{
+    for (size_t position = 1; position <= 17; ++position)
+    {
+        for (size_t suffix = 0; suffix <= 9; suffix += 9)
+        {
+            size_t length = position + width + suffix;
+            char *bytes = validation_bytes(length);
+            memcpy(bytes + position, sequence, width);
+            verify_validation_result(bytes, length, expected);
+            free(bytes);
+        }
+    }
+}
+
+static void verify_validation_sequences(void)
+{
+    verify_validation_sequence("\xC2\x80", 2, NOTE_TEXT_ACCEPTED);
+    verify_validation_sequence("\xDF\xBF", 2, NOTE_TEXT_ACCEPTED);
+    verify_validation_sequence("\xE0\xA0\x80", 3, NOTE_TEXT_ACCEPTED);
+    verify_validation_sequence("\xEF\xBB\xBF", 3, NOTE_TEXT_ACCEPTED);
+    verify_validation_sequence("\xF0\x90\x80\x80", 4, NOTE_TEXT_ACCEPTED);
+    verify_validation_sequence("\xF4\x8F\xBF\xBF", 4, NOTE_TEXT_ACCEPTED);
+    verify_validation_sequence("\xC0\x80", 2, NOTE_TEXT_INVALID_UTF8);
+    verify_validation_sequence("\xE0\x9F\xBF", 3, NOTE_TEXT_INVALID_UTF8);
+    verify_validation_sequence("\xED\xA0\x80", 3, NOTE_TEXT_INVALID_UTF8);
+    verify_validation_sequence("\xF4\x90\x80\x80", 4, NOTE_TEXT_INVALID_UTF8);
+    verify_validation_sequence("\xE6\x97", 2, NOTE_TEXT_INVALID_UTF8);
+    verify_validation_sequence("\xF0\x9F\x98", 3, NOTE_TEXT_INVALID_UTF8);
+    verify_validation_sequence("\xE6x\xA5", 3, NOTE_TEXT_INVALID_UTF8);
+    char bytes[40];
+    memset(bytes, 0x7F, sizeof bytes);
+    verify_validation_result(bytes, sizeof bytes, NOTE_TEXT_ACCEPTED);
+    memset(bytes, 1, sizeof bytes);
+    verify_validation_result(bytes, sizeof bytes, NOTE_TEXT_ACCEPTED);
+    bytes[15] = '\0';
+    bytes[32] = (char)0x80;
+    verify_validation_result(bytes, sizeof bytes, NOTE_TEXT_INVALID_UTF8);
+    bytes[32] = 'x';
+    verify_validation_result(bytes, sizeof bytes, NOTE_TEXT_EMBEDDED_NUL);
+}
+
 void run_text_tests(void)
 {
     verify_utf8_decode();
@@ -400,6 +538,9 @@ void run_text_tests(void)
     verify_first_line();
     verify_colors();
     verify_name_list();
+    verify_validation_bounds();
+    verify_validation_byte_positions();
+    verify_validation_sequences();
 }
 
 static char *_Nonnull size_bytes(void)

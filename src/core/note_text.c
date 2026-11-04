@@ -15,8 +15,40 @@ struct note_text
     size_t file_length;
 };
 
+/* 非ゼロ ASCII だけなら復号は不要。UTF-8 と NUL は既存の検証順へ戻す。 */
+static bool plain_ascii(const char *_Nonnull bytes, size_t length)
+{
+    constexpr uint64_t high_bits = UINT64_C(0x8080808080808080);
+    constexpr uint64_t low_bits = UINT64_C(0x0101010101010101);
+    size_t count = 0;
+    while (length - count >= sizeof(uint64_t))
+    {
+        uint64_t word = 0;
+        memcpy(&word, bytes + count, sizeof word);
+        bool has_nul = ((word - low_bits) & ~word & high_bits) != 0;
+        if ((word & high_bits) != 0 || has_nul)
+        {
+            return false;
+        }
+        count += sizeof word;
+    }
+    for (; count < length; ++count)
+    {
+        unsigned char byte = (unsigned char)bytes[count];
+        if (byte == 0 || byte >= 0x80)
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
 static enum note_text_outcome validate(const char *_Nonnull bytes, size_t length)
 {
+    if (plain_ascii(bytes, length))
+    {
+        return NOTE_TEXT_ACCEPTED;
+    }
     bool contains_nul = false;
     uint32_t code_point = 0;
     for (size_t index = 0; index < length;)
