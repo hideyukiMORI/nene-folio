@@ -58,6 +58,14 @@ md の書戻しを止め、編集中の本文を残す。共有違反・読み�
 解除後の再試行でも最古版が追加で失われうる既存の限界は残る。md は保存失敗時に無傷である。
 実測と再現手順は [対象品質記録](../quality/2026-10-09-history-rotation-checks.md)。
 
+## 2026-11-05 補正 — 表示準備を履歴の副作用より前に完了する（#617）
+
+`store_edited`は本文の差を確認し、閲覧用RTFを準備してから`archive_note`→`write_note`へ進む。
+純粋な表示準備の確保失敗では履歴もmdも書かず、読込本文・mode・選択先・保存世代を保つ。
+archive拒否時は準備済みRTFも破棄する。履歴回転と実writeの既知の非原子性は変えない。
+旧順序でarchives1/writes0となる確保失敗を既存注入で再現し、16確保点の拒否とretryを
+[品質記録](../quality/2026-11-05-save-preparation.md)に残す。state単体を既存suiteへ結び、再発を検出する。
+
 ## 強制
 
 - adapters 以外がファイルを触らないこと、core / application が時刻を読まないことは ARC-003 / ARC-007 が **active**（`eng/symbols.py`）

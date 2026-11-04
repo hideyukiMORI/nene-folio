@@ -1172,3 +1172,12 @@ fresh起動/設定1.3.0/正常終了を確認。MSIX初回画像は判定不能�
 GitHub v1.3.0 Betaを公開、再取得2asset/全11ZIPmember一致。全10run子/記録0、24artifact再hash。
 5,584file全保全後に610のworktree/output整理済み。Storeはhideへ提出原本/更新文を引渡し、認定/公開未確認。
 詳細とhash・境界は[品質記録](2026-11-04-release-1.3.0.md)。#612は文書のみ、成功済み製品検証/配布物/通常exeを再利用する。
+
+## #617 — 保存準備の失敗と履歴保持
+
+旧版の7番目の確保失敗でOOM・archive1/write0を回帰assertionが検出してexit1。
+同じstore_editedでRTF準備をarchiveより先へ移し、16確保点で双方0・本文/表示/mode/対象/revision保持、
+同じ失敗の反復と解除後retryを確認してexit0。既存保存8fixtureとDebug/tidy/formatも成功。
+テストは既存state suiteへ結び、全体と対象selectorで同じfixtureを使う。追加のゲートや閾値変更はない。
+測定exeのASan interception通知と、履歴回転/実write失敗の非原子性という残る限界は[品質記録](2026-11-05-save-preparation.md)へ。
+最終head必須CI/統合/反映/保全整理の確定原本は`D:/NeNeFolio/agents/617-save-preparation/integration-completion.json`。

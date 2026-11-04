@@ -1,5 +1,20 @@
 # いまの状態 — NeNe Folio
 
+## 11月5日 — hide不在中の品質改善を継続
+
+hideの現在指示は、停止の指示まで調査・試験・計測・必要な修正を続け、全試行と変更を記録すること。
+主担当は単体で実行し、保存系だけ独立読取レビューを使用した。古い停止・固定分担を新指示へ持ち込まない。
+
+**#617は保存前の表示準備失敗で履歴を消費する問題を修正した候補。** 旧版は7番目の確保失敗でarchives1/writes0、
+候補は16確保失敗で双方0・状態保持・反復拒否・正常retryを確認した。Debug/tidyと既存保存8fixtureも成功。
+最終head必須CI・正典統合・通常反映・全保全/整理の確定状態は
+`D:/NeNeFolio/agents/617-save-preparation/integration-completion.json`へ記録する。対象検証だけで統合完了とは扱わない。
+
+次は#616の本文検証性能調査。Issue作成までで実装/計測未着手。#458後の#460/#464も基点へ含め、過去値を現実測にしない。
+全体journalは`D:/NeNeFolio/agents/quality-20261105/journal.md`。
+[品質記録](../quality/2026-11-05-save-preparation.md)・[日報](../reports/2026-11-05.md)・[引き継ぎ](../handoffs/2026-11-05.md)。
+追加waiver none、既存WVR-0001継続。実app/実ノート/Storeは試験に使っていない。
+
 ## 11月4日22時 — 1.3.0 Store申請済み（hide報告）
 
 hideのリリース依頼により#610/PR611を統合し、**[GitHub 1.3.0 Beta](https://github.com/hideyukiMORI/nene-folio/releases/tag/v1.3.0)を公開した**。
@@ -30,7 +45,7 @@ Store提出用MSIXと3言語更新文は`D:/NeNeFolio/releases/1.3.0/store-candi
 hideによる11月3日20:19:59の「Pre-processing」を、現在の1.2.0/1.3.0の認定/公開状態へ流用しない。
 旧提出原本は`D:/NeNeFolio/agents/release-1.2.0-20261103/store-status.json`。新しい1.3.0原本とは別に保持する。
 WACKとAppDataノートroot、Store署名版導入の従前の検証限界は[MSIX品質記録](../quality/2026-11-01-msix-installation.md)を参照。
-全体品質journalは`D:/NeNeFolio/agents/quality-20261104/journal.md`。今回の依頼はリリース対応として完了し、追加の製品変更は始めていない。
+11月4日の品質journalは`D:/NeNeFolio/agents/quality-20261104/journal.md`。11月5日の品質作業とは根拠と実行を分けて保持する。
 
 ## 保留・保持物
 

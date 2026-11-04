@@ -2023,6 +2023,71 @@ static void verify_edit_saves(void)
     folio_state_destroy(state);
 }
 
+static bool save_preparation_attempt(size_t nth)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    adapter.note_body = "# Hello\r\n\r\nbody";
+    struct folio_state *state = edited_state(&adapter);
+    const char *body = folio_state_pane_text(state);
+    const char *pane = folio_state_pane_rtf(state);
+    uint64_t revision = folio_state_store_revision(state);
+    allocation_probe_fail_at(nth);
+    enum folio_state_outcome saved = folio_state_store_note(state, u"changed", 7);
+    allocation_probe_fail_at(0);
+    printf("save preparation: fail_at=%zu outcome=%d archives=%zu writes=%zu\n", nth, saved,
+           adapter.archives, adapter.note_writes);
+    if (saved == FOLIO_STATE_READY)
+    {
+        require(adapter.archives == 1 && adapter.note_writes == 1 &&
+                    same_text(adapter.calls, "archive/write"),
+                "the first uninjected save archives and writes exactly once");
+        folio_state_destroy(state);
+        return true;
+    }
+    require(saved == FOLIO_STATE_OUT_OF_MEMORY && adapter.archives == 0 &&
+                adapter.note_writes == 0 && same_text(adapter.calls, ""),
+            "save preparation failure must not consume history or write the note");
+    allocation_probe_fail_at(nth);
+    enum folio_state_outcome left = folio_state_end_edit(state, u"changed", 7);
+    allocation_probe_fail_at(0);
+    require(left == FOLIO_STATE_OUT_OF_MEMORY && adapter.archives == 0 && adapter.note_writes == 0,
+            "repeating the preparation failure while leaving still preserves history");
+    require(folio_state_pane_text(state) == body && folio_state_pane_rtf(state) == pane &&
+                folio_state_pane_mode(state) == PANE_MODE_EDIT &&
+                folio_state_store_revision(state) == revision &&
+                same_text(folio_state_pane_title(state).category, "B") &&
+                same_text(folio_state_pane_title(state).note, "two"),
+            "failed preparation preserves the saved body, view, mode, revision and target");
+    require(folio_state_end_edit(state, u"changed", 7) == FOLIO_STATE_READY &&
+                adapter.archives == 1 && adapter.note_writes == 1 &&
+                same_text(adapter.calls, "archive/write") &&
+                same_text(adapter.written_body, "changed") &&
+                same_text(folio_state_pane_text(state), "changed") &&
+                folio_state_pane_mode(state) == PANE_MODE_VIEW &&
+                folio_state_store_revision(state) == revision + 1,
+            "retry after preparation failure saves once through the original archive/write path");
+    folio_state_destroy(state);
+    return false;
+}
+
+size_t run_save_preparation_allocation_tests(void)
+{
+    allocation_probe_fail_at(1);
+    struct note_text *check = nullptr;
+    enum note_text_outcome active = note_text_create("", 0, &check);
+    allocation_probe_fail_at(0);
+    note_text_destroy(check);
+    if (active != NOTE_TEXT_OUT_OF_MEMORY)
+        return 0;
+    finder = test_regex_port();
+    for (size_t nth = 1; nth < 128; ++nth)
+    {
+        if (save_preparation_attempt(nth))
+            return nth - 1;
+    }
+    test_failure("save preparation allocation sweep must reach a successful save");
+}
+
 static void verify_edit_failures(void)
 {
     static const char16_t lone_surrogate[] = {u'a', 0xD83D, u'b'};
@@ -5427,6 +5492,20 @@ void run_status_tests(void)
     verify_time_save_rename();
 }
 
+void run_save_state_tests(void)
+{
+    finder = test_regex_port();
+    verify_edit_guards();
+    verify_edit_unchanged();
+    verify_note_changed();
+    verify_unsaved();
+    verify_history_order();
+    verify_history_failures();
+    verify_edit_saves();
+    verify_edit_failures();
+    (void)run_save_preparation_allocation_tests();
+}
+
 void run_state_tests(void)
 {
     run_layout_mode_state_tests();
@@ -5453,14 +5532,7 @@ void run_state_tests(void)
     verify_cursor_expanded();
     verify_reveal_cursor();
     verify_mode_survives_selection();
-    verify_edit_guards();
-    verify_edit_unchanged();
-    verify_note_changed();
-    verify_unsaved();
-    verify_history_order();
-    verify_history_failures();
-    verify_edit_saves();
-    verify_edit_failures();
+    run_save_state_tests();
     verify_discard_refusals();
     verify_discard_edits();
     verify_move_while_editing();
