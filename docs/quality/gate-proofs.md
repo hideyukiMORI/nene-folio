@@ -1189,3 +1189,11 @@ GitHub v1.3.0 Betaを公開、再取得2asset/全11ZIPmember一致。全10run子
 Debug/tidyと既存--text-validationが成功、初回test nesting違反は既存確保fixture再利用で解消し閾値/抑制は不変。
 固定Releaseの30case×3候補は[品質記録](2026-11-05-editor-normalization.md)へ。短い混在行の約6%増を含み、一般速度は保証しない。
 最終head必須CI/統合/反映/保全整理はD:/NeNeFolio/agents/620-editor-normalization/integration-completion.jsonで確定する。
+
+## #622 — Markdown段落分布の限定計測
+
+製品変更なし。固定Releaseで24RTF構築caseと12直接lookup case、計180sampleを取得。
+全input不変、RTF再現bytes/原文保持、24fixture/24outputの再hash、raw中央値再計算が成功した。
+1MiBの1文字+LF段落は838.4193ms。実UI/任意入力の上限/構文完全性の証明にはしない。
+詳細は[品質記録](2026-11-05-markdown-paragraph-scale.md)。追加gate/閾値/抑制なし。
+対象文書検査と最終head必須CI/統合/保全整理はagents/622-markdown-paragraph-scale/integration-completion.jsonへ。

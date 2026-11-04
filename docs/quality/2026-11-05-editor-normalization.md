@@ -99,3 +99,10 @@ format/tidy/警告error・ASan/UBSan/nullability・recover禁止を維持し、�
 text-validation-01はfolio_tests.exe --text-validationで子/記録0、stdout成功、stderr空。
 成功runは記録error0、全入力は終了時も不変。既存の確保順を保つため、重複した独自OOM sweepは追加しない。
 文書/規約検査と最終CIは実runと完了原本へ記録する。
+
+## 08:35 — #620統合・通常反映・整理完了
+
+PR621最終head`e6f834af`のCI41933849295 full-gate/check成功、main`6107a26`へ正典統合した。
+通常版build成功、portable data32fileの全bytes/hash/作成更新日時不変。通常app起動0。
+1,401fileをZIPへ全hash照合し、取込/dirty/ignored/リンク/稼働参照の監査後に専用worktree/outputを削除した。
+branch/commit保持。確定原本はD:/NeNeFolio/agents/620-editor-normalization/integration-completion.json。

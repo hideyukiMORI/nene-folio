@@ -5,11 +5,15 @@
 hideの現在指示は、停止の指示まで調査・試験・計測・必要な修正を続け、全試行と変更を記録すること。
 主担当は単体で実行し、必要な保存系/本文処理の独立静読だけを委任した。古い停止・固定分担は持ち込まない。
 
-**#620は改行間の走査をまとめる候補。** 3案を比較し、改行の分岐と確保順を保つ案2を採用。
-固定Releaseの16MiB LF編集入口はASCII26.95035→14.92035ms、日本語46.44125→34.84095ms。
-連続改行はほぼ同等、数文字ごとの混在改行は約6%増える。実UIや全入力の改善を主張しない。
-Debug/tidyと既存--text-validationは成功。最終head必須CI/統合/通常反映/保全整理の確定は
-`D:/NeNeFolio/agents/620-editor-normalization/integration-completion.json`と実runへ記録する。
+**#622はMarkdown段落分布の基点計測。** 製品変更なし。24RTF構築/12lookup、180sampleの監査成功。
+1MiBのRTF中央値はASCII一行11.4459ms、79文字+LF59.7733ms、1文字+LF838.4193ms。
+実UIやlookupの寄与率は未測定。次の改善候補をこの根拠から別単位で検討する。
+文書検査/最終head必須CI/統合/保全整理の確定原本は
+`D:/NeNeFolio/agents/622-markdown-paragraph-scale/integration-completion.json`。
+
+#620はPR621/必須CI41933849295成功、main6107a26へ統合済み。通常反映/data32file不変、
+1,401file全保全・専用領域整理済み。原本は同agents/620-editor-normalization/integration-completion.json。
+改行正規化でASCII16MiB LF26.95035→14.92035ms。短い混在行の約6%増は残る。
 
 #616はPR619/必須CI41930597783成功後、main`2c2f0be`へ統合済み。通常版反映・data32file不変、
 1,378file全保全と専用worktree/output整理を完了した。原本は同agents/616-text-validation/integration-completion.json。
@@ -17,7 +21,7 @@ Debug/tidyと既存--text-validationは成功。最終head必須CI/統合/通常
 原本は同agents/617-save-preparation/integration-completion.json。branch/commitは保持する。
 
 全体journalは`D:/NeNeFolio/agents/quality-20261105/journal.md`。
-[改行正規化](../quality/2026-11-05-editor-normalization.md)・[本文検証](../quality/2026-11-05-ascii-validation.md)・
+[Markdown段落](../quality/2026-11-05-markdown-paragraph-scale.md)・[改行正規化](../quality/2026-11-05-editor-normalization.md)・[本文検証](../quality/2026-11-05-ascii-validation.md)・
 [保存](../quality/2026-11-05-save-preparation.md)・[日報](../reports/2026-11-05.md)・[引き継ぎ](../handoffs/2026-11-05.md)。
 追加waiver none、既存WVR-0001継続。実app/実ノート/Storeは試験に使っていない。
 
@@ -41,9 +45,9 @@ Store提出用MSIXと3言語更新文は`D:/NeNeFolio/releases/1.3.0/store-candi
 
 ## 通常版と実機確認の範囲
 
-通常exeは`C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`、#616反映時sourceは`2c2f0be`。
-SHA256は`7e2fe53a271d474866ce34379c71b341e7c0217a159780799068b679f44548b3`。
-#620後の必要反映は同taskの完了原本へ記録する。GitHub/Store配布1.3.0のsource`4359e9e`とは区別する。
+通常exeは`C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`、#620反映時sourceは`6107a26`。
+SHA256は`3fd9d8a9a97858782b7a45daa5d9eaaf6d973776f08523db28fe60317a4fa030`。
+#622は文書だけなので通常exeを再buildしない。GitHub/Store配布1.3.0のsource`4359e9e`とは区別する。
 通常app/実ノートは試験に使っていない。hideによる1.3.0の実機受理は未確認。
 
 以前のStore1.2.0は#536/PR538、source`eb10419`でMermaidを含まない。
