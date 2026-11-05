@@ -18,6 +18,7 @@
 #include "persistence_adapter.h"
 #include "regex_adapter.h"
 #include "storage_adapter.h"
+#include "storage_native_path.h"
 #include "storage_state.h"
 #include "transfer_adapter.h"
 #include "web_link_adapter.h"
@@ -47,6 +48,7 @@ static bool replace_case;
 static bool search_case;
 static bool note_switch_case;
 static bool zoom_case;
+static bool theme_preview_case;
 
 static const char history_current[] = "# Current 日本語 😀 **saved**";
 static const char history_previous[] = "> Previous 猫 🐾 `old`";
@@ -97,10 +99,13 @@ static void seed_notes(struct persistence_port disk)
     const char *source =
         diagram_case ? "Body before diagrams\n\n```mermaid\nflowchart LR\nA --> B\n```\n\nAfter\n"
                      : "Body before images\n\n![alt](images/one.png)\n\nBody after images\n";
-    if (history_case || replace_case || search_case || note_switch_case || zoom_case)
+    if (history_case || replace_case || search_case || note_switch_case || zoom_case ||
+        theme_preview_case)
     {
         seed_history(disk);
-        source = history_case || note_switch_case || zoom_case ? history_current : replace_current;
+        source = history_case || note_switch_case || zoom_case || theme_preview_case
+                     ? history_current
+                     : replace_current;
     }
     if (search_case)
         source = search_current;
@@ -1283,7 +1288,7 @@ static void run_note_switch_case(struct native_fixture *_Nonnull fixture)
         note_text_destroy(snapshot.files[version]);
 }
 
-struct zoom_snapshot
+struct native_body_snapshot
 {
     wchar_t text[128];
     CHARRANGE selection;
@@ -1293,14 +1298,14 @@ struct zoom_snapshot
     HWND focus;
 };
 
-static void capture_zoom_body(struct folio_window *_Nonnull window,
-                              struct zoom_snapshot *_Nonnull snapshot)
+static void capture_native_body(struct folio_window *_Nonnull window,
+                                struct native_body_snapshot *_Nonnull snapshot)
 {
     HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
     GETTEXTEX request = {.cb = sizeof snapshot->text, .flags = GT_RAWTEXT, .codepage = 1200};
     LRESULT length = SendMessageW(body, EM_GETTEXTEX, (WPARAM)&request, (LPARAM)snapshot->text);
     require(length > 0 && (size_t)length < sizeof snapshot->text / sizeof snapshot->text[0] - 1,
-            "short zoom fixture fits its native text snapshot");
+            "short native fixture fits its native text snapshot");
     SendMessageW(body, EM_EXGETSEL, 0, (LPARAM)&snapshot->selection);
     snapshot->modified = SendMessageW(body, EM_GETMODIFY, 0, 0);
     snapshot->undo = SendMessageW(body, EM_CANUNDO, 0, 0);
@@ -1308,18 +1313,19 @@ static void capture_zoom_body(struct folio_window *_Nonnull window,
     snapshot->focus = GetFocus();
 }
 
-static void expect_zoom_body(struct folio_window *_Nonnull window,
-                             const struct zoom_snapshot *_Nonnull snapshot)
+static void expect_native_body(struct folio_window *_Nonnull window,
+                               const struct native_body_snapshot *_Nonnull snapshot)
 {
-    struct zoom_snapshot after = {0};
-    capture_zoom_body(window, &after);
-    require(wcscmp(after.text, snapshot->text) == 0, "zoom preserves all native text units");
+    struct native_body_snapshot after = {0};
+    capture_native_body(window, &after);
+    require(wcscmp(after.text, snapshot->text) == 0,
+            "surface operation preserves all native text units");
     require(after.selection.cpMin == snapshot->selection.cpMin &&
                 after.selection.cpMax == snapshot->selection.cpMax,
-            "zoom preserves the native selection");
+            "surface operation preserves the native selection");
     require(after.modified == snapshot->modified && after.undo == snapshot->undo &&
                 after.redo == snapshot->redo && after.focus == snapshot->focus,
-            "zoom preserves native dirty, Undo, Redo and focus");
+            "surface operation preserves native dirty, Undo, Redo and focus");
 }
 
 static void expect_zoom(struct folio_window *_Nonnull window, int percent)
@@ -1355,14 +1361,14 @@ static void zoom_edit_cycle(struct folio_window *_Nonnull window,
     HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
     CHARRANGE selected = {.cpMin = 10, .cpMax = 12};
     SendMessageW(body, EM_EXSETSEL, 0, (LPARAM)&selected);
-    struct zoom_snapshot snapshot = {0};
-    capture_zoom_body(window, &snapshot);
+    struct native_body_snapshot snapshot = {0};
+    capture_native_body(window, &snapshot);
     const int deltas[] = {60, 60, -120, 3600, 120, -3600, -120, 1200};
     const int percentages[] = {150, 160, 150, 300, 300, 50, 50, 150};
     for (size_t index = 0; index < sizeof deltas / sizeof deltas[0]; ++index)
     {
         zoom_wheel(window, deltas[index], percentages[index]);
-        expect_zoom_body(window, &snapshot);
+        expect_native_body(window, &snapshot);
     }
     expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_CHANGED);
     verify_history_unchanged(fixture, history);
@@ -1375,10 +1381,10 @@ static void zoom_redo(struct folio_window *_Nonnull window, struct native_fixtur
     expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_SAME);
     HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
     require(SendMessageW(body, EM_CANREDO, 0, 0) != 0, "Undo exposes one redoable insertion");
-    struct zoom_snapshot snapshot = {0};
-    capture_zoom_body(window, &snapshot);
+    struct native_body_snapshot snapshot = {0};
+    capture_native_body(window, &snapshot);
     zoom_wheel(window, WHEEL_DELTA, 160);
-    expect_zoom_body(window, &snapshot);
+    expect_native_body(window, &snapshot);
     require(SendMessageW(body, EM_REDO, 0, 0) != 0, "native Redo succeeds after zoom");
     pump(window);
     expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_CHANGED);
@@ -1404,10 +1410,10 @@ static void run_zoom_case(struct native_fixture *_Nonnull fixture)
     CHARRANGE selected = {.cpMin = 2, .cpMax = 4};
     SendMessageW(body, EM_EXSETSEL, 0, (LPARAM)&selected);
     SetFocus(folio_window_accessible_window(window, ACCESSIBLE_WINDOW));
-    struct zoom_snapshot view = {0};
-    capture_zoom_body(window, &view);
+    struct native_body_snapshot view = {0};
+    capture_native_body(window, &view);
     zoom_wheel(window, 5 * WHEEL_DELTA, 150);
-    expect_zoom_body(window, &view);
+    expect_native_body(window, &view);
     verify_history_unchanged(fixture, &history);
     action(window, ACCESSIBLE_EDIT);
     expect_zoom(window, 150);
@@ -1416,8 +1422,8 @@ static void run_zoom_case(struct native_fixture *_Nonnull fixture)
     zoom_redo(window, fixture, &history);
     action(window, ACCESSIBLE_VIEW);
     expect_zoom(window, 160);
-    struct zoom_snapshot returned = {0};
-    capture_zoom_body(window, &returned);
+    struct native_body_snapshot returned = {0};
+    capture_native_body(window, &returned);
     require(wcscmp(view.text, returned.text) == 0 &&
                 folio_state_pane_mode(fixture->state) == PANE_MODE_VIEW &&
                 (GetWindowLongPtrW(body, GWL_STYLE) & ES_READONLY) != 0,
@@ -1427,6 +1433,159 @@ static void run_zoom_case(struct native_fixture *_Nonnull fixture)
     folio_window_destroy(window);
     for (size_t version = 0; version <= note_history_depth; ++version)
         note_text_destroy(history.files[version]);
+}
+
+struct theme_snapshot
+{
+    enum folio_theme_choice choice;
+    enum folio_theme theme;
+    struct theme_palette palette;
+    struct file_bytes *_Nonnull settings;
+};
+
+static struct file_bytes *_Nonnull read_theme_settings(struct native_fixture *_Nonnull fixture)
+{
+    wchar_t path[storage_native_capacity];
+    size_t length = 0;
+    const wchar_t suffix[] = L"\\settings.json";
+    require(storage_native_path_fill(storage_state_directory(fixture->location), path, &length) &&
+                length + sizeof suffix / sizeof suffix[0] <= storage_native_capacity,
+            "dedicated settings path fits the native capacity");
+    memcpy(path + length, suffix, sizeof suffix);
+    struct file_bytes *bytes = nullptr;
+    require(file_bytes_read(path, &bytes) == PERSISTENCE_LOADED && bytes != nullptr,
+            "read the dedicated settings bytes");
+    return bytes;
+}
+
+static void expect_theme_settings(struct native_fixture *_Nonnull fixture,
+                                  const struct theme_snapshot *_Nonnull snapshot)
+{
+    require(folio_state_theme_choice(fixture->state) == snapshot->choice,
+            "preview and cancellation preserve the saved theme choice");
+    struct file_bytes *after = read_theme_settings(fixture);
+    require(file_bytes_length(after) == file_bytes_length(snapshot->settings) &&
+                memcmp(file_bytes_data(after), file_bytes_data(snapshot->settings),
+                       file_bytes_length(after)) == 0,
+            "preview and cancellation preserve all settings bytes");
+    file_bytes_destroy(after);
+}
+
+static void preview_theme_candidate(struct folio_window *_Nonnull window,
+                                    struct folio_state *_Nonnull state,
+                                    enum folio_theme_choice saved)
+{
+    const bool use_nord = saved != FOLIO_THEME_CHOICE_NORD;
+    const wchar_t *name = use_nord ? L"nord" : L"dracula";
+    HWND input = folio_window_accessible_window(window, ACCESSIBLE_COMMAND_INPUT);
+    require(input != nullptr && SetWindowTextW(input, name), "filter a normal theme candidate");
+    pump(window);
+    struct accessible_item list = {.kind = ACCESSIBLE_SURFACE_LIST,
+                                   .revision = folio_window_accessible_surface_revision(window)};
+    struct accessible_item row;
+    require(folio_window_accessible_navigate(window, &list, ACCESSIBLE_NAVIGATION_FIRST, &row) ==
+                    S_OK &&
+                row.kind == ACCESSIBLE_SURFACE_CHOICE,
+            "filtered theme exposes its public choice row");
+    struct accessible_view view;
+    require(folio_window_accessible_read(window, &row, &view) == S_OK &&
+                wcscmp((const wchar_t *)view.name, name) == 0,
+            "the filtered row is the intended theme");
+    struct accessible_request request = {.item = row, .action = ACCESSIBLE_ACTION_SELECT};
+    require(folio_window_accessible_action(window, &request) == S_OK,
+            "Select previews the current theme row without invoking it");
+    pump(window);
+    require(folio_state_theme(state) == (use_nord ? FOLIO_THEME_NORD : FOLIO_THEME_DRACULA),
+            "the display theme resolves to the preview candidate");
+}
+
+static void expect_theme_restored(struct native_fixture *_Nonnull fixture,
+                                  const struct theme_snapshot *_Nonnull snapshot)
+{
+    expect_theme_settings(fixture, snapshot);
+    require(folio_state_theme(fixture->state) == snapshot->theme &&
+                theme_palette_equal(folio_state_palette(fixture->state), &snapshot->palette),
+            "cancellation restores the initial effective palette and theme");
+}
+
+static void theme_preview_cycle(struct folio_window *_Nonnull window,
+                                struct native_fixture *_Nonnull fixture,
+                                const struct theme_snapshot *_Nonnull snapshot, bool go_back)
+{
+    struct native_body_snapshot closed = {0};
+    capture_native_body(window, &closed);
+    struct accessible_request settings = {.item = {.kind = ACCESSIBLE_SETTINGS},
+                                          .action = ACCESSIBLE_ACTION_INVOKE};
+    require(folio_window_accessible_action(window, &settings) == S_OK,
+            "invoke the public settings action");
+    pump(window);
+    surface_button(window, ACCESSIBLE_SURFACE_THEME);
+    struct native_body_snapshot opened = {0};
+    capture_native_body(window, &opened);
+    preview_theme_candidate(window, fixture->state, snapshot->choice);
+    expect_native_body(window, &opened);
+    expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_CHANGED);
+    expect_theme_settings(fixture, snapshot);
+    if (go_back)
+    {
+        surface_button(window, ACCESSIBLE_SURFACE_BACK);
+        expect_theme_restored(fixture, snapshot);
+        opened.focus = GetFocus(); /* Returning to settings legitimately changes surface focus. */
+        expect_native_body(window, &opened);
+    }
+    surface_button(window, ACCESSIBLE_SURFACE_CLOSE);
+    expect_native_body(window, &closed);
+    expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_CHANGED);
+    expect_theme_restored(fixture, snapshot);
+}
+
+/* #661: Preview and both cancellation routes retain the unsaved native document. */
+static void run_theme_preview_case(struct native_fixture *_Nonnull fixture)
+{
+    require(folio_state_select_note(fixture->state, 0, 0, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
+            "select the dedicated theme preview note");
+    struct history_snapshot history = {0};
+    capture_history(fixture, &history);
+    struct folio_window *window = nullptr;
+    require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
+                FOLIO_WINDOW_CREATED,
+            "real theme preview window");
+    pump(window);
+    action(window, ACCESSIBLE_EDIT);
+    append_switch_text(window);
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    CHARRANGE selected = {.cpMin = 10, .cpMax = 12};
+    SendMessageW(body, EM_EXSETSEL, 0, (LPARAM)&selected);
+    struct theme_snapshot snapshot = {.choice = folio_state_theme_choice(fixture->state),
+                                      .theme = folio_state_theme(fixture->state),
+                                      .palette = *folio_state_palette(fixture->state),
+                                      .settings = read_theme_settings(fixture)};
+    theme_preview_cycle(window, fixture, &snapshot, false);
+    verify_history_unchanged(fixture, &history);
+    theme_preview_cycle(window, fixture, &snapshot, true);
+    verify_history_unchanged(fixture, &history);
+    history_undo(window);
+    expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_SAME);
+    verify_history_unchanged(fixture, &history);
+    expect_theme_restored(fixture, &snapshot);
+    require(controlled.requests == 0, "plain theme preview does not request image work");
+    file_bytes_destroy(snapshot.settings);
+    folio_window_destroy(window);
+    for (size_t version = 0; version <= note_history_depth; ++version)
+        note_text_destroy(history.files[version]);
+}
+
+static void run_other_fixture(struct native_fixture *_Nonnull fixture, int argc,
+                              char *_Nonnull *_Nonnull argv)
+{
+    if (argc == 2)
+        run_status_case(fixture, argv[1]);
+    else
+    {
+        require(argc == 1, "valid argument count");
+        run_image_case(fixture);
+    }
 }
 
 static void run_fixture(struct native_fixture *_Nonnull fixture, int argc,
@@ -1444,15 +1603,12 @@ static void run_fixture(struct native_fixture *_Nonnull fixture, int argc,
         run_note_switch_case(fixture);
     else if (zoom_case)
         run_zoom_case(fixture);
+    else if (theme_preview_case)
+        run_theme_preview_case(fixture);
     else if (argc == 2 && strcmp(argv[1], "--icon") == 0)
         window_icons(fixture);
-    else if (argc == 2)
-        run_status_case(fixture, argv[1]);
     else
-    {
-        require(argc == 1, "valid argument count");
-        run_image_case(fixture);
-    }
+        run_other_fixture(fixture, argc, argv);
 }
 
 int main(int argc, char *_Nonnull *_Nonnull argv)
@@ -1469,6 +1625,7 @@ int main(int argc, char *_Nonnull *_Nonnull argv)
     search_case = argc == 2 && strcmp(argv[1], "--search") == 0;
     note_switch_case = argc == 2 && strcmp(argv[1], "--note-switch") == 0;
     zoom_case = argc == 2 && strcmp(argv[1], "--zoom") == 0;
+    theme_preview_case = argc == 2 && strcmp(argv[1], "--theme-preview") == 0;
     struct native_fixture fixture = {0};
     create_fixture(&fixture);
     run_fixture(&fixture, argc, argv);

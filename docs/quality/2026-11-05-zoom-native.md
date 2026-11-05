@@ -58,3 +58,9 @@ tools/record-run.pyで全入力snapshot、raw stdout/stderr、終了値を保存
 同じPowerShell内の後続commit/push/Draft PR作成は終了したがReadyは未実行。初回sourceと通知をprepare-pr-initial.py/prepare-pr-failure.jsonへ保存した。
 参照をswitch-01へ訂正し、製品不変確認を作業差分だけでなく基点main5d776cbからの全差分へ限定した。
 失敗記録追記後のconformance-02と最終source/CMake/docsSHA照合を完了してからReadyへ進む。製品/nativeの再実行はしない。
+
+## 最終受理・保全整理（16:15）
+
+PR660 heada535f1b25d5fedba41fe5050965cc03d7f64c760、必須CI41985213330 full-gate/check成功、mainbc00acdへ統合済み。
+Issue659 CLOSED、通常exe/data32file不変。1378file/64642314bytes全保全ZIP/hashと取込tree/clean/ignored/link/稼働参照を監査し、専用領域を整理。
+branch/commit保持。初回提出補助失敗も原本に保持。D:/NeNeFolio/agents/659-zoom-native/integration-completion.json。
