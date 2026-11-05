@@ -75,3 +75,9 @@ SEARCHのliteral/ASCII大小無視とREPLACEの正規表現・編集中だけと
 - 決定5の標準RichEdit選択を維持する。Issue下書きのselected_background強制は、文字書式・Undo・dirty・高コントラストへ別経路を作るため採用しない。
 
 完成候補の対象確認でgeometryと最長文言を記録する。3言語/3DPIの範囲や物理IME/実reader等の未測定を区別し、既に成功した無関係な検証は繰り返さない。
+
+## 2026-11-05 — Undo後の検索とRedo保持（#689）
+
+既存search_nativeでUndo後のRedo可能状態にも公開FIND/語変更/前後/closeを通し、Undo/Redo可否、本文/dirty/全履歴保持を確認する。
+実Redo/Undoが追記全文と元全文へ戻ることも固定する。検索による一致選択は維持し、selection復帰の新保証は追加しない。
+本文を再投入しない既存契約の回帰で、製品/CMake/selector/API/schema変更なし。[品質記録](../quality/2026-11-05-search-redo.md)。

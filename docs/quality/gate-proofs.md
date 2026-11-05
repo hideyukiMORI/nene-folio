@@ -1426,3 +1426,9 @@ note_mode_native、205checks/1.036016秒成功、stderr空。
 16通常UTF-8文書/720sampleの全文RTF一致。32file/8MAP/同vectorとarchive/3箇所差分を監査。
 長い通常段落の両順序での増加から候補を不採用とし、最終製品bytesは元へ復帰。
 src/tests/eng/CMake不変、文書だけを収載。閾値/抑制/API/schema変更なし。[品質記録](2026-11-05-inline-run.md)。
+
+## 2026-11-05 — #689検索後のRedo保持
+
+既存search_native、246checks/1.001543秒・stderr空。Undo後の公開検索と実Redo/Undo、全本文/dirty/全履歴保持を確認。
+初回変数位置誤りのcompile停止も記録し、最終sourceのDebug対象成功を照合。製品/CMake/selector/閾値/抑制変更なし。
+[品質記録](2026-11-05-search-redo.md)。
