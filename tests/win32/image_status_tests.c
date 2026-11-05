@@ -55,6 +55,7 @@ static bool mode_save_case;
 static bool discard_case;
 static bool palette_case;
 static bool paste_case;
+static bool format_case;
 
 static const char history_current[] = "# Current 日本語 😀 **saved**";
 static const char history_previous[] = "> Previous 猫 🐾 `old`";
@@ -107,12 +108,12 @@ static void seed_notes(struct persistence_port disk)
                      : "Body before images\n\n![alt](images/one.png)\n\nBody after images\n";
     if (history_case || replace_case || search_case || note_switch_case || zoom_case ||
         theme_preview_case || settings_edit_case || mode_save_case || discard_case ||
-        palette_case || paste_case)
+        palette_case || paste_case || format_case)
     {
         seed_history(disk);
         source = history_case || note_switch_case || zoom_case || theme_preview_case ||
                          settings_edit_case || mode_save_case || discard_case || palette_case ||
-                         paste_case
+                         paste_case || format_case
                      ? history_current
                      : replace_current;
     }
@@ -2291,14 +2292,14 @@ static CHARFORMAT2W character_format(HWND _Nonnull body, LONG position)
 }
 
 /* Exercise the same translate/dispatch order as main.c, including the generated WM_CHAR. */
-static void paste_input(struct folio_window *_Nonnull window, UINT key, BYTE modifiers)
+static bool native_key_input(struct folio_window *_Nonnull window, UINT key, BYTE modifiers)
 {
     HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
     if (key == 0)
     {
         SendMessageW(body, WM_PASTE, 0, 0);
         pump(window);
-        return;
+        return false;
     }
     BYTE original[256], keyboard[256] = {0};
     require(GetKeyboardState(original), "save fixture keyboard state");
@@ -2307,13 +2308,19 @@ static void paste_input(struct folio_window *_Nonnull window, UINT key, BYTE mod
     keyboard[key] = 0x80;
     require(SetKeyboardState(keyboard), "fixture key modifiers");
     MSG message = {.hwnd = body, .message = WM_KEYDOWN, .wParam = key, .lParam = 1};
-    if (!folio_window_translate(window, &message))
+    bool translated = folio_window_translate(window, &message);
+    if (!translated)
     {
         TranslateMessage(&message);
         DispatchMessageW(&message);
     }
     pump(window);
+    if (format_case)
+        printf("key route=%u translated=%d visible=%d enabled=%d focus=%d ctrl=%d left=%d\n", key,
+               translated, IsWindowVisible(body), IsWindowEnabled(body), GetFocus() == body,
+               GetKeyState(VK_CONTROL), GetKeyState(VK_LCONTROL));
     require(SetKeyboardState(original), "restore fixture keyboard state");
+    return translated;
 }
 
 /* PrintWindow is black on the private station: render the actual native document to a memory DC. */
@@ -2352,7 +2359,7 @@ static void paste_roundtrip(struct folio_window *_Nonnull window,
     CHARFORMAT2W original = character_format(body, 0);
     CHARRANGE selection = {.cpMin = 2, .cpMax = 9};
     SendMessageW(body, EM_EXSETSEL, 0, (LPARAM)&selection);
-    paste_input(window, key, modifiers);
+    native_key_input(window, key, modifiers);
     expect_editor(window, fixture->state, L"# Bold Light 日本語 😀 **saved**", FOLIO_NOTE_CHANGED);
     SendMessageW(body, EM_EXGETSEL, 0, (LPARAM)&selection);
     require(selection.cpMin == 12 && selection.cpMax == 12, "paste collapses caret after text");
@@ -2410,14 +2417,14 @@ static void paste_text_formats(struct folio_window *_Nonnull window,
     const wchar_t unicode[] = L"日本語 😀\r\n\tNext";
     single_clipboard(body, CF_UNICODETEXT, unicode, sizeof unicode);
     SendMessageW(body, EM_SETSEL, 0, -1);
-    paste_input(window, 'V', FCONTROL);
+    native_key_input(window, 'V', FCONTROL);
     expect_editor(window, fixture->state, L"日本語 😀\r\tNext", FOLIO_NOTE_CHANGED);
     history_undo(window);
     expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_SAME);
     const char ansi[] = "ANSI plain";
     single_clipboard(body, CF_TEXT, ansi, sizeof ansi);
     SendMessageW(body, EM_SETSEL, 0, -1);
-    paste_input(window, 0, 0);
+    native_key_input(window, 0, 0);
     expect_editor(window, fixture->state, L"ANSI plain", FOLIO_NOTE_CHANGED);
     history_undo(window);
     expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_SAME);
@@ -2427,7 +2434,7 @@ static void paste_text_formats(struct folio_window *_Nonnull window,
     publish_clipboard(CF_UNICODETEXT, preferred, sizeof preferred);
     require(CloseClipboard(), "close mixed representations");
     SendMessageW(body, EM_SETSEL, 0, -1);
-    paste_input(window, VK_INSERT, FSHIFT);
+    native_key_input(window, VK_INSERT, FSHIFT);
     expect_editor(window, fixture->state, preferred, FOLIO_NOTE_CHANGED);
     history_undo(window);
     expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_SAME);
@@ -2437,11 +2444,11 @@ static void expect_paste_blocked(struct folio_window *_Nonnull window)
 {
     struct native_body_snapshot snapshot = {0};
     capture_native_body(window, &snapshot);
-    paste_input(window, 0, 0);
+    native_key_input(window, 0, 0);
     expect_native_body(window, &snapshot);
-    paste_input(window, 'V', FCONTROL);
+    native_key_input(window, 'V', FCONTROL);
     expect_native_body(window, &snapshot);
-    paste_input(window, VK_INSERT, FSHIFT);
+    native_key_input(window, VK_INSERT, FSHIFT);
     expect_native_body(window, &snapshot);
 }
 
@@ -2518,9 +2525,216 @@ static void run_paste_case(struct native_fixture *_Nonnull fixture)
         note_text_destroy(history.files[version]);
 }
 
+static bool observe_format_key(struct folio_window *_Nonnull window,
+                               struct native_fixture *_Nonnull fixture, UINT key, BYTE modifiers)
+{
+    printf("format begin key=%u modifiers=%u\n", key, modifiers);
+    fflush(stdout);
+    expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_SAME);
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    CHARFORMAT2W before = character_format(body, 2);
+    require(before.yHeight == 220 && (before.dwEffects & CFE_BOLD) == 0,
+            "each formatting key starts in the plain editor");
+    PARAFORMAT2 paragraph_before = {.cbSize = sizeof paragraph_before};
+    SendMessageW(body, EM_GETPARAFORMAT, 0, (LPARAM)&paragraph_before);
+    require(paragraph_before.wAlignment == PFA_LEFT && paragraph_before.wNumbering == 0,
+            "each formatting key starts with the plain paragraph");
+    SendMessageW(body, EM_SETSEL, 2, 9);
+    native_key_input(window, key, modifiers);
+    wchar_t text[256];
+    GetWindowTextW(body, text, sizeof text / sizeof text[0]);
+    bool same_text = wcscmp(text, switch_original) == 0;
+    CHARFORMAT2W after = character_format(body, 2);
+    PARAFORMAT2 paragraph_after = {.cbSize = sizeof paragraph_after};
+    SendMessageW(body, EM_GETPARAFORMAT, 0, (LPARAM)&paragraph_after);
+    bool same_character = before.yHeight == after.yHeight && before.wWeight == after.wWeight &&
+                          before.crTextColor == after.crTextColor &&
+                          before.dwEffects == after.dwEffects &&
+                          wcscmp(before.szFaceName, after.szFaceName) == 0;
+    bool same_paragraph = paragraph_before.wAlignment == paragraph_after.wAlignment &&
+                          paragraph_before.wNumbering == paragraph_after.wNumbering &&
+                          paragraph_before.dyLineSpacing == paragraph_after.dyLineSpacing &&
+                          paragraph_before.bLineSpacingRule == paragraph_after.bLineSpacingRule;
+    printf("format key=%u modifiers=%u text=%d character=%d paragraph=%d "
+           "height=%ld/%ld effects=%lu/%lu align=%u/%u spacing=%ld/%ld rule=%u/%u number=%u/%u\n",
+           key, modifiers, same_text, same_character, same_paragraph, before.yHeight, after.yHeight,
+           before.dwEffects, after.dwEffects, paragraph_before.wAlignment,
+           paragraph_after.wAlignment, paragraph_before.dyLineSpacing,
+           paragraph_after.dyLineSpacing, paragraph_before.bLineSpacingRule,
+           paragraph_after.bLineSpacingRule, paragraph_before.wNumbering,
+           paragraph_after.wNumbering);
+    fflush(stdout);
+    return same_text && same_character && same_paragraph;
+}
+
+static void paragraph_keys_preserve_edit(struct folio_window *_Nonnull window)
+{
+    struct native_body_snapshot snapshot = {0};
+    capture_native_body(window, &snapshot);
+    const UINT keys[] = {'R', '2', '5'};
+    for (size_t at = 0; at < sizeof keys / sizeof keys[0]; ++at)
+    {
+        require(native_key_input(window, keys[at], FCONTROL),
+                "paragraph-only shortcut is consumed before character translation");
+        expect_native_body(window, &snapshot);
+    }
+    PARAFORMAT2 paragraph = {.cbSize = sizeof paragraph};
+    SendMessageW(folio_window_accessible_window(window, ACCESSIBLE_BODY), EM_GETPARAFORMAT, 0,
+                 (LPARAM)&paragraph);
+    require(paragraph.wAlignment == PFA_LEFT && paragraph.dyLineSpacing == 20 &&
+                paragraph.bLineSpacingRule == 5,
+            "blocked shortcuts retain plain paragraph spacing and alignment");
+}
+
+static void format_edit_history(struct folio_window *_Nonnull window,
+                                struct native_fixture *_Nonnull fixture)
+{
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    append_switch_text(window);
+    SendMessageW(body, EM_SETSEL, 10, 12);
+    paragraph_keys_preserve_edit(window);
+    expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_CHANGED);
+    native_key_input(window, 'Z', FCONTROL);
+    expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_SAME);
+    require(SendMessageW(body, EM_CANREDO, 0, 0) != 0, "typing remains redoable");
+    SendMessageW(body, EM_SETSEL, 10, 12);
+    paragraph_keys_preserve_edit(window);
+    native_key_input(window, 'Y', FCONTROL);
+    expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_CHANGED);
+    native_key_input(window, 'Z', FCONTROL);
+    expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_SAME);
+    invoke_operation(window, FOLIO_COMMAND_DISCARD_EDITS);
+    pump(window);
+}
+
+static void format_neighbor_inputs(struct folio_window *_Nonnull window,
+                                   struct native_fixture *_Nonnull fixture)
+{
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    native_key_input(window, 'A', FCONTROL);
+    CHARRANGE selected = {0};
+    SendMessageW(body, EM_EXGETSEL, 0, (LPARAM)&selected);
+    printf("Ctrl+A selection=%ld/%ld length=%d\n", selected.cpMin, selected.cpMax,
+           GetWindowTextLengthW(body));
+    fflush(stdout);
+    /* RichEdit's Select All can include its final paragraph mark. */
+    LONG length = GetWindowTextLengthW(body);
+    require(selected.cpMin == 0 && selected.cpMax >= length && selected.cpMax <= length + 1,
+            "Ctrl+A still selects the complete body");
+    SendMessageW(body, EM_SETSEL, 2, 2);
+    native_key_input(window, VK_RIGHT, FCONTROL | FSHIFT);
+    SendMessageW(body, EM_EXGETSEL, 0, (LPARAM)&selected);
+    require(selected.cpMin == 2 && selected.cpMax > 2, "word selection still extends to the right");
+    CHARRANGE end = {.cpMin = -1, .cpMax = -1};
+    SendMessageW(body, EM_EXSETSEL, 0, (LPARAM)&end);
+    SendMessageW(body, WM_CHAR, L'追', 1);
+    native_key_input(window, 'I', FCONTROL);
+    native_key_input(window, VK_RETURN, 0);
+    expect_editor(window, fixture->state, L"# Current 日本語 😀 **saved**追\t\r",
+                  FOLIO_NOTE_CHANGED);
+    invoke_operation(window, FOLIO_COMMAND_DISCARD_EDITS);
+    pump(window);
+    expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_SAME);
+    native_key_input(window, '3', FCONTROL | FSHIFT);
+    require(folio_state_layout_mode(fixture->state) == FOLIO_LAYOUT_NOTE,
+            "Ctrl+Shift+3 still selects note layout");
+    native_key_input(window, '2', FCONTROL | FSHIFT);
+    require(folio_state_layout_mode(fixture->state) == FOLIO_LAYOUT_BOTH,
+            "Ctrl+Shift+2 is not a blocked line-spacing shortcut");
+    native_key_input(window, 'E', FCONTROL);
+    CHARFORMAT2W heading = character_format(body, 0);
+    require((heading.dwEffects & CFE_BOLD) != 0 && heading.yHeight > 220,
+            "the product mode shortcut retains formatted Markdown viewing");
+    native_key_input(window, 'E', FCONTROL);
+    expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_SAME);
+}
+
+static void format_route_controls(struct folio_window *_Nonnull window,
+                                  struct native_fixture *_Nonnull fixture)
+{
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    require(IsWindowVisible(body), "format diagnosis uses a visible body on the private desktop");
+    SendMessageW(body, EM_SETSEL, 0, -1);
+    SendMessageW(body, EM_REPLACESEL, TRUE, (LPARAM)L"first\rsecond\rthird");
+    SendMessageW(body, EM_SETSEL, 0, 0);
+    require(native_key_input(window, 'J', FCONTROL),
+            "Ctrl+J is handled by the product caret accelerator");
+    CHARRANGE selected = {0};
+    SendMessageW(body, EM_EXGETSEL, 0, (LPARAM)&selected);
+    require(selected.cpMin > 0 && selected.cpMin == selected.cpMax, "Ctrl+J moves down a line");
+    require(native_key_input(window, 'K', FCONTROL),
+            "Ctrl+K is handled by the product caret accelerator");
+    SendMessageW(body, EM_EXGETSEL, 0, (LPARAM)&selected);
+    require(selected.cpMin == 0 && selected.cpMax == 0, "Ctrl+K moves back up");
+    require(native_key_input(window, 'L', FCONTROL),
+            "Ctrl+L is handled by the product caret accelerator");
+    SendMessageW(body, EM_EXGETSEL, 0, (LPARAM)&selected);
+    require(selected.cpMin == 1 && selected.cpMax == 1, "Ctrl+L moves right one character");
+    require(native_key_input(window, 'H', FCONTROL),
+            "Ctrl+H is handled by the product caret accelerator");
+    expect_editor(window, fixture->state, L"first\rsecond\rthird", FOLIO_NOTE_CHANGED);
+    history_undo(window);
+    expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_SAME);
+    CHARRANGE end = {.cpMin = -1, .cpMax = -1};
+    SendMessageW(body, EM_EXSETSEL, 0, (LPARAM)&end);
+    native_key_input(window, VK_RETURN, FCONTROL);
+    wchar_t text[128];
+    GETTEXTEX request = {.cb = sizeof text, .flags = GT_RAWTEXT, .codepage = 1200};
+    LRESULT length = SendMessageW(body, EM_GETTEXTEX, (WPARAM)&request, (LPARAM)text);
+    require(length > 0 && length < 128, "Ctrl+Enter observation fits");
+    printf("Ctrl+Enter length=%lld last=%u\n", (long long)length, (unsigned)text[length - 1]);
+    expect_editor(window, fixture->state, L"# Current 日本語 😀 **saved**\r", FOLIO_NOTE_CHANGED);
+    invoke_operation(window, FOLIO_COMMAND_DISCARD_EDITS);
+    pump(window);
+    expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_SAME);
+}
+
+static void run_format_case(struct native_fixture *_Nonnull fixture)
+{
+    require(folio_state_select_note(fixture->state, 0, 0, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
+            "select the dedicated format key note");
+    struct history_snapshot history = {0};
+    capture_history(fixture, &history);
+    struct folio_window *window = nullptr;
+    require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
+                FOLIO_WINDOW_CREATED,
+            "real window for native formatting keys");
+    pump(window);
+    action(window, ACCESSIBLE_EDIT);
+    format_route_controls(window, fixture);
+    const UINT ordinary[] = {'J', 'R', 'L', '1', '2', '5', 'B', 'U'};
+    const UINT shifted[] = {'A', 'L', VK_OEM_PERIOD, VK_OEM_COMMA, VK_LEFT, VK_RIGHT};
+    bool unchanged = true;
+    for (size_t at = 0; at < sizeof ordinary / sizeof ordinary[0]; ++at)
+    {
+        unchanged &= observe_format_key(window, fixture, ordinary[at], FCONTROL);
+        invoke_operation(window, FOLIO_COMMAND_DISCARD_EDITS);
+        pump(window);
+    }
+    for (size_t at = 0; at < sizeof shifted / sizeof shifted[0]; ++at)
+    {
+        unchanged &= observe_format_key(window, fixture, shifted[at], FCONTROL | FSHIFT);
+        invoke_operation(window, FOLIO_COMMAND_DISCARD_EDITS);
+        pump(window);
+    }
+    require(unchanged, "native formatting keys preserve the plain editor body and format");
+    format_edit_history(window, fixture);
+    format_neighbor_inputs(window, fixture);
+    verify_history_unchanged(fixture, &history);
+    folio_window_destroy(window);
+    for (size_t version = 0; version <= note_history_depth; ++version)
+        note_text_destroy(history.files[version]);
+}
+
 static void run_other_fixture(struct native_fixture *_Nonnull fixture, int argc,
                               char *_Nonnull *_Nonnull argv)
 {
+    if (format_case)
+    {
+        run_format_case(fixture);
+        return;
+    }
     if (paste_case)
     {
         run_paste_case(fixture);
@@ -2582,6 +2796,7 @@ int main(int argc, char *_Nonnull *_Nonnull argv)
 {
     const char *selector = argc == 2 ? argv[1] : "";
     paste_case = strcmp(selector, "--paste") == 0;
+    format_case = strcmp(selector, "--format-keys") == 0;
     HWINSTA original_station = GetProcessWindowStation();
     HDESK original_desktop = GetThreadDesktop(GetCurrentThreadId());
     HWINSTA paste_station = paste_case ? isolate_paste_clipboard() : nullptr;

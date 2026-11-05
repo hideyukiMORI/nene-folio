@@ -12838,6 +12838,18 @@ static bool translate_search_shortcut(const struct folio_window *_Nonnull window
     return TranslateAcceleratorW(window->handle, window->search_keys, &translated) != 0;
 }
 
+/* Consume paragraph-only shortcuts before TranslateMessage can generate a native edit command. */
+static bool paragraph_shortcut(const struct folio_window *_Nonnull window,
+                               const MSG *_Nonnull message)
+{
+    if (message->message != WM_KEYDOWN || window->pane == nullptr ||
+        message->hwnd != note_pane_handle(window->pane) ||
+        folio_state_pane_mode(window->state) != PANE_MODE_EDIT)
+        return false;
+    return pressed_shortcut_modifiers() == (FVIRTKEY | FCONTROL) &&
+           (message->wParam == 'R' || message->wParam == '2' || message->wParam == '5');
+}
+
 bool folio_window_translate(const struct folio_window *_Nonnull window, const MSG *_Nonnull message)
 {
     if (cancel_drawer_input(window, message))
@@ -12862,7 +12874,8 @@ bool folio_window_translate(const struct folio_window *_Nonnull window, const MS
     {
         return false;
     }
-    return note_pane_translate(window->pane, message, folio_state_pane_mode(window->state));
+    return note_pane_translate(window->pane, message, folio_state_pane_mode(window->state)) ||
+           paragraph_shortcut(window, message);
 }
 
 static void release_accelerators(struct folio_window *_Nonnull window)

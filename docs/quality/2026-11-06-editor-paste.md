@@ -78,3 +78,15 @@ bitmap保存だけを既存status_pixelsと共用し、そちらの色assertion�
 STREAMING/終了照会中の同期再入pasteは未実行。最後の2状態の拒否順序は既存guardと差分の静読で照合した。
 最終head必須CI・統合・通常版反映・全保全整理の確定結果は、agents内`integration-completion.json`へ収載する。
 対象試験の成功だけを統合完了とは扱わない。
+
+## 統合と通常反映の確定
+
+PR708の最終head `eed344b126bfe82025f1b2ecf2cdf2279ccaf71c`で、必須CI42122814552のfull-gate/checkが成功した。
+main `50fa28ea6ebc120023f1bbd30a753f9c3a5e9ab3`へ統合し、通常版を正典prepare-real-machineで反映。
+実data32fileのbytes/hash/作成更新日時は不変で、通常appは起動していない。
+通常exe SHA256は`496dd3b7455f425c7400e23cdd9017e79881817ef2ee039a2f71db78531aec14`。
+
+旧10月31日output・今回output・作業木の11811filesをarchive内の全hashで照合した。
+archive SHA256は`63ce1848c5f252a55cb591334294b8fb067ac7d6d6cc107579ef9ca580faf11e`。
+絶対path、同一squash tree、clean/ignored、全file不変、linksと稼働参照を確認して3領域を整理し、branch/commitを保持した。
+確定原本は`D:/NeNeFolio/agents/479-editor-paste-20261106/integration-completion.json`。

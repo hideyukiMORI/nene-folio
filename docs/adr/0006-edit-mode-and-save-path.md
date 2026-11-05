@@ -247,3 +247,10 @@ Unicodeへ変換可能な文字形式が無いときは、選択本文を保持�
 職場環境と物理IMEはこの修正の保証に含めない。追加waiverは不要。
 API根拠: [EM_PASTESPECIAL](https://learn.microsoft.com/en-us/windows/win32/controls/em-pastespecial)、
 [Clipboard Formats](https://learn.microsoft.com/en-us/windows/win32/dataxchg/clipboard-formats)。
+
+## 2026-11-06 — 平文編集の段落書式キー（#709）
+
+編集本文のCtrl+R/2/5は保存本文に残らない段落揃え・行間を変更するため、既存folio_window_translateでTranslateMessage前に消費する。
+sessionと製品キー、Ctrl+H/J/K/Lの移動を先に処理する順序は維持する。Shift/Alt併用、別入力欄、閲覧modeへ適用しない。
+本文/選択/Undoを再設定する経路やWM_CHAR値だけの判定を追加しない。
+修正前red、入力経路の訂正、対象339checks、限界は[品質記録](../quality/2026-11-06-editor-format.md)へ。
