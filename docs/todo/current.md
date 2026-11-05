@@ -5,11 +5,15 @@
 hideの現在指示は、停止の指示まで調査・試験・計測・必要な修正を続け、全試行と変更を記録すること。
 主担当は単体で実行し、必要な保存系/本文処理の独立静読だけを委任した。古い停止・固定分担は持ち込まない。
 
-**#624は借用Markdown行の参照改善。** 4候補を比較し、範囲照合付き推定と同じ二分探索を使う候補4を採用。
-1MiB RTFの79文字+LF56.39725→27.20645ms、1文字+LF722.01880→253.44850ms。
-標本幅だけ一致する中間交互入力は約10%増。実UIや全入力の改善を保証しない。
-Debug/tidy/既存--markdown-rtfと240組の監査成功。最終head必須CI/統合/通常反映/保全整理の確定は
-`D:/NeNeFolio/agents/624-markdown-view-lookup/integration-completion.json`へ。
+**#626は一括取り込みの停止・再試行の試験追加。** 製品変更なし。7path/4新規ノートで、
+read/create/ledger各1〜4位置、cold/warm corpusの24caseを確認した。Debug/tidy/既存--transfer成功。
+初回のfake初期総数の仮定は訂正し、失敗原本を保持する。実I/OやUI Undoは検証範囲外。
+最終head必須CI/統合/通常exe不変/保全整理の確定は
+`D:/NeNeFolio/agents/626-import-batch-retry/integration-completion.json`へ。
+
+#624はPR625/必須CI41940460425成功、main19857d8へ統合済み。通常反映/data32file不変、
+2,000file全保全・専用領域整理済み。原本は同agents/624-markdown-view-lookup/integration-completion.json。
+1MiB soft1のRTF722.01880→253.44850ms。標本幅だけ一致する中間交互入力の約10%増は残る。
 
 #622はPR623/必須CI41936962814成功、mainbd8359eへ統合済み。文書のみ・通常exe/data32file不変、
 1,314file全保全・専用領域整理済み。原本は同agents/622-markdown-paragraph-scale/integration-completion.json。
@@ -24,7 +28,7 @@ Debug/tidy/既存--markdown-rtfと240組の監査成功。最終head必須CI/統
 原本は同agents/617-save-preparation/integration-completion.json。branch/commitは保持する。
 
 全体journalは`D:/NeNeFolio/agents/quality-20261105/journal.md`。
-[借用行参照](../quality/2026-11-05-markdown-view-lookup.md)・[Markdown段落](../quality/2026-11-05-markdown-paragraph-scale.md)・[改行正規化](../quality/2026-11-05-editor-normalization.md)・[本文検証](../quality/2026-11-05-ascii-validation.md)・
+[取り込み再試行](../quality/2026-11-05-import-batch-retry.md)・[借用行参照](../quality/2026-11-05-markdown-view-lookup.md)・[Markdown段落](../quality/2026-11-05-markdown-paragraph-scale.md)・[改行正規化](../quality/2026-11-05-editor-normalization.md)・[本文検証](../quality/2026-11-05-ascii-validation.md)・
 [保存](../quality/2026-11-05-save-preparation.md)・[日報](../reports/2026-11-05.md)・[引き継ぎ](../handoffs/2026-11-05.md)。
 追加waiver none、既存WVR-0001継続。実app/実ノート/Storeは試験に使っていない。
 
@@ -48,9 +52,9 @@ Store提出用MSIXと3言語更新文は`D:/NeNeFolio/releases/1.3.0/store-candi
 
 ## 通常版と実機確認の範囲
 
-通常exeは`C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`、#620反映時sourceは`6107a26`。
-SHA256は`3fd9d8a9a97858782b7a45daa5d9eaaf6d973776f08523db28fe60317a4fa030`。
-#622では再build無し。#624後の通常反映は同task完了原本へ。GitHub/Store配布1.3.0のsource`4359e9e`とは区別する。
+通常exeは`C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`、#624反映時sourceは`19857d8`。
+SHA256は`6af153d5fa22a1cea383530ebb3688c3817714ee2a2f7dabe4d17d0cb5ea5392`。
+#626は製品変更がなく通常exeを再buildしない。GitHub/Store配布1.3.0のsource`4359e9e`とは区別する。
 通常app/実ノートは試験に使っていない。hideによる1.3.0の実機受理は未確認。
 
 以前のStore1.2.0は#536/PR538、source`eb10419`でMermaidを含まない。

@@ -24,33 +24,83 @@ static struct persistence_port source_port;
 static enum persistence_outcome create_result;
 static enum persistence_outcome ledger_result;
 static enum persistence_outcome saved_read_result;
+static size_t read_failure_call;
+static size_t create_failure_call;
+static size_t ledger_failure_call;
+static size_t create_calls;
+static size_t ledger_calls;
+static bool retain_imports;
+static size_t retained_import_count;
+static char retained_names[4][32];
+static char retained_bodies[4][64];
+
+static void remember_import(const char *_Nonnull category, const char *_Nonnull name,
+                            const struct note_text *_Nonnull body)
+{
+    require(strcmp(category, "A") == 0 && retained_import_count < 4,
+            "batch fixture publishes at most four distinct notes in A");
+    size_t name_length = strlen(name);
+    size_t body_length = note_text_length(body);
+    require(name_length < sizeof retained_names[0] && body_length < sizeof retained_bodies[0],
+            "batch fixture names and bodies fit retained storage");
+    memcpy(retained_names[retained_import_count], name, name_length + 1);
+    memcpy(retained_bodies[retained_import_count], note_text_bytes(body), body_length + 1);
+    retained_import_count += 1;
+}
 
 static enum persistence_outcome create_import(struct persistence_adapter *_Nonnull adapter,
                                               const char *_Nonnull category,
                                               const char *_Nonnull name,
                                               const struct note_text *_Nonnull body)
 {
-    return create_result == PERSISTENCE_STORED
-               ? source_port.create_note(adapter, category, name, body)
-               : create_result;
+    create_calls += 1;
+    enum persistence_outcome result = create_result;
+    if (create_failure_call != 0 && create_calls != create_failure_call)
+        result = PERSISTENCE_STORED;
+    enum persistence_outcome stored = result == PERSISTENCE_STORED
+                                          ? source_port.create_note(adapter, category, name, body)
+                                          : result;
+    if (retain_imports && stored == PERSISTENCE_STORED)
+        remember_import(category, name, body);
+    return stored;
 }
 
 static enum persistence_outcome write_index(struct persistence_adapter *_Nonnull adapter,
                                             const char *_Nonnull category,
                                             const struct note_ledger *_Nonnull ledger)
 {
-    return ledger_result == PERSISTENCE_STORED
-               ? source_port.write_note_ledger(adapter, category, ledger)
-               : ledger_result;
+    ledger_calls += 1;
+    enum persistence_outcome result = ledger_result;
+    if (ledger_failure_call != 0 && ledger_calls != ledger_failure_call)
+        result = PERSISTENCE_STORED;
+    return result == PERSISTENCE_STORED ? source_port.write_note_ledger(adapter, category, ledger)
+                                        : result;
+}
+
+static enum persistence_outcome read_retained(size_t index,
+                                              struct note_text *_Nullable *_Nonnull out)
+{
+    return note_text_create(retained_bodies[index], strlen(retained_bodies[index]), out) ==
+                   NOTE_TEXT_ACCEPTED
+               ? PERSISTENCE_LOADED
+               : PERSISTENCE_OUT_OF_MEMORY;
 }
 
 static enum persistence_outcome read_saved(struct persistence_adapter *_Nonnull adapter,
                                            const char *_Nonnull category, const char *_Nonnull name,
                                            struct note_text *_Nullable *_Nonnull out)
 {
-    return saved_read_result == PERSISTENCE_LOADED
-               ? source_port.read_note(adapter, category, name, out)
-               : saved_read_result;
+    if (saved_read_result != PERSISTENCE_LOADED)
+        return saved_read_result;
+    if (retain_imports && strcmp(category, "A") == 0)
+    {
+        for (size_t index = 0; index < retained_import_count; ++index)
+        {
+            if (strcmp(name, retained_names[index]) == 0)
+                return read_retained(index, out);
+        }
+    }
+    return source_port.read_note(adapter, category, name, out);
 }
 
 static enum persistence_outcome read_source(const struct storage_path *_Nonnull path,
@@ -58,8 +108,11 @@ static enum persistence_outcome read_source(const struct storage_path *_Nonnull 
 {
     (void)path;
     reads += 1;
-    if (read_result != PERSISTENCE_LOADED)
-        return read_result;
+    enum persistence_outcome result = read_result;
+    if (read_failure_call != 0 && reads != read_failure_call)
+        result = PERSISTENCE_LOADED;
+    if (result != PERSISTENCE_LOADED)
+        return result;
     return note_text_create("# imported\r\n", 12, out) == NOTE_TEXT_ACCEPTED
                ? PERSISTENCE_LOADED
                : PERSISTENCE_OUT_OF_MEMORY;
@@ -399,6 +452,135 @@ static void verify_import_failures(void)
     test_adapter_destroy(adapter);
 }
 
+static void arm_import_failure(size_t read_at, size_t create_at, size_t ledger_at)
+{
+    reads = create_calls = ledger_calls = 0;
+    read_failure_call = read_at;
+    create_failure_call = create_at;
+    ledger_failure_call = ledger_at;
+    read_result = read_at == 0 ? PERSISTENCE_LOADED : PERSISTENCE_MALFORMED;
+    create_result = create_at == 0 ? PERSISTENCE_STORED : PERSISTENCE_UNWRITABLE;
+    ledger_result = ledger_at == 0 ? PERSISTENCE_STORED : PERSISTENCE_UNWRITABLE;
+}
+
+static struct note_import_request import_batch(struct storage_path *_Nonnull *_Nonnull paths)
+{
+    static const char *const names[] = {
+        "D:/source/one.md",   "D:/source/alpha.md", "D:/source/ALPHA.MD", "D:/source/beta.md",
+        "D:/source/gamma.md", "D:/source/ONE.md",   "D:/source/delta.md"};
+    for (size_t index = 0; index < sizeof names / sizeof names[0]; ++index)
+        paths[index] = accepted_path(names[index]);
+    return (struct note_import_request){.category = 0, .paths = paths, .count = 7};
+}
+
+static void expect_import_counts(struct note_import_result actual,
+                                 struct note_import_result expected)
+{
+    require(actual.added == expected.added && actual.skipped == expected.skipped &&
+                actual.remaining == expected.remaining && actual.outcome == expected.outcome,
+            "batch result distinguishes published prefix, duplicates and untouched suffix");
+}
+
+static void retry_import_batch(struct folio_state *_Nonnull state,
+                               const struct note_import_request *_Nonnull request,
+                               struct note_import_result expected, bool pending)
+{
+    size_t before = folio_state_note_count(state);
+    expect_import_counts(folio_state_import_notes(state, request), expected);
+    require(folio_state_note_count(state) == before + expected.added,
+            "only the expected prefix is published");
+    size_t published = expected.added;
+    if (pending)
+    {
+        ledger_failure_call = 0;
+        reads = create_calls = 0;
+        struct note_import_result refused = {.remaining = 7,
+                                             .outcome = FOLIO_STATE_LEDGER_UNSYNCED};
+        expect_import_counts(folio_state_import_notes(state, request), refused);
+        require(reads == 0 && create_calls == 0 &&
+                    folio_state_note_count(state) == before + published,
+                "unrepaired ledger prevents another read or publication");
+    }
+    arm_import_failure(0, 0, 0);
+    struct note_import_result retried = {.added = 4 - published,
+                                         .skipped = 3 + published,
+                                         .remaining = 0,
+                                         .outcome = FOLIO_STATE_READY};
+    expect_import_counts(folio_state_import_notes(state, request), retried);
+    require(folio_state_note_count(state) == before + 4 && reads == 4 - published &&
+                create_calls == 4 - published,
+            "retry reads and publishes each remaining distinct note exactly once");
+    require(test_index_filter_complete(state, u"imported", 8) == FOLIO_STATE_READY &&
+                folio_state_index_filter_count(state) == 4,
+            "search corpus contains all imported bodies after retry");
+}
+
+static void verify_import_batch_retry(bool warm, size_t read_at, size_t create_at, size_t ledger_at)
+{
+    static const struct note_import_result prefixes[] = {
+        {.added = 0, .skipped = 1, .remaining = 6},
+        {.added = 1, .skipped = 2, .remaining = 4},
+        {.added = 2, .skipped = 2, .remaining = 3},
+        {.added = 3, .skipped = 3, .remaining = 1}};
+    struct persistence_adapter *adapter = adapter_for();
+    struct folio_state *state = state_for(adapter);
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
+                folio_state_begin_edit(state) == FOLIO_STATE_READY,
+            "batch retry keeps an existing editor open");
+    char before[256];
+    size_t length = strlen(folio_state_pane_text(state));
+    require(length < sizeof before, "batch pane snapshot bound");
+    memcpy(before, folio_state_pane_text(state), length + 1);
+    if (warm)
+    {
+        require(test_index_filter_complete(state, u"imported", 8) == FOLIO_STATE_READY &&
+                    folio_state_index_filter_count(state) == 0,
+                "warm corpus starts without imported bodies");
+        require(test_index_filter_complete(state, u"", 0) == FOLIO_STATE_READY,
+                "warm corpus is retained while import is unfiltered");
+    }
+    struct storage_path *paths[7];
+    struct note_import_request request = import_batch(paths);
+    retain_imports = true;
+    retained_import_count = 0;
+    arm_import_failure(read_at, create_at, ledger_at);
+    size_t position = read_at + create_at + ledger_at;
+    require(position >= 1 && position <= 4, "one refusal is placed at a distinct new note");
+    struct note_import_result expected = prefixes[position - 1];
+    expected.outcome = read_at != 0 ? FOLIO_STATE_NOTE_MALFORMED : FOLIO_STATE_NOTE_STORE_FAILED;
+    if (ledger_at != 0)
+    {
+        expected.added += 1;
+        expected.remaining -= 1;
+        expected.outcome = FOLIO_STATE_LEDGER_STALE;
+    }
+    retry_import_batch(state, &request, expected, ledger_at != 0);
+    require(folio_state_pane_mode(state) == PANE_MODE_EDIT &&
+                same_text(folio_state_pane_title(state).note, "one") &&
+                same_text(folio_state_pane_text(state), before) &&
+                test_adapter_body_publications(adapter) == 0,
+            "batch failure and retry preserve current selection, source and edit mode");
+    for (size_t index = 0; index < request.count; ++index)
+        storage_path_destroy(paths[index]);
+    folio_state_destroy(state);
+    test_adapter_destroy(adapter);
+    retain_imports = false;
+    arm_import_failure(0, 0, 0);
+}
+
+static void verify_import_batch_retries(void)
+{
+    for (size_t position = 1; position <= 4; ++position)
+    {
+        verify_import_batch_retry(false, position, 0, 0);
+        verify_import_batch_retry(false, 0, position, 0);
+        verify_import_batch_retry(false, 0, 0, position);
+        verify_import_batch_retry(true, position, 0, 0);
+        verify_import_batch_retry(true, 0, position, 0);
+        verify_import_batch_retry(true, 0, 0, position);
+    }
+}
+
 static void verify_import_search(void)
 {
     struct persistence_adapter *adapter = adapter_for();
@@ -533,6 +715,7 @@ void run_transfer_tests(void)
     verify_import();
     verify_export();
     verify_import_failures();
+    verify_import_batch_retries();
     verify_import_search();
     verify_export_boundaries();
     verify_import_allocation(false);

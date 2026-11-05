@@ -105,3 +105,10 @@ audit-01も子/記録0。全6pairedファイル、240組/4,800timed samples、38
 全体journalは`D:/NeNeFolio/agents/quality-20261105/journal.md`。
 文書確認→最終head必須CIのeng/check.ps1→正典merge→通常反映/data不変→全保全/専用worktree/output整理の確定は
 同taskのintegration-completion.jsonへ記録する。branch/commitは保持する。実ノート・通常app・Storeは試験に使わない。
+
+## 09:29 — #624統合・反映・保全整理完了
+
+PR625最終head7339fa92の必須CI41940460425 full-gate/check成功、main19857d8へ正典統合、Issue624 CLOSED。
+通常版へ反映し、portable data32fileのbytes/hash/作成更新日時不変、通常app起動0を確認した。
+2,000fileを全保全/hash照合し、取込/clean/ignored/リンク/稼働参照を監査して専用worktree/outputを削除した。
+branch/commit保持。原本D:/NeNeFolio/agents/624-markdown-view-lookup/integration-completion.json。

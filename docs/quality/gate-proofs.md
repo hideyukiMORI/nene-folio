@@ -1206,3 +1206,11 @@ Debug/tidyと既存--text-validationが成功、初回test nesting違反は既�
 4候補240組/4,800標本、38fixture/576RTFの全hash・raw再計算・全版bytes一致を監査した。
 新しい確保・公開API・schema・gateは無い。中間交互入力の約10%増など限界は[品質記録](2026-11-05-markdown-view-lookup.md)へ。
 最終head必須CI/統合/通常反映/保全整理の確定原本はagents/624-markdown-view-lookup/integration-completion.json。
+
+## #626 — 一括取り込みのprefixと再試行
+
+既存transfer_testsへ、同名を挟む7path・4新規、3拒否境界×4位置×cold/warmの24caseを追加した。
+added/skipped/remaining/outcomeと実際のnote総数、台帳保留中read/create0、解除後の一度だけの追加と検索派生集合を確認。
+初期総数のfake仮定を修正した後、Debug/tidy/既存--transferが成功。製品/API/schema/gateに変更なし。
+失敗原本・既存比較stderr・fake範囲の限界は[品質記録](2026-11-05-import-batch-retry.md)へ。
+最終head必須CI/統合/通常exe不変/保全整理の確定原本はagents/626-import-batch-retry/integration-completion.json。
