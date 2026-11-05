@@ -294,6 +294,8 @@ add_custom_command(TARGET image_status_tests POST_BUILD
 add_test(NAME image_status COMMAND image_status_tests)
 add_test(NAME diagram_status COMMAND image_status_tests --mermaid)
 add_test(NAME search_native COMMAND image_status_tests --search)
+add_test(NAME note_switch_native COMMAND image_status_tests --note-switch)
+set_tests_properties(note_switch_native PROPERTIES TIMEOUT 30 RESOURCE_LOCK image_status_data)
 set_tests_properties(search_native PROPERTIES TIMEOUT 30 RESOURCE_LOCK image_status_data)
 add_test(NAME replace_native COMMAND image_status_tests --replace)
 set_tests_properties(replace_native PROPERTIES TIMEOUT 30 RESOURCE_LOCK image_status_data)
