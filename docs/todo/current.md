@@ -1,8 +1,10 @@
 # いまの状態 — NeNe Folio
 
-## 2026-11-06 — 品質対応を継続
+## 2026-11-06 — 区切りで一時停止
 
-hideの11月5日23:17頃の継続指示と11月6日の「頑張って！」を受け、現在のサナが単体で進める。個別保留は維持する。
+hideの11月6日00:51頃「区切りのいいところでいったん止めて日報と引き継ぎ書を書いて」を受け、品質対応を一時停止する。
+進行中の#706のStore公開記録と停止地点の文書化・最終CI・統合・全保全整理で区切る。新しい調査/試験/Issue起票は行わず、再開はhideの新しい指示を待つ。
+停止処理の確定原本はD:/NeNeFolio/agents/706-store-publication/integration-completion.json。個別保留は維持する。
 #704/PR705は操作パレットの取消と編集保持を確認（141checks、stderr空）し、最終CI42054891152成功、main eaef26aへ統合・全保全整理済み。
 [品質記録](../quality/2026-11-06-palette-native.md)。原本はD:/NeNeFolio/agents/704-palette-native/integration-completion.json。
 #702/PR703は最終CI42045853037成功、main82204cbへ統合・全保全整理済み。原本はD:/NeNeFolio/agents/702-discard-native/integration-completion.json。
@@ -16,7 +18,7 @@ Windows版は1.3.1.0。正規ZIP/MSIX生成、専用コピーでの起動・設�
 確定原本は `D:/NeNeFolio/agents/release-1.3.1-20261105/integration-completion.json`。697専用worktree/outputは全保全後に整理済み、branch/commitは保持した。
 結果収載#700 / PR701も最終CI42040854960成功、main e1df61cへ統合・全保全整理済み。原本は `D:/NeNeFolio/agents/700-release-result/integration-completion.json`。
 
-21:28の一時停止後、22:13のリリース依頼を完了した。23:17頃の新しい指示で品質対応も再開している。
+11月5日21:28の一時停止後、22:13のリリース依頼を完了し、23:17頃に品質対応を再開した。11月6日00:51頃の新しい停止指示が現在の状態である。
 
 ## リリースに含む最新の品質改善
 
