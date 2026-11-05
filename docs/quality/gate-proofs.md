@@ -1289,3 +1289,10 @@ Debug/tidy/対象7657checks成功、資源55/36/267前後一致、stderr空。�
 API/確保/schema不変。Debug/tidy、編集開始/履歴復元/切替と文字位置/本文不変の専用回帰が成功。
 正常24入力480sampleのraw/MAP/sourceを監査。初回補助監査の未使用symbol前提誤りも保持。
 性能の範囲・悪化・独立静読は[品質記録](2026-11-05-editor-eligibility.md)。最終head必須CI/統合/通常反映/全保全整理は647/integration-completion.jsonへ。
+
+### #647の最終候補への訂正
+
+候補1のCI41971675035はARC-003のmemchr未許可を正しく拒否した。許可集合を変えず残長内memcpyへ修正。
+最終候補3はDebug/tidy/--editor-eligibilityとsymbols.pyの2library検査0違反、正常24入力480sample監査成功。
+候補2の性能悪化、補助library名の誤指定、旧merge停止も品質記録へ収載し、成功扱いしない。
+最終headの必須CIが成功するまで統合しない。

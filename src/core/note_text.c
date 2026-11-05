@@ -280,13 +280,41 @@ static bool editor_alters(uint32_t code_point)
     return false;
 }
 
+/* 残長内の8byteだけをコピーし、一致するbyteがあるかを調べる。 */
+static bool contains_ascii(const char *_Nonnull bytes, size_t length, unsigned char value)
+{
+    constexpr uint64_t high_bits = UINT64_C(0x8080808080808080);
+    constexpr uint64_t low_bits = UINT64_C(0x0101010101010101);
+    uint64_t repeated = low_bits * value;
+    size_t count = 0;
+    while (length - count >= sizeof(uint64_t))
+    {
+        uint64_t word = 0;
+        memcpy(&word, bytes + count, sizeof word);
+        word ^= repeated;
+        if (((word - low_bits) & ~word & high_bits) != 0)
+        {
+            return true;
+        }
+        count += sizeof word;
+    }
+    for (; count < length; ++count)
+    {
+        if ((unsigned char)bytes[count] == value)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
 /* ASCII と確認済みなら、同じ禁止文字集合の ASCII 要素だけを byte 検索する。 */
 static bool ascii_editor_alters(const char *_Nonnull bytes, size_t length)
 {
     for (size_t index = 0; index < sizeof editor_altered / sizeof editor_altered[0]; ++index)
     {
         if (editor_altered[index] <= 0x7f &&
-            memchr(bytes, (int)editor_altered[index], length) != nullptr)
+            contains_ascii(bytes, length, (unsigned char)editor_altered[index]))
         {
             return true;
         }
@@ -302,9 +330,9 @@ enum note_text_editability note_text_editability(const struct note_text *_Nonnul
                                                               : NOTE_TEXT_EDITABLE;
     }
     /* 本文は生成時に検証済みなので、decode が 0 を返すことは無い。 */
+    uint32_t code_point = 0;
     for (size_t index = 0; index < text->length;)
     {
-        uint32_t code_point = 0;
         size_t consumed = utf8_text_decode(text->bytes + index, text->length - index, &code_point);
         if (editor_alters(code_point))
         {
