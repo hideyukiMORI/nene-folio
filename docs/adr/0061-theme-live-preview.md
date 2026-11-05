@@ -83,3 +83,9 @@ CTest theme_preview_nativeで通常候補検索/SELECT→CLOSE、同preview→BA
 既存theme_preview_nativeで候補INVOKEによる設定保存と一覧保持を確認する。未保存本文/UndoRedo/全保存履歴を保持し、
 別候補の取消は直近に確定したtheme/paletteへ戻る。実settings再読でtheme以外の設定不変も比較する。
 契約変更なし。[品質記録](../quality/2026-11-05-theme-commit.md)。
+
+## 2026-11-05 の通常終了回帰（#677）
+
+既存theme_preview_nativeで未保存の名前付き本文+別候補previewからWM_CLOSEを通す。
+本文一世代保存/全履歴shift/revision+1と、保存choice/settings全bytes保持、root破棄/WM_QUIT0を確認する。
+決定5の意味は不変。[品質記録](../quality/2026-11-05-theme-close.md)。

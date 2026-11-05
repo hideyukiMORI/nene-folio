@@ -1547,13 +1547,14 @@ static void theme_preview_cycle(struct folio_window *_Nonnull window,
 }
 
 static void expect_theme_body_saved(struct native_fixture *_Nonnull fixture,
-                                    const struct history_snapshot *_Nonnull history)
+                                    const struct history_snapshot *_Nonnull history,
+                                    const char *_Nonnull expected)
 {
     require(folio_state_store_revision(fixture->state) == history->store_revision + 1,
-            "surface save publishes exactly one body revision");
+            "native body save publishes exactly one revision");
     struct persistence_port disk = persistence_adapter_port(fixture->files);
     struct note_text *saved = nullptr;
-    require(note_text_create(switch_saved, strlen(switch_saved), &saved) == NOTE_TEXT_ACCEPTED,
+    require(note_text_create(expected, strlen(expected), &saved) == NOTE_TEXT_ACCEPTED,
             "valid theme body save expectation");
     expect_history_file(disk, 0, saved);
     for (size_t version = 1; version <= note_history_depth; ++version)
@@ -1591,7 +1592,7 @@ static void save_theme_input(struct folio_window *_Nonnull window,
         require(folio_state_theme(fixture->state) == preview &&
                     theme_palette_equal(folio_state_palette(fixture->state), &palette),
                 "body save retains the uncommitted theme preview");
-        expect_theme_body_saved(fixture, history);
+        expect_theme_body_saved(fixture, history, switch_saved);
     }
 }
 
@@ -1617,12 +1618,12 @@ static void theme_save_cycle(struct folio_window *_Nonnull window,
     expect_theme_restored(fixture, theme);
     history_undo(window);
     expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_CHANGED);
-    expect_theme_body_saved(fixture, history);
+    expect_theme_body_saved(fixture, history, switch_saved);
     HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
     require(SendMessageW(body, EM_REDO, 0, 0) != 0, "native Redo succeeds after body-only save");
     pump(window);
     expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_SAME);
-    expect_theme_body_saved(fixture, history);
+    expect_theme_body_saved(fixture, history, switch_saved);
     expect_theme_restored(fixture, theme);
 }
 
@@ -1730,7 +1731,58 @@ static void theme_commit_cycle(struct folio_window *_Nonnull window,
         note_text_destroy(history.files[version]);
 }
 
-/* #661/#665/#671: Theme preview, body save and commit retain native editing history. */
+static void close_theme_window(struct folio_window *_Nonnull window)
+{
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    require(root != nullptr && IsWindow(root), "normal close starts with a live root window");
+    SendMessageW(root, WM_CLOSE, 0, 0);
+    MSG message;
+    for (unsigned count = 0;
+         count < 1000 && IsWindow(root) && PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE);
+         ++count)
+    {
+        require(message.message != WM_QUIT, "quit is posted only after the root is destroyed");
+        if (message.message == WM_TIMER)
+            continue;
+        if (!folio_window_translate(window, &message))
+        {
+            TranslateMessage(&message);
+            DispatchMessageW(&message);
+        }
+    }
+    require(!IsWindow(root) && folio_window_accessible_window(window, ACCESSIBLE_WINDOW) == nullptr,
+            "normal close completes deferred saving and finalizes the native root");
+    require(PeekMessageW(&message, nullptr, WM_QUIT, WM_QUIT, PM_REMOVE) &&
+                message.message == WM_QUIT && message.wParam == 0,
+            "normal close publishes successful quit for the composition root");
+}
+
+static void theme_close_cycle(struct folio_window *_Nonnull window,
+                              struct native_fixture *_Nonnull fixture)
+{
+    struct history_snapshot history = {0};
+    capture_history(fixture, &history);
+    expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_CHANGED);
+    struct theme_snapshot saved = {.choice = folio_state_theme_choice(fixture->state),
+                                   .settings = read_theme_settings(fixture)};
+    struct accessible_request settings = {.item = {.kind = ACCESSIBLE_SETTINGS},
+                                          .action = ACCESSIBLE_ACTION_INVOKE};
+    require(folio_window_accessible_action(window, &settings) == S_OK,
+            "open settings with an unsaved body before normal close");
+    pump(window);
+    surface_button(window, ACCESSIBLE_SURFACE_THEME);
+    preview_theme_candidate(window, fixture->state, saved.choice);
+    expect_theme_settings(fixture, &saved);
+    verify_history_unchanged(fixture, &history);
+    close_theme_window(window);
+    expect_theme_body_saved(fixture, &history, history_current);
+    expect_theme_settings(fixture, &saved);
+    file_bytes_destroy(saved.settings);
+    for (size_t version = 0; version <= note_history_depth; ++version)
+        note_text_destroy(history.files[version]);
+}
+
+/* #661/#665/#671/#677: Theme operations retain edits; normal close saves only the body. */
 static void run_theme_preview_case(struct native_fixture *_Nonnull fixture)
 {
     require(folio_state_select_note(fixture->state, 0, 0, FOLIO_UNTITLED_PROTECT) ==
@@ -1762,6 +1814,7 @@ static void run_theme_preview_case(struct native_fixture *_Nonnull fixture)
     expect_theme_restored(fixture, &snapshot);
     theme_save_cycle(window, fixture, &snapshot, &history);
     theme_commit_cycle(window, fixture);
+    theme_close_cycle(window, fixture);
     require(controlled.requests == 0, "plain theme preview does not request image work");
     file_bytes_destroy(snapshot.settings);
     folio_window_destroy(window);

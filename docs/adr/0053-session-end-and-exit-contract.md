@@ -81,3 +81,9 @@ API根拠: [WM_QUERYENDSESSION](https://learn.microsoft.com/en-us/windows/win32/
 [WM_ENDSESSION](https://learn.microsoft.com/en-us/windows/win32/shutdown/wm-endsession)、
 [ShutdownBlockReasonCreate](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-shutdownblockreasoncreate)、
 [EnableWindow](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-enablewindow)。
+
+## 2026-11-05 のtheme preview中の通常終了（#677）
+
+既存theme_preview_nativeで名前付き本文の未保存編集と未確定themeを組み合わせ、WM_CLOSEから正典の遅延終了を通す。
+本文だけの保存/全履歴shiftとsettings保持、root破棄/WM_QUIT0を固定する。OS終了通知や失敗経路の設計変更はない。
+[品質記録](../quality/2026-11-05-theme-close.md)。
