@@ -1461,3 +1461,11 @@ MSIXはpackage identity外のpayload起動であり、Store署名版の導入・
 物理IME・聴感・hideの実機受理を確認したとは扱わない。既存機能の対象成功は再利用し、新しい全回帰は実行していない。
 画像/raw/入力/環境原本はD:/NeNeFolio/agents/release-1.3.1-20261105/、全配布hashと公開後再取得は[品質記録](2026-11-05-release-1.3.1.md)。
 ゲート/閾値/抑制/API/schema変更なし。追加waiver none、既存WVR-0001継続。
+
+## 2026-11-05 — #702編集破棄とnative履歴
+
+Windows専用desktop NeNeFolioImageStatus520、専用portable data初回0fileで既存image_status_testsの--discardを実行。
+公開操作メニューと実RichEditで、変更状態/Undo後のRedo保有状態からの破棄、全文/SAME/編集可能/focus、実UndoRedoによる復活拒否を確認。
+破棄後の追記→Undo→Redoも全文/dirtyを確認し、全保存本文/5履歴slot/store_revisionは不変。127checks/0.691320秒、stderr空。
+同target/lock/30秒をCTestへ登録する。製品/閾値/抑制/API/schema変更なし。物理入力/IME・全DPI・無題/保存失敗の追加試験ではない。
+原本D:/NeNeFolio/agents/702-discard-native/。[品質記録](2026-11-05-discard-native.md)。

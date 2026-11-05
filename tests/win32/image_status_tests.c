@@ -52,6 +52,7 @@ static bool zoom_case;
 static bool theme_preview_case;
 static bool settings_edit_case;
 static bool mode_save_case;
+static bool discard_case;
 
 static const char history_current[] = "# Current 日本語 😀 **saved**";
 static const char history_previous[] = "> Previous 猫 🐾 `old`";
@@ -103,11 +104,11 @@ static void seed_notes(struct persistence_port disk)
         diagram_case ? "Body before diagrams\n\n```mermaid\nflowchart LR\nA --> B\n```\n\nAfter\n"
                      : "Body before images\n\n![alt](images/one.png)\n\nBody after images\n";
     if (history_case || replace_case || search_case || note_switch_case || zoom_case ||
-        theme_preview_case || settings_edit_case || mode_save_case)
+        theme_preview_case || settings_edit_case || mode_save_case || discard_case)
     {
         seed_history(disk);
         source = history_case || note_switch_case || zoom_case || theme_preview_case ||
-                         settings_edit_case || mode_save_case
+                         settings_edit_case || mode_save_case || discard_case
                      ? history_current
                      : replace_current;
     }
@@ -2094,9 +2095,73 @@ static void run_mode_save_case(struct native_fixture *_Nonnull fixture)
         note_text_destroy(history.files[version]);
 }
 
+static void discard_and_verify(struct folio_window *_Nonnull window,
+                               struct native_fixture *_Nonnull fixture,
+                               const struct history_snapshot *_Nonnull history)
+{
+    invoke_operation(window, FOLIO_COMMAND_DISCARD_EDITS);
+    pump(window);
+    expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_SAME);
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    require(GetFocus() == body, "discard returns focus to the editable body");
+    require(SendMessageW(body, EM_CANUNDO, 0, 0) == 0 && SendMessageW(body, EM_CANREDO, 0, 0) == 0,
+            "discard removes both undoable and redoable edits");
+    require(SendMessageW(body, EM_UNDO, 0, 0) == 0 && SendMessageW(body, EM_REDO, 0, 0) == 0,
+            "discarded edits cannot return through Undo or Redo");
+    pump(window);
+    expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_SAME);
+    verify_history_unchanged(fixture, history);
+}
+
+/* #702: Discard resets the native edit history without publishing a saved revision. */
+static void run_discard_case(struct native_fixture *_Nonnull fixture)
+{
+    require(folio_state_select_note(fixture->state, 0, 0, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
+            "select the dedicated discard note");
+    struct history_snapshot history = {0};
+    capture_history(fixture, &history);
+    struct folio_window *window = nullptr;
+    require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
+                FOLIO_WINDOW_CREATED,
+            "real discard window");
+    pump(window);
+    action(window, ACCESSIBLE_EDIT);
+    append_switch_text(window);
+    expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_CHANGED);
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    require(SendMessageW(body, EM_CANUNDO, 0, 0) != 0, "changed edit is undoable before discard");
+    discard_and_verify(window, fixture, &history);
+    append_switch_text(window);
+    expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_CHANGED);
+    history_undo(window);
+    expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_SAME);
+    require(SendMessageW(body, EM_CANREDO, 0, 0) != 0,
+            "unchanged text still has a redoable edit before discard");
+    discard_and_verify(window, fixture, &history);
+    append_switch_text(window);
+    expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_CHANGED);
+    history_undo(window);
+    expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_SAME);
+    require(SendMessageW(body, EM_REDO, 0, 0) != 0, "new edits remain redoable after discard");
+    pump(window);
+    expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_CHANGED);
+    verify_history_unchanged(fixture, &history);
+    discard_and_verify(window, fixture, &history);
+    require(controlled.requests == 0, "plain discard does not request image work");
+    folio_window_destroy(window);
+    for (size_t version = 0; version <= note_history_depth; ++version)
+        note_text_destroy(history.files[version]);
+}
+
 static void run_other_fixture(struct native_fixture *_Nonnull fixture, int argc,
                               char *_Nonnull *_Nonnull argv)
 {
+    if (discard_case)
+    {
+        run_discard_case(fixture);
+        return;
+    }
     if (mode_save_case)
     {
         run_mode_save_case(fixture);
@@ -2147,15 +2212,17 @@ int main(int argc, char *_Nonnull *_Nonnull argv)
                                    nullptr);
     require(desktop != nullptr && SetThreadDesktop(desktop), "isolated desktop");
     require(SUCCEEDED(OleInitialize(nullptr)), "COM apartment");
-    diagram_case = argc == 2 && strcmp(argv[1], "--mermaid") == 0;
-    history_case = argc == 2 && strcmp(argv[1], "--history") == 0;
-    replace_case = argc == 2 && strcmp(argv[1], "--replace") == 0;
-    search_case = argc == 2 && strcmp(argv[1], "--search") == 0;
-    note_switch_case = argc == 2 && strcmp(argv[1], "--note-switch") == 0;
-    zoom_case = argc == 2 && strcmp(argv[1], "--zoom") == 0;
-    theme_preview_case = argc == 2 && strcmp(argv[1], "--theme-preview") == 0;
-    settings_edit_case = argc == 2 && strcmp(argv[1], "--settings-edit") == 0;
-    mode_save_case = argc == 2 && strcmp(argv[1], "--mode-save") == 0;
+    const char *selector = argc == 2 ? argv[1] : "";
+    diagram_case = strcmp(selector, "--mermaid") == 0;
+    history_case = strcmp(selector, "--history") == 0;
+    replace_case = strcmp(selector, "--replace") == 0;
+    search_case = strcmp(selector, "--search") == 0;
+    note_switch_case = strcmp(selector, "--note-switch") == 0;
+    zoom_case = strcmp(selector, "--zoom") == 0;
+    theme_preview_case = strcmp(selector, "--theme-preview") == 0;
+    settings_edit_case = strcmp(selector, "--settings-edit") == 0;
+    mode_save_case = strcmp(selector, "--mode-save") == 0;
+    discard_case = strcmp(selector, "--discard") == 0;
     struct native_fixture fixture = {0};
     create_fixture(&fixture);
     run_fixture(&fixture, argc, argv);

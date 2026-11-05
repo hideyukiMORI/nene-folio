@@ -1,16 +1,21 @@
 # いまの状態 — NeNe Folio
 
-## 2026-11-05 22:50 — 1.3.1公開済み / 品質調査は停止中
+## 2026-11-05 23:17以降 — 品質対応再開 / Store Pre-processing報告
+
+hide「お風呂に入ってくるので止めるまで進めて。」により継続品質対応を再開。現在のサナが単体で進め、保留事項は個別に維持する。
+#702は編集破棄時の実Undo/Redo消去・全文/dirty/focus・保存本文/全履歴保持を専用native試験で確認した（127checks、stderr空）。
+[品質記録](../quality/2026-11-05-discard-native.md)。最終CI・統合・整理の確定原本はD:/NeNeFolio/agents/702-discard-native/integration-completion.json。
+
+## 公開済み1.3.1
 
 [GitHub 1.3.1 Beta](https://github.com/hideyukiMORI/nene-folio/releases/tag/v1.3.1)を公開し、ZIP/SHA256SUMSの再取得と全11memberの原本一致を確認した。
 #697 / PR699、最終CI42035926749のfull-gate/check成功。配布source/tagは `d474e531a5199895d6d8447435c7f45ade362cc3`。
 Windows版は1.3.1.0。正規ZIP/MSIX生成、専用コピーでの起動・設定Version 1.3.1・正常終了を確認した。
 [変更一覧](../release/1.3.1.md)・[リリース品質記録](../quality/2026-11-05-release-1.3.1.md)を参照。
 確定原本は `D:/NeNeFolio/agents/release-1.3.1-20261105/integration-completion.json`。697専用worktree/outputは全保全後に整理済み、branch/commitは保持した。
-結果収載#700の最終CI・統合・整理は `D:/NeNeFolio/agents/700-release-result/integration-completion.json`へ記録する。
+結果収載#700 / PR701も最終CI42040854960成功、main e1df61cへ統合・全保全整理済み。原本は `D:/NeNeFolio/agents/700-release-result/integration-completion.json`。
 
-22:13のhideの「お願い」による再開はリリース対応だけ。朝からの品質調査は21:28の指示で停止したまま、再開はhideの新しい指示を待つ。
-新しい改善・試験テーマや保留事項へ進まない。
+21:28の一時停止後、22:13のリリース依頼を完了した。23:17頃の新しい指示で品質対応も再開している。
 
 ## リリースに含む最新の品質改善
 
@@ -21,7 +26,7 @@ Windows版は1.3.1.0。正規ZIP/MSIX生成、専用コピーでの起動・設�
 原本は `D:/NeNeFolio/agents/693-search-validation/integration-completion.json`。
 
 本日の完了履歴・不採用候補・全試行・保全先は[日報](../reports/2026-11-05.md)と[引き継ぎ](../handoffs/2026-11-05.md)から辿る。
-全体journalは `D:/NeNeFolio/agents/quality-20261105/journal.md`。この停止記録#695の最終CI・統合・整理は同agents/695-current-state/integration-completion.jsonへ。
+全体journalは `D:/NeNeFolio/agents/quality-20261105/journal.md`。停止記録#695の履歴は同agents/695-current-state/integration-completion.jsonから辿れる。
 主担当単体で実装・計測・検証し、必要な独立静読だけ委任した。追加waiver none、既存WVR-0001継続。
 
 ## 通常版と実機確認
@@ -36,7 +41,8 @@ SHA256は `80633f7b61241e75577f2c4095fe87914a291c45e6b2027e63a3d98904f9bd8f`。#
 1.3.1の提出用MSIXと日本語・英語・簡体字の更新文は `D:/NeNeFolio/releases/1.3.1/store-candidate-20261105/` に準備済み。
 ZIPは `D:/NeNeFolio/releases/1.3.1/github/`。ZIP SHA256は `120968465a35664fa91ec300a18bbca699406c2c8a96b0c8ca4f4923c32535f7`、
 MSIX SHA256は `3b113aabfb8c88b00ad0bc6b0d0b19acf7670a881797c6df0fbf2e58f44f5326`。
-1.3.1のStore提出はhide担当で、提出・認定・公開は未確認。今回の確認はMSIX内payloadの起動であり、Store署名版の導入ではない。
+23:17頃のhide「Pre-processing」を、直前の1.3.1申請文脈の本人報告として記録した。原本はD:/NeNeFolio/agents/release-1.3.1-20261105/store-status.json。
+portal画面・提出package hash・申請番号・正確な申請時刻は独立未確認。認定・公開も未確認。配布確認はMSIX内payloadの起動であり、Store署名版導入ではない。
 
 [GitHub 1.3.0 Beta](https://github.com/hideyukiMORI/nene-folio/releases/tag/v1.3.0)は公開済み。配布source/tagは `4359e9e2268bdeef135a4630dbaa241d57c3063d`。
 11月4日22:30頃のhideの「申請した」という報告により、Store1.3.0（Windows1.3.0.0）は申請済みとして記録した。
