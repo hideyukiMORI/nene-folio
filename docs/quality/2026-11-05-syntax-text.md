@@ -102,3 +102,11 @@ ARC-001/004/008/012、C-002/008/012/014/016、QLT-008/009/010/012/013、GIT-001�
 通常app/実ノート/Storeと#634の保留試験は対象外。補助読取の推測path不存在と引数失敗も全体journalへ記録する。
 最終CI/統合/必要な通常反映とdata不変/全保全・専用整理はD:/NeNeFolio/agents/675-syntax-text/integration-completion.jsonへ。
 branch/commitと全試行の原本は保持する。[日報](../reports/2026-11-05.md)・[引き継ぎ](../handoffs/2026-11-05.md)。
+
+## 18:54〜18:56 統合・通常反映・全保全整理完了
+
+#675はPR676/head46ccf260f17b35503306457a0989b289929e03e0、最終CI42005269935 full-gate/check成功。
+main6ab2539c6814da8ea15ce42e985373c5edadfe28へ正典統合、Issue675 CLOSED。通常版反映は3actions成功、data32file bytes/hash/作成更新日時不変。
+通常exeSHA5ab23f3244c45c78335e05d8ff6e22772ed59541c9a67e8f46733bb0088ce187、通常app起動なし。
+1696file全保全ZIP再hash/取込tree/clean-untracked/ignored/link/稼働参照監査後、675専用worktree/outputを削除。
+branch/commitと全途中失敗/測定通知保持。原本D:/NeNeFolio/agents/675-syntax-text/integration-completion.json。

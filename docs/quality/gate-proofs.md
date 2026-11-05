@@ -1387,3 +1387,9 @@ NUL区切り+strlen候補は改善無しで不採用。全表/末尾sentinel/750
 42条件/84file/1890sample/14MAPbinding、手書きsyntax期待と全RTF一致、ABBA/BAABを分けて監査。
 既存syntax/Markdown回帰とactive確保注入・nullability binding正反例・symbols成功。引数名失敗と2processのinterceptor通知も記録。
 新ゲート/閾値/抑制/API/schema変更なし。[品質記録](2026-11-05-syntax-text.md)。
+
+## 2026-11-05 — #677preview中の通常終了
+
+既存theme_preview_native、418checks/1.304600秒成功、stderr空。
+通常WM_CLOSEによる本文保存/履歴全slot/revision+1と未確定theme非保存、root破棄/WM_QUIT0を隔離fixtureで固定。
+新ゲート/selector/閾値/抑制/API/schema変更なし。初回format停止も記録。[品質記録](2026-11-05-theme-close.md)。
