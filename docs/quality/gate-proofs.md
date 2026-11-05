@@ -1420,3 +1420,9 @@ note_mode_native、205checks/1.036016秒成功、stderr空。
 同EDITの2編集状態保持、実Redo→VIEW一世代保存、同VIEW/変更なし往復を全本文/全履歴で確認する。
 同target/lock/30秒をCTest2行で登録し、生成登録も読み取り照合。製品/閾値/抑制/API/schema不変。
 [品質記録](2026-11-05-mode-save.md)。
+
+## 2026-11-05 — #687行内runの不採用比較
+
+16通常UTF-8文書/720sampleの全文RTF一致。32file/8MAP/同vectorとarchive/3箇所差分を監査。
+長い通常段落の両順序での増加から候補を不採用とし、最終製品bytesは元へ復帰。
+src/tests/eng/CMake不変、文書だけを収載。閾値/抑制/API/schema変更なし。[品質記録](2026-11-05-inline-run.md)。
