@@ -1353,3 +1353,8 @@ CTest search_nativeを既存30秒/image_status_data lockへ追加。製品コメ
 NUL区切り+strlen候補は改善無しで不採用。全表/末尾sentinel/750raw/中央値/MAP4symbolと2実装所属/元source復帰を監査。
 製品/test/build差分0、文書収載。通常再build/起動なし。対象runは全成功、追加waiver none。
 実測と限界は[品質記録](2026-11-05-code-keyword.md)。最終CI/統合/保全整理は663-keyword-scan/integration-completion.jsonへ。
+
+## 2026-11-05 — #665 テーマpreview中本文保存
+
+テーマpreview/取消/本文だけの保存 257checks/1.056087秒、stderr空、子/補助/記録0。既存theme_preview_nativeへ通常Ctrl+Sの1世代保存/再保存無増分、入力面/未確定theme保持、取消後Undo/Redoを追加。
+製品/API/CMake/schema/timeout/data lock不変、規則/閾値/抑制変更なし。新ゲートではない。[品質記録](2026-11-05-theme-save.md)。

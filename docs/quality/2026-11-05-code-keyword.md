@@ -69,3 +69,9 @@ audit-01は全filehash/UTF8、全表の語集合と順序/sentinel、70alias、r
 追加waiver none、既存WVR-0001継続。schema/版/依存不変。
 原本D:/NeNeFolio/agents/663-keyword-scan/。最終CI/統合/通常不変/全保全/専用整理は同integration-completion.jsonへ。
 全保全/hashと取込tree/dirty/ignored/link/稼働参照監査後、当該D専用worktree/outputだけ整理しbranch/commitは保持する。
+
+## 最終受理・保全整理（16:56）
+
+PR664 head20973e7acf973a5c3d5990294d307720e1be7f23、必須CI41989646963 full-gate/check成功、main6301780へ統合済み。
+Issue663 CLOSED、通常exe/data32file不変。1364file/29028912bytes全保全ZIP/hashと取込tree/clean/ignored/link/稼働参照を監査し、専用領域を整理。
+不採用候補source/exe/rawを保全しbranch/commitも保持。D:/NeNeFolio/agents/663-keyword-scan/integration-completion.json。
