@@ -53,6 +53,7 @@ static bool theme_preview_case;
 static bool settings_edit_case;
 static bool mode_save_case;
 static bool discard_case;
+static bool palette_case;
 
 static const char history_current[] = "# Current 日本語 😀 **saved**";
 static const char history_previous[] = "> Previous 猫 🐾 `old`";
@@ -104,11 +105,11 @@ static void seed_notes(struct persistence_port disk)
         diagram_case ? "Body before diagrams\n\n```mermaid\nflowchart LR\nA --> B\n```\n\nAfter\n"
                      : "Body before images\n\n![alt](images/one.png)\n\nBody after images\n";
     if (history_case || replace_case || search_case || note_switch_case || zoom_case ||
-        theme_preview_case || settings_edit_case || mode_save_case || discard_case)
+        theme_preview_case || settings_edit_case || mode_save_case || discard_case || palette_case)
     {
         seed_history(disk);
         source = history_case || note_switch_case || zoom_case || theme_preview_case ||
-                         settings_edit_case || mode_save_case || discard_case
+                         settings_edit_case || mode_save_case || discard_case || palette_case
                      ? history_current
                      : replace_current;
     }
@@ -2154,9 +2155,95 @@ static void run_discard_case(struct native_fixture *_Nonnull fixture)
         note_text_destroy(history.files[version]);
 }
 
+static void palette_query(struct folio_window *_Nonnull window, const wchar_t *_Nonnull text,
+                          HRESULT expected_selection)
+{
+    struct accessible_request request = {.item = {.kind = ACCESSIBLE_HELP},
+                                         .action = ACCESSIBLE_ACTION_INVOKE};
+    require(folio_window_accessible_action(window, &request) == S_OK,
+            "open the operation palette through its public header action");
+    pump(window);
+    HWND input = folio_window_accessible_window(window, ACCESSIBLE_COMMAND_INPUT);
+    require(input != nullptr && GetFocus() == input && SetWindowTextW(input, text),
+            "the focused palette input receives the query");
+    pump(window);
+    wchar_t actual[64];
+    require(GetWindowTextW(input, actual, 64) == (int)wcslen(text) && wcscmp(actual, text) == 0,
+            "the palette keeps the exact query in its own input");
+    struct accessible_item list = {.kind = ACCESSIBLE_SURFACE_LIST,
+                                   .revision = folio_window_accessible_surface_revision(window)};
+    struct accessible_item selected = {0};
+    require(folio_window_accessible_selected(window, &list, &selected) == expected_selection,
+            "the public palette selection distinguishes matching and unmatched queries");
+}
+
+static void palette_roundtrip(struct folio_window *_Nonnull window,
+                              struct native_fixture *_Nonnull fixture,
+                              const struct history_snapshot *_Nonnull history)
+{
+    struct native_body_snapshot snapshot = {0};
+    capture_native_body(window, &snapshot);
+    palette_query(window, L"write", S_OK);
+    surface_button(window, ACCESSIBLE_SURFACE_CLOSE);
+    expect_native_body(window, &snapshot);
+    verify_history_unchanged(fixture, history);
+    palette_query(window, L"no-such-palette-command", S_FALSE);
+    HWND input = folio_window_accessible_window(window, ACCESSIBLE_COMMAND_INPUT);
+    require(input != nullptr, "the unmatched palette still has its own input");
+    SendMessageW(input, WM_KEYDOWN, VK_ESCAPE, 0);
+    pump(window);
+    expect_native_body(window, &snapshot);
+    verify_history_unchanged(fixture, history);
+}
+
+/* #704: Filtering and cancelling the palette preserves both changed and redoable edits. */
+static void run_palette_case(struct native_fixture *_Nonnull fixture)
+{
+    require(folio_state_select_note(fixture->state, 0, 0, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
+            "select the dedicated palette note");
+    struct history_snapshot history = {0};
+    capture_history(fixture, &history);
+    struct folio_window *window = nullptr;
+    require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
+                FOLIO_WINDOW_CREATED,
+            "real palette window");
+    pump(window);
+    action(window, ACCESSIBLE_EDIT);
+    append_switch_text(window);
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    CHARRANGE selected = {.cpMin = 10, .cpMax = 12};
+    SendMessageW(body, EM_EXSETSEL, 0, (LPARAM)&selected);
+    expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_CHANGED);
+    palette_roundtrip(window, fixture, &history);
+    expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_CHANGED);
+    history_undo(window);
+    expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_SAME);
+    require(SendMessageW(body, EM_CANREDO, 0, 0) != 0,
+            "Undo leaves a redoable insertion before opening the palette");
+    SendMessageW(body, EM_EXSETSEL, 0, (LPARAM)&selected);
+    palette_roundtrip(window, fixture, &history);
+    expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_SAME);
+    require(SendMessageW(body, EM_REDO, 0, 0) != 0, "Redo succeeds after cancelling the palette");
+    pump(window);
+    expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_CHANGED);
+    history_undo(window);
+    expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_SAME);
+    verify_history_unchanged(fixture, &history);
+    require(controlled.requests == 0, "plain palette queries do not request image work");
+    folio_window_destroy(window);
+    for (size_t version = 0; version <= note_history_depth; ++version)
+        note_text_destroy(history.files[version]);
+}
+
 static void run_other_fixture(struct native_fixture *_Nonnull fixture, int argc,
                               char *_Nonnull *_Nonnull argv)
 {
+    if (palette_case)
+    {
+        run_palette_case(fixture);
+        return;
+    }
     if (discard_case)
     {
         run_discard_case(fixture);
@@ -2223,6 +2310,7 @@ int main(int argc, char *_Nonnull *_Nonnull argv)
     settings_edit_case = strcmp(selector, "--settings-edit") == 0;
     mode_save_case = strcmp(selector, "--mode-save") == 0;
     discard_case = strcmp(selector, "--discard") == 0;
+    palette_case = strcmp(selector, "--palette") == 0;
     struct native_fixture fixture = {0};
     create_fixture(&fixture);
     run_fixture(&fixture, argc, argv);
