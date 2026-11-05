@@ -1445,3 +1445,19 @@ Release同vector/archive比較20本文/80条件/3600sample全結果一致、全�
 最終Debug --note-search/関係symbols成功・stderr空。2112正常exact extentと固定5拒否列の本文/語両側、既存4719oracleを確認。
 独立静読必須修正0。先頭emojiの性能費用・補助準備assert停止・拒否例追加による対象再buildも[品質記録](2026-11-05-search-validation.md)に保持。
 API/schema/owner/確保/selector/CTest/閾値/抑制変更なし。
+
+## 2026-11-05 — #697 / #700、1.3.1配布payloadの起動と版表示
+
+環境はWindows x64のローカル実機、専用desktop `NeNeFolio-697-zip` / `NeNeFolio-697-msix-03`。
+clean main d474e531a5199895d6d8447435c7f45ade362cc3から正規Releaseで生成したZIP/MSIXを、D専用dataなしコピーへ展開した。
+各copyの全payload hashを原本と照合し、既存tools/post-keys.ps1のPostMessageを正確なPIDへ送り、tools/capture-window.ps1のPrintWindowで設定表示を観測した。
+foregroundは実行前後不変、SwitchDesktopは定義せず、通常app/実ノート/OS設定へ操作しない。
+
+ZIP PID42160とMSIX第三回PID28084でSettings / Version 1.3.1を画像確認し、通常終了0、stderr空。
+MSIX初回PID42508と第二回PID18648は画像が背景だけで判定不能。600→1500msの待ち増加だけでは解消しなかった。
+第三回はowned windowをRedrawWindow（INVALIDATE / ERASE / ALLCHILDREN / UPDATENOW）で明示再描画してから同じPrintWindowを呼んだ。
+初回2回の原因は未確定で、正常終了を版表示成功の根拠へ読み替えない。全試行を保持し、製品/捕捉工具は変更していない。
+MSIXはpackage identity外のpayload起動であり、Store署名版の導入・AppData保存先・WACKを新たに検証したものではない。
+物理IME・聴感・hideの実機受理を確認したとは扱わない。既存機能の対象成功は再利用し、新しい全回帰は実行していない。
+画像/raw/入力/環境原本はD:/NeNeFolio/agents/release-1.3.1-20261105/、全配布hashと公開後再取得は[品質記録](2026-11-05-release-1.3.1.md)。
+ゲート/閾値/抑制/API/schema変更なし。追加waiver none、既存WVR-0001継続。
