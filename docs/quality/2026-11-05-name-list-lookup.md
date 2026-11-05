@@ -75,7 +75,7 @@ stderr空とは扱わず、サニタイザによる全範囲の検出能力を�
 
 ## 全試行と限界
 
-最初のprofile-01は6分布×3modeを予定し、13case完了後に長prefix逆順16kのlookupが診断60秒へ到達した。
+最初のmeasure-profile-01は6分布×3modeを予定し、13case完了後に長prefix逆順16kのlookupが診断60秒へ到達した。
 所有childを終了し子/記録1、完了値/partial rawを保持した。比較は診断上限だけ180秒とし、observer処理やCI制限は変えない。
 configure-release/build-core/fixture/compile両版/measure-candidate-01は成功。profileの既成功部分を再profileしなかった。
 補助script名・ADR名の推測readは不存在、PowerShellのbrace列挙は構文拒否、進行中集計readはJSONDecodeError。
@@ -86,3 +86,10 @@ configure-release/build-core/fixture/compile両版/measure-candidate-01は成功
 各runの実argv/source/object/exe/入力/raw/終了値はrecord-run.pyで保持する。
 文書検査・最終head必須CI・統合・通常反映/data不変・全保全/専用worktree/output整理の確定はintegration-completion.jsonへ。
 branch/commitは保持する。任意の大集合、実ディスク障害、実UI待ち時間を網羅する試験ではない。
+
+## 統合・反映・保全整理の確定
+
+PR631 head0e8d3e34の必須CI41949515350 full-gate/check成功後、main23397d7へ正典統合、Issue630 CLOSED。
+通常反映/data32file bytes/hash/作成更新日時不変、通常app起動0。1,639fileを全保全/hash再照合した。
+取込tree/clean/ignored/link/稼働参照を監査後、630専用worktree/outputを削除、branch/commit保持。
+確定原本D:/NeNeFolio/agents/630-name-list-lookup/integration-completion.json。
