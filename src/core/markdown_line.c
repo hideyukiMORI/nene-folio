@@ -1,5 +1,6 @@
 #include "markdown_line.h"
 #include <stdint.h>
+#include <string.h>
 
 static bool space(char character)
 {
@@ -45,13 +46,32 @@ static bool prefix(struct markdown_line *_Nonnull line)
     return true;
 }
 
+/* CR/LFを含まない8byteだけをまとめて進み、一致を含む塊と末尾は順に照合する。 */
+static size_t unbroken_bytes(const char *_Nonnull source, size_t length)
+{
+    constexpr uint64_t low_bits = UINT64_C(0x0101010101010101);
+    constexpr uint64_t high_bits = UINT64_C(0x8080808080808080);
+    size_t position = 0;
+    while (length - position >= sizeof(uint64_t))
+    {
+        uint64_t word = 0;
+        memcpy(&word, source + position, sizeof word);
+        uint64_t carriage = word ^ (low_bits * '\r');
+        uint64_t newline = word ^ (low_bits * '\n');
+        if ((((carriage - low_bits) & ~carriage) | ((newline - low_bits) & ~newline)) & high_bits)
+            break;
+        position += sizeof word;
+    }
+    while (position < length && source[position] != '\r' && source[position] != '\n')
+        ++position;
+    return position;
+}
+
 struct markdown_line markdown_line_read(const char *_Nonnull source, size_t length, size_t start)
 {
     if (start > length)
         start = length;
-    size_t end = start;
-    while (end < length && source[end] != '\r' && source[end] != '\n')
-        ++end;
+    size_t end = start + unbroken_bytes(source + start, length - start);
     size_t next = end;
     if (next < length)
     {

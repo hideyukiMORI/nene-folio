@@ -46,3 +46,10 @@ mainf1b5a138916b7bbeceb2644887a9cfb5be212f1b（#677統合済み）から専用De
 初回compile/静的解析失敗、読取補助のctest未初期化PATHも記録し、正典toolchainを読んだ実登録照合へ進めた。
 ARC-001/004/008/011、C-005/008/012/014、QLT-008/010/012/013、GIT-001〜004。
 追加waiver none、既存WVR-0001継続。[日報](../reports/2026-11-05.md)・[引き継ぎ](../handoffs/2026-11-05.md)。
+
+## 19:26〜19:28 統合・全保全整理完了
+
+#679はPR680/headf1ceaef04493ab97a9c09f60f7130989672b51e9、最終CI42009682823 full-gate/check成功。
+main3ccd5ae09dcf6d17d853b2cf74bfb50a621cd59fへ正典統合、Issue679 CLOSED。#675通常exe/data32file bytes/hash/作成更新日時不変、通常app起動なし。
+1384file/64792222byte全保全ZIP再hash/取込tree/clean-untracked/ignored/link/稼働参照監査後、679専用worktree/outputを削除。
+branch/commitと初回compile/複雑度失敗を保持。原本D:/NeNeFolio/agents/679-settings-edit/integration-completion.json。
