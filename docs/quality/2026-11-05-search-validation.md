@@ -156,3 +156,10 @@ buildDebug02は変更したunitの2actions、contract02の最終--note-searchは
 ARC-001/007/008/010/012、C-004/005/008/012/014/016、QLT-008/010/012/013、GIT-001〜004。
 主担当単体で実装/計測/試験し、必要なbit判定の独立静読だけを委任。追加waiver none、既存WVR-0001継続。
 [日報](../reports/2026-11-05.md)・[引き継ぎ](../handoffs/2026-11-05.md)。
+
+## 21:30〜21:32 統合・通常反映・全保全整理完了
+
+#693はPR694/head6109a3779c4876be4ed4cdc9a4923e9df5465e61、最終CI42026620126 full-gate/check成功、mainb898c79413b578bbfdb96c615ee0528ddae62feeへ正典統合。Issue693 CLOSED。
+通常版を同mainへ反映し、exeSHA256は80633f7b61241e75577f2c4095fe87914a291c45e6b2027e63a3d98904f9bd8f。実data32fileの全bytes/hash/作成更新日時不変、通常app起動なし。
+1529file/41081086bytesの全保全ZIP再hash、取込tree/未保存・untracked・ignored/link/稼働参照監査後、693専用worktree/outputだけ削除。
+branch/commitと全rawを保持。原本D:/NeNeFolio/agents/693-search-validation/integration-completion.json。
