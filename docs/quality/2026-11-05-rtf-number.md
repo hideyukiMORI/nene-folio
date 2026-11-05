@@ -83,3 +83,10 @@ Debugと測定buildはASan/UBSan/nullability/no-recoverを保持する。測定b
 規則ARC-001/004/007/008/012、C-008/012/014、QLT-008/009/010/012/013、GIT-001〜004。親単体、追加委任無し、実app/実ノート/Store未使用、#634等保留不変。
 最終head必須CI eng/check.ps1成功→tools/merge-pr.ps1統合→正典の通常exe反映/data全bytesと日時不変→全保全/取込tree/clean/ignored/link/稼働参照監査→当該D専用領域整理。
 branch/commit保持。原本D:/NeNeFolio/agents/667-rtf-number/、最終結果は同integration-completion.json、全体journalはD:/NeNeFolio/agents/quality-20261105/journal.md。
+
+## 最終受理・通常反映・保全整理（17:47）
+
+PR668 head92d8dc70e8ad2aec038ac66a42af4d89f66d4f52、必須CI41995753404 full-gate/check成功、main48597b4へ統合済み。
+Issue667 CLOSED、正典通常build/check成功。通常exe SHA256は875607eb3b3322fa2d42bc46462ccd5aea494ddc44488dd5e87fcbf4d065c0c2、data32fileの全bytes/hash/作成更新日時不変。
+1630file/54268718bytes全保全ZIP/hashと取込tree/clean/ignored/link/稼働参照を監査し、専用領域を整理。通常app起動なし。
+branch/commit、全途中失敗とfrexp interceptor診断も保持。確定原本は同taskのintegration-completion.json。

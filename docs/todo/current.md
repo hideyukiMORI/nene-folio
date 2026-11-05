@@ -5,9 +5,11 @@
 hideの現在指示は、停止の指示まで調査・試験・計測・必要な修正を続け、全試行と変更を記録すること。
 主担当は単体で実行し、必要な保存系/本文処理の独立静読だけを委任した。古い停止・固定分担は持ち込まない。
 
-**#667はRTF数値出力を同stackの一括追加へ。** 数値batch約27%/61%短縮、全RTF/250sample一致。全体UI高速化は断定しない。
-472境界/Markdown/確保注入/symbolを確認。最終CI/統合/通常反映/全保全整理はD:/NeNeFolio/agents/667-rtf-number/integration-completion.jsonへ。
-frexp interceptor通知は追加診断で特定・保全し、全sanitizer捕捉の保証とはしない。
+**#669は編集可能判定の品質文書を訂正。** 説明文へ入り込んだ不採用候補1の表を独立節へ移し、採用候補3と区別する。
+192raw/960sample再計算と48行一致。数値/採否/製品は不変、製品試験・再計測無し。最終CI/統合/通常不変/保全整理はD:/NeNeFolio/agents/669-quality-tables/integration-completion.jsonへ。
+
+#667はPR668/最終CI41995753404成功、main48597b4へ統合済み。通常版反映/data32file不変、1630file全保全・専用整理済み。
+数値batch改善の範囲を維持し、frexp interceptor通知/全途中失敗を同agents/667-rtf-number/integration-completion.jsonへ保全。
 
 #665はPR666/最終CI41991845670成功、main7838718へ統合済み。通常exe/data32file不変、1378file全保全・専用整理済み。
 原本は同agents/665-theme-save/integration-completion.json。
@@ -44,11 +46,9 @@ Store提出用MSIXと3言語更新文は`D:/NeNeFolio/releases/1.3.0/store-candi
 
 ## 通常版と実機確認の範囲
 
-通常exeは`C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`、#651反映時sourceは`fe4703b`。
-SHA256は`baffeebbc2179f4ff598f186628f8dfdeec88acdd8516b850a5c7387850149c5`。
-#653/#655/#657/#659/#661/#663/#665は製品ロジック不変で再buildしない。GitHub/Store配布1.3.0のsource`4359e9e`とは区別する。
-
-#667の通常exe反映後SHAとdata不変は同agents/667-rtf-number/integration-completion.jsonを正本とする。上記#651値は反映前の識別。
+通常exeは`C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`、#667反映時sourceは`48597b4`。
+SHA256は`875607eb3b3322fa2d42bc46462ccd5aea494ddc44488dd5e87fcbf4d065c0c2`。data32fileの全bytes/hash/作成更新日時不変を確認済み。
+#669は文書のみで再buildしない。GitHub/Store配布1.3.0のsource`4359e9e`とは区別する。
 通常app/実ノートは試験に使っていない。hideによる1.3.0の実機受理は未確認。
 
 以前のStore1.2.0は#536/PR538、source`eb10419`でMermaidを含まない。
