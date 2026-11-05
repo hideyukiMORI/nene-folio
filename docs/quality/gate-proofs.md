@@ -1268,3 +1268,10 @@ Debug/tidy/--drawer-layout成功、初回test nesting/audit補助の失敗も保
 Debug/tidy/対象2299checks成功、資源55/36/267前後一致、stderr空。製品・ゲート変更なし。
 初回入力準備/SDK定数重複link失敗も保持。範囲と限界は[品質記録](2026-11-05-settings-reopen.md)。
 最終head必須CI/統合/通常exe-data不変/全保全整理は641/integration-completion.jsonへ。
+
+## 2026-11-05 #643 — 通常文字変換の観測
+
+正典Release coreの3変換入口を15正常入力/39条件/195sampleで観測。全出力と独立codec期待値が一致した。
+30入力hash・全raw統計・9正典symbol・source/archive/vector不変の監査成功。製品やgateの変更なし。
+条件/範囲/限界は[品質記録](2026-11-05-text-conversion.md)。
+最終head必須CI/統合/通常exe-data不変/全保全整理は643/integration-completion.jsonへ。

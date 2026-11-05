@@ -60,3 +60,11 @@ configure入力は既存sourceと生成後artifactを分け、上限/閾値/除�
 成功nativeのsource/exe hashを最終sourceと照合し、文書化やpushだけでは再実行しない。
 最終head必須CIのeng/check.ps1、正典統合、通常exe/data32file不変、全保全と専用領域整理は
 同taskのintegration-completion.jsonで確定する。branch/commit保持。#634は保留を維持する。
+
+## 13:25 統合・保全整理完了
+
+PR642 head706b84a5e2586c80a04c7448d91b9c5b5a8901f0の必須CI41966940248 full-gate/check成功、
+mainbfc9ab7a7420dde6feef5291a93f3c3e0c8acd19へ正典統合、Issue641 CLOSED。
+通常exe/data32fileは#635後のbytes/hash/作成更新日時と一致、通常app起動なし。
+1,362file全保全ZIPを再hash照合し、取込tree/clean/ignored/link/稼働参照を監査後、専用worktree/outputを削除。
+branch/commit保持。初回build失敗も含む確定原本は同taskのintegration-completion.json。
