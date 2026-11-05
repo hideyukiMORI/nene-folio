@@ -3,8 +3,8 @@
 ## 2026-11-06 — 品質対応を継続
 
 hideの11月5日23:17頃の継続指示と11月6日の「頑張って！」を受け、現在のサナが単体で進める。個別保留は維持する。
-#704は操作パレットの候補あり/なしからの取消で全文/選択/dirty/UndoRedo/focusと全保存本文/履歴保持を確認した（141checks、stderr空）。
-[品質記録](../quality/2026-11-06-palette-native.md)。最終CI・統合・整理の原本はD:/NeNeFolio/agents/704-palette-native/integration-completion.json。
+#704/PR705は操作パレットの取消と編集保持を確認（141checks、stderr空）し、最終CI42054891152成功、main eaef26aへ統合・全保全整理済み。
+[品質記録](../quality/2026-11-06-palette-native.md)。原本はD:/NeNeFolio/agents/704-palette-native/integration-completion.json。
 #702/PR703は最終CI42045853037成功、main82204cbへ統合・全保全整理済み。原本はD:/NeNeFolio/agents/702-discard-native/integration-completion.json。
 
 ## 公開済み1.3.1
@@ -37,13 +37,15 @@ SHA256は `80633f7b61241e75577f2c4095fe87914a291c45e6b2027e63a3d98904f9bd8f`。#
 通常app/実ノート/Storeは品質試験に使っていない。hideによる1.3.0の実機受理は未確認。
 文書・native試験のみの変更を理由に通常buildを反復しない。配布1.3.0のsourceとは区別する。
 
-## 配布とStoreの未確認事項
+## Store公開と残る未確認事項
 
 1.3.1の提出用MSIXと日本語・英語・簡体字の更新文は `D:/NeNeFolio/releases/1.3.1/store-candidate-20261105/` に準備済み。
 ZIPは `D:/NeNeFolio/releases/1.3.1/github/`。ZIP SHA256は `120968465a35664fa91ec300a18bbca699406c2c8a96b0c8ca4f4923c32535f7`、
 MSIX SHA256は `3b113aabfb8c88b00ad0bc6b0d0b19acf7670a881797c6df0fbf2e58f44f5326`。
-11月5日23:17頃のhide「Pre-processing」を、直前の1.3.1申請文脈の本人報告として記録した。原本はD:/NeNeFolio/agents/release-1.3.1-20261105/store-status.json。
-portal画面・提出package hash・申請番号・正確な申請時刻は独立未確認。認定・公開も未確認。配布確認はMSIX内payloadの起動であり、Store署名版導入ではない。
+11月6日の[hide本人の報告（#706）](https://github.com/hideyukiMORI/nene-folio/issues/706)で、Store掲載1.3.1とStoreアプリ経由の実機更新成功を確認済みとした。
+原本はD:/NeNeFolio/agents/release-1.3.1-20261105/store-status.json。11月5日23:17頃の「Pre-processing」報告も履歴として保持する。
+認定日時・申請番号・正確な申請時刻は未確認。portal画面・提出package hash・更新実機の独立確認は行っていない。
+Store署名版は品質試験に使っておらず、既存の配布試験はMSIX内payloadの起動確認である。
 
 [GitHub 1.3.0 Beta](https://github.com/hideyukiMORI/nene-folio/releases/tag/v1.3.0)は公開済み。配布source/tagは `4359e9e2268bdeef135a4630dbaa241d57c3063d`。
 11月4日22:30頃のhideの「申請した」という報告により、Store1.3.0（Windows1.3.0.0）は申請済みとして記録した。
