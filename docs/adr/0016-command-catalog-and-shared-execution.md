@@ -234,3 +234,8 @@ END(TRUE)だけが通常終了と同じ`finish_quit`で窓を破棄する。`:q!
 無題・改名保留・未確定入力・モーダル・ごみ箱操作中・保存未完了は対話を開かず理由付きで拒否する。
 保存中の取消は承認へ戻さず、承認待ちの入力停止はEND(FALSE)でだけ元へ戻す。
 通常終了と明示保存/明示破棄の意味はADR0050のまま。
+
+## 2026-11-05 の本文保存回帰（#665）
+
+既存theme_preview_nativeでpreview中のnative Ctrl+Sを2回通す。本文だけ1世代保存し、入力語/選択/focus/面と未確定themeを保つ。
+保存choice/settings全bytesは不変、CLOSE後もUndo/Redoが一回で働く。契約変更なし。[品質記録](../quality/2026-11-05-theme-save.md)。

@@ -72,3 +72,8 @@ native fixtureで入力経路・全体色・保存値・本文状態の保持・
 CTest theme_preview_nativeで通常候補検索/SELECT→CLOSE、同preview→BACK→CLOSEを固定する。
 未保存本文/選択/dirty/Undo/Redo、取消後paletteと保存choice/settings.json全bytes、全保存履歴の保持を比較し、Undo一回で事前の追記だけを戻す。
 製品契約と所有者は不変。範囲と限界は[品質記録](../quality/2026-11-05-theme-preview.md)。
+
+## 2026-11-05 の本文保存回帰（#665）
+
+既存theme_preview_nativeでpreview中のnative Ctrl+Sを2回通す。本文だけ1世代保存し、入力語/選択/focus/面と未確定themeを保つ。
+保存choice/settings全bytesは不変、CLOSE後もUndo/Redoが一回で働く。契約変更なし。[品質記録](../quality/2026-11-05-theme-save.md)。
