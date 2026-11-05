@@ -56,6 +56,7 @@ static bool discard_case;
 static bool palette_case;
 static bool paste_case;
 static bool format_case;
+static bool layout_case;
 
 static const char history_current[] = "# Current 日本語 😀 **saved**";
 static const char history_previous[] = "> Previous 猫 🐾 `old`";
@@ -108,12 +109,12 @@ static void seed_notes(struct persistence_port disk)
                      : "Body before images\n\n![alt](images/one.png)\n\nBody after images\n";
     if (history_case || replace_case || search_case || note_switch_case || zoom_case ||
         theme_preview_case || settings_edit_case || mode_save_case || discard_case ||
-        palette_case || paste_case || format_case)
+        palette_case || paste_case || format_case || layout_case)
     {
         seed_history(disk);
         source = history_case || note_switch_case || zoom_case || theme_preview_case ||
                          settings_edit_case || mode_save_case || discard_case || palette_case ||
-                         paste_case || format_case
+                         paste_case || format_case || layout_case
                      ? history_current
                      : replace_current;
     }
@@ -2727,9 +2728,178 @@ static void run_format_case(struct native_fixture *_Nonnull fixture)
         note_text_destroy(history.files[version]);
 }
 
+struct layout_step
+{
+    enum folio_layout_mode mode;
+    enum accessible_kind control;
+    enum folio_command command;
+    enum accessible_kind focus;
+    enum accessible_kind repeated_focus;
+};
+
+/* A narrow drawer exposes the existing chooser, not the hidden three-choice controls. */
+static bool select_layout(struct folio_window *_Nonnull window,
+                          const struct layout_step *_Nonnull step)
+{
+    struct accessible_item item = {.kind = step->control};
+    struct accessible_view view = {0};
+    require(folio_window_accessible_read(window, &item, &view) == S_OK,
+            "read the public layout choice");
+    if (view.enabled)
+    {
+        require(!view.offscreen, "select only a visible layout choice");
+        action(window, step->control);
+        return false;
+    }
+    require(view.offscreen, "a hidden layout choice is disabled");
+    struct accessible_request request = {.item = {.kind = ACCESSIBLE_LAYOUT_CHOOSER},
+                                         .action = ACCESSIBLE_ACTION_INVOKE};
+    require(folio_window_accessible_read(window, &request.item, &view) == S_OK && view.enabled &&
+                !view.offscreen,
+            "the narrow layout chooser is visible and enabled");
+    require(folio_window_accessible_action(window, &request) == S_OK, "open the layout chooser");
+    pump(window);
+    for (size_t at = 0; at < folio_menu_action_count(FOLIO_MENU_LAYOUT); ++at)
+    {
+        const struct folio_menu_action *entry = folio_menu_action_at(FOLIO_MENU_LAYOUT, at);
+        if (folio_menu_action_kind(entry) == FOLIO_MENU_ACTION_COMMAND &&
+            folio_menu_action_command(entry) == step->command)
+        {
+            request.item = (struct accessible_item){
+                .kind = ACCESSIBLE_SURFACE_CHOICE,
+                .slot = at,
+                .revision = folio_window_accessible_surface_revision(window)};
+            require(folio_window_accessible_action(window, &request) == S_OK,
+                    "invoke the requested layout through its visible chooser row");
+            pump(window);
+            return true;
+        }
+    }
+    require(false, "the requested layout exists in the chooser");
+    return false;
+}
+
+static void expect_layout(struct folio_window *_Nonnull window,
+                          struct native_fixture *_Nonnull fixture,
+                          const struct layout_step *_Nonnull step,
+                          const struct native_body_snapshot *_Nonnull snapshot)
+{
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    require(folio_state_layout_mode(fixture->state) == step->mode &&
+                folio_state_pane_mode(fixture->state) == PANE_MODE_EDIT,
+            "layout selection changes only layout, retaining edit mode");
+    require((IsWindowVisible(body) != 0) == (step->mode != FOLIO_LAYOUT_DRAWER),
+            "layout selection hides the body only in drawer mode");
+    expect_native_body(window, snapshot);
+}
+
+static void expect_layout_focus(struct folio_window *_Nonnull window, enum accessible_kind expected)
+{
+    if (expected == ACCESSIBLE_BODY)
+        return; /* The native HWND focus is checked by expect_native_body. */
+    struct accessible_item focused = {0};
+    enum accessible_kind root =
+        expected == ACCESSIBLE_DRAWER ? ACCESSIBLE_DRAWER : ACCESSIBLE_WINDOW;
+    require(folio_window_accessible_focus(window, root, &focused) == S_OK,
+            "layout focus belongs to a visible public item");
+    require(expected == ACCESSIBLE_DRAWER || focused.kind == expected,
+            "the menu opener or its visible layout replacement retains header focus");
+}
+
+static void layout_roundtrip(struct folio_window *_Nonnull window,
+                             struct native_fixture *_Nonnull fixture,
+                             const struct history_snapshot *_Nonnull history)
+{
+    /* ADR0075: chooser focus maps to the visible BOTH choice, then survives later Select actions.
+     */
+    const struct layout_step steps[] = {
+        {FOLIO_LAYOUT_NOTE, ACCESSIBLE_LAYOUT_NOTE, FOLIO_COMMAND_LAYOUT_NOTE, ACCESSIBLE_BODY,
+         ACCESSIBLE_BODY},
+        {FOLIO_LAYOUT_BOTH, ACCESSIBLE_LAYOUT_BOTH, FOLIO_COMMAND_LAYOUT_BOTH, ACCESSIBLE_BODY,
+         ACCESSIBLE_BODY},
+        {FOLIO_LAYOUT_DRAWER, ACCESSIBLE_LAYOUT_DRAWER, FOLIO_COMMAND_LAYOUT_DRAWER,
+         ACCESSIBLE_DRAWER, ACCESSIBLE_LAYOUT_CHOOSER},
+        {FOLIO_LAYOUT_BOTH, ACCESSIBLE_LAYOUT_BOTH, FOLIO_COMMAND_LAYOUT_BOTH,
+         ACCESSIBLE_LAYOUT_BOTH, ACCESSIBLE_LAYOUT_BOTH},
+        {FOLIO_LAYOUT_NOTE, ACCESSIBLE_LAYOUT_NOTE, FOLIO_COMMAND_LAYOUT_NOTE,
+         ACCESSIBLE_LAYOUT_BOTH, ACCESSIBLE_LAYOUT_BOTH},
+        {FOLIO_LAYOUT_BOTH, ACCESSIBLE_LAYOUT_BOTH, FOLIO_COMMAND_LAYOUT_BOTH,
+         ACCESSIBLE_LAYOUT_BOTH, ACCESSIBLE_LAYOUT_BOTH}};
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    struct accessible_request focus = {.item = {.kind = ACCESSIBLE_BODY},
+                                       .action = ACCESSIBLE_ACTION_FOCUS};
+    require(folio_window_accessible_action(window, &focus) == S_OK,
+            "start each layout roundtrip from the public body focus action");
+    pump(window);
+    struct native_body_snapshot snapshot = {0};
+    capture_native_body(window, &snapshot);
+    require(snapshot.focus == body, "the layout roundtrip starts with body focus");
+    bool used_chooser = false;
+    for (size_t at = 0; at < sizeof steps / sizeof steps[0]; ++at)
+    {
+        printf("layout step=%zu select\n", at);
+        used_chooser |= select_layout(window, &steps[at]);
+        snapshot.focus = steps[at].focus == ACCESSIBLE_BODY ? body : root;
+        expect_layout(window, fixture, &steps[at], &snapshot);
+        expect_layout_focus(window, steps[at].focus);
+        printf("layout step=%zu repeat\n", at);
+        used_chooser |= select_layout(window, &steps[at]);
+        snapshot.focus = steps[at].repeated_focus == ACCESSIBLE_BODY ? body : root;
+        expect_layout(window, fixture, &steps[at], &snapshot);
+        expect_layout_focus(window, steps[at].repeated_focus);
+        verify_history_unchanged(fixture, history);
+    }
+    require(used_chooser, "the roundtrip exercises the narrow chooser as well as visible choices");
+}
+
+/* #711: Hiding and restoring the real editor must not save, reload or discard its undo history. */
+static void run_layout_case(struct native_fixture *_Nonnull fixture)
+{
+    require(folio_state_select_note(fixture->state, 0, 0, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
+            "select the dedicated layout note");
+    struct history_snapshot history = {0};
+    capture_history(fixture, &history);
+    struct folio_window *window = nullptr;
+    require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
+                FOLIO_WINDOW_CREATED,
+            "real window for layout edit retention");
+    pump(window);
+    action(window, ACCESSIBLE_EDIT);
+    append_switch_text(window);
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    CHARRANGE selected = {.cpMin = 10, .cpMax = 12};
+    SendMessageW(body, EM_EXSETSEL, 0, (LPARAM)&selected);
+    expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_CHANGED);
+    layout_roundtrip(window, fixture, &history);
+    expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_CHANGED);
+    history_undo(window);
+    expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_SAME);
+    require(SendMessageW(body, EM_CANREDO, 0, 0) != 0, "Undo leaves the layout input redoable");
+    SendMessageW(body, EM_EXSETSEL, 0, (LPARAM)&selected);
+    layout_roundtrip(window, fixture, &history);
+    expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_SAME);
+    require(SendMessageW(body, EM_REDO, 0, 0) != 0, "Redo succeeds after the layout roundtrip");
+    pump(window);
+    expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_CHANGED);
+    history_undo(window);
+    expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_SAME);
+    verify_history_unchanged(fixture, &history);
+    require(controlled.requests == 0, "plain layout changes do not request image work");
+    folio_window_destroy(window);
+    for (size_t version = 0; version <= note_history_depth; ++version)
+        note_text_destroy(history.files[version]);
+}
+
 static void run_other_fixture(struct native_fixture *_Nonnull fixture, int argc,
                               char *_Nonnull *_Nonnull argv)
 {
+    if (layout_case)
+    {
+        run_layout_case(fixture);
+        return;
+    }
     if (format_case)
     {
         run_format_case(fixture);
@@ -2797,6 +2967,7 @@ int main(int argc, char *_Nonnull *_Nonnull argv)
     const char *selector = argc == 2 ? argv[1] : "";
     paste_case = strcmp(selector, "--paste") == 0;
     format_case = strcmp(selector, "--format-keys") == 0;
+    layout_case = strcmp(selector, "--layout") == 0;
     HWINSTA original_station = GetProcessWindowStation();
     HDESK original_desktop = GetThreadDesktop(GetCurrentThreadId());
     HWINSTA paste_station = paste_case ? isolate_paste_clipboard() : nullptr;

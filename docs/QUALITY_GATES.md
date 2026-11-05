@@ -82,6 +82,11 @@ Ctrl+R/2/5の書式不変、未保存本文/選択/UndoRedo、既存移動・選
 修正前は段落書式変更で失敗、修正後339checks成功。30秒timeoutと既存data lockを維持する。
 初期のfixture誤判定・全試行・限界は[品質記録](quality/2026-11-06-editor-format.md)へ。
 
+#711の表示切替はCTestの`layout_edit_native`で固定する。専用desktop/dataで可視3択と狭幅chooserを使い、
+6ステップと同表示再選択を変更状態/Redo保有状態で巡回する。本文・選択・dirty・UndoRedo・保存履歴と、
+既存仕様に沿う本文/一覧/headerのfocusを486checksで確認した。30秒timeoutと既存data lockを維持する。
+最初のfocus期待誤り・全試行・未検証範囲は[品質記録](quality/2026-11-06-layout-native.md)へ。
+
 - 機械強制: **不能**（テストの有意味性・契約の充足は判断であり、記録とレビューで確認する。QLT-009のカバレッジ下限だけでは代替できない）
 
 ### QLT-009 — カバレッジは下げられない
