@@ -44,10 +44,14 @@ static unsigned checks;
 static bool diagram_case;
 static bool history_case;
 static bool replace_case;
+static bool search_case;
 
 static const char history_current[] = "# Current 日本語 😀 **saved**";
 static const char history_previous[] = "> Previous 猫 🐾 `old`";
 static const char history_oldest[] = "- Oldest 履歴 🌸";
+static const char search_current[] = "猫 😀 aaaa 日本語";
+static const wchar_t search_original[] = L"猫 😀 aaaa 日本語";
+static const wchar_t search_edited[] = L"猫 😀 aaaa 日本語 🐾";
 static const char replace_current[] = "猫1 😀\n猫2 **saved**\n猫1 `old`";
 static const wchar_t replace_original[] = L"猫1 😀\r猫2 **saved**\r猫1 `old`";
 static const wchar_t replace_all[] = L"1-猫-🐾\r 😀\r2-猫-🐾\r **saved**\r1-猫-🐾\r `old`";
@@ -87,11 +91,13 @@ static void seed_notes(struct persistence_port disk)
     const char *source =
         diagram_case ? "Body before diagrams\n\n```mermaid\nflowchart LR\nA --> B\n```\n\nAfter\n"
                      : "Body before images\n\n![alt](images/one.png)\n\nBody after images\n";
-    if (history_case || replace_case)
+    if (history_case || replace_case || search_case)
     {
         seed_history(disk);
         source = history_case ? history_current : replace_current;
     }
+    if (search_case)
+        source = search_current;
     struct note_text *_Nullable body = nullptr;
     require(note_text_create(source, strlen(source), &body) == NOTE_TEXT_ACCEPTED, "media note");
     require(disk.write_note(disk.adapter, "schedule", "one", body) == PERSISTENCE_STORED,
@@ -906,7 +912,7 @@ static void prepare_replacement(struct folio_window *_Nonnull window,
     require(folio_state_replace_count(state) == 3, "real ICU preview finds three matches");
 }
 
-static void replace_button(struct folio_window *_Nonnull window,
+static void surface_button(struct folio_window *_Nonnull window,
                            enum accessible_surface_button button)
 {
     struct accessible_request request = {
@@ -915,7 +921,7 @@ static void replace_button(struct folio_window *_Nonnull window,
                  .revision = folio_window_accessible_surface_revision(window)},
         .action = ACCESSIBLE_ACTION_INVOKE};
     require(folio_window_accessible_action(window, &request) == S_OK,
-            "invoke the current public replacement surface button");
+            "invoke the current public surface button");
     pump(window);
 }
 
@@ -940,21 +946,21 @@ static void replace_and_undo(struct folio_window *_Nonnull window,
                              const struct history_snapshot *_Nonnull snapshot)
 {
     prepare_replacement(window, fixture->state);
-    replace_button(window, ACCESSIBLE_SURFACE_REPLACE_ONE);
+    surface_button(window, ACCESSIBLE_SURFACE_REPLACE_ONE);
     expect_editor(window, fixture->state, L"1-猫-🐾\r 😀\r猫2 **saved**\r猫1 `old`",
                   FOLIO_NOTE_CHANGED);
     expect_replace_position(window, fixture->state, 7, 2);
     verify_history_unchanged(fixture, snapshot);
-    replace_button(window, ACCESSIBLE_SURFACE_CLOSE);
+    surface_button(window, ACCESSIBLE_SURFACE_CLOSE);
     history_undo(window);
     expect_editor(window, fixture->state, replace_original, FOLIO_NOTE_SAME);
     verify_history_unchanged(fixture, snapshot);
     prepare_replacement(window, fixture->state);
-    replace_button(window, ACCESSIBLE_SURFACE_REPLACE_ALL);
+    surface_button(window, ACCESSIBLE_SURFACE_REPLACE_ALL);
     expect_editor(window, fixture->state, replace_all, FOLIO_NOTE_CHANGED);
     expect_replace_position(window, fixture->state, 0, 0);
     verify_history_unchanged(fixture, snapshot);
-    replace_button(window, ACCESSIBLE_SURFACE_CLOSE);
+    surface_button(window, ACCESSIBLE_SURFACE_CLOSE);
     history_undo(window);
     expect_editor(window, fixture->state, replace_original, FOLIO_NOTE_SAME);
     verify_history_unchanged(fixture, snapshot);
@@ -965,10 +971,10 @@ static void save_replacement(struct folio_window *_Nonnull window,
                              const struct history_snapshot *_Nonnull snapshot)
 {
     prepare_replacement(window, fixture->state);
-    replace_button(window, ACCESSIBLE_SURFACE_REPLACE_ALL);
+    surface_button(window, ACCESSIBLE_SURFACE_REPLACE_ALL);
     expect_editor(window, fixture->state, replace_all, FOLIO_NOTE_CHANGED);
     verify_history_unchanged(fixture, snapshot);
-    replace_button(window, ACCESSIBLE_SURFACE_CLOSE);
+    surface_button(window, ACCESSIBLE_SURFACE_CLOSE);
     struct accessible_request request = {.item = {.kind = ACCESSIBLE_SAVE},
                                          .action = ACCESSIBLE_ACTION_INVOKE};
     require(folio_window_accessible_action(window, &request) == S_OK,
@@ -1010,6 +1016,127 @@ static void run_replace_case(struct native_fixture *_Nonnull fixture)
         note_text_destroy(snapshot.files[version]);
 }
 
+/* #655: 重なった一致・Unicode位置と本文/Undo保持を公開検索操作から確認する。 */
+static void expect_search_result(struct folio_window *_Nonnull window, LONG start, LONG end,
+                                 const wchar_t *_Nonnull status)
+{
+    CHARRANGE selected = {0};
+    SendMessageW(folio_window_accessible_window(window, ACCESSIBLE_BODY), EM_EXGETSEL, 0,
+                 (LPARAM)&selected);
+    require(selected.cpMin == start && selected.cpMax == end,
+            "public search selects the expected UTF16 range");
+    struct accessible_item item = {.kind = ACCESSIBLE_SURFACE_STATUS,
+                                   .revision = folio_window_accessible_surface_revision(window)};
+    struct accessible_view view;
+    require(folio_window_accessible_read(window, &item, &view) == S_OK &&
+                wcscmp(view.name, status) == 0,
+            "public search status reports the expected ordinal or no-match text");
+}
+
+static void search_term(struct folio_window *_Nonnull window, const wchar_t *_Nonnull text)
+{
+    HWND input = folio_window_accessible_window(window, ACCESSIBLE_COMMAND_INPUT);
+    require(input != nullptr && SetWindowTextW(input, text), "set the native search term");
+    pump(window);
+}
+
+static void search_overlap_cycle(struct folio_window *_Nonnull window)
+{
+    search_term(window, L"AA");
+    expect_search_result(window, 5, 7, L"1 / 3 件");
+    surface_button(window, ACCESSIBLE_SURFACE_NEXT);
+    expect_search_result(window, 6, 8, L"2 / 3 件");
+    surface_button(window, ACCESSIBLE_SURFACE_NEXT);
+    expect_search_result(window, 7, 9, L"3 / 3 件");
+    surface_button(window, ACCESSIBLE_SURFACE_NEXT);
+    expect_search_result(window, 5, 7, L"1 / 3 件");
+    surface_button(window, ACCESSIBLE_SURFACE_PREVIOUS);
+    expect_search_result(window, 7, 9, L"3 / 3 件");
+    surface_button(window, ACCESSIBLE_SURFACE_PREVIOUS);
+    expect_search_result(window, 6, 8, L"2 / 3 件");
+    surface_button(window, ACCESSIBLE_SURFACE_PREVIOUS);
+    expect_search_result(window, 5, 7, L"1 / 3 件");
+}
+
+static void search_roundtrip(struct folio_window *_Nonnull window,
+                             struct folio_state *_Nonnull state)
+{
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    SetFocus(body);
+    CHARRANGE initial = {0};
+    SendMessageW(body, EM_EXSETSEL, 0, (LPARAM)&initial);
+    LRESULT undo = SendMessageW(body, EM_CANUNDO, 0, 0);
+    enum search_direction direction = folio_state_search_direction(state);
+    invoke_operation(window, FOLIO_COMMAND_FIND);
+    pump(window);
+    search_overlap_cycle(window);
+    search_term(window, L"😀");
+    expect_search_result(window, 2, 4, L"1 / 1 件");
+    surface_button(window, ACCESSIBLE_SURFACE_NEXT);
+    expect_search_result(window, 2, 4, L"1 / 1 件");
+    surface_button(window, ACCESSIBLE_SURFACE_PREVIOUS);
+    expect_search_result(window, 2, 4, L"1 / 1 件");
+    search_term(window, L"不存在");
+    expect_search_result(window, 2, 4, L"見つかりません");
+    search_term(window, L"");
+    expect_search_result(window, 2, 4, L"");
+    surface_button(window, ACCESSIBLE_SURFACE_NEXT);
+    expect_search_result(window, 2, 4, L"");
+    surface_button(window, ACCESSIBLE_SURFACE_CLOSE);
+    require(GetFocus() == body && SendMessageW(body, EM_CANUNDO, 0, 0) == undo,
+            "closing Find restores body focus and keeps its Undo availability");
+    require(folio_state_search_direction(state) == direction,
+            "explicit previous and next buttons preserve the remembered direction");
+}
+
+static void search_unsaved(struct folio_window *_Nonnull window,
+                           struct native_fixture *_Nonnull fixture,
+                           const struct history_snapshot *_Nonnull snapshot)
+{
+    action(window, ACCESSIBLE_EDIT);
+    expect_editor(window, fixture->state, search_original, FOLIO_NOTE_SAME);
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    CHARRANGE end = {.cpMin = -1, .cpMax = -1};
+    SendMessageW(body, EM_EXSETSEL, 0, (LPARAM)&end);
+    SendMessageW(body, EM_REPLACESEL, TRUE, (LPARAM)L" 🐾");
+    pump(window);
+    expect_editor(window, fixture->state, search_edited, FOLIO_NOTE_CHANGED);
+    search_roundtrip(window, fixture->state);
+    expect_editor(window, fixture->state, search_edited, FOLIO_NOTE_CHANGED);
+    verify_history_unchanged(fixture, snapshot);
+    history_undo(window);
+    expect_editor(window, fixture->state, search_original, FOLIO_NOTE_SAME);
+    verify_history_unchanged(fixture, snapshot);
+}
+
+static void run_search_case(struct native_fixture *_Nonnull fixture)
+{
+    require(folio_state_select_note(fixture->state, 0, 0, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
+            "select the dedicated search note");
+    struct history_snapshot snapshot = {0};
+    capture_history(fixture, &snapshot);
+    struct folio_window *window = nullptr;
+    require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
+                FOLIO_WINDOW_CREATED,
+            "real search window");
+    pump(window);
+    search_roundtrip(window, fixture->state);
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    wchar_t text[128];
+    require(GetWindowTextW(body, text, 128) == (int)wcslen(search_original) &&
+                wcscmp(text, search_original) == 0 &&
+                folio_state_pane_mode(fixture->state) == PANE_MODE_VIEW &&
+                (GetWindowLongPtrW(body, GWL_STYLE) & ES_READONLY) != 0,
+            "search preserves the one-line view text and readonly mode");
+    verify_history_unchanged(fixture, &snapshot);
+    search_unsaved(window, fixture, &snapshot);
+    require(controlled.requests == 0, "plain search does not request image work");
+    folio_window_destroy(window);
+    for (size_t version = 0; version <= note_history_depth; ++version)
+        note_text_destroy(snapshot.files[version]);
+}
+
 static void run_fixture(struct native_fixture *_Nonnull fixture, int argc,
                         char *_Nonnull *_Nonnull argv)
 {
@@ -1019,6 +1146,8 @@ static void run_fixture(struct native_fixture *_Nonnull fixture, int argc,
         run_history_case(fixture);
     else if (replace_case)
         run_replace_case(fixture);
+    else if (search_case)
+        run_search_case(fixture);
     else if (argc == 2 && strcmp(argv[1], "--icon") == 0)
         window_icons(fixture);
     else if (argc == 2)
@@ -1041,6 +1170,7 @@ int main(int argc, char *_Nonnull *_Nonnull argv)
     diagram_case = argc == 2 && strcmp(argv[1], "--mermaid") == 0;
     history_case = argc == 2 && strcmp(argv[1], "--history") == 0;
     replace_case = argc == 2 && strcmp(argv[1], "--replace") == 0;
+    search_case = argc == 2 && strcmp(argv[1], "--search") == 0;
     struct native_fixture fixture = {0};
     create_fixture(&fixture);
     run_fixture(&fixture, argc, argv);

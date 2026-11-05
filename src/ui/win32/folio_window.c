@@ -6012,8 +6012,8 @@ static enum search_direction reversed_direction(enum search_direction direction)
 }
 
 /* 探し始める位置。選択の正本は RichEdit で、application も core も持たない（ADR 0023 の決定 1）。
- * advance なら選択の外側（前方は終わり・後方は始まり）から、入力中（インクリメンタル）は
- * いまの一致の頭（後方なら末尾）から数え直して、打つたびに同じ場所で伸びるようにする。 */
+ * advance なら現選択をcoreへ渡す。前方は開始の次（空選択は同位置）、後方は開始より前。
+ * 入力中（インクリメンタル）は、いまの一致の頭（後方なら末尾）から数え直し、同じ場所で伸ばす。 */
 static struct note_search_span search_anchor(const struct folio_window *_Nonnull self,
                                              enum search_direction direction, bool advance)
 {

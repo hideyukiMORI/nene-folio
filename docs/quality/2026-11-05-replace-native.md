@@ -48,7 +48,7 @@
 | conformance-01 | 文書参照/diff/source/build graphと最終入力SHAを確認して提出する |
 
 ASan診断は「interception_win: unhandled instruction … 0f 29 74 24 30 0f 28 f0」。
-[LLVMの対応ソース](https://github.com/llvm/llvm-project/blob/llvmorg-21.1.8/compiler-rt/lib/interception/interception_win.cpp)は命令を解釈できない診断を非致命として出す。
+[LLVMの対応ソース](https://github.com/llvm/llvm-project/blob/llvmorg-19.1.5/compiler-rt/lib/interception/interception_win.cpp)は命令を解釈できない診断を非致命として出す。
 当該binaryでどの関数のinterceptionが関わったかは特定しておらず、診断が出た実行を完全なsanitizer捕捉の証明としない。
 一時出力を除いた最終binaryでは両対象がstderr空だった。診断の原因を一時ログだけへ断定せず、全rawと失敗結果を保つ。
 
@@ -69,3 +69,11 @@ OS全I/Oを捕捉しないため、同一bytes書戻しが一度もない証明�
 
 原本はD:/NeNeFolio/agents/653-replace-native/。最終CI/統合/通常exe-data不変/全保全・専用領域整理は同integration-completion.jsonへ。
 全試行のcopy/hashを保持し、完了後はD専用worktree/outputだけ整理、branch/commit保持。全体journalはD:/NeNeFolio/agents/quality-20261105/journal.md。
+
+## 15:24 統合・保全整理完了
+
+PR654 head13fdd0e8893d7ba6ebf0c419cb641c68cb8693af、必須CI41979295240 full-gate/check成功。
+main7176bf49ac5573e466327a80c718062ee10d1099へ正典統合、Issue653 CLOSED。通常exe/data32file bytes/hash/作成更新日時不変。
+1374file全保全ZIP再hashと取込tree/clean-untracked/ignored/link/稼働参照の監査後、653専用worktree/outputだけ削除。branch/commit保持。
+全失敗実値を含む確定原本は同taskのintegration-completion.json。通常app起動なし。
+ASan説明の参照は、固定toolchainと同じLLVM19.1.5の公式sourceでも同じ非致命診断を確認し、リンクをその版へ揃えた。
