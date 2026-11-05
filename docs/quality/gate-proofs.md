@@ -1318,3 +1318,10 @@ CTest history_restoreを既存30秒/image_status_data lockへ追加。製品/API
 最終158checksと共通本文読取の履歴168checks成功、stderr空。保存前のstore_revision/現在ノート/全履歴bytesを保持し保存だけ一世代更新。
 CTest replace_nativeを既存30秒/image_status_data lockへ追加。製品/API/schema/ゲート不変。
 全失敗と範囲は[品質記録](2026-11-05-replace-native.md)。最終CI/統合/保全整理は653/integration-completion.jsonへ。
+
+## 2026-11-05 #655 — ノート内検索の選択・巡回・編集保持
+
+公開入力/前後から重複一致と絵文字を選択し、status、VIEW/未保存EDITの本文/Undo/全保存内容を確認する恒久回帰。
+検索161checks、共用ボタンの置換153checks成功、stderr空。検索後のUndo一回で事前の未保存挿入だけが戻る。
+CTest search_nativeを既存30秒/image_status_data lockへ追加。製品コメント以外のロジック/API/schema/ゲート不変。
+範囲は[品質記録](2026-11-05-search-native.md)。最終CI/統合/保全整理は655/integration-completion.jsonへ。

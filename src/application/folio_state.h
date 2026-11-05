@@ -421,7 +421,7 @@ folio_state_set_search_term(struct folio_state *_Nonnull state, const char16_t *
 [[nodiscard]] const char *_Nonnull folio_state_search_term(
     const struct folio_state *_Nonnull state);
 [[nodiscard]] size_t folio_state_search_term_length(const struct folio_state *_Nonnull state);
-/* 直前の方向（`/` と「次へ」なら前方、`?` と「前へ」なら後方）。初期値は前方。
+/* 直前の方向（`/` なら前方、`?` なら後方）。初期値は前方。前後ボタンは変えない。
  * n / N の N は逆向きに 1 回進むだけで、覚えている方向は変えない。 */
 [[nodiscard]] enum search_direction
 folio_state_search_direction(const struct folio_state *_Nonnull state);
