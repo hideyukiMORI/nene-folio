@@ -30,6 +30,7 @@ startup_settings_create(const struct storage_path *_Nullable directory,
 static bool key(struct json_reader *_Nonnull reader, const char *_Nonnull name)
 {
     return json_reader_next(reader) == JSON_TOKEN_KEY &&
+           json_reader_text_length(reader) == strlen(name) &&
            strcmp(json_reader_text(reader), name) == 0;
 }
 

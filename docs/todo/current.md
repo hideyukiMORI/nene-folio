@@ -5,11 +5,13 @@
 hideの現在指示は、停止の指示まで調査・試験・計測・必要な修正を続け、全試行と変更を記録すること。
 主担当は単体で実行し、必要な保存系/本文処理の独立静読だけを委任した。古い停止・固定分担は持ち込まない。
 
-**#626は一括取り込みの停止・再試行の試験追加。** 製品変更なし。7path/4新規ノートで、
-read/create/ledger各1〜4位置、cold/warm corpusの24caseを確認した。Debug/tidy/既存--transfer成功。
-初回のfake初期総数の仮定は訂正し、失敗原本を保持する。実I/OやUI Undoは検証範囲外。
-最終head必須CI/統合/通常exe不変/保全整理の確定は
-`D:/NeNeFolio/agents/626-import-batch-retry/integration-completion.json`へ。
+**#628は設定JSONの固定語の誤受理修正。** folio_settingsのkey/language、startup_settingsのkeyで展開長を照合する。
+旧実装の表示/起動設定でredを確認し、Debug/tidy/--settings-codecsが成功した。348変異＋startup8拒否と合法escapeを確認。
+最終head必須CI/統合/通常反映/data不変/保全整理の確定は
+D:/NeNeFolio/agents/628-settings-tokens/integration-completion.jsonへ。
+
+#626はPR627/必須CI41942785824成功、main0e879fbへ統合済み。製品不変・通常exe/data32file不変、
+1,322file全保全・専用領域整理済み。原本は同agents/626-import-batch-retry/integration-completion.json。
 
 #624はPR625/必須CI41940460425成功、main19857d8へ統合済み。通常反映/data32file不変、
 2,000file全保全・専用領域整理済み。原本は同agents/624-markdown-view-lookup/integration-completion.json。
@@ -28,7 +30,7 @@ read/create/ledger各1〜4位置、cold/warm corpusの24caseを確認した。De
 原本は同agents/617-save-preparation/integration-completion.json。branch/commitは保持する。
 
 全体journalは`D:/NeNeFolio/agents/quality-20261105/journal.md`。
-[取り込み再試行](../quality/2026-11-05-import-batch-retry.md)・[借用行参照](../quality/2026-11-05-markdown-view-lookup.md)・[Markdown段落](../quality/2026-11-05-markdown-paragraph-scale.md)・[改行正規化](../quality/2026-11-05-editor-normalization.md)・[本文検証](../quality/2026-11-05-ascii-validation.md)・
+[設定固定語](../quality/2026-11-05-settings-tokens.md)・[取り込み再試行](../quality/2026-11-05-import-batch-retry.md)・[借用行参照](../quality/2026-11-05-markdown-view-lookup.md)・[Markdown段落](../quality/2026-11-05-markdown-paragraph-scale.md)・[改行正規化](../quality/2026-11-05-editor-normalization.md)・[本文検証](../quality/2026-11-05-ascii-validation.md)・
 [保存](../quality/2026-11-05-save-preparation.md)・[日報](../reports/2026-11-05.md)・[引き継ぎ](../handoffs/2026-11-05.md)。
 追加waiver none、既存WVR-0001継続。実app/実ノート/Storeは試験に使っていない。
 

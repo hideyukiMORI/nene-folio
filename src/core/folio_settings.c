@@ -100,7 +100,9 @@ folio_settings_with_language(const struct folio_settings *_Nonnull settings,
 
 static bool expect_key(struct json_reader *_Nonnull reader, const char *_Nonnull key)
 {
-    return json_reader_next(reader) == JSON_TOKEN_KEY && strcmp(json_reader_text(reader), key) == 0;
+    return json_reader_next(reader) == JSON_TOKEN_KEY &&
+           json_reader_text_length(reader) == strlen(key) &&
+           strcmp(json_reader_text(reader), key) == 0;
 }
 
 static bool read_boolean(struct json_reader *_Nonnull reader, bool *_Nonnull value)
@@ -140,7 +142,8 @@ static bool read_language(struct json_reader *_Nonnull reader, enum folio_langua
     const char *_Nonnull text = json_reader_text(reader);
     for (size_t item = 0; item < sizeof language_names / sizeof language_names[0]; ++item)
     {
-        if (strcmp(text, language_names[item]) == 0)
+        if (json_reader_text_length(reader) == strlen(language_names[item]) &&
+            strcmp(text, language_names[item]) == 0)
         {
             *value = (enum folio_language)item;
             return true;

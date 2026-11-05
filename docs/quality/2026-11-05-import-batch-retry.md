@@ -67,3 +67,10 @@ source/test/exe/config/input/raw/終了値はrecord-run.pyで保存する。文�
 
 fake portによるapplication契約の検証であり、実Win32 I/O・電源断・複数fileの原子性・UI Undo/dirtyを証明しない。
 実ノート・通常app・Storeを試験に使わない。既存の移動/履歴/write途中失敗の非原子性を解消した変更ではない。
+
+## 統合・不変照合・整理の確定
+
+PR627最終head8163e882の必須CI41942785824 full-gate/check成功後、main0e879fbへ正典統合しIssue626 CLOSED。
+#624の通常exeとdata32fileは全bytes/hash/作成更新日時不変。再build/通常app起動なし。
+1,322fileをZIPへ全保全/hash照合し、取込tree/clean/ignored/リンク/稼働参照を確認後に626専用worktree/outputを削除した。
+branch/commit保持。確定原本はagents/626-import-batch-retry/integration-completion.json。

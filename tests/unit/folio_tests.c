@@ -88,6 +88,14 @@ static bool run_document_settings_target_tests(const char *_Nonnull argument)
 
 static bool run_minimap_target_tests(const char *_Nonnull argument)
 {
+    if (strcmp(argument, "--settings-codecs") == 0)
+    {
+        run_json_tests();
+        run_settings_tests();
+        run_storage_tests();
+        printf("JSON and settings codec tests passed\n");
+        return true;
+    }
     if (strcmp(argument, "--minimap") == 0)
     {
         run_settings_tests();

@@ -117,6 +117,23 @@ static void verify_strings(void)
     expect_malformed("\"\xC3\"");
 }
 
+static void verify_embedded_zero(void)
+{
+    struct json_reader *reader = open_reader("{\"a\\u0000b\":\"c\\u0000d\"}");
+    require(json_reader_next(reader) == JSON_TOKEN_OBJECT_BEGIN &&
+                json_reader_next(reader) == JSON_TOKEN_KEY &&
+                json_reader_text_length(reader) == 3 &&
+                memcmp(json_reader_text(reader), "a\0b", 4) == 0,
+            "JSON keys retain legal decoded NUL bytes and full length");
+    require(json_reader_next(reader) == JSON_TOKEN_STRING && json_reader_text_length(reader) == 3 &&
+                memcmp(json_reader_text(reader), "c\0d", 4) == 0,
+            "JSON strings retain legal decoded NUL bytes and full length");
+    require(json_reader_next(reader) == JSON_TOKEN_OBJECT_END &&
+                json_reader_next(reader) == JSON_TOKEN_END,
+            "embedded zero does not terminate JSON parsing");
+    json_reader_destroy(reader);
+}
+
 static void verify_numbers(void)
 {
     struct json_reader *reader = open_reader("[0, 12, -3, 1.5, 2e3, 4E+2, 4294967295, 4294967296]");
@@ -347,6 +364,7 @@ static void verify_writer_rejections(void)
 
 void run_json_tests(void)
 {
+    verify_embedded_zero();
     verify_document_tokens();
     verify_strings();
     verify_numbers();

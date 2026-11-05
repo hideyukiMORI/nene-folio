@@ -374,8 +374,65 @@ static void verify_minimap_schema(void)
                        "minimap is required only in version 5 with exact boolean shape");
 }
 
+static void reject_token_insertion(const char *_Nonnull source, size_t at,
+                                   const char *_Nonnull inserted)
+{
+    char changed[256];
+    size_t length = strlen(source);
+    size_t added = strlen(inserted);
+    require(length + added < sizeof changed, "fixed settings mutation fits");
+    memcpy(changed, source, at);
+    memcpy(changed + at, inserted, added);
+    memcpy(changed + at + added, source + at, length - at + 1);
+    struct folio_settings *original = nullptr;
+    require(folio_settings_default(&original) == FOLIO_SETTINGS_READY, "settings sentinel");
+    struct folio_settings *out = original;
+    require(folio_settings_parse(changed, length + added, &out) == FOLIO_SETTINGS_MALFORMED &&
+                out == original,
+            "decoded NUL in a fixed settings token is rejected without replacing output");
+    folio_settings_destroy(original);
+}
+
+static void verify_token_insertions(const char *_Nonnull source)
+{
+    bool quoted = false;
+    for (size_t at = 0; source[at] != '\0'; ++at)
+    {
+        if (quoted)
+        {
+            reject_token_insertion(source, at, "\\u0000");
+            reject_token_insertion(source, at, "\\u0000extra");
+        }
+        if (source[at] == '"')
+            quoted = !quoted;
+    }
+}
+
+static void verify_fixed_tokens(void)
+{
+    static const char *const documents[] = {
+        "{\"version\":1,\"number\":true}", "{\"version\":2,\"number\":false,\"theme\":\"dark\"}",
+        "{\"version\":3,\"number\":true,\"theme\":\"light\",\"language\":\"ja\"}",
+        "{\"version\":4,\"number\":false,\"theme\":\"dracula\",\"language\":\"en\"}",
+        ("{\"version\":5,\"number\":true,\"theme\":\"system\",\"language\":\"zh-Hans\",\"minimap\":"
+         "true}")};
+    for (size_t index = 0; index < sizeof documents / sizeof documents[0]; ++index)
+        verify_token_insertions(documents[index]);
+    const char *escaped =
+        "{\"\\u0076ersion\":5,\"nu\\u006dber\":true,\"the\\u006de\":\"da\\u0072k\","
+        "\"langua\\u0067e\":\"e\\u006e\",\"minima\\u0070\":true}";
+    struct folio_settings *settings = nullptr;
+    require(folio_settings_parse(escaped, strlen(escaped), &settings) == FOLIO_SETTINGS_READY &&
+                folio_settings_number(settings) && folio_settings_minimap(settings) &&
+                folio_settings_language(settings) == FOLIO_LANGUAGE_EN &&
+                folio_settings_theme(settings) == FOLIO_THEME_CHOICE_DARK,
+            "escaped fixed tokens are compared after JSON decoding");
+    folio_settings_destroy(settings);
+}
+
 void run_settings_tests(void)
 {
+    verify_fixed_tokens();
     verify_minimap_schema();
     verify_catalog_schema();
     verify_default();
