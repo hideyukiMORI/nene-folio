@@ -62,3 +62,11 @@ store_revisionとfile bytesの不変は照合するが、OSの全I/Oを捕捉し
 原本D:/NeNeFolio/agents/649-history-restore/。作業木/一時出力は同worktrees/outputsの649-history-restore。
 最終head必須CI、正典統合、通常exe/data不変、全保全/hash照合と専用領域整理は同taskのintegration-completion.jsonへ。
 branch/commit保持。全体journalはD:/NeNeFolio/agents/quality-20261105/journal.md。
+
+## 14:43 統合・保全整理完了
+
+PR650 headcf158dff6cc5418b312205e75356d5e48c0dc9d8の必須CI41975099692 full-gate/check成功。
+main13ce4ee3add602b63776a378da71b2b147dfb3f6へ正典統合、Issue649 CLOSED。
+通常exe/data32fileは#647後のbytes/hash/作成更新日時と一致。製品不変で通常build/app起動なし。
+1370file全保全ZIPの再hashと取込tree/clean-untracked/ignored/link/稼働参照監査後、専用worktree/outputを削除。
+branch/commit保持。確定原本は同taskのintegration-completion.json。
