@@ -2,6 +2,8 @@
 
 #include "ascii_fold.h"
 #include "note_search_order.h"
+#include <stdint.h>
+#include <string.h>
 
 /* 呼出中だけの借用と走査位置。公開 owner・語長に比例する領域は持たない。 */
 struct note_search
@@ -40,10 +42,31 @@ static size_t encoded_units(const char16_t *_Nonnull units, size_t length, size_
     return low_surrogate(units[index]) ? 0 : 1;
 }
 
+/* サロゲートの無い4単位だけを進める。存在判定のbitを位置として読まない。 */
+static size_t scalar_prefix(const char16_t *_Nonnull units, size_t length)
+{
+    constexpr uint64_t kind_bits = UINT64_C(0xF800F800F800F800);
+    constexpr uint64_t surrogate = UINT64_C(0xD800D800D800D800);
+    constexpr uint64_t low_bits = UINT64_C(0x0001000100010001);
+    constexpr uint64_t high_bits = UINT64_C(0x8000800080008000);
+    constexpr size_t width = sizeof(uint64_t) / sizeof(char16_t);
+    size_t index = 0;
+    while (length - index >= width)
+    {
+        uint64_t word = 0;
+        memcpy(&word, units + index, sizeof word);
+        uint64_t different = (word & kind_bits) ^ surrogate;
+        if (((different - low_bits) & ~different & high_bits) != 0)
+            break;
+        index += width;
+    }
+    return index;
+}
+
 /* 孤立サロゲートを含まないか。整形式なら一致はサロゲート対を跨がない。 */
 static bool well_formed(const char16_t *_Nonnull units, size_t length)
 {
-    size_t index = 0;
+    size_t index = scalar_prefix(units, length);
     while (index < length)
     {
         size_t step = encoded_units(units, length, index);

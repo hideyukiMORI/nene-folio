@@ -3,6 +3,8 @@
 #include "unit_tests.h"
 
 #include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
 
 static size_t units_of(const char16_t *_Nonnull units)
 {
@@ -527,6 +529,88 @@ static void verify_extreme_anchors(void)
             "a maximum inverted anchor is refused without touching output");
 }
 
+/* #693: Exact allocations cover every four-unit boundary and valid pair position. */
+static void verify_validation_extent(size_t offset, size_t length, size_t pair)
+{
+    static const char16_t scalars[] = {u'\0',  u'\r',  0x007F, 0x07FF, 0x0800, 0xD7FF,
+                                       0xE000, 0xF7FF, 0xF800, 0xFFFF, u'猫'};
+    size_t bytes = (offset + length) * sizeof(char16_t);
+    char16_t *storage = malloc(bytes);
+    if (storage == nullptr)
+        test_failure("exact UTF16 validation allocation");
+    for (size_t index = 0; index < offset + length; ++index)
+        storage[index] = scalars[index % (sizeof scalars / sizeof scalars[0])];
+    if (pair < length)
+    {
+        storage[offset + pair] = 0xD83D;
+        storage[offset + pair + 1] = 0xDE00;
+    }
+    char16_t original[35];
+    memcpy(original, storage, bytes);
+    struct note_search_query query = {.text = storage + offset,
+                                      .length = length,
+                                      .term = storage + offset,
+                                      .term_length = length};
+    require(found_at(&query, span_of(0, 0), SEARCH_DIRECTION_FORWARD) == 0 &&
+                found_at(&query, span_of(0, 0), SEARCH_DIRECTION_BACKWARD) == 0,
+            "complete valid UTF16 text is found in both directions within its exact extent");
+    require_count(&query, 0, 1, 1);
+    require(memcmp(storage, original, bytes) == 0,
+            "validation and search leave all input units intact");
+    free(storage);
+}
+
+static void verify_validation_pairs(size_t offset, size_t length)
+{
+    verify_validation_extent(offset, length, length);
+    for (size_t pair = 0; pair + 1 < length; ++pair)
+        verify_validation_extent(offset, length, pair);
+}
+
+static void verify_validation_extents(void)
+{
+    for (size_t offset = 0; offset < 4; ++offset)
+        for (size_t length = 1; length <= 32; ++length)
+            verify_validation_pairs(offset, length);
+}
+
+static void verify_chunk_refused(const struct note_search_query *_Nonnull query)
+{
+    struct note_search_span match = span_of(91, 93);
+    size_t total = 95;
+    size_t ordinal = 97;
+    require(note_search_next(query, span_of(0, 0), SEARCH_DIRECTION_FORWARD, &match) ==
+                NOTE_SEARCH_MALFORMED,
+            "forward validation refuses an unpaired surrogate in a full block");
+    require(note_search_next(query, span_of(0, 0), SEARCH_DIRECTION_BACKWARD, &match) ==
+                NOTE_SEARCH_MALFORMED,
+            "backward validation refuses the same full block");
+    require(note_search_count(query, 0, &total, &ordinal) == NOTE_SEARCH_MALFORMED,
+            "count validation refuses the same full block");
+    require(match.start == 91 && match.end == 93 && total == 95 && ordinal == 97,
+            "block validation refuses without writing any result");
+}
+
+static void verify_validation_refusals(void)
+{
+    const char16_t normal[] = {u'a', u'b', u'c', u'd', u'e', u'f', u'g', u'h'};
+    const char16_t broken[][8] = {
+        {0xDC00, u'b', u'c', u'd', u'e', u'f', u'g', u'h'},
+        {u'a', 0xD800, u'c', u'd', u'e', u'f', u'g', u'h'},
+        {u'a', u'b', 0xDC00, u'd', u'e', u'f', u'g', u'h'},
+        {u'a', u'b', u'c', 0xD800, u'e', u'f', u'g', u'h'},
+        {u'a', u'b', u'c', u'd', u'e', u'f', u'g', 0xD800},
+    };
+    for (size_t index = 0; index < sizeof broken / sizeof broken[0]; ++index)
+    {
+        struct note_search_query query = {broken[index], 8, normal, 8};
+        verify_chunk_refused(&query);
+        query.text = normal;
+        query.term = broken[index];
+        verify_chunk_refused(&query);
+    }
+}
+
 void run_search_tests(void)
 {
     verify_ascii_case();
@@ -545,4 +629,6 @@ void run_search_tests(void)
     verify_explicit_units();
     verify_refusal_priority();
     verify_extreme_anchors();
+    verify_validation_extents();
+    verify_validation_refusals();
 }

@@ -44,3 +44,10 @@ Redo後のcaret/scroll位置や置換帯を開いたままのUndoは新たに規
 OS全I/Oの捕捉ではなく保存ファイルの全bytesとrevisionの照合。性能効果は主張しない。主担当単体、追加委任なし。
 ARC-001/004/008/012、C-008/012/014/016、QLT-008/010/012/013、GIT-001〜004。
 追加waiver none、既存WVR-0001継続。[日報](../reports/2026-11-05.md)・[引き継ぎ](../handoffs/2026-11-05.md)。
+
+## 21:01 統合・全保全整理完了
+
+#691はPR692/head6819f2b4b3077b044f8ef43235b5946ef2abd38c、最終CI42022605286 full-gate/check成功。
+mainbd2394f42b415c7c64549ff88286c8d1fa770ca0へ正典統合、Issue691 CLOSED。#683通常exe/data32file bytes/hash/作成更新日時不変。
+1390file全保全ZIP再hash/取込tree/clean-untracked/ignored/link/稼働参照監査後、691専用worktree/outputだけ削除、branch/commit保持。
+初回の引数指定による補助入口失敗も全実値と照合。原本D:/NeNeFolio/agents/691-replace-redo/integration-completion.json。

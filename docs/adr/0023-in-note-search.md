@@ -107,3 +107,9 @@ IME変換中のmouse前後・閉じるは無操作とする。検索の意味・
 VIEW/未保存EDITの本文とUndo・全保存内容を保持し、Undo一回で検索前の未保存挿入だけが戻ることを固定する。
 前方anchorと前後ボタンの方向保持の古い実装コメントも現契約へ揃える。製品ロジック/API/schema不変。
 既存30秒/data lockを共有。[品質記録](../quality/2026-11-05-search-native.md)。
+
+## 2026-11-05 — UTF-16先頭の検証費用（#693）
+
+既存well_formedの内部でサロゲートの無い先頭4単位だけを範囲内memcpyと存在判定で進め、候補塊/末尾は既存encoded_unitsへ戻す。
+検証済み先頭は再走査しない。拒否順序/失敗out/NUL/CR/ASCII fold/重複/巡回/ordinalとTwo-Way走査、API/所有/確保は維持する。
+20通常本文/80条件の比較と2112正常exact extent・少数固定拒否例で確認する。先頭emojiの費用を含む採否根拠は[品質記録](../quality/2026-11-05-search-validation.md)。
