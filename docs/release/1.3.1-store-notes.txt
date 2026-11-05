@@ -1,0 +1,8 @@
+日本語
+保存前の表示準備が失敗した際に保存履歴だけが更新される問題と、一部の不正な設定値を受け入れる問題を修正しました。本文の読み込み・改行処理、Markdown表示、ノート一覧、ノート内検索の処理を改善しました。取り込み、履歴復元、置換、設定・テーマ操作、Undo／Redoの自動検証も強化しています。ノートの保存形式は変更しません。改善量は文書や操作によって異なります。
+
+English
+Fixed an issue where save history could advance when preparing the note view failed, and a validation issue that accepted some malformed settings values. Improved text loading and line-ending processing, Markdown rendering, note-list lookup, and in-note search. Expanded automated checks for import, history restore, replacement, settings, themes, and Undo/Redo. The note storage format is unchanged. Performance gains vary with document content and operations.
+
+简体中文
+修复了准备笔记视图失败时仍更新保存历史的问题，以及部分无效设置值被错误接受的问题。优化了文本读取与换行处理、Markdown 显示、笔记列表查找和笔记内搜索。加强了导入、历史恢复、替换、设置、主题及撤销／重做的自动验证。笔记存储格式保持不变。性能改善程度因文档内容和操作而异。

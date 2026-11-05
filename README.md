@@ -8,10 +8,10 @@ A frameless Markdown notebook for Windows with a category drawer. Plain C (C23),
 > Windows 10 version 2004 or later is required. Notes and settings use `data/` beside the executable
 > by default; Settings can select another location.
 
-The current source is **1.3.0**, including native Mermaid flowcharts and sequence diagrams,
-PNG/JPEG images, image-aware ZIP export, syntax colors, a status bar, and the new application icon.
-See the [1.3.0 changes and update instructions](docs/release/1.3.0.md) and
-[release verification record](docs/quality/2026-11-04-release-1.3.0.md).
+The current source is **1.3.1**, with fixes for save-history handling and settings validation,
+plus improvements to text processing, Markdown rendering, list lookup, and in-note search.
+See the [1.3.1 changes and update instructions](docs/release/1.3.1.md) and
+[release verification record](docs/quality/2026-11-05-release-1.3.1.md).
 Package creation, GitHub publication, and Microsoft Store certification are tracked separately.
 The unsigned MSIX is a Store submission artifact, not a portable installer.
 
@@ -25,8 +25,9 @@ v0.2.0 with the Japanese UI, Light theme, and sample notes.
 
 ## What it does
 
-The [1.3.0 release notes](docs/release/1.3.0.md) describe the current changes, update steps,
-and limitations. Earlier changes are retained in the [1.2.0 Store notes](docs/release/1.2.0.md)
+The [1.3.1 release notes](docs/release/1.3.1.md) describe the current changes, update steps,
+and limitations. Images, Mermaid diagrams, and image-aware export are covered in the
+[1.3.0 notes](docs/release/1.3.0.md); earlier changes remain in the [1.2.0 Store notes](docs/release/1.2.0.md)
 and [1.1.0 notes](docs/release/1.1.0.md).
 
 - **A borderless window** with a drawer on the left and a Markdown view/editor on the right. It follows
