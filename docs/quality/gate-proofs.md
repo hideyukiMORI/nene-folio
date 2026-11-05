@@ -1438,3 +1438,10 @@ src/tests/eng/CMake不変、文書だけを収載。閾値/抑制/API/schema変�
 既存replace_native、237checks/1.355697秒・stderr空。1件/全置換のUndo後に下見開閉、実Redo/Undo、全本文/dirty/保存履歴保持を確認。
 初回引数指定ミスの補助入口停止/native未起動も記録し、訂正後の最終sourceを照合。製品/CMake/selector/閾値/抑制変更なし。
 [品質記録](2026-11-05-replace-redo.md)。
+
+## 2026-11-05 — #693検索UTF-16先頭検証
+
+Release同vector/archive比較20本文/80条件/3600sample全結果一致、全数値と6MAP行を照合。
+最終Debug --note-search/関係symbols成功・stderr空。2112正常exact extentと固定5拒否列の本文/語両側、既存4719oracleを確認。
+独立静読必須修正0。先頭emojiの性能費用・補助準備assert停止・拒否例追加による対象再buildも[品質記録](2026-11-05-search-validation.md)に保持。
+API/schema/owner/確保/selector/CTest/閾値/抑制変更なし。
