@@ -614,6 +614,7 @@ static void pointer_focus(struct folio_window *_Nonnull self, POINT point);
 static void accessible_command_invoked(struct folio_window *_Nonnull self,
                                        enum folio_command command);
 static bool pane_streaming(const struct folio_window *_Nonnull self);
+static BYTE pressed_shortcut_modifiers(void);
 static enum accessible_kind mode_kind(enum pane_mode mode);
 static bool minimap_visible(const struct folio_window *_Nonnull self);
 static bool minimap_available(const struct folio_window *_Nonnull self);
@@ -9750,7 +9751,38 @@ static LRESULT tooltip_display(struct folio_window *_Nonnull self, LPARAM lparam
     return 0;
 }
 
-/* RichEdit の鍵の通知。IME変換中は親の操作に変換しない。 */
+static bool pane_paste(struct folio_window *_Nonnull self, const MSGFILTER *_Nonnull filter)
+{
+    /* TranslateMessage precedes DispatchMessage: the key's generated character is not a second
+     * paste. */
+    if (filter->msg == WM_CHAR && filter->wParam == 22)
+        return true;
+    if (filter->msg != WM_KEYDOWN)
+        return false;
+    BYTE modifiers = pressed_shortcut_modifiers();
+    bool control_v = filter->wParam == 'V' && (modifiers == (FVIRTKEY | FCONTROL) ||
+                                               modifiers == (FVIRTKEY | FCONTROL | FSHIFT));
+    bool shift_insert = filter->wParam == VK_INSERT && modifiers == (FVIRTKEY | FSHIFT);
+    if (!control_v && !shift_insert)
+        return false;
+    SendMessageW(note_pane_handle(self->pane), WM_PASTE, 0, 0);
+    return true;
+}
+
+static LRESULT pane_filter(struct folio_window *_Nonnull self, const MSGFILTER *_Nonnull filter)
+{
+    if (filter->nmhdr.hwndFrom == note_pane_handle(self->pane) && pane_paste(self, filter))
+        return 1;
+    if (note_pane_composing(self->pane))
+        return 0;
+    if (filter->msg == WM_CHAR)
+        return pane_character(self, filter->wParam);
+    if (filter->msg == WM_KEYDOWN)
+        return pane_key(self, filter->wParam);
+    return 0;
+}
+
+/* RichEdit の鍵の通知。pasteも既存の終了/投入guardを通す。IME中のpasteはpaneで拒否する。 */
 static LRESULT on_notify(struct folio_window *_Nonnull self, LPARAM lparam)
 {
     const NMHDR *_Nonnull header = (const NMHDR *)lparam;
@@ -9764,20 +9796,11 @@ static LRESULT on_notify(struct folio_window *_Nonnull self, LPARAM lparam)
     {
         return tooltip_display(self, lparam);
     }
-    if (header->code != EN_MSGFILTER || self->pane == nullptr || note_pane_composing(self->pane))
+    if (header->code != EN_MSGFILTER || self->pane == nullptr)
     {
         return 0;
     }
-    const MSGFILTER *_Nonnull filter = (const MSGFILTER *)lparam;
-    if (filter->msg == WM_CHAR)
-    {
-        return pane_character(self, filter->wParam);
-    }
-    if (filter->msg == WM_KEYDOWN)
-    {
-        return pane_key(self, filter->wParam);
-    }
-    return 0;
+    return pane_filter(self, (const MSGFILTER *)lparam);
 }
 
 static bool forward_body_wheel(const struct folio_window *_Nonnull self, WPARAM keys,

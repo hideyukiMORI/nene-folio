@@ -54,6 +54,7 @@ static bool settings_edit_case;
 static bool mode_save_case;
 static bool discard_case;
 static bool palette_case;
+static bool paste_case;
 
 static const char history_current[] = "# Current 日本語 😀 **saved**";
 static const char history_previous[] = "> Previous 猫 🐾 `old`";
@@ -105,11 +106,13 @@ static void seed_notes(struct persistence_port disk)
         diagram_case ? "Body before diagrams\n\n```mermaid\nflowchart LR\nA --> B\n```\n\nAfter\n"
                      : "Body before images\n\n![alt](images/one.png)\n\nBody after images\n";
     if (history_case || replace_case || search_case || note_switch_case || zoom_case ||
-        theme_preview_case || settings_edit_case || mode_save_case || discard_case || palette_case)
+        theme_preview_case || settings_edit_case || mode_save_case || discard_case ||
+        palette_case || paste_case)
     {
         seed_history(disk);
         source = history_case || note_switch_case || zoom_case || theme_preview_case ||
-                         settings_edit_case || mode_save_case || discard_case || palette_case
+                         settings_edit_case || mode_save_case || discard_case || palette_case ||
+                         paste_case
                      ? history_current
                      : replace_current;
     }
@@ -435,21 +438,8 @@ static void file_timestamp_roundtrip(void)
             "absent attributes leave output untouched");
 }
 
-static void status_pixels(HWND root, const char *_Nonnull path,
-                          const struct theme_palette *_Nonnull palette)
+static void save_bitmap(HDC dc, HBITMAP bitmap, RECT client, const char *_Nonnull path)
 {
-    RECT client;
-    GetClientRect(root, &client);
-    HDC source = GetDC(root);
-    HDC dc = CreateCompatibleDC(source);
-    HBITMAP bitmap = CreateCompatibleBitmap(source, client.right, client.bottom);
-    HGDIOBJ old = SelectObject(dc, bitmap);
-    require(PrintWindow(root, dc, PW_CLIENTONLY), "render real status pixels");
-    struct rgb_color background = palette->status_background;
-    require(GetPixel(dc, 2, client.bottom - 12) ==
-                RGB(background.red, background.green, background.blue),
-            "status background uses the canonical palette role");
-    SelectObject(dc, old);
     BITMAPINFO info = {.bmiHeader = {.biSize = sizeof(BITMAPINFOHEADER),
                                      .biWidth = client.right,
                                      .biHeight = -client.bottom,
@@ -472,6 +462,24 @@ static void status_pixels(HWND root, const char *_Nonnull path,
             "write status evidence");
     fclose(output);
     free(pixels);
+}
+
+static void status_pixels(HWND root, const char *_Nonnull path,
+                          const struct theme_palette *_Nonnull palette)
+{
+    RECT client;
+    GetClientRect(root, &client);
+    HDC source = GetDC(root);
+    HDC dc = CreateCompatibleDC(source);
+    HBITMAP bitmap = CreateCompatibleBitmap(source, client.right, client.bottom);
+    HGDIOBJ old = SelectObject(dc, bitmap);
+    require(PrintWindow(root, dc, PW_CLIENTONLY), "render real status pixels");
+    struct rgb_color background = palette->status_background;
+    require(GetPixel(dc, 2, client.bottom - 12) ==
+                RGB(background.red, background.green, background.blue),
+            "status background uses the canonical palette role");
+    SelectObject(dc, old);
+    save_bitmap(dc, bitmap, client, path);
     DeleteObject(bitmap);
     DeleteDC(dc);
     ReleaseDC(root, source);
@@ -2236,9 +2244,288 @@ static void run_palette_case(struct native_fixture *_Nonnull fixture)
         note_text_destroy(history.files[version]);
 }
 
+/* #479: The clipboard belongs to a different window station, never to the user's desktop. */
+static HWINSTA _Nonnull isolate_paste_clipboard(void)
+{
+    HWINSTA station = CreateWindowStationW(nullptr, 0, WINSTA_ALL_ACCESS, nullptr);
+    require(station != nullptr && SetProcessWindowStation(station), "isolated clipboard station");
+    wchar_t name[256];
+    DWORD needed = 0;
+    require(GetUserObjectInformationW(GetProcessWindowStation(), UOI_NAME, name, sizeof name,
+                                      &needed) &&
+                _wcsicmp(name, L"WinSta0") != 0,
+            "clipboard station is not the interactive station");
+    return station;
+}
+
+static void publish_clipboard(UINT format, const void *_Nonnull bytes, size_t size)
+{
+    HGLOBAL block = GlobalAlloc(GMEM_MOVEABLE, size);
+    require(block != nullptr, "clipboard allocation");
+    void *data = GlobalLock(block);
+    require(data != nullptr, "clipboard lock");
+    memcpy(data, bytes, size);
+    GlobalUnlock(block);
+    require(SetClipboardData(format, block) != nullptr, "clipboard owns the published bytes");
+}
+
+static void rich_clipboard(HWND _Nonnull owner)
+{
+    const wchar_t text[] = L"Bold Light";
+    const char rich[] = "{\\rtf1\\ansi{\\fonttbl{\\f0 Times New Roman;}}"
+                        "{\\colortbl;\\red220\\green20\\blue20;}"
+                        "\\pard\\qc\\f0\\fs36\\cf1\\b Bold\\b0  Light}";
+    require(OpenClipboard(owner) && EmptyClipboard(), "open isolated clipboard");
+    publish_clipboard(RegisterClipboardFormatW(L"Rich Text Format"), rich, sizeof rich);
+    publish_clipboard(CF_UNICODETEXT, text, sizeof text);
+    require(CloseClipboard(), "close isolated clipboard");
+}
+
+static CHARFORMAT2W character_format(HWND _Nonnull body, LONG position)
+{
+    CHARRANGE selection = {.cpMin = position, .cpMax = position + 1};
+    SendMessageW(body, EM_EXSETSEL, 0, (LPARAM)&selection);
+    CHARFORMAT2W format = {.cbSize = sizeof format};
+    SendMessageW(body, EM_GETCHARFORMAT, SCF_SELECTION, (LPARAM)&format);
+    return format;
+}
+
+/* Exercise the same translate/dispatch order as main.c, including the generated WM_CHAR. */
+static void paste_input(struct folio_window *_Nonnull window, UINT key, BYTE modifiers)
+{
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    if (key == 0)
+    {
+        SendMessageW(body, WM_PASTE, 0, 0);
+        pump(window);
+        return;
+    }
+    BYTE original[256], keyboard[256] = {0};
+    require(GetKeyboardState(original), "save fixture keyboard state");
+    keyboard[VK_CONTROL] = (modifiers & FCONTROL) != 0 ? 0x80 : 0;
+    keyboard[VK_SHIFT] = (modifiers & FSHIFT) != 0 ? 0x80 : 0;
+    keyboard[key] = 0x80;
+    require(SetKeyboardState(keyboard), "fixture key modifiers");
+    MSG message = {.hwnd = body, .message = WM_KEYDOWN, .wParam = key, .lParam = 1};
+    if (!folio_window_translate(window, &message))
+    {
+        TranslateMessage(&message);
+        DispatchMessageW(&message);
+    }
+    pump(window);
+    require(SetKeyboardState(original), "restore fixture keyboard state");
+}
+
+/* PrintWindow is black on the private station: render the actual native document to a memory DC. */
+static void paste_pixels(struct folio_window *_Nonnull window, const char *_Nonnull path,
+                         const struct theme_palette *_Nonnull palette)
+{
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    RECT client = {.right = 900, .bottom = 160};
+    HDC source = GetDC(body);
+    HDC dc = CreateCompatibleDC(source);
+    HBITMAP bitmap = CreateCompatibleBitmap(source, client.right, client.bottom);
+    HGDIOBJ old = SelectObject(dc, bitmap);
+    struct rgb_color background = palette->pane;
+    SetDCBrushColor(dc, RGB(background.red, background.green, background.blue));
+    FillRect(dc, &client, (HBRUSH)GetStockObject(DC_BRUSH));
+    RECT page = {.right = MulDiv(client.right, 1440, GetDeviceCaps(dc, LOGPIXELSX)),
+                 .bottom = MulDiv(client.bottom, 1440, GetDeviceCaps(dc, LOGPIXELSY))};
+    RECT text = page;
+    text.left = 120;
+    text.top = 120;
+    FORMATRANGE format = {.hdc = dc, .hdcTarget = dc, .rc = text, .rcPage = page, .chrg = {0, -1}};
+    LRESULT end = SendMessageW(body, EM_FORMATRANGE, TRUE, (LPARAM)&format);
+    SendMessageW(body, EM_FORMATRANGE, FALSE, 0);
+    require(end >= GetWindowTextLengthW(body), "native output includes the complete short body");
+    SelectObject(dc, old);
+    save_bitmap(dc, bitmap, client, path);
+    DeleteObject(bitmap);
+    DeleteDC(dc);
+    ReleaseDC(body, source);
+}
+
+static void paste_roundtrip(struct folio_window *_Nonnull window,
+                            struct native_fixture *_Nonnull fixture, UINT key, BYTE modifiers)
+{
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    CHARFORMAT2W original = character_format(body, 0);
+    CHARRANGE selection = {.cpMin = 2, .cpMax = 9};
+    SendMessageW(body, EM_EXSETSEL, 0, (LPARAM)&selection);
+    paste_input(window, key, modifiers);
+    expect_editor(window, fixture->state, L"# Bold Light 日本語 😀 **saved**", FOLIO_NOTE_CHANGED);
+    SendMessageW(body, EM_EXGETSEL, 0, (LPARAM)&selection);
+    require(selection.cpMin == 12 && selection.cpMax == 12, "paste collapses caret after text");
+    if (key == 0)
+        paste_pixels(window, "paste-editor.bmp", folio_state_palette(fixture->state));
+    CHARFORMAT2W first = character_format(body, 2), last = character_format(body, 7);
+    printf("paste key=%u modifiers=%u heights=%ld/%ld/%ld weights=%u/%u/%u\n", key, modifiers,
+           original.yHeight, first.yHeight, last.yHeight, original.wWeight, first.wWeight,
+           last.wWeight);
+    require(original.yHeight == first.yHeight && original.yHeight == last.yHeight &&
+                original.wWeight == first.wWeight && original.wWeight == last.wWeight &&
+                original.crTextColor == first.crTextColor &&
+                original.crTextColor == last.crTextColor &&
+                wcscmp(original.szFaceName, first.szFaceName) == 0 &&
+                wcscmp(original.szFaceName, last.szFaceName) == 0 &&
+                (first.dwEffects & (CFE_BOLD | CFE_ITALIC | CFE_UNDERLINE)) == 0,
+            "clipboard character formatting is not imported");
+    PARAFORMAT2 paragraph = {.cbSize = sizeof paragraph};
+    SendMessageW(body, EM_GETPARAFORMAT, 0, (LPARAM)&paragraph);
+    require(paragraph.wAlignment == PFA_LEFT, "clipboard paragraph formatting is not imported");
+    require(SendMessageW(body, EM_GETMODIFY, 0, 0) != 0, "paste marks the editor dirty");
+    selection = (CHARRANGE){.cpMin = 12, .cpMax = 12};
+    SendMessageW(body, EM_EXSETSEL, 0, (LPARAM)&selection);
+    SendMessageW(body, EM_STOPGROUPTYPING, 0, 0);
+    SendMessageW(body, WM_CHAR, '!', 1);
+    pump(window);
+    expect_editor(window, fixture->state, L"# Bold Light! 日本語 😀 **saved**", FOLIO_NOTE_CHANGED);
+    CHARFORMAT2W typed = character_format(body, 12);
+    require(typed.yHeight == original.yHeight && typed.crTextColor == original.crTextColor &&
+                (typed.dwEffects & (CFE_BOLD | CFE_ITALIC | CFE_UNDERLINE)) == 0,
+            "continued typing keeps the editor format");
+    history_undo(window);
+    expect_editor(window, fixture->state, L"# Bold Light 日本語 😀 **saved**", FOLIO_NOTE_CHANGED);
+    history_undo(window);
+    expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_SAME);
+    require(SendMessageW(body, EM_REDO, 0, 0) != 0, "paste is redoable");
+    expect_editor(window, fixture->state, L"# Bold Light 日本語 😀 **saved**", FOLIO_NOTE_CHANGED);
+    history_undo(window);
+    expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_SAME);
+}
+
+static void single_clipboard(HWND _Nonnull owner, UINT format, const void *_Nonnull bytes,
+                             size_t size)
+{
+    require(OpenClipboard(owner) && EmptyClipboard(), "replace isolated clipboard contents");
+    if (format != 0)
+        publish_clipboard(format, bytes, size);
+    require(CloseClipboard(), "close single-format clipboard");
+}
+
+static void paste_text_formats(struct folio_window *_Nonnull window,
+                               struct native_fixture *_Nonnull fixture)
+{
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    const wchar_t unicode[] = L"日本語 😀\r\n\tNext";
+    single_clipboard(body, CF_UNICODETEXT, unicode, sizeof unicode);
+    SendMessageW(body, EM_SETSEL, 0, -1);
+    paste_input(window, 'V', FCONTROL);
+    expect_editor(window, fixture->state, L"日本語 😀\r\tNext", FOLIO_NOTE_CHANGED);
+    history_undo(window);
+    expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_SAME);
+    const char ansi[] = "ANSI plain";
+    single_clipboard(body, CF_TEXT, ansi, sizeof ansi);
+    SendMessageW(body, EM_SETSEL, 0, -1);
+    paste_input(window, 0, 0);
+    expect_editor(window, fixture->state, L"ANSI plain", FOLIO_NOTE_CHANGED);
+    history_undo(window);
+    expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_SAME);
+    rich_clipboard(body);
+    const wchar_t preferred[] = L"Unicode wins";
+    require(OpenClipboard(body), "add independent Unicode representation");
+    publish_clipboard(CF_UNICODETEXT, preferred, sizeof preferred);
+    require(CloseClipboard(), "close mixed representations");
+    SendMessageW(body, EM_SETSEL, 0, -1);
+    paste_input(window, VK_INSERT, FSHIFT);
+    expect_editor(window, fixture->state, preferred, FOLIO_NOTE_CHANGED);
+    history_undo(window);
+    expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_SAME);
+}
+
+static void expect_paste_blocked(struct folio_window *_Nonnull window)
+{
+    struct native_body_snapshot snapshot = {0};
+    capture_native_body(window, &snapshot);
+    paste_input(window, 0, 0);
+    expect_native_body(window, &snapshot);
+    paste_input(window, 'V', FCONTROL);
+    expect_native_body(window, &snapshot);
+    paste_input(window, VK_INSERT, FSHIFT);
+    expect_native_body(window, &snapshot);
+}
+
+static void paste_unavailable_formats(struct folio_window *_Nonnull window)
+{
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    const char rich[] = "{\\rtf1\\ansi\\b Rich only}";
+    single_clipboard(body, RegisterClipboardFormatW(L"Rich Text Format"), rich, sizeof rich);
+    SendMessageW(body, EM_SETSEL, 2, 9);
+    expect_paste_blocked(window);
+    const char html[] = "<b>HTML only</b>";
+    single_clipboard(body, RegisterClipboardFormatW(L"HTML Format"), html, sizeof html);
+    expect_paste_blocked(window);
+    single_clipboard(body, 0, "", 0);
+    expect_paste_blocked(window);
+}
+
+static void paste_input_guards(struct folio_window *_Nonnull window,
+                               struct native_fixture *_Nonnull fixture)
+{
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    rich_clipboard(body);
+    require(SendMessageW(body, EM_SETREADONLY, TRUE, 0) != 0, "test readonly editor");
+    expect_paste_blocked(window);
+    require(SendMessageW(body, EM_SETREADONLY, FALSE, 0) != 0, "restore writable editor");
+    EnableWindow(body, FALSE);
+    expect_paste_blocked(window);
+    EnableWindow(body, TRUE);
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    EnableWindow(root, FALSE);
+    expect_paste_blocked(window);
+    EnableWindow(root, TRUE);
+    SendMessageW(body, WM_IME_STARTCOMPOSITION, 0, 0);
+    expect_paste_blocked(window);
+    SendMessageW(body, WM_IME_ENDCOMPOSITION, 0, 0);
+    action(window, ACCESSIBLE_VIEW);
+    CHARFORMAT2W heading = character_format(body, 0);
+    require((heading.dwEffects & CFE_BOLD) != 0, "view retains Markdown heading formatting");
+    SendMessageW(body, EM_SETSEL, 0, 0);
+    paste_pixels(window, "paste-view.bmp", folio_state_palette(fixture->state));
+    expect_paste_blocked(window);
+    action(window, ACCESSIBLE_EDIT);
+    expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_SAME);
+    CHARFORMAT2W edit = character_format(body, 0);
+    require((edit.dwEffects & CFE_BOLD) == 0 && edit.yHeight == 220,
+            "return to edit restores the plain editor format");
+}
+
+static void run_paste_case(struct native_fixture *_Nonnull fixture)
+{
+    require(folio_state_select_note(fixture->state, 0, 0, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
+            "select the dedicated paste note");
+    struct history_snapshot history = {0};
+    capture_history(fixture, &history);
+    struct folio_window *window = nullptr;
+    require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
+                FOLIO_WINDOW_CREATED,
+            "real paste window");
+    pump(window);
+    action(window, ACCESSIBLE_EDIT);
+    rich_clipboard(folio_window_accessible_window(window, ACCESSIBLE_BODY));
+    paste_roundtrip(window, fixture, 0, 0);
+    paste_roundtrip(window, fixture, 'V', FCONTROL);
+    paste_roundtrip(window, fixture, 'V', FCONTROL | FSHIFT);
+    paste_roundtrip(window, fixture, VK_INSERT, FSHIFT);
+    paste_text_formats(window, fixture);
+    paste_unavailable_formats(window);
+    paste_input_guards(window, fixture);
+    verify_history_unchanged(fixture, &history);
+    require(controlled.requests == 0, "clipboard text does not request image work");
+    folio_window_destroy(window);
+    for (size_t version = 0; version <= note_history_depth; ++version)
+        note_text_destroy(history.files[version]);
+}
+
 static void run_other_fixture(struct native_fixture *_Nonnull fixture, int argc,
                               char *_Nonnull *_Nonnull argv)
 {
+    if (paste_case)
+    {
+        run_paste_case(fixture);
+        return;
+    }
     if (palette_case)
     {
         run_palette_case(fixture);
@@ -2293,13 +2580,17 @@ static void run_fixture(struct native_fixture *_Nonnull fixture, int argc,
 
 int main(int argc, char *_Nonnull *_Nonnull argv)
 {
+    const char *selector = argc == 2 ? argv[1] : "";
+    paste_case = strcmp(selector, "--paste") == 0;
+    HWINSTA original_station = GetProcessWindowStation();
+    HDESK original_desktop = GetThreadDesktop(GetCurrentThreadId());
+    HWINSTA paste_station = paste_case ? isolate_paste_clipboard() : nullptr;
     HDESK desktop = CreateDesktopW(L"NeNeFolioImageStatus520", nullptr, nullptr, 0,
                                    DESKTOP_CREATEWINDOW | DESKTOP_CREATEMENU | DESKTOP_READOBJECTS |
                                        DESKTOP_WRITEOBJECTS,
                                    nullptr);
     require(desktop != nullptr && SetThreadDesktop(desktop), "isolated desktop");
     require(SUCCEEDED(OleInitialize(nullptr)), "COM apartment");
-    const char *selector = argc == 2 ? argv[1] : "";
     diagram_case = strcmp(selector, "--mermaid") == 0;
     history_case = strcmp(selector, "--history") == 0;
     replace_case = strcmp(selector, "--replace") == 0;
@@ -2316,7 +2607,15 @@ int main(int argc, char *_Nonnull *_Nonnull argv)
     run_fixture(&fixture, argc, argv);
     destroy_fixture(&fixture);
     OleUninitialize();
-    CloseDesktop(desktop);
+    if (paste_station != nullptr)
+    {
+        require(SetProcessWindowStation(original_station), "restore the process station");
+        require(SetThreadDesktop(original_desktop), "restore the original thread desktop");
+        require(CloseDesktop(desktop), "release the isolated clipboard desktop");
+        require(CloseWindowStation(paste_station), "release the isolated clipboard station");
+    }
+    else
+        CloseDesktop(desktop);
     printf("image/status: %u checks passed\n", checks);
     return EXIT_SUCCESS;
 }

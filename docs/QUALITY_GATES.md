@@ -72,6 +72,11 @@ CI で必要なゲートは、すべてローカルで実行できる。検査�
 修正版で318checks成功を確認した。専用desktopと`build/verification-settings`だけを使い、30秒timeoutを設ける。
 [品質記録](quality/2026-11-01-settings-uia-cycle.md)に対象・反例・外部UIA確認を残す。
 
+#479の編集clipboardはCTestの`paste_native`で固定する。専用WindowStation/desktop/dataを使い、
+4入力の書式非混入、Unicode/選択/後続入力/UndoRedo、文字形式無しと入力停止時の保持を確認する。
+修正前は11ptへ18ptが混入して失敗、修正後は414checks成功。30秒timeoutと既存data lockを使う。
+native本文出力とviewport撮影の違い、全試行は[品質記録](quality/2026-11-06-editor-paste.md)に残す。
+
 - 機械強制: **不能**（テストの有意味性・契約の充足は判断であり、記録とレビューで確認する。QLT-009のカバレッジ下限だけでは代替できない）
 
 ### QLT-009 — カバレッジは下げられない
