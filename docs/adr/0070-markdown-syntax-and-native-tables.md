@@ -118,7 +118,7 @@ Waivers: none。
 
 山括弧で囲んだ画像パスの片側丸括弧と引用符title内の丸括弧を一般の括弧対応付けへ数え、
 画像参照を見失う反例を確認した。実画像の同梱も成功扱いのまま欠落する。
-inline tokenの既存対応付けで、認識済みの`[... ](`に属する山括弧内と空白後の引用符titleを
+inline tokenの既存対応付けで、認識済みlabelの閉じ角括弧に続く `(` に属する山括弧内と空白後の引用符titleを
 literalな範囲として飛ばす。既存literal token内の引用符を調べ、対応付けは同じtoken所有者の中に保つ。
 山括弧はnested `<`/改行で打切り、escapeされた閉じ文字は終端にしない。
 成功したliteral範囲を一度だけ飛ばし、未閉じの入力へ全suffix再探索を重ねない。
@@ -164,3 +164,8 @@ local percent展開はimage_sourceが引き続き担当する。元の全体code
 旧50.205ms→178.793ms（4定常sample中央値、起動診断あり）となったため採用しない。
 元の字句分割を維持し、対応付け中のdestination内にある既存literal tokenだけを走査して
 titleの開始引用符を見つける。通常本文の引用符へtoken増加を波及させない。
+
+## 2026-11-05 の数値出力（#667）
+
+同じrtf_text_numberのstackへ十進数字を正順に作り、一度だけ既存text_bufferへ追加する。API/所有/RTF bytes/sticky OOMは不変。
+0/最大値/桁境界/成長境界472組と変換の失敗注入を既存markdown_testsで確認する。性能は数値batch改善の範囲に限定する。[品質記録](../quality/2026-11-05-rtf-number.md)。

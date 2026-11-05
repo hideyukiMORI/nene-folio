@@ -1550,6 +1550,72 @@ static void verify_plain_emission_allocation(const char *_Nonnull source)
     note_text_destroy(text);
 }
 
+static void expect_number_emission(size_t value, size_t prefix)
+{
+    char expected[1024];
+    memset(expected, 'a', prefix);
+    int written = snprintf(expected + prefix, sizeof expected - prefix, "%zu;", value);
+    require(written > 0 && (size_t)written < sizeof expected - prefix,
+            "standard decimal expectation fits the fixture");
+    struct text_buffer *out = nullptr;
+    require(text_buffer_create(&out) == TEXT_BUFFER_ACCEPTED, "numeric output buffer");
+    text_buffer_append(out, expected, prefix);
+    rtf_text_number(out, value);
+    text_buffer_append_text(out, ";");
+    size_t length = prefix + (size_t)written;
+    require(text_buffer_finish(out) == TEXT_BUFFER_ACCEPTED && text_buffer_length(out) == length &&
+                memcmp(text_buffer_bytes(out), expected, length + 1) == 0,
+            "RTF number retains all decimal digits, prefix, suffix and terminator");
+    text_buffer_destroy(out);
+}
+
+static void verify_number_allocation(void)
+{
+    char prefix[255];
+    memset(prefix, 'a', sizeof prefix);
+    struct text_buffer *out = nullptr;
+    require(text_buffer_create(&out) == TEXT_BUFFER_ACCEPTED, "numeric OOM output buffer");
+    text_buffer_append(out, prefix, sizeof prefix);
+    allocation_probe_fail_at(1);
+    rtf_text_number(out, SIZE_MAX);
+    size_t calls = allocation_probe_calls();
+    allocation_probe_fail_at(0);
+    if (calls != 0)
+    {
+        require(text_buffer_finish(out) == TEXT_BUFFER_OUT_OF_MEMORY,
+                "numeric buffer growth propagates allocation failure");
+        size_t length = text_buffer_length(out);
+        rtf_text_number(out, 0);
+        require(text_buffer_finish(out) == TEXT_BUFFER_OUT_OF_MEMORY &&
+                    text_buffer_length(out) == length,
+                "later numeric output retains sticky failure without appending");
+    }
+    else
+        require(text_buffer_finish(out) == TEXT_BUFFER_ACCEPTED,
+                "uninstrumented numeric growth succeeds");
+    text_buffer_destroy(out);
+    printf("RTF numeric OOM: active=%d\n", calls != 0);
+}
+
+static void verify_numeric_emission(void)
+{
+    const size_t prefixes[] = {0, 235, 236, 254, 255, 256, 511, 512};
+    for (size_t index = 0; index < sizeof prefixes / sizeof prefixes[0]; ++index)
+    {
+        expect_number_emission(0, prefixes[index]);
+        expect_number_emission(SIZE_MAX, prefixes[index]);
+        size_t power = 1;
+        while (power <= SIZE_MAX / 10)
+        {
+            power *= 10;
+            expect_number_emission(power - 1, prefixes[index]);
+            expect_number_emission(power, prefixes[index]);
+            expect_number_emission(power + 1, prefixes[index]);
+        }
+    }
+    verify_number_allocation();
+}
+
 static void verify_emission_boundaries(void)
 {
     const size_t lengths[] = {0, 1, 254, 255, 256, 257, 511, 512, 513};
@@ -2035,6 +2101,7 @@ static void verify_rule_spacing(void)
 void run_markdown_tests(void)
 {
     verify_view_partitions();
+    verify_numeric_emission();
     verify_emission_boundaries();
     verify_autolink_rendering();
     verify_character_references();

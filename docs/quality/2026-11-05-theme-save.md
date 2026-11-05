@@ -51,3 +51,9 @@ build/nativeそのものに失敗なし。contract-01はPowerShell wrapperの-Se
 最終head必須CI eng/check.ps1成功→tools/merge-pr.ps1で統合→通常不変→全保全/取込tree/clean/ignored/link/稼働参照監査→当該D専用領域整理。
 branch/commit保持。原本D:/NeNeFolio/agents/665-theme-save/、確定結果は同integration-completion.json。
 全体journalはD:/NeNeFolio/agents/quality-20261105/journal.md。主担当単体、追加委任無し。
+
+## 最終受理・保全整理（17:13）
+
+PR666 head091bc6ad3bf3b20fdd71ac1745be02fcbfb688f6、必須CI41991845670 full-gate/check成功、main7838718へ統合済み。
+Issue665 CLOSED、通常exe/data32file不変。1378file/64692858bytes全保全ZIP/hashと取込tree/clean/ignored/link/稼働参照を監査し、専用領域を整理。
+branch/commitと初回wrapper失敗も保持。D:/NeNeFolio/agents/665-theme-save/integration-completion.json。
