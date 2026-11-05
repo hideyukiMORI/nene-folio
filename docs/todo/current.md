@@ -5,17 +5,17 @@
 hideの現在指示は、停止の指示まで調査・試験・計測・必要な修正を続け、全試行と変更を記録すること。
 主担当は単体で実行し、必要な保存系/本文処理の独立静読だけを委任した。古い停止・固定分担は持ち込まない。
 
-**#647は編集可能判定のASCII本文を短縮。** 既存ASCII確認と正本の対象文字集合を共有する。
-正常24入力/480sampleでASCII16MiB 21.71→2.49ms。最小日本語約7.36%増、16MiB日本語約0.5%増も記録。
-初回CIの未許可memchrを修正し、最終候補のDebug/回帰/依存0違反・測定監査が成功。
-最終CI/統合/通常反映/data不変/全保全整理はD:/NeNeFolio/agents/647-editor-eligibility/integration-completion.jsonへ。
+**#649は履歴採用とUndoの恒久native回帰を追加。** VIEW/未保存EDITからの採用、各Undo一回、
+保存revision/全履歴bytesの保持と明示保存の1世代更新を148checks/1.73秒で確認。製品不変。
+最終CI/統合/通常exe-data不変/全保全整理はD:/NeNeFolio/agents/649-history-restore/integration-completion.jsonへ。
 
-#645はPR646/必須CI41969946097成功、mainc1c6444へ統合済み。設定値と表示の回帰7657checks成功。
-製品・通常exe/data32file不変、1364file全保全・専用領域整理済み。原本は同agents/645-settings-controls/integration-completion.json。
+#647はPR648/最終CI41973359728成功、main8e74a91へ統合し通常版へ反映済み。
+data32file不変、最終1523file全保全・専用領域整理済み。初回CI拒否/候補1〜3の全記録も保持。
+原本は同agents/647-editor-eligibility/integration-completion.json。
 本日のそれ以前の統合結果・計測値・保全先は[日報](../reports/2026-11-05.md)と[引き継ぎ](../handoffs/2026-11-05.md)へ集約する。
 
 全体journalは`D:/NeNeFolio/agents/quality-20261105/journal.md`。
-[編集可能判定](../quality/2026-11-05-editor-eligibility.md)・[設定操作](../quality/2026-11-05-settings-controls.md)・[文字変換](../quality/2026-11-05-text-conversion.md)・[設定再開](../quality/2026-11-05-settings-reopen.md)・[設定資源](../quality/2026-11-05-settings-resources.md)・[配置準備](../quality/2026-11-05-drawer-preparation.md)・[行選択](../quality/2026-11-05-drawer-hit-lookup.md)・[検索oracle](../quality/2026-11-05-index-matcher-oracle.md)・[名前集合](../quality/2026-11-05-name-list-lookup.md)・[設定固定語](../quality/2026-11-05-settings-tokens.md)・[取り込み再試行](../quality/2026-11-05-import-batch-retry.md)・[借用行参照](../quality/2026-11-05-markdown-view-lookup.md)・[Markdown段落](../quality/2026-11-05-markdown-paragraph-scale.md)・[改行正規化](../quality/2026-11-05-editor-normalization.md)・[本文検証](../quality/2026-11-05-ascii-validation.md)・
+[履歴復元](../quality/2026-11-05-history-restore.md)・[編集可能判定](../quality/2026-11-05-editor-eligibility.md)・[設定操作](../quality/2026-11-05-settings-controls.md)・[文字変換](../quality/2026-11-05-text-conversion.md)・[設定再開](../quality/2026-11-05-settings-reopen.md)・[設定資源](../quality/2026-11-05-settings-resources.md)・[配置準備](../quality/2026-11-05-drawer-preparation.md)・[行選択](../quality/2026-11-05-drawer-hit-lookup.md)・[検索oracle](../quality/2026-11-05-index-matcher-oracle.md)・[名前集合](../quality/2026-11-05-name-list-lookup.md)・[設定固定語](../quality/2026-11-05-settings-tokens.md)・[取り込み再試行](../quality/2026-11-05-import-batch-retry.md)・[借用行参照](../quality/2026-11-05-markdown-view-lookup.md)・[Markdown段落](../quality/2026-11-05-markdown-paragraph-scale.md)・[改行正規化](../quality/2026-11-05-editor-normalization.md)・[本文検証](../quality/2026-11-05-ascii-validation.md)・
 [保存](../quality/2026-11-05-save-preparation.md)・[日報](../reports/2026-11-05.md)・[引き継ぎ](../handoffs/2026-11-05.md)。
 追加waiver none、既存WVR-0001継続。実app/実ノート/Storeは試験に使っていない。
 
@@ -39,9 +39,9 @@ Store提出用MSIXと3言語更新文は`D:/NeNeFolio/releases/1.3.0/store-candi
 
 ## 通常版と実機確認の範囲
 
-通常exeは`C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`、#635反映時sourceは`9a84beb`。
-SHA256は`c6fc325583aa8e60929161065531ac58287812659bb8babc020241a10dc0ef61`。
-#637/#639/#641/#643/#645は製品不変で再buildしない。GitHub/Store配布1.3.0のsource`4359e9e`とは区別する。
+通常exeは`C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`、#647反映時sourceは`8e74a91`。
+SHA256は`9cafa618c08c0b5f6220d36ec3f8ff259c8530f698ce0ddeeafb347a84771e70`。
+#649は製品不変で再buildしない。GitHub/Store配布1.3.0のsource`4359e9e`とは区別する。
 通常app/実ノートは試験に使っていない。hideによる1.3.0の実機受理は未確認。
 
 以前のStore1.2.0は#536/PR538、source`eb10419`でMermaidを含まない。

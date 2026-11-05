@@ -11,6 +11,7 @@
 #include "image_bitmap.h"
 #include "image_port.h"
 #include "note_file_times.h"
+#include "note_history.h"
 #include "note_ledger.h"
 #include "note_text.h"
 #include "persistence_adapter.h"
@@ -40,6 +41,11 @@ struct native_fixture
 
 static unsigned checks;
 static bool diagram_case;
+static bool history_case;
+
+static const char history_current[] = "# Current 日本語 😀 **saved**";
+static const char history_previous[] = "> Previous 猫 🐾 `old`";
+static const char history_oldest[] = "- Oldest 履歴 🌸";
 
 static void require(bool condition, const char *_Nonnull message)
 {
@@ -48,6 +54,22 @@ static void require(bool condition, const char *_Nonnull message)
     {
         fprintf(stderr, "FAIL: %s\n", message);
         exit(EXIT_FAILURE);
+    }
+}
+
+static void seed_history(struct persistence_port disk)
+{
+    const char *versions[] = {history_oldest, history_previous};
+    for (size_t index = 0; index < sizeof versions / sizeof versions[0]; ++index)
+    {
+        struct note_text *_Nullable body = nullptr;
+        require(note_text_create(versions[index], strlen(versions[index]), &body) ==
+                    NOTE_TEXT_ACCEPTED,
+                "valid history fixture");
+        require(disk.write_note(disk.adapter, "schedule", "one", body) == PERSISTENCE_STORED &&
+                    disk.archive_note(disk.adapter, "schedule", "one") == PERSISTENCE_STORED,
+                "fixture history uses the canonical archive port");
+        note_text_destroy(body);
     }
 }
 
@@ -60,6 +82,11 @@ static void seed_notes(struct persistence_port disk)
     const char *source =
         diagram_case ? "Body before diagrams\n\n```mermaid\nflowchart LR\nA --> B\n```\n\nAfter\n"
                      : "Body before images\n\n![alt](images/one.png)\n\nBody after images\n";
+    if (history_case)
+    {
+        seed_history(disk);
+        source = history_current;
+    }
     struct note_text *_Nullable body = nullptr;
     require(note_text_create(source, strlen(source), &body) == NOTE_TEXT_ACCEPTED, "media note");
     require(disk.write_note(disk.adapter, "schedule", "one", body) == PERSISTENCE_STORED,
@@ -675,6 +702,188 @@ static void run_diagram_case(struct native_fixture *_Nonnull fixture)
     folio_window_destroy(window);
 }
 
+struct history_snapshot
+{
+    struct note_text *_Nullable files[note_history_depth + 1];
+    uint64_t store_revision;
+};
+
+static enum persistence_outcome history_file(struct persistence_port disk, size_t version,
+                                             struct note_text *_Nullable *_Nonnull out)
+{
+    if (version == 0)
+        return disk.read_note(disk.adapter, "schedule", "one", out);
+    struct history_version which = {.category = "schedule", .note = "one", .version = version};
+    return disk.read_history(disk.adapter, &which, out);
+}
+
+static void capture_history(struct native_fixture *_Nonnull fixture,
+                            struct history_snapshot *_Nonnull snapshot)
+{
+    struct persistence_port disk = persistence_adapter_port(fixture->files);
+    snapshot->store_revision = folio_state_store_revision(fixture->state);
+    for (size_t version = 0; version <= note_history_depth; ++version)
+    {
+        enum persistence_outcome outcome = history_file(disk, version, &snapshot->files[version]);
+        require(outcome == PERSISTENCE_LOADED || outcome == PERSISTENCE_ABSENT,
+                "snapshot only valid dedicated note and history files");
+    }
+    require(snapshot->files[0] != nullptr && snapshot->files[1] != nullptr &&
+                snapshot->files[2] != nullptr,
+            "current note and two seeded versions exist");
+}
+
+static void expect_history_file(struct persistence_port disk, size_t version,
+                                const struct note_text *_Nullable expected)
+{
+    struct note_text *_Nullable actual = nullptr;
+    enum persistence_outcome outcome = history_file(disk, version, &actual);
+    if (expected == nullptr)
+        require(outcome == PERSISTENCE_ABSENT && actual == nullptr, "absent version stays absent");
+    else
+    {
+        require(outcome == PERSISTENCE_LOADED && actual != nullptr, "stored version is readable");
+        size_t length = note_text_file_length(expected);
+        require(note_text_file_length(actual) == length &&
+                    memcmp(note_text_file_bytes(actual), note_text_file_bytes(expected), length) ==
+                        0,
+                "stored file matches every expected byte");
+    }
+    note_text_destroy(actual);
+}
+
+static void verify_history_unchanged(struct native_fixture *_Nonnull fixture,
+                                     const struct history_snapshot *_Nonnull snapshot)
+{
+    require(folio_state_store_revision(fixture->state) == snapshot->store_revision,
+            "restore and Undo do not publish a save");
+    struct persistence_port disk = persistence_adapter_port(fixture->files);
+    for (size_t version = 0; version <= note_history_depth; ++version)
+        expect_history_file(disk, version, snapshot->files[version]);
+}
+
+static void expect_editor(struct folio_window *_Nonnull window,
+                          const struct folio_state *_Nonnull state,
+                          const wchar_t *_Nonnull expected, enum folio_note_change change)
+{
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    wchar_t text[128];
+    int length = GetWindowTextW(body, text, 128);
+    require(length >= 0 && (size_t)length == wcslen(expected) && wcscmp(text, expected) == 0,
+            "editor retains exact Markdown and Unicode units");
+    require(folio_state_pane_mode(state) == PANE_MODE_EDIT &&
+                (GetWindowLongPtrW(body, GWL_STYLE) & ES_READONLY) == 0,
+            "restored document is editable");
+    require(folio_state_unsaved(state, text, (size_t)length) == change,
+            "canonical unsaved comparison matches the editor");
+}
+
+static void adopt_history(struct folio_window *_Nonnull window, struct folio_state *_Nonnull state,
+                          size_t index, const char *_Nonnull expected)
+{
+    invoke_operation(window, FOLIO_COMMAND_HISTORY);
+    pump(window);
+    require(folio_state_history_count(state) > index, "requested history row exists");
+    const struct note_text *body = folio_state_history_body(state, index);
+    require(body != nullptr && strcmp(note_text_bytes(body), expected) == 0,
+            "row resolves to the expected archived version");
+    struct accessible_item list = {.kind = ACCESSIBLE_SURFACE_LIST,
+                                   .revision = folio_window_accessible_surface_revision(window)};
+    struct accessible_item row;
+    require(folio_window_accessible_navigate(window, &list, ACCESSIBLE_NAVIGATION_FIRST, &row) ==
+                S_OK,
+            "history exposes a first row");
+    for (size_t at = 0; at < index; ++at)
+        require(folio_window_accessible_navigate(window, &row, ACCESSIBLE_NAVIGATION_NEXT, &row) ==
+                    S_OK,
+                "history exposes the requested following row");
+    struct accessible_request request = {.item = row, .action = ACCESSIBLE_ACTION_INVOKE};
+    require(folio_window_accessible_action(window, &request) == S_OK, "adopt public history row");
+    pump(window);
+    HWND editor = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    CHARRANGE selected = {0};
+    SendMessageW(editor, EM_EXGETSEL, 0, (LPARAM)&selected);
+    require(selected.cpMin == 0 && selected.cpMax == 0 && GetFocus() == editor,
+            "adoption puts the caret and focus at the body start");
+    require(folio_state_history_count(state) == 0 &&
+                folio_window_accessible_surface_revision(window) != list.revision,
+            "adoption closes and retires the history list");
+}
+
+static void history_undo(struct folio_window *_Nonnull window)
+{
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    require(SendMessageW(body, EM_CANUNDO, 0, 0) != 0 && SendMessageW(body, EM_UNDO, 0, 0) != 0,
+            "one native Undo succeeds");
+    pump(window);
+}
+
+static void history_from_edit(struct folio_window *_Nonnull window,
+                              struct native_fixture *_Nonnull fixture,
+                              const struct history_snapshot *_Nonnull snapshot)
+{
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    CHARRANGE all = {.cpMin = 0, .cpMax = -1};
+    SendMessageW(body, EM_EXSETSEL, 0, (LPARAM)&all);
+    SendMessageW(body, EM_REPLACESEL, TRUE, (LPARAM)L"# Draft 未保存 🙂");
+    pump(window);
+    expect_editor(window, fixture->state, L"# Draft 未保存 🙂", FOLIO_NOTE_CHANGED);
+    verify_history_unchanged(fixture, snapshot);
+    adopt_history(window, fixture->state, 0, history_previous);
+    expect_editor(window, fixture->state, L"> Previous 猫 🐾 `old`", FOLIO_NOTE_CHANGED);
+    verify_history_unchanged(fixture, snapshot);
+    history_undo(window);
+    expect_editor(window, fixture->state, L"# Draft 未保存 🙂", FOLIO_NOTE_CHANGED);
+    verify_history_unchanged(fixture, snapshot);
+}
+
+static void save_restored_history(struct folio_window *_Nonnull window,
+                                  struct native_fixture *_Nonnull fixture,
+                                  const struct history_snapshot *_Nonnull snapshot)
+{
+    adopt_history(window, fixture->state, 0, history_previous);
+    verify_history_unchanged(fixture, snapshot);
+    struct accessible_request request = {.item = {.kind = ACCESSIBLE_SAVE},
+                                         .action = ACCESSIBLE_ACTION_INVOKE};
+    require(folio_window_accessible_action(window, &request) == S_OK, "explicit public Save");
+    pump(window);
+    expect_editor(window, fixture->state, L"> Previous 猫 🐾 `old`", FOLIO_NOTE_SAME);
+    require(folio_state_store_revision(fixture->state) == snapshot->store_revision + 1,
+            "explicit Save publishes exactly one new store revision");
+    struct persistence_port disk = persistence_adapter_port(fixture->files);
+    expect_history_file(disk, 0, snapshot->files[1]);
+    for (size_t version = 1; version <= note_history_depth; ++version)
+        expect_history_file(disk, version, snapshot->files[version - 1]);
+}
+
+/* #649: 通常の履歴採用は未保存の編集で、VIEW/EDITのどちらからもUndo一回で戻せる。 */
+static void run_history_case(struct native_fixture *_Nonnull fixture)
+{
+    require(folio_state_select_note(fixture->state, 0, 0, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
+            "select the dedicated history note");
+    struct history_snapshot snapshot = {0};
+    capture_history(fixture, &snapshot);
+    struct folio_window *window = nullptr;
+    require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
+                FOLIO_WINDOW_CREATED,
+            "real history window");
+    pump(window);
+    require(folio_state_pane_mode(fixture->state) == PANE_MODE_VIEW, "start from saved view");
+    adopt_history(window, fixture->state, 1, history_oldest);
+    expect_editor(window, fixture->state, L"- Oldest 履歴 🌸", FOLIO_NOTE_CHANGED);
+    verify_history_unchanged(fixture, &snapshot);
+    history_undo(window);
+    expect_editor(window, fixture->state, L"# Current 日本語 😀 **saved**", FOLIO_NOTE_SAME);
+    verify_history_unchanged(fixture, &snapshot);
+    history_from_edit(window, fixture, &snapshot);
+    save_restored_history(window, fixture, &snapshot);
+    require(controlled.requests == 0, "plain history does not request image work");
+    folio_window_destroy(window);
+    for (size_t version = 0; version <= note_history_depth; ++version)
+        note_text_destroy(snapshot.files[version]);
+}
+
 int main(int argc, char *_Nonnull *_Nonnull argv)
 {
     HDESK desktop = CreateDesktopW(L"NeNeFolioImageStatus520", nullptr, nullptr, 0,
@@ -684,10 +893,13 @@ int main(int argc, char *_Nonnull *_Nonnull argv)
     require(desktop != nullptr && SetThreadDesktop(desktop), "isolated desktop");
     require(SUCCEEDED(OleInitialize(nullptr)), "COM apartment");
     diagram_case = argc == 2 && strcmp(argv[1], "--mermaid") == 0;
+    history_case = argc == 2 && strcmp(argv[1], "--history") == 0;
     struct native_fixture fixture = {0};
     create_fixture(&fixture);
     if (diagram_case)
         run_diagram_case(&fixture);
+    else if (history_case)
+        run_history_case(&fixture);
     else if (argc == 2 && strcmp(argv[1], "--icon") == 0)
         window_icons(&fixture);
     else if (argc == 2)
