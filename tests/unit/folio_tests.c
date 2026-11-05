@@ -289,6 +289,13 @@ static bool run_bounded_filter_target_tests(const char *_Nonnull argument)
 
 static bool run_filter_target_tests(const char *_Nonnull argument)
 {
+    if (strcmp(argument, "--drawer-layout") == 0)
+    {
+        run_layout_tests();
+        run_filter_layout_tests();
+        printf("drawer layout and filtered hit tests passed\n");
+        return true;
+    }
     if (strcmp(argument, "--index-preparation") == 0)
     {
         run_index_preparation_tests();

@@ -1238,3 +1238,10 @@ ASCII/UTF8の9,438queryを名前/本文の2経路×5work配分で確認し、素
 総work配分不変、正確なrefと2+4L+3N上限、既存周期/境界/ownership/application回帰が成功。
 Debug/tidy/--bounded-index-matching、stderr空。製品/ゲート変更なし、確保注入はinactive。
 全試行と有限範囲の限界は[品質記録](2026-11-05-index-matcher-oracle.md)、最終CI以後は632/integration-completion.jsonへ。
+
+## 2026-11-05 #635 — 通常一覧の行選択
+
+drawer_layout_hitの同じowner/表示座標で、下端順の探索へ変更。40条件/800sample比較と
+Debug/tidy/--drawer-layout成功、初回test nesting/audit補助の失敗も保存。ゲートを弱めていない。
+範囲・採否・増加した先頭照合の費用は[品質記録](2026-11-05-drawer-hit-lookup.md)。
+最終head必須CI/統合/通常反映/保全整理はD:/NeNeFolio/agents/635-drawer-hit-lookup/integration-completion.jsonで確定する。

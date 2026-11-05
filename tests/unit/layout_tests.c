@@ -3,6 +3,7 @@
 #include "note_ledger.h"
 #include "unit_tests.h"
 
+#include <stdint.h>
 #include <string.h>
 
 static const struct drawer_metrics metrics = {.top_padding = 8,
@@ -433,6 +434,98 @@ static void verify_drops(void)
     drawer_layout_destroy(layout);
 }
 
+static void require_hit(const struct drawer_layout *_Nonnull layout, int y, size_t expected)
+{
+    size_t actual = SIZE_MAX;
+    bool found = drawer_layout_hit(layout, y, &actual);
+    require(found == (expected != SIZE_MAX) && actual == expected,
+            "displayed intervals select their row and blank space preserves the output");
+}
+
+/* The expected intervals are the fixture's stated geometry, not read back from the layout. */
+static size_t expected_small_row(int inner, size_t notes)
+{
+    if (inner >= 14 && inner < 48)
+    {
+        return 0;
+    }
+    if (inner >= 48 && inner < 48 + 28 * (int)notes)
+    {
+        return 1 + (size_t)(inner - 48) / 28;
+    }
+    return SIZE_MAX;
+}
+
+static void verify_small_hit_positions(struct drawer_layout *_Nonnull layout, size_t notes)
+{
+    int reach = 48 + 28 * (int)notes + 10 - 100;
+    int limit = reach > 0 ? reach : 0;
+    const int scrolls[] = {0, limit / 2, limit};
+    for (size_t offset = 0; offset < 3; ++offset)
+    {
+        drawer_layout_scroll(layout, scrolls[offset]);
+        for (int y = -2; y <= 310; ++y)
+        {
+            size_t expected = y < 8 ? SIZE_MAX : expected_small_row(y + scrolls[offset], notes);
+            require_hit(layout, y, expected);
+        }
+    }
+}
+
+static void verify_hit_row_counts(void)
+{
+    static const char *const names[] = {"one", "two",   "three", "four", "five",
+                                        "six", "seven", "eight", "nine"};
+    struct category_ledger *categories =
+        categories_from("{\"version\":1,\"categories\":[{\"name\":\"work\",\"color\":\"#3D7EFF\","
+                        "\"expanded\":true}]}");
+    struct note_ledger *notes = notes_from("{\"version\":1,\"notes\":[]}");
+    for (size_t count = 0; count <= 9; ++count)
+    {
+        const struct note_ledger *const ledgers[] = {notes};
+        struct drawer_source source = plain_source(categories, ledgers);
+        struct drawer_layout *layout = nullptr;
+        require(drawer_layout_create(&source, scrolled_metrics, &layout) == DRAWER_LAYOUT_CREATED,
+                "one through ten displayed rows");
+        verify_small_hit_positions(layout, count);
+        drawer_layout_destroy(layout);
+        if (count < 9)
+        {
+            struct note_ledger *next = nullptr;
+            require(note_ledger_inserted(notes, count, names[count], &next) == NOTE_LEDGER_ACCEPTED,
+                    "append a normal notebook entry");
+            note_ledger_destroy(notes);
+            notes = next;
+        }
+    }
+    note_ledger_destroy(notes);
+    category_ledger_destroy(categories);
+}
+
+static size_t expected_wide_row(int y)
+{
+    static const int tops[] = {14, 48, 76, 110, 144, 172, 206, 246};
+    static const int heights[] = {34, 28, 28, 34, 28, 28, 34, 34};
+    for (size_t row = 0; row < 8; ++row)
+    {
+        if (y >= tops[row] && y < tops[row] + heights[row])
+        {
+            return row;
+        }
+    }
+    return SIZE_MAX;
+}
+
+static void verify_wide_hit_intervals(void)
+{
+    struct drawer_layout *layout = build_wide_layout();
+    for (int y = -2; y <= 290; ++y)
+    {
+        require_hit(layout, y, expected_wide_row(y));
+    }
+    drawer_layout_destroy(layout);
+}
+
 void run_layout_tests(void)
 {
     verify_rows();
@@ -440,4 +533,6 @@ void run_layout_tests(void)
     verify_drops();
     verify_scroll();
     verify_reveal();
+    verify_hit_row_counts();
+    verify_wide_hit_intervals();
 }

@@ -298,16 +298,28 @@ bool drawer_layout_hit(const struct drawer_layout *_Nonnull layout, int y, size_
         return false;
     }
     int inner = y + layout->scroll;
-    for (size_t row = 0; row < layout->count; ++row)
+    /* 行の下端は配置順に増える。下端が inner を越える最初の行だけが候補になる。 */
+    size_t low = 0;
+    size_t high = layout->count;
+    while (low < high)
     {
-        const struct drawer_row *_Nonnull candidate = &layout->rows[row];
-        if (inner >= candidate->top && inner < candidate->top + candidate->height)
+        size_t middle = low + (high - low) / 2;
+        const struct drawer_row *_Nonnull candidate = &layout->rows[middle];
+        if (inner >= candidate->top + candidate->height)
         {
-            *index = row;
-            return true;
+            low = middle + 1;
+        }
+        else
+        {
+            high = middle;
         }
     }
-    return false;
+    if (low == layout->count || inner < layout->rows[low].top)
+    {
+        return false;
+    }
+    *index = low;
+    return true;
 }
 
 /* start のカテゴリ行に続くノート行を飛ばし、次の塊の先頭の番号を返す。 */

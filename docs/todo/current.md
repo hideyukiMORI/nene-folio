@@ -5,9 +5,13 @@
 hideの現在指示は、停止の指示まで調査・試験・計測・必要な修正を続け、全試行と変更を記録すること。
 主担当は単体で実行し、必要な保存系/本文処理の独立静読だけを委任した。古い停止・固定分担は持ち込まない。
 
-**#632は全ノート検索の独立oracle回帰。** ASCII/UTF8の9,438queryを名前/本文と5work配分で照合した。
-期待集合・総work配分不変・上限、Debug/tidy/--bounded-index-matching成功。今回の範囲で製品欠陥は検出せず、製品不変。
-最終CI/統合/通常exe-data不変/保全整理はD:/NeNeFolio/agents/632-index-matcher-oracle/integration-completion.jsonへ。
+**#635は一覧の行選択の探索改善。** 正常な8一覧×5位置の40条件/800sampleで結果一致。
+16384本末尾の照合17.0994→0.015405µs。先頭付近には最大+12.2803nsの増加がある。
+Debug/tidy/--drawer-layout成功。最終CI/統合/通常反映/保全整理は
+D:/NeNeFolio/agents/635-drawer-hit-lookup/integration-completion.jsonへ。
+
+#632はPR633/必須CI41950942779成功、main7113a4cへ統合済み。製品不変、通常exe/data32file不変、
+1,325file全保全・専用領域整理済み。原本は同agents/632-index-matcher-oracle/integration-completion.json。
 
 #630はPR631/必須CI41949515350成功、main23397d7へ統合済み。通常反映/data32file不変、
 1,639file全保全・専用領域整理済み。原本は同agents/630-name-list-lookup/integration-completion.json。
@@ -36,7 +40,7 @@ hideの現在指示は、停止の指示まで調査・試験・計測・必要�
 原本は同agents/617-save-preparation/integration-completion.json。branch/commitは保持する。
 
 全体journalは`D:/NeNeFolio/agents/quality-20261105/journal.md`。
-[検索oracle](../quality/2026-11-05-index-matcher-oracle.md)・[名前集合](../quality/2026-11-05-name-list-lookup.md)・[設定固定語](../quality/2026-11-05-settings-tokens.md)・[取り込み再試行](../quality/2026-11-05-import-batch-retry.md)・[借用行参照](../quality/2026-11-05-markdown-view-lookup.md)・[Markdown段落](../quality/2026-11-05-markdown-paragraph-scale.md)・[改行正規化](../quality/2026-11-05-editor-normalization.md)・[本文検証](../quality/2026-11-05-ascii-validation.md)・
+[行選択](../quality/2026-11-05-drawer-hit-lookup.md)・[検索oracle](../quality/2026-11-05-index-matcher-oracle.md)・[名前集合](../quality/2026-11-05-name-list-lookup.md)・[設定固定語](../quality/2026-11-05-settings-tokens.md)・[取り込み再試行](../quality/2026-11-05-import-batch-retry.md)・[借用行参照](../quality/2026-11-05-markdown-view-lookup.md)・[Markdown段落](../quality/2026-11-05-markdown-paragraph-scale.md)・[改行正規化](../quality/2026-11-05-editor-normalization.md)・[本文検証](../quality/2026-11-05-ascii-validation.md)・
 [保存](../quality/2026-11-05-save-preparation.md)・[日報](../reports/2026-11-05.md)・[引き継ぎ](../handoffs/2026-11-05.md)。
 追加waiver none、既存WVR-0001継続。実app/実ノート/Storeは試験に使っていない。
 
@@ -62,7 +66,7 @@ Store提出用MSIXと3言語更新文は`D:/NeNeFolio/releases/1.3.0/store-candi
 
 通常exeは`C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`、#630反映時sourceは`23397d7`。
 SHA256は`b53792fcafc4bf210223b0f443353b189a7ee964753a842fc8f2a0166e1e1d58`。
-#632は製品不変で再buildしない。GitHub/Store配布1.3.0のsource`4359e9e`とは区別する。
+#632は製品不変で再buildしなかった。#635後の通常反映は同task完了原本へ。GitHub/Store配布1.3.0のsource`4359e9e`とは区別する。
 通常app/実ノートは試験に使っていない。hideによる1.3.0の実機受理は未確認。
 
 以前のStore1.2.0は#536/PR538、source`eb10419`でMermaidを含まない。
@@ -72,6 +76,10 @@ WACKとAppDataノートroot、Store署名版導入の従前の検証限界は[MS
 11月4日の品質journalは`D:/NeNeFolio/agents/quality-20261104/journal.md`。11月5日の品質作業とは根拠と実行を分けて保持する。
 
 ## 保留・保持物
+
+#634のJSON変異試験は安全判定の通知を受けて保留。比較は未実行、repo変更/PR無し。
+未完了のためD:/NeNeFolio/worktrees/634-json-boundary-oracleと同outputsを保持し、追加build/runは行わない。
+入力・補助build失敗・通知とhideの通常品質対応継続指示は同agentsと全体journalへ記録した。
 
 #466の表幅診断と#479の職場での文字ウェイト混在は保留。#530と旧削除拒否9作業木は保持し、削除を再試行しない。
 正確な所在・理由は引き継ぎ書へ。10月31日にhideが削除した47出力を古い記録だけで現存扱いに戻さない。
