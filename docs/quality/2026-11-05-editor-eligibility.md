@@ -167,3 +167,10 @@ QPC/cycle中央値と比を再計算し、文書48行の丸め値が原本に一
 製品/test/build/schema変更なし、製品試験・性能再計測なし。正典conformance/文書参照と最終head必須CIで受理する。
 規則ARC-001、QLT-008/010/012/013、GIT-001〜004。追加waiver none、既存WVR-0001継続。
 最終CI/統合/通常exe-data不変/全保全と専用領域整理は同taskのintegration-completion.jsonへ。branch/commit保持。
+
+## 17:58 文書訂正の統合・保全整理完了
+
+#669はPR670/headf7a0cd0392819b7b382349092c0179357dc69913、最終CI41997739272 full-gate/check成功。
+main96a907936b76ef6147973f94f383047dc438512eへ統合、Issue669 CLOSED。通常exe/data32file不変。
+1180file/27478338bytes全保全ZIP/hashを再照合し、取込tree/clean/ignored/link/稼働参照監査後に669専用worktree/outputを削除。
+branch/commit保持。原本D:/NeNeFolio/agents/669-quality-tables/integration-completion.json。

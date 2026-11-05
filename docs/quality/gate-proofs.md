@@ -1369,3 +1369,9 @@ NUL区切り+strlen候補は改善無しで不採用。全表/末尾sentinel/750
 
 #647の不採用候補1表が説明文へ入った文書誤りを訂正。既存192raw/960sampleから中央値/比を再計算し、48行は数値不変と照合する。
 採用候補3と不採用候補1の見出し・測定時点を分ける。文書のみ、製品試験・再計測・新ゲート無し。[品質記録](2026-11-05-editor-eligibility.md)。
+
+## 2026-11-05 — #671テーマ確定と取消先
+
+既存theme_preview_nativeの363checks/1.266745秒成功。候補INVOKEでthemeだけ保存し、一覧/未保存本文/UndoRedo/全保存履歴を保持。
+別候補取消は新しい保存theme/paletteへ復帰。製品/API/CMake/schema/timeout/data lockと規則/閾値/抑制不変、新ゲートではない。
+補助生成scriptの途中不備は保全。[品質記録](2026-11-05-theme-commit.md)。

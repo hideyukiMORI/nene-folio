@@ -5,8 +5,11 @@
 hideの現在指示は、停止の指示まで調査・試験・計測・必要な修正を続け、全試行と変更を記録すること。
 主担当は単体で実行し、必要な保存系/本文処理の独立静読だけを委任した。古い停止・固定分担は持ち込まない。
 
-**#669は編集可能判定の品質文書を訂正。** 説明文へ入り込んだ不採用候補1の表を独立節へ移し、採用候補3と区別する。
-192raw/960sample再計算と48行一致。数値/採否/製品は不変、製品試験・再計測無し。最終CI/統合/通常不変/保全整理はD:/NeNeFolio/agents/669-quality-tables/integration-completion.jsonへ。
+**#671はテーマ確定の恒久native回帰。** 明示確定でthemeだけ保存し、未保存本文/UndoRedo/保存履歴を保持、次の取消は新しい保存themeへ戻る。
+363checks/1.266745秒成功、製品/API/CMake/schema不変。最終CI/統合/通常不変/保全整理はD:/NeNeFolio/agents/671-theme-commit/integration-completion.jsonへ。
+
+#669はPR670/最終CI41997739272成功、main96a9079統合済み。48行の数値不変、通常exe/data32file不変、1180file全保全・専用整理済み。
+原本は同agents/669-quality-tables/integration-completion.json。
 
 #667はPR668/最終CI41995753404成功、main48597b4へ統合済み。通常版反映/data32file不変、1630file全保全・専用整理済み。
 数値batch改善の範囲を維持し、frexp interceptor通知/全途中失敗を同agents/667-rtf-number/integration-completion.jsonへ保全。
@@ -22,7 +25,7 @@ hideの現在指示は、停止の指示まで調査・試験・計測・必要�
 本日のそれ以前の統合結果・計測値・保全先は[日報](../reports/2026-11-05.md)と[引き継ぎ](../handoffs/2026-11-05.md)へ集約する。
 
 全体journalは`D:/NeNeFolio/agents/quality-20261105/journal.md`。
-[RTF数値出力](../quality/2026-11-05-rtf-number.md)・[テーマ面本文保存](../quality/2026-11-05-theme-save.md)・[予約語計測](../quality/2026-11-05-code-keyword.md)・[テーマpreview](../quality/2026-11-05-theme-preview.md)・[本文倍率](../quality/2026-11-05-zoom-native.md)・[ノート切替](../quality/2026-11-05-note-switch.md)・[ノート内検索](../quality/2026-11-05-search-native.md)・[通常置換](../quality/2026-11-05-replace-native.md)・[行索引](../quality/2026-11-05-line-index.md)・[履歴復元](../quality/2026-11-05-history-restore.md)・[編集可能判定](../quality/2026-11-05-editor-eligibility.md)・[設定操作](../quality/2026-11-05-settings-controls.md)・[文字変換](../quality/2026-11-05-text-conversion.md)・[設定再開](../quality/2026-11-05-settings-reopen.md)・[設定資源](../quality/2026-11-05-settings-resources.md)・[配置準備](../quality/2026-11-05-drawer-preparation.md)・[行選択](../quality/2026-11-05-drawer-hit-lookup.md)・[検索oracle](../quality/2026-11-05-index-matcher-oracle.md)・[名前集合](../quality/2026-11-05-name-list-lookup.md)・[設定固定語](../quality/2026-11-05-settings-tokens.md)・[取り込み再試行](../quality/2026-11-05-import-batch-retry.md)・[借用行参照](../quality/2026-11-05-markdown-view-lookup.md)・[Markdown段落](../quality/2026-11-05-markdown-paragraph-scale.md)・[改行正規化](../quality/2026-11-05-editor-normalization.md)・[本文検証](../quality/2026-11-05-ascii-validation.md)・
+[テーマ確定](../quality/2026-11-05-theme-commit.md)・[RTF数値出力](../quality/2026-11-05-rtf-number.md)・[テーマ面本文保存](../quality/2026-11-05-theme-save.md)・[予約語計測](../quality/2026-11-05-code-keyword.md)・[テーマpreview](../quality/2026-11-05-theme-preview.md)・[本文倍率](../quality/2026-11-05-zoom-native.md)・[ノート切替](../quality/2026-11-05-note-switch.md)・[ノート内検索](../quality/2026-11-05-search-native.md)・[通常置換](../quality/2026-11-05-replace-native.md)・[行索引](../quality/2026-11-05-line-index.md)・[履歴復元](../quality/2026-11-05-history-restore.md)・[編集可能判定](../quality/2026-11-05-editor-eligibility.md)・[設定操作](../quality/2026-11-05-settings-controls.md)・[文字変換](../quality/2026-11-05-text-conversion.md)・[設定再開](../quality/2026-11-05-settings-reopen.md)・[設定資源](../quality/2026-11-05-settings-resources.md)・[配置準備](../quality/2026-11-05-drawer-preparation.md)・[行選択](../quality/2026-11-05-drawer-hit-lookup.md)・[検索oracle](../quality/2026-11-05-index-matcher-oracle.md)・[名前集合](../quality/2026-11-05-name-list-lookup.md)・[設定固定語](../quality/2026-11-05-settings-tokens.md)・[取り込み再試行](../quality/2026-11-05-import-batch-retry.md)・[借用行参照](../quality/2026-11-05-markdown-view-lookup.md)・[Markdown段落](../quality/2026-11-05-markdown-paragraph-scale.md)・[改行正規化](../quality/2026-11-05-editor-normalization.md)・[本文検証](../quality/2026-11-05-ascii-validation.md)・
 [保存](../quality/2026-11-05-save-preparation.md)・[日報](../reports/2026-11-05.md)・[引き継ぎ](../handoffs/2026-11-05.md)。
 追加waiver none、既存WVR-0001継続。実app/実ノート/Storeは試験に使っていない。
 
