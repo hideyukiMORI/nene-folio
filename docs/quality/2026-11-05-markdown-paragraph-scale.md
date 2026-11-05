@@ -92,3 +92,10 @@ conformance-01は補助driverに前taskの未構築debug pathが残り、File AP
 文書だけの対象に合わせて任意build-dir引数を外し、conformance-02でsource規約0違反・6文書111local参照・diff成功。
 これはbuild graph検査成功の主張ではなく、graphを含む完了定義は最終head必須CIで実行する。
 追加後の本文差分確認を行い、成功済み製品計測は再実行しない。
+
+## 09:00 — #622統合・保全整理完了
+
+PR623最終head aab06aaeの必須CI41936962814 full-gate/check成功、mainbd8359eへ正典統合、Issue622 CLOSED。
+通常exe/data32fileは#620完了時とbytes/hash/作成更新日時が不変、再build/app起動無し。
+1,314fileを全保全/hash照合後、取込/dirty/ignored/リンク/稼働参照を監査して専用worktree/outputを削除した。
+branch/commit保持。原本D:/NeNeFolio/agents/622-markdown-paragraph-scale/integration-completion.json。

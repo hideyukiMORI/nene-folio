@@ -17,6 +17,7 @@
 
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #define IMAGE0                                                                                     \
@@ -1135,6 +1136,131 @@ static void verify_syntax_allocation(void)
                                    "| `&amp;` | ![&amp;](url) |");
 }
 
+static char *_Nonnull view_fixture_bytes(size_t length)
+{
+    char *bytes = malloc(length == 0 ? 1 : length);
+    if (bytes == nullptr)
+    {
+        test_failure("borrowed view fixture allocation");
+        exit(1);
+    }
+    return bytes;
+}
+
+static void verify_view_partition(const size_t *_Nonnull lengths, size_t count)
+{
+    require(count <= 64, "borrowed fixture span bound");
+    struct markdown_span spans[64];
+    char *sources[64];
+    size_t length = count == 0 ? 0 : count - 1;
+    for (size_t index = 0; index < count; ++index)
+        length += lengths[index];
+    char *expected = view_fixture_bytes(length);
+    size_t offset = 0;
+    const char pattern[] = "a日本語z";
+    for (size_t index = 0; index < count; ++index)
+    {
+        char *bytes = view_fixture_bytes(lengths[index]);
+        sources[index] = bytes;
+        spans[index] =
+            (struct markdown_span){.bytes = bytes, .length = lengths[index], .offset = offset};
+        for (size_t local = 0; local < lengths[index]; ++local)
+        {
+            bytes[local] = pattern[(index + local) % (sizeof pattern - 1)];
+            expected[offset++] = bytes[local];
+        }
+        if (index + 1 < count)
+            expected[offset++] = '\n';
+    }
+    struct markdown_view view = {.spans = spans, .count = count, .length = length};
+    require(offset == length, "independent concatenation has the expected length");
+    require(markdown_view_valid(view), "independent concatenation forms a valid view");
+    for (size_t index = 0; index < length; ++index)
+    {
+        require(markdown_view_at(view, index) == expected[index],
+                "forward borrowed byte and virtual LF");
+        size_t reverse = length - index - 1;
+        require(markdown_view_at(view, reverse) == expected[reverse],
+                "reverse borrowed byte and virtual LF");
+    }
+    require(markdown_view_at(view, length) == '\0', "view end never reads borrowed storage");
+    require(markdown_view_at(view, SIZE_MAX) == '\0', "maximum index never reads borrowed storage");
+    for (size_t index = 0; index < count; ++index)
+    {
+        require(memcmp(sources[index], expected + spans[index].offset, lengths[index]) == 0,
+                "borrowed storage is unchanged");
+        free(sources[index]);
+    }
+    free(expected);
+}
+
+static void verify_view_count(size_t count)
+{
+    const size_t widths[] = {0, 1, 2, 7, 31, 127, 511, 2047};
+    size_t lengths[64] = {0};
+    verify_view_partition(lengths, count);
+    for (size_t index = 0; index < count; ++index)
+        lengths[index] = 17;
+    verify_view_partition(lengths, count);
+    for (size_t index = 0; index < count; ++index)
+        lengths[index] = widths[index % (sizeof widths / sizeof widths[0])];
+    verify_view_partition(lengths, count);
+    for (size_t index = 0; index < count; ++index)
+        lengths[index] = 1;
+    lengths[0] = 2047;
+    verify_view_partition(lengths, count);
+    lengths[0] = 1;
+    if (count != 0)
+        lengths[count - 1] = 2047;
+    verify_view_partition(lengths, count);
+    for (size_t index = 0; index < count; ++index)
+        lengths[index] = 1;
+    if (count > 2)
+    {
+        lengths[count / 2] = 2047;
+        verify_view_partition(lengths, count);
+        lengths[count / 2] = 0;
+        verify_view_partition(lengths, count);
+    }
+}
+
+static void verify_large_view_indices(void)
+{
+    struct markdown_span spans[32];
+    size_t offset = 0;
+    for (size_t index = 0; index < 32; ++index)
+    {
+        size_t length = index == 16 ? SIZE_MAX - 62 : 1;
+        spans[index] = (struct markdown_span){.bytes = "x", .length = length, .offset = offset};
+        offset += length;
+        if (index + 1 < 32)
+            ++offset;
+    }
+    struct markdown_view view = {.spans = spans, .count = 32, .length = SIZE_MAX};
+    require(offset == SIZE_MAX && markdown_view_valid(view),
+            "maximum length has consistent span offsets");
+    require(markdown_view_at(view, SIZE_MAX - 30) == '\n',
+            "large middle span is queried only at its virtual LF");
+    require(markdown_view_at(view, SIZE_MAX - 29) == 'x',
+            "large index reaches the small span after the middle");
+    require(markdown_view_at(view, SIZE_MAX) == '\0', "maximum view end remains outside the input");
+}
+
+static void verify_view_partitions(void)
+{
+    const size_t counts[] = {0, 1, 2, 3, 4, 5, 7, 8, 9, 16, 31, 32, 33, 64};
+    for (size_t sample = 0; sample < sizeof counts / sizeof counts[0]; ++sample)
+        verify_view_count(counts[sample]);
+    verify_large_view_indices();
+    const struct markdown_span spans[] = {{.bytes = "", .length = SIZE_MAX - 2, .offset = 0},
+                                          {.bytes = "Q", .length = 1, .offset = SIZE_MAX - 1}};
+    struct markdown_view view = {.spans = spans, .count = 2, .length = SIZE_MAX};
+    require(markdown_view_valid(view) && markdown_view_at(view, SIZE_MAX - 2) == '\n' &&
+                markdown_view_at(view, SIZE_MAX - 1) == 'Q' &&
+                markdown_view_at(view, SIZE_MAX) == '\0',
+            "maximum length arithmetic reads only virtual LF and the small final span");
+}
+
 static void verify_borrowed_input(void)
 {
     struct markdown_span span = {.bytes = "x", .length = 1, .offset = 2};
@@ -1908,6 +2034,7 @@ static void verify_rule_spacing(void)
 
 void run_markdown_tests(void)
 {
+    verify_view_partitions();
     verify_emission_boundaries();
     verify_autolink_rendering();
     verify_character_references();
