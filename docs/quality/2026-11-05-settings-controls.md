@@ -58,3 +58,11 @@ build結果JSONを全文表示した補助読取は過大出力で切れたた�
 成功nativeのsource/exe hashを最終sourceへ照合し、文書化やpushだけでは繰り返さない。
 最終head必須CIのeng/check.ps1、正典統合、通常exe/data32file不変、全保全/hash照合と専用領域整理は
 同taskのintegration-completion.jsonで確定する。branch/commit保持。#634は保留のまま。
+
+## 13:53 統合・保全整理完了
+
+PR646 headc878363ba8aa04a8cb96352293af24165db30a9eの必須CI41969946097 full-gate/check成功、
+mainc1c6444dab07d142e2826a5050c1a9e0a9769b44へ正典統合、Issue645 CLOSED。
+通常exe/data32fileは#635後のbytes/hash/作成更新日時と一致。製品不変で通常build/app起動なし。
+1364file全保全ZIPを再hash照合、取込tree/clean/ignored/link/稼働参照を監査後、専用worktree/outputを削除。
+branch/commit保持。確定原本は同taskのintegration-completion.json。

@@ -319,7 +319,13 @@ static void expect_editability(const char *_Nonnull bytes, size_t length,
 {
     struct note_text *text = nullptr;
     require(note_text_create(bytes, length, &text) == NOTE_TEXT_ACCEPTED, "editability fixture");
-    require(note_text_editability(text) == expected, description);
+    const char *body = note_text_bytes(text);
+    size_t kept = note_text_length(text);
+    require(note_text_editability(text) == expected && note_text_editability(text) == expected,
+            description);
+    require(note_text_bytes(text) == body && note_text_length(text) == kept &&
+                memcmp(body, bytes + length - kept, kept) == 0,
+            "repeated eligibility queries preserve owned body bytes and length");
     note_text_destroy(text);
 }
 
@@ -361,6 +367,62 @@ static void verify_editability(void)
     expect_editability("\xEF\xBB\xBF"
                        "a",
                        4, NOTE_TEXT_EDITABLE, "a dropped BOM is not a body character");
+}
+
+static void verify_ascii_editability(void)
+{
+    static const size_t lengths[] = {1, 7, 8, 9, 15, 16, 17, 63, 64, 65, 257};
+    char bytes[257];
+    for (size_t index = 0; index < sizeof lengths / sizeof lengths[0]; ++index)
+    {
+        size_t length = lengths[index];
+        memset(bytes, 'x', sizeof bytes);
+        expect_editability(bytes, length, NOTE_TEXT_EDITABLE, "ordinary ASCII remains editable");
+        const size_t positions[] = {0, length / 2, length - 1};
+        for (size_t slot = 0; slot < sizeof positions / sizeof positions[0]; ++slot)
+        {
+            size_t at = positions[slot];
+            bytes[at] = '\a';
+            expect_editability(bytes, length, NOTE_TEXT_EDITOR_ALTERS,
+                               "ASCII bell is retained in the ineligible set at every position");
+            bytes[at] = '\t';
+            expect_editability(bytes, length, NOTE_TEXT_EDITABLE, "ASCII tab stays editable");
+            bytes[at] = 'x';
+        }
+    }
+}
+
+static void verify_unicode_editability(void)
+{
+    static const size_t positions[] = {0, 1, 7, 8, 15, 16, 61};
+    static const char *const markers[] = {"\xE2\x80\xA8", "\xE2\x80\xA9"};
+    char bytes[64];
+    for (size_t index = 0; index < sizeof positions / sizeof positions[0]; ++index)
+    {
+        memset(bytes, 'x', sizeof bytes);
+        for (size_t marker = 0; marker < sizeof markers / sizeof markers[0]; ++marker)
+        {
+            memcpy(bytes + positions[index], markers[marker], 3);
+            expect_editability(bytes, sizeof bytes, NOTE_TEXT_EDITOR_ALTERS,
+                               "Unicode separators remain ineligible across ASCII block positions");
+        }
+        memcpy(bytes + positions[index], "\xE6\x97\xA5", 3);
+        expect_editability(bytes, sizeof bytes, NOTE_TEXT_EDITABLE,
+                           "ordinary Japanese amid ASCII remains editable");
+        if (positions[index] < 61)
+        {
+            bytes[63] = '\a';
+            expect_editability(bytes, sizeof bytes, NOTE_TEXT_EDITOR_ALTERS,
+                               "mixed text still detects a later ASCII bell");
+        }
+    }
+}
+
+void run_editor_eligibility_text_tests(void)
+{
+    verify_editability();
+    verify_ascii_editability();
+    verify_unicode_editability();
 }
 
 static void verify_colors(void)
@@ -678,7 +740,7 @@ void run_text_tests(void)
     verify_normalization_boundaries();
     verify_bom_boundary();
     verify_note_equals();
-    verify_editability();
+    run_editor_eligibility_text_tests();
     verify_first_line();
     verify_colors();
     run_name_list_tests();

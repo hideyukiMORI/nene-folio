@@ -5,16 +5,16 @@
 hideの現在指示は、停止の指示まで調査・試験・計測・必要な修正を続け、全試行と変更を記録すること。
 主担当は単体で実行し、必要な保存系/本文処理の独立静読だけを委任した。古い停止・固定分担は持ち込まない。
 
-**#645は設定操作と状態・表示の対応を恒久回帰へ追加。** 行番号/ミニマップの4組合せ、
-3言語選択と9行の翻訳を専用nativeで確認。7657checks/12.15秒、資源55/36/267前後一致。製品不変。
-最終CI/統合/通常exe-data不変/全保全整理はD:/NeNeFolio/agents/645-settings-controls/integration-completion.jsonへ。
+**#647は編集可能判定のASCII本文を短縮。** 既存ASCII確認と正本の対象文字集合を共有する。
+正常24入力/480sampleでASCII16MiB 21.71→2.08ms、末尾だけ日本語は約6.2%増。対象Debug/回帰/独立静読成功。
+最終CI/統合/通常反映/data不変/全保全整理はD:/NeNeFolio/agents/647-editor-eligibility/integration-completion.jsonへ。
 
-#643はPR644/必須CI41968246196成功、mainfec31faへ統合済み。15正常入力/39条件の文字変換計測。
-製品・通常exe/data32file不変、1329file全保全・専用領域整理済み。原本は同agents/643-text-conversion/integration-completion.json。
+#645はPR646/必須CI41969946097成功、mainc1c6444へ統合済み。設定値と表示の回帰7657checks成功。
+製品・通常exe/data32file不変、1364file全保全・専用領域整理済み。原本は同agents/645-settings-controls/integration-completion.json。
 本日のそれ以前の統合結果・計測値・保全先は[日報](../reports/2026-11-05.md)と[引き継ぎ](../handoffs/2026-11-05.md)へ集約する。
 
 全体journalは`D:/NeNeFolio/agents/quality-20261105/journal.md`。
-[設定操作](../quality/2026-11-05-settings-controls.md)・[文字変換](../quality/2026-11-05-text-conversion.md)・[設定再開](../quality/2026-11-05-settings-reopen.md)・[設定資源](../quality/2026-11-05-settings-resources.md)・[配置準備](../quality/2026-11-05-drawer-preparation.md)・[行選択](../quality/2026-11-05-drawer-hit-lookup.md)・[検索oracle](../quality/2026-11-05-index-matcher-oracle.md)・[名前集合](../quality/2026-11-05-name-list-lookup.md)・[設定固定語](../quality/2026-11-05-settings-tokens.md)・[取り込み再試行](../quality/2026-11-05-import-batch-retry.md)・[借用行参照](../quality/2026-11-05-markdown-view-lookup.md)・[Markdown段落](../quality/2026-11-05-markdown-paragraph-scale.md)・[改行正規化](../quality/2026-11-05-editor-normalization.md)・[本文検証](../quality/2026-11-05-ascii-validation.md)・
+[編集可能判定](../quality/2026-11-05-editor-eligibility.md)・[設定操作](../quality/2026-11-05-settings-controls.md)・[文字変換](../quality/2026-11-05-text-conversion.md)・[設定再開](../quality/2026-11-05-settings-reopen.md)・[設定資源](../quality/2026-11-05-settings-resources.md)・[配置準備](../quality/2026-11-05-drawer-preparation.md)・[行選択](../quality/2026-11-05-drawer-hit-lookup.md)・[検索oracle](../quality/2026-11-05-index-matcher-oracle.md)・[名前集合](../quality/2026-11-05-name-list-lookup.md)・[設定固定語](../quality/2026-11-05-settings-tokens.md)・[取り込み再試行](../quality/2026-11-05-import-batch-retry.md)・[借用行参照](../quality/2026-11-05-markdown-view-lookup.md)・[Markdown段落](../quality/2026-11-05-markdown-paragraph-scale.md)・[改行正規化](../quality/2026-11-05-editor-normalization.md)・[本文検証](../quality/2026-11-05-ascii-validation.md)・
 [保存](../quality/2026-11-05-save-preparation.md)・[日報](../reports/2026-11-05.md)・[引き継ぎ](../handoffs/2026-11-05.md)。
 追加waiver none、既存WVR-0001継続。実app/実ノート/Storeは試験に使っていない。
 

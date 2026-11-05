@@ -280,8 +280,27 @@ static bool editor_alters(uint32_t code_point)
     return false;
 }
 
+/* ASCII と確認済みなら、同じ禁止文字集合の ASCII 要素だけを byte 検索する。 */
+static bool ascii_editor_alters(const char *_Nonnull bytes, size_t length)
+{
+    for (size_t index = 0; index < sizeof editor_altered / sizeof editor_altered[0]; ++index)
+    {
+        if (editor_altered[index] <= 0x7f &&
+            memchr(bytes, (int)editor_altered[index], length) != nullptr)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
 enum note_text_editability note_text_editability(const struct note_text *_Nonnull text)
 {
+    if (plain_ascii(text->bytes, text->length))
+    {
+        return ascii_editor_alters(text->bytes, text->length) ? NOTE_TEXT_EDITOR_ALTERS
+                                                              : NOTE_TEXT_EDITABLE;
+    }
     /* 本文は生成時に検証済みなので、decode が 0 を返すことは無い。 */
     for (size_t index = 0; index < text->length;)
     {

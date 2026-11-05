@@ -19,6 +19,8 @@ void run_storage_tests(void);
 void run_web_link_tests(void);
 void run_storage_state_tests(void);
 void run_text_tests(void);
+void run_editor_eligibility_text_tests(void);
+void run_editor_eligibility_state_tests(void);
 void run_size_overflow_tests(void);
 void run_index_filter_size_tests(void);
 void run_index_filter_size_allocation_tests(void);

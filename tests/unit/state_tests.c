@@ -5300,8 +5300,9 @@ static void verify_uneditable_switch_notice(void)
     folio_state_destroy(state);
 }
 
-static void verify_uneditable(void)
+void run_editor_eligibility_state_tests(void)
 {
+    finder = test_regex_port();
     verify_uneditable_begin_edit();
     verify_uneditable_restore();
     verify_uneditable_neighbours();
@@ -5549,7 +5550,7 @@ void run_state_tests(void)
     verify_save_as_edit_unsynced();
     verify_history_all();
     verify_history_gaps();
-    verify_uneditable();
+    run_editor_eligibility_state_tests();
     verify_later_units();
     verify_trash_all();
     verify_remove_categories();

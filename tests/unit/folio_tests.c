@@ -152,6 +152,13 @@ static bool run_transfer_target_tests(const char *_Nonnull argument)
 
 static bool run_text_validation_target_tests(const char *_Nonnull argument)
 {
+    if (strcmp(argument, "--editor-eligibility") == 0)
+    {
+        run_editor_eligibility_text_tests();
+        run_editor_eligibility_state_tests();
+        printf("editor eligibility text and state tests passed\n");
+        return true;
+    }
     if (strcmp(argument, "--names") == 0)
     {
         run_name_list_tests();
