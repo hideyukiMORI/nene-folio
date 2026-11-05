@@ -1,10 +1,13 @@
 # いまの状態 — NeNe Folio
 
-## 2026-11-06 — 区切りで一時停止
+## 2026-11-06 07:08 — 品質対応を再開、編集pasteを最優先
 
-hideの11月6日00:51頃「区切りのいいところでいったん止めて日報と引き継ぎ書を書いて」を受け、品質対応を一時停止する。
-進行中の#706のStore公開記録と停止地点の文書化・最終CI・統合・全保全整理で区切る。新しい調査/試験/Issue起票は行わず、再開はhideの新しい指示を待つ。
-停止処理の確定原本はD:/NeNeFolio/agents/706-store-publication/integration-completion.json。個別保留は維持する。
+hideの新しい依頼により、停止指示まで品質対応を継続する。試験・計測・必要な調査と独立レビューを行い、全試行と変更を記録する。
+最優先は編集モードのclipboard pasteに書式が混入する#479。今回modeがEDITと判明したため、同Issueを再開した。
+既存RichEditの編集/Undo経路で文字形式だけを受け入れる修正を実装し、修正前の書式混入redと修正後414checks成功を確認した。
+[品質記録](../quality/2026-11-06-editor-paste.md)。最終head必須CI・統合・通常反映・全保全整理の確定結果は下記原本のintegration-completion.jsonへ収載する。
+原本はD:/NeNeFolio/agents/479-editor-paste-20261106、全体journalはD:/NeNeFolio/agents/quality-20261106/journal.md。
+00:51の停止は今回指示で解除。停止処理の履歴はD:/NeNeFolio/agents/706-store-publication/integration-completion.jsonに保持する。
 #704/PR705は操作パレットの取消と編集保持を確認（141checks、stderr空）し、最終CI42054891152成功、main eaef26aへ統合・全保全整理済み。
 [品質記録](../quality/2026-11-06-palette-native.md)。原本はD:/NeNeFolio/agents/704-palette-native/integration-completion.json。
 #702/PR703は最終CI42045853037成功、main82204cbへ統合・全保全整理済み。原本はD:/NeNeFolio/agents/702-discard-native/integration-completion.json。
@@ -18,7 +21,7 @@ Windows版は1.3.1.0。正規ZIP/MSIX生成、専用コピーでの起動・設�
 確定原本は `D:/NeNeFolio/agents/release-1.3.1-20261105/integration-completion.json`。697専用worktree/outputは全保全後に整理済み、branch/commitは保持した。
 結果収載#700 / PR701も最終CI42040854960成功、main e1df61cへ統合・全保全整理済み。原本は `D:/NeNeFolio/agents/700-release-result/integration-completion.json`。
 
-11月5日21:28の一時停止後、22:13のリリース依頼を完了し、23:17頃に品質対応を再開した。11月6日00:51頃の新しい停止指示が現在の状態である。
+11月5日21:28の一時停止後、22:13のリリース依頼を完了し、23:17頃に品質対応を再開した。11月6日00:51頃に区切り、同日07:08の新指示で継続品質対応を再開した。
 
 ## リリースに含む最新の品質改善
 
@@ -62,7 +65,7 @@ Store署名版は品質試験に使っておらず、既存の配布試験はMSI
 未完了のためD:/NeNeFolio/worktrees/634-json-boundary-oracleと同outputsを保持し、追加build/runは行わない。
 入力・補助build失敗・通知とhideの通常品質対応継続指示は同agentsと全体journalへ記録した。
 
-#466の表幅診断と#479の職場での文字ウェイト混在は保留。#530と旧削除拒否9作業木は保持し、削除を再試行しない。
+#466の表幅診断は保留。#479は今回の編集paste報告を受けて再開。#530と旧削除拒否9作業木は保持し、削除を再試行しない。
 正確な所在・理由は引き継ぎ書へ。10月31日にhideが削除した47出力を古い記録だけで現存扱いに戻さない。
 大文書の投入/表配置、大量ノート検索準備、極狭幅表、flow/sequence以外のMermaidは未対応/保留。
 WACKとAppDataノートroot、Store署名版導入の従前の検証限界は[MSIX品質記録](../quality/2026-11-01-msix-installation.md)を参照する。

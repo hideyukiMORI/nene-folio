@@ -482,8 +482,25 @@ static bool pane_wheel(struct note_pane *_Nonnull pane, UINT message, WPARAM key
     return true;
 }
 
+/* Keep native replacement/Undo, but never import the clipboard's character or paragraph format. */
+static void paste_text(struct note_pane *_Nonnull pane)
+{
+    if (pane->readiness != NOTE_PANE_READINESS_READY || pane->composing ||
+        pane->recolor_undo_pending || pane->recolor_input_locked ||
+        !IsWindowEnabled(pane->handle) || !IsWindowEnabled(GetAncestor(pane->handle, GA_ROOT)) ||
+        (GetWindowLongPtrW(pane->handle, GWL_STYLE) & ES_READONLY) != 0)
+        return;
+    cancel_scroll(pane);
+    SendMessageW(pane->handle, EM_PASTESPECIAL, CF_UNICODETEXT, 0);
+}
+
 static bool pane_input(struct note_pane *_Nonnull pane, UINT message, WPARAM keys, LPARAM parameter)
 {
+    if (message == WM_PASTE)
+    {
+        paste_text(pane);
+        return true;
+    }
     if (message == WM_COMMAND && parameter == 0 && HIWORD(keys) == 1 &&
         LOWORD(keys) == open_link_command)
     {

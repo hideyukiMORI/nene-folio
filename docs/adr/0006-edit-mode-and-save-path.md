@@ -229,3 +229,21 @@ note_mode_nativeで同EDITが未保存本文/選択/UndoRedoを保持し、VIEW�
 実本文と全履歴slot/store_revision、表示全文/readonly、EDITでのMarkdown原文復帰も比較する。
 正常な名前付き本文の保存成功経路を対象とし、無題/失敗等の新しい契約は追加しない。
 [品質記録](../quality/2026-11-05-mode-save.md)。
+
+## 2026-11-06 の補正（#479 — 貼り付け元の書式を編集へ持ち込まない）
+
+編集でのclipboard貼り付けは、既存RichEditの`EM_PASTESPECIAL(CF_UNICODETEXT)`へ集約する。
+Ctrl+V・Ctrl+Shift+V・Shift+Insertは、主窓の既存`EN_MSGFILTER`で終了/投入中の入力拒否を
+通してから同じ`WM_PASTE`へ渡す。keydownから生成済みのWM_CHAR 22は二重実行せず消費する。
+Altを含む組合せはpasteとして扱わない。
+
+`note_pane`はREADY・編集可能・有効・IME変換中でない場合だけnativeへ貼り付けを渡す。
+本文の取得/書換え、clipboardの複製、RTFの解析、Undoの自前管理は追加しない。
+Unicode文字・改行・選択置換・caret・dirty・Undo/Redoは同じnative編集と既存保存経路が所有する。
+Unicodeへ変換可能な文字形式が無いときは、選択本文を保持して無操作とし、rich形式へ退避しない。
+閲覧と編集の既存RTF投入、閲覧書式、保存schemaは変えない。
+
+本契約はclipboardの貼り付けを対象とする。OLE drag/drop・外部からの直接TOM/EM_PASTESPECIAL操作、
+職場環境と物理IMEはこの修正の保証に含めない。追加waiverは不要。
+API根拠: [EM_PASTESPECIAL](https://learn.microsoft.com/en-us/windows/win32/controls/em-pastespecial)、
+[Clipboard Formats](https://learn.microsoft.com/en-us/windows/win32/dataxchg/clipboard-formats)。
