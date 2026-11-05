@@ -5,11 +5,14 @@
 hideの現在指示は、停止の指示まで調査・試験・計測・必要な修正を続け、全試行と変更を記録すること。
 主担当は単体で実行し、必要な保存系/本文処理の独立静読だけを委任した。古い停止・固定分担は持ち込まない。
 
-**#622はMarkdown段落分布の基点計測。** 製品変更なし。24RTF構築/12lookup、180sampleの監査成功。
-1MiBのRTF中央値はASCII一行11.4459ms、79文字+LF59.7733ms、1文字+LF838.4193ms。
-実UIやlookupの寄与率は未測定。次の改善候補をこの根拠から別単位で検討する。
-文書検査/最終head必須CI/統合/保全整理の確定原本は
-`D:/NeNeFolio/agents/622-markdown-paragraph-scale/integration-completion.json`。
+**#624は借用Markdown行の参照改善。** 4候補を比較し、範囲照合付き推定と同じ二分探索を使う候補4を採用。
+1MiB RTFの79文字+LF56.39725→27.20645ms、1文字+LF722.01880→253.44850ms。
+標本幅だけ一致する中間交互入力は約10%増。実UIや全入力の改善を保証しない。
+Debug/tidy/既存--markdown-rtfと240組の監査成功。最終head必須CI/統合/通常反映/保全整理の確定は
+`D:/NeNeFolio/agents/624-markdown-view-lookup/integration-completion.json`へ。
+
+#622はPR623/必須CI41936962814成功、mainbd8359eへ統合済み。文書のみ・通常exe/data32file不変、
+1,314file全保全・専用領域整理済み。原本は同agents/622-markdown-paragraph-scale/integration-completion.json。
 
 #620はPR621/必須CI41933849295成功、main6107a26へ統合済み。通常反映/data32file不変、
 1,401file全保全・専用領域整理済み。原本は同agents/620-editor-normalization/integration-completion.json。
@@ -21,7 +24,7 @@ hideの現在指示は、停止の指示まで調査・試験・計測・必要�
 原本は同agents/617-save-preparation/integration-completion.json。branch/commitは保持する。
 
 全体journalは`D:/NeNeFolio/agents/quality-20261105/journal.md`。
-[Markdown段落](../quality/2026-11-05-markdown-paragraph-scale.md)・[改行正規化](../quality/2026-11-05-editor-normalization.md)・[本文検証](../quality/2026-11-05-ascii-validation.md)・
+[借用行参照](../quality/2026-11-05-markdown-view-lookup.md)・[Markdown段落](../quality/2026-11-05-markdown-paragraph-scale.md)・[改行正規化](../quality/2026-11-05-editor-normalization.md)・[本文検証](../quality/2026-11-05-ascii-validation.md)・
 [保存](../quality/2026-11-05-save-preparation.md)・[日報](../reports/2026-11-05.md)・[引き継ぎ](../handoffs/2026-11-05.md)。
 追加waiver none、既存WVR-0001継続。実app/実ノート/Storeは試験に使っていない。
 
@@ -47,7 +50,7 @@ Store提出用MSIXと3言語更新文は`D:/NeNeFolio/releases/1.3.0/store-candi
 
 通常exeは`C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`、#620反映時sourceは`6107a26`。
 SHA256は`3fd9d8a9a97858782b7a45daa5d9eaaf6d973776f08523db28fe60317a4fa030`。
-#622は文書だけなので通常exeを再buildしない。GitHub/Store配布1.3.0のsource`4359e9e`とは区別する。
+#622では再build無し。#624後の通常反映は同task完了原本へ。GitHub/Store配布1.3.0のsource`4359e9e`とは区別する。
 通常app/実ノートは試験に使っていない。hideによる1.3.0の実機受理は未確認。
 
 以前のStore1.2.0は#536/PR538、source`eb10419`でMermaidを含まない。

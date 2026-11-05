@@ -1197,3 +1197,12 @@ Debug/tidyと既存--text-validationが成功、初回test nesting違反は既�
 1MiBの1文字+LF段落は838.4193ms。実UI/任意入力の上限/構文完全性の証明にはしない。
 詳細は[品質記録](2026-11-05-markdown-paragraph-scale.md)。追加gate/閾値/抑制なし。
 対象文書検査と最終head必須CI/統合/保全整理はagents/622-markdown-paragraph-scale/integration-completion.jsonへ。
+
+## #624 — 借用行の参照と探索境界
+
+同じmarkdown_view_atで実範囲と検証付き推定を使い、外れたら順序付きspanの二分探索へ戻す。
+正確確保長の独立連結期待で、14種類のspan数、空/均等/不均一/長さの偏り、正逆順/仮想LF/入力不変を検証。
+2span/32spanのSIZE_MAX fixtureは巨大領域を読まず直接判定と探索復帰を確認した。Debug/tidyと既存--markdown-rtf成功。
+4候補240組/4,800標本、38fixture/576RTFの全hash・raw再計算・全版bytes一致を監査した。
+新しい確保・公開API・schema・gateは無い。中間交互入力の約10%増など限界は[品質記録](2026-11-05-markdown-view-lookup.md)へ。
+最終head必須CI/統合/通常反映/保全整理の確定原本はagents/624-markdown-view-lookup/integration-completion.json。
