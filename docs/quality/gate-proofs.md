@@ -1245,3 +1245,10 @@ drawer_layout_hitの同じowner/表示座標で、下端順の探索へ変更。
 Debug/tidy/--drawer-layout成功、初回test nesting/audit補助の失敗も保存。ゲートを弱めていない。
 範囲・採否・増加した先頭照合の費用は[品質記録](2026-11-05-drawer-hit-lookup.md)。
 最終head必須CI/統合/通常反映/保全整理はD:/NeNeFolio/agents/635-drawer-hit-lookup/integration-completion.jsonで確定する。
+
+## 2026-11-05 #637 — 一覧配置準備の観測
+
+製品不変。正典Release coreと外部observerで32正常入力/128case/640sampleを記録し、
+全raw統計・入力hash・9正典symbol・終了時入力不変の監査に成功。新しいゲートやactive宣言は追加しない。
+範囲/条件/限界は[品質記録](2026-11-05-drawer-preparation.md)。
+最終head必須CI/統合/通常exe-data不変/全保全整理はD:/NeNeFolio/agents/637-drawer-preparation/integration-completion.json。
