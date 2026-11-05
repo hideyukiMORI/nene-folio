@@ -152,6 +152,12 @@ static bool run_transfer_target_tests(const char *_Nonnull argument)
 
 static bool run_text_validation_target_tests(const char *_Nonnull argument)
 {
+    if (strcmp(argument, "--line-index") == 0)
+    {
+        run_line_index_tests();
+        printf("line index position and boundary tests passed\n");
+        return true;
+    }
     if (strcmp(argument, "--editor-eligibility") == 0)
     {
         run_editor_eligibility_text_tests();

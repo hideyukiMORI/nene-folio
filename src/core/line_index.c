@@ -1,6 +1,8 @@
 #include "line_index.h"
 
+#include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 
 struct line_index
 {
@@ -29,6 +31,27 @@ static bool reserve(struct line_index *_Nonnull index)
     return true;
 }
 
+/* CRを含まない4単位はまとめて進む。一致を含む塊と末尾は先頭から照合する。 */
+static size_t unbroken_units(const char16_t *_Nonnull units, size_t count)
+{
+    constexpr uint64_t low_bits = UINT64_C(0x0001000100010001);
+    constexpr uint64_t high_bits = UINT64_C(0x8000800080008000);
+    constexpr size_t width = sizeof(uint64_t) / sizeof(char16_t);
+    size_t position = 0;
+    while (count - position >= width)
+    {
+        uint64_t word = 0;
+        memcpy(&word, units + position, sizeof word);
+        word ^= low_bits * paragraph_break;
+        if (((word - low_bits) & ~word & high_bits) != 0)
+            break;
+        position += width;
+    }
+    while (position < count && units[position] != paragraph_break)
+        position += 1;
+    return position;
+}
+
 enum line_index_outcome line_index_create(const char16_t *_Nonnull units, size_t count,
                                           struct line_index *_Nullable *_Nonnull out)
 {
@@ -38,12 +61,11 @@ enum line_index_outcome line_index_create(const char16_t *_Nonnull units, size_t
         return LINE_INDEX_OUT_OF_MEMORY;
     }
     index->length = count;
-    for (size_t position = 0; position < count; ++position)
+    for (size_t position = 0; position < count;)
     {
-        if (units[position] != paragraph_break)
-        {
-            continue;
-        }
+        position += unbroken_units(units + position, count - position);
+        if (position == count)
+            break;
         if (!reserve(index))
         {
             line_index_destroy(index);
@@ -51,6 +73,7 @@ enum line_index_outcome line_index_create(const char16_t *_Nonnull units, size_t
         }
         index->breaks[index->break_count] = position;
         index->break_count += 1;
+        position += 1;
     }
     *out = index;
     return LINE_INDEX_READY;

@@ -165,6 +165,64 @@ static void verify_digits(size_t lines, size_t digits)
     line_index_destroy(index);
 }
 
+/* 長さ付き本文を単純な1単位走査と照合し、全位置と全行先頭を確認する。 */
+static void verify_literal_lines(const char16_t *_Nonnull units, size_t count)
+{
+    struct line_index *index = nullptr;
+    require(line_index_create(units, count, &index) == LINE_INDEX_READY,
+            "normal length-delimited line fixture");
+    size_t number = 1;
+    size_t start = 0;
+    for (size_t position = 0; position <= count; ++position)
+    {
+        struct line_mark expected = {.number = number,
+                                     .first = position == 0 || units[position - 1] == u'\r'};
+        expect_mark(index, position, expected, "every position agrees with the literal CR scan");
+        expect_start(index, number, start, "every line start agrees with the literal CR scan");
+        if (position < count && units[position] == u'\r')
+        {
+            number += 1;
+            start = position + 1;
+        }
+    }
+    require(line_index_count(index) == number, "the entire CR count agrees");
+    struct line_mark unchanged = {.number = 77, .first = true};
+    require(line_index_at(index, count + 1, &unchanged) == LINE_INDEX_OUT_OF_RANGE &&
+                unchanged.number == 77 && unchanged.first,
+            "refused position keeps the caller output");
+    line_index_destroy(index);
+}
+
+static void verify_cr_position(size_t count, size_t position)
+{
+    static const char16_t pattern[] = {u'x', 0x010d, 0x0d00, 0x010c};
+    char16_t body[72];
+    require(count <= 65 && position <= count, "normal boundary fixture fits");
+    for (size_t offset = 0; offset < 4; ++offset)
+    {
+        for (size_t at = 0; at < sizeof body / sizeof body[0]; ++at)
+            body[at] = u'\r';
+        for (size_t at = 0; at < count; ++at)
+            body[offset + at] = pattern[at % (sizeof pattern / sizeof pattern[0])];
+        if (position < count)
+            body[offset + position] = u'\r';
+        verify_literal_lines(body + offset, count);
+    }
+}
+
+/* #651: 4単位の前後・各CR位置・非CRの似たbyte・非終端入力・各開始alignment。 */
+static void verify_word_boundaries(void)
+{
+    static const size_t counts[] = {0, 1, 2, 3, 4, 5, 7, 8, 9, 15, 16, 17, 31, 32, 33, 63, 64, 65};
+    for (size_t index = 0; index < sizeof counts / sizeof counts[0]; ++index)
+    {
+        for (size_t position = 0; position <= counts[index]; ++position)
+            verify_cr_position(counts[index], position);
+    }
+    static const char16_t paired[] = u"😀\r猫\r🐾";
+    verify_literal_lines(paired, sizeof paired / sizeof paired[0] - 1);
+}
+
 void run_line_index_tests(void)
 {
     verify_empty();
@@ -180,4 +238,5 @@ void run_line_index_tests(void)
     verify_digits(1000, 4);
     verify_digits(9999, 4);
     verify_digits(10000, 5);
+    verify_word_boundaries();
 }

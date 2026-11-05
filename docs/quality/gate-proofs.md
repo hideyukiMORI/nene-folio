@@ -1303,3 +1303,11 @@ API/確保/schema不変。Debug/tidy、編集開始/履歴復元/切替と文字
 148checks成功。採用/Undoではstore_revision/現在ノート/全履歴bytes・不存在を保持、保存だけ正確に一世代更新。
 CTest history_restoreを既存30秒/image_status_data lockへ追加。製品/API/schema/ゲート不変。
 範囲と限界は[品質記録](2026-11-05-history-restore.md)。最終head必須CI/統合/全保全整理は649/integration-completion.jsonへ。
+
+## 2026-11-05 #651 — 行索引のCR探索
+
+既存line_index owner内で、残長4単位以上のときだけmemcpy/16bit一致有無を確認してCRなし区間を進める。
+公開API/確保順/失敗out/CR位置は不変。1572配置とsurrogate pairを含む全位置/行先頭回帰、Debug/tidy/依存0違反成功。
+正常24条件480sampleの全行開始位置・入力hash/codec・raw QPC/cycles・MAP6・source/archiveを監査。
+性能悪化と監査初回の誤り、独立静読と範囲は[品質記録](2026-11-05-line-index.md)。
+最終head必須CI/正典統合/通常反映/全保全整理は651/integration-completion.jsonへ。
