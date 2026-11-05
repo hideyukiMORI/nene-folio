@@ -88,3 +88,11 @@ repo内638source/configと各run固有driverを分けてからconfigureした。
 追加waiver none、既存WVR-0001継続。最終head必須CIのeng/check.ps1、正典統合、通常exe/data32file不変、
 全保全/hash照合と専用領域整理は同taskのintegration-completion.jsonで確定する。branch/commit保持。
 #634は保留を維持する。
+
+## 13:40 統合・保全整理完了
+
+PR644 head8c46fff8b74d04babbbc15c2fb28ebc090079cacの必須CI41968246196 full-gate/check成功、
+mainfec31fa9eb5a46187c2d52678ff5609e7ec2f78aへ正典統合、Issue643 CLOSED。
+通常exe/data32fileは#635後のbytes/hash/作成更新日時と一致。製品不変で通常build/app起動なし。
+1329file全保全ZIPを再hash照合、取込tree/clean/ignored/link/稼働参照を監査後、専用worktree/outputを削除。
+branch/commit保持。確定原本は同taskのintegration-completion.json。

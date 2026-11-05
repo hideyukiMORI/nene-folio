@@ -1275,3 +1275,10 @@ Debug/tidy/対象2299checks成功、資源55/36/267前後一致、stderr空。�
 30入力hash・全raw統計・9正典symbol・source/archive/vector不変の監査成功。製品やgateの変更なし。
 条件/範囲/限界は[品質記録](2026-11-05-text-conversion.md)。
 最終head必須CI/統合/通常exe-data不変/全保全整理は643/integration-completion.jsonへ。
+
+## 2026-11-05 #645 — 設定の公開操作と表示
+
+専用desktop/dataの既存native回帰で、行番号/ミニマップの4組合せ、3言語と9行翻訳を公開SELECTで確認。
+値・CheckBox/RadioButton選択印・他項目不変を毎回照合し、現在世代から行参照を取り直す。
+Debug/tidy/対象7657checks成功、資源55/36/267前後一致、stderr空。製品・ゲート変更なし。
+範囲と限界は[品質記録](2026-11-05-settings-controls.md)。最終head必須CI/統合/通常exe-data不変/全保全整理は645/integration-completion.jsonへ。

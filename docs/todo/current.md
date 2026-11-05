@@ -5,55 +5,16 @@
 hideの現在指示は、停止の指示まで調査・試験・計測・必要な修正を続け、全試行と変更を記録すること。
 主担当は単体で実行し、必要な保存系/本文処理の独立静読だけを委任した。古い停止・固定分担は持ち込まない。
 
-**#643は通常文字変換の分離計測。** 15正常入力/39条件/195sample、全出力一致。
-1MiB前後のUTF-8→UTF-16所有変換1.43〜1.58ms。実UI全体へ拡張せず、製品は変更しない。
-最終CI/統合/通常exe-data不変/全保全整理はD:/NeNeFolio/agents/643-text-conversion/integration-completion.jsonへ。
+**#645は設定操作と状態・表示の対応を恒久回帰へ追加。** 行番号/ミニマップの4組合せ、
+3言語選択と9行の翻訳を専用nativeで確認。7657checks/12.15秒、資源55/36/267前後一致。製品不変。
+最終CI/統合/通常exe-data不変/全保全整理はD:/NeNeFolio/agents/645-settings-controls/integration-completion.jsonへ。
 
-#641はPR642/必須CI41966940248成功、mainbfc9ab7へ統合済み。製品・通常exe/data32file不変、
-1,362file全保全・専用領域整理済み。原本は同agents/641-settings-reopen/integration-completion.json。
-
-#639はPR640/必須CI41965392019成功、main6d10a21へ統合済み。製品・通常exe/data32file不変、
-1,361file全保全・専用領域整理済み。原本は同agents/639-settings-resources/integration-completion.json。
-
-#637はPR638/必須CI41962853025成功、main332ad35へ統合済み。製品・通常exe/data32file不変、
-1,340file全保全・専用領域整理済み。原本は同agents/637-drawer-preparation/integration-completion.json。
-32正常入力×4phase/640sample。16384本/1カテゴリの準備〜末尾hit〜破棄は短名0.454ms、長名1.470ms。
-単独hitの改善率を操作全体へ広げない。
-
-#635はPR636/必須CI41961125755成功、main9a84bebへ統合済み。通常反映/data32file不変、
-1,457file全保全・専用領域整理済み。原本は同agents/635-drawer-hit-lookup/integration-completion.json。
-
-#632はPR633/必須CI41950942779成功、main7113a4cへ統合済み。製品不変、通常exe/data32file不変、
-1,325file全保全・専用領域整理済み。原本は同agents/632-index-matcher-oracle/integration-completion.json。
-
-#630はPR631/必須CI41949515350成功、main23397d7へ統合済み。通常反映/data32file不変、
-1,639file全保全・専用領域整理済み。原本は同agents/630-name-list-lookup/integration-completion.json。
-小集合の約18%増、pointer領域2倍、逆順shift二次を残る費用として記録した。
-
-#628はPR629/必須CI41944717201成功、main1dc20301へ統合済み。通常反映/data32file不変、
-1,323file全保全・専用領域整理済み。原本は同agents/628-settings-tokens/integration-completion.json。
-
-#626はPR627/必須CI41942785824成功、main0e879fbへ統合済み。製品不変・通常exe/data32file不変、
-1,322file全保全・専用領域整理済み。原本は同agents/626-import-batch-retry/integration-completion.json。
-
-#624はPR625/必須CI41940460425成功、main19857d8へ統合済み。通常反映/data32file不変、
-2,000file全保全・専用領域整理済み。原本は同agents/624-markdown-view-lookup/integration-completion.json。
-1MiB soft1のRTF722.01880→253.44850ms。標本幅だけ一致する中間交互入力の約10%増は残る。
-
-#622はPR623/必須CI41936962814成功、mainbd8359eへ統合済み。文書のみ・通常exe/data32file不変、
-1,314file全保全・専用領域整理済み。原本は同agents/622-markdown-paragraph-scale/integration-completion.json。
-
-#620はPR621/必須CI41933849295成功、main6107a26へ統合済み。通常反映/data32file不変、
-1,401file全保全・専用領域整理済み。原本は同agents/620-editor-normalization/integration-completion.json。
-改行正規化でASCII16MiB LF26.95035→14.92035ms。短い混在行の約6%増は残る。
-
-#616はPR619/必須CI41930597783成功後、main`2c2f0be`へ統合済み。通常版反映・data32file不変、
-1,378file全保全と専用worktree/output整理を完了した。原本は同agents/616-text-validation/integration-completion.json。
-#617はPR618/main`038b8b7`、必須CI41924699377・通常反映・1,573file全保全・専用領域整理まで完了。
-原本は同agents/617-save-preparation/integration-completion.json。branch/commitは保持する。
+#643はPR644/必須CI41968246196成功、mainfec31faへ統合済み。15正常入力/39条件の文字変換計測。
+製品・通常exe/data32file不変、1329file全保全・専用領域整理済み。原本は同agents/643-text-conversion/integration-completion.json。
+本日のそれ以前の統合結果・計測値・保全先は[日報](../reports/2026-11-05.md)と[引き継ぎ](../handoffs/2026-11-05.md)へ集約する。
 
 全体journalは`D:/NeNeFolio/agents/quality-20261105/journal.md`。
-[文字変換](../quality/2026-11-05-text-conversion.md)・[設定再開](../quality/2026-11-05-settings-reopen.md)・[設定資源](../quality/2026-11-05-settings-resources.md)・[配置準備](../quality/2026-11-05-drawer-preparation.md)・[行選択](../quality/2026-11-05-drawer-hit-lookup.md)・[検索oracle](../quality/2026-11-05-index-matcher-oracle.md)・[名前集合](../quality/2026-11-05-name-list-lookup.md)・[設定固定語](../quality/2026-11-05-settings-tokens.md)・[取り込み再試行](../quality/2026-11-05-import-batch-retry.md)・[借用行参照](../quality/2026-11-05-markdown-view-lookup.md)・[Markdown段落](../quality/2026-11-05-markdown-paragraph-scale.md)・[改行正規化](../quality/2026-11-05-editor-normalization.md)・[本文検証](../quality/2026-11-05-ascii-validation.md)・
+[設定操作](../quality/2026-11-05-settings-controls.md)・[文字変換](../quality/2026-11-05-text-conversion.md)・[設定再開](../quality/2026-11-05-settings-reopen.md)・[設定資源](../quality/2026-11-05-settings-resources.md)・[配置準備](../quality/2026-11-05-drawer-preparation.md)・[行選択](../quality/2026-11-05-drawer-hit-lookup.md)・[検索oracle](../quality/2026-11-05-index-matcher-oracle.md)・[名前集合](../quality/2026-11-05-name-list-lookup.md)・[設定固定語](../quality/2026-11-05-settings-tokens.md)・[取り込み再試行](../quality/2026-11-05-import-batch-retry.md)・[借用行参照](../quality/2026-11-05-markdown-view-lookup.md)・[Markdown段落](../quality/2026-11-05-markdown-paragraph-scale.md)・[改行正規化](../quality/2026-11-05-editor-normalization.md)・[本文検証](../quality/2026-11-05-ascii-validation.md)・
 [保存](../quality/2026-11-05-save-preparation.md)・[日報](../reports/2026-11-05.md)・[引き継ぎ](../handoffs/2026-11-05.md)。
 追加waiver none、既存WVR-0001継続。実app/実ノート/Storeは試験に使っていない。
 
@@ -79,7 +40,7 @@ Store提出用MSIXと3言語更新文は`D:/NeNeFolio/releases/1.3.0/store-candi
 
 通常exeは`C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`、#635反映時sourceは`9a84beb`。
 SHA256は`c6fc325583aa8e60929161065531ac58287812659bb8babc020241a10dc0ef61`。
-#637/#639/#641/#643は製品不変で再buildしない。GitHub/Store配布1.3.0のsource`4359e9e`とは区別する。
+#637/#639/#641/#643/#645は製品不変で再buildしない。GitHub/Store配布1.3.0のsource`4359e9e`とは区別する。
 通常app/実ノートは試験に使っていない。hideによる1.3.0の実機受理は未確認。
 
 以前のStore1.2.0は#536/PR538、source`eb10419`でMermaidを含まない。

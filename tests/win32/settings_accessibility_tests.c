@@ -283,6 +283,89 @@ static void verify_reopen(struct folio_window *_Nonnull window, struct accessibl
     verify_root(window, true);
 }
 
+static bool control_selected(struct folio_window *_Nonnull window, struct accessible_item item,
+                             enum accessible_kind kind)
+{
+    require(item.kind == kind, "setting control has the expected role");
+    struct accessible_view view = {0};
+    require(folio_window_accessible_read(window, &item, &view) == S_OK && view.enabled,
+            "setting control is readable and enabled");
+    return view.selected;
+}
+
+static void select_control(struct folio_window *_Nonnull window, struct accessible_item item)
+{
+    /* IToggleProvider::Toggle と ISelectionItemProvider::Select の公開先と同じ要求。 */
+    struct accessible_request request = {.item = item, .action = ACCESSIBLE_ACTION_SELECT};
+    require(folio_window_accessible_action(window, &request) == S_OK, "select public setting");
+    pump(window);
+}
+
+struct settings_values
+{
+    bool number;
+    bool minimap;
+    enum folio_language language;
+};
+
+static void verify_control_values(struct native_fixture *_Nonnull fixture,
+                                  struct folio_window *_Nonnull window,
+                                  struct accessible_item *_Nonnull rows,
+                                  struct settings_values values)
+{
+    require(folio_state_number(fixture->state) == values.number &&
+                folio_state_minimap(fixture->state) == values.minimap &&
+                folio_state_language(fixture->state) == values.language,
+            "public setting action changes only the intended application value");
+    struct accessible_item list = {.kind = ACCESSIBLE_SURFACE_LIST,
+                                   .revision = folio_window_accessible_surface_revision(window)};
+    (void)walk(window, list, rows, values.language);
+    require(control_selected(window, rows[6], ACCESSIBLE_SURFACE_TOGGLE) == values.number,
+            "line-number check matches application state");
+    require(control_selected(window, rows[7], ACCESSIBLE_SURFACE_TOGGLE) == values.minimap,
+            "minimap check matches application state");
+    const enum folio_language languages[] = {FOLIO_LANGUAGE_JA, FOLIO_LANGUAGE_EN,
+                                             FOLIO_LANGUAGE_ZH_HANS};
+    for (size_t index = 0; index < sizeof languages / sizeof languages[0]; ++index)
+        require(control_selected(window, rows[3 + index], ACCESSIBLE_SURFACE_LANGUAGE) ==
+                    (languages[index] == values.language),
+                "exactly the current language row is selected");
+}
+
+/* #645: 公開SELECTと表示状態を、両booleanの全組合せと3言語で対応させる。 */
+static void verify_controls(struct native_fixture *_Nonnull fixture,
+                            struct folio_window *_Nonnull window, enum folio_language language)
+{
+    struct settings_values values = {.number = folio_state_number(fixture->state),
+                                     .minimap = folio_state_minimap(fixture->state),
+                                     .language = language};
+    invoke(window, (struct accessible_item){.kind = ACCESSIBLE_SETTINGS});
+    struct accessible_item rows[sizeof row_names / sizeof row_names[0]];
+    verify_control_values(fixture, window, rows, values);
+    for (size_t step = 0; step < 4; ++step)
+    {
+        select_control(window, rows[6 + step % 2]);
+        if (step % 2 == 0)
+            values.number = !values.number;
+        else
+            values.minimap = !values.minimap;
+        verify_control_values(fixture, window, rows, values);
+    }
+    const enum folio_language languages[] = {FOLIO_LANGUAGE_JA, FOLIO_LANGUAGE_EN,
+                                             FOLIO_LANGUAGE_ZH_HANS};
+    for (size_t index = 0; index < sizeof languages / sizeof languages[0]; ++index)
+    {
+        select_control(window, rows[3 + index]);
+        values.language = languages[index];
+        verify_control_values(fixture, window, rows, values);
+    }
+    select_control(window, rows[3 + (size_t)language]);
+    values.language = language;
+    verify_control_values(fixture, window, rows, values);
+    invoke(window, close_button(folio_window_accessible_surface_revision(window)));
+    verify_root(window, true);
+}
+
 static void verify_language(struct native_fixture *_Nonnull fixture, enum folio_language language)
 {
     require(folio_state_set_language(fixture->state, language) == FOLIO_STATE_READY, "language");
@@ -299,6 +382,7 @@ static void verify_language(struct native_fixture *_Nonnull fixture, enum folio_
     verify_retired(window, list, rows);
     verify_root(window, true);
     verify_reopen(window, list, rows, language);
+    verify_controls(fixture, window, language);
     folio_window_destroy(window);
 }
 
