@@ -1375,3 +1375,9 @@ NUL区切り+strlen候補は改善無しで不採用。全表/末尾sentinel/750
 既存theme_preview_nativeの363checks/1.266745秒成功。候補INVOKEでthemeだけ保存し、一覧/未保存本文/UndoRedo/全保存履歴を保持。
 別候補取消は新しい保存theme/paletteへ復帰。製品/API/CMake/schema/timeout/data lockと規則/閾値/抑制不変、新ゲートではない。
 補助生成scriptの途中不備は保全。[品質記録](2026-11-05-theme-commit.md)。
+
+## 2026-11-05 — #673記号escaping候補の採否
+
+16条件/1040sample/全32fixture、独立escapingと全RTF一致。3候補は長い記号無しMarkdownの悪化が残り全不採用。
+同flags/archive/16MAPbinding/全raw中央値/元source復帰を監査。製品/test/build/schema不変、規則/閾値/抑制/新ゲート無し。
+[品質記録](2026-11-05-rtf-escape.md)。

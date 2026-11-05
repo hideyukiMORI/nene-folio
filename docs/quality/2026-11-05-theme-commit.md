@@ -54,3 +54,10 @@ OS外観切替、設定write失敗、再起動、全127テーマを再試験し�
 merge-01はPR本文をMarkdown見出しにしたため、正典tools/merge-pr.ps1が必須field行不足でReady前に停止した。
 子/記録1、記録error0、PRはDraftのまま。本文を既定のコロン付きfield行へ訂正し、初回本文/metadata/rawは保持した。
 製品/testsource不変のため成功済みbuild/nativeを再利用し、文書conformanceと最終入力照合だけを更新する。
+
+## 18:18 統合・全保全整理完了
+
+#671はPR672/headd12a7cb325211625a476c18ca5d27541d5cc216c、最終CI42000171674 full-gate/check成功。
+main547d745a7c05010966559287578181087f3b14deへ正典統合、Issue671 CLOSED。通常exe/data32file不変。
+1380file/64722738bytes全保全ZIP再hashと取込/clean/ignored/link/稼働参照監査後、671専用worktree/outputを削除。
+branch/commit保持。初回merge書式拒否も実値照合し、原本D:/NeNeFolio/agents/671-theme-commit/integration-completion.jsonを確定。
