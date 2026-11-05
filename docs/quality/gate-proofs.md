@@ -1332,3 +1332,10 @@ CTest search_nativeを既存30秒/image_status_data lockへ追加。製品コメ
 同一ノートの未保存本文/選択/Undo/保存保持、別ノートへの1世代保存/履歴回転、無変更からの復帰で世代不増、文書間Undo初期化を確認する。
 ノート切替152checks/1.707116秒、二本目を残した既存画像fixture75checks/1.267154秒。両stderr空、子/補助/記録0。製品/ゲート/30秒/data lock不変、対象失敗なし。
 範囲は[品質記録](2026-11-05-note-switch.md)。最終CI/統合/保全整理は657/integration-completion.jsonへ。
+
+## 2026-11-05 #659 — 本文倍率と未保存編集
+
+固定Debug/tidy、専用desktop/data、実window/paneの通常Ctrl+wheel配送と公開EDIT/VIEWを使用。
+小delta累積/50〜300%上下限、本文/選択/dirty/Undo/Redo/focusと保存内容保持、mode再投入後の倍率保持を確認する。
+倍率175checks/0.864898秒、共有fixture/追記helperのノート切替162checks/0.899475秒。両stderr空、子/補助/記録0。製品/ゲート/30秒/data lock不変、対象失敗なし。
+範囲は[品質記録](2026-11-05-zoom-native.md)。最終CI/統合/保全整理は659/integration-completion.jsonへ。

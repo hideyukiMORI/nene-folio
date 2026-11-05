@@ -46,6 +46,7 @@ static bool history_case;
 static bool replace_case;
 static bool search_case;
 static bool note_switch_case;
+static bool zoom_case;
 
 static const char history_current[] = "# Current 日本語 😀 **saved**";
 static const char history_previous[] = "> Previous 猫 🐾 `old`";
@@ -96,10 +97,10 @@ static void seed_notes(struct persistence_port disk)
     const char *source =
         diagram_case ? "Body before diagrams\n\n```mermaid\nflowchart LR\nA --> B\n```\n\nAfter\n"
                      : "Body before images\n\n![alt](images/one.png)\n\nBody after images\n";
-    if (history_case || replace_case || search_case || note_switch_case)
+    if (history_case || replace_case || search_case || note_switch_case || zoom_case)
     {
         seed_history(disk);
-        source = history_case || note_switch_case ? history_current : replace_current;
+        source = history_case || note_switch_case || zoom_case ? history_current : replace_current;
     }
     if (search_case)
         source = search_current;
@@ -1282,6 +1283,152 @@ static void run_note_switch_case(struct native_fixture *_Nonnull fixture)
         note_text_destroy(snapshot.files[version]);
 }
 
+struct zoom_snapshot
+{
+    wchar_t text[128];
+    CHARRANGE selection;
+    LRESULT modified;
+    LRESULT undo;
+    LRESULT redo;
+    HWND focus;
+};
+
+static void capture_zoom_body(struct folio_window *_Nonnull window,
+                              struct zoom_snapshot *_Nonnull snapshot)
+{
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    GETTEXTEX request = {.cb = sizeof snapshot->text, .flags = GT_RAWTEXT, .codepage = 1200};
+    LRESULT length = SendMessageW(body, EM_GETTEXTEX, (WPARAM)&request, (LPARAM)snapshot->text);
+    require(length > 0 && (size_t)length < sizeof snapshot->text / sizeof snapshot->text[0] - 1,
+            "short zoom fixture fits its native text snapshot");
+    SendMessageW(body, EM_EXGETSEL, 0, (LPARAM)&snapshot->selection);
+    snapshot->modified = SendMessageW(body, EM_GETMODIFY, 0, 0);
+    snapshot->undo = SendMessageW(body, EM_CANUNDO, 0, 0);
+    snapshot->redo = SendMessageW(body, EM_CANREDO, 0, 0);
+    snapshot->focus = GetFocus();
+}
+
+static void expect_zoom_body(struct folio_window *_Nonnull window,
+                             const struct zoom_snapshot *_Nonnull snapshot)
+{
+    struct zoom_snapshot after = {0};
+    capture_zoom_body(window, &after);
+    require(wcscmp(after.text, snapshot->text) == 0, "zoom preserves all native text units");
+    require(after.selection.cpMin == snapshot->selection.cpMin &&
+                after.selection.cpMax == snapshot->selection.cpMax,
+            "zoom preserves the native selection");
+    require(after.modified == snapshot->modified && after.undo == snapshot->undo &&
+                after.redo == snapshot->redo && after.focus == snapshot->focus,
+            "zoom preserves native dirty, Undo, Redo and focus");
+}
+
+static void expect_zoom(struct folio_window *_Nonnull window, int percent)
+{
+    int numerator = 0;
+    int denominator = 0;
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    require(SendMessageW(body, EM_GETZOOM, (WPARAM)&numerator, (LPARAM)&denominator) != 0,
+            "native zoom is readable");
+    require(denominator != 0 ? numerator * 100 == percent * denominator
+                             : numerator == 0 && percent == 100,
+            "native zoom matches the expected percentage");
+}
+
+static void zoom_wheel(struct folio_window *_Nonnull window, int delta, int percent)
+{
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    RECT bounds;
+    require(GetWindowRect(body, &bounds) && !IsRectEmpty(&bounds), "zoom body has native bounds");
+    LPARAM position = MAKELPARAM(bounds.left + 8, bounds.top + 8);
+    SendMessageW(folio_window_accessible_window(window, ACCESSIBLE_WINDOW), WM_MOUSEWHEEL,
+                 MAKEWPARAM(MK_CONTROL, (WORD)delta), position);
+    pump(window);
+    expect_zoom(window, percent);
+}
+
+static void zoom_edit_cycle(struct folio_window *_Nonnull window,
+                            struct native_fixture *_Nonnull fixture,
+                            const struct history_snapshot *_Nonnull history)
+{
+    append_switch_text(window);
+    expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_CHANGED);
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    CHARRANGE selected = {.cpMin = 10, .cpMax = 12};
+    SendMessageW(body, EM_EXSETSEL, 0, (LPARAM)&selected);
+    struct zoom_snapshot snapshot = {0};
+    capture_zoom_body(window, &snapshot);
+    const int deltas[] = {60, 60, -120, 3600, 120, -3600, -120, 1200};
+    const int percentages[] = {150, 160, 150, 300, 300, 50, 50, 150};
+    for (size_t index = 0; index < sizeof deltas / sizeof deltas[0]; ++index)
+    {
+        zoom_wheel(window, deltas[index], percentages[index]);
+        expect_zoom_body(window, &snapshot);
+    }
+    expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_CHANGED);
+    verify_history_unchanged(fixture, history);
+}
+
+static void zoom_redo(struct folio_window *_Nonnull window, struct native_fixture *_Nonnull fixture,
+                      const struct history_snapshot *_Nonnull history)
+{
+    history_undo(window);
+    expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_SAME);
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    require(SendMessageW(body, EM_CANREDO, 0, 0) != 0, "Undo exposes one redoable insertion");
+    struct zoom_snapshot snapshot = {0};
+    capture_zoom_body(window, &snapshot);
+    zoom_wheel(window, WHEEL_DELTA, 160);
+    expect_zoom_body(window, &snapshot);
+    require(SendMessageW(body, EM_REDO, 0, 0) != 0, "native Redo succeeds after zoom");
+    pump(window);
+    expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_CHANGED);
+    history_undo(window);
+    expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_SAME);
+    verify_history_unchanged(fixture, history);
+}
+
+static void run_zoom_case(struct native_fixture *_Nonnull fixture)
+{
+    require(folio_state_select_note(fixture->state, 0, 0, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
+            "select the dedicated zoom note");
+    struct history_snapshot history = {0};
+    capture_history(fixture, &history);
+    struct folio_window *window = nullptr;
+    require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
+                FOLIO_WINDOW_CREATED,
+            "real zoom window");
+    pump(window);
+    expect_zoom(window, 100);
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    CHARRANGE selected = {.cpMin = 2, .cpMax = 4};
+    SendMessageW(body, EM_EXSETSEL, 0, (LPARAM)&selected);
+    SetFocus(folio_window_accessible_window(window, ACCESSIBLE_WINDOW));
+    struct zoom_snapshot view = {0};
+    capture_zoom_body(window, &view);
+    zoom_wheel(window, 5 * WHEEL_DELTA, 150);
+    expect_zoom_body(window, &view);
+    verify_history_unchanged(fixture, &history);
+    action(window, ACCESSIBLE_EDIT);
+    expect_zoom(window, 150);
+    expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_SAME);
+    zoom_edit_cycle(window, fixture, &history);
+    zoom_redo(window, fixture, &history);
+    action(window, ACCESSIBLE_VIEW);
+    expect_zoom(window, 160);
+    struct zoom_snapshot returned = {0};
+    capture_zoom_body(window, &returned);
+    require(wcscmp(view.text, returned.text) == 0 &&
+                folio_state_pane_mode(fixture->state) == PANE_MODE_VIEW &&
+                (GetWindowLongPtrW(body, GWL_STYLE) & ES_READONLY) != 0,
+            "mode roundtrip preserves the rendered view and readonly mode");
+    verify_history_unchanged(fixture, &history);
+    require(controlled.requests == 0, "plain zoom does not request image work");
+    folio_window_destroy(window);
+    for (size_t version = 0; version <= note_history_depth; ++version)
+        note_text_destroy(history.files[version]);
+}
+
 static void run_fixture(struct native_fixture *_Nonnull fixture, int argc,
                         char *_Nonnull *_Nonnull argv)
 {
@@ -1295,6 +1442,8 @@ static void run_fixture(struct native_fixture *_Nonnull fixture, int argc,
         run_search_case(fixture);
     else if (note_switch_case)
         run_note_switch_case(fixture);
+    else if (zoom_case)
+        run_zoom_case(fixture);
     else if (argc == 2 && strcmp(argv[1], "--icon") == 0)
         window_icons(fixture);
     else if (argc == 2)
@@ -1319,6 +1468,7 @@ int main(int argc, char *_Nonnull *_Nonnull argv)
     replace_case = argc == 2 && strcmp(argv[1], "--replace") == 0;
     search_case = argc == 2 && strcmp(argv[1], "--search") == 0;
     note_switch_case = argc == 2 && strcmp(argv[1], "--note-switch") == 0;
+    zoom_case = argc == 2 && strcmp(argv[1], "--zoom") == 0;
     struct native_fixture fixture = {0};
     create_fixture(&fixture);
     run_fixture(&fixture, argc, argv);

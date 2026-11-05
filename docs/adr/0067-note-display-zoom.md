@@ -75,3 +75,9 @@ Waivers: none
 レーン操作では細かい倍率deltaの残りを破棄し、後の本文Ctrl+wheelへ持ち越さない。
 本文外から親へ戻ったwheelは配送先を決めてから余韻を止めるため、本文/レーン間の細かなdeltaが失われない。
 本文上のCtrl+wheelとキー倍率、IME/modal guardは不変。[ADR0084](0084-bounded-native-minimap.md)を参照する。
+
+## 2026-11-05 の恒久回帰（#659）
+
+CTest note_zoom_nativeで主窓の通常Ctrl+wheel配送、小delta累積/上下限、VIEW/EDIT再投入後の倍率保持を固定する。
+短い通常本文で全units・選択・dirty・Undo/Redo・focusと保存内容を比較し、Undo/Redoも実行する。
+製品の所有/入力経路/APIは不変。#383の広い専用受理の反復ではない。範囲と限界は[品質記録](../quality/2026-11-05-zoom-native.md)。

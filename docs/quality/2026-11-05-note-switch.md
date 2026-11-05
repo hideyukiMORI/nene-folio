@@ -53,3 +53,9 @@ store_revisionと保存全bytesを照合し、OS全I/Oを捕捉した回数保�
 
 原本はD:/NeNeFolio/agents/657-note-switch/。最終CI/統合/通常exe-data不変/全保全・専用領域整理は同integration-completion.jsonへ。
 完了後は当該D専用worktree/outputのみ整理、branch/commit保持。全体journalはD:/NeNeFolio/agents/quality-20261105/journal.md。
+
+## 最終受理・保全整理（15:58）
+
+PR658 head5243c54df5615123aa6a268c2c2ab758c250fc7b、必須CI41983221237 full-gate/check成功、main5d776cbへ統合済み。
+Issue657 CLOSED、通常exe/data32file不変。1377file/64616995bytes全保全ZIP/hash照合と取込tree/clean/ignored/link/稼働参照監査後、当該worktree/outputを削除。
+branch/commit保持、全run成功。原本D:/NeNeFolio/agents/657-note-switch/integration-completion.json。
