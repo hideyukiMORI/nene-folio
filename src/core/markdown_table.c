@@ -121,8 +121,8 @@ bool markdown_table_starts(struct markdown_line line, struct markdown_line delim
         markdown_line_thematic(line) || markdown_line_fence(line) != 0 ||
         markdown_line_setext(delimiter) != 0)
         return false;
-    return markdown_table_columns(line) == markdown_table_columns(delimiter) &&
-           markdown_table_delimiter(delimiter);
+    return markdown_table_delimiter(delimiter) &&
+           markdown_table_columns(line) == markdown_table_columns(delimiter);
 }
 
 bool markdown_table_native(size_t columns, size_t indent_twips)

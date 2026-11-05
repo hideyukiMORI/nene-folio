@@ -1407,3 +1407,9 @@ settings_edit_native、472checks/2.565864秒成功、stderr空。
 既存--markdown-emissionへ768通常範囲回帰を追加しDebug/active確保注入成功、symbols0違反。
 途中反復数拒否/test null診断/audit停止と測定版通知も保持。新ゲート/selector/閾値/抑制なし。
 実RichEdit速度の試験とはしない。[品質記録](2026-11-05-markdown-line.md)。
+
+## 2026-11-05 — #683表候補predicate順序
+
+12通常UTF8文書/24条件/1080sampleのpredicate/全文RTF一致、36filehash/20MAP/同vector/archive/最終sourceを照合。
+既存--markdown-emissionのDebug/active確保注入、symbols0違反。測定版通知1行も保持。
+新gate/selector/test/閾値/抑制なし。実RichEdit速度の確認とはしない。[品質記録](2026-11-05-table-candidate.md)。

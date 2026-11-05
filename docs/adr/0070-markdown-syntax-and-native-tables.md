@@ -181,3 +181,9 @@ code_syntax.emitのTEXT tokenだけ、空styleの追加を省く。原文escapin
 markdown_line_readの長さ付きborrowed契約内で、CR/LFを含まない8byteだけを一括で進む。
 一致塊と末尾は既存順次照合、CR/LF/CRLF・tab幅・全公開field・構文・所有/確保/失敗順は不変。
 24有効入力の全linefield/全文RTF同値、768通常範囲回帰、短行の費用増を含むABBA/BAAB比較は[品質記録](../quality/2026-11-05-markdown-line.md)へ。
+
+## 2026-11-05 の表候補predicate順序（#683）
+
+markdown_table_startsで既存delimiter成立を列数比較より先へ置き、通常段落で不要な分割を省く。
+両入力のvalidationとheader分類、各純粋predicateの実装と結果、RTF/所有/確保経路は不変。
+全比較と小さい実表側の費用増は[品質記録](../quality/2026-11-05-table-candidate.md)へ。

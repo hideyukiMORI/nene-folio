@@ -127,3 +127,11 @@ API/schema/版/owner/依存/gate不変。追加waiver none、既存WVR-0001は�
 
 初回commitはGIT-003の許可typeにないperfを使いhookで拒否（終了1、commit/push/PRなし）。
 規則を変えずbranchと件名をrefactorへ訂正した。製品/testは不変で成功対象を再利用し、文書検査と最終SHA照合だけ更新する。
+
+## 19:46〜19:47 統合・通常反映・全保全整理完了
+
+#681はPR682/head271a437d5b3ccae71977e0e8dc287de81be4865a、最終CI42012683060 full-gate/check成功。
+mainfc6faea053c224fbaf7c446c4b2e274b1c5f1765へ正典統合、Issue681 CLOSED。通常版反映成功、data32file bytes/hash/作成更新日時不変、通常app起動なし。
+通常exeSHA20f3cb96b6d2cd48dbfaf745e89e04818375fdeded9bc1a70e1a0cdc84506aa9。1687file/54672909byte全保全ZIP再hash/取込tree/clean-untracked/ignored/link/稼働参照監査後、681専用worktree/outputを削除。
+branch/commit、測定器反復拒否/test null指摘/audit停止・成果物未生成/commit type拒否も保持。
+原本D:/NeNeFolio/agents/681-markdown-line/integration-completion.json。
