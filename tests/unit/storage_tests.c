@@ -161,8 +161,34 @@ static void verify_codec_allocation(void)
     }
 }
 
+static void verify_fixed_keys(void)
+{
+    static const char *const malformed[] = {"{\"version\\u0000\":1,\"directory\":\"D:/x\"}",
+                                            "{\"version\\u0000extra\":1,\"directory\":\"D:/x\"}",
+                                            "{\"ver\\u0000sion\":1,\"directory\":\"D:/x\"}",
+                                            "{\"\\u0000version\":1,\"directory\":\"D:/x\"}",
+                                            "{\"version\":1,\"directory\\u0000\":\"D:/x\"}",
+                                            "{\"version\":1,\"directory\\u0000extra\":\"D:/x\"}",
+                                            "{\"version\":1,\"direc\\u0000tory\":\"D:/x\"}",
+                                            "{\"version\":1,\"\\u0000directory\":\"D:/x\"}"};
+    struct startup_settings *original = nullptr;
+    require(startup_settings_create(nullptr, &original) == STARTUP_SETTINGS_READY,
+            "startup settings sentinel");
+    for (size_t index = 0; index < sizeof malformed / sizeof malformed[0]; ++index)
+    {
+        struct startup_settings *out = original;
+        require(startup_settings_parse(malformed[index], strlen(malformed[index]), &out) ==
+                        STARTUP_SETTINGS_MALFORMED &&
+                    out == original,
+                "decoded NUL in a startup key is rejected without replacing output");
+    }
+    startup_settings_destroy(original);
+    round_trip("{\"\\u0076ersion\":1,\"direc\\u0074ory\":\"D:/x\"}", "D:\\x");
+}
+
 void run_storage_tests(void)
 {
+    verify_fixed_keys();
     verify_paths();
     verify_codec();
     verify_codec_allocation();

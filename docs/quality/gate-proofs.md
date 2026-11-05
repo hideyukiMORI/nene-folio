@@ -1214,3 +1214,12 @@ added/skipped/remaining/outcomeと実際のnote総数、台帳保留中read/crea
 初期総数のfake仮定を修正した後、Debug/tidy/既存--transferが成功。製品/API/schema/gateに変更なし。
 失敗原本・既存比較stderr・fake範囲の限界は[品質記録](2026-11-05-import-batch-retry.md)へ。
 最終head必須CI/統合/通常exe不変/保全整理の確定原本はagents/626-import-batch-retry/integration-completion.json。
+
+## #628 — 設定固定語と展開NUL
+
+folio_settingsのkey/languageとstartup_settingsのkeyで展開長一致を要求する。
+旧版1〜5の固定string全位置348変異、startup両key8拒否、非NULL out保持と合法escape対照を追加。
+JSON readerのNUL含有key/stringのbytes/長さも固定し、reader全体を禁止へ変えていない。
+旧実装の表示/起動設定は新拒否assertionでred、修正後Debug/tidy/--settings-codecs成功。
+初回literal書式拒否・全試行/限界は[品質記録](2026-11-05-settings-tokens.md)。
+最終head必須CI/統合/通常反映/保全整理はagents/628-settings-tokens/integration-completion.jsonへ。
