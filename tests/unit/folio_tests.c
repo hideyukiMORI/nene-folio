@@ -210,6 +210,11 @@ static void run_markdown_suite(void)
 
 static bool run_markdown_target_tests(const char *_Nonnull argument)
 {
+    if (strcmp(argument, "--code-syntax") == 0)
+    {
+        run_code_syntax_tests();
+        return true;
+    }
     if (strcmp(argument, "--markdown-emission") == 0)
     {
         run_markdown_tests();

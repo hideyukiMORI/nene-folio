@@ -1381,3 +1381,9 @@ NUL区切り+strlen候補は改善無しで不採用。全表/末尾sentinel/750
 16条件/1040sample/全32fixture、独立escapingと全RTF一致。3候補は長い記号無しMarkdownの悪化が残り全不採用。
 同flags/archive/16MAPbinding/全raw中央値/元source復帰を監査。製品/test/build/schema不変、規則/閾値/抑制/新ゲート無し。
 [品質記録](2026-11-05-rtf-escape.md)。
+
+## 2026-11-05 — #675通常文字tokenの出力保持
+
+42条件/84file/1890sample/14MAPbinding、手書きsyntax期待と全RTF一致、ABBA/BAABを分けて監査。
+既存syntax/Markdown回帰とactive確保注入・nullability binding正反例・symbols成功。引数名失敗と2processのinterceptor通知も記録。
+新ゲート/閾値/抑制/API/schema変更なし。[品質記録](2026-11-05-syntax-text.md)。
