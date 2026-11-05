@@ -1296,3 +1296,10 @@ API/確保/schema不変。Debug/tidy、編集開始/履歴復元/切替と文字
 最終候補3はDebug/tidy/--editor-eligibilityとsymbols.pyの2library検査0違反、正常24入力480sample監査成功。
 候補2の性能悪化、補助library名の誤指定、旧merge停止も品質記録へ収載し、成功扱いしない。
 最終headの必須CIが成功するまで統合しない。
+
+## 2026-11-05 #649 — 履歴採用・Undo・明示保存
+
+既存image_status_testsの公開menu/行操作と実RichEditでVIEW/未保存EDITからの採用、Undo一回、明示保存を確認。
+148checks成功。採用/Undoではstore_revision/現在ノート/全履歴bytes・不存在を保持、保存だけ正確に一世代更新。
+CTest history_restoreを既存30秒/image_status_data lockへ追加。製品/API/schema/ゲート不変。
+範囲と限界は[品質記録](2026-11-05-history-restore.md)。最終head必須CI/統合/全保全整理は649/integration-completion.jsonへ。

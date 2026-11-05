@@ -140,3 +140,10 @@ OS全体のidle・cache・CPU周波数は制御しない。同じ本文への反
 一時出力は同outputs/647-editor-eligibility/。全体journalはD:/NeNeFolio/agents/quality-20261105/journal.md。
 最終head必須CIのeng/check.ps1、正典統合、通常版反映/data32file不変、全保全/hash照合後の専用領域整理は
 同taskのintegration-completion.jsonで確定する。branch/commit保持。実app/実ノート/Storeを試験に使わず、#634は保留する。
+
+## 14:30 統合・通常反映・保全整理完了
+
+PR648 head5bb819d476b92c302fae8d15672de7d632e0433b、最終CI41973359728 full-gate/check成功。
+main8e74a9122b2b335c553714dc09aaf884922ef3a8へ正典統合、Issue647 CLOSED。通常版再build/check成功、data32file不変。
+最終1523fileのZIP全hashを再照合し、取込tree/clean-untracked/ignored/link/稼働参照の監査後、647専用worktree/outputを削除。
+旧候補1ZIP/branch/commit保持。全失敗実値も含む確定原本は同taskのintegration-completion.json。通常app起動なし。

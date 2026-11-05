@@ -293,6 +293,8 @@ add_custom_command(TARGET image_status_tests POST_BUILD
     VERBATIM)
 add_test(NAME image_status COMMAND image_status_tests)
 add_test(NAME diagram_status COMMAND image_status_tests --mermaid)
+add_test(NAME history_restore COMMAND image_status_tests --history)
+set_tests_properties(history_restore PROPERTIES TIMEOUT 30 RESOURCE_LOCK image_status_data)
 set_tests_properties(diagram_status PROPERTIES TIMEOUT 30 RESOURCE_LOCK image_status_data)
 set_tests_properties(image_status PROPERTIES TIMEOUT 30)
 foreach(status_case ja en zh find replace)
