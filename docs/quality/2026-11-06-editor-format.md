@@ -58,3 +58,15 @@ Windows11 Pro 10.0.26300、Msftedit10.0.26100.9949。固定toolchain/入力snaps
 ASan起動時の`interception_win: unhandled instruction`一行が一部のraw出力にある。計装を無効化せず、隠さず収載した。
 この警告と初期timeoutを同一原因とは断定しない。物理IME/全配列/全OS/viewport、外部からの直接WM_CHAR/TOM操作は未検証。
 最終head必須CI・main統合・通常版反映・全保全整理の確定結果はagents内`integration-completion.json`へ収載する。
+
+## 統合・通常反映・全保全の確定
+
+PR710の最終head `357c2ac980b1f572d0c680ab4ae8f6b137518964`で、必須CI42129740643のfull-gate/checkが成功した。
+main `8ccbf29a232bd25d03102be3ce8f0fe4f9e05851`へ正典統合し、通常版をprepare-real-machineで反映。
+通常exe SHA256は`caee9596c1f73f40dc959737cb2309097e860cacf8ee2ee03c9789bd2c593174`。実data32fileのbytes/hash/作成更新日時は不変、通常appは起動していない。
+
+作業木と全outputsの10611filesをarchive内の全hashで照合した。archive SHA256は`4e922e3f843aa58ac34914ca8c5f90a9347123f604433d6548a8e468886761d7`。
+絶対path、同一squash tree、clean/ignored、全file不変、links/稼働参照を確認して2領域を整理し、branch/commitを保持した。
+完了収載complete01はmainの改行変換によるtest sourceのbytes差で停止した。原本hashは保存済みのreview値と一致し、
+mainと保全sourceのCRLFだけをLFへ正規化したbytesが完全一致することを確認した。complete02は成功し、失敗runも記録へ含めた。
+確定原本は`D:/NeNeFolio/agents/709-editor-format/integration-completion.json`。
