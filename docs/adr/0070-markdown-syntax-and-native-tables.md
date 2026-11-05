@@ -175,3 +175,9 @@ titleの開始引用符を見つける。通常本文の引用符へtoken増加�
 code_syntax.emitのTEXT tokenだけ、空styleの追加を省く。原文escapingと着色tokenの囲み、字句/状態/所有、公開APIは不変。
 --code-syntaxで既存着色試験を単独選択し、既存Markdownと確保失敗境界も確認する。
 42条件の全出力と比較/確認計測の限界は[品質記録](../quality/2026-11-05-syntax-text.md)へ。一般UI高速化は主張しない。
+
+## 2026-11-05 の通常行末読取り（#681）
+
+markdown_line_readの長さ付きborrowed契約内で、CR/LFを含まない8byteだけを一括で進む。
+一致塊と末尾は既存順次照合、CR/LF/CRLF・tab幅・全公開field・構文・所有/確保/失敗順は不変。
+24有効入力の全linefield/全文RTF同値、768通常範囲回帰、短行の費用増を含むABBA/BAAB比較は[品質記録](../quality/2026-11-05-markdown-line.md)へ。

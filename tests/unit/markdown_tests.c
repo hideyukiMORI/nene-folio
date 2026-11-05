@@ -403,6 +403,46 @@ static void verify_line_endings(void)
     expect_same_rendering("\r\n\r\n", "\n\n");
 }
 
+static void verify_line_sample(size_t offset, size_t count, const char *_Nonnull ending)
+{
+    size_t ending_length = strlen(ending);
+    size_t length = offset + count + ending_length;
+    char *source = malloc(length);
+    if (source == nullptr)
+        test_failure("exact-sized ordinary line storage");
+    memset(source, 'x', offset + count);
+    memcpy(source + offset + count, ending, ending_length);
+    struct markdown_line line = markdown_line_read(source, length, offset);
+    require(line.bytes == source + offset && line.length == count && line.next == length,
+            "all ordinary offsets and line endings retain exact borrowed ranges");
+    require(line.content == 0 && line.indent == 0 && line.prefix == 0 && line.column == 0 &&
+                line.padding == 0 && line.marker == 0 && line.marker_columns == 0 &&
+                line.number == 0 && line.delimiter == 0 && !line.ordered,
+            "ordinary line metadata stays initialized");
+    for (size_t index = 0; index < offset + count; ++index)
+        require(source[index] == 'x', "borrowed source text is unchanged");
+    require(memcmp(source + offset + count, ending, ending_length) == 0,
+            "borrowed source ending is unchanged");
+    line = markdown_line_read(source, length, line.next);
+    require(line.bytes == source + length && line.length == 0 && line.next == length,
+            "end query has an empty borrowed range");
+    free(source);
+}
+
+static void verify_line_byte_ranges(void)
+{
+    const char *const endings[] = {"", "\r", "\n", "\r\n"};
+    for (size_t offset = 0; offset < 8; ++offset)
+        for (size_t count = 1; count <= 24; ++count)
+            for (size_t index = 0; index < sizeof endings / sizeof endings[0]; ++index)
+                verify_line_sample(offset, count, endings[index]);
+    const char source[] = " \t日本語 😀\r\nnext";
+    struct markdown_line line = markdown_line_read(source, sizeof source - 1, 0);
+    require(line.content == 2 && line.indent == 4 && line.length == strlen(" \t日本語 😀") &&
+                line.next == strlen(" \t日本語 😀\r\n"),
+            "Unicode bytes and tab columns keep their original meanings");
+}
+
 static void verify_line_bounds(void)
 {
     const char terminal[] = {'a', '\r'};
@@ -2111,6 +2151,7 @@ void run_markdown_tests(void)
     (void)run_markdown_inline_storage_allocation_tests();
     verify_line_endings();
     verify_line_bounds();
+    verify_line_byte_ranges();
     run_markdown_source_state_tests();
     run_markdown_table_indent_tests();
     verify_container_paths();

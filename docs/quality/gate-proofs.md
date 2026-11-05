@@ -1400,3 +1400,10 @@ settings_edit_native、472checks/2.565864秒成功、stderr空。
 2状態で全boolean組合せ/3言語を選択し、保存設定と本文/選択/dirty/UndoRedo/focus/全履歴保持を確認。
 既存image_status_tests targetへselector/同data lock/30秒を2行追加、実生成CTest登録も照合する。
 閾値/抑制/API/schema変更なし。初回compile/静的解析停止も記録。[品質記録](2026-11-05-settings-edit.md)。
+
+## 2026-11-05 — #681通常Markdown行末読取り
+
+24有効UTF8入力/48条件/2160sample全linefield/RTF一致、72filehash/14MAP/同vector/archive/整形sourceを監査。
+既存--markdown-emissionへ768通常範囲回帰を追加しDebug/active確保注入成功、symbols0違反。
+途中反復数拒否/test null診断/audit停止と測定版通知も保持。新ゲート/selector/閾値/抑制なし。
+実RichEdit速度の試験とはしない。[品質記録](2026-11-05-markdown-line.md)。
