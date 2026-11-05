@@ -1,12 +1,15 @@
 # いまの状態 — NeNe Folio
 
-## 2026-11-06 07:08 — 品質対応を再開、編集pasteを最優先
+## 2026-11-06 — 編集paste完了、隣接する入力経路を確認中
 
 hideの新しい依頼により、停止指示まで品質対応を継続する。試験・計測・必要な調査と独立レビューを行い、全試行と変更を記録する。
-最優先は編集モードのclipboard pasteに書式が混入する#479。今回modeがEDITと判明したため、同Issueを再開した。
-既存RichEditの編集/Undo経路で文字形式だけを受け入れる修正を実装し、修正前の書式混入redと修正後414checks成功を確認した。
-[品質記録](../quality/2026-11-06-editor-paste.md)。最終head必須CI・統合・通常反映・全保全整理の確定結果は下記原本のintegration-completion.jsonへ収載する。
-原本はD:/NeNeFolio/agents/479-editor-paste-20261106、全体journalはD:/NeNeFolio/agents/quality-20261106/journal.md。
+最優先の#479はPR708の最終CI42122814552が成功し、main `50fa28ea6ebc120023f1bbd30a753f9c3a5e9ab3`へ統合した。
+既存RichEditの編集/Undo経路で文字形式だけを受け入れる。対象414checksと直接影響する画像保存28checksが成功。
+通常反映と実data32file不変、11811filesの全保全・作業木/旧新outputの整理まで完了し、branch/commitは保持した。
+[品質記録](../quality/2026-11-06-editor-paste.md)。確定原本はD:/NeNeFolio/agents/479-editor-paste-20261106/integration-completion.json。
+続く#709はCtrl+R/2/5の段落書式変更を再現し、既存翻訳経路で拒否する修正と339checksが成功した。
+[品質記録](../quality/2026-11-06-editor-format.md)。最終head必須CI・統合・通常反映・全保全整理の確定結果はD:/NeNeFolio/agents/709-editor-format/integration-completion.jsonへ収載する。
+全体journalはD:/NeNeFolio/agents/quality-20261106/journal.md。
 00:51の停止は今回指示で解除。停止処理の履歴はD:/NeNeFolio/agents/706-store-publication/integration-completion.jsonに保持する。
 #704/PR705は操作パレットの取消と編集保持を確認（141checks、stderr空）し、最終CI42054891152成功、main eaef26aへ統合・全保全整理済み。
 [品質記録](../quality/2026-11-06-palette-native.md)。原本はD:/NeNeFolio/agents/704-palette-native/integration-completion.json。
@@ -37,8 +40,8 @@ Windows版は1.3.1.0。正規ZIP/MSIX生成、専用コピーでの起動・設�
 
 ## 通常版と実機確認
 
-通常exeは `C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`、反映sourceは `b898c79413b578bbfdb96c615ee0528ddae62fee`。
-SHA256は `80633f7b61241e75577f2c4095fe87914a291c45e6b2027e63a3d98904f9bd8f`。#693反映時、実data32fileの全bytes/hash/作成更新日時不変を確認した。
+通常exeは `C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`、反映sourceは `50fa28ea6ebc120023f1bbd30a753f9c3a5e9ab3`。
+SHA256は `496dd3b7455f425c7400e23cdd9017e79881817ef2ee039a2f71db78531aec14`。#479反映時、実data32fileの全bytes/hash/作成更新日時不変を確認した。
 通常app/実ノート/Storeは品質試験に使っていない。hideによる1.3.0の実機受理は未確認。
 文書・native試験のみの変更を理由に通常buildを反復しない。配布1.3.0のsourceとは区別する。
 
@@ -65,7 +68,7 @@ Store署名版は品質試験に使っておらず、既存の配布試験はMSI
 未完了のためD:/NeNeFolio/worktrees/634-json-boundary-oracleと同outputsを保持し、追加build/runは行わない。
 入力・補助build失敗・通知とhideの通常品質対応継続指示は同agentsと全体journalへ記録した。
 
-#466の表幅診断は保留。#479は今回の編集paste報告を受けて再開。#530と旧削除拒否9作業木は保持し、削除を再試行しない。
+#466の表幅診断は保留。#479は修正・統合・通常反映・整理済み。#530と旧削除拒否9作業木は保持し、削除を再試行しない。
 正確な所在・理由は引き継ぎ書へ。10月31日にhideが削除した47出力を古い記録だけで現存扱いに戻さない。
 大文書の投入/表配置、大量ノート検索準備、極狭幅表、flow/sequence以外のMermaidは未対応/保留。
 WACKとAppDataノートroot、Store署名版導入の従前の検証限界は[MSIX品質記録](../quality/2026-11-01-msix-installation.md)を参照する。

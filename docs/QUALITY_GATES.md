@@ -77,6 +77,11 @@ CI で必要なゲートは、すべてローカルで実行できる。検査�
 修正前は11ptへ18ptが混入して失敗、修正後は414checks成功。30秒timeoutと既存data lockを使う。
 native本文出力とviewport撮影の違い、全試行は[品質記録](quality/2026-11-06-editor-paste.md)に残す。
 
+#709の段落書式キーはCTestの`editor_format_native`で固定する。専用desktop/dataで実HACCEL経路を通し、
+Ctrl+R/2/5の書式不変、未保存本文/選択/UndoRedo、既存移動・選択・文字入力・製品キーを確認する。
+修正前は段落書式変更で失敗、修正後339checks成功。30秒timeoutと既存data lockを維持する。
+初期のfixture誤判定・全試行・限界は[品質記録](quality/2026-11-06-editor-format.md)へ。
+
 - 機械強制: **不能**（テストの有意味性・契約の充足は判断であり、記録とレビューで確認する。QLT-009のカバレッジ下限だけでは代替できない）
 
 ### QLT-009 — カバレッジは下げられない
