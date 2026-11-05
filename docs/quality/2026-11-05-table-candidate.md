@@ -100,3 +100,11 @@ API/schema/版/owner/依存/gate不変。追加waiver none、既存WVR-0001は�
 
 自己レビュー初回は補助scriptの数値表参照が前案件syntax-textのままで停止（子1、成果物未生成で記録125/error1）。
 今回の検査対象文書一覧から表を読むよう直し、失敗原稿/rawも保持する。製品/test/測定値は不変で対象結果を再利用し、文書検査と最終自己レビューだけ更新する。
+
+## 20:05〜20:06 統合・通常反映・全保全整理完了
+
+#683はPR684/headad1d7e8d3cadb073fd5487b26bcb9f6702b5c9b7、最終CI42015255066 full-gate/check成功。
+main17708db74ddcfd301f53b42fc29d661e44e94ab5へ正典統合、Issue683 CLOSED。通常反映後data32fileの全bytes/hash/作成更新日時不変。
+通常exeSHAa47cb41d146153f2665d97902b0ccb2d2033280752c5a8df58eb5f46dda1f837、通常app起動なし。
+1652file/54432403bytesを全保全ZIP再hash/取込tree/clean-untracked/ignored/link/稼働参照監査後、683専用worktree/outputを削除。
+branch/commitと自己レビュー補助参照の失敗を保持。原本D:/NeNeFolio/agents/683-table-candidate/integration-completion.json。

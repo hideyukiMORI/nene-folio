@@ -51,6 +51,7 @@ static bool note_switch_case;
 static bool zoom_case;
 static bool theme_preview_case;
 static bool settings_edit_case;
+static bool mode_save_case;
 
 static const char history_current[] = "# Current 日本語 😀 **saved**";
 static const char history_previous[] = "> Previous 猫 🐾 `old`";
@@ -102,11 +103,11 @@ static void seed_notes(struct persistence_port disk)
         diagram_case ? "Body before diagrams\n\n```mermaid\nflowchart LR\nA --> B\n```\n\nAfter\n"
                      : "Body before images\n\n![alt](images/one.png)\n\nBody after images\n";
     if (history_case || replace_case || search_case || note_switch_case || zoom_case ||
-        theme_preview_case || settings_edit_case)
+        theme_preview_case || settings_edit_case || mode_save_case)
     {
         seed_history(disk);
         source = history_case || note_switch_case || zoom_case || theme_preview_case ||
-                         settings_edit_case
+                         settings_edit_case || mode_save_case
                      ? history_current
                      : replace_current;
     }
@@ -1548,16 +1549,16 @@ static void theme_preview_cycle(struct folio_window *_Nonnull window,
     expect_theme_restored(fixture, snapshot);
 }
 
-static void expect_theme_body_saved(struct native_fixture *_Nonnull fixture,
-                                    const struct history_snapshot *_Nonnull history,
-                                    const char *_Nonnull expected)
+static void expect_body_saved(struct native_fixture *_Nonnull fixture,
+                              const struct history_snapshot *_Nonnull history,
+                              const char *_Nonnull expected)
 {
     require(folio_state_store_revision(fixture->state) == history->store_revision + 1,
             "native body save publishes exactly one revision");
     struct persistence_port disk = persistence_adapter_port(fixture->files);
     struct note_text *saved = nullptr;
     require(note_text_create(expected, strlen(expected), &saved) == NOTE_TEXT_ACCEPTED,
-            "valid theme body save expectation");
+            "valid body save expectation");
     expect_history_file(disk, 0, saved);
     for (size_t version = 1; version <= note_history_depth; ++version)
         expect_history_file(disk, version, history->files[version - 1]);
@@ -1594,7 +1595,7 @@ static void save_theme_input(struct folio_window *_Nonnull window,
         require(folio_state_theme(fixture->state) == preview &&
                     theme_palette_equal(folio_state_palette(fixture->state), &palette),
                 "body save retains the uncommitted theme preview");
-        expect_theme_body_saved(fixture, history, switch_saved);
+        expect_body_saved(fixture, history, switch_saved);
     }
 }
 
@@ -1620,12 +1621,12 @@ static void theme_save_cycle(struct folio_window *_Nonnull window,
     expect_theme_restored(fixture, theme);
     history_undo(window);
     expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_CHANGED);
-    expect_theme_body_saved(fixture, history, switch_saved);
+    expect_body_saved(fixture, history, switch_saved);
     HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
     require(SendMessageW(body, EM_REDO, 0, 0) != 0, "native Redo succeeds after body-only save");
     pump(window);
     expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_SAME);
-    expect_theme_body_saved(fixture, history, switch_saved);
+    expect_body_saved(fixture, history, switch_saved);
     expect_theme_restored(fixture, theme);
 }
 
@@ -1777,7 +1778,7 @@ static void theme_close_cycle(struct folio_window *_Nonnull window,
     expect_theme_settings(fixture, &saved);
     verify_history_unchanged(fixture, &history);
     close_theme_window(window);
-    expect_theme_body_saved(fixture, &history, history_current);
+    expect_body_saved(fixture, &history, history_current);
     expect_theme_settings(fixture, &saved);
     file_bytes_destroy(saved.settings);
     for (size_t version = 0; version <= note_history_depth; ++version)
@@ -1966,9 +1967,101 @@ static void run_settings_edit_case(struct native_fixture *_Nonnull fixture)
         note_text_destroy(history.files[version]);
 }
 
+static void reselect_edit_mode(struct folio_window *_Nonnull window,
+                               struct native_fixture *_Nonnull fixture,
+                               const struct history_snapshot *_Nonnull history,
+                               enum folio_note_change change)
+{
+    struct native_body_snapshot snapshot = {0};
+    capture_native_body(window, &snapshot);
+    for (size_t repeat = 0; repeat < 2; ++repeat)
+    {
+        action(window, ACCESSIBLE_EDIT);
+        expect_native_body(window, &snapshot);
+        expect_editor(window, fixture->state, snapshot.text, change);
+        verify_history_unchanged(fixture, history);
+    }
+}
+
+static void expect_saved_view(struct folio_window *_Nonnull window,
+                              struct native_fixture *_Nonnull fixture,
+                              const struct history_snapshot *_Nonnull history)
+{
+    struct native_body_snapshot snapshot = {0};
+    capture_native_body(window, &snapshot);
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    require(wcscmp(snapshot.text, L"Current 日本語 😀 saved 追記 🙂") == 0 &&
+                folio_state_pane_mode(fixture->state) == PANE_MODE_VIEW &&
+                (GetWindowLongPtrW(body, GWL_STYLE) & ES_READONLY) != 0,
+            "saved view renders the expected plain text and remains readonly");
+    expect_body_saved(fixture, history, switch_saved);
+}
+
+static void saved_mode_roundtrip(struct folio_window *_Nonnull window,
+                                 struct native_fixture *_Nonnull fixture,
+                                 const struct history_snapshot *_Nonnull history)
+{
+    action(window, ACCESSIBLE_VIEW);
+    expect_saved_view(window, fixture, history);
+    struct native_body_snapshot snapshot = {0};
+    capture_native_body(window, &snapshot);
+    for (size_t repeat = 0; repeat < 2; ++repeat)
+    {
+        action(window, ACCESSIBLE_VIEW);
+        expect_native_body(window, &snapshot);
+        expect_saved_view(window, fixture, history);
+    }
+    action(window, ACCESSIBLE_EDIT);
+    expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_SAME);
+    expect_body_saved(fixture, history, switch_saved);
+    action(window, ACCESSIBLE_VIEW);
+    expect_saved_view(window, fixture, history);
+}
+
+/* #685: Same-mode selection keeps edits; leaving a changed edit saves one revision. */
+static void run_mode_save_case(struct native_fixture *_Nonnull fixture)
+{
+    require(folio_state_select_note(fixture->state, 0, 0, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
+            "select the dedicated mode save note");
+    struct history_snapshot history = {0};
+    capture_history(fixture, &history);
+    struct folio_window *window = nullptr;
+    require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
+                FOLIO_WINDOW_CREATED,
+            "real mode save window");
+    pump(window);
+    action(window, ACCESSIBLE_EDIT);
+    expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_SAME);
+    append_switch_text(window);
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    CHARRANGE selected = {.cpMin = 10, .cpMax = 12};
+    SendMessageW(body, EM_EXSETSEL, 0, (LPARAM)&selected);
+    expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_CHANGED);
+    reselect_edit_mode(window, fixture, &history, FOLIO_NOTE_CHANGED);
+    history_undo(window);
+    expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_SAME);
+    require(SendMessageW(body, EM_CANREDO, 0, 0) != 0,
+            "Undo leaves a redoable insertion before same-mode selection");
+    reselect_edit_mode(window, fixture, &history, FOLIO_NOTE_SAME);
+    require(SendMessageW(body, EM_REDO, 0, 0) != 0, "Redo succeeds after same-mode selection");
+    pump(window);
+    expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_CHANGED);
+    saved_mode_roundtrip(window, fixture, &history);
+    require(controlled.requests == 0, "plain mode selection does not request image work");
+    folio_window_destroy(window);
+    for (size_t version = 0; version <= note_history_depth; ++version)
+        note_text_destroy(history.files[version]);
+}
+
 static void run_other_fixture(struct native_fixture *_Nonnull fixture, int argc,
                               char *_Nonnull *_Nonnull argv)
 {
+    if (mode_save_case)
+    {
+        run_mode_save_case(fixture);
+        return;
+    }
     if (settings_edit_case)
     {
         run_settings_edit_case(fixture);
@@ -2022,6 +2115,7 @@ int main(int argc, char *_Nonnull *_Nonnull argv)
     zoom_case = argc == 2 && strcmp(argv[1], "--zoom") == 0;
     theme_preview_case = argc == 2 && strcmp(argv[1], "--theme-preview") == 0;
     settings_edit_case = argc == 2 && strcmp(argv[1], "--settings-edit") == 0;
+    mode_save_case = argc == 2 && strcmp(argv[1], "--mode-save") == 0;
     struct native_fixture fixture = {0};
     create_fixture(&fixture);
     run_fixture(&fixture, argc, argv);
