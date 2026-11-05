@@ -1731,6 +1731,102 @@ void run_minimap_allocation_tests(void)
     exhaust(settings_scenario, "settings scenario never completed");
 }
 
+static void retry_name(size_t index, char *_Nonnull text)
+{
+    text[0] = 'n';
+    text[1] = (char)('0' + index / 10);
+    text[2] = (char)('0' + index % 10);
+    text[3] = '\0';
+}
+
+static struct name_list *_Nonnull name_retry_owner(size_t count,
+                                                   const char *_Nonnull *_Nonnull borrowed)
+{
+    struct name_list *list = nullptr;
+    require(name_list_create(&list) == NAME_LIST_ACCEPTED, "name retry owner");
+    for (size_t index = 0; index < count; ++index)
+    {
+        char name[4];
+        retry_name(count - index - 1, name);
+        require(name_list_append(list, name, 3) == NAME_LIST_ACCEPTED, "reverse retry prefix");
+        borrowed[index] = name_list_at(list, index);
+    }
+    return list;
+}
+
+static void check_name_retry_prefix(const struct name_list *_Nonnull list,
+                                    const char *_Nonnull const *_Nonnull borrowed, size_t count)
+{
+    for (size_t index = 0; index < count; ++index)
+    {
+        char name[4];
+        retry_name(count - index - 1, name);
+        require(
+            name_list_at(list, index) == borrowed[index] &&
+                same_text(name_list_at(list, index), name) && name_list_contains(list, name),
+            "name allocation failure keeps bytes, insertion order, borrowed pointers and index");
+    }
+}
+
+static bool name_failure_at(size_t count, const char *_Nonnull added, size_t nth)
+{
+    allocation_probe_fail_at(0);
+    const char *borrowed[16];
+    struct name_list *list = name_retry_owner(count, borrowed);
+    allocation_probe_fail_at(nth);
+    enum name_list_outcome outcome = name_list_append(list, added, strlen(added));
+    allocation_probe_fail_at(0);
+    if (outcome == NAME_LIST_ACCEPTED)
+    {
+        require(name_list_count(list) == count + 1,
+                "name failure sweep reaches a successful append");
+        name_list_destroy(list);
+        return false;
+    }
+    require(outcome == NAME_LIST_OUT_OF_MEMORY && name_list_count(list) == count &&
+                !name_list_contains(list, added),
+            "name allocation failure publishes neither the owner entry nor its lookup reference");
+    check_name_retry_prefix(list, borrowed, count);
+    allocation_probe_fail_at(1);
+    outcome = name_list_append(list, added, strlen(added));
+    allocation_probe_fail_at(0);
+    require(outcome == NAME_LIST_OUT_OF_MEMORY && name_list_count(list) == count &&
+                !name_list_contains(list, added),
+            "same owner can refuse again after reserve or after copy failure");
+    check_name_retry_prefix(list, borrowed, count);
+    require(name_list_append(list, added, strlen(added)) == NAME_LIST_ACCEPTED &&
+                name_list_count(list) == count + 1 && same_text(name_list_at(list, count), added) &&
+                name_list_contains(list, added),
+            "clearing failure retries the same owner and publishes one ordered name");
+    check_name_retry_prefix(list, borrowed, count);
+    require(name_list_append(list, added, strlen(added)) == NAME_LIST_DUPLICATE &&
+                name_list_count(list) == count + 1,
+            "retry does not create a duplicate owner or lookup entry");
+    name_list_destroy(list);
+    return true;
+}
+
+static size_t count_name_failures(size_t count, const char *_Nonnull added)
+{
+    for (size_t nth = 1; nth < 8; ++nth)
+        if (!name_failure_at(count, added, nth))
+            return nth - 1;
+    test_failure("name retry allocation scenario never completed");
+}
+
+size_t run_name_list_allocation_tests(void)
+{
+    if (!probe_active())
+        return 0;
+    static const size_t counts[] = {0, 3, 4, 7, 8, 15, 16};
+    static const char *const names[] = {"m", "n01a", "z"};
+    size_t failures = 0;
+    for (size_t at = 0; at < sizeof counts / sizeof counts[0]; ++at)
+        for (size_t name = 0; name < sizeof names / sizeof names[0]; ++name)
+            failures += count_name_failures(counts[at], names[name]);
+    return failures;
+}
+
 void run_allocation_tests(void)
 {
     if (!probe_active())
@@ -1741,6 +1837,8 @@ void run_allocation_tests(void)
     exhaust(text_scenario, "text scenario never completed");
     run_nullable_allocation_tests();
     exhaust(names_scenario, "names scenario never completed");
+    require(run_name_list_allocation_tests() != 0,
+            "name allocation retry boundaries are exercised");
     exhaust(categories_scenario, "categories scenario never completed");
     exhaust(category_insert_scenario, "category insert scenario never completed");
     exhaust(notes_scenario, "notes scenario never completed");

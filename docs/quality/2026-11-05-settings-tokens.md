@@ -68,3 +68,11 @@ branch/commitは保持する。実app・実ノート・Storeを試験に使わ�
 
 coreの入力拒否と出力保持を検証したもので、実ディスクの障害やOS競合を網羅する試験ではない。
 通常の書出しは元からNUL入り語を生成しない。修正前に既に書き替わった設定を復元する変更ではない。
+
+## 統合・反映・整理の確定
+
+PR629最終head a5643f37の必須CI41944717201 full-gate/check成功後、main1dc20301へ正典統合、Issue628 CLOSED。
+merge-01は必須PR見出し5件不足でReady前に拒否された。本文だけ訂正して固定したmerge-02は成功、製品head不変。
+旧Draft runのfailure/skippedはci-finalに保持し、required-finalに最終headの成功runを別途保存した。
+通常build/check成功、data32file bytes/hash/作成更新日時不変。1,323file全保全/hash再照合後、専用worktree/outputを削除。
+branch/commit保持。確定原本agents/628-settings-tokens/integration-completion.json。

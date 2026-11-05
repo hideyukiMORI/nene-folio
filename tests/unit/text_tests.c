@@ -431,6 +431,69 @@ static void verify_name_list(void)
     name_list_destroy(nullptr);
 }
 
+static const char *_Nonnull ordered_name(size_t start, size_t stride, size_t index)
+{
+    static const char *const names[] = {"A", "a", "aa",   "a.a", "a b", "a日", "仕事", "資料",
+                                        "é", "é", ".dot", "_",   "z",   "Z",   "aba",  "ab"};
+    return names[(start + index * stride) % 16];
+}
+
+static void check_ordered_names(const struct name_list *_Nonnull list, size_t start, size_t stride,
+                                size_t count)
+{
+    require(name_list_count(list) == count, "indexed names keep the insertion count");
+    for (size_t index = 0; index < count; ++index)
+    {
+        const char *expected = ordered_name(start, stride, index);
+        require(same_text(name_list_at(list, index), expected) &&
+                    name_list_contains(list, expected),
+                "every inserted name remains in insertion order and searchable");
+    }
+    require(!name_list_contains(list, "") && !name_list_contains(list, "missing") &&
+                !name_list_contains(list, "a日extra"),
+            "absent and longer prefix queries stay absent");
+}
+
+static void verify_name_order(size_t start, size_t stride)
+{
+    struct name_list *list = nullptr;
+    require(name_list_create(&list) == NAME_LIST_ACCEPTED, "ordered name owner");
+    const char *borrowed[16];
+    check_ordered_names(list, start, stride, 0);
+    for (size_t index = 0; index < 16; ++index)
+    {
+        const char *expected = ordered_name(start, stride, index);
+        size_t length = strlen(expected);
+        char *exact = malloc(length);
+        require(exact != nullptr, "exact nonterminated name input");
+        memcpy(exact, expected, length);
+        require(name_list_append(list, exact, length) == NAME_LIST_ACCEPTED,
+                "indexing accepts exactly bounded nonterminated UTF-8 names");
+        free(exact);
+        borrowed[index] = name_list_at(list, index);
+        check_ordered_names(list, start, stride, index + 1);
+    }
+    for (size_t index = 0; index < 16; ++index)
+    {
+        const char *expected = ordered_name(start, stride, index);
+        require(name_list_at(list, index) == borrowed[index] &&
+                    name_list_append(list, expected, strlen(expected)) == NAME_LIST_DUPLICATE,
+                "growth preserves borrowed pointers and refuses every duplicate");
+    }
+    require(name_list_append(list, "a\0b", 3) == NAME_LIST_INVALID_NAME,
+            "invalid NUL is refused before any prefix can match");
+    check_ordered_names(list, start, stride, 16);
+    name_list_destroy(list);
+}
+
+void run_name_list_tests(void)
+{
+    verify_name_list();
+    for (size_t start = 0; start < 16; ++start)
+        for (size_t stride = 1; stride < 16; stride += 2)
+            verify_name_order(start, stride);
+}
+
 static void verify_bom_stream(const char *_Nonnull raw, const char *_Nonnull body)
 {
     struct note_text *text = nullptr;
@@ -618,7 +681,7 @@ void run_text_tests(void)
     verify_editability();
     verify_first_line();
     verify_colors();
-    verify_name_list();
+    run_name_list_tests();
     verify_validation_bounds();
     verify_validation_byte_positions();
     verify_validation_sequences();

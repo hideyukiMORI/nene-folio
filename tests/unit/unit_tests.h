@@ -86,6 +86,8 @@ void run_category_rename_state_tests(void);
 void run_category_rename_allocation_tests(void);
 void run_rename_allocation_tests(void);
 void run_search_tests(void);
+void run_name_list_tests(void);
+[[nodiscard]] size_t run_name_list_allocation_tests(void);
 struct folio_state;
 /* 完成後の既存契約を調べる試験だけが使う。準備状態の試験は生のAPIを直接呼ぶ。 */
 [[nodiscard]] enum folio_state_outcome

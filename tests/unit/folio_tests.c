@@ -152,6 +152,22 @@ static bool run_transfer_target_tests(const char *_Nonnull argument)
 
 static bool run_text_validation_target_tests(const char *_Nonnull argument)
 {
+    if (strcmp(argument, "--names") == 0)
+    {
+        run_name_list_tests();
+        run_ledger_tests();
+        run_note_name_tests();
+        run_category_name_tests();
+        printf("name list and ledger tests passed\n");
+        return true;
+    }
+    if (strcmp(argument, "--names-oom") == 0)
+    {
+        size_t failures = run_name_list_allocation_tests();
+        require(failures != 0, "name retry selector requires actual allocation failure injection");
+        printf("name list: %zu allocation failures and successful retries passed\n", failures);
+        return true;
+    }
     if (strcmp(argument, "--text-validation") != 0)
         return false;
     run_text_tests();
