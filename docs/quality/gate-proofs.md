@@ -1311,3 +1311,10 @@ CTest history_restoreを既存30秒/image_status_data lockへ追加。製品/API
 正常24条件480sampleの全行開始位置・入力hash/codec・raw QPC/cycles・MAP6・source/archiveを監査。
 性能悪化と監査初回の誤り、独立静読と範囲は[品質記録](2026-11-05-line-index.md)。
 最終head必須CI/正典統合/通常反映/全保全整理は651/integration-completion.jsonへ。
+
+## 2026-11-05 #653 — 通常置換・Undo・明示保存
+
+既存image_status_testsの公開menu/input/buttonsと実ICU/RichEditで1件/全置換、各Undo一回、明示保存を確認。
+最終158checksと共通本文読取の履歴168checks成功、stderr空。保存前のstore_revision/現在ノート/全履歴bytesを保持し保存だけ一世代更新。
+CTest replace_nativeを既存30秒/image_status_data lockへ追加。製品/API/schema/ゲート不変。
+全失敗と範囲は[品質記録](2026-11-05-replace-native.md)。最終CI/統合/保全整理は653/integration-completion.jsonへ。

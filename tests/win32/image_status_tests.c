@@ -1,5 +1,6 @@
 /* #520: body-first loading, processing notice and mode cancellation through the real window. */
 #include "accessible_request.h"
+#include "accessible_surface_button.h"
 #include "accessible_view.h"
 #include "appearance_adapter.h"
 #include "file_bytes.h"
@@ -42,10 +43,14 @@ struct native_fixture
 static unsigned checks;
 static bool diagram_case;
 static bool history_case;
+static bool replace_case;
 
 static const char history_current[] = "# Current 日本語 😀 **saved**";
 static const char history_previous[] = "> Previous 猫 🐾 `old`";
 static const char history_oldest[] = "- Oldest 履歴 🌸";
+static const char replace_current[] = "猫1 😀\n猫2 **saved**\n猫1 `old`";
+static const wchar_t replace_original[] = L"猫1 😀\r猫2 **saved**\r猫1 `old`";
+static const wchar_t replace_all[] = L"1-猫-🐾\r 😀\r2-猫-🐾\r **saved**\r1-猫-🐾\r `old`";
 
 static void require(bool condition, const char *_Nonnull message)
 {
@@ -82,10 +87,10 @@ static void seed_notes(struct persistence_port disk)
     const char *source =
         diagram_case ? "Body before diagrams\n\n```mermaid\nflowchart LR\nA --> B\n```\n\nAfter\n"
                      : "Body before images\n\n![alt](images/one.png)\n\nBody after images\n";
-    if (history_case)
+    if (history_case || replace_case)
     {
         seed_history(disk);
-        source = history_current;
+        source = history_case ? history_current : replace_current;
     }
     struct note_text *_Nullable body = nullptr;
     require(note_text_create(source, strlen(source), &body) == NOTE_TEXT_ACCEPTED, "media note");
@@ -768,7 +773,8 @@ static void expect_editor(struct folio_window *_Nonnull window,
 {
     HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
     wchar_t text[128];
-    int length = GetWindowTextW(body, text, 128);
+    GETTEXTEX request = {.cb = sizeof text, .flags = GT_RAWTEXT, .codepage = 1200};
+    LRESULT length = SendMessageW(body, EM_GETTEXTEX, (WPARAM)&request, (LPARAM)text);
     require(length >= 0 && (size_t)length == wcslen(expected) && wcscmp(text, expected) == 0,
             "editor retains exact Markdown and Unicode units");
     require(folio_state_pane_mode(state) == PANE_MODE_EDIT &&
@@ -884,6 +890,146 @@ static void run_history_case(struct native_fixture *_Nonnull fixture)
         note_text_destroy(snapshot.files[version]);
 }
 
+/* #653: 公開置換入力とボタンから、実ICU・RichEdit・保存の境界を確認する。 */
+static void prepare_replacement(struct folio_window *_Nonnull window,
+                                struct folio_state *_Nonnull state)
+{
+    invoke_operation(window, FOLIO_COMMAND_REPLACE);
+    pump(window);
+    HWND pattern = folio_window_accessible_window(window, ACCESSIBLE_REPLACE_PATTERN);
+    HWND replacement = folio_window_accessible_window(window, ACCESSIBLE_REPLACE_TEXT);
+    require(pattern != nullptr && replacement != nullptr &&
+                SetWindowTextW(pattern, L"(猫)([12])") &&
+                SetWindowTextW(replacement, L"\\2-\\1-🐾\\n"),
+            "set ordinary pattern and capture/newline replacement in the native inputs");
+    pump(window);
+    require(folio_state_replace_count(state) == 3, "real ICU preview finds three matches");
+}
+
+static void replace_button(struct folio_window *_Nonnull window,
+                           enum accessible_surface_button button)
+{
+    struct accessible_request request = {
+        .item = {.kind = ACCESSIBLE_SURFACE_BUTTON,
+                 .slot = button,
+                 .revision = folio_window_accessible_surface_revision(window)},
+        .action = ACCESSIBLE_ACTION_INVOKE};
+    require(folio_window_accessible_action(window, &request) == S_OK,
+            "invoke the current public replacement surface button");
+    pump(window);
+}
+
+static void expect_replace_position(struct folio_window *_Nonnull window,
+                                    struct folio_state *_Nonnull state, LONG caret, size_t count)
+{
+    CHARRANGE selected = {0};
+    SendMessageW(folio_window_accessible_window(window, ACCESSIBLE_BODY), EM_EXGETSEL, 0,
+                 (LPARAM)&selected);
+    require(selected.cpMin == caret && selected.cpMax == caret,
+            "replacement positions the native UTF16 caret");
+    require(folio_state_replace_count(state) == count, "replacement refreshes the preview count");
+    struct accessible_item item = {.kind = ACCESSIBLE_REPLACE_PATTERN,
+                                   .revision = folio_window_accessible_surface_revision(window)};
+    struct accessible_view view;
+    require(folio_window_accessible_read(window, &item, &view) == S_OK && !view.offscreen,
+            "replacement leaves its input band open");
+}
+
+static void replace_and_undo(struct folio_window *_Nonnull window,
+                             struct native_fixture *_Nonnull fixture,
+                             const struct history_snapshot *_Nonnull snapshot)
+{
+    prepare_replacement(window, fixture->state);
+    replace_button(window, ACCESSIBLE_SURFACE_REPLACE_ONE);
+    expect_editor(window, fixture->state, L"1-猫-🐾\r 😀\r猫2 **saved**\r猫1 `old`",
+                  FOLIO_NOTE_CHANGED);
+    expect_replace_position(window, fixture->state, 7, 2);
+    verify_history_unchanged(fixture, snapshot);
+    replace_button(window, ACCESSIBLE_SURFACE_CLOSE);
+    history_undo(window);
+    expect_editor(window, fixture->state, replace_original, FOLIO_NOTE_SAME);
+    verify_history_unchanged(fixture, snapshot);
+    prepare_replacement(window, fixture->state);
+    replace_button(window, ACCESSIBLE_SURFACE_REPLACE_ALL);
+    expect_editor(window, fixture->state, replace_all, FOLIO_NOTE_CHANGED);
+    expect_replace_position(window, fixture->state, 0, 0);
+    verify_history_unchanged(fixture, snapshot);
+    replace_button(window, ACCESSIBLE_SURFACE_CLOSE);
+    history_undo(window);
+    expect_editor(window, fixture->state, replace_original, FOLIO_NOTE_SAME);
+    verify_history_unchanged(fixture, snapshot);
+}
+
+static void save_replacement(struct folio_window *_Nonnull window,
+                             struct native_fixture *_Nonnull fixture,
+                             const struct history_snapshot *_Nonnull snapshot)
+{
+    prepare_replacement(window, fixture->state);
+    replace_button(window, ACCESSIBLE_SURFACE_REPLACE_ALL);
+    expect_editor(window, fixture->state, replace_all, FOLIO_NOTE_CHANGED);
+    verify_history_unchanged(fixture, snapshot);
+    replace_button(window, ACCESSIBLE_SURFACE_CLOSE);
+    struct accessible_request request = {.item = {.kind = ACCESSIBLE_SAVE},
+                                         .action = ACCESSIBLE_ACTION_INVOKE};
+    require(folio_window_accessible_action(window, &request) == S_OK,
+            "explicit Save after replace");
+    pump(window);
+    expect_editor(window, fixture->state, replace_all, FOLIO_NOTE_SAME);
+    require(folio_state_store_revision(fixture->state) == snapshot->store_revision + 1,
+            "replacement is stored only by explicit Save");
+    const char expected[] = "1-猫-🐾\n 😀\n2-猫-🐾\n **saved**\n1-猫-🐾\n `old`";
+    struct note_text *_Nullable body = nullptr;
+    require(note_text_create(expected, sizeof expected - 1, &body) == NOTE_TEXT_ACCEPTED,
+            "expected saved Unicode and LF bytes");
+    struct persistence_port disk = persistence_adapter_port(fixture->files);
+    expect_history_file(disk, 0, body);
+    for (size_t version = 1; version <= note_history_depth; ++version)
+        expect_history_file(disk, version, snapshot->files[version - 1]);
+    note_text_destroy(body);
+}
+
+static void run_replace_case(struct native_fixture *_Nonnull fixture)
+{
+    require(folio_state_select_note(fixture->state, 0, 0, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
+            "select the dedicated replacement note");
+    struct history_snapshot snapshot = {0};
+    capture_history(fixture, &snapshot);
+    struct folio_window *window = nullptr;
+    require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
+                FOLIO_WINDOW_CREATED,
+            "real replacement window");
+    pump(window);
+    action(window, ACCESSIBLE_EDIT);
+    expect_editor(window, fixture->state, replace_original, FOLIO_NOTE_SAME);
+    replace_and_undo(window, fixture, &snapshot);
+    save_replacement(window, fixture, &snapshot);
+    require(controlled.requests == 0, "plain replacement does not request image work");
+    folio_window_destroy(window);
+    for (size_t version = 0; version <= note_history_depth; ++version)
+        note_text_destroy(snapshot.files[version]);
+}
+
+static void run_fixture(struct native_fixture *_Nonnull fixture, int argc,
+                        char *_Nonnull *_Nonnull argv)
+{
+    if (diagram_case)
+        run_diagram_case(fixture);
+    else if (history_case)
+        run_history_case(fixture);
+    else if (replace_case)
+        run_replace_case(fixture);
+    else if (argc == 2 && strcmp(argv[1], "--icon") == 0)
+        window_icons(fixture);
+    else if (argc == 2)
+        run_status_case(fixture, argv[1]);
+    else
+    {
+        require(argc == 1, "valid argument count");
+        run_image_case(fixture);
+    }
+}
+
 int main(int argc, char *_Nonnull *_Nonnull argv)
 {
     HDESK desktop = CreateDesktopW(L"NeNeFolioImageStatus520", nullptr, nullptr, 0,
@@ -894,21 +1040,10 @@ int main(int argc, char *_Nonnull *_Nonnull argv)
     require(SUCCEEDED(OleInitialize(nullptr)), "COM apartment");
     diagram_case = argc == 2 && strcmp(argv[1], "--mermaid") == 0;
     history_case = argc == 2 && strcmp(argv[1], "--history") == 0;
+    replace_case = argc == 2 && strcmp(argv[1], "--replace") == 0;
     struct native_fixture fixture = {0};
     create_fixture(&fixture);
-    if (diagram_case)
-        run_diagram_case(&fixture);
-    else if (history_case)
-        run_history_case(&fixture);
-    else if (argc == 2 && strcmp(argv[1], "--icon") == 0)
-        window_icons(&fixture);
-    else if (argc == 2)
-        run_status_case(&fixture, argv[1]);
-    else
-    {
-        require(argc == 1, "valid argument count");
-        run_image_case(&fixture);
-    }
+    run_fixture(&fixture, argc, argv);
     destroy_fixture(&fixture);
     OleUninitialize();
     CloseDesktop(desktop);

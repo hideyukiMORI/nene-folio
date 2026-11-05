@@ -104,3 +104,11 @@ selectorだけはレビュー後に同じblockを既存text系helperへ移し、
 補助readのWindows glob誤りは全体journalへ分離。通常app/実ノート/Storeは試験に使わず、#634は保留。
 最終head必須CI eng/check.ps1、正典統合、必要な通常反映/data不変、全保全/hash確認と専用worktree/output整理は
 同taskのintegration-completion.jsonで確定する。branch/commit保持。API/schema/版/ゲートは不変。
+
+## 15:07 統合・通常反映・保全整理完了
+
+PR652 head3c434f979b8ec5bc647785e574ef0e8385094da5、必須CI41977293968 full-gate/check成功。
+mainfe4703b96cba62c54b2cd376bad3d134bd81392fへ統合、Issue651 CLOSED。初回normal-build01はmergeのmain同期とpullが重なり拒否。
+子/記録1/error0を保持し、merge01完了とclean main確認後のnormal-build02/check01成功。data32file bytes/hash/作成更新日時不変。
+1493file全保全ZIP再hash、取込tree/clean-untracked/ignored/link/稼働参照確認後、651専用worktree/outputだけ削除。
+branch/commit保持。全失敗を含む確定原本は同taskのintegration-completion.json。通常app起動なし。
