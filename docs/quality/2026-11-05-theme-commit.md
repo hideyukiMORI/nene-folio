@@ -48,3 +48,9 @@ OS外観切替、設定write失敗、再起動、全127テーマを再試験し�
 
 原本D:/NeNeFolio/agents/671-theme-commit/。最終CI/正典統合/通常exe-data不変/全保全と専用領域整理は
 同taskのintegration-completion.jsonへ。branch/commitを保持し、#634その他の保留領域は触らない。
+
+## 提出補助の初回拒否
+
+merge-01はPR本文をMarkdown見出しにしたため、正典tools/merge-pr.ps1が必須field行不足でReady前に停止した。
+子/記録1、記録error0、PRはDraftのまま。本文を既定のコロン付きfield行へ訂正し、初回本文/metadata/rawは保持した。
+製品/testsource不変のため成功済みbuild/nativeを再利用し、文書conformanceと最終入力照合だけを更新する。
