@@ -50,6 +50,7 @@ static bool search_case;
 static bool note_switch_case;
 static bool zoom_case;
 static bool theme_preview_case;
+static bool settings_edit_case;
 
 static const char history_current[] = "# Current 日本語 😀 **saved**";
 static const char history_previous[] = "> Previous 猫 🐾 `old`";
@@ -101,10 +102,11 @@ static void seed_notes(struct persistence_port disk)
         diagram_case ? "Body before diagrams\n\n```mermaid\nflowchart LR\nA --> B\n```\n\nAfter\n"
                      : "Body before images\n\n![alt](images/one.png)\n\nBody after images\n";
     if (history_case || replace_case || search_case || note_switch_case || zoom_case ||
-        theme_preview_case)
+        theme_preview_case || settings_edit_case)
     {
         seed_history(disk);
-        source = history_case || note_switch_case || zoom_case || theme_preview_case
+        source = history_case || note_switch_case || zoom_case || theme_preview_case ||
+                         settings_edit_case
                      ? history_current
                      : replace_current;
     }
@@ -1822,9 +1824,156 @@ static void run_theme_preview_case(struct native_fixture *_Nonnull fixture)
         note_text_destroy(history.files[version]);
 }
 
+struct settings_edit_values
+{
+    bool number;
+    bool minimap;
+    enum folio_language language;
+    enum folio_theme_choice theme;
+};
+
+static void select_setting_control(struct folio_window *_Nonnull window, size_t ordinal,
+                                   enum accessible_kind kind)
+{
+    struct accessible_item list = {.kind = ACCESSIBLE_SURFACE_LIST,
+                                   .revision = folio_window_accessible_surface_revision(window)};
+    struct accessible_item row;
+    require(folio_window_accessible_navigate(window, &list, ACCESSIBLE_NAVIGATION_FIRST, &row) ==
+                S_OK,
+            "settings exposes its first current row");
+    for (size_t index = 0; index < ordinal; ++index)
+    {
+        struct accessible_item next;
+        require(folio_window_accessible_navigate(window, &row, ACCESSIBLE_NAVIGATION_NEXT, &next) ==
+                    S_OK,
+                "settings exposes the requested current row");
+        row = next;
+    }
+    require(row.kind == kind, "the requested setting has its expected public role");
+    struct accessible_request request = {.item = row, .action = ACCESSIBLE_ACTION_SELECT};
+    require(folio_window_accessible_action(window, &request) == S_OK,
+            "Select applies the current setting through the public boundary");
+    pump(window);
+}
+
+static void expect_settings_values(struct native_fixture *_Nonnull fixture,
+                                   const struct settings_edit_values *_Nonnull expected)
+{
+    struct folio_settings *saved = saved_theme_settings(fixture);
+    require(folio_settings_number(saved) == expected->number &&
+                folio_state_number(fixture->state) == expected->number &&
+                folio_settings_minimap(saved) == expected->minimap &&
+                folio_state_minimap(fixture->state) == expected->minimap,
+            "saved and active booleans match the intended setting changes");
+    require(folio_settings_language(saved) == expected->language &&
+                folio_state_language(fixture->state) == expected->language &&
+                folio_settings_theme(saved) == expected->theme &&
+                folio_state_theme_choice(fixture->state) == expected->theme,
+            "saved language matches its selection while theme remains unchanged");
+    folio_settings_destroy(saved);
+}
+
+static void settings_edit_preserved(struct folio_window *_Nonnull window,
+                                    struct native_fixture *_Nonnull fixture,
+                                    const struct history_snapshot *_Nonnull history,
+                                    const struct native_body_snapshot *_Nonnull body)
+{
+    struct accessible_item root = {.kind = ACCESSIBLE_SURFACE};
+    struct accessible_view view;
+    require(folio_window_accessible_read(window, &root, &view) == S_OK && !view.offscreen,
+            "setting selection keeps the settings surface open");
+    expect_native_body(window, body);
+    verify_history_unchanged(fixture, history);
+}
+
+static void settings_edit_cycle(struct folio_window *_Nonnull window,
+                                struct native_fixture *_Nonnull fixture,
+                                const struct history_snapshot *_Nonnull history)
+{
+    struct settings_edit_values values = {.number = folio_state_number(fixture->state),
+                                          .minimap = folio_state_minimap(fixture->state),
+                                          .language = folio_state_language(fixture->state),
+                                          .theme = folio_state_theme_choice(fixture->state)};
+    struct native_body_snapshot closed = {0};
+    capture_native_body(window, &closed);
+    struct accessible_request settings = {.item = {.kind = ACCESSIBLE_SETTINGS},
+                                          .action = ACCESSIBLE_ACTION_INVOKE};
+    require(folio_window_accessible_action(window, &settings) == S_OK,
+            "open settings while retaining the native editing state");
+    pump(window);
+    struct native_body_snapshot opened = {0};
+    capture_native_body(window, &opened);
+    expect_settings_values(fixture, &values);
+    for (size_t step = 0; step < 4; ++step)
+    {
+        select_setting_control(window, 6 + step % 2, ACCESSIBLE_SURFACE_TOGGLE);
+        if (step % 2 == 0)
+            values.number = !values.number;
+        else
+            values.minimap = !values.minimap;
+        expect_settings_values(fixture, &values);
+        settings_edit_preserved(window, fixture, history, &opened);
+    }
+    const enum folio_language languages[] = {FOLIO_LANGUAGE_EN, FOLIO_LANGUAGE_ZH_HANS,
+                                             FOLIO_LANGUAGE_JA};
+    for (size_t index = 0; index < sizeof languages / sizeof languages[0]; ++index)
+    {
+        select_setting_control(window, 3 + (size_t)languages[index], ACCESSIBLE_SURFACE_LANGUAGE);
+        values.language = languages[index];
+        expect_settings_values(fixture, &values);
+        settings_edit_preserved(window, fixture, history, &opened);
+    }
+    surface_button(window, ACCESSIBLE_SURFACE_CLOSE);
+    expect_native_body(window, &closed);
+    verify_history_unchanged(fixture, history);
+}
+
+/* #679: Setting changes preserve unsaved edits and a redoable native insertion. */
+static void run_settings_edit_case(struct native_fixture *_Nonnull fixture)
+{
+    require(folio_state_select_note(fixture->state, 0, 0, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
+            "select the dedicated settings edit note");
+    struct history_snapshot history = {0};
+    capture_history(fixture, &history);
+    struct folio_window *window = nullptr;
+    require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
+                FOLIO_WINDOW_CREATED,
+            "real settings edit window");
+    pump(window);
+    action(window, ACCESSIBLE_EDIT);
+    append_switch_text(window);
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    CHARRANGE selected = {.cpMin = 10, .cpMax = 12};
+    SendMessageW(body, EM_EXSETSEL, 0, (LPARAM)&selected);
+    expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_CHANGED);
+    settings_edit_cycle(window, fixture, &history);
+    expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_CHANGED);
+    history_undo(window);
+    expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_SAME);
+    require(SendMessageW(body, EM_CANREDO, 0, 0) != 0,
+            "Undo leaves a redoable insertion before settings");
+    settings_edit_cycle(window, fixture, &history);
+    require(SendMessageW(body, EM_REDO, 0, 0) != 0, "Redo succeeds after changing all settings");
+    pump(window);
+    expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_CHANGED);
+    history_undo(window);
+    expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_SAME);
+    verify_history_unchanged(fixture, &history);
+    require(controlled.requests == 0, "plain setting changes do not request image work");
+    folio_window_destroy(window);
+    for (size_t version = 0; version <= note_history_depth; ++version)
+        note_text_destroy(history.files[version]);
+}
+
 static void run_other_fixture(struct native_fixture *_Nonnull fixture, int argc,
                               char *_Nonnull *_Nonnull argv)
 {
+    if (settings_edit_case)
+    {
+        run_settings_edit_case(fixture);
+        return;
+    }
     if (argc == 2)
         run_status_case(fixture, argv[1]);
     else
@@ -1872,6 +2021,7 @@ int main(int argc, char *_Nonnull *_Nonnull argv)
     note_switch_case = argc == 2 && strcmp(argv[1], "--note-switch") == 0;
     zoom_case = argc == 2 && strcmp(argv[1], "--zoom") == 0;
     theme_preview_case = argc == 2 && strcmp(argv[1], "--theme-preview") == 0;
+    settings_edit_case = argc == 2 && strcmp(argv[1], "--settings-edit") == 0;
     struct native_fixture fixture = {0};
     create_fixture(&fixture);
     run_fixture(&fixture, argc, argv);

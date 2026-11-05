@@ -142,3 +142,10 @@ Win32 部品 probe（`out/design/2026-09-23/language-ui-probe/`）: 3 言語 × 
     Search / 搜索**で、`UI_TEXT_HELP_SEARCH_FIELD` だけがこの規則から外れていた。
     確認記録 §1 の用語表を正本とする。訳を変えた ID は帯幅の probe を流し直し、
     3 言語ともあふれ 0 のままであることを確かめた。
+
+## 2026-11-05 の設定切替と未保存本文回帰（#679）
+
+settings_edit_nativeで未保存追記後とUndo後のRedo可能状態を保ったまま行番号/ミニマップ/3言語の公開SELECTを通す。
+実保存設定、本文全units/選択/dirty/UndoRedo/focus、全保存履歴/store_revisionと最後の実Redo/Undoを確認する。
+設定変更が本文同期を通さない契約は不変。短文を使い、折返しや論理scroll位置の保証は追加しない。
+[品質記録](../quality/2026-11-05-settings-edit.md)。
