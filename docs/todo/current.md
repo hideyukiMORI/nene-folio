@@ -5,10 +5,13 @@
 hideの現在指示は、停止の指示まで調査・試験・計測・必要な修正を続け、全試行と変更を記録すること。
 主担当は単体で実行し、必要な保存系/本文処理の独立静読だけを委任した。古い停止・固定分担は持ち込まない。
 
-**#630は名前集合の照合改善。** 同じowner内の辞書順借用参照をappend/containsで共用する。
-108caseの比較、挿入順128通り、確保拒否33点と反復拒否/retry、Debug/tidy/--names/--names-oom成功。
-小集合の一部増加・pointer領域2倍・逆順shift二次は残る。最終CI/統合/反映/保全整理は
-D:/NeNeFolio/agents/630-name-list-lookup/integration-completion.jsonへ。
+**#632は全ノート検索の独立oracle回帰。** ASCII/UTF8の9,438queryを名前/本文と5work配分で照合した。
+期待集合・総work配分不変・上限、Debug/tidy/--bounded-index-matching成功。今回の範囲で製品欠陥は検出せず、製品不変。
+最終CI/統合/通常exe-data不変/保全整理はD:/NeNeFolio/agents/632-index-matcher-oracle/integration-completion.jsonへ。
+
+#630はPR631/必須CI41949515350成功、main23397d7へ統合済み。通常反映/data32file不変、
+1,639file全保全・専用領域整理済み。原本は同agents/630-name-list-lookup/integration-completion.json。
+小集合の約18%増、pointer領域2倍、逆順shift二次を残る費用として記録した。
 
 #628はPR629/必須CI41944717201成功、main1dc20301へ統合済み。通常反映/data32file不変、
 1,323file全保全・専用領域整理済み。原本は同agents/628-settings-tokens/integration-completion.json。
@@ -33,7 +36,7 @@ D:/NeNeFolio/agents/630-name-list-lookup/integration-completion.jsonへ。
 原本は同agents/617-save-preparation/integration-completion.json。branch/commitは保持する。
 
 全体journalは`D:/NeNeFolio/agents/quality-20261105/journal.md`。
-[名前集合](../quality/2026-11-05-name-list-lookup.md)・[設定固定語](../quality/2026-11-05-settings-tokens.md)・[取り込み再試行](../quality/2026-11-05-import-batch-retry.md)・[借用行参照](../quality/2026-11-05-markdown-view-lookup.md)・[Markdown段落](../quality/2026-11-05-markdown-paragraph-scale.md)・[改行正規化](../quality/2026-11-05-editor-normalization.md)・[本文検証](../quality/2026-11-05-ascii-validation.md)・
+[検索oracle](../quality/2026-11-05-index-matcher-oracle.md)・[名前集合](../quality/2026-11-05-name-list-lookup.md)・[設定固定語](../quality/2026-11-05-settings-tokens.md)・[取り込み再試行](../quality/2026-11-05-import-batch-retry.md)・[借用行参照](../quality/2026-11-05-markdown-view-lookup.md)・[Markdown段落](../quality/2026-11-05-markdown-paragraph-scale.md)・[改行正規化](../quality/2026-11-05-editor-normalization.md)・[本文検証](../quality/2026-11-05-ascii-validation.md)・
 [保存](../quality/2026-11-05-save-preparation.md)・[日報](../reports/2026-11-05.md)・[引き継ぎ](../handoffs/2026-11-05.md)。
 追加waiver none、既存WVR-0001継続。実app/実ノート/Storeは試験に使っていない。
 
@@ -57,9 +60,9 @@ Store提出用MSIXと3言語更新文は`D:/NeNeFolio/releases/1.3.0/store-candi
 
 ## 通常版と実機確認の範囲
 
-通常exeは`C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`、#628反映時sourceは`1dc20301`。
-SHA256は`14fcc70bb0612a14109ffe28fea733ccae26d40d5da49290c2b5d2c44260c396`。
-#630後の通常反映は同task完了原本へ。GitHub/Store配布1.3.0のsource`4359e9e`とは区別する。
+通常exeは`C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`、#630反映時sourceは`23397d7`。
+SHA256は`b53792fcafc4bf210223b0f443353b189a7ee964753a842fc8f2a0166e1e1d58`。
+#632は製品不変で再buildしない。GitHub/Store配布1.3.0のsource`4359e9e`とは区別する。
 通常app/実ノートは試験に使っていない。hideによる1.3.0の実機受理は未確認。
 
 以前のStore1.2.0は#536/PR538、source`eb10419`でMermaidを含まない。

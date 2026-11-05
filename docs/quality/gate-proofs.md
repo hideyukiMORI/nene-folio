@@ -1231,3 +1231,10 @@ count0/3/4/7/8/15/16×3位置の確保拒否33点を実注入し、同owner反�
 Debug/tidy/--names、既存coverage.build_measurementと--names-oom成功。ローカル全suite/coverage判定は行わない。
 108case比較の全raw/hash/中央値/MAPと試行・限界は[品質記録](2026-11-05-name-list-lookup.md)。
 最終head必須CI/統合/反映/保全整理はagents/630-name-list-lookup/integration-completion.jsonへ。
+
+## #632 — 全ノートmatcherの独立oracle
+
+ASCII/UTF8の9,438queryを名前/本文の2経路×5work配分で確認し、素朴な全候補比較の期待集合と一致した。
+総work配分不変、正確なrefと2+4L+3N上限、既存周期/境界/ownership/application回帰が成功。
+Debug/tidy/--bounded-index-matching、stderr空。製品/ゲート変更なし、確保注入はinactive。
+全試行と有限範囲の限界は[品質記録](2026-11-05-index-matcher-oracle.md)、最終CI以後は632/integration-completion.jsonへ。

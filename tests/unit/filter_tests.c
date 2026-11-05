@@ -839,6 +839,104 @@ static void verify_linear_work(void)
     verify_prefix_boundaries();
 }
 
+/* 全候補を素朴に比較する。製品のfold・tail表・prefix表を期待値に使わない。 */
+static unsigned char oracle_index_fold(char value)
+{
+    return (unsigned char)(value >= 'A' && value <= 'Z' ? value + ('a' - 'A') : value);
+}
+
+static bool oracle_index_at(const char *_Nonnull text, const char *_Nonnull term, size_t length)
+{
+    for (size_t index = 0; index < length; ++index)
+        if (oracle_index_fold(text[index]) != oracle_index_fold(term[index]))
+            return false;
+    return true;
+}
+
+static bool oracle_index_contains(const char *_Nonnull text, size_t length,
+                                  const char *_Nonnull term, size_t term_length)
+{
+    if (term_length > length)
+        return false;
+    for (size_t at = 0; at <= length - term_length; ++at)
+        if (oracle_index_at(text + at, term, term_length))
+            return true;
+    return false;
+}
+
+static void verify_oracle_index_query(const char *_Nonnull text, size_t length,
+                                      const char *_Nonnull term, size_t term_length)
+{
+    size_t expected = oracle_index_contains(text, length, term, term_length) ? 1 : 0;
+    const struct index_filter_entry body = {
+        .ref = at(3, 7), .name = "", .body = text, .length = length};
+    const struct index_filter_entry name = {.ref = at(3, 7), .name = text, .body = "", .length = 0};
+    (void)verify_entry_work(term, &body, expected, 2 + 3 * length);
+    (void)verify_entry_work(term, &name, expected, 2 + 4 * length);
+}
+
+/* 呼出側は最大4単位×3byteと終端の固定領域を持つ。各単位は妥当なUTF-8。 */
+static size_t fill_index_sequence(char *_Nonnull text, size_t units, size_t code,
+                                  const char *_Nonnull const *_Nonnull alphabet)
+{
+    size_t length = 0;
+    for (size_t index = 0; index < units; ++index)
+    {
+        const char *glyph = alphabet[code % 3];
+        size_t width = strlen(glyph);
+        memcpy(text + length, glyph, width);
+        length += width;
+        code /= 3;
+    }
+    text[length] = '\0';
+    return length;
+}
+
+static size_t verify_oracle_index_terms(const char *_Nonnull text, size_t length,
+                                        const char *_Nonnull const *_Nonnull alphabet)
+{
+    char term[10];
+    size_t cases = 1, queries = 0;
+    for (size_t units = 1; units <= 3; ++units)
+    {
+        cases *= 3;
+        for (size_t code = 0; code < cases; ++code)
+        {
+            size_t term_length = fill_index_sequence(term, units, code, alphabet);
+            verify_oracle_index_query(text, length, term, term_length);
+            queries += 1;
+        }
+    }
+    return queries;
+}
+
+static size_t verify_oracle_index_alphabet(const char *_Nonnull const *_Nonnull alphabet)
+{
+    char text[13];
+    size_t cases = 1, queries = 0;
+    for (size_t units = 0; units <= 4; ++units)
+    {
+        for (size_t code = 0; code < cases; ++code)
+        {
+            size_t length = fill_index_sequence(text, units, code, alphabet);
+            queries += verify_oracle_index_terms(text, length, alphabet);
+        }
+        cases *= 3;
+    }
+    require(queries == 4719, "all small source/term combinations reach the independent oracle");
+    return queries;
+}
+
+static void verify_small_index_oracle(void)
+{
+    static const char *const ascii[] = {"a", "A", "b"};
+    static const char *const utf8[] = {"a", "A", "猫"};
+    size_t queries = verify_oracle_index_alphabet(ascii);
+    queries += verify_oracle_index_alphabet(utf8);
+    require(queries == 9438, "both ASCII and UTF-8 query sets are checked");
+    printf("index oracle: %zu queries in name/body with five work schedules passed\n", queries);
+}
+
 void run_index_filter_tests(void)
 {
     const size_t single[] = {1}, pair[] = {2}, mixed[] = {1, 3, 2, 7}, large[] = {65536};
@@ -848,6 +946,7 @@ void run_index_filter_tests(void)
     verify_work_schedule(large, 1);
     verify_exact_work();
     verify_linear_work();
+    verify_small_index_oracle();
     verify_sealed_ownership();
     verify_folding();
     verify_sources();
