@@ -23,12 +23,11 @@ void rtf_text_append(struct text_buffer *_Nonnull out, const char *_Nonnull text
 void rtf_text_number(struct text_buffer *_Nonnull out, size_t value)
 {
     char digits[3 * sizeof value];
-    size_t count = 0;
+    size_t start = sizeof digits;
     do
     {
-        digits[count++] = (char)('0' + value % 10);
+        digits[--start] = (char)('0' + value % 10);
         value /= 10;
     } while (value != 0);
-    while (count != 0)
-        text_buffer_append(out, &digits[--count], 1);
+    text_buffer_append(out, digits + start, sizeof digits - start);
 }

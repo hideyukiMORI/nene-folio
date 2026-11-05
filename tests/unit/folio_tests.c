@@ -208,13 +208,24 @@ static void run_markdown_suite(void)
     run_markdown_tests();
 }
 
-static bool run_target_tests(const char *_Nonnull argument)
+static bool run_markdown_target_tests(const char *_Nonnull argument)
 {
-    if (strcmp(argument, "--markdown-rtf") == 0)
+    if (strcmp(argument, "--markdown-emission") == 0)
     {
-        run_markdown_suite();
+        run_markdown_tests();
+        printf("Markdown emission tests passed\n");
         return true;
     }
+    if (strcmp(argument, "--markdown-rtf") != 0)
+        return false;
+    run_markdown_suite();
+    return true;
+}
+
+static bool run_target_tests(const char *_Nonnull argument)
+{
+    if (run_markdown_target_tests(argument))
+        return true;
     if (strcmp(argument, "--commands-ui") == 0)
     {
         run_command_tests();

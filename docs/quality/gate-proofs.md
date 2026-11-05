@@ -1358,3 +1358,9 @@ NUL区切り+strlen候補は改善無しで不採用。全表/末尾sentinel/750
 
 テーマpreview/取消/本文だけの保存 257checks/1.056087秒、stderr空、子/補助/記録0。既存theme_preview_nativeへ通常Ctrl+Sの1世代保存/再保存無増分、入力面/未確定theme保持、取消後Undo/Redoを追加。
 製品/API/CMake/schema/timeout/data lock不変、規則/閾値/抑制変更なし。新ゲートではない。[品質記録](2026-11-05-theme-save.md)。
+
+## 2026-11-05 — #667 RTF数値出力
+
+同stackへ正順数字を作り一度append。既存markdown_testsに十進472境界とsticky OOM確認を追加し、--markdown-emissionは同試験を選択する。
+対象Debug/注入/symbol/250sample比較成功。初回補助CRLF/行数違反とfrexp interceptor通知は保全し、全sanitizer捕捉を保証しない。
+閾値/規則/抑制/新ゲートなし。[品質記録](2026-11-05-rtf-number.md)。
