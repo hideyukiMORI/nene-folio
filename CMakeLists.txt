@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.31)
 # 版はここが唯一の出どころ（DEVELOPMENT_WORKFLOW 第 9 節）。
-project(NeNeFolio VERSION 1.3.0 LANGUAGES C RC)
+project(NeNeFolio VERSION 1.3.1 LANGUAGES C RC)
 set(NENEFOLIO_VERSION_COMPONENTS)
 foreach(component MAJOR MINOR PATCH TWEAK)
     set(value "${PROJECT_VERSION_${component}}")
