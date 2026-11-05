@@ -1393,3 +1393,10 @@ NUL区切り+strlen候補は改善無しで不採用。全表/末尾sentinel/750
 既存theme_preview_native、418checks/1.304600秒成功、stderr空。
 通常WM_CLOSEによる本文保存/履歴全slot/revision+1と未確定theme非保存、root破棄/WM_QUIT0を隔離fixtureで固定。
 新ゲート/selector/閾値/抑制/API/schema変更なし。初回format停止も記録。[品質記録](2026-11-05-theme-close.md)。
+
+## 2026-11-05 — #679設定切替と編集履歴
+
+settings_edit_native、472checks/2.565864秒成功、stderr空。
+2状態で全boolean組合せ/3言語を選択し、保存設定と本文/選択/dirty/UndoRedo/focus/全履歴保持を確認。
+既存image_status_tests targetへselector/同data lock/30秒を2行追加、実生成CTest登録も照合する。
+閾値/抑制/API/schema変更なし。初回compile/静的解析停止も記録。[品質記録](2026-11-05-settings-edit.md)。

@@ -42,3 +42,10 @@ main6ab2539c6814da8ea15ce42e985373c5edadfe28（#675統合済み）から専用De
 初回format失敗、補助readの推測path/glob失敗も全体journalへ記録する。親単体、追加委任なし。
 ARC-001/004/008/011、C-005/008/012/014、QLT-008/010/012/013、GIT-001〜004。
 追加waiver none、既存WVR-0001継続。[日報](../reports/2026-11-05.md)・[引き継ぎ](../handoffs/2026-11-05.md)。
+
+## 19:06〜19:07 統合・全保全整理完了
+
+#677はPR678/head60c32ee3e2505d53af36267d94dffebac010ebde、最終CI42007198985 full-gate/check成功。
+mainf1b5a138916b7bbeceb2644887a9cfb5be212f1bへ正典統合、Issue677 CLOSED。#675通常exe/data32file bytes/hash/作成更新日時不変、通常app起動なし。
+1384file全保全ZIP再hash/取込tree/clean-untracked/ignored/link/稼働参照監査後、677専用worktree/outputを削除。
+branch/commitと初回format失敗を保持。原本D:/NeNeFolio/agents/677-theme-close/integration-completion.json。
