@@ -965,6 +965,29 @@ static void expect_replace_position(struct folio_window *_Nonnull window,
             "replacement leaves its input band open");
 }
 
+/* #691: Previewing after Undo must keep each replacement as one redoable edit. */
+static void redo_replacement(struct folio_window *_Nonnull window,
+                             struct native_fixture *_Nonnull fixture,
+                             const struct history_snapshot *_Nonnull snapshot,
+                             const wchar_t *_Nonnull expected)
+{
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    require(SendMessageW(body, EM_CANREDO, 0, 0) != 0, "undone replacement can be redone");
+    prepare_replacement(window, fixture->state);
+    surface_button(window, ACCESSIBLE_SURFACE_CLOSE);
+    expect_editor(window, fixture->state, replace_original, FOLIO_NOTE_SAME);
+    verify_history_unchanged(fixture, snapshot);
+    require(GetFocus() == body && SendMessageW(body, EM_CANREDO, 0, 0) != 0,
+            "closing replacement preview returns body focus and preserves Redo");
+    require(SendMessageW(body, EM_REDO, 0, 0) != 0, "redo replacement once");
+    pump(window);
+    expect_editor(window, fixture->state, expected, FOLIO_NOTE_CHANGED);
+    verify_history_unchanged(fixture, snapshot);
+    history_undo(window);
+    expect_editor(window, fixture->state, replace_original, FOLIO_NOTE_SAME);
+    verify_history_unchanged(fixture, snapshot);
+}
+
 static void replace_and_undo(struct folio_window *_Nonnull window,
                              struct native_fixture *_Nonnull fixture,
                              const struct history_snapshot *_Nonnull snapshot)
@@ -979,6 +1002,7 @@ static void replace_and_undo(struct folio_window *_Nonnull window,
     history_undo(window);
     expect_editor(window, fixture->state, replace_original, FOLIO_NOTE_SAME);
     verify_history_unchanged(fixture, snapshot);
+    redo_replacement(window, fixture, snapshot, L"1-猫-🐾\r 😀\r猫2 **saved**\r猫1 `old`");
     prepare_replacement(window, fixture->state);
     surface_button(window, ACCESSIBLE_SURFACE_REPLACE_ALL);
     expect_editor(window, fixture->state, replace_all, FOLIO_NOTE_CHANGED);
@@ -988,6 +1012,7 @@ static void replace_and_undo(struct folio_window *_Nonnull window,
     history_undo(window);
     expect_editor(window, fixture->state, replace_original, FOLIO_NOTE_SAME);
     verify_history_unchanged(fixture, snapshot);
+    redo_replacement(window, fixture, snapshot, replace_all);
 }
 
 static void save_replacement(struct folio_window *_Nonnull window,

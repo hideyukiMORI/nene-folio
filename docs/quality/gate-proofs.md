@@ -1432,3 +1432,9 @@ src/tests/eng/CMake不変、文書だけを収載。閾値/抑制/API/schema変�
 既存search_native、246checks/1.001543秒・stderr空。Undo後の公開検索と実Redo/Undo、全本文/dirty/全履歴保持を確認。
 初回変数位置誤りのcompile停止も記録し、最終sourceのDebug対象成功を照合。製品/CMake/selector/閾値/抑制変更なし。
 [品質記録](2026-11-05-search-redo.md)。
+
+## 2026-11-05 — #691置換下見後のRedo
+
+既存replace_native、237checks/1.355697秒・stderr空。1件/全置換のUndo後に下見開閉、実Redo/Undo、全本文/dirty/保存履歴保持を確認。
+初回引数指定ミスの補助入口停止/native未起動も記録し、訂正後の最終sourceを照合。製品/CMake/selector/閾値/抑制変更なし。
+[品質記録](2026-11-05-replace-redo.md)。

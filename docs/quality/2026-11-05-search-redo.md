@@ -43,3 +43,10 @@ branch/commitと初稿/全失敗を保持する。通常版の再buildは不要�
 実ノート/通常app/Storeを試験せず、#634保留を再開しない。性能効果は主張しない。親単体、追加委任なし。
 ARC-001/004/008/011、C-005/008/012/014、QLT-008/010/012/013、GIT-001〜004。
 追加waiver none、既存WVR-0001継続。[日報](../reports/2026-11-05.md)・[引き継ぎ](../handoffs/2026-11-05.md)。
+
+## 20:46〜20:47 統合・全保全整理完了
+
+#689はPR690/head0736efa348d42c2d3f81cc7f521f2fbc8aab517c、最終CI42020770511 full-gate/check成功。
+maine17c178d31d5d971459b66963ec7a2325d7ca420へ正典統合、Issue689 CLOSED。#683通常exe/data32file bytes/hash/作成更新日時不変。
+1388file全保全ZIP再hash/取込tree/clean-untracked/ignored/link/稼働参照監査後、689専用worktree/outputだけ削除。branch/commit保持。
+初回buildの誤宣言失敗も全実値とともに照合済み。原本D:/NeNeFolio/agents/689-search-redo/integration-completion.json。
