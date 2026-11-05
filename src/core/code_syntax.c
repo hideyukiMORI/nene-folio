@@ -79,7 +79,8 @@ static const char *_Nonnull token_style(enum code_token token)
 
 static void emit(struct code_syntax *_Nonnull syntax, enum code_token token, size_t start)
 {
-    text_buffer_append_text(syntax->out, token_style(token));
+    if (token != CODE_TOKEN_TEXT)
+        text_buffer_append_text(syntax->out, token_style(token));
     rtf_text_append(syntax->out, syntax->text + start, syntax->cursor - start);
     if (token != CODE_TOKEN_TEXT)
         text_buffer_append_text(syntax->out, "}");

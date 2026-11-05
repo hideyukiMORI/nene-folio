@@ -169,3 +169,9 @@ titleの開始引用符を見つける。通常本文の引用符へtoken増加�
 
 同じrtf_text_numberのstackへ十進数字を正順に作り、一度だけ既存text_bufferへ追加する。API/所有/RTF bytes/sticky OOMは不変。
 0/最大値/桁境界/成長境界472組と変換の失敗注入を既存markdown_testsで確認する。性能は数値batch改善の範囲に限定する。[品質記録](../quality/2026-11-05-rtf-number.md)。
+
+## 2026-11-05 の通常文字出力（#675）
+
+code_syntax.emitのTEXT tokenだけ、空styleの追加を省く。原文escapingと着色tokenの囲み、字句/状態/所有、公開APIは不変。
+--code-syntaxで既存着色試験を単独選択し、既存Markdownと確保失敗境界も確認する。
+42条件の全出力と比較/確認計測の限界は[品質記録](../quality/2026-11-05-syntax-text.md)へ。一般UI高速化は主張しない。

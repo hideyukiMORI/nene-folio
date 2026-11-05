@@ -110,3 +110,10 @@ auditは32fixture全hash、UTF8/独立escaping期待、全208raw/1040sampleのQP
 追加waiver none、既存WVR-0001継続。親単体、追加委任なし。通常app/実ノート/Store/#634保留試験は対象外。
 原本D:/NeNeFolio/agents/673-rtf-escape/、全体journalは同quality-20261105/journal.md。
 最終CI/統合/通常exe-data不変/全保全と専用worktree-output整理は同taskのintegration-completion.jsonへ。branch/commit保持。
+
+## 18:35 統合・全保全整理完了
+
+#673はPR674/head883fa105764901033aae70a9920f1c208559f093、最終CI42002490894 full-gate/check成功。
+main85d664408fee423e3339fe0e31544f54d010881aへ正典統合、Issue673 CLOSED。全候補不採用で製品差分0、通常exe/data32file不変。
+1357file/29525693bytes全保全ZIP再hash/取込tree/clean-untracked/ignored/link/稼働参照監査後、673専用worktree/outputのみ削除。
+branch/commit保持、原本D:/NeNeFolio/agents/673-rtf-escape/integration-completion.json。
