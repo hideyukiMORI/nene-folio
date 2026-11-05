@@ -1,10 +1,11 @@
 # いまの状態 — NeNe Folio
 
-## 2026-11-05 23:17以降 — 品質対応再開 / Store Pre-processing報告
+## 2026-11-06 — 品質対応を継続
 
-hide「お風呂に入ってくるので止めるまで進めて。」により継続品質対応を再開。現在のサナが単体で進め、保留事項は個別に維持する。
-#702は編集破棄時の実Undo/Redo消去・全文/dirty/focus・保存本文/全履歴保持を専用native試験で確認した（127checks、stderr空）。
-[品質記録](../quality/2026-11-05-discard-native.md)。最終CI・統合・整理の確定原本はD:/NeNeFolio/agents/702-discard-native/integration-completion.json。
+hideの11月5日23:17頃の継続指示と11月6日の「頑張って！」を受け、現在のサナが単体で進める。個別保留は維持する。
+#704は操作パレットの候補あり/なしからの取消で全文/選択/dirty/UndoRedo/focusと全保存本文/履歴保持を確認した（141checks、stderr空）。
+[品質記録](../quality/2026-11-06-palette-native.md)。最終CI・統合・整理の原本はD:/NeNeFolio/agents/704-palette-native/integration-completion.json。
+#702/PR703は最終CI42045853037成功、main82204cbへ統合・全保全整理済み。原本はD:/NeNeFolio/agents/702-discard-native/integration-completion.json。
 
 ## 公開済み1.3.1
 
@@ -25,7 +26,7 @@ Windows版は1.3.1.0。正規ZIP/MSIX生成、専用コピーでの起動・設�
 先頭絵文字などの費用も残り、65536単位の後方は+5.15%（18.32µs）。全数値・対象試験・静読の範囲は[検索検証の品質記録](../quality/2026-11-05-search-validation.md)へ。
 原本は `D:/NeNeFolio/agents/693-search-validation/integration-completion.json`。
 
-本日の完了履歴・不採用候補・全試行・保全先は[日報](../reports/2026-11-05.md)と[引き継ぎ](../handoffs/2026-11-05.md)から辿る。
+現在の履歴は[11月6日日報](../reports/2026-11-06.md)と[引き継ぎ](../handoffs/2026-11-06.md)。前日までの完了・不採用候補・全試行・保全先は[11月5日日報](../reports/2026-11-05.md)と[引き継ぎ](../handoffs/2026-11-05.md)から辿る。
 全体journalは `D:/NeNeFolio/agents/quality-20261105/journal.md`。停止記録#695の履歴は同agents/695-current-state/integration-completion.jsonから辿れる。
 主担当単体で実装・計測・検証し、必要な独立静読だけ委任した。追加waiver none、既存WVR-0001継続。
 
@@ -41,7 +42,7 @@ SHA256は `80633f7b61241e75577f2c4095fe87914a291c45e6b2027e63a3d98904f9bd8f`。#
 1.3.1の提出用MSIXと日本語・英語・簡体字の更新文は `D:/NeNeFolio/releases/1.3.1/store-candidate-20261105/` に準備済み。
 ZIPは `D:/NeNeFolio/releases/1.3.1/github/`。ZIP SHA256は `120968465a35664fa91ec300a18bbca699406c2c8a96b0c8ca4f4923c32535f7`、
 MSIX SHA256は `3b113aabfb8c88b00ad0bc6b0d0b19acf7670a881797c6df0fbf2e58f44f5326`。
-23:17頃のhide「Pre-processing」を、直前の1.3.1申請文脈の本人報告として記録した。原本はD:/NeNeFolio/agents/release-1.3.1-20261105/store-status.json。
+11月5日23:17頃のhide「Pre-processing」を、直前の1.3.1申請文脈の本人報告として記録した。原本はD:/NeNeFolio/agents/release-1.3.1-20261105/store-status.json。
 portal画面・提出package hash・申請番号・正確な申請時刻は独立未確認。認定・公開も未確認。配布確認はMSIX内payloadの起動であり、Store署名版導入ではない。
 
 [GitHub 1.3.0 Beta](https://github.com/hideyukiMORI/nene-folio/releases/tag/v1.3.0)は公開済み。配布source/tagは `4359e9e2268bdeef135a4630dbaa241d57c3063d`。

@@ -1469,3 +1469,11 @@ Windows専用desktop NeNeFolioImageStatus520、専用portable data初回0fileで
 破棄後の追記→Undo→Redoも全文/dirtyを確認し、全保存本文/5履歴slot/store_revisionは不変。127checks/0.691320秒、stderr空。
 同target/lock/30秒をCTestへ登録する。製品/閾値/抑制/API/schema変更なし。物理入力/IME・全DPI・無題/保存失敗の追加試験ではない。
 原本D:/NeNeFolio/agents/702-discard-native/。[品質記録](2026-11-05-discard-native.md)。
+
+## 2026-11-06 — #704操作パレットの取消と編集履歴
+
+Windows専用desktop NeNeFolioImageStatus520、専用portable data初回0file。既存image_status_tests --paletteは141checks/0.727768秒、終了0、stderr空。
+公開HELP actionから入力欄へwrite/不一致語を設定し、公開選択情報で候補の有無を確認。閉じるボタン/Escで取消する。
+変更状態とRedo保有状態の全文/非空選択/dirty/UndoRedo/focus、全保存本文/5履歴slot/store_revisionを保持し、最後の実Redo/Undoも確認。
+同target/lock/30秒の登録。製品/閾値/抑制/API/schema変更なし。物理Ctrl+P/IME・全DPI・操作実行の追加保証ではない。
+原本D:/NeNeFolio/agents/704-palette-native/。[品質記録](2026-11-06-palette-native.md)。
