@@ -1,4 +1,5 @@
 /* #504: UIAの公開境界を実windowへ接続し、行の重複と循環を有限workで拒否する。 */
+#include "accessibility_node.h"
 #include "accessible_request.h"
 #include "accessible_surface_button.h"
 #include "accessible_view.h"
@@ -190,6 +191,98 @@ static void verify_buttons(struct folio_window *_Nonnull window,
     }
 }
 
+/* #641: 同じwindowで再開した設定へ、前の世代の公開参照を転用しない。 */
+static void verify_expired(struct folio_window *_Nonnull window, struct accessible_item item)
+{
+    struct accessible_view view = {0};
+    require(folio_window_accessible_read(window, &item, &view) == accessibility_node_unavailable,
+            "old settings reference is unavailable");
+    const enum accessible_navigation directions[] = {
+        ACCESSIBLE_NAVIGATION_PARENT, ACCESSIBLE_NAVIGATION_NEXT, ACCESSIBLE_NAVIGATION_PREVIOUS,
+        ACCESSIBLE_NAVIGATION_FIRST, ACCESSIBLE_NAVIGATION_LAST};
+    for (size_t index = 0; index < sizeof directions / sizeof directions[0]; ++index)
+    {
+        struct accessible_item adjacent;
+        require(folio_window_accessible_navigate(window, &item, directions[index], &adjacent) ==
+                    accessibility_node_unavailable,
+                "old settings reference cannot navigate");
+    }
+    struct accessible_request request = {.item = item, .action = ACCESSIBLE_ACTION_FOCUS};
+    require(folio_window_accessible_action(window, &request) == accessibility_node_unavailable,
+            "old settings reference cannot focus");
+}
+
+static struct accessible_item close_button(uint64_t revision)
+{
+    return (struct accessible_item){
+        .kind = ACCESSIBLE_SURFACE_BUTTON, .slot = ACCESSIBLE_SURFACE_CLOSE, .revision = revision};
+}
+
+static void verify_retired(struct folio_window *_Nonnull window, struct accessible_item list,
+                           const struct accessible_item *_Nonnull rows)
+{
+    verify_expired(window, list);
+    verify_expired(window, close_button(list.revision));
+    for (size_t index = 0; index < sizeof row_names / sizeof row_names[0]; ++index)
+        verify_expired(window, rows[index]);
+}
+
+static void verify_root(struct folio_window *_Nonnull window, bool closed)
+{
+    struct accessible_item root = {.kind = ACCESSIBLE_SURFACE};
+    struct accessible_view view = {0};
+    require(folio_window_accessible_read(window, &root, &view) == S_OK && view.offscreen == closed,
+            "stable surface root follows the current open state");
+}
+
+static struct accessible_item verify_open(struct folio_window *_Nonnull window,
+                                          struct accessible_item *_Nonnull rows,
+                                          enum folio_language language)
+{
+    invoke(window, (struct accessible_item){.kind = ACCESSIBLE_SETTINGS});
+    struct accessible_item list = {.kind = ACCESSIBLE_SURFACE_LIST,
+                                   .revision = folio_window_accessible_surface_revision(window)};
+    size_t count = walk(window, list, rows, language);
+    reverse_walk(window, list, rows, count);
+    verify_buttons(window, rows);
+    verify_root(window, false);
+    return list;
+}
+
+static void verify_reopen(struct folio_window *_Nonnull window, struct accessible_item previous,
+                          const struct accessible_item *_Nonnull old_rows,
+                          enum folio_language language)
+{
+    struct accessible_item rows[sizeof row_names / sizeof row_names[0]];
+    struct accessible_item current = verify_open(window, rows, language);
+    require(current.revision != previous.revision, "reopened settings have a new generation");
+    for (size_t index = 0; index < sizeof rows / sizeof rows[0]; ++index)
+        require(rows[index].kind == old_rows[index].kind &&
+                    rows[index].slot == old_rows[index].slot &&
+                    rows[index].revision == current.revision &&
+                    !accessible_item_equal(rows[index], old_rows[index]),
+                "same setting row has a distinct current identity");
+    struct accessible_item focused;
+    require(folio_window_accessible_focus(window, ACCESSIBLE_SURFACE, &focused) == S_OK,
+            "current setting has focus before old requests");
+    verify_retired(window, previous, old_rows);
+    struct accessible_request request = {.item = close_button(previous.revision),
+                                         .action = ACCESSIBLE_ACTION_INVOKE};
+    require(folio_window_accessible_action(window, &request) == accessibility_node_unavailable,
+            "old close button cannot close reopened settings");
+    pump(window);
+    require(folio_window_accessible_surface_revision(window) == current.revision,
+            "old close request preserves the current generation");
+    struct accessible_item after;
+    require(folio_window_accessible_focus(window, ACCESSIBLE_SURFACE, &after) == S_OK &&
+                accessible_item_equal(focused, after),
+            "old requests preserve current settings focus");
+    verify_root(window, false);
+    verify_row(window, rows[0], 0, language);
+    invoke(window, close_button(current.revision));
+    verify_root(window, true);
+}
+
 static void verify_language(struct native_fixture *_Nonnull fixture, enum folio_language language)
 {
     require(folio_state_set_language(fixture->state, language) == FOLIO_STATE_READY, "language");
@@ -200,19 +293,12 @@ static void verify_language(struct native_fixture *_Nonnull fixture, enum folio_
         fprintf(stderr, "window outcome=%u native_error=%lu\n", (unsigned)created, GetLastError());
     require(created == FOLIO_WINDOW_CREATED, "real window");
     pump(window);
-    invoke(window, (struct accessible_item){.kind = ACCESSIBLE_SETTINGS});
-    uint64_t revision = folio_window_accessible_surface_revision(window);
-    struct accessible_item list = {.kind = ACCESSIBLE_SURFACE_LIST, .revision = revision};
     struct accessible_item rows[sizeof row_names / sizeof row_names[0]];
-    size_t count = walk(window, list, rows, language);
-    reverse_walk(window, list, rows, count);
-    verify_buttons(window, rows);
-    invoke(window, (struct accessible_item){.kind = ACCESSIBLE_SURFACE_BUTTON,
-                                            .slot = ACCESSIBLE_SURFACE_CLOSE,
-                                            .revision = revision});
-    struct accessible_view view = {0};
-    require(FAILED(folio_window_accessible_read(window, &rows[count - 1], &view)),
-            "closed setting references are invalid");
+    struct accessible_item list = verify_open(window, rows, language);
+    invoke(window, close_button(list.revision));
+    verify_retired(window, list, rows);
+    verify_root(window, true);
+    verify_reopen(window, list, rows, language);
     folio_window_destroy(window);
 }
 

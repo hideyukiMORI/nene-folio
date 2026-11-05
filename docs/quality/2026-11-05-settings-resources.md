@@ -62,3 +62,11 @@ contract-02は637checks/9.050630秒成功。両方とも55/36/267が前後一致
 最終head必須CIのeng/check.ps1、正典統合、通常exe/data32file不変、全保全/hash再照合と
 専用領域整理は同taskのintegration-completion.jsonで確定する。branch/commitは保持する。
 #634は保留を維持し追加build/runを行っていない。
+
+## 13:10 統合・保全整理完了
+
+PR640 head436301fe9028f707c21c4a6a6b14817a8ed1f957の必須CI41965392019 full-gate/check成功、
+main6d10a210fa32bedfeecaed79c0c6c6fa9bff7071へ正典統合、Issue639 CLOSED。
+通常exe/data32fileは#635後のbytes/hash/作成更新日時と一致、通常app起動なし。
+1,361file全保全ZIPを再hash照合し、取込tree/clean/ignored/link/稼働参照を監査後、専用worktree/outputを削除。
+branch/commit保持。初回observe未完了も含む確定原本は同taskのintegration-completion.json。

@@ -1260,3 +1260,11 @@ Debug/tidy/--drawer-layout成功、初回test nesting/audit補助の失敗も保
 初回39window観測の30秒未完了は保持し、30秒上限/閾値/除外は変更していない。製品不変。
 条件/試行/有限範囲の限界は[品質記録](2026-11-05-settings-resources.md)。
 最終head必須CI/統合/通常exe-data不変/全保全整理は639/integration-completion.jsonへ。
+
+## 2026-11-05 #641 — 設定を再開した後の世代
+
+同じwindowで設定を再開し、旧9行/list/closeの読取・全5navigate・focusを正確なunavailableで拒否する。
+旧close Invokeは現在の世代/focusを変えず、新行の名前・巡回・矩形とrootの開閉状態も確認。
+Debug/tidy/対象2299checks成功、資源55/36/267前後一致、stderr空。製品・ゲート変更なし。
+初回入力準備/SDK定数重複link失敗も保持。範囲と限界は[品質記録](2026-11-05-settings-reopen.md)。
+最終head必須CI/統合/通常exe-data不変/全保全整理は641/integration-completion.jsonへ。
