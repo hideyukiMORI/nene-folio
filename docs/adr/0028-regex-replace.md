@@ -259,3 +259,9 @@ U+FFFDを空白へ変えず、U+000BとCRの区別・UTF-16位置を保持する
 既存image_status_testsにreplace_nativeを追加し、実window/ICUと公開入力・ボタンから1件/全置換、各Undo一回、
 CR挿入とUnicode全文/caret/件数、保存前の全履歴不変、明示保存の1世代更新を確認する。
 既存30秒/data lockを共有し、製品契約と実装は変更しない。[品質記録](../quality/2026-11-05-replace-native.md)。
+
+## 2026-11-05 — 下見開閉後のRedo（#691）
+
+既存replace_nativeを拡張し、1件/全置換のUndo後に下見を開閉してもRedoを保持することを確認する。
+実Redo一回で置換後の全本文、再Undo一回で元本文へ戻り、各段階のdirtyと全保存履歴/revisionも照合する。
+決定7の一単位の編集と保存しない既存経路の回帰で、製品/CMake/selector/API/schema変更なし。[品質記録](../quality/2026-11-05-replace-redo.md)。
