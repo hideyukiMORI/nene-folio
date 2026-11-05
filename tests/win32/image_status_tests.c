@@ -6,6 +6,7 @@
 #include "file_bytes.h"
 #include "file_times.h"
 #include "folio_menu_action.h"
+#include "folio_settings.h"
 #include "folio_state.h"
 #include "folio_window.h"
 #include "font_bundle.h"
@@ -1471,6 +1472,18 @@ static void expect_theme_settings(struct native_fixture *_Nonnull fixture,
     file_bytes_destroy(after);
 }
 
+static struct accessible_item theme_choice_row(struct folio_window *_Nonnull window)
+{
+    struct accessible_item list = {.kind = ACCESSIBLE_SURFACE_LIST,
+                                   .revision = folio_window_accessible_surface_revision(window)};
+    struct accessible_item row;
+    require(folio_window_accessible_navigate(window, &list, ACCESSIBLE_NAVIGATION_FIRST, &row) ==
+                    S_OK &&
+                row.kind == ACCESSIBLE_SURFACE_CHOICE,
+            "filtered theme exposes its public choice row");
+    return row;
+}
+
 static void preview_theme_candidate(struct folio_window *_Nonnull window,
                                     struct folio_state *_Nonnull state,
                                     enum folio_theme_choice saved)
@@ -1480,13 +1493,7 @@ static void preview_theme_candidate(struct folio_window *_Nonnull window,
     HWND input = folio_window_accessible_window(window, ACCESSIBLE_COMMAND_INPUT);
     require(input != nullptr && SetWindowTextW(input, name), "filter a normal theme candidate");
     pump(window);
-    struct accessible_item list = {.kind = ACCESSIBLE_SURFACE_LIST,
-                                   .revision = folio_window_accessible_surface_revision(window)};
-    struct accessible_item row;
-    require(folio_window_accessible_navigate(window, &list, ACCESSIBLE_NAVIGATION_FIRST, &row) ==
-                    S_OK &&
-                row.kind == ACCESSIBLE_SURFACE_CHOICE,
-            "filtered theme exposes its public choice row");
+    struct accessible_item row = theme_choice_row(window);
     struct accessible_view view;
     require(folio_window_accessible_read(window, &row, &view) == S_OK &&
                 wcscmp((const wchar_t *)view.name, name) == 0,
@@ -1619,7 +1626,111 @@ static void theme_save_cycle(struct folio_window *_Nonnull window,
     expect_theme_restored(fixture, theme);
 }
 
-/* #661/#665: Preview cancellation and body-only save retain native editing history. */
+static struct folio_settings *_Nonnull saved_theme_settings(struct native_fixture *_Nonnull fixture)
+{
+    struct persistence_port disk = persistence_adapter_port(fixture->files);
+    struct folio_settings *settings = nullptr;
+    require(disk.read_settings(disk.adapter, &settings) == PERSISTENCE_LOADED &&
+                settings != nullptr,
+            "load the dedicated saved settings through the real adapter");
+    return settings;
+}
+
+static void expect_committed_theme(struct native_fixture *_Nonnull fixture,
+                                   const struct folio_settings *_Nonnull before,
+                                   enum folio_theme_choice expected)
+{
+    struct folio_settings *after = saved_theme_settings(fixture);
+    require(folio_settings_theme(after) == expected &&
+                folio_state_theme_choice(fixture->state) == expected,
+            "Invoke commits the expected theme to state and disk");
+    require(folio_settings_number(after) == folio_settings_number(before) &&
+                folio_settings_minimap(after) == folio_settings_minimap(before) &&
+                folio_settings_language(after) == folio_settings_language(before),
+            "theme commit retains every other saved setting");
+    folio_settings_destroy(after);
+}
+
+static void invoke_theme_candidate(struct folio_window *_Nonnull window,
+                                   struct native_fixture *_Nonnull fixture,
+                                   const struct folio_settings *_Nonnull before,
+                                   enum folio_theme_choice expected)
+{
+    HWND input = folio_window_accessible_window(window, ACCESSIBLE_COMMAND_INPUT);
+    SetFocus(input);
+    SendMessageW(input, EM_SETSEL, 1, 3);
+    struct native_body_snapshot opened = {0};
+    capture_native_body(window, &opened);
+    struct accessible_request request = {.item = theme_choice_row(window),
+                                         .action = ACCESSIBLE_ACTION_INVOKE};
+    require(folio_window_accessible_action(window, &request) == S_OK,
+            "Invoke commits the current public theme candidate");
+    pump(window);
+    wchar_t query[16];
+    DWORD start = 0;
+    DWORD end = 0;
+    SendMessageW(input, EM_GETSEL, (WPARAM)&start, (LPARAM)&end);
+    const wchar_t *name = expected == FOLIO_THEME_CHOICE_NORD ? L"nord" : L"dracula";
+    require(IsWindowVisible(input) && GetWindowTextW(input, query, 16) > 0 &&
+                wcscmp(query, name) == 0 && start == 1 && end == 3 && GetFocus() == input,
+            "theme commit keeps the open query, selection and focus");
+    struct accessible_item row = theme_choice_row(window);
+    struct accessible_view view;
+    require(folio_window_accessible_read(window, &row, &view) == S_OK && view.selected,
+            "the committed theme row exposes its saved selection mark");
+    expect_native_body(window, &opened);
+    expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_CHANGED);
+    expect_committed_theme(fixture, before, expected);
+}
+
+static void theme_commit_cycle(struct folio_window *_Nonnull window,
+                               struct native_fixture *_Nonnull fixture)
+{
+    struct history_snapshot history = {0};
+    capture_history(fixture, &history);
+    struct folio_settings *before = saved_theme_settings(fixture);
+    enum folio_theme_choice expected = folio_settings_theme(before) != FOLIO_THEME_CHOICE_NORD
+                                           ? FOLIO_THEME_CHOICE_NORD
+                                           : FOLIO_THEME_CHOICE_DRACULA;
+    history_undo(window);
+    expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_CHANGED);
+    struct native_body_snapshot closed = {0};
+    capture_native_body(window, &closed);
+    struct accessible_request settings = {.item = {.kind = ACCESSIBLE_SETTINGS},
+                                          .action = ACCESSIBLE_ACTION_INVOKE};
+    require(folio_window_accessible_action(window, &settings) == S_OK,
+            "open settings with an unsaved native edit before theme commit");
+    pump(window);
+    surface_button(window, ACCESSIBLE_SURFACE_THEME);
+    preview_theme_candidate(window, fixture->state, folio_settings_theme(before));
+    invoke_theme_candidate(window, fixture, before, expected);
+    verify_history_unchanged(fixture, &history);
+    struct theme_snapshot committed = {.choice = expected,
+                                       .theme = folio_state_theme(fixture->state),
+                                       .palette = *folio_state_palette(fixture->state),
+                                       .settings = read_theme_settings(fixture)};
+    preview_theme_candidate(window, fixture->state, expected);
+    expect_theme_settings(fixture, &committed);
+    surface_button(window, ACCESSIBLE_SURFACE_CLOSE);
+    expect_native_body(window, &closed);
+    expect_theme_restored(fixture, &committed);
+    expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_CHANGED);
+    verify_history_unchanged(fixture, &history);
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    require(SendMessageW(body, EM_REDO, 0, 0) != 0, "Redo succeeds after theme commit and cancel");
+    pump(window);
+    expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_SAME);
+    history_undo(window);
+    expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_CHANGED);
+    verify_history_unchanged(fixture, &history);
+    expect_theme_restored(fixture, &committed);
+    file_bytes_destroy(committed.settings);
+    folio_settings_destroy(before);
+    for (size_t version = 0; version <= note_history_depth; ++version)
+        note_text_destroy(history.files[version]);
+}
+
+/* #661/#665/#671: Theme preview, body save and commit retain native editing history. */
 static void run_theme_preview_case(struct native_fixture *_Nonnull fixture)
 {
     require(folio_state_select_note(fixture->state, 0, 0, FOLIO_UNTITLED_PROTECT) ==
@@ -1650,6 +1761,7 @@ static void run_theme_preview_case(struct native_fixture *_Nonnull fixture)
     verify_history_unchanged(fixture, &history);
     expect_theme_restored(fixture, &snapshot);
     theme_save_cycle(window, fixture, &snapshot, &history);
+    theme_commit_cycle(window, fixture);
     require(controlled.requests == 0, "plain theme preview does not request image work");
     file_bytes_destroy(snapshot.settings);
     folio_window_destroy(window);
