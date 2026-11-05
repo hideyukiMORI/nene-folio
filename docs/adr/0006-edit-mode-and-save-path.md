@@ -222,3 +222,10 @@ EM_STREAMINの文字数・dwError・供給完了と書込可能化を確認し�
 編集用RTFの段落開始だけを閲覧用から分け、`\pard\sb0\sa0\sl240\slmult1\cf1` とする。
 閲覧用の段落後8pt・1.25行送りを生テキストの各行へ持ち込まない。自然な1行送りを使い、固定高さでCJKの字形を切らない。
 fonttbl/colortbl・UTF-8 escape・改行・流し込み・保存/Undoは同じ経路を維持する。
+
+## 2026-11-05 モード選択と一世代保存のnative回帰（#685）
+
+note_mode_nativeで同EDITが未保存本文/選択/UndoRedoを保持し、VIEWで一世代保存、同VIEW/変更なし往復で追加保存しないことを確認する。
+実本文と全履歴slot/store_revision、表示全文/readonly、EDITでのMarkdown原文復帰も比較する。
+正常な名前付き本文の保存成功経路を対象とし、無題/失敗等の新しい契約は追加しない。
+[品質記録](../quality/2026-11-05-mode-save.md)。

@@ -1413,3 +1413,10 @@ settings_edit_native、472checks/2.565864秒成功、stderr空。
 12通常UTF8文書/24条件/1080sampleのpredicate/全文RTF一致、36filehash/20MAP/同vector/archive/最終sourceを照合。
 既存--markdown-emissionのDebug/active確保注入、symbols0違反。測定版通知1行も保持。
 新gate/selector/test/閾値/抑制なし。実RichEdit速度の確認とはしない。[品質記録](2026-11-05-table-candidate.md)。
+
+## 2026-11-05 — #685モード選択と一世代保存
+
+note_mode_native、205checks/1.036016秒成功、stderr空。
+同EDITの2編集状態保持、実Redo→VIEW一世代保存、同VIEW/変更なし往復を全本文/全履歴で確認する。
+同target/lock/30秒をCTest2行で登録し、生成登録も読み取り照合。製品/閾値/抑制/API/schema不変。
+[品質記録](2026-11-05-mode-save.md)。
