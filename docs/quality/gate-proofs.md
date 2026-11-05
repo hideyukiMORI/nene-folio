@@ -1364,3 +1364,8 @@ NUL区切り+strlen候補は改善無しで不採用。全表/末尾sentinel/750
 同stackへ正順数字を作り一度append。既存markdown_testsに十進472境界とsticky OOM確認を追加し、--markdown-emissionは同試験を選択する。
 対象Debug/注入/symbol/250sample比較成功。初回補助CRLF/行数違反とfrexp interceptor通知は保全し、全sanitizer捕捉を保証しない。
 閾値/規則/抑制/新ゲートなし。[品質記録](2026-11-05-rtf-number.md)。
+
+## 2026-11-05 — #669計測表の候補識別
+
+#647の不採用候補1表が説明文へ入った文書誤りを訂正。既存192raw/960sampleから中央値/比を再計算し、48行は数値不変と照合する。
+採用候補3と不採用候補1の見出し・測定時点を分ける。文書のみ、製品試験・再計測・新ゲート無し。[品質記録](2026-11-05-editor-eligibility.md)。
