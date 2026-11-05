@@ -96,3 +96,12 @@ Debug/ASan/UBSan/nullability/no-recover、clang-tidy、警告error、5変更C/he
 hideは12時頃、安全判定の通知を共有した後、通常の品質対応を安全に続けるよう指定した。
 #634のJSON変異試験は生成とobserver構築途中で保留し、未実行の比較を成功扱いしない。
 同試験の再実行・言い換え・別モデルによる判定回避は行わず、今回の通常一覧の確認とは分けて記録する。
+
+## 統合・通常反映・保全整理の確定
+
+PR636最終headc04338adのCI41961125755 full-gate/check成功、main9a84bebへ正典統合、Issue635 CLOSED。
+通常build/check成功、data32fileのbytes/hash/作成更新日時不変、通常app起動無し。
+1457fileをZIPへ全保全・hash照合し、取込tree/dirty/ignored/リンク/稼働参照を確認後、専用worktree/outputのみ削除。
+branch/commit保持。原本D:/NeNeFolio/agents/635-drawer-hit-lookup/integration-completion.json。
+後続#637の[配置準備の計測](2026-11-05-drawer-preparation.md)では、hitの前後にあるcreate/mark/scroll/destroyを区別した。
+単独hitの速度倍率を、UI全体や毎回の配置準備を含む速度倍率として扱わない。
