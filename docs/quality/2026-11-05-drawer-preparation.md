@@ -117,3 +117,11 @@ pipeline約0.18µsだった。展開した大きな一覧では名前の長さ�
 最終headの必須CIは従来どおりFile APIのbuild graphを含むeng/check.ps1全体を実行する。
 最終head必須CI/統合/通常exe-data不変/全保全/専用領域整理は同taskのintegration-completion.jsonで確定する。
 branch/commitは保持。#634の保留試験の追加build/runは行っていない。
+
+## 12:45 統合・保全整理完了
+
+PR638 head eb4163c8e29b457e5fb511fa1f540afe4e3920f9の必須CI41962853025 full-gate/check成功、
+main332ad35d9d8565721f8ff155669577af6fb6ba64へ正典統合、Issue637 CLOSED。
+通常exe/data32fileは#635反映後のbytes/hash/作成更新日時と一致。通常app起動なし。
+1,340file全保全ZIPを再hash照合し、取込tree/clean/ignored/link/稼働参照を監査後、専用worktree/outputを削除。
+branch/commit保持。初回conformance失敗も含む確定原本は同taskのintegration-completion.json。
