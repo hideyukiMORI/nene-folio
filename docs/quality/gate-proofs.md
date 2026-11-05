@@ -1325,3 +1325,10 @@ CTest replace_nativeを既存30秒/image_status_data lockへ追加。製品/API/
 検索161checks、共用ボタンの置換153checks成功、stderr空。検索後のUndo一回で事前の未保存挿入だけが戻る。
 CTest search_nativeを既存30秒/image_status_data lockへ追加。製品コメント以外のロジック/API/schema/ゲート不変。
 範囲は[品質記録](2026-11-05-search-native.md)。最終CI/統合/保全整理は655/integration-completion.jsonへ。
+
+## 2026-11-05 #657 — 同一再選択と別ノートへの保存
+
+固定Debug/tidy、専用desktop/data、実window/persistenceの公開EDIT/NOTE SELECT・INVOKEを使用。
+同一ノートの未保存本文/選択/Undo/保存保持、別ノートへの1世代保存/履歴回転、無変更からの復帰で世代不増、文書間Undo初期化を確認する。
+ノート切替152checks/1.707116秒、二本目を残した既存画像fixture75checks/1.267154秒。両stderr空、子/補助/記録0。製品/ゲート/30秒/data lock不変、対象失敗なし。
+範囲は[品質記録](2026-11-05-note-switch.md)。最終CI/統合/保全整理は657/integration-completion.jsonへ。

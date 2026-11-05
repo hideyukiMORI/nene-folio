@@ -45,10 +45,15 @@ static bool diagram_case;
 static bool history_case;
 static bool replace_case;
 static bool search_case;
+static bool note_switch_case;
 
 static const char history_current[] = "# Current 日本語 😀 **saved**";
 static const char history_previous[] = "> Previous 猫 🐾 `old`";
 static const char history_oldest[] = "- Oldest 履歴 🌸";
+static const char switch_other[] = "> Other 別ノート 🐾";
+static const char switch_saved[] = "# Current 日本語 😀 **saved** 追記 🙂";
+static const wchar_t switch_original[] = L"# Current 日本語 😀 **saved**";
+static const wchar_t switch_edited[] = L"# Current 日本語 😀 **saved** 追記 🙂";
 static const char search_current[] = "猫 😀 aaaa 日本語";
 static const wchar_t search_original[] = L"猫 😀 aaaa 日本語";
 static const wchar_t search_edited[] = L"猫 😀 aaaa 日本語 🐾";
@@ -91,10 +96,10 @@ static void seed_notes(struct persistence_port disk)
     const char *source =
         diagram_case ? "Body before diagrams\n\n```mermaid\nflowchart LR\nA --> B\n```\n\nAfter\n"
                      : "Body before images\n\n![alt](images/one.png)\n\nBody after images\n";
-    if (history_case || replace_case || search_case)
+    if (history_case || replace_case || search_case || note_switch_case)
     {
         seed_history(disk);
-        source = history_case ? history_current : replace_current;
+        source = history_case || note_switch_case ? history_current : replace_current;
     }
     if (search_case)
         source = search_current;
@@ -103,6 +108,15 @@ static void seed_notes(struct persistence_port disk)
     require(disk.write_note(disk.adapter, "schedule", "one", body) == PERSISTENCE_STORED,
             "image note stored");
     note_text_destroy(body);
+    if (note_switch_case)
+    {
+        body = nullptr;
+        require(note_text_create(switch_other, strlen(switch_other), &body) == NOTE_TEXT_ACCEPTED,
+                "valid second note");
+        require(disk.write_note(disk.adapter, "schedule", "two", body) == PERSISTENCE_STORED,
+                "second dedicated note stored");
+        note_text_destroy(body);
+    }
 }
 struct image_adapter
 {
@@ -1137,6 +1151,137 @@ static void run_search_case(struct native_fixture *_Nonnull fixture)
         note_text_destroy(snapshot.files[version]);
 }
 
+static void choose_note(struct folio_window *_Nonnull window, size_t index,
+                        enum accessible_action operation)
+{
+    struct accessible_request request = {
+        .item = {.kind = ACCESSIBLE_NOTE,
+                 .ref = {.category = 0, .note = index},
+                 .revision = folio_window_accessible_revision(window)},
+        .action = operation};
+    require(folio_window_accessible_action(window, &request) == S_OK,
+            "select or invoke the current public note row");
+    pump(window);
+}
+
+static void expect_other_unchanged(struct native_fixture *_Nonnull fixture)
+{
+    struct persistence_port disk = persistence_adapter_port(fixture->files);
+    struct note_text *body = nullptr;
+    require(disk.read_note(disk.adapter, "schedule", "two", &body) == PERSISTENCE_LOADED &&
+                body != nullptr,
+            "second note remains readable");
+    require(note_text_file_length(body) == strlen(switch_other) &&
+                memcmp(note_text_file_bytes(body), switch_other, strlen(switch_other)) == 0,
+            "second note retains all stored bytes");
+    note_text_destroy(body);
+    for (size_t version = 1; version <= note_history_depth; ++version)
+    {
+        body = nullptr;
+        struct history_version which = {.category = "schedule", .note = "two", .version = version};
+        require(disk.read_history(disk.adapter, &which, &body) == PERSISTENCE_ABSENT &&
+                    body == nullptr,
+                "unchanged second note has no saved history");
+        note_text_destroy(body);
+    }
+}
+
+static void append_switch_text(struct folio_window *_Nonnull window)
+{
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    CHARRANGE end = {.cpMin = -1, .cpMax = -1};
+    SendMessageW(body, EM_EXSETSEL, 0, (LPARAM)&end);
+    SendMessageW(body, EM_REPLACESEL, TRUE, (LPARAM)L" 追記 🙂");
+    pump(window);
+}
+
+static void reselect_unsaved(struct folio_window *_Nonnull window,
+                             struct native_fixture *_Nonnull fixture,
+                             const struct history_snapshot *_Nonnull snapshot)
+{
+    append_switch_text(window);
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    CHARRANGE before = {.cpMin = 10, .cpMax = 12};
+    SendMessageW(body, EM_EXSETSEL, 0, (LPARAM)&before);
+    const enum accessible_action operations[] = {ACCESSIBLE_ACTION_SELECT,
+                                                 ACCESSIBLE_ACTION_INVOKE};
+    for (size_t index = 0; index < sizeof operations / sizeof operations[0]; ++index)
+    {
+        choose_note(window, 0, operations[index]);
+        expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_CHANGED);
+        CHARRANGE selected = {0};
+        SendMessageW(body, EM_EXGETSEL, 0, (LPARAM)&selected);
+        require(selected.cpMin == before.cpMin && selected.cpMax == before.cpMax &&
+                    SendMessageW(body, EM_CANUNDO, 0, 0) != 0,
+                "same-note selection preserves the native selection and Undo");
+        verify_history_unchanged(fixture, snapshot);
+        expect_other_unchanged(fixture);
+    }
+    history_undo(window);
+    expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_SAME);
+    verify_history_unchanged(fixture, snapshot);
+}
+
+static void switch_and_return(struct folio_window *_Nonnull window,
+                              struct native_fixture *_Nonnull fixture,
+                              const struct history_snapshot *_Nonnull snapshot)
+{
+    append_switch_text(window);
+    expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_CHANGED);
+    choose_note(window, 1, ACCESSIBLE_ACTION_SELECT);
+    expect_editor(window, fixture->state, L"> Other 別ノート 🐾", FOLIO_NOTE_SAME);
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    require(SendMessageW(body, EM_CANUNDO, 0, 0) == 0,
+            "the next note cannot undo the previous document edit");
+    require(folio_state_store_revision(fixture->state) == snapshot->store_revision + 1,
+            "changing note stores the previous edit exactly once");
+    struct persistence_port disk = persistence_adapter_port(fixture->files);
+    struct note_text *saved = nullptr;
+    require(note_text_create(switch_saved, strlen(switch_saved), &saved) == NOTE_TEXT_ACCEPTED,
+            "valid saved note expectation");
+    expect_history_file(disk, 0, saved);
+    for (size_t version = 1; version <= note_history_depth; ++version)
+        expect_history_file(disk, version, snapshot->files[version - 1]);
+    expect_other_unchanged(fixture);
+    choose_note(window, 0, ACCESSIBLE_ACTION_INVOKE);
+    expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_SAME);
+    require(SendMessageW(body, EM_CANUNDO, 0, 0) == 0 && GetFocus() == body,
+            "Invoke focuses the reloaded note with a fresh Undo history");
+    require(folio_state_store_revision(fixture->state) == snapshot->store_revision + 1,
+            "leaving an unchanged note does not publish another save");
+    expect_history_file(disk, 0, saved);
+    for (size_t version = 1; version <= note_history_depth; ++version)
+        expect_history_file(disk, version, snapshot->files[version - 1]);
+    expect_other_unchanged(fixture);
+    note_text_destroy(saved);
+}
+
+static void run_note_switch_case(struct native_fixture *_Nonnull fixture)
+{
+    require(strcmp(folio_state_note_name(fixture->state, (struct note_ref){0, 0}), "one") == 0 &&
+                strcmp(folio_state_note_name(fixture->state, (struct note_ref){0, 1}), "two") == 0,
+            "dedicated note order is stable");
+    require(folio_state_select_note(fixture->state, 0, 0, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
+            "select the dedicated first note");
+    struct history_snapshot snapshot = {0};
+    capture_history(fixture, &snapshot);
+    struct folio_window *window = nullptr;
+    require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
+                FOLIO_WINDOW_CREATED,
+            "real note switching window");
+    pump(window);
+    action(window, ACCESSIBLE_EDIT);
+    expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_SAME);
+    expect_other_unchanged(fixture);
+    reselect_unsaved(window, fixture, &snapshot);
+    switch_and_return(window, fixture, &snapshot);
+    require(controlled.requests == 0, "plain note switching does not request image work");
+    folio_window_destroy(window);
+    for (size_t version = 0; version <= note_history_depth; ++version)
+        note_text_destroy(snapshot.files[version]);
+}
+
 static void run_fixture(struct native_fixture *_Nonnull fixture, int argc,
                         char *_Nonnull *_Nonnull argv)
 {
@@ -1148,6 +1293,8 @@ static void run_fixture(struct native_fixture *_Nonnull fixture, int argc,
         run_replace_case(fixture);
     else if (search_case)
         run_search_case(fixture);
+    else if (note_switch_case)
+        run_note_switch_case(fixture);
     else if (argc == 2 && strcmp(argv[1], "--icon") == 0)
         window_icons(fixture);
     else if (argc == 2)
@@ -1171,6 +1318,7 @@ int main(int argc, char *_Nonnull *_Nonnull argv)
     history_case = argc == 2 && strcmp(argv[1], "--history") == 0;
     replace_case = argc == 2 && strcmp(argv[1], "--replace") == 0;
     search_case = argc == 2 && strcmp(argv[1], "--search") == 0;
+    note_switch_case = argc == 2 && strcmp(argv[1], "--note-switch") == 0;
     struct native_fixture fixture = {0};
     create_fixture(&fixture);
     run_fixture(&fixture, argc, argv);

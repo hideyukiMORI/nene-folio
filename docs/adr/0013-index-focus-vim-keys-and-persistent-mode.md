@@ -104,3 +104,10 @@ modal・IME変換・本文投入・終了処理中は背後への移動/操作�
 
 - [ADR 0006](0006-edit-mode-and-save-path.md)（保存の意図と決定 5）/ [ADR 0009](0009-drawer-scroll-and-overflow-fade.md)（鍵の経路・フォーカス）/
   [ADR 0012](0012-note-history-before-save.md)（保険）
+
+## 2026-11-05 の恒久回帰（#657）
+
+CTest note_switch_nativeで名前付きノートの同一SELECT/INVOKEによる本文/選択/Undo/保存保持を確認する。
+別ノートへのSELECTでは編集modeを保ち1世代だけ保存/履歴回転し、無変更の次ノートからINVOKE復帰しても世代は増えない。
+文書を跨ぐUndoは初期化される。製品契約/入口の変更はなく、専用desktop/dataの短い通常本文だけを使用する。
+詳細と限界は[品質記録](../quality/2026-11-05-note-switch.md)。

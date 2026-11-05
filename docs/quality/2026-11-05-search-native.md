@@ -59,3 +59,9 @@ tools/record-run.pyで入力snapshot、raw stdout/stderr、終了値を保存。
 
 原本はD:/NeNeFolio/agents/655-search-native/。最終CI/統合/通常exe-data不変/全保全・専用領域整理は同integration-completion.jsonへ。
 完了後はD専用worktree/outputだけ整理、branch/commit保持。全体journalはD:/NeNeFolio/agents/quality-20261105/journal.md。
+
+## 最終受理・保全整理（15:39）
+
+PR656 head7adf83cfe76f45f3891f2b44f510a1e1fff95faa、必須CI41981068345 full-gate/check成功、mainb4d0becへ統合済み。
+Issue655 CLOSED、通常exe/data32file不変。1375file/64591559bytesを全保全ZIP/hash照合し、取込tree/clean/ignored/link/稼働参照の確認後に当該worktree/outputを削除。
+branch/commit保持。全run成功、原本D:/NeNeFolio/agents/655-search-native/integration-completion.json。
