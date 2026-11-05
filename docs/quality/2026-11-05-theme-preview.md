@@ -62,3 +62,9 @@ store_revisionと保存内容を比較し、全I/Oを捕捉したとはしない
 原本D:/NeNeFolio/agents/661-theme-preview/。最終CI/統合/通常exe-data不変/全保全/専用領域整理は同integration-completion.jsonへ。
 全保全hash・取込tree・dirty/ignored/link/稼働参照監査後、当該D専用worktree/outputだけ整理。branch/commitを保持。
 全体journalはD:/NeNeFolio/agents/quality-20261105/journal.md。
+
+## 最終受理・保全整理（16:37）
+
+PR662 head41c8e1a79cbb29334f7e383b751c79925cd33bf5、必須CI41987534558 full-gate/check成功、main2eb20d8へ統合。
+Issue661 CLOSED、通常exe/data32file不変。1380file/64670785bytes全保全ZIP/hashと取込tree/clean/ignored/link/稼働参照を監査し専用領域を整理。
+途中build/native/編集補助の失敗も保持。branch/commit保持、原本D:/NeNeFolio/agents/661-theme-preview/integration-completion.json。

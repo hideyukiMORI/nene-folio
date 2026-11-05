@@ -74,3 +74,9 @@ hideの追加依頼により、決定1の「表示用見出しを追加しない
 
 採用図案はClaudeのdesign:design-critique/design-handoffによる[比較canvas](https://claude.ai/artifact/4hmz67GuzYjexqiXyScUoN)のD案。
 左上の位置と既存色を保ち、本文書体と4pt余白でコード行と区別する。右寄せと別色帯は採用しない。
+
+## 2026-11-05 の照合計測（#663）
+
+単一語一覧をNUL区切り/strlenへ変える候補を、全alias/予約語と通常コードの全RTF一致を守って比較した。
+30条件ABBAの観測で改善が無く不採用とし、製品は元の空白区切り/比較経路へ完全復帰した。
+本ADRの決定/API/schema/ゲートは不変。実測値と限界は[品質記録](../quality/2026-11-05-code-keyword.md)。

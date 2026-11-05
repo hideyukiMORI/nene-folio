@@ -1346,3 +1346,10 @@ CTest search_nativeを既存30秒/image_status_data lockへ追加。製品コメ
 本文/選択/dirty/Undo/Redo、保存choice/settings.json全bytesと全履歴保持、取消後palette復元、Undo一回を確認する。
 テーマ157checks/1.287395秒、共有本文snapshotの倍率187checks/0.828516秒、分岐移動の画像経路75checks/0.925461秒。全stderr空、子/補助/記録0。製品/ゲート/30秒/data lock不変。初回編集補助のencoding失敗は別記録。
 範囲は[品質記録](2026-11-05-theme-preview.md)。最終CI/統合/保全整理は661-theme-preview/integration-completion.jsonへ。
+
+## 2026-11-05 #663 — 予約語候補の計測と不採用
+
+固定Release、同core/vector、全70alias/30条件/750sample、全語結果/全RTF bytes/入力不変を確認。
+NUL区切り+strlen候補は改善無しで不採用。全表/末尾sentinel/750raw/中央値/MAP4symbolと2実装所属/元source復帰を監査。
+製品/test/build差分0、文書収載。通常再build/起動なし。対象runは全成功、追加waiver none。
+実測と限界は[品質記録](2026-11-05-code-keyword.md)。最終CI/統合/保全整理は663-keyword-scan/integration-completion.jsonへ。
