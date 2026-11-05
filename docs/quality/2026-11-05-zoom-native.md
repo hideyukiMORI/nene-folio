@@ -36,7 +36,7 @@ VIEW変更後・EDIT一巡後・Undo/Redo後・VIEW復帰後にstore_revisionと
 | build-debug-01 | clang-format --dry-run --Werror、cmake --build <debug> --target image_status_tests --parallel 2、142actions成功、tidy/警告維持 |
 | contract-01 | image_status_tests.exe --zoom、175checks/0.864898秒、stderr空 |
 | switch-01 | 同exe --note-switch、162checks/0.899475秒、stderr空 |
-| conformance-01 | 7docsの参照/diff/source/build graphと提出入力SHAを確認する |
+| conformance-01/02 | 7docs/194相対参照、diff/source/build graphを確認。02は下記補助失敗記録の追記後 |
 
 tools/record-run.pyで全入力snapshot、raw stdout/stderr、終了値を保存。対象build/native失敗なし。
 成功済みの#383全条件や無関係なnativeは工程だけで繰り返さない。最終head必須CI eng/check.ps1成功後にtools/merge-pr.ps1で統合する。
@@ -51,3 +51,10 @@ tools/record-run.pyで全入力snapshot、raw stdout/stderr、終了値を保存
 
 原本D:/NeNeFolio/agents/659-zoom-native/。最終CI/統合/通常exe-data不変/全保全と専用領域整理は同integration-completion.jsonへ。
 完了後は当該D専用worktree/outputだけ整理し、branch/commitを保持。全体journalはD:/NeNeFolio/agents/quality-20261105/journal.md。
+
+## 提出用補助の訂正
+
+初回prepare-pr.pyは前taskのimage-01/result.json名を残してFileNotFoundError/子1となった。
+同じPowerShell内の後続commit/push/Draft PR作成は終了したがReadyは未実行。初回sourceと通知をprepare-pr-initial.py/prepare-pr-failure.jsonへ保存した。
+参照をswitch-01へ訂正し、製品不変確認を作業差分だけでなく基点main5d776cbからの全差分へ限定した。
+失敗記録追記後のconformance-02と最終source/CMake/docsSHA照合を完了してからReadyへ進む。製品/nativeの再実行はしない。
