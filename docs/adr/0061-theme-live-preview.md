@@ -66,3 +66,9 @@ native fixtureで入力経路・全体色・保存値・本文状態の保持・
 - 候補移動のたびに設定を保存する: 取消に再書込が必要となり、試す操作が永続化される。
 - 開始時のRTF/設定をコピーして戻す: 本文保存やOS外観更新後に古い状態へ戻る別の所有者ができる。
 - 一覧だけ独自の色描画を使う: 本文・ドロワーと異なる反映経路になり、実際の結果を確認できない。
+
+## 2026-11-05 の恒久回帰（#661）
+
+CTest theme_preview_nativeで通常候補検索/SELECT→CLOSE、同preview→BACK→CLOSEを固定する。
+未保存本文/選択/dirty/Undo/Redo、取消後paletteと保存choice/settings.json全bytes、全保存履歴の保持を比較し、Undo一回で事前の追記だけを戻す。
+製品契約と所有者は不変。範囲と限界は[品質記録](../quality/2026-11-05-theme-preview.md)。

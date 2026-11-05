@@ -1339,3 +1339,10 @@ CTest search_nativeを既存30秒/image_status_data lockへ追加。製品コメ
 小delta累積/50〜300%上下限、本文/選択/dirty/Undo/Redo/focusと保存内容保持、mode再投入後の倍率保持を確認する。
 倍率175checks/0.864898秒、共有fixture/追記helperのノート切替162checks/0.899475秒。両stderr空、子/補助/記録0。製品/ゲート/30秒/data lock不変、対象失敗なし。
 範囲は[品質記録](2026-11-05-zoom-native.md)。最終CI/統合/保全整理は659/integration-completion.jsonへ。
+
+## 2026-11-05 #661 — テーマpreview取消と未保存編集
+
+固定Debug/tidy、専用desktop/data、公開設定/候補検索/SELECT/CLOSE/BACKを使用。
+本文/選択/dirty/Undo/Redo、保存choice/settings.json全bytesと全履歴保持、取消後palette復元、Undo一回を確認する。
+テーマ157checks/1.287395秒、共有本文snapshotの倍率187checks/0.828516秒、分岐移動の画像経路75checks/0.925461秒。全stderr空、子/補助/記録0。製品/ゲート/30秒/data lock不変。初回編集補助のencoding失敗は別記録。
+範囲は[品質記録](2026-11-05-theme-preview.md)。最終CI/統合/保全整理は661-theme-preview/integration-completion.jsonへ。
