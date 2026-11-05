@@ -1223,3 +1223,11 @@ JSON readerのNUL含有key/stringのbytes/長さも固定し、reader全体を�
 旧実装の表示/起動設定は新拒否assertionでred、修正後Debug/tidy/--settings-codecs成功。
 初回literal書式拒否・全試行/限界は[品質記録](2026-11-05-settings-tokens.md)。
 最終head必須CI/統合/通常反映/保全整理はagents/628-settings-tokens/integration-completion.jsonへ。
+
+## #630 — 名前集合の借用索引と確保失敗再試行
+
+name_listの唯一のowner内に辞書順借用参照を持ち、128挿入順/非終端入力/大小UTF-8/prefix/borrow寿命を確認。
+count0/3/4/7/8/15/16×3位置の確保拒否33点を実注入し、同owner反復拒否と解除後retry/重複拒否まで成功した。
+Debug/tidy/--names、既存coverage.build_measurementと--names-oom成功。ローカル全suite/coverage判定は行わない。
+108case比較の全raw/hash/中央値/MAPと試行・限界は[品質記録](2026-11-05-name-list-lookup.md)。
+最終head必須CI/統合/反映/保全整理はagents/630-name-list-lookup/integration-completion.jsonへ。

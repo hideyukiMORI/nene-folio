@@ -2,12 +2,14 @@
 
 #include "utf8_text.h"
 
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
 struct name_list
 {
-    char *_Nonnull *_Nullable items; /* 各要素は終端付きの所有文字列 */
+    /* 前半capacityは挿入順の所有文字列、後半capacityは辞書順の借用参照。 */
+    char *_Nonnull *_Nullable items;
     size_t count;
     size_t capacity;
 };
@@ -109,20 +111,46 @@ static bool reserve(struct name_list *_Nonnull list)
     {
         return true;
     }
+    if (list->capacity > SIZE_MAX / (4 * sizeof *list->items))
+    {
+        return false;
+    }
     size_t capacity = list->capacity == 0 ? 4 : list->capacity * 2;
-    char *_Nonnull *_Nullable grown = realloc(list->items, capacity * sizeof *grown);
+    char *_Nonnull *_Nullable grown = realloc(list->items, 2 * capacity * sizeof *grown);
     if (grown == nullptr)
     {
         return false;
     }
+    memmove(grown + capacity, grown + list->capacity, list->count * sizeof *grown);
     list->items = grown;
     list->capacity = capacity;
     return true;
 }
 
-static bool same_text(const char *_Nonnull item, const char *_Nonnull text, size_t length)
+static int compare(const char *_Nonnull item, const char *_Nonnull text, size_t length)
 {
-    return strlen(item) == length && memcmp(item, text, length) == 0;
+    size_t item_length = strlen(item);
+    size_t common = item_length < length ? item_length : length;
+    int order = memcmp(item, text, common);
+    return order != 0 ? order : (item_length > length) - (item_length < length);
+}
+
+/* 挿入順の配列を走査せず、同じ辞書順参照から存在と挿入位置を決める。 */
+static bool locate(const struct name_list *_Nonnull list, const char *_Nonnull text, size_t length,
+                   size_t *_Nonnull position)
+{
+    size_t low = 0;
+    size_t high = list->count;
+    while (low < high)
+    {
+        size_t middle = low + (high - low) / 2;
+        if (compare(list->items[list->capacity + middle], text, length) < 0)
+            low = middle + 1;
+        else
+            high = middle;
+    }
+    *position = low;
+    return low < list->count && compare(list->items[list->capacity + low], text, length) == 0;
 }
 
 enum name_list_outcome name_list_append(struct name_list *_Nonnull list, const char *_Nonnull text,
@@ -132,12 +160,10 @@ enum name_list_outcome name_list_append(struct name_list *_Nonnull list, const c
     {
         return NAME_LIST_INVALID_NAME;
     }
-    for (size_t index = 0; index < list->count; ++index)
+    size_t position = 0;
+    if (locate(list, text, length, &position))
     {
-        if (same_text(list->items[index], text, length))
-        {
-            return NAME_LIST_DUPLICATE;
-        }
+        return NAME_LIST_DUPLICATE;
     }
     if (!reserve(list))
     {
@@ -150,6 +176,9 @@ enum name_list_outcome name_list_append(struct name_list *_Nonnull list, const c
     }
     memcpy(copy, text, length);
     copy[length] = '\0';
+    char *_Nonnull *_Nonnull ordered = list->items + list->capacity;
+    memmove(ordered + position + 1, ordered + position, (list->count - position) * sizeof *ordered);
+    ordered[position] = copy;
     list->items[list->count] = copy;
     list->count += 1;
     return NAME_LIST_ACCEPTED;
@@ -167,15 +196,8 @@ const char *_Nonnull name_list_at(const struct name_list *_Nonnull list, size_t 
 
 bool name_list_contains(const struct name_list *_Nonnull list, const char *_Nonnull text)
 {
-    size_t length = strlen(text);
-    for (size_t index = 0; index < list->count; ++index)
-    {
-        if (same_text(list->items[index], text, length))
-        {
-            return true;
-        }
-    }
-    return false;
+    size_t position = 0;
+    return locate(list, text, strlen(text), &position);
 }
 
 void name_list_destroy(struct name_list *_Nullable list)

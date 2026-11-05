@@ -118,3 +118,24 @@ active にする。**
 - NeNe Loupe ADR 0004（最初の縦切り）・`eng/coverage.py`（測定ビルドの原型）
 - [LLVM source-based coverage](https://clang.llvm.org/docs/SourceBasedCodeCoverage.html)
 - [AddressSanitizer on Windows](https://clang.llvm.org/docs/AddressSanitizer.html)
+
+## 2026-11-05: 名前集合の重複照合を同じ所有者内に索引する（#630、製品編集前）
+
+name_listの挿入順とbyte完全一致を維持し、唯一のitems確保を2×capacity個のpointer領域にする候補を比較する。
+前半capacityは従来どおり挿入順の所有文字列、後半capacityは同じ文字列への借用参照をbyte辞書順で保持する。
+別owner・公開型/API・永続化schemaは作らない。appendとcontainsの同じprivate lower-bound照合へ集約する。
+長さ付き入力を扱うため、既存語とのmemcmpは短い方の長さまで、同prefixなら長さで順序を決める。
+ASCII大小やUTF-8の正規化は加えない。名前妥当性は既存acceptableで先に確認する。
+
+reserveは2倍capacityと2領域分のbyte数を乗算前に検査する。realloc成功後に旧後半を新後半へmemmoveし、
+新しいcapacityを採用する。既存文字列の位置は変わらず借用pointerの寿命を維持する。
+追加文字列の確保が成功してから索引だけを挿入shiftし、前半の末尾とcountを採用する。
+失敗時のcount/挿入順/名前bytes/containsは不変。確保数とreserve→copyの順は従来と同じで、
+内部capacityだけの拡張は公開状態ではない。破棄は前半count個の文字列だけを解放する。
+
+pointer領域の確保byte数は2倍になる。逆順/不規則挿入のpointer移動は依然二次なので、全体を線形とは呼ばない。
+固定Releaseの同一入力・小集合/長prefix/日本語・順序/逆順/交互で費用と順序bytesを比較して採否を決める。
+採用時は対象Debugと既存計装の失敗・反復拒否・解除後retryを確認し、悪化と未検証範囲を品質記録へ残す。
+
+候補1を採用した。108caseの比較と対象Debug/実確保注入は[品質記録](../quality/2026-11-05-name-list-lookup.md)へ。
+小集合の増加、pointer領域2倍、逆順shiftの二次性を残る費用として明示する。
