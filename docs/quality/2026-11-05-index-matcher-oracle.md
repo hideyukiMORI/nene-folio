@@ -75,3 +75,10 @@ selectorには既存準備/lookup/cache-retry/容量境界が含まれる。表�
 実ノート・通常app・Storeを試験に使わない。製品変更がないため通常exeの再buildは行わない。
 文書検査/最終head必須CI/統合/#630後の通常exe/data不変/全保全と専用worktree/output整理の確定は
 同taskのintegration-completion.jsonへ。branch/commitは保持する。
+
+## 統合・保全整理の確定
+
+PR633最終headc2a275bfの必須CI41950942779 full-gate/check成功、main7113a4cへ正典統合、Issue632 CLOSED。
+通常exe/data32fileは#630完了時とbytes/hash/作成更新日時まで不変、製品不変のため再build/app起動無し。
+1325fileを全保全/hash照合し、取込・dirty/ignored・リンク・稼働参照の監査後、専用worktree/outputを削除。
+branch/commit保持。原本D:/NeNeFolio/agents/632-index-matcher-oracle/integration-completion.json。

@@ -309,6 +309,30 @@ static struct note_ledger *_Nonnull notes_from(const char *_Nonnull text)
     return ledger;
 }
 
+static void verify_filtered_rows(const struct drawer_layout *_Nonnull layout)
+{
+    require(drawer_layout_row_count(layout) == 4, "two categories and one note each");
+    struct drawer_row row = drawer_layout_row(layout, 1);
+    require(row.kind == DRAWER_ROW_NOTE && row.note == 1 && same_text(row.text, "beta"),
+            "the matching note keeps its ledger number");
+    require(drawer_layout_row(layout, 2).expanded,
+            "a collapsed category is opened while filtering");
+    require(drawer_layout_row(layout, 2).ordinal == 2 &&
+                drawer_layout_row(layout, 2).color.green == 0xFF,
+            "and keeps its ordinal and colour");
+    require(drawer_layout_row(layout, 3).category == 1 && drawer_layout_row(layout, 3).note == 0,
+            "its matching note is numbered by the ledger too");
+    size_t hit = 99;
+    require(drawer_layout_hit(layout, 48, &hit) && hit == 1 &&
+                drawer_layout_row(layout, hit).note == 1,
+            "a filtered hit returns its displayed row and retains the original note number");
+    hit = 99;
+    require(!drawer_layout_hit(layout, 79, &hit) && hit == 99,
+            "the gap between filtered categories is not a row");
+    require(drawer_layout_hit(layout, 116, &hit) && hit == 3,
+            "a filtered hit reaches the last visible note");
+}
+
 /* 絞り込むと、一致を持つカテゴリだけが折り畳みに関わらず展開して並び、番号と色は台帳のまま
  * （決定 3）。 */
 static void verify_layout(void)
@@ -331,17 +355,7 @@ static void verify_layout(void)
     struct drawer_layout *layout = nullptr;
     require(drawer_layout_create(&source, metrics, &layout) == DRAWER_LAYOUT_CREATED,
             "filtered layout create");
-    require(drawer_layout_row_count(layout) == 4, "two categories and one note each");
-    struct drawer_row row = drawer_layout_row(layout, 1);
-    require(row.kind == DRAWER_ROW_NOTE && row.note == 1 && same_text(row.text, "beta"),
-            "the matching note keeps its ledger number");
-    require(drawer_layout_row(layout, 2).expanded,
-            "a collapsed category is opened while filtering");
-    require(drawer_layout_row(layout, 2).ordinal == 2 &&
-                drawer_layout_row(layout, 2).color.green == 0xFF,
-            "and keeps its ordinal and colour");
-    require(drawer_layout_row(layout, 3).category == 1 && drawer_layout_row(layout, 3).note == 0,
-            "its matching note is numbered by the ledger too");
+    verify_filtered_rows(layout);
     drawer_layout_destroy(layout);
     index_filter_destroy(filter);
 
@@ -355,6 +369,10 @@ static void verify_layout(void)
     require(drawer_layout_row(layout, 0).category == 1, "and it is the second one");
     require(drawer_layout_row(layout, 0).top == metrics.top_padding + metrics.category_gap,
             "the first shown row sits under the band");
+    size_t hit = 99;
+    require(drawer_layout_hit(layout, 48, &hit) && hit == 1 &&
+                drawer_layout_row(layout, hit).category == 1,
+            "a narrowed hit preserves the original category reference");
     drawer_layout_destroy(layout);
     index_filter_destroy(filter);
 
@@ -365,6 +383,9 @@ static void verify_layout(void)
     require(drawer_layout_create(&source, metrics, &layout) == DRAWER_LAYOUT_CREATED,
             "empty filtered layout");
     require(drawer_layout_row_count(layout) == 0, "no row is placed");
+    hit = 99;
+    require(!drawer_layout_hit(layout, 48, &hit) && hit == 99,
+            "a filtered empty layout leaves the hit output unchanged");
     drawer_layout_destroy(layout);
     index_filter_destroy(filter);
 
@@ -937,6 +958,11 @@ static void verify_small_index_oracle(void)
     printf("index oracle: %zu queries in name/body with five work schedules passed\n", queries);
 }
 
+void run_filter_layout_tests(void)
+{
+    verify_layout();
+}
+
 void run_index_filter_tests(void)
 {
     const size_t single[] = {1}, pair[] = {2}, mixed[] = {1, 3, 2, 7}, large[] = {65536};
@@ -957,7 +983,7 @@ void run_index_filter_tests(void)
     verify_byte_sources();
     verify_match_spans();
     verify_order();
-    verify_layout();
+    run_filter_layout_tests();
     verify_removed_filter();
 }
 
