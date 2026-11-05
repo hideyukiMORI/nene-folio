@@ -1252,3 +1252,11 @@ Debug/tidy/--drawer-layout成功、初回test nesting/audit補助の失敗も保
 全raw統計・入力hash・9正典symbol・終了時入力不変の監査に成功。新しいゲートやactive宣言は追加しない。
 範囲/条件/限界は[品質記録](2026-11-05-drawer-preparation.md)。
 最終head必須CI/統合/通常exe-data不変/全保全整理はD:/NeNeFolio/agents/637-drawer-preparation/integration-completion.json。
+
+## 2026-11-05 #639 — 設定画面の資源非増加
+
+既存settings_accessibilityの3言語warmup後にもう1巡を追加し、GDI/USER/process handlesの非増加を検査する。
+取得APIの失敗も検査。最終Debug/tidy/対象637checks成功、前後55/36/267、stderr空。
+初回39window観測の30秒未完了は保持し、30秒上限/閾値/除外は変更していない。製品不変。
+条件/試行/有限範囲の限界は[品質記録](2026-11-05-settings-resources.md)。
+最終head必須CI/統合/通常exe-data不変/全保全整理は639/integration-completion.jsonへ。

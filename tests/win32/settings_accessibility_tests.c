@@ -216,6 +216,51 @@ static void verify_language(struct native_fixture *_Nonnull fixture, enum folio_
     folio_window_destroy(window);
 }
 
+static void verify_languages(struct native_fixture *_Nonnull fixture)
+{
+    verify_language(fixture, FOLIO_LANGUAGE_JA);
+    verify_language(fixture, FOLIO_LANGUAGE_EN);
+    verify_language(fixture, FOLIO_LANGUAGE_ZH_HANS);
+}
+
+struct window_resources
+{
+    DWORD gdi;
+    DWORD user;
+    DWORD handles;
+};
+
+static DWORD gui_resources(DWORD kind)
+{
+    SetLastError(ERROR_SUCCESS);
+    DWORD count = GetGuiResources(GetCurrentProcess(), kind);
+    require(count != 0 || GetLastError() == ERROR_SUCCESS, "GUI resource count");
+    return count;
+}
+
+static struct window_resources read_resources(unsigned round)
+{
+    struct window_resources resources = {.gdi = gui_resources(GR_GDIOBJECTS),
+                                         .user = gui_resources(GR_USEROBJECTS)};
+    require(GetProcessHandleCount(GetCurrentProcess(), &resources.handles) != 0,
+            "process handle count");
+    printf("resources,%u,%lu,%lu,%lu\n", round, resources.gdi, resources.user, resources.handles);
+    fflush(stdout);
+    return resources;
+}
+
+/* #639: 3言語の初回利用後、同じfixtureを保持したままwindowの生成・破棄をもう一巡する。 */
+static void verify_resources(struct native_fixture *_Nonnull fixture)
+{
+    struct window_resources before = read_resources(0);
+    verify_languages(fixture);
+    struct window_resources after = read_resources(1);
+    require(after.gdi <= before.gdi, "repeated settings windows do not retain more GDI objects");
+    require(after.user <= before.user, "repeated settings windows do not retain more USER objects");
+    require(after.handles <= before.handles,
+            "repeated settings windows do not retain more process handles");
+}
+
 int main(void)
 {
     HDESK desktop = CreateDesktopW(L"NeNeFolioSettingsVerification", nullptr, nullptr, 0,
@@ -226,9 +271,8 @@ int main(void)
     require(SUCCEEDED(OleInitialize(nullptr)), "COM apartment");
     struct native_fixture fixture = {0};
     create_fixture(&fixture);
-    verify_language(&fixture, FOLIO_LANGUAGE_JA);
-    verify_language(&fixture, FOLIO_LANGUAGE_EN);
-    verify_language(&fixture, FOLIO_LANGUAGE_ZH_HANS);
+    verify_languages(&fixture);
+    verify_resources(&fixture);
     destroy_fixture(&fixture);
     OleUninitialize();
     CloseDesktop(desktop);
