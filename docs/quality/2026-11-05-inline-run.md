@@ -65,3 +65,10 @@ ARC-001/004/008/012、C-004/008/012/014/016、QLT-008/009/010/012/013、GIT-001�
 API/schema/版/所有/依存/gate不変、追加waiver none、既存WVR-0001継続。
 主担当単体、追加委任なし。実ノート/通常app/Storeを試験に使わず、#634保留を再開しない。
 [日報](../reports/2026-11-05.md)・[引き継ぎ](../handoffs/2026-11-05.md)。
+
+## 20:35〜20:36 統合・全保全整理完了
+
+#687はPR688/head7898c281e9182d6db8e7012812ec3af71eeb0bbe、最終CI42019378445 full-gate/check成功。
+mainfed54296af3f87561e50fcb99c6e6723c6f264c1へ正典統合、Issue687 CLOSED。候補不採用、製品/tests/build差分0、#683通常exe/data32file bytes/hash/作成更新日時不変。
+1356fileを全保全ZIP再hash/取込tree/clean-untracked/ignored/link/稼働参照監査後、687専用worktree/outputを削除。
+branch/commitと候補source/exe/rawを保持。原本D:/NeNeFolio/agents/687-inline-run/integration-completion.json。

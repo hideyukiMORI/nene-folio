@@ -1090,6 +1090,7 @@ static void search_roundtrip(struct folio_window *_Nonnull window,
     CHARRANGE initial = {0};
     SendMessageW(body, EM_EXSETSEL, 0, (LPARAM)&initial);
     LRESULT undo = SendMessageW(body, EM_CANUNDO, 0, 0);
+    LRESULT redo = SendMessageW(body, EM_CANREDO, 0, 0);
     enum search_direction direction = folio_state_search_direction(state);
     invoke_operation(window, FOLIO_COMMAND_FIND);
     pump(window);
@@ -1107,8 +1108,9 @@ static void search_roundtrip(struct folio_window *_Nonnull window,
     surface_button(window, ACCESSIBLE_SURFACE_NEXT);
     expect_search_result(window, 2, 4, L"");
     surface_button(window, ACCESSIBLE_SURFACE_CLOSE);
-    require(GetFocus() == body && SendMessageW(body, EM_CANUNDO, 0, 0) == undo,
-            "closing Find restores body focus and keeps its Undo availability");
+    require(GetFocus() == body && SendMessageW(body, EM_CANUNDO, 0, 0) == undo &&
+                SendMessageW(body, EM_CANREDO, 0, 0) == redo,
+            "closing Find restores body focus and keeps Undo and Redo availability");
     require(folio_state_search_direction(state) == direction,
             "explicit previous and next buttons preserve the remembered direction");
 }
@@ -1126,6 +1128,19 @@ static void search_unsaved(struct folio_window *_Nonnull window,
     pump(window);
     expect_editor(window, fixture->state, search_edited, FOLIO_NOTE_CHANGED);
     search_roundtrip(window, fixture->state);
+    expect_editor(window, fixture->state, search_edited, FOLIO_NOTE_CHANGED);
+    verify_history_unchanged(fixture, snapshot);
+    history_undo(window);
+    expect_editor(window, fixture->state, search_original, FOLIO_NOTE_SAME);
+    verify_history_unchanged(fixture, snapshot);
+    /* #689: Searching a redoable document must not replace its native edit history. */
+    require(SendMessageW(body, EM_CANREDO, 0, 0) != 0,
+            "Undo leaves a redoable insertion before Find");
+    search_roundtrip(window, fixture->state);
+    expect_editor(window, fixture->state, search_original, FOLIO_NOTE_SAME);
+    verify_history_unchanged(fixture, snapshot);
+    require(SendMessageW(body, EM_REDO, 0, 0) != 0, "Redo succeeds after Find");
+    pump(window);
     expect_editor(window, fixture->state, search_edited, FOLIO_NOTE_CHANGED);
     verify_history_unchanged(fixture, snapshot);
     history_undo(window);
