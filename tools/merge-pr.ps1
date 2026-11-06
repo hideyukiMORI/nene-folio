@@ -148,7 +148,8 @@ function Wait-Check {
         if ($summary.pending.Count -eq 0 -and $summary.failed.Count -gt 0) {
             # Ready を送っていない（元から Ready の PR）と、見えている failure が Draft 時代のものか本物か区別できない。
             # 1 回だけ Ready を送り直して新しい run を起こし、それでも failure なら本物として止まる（#163）。
-            if ($resent) { Stop-Merge "checks failed: $($summary.failed -join ', ')" }
+            # 今回 Ready を送った後の結果は既に時刻で絞っている。同じ確定失敗で CI を再起動しない（#769）。
+            if ($resent -or $null -ne $script:ReadyAt) { Stop-Merge "checks failed: $($summary.failed -join ', ')" }
             [Console]::Error.WriteLine("merge-pr: failed check(s) $($summary.failed -join ', ') with nothing pending; resending ready once")
             Send-Ready -Pr $Pr -Undo
             $resent = $true
