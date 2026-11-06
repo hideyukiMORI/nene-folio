@@ -165,6 +165,8 @@ Unicode行名と全台帳/履歴、選択/非選択/category/Treeの一致、foc
 #759はclose_modal_nativeで実SaveAs中の主窓終了要求/名前取消/元保存拒否からの復帰/UndoRedo/再終了保存一回を固定。save_as_native 377checks/1.69秒、session_modal_native 438checks/1.17秒、close_modal_native 197checks/1.18秒、計4.04秒成功。台帳あり/元追加2md/target追加1mdのrepeatはclose_modal_native 215checks/1.24秒、CTest1.25秒成功。runtime stderr空・child/wrapper0・入力不変。追加3mdと台帳の全bytes/hash/作成更新日時不変。
 [全試行と限界](quality/2026-11-06-close-modal-native.md)。
 
+#761は有効pair後の同UTF-16 scanner再開を、Debug検索44追加fixture/216公開呼出し・既存oracle/extentと同Release112条件/8960sampleで確認。全公開結果/入力不変、symbols2library/実graph違反0。全候補と費用は[品質記録](quality/2026-11-06-search-validation-resume.md)。
+
 ### QLT-009 — カバレッジは下げられない
 
 中核の分岐カバレッジ下限を 90% とする。閾値は上げてよいが下げてはならない。下げるには ADR が要る。

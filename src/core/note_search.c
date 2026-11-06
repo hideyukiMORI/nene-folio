@@ -75,6 +75,8 @@ static bool well_formed(const char16_t *_Nonnull units, size_t length)
             return false;
         }
         index += step;
+        if (step == 2 && index < length && !high_surrogate(units[index]))
+            index += scalar_prefix(units + index, length - index);
     }
     return true;
 }

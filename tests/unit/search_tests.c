@@ -611,6 +611,73 @@ static void verify_validation_refusals(void)
     }
 }
 
+/* #761: Multiple pairs and later malformed units must stay within the exact input. */
+static void verify_resumed_units(const char16_t *_Nonnull units, size_t offset, bool malformed)
+{
+    constexpr size_t length = 14;
+    size_t bytes = (offset + length) * sizeof(char16_t);
+    char16_t *storage = malloc(bytes);
+    if (storage == nullptr)
+        test_failure("exact resumed UTF16 validation allocation");
+    for (size_t index = 0; index < offset + length; ++index)
+        storage[index] = index < offset ? u'.' : units[index - offset];
+    char16_t original[17];
+    memcpy(original, storage, bytes);
+    struct note_search_query query = {storage + offset, length, storage + offset, length};
+    if (malformed)
+    {
+        const char16_t normal[] = {u'x'};
+        query.term = normal;
+        query.term_length = 1;
+        verify_chunk_refused(&query);
+        query.text = normal;
+        query.length = 1;
+        query.term = storage + offset;
+        query.term_length = length;
+        verify_chunk_refused(&query);
+    }
+    else
+    {
+        require(found_at(&query, span_of(0, 0), SEARCH_DIRECTION_FORWARD) == 0 &&
+                    found_at(&query, span_of(0, 0), SEARCH_DIRECTION_BACKWARD) == 0,
+                "multiple Unicode pairs retain complete matches in both directions");
+        require_count(&query, 0, 1, 1);
+    }
+    require(memcmp(storage, original, bytes) == 0,
+            "resumed validation preserves every input and leading offset unit");
+    free(storage);
+}
+
+static void verify_resumed_validation(void)
+{
+    const char16_t valid[][14] = {
+        {0xD83D, 0xDE00, u'a', u'b', u'c', u'd', 0xD83D, 0xDE00, 0, u'\r', u'猫', 0xFFFF, 0xD83D,
+         0xDE00},
+        {u'a', 0xD83D, 0xDE00, u'b', 0xD83D, 0xDE00, u'c', u'd', u'e', u'f', 0xD83D, 0xDE00, u'g',
+         u'h'},
+        {0xD83D, 0xDE00, 0xD83D, 0xDE00, 0xD83D, 0xDE00, u'a', 0, u'\r', u'猫', 0xD83D, 0xDE00,
+         0xD7FF, 0xE000},
+        {u'a', u'b', 0xD83D, 0xDE00, u'c', u'd', u'e', 0xD83D, 0xDE00, u'f', u'g', u'h', u'i',
+         u'j'},
+    };
+    const char16_t broken[][14] = {
+        {0xD83D, 0xDE00, 0xD800, u'a', u'b', u'c', u'd', u'e', u'f', u'g', u'h', u'i', u'j', u'k'},
+        {0xD83D, 0xDE00, u'a', u'b', u'c', u'd', 0xDC00, u'e', u'f', u'g', u'h', u'i', u'j', u'k'},
+        {0xD83D, 0xDE00, u'a', u'b', u'c', u'd', 0xD800, u'e', u'f', u'g', u'h', u'i', u'j', u'k'},
+        {0xD83D, 0xDE00, u'a', u'b', u'c', u'd', u'e', 0xDC00, u'f', u'g', u'h', u'i', u'j', u'k'},
+        {0xD83D, 0xDE00, u'a', u'b', u'c', u'd', u'e', u'f', u'g', 0xD800, u'h', u'i', u'j', u'k'},
+        {0xD83D, 0xDE00, u'a', u'b', u'c', u'd', u'e', u'f', u'g', u'h', u'i', u'j', 0xDC00, u'k'},
+        {0xD83D, 0xDE00, u'a', u'b', u'c', u'd', u'e', u'f', u'g', u'h', u'i', u'j', u'k', 0xD800},
+    };
+    for (size_t offset = 0; offset < 4; ++offset)
+    {
+        for (size_t index = 0; index < sizeof valid / sizeof valid[0]; ++index)
+            verify_resumed_units(valid[index], offset, false);
+        for (size_t index = 0; index < sizeof broken / sizeof broken[0]; ++index)
+            verify_resumed_units(broken[index], offset, true);
+    }
+}
+
 void run_search_tests(void)
 {
     verify_ascii_case();
@@ -631,4 +698,5 @@ void run_search_tests(void)
     verify_extreme_anchors();
     verify_validation_extents();
     verify_validation_refusals();
+    verify_resumed_validation();
 }

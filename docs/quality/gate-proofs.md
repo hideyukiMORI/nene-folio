@@ -1487,3 +1487,10 @@ Windows専用desktop NeNeFolioImageStatus520、専用portable data初回0file。
 変更状態とRedo保有状態の全文/非空選択/dirty/UndoRedo/focus、全保存本文/5履歴slot/store_revisionを保持し、最後の実Redo/Undoも確認。
 同target/lock/30秒の登録。製品/閾値/抑制/API/schema変更なし。物理Ctrl+P/IME・全DPI・操作実行の追加保証ではない。
 原本D:/NeNeFolio/agents/704-palette-native/。[品質記録](2026-11-06-palette-native.md)。
+
+## 2026-11-06 — #761有効pair後の検索検証再開
+
+同Release vector/archiveで2候補/112条件/8960sample全公開結果一致。9MAP行/全中央値/最終製品2行差分を照合。
+最終Debug --note-search成功、44fixture/216公開呼出しで複数pair後の正常/拒否と実extent/出力保持を確認。
+既存4719oracle/2112exactextent維持。symbols2library/conformance実graph違反0。候補1不採用と候補2の不利な値も[品質記録](2026-11-06-search-validation-resume.md)へ。
+API/schema/CMake/ゲート不変、追加waiver none。

@@ -113,3 +113,10 @@ VIEW/未保存EDITの本文とUndo・全保存内容を保持し、Undo一回で
 既存well_formedの内部でサロゲートの無い先頭4単位だけを範囲内memcpyと存在判定で進め、候補塊/末尾は既存encoded_unitsへ戻す。
 検証済み先頭は再走査しない。拒否順序/失敗out/NUL/CR/ASCII fold/重複/巡回/ordinalとTwo-Way走査、API/所有/確保は維持する。
 20通常本文/80条件の比較と2112正常exact extent・少数固定拒否例で確認する。先頭emojiの費用を含む採否根拠は[品質記録](../quality/2026-11-05-search-validation.md)。
+
+## 2026-11-06 — 有効pair後の同じ検証再開（#761）
+
+既存encoded_unitsが有効pairを確認した後、残長があり次単位がhigh surrogateでなければ同scalar_prefixを再開する。
+次単位がhighなら同scannerは0を返すため呼出しだけ省略する。index/残長境界、同decoder/matcher/拒否順序/借用契約を維持。
+先頭emoji/混在の費用を短縮し、密なpair列やBMPの費用も比較して採否を決めた。API/schema/owner/確保/線形性は不変。
+2候補/112条件/8960標本と後続拒否の固定例、限界は[品質記録](../quality/2026-11-06-search-validation-resume.md)。
