@@ -64,6 +64,7 @@ static bool save_as_case;
 static bool rename_case;
 static bool move_edit_case;
 static bool unicode_save_case;
+static bool first_save_case;
 
 static const char history_current[] = "# Current 日本語 😀 **saved**";
 static const char history_previous[] = "> Previous 猫 🐾 `old`";
@@ -78,6 +79,9 @@ static const wchar_t search_edited[] = L"猫 😀 aaaa 日本語 🐾";
 static const char replace_current[] = "猫1 😀\n猫2 **saved**\n猫1 `old`";
 static const wchar_t replace_original[] = L"猫1 😀\r猫2 **saved**\r猫1 `old`";
 static const wchar_t replace_all[] = L"1-猫-🐾\r 😀\r2-猫-🐾\r **saved**\r1-猫-🐾\r `old`";
+
+static const char first_save_bytes[] = "# New 日本語 🐾\nnext";
+static const wchar_t first_save_edited[] = L"# New 日本語 🐾\rnext";
 
 static const char unicode_current[] =
     "\xEF\xBB\xBF\xEF\xBB\xBF\xEF\xBB\xBF# 日本語 😀\r\n記号 \xEF\xBF\xBD\v中"
@@ -137,13 +141,13 @@ static void seed_notes(struct persistence_port disk)
     if (history_case || replace_case || search_case || note_switch_case || zoom_case ||
         theme_preview_case || settings_edit_case || mode_save_case || discard_case ||
         palette_case || paste_case || format_case || layout_case || save_as_case || rename_case ||
-        replace_save_case || move_edit_case || unicode_save_case)
+        replace_save_case || move_edit_case || first_save_case || unicode_save_case)
     {
         seed_history(disk);
         source = history_case || note_switch_case || zoom_case || theme_preview_case ||
                          settings_edit_case || mode_save_case || discard_case || palette_case ||
                          paste_case || format_case || layout_case || save_as_case || rename_case ||
-                         replace_save_case || move_edit_case
+                         replace_save_case || move_edit_case || first_save_case
                      ? history_current
                      : replace_current;
     }
@@ -3859,9 +3863,179 @@ static void run_unicode_save_case(struct native_fixture *_Nonnull fixture)
         note_text_destroy(history.files[version]);
 }
 
+/* #725: NEW saves the departing note; first SAVE names the native draft without reloading it. */
+static void expect_first_save_count(struct native_fixture *_Nonnull fixture, size_t count)
+{
+    struct persistence_port disk = persistence_adapter_port(fixture->files);
+    struct name_list *names = nullptr;
+    require(disk.scan_notes(disk.adapter, "schedule", &names) == PERSISTENCE_LOADED &&
+                names != nullptr,
+            "scan the dedicated first-save files");
+    require(name_list_count(names) == count && folio_state_note_count(fixture->state) == count,
+            "physical note files and public rows have the expected count");
+    name_list_destroy(names);
+}
+
+static void first_save_departure(struct folio_window *_Nonnull window,
+                                 struct native_fixture *_Nonnull fixture,
+                                 const struct history_snapshot *_Nonnull history)
+{
+    action(window, ACCESSIBLE_EDIT);
+    append_switch_text(window);
+    expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_CHANGED);
+    size_t count = folio_state_note_count(fixture->state);
+    expect_first_save_count(fixture, count);
+    struct accessible_request create = {.item = {.kind = ACCESSIBLE_NEW_NOTE},
+                                        .action = ACCESSIBLE_ACTION_INVOKE};
+    require(folio_window_accessible_action(window, &create) == S_OK,
+            "invoke the public header New Note button");
+    pump(window);
+    expect_editor(window, fixture->state, L"", FOLIO_NOTE_CHANGED);
+    struct note_ref selected = {0};
+    require(folio_state_document_kind(fixture->state) == FOLIO_DOCUMENT_UNTITLED &&
+                folio_state_document_category(fixture->state) == 0 &&
+                !folio_state_selection(fixture->state, &selected) &&
+                folio_state_document_name(fixture->state)[0] == '\0',
+            "the blank draft has a category but no fictitious name or selected row");
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    require(GetFocus() == body && SendMessageW(body, EM_CANUNDO, 0, 0) == 0 &&
+                SendMessageW(body, EM_CANREDO, 0, 0) == 0 &&
+                SendMessageW(body, EM_GETMODIFY, 0, 0) == 0,
+            "New Note focuses a clean editor without the previous document's native history");
+    expect_first_save_count(fixture, count);
+    expect_body_saved(fixture, history, switch_saved);
+}
+
+static void expect_first_save_ledger(struct native_fixture *_Nonnull fixture,
+                                     const char *_Nonnull name, size_t count)
+{
+    struct note_ref selected = {0};
+    require(folio_state_selection(fixture->state, &selected) && selected.category == 0 &&
+                strcmp(folio_state_note_name(fixture->state, selected), name) == 0,
+            "the first saved note is the selected public row");
+    struct persistence_port disk = persistence_adapter_port(fixture->files);
+    struct note_ledger *ledger = nullptr;
+    require(disk.read_note_ledger(disk.adapter, "schedule", &ledger) == PERSISTENCE_LOADED &&
+                ledger != nullptr && note_ledger_count(ledger) == count,
+            "first save publishes the complete note ledger");
+    for (size_t index = 0; index < count; ++index)
+        require(strcmp(note_ledger_name(ledger, index),
+                       folio_state_note_name(fixture->state, (struct note_ref){0, index})) == 0,
+                "all persisted note rows match the public order");
+    note_ledger_destroy(ledger);
+    expect_first_save_count(fixture, count);
+}
+
+static void first_save_command(struct folio_window *_Nonnull window,
+                               struct native_fixture *_Nonnull fixture, char name[64])
+{
+    size_t count = folio_state_note_count(fixture->state);
+    int length = snprintf(name, 64, "zznew-%zu", count);
+    require(length > 0 && length < 64, "dedicated first-save name fits");
+    struct persistence_port disk = persistence_adapter_port(fixture->files);
+    struct note_text *absent = nullptr;
+    require(disk.read_note(disk.adapter, "schedule", name, &absent) == PERSISTENCE_ABSENT &&
+                absent == nullptr,
+            "first-save repeat never overwrites an older dedicated note");
+    struct native_body_snapshot before = {0};
+    capture_native_body(window, &before);
+    require(before.modified != 0 && before.undo != 0 && before.redo == 0,
+            "the draft has a real native insertion before first save");
+    wchar_t command[96];
+    require(swprintf(command, 96, L":w zznew-%zu", count) > 0, "first-save Ex command fits");
+    submit_ex(window, command);
+    require(!IsWindowVisible(folio_window_accessible_window(window, ACCESSIBLE_COMMAND_INPUT)) &&
+                folio_state_document_kind(fixture->state) == FOLIO_DOCUMENT_NAMED &&
+                strcmp(folio_state_document_name(fixture->state), name) == 0,
+            "successful first save names the draft and closes Ex");
+    expect_name_operation_body(window, &before);
+    require(SendMessageW(folio_window_accessible_window(window, ACCESSIBLE_BODY), EM_GETMODIFY, 0,
+                         0) == before.modified,
+            "first save preserves the native modified mark");
+    expect_editor(window, fixture->state, first_save_edited, FOLIO_NOTE_SAME);
+    expect_copy(fixture, name, first_save_bytes);
+    expect_first_save_ledger(fixture, name, count + 1);
+}
+
+static void first_save_roundtrip(struct folio_window *_Nonnull window,
+                                 struct native_fixture *_Nonnull fixture,
+                                 const struct history_snapshot *_Nonnull original,
+                                 const char *_Nonnull name)
+{
+    history_undo(window);
+    expect_editor(window, fixture->state, L"", FOLIO_NOTE_CHANGED);
+    expect_copy(fixture, name, first_save_bytes);
+    expect_save_as_original(fixture, original, 1);
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    require(SendMessageW(body, EM_CANREDO, 0, 0) != 0 && SendMessageW(body, EM_REDO, 0, 0) != 0,
+            "first save preserves Redo back to the saved draft");
+    pump(window);
+    expect_editor(window, fixture->state, first_save_edited, FOLIO_NOTE_SAME);
+    struct native_body_snapshot before = {0};
+    capture_native_body(window, &before);
+    before.focus = body;
+    struct accessible_request focus = {.item = {.kind = ACCESSIBLE_BODY},
+                                       .action = ACCESSIBLE_ACTION_FOCUS};
+    require(folio_window_accessible_action(window, &focus) == S_OK,
+            "explicitly return focus from Ex to the named draft");
+    pump(window);
+    expect_native_body(window, &before);
+    for (size_t repeat = 0; repeat < 2; ++repeat)
+    {
+        SendMessageW(body, WM_CHAR, 0x13, 0);
+        pump(window);
+        expect_native_body(window, &before);
+        expect_editor(window, fixture->state, first_save_edited, FOLIO_NOTE_SAME);
+        expect_copy(fixture, name, first_save_bytes);
+        expect_save_as_original(fixture, original, 1);
+    }
+}
+
+static void run_first_save_case(struct native_fixture *_Nonnull fixture)
+{
+    require(strcmp(folio_state_note_name(fixture->state, (struct note_ref){0, 0}), "one") == 0,
+            "retained new notes follow the original in the dedicated fixture");
+    require(folio_state_select_note(fixture->state, 0, 0, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
+            "select the note to save before New Note");
+    struct history_snapshot initial = {0};
+    capture_history(fixture, &initial);
+    struct folio_window *window = nullptr;
+    require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
+                FOLIO_WINDOW_CREATED,
+            "real New Note and first-save window");
+    pump(window);
+    first_save_departure(window, fixture, &initial);
+    struct history_snapshot original = {0};
+    capture_history(fixture, &original);
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    SendMessageW(body, EM_REPLACESEL, TRUE, (LPARAM)first_save_edited);
+    pump(window);
+    expect_editor(window, fixture->state, first_save_edited, FOLIO_NOTE_CHANGED);
+    verify_history_unchanged(fixture, &original);
+    CHARRANGE selection = {.cpMin = 2, .cpMax = 6};
+    SendMessageW(body, EM_EXSETSEL, 0, (LPARAM)&selection);
+    char name[64];
+    first_save_command(window, fixture, name);
+    expect_save_as_original(fixture, &original, 1);
+    first_save_roundtrip(window, fixture, &original, name);
+    require(controlled.requests == 0, "plain new Markdown does not request image work");
+    folio_window_destroy(window);
+    for (size_t version = 0; version <= note_history_depth; ++version)
+    {
+        note_text_destroy(initial.files[version]);
+        note_text_destroy(original.files[version]);
+    }
+}
+
 static void run_extended_fixture(struct native_fixture *_Nonnull fixture, int argc,
                                  char *_Nonnull *_Nonnull argv)
 {
+    if (first_save_case)
+    {
+        run_first_save_case(fixture);
+        return;
+    }
     if (unicode_save_case)
     {
         run_unicode_save_case(fixture);
@@ -3923,6 +4097,7 @@ int main(int argc, char *_Nonnull *_Nonnull argv)
     rename_case = strcmp(selector, "--rename") == 0;
     move_edit_case = strcmp(selector, "--move-edit") == 0;
     unicode_save_case = strcmp(selector, "--unicode-save") == 0;
+    first_save_case = strcmp(selector, "--first-save") == 0;
     HWINSTA original_station = GetProcessWindowStation();
     HDESK original_desktop = GetThreadDesktop(GetCurrentThreadId());
     HWINSTA paste_station = paste_case ? isolate_paste_clipboard() : nullptr;
