@@ -59,3 +59,10 @@ OS側理由表示や待機時間内の保存完了を保証しない。#309の�
 
 Microsoft Learnの[STARTCOMPOSITION](https://learn.microsoft.com/en-us/windows/win32/intl/wm-ime-startcomposition)と[ENDCOMPOSITION](https://learn.microsoft.com/en-us/windows/win32/intl/wm-ime-endcomposition)は引数のない開始前/終了通知を定める。
 [Composition String](https://learn.microsoft.com/en-us/windows/win32/intl/composition-string)の文字列・句・属性取得とは別の境界である。この仕様から、合成通知だけでは実変換文字列の保持を保証しないと判断した。
+
+## 統合・保全整理の確定
+
+#755/PR756は最終headc120b5f811a55998b94ddc4a8817b62deddacb24、必須CI42187525767 full-gate/check成功。
+main4c798e0cbfd0379928ea3c61bc3736d59926d5f5へ正典統合。src/eng/fonts/packagingとCMake試験2行以外不変、通常exe hash/bytes/更新日時不変。通常build/app起動なし。
+5657files全hash保全後、絶対path/同一squash tree/clean・untracked・ignored/link/稼働参照0を確認して専用worktree/output整理、branch/commit保持。
+確定原本D:/NeNeFolio/agents/755-session-ime-native/integration-completion.json。

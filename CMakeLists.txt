@@ -346,6 +346,8 @@ add_test(NAME session_untitled_native COMMAND first_save_modal_native_tests --se
 set_tests_properties(session_untitled_native PROPERTIES TIMEOUT 30 RESOURCE_LOCK image_status_data)
 add_test(NAME session_ime_native COMMAND image_status_tests --session-ime)
 set_tests_properties(session_ime_native PROPERTIES TIMEOUT 30 RESOURCE_LOCK image_status_data)
+add_test(NAME session_modal_native COMMAND image_status_tests --session-modal)
+set_tests_properties(session_modal_native PROPERTIES TIMEOUT 30 RESOURCE_LOCK image_status_data)
 add_test(NAME empty_save_native COMMAND image_status_tests --empty-save)
 set_tests_properties(empty_save_native PROPERTIES TIMEOUT 30 RESOURCE_LOCK image_status_data)
 add_test(NAME unicode_save_native COMMAND image_status_tests --unicode-save)

@@ -1,19 +1,20 @@
 # いまの状態 — NeNe Folio
 
-## 2026-11-06 — #753まで完了、IME変換中の終了拒否を確認中
+## 2026-11-06 — #755まで完了、名前入力面の終了拒否を確認中
 
 hideの07:08の依頼により停止指示まで品質対応を継続する。最優先の平文paste・書式キー・Debug ASan修正は統合・通常反映・整理済み。
-保存/改名/移動/無題離脱/初回保存/trash拒否/検索focus保存/通常終了拒否/名前付き・無題OS終了通知の回帰は#753/PR754まで統合・整理済み。
+保存/改名/移動/無題離脱/初回保存/trash拒否/検索focus保存/通常終了拒否/OS終了通知とIME中の拒否回帰は#755/PR756まで統合・整理済み。
 [日報](../reports/2026-11-06.md)・[引き継ぎ](../handoffs/2026-11-06.md)と各品質記録に実測・確定原本を収載。
-最新確定mainは95bc500f6acf84e7e08dfb41d7680cda62cdb0d0、最終CI42184391726成功。#753確定原本D:/NeNeFolio/agents/753-session-untitled-native/integration-completion.json。
+最新確定mainは4c798e0cbfd0379928ea3c61bc3736d59926d5f5、最終CI42187525767成功。#755確定原本D:/NeNeFolio/agents/755-session-ime-native/integration-completion.json。
 
-#755は4入力所有者を本文caret/主窓/全ノート検索/Find/設定layerの5対象で確認。合成IME中の2回のQUERY拒否/ENDTRUE無破棄/ENDFALSE理由解除とreadyfalse保持、IMEEND後readytrueを固定。
-同root/native全文selectionmodifiedUndoRedo/focus/EDIT/NAMED/選択/count/全履歴revision、検索欄文字選択と語/件数、設定面選択revision/全settingsbytes保持。実Redo後は既存sessionhelperで保存一回/取消UndoRedo/最終破棄を確認する。
-session_ime_native 1158checks/1.07秒、CTest1.08秒成功。台帳あり/元追加2md/target追加1mdのrepeatは1158checks/1.02秒、CTest1.02秒成功。成功runtime stderr空・child/wrapper0・入力不変。追加3mdと台帳の全bytes/hash/作成更新日時不変。
-src/API/schema/既存helper/依存/ゲート不変。CMakeは登録と既存lock/TIMEOUT30の2行のみ。単体自己レビュー、追加waiver none、既存WVR-0001継続。
-本文選択の合成START挙動と設定面呼出しの試験前提を診断・訂正し最終対象成功。全失敗も保持。
-最終CI/統合/通常exe不変/全保全整理はこれから。[品質記録](../quality/2026-11-06-session-ime-native.md)。
-D:/NeNeFolio/worktrees/755-session-ime-native、同outputs、恒久agents。全体journalはD:/NeNeFolio/agents/quality-20261106/journal.md。
+#757は実CtrlShiftSで開いたSaveAs中のQUERY拒否/ENDTRUE無破棄/ENDFALSE理由解除を2回確認。
+同root有効/同dialog生存、未保存の日本語名/選択/target/focus、内容無効/readyfalse、本文全体/選択/modified/UndoRedoと全保存物を保持。
+Cancel復帰後は既存session helperで元oneの保存一回/取消/実UndoRedo/最終破棄を固定する。
+save_as_native 377checks/1.59秒、session_modal_native 438checks/1.14秒、計2.74秒成功。台帳あり/元追加2md/target追加1mdのrepeatはsession_modal_native 524checks/1.13秒、CTest1.13秒成功。runtime stderr空・child/wrapper0・入力不変。追加3mdと台帳の全bytes/hash/作成更新日時不変。
+製品src/API/schema/依存/既存session helper/ゲート不変。既存owned有限observerの閉じたactionと同期stack借用contextを使う。
+CMakeは試験登録と既存lock/TIMEOUT30の2行のみ。単体自己レビュー、追加waiver none、既存WVR-0001継続。
+最終CI/統合/通常exe不変/全保全整理はこれから。[品質記録](../quality/2026-11-06-session-modal-native.md)。
+D:/NeNeFolio/worktrees/757-session-modal-native、同outputs、恒久agents。全体journalはD:/NeNeFolio/agents/quality-20261106/journal.md。
 過去の停止履歴は今回依頼の停止指示として扱わない。
 
 ## 公開済み1.3.1
