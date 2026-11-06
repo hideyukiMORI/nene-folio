@@ -1,18 +1,18 @@
 # いまの状態 — NeNe Folio
 
-## 2026-11-06 — #743まで完了、使用中ノートのごみ箱送り拒否を確認中
+## 2026-11-06 — #745まで完了、全ノート検索へのfocus保存を確認中
 
 hideの07:08の依頼により、停止指示まで品質対応を継続する。試験・計測・必要な調査と独立レビューを行い、全試行と変更を記録する。
 最優先の平文paste・書式キー・Debug ASan修正はmain統合・通常反映・全保全整理まで完了。
-続く保存・改名・表示切替・移動と無題の離脱/初回保存の回帰は#743/PR744まで統合・整理済み。
-[日報](../reports/2026-11-06.md)・[引き継ぎ](../handoffs/2026-11-06.md)と各品質記録に全実測・確定原本をまとめた。
-最新確定mainは8c81e0402156e21c3334bd54c973288576990052、最終CI42173704433成功。
-#743確定原本D:/NeNeFolio/agents/743-first-save-retry-native/integration-completion.json。
+保存・改名・表示切替・移動・無題の離脱/初回保存・使用中trash拒否は#745/PR746まで統合・整理済み。
+[日報](../reports/2026-11-06.md)・[引き継ぎ](../handoffs/2026-11-06.md)と各品質記録に実測・確定原本をまとめた。
+最新確定mainは2dda66671c2af2017c7b05e5a1a39cf2f65477b8、最終CI42176053296成功。
+#745確定原本D:/NeNeFolio/agents/745-trash-busy-native/integration-completion.json。
 
-#745は実Ex :trashnoteの共有違反拒否をVIEWとSAME+Redo保有EDITで固定する。拒否後も入力/本文/UndoRedo/選択/保存物/台帳を保持し、Redo・保存拒否と解除後の再保存が成功。
-locked_save_native 291checks/0.94秒、CTest0.95秒成功。台帳あり・source追加2file/target追加1fileのrepeatは350checks/0.73秒、CTest0.74秒成功。両runtime stderr空・child/wrapper0・入力不変。3既存mdと台帳1fileの全bytes/hash/作成更新日時不変。
-src/API/schema/CMake不変。最終CI/統合/通常exe不変/全保全整理はこれから。[品質記録](../quality/2026-11-06-trash-busy-native.md)。
-作業木D:/NeNeFolio/worktrees/745-trash-busy-native、試行同outputs、恒久原本同agents。
+#747は実Ctrl+Shift+Fの保存拒否・本文/Undo/検索語保持・解除後保存/検索一致+1・SAME再focus/UndoRedoを固定する。
+locked_save_native 290checks/0.9秒、filter_save_native 213checks/0.65秒、計1.56秒成功。別カテゴリを含む既存一致2件/非一致1件/台帳ありのrepeatはfilter_save_native 213checks/0.66秒、CTest0.67秒成功。runtime stderr空・child/wrapper0・入力不変。追加3mdと台帳の全bytes/hash/作成更新日時不変。
+src/API/schema不変、CMakeは試験登録2行追加。最終CI/統合/通常exe不変/全保全整理はこれから。
+[品質記録](../quality/2026-11-06-filter-save-native.md)。作業木D:/NeNeFolio/worktrees/747-filter-save-native、試行同outputs、恒久原本同agents。
 全体journalはD:/NeNeFolio/agents/quality-20261106/journal.md。過去の停止履歴は今回依頼の停止指示として扱わない。
 
 ## 公開済み1.3.1

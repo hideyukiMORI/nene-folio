@@ -68,6 +68,7 @@ static bool first_save_case;
 static bool first_save_modal_case;
 static bool empty_save_case;
 static bool locked_save_case;
+static bool filter_save_case;
 
 static const char history_current[] = "# Current 日本語 😀 **saved**";
 static const char history_previous[] = "> Previous 猫 🐾 `old`";
@@ -145,14 +146,15 @@ static void seed_notes(struct persistence_port disk)
         theme_preview_case || settings_edit_case || mode_save_case || discard_case ||
         palette_case || paste_case || format_case || layout_case || save_as_case || rename_case ||
         replace_save_case || move_edit_case || first_save_case || first_save_modal_case ||
-        empty_save_case || locked_save_case || unicode_save_case)
+        empty_save_case || locked_save_case || unicode_save_case || filter_save_case)
     {
         seed_history(disk);
         source = history_case || note_switch_case || zoom_case || theme_preview_case ||
                          settings_edit_case || mode_save_case || discard_case || palette_case ||
                          paste_case || format_case || layout_case || save_as_case || rename_case ||
                          replace_save_case || move_edit_case || first_save_case ||
-                         first_save_modal_case || empty_save_case || locked_save_case
+                         first_save_modal_case || empty_save_case || locked_save_case ||
+                         filter_save_case
                      ? history_current
                      : replace_current;
     }
@@ -5154,6 +5156,23 @@ static HANDLE lock_native_note(struct native_fixture *_Nonnull fixture)
     return locked;
 }
 
+static void begin_history_failure(struct folio_window *_Nonnull window)
+{
+    failure =
+        (struct failure_probe){.root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW)};
+    failure.timer = SetTimer(nullptr, 0, 50, observe_history_failure);
+    require(failure.timer != 0, "start the owned failure observer timer");
+}
+
+static void end_history_failure(void)
+{
+    if (failure.timer != 0)
+    {
+        require(KillTimer(nullptr, failure.timer), "cancel an unused failure observer");
+        failure.timer = 0;
+    }
+}
+
 static void expect_locked_target(const struct folio_state *_Nonnull state)
 {
     struct note_ref selected = {0};
@@ -5324,17 +5343,10 @@ static void refused_native_save(struct folio_window *_Nonnull window,
     require(before.modified != 0 && before.undo != 0 && before.redo == 0,
             "save refusal starts with a real native edit and Undo");
     HANDLE locked = lock_native_note(fixture);
-    failure =
-        (struct failure_probe){.root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW)};
-    failure.timer = SetTimer(nullptr, 0, 50, observe_history_failure);
-    require(failure.timer != 0, "start the owned failure observer timer");
+    begin_history_failure(window);
     HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
     SendMessageW(body, WM_CHAR, 0x13, 0);
-    if (failure.timer != 0)
-    {
-        require(KillTimer(nullptr, failure.timer), "cancel an unused failure observer");
-        failure.timer = 0;
-    }
+    end_history_failure();
     require(CloseHandle(locked), "release the dedicated note's exclusive handle");
     pump(window);
     require(failure.closed == 1, "saving a locked original reports exactly one history failure");
@@ -5401,9 +5413,186 @@ static void run_locked_save_case(struct native_fixture *_Nonnull fixture)
         note_text_destroy(history.files[version]);
 }
 
+/* #747: Index focus saves through the real shortcut and retains failed native input. */
+struct filter_save_snapshot
+{
+    struct native_body_snapshot body;
+    size_t matches;
+    size_t total;
+};
+
+static void finish_filter_work(struct folio_window *_Nonnull window,
+                               const struct folio_state *_Nonnull state)
+{
+    for (size_t step = 0; step < 1000 && folio_window_idle_work_ready(window); ++step)
+    {
+        folio_window_continue_idle_work(window);
+        pump(window);
+    }
+    require(!folio_state_index_filter_pending(state),
+            "bounded public idle work finishes the query");
+}
+
+static void expect_filter_terms(struct folio_window *_Nonnull window,
+                                const struct folio_state *_Nonnull state, size_t matches)
+{
+    HWND input = folio_window_accessible_window(window, ACCESSIBLE_FILTER);
+    wchar_t term[16];
+    require(GetWindowTextW(input, term, 16) == 2 && wcscmp(term, L"追記") == 0 &&
+                strcmp(folio_state_index_filter_term(state), "追記") == 0 &&
+                strcmp(folio_state_search_term(state), "Current") == 0,
+            "global and local search terms retain their separate owners");
+    require(!folio_state_index_filter_pending(state) && folio_state_filtering(state) &&
+                folio_state_index_filter_count(state) == matches,
+            "the completed global result reflects only saved content");
+}
+
+static void prepare_filter_save(struct folio_window *_Nonnull window,
+                                struct native_fixture *_Nonnull fixture,
+                                struct filter_save_snapshot *_Nonnull snapshot)
+{
+    require(folio_state_pane_mode(fixture->state) == PANE_MODE_VIEW &&
+                strstr(history_current, "追記") == nullptr &&
+                strstr(switch_saved, "追記") != nullptr,
+            "the saved fixture does not yet match the later edit's independent query");
+    require(folio_state_set_search_term(fixture->state, u"Current", 7) == FOLIO_STATE_READY,
+            "seed a distinct note-local term through its public owner");
+    struct accessible_request focus = {.item = {.kind = ACCESSIBLE_FILTER},
+                                       .action = ACCESSIBLE_ACTION_FOCUS};
+    require(folio_window_accessible_action(window, &focus) == S_OK,
+            "focus the real global query while still viewing");
+    HWND input = folio_window_accessible_window(window, ACCESSIBLE_FILTER);
+    require(GetFocus() == input && SetWindowTextW(input, L"追記"), "enter the native index query");
+    pump(window);
+    finish_filter_work(window, fixture->state);
+    snapshot->matches = folio_state_index_filter_count(fixture->state);
+    snapshot->total = folio_state_note_count(fixture->state);
+    expect_filter_terms(window, fixture->state, snapshot->matches);
+    action(window, ACCESSIBLE_EDIT);
+    append_switch_text(window);
+    expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_CHANGED);
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    CHARRANGE selected = {.cpMin = 10, .cpMax = 12};
+    SendMessageW(body, EM_EXSETSEL, 0, (LPARAM)&selected);
+    capture_native_body(window, &snapshot->body);
+    require(snapshot->body.focus == body && snapshot->body.modified != 0 &&
+                snapshot->body.undo != 0 && snapshot->body.redo == 0 &&
+                snapshot->body.selection.cpMin < snapshot->body.selection.cpMax,
+            "filter save starts with real native edits, selection and Undo");
+}
+
+static void refused_filter_save(struct folio_window *_Nonnull window,
+                                struct native_fixture *_Nonnull fixture,
+                                const struct history_snapshot *_Nonnull history,
+                                const struct filter_save_snapshot *_Nonnull snapshot)
+{
+    HANDLE locked = lock_native_note(fixture);
+    begin_history_failure(window);
+    bool translated = native_key_input(window, 'F', FCONTROL | FSHIFT);
+    end_history_failure();
+    require(CloseHandle(locked), "release the dedicated source after the real focus refusal");
+    pump(window);
+    require(translated && failure.closed == 1,
+            "Ctrl+Shift+F reports one owned history failure without modal reentry");
+    expect_native_body(window, &snapshot->body);
+    expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_CHANGED);
+    expect_locked_target(fixture->state);
+    require(IsWindowEnabled(folio_window_accessible_window(window, ACCESSIBLE_WINDOW)) &&
+                IsWindowEnabled(folio_window_accessible_window(window, ACCESSIBLE_BODY)) &&
+                IsWindowEnabled(folio_window_accessible_window(window, ACCESSIBLE_TREE)) &&
+                folio_state_note_count(fixture->state) == snapshot->total,
+            "failure restores enabled input and preserves the public note count");
+    expect_filter_terms(window, fixture->state, snapshot->matches);
+    verify_history_unchanged(fixture, history);
+    expect_raw_file(fixture, L"\\schedule\\one.md", history_current);
+}
+
+static void retry_filter_save(struct folio_window *_Nonnull window,
+                              struct native_fixture *_Nonnull fixture,
+                              const struct history_snapshot *_Nonnull history,
+                              const struct filter_save_snapshot *_Nonnull snapshot)
+{
+    HWND input = folio_window_accessible_window(window, ACCESSIBLE_FILTER);
+    struct native_body_snapshot focused = snapshot->body;
+    focused.focus = input;
+    for (size_t repeat = 0; repeat < 2; ++repeat)
+    {
+        require(native_key_input(window, 'F', FCONTROL | FSHIFT),
+                "translate the real filter shortcut");
+        finish_filter_work(window, fixture->state);
+        DWORD start = 0;
+        DWORD end = 0;
+        SendMessageW(input, EM_GETSEL, (WPARAM)&start, (LPARAM)&end);
+        require(GetFocus() == input && start == 0 && end == 2,
+                "successful focus selects the full retained global term");
+        expect_native_body(window, &focused);
+        expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_SAME);
+        expect_locked_target(fixture->state);
+        require(folio_state_note_count(fixture->state) == snapshot->total,
+                "focus save keeps the total public note count");
+        expect_filter_terms(window, fixture->state, snapshot->matches + 1);
+        expect_body_saved(fixture, history, switch_saved);
+        expect_raw_file(fixture, L"\\schedule\\one.md", switch_saved);
+        struct accessible_request focus = {.item = {.kind = ACCESSIBLE_BODY},
+                                           .action = ACCESSIBLE_ACTION_FOCUS};
+        require(folio_window_accessible_action(window, &focus) == S_OK,
+                "return focus to the existing editor without reloading its body");
+        pump(window);
+        expect_native_body(window, &snapshot->body);
+    }
+}
+
+static void undo_filter_save(struct folio_window *_Nonnull window,
+                             struct native_fixture *_Nonnull fixture,
+                             const struct history_snapshot *_Nonnull history, size_t matches)
+{
+    history_undo(window);
+    expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_CHANGED);
+    expect_body_saved(fixture, history, switch_saved);
+    expect_filter_terms(window, fixture->state, matches);
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    require(SendMessageW(body, EM_CANREDO, 0, 0) != 0 && SendMessageW(body, EM_REDO, 0, 0) != 0,
+            "filter focus saves retain the original redoable native edit");
+    pump(window);
+    expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_SAME);
+    expect_body_saved(fixture, history, switch_saved);
+    expect_filter_terms(window, fixture->state, matches);
+}
+
+static void run_filter_save_case(struct native_fixture *_Nonnull fixture)
+{
+    require(folio_state_select_note(fixture->state, 0, 0, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
+            "select the dedicated filter-save source");
+    expect_locked_target(fixture->state);
+    struct history_snapshot history = {0};
+    capture_history(fixture, &history);
+    struct folio_window *window = nullptr;
+    require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
+                FOLIO_WINDOW_CREATED,
+            "real filter-save window");
+    pump(window);
+    struct filter_save_snapshot snapshot = {0};
+    prepare_filter_save(window, fixture, &snapshot);
+    verify_history_unchanged(fixture, &history);
+    refused_filter_save(window, fixture, &history, &snapshot);
+    retry_filter_save(window, fixture, &history, &snapshot);
+    undo_filter_save(window, fixture, &history, snapshot.matches + 1);
+    require(controlled.requests == 0 && failure.timer == 0,
+            "filter save leaves no image work or observer timer");
+    folio_window_destroy(window);
+    for (size_t version = 0; version <= note_history_depth; ++version)
+        note_text_destroy(history.files[version]);
+}
+
 static void run_extended_fixture(struct native_fixture *_Nonnull fixture, int argc,
                                  char *_Nonnull *_Nonnull argv)
 {
+    if (filter_save_case)
+    {
+        run_filter_save_case(fixture);
+        return;
+    }
     if (locked_save_case)
     {
         run_locked_save_case(fixture);
@@ -5489,6 +5678,7 @@ int main(int argc, char *_Nonnull *_Nonnull argv)
     first_save_modal_case = strcmp(selector, "--first-save-modal") == 0;
     empty_save_case = strcmp(selector, "--empty-save") == 0;
     locked_save_case = strcmp(selector, "--locked-save") == 0;
+    filter_save_case = strcmp(selector, "--filter-save") == 0;
     HWINSTA original_station = GetProcessWindowStation();
     HDESK original_desktop = GetThreadDesktop(GetCurrentThreadId());
     HWINSTA paste_station = paste_case ? isolate_paste_clipboard() : nullptr;

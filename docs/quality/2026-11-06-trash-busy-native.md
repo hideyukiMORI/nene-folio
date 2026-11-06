@@ -50,3 +50,11 @@ Windows11 Pro10.0.26300、Msftedit10.0.26100.9949、専用desktop/verification-i
 
 OSごみ箱移動成功/復元/設定変更、BUSY以外のOS移動失敗/台帳部分失敗/資源失敗、別ノート/カテゴリの削除、物理keyboard/全OS/DPI/外部UIAは対象外。
 通常app/実ノート/clipboard/前面focus/Storeは試験に使わない。個別保留466/634/530と旧削除拒否領域を維持する。
+
+## 統合・保全整理の確定
+
+#745/PR746は最終head41e310ab6aa7830282d01f15051458a1969643ff、必須CI42176053296 full-gate/check成功。
+main2dda66671c2af2017c7b05e5a1a39cf2f65477b8へ正典統合し、通常exeのhash/bytes/更新日時不変を確認した。src/eng/fonts/packaging/CMake不変で通常build/app起動なし。
+4158filesを全hash保全し、絶対path/同一squash tree/clean・untracked・ignored/link/稼働参照0確認後、専用worktree/outputを整理。branch/commit保持。
+Ready前merge01のPR本文field行不足拒否child/wrapper1も保持し、本文の形式だけを訂正したmerge02で成功した。
+確定原本D:/NeNeFolio/agents/745-trash-busy-native/integration-completion.json。

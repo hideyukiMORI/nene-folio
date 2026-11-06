@@ -150,6 +150,8 @@ Unicode行名と全台帳/履歴、選択/非選択/category/Treeの一致、foc
 履歴回転途中/write失敗・容量不足・ACL改変・全OS/DPI・物理IME・OS fallback面は対象外。[品質記録](quality/2026-11-06-locked-save-native.md)。
 #745は同試験へVIEW/SAME+Redo編集の実Ex :trashnote BUSY拒否と入力再有効化を追加。locked_save_native 291checks/0.94秒、CTest0.95秒成功。台帳あり・source追加2file/target追加1fileのrepeatは350checks/0.73秒、CTest0.74秒成功。両runtime stderr空・child/wrapper0・入力不変。3既存mdと台帳1fileの全bytes/hash/作成更新日時不変。
 [全試行と限界](quality/2026-11-06-trash-busy-native.md)。
+#747はfilter_save_nativeで実Ctrl+Shift+Fの共有違反拒否/解除後保存/検索copy更新/SAME再focus/UndoRedoを固定。locked_save_native 290checks/0.9秒、filter_save_native 213checks/0.65秒、計1.56秒成功。別カテゴリを含む既存一致2件/非一致1件/台帳ありのrepeatはfilter_save_native 213checks/0.66秒、CTest0.67秒成功。runtime stderr空・child/wrapper0・入力不変。追加3mdと台帳の全bytes/hash/作成更新日時不変。
+[全試行と限界](quality/2026-11-06-filter-save-native.md)。
 
 ### QLT-009 — カバレッジは下げられない
 
