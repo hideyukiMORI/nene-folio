@@ -91,6 +91,9 @@ Ctrl+R/2/5の書式不変、未保存本文/選択/UndoRedo、既存移動・選
 native本文/選択/UndoRedoと元md/全履歴を保ち、新mdの全bytes/初回履歴なしを照合。164checksと再実行170checksが成功した。
 再実行で前回3コピーのbytes/hash/作成更新日時不変と新3コピー追加を照合した。30秒timeout/data lockを維持する。
 全試行・未検証範囲は[品質記録](quality/2026-11-06-save-as-native.md)へ。
+#733は同じnative試験で、既知同名とOSのcase alias衝突を確認する。台帳なしのsave_as_native302checks/1.39秒、台帳ありの再実行332checks/1.03秒成功。両stderr空・child/wrapper0・入力不変。旧3コピーのbytes/hash/作成更新日時と履歴不在も保持。
+Ex語/focus/理由、native本文/選択/modified/UndoRedo、元md/全履歴/revision、全台帳/実名前集合、一時write不在を固定する。
+拒否後の実UndoRedoと3コピー成功を維持する。[全試行と限界](quality/2026-11-06-save-as-collision-native.md)。
 
 #717の改名はCTestのrename_nativeで固定する。専用target/dataの実Ex入口から同名無操作/理由と入力focus保持、
 変更EDIT/Redo保有状態の先保存・履歴移動・native UndoRedo、VIEWの非保存改名、旧名/journal不在を252checksで確認した。

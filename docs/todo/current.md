@@ -1,17 +1,18 @@
 # いまの状態 — NeNe Folio
 
-## 2026-11-06 — #729まで完了、ノート行の選択値を修正中
+## 2026-11-06 — #731まで完了、別名保存の名前衝突を確認中
 
 hideの07:08の依頼により、停止指示まで品質対応を継続する。試験・計測・必要な調査と独立レビューを行い、全試行と変更を記録する。
 最優先の#479/PR708の平文paste、#709/PR710のCtrl+R/2/5、#713/PR714のDebug ASan検出修正は、最終CI・main統合・通常反映・全保全整理まで完了。
 [paste](../quality/2026-11-06-editor-paste.md)・[書式キー](../quality/2026-11-06-editor-format.md)・[ASan](../quality/2026-11-06-asan-interceptor.md)の品質記録を参照する。
 表示切替・別名保存・改名・置換欄保存・カテゴリ間drag・Unicode保存・新規と初回保存・空本文保存・共有違反の保存拒否の回帰も#729/PR730まで統合・整理済み。実測と確定原本は[日報](../reports/2026-11-06.md)・[引き継ぎ](../handoffs/2026-11-06.md)にまとめた。
-最新確定mainは4834e45156fae29d0c5ee9cc1b245ed911c90667、最終CI42155500337成功。
-通常exe不変、3918files全保全。#729原本D:/NeNeFolio/agents/729-locked-save-native/integration-completion.json。
+最新確定mainは1a9b8698afa624d393f36ec002bff39d9a9d5990、最終CI42157906888成功。
+#731のノート行選択値修正は通常Debug反映・実data32files保持・4184files全保全整理まで完了。
+確定原本D:/NeNeFolio/agents/731-unicode-rename-native/integration-completion.json。
 
-#731はUnicode改名の回帰で、主窓がdrawerの選択値をfalseへ上書きする不具合を発見・修正。rename_native273checks/2.05秒、note_switch_native197checks/1.4秒、layout_edit_native606checks/0.65秒、計4.13秒成功。既存Unicode名保持の再実行は276checks/1.41秒成功。stderr空・child/wrapper0・入力不変。
-API/schema/CMake不変。最終CI/統合/通常反映はこれから。[品質記録](../quality/2026-11-06-unicode-rename-native.md)。
-作業木D:/NeNeFolio/worktrees/731-unicode-rename-native、試行同outputs、恒久原本同agents。
+#733は別名保存の既知同名/OS case alias衝突の拒否保持を既存native試験へ追加。台帳なしのsave_as_native302checks/1.39秒、台帳ありの再実行332checks/1.03秒成功。両stderr空・child/wrapper0・入力不変。旧3コピーのbytes/hash/作成更新日時と履歴不在も保持。
+src/API/schema/CMake不変。最終CI/統合/通常exe不変/全保全整理はこれから。[品質記録](../quality/2026-11-06-save-as-collision-native.md)。
+作業木D:/NeNeFolio/worktrees/733-save-as-collision-native、試行同outputs、恒久原本同agents。
 全体journalはD:/NeNeFolio/agents/quality-20261106/journal.md。過去の停止履歴は今回依頼の停止指示として扱わない。
 
 ## 公開済み1.3.1
@@ -39,8 +40,8 @@ Windows版は1.3.1.0。正規ZIP/MSIX生成、専用コピーでの起動・設�
 
 ## 通常版と実機確認
 
-通常exeは `C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`、反映sourceは `570d14000de8cbc228c4017823d850a6543231a8`。
-SHA256は `2f1864c471e0cb0ff14053dfa52fbc2aabe0da21caa4d16f8507e61cd41e14a0`。#713反映時、実data32fileの全bytes/hash/作成更新日時不変を確認した。
+通常exeは `C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`、反映sourceは `1a9b8698afa624d393f36ec002bff39d9a9d5990`。
+SHA256は `064c2f8bc35d132aa486b2677ac9fba7f794d1a6c44e320af1d7872e1a8b91eb`。#731反映時、実data32fileの全bytes/hash/作成更新日時不変を確認した。
 通常app/実ノート/Storeは品質試験に使っていない。hideによる1.3.0の実機受理は未確認。
 文書・native試験のみの変更を理由に通常buildを反復しない。配布1.3.0のsourceとは区別する。
 

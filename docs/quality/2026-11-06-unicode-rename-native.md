@@ -54,3 +54,12 @@ layout_stepのfieldをkindと誤記した候補は、実field controlと照合�
 nativeの公開値を確認し、外部UIA client/reader発話/通知タイミング・glyphの画素描画・全OS/DPIを実測したとは扱わない。
 カテゴリ改名、Unicode正規化/大小文字だけの改名、長いpath/予約名/末尾空白、名前衝突/I/O失敗/journal復旧、物理IME/keyboard/fresh-process復旧は対象外。
 Store署名版の検証や新規配布は行わない。
+
+## 統合・通常反映・保全整理の確定
+
+#731/PR732は最終head66a91a4cc861a861213f7ee9f2ebfc5f5c635adf、必須CI42157906888 full-gate/check成功。
+main1a9b8698afa624d393f36ec002bff39d9a9d5990へ正典統合。通常Debug exeを正典prepare-real-machineで反映し、
+SHA064c2f8bc35d132aa486b2677ac9fba7f794d1a6c44e320af1d7872e1a8b91eb、8096768bytesを確認した。
+通常app未起動、実data32filesの全bytes/hash/作成更新日時不変。旧exeも恒久原本へ保全した。
+4184filesを全hash保全し、絶対path/同一squash tree/clean・untracked・ignored/link/稼働参照0を確認後、専用worktree/outputを整理した。
+branch/commit保持。確定原本D:/NeNeFolio/agents/731-unicode-rename-native/integration-completion.json。
