@@ -158,6 +158,8 @@ Unicode行名と全台帳/履歴、選択/非選択/category/Treeの一致、foc
 [全試行と限界](quality/2026-11-06-session-save-native.md)。
 #753はsession_untitled_nativeで初期空/編集済み/Undo後空の無題OS終了拒否、手動初回保存後の承認/取消/最終破棄を固定。first_save_modal_native 308checks/1.15秒、session_save_native 233checks/0.83秒、session_untitled_native 576checks/0.91秒、計2.89秒成功。台帳・追加ノート・前回保存物ありのrepeatはsession_untitled_native 702checks/1.09秒、CTest1.1秒成功。runtime stderr空・child/wrapper0・入力不変。元追加2md/target追加1md/前回保存物/元台帳の全bytes/hash/作成更新日時不変。
 [全試行と限界](quality/2026-11-06-session-untitled-native.md)。
+#755はsession_ime_nativeで4所有者/5対象の合成IME中の終了拒否/取消後制約保持/解除後の保存一回と最終破棄を固定。session_ime_native 1158checks/1.07秒、CTest1.08秒成功。台帳あり/元追加2md/target追加1mdのrepeatは1158checks/1.02秒、CTest1.02秒成功。成功runtime stderr空・child/wrapper0・入力不変。追加3mdと台帳の全bytes/hash/作成更新日時不変。
+[全試行と限界](quality/2026-11-06-session-ime-native.md)。
 
 ### QLT-009 — カバレッジは下げられない
 

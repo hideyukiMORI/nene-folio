@@ -71,6 +71,7 @@ static bool locked_save_case;
 static bool filter_save_case;
 static bool session_save_case;
 static bool session_untitled_case;
+static bool session_ime_case;
 
 static const char history_current[] = "# Current 日本語 😀 **saved**";
 static const char history_previous[] = "> Previous 猫 🐾 `old`";
@@ -149,7 +150,7 @@ static void seed_notes(struct persistence_port disk)
         palette_case || paste_case || format_case || layout_case || save_as_case || rename_case ||
         replace_save_case || move_edit_case || first_save_case || first_save_modal_case ||
         empty_save_case || locked_save_case || unicode_save_case || filter_save_case ||
-        session_save_case || session_untitled_case)
+        session_save_case || session_untitled_case || session_ime_case)
     {
         seed_history(disk);
         source = history_case || note_switch_case || zoom_case || theme_preview_case ||
@@ -157,7 +158,8 @@ static void seed_notes(struct persistence_port disk)
                          paste_case || format_case || layout_case || save_as_case || rename_case ||
                          replace_save_case || move_edit_case || first_save_case ||
                          first_save_modal_case || empty_save_case || locked_save_case ||
-                         filter_save_case || session_save_case || session_untitled_case
+                         filter_save_case || session_save_case || session_untitled_case ||
+                         session_ime_case
                      ? history_current
                      : replace_current;
     }
@@ -5978,6 +5980,255 @@ static void run_session_untitled_case(struct native_fixture *_Nonnull fixture)
     release_modal_save(&files);
 }
 
+/* #755: Synthetic composition notifications protect all four input owners. */
+struct session_ime_target
+{
+    HWND handle;
+    bool field;
+};
+
+struct session_ime_probe
+{
+    struct folio_window *window;
+    HWND root;
+    struct native_fixture *fixture;
+    const struct history_snapshot *history;
+    struct native_body_snapshot body;
+    struct session_ime_target target;
+    wchar_t input[64];
+    DWORD first;
+    DWORD last;
+    size_t count;
+    enum folio_note_change change;
+};
+
+static void expect_composition_retained(const struct session_ime_probe *_Nonnull probe,
+                                        bool composing)
+{
+    struct folio_window *window = probe->window;
+    MSG message;
+    require(IsWindow(probe->root) && IsWindowEnabled(probe->root) &&
+                folio_window_accessible_window(window, ACCESSIBLE_WINDOW) == probe->root &&
+                folio_window_accessible_ready(window) == !composing &&
+                !PeekMessageW(&message, nullptr, WM_QUIT, WM_QUIT, PM_NOREMOVE),
+            "session refusal keeps an enabled root, composition readiness and no quit");
+    expect_native_body(window, &probe->body);
+    expect_editor(window, probe->fixture->state, probe->body.text, probe->change);
+    expect_locked_target(probe->fixture->state);
+    verify_history_unchanged(probe->fixture, probe->history);
+    require(folio_state_note_count(probe->fixture->state) == probe->count &&
+                name_dialog.timer == 0 && failure.timer == 0,
+            "composition refuses before saving, prompting or changing public note rows");
+    if (probe->target.field)
+        expect_replace_save_input(probe->target.handle, probe->input, probe->first, probe->last);
+}
+
+static void refuse_composing_session(struct folio_window *_Nonnull window,
+                                     struct native_fixture *_Nonnull fixture,
+                                     const struct history_snapshot *_Nonnull history,
+                                     struct session_ime_target target)
+{
+    struct session_ime_probe probe = {.window = window,
+                                      .root =
+                                          folio_window_accessible_window(window, ACCESSIBLE_WINDOW),
+                                      .fixture = fixture,
+                                      .history = history,
+                                      .target = target,
+                                      .count = folio_state_note_count(fixture->state)};
+    capture_native_body(window, &probe.body);
+    require(wcscmp(probe.body.text, switch_original) == 0 ||
+                wcscmp(probe.body.text, switch_edited) == 0,
+            "the IME probe begins with an independently expected original or edited body");
+    probe.change =
+        wcscmp(probe.body.text, switch_edited) == 0 ? FOLIO_NOTE_CHANGED : FOLIO_NOTE_SAME;
+    require(IsWindow(target.handle) && IsWindowVisible(target.handle) &&
+                GetFocus() == target.handle,
+            "composition targets the visible focused native owner");
+    if (target.field)
+    {
+        require(GetWindowTextW(target.handle, probe.input, 64) > 0,
+                "the focused composition field starts with a nonempty independent query");
+        SendMessageW(target.handle, EM_GETSEL, (WPARAM)&probe.first, (LPARAM)&probe.last);
+        require(probe.first < probe.last, "the composition query starts with a nonempty selection");
+    }
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    SendMessageW(target.handle, WM_IME_STARTCOMPOSITION, 0, 0);
+    for (unsigned attempt = 0; attempt < 2; ++attempt)
+    {
+        require(SendMessageW(root, WM_QUERYENDSESSION, 0, (LPARAM)ENDSESSION_LOGOFF) == FALSE,
+                "composition and composition after a cancelled session both refuse synchronously");
+        expect_session_notice(window, L"文字の変換を確定してから終了してください。", true);
+        expect_composition_retained(&probe, true);
+        SendMessageW(root, WM_ENDSESSION, TRUE, (LPARAM)ENDSESSION_LOGOFF);
+        expect_composition_retained(&probe, true);
+        expect_session_notice(window, L"文字の変換を確定してから終了してください。", true);
+        SendMessageW(root, WM_ENDSESSION, FALSE, (LPARAM)ENDSESSION_LOGOFF);
+        expect_session_notice(window, L"文字の変換を確定してから終了してください。", false);
+        expect_composition_retained(&probe, true);
+    }
+    SendMessageW(target.handle, WM_IME_ENDCOMPOSITION, 0, 0);
+    pump(window);
+    SendMessageW(root, WM_ENDSESSION, FALSE, (LPARAM)ENDSESSION_LOGOFF);
+    expect_composition_retained(&probe, false);
+}
+
+static void focus_session_body(struct folio_window *_Nonnull window)
+{
+    struct accessible_request focus = {.item = {.kind = ACCESSIBLE_BODY},
+                                       .action = ACCESSIBLE_ACTION_FOCUS};
+    require(folio_window_accessible_action(window, &focus) == S_OK,
+            "return focus through the existing public body action");
+    pump(window);
+}
+
+static void session_body_composition(struct folio_window *_Nonnull window,
+                                     struct native_fixture *_Nonnull fixture,
+                                     const struct history_snapshot *_Nonnull history)
+{
+    action(window, ACCESSIBLE_EDIT);
+    append_switch_text(window);
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    /* Native RichEdit START replaces a selection before QUERY; start at a caret instead. */
+    CHARRANGE selection = {.cpMin = 10, .cpMax = 10};
+    SendMessageW(body, EM_EXSETSEL, 0, (LPARAM)&selection);
+    expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_CHANGED);
+    require(SendMessageW(body, EM_GETMODIFY, 0, 0) != 0 &&
+                SendMessageW(body, EM_CANUNDO, 0, 0) != 0,
+            "body composition starts with an unsaved native insertion and Undo");
+    refuse_composing_session(window, fixture, history, (struct session_ime_target){.handle = body});
+    selection.cpMax = 12;
+    SendMessageW(body, EM_EXSETSEL, 0, (LPARAM)&selection);
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    SetFocus(root);
+    refuse_composing_session(window, fixture, history, (struct session_ime_target){.handle = root});
+    focus_session_body(window);
+    history_undo(window);
+    expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_SAME);
+    require(SendMessageW(body, EM_CANREDO, 0, 0) != 0,
+            "body and root composition preserve actual Undo and leave the insertion redoable");
+}
+
+static void session_filter_composition(struct folio_window *_Nonnull window,
+                                       struct native_fixture *_Nonnull fixture,
+                                       const struct history_snapshot *_Nonnull history)
+{
+    struct accessible_request focus = {.item = {.kind = ACCESSIBLE_FILTER},
+                                       .action = ACCESSIBLE_ACTION_FOCUS};
+    require(folio_window_accessible_action(window, &focus) == S_OK,
+            "focus the real index query with a SAME redoable body");
+    HWND input = folio_window_accessible_window(window, ACCESSIBLE_FILTER);
+    require(SetWindowTextW(input, L"Current"), "enter the independent global query");
+    pump(window);
+    finish_filter_work(window, fixture->state);
+    SendMessageW(input, EM_SETSEL, 1, 4);
+    expect_replace_save_input(input, L"Current", 1, 4);
+    require(strcmp(folio_state_index_filter_term(fixture->state), "Current") == 0 &&
+                folio_state_index_filter_count(fixture->state) == 1,
+            "exactly the dedicated saved source matches the global query");
+    refuse_composing_session(window, fixture, history,
+                             (struct session_ime_target){.handle = input, .field = true});
+    finish_filter_work(window, fixture->state);
+    expect_replace_save_input(input, L"Current", 1, 4);
+    require(strcmp(folio_state_index_filter_term(fixture->state), "Current") == 0 &&
+                folio_state_index_filter_count(fixture->state) == 1 &&
+                !folio_state_index_filter_pending(fixture->state),
+            "session cancellation and composition end retain the completed global result");
+    focus_session_body(window);
+}
+
+static void session_find_composition(struct folio_window *_Nonnull window,
+                                     struct native_fixture *_Nonnull fixture,
+                                     const struct history_snapshot *_Nonnull history)
+{
+    invoke_operation(window, FOLIO_COMMAND_FIND);
+    pump(window);
+    search_term(window, L"日本語");
+    expect_search_result(window, 10, 13, L"1 / 1 件");
+    HWND input = folio_window_accessible_window(window, ACCESSIBLE_COMMAND_INPUT);
+    SendMessageW(input, EM_SETSEL, 1, 3);
+    expect_replace_save_input(input, L"日本語", 1, 3);
+    uint64_t revision = folio_window_accessible_surface_revision(window);
+    refuse_composing_session(window, fixture, history,
+                             (struct session_ime_target){.handle = input, .field = true});
+    expect_replace_save_input(input, L"日本語", 1, 3);
+    expect_search_result(window, 10, 13, L"1 / 1 件");
+    require(folio_window_accessible_surface_revision(window) == revision &&
+                strcmp(folio_state_search_term(fixture->state), "日本語") == 0 &&
+                strcmp(folio_state_index_filter_term(fixture->state), "Current") == 0,
+            "the same Find surface and both separately owned search terms survive composition");
+    surface_button(window, ACCESSIBLE_SURFACE_CLOSE);
+    focus_session_body(window);
+}
+
+static void session_settings_composition(struct folio_window *_Nonnull window,
+                                         struct native_fixture *_Nonnull fixture,
+                                         const struct history_snapshot *_Nonnull history)
+{
+    struct theme_snapshot settings = {.choice = folio_state_theme_choice(fixture->state),
+                                      .settings = read_theme_settings(fixture)};
+    struct accessible_request open = {.item = {.kind = ACCESSIBLE_SETTINGS},
+                                      .action = ACCESSIBLE_ACTION_INVOKE};
+    require(folio_window_accessible_action(window, &open) == S_OK,
+            "open settings through its existing public button");
+    pump(window);
+    HWND layer = folio_window_accessible_window(window, ACCESSIBLE_SURFACE);
+    require(!IsWindowVisible(folio_window_accessible_window(window, ACCESSIBLE_COMMAND_INPUT)),
+            "the settings surface has no visible native query field");
+    struct accessible_item list = {.kind = ACCESSIBLE_SURFACE_LIST,
+                                   .revision = folio_window_accessible_surface_revision(window)};
+    struct accessible_item selected;
+    require(folio_window_accessible_selected(window, &list, &selected) == S_OK,
+            "snapshot the actual settings row before composition on its focused layer");
+    refuse_composing_session(window, fixture, history,
+                             (struct session_ime_target){.handle = layer});
+    struct accessible_item after;
+    struct accessible_item surface = {.kind = ACCESSIBLE_SURFACE};
+    struct accessible_view view;
+    require(folio_window_accessible_surface_revision(window) == list.revision &&
+                folio_window_accessible_selected(window, &list, &after) == S_OK &&
+                accessible_item_equal(selected, after) &&
+                folio_window_accessible_read(window, &surface, &view) == S_OK && !view.offscreen,
+            "composition refusal keeps the same visible settings surface and selected row");
+    expect_theme_settings(fixture, &settings);
+    surface_button(window, ACCESSIBLE_SURFACE_CLOSE);
+    expect_theme_settings(fixture, &settings);
+    file_bytes_destroy(settings.settings);
+    focus_session_body(window);
+}
+
+static void run_session_ime_case(struct native_fixture *_Nonnull fixture)
+{
+    require(folio_state_select_note(fixture->state, 0, 0, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
+            "select the dedicated named composition source");
+    struct history_snapshot history = {0};
+    capture_history(fixture, &history);
+    struct folio_window *window = nullptr;
+    require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
+                FOLIO_WINDOW_CREATED,
+            "real session-composition window on the dedicated desktop");
+    pump(window);
+    session_body_composition(window, fixture, &history);
+    session_filter_composition(window, fixture, &history);
+    session_find_composition(window, fixture, &history);
+    session_settings_composition(window, fixture, &history);
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    require(SendMessageW(body, EM_CANREDO, 0, 0) != 0 && SendMessageW(body, EM_REDO, 0, 0) != 0,
+            "all composition owners preserve actual Redo to the original insertion");
+    pump(window);
+    expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_CHANGED);
+    verify_history_unchanged(fixture, &history);
+    struct native_body_snapshot before = {0};
+    capture_native_body(window, &before);
+    approve_session_save(window, fixture, &history, &before);
+    finish_session_save(window, fixture, &history);
+    require(controlled.requests == 0 && name_dialog.timer == 0 && failure.timer == 0,
+            "composition session tests leave no image request or modal observer");
+    folio_window_destroy(window);
+    for (size_t version = 0; version <= note_history_depth; ++version)
+        note_text_destroy(history.files[version]);
+}
+
 static void run_extended_fixture(struct native_fixture *_Nonnull fixture, int argc,
                                  char *_Nonnull *_Nonnull argv)
 {
@@ -6037,7 +6288,9 @@ static void run_extended_fixture(struct native_fixture *_Nonnull fixture, int ar
 static void run_remaining_fixture(struct native_fixture *_Nonnull fixture, int argc,
                                   char *_Nonnull *_Nonnull argv)
 {
-    if (session_save_case)
+    if (session_ime_case)
+        run_session_ime_case(fixture);
+    else if (session_save_case)
         run_session_save_case(fixture);
     else if (session_untitled_case)
         run_session_untitled_case(fixture);
@@ -6085,6 +6338,7 @@ int main(int argc, char *_Nonnull *_Nonnull argv)
     filter_save_case = strcmp(selector, "--filter-save") == 0;
     session_save_case = strcmp(selector, "--session-save") == 0;
     session_untitled_case = strcmp(selector, "--session-untitled") == 0;
+    session_ime_case = strcmp(selector, "--session-ime") == 0;
     HWINSTA original_station = GetProcessWindowStation();
     HDESK original_desktop = GetThreadDesktop(GetCurrentThreadId());
     HWINSTA paste_station = paste_case ? isolate_paste_clipboard() : nullptr;

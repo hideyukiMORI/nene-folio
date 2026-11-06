@@ -48,3 +48,10 @@ fixture準備/解放は既存初回保存試験から共用helperへ抽出。拒
 
 専用rootのLOGOFF通知のみ。実OSログオフ/WindowsUpdate/再起動/強制終了/電断、全flags、改名pending/IME/modal/削除との全組合せ、保存中再入取消、理由API故障、保存途中/容量/ACL/公開後失敗/資源失敗は対象外。
 OS側理由表示と待機時間内の保存完了を保証しない。通常app/実ノート/clipboard/前面focus/Store未使用。#309の旧診断は今回結果へ加算しない。個別保留466/634/530と旧削除拒否領域維持。
+
+## 統合・保全整理の確定
+
+#753/PR754は最終head770349fdb39e6acfac17e7449e40de947746630b、必須CI42184391726 full-gate/check成功。
+main95bc500f6acf84e7e08dfb41d7680cda62cdb0d0へ正典統合。src/eng/fonts/packagingとCMake試験2行以外不変、通常exe hash/bytes/更新日時不変。通常build/app起動なし。
+2795files全hash保全後、絶対path/同一squash tree/clean・untracked・ignored/link/稼働参照0を確認して専用worktree/output整理、branch/commit保持。
+確定原本D:/NeNeFolio/agents/753-session-untitled-native/integration-completion.json。
