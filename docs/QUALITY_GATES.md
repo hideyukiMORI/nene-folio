@@ -107,6 +107,11 @@ native本文/選択/UndoRedoと元md/全履歴を保ち、新mdの全bytes/初�
 358checksと再実行398checksで本文native状態、非保存の移動、保存先追随、旧履歴保持を確認。製品経路は不変。
 物理mouse/IME/全DPI/衝突/I/O失敗は対象外。[品質記録](quality/2026-11-06-move-edit-native.md)。
 
+#723のunicode_save_nativeは署名1＋本文FEFF2、FFFD/VT/日本語/絵文字/tab/RTF escape/CRLFのnative保存を固定する。
+251checksで未編集no-write、保存1回、raw md/history1の独立literal比較、UndoRedo/VIEW→EDITを確認。
+直接共用search_native246checksも成功。物理IME・不正文字拒否・全改行・fresh-process再起動は対象外。
+[品質記録](quality/2026-11-06-unicode-save-native.md)。
+
 ### QLT-009 — カバレッジは下げられない
 
 中核の分岐カバレッジ下限を 90% とする。閾値は上げてよいが下げてはならない。下げるには ADR が要る。

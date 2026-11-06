@@ -1,32 +1,18 @@
 # いまの状態 — NeNe Folio
 
-## 2026-11-06 — 置換2欄保存まで完了、カテゴリ間dragの編集保持を確認中
+## 2026-11-06 — #721まで完了、Unicode/CRLF本文の保存を確認中
 
-hideの新しい依頼により、停止指示まで品質対応を継続する。試験・計測・必要な調査と独立レビューを行い、全試行と変更を記録する。
-最優先の#479はPR708の最終CI42122814552が成功し、main `50fa28ea6ebc120023f1bbd30a753f9c3a5e9ab3`へ統合した。
-既存RichEditの編集/Undo経路で文字形式だけを受け入れる。対象414checksと直接影響する画像保存28checksが成功。
-通常反映と実data32file不変、11811filesの全保全・作業木/旧新outputの整理まで完了し、branch/commitは保持した。
-[品質記録](../quality/2026-11-06-editor-paste.md)。確定原本はD:/NeNeFolio/agents/479-editor-paste-20261106/integration-completion.json。
-#709/PR710はCtrl+R/2/5の段落書式変更を止め、339checksと最終CI42129740643が成功。main `8ccbf29a232bd25d03102be3ce8f0fe4f9e05851`へ統合・通常反映・10611filesの全保全整理まで完了した。
-[品質記録](../quality/2026-11-06-editor-format.md)。確定原本はD:/NeNeFolio/agents/709-editor-format/integration-completion.json。
-#711/PR712は表示3択と狭幅chooserの編集保持486checksと最終CI42132598999が成功し、main `47f80045ce3f33b71e176d31c38b43f84caa6d94`へ統合した。
-通常exe不変、4402filesの全保全と専用領域整理まで完了。[品質記録](../quality/2026-11-06-layout-native.md)、確定原本D:/NeNeFolio/agents/711-layout-native/integration-completion.json。
-#713/PR714はASanのfrexp出力先未検出をDebug linkで修復し、最終CI42136664822成功、main570d14000de8cbc228c4017823d850a6543231a8へ統合。
-通常Debug反映と実data32files不変、7806files全保全・専用領域整理まで完了した。[品質記録](../quality/2026-11-06-asan-interceptor.md)。
-確定原本D:/NeNeFolio/agents/713-asan-interceptor/integration-completion.json。
-#715/PR716は別名保存の対象164checksと再実行170checks、最終CI42139348824成功、main4096ce691e151bbba32bc08bf3739952ebf18535へ統合。
-通常exe不変、3358files全保全・専用領域整理まで完了。[品質記録](../quality/2026-11-06-save-as-native.md)、確定原本同agents/715-save-as-native/integration-completion.json。
-#717/PR718は改名252checks・直接共用save_as164checks・再実行252checksと最終CI42141683575成功、main8ebc8b8a7b28fe81f9bf68630c58acf26617b1aaへ統合。
-通常exe不変、4099files全保全・専用領域整理まで完了。[品質記録](../quality/2026-11-06-rename-native.md)、確定原本同agents/717-rename-native/integration-completion.json。
-#719/PR720は置換2欄の保存221checksと最終CI42144117242成功、mainb85308e653eac90041c764accb882231350eb058へ統合。
-通常exe不変、3371files全保全・専用領域整理まで完了。[品質記録](../quality/2026-11-06-replace-save-native.md)、確定原本同agents/719-replace-save-native/integration-completion.json。
-#721はカテゴリ間dragのnative編集保持と各保存先の履歴を追加し、358checksと再実行398checksが成功、stderr空。
-製品src/API/schemaは不変。最終CI/統合はこれから。[品質記録](../quality/2026-11-06-move-edit-native.md)。作業木D:/NeNeFolio/worktrees/721-move-edit-native、試行同outputs、恒久原本同agents。
-全体journalはD:/NeNeFolio/agents/quality-20261106/journal.md。
-00:51の停止は今回指示で解除。停止処理の履歴はD:/NeNeFolio/agents/706-store-publication/integration-completion.jsonに保持する。
-#704/PR705は操作パレットの取消と編集保持を確認（141checks、stderr空）し、最終CI42054891152成功、main eaef26aへ統合・全保全整理済み。
-[品質記録](../quality/2026-11-06-palette-native.md)。原本はD:/NeNeFolio/agents/704-palette-native/integration-completion.json。
-#702/PR703は最終CI42045853037成功、main82204cbへ統合・全保全整理済み。原本はD:/NeNeFolio/agents/702-discard-native/integration-completion.json。
+hideの07:08の依頼により、停止指示まで品質対応を継続する。試験・計測・必要な調査と独立レビューを行い、全試行と変更を記録する。
+最優先の#479/PR708の平文paste、#709/PR710のCtrl+R/2/5、#713/PR714のDebug ASan検出修正は、最終CI・main統合・通常反映・全保全整理まで完了。
+[paste](../quality/2026-11-06-editor-paste.md)・[書式キー](../quality/2026-11-06-editor-format.md)・[ASan](../quality/2026-11-06-asan-interceptor.md)の品質記録を参照する。
+表示切替・別名保存・改名・置換欄保存・カテゴリ間dragの回帰も#721/PR722まで統合・整理済み。実測と確定原本は[日報](../reports/2026-11-06.md)・[引き継ぎ](../handoffs/2026-11-06.md)にまとめた。
+最新確定mainはfb8b66920ad42363e50174f92253dbc0f6a46b8b、最終CI42146581183成功。
+通常exe不変、5344files全保全。#721原本D:/NeNeFolio/agents/721-move-edit-native/integration-completion.json。
+
+#723はUnicode/CRLF本文のnative保存251checksと、直接共用search246checksが成功、stderr空。
+製品src/API/schemaは不変。最終CI/統合はこれから。[品質記録](../quality/2026-11-06-unicode-save-native.md)。
+作業木D:/NeNeFolio/worktrees/723-unicode-save-native、試行同outputs、恒久原本同agents。
+全体journalはD:/NeNeFolio/agents/quality-20261106/journal.md。過去の停止履歴は今回依頼の停止指示として扱わない。
 
 ## 公開済み1.3.1
 

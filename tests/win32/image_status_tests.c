@@ -63,6 +63,7 @@ static bool layout_case;
 static bool save_as_case;
 static bool rename_case;
 static bool move_edit_case;
+static bool unicode_save_case;
 
 static const char history_current[] = "# Current 日本語 😀 **saved**";
 static const char history_previous[] = "> Previous 猫 🐾 `old`";
@@ -77,6 +78,17 @@ static const wchar_t search_edited[] = L"猫 😀 aaaa 日本語 🐾";
 static const char replace_current[] = "猫1 😀\n猫2 **saved**\n猫1 `old`";
 static const wchar_t replace_original[] = L"猫1 😀\r猫2 **saved**\r猫1 `old`";
 static const wchar_t replace_all[] = L"1-猫-🐾\r 😀\r2-猫-🐾\r **saved**\r1-猫-🐾\r `old`";
+
+static const char unicode_current[] =
+    "\xEF\xBB\xBF\xEF\xBB\xBF\xEF\xBB\xBF# 日本語 😀\r\n記号 \xEF\xBF\xBD\v中"
+    "\xEF\xBB\xBF末\t\\{}\r\n\r\n";
+static const char unicode_saved[] =
+    "\xEF\xBB\xBF\xEF\xBB\xBF\xEF\xBB\xBF# 日本語 😀\r\n記号 \xEF\xBF\xBD\v中"
+    "\xEF\xBB\xBF末\t\\{}\r\n\r\n 追記 🙂";
+static const wchar_t unicode_original[] =
+    L"\uFEFF\uFEFF# 日本語 😀\r記号 \uFFFD\v中\uFEFF末\t\\{}\r\r";
+static const wchar_t unicode_edited[] =
+    L"\uFEFF\uFEFF# 日本語 😀\r記号 \uFFFD\v中\uFEFF末\t\\{}\r\r 追記 🙂";
 
 static void require(bool condition, const char *_Nonnull message)
 {
@@ -104,6 +116,15 @@ static void seed_history(struct persistence_port disk)
     }
 }
 
+static const char *_Nonnull text_fixture_source(const char *_Nonnull fallback)
+{
+    if (search_case)
+        return search_current;
+    if (unicode_save_case)
+        return unicode_current;
+    return fallback;
+}
+
 static void seed_notes(struct persistence_port disk)
 {
     enum persistence_outcome created = disk.create_category(disk.adapter, "schedule");
@@ -116,7 +137,7 @@ static void seed_notes(struct persistence_port disk)
     if (history_case || replace_case || search_case || note_switch_case || zoom_case ||
         theme_preview_case || settings_edit_case || mode_save_case || discard_case ||
         palette_case || paste_case || format_case || layout_case || save_as_case || rename_case ||
-        replace_save_case || move_edit_case)
+        replace_save_case || move_edit_case || unicode_save_case)
     {
         seed_history(disk);
         source = history_case || note_switch_case || zoom_case || theme_preview_case ||
@@ -126,8 +147,7 @@ static void seed_notes(struct persistence_port disk)
                      ? history_current
                      : replace_current;
     }
-    if (search_case)
-        source = search_current;
+    source = text_fixture_source(source);
     struct note_text *_Nullable body = nullptr;
     require(note_text_create(source, strlen(source), &body) == NOTE_TEXT_ACCEPTED, "media note");
     require(disk.write_note(disk.adapter, "schedule", "one", body) == PERSISTENCE_STORED,
@@ -3718,9 +3738,135 @@ static void run_other_fixture(struct native_fixture *_Nonnull fixture, int argc,
     }
 }
 
+/* #723: File signatures, body FEFF, replacement/vertical-tab and CRLF stay distinct. */
+static void expect_unicode_raw(struct native_fixture *_Nonnull fixture,
+                               const wchar_t *_Nonnull suffix, const char *_Nonnull expected)
+{
+    wchar_t path[storage_native_capacity];
+    size_t length = 0;
+    size_t count = wcslen(suffix) + 1;
+    require(storage_native_path_fill(storage_state_directory(fixture->location), path, &length) &&
+                length + count <= storage_native_capacity,
+            "dedicated Unicode raw path fits");
+    memcpy(path + length, suffix, count * sizeof *suffix);
+    struct file_bytes *bytes = nullptr;
+    require(file_bytes_read(path, &bytes) == PERSISTENCE_LOADED && bytes != nullptr,
+            "read the actual Unicode file without text interpretation");
+    require(file_bytes_length(bytes) == strlen(expected) &&
+                memcmp(file_bytes_data(bytes), expected, strlen(expected)) == 0,
+            "raw file retains the exact signature, FEFF, replacement, VT and CRLF bytes");
+    file_bytes_destroy(bytes);
+}
+
+static void expect_unicode_saved(struct native_fixture *_Nonnull fixture,
+                                 const struct history_snapshot *_Nonnull history)
+{
+    expect_body_saved(fixture, history, unicode_saved);
+    expect_unicode_raw(fixture, L"\\schedule\\one.md", unicode_saved);
+    expect_unicode_raw(fixture, L"\\.history\\schedule\\one\\1.md", unicode_current);
+}
+
+static void unicode_same_save(struct folio_window *_Nonnull window,
+                              struct native_fixture *_Nonnull fixture,
+                              const struct history_snapshot *_Nonnull history)
+{
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    CHARRANGE selection = {.cpMin = 2, .cpMax = 6};
+    SendMessageW(body, EM_EXSETSEL, 0, (LPARAM)&selection);
+    struct native_body_snapshot before = {0};
+    capture_native_body(window, &before);
+    for (size_t repeat = 0; repeat < 2; ++repeat)
+    {
+        SendMessageW(body, WM_CHAR, 0x13, 0);
+        pump(window);
+        expect_native_body(window, &before);
+        expect_editor(window, fixture->state, unicode_original, FOLIO_NOTE_SAME);
+        verify_history_unchanged(fixture, history);
+        expect_unicode_raw(fixture, L"\\schedule\\one.md", unicode_current);
+    }
+}
+
+static void unicode_changed_save(struct folio_window *_Nonnull window,
+                                 struct native_fixture *_Nonnull fixture,
+                                 const struct history_snapshot *_Nonnull history)
+{
+    append_switch_text(window);
+    expect_editor(window, fixture->state, unicode_edited, FOLIO_NOTE_CHANGED);
+    verify_history_unchanged(fixture, history);
+    expect_unicode_raw(fixture, L"\\schedule\\one.md", unicode_current);
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    CHARRANGE selection = {.cpMin = 6, .cpMax = 9};
+    SendMessageW(body, EM_EXSETSEL, 0, (LPARAM)&selection);
+    struct native_body_snapshot before = {0};
+    capture_native_body(window, &before);
+    require(before.undo != 0 && before.redo == 0 && before.focus == body,
+            "Unicode insertion has native Undo and body focus");
+    for (size_t repeat = 0; repeat < 2; ++repeat)
+    {
+        SendMessageW(body, WM_CHAR, 0x13, 0);
+        pump(window);
+        expect_native_body(window, &before);
+        expect_editor(window, fixture->state, unicode_edited, FOLIO_NOTE_SAME);
+        expect_unicode_saved(fixture, history);
+    }
+}
+
+static void unicode_saved_roundtrip(struct folio_window *_Nonnull window,
+                                    struct native_fixture *_Nonnull fixture,
+                                    const struct history_snapshot *_Nonnull history)
+{
+    history_undo(window);
+    expect_editor(window, fixture->state, unicode_original, FOLIO_NOTE_CHANGED);
+    expect_unicode_saved(fixture, history);
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    require(SendMessageW(body, EM_CANREDO, 0, 0) != 0 && SendMessageW(body, EM_REDO, 0, 0) != 0,
+            "Unicode insertion remains redoable after saving");
+    pump(window);
+    expect_editor(window, fixture->state, unicode_edited, FOLIO_NOTE_SAME);
+    expect_unicode_saved(fixture, history);
+    action(window, ACCESSIBLE_VIEW);
+    require(folio_state_pane_mode(fixture->state) == PANE_MODE_VIEW &&
+                (GetWindowLongPtrW(body, GWL_STYLE) & ES_READONLY) != 0,
+            "saved Unicode document enters readonly View");
+    expect_unicode_saved(fixture, history);
+    action(window, ACCESSIBLE_EDIT);
+    expect_editor(window, fixture->state, unicode_edited, FOLIO_NOTE_SAME);
+    require(GetFocus() == body, "Unicode document returns to the same editor");
+    expect_unicode_saved(fixture, history);
+}
+
+static void run_unicode_save_case(struct native_fixture *_Nonnull fixture)
+{
+    require(folio_state_select_note(fixture->state, 0, 0, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
+            "select the dedicated Unicode note");
+    struct history_snapshot history = {0};
+    capture_history(fixture, &history);
+    expect_unicode_raw(fixture, L"\\schedule\\one.md", unicode_current);
+    struct folio_window *window = nullptr;
+    require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
+                FOLIO_WINDOW_CREATED,
+            "real Unicode save window");
+    pump(window);
+    action(window, ACCESSIBLE_EDIT);
+    expect_editor(window, fixture->state, unicode_original, FOLIO_NOTE_SAME);
+    unicode_same_save(window, fixture, &history);
+    unicode_changed_save(window, fixture, &history);
+    unicode_saved_roundtrip(window, fixture, &history);
+    require(controlled.requests == 0, "Unicode Markdown does not request image work");
+    folio_window_destroy(window);
+    for (size_t version = 0; version <= note_history_depth; ++version)
+        note_text_destroy(history.files[version]);
+}
+
 static void run_extended_fixture(struct native_fixture *_Nonnull fixture, int argc,
                                  char *_Nonnull *_Nonnull argv)
 {
+    if (unicode_save_case)
+    {
+        run_unicode_save_case(fixture);
+        return;
+    }
     if (move_edit_case)
     {
         run_move_edit_case(fixture);
@@ -3776,6 +3922,7 @@ int main(int argc, char *_Nonnull *_Nonnull argv)
     save_as_case = strcmp(selector, "--save-as") == 0;
     rename_case = strcmp(selector, "--rename") == 0;
     move_edit_case = strcmp(selector, "--move-edit") == 0;
+    unicode_save_case = strcmp(selector, "--unicode-save") == 0;
     HWINSTA original_station = GetProcessWindowStation();
     HDESK original_desktop = GetThreadDesktop(GetCurrentThreadId());
     HWINSTA paste_station = paste_case ? isolate_paste_clipboard() : nullptr;
