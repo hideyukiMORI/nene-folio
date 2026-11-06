@@ -102,6 +102,13 @@ vector一致とASan/UBSan/nullability・recover禁止を必須にし、欠落・
 proofのobjectは製品/testのobject集合へ入れない。90%下限・source inventory・負例profile判定は維持する。
 実結果は[品質記録](quality/2026-10-29-nullable-allocation.md)へ残す。
 
+#713は固定LLVMのCRT interceptor未検出をDebugの`/FUNCTIONPADMIN:6`で防ぐ。
+link optionsは`eng/targets.cmake`が全Debug executableへ適用し、同変数の生成metadataを測定経路へ渡す。
+`eng/sanitizer_probe.py`の一つのsource/判定器を既存`eng/prove-gates.py`と`eng/coverage.py`から使う。
+正常呼出しは結果一致・stderr空、直接storeと`frexp`出力先はpoison到達・該当ASan書込診断・非zero終了を要求する。
+直接storeの反例は`frexp`へ進まず、timeout/起動失敗の部分記録も残す。設定欠落・未検出・別原因失敗は拒否する。
+全CRTや任意入力の安全性を保証するものではない。実反例・全試行・Release非適用は[品質記録](quality/2026-11-06-asan-interceptor.md)へ。
+
 ### QLT-010 — ゲートの弱体化はアーキテクチャ変更
 
 重大度・除外・閾値・モジュール境界・必須 CI ジョブを変えるには明示的な根拠が要る。MUST 規則を弱める変更には ADR か waiver が要る。

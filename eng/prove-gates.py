@@ -6,6 +6,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import sanitizer_probe
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -121,6 +122,14 @@ def main() -> None:
         build = ["cmake", "--build", "build", "--target", "toolchain_smoke", "--clean-first"]
         run(configure, root, True)
         run(build, root, True)
+        source.write_text(sanitizer_probe.SOURCE, encoding="utf-8")
+        run(build, root, True)
+        interception = sanitizer_probe.prove(root / "build/toolchain_smoke.exe", output_root / "interceptor")
+        source.write_text(original, encoding="utf-8")
+        restoration = run(build, root, True)
+        evidence.append({"rule": "C-016", "interception": interception,
+                         "restorationExit": restoration["exitCode"]})
+        print("C-016: normal CRT call passed; direct and frexp poisoned writes rejected; restoration passed")
         for rule, text, diagnostic in COMPILER_PROBES:
             source.write_text(text, encoding="utf-8")
             result = run(build, root, False, diagnostic)

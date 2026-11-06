@@ -22,6 +22,10 @@ execute_process(COMMAND "${CMAKE_C_COMPILER}" /clang:-print-resource-dir
                 COMMAND_ERROR_IS_FATAL ANY)
 set(NENEFOLIO_SANITIZE_OPTIONS
     -fsanitize=address -fsanitize=undefined -fsanitize=nullability -fno-sanitize-recover=all)
+# #713: CRT先頭の命令がtrampoline decoderの未対応命令でもhotpatchで検査を結ぶ。
+set(NENEFOLIO_SANITIZE_LINK_OPTIONS /INCREMENTAL:NO /FUNCTIONPADMIN:6)
+file(GENERATE OUTPUT "${CMAKE_BINARY_DIR}/sanitizer-link-options.json"
+    CONTENT "[$<$<CONFIG:Debug>:\"$<JOIN:${NENEFOLIO_SANITIZE_LINK_OPTIONS},\",\">\">]\n")
 set(NENEFOLIO_SANITIZE_RUNTIME "${NENEFOLIO_RESOURCE_DIR}/lib/windows")
 set(NENEFOLIO_SANITIZE_LIBRARIES
     "${NENEFOLIO_SANITIZE_RUNTIME}/clang_rt.asan-x86_64.lib"
@@ -48,7 +52,7 @@ function(nenefolio_target target module kind)
     if(kind STREQUAL "EXECUTABLE")
         add_executable(${target} ${ARGN})
         target_link_options(${target} PRIVATE
-            "$<$<CONFIG:Debug>:/INCREMENTAL:NO;/WHOLEARCHIVE:${NENEFOLIO_SANITIZE_RUNTIME}/clang_rt.asan-x86_64.lib>")
+            "$<$<CONFIG:Debug>:${NENEFOLIO_SANITIZE_LINK_OPTIONS};/WHOLEARCHIVE:${NENEFOLIO_SANITIZE_RUNTIME}/clang_rt.asan-x86_64.lib>")
         foreach(library IN LISTS NENEFOLIO_SANITIZE_LIBRARIES)
             target_link_libraries(${target} PRIVATE "$<$<CONFIG:Debug>:${library}>")
         endforeach()

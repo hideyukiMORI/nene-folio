@@ -1,6 +1,6 @@
 # いまの状態 — NeNe Folio
 
-## 2026-11-06 — 編集paste・段落書式キーを修正、表示切替の保持を確認中
+## 2026-11-06 — 編集操作の品質対応を完了、ASanの検出を修復中
 
 hideの新しい依頼により、停止指示まで品質対応を継続する。試験・計測・必要な調査と独立レビューを行い、全試行と変更を記録する。
 最優先の#479はPR708の最終CI42122814552が成功し、main `50fa28ea6ebc120023f1bbd30a753f9c3a5e9ab3`へ統合した。
@@ -9,8 +9,12 @@ hideの新しい依頼により、停止指示まで品質対応を継続する�
 [品質記録](../quality/2026-11-06-editor-paste.md)。確定原本はD:/NeNeFolio/agents/479-editor-paste-20261106/integration-completion.json。
 #709/PR710はCtrl+R/2/5の段落書式変更を止め、339checksと最終CI42129740643が成功。main `8ccbf29a232bd25d03102be3ce8f0fe4f9e05851`へ統合・通常反映・10611filesの全保全整理まで完了した。
 [品質記録](../quality/2026-11-06-editor-format.md)。確定原本はD:/NeNeFolio/agents/709-editor-format/integration-completion.json。
-現在の#711は表示3択と狭幅chooserを使った未保存本文/選択/UndoRedo/保存履歴保持の486checksが成功した。
-[品質記録](../quality/2026-11-06-layout-native.md)。最終head CI・統合・通常exe不変・全保全整理の確定結果はD:/NeNeFolio/agents/711-layout-native/integration-completion.jsonへ収載する。
+#711/PR712は表示3択と狭幅chooserの編集保持486checksと最終CI42132598999が成功し、main `47f80045ce3f33b71e176d31c38b43f84caa6d94`へ統合した。
+通常exe不変、4402filesの全保全と専用領域整理まで完了。[品質記録](../quality/2026-11-06-layout-native.md)、確定原本D:/NeNeFolio/agents/711-layout-native/integration-completion.json。
+#713はASanの起動警告をCRT frexp先頭へ特定し、poisoned出力先の未検出をDebug linkのpaddingで修正している。
+正典CMake/測定driverの両方で正常呼出しと直接store/CRTの検出、判定器11tests、Release非適用を確認した。
+測定90.9673%、native表示切替447checksは成功し起動警告無し。[品質記録](../quality/2026-11-06-asan-interceptor.md)。
+最終head CI・統合・通常Debug反映/data保持・全保全整理の確定原本はD:/NeNeFolio/agents/713-asan-interceptor/integration-completion.jsonへ収載する。
 全体journalはD:/NeNeFolio/agents/quality-20261106/journal.md。
 00:51の停止は今回指示で解除。停止処理の履歴はD:/NeNeFolio/agents/706-store-publication/integration-completion.jsonに保持する。
 #704/PR705は操作パレットの取消と編集保持を確認（141checks、stderr空）し、最終CI42054891152成功、main eaef26aへ統合・全保全整理済み。
