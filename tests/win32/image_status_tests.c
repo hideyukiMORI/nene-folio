@@ -62,6 +62,7 @@ static bool format_case;
 static bool layout_case;
 static bool save_as_case;
 static bool rename_case;
+static bool move_edit_case;
 
 static const char history_current[] = "# Current 日本語 😀 **saved**";
 static const char history_previous[] = "> Previous 猫 🐾 `old`";
@@ -115,13 +116,13 @@ static void seed_notes(struct persistence_port disk)
     if (history_case || replace_case || search_case || note_switch_case || zoom_case ||
         theme_preview_case || settings_edit_case || mode_save_case || discard_case ||
         palette_case || paste_case || format_case || layout_case || save_as_case || rename_case ||
-        replace_save_case)
+        replace_save_case || move_edit_case)
     {
         seed_history(disk);
         source = history_case || note_switch_case || zoom_case || theme_preview_case ||
                          settings_edit_case || mode_save_case || discard_case || palette_case ||
                          paste_case || format_case || layout_case || save_as_case || rename_case ||
-                         replace_save_case
+                         replace_save_case || move_edit_case
                      ? history_current
                      : replace_current;
     }
@@ -3383,6 +3384,293 @@ static void run_rename_case(struct native_fixture *_Nonnull fixture)
         note_text_destroy(history.files[version]);
 }
 
+/* #721: 実drawerのdragで保存先を移し、未保存本文とnative Undo/Redoを保つ。 */
+static POINT move_row_point(struct folio_window *_Nonnull window, enum accessible_kind kind,
+                            size_t category)
+{
+    struct accessible_item item = {.kind = kind,
+                                   .ref = {.category = category, .note = 0},
+                                   .revision = folio_window_accessible_revision(window)};
+    struct accessible_view view;
+    require(folio_window_accessible_read(window, &item, &view) == S_OK && !view.offscreen &&
+                !IsRectEmpty(&view.bounds),
+            "drag uses the current visible public row bounds");
+    POINT point = {.x = view.bounds.left + (view.bounds.right - view.bounds.left) / 2,
+                   .y = view.bounds.top + (view.bounds.bottom - view.bounds.top) / 2};
+    require(ScreenToClient(folio_window_accessible_window(window, ACCESSIBLE_DRAWER), &point),
+            "public row coordinates map into the native drawer");
+    return point;
+}
+
+static void drag_edit_note(struct folio_window *_Nonnull window, struct folio_state *_Nonnull state,
+                           size_t from, size_t to)
+{
+    POINT source = move_row_point(window, ACCESSIBLE_NOTE, from);
+    POINT target = move_row_point(window, ACCESSIBLE_CATEGORY, to);
+    HWND drawer = folio_window_accessible_window(window, ACCESSIBLE_DRAWER);
+    struct native_body_snapshot before = {0};
+    capture_native_body(window, &before);
+    /* Pointer press intentionally moves focus from the body to the root/tree. */
+    before.focus = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    SendMessageW(drawer, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM((WORD)source.x, (WORD)source.y));
+    require(GetCapture() == drawer, "native row press captures the dedicated drawer");
+    SendMessageW(drawer, WM_MOUSEMOVE, MK_LBUTTON, MAKELPARAM((WORD)target.x, (WORD)target.y));
+    SendMessageW(drawer, WM_LBUTTONUP, 0, MAKELPARAM((WORD)target.x, (WORD)target.y));
+    pump(window);
+    require(GetCapture() != drawer, "native row release ends drag capture");
+    expect_native_body(window, &before);
+    struct note_ref selected = {0};
+    require(folio_state_selection(state, &selected) && selected.category == to &&
+                selected.note == 0 && folio_state_note_count(state) == 1,
+            "drag moves the selected note to the destination without duplicating it");
+    struct pane_title_view title = folio_state_pane_title(state);
+    require(title.any && strcmp(title.category, folio_state_category_name(state, to)) == 0 &&
+                strcmp(title.note, "one") == 0,
+            "the current document title follows the moved note");
+}
+
+static void expect_move_ledger(struct persistence_port disk, const char *_Nonnull category,
+                               bool contains_note)
+{
+    struct note_ledger *ledger = nullptr;
+    require(disk.read_note_ledger(disk.adapter, category, &ledger) == PERSISTENCE_LOADED &&
+                ledger != nullptr,
+            "both category ledgers are written after native drag");
+    require(note_ledger_count(ledger) == (contains_note ? 1U : 0U),
+            "each ledger has exactly the expected moved-note count");
+    if (contains_note)
+        require(strcmp(note_ledger_name(ledger, 0), "one") == 0,
+                "the destination ledger contains the moved note name");
+    note_ledger_destroy(ledger);
+}
+
+struct move_snapshot
+{
+    struct history_snapshot source;
+    struct note_text *_Nullable target[note_history_depth + 1];
+};
+
+static void capture_move_history(struct native_fixture *_Nonnull fixture,
+                                 struct move_snapshot *_Nonnull history)
+{
+    capture_history(fixture, &history->source);
+    struct persistence_port disk = persistence_adapter_port(fixture->files);
+    struct note_text *target = nullptr;
+    require(disk.read_note(disk.adapter, "target", "one", &target) == PERSISTENCE_ABSENT &&
+                target == nullptr,
+            "dedicated move fixture starts without a target note");
+    note_text_destroy(target);
+    for (size_t version = 1; version <= note_history_depth; ++version)
+    {
+        struct history_version which = {.category = "target", .note = "one", .version = version};
+        enum persistence_outcome read =
+            disk.read_history(disk.adapter, &which, &history->target[version]);
+        require(read == PERSISTENCE_LOADED || read == PERSISTENCE_ABSENT,
+                "retain any target history from previous dedicated runs");
+    }
+}
+
+static void expect_move_bytes(const struct note_text *_Nonnull actual,
+                              const struct note_text *_Nonnull expected)
+{
+    size_t bytes = note_text_file_length(expected);
+    require(note_text_file_length(actual) == bytes &&
+                memcmp(note_text_file_bytes(actual), note_text_file_bytes(expected), bytes) == 0,
+            "moved or stored file matches every expected byte");
+}
+
+static const struct note_text *_Nullable moved_target_version(
+    const struct move_snapshot *_Nonnull history, bool saved, size_t version)
+{
+    if (!saved)
+        return history->target[version];
+    if (version == 1)
+        return history->source.files[0];
+    return history->target[version - 1];
+}
+
+static void expect_target_history(struct persistence_port disk,
+                                  const struct move_snapshot *_Nonnull history, bool saved)
+{
+    for (size_t version = 1; version <= note_history_depth; ++version)
+    {
+        const struct note_text *expected = moved_target_version(history, saved, version);
+        struct history_version which = {.category = "target", .note = "one", .version = version};
+        struct note_text *text = nullptr;
+        enum persistence_outcome read = disk.read_history(disk.adapter, &which, &text);
+        if (expected == nullptr)
+            require(read == PERSISTENCE_ABSENT && text == nullptr,
+                    "target history has no unexpected version");
+        else
+        {
+            require(read == PERSISTENCE_LOADED && text != nullptr,
+                    "target history has each expected version");
+            expect_move_bytes(text, expected);
+        }
+        note_text_destroy(text);
+    }
+}
+
+static void expect_move_note(struct persistence_port disk, const char *_Nonnull category,
+                             const struct note_text *_Nullable expected)
+{
+    struct note_text *text = nullptr;
+    enum persistence_outcome read = disk.read_note(disk.adapter, category, "one", &text);
+    if (expected == nullptr)
+        require(read == PERSISTENCE_ABSENT && text == nullptr, "the old moved-note path is absent");
+    else
+    {
+        require(read == PERSISTENCE_LOADED && text != nullptr, "the moved-note path is readable");
+        expect_move_bytes(text, expected);
+    }
+    note_text_destroy(text);
+}
+
+static void expect_move_files(struct native_fixture *_Nonnull fixture,
+                              const struct move_snapshot *_Nonnull history, bool moved,
+                              bool target_saved)
+{
+    struct persistence_port disk = persistence_adapter_port(fixture->files);
+    require(folio_state_store_revision(fixture->state) ==
+                history->source.store_revision + (target_saved ? 1U : 0U),
+            "only the explicit target save advances the store revision");
+    struct note_text *saved = nullptr;
+    require(note_text_create(switch_saved, strlen(switch_saved), &saved) == NOTE_TEXT_ACCEPTED,
+            "valid moved-file save expectation");
+    const struct note_text *current = target_saved ? saved : history->source.files[0];
+    expect_move_note(disk, "schedule", moved ? nullptr : current);
+    expect_move_note(disk, "target", moved ? current : nullptr);
+    for (size_t version = 1; version <= note_history_depth; ++version)
+        expect_history_file(disk, version, history->source.files[version]);
+    expect_target_history(disk, history, target_saved);
+    expect_move_ledger(disk, "schedule", !moved);
+    expect_move_ledger(disk, "target", moved);
+    note_text_destroy(saved);
+}
+
+static void save_moved_body(struct folio_window *_Nonnull window,
+                            struct native_fixture *_Nonnull fixture,
+                            const struct move_snapshot *_Nonnull history)
+{
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    SetFocus(body);
+    struct native_body_snapshot before = {0};
+    capture_native_body(window, &before);
+    for (size_t attempt = 0; attempt < 2; ++attempt)
+    {
+        SendMessageW(body, WM_CHAR, 0x13, 1);
+        pump(window);
+        expect_native_body(window, &before);
+        expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_SAME);
+        expect_move_files(fixture, history, true, true);
+    }
+}
+
+static void expect_return_save(struct native_fixture *_Nonnull fixture,
+                               const struct move_snapshot *_Nonnull history)
+{
+    struct persistence_port disk = persistence_adapter_port(fixture->files);
+    require(folio_state_store_revision(fixture->state) == history->source.store_revision + 2,
+            "one target save and one returned save publish exactly two revisions");
+    struct note_text *previous = nullptr;
+    require(note_text_create(switch_saved, strlen(switch_saved), &previous) == NOTE_TEXT_ACCEPTED,
+            "valid previously saved moved text");
+    expect_history_file(disk, 0, history->source.files[0]);
+    expect_history_file(disk, 1, previous);
+    for (size_t version = 2; version <= note_history_depth; ++version)
+        expect_history_file(disk, version, history->source.files[version - 1]);
+    expect_move_note(disk, "target", nullptr);
+    expect_target_history(disk, history, true);
+    note_text_destroy(previous);
+}
+
+static void save_returned_body(struct folio_window *_Nonnull window,
+                               struct native_fixture *_Nonnull fixture,
+                               const struct move_snapshot *_Nonnull history)
+{
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    SetFocus(body);
+    struct native_body_snapshot before = {0};
+    capture_native_body(window, &before);
+    for (size_t attempt = 0; attempt < 2; ++attempt)
+    {
+        SendMessageW(body, WM_CHAR, 0x13, 1);
+        pump(window);
+        expect_native_body(window, &before);
+        expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_SAME);
+        expect_return_save(fixture, history);
+    }
+}
+
+static void move_edit_roundtrip(struct folio_window *_Nonnull window,
+                                struct native_fixture *_Nonnull fixture,
+                                const struct move_snapshot *_Nonnull history)
+{
+    drag_edit_note(window, fixture->state, 0, 1);
+    expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_CHANGED);
+    expect_move_files(fixture, history, true, false);
+    history_undo(window);
+    expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_SAME);
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    require(SendMessageW(body, EM_REDO, 0, 0) != 0, "Redo survives the outward category drag");
+    pump(window);
+    expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_CHANGED);
+    expect_move_files(fixture, history, true, false);
+    save_moved_body(window, fixture, history);
+    history_undo(window);
+    expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_CHANGED);
+    require(SendMessageW(body, EM_CANREDO, 0, 0) != 0, "return drag starts with native Redo");
+    expect_move_files(fixture, history, true, true);
+    drag_edit_note(window, fixture->state, 1, 0);
+    expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_CHANGED);
+    expect_move_files(fixture, history, false, true);
+    require(SendMessageW(body, EM_REDO, 0, 0) != 0, "Redo survives the return category drag");
+    pump(window);
+    expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_SAME);
+    history_undo(window);
+    expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_CHANGED);
+    expect_move_files(fixture, history, false, true);
+    save_returned_body(window, fixture, history);
+    require(SendMessageW(body, EM_REDO, 0, 0) != 0,
+            "Redo survives saving at the returned location");
+    pump(window);
+    expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_CHANGED);
+    history_undo(window);
+    expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_SAME);
+    expect_return_save(fixture, history);
+}
+
+static void run_move_edit_case(struct native_fixture *_Nonnull fixture)
+{
+    require(folio_state_note_count(fixture->state) == 1 &&
+                folio_state_select_note(fixture->state, 0, 0, FOLIO_UNTITLED_PROTECT) ==
+                    FOLIO_STATE_READY,
+            "select the sole dedicated drag note");
+    struct move_snapshot history = {0};
+    capture_move_history(fixture, &history);
+    struct folio_window *window = nullptr;
+    require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
+                FOLIO_WINDOW_CREATED,
+            "real native drag window");
+    pump(window);
+    action(window, ACCESSIBLE_EDIT);
+    append_switch_text(window);
+    expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_CHANGED);
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    CHARRANGE selected = {.cpMin = 10, .cpMax = 12};
+    SendMessageW(body, EM_EXSETSEL, 0, (LPARAM)&selected);
+    require(SendMessageW(body, EM_CANUNDO, 0, 0) != 0, "outward drag starts with native Undo");
+    verify_history_unchanged(fixture, &history.source);
+    move_edit_roundtrip(window, fixture, &history);
+    require(controlled.requests == 0, "plain drag note does not request image work");
+    folio_window_destroy(window);
+    for (size_t version = 0; version <= note_history_depth; ++version)
+    {
+        note_text_destroy(history.source.files[version]);
+        note_text_destroy(history.target[version]);
+    }
+}
+
 static void run_other_fixture(struct native_fixture *_Nonnull fixture, int argc,
                               char *_Nonnull *_Nonnull argv)
 {
@@ -3433,6 +3721,11 @@ static void run_other_fixture(struct native_fixture *_Nonnull fixture, int argc,
 static void run_extended_fixture(struct native_fixture *_Nonnull fixture, int argc,
                                  char *_Nonnull *_Nonnull argv)
 {
+    if (move_edit_case)
+    {
+        run_move_edit_case(fixture);
+        return;
+    }
     if (replace_save_case)
     {
         run_replace_save_case(fixture);
@@ -3482,6 +3775,7 @@ int main(int argc, char *_Nonnull *_Nonnull argv)
     layout_case = strcmp(selector, "--layout") == 0;
     save_as_case = strcmp(selector, "--save-as") == 0;
     rename_case = strcmp(selector, "--rename") == 0;
+    move_edit_case = strcmp(selector, "--move-edit") == 0;
     HWINSTA original_station = GetProcessWindowStation();
     HDESK original_desktop = GetThreadDesktop(GetCurrentThreadId());
     HWINSTA paste_station = paste_case ? isolate_paste_clipboard() : nullptr;

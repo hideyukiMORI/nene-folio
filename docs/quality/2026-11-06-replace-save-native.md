@@ -47,3 +47,10 @@ Windows11 Pro10.0.26300、Msftedit10.0.26100.9949、ローカルNTFS・専用D�
 通常app/実ノート/clipboard/前面focus/Storeを試験に使っていない。物理キー/IME、実置換の再検査、保存失敗、無題modal、
 全ノート検索focus、自動保存、VIEWからの保存、全DPIは対象外。対象外の挙動を成功したとは主張しない。
 製品src/API/保存schemaは不変。通常buildは反復せず、同一exeのhash/bytes/更新日時を照合する。
+
+## 統合・保全・整理の確定
+
+#719/PR720は最終head6ede846c16543608a049a238dcb500cc6e3bb255、必須CI42144117242 full-gate/check成功。
+mainb85308e653eac90041c764accb882231350eb058へ正典統合し、通常exeのhash/bytes/更新日時不変を確認した。
+3371filesを全hash保全し、絶対path/同一squash tree/clean・untracked・ignored/link/稼働参照0を確認後、専用worktree/outputを整理した。
+branch/commit保持。確定原本D:/NeNeFolio/agents/719-replace-save-native/integration-completion.json。
