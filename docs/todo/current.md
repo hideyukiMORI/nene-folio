@@ -1,21 +1,28 @@
 # いまの状態 — NeNe Folio
 
-## 2026-11-06 21時台 — 1.3.2の公開前候補へ区切る
+## 2026-11-06 — 1.3.2の公開前候補が完成
 
-hideの21:32の依頼により、新しい品質課題を追加せず、最後の#771を完了して1.3.2候補を準備する。
-#771/PR772は最終CI42219301978 full-gate/check成功、main e962ac78c1b5859e650d028effd6163b13fab516へ統合済み。
-通常exe不変、全file保全・専用worktree/output整理済み。原本D:/NeNeFolio/agents/771-export-recovery/integration-completion.json。
-#769/PR770も最終CI42215039675成功、main fed522aへ統合・全保全整理済み。詳細は日報と各品質記録へ。
+hideの21:32の依頼に基づき、新しい品質課題の追加を区切り、1.3.2の公開判断用候補を揃えた。
+#773/PR774は最終head`eae7e2a4e8155d4fb27bfc37c99161126f6f0835`、必須CI42220848714 full-gate/check成功。
+候補のsourceは統合済みclean main `ba1e697deccb71e2f248f4759349d51ddec99e29`。Windows版は1.3.2.0。
+正規ZIP/MSIX生成・全payload検査、専用コピーのdataなし起動・設定Version 1.3.2・正常終了を両形式で確認した。
+[変更一覧](../release/1.3.2.md)・[確定品質記録](../quality/2026-11-06-release-1.3.2.md)・[3言語更新文](../release/1.3.2-store-notes.txt)。
 
-#773はCMake唯一の版を1.3.2へ更新し、変更一覧・3言語更新文・正規ZIP/MSIX・専用起動/Version確認を揃える。
-[変更一覧](../release/1.3.2.md)・[品質記録](../quality/2026-11-06-release-1.3.2.md)。最終CI/配布生成/起動確認はこれから。
-恒久配布D:/NeNeFolio/releases/1.3.2/、確定原本D:/NeNeFolio/agents/release-1.3.2-20261106/integration-completion.json。
-GitHub tag/Release公開とStore送信は未実施。これまでの継続品質対応を新しいテーマへ広げず、この公開判断用候補までを仕上げる。
+恒久配布はD:/NeNeFolio/releases/1.3.2/。
+ZIP `github/NeNeFolio-1.3.2-win-x64.zip`、SHA256 `e3922f11b227d089528f7880f27df4789b848a1b289871311faa36f48da36a34`。
+MSIX `store-candidate-20261106/NeNeFolio-1.3.2-win-x64.msix`、SHA256 `c772638689f7977b2ea062c5cff0dfd0fdf244fadb1cbfaf16a3fae8c428d7fc`。
+各directoryにSHA256SUMSと生成証跡、Store側に日本語・英語・簡体字のrelease-notes.txtを置いた。
+GitHub tag/Release公開とStore送信は未実施。MSIX payload起動をStore署名版の導入確認とは扱わない。
+公開判断までを今回の到達点とし、新しい品質テーマは次のhide指示を待つ。
 
-今日のpaste・書式キー・アクセシビリティ選択・検索・Debug ASan修正と、保存/終了/書き出し等のnative回帰は統合済み。
-最新の製品変更#763/PR764はCI42200797878成功、main4dabcfdca8951f5113c812adbc3248bdd74fed42から通常版へ反映、実data32file不変。
+1966files全hash保全・絶対roots/同squashtree/clean・全file/link/稼働参照監査後、専用worktree/outputを整理、branch/commit保持。
+確定原本D:/NeNeFolio/agents/release-1.3.2-20261106/integration-completion.json。
+通常exeはsource4dabcfdca8951f5113c812adbc3248bdd74fed42の製品修正反映済み1.3.1、hash/サイズ/更新日時不変。配布候補の1.3.2とは区別する。
+
+今日のpaste479・書式キー709・アクセシビリティ選択731・検索761/763・Debug ASan713修正と、保存/終了/書き出し等のnative回帰を統合済み。
+最後の#771/PR772はCI42219301978成功、main e962ac78c1b5859e650d028effd6163b13fab516へ統合・通常exe不変・全保全整理済み。
 日付付き[日報](../reports/2026-11-06.md)・[引き継ぎ](../handoffs/2026-11-06.md)、全体journal D:/NeNeFolio/agents/quality-20261106/journal.mdを参照。
-追加waiver none、既存WVR-0001継続。保留466/634/530と旧削除拒否領域は維持する。
+追加waiver none、既存WVR-0001継続。保留466/634/530と旧削除拒否領域を維持する。
 
 ## 公開済み1.3.1
 
