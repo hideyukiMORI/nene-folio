@@ -3101,6 +3101,17 @@ static void run_layout_case(struct native_fixture *_Nonnull fixture)
         note_text_destroy(history.files[version]);
 }
 
+static void native_file_path(struct native_fixture *_Nonnull fixture,
+                             const wchar_t *_Nonnull suffix, wchar_t path[storage_native_capacity])
+{
+    size_t length = 0;
+    size_t count = wcslen(suffix) + 1;
+    require(storage_native_path_fill(storage_state_directory(fixture->location), path, &length) &&
+                length + count <= storage_native_capacity,
+            "dedicated raw file path fits");
+    memcpy(path + length, suffix, count * sizeof *suffix);
+}
+
 static void expect_copy(struct native_fixture *_Nonnull fixture, const char *_Nonnull name,
                         const char *_Nonnull expected)
 {
@@ -3188,6 +3199,166 @@ static void expect_save_as_original(struct native_fixture *_Nonnull fixture,
         expect_history_file(disk, version, history->files[version]);
 }
 
+/* #733: Both ledger and OS name collisions preserve the open editor and old files. */
+static void collision_file_id(struct native_fixture *_Nonnull fixture,
+                              const wchar_t *_Nonnull suffix,
+                              BY_HANDLE_FILE_INFORMATION *_Nonnull identity)
+{
+    wchar_t path[storage_native_capacity];
+    native_file_path(fixture, suffix, path);
+    HANDLE file = CreateFileW(path, FILE_READ_ATTRIBUTES,
+                              FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                              OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    require(file != INVALID_HANDLE_VALUE, "the collision target already exists");
+    require(GetFileInformationByHandle(file, identity), "the collision target has a file identity");
+    require(CloseHandle(file), "release the identity handle before Save As");
+}
+
+static void expect_case_alias(struct native_fixture *_Nonnull fixture)
+{
+    BY_HANDLE_FILE_INFORMATION original = {0};
+    BY_HANDLE_FILE_INFORMATION alias = {0};
+    collision_file_id(fixture, L"\\schedule\\one.md", &original);
+    collision_file_id(fixture, L"\\schedule\\ONE.md", &alias);
+    require(original.dwVolumeSerialNumber == alias.dwVolumeSerialNumber &&
+                original.nFileIndexHigh == alias.nFileIndexHigh &&
+                original.nFileIndexLow == alias.nFileIndexLow,
+            "the case variant refers to the same existing file in this dedicated directory");
+}
+
+static void expect_no_save_as_temporary(struct native_fixture *_Nonnull fixture)
+{
+    wchar_t path[storage_native_capacity];
+    native_file_path(fixture, L"\\schedule\\.nenefolio-write-*.tmp", path);
+    WIN32_FIND_DATAW entry = {0};
+    HANDLE found = FindFirstFileW(path, &entry);
+    DWORD error = found == INVALID_HANDLE_VALUE ? GetLastError() : ERROR_SUCCESS;
+    if (found != INVALID_HANDLE_VALUE)
+        require(FindClose(found), "close the unexpected temporary file search");
+    require(found == INVALID_HANDLE_VALUE && error == ERROR_FILE_NOT_FOUND,
+            "a refused Save As leaves no temporary write file in the dedicated category");
+}
+
+static void expect_collision_ledger(struct native_fixture *_Nonnull fixture,
+                                    const struct note_ledger *_Nullable before,
+                                    const struct name_list *_Nonnull public_names)
+{
+    struct persistence_port disk = persistence_adapter_port(fixture->files);
+    struct note_ledger *after = nullptr;
+    struct name_list *files = nullptr;
+    size_t count = name_list_count(public_names);
+    enum persistence_outcome outcome = disk.read_note_ledger(disk.adapter, "schedule", &after);
+    if (before == nullptr)
+        require(outcome == PERSISTENCE_ABSENT && after == nullptr,
+                "rejection does not create an initially absent ledger");
+    else
+        require(outcome == PERSISTENCE_LOADED && after != nullptr &&
+                    note_ledger_count(after) == note_ledger_count(before),
+                "rejection preserves the existing ledger length");
+    require(folio_state_note_count(fixture->state) == count,
+            "rejection preserves the public note count");
+    require(disk.scan_notes(disk.adapter, "schedule", &files) == PERSISTENCE_LOADED &&
+                files != nullptr && name_list_count(files) == count,
+            "rejection creates no extra Markdown file");
+    for (size_t index = 0; index < count; ++index)
+    {
+        const char *name = name_list_at(public_names, index);
+        require(strcmp(folio_state_note_name(fixture->state, (struct note_ref){0, index}), name) ==
+                        0 &&
+                    name_list_contains(files, name),
+                "every public row and existing filename is preserved");
+    }
+    if (before != nullptr)
+        for (size_t index = 0; index < note_ledger_count(before); ++index)
+            require(strcmp(note_ledger_name(after, index), note_ledger_name(before, index)) == 0,
+                    "every persisted ledger row retains its name and order");
+    name_list_destroy(files);
+    note_ledger_destroy(after);
+    expect_no_save_as_temporary(fixture);
+}
+
+static void reject_save_as(struct folio_window *_Nonnull window,
+                           struct native_fixture *_Nonnull fixture, const wchar_t *_Nonnull command)
+{
+    struct native_body_snapshot before = {0};
+    capture_native_body(window, &before);
+    require(before.modified != 0 && before.undo != 0 &&
+                before.selection.cpMin < before.selection.cpMax,
+            "collision starts with changed text, real Undo and a nonempty selection");
+    submit_ex(window, command);
+    HWND input = folio_window_accessible_window(window, ACCESSIBLE_COMMAND_INPUT);
+    wchar_t query[64];
+    require(IsWindowVisible(input) && GetFocus() == input && GetWindowTextW(input, query, 64) > 0 &&
+                wcscmp(query, command) == 0,
+            "name collision retains the exact Ex input and its focus");
+    struct accessible_item item = {.kind = ACCESSIBLE_SURFACE_STATUS,
+                                   .revision = folio_window_accessible_surface_revision(window)};
+    struct accessible_view status = {0};
+    require(folio_window_accessible_read(window, &item, &status) == S_OK && !status.offscreen &&
+                wcsstr(status.name, L"同じ名前のノートがあります。") != nullptr,
+            "name collision exposes the existing inline reason");
+    expect_name_operation_body(window, &before);
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    require(SendMessageW(body, EM_GETMODIFY, 0, 0) == before.modified,
+            "rejection preserves the native modified flag");
+    SendMessageW(input, WM_KEYDOWN, VK_ESCAPE, 0);
+    pump(window);
+    require(!IsWindowVisible(input) && GetFocus() != input,
+            "Escape closes the rejected command without leaving focus in the hidden input");
+    expect_name_operation_body(window, &before);
+    require(SendMessageW(body, EM_GETMODIFY, 0, 0) == before.modified,
+            "dismissing the rejected command preserves the native modified flag");
+    expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_CHANGED);
+    struct note_ref selected = {0};
+    require(folio_state_document_kind(fixture->state) == FOLIO_DOCUMENT_NAMED &&
+                strcmp(folio_state_document_name(fixture->state), "one") == 0 &&
+                folio_state_selection(fixture->state, &selected) && selected.category == 0 &&
+                strcmp(folio_state_note_name(fixture->state, selected), "one") == 0,
+            "rejection retains the original named document and selection");
+}
+
+static void save_as_collisions(struct folio_window *_Nonnull window,
+                               struct native_fixture *_Nonnull fixture,
+                               const struct history_snapshot *_Nonnull history)
+{
+    struct persistence_port disk = persistence_adapter_port(fixture->files);
+    struct note_ledger *ledger = nullptr;
+    enum persistence_outcome outcome = disk.read_note_ledger(disk.adapter, "schedule", &ledger);
+    require((outcome == PERSISTENCE_LOADED && ledger != nullptr) ||
+                (outcome == PERSISTENCE_ABSENT && ledger == nullptr),
+            "snapshot the existing ledger or its initial absence before any collision");
+    struct name_list *public_names = nullptr;
+    require(name_list_create(&public_names) == NAME_LIST_ACCEPTED && public_names != nullptr,
+            "snapshot all public note names before any collision");
+    for (size_t index = 0; index < folio_state_note_count(fixture->state); ++index)
+    {
+        const char *name = folio_state_note_name(fixture->state, (struct note_ref){0, index});
+        require(name_list_append(public_names, name, strlen(name)) == NAME_LIST_ACCEPTED,
+                "snapshot each public name in its original order");
+    }
+    expect_collision_ledger(fixture, ledger, public_names);
+    expect_case_alias(fixture);
+    const wchar_t *commands[] = {L":saveas one", L":saveas ONE"};
+    for (size_t index = 0; index < sizeof commands / sizeof commands[0]; ++index)
+    {
+        reject_save_as(window, fixture, commands[index]);
+        verify_history_unchanged(fixture, history);
+        expect_collision_ledger(fixture, ledger, public_names);
+        expect_case_alias(fixture);
+    }
+    note_ledger_destroy(ledger);
+    name_list_destroy(public_names);
+    history_undo(window);
+    expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_SAME);
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    require(SendMessageW(body, EM_REDO, 0, 0) != 0, "native Redo succeeds after both collisions");
+    pump(window);
+    expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_CHANGED);
+    verify_history_unchanged(fixture, history);
+    CHARRANGE selection = {.cpMin = 10, .cpMax = 12};
+    SendMessageW(body, EM_EXSETSEL, 0, (LPARAM)&selection);
+}
+
 static void save_as_edit(struct folio_window *_Nonnull window,
                          struct native_fixture *_Nonnull fixture,
                          const struct history_snapshot *_Nonnull history)
@@ -3198,6 +3369,7 @@ static void save_as_edit(struct folio_window *_Nonnull window,
     HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
     CHARRANGE selection = {.cpMin = 10, .cpMax = 12};
     SendMessageW(body, EM_EXSETSEL, 0, (LPARAM)&selection);
+    save_as_collisions(window, fixture, history);
     char edited_name[64];
     save_as_command(window, fixture, edited_name);
     expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_SAME);
@@ -3842,17 +4014,6 @@ static void run_other_fixture(struct native_fixture *_Nonnull fixture, int argc,
 }
 
 /* #723/#727: Read exact bytes, including an existing zero-byte file, without decoding. */
-static void native_file_path(struct native_fixture *_Nonnull fixture,
-                             const wchar_t *_Nonnull suffix, wchar_t path[storage_native_capacity])
-{
-    size_t length = 0;
-    size_t count = wcslen(suffix) + 1;
-    require(storage_native_path_fill(storage_state_directory(fixture->location), path, &length) &&
-                length + count <= storage_native_capacity,
-            "dedicated raw file path fits");
-    memcpy(path + length, suffix, count * sizeof *suffix);
-}
-
 static void expect_raw_file(struct native_fixture *_Nonnull fixture, const wchar_t *_Nonnull suffix,
                             const char *_Nonnull expected)
 {
