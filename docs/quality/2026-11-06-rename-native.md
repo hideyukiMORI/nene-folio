@@ -57,3 +57,10 @@ Windows11 Pro10.0.26300、Msftedit10.0.26100.9949。製品のローカルNTFS制
 カテゴリ改名、物理F2/IME、name modal、名前衝突/未選択/無題、I/O部分失敗/クラッシュ復旧、別volume、viewport画素/長文scroll/全DPIは対象外。
 先保存と移動の完了結果を実測したもので、電源断耐久性や全ファイル競合を証明しない。通常app/実ノート/利用者clipboard/前面focus/Storeを試験に使っていない。
 通常exeの実行内容を変える変更はなく、通常buildは反復しない。
+
+## 統合・保全・整理の確定
+
+#717/PR718は最終head6ab95285e7f67c73b21d08b5e122d467df5871da、必須CI42141683575 full-gate/check成功。
+main8ebc8b8a7b28fe81f9bf68630c58acf26617b1aaへ正典統合し、通常exeのhash/bytes/更新日時不変を確認した。
+4099filesを全hash保全し、絶対path/同一squash tree/clean・untracked・ignored/link/稼働参照0を確認後、専用worktree/outputを整理した。
+branch/commit保持。確定原本D:/NeNeFolio/agents/717-rename-native/integration-completion.json。
