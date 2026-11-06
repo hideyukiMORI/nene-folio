@@ -1,29 +1,25 @@
 # いまの状態 — NeNe Folio
 
-## 2026-11-06 — 1.3.2の公開前候補が完成
+## 2026-11-06 — GitHub 1.3.2 Beta公開済み
 
-hideの21:32の依頼に基づき、新しい品質課題の追加を区切り、1.3.2の公開判断用候補を揃えた。
-#773/PR774は最終head`eae7e2a4e8155d4fb27bfc37c99161126f6f0835`、必須CI42220848714 full-gate/check成功。
-候補のsourceは統合済みclean main `ba1e697deccb71e2f248f4759349d51ddec99e29`。Windows版は1.3.2.0。
-正規ZIP/MSIX生成・全payload検査、専用コピーのdataなし起動・設定Version 1.3.2・正常終了を両形式で確認した。
-[変更一覧](../release/1.3.2.md)・[確定品質記録](../quality/2026-11-06-release-1.3.2.md)・[3言語更新文](../release/1.3.2-store-notes.txt)。
+hideの22:47の依頼で、[GitHub 1.3.2 Beta](https://github.com/hideyukiMORI/nene-folio/releases/tag/v1.3.2)を22:54:38 JSTに公開した（#779）。
+tag/配布sourceは`ba1e697deccb71e2f248f4759349d51ddec99e29`、Windows版1.3.2.0。
+#773/PR774最終head`eae7e2a4e8155d4fb27bfc37c99161126f6f0835`、必須CI42220848714 full-gate/check成功と正規ZIP/MSIX生成・専用起動/版確認を再利用した。
+公開後のZIP/SHA256SUMS再取得で原本の全bytes/hashとZIP全11member一致を確認済み。
+[変更一覧](../release/1.3.2.md)・[品質記録](../quality/2026-11-06-release-1.3.2.md)・[3言語更新文](../release/1.3.2-store-notes.txt)。
 
 恒久配布はD:/NeNeFolio/releases/1.3.2/。
 ZIP `github/NeNeFolio-1.3.2-win-x64.zip`、SHA256 `e3922f11b227d089528f7880f27df4789b848a1b289871311faa36f48da36a34`。
 MSIX `store-candidate-20261106/NeNeFolio-1.3.2-win-x64.msix`、SHA256 `c772638689f7977b2ea062c5cff0dfd0fdf244fadb1cbfaf16a3fae8c428d7fc`。
-各directoryにSHA256SUMSと生成証跡、Store側に日本語・英語・簡体字のrelease-notes.txtを置いた。
-GitHub tag/Release公開とStore送信は未実施。MSIX payload起動をStore署名版の導入確認とは扱わない。
-公開判断までを今回の到達点とし、新しい品質テーマは次のhide指示を待つ。
+MSIXは前版と同identity/対応環境、1.3.1.0→1.3.2.0を照合済み。既存アプリのStore更新申請用であり、Store送信・認定・公開は未実施。
+公開原本D:/NeNeFolio/agents/publish-1.3.2-20261106/、生成・専用起動の確定原本は同agents/release-1.3.2-20261106/integration-completion.json。
 
-1966files全hash保全・絶対roots/同squashtree/clean・全file/link/稼働参照監査後、専用worktree/outputを整理、branch/commit保持。
-確定原本D:/NeNeFolio/agents/release-1.3.2-20261106/integration-completion.json。
-通常exeは22:16のhideの実機起動依頼で1.3.2へ反映し、source `99d74fab5db0fb7a4c94e415425cb0810b4bb3c1`、PID25132で起動・表示・応答を確認した。
-実data32fileは起動前の比較で全bytes/hash/作成更新日時不変。hideの「うん、よさそう」は初見の肯定であり、全機能の受理とは扱わない。
-起動原本D:/NeNeFolio/agents/release-1.3.2-20261106/real-machine/launch-result.json。アプリはhideの試用用に残し、以後のノート操作を自動試験に使わない。
+通常exeは22:16の実機起動依頼により1.3.2へ反映し、source `99d74fab5db0fb7a4c94e415425cb0810b4bb3c1`、PID25132で一度起動・表示・応答を確認した。
+起動前の実data32fileは全bytes/hash/作成更新日時不変。hideの「うん、よさそう」は初見の肯定として記録し、全機能受理とは区別した。
+実機結果#777/PR778は必須CI42225682924成功・main ef218ceへ統合・全保全整理済み。
+起動原本は同agents/release-1.3.2-20261106/real-machine/launch-result.json。公開作業で通常app/実ノートを操作しない。
 
-今日のpaste479・書式キー709・アクセシビリティ選択731・検索761/763・Debug ASan713修正と、保存/終了/書き出し等のnative回帰を統合済み。
-最後の#771/PR772はCI42219301978成功、main e962ac78c1b5859e650d028effd6163b13fab516へ統合・通常exe不変・全保全整理済み。
-日付付き[日報](../reports/2026-11-06.md)・[引き継ぎ](../handoffs/2026-11-06.md)、全体journal D:/NeNeFolio/agents/quality-20261106/journal.mdを参照。
+新しい品質テーマと次版Aboutはhideの次の実装指示を待つ。日付付き[日報](../reports/2026-11-06.md)・[引き継ぎ](../handoffs/2026-11-06.md)を参照。
 追加waiver none、既存WVR-0001継続。保留466/634/530と旧削除拒否領域を維持する。
 
 ## 公開済み1.3.1
