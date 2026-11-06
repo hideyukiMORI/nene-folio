@@ -57,6 +57,7 @@ static bool palette_case;
 static bool paste_case;
 static bool format_case;
 static bool layout_case;
+static bool save_as_case;
 
 static const char history_current[] = "# Current 日本語 😀 **saved**";
 static const char history_previous[] = "> Previous 猫 🐾 `old`";
@@ -109,12 +110,12 @@ static void seed_notes(struct persistence_port disk)
                      : "Body before images\n\n![alt](images/one.png)\n\nBody after images\n";
     if (history_case || replace_case || search_case || note_switch_case || zoom_case ||
         theme_preview_case || settings_edit_case || mode_save_case || discard_case ||
-        palette_case || paste_case || format_case || layout_case)
+        palette_case || paste_case || format_case || layout_case || save_as_case)
     {
         seed_history(disk);
         source = history_case || note_switch_case || zoom_case || theme_preview_case ||
                          settings_edit_case || mode_save_case || discard_case || palette_case ||
-                         paste_case || format_case || layout_case
+                         paste_case || format_case || layout_case || save_as_case
                      ? history_current
                      : replace_current;
     }
@@ -2892,9 +2893,170 @@ static void run_layout_case(struct native_fixture *_Nonnull fixture)
         note_text_destroy(history.files[version]);
 }
 
+static void expect_copy(struct native_fixture *_Nonnull fixture, const char *_Nonnull name,
+                        const char *_Nonnull expected)
+{
+    struct persistence_port disk = persistence_adapter_port(fixture->files);
+    struct note_text *text = nullptr;
+    require(disk.read_note(disk.adapter, "schedule", name, &text) == PERSISTENCE_LOADED &&
+                text != nullptr,
+            "the new copy is readable");
+    require(note_text_file_length(text) == strlen(expected) &&
+                memcmp(note_text_file_bytes(text), expected, strlen(expected)) == 0,
+            "the new copy contains every expected Markdown byte");
+    note_text_destroy(text);
+    for (size_t version = 1; version <= note_history_depth; ++version)
+    {
+        text = nullptr;
+        struct history_version which = {.category = "schedule", .note = name, .version = version};
+        require(disk.read_history(disk.adapter, &which, &text) == PERSISTENCE_ABSENT &&
+                    text == nullptr,
+                "a newly created copy has no archived history");
+        note_text_destroy(text);
+    }
+}
+
+static void expect_save_as_body(struct folio_window *_Nonnull window,
+                                const struct native_body_snapshot *_Nonnull before)
+{
+    struct native_body_snapshot after = {0};
+    capture_native_body(window, &after);
+    require(wcscmp(after.text, before->text) == 0 &&
+                after.selection.cpMin == before->selection.cpMin &&
+                after.selection.cpMax == before->selection.cpMax,
+            "Save As retains all native text units and the selection");
+    require(after.undo == before->undo && after.redo == before->redo,
+            "Save As retains native Undo and Redo availability");
+}
+
+static void save_as_command(struct folio_window *_Nonnull window,
+                            struct native_fixture *_Nonnull fixture, char name[64])
+{
+    size_t count = folio_state_note_count(fixture->state);
+    int length = snprintf(name, 64, "zzcopy-%zu", count);
+    require(length > 0 && length < 64, "dedicated copy name fits");
+    struct persistence_port disk = persistence_adapter_port(fixture->files);
+    struct note_text *absent = nullptr;
+    require(disk.read_note(disk.adapter, "schedule", name, &absent) == PERSISTENCE_ABSENT &&
+                absent == nullptr,
+            "repeat runs never overwrite a previous dedicated copy");
+    struct native_body_snapshot before = {0};
+    capture_native_body(window, &before);
+    struct accessible_request focus = {.item = {.kind = ACCESSIBLE_TREE},
+                                       .action = ACCESSIBLE_ACTION_FOCUS};
+    require(folio_window_accessible_action(window, &focus) == S_OK,
+            "open Ex from the public tree focus without typing into the editor");
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    SendMessageW(root, WM_CHAR, ':', 0);
+    pump(window);
+    HWND input = folio_window_accessible_window(window, ACCESSIBLE_COMMAND_INPUT);
+    require(input != nullptr && IsWindowVisible(input) && GetFocus() == input,
+            "the real Ex input is visible and focused");
+    wchar_t command[96];
+    require(swprintf(command, 96, L":saveas zzcopy-%zu", count) > 0, "the Save As command fits");
+    require(SetWindowTextW(input, command), "enter the dedicated Save As name");
+    SendMessageW(input, WM_KEYDOWN, VK_RETURN, 0);
+    pump(window);
+    require(!IsWindowVisible(input) && folio_state_note_count(fixture->state) == count + 1 &&
+                strcmp(folio_state_document_name(fixture->state), name) == 0,
+            "Ex creates and selects exactly one new note and closes");
+    expect_save_as_body(window, &before);
+}
+
+static void expect_save_as_original(struct native_fixture *_Nonnull fixture,
+                                    const struct history_snapshot *_Nonnull history,
+                                    uint64_t copies)
+{
+    require(folio_state_store_revision(fixture->state) == history->store_revision + copies,
+            "only the requested new copies publish a store revision");
+    struct persistence_port disk = persistence_adapter_port(fixture->files);
+    for (size_t version = 0; version <= note_history_depth; ++version)
+        expect_history_file(disk, version, history->files[version]);
+}
+
+static void save_as_edit(struct folio_window *_Nonnull window,
+                         struct native_fixture *_Nonnull fixture,
+                         const struct history_snapshot *_Nonnull history)
+{
+    action(window, ACCESSIBLE_EDIT);
+    append_switch_text(window);
+    expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_CHANGED);
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    CHARRANGE selection = {.cpMin = 10, .cpMax = 12};
+    SendMessageW(body, EM_EXSETSEL, 0, (LPARAM)&selection);
+    char edited_name[64];
+    save_as_command(window, fixture, edited_name);
+    expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_SAME);
+    expect_copy(fixture, edited_name, switch_saved);
+    expect_save_as_original(fixture, history, 1);
+    history_undo(window);
+    expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_CHANGED);
+    require(SendMessageW(body, EM_REDO, 0, 0) != 0, "Redo survives Save As of changed text");
+    pump(window);
+    expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_SAME);
+    history_undo(window);
+    expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_CHANGED);
+    require(SendMessageW(body, EM_CANREDO, 0, 0) != 0, "second Save As starts with native Redo");
+    SendMessageW(body, EM_EXSETSEL, 0, (LPARAM)&selection);
+    char redo_name[64];
+    save_as_command(window, fixture, redo_name);
+    expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_SAME);
+    expect_copy(fixture, redo_name, history_current);
+    require(SendMessageW(body, EM_REDO, 0, 0) != 0, "Redo survives Save As of undone text");
+    pump(window);
+    expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_CHANGED);
+    history_undo(window);
+    expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_SAME);
+    expect_copy(fixture, redo_name, history_current);
+    expect_copy(fixture, edited_name, switch_saved);
+    expect_save_as_original(fixture, history, 2);
+}
+
+/* #715: The native Save As path must not reload the editor or save the original first. */
+static void run_save_as_case(struct native_fixture *_Nonnull fixture)
+{
+    require(strcmp(folio_state_note_name(fixture->state, (struct note_ref){0, 0}), "one") == 0,
+            "copies remain after the original in the dedicated fixture");
+    require(folio_state_select_note(fixture->state, 0, 0, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
+            "select the dedicated original note");
+    struct history_snapshot history = {0};
+    capture_history(fixture, &history);
+    struct folio_window *window = nullptr;
+    require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
+                FOLIO_WINDOW_CREATED,
+            "real window for Save As");
+    pump(window);
+    save_as_edit(window, fixture, &history);
+    action(window, ACCESSIBLE_VIEW);
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    CHARRANGE selection = {.cpMin = 2, .cpMax = 5};
+    SendMessageW(body, EM_EXSETSEL, 0, (LPARAM)&selection);
+    struct native_body_snapshot view = {0};
+    capture_native_body(window, &view);
+    require(wcsstr(view.text, L"**saved**") == nullptr,
+            "the rendered view differs from the Markdown source being copied");
+    char view_name[64];
+    save_as_command(window, fixture, view_name);
+    require(folio_state_pane_mode(fixture->state) == PANE_MODE_VIEW &&
+                (GetWindowLongPtrW(body, GWL_STYLE) & ES_READONLY) != 0,
+            "Save As preserves VIEW and readonly mode");
+    expect_copy(fixture, view_name, history_current);
+    expect_save_as_original(fixture, &history, 3);
+    require(controlled.requests == 0, "plain Save As does not request image work");
+    folio_window_destroy(window);
+    for (size_t version = 0; version <= note_history_depth; ++version)
+        note_text_destroy(history.files[version]);
+}
+
 static void run_other_fixture(struct native_fixture *_Nonnull fixture, int argc,
                               char *_Nonnull *_Nonnull argv)
 {
+    if (save_as_case)
+    {
+        run_save_as_case(fixture);
+        return;
+    }
     if (layout_case)
     {
         run_layout_case(fixture);
@@ -2968,6 +3130,7 @@ int main(int argc, char *_Nonnull *_Nonnull argv)
     paste_case = strcmp(selector, "--paste") == 0;
     format_case = strcmp(selector, "--format-keys") == 0;
     layout_case = strcmp(selector, "--layout") == 0;
+    save_as_case = strcmp(selector, "--save-as") == 0;
     HWINSTA original_station = GetProcessWindowStation();
     HDESK original_desktop = GetThreadDesktop(GetCurrentThreadId());
     HWINSTA paste_station = paste_case ? isolate_paste_clipboard() : nullptr;

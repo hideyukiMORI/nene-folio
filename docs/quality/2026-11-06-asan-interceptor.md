@@ -66,3 +66,11 @@ GitHub pluginのIssue更新403は認証済みghへ切替えて成功。誤ファ
 この3モードは全CRT・全OS・全命令列・任意入力のメモリ安全性を証明しない。製品srcには直接frexp呼出しを認めていない。
 今回消えた警告以外の未知interceptor失敗を一括無視する規則も追加していない。通常app/実ノート/利用者clipboard/前面focus/Storeを品質試験に使っていない。
 Release配布物の再生成/公開は本件の対象ではなく、Releaseの確認は実smoke build/link引数と起動に限定した。
+
+## 統合・反映・整理済み
+
+#713/PR714は最終head f1b31fbbee6d69998a314c7e016e8c03785167e7、必須CI42136664822 full-gate/check成功。
+main570d14000de8cbc228c4017823d850a6543231a8へ正典統合し、通常Debugへ反映した。
+通常exe SHA256=2f1864c471e0cb0ff14053dfa52fbc2aabe0da21caa4d16f8507e61cd41e14a0、実data32filesのbytes/hash/作成更新日時不変。
+通常appは未起動。7806filesを全hash保全し、絶対path/同一squash tree/clean・untracked・ignored/link/稼働参照0を照合後、専用worktree/outputを整理した。
+branch/commit保持。確定原本D:/NeNeFolio/agents/713-asan-interceptor/integration-completion.json。

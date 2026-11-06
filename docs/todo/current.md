@@ -1,6 +1,6 @@
 # いまの状態 — NeNe Folio
 
-## 2026-11-06 — 編集操作の品質対応を完了、ASanの検出を修復中
+## 2026-11-06 — ASan修正を完了、別名保存のnative保持を確認中
 
 hideの新しい依頼により、停止指示まで品質対応を継続する。試験・計測・必要な調査と独立レビューを行い、全試行と変更を記録する。
 最優先の#479はPR708の最終CI42122814552が成功し、main `50fa28ea6ebc120023f1bbd30a753f9c3a5e9ab3`へ統合した。
@@ -11,10 +11,12 @@ hideの新しい依頼により、停止指示まで品質対応を継続する�
 [品質記録](../quality/2026-11-06-editor-format.md)。確定原本はD:/NeNeFolio/agents/709-editor-format/integration-completion.json。
 #711/PR712は表示3択と狭幅chooserの編集保持486checksと最終CI42132598999が成功し、main `47f80045ce3f33b71e176d31c38b43f84caa6d94`へ統合した。
 通常exe不変、4402filesの全保全と専用領域整理まで完了。[品質記録](../quality/2026-11-06-layout-native.md)、確定原本D:/NeNeFolio/agents/711-layout-native/integration-completion.json。
-#713はASanの起動警告をCRT frexp先頭へ特定し、poisoned出力先の未検出をDebug linkのpaddingで修正している。
-正典CMake/測定driverの両方で正常呼出しと直接store/CRTの検出、判定器11tests、Release非適用を確認した。
-測定90.9673%、native表示切替447checksは成功し起動警告無し。[品質記録](../quality/2026-11-06-asan-interceptor.md)。
-最終head CI・統合・通常Debug反映/data保持・全保全整理の確定原本はD:/NeNeFolio/agents/713-asan-interceptor/integration-completion.jsonへ収載する。
+#713/PR714はASanのfrexp出力先未検出をDebug linkで修復し、最終CI42136664822成功、main570d14000de8cbc228c4017823d850a6543231a8へ統合。
+通常Debug反映と実data32files不変、7806files全保全・専用領域整理まで完了した。[品質記録](../quality/2026-11-06-asan-interceptor.md)。
+確定原本D:/NeNeFolio/agents/713-asan-interceptor/integration-completion.json。
+#715は別名保存で元md/全履歴を保ち、native本文/選択/UndoRedoを維持する回帰を追加中。
+公開Ex入口から変更本文/Redo保有/VIEW原文の3ケースを専用dataで確認する。対象164checksと再実行170checksが成功、stderr空。最終CI/統合はこれから。
+[品質記録](../quality/2026-11-06-save-as-native.md)。作業木D:/NeNeFolio/worktrees/715-save-as-native、試行同outputs、恒久原本同agents。製品srcは不変。
 全体journalはD:/NeNeFolio/agents/quality-20261106/journal.md。
 00:51の停止は今回指示で解除。停止処理の履歴はD:/NeNeFolio/agents/706-store-publication/integration-completion.jsonに保持する。
 #704/PR705は操作パレットの取消と編集保持を確認（141checks、stderr空）し、最終CI42054891152成功、main eaef26aへ統合・全保全整理済み。
@@ -46,8 +48,8 @@ Windows版は1.3.1.0。正規ZIP/MSIX生成、専用コピーでの起動・設�
 
 ## 通常版と実機確認
 
-通常exeは `C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`、反映sourceは `8ccbf29a232bd25d03102be3ce8f0fe4f9e05851`。
-SHA256は `caee9596c1f73f40dc959737cb2309097e860cacf8ee2ee03c9789bd2c593174`。#709反映時、実data32fileの全bytes/hash/作成更新日時不変を確認した。
+通常exeは `C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`、反映sourceは `570d14000de8cbc228c4017823d850a6543231a8`。
+SHA256は `2f1864c471e0cb0ff14053dfa52fbc2aabe0da21caa4d16f8507e61cd41e14a0`。#713反映時、実data32fileの全bytes/hash/作成更新日時不変を確認した。
 通常app/実ノート/Storeは品質試験に使っていない。hideによる1.3.0の実機受理は未確認。
 文書・native試験のみの変更を理由に通常buildを反復しない。配布1.3.0のsourceとは区別する。
 
