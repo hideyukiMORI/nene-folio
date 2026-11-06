@@ -1,17 +1,19 @@
 # いまの状態 — NeNe Folio
 
-## 2026-11-06 — #751まで完了、無題のOS終了拒否を確認中
+## 2026-11-06 — #753まで完了、IME変換中の終了拒否を確認中
 
 hideの07:08の依頼により停止指示まで品質対応を継続する。最優先の平文paste・書式キー・Debug ASan修正は統合・通常反映・整理済み。
-保存/改名/移動/無題離脱/初回保存/trash拒否/検索focus保存/通常終了拒否/名前付きOS終了通知の回帰は#751/PR752まで統合・整理済み。
-[日報](../reports/2026-11-06.md)・[引き継ぎ](../handoffs/2026-11-06.md)と各品質記録へ実測・確定原本を収載。
-最新確定mainは201c6854b747ba42ed210a45272f3ef825e2a086、最終CI42182200571成功。
-#751確定原本D:/NeNeFolio/agents/751-session-save-native/integration-completion.json。
+保存/改名/移動/無題離脱/初回保存/trash拒否/検索focus保存/通常終了拒否/名前付き・無題OS終了通知の回帰は#753/PR754まで統合・整理済み。
+[日報](../reports/2026-11-06.md)・[引き継ぎ](../handoffs/2026-11-06.md)と各品質記録に実測・確定原本を収載。
+最新確定mainは95bc500f6acf84e7e08dfb41d7680cda62cdb0d0、最終CI42184391726成功。#753確定原本D:/NeNeFolio/agents/753-session-untitled-native/integration-completion.json。
 
-#753は初期空/編集済み/Undo後空で無題のOS終了を拒否し、入力と保存物を保持。手動初回保存後の承認/取消/最終破棄を固定する。
-first_save_modal_native 308checks/1.15秒、session_save_native 233checks/0.83秒、session_untitled_native 576checks/0.91秒、計2.89秒成功。台帳・追加ノート・前回保存物ありのrepeatはsession_untitled_native 702checks/1.09秒、CTest1.1秒成功。runtime stderr空・child/wrapper0・入力不変。元追加2md/target追加1md/前回保存物/元台帳の全bytes/hash/作成更新日時不変。
-src/API/schema不変、CMakeは試験登録2行。最終CI/統合/通常exe不変/全保全整理はこれから。[品質記録](../quality/2026-11-06-session-untitled-native.md)。
-作業木D:/NeNeFolio/worktrees/753-session-untitled-native、試行同outputs、恒久agents。全体journalはD:/NeNeFolio/agents/quality-20261106/journal.md。
+#755は4入力所有者を本文caret/主窓/全ノート検索/Find/設定layerの5対象で確認。合成IME中の2回のQUERY拒否/ENDTRUE無破棄/ENDFALSE理由解除とreadyfalse保持、IMEEND後readytrueを固定。
+同root/native全文selectionmodifiedUndoRedo/focus/EDIT/NAMED/選択/count/全履歴revision、検索欄文字選択と語/件数、設定面選択revision/全settingsbytes保持。実Redo後は既存sessionhelperで保存一回/取消UndoRedo/最終破棄を確認する。
+session_ime_native 1158checks/1.07秒、CTest1.08秒成功。台帳あり/元追加2md/target追加1mdのrepeatは1158checks/1.02秒、CTest1.02秒成功。成功runtime stderr空・child/wrapper0・入力不変。追加3mdと台帳の全bytes/hash/作成更新日時不変。
+src/API/schema/既存helper/依存/ゲート不変。CMakeは登録と既存lock/TIMEOUT30の2行のみ。単体自己レビュー、追加waiver none、既存WVR-0001継続。
+本文選択の合成START挙動と設定面呼出しの試験前提を診断・訂正し最終対象成功。全失敗も保持。
+最終CI/統合/通常exe不変/全保全整理はこれから。[品質記録](../quality/2026-11-06-session-ime-native.md)。
+D:/NeNeFolio/worktrees/755-session-ime-native、同outputs、恒久agents。全体journalはD:/NeNeFolio/agents/quality-20261106/journal.md。
 過去の停止履歴は今回依頼の停止指示として扱わない。
 
 ## 公開済み1.3.1
