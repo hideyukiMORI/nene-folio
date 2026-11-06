@@ -49,3 +49,10 @@ Windows NT10.0.26300.0、Msftedit10.0.26100.9949、ローカルNTFS・専用desk
 短い正常な名前付き本文からの新規・初回保存が対象。物理keyboard/IME、名前入力modal/取消/保存しない、カテゴリ0/別カテゴリ、名前衝突/I/O失敗/台帳部分失敗、全DPI、fresh-process復旧は対象外。
 ローカル成功runは旧試行のノートが残ったfixtureであり、全組合せやまっさらな実アプリ初回起動の保証ではない。
 通常app/実ノート/前面focus/Storeは試験に使わず、通常buildも反復せずexeのhash/bytes/更新日時を照合する。
+
+## 統合・保全・整理の確定
+
+#725/PR726は最終head3a974c57d08b701a45c07f6a863cb7c762c65ea8、必須CI42150856096 full-gate/check成功。
+main16af695a6edd48cbd3bcfb27a35a9af3466b360dへ正典統合し、通常exeのhash/bytes/更新日時不変を確認した。
+3404filesを全hash保全し、絶対path/同一squash tree/clean・untracked・ignored/link/稼働参照0を確認後、専用worktree/outputを整理した。
+branch/commit保持。確定原本D:/NeNeFolio/agents/725-first-save-native/integration-completion.json。

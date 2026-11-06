@@ -117,6 +117,11 @@ native本文/選択/UndoRedoと元md/全履歴を保ち、新mdの全bytes/初�
 前試行で作成したmdの全bytes/hash/作成更新日時保持も照合。modal/IME/衝突/I/O失敗は対象外。
 [品質記録](quality/2026-11-06-first-save-native.md)。
 
+#727のempty_save_nativeは全削除した本文の0bytes実在保存・全履歴1世代更新・実UndoRedo・空VIEW/EDIT再投入を固定する。
+236checksでnative全文/選択/modified/UndoRedo/focusとNAMEDを保持。共通snapshotの正常0を終端確認付きで受理し、
+直接共用unicode_save_native254checksも成功。getter/I/O失敗注入・物理IME・fresh-process復旧は対象外。
+[品質記録](quality/2026-11-06-empty-save-native.md)。
+
 ### QLT-009 — カバレッジは下げられない
 
 中核の分岐カバレッジ下限を 90% とする。閾値は上げてよいが下げてはならない。下げるには ADR が要る。
