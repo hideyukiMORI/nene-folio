@@ -8,10 +8,10 @@ A frameless Markdown notebook for Windows with a category drawer. Plain C (C23),
 > Windows 10 version 2004 or later is required. Notes and settings use `data/` beside the executable
 > by default; Settings can select another location.
 
-The current source is the **1.3.2 release candidate**, with plain-text paste, protection from
+The current source is the **1.3.2 Beta**, [published on GitHub](https://github.com/hideyukiMORI/nene-folio/releases/tag/v1.3.2), with plain-text paste, protection from
 unintended paragraph formatting, corrected accessible note selection, and in-note search improvements.
 See the [1.3.2 changes and update instructions](docs/release/1.3.2.md) and
-[candidate verification record](docs/quality/2026-11-06-release-1.3.2.md).
+[release verification record](docs/quality/2026-11-06-release-1.3.2.md).
 Package creation, GitHub publication, and Microsoft Store certification are tracked separately.
 The unsigned MSIX is a Store submission artifact, not a portable installer.
 
