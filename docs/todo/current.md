@@ -1,102 +1,51 @@
 # いまの状態 — NeNe Folio
 
-## 2026-11-07 — Store掲載文3言語を準備、通常版・READMEは反映済み
+## 2026-11-07 — Store 1.3.2公開報告と当日の記録
 
-#787で公開済み1.3.2に合う[Store掲載原稿](../release/store-listing/README.md)を日本語・英語・簡体字で準備した。
-画像・Mermaid・コード色分けの旧非対応説明を訂正し、HTML描画/独自クラウド同期の制限は維持する。
-貼り付け用9ファイルはD:/NeNeFolio/releases/1.3.2/store-listing-20261107/。説明/機能/短い説明の3欄で、未送信。
-[作成・照合記録](../quality/2026-11-07-store-listing-current.md)。確定原本同agents/store-listing-current-20261107/integration-completion.json。
-次の外部反映はStoreの各言語欄の差替え。今回はPartner Centerを操作せず、1.3.2の認定/公開や訂正掲載は未確認。
+[Issue #789](https://github.com/hideyukiMORI/nene-folio/issues/789)に記録されたhideの
+「Store は 1.3.2 出てたよ」に基づき、Store掲載1.3.2を本人報告による公開確認済みとした。
+Issue作成03:10:16 JSTは記録日時で、実際の報告・認定・公開日時ではない。
+Storeアプリ経由の1.3.2実機更新、Store署名版の品質試験、portal/package hashの独立確認は未確認。
+原本D:/NeNeFolio/agents/release-1.3.2-20261106/store-status.jsonには旧#781申請報告も保持する。
+Store1.3.1の実機更新成功報告#706は履歴であり、1.3.2の更新成功を意味しない。
 
-#785/PR786は最終CI42245044660成功、main445315bへ統合済み。READMEの公式Store URLと1.3.2画面2枚を更新し、1,268file全保全後に専用領域整理済み。
-原本同agents/readme-current-20261107/integration-completion.json。
-#783/PR784は最終CI42239417180成功・maind343071へ統合し、00:24に通常exeへ反映した。実data33fileのbytes/hash/作成更新日時不変、未起動。
-1,481file全保全後に783専用領域も整理済み。原本同agents/editor-font-binding-20261106/integration-reflected.json。
-物理IMEと実ノートでの見た目は未確認。公開済み1.3.2 ZIP/MSIXにはこのCJK修正を収載しない。
+当日の実績は[11月7日日報](../reports/2026-11-07.md)、再開条件は[11月7日引き継ぎ](../handoffs/2026-11-07.md)。
+今回の依頼はこの記録作成。新しい品質テーマ・Store送信・通常app起動の指示へ広げない。
+#789の最終head/CI/統合/整理の確定原本はD:/NeNeFolio/agents/789-daily-handoff/integration-completion.json。
+記録が未完なら完了扱いにせず、実際のIssue/PRとcheckoutを照合する。
+
+## 通常版と公開版
+
+#783/PR784は最終CI42239417180成功・main d343071へ統合し、00:24に通常exeへ反映した。
+通常exeはC:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe、版1.3.2 / Windows1.3.2.0。
+反映source `d343071aa918d6b5e7a41341009a2db607b5217c`、
+SHA256 `ab97b69dcab303d8a75c09ed879237c9477939a64c1ddb6d8faabc02180018f1`。
+実data33ファイルのbytes/hash/作成・更新日時不変、反映後は未起動。物理IMEと実ノートの見た目は未確認。
+確定原本はD:/NeNeFolio/agents/editor-font-binding-20261106/integration-reflected.json。
+旧integration-completion.jsonの反映待ちは過去の状態。専用領域は1481ファイル全保全後に整理済み。
+
+[GitHub 1.3.2 Beta](https://github.com/hideyukiMORI/nene-folio/releases/tag/v1.3.2)は11月6日22:54:38 JST公開済み。
+tag/配布sourceは `ba1e697deccb71e2f248f4759349d51ddec99e29`。通常版の#783修正は公開済みZIP/MSIXに未収載。
+恒久配布はD:/NeNeFolio/releases/1.3.2/。ZIP/MSIXの正確なhashと検証範囲は
+[1.3.2品質記録](../quality/2026-11-06-release-1.3.2.md)・[変更一覧](../release/1.3.2.md)を参照する。
+公開・配布の確認済み結果を、Store署名版更新の検証へ広げない。
+
+## README・Store原稿
+
+#785/PR786は最終CI42245044660成功・main445315bへ統合済み。READMEの公式Store URLと公開1.3.2の画面2枚を更新した。
+1268ファイル全保全後に専用領域を整理済み。原本D:/NeNeFolio/agents/readme-current-20261107/integration-completion.json。
+#787/PR788は最終CI42247664237成功・maina1f6659へ統合済み。
+[Store掲載原稿](../release/store-listing/README.md)は日本語・英語・簡体字の説明/機能/短い説明を準備済み、未送信。
+貼り付け用9ファイルはD:/NeNeFolio/releases/1.3.2/store-listing-20261107/。正本commit/hashと全出力一致を確認済み。
+製品のStore公開と掲載文の訂正反映は別の状態。次の外部反映を行う場合は各言語欄をこの原稿へ差し替える。
+1249ファイル全保全後に専用領域を整理済み。原本同agents/store-listing-current-20261107/integration-completion.json。
 次版Aboutは未着手。追加waiver none、既存WVR-0001継続。
-
-## 2026-11-06 — GitHub 1.3.2公開・Store更新申請済み
-
-hideの22:47の依頼で、[GitHub 1.3.2 Beta](https://github.com/hideyukiMORI/nene-folio/releases/tag/v1.3.2)を22:54:38 JSTに公開した（#779）。
-tag/配布sourceは`ba1e697deccb71e2f248f4759349d51ddec99e29`、Windows版1.3.2.0。
-#773/PR774最終head`eae7e2a4e8155d4fb27bfc37c99161126f6f0835`、必須CI42220848714 full-gate/check成功と正規ZIP/MSIX生成・専用起動/版確認を再利用した。
-公開後のZIP/SHA256SUMS再取得で原本の全bytes/hashとZIP全11member一致を確認済み。
-[変更一覧](../release/1.3.2.md)・[品質記録](../quality/2026-11-06-release-1.3.2.md)・[3言語更新文](../release/1.3.2-store-notes.txt)。
-
-恒久配布はD:/NeNeFolio/releases/1.3.2/。
-ZIP `github/NeNeFolio-1.3.2-win-x64.zip`、SHA256 `e3922f11b227d089528f7880f27df4789b848a1b289871311faa36f48da36a34`。
-MSIX `store-candidate-20261106/NeNeFolio-1.3.2-win-x64.msix`、SHA256 `c772638689f7977b2ea062c5cff0dfd0fdf244fadb1cbfaf16a3fae8c428d7fc`。
-MSIXは前版と同identity/対応環境、1.3.1.0→1.3.2.0を照合済み。hideの「Storeは更新申請した。」との報告により、1.3.2は更新申請済み（#781）。認定・公開・Store経由の実機更新は未確認。
-公開原本D:/NeNeFolio/agents/publish-1.3.2-20261106/、生成・専用起動の確定原本は同agents/release-1.3.2-20261106/integration-completion.json。
-
-通常exeは22:16の実機起動依頼により1.3.2へ反映し、source `99d74fab5db0fb7a4c94e415425cb0810b4bb3c1`、PID25132で一度起動・表示・応答を確認した。
-起動前の実data32fileは全bytes/hash/作成更新日時不変。hideの「うん、よさそう」は初見の肯定として記録し、全機能受理とは区別した。
-実機結果#777/PR778は必須CI42225682924成功・main ef218ceへ統合・全保全整理済み。
-起動原本は同agents/release-1.3.2-20261106/real-machine/launch-result.json。公開作業で通常app/実ノートを操作しない。
-
-その後の23:20頃の依頼で#783の書体混在を対応中。次版Aboutは検討案のまま。日付付き[日報](../reports/2026-11-06.md)・[引き継ぎ](../handoffs/2026-11-06.md)を参照。
-追加waiver none、既存WVR-0001継続。保留466/634/530と旧削除拒否領域を維持する。
-
-## 公開済み1.3.1
-
-[GitHub 1.3.1 Beta](https://github.com/hideyukiMORI/nene-folio/releases/tag/v1.3.1)を公開し、ZIP/SHA256SUMSの再取得と全11memberの原本一致を確認した。
-#697 / PR699、最終CI42035926749のfull-gate/check成功。配布source/tagは `d474e531a5199895d6d8447435c7f45ade362cc3`。
-Windows版は1.3.1.0。正規ZIP/MSIX生成、専用コピーでの起動・設定Version 1.3.1・正常終了を確認した。
-[変更一覧](../release/1.3.1.md)・[リリース品質記録](../quality/2026-11-05-release-1.3.1.md)を参照。
-確定原本は `D:/NeNeFolio/agents/release-1.3.1-20261105/integration-completion.json`。697専用worktree/outputは全保全後に整理済み、branch/commitは保持した。
-結果収載#700 / PR701も最終CI42040854960成功、main e1df61cへ統合・全保全整理済み。原本は `D:/NeNeFolio/agents/700-release-result/integration-completion.json`。
-
-11月5日21:28の一時停止後、22:13のリリース依頼を完了し、23:17頃に品質対応を再開した。11月6日00:51頃に区切り、同日07:08の新指示で継続品質対応を再開した。
-
-## リリースに含む最新の品質改善
-
-#693 / PR694、最終CI42026620126のfull-gate/checkが成功し、main `b898c79413b578bbfdb96c615ee0528ddae62fee` へ統合済み。
-検索はサロゲートの無いUTF-16先頭を4単位ずつ検証し、候補塊と末尾は既存処理へ戻る。API/保存形式/検索の意味は不変。
-20通常本文・80条件・3600sampleが全結果一致。262144単位のASCII/日本語/末尾絵文字は前方約92〜93%、count約31〜36%短縮。
-先頭絵文字などの費用も残り、65536単位の後方は+5.15%（18.32µs）。全数値・対象試験・静読の範囲は[検索検証の品質記録](../quality/2026-11-05-search-validation.md)へ。
-原本は `D:/NeNeFolio/agents/693-search-validation/integration-completion.json`。
-
-現在の履歴は[11月6日日報](../reports/2026-11-06.md)と[引き継ぎ](../handoffs/2026-11-06.md)。前日までの完了・不採用候補・全試行・保全先は[11月5日日報](../reports/2026-11-05.md)と[引き継ぎ](../handoffs/2026-11-05.md)から辿る。
-全体journalは `D:/NeNeFolio/agents/quality-20261105/journal.md`。停止記録#695の履歴は同agents/695-current-state/integration-completion.jsonから辿れる。
-主担当単体で実装・計測・検証し、必要な独立静読だけ委任した。追加waiver none、既存WVR-0001継続。
-
-## 通常版と実機確認
-
-通常exeはC:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe、版1.3.2、反映sourceはd343071aa918d6b5e7a41341009a2db607b5217c。
-SHA256 ab97b69dcab303d8a75c09ed879237c9477939a64c1ddb6d8faabc02180018f1。
-11月7日00:24の反映で実data33fileのbytes/hash/作成更新日時不変を確認した。次回起動から#783修正が有効になる。
-今回の通常版は未起動。hideの以前の「うん、よさそう」は11月6日22:19の公開候補に対する初見であり、今回の修正受理ではない。
-公開済み1.3.2の配布sourceとは区別する。文書だけの変更で通常buildや製品試験を反復しない。
-
-## Store公開と残る未確認事項
-
-1.3.2 / Windows1.3.2.0はhideの本人報告によりStore更新申請済み（#781）。直前の1.3.2案内から版を特定した。
-報告後の時計確認は11月6日23:18:55 JSTで、正確な申請時刻・申請番号・現在の審査段階は未確認。
-認定・公開・Store経由の実機更新、portal画面やアップロードpackage hashの独立確認は行っていない。
-申請原本D:/NeNeFolio/agents/release-1.3.2-20261106/store-status.json。次はhideの結果報告を待つ。
-
-1.3.1の提出用MSIXと日本語・英語・簡体字の更新文は `D:/NeNeFolio/releases/1.3.1/store-candidate-20261105/` に準備済み。
-ZIPは `D:/NeNeFolio/releases/1.3.1/github/`。ZIP SHA256は `120968465a35664fa91ec300a18bbca699406c2c8a96b0c8ca4f4923c32535f7`、
-MSIX SHA256は `3b113aabfb8c88b00ad0bc6b0d0b19acf7670a881797c6df0fbf2e58f44f5326`。
-11月6日の[hide本人の報告（#706）](https://github.com/hideyukiMORI/nene-folio/issues/706)で、Store掲載1.3.1とStoreアプリ経由の実機更新成功を確認済みとした。
-原本はD:/NeNeFolio/agents/release-1.3.1-20261105/store-status.json。11月5日23:17頃の「Pre-processing」報告も履歴として保持する。
-認定日時・申請番号・正確な申請時刻は未確認。portal画面・提出package hash・更新実機の独立確認は行っていない。
-Store署名版は品質試験に使っておらず、既存の配布試験はMSIX内payloadの起動確認である。
-
-[GitHub 1.3.0 Beta](https://github.com/hideyukiMORI/nene-folio/releases/tag/v1.3.0)は公開済み。配布source/tagは `4359e9e2268bdeef135a4630dbaa241d57c3063d`。
-11月4日22:30頃のhideの「申請した」という報告により、Store1.3.0（Windows1.3.0.0）は申請済みとして記録した。
-申請番号・正確な申請時刻・現在の審査段階・認定/公開は未確認。次はhideの結果報告を待つ。
-提出用MSIX/3言語更新文は `D:/NeNeFolio/releases/1.3.0/store-candidate-20261104/`、申請原本は同agents/release-1.3.0-20261104/store-status.json。
-[変更一覧](../release/1.3.0.md)・[リリース品質記録](../quality/2026-11-04-release-1.3.0.md)・[11月4日日報](../reports/2026-11-04.md)・[11月4日引き継ぎ](../handoffs/2026-11-04.md)を参照する。
-以前の1.2.0のPre-processing報告を現在の認定/公開状態へ流用しない。WACK/AppData root/Store署名版の検証限界は[MSIX品質記録](../quality/2026-11-01-msix-installation.md)へ。
 
 ## 保留・保持物
 
-#634のJSON変異試験は安全判定の通知を受けて保留。比較は未実行、repo変更/PR無し。
-未完了のためD:/NeNeFolio/worktrees/634-json-boundary-oracleと同outputsを保持し、追加build/runは行わない。
-入力・補助build失敗・通知とhideの通常品質対応継続指示は同agentsと全体journalへ記録した。
-
-#466の表幅診断は保留。#479は修正・統合・通常反映・整理済み。#530と旧削除拒否9作業木は保持し、削除を再試行しない。
-正確な所在・理由は引き継ぎ書へ。10月31日にhideが削除した47出力を古い記録だけで現存扱いに戻さない。
-大文書の投入/表配置、大量ノート検索準備、極狭幅表、flow/sequence以外のMermaidは未対応/保留。
-WACKとAppDataノートroot、Store署名版導入の従前の検証限界は[MSIX品質記録](../quality/2026-11-01-msix-installation.md)を参照する。
+#466の表幅診断と#634のJSON変異試験を保留。#634は安全判定の通知による保留で、追加build/runを行わない。
+#530は実装受理済みだが整理の自動承認審査が削除を拒否した領域。旧削除拒否9作業木とともに保持し、削除を再試行しない。
+正確な所在と理由は[当日の引き継ぎ](../handoffs/2026-11-07.md)へ。#479は完了・整理済み。
+大文書の投入/表配置、大量ノート検索準備、極狭幅表、flow/sequence以外のMermaidは従前の未対応/保留。
+WACK/AppData root/Store署名版の検証限界は[MSIX品質記録](../quality/2026-11-01-msix-installation.md)を参照する。
+以前の実績・全体journal・保全先は[11月6日日報](../reports/2026-11-06.md)と[引き継ぎ](../handoffs/2026-11-06.md)から辿れる。
