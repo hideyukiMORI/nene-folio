@@ -55,3 +55,11 @@ Windows11 Pro10.0.26300、Msftedit10.0.26100.9949。既存専用desktop/verifica
 並行レース、case-sensitive directory、Unicode正規化/長いpath/予約名、名前modal/ACL/容量不足/台帳部分失敗、
 物理keyboard/IME/外部UIA client/全OS/DPIの確認ではない。通常app/実ノート/clipboard/前面focus/Storeは試験に使わない。
 個別保留466/634/530と旧削除拒否領域を維持する。
+
+## 統合・保全整理の確定
+
+#733/PR734は最終head7451458c8012bc49f1c58330141f0be990507164、必須CI42160015915 full-gate/check成功。
+mainf733eca11a1e53bf78481cba0d3c4264d122b082へ正典統合し、#731反映済み通常exeのhash/bytes/更新日時不変を確認した。
+統合初回merge01はPR本文のCloses行形式をReady前に拒否（child/wrapper1）。Draftの本文だけ訂正し、merge02で成功した。
+3454filesを全hash保全し、絶対path/同一squash tree/clean・untracked・ignored/link/稼働参照0を確認後、専用worktree/outputを整理。
+branch/commit保持。確定原本D:/NeNeFolio/agents/733-save-as-collision-native/integration-completion.json。
