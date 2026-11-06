@@ -70,6 +70,7 @@ static bool empty_save_case;
 static bool locked_save_case;
 static bool filter_save_case;
 static bool session_save_case;
+static bool session_untitled_case;
 
 static const char history_current[] = "# Current 日本語 😀 **saved**";
 static const char history_previous[] = "> Previous 猫 🐾 `old`";
@@ -148,7 +149,7 @@ static void seed_notes(struct persistence_port disk)
         palette_case || paste_case || format_case || layout_case || save_as_case || rename_case ||
         replace_save_case || move_edit_case || first_save_case || first_save_modal_case ||
         empty_save_case || locked_save_case || unicode_save_case || filter_save_case ||
-        session_save_case)
+        session_save_case || session_untitled_case)
     {
         seed_history(disk);
         source = history_case || note_switch_case || zoom_case || theme_preview_case ||
@@ -156,7 +157,7 @@ static void seed_notes(struct persistence_port disk)
                          paste_case || format_case || layout_case || save_as_case || rename_case ||
                          replace_save_case || move_edit_case || first_save_case ||
                          first_save_modal_case || empty_save_case || locked_save_case ||
-                         filter_save_case || session_save_case
+                         filter_save_case || session_save_case || session_untitled_case
                      ? history_current
                      : replace_current;
     }
@@ -4799,7 +4800,7 @@ static void expect_rejected_draft(const struct name_rejection_probe *_Nonnull pr
     HWND body = folio_window_accessible_window(probe->window, ACCESSIBLE_BODY);
     require(SendMessageW(body, EM_GETMODIFY, 0, 0) == probe->body->modified,
             "a rejected destination keeps the native modified flag");
-    expect_editor(probe->window, fixture->state, first_save_edited, FOLIO_NOTE_CHANGED);
+    expect_editor(probe->window, fixture->state, probe->body->text, FOLIO_NOTE_CHANGED);
     struct note_ref selected = {0};
     require(folio_state_document_kind(fixture->state) == FOLIO_DOCUMENT_UNTITLED &&
                 folio_state_document_category(fixture->state) == 0 &&
@@ -4966,44 +4967,57 @@ static void modal_save_accept(struct folio_window *_Nonnull window,
     expect_name_file_set(disk, "schedule", files->source);
 }
 
-static void run_first_save_modal_case(struct native_fixture *_Nonnull fixture)
+static struct folio_window *_Nonnull begin_modal_save(struct native_fixture *_Nonnull fixture,
+                                                      struct modal_save_files *_Nonnull files)
 {
     require(strcmp(folio_state_note_name(fixture->state, (struct note_ref){0, 0}), "one") == 0 &&
                 strcmp(folio_state_category_name(fixture->state, 1), "target") == 0 &&
                 folio_state_select_note(fixture->state, 0, 0, FOLIO_UNTITLED_PROTECT) ==
                     FOLIO_STATE_READY,
             "select the source beside the dedicated destination category");
-    struct modal_save_files files = {0};
-    capture_history(fixture, &files.original);
+    capture_history(fixture, &files->original);
     struct persistence_port disk = persistence_adapter_port(fixture->files);
-    require(disk.scan_notes(disk.adapter, "schedule", &files.source) == PERSISTENCE_LOADED &&
-                files.source != nullptr &&
-                disk.scan_notes(disk.adapter, "target", &files.target) == PERSISTENCE_LOADED &&
-                files.target != nullptr,
+    require(disk.scan_notes(disk.adapter, "schedule", &files->source) == PERSISTENCE_LOADED &&
+                files->source != nullptr &&
+                disk.scan_notes(disk.adapter, "target", &files->target) == PERSISTENCE_LOADED &&
+                files->target != nullptr,
             "snapshot both categories before creating an unsaved draft");
-    files.count = folio_state_note_count(fixture->state);
-    require(files.count == name_list_count(files.source) + name_list_count(files.target),
+    files->count = folio_state_note_count(fixture->state);
+    require(files->count == name_list_count(files->source) + name_list_count(files->target),
             "the fixture has exactly the two snapshotted categories");
     struct folio_window *window = nullptr;
     require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
                 FOLIO_WINDOW_CREATED,
             "real first-save name dialog host");
     pump(window);
-    modal_save_draft(window, fixture, &files);
-    snapshot_modal_ledger(disk, "schedule", &files.source_ledger);
-    snapshot_modal_ledger(disk, "target", &files.target_ledger);
+    modal_save_draft(window, fixture, files);
+    snapshot_modal_ledger(disk, "schedule", &files->source_ledger);
+    snapshot_modal_ledger(disk, "target", &files->target_ledger);
+    return window;
+}
+
+static void release_modal_save(struct modal_save_files *_Nonnull files)
+{
+    name_list_destroy(files->source);
+    name_list_destroy(files->target);
+    note_ledger_destroy(files->source_ledger);
+    note_ledger_destroy(files->target_ledger);
+    for (size_t version = 0; version <= note_history_depth; ++version)
+        note_text_destroy(files->original.files[version]);
+}
+
+static void run_first_save_modal_case(struct native_fixture *_Nonnull fixture)
+{
+    struct modal_save_files files = {0};
+    struct folio_window *window = begin_modal_save(fixture, &files);
+    struct persistence_port disk = persistence_adapter_port(fixture->files);
     modal_save_accept(window, fixture, &files);
     modal_save_roundtrip(window, fixture, &files);
     expect_name_file_set(disk, "schedule", files.source);
     require(folio_state_note_count(fixture->state) == files.count + 1 && controlled.requests == 0,
             "SAME saves add no public notes and plain Markdown requests no image work");
     folio_window_destroy(window);
-    name_list_destroy(files.source);
-    name_list_destroy(files.target);
-    note_ledger_destroy(files.source_ledger);
-    note_ledger_destroy(files.target_ledger);
-    for (size_t version = 0; version <= note_history_depth; ++version)
-        note_text_destroy(files.original.files[version]);
+    release_modal_save(&files);
 }
 
 /* #727: An empty named document is saved, archived and reloaded as a real document. */
@@ -5684,14 +5698,14 @@ static void expect_session_live(struct folio_window *_Nonnull window, HWND root,
             "session negotiation does not publish quit before approved final destruction");
 }
 
-static void expect_session_notice(struct folio_window *_Nonnull window, bool blocked)
+static void expect_session_notice(struct folio_window *_Nonnull window,
+                                  const wchar_t *_Nonnull reason, bool blocked)
 {
     struct accessible_item item = {.kind = ACCESSIBLE_NOTICE};
     struct accessible_view status = {0};
     require(folio_window_accessible_read(window, &item, &status) == S_OK && !status.offscreen,
             "session status is exposed through the existing notice");
-    require((wcsstr(status.name, L"保存処理が未完了です。保存を再試行してください。") != nullptr) ==
-                blocked,
+    require((wcsstr(status.name, reason) != nullptr) == blocked,
             "session save refusal has its independent reason and cancellation clears it");
 }
 
@@ -5706,17 +5720,17 @@ static void refused_session_save(struct folio_window *_Nonnull window,
     require(SendMessageW(root, WM_QUERYENDSESSION, 0, (LPARAM)ENDSESSION_LOGOFF) == FALSE,
             "a named save sharing violation refuses the session synchronously without a modal");
     expect_session_live(window, root, true);
-    expect_session_notice(window, true);
+    expect_session_notice(window, L"保存処理が未完了です。保存を再試行してください。", true);
     expect_native_body(window, before);
     expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_CHANGED);
     expect_locked_target(fixture->state);
     SendMessageW(root, WM_ENDSESSION, TRUE, (LPARAM)ENDSESSION_LOGOFF);
     expect_session_live(window, root, true);
     expect_native_body(window, before);
-    expect_session_notice(window, true);
+    expect_session_notice(window, L"保存処理が未完了です。保存を再試行してください。", true);
     SendMessageW(root, WM_ENDSESSION, FALSE, (LPARAM)ENDSESSION_LOGOFF);
     expect_session_live(window, root, true);
-    expect_session_notice(window, false);
+    expect_session_notice(window, L"保存処理が未完了です。保存を再試行してください。", false);
     expect_native_body(window, before);
     require(folio_state_note_count(fixture->state) == total,
             "refused and cancelled session notifications retain all existing note rows");
@@ -5747,7 +5761,7 @@ static void approve_session_save(struct folio_window *_Nonnull window,
     }
     SendMessageW(root, WM_ENDSESSION, FALSE, (LPARAM)ENDSESSION_LOGOFF);
     expect_session_live(window, root, true);
-    expect_session_notice(window, false);
+    expect_session_notice(window, L"保存処理が未完了です。保存を再試行してください。", false);
     expect_native_body(window, before);
     expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_SAME);
     expect_body_saved(fixture, history, switch_saved);
@@ -5816,6 +5830,154 @@ static void run_session_save_case(struct native_fixture *_Nonnull fixture)
         note_text_destroy(history.files[version]);
 }
 
+/* #753: Even an empty untitled draft refuses noninteractive session termination. */
+static void refuse_untitled_session(const struct name_rejection_probe *_Nonnull probe)
+{
+    struct folio_window *window = probe->window;
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    require(SendMessageW(root, WM_QUERYENDSESSION, 0, (LPARAM)ENDSESSION_LOGOFF) == FALSE,
+            "an untitled draft refuses the session synchronously without asking for a name");
+    expect_session_live(window, root, true);
+    expect_session_notice(window, L"無題のノートを保存してから終了してください。", true);
+    expect_native_body(window, probe->body);
+    expect_rejected_draft(probe);
+    SendMessageW(root, WM_ENDSESSION, TRUE, (LPARAM)ENDSESSION_LOGOFF);
+    expect_session_live(window, root, true);
+    expect_session_notice(window, L"無題のノートを保存してから終了してください。", true);
+    expect_native_body(window, probe->body);
+    expect_rejected_draft(probe);
+    SendMessageW(root, WM_ENDSESSION, FALSE, (LPARAM)ENDSESSION_LOGOFF);
+    expect_session_live(window, root, true);
+    expect_session_notice(window, L"無題のノートを保存してから終了してください。", false);
+    expect_native_body(window, probe->body);
+    expect_rejected_draft(probe);
+    require(IsWindowEnabled(folio_window_accessible_window(window, ACCESSIBLE_BODY)) &&
+                IsWindowEnabled(folio_window_accessible_window(window, ACCESSIBLE_TREE)) &&
+                name_dialog.timer == 0 && failure.timer == 0,
+            "the refusal preserves content input and needs no modal observer");
+}
+
+static void untitled_session_states(struct folio_window *_Nonnull window,
+                                    struct native_fixture *_Nonnull fixture,
+                                    const struct modal_save_files *_Nonnull files)
+{
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    struct native_body_snapshot before = {0};
+    capture_native_body(window, &before);
+    require(before.text[0] == L'\0' && before.modified == 0 && before.undo == 0 &&
+                before.redo == 0 && before.focus == body,
+            "the new empty draft has clean native flags but is still unsaved");
+    const struct name_rejection_probe probe = {
+        .window = window, .fixture = fixture, .body = &before, .files = files};
+    refuse_untitled_session(&probe);
+    SendMessageW(body, EM_REPLACESEL, TRUE, (LPARAM)first_save_edited);
+    pump(window);
+    expect_editor(window, fixture->state, first_save_edited, FOLIO_NOTE_CHANGED);
+    CHARRANGE selection = {.cpMin = 2, .cpMax = 6};
+    SendMessageW(body, EM_EXSETSEL, 0, (LPARAM)&selection);
+    capture_native_body(window, &before);
+    require(before.modified != 0 && before.undo != 0 && before.redo == 0 &&
+                before.selection.cpMin < before.selection.cpMax && before.focus == body,
+            "the edited draft has native Undo and a nonempty selection");
+    refuse_untitled_session(&probe);
+    history_undo(window);
+    expect_editor(window, fixture->state, L"", FOLIO_NOTE_CHANGED);
+    capture_native_body(window, &before);
+    require(before.text[0] == L'\0' && before.undo == 0 && before.redo != 0 && before.focus == body,
+            "Undo returns to an empty unsaved draft with real Redo");
+    refuse_untitled_session(&probe);
+    require(SendMessageW(body, EM_REDO, 0, 0) != 0,
+            "session refusal and cancellation preserve actual Redo to the edited draft");
+    pump(window);
+    expect_editor(window, fixture->state, first_save_edited, FOLIO_NOTE_CHANGED);
+    SendMessageW(body, EM_EXSETSEL, 0, (LPARAM)&selection);
+}
+
+static void expect_session_first_saved(struct folio_window *_Nonnull window,
+                                       struct native_fixture *_Nonnull fixture,
+                                       const struct modal_save_files *_Nonnull files)
+{
+    expect_editor(window, fixture->state, first_save_edited, FOLIO_NOTE_SAME);
+    expect_modal_destination(fixture, files->name, files->target);
+    expect_modal_cursor(fixture);
+    expect_save_as_original(fixture, &files->original, 1);
+    struct persistence_port disk = persistence_adapter_port(fixture->files);
+    expect_name_file_set(disk, "schedule", files->source);
+    expect_rejected_ledger(fixture, 0, files->source_ledger);
+    require(folio_state_note_count(fixture->state) == files->count + 1,
+            "manual first save publishes exactly one note after three refused sessions");
+}
+
+static void save_session_draft(struct folio_window *_Nonnull window,
+                               struct native_fixture *_Nonnull fixture,
+                               struct modal_save_files *_Nonnull files)
+{
+    struct native_body_snapshot before = {0};
+    capture_native_body(window, &before);
+    wchar_t input[64];
+    int length = snprintf(files->name, 64, "zzsession 日本語 🐾-%zu", files->count);
+    int units = swprintf(input, 64, L"zzsession 日本語 🐾-%zu", files->count);
+    require(length > 0 && length < 64 && units > 0 && units < 64,
+            "independent manual-save destination literals fit");
+    struct persistence_port disk = persistence_adapter_port(fixture->files);
+    struct note_text *absent = nullptr;
+    require(disk.read_note(disk.adapter, "target", files->name, &absent) == PERSISTENCE_ABSENT &&
+                absent == nullptr,
+            "the manual save destination cannot overwrite a previous session-test note");
+    start_name_dialog(window, (struct name_dialog_request){
+                                  .title = L"保存", .name = input, .action = NAME_DIALOG_SAVE});
+    (void)native_key_input(window, 'S', FCONTROL);
+    finish_name_dialog();
+    pump(window);
+    expect_native_body(window, &before);
+    expect_session_first_saved(window, fixture, files);
+}
+
+static void finish_untitled_session(struct folio_window *_Nonnull window,
+                                    struct native_fixture *_Nonnull fixture,
+                                    const struct modal_save_files *_Nonnull files)
+{
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    struct native_body_snapshot before = {0};
+    capture_native_body(window, &before);
+    require(SendMessageW(root, WM_QUERYENDSESSION, 0, (LPARAM)ENDSESSION_LOGOFF) == TRUE,
+            "a manually saved draft now approves session termination without another write");
+    expect_session_live(window, root, false);
+    expect_session_notice(window, L"無題のノートを保存してから終了してください。", false);
+    expect_session_first_saved(window, fixture, files);
+    SendMessageW(root, WM_ENDSESSION, FALSE, (LPARAM)ENDSESSION_LOGOFF);
+    expect_session_live(window, root, true);
+    expect_native_body(window, &before);
+    expect_session_first_saved(window, fixture, files);
+    require(SendMessageW(root, WM_QUERYENDSESSION, 0, (LPARAM)ENDSESSION_LOGOFF) == TRUE,
+            "the same saved draft approves a second session after cancellation");
+    expect_session_live(window, root, false);
+    SendMessageW(root, WM_ENDSESSION, TRUE, (LPARAM)ENDSESSION_LOGOFF);
+    require(!IsWindow(root) && folio_window_accessible_window(window, ACCESSIBLE_WINDOW) == nullptr,
+            "final approved session destroys the manually saved draft window");
+    MSG message;
+    require(PeekMessageW(&message, nullptr, WM_QUIT, WM_QUIT, PM_REMOVE) &&
+                message.message == WM_QUIT && message.wParam == 0,
+            "final approved session publishes successful quit");
+    expect_modal_destination(fixture, files->name, files->target);
+    expect_save_as_original(fixture, &files->original, 1);
+    expect_name_file_set(persistence_adapter_port(fixture->files), "schedule", files->source);
+    expect_rejected_ledger(fixture, 0, files->source_ledger);
+}
+
+static void run_session_untitled_case(struct native_fixture *_Nonnull fixture)
+{
+    struct modal_save_files files = {0};
+    struct folio_window *window = begin_modal_save(fixture, &files);
+    untitled_session_states(window, fixture, &files);
+    save_session_draft(window, fixture, &files);
+    finish_untitled_session(window, fixture, &files);
+    require(controlled.requests == 0 && name_dialog.timer == 0 && failure.timer == 0,
+            "untitled session handling leaves no image requests or modal observer timers");
+    folio_window_destroy(window);
+    release_modal_save(&files);
+}
+
 static void run_extended_fixture(struct native_fixture *_Nonnull fixture, int argc,
                                  char *_Nonnull *_Nonnull argv)
 {
@@ -5877,6 +6039,8 @@ static void run_remaining_fixture(struct native_fixture *_Nonnull fixture, int a
 {
     if (session_save_case)
         run_session_save_case(fixture);
+    else if (session_untitled_case)
+        run_session_untitled_case(fixture);
     else
         run_extended_fixture(fixture, argc, argv);
 }
@@ -5920,6 +6084,7 @@ int main(int argc, char *_Nonnull *_Nonnull argv)
     locked_save_case = strcmp(selector, "--locked-save") == 0;
     filter_save_case = strcmp(selector, "--filter-save") == 0;
     session_save_case = strcmp(selector, "--session-save") == 0;
+    session_untitled_case = strcmp(selector, "--session-untitled") == 0;
     HWINSTA original_station = GetProcessWindowStation();
     HDESK original_desktop = GetThreadDesktop(GetCurrentThreadId());
     HWINSTA paste_station = paste_case ? isolate_paste_clipboard() : nullptr;

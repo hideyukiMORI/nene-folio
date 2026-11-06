@@ -54,3 +54,10 @@ repeatの非辞書順台帳はone→zzsession-second→zzsession-first。追加3
 名前付き本文・LOGOFF通知・共有違反による履歴保存拒否と解除後の保存だけ。実ログオフ/WindowsUpdate/再起動/強制終了/電断、全flags、UNTITLED/改名pending/削除/IME/modalの全組合せ、保存中再入/取消/理由API故障注入、書込途中/容量/ACL/公開後失敗/資源失敗は対象外。
 OS側の理由表示成功や待機時間内の保存完了は保証しない。#309の旧172件は今回の実測に加算しない。
 通常app/実ノート/clipboard/前面focus/Storeを使わない。個別保留466/634/530と旧削除拒否領域は維持。
+
+## 統合・保全整理の確定
+
+#751/PR752は最終headd23d6bede1f2251aa31c6687e76d6cfc8fb1029b、必須CI42182200571 full-gate/check成功。
+main201c6854b747ba42ed210a45272f3ef825e2a086へ正典統合。src/eng/fonts/packagingとCMake試験2行以外不変、通常exe hash/bytes/更新日時不変を確認し、通常build/app起動なし。
+4189filesを全hash保全し、絶対path/同一squash tree/clean・untracked・ignored/link/稼働参照0確認後、専用worktree/output整理。branch/commit保持。
+確定原本D:/NeNeFolio/agents/751-session-save-native/integration-completion.json。
