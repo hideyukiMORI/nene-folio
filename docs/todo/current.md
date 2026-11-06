@@ -1,19 +1,19 @@
 # いまの状態 — NeNe Folio
 
-## 2026-11-06 — #735まで完了、無題の保存・離脱取消を確認中
+## 2026-11-06 — #737まで完了、無題の保存しない操作を確認中
 
 hideの07:08の依頼により、停止指示まで品質対応を継続する。試験・計測・必要な調査と独立レビューを行い、全試行と変更を記録する。
 最優先の#479/PR708の平文paste、#709/PR710のCtrl+R/2/5、#713/PR714のDebug ASan検出修正は、最終CI・main統合・通常反映・全保全整理まで完了。
 [paste](../quality/2026-11-06-editor-paste.md)・[書式キー](../quality/2026-11-06-editor-format.md)・[ASan](../quality/2026-11-06-asan-interceptor.md)の品質記録を参照する。
 表示切替・別名保存・改名・置換欄保存・カテゴリ間drag・Unicode保存・新規と初回保存・空本文保存・共有違反の保存拒否の回帰も#729/PR730まで統合・整理済み。実測と確定原本は[日報](../reports/2026-11-06.md)・[引き継ぎ](../handoffs/2026-11-06.md)にまとめた。
-最新確定mainは17906d22096a0f03950ee81b3f13623f6e779ee6、最終CI42161624201成功。
+最新確定mainは2b3b576c723a061be6312d870dfbe58bddf10b0c、最終CI42163242971成功。
 #731のノート行選択値修正は通常Debug反映・実data32files保持・4184files全保全整理まで完了。
-#733の別名保存衝突、#735の名前面取消も通常exe不変・全保全整理まで完了。
-#735確定原本D:/NeNeFolio/agents/735-save-as-cancel-native/integration-completion.json。
+#733の別名保存衝突、#735の名前面取消、#737の無題取消も通常exe不変・全保全整理まで完了。
+#737確定原本D:/NeNeFolio/agents/737-untitled-cancel-native/integration-completion.json。
 
-#737は無題の空/入力済み/Redo保有からの新規と、入力済みの明示CtrlSで名前面を入力後取消し、本文と保存物を保持する。first_save_native385checks/1.52秒、save_as_native377checks/1.56秒、CTest計3.08秒成功。stderr空・child/wrapper0・入力不変。
-src/API/schema/CMake不変。最終CI/統合/通常exe不変/全保全整理はこれから。[品質記録](../quality/2026-11-06-untitled-cancel-native.md)。
-作業木D:/NeNeFolio/worktrees/737-untitled-cancel-native、試行同outputs、恒久原本同agents。
+#739は入力済み/Redo保有の無題で「保存しない」を承認し、保存物を増やさず元カテゴリの空無題へ進み、旧nativeUndoRedoを切断する。first_save_native485checks/1.99秒、save_as_native377checks/1.82秒、CTest計3.81秒成功。stderr空・child/wrapper0・入力不変。
+src/API/schema/CMake不変。最終CI/統合/通常exe不変/全保全整理はこれから。[品質記録](../quality/2026-11-06-untitled-discard-native.md)。
+作業木D:/NeNeFolio/worktrees/739-untitled-discard-native、試行同outputs、恒久原本同agents。
 全体journalはD:/NeNeFolio/agents/quality-20261106/journal.md。過去の停止履歴は今回依頼の停止指示として扱わない。
 
 ## 公開済み1.3.1

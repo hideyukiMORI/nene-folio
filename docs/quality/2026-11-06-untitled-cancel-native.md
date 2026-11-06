@@ -42,3 +42,10 @@ Windows11 Pro10.0.26300、Msftedit10.0.26100.9949、既存専用desktop/verifica
 
 名前面での保存/保存しない承認、保存失敗・資源失敗、主窓終了/OS session/IME中断・物理keyboard・全OS/DPI・外部UIAは対象外。
 通常app/実ノート/clipboard/前面focus/Storeを試験に使わない。個別保留466/634/530と旧削除拒否領域を維持する。
+
+## 統合・保全整理の確定
+
+#737/PR738は最終head677b5899c9a4794a45266e5eafe5e34aa852f35d、必須CI42163242971 full-gate/check成功。
+main2b3b576c723a061be6312d870dfbe58bddf10b0cへ正典統合し、#731反映済み通常exeのhash/bytes/更新日時不変を確認した。
+2736filesを全hash保全し、絶対path/同一squash tree/clean・untracked・ignored/link/稼働参照0を確認後、専用worktree/outputを整理。
+branch/commit保持。確定原本D:/NeNeFolio/agents/737-untitled-cancel-native/integration-completion.json。
