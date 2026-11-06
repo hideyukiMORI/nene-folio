@@ -154,6 +154,8 @@ Unicode行名と全台帳/履歴、選択/非選択/category/Treeの一致、foc
 [全試行と限界](quality/2026-11-06-filter-save-native.md)。
 #749はlocked_save_nativeへ通常WM_CLOSEの共有違反拒否/窓と編集履歴保持/WM_QUIT未発行/再終了成功を追加。locked_save_native 426checks/1.08秒、CTest1.08秒成功。台帳あり/source2追加md/target1追加mdのrepeatは458checks/1.17秒、CTest1.17秒成功。成功runtime stderr空・child/wrapper0・入力不変。追加3mdと台帳の全bytes/hash/作成更新日時不変。
 [全試行と限界](quality/2026-11-06-close-busy-native.md)。
+#751はsession_save_nativeで専用窓のOS終了通知の保存拒否/承認/重複QUERY/入力凍結/取消/UndoRedo/最終破棄を固定。session_save_native 233checks/0.78秒、CTest0.78秒成功。台帳あり/source追加2md/target追加1mdのrepeatは253checks/0.63秒、CTest0.63秒成功。runtime stderr空・child/wrapper0・入力不変。追加3mdと台帳の全bytes/hash/作成更新日時不変。 既存振分け確認locked_save_native 459checks/1.14秒、CTest1.15秒成功。
+[全試行と限界](quality/2026-11-06-session-save-native.md)。
 
 ### QLT-009 — カバレッジは下げられない
 

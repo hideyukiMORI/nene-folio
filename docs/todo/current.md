@@ -1,19 +1,19 @@
 # いまの状態 — NeNe Folio
 
-## 2026-11-06 — #747まで完了、通常終了の保存拒否を確認中
+## 2026-11-06 — #749まで完了、OS終了通知の保存・取消を確認中
 
 hideの07:08の依頼により、停止指示まで品質対応を継続する。試験・計測・必要な調査と独立レビューを行い、全試行と変更を記録する。
-平文paste・書式キー・Debug ASan修正はmain統合・通常反映・全保全整理まで完了。
-続く保存/改名/移動/無題離脱/初回保存/trash拒否/検索focus保存の回帰は#747/PR748まで統合・整理済み。
-[日報](../reports/2026-11-06.md)・[引き継ぎ](../handoffs/2026-11-06.md)と各品質記録に実測・確定原本をまとめた。
-最新確定mainは7d5f1ad92cff5c0ac0734ff0a4a6bffa40e7c722、最終CI42178271367成功。
-#747確定原本D:/NeNeFolio/agents/747-filter-save-native/integration-completion.json。
+最優先の平文paste・書式キー・Debug ASan修正はmain統合・通常反映・全保全整理まで完了。
+保存/改名/移動/無題離脱/初回保存/trash拒否/検索focus保存/通常終了拒否の回帰は#749/PR750まで統合・整理済み。
+[日報](../reports/2026-11-06.md)・[引き継ぎ](../handoffs/2026-11-06.md)と各品質記録へ実測・確定原本を収載した。
+最新確定mainはf9b0151962f14a5cd433062a38c5b9d1aa259e78、最終CI42179944433成功。
+#749確定原本D:/NeNeFolio/agents/749-close-busy-native/integration-completion.json。
 
-#749は通常WM_CLOSEの保存拒否後の同root/編集保持/WM_QUIT未発行と、解除後の再終了/保存一回を固定する。
-locked_save_native 426checks/1.08秒、CTest1.08秒成功。台帳あり/source2追加md/target1追加mdのrepeatは458checks/1.17秒、CTest1.17秒成功。成功runtime stderr空・child/wrapper0・入力不変。追加3mdと台帳の全bytes/hash/作成更新日時不変。
-初回の本文focus準備不足は診断・訂正し全失敗を保持。src/API/schema/CMake不変。
-最終CI/統合/通常exe不変/全保全整理はこれから。[品質記録](../quality/2026-11-06-close-busy-native.md)。
-作業木D:/NeNeFolio/worktrees/749-close-busy-native、試行同outputs、恒久原本同agents。全体journalはD:/NeNeFolio/agents/quality-20261106/journal.md。
+#751は専用窓のOS終了通知について保存拒否/承認/入力凍結/終了取消/UndoRedo/最終破棄と保存一回を固定する。
+session_save_native 233checks/0.78秒、CTest0.78秒成功。台帳あり/source追加2md/target追加1mdのrepeatは253checks/0.63秒、CTest0.63秒成功。runtime stderr空・child/wrapper0・入力不変。追加3mdと台帳の全bytes/hash/作成更新日時不変。 既存振分け確認locked_save_native 459checks/1.14秒、CTest1.15秒成功。
+build01/02複雑度超過を短い選択関数への分離で訂正、build03成功。src/API/schema不変、CMakeは試験登録2行。
+最終CI/統合/通常exe不変/全保全整理はこれから。[品質記録](../quality/2026-11-06-session-save-native.md)。
+作業木D:/NeNeFolio/worktrees/751-session-save-native、試行同outputs、恒久原本同agents。全体journalはD:/NeNeFolio/agents/quality-20261106/journal.md。
 過去の停止履歴は今回依頼の停止指示として扱わない。
 
 ## 公開済み1.3.1
