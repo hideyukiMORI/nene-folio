@@ -1,22 +1,22 @@
 # いまの状態 — NeNe Folio
 
-## 2026-11-06 — #767完了、統合toolの確定CI失敗再送を修正中
+## 2026-11-06 — #769完了、同名書き出し拒否からの復帰を固定中
 
 hideの07:08の依頼により停止指示まで品質対応を継続する。最優先paste・書式キー・Debug ASan修正と保存/終了回帰は統合済み。
-#767/PR768は必須CI42209596693 full-gate/check成功、main`e81c15a37450b9070fb3343fcbae828af3f08678`へ統合済み。
-通常exe不変、8864file全保全・専用worktree/output整理済み。原本D:/NeNeFolio/agents/767-export-native/integration-completion.json。
-[書き出しの全試行と限界](../quality/2026-11-06-export-native.md)。
+#769/PR770は必須CI42215039675 full-gate/check成功、main`fed522a684966b68d326a3506a3691f6df49d4b5`へ統合済み。
+通常exe不変、3870file全保全・専用worktree/output整理済み。原本D:/NeNeFolio/agents/769-merge-ready-failure/integration-completion.json。
+[統合toolの全試行と限界](../quality/2026-11-06-merge-ready-failure.md)。
 
-#769はReady前の既存suiteを除外し、今回Ready後の確定failure/cancelledを再送せず停止する。
-初期5ケース/CI成功後に時計許容内の旧Draft誤停止を発見し、未統合のまま修正。最終8テスト/9子process・5.856秒、実UTC境界813.5453ms成功。
-製品src/eng/CMake/API/schema/ゲートは不変。
-最終CI/統合/通常exe不変/全保全整理はこれから。[品質記録](../quality/2026-11-06-merge-ready-failure.md)。
-D:/NeNeFolio/worktrees/769-merge-ready-failure、同outputs、恒久agents。追加waiver none、既存WVR-0001継続。
+#771は既存export_nativeでRedo保有EDITの同名拒否→実Redo/Undo→別名成功→実Redo/Undoを固定する。
+保護出力/元md/全履歴/台帳/全file集合と本文全文/selection/modified/UndoRedo/focus/modeを保持。
+初回のmodal誤認を既存通知欄へ訂正し、Debug/tidyと対象438checks/3.52秒成功。既存6file全bytes/hash/作成更新日時不変、新3出力の独立literal一致。
+製品src/eng/CMake/API/schema/ゲート不変。最終CI/統合/通常exe不変/全保全整理はこれから。
+[品質記録](../quality/2026-11-06-export-recovery.md)。D:/NeNeFolio/worktrees/771-export-recovery、同outputsと恒久agents。
+追加waiver none、既存WVR-0001継続。公開milestone0、未完製品Issueは保留466/634のみと着手時に再照合。
 
-最新の製品変更#763/PR764は必須CI42200797878成功、main`4dabcfdca8951f5113c812adbc3248bdd74fed42`へ統合・通常反映済み。
-実data32file不変。検索の性能値/費用は[同値比較](../quality/2026-11-06-search-equality.md)と[検証再開](../quality/2026-11-06-search-validation-resume.md)へ。
+最新製品sourceは#763 main`4dabcfdca8951f5113c812adbc3248bdd74fed42`、通常exe SHA`74fe1738ee249e7ca9396c23f8e70b414b9876e615c2088a4b4ede91f07cc1f1`。
 履歴は[日報](../reports/2026-11-06.md)・[引き継ぎ](../handoffs/2026-11-06.md)、全体journalはD:/NeNeFolio/agents/quality-20261106/journal.md。
-公開milestone0、未完製品Issueは保留466/634のみだったことを着手時に再照合した。過去の停止履歴を新しい停止指示にせず、個別保留を維持する。
+21:32のhide依頼により、#771完了後は新規品質課題を増やさず1.3.2のリリース候補を準備する。個別保留を維持する。
 
 ## 公開済み1.3.1
 
