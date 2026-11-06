@@ -5164,6 +5164,157 @@ static void expect_locked_target(const struct folio_state *_Nonnull state)
             "save refusal and retry retain the named document and selected row");
 }
 
+/* #745: A busy source is refused before either Markdown or history can be recycled. */
+struct trash_refusal_snapshot
+{
+    struct native_body_snapshot body;
+    enum pane_mode mode;
+    LONG_PTR read_only;
+    size_t count;
+    struct name_list *files;
+    struct name_list *public_names;
+    struct note_ledger *ledger;
+};
+
+static void capture_trash_refusal(struct folio_window *_Nonnull window,
+                                  struct native_fixture *_Nonnull fixture,
+                                  struct trash_refusal_snapshot *_Nonnull snapshot)
+{
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    CHARRANGE selected = {.cpMin = 2, .cpMax = 7};
+    SendMessageW(body, EM_EXSETSEL, 0, (LPARAM)&selected);
+    capture_native_body(window, &snapshot->body);
+    require(snapshot->body.selection.cpMin < snapshot->body.selection.cpMax,
+            "trash refusal starts with a nonempty native selection");
+    snapshot->mode = folio_state_pane_mode(fixture->state);
+    snapshot->read_only = GetWindowLongPtrW(body, GWL_STYLE) & ES_READONLY;
+    snapshot->count = folio_state_note_count(fixture->state);
+    struct persistence_port disk = persistence_adapter_port(fixture->files);
+    require(disk.scan_notes(disk.adapter, "schedule", &snapshot->files) == PERSISTENCE_LOADED &&
+                snapshot->files != nullptr,
+            "snapshot the source category's complete file set before trash refusal");
+    snapshot_modal_ledger(disk, "schedule", &snapshot->ledger);
+    require(name_list_create(&snapshot->public_names) == NAME_LIST_ACCEPTED &&
+                snapshot->public_names != nullptr,
+            "snapshot the public source rows independently of other categories");
+    for (size_t index = 0; index < name_list_count(snapshot->files); ++index)
+    {
+        const char *name = folio_state_note_name(fixture->state, (struct note_ref){0, index});
+        require(name_list_contains(snapshot->files, name) &&
+                    name_list_append(snapshot->public_names, name, strlen(name)) ==
+                        NAME_LIST_ACCEPTED,
+                "snapshot each source row in public order with its existing file");
+    }
+}
+
+static void expect_trash_retained(struct folio_window *_Nonnull window,
+                                  struct native_fixture *_Nonnull fixture,
+                                  const struct trash_refusal_snapshot *_Nonnull snapshot)
+{
+    expect_name_operation_body(window, &snapshot->body);
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    require(IsWindowEnabled(folio_window_accessible_window(window, ACCESSIBLE_WINDOW)) &&
+                IsWindowEnabled(body) &&
+                IsWindowEnabled(folio_window_accessible_window(window, ACCESSIBLE_TREE)),
+            "trash refusal restores enabled input to the root, body and tree");
+    require(SendMessageW(body, EM_GETMODIFY, 0, 0) == snapshot->body.modified &&
+                (GetWindowLongPtrW(body, GWL_STYLE) & ES_READONLY) == snapshot->read_only &&
+                folio_state_pane_mode(fixture->state) == snapshot->mode,
+            "trash refusal retains the native modified flag, read-only state and pane mode");
+    require(folio_state_unsaved(fixture->state, switch_original, wcslen(switch_original)) ==
+                    FOLIO_NOTE_SAME &&
+                folio_state_note_count(fixture->state) == snapshot->count,
+            "trash refusal retains the saved document content and total public count");
+    expect_locked_target(fixture->state);
+    if (snapshot->mode == PANE_MODE_EDIT)
+        expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_SAME);
+    struct persistence_port disk = persistence_adapter_port(fixture->files);
+    expect_name_file_set(disk, "schedule", snapshot->files);
+    expect_rejected_ledger(fixture, 0, snapshot->ledger);
+    for (size_t index = 0; index < name_list_count(snapshot->public_names); ++index)
+        require(strcmp(folio_state_note_name(fixture->state, (struct note_ref){0, index}),
+                       name_list_at(snapshot->public_names, index)) == 0,
+                "every source row retains its order even when its ledger was absent");
+}
+
+static void expect_recycle_blocked(struct native_fixture *_Nonnull fixture)
+{
+    wchar_t path[storage_native_capacity];
+    native_file_path(fixture, L"\\schedule\\one.md", path);
+    HANDLE attempted =
+        CreateFileW(path, DELETE | FILE_READ_ATTRIBUTES, 0, nullptr, OPEN_EXISTING,
+                    FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+    DWORD error = GetLastError();
+    if (attempted != INVALID_HANDLE_VALUE)
+        require(CloseHandle(attempted), "release an unexpectedly admitted preflight handle");
+    require(attempted == INVALID_HANDLE_VALUE && error == ERROR_SHARING_VIOLATION,
+            "the canonical recycle preflight is blocked by sharing before any move");
+}
+
+static void expect_trash_busy_surface(struct folio_window *_Nonnull window)
+{
+    HWND input = folio_window_accessible_window(window, ACCESSIBLE_COMMAND_INPUT);
+    wchar_t query[64];
+    require(IsWindowVisible(input) && GetFocus() == input && GetWindowTextW(input, query, 64) > 0 &&
+                wcscmp(query, L":trashnote") == 0,
+            "busy trash retains the exact Ex command and focus for correction");
+    struct accessible_item item = {.kind = ACCESSIBLE_SURFACE_STATUS,
+                                   .revision = folio_window_accessible_surface_revision(window)};
+    struct accessible_view status = {0};
+    require(folio_window_accessible_read(window, &item, &status) == S_OK && !status.offscreen &&
+                wcsstr(status.name, L"ほかのプログラムが使用中のため、ノートを移していません。") !=
+                    nullptr,
+            "busy trash reports its independent inline refusal reason");
+}
+
+static void refused_native_trash(struct folio_window *_Nonnull window,
+                                 struct native_fixture *_Nonnull fixture,
+                                 const struct history_snapshot *_Nonnull history)
+{
+    struct trash_refusal_snapshot snapshot = {0};
+    capture_trash_refusal(window, fixture, &snapshot);
+    HANDLE locked = lock_native_note(fixture);
+    expect_recycle_blocked(fixture);
+    submit_ex(window, L":trashnote");
+    require(CloseHandle(locked), "release the source only after the real trash refusal returns");
+    expect_trash_busy_surface(window);
+    expect_trash_retained(window, fixture, &snapshot);
+    verify_history_unchanged(fixture, history);
+    HWND input = folio_window_accessible_window(window, ACCESSIBLE_COMMAND_INPUT);
+    SendMessageW(input, WM_KEYDOWN, VK_ESCAPE, 0);
+    pump(window);
+    require(!IsWindowVisible(input) && GetFocus() != input,
+            "Escape dismisses busy trash without leaving focus in the hidden Ex input");
+    expect_trash_retained(window, fixture, &snapshot);
+    verify_history_unchanged(fixture, history);
+    note_ledger_destroy(snapshot.ledger);
+    name_list_destroy(snapshot.public_names);
+    name_list_destroy(snapshot.files);
+}
+
+static void trash_refusal_roundtrip(struct folio_window *_Nonnull window,
+                                    struct native_fixture *_Nonnull fixture,
+                                    const struct history_snapshot *_Nonnull history)
+{
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    require(folio_state_pane_mode(fixture->state) == PANE_MODE_VIEW &&
+                (GetWindowLongPtrW(body, GWL_STYLE) & ES_READONLY) != 0,
+            "the first busy trash command starts in the real read-only view");
+    refused_native_trash(window, fixture, history);
+    action(window, ACCESSIBLE_EDIT);
+    append_switch_text(window);
+    expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_CHANGED);
+    history_undo(window);
+    expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_SAME);
+    require(SendMessageW(body, EM_CANREDO, 0, 0) != 0,
+            "the second busy trash starts with a real redoable edit and SAME content");
+    refused_native_trash(window, fixture, history);
+    require(SendMessageW(body, EM_REDO, 0, 0) != 0,
+            "the original input remains redoable after busy trash and Ex dismissal");
+    pump(window);
+    expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_CHANGED);
+}
+
 static void refused_native_save(struct folio_window *_Nonnull window,
                                 struct native_fixture *_Nonnull fixture,
                                 const struct history_snapshot *_Nonnull history)
@@ -5236,9 +5387,7 @@ static void run_locked_save_case(struct native_fixture *_Nonnull fixture)
                 FOLIO_WINDOW_CREATED,
             "real locked-save window");
     pump(window);
-    action(window, ACCESSIBLE_EDIT);
-    append_switch_text(window);
-    expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_CHANGED);
+    trash_refusal_roundtrip(window, fixture, &history);
     HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
     CHARRANGE selected = {.cpMin = 10, .cpMax = 12};
     SendMessageW(body, EM_EXSETSEL, 0, (LPARAM)&selected);
