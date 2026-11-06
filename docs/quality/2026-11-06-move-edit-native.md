@@ -53,3 +53,10 @@ Windows11 Pro10.0.26300、Msftedit10.0.26100.9949、ローカルNTFS・専用des
 物理mouse/IME、全DPI、名前衝突、絞り込み中のdrag、I/O部分失敗、VIEW画像、全scroll位置、target履歴5世代の飽和回転は対象外。
 専用drawerのHWNDへ送った合成nativeメッセージの確認であり、OS全体のpointer配送を証明しない。
 通常app/実ノート/利用者clipboard/前面focus/Storeを試験に使っていない。通常buildは反復せず、同一exeのhash/bytes/更新日時を照合する。
+
+## 統合・保全・整理の確定
+
+#721/PR722は最終head421679a9a27b3e068ab1fb74d05d98e8506018f6、必須CI42146581183 full-gate/check成功。
+mainfb8b66920ad42363e50174f92253dbc0f6a46b8bへ正典統合し、通常exeのhash/bytes/更新日時不変を確認した。
+5344filesを全hash保全し、絶対path/同一squash tree/clean・untracked・ignored/link/稼働参照0を確認後、専用worktree/outputを整理した。
+branch/commit保持。確定原本D:/NeNeFolio/agents/721-move-edit-native/integration-completion.json。
