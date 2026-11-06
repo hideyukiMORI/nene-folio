@@ -1,20 +1,22 @@
 # いまの状態 — NeNe Folio
 
-## 2026-11-06 — #763まで統合・通常反映・整理完了、品質対応を継続中
+## 2026-11-06 — #765まで完了、現在ノートのnative書き出しを固定中
 
-hideの07:08の依頼により停止指示まで品質対応を継続する。最優先paste・書式キー・Debug ASan修正と保存/終了回帰は完了済み。
+hideの07:08の依頼により停止指示まで品質対応を継続する。最優先paste・書式キー・Debug ASan修正と保存/終了回帰は統合済み。
 最新の製品変更#763/PR764は必須CI42200797878成功、main`4dabcfdca8951f5113c812adbc3248bdd74fed42`へ統合・通常反映済み。
-実data32file不変、1623file全保全、専用worktree/output整理済み。原本D:/NeNeFolio/agents/763-search-equality/integration-completion.json。
+実data32file不変、1623file全保全・専用整理済み。検索の全性能値/費用は[同値比較](../quality/2026-11-06-search-equality.md)と[検証再開](../quality/2026-11-06-search-validation-resume.md)へ。
+#765/PR766の確定記録はCI42203137400成功、main`4ebedf741885d4bc25cf8d2fb60678ea3875059a`へ統合・通常exe不変・2468file全保全整理済み。
+原本D:/NeNeFolio/agents/765-search-completion/integration-completion.json。
 
-#761は絵文字後も同じUTF-16塊検証を再開し、固定長文の先頭emoji前方を約93%短縮。
-#763は同じ文字単位の比較で二回foldを省き、固定長文の日本語/emojiのcountを約20%短縮した。
-英字/短文の一部に費用が残り、実UI応答の測定ではない。全条件・不採用候補・失敗・範囲は
-[検証再開](../quality/2026-11-06-search-validation-resume.md)・[同値比較](../quality/2026-11-06-search-equality.md)に収載。
-API/schema/owner/確保/依存/CMake/版/ゲート不変。追加waiver none、既存WVR-0001継続。
-
-#765は確定結果の4文書への反映。新しい製品課題は未選定。19:23時点で公開milestone0、未完製品Issueは個別保留466/634のみ。
-[日報](../reports/2026-11-06.md)・[引き継ぎ](../handoffs/2026-11-06.md)、全体journalはD:/NeNeFolio/agents/quality-20261106/journal.md。
-過去の停止履歴を今回依頼の停止指示として扱わず、保留案件は新しい指定なしに再開しない。
+#767は実操作メニューから同thread/root所有のWindows保存先選択を通し、変更EDIT/実Undo後Redo保有EDIT/VIEW原文を各1件書き出す。
+変更EDITの取消は出力0。日本語名の全出力bytesを独立literalで照合し、本文全文/selection/modified/UndoRedo/focus/mode/選択noteと元md/全履歴/revision/両実file集合・台帳を保持する。
+終了後の実Redo/Undo、modal中のroot有効/内容無効/readyfalseと復帰も固定。専用exe隣の新directoryだけへ出力し、前回物を上書きしない。
+export_native 276checks/2.91秒、close_modal_native 193checks/1.08秒、計4.0秒成功。台帳あり/元追加2md/target追加1md/前回出力3fileのrepeatはexport_native 314checks/2.43秒、CTest2.43秒成功。runtime stderr空・child/wrapper0・入力不変。既存7fileの全bytes/hash/作成更新日時不変、新3出力も初回と全bytes一致。
+製品src/API/schema/依存/版/ゲート/既存helper不変、追加waiver none、既存WVR-0001継続。
+初回CI2回と診断CIは期待出力path不存在で失敗。実filenameへのfocus/全選択置換/次dispatchのpath再照合へ修正し、対象358checks/3.37秒成功。
+最終CI/統合/通常exe不変/全保全整理はこれから。[品質記録](../quality/2026-11-06-export-native.md)。
+D:/NeNeFolio/worktrees/767-export-native、同outputs、恒久agents。[日報](../reports/2026-11-06.md)・[引き継ぎ](../handoffs/2026-11-06.md)。
+全体journalはD:/NeNeFolio/agents/quality-20261106/journal.md。過去の停止履歴を新しい停止指示として扱わず、個別保留を維持する。
 
 ## 公開済み1.3.1
 
