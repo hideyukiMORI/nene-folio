@@ -63,3 +63,10 @@ Ctrl+Shift+Fの実native経路と共有違反の履歴拒否を対象とする�
 ×ボタンpointer geometry/外部UIA/余白mouse/物理IME/全OS・DPI/UNTITLED/NONE/検索性能/外部更新検知は対象外。
 10月18日の専用失敗注入診断は[当時の品質記録](2026-10-18-filter-focus-save.md)と区別する。
 通常app/実ノート/clipboard/前面focus/Storeは使わない。個別保留466/634/530と旧削除拒否領域を維持する。
+
+## 統合・保全整理の確定
+
+#747/PR748は最終head7f242ac9755f28e5b21c5a9705db20334c2a7784、必須CI42178271367 full-gate/check成功。
+main7d5f1ad92cff5c0ac0734ff0a4a6bffa40e7c722へ正典統合。製品treeとCMake試験登録2行以外の一致を確認し、通常exeのhash/bytes/更新日時不変、通常build/app起動なし。
+2772filesを全hash保全し、絶対path/同一squash tree/clean・untracked・ignored/link/稼働参照0確認後に専用worktree/outputを整理。branch/commit保持。
+repeat01の子起動前PATH不足wrapper125も原本へ保持。確定原本D:/NeNeFolio/agents/747-filter-save-native/integration-completion.json。

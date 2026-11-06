@@ -5387,6 +5387,90 @@ static void retry_locked_save(struct folio_window *_Nonnull window,
     }
 }
 
+/* #749: A failed normal close keeps this window and can later complete its original save. */
+static void pump_refused_close(struct folio_window *_Nonnull window, HWND root)
+{
+    MSG message;
+    for (unsigned count = 0; count < 1000 && PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE);
+         ++count)
+    {
+        require(message.message != WM_QUIT && IsWindow(root),
+                "a refused normal close never publishes quit or destroys the root");
+        if (message.message == WM_TIMER)
+            continue;
+        if (!folio_window_translate(window, &message))
+        {
+            TranslateMessage(&message);
+            DispatchMessageW(&message);
+        }
+    }
+    require(IsWindow(root) && folio_window_accessible_window(window, ACCESSIBLE_WINDOW) == root &&
+                !PeekMessageW(&message, nullptr, WM_QUIT, WM_QUIT, PM_NOREMOVE),
+            "the exact root remains alive without a hidden quit after close refusal");
+}
+
+static void refused_normal_close(struct folio_window *_Nonnull window,
+                                 struct native_fixture *_Nonnull fixture,
+                                 const struct history_snapshot *_Nonnull history)
+{
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    CHARRANGE selected = {.cpMin = 2, .cpMax = 7};
+    SendMessageW(body, EM_EXSETSEL, 0, (LPARAM)&selected);
+    struct native_body_snapshot before = {0};
+    capture_native_body(window, &before);
+    size_t total = folio_state_note_count(fixture->state);
+    require(IsWindow(root), "normal close starts with the existing live root");
+    require(before.focus == body, "normal-close fixture starts with focus in its native body");
+    require(before.redo != 0 && before.selection.cpMin < before.selection.cpMax,
+            "normal close starts with redoable input and a nonempty selection");
+    HANDLE locked = lock_native_note(fixture);
+    begin_history_failure(window);
+    SendMessageW(root, WM_CLOSE, 0, 0);
+    pump_refused_close(window, root);
+    end_history_failure();
+    require(CloseHandle(locked), "release only this source after normal-close refusal returns");
+    require(failure.closed == 1, "normal close reports one owned history failure");
+    expect_native_body(window, &before);
+    expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_CHANGED);
+    expect_locked_target(fixture->state);
+    require(IsWindowEnabled(root) && IsWindow(body) && IsWindowEnabled(body) &&
+                IsWindowEnabled(folio_window_accessible_window(window, ACCESSIBLE_TREE)) &&
+                folio_state_note_count(fixture->state) == total,
+            "close refusal restores enabled input and retains the public note count");
+    verify_history_unchanged(fixture, history);
+    expect_raw_file(fixture, L"\\schedule\\one.md", switch_saved);
+}
+
+static void close_busy_roundtrip(struct folio_window *_Nonnull window,
+                                 struct native_fixture *_Nonnull fixture)
+{
+    struct accessible_request focus = {.item = {.kind = ACCESSIBLE_BODY},
+                                       .action = ACCESSIBLE_ACTION_FOCUS};
+    require(folio_window_accessible_action(window, &focus) == S_OK,
+            "return to the existing editor before requesting normal close");
+    pump(window);
+    history_undo(window);
+    expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_CHANGED);
+    struct history_snapshot history = {0};
+    capture_history(fixture, &history);
+    refused_normal_close(window, fixture, &history);
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    require(SendMessageW(body, EM_CANREDO, 0, 0) != 0 && SendMessageW(body, EM_REDO, 0, 0) != 0,
+            "the same native redo remains usable after close refusal");
+    pump(window);
+    expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_SAME);
+    verify_history_unchanged(fixture, &history);
+    history_undo(window);
+    expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_CHANGED);
+    verify_history_unchanged(fixture, &history);
+    close_theme_window(window);
+    expect_body_saved(fixture, &history, history_current);
+    expect_raw_file(fixture, L"\\schedule\\one.md", history_current);
+    for (size_t version = 0; version <= note_history_depth; ++version)
+        note_text_destroy(history.files[version]);
+}
+
 static void run_locked_save_case(struct native_fixture *_Nonnull fixture)
 {
     require(folio_state_select_note(fixture->state, 0, 0, FOLIO_UNTITLED_PROTECT) ==
@@ -5406,6 +5490,7 @@ static void run_locked_save_case(struct native_fixture *_Nonnull fixture)
     verify_history_unchanged(fixture, &history);
     refused_native_save(window, fixture, &history);
     retry_locked_save(window, fixture, &history);
+    close_busy_roundtrip(window, fixture);
     require(controlled.requests == 0 && failure.timer == 0,
             "plain locked-save case leaves no image requests or observer timer");
     folio_window_destroy(window);
