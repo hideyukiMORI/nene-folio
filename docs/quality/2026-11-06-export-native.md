@@ -95,3 +95,13 @@ WM_SETTEXTにも通常の変更通知があるため、旧失敗を単に「通�
 今回の検証結果は専用native入力条件に限り、全OSのUI構造や物理操作の保証へ拡張しない。
 
 verify-02はCMake再生成前のreplyファイル一覧を使ったため、input snapshotで19不存在（前後計38記録error）を検出し、子を起動せず拒否（child null/wrapper125）。補助集計の初回はwrapper1との誤ったassertで停止し、実値125へ訂正した。古い一覧はsnapshotに残し、現実のreply一覧へ更新したverify-03で最終静的検査を行う。製品runtimeの失敗とは分離する。
+
+## 20:31 — 統合と保全整理の確定
+
+#767 / PR768は最終head`c1cedc2db5487ee781575b1fcbdd920122f6f69c`、必須CI42209596693のfull-gate/check成功。
+CIのexport_nativeは2.01秒、46/46成功。main`e81c15a37450b9070fb3343fcbae828af3f08678`へ正典merge02で統合、Issue767 CLOSED。
+通常exe hash/bytes/更新日時不変、製品src/eng/fonts/packaging不変、通常build/app起動なし。
+8864filesを全hash保全し、絶対2roots/同squashtree/clean・ignored・untracked/link/稼働参照0を確認して専用worktree/output整理、branch/commit保持。
+保全ZIP381481479bytes/SHA256 `3e8005f8bd30b19e5a2085dab61fe456768419a3de0158a9fc6b42d5485d8e7a`。
+原本D:/NeNeFolio/agents/767-export-native/integration-completion.json。
+初回2CIと診断CIの期待path不存在、全補助失敗、最終入力修正を区別して保存した。Windows内部の特定原因や全OSへの保証はしない。
