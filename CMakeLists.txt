@@ -338,6 +338,8 @@ set_tests_properties(note_switch_native PROPERTIES TIMEOUT 30 RESOURCE_LOCK imag
 set_tests_properties(search_native PROPERTIES TIMEOUT 30 RESOURCE_LOCK image_status_data)
 add_test(NAME locked_save_native COMMAND image_status_tests --locked-save)
 set_tests_properties(locked_save_native PROPERTIES TIMEOUT 30 RESOURCE_LOCK image_status_data)
+add_test(NAME filter_save_native COMMAND image_status_tests --filter-save)
+set_tests_properties(filter_save_native PROPERTIES TIMEOUT 30 RESOURCE_LOCK image_status_data)
 add_test(NAME empty_save_native COMMAND image_status_tests --empty-save)
 set_tests_properties(empty_save_native PROPERTIES TIMEOUT 30 RESOURCE_LOCK image_status_data)
 add_test(NAME unicode_save_native COMMAND image_status_tests --unicode-save)
