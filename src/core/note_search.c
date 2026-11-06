@@ -157,7 +157,7 @@ static size_t maximal_suffix(const struct note_search_query *_Nonnull query,
 
 static bool same_unit(char16_t left, char16_t right)
 {
-    return ascii_fold_unit(left) == ascii_fold_unit(right);
+    return left == right || ascii_fold_unit(left) == ascii_fold_unit(right);
 }
 
 static bool periodic_prefix(const struct note_search *_Nonnull iterator)

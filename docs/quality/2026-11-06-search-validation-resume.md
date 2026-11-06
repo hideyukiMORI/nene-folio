@@ -301,3 +301,12 @@ symbols01はcore/applicationの2library・違反0。conformance01はformat/実bu
 確定CI/統合/通常反映/全保全整理はD:/NeNeFolio/agents/761-search-validation-resume/integration-completion.json。
 ARC-001/003/004/007/008/010/012、C-002/004/008/012/014/016、QLT-008/009/010/012/013、GIT-001〜004。
 主担当単体。追加waiver none、既存WVR-0001継続。[日報](../reports/2026-11-06.md)・[引き継ぎ](../handoffs/2026-11-06.md)。
+
+## 18:56 統合・通常反映・全保全整理完了
+
+#761/PR762はhead1d10b14614199fddba1117bf7e51823c47cfeb75、最終CI42197861676 full-gate/check成功。
+main393c253b2dd934dea33dd9e67fd1066cf6be2a5cへ統合、Issue761 CLOSED。正典通常build3actionsで必要反映済み。
+通常exe SHA256 836e8691956bb3fcee64689dc8a6b63f2167270b9be4f8a5147333587c7d961d、実data32file全bytes/hash/作成更新日時不変。
+1598file全hash保全、ZIP41552938bytes/SHAd17f89a0bc3ac068ba11780dbd4a473a0559c6c9730f249bf591868e2c4f7266。
+取込同tree/clean/ignored/untracked/link/稼働参照0確認後、専用worktree/output整理、branch/commit保持。
+原本D:/NeNeFolio/agents/761-search-validation-resume/integration-completion.json。

@@ -1494,3 +1494,9 @@ Windows専用desktop NeNeFolioImageStatus520、専用portable data初回0file。
 最終Debug --note-search成功、44fixture/216公開呼出しで複数pair後の正常/拒否と実extent/出力保持を確認。
 既存4719oracle/2112exactextent維持。symbols2library/conformance実graph違反0。候補1不採用と候補2の不利な値も[品質記録](2026-11-06-search-validation-resume.md)へ。
 API/schema/CMake/ゲート不変、追加waiver none。
+
+## 2026-11-06 — #763検索raw同値の比較省略
+
+同Release vector/archiveで明示語を含む84file/112条件/4480sampleの全公開結果・本文語保持を確認。全raw/中央値/6MAP行/製品1行scope照合。
+正典Debug --note-search、既存4719oracle/2112extent/44fixtureを再利用。symbols2library違反0、test/selector/CMake不変。
+短文/英字の費用と測定限界は[品質記録](2026-11-06-search-equality.md)。

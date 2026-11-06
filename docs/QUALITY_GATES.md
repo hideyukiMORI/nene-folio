@@ -167,6 +167,8 @@ Unicode行名と全台帳/履歴、選択/非選択/category/Treeの一致、foc
 
 #761は有効pair後の同UTF-16 scanner再開を、Debug検索44追加fixture/216公開呼出し・既存oracle/extentと同Release112条件/8960sampleで確認。全公開結果/入力不変、symbols2library/実graph違反0。全候補と費用は[品質記録](quality/2026-11-06-search-validation-resume.md)。
 
+#763は同じsame_unitのraw等値で二回foldを省き、既存Debug検索契約と同Release84file/112条件/4480sampleで全公開結果・本文語不変を確認。費用と旧比較計測の限界は[品質記録](quality/2026-11-06-search-equality.md)。
+
 ### QLT-009 — カバレッジは下げられない
 
 中核の分岐カバレッジ下限を 90% とする。閾値は上げてよいが下げてはならない。下げるには ADR が要る。
