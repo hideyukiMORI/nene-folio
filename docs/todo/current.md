@@ -13,6 +13,7 @@ hideの07:08の依頼により停止指示まで品質対応を継続する。�
 終了後の実Redo/Undo、modal中のroot有効/内容無効/readyfalseと復帰も固定。専用exe隣の新directoryだけへ出力し、前回物を上書きしない。
 export_native 276checks/2.91秒、close_modal_native 193checks/1.08秒、計4.0秒成功。台帳あり/元追加2md/target追加1md/前回出力3fileのrepeatはexport_native 314checks/2.43秒、CTest2.43秒成功。runtime stderr空・child/wrapper0・入力不変。既存7fileの全bytes/hash/作成更新日時不変、新3出力も初回と全bytes一致。
 製品src/API/schema/依存/版/ゲート/既存helper不変、追加waiver none、既存WVR-0001継続。
+初回CI2回と診断CIは期待出力path不存在で失敗。実filenameへのfocus/全選択置換/次dispatchのpath再照合へ修正し、対象358checks/3.37秒成功。
 最終CI/統合/通常exe不変/全保全整理はこれから。[品質記録](../quality/2026-11-06-export-native.md)。
 D:/NeNeFolio/worktrees/767-export-native、同outputs、恒久agents。[日報](../reports/2026-11-06.md)・[引き継ぎ](../handoffs/2026-11-06.md)。
 全体journalはD:/NeNeFolio/agents/quality-20261106/journal.md。過去の停止履歴を新しい停止指示として扱わず、個別保留を維持する。

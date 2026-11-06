@@ -6519,6 +6519,13 @@ static void run_close_modal_case(struct native_fixture *_Nonnull fixture)
 }
 
 /* #767: Use the real operations menu, native file picker and publication without saving. */
+enum export_dialog_phase
+{
+    EXPORT_DIALOG_ENTER,
+    EXPORT_DIALOG_SUBMIT,
+    EXPORT_DIALOG_NOTICE
+};
+
 struct export_dialog_probe
 {
     struct folio_window *window;
@@ -6533,6 +6540,7 @@ struct export_dialog_probe
     unsigned inputs;
     unsigned notices;
     bool cancel;
+    enum export_dialog_phase phase;
 };
 
 static struct export_dialog_probe exporting;
@@ -6566,6 +6574,15 @@ static void expect_export_modal(HWND dialog)
     expect_native_body(exporting.window, &inside);
 }
 
+static void expect_export_filename(void)
+{
+    wchar_t value[storage_native_capacity];
+    int length = GetWindowTextW(exporting.filename, value, storage_native_capacity);
+    require(length > 0 && (size_t)length == wcslen(exporting.path) &&
+                wcscmp(value, exporting.path) == 0,
+            "the native filename contains the complete intended absolute Unicode path");
+}
+
 static void choose_export_destination(HWND dialog)
 {
     wchar_t title[128];
@@ -6577,9 +6594,20 @@ static void choose_export_destination(HWND dialog)
                 IsWindowEnabled(exporting.filename),
             "the native picker exposes exactly one editable filename initialized from one");
     expect_export_modal(dialog);
-    require(SetWindowTextW(exporting.filename, exporting.path),
-            "enter the dedicated absolute Unicode export path into the real filename input");
+    SetFocus(exporting.filename);
+    require(GetFocus() == exporting.filename, "focus the actual native filename editor");
+    SendMessageW(exporting.filename, EM_SETSEL, 0, -1);
+    SendMessageW(exporting.filename, EM_REPLACESEL, TRUE, (LPARAM)exporting.path);
+    expect_export_filename();
     exporting.picker = dialog;
+    exporting.phase = EXPORT_DIALOG_SUBMIT;
+}
+
+static void submit_export_destination(HWND dialog)
+{
+    require(dialog == exporting.picker, "submit the same owned picker after its input dispatch");
+    expect_export_filename();
+    expect_export_modal(dialog);
     int command = exporting.cancel ? IDCANCEL : IDOK;
     HWND button = GetDlgItem(dialog, command);
     require(button != nullptr && IsWindowEnabled(button),
@@ -6589,6 +6617,7 @@ static void choose_export_destination(HWND dialog)
         require(KillTimer(nullptr, exporting.timer), "stop the cancelling export observer");
         exporting.timer = 0;
     }
+    exporting.phase = EXPORT_DIALOG_NOTICE;
     require(PostMessageW(dialog, WM_COMMAND, MAKEWPARAM(command, BN_CLICKED), (LPARAM)button),
             "submit only the owned native picker through its actual command");
 }
@@ -6617,10 +6646,19 @@ static BOOL CALLBACK observe_export_window(HWND dialog, LPARAM parameter)
     if (GetAncestor(dialog, GA_ROOTOWNER) != (HWND)parameter || !IsWindowVisible(dialog) ||
         GetClassNameW(dialog, kind, 32) == 0 || wcscmp(kind, L"#32770") != 0)
         return TRUE;
-    if (exporting.picker == nullptr)
+    switch (exporting.phase)
+    {
+    case EXPORT_DIALOG_ENTER:
         choose_export_destination(dialog);
-    else if (dialog != exporting.picker)
-        finish_export_notice(dialog);
+        break;
+    case EXPORT_DIALOG_SUBMIT:
+        submit_export_destination(dialog);
+        break;
+    case EXPORT_DIALOG_NOTICE:
+        if (dialog != exporting.picker)
+            finish_export_notice(dialog);
+        break;
+    }
     return FALSE;
 }
 
@@ -6724,7 +6762,8 @@ static void export_current_to(struct folio_window *_Nonnull window, const wchar_
         .body = &before,
         .path = path,
         .root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW),
-        .cancel = expected == nullptr};
+        .cancel = expected == nullptr,
+        .phase = EXPORT_DIALOG_ENTER};
     exporting.timer = SetTimer(nullptr, 0, 50, observe_export_dialog);
     require(exporting.timer != 0, "arm the owned finite export observer");
     invoke_operation(window, FOLIO_COMMAND_EXPORT_NOTE);

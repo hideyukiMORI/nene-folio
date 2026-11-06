@@ -113,7 +113,7 @@ first_save_modal_native339checks/1.13秒、CTest1.13秒成功。旧target1file�
 #767のexport_nativeは、実操作メニューとWindows保存先選択から変更EDIT/Redo保有EDIT/VIEW原文を単票出力し、取消では出力しない。
 export_native 276checks/2.91秒、close_modal_native 193checks/1.08秒、計4.0秒成功。台帳あり/元追加2md/target追加1md/前回出力3fileのrepeatはexport_native 314checks/2.43秒、CTest2.43秒成功。runtime stderr空・child/wrapper0・入力不変。既存7fileの全bytes/hash/作成更新日時不変、新3出力も初回と全bytes一致。
 本文/selection/modified/UndoRedo/focus/mode/元md全履歴revision/両集合台帳保持と実RedoUndoを固定。製品経路不変、TIMEOUT30/data lock維持。
-[全試行と限界](quality/2026-11-06-export-native.md)。
+[全試行と限界](quality/2026-11-06-export-native.md)。 CI専用の期待path不存在を失敗時bytes診断で切分け、試験入力をfocus/選択置換/次dispatchの全path照合へ変更。対象358checks/3.37秒、製品と完全一致判定は維持。
 
 #717の改名はCTestのrename_nativeで固定する。専用target/dataの実Ex入口から同名無操作/理由と入力focus保持、
 変更EDIT/Redo保有状態の先保存・履歴移動・native UndoRedo、VIEWの非保存改名、旧名/journal不在を252checksで確認した。

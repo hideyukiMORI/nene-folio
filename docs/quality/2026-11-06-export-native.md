@@ -71,3 +71,27 @@ Windows Server 2022 CIでだけ再現し、ローカルでは同候補も成功�
 - build-diagnostic-01: 診断を既存functionに足した結果、complexity22>10をtidyが拒否。child/wrapper1、入力不変。製品実行前。
 - build-diagnostic-02: 読取結果検査と失敗情報formatterを関心ごとに分割。Debug/tidy成功、child/wrapper0、入力不変。
 - test-diagnostic-01: export_nativeだけローカル成功、child/wrapper0、入力不変。CI原因はまだ未確定。
+
+## 保存先入力の切分けと修正候補（20:16 JST）
+
+診断head a936894のCI42207947041は変更EDITの最初の成功出力で、
+`PERSISTENCE_ABSENT`（read=1）、期待46bytes、実0bytesを記録した。
+期待絶対pathは専用export-native-0001の「変更 日本語.md」。成功notice後にこのpathが存在せず、
+本文bytesが異なったという証拠ではない。製品不具合やWindows内部の特定の通知欠落と断定しない。
+
+試験側はSetWindowTextと即時保存要求を、同owned実filenameへfocus→EM_SETSEL全選択→EM_REPLACESELへ変更する。
+入力直後と通常modal dispatchへ戻った次の有限timer callbackで、全長と全文が期待絶対pathに一致することを要求し、
+その後に同dialogのIDOK/IDCANCELへ進む。閉じたENTER/SUBMIT/NOTICEのenumをswitchで全列挙し、
+固定sleep・再入力retry・判定緩和・private COM窓口・製品変更を加えない。既存50ms/100callback上限を維持する。
+
+build-03はDebug/tidy成功。test-02のexport_nativeは358checks/3.37秒、CTest3.37秒成功。
+child/wrapper0、stderr空、入力不変。既存7fileの全bytes/hash/作成更新日時不変、独立4directoryの指定3出力は全bytes一致。
+既存共用helperは不変のため、初回close_modal_native193checks/1.08秒の結果を再利用する。
+Windows Server 2022上の修正後結果は最終CIで確認し、現時点では改善済みと断定しない。
+
+API操作の根拠はMicrosoftの[Edit control text operations](https://learn.microsoft.com/en-us/windows/win32/controls/edit-controls-text-operations)
+と[Edit controls](https://learn.microsoft.com/en-us/windows/win32/controls/about-edit-controls)。
+WM_SETTEXTにも通常の変更通知があるため、旧失敗を単に「通知しないAPI」と説明しない。
+今回の検証結果は専用native入力条件に限り、全OSのUI構造や物理操作の保証へ拡張しない。
+
+verify-02はCMake再生成前のreplyファイル一覧を使ったため、input snapshotで19不存在（前後計38記録error）を検出し、子を起動せず拒否（child null/wrapper125）。補助集計の初回はwrapper1との誤ったassertで停止し、実値125へ訂正した。古い一覧はsnapshotに残し、現実のreply一覧へ更新したverify-03で最終静的検査を行う。製品runtimeの失敗とは分離する。
