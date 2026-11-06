@@ -46,3 +46,10 @@ Windows NT10.0.26300.0、Msftedit10.0.26100.9949、ローカルNTFS・専用desk
 履歴回転と実writeの既知の非原子性（ADR0012）を解消したとは主張しない。
 themed failure dialogだけを観測し、OS fallback面、全OS/DPI、物理keyboard/IME、外部UIA client、fresh-process復旧は未検証。
 通常app/実ノート/前面focus/Storeを使わず、通常buildも反復せずexeのhash/bytes/更新日時を照合する。
+
+## 統合・保全・整理の確定
+
+#729/PR730は最終head6cfc569f492d518daa22707cc50d186ad91ba6e6、必須CI42155500337 full-gate/check成功。
+main4834e45156fae29d0c5ee9cc1b245ed911c90667へ正典統合し、通常exeのhash/bytes/更新日時不変を確認した。
+3918filesを全hash保全し、絶対path/同一squash tree/clean・untracked・ignored/link/稼働参照0を確認後、専用worktree/outputを整理した。
+branch/commit保持。確定原本D:/NeNeFolio/agents/729-locked-save-native/integration-completion.json。

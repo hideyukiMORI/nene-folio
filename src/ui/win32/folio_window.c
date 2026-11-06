@@ -14556,6 +14556,7 @@ HRESULT folio_window_accessible_read(struct folio_window *_Nonnull self,
     accessible_accelerator(self, item->kind, out->accelerator);
     accessible_details(self, item->kind, out);
     accessible_availability(self, item->kind, out);
+    accessible_selection_view(self, item->kind, out);
     if (accessible_item_host(*item) == ACCESSIBLE_DRAWER)
     {
         if (self->drawer == nullptr)
@@ -14577,7 +14578,6 @@ HRESULT folio_window_accessible_read(struct folio_window *_Nonnull self,
     struct accessible_item focus = {.kind = ACCESSIBLE_WINDOW};
     out->focused = folio_window_accessible_focus(self, ACCESSIBLE_WINDOW, &focus) == S_OK &&
                    accessible_item_equal(focus, *item);
-    accessible_selection_view(self, item->kind, out);
     return S_OK;
 }
 

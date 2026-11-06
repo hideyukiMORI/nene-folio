@@ -96,6 +96,11 @@ native本文/選択/UndoRedoと元md/全履歴を保ち、新mdの全bytes/初�
 変更EDIT/Redo保有状態の先保存・履歴移動・native UndoRedo、VIEWの非保存改名、旧名/journal不在を252checksで確認した。
 直接共用したEx/履歴helperのsave_as164checks、同data再実行252checksと前回md/4履歴のbytes/日時保持も成功した。
 30秒timeout/data lockを維持する。全試行・初回complexity拒否・限界は[品質記録](quality/2026-11-06-rename-native.md)へ。
+#731でノート行のselectedを主窓の共通選択設定がfalseへ上書きする不具合を発見し、設定順を修正した。
+行の選択値はdrawer/applicationから導いた値を保持し、layout/mode専用値で上書きしない。
+rename_native273checks、note_switch_native197checks、layout_edit_native606checksで
+Unicode行名と全台帳/履歴、選択/非選択/category/Treeの一致、focus独立、表示/mode選択を機械的に固定する。
+既存Unicode名保持の再実行も成功。red・全試行・外部client等の限界は[品質記録](quality/2026-11-06-unicode-rename-native.md)へ。
 
 - 機械強制: **不能**（テストの有意味性・契約の充足は判断であり、記録とレビューで確認する。QLT-009のカバレッジ下限だけでは代替できない）
 

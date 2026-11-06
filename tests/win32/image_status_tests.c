@@ -1262,6 +1262,34 @@ static void run_search_case(struct native_fixture *_Nonnull fixture)
         note_text_destroy(snapshot.files[version]);
 }
 
+static void expect_note_selection(struct folio_window *_Nonnull window, size_t selected)
+{
+    for (size_t index = 0; index < 2; ++index)
+    {
+        struct accessible_item row = {.kind = ACCESSIBLE_NOTE,
+                                      .ref = {.category = 0, .note = index},
+                                      .revision = folio_window_accessible_revision(window)};
+        struct accessible_view view = {0};
+        require(folio_window_accessible_read(window, &row, &view) == S_OK &&
+                    view.selected == (index == selected),
+                "only the selected note exposes IsSelected, independently of focus");
+    }
+    struct accessible_item category = {.kind = ACCESSIBLE_CATEGORY,
+                                       .ref = {.category = 0},
+                                       .revision = folio_window_accessible_revision(window)};
+    struct accessible_view view = {0};
+    require(folio_window_accessible_read(window, &category, &view) == S_OK && !view.selected,
+            "a category does not inherit the selected note state");
+    struct accessible_item tree = {.kind = ACCESSIBLE_TREE};
+    struct accessible_item current = {0};
+    require(folio_window_accessible_selected(window, &tree, &current) == S_OK &&
+                current.kind == ACCESSIBLE_NOTE && current.ref.category == 0 &&
+                current.ref.note == selected,
+            "Tree GetSelection agrees with the selected row");
+    require(folio_window_accessible_read(window, &tree, &view) == S_OK && view.selection_required,
+            "the tree retains the existing document selection requirement");
+}
+
 static void choose_note(struct folio_window *_Nonnull window, size_t index,
                         enum accessible_action operation)
 {
@@ -1271,7 +1299,7 @@ static void choose_note(struct folio_window *_Nonnull window, size_t index,
                  .revision = folio_window_accessible_revision(window)},
         .action = operation};
     require(folio_window_accessible_action(window, &request) == S_OK,
-            "select or invoke the current public note row");
+            "focus, select or invoke the current public note row");
     pump(window);
 }
 
@@ -1314,11 +1342,21 @@ static void reselect_unsaved(struct folio_window *_Nonnull window,
     HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
     CHARRANGE before = {.cpMin = 10, .cpMax = 12};
     SendMessageW(body, EM_EXSETSEL, 0, (LPARAM)&before);
+    choose_note(window, 1, ACCESSIBLE_ACTION_FOCUS);
+    struct accessible_item focused = {0};
+    require(folio_window_accessible_focus(window, ACCESSIBLE_DRAWER, &focused) == S_OK &&
+                focused.kind == ACCESSIBLE_NOTE && focused.ref.category == 0 &&
+                focused.ref.note == 1,
+            "Focus actually moves to the other note without selecting it");
+    expect_note_selection(window, 0);
+    expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_CHANGED);
+    verify_history_unchanged(fixture, snapshot);
     const enum accessible_action operations[] = {ACCESSIBLE_ACTION_SELECT,
                                                  ACCESSIBLE_ACTION_INVOKE};
     for (size_t index = 0; index < sizeof operations / sizeof operations[0]; ++index)
     {
         choose_note(window, 0, operations[index]);
+        expect_note_selection(window, 0);
         expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_CHANGED);
         CHARRANGE selected = {0};
         SendMessageW(body, EM_EXGETSEL, 0, (LPARAM)&selected);
@@ -1340,6 +1378,7 @@ static void switch_and_return(struct folio_window *_Nonnull window,
     append_switch_text(window);
     expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_CHANGED);
     choose_note(window, 1, ACCESSIBLE_ACTION_SELECT);
+    expect_note_selection(window, 1);
     expect_editor(window, fixture->state, L"> Other 別ノート 🐾", FOLIO_NOTE_SAME);
     HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
     require(SendMessageW(body, EM_CANUNDO, 0, 0) == 0,
@@ -1355,6 +1394,7 @@ static void switch_and_return(struct folio_window *_Nonnull window,
         expect_history_file(disk, version, snapshot->files[version - 1]);
     expect_other_unchanged(fixture);
     choose_note(window, 0, ACCESSIBLE_ACTION_INVOKE);
+    expect_note_selection(window, 0);
     expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_SAME);
     require(SendMessageW(body, EM_CANUNDO, 0, 0) == 0 && GetFocus() == body,
             "Invoke focuses the reloaded note with a fresh Undo history");
@@ -1382,6 +1422,7 @@ static void run_note_switch_case(struct native_fixture *_Nonnull fixture)
                 FOLIO_WINDOW_CREATED,
             "real note switching window");
     pump(window);
+    expect_note_selection(window, 0);
     action(window, ACCESSIBLE_EDIT);
     expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_SAME);
     expect_other_unchanged(fixture);
@@ -2946,6 +2987,18 @@ static void expect_layout(struct folio_window *_Nonnull window,
             "layout selection changes only layout, retaining edit mode");
     require((IsWindowVisible(body) != 0) == (step->mode != FOLIO_LAYOUT_DRAWER),
             "layout selection hides the body only in drawer mode");
+    const enum accessible_kind choices[] = {ACCESSIBLE_LAYOUT_DRAWER, ACCESSIBLE_LAYOUT_BOTH,
+                                            ACCESSIBLE_LAYOUT_NOTE, ACCESSIBLE_VIEW,
+                                            ACCESSIBLE_EDIT};
+    for (size_t index = 0; index < sizeof choices / sizeof choices[0]; ++index)
+    {
+        struct accessible_item choice = {.kind = choices[index]};
+        struct accessible_view view = {0};
+        require(folio_window_accessible_read(window, &choice, &view) == S_OK &&
+                    view.selected ==
+                        (choices[index] == step->control || choices[index] == ACCESSIBLE_EDIT),
+                "layout and mode groups retain exactly their current selected choice");
+    }
     expect_native_body(window, snapshot);
 }
 
@@ -3274,6 +3327,40 @@ static void expect_renamed_files(struct native_fixture *_Nonnull fixture,
         expect_named_history_file(disk, name, version, expected->files[version]);
 }
 
+static void expect_rename_ledger(struct native_fixture *_Nonnull fixture)
+{
+    size_t count = folio_state_note_count(fixture->state);
+    struct persistence_port disk = persistence_adapter_port(fixture->files);
+    struct note_ledger *ledger = nullptr;
+    require(disk.read_note_ledger(disk.adapter, "schedule", &ledger) == PERSISTENCE_LOADED &&
+                ledger != nullptr && note_ledger_count(ledger) == count,
+            "rename publishes the complete note ledger without adding or removing rows");
+    for (size_t index = 0; index < count; ++index)
+        require(strcmp(note_ledger_name(ledger, index),
+                       folio_state_note_name(fixture->state, (struct note_ref){0, index})) == 0,
+                "all renamed ledger rows retain the public order and exact UTF-8 names");
+    note_ledger_destroy(ledger);
+}
+
+static void expect_rename_row(struct folio_window *_Nonnull window,
+                              struct native_fixture *_Nonnull fixture, const wchar_t *_Nonnull name)
+{
+    struct note_ref selected = {0};
+    require(folio_state_selection(fixture->state, &selected) && selected.category == 0 &&
+                strcmp(folio_state_note_name(fixture->state, selected),
+                       folio_state_document_name(fixture->state)) == 0,
+            "the renamed document remains the selected public note");
+    struct accessible_item item = {.kind = ACCESSIBLE_NOTE,
+                                   .ref = selected,
+                                   .revision = folio_window_accessible_revision(window)};
+    struct accessible_view view = {0};
+    require(folio_window_accessible_read(window, &item, &view) == S_OK &&
+                wcscmp(view.name, name) == 0,
+            "the selected row exposes the exact UTF-16 rename input");
+    require(view.selected, "the renamed row retains its selected state through the main window");
+    expect_rename_ledger(fixture);
+}
+
 static void rename_command(struct folio_window *_Nonnull window,
                            struct native_fixture *_Nonnull fixture, unsigned step)
 {
@@ -3282,19 +3369,25 @@ static void rename_command(struct folio_window *_Nonnull window,
     int length = snprintf(old, 64, "%s", folio_state_document_name(fixture->state));
     require(length > 0 && length < 64, "the original name fits before its ledger is replaced");
     char name[64];
-    length = snprintf(name, 64, "zzrename-%zu-%u", count, step);
+    const char *prefix = step == 2 ? "zzrename" : "zz改名 猫🐾";
+    length = snprintf(name, 64, "%s-%zu-%u", prefix, count, step);
     require(length > 0 && length < 64, "the dedicated destination name fits");
     expect_rename_name_absent(fixture, name);
     struct native_body_snapshot before = {0};
     capture_native_body(window, &before);
+    const wchar_t *wide_prefix = step == 2 ? L"zzrename" : L"zz改名 猫🐾";
+    wchar_t wide_name[64];
+    require(swprintf(wide_name, 64, L"%ls-%zu-%u", wide_prefix, count, step) > 0,
+            "the independently written UTF-16 destination fits");
     wchar_t command[96];
-    require(swprintf(command, 96, L":rename zzrename-%zu-%u", count, step) > 0,
+    require(swprintf(command, 96, L":rename %ls", wide_name) > 0,
             "the dedicated rename command fits");
     submit_ex(window, command);
     HWND input = folio_window_accessible_window(window, ACCESSIBLE_COMMAND_INPUT);
     require(!IsWindowVisible(input) && folio_state_note_count(fixture->state) == count &&
                 strcmp(folio_state_document_name(fixture->state), name) == 0,
             "rename changes only the selected name and closes Ex");
+    expect_rename_row(window, fixture, wide_name);
     expect_name_operation_body(window, &before);
     expect_rename_name_absent(fixture, old);
     struct rename_view pending = {.kind = RENAME_KIND_NOTE, .from = "", .to = ""};

@@ -1,17 +1,17 @@
 # いまの状態 — NeNe Folio
 
-## 2026-11-06 — #727まで完了、共有違反の保存拒否を確認中
+## 2026-11-06 — #729まで完了、ノート行の選択値を修正中
 
 hideの07:08の依頼により、停止指示まで品質対応を継続する。試験・計測・必要な調査と独立レビューを行い、全試行と変更を記録する。
 最優先の#479/PR708の平文paste、#709/PR710のCtrl+R/2/5、#713/PR714のDebug ASan検出修正は、最終CI・main統合・通常反映・全保全整理まで完了。
 [paste](../quality/2026-11-06-editor-paste.md)・[書式キー](../quality/2026-11-06-editor-format.md)・[ASan](../quality/2026-11-06-asan-interceptor.md)の品質記録を参照する。
-表示切替・別名保存・改名・置換欄保存・カテゴリ間drag・Unicode保存・新規と初回保存・空本文保存の回帰も#727/PR728まで統合・整理済み。実測と確定原本は[日報](../reports/2026-11-06.md)・[引き継ぎ](../handoffs/2026-11-06.md)にまとめた。
-最新確定mainは67cbf4afc76dbaa00a7de2c232702539d0cb48c1、最終CI42153147608成功。
-通常exe不変、3383files全保全。#727原本D:/NeNeFolio/agents/727-empty-save-native/integration-completion.json。
+表示切替・別名保存・改名・置換欄保存・カテゴリ間drag・Unicode保存・新規と初回保存・空本文保存・共有違反の保存拒否の回帰も#729/PR730まで統合・整理済み。実測と確定原本は[日報](../reports/2026-11-06.md)・[引き継ぎ](../handoffs/2026-11-06.md)にまとめた。
+最新確定mainは4834e45156fae29d0c5ee9cc1b245ed911c90667、最終CI42155500337成功。
+通常exe不変、3918files全保全。#729原本D:/NeNeFolio/agents/729-locked-save-native/integration-completion.json。
 
-#729は共有違反の保存拒否と解除後の再保存が成功。locked_save_native156checks/0.84秒、直接共用empty_save_native253checks/0.63秒、合計1.47秒成功。stderr空・child/wrapper0、入力不変。
-製品src/API/schemaは不変。最終CI/統合はこれから。[品質記録](../quality/2026-11-06-locked-save-native.md)。
-作業木D:/NeNeFolio/worktrees/729-locked-save-native、試行同outputs、恒久原本同agents。
+#731はUnicode改名の回帰で、主窓がdrawerの選択値をfalseへ上書きする不具合を発見・修正。rename_native273checks/2.05秒、note_switch_native197checks/1.4秒、layout_edit_native606checks/0.65秒、計4.13秒成功。既存Unicode名保持の再実行は276checks/1.41秒成功。stderr空・child/wrapper0・入力不変。
+API/schema/CMake不変。最終CI/統合/通常反映はこれから。[品質記録](../quality/2026-11-06-unicode-rename-native.md)。
+作業木D:/NeNeFolio/worktrees/731-unicode-rename-native、試行同outputs、恒久原本同agents。
 全体journalはD:/NeNeFolio/agents/quality-20261106/journal.md。過去の停止履歴は今回依頼の停止指示として扱わない。
 
 ## 公開済み1.3.1
