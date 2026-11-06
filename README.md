@@ -8,10 +8,10 @@ A frameless Markdown notebook for Windows with a category drawer. Plain C (C23),
 > Windows 10 version 2004 or later is required. Notes and settings use `data/` beside the executable
 > by default; Settings can select another location.
 
-The current source is **1.3.1**, with fixes for save-history handling and settings validation,
-plus improvements to text processing, Markdown rendering, list lookup, and in-note search.
-See the [1.3.1 changes and update instructions](docs/release/1.3.1.md) and
-[release verification record](docs/quality/2026-11-05-release-1.3.1.md).
+The current source is the **1.3.2 release candidate**, with plain-text paste, protection from
+unintended paragraph formatting, corrected accessible note selection, and in-note search improvements.
+See the [1.3.2 changes and update instructions](docs/release/1.3.2.md) and
+[candidate verification record](docs/quality/2026-11-06-release-1.3.2.md).
 Package creation, GitHub publication, and Microsoft Store certification are tracked separately.
 The unsigned MSIX is a Store submission artifact, not a portable installer.
 
@@ -25,7 +25,7 @@ v0.2.0 with the Japanese UI, Light theme, and sample notes.
 
 ## What it does
 
-The [1.3.1 release notes](docs/release/1.3.1.md) describe the current changes, update steps,
+The [1.3.2 release notes](docs/release/1.3.2.md) describe the current changes, update steps,
 and limitations. Images, Mermaid diagrams, and image-aware export are covered in the
 [1.3.0 notes](docs/release/1.3.0.md); earlier changes remain in the [1.2.0 Store notes](docs/release/1.2.0.md)
 and [1.1.0 notes](docs/release/1.1.0.md).

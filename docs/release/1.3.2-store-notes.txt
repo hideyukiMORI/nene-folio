@@ -1,0 +1,8 @@
+日本語
+貼り付け元の書式が編集面へ混入する問題と、一部のキー操作で段落の揃え・行間が変わる問題を修正しました。選択中ノートのアクセシビリティ情報を修正し、ノート内検索の文字処理を改善しました。保存・終了・履歴復元・置換・書き出しとUndo／Redoの自動検証を拡充しています。ノートの保存形式は変更しません。検索の改善量は文書や操作によって異なります。
+
+English
+Fixed pasted formatting leaking into the editor and unintended paragraph alignment or line-spacing changes from certain shortcuts. Corrected accessible selection information for the current note and improved character processing in in-note search. Expanded automated checks for saving, closing, history restore, replacement, export, and Undo/Redo. The note storage format is unchanged. Search performance gains vary with document content and operations.
+
+简体中文
+修复了粘贴时源格式混入编辑区，以及部分快捷键意外改变段落对齐和行距的问题。修正了当前笔记的无障碍选中状态，并优化了笔记内搜索的字符处理。加强了保存、关闭、历史恢复、替换、导出及撤销／重做的自动验证。笔记存储格式保持不变。搜索性能改善程度因文档内容和操作而异。
