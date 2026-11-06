@@ -3367,14 +3367,17 @@ static void save_as_collisions(struct folio_window *_Nonnull window,
     SendMessageW(body, EM_EXSETSEL, 0, (LPARAM)&selection);
 }
 
-/* #735/#737/#739/#741: Observe and finish only the real name dialog owned by this test. */
+/* #735/#737/#739/#741/#743: Observe and finish only the real name dialog owned by this test. */
 enum name_dialog_action
 {
     NAME_DIALOG_CANCEL,
     NAME_DIALOG_CLOSE,
     NAME_DIALOG_DISCARD,
-    NAME_DIALOG_SAVE
+    NAME_DIALOG_SAVE,
+    NAME_DIALOG_RETRY_SAVE
 };
+
+struct name_rejection_probe;
 
 struct name_dialog_request
 {
@@ -3382,6 +3385,7 @@ struct name_dialog_request
     bool discard;
     const wchar_t *title;
     const wchar_t *name;
+    const struct name_rejection_probe *rejection;
 };
 
 struct name_dialog_probe
@@ -3434,6 +3438,14 @@ static void enter_pending_destination(HWND dialog)
             "the modal has a real pending destination name rather than an empty form");
 }
 
+static void accept_name_dialog(HWND dialog)
+{
+    require(IsWindowEnabled(GetDlgItem(dialog, IDOK)), "the entered destination can be submitted");
+    SendMessageW(GetDlgItem(dialog, IDOK), BM_CLICK, 0, 0);
+}
+
+static void retry_name_dialog(HWND dialog, const struct name_rejection_probe *_Nonnull probe);
+
 static BOOL CALLBACK close_name_dialog(HWND dialog, LPARAM parameter)
 {
     wchar_t kind[32];
@@ -3457,8 +3469,13 @@ static BOOL CALLBACK close_name_dialog(HWND dialog, LPARAM parameter)
         SendMessageW(dialog, WM_CLOSE, 0, 0);
         break;
     case NAME_DIALOG_SAVE:
-        require(IsWindowEnabled(GetDlgItem(dialog, IDOK)), "the entered destination can be saved");
-        SendMessageW(GetDlgItem(dialog, IDOK), BM_CLICK, 0, 0);
+        accept_name_dialog(dialog);
+        break;
+    case NAME_DIALOG_RETRY_SAVE:
+        require(name_dialog.request.rejection != nullptr,
+                "rejection checks borrow live fixture state");
+        retry_name_dialog(dialog, name_dialog.request.rejection);
+        accept_name_dialog(dialog);
         break;
     case NAME_DIALOG_DISCARD:
         SendMessageW(GetDlgItem(dialog, 3), BM_CLICK, 0, 0);
@@ -4715,9 +4732,137 @@ struct modal_save_files
     struct history_snapshot original;
     struct name_list *source;
     struct name_list *target;
+    struct note_ledger *source_ledger;
+    struct note_ledger *target_ledger;
     size_t count;
     char name[64];
 };
+
+/* #743: A rejected destination keeps the same owned dialog and every unsaved byte. */
+struct name_rejection_probe
+{
+    struct folio_window *window;
+    struct native_fixture *fixture;
+    const struct native_body_snapshot *body;
+    const struct modal_save_files *files;
+};
+
+struct name_rejection_step
+{
+    const wchar_t *name;
+    const wchar_t *category;
+    const wchar_t *reason;
+};
+
+static void snapshot_modal_ledger(struct persistence_port disk, const char *_Nonnull category,
+                                  struct note_ledger *_Nullable *_Nonnull out)
+{
+    enum persistence_outcome outcome = disk.read_note_ledger(disk.adapter, category, out);
+    require((outcome == PERSISTENCE_LOADED && *out != nullptr) ||
+                (outcome == PERSISTENCE_ABSENT && *out == nullptr),
+            "snapshot the category ledger or its initial absence before rejected names");
+}
+
+static void expect_rejected_ledger(struct native_fixture *_Nonnull fixture, size_t category,
+                                   const struct note_ledger *_Nullable before)
+{
+    struct persistence_port disk = persistence_adapter_port(fixture->files);
+    const char *name = folio_state_category_name(fixture->state, category);
+    struct note_ledger *after = nullptr;
+    enum persistence_outcome outcome = disk.read_note_ledger(disk.adapter, name, &after);
+    if (before == nullptr)
+        require(outcome == PERSISTENCE_ABSENT && after == nullptr,
+                "rejection does not create an initially absent category ledger");
+    else
+    {
+        require(outcome == PERSISTENCE_LOADED && after != nullptr &&
+                    note_ledger_count(after) == note_ledger_count(before),
+                "rejection preserves the category ledger's complete row count");
+        for (size_t index = 0; index < note_ledger_count(before); ++index)
+            require(strcmp(note_ledger_name(after, index), note_ledger_name(before, index)) == 0 &&
+                        strcmp(folio_state_note_name(fixture->state,
+                                                     (struct note_ref){category, index}),
+                               note_ledger_name(before, index)) == 0,
+                    "rejection preserves every persisted and public row in its original order");
+    }
+    note_ledger_destroy(after);
+}
+
+static void expect_rejected_draft(const struct name_rejection_probe *_Nonnull probe)
+{
+    struct native_fixture *fixture = probe->fixture;
+    expect_name_operation_body(probe->window, probe->body);
+    HWND body = folio_window_accessible_window(probe->window, ACCESSIBLE_BODY);
+    require(SendMessageW(body, EM_GETMODIFY, 0, 0) == probe->body->modified,
+            "a rejected destination keeps the native modified flag");
+    expect_editor(probe->window, fixture->state, first_save_edited, FOLIO_NOTE_CHANGED);
+    struct note_ref selected = {0};
+    require(folio_state_document_kind(fixture->state) == FOLIO_DOCUMENT_UNTITLED &&
+                folio_state_document_category(fixture->state) == 0 &&
+                folio_state_document_name(fixture->state)[0] == '\0' &&
+                !folio_state_selection(fixture->state, &selected) &&
+                folio_state_note_count(fixture->state) == probe->files->count,
+            "rejection retains the unnamed document and adds no selected or public row");
+    expect_modal_cursor(fixture);
+    verify_history_unchanged(fixture, &probe->files->original);
+    struct persistence_port disk = persistence_adapter_port(fixture->files);
+    expect_name_file_set(disk, "schedule", probe->files->source);
+    expect_name_file_set(disk, "target", probe->files->target);
+    expect_rejected_ledger(fixture, 0, probe->files->source_ledger);
+    expect_rejected_ledger(fixture, 1, probe->files->target_ledger);
+}
+
+static void submit_rejected_name(HWND dialog, const struct name_rejection_step *_Nonnull step,
+                                 const struct name_rejection_probe *_Nonnull probe)
+{
+    HWND name = FindWindowExW(dialog, nullptr, L"EDIT", nullptr);
+    HWND categories = FindWindowExW(dialog, nullptr, L"LISTBOX", nullptr);
+    HWND reason = FindWindowExW(dialog, name, L"EDIT", nullptr);
+    require(IsWindow(name) && IsWindow(categories) && IsWindow(reason) &&
+                (GetWindowLongPtrW(reason, GWL_STYLE) & (ES_READONLY | ES_MULTILINE)) ==
+                    (ES_READONLY | ES_MULTILINE),
+            "the rejection reason is the owned readonly multiline field");
+    LRESULT category =
+        SendMessageW(categories, LB_FINDSTRINGEXACT, (WPARAM)-1, (LPARAM)step->category);
+    require(SetWindowTextW(name, step->name) && category != LB_ERR &&
+                SendMessageW(categories, LB_SETCURSEL, (WPARAM)category, 0) == category,
+            "enter the exact rejected name and its intended category");
+    accept_name_dialog(dialog);
+    require(
+        IsWindow(dialog) && IsWindowVisible(dialog) &&
+            GetAncestor(dialog, GA_ROOTOWNER) == name_dialog.root && GetFocus() == name &&
+            IsWindowEnabled(name_dialog.root) && !IsWindowEnabled(name_dialog.body) &&
+            !IsWindowEnabled(name_dialog.drawer) && IsWindowEnabled(name) &&
+            IsWindowEnabled(categories) && IsWindowEnabled(GetDlgItem(dialog, IDOK)) &&
+            IsWindowEnabled(GetDlgItem(dialog, IDCANCEL)),
+        "rejection keeps this same modal open, editable and focused while content stays disabled");
+    wchar_t value[256] = {0};
+    int length = GetWindowTextW(name, value, 256);
+    require(length >= 0 && (size_t)length == wcslen(step->name) && wcscmp(value, step->name) == 0 &&
+                SendMessageW(categories, LB_GETCURSEL, 0, 0) == category,
+            "rejection retains all entered name units and the selected category");
+    require(IsWindowVisible(reason) && GetWindowTextW(reason, value, 256) > 0 &&
+                wcscmp(value, step->reason) == 0,
+            "the visible inline reason matches the independent expected message");
+    expect_rejected_draft(probe);
+}
+
+static void retry_name_dialog(HWND dialog, const struct name_rejection_probe *_Nonnull probe)
+{
+    const struct name_rejection_step steps[] = {
+        {.name = L"", .category = L"target", .reason = L"名前を入力してください。"},
+        {.name = L"CON",
+         .category = L"target",
+         .reason = L"使えない名前です。予約名・末尾の空白やピリオド・区切りを避け、"
+                   L".mdを含め255バイト以内で指定してください。"},
+        {.name = L"one",
+         .category = L"schedule",
+         .reason = L"同じ名前のノートがあります。別の名前を指定してください。"
+                   L"既存ファイルは変更していません。"}};
+    for (size_t index = 0; index < sizeof steps / sizeof steps[0]; ++index)
+        submit_rejected_name(dialog, &steps[index], probe);
+    enter_pending_destination(dialog);
+}
 
 static void modal_save_roundtrip(struct folio_window *_Nonnull window,
                                  struct native_fixture *_Nonnull fixture,
@@ -4798,8 +4943,12 @@ static void modal_save_accept(struct folio_window *_Nonnull window,
     require(disk.read_note(disk.adapter, "target", files->name, &absent) == PERSISTENCE_ABSENT &&
                 absent == nullptr,
             "the name dialog never overwrites an older first-save note");
-    start_name_dialog(window, (struct name_dialog_request){
-                                  .title = L"保存", .name = input, .action = NAME_DIALOG_SAVE});
+    const struct name_rejection_probe rejection = {
+        .window = window, .fixture = fixture, .body = &before, .files = files};
+    start_name_dialog(window, (struct name_dialog_request){.title = L"保存",
+                                                           .name = input,
+                                                           .action = NAME_DIALOG_RETRY_SAVE,
+                                                           .rejection = &rejection});
     (void)native_key_input(window, 'S', FCONTROL);
     finish_name_dialog();
     pump(window);
@@ -4837,6 +4986,8 @@ static void run_first_save_modal_case(struct native_fixture *_Nonnull fixture)
             "real first-save name dialog host");
     pump(window);
     modal_save_draft(window, fixture, &files);
+    snapshot_modal_ledger(disk, "schedule", &files.source_ledger);
+    snapshot_modal_ledger(disk, "target", &files.target_ledger);
     modal_save_accept(window, fixture, &files);
     modal_save_roundtrip(window, fixture, &files);
     expect_name_file_set(disk, "schedule", files.source);
@@ -4845,6 +4996,8 @@ static void run_first_save_modal_case(struct native_fixture *_Nonnull fixture)
     folio_window_destroy(window);
     name_list_destroy(files.source);
     name_list_destroy(files.target);
+    note_ledger_destroy(files.source_ledger);
+    note_ledger_destroy(files.target_ledger);
     for (size_t version = 0; version <= note_history_depth; ++version)
         note_text_destroy(files.original.files[version]);
 }
