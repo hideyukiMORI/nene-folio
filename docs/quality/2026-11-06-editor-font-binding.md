@@ -93,3 +93,12 @@ FR-006、ARC-001/002/004/008/011/012、C-002/005/008/014/016/017、QLT-008/010/0
 同梱フォントとOSの同名family衝突の限界はADR0036を維持する。既に開いた実行中appには適用されない。
 公開済み1.3.2 ZIP/MSIXとStore申請を差し替えず、次の版への修正とする。
 保留466/634/530と旧削除拒否領域には触れない。
+
+## 2026-11-07 — 通常版反映と整理完了（#785で収載）
+
+PR784最終head42689f56ed30301d995ac2a1c6eabb1c2710529aの必須CI42239417180 full-gate/checkが成功し、main d343071へ統合した。
+hideの終了報告後、00:24に正典prepare-real-machine.ps1で通常exeを更新。実data33fileのbytes/hash/作成更新日時不変を確認した。
+新exe SHA256 ab97b69dcab303d8a75c09ed879237c9477939a64c1ddb6d8faabc02180018f1、版1.3.2/1.3.2.0。起動・物理IME・実ノート見た目は未確認。
+1,481file全保全後にD:/NeNeFolio/worktrees/783-editor-font-bindingと同outputsを整理し、branch/commitを保持した。
+確定原本D:/NeNeFolio/agents/editor-font-binding-20261106/integration-reflected.json。
+同integration-completion.jsonは00:12の反映待ち記録として保持する。公開済み1.3.2 ZIP/MSIXへの反映ではない。
