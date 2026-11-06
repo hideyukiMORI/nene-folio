@@ -42,3 +42,10 @@ Windows11 Pro10.0.26300、Msftedit10.0.26100.9949、専用desktop/verification-f
 
 OS大小文字alias/最大長/全予約名列挙、実ディスク保存失敗/台帳部分失敗/資源失敗、離脱時保存承認/別ノート切替/主窓終了/OSsession/IME中断、物理keyboard/Enter・全OS/DPI・外部UIAは対象外。
 通常app/実ノート/clipboard/前面focus/Storeを試験に使わない。個別保留466/634/530と旧削除拒否領域を維持する。
+
+## 統合・保全整理の確定
+
+#743/PR744は最終head21f81e16a44ff2f0381418fcab2621e8fe3bb788、必須CI42173704433 full-gate/check成功。
+main8c81e0402156e21c3334bd54c973288576990052へ正典統合し、通常exeのhash/bytes/更新日時不変を確認した。src/eng/fonts/packaging/CMake不変で通常build/app起動なし。
+2812filesを全hash保全し、絶対path/同一squash tree/clean・untracked・ignored/link/稼働参照0を確認後、専用worktree/outputを整理。
+branch/commit保持。確定原本D:/NeNeFolio/agents/743-first-save-retry-native/integration-completion.json。

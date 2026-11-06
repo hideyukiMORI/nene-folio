@@ -148,6 +148,8 @@ Unicode行名と全台帳/履歴、選択/非選択/category/Treeの一致、foc
 #729のlocked_save_nativeは専用mdの共有違反による履歴read拒否→themed失敗面→編集保持→解除後の再保存を固定する。
 156checksで元md/全履歴/revision不変、native本文/選択/modified/UndoRedo/focusとNAMEDを確認。直接共用empty_save_native253checksも成功。
 履歴回転途中/write失敗・容量不足・ACL改変・全OS/DPI・物理IME・OS fallback面は対象外。[品質記録](quality/2026-11-06-locked-save-native.md)。
+#745は同試験へVIEW/SAME+Redo編集の実Ex :trashnote BUSY拒否と入力再有効化を追加。locked_save_native 291checks/0.94秒、CTest0.95秒成功。台帳あり・source追加2file/target追加1fileのrepeatは350checks/0.73秒、CTest0.74秒成功。両runtime stderr空・child/wrapper0・入力不変。3既存mdと台帳1fileの全bytes/hash/作成更新日時不変。
+[全試行と限界](quality/2026-11-06-trash-busy-native.md)。
 
 ### QLT-009 — カバレッジは下げられない
 
