@@ -52,3 +52,10 @@ agents内integration-completion.jsonへ収載する。
 物理Ctrl+Shift+S/IME、名前入力modalの取消・衝突、I/O失敗・台帳部分失敗、改名、無題、外部UIA reader、viewport画素、長文scroll、全DPIを確認したものではない。
 通常app/実ノート/利用者clipboard/前面focus/Storeを試験に使っていない。今回のfixtureは一行Unicode本文を対象にし、改行正規化の全組合せまで広げない。
 通常exeの生成に関係するsrc/eng/fontsは不変で、CMake差分はnative試験hostの共通設定と追加に閉じる。通常buildは反復しない。
+
+## 統合・整理済み
+
+#715/PR716は最終head852f92602a3ecbd587459c57715f35d3eb1ca0b7、必須CI42139348824 full-gate/check成功。
+main4096ce691e151bbba32bc08bf3739952ebf18535へ正典統合し、通常exeのhash/bytes/更新日時不変を確認した。
+3358filesを全hash保全し、絶対path/同一squash tree/clean・untracked・ignored/link/稼働参照0を照合後、専用worktree/outputを整理した。
+branch/commit保持。確定原本D:/NeNeFolio/agents/715-save-as-native/integration-completion.json。

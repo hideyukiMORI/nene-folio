@@ -306,7 +306,8 @@ folio_state_store_new(struct folio_state *_Nonnull state,
 /* 現在のノートの md と履歴を同じカテゴリの新しい名前へ移す（FR-031 / ADR 0022）。
  * units / count は編集中の本文で、未保存なら同じ保存経路で先に確定してから改名する
  * （VIEW では使わない）。未選択は NOTHING_SELECTED、無題は NAME_REQUIRED（初回保存が先）、
- * 同じ名前は何もせず READY、大小文字だけ違う名前を含む同名は NAME_TAKEN。
+ * 完全同名は NAME_UNCHANGED（先行同期のみ）。大小文字だけ違う名前を含む同名は NAME_TAKEN。
+ *
  * 記録を公開する前の拒否では意図が残らない。公開後に止まったら RENAME_PENDING（再試行で進み得る）
  * または RENAME_HALTED（data/ を直すまで進まない）を返し、どちらでも意図を 1 つだけ保持して、
  * 次の意図より先に同じ改名を再試行する（決定 7）。
