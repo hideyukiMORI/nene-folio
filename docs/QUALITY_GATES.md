@@ -97,6 +97,9 @@ Ex語/focus/理由、native本文/選択/modified/UndoRedo、元md/全履歴/rev
 #735は実Ctrl+Shift+Sから名前面を開き、変更EDIT/Redo保有EDITの入力後取消を固定する。save_as_native389checks/1.83秒、CTest計1.84秒成功。stderr空・child/wrapper0・入力不変。
 所有面のbutton/WM_CLOSE、modal中の内容disableと終了後の再enable/focus/native状態、元md/履歴/全名前集合を確認。
 [全試行と限界](quality/2026-11-06-save-as-cancel-native.md)。
+#737は空/入力済み/Redo保有の無題で次の新規を取消し、入力済みからの明示CtrlS取消も固定する。first_save_native385checks/1.52秒、save_as_native377checks/1.56秒、CTest計3.08秒成功。stderr空・child/wrapper0・入力不変。
+新規だけのdiscard表示、native本文/選択/UndoRedo/focusと保存物保持、その後のEx初回保存を確認。
+[全試行と限界](quality/2026-11-06-untitled-cancel-native.md)。
 
 #717の改名はCTestのrename_nativeで固定する。専用target/dataの実Ex入口から同名無操作/理由と入力focus保持、
 変更EDIT/Redo保有状態の先保存・履歴移動・native UndoRedo、VIEWの非保存改名、旧名/journal不在を252checksで確認した。
