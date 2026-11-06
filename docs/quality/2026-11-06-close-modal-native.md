@@ -56,3 +56,11 @@ CMakeは試験登録と既存lock/TIMEOUT30の2行のみ。単体自己レビュ
 Microsoft Learnの[EndDialog](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-enddialog)は終了flagを設定し、systemへ制御が戻った後にdialogloopを終えると定める。
 [WM_CLOSE](https://learn.microsoft.com/en-us/windows/win32/winmsg/wm-close)は終了要求の通知であり、保存と取消の契約は製品側で保持する。
 このためcallback中のroot生存と外側復帰後の保存結果を分け、名前面の取消後の可視性/focusを過剰に固定しない。
+
+## 18:25 統合・全保全整理完了
+
+#759/PR760はhead63e2b6de945f5fdfe2232eeaa0e8ed728f13a490、最終CI42193935725 full-gate/check成功。
+main649c055bb8e9a770ab3951db4b0519cff3a76903へ統合、Issue759 CLOSED。通常exe hash/bytes/更新日時不変。
+2796file全hash保全、ZIP224971785bytes/SHA6317324ed6506fee80d9857b32ee3afcbc17563fdb279d58e4feb4d9654c0c13。
+取込tree/clean/ignored/untracked/link/稼働参照確認後、専用worktree/outputだけ整理、branch/commit保持。
+原本D:/NeNeFolio/agents/759-close-modal-native/integration-completion.json。
