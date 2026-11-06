@@ -162,6 +162,8 @@ Unicode行名と全台帳/履歴、選択/非選択/category/Treeの一致、foc
 [全試行と限界](quality/2026-11-06-session-ime-native.md)。
 #757はsession_modal_nativeで実SaveAs中の終了拒否/取消後の内容制約保持/Cancel後の元ノート保存一回と最終破棄を固定。save_as_native 377checks/1.59秒、session_modal_native 438checks/1.14秒、計2.74秒成功。台帳あり/元追加2md/target追加1mdのrepeatはsession_modal_native 524checks/1.13秒、CTest1.13秒成功。runtime stderr空・child/wrapper0・入力不変。追加3mdと台帳の全bytes/hash/作成更新日時不変。
 [全試行と限界](quality/2026-11-06-session-modal-native.md)。
+#759はclose_modal_nativeで実SaveAs中の主窓終了要求/名前取消/元保存拒否からの復帰/UndoRedo/再終了保存一回を固定。save_as_native 377checks/1.69秒、session_modal_native 438checks/1.17秒、close_modal_native 197checks/1.18秒、計4.04秒成功。台帳あり/元追加2md/target追加1mdのrepeatはclose_modal_native 215checks/1.24秒、CTest1.25秒成功。runtime stderr空・child/wrapper0・入力不変。追加3mdと台帳の全bytes/hash/作成更新日時不変。
+[全試行と限界](quality/2026-11-06-close-modal-native.md)。
 
 ### QLT-009 — カバレッジは下げられない
 

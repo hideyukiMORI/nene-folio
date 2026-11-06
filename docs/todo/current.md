@@ -1,20 +1,20 @@
 # いまの状態 — NeNe Folio
 
-## 2026-11-06 — #755まで完了、名前入力面の終了拒否を確認中
+## 2026-11-06 — #757まで完了、名前入力中の通常終了を確認中
 
 hideの07:08の依頼により停止指示まで品質対応を継続する。最優先の平文paste・書式キー・Debug ASan修正は統合・通常反映・整理済み。
-保存/改名/移動/無題離脱/初回保存/trash拒否/検索focus保存/通常終了拒否/OS終了通知とIME中の拒否回帰は#755/PR756まで統合・整理済み。
+保存/改名/移動/無題離脱/初回保存/trash拒否/検索focus保存/通常終了拒否/OS終了通知とIME・native面中の拒否回帰は#757/PR758まで統合・整理済み。
 [日報](../reports/2026-11-06.md)・[引き継ぎ](../handoffs/2026-11-06.md)と各品質記録に実測・確定原本を収載。
-最新確定mainは4c798e0cbfd0379928ea3c61bc3736d59926d5f5、最終CI42187525767成功。#755確定原本D:/NeNeFolio/agents/755-session-ime-native/integration-completion.json。
+最新確定mainは58afc24409c5d96f3aadb266c7b3f1a8aaaf147d、最終CI42191507869成功。#757確定原本D:/NeNeFolio/agents/757-session-modal-native/integration-completion.json。
 
-#757は実CtrlShiftSで開いたSaveAs中のQUERY拒否/ENDTRUE無破棄/ENDFALSE理由解除を2回確認。
-同root有効/同dialog生存、未保存の日本語名/選択/target/focus、内容無効/readyfalse、本文全体/選択/modified/UndoRedoと全保存物を保持。
-Cancel復帰後は既存session helperで元oneの保存一回/取消/実UndoRedo/最終破棄を固定する。
-save_as_native 377checks/1.59秒、session_modal_native 438checks/1.14秒、計2.74秒成功。台帳あり/元追加2md/target追加1mdのrepeatはsession_modal_native 524checks/1.13秒、CTest1.13秒成功。runtime stderr空・child/wrapper0・入力不変。追加3mdと台帳の全bytes/hash/作成更新日時不変。
-製品src/API/schema/依存/既存session helper/ゲート不変。既存owned有限observerの閉じたactionと同期stack借用contextを使う。
+#759は実CtrlShiftSの名前面からrootWM_CLOSEし、最内name取消と外側復帰後の元one保存拒否を確認。
+callback中は同root/本文/状態/revision保持とfailure未発火、復帰後は候補名を作らず本文/選択/modified/UndoRedo/focusと全保存物を保持する。
+拒否解除後の実UndoRedoと通常close再試行で元one保存一回/全履歴一回shift/revision+1/最終破棄を固定。
+save_as_native 377checks/1.69秒、session_modal_native 438checks/1.17秒、close_modal_native 197checks/1.18秒、計4.04秒成功。台帳あり/元追加2md/target追加1mdのrepeatはclose_modal_native 215checks/1.24秒、CTest1.25秒成功。runtime stderr空・child/wrapper0・入力不変。追加3mdと台帳の全bytes/hash/作成更新日時不変。
+製品src/API/schema/依存/既存session helper/ゲート不変。既存owned有限observerへ閉じたROOT_CLOSE action、既存file helper2つは共用名へ改名のみ。
 CMakeは試験登録と既存lock/TIMEOUT30の2行のみ。単体自己レビュー、追加waiver none、既存WVR-0001継続。
-最終CI/統合/通常exe不変/全保全整理はこれから。[品質記録](../quality/2026-11-06-session-modal-native.md)。
-D:/NeNeFolio/worktrees/757-session-modal-native、同outputs、恒久agents。全体journalはD:/NeNeFolio/agents/quality-20261106/journal.md。
+最終CI/統合/通常exe不変/全保全整理はこれから。[品質記録](../quality/2026-11-06-close-modal-native.md)。
+D:/NeNeFolio/worktrees/759-close-modal-native、同outputs、恒久agents。全体journalはD:/NeNeFolio/agents/quality-20261106/journal.md。
 過去の停止履歴は今回依頼の停止指示として扱わない。
 
 ## 公開済み1.3.1

@@ -73,6 +73,7 @@ static bool session_save_case;
 static bool session_untitled_case;
 static bool session_ime_case;
 static bool session_modal_case;
+static bool close_modal_case;
 
 static const char history_current[] = "# Current 日本語 😀 **saved**";
 static const char history_previous[] = "> Previous 猫 🐾 `old`";
@@ -151,7 +152,8 @@ static void seed_notes(struct persistence_port disk)
         palette_case || paste_case || format_case || layout_case || save_as_case || rename_case ||
         replace_save_case || move_edit_case || first_save_case || first_save_modal_case ||
         empty_save_case || locked_save_case || unicode_save_case || filter_save_case ||
-        session_save_case || session_untitled_case || session_ime_case || session_modal_case)
+        session_save_case || session_untitled_case || session_ime_case || session_modal_case ||
+        close_modal_case)
     {
         seed_history(disk);
         source = history_case || note_switch_case || zoom_case || theme_preview_case ||
@@ -160,7 +162,7 @@ static void seed_notes(struct persistence_port disk)
                          replace_save_case || move_edit_case || first_save_case ||
                          first_save_modal_case || empty_save_case || locked_save_case ||
                          filter_save_case || session_save_case || session_untitled_case ||
-                         session_ime_case || session_modal_case
+                         session_ime_case || session_modal_case || close_modal_case
                      ? history_current
                      : replace_current;
     }
@@ -3383,7 +3385,8 @@ enum name_dialog_action
     NAME_DIALOG_DISCARD,
     NAME_DIALOG_SAVE,
     NAME_DIALOG_RETRY_SAVE,
-    NAME_DIALOG_SESSION_CANCEL
+    NAME_DIALOG_SESSION_CANCEL,
+    NAME_DIALOG_ROOT_CLOSE
 };
 
 struct name_rejection_probe;
@@ -3457,6 +3460,9 @@ static void retry_name_dialog(HWND dialog, const struct name_rejection_probe *_N
 static void probe_session_name_dialog(HWND dialog,
                                       const struct name_rejection_probe *_Nonnull probe);
 
+static void close_root_from_name_dialog(HWND dialog,
+                                        const struct name_rejection_probe *_Nonnull probe);
+
 static BOOL CALLBACK close_name_dialog(HWND dialog, LPARAM parameter)
 {
     wchar_t kind[32];
@@ -3493,6 +3499,11 @@ static BOOL CALLBACK close_name_dialog(HWND dialog, LPARAM parameter)
                 "session checks borrow live fixture state for the synchronous modal call");
         probe_session_name_dialog(dialog, name_dialog.request.rejection);
         SendMessageW(GetDlgItem(dialog, IDCANCEL), BM_CLICK, 0, 0);
+        break;
+    case NAME_DIALOG_ROOT_CLOSE:
+        require(name_dialog.request.rejection != nullptr,
+                "normal close checks borrow live fixture state for the synchronous modal call");
+        close_root_from_name_dialog(dialog, name_dialog.request.rejection);
         break;
     case NAME_DIALOG_DISCARD:
         SendMessageW(GetDlgItem(dialog, 3), BM_CLICK, 0, 0);
@@ -6240,7 +6251,7 @@ static void run_session_ime_case(struct native_fixture *_Nonnull fixture)
 }
 
 /* #757: The real Save As modal keeps its content lock through session cancellation. */
-static void expect_session_name_files(const struct name_rejection_probe *_Nonnull probe)
+static void expect_named_modal_files(const struct name_rejection_probe *_Nonnull probe)
 {
     struct native_fixture *fixture = probe->fixture;
     expect_editor(probe->window, fixture->state, switch_edited, FOLIO_NOTE_CHANGED);
@@ -6286,7 +6297,7 @@ static void expect_session_name_dialog(HWND dialog,
     require(!PeekMessageW(&message, nullptr, WM_QUIT, WM_QUIT, PM_NOREMOVE),
             "an unapproved session does not publish quit from the name dialog loop");
     expect_native_body(window, inside);
-    expect_session_name_files(probe);
+    expect_named_modal_files(probe);
 }
 
 static void probe_session_name_dialog(HWND dialog,
@@ -6315,8 +6326,8 @@ static void probe_session_name_dialog(HWND dialog,
     }
 }
 
-static void capture_session_name_files(struct native_fixture *_Nonnull fixture,
-                                       struct modal_save_files *_Nonnull files)
+static void capture_named_modal_files(struct native_fixture *_Nonnull fixture,
+                                      struct modal_save_files *_Nonnull files)
 {
     capture_history(fixture, &files->original);
     struct persistence_port disk = persistence_adapter_port(fixture->files);
@@ -6355,7 +6366,7 @@ static void cancel_session_name_modal(struct folio_window *_Nonnull window,
     expect_session_live(window, name_dialog.root, true);
     expect_native_body(window, &before);
     expect_session_notice(window, L"開いている操作を終えてから終了してください。", false);
-    expect_session_name_files(&probe);
+    expect_named_modal_files(&probe);
 }
 
 static void run_session_modal_case(struct native_fixture *_Nonnull fixture)
@@ -6364,7 +6375,7 @@ static void run_session_modal_case(struct native_fixture *_Nonnull fixture)
                 FOLIO_STATE_READY,
             "select the named source before session refusal in Save As");
     struct modal_save_files files = {0};
-    capture_session_name_files(fixture, &files);
+    capture_named_modal_files(fixture, &files);
     struct folio_window *window = nullptr;
     require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
                 FOLIO_WINDOW_CREATED,
@@ -6383,6 +6394,125 @@ static void run_session_modal_case(struct native_fixture *_Nonnull fixture)
     finish_session_save(window, fixture, &files.original);
     require(controlled.requests == 0 && name_dialog.timer == 0 && failure.timer == 0,
             "modal session checks leave no image request or observer timer");
+    folio_window_destroy(window);
+    release_modal_save(&files);
+}
+
+/* #759: Closing the root from Save As cancels that name before the original save. */
+static void close_root_from_name_dialog(HWND dialog,
+                                        const struct name_rejection_probe *_Nonnull probe)
+{
+    HWND name = FindWindowExW(dialog, nullptr, L"EDIT", nullptr);
+    SendMessageW(name, EM_SETSEL, 1, 4);
+    struct native_body_snapshot inside = *probe->body;
+    inside.focus = name;
+    expect_native_body(probe->window, &inside);
+    expect_editor(probe->window, probe->fixture->state, switch_edited, FOLIO_NOTE_CHANGED);
+    require(IsWindowEnabled(name_dialog.root) && !IsWindowEnabled(name_dialog.body) &&
+                !IsWindowEnabled(name_dialog.drawer) &&
+                !folio_window_accessible_ready(probe->window),
+            "normal close begins with an enabled root and the live Save As content lock");
+    begin_history_failure(probe->window);
+    SendMessageW(name_dialog.root, WM_CLOSE, 0, 0);
+    MSG message;
+    require(IsWindow(name_dialog.root) &&
+                folio_window_accessible_window(probe->window, ACCESSIBLE_WINDOW) ==
+                    name_dialog.root &&
+                !folio_window_accessible_ready(probe->window) && failure.closed == 0 &&
+                !PeekMessageW(&message, nullptr, WM_QUIT, WM_QUIT, PM_NOREMOVE),
+            "the root and unsaved document outlive the modal callback before deferred saving");
+    /* Cancellation may move focus; only the completed outer operation must restore it. */
+    inside.focus = GetFocus();
+    expect_native_body(probe->window, &inside);
+    expect_editor(probe->window, probe->fixture->state, switch_edited, FOLIO_NOTE_CHANGED);
+    expect_locked_target(probe->fixture->state);
+    require(folio_state_note_count(probe->fixture->state) == probe->files->count &&
+                folio_state_store_revision(probe->fixture->state) ==
+                    probe->files->original.store_revision,
+            "the inner close request publishes neither a new name nor a save revision");
+}
+
+static void refuse_close_from_name(struct folio_window *_Nonnull window,
+                                   struct native_fixture *_Nonnull fixture,
+                                   const struct modal_save_files *_Nonnull files)
+{
+    struct native_body_snapshot before = {0};
+    capture_native_body(window, &before);
+    require(before.focus == folio_window_accessible_window(window, ACCESSIBLE_BODY) &&
+                before.modified != 0 && before.undo != 0 && before.redo == 0 &&
+                before.selection.cpMin < before.selection.cpMax,
+            "modal close starts with focused modified text, nonempty selection and native Undo");
+    const struct name_rejection_probe probe = {
+        .window = window, .fixture = fixture, .body = &before, .files = files};
+    expect_named_modal_files(&probe);
+    HANDLE locked = lock_native_note(fixture);
+    start_name_dialog(window, (struct name_dialog_request){.title = L"別名で保存",
+                                                           .name = cancelled_name,
+                                                           .action = NAME_DIALOG_ROOT_CLOSE,
+                                                           .rejection = &probe});
+    require(native_key_input(window, 'S', FCONTROL | FSHIFT),
+            "the real Ctrl+Shift+S opens Save As before its root receives normal close");
+    finish_name_dialog();
+    end_history_failure();
+    require(CloseHandle(locked), "release the original only after the deferred save refusal");
+    pump_refused_close(window, name_dialog.root);
+    require(failure.closed == 1 && IsWindowEnabled(name_dialog.root) &&
+                IsWindowEnabled(name_dialog.body) && IsWindowEnabled(name_dialog.drawer) &&
+                IsWindowEnabled(folio_window_accessible_window(window, ACCESSIBLE_FILTER)) &&
+                folio_window_accessible_ready(window),
+            "one deferred history refusal returns the original root to usable content");
+    expect_native_body(window, &before);
+    expect_named_modal_files(&probe);
+}
+
+static void retry_close_after_name(struct folio_window *_Nonnull window,
+                                   struct native_fixture *_Nonnull fixture,
+                                   const struct modal_save_files *_Nonnull files)
+{
+    history_undo(window);
+    expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_SAME);
+    verify_history_unchanged(fixture, &files->original);
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    require(SendMessageW(body, EM_CANREDO, 0, 0) != 0 && SendMessageW(body, EM_REDO, 0, 0) != 0,
+            "the original native edit is redoable after cancellation and deferred save refusal");
+    pump(window);
+    expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_CHANGED);
+    verify_history_unchanged(fixture, &files->original);
+    close_theme_window(window);
+    expect_body_saved(fixture, &files->original, switch_saved);
+    expect_raw_file(fixture, L"\\schedule\\one.md", switch_saved);
+    expect_locked_target(fixture->state);
+    require(folio_state_note_count(fixture->state) == files->count,
+            "retry closes after saving the original without publishing the cancelled name");
+    struct persistence_port disk = persistence_adapter_port(fixture->files);
+    expect_name_file_set(disk, "schedule", files->source);
+    expect_name_file_set(disk, "target", files->target);
+    expect_rejected_ledger(fixture, 0, files->source_ledger);
+    expect_rejected_ledger(fixture, 1, files->target_ledger);
+}
+
+static void run_close_modal_case(struct native_fixture *_Nonnull fixture)
+{
+    require(folio_state_select_note(fixture->state, 0, 0, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
+            "select the named original before normal close from Save As");
+    struct modal_save_files files = {0};
+    capture_named_modal_files(fixture, &files);
+    struct folio_window *window = nullptr;
+    require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
+                FOLIO_WINDOW_CREATED,
+            "real close-modal window on the dedicated desktop");
+    pump(window);
+    action(window, ACCESSIBLE_EDIT);
+    append_switch_text(window);
+    CHARRANGE selection = {.cpMin = 10, .cpMax = 12};
+    SendMessageW(folio_window_accessible_window(window, ACCESSIBLE_BODY), EM_EXSETSEL, 0,
+                 (LPARAM)&selection);
+    expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_CHANGED);
+    refuse_close_from_name(window, fixture, &files);
+    retry_close_after_name(window, fixture, &files);
+    require(controlled.requests == 0 && name_dialog.timer == 0 && failure.timer == 0,
+            "normal close from a name dialog leaves no image request or observer timer");
     folio_window_destroy(window);
     release_modal_save(&files);
 }
@@ -6446,7 +6576,9 @@ static void run_extended_fixture(struct native_fixture *_Nonnull fixture, int ar
 static void run_remaining_fixture(struct native_fixture *_Nonnull fixture, int argc,
                                   char *_Nonnull *_Nonnull argv)
 {
-    if (session_modal_case)
+    if (close_modal_case)
+        run_close_modal_case(fixture);
+    else if (session_modal_case)
         run_session_modal_case(fixture);
     else if (session_ime_case)
         run_session_ime_case(fixture);
@@ -6500,6 +6632,7 @@ int main(int argc, char *_Nonnull *_Nonnull argv)
     session_untitled_case = strcmp(selector, "--session-untitled") == 0;
     session_ime_case = strcmp(selector, "--session-ime") == 0;
     session_modal_case = strcmp(selector, "--session-modal") == 0;
+    close_modal_case = strcmp(selector, "--close-modal") == 0;
     HWINSTA original_station = GetProcessWindowStation();
     HDESK original_desktop = GetThreadDesktop(GetCurrentThreadId());
     HWINSTA paste_station = paste_case ? isolate_paste_clipboard() : nullptr;
