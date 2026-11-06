@@ -1,20 +1,20 @@
 # いまの状態 — NeNe Folio
 
-## 2026-11-06 — #739まで完了、実名前面の初回保存を確認中
+## 2026-11-06 — #741まで完了、初回保存の名前拒否と訂正を確認中
 
 hideの07:08の依頼により、停止指示まで品質対応を継続する。試験・計測・必要な調査と独立レビューを行い、全試行と変更を記録する。
 最優先の#479/PR708の平文paste、#709/PR710のCtrl+R/2/5、#713/PR714のDebug ASan検出修正は、最終CI・main統合・通常反映・全保全整理まで完了。
 [paste](../quality/2026-11-06-editor-paste.md)・[書式キー](../quality/2026-11-06-editor-format.md)・[ASan](../quality/2026-11-06-asan-interceptor.md)の品質記録を参照する。
 表示切替・別名保存・改名・置換欄保存・カテゴリ間drag・Unicode保存・新規と初回保存・空本文保存・共有違反の保存拒否の回帰も#729/PR730まで統合・整理済み。実測と確定原本は[日報](../reports/2026-11-06.md)・[引き継ぎ](../handoffs/2026-11-06.md)にまとめた。
-最新確定mainはea548a27c24286ef0de704da7cd99df634a965b9、最終CI42164552781成功。
+最新確定mainは4656997c09edc2896d889cf811adfa4be2ab9f16、最終CI42167822732成功。
 #731のノート行選択値修正は通常Debug反映・実data32files保持・4184files全保全整理まで完了。
-#733の別名保存衝突、#735の名前面取消、#737の無題取消、#739の保存しないも通常exe不変・全保全整理まで完了。
-#739確定原本D:/NeNeFolio/agents/739-untitled-discard-native/integration-completion.json。
+#733の別名保存衝突、#735の名前面取消、#737の無題取消、#739の保存しない、#741の別カテゴリ初回保存も通常exe不変・全保全整理まで完了。
+#741確定原本D:/NeNeFolio/agents/741-first-save-modal-native/integration-completion.json。
 
-#741は実CtrlSの名前面で日本語名と別カテゴリを指定して初回保存し、native本文/UndoRedo・元保存物を保持する。first_save_native485checks/2.18秒、save_as_native377checks/2.15秒、first_save_modal_native219checks/1.59秒。前2件はtest-01の成功結果を再利用。新規caseはtest-02でCTest1.61秒成功、stderr空・child/wrapper0・入力不変。
-first_save_modal_native233checks/1.05秒、CTest1.06秒成功。旧target1fileの全bytes/hash/作成更新日時保持、旧/新とも履歴不在、新名1件のみ追加。stderr空・child/wrapper0・入力不変。
-CMakeは共用host/iconと専用出力/CTestのみ。src/API/schema不変。最終CI/統合/通常exe不変/全保全整理はこれから。
-[品質記録](../quality/2026-11-06-first-save-modal-native.md)。作業木D:/NeNeFolio/worktrees/741-first-save-modal-native、試行同outputs、恒久原本同agents。
+#743は実名前面で空名/CON/既存oneを拒否し、入力/本文/UndoRedo・元保存物/全台帳を保持して同じ面で有効名へ訂正する。first_save_modal_native308checks/1.19秒、first_save_native485checks/1.76秒、save_as_native377checks/1.98秒、CTest計4.93秒成功。stderr空・child/wrapper0・入力不変。
+first_save_modal_native339checks/1.13秒、CTest1.13秒成功。旧target1fileの全bytes/hash/作成更新日時保持、新旧history不在、新名1件のみ追加。stderr空・child/wrapper0・入力不変。
+src/API/schema/CMake不変。最終CI/統合/通常exe不変/全保全整理はこれから。[品質記録](../quality/2026-11-06-first-save-retry-native.md)。
+作業木D:/NeNeFolio/worktrees/743-first-save-retry-native、試行同outputs、恒久原本同agents。
 全体journalはD:/NeNeFolio/agents/quality-20261106/journal.md。過去の停止履歴は今回依頼の停止指示として扱わない。
 
 ## 公開済み1.3.1

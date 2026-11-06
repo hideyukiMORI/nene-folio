@@ -47,3 +47,11 @@ Windows11 Pro10.0.26300、Msftedit10.0.26100.9949、既存専用desktop/各verif
 
 名前面validation/同名/保存失敗/台帳部分失敗/資源失敗、離脱時保存承認・別ノート切替/主窓終了/OSsession/IME中断、物理keyboard/Enter・全OS/DPI・外部UIAは対象外。
 通常app/実ノート/clipboard/前面focus/Storeを試験に使わない。個別保留466/634/530と旧削除拒否領域を維持する。
+
+## 統合・保全整理の確定
+
+#741/PR742は最終headc6bc85e51a98a60f742b3d4bcc5a31d6a2c78102、必須CI42167822732 full-gate/check成功。
+main4656997c09edc2896d889cf811adfa4be2ab9f16へ正典統合し、#731反映済み通常exeのhash/bytes/更新日時不変を確認した。
+CMakeは専用試験登録だけを除くと前mainと完全一致し、src/eng/fonts/packagingも不変。
+4229filesを全hash保全し、絶対path/同一squash tree/clean・untracked・ignored/link/稼働参照0を確認後、専用worktree/outputを整理。
+branch/commit保持。確定原本D:/NeNeFolio/agents/741-first-save-modal-native/integration-completion.json。
