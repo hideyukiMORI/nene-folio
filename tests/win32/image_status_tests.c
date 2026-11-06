@@ -74,6 +74,7 @@ static bool session_untitled_case;
 static bool session_ime_case;
 static bool session_modal_case;
 static bool close_modal_case;
+static bool export_case;
 
 static const char history_current[] = "# Current 日本語 😀 **saved**";
 static const char history_previous[] = "> Previous 猫 🐾 `old`";
@@ -153,7 +154,7 @@ static void seed_notes(struct persistence_port disk)
         replace_save_case || move_edit_case || first_save_case || first_save_modal_case ||
         empty_save_case || locked_save_case || unicode_save_case || filter_save_case ||
         session_save_case || session_untitled_case || session_ime_case || session_modal_case ||
-        close_modal_case)
+        close_modal_case || export_case)
     {
         seed_history(disk);
         source = history_case || note_switch_case || zoom_case || theme_preview_case ||
@@ -162,7 +163,7 @@ static void seed_notes(struct persistence_port disk)
                          replace_save_case || move_edit_case || first_save_case ||
                          first_save_modal_case || empty_save_case || locked_save_case ||
                          filter_save_case || session_save_case || session_untitled_case ||
-                         session_ime_case || session_modal_case || close_modal_case
+                         session_ime_case || session_modal_case || close_modal_case || export_case
                      ? history_current
                      : replace_current;
     }
@@ -6517,6 +6518,294 @@ static void run_close_modal_case(struct native_fixture *_Nonnull fixture)
     release_modal_save(&files);
 }
 
+/* #767: Use the real operations menu, native file picker and publication without saving. */
+struct export_dialog_probe
+{
+    struct folio_window *window;
+    const struct native_body_snapshot *body;
+    const wchar_t *path;
+    HWND root;
+    HWND picker;
+    HWND notice;
+    HWND filename;
+    UINT_PTR timer;
+    unsigned ticks;
+    unsigned inputs;
+    unsigned notices;
+    bool cancel;
+};
+
+static struct export_dialog_probe exporting;
+
+static BOOL CALLBACK find_export_filename(HWND child, LPARAM parameter)
+{
+    (void)parameter;
+    wchar_t kind[32];
+    wchar_t value[64];
+    if (GetDlgCtrlID(child) != 1001 || GetClassNameW(child, kind, 32) == 0 ||
+        wcscmp(kind, L"Edit") != 0 || GetWindowTextW(child, value, 64) == 0)
+        return TRUE;
+    if (wcscmp(value, L"one") != 0 && wcscmp(value, L"one.md") != 0)
+        return TRUE;
+    exporting.filename = child;
+    ++exporting.inputs;
+    return TRUE;
+}
+
+static void expect_export_modal(HWND dialog)
+{
+    HWND body = folio_window_accessible_window(exporting.window, ACCESSIBLE_BODY);
+    HWND drawer = folio_window_accessible_window(exporting.window, ACCESSIBLE_DRAWER);
+    require(IsWindowEnabled(exporting.root) && !IsWindowEnabled(body) && !IsWindowEnabled(drawer) &&
+                !folio_window_accessible_ready(exporting.window),
+            "the export modal keeps the shell enabled and locks only content");
+    struct native_body_snapshot inside = *exporting.body;
+    inside.focus = GetFocus();
+    require(inside.focus != nullptr && IsChild(dialog, inside.focus),
+            "the active export modal owns keyboard focus");
+    expect_native_body(exporting.window, &inside);
+}
+
+static void choose_export_destination(HWND dialog)
+{
+    wchar_t title[128];
+    require(GetWindowTextW(dialog, title, 128) > 0 &&
+                wcscmp(title, L"Markdownを書き出す（編集中の内容を含む）") == 0,
+            "the native picker is specifically the current Markdown export");
+    EnumChildWindows(dialog, find_export_filename, 0);
+    require(exporting.inputs == 1 && exporting.filename != nullptr &&
+                IsWindowEnabled(exporting.filename),
+            "the native picker exposes exactly one editable filename initialized from one");
+    expect_export_modal(dialog);
+    require(SetWindowTextW(exporting.filename, exporting.path),
+            "enter the dedicated absolute Unicode export path into the real filename input");
+    exporting.picker = dialog;
+    int command = exporting.cancel ? IDCANCEL : IDOK;
+    HWND button = GetDlgItem(dialog, command);
+    require(button != nullptr && IsWindowEnabled(button),
+            "the selected save or cancel action is available");
+    if (exporting.cancel)
+    {
+        require(KillTimer(nullptr, exporting.timer), "stop the cancelling export observer");
+        exporting.timer = 0;
+    }
+    require(PostMessageW(dialog, WM_COMMAND, MAKEWPARAM(command, BN_CLICKED), (LPARAM)button),
+            "submit only the owned native picker through its actual command");
+}
+
+static void finish_export_notice(HWND dialog)
+{
+    HWND text = FindWindowExW(dialog, nullptr, L"EDIT", nullptr);
+    HWND accept = GetDlgItem(dialog, IDOK);
+    wchar_t message[512];
+    require(text != nullptr && accept != nullptr && IsWindowEnabled(accept) &&
+                GetWindowTextW(text, message, 512) > 0 &&
+                wcscmp(message, L"書き出しました。元のノートはそのままです。") == 0,
+            "the separate product notice confirms export rather than an error or overwrite");
+    expect_export_modal(dialog);
+    require(!IsWindow(exporting.picker) && KillTimer(nullptr, exporting.timer),
+            "the picker is closed before the success notice and observer stop");
+    exporting.timer = 0;
+    exporting.notice = dialog;
+    ++exporting.notices;
+    SendMessageW(accept, BM_CLICK, 0, 0);
+}
+
+static BOOL CALLBACK observe_export_window(HWND dialog, LPARAM parameter)
+{
+    wchar_t kind[32];
+    if (GetAncestor(dialog, GA_ROOTOWNER) != (HWND)parameter || !IsWindowVisible(dialog) ||
+        GetClassNameW(dialog, kind, 32) == 0 || wcscmp(kind, L"#32770") != 0)
+        return TRUE;
+    if (exporting.picker == nullptr)
+        choose_export_destination(dialog);
+    else if (dialog != exporting.picker)
+        finish_export_notice(dialog);
+    return FALSE;
+}
+
+static void CALLBACK observe_export_dialog(HWND window, UINT message, UINT_PTR timer, DWORD ticks)
+{
+    (void)window;
+    (void)message;
+    (void)ticks;
+    if (exporting.timer == 0)
+        return;
+    require(timer == exporting.timer && ++exporting.ticks <= 100,
+            "the export observer stays within its finite deadline");
+    EnumThreadWindows(GetCurrentThreadId(), observe_export_window, (LPARAM)exporting.root);
+}
+
+static void export_directory(wchar_t path[storage_native_capacity])
+{
+    DWORD length = GetModuleFileNameW(nullptr, path, storage_native_capacity);
+    require(length > 0 && length < storage_native_capacity, "the test executable path fits");
+    while (length != 0 && path[length - 1] != L'\\')
+        --length;
+    require(length != 0 && storage_native_capacity - length > 32,
+            "export artifacts stay beside the dedicated executable and outside its data");
+    for (unsigned attempt = 1; attempt <= 1000; ++attempt)
+    {
+        int written = swprintf_s(path + length, storage_native_capacity - length,
+                                 L"export-native-%04u", attempt);
+        require(written > 0, "the dedicated export directory name fits");
+        if (CreateDirectoryW(path, nullptr))
+            return;
+        require(GetLastError() == ERROR_ALREADY_EXISTS, "only a prior export directory is skipped");
+    }
+    require(false, "a fresh export artifact directory is available");
+}
+
+static void expect_export_files(struct native_fixture *_Nonnull fixture,
+                                const struct modal_save_files *_Nonnull files)
+{
+    expect_locked_target(fixture->state);
+    require(folio_state_note_count(fixture->state) == files->count,
+            "export does not create or select a note in the notebook");
+    verify_history_unchanged(fixture, &files->original);
+    struct persistence_port disk = persistence_adapter_port(fixture->files);
+    expect_name_file_set(disk, "schedule", files->source);
+    expect_name_file_set(disk, "target", files->target);
+    expect_rejected_ledger(fixture, 0, files->source_ledger);
+    expect_rejected_ledger(fixture, 1, files->target_ledger);
+}
+
+static void export_current_to(struct folio_window *_Nonnull window, const wchar_t *_Nonnull path,
+                              const char *_Nullable expected)
+{
+    focus_session_body(window);
+    struct native_body_snapshot before = {0};
+    capture_native_body(window, &before);
+    require(before.selection.cpMin < before.selection.cpMax,
+            "export starts with a nonempty native selection");
+    exporting = (struct export_dialog_probe){
+        .window = window,
+        .body = &before,
+        .path = path,
+        .root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW),
+        .cancel = expected == nullptr};
+    exporting.timer = SetTimer(nullptr, 0, 50, observe_export_dialog);
+    require(exporting.timer != 0, "arm the owned finite export observer");
+    invoke_operation(window, FOLIO_COMMAND_EXPORT_NOTE);
+    pump(window);
+    require(exporting.timer == 0 && exporting.picker != nullptr && !IsWindow(exporting.picker) &&
+                !IsWindow(exporting.notice) && exporting.notices == (expected != nullptr ? 1U : 0U),
+            "one native picker and only the expected success notice close completely");
+    require(IsWindowEnabled(exporting.root) &&
+                IsWindowEnabled(folio_window_accessible_window(window, ACCESSIBLE_BODY)) &&
+                IsWindowEnabled(folio_window_accessible_window(window, ACCESSIBLE_DRAWER)) &&
+                folio_window_accessible_ready(window),
+            "the same root and content return to their ready state after export");
+    expect_native_body(window, &before);
+    struct file_bytes *bytes = nullptr;
+    enum persistence_outcome read = file_bytes_read(path, &bytes);
+    if (expected == nullptr)
+        require(read == PERSISTENCE_ABSENT && bytes == nullptr,
+                "cancelling the selected filename publishes no external file");
+    else
+        require(read == PERSISTENCE_LOADED && bytes != nullptr &&
+                    file_bytes_length(bytes) == strlen(expected) &&
+                    memcmp(file_bytes_data(bytes), expected, strlen(expected)) == 0,
+                "the actual exported file matches every independent UTF-8 literal byte");
+    file_bytes_destroy(bytes);
+}
+
+struct export_file_request
+{
+    const wchar_t *directory;
+    const wchar_t *leaf;
+    const char *expected;
+};
+
+static void export_step(struct folio_window *_Nonnull window,
+                        struct native_fixture *_Nonnull fixture,
+                        const struct modal_save_files *_Nonnull files,
+                        struct export_file_request request)
+{
+    wchar_t path[storage_native_capacity];
+    require(swprintf_s(path, storage_native_capacity, L"%s\\%s", request.directory, request.leaf) >
+                0,
+            "the dedicated destination path fits");
+    CHARRANGE selection = {.cpMin = 2, .cpMax = 6};
+    SendMessageW(folio_window_accessible_window(window, ACCESSIBLE_BODY), EM_EXSETSEL, 0,
+                 (LPARAM)&selection);
+    enum pane_mode mode = folio_state_pane_mode(fixture->state);
+    export_current_to(window, path, request.expected);
+    require(folio_state_pane_mode(fixture->state) == mode,
+            "current-note export keeps the existing VIEW or EDIT mode");
+    expect_export_files(fixture, files);
+}
+
+static void expect_export_directory(const wchar_t *_Nonnull directory)
+{
+    wchar_t pattern[storage_native_capacity];
+    require(swprintf_s(pattern, storage_native_capacity, L"%s\\*", directory) > 0,
+            "the external export enumeration fits");
+    WIN32_FIND_DATAW entry = {0};
+    HANDLE found = FindFirstFileW(pattern, &entry);
+    require(found != INVALID_HANDLE_VALUE, "enumerate the dedicated external output directory");
+    unsigned count = 0;
+    do
+    {
+        if (wcscmp(entry.cFileName, L".") == 0 || wcscmp(entry.cFileName, L"..") == 0)
+            continue;
+        require((entry.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) == 0 &&
+                    (wcscmp(entry.cFileName, L"変更 日本語.md") == 0 ||
+                     wcscmp(entry.cFileName, L"取消後 日本語.md") == 0 ||
+                     wcscmp(entry.cFileName, L"閲覧 日本語.md") == 0),
+                "export leaves only the three requested files and no temporary artifacts");
+        ++count;
+    } while (FindNextFileW(found, &entry));
+    require(GetLastError() == ERROR_NO_MORE_FILES && FindClose(found) && count == 3,
+            "the complete external file set contains exactly the three successful exports");
+}
+
+static void run_export_case(struct native_fixture *_Nonnull fixture)
+{
+    require(folio_state_select_note(fixture->state, 0, 0, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
+            "select the named source before external export");
+    struct modal_save_files files = {0};
+    capture_named_modal_files(fixture, &files);
+    wchar_t directory[storage_native_capacity];
+    export_directory(directory);
+    struct folio_window *window = nullptr;
+    require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
+                FOLIO_WINDOW_CREATED,
+            "real export window on the dedicated desktop");
+    pump(window);
+    action(window, ACCESSIBLE_EDIT);
+    append_switch_text(window);
+    expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_CHANGED);
+    export_step(window, fixture, &files,
+                (struct export_file_request){directory, L"取消 日本語.md", nullptr});
+    export_step(window, fixture, &files,
+                (struct export_file_request){directory, L"変更 日本語.md", switch_saved});
+    expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_CHANGED);
+    history_undo(window);
+    expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_SAME);
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    require(SendMessageW(body, EM_CANREDO, 0, 0) != 0, "the second export retains real Redo");
+    export_step(window, fixture, &files,
+                (struct export_file_request){directory, L"取消後 日本語.md", history_current});
+    require(SendMessageW(body, EM_REDO, 0, 0) != 0, "actual Redo succeeds after external export");
+    pump(window);
+    expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_CHANGED);
+    history_undo(window);
+    expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_SAME);
+    action(window, ACCESSIBLE_VIEW);
+    require(folio_state_pane_mode(fixture->state) == PANE_MODE_VIEW &&
+                (GetWindowLongPtrW(body, GWL_STYLE) & ES_READONLY) != 0,
+            "the third export starts with the readonly rendered VIEW");
+    export_step(window, fixture, &files,
+                (struct export_file_request){directory, L"閲覧 日本語.md", history_current});
+    expect_export_directory(directory);
+    require(controlled.requests == 0 && exporting.timer == 0,
+            "plain single-note exports leave no image requests or observers");
+    folio_window_destroy(window);
+    release_modal_save(&files);
+}
+
 static void run_extended_fixture(struct native_fixture *_Nonnull fixture, int argc,
                                  char *_Nonnull *_Nonnull argv)
 {
@@ -6576,7 +6865,9 @@ static void run_extended_fixture(struct native_fixture *_Nonnull fixture, int ar
 static void run_remaining_fixture(struct native_fixture *_Nonnull fixture, int argc,
                                   char *_Nonnull *_Nonnull argv)
 {
-    if (close_modal_case)
+    if (export_case)
+        run_export_case(fixture);
+    else if (close_modal_case)
         run_close_modal_case(fixture);
     else if (session_modal_case)
         run_session_modal_case(fixture);
@@ -6633,6 +6924,7 @@ int main(int argc, char *_Nonnull *_Nonnull argv)
     session_ime_case = strcmp(selector, "--session-ime") == 0;
     session_modal_case = strcmp(selector, "--session-modal") == 0;
     close_modal_case = strcmp(selector, "--close-modal") == 0;
+    export_case = strcmp(selector, "--export") == 0;
     HWINSTA original_station = GetProcessWindowStation();
     HDESK original_desktop = GetThreadDesktop(GetCurrentThreadId());
     HWINSTA paste_station = paste_case ? isolate_paste_clipboard() : nullptr;
