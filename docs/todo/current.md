@@ -17,7 +17,9 @@ GitHub tag/Release公開とStore送信は未実施。MSIX payload起動をStore�
 
 1966files全hash保全・絶対roots/同squashtree/clean・全file/link/稼働参照監査後、専用worktree/outputを整理、branch/commit保持。
 確定原本D:/NeNeFolio/agents/release-1.3.2-20261106/integration-completion.json。
-通常exeはsource4dabcfdca8951f5113c812adbc3248bdd74fed42の製品修正反映済み1.3.1、hash/サイズ/更新日時不変。配布候補の1.3.2とは区別する。
+通常exeは22:16のhideの実機起動依頼で1.3.2へ反映し、source `99d74fab5db0fb7a4c94e415425cb0810b4bb3c1`、PID25132で起動・表示・応答を確認した。
+実data32fileは起動前の比較で全bytes/hash/作成更新日時不変。hideの「うん、よさそう」は初見の肯定であり、全機能の受理とは扱わない。
+起動原本D:/NeNeFolio/agents/release-1.3.2-20261106/real-machine/launch-result.json。アプリはhideの試用用に残し、以後のノート操作を自動試験に使わない。
 
 今日のpaste479・書式キー709・アクセシビリティ選択731・検索761/763・Debug ASan713修正と、保存/終了/書き出し等のnative回帰を統合済み。
 最後の#771/PR772はCI42219301978成功、main e962ac78c1b5859e650d028effd6163b13fab516へ統合・通常exe不変・全保全整理済み。
@@ -49,9 +51,9 @@ Windows版は1.3.1.0。正規ZIP/MSIX生成、専用コピーでの起動・設�
 
 ## 通常版と実機確認
 
-通常exeは `C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`、反映sourceは `4dabcfdca8951f5113c812adbc3248bdd74fed42`。
-SHA256は `74fe1738ee249e7ca9396c23f8e70b414b9876e615c2088a4b4ede91f07cc1f1`。#763反映時、実data32fileの全bytes/hash/作成更新日時不変を確認した。
-通常app/実ノート/Storeは品質試験に使っていない。hideによる1.3.0の実機受理は未確認。
+通常exeは `C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`、版1.3.2、反映sourceは `99d74fab5db0fb7a4c94e415425cb0810b4bb3c1`。
+SHA256は `2a4b19c97fe1d59d007fe14ce0e2e71cf7c8b991d752e70c5efbf38093df39cb`。22:19の反映時、実data32fileの全bytes/hash/作成更新日時不変を起動前に確認した。
+通常app/実ノート/Storeは自動品質試験に使っていない。hideは1.3.2起動後に「うん、よさそう」と初見を報告した。1.3.0の従前の未確認事項とは分ける。
 文書・native試験のみの変更を理由に通常buildを反復しない。配布1.3.0のsourceとは区別する。
 
 ## Store公開と残る未確認事項
