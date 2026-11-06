@@ -175,3 +175,18 @@ docs01の完了前に補助self-reviewを読ませた一回はresult.json未作�
 確定CI/統合/通常反映/全保全整理はD:/NeNeFolio/agents/763-search-equality/integration-completion.json。
 ADR0023/0032/0044、ARC-001/003/004/007/008/010/012、C-002/004/008/012/014/016、QLT-008/009/010/012/013、GIT-001〜004。
 追加waiver none、既存WVR-0001継続。[日報](../reports/2026-11-06.md)・[引き継ぎ](../handoffs/2026-11-06.md)。
+
+## 19:20 統合・通常反映・全保全整理完了
+
+#763/PR764は最終head`ed3711020a601ff566bc9e9746905fbd9981df17`、必須CI42200797878のfull-gate/check成功。
+main`4dabcfdca8951f5113c812adbc3248bdd74fed42`へ正典統合、Issue763 CLOSED。通常版は同sourceからprepare-real-machineの3actionsで反映済み。
+通常exe SHA256 `74fe1738ee249e7ca9396c23f8e70b414b9876e615c2088a4b4ede91f07cc1f1`、8097792bytes、更新時刻2026-11-06 19:20:00 JST。
+実data32fileの全名前/bytes/SHA256/作成更新日時が前後一致。通常appは起動していない。
+作業物1623fileを全hashで保全し、ZIP41370647bytes/SHA256 `8968779139bb4045a75603a49ec0feb3ceb51c87d66f3a5789e3ccfa00d352d1`。
+絶対D専用2roots・同一squash tree・clean/ignored/untracked・全保全hash・link・稼働参照0を確認して整理した。
+refactor/763-search-equalityとcommitは保持。確定原本はD:/NeNeFolio/agents/763-search-equality/integration-completion.json。
+
+検証記録14runはchild/wrapper0・入力不変。補助self-reviewのdocs01完了前readはFileNotFoundError、
+metadata writerのPython-cはPowerShell引用のSyntaxErrorで文は未実行。preparation-attempts.jsonへ双方を保存し、
+docs02の完了後に最終照合を成功させた。製品試験の失敗や再試行と混同しない。
+全4480標本/112条件の意味照合と性能費用は本文に保持する。API/schema/依存/版/ゲート不変、追加waiver none、既存WVR-0001継続。

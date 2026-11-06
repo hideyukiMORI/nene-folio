@@ -1,19 +1,20 @@
 # いまの状態 — NeNe Folio
 
-## 2026-11-06 — #761まで完了、同じ文字単位の検索比較を短縮中
+## 2026-11-06 — #763まで統合・通常反映・整理完了、品質対応を継続中
 
-hideの07:08の依頼により停止指示まで品質対応を継続する。最優先paste・書式キー・Debug ASan修正と保存/終了回帰は統合・必要反映・整理済み。
-#761/PR762はCI42197861676成功、main393c253b2dd934dea33dd9e67fd1066cf6be2a5cへ統合。通常版反映・実data32file不変・1598file保全・専用整理済み。
-原本D:/NeNeFolio/agents/761-search-validation-resume/integration-completion.json。
+hideの07:08の依頼により停止指示まで品質対応を継続する。最優先paste・書式キー・Debug ASan修正と保存/終了回帰は完了済み。
+最新の製品変更#763/PR764は必須CI42200797878成功、main`4dabcfdca8951f5113c812adbc3248bdd74fed42`へ統合・通常反映済み。
+実data32file不変、1623file全保全、専用worktree/output整理済み。原本D:/NeNeFolio/agents/763-search-equality/integration-completion.json。
 
-#763は同じ文字単位の比較で二回のfoldを省く1行。異なる値は同fold、語前処理/一致列制御/API/schema/owner/確保/依存/CMake/版/ゲート不変。
-7分布/28本文語組/84file/112条件/4480sampleの全結果・入力保持。長文countは日本語-20.38%、emoji-21.33%、反復-12.65〜18.43%。
-英字count+3.42〜3.59%/約32µs、英字前方+8.36%/3.19µs、短文fold英字count+20.06%/12.75nsも全112行に収載。実UI応答の実測ではない。
-Debug --note-search/symbols成功。既存oracle/extent/境界fixtureを再利用しtest不変。単体自己レビュー、追加waiver none、既存WVR-0001継続。
-最終CI/統合/通常反映/全保全整理はこれから。[品質記録](../quality/2026-11-06-search-equality.md)。
-D:/NeNeFolio/worktrees/763-search-equality、同outputs、恒久agents。
+#761は絵文字後も同じUTF-16塊検証を再開し、固定長文の先頭emoji前方を約93%短縮。
+#763は同じ文字単位の比較で二回foldを省き、固定長文の日本語/emojiのcountを約20%短縮した。
+英字/短文の一部に費用が残り、実UI応答の測定ではない。全条件・不採用候補・失敗・範囲は
+[検証再開](../quality/2026-11-06-search-validation-resume.md)・[同値比較](../quality/2026-11-06-search-equality.md)に収載。
+API/schema/owner/確保/依存/CMake/版/ゲート不変。追加waiver none、既存WVR-0001継続。
+
+#765は確定結果の4文書への反映。新しい製品課題は未選定。19:23時点で公開milestone0、未完製品Issueは個別保留466/634のみ。
 [日報](../reports/2026-11-06.md)・[引き継ぎ](../handoffs/2026-11-06.md)、全体journalはD:/NeNeFolio/agents/quality-20261106/journal.md。
-過去の停止履歴は今回依頼の停止指示として扱わない。
+過去の停止履歴を今回依頼の停止指示として扱わず、保留案件は新しい指定なしに再開しない。
 
 ## 公開済み1.3.1
 
@@ -40,8 +41,8 @@ Windows版は1.3.1.0。正規ZIP/MSIX生成、専用コピーでの起動・設�
 
 ## 通常版と実機確認
 
-通常exeは `C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`、反映sourceは `393c253b2dd934dea33dd9e67fd1066cf6be2a5c`。
-SHA256は `836e8691956bb3fcee64689dc8a6b63f2167270b9be4f8a5147333587c7d961d`。#761反映時、実data32fileの全bytes/hash/作成更新日時不変を確認した。
+通常exeは `C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`、反映sourceは `4dabcfdca8951f5113c812adbc3248bdd74fed42`。
+SHA256は `74fe1738ee249e7ca9396c23f8e70b414b9876e615c2088a4b4ede91f07cc1f1`。#763反映時、実data32fileの全bytes/hash/作成更新日時不変を確認した。
 通常app/実ノート/Storeは品質試験に使っていない。hideによる1.3.0の実機受理は未確認。
 文書・native試験のみの変更を理由に通常buildを反復しない。配布1.3.0のsourceとは区別する。
 
