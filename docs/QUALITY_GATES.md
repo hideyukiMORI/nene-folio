@@ -112,6 +112,11 @@ native本文/選択/UndoRedoと元md/全履歴を保ち、新mdの全bytes/初�
 直接共用search_native246checksも成功。物理IME・不正文字拒否・全改行・fresh-process再起動は対象外。
 [品質記録](quality/2026-11-06-unicode-save-native.md)。
 
+#725のfirst_save_nativeは変更した名前付きノートから新規へ進む保存と、無題の初回保存を固定する。
+213checksで元履歴/架空行なし/初回履歴なし/全ledger/native本文・選択・modified・UndoRedoを確認。
+前試行で作成したmdの全bytes/hash/作成更新日時保持も照合。modal/IME/衝突/I/O失敗は対象外。
+[品質記録](quality/2026-11-06-first-save-native.md)。
+
 ### QLT-009 — カバレッジは下げられない
 
 中核の分岐カバレッジ下限を 90% とする。閾値は上げてよいが下げてはならない。下げるには ADR が要る。
