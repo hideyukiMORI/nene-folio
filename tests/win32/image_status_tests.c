@@ -48,6 +48,7 @@ static unsigned checks;
 static bool diagram_case;
 static bool history_case;
 static bool replace_case;
+static bool replace_save_case;
 static bool search_case;
 static bool note_switch_case;
 static bool zoom_case;
@@ -113,12 +114,14 @@ static void seed_notes(struct persistence_port disk)
                      : "Body before images\n\n![alt](images/one.png)\n\nBody after images\n";
     if (history_case || replace_case || search_case || note_switch_case || zoom_case ||
         theme_preview_case || settings_edit_case || mode_save_case || discard_case ||
-        palette_case || paste_case || format_case || layout_case || save_as_case || rename_case)
+        palette_case || paste_case || format_case || layout_case || save_as_case || rename_case ||
+        replace_save_case)
     {
         seed_history(disk);
         source = history_case || note_switch_case || zoom_case || theme_preview_case ||
                          settings_edit_case || mode_save_case || discard_case || palette_case ||
-                         paste_case || format_case || layout_case || save_as_case || rename_case
+                         paste_case || format_case || layout_case || save_as_case || rename_case ||
+                         replace_save_case
                      ? history_current
                      : replace_current;
     }
@@ -1632,6 +1635,111 @@ static void expect_body_saved(struct native_fixture *_Nonnull fixture,
     for (size_t version = 1; version <= note_history_depth; ++version)
         expect_history_file(disk, version, history->files[version - 1]);
     note_text_destroy(saved);
+}
+
+/* #719: 置換の両入力から本文だけ保存し、nativeの入力とUndo/Redoを保つ。 */
+static void expect_replace_save_input(HWND input, const wchar_t *_Nonnull expected, DWORD first,
+                                      DWORD last)
+{
+    wchar_t text[16];
+    DWORD start = 0;
+    DWORD end = 0;
+    SendMessageW(input, EM_GETSEL, (WPARAM)&start, (LPARAM)&end);
+    require(IsWindowVisible(input) && GetWindowTextW(input, text, 16) > 0 &&
+                wcscmp(text, expected) == 0 && start == first && end == last,
+            "body save preserves each visible replacement input and its selection");
+}
+
+static void prepare_replace_save(struct folio_window *_Nonnull window,
+                                 struct folio_state *_Nonnull state)
+{
+    invoke_operation(window, FOLIO_COMMAND_REPLACE);
+    pump(window);
+    HWND pattern = folio_window_accessible_window(window, ACCESSIBLE_REPLACE_PATTERN);
+    HWND replacement = folio_window_accessible_window(window, ACCESSIBLE_REPLACE_TEXT);
+    require(pattern != nullptr && replacement != nullptr && SetWindowTextW(pattern, L"日本語") &&
+                SetWindowTextW(replacement, L"猫 🐾"),
+            "open and populate both ordinary replacement inputs");
+    pump(window);
+    require(folio_state_replace_count(state) == 1, "real ICU preview finds one pending match");
+    SendMessageW(pattern, EM_SETSEL, 1, 3);
+    SendMessageW(replacement, EM_SETSEL, 2, 4);
+}
+
+static void save_replace_input(struct folio_window *_Nonnull window,
+                               struct native_fixture *_Nonnull fixture, enum accessible_kind which,
+                               const char *_Nonnull saved)
+{
+    struct history_snapshot history = {0};
+    capture_history(fixture, &history);
+    prepare_replace_save(window, fixture->state);
+    verify_history_unchanged(fixture, &history);
+    HWND input = folio_window_accessible_window(window, which);
+    SetFocus(input);
+    require(GetFocus() == input, "the selected replacement input owns focus before saving");
+    struct native_body_snapshot opened = {0};
+    capture_native_body(window, &opened);
+    expect_editor(window, fixture->state, opened.text, FOLIO_NOTE_CHANGED);
+    HWND pattern = folio_window_accessible_window(window, ACCESSIBLE_REPLACE_PATTERN);
+    HWND replacement = folio_window_accessible_window(window, ACCESSIBLE_REPLACE_TEXT);
+    for (size_t attempt = 0; attempt < 2; ++attempt)
+    {
+        SendMessageW(input, WM_CHAR, 0x13, 1);
+        pump(window);
+        expect_replace_save_input(pattern, L"日本語", 1, 3);
+        expect_replace_save_input(replacement, L"猫 🐾", 2, 4);
+        expect_native_body(window, &opened);
+        expect_editor(window, fixture->state, opened.text, FOLIO_NOTE_SAME);
+        expect_body_saved(fixture, &history, saved);
+    }
+    surface_button(window, ACCESSIBLE_SURFACE_CLOSE);
+    require(!IsWindowVisible(pattern) && !IsWindowVisible(replacement) &&
+                GetFocus() == folio_window_accessible_window(window, ACCESSIBLE_BODY),
+            "closing the retained replacement surface returns focus to the body");
+    for (size_t version = 0; version <= note_history_depth; ++version)
+        note_text_destroy(history.files[version]);
+}
+
+static void run_replace_save_case(struct native_fixture *_Nonnull fixture)
+{
+    require(folio_state_select_note(fixture->state, 0, 0, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
+            "select the dedicated replacement-save note");
+    struct history_snapshot first = {0};
+    struct history_snapshot second = {0};
+    struct folio_window *window = nullptr;
+    require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
+                FOLIO_WINDOW_CREATED,
+            "real replacement-save window");
+    pump(window);
+    action(window, ACCESSIBLE_EDIT);
+    append_switch_text(window);
+    expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_CHANGED);
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    CHARRANGE selection = {.cpMin = 10, .cpMax = 12};
+    SendMessageW(body, EM_EXSETSEL, 0, (LPARAM)&selection);
+    require(SendMessageW(body, EM_CANUNDO, 0, 0) != 0, "the initial edit has native Undo");
+    save_replace_input(window, fixture, ACCESSIBLE_REPLACE_PATTERN, switch_saved);
+    capture_history(fixture, &first);
+    history_undo(window);
+    expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_CHANGED);
+    require(SendMessageW(body, EM_CANREDO, 0, 0) != 0, "the restored original has native Redo");
+    verify_history_unchanged(fixture, &first);
+    save_replace_input(window, fixture, ACCESSIBLE_REPLACE_TEXT, history_current);
+    capture_history(fixture, &second);
+    require(SendMessageW(body, EM_REDO, 0, 0) != 0, "native Redo survives replacement-input save");
+    pump(window);
+    expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_CHANGED);
+    history_undo(window);
+    expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_SAME);
+    verify_history_unchanged(fixture, &second);
+    require(controlled.requests == 0, "plain replacement-save does not request image work");
+    folio_window_destroy(window);
+    for (size_t version = 0; version <= note_history_depth; ++version)
+    {
+        note_text_destroy(first.files[version]);
+        note_text_destroy(second.files[version]);
+    }
 }
 
 static void save_theme_input(struct folio_window *_Nonnull window,
@@ -3322,9 +3430,14 @@ static void run_other_fixture(struct native_fixture *_Nonnull fixture, int argc,
     }
 }
 
-static void run_name_fixture(struct native_fixture *_Nonnull fixture, int argc,
-                             char *_Nonnull *_Nonnull argv)
+static void run_extended_fixture(struct native_fixture *_Nonnull fixture, int argc,
+                                 char *_Nonnull *_Nonnull argv)
 {
+    if (replace_save_case)
+    {
+        run_replace_save_case(fixture);
+        return;
+    }
     if (rename_case)
     {
         run_rename_case(fixture);
@@ -3358,7 +3471,7 @@ static void run_fixture(struct native_fixture *_Nonnull fixture, int argc,
     else if (argc == 2 && strcmp(argv[1], "--icon") == 0)
         window_icons(fixture);
     else
-        run_name_fixture(fixture, argc, argv);
+        run_extended_fixture(fixture, argc, argv);
 }
 
 int main(int argc, char *_Nonnull *_Nonnull argv)
@@ -3381,6 +3494,7 @@ int main(int argc, char *_Nonnull *_Nonnull argv)
     diagram_case = strcmp(selector, "--mermaid") == 0;
     history_case = strcmp(selector, "--history") == 0;
     replace_case = strcmp(selector, "--replace") == 0;
+    replace_save_case = strcmp(selector, "--replace-save") == 0;
     search_case = strcmp(selector, "--search") == 0;
     note_switch_case = strcmp(selector, "--note-switch") == 0;
     zoom_case = strcmp(selector, "--zoom") == 0;

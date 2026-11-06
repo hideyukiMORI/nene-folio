@@ -325,6 +325,8 @@ set_tests_properties(theme_preview_native PROPERTIES TIMEOUT 30 RESOURCE_LOCK im
 set_tests_properties(note_zoom_native PROPERTIES TIMEOUT 30 RESOURCE_LOCK image_status_data)
 set_tests_properties(note_switch_native PROPERTIES TIMEOUT 30 RESOURCE_LOCK image_status_data)
 set_tests_properties(search_native PROPERTIES TIMEOUT 30 RESOURCE_LOCK image_status_data)
+add_test(NAME replace_save_native COMMAND image_status_tests --replace-save)
+set_tests_properties(replace_save_native PROPERTIES TIMEOUT 30 RESOURCE_LOCK image_status_data)
 add_test(NAME replace_native COMMAND image_status_tests --replace)
 set_tests_properties(replace_native PROPERTIES TIMEOUT 30 RESOURCE_LOCK image_status_data)
 add_test(NAME history_restore COMMAND image_status_tests --history)
