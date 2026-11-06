@@ -48,3 +48,10 @@ CMakeは試験登録と既存lock/TIMEOUT30の2行のみ。単体自己レビュ
 
 実OS終了/Update/全flags/nested modal/無題/改名復旧/色選択/メッセージbox/IMEとの全組合せ、通常WM_CLOSEの遅延終了要求、既に無効なroot、保存中再入取消/理由API故障/容量/ACL/公開後失敗/資源失敗は対象外。
 OS側理由表示や待機時間内保存完了を保証しない。通常app/実ノート/clipboard/前面focus/Store未使用。個別保留466/634/530と旧削除拒否領域を維持。
+
+## 統合・保全整理の確定
+
+#757/PR758は最終head87d836379e74035f1f3ac7ce88f9834d13201fef、必須CI42191507869 full-gate/check成功。
+main58afc24409c5d96f3aadb266c7b3f1a8aaaf147dへ正典統合。src/eng/fonts/packagingとCMake試験2行以外不変、通常exe hash/bytes/更新日時不変。通常build/app起動なし。
+2795files全hash保全後、絶対path/同一squash tree/clean・untracked・ignored/link/稼働参照0を確認して専用worktree/output整理、branch/commit保持。
+確定原本D:/NeNeFolio/agents/757-session-modal-native/integration-completion.json。
