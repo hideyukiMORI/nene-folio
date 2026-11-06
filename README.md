@@ -2,26 +2,33 @@
 
 A frameless Markdown notebook for Windows with a category drawer. Plain C (C23), Win32, no UI library.
 
+> **Microsoft Store:** [Get NeNe Folio for Windows](https://apps.microsoft.com/detail/9PCHS225SWBX).
+>
 > **Windows x64 portable beta:** Download the ZIP and `SHA256SUMS` from
 > [GitHub Releases](https://github.com/hideyukiMORI/nene-folio/releases).
 > Extract the whole product folder and run `NeNeFolio.exe`. The portable package is unsigned.
 > Windows 10 version 2004 or later is required. Notes and settings use `data/` beside the executable
 > by default; Settings can select another location.
 
-The current source is the **1.3.2 Beta**, [published on GitHub](https://github.com/hideyukiMORI/nene-folio/releases/tag/v1.3.2), with plain-text paste, protection from
+The latest GitHub release is **1.3.2 Beta**, [published on GitHub](https://github.com/hideyukiMORI/nene-folio/releases/tag/v1.3.2), with plain-text paste, protection from
 unintended paragraph formatting, corrected accessible note selection, and in-note search improvements.
 See the [1.3.2 changes and update instructions](docs/release/1.3.2.md) and
 [release verification record](docs/quality/2026-11-06-release-1.3.2.md).
 Package creation, GitHub publication, and Microsoft Store certification are tracked separately.
 The unsigned MSIX is a Store submission artifact, not a portable installer.
+The Store listing is live; the maintainer reported a successful Store update to 1.3.1 on November 6.
+The 1.3.2 Store update has been submitted; its publication is not yet confirmed.
+The `main` branch also includes a [CJK input font correction](docs/quality/2026-11-06-editor-font-binding.md)
+made after the published 1.3.2 packages.
 
-[Download and checksums](https://github.com/hideyukiMORI/nene-folio/releases)
+[Microsoft Store](https://apps.microsoft.com/detail/9PCHS225SWBX)
+· [Portable download and checksums](https://github.com/hideyukiMORI/nene-folio/releases)
 · [Supported Markdown and Mermaid syntax](docs/MARKDOWN.md)
 · [Import and export](docs/TRANSFER.md)
 
-![NeNe Folio 0.2.0 showing categories and a rendered Markdown note](docs/images/0.2.0-main.png)
+![NeNe Folio 1.3.2 showing categories, a Markdown note and a Mermaid flowchart](docs/images/1.3.2-main.png)
 
-v0.2.0 with the Japanese UI, Light theme, and sample notes.
+v1.3.2 with the Japanese UI, Light theme, and sample notes. [Screenshot provenance](docs/quality/2026-11-07-readme-current.md).
 
 ## What it does
 
@@ -116,7 +123,7 @@ The requirements, one FR per row, are in [SPECIFICATION.md](SPECIFICATION.md).
 Palette sources and license texts are retained in [THIRD_PARTY_NOTICES.txt](THIRD_PARTY_NOTICES.txt).
 Every key and command is listed in [キーバインドとコマンド](docs/KEY_BINDINGS.md) (Japanese).
 
-![The searchable theme chooser in NeNe Folio 0.2.0, with Nord selected](docs/images/0.2.0-themes.png)
+![The searchable theme chooser in NeNe Folio 1.3.2, with Nord selected](docs/images/1.3.2-themes.png)
 
 The theme chooser offers 128 choices, including the OS setting and the original Light / Dark themes.
 Arrow keys preview a choice across the window before it is saved.
@@ -132,7 +139,9 @@ In the table below, `data/` means the selected folder itself.
 The location is stored separately in version 1 `nenefolio-startup.json` next to the portable executable.
 A build with Windows package identity uses Documents/NeNeFolio as its initial suggestion and asks before
 opening notes; its startup setting lives in LocalAppData/NeNeFolio. The 1.0.0 candidate passed local
-installation/update/removal checks; Store-signed delivery is not yet verified.
+installation/update/removal checks. A successful Store update to 1.3.1 was
+[reported by the maintainer](https://github.com/hideyukiMORI/nene-folio/issues/706); the 1.3.2 submission
+is tracked separately in the [current status](docs/todo/current.md).
 A missing or unavailable selected folder opens a recovery choice; an invalid or unknown startup-setting version is reported without overwriting it.
 
 | Path | Meaning |

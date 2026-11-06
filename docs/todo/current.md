@@ -1,15 +1,18 @@
 # いまの状態 — NeNe Folio
 
-## 2026-11-06 — #783 CJK入力の書体混在、通常反映はapp終了待ち
+## 2026-11-07 — CJK書体修正を通常版へ反映・READMEを現行化
 
-hideの23:20頃の継続依頼により、日本語だけ別書体になるnative入力経路を修正した。
-既存note_pane_refaceで日本語/簡体字を選択中の本文faceへ関連付け、絵文字のnative代替表示を維持する。
-3言語・4貼り付け入口のpaste_native3715checks/2.57秒、設定中の編集保持523checks、書式キー339checksが成功。
-[根拠・不採用候補・全試行・限界](../quality/2026-11-06-editor-font-binding.md)。
-最終head必須CIが統合条件。確定結果はD:/NeNeFolio/agents/editor-font-binding-20261106/integration-completion.jsonへ記録する。
-通常appは稼働中の1.3.2（PID25132、23:52:15観測）のまま。hideの保存・終了後に停止/実data保全を確認し、正典toolで反映する。
-それまではD:/NeNeFolio/worktrees/783-editor-font-bindingと同outputsを保持する。公開済み1.3.2とStore申請は差し替えない。
-次版Aboutは検討案のまま。物理IMEと実ノートでの修正確認は未実施。追加waiver none、既存WVR-0001継続。
+#783/PR784は最終head42689f56ed30301d995ac2a1c6eabb1c2710529a、必須CI42239417180 full-gate/check成功、main d343071へ統合済み。
+hideの終了報告後、00:24に正典prepare-real-machine.ps1で通常exeへ反映した。起動はしていない。
+実data33fileの全bytes/hash/作成更新日時不変、旧exe保管、1,481fileの全保全後に783専用worktree/outputを整理済み。
+確定原本D:/NeNeFolio/agents/editor-font-binding-20261106/integration-reflected.json。
+[書体修正の根拠・全試行・限界](../quality/2026-11-06-editor-font-binding.md)。物理IMEと実ノートでの見た目は未確認。
+
+#785でREADMEへ[Microsoft Store](https://apps.microsoft.com/detail/9PCHS225SWBX)と公開1.3.2の新しい画面を追加し、公開版/main/申請中を区別した。
+Storeの商品名・公開元・repo・HTTP200を確認。現在のStore版番号は未確認で、1.3.2公開済みとはしない。
+[README検証記録](../quality/2026-11-07-readme-current.md)。確定結果は同agents/readme-current-20261107/integration-completion.json。
+次はStore掲載説明の古い「画像・Mermaid等非対応」の訂正案を準備する。Store送信はこの対応に含めない。
+公開済み1.3.2 ZIP/MSIX・申請は差し替えず、次版Aboutは未着手。追加waiver none、既存WVR-0001継続。
 
 ## 2026-11-06 — GitHub 1.3.2公開・Store更新申請済み
 
@@ -58,10 +61,11 @@ Windows版は1.3.1.0。正規ZIP/MSIX生成、専用コピーでの起動・設�
 
 ## 通常版と実機確認
 
-通常exeは `C:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe`、版1.3.2、反映sourceは `99d74fab5db0fb7a4c94e415425cb0810b4bb3c1`。
-SHA256は `2a4b19c97fe1d59d007fe14ce0e2e71cf7c8b991d752e70c5efbf38093df39cb`。22:19の反映時、実data32fileの全bytes/hash/作成更新日時不変を起動前に確認した。
-通常app/実ノート/Storeは自動品質試験に使っていない。hideは1.3.2起動後に「うん、よさそう」と初見を報告した。1.3.0の従前の未確認事項とは分ける。
-文書・native試験のみの変更を理由に通常buildを反復しない。配布1.3.0のsourceとは区別する。
+通常exeはC:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe、版1.3.2、反映sourceはd343071aa918d6b5e7a41341009a2db607b5217c。
+SHA256 ab97b69dcab303d8a75c09ed879237c9477939a64c1ddb6d8faabc02180018f1。
+11月7日00:24の反映で実data33fileのbytes/hash/作成更新日時不変を確認した。次回起動から#783修正が有効になる。
+今回の通常版は未起動。hideの以前の「うん、よさそう」は11月6日22:19の公開候補に対する初見であり、今回の修正受理ではない。
+公開済み1.3.2の配布sourceとは区別する。文書だけの変更で通常buildや製品試験を反復しない。
 
 ## Store公開と残る未確認事項
 
