@@ -41,3 +41,10 @@ Windows NT10.0.26300.0、Msftedit10.0.26100.9949、ローカルNTFS・専用desk
 物理keyboard/IME、外部clipboard、不正UTF16/NUL/16MiB拒否、I/O失敗、getter失敗注入、全DPI、fresh-process復旧は対象外。
 VIEW→EDITは同一processでの再投入であり、Store署名版の導入・再起動ではない。
 通常app/実ノート/前面focus/Storeは試験に使わず、通常buildも反復せずexeのhash/bytes/更新日時を照合する。
+
+## 統合・保全・整理の確定
+
+#727/PR728は最終headc14c9a5ecfee09d1bdb0db2953ca24c2d58a4301、必須CI42153147608 full-gate/check成功。
+main67cbf4afc76dbaa00a7de2c232702539d0cb48c1へ正典統合し、通常exeのhash/bytes/更新日時不変を確認した。
+3383filesを全hash保全し、絶対path/同一squash tree/clean・untracked・ignored/link/稼働参照0を確認後、専用worktree/outputを整理した。
+branch/commit保持。確定原本D:/NeNeFolio/agents/727-empty-save-native/integration-completion.json。

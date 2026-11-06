@@ -122,6 +122,10 @@ native本文/選択/UndoRedoと元md/全履歴を保ち、新mdの全bytes/初�
 直接共用unicode_save_native254checksも成功。getter/I/O失敗注入・物理IME・fresh-process復旧は対象外。
 [品質記録](quality/2026-11-06-empty-save-native.md)。
 
+#729のlocked_save_nativeは専用mdの共有違反による履歴read拒否→themed失敗面→編集保持→解除後の再保存を固定する。
+156checksで元md/全履歴/revision不変、native本文/選択/modified/UndoRedo/focusとNAMEDを確認。直接共用empty_save_native253checksも成功。
+履歴回転途中/write失敗・容量不足・ACL改変・全OS/DPI・物理IME・OS fallback面は対象外。[品質記録](quality/2026-11-06-locked-save-native.md)。
+
 ### QLT-009 — カバレッジは下げられない
 
 中核の分岐カバレッジ下限を 90% とする。閾値は上げてよいが下げてはならない。下げるには ADR が要る。
