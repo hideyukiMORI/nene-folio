@@ -116,3 +116,12 @@ exe への埋め込み（`AddFontMemResourceEx`）、OS へのインストール
 3. **退避の表は別ファイル `src/core/ui_font_fallback.c`**（`ui_font_fallback_face`）。CNF-009 の `lineTables` は「列挙 → 表のファイル」の対で網羅を数えるので、同じファイルに 2 つの表を置くと片方の欠けを見逃す。
 4. 実測（単位 B の identity probe・この機械・DPI 120）: 登録後は Noto Sans SC / JP / Arimo の 3 face とも `GetFontData` の `name` テーブルが同梱ファイルと一致し、JP は登録前が OS の `NotoSansJP-VF.ttf`、登録後が同梱の static だった。同名の衝突は「登録後は同梱が選ばれる」と、この機械では言える。
 5. **English の UI の書体は Noto Sans JP にし、Arimo は同梱から外す**（hide 2026-09-23・案 1）。実機の絵（`shots/c-en-0.png`）で、Arimo に漢字が無いためドロワーの日本語のノート名が別の書体へ束ねられ字間が空いた。Noto Sans JP のラテン文字で英語の UI を描けば、日本語のノート名と字間が揃う。決定 1 の 6 ファイルは 4 ファイル（Noto Sans JP / SC の Regular / Bold・合計 26,063,980 バイト）、ライセンスは 1 本になる。決定 4 の EN の同梱 face は `Noto Sans JP`（退避は `Yu Gothic UI` のまま）。
+
+## 2026-11-06 の補正（#783 — 入力時のCJK font binding）
+
+平文貼り付けでもRichEditが日本語を游ゴシックへ自動bindingし、同じ行の英数字と見た目が混ざる経路を再現した。
+既存`note_pane_reface`で、選択済みの同じfaceをSHIFTJIS_CHARSET/GB2312_CHARSETの
+`SCF_ASSOCIATEFONT`にも渡す。faceの選択や所有者は増やさず、既存Undo停止/再開・変更印保全内で適用する。
+本文全体を再書式化せず、RTF投入・言語切替・native入力・保存は従来経路を保つ。
+IMF_AUTOFONTの無効化は絵文字を欠落glyphにしたため採用せず、範囲外文字のnative代替表示を残す。
+全試行、3言語と4貼り付け入口の検証、物理IME等の限界は[品質記録](../quality/2026-11-06-editor-font-binding.md)。

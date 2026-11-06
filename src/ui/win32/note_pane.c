@@ -1437,6 +1437,14 @@ void note_pane_reface(struct note_pane *_Nonnull pane, const wchar_t *_Nonnull f
     LRESULT modified = SendMessageW(pane->handle, EM_GETMODIFY, 0, 0);
     document->lpVtbl->Undo(document, tomSuspend, nullptr);
     SendMessageW(pane->handle, EM_SETCHARFORMAT, SCF_DEFAULT, (LPARAM)&format);
+    /* CJKの自動bindingにも同じfaceを使う。絵文字などのnative fallbackは残す（#783）。 */
+    format.dwMask |= CFM_CHARSET;
+    const BYTE charsets[] = {SHIFTJIS_CHARSET, GB2312_CHARSET};
+    for (size_t index = 0; index < sizeof charsets / sizeof charsets[0]; ++index)
+    {
+        format.bCharSet = charsets[index];
+        SendMessageW(pane->handle, EM_SETCHARFORMAT, SCF_ASSOCIATEFONT, (LPARAM)&format);
+    }
     document->lpVtbl->Undo(document, tomResume, nullptr);
     document->lpVtbl->Release(document);
     SendMessageW(pane->handle, EM_SETMODIFY, (WPARAM)(modified != 0), 0);
