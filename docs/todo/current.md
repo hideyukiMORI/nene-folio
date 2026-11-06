@@ -1,17 +1,17 @@
 # いまの状態 — NeNe Folio
 
-## 2026-11-06 — #723まで完了、新規と初回保存を確認中
+## 2026-11-06 — #725まで完了、空本文の保存を確認中
 
 hideの07:08の依頼により、停止指示まで品質対応を継続する。試験・計測・必要な調査と独立レビューを行い、全試行と変更を記録する。
 最優先の#479/PR708の平文paste、#709/PR710のCtrl+R/2/5、#713/PR714のDebug ASan検出修正は、最終CI・main統合・通常反映・全保全整理まで完了。
 [paste](../quality/2026-11-06-editor-paste.md)・[書式キー](../quality/2026-11-06-editor-format.md)・[ASan](../quality/2026-11-06-asan-interceptor.md)の品質記録を参照する。
-表示切替・別名保存・改名・置換欄保存・カテゴリ間drag・Unicode保存の回帰も#723/PR724まで統合・整理済み。実測と確定原本は[日報](../reports/2026-11-06.md)・[引き継ぎ](../handoffs/2026-11-06.md)にまとめた。
-最新確定mainはd9f5b426803083a107ed3cac16ed9492fd9ea1e2、最終CI42148810753成功。
-通常exe不変、3377files全保全。#723原本D:/NeNeFolio/agents/723-unicode-save-native/integration-completion.json。
+表示切替・別名保存・改名・置換欄保存・カテゴリ間drag・Unicode保存・新規と初回保存の回帰も#725/PR726まで統合・整理済み。実測と確定原本は[日報](../reports/2026-11-06.md)・[引き継ぎ](../handoffs/2026-11-06.md)にまとめた。
+最新確定mainは16af695a6edd48cbd3bcfb27a35a9af3466b360d、最終CI42150856096成功。
+通常exe不変、3404files全保全。#725原本D:/NeNeFolio/agents/725-first-save-native/integration-completion.json。
 
-#725は新規と初回保存のnative回帰213checksが成功、stderr空。前試行の新ノートを全bytes/hash/作成更新日時付きで保持し、新規1件だけを追加した。
-製品src/API/schemaは不変。最終CI/統合はこれから。[品質記録](../quality/2026-11-06-first-save-native.md)。
-作業木D:/NeNeFolio/worktrees/725-first-save-native、試行同outputs、恒久原本同agents。
+#727は空本文保存のnative回帰が成功。empty_save_native236checks/0.77秒、直接共用unicode_save_native254checks/0.65秒、CTest合計1.43秒成功。stderr空、child/wrapper0、入力不変。
+製品src/API/schemaは不変。最終CI/統合はこれから。[品質記録](../quality/2026-11-06-empty-save-native.md)。
+作業木D:/NeNeFolio/worktrees/727-empty-save-native、試行同outputs、恒久原本同agents。
 全体journalはD:/NeNeFolio/agents/quality-20261106/journal.md。過去の停止履歴は今回依頼の停止指示として扱わない。
 
 ## 公開済み1.3.1

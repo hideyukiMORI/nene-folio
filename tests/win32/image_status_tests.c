@@ -65,6 +65,7 @@ static bool rename_case;
 static bool move_edit_case;
 static bool unicode_save_case;
 static bool first_save_case;
+static bool empty_save_case;
 
 static const char history_current[] = "# Current 日本語 😀 **saved**";
 static const char history_previous[] = "> Previous 猫 🐾 `old`";
@@ -141,13 +142,14 @@ static void seed_notes(struct persistence_port disk)
     if (history_case || replace_case || search_case || note_switch_case || zoom_case ||
         theme_preview_case || settings_edit_case || mode_save_case || discard_case ||
         palette_case || paste_case || format_case || layout_case || save_as_case || rename_case ||
-        replace_save_case || move_edit_case || first_save_case || unicode_save_case)
+        replace_save_case || move_edit_case || first_save_case || empty_save_case ||
+        unicode_save_case)
     {
         seed_history(disk);
         source = history_case || note_switch_case || zoom_case || theme_preview_case ||
                          settings_edit_case || mode_save_case || discard_case || palette_case ||
                          paste_case || format_case || layout_case || save_as_case || rename_case ||
-                         replace_save_case || move_edit_case || first_save_case
+                         replace_save_case || move_edit_case || first_save_case || empty_save_case
                      ? history_current
                      : replace_current;
     }
@@ -1404,9 +1406,11 @@ static void capture_native_body(struct folio_window *_Nonnull window,
 {
     HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
     GETTEXTEX request = {.cb = sizeof snapshot->text, .flags = GT_RAWTEXT, .codepage = 1200};
+    wmemset(snapshot->text, L'\x7F', sizeof snapshot->text / sizeof snapshot->text[0]);
     LRESULT length = SendMessageW(body, EM_GETTEXTEX, (WPARAM)&request, (LPARAM)snapshot->text);
-    require(length > 0 && (size_t)length < sizeof snapshot->text / sizeof snapshot->text[0] - 1,
-            "short native fixture fits its native text snapshot");
+    require(length >= 0 && (size_t)length < sizeof snapshot->text / sizeof snapshot->text[0] - 1 &&
+                snapshot->text[length] == L'\0',
+            "short native fixture writes a terminated snapshot, including empty text");
     SendMessageW(body, EM_EXGETSEL, 0, (LPARAM)&snapshot->selection);
     snapshot->modified = SendMessageW(body, EM_GETMODIFY, 0, 0);
     snapshot->undo = SendMessageW(body, EM_CANUNDO, 0, 0);
@@ -3742,23 +3746,23 @@ static void run_other_fixture(struct native_fixture *_Nonnull fixture, int argc,
     }
 }
 
-/* #723: File signatures, body FEFF, replacement/vertical-tab and CRLF stay distinct. */
-static void expect_unicode_raw(struct native_fixture *_Nonnull fixture,
-                               const wchar_t *_Nonnull suffix, const char *_Nonnull expected)
+/* #723/#727: Read exact bytes, including an existing zero-byte file, without decoding. */
+static void expect_raw_file(struct native_fixture *_Nonnull fixture, const wchar_t *_Nonnull suffix,
+                            const char *_Nonnull expected)
 {
     wchar_t path[storage_native_capacity];
     size_t length = 0;
     size_t count = wcslen(suffix) + 1;
     require(storage_native_path_fill(storage_state_directory(fixture->location), path, &length) &&
                 length + count <= storage_native_capacity,
-            "dedicated Unicode raw path fits");
+            "dedicated raw file path fits");
     memcpy(path + length, suffix, count * sizeof *suffix);
     struct file_bytes *bytes = nullptr;
     require(file_bytes_read(path, &bytes) == PERSISTENCE_LOADED && bytes != nullptr,
-            "read the actual Unicode file without text interpretation");
+            "read the actual file without text interpretation");
     require(file_bytes_length(bytes) == strlen(expected) &&
                 memcmp(file_bytes_data(bytes), expected, strlen(expected)) == 0,
-            "raw file retains the exact signature, FEFF, replacement, VT and CRLF bytes");
+            "raw file matches every literal expected byte");
     file_bytes_destroy(bytes);
 }
 
@@ -3766,8 +3770,8 @@ static void expect_unicode_saved(struct native_fixture *_Nonnull fixture,
                                  const struct history_snapshot *_Nonnull history)
 {
     expect_body_saved(fixture, history, unicode_saved);
-    expect_unicode_raw(fixture, L"\\schedule\\one.md", unicode_saved);
-    expect_unicode_raw(fixture, L"\\.history\\schedule\\one\\1.md", unicode_current);
+    expect_raw_file(fixture, L"\\schedule\\one.md", unicode_saved);
+    expect_raw_file(fixture, L"\\.history\\schedule\\one\\1.md", unicode_current);
 }
 
 static void unicode_same_save(struct folio_window *_Nonnull window,
@@ -3786,7 +3790,7 @@ static void unicode_same_save(struct folio_window *_Nonnull window,
         expect_native_body(window, &before);
         expect_editor(window, fixture->state, unicode_original, FOLIO_NOTE_SAME);
         verify_history_unchanged(fixture, history);
-        expect_unicode_raw(fixture, L"\\schedule\\one.md", unicode_current);
+        expect_raw_file(fixture, L"\\schedule\\one.md", unicode_current);
     }
 }
 
@@ -3797,7 +3801,7 @@ static void unicode_changed_save(struct folio_window *_Nonnull window,
     append_switch_text(window);
     expect_editor(window, fixture->state, unicode_edited, FOLIO_NOTE_CHANGED);
     verify_history_unchanged(fixture, history);
-    expect_unicode_raw(fixture, L"\\schedule\\one.md", unicode_current);
+    expect_raw_file(fixture, L"\\schedule\\one.md", unicode_current);
     HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
     CHARRANGE selection = {.cpMin = 6, .cpMax = 9};
     SendMessageW(body, EM_EXSETSEL, 0, (LPARAM)&selection);
@@ -3846,7 +3850,7 @@ static void run_unicode_save_case(struct native_fixture *_Nonnull fixture)
             "select the dedicated Unicode note");
     struct history_snapshot history = {0};
     capture_history(fixture, &history);
-    expect_unicode_raw(fixture, L"\\schedule\\one.md", unicode_current);
+    expect_raw_file(fixture, L"\\schedule\\one.md", unicode_current);
     struct folio_window *window = nullptr;
     require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
                 FOLIO_WINDOW_CREATED,
@@ -4028,9 +4032,111 @@ static void run_first_save_case(struct native_fixture *_Nonnull fixture)
     }
 }
 
+/* #727: An empty named document is saved, archived and reloaded as a real document. */
+static void expect_empty_saved(struct native_fixture *_Nonnull fixture,
+                               const struct history_snapshot *_Nonnull history)
+{
+    struct note_ref selected = {0};
+    require(folio_state_document_kind(fixture->state) == FOLIO_DOCUMENT_NAMED &&
+                strcmp(folio_state_document_name(fixture->state), "one") == 0 &&
+                folio_state_selection(fixture->state, &selected) && selected.category == 0 &&
+                strcmp(folio_state_note_name(fixture->state, selected), "one") == 0,
+            "empty save retains the named and selected document");
+    expect_body_saved(fixture, history, "");
+    expect_raw_file(fixture, L"\\schedule\\one.md", "");
+    expect_raw_file(fixture, L"\\.history\\schedule\\one\\1.md", history_current);
+}
+
+static void empty_save_twice(struct folio_window *_Nonnull window,
+                             struct native_fixture *_Nonnull fixture,
+                             const struct history_snapshot *_Nonnull history)
+{
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    struct native_body_snapshot before = {0};
+    capture_native_body(window, &before);
+    require(before.text[0] == L'\0' && before.selection.cpMin == 0 && before.selection.cpMax == 0 &&
+                before.focus == body,
+            "empty save starts with empty native text, collapsed selection and body focus");
+    for (size_t repeat = 0; repeat < 2; ++repeat)
+    {
+        SendMessageW(body, WM_CHAR, 0x13, 0);
+        pump(window);
+        expect_native_body(window, &before);
+        expect_editor(window, fixture->state, L"", FOLIO_NOTE_SAME);
+        expect_empty_saved(fixture, history);
+    }
+}
+
+static void empty_saved_roundtrip(struct folio_window *_Nonnull window,
+                                  struct native_fixture *_Nonnull fixture,
+                                  const struct history_snapshot *_Nonnull history)
+{
+    history_undo(window);
+    expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_CHANGED);
+    expect_empty_saved(fixture, history);
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    require(SendMessageW(body, EM_CANREDO, 0, 0) != 0 && SendMessageW(body, EM_REDO, 0, 0) != 0,
+            "the complete deletion remains redoable after saving");
+    pump(window);
+    expect_editor(window, fixture->state, L"", FOLIO_NOTE_SAME);
+    expect_empty_saved(fixture, history);
+    action(window, ACCESSIBLE_VIEW);
+    struct native_body_snapshot view = {0};
+    capture_native_body(window, &view);
+    require(view.text[0] == L'\0' && folio_state_pane_mode(fixture->state) == PANE_MODE_VIEW &&
+                (GetWindowLongPtrW(body, GWL_STYLE) & ES_READONLY) != 0,
+            "empty saved document enters readonly View with no placeholder text");
+    expect_empty_saved(fixture, history);
+    action(window, ACCESSIBLE_EDIT);
+    expect_editor(window, fixture->state, L"", FOLIO_NOTE_SAME);
+    require(IsWindowEnabled(body) && GetFocus() == body,
+            "empty document is enabled and focused after Edit reload");
+    empty_save_twice(window, fixture, history);
+}
+
+static void run_empty_save_case(struct native_fixture *_Nonnull fixture)
+{
+    require(folio_state_select_note(fixture->state, 0, 0, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
+            "select the dedicated empty-save note");
+    struct history_snapshot history = {0};
+    capture_history(fixture, &history);
+    expect_raw_file(fixture, L"\\schedule\\one.md", history_current);
+    struct folio_window *window = nullptr;
+    require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
+                FOLIO_WINDOW_CREATED,
+            "real empty-save window");
+    pump(window);
+    action(window, ACCESSIBLE_EDIT);
+    expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_SAME);
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    CHARRANGE all = {.cpMin = 0, .cpMax = -1};
+    SendMessageW(body, EM_EXSETSEL, 0, (LPARAM)&all);
+    SendMessageW(body, EM_REPLACESEL, TRUE, (LPARAM)L"");
+    pump(window);
+    expect_editor(window, fixture->state, L"", FOLIO_NOTE_CHANGED);
+    struct native_body_snapshot deleted = {0};
+    capture_native_body(window, &deleted);
+    require(deleted.modified != 0 && deleted.undo != 0 && deleted.redo == 0,
+            "full deletion is a modified native Undo unit");
+    verify_history_unchanged(fixture, &history);
+    expect_raw_file(fixture, L"\\schedule\\one.md", history_current);
+    empty_save_twice(window, fixture, &history);
+    empty_saved_roundtrip(window, fixture, &history);
+    require(controlled.requests == 0, "empty body does not request image work");
+    folio_window_destroy(window);
+    for (size_t version = 0; version <= note_history_depth; ++version)
+        note_text_destroy(history.files[version]);
+}
+
 static void run_extended_fixture(struct native_fixture *_Nonnull fixture, int argc,
                                  char *_Nonnull *_Nonnull argv)
 {
+    if (empty_save_case)
+    {
+        run_empty_save_case(fixture);
+        return;
+    }
     if (first_save_case)
     {
         run_first_save_case(fixture);
@@ -4098,6 +4204,7 @@ int main(int argc, char *_Nonnull *_Nonnull argv)
     move_edit_case = strcmp(selector, "--move-edit") == 0;
     unicode_save_case = strcmp(selector, "--unicode-save") == 0;
     first_save_case = strcmp(selector, "--first-save") == 0;
+    empty_save_case = strcmp(selector, "--empty-save") == 0;
     HWINSTA original_station = GetProcessWindowStation();
     HDESK original_desktop = GetThreadDesktop(GetCurrentThreadId());
     HWINSTA paste_station = paste_case ? isolate_paste_clipboard() : nullptr;
