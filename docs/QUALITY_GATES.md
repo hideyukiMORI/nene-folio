@@ -94,6 +94,9 @@ native本文/選択/UndoRedoと元md/全履歴を保ち、新mdの全bytes/初�
 #733は同じnative試験で、既知同名とOSのcase alias衝突を確認する。台帳なしのsave_as_native302checks/1.39秒、台帳ありの再実行332checks/1.03秒成功。両stderr空・child/wrapper0・入力不変。旧3コピーのbytes/hash/作成更新日時と履歴不在も保持。
 Ex語/focus/理由、native本文/選択/modified/UndoRedo、元md/全履歴/revision、全台帳/実名前集合、一時write不在を固定する。
 拒否後の実UndoRedoと3コピー成功を維持する。[全試行と限界](quality/2026-11-06-save-as-collision-native.md)。
+#735は実Ctrl+Shift+Sから名前面を開き、変更EDIT/Redo保有EDITの入力後取消を固定する。save_as_native389checks/1.83秒、CTest計1.84秒成功。stderr空・child/wrapper0・入力不変。
+所有面のbutton/WM_CLOSE、modal中の内容disableと終了後の再enable/focus/native状態、元md/履歴/全名前集合を確認。
+[全試行と限界](quality/2026-11-06-save-as-cancel-native.md)。
 
 #717の改名はCTestのrename_nativeで固定する。専用target/dataの実Ex入口から同名無操作/理由と入力focus保持、
 変更EDIT/Redo保有状態の先保存・履歴移動・native UndoRedo、VIEWの非保存改名、旧名/journal不在を252checksで確認した。

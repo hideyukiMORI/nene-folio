@@ -3359,6 +3359,152 @@ static void save_as_collisions(struct folio_window *_Nonnull window,
     SendMessageW(body, EM_EXSETSEL, 0, (LPARAM)&selection);
 }
 
+/* #735: Cancel the real name dialog without saving or recreating the editor. */
+struct name_cancel_probe
+{
+    HWND root;
+    HWND body;
+    HWND drawer;
+    HWND dialog;
+    UINT_PTR timer;
+    unsigned ticks;
+    unsigned closed;
+    bool close_message;
+};
+
+static struct name_cancel_probe name_cancel;
+
+static void enter_cancelled_destination(HWND dialog)
+{
+    HWND name = FindWindowExW(dialog, nullptr, L"EDIT", nullptr);
+    HWND categories = FindWindowExW(dialog, nullptr, L"LISTBOX", nullptr);
+    HWND cancel = GetDlgItem(dialog, IDCANCEL);
+    require(name != nullptr && categories != nullptr && cancel != nullptr &&
+                (GetWindowLongPtrW(name, GWL_STYLE) & ES_READONLY) == 0 && IsWindowEnabled(name) &&
+                IsWindowEnabled(categories) && IsWindowEnabled(cancel) && GetFocus() == name,
+            "Save As opens its editable name, category list and cancel control with name focus");
+    require(IsWindowEnabled(name_cancel.root) && !IsWindowEnabled(name_cancel.body) &&
+                !IsWindowEnabled(name_cancel.drawer),
+            "the name modal leaves the root enabled while disabling its content controls");
+    require(SetWindowTextW(name, L"zzcancel 日本語 🐾"), "enter a valid unsaved destination name");
+    LRESULT target = SendMessageW(categories, LB_FINDSTRINGEXACT, (WPARAM)-1, (LPARAM)L"target");
+    require(target != LB_ERR && SendMessageW(categories, LB_GETCURSEL, 0, 0) != target &&
+                SendMessageW(categories, LB_SETCURSEL, (WPARAM)target, 0) != LB_ERR &&
+                SendMessageW(categories, LB_GETCURSEL, 0, 0) == target,
+            "change only the name dialog's selected destination category");
+    wchar_t value[64];
+    require(GetWindowTextW(name, value, 64) > 0 && wcscmp(value, L"zzcancel 日本語 🐾") == 0,
+            "the cancellation discards a real pending name rather than an empty form");
+}
+
+static BOOL CALLBACK close_save_as_dialog(HWND dialog, LPARAM parameter)
+{
+    wchar_t kind[32];
+    if (GetAncestor(dialog, GA_ROOTOWNER) != (HWND)parameter || !IsWindowVisible(dialog) ||
+        GetClassNameW(dialog, kind, 32) == 0 || wcscmp(kind, L"#32770") != 0)
+        return TRUE;
+    wchar_t title[64];
+    require(GetWindowTextW(dialog, title, 64) > 0 && wcscmp(title, L"別名で保存") == 0,
+            "the owned modal is the intended Save As name dialog");
+    enter_cancelled_destination(dialog);
+    require(KillTimer(nullptr, name_cancel.timer), "stop the owned name dialog observer");
+    name_cancel.timer = 0;
+    name_cancel.dialog = dialog;
+    ++name_cancel.closed;
+    if (name_cancel.close_message)
+        SendMessageW(dialog, WM_CLOSE, 0, 0);
+    else
+        SendMessageW(GetDlgItem(dialog, IDCANCEL), BM_CLICK, 0, 0);
+    return FALSE;
+}
+
+static void CALLBACK observe_save_as_dialog(HWND window, UINT message, UINT_PTR timer,
+                                            DWORD tick_millis)
+{
+    (void)window;
+    (void)message;
+    (void)tick_millis;
+    if (name_cancel.timer == 0)
+        return;
+    require(timer == name_cancel.timer && ++name_cancel.ticks <= 100,
+            "the owned name dialog observer stays within its finite deadline");
+    EnumThreadWindows(GetCurrentThreadId(), close_save_as_dialog, (LPARAM)name_cancel.root);
+}
+
+static void expect_cancel_file_set(struct persistence_port disk, const char *_Nonnull category,
+                                   const struct name_list *_Nonnull before)
+{
+    struct name_list *after = nullptr;
+    require(disk.scan_notes(disk.adapter, category, &after) == PERSISTENCE_LOADED &&
+                after != nullptr && name_list_count(after) == name_list_count(before),
+            "name cancellation preserves the category's complete file count");
+    for (size_t index = 0; index < name_list_count(before); ++index)
+        require(name_list_contains(after, name_list_at(before, index)),
+                "name cancellation preserves every prior Markdown filename");
+    name_list_destroy(after);
+}
+
+static void cancel_save_as(struct folio_window *_Nonnull window,
+                           struct native_fixture *_Nonnull fixture, bool close_message)
+{
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    struct accessible_request focus = {.item = {.kind = ACCESSIBLE_BODY},
+                                       .action = ACCESSIBLE_ACTION_FOCUS};
+    require(folio_window_accessible_action(window, &focus) == S_OK && GetFocus() == body,
+            "open Save As from the actual editor focus");
+    struct native_body_snapshot before = {0};
+    capture_native_body(window, &before);
+    struct note_ref selected = {0};
+    require(folio_state_selection(fixture->state, &selected), "the original has a selected row");
+    char name[64];
+    int length = snprintf(name, sizeof name, "%s", folio_state_document_name(fixture->state));
+    require(length > 0 && (size_t)length < sizeof name &&
+                before.selection.cpMin < before.selection.cpMax &&
+                (close_message ? before.redo != 0 : before.undo != 0),
+            "cancellation starts with a named document, selection and the intended Undo or Redo");
+    uint64_t revision = folio_state_store_revision(fixture->state);
+    struct persistence_port disk = persistence_adapter_port(fixture->files);
+    struct name_list *source_files = nullptr;
+    struct name_list *target_files = nullptr;
+    require(disk.scan_notes(disk.adapter, "schedule", &source_files) == PERSISTENCE_LOADED &&
+                source_files != nullptr &&
+                disk.scan_notes(disk.adapter, "target", &target_files) == PERSISTENCE_LOADED &&
+                target_files != nullptr,
+            "snapshot both dedicated category file sets before name cancellation");
+    name_cancel = (struct name_cancel_probe){
+        .root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW),
+        .body = body,
+        .drawer = folio_window_accessible_window(window, ACCESSIBLE_DRAWER),
+        .close_message = close_message};
+    require(IsWindow(name_cancel.drawer) && name_cancel.drawer != name_cancel.root &&
+                IsChild(name_cancel.root, name_cancel.drawer),
+            "the native drawer handle belongs to the root and is not the abstract tree host");
+    name_cancel.timer = SetTimer(nullptr, 0, 50, observe_save_as_dialog);
+    require(name_cancel.timer != 0, "arm the finite name dialog observer");
+    bool translated = native_key_input(window, 'S', FCONTROL | FSHIFT);
+    if (name_cancel.timer != 0)
+    {
+        require(KillTimer(nullptr, name_cancel.timer), "cancel an unused name dialog observer");
+        name_cancel.timer = 0;
+    }
+    require(translated && name_cancel.closed == 1 && !IsWindow(name_cancel.dialog) &&
+                IsWindow(name_cancel.root) && IsWindowEnabled(name_cancel.root) &&
+                IsWindowEnabled(body) && IsWindowEnabled(name_cancel.drawer),
+            "Ctrl+Shift+S cancels one owned dialog and restores the root and content controls");
+    expect_native_body(window, &before);
+    struct note_ref after = {0};
+    require(folio_state_document_kind(fixture->state) == FOLIO_DOCUMENT_NAMED &&
+                strcmp(folio_state_document_name(fixture->state), name) == 0 &&
+                folio_state_selection(fixture->state, &after) &&
+                after.category == selected.category && after.note == selected.note &&
+                folio_state_store_revision(fixture->state) == revision,
+            "name cancellation retains the named selected row and publishes no store revision");
+    expect_cancel_file_set(disk, "schedule", source_files);
+    expect_cancel_file_set(disk, "target", target_files);
+    name_list_destroy(source_files);
+    name_list_destroy(target_files);
+}
+
 static void save_as_edit(struct folio_window *_Nonnull window,
                          struct native_fixture *_Nonnull fixture,
                          const struct history_snapshot *_Nonnull history)
@@ -3369,6 +3515,8 @@ static void save_as_edit(struct folio_window *_Nonnull window,
     HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
     CHARRANGE selection = {.cpMin = 10, .cpMax = 12};
     SendMessageW(body, EM_EXSETSEL, 0, (LPARAM)&selection);
+    cancel_save_as(window, fixture, false);
+    expect_save_as_original(fixture, history, 0);
     save_as_collisions(window, fixture, history);
     char edited_name[64];
     save_as_command(window, fixture, edited_name);
@@ -3384,6 +3532,9 @@ static void save_as_edit(struct folio_window *_Nonnull window,
     expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_CHANGED);
     require(SendMessageW(body, EM_CANREDO, 0, 0) != 0, "second Save As starts with native Redo");
     SendMessageW(body, EM_EXSETSEL, 0, (LPARAM)&selection);
+    cancel_save_as(window, fixture, true);
+    expect_copy(fixture, edited_name, switch_saved);
+    expect_save_as_original(fixture, history, 1);
     char redo_name[64];
     save_as_command(window, fixture, redo_name);
     expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_SAME);
