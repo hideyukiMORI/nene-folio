@@ -33,9 +33,14 @@ $script:ResendAfterSeconds = 60
 $script:IssueCloseWaitSeconds = 30
 # Ready を送った時刻（UTC）。これより前に始まった check-run は Draft 時代の結論（ADR 0037 の failure）なので判定から外す（#163）。
 $script:ReadyAt = $null
+$script:PreviousSuites = @()
 
 function Send-Ready {
     param([Parameter(Mandatory)][int]$Pr, [switch]$Undo)
+    # 時計の10秒許容内にある直前Draft結果も除く。読取失敗ならReady/Undoを送らない（#769）。
+    $head = (Invoke-Gh @('pr', 'view', "$Pr", '--json', 'headRefOid') | ConvertFrom-Json).headRefOid
+    $suites = Invoke-Gh @('api', "repos/{owner}/{repo}/commits/$head/check-suites?per_page=100", '--paginate', '--jq', '.check_suites[].id')
+    $script:PreviousSuites = @($suites -split "`r?`n" | ForEach-Object { $_.Trim() } | Where-Object { $_.Length -gt 0 })
     if ($Undo) { Invoke-Gh @('pr', 'ready', "$Pr", '--undo') | Out-Null }
     Invoke-Gh @('pr', 'ready', "$Pr") | Out-Null
     # GitHub の started_at と手元の時計のずれを見込んで 10 秒引く。
@@ -100,6 +105,7 @@ function Get-CheckState {
     $runs = @($text -split "`r?`n" | Where-Object { $_.Trim().Length -gt 0 } | ForEach-Object { $_ | ConvertFrom-Json })
     $latest = @{}
     foreach ($run in $runs) {
+        if ($script:PreviousSuites -contains "$($run.suite)") { continue }
         # Ready より前に始まった check-run（Draft 時代の skipped / failure）は見ない（#163）。started_at が無い（queued）ものは新しいとみなす。
         if ($null -ne $script:ReadyAt -and -not [string]::IsNullOrEmpty("$($run.started)")) {
             $startedAt = [DateTime]::Parse("$($run.started)", [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::AdjustToUniversal)
@@ -148,7 +154,7 @@ function Wait-Check {
         if ($summary.pending.Count -eq 0 -and $summary.failed.Count -gt 0) {
             # Ready を送っていない（元から Ready の PR）と、見えている failure が Draft 時代のものか本物か区別できない。
             # 1 回だけ Ready を送り直して新しい run を起こし、それでも failure なら本物として止まる（#163）。
-            # 今回 Ready を送った後の結果は既に時刻で絞っている。同じ確定失敗で CI を再起動しない（#769）。
+            # 今回 Ready を送った後の結果は既存suiteと時刻で絞る。同じ確定失敗で CI を再起動しない（#769）。
             if ($resent -or $null -ne $script:ReadyAt) { Stop-Merge "checks failed: $($summary.failed -join ', ')" }
             [Console]::Error.WriteLine("merge-pr: failed check(s) $($summary.failed -join ', ') with nothing pending; resending ready once")
             Send-Ready -Pr $Pr -Undo

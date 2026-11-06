@@ -7,8 +7,9 @@ hideの07:08の依頼により停止指示まで品質対応を継続する。�
 通常exe不変、8864file全保全・専用worktree/output整理済み。原本D:/NeNeFolio/agents/767-export-native/integration-completion.json。
 [書き出しの全試行と限界](../quality/2026-11-06-export-native.md)。
 
-#769は統合toolが今回Ready後の確定failure/cancelledを再送せず停止する最小修正。
-実toolを別PowerShellで動かす5ケース3.848秒成功。製品src/eng/CMake/API/schema/ゲートは不変。
+#769はReady前の既存suiteを除外し、今回Ready後の確定failure/cancelledを再送せず停止する。
+初期5ケース/CI成功後に時計許容内の旧Draft誤停止を発見し、未統合のまま修正。最終8テスト/9子process・5.856秒、実UTC境界813.5453ms成功。
+製品src/eng/CMake/API/schema/ゲートは不変。
 最終CI/統合/通常exe不変/全保全整理はこれから。[品質記録](../quality/2026-11-06-merge-ready-failure.md)。
 D:/NeNeFolio/worktrees/769-merge-ready-failure、同outputs、恒久agents。追加waiver none、既存WVR-0001継続。
 

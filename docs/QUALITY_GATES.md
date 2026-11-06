@@ -247,7 +247,8 @@ failure になる。GitHub は skipped の必須 check を「満たした」と�
 - 実行時点・対象範囲・再利用の妥当性の機械強制: **不能**（判断。記録とレビューで確認する。activeは最終headの必須CI条件を指す）
 
 #769はmerge-pr.ps1が今回Readyを送った後の確定failure/cancelledを再送せず停止する。
-実スクリプトの5プロセス試験3.848秒で、余計なReady/merge/gitの不在と旧Draft除外・既存Ready再同期・成功統合を確認した。
+Ready前の既存suiteを除外し、実スクリプト8テスト/9子process・5.856秒で、余計なReady/merge/gitの不在と旧Draft除外・既存Ready再同期・成功統合・取得失敗前停止を確認した。
+実UTCの直前Draft境界は初期候補で誤停止し、修正後813.5453ms内でReady1回だけの成功を確認した。
 未起動の既存再送や必須CIは不変。検証頻度全体を機械強制できるという主張へ広げない。
 [全試行と限界](quality/2026-11-06-merge-ready-failure.md)。
 

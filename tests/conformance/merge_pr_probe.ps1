@@ -45,6 +45,12 @@ function gh {
         $global:MergeProbeDraft = $Arguments -contains '--undo'
         return 'ready state changed'
     }
+    if ($Arguments[0] -eq 'api' -and $Arguments[1] -match '/check-suites\?') {
+        $global:LASTEXITCODE = $global:MergeProbeScenario.suiteExit
+        if ($LASTEXITCODE -ne 0) { return 'suite read failed' }
+        foreach ($suite in $global:MergeProbeScenario.knownSuites) { "$suite" }
+        return
+    }
     if ($Arguments[0] -eq 'api' -and $Arguments[1] -match '/check-runs\?') {
         $frames = $global:MergeProbeScenario.frames
         $index = [Math]::Min($global:MergeProbeFrame, $frames.Count - 1)
