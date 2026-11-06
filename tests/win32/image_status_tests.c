@@ -65,6 +65,7 @@ static bool rename_case;
 static bool move_edit_case;
 static bool unicode_save_case;
 static bool first_save_case;
+static bool first_save_modal_case;
 static bool empty_save_case;
 static bool locked_save_case;
 
@@ -143,15 +144,15 @@ static void seed_notes(struct persistence_port disk)
     if (history_case || replace_case || search_case || note_switch_case || zoom_case ||
         theme_preview_case || settings_edit_case || mode_save_case || discard_case ||
         palette_case || paste_case || format_case || layout_case || save_as_case || rename_case ||
-        replace_save_case || move_edit_case || first_save_case || empty_save_case ||
-        locked_save_case || unicode_save_case)
+        replace_save_case || move_edit_case || first_save_case || first_save_modal_case ||
+        empty_save_case || locked_save_case || unicode_save_case)
     {
         seed_history(disk);
         source = history_case || note_switch_case || zoom_case || theme_preview_case ||
                          settings_edit_case || mode_save_case || discard_case || palette_case ||
                          paste_case || format_case || layout_case || save_as_case || rename_case ||
                          replace_save_case || move_edit_case || first_save_case ||
-                         empty_save_case || locked_save_case
+                         first_save_modal_case || empty_save_case || locked_save_case
                      ? history_current
                      : replace_current;
     }
@@ -3112,12 +3113,13 @@ static void native_file_path(struct native_fixture *_Nonnull fixture,
     memcpy(path + length, suffix, count * sizeof *suffix);
 }
 
-static void expect_copy(struct native_fixture *_Nonnull fixture, const char *_Nonnull name,
-                        const char *_Nonnull expected)
+static void expect_category_copy(struct native_fixture *_Nonnull fixture,
+                                 const char *_Nonnull category, const char *_Nonnull name,
+                                 const char *_Nonnull expected)
 {
     struct persistence_port disk = persistence_adapter_port(fixture->files);
     struct note_text *text = nullptr;
-    require(disk.read_note(disk.adapter, "schedule", name, &text) == PERSISTENCE_LOADED &&
+    require(disk.read_note(disk.adapter, category, name, &text) == PERSISTENCE_LOADED &&
                 text != nullptr,
             "the new copy is readable");
     require(note_text_file_length(text) == strlen(expected) &&
@@ -3127,12 +3129,18 @@ static void expect_copy(struct native_fixture *_Nonnull fixture, const char *_No
     for (size_t version = 1; version <= note_history_depth; ++version)
     {
         text = nullptr;
-        struct history_version which = {.category = "schedule", .note = name, .version = version};
+        struct history_version which = {.category = category, .note = name, .version = version};
         require(disk.read_history(disk.adapter, &which, &text) == PERSISTENCE_ABSENT &&
                     text == nullptr,
                 "a newly created copy has no archived history");
         note_text_destroy(text);
     }
+}
+
+static void expect_copy(struct native_fixture *_Nonnull fixture, const char *_Nonnull name,
+                        const char *_Nonnull expected)
+{
+    expect_category_copy(fixture, "schedule", name, expected);
 }
 
 static void expect_name_operation_body(struct folio_window *_Nonnull window,
@@ -3359,12 +3367,21 @@ static void save_as_collisions(struct folio_window *_Nonnull window,
     SendMessageW(body, EM_EXSETSEL, 0, (LPARAM)&selection);
 }
 
-/* #735/#737/#739: Observe and finish only the real name dialog owned by this test. */
+/* #735/#737/#739/#741: Observe and finish only the real name dialog owned by this test. */
 enum name_dialog_action
 {
     NAME_DIALOG_CANCEL,
     NAME_DIALOG_CLOSE,
-    NAME_DIALOG_DISCARD
+    NAME_DIALOG_DISCARD,
+    NAME_DIALOG_SAVE
+};
+
+struct name_dialog_request
+{
+    enum name_dialog_action action;
+    bool discard;
+    const wchar_t *title;
+    const wchar_t *name;
 };
 
 struct name_dialog_probe
@@ -3376,12 +3393,11 @@ struct name_dialog_probe
     UINT_PTR timer;
     unsigned ticks;
     unsigned closed;
-    enum name_dialog_action action;
-    bool discard;
-    const wchar_t *title;
+    struct name_dialog_request request;
 };
 
 static struct name_dialog_probe name_dialog;
+static const wchar_t cancelled_name[] = L"zzcancel 日本語 🐾";
 
 static void enter_pending_destination(HWND dialog)
 {
@@ -3393,11 +3409,11 @@ static void enter_pending_destination(HWND dialog)
                 IsWindowEnabled(categories) && IsWindowEnabled(cancel) && GetFocus() == name,
             "the name modal opens editable name, category list and cancel with name focus");
     HWND discard = GetDlgItem(dialog, 3);
-    require(name_dialog.discard
+    require(name_dialog.request.discard
                 ? discard != nullptr && IsWindowVisible(discard) && IsWindowEnabled(discard)
                 : discard == nullptr,
             "only untitled departure offers a discard button");
-    if (name_dialog.discard)
+    if (name_dialog.request.discard)
     {
         wchar_t label[64];
         require(GetWindowTextW(discard, label, 64) > 0 && wcscmp(label, L"保存しない(&D)") == 0,
@@ -3406,14 +3422,15 @@ static void enter_pending_destination(HWND dialog)
     require(IsWindowEnabled(name_dialog.root) && !IsWindowEnabled(name_dialog.body) &&
                 !IsWindowEnabled(name_dialog.drawer),
             "the name modal leaves the root enabled while disabling its content controls");
-    require(SetWindowTextW(name, L"zzcancel 日本語 🐾"), "enter a valid unsaved destination name");
+    require(SetWindowTextW(name, name_dialog.request.name),
+            "enter a valid unsaved destination name");
     LRESULT target = SendMessageW(categories, LB_FINDSTRINGEXACT, (WPARAM)-1, (LPARAM)L"target");
     require(target != LB_ERR && SendMessageW(categories, LB_GETCURSEL, 0, 0) != target &&
                 SendMessageW(categories, LB_SETCURSEL, (WPARAM)target, 0) != LB_ERR &&
                 SendMessageW(categories, LB_GETCURSEL, 0, 0) == target,
             "change only the name dialog's selected destination category");
     wchar_t value[64];
-    require(GetWindowTextW(name, value, 64) > 0 && wcscmp(value, L"zzcancel 日本語 🐾") == 0,
+    require(GetWindowTextW(name, value, 64) > 0 && wcscmp(value, name_dialog.request.name) == 0,
             "the modal has a real pending destination name rather than an empty form");
 }
 
@@ -3424,20 +3441,24 @@ static BOOL CALLBACK close_name_dialog(HWND dialog, LPARAM parameter)
         GetClassNameW(dialog, kind, 32) == 0 || wcscmp(kind, L"#32770") != 0)
         return TRUE;
     wchar_t title[64];
-    require(GetWindowTextW(dialog, title, 64) > 0 && wcscmp(title, name_dialog.title) == 0,
+    require(GetWindowTextW(dialog, title, 64) > 0 && wcscmp(title, name_dialog.request.title) == 0,
             "the owned modal is the intended name dialog");
     enter_pending_destination(dialog);
     require(KillTimer(nullptr, name_dialog.timer), "stop the owned name dialog observer");
     name_dialog.timer = 0;
     name_dialog.dialog = dialog;
     ++name_dialog.closed;
-    switch (name_dialog.action)
+    switch (name_dialog.request.action)
     {
     case NAME_DIALOG_CANCEL:
         SendMessageW(GetDlgItem(dialog, IDCANCEL), BM_CLICK, 0, 0);
         break;
     case NAME_DIALOG_CLOSE:
         SendMessageW(dialog, WM_CLOSE, 0, 0);
+        break;
+    case NAME_DIALOG_SAVE:
+        require(IsWindowEnabled(GetDlgItem(dialog, IDOK)), "the entered destination can be saved");
+        SendMessageW(GetDlgItem(dialog, IDOK), BM_CLICK, 0, 0);
         break;
     case NAME_DIALOG_DISCARD:
         SendMessageW(GetDlgItem(dialog, 3), BM_CLICK, 0, 0);
@@ -3459,16 +3480,14 @@ static void CALLBACK observe_name_dialog(HWND window, UINT message, UINT_PTR tim
     EnumThreadWindows(GetCurrentThreadId(), close_name_dialog, (LPARAM)name_dialog.root);
 }
 
-static void start_name_dialog(struct folio_window *_Nonnull window, const wchar_t *_Nonnull title,
-                              bool discard, enum name_dialog_action action)
+static void start_name_dialog(struct folio_window *_Nonnull window,
+                              struct name_dialog_request request)
 {
     name_dialog = (struct name_dialog_probe){
         .root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW),
         .body = folio_window_accessible_window(window, ACCESSIBLE_BODY),
         .drawer = folio_window_accessible_window(window, ACCESSIBLE_DRAWER),
-        .action = action,
-        .discard = discard,
-        .title = title};
+        .request = request};
     require(IsWindow(name_dialog.drawer) && name_dialog.drawer != name_dialog.root &&
                 IsChild(name_dialog.root, name_dialog.drawer),
             "the native drawer belongs to the root and is not the abstract tree host");
@@ -3529,8 +3548,11 @@ static void cancel_save_as(struct folio_window *_Nonnull window,
                 disk.scan_notes(disk.adapter, "target", &target_files) == PERSISTENCE_LOADED &&
                 target_files != nullptr,
             "snapshot both dedicated category file sets before name cancellation");
-    start_name_dialog(window, L"別名で保存", false,
-                      close_message ? NAME_DIALOG_CLOSE : NAME_DIALOG_CANCEL);
+    start_name_dialog(window,
+                      (struct name_dialog_request){.title = L"別名で保存",
+                                                   .name = cancelled_name,
+                                                   .action = close_message ? NAME_DIALOG_CLOSE
+                                                                           : NAME_DIALOG_CANCEL});
     bool translated = native_key_input(window, 'S', FCONTROL | FSHIFT);
     finish_name_dialog();
     require(translated, "Ctrl+Shift+S translates through the registered accelerator");
@@ -4472,7 +4494,11 @@ static void cancel_untitled(struct folio_window *_Nonnull window,
                 target_files != nullptr,
             "snapshot both file sets before cancelling an untitled operation");
     size_t count = folio_state_note_count(fixture->state);
-    start_name_dialog(window, departure ? L"無題のノート" : L"保存", departure, NAME_DIALOG_CANCEL);
+    start_name_dialog(window,
+                      (struct name_dialog_request){.title = departure ? L"無題のノート" : L"保存",
+                                                   .name = cancelled_name,
+                                                   .discard = departure,
+                                                   .action = NAME_DIALOG_CANCEL});
     if (departure)
     {
         struct accessible_request create = {.item = {.kind = ACCESSIBLE_NEW_NOTE},
@@ -4539,7 +4565,10 @@ static void discard_untitled(struct folio_window *_Nonnull window,
                 target_files != nullptr,
             "snapshot both file sets before approving Don't Save");
     size_t count = folio_state_note_count(fixture->state);
-    start_name_dialog(window, L"無題のノート", true, NAME_DIALOG_DISCARD);
+    start_name_dialog(window, (struct name_dialog_request){.title = L"無題のノート",
+                                                           .name = cancelled_name,
+                                                           .discard = true,
+                                                           .action = NAME_DIALOG_DISCARD});
     struct accessible_request create = {.item = {.kind = ACCESSIBLE_NEW_NOTE},
                                         .action = ACCESSIBLE_ACTION_INVOKE};
     require(folio_window_accessible_action(window, &create) == S_OK,
@@ -4634,6 +4663,190 @@ static void run_first_save_case(struct native_fixture *_Nonnull fixture)
         note_text_destroy(initial.files[version]);
         note_text_destroy(original.files[version]);
     }
+}
+
+/* #741: The real name dialog saves the existing native draft into another category. */
+static void expect_modal_destination(struct native_fixture *_Nonnull fixture,
+                                     const char *_Nonnull name,
+                                     const struct name_list *_Nonnull previous)
+{
+    struct note_ref selected = {0};
+    require(folio_state_document_kind(fixture->state) == FOLIO_DOCUMENT_NAMED &&
+                folio_state_document_category(fixture->state) == 1 &&
+                strcmp(folio_state_document_name(fixture->state), name) == 0 &&
+                folio_state_selection(fixture->state, &selected) && selected.category == 1 &&
+                strcmp(folio_state_note_name(fixture->state, selected), name) == 0,
+            "the modal names and selects the first saved note in its chosen category");
+    struct persistence_port disk = persistence_adapter_port(fixture->files);
+    struct name_list *files = nullptr;
+    size_t count = name_list_count(previous) + 1;
+    require(disk.scan_notes(disk.adapter, "target", &files) == PERSISTENCE_LOADED &&
+                files != nullptr && name_list_count(files) == count &&
+                name_list_contains(files, name),
+            "the target contains exactly one additional Markdown file");
+    for (size_t index = 0; index < name_list_count(previous); ++index)
+        require(name_list_contains(files, name_list_at(previous, index)),
+                "every older destination filename is retained");
+    struct note_ledger *ledger = nullptr;
+    require(disk.read_note_ledger(disk.adapter, "target", &ledger) == PERSISTENCE_LOADED &&
+                ledger != nullptr && note_ledger_count(ledger) == count,
+            "the modal publishes the complete destination ledger");
+    for (size_t index = 0; index < count; ++index)
+        require(strcmp(note_ledger_name(ledger, index),
+                       folio_state_note_name(fixture->state, (struct note_ref){1, index})) == 0 &&
+                    name_list_contains(files, note_ledger_name(ledger, index)),
+                "every persisted destination row matches the public order and a real file");
+    name_list_destroy(files);
+    note_ledger_destroy(ledger);
+    expect_category_copy(fixture, "target", name, first_save_bytes);
+}
+
+static void expect_modal_cursor(struct native_fixture *_Nonnull fixture)
+{
+    enum folio_cursor_kind kind = FOLIO_CURSOR_NOTE;
+    struct note_ref cursor = {0};
+    require(folio_state_cursor(fixture->state, &kind, &cursor) && kind == FOLIO_CURSOR_CATEGORY &&
+                cursor.category == 0,
+            "first save does not steal the existing source category cursor");
+}
+
+struct modal_save_files
+{
+    struct history_snapshot original;
+    struct name_list *source;
+    struct name_list *target;
+    size_t count;
+    char name[64];
+};
+
+static void modal_save_roundtrip(struct folio_window *_Nonnull window,
+                                 struct native_fixture *_Nonnull fixture,
+                                 const struct modal_save_files *_Nonnull files)
+{
+    history_undo(window);
+    expect_editor(window, fixture->state, L"", FOLIO_NOTE_CHANGED);
+    expect_modal_destination(fixture, files->name, files->target);
+    expect_save_as_original(fixture, &files->original, 1);
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    require(SendMessageW(body, EM_CANREDO, 0, 0) != 0 && SendMessageW(body, EM_REDO, 0, 0) != 0,
+            "modal first save preserves actual native Redo to the saved draft");
+    pump(window);
+    expect_editor(window, fixture->state, first_save_edited, FOLIO_NOTE_SAME);
+    struct native_body_snapshot before = {0};
+    capture_native_body(window, &before);
+    require(before.focus == body, "Undo and Redo keep focus in the saved editor");
+    for (size_t repeat = 0; repeat < 2; ++repeat)
+    {
+        (void)native_key_input(window, 'S', FCONTROL);
+        expect_native_body(window, &before);
+        expect_editor(window, fixture->state, first_save_edited, FOLIO_NOTE_SAME);
+        expect_modal_destination(fixture, files->name, files->target);
+        expect_save_as_original(fixture, &files->original, 1);
+        expect_modal_cursor(fixture);
+    }
+}
+
+static void modal_save_draft(struct folio_window *_Nonnull window,
+                             struct native_fixture *_Nonnull fixture,
+                             const struct modal_save_files *_Nonnull files)
+{
+    struct persistence_port disk = persistence_adapter_port(fixture->files);
+    action(window, ACCESSIBLE_EDIT);
+    expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_SAME);
+    struct accessible_request create = {.item = {.kind = ACCESSIBLE_NEW_NOTE},
+                                        .action = ACCESSIBLE_ACTION_INVOKE};
+    require(folio_window_accessible_action(window, &create) == S_OK, "invoke the real New button");
+    pump(window);
+    expect_editor(window, fixture->state, L"", FOLIO_NOTE_CHANGED);
+    struct note_ref selected = {0};
+    require(folio_state_document_kind(fixture->state) == FOLIO_DOCUMENT_UNTITLED &&
+                folio_state_document_category(fixture->state) == 0 &&
+                folio_state_document_name(fixture->state)[0] == '\0' &&
+                !folio_state_selection(fixture->state, &selected),
+            "New creates only an unnamed draft in the source category");
+    verify_history_unchanged(fixture, &files->original);
+    expect_name_file_set(disk, "schedule", files->source);
+    expect_name_file_set(disk, "target", files->target);
+    require(folio_state_focus_cursor(fixture->state, FOLIO_CURSOR_CATEGORY,
+                                     (struct note_ref){0, 0}) == FOLIO_STATE_READY,
+            "establish a source category cursor in the new draft before first save");
+    expect_modal_cursor(fixture);
+}
+
+static void modal_save_accept(struct folio_window *_Nonnull window,
+                              struct native_fixture *_Nonnull fixture,
+                              struct modal_save_files *_Nonnull files)
+{
+    struct persistence_port disk = persistence_adapter_port(fixture->files);
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    SendMessageW(body, EM_REPLACESEL, TRUE, (LPARAM)first_save_edited);
+    pump(window);
+    expect_editor(window, fixture->state, first_save_edited, FOLIO_NOTE_CHANGED);
+    CHARRANGE selection = {.cpMin = 2, .cpMax = 6};
+    SendMessageW(body, EM_EXSETSEL, 0, (LPARAM)&selection);
+    struct native_body_snapshot before = {0};
+    capture_native_body(window, &before);
+    require(before.modified != 0 && before.undo != 0 && before.redo == 0 && before.focus == body &&
+                before.selection.cpMin < before.selection.cpMax,
+            "the draft has a real native insertion, nonempty selection and editor focus");
+    wchar_t input[64];
+    int length = snprintf(files->name, 64, "zzmodal 日本語 🐾-%zu", files->count);
+    int units = swprintf(input, 64, L"zzmodal 日本語 🐾-%zu", files->count);
+    require(length > 0 && length < 64 && units > 0 && units < 64,
+            "independent UTF-8 and UTF-16 destination literals fit");
+    struct note_text *absent = nullptr;
+    require(disk.read_note(disk.adapter, "target", files->name, &absent) == PERSISTENCE_ABSENT &&
+                absent == nullptr,
+            "the name dialog never overwrites an older first-save note");
+    start_name_dialog(window, (struct name_dialog_request){
+                                  .title = L"保存", .name = input, .action = NAME_DIALOG_SAVE});
+    (void)native_key_input(window, 'S', FCONTROL);
+    finish_name_dialog();
+    pump(window);
+    expect_native_body(window, &before);
+    expect_editor(window, fixture->state, first_save_edited, FOLIO_NOTE_SAME);
+    expect_modal_destination(fixture, files->name, files->target);
+    expect_modal_cursor(fixture);
+    require(folio_state_note_count(fixture->state) == files->count + 1,
+            "first save adds exactly one public note");
+    expect_save_as_original(fixture, &files->original, 1);
+    expect_name_file_set(disk, "schedule", files->source);
+}
+
+static void run_first_save_modal_case(struct native_fixture *_Nonnull fixture)
+{
+    require(strcmp(folio_state_note_name(fixture->state, (struct note_ref){0, 0}), "one") == 0 &&
+                strcmp(folio_state_category_name(fixture->state, 1), "target") == 0 &&
+                folio_state_select_note(fixture->state, 0, 0, FOLIO_UNTITLED_PROTECT) ==
+                    FOLIO_STATE_READY,
+            "select the source beside the dedicated destination category");
+    struct modal_save_files files = {0};
+    capture_history(fixture, &files.original);
+    struct persistence_port disk = persistence_adapter_port(fixture->files);
+    require(disk.scan_notes(disk.adapter, "schedule", &files.source) == PERSISTENCE_LOADED &&
+                files.source != nullptr &&
+                disk.scan_notes(disk.adapter, "target", &files.target) == PERSISTENCE_LOADED &&
+                files.target != nullptr,
+            "snapshot both categories before creating an unsaved draft");
+    files.count = folio_state_note_count(fixture->state);
+    require(files.count == name_list_count(files.source) + name_list_count(files.target),
+            "the fixture has exactly the two snapshotted categories");
+    struct folio_window *window = nullptr;
+    require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
+                FOLIO_WINDOW_CREATED,
+            "real first-save name dialog host");
+    pump(window);
+    modal_save_draft(window, fixture, &files);
+    modal_save_accept(window, fixture, &files);
+    modal_save_roundtrip(window, fixture, &files);
+    expect_name_file_set(disk, "schedule", files.source);
+    require(folio_state_note_count(fixture->state) == files.count + 1 && controlled.requests == 0,
+            "SAME saves add no public notes and plain Markdown requests no image work");
+    folio_window_destroy(window);
+    name_list_destroy(files.source);
+    name_list_destroy(files.target);
+    for (size_t version = 0; version <= note_history_depth; ++version)
+        note_text_destroy(files.original.files[version]);
 }
 
 /* #727: An empty named document is saved, archived and reloaded as a real document. */
@@ -4899,6 +5112,11 @@ static void run_extended_fixture(struct native_fixture *_Nonnull fixture, int ar
         run_empty_save_case(fixture);
         return;
     }
+    if (first_save_modal_case)
+    {
+        run_first_save_modal_case(fixture);
+        return;
+    }
     if (first_save_case)
     {
         run_first_save_case(fixture);
@@ -4966,6 +5184,7 @@ int main(int argc, char *_Nonnull *_Nonnull argv)
     move_edit_case = strcmp(selector, "--move-edit") == 0;
     unicode_save_case = strcmp(selector, "--unicode-save") == 0;
     first_save_case = strcmp(selector, "--first-save") == 0;
+    first_save_modal_case = strcmp(selector, "--first-save-modal") == 0;
     empty_save_case = strcmp(selector, "--empty-save") == 0;
     locked_save_case = strcmp(selector, "--locked-save") == 0;
     HWINSTA original_station = GetProcessWindowStation();

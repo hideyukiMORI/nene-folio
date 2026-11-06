@@ -44,3 +44,10 @@ Windows11 Pro10.0.26300、Msftedit10.0.26100.9949、既存専用desktop/verifica
 
 名前面での保存承認・validation/保存失敗・資源失敗、別ノート切替/主窓終了/OS session/IME中断、物理keyboard/Enter・全OS/DPI・外部UIAは対象外。
 通常app/実ノート/clipboard/前面focus/Storeを試験に使わない。個別保留466/634/530と旧削除拒否領域を維持する。
+
+## 統合・保全整理の確定
+
+#739/PR740は最終head87e012ccda604b76c980ba5e7af19e9af0b42308、必須CI42164552781 full-gate/check成功。
+mainea548a27c24286ef0de704da7cd99df634a965b9へ正典統合し、#731反映済み通常exeのhash/bytes/更新日時不変を確認した。
+2738filesを全hash保全し、絶対path/同一squash tree/clean・untracked・ignored/link/稼働参照0を確認後、専用worktree/outputを整理。
+branch/commit保持。確定原本D:/NeNeFolio/agents/739-untitled-discard-native/integration-completion.json。

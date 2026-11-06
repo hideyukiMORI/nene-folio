@@ -103,6 +103,9 @@ Ex語/focus/理由、native本文/選択/modified/UndoRedo、元md/全履歴/rev
 #739は入力済み/Redo保有の無題で「保存しない」を承認し、元カテゴリの次の空無題へ進む。first_save_native485checks/1.99秒、save_as_native377checks/1.82秒、CTest計3.81秒成功。stderr空・child/wrapper0・入力不変。
 旧nativeUndoRedoの切断、実UndoRedo無効、元保存物保持と後続初回保存を確認。
 [全試行と限界](quality/2026-11-06-untitled-discard-native.md)。
+#741は実名前面から日本語名で別カテゴリへ初回保存し、native本文/選択/UndoRedo/focus・既存cursorを保持する。first_save_native485checks/2.18秒、save_as_native377checks/2.15秒、first_save_modal_native219checks/1.59秒。前2件はtest-01の成功結果を再利用。新規caseはtest-02でCTest1.61秒成功、stderr空・child/wrapper0・入力不変。
+first_save_modal_native233checks/1.05秒、CTest1.06秒成功。旧target1fileの全bytes/hash/作成更新日時保持、旧/新とも履歴不在、新名1件のみ追加。stderr空・child/wrapper0・入力不変。
+新md/全台帳/初回履歴不在/revision1回を確認。[全試行と限界](quality/2026-11-06-first-save-modal-native.md)。
 
 #717の改名はCTestのrename_nativeで固定する。専用target/dataの実Ex入口から同名無操作/理由と入力focus保持、
 変更EDIT/Redo保有状態の先保存・履歴移動・native UndoRedo、VIEWの非保存改名、旧名/journal不在を252checksで確認した。
