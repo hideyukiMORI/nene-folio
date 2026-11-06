@@ -92,6 +92,11 @@ native本文/選択/UndoRedoと元md/全履歴を保ち、新mdの全bytes/初�
 再実行で前回3コピーのbytes/hash/作成更新日時不変と新3コピー追加を照合した。30秒timeout/data lockを維持する。
 全試行・未検証範囲は[品質記録](quality/2026-11-06-save-as-native.md)へ。
 
+#717の改名はCTestのrename_nativeで固定する。専用target/dataの実Ex入口から同名無操作/理由と入力focus保持、
+変更EDIT/Redo保有状態の先保存・履歴移動・native UndoRedo、VIEWの非保存改名、旧名/journal不在を252checksで確認した。
+直接共用したEx/履歴helperのsave_as164checks、同data再実行252checksと前回md/4履歴のbytes/日時保持も成功した。
+30秒timeout/data lockを維持する。全試行・初回complexity拒否・限界は[品質記録](quality/2026-11-06-rename-native.md)へ。
+
 - 機械強制: **不能**（テストの有意味性・契約の充足は判断であり、記録とレビューで確認する。QLT-009のカバレッジ下限だけでは代替できない）
 
 ### QLT-009 — カバレッジは下げられない

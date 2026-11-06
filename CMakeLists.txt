@@ -273,7 +273,7 @@ add_test(NAME diagram_render COMMAND diagram_render_tests)
 set_tests_properties(diagram_render PROPERTIES TIMEOUT 60)
 
 # #520: main-window progress and cancellation on an isolated desktop.
-foreach(native_host image_status_tests save_as_native_tests)
+foreach(native_host image_status_tests save_as_native_tests rename_native_tests)
     nenefolio_target(${native_host} win32_tests EXECUTABLE
         tests/win32/image_status_tests.c tests/win32/image_status_tests.rc)
     nenefolio_link(${native_host} nenefolio_core)
@@ -295,6 +295,10 @@ set_source_files_properties(tests/win32/image_status_tests.rc PROPERTIES
 set_target_properties(image_status_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/verification-images")
 # #715: Retained Save As copies must not affect other native fixtures' note order.
 set_target_properties(save_as_native_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/verification-save-as")
+# #717: Renamed fixture files stay isolated from the source notes of other native cases.
+set_target_properties(rename_native_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/verification-rename")
+add_test(NAME rename_native COMMAND rename_native_tests --rename)
+set_tests_properties(rename_native PROPERTIES TIMEOUT 30 RESOURCE_LOCK image_status_data)
 add_test(NAME save_as_native COMMAND save_as_native_tests --save-as)
 set_tests_properties(save_as_native PROPERTIES TIMEOUT 30 RESOURCE_LOCK image_status_data)
 add_test(NAME image_status COMMAND image_status_tests)
@@ -335,7 +339,7 @@ set_tests_properties(image_status note_status_ja note_status_en note_status_zh
     note_status_find note_status_replace PROPERTIES RESOURCE_LOCK image_status_data)
 
 # The same icon resource is used by the product and real-window verification hosts (ADR0088).
-foreach(icon_target nenefolio image_status_tests save_as_native_tests minimap_scheduling_tests settings_accessibility_tests)
+foreach(icon_target nenefolio image_status_tests save_as_native_tests rename_native_tests minimap_scheduling_tests settings_accessibility_tests)
     target_include_directories(${icon_target} PRIVATE
         "$<$<COMPILE_LANGUAGE:RC>:${CMAKE_CURRENT_SOURCE_DIR}/packaging/windows>")
 endforeach()

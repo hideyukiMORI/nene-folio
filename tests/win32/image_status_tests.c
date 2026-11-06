@@ -12,12 +12,14 @@
 #include "font_bundle.h"
 #include "image_bitmap.h"
 #include "image_port.h"
+#include "name_list.h"
 #include "note_file_times.h"
 #include "note_history.h"
 #include "note_ledger.h"
 #include "note_text.h"
 #include "persistence_adapter.h"
 #include "regex_adapter.h"
+#include "rename_view.h"
 #include "storage_adapter.h"
 #include "storage_native_path.h"
 #include "storage_state.h"
@@ -58,6 +60,7 @@ static bool paste_case;
 static bool format_case;
 static bool layout_case;
 static bool save_as_case;
+static bool rename_case;
 
 static const char history_current[] = "# Current 日本語 😀 **saved**";
 static const char history_previous[] = "> Previous 猫 🐾 `old`";
@@ -110,12 +113,12 @@ static void seed_notes(struct persistence_port disk)
                      : "Body before images\n\n![alt](images/one.png)\n\nBody after images\n";
     if (history_case || replace_case || search_case || note_switch_case || zoom_case ||
         theme_preview_case || settings_edit_case || mode_save_case || discard_case ||
-        palette_case || paste_case || format_case || layout_case || save_as_case)
+        palette_case || paste_case || format_case || layout_case || save_as_case || rename_case)
     {
         seed_history(disk);
         source = history_case || note_switch_case || zoom_case || theme_preview_case ||
                          settings_edit_case || mode_save_case || discard_case || palette_case ||
-                         paste_case || format_case || layout_case || save_as_case
+                         paste_case || format_case || layout_case || save_as_case || rename_case
                      ? history_current
                      : replace_current;
     }
@@ -756,13 +759,20 @@ struct history_snapshot
     uint64_t store_revision;
 };
 
+static enum persistence_outcome named_history_file(struct persistence_port disk,
+                                                   const char *_Nonnull name, size_t version,
+                                                   struct note_text *_Nullable *_Nonnull out)
+{
+    if (version == 0)
+        return disk.read_note(disk.adapter, "schedule", name, out);
+    struct history_version which = {.category = "schedule", .note = name, .version = version};
+    return disk.read_history(disk.adapter, &which, out);
+}
+
 static enum persistence_outcome history_file(struct persistence_port disk, size_t version,
                                              struct note_text *_Nullable *_Nonnull out)
 {
-    if (version == 0)
-        return disk.read_note(disk.adapter, "schedule", "one", out);
-    struct history_version which = {.category = "schedule", .note = "one", .version = version};
-    return disk.read_history(disk.adapter, &which, out);
+    return named_history_file(disk, "one", version, out);
 }
 
 static void capture_history(struct native_fixture *_Nonnull fixture,
@@ -781,11 +791,11 @@ static void capture_history(struct native_fixture *_Nonnull fixture,
             "current note and two seeded versions exist");
 }
 
-static void expect_history_file(struct persistence_port disk, size_t version,
-                                const struct note_text *_Nullable expected)
+static void expect_named_history_file(struct persistence_port disk, const char *_Nonnull name,
+                                      size_t version, const struct note_text *_Nullable expected)
 {
     struct note_text *_Nullable actual = nullptr;
-    enum persistence_outcome outcome = history_file(disk, version, &actual);
+    enum persistence_outcome outcome = named_history_file(disk, name, version, &actual);
     if (expected == nullptr)
         require(outcome == PERSISTENCE_ABSENT && actual == nullptr, "absent version stays absent");
     else
@@ -798,6 +808,12 @@ static void expect_history_file(struct persistence_port disk, size_t version,
                 "stored file matches every expected byte");
     }
     note_text_destroy(actual);
+}
+
+static void expect_history_file(struct persistence_port disk, size_t version,
+                                const struct note_text *_Nullable expected)
+{
+    expect_named_history_file(disk, "one", version, expected);
 }
 
 static void verify_history_unchanged(struct native_fixture *_Nonnull fixture,
@@ -2916,17 +2932,34 @@ static void expect_copy(struct native_fixture *_Nonnull fixture, const char *_No
     }
 }
 
-static void expect_save_as_body(struct folio_window *_Nonnull window,
-                                const struct native_body_snapshot *_Nonnull before)
+static void expect_name_operation_body(struct folio_window *_Nonnull window,
+                                       const struct native_body_snapshot *_Nonnull before)
 {
     struct native_body_snapshot after = {0};
     capture_native_body(window, &after);
     require(wcscmp(after.text, before->text) == 0 &&
                 after.selection.cpMin == before->selection.cpMin &&
                 after.selection.cpMax == before->selection.cpMax,
-            "Save As retains all native text units and the selection");
+            "Name operation retains all native text units and the selection");
     require(after.undo == before->undo && after.redo == before->redo,
-            "Save As retains native Undo and Redo availability");
+            "Name operation retains native Undo and Redo availability");
+}
+
+static void submit_ex(struct folio_window *_Nonnull window, const wchar_t *_Nonnull command)
+{
+    struct accessible_request focus = {.item = {.kind = ACCESSIBLE_TREE},
+                                       .action = ACCESSIBLE_ACTION_FOCUS};
+    require(folio_window_accessible_action(window, &focus) == S_OK,
+            "open Ex from the public tree focus without typing into the editor");
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    SendMessageW(root, WM_CHAR, ':', 0);
+    pump(window);
+    HWND input = folio_window_accessible_window(window, ACCESSIBLE_COMMAND_INPUT);
+    require(input != nullptr && IsWindowVisible(input) && GetFocus() == input,
+            "the real Ex input is visible and focused");
+    require(SetWindowTextW(input, command), "enter the dedicated Ex command");
+    SendMessageW(input, WM_KEYDOWN, VK_RETURN, 0);
+    pump(window);
 }
 
 static void save_as_command(struct folio_window *_Nonnull window,
@@ -2942,25 +2975,14 @@ static void save_as_command(struct folio_window *_Nonnull window,
             "repeat runs never overwrite a previous dedicated copy");
     struct native_body_snapshot before = {0};
     capture_native_body(window, &before);
-    struct accessible_request focus = {.item = {.kind = ACCESSIBLE_TREE},
-                                       .action = ACCESSIBLE_ACTION_FOCUS};
-    require(folio_window_accessible_action(window, &focus) == S_OK,
-            "open Ex from the public tree focus without typing into the editor");
-    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
-    SendMessageW(root, WM_CHAR, ':', 0);
-    pump(window);
-    HWND input = folio_window_accessible_window(window, ACCESSIBLE_COMMAND_INPUT);
-    require(input != nullptr && IsWindowVisible(input) && GetFocus() == input,
-            "the real Ex input is visible and focused");
     wchar_t command[96];
     require(swprintf(command, 96, L":saveas zzcopy-%zu", count) > 0, "the Save As command fits");
-    require(SetWindowTextW(input, command), "enter the dedicated Save As name");
-    SendMessageW(input, WM_KEYDOWN, VK_RETURN, 0);
-    pump(window);
+    submit_ex(window, command);
+    HWND input = folio_window_accessible_window(window, ACCESSIBLE_COMMAND_INPUT);
     require(!IsWindowVisible(input) && folio_state_note_count(fixture->state) == count + 1 &&
                 strcmp(folio_state_document_name(fixture->state), name) == 0,
             "Ex creates and selects exactly one new note and closes");
-    expect_save_as_body(window, &before);
+    expect_name_operation_body(window, &before);
 }
 
 static void expect_save_as_original(struct native_fixture *_Nonnull fixture,
@@ -3049,14 +3071,213 @@ static void run_save_as_case(struct native_fixture *_Nonnull fixture)
         note_text_destroy(history.files[version]);
 }
 
+static void select_rename_source(struct native_fixture *_Nonnull fixture)
+{
+    struct persistence_port disk = persistence_adapter_port(fixture->files);
+    struct name_list *names = nullptr;
+    require(disk.scan_notes(disk.adapter, "schedule", &names) == PERSISTENCE_LOADED &&
+                names != nullptr &&
+                name_list_count(names) == folio_state_note_count(fixture->state),
+            "all dedicated rename notes belong to the fixture category");
+    size_t count = name_list_count(names);
+    name_list_destroy(names);
+    for (size_t index = 0; index < count; ++index)
+    {
+        if (strcmp(folio_state_note_name(fixture->state, (struct note_ref){0, index}), "one") == 0)
+        {
+            require(folio_state_select_note(fixture->state, 0, index, FOLIO_UNTITLED_PROTECT) ==
+                        FOLIO_STATE_READY,
+                    "select the new original without moving a previous renamed fixture");
+            return;
+        }
+    }
+    require(false, "the dedicated original exists in the current ledger");
+}
+
+static void expect_rename_path_absent(struct native_fixture *_Nonnull fixture,
+                                      const wchar_t *_Nonnull suffix)
+{
+    wchar_t root[storage_native_capacity];
+    size_t length = 0;
+    require(storage_native_path_fill(storage_state_directory(fixture->location), root, &length),
+            "the dedicated data path is available");
+    wchar_t path[storage_native_capacity];
+    require(swprintf(path, storage_native_capacity, L"%ls%ls", root, suffix) > 0,
+            "the dedicated rename path fits");
+    require(GetFileAttributesW(path) == INVALID_FILE_ATTRIBUTES &&
+                GetLastError() == ERROR_FILE_NOT_FOUND,
+            "the old history directory or completed rename journal is absent");
+}
+
+static void expect_rename_name_absent(struct native_fixture *_Nonnull fixture,
+                                      const char *_Nonnull name)
+{
+    struct persistence_port disk = persistence_adapter_port(fixture->files);
+    for (size_t version = 0; version <= note_history_depth; ++version)
+        expect_named_history_file(disk, name, version, nullptr);
+    wchar_t wide[64];
+    require(MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, name, -1, wide, 64) > 0,
+            "the dedicated rename name converts to UTF-16");
+    wchar_t suffix[128];
+    require(swprintf(suffix, 128, L"\\.history\\schedule\\%ls", wide) > 0,
+            "the dedicated history suffix fits");
+    expect_rename_path_absent(fixture, suffix);
+}
+
+static void expect_renamed_files(struct native_fixture *_Nonnull fixture,
+                                 const struct history_snapshot *_Nonnull expected)
+{
+    require(folio_state_store_revision(fixture->state) == expected->store_revision,
+            "rename saves only changed editor contents, once per change");
+    struct persistence_port disk = persistence_adapter_port(fixture->files);
+    const char *name = folio_state_document_name(fixture->state);
+    for (size_t version = 0; version <= note_history_depth; ++version)
+        expect_named_history_file(disk, name, version, expected->files[version]);
+}
+
+static void rename_command(struct folio_window *_Nonnull window,
+                           struct native_fixture *_Nonnull fixture, unsigned step)
+{
+    size_t count = folio_state_note_count(fixture->state);
+    char old[64];
+    int length = snprintf(old, 64, "%s", folio_state_document_name(fixture->state));
+    require(length > 0 && length < 64, "the original name fits before its ledger is replaced");
+    char name[64];
+    length = snprintf(name, 64, "zzrename-%zu-%u", count, step);
+    require(length > 0 && length < 64, "the dedicated destination name fits");
+    expect_rename_name_absent(fixture, name);
+    struct native_body_snapshot before = {0};
+    capture_native_body(window, &before);
+    wchar_t command[96];
+    require(swprintf(command, 96, L":rename zzrename-%zu-%u", count, step) > 0,
+            "the dedicated rename command fits");
+    submit_ex(window, command);
+    HWND input = folio_window_accessible_window(window, ACCESSIBLE_COMMAND_INPUT);
+    require(!IsWindowVisible(input) && folio_state_note_count(fixture->state) == count &&
+                strcmp(folio_state_document_name(fixture->state), name) == 0,
+            "rename changes only the selected name and closes Ex");
+    expect_name_operation_body(window, &before);
+    expect_rename_name_absent(fixture, old);
+    struct rename_view pending = {.kind = RENAME_KIND_NOTE, .from = "", .to = ""};
+    require(!folio_state_rename_pending(fixture->state, &pending),
+            "the completed rename leaves no application recovery intent");
+    expect_rename_path_absent(fixture, L"\\.rename.json");
+}
+
+static void rename_same_name(struct folio_window *_Nonnull window,
+                             struct native_fixture *_Nonnull fixture,
+                             const struct history_snapshot *_Nonnull history)
+{
+    struct native_body_snapshot before = {0};
+    capture_native_body(window, &before);
+    submit_ex(window, L":rename one");
+    HWND input = folio_window_accessible_window(window, ACCESSIBLE_COMMAND_INPUT);
+    wchar_t query[64];
+    require(IsWindowVisible(input) && GetFocus() == input && GetWindowTextW(input, query, 64) > 0 &&
+                wcscmp(query, L":rename one") == 0,
+            "same-name rejection retains the Ex input");
+    struct accessible_item item = {.kind = ACCESSIBLE_SURFACE_STATUS,
+                                   .revision = folio_window_accessible_surface_revision(window)};
+    struct accessible_view status = {0};
+    require(folio_window_accessible_read(window, &item, &status) == S_OK && !status.offscreen &&
+                wcsstr(status.name, L"同じ名前です。") != nullptr,
+            "same-name rejection exposes its existing inline reason");
+    expect_name_operation_body(window, &before);
+    expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_CHANGED);
+    verify_history_unchanged(fixture, history);
+    expect_rename_path_absent(fixture, L"\\.rename.json");
+    SendMessageW(input, WM_KEYDOWN, VK_ESCAPE, 0);
+    pump(window);
+    require(!IsWindowVisible(input), "Escape closes the retained Ex input");
+    expect_name_operation_body(window, &before);
+}
+
+static void expected_rename_save(struct history_snapshot *_Nonnull expected,
+                                 struct note_text *_Nonnull content)
+{
+    for (size_t version = note_history_depth; version > 0; --version)
+        expected->files[version] = expected->files[version - 1];
+    expected->files[0] = content;
+    ++expected->store_revision;
+}
+
+static void rename_edit(struct folio_window *_Nonnull window,
+                        struct native_fixture *_Nonnull fixture,
+                        const struct history_snapshot *_Nonnull history,
+                        struct history_snapshot *_Nonnull expected)
+{
+    action(window, ACCESSIBLE_EDIT);
+    append_switch_text(window);
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    CHARRANGE selection = {.cpMin = 10, .cpMax = 12};
+    SendMessageW(body, EM_EXSETSEL, 0, (LPARAM)&selection);
+    rename_same_name(window, fixture, history);
+    rename_command(window, fixture, 1);
+    expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_SAME);
+    expect_renamed_files(fixture, expected);
+    history_undo(window);
+    expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_CHANGED);
+    require(SendMessageW(body, EM_REDO, 0, 0) != 0, "Redo survives rename of changed text");
+    pump(window);
+    expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_SAME);
+    history_undo(window);
+    expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_CHANGED);
+    require(SendMessageW(body, EM_CANREDO, 0, 0) != 0, "the second rename starts with native Redo");
+    SendMessageW(body, EM_EXSETSEL, 0, (LPARAM)&selection);
+    rename_command(window, fixture, 2);
+    struct note_text *original = history->files[0];
+    require(original != nullptr, "the captured original is available for the second save");
+    expected_rename_save(expected, original);
+    expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_SAME);
+    expect_renamed_files(fixture, expected);
+    require(SendMessageW(body, EM_REDO, 0, 0) != 0, "Redo survives rename of undone text");
+    pump(window);
+    expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_CHANGED);
+    history_undo(window);
+    expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_SAME);
+    expect_renamed_files(fixture, expected);
+}
+
+/* #717: Save changed text before rename, moving every history slot without reloading the editor. */
+static void run_rename_case(struct native_fixture *_Nonnull fixture)
+{
+    select_rename_source(fixture);
+    struct history_snapshot history = {0};
+    capture_history(fixture, &history);
+    struct note_text *edited = nullptr;
+    require(note_text_create(switch_saved, strlen(switch_saved), &edited) == NOTE_TEXT_ACCEPTED,
+            "valid expected edited Markdown for rename");
+    struct history_snapshot expected = history;
+    expected_rename_save(&expected, edited);
+    struct folio_window *window = nullptr;
+    require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
+                FOLIO_WINDOW_CREATED,
+            "real window for rename edit retention");
+    pump(window);
+    rename_edit(window, fixture, &history, &expected);
+    action(window, ACCESSIBLE_VIEW);
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    CHARRANGE selection = {.cpMin = 2, .cpMax = 5};
+    SendMessageW(body, EM_EXSETSEL, 0, (LPARAM)&selection);
+    struct native_body_snapshot view = {0};
+    capture_native_body(window, &view);
+    require(wcsstr(view.text, L"**saved**") == nullptr,
+            "the view differs from the raw Markdown being renamed");
+    rename_command(window, fixture, 3);
+    require(folio_state_pane_mode(fixture->state) == PANE_MODE_VIEW &&
+                (GetWindowLongPtrW(body, GWL_STYLE) & ES_READONLY) != 0,
+            "rename preserves VIEW and readonly mode");
+    expect_renamed_files(fixture, &expected);
+    require(controlled.requests == 0, "plain rename does not request image work");
+    folio_window_destroy(window);
+    note_text_destroy(edited);
+    for (size_t version = 0; version <= note_history_depth; ++version)
+        note_text_destroy(history.files[version]);
+}
+
 static void run_other_fixture(struct native_fixture *_Nonnull fixture, int argc,
                               char *_Nonnull *_Nonnull argv)
 {
-    if (save_as_case)
-    {
-        run_save_as_case(fixture);
-        return;
-    }
     if (layout_case)
     {
         run_layout_case(fixture);
@@ -3101,6 +3322,22 @@ static void run_other_fixture(struct native_fixture *_Nonnull fixture, int argc,
     }
 }
 
+static void run_name_fixture(struct native_fixture *_Nonnull fixture, int argc,
+                             char *_Nonnull *_Nonnull argv)
+{
+    if (rename_case)
+    {
+        run_rename_case(fixture);
+        return;
+    }
+    if (save_as_case)
+    {
+        run_save_as_case(fixture);
+        return;
+    }
+    run_other_fixture(fixture, argc, argv);
+}
+
 static void run_fixture(struct native_fixture *_Nonnull fixture, int argc,
                         char *_Nonnull *_Nonnull argv)
 {
@@ -3121,7 +3358,7 @@ static void run_fixture(struct native_fixture *_Nonnull fixture, int argc,
     else if (argc == 2 && strcmp(argv[1], "--icon") == 0)
         window_icons(fixture);
     else
-        run_other_fixture(fixture, argc, argv);
+        run_name_fixture(fixture, argc, argv);
 }
 
 int main(int argc, char *_Nonnull *_Nonnull argv)
@@ -3131,6 +3368,7 @@ int main(int argc, char *_Nonnull *_Nonnull argv)
     format_case = strcmp(selector, "--format-keys") == 0;
     layout_case = strcmp(selector, "--layout") == 0;
     save_as_case = strcmp(selector, "--save-as") == 0;
+    rename_case = strcmp(selector, "--rename") == 0;
     HWINSTA original_station = GetProcessWindowStation();
     HDESK original_desktop = GetThreadDesktop(GetCurrentThreadId());
     HWINSTA paste_station = paste_case ? isolate_paste_clipboard() : nullptr;
