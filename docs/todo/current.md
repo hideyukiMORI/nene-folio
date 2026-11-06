@@ -1,19 +1,17 @@
 # いまの状態 — NeNe Folio
 
-## 2026-11-06 — #749まで完了、OS終了通知の保存・取消を確認中
+## 2026-11-06 — #751まで完了、無題のOS終了拒否を確認中
 
-hideの07:08の依頼により、停止指示まで品質対応を継続する。試験・計測・必要な調査と独立レビューを行い、全試行と変更を記録する。
-最優先の平文paste・書式キー・Debug ASan修正はmain統合・通常反映・全保全整理まで完了。
-保存/改名/移動/無題離脱/初回保存/trash拒否/検索focus保存/通常終了拒否の回帰は#749/PR750まで統合・整理済み。
-[日報](../reports/2026-11-06.md)・[引き継ぎ](../handoffs/2026-11-06.md)と各品質記録へ実測・確定原本を収載した。
-最新確定mainはf9b0151962f14a5cd433062a38c5b9d1aa259e78、最終CI42179944433成功。
-#749確定原本D:/NeNeFolio/agents/749-close-busy-native/integration-completion.json。
+hideの07:08の依頼により停止指示まで品質対応を継続する。最優先の平文paste・書式キー・Debug ASan修正は統合・通常反映・整理済み。
+保存/改名/移動/無題離脱/初回保存/trash拒否/検索focus保存/通常終了拒否/名前付きOS終了通知の回帰は#751/PR752まで統合・整理済み。
+[日報](../reports/2026-11-06.md)・[引き継ぎ](../handoffs/2026-11-06.md)と各品質記録へ実測・確定原本を収載。
+最新確定mainは201c6854b747ba42ed210a45272f3ef825e2a086、最終CI42182200571成功。
+#751確定原本D:/NeNeFolio/agents/751-session-save-native/integration-completion.json。
 
-#751は専用窓のOS終了通知について保存拒否/承認/入力凍結/終了取消/UndoRedo/最終破棄と保存一回を固定する。
-session_save_native 233checks/0.78秒、CTest0.78秒成功。台帳あり/source追加2md/target追加1mdのrepeatは253checks/0.63秒、CTest0.63秒成功。runtime stderr空・child/wrapper0・入力不変。追加3mdと台帳の全bytes/hash/作成更新日時不変。 既存振分け確認locked_save_native 459checks/1.14秒、CTest1.15秒成功。
-build01/02複雑度超過を短い選択関数への分離で訂正、build03成功。src/API/schema不変、CMakeは試験登録2行。
-最終CI/統合/通常exe不変/全保全整理はこれから。[品質記録](../quality/2026-11-06-session-save-native.md)。
-作業木D:/NeNeFolio/worktrees/751-session-save-native、試行同outputs、恒久原本同agents。全体journalはD:/NeNeFolio/agents/quality-20261106/journal.md。
+#753は初期空/編集済み/Undo後空で無題のOS終了を拒否し、入力と保存物を保持。手動初回保存後の承認/取消/最終破棄を固定する。
+first_save_modal_native 308checks/1.15秒、session_save_native 233checks/0.83秒、session_untitled_native 576checks/0.91秒、計2.89秒成功。台帳・追加ノート・前回保存物ありのrepeatはsession_untitled_native 702checks/1.09秒、CTest1.1秒成功。runtime stderr空・child/wrapper0・入力不変。元追加2md/target追加1md/前回保存物/元台帳の全bytes/hash/作成更新日時不変。
+src/API/schema不変、CMakeは試験登録2行。最終CI/統合/通常exe不変/全保全整理はこれから。[品質記録](../quality/2026-11-06-session-untitled-native.md)。
+作業木D:/NeNeFolio/worktrees/753-session-untitled-native、試行同outputs、恒久agents。全体journalはD:/NeNeFolio/agents/quality-20261106/journal.md。
 過去の停止履歴は今回依頼の停止指示として扱わない。
 
 ## 公開済み1.3.1
