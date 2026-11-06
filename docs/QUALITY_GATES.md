@@ -103,6 +103,10 @@ native本文/選択/UndoRedoと元md/全履歴を保ち、新mdの全bytes/初�
 履歴/revisionを1回だけ更新する221checksを確認した。Undo/Redo後の保存基準も固定する。
 実置換/IME/I/O失敗/無題modalは再検査しない。[品質記録](quality/2026-11-06-replace-save-native.md)。
 
+#721のmove_edit_nativeは実drawerのdragによるEDIT/Redo保有状態の往復移動と、各宛先の保存/履歴を固定する。
+358checksと再実行398checksで本文native状態、非保存の移動、保存先追随、旧履歴保持を確認。製品経路は不変。
+物理mouse/IME/全DPI/衝突/I/O失敗は対象外。[品質記録](quality/2026-11-06-move-edit-native.md)。
+
 ### QLT-009 — カバレッジは下げられない
 
 中核の分岐カバレッジ下限を 90% とする。閾値は上げてよいが下げてはならない。下げるには ADR が要る。

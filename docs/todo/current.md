@@ -1,6 +1,6 @@
 # いまの状態 — NeNe Folio
 
-## 2026-11-06 — 改名まで完了、置換2欄からの保存を確認中
+## 2026-11-06 — 置換2欄保存まで完了、カテゴリ間dragの編集保持を確認中
 
 hideの新しい依頼により、停止指示まで品質対応を継続する。試験・計測・必要な調査と独立レビューを行い、全試行と変更を記録する。
 最優先の#479はPR708の最終CI42122814552が成功し、main `50fa28ea6ebc120023f1bbd30a753f9c3a5e9ab3`へ統合した。
@@ -18,8 +18,10 @@ hideの新しい依頼により、停止指示まで品質対応を継続する�
 通常exe不変、3358files全保全・専用領域整理まで完了。[品質記録](../quality/2026-11-06-save-as-native.md)、確定原本同agents/715-save-as-native/integration-completion.json。
 #717/PR718は改名252checks・直接共用save_as164checks・再実行252checksと最終CI42141683575成功、main8ebc8b8a7b28fe81f9bf68630c58acf26617b1aaへ統合。
 通常exe不変、4099files全保全・専用領域整理まで完了。[品質記録](../quality/2026-11-06-rename-native.md)、確定原本同agents/717-rename-native/integration-completion.json。
-#719は置換2入力からのCtrl+Sと本文のnative保持を追加し、対象221checks/1.45秒が成功、stderr空。
-製品src/API/schemaは不変。最終CI/統合はこれから。[品質記録](../quality/2026-11-06-replace-save-native.md)。作業木D:/NeNeFolio/worktrees/719-replace-save-native、試行同outputs、恒久原本同agents。
+#719/PR720は置換2欄の保存221checksと最終CI42144117242成功、mainb85308e653eac90041c764accb882231350eb058へ統合。
+通常exe不変、3371files全保全・専用領域整理まで完了。[品質記録](../quality/2026-11-06-replace-save-native.md)、確定原本同agents/719-replace-save-native/integration-completion.json。
+#721はカテゴリ間dragのnative編集保持と各保存先の履歴を追加し、358checksと再実行398checksが成功、stderr空。
+製品src/API/schemaは不変。最終CI/統合はこれから。[品質記録](../quality/2026-11-06-move-edit-native.md)。作業木D:/NeNeFolio/worktrees/721-move-edit-native、試行同outputs、恒久原本同agents。
 全体journalはD:/NeNeFolio/agents/quality-20261106/journal.md。
 00:51の停止は今回指示で解除。停止処理の履歴はD:/NeNeFolio/agents/706-store-publication/integration-completion.jsonに保持する。
 #704/PR705は操作パレットの取消と編集保持を確認（141checks、stderr空）し、最終CI42054891152成功、main eaef26aへ統合・全保全整理済み。
