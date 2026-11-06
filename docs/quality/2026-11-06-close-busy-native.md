@@ -56,3 +56,10 @@ Draftでhead/title/bodyを確定し、正典tools/merge-pr.ps1でReady→最終h
 名前付き本文・通常WM_CLOSE・共有違反での履歴拒否と解除後保存だけを対象とする。
 UNTITLEDの名前面/破棄/取消、theme/modalを開いた終了の全組合せ、OSsession/実ログオフ/強制終了、IME/物理AltF4/外部UIA、容量/ACL/部分書込/資源失敗は対象外。
 通常app/実ノート/clipboard/前面focus/Storeは使わない。個別保留466/634/530と旧削除拒否領域を維持する。
+
+## 統合・保全整理の確定
+
+#749/PR750は最終heada3f962d6327a70d1aaa80ae6ca69652f146e6909、必須CI42179944433 full-gate/check成功。
+mainf9b0151962f14a5cd433062a38c5b9d1aa259e78へ正典統合、src/eng/fonts/packaging/CMake不変と通常exeのhash/bytes/更新日時不変を確認し、通常build/app起動なし。
+4202filesを全hash保全し、絶対path/同一squash tree/clean・untracked・ignored/link/稼働参照0確認後、専用worktree/outputを整理。branch/commit保持。
+確定原本D:/NeNeFolio/agents/749-close-busy-native/integration-completion.json。

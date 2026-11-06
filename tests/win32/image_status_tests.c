@@ -69,6 +69,7 @@ static bool first_save_modal_case;
 static bool empty_save_case;
 static bool locked_save_case;
 static bool filter_save_case;
+static bool session_save_case;
 
 static const char history_current[] = "# Current 日本語 😀 **saved**";
 static const char history_previous[] = "> Previous 猫 🐾 `old`";
@@ -146,7 +147,8 @@ static void seed_notes(struct persistence_port disk)
         theme_preview_case || settings_edit_case || mode_save_case || discard_case ||
         palette_case || paste_case || format_case || layout_case || save_as_case || rename_case ||
         replace_save_case || move_edit_case || first_save_case || first_save_modal_case ||
-        empty_save_case || locked_save_case || unicode_save_case || filter_save_case)
+        empty_save_case || locked_save_case || unicode_save_case || filter_save_case ||
+        session_save_case)
     {
         seed_history(disk);
         source = history_case || note_switch_case || zoom_case || theme_preview_case ||
@@ -154,7 +156,7 @@ static void seed_notes(struct persistence_port disk)
                          paste_case || format_case || layout_case || save_as_case || rename_case ||
                          replace_save_case || move_edit_case || first_save_case ||
                          first_save_modal_case || empty_save_case || locked_save_case ||
-                         filter_save_case
+                         filter_save_case || session_save_case
                      ? history_current
                      : replace_current;
     }
@@ -5670,6 +5672,150 @@ static void run_filter_save_case(struct native_fixture *_Nonnull fixture)
         note_text_destroy(history.files[version]);
 }
 
+/* #751: Only the dedicated root receives session notifications; no OS session is ended. */
+static void expect_session_live(struct folio_window *_Nonnull window, HWND root, bool enabled)
+{
+    MSG message;
+    require(IsWindow(root) && folio_window_accessible_window(window, ACCESSIBLE_WINDOW) == root &&
+                (IsWindowEnabled(root) != 0) == enabled &&
+                folio_window_accessible_ready(window) == enabled,
+            "session negotiation retains the same root and the expected input availability");
+    require(!PeekMessageW(&message, nullptr, WM_QUIT, WM_QUIT, PM_NOREMOVE),
+            "session negotiation does not publish quit before approved final destruction");
+}
+
+static void expect_session_notice(struct folio_window *_Nonnull window, bool blocked)
+{
+    struct accessible_item item = {.kind = ACCESSIBLE_NOTICE};
+    struct accessible_view status = {0};
+    require(folio_window_accessible_read(window, &item, &status) == S_OK && !status.offscreen,
+            "session status is exposed through the existing notice");
+    require((wcsstr(status.name, L"保存処理が未完了です。保存を再試行してください。") != nullptr) ==
+                blocked,
+            "session save refusal has its independent reason and cancellation clears it");
+}
+
+static void refused_session_save(struct folio_window *_Nonnull window,
+                                 struct native_fixture *_Nonnull fixture,
+                                 const struct history_snapshot *_Nonnull history,
+                                 const struct native_body_snapshot *_Nonnull before)
+{
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    size_t total = folio_state_note_count(fixture->state);
+    HANDLE locked = lock_native_note(fixture);
+    require(SendMessageW(root, WM_QUERYENDSESSION, 0, (LPARAM)ENDSESSION_LOGOFF) == FALSE,
+            "a named save sharing violation refuses the session synchronously without a modal");
+    expect_session_live(window, root, true);
+    expect_session_notice(window, true);
+    expect_native_body(window, before);
+    expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_CHANGED);
+    expect_locked_target(fixture->state);
+    SendMessageW(root, WM_ENDSESSION, TRUE, (LPARAM)ENDSESSION_LOGOFF);
+    expect_session_live(window, root, true);
+    expect_native_body(window, before);
+    expect_session_notice(window, true);
+    SendMessageW(root, WM_ENDSESSION, FALSE, (LPARAM)ENDSESSION_LOGOFF);
+    expect_session_live(window, root, true);
+    expect_session_notice(window, false);
+    expect_native_body(window, before);
+    require(folio_state_note_count(fixture->state) == total,
+            "refused and cancelled session notifications retain all existing note rows");
+    require(CloseHandle(locked), "release only the dedicated note after rejected notifications");
+    verify_history_unchanged(fixture, history);
+    expect_raw_file(fixture, L"\\schedule\\one.md", history_current);
+}
+
+static void approve_session_save(struct folio_window *_Nonnull window,
+                                 struct native_fixture *_Nonnull fixture,
+                                 const struct history_snapshot *_Nonnull history,
+                                 const struct native_body_snapshot *_Nonnull before)
+{
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    for (unsigned repeat = 0; repeat < 2; ++repeat)
+    {
+        require(SendMessageW(root, WM_QUERYENDSESSION, 0, (LPARAM)ENDSESSION_LOGOFF) == TRUE,
+                "successful named save and duplicate session query approve termination");
+        expect_session_live(window, root, false);
+        require(native_key_input(window, 'X', 0),
+                "the real message translator consumes body input while termination is approved");
+        struct native_body_snapshot frozen = *before;
+        frozen.focus = GetFocus();
+        expect_native_body(window, &frozen);
+        expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_SAME);
+        expect_locked_target(fixture->state);
+        expect_body_saved(fixture, history, switch_saved);
+    }
+    SendMessageW(root, WM_ENDSESSION, FALSE, (LPARAM)ENDSESSION_LOGOFF);
+    expect_session_live(window, root, true);
+    expect_session_notice(window, false);
+    expect_native_body(window, before);
+    expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_SAME);
+    expect_body_saved(fixture, history, switch_saved);
+}
+
+static void finish_session_save(struct folio_window *_Nonnull window,
+                                struct native_fixture *_Nonnull fixture,
+                                const struct history_snapshot *_Nonnull history)
+{
+    history_undo(window);
+    expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_CHANGED);
+    expect_body_saved(fixture, history, switch_saved);
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    require(SendMessageW(body, EM_CANREDO, 0, 0) != 0 && SendMessageW(body, EM_REDO, 0, 0) != 0,
+            "cancellation preserves the actual native redo of the already-saved input");
+    pump(window);
+    expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_SAME);
+    expect_body_saved(fixture, history, switch_saved);
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    require(SendMessageW(root, WM_QUERYENDSESSION, 0, (LPARAM)ENDSESSION_LOGOFF) == TRUE,
+            "unchanged saved input approves a new session without another save");
+    expect_session_live(window, root, false);
+    expect_body_saved(fixture, history, switch_saved);
+    SendMessageW(root, WM_ENDSESSION, TRUE, (LPARAM)ENDSESSION_LOGOFF);
+    require(!IsWindow(root) && folio_window_accessible_window(window, ACCESSIBLE_WINDOW) == nullptr,
+            "approved final session notification destroys the root through canonical finalization");
+    MSG message;
+    require(PeekMessageW(&message, nullptr, WM_QUIT, WM_QUIT, PM_REMOVE) &&
+                message.message == WM_QUIT && message.wParam == 0,
+            "approved final session destruction publishes successful quit");
+    expect_body_saved(fixture, history, switch_saved);
+    expect_raw_file(fixture, L"\\schedule\\one.md", switch_saved);
+}
+
+static void run_session_save_case(struct native_fixture *_Nonnull fixture)
+{
+    require(folio_state_select_note(fixture->state, 0, 0, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
+            "select the dedicated named session-save source");
+    struct history_snapshot history = {0};
+    capture_history(fixture, &history);
+    struct folio_window *window = nullptr;
+    require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
+                FOLIO_WINDOW_CREATED,
+            "real session-save window on the dedicated desktop");
+    pump(window);
+    action(window, ACCESSIBLE_EDIT);
+    append_switch_text(window);
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    CHARRANGE selected = {.cpMin = 10, .cpMax = 12};
+    SendMessageW(body, EM_EXSETSEL, 0, (LPARAM)&selected);
+    struct native_body_snapshot before = {0};
+    capture_native_body(window, &before);
+    require(before.focus == body && before.modified != 0 && before.undo != 0 && before.redo == 0 &&
+                before.selection.cpMin < before.selection.cpMax,
+            "session save begins with a focused modified native body, selection and real Undo");
+    expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_CHANGED);
+    verify_history_unchanged(fixture, &history);
+    refused_session_save(window, fixture, &history, &before);
+    approve_session_save(window, fixture, &history, &before);
+    finish_session_save(window, fixture, &history);
+    require(controlled.requests == 0 && failure.timer == 0,
+            "session save uses no image request or modal observer");
+    folio_window_destroy(window);
+    for (size_t version = 0; version <= note_history_depth; ++version)
+        note_text_destroy(history.files[version]);
+}
+
 static void run_extended_fixture(struct native_fixture *_Nonnull fixture, int argc,
                                  char *_Nonnull *_Nonnull argv)
 {
@@ -5726,6 +5872,15 @@ static void run_extended_fixture(struct native_fixture *_Nonnull fixture, int ar
     run_other_fixture(fixture, argc, argv);
 }
 
+static void run_remaining_fixture(struct native_fixture *_Nonnull fixture, int argc,
+                                  char *_Nonnull *_Nonnull argv)
+{
+    if (session_save_case)
+        run_session_save_case(fixture);
+    else
+        run_extended_fixture(fixture, argc, argv);
+}
+
 static void run_fixture(struct native_fixture *_Nonnull fixture, int argc,
                         char *_Nonnull *_Nonnull argv)
 {
@@ -5746,7 +5901,7 @@ static void run_fixture(struct native_fixture *_Nonnull fixture, int argc,
     else if (argc == 2 && strcmp(argv[1], "--icon") == 0)
         window_icons(fixture);
     else
-        run_extended_fixture(fixture, argc, argv);
+        run_remaining_fixture(fixture, argc, argv);
 }
 
 int main(int argc, char *_Nonnull *_Nonnull argv)
@@ -5764,6 +5919,7 @@ int main(int argc, char *_Nonnull *_Nonnull argv)
     empty_save_case = strcmp(selector, "--empty-save") == 0;
     locked_save_case = strcmp(selector, "--locked-save") == 0;
     filter_save_case = strcmp(selector, "--filter-save") == 0;
+    session_save_case = strcmp(selector, "--session-save") == 0;
     HWINSTA original_station = GetProcessWindowStation();
     HDESK original_desktop = GetThreadDesktop(GetCurrentThreadId());
     HWINSTA paste_station = paste_case ? isolate_paste_clipboard() : nullptr;
