@@ -100,6 +100,9 @@ Ex語/focus/理由、native本文/選択/modified/UndoRedo、元md/全履歴/rev
 #737は空/入力済み/Redo保有の無題で次の新規を取消し、入力済みからの明示CtrlS取消も固定する。first_save_native385checks/1.52秒、save_as_native377checks/1.56秒、CTest計3.08秒成功。stderr空・child/wrapper0・入力不変。
 新規だけのdiscard表示、native本文/選択/UndoRedo/focusと保存物保持、その後のEx初回保存を確認。
 [全試行と限界](quality/2026-11-06-untitled-cancel-native.md)。
+#739は入力済み/Redo保有の無題で「保存しない」を承認し、元カテゴリの次の空無題へ進む。first_save_native485checks/1.99秒、save_as_native377checks/1.82秒、CTest計3.81秒成功。stderr空・child/wrapper0・入力不変。
+旧nativeUndoRedoの切断、実UndoRedo無効、元保存物保持と後続初回保存を確認。
+[全試行と限界](quality/2026-11-06-untitled-discard-native.md)。
 
 #717の改名はCTestのrename_nativeで固定する。専用target/dataの実Ex入口から同名無操作/理由と入力focus保持、
 変更EDIT/Redo保有状態の先保存・履歴移動・native UndoRedo、VIEWの非保存改名、旧名/journal不在を252checksで確認した。
