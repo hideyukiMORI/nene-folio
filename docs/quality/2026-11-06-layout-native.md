@@ -45,3 +45,10 @@ ASan起動時の`interception_win: unhandled instruction`一行がnative出力�
 通常app/実ノート/利用者clipboard/前面focus/Store/Ledgerを試験に使っていない。
 
 最終head必須CI・統合・通常exe不変・全保全整理の確定結果は、agents内`integration-completion.json`へ収載する。
+
+## 統合・整理済み
+
+PR712最終head df27ea776d452418abcb430e4885027bdef781ec、必須CI42132598999 full-gate/check成功。
+main47f80045ce3f33b71e176d31c38b43f84caa6d94へ統合し、通常exe不変を確認した。
+4402filesを全hash保全し、絶対path/同一squash tree/clean・untracked・ignored/link/稼働参照を照合後、専用worktree/outputを整理した。
+branch/commit保持。確定原本は上記integration-completion.json。

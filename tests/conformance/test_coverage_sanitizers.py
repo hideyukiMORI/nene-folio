@@ -1,10 +1,14 @@
 """Reject measurement/Debug sanitizer drift and unrelated counterexample failures (C-016/QLT-007)."""
 
 import importlib.util
+import copy
+import json
 from pathlib import Path
 import subprocess
 import sys
+import tempfile
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "eng"))
@@ -75,6 +79,56 @@ class CoverageSanitizerTests(unittest.TestCase):
         for code, output in ((0, diagnostic), (1, "link failed"), (1, "other.c: runtime error: overflow")):
             with self.subTest(code=code, output=output), self.assertRaisesRegex(ValueError, "counterexample"):
                 coverage.check_binding_failure(subprocess.CompletedProcess([], code, "", output), source)
+
+    def test_link_options_require_the_canonical_padding_and_nonincremental_link(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            source = directory / "sanitizer-link-options.json"
+            expected = ["/INCREMENTAL:NO", "/FUNCTIONPADMIN:6"]
+            source.write_text(json.dumps(expected), encoding="utf-8")
+            self.assertEqual(expected, coverage.sanitizer_link_options(directory))
+            for options in ([], expected[:1], expected[1:], expected + ["/FORCE"],
+                            ["/INCREMENTAL:NO", "/FUNCTIONPADMIN:0"], "not a list"):
+                source.write_text(json.dumps(options), encoding="utf-8")
+                with self.subTest(options=options), self.assertRaisesRegex(ValueError, "link options"):
+                    coverage.sanitizer_link_options(directory)
+            source.unlink()
+            with self.assertRaises(FileNotFoundError):
+                coverage.sanitizer_link_options(directory)
+
+    def test_interceptor_proof_rejects_missing_poison_undetected_and_unrelated_failures(self):
+        negative = {"exitCode": 1, "stdout": "mode=frexp poisoned=1\n",
+                    "stderr": "ERROR: AddressSanitizer: use-after-poison\nWRITE of size 4\n in frexp source:911"}
+        results = {"valid": {"exitCode": 0, "stdout": "mode=valid poisoned=0\nfraction=0.75 exponent=1\n", "stderr": ""},
+                   "direct": {**negative, "stdout": "mode=direct poisoned=1\n"}, "frexp": dict(negative)}
+        coverage.sanitizer_probe.check_results(results)
+        mutations = [("valid", "exitCode", 1), ("valid", "stderr", "interception_win: unhandled instruction"),
+                     ("valid", "stdout", "poisoned=0\nfraction=0 exponent=0\n"),
+                     ("direct", "exitCode", 0), ("frexp", "exitCode", 0),
+                     ("frexp", "stdout", "poisoned=0\n"), ("direct", "stderr", "startup failed"),
+                     ("frexp", "stderr", "ERROR: AddressSanitizer: use-after-poison\nWRITE of size 4\n in other"),
+                     ("frexp", "stderr", negative["stderr"].replace("WRITE of size 4", "READ of size 4")),
+                     ("direct", "stderr", negative["stderr"] + "\ninterception_win: unhandled instruction")]
+        for mode, field, value in mutations:
+            changed = copy.deepcopy(results)
+            changed[mode][field] = value
+            with self.subTest(mode=mode, field=field, value=value), self.assertRaises(ValueError):
+                coverage.sanitizer_probe.check_results(changed)
+
+    def test_timeout_records_partial_output_and_replaces_prior_success(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            record = directory / "results.json"
+            record.write_text('{"valid": {"exitCode": 0}}', encoding="utf-8")
+            error = subprocess.TimeoutExpired(["probe", "valid"], 15, output=b"partial output", stderr=b"diagnostic")
+            with patch.object(coverage.sanitizer_probe.subprocess, "run", side_effect=error):
+                with self.assertRaises(subprocess.TimeoutExpired):
+                    coverage.sanitizer_probe.prove(directory / "probe.exe", directory)
+            actual = json.loads(record.read_text(encoding="utf-8"))
+            self.assertIsNone(actual["valid"]["exitCode"])
+            self.assertEqual("partial output", actual["valid"]["stdout"])
+            self.assertEqual("diagnostic", actual["valid"]["stderr"])
+            self.assertIn("timed out", actual["valid"]["error"])
 
 
 if __name__ == "__main__":

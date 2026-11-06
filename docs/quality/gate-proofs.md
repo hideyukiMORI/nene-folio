@@ -18,6 +18,16 @@ CI: GitHub Actions `windows-2022`（PR の ready_for_review で起動。ロー�
 
 ## 1. 実測結果
 
+### #713: ASanのCRT出力先検出（2026-11-06）
+
+固定LLVM19.1.5の未対応命令警告を実`frexp`先頭+4へ結び付け、poisoned指数出力先への書込が未検出になることを再現した。
+正典Debug linkに6byte paddingを加え、正常呼出しはexit0/stderr空、直接storeと`frexp`出力先はそれぞれ
+use-after-poison・WRITE4・非zero終了を確認した。同一のsource/判定器を正典CMakeと測定driverの両経路で実行した。
+判定器11testsは設定欠落/無効値・未検出・別原因診断・timeoutの部分記録を含む。Releaseの実リンク引数へ非混入、
+元のtoolchain smokeへの復帰も成功。測定は8238/9056branch（90.9673%）、省略反例は3.63%で既存90%下限に拒否された。
+既存native表示切替は447checks/1.12秒、起動警告無し。通常製品ソース・保存形式・toolchain版・閾値は不変。
+初期の補助script失敗・複雑度拒否・検証範囲は[品質記録](2026-11-06-asan-interceptor.md)に残す。
+
 ### #292: 表示3択・直接キー・標準tooltip（2026-10-12）
 
 共通枠/選択下線、Ctrl+Shift+1/2/3、3言語の説明を追加し、独立レビューでroot IME抑止の欠落を修正した。

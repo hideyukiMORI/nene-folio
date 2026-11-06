@@ -17,6 +17,7 @@ import shlex
 import subprocess
 
 from conformance import inventory
+import sanitizer_probe
 
 
 def assess(report: dict, root: Path, required: set[Path], scopes: list[Path], minimum: int) -> dict:
@@ -96,7 +97,14 @@ def check_binding_failure(result: subprocess.CompletedProcess, source: Path) -> 
         raise ValueError("QLT-007: nullable binding counterexample did not produce its sanitizer diagnostic")
 
 
-def prove_nullability(output: Path, sanitizers: list[str]) -> None:
+def sanitizer_link_options(canonical_build: Path) -> list[str]:
+    options = json.loads((canonical_build / "sanitizer-link-options.json").read_text(encoding="utf-8"))
+    if options != ["/INCREMENTAL:NO", "/FUNCTIONPADMIN:6"]:
+        raise ValueError("C-016: missing or unsupported canonical Debug sanitizer link options")
+    return options
+
+
+def prove_nullability(output: Path, sanitizers: list[str], link_options: list[str]) -> None:
     proof = output / "nullability-proof"
     proof.mkdir(parents=True, exist_ok=True)
     source = proof / "binding.c"
@@ -107,7 +115,7 @@ def prove_nullability(output: Path, sanitizers: list[str]) -> None:
         'free(bytes); return 0; }\n', encoding="utf-8")
     executable = proof / "binding.exe"
     compile_command = ["clang-cl", "/nologo", "/clang:-std=c23", "/MT", "/W4", "/WX", *sanitizers,
-                       str(source), f"/Fo:{proof / 'binding.obj'}", f"/Fe:{executable}"]
+                       str(source), f"/Fo:{proof / 'binding.obj'}", f"/Fe:{executable}", "/link", *link_options]
     run(compile_command, proof)
     positive = run([str(executable)], proof)
     negative = subprocess.run([str(executable), "--null"], cwd=proof, capture_output=True,
@@ -120,10 +128,25 @@ def prove_nullability(output: Path, sanitizers: list[str]) -> None:
     check_binding_failure(negative, source)
 
 
+def prove_interception(output: Path, sanitizers: list[str], link_options: list[str]) -> None:
+    proof = output / "interceptor-proof"
+    proof.mkdir(parents=True, exist_ok=True)
+    source = proof / "interceptor.c"
+    source.write_text(sanitizer_probe.SOURCE, encoding="utf-8")
+    executable = proof / "interceptor.exe"
+    command = ["clang-cl", "/nologo", "/clang:-std=c23", "/MT", "/W4", "/WX", "/Zi", *sanitizers,
+               str(source), f"/Fo:{proof / 'interceptor.obj'}", f"/Fe:{executable}", "/link", "/DEBUG", *link_options]
+    run(command, proof)
+    (proof / "compile-command.json").write_text(json.dumps(command, indent=2) + "\n", encoding="utf-8")
+    sanitizer_probe.prove(executable, proof)
+
+
 def build_measurement(canonical_build: Path, output: Path, sources: list[Path], tests: list[Path],
                       scopes: list[Path], test_scope: Path, sanitizers: list[str]) -> Path:
     output.mkdir(parents=True, exist_ok=True)
-    prove_nullability(output, sanitizers)
+    link_options = sanitizer_link_options(canonical_build)
+    prove_nullability(output, sanitizers, link_options)
+    prove_interception(output, sanitizers, link_options)
     executable = output / "folio_coverage.exe"
     objects = output / "objects"
     objects.mkdir(exist_ok=True)
@@ -139,7 +162,7 @@ def build_measurement(canonical_build: Path, output: Path, sources: list[Path], 
     run(common + probes + [str(p) for p in sources], output)
     run(common + [str(p) for p in tests], output)
     run(["clang-cl", "/nologo", "/MT", *sanitizers, "/clang:-fprofile-instr-generate", f"/Fe:{executable}"]
-        + [str(o) for o in sorted(objects.glob("*.obj"))], output)
+        + [str(o) for o in sorted(objects.glob("*.obj"))] + ["/link", *link_options], output)
     return executable
 
 

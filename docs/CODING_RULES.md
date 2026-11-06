@@ -174,6 +174,9 @@ C はメモリ安全を言語で保証しない。本リポジトリでは次を
 確保失敗の測定ビルドも、Debugの`compile_commands.json`にあるASan/UBSan/nullabilityとrecover禁止の
 同じvectorをcompile/linkへ使う。対象recordの欠落・不一致・無効化指定は拒否し、ASan-onlyへ退避しない。
 同vectorによるnullable→nonnull bindingの正例と、該当診断で停止する反例を既存`eng/coverage.py`で確認する（#407）。
+Debug executableのCRT interceptorは正典`eng/targets.cmake`のhotpatch用paddingを使う（#713）。
+同じlink optionsをCMake生成metadataから測定ビルドへ渡し、正常呼出し・直接store・`frexp`のpoisoned出力先を
+正典CMakeと測定経路の両方で確認する。未検出や別原因の終了を検出成功とせず、全CRTの網羅とは主張しない。
 未完成objectを公開destroyへ渡さず、factoryが持つlocalだけを同moduleの構築用destroyで片付ける。
 
 - 機械強制: **planned** → VLA は `-Werror=vla`（K2-vla-werror。`-Wvla` だけでは C23 で通る＝K2-vla-plain-hole）。`strcpy` 等は clang-tidy `clang-analyzer-security.insecureAPI.*`。ASan / UBSan / nullability は Debug 構成の全 target と単体テストに結線済みで、確保失敗の経路は測定ビルドの注入で全部走る（2026-09-09・ADR 0004）。「確保と解放の対」はレビュー事項なので全体としては planned
