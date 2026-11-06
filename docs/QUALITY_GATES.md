@@ -87,6 +87,11 @@ Ctrl+R/2/5の書式不変、未保存本文/選択/UndoRedo、既存移動・選
 既存仕様に沿う本文/一覧/headerのfocusを486checksで確認した。30秒timeoutと既存data lockを維持する。
 最初のfocus期待誤り・全試行・未検証範囲は[品質記録](quality/2026-11-06-layout-native.md)へ。
 
+#715の別名保存はCTestの`save_as_native`で固定する。専用target/dataの実Ex入口から、変更EDIT/Redo保有/VIEW原文を確認する。
+native本文/選択/UndoRedoと元md/全履歴を保ち、新mdの全bytes/初回履歴なしを照合。164checksと再実行170checksが成功した。
+再実行で前回3コピーのbytes/hash/作成更新日時不変と新3コピー追加を照合した。30秒timeout/data lockを維持する。
+全試行・未検証範囲は[品質記録](quality/2026-11-06-save-as-native.md)へ。
+
 - 機械強制: **不能**（テストの有意味性・契約の充足は判断であり、記録とレビューで確認する。QLT-009のカバレッジ下限だけでは代替できない）
 
 ### QLT-009 — カバレッジは下げられない
