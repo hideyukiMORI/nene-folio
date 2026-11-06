@@ -66,6 +66,7 @@ static bool move_edit_case;
 static bool unicode_save_case;
 static bool first_save_case;
 static bool empty_save_case;
+static bool locked_save_case;
 
 static const char history_current[] = "# Current 日本語 😀 **saved**";
 static const char history_previous[] = "> Previous 猫 🐾 `old`";
@@ -143,13 +144,14 @@ static void seed_notes(struct persistence_port disk)
         theme_preview_case || settings_edit_case || mode_save_case || discard_case ||
         palette_case || paste_case || format_case || layout_case || save_as_case || rename_case ||
         replace_save_case || move_edit_case || first_save_case || empty_save_case ||
-        unicode_save_case)
+        locked_save_case || unicode_save_case)
     {
         seed_history(disk);
         source = history_case || note_switch_case || zoom_case || theme_preview_case ||
                          settings_edit_case || mode_save_case || discard_case || palette_case ||
                          paste_case || format_case || layout_case || save_as_case || rename_case ||
-                         replace_save_case || move_edit_case || first_save_case || empty_save_case
+                         replace_save_case || move_edit_case || first_save_case ||
+                         empty_save_case || locked_save_case
                      ? history_current
                      : replace_current;
     }
@@ -3747,16 +3749,22 @@ static void run_other_fixture(struct native_fixture *_Nonnull fixture, int argc,
 }
 
 /* #723/#727: Read exact bytes, including an existing zero-byte file, without decoding. */
-static void expect_raw_file(struct native_fixture *_Nonnull fixture, const wchar_t *_Nonnull suffix,
-                            const char *_Nonnull expected)
+static void native_file_path(struct native_fixture *_Nonnull fixture,
+                             const wchar_t *_Nonnull suffix, wchar_t path[storage_native_capacity])
 {
-    wchar_t path[storage_native_capacity];
     size_t length = 0;
     size_t count = wcslen(suffix) + 1;
     require(storage_native_path_fill(storage_state_directory(fixture->location), path, &length) &&
                 length + count <= storage_native_capacity,
             "dedicated raw file path fits");
     memcpy(path + length, suffix, count * sizeof *suffix);
+}
+
+static void expect_raw_file(struct native_fixture *_Nonnull fixture, const wchar_t *_Nonnull suffix,
+                            const char *_Nonnull expected)
+{
+    wchar_t path[storage_native_capacity];
+    native_file_path(fixture, suffix, path);
     struct file_bytes *bytes = nullptr;
     require(file_bytes_read(path, &bytes) == PERSISTENCE_LOADED && bytes != nullptr,
             "read the actual file without text interpretation");
@@ -4129,9 +4137,167 @@ static void run_empty_save_case(struct native_fixture *_Nonnull fixture)
         note_text_destroy(history.files[version]);
 }
 
+/* #729: Observe only this fixture's native failure dialog; never close unrelated windows. */
+struct failure_probe
+{
+    HWND root;
+    UINT_PTR timer;
+    unsigned ticks;
+    unsigned closed;
+};
+
+static struct failure_probe failure;
+
+static BOOL CALLBACK close_history_failure(HWND dialog, LPARAM parameter)
+{
+    wchar_t kind[32];
+    if (GetAncestor(dialog, GA_ROOTOWNER) != (HWND)parameter || !IsWindowVisible(dialog) ||
+        GetClassNameW(dialog, kind, 32) == 0 || wcscmp(kind, L"#32770") != 0)
+        return TRUE;
+    HWND text = FindWindowExW(dialog, nullptr, L"EDIT", nullptr);
+    HWND accept = GetDlgItem(dialog, IDOK);
+    wchar_t message[512];
+    require(text != nullptr && accept != nullptr && IsWindowEnabled(accept) &&
+                GetWindowTextW(text, message, 512) > 0 &&
+                wcsstr(message, L"履歴を書けなかったので保存していません。"
+                                L"編集中の本文は残っています。") != nullptr,
+            "the fixture's themed failure dialog reports the specific history refusal");
+    require(KillTimer(nullptr, failure.timer), "stop the owned failure observer timer");
+    failure.timer = 0;
+    ++failure.closed;
+    SendMessageW(accept, BM_CLICK, 0, 0);
+    return FALSE;
+}
+
+static void CALLBACK observe_history_failure(HWND window, UINT message, UINT_PTR timer,
+                                             DWORD tick_millis)
+{
+    (void)window;
+    (void)message;
+    (void)tick_millis;
+    if (failure.timer == 0)
+        return;
+    require(timer == failure.timer && ++failure.ticks <= 100,
+            "the owned failure observer stays within its finite deadline");
+    EnumThreadWindows(GetCurrentThreadId(), close_history_failure, (LPARAM)failure.root);
+}
+
+static HANDLE lock_native_note(struct native_fixture *_Nonnull fixture)
+{
+    wchar_t path[storage_native_capacity];
+    native_file_path(fixture, L"\\schedule\\one.md", path);
+    HANDLE locked =
+        CreateFileW(path, GENERIC_READ, 0, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    require(locked != INVALID_HANDLE_VALUE, "hold only the dedicated note without sharing");
+    return locked;
+}
+
+static void expect_locked_target(const struct folio_state *_Nonnull state)
+{
+    struct note_ref selected = {0};
+    require(folio_state_document_kind(state) == FOLIO_DOCUMENT_NAMED &&
+                strcmp(folio_state_document_name(state), "one") == 0 &&
+                folio_state_selection(state, &selected) && selected.category == 0 &&
+                strcmp(folio_state_note_name(state, selected), "one") == 0,
+            "save refusal and retry retain the named document and selected row");
+}
+
+static void refused_native_save(struct folio_window *_Nonnull window,
+                                struct native_fixture *_Nonnull fixture,
+                                const struct history_snapshot *_Nonnull history)
+{
+    struct native_body_snapshot before = {0};
+    capture_native_body(window, &before);
+    require(before.modified != 0 && before.undo != 0 && before.redo == 0,
+            "save refusal starts with a real native edit and Undo");
+    HANDLE locked = lock_native_note(fixture);
+    failure =
+        (struct failure_probe){.root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW)};
+    failure.timer = SetTimer(nullptr, 0, 50, observe_history_failure);
+    require(failure.timer != 0, "start the owned failure observer timer");
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    SendMessageW(body, WM_CHAR, 0x13, 0);
+    if (failure.timer != 0)
+    {
+        require(KillTimer(nullptr, failure.timer), "cancel an unused failure observer");
+        failure.timer = 0;
+    }
+    require(CloseHandle(locked), "release the dedicated note's exclusive handle");
+    pump(window);
+    require(failure.closed == 1, "saving a locked original reports exactly one history failure");
+    expect_locked_target(fixture->state);
+    expect_native_body(window, &before);
+    expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_CHANGED);
+    verify_history_unchanged(fixture, history);
+    expect_raw_file(fixture, L"\\schedule\\one.md", history_current);
+}
+
+static void retry_locked_save(struct folio_window *_Nonnull window,
+                              struct native_fixture *_Nonnull fixture,
+                              const struct history_snapshot *_Nonnull history)
+{
+    history_undo(window);
+    expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_SAME);
+    verify_history_unchanged(fixture, history);
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    require(SendMessageW(body, EM_CANREDO, 0, 0) != 0 && SendMessageW(body, EM_REDO, 0, 0) != 0,
+            "the unsaved edit remains redoable after the refusal");
+    pump(window);
+    expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_CHANGED);
+    verify_history_unchanged(fixture, history);
+    CHARRANGE selected = {.cpMin = 10, .cpMax = 12};
+    SendMessageW(body, EM_EXSETSEL, 0, (LPARAM)&selected);
+    struct native_body_snapshot before = {0};
+    capture_native_body(window, &before);
+    for (size_t repeat = 0; repeat < 2; ++repeat)
+    {
+        SendMessageW(body, WM_CHAR, 0x13, 0);
+        pump(window);
+        expect_native_body(window, &before);
+        expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_SAME);
+        expect_locked_target(fixture->state);
+        expect_body_saved(fixture, history, switch_saved);
+        expect_raw_file(fixture, L"\\schedule\\one.md", switch_saved);
+        expect_raw_file(fixture, L"\\.history\\schedule\\one\\1.md", history_current);
+    }
+}
+
+static void run_locked_save_case(struct native_fixture *_Nonnull fixture)
+{
+    require(folio_state_select_note(fixture->state, 0, 0, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
+            "select the dedicated locked-save note");
+    struct history_snapshot history = {0};
+    capture_history(fixture, &history);
+    struct folio_window *window = nullptr;
+    require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
+                FOLIO_WINDOW_CREATED,
+            "real locked-save window");
+    pump(window);
+    action(window, ACCESSIBLE_EDIT);
+    append_switch_text(window);
+    expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_CHANGED);
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    CHARRANGE selected = {.cpMin = 10, .cpMax = 12};
+    SendMessageW(body, EM_EXSETSEL, 0, (LPARAM)&selected);
+    verify_history_unchanged(fixture, &history);
+    refused_native_save(window, fixture, &history);
+    retry_locked_save(window, fixture, &history);
+    require(controlled.requests == 0 && failure.timer == 0,
+            "plain locked-save case leaves no image requests or observer timer");
+    folio_window_destroy(window);
+    for (size_t version = 0; version <= note_history_depth; ++version)
+        note_text_destroy(history.files[version]);
+}
+
 static void run_extended_fixture(struct native_fixture *_Nonnull fixture, int argc,
                                  char *_Nonnull *_Nonnull argv)
 {
+    if (locked_save_case)
+    {
+        run_locked_save_case(fixture);
+        return;
+    }
     if (empty_save_case)
     {
         run_empty_save_case(fixture);
@@ -4205,6 +4371,7 @@ int main(int argc, char *_Nonnull *_Nonnull argv)
     unicode_save_case = strcmp(selector, "--unicode-save") == 0;
     first_save_case = strcmp(selector, "--first-save") == 0;
     empty_save_case = strcmp(selector, "--empty-save") == 0;
+    locked_save_case = strcmp(selector, "--locked-save") == 0;
     HWINSTA original_station = GetProcessWindowStation();
     HDESK original_desktop = GetThreadDesktop(GetCurrentThreadId());
     HWINSTA paste_station = paste_case ? isolate_paste_clipboard() : nullptr;
