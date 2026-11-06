@@ -1,5 +1,16 @@
 # いまの状態 — NeNe Folio
 
+## 2026-11-06 — #783 CJK入力の書体混在、通常反映はapp終了待ち
+
+hideの23:20頃の継続依頼により、日本語だけ別書体になるnative入力経路を修正した。
+既存note_pane_refaceで日本語/簡体字を選択中の本文faceへ関連付け、絵文字のnative代替表示を維持する。
+3言語・4貼り付け入口のpaste_native3715checks/2.57秒、設定中の編集保持523checks、書式キー339checksが成功。
+[根拠・不採用候補・全試行・限界](../quality/2026-11-06-editor-font-binding.md)。
+最終head必須CIが統合条件。確定結果はD:/NeNeFolio/agents/editor-font-binding-20261106/integration-completion.jsonへ記録する。
+通常appは稼働中の1.3.2（PID25132、23:52:15観測）のまま。hideの保存・終了後に停止/実data保全を確認し、正典toolで反映する。
+それまではD:/NeNeFolio/worktrees/783-editor-font-bindingと同outputsを保持する。公開済み1.3.2とStore申請は差し替えない。
+次版Aboutは検討案のまま。物理IMEと実ノートでの修正確認は未実施。追加waiver none、既存WVR-0001継続。
+
 ## 2026-11-06 — GitHub 1.3.2公開・Store更新申請済み
 
 hideの22:47の依頼で、[GitHub 1.3.2 Beta](https://github.com/hideyukiMORI/nene-folio/releases/tag/v1.3.2)を22:54:38 JSTに公開した（#779）。
@@ -19,7 +30,7 @@ MSIXは前版と同identity/対応環境、1.3.1.0→1.3.2.0を照合済み。hi
 実機結果#777/PR778は必須CI42225682924成功・main ef218ceへ統合・全保全整理済み。
 起動原本は同agents/release-1.3.2-20261106/real-machine/launch-result.json。公開作業で通常app/実ノートを操作しない。
 
-新しい品質テーマと次版Aboutはhideの次の実装指示を待つ。日付付き[日報](../reports/2026-11-06.md)・[引き継ぎ](../handoffs/2026-11-06.md)を参照。
+その後の23:20頃の依頼で#783の書体混在を対応中。次版Aboutは検討案のまま。日付付き[日報](../reports/2026-11-06.md)・[引き継ぎ](../handoffs/2026-11-06.md)を参照。
 追加waiver none、既存WVR-0001継続。保留466/634/530と旧削除拒否領域を維持する。
 
 ## 公開済み1.3.1

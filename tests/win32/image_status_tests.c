@@ -2554,7 +2554,9 @@ static void paste_pixels(struct folio_window *_Nonnull window, const char *_Nonn
     FORMATRANGE format = {.hdc = dc, .hdcTarget = dc, .rc = text, .rcPage = page, .chrg = {0, -1}};
     LRESULT end = SendMessageW(body, EM_FORMATRANGE, TRUE, (LPARAM)&format);
     SendMessageW(body, EM_FORMATRANGE, FALSE, 0);
-    require(end >= GetWindowTextLengthW(body), "native output includes the complete short body");
+    GETTEXTLENGTHEX count = {.flags = GTL_PRECISE | GTL_NUMCHARS, .codepage = 1200};
+    LRESULT length = SendMessageW(body, EM_GETTEXTLENGTHEX, (WPARAM)&count, 0);
+    require(length >= 0 && end >= length, "native output includes the complete short body");
     SelectObject(dc, old);
     save_bitmap(dc, bitmap, client, path);
     DeleteObject(bitmap);
@@ -2707,6 +2709,113 @@ static void paste_input_guards(struct folio_window *_Nonnull window,
             "return to edit restores the plain editor format");
 }
 
+static void expect_editor_font(HWND _Nonnull body, const CHARFORMAT2W *_Nonnull expected)
+{
+    CHARRANGE selected;
+    SendMessageW(body, EM_EXGETSEL, 0, (LPARAM)&selected);
+    GETTEXTLENGTHEX count = {.flags = GTL_PRECISE | GTL_NUMCHARS, .codepage = 1200};
+    LRESULT length = SendMessageW(body, EM_GETTEXTLENGTHEX, (WPARAM)&count, 0);
+    require(length > 0, "font comparison covers a nonempty native document");
+    wchar_t text[256];
+    GETTEXTEX request = {.cb = sizeof text, .flags = GT_RAWTEXT, .codepage = 1200};
+    require(SendMessageW(body, EM_GETTEXTEX, (WPARAM)&request, (LPARAM)text) == length &&
+                (size_t)length < sizeof text / sizeof text[0],
+            "font comparison reads every native UTF-16 unit");
+    DWORD mask = CFM_FACE | CFM_SIZE | CFM_WEIGHT | CFM_COLOR | CFM_BOLD | CFM_ITALIC |
+                 CFM_UNDERLINE | CFM_STRIKEOUT;
+    DWORD effects = CFE_BOLD | CFE_ITALIC | CFE_UNDERLINE | CFE_STRIKEOUT;
+    require((expected->dwMask & mask) == mask, "original editor format is fully defined");
+    for (LONG position = 0; position < length; ++position)
+    {
+        CHARFORMAT2W format = character_format(body, position);
+        bool symbol =
+            text[position] == L'●' || (text[position] >= 0xd800 && text[position] <= 0xdfff);
+        bool matching_face = wcscmp(format.szFaceName, expected->szFaceName) == 0;
+        if (text[position] >= 0xd800 && text[position] <= 0xdfff)
+            require(!matching_face && (format.dwEffects & CFE_FONTBOUND) != 0,
+                    "emoji keeps native fallback beyond the bundled CJK font");
+        require((format.dwMask & mask) == mask && format.yHeight == expected->yHeight &&
+                    format.wWeight == expected->wWeight &&
+                    format.crTextColor == expected->crTextColor &&
+                    (format.dwEffects & effects) == (expected->dwEffects & effects) &&
+                    (symbol || matching_face),
+                "every script keeps the document font, size, weight and color");
+    }
+    SendMessageW(body, EM_EXSETSEL, 0, (LPARAM)&selected);
+}
+
+static void paste_font_roundtrip(struct folio_window *_Nonnull window,
+                                 struct native_fixture *_Nonnull fixture, UINT key, BYTE modifiers)
+{
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    const wchar_t text[] =
+        L"● 日本語の文章と金額100を確認 (id12345・￥1,234) を整える。\r"
+        L"API項目と英数字の表示を確認する。\r日本語の前後にABCを置く。\r简体汉语ABC。😀";
+    const wchar_t edited[] = L"● 日本語の文章と金額100を確認 (id12345・￥1,234) を整える。\r"
+                             L"API項目と英数字の表示を確認する。\r日本語の前後にABCを置く。\r简体汉"
+                             L"语ABC。😀追記Ab漢字😀";
+    CHARFORMAT2W original = character_format(body, 0);
+    const wchar_t *const faces[] = {[FOLIO_LANGUAGE_JA] = L"Noto Sans JP",
+                                    [FOLIO_LANGUAGE_EN] = L"Noto Sans JP",
+                                    [FOLIO_LANGUAGE_ZH_HANS] = L"Noto Sans SC"};
+    require(wcscmp(original.szFaceName, faces[folio_state_language(fixture->state)]) == 0,
+            "the fixture starts with its language's bundled document font");
+    expect_editor_font(body, &original);
+    single_clipboard(body, CF_UNICODETEXT, text, sizeof text);
+    SendMessageW(body, EM_SETSEL, 0, -1);
+    native_key_input(window, key, modifiers);
+    expect_editor(window, fixture->state, text, FOLIO_NOTE_CHANGED);
+    CHARRANGE selection;
+    SendMessageW(body, EM_EXGETSEL, 0, (LPARAM)&selection);
+    require(selection.cpMin == (LONG)wcslen(text) && selection.cpMax == selection.cpMin,
+            "mixed-script paste leaves the caret after the complete text");
+    expect_editor_font(body, &original);
+    if (key == 0)
+        paste_pixels(window, "paste-fonts.bmp", folio_state_palette(fixture->state));
+    SendMessageW(body, EM_STOPGROUPTYPING, 0, 0);
+    const wchar_t typed[] = L"追記Ab漢字😀";
+    for (size_t at = 0; at < wcslen(typed); ++at)
+        SendMessageW(body, WM_CHAR, typed[at], 1);
+    pump(window);
+    expect_editor(window, fixture->state, edited, FOLIO_NOTE_CHANGED);
+    expect_editor_font(body, &original);
+    require(SendMessageW(body, EM_GETMODIFY, 0, 0) != 0, "continued input remains modified");
+    history_undo(window);
+    expect_editor(window, fixture->state, text, FOLIO_NOTE_CHANGED);
+    expect_editor_font(body, &original);
+    history_undo(window);
+    expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_SAME);
+    require(SendMessageW(body, EM_REDO, 0, 0) != 0, "mixed-script paste is one redo unit");
+    expect_editor(window, fixture->state, text, FOLIO_NOTE_CHANGED);
+    expect_editor_font(body, &original);
+    history_undo(window);
+    expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_SAME);
+    expect_editor_font(body, &original);
+}
+
+static void paste_font_languages(struct folio_window *_Nonnull window,
+                                 struct native_fixture *_Nonnull fixture)
+{
+    const enum folio_language languages[] = {FOLIO_LANGUAGE_EN, FOLIO_LANGUAGE_ZH_HANS,
+                                             FOLIO_LANGUAGE_JA};
+    for (size_t index = 0; index < sizeof languages / sizeof languages[0]; ++index)
+    {
+        struct accessible_request settings = {.item = {.kind = ACCESSIBLE_SETTINGS},
+                                              .action = ACCESSIBLE_ACTION_INVOKE};
+        require(folio_window_accessible_action(window, &settings) == S_OK,
+                "open settings for the next font language");
+        pump(window);
+        select_setting_control(window, 3 + (size_t)languages[index], ACCESSIBLE_SURFACE_LANGUAGE);
+        surface_button(window, ACCESSIBLE_SURFACE_CLOSE);
+        require(folio_state_language(fixture->state) == languages[index],
+                "font fixture adopts the selected language");
+        action(window, ACCESSIBLE_VIEW);
+        action(window, ACCESSIBLE_EDIT);
+        expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_SAME);
+        paste_font_roundtrip(window, fixture, 'V', FCONTROL);
+    }
+}
+
 static void run_paste_case(struct native_fixture *_Nonnull fixture)
 {
     require(folio_state_select_note(fixture->state, 0, 0, FOLIO_UNTITLED_PROTECT) ==
@@ -2726,6 +2835,11 @@ static void run_paste_case(struct native_fixture *_Nonnull fixture)
     paste_roundtrip(window, fixture, 'V', FCONTROL | FSHIFT);
     paste_roundtrip(window, fixture, VK_INSERT, FSHIFT);
     paste_text_formats(window, fixture);
+    paste_font_roundtrip(window, fixture, 0, 0);
+    paste_font_roundtrip(window, fixture, 'V', FCONTROL);
+    paste_font_roundtrip(window, fixture, 'V', FCONTROL | FSHIFT);
+    paste_font_roundtrip(window, fixture, VK_INSERT, FSHIFT);
+    paste_font_languages(window, fixture);
     paste_unavailable_formats(window);
     paste_input_guards(window, fixture);
     verify_history_unchanged(fixture, &history);

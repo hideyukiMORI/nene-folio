@@ -174,6 +174,11 @@ Unicode行名と全台帳/履歴、選択/非選択/category/Treeの一致、foc
 
 #763は同じsame_unitのraw等値で二回foldを省き、既存Debug検索契約と同Release84file/112条件/4480sampleで全公開結果・本文語不変を確認。費用と旧比較計測の限界は[品質記録](quality/2026-11-06-search-equality.md)。
 
+#783は平文入力時のCJK font bindingを既存note_pane_refaceで指定し、絵文字の代替表示を保持する。
+paste_native3715checks/2.57秒で3言語/4入口/各文字書式/全本文/選択/UndoRedo/全保存履歴を確認。
+settings_edit_native523checks/1.45秒、editor_format_native339checks/0.83秒も成功。
+自動binding無効候補の絵文字欠落と全診断失敗を含む[品質記録](quality/2026-11-06-editor-font-binding.md)。物理IME等は未確認。
+
 ### QLT-009 — カバレッジは下げられない
 
 中核の分岐カバレッジ下限を 90% とする。閾値は上げてよいが下げてはならない。下げるには ADR が要る。
