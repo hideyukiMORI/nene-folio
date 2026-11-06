@@ -152,6 +152,8 @@ Unicode行名と全台帳/履歴、選択/非選択/category/Treeの一致、foc
 [全試行と限界](quality/2026-11-06-trash-busy-native.md)。
 #747はfilter_save_nativeで実Ctrl+Shift+Fの共有違反拒否/解除後保存/検索copy更新/SAME再focus/UndoRedoを固定。locked_save_native 290checks/0.9秒、filter_save_native 213checks/0.65秒、計1.56秒成功。別カテゴリを含む既存一致2件/非一致1件/台帳ありのrepeatはfilter_save_native 213checks/0.66秒、CTest0.67秒成功。runtime stderr空・child/wrapper0・入力不変。追加3mdと台帳の全bytes/hash/作成更新日時不変。
 [全試行と限界](quality/2026-11-06-filter-save-native.md)。
+#749はlocked_save_nativeへ通常WM_CLOSEの共有違反拒否/窓と編集履歴保持/WM_QUIT未発行/再終了成功を追加。locked_save_native 426checks/1.08秒、CTest1.08秒成功。台帳あり/source2追加md/target1追加mdのrepeatは458checks/1.17秒、CTest1.17秒成功。成功runtime stderr空・child/wrapper0・入力不変。追加3mdと台帳の全bytes/hash/作成更新日時不変。
+[全試行と限界](quality/2026-11-06-close-busy-native.md)。
 
 ### QLT-009 — カバレッジは下げられない
 
