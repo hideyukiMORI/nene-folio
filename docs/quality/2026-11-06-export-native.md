@@ -55,3 +55,19 @@ export_native 276checks/2.91秒、close_modal_native 193checks/1.08秒、計4.0�
 
 原本はD:/NeNeFolio/agents/767-export-native、試行は同outputs。必須CI/統合/通常exe不変/全保全整理は完了後に同agents/integration-completion.jsonへ確定する。
 成功した対象試験だけを統合完了とは扱わない。[日報](../reports/2026-11-06.md)・[引き継ぎ](../handoffs/2026-11-06.md)。
+
+## CI専用失敗の診断（20:07 JST時点）
+
+初回head d3c3839の必須CI42206482231は46対象中export_nativeの出力全bytes比較だけが失敗した。
+正典merge toolの既存一回Ready再送が起こした42207000260でも同じ比較が失敗した。
+両runのraw logをagentsに保持し、統合待ちprocessを停止、PR768をDraftへ戻した。統合はしていない。
+GitHub連携のDraft mutationはResource not accessible by integrationだったため、既存認証CLIへ切替成功。
+
+本文全文/選択/modified/UndoRedo/focusとmodal復帰の検査は失敗位置の直前まで成功している。
+read結果・実bytes長/全hex・期待bytes・UTF16出力pathを失敗時だけ記録し、元の完全一致assertは維持した。
+Windows Server 2022 CIでだけ再現し、ローカルでは同候補も成功するため、原因確定用に同CI環境で診断する。
+この追加情報は原因の特定に必要な途中診断（QLT-012）であり、失敗を一時的とみなす再試行ではない。
+
+- build-diagnostic-01: 診断を既存functionに足した結果、complexity22>10をtidyが拒否。child/wrapper1、入力不変。製品実行前。
+- build-diagnostic-02: 読取結果検査と失敗情報formatterを関心ごとに分割。Debug/tidy成功、child/wrapper0、入力不変。
+- test-diagnostic-01: export_nativeだけローカル成功、child/wrapper0、入力不変。CI原因はまだ未確定。

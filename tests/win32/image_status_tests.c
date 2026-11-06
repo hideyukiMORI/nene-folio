@@ -6670,6 +6670,47 @@ static void expect_export_files(struct native_fixture *_Nonnull fixture,
     expect_rejected_ledger(fixture, 1, files->target_ledger);
 }
 
+static void report_export_mismatch(const wchar_t *_Nonnull path, const char *_Nonnull expected,
+                                   const struct file_bytes *_Nullable bytes,
+                                   enum persistence_outcome read)
+{
+    fprintf(stderr, "export diagnostic: read=%d expected=%zu actual=%zu path=", (int)read,
+            strlen(expected), bytes == nullptr ? 0 : file_bytes_length(bytes));
+    for (size_t index = 0; path[index] != L'\0'; ++index)
+        fprintf(stderr, "%04x ", (unsigned)path[index]);
+    fprintf(stderr, "\nactual bytes:");
+    if (bytes != nullptr)
+        for (size_t index = 0; index < file_bytes_length(bytes); ++index)
+            fprintf(stderr, " %02x", (unsigned char)file_bytes_data(bytes)[index]);
+    fprintf(stderr, "\nexpected bytes:");
+    for (size_t index = 0; index < strlen(expected); ++index)
+        fprintf(stderr, " %02x", (unsigned char)expected[index]);
+    fprintf(stderr, "\n");
+}
+
+static void expect_export_result(const wchar_t *_Nonnull path, const char *_Nullable expected)
+{
+    struct file_bytes *bytes = nullptr;
+    enum persistence_outcome read = file_bytes_read(path, &bytes);
+    if (expected == nullptr)
+        require(read == PERSISTENCE_ABSENT && bytes == nullptr,
+                "cancelling the selected filename publishes no external file");
+    else
+    {
+        if (read != PERSISTENCE_LOADED || bytes == nullptr ||
+            file_bytes_length(bytes) != strlen(expected) ||
+            memcmp(file_bytes_data(bytes), expected, strlen(expected)) != 0)
+        {
+            report_export_mismatch(path, expected, bytes, read);
+        }
+        require(read == PERSISTENCE_LOADED && bytes != nullptr &&
+                    file_bytes_length(bytes) == strlen(expected) &&
+                    memcmp(file_bytes_data(bytes), expected, strlen(expected)) == 0,
+                "the actual exported file matches every independent UTF-8 literal byte");
+    }
+    file_bytes_destroy(bytes);
+}
+
 static void export_current_to(struct folio_window *_Nonnull window, const wchar_t *_Nonnull path,
                               const char *_Nullable expected)
 {
@@ -6697,17 +6738,7 @@ static void export_current_to(struct folio_window *_Nonnull window, const wchar_
                 folio_window_accessible_ready(window),
             "the same root and content return to their ready state after export");
     expect_native_body(window, &before);
-    struct file_bytes *bytes = nullptr;
-    enum persistence_outcome read = file_bytes_read(path, &bytes);
-    if (expected == nullptr)
-        require(read == PERSISTENCE_ABSENT && bytes == nullptr,
-                "cancelling the selected filename publishes no external file");
-    else
-        require(read == PERSISTENCE_LOADED && bytes != nullptr &&
-                    file_bytes_length(bytes) == strlen(expected) &&
-                    memcmp(file_bytes_data(bytes), expected, strlen(expected)) == 0,
-                "the actual exported file matches every independent UTF-8 literal byte");
-    file_bytes_destroy(bytes);
+    expect_export_result(path, expected);
 }
 
 struct export_file_request
