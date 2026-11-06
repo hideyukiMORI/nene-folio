@@ -87,3 +87,11 @@ CIのexport_nativeは2.01秒、46/46成功。main`e81c15a37450b9070fb3343fcbae82
 保全ZIP381481479bytes/SHA256 `3e8005f8bd30b19e5a2085dab61fe456768419a3de0158a9fc6b42d5485d8e7a`。
 原本D:/NeNeFolio/agents/767-export-native/integration-completion.json。
 初回2CIと診断CIの期待path不存在、全補助失敗、最終入力修正を区別して保存した。Windows内部の特定原因や全OSへの保証はしない。
+
+## 統合と終了整理の確定
+
+#769 / PR770は最終head`f7a7ebb315c1a0afb14dcd710626b2269459dfd7`、必須CI42215039675のfull-gate/check成功。
+main`fed522a684966b68d326a3506a3691f6df49d4b5`へ正典merge02で統合し、Issue769 CLOSED。通常exe hash/bytes/更新日時不変、製品src/eng/fonts/packaging/CMake不変。
+3870file全hash保全、ZIP83769164bytes/SHA256 `7fcda0819b4e5f9664e14a637992df4db1119d9a4bf24134ea020fdf1888d4f2`。
+絶対2roots/同squashtree/clean・ignored・untracked/link/稼働参照0を確認して専用worktree/output整理、branch/commit保持。
+原本D:/NeNeFolio/agents/769-merge-ready-failure/integration-completion.json。初期CI成功後の時計境界反例と補助行slice失敗も分離収載した。
