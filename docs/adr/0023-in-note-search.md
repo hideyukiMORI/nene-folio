@@ -120,3 +120,9 @@ VIEW/未保存EDITの本文とUndo・全保存内容を保持し、Undo一回で
 次単位がhighなら同scannerは0を返すため呼出しだけ省略する。index/残長境界、同decoder/matcher/拒否順序/借用契約を維持。
 先頭emoji/混在の費用を短縮し、密なpair列やBMPの費用も比較して採否を決めた。API/schema/owner/確保/線形性は不変。
 2候補/112条件/8960標本と後続拒否の固定例、限界は[品質記録](../quality/2026-11-06-search-validation-resume.md)。
+
+## 2026-11-06 — raw同値比較のfold省略（#763）
+
+同じsame_unitでUTF-16単位がraw同値ならtrueとし、異なる値だけ既存ascii_fold_unitの結果を比べる。
+fold規則を複製せず、語の順序前処理・一致列の制御・拒否順序・借用契約を維持する。
+旧fold呼出数/2を新しい比較回数として使わない。本文/明示語の7分布112条件、短文/英字の費用も[品質記録](../quality/2026-11-06-search-equality.md)へ残す。
