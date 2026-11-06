@@ -1,6 +1,6 @@
 # いまの状態 — NeNe Folio
 
-## 2026-11-06 — GitHub 1.3.2 Beta公開済み
+## 2026-11-06 — GitHub 1.3.2公開・Store更新申請済み
 
 hideの22:47の依頼で、[GitHub 1.3.2 Beta](https://github.com/hideyukiMORI/nene-folio/releases/tag/v1.3.2)を22:54:38 JSTに公開した（#779）。
 tag/配布sourceは`ba1e697deccb71e2f248f4759349d51ddec99e29`、Windows版1.3.2.0。
@@ -11,7 +11,7 @@ tag/配布sourceは`ba1e697deccb71e2f248f4759349d51ddec99e29`、Windows版1.3.2.
 恒久配布はD:/NeNeFolio/releases/1.3.2/。
 ZIP `github/NeNeFolio-1.3.2-win-x64.zip`、SHA256 `e3922f11b227d089528f7880f27df4789b848a1b289871311faa36f48da36a34`。
 MSIX `store-candidate-20261106/NeNeFolio-1.3.2-win-x64.msix`、SHA256 `c772638689f7977b2ea062c5cff0dfd0fdf244fadb1cbfaf16a3fae8c428d7fc`。
-MSIXは前版と同identity/対応環境、1.3.1.0→1.3.2.0を照合済み。既存アプリのStore更新申請用であり、Store送信・認定・公開は未実施。
+MSIXは前版と同identity/対応環境、1.3.1.0→1.3.2.0を照合済み。hideの「Storeは更新申請した。」との報告により、1.3.2は更新申請済み（#781）。認定・公開・Store経由の実機更新は未確認。
 公開原本D:/NeNeFolio/agents/publish-1.3.2-20261106/、生成・専用起動の確定原本は同agents/release-1.3.2-20261106/integration-completion.json。
 
 通常exeは22:16の実機起動依頼により1.3.2へ反映し、source `99d74fab5db0fb7a4c94e415425cb0810b4bb3c1`、PID25132で一度起動・表示・応答を確認した。
@@ -53,6 +53,11 @@ SHA256は `2a4b19c97fe1d59d007fe14ce0e2e71cf7c8b991d752e70c5efbf38093df39cb`。2
 文書・native試験のみの変更を理由に通常buildを反復しない。配布1.3.0のsourceとは区別する。
 
 ## Store公開と残る未確認事項
+
+1.3.2 / Windows1.3.2.0はhideの本人報告によりStore更新申請済み（#781）。直前の1.3.2案内から版を特定した。
+報告後の時計確認は11月6日23:18:55 JSTで、正確な申請時刻・申請番号・現在の審査段階は未確認。
+認定・公開・Store経由の実機更新、portal画面やアップロードpackage hashの独立確認は行っていない。
+申請原本D:/NeNeFolio/agents/release-1.3.2-20261106/store-status.json。次はhideの結果報告を待つ。
 
 1.3.1の提出用MSIXと日本語・英語・簡体字の更新文は `D:/NeNeFolio/releases/1.3.1/store-candidate-20261105/` に準備済み。
 ZIPは `D:/NeNeFolio/releases/1.3.1/github/`。ZIP SHA256は `120968465a35664fa91ec300a18bbca699406c2c8a96b0c8ca4f4923c32535f7`、
