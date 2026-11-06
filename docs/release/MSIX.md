@@ -34,6 +34,9 @@ Storeは公開時にMicrosoft署名へ置き換えるため、Store提出用のC
 Documentsなどの通常フォルダーと同じ保持を未検証のまま保証しない。
 Storeページの説明・画像・プライバシーポリシー・サポートURL・価格/地域/レーティング・申請は別途整える。
 
+掲載文の更新原稿と入力欄の対応は[Store掲載原稿](store-listing/README.md)を参照する。
+公開済み1.3.2の機能に合わせた3言語の訂正案で、原稿の準備とStoreへの入力・申請・公開を区別する。
+
 関連: [ADR0080](../adr/0080-store-msix-through-release-pipeline.md)、[保存先ADR0077](../adr/0077-note-storage-location.md)。
 
 ## 1.0.0候補の実測（2026-11-01 / #486）

@@ -1,18 +1,19 @@
 # いまの状態 — NeNe Folio
 
-## 2026-11-07 — CJK書体修正を通常版へ反映・READMEを現行化
+## 2026-11-07 — Store掲載文3言語を準備、通常版・READMEは反映済み
 
-#783/PR784は最終head42689f56ed30301d995ac2a1c6eabb1c2710529a、必須CI42239417180 full-gate/check成功、main d343071へ統合済み。
-hideの終了報告後、00:24に正典prepare-real-machine.ps1で通常exeへ反映した。起動はしていない。
-実data33fileの全bytes/hash/作成更新日時不変、旧exe保管、1,481fileの全保全後に783専用worktree/outputを整理済み。
-確定原本D:/NeNeFolio/agents/editor-font-binding-20261106/integration-reflected.json。
-[書体修正の根拠・全試行・限界](../quality/2026-11-06-editor-font-binding.md)。物理IMEと実ノートでの見た目は未確認。
+#787で公開済み1.3.2に合う[Store掲載原稿](../release/store-listing/README.md)を日本語・英語・簡体字で準備した。
+画像・Mermaid・コード色分けの旧非対応説明を訂正し、HTML描画/独自クラウド同期の制限は維持する。
+貼り付け用9ファイルはD:/NeNeFolio/releases/1.3.2/store-listing-20261107/。説明/機能/短い説明の3欄で、未送信。
+[作成・照合記録](../quality/2026-11-07-store-listing-current.md)。確定原本同agents/store-listing-current-20261107/integration-completion.json。
+次の外部反映はStoreの各言語欄の差替え。今回はPartner Centerを操作せず、1.3.2の認定/公開や訂正掲載は未確認。
 
-#785でREADMEへ[Microsoft Store](https://apps.microsoft.com/detail/9PCHS225SWBX)と公開1.3.2の新しい画面を追加し、公開版/main/申請中を区別した。
-Storeの商品名・公開元・repo・HTTP200を確認。現在のStore版番号は未確認で、1.3.2公開済みとはしない。
-[README検証記録](../quality/2026-11-07-readme-current.md)。確定結果は同agents/readme-current-20261107/integration-completion.json。
-次はStore掲載説明の古い「画像・Mermaid等非対応」の訂正案を準備する。Store送信はこの対応に含めない。
-公開済み1.3.2 ZIP/MSIX・申請は差し替えず、次版Aboutは未着手。追加waiver none、既存WVR-0001継続。
+#785/PR786は最終CI42245044660成功、main445315bへ統合済み。READMEの公式Store URLと1.3.2画面2枚を更新し、1,268file全保全後に専用領域整理済み。
+原本同agents/readme-current-20261107/integration-completion.json。
+#783/PR784は最終CI42239417180成功・maind343071へ統合し、00:24に通常exeへ反映した。実data33fileのbytes/hash/作成更新日時不変、未起動。
+1,481file全保全後に783専用領域も整理済み。原本同agents/editor-font-binding-20261106/integration-reflected.json。
+物理IMEと実ノートでの見た目は未確認。公開済み1.3.2 ZIP/MSIXにはこのCJK修正を収載しない。
+次版Aboutは未着手。追加waiver none、既存WVR-0001継続。
 
 ## 2026-11-06 — GitHub 1.3.2公開・Store更新申請済み
 
