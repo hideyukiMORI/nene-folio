@@ -14,6 +14,13 @@ Store1.3.1の実機更新成功報告#706は履歴であり、1.3.2の更新成�
 #789の最終head/CI/統合/整理の確定原本はD:/NeNeFolio/agents/789-daily-handoff/integration-completion.json。
 記録が未完なら完了扱いにせず、実際のIssue/PRとcheckoutを照合する。
 
+## 2026-11-10 — 英語UIの画像（#791）
+
+dev.toの英語記事向けに、公開1.3.2の英語UI画像docs/images/1.3.2-main-en.png・1.3.2-themes-en.pngを追加した。
+READMEの掲載画像も英語UIの2枚へ切り替えた。日本語UIの2枚は外部記事が参照するため保持する。
+由来は[品質記録](../quality/2026-11-10-english-screenshots.md)、実績は[11月10日日報](../reports/2026-11-10.md)。
+dev.to記事の差し替えは統合側の担当。統合の結果はIssue #791とそのPRが実状態。原本D:/NeNeFolio/agents/791-en-screenshots/。
+
 ## 通常版と公開版
 
 #783/PR784は最終CI42239417180成功・main d343071へ統合し、00:24に通常exeへ反映した。
