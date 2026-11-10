@@ -27,9 +27,9 @@ made after the published 1.3.2 packages.
 · [Supported Markdown and Mermaid syntax](docs/MARKDOWN.md)
 · [Import and export](docs/TRANSFER.md)
 
-![NeNe Folio 1.3.2 showing categories, a Markdown note and a Mermaid flowchart](docs/images/1.3.2-main.png)
+![NeNe Folio 1.3.2 showing categories, a Markdown note and a Mermaid flowchart](docs/images/1.3.2-main-en.png)
 
-v1.3.2 with the Japanese UI, Light theme, and sample notes. [Screenshot provenance](docs/quality/2026-11-07-readme-current.md).
+v1.3.2 with the English UI, Light theme, and sample notes. [Screenshot provenance](docs/quality/2026-11-10-english-screenshots.md).
 
 ## What it does
 
@@ -124,7 +124,7 @@ The requirements, one FR per row, are in [SPECIFICATION.md](SPECIFICATION.md).
 Palette sources and license texts are retained in [THIRD_PARTY_NOTICES.txt](THIRD_PARTY_NOTICES.txt).
 Every key and command is listed in [キーバインドとコマンド](docs/KEY_BINDINGS.md) (Japanese).
 
-![The searchable theme chooser in NeNe Folio 1.3.2, with Nord selected](docs/images/1.3.2-themes.png)
+![The searchable theme chooser in NeNe Folio 1.3.2, with Nord selected](docs/images/1.3.2-themes-en.png)
 
 The theme chooser offers 128 choices, including the OS setting and the original Light / Dark themes.
 Arrow keys preview a choice across the window before it is saved.
