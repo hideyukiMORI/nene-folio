@@ -2,7 +2,7 @@
 
 商品: [NeNe Folio](https://apps.microsoft.com/detail/9PCHS225SWBX)（9PCHS225SWBX）。
 公開済み1.3.2の機能を基準に、2026-11-07に準備した訂正案。
-hideが2026-11-10に[変更を申請したと報告した](https://github.com/hideyukiMORI/nene-folio/issues/797)。認定と掲載への反映は未確認。
+hideが2026-11-10に[変更を申請したと報告した](https://github.com/hideyukiMORI/nene-folio/issues/797)。同日、公開Storeページへの[反映を確認した](https://github.com/hideyukiMORI/nene-folio/issues/801)。認定日時は未確認。
 Storeの現在版番号や1.3.2の認定・公開を示すものではない。
 
 ## 正本と入力欄

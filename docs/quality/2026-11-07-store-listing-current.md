@@ -53,3 +53,22 @@ D:/NeNeFolio/releases/1.3.2/store-listing-20261107/{ja-JP,en-US,zh-CN}/を受け
 入力した言語と欄、申請番号、入力内容と原稿の一致、認定、掲載への反映は聞いておらず、未確認。
 Partner Centerの操作・確認は主担当からは行っていない。原稿JSONと貼り付け用9ファイルは変更していない。
 上の「未送信の原稿準備」は11月7日時点の状態として保持する。
+
+## 2026-11-10 — 掲載への反映（#801）
+
+hideが2026-11-10に公式Storeページ（商品9PCHS225SWBX、日本向けの共有URL）を示し、「リリースされたみたい。」と報告した
+（[Issue #801](https://github.com/hideyukiMORI/nene-folio/issues/801)）。
+23:35 JSTに公開ページを3つの言語・市場で取得し、準備した原稿と照合した。いずれもHTTP200。
+
+| 取得したページ | bytes | SHA256の先頭 | 説明 | 機能 | 短い説明 |
+| --- | --- | --- | --- | --- | --- |
+| hl=ja-jp、gl=JP | 587319 | ef42b142275c5704 | 一致 | 8 / 8 | 一致 |
+| hl=en-us、gl=US | 233446 | 3094b4609f5d315e | 一致 | 8 / 8 | 一致 |
+| hl=zh-cn、gl=CN | 473530 | c5b408d41306618c | 一致 | 8 / 8 | 一致 |
+
+照合は、HTMLの文字参照とJSON escapeを戻して空白を除いた本文に、
+D:/NeNeFolio/releases/1.3.2/store-listing-20261107/の各テキスト（空白を除く）が部分文字列として含まれるかで判定した。
+原稿に無い文言がページに残っていないか、画面上の見え方、他の市場・言語は確認していない。
+認定日時・申請番号・Partner Center側の状態も未確認。install・update・サインインは行っていない。
+上の#797の節にある「掲載への反映は未確認」は申請時点の状態として保持する。
+原本はD:/NeNeFolio/agents/801-listing-live/（取得した3つのHTML、compare.py、compare-result.json）。
