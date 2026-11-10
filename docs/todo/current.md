@@ -30,7 +30,10 @@ hideが11月10日の対話で、Storeアプリ経由の1.3.2への更新を「�
 下の11月7日の節にある「1.3.2実機更新は未確認」は当時の状態で、この節が新しい。
 原本D:/NeNeFolio/agents/release-1.3.2-20261106/store-status.json、変更前の固定コピーは同agents/793-store-update-report/。
 
-通常exeはhideの指示で11月10日22:03に起動した（PID6472）。物理IMEと実ノートの書体の見た目はhideの確認待ち。
+通常exeはhideの指示で11月10日22:03に起動した（PID6472）。
+#783の書体修正は、hideが実機で見て「全部大丈夫と思う。」と報告した（[#795](https://github.com/hideyukiMORI/nene-folio/issues/795)）。
+本人報告による受理とし、範囲は[書体の品質記録](../quality/2026-11-06-editor-font-binding.md)の末尾を参照する。
+#793/PR794は最終CI42821469341成功・mainbc18441へ統合済み。
 Store掲載文3言語は準備済み・未送信で、hideが後で入力する。
 次版（About含む）はNibの開発が落ち着いてから着手する（hideの11月10日の判断）。それまで新しい版の作業を始めない。
 
@@ -40,7 +43,7 @@ Store掲載文3言語は準備済み・未送信で、hideが後で入力する�
 通常exeはC:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe、版1.3.2 / Windows1.3.2.0。
 反映source `d343071aa918d6b5e7a41341009a2db607b5217c`、
 SHA256 `ab97b69dcab303d8a75c09ed879237c9477939a64c1ddb6d8faabc02180018f1`。
-実data33ファイルのbytes/hash/作成・更新日時不変、反映後は未起動。物理IMEと実ノートの見た目は未確認。
+実data33ファイルのbytes/hash/作成・更新日時不変、反映後の起動と見た目の確認は上の11月10日の節を参照する。
 確定原本はD:/NeNeFolio/agents/editor-font-binding-20261106/integration-reflected.json。
 旧integration-completion.jsonの反映待ちは過去の状態。専用領域は1481ファイル全保全後に整理済み。
 

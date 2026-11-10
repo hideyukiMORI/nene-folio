@@ -102,3 +102,21 @@ hideの終了報告後、00:24に正典prepare-real-machine.ps1で通常exeを�
 1,481file全保全後にD:/NeNeFolio/worktrees/783-editor-font-bindingと同outputsを整理し、branch/commitを保持した。
 確定原本D:/NeNeFolio/agents/editor-font-binding-20261106/integration-reflected.json。
 同integration-completion.jsonは00:12の反映待ち記録として保持する。公開済み1.3.2 ZIP/MSIXへの反映ではない。
+
+## 2026-11-10 — 実機での見た目の本人報告（#795）
+
+hideの指示で11月10日22:03に通常exe（source d343071、SHA256 ab97b69d…、PID6472）を起動した。
+起動前にexeのhashと更新日時2026-11-07 00:24の不変を確認し、起動後の操作は主担当からは行っていない。
+hideに次の5項目を案内した。
+
+1. 元の症状（編集行の日本語だけ細く見える）が消えたか
+2. 物理IMEで打って確定した日本語が周りと同じ書体か
+3. 日本語の混じった文を貼り付けても、そこだけ細くならないか
+4. 閲覧と編集を往復しても書体が変わらないか
+5. 絵文字が空の四角にならず表示されるか
+
+hideは「全部大丈夫と思う。」と報告した（[Issue #795](https://github.com/hideyukiMORI/nene-folio/issues/795)）。
+これを物理IME・実ノートでの見た目の、本人報告による受理として記録する。
+hideが項目ごとに何を操作したか、どのノートで見たかは聞いていない。画像や実ノートの内容は受け取っておらず、記録にも転記していない。
+上の節にある「物理IME・実ノート見た目は未確認」は当時の状態として保持する。
+公開済み1.3.2のZIP/MSIXとStore版にはこの修正が入っていない点は変わらない。次の版で収載する。
