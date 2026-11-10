@@ -19,7 +19,20 @@ Store1.3.1の実機更新成功報告#706は履歴であり、1.3.2の更新成�
 dev.toの英語記事向けに、公開1.3.2の英語UI画像docs/images/1.3.2-main-en.png・1.3.2-themes-en.pngを追加した。
 READMEの掲載画像も英語UIの2枚へ切り替えた。日本語UIの2枚は外部記事が参照するため保持する。
 由来は[品質記録](../quality/2026-11-10-english-screenshots.md)、実績は[11月10日日報](../reports/2026-11-10.md)。
-dev.to記事の差し替えは統合側の担当。統合の結果はIssue #791とそのPRが実状態。原本D:/NeNeFolio/agents/791-en-screenshots/。
+dev.to記事の差し替えは統合側の担当。#791/PR792は最終CI42816719519成功・main57617ecへ統合済み。原本D:/NeNeFolio/agents/791-en-screenshots/。
+hideはREADMEの英語UI画像を了承した。テーマ一覧の行数差は脚の高さを言語ごとに測る既存設計の結果で、不具合ではない。
+
+## 2026-11-10 — Store 1.3.2の実機更新報告（#793）
+
+hideが11月10日の対話で、Storeアプリ経由の1.3.2への更新を「実機更新できたよ」と報告した。
+[Issue #793](https://github.com/hideyukiMORI/nene-folio/issues/793)に記録し、本人報告による確認済みとした。
+更新した日時・端末、認定日時、Store署名版の品質試験、portal/package hashの独立確認は未確認。
+下の11月7日の節にある「1.3.2実機更新は未確認」は当時の状態で、この節が新しい。
+原本D:/NeNeFolio/agents/release-1.3.2-20261106/store-status.json、変更前の固定コピーは同agents/793-store-update-report/。
+
+通常exeはhideの指示で11月10日22:03に起動した（PID6472）。物理IMEと実ノートの書体の見た目はhideの確認待ち。
+Store掲載文3言語は準備済み・未送信で、hideが後で入力する。
+次版（About含む）はNibの開発が落ち着いてから着手する（hideの11月10日の判断）。それまで新しい版の作業を始めない。
 
 ## 通常版と公開版
 

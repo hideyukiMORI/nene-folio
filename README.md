@@ -18,7 +18,7 @@ Package creation, GitHub publication, and Microsoft Store certification are trac
 The unsigned MSIX is a Store submission artifact, not a portable installer.
 The Store listing is live; the maintainer reported a successful Store update to 1.3.1 on November 6.
 The maintainer [reported that Store version 1.3.2 is live](https://github.com/hideyukiMORI/nene-folio/issues/789) on November 7.
-A Store-app update to 1.3.2 has not yet been confirmed.
+The maintainer [reported a successful Store-app update to 1.3.2](https://github.com/hideyukiMORI/nene-folio/issues/793) on November 10.
 The `main` branch also includes a [CJK input font correction](docs/quality/2026-11-06-editor-font-binding.md)
 made after the published 1.3.2 packages.
 
@@ -142,8 +142,8 @@ A build with Windows package identity uses Documents/NeNeFolio as its initial su
 opening notes; its startup setting lives in LocalAppData/NeNeFolio. The 1.0.0 candidate passed local
 installation/update/removal checks. A successful Store update to 1.3.1 was
 [reported by the maintainer](https://github.com/hideyukiMORI/nene-folio/issues/706). Store publication of 1.3.2 was
-[reported separately](https://github.com/hideyukiMORI/nene-folio/issues/789); its actual Store-app update remains unconfirmed
-in the [current status](docs/todo/current.md).
+[reported separately](https://github.com/hideyukiMORI/nene-folio/issues/789), and a successful Store-app update to 1.3.2 was
+[reported on November 10](https://github.com/hideyukiMORI/nene-folio/issues/793). Both are maintainer reports; see the [current status](docs/todo/current.md).
 A missing or unavailable selected folder opens a recovery choice; an invalid or unknown startup-setting version is reported without overwriting it.
 
 | Path | Meaning |
