@@ -34,7 +34,9 @@ hideが11月10日の対話で、Storeアプリ経由の1.3.2への更新を「�
 #783の書体修正は、hideが実機で見て「全部大丈夫と思う。」と報告した（[#795](https://github.com/hideyukiMORI/nene-folio/issues/795)）。
 本人報告による受理とし、範囲は[書体の品質記録](../quality/2026-11-06-editor-font-binding.md)の末尾を参照する。
 #793/PR794は最終CI42821469341成功・mainbc18441へ統合済み。
-Store掲載文3言語は準備済み・未送信で、hideが後で入力する。
+Store掲載文の変更は、hideが11月10日に「文言変更申請した」と報告した（[#797](https://github.com/hideyukiMORI/nene-folio/issues/797)）。本人報告による申請済みとする。
+入力した言語と欄・申請番号・原稿との一致・認定・掲載への反映は未確認。反映の報告が来たら別に記録する。
+#795/PR796は最終CI42822868201成功・mainb4e91a4へ統合済み。
 次版（About含む）はNibの開発が落ち着いてから着手する（hideの11月10日の判断）。それまで新しい版の作業を始めない。
 
 ## 通常版と公開版
@@ -58,7 +60,7 @@ tag/配布sourceは `ba1e697deccb71e2f248f4759349d51ddec99e29`。通常版の#78
 #785/PR786は最終CI42245044660成功・main445315bへ統合済み。READMEの公式Store URLと公開1.3.2の画面2枚を更新した。
 1268ファイル全保全後に専用領域を整理済み。原本D:/NeNeFolio/agents/readme-current-20261107/integration-completion.json。
 #787/PR788は最終CI42247664237成功・maina1f6659へ統合済み。
-[Store掲載原稿](../release/store-listing/README.md)は日本語・英語・簡体字の説明/機能/短い説明を準備済み、未送信。
+[Store掲載原稿](../release/store-listing/README.md)は日本語・英語・簡体字の説明/機能/短い説明を準備済み。申請の状態は上の11月10日の節を参照する。
 貼り付け用9ファイルはD:/NeNeFolio/releases/1.3.2/store-listing-20261107/。正本commit/hashと全出力一致を確認済み。
 製品のStore公開と掲載文の訂正反映は別の状態。次の外部反映を行う場合は各言語欄をこの原稿へ差し替える。
 1249ファイル全保全後に専用領域を整理済み。原本同agents/store-listing-current-20261107/integration-completion.json。
