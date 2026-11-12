@@ -11,11 +11,15 @@ hideの最後の指示は「日報と引き継ぎ書を書いたらすべて止�
 | Store掲載1.3.2 | hideの本人報告で公開確認済み（#789） | 認定・公開の日時、portalの独立確認 |
 | Store経由の1.3.2更新 | hideの本人報告で確認済み（#793） | 更新した日時・端末、Store署名版の品質試験 |
 | Store掲載文の変更 | 公開ページへ反映済み。hideの報告と3言語の照合で確認（#801） | 認定日時、申請番号、Partner Center側の状態 |
+| 掲載文のMermaid訴求 | 3言語の訂正案と貼り付け用テキストを11月12日に準備（#803）。未申請 | Partner Centerの現在の検索キーワード。図の画像は未着手 |
 | #783の書体修正 | hideが実機で見て受理（#795） | 項目ごとの操作内容。公開済み1.3.2とStore版には未収載 |
 | 英語UIの画像2枚 | mainへ収載済み（#791） | dev.to記事の差し替えは統合側の担当 |
 | 次版（About含む） | 未着手 | Nibの開発が落ち着いてから着手する（hideの判断） |
 
 掲載文の反映は11月10日23:35に公開ページのja-JP/en-US/zh-CNで原稿との一致を照合した（[記録](../quality/2026-11-07-store-listing-current.md)）。
+11月12日にhideの依頼でMermaidを2番目の柱にする訂正案を作った（[記録](../quality/2026-11-12-store-listing-mermaid.md)）。
+[掲載原稿](../release/store-listing/README.md)の正本は訂正案へ進み、公開ページは11月7日の原稿のまま。
+貼り付け用はD:/NeNeFolio/releases/1.3.2/store-listing-20261112/。
 英語UIのテーマ一覧が日本語より1行少ないのは既存設計の結果で、不具合ではない（[品質記録](../quality/2026-11-10-english-screenshots.md)）。
 当日の4件（#791/#793/#795/#797）は最終headの必須CI成功・main統合済み。番号とCIは日報の表を参照する。
 Storeの報告の原本はD:/NeNeFolio/agents/release-1.3.2-20261106/store-status.json。
