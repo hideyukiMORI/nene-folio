@@ -2,8 +2,9 @@
 
 商品: [NeNe Folio](https://apps.microsoft.com/detail/9PCHS225SWBX)（9PCHS225SWBX）。
 公開済み1.3.2の機能を基準にした掲載原稿。現在の内容は2026-11-12の訂正案で、Mermaidの図を2番目の柱として案内する
-（[Issue #803](https://github.com/hideyukiMORI/nene-folio/issues/803)）。**この訂正案は未申請で、公開ページには反映されていない。**
-公開ページにあるのは2026-11-07の原稿で、hideが2026-11-10に[変更を申請したと報告し](https://github.com/hideyukiMORI/nene-folio/issues/797)、
+（[Issue #803](https://github.com/hideyukiMORI/nene-folio/issues/803)）。
+hideが2026-11-12に[この訂正案を申請したと報告した](https://github.com/hideyukiMORI/nene-folio/issues/805)。認定と公開ページへの反映は未確認。
+最後に公開ページで照合したのは2026-11-07の原稿で、hideが2026-11-10に[変更を申請したと報告し](https://github.com/hideyukiMORI/nene-folio/issues/797)、
 同日に[反映を確認した](https://github.com/hideyukiMORI/nene-folio/issues/801)。認定日時は未確認。
 Storeの現在版番号や1.3.2の認定・公開を示すものではない。
 
