@@ -24,7 +24,8 @@
 | ノート（note） | 1 つの Markdown ファイル。`data/<カテゴリ>/<名前>.md` | `struct note`（core） |
 | カテゴリ（category） | `data/` 直下の 1 ディレクトリ。色・表示順・展開状態を持つ | `struct category`（core） |
 | 索引（index） | ドロワーに並ぶ「カテゴリ → ノート」の一覧。台帳の順序で並ぶ | `struct drawer_layout`（core） |
-| 台帳（ledger） | 順序と色を永続化する json。`data/categories.json` と `data/<カテゴリ>/index.json` | adapters/win32 が読み書き・core が解釈 |
+| 台帳（ledger） | 順序・色・星を永続化するjson。categories.jsonはカテゴリの順/色/展開、index.json版2はノートの手動順/星。旧版1は星なしとして読む | adapters/win32が読み書き・coreのcategory_ledger/note_ledgerが解釈・ADR0090 |
+| お気に入り（favorite） | 保存済みノートに付ける星。優先表示は手動順を保ち、星だけの表示は検索語とのAND。本文と本文履歴へは保存しない | note_ledger・note_order・note_scope・drawer_source・ADR0090 |
 | ドロワー（drawer） | 左のペイン。検索窓と索引。自前描画・スクロールバー無し | `src/ui/win32` |
 | ビュー（view）／編集（edit） | 右のペインの 2 つのモード。閉じた enum。ノートを切り替えても保たれる。Ctrl+Eは現在modeを反転し、閲覧へ戻るときは「閲覧」の札と同じ保存処理を通る | `enum pane_mode`（application）・ADR0013/0081 |
 | 表示モード（layout mode） | 一覧／両方／ノートの可視領域。閲覧／編集とは独立し、切替だけでは保存しない。一覧は窓を細くし、戻すと直前の広い幅または最大化へ復元する。実行中だけの状態 | `enum folio_layout_mode`（core）・`folio_state_layout_mode`（application）・ADR0047 |
@@ -79,9 +80,9 @@
 | 絞り込み（index filter） | 全ノートの名前と本文に語が含まれるノートだけを索引に残すこと。一致を持つカテゴリは折り畳んでいても展開して並ぶ。ノート内検索（FR-011）とは対象も語も別。初回は本文を一件ずつ準備し、新語の一致計算は有限workで継続して完成集合だけを採用する | `index_filter_build` / `index_filter`（core）・`folio_state_set_index_filter` / `folio_state_continue_index_filter`（application）・ADR0024/0068/0073 |
 | 論理行（logical line） | md 原文の改行で区切られた 1 行。RichEdit が折り返して作る**表示行**とは別で、折り返しの継続行には番号を出さない。表示中の平文では段落区切りが CR 1 つに揃っている | `line_index`（core）・`struct line_mark`・ADR 0026 の決定 2 |
 | 番号の帯（gutter） | 編集中の本文の左の空きに、主窓が自前で描く論理行番号の列。RichEdit の中には置かない（スクロールで一緒に動いてしまうため） | `struct gutter_row`（ui/win32）・`note_pane_visible_rows`・ADR 0026 の決定 1 / 3 |
-| 設定（settings） | `data/settings.json` の版5（`number`・`theme`・`language`・`minimap`）。版1〜4も読み、足りない値を既定値で補い、次の設定変更で版5へ移行する。themeはsystemと127固定配色のID。効果を実装したキーだけが入り、キーを足すたびに版を上げる。ファイルが無ければ既定値で始め、読めなければ既定値で起動して**上書きしない** | `folio_settings`（core）・`folio_state_set_number` / `folio_state_set_theme` / `folio_state_set_language` / `folio_state_set_minimap`（application）・ADR0084 / 0025 / 0031 / 0032 / 0049・SPECIFICATION §2-1 |
+| 設定（settings） | `data/settings.json`の版6（number・theme・language・minimap・note_order）。版1〜5も読み、足りない値を既定で補い、次の設定変更で版6を書く。起動だけでは移行しない。themeはsystemと127固定配色のID。読めなければ既定で起動し**上書きしない** | folio_settings（core）とfolio_stateの設定操作（application）・ADR0090 / 0084 / 0025 / 0031 / 0032 / 0049・SPECIFICATION §2-1 |
 | 本文の写し（note corpus） | 絞り込みが読む、ノートの本文の複製。**空でない語が初めて来たときに 1 回だけ**ポートから読み、以後は保存・新規・改名・移動で該当の写しだけ差し替える。宛先はカテゴリ名とノート名（並び替えでは動かない）。写しが無いノートは一致しない | `note_corpus`（core）・ADR 0024 の決定 1 |
-| 配置の入力（drawer source） | ドロワーの配置が読む、カテゴリ台帳・索引台帳の列・nullable の絞り込みの束。絞り込みの有無で配置の関数を分けないための 1 つの型 | `struct drawer_source`（core）・ADR 0024 の決定 3 |
+| 配置の入力（drawer source） | カテゴリ台帳・索引台帳の列・検索の一致集合・note_order・note_scopeの束。同じ可視/展開queryを描画と鍵の移動で共有する | drawer_source（core）・ADR0024 / 0090 |
 | 置換の下見（replace preview） | 「このパターンで、この本文の、この一致を、この置換文字列で置き換える」を 1 つ持つ値。**UTF-16 の本文の写し**・一致の列・件数・宛先（カテゴリ名とノート名）・解析済みの置換文字列を所有する。位置が `EM_EXSETSEL` と 1 対 1 でなければならないので UTF-8 へ写さない（C-014 の名指しの例外） | `replace_preview`（core）・`folio_state_preview_replace`（application）・ADR 0028 の決定 6 |
 | 置換の当て方（replace scope） | 1 件（anchor 以降で最初の一致）・すべて・各論理行の最初の一致（`g` の無い `:%s`）の閉じた 3 値。選別そのものは core が行う | `enum replace_scope`（core）・ADR 0028 の決定 6 / 8(b) |
 | 置換文字列（replace template） | 利用者が打つ置換の書き方を解析した値。`&` と `\0`・`\1`〜`\9`・`\r` / `\n`・`\\` / `\&` / `\/` だけを認め、ICU の `$1` 形式は使わない | `replace_template`（core）・ADR 0028 の決定 5 |

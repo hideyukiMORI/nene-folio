@@ -492,7 +492,9 @@ static void verify_hit_row_counts(void)
         if (count < 9)
         {
             struct note_ledger *next = nullptr;
-            require(note_ledger_inserted(notes, count, names[count], &next) == NOTE_LEDGER_ACCEPTED,
+            require(note_ledger_inserted(
+                        notes, count, (struct note_entry){.name = names[count], .favorite = false},
+                        &next) == NOTE_LEDGER_ACCEPTED,
                     "append a normal notebook entry");
             note_ledger_destroy(notes);
             notes = next;

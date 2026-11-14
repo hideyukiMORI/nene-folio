@@ -58,6 +58,8 @@ enum folio_state_outcome : unsigned char
     /* 絞り込み中に断る操作（並び替え・開閉など）が来た。台帳もファイルも表示も変えていない
      * （ADR 0024 の決定 4・ADR 0039 の決定 6） */
     FOLIO_STATE_FILTERED,
+    FOLIO_STATE_ORDERED,               /* 優先表示中。手動順へ戻すまでノートの並べ替えは受けない */
+    FOLIO_STATE_MOVE_ROLLBACK_PENDING, /* md移動失敗。移動先の先行台帳の戻しも未完了 */
     /* 設定が版 1 の形ではない・読めない。既定値で起動し、このセッションは設定を変えず、
      * 人が直すか消すまで上書きもしない（ADR 0025 の決定 6） */
     FOLIO_STATE_SETTINGS_UNREADABLE,

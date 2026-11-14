@@ -82,6 +82,8 @@ struct persistence_adapter
     const char *_Nullable written_category;
     char written_names[64]; /* 最後に書かれたカテゴリ台帳の名前（'/' 区切り） */
     enum persistence_outcome ledger_write_outcome;
+    size_t written_favorite_count;
+    size_t move_favorite_count;
     size_t ledger_writes;                  /* write_note_ledger が呼ばれた回数 */
     const char *_Nullable ledger_category; /* 最後に索引を書かれたカテゴリ名 */
     char ledger_order[64];                 /* 最後に書かれた索引の名前（'/' 区切り） */
@@ -432,6 +434,7 @@ static enum persistence_outcome fake_write_note_ledger(struct persistence_adapte
     {
         return adapter->ledger_write_outcome;
     }
+    adapter->written_favorite_count = note_ledger_favorite_count(ledger);
     size_t position = 0;
     adapter->ledger_order[0] = '\0';
     size_t count = note_ledger_count(ledger);
@@ -451,6 +454,7 @@ static enum persistence_outcome fake_move_note(struct persistence_adapter *_Nonn
                                                const char *_Nonnull to_category)
 {
     adapter->moves += 1;
+    adapter->move_favorite_count = adapter->written_favorite_count;
     adapter->move_from = from_category;
     size_t length = strlen(note);
     require(length + 1 < sizeof adapter->moved_note, "the moved name fits the fake");
@@ -1129,8 +1133,8 @@ static void verify_transfer_note(void)
     require(adapter.moves == 1 && same_text(adapter.move_from, "B") &&
                 same_text(adapter.moved_note, "two") && same_text(adapter.move_to, "A"),
             "the md was renamed once, from B to A");
-    require(same_text(adapter.calls, "move/A/four/two/five/B/one/three"),
-            "the rename comes first, then the destination ledger, then the source");
+    require(same_text(adapter.calls, "A/four/two/five/move/B/one/three"),
+            "destination star is durable before rename, then source is pruned");
     require(adapter.ledger_writes == 2 && same_text(adapter.ledger_order, "one/three"),
             "the source ledger is the last write");
     require(folio_state_toggle_category(state, 1) == FOLIO_STATE_READY, "expand A");
@@ -1148,8 +1152,8 @@ static void verify_transfer_to_end(void)
     struct folio_state *state = transfer_state(&adapter);
     require(folio_state_move_note(state, at(0, 0), at(1, 2)) == FOLIO_STATE_READY,
             "one moves to the end of A");
-    require(same_text(adapter.calls, "move/A/four/five/one/B/two/three"),
-            "the destination ledger gained the note at its end");
+    require(same_text(adapter.calls, "A/four/five/one/move/B/two/three"),
+            "destination append is durable before rename, then source is pruned");
     require(folio_state_toggle_category(state, 1) == FOLIO_STATE_READY, "expand A");
     row_order(state, order, sizeof order);
     require(same_text(order, "B/two/three/A/four/five/one/C/one/two/three"), "the new order");
@@ -1221,8 +1225,9 @@ static void verify_transfer_refusals(void)
     adapter.move_outcome = PERSISTENCE_UNWRITABLE;
     require(folio_state_move_note(state, at(0, 0), at(1, 0)) == FOLIO_STATE_STORE_FAILED,
             "the file could not be moved");
-    require(adapter.moves == 1 && adapter.ledger_writes == 0 && same_text(adapter.calls, "move"),
-            "no ledger is written when the rename fails");
+    require(adapter.moves == 1 && adapter.ledger_writes == 2 &&
+                same_text(adapter.calls, "A/one/four/five/move/A/four/five"),
+            "a failed rename restores the destination ledger");
     adapter.move_outcome = PERSISTENCE_OUT_OF_MEMORY;
     require(folio_state_move_note(state, at(0, 0), at(1, 0)) == FOLIO_STATE_OUT_OF_MEMORY,
             "the rename reports out of memory");
@@ -1239,29 +1244,34 @@ static void verify_transfer_stale_ledger(void)
     struct persistence_adapter adapter = healthy_adapter();
     adapter.ledger_fail_at = 1;
     struct folio_state *state = transfer_state(&adapter);
-    require(folio_state_move_note(state, at(0, 1), at(1, 1)) == FOLIO_STATE_LEDGER_STALE,
-            "the destination ledger could not be written");
-    require(adapter.moves == 1 && adapter.ledger_writes == 2 &&
-                same_text(adapter.calls, "move/A/B/one/three"),
-            "both ledgers were attempted, the destination first");
-    require(folio_state_toggle_category(state, 1) == FOLIO_STATE_READY, "expand A");
+    require(folio_state_move_note(state, at(0, 1), at(1, 1)) == FOLIO_STATE_STORE_FAILED,
+            "destination persistence fails before moving md");
+    require(adapter.moves == 0 && adapter.ledger_writes == 1 && same_text(adapter.calls, "A"),
+            "failed preparation does not move or publish state");
     row_order(state, order, sizeof order);
-    require(same_text(order, "B/one/three/A/four/two/five/C/one/two/three"),
-            "the index follows the file even when a ledger is stale");
+    require(same_text(order, "B/one/two/three/A/C/one/two/three"),
+            "failed preparation keeps source");
     folio_state_destroy(state);
     adapter = healthy_adapter();
     adapter.ledger_fail_at = 2;
     state = transfer_state(&adapter);
     require(folio_state_move_note(state, at(0, 1), at(1, 1)) == FOLIO_STATE_LEDGER_STALE,
-            "the source ledger could not be written either");
-    require(same_text(adapter.calls, "move/A/four/two/five/B"),
-            "the destination was still written");
+            "source prune failed after the move");
+    require(same_text(adapter.calls, "A/four/two/five/move/B"),
+            "destination was durable before move");
+    require(folio_state_toggle_category(state, 1) == FOLIO_STATE_READY &&
+                adapter.ledger_writes == 3,
+            "next action repairs the pending source index");
+    row_order(state, order, sizeof order);
+    require(same_text(order, "B/one/three/A/four/two/five/C/one/two/three"),
+            "state follows moved md");
     folio_state_destroy(state);
     adapter = healthy_adapter();
     adapter.ledger_write_outcome = PERSISTENCE_OUT_OF_MEMORY;
     state = transfer_state(&adapter);
-    require(folio_state_move_note(state, at(0, 1), at(1, 1)) == FOLIO_STATE_OUT_OF_MEMORY,
-            "out of memory is not folded into stale");
+    require(folio_state_move_note(state, at(0, 1), at(1, 1)) == FOLIO_STATE_OUT_OF_MEMORY &&
+                adapter.moves == 0,
+            "preparation allocation failure never moves md");
     folio_state_destroy(state);
 }
 
@@ -2243,6 +2253,10 @@ static const char *_Nonnull const expected_failure_lines[] = {
         "名前変更の記録と実ファイルが一致しません。data/.rename.json と data/<カテゴリ>/ "
         "を確認してください。",
     [FOLIO_STATE_SEARCH_MALFORMED] = "検索する語に壊れた文字があります。語は前のままです。",
+    [FOLIO_STATE_ORDERED] =
+        "ノートを並べ替えるには、お気に入り優先を解除して手動順へ戻してください。",
+    [FOLIO_STATE_MOVE_ROLLBACK_PENDING] =
+        "ノートを移動できず、移動先の台帳も戻せませんでした。次の操作で台帳の同期を再試行します。",
     [FOLIO_STATE_FILTERED] =
         "絞り込み中はこの操作ができません。絞り込みを解いてからやり直してください。",
     [FOLIO_STATE_SETTINGS_UNREADABLE] =
@@ -7853,4 +7867,153 @@ void run_markdown_source_state_tests(void)
             "EDIT is constructed from original Markdown and has no native table structure");
     note_name_destroy(name);
     folio_state_destroy(state);
+}
+
+static void verify_favorite_state(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = transfer_state(&adapter);
+    require(folio_state_toggle_favorite(state, at(0, 2)) == FOLIO_STATE_READY,
+            "star can be set without opening any note");
+    require(adapter.note_reads == 0 && adapter.note_writes == 0 && adapter.archives == 0 &&
+                adapter.written_favorite_count == 1,
+            "star saves only index metadata");
+    char order[160] = {0};
+    row_order(state, order, sizeof order);
+    require(same_text(order, "B/three/one/two/A/C/one/two/three"),
+            "star is first within its category");
+    enum folio_cursor_kind kind = FOLIO_CURSOR_CATEGORY;
+    struct note_ref next = {0};
+    require(folio_state_step_kind(state, FOLIO_STEP_FIRST, &kind, &next) &&
+                kind == FOLIO_CURSOR_NOTE && next.category == 0 && next.note == 2,
+            "keyboard follows the same displayed first note");
+    require(folio_state_select_note(state, 0, 2, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
+                folio_state_begin_edit(state) == FOLIO_STATE_READY,
+            "open starred note in edit");
+    require(folio_state_step_kind(state, FOLIO_STEP_NEXT, &kind, &next) && next.note == 0,
+            "keyboard leaves first star for first manual-order ordinary note");
+    const char *body = folio_state_pane_text(state);
+    size_t reads = adapter.note_reads;
+    folio_state_set_note_scope(state, NOTE_SCOPE_FAVORITES);
+    require(folio_state_index_filter_count(state) == 1 && adapter.note_reads == reads,
+            "star filtering never prepares corpus");
+    require(test_index_filter_complete(state, u"one", 3) == FOLIO_STATE_READY &&
+                folio_state_index_filter_count(state) == 0,
+            "star and term filters intersect");
+    require(test_index_filter_complete(state, u"three", 5) == FOLIO_STATE_READY &&
+                folio_state_index_filter_count(state) == 1,
+            "term finds the starred note");
+    require(folio_state_toggle_favorite(state, at(0, 2)) == FOLIO_STATE_READY &&
+                folio_state_index_filter_count(state) == 0 &&
+                folio_state_pane_text(state) == body &&
+                folio_state_pane_mode(state) == PANE_MODE_EDIT && adapter.note_writes == 0 &&
+                adapter.archives == 0,
+            "removing the filtered row retains open body, mode and saved history");
+    folio_state_destroy(state);
+}
+
+static void verify_favorite_failure_and_order(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = transfer_state(&adapter);
+    adapter.ledger_write_outcome = PERSISTENCE_UNWRITABLE;
+    require(folio_state_toggle_favorite(state, at(0, 1)) == FOLIO_STATE_STORE_FAILED &&
+                !folio_state_note_favorite(state, at(0, 1)),
+            "failed star write never changes display");
+    adapter.ledger_write_outcome = PERSISTENCE_STORED;
+    require(folio_state_toggle_favorite(state, at(0, 1)) == FOLIO_STATE_READY,
+            "star retry succeeds");
+    require(folio_state_move_note(state, at(0, 1), at(0, 0)) == FOLIO_STATE_ORDERED,
+            "manual reorder is rejected while priority changes the order");
+    adapter.settings_write_outcome = PERSISTENCE_UNWRITABLE;
+    require(folio_state_set_note_order(state, NOTE_ORDER_MANUAL) ==
+                    FOLIO_STATE_SETTINGS_STORE_FAILED &&
+                folio_state_note_order(state) == NOTE_ORDER_FAVORITES_FIRST,
+            "failed preference save preserves order");
+    adapter.settings_write_outcome = PERSISTENCE_STORED;
+    require(folio_state_set_note_order(state, NOTE_ORDER_MANUAL) == FOLIO_STATE_READY,
+            "manual preference saved");
+    char order[160] = {0};
+    row_order(state, order, sizeof order);
+    require(same_text(order, "B/one/two/three/A/C/one/two/three"),
+            "manual order is restored exactly");
+    require(folio_state_move_note(state, at(0, 1), at(1, 1)) == FOLIO_STATE_READY &&
+                folio_state_note_favorite(state, at(1, 1)) && adapter.move_favorite_count == 1,
+            "destination star is saved before md moves and adopted at destination");
+    folio_state_destroy(state);
+}
+
+static void verify_move_rollback_pending(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = transfer_state(&adapter);
+    adapter.move_outcome = PERSISTENCE_UNWRITABLE;
+    adapter.ledger_fail_at = 2;
+    require(folio_state_move_note(state, at(0, 1), at(1, 1)) == FOLIO_STATE_MOVE_ROLLBACK_PENDING &&
+                adapter.moves == 1,
+            "failed md plus failed rollback is distinct from successful move");
+    adapter.ledger_write_outcome = PERSISTENCE_UNWRITABLE;
+    require(folio_state_toggle_favorite(state, at(0, 0)) == FOLIO_STATE_LEDGER_UNSYNCED &&
+                adapter.moves == 1,
+            "unrestored index blocks later metadata mutation");
+    adapter.ledger_write_outcome = PERSISTENCE_STORED;
+    require(folio_state_toggle_favorite(state, at(0, 0)) == FOLIO_STATE_READY,
+            "same synchronization restores old destination then accepts star");
+    folio_state_destroy(state);
+}
+
+void run_favorite_state_tests(void)
+{
+    finder = test_regex_port();
+    verify_favorite_state();
+    verify_favorite_failure_and_order();
+    verify_move_rollback_pending();
+    verify_transfer_note();
+    verify_transfer_to_end();
+    verify_transfer_selection();
+    verify_transfer_renumbering();
+    verify_transfer_refusals();
+    verify_transfer_stale_ledger();
+}
+
+static bool favorite_state_allocation(size_t nth)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = transfer_state(&adapter);
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
+                folio_state_begin_edit(state) == FOLIO_STATE_READY,
+            "prepare editor before metadata allocation failure");
+    const char *body = folio_state_pane_text(state);
+    allocation_probe_fail_at(nth);
+    enum folio_state_outcome outcome = folio_state_toggle_favorite(state, at(0, 1));
+    allocation_probe_fail_at(0);
+    bool accepted = outcome == FOLIO_STATE_READY;
+    require(accepted || outcome == FOLIO_STATE_OUT_OF_MEMORY,
+            "metadata allocation failure keeps its typed outcome");
+    require(folio_state_note_favorite(state, at(0, 1)) == accepted &&
+                adapter.ledger_writes == (accepted ? 1u : 0u) &&
+                folio_state_pane_text(state) == body && adapter.note_writes == 0 &&
+                adapter.archives == 0,
+            "failed construction publishes no star and performs no write");
+    if (!accepted)
+        require(folio_state_toggle_favorite(state, at(0, 1)) == FOLIO_STATE_READY &&
+                    folio_state_note_favorite(state, at(0, 1)),
+                "same state retries metadata after allocation failure");
+    folio_state_destroy(state);
+    return accepted;
+}
+
+void run_favorite_state_allocation_tests(void)
+{
+    finder = test_regex_port();
+    for (size_t nth = 1; nth < 128; ++nth)
+    {
+        if (favorite_state_allocation(nth))
+        {
+            require(nth > 1, "favorite state sweep actually injected failures");
+            printf("favorite state: %zu allocation failures and successful retries\n", nth - 1);
+            return;
+        }
+    }
+    test_failure("favorite state allocation sweep did not finish");
 }

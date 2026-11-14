@@ -302,8 +302,8 @@ static void verify_note_parse(void)
     require(json_writer_create(&writer) == JSON_WRITER_ACCEPTED, "writer");
     note_ledger_write(ledger, writer);
     require(json_writer_finish(writer) == JSON_WRITER_ACCEPTED, "note write finish");
-    require(same_text(json_writer_text(writer),
-                      "{\n  \"version\": 1,\n  \"notes\": [\n    \"a\",\n    \"b\"\n  ]\n}"),
+    require(same_text(json_writer_text(writer), "{\n  \"version\": 2,\n  \"notes\": [\n    "
+                                                "\"a\",\n    \"b\"\n  ],\n  \"favorites\": []\n}"),
             "note text");
     json_writer_destroy(writer);
     note_ledger_destroy(ledger);
@@ -377,8 +377,8 @@ static void verify_note_round_trip(void)
     note_ledger_write(moved, writer);
     require(json_writer_finish(writer) == JSON_WRITER_ACCEPTED, "round trip finish");
     require(same_text(json_writer_text(writer),
-                      "{\n  \"version\": 1,\n  \"notes\": [\n    \"c\",\n    \"a\",\n    \"b\"\n  "
-                      "]\n}"),
+                      "{\n  \"version\": 2,\n  \"notes\": [\n    \"c\",\n    \"a\",\n    \"b\"\n  "
+                      "],\n  \"favorites\": []\n}"),
             "the written document holds the new order");
     struct note_ledger *again = nullptr;
     require(note_ledger_parse(json_writer_text(writer), json_writer_length(writer), &again) ==
@@ -415,7 +415,9 @@ static void inserted_notes(size_t index, const char *_Nonnull name, char *_Nonnu
 {
     struct note_ledger *ledger = parse_notes("{\"version\": 1, \"notes\": [\"a\", \"b\", \"c\"]}");
     struct note_ledger *grown = nullptr;
-    require(note_ledger_inserted(ledger, index, name, &grown) == NOTE_LEDGER_ACCEPTED,
+    require(note_ledger_inserted(ledger, index,
+                                 (struct note_entry){.name = name, .favorite = false},
+                                 &grown) == NOTE_LEDGER_ACCEPTED,
             "note inserted");
     require(note_ledger_count(grown) == 4, "inserted grows by one");
     for (size_t position = 0; position < 4; ++position)
@@ -462,9 +464,11 @@ static void verify_note_transfer(void)
     require(same_text(order, "ab"), "removed the last");
     struct note_ledger *ledger = parse_notes("{\"version\": 1, \"notes\": [\"a\", \"b\", \"c\"]}");
     struct note_ledger *grown = nullptr;
-    require(note_ledger_inserted(ledger, 0, "b", &grown) == NOTE_LEDGER_MALFORMED,
+    require(note_ledger_inserted(ledger, 0, (struct note_entry){.name = "b", .favorite = false},
+                                 &grown) == NOTE_LEDGER_MALFORMED,
             "a duplicate name is refused");
-    require(note_ledger_inserted(ledger, 0, "a/b", &grown) == NOTE_LEDGER_MALFORMED,
+    require(note_ledger_inserted(ledger, 0, (struct note_entry){.name = "a/b", .favorite = false},
+                                 &grown) == NOTE_LEDGER_MALFORMED,
             "an invalid name is refused");
     note_ledger_destroy(ledger);
 }
@@ -499,6 +503,67 @@ static void verify_category_removed(void)
     category_ledger_destroy(source);
 }
 
+static void verify_favorite_rejections(void)
+{
+    const char *const invalid[] = {
+        "{\"version\":2,\"notes\":[\"a\"]}",
+        "{\"version\":2,\"notes\":[\"a\"],\"favorites\":[\"missing\"]}",
+        "{\"version\":2,\"notes\":[\"a\"],\"favorites\":[\"a\",\"a\"]}",
+        "{\"version\":2,\"notes\":[\"a\"],\"favorites\":[true]}",
+        "{\"version\":2,\"notes\":[\"a\"],\"favorites\":{}}",
+        "{\"version\":2,\"notes\":[\"a\\u0000b\"],\"favorites\":[]}",
+        "{\"version\":2,\"notes\":[\"a\"],\"favorites\":[\"a\\u0000b\"]}"};
+    for (size_t index = 0; index < sizeof invalid / sizeof invalid[0]; ++index)
+        require(note_outcome(invalid[index]) == NOTE_LEDGER_MALFORMED,
+                "malformed favorites are refused, never silently removed");
+}
+
+static void verify_favorite_preservation(void)
+{
+    struct note_ledger *ledger = parse_notes(
+        "{\"version\":2,\"notes\":[\"a\",\"b\",\"c\",\"d\"],\"favorites\":[\"d\",\"b\"]}");
+    const size_t expected[] = {1, 3, 0, 2};
+    for (size_t at = 0; at < 4; ++at)
+        require(note_ledger_ordered(ledger, NOTE_ORDER_FAVORITES_FIRST, at) == expected[at] &&
+                    note_ledger_position(ledger, NOTE_ORDER_FAVORITES_FIRST, expected[at]) == at &&
+                    note_ledger_ordered(ledger, NOTE_ORDER_MANUAL, at) == at,
+                "favorite groups retain manual order; inverse positions agree");
+    struct note_ledger *changed = nullptr;
+    require(note_ledger_renamed(ledger, 1, "renamed", &changed) == NOTE_LEDGER_ACCEPTED &&
+                note_ledger_favorite(changed, 1) && note_ledger_favorite_count(changed) == 2,
+            "rename preserves a star without moving the manual position");
+    note_ledger_destroy(changed);
+    changed = nullptr;
+    require(note_ledger_moved(ledger, 3, 0, &changed) == NOTE_LEDGER_ACCEPTED &&
+                note_ledger_favorite(changed, 0) && note_ledger_favorite(changed, 2),
+            "manual reorder carries both stars");
+    note_ledger_destroy(changed);
+    const char *const scanned_names[] = {"b", "c", "new"};
+    struct name_list *scanned = names_of(scanned_names, 3);
+    changed = nullptr;
+    require(note_ledger_reconcile(ledger, scanned, &changed) == NOTE_LEDGER_ACCEPTED &&
+                note_ledger_favorite_count(changed) == 1 && note_ledger_favorite(changed, 0) &&
+                !note_ledger_favorite(changed, 2),
+            "scan removes missing stars and never stars new notes");
+    note_ledger_destroy(changed);
+    name_list_destroy(scanned);
+    changed = nullptr;
+    require(note_ledger_toggled(ledger, 1, &changed) == NOTE_LEDGER_ACCEPTED &&
+                !note_ledger_favorite(changed, 1) && note_ledger_favorite(ledger, 1),
+            "toggle produces a copy, retaining the source star");
+    struct json_writer *writer = nullptr;
+    require(json_writer_create(&writer) == JSON_WRITER_ACCEPTED, "favorites writer");
+    note_ledger_write(changed, writer);
+    require(json_writer_finish(writer) == JSON_WRITER_ACCEPTED, "favorites write");
+    struct note_ledger *reread = parse_notes(json_writer_text(writer));
+    require(note_ledger_favorite_count(reread) == 1 && note_ledger_favorite(reread, 3),
+            "saved favorites survive restart parsing");
+    note_ledger_destroy(reread);
+    json_writer_destroy(writer);
+    note_ledger_destroy(changed);
+    note_ledger_destroy(ledger);
+}
+
 void run_ledger_tests(void)
 {
     verify_category_parse();
@@ -510,6 +575,8 @@ void run_ledger_tests(void)
     verify_category_moved();
     verify_category_removed();
     verify_note_parse();
+    verify_favorite_rejections();
+    verify_favorite_preservation();
     verify_note_reconcile();
     verify_note_moved();
     verify_note_transfer();

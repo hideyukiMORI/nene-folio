@@ -70,6 +70,8 @@ tests/win32（専用desktopと専用portable dataの検証合成ルート）
 ドロップ先・スクロール上限）、カテゴリと索引の json 読み書き、md → RTF のサブセット変換を**純関数**として持つ。
 全文検索は`index_filter_build`だけに非公開の継続状態を認め、有限workの同一matcherから不変の`index_filter`を作る（ADR0073）。
 step自体を純関数とは呼ばず、同じ構築状態・入力・work列から同じ結果になる決定性を守る。
+`note_ledger`は手動順・星とその安定した優先順を所有し、`drawer_source`は検索/星の可視条件と展開を共有する。
+`folio_settings`の優先表示設定と`folio_state`の実行中の星scopeを入力し、台帳の順序自体は変えない（ADR0090）。
 テーマの固定ID/名前/UI・RTF配色は `folio_theme` の一表、systemを含む名前の解析・解決は `folio_theme_choice` が持つ（ADR0049）。
 `note_file_times`はadapterが得たローカルの作成・更新日時を検証した不変の表示値で、時計やファイルを読まない（ADR0087）。
 Markdown生成物は`markdown_rtf`、leafと段落spanは`markdown_blocks`、順序付きquote/list pathとitem連番・未表示の印は

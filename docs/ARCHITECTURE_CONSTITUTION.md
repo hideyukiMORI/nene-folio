@@ -88,7 +88,9 @@
 | --- | --- | --- | --- |
 | 文書の一覧（索引） | `data/<カテゴリ>/*.md` の存在と順序 | application（`folio_state`） | 起動時の走査と保存後の再読込だけ |
 | カテゴリの色・順序・展開状態 | `data/categories.json` | application | 右クリック・ドラッグ・トグルの意図を受けた reducer |
-| 文書の順序 | `data/<カテゴリ>/index.json` | application | ドラッグの意図を受けた reducer |
+| 文書の手動順と星 | `data/<カテゴリ>/index.json`版2 | core（`note_ledger`）をapplicationが所有 | ドラッグ・星の意図から新台帳を作り、保存成功後に採用する。派生する優先順は同じ台帳から作る（ADR0090） |
+| 文書の表示順設定 | MANUAL / FAVORITES_FIRST。設定版6のnote_order | core（`folio_settings`）をapplicationが所有 | 共通設定保存の成功後に採用し、手動順は保持する（ADR0090） |
+| 星だけの絞り込み | ALL / FAVORITES。起動時ALLの実行中状態 | application（`folio_state`） | 同じdrawer_sourceで検索語とのAND・展開・可視行を判定する。本文は再投入しない（ADR0090） |
 | ノートの保存先 | 現在root・次回設定・初回/復旧/稼働phase | application（`storage_state`） | `storage_port`の検証/保存成功後に採用する。稼働中は次回設定だけ更新し、現在のpersistenceと本文を変えない（ADR0077） |
 | 配布形式と保存先のOS配置 | package identity・Known Folder・起動設定のnative path | adapters/win32（`storage_adapter`） | 起動時に一度解決し、純粋な`storage_path`をapplicationへ渡す（ADR0077） |
 | GDI+の描画寿命 | 窓が所有する起動token | ui/win32（`folio_window` / `storage_prompt`） | `icon_paint_start/stop`の同じ経路で取得/解放し、初回確認も主窓の存在へ依存しない（ADR0077） |

@@ -570,6 +570,17 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_STORAGE_SETTINGS_CHANGED] =
         "別の起動中アプリが保存先設定を変更しました。上書きせず、再起動して読み直してください。",
     [UI_TEXT_STORAGE_PICKER_FAILED] = "フォルダー選択を開けませんでした。パスを直接入力できます。",
+    [UI_TEXT_COMMAND_TOGGLE_FAVORITE] = "お気に入りの星を付け外しする",
+    [UI_TEXT_COMMAND_TOGGLE_FAVORITES_ONLY] = "お気に入りだけの表示を切り替える",
+    [UI_TEXT_COMMAND_TOGGLE_FAVORITES_FIRST] = "お気に入りの優先表示を切り替える",
+    [UI_TEXT_FAILURE_ORDERED] =
+        "ノートを並べ替えるには、お気に入り優先を解除して手動順へ戻してください。",
+    [UI_TEXT_FAILURE_MOVE_ROLLBACK_PENDING] =
+        "ノートを移動できず、移動先の台帳も戻せませんでした。次の操作で台帳の同期を再試行します。",
+    [UI_TEXT_SETTINGS_FAVORITES_FIRST] = "お気に入りを先に表示",
+    [UI_TEXT_TITLE_FAVORITES] = "お気に入り",
+    [UI_TEXT_NOTE_FAVORITE_ON] = "お気に入り",
+    [UI_TEXT_NOTE_FAVORITE_OFF] = "お気に入りではありません",
     [UI_TEXT_COMMAND_TOGGLE_MINIMAP] = "ミニマップの表示を切り替える",
     [UI_TEXT_KEY_MINIMAP] = "Ctrl+Shift+M",
     [UI_TEXT_SETTINGS_MINIMAP] = "ミニマップを表示",

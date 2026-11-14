@@ -10,11 +10,13 @@ struct folio_settings
 {
     bool number;
     bool minimap;
+    enum note_order order;
     enum folio_theme_choice theme;
     enum folio_language language;
 };
 
-constexpr uint32_t settings_version = 5;
+constexpr uint32_t settings_version = 6;
+constexpr uint32_t settings_version_5 = 5;
 constexpr uint32_t settings_version_4 = 4;
 constexpr uint32_t settings_version_1 = 1;
 constexpr uint32_t settings_version_2 = 2;
@@ -22,6 +24,11 @@ constexpr uint32_t settings_version_3 = 3;
 
 /* language の語（ADR 0032 の決定 1）。網羅は CNF-009 が守る。
  * BCP 47 の綴りをそのまま持つ（`zh-Hans` の大文字は形のうち）。表の外の語は MALFORMED。 */
+static const char *_Nonnull const order_names[] = {
+    [NOTE_ORDER_MANUAL] = "manual",
+    [NOTE_ORDER_FAVORITES_FIRST] = "favorites_first",
+};
+
 static const char *_Nonnull const language_names[] = {
     [FOLIO_LANGUAGE_JA] = "ja",
     [FOLIO_LANGUAGE_EN] = "en",
@@ -48,6 +55,7 @@ static struct folio_settings defaults(void)
 {
     struct folio_settings values = {.number = false,
                                     .minimap = true,
+                                    .order = NOTE_ORDER_FAVORITES_FIRST,
                                     .theme = FOLIO_THEME_CHOICE_SYSTEM,
                                     .language = FOLIO_LANGUAGE_JA};
     return values;
@@ -152,6 +160,32 @@ static bool read_language(struct json_reader *_Nonnull reader, enum folio_langua
     return false;
 }
 
+static bool read_order(struct json_reader *_Nonnull reader, enum note_order *_Nonnull value)
+{
+    if (json_reader_next(reader) != JSON_TOKEN_STRING)
+        return false;
+    for (size_t item = 0; item < sizeof order_names / sizeof order_names[0]; ++item)
+    {
+        if (json_reader_text_length(reader) == strlen(order_names[item]) &&
+            strcmp(json_reader_text(reader), order_names[item]) == 0)
+        {
+            *value = (enum note_order)item;
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool read_options(struct json_reader *_Nonnull reader,
+                         struct folio_settings *_Nonnull values, uint32_t version)
+{
+    if (version >= settings_version_5 &&
+        (!expect_key(reader, "minimap") || !read_boolean(reader, &values->minimap)))
+        return false;
+    return version < settings_version ||
+           (expect_key(reader, "note_order") && read_order(reader, &values->order));
+}
+
 static bool document_end(struct json_reader *_Nonnull reader)
 {
     return json_reader_next(reader) == JSON_TOKEN_OBJECT_END &&
@@ -191,9 +225,7 @@ static enum folio_settings_outcome parse_localized(struct json_reader *_Nonnull 
     if (!expect_key(reader, "number") || !read_boolean(reader, &values->number) ||
         !expect_key(reader, "theme") || !read_theme(reader, version, &values->theme) ||
         !expect_key(reader, "language") || !read_language(reader, &values->language) ||
-        (version == settings_version &&
-         (!expect_key(reader, "minimap") || !read_boolean(reader, &values->minimap))) ||
-        !document_end(reader))
+        !read_options(reader, values, version) || !document_end(reader))
     {
         return FOLIO_SETTINGS_MALFORMED;
     }
@@ -219,7 +251,7 @@ static enum folio_settings_outcome parse_document(struct json_reader *_Nonnull r
         return parse_version_2(reader, values);
     }
     if (version == settings_version_3 || version == settings_version_4 ||
-        version == settings_version)
+        version == settings_version_5 || version == settings_version)
     {
         return parse_localized(reader, values, version);
     }
@@ -258,6 +290,8 @@ void folio_settings_write(const struct folio_settings *_Nonnull settings,
     json_writer_string(writer, language_names[settings->language]);
     json_writer_key(writer, "minimap");
     json_writer_boolean(writer, settings->minimap);
+    json_writer_key(writer, "note_order");
+    json_writer_string(writer, order_names[settings->order]);
     json_writer_object_end(writer);
 }
 
@@ -279,6 +313,21 @@ enum folio_theme_choice folio_settings_theme(const struct folio_settings *_Nonnu
 enum folio_language folio_settings_language(const struct folio_settings *_Nonnull settings)
 {
     return settings->language;
+}
+
+enum note_order folio_settings_note_order(const struct folio_settings *_Nonnull settings)
+{
+    return settings->order;
+}
+
+enum folio_settings_outcome
+folio_settings_with_note_order(const struct folio_settings *_Nonnull settings,
+                               enum note_order order,
+                               struct folio_settings *_Nullable *_Nonnull out)
+{
+    struct folio_settings values = *settings;
+    values.order = order;
+    return create(&values, out);
 }
 
 void folio_settings_destroy(struct folio_settings *_Nullable settings)

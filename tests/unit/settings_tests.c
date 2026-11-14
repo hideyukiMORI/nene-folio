@@ -177,9 +177,9 @@ static void expect_migration(const char *_Nonnull text, const char *_Nonnull des
     folio_settings_write(settings, writer);
     folio_settings_destroy(settings);
     require(json_writer_finish(writer) == JSON_WRITER_ACCEPTED, "the document is complete");
-    require(strstr(json_writer_text(writer), "\"version\": 5") != nullptr &&
+    require(strstr(json_writer_text(writer), "\"version\": 6") != nullptr &&
                 strstr(json_writer_text(writer), "\"language\": \"ja\"") != nullptr,
-            "writing always produces version 5");
+            "writing always produces version 6");
     json_writer_destroy(writer);
 }
 
@@ -247,7 +247,7 @@ static void verify_parse(void)
 /* 黙って既定値へ落とさない形（決定 1）。無い・壊れているは呼び出し側が区別する。 */
 static void verify_refusals(void)
 {
-    expect_refusal("{\"version\": 6, \"number\": true, \"theme\": \"dark\", "
+    expect_refusal("{\"version\": 7, \"number\": true, \"theme\": \"dark\", "
                    "\"language\": \"ja\"}",
                    FOLIO_SETTINGS_UNSUPPORTED_VERSION,
                    "a newer version is refused, not downgraded");
@@ -340,9 +340,9 @@ static void verify_catalog_schema(void)
     folio_settings_write(settings, writer);
     folio_settings_destroy(settings);
     require(json_writer_finish(writer) == JSON_WRITER_ACCEPTED &&
-                strstr(json_writer_text(writer), "\"version\": 5") != nullptr &&
+                strstr(json_writer_text(writer), "\"version\": 6") != nullptr &&
                 strstr(json_writer_text(writer), "\"language\": \"en\"") != nullptr,
-            "writing migrated version 3 preserves its language in version 5");
+            "writing migrated version 3 preserves its language in version 6");
     json_writer_destroy(writer);
 }
 
@@ -430,8 +430,45 @@ static void verify_fixed_tokens(void)
     folio_settings_destroy(settings);
 }
 
+static void verify_note_order_settings(void)
+{
+    const char *raw =
+        "{\"version\":5,\"number\":true,\"theme\":\"dark\",\"language\":\"en\",\"minimap\":false}";
+    struct folio_settings *settings = nullptr;
+    require(folio_settings_parse(raw, strlen(raw), &settings) == FOLIO_SETTINGS_READY &&
+                folio_settings_note_order(settings) == NOTE_ORDER_FAVORITES_FIRST,
+            "version five receives favorites-first without rewriting input");
+    struct folio_settings *manual = nullptr;
+    require(folio_settings_with_note_order(settings, NOTE_ORDER_MANUAL, &manual) ==
+                FOLIO_SETTINGS_READY,
+            "manual order can be selected");
+    struct json_writer *writer = nullptr;
+    require(json_writer_create(&writer) == JSON_WRITER_ACCEPTED, "settings writer");
+    folio_settings_write(manual, writer);
+    require(json_writer_finish(writer) == JSON_WRITER_ACCEPTED, "settings written");
+    struct folio_settings *reread = nullptr;
+    require(folio_settings_parse(json_writer_text(writer), json_writer_length(writer), &reread) ==
+                    FOLIO_SETTINGS_READY &&
+                folio_settings_note_order(reread) == NOTE_ORDER_MANUAL &&
+                folio_settings_number(reread) && !folio_settings_minimap(reread) &&
+                folio_settings_language(reread) == FOLIO_LANGUAGE_EN &&
+                folio_settings_theme(reread) == FOLIO_THEME_CHOICE_DARK,
+            "version six roundtrip retains order and every existing setting");
+    folio_settings_destroy(reread);
+    json_writer_destroy(writer);
+    folio_settings_destroy(manual);
+    folio_settings_destroy(settings);
+    expect_refusal("{\"version\":6,\"number\":false,\"theme\":\"system\",\"language\":\"ja\","
+                   "\"minimap\":true}",
+                   FOLIO_SETTINGS_MALFORMED, "new version requires order");
+    expect_refusal("{\"version\":6,\"number\":false,\"theme\":\"system\",\"language\":\"ja\","
+                   "\"minimap\":true,\"note_order\":\"other\"}",
+                   FOLIO_SETTINGS_MALFORMED, "order vocabulary is closed");
+}
+
 void run_settings_tests(void)
 {
+    verify_note_order_settings();
     verify_fixed_tokens();
     verify_minimap_schema();
     verify_catalog_schema();

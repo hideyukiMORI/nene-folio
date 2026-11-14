@@ -18,39 +18,20 @@ struct drawer_layout
     struct drawer_metrics metrics; /* 挿入線の位置と上限に要る */
 };
 
-/* 絞り込んでいるあいだは、見えるノートを持つカテゴリだけが行になる（ADR 0024 の決定 3）。 */
-static bool shown_category(const struct drawer_source *_Nonnull source, size_t category)
-{
-    return source->filter == nullptr || index_filter_category(source->filter, category);
-}
-
-/* 絞り込んでいるあいだは、一致したノートだけが行になる。 */
-static bool shown_note(const struct drawer_source *_Nonnull source, size_t category, size_t note)
-{
-    struct note_ref ref = {.category = category, .note = note};
-    return source->filter == nullptr || index_filter_note(source->filter, ref);
-}
-
-/* 絞り込んでいるあいだは台帳の expanded に関わらず展開して並べる。 */
-static bool shown_expanded(const struct drawer_source *_Nonnull source, size_t category)
-{
-    return source->filter != nullptr || category_ledger_expanded(source->categories, category);
-}
-
 /* 1 カテゴリぶんの行数と名前のバイト数（終端込み）を足す。 */
 static void measure_category(const struct drawer_source *_Nonnull source, size_t category,
                              size_t *_Nonnull rows, size_t *_Nonnull bytes)
 {
     *rows += 1;
     *bytes += strlen(category_ledger_name(source->categories, category)) + 1;
-    if (!shown_expanded(source, category))
+    if (!drawer_source_expanded(source, category))
     {
         return;
     }
     size_t notes_count = note_ledger_count(source->notes[category]);
     for (size_t note = 0; note < notes_count; ++note)
     {
-        if (shown_note(source, category, note))
+        if (drawer_source_shown_note(source, (struct note_ref){.category = category, .note = note}))
         {
             *rows += 1;
             *bytes += strlen(note_ledger_name(source->notes[category], note)) + 1;
@@ -65,7 +46,7 @@ static void measure(const struct drawer_source *_Nonnull source, size_t *_Nonnul
     size_t categories_count = category_ledger_count(source->categories);
     for (size_t category = 0; category < categories_count; ++category)
     {
-        if (shown_category(source, category))
+        if (drawer_source_shown_category(source, category))
         {
             measure_category(source, category, rows, bytes);
         }
@@ -99,7 +80,7 @@ static struct drawer_row category_row(const struct drawer_layout *_Nonnull layou
         .category = category,
         .note = 0,
         .ordinal = category + 1,
-        .expanded = shown_expanded(source, category),
+        .expanded = drawer_source_expanded(source, category),
         .selected = false,
         .cursor = false,
     };
@@ -133,9 +114,11 @@ static size_t fill_category(struct drawer_layout *_Nonnull layout,
         return offset;
     }
     size_t notes_count = note_ledger_count(source->notes[category]);
-    for (size_t note = 0; note < notes_count; ++note)
+    for (size_t position = 0; position < notes_count; ++position)
     {
-        if (!shown_note(source, category, note))
+        size_t note = note_ledger_ordered(source->notes[category], source->order, position);
+        if (!drawer_source_shown_note(source,
+                                      (struct note_ref){.category = category, .note = note}))
         {
             continue;
         }
@@ -154,7 +137,7 @@ static void fill(struct drawer_layout *_Nonnull layout, const struct drawer_sour
     for (size_t category = 0; category < categories_count; ++category)
     {
         layout->notes[category] = note_ledger_count(source->notes[category]);
-        if (shown_category(source, category))
+        if (drawer_source_shown_category(source, category))
         {
             offset = fill_category(layout, source, category, offset);
         }

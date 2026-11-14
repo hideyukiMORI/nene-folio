@@ -528,6 +528,30 @@ static bool run_status_target_tests(const char *_Nonnull argument)
     return true;
 }
 
+static bool run_favorites_target_tests(const char *_Nonnull argument)
+{
+    if (strcmp(argument, "--favorites-oom") == 0)
+    {
+        run_favorite_allocation_tests();
+        printf("favorites allocation tests passed\n");
+        return true;
+    }
+    if (strcmp(argument, "--favorites") == 0)
+    {
+        run_ledger_tests();
+        run_settings_tests();
+        run_layout_tests();
+        run_filter_tests();
+        run_rename_tests();
+        run_favorite_state_tests();
+        run_command_tests();
+        run_ui_text_tests();
+        printf("favorites ledger, order, settings, move failures and presentation tests passed\n");
+        return true;
+    }
+    return false;
+}
+
 static bool run_selected_tests(const char *_Nonnull argument)
 {
     if (strcmp(argument, "--storage-location") == 0)
@@ -579,13 +603,14 @@ static bool run_selected_tests(const char *_Nonnull argument)
         printf("nullable allocation, preview ownership, BOM and template tests passed\n");
         return true;
     }
-    return (run_minimap_target_tests(argument) || run_transfer_target_tests(argument) ||
-            run_web_link_target_tests(argument) || run_text_validation_target_tests(argument) ||
-            run_note_search_target_tests(argument) || run_surface_target_tests(argument) ||
-            run_menu_target_tests(argument) || run_size_overflow_target_tests(argument) ||
-            run_pane_load_target_tests(argument) || run_document_settings_target_tests(argument) ||
-            run_target_tests(argument) || run_filter_target_tests(argument) ||
-            run_status_target_tests(argument) || run_save_target_tests(argument));
+    return (run_favorites_target_tests(argument) || run_minimap_target_tests(argument) ||
+            run_transfer_target_tests(argument) || run_web_link_target_tests(argument) ||
+            run_text_validation_target_tests(argument) || run_note_search_target_tests(argument) ||
+            run_surface_target_tests(argument) || run_menu_target_tests(argument) ||
+            run_size_overflow_target_tests(argument) || run_pane_load_target_tests(argument) ||
+            run_document_settings_target_tests(argument) || run_target_tests(argument) ||
+            run_filter_target_tests(argument) || run_status_target_tests(argument) ||
+            run_save_target_tests(argument));
 }
 
 static void run_full_suite(void)
@@ -624,6 +649,7 @@ static void run_full_suite(void)
     run_line_index_tests();
     run_replace_tests();
     run_state_tests();
+    run_favorite_state_tests();
     run_status_tests();
     run_accessibility_state_tests();
     run_unsaved_departure_tests();

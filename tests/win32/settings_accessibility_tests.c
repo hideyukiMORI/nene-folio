@@ -114,7 +114,8 @@ static void invoke(struct folio_window *_Nonnull window, struct accessible_item 
 static const enum ui_text row_names[] = {
     UI_TEXT_SETTINGS_THEME,        UI_TEXT_THEME_CHOOSE,         UI_TEXT_SETTINGS_LANGUAGE,
     UI_TEXT_SETTINGS_LANGUAGE_JA,  UI_TEXT_SETTINGS_LANGUAGE_EN, UI_TEXT_SETTINGS_LANGUAGE_ZH_HANS,
-    UI_TEXT_SETTINGS_NUMBER_CHECK, UI_TEXT_SETTINGS_MINIMAP,     UI_TEXT_STORAGE_ENTRY};
+    UI_TEXT_SETTINGS_NUMBER_CHECK, UI_TEXT_SETTINGS_MINIMAP,     UI_TEXT_SETTINGS_FAVORITES_FIRST,
+    UI_TEXT_STORAGE_ENTRY};
 
 static void verify_row(struct folio_window *_Nonnull window, struct accessible_item item,
                        size_t ordinal, enum folio_language language)
@@ -177,7 +178,7 @@ static void reverse_walk(struct folio_window *_Nonnull window, struct accessible
 static void verify_buttons(struct folio_window *_Nonnull window,
                            const struct accessible_item *_Nonnull rows)
 {
-    const size_t ordinals[] = {1, 8};
+    const size_t ordinals[] = {1, 9};
     for (size_t index = 0; index < sizeof ordinals / sizeof ordinals[0]; ++index)
     {
         struct accessible_item item = rows[ordinals[index]];

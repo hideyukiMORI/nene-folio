@@ -49,6 +49,18 @@ static const struct
     [FOLIO_COMMAND_FIND] = {FOLIO_COMMAND_FIND, UI_TEXT_COMMAND_FIND, 0, {"", ""}},
     /* 語を要る Ex の文法（ADR 0026 の決定 8）。パレットとメニューには出ない。 */
     [FOLIO_COMMAND_SET] = {FOLIO_COMMAND_SET, UI_TEXT_COMMAND_SET, 2, {"set", "se"}},
+    [FOLIO_COMMAND_TOGGLE_FAVORITE] = {FOLIO_COMMAND_TOGGLE_FAVORITE,
+                                       UI_TEXT_COMMAND_TOGGLE_FAVORITE,
+                                       1,
+                                       {"favorite", ""}},
+    [FOLIO_COMMAND_TOGGLE_FAVORITES_ONLY] = {FOLIO_COMMAND_TOGGLE_FAVORITES_ONLY,
+                                             UI_TEXT_COMMAND_TOGGLE_FAVORITES_ONLY,
+                                             1,
+                                             {"favorites", ""}},
+    [FOLIO_COMMAND_TOGGLE_FAVORITES_FIRST] = {FOLIO_COMMAND_TOGGLE_FAVORITES_FIRST,
+                                              UI_TEXT_COMMAND_TOGGLE_FAVORITES_FIRST,
+                                              1,
+                                              {"favoritesfirst", ""}},
     [FOLIO_COMMAND_TOGGLE_MINIMAP] = {FOLIO_COMMAND_TOGGLE_MINIMAP,
                                       UI_TEXT_COMMAND_TOGGLE_MINIMAP,
                                       0,
@@ -154,6 +166,9 @@ static enum folio_argument_kind argument_kind(enum folio_command command)
     case FOLIO_COMMAND_VIEW:
     case FOLIO_COMMAND_NEW:
     case FOLIO_COMMAND_FIND:
+    case FOLIO_COMMAND_TOGGLE_FAVORITE:
+    case FOLIO_COMMAND_TOGGLE_FAVORITES_ONLY:
+    case FOLIO_COMMAND_TOGGLE_FAVORITES_FIRST:
     case FOLIO_COMMAND_TOGGLE_MINIMAP:
     case FOLIO_COMMAND_TOGGLE_NUMBER:
     case FOLIO_COMMAND_REPLACE:
@@ -192,6 +207,9 @@ bool folio_command_listed(enum folio_command command)
     case FOLIO_COMMAND_SAVE_AS:
     case FOLIO_COMMAND_RENAME:
     case FOLIO_COMMAND_FIND:
+    case FOLIO_COMMAND_TOGGLE_FAVORITE:
+    case FOLIO_COMMAND_TOGGLE_FAVORITES_ONLY:
+    case FOLIO_COMMAND_TOGGLE_FAVORITES_FIRST:
     case FOLIO_COMMAND_TOGGLE_MINIMAP:
     case FOLIO_COMMAND_TOGGLE_NUMBER:
     case FOLIO_COMMAND_REPLACE:
@@ -541,6 +559,8 @@ enum folio_command_scope folio_command_scope(enum folio_command command)
     case FOLIO_COMMAND_HELP:
     case FOLIO_COMMAND_SET:
     case FOLIO_COMMAND_SETTINGS:
+    case FOLIO_COMMAND_TOGGLE_FAVORITES_ONLY:
+    case FOLIO_COMMAND_TOGGLE_FAVORITES_FIRST:
     case FOLIO_COMMAND_TOGGLE_MINIMAP:
     case FOLIO_COMMAND_TOGGLE_NUMBER:
         return FOLIO_COMMAND_SCOPE_APP;
@@ -554,6 +574,7 @@ enum folio_command_scope folio_command_scope(enum folio_command command)
     case FOLIO_COMMAND_LAYOUT_BOTH:
     case FOLIO_COMMAND_LAYOUT_NOTE:
         return FOLIO_COMMAND_SCOPE_LAYOUT;
+    case FOLIO_COMMAND_TOGGLE_FAVORITE:
     case FOLIO_COMMAND_EXPORT_NOTE:
     case FOLIO_COMMAND_SAVE:
     case FOLIO_COMMAND_EDIT:

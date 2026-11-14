@@ -59,6 +59,7 @@ static bool discard_case;
 static bool palette_case;
 static bool paste_case;
 static bool format_case;
+static bool favorites_case;
 static bool layout_case;
 static bool save_as_case;
 static bool rename_case;
@@ -150,20 +151,21 @@ static void seed_notes(struct persistence_port disk)
                      : "Body before images\n\n![alt](images/one.png)\n\nBody after images\n";
     if (history_case || replace_case || search_case || note_switch_case || zoom_case ||
         theme_preview_case || settings_edit_case || mode_save_case || discard_case ||
-        palette_case || paste_case || format_case || layout_case || save_as_case || rename_case ||
-        replace_save_case || move_edit_case || first_save_case || first_save_modal_case ||
-        empty_save_case || locked_save_case || unicode_save_case || filter_save_case ||
-        session_save_case || session_untitled_case || session_ime_case || session_modal_case ||
-        close_modal_case || export_case)
+        palette_case || paste_case || format_case || favorites_case || layout_case ||
+        save_as_case || rename_case || replace_save_case || move_edit_case || first_save_case ||
+        first_save_modal_case || empty_save_case || locked_save_case || unicode_save_case ||
+        filter_save_case || session_save_case || session_untitled_case || session_ime_case ||
+        session_modal_case || close_modal_case || export_case)
     {
         seed_history(disk);
         source = history_case || note_switch_case || zoom_case || theme_preview_case ||
                          settings_edit_case || mode_save_case || discard_case || palette_case ||
-                         paste_case || format_case || layout_case || save_as_case || rename_case ||
-                         replace_save_case || move_edit_case || first_save_case ||
-                         first_save_modal_case || empty_save_case || locked_save_case ||
-                         filter_save_case || session_save_case || session_untitled_case ||
-                         session_ime_case || session_modal_case || close_modal_case || export_case
+                         paste_case || format_case || favorites_case || layout_case ||
+                         save_as_case || rename_case || replace_save_case || move_edit_case ||
+                         first_save_case || first_save_modal_case || empty_save_case ||
+                         locked_save_case || filter_save_case || session_save_case ||
+                         session_untitled_case || session_ime_case || session_modal_case ||
+                         close_modal_case || export_case
                      ? history_current
                      : replace_current;
     }
@@ -7045,6 +7047,165 @@ static void run_export_case(struct native_fixture *_Nonnull fixture)
     release_modal_save(&files);
 }
 
+static struct accessible_item favorite_item(struct folio_window *_Nonnull window)
+{
+    struct accessible_item tree = {.kind = ACCESSIBLE_TREE};
+    struct accessible_item item = {0};
+    require(folio_window_accessible_selected(window, &tree, &item) == S_OK &&
+                item.kind == ACCESSIBLE_NOTE && item.ref.category == 0 && item.ref.note == 0,
+            "obtain the current row identity through the public tree");
+    return item;
+}
+
+static void expect_favorite_saved(struct folio_window *_Nonnull window,
+                                  struct native_fixture *_Nonnull fixture, bool expected)
+{
+    struct accessible_item item = favorite_item(window);
+    struct accessible_view view = {0};
+    require(folio_window_accessible_read(window, &item, &view) == S_OK && view.favorite == expected,
+            "UIA exposes favorite independently of note selection");
+    struct persistence_port disk = persistence_adapter_port(fixture->files);
+    struct note_ledger *ledger = nullptr;
+    require(disk.read_note_ledger(disk.adapter, "schedule", &ledger) == PERSISTENCE_LOADED &&
+                note_ledger_favorite(ledger, 0) == expected,
+            "native operation persists the same favorite through the canonical codec");
+    note_ledger_destroy(ledger);
+}
+
+/* Click the same visible star rectangle that a pointer can reach, with cancellation as a separate
+ * case. */
+static void favorite_click(struct folio_window *_Nonnull window, bool cancel)
+{
+    struct accessible_item item = favorite_item(window);
+    struct accessible_view view = {0};
+    require(folio_window_accessible_read(window, &item, &view) == S_OK && !view.offscreen,
+            "favorite row is on screen");
+    HWND drawer = folio_window_accessible_window(window, ACCESSIBLE_DRAWER);
+    POINT point = {view.bounds.right - MulDiv(43, (int)GetDpiForWindow(drawer), 96),
+                   (view.bounds.top + view.bounds.bottom) / 2};
+    ScreenToClient(drawer, &point);
+    LPARAM position = MAKELPARAM(point.x, point.y);
+    SendMessageW(drawer, WM_LBUTTONDOWN, MK_LBUTTON, position);
+    if (cancel)
+        ReleaseCapture();
+    SendMessageW(drawer, WM_LBUTTONUP, 0, position);
+    pump(window);
+}
+
+static void expect_favorite_scope_name(struct folio_window *_Nonnull window, bool favorites)
+{
+    const enum accessible_kind kinds[] = {ACCESSIBLE_DRAWER, ACCESSIBLE_TREE};
+    const char16_t *name = favorites ? u"お気に入り" : u"カテゴリ";
+    for (size_t index = 0; index < sizeof kinds / sizeof kinds[0]; ++index)
+    {
+        struct accessible_item item = {.kind = kinds[index]};
+        struct accessible_view view = {0};
+        require(folio_window_accessible_read(window, &item, &view) == S_OK &&
+                    wcscmp((const wchar_t *)view.name, (const wchar_t *)name) == 0,
+                "drawer and tree expose the active favorite scope even when no row matches");
+    }
+}
+
+static void favorite_edit_roundtrip(struct folio_window *_Nonnull window,
+                                    struct native_fixture *_Nonnull fixture,
+                                    const struct history_snapshot *_Nonnull history)
+{
+    struct native_body_snapshot snapshot = {0};
+    capture_native_body(window, &snapshot);
+    favorite_click(window, true);
+    expect_native_body(window, &snapshot);
+    require(!folio_state_note_favorite(fixture->state, (struct note_ref){0, 0}),
+            "capture cancellation never toggles a star");
+    favorite_click(window, false);
+    expect_favorite_saved(window, fixture, true);
+    expect_native_body(window, &snapshot);
+    struct accessible_request toggle = {.item = favorite_item(window),
+                                        .action = ACCESSIBLE_ACTION_TOGGLE_FAVORITE};
+    require(folio_window_accessible_action(window, &toggle) == S_OK, "UIA toggles the same note");
+    pump(window);
+    expect_favorite_saved(window, fixture, false);
+    expect_native_body(window, &snapshot);
+    favorite_click(window, false);
+    invoke_operation(window, FOLIO_COMMAND_TOGGLE_FAVORITES_ONLY);
+    pump(window);
+    snapshot.focus =
+        GetFocus(); /* The menu's public focus policy changes focus, not editor state. */
+    expect_native_body(window, &snapshot);
+    require(folio_state_note_scope(fixture->state) == NOTE_SCOPE_FAVORITES,
+            "favorites-only command is applied without saving the editor");
+    expect_favorite_scope_name(window, true);
+    toggle.item = favorite_item(window);
+    require(folio_window_accessible_action(window, &toggle) == S_OK,
+            "unstar the only filtered note");
+    pump(window);
+    expect_native_body(window, &snapshot);
+    struct accessible_view hidden = {0};
+    require(folio_window_accessible_read(window, &toggle.item, &hidden) != S_OK &&
+                folio_state_document_kind(fixture->state) == FOLIO_DOCUMENT_NAMED,
+            "filtered row disappears while its edited document remains open");
+    expect_favorite_scope_name(window, true);
+    invoke_operation(window, FOLIO_COMMAND_TOGGLE_FAVORITES_ONLY);
+    pump(window);
+    expect_favorite_scope_name(window, false);
+    invoke_operation(window, FOLIO_COMMAND_TOGGLE_FAVORITES_FIRST);
+    pump(window);
+    snapshot.focus = GetFocus();
+    expect_native_body(window, &snapshot);
+    verify_history_unchanged(fixture, history);
+}
+
+static void run_favorites_case(struct native_fixture *_Nonnull fixture)
+{
+    require(folio_state_select_note(fixture->state, 0, 0, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
+            "select dedicated favorite note");
+    if (folio_state_note_favorite(fixture->state, (struct note_ref){0, 0}))
+        require(folio_state_toggle_favorite(fixture->state, (struct note_ref){0, 0}) ==
+                    FOLIO_STATE_READY,
+                "prepare an unstarred fixture");
+    struct history_snapshot history = {0};
+    capture_history(fixture, &history);
+    struct folio_window *window = nullptr;
+    require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
+                FOLIO_WINDOW_CREATED,
+            "real window for favorites");
+    pump(window);
+    action(window, ACCESSIBLE_EDIT);
+    append_switch_text(window);
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    SendMessageW(body, EM_SETSEL, 10, 12);
+    favorite_edit_roundtrip(window, fixture, &history);
+    expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_CHANGED);
+    history_undo(window);
+    expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_SAME);
+    SendMessageW(body, EM_SETSEL, 10, 12);
+    favorite_edit_roundtrip(window, fixture, &history);
+    require(SendMessageW(body, EM_REDO, 0, 0) != 0,
+            "Redo remains available after favorites operations");
+    pump(window);
+    expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_CHANGED);
+    history_undo(window);
+    expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_SAME);
+    verify_history_unchanged(fixture, &history);
+    invoke_operation(window, FOLIO_COMMAND_TOGGLE_FAVORITE);
+    pump(window);
+    expect_favorite_saved(window, fixture, true);
+    expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_SAME);
+    verify_history_unchanged(fixture, &history);
+    folio_state_set_note_scope(fixture->state, NOTE_SCOPE_FAVORITES);
+    enum note_order saved_order = folio_state_note_order(fixture->state);
+    folio_window_destroy(window);
+    for (size_t version = 0; version <= note_history_depth; ++version)
+        note_text_destroy(history.files[version]);
+    destroy_fixture(fixture);
+    *fixture = (struct native_fixture){0};
+    create_fixture(fixture);
+    require(folio_state_note_favorite(fixture->state, (struct note_ref){0, 0}) &&
+                folio_state_note_order(fixture->state) == saved_order &&
+                folio_state_note_scope(fixture->state) == NOTE_SCOPE_ALL,
+            "fresh application reads the star and preference but resets the transient scope");
+}
+
 static void run_extended_fixture(struct native_fixture *_Nonnull fixture, int argc,
                                  char *_Nonnull *_Nonnull argv)
 {
@@ -7104,7 +7265,9 @@ static void run_extended_fixture(struct native_fixture *_Nonnull fixture, int ar
 static void run_remaining_fixture(struct native_fixture *_Nonnull fixture, int argc,
                                   char *_Nonnull *_Nonnull argv)
 {
-    if (export_case)
+    if (favorites_case)
+        run_favorites_case(fixture);
+    else if (export_case)
         run_export_case(fixture);
     else if (close_modal_case)
         run_close_modal_case(fixture);
@@ -7148,6 +7311,7 @@ int main(int argc, char *_Nonnull *_Nonnull argv)
     const char *selector = argc == 2 ? argv[1] : "";
     paste_case = strcmp(selector, "--paste") == 0;
     format_case = strcmp(selector, "--format-keys") == 0;
+    favorites_case = strcmp(selector, "--favorites") == 0;
     layout_case = strcmp(selector, "--layout") == 0;
     save_as_case = strcmp(selector, "--save-as") == 0;
     rename_case = strcmp(selector, "--rename") == 0;
