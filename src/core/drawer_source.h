@@ -6,6 +6,10 @@
 #ifndef NENEFOLIO_DRAWER_SOURCE_H
 #define NENEFOLIO_DRAWER_SOURCE_H
 
+#include "note_order.h"
+#include "note_ref.h"
+#include "note_scope.h"
+
 struct category_ledger;
 struct index_filter;
 struct note_ledger;
@@ -15,7 +19,16 @@ struct drawer_source
     const struct category_ledger *_Nonnull categories;
     /* categories と同じ数・同じ順の索引台帳。名前は配置へ複製され、台帳より長く生きてよい。 */
     const struct note_ledger *_Nonnull const *_Nonnull notes;
+    enum note_order order;
+    enum note_scope scope;
     const struct index_filter *_Nullable filter; /* 絞り込み。無ければ全部が見える */
 };
 
+[[nodiscard]] bool drawer_source_filtered(const struct drawer_source *_Nonnull source);
+[[nodiscard]] bool drawer_source_shown_note(const struct drawer_source *_Nonnull source,
+                                            struct note_ref ref);
+[[nodiscard]] bool drawer_source_shown_category(const struct drawer_source *_Nonnull source,
+                                                size_t category);
+[[nodiscard]] bool drawer_source_expanded(const struct drawer_source *_Nonnull source,
+                                          size_t category);
 #endif

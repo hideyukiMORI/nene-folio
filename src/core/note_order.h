@@ -1,0 +1,8 @@
+#ifndef NENEFOLIO_NOTE_ORDER_H
+#define NENEFOLIO_NOTE_ORDER_H
+enum note_order
+{
+    NOTE_ORDER_MANUAL,
+    NOTE_ORDER_FAVORITES_FIRST,
+};
+#endif

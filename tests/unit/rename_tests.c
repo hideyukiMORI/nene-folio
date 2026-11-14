@@ -15,7 +15,8 @@ static const char *_Nonnull const history_id = "fedcba9876543210fedcba9876543210
 
 static struct rename_plan *_Nonnull plan(void)
 {
-    const char *text = "{\"version\":1,\"notes\":[\"one\",\"source\",\"three\"]}";
+    const char *text = "{\"version\":2,\"notes\":[\"one\",\"source\",\"three\"],"
+                       "\"favorites\":[\"source\"]}";
     struct note_ledger *ledger = nullptr;
     struct note_name *name = nullptr;
     require(note_ledger_parse(text, strlen(text), &ledger) == NOTE_LEDGER_ACCEPTED,
@@ -42,8 +43,9 @@ static void verify_plan(void)
     const struct note_ledger *ledger = rename_plan_note_ledger(rename);
     require(note_ledger_count(ledger) == 3 && same_text(note_ledger_name(ledger, 0), "one") &&
                 same_text(note_ledger_name(ledger, 1), "日本語 名前") &&
-                same_text(note_ledger_name(ledger, 2), "three"),
-            "rename preserves the exact index position and other names");
+                same_text(note_ledger_name(ledger, 2), "three") &&
+                note_ledger_favorite(ledger, 1) && note_ledger_favorite_count(ledger) == 1,
+            "rename preserves the exact index position, favorite and other names");
     struct note_ledger *taken = rename_plan_take_note_ledger(rename);
     rename_plan_destroy(rename);
     require(same_text(note_ledger_name(taken, 1), "日本語 名前"),
@@ -133,6 +135,27 @@ static void verify_journal(void)
             "only the optional history identity may be empty");
     json_writer_destroy(writer);
     rename_plan_destroy(rename);
+}
+
+static void verify_favorite_equality(void)
+{
+    struct rename_plan *starred = plan();
+    const char *text = "{\"version\":1,\"notes\":[\"one\",\"source\",\"three\"]}";
+    struct note_ledger *ledger = nullptr;
+    struct note_name *name = nullptr;
+    require(note_ledger_parse(text, strlen(text), &ledger) == NOTE_LEDGER_ACCEPTED &&
+                note_name_create("日本語 名前", strlen("日本語 名前"), &name) == NOTE_NAME_ACCEPTED,
+            "prepare equal names with different favorite metadata");
+    struct note_rename_target target = {.index = 1, .name = name};
+    struct rename_plan *ordinary = nullptr;
+    require(rename_plan_create_note("カテゴリ", ledger, &target, &ordinary) ==
+                    RENAME_PLAN_ACCEPTED &&
+                !rename_plan_equals(starred, ordinary),
+            "rename recovery equality cannot ignore favorite metadata");
+    rename_plan_destroy(ordinary);
+    note_name_destroy(name);
+    note_ledger_destroy(ledger);
+    rename_plan_destroy(starred);
 }
 
 static void verify_bad_plans(void)
@@ -482,6 +505,7 @@ void run_rename_tests(void)
     verify_plan();
     verify_refusals();
     verify_journal();
+    verify_favorite_equality();
     verify_bad_plans();
     verify_bad_journals();
     verify_category_plan();

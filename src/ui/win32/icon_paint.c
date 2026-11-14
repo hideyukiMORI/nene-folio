@@ -372,11 +372,28 @@ static int add_layout_path(struct GpPath *_Nonnull path, enum icon_paint_kind ki
     return first_failure(status, add_polygon(path, pane, sizeof pane / sizeof pane[0]));
 }
 
+static int add_star_path(struct GpPath *_Nonnull path, enum icon_paint_kind kind)
+{
+    static const float outer[] = {12.0f, 2.0f,  15.0f, 8.4f,  22.0f, 9.3f, 16.8f,
+                                  14.2f, 18.1f, 21.0f, 12.0f, 17.6f, 5.9f, 21.0f,
+                                  7.2f,  14.2f, 2.0f,  9.3f,  9.0f,  8.4f};
+    static const float inner[] = {12.0f, 6.6f,  13.7f, 10.2f, 17.8f, 10.8f, 14.8f,
+                                  13.6f, 15.5f, 17.4f, 12.0f, 15.5f, 8.5f,  17.4f,
+                                  9.2f,  13.6f, 6.2f,  10.8f, 10.3f, 10.2f};
+    int status = add_polygon(path, outer, sizeof outer / sizeof outer[0]);
+    if (kind == ICON_PAINT_STAR_OUTLINE)
+        status = first_failure(status, add_polygon(path, inner, sizeof inner / sizeof inner[0]));
+    return status;
+}
+
 /* 形ごとに割る（全値の switch・default は書かない・C-002）。 */
 static int build_path(struct GpPath *_Nonnull path, enum icon_paint_kind kind)
 {
     switch (kind)
     {
+    case ICON_PAINT_STAR:
+    case ICON_PAINT_STAR_OUTLINE:
+        return add_star_path(path, kind);
     case ICON_PAINT_MINIMIZE:
         return add_minimize_path(path);
     case ICON_PAINT_MAXIMIZE:
@@ -427,6 +444,8 @@ static int fill_mode_for(enum icon_paint_kind kind)
     case ICON_PAINT_SELECTION:
     case ICON_PAINT_MENU:
         return gdiplus_fill_winding;
+    case ICON_PAINT_STAR:
+    case ICON_PAINT_STAR_OUTLINE:
     case ICON_PAINT_MINIMIZE:
     case ICON_PAINT_MAXIMIZE:
     case ICON_PAINT_RESTORE:

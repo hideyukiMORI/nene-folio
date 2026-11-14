@@ -26,7 +26,9 @@
 #include "note_export_request.h"
 #include "note_import_request.h"
 #include "note_import_result.h"
+#include "note_order.h"
 #include "note_ref.h"
+#include "note_scope.h"
 #include "note_times_view.h"
 #include "pane_mode.h"
 
@@ -488,4 +490,13 @@ folio_state_recolor_availability(const struct folio_state *_Nonnull state, size_
 /* 有効な索引上の対象の名前。同期呼出しの間だけ借りる。 */
 [[nodiscard]] const char *_Nonnull folio_state_note_name(const struct folio_state *_Nonnull state,
                                                          struct note_ref target);
+[[nodiscard]] bool folio_state_note_favorite(const struct folio_state *_Nonnull state,
+                                             struct note_ref ref);
+[[nodiscard]] enum folio_state_outcome
+folio_state_toggle_favorite(struct folio_state *_Nonnull state, struct note_ref ref);
+[[nodiscard]] enum note_scope folio_state_note_scope(const struct folio_state *_Nonnull state);
+void folio_state_set_note_scope(struct folio_state *_Nonnull state, enum note_scope scope);
+[[nodiscard]] enum note_order folio_state_note_order(const struct folio_state *_Nonnull state);
+[[nodiscard]] enum folio_state_outcome
+folio_state_set_note_order(struct folio_state *_Nonnull state, enum note_order order);
 #endif

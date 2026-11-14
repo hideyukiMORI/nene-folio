@@ -40,6 +40,9 @@ struct drawer_window
     HFONT _Nullable category_font;
     HFONT _Nullable note_font;
     HFONT _Nullable mono_font;
+    bool favorite_pressed;
+    struct note_ref favorite_target;
+    uint64_t favorite_revision;
     bool pressed; /* 左ボタンを押した行を覚えているか */
     enum drawer_header_button header_pressed;
     bool header_inside;   /* 押したボタンの矩形の内にポインタがある（外なら押していない見た目） */
@@ -334,7 +337,11 @@ static void draw_category_band(const struct drawer_window *_Nonnull self, HDC de
                   button.left - scale(80, dpi), band_height(self)};
     SelectObject(device, self->category_font);
     SetTextColor(device, self->palette.category_text);
-    draw_utf8(device, ui_text_line(UI_TEXT_TITLE_CATEGORIES, folio_state_language(self->state)),
+    draw_utf8(device,
+              ui_text_line(folio_state_note_scope(self->state) == NOTE_SCOPE_FAVORITES
+                               ? UI_TEXT_TITLE_FAVORITES
+                               : UI_TEXT_TITLE_CATEGORIES,
+                           folio_state_language(self->state)),
               label, 0);
     RECT count = {label.right + scale(8, dpi), label.top, button.left - scale(8, dpi),
                   label.bottom};
@@ -423,6 +430,17 @@ static void draw_category(const struct drawer_window *_Nonnull self, HDC device,
 
 /* ノート行: 選択中なら面を敷き、カーソルの行なら右端にカテゴリ色の角を置く
  * （面は選択・角はカーソル・ADR 0015 の決定 8）。 */
+/* 星の描画と押下/解放は同じ矩形を使う。 */
+static RECT favorite_rect(const struct drawer_window *_Nonnull self, struct drawer_row row,
+                          int width)
+{
+    UINT dpi = GetDpiForWindow(self->handle);
+    int size = scale(22, dpi);
+    int right = width - scale(base_right_inset * 2, dpi);
+    int top = row.top + (row.height - size) / 2;
+    return (RECT){right - size, top, right, top + size};
+}
+
 static void draw_note(const struct drawer_window *_Nonnull self, HDC device, struct drawer_row row,
                       int width)
 {
@@ -437,7 +455,12 @@ static void draw_note(const struct drawer_window *_Nonnull self, HDC device, str
     {
         draw_cursor_mark(self, device, row, width - inset);
     }
-    RECT bounds = {row.indent, row.top, width - inset * 2, row.top + row.height};
+    RECT star = favorite_rect(self, row, width);
+    struct note_ref ref = {.category = row.category, .note = row.note};
+    bool favorite = folio_state_note_favorite(self->state, ref);
+    icon_paint_fill(device, star, favorite ? ICON_PAINT_STAR : ICON_PAINT_STAR_OUTLINE,
+                    row.selected ? self->palette.selected_text : self->palette.note_text);
+    RECT bounds = {row.indent, row.top, star.left - scale(6, dpi), row.top + row.height};
     SelectObject(device, self->note_font);
     SetTextColor(device, row.selected ? self->palette.selected_text : self->palette.note_text);
     draw_utf8(device, row.text, bounds, DT_END_ELLIPSIS);
@@ -847,13 +870,57 @@ static bool press_header(struct drawer_window *_Nonnull self, POINT point)
     return true;
 }
 
+static bool favorite_hit(const struct drawer_window *_Nonnull self, POINT point,
+                         struct note_ref *_Nonnull out)
+{
+    struct drawer_layout *_Nullable layout = nullptr;
+    if (point.y < band_height(self) || !current_layout(self, &layout))
+        return false;
+    size_t index = 0;
+    bool found = drawer_layout_hit(layout, point.y, &index);
+    struct drawer_row row = found ? drawer_layout_row(layout, index) : (struct drawer_row){0};
+    drawer_layout_destroy(layout);
+    RECT client;
+    GetClientRect(self->handle, &client);
+    RECT star = favorite_rect(self, row, client.right);
+    if (!found || row.kind != DRAWER_ROW_NOTE || !PtInRect(&star, point))
+        return false;
+    *out = (struct note_ref){.category = row.category, .note = row.note};
+    return true;
+}
+
+static bool press_favorite(struct drawer_window *_Nonnull self, POINT point)
+{
+    if (!favorite_hit(self, point, &self->favorite_target))
+        return false;
+    self->favorite_pressed = true;
+    self->favorite_revision = folio_state_index_revision(self->state);
+    SetCapture(self->handle);
+    return true;
+}
+
+static void release_favorite(struct drawer_window *_Nonnull self, POINT point)
+{
+    struct note_ref pressed = self->favorite_target;
+    uint64_t revision = self->favorite_revision;
+    self->favorite_pressed = false;
+    ReleaseCapture();
+    struct note_ref target = {0};
+    if (revision != folio_state_index_revision(self->state) ||
+        !favorite_hit(self, point, &target) || target.category != pressed.category ||
+        target.note != pressed.note)
+        return;
+    SendMessageW(GetParent(self->handle), folio_message_drawer_menu, DRAWER_MENU_TOGGLE_FAVORITE,
+                 (LPARAM)&target);
+}
+
 static void press(struct drawer_window *_Nonnull self, POINT point)
 {
-    if (self->pressed || self->header_pressed != DRAWER_HEADER_NONE)
+    if (self->pressed || self->favorite_pressed || self->header_pressed != DRAWER_HEADER_NONE)
     {
         return;
     }
-    if (press_header(self, point))
+    if (press_favorite(self, point) || press_header(self, point))
     {
         return;
     }
@@ -996,6 +1063,11 @@ static void run_header(struct drawer_window *_Nonnull self, enum drawer_header_b
 
 static void release(struct drawer_window *_Nonnull self, POINT point)
 {
+    if (self->favorite_pressed)
+    {
+        release_favorite(self, point);
+        return;
+    }
     enum drawer_header_button pressed = self->header_pressed;
     if (pressed == DRAWER_HEADER_NONE)
     {
@@ -1062,6 +1134,7 @@ static int key_step(const struct drawer_window *_Nonnull self, WPARAM key)
 /* 捕捉を取り上げられたら、線も覚えた行も捨てる。 */
 static void cancel(struct drawer_window *_Nonnull self)
 {
+    self->favorite_pressed = false;
     self->header_pressed = DRAWER_HEADER_NONE;
     self->pressed = false;
     self->moved = false;
@@ -1356,47 +1429,22 @@ static enum ui_pointer_kind drawer_cursor(struct drawer_window *_Nonnull self, P
     return row_action_available(self, row.kind) ? UI_POINTER_ACTION : UI_POINTER_ARROW;
 }
 
-static int accessible_compare(struct drawer_row row, const struct accessible_item *_Nonnull item)
-{
-    if (row.category != item->ref.category)
-    {
-        return row.category < item->ref.category ? -1 : 1;
-    }
-    bool category = row.kind == DRAWER_ROW_CATEGORY;
-    bool target_category = item->kind == ACCESSIBLE_CATEGORY;
-    if (category != target_category)
-    {
-        return category ? -1 : 1;
-    }
-    if (category || row.note == item->ref.note)
-    {
-        return 0;
-    }
-    return row.note < item->ref.note ? -1 : 1;
-}
-
+/* 台帳番号は表示順とは限らない。カテゴリ内を実際の表示行で照合する（ADR0090）。 */
 static bool accessible_row_index(const struct drawer_window *_Nonnull self,
                                  const struct accessible_item *_Nonnull item, size_t *_Nonnull out)
 {
-    size_t low = 0;
-    size_t high = drawer_layout_row_count(self->accessible_layout);
-    while (low < high)
+    size_t count = drawer_layout_row_count(self->accessible_layout);
+    for (size_t index = 0; index < count; ++index)
     {
-        size_t middle = low + (high - low) / 2;
-        struct drawer_row row = drawer_layout_row(self->accessible_layout, middle);
-        int comparison = accessible_compare(row, item);
-        if (comparison == 0)
+        struct drawer_row row = drawer_layout_row(self->accessible_layout, index);
+        if (row.category > item->ref.category)
+            break;
+        bool category = row.kind == DRAWER_ROW_CATEGORY;
+        if (row.category == item->ref.category && category == (item->kind == ACCESSIBLE_CATEGORY) &&
+            (category || row.note == item->ref.note))
         {
-            *out = middle;
+            *out = index;
             return true;
-        }
-        if (comparison < 0)
-        {
-            low = middle + 1;
-        }
-        else
-        {
-            high = middle;
         }
     }
     return false;
@@ -1422,6 +1470,17 @@ static void accessible_row_view(struct drawer_window *_Nonnull self, struct draw
     RECT viewport = {0, band_height(self), client.right, client.bottom};
     out->offscreen = !IntersectRect(&out->bounds, &bounds, &viewport);
     out->expanded = row.expanded;
+    if (row.kind == DRAWER_ROW_NOTE)
+    {
+        out->favorite =
+            folio_state_note_favorite(self->state, (struct note_ref){row.category, row.note});
+        const char *status =
+            ui_text_line(out->favorite ? UI_TEXT_NOTE_FAVORITE_ON : UI_TEXT_NOTE_FAVORITE_OFF,
+                         folio_state_language(self->state));
+        size_t written = 0;
+        (void)utf16_text_fill(status, out->status, sizeof out->status / sizeof out->status[0],
+                              &written);
+    }
     out->focusable = true;
     struct note_ref selected;
     out->selected = row.kind == DRAWER_ROW_NOTE && folio_state_selection(self->state, &selected) &&

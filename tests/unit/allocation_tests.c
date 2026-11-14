@@ -283,6 +283,53 @@ static bool notes_scenario(void)
     return completed;
 }
 
+static bool favorites_scenario(void)
+{
+    const char *text = "{\"version\":2,\"notes\":[\"a\",\"b\",\"c\",\"d\",\"e\"],"
+                       "\"favorites\":[\"b\",\"e\"]}";
+    struct note_ledger *ledger = nullptr;
+    enum note_ledger_outcome parsed = note_ledger_parse(text, strlen(text), &ledger);
+    if (parsed == NOTE_LEDGER_OUT_OF_MEMORY)
+    {
+        require(ledger == nullptr, "favorite parse OOM preserves empty output");
+        return false;
+    }
+    require(parsed == NOTE_LEDGER_ACCEPTED && note_ledger_favorite_count(ledger) == 2,
+            "favorite parse has typed success under injection");
+    struct note_ledger *toggled = ledger;
+    enum note_ledger_outcome outcome = note_ledger_toggled(ledger, 0, &toggled);
+    if (outcome == NOTE_LEDGER_OUT_OF_MEMORY)
+    {
+        require(toggled == ledger && !note_ledger_favorite(ledger, 0),
+                "favorite toggle OOM preserves a nonnull output and original ledger");
+        note_ledger_destroy(ledger);
+        return false;
+    }
+    require(outcome == NOTE_LEDGER_ACCEPTED && note_ledger_favorite(toggled, 0),
+            "favorite toggle succeeds after all its allocation points");
+    struct note_ledger *renamed = nullptr;
+    bool completed = note_ledger_renamed(toggled, 0, "renamed", &renamed) == NOTE_LEDGER_ACCEPTED;
+    struct note_ledger *inserted = nullptr;
+    completed = completed && note_ledger_inserted(renamed, 5, (struct note_entry){"f", true},
+                                                  &inserted) == NOTE_LEDGER_ACCEPTED;
+    const char *const names[] = {"renamed", "e", "f", "new"};
+    struct name_list *scanned = nullptr;
+    struct note_ledger *merged = nullptr;
+    completed = completed && scanned_names(names, 4, &scanned) &&
+                note_ledger_reconcile(inserted, scanned, &merged) == NOTE_LEDGER_ACCEPTED;
+    if (completed)
+        require(note_ledger_favorite_count(merged) == 3 && !note_ledger_favorite(merged, 3) &&
+                    note_ledger_ordered(merged, NOTE_ORDER_FAVORITES_FIRST, 0) == 0,
+                "favorite edits and reconciliation retain metadata under injection");
+    note_ledger_destroy(merged);
+    name_list_destroy(scanned);
+    note_ledger_destroy(inserted);
+    note_ledger_destroy(renamed);
+    note_ledger_destroy(toggled);
+    note_ledger_destroy(ledger);
+    return completed;
+}
+
 static bool markdown_scenario(void)
 {
     const char *source =
@@ -1827,6 +1874,13 @@ size_t run_name_list_allocation_tests(void)
     return failures;
 }
 
+void run_favorite_allocation_tests(void)
+{
+    require(probe_active(), "favorite allocation selector requires active injection");
+    exhaust(favorites_scenario, "favorite allocation scenario never completed");
+    run_favorite_state_allocation_tests();
+}
+
 void run_allocation_tests(void)
 {
     if (!probe_active())
@@ -1842,6 +1896,7 @@ void run_allocation_tests(void)
     exhaust(categories_scenario, "categories scenario never completed");
     exhaust(category_insert_scenario, "category insert scenario never completed");
     exhaust(notes_scenario, "notes scenario never completed");
+    run_favorite_allocation_tests();
     exhaust(markdown_scenario, "markdown scenario never completed");
     exhaust(layout_scenario, "layout scenario never completed");
     exhaust(state_scenario, "state scenario never completed");

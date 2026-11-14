@@ -5,6 +5,8 @@
 
 enum icon_paint_kind : unsigned char
 {
+    ICON_PAINT_STAR,
+    ICON_PAINT_STAR_OUTLINE,
     ICON_PAINT_CLOSE, /* 頭の右端の閉じる × */
     ICON_PAINT_MINIMIZE,
     ICON_PAINT_MAXIMIZE,

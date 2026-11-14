@@ -266,7 +266,9 @@ static const struct
      ACCESSIBLE_SURFACE_CLOSE},
     {UI_TEXT_SETTINGS_NUMBER_CHECK, SETTINGS_ROW_NUMBER, 1, 2, 0, ACCESSIBLE_SURFACE_CLOSE},
     {UI_TEXT_SETTINGS_MINIMAP, SETTINGS_ROW_MINIMAP, 1, 3, 0, ACCESSIBLE_SURFACE_CLOSE},
-    {UI_TEXT_STORAGE_ENTRY, SETTINGS_ROW_STORAGE, 0, 4, 0, ACCESSIBLE_SURFACE_STORAGE},
+    {UI_TEXT_SETTINGS_FAVORITES_FIRST, SETTINGS_ROW_FAVORITES_FIRST, 1, 4, 0,
+     ACCESSIBLE_SURFACE_CLOSE},
+    {UI_TEXT_STORAGE_ENTRY, SETTINGS_ROW_STORAGE, 0, 5, 0, ACCESSIBLE_SURFACE_STORAGE},
 };
 static const struct
 {
@@ -1306,6 +1308,7 @@ static RECT settings_item_rect(const struct folio_window *_Nonnull self, size_t 
     }
     if (settings_rows[index].kind == SETTINGS_ROW_NUMBER ||
         settings_rows[index].kind == SETTINGS_ROW_MINIMAP ||
+        settings_rows[index].kind == SETTINGS_ROW_FAVORITES_FIRST ||
         settings_rows[index].kind == SETTINGS_ROW_STORAGE)
     {
         bounds.top += settings_rows[index].position * (height + gap);
@@ -4102,6 +4105,8 @@ static bool settings_row_current(const struct folio_window *_Nonnull self, size_
         return false;
     case SETTINGS_ROW_LANGUAGE:
         return (unsigned char)folio_state_language(self->state) == settings_rows[index].value;
+    case SETTINGS_ROW_FAVORITES_FIRST:
+        return folio_state_note_order(self->state) == NOTE_ORDER_FAVORITES_FIRST;
     case SETTINGS_ROW_MINIMAP:
         return folio_state_minimap(self->state);
     case SETTINGS_ROW_NUMBER:
@@ -4125,7 +4130,8 @@ static void draw_settings_theme(const struct folio_window *_Nonnull self, HDC de
 static bool settings_row_toggle(size_t index)
 {
     return settings_rows[index].kind == SETTINGS_ROW_NUMBER ||
-           settings_rows[index].kind == SETTINGS_ROW_MINIMAP;
+           settings_rows[index].kind == SETTINGS_ROW_MINIMAP ||
+           settings_rows[index].kind == SETTINGS_ROW_FAVORITES_FIRST;
 }
 
 static void draw_settings_row(const struct folio_window *_Nonnull self, HDC device, RECT row,
@@ -5564,6 +5570,8 @@ static const bool inline_outcomes[] = {
     [FOLIO_STATE_RENAME_HALTED] = false,
     [FOLIO_STATE_SEARCH_MALFORMED] = true,
     [FOLIO_STATE_FILTERED] = true,
+    [FOLIO_STATE_ORDERED] = true,
+    [FOLIO_STATE_MOVE_ROLLBACK_PENDING] = true,
     [FOLIO_STATE_PANE_UNAVAILABLE] = false,
     [FOLIO_STATE_PANE_LOAD_FAILED] = false,
     [FOLIO_STATE_PANE_RECOLOR_FAILED] = false,
@@ -8386,6 +8394,80 @@ static void execute_find_command(struct folio_window *_Nonnull self, const char 
     begin_search(self);
 }
 
+static void favorite_at(struct folio_window *_Nonnull self, struct note_ref target)
+{
+    enum folio_state_outcome outcome = folio_state_toggle_favorite(self->state, target);
+    if (outcome != FOLIO_STATE_READY)
+        report_outcome(self, outcome);
+    redraw_drawer(self);
+    accessibility_host_schedule(self->accessibility);
+}
+
+static void execute_toggle_favorite(struct folio_window *_Nonnull self,
+                                    const char *_Nonnull argument)
+{
+    (void)argument;
+    struct note_ref target = {0};
+    if (!folio_state_selection(self->state, &target))
+    {
+        report_outcome(self, FOLIO_STATE_NOTHING_SELECTED);
+        return;
+    }
+    if (!hide_command_surface(self))
+        return;
+    favorite_at(self, target);
+}
+
+static void execute_toggle_favorites_only(struct folio_window *_Nonnull self,
+                                          const char *_Nonnull argument)
+{
+    (void)argument;
+    if (!hide_command_surface(self))
+        return;
+    enum note_scope scope = folio_state_note_scope(self->state);
+    switch (scope)
+    {
+    case NOTE_SCOPE_ALL:
+        scope = NOTE_SCOPE_FAVORITES;
+        break;
+    case NOTE_SCOPE_FAVORITES:
+        scope = NOTE_SCOPE_ALL;
+        break;
+    }
+    folio_state_set_note_scope(self->state, scope);
+    redraw_drawer(self);
+    accessibility_host_schedule(self->accessibility);
+}
+
+static void execute_toggle_favorites_first(struct folio_window *_Nonnull self,
+                                           const char *_Nonnull argument)
+{
+    (void)argument;
+    enum note_order order = folio_state_note_order(self->state);
+    switch (order)
+    {
+    case NOTE_ORDER_MANUAL:
+        order = NOTE_ORDER_FAVORITES_FIRST;
+        break;
+    case NOTE_ORDER_FAVORITES_FIRST:
+        order = NOTE_ORDER_MANUAL;
+        break;
+    }
+    enum folio_state_outcome outcome = folio_state_set_note_order(self->state, order);
+    if (outcome != FOLIO_STATE_READY)
+    {
+        report_outcome(self, outcome);
+        return;
+    }
+    if (settings_surface(self))
+        clear_command_status(self);
+    else if (!hide_command_surface(self))
+        return;
+    redraw_drawer(self);
+    redraw_command_layer(self);
+    accessibility_host_schedule(self->accessibility);
+}
+
 static void execute_toggle_minimap_command(struct folio_window *_Nonnull self,
                                            const char *_Nonnull argument)
 {
@@ -8447,6 +8529,9 @@ static void (*_Nonnull const command_runs[])(struct folio_window *_Nonnull self,
     [FOLIO_COMMAND_FIND] = execute_find_command,
     [FOLIO_COMMAND_SET] = execute_set_command,
     [FOLIO_COMMAND_TOGGLE_MINIMAP] = execute_toggle_minimap_command,
+    [FOLIO_COMMAND_TOGGLE_FAVORITE] = execute_toggle_favorite,
+    [FOLIO_COMMAND_TOGGLE_FAVORITES_ONLY] = execute_toggle_favorites_only,
+    [FOLIO_COMMAND_TOGGLE_FAVORITES_FIRST] = execute_toggle_favorites_first,
     [FOLIO_COMMAND_TOGGLE_NUMBER] = execute_toggle_number_command,
     [FOLIO_COMMAND_REPLACE] = begin_replace,
     [FOLIO_COMMAND_SUBSTITUTE] = execute_substitute_command,
@@ -8607,6 +8692,9 @@ static void run_drawer_menu(struct folio_window *_Nonnull self, enum drawer_menu
         return;
     case DRAWER_MENU_RENAME_CATEGORY:
         rename_category_at(self, target->category, "");
+        return;
+    case DRAWER_MENU_TOGGLE_FAVORITE:
+        favorite_at(self, *target);
         return;
     case DRAWER_MENU_TRASH_NOTE:
         trash_note_at(self, *target);
@@ -8779,6 +8867,9 @@ static void adopt_settings_row(struct folio_window *_Nonnull self)
         return;
     case SETTINGS_ROW_LANGUAGE:
         apply_language(self, (enum folio_language)settings_rows[index].value);
+        return;
+    case SETTINGS_ROW_FAVORITES_FIRST:
+        execute_toggle_favorites_first(self, "");
         return;
     case SETTINGS_ROW_MINIMAP:
         apply_minimap(self);
@@ -10304,6 +10395,7 @@ static size_t settings_vertical_choice(const struct folio_window *_Nonnull self,
         if (settings_rows[index].position == settings_rows[from].position ||
             settings_rows[index].kind == SETTINGS_ROW_NUMBER ||
             settings_rows[index].kind == SETTINGS_ROW_MINIMAP ||
+            settings_rows[index].kind == SETTINGS_ROW_FAVORITES_FIRST ||
             settings_rows[index].kind == SETTINGS_ROW_THEME ||
             settings_rows[index].kind == SETTINGS_ROW_STORAGE)
         {
@@ -13033,6 +13125,7 @@ static enum accessible_kind surface_row_kind(const struct folio_window *_Nonnull
         return ACCESSIBLE_SURFACE_BUTTON;
     case SETTINGS_ROW_LANGUAGE:
         return ACCESSIBLE_SURFACE_LANGUAGE;
+    case SETTINGS_ROW_FAVORITES_FIRST:
     case SETTINGS_ROW_MINIMAP:
     case SETTINGS_ROW_NUMBER:
         return ACCESSIBLE_SURFACE_TOGGLE;
@@ -14300,6 +14393,9 @@ static const char *_Nonnull accessible_label_line(const struct folio_window *_No
 {
     enum ui_text label =
         kind == ACCESSIBLE_COMMAND_INPUT ? surface_title(self) : part_label(self, kind);
+    if ((kind == ACCESSIBLE_DRAWER || kind == ACCESSIBLE_TREE) &&
+        folio_state_note_scope(self->state) == NOTE_SCOPE_FAVORITES)
+        label = UI_TEXT_TITLE_FAVORITES;
     if (kind == ACCESSIBLE_COMMAND_INPUT && self->command_surface == COMMAND_SURFACE_THEMES)
         label = UI_TEXT_THEME_FILTER;
     if (kind == ACCESSIBLE_NOTICE)
@@ -15031,6 +15127,18 @@ static HRESULT accessible_set_range(struct folio_window *_Nonnull self,
     return S_OK;
 }
 
+static HRESULT accessible_favorite(struct folio_window *_Nonnull self,
+                                   const struct accessible_request *_Nonnull request)
+{
+    if (request->item.kind != ACCESSIBLE_NOTE)
+        return accessibility_node_invalid;
+    HRESULT result =
+        accessible_outcome(self, folio_state_toggle_favorite(self->state, request->item.ref));
+    redraw_drawer(self);
+    accessibility_host_schedule(self->accessibility);
+    return result;
+}
+
 static HRESULT accessible_dispatch(struct folio_window *_Nonnull self,
                                    const struct accessible_request *_Nonnull request, bool selected)
 {
@@ -15055,6 +15163,8 @@ static HRESULT accessible_dispatch(struct folio_window *_Nonnull self,
     case ACCESSIBLE_ACTION_REVEAL:
     case ACCESSIBLE_ACTION_SCROLL:
         return accessible_outcome(self, drawer_window_accessible_scroll(self->drawer, request));
+    case ACCESSIBLE_ACTION_TOGGLE_FAVORITE:
+        return accessible_favorite(self, request);
     case ACCESSIBLE_ACTION_SET_RANGE:
         return accessible_set_range(self, request);
     }
@@ -15934,6 +16044,17 @@ static void show_menu_surface(struct folio_window *_Nonnull self,
     accessibility_host_menu(self->accessibility, ACCESSIBLE_MENU_OPENED);
 }
 
+static void menu_run_note(struct folio_window *_Nonnull self, enum folio_command command,
+                          struct note_ref target)
+{
+    if (command == FOLIO_COMMAND_RENAME)
+        rename_from_drawer(self, target);
+    if (command == FOLIO_COMMAND_TOGGLE_FAVORITE)
+        favorite_at(self, target);
+    if (command == FOLIO_COMMAND_TRASH_NOTE)
+        trash_note_at(self, target);
+}
+
 static void menu_run_target(struct folio_window *_Nonnull self, enum folio_command command,
                             const struct menu_request *_Nonnull request)
 {
@@ -15947,14 +16068,11 @@ static void menu_run_target(struct folio_window *_Nonnull self, enum folio_comma
     enum folio_command previous_command = self->reporting_command;
     self->command_context = true;
     self->reporting_command = command;
+    menu_run_note(self, command, request->target);
     if (command == FOLIO_COMMAND_NEW)
         new_note_at(self, request->target.category);
-    if (command == FOLIO_COMMAND_RENAME)
-        rename_from_drawer(self, request->target);
     if (command == FOLIO_COMMAND_RENAME_CATEGORY)
         rename_category_at(self, request->target.category, "");
-    if (command == FOLIO_COMMAND_TRASH_NOTE)
-        trash_note_at(self, request->target);
     if (command == FOLIO_COMMAND_DELETE_CATEGORY)
         delete_category_at(self, request->target.category);
     if (command == FOLIO_COMMAND_NEW_CATEGORY)

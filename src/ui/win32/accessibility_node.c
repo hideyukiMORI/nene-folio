@@ -293,7 +293,8 @@ static IUnknown *_Nullable pattern_for(struct accessibility_node *_Nonnull node,
         {UIA_ExpandCollapsePatternId, (IUnknown *)&node->expand, has_expand(kind)},
         {UIA_ScrollPatternId, (IUnknown *)&node->scroll, has_scroll(kind)},
         {UIA_ScrollItemPatternId, (IUnknown *)&node->scroll_item, has_scroll_item(node->item)},
-        {UIA_TogglePatternId, (IUnknown *)&node->toggle, kind == ACCESSIBLE_SURFACE_TOGGLE},
+        {UIA_TogglePatternId, (IUnknown *)&node->toggle,
+         kind == ACCESSIBLE_SURFACE_TOGGLE || kind == ACCESSIBLE_NOTE},
         {UIA_RangeValuePatternId, (IUnknown *)&node->range,
          (kind == ACCESSIBLE_SPLITTER || kind == ACCESSIBLE_MINIMAP)}};
     for (size_t index = 0; index < sizeof patterns / sizeof patterns[0]; ++index)
@@ -1202,16 +1203,21 @@ static ULONG STDMETHODCALLTYPE toggle_release(IToggleProvider *_Nonnull self)
 
 static HRESULT STDMETHODCALLTYPE toggle_run(IToggleProvider *_Nonnull self)
 {
-    return perform(toggle_owner(self), ACCESSIBLE_ACTION_SELECT);
+    struct accessibility_node *node = toggle_owner(self);
+    return perform(node, node->item.kind == ACCESSIBLE_NOTE ? ACCESSIBLE_ACTION_TOGGLE_FAVORITE
+                                                            : ACCESSIBLE_ACTION_SELECT);
 }
 
 static HRESULT STDMETHODCALLTYPE toggle_get(IToggleProvider *_Nonnull self,
                                             enum ToggleState *_Nonnull out)
 {
     struct accessible_view view = {0};
-    HRESULT result = read_view(toggle_owner(self), &view);
+    struct accessibility_node *node = toggle_owner(self);
+    HRESULT result = read_view(node, &view);
     if (SUCCEEDED(result))
-        *out = view.selected ? ToggleState_On : ToggleState_Off;
+        *out = (node->item.kind == ACCESSIBLE_NOTE ? view.favorite : view.selected)
+                   ? ToggleState_On
+                   : ToggleState_Off;
     return result;
 }
 
@@ -1569,20 +1575,28 @@ static void raise_expand(struct accessibility_node *_Nonnull node,
         &node->simple, UIA_ExpandCollapseExpandCollapseStatePropertyId, old_value, new_value);
 }
 
+static void raise_toggle(struct accessibility_node *_Nonnull node,
+                         const struct accessible_view *_Nonnull before,
+                         const struct accessible_view *_Nonnull after)
+{
+    bool before_toggle = node->item.kind == ACCESSIBLE_NOTE ? before->favorite : before->selected;
+    bool after_toggle = node->item.kind == ACCESSIBLE_NOTE ? after->favorite : after->selected;
+    if ((node->item.kind == ACCESSIBLE_SURFACE_TOGGLE || node->item.kind == ACCESSIBLE_NOTE) &&
+        before_toggle != after_toggle)
+    {
+        VARIANT old_value = {.vt = VT_I4, .lVal = before_toggle ? ToggleState_On : ToggleState_Off};
+        VARIANT new_value = {.vt = VT_I4, .lVal = after_toggle ? ToggleState_On : ToggleState_Off};
+        (void)UiaRaiseAutomationPropertyChangedEvent(&node->simple, UIA_ToggleToggleStatePropertyId,
+                                                     old_value, new_value);
+    }
+}
+
 static void raise_patterns(struct accessibility_node *_Nonnull node,
                            const struct accessible_view *_Nonnull before,
                            const struct accessible_view *_Nonnull after)
 {
     raise_expand(node, before, after);
-    if (node->item.kind == ACCESSIBLE_SURFACE_TOGGLE && before->selected != after->selected)
-    {
-        VARIANT old_value = {.vt = VT_I4,
-                             .lVal = before->selected ? ToggleState_On : ToggleState_Off};
-        VARIANT new_value = {.vt = VT_I4,
-                             .lVal = after->selected ? ToggleState_On : ToggleState_Off};
-        (void)UiaRaiseAutomationPropertyChangedEvent(&node->simple, UIA_ToggleToggleStatePropertyId,
-                                                     old_value, new_value);
-    }
+    raise_toggle(node, before, after);
     if (has_selection_item(node->item.kind))
     {
         raise_boolean(node, UIA_SelectionItemIsSelectedPropertyId, before->selected,

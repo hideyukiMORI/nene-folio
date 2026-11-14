@@ -52,6 +52,11 @@ and [1.1.0 notes](docs/release/1.1.0.md).
   the drawer scrolls by wheel and keys. A search box at the top filters every note by name and body.
   The first search prepares saved note bodies one at a time while continuing to process input and paint.
   Results appear after preparation finishes; large collections can still take time to prepare.
+- **Favorites (development build)**: click a note's star or use Actions / the command palette.
+  Favorites appear first within each category, retaining manual order within both groups.
+  Turn off Favorites first in Settings to restore manual order. Favorites only combines with the
+  existing name/body search. Stars survive restart, rename and category moves without changing
+  Markdown, editor Undo or body history. This addition is not in the published 1.3.2 packages.
 - **View and edit.** Clicking a note renders its Markdown. Edit mode shows the plain text in the same
   pane; Ctrl+S writes the file back atomically, keeps the original line endings, and writes nothing when
   the text is unchanged. The body just before each save is kept as `data/.history/<category>/<note>/1.md`
@@ -149,12 +154,16 @@ A missing or unavailable selected folder opens a recovery choice; an invalid or 
 | Path | Meaning |
 | --- | --- |
 | `data/categories.json` | category order, colour and folded/expanded state |
-| `data/<category>/index.json` | note order inside the category |
+| `data/<category>/index.json` | manual note order and favorites (version 2; version 1 reads as unstarred) |
 | `data/<category>/<note>.md` | the note itself, written back as-is |
 | `data/.history/<category>/<note>/1.md` … `5.md` | the last five bodies before a save (1 is newest) |
-| `data/settings.json` | line numbers, theme, language, minimap (version 5; versions 1–4 are read) |
+| `data/settings.json` | line numbers, theme, language, minimap and note order (version 6; versions 1–5 are read) |
 | `data/.rename.json` | an in-flight rename, replayed on the next start |
 | `data/.nenefolio.lock` | refuses a second instance on the same `data/` |
+
+Changing metadata or preferences writes the new schema; startup alone does not migrate files.
+Older app versions cannot read version 2 note indexes or version 6 settings. Markdown/ZIP export
+does not include personal favorites.
 
 Folders whose name starts with `.` are not scanned as categories. Use a local NTFS folder; sync-folder
 placeholders are read as ordinary files, but symbolic links and junctions are refused for renames.

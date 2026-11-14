@@ -24,6 +24,7 @@ struct accessible_view
     bool focusable;
     bool focused;
     bool selected;
+    bool favorite;
     bool expanded;
     bool selection_required;
     int scroll;

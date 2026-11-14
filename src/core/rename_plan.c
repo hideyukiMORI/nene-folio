@@ -450,7 +450,8 @@ static bool ledger_row_equals(const struct rename_plan *_Nonnull left,
     switch (left->kind)
     {
     case RENAME_KIND_NOTE:
-        return true;
+        return note_ledger_favorite(left->notes, index) ==
+               note_ledger_favorite(right->notes, index);
     case RENAME_KIND_CATEGORY:
         return category_row_equals(left->categories, right->categories, index);
     }

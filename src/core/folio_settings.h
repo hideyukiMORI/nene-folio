@@ -1,18 +1,20 @@
 /* data/settings.json の設定（ADR 0025・ADR 0031 の決定 1）。
  * 効果を実装したキーだけがスキーマに入る。
- * 版 5 の形（キーの順序も固定。違えば MALFORMED で既定値には落ちない・ARC-009）:
- *   {"version": 5, "number": false, "theme": "system", "language": "ja", "minimap": true}
- * 版 1 の形 {"version": 1, "number": <bool>} と版 2 の形
+ * 版 6 の形（キーの順序も固定。違えば MALFORMED で既定値には落ちない・ARC-009）:
+ *   {"version": 6, "number": false, "theme": "system", "language": "ja", "minimap": true,
+ * "note_order": "favorites_first"} 版 1 の形 {"version": 1, "number": <bool>} と版 2 の形
  * {"version": 2, "number": <bool>, "theme": "…"} と版 3
  * の3語テーマも読めて、足りないキーに既定値を埋める（移行）。
  * キーを足すときは必ず版を上げ、旧版からの移行は core の純関数で行う（決定 2）。
- * 版4は127固定テーマを受ける。版1〜4のminimapはtrueで、次の設定変更で版5へ移る。 */
+ * 版4は127固定テーマを受ける。版1〜4のminimapはtrueで、版1〜5のnote_orderはfavorites_firstで、次の設定変更で版6へ移る。
+ */
 #ifndef NENEFOLIO_FOLIO_SETTINGS_H
 #define NENEFOLIO_FOLIO_SETTINGS_H
 
 #include "folio_language.h"
 #include "folio_settings_outcome.h"
 #include "folio_theme_choice.h"
+#include "note_order.h"
 
 #include <stddef.h>
 
@@ -46,7 +48,7 @@ folio_settings_with_theme(const struct folio_settings *_Nonnull settings,
 folio_settings_with_language(const struct folio_settings *_Nonnull settings,
                              enum folio_language language,
                              struct folio_settings *_Nullable *_Nonnull out);
-/* writer へ版 5 の文書を 1 つ書く。完了の判定は json_writer_finish で行う。 */
+/* writer へ版 6 の文書を 1 つ書く。完了の判定は json_writer_finish で行う。 */
 void folio_settings_write(const struct folio_settings *_Nonnull settings,
                           struct json_writer *_Nonnull writer);
 /* 編集中の本文の左に原文の行番号を出すか（FR-021 / ADR 0026）。 */
@@ -58,6 +60,12 @@ folio_settings_theme(const struct folio_settings *_Nonnull settings);
 /* 利用者が選んだ表示言語（ADR 0032 の決定 1）。UI へ渡すのは application である。 */
 [[nodiscard]] enum folio_language
 folio_settings_language(const struct folio_settings *_Nonnull settings);
+[[nodiscard]] enum note_order
+folio_settings_note_order(const struct folio_settings *_Nonnull settings);
+[[nodiscard]] enum folio_settings_outcome
+folio_settings_with_note_order(const struct folio_settings *_Nonnull settings,
+                               enum note_order order,
+                               struct folio_settings *_Nullable *_Nonnull out);
 void folio_settings_destroy(struct folio_settings *_Nullable settings);
 
 #endif
