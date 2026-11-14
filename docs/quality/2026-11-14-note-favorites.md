@@ -17,7 +17,7 @@ D:/NeNeFolio/agents/favorites-20261114/から辿る。実ノートは試験に�
 | コマンド・記録 | 結果と範囲 |
 | --- | --- |
 | `cmake --build build --target folio_tests nenefolio favorites_native_tests settings_accessibility_tests` | 固定clang-cl/tidyで構築。新しい対象にも同じicon resourceを結線 |
-| `build/folio_tests.exe --favorites`（unit-05） | 成功。旧/新版台帳、異常系、安定順と逆引き、設定版6と旧版読込、表示/鍵、検索とのAND、保存/移動/戻し失敗、改名journalと星の比較、コマンドと3言語文言 |
+| `build/folio_tests.exe --favorites`（unit-06） | 成功。旧/新版台帳、異常系、安定順と逆引き、設定版6と旧版読込、表示/鍵、検索とのAND、保存/移動/戻し失敗、改名journalと星の比較、コマンドと3言語文言。移動先末尾への挿入と編集中の選択保持も対象へ含めた |
 | `ctest --test-dir build -R '^favorites_native$' --output-on-failure`（native-07） | 成功。専用desktop/dataの実RichEditで、星クリック・capture取消・UIA・メニュー、星だけ/優先、0件時の文書と読み上げ名、本文/選択/dirty/Undo/Redoとmd/履歴不変、再起動の星/優先保持とscope初期化 |
 | `ctest --test-dir build -R '^(favorites_native\|settings_accessibility)$' --output-on-failure`（native-03のsettings_accessibility） | 設定面の対象は成功。追加項目の表示/探索と既存操作。favorites側の同run失敗は後続runで修正・確認 |
 | `pwsh -NoProfile -File D:/NeNeFolio/outputs/813-note-favorites/oom.ps1`（oom-02） | 成功。eng/coverage.pyの測定buildを再利用し`--favorites-oom`だけ実行。版2の読込・星変更・改名・挿入・照合の全確保を順に失敗させる。applicationの星変更は8失敗点と各再試行で、失敗時の書込なし・本文保持を確認 |
@@ -34,6 +34,7 @@ D:/NeNeFolio/agents/favorites-20261114/から辿る。実ノートは試験に�
 - 独立レビューで星だけ表示の読み上げ名不足を確認し、DRAWER/TREEのNameへ同じ状態文言を投影。0件時と解除後も対象試験へ追加。
 - 読み取り専用の独立レビューは修正を確認し、台帳/設定・改名比較・移動の保存と同期・表示順・検索条件・操作対象について追加の具体的欠陥なしで終了。
 - native-01はtoolchain環境なしでctestを起動できず未実行。native-02の星操作は保存成功の誤判定で失敗通知を開きtimeout。記録は削除せず後続の修正と区別する。
+- 初回CI43599712625は、カテゴリ末尾移動の旧テストだけが旧保存順を期待して失敗した。ADR0090の移動先台帳→md→移動元台帳へ期待を合わせ、同ケースと編集中の移動を対象selectorへ追加。build-12/unit-06で成功を確認した。製品実装やゲートは変更していない。
 
 ## 互換性と限界
 

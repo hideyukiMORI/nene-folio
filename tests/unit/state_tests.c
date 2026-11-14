@@ -1152,8 +1152,8 @@ static void verify_transfer_to_end(void)
     struct folio_state *state = transfer_state(&adapter);
     require(folio_state_move_note(state, at(0, 0), at(1, 2)) == FOLIO_STATE_READY,
             "one moves to the end of A");
-    require(same_text(adapter.calls, "move/A/four/five/one/B/two/three"),
-            "the destination ledger gained the note at its end");
+    require(same_text(adapter.calls, "A/four/five/one/move/B/two/three"),
+            "destination append is durable before rename, then source is pruned");
     require(folio_state_toggle_category(state, 1) == FOLIO_STATE_READY, "expand A");
     row_order(state, order, sizeof order);
     require(same_text(order, "B/two/three/A/four/five/one/C/one/two/three"), "the new order");
@@ -7969,6 +7969,8 @@ void run_favorite_state_tests(void)
     verify_favorite_failure_and_order();
     verify_move_rollback_pending();
     verify_transfer_note();
+    verify_transfer_to_end();
+    verify_transfer_selection();
     verify_transfer_renumbering();
     verify_transfer_refusals();
     verify_transfer_stale_ledger();
