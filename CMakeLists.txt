@@ -76,7 +76,7 @@ nenefolio_target(nenefolio_core core STATIC
     src/core/replace_template.c src/core/replace_edit.c src/core/note_replace.c
     src/core/replace_preview.c
     src/core/ascii_fold.c src/core/ui_font.c src/core/ui_font_fallback.c
-    src/core/ui_text.c src/core/font_bundle_verdict.c src/core/product_version.c)
+    src/core/ui_text.c src/core/font_bundle_verdict.c src/core/product_version.c src/core/product_link.c)
 target_compile_definitions(nenefolio_core PRIVATE NENEFOLIO_PRODUCT_VERSION="${PROJECT_VERSION}")
 nenefolio_target(nenefolio_application application STATIC src/application/folio_state.c src/application/storage_state.c
     src/application/image_export.c)
@@ -344,6 +344,8 @@ add_test(NAME note_switch_native COMMAND image_status_tests --note-switch)
 add_test(NAME note_zoom_native COMMAND image_status_tests --zoom)
 add_test(NAME theme_preview_native COMMAND image_status_tests --theme-preview)
 add_test(NAME settings_edit_native COMMAND image_status_tests --settings-edit)
+add_test(NAME about_native COMMAND image_status_tests --about)
+set_tests_properties(about_native PROPERTIES TIMEOUT 30 RESOURCE_LOCK image_status_data)
 add_test(NAME note_mode_native COMMAND image_status_tests --mode-save)
 add_test(NAME discard_native COMMAND image_status_tests --discard)
 add_test(NAME palette_native COMMAND image_status_tests --palette)

@@ -1242,6 +1242,33 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
         {"フォルダー選択を開けませんでした。パスを直接入力できます。",
          "The folder picker could not be opened. You can enter the path directly.",
          "无法打开文件夹选择窗口。可以直接输入路径。"},
+    /* 「このアプリについて」（ADR0097）。固有名とファイル名は訳さない。 */
+    [UI_TEXT_ABOUT_ENTRY] = {"このアプリについて…", "About this app…", "关于本应用…"},
+    [UI_TEXT_ABOUT_TITLE] = {"このアプリについて", "About this app", "关于本应用"},
+    [UI_TEXT_ABOUT_DESCRIPTION] = {"手元のフォルダーに置く Markdown ノート。",
+                                   "Markdown notes that stay in your own folder.",
+                                   "保存在自己文件夹里的 Markdown 笔记。"},
+    [UI_TEXT_ABOUT_LICENSE_HEADING] = {"ライセンス", "License", "许可"},
+    [UI_TEXT_ABOUT_LICENSE] = {"MIT License © 2026 HideyukiMORI", "MIT License © 2026 HideyukiMORI",
+                               "MIT License © 2026 HideyukiMORI"},
+    [UI_TEXT_ABOUT_FONTS] =
+        {"同梱書体 Noto Sans JP / SC は SIL Open Font License 1.1 です。",
+         "Bundled fonts Noto Sans JP / SC are under the SIL Open Font License 1.1.",
+         "随附字体 Noto Sans JP / SC 采用 SIL Open Font License 1.1。"},
+    [UI_TEXT_ABOUT_NOTICES] =
+        {"配色の出典と各ライセンスの全文は、同梱の THIRD_PARTY_NOTICES.txt と fonts "
+         "フォルダーにあります。",
+         "Theme color sources and full license texts are in the bundled "
+         "THIRD_PARTY_NOTICES.txt and the fonts folder.",
+         "配色来源与各许可全文见随附的 THIRD_PARTY_NOTICES.txt 和 fonts 文件夹。"},
+    [UI_TEXT_ABOUT_LINKS_HEADING] = {"リンク", "Links", "链接"},
+    [UI_TEXT_ABOUT_LINK_REPOSITORY] = {"GitHub", "GitHub", "GitHub"},
+    [UI_TEXT_ABOUT_LINK_RELEASES] = {"リリース", "Releases", "发布"},
+    [UI_TEXT_ABOUT_LINK_STORE] = {"Microsoft Store", "Microsoft Store", "Microsoft Store"},
+    [UI_TEXT_ABOUT_LINK_ISSUES] = {"不具合の報告", "Report an issue", "报告问题"},
+    [UI_TEXT_ABOUT_LINKS_HINT] = {"リンクは既定のブラウザーで開きます。",
+                                  "Links open in your default browser.",
+                                  "链接将在默认浏览器中打开。"},
 };
 
 /* 置換子の綴り。**並びが意味を決める**: 先頭の 3 つが数（k / n / offset）、残りが文字列

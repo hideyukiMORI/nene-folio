@@ -126,6 +126,10 @@ and [1.1.0 notes](docs/release/1.1.0.md).
   Windows high contrast temporarily uses the system colors across the window and note body.
   Your theme and category colors stay saved; turning high contrast off restores the chosen theme.
   The settings surface also shows the build version.
+  In the development source, **About this app…** at the end of Settings shows the product name, version,
+  license, bundled-font and third-party notice pointers, and four official links (GitHub, Releases,
+  Microsoft Store, Report an issue) that open in the default browser. It never checks for updates
+  ([ADR0097](docs/adr/0097-about-surface-and-product-links.md); not in the published 1.3.2 packages).
   Noto Sans JP and Noto Sans SC are bundled under `fonts/`.
 - **Limits**: a note body is at most 16 MiB and may not contain NUL; both are refused rather than truncated.
 - Failures (unreadable ledgers, unwritable files, a second instance on the same `data/`) are reported in

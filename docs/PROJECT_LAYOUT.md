@@ -100,6 +100,7 @@ fenceの言語・aliases・字句規則は`code_language`、ブロック内の�
 同じ`markdown_blocks`の行入力とRTF出力へ合流する。info先頭語の借用queryは色分けと言語ラベルで共有し、
 ラベルも同じコード面の通常テキストとして生成する。配色は既存の`folio_theme`表だけに置く（ADR0086）。
 `web_uri`がWeb起動対象の条件を所有し、`markdown_web_link`は既存字句処理でdestinationを展開して同じfactoryへ渡す（ADR0079）。
+`product_link`は製品の公式リンクの閉じた集合と絶対https URLの唯一の表で、applicationが同じ`web_uri`検証と`web_link`ポートへ渡す（ADR0097）。
 `note_archive`は検証済み本文のsnapshotから、UTF-8名・固定日時・CRC32を持つZIP32 STOREを純粋に生成する（ADR0082）。
 同じparserの`markdown_images`が画像参照と原文destination範囲を収集する。`markdown_destination`の展開をリンクと共有し、
 `markdown_image_copy`は出力コピーの該当範囲だけを変更する。`archive_assets`の画像bytesも同じZIP writerへ渡す（ADR0085）。
