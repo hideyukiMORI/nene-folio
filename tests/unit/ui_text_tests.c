@@ -579,6 +579,11 @@ static const char *_Nonnull const expected[] = {
         "ノートを移動できず、移動先の台帳も戻せませんでした。次の操作で台帳の同期を再試行します。",
     [UI_TEXT_SETTINGS_FAVORITES_FIRST] = "お気に入りを先に表示",
     [UI_TEXT_TITLE_FAVORITES] = "お気に入り",
+    [UI_TEXT_SCOPE_GROUP] = "表示範囲",
+    [UI_TEXT_SCOPE_ALL] = "すべて",
+    [UI_TEXT_EMPTY_FAVORITES] = "お気に入りはありません。\nノートの星で追加できます。",
+    [UI_TEXT_EMPTY_FAVORITES_FILTER] =
+        "一致するお気に入りはありません。\n検索語を変えるか「すべて」に戻します。",
     [UI_TEXT_NOTE_FAVORITE_ON] = "お気に入り",
     [UI_TEXT_NOTE_FAVORITE_OFF] = "お気に入りではありません",
     [UI_TEXT_COMMAND_TOGGLE_MINIMAP] = "ミニマップの表示を切り替える",

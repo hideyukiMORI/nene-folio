@@ -1256,6 +1256,14 @@ void folio_state_set_note_scope(struct folio_state *_Nonnull state, enum note_sc
     settle_cursor(state);
 }
 
+size_t folio_state_favorite_count(const struct folio_state *_Nonnull state)
+{
+    size_t count = 0;
+    for (size_t category = 0; category < state->notes_count; ++category)
+        count += note_ledger_favorite_count(state->notes[category]);
+    return count;
+}
+
 bool folio_state_note_favorite(const struct folio_state *_Nonnull state, struct note_ref ref)
 {
     return ref.category < state->notes_count &&

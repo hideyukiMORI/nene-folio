@@ -31,6 +31,9 @@ enum accessible_kind accessible_item_host(struct accessible_item item)
     switch (item.kind)
     {
     case ACCESSIBLE_DRAWER:
+    case ACCESSIBLE_SCOPE_GROUP:
+    case ACCESSIBLE_SCOPE_ALL:
+    case ACCESSIBLE_SCOPE_FAVORITES:
     case ACCESSIBLE_NEW_CATEGORY:
     case ACCESSIBLE_TREE:
     case ACCESSIBLE_CATEGORY:
