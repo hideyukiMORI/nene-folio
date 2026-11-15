@@ -17,7 +17,9 @@ enum command_surface_mode : unsigned char
     COMMAND_SURFACE_THEMES,
     /* 履歴から戻す。設定と同じく EDIT を持たず、行数は版の数で変わる（ADR 0038 の決定 12） */
     COMMAND_SURFACE_HISTORY,
-    COMMAND_SURFACE_MENU
+    COMMAND_SURFACE_MENU,
+    COMMAND_SURFACE_TAG_EDIT,
+    COMMAND_SURFACE_TAG_FILTER
 };
 
 #endif

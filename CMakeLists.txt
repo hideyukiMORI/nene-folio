@@ -44,6 +44,8 @@ nenefolio_target(nenefolio_core core STATIC
     src/core/json_reader.c src/core/json_writer.c src/core/name_list.c
     src/core/category_ledger.c src/core/category_name.c src/core/note_ledger.c src/core/drawer_source.c src/core/drawer_layout.c
     src/core/text_buffer.c src/core/note_text.c src/core/note_file_times.c src/core/markdown_rtf.c src/core/rtf_palette.c
+    src/core/note_tag.c src/core/note_tags.c src/core/metadata_scalar.c src/core/note_metadata.c
+    src/core/tag_catalog.c src/core/tag_edit_snapshot.c
     src/core/rtf_text.c src/core/markdown_blocks.c src/core/markdown_inline_tokens.c
     src/core/code_language.c src/core/code_syntax.c
     src/core/diagram_flow_layout.c
@@ -84,6 +86,7 @@ nenefolio_target(folio_tests unit_tests EXECUTABLE
     tests/unit/storage_tests.c tests/unit/storage_state_tests.c
     tests/unit/web_link_tests.c tests/unit/transfer_tests.c tests/unit/image_tests.c
     tests/unit/folio_tests.c tests/unit/text_tests.c tests/unit/json_tests.c
+    tests/unit/tag_tests.c
     tests/unit/ledger_tests.c tests/unit/layout_tests.c tests/unit/state_tests.c
     tests/unit/allocation_probe.c tests/unit/allocation_tests.c tests/unit/markdown_tests.c
     tests/unit/code_syntax_tests.c
@@ -135,7 +138,8 @@ nenefolio_target(nenefolio_window ui_win32 STATIC
     src/ui/win32/folio_palette.c src/ui/win32/failure_box.c src/ui/win32/name_prompt.c
     src/ui/win32/ui_face.c src/ui/win32/icon_paint.c src/ui/win32/dialog_theme.c
     src/ui/win32/ui_part.c src/ui/win32/ui_pointer.c src/ui/win32/modal_owner.c src/ui/win32/name_prompt_metrics.c
-    src/ui/win32/command_candidates.c src/ui/win32/theme_candidates.c)
+    src/ui/win32/command_candidates.c src/ui/win32/theme_candidates.c
+    src/ui/win32/tag_candidates.c src/ui/win32/tag_filter_text.c)
 nenefolio_link(nenefolio_window nenefolio_core)
 nenefolio_link(nenefolio_window nenefolio_application)
 nenefolio_system_link(nenefolio_window user32)
@@ -273,7 +277,11 @@ add_test(NAME diagram_render COMMAND diagram_render_tests)
 set_tests_properties(diagram_render PROPERTIES TIMEOUT 60)
 
 # #520: main-window progress and cancellation on an isolated desktop.
-foreach(native_host favorites_native_tests image_status_tests save_as_native_tests rename_native_tests move_edit_native_tests first_save_native_tests first_save_modal_native_tests)
+nenefolio_target(tag_catalog_tests win32_tests EXECUTABLE tests/win32/tag_catalog_tests.c)
+nenefolio_link(tag_catalog_tests nenefolio_core)
+nenefolio_link(tag_catalog_tests nenefolio_window)
+
+foreach(native_host tags_native_tests favorites_native_tests image_status_tests save_as_native_tests rename_native_tests move_edit_native_tests first_save_native_tests first_save_modal_native_tests)
     nenefolio_target(${native_host} win32_tests EXECUTABLE
         tests/win32/image_status_tests.c tests/win32/image_status_tests.rc)
     nenefolio_link(${native_host} nenefolio_core)
@@ -302,6 +310,10 @@ set_target_properties(move_edit_native_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY
 # #725: Keep newly named drafts out of other native fixtures' note collections.
 set_target_properties(first_save_native_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/verification-first-save")
 set_target_properties(favorites_native_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/verification-favorites")
+set_target_properties(tags_native_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/verification-tags")
+add_test(NAME tags_native COMMAND tags_native_tests --tags)
+add_test(NAME tags_metrics_native COMMAND tags_native_tests --tags-metrics)
+set_tests_properties(tags_native tags_metrics_native PROPERTIES TIMEOUT 30 RESOURCE_LOCK image_status_data)
 add_test(NAME favorites_native COMMAND favorites_native_tests --favorites)
 set_tests_properties(favorites_native PROPERTIES TIMEOUT 30 RESOURCE_LOCK image_status_data)
 add_test(NAME favorites_ui_native COMMAND favorites_native_tests --favorites-ui)
@@ -377,7 +389,7 @@ set_tests_properties(image_status note_status_ja note_status_en note_status_zh
     note_status_find note_status_replace PROPERTIES RESOURCE_LOCK image_status_data)
 
 # The same icon resource is used by the product and real-window verification hosts (ADR0088).
-foreach(icon_target nenefolio image_status_tests save_as_native_tests rename_native_tests move_edit_native_tests first_save_native_tests first_save_modal_native_tests favorites_native_tests minimap_scheduling_tests settings_accessibility_tests)
+foreach(icon_target nenefolio image_status_tests save_as_native_tests rename_native_tests move_edit_native_tests first_save_native_tests first_save_modal_native_tests favorites_native_tests tags_native_tests minimap_scheduling_tests settings_accessibility_tests)
     target_include_directories(${icon_target} PRIVATE
         "$<$<COMPILE_LANGUAGE:RC>:${CMAKE_CURRENT_SOURCE_DIR}/packaging/windows>")
 endforeach()

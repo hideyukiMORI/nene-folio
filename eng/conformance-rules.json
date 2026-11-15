@@ -23,7 +23,9 @@
     {"enum": "src/core/folio_command.h", "table": "src/ui/win32/folio_window.c", "prefix": "FOLIO_COMMAND_"},
     {"enum": "src/application/folio_state_outcome.h", "table": "src/ui/win32/folio_window.c", "prefix": "FOLIO_STATE_"},
     {"enum": "src/application/folio_state_outcome.h", "table": "src/ui/win32/failure_box.c", "prefix": "FOLIO_STATE_"},
-    {"enum": "src/adapters/win32/persistence_adapter_outcome.h", "table": "src/app/main.c", "prefix": "PERSISTENCE_ADAPTER_"}
+    {"enum": "src/adapters/win32/persistence_adapter_outcome.h", "table": "src/app/main.c", "prefix": "PERSISTENCE_ADAPTER_"},
+    {"enum": "src/ui/win32/accessible_kind.h", "table": "src/ui/win32/folio_window.c", "prefix": "ACCESSIBLE_"},
+    {"enum": "src/ui/win32/accessible_kind.h", "table": "src/ui/win32/accessibility_node.c", "prefix": "ACCESSIBLE_"}
   ],
   "textCatalog": {
     "files": ["src/core/ui_text.c"],

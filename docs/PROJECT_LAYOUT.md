@@ -66,6 +66,14 @@ tests/win32（専用desktopと専用portable dataの検証合成ルート）
 
 ### `src/core`
 
+`note_text`が不変の`note_metadata`を所有する。front matterの読取・表示開始位置・GUIの変更範囲は
+同じparserから導く。`note_tag`の名前factoryと`note_tags`の集合を手入力/GUI/絞り込みで共有し、
+`note_metadata_edit`は既存`replace_edit`へ一つのUTF-16置換を返す。未知のメタデータや本文を再構築しない（ADR0092）。
+保存済み候補は`tag_catalog`が不変の集合と使用数へ集計する。現在の台帳にあるcorpusの解析結果だけを借り、
+完成値は名前を複製して所有する。別タグ台帳やファイル読込経路を作らない。
+`tag_edit_snapshot`は正規化済み本文と複製した宛先名を所有する不変値。applicationがstaged集合と
+ともに面の寿命で所有し、適用前の照合と文書変更時の取消を管理する。
+
 意味の正本を持つ。値型・閉じた選択肢・拒否理由と結果型。ドロワーのレイアウト（どの行が何ピクセルに見えるか・ヒットテスト・
 ドロップ先・スクロール上限）、カテゴリと索引の json 読み書き、md → RTF のサブセット変換を**純関数**として持つ。
 全文検索は`index_filter_build`だけに非公開の継続状態を認め、有限workの同一matcherから不変の`index_filter`を作る（ADR0073）。

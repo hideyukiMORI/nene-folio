@@ -12,6 +12,10 @@
 #include <stddef.h>
 
 struct note_text;
+struct note_metadata;
+/* The one parsed immutable projection, owned by text; source is never rewritten by parsing. */
+[[nodiscard]] const struct note_metadata *_Nonnull note_text_metadata(
+    const struct note_text *_Nonnull text);
 
 [[nodiscard]] enum note_text_outcome note_text_create(const char *_Nonnull bytes, size_t length,
                                                       struct note_text *_Nullable *_Nonnull out);

@@ -42,8 +42,9 @@ static bool has_invoke(enum accessible_kind kind)
     return kind == ACCESSIBLE_SETTINGS || accessible_item_shell(kind) ||
            accessible_item_menu(kind) || kind == ACCESSIBLE_NEW_NOTE ||
            kind == ACCESSIBLE_NEW_CATEGORY || kind == ACCESSIBLE_NOTE || kind == ACCESSIBLE_SAVE ||
-           kind == ACCESSIBLE_HELP || kind == ACCESSIBLE_FIND ||
-           kind == ACCESSIBLE_SURFACE_CHOICE || kind == ACCESSIBLE_SURFACE_BUTTON;
+           kind == ACCESSIBLE_HELP || kind == ACCESSIBLE_FIND || kind == ACCESSIBLE_TAG_EDIT ||
+           kind == ACCESSIBLE_TAG_FILTER || kind == ACCESSIBLE_SURFACE_CHOICE ||
+           kind == ACCESSIBLE_SURFACE_BUTTON;
 }
 
 static bool has_selection(enum accessible_kind kind)
@@ -279,6 +280,16 @@ static HRESULT STDMETHODCALLTYPE simple_options(IRawElementProviderSimple *_Nonn
     return S_OK;
 }
 
+static bool supports_selection(struct accessibility_node *_Nonnull node)
+{
+    if (!has_selection(node->item.kind))
+        return false;
+    if (node->item.kind != ACCESSIBLE_SURFACE_LIST)
+        return true;
+    struct accessible_view view = {0};
+    return SUCCEEDED(read_view(node, &view)) && !view.checklist;
+}
+
 static IUnknown *_Nullable pattern_for(struct accessibility_node *_Nonnull node, PATTERNID id)
 {
     enum accessible_kind kind = node->item.kind;
@@ -289,7 +300,7 @@ static IUnknown *_Nullable pattern_for(struct accessibility_node *_Nonnull node,
         bool supported;
     } patterns[] = {
         {UIA_InvokePatternId, (IUnknown *)&node->invoke, has_invoke(kind)},
-        {UIA_SelectionPatternId, (IUnknown *)&node->selection, has_selection(kind)},
+        {UIA_SelectionPatternId, (IUnknown *)&node->selection, supports_selection(node)},
         {UIA_SelectionItemPatternId, (IUnknown *)&node->selection_item, has_selection_item(kind)},
         {UIA_ExpandCollapsePatternId, (IUnknown *)&node->expand, has_expand(kind)},
         {UIA_ScrollPatternId, (IUnknown *)&node->scroll, has_scroll(kind)},
@@ -349,6 +360,8 @@ static const CONTROLTYPEID control_types[] = {
     [ACCESSIBLE_VIEW] = UIA_RadioButtonControlTypeId,
     [ACCESSIBLE_EDIT] = UIA_RadioButtonControlTypeId,
     [ACCESSIBLE_MENU] = UIA_ButtonControlTypeId,
+    [ACCESSIBLE_TAG_EDIT] = UIA_ButtonControlTypeId,
+    [ACCESSIBLE_TAG_FILTER] = UIA_ButtonControlTypeId,
     [ACCESSIBLE_SAVE] = UIA_ButtonControlTypeId,
     [ACCESSIBLE_HELP] = UIA_ButtonControlTypeId,
     [ACCESSIBLE_FIND] = UIA_ButtonControlTypeId,
@@ -1451,6 +1464,8 @@ void accessibility_node_notify(struct accessibility_node *_Nonnull node,
 
 void accessibility_node_selection_changed(struct accessibility_node *_Nonnull node)
 {
+    if (!supports_selection(node) && !has_selection_item(node->item.kind))
+        return;
     EVENTID event = has_selection(node->item.kind) ? UIA_Selection_InvalidatedEventId
                                                    : UIA_SelectionItem_ElementSelectedEventId;
     (void)UiaRaiseAutomationEvent(&node->simple, event);
@@ -1608,7 +1623,7 @@ static void raise_patterns(struct accessibility_node *_Nonnull node,
         raise_boolean(node, UIA_SelectionItemIsSelectedPropertyId, before->selected,
                       after->selected);
     }
-    if (has_selection(node->item.kind))
+    if (has_selection(node->item.kind) && !after->checklist)
     {
         raise_boolean(node, UIA_SelectionIsSelectionRequiredPropertyId, before->selection_required,
                       after->selection_required);

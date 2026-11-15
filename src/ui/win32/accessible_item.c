@@ -34,6 +34,7 @@ enum accessible_kind accessible_item_host(struct accessible_item item)
     case ACCESSIBLE_SCOPE_GROUP:
     case ACCESSIBLE_SCOPE_ALL:
     case ACCESSIBLE_SCOPE_FAVORITES:
+    case ACCESSIBLE_TAG_FILTER:
     case ACCESSIBLE_NEW_CATEGORY:
     case ACCESSIBLE_TREE:
     case ACCESSIBLE_CATEGORY:
@@ -59,6 +60,7 @@ enum accessible_kind accessible_item_host(struct accessible_item item)
     case ACCESSIBLE_VIEW:
     case ACCESSIBLE_EDIT:
     case ACCESSIBLE_MENU:
+    case ACCESSIBLE_TAG_EDIT:
     case ACCESSIBLE_SAVE:
     case ACCESSIBLE_HELP:
     case ACCESSIBLE_FIND:

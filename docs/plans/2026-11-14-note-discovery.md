@@ -2,7 +2,7 @@
 
 2026-11-14 / [Issue #811](https://github.com/hideyukiMORI/nene-folio/issues/811)
 
-状態: 段階1のお気に入りは#813で実装し、[ADR0090](../adr/0090-note-favorites-and-display-order.md)と正本仕様へ移した。タグ・検索プレビュー・演出は仕様案。本書は採用を示すADRではない。
+状態: 段階1のお気に入りは#813で実装し、[ADR0090](../adr/0090-note-favorites-and-display-order.md)と正本仕様へ移した。段階2aのタグ付与・絞り込みは#819 / ADR0092へ移して対象確認中。段階2bの全体管理、検索プレビュー・演出は仕様案。本書は採用を示すADRではない。
 優先順位と他の候補は[ロードマップ](../ROADMAP.md)、現在の動作は[仕様](../../SPECIFICATION.md)に従う。
 
 ## 1. hideの指定と今回の境界
@@ -46,6 +46,8 @@ fzf/Telescopeのようなlive grep・ファイル検索・プレビューにサ�
 Markdown単票や現在のZIP書き出しへ個人の星を混ぜない。星を含むバックアップが必要なら別の契約として決める。
 
 ## 4. タグとfront matter
+
+段階2aの確定した設計は[ADR0092](../adr/0092-markdown-tags-and-filter.md)、正本仕様はFR-045。以下は計画時の案で、全体管理は段階2bへ残す。
 
 タグの正本はノートのMarkdown。外へ持ち出しても残り、外部で編集して再読込した内容を採用できる。
 一覧や検索用のタグ集合はそこから導出し、JSON側にも独立した正本を持たせない。

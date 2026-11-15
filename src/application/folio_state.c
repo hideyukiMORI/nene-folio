@@ -19,8 +19,11 @@
 #include "note_file_times.h"
 #include "note_history.h"
 #include "note_ledger.h"
+#include "note_metadata.h"
 #include "note_name.h"
 #include "note_replace.h"
+#include "note_tag.h"
+#include "note_tags.h"
 #include "note_text.h"
 #include "persistence_port.h"
 #include "regex_matches.h"
@@ -31,6 +34,8 @@
 #include "replace_preview.h"
 #include "rtf_palette.h"
 #include "storage_path.h"
+#include "tag_catalog.h"
+#include "tag_edit_snapshot.h"
 #include "transfer_port.h"
 #include "ui_font.h"
 #include "utf8_text.h"
@@ -100,6 +105,13 @@ struct folio_state
     enum search_direction search_direction;
     /* 全ノートの絞り込み（ADR 0024）。語と一致集合の所有者で、どちらも永続化しない */
     struct utf8_text *_Nullable index_term;
+    struct note_tags
+        *_Nullable index_tags; /* Omitted means no tag restriction, independent of catalog. */
+    enum tag_match_mode tag_mode;
+    struct tag_catalog *_Nullable catalog;
+    enum tag_catalog_status catalog_status;
+    struct tag_edit_snapshot *_Nullable tag_edit;
+    struct note_tags *_Nullable edit_tags;
     struct index_filter *_Nullable filter;
     enum note_scope note_scope;
     /* 準備中の最新要求と次の読込位置（ADR0068）。部分corpusを結果へ公開しない。 */
@@ -126,6 +138,12 @@ struct folio_state
     size_t history_versions[note_history_depth];
     size_t history_count;
 };
+
+static void document_changed(struct folio_state *_Nonnull state, enum folio_document_kind kind)
+{
+    folio_state_close_tag_edit(state);
+    state->document = kind;
+}
 
 /* 絞り込みの作り直しとカーソルの着地は、写しを付け替える経路（改名）より後に書いてあるので
  * ここで名前だけ先に出す。定義は 1 つずつで、経路は増やさない（ARC-001）。 */
@@ -849,24 +867,45 @@ static enum folio_state_outcome from_index_filter(enum index_filter_outcome outc
     return FOLIO_STATE_SEARCH_MALFORMED;
 }
 
-/* Initial O(categories) count, checked before constructing the only matching owner. */
-static enum folio_state_outcome
-create_index_build(const struct folio_state *_Nonnull state, const struct utf8_text *_Nonnull term,
-                   struct index_filter_build *_Nullable *_Nonnull out)
+static bool index_note_count(const struct folio_state *_Nonnull state, size_t *_Nonnull out)
 {
     size_t count = 0;
     for (size_t category = 0; category < state->notes_count; ++category)
     {
         size_t notes = note_ledger_count(state->notes[category]);
         if (notes > SIZE_MAX - count)
-            return FOLIO_STATE_OUT_OF_MEMORY;
+            return false;
         count += notes;
     }
-    return from_index_filter(
-        index_filter_build_create(utf8_text_bytes(term), utf8_text_length(term), count, out));
+    *out = count;
+    return true;
+}
+
+/* Initial O(categories) count, checked before constructing the only matching owner. */
+static enum folio_state_outcome
+create_index_build(const struct folio_state *_Nonnull state, const struct utf8_text *_Nonnull term,
+                   struct index_filter_build *_Nullable *_Nonnull out)
+{
+    size_t count = 0;
+    if (!index_note_count(state, &count))
+        return FOLIO_STATE_OUT_OF_MEMORY;
+    return from_index_filter(index_filter_build_create(
+        &(const struct index_filter_query){.term = utf8_text_bytes(term),
+                                           .length = utf8_text_length(term),
+                                           .tags = state->index_tags,
+                                           .mode = state->tag_mode},
+        count, out));
 }
 
 /* Only this call borrows name/body. No entry array or pointer survives a step. */
+static const struct note_tags *_Nullable available_tags(const struct note_text *_Nullable body)
+{
+    if (body == nullptr)
+        return nullptr;
+    const struct note_metadata *_Nonnull metadata = note_text_metadata(body);
+    return note_metadata_available(metadata) ? note_metadata_tags(metadata) : nullptr;
+}
+
 static struct index_filter_entry filter_entry(const struct folio_state *_Nonnull state,
                                               struct note_ref ref)
 {
@@ -876,7 +915,8 @@ static struct index_filter_entry filter_entry(const struct folio_state *_Nonnull
     return (struct index_filter_entry){.ref = ref,
                                        .name = name,
                                        .body = body == nullptr ? nullptr : note_text_bytes(body),
-                                       .length = body == nullptr ? 0 : note_text_length(body)};
+                                       .length = body == nullptr ? 0 : note_text_length(body),
+                                       .tags = available_tags(body)};
 }
 
 /* Shared by pending idle and call-local synchronous repair; no second iterator/matcher. */
@@ -2070,7 +2110,7 @@ enum folio_state_outcome folio_state_select_note(struct folio_state *_Nonnull st
                     note_ledger_name(state->notes[category], note));
     if (outcome == FOLIO_STATE_READY)
     {
-        state->document = FOLIO_DOCUMENT_NAMED;
+        document_changed(state, FOLIO_DOCUMENT_NAMED);
         state->selected_category = category;
         state->selected_note = note;
         folio_state_refresh_note_times(state);
@@ -2495,7 +2535,7 @@ enum folio_state_outcome folio_state_new_note(struct folio_state *_Nonnull state
     state->body = body;
     state->pane = pane;
     state->edit = edit;
-    state->document = FOLIO_DOCUMENT_UNTITLED;
+    document_changed(state, FOLIO_DOCUMENT_UNTITLED);
     state->selected_category = category;
     folio_state_refresh_note_times(state);
     state->images.cancel(state->images.adapter);
@@ -2734,7 +2774,7 @@ static enum folio_state_outcome create_edited(struct folio_state *_Nonnull state
     state->pane = rendered;
     note_text_destroy(state->body);
     state->body = edited;
-    state->document = FOLIO_DOCUMENT_NAMED;
+    document_changed(state, FOLIO_DOCUMENT_NAMED);
     state->selected_category = category;
     state->selected_note = index;
     folio_state_refresh_note_times(state);
@@ -3344,7 +3384,7 @@ static enum folio_state_outcome finish_trash(struct folio_state *_Nonnull state,
         discard_view(state);
         state->body = body;
         state->pane = pane;
-        state->document = FOLIO_DOCUMENT_NONE;
+        document_changed(state, FOLIO_DOCUMENT_NONE);
         folio_state_refresh_note_times(state);
         state->mode = PANE_MODE_VIEW;
         settle_cursor(state);
@@ -4087,6 +4127,9 @@ static void cancel_index_request(struct folio_state *_Nonnull state)
     restart_corpus_load(state);
     utf8_text_destroy(state->index_request);
     state->index_request = nullptr;
+    note_tags_destroy(state->index_tags);
+    state->index_tags = nullptr;
+    state->tag_mode = TAG_MATCH_ALL;
 }
 
 /* 新しい語と一致集合を受け取り、前のものと入れ替える。 */
@@ -4107,9 +4150,11 @@ static enum folio_state_outcome synchronize_filter(struct folio_state *_Nonnull 
 enum folio_state_outcome folio_state_set_index_filter(struct folio_state *_Nonnull state,
                                                       const char16_t *_Nonnull units, size_t count)
 {
-    if (count == 0)
+    if (count == 0 && (state->index_tags == nullptr || note_tags_count(state->index_tags) == 0))
     {
+        enum tag_match_mode mode = state->tag_mode;
         cancel_index_request(state);
+        state->tag_mode = mode;
         clear_index_filter(state);
         state->scroll = 0;
         settle_cursor(state);
@@ -4135,6 +4180,60 @@ enum folio_state_outcome folio_state_set_index_filter(struct folio_state *_Nonnu
     return FOLIO_STATE_READY;
 }
 
+static void adopt_tag_query(struct folio_state *_Nonnull state, struct note_tags *_Nonnull tags,
+                            struct utf8_text *_Nonnull term, enum tag_match_mode mode)
+{
+    discard_index_build(state);
+    if (state->index_request == term)
+        state->index_request = nullptr;
+    if (state->index_term == term)
+        state->index_term = nullptr;
+    clear_index_filter(state);
+    utf8_text_destroy(state->index_request);
+    note_tags_destroy(state->index_tags);
+    state->index_tags = tags;
+    state->tag_mode = mode;
+    state->index_request = term;
+    state->scroll = 0;
+    if (note_tags_count(tags) == 0 && utf8_text_length(term) == 0)
+    {
+        cancel_index_request(state);
+        state->tag_mode = mode;
+        settle_cursor(state);
+    }
+}
+
+enum folio_state_outcome folio_state_set_tag_filter(struct folio_state *_Nonnull state,
+                                                    const struct note_tags *_Nonnull tags,
+                                                    enum tag_match_mode mode)
+{
+    enum folio_state_outcome synced = synchronize_filter(state);
+    if (synced != FOLIO_STATE_READY)
+        return synced;
+    struct note_tags *_Nullable owned = nullptr;
+    if (note_tags_copy(tags, &owned) != NOTE_TAGS_READY)
+        return FOLIO_STATE_OUT_OF_MEMORY;
+    struct utf8_text *_Nullable term =
+        state->index_request == nullptr ? state->index_term : state->index_request;
+    if (term == nullptr && utf8_text_create(u"", 0, &term) != UTF8_TEXT_CONVERTED)
+    {
+        note_tags_destroy(owned);
+        return FOLIO_STATE_OUT_OF_MEMORY;
+    }
+    adopt_tag_query(state, owned, term, mode);
+    return FOLIO_STATE_READY;
+}
+
+const struct note_tags *_Nullable folio_state_tag_filter(const struct folio_state *_Nonnull state)
+{
+    return state->index_tags;
+}
+
+enum tag_match_mode folio_state_tag_match_mode(const struct folio_state *_Nonnull state)
+{
+    return state->tag_mode;
+}
+
 /* 完成するまで採用せず、最新の要求だけを既存build/adoptへ渡す。 */
 static enum folio_state_outcome finish_index_request(struct folio_state *_Nonnull state)
 {
@@ -4157,12 +4256,67 @@ static enum folio_state_outcome finish_index_request(struct folio_state *_Nonnul
     return FOLIO_STATE_READY;
 }
 
-enum folio_state_outcome folio_state_continue_index_filter(struct folio_state *_Nonnull state)
+void folio_state_close_tag_catalog(struct folio_state *_Nonnull state)
 {
-    if (state->index_request == nullptr)
-    {
-        return FOLIO_STATE_READY;
-    }
+    tag_catalog_destroy(state->catalog);
+    state->catalog = nullptr;
+    state->catalog_status = TAG_CATALOG_UNREQUESTED;
+}
+
+void folio_state_request_tag_catalog(struct folio_state *_Nonnull state)
+{
+    folio_state_close_tag_catalog(state);
+    state->catalog_status = TAG_CATALOG_PREPARING;
+}
+
+enum tag_catalog_status folio_state_tag_catalog_status(const struct folio_state *_Nonnull state)
+{
+    return state->catalog_status;
+}
+
+const struct tag_catalog *_Nonnull folio_state_tag_catalog(const struct folio_state *_Nonnull state)
+{
+    return state->catalog;
+}
+
+bool folio_state_index_work_pending(const struct folio_state *_Nonnull state)
+{
+    return state->index_request != nullptr || state->catalog_status == TAG_CATALOG_PREPARING;
+}
+
+static void catalog_notes_destroy(const struct note_tags *_Nullable *_Nullable notes)
+{
+    free(notes);
+}
+
+static enum folio_state_outcome build_tag_catalog(struct folio_state *_Nonnull state)
+{
+    size_t count = 0;
+    if (!index_note_count(state, &count) || count >= SIZE_MAX / sizeof(const struct note_tags *))
+        return FOLIO_STATE_OUT_OF_MEMORY;
+    const struct note_tags *_Nullable *_Nullable notes = malloc((count + 1) * sizeof *notes);
+    if (notes == nullptr)
+        return FOLIO_STATE_OUT_OF_MEMORY;
+    size_t at = 0;
+    for (size_t category = 0; category < state->notes_count; ++category)
+        for (size_t note = 0; note < note_ledger_count(state->notes[category]); ++note)
+            notes[at++] = filter_entry(state, located(category, note)).tags;
+    enum tag_catalog_outcome built = tag_catalog_create(notes, count, &state->catalog);
+    catalog_notes_destroy(notes);
+    state->catalog_status = built == TAG_CATALOG_READY ? TAG_CATALOG_AVAILABLE : TAG_CATALOG_FAILED;
+    return built == TAG_CATALOG_READY ? FOLIO_STATE_READY : FOLIO_STATE_OUT_OF_MEMORY;
+}
+
+static void stop_index_preparation(struct folio_state *_Nonnull state)
+{
+    if (state->index_request != nullptr)
+        cancel_index_request(state);
+    if (state->catalog_status == TAG_CATALOG_PREPARING)
+        state->catalog_status = TAG_CATALOG_FAILED;
+}
+
+static enum folio_state_outcome prepare_index_corpus(struct folio_state *_Nonnull state)
+{
     enum folio_state_outcome loaded = synchronize_filter(state);
     if (loaded == FOLIO_STATE_READY && corpus_next_present(state))
     {
@@ -4171,9 +4325,26 @@ enum folio_state_outcome folio_state_continue_index_filter(struct folio_state *_
     }
     if (loaded != FOLIO_STATE_READY)
     {
-        cancel_index_request(state);
+        stop_index_preparation(state);
         return loaded;
     }
+    if (state->corpus_loaded && state->catalog_status == TAG_CATALOG_PREPARING)
+    {
+        enum folio_state_outcome built = build_tag_catalog(state);
+        if (built != FOLIO_STATE_READY)
+            state->catalog_status = TAG_CATALOG_FAILED;
+        return built;
+    }
+    return FOLIO_STATE_READY;
+}
+
+enum folio_state_outcome folio_state_continue_index_filter(struct folio_state *_Nonnull state)
+{
+    if (!folio_state_index_work_pending(state))
+        return FOLIO_STATE_READY;
+    enum folio_state_outcome loaded = prepare_index_corpus(state);
+    if (loaded != FOLIO_STATE_READY || state->index_request == nullptr)
+        return loaded;
     if (!state->corpus_loaded)
         return FOLIO_STATE_READY;
     if (state->index_build == nullptr)
@@ -4541,6 +4712,10 @@ static const enum ui_text failure_lines[] = {
     [FOLIO_STATE_REPLACE_TOO_LARGE] = UI_TEXT_FAILURE_REPLACE_TOO_LARGE,
     [FOLIO_STATE_REPLACE_STALE] = UI_TEXT_FAILURE_REPLACE_STALE,
     [FOLIO_STATE_REPLACE_BAD_SPAN] = UI_TEXT_FAILURE_REPLACE_BAD_SPAN,
+    [FOLIO_STATE_TAG_INVALID] = UI_TEXT_FAILURE_TAG_INVALID,
+    [FOLIO_STATE_TAG_LIMIT] = UI_TEXT_FAILURE_TAG_LIMIT,
+    [FOLIO_STATE_TAGS_UNAVAILABLE] = UI_TEXT_FAILURE_TAGS_UNAVAILABLE,
+    [FOLIO_STATE_TAGS_STALE] = UI_TEXT_FAILURE_TAGS_STALE,
     [FOLIO_STATE_OUT_OF_MEMORY] = UI_TEXT_FAILURE_OUT_OF_MEMORY,
     [FOLIO_STATE_NAME_REQUIRED] = UI_TEXT_FAILURE_NAME_REQUIRED,
     [FOLIO_STATE_INVALID_NAME] = UI_TEXT_FAILURE_INVALID_NAME,
@@ -4596,7 +4771,10 @@ void folio_state_destroy(struct folio_state *_Nullable state)
     utf8_text_destroy(state->index_term);
     index_filter_build_destroy(state->index_build);
     utf8_text_destroy(state->index_request);
+    note_tags_destroy(state->index_tags);
+    folio_state_close_tag_catalog(state);
     index_filter_destroy(state->filter);
+    folio_state_close_tag_edit(state);
     note_corpus_destroy(state->corpus);
     folio_settings_destroy(state->settings);
     /* 下見は次の下見か破棄まで残る。捨てる契機は数え上げない（ADR 0028 の決定 6）。 */
@@ -4774,4 +4952,211 @@ const char *_Nonnull folio_state_note_name(const struct folio_state *_Nonnull st
                                            struct note_ref target)
 {
     return note_ledger_name(state->notes[target.category], target.note);
+}
+
+void folio_state_close_tag_edit(struct folio_state *_Nonnull state)
+{
+    tag_edit_snapshot_destroy(state->tag_edit);
+    note_tags_destroy(state->edit_tags);
+    state->tag_edit = nullptr;
+    state->edit_tags = nullptr;
+}
+
+static struct tag_edit_identity tag_destination(const struct folio_state *_Nonnull state)
+{
+    return (struct tag_edit_identity){
+        .category = category_ledger_name(state->categories, state->selected_category),
+        .note = folio_state_document_name(state)};
+}
+
+static enum folio_state_outcome tag_source(const struct folio_state *_Nonnull state,
+                                           const char16_t *_Nonnull units, size_t count,
+                                           struct note_text *_Nullable *_Nonnull out)
+{
+    if (state->document == FOLIO_DOCUMENT_NONE)
+        return FOLIO_STATE_NOTHING_SELECTED;
+    if (state->mode == PANE_MODE_EDIT)
+        return edited_text(state, units, count, out);
+    if (note_text_editability(state->body) == NOTE_TEXT_EDITOR_ALTERS)
+        return FOLIO_STATE_NOTE_UNEDITABLE;
+    return text_outcome(note_text_from_editor(note_text_bytes(state->body),
+                                              note_text_length(state->body),
+                                              note_text_line_ending(state->body), out));
+}
+
+enum folio_state_outcome folio_state_note_tag_count(const struct folio_state *_Nonnull state,
+                                                    const char16_t *_Nonnull units, size_t count,
+                                                    size_t *_Nonnull out)
+{
+    if (state->document == FOLIO_DOCUMENT_NONE)
+        return FOLIO_STATE_NOTHING_SELECTED;
+    struct note_text *_Nullable edited = nullptr;
+    if (state->mode == PANE_MODE_EDIT)
+    {
+        enum folio_state_outcome outcome = edited_text(state, units, count, &edited);
+        if (outcome != FOLIO_STATE_READY)
+            return outcome;
+    }
+    const struct note_metadata *_Nonnull metadata =
+        note_text_metadata(edited == nullptr ? state->body : edited);
+    enum folio_state_outcome outcome = FOLIO_STATE_TAGS_UNAVAILABLE;
+    if (note_metadata_available(metadata))
+    {
+        *out = note_tags_count(note_metadata_tags(metadata));
+        outcome = FOLIO_STATE_READY;
+    }
+    note_text_destroy(edited);
+    return outcome;
+}
+
+static enum folio_state_outcome tag_set_outcome(enum note_tags_outcome made)
+{
+    switch (made)
+    {
+    case NOTE_TAGS_READY:
+        return FOLIO_STATE_READY;
+    case NOTE_TAGS_TOO_MANY:
+        return FOLIO_STATE_TAG_LIMIT;
+    case NOTE_TAGS_OUT_OF_MEMORY:
+        return FOLIO_STATE_OUT_OF_MEMORY;
+    }
+    return FOLIO_STATE_OUT_OF_MEMORY;
+}
+
+/* Take the prepared body only when the full replacement session exists. */
+static enum folio_state_outcome adopt_tag_session(struct folio_state *_Nonnull state,
+                                                  struct note_text *_Nonnull body)
+{
+    const struct note_metadata *_Nonnull metadata = note_text_metadata(body);
+    if (!note_metadata_available(metadata))
+        return FOLIO_STATE_TAGS_UNAVAILABLE;
+    struct note_tags *_Nullable tags = nullptr;
+    enum folio_state_outcome copied =
+        tag_set_outcome(note_tags_copy(note_metadata_tags(metadata), &tags));
+    if (copied != FOLIO_STATE_READY)
+        return copied;
+    struct tag_edit_snapshot *_Nullable snapshot = nullptr;
+    struct tag_edit_identity identity = tag_destination(state);
+    if (tag_edit_snapshot_create(body, &identity, &snapshot) != TAG_EDIT_SNAPSHOT_READY)
+    {
+        note_tags_destroy(tags);
+        return FOLIO_STATE_OUT_OF_MEMORY;
+    }
+    folio_state_close_tag_edit(state);
+    state->tag_edit = snapshot;
+    state->edit_tags = tags;
+    return FOLIO_STATE_READY;
+}
+
+enum folio_state_outcome folio_state_begin_tag_edit(struct folio_state *_Nonnull state,
+                                                    const char16_t *_Nonnull units, size_t count)
+{
+    struct note_text *_Nullable body = nullptr;
+    enum folio_state_outcome result = tag_source(state, units, count, &body);
+    if (result == FOLIO_STATE_READY)
+        result = adopt_tag_session(state, body);
+    if (result != FOLIO_STATE_READY)
+        note_text_destroy(body);
+    return result;
+}
+
+const struct note_tags *_Nullable folio_state_edit_tags(const struct folio_state *_Nonnull state)
+{
+    return state->edit_tags;
+}
+
+enum folio_state_outcome folio_state_toggle_edit_tag(struct folio_state *_Nonnull state,
+                                                     const struct note_tag *_Nonnull tag)
+{
+    if (state->edit_tags == nullptr)
+        return FOLIO_STATE_TAGS_STALE;
+    struct note_tags *_Nullable tags = nullptr;
+    enum note_tag_presence presence =
+        note_tags_contains(state->edit_tags, tag) ? NOTE_TAG_ABSENT : NOTE_TAG_PRESENT;
+    enum folio_state_outcome result =
+        tag_set_outcome(note_tags_with(state->edit_tags, tag, presence, &tags));
+    if (result == FOLIO_STATE_READY)
+    {
+        note_tags_destroy(state->edit_tags);
+        state->edit_tags = tags;
+    }
+    return result;
+}
+
+static enum folio_state_outcome tag_name_outcome(enum note_tag_outcome made)
+{
+    switch (made)
+    {
+    case NOTE_TAG_READY:
+        return FOLIO_STATE_READY;
+    case NOTE_TAG_EMPTY:
+    case NOTE_TAG_INVALID:
+        return FOLIO_STATE_TAG_INVALID;
+    case NOTE_TAG_TOO_LONG:
+        return FOLIO_STATE_TAG_LIMIT;
+    case NOTE_TAG_OUT_OF_MEMORY:
+        return FOLIO_STATE_OUT_OF_MEMORY;
+    }
+    return FOLIO_STATE_TAG_INVALID;
+}
+
+enum folio_state_outcome folio_state_enter_edit_tag(struct folio_state *_Nonnull state,
+                                                    const char16_t *_Nonnull units, size_t count)
+{
+    if (state->edit_tags == nullptr)
+        return FOLIO_STATE_TAGS_STALE;
+    struct utf8_text *_Nullable text = nullptr;
+    enum utf8_text_outcome converted = utf8_text_create(units, count, &text);
+    if (converted != UTF8_TEXT_CONVERTED)
+        return converted == UTF8_TEXT_OUT_OF_MEMORY ? FOLIO_STATE_OUT_OF_MEMORY
+                                                    : FOLIO_STATE_TAG_INVALID;
+    struct note_tag *_Nullable tag = nullptr;
+    enum folio_state_outcome made =
+        tag_name_outcome(note_tag_create(utf8_text_bytes(text), utf8_text_length(text), &tag));
+    utf8_text_destroy(text);
+    if (made == FOLIO_STATE_READY && !note_tags_contains(state->edit_tags, tag))
+        made = folio_state_toggle_edit_tag(state, tag);
+    note_tag_destroy(tag);
+    return made;
+}
+
+static enum folio_state_outcome tag_edit_outcome(enum note_tag_edit_outcome made)
+{
+    switch (made)
+    {
+    case NOTE_TAG_EDIT_READY:
+    case NOTE_TAG_EDIT_UNCHANGED:
+        return FOLIO_STATE_READY;
+    case NOTE_TAG_EDIT_UNAVAILABLE:
+        return FOLIO_STATE_TAGS_UNAVAILABLE;
+    case NOTE_TAG_EDIT_LIMIT:
+        return FOLIO_STATE_TAG_LIMIT;
+    case NOTE_TAG_EDIT_OUT_OF_MEMORY:
+        return FOLIO_STATE_OUT_OF_MEMORY;
+    }
+    return FOLIO_STATE_TAGS_UNAVAILABLE;
+}
+
+enum folio_state_outcome folio_state_apply_tag_edit(struct folio_state *_Nonnull state,
+                                                    const char16_t *_Nonnull units, size_t count,
+                                                    struct replace_edit *_Nullable *_Nonnull out)
+{
+    if (state->tag_edit == nullptr)
+        return FOLIO_STATE_TAGS_STALE;
+    struct note_text *_Nullable current = nullptr;
+    enum folio_state_outcome result = tag_source(state, units, count, &current);
+    if (result != FOLIO_STATE_READY)
+        return result;
+    struct tag_edit_identity identity = tag_destination(state);
+    bool holds = tag_edit_snapshot_holds(state->tag_edit, current, &identity);
+    note_text_destroy(current);
+    if (!holds)
+        return FOLIO_STATE_TAGS_STALE;
+    const struct note_text *_Nonnull source = tag_edit_snapshot_text(state->tag_edit);
+    struct replace_edit *_Nullable edit = nullptr;
+    result =
+        tag_edit_outcome(note_metadata_edit(note_text_metadata(source), state->edit_tags, &edit));
+    if (result == FOLIO_STATE_READY)
+        *out = edit;
+    return result;
 }

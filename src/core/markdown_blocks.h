@@ -4,6 +4,7 @@
 #include "markdown_rtf_outcome.h"
 #include <stddef.h>
 struct text_buffer;
+struct note_text;
 [[nodiscard]] enum markdown_rtf_outcome
-markdown_blocks_render(struct markdown_render render, const char *_Nonnull text, size_t length);
+markdown_blocks_render(struct markdown_render render, const struct note_text *_Nonnull text);
 #endif

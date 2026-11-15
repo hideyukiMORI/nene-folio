@@ -8,6 +8,8 @@
 #include "markdown_table.h"
 #include "markdown_table_state.h"
 #include "markdown_task_kind.h"
+#include "note_metadata.h"
+#include "note_text.h"
 #include "rtf_text.h"
 #include "text_buffer.h"
 #include <stdint.h>
@@ -567,17 +569,18 @@ static void markdown_blocks_destroy(struct markdown_blocks *_Nonnull parser)
 }
 
 enum markdown_rtf_outcome markdown_blocks_render(struct markdown_render render,
-                                                 const char *_Nonnull text, size_t length)
+                                                 const struct note_text *_Nonnull text)
 {
+    size_t length = note_text_length(text);
     struct markdown_blocks parser = {.out = render.text,
                                      .media = render.media,
-                                     .source = text,
+                                     .source = note_text_bytes(text),
                                      .length = length,
                                      .outcome = MARKDOWN_RTF_CONVERTED};
     parser.outcome = markdown_containers_create(&parser.containers);
     if (parser.outcome != MARKDOWN_RTF_CONVERTED)
         return parser.outcome;
-    size_t cursor = 0;
+    size_t cursor = note_metadata_body(note_text_metadata(text));
     bool accepted = true;
     while (cursor < length && accepted)
         accepted = render_next(&parser, &cursor);

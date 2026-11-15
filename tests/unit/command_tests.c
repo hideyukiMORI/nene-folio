@@ -195,7 +195,7 @@ static void verify_listed(void)
                                   FOLIO_LANGUAGE_JA),
             "the palette finds the toggle by label");
     /* パレットの箱の高さはlisted数で決まり、Ex専用の2操作は数えない（補正9）。 */
-    require(folio_command_listed_count() == 31, "thirty-one operations are offered on a surface");
+    require(folio_command_listed_count() == 33, "thirty-three operations are offered on a surface");
     require(folio_command_listed_count() == folio_command_count() - 2,
             "exactly the two unlisted Ex grammars are left out");
     require(folio_command_alias_count(FOLIO_COMMAND_REPLACE) == 0 &&
@@ -363,7 +363,7 @@ static void verify_rejections(void)
 
 static void verify_catalog(void)
 {
-    require(folio_command_count() == 33, "only implemented commands are registered");
+    require(folio_command_count() == 35, "only implemented commands are registered");
     const enum folio_command expected[] = {FOLIO_COMMAND_SAVE,
                                            FOLIO_COMMAND_QUIT,
                                            FOLIO_COMMAND_SAVE_QUIT,
@@ -396,7 +396,9 @@ static void verify_catalog(void)
                                            FOLIO_COMMAND_TOGGLE_MINIMAP,
                                            FOLIO_COMMAND_TOGGLE_FAVORITE,
                                            FOLIO_COMMAND_TOGGLE_FAVORITES_ONLY,
-                                           FOLIO_COMMAND_TOGGLE_FAVORITES_FIRST};
+                                           FOLIO_COMMAND_TOGGLE_FAVORITES_FIRST,
+                                           FOLIO_COMMAND_EDIT_TAGS,
+                                           FOLIO_COMMAND_FILTER_TAGS};
     for (size_t index = 0; index < folio_command_count(); ++index)
     {
         enum folio_command command = folio_command_at(index);
@@ -601,6 +603,8 @@ static void verify_menu_catalog(void)
                                            FOLIO_COMMAND_VIEW,
                                            FOLIO_COMMAND_REPLACE,
                                            FOLIO_COMMAND_HISTORY,
+                                           FOLIO_COMMAND_EDIT_TAGS,
+                                           FOLIO_COMMAND_FILTER_TAGS,
                                            FOLIO_COMMAND_TOGGLE_FAVORITE,
                                            FOLIO_COMMAND_TOGGLE_FAVORITES_ONLY,
                                            FOLIO_COMMAND_TOGGLE_FAVORITES_FIRST,
@@ -611,12 +615,12 @@ static void verify_menu_catalog(void)
                                            FOLIO_COMMAND_EXPORT_ALL,
                                            FOLIO_COMMAND_DISCARD_EDITS,
                                            FOLIO_COMMAND_TRASH_NOTE};
-    const size_t counts[] = {[FOLIO_MENU_OPERATIONS] = 15,
+    const size_t counts[] = {[FOLIO_MENU_OPERATIONS] = 17,
                              [FOLIO_MENU_LAYOUT] = 3,
                              [FOLIO_MENU_CATEGORY] = 7,
                              [FOLIO_MENU_NOTE] = 3,
                              [FOLIO_MENU_EMPTY] = 1};
-    require(folio_command_count() == 33, "stable command IDs and count");
+    require(folio_command_count() == 35, "stable command IDs and count");
     for (size_t context = 0; context < sizeof counts / sizeof counts[0]; ++context)
     {
         require(folio_menu_action_count((enum folio_menu_context)context) == counts[context],

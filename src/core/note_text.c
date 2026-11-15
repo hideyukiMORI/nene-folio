@@ -1,4 +1,5 @@
 #include "note_text.h"
+#include "note_metadata.h"
 #include "persisted_size_limit.h"
 
 #include "text_buffer.h"
@@ -13,6 +14,7 @@ struct note_text
     char *_Nonnull bytes;
     size_t length;
     size_t file_length;
+    struct note_metadata *_Nonnull metadata;
 };
 
 /* 非ゼロ ASCII だけなら復号は不要。UTF-8 と NUL は既存の検証順へ戻す。 */
@@ -87,6 +89,14 @@ static enum note_text_outcome adopt(const char *_Nonnull bytes, size_t length,
     memcpy(text->bytes, bytes, length);
     text->bytes[length] = '\0';
     text->length = length;
+    struct note_metadata *_Nullable metadata = nullptr;
+    if (note_metadata_create(text->bytes, length, &metadata) != NOTE_METADATA_READY)
+    {
+        free(file_bytes);
+        free(text);
+        return NOTE_TEXT_OUT_OF_MEMORY;
+    }
+    text->metadata = metadata;
     *out = text;
     return NOTE_TEXT_ACCEPTED;
 }
@@ -348,6 +358,11 @@ const char *_Nonnull note_text_bytes(const struct note_text *_Nonnull text)
     return text->bytes;
 }
 
+const struct note_metadata *_Nonnull note_text_metadata(const struct note_text *_Nonnull text)
+{
+    return text->metadata;
+}
+
 size_t note_text_length(const struct note_text *_Nonnull text)
 {
     return text->length;
@@ -413,6 +428,7 @@ void note_text_destroy(struct note_text *_Nullable text)
     {
         return;
     }
+    note_metadata_destroy(text->metadata);
     free(text->file_bytes);
     free(text);
 }

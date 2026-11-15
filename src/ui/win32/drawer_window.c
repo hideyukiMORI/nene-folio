@@ -13,6 +13,7 @@
 #include "icon_paint.h"
 #include "menu_request.h"
 #include "note_ref.h"
+#include "tag_filter_text.h"
 #include "ui_face.h"
 #include "ui_part.h"
 #include "ui_pointer.h"
@@ -80,6 +81,7 @@ constexpr int base_header_indent = 16;
  * ここは行を置かない余白として数える。 */
 constexpr int base_filter_height = 36;
 constexpr int base_scope_height = 32;
+constexpr int base_tag_filter_height = 32;
 constexpr int base_category_band_height = 36;
 constexpr int base_filter_inset = 16; /* 欄の左右の余白（窓の縁 16・#349） */
 constexpr int base_filter_margin = 4; /* 欄の上下に空ける間 */
@@ -152,7 +154,8 @@ static void refresh_fonts(struct drawer_window *_Nonnull self, UINT dpi)
 /* 固定の検索欄・カテゴリ帯。行配置/clip/hit/scrollはこの高さを共用する。 */
 static int band_height(const struct drawer_window *_Nonnull self)
 {
-    return scale(base_filter_height + base_scope_height + base_category_band_height,
+    return scale(base_filter_height + base_scope_height + base_tag_filter_height +
+                     base_category_band_height,
                  GetDpiForWindow(self->handle));
 }
 
@@ -180,6 +183,13 @@ static RECT scope_item_rect(const struct drawer_window *_Nonnull self, enum note
         bounds.left = middle;
         break;
     }
+    return bounds;
+}
+
+static RECT tag_filter_rect(const struct drawer_window *_Nonnull self)
+{
+    RECT bounds = scope_group_rect(self);
+    OffsetRect(&bounds, 0, scale(base_scope_height, GetDpiForWindow(self->handle)));
     return bounds;
 }
 
@@ -396,6 +406,29 @@ static void draw_scope_item(const struct drawer_window *_Nonnull self, HDC devic
               ink.label, DT_CENTER | DT_END_ELLIPSIS);
 }
 
+static void draw_tag_filter(const struct drawer_window *_Nonnull self, HDC device)
+{
+    bool pressed = self->header_pressed == DRAWER_HEADER_TAG_FILTER;
+    struct ui_part_paint part = {
+        .bounds = tag_filter_rect(self),
+        .style = UI_PART_STYLE_COMMAND,
+        .dpi = GetDpiForWindow(self->handle),
+        .labeled = true,
+        .hovered = self->header_hover == DRAWER_HEADER_TAG_FILTER && !pressed,
+        .pressed = (pressed && self->header_inside) ||
+                   SendMessageW(GetParent(self->handle), folio_message_part_pressed,
+                                ACCESSIBLE_TAG_FILTER, 0) != 0,
+        .focused = control_focused(self, ACCESSIBLE_TAG_FILTER),
+        .disabled =
+            SendMessageW(GetParent(self->handle), folio_message_pointer_blocked, 0, 0) != 0};
+    struct ui_part_ink ink = ui_part_draw(device, &self->palette, &part);
+    char text[ui_text_unit_limit];
+    tag_filter_text_format(self->state, text, sizeof text);
+    SelectObject(device, self->category_font);
+    SetTextColor(device, ink.text);
+    draw_utf8(device, text, ink.label, DT_END_ELLIPSIS);
+}
+
 /* カテゴリ＋は C 様式。状態の表現は主窓の部品と同じ ui_part の 1 本を通る。 */
 static void draw_category_band(const struct drawer_window *_Nonnull self, HDC device)
 {
@@ -435,6 +468,7 @@ static void draw_header(const struct drawer_window *_Nonnull self, HDC device)
     ui_part_frame_group(device, &self->palette, scope_group_rect(self));
     draw_scope_item(self, device, NOTE_SCOPE_ALL);
     draw_scope_item(self, device, NOTE_SCOPE_FAVORITES);
+    draw_tag_filter(self, device);
     draw_category_band(self, device);
 }
 
@@ -975,6 +1009,8 @@ static RECT header_button_rect(const struct drawer_window *_Nonnull self,
     {
     case DRAWER_HEADER_NONE:
         return (RECT){0, 0, 0, 0};
+    case DRAWER_HEADER_TAG_FILTER:
+        return tag_filter_rect(self);
     case DRAWER_HEADER_NEW_CATEGORY:
         return new_category_rect(self);
     case DRAWER_HEADER_SCOPE_ALL:
@@ -995,6 +1031,8 @@ static enum accessible_kind header_kind(enum drawer_header_button button)
         return ACCESSIBLE_SCOPE_ALL;
     case DRAWER_HEADER_SCOPE_FAVORITES:
         return ACCESSIBLE_SCOPE_FAVORITES;
+    case DRAWER_HEADER_TAG_FILTER:
+        return ACCESSIBLE_TAG_FILTER;
     case DRAWER_HEADER_NEW_CATEGORY:
         return ACCESSIBLE_NEW_CATEGORY;
     }
@@ -1004,7 +1042,8 @@ static enum accessible_kind header_kind(enum drawer_header_button button)
 static enum drawer_header_button header_at(const struct drawer_window *_Nonnull self, POINT point)
 {
     const enum drawer_header_button buttons[] = {
-        DRAWER_HEADER_SCOPE_ALL, DRAWER_HEADER_SCOPE_FAVORITES, DRAWER_HEADER_NEW_CATEGORY};
+        DRAWER_HEADER_SCOPE_ALL, DRAWER_HEADER_SCOPE_FAVORITES, DRAWER_HEADER_TAG_FILTER,
+        DRAWER_HEADER_NEW_CATEGORY};
     for (size_t at = 0; at < sizeof buttons / sizeof buttons[0]; ++at)
     {
         RECT bounds = header_button_rect(self, buttons[at]);
@@ -1278,6 +1317,13 @@ static void run_header(struct drawer_window *_Nonnull self, enum drawer_header_b
     {
     case DRAWER_HEADER_NONE:
         return;
+    case DRAWER_HEADER_TAG_FILTER:
+    {
+        struct accessible_request request = {.item = {.kind = ACCESSIBLE_TAG_FILTER},
+                                             .action = ACCESSIBLE_ACTION_INVOKE};
+        (void)accessibility_host_action(self->accessibility, &request);
+        return;
+    }
     case DRAWER_HEADER_NEW_CATEGORY:
         SendMessageW(GetParent(self->handle), folio_message_drawer_menu, DRAWER_MENU_NEW_CATEGORY,
                      (LPARAM)&target);
@@ -1756,6 +1802,8 @@ static RECT accessible_fixed_rect(const struct drawer_window *_Nonnull self,
     if (kind == ACCESSIBLE_SCOPE_ALL || kind == ACCESSIBLE_SCOPE_FAVORITES)
         return scope_item_rect(self, kind == ACCESSIBLE_SCOPE_ALL ? NOTE_SCOPE_ALL
                                                                   : NOTE_SCOPE_FAVORITES);
+    if (kind == ACCESSIBLE_TAG_FILTER)
+        return tag_filter_rect(self);
     if (kind == ACCESSIBLE_NEW_CATEGORY)
     {
         return new_category_rect(self);

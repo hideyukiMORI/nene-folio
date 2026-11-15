@@ -1,0 +1,8 @@
+#ifndef NENEFOLIO_NOTE_TAG_PRESENCE_H
+#define NENEFOLIO_NOTE_TAG_PRESENCE_H
+enum note_tag_presence
+{
+    NOTE_TAG_ABSENT,
+    NOTE_TAG_PRESENT
+};
+#endif

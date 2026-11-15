@@ -91,6 +91,10 @@ enum folio_state_outcome : unsigned char
     FOLIO_STATE_REPLACE_STALE,
     /* 置換の anchor の start が end より後ろ。公開契約の違反なので黙って直さず拒む */
     FOLIO_STATE_REPLACE_BAD_SPAN,
+    FOLIO_STATE_TAG_INVALID,
+    FOLIO_STATE_TAG_LIMIT,
+    FOLIO_STATE_TAGS_UNAVAILABLE,
+    FOLIO_STATE_TAGS_STALE,
     FOLIO_STATE_OUT_OF_MEMORY,
     FOLIO_STATE_NAME_REQUIRED,
     FOLIO_STATE_INVALID_NAME,

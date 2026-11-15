@@ -55,7 +55,10 @@ static struct index_filter *_Nullable filter_of_span(
     size_t count)
 {
     struct index_filter_build *build = nullptr;
-    if (index_filter_build_create(term, length, count, &build) != INDEX_FILTER_ACCEPTED)
+    if (index_filter_build_create(
+            &(const struct index_filter_query){
+                .term = term, .length = length, .tags = nullptr, .mode = TAG_MATCH_ALL},
+            count, &build) != INDEX_FILTER_ACCEPTED)
         return nullptr;
     struct index_filter *filter = nullptr;
     if (test_index_filter_finish(&build, entries, count, &filter) != INDEX_FILTER_FINISH_ACCEPTED)
@@ -129,18 +132,34 @@ static void verify_rejections(void)
 {
     const struct index_filter_entry entries[] = {entry_of(at(0, 0), "alpha", "body")};
     struct index_filter_build *build = nullptr;
-    require(index_filter_build_create("", 0, 1, &build) == INDEX_FILTER_NO_TERM,
+    require(index_filter_build_create(
+                &(const struct index_filter_query){
+                    .term = "", .length = 0, .tags = nullptr, .mode = TAG_MATCH_ALL},
+                1, &build) == INDEX_FILTER_NO_TERM,
             "an empty term does not filter");
     require(build == nullptr, "and leaves the output alone");
     /* 0xC3 は 2 バイト列の先頭で、続きが無い。 */
-    require(index_filter_build_create("\xC3", 1, 1, &build) == INDEX_FILTER_MALFORMED,
+    require(index_filter_build_create(
+                &(const struct index_filter_query){
+                    .term = "\xC3", .length = 1, .tags = nullptr, .mode = TAG_MATCH_ALL},
+                1, &build) == INDEX_FILTER_MALFORMED,
             "a broken term is refused");
     require(build == nullptr, "and leaves the output alone");
-    require(index_filter_build_create("bodybody", 8, 1, &build) == INDEX_FILTER_ACCEPTED,
+    require(index_filter_build_create(
+                &(const struct index_filter_query){
+                    .term = "bodybody", .length = 8, .tags = nullptr, .mode = TAG_MATCH_ALL},
+                1, &build) == INDEX_FILTER_ACCEPTED,
             "a term longer than every text still builds a set");
     struct index_filter_build *held = build;
-    require(index_filter_build_create("", 0, 1, &build) == INDEX_FILTER_NO_TERM && build == held &&
-                index_filter_build_create("\xC3", 1, 1, &build) == INDEX_FILTER_MALFORMED &&
+    require(index_filter_build_create(
+                &(const struct index_filter_query){
+                    .term = "", .length = 0, .tags = nullptr, .mode = TAG_MATCH_ALL},
+                1, &build) == INDEX_FILTER_NO_TERM &&
+                build == held &&
+                index_filter_build_create(
+                    &(const struct index_filter_query){
+                        .term = "\xC3", .length = 1, .tags = nullptr, .mode = TAG_MATCH_ALL},
+                    1, &build) == INDEX_FILTER_MALFORMED &&
                 build == held,
             "empty and malformed terms leave an existing owner untouched");
     struct index_filter *filter = nullptr;
@@ -648,7 +667,10 @@ static void verify_work_schedule(const size_t *_Nonnull schedule, size_t schedul
         entry_of(at(0, 0), "_", "aaaaaaab"), entry_of(at(0, 1), "AAAB", ""),
         entry_of(at(0, 2), "aaab", nullptr), entry_of(at(1, 0), "_", "aaaaaaax")};
     struct index_filter_build *build = nullptr;
-    require(index_filter_build_create("aaab", 4, 4, &build) == INDEX_FILTER_ACCEPTED,
+    require(index_filter_build_create(
+                &(const struct index_filter_query){
+                    .term = "aaab", .length = 4, .tags = nullptr, .mode = TAG_MATCH_ALL},
+                4, &build) == INDEX_FILTER_ACCEPTED,
             "scheduled owner");
     size_t zero = 0;
     require(index_filter_build_step(build, &entries[0], &zero) == INDEX_FILTER_STEP_MORE &&
@@ -682,7 +704,11 @@ static void verify_exact_work(void)
 {
     struct index_filter_entry entry = entry_of(at(0, 0), "N", "");
     struct index_filter_build *build = nullptr;
-    require(index_filter_build_create("z", 1, 1, &build) == INDEX_FILTER_ACCEPTED, "byte owner");
+    require(index_filter_build_create(
+                &(const struct index_filter_query){
+                    .term = "z", .length = 1, .tags = nullptr, .mode = TAG_MATCH_ALL},
+                1, &build) == INDEX_FILTER_ACCEPTED,
+            "byte owner");
     size_t work = 3;
     require(index_filter_build_step(build, &entry, &work) == INDEX_FILTER_STEP_MORE && work == 0,
             "entry plus name byte/NUL leaves the name comparison pending");
@@ -692,7 +718,11 @@ static void verify_exact_work(void)
             "the final name comparison completes with exactly zero remaining work");
     index_filter_build_destroy(build);
     entry = entry_of(at(0, 0), "", "ab");
-    require(index_filter_build_create("ab", 2, 1, &build) == INDEX_FILTER_ACCEPTED, "full owner");
+    require(index_filter_build_create(
+                &(const struct index_filter_query){
+                    .term = "ab", .length = 2, .tags = nullptr, .mode = TAG_MATCH_ALL},
+                1, &build) == INDEX_FILTER_ACCEPTED,
+            "full owner");
     work = 4;
     require(index_filter_build_step(build, &entry, &work) == INDEX_FILTER_STEP_MORE && work == 0,
             "tail and first scan leave the final source byte pending within the budget");
@@ -711,7 +741,11 @@ static void verify_sealed_ownership(void)
     memcpy(term, "aaab", 4);
     struct index_filter_entry entry = entry_of(at(2, 7), "_", "aaab");
     struct index_filter_build *build = nullptr;
-    require(index_filter_build_create(term, 4, 1, &build) == INDEX_FILTER_ACCEPTED, "borrow owner");
+    require(index_filter_build_create(
+                &(const struct index_filter_query){
+                    .term = term, .length = 4, .tags = nullptr, .mode = TAG_MATCH_ALL},
+                1, &build) == INDEX_FILTER_ACCEPTED,
+            "borrow owner");
     struct index_filter *held = filter_of("_", &entry, 1);
     require(held != nullptr, "actual nonempty finish sentinel");
     struct index_filter *out = held;
@@ -740,7 +774,10 @@ static void verify_sealed_ownership(void)
     index_filter_destroy(out);
     index_filter_destroy(held);
     out = nullptr;
-    require(index_filter_build_create("x", 1, 0, &build) == INDEX_FILTER_ACCEPTED &&
+    require(index_filter_build_create(
+                &(const struct index_filter_query){
+                    .term = "x", .length = 1, .tags = nullptr, .mode = TAG_MATCH_ALL},
+                0, &build) == INDEX_FILTER_ACCEPTED &&
                 index_filter_build_readiness(build) == INDEX_FILTER_READY &&
                 index_filter_build_count(build) == 0,
             "zero entries seal without a synthetic entry");
@@ -789,7 +826,11 @@ static size_t verify_entry_work(const char *_Nonnull term,
     for (size_t index = 0; index < sizeof schedules / sizeof schedules[0]; ++index)
     {
         struct index_filter_build *build = nullptr;
-        require(index_filter_build_create(term, strlen(term), 1, &build) == INDEX_FILTER_ACCEPTED,
+        require(index_filter_build_create(&(const struct index_filter_query){.term = term,
+                                                                             .length = strlen(term),
+                                                                             .tags = nullptr,
+                                                                             .mode = TAG_MATCH_ALL},
+                                          1, &build) == INDEX_FILTER_ACCEPTED,
                 "public owner for fixed work and set oracle");
         size_t work = measure_entry_work(build, entry, schedules[index], 4);
         require(work <= bound && index_filter_build_count(build) == expected_count,
