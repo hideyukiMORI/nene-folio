@@ -1,86 +1,32 @@
 # いまの状態 — NeNe Folio
 
-## 2026-11-15 — Releaseで検索費用を確認
+## 2026-11-15 — 初回本文準備の費用を切り分ける
 
-#829 / PR830はmain `1ec50d893a0242e4963b64e330cd39e9bab0fa71`へ統合済み。
-最終head `99f46fd9305d7a48e9256cd009f4ea9cc6681219`、必須CI43716315383成功（56 CTest、分岐90.766456%）。
-製品入力不変のため通常exe反映を再利用した。全12,967ファイルを保全・照合し、829の追加worktree/outputsを整理済み。
-確定原本はD:/NeNeFolio/agents/discovery-scale-20261115/completion.json。
+#833は1000件×4KiBの初回本文検索を既存private desktopで観測した。
+無計装/計装の各3process・計30操作と原文不変、対象build/8境界試験/実graph規約検査/共有motion実pumpは成功。
+初回検索中央値は無計装4.618秒/計装4.800秒。1000readの受信区間合計中央値は53.793ms、read以外のidle内は4.444秒。
+配送の偏りがあるため純粋IO/paintや実時間の割合とは解釈せず、read以外を次の調査候補とする。主因は未特定。
+製品コード・保存schema・版・有限work政策は変えない。負荷で中止した2試行は保全し、成功集計へ含めない。
+全試行と限界は[品質記録](../quality/2026-11-15-discovery-cost.md)。
+D:/NeNeFolio/worktrees/833-discovery-costと対応outputsには未統合sourceと実行記録があり保持する。
+最終head CI・統合はIssue/PR、恒久保全・整理の確定原本は
+D:/NeNeFolio/agents/discovery-cost-20261115/completion.json。未作成を完了とは扱わない。
 
-#831は同じfixture/driver・合成3構成を正典Releaseで測り、最適化の対象を判断する。
-3構成×3processの45操作と原文不変を確認した。中央値は1000件の初回4.824秒、32件×1MiBの全件一致再検索3.275秒。
-初回の本文準備/UI反映までと、長い本文の全一致位置完成を別々に切り分ける。最終CI/統合は未完了。
-製品コード・保存schema・版・公開APIの変更はない。D:/NeNeFolio/worktrees/831-discovery-releaseと対応outputsは進行中のため保持。
-全試行と最終状態は[品質記録](../quality/2026-11-15-discovery-release.md)とIssue/PR、
-保全・整理の確定原本はD:/NeNeFolio/agents/discovery-release-20261115/completion.json。未作成を完了とは扱わない。
+直前の#831 / PR832はmain `28093b7602bb40b74aafd74e82cde9f31a129b49`へ統合済み。
+最終head `e46ef18a134295fca8d05cca6301b3070b12e7a5`、必須CI43718941842成功（56 CTest、分岐90.766456%）。
+Release45操作と原文不変が成功。中央値は1000件初回4.824秒、32件×1MiB全件一致再検索3.275秒。
+製品入力/通常exe不変を確認して反映を再利用し、全4,445ファイル保全・照合後に追加worktree/outputsを整理した。
+確定原本はD:/NeNeFolio/agents/discovery-release-20261115/completion.json、[品質記録](../quality/2026-11-15-discovery-release.md)。
+#829 / PR830のDebug45操作も統合・全12,967ファイル保全/照合・整理済み。
+両構成は別時間の条件付き観測で、純粋I/O/paint、cold OS cache、物理入力遅延の保証ではない。
 
-#821 / PR822はmain `0851f66de66313586d68fc80bf480b8ce88a2091`へ統合済み。
-最終head `c3b36f7d1230e2511c9e8195698294549e304339`、必須CI43686022314成功（51 CTest、分岐90.8667%）。
-通常exe反映・実data34件不変・全7,599ファイル保全を確認し、821の追加worktree/outputsは整理した。
-D:/NeNeFolio/agents/tag-management-20261115/completion.jsonが確定原本。
-
-継続指示に基づき#823で名前のあいまい検索と保存済み原文previewを共通面へ実装した。
-[ADR0094](../adr/0094-name-discovery-and-source-preview.md)、仕様FR-047、[操作表](../KEY_BINDINGS.md#名前検索と原文プレビュー)。
-既存engineのscope/有限work、条件の独立copy、最大200件と全一致数、候補移動と明示Openを使う。
-原文は先頭80行/16KiBまで、native本文/Undoは候補移動で変えない。保存prompt後は宛先名を再解決する。
-対象unit/確保注入、native拒否/復旧とコピー、3言語・3配色・最小/広幅、7回の外側計測を確認した。
-全成功/失敗と限界は[品質記録](../quality/2026-11-15-note-discovery.md)。#823 / PR824はmain
-`c6c70e045438647815da01d3ba4de0f04a3d0008`へ統合済み。最終head `a987aa3a3d40b8c26272856c46fa29c6809aa41d`、
-必須CI43697860397成功（53 CTest、分岐90.820096%）。通常exe反映と実data34件不変、全11,616ファイル保全・照合を確認し、823の追加worktree/outputsを整理した。
-確定原本はD:/NeNeFolio/agents/discovery-design-20261115/completion.json。
-
-段階3bの本文検索は#825 / PR826でmainへ統合済み。[ADR0095](../adr/0095-body-discovery-and-source-position.md)、FR-048と
-[品質記録](../quality/2026-11-15-body-discovery.md)。同じengine/corpusへ本文mode、有限workの最初の一致位置、
-一致周辺の有限preview、確定時snapshotと採用本文の照合を接続した。中核/applicationの対象試験と確保注入、
-native採用/失敗/復旧、貼り付け、3言語/3配色の27画像と表示位置、7回の外側計測を確認した。
-最終head `1c1166ec1f3af9eb0e8a11e316dd008471a9f24c`、必須CI43706311380成功（55 CTest、分岐90.737394%）、
-main `dbfba3be21680af52962f1868d32192734bd07a3`。通常exe反映と実data34件不変、全33,076ファイル保全・照合を確認し、
-825の追加worktree/outputsを整理した。確定原本はD:/NeNeFolio/agents/live-grep-design-20261115/completion.json。
-
-段階4の演出は#827で[ADR0096](../adr/0096-discovery-motion-and-static-fallback.md)に沿って実装した。
-設定版7のmotion、OS三値の実効判定、有限の外枠/選択/処理中の線を接続した。対象unit/確保注入、native179項目、
-設定UIA、三言語/三配色/二寸法36画像、実pumpの静止20秒とON/OFF検索・35ms配送遅延を確認した。
-PR828はmain `8e1ef719247db68acca5e82bf95f3a9c66ec507b`へ統合済み。最終head
-`1c8bef693b18d7aba0a773c429676e0e37813c91`、必須CI43712501339成功（56 CTest、分岐90.766456%）。
-通常exe反映と実data34件不変、全24,746ファイル保全・照合を確認し、827の追加worktree/outputsを整理した。
-確定原本はD:/NeNeFolio/agents/discovery-motion-design-20261115/completion.json。
-全試行と限界は[品質記録](../quality/2026-11-15-discovery-motion.md)へ。
-
-完了した#829では、100件×4KiB・1000件×4KiB・32件×1MiBの合成データで、初回の本文準備と再検索を分けて計測した。
-製品コードは変更せず、既存のprivate desktop fixtureと公開検索経路、外側Pythonの時計を使う。
-対象build、3構成×3processの45操作・原文不変、共用motion loopと実graph規約検査を確認した。
-Debugでの初回本文検索の中央値は1000件で5.182秒、32件×1MiBの全件一致再検索は6.488秒。
-pipe/UI/検証費用を含み、OS coldや物理入力遅延の保証ではない。[品質記録](../quality/2026-11-15-discovery-scale.md)。
-About・版上げ・公開は未着手。
-
-hideの停止まで継続する実装指示に基づき、#821でロードマップ段階2bを実装した。
-全カテゴリの保存済みノートを新しく確認して、タグを全体改名/解除する。既存名は集合へ統合し、
-一件ずつ期待本文を照合して共通の履歴/公開へ渡す。変更済み・見送り・失敗・中止時の未処理を区別し、
-再試行は同じ意図で確認し直す。選択本文は公開直後に採用し、native投入失敗でも公開済み件数を保つ。
-設計は[ADR0093](../adr/0093-global-tag-management.md)、全試行と未確認範囲は
-[品質記録](../quality/2026-11-15-tag-management.md)。最終CI・統合状態は#821のIssue/PR、
-通常exe反映と整理の確定結果はD:/NeNeFolio/agents/tag-management-20261115/completion.jsonを正本とする。
-未作成を成功とは解釈しない。
-
-#819 / PR820のタグ付与と絞り込みはmain `11080b0c75cf75f85ccb6de4006af8926fb4d730`へ統合済み。
-最終head `e79cefeca87c9df125c045c7683c00e2358332de`、必須CI43676165610成功（50 CTest、分岐90.9667%）。
-通常exe反映・実data34件不変・全証跡保全済み。D:/NeNeFolio/agents/tags-20261115/completion.jsonが確定原本。
-作業木の全ファイルとGit登録、outputsは整理済み。OSが最後の空directory削除を拒否したため
+[ロードマップ](../ROADMAP.md)の段階1〜4（お気に入りUI、タグ付与/全体管理、名前/本文検索、検索演出）は
+main統合・通常exe反映・必要検証まで完了。仕様と操作は[操作表](../KEY_BINDINGS.md)、
+到達点と確定原本は[日報](../reports/2026-11-15.md)と[引き継ぎ](../handoffs/2026-11-15.md)を参照する。
+#819の作業木は全ファイルとGit登録を整理済みだが、OSが最後の空directory削除を拒否したため
 D:/NeNeFolio/worktrees/819-note-tagsを0ファイルで保持し、盲目的な再試行はしない。
-[ADR0092](../adr/0092-markdown-tags-and-filter.md)、[品質記録](../quality/2026-11-15-note-tags.md)。
-
-#817 / PR818のお気に入りUIはmain `5593835b6ee1169dfc49ddba7fd04348d3a0cf5a`へ統合済み。
-最終head `02645f198d15fc8c1a5816f174e0a7e339423b5d`、必須CI43656795092成功。
-右端へ星を整列し、字形と当たり判定を分け、未登録星の条件表示と文字付きの範囲切替を設けた。
-[ADR0091](../adr/0091-favorites-scope-and-quiet-stars.md)、[品質記録](../quality/2026-11-15-favorites-ui.md)、
-D:/NeNeFolio/agents/favorites-ui-20261115/completion.jsonが確定原本。追加worktree/outputsは整理済み。
-
-現在は[ロードマップ](../ROADMAP.md)のRelease規模別計測。段階4までの実装・統合・必要反映・整理は完了した。
-About・次版は未着手。
-版上げ・配布/Store操作はしていない。到達点と判断は[日報](../reports/2026-11-15.md)、
-保持領域と次の条件は[引き継ぎ](../handoffs/2026-11-15.md)。
-11月12日の[PR810](https://github.com/hideyukiMORI/nene-folio/pull/810)は11月15日12:35でもDraft/open、今回変更していない。
-過去の停止・継続・起動・相談の許可を、新しい作業へ持ち越さない。
+About・版上げ・配布/Store操作は未着手。11月12日のPR810は11月15日12:35時点でDraft/open、今回変更していない。
+古い停止/継続/起動/相談の許可を新しい作業へ持ち越さず、現在のhide指示を優先する。
 
 ## 通常版と公開版
 

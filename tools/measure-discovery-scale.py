@@ -21,6 +21,8 @@ import subprocess
 import threading
 import time
 
+from discovery_trace import ReadCostTrace
+
 
 MESSAGE = 0x8000 + 197
 PROFILES = {"small": (100, 4096), "many": (1000, 4096), "long": (32, 1024 * 1024)}
@@ -85,7 +87,7 @@ def read_events(stream, events: queue.Queue, raw_path: Path) -> None:
 
 
 def measure_command(api: NativeApi, events: queue.Queue, thread_id: int,
-                    handle: int, command: int) -> dict:
+                    handle: int, command: int, traced_reads: int | None = None) -> dict:
     cpu_before = api.cpu_ms(handle)
     started = time.perf_counter()
     api.post(thread_id, command)
@@ -95,6 +97,7 @@ def measure_command(api: NativeApi, events: queue.Queue, thread_id: int,
     pending = None
     next_ping = started
     result = None
+    trace = ReadCostTrace(traced_reads if command == 1 else None)
     while result is None or pending is not None:
         now = time.perf_counter()
         if now - started > 120:
@@ -109,7 +112,11 @@ def measure_command(api: NativeApi, events: queue.Queue, thread_id: int,
         except queue.Empty:
             continue
         kind = event.get("event")
-        if kind == "ping":
+        if kind == "cost":
+            if "begin" not in phases or "read" in phases:
+                raise RuntimeError("read trace arrived outside the initial preparation phase")
+            trace.accept(event, (arrived - started) * 1000)
+        elif kind == "ping":
             if pending is None or event.get("id") != pending[0]:
                 raise RuntimeError(f"unexpected ping: {event}")
             ping_ms.append((arrived - pending[1]) * 1000)
@@ -118,6 +125,8 @@ def measure_command(api: NativeApi, events: queue.Queue, thread_id: int,
             if event.get("command") != command or kind in phases:
                 raise RuntimeError(f"unexpected measurement phase: {event}")
             phases[kind] = (arrived - started) * 1000
+            if kind == "read" and traced_reads is not None:
+                trace.seal(phases[kind])
             if kind == "result":
                 result = event
         else:
@@ -128,15 +137,17 @@ def measure_command(api: NativeApi, events: queue.Queue, thread_id: int,
     return {"operation": COMMANDS[command], "postedToResultMs": phases["result"],
             "phaseArrivalMs": phases, "mainThreadCpuMs": api.cpu_ms(handle) - cpu_before,
             "pingSamplesMs": ping_ms, "pingMaxMs": max(ping_ms),
-            "result": result, "includesPipeUiAndScheduling": True}
+            "result": result, "readCostTrace": trace.result(), "includesPipeUiAndScheduling": True}
 
 
-def run_sample(api: NativeApi, executable: Path, profile: str, sample: int) -> list[dict]:
+def run_sample(api: NativeApi, executable: Path, profile: str, sample: int,
+               trace_reads: bool = False) -> list[dict]:
     started = time.perf_counter()
     events: queue.Queue = queue.Queue()
     measurements = []
     with (executable.parent / f"sample-{sample}.stderr.log").open("x", encoding="utf-8") as errors:
-        with subprocess.Popen([str(executable), f"--discovery-scale-{profile}"],
+        selector = "--discovery-cost" if trace_reads else f"--discovery-scale-{profile}"
+        with subprocess.Popen([str(executable), selector],
                               stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=errors,
                               text=True, encoding="utf-8", bufsize=1,
                               creationflags=subprocess.CREATE_NO_WINDOW) as child:
@@ -152,6 +163,8 @@ def run_sample(api: NativeApi, executable: Path, profile: str, sample: int) -> l
                 if (ready.get("event"), ready.get("notes"), ready.get("sourceBytes")) != (
                         "ready", notes, source_bytes):
                     raise RuntimeError(f"unexpected fixture startup: {ready}")
+                if ready.get("traceReads", False) is not trace_reads:
+                    raise RuntimeError(f"fixture trace configuration differs: {ready}")
                 thread_id = ready["thread"]
                 handle = api.kernel.OpenThread(0x0040, False, thread_id)
                 desktop = api.user.OpenDesktopW("NeNeFolioImageStatus520", 0, False, 0x0001 | 0x0080)
@@ -160,10 +173,12 @@ def run_sample(api: NativeApi, executable: Path, profile: str, sample: int) -> l
                 emit({"phase": "setup", "profile": profile, "sample": sample,
                       "processStartToReadyMs": (arrived - started) * 1000, "coldOsCache": False,
                       "includesSeedingAndInitialDocument": True, "notes": notes,
-                      "sourceBytesEach": source_bytes, "freshApplicationProcess": True})
+                      "sourceBytesEach": source_bytes, "freshApplicationProcess": True,
+                      "traceReads": trace_reads})
                 for command in COMMANDS:
                     measurement = {"phase": "measurement", "profile": profile, "sample": sample,
-                                   **measure_command(api, events, thread_id, handle, command)}
+                                   **measure_command(api, events, thread_id, handle, command,
+                                                     notes if trace_reads else None)}
                     emit(measurement)
                     measurements.append(measurement)
                 api.post(thread_id, 6)
@@ -228,7 +243,11 @@ def main() -> int:
     parser.add_argument("runtime_root", type=Path)
     parser.add_argument("--profiles", nargs="+", choices=tuple(PROFILES), default=list(PROFILES))
     parser.add_argument("--samples", type=int, choices=range(1, 8), default=3)
+    parser.add_argument("--trace-reads", action="store_true",
+                        help="observe the initial read/idle boundaries; requires --profiles many")
     args = parser.parse_args()
+    if args.trace_reads and list(dict.fromkeys(args.profiles)) != ["many"]:
+        parser.error("--trace-reads requires exactly --profiles many")
     executable = args.executable.resolve(strict=True)
     root = args.runtime_root
     if not root.is_absolute() or root.exists():
@@ -246,7 +265,7 @@ def main() -> int:
         shutil.copytree(executable.parent / "fonts", runtime / "fonts")
         before = None
         for sample in range(args.samples):
-            measurements.extend(run_sample(api, copied, profile, sample))
+            measurements.extend(run_sample(api, copied, profile, sample, args.trace_reads))
             after = source_snapshot(runtime, profile)
             if before is not None and before != after:
                 raise RuntimeError(f"retained synthetic sources changed during {profile}/{sample}")
