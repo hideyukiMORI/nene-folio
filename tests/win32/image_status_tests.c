@@ -16,6 +16,7 @@
 #include "name_list.h"
 #include "note_file_times.h"
 #include "note_history.h"
+#include "note_identity.h"
 #include "note_ledger.h"
 #include "note_store_request.h"
 #include "note_tag.h"
@@ -69,6 +70,12 @@ static bool paste_case;
 static bool format_case;
 static bool favorites_case;
 static bool tags_case;
+static bool discovery_case;
+static bool discovery_visual_case;
+static bool discovery_copy_case;
+static bool discovery_measure_case;
+static WNDPROC discovery_preview_procedure;
+static unsigned discovery_rejected_text;
 static bool tag_management_case;
 static bool tag_management_visual_case;
 static bool tag_management_measure_case;
@@ -8995,10 +9002,549 @@ static void run_existing_fixture(struct native_fixture *_Nonnull fixture, int ar
         run_remaining_fixture(fixture, argc, argv);
 }
 
+static void discovery_settle(struct folio_window *_Nonnull window,
+                             struct folio_state *_Nonnull state)
+{
+    for (size_t step = 0; step < 1000 && folio_window_idle_work_ready(window); ++step)
+    {
+        folio_window_continue_idle_work(window);
+        pump(window);
+    }
+    require(!folio_state_discovery_work_pending(state),
+            "discovery idle reaches a stable result and preview");
+}
+
+static void discovery_query(struct folio_window *_Nonnull window,
+                            struct folio_state *_Nonnull state, const wchar_t *_Nonnull query)
+{
+    HWND input = folio_window_accessible_window(window, ACCESSIBLE_COMMAND_INPUT);
+    require(SetWindowTextW(input, query), "native discovery query accepts text");
+    pump(window);
+    discovery_settle(window, state);
+}
+
+static struct accessible_item discovery_row(struct folio_window *_Nonnull window, size_t at)
+{
+    return (struct accessible_item){.kind = ACCESSIBLE_SURFACE_CHOICE,
+                                    .slot = at,
+                                    .revision = folio_window_accessible_surface_revision(window)};
+}
+
+static void discovery_choose(struct folio_window *_Nonnull window, size_t at)
+{
+    struct accessible_request request = {.item = discovery_row(window, at),
+                                         .action = ACCESSIBLE_ACTION_SELECT};
+    require(folio_window_accessible_action(window, &request) == S_OK,
+            "UIA selects a discovery candidate without opening");
+    pump(window);
+}
+
+static void discovery_body_unchanged(struct folio_window *_Nonnull window,
+                                     const struct native_body_snapshot *_Nonnull before)
+{
+    struct native_body_snapshot expected = *before;
+    expected.focus = GetFocus();
+    expect_native_body(window, &expected);
+}
+
+static void discovery_preview_text(struct folio_window *_Nonnull window,
+                                   const wchar_t *_Nonnull expected)
+{
+    HWND preview = folio_window_accessible_window(window, ACCESSIBLE_DISCOVERY_PREVIEW);
+    wchar_t text[512];
+    require(preview != nullptr && IsWindowVisible(preview) &&
+                GetWindowTextW(preview, text, 512) >= 0 && wcscmp(text, expected) == 0,
+            "readonly native preview shows exact logical source lines");
+    require((GetWindowLongPtrW(preview, GWL_STYLE) & ES_READONLY) != 0,
+            "source preview cannot edit the stored note");
+    SendMessageW(preview, WM_CHAR, L'X', 0);
+    require(GetWindowTextW(preview, text, 512) >= 0 && wcscmp(text, expected) == 0,
+            "native character input does not mutate the source preview");
+}
+
+static void discovery_selection_boundary(struct folio_window *_Nonnull window,
+                                         struct native_fixture *_Nonnull fixture)
+{
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    SendMessageW(body, EM_SETSEL, 3, 8);
+    struct native_body_snapshot before = {0};
+    capture_native_body(window, &before);
+    invoke_operation(window, FOLIO_COMMAND_DISCOVER_NOTES);
+    pump(window);
+    discovery_settle(window, fixture->state);
+    require(folio_state_discovery_summary(fixture->state).shown == 3,
+            "empty name query lists every saved note without body filtering");
+    struct accessible_item original = discovery_row(window, 0);
+    uint64_t generation = original.revision;
+    discovery_choose(window, 1);
+    discovery_settle(window, fixture->state);
+    require(folio_window_accessible_surface_revision(window) == generation,
+            "selection and preview do not replace the UIA result/status generation");
+    struct accessible_view view = {0};
+    require(folio_window_accessible_read(window, &original, &view) == S_OK,
+            "same-result UIA identities survive selection and preview");
+    discovery_preview_text(window, L"---\r\ntags: [blue, green]\r\n---\r\nOther");
+    HWND layer = folio_window_accessible_window(window, ACCESSIBLE_SURFACE);
+    SendMessageW(layer, WM_KEYDOWN, VK_SPACE, 0);
+    require(folio_state_discovery_summary(fixture->state).phase == DISCOVERY_READY &&
+                strcmp(folio_state_document_name(fixture->state), "one") == 0,
+            "Space on a result does not open a different document");
+    discovery_body_unchanged(window, &before);
+    discovery_query(window, fixture->state, L"zzzzmissing");
+    require(folio_state_discovery_summary(fixture->state).shown == 0 &&
+                !IsWindowVisible(
+                    folio_window_accessible_window(window, ACCESSIBLE_DISCOVERY_PREVIEW)) &&
+                FAILED(folio_window_accessible_read(window, &original, &view)),
+            "new empty results discard old preview and old UIA result identity");
+    surface_button(window, ACCESSIBLE_SURFACE_CLOSE);
+    discovery_body_unchanged(window, &before);
+}
+
+static void discovery_ime_boundary(struct folio_window *_Nonnull window,
+                                   struct native_fixture *_Nonnull fixture)
+{
+    invoke_operation(window, FOLIO_COMMAND_DISCOVER_NOTES);
+    pump(window);
+    discovery_settle(window, fixture->state);
+    HWND input = folio_window_accessible_window(window, ACCESSIBLE_COMMAND_INPUT);
+    uint64_t before = folio_state_discovery_summary(fixture->state).results_revision;
+    SendMessageW(input, WM_IME_STARTCOMPOSITION, 0, 0);
+    require(SetWindowTextW(input, L"two"), "stage synthetic IME input");
+    SendMessageW(input, WM_KEYDOWN, VK_RETURN, 0);
+    SendMessageW(input, WM_KEYDOWN, VK_ESCAPE, 0);
+    SendMessageW(input, WM_KEYDOWN, VK_DOWN, 0);
+    require(folio_state_discovery_summary(fixture->state).results_revision == before &&
+                folio_state_discovery_summary(fixture->state).shown == 3,
+            "synthetic active composition does not query, open, close or move candidates");
+    SendMessageW(input, WM_IME_ENDCOMPOSITION, 0, 0);
+    pump(window);
+    discovery_settle(window, fixture->state);
+    require(folio_state_discovery_summary(fixture->state).shown == 1,
+            "composition completion applies only the current committed query");
+    surface_button(window, ACCESSIBLE_SURFACE_DISCOVERY_OPEN);
+    require(folio_state_discovery_summary(fixture->state).phase == DISCOVERY_CLOSED &&
+                strcmp(folio_state_document_name(fixture->state), "two") == 0,
+            "explicit Open adopts the selected saved document");
+}
+
+static void discovery_untitled_boundary(struct folio_window *_Nonnull window,
+                                        struct native_fixture *_Nonnull fixture)
+{
+    struct accessible_request create = {.item = {.kind = ACCESSIBLE_NEW_NOTE},
+                                        .action = ACCESSIBLE_ACTION_INVOKE};
+    require(folio_window_accessible_action(window, &create) == S_OK,
+            "create a private untitled discovery draft");
+    pump(window);
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    SendMessageW(body, EM_REPLACESEL, TRUE, (LPARAM)L"discovery draft");
+    pump(window);
+    struct native_body_snapshot before = {0};
+    capture_native_body(window, &before);
+    invoke_operation(window, FOLIO_COMMAND_DISCOVER_NOTES);
+    pump(window);
+    discovery_query(window, fixture->state, L"one");
+    discovery_body_unchanged(window, &before);
+    start_name_dialog(window, (struct name_dialog_request){.title = L"無題のノート",
+                                                           .name = cancelled_name,
+                                                           .discard = true,
+                                                           .action = NAME_DIALOG_CANCEL});
+    surface_button(window, ACCESSIBLE_SURFACE_DISCOVERY_OPEN);
+    require(name_dialog.timer == 0 && name_dialog.closed == 1 && !IsWindowEnabled(body) &&
+                folio_state_document_kind(fixture->state) == FOLIO_DOCUMENT_UNTITLED &&
+                folio_state_discovery_summary(fixture->state).phase == DISCOVERY_READY,
+            "cancelled departure keeps the draft and discovery surface");
+    discovery_body_unchanged(window, &before);
+    start_name_dialog(window, (struct name_dialog_request){.title = L"無題のノート",
+                                                           .name = L"discovery-saved",
+                                                           .discard = true,
+                                                           .action = NAME_DIALOG_SAVE});
+    surface_button(window, ACCESSIBLE_SURFACE_DISCOVERY_OPEN);
+    finish_name_dialog();
+    require(strcmp(folio_state_document_name(fixture->state), "one") == 0 &&
+                folio_state_discovery_summary(fixture->state).phase == DISCOVERY_CLOSED,
+            "saved draft insertion still opens the owned original destination identity");
+    struct note_identity *saved = nullptr;
+    struct note_ref saved_ref = {0};
+    require(note_identity_create("target", "discovery-saved", &saved) == NOTE_IDENTITY_READY &&
+                folio_state_resolve_note(fixture->state, saved, &saved_ref) == FOLIO_STATE_READY,
+            "the exact draft destination was created in the prompt category");
+    note_identity_destroy(saved);
+    require(folio_state_trash_note(fixture->state, saved_ref, u"", 0) == FOLIO_STATE_READY,
+            "remove only this fixture's saved draft through the common note operation");
+}
+
+static void discovery_named_save(struct folio_window *_Nonnull window,
+                                 struct native_fixture *_Nonnull fixture)
+{
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    SendMessageW(body, EM_SETSEL, (WPARAM)-1, -1);
+    SendMessageW(body, EM_REPLACESEL, TRUE, (LPARAM)L" saved");
+    pump(window);
+    struct native_body_snapshot before = {0};
+    capture_native_body(window, &before);
+    struct history_snapshot history = {0};
+    management_history_snapshot(fixture, &history);
+    HANDLE locked = lock_native_note(fixture);
+    begin_history_failure(window);
+    invoke_operation(window, FOLIO_COMMAND_DISCOVER_NOTES);
+    end_history_failure();
+    require(CloseHandle(locked), "release only the discovery fixture's save lock");
+    require(failure.closed == 1 &&
+                folio_state_discovery_summary(fixture->state).phase == DISCOVERY_CLOSED,
+            "failed named save refuses discovery entry");
+    discovery_body_unchanged(window, &before);
+    verify_history_unchanged(fixture, &history);
+    tags_expect_saved(fixture, tags_current);
+    invoke_operation(window, FOLIO_COMMAND_DISCOVER_NOTES);
+    pump(window);
+    discovery_settle(window, fixture->state);
+    tags_expect_saved(
+        fixture,
+        "---\ntitle: 'Keep' # unknown\ntags: [red, 'blue'] # keep\n---\n# Note 日本語 😀 saved");
+    require(folio_state_store_revision(fixture->state) == history.store_revision + 1,
+            "successful named entry saves exactly once before searching");
+    surface_button(window, ACCESSIBLE_SURFACE_CLOSE);
+    require(SendMessageW(body, EM_UNDO, 0, 0), "entry save preserves native undo");
+    pump(window);
+    invoke_operation(window, FOLIO_COMMAND_DISCOVER_NOTES);
+    pump(window);
+    discovery_settle(window, fixture->state);
+    surface_button(window, ACCESSIBLE_SURFACE_CLOSE);
+    tags_expect_saved(fixture, tags_current);
+    for (size_t version = 0; version <= note_history_depth; ++version)
+        note_text_destroy(history.files[version]);
+}
+
+static LRESULT CALLBACK discovery_reject_preview(HWND window, UINT message, WPARAM wparam,
+                                                 LPARAM lparam)
+{
+    if (message == WM_SETTEXT && ((const wchar_t *)lparam)[0] != L'\0')
+    {
+        discovery_rejected_text += 1;
+        return FALSE;
+    }
+    return CallWindowProcW(discovery_preview_procedure, window, message, wparam, lparam);
+}
+
+static void discovery_failed_preview(struct folio_window *_Nonnull window,
+                                     struct native_fixture *_Nonnull fixture)
+{
+    struct native_body_snapshot before = {0};
+    capture_native_body(window, &before);
+    invoke_operation(window, FOLIO_COMMAND_DISCOVER_NOTES);
+    pump(window);
+    discovery_settle(window, fixture->state);
+    HWND preview = folio_window_accessible_window(window, ACCESSIBLE_DISCOVERY_PREVIEW);
+    discovery_preview_procedure =
+        (WNDPROC)SetWindowLongPtrW(preview, GWLP_WNDPROC, (LONG_PTR)discovery_reject_preview);
+    require(discovery_preview_procedure != nullptr, "observe the real preview text boundary");
+    require(SendMessageW(preview, WM_SETTEXT, 0, (LPARAM)L"probe rejection") == FALSE,
+            "native message rejection reaches the caller");
+    discovery_rejected_text = 0;
+    discovery_choose(window, 1);
+    discovery_settle(window, fixture->state);
+    SetWindowLongPtrW(preview, GWLP_WNDPROC, (LONG_PTR)discovery_preview_procedure);
+    struct accessible_view status = tags_view(window, ACCESSIBLE_SURFACE_STATUS, 0);
+    require(discovery_rejected_text == 1 && !IsWindowVisible(preview) &&
+                wcsstr(status.name, L"本文読込失敗") != nullptr,
+            "native text rejection clears the old preview and exposes its failure");
+    discovery_body_unchanged(window, &before);
+    discovery_choose(window, 0);
+    discovery_settle(window, fixture->state);
+    discovery_choose(window, 1);
+    discovery_settle(window, fixture->state);
+    discovery_preview_text(window, L"---\r\ntags: [blue, green]\r\n---\r\nOther");
+    status = tags_view(window, ACCESSIBLE_SURFACE_STATUS, 0);
+    require(wcsstr(status.name, L"本文読込失敗") == nullptr,
+            "successful new preview clears the previous native failure");
+    surface_button(window, ACCESSIBLE_SURFACE_CLOSE);
+}
+
+static void discovery_unreadable_query(struct folio_window *_Nonnull window,
+                                       struct native_fixture *_Nonnull fixture)
+{
+    HANDLE locked = management_lock(fixture, L"\\schedule\\two.md", 0);
+    invoke_operation(window, FOLIO_COMMAND_DISCOVER_NOTES);
+    pump(window);
+    discovery_query(window, fixture->state, L"two");
+    struct discovery_summary summary = folio_state_discovery_summary(fixture->state);
+    require(summary.shown == 1 && summary.unreadable == 1 &&
+                summary.preview == DISCOVERY_PREVIEW_UNREADABLE,
+            "name match remains available while its saved source is unreadable");
+    surface_button(window, ACCESSIBLE_SURFACE_DISCOVERY_OPEN);
+    require(folio_state_discovery_summary(fixture->state).phase == DISCOVERY_READY &&
+                strcmp(folio_state_document_name(fixture->state), "one") == 0,
+            "unreadable destination cannot replace the original document");
+    require(CloseHandle(locked), "release only the fixture's unreadable source");
+    wchar_t limit[514];
+    for (size_t at = 0; at < 513; ++at)
+        limit[at] = L'x';
+    limit[513] = L'\0';
+    discovery_query(window, fixture->state, limit);
+    struct accessible_view open =
+        tags_view(window, ACCESSIBLE_SURFACE_BUTTON, ACCESSIBLE_SURFACE_DISCOVERY_OPEN);
+    struct accessible_view status = tags_view(window, ACCESSIBLE_SURFACE_STATUS, 0);
+    require(!open.enabled && wcsstr(status.name, L"256文字以内") != nullptr &&
+                folio_state_discovery_summary(fixture->state).shown == 0,
+            "over-limit native input disables Open and discards old results");
+    discovery_query(window, fixture->state, L"one");
+    require(folio_state_discovery_summary(fixture->state).shown == 1,
+            "a corrected query recovers without reopening the surface");
+    surface_button(window, ACCESSIBLE_SURFACE_CLOSE);
+}
+
+static void discovery_seed_conditions(struct native_fixture *_Nonnull fixture)
+{
+    struct note_tag *red = nullptr, *blue = nullptr;
+    struct note_tags *tags = nullptr;
+    require(note_tag_create("red", 3, &red) == NOTE_TAG_READY &&
+                note_tag_create("blue", 4, &blue) == NOTE_TAG_READY,
+            "create exact discovery conditions");
+    const struct note_tag *names[] = {red, blue};
+    require(note_tags_create(names, 2, &tags) == NOTE_TAGS_READY &&
+                folio_state_set_tag_filter(fixture->state, tags, TAG_MATCH_ALL) ==
+                    FOLIO_STATE_READY,
+            "the list owns two selected conditions");
+    note_tags_destroy(tags);
+    note_tag_destroy(red);
+    note_tag_destroy(blue);
+    if (!folio_state_note_favorite(fixture->state, (struct note_ref){0, 0}))
+        require(folio_state_toggle_favorite(fixture->state, (struct note_ref){0, 0}) ==
+                    FOLIO_STATE_READY,
+                "condition fixture has one favorite");
+    folio_state_set_note_scope(fixture->state, NOTE_SCOPE_FAVORITES);
+}
+
+static void discovery_condition_boundary(struct folio_window *_Nonnull window,
+                                         struct native_fixture *_Nonnull fixture)
+{
+    discovery_seed_conditions(fixture);
+    tags_settle(window, fixture->state);
+    invoke_operation(window, FOLIO_COMMAND_DISCOVER_NOTES);
+    pump(window);
+    discovery_settle(window, fixture->state);
+    require(folio_state_discovery_summary(fixture->state).shown == 1,
+            "the copied star and ALL tag conditions are applied together");
+    struct accessible_request query_focus = {.item = {.kind = ACCESSIBLE_COMMAND_INPUT},
+                                             .action = ACCESSIBLE_ACTION_FOCUS};
+    require(folio_window_accessible_action(window, &query_focus) == S_OK &&
+                GetFocus() == folio_window_accessible_window(window, ACCESSIBLE_COMMAND_INPUT),
+            "the common native focus route reaches the discovery query too");
+    struct accessible_view chip =
+        tags_view(window, ACCESSIBLE_SURFACE_BUTTON, ACCESSIBLE_SURFACE_DISCOVERY_TAG);
+    require(wcsncmp(chip.name, L"red", 3) == 0, "first tag name leads its accessible label");
+    surface_button(window, ACCESSIBLE_SURFACE_DISCOVERY_NEXT_TAG);
+    chip = tags_view(window, ACCESSIBLE_SURFACE_BUTTON, ACCESSIBLE_SURFACE_DISCOVERY_TAG);
+    require(wcsncmp(chip.name, L"blue", 4) == 0, "next tag is individually reachable by name");
+    surface_button(window, ACCESSIBLE_SURFACE_DISCOVERY_TAG);
+    discovery_settle(window, fixture->state);
+    require(note_tags_count(folio_state_discovery_tags(fixture->state)) == 1 &&
+                note_tags_count(folio_state_tag_filter(fixture->state)) == 2,
+            "individual tag removal changes only the search session");
+    surface_button(window, ACCESSIBLE_SURFACE_DISCOVERY_CLEAR);
+    discovery_settle(window, fixture->state);
+    require(folio_state_discovery_summary(fixture->state).shown == 3 &&
+                folio_state_note_scope(fixture->state) == NOTE_SCOPE_FAVORITES &&
+                note_tags_count(folio_state_tag_filter(fixture->state)) == 2,
+            "clear all expands the search while preserving list conditions");
+    HWND preview = folio_window_accessible_window(window, ACCESSIBLE_DISCOVERY_PREVIEW);
+    struct accessible_request focus = {.item = {.kind = ACCESSIBLE_DISCOVERY_PREVIEW},
+                                       .action = ACCESSIBLE_ACTION_FOCUS};
+    require(folio_window_accessible_action(window, &focus) == S_OK && GetFocus() == preview,
+            "readonly source receives keyboard focus through its native provider");
+    SendMessageW(preview, WM_KEYDOWN, VK_TAB, 0);
+    require(GetFocus() != preview, "Tab leaves the readonly source");
+    SetFocus(preview);
+    SendMessageW(preview, WM_KEYDOWN, VK_F1, 0);
+    pump(window);
+    require(folio_state_discovery_summary(fixture->state).phase == DISCOVERY_CLOSED,
+            "the common help shortcut closes discovery from its native preview");
+    surface_button(window, ACCESSIBLE_SURFACE_CLOSE);
+    struct note_tags *empty = nullptr;
+    require(note_tags_empty(&empty) == NOTE_TAGS_READY &&
+                folio_state_set_tag_filter(fixture->state, empty, TAG_MATCH_ALL) ==
+                    FOLIO_STATE_READY,
+            "restore only the private fixture's list conditions");
+    note_tags_destroy(empty);
+    folio_state_set_note_scope(fixture->state, NOTE_SCOPE_ALL);
+}
+
+static void discovery_copy(struct folio_window *_Nonnull window,
+                           struct native_fixture *_Nonnull fixture)
+{
+    invoke_operation(window, FOLIO_COMMAND_DISCOVER_NOTES);
+    pump(window);
+    discovery_query(window, fixture->state, L"two");
+    HWND preview = folio_window_accessible_window(window, ACCESSIBLE_DISCOVERY_PREVIEW);
+    SendMessageW(preview, EM_SETSEL, 0, -1);
+    SendMessageW(preview, WM_COPY, 0, 0);
+    require(OpenClipboard(preview), "open only the isolated station's copied text");
+    HGLOBAL block = GetClipboardData(CF_UNICODETEXT);
+    require(block != nullptr, "native source copy publishes Unicode text");
+    const wchar_t *copied = GlobalLock(block);
+    require(copied != nullptr && wcscmp(copied, L"---\r\ntags: [blue, green]\r\n---\r\nOther") == 0,
+            "copy preserves the full source without the separately painted line numbers");
+    GlobalUnlock(block);
+    require(CloseClipboard(), "close the isolated clipboard");
+    SendMessageW(preview, EM_LINESCROLL, 0, 2);
+    require(SendMessageW(preview, EM_GETMODIFY, 0, 0) == 0,
+            "source scroll and copy never mark the readonly text modified");
+    surface_button(window, ACCESSIBLE_SURFACE_CLOSE);
+}
+
+static void discovery_measure(struct folio_window *_Nonnull window,
+                              struct native_fixture *_Nonnull fixture)
+{
+    for (size_t sample = 0; sample < 7; ++sample)
+    {
+        management_measure_phase("ready", sample);
+        invoke_operation(window, FOLIO_COMMAND_DISCOVER_NOTES);
+        pump(window);
+        for (size_t step = 0;
+             step < 1000 && folio_state_discovery_summary(fixture->state).phase != DISCOVERY_READY;
+             ++step)
+        {
+            folio_window_continue_idle_work(window);
+            pump(window);
+        }
+        require(folio_state_discovery_summary(fixture->state).phase == DISCOVERY_READY,
+                "measured name matching reaches completed results");
+        require(folio_state_discovery_summary(fixture->state).source_checked == 0,
+                "name-only matching performs no saved body reads");
+        management_measure_phase("matched", sample);
+        discovery_settle(window, fixture->state);
+        require(folio_state_discovery_summary(fixture->state).source_checked == 1,
+                "initial preview reads one source in the new session");
+        management_measure_phase("preview", sample);
+        discovery_query(window, fixture->state, L"one");
+        discovery_query(window, fixture->state, L"");
+        require(folio_state_discovery_summary(fixture->state).source_checked == 1,
+                "two warm queries reuse the already observed source");
+        management_measure_phase("warm", sample);
+        discovery_choose(window, 1);
+        discovery_settle(window, fixture->state);
+        require(folio_state_discovery_summary(fixture->state).source_checked == 2,
+                "new candidate preview reads only its own source");
+        management_measure_phase("selected", sample);
+        discovery_choose(window, 0);
+        discovery_settle(window, fixture->state);
+        require(folio_state_discovery_summary(fixture->state).source_checked == 2,
+                "cached candidate preview performs no new source read");
+        management_measure_phase("cached", sample);
+        surface_button(window, ACCESSIBLE_SURFACE_CLOSE);
+    }
+}
+
+static void discovery_visual(struct native_fixture *_Nonnull fixture)
+{
+    const enum folio_language languages[] = {FOLIO_LANGUAGE_JA, FOLIO_LANGUAGE_EN,
+                                             FOLIO_LANGUAGE_ZH_HANS};
+    for (size_t at = 0; at < 9; ++at)
+    {
+        favorite_high_contrast = at / 3 == 2;
+        require(folio_state_set_language(fixture->state, languages[at % 3]) == FOLIO_STATE_READY &&
+                    folio_state_refresh_theme(fixture->state) == FOLIO_STATE_READY &&
+                    folio_state_set_theme(fixture->state, at / 3 == 1 ? FOLIO_THEME_CHOICE_DARK
+                                                                      : FOLIO_THEME_CHOICE_LIGHT) ==
+                        FOLIO_STATE_READY,
+                "discovery visual matrix uses exact language and palette");
+        folio_state_set_note_scope(fixture->state, NOTE_SCOPE_FAVORITES);
+        struct folio_window *window = nullptr;
+        require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY,
+                                    &window) == FOLIO_WINDOW_CREATED,
+                "private discovery visual window");
+        HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+        require(SetWindowPos(root, nullptr, 20, 20, 560, 360, SWP_NOZORDER | SWP_NOACTIVATE),
+                "minimum discovery window");
+        pump(window);
+        invoke_operation(window, FOLIO_COMMAND_DISCOVER_NOTES);
+        pump(window);
+        discovery_settle(window, fixture->state);
+        char path[80];
+        require(snprintf(path, sizeof path, "discovery-list-%zu.bmp", at) > 0, "list capture name");
+        tags_capture(root, path);
+        struct accessible_view previous =
+            tags_view(window, ACCESSIBLE_SURFACE_BUTTON, ACCESSIBLE_SURFACE_DISCOVERY_PREVIOUS_TAG);
+        struct accessible_view tag =
+            tags_view(window, ACCESSIBLE_SURFACE_BUTTON, ACCESSIBLE_SURFACE_DISCOVERY_TAG);
+        struct accessible_view next =
+            tags_view(window, ACCESSIBLE_SURFACE_BUTTON, ACCESSIBLE_SURFACE_DISCOVERY_NEXT_TAG);
+        require(previous.bounds.right <= tag.bounds.left && tag.bounds.right <= next.bounds.left &&
+                    tag.bounds.right > tag.bounds.left,
+                "minimum star plus multiple tags retain distinct condition targets");
+        surface_button(window, ACCESSIBLE_SURFACE_DISCOVERY_TOGGLE);
+        HWND preview = folio_window_accessible_window(window, ACCESSIBLE_DISCOVERY_PREVIEW);
+        RECT client = {0};
+        GetClientRect(preview, &client);
+        require(IsWindowVisible(preview) && client.bottom >= 16,
+                "minimum preview retains an actual source line above scrollbars");
+        require(snprintf(path, sizeof path, "discovery-preview-%zu.bmp", at) > 0,
+                "preview capture name");
+        tags_capture(root, path);
+        require(SetWindowPos(root, nullptr, 20, 20, 1250, 850, SWP_NOZORDER | SWP_NOACTIVATE),
+                "wide discovery geometry");
+        pump(window);
+        struct accessible_view rows = tags_view(window, ACCESSIBLE_SURFACE_LIST, 0);
+        struct accessible_view source = tags_view(window, ACCESSIBLE_DISCOVERY_PREVIEW, 0);
+        require(rows.bounds.right < source.bounds.left && source.bounds.bottom > source.bounds.top,
+                "wide layout shows both candidates and source without overlap");
+        require(snprintf(path, sizeof path, "discovery-wide-%zu.bmp", at) > 0, "wide capture name");
+        tags_capture(root, path);
+        folio_window_destroy(window);
+        folio_state_close_discovery(fixture->state);
+    }
+    favorite_high_contrast = false;
+}
+
+static void run_discovery_case(struct native_fixture *_Nonnull fixture)
+{
+    require(folio_state_select_note(fixture->state, 0, 0, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
+            "select discovery baseline note");
+    require(folio_state_set_language(fixture->state, FOLIO_LANGUAGE_JA) == FOLIO_STATE_READY,
+            "discovery modal fixture starts in Japanese");
+    folio_state_set_note_scope(fixture->state, NOTE_SCOPE_ALL);
+    if (discovery_visual_case)
+    {
+        discovery_seed_conditions(fixture);
+        discovery_visual(fixture);
+        return;
+    }
+    struct folio_window *window = nullptr;
+    require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
+                FOLIO_WINDOW_CREATED,
+            "private native discovery window");
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    require(SetWindowPos(root, nullptr, 20, 20, 1050, 720, SWP_NOZORDER | SWP_NOACTIVATE),
+            "wide discovery window");
+    pump(window);
+    action(window, ACCESSIBLE_EDIT);
+    if (discovery_copy_case || discovery_measure_case)
+    {
+        if (discovery_copy_case)
+            discovery_copy(window, fixture);
+        if (discovery_measure_case)
+            discovery_measure(window, fixture);
+        folio_window_destroy(window);
+        return;
+    }
+    discovery_selection_boundary(window, fixture);
+    discovery_ime_boundary(window, fixture);
+    discovery_untitled_boundary(window, fixture);
+    discovery_named_save(window, fixture);
+    discovery_failed_preview(window, fixture);
+    discovery_unreadable_query(window, fixture);
+    discovery_condition_boundary(window, fixture);
+    require(controlled.requests == 0, "source preview starts no image or diagram work");
+    folio_window_destroy(window);
+}
+
 static void run_fixture(struct native_fixture *_Nonnull fixture, int argc,
                         char *_Nonnull *_Nonnull argv)
 {
-    if (tag_management_case)
+    if (discovery_case)
+        run_discovery_case(fixture);
+    else if (tag_management_case)
         run_tag_management_case(fixture);
     else if (tags_case)
         run_tags_case(fixture);
@@ -9016,6 +9562,11 @@ static void select_favorites_fixture(const char *_Nonnull selector)
 
 static void select_tags_fixture(const char *_Nonnull selector)
 {
+    discovery_visual_case = strcmp(selector, "--discovery-visual") == 0;
+    discovery_copy_case = strcmp(selector, "--discovery-copy") == 0;
+    discovery_measure_case = strcmp(selector, "--discovery-measure") == 0;
+    discovery_case = strcmp(selector, "--discovery") == 0 || discovery_visual_case ||
+                     discovery_copy_case || discovery_measure_case;
     tag_management_visual_case = strcmp(selector, "--tag-management-visual") == 0;
     tag_management_measure_case = strcmp(selector, "--tag-management-measure") == 0;
     tag_management_case = strcmp(selector, "--tag-management") == 0 || tag_management_visual_case ||
@@ -9024,7 +9575,7 @@ static void select_tags_fixture(const char *_Nonnull selector)
     tags_reload_case = strcmp(selector, "--tags-reload") == 0;
     tags_metrics_case = strcmp(selector, "--tags-metrics") == 0;
     tags_case = strcmp(selector, "--tags") == 0 || tags_visual_case || tags_reload_case ||
-                tags_metrics_case || tag_management_case;
+                tags_metrics_case || tag_management_case || discovery_case;
 }
 
 int main(int argc, char *_Nonnull *_Nonnull argv)
@@ -9052,7 +9603,7 @@ int main(int argc, char *_Nonnull *_Nonnull argv)
     export_case = strcmp(selector, "--export") == 0;
     HWINSTA original_station = GetProcessWindowStation();
     HDESK original_desktop = GetThreadDesktop(GetCurrentThreadId());
-    HWINSTA paste_station = paste_case ? isolate_paste_clipboard() : nullptr;
+    HWINSTA paste_station = paste_case || discovery_copy_case ? isolate_paste_clipboard() : nullptr;
     HDESK desktop = CreateDesktopW(L"NeNeFolioImageStatus520", nullptr, nullptr, 0,
                                    DESKTOP_CREATEWINDOW | DESKTOP_CREATEMENU | DESKTOP_READOBJECTS |
                                        DESKTOP_WRITEOBJECTS,

@@ -7,7 +7,9 @@
 #include "folio_state.h"
 #include "markdown_rtf.h"
 #include "name_list.h"
+#include "note_excerpt.h"
 #include "note_file_times.h"
+#include "note_identity.h"
 #include "note_ledger.h"
 #include "note_name.h"
 #include "note_store_request.h"
@@ -2330,6 +2332,9 @@ static const char *_Nonnull const expected_failure_lines[] = {
         "名前変更の記録と実ファイルが一致しません。data/.rename.json と data/<カテゴリ>/ "
         "を確認してください。",
     [FOLIO_STATE_SEARCH_MALFORMED] = "検索する語に壊れた文字があります。語は前のままです。",
+    [FOLIO_STATE_DISCOVERY_QUERY_LIMIT] = "検索語は256文字以内で入力してください。",
+    [FOLIO_STATE_DISCOVERY_QUERY_INVALID] =
+        "検索できない文字があります。検索語を入力し直してください。",
     [FOLIO_STATE_ORDERED] =
         "ノートを並べ替えるには、お気に入り優先を解除して手動順へ戻してください。",
     [FOLIO_STATE_MOVE_ROLLBACK_PENDING] =
@@ -9133,4 +9138,326 @@ void run_tag_management_state_tests(void)
     verify_management_fresh_merge();
     verify_management_untitled_and_identity();
     management_allocation_sweeps();
+}
+
+static enum folio_state_outcome finish_discovery_test(struct folio_state *_Nonnull state,
+                                                      struct persistence_adapter *_Nonnull adapter)
+{
+    enum folio_state_outcome result = FOLIO_STATE_READY;
+    for (size_t step = 0; step < 128 && folio_state_discovery_work_pending(state); ++step)
+    {
+        size_t reads = adapter->note_reads;
+        result = folio_state_continue_discovery(state);
+        require(adapter->note_reads <= reads + 1, "discovery reads at most one source per idle");
+        if (result != FOLIO_STATE_READY)
+            return result;
+    }
+    require(!folio_state_discovery_work_pending(state), "discovery finishes finite fixture");
+    return result;
+}
+
+static void verify_discovery_lazy_preview(void)
+{
+    struct persistence_adapter adapter = tagged_adapter();
+    adapter.missing_note = "one";
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_new_note(state, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
+                folio_state_open_discovery(state) == FOLIO_STATE_READY && adapter.note_reads == 0,
+            "untitled discovery neither saves nor preloads bodies");
+    require(folio_state_continue_discovery(state) == FOLIO_STATE_READY &&
+                folio_state_discovery_summary(state).phase == DISCOVERY_READY &&
+                folio_state_discovery_summary(state).shown == 2 && adapter.note_reads == 0,
+            "name results include unread documents without probing any body");
+    uint64_t results_revision = folio_state_discovery_summary(state).results_revision;
+    require(folio_state_continue_discovery(state) == FOLIO_STATE_READY &&
+                folio_state_discovery_summary(state).preview == DISCOVERY_PREVIEW_UNREADABLE &&
+                folio_state_discovery_summary(state).unreadable == 1 && adapter.note_reads == 1,
+            "selected unreadable body is distinct from no match");
+    require(
+        folio_state_select_discovery(state, 1) == FOLIO_STATE_READY &&
+            folio_state_discovery_excerpt(state) == nullptr &&
+            finish_discovery_test(state, &adapter) == FOLIO_STATE_READY &&
+            same_text(note_excerpt_bytes(folio_state_discovery_excerpt(state)), adapter.rare_body),
+        "selection clears the old preview and exposes exact saved source");
+    require(folio_state_discovery_summary(state).results_revision == results_revision,
+            "preview failure and selection preserve candidate identities");
+    require(folio_state_query_discovery(state, u"to", 2) == FOLIO_STATE_READY &&
+                folio_state_discovery_summary(state).shown == 0 &&
+                finish_discovery_test(state, &adapter) == FOLIO_STATE_READY &&
+                folio_state_discovery_summary(state).shown == 1 && adapter.note_reads == 2,
+            "warm fuzzy query reuses observed source without another read");
+    require(folio_state_discovery_summary(state).results_revision > results_revision,
+            "query completion invalidates previous result identities");
+    require(folio_state_document_kind(state) == FOLIO_DOCUMENT_UNTITLED &&
+                same_text(folio_state_pane_text(state), "") && adapter.creates == 0 &&
+                adapter.note_writes == 0 && adapter.archives == 0,
+            "candidate navigation preserves untitled document and never publishes");
+    folio_state_close_discovery(state);
+    require(folio_state_discovery_summary(state).phase == DISCOVERY_CLOSED &&
+                folio_state_continue_discovery(state) == FOLIO_STATE_READY &&
+                adapter.note_reads == 2,
+            "closed session has no pending work");
+    folio_state_destroy(state);
+}
+
+static void verify_discovery_conditions(void)
+{
+    struct persistence_adapter adapter = tagged_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    struct note_tags *red = selected_tags(1);
+    require(folio_state_set_tag_filter(state, red, TAG_MATCH_ANY) == FOLIO_STATE_READY &&
+                test_index_filter_complete(state, u"needle", 6) == FOLIO_STATE_READY &&
+                folio_state_toggle_favorite(state, at(0, 0)) == FOLIO_STATE_READY &&
+                folio_state_set_note_order(state, NOTE_ORDER_FAVORITES_FIRST) == FOLIO_STATE_READY,
+            "establish independent list term, tag, favorite and ordering");
+    folio_state_set_note_scope(state, NOTE_SCOPE_FAVORITES);
+    size_t reads = adapter.note_reads;
+    require(folio_state_open_discovery(state) == FOLIO_STATE_READY &&
+                finish_discovery_test(state, &adapter) == FOLIO_STATE_READY &&
+                adapter.note_reads == reads + 2 &&
+                folio_state_discovery_summary(state).shown == 1 &&
+                folio_state_discovery_tag_mode(state) == TAG_MATCH_ANY,
+            "tag discovery freshly reads all notes once and previews the shared source");
+    require(folio_state_query_discovery(state, u"B", 1) == FOLIO_STATE_READY &&
+                finish_discovery_test(state, &adapter) == FOLIO_STATE_READY &&
+                adapter.note_reads == reads + 2,
+            "same-session query reuses the completed fresh tag pass");
+    require(folio_state_remove_discovery_tag(state, 0) == FOLIO_STATE_READY &&
+                finish_discovery_test(state, &adapter) == FOLIO_STATE_READY &&
+                folio_state_discovery_summary(state).shown == 1,
+            "removing this session tag preserves its star restriction");
+    folio_state_clear_discovery_conditions(state);
+    require(finish_discovery_test(state, &adapter) == FOLIO_STATE_READY &&
+                folio_state_discovery_summary(state).shown == 2 &&
+                folio_state_discovery_order(state) == NOTE_ORDER_FAVORITES_FIRST &&
+                folio_state_discovery_row(state, 0).favorite &&
+                same_text(folio_state_index_filter_term(state), "needle") &&
+                note_tags_equal(folio_state_tag_filter(state), red) &&
+                folio_state_note_scope(state) == NOTE_SCOPE_FAVORITES,
+            "clearing session conditions preserves priority and every list condition");
+    require(folio_state_remove_discovery_tag(state, 0) == FOLIO_STATE_TAG_INVALID &&
+                folio_state_select_discovery(state, 9) == FOLIO_STATE_NO_SUCH_NOTE,
+            "absent tag and stale row reject without changing valid results");
+    note_tags_destroy(red);
+    folio_state_destroy(state);
+}
+
+static void verify_discovery_partial_tags(void)
+{
+    struct persistence_adapter adapter = tagged_adapter();
+    adapter.rare_body = "---\ntags: *alias\n---\nbody";
+    struct folio_state *state = ready_state(&adapter);
+    struct note_tags *red = selected_tags(1);
+    require(folio_state_set_tag_filter(state, red, TAG_MATCH_ALL) == FOLIO_STATE_READY &&
+                folio_state_open_discovery(state) == FOLIO_STATE_READY &&
+                folio_state_continue_discovery(state) == FOLIO_STATE_READY &&
+                adapter.note_reads == 1,
+            "fresh tag preparation yields after one document");
+    require(folio_state_query_discovery(state, u"two", 3) == FOLIO_STATE_READY &&
+                finish_discovery_test(state, &adapter) == FOLIO_STATE_READY &&
+                adapter.note_reads == 2 && folio_state_discovery_summary(state).shown == 0 &&
+                folio_state_discovery_summary(state).unsupported == 1,
+            "query change retains corpus progress and unsupported tags differ from complete zero");
+    folio_state_clear_discovery_conditions(state);
+    require(
+        finish_discovery_test(state, &adapter) == FOLIO_STATE_READY &&
+            folio_state_discovery_summary(state).shown == 1 && adapter.note_reads == 2 &&
+            same_text(note_excerpt_bytes(folio_state_discovery_excerpt(state)), adapter.rare_body),
+        "name-only search can preview unsupported metadata as untouched source");
+    note_tags_destroy(red);
+    folio_state_destroy(state);
+}
+
+static void verify_discovery_limits(void)
+{
+    struct persistence_adapter adapter = preparation_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    char16_t emojis[514];
+    for (size_t at = 0; at < 514; at += 2)
+    {
+        emojis[at] = 0xd83d;
+        emojis[at + 1] = 0xde00;
+    }
+    require(folio_state_query_discovery(state, u"", 0) == FOLIO_STATE_CANCELLED &&
+                folio_state_open_discovery(state) == FOLIO_STATE_READY &&
+                folio_state_query_discovery(state, emojis, 512) == FOLIO_STATE_READY &&
+                finish_discovery_test(state, &adapter) == FOLIO_STATE_READY,
+            "exact 256-scalar and 1024-byte query is accepted");
+    require(folio_state_query_discovery(state, emojis, 514) == FOLIO_STATE_DISCOVERY_QUERY_LIMIT &&
+                folio_state_discovery_summary(state).phase == DISCOVERY_FAILED &&
+                folio_state_discovery_summary(state).shown == 0,
+            "over-limit query cannot retain old results");
+    folio_state_clear_discovery_conditions(state);
+    require(!folio_state_discovery_work_pending(state),
+            "condition change cannot revive rejected query");
+    const char16_t nul_queries[][3] = {{0, u'a', u'b'}, {u'a', 0, u'b'}, {u'a', u'b', 0}};
+    for (size_t index = 0; index < 3; ++index)
+        require(folio_state_query_discovery(state, nul_queries[index], 3) ==
+                        FOLIO_STATE_DISCOVERY_QUERY_INVALID &&
+                    folio_state_discovery_summary(state).phase == DISCOVERY_FAILED &&
+                    folio_state_discovery_summary(state).shown == 0,
+                "embedded NUL at each input position is rejected without stale results");
+    const char16_t malformed[] = {0xd800};
+    require(folio_state_query_discovery(state, malformed, 1) ==
+                    FOLIO_STATE_DISCOVERY_QUERY_INVALID &&
+                folio_state_query_discovery(state, u"one", 3) == FOLIO_STATE_READY &&
+                finish_discovery_test(state, &adapter) == FOLIO_STATE_READY &&
+                folio_state_discovery_summary(state).shown == 1,
+            "malformed query is explicit and corrected query recovers");
+    folio_state_destroy(state);
+}
+
+static void verify_discovery_identity(void)
+{
+    struct persistence_adapter adapter = preparation_adapter();
+    static const char *const names[] = {"one.md", "two", nullptr};
+    adapter.scanned_notes = names;
+    adapter.notes_text = "{\"version\":1,\"notes\":[\"one.md\",\"two\"]}";
+    struct folio_state *state = ready_state(&adapter);
+    struct note_identity *identity = nullptr;
+    require(folio_state_capture_note(state, at(0, 0), &identity) == FOLIO_STATE_READY &&
+                same_text(note_identity_note(identity), "one.md"),
+            "identity preserves a literal .md stem without stripping twice");
+    require(folio_state_open_discovery(state) == FOLIO_STATE_READY &&
+                finish_discovery_test(state, &adapter) == FOLIO_STATE_READY &&
+                folio_state_move_note(state, at(0, 0), at(0, 1)) == FOLIO_STATE_READY &&
+                folio_state_discovery_summary(state).shown == 0,
+            "ledger change immediately discards completed discovery rows");
+    struct note_ref resolved = {0};
+    require(folio_state_resolve_note(state, identity, &resolved) == FOLIO_STATE_READY &&
+                resolved.category == 0 && resolved.note == 1 &&
+                finish_discovery_test(state, &adapter) == FOLIO_STATE_READY &&
+                folio_state_discovery_summary(state).selected == 1,
+            "owned identity re-resolves moved row and restores candidate by name");
+    require(folio_state_capture_note(state, at(8, 0), &identity) == FOLIO_STATE_NO_SUCH_CATEGORY &&
+                folio_state_capture_note(state, at(0, 8), &identity) == FOLIO_STATE_NO_SUCH_NOTE,
+            "invalid row capture preserves owned identity");
+    note_identity_destroy(identity);
+    folio_state_destroy(state);
+}
+
+static void verify_discovery_corpus_replacement(void)
+{
+    struct persistence_adapter adapter = preparation_adapter();
+    char *body = malloc(200001);
+    if (body == nullptr)
+        test_failure("long corpus replacement fixture");
+    memset(body, 'a', 200000);
+    body[200000] = '\0';
+    adapter.note_body = body;
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_set_index_filter(state, u"z", 1) == FOLIO_STATE_READY &&
+                folio_state_continue_index_filter(state) == FOLIO_STATE_READY &&
+                folio_state_continue_index_filter(state) == FOLIO_STATE_READY &&
+                folio_state_continue_index_filter(state) == FOLIO_STATE_READY &&
+                folio_state_index_filter_pending(state),
+            "list matcher yields with positions into a long cached body");
+    adapter.note_body = "tiny";
+    require(folio_state_open_discovery(state) == FOLIO_STATE_READY &&
+                finish_discovery_test(state, &adapter) == FOLIO_STATE_READY &&
+                same_text(note_excerpt_bytes(folio_state_discovery_excerpt(state)), "tiny") &&
+                folio_state_index_filter_pending(state) &&
+                same_text(folio_state_index_filter_term(state), "z"),
+            "fresh preview replaces shared corpus while preserving the pending list intent");
+    require(finish_test_index_filter(state) == FOLIO_STATE_READY &&
+                folio_state_index_filter_count(state) == 0 &&
+                folio_state_discovery_summary(state).shown == 2,
+            "restarted list never reuses old body positions and name results stay valid");
+    folio_state_destroy(state);
+    free(body);
+}
+
+static void verify_discovery_saved_revision(void)
+{
+    struct persistence_adapter adapter = management_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
+                folio_state_begin_edit(state) == FOLIO_STATE_READY &&
+                folio_state_open_discovery(state) == FOLIO_STATE_READY &&
+                finish_discovery_test(state, &adapter) == FOLIO_STATE_READY,
+            "completed preview before saving changed editor source");
+    require(folio_state_store_note(state, u"new body", 8) == FOLIO_STATE_READY &&
+                folio_state_discovery_summary(state).shown == 0 &&
+                folio_state_discovery_excerpt(state) == nullptr &&
+                finish_discovery_test(state, &adapter) == FOLIO_STATE_READY &&
+                same_text(note_excerpt_bytes(folio_state_discovery_excerpt(state)), "new body"),
+            "saved revision invalidates every result and refreshes selected preview source");
+    require(adapter.note_writes == 1 && adapter.archives == 1 &&
+                folio_state_pane_mode(state) == PANE_MODE_EDIT,
+            "preview refresh adds neither save nor history nor mode transition");
+    folio_state_destroy(state);
+}
+
+static void verify_discovery_failed_read_retry(void)
+{
+    struct persistence_adapter adapter = tagged_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    struct note_tags *red = selected_tags(1);
+    require(folio_state_set_tag_filter(state, red, TAG_MATCH_ALL) == FOLIO_STATE_READY &&
+                folio_state_open_discovery(state) == FOLIO_STATE_READY,
+            "tag session before failed corpus reads");
+    adapter.note_outcome = PERSISTENCE_OUT_OF_MEMORY;
+    require(folio_state_continue_discovery(state) == FOLIO_STATE_OUT_OF_MEMORY &&
+                folio_state_query_discovery(state, u"o", 1) == FOLIO_STATE_READY &&
+                folio_state_continue_discovery(state) == FOLIO_STATE_OUT_OF_MEMORY,
+            "two read failures remain local to discovery across query replacement");
+    require(folio_state_tag_filter(state) != nullptr &&
+                note_tags_equal(folio_state_tag_filter(state), red),
+            "discovery read failure preserves independent list conditions");
+    adapter.note_outcome = PERSISTENCE_LOADED;
+    require(folio_state_query_discovery(state, u"one", 3) == FOLIO_STATE_READY &&
+                finish_discovery_test(state, &adapter) == FOLIO_STATE_READY &&
+                folio_state_discovery_summary(state).shown == 1 &&
+                folio_state_discovery_summary(state).unreadable == 0,
+            "retry cannot skip an unobserved matching source after read failure");
+    note_tags_destroy(red);
+    folio_state_destroy(state);
+}
+
+static bool discovery_allocation(size_t nth)
+{
+    struct persistence_adapter adapter = tagged_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    struct note_tags *red = selected_tags(1);
+    require(folio_state_set_tag_filter(state, red, TAG_MATCH_ALL) == FOLIO_STATE_READY,
+            "allocation fixture tag conditions");
+    allocation_probe_fail_at(nth);
+    enum folio_state_outcome outcome = folio_state_open_discovery(state);
+    if (outcome == FOLIO_STATE_READY)
+        outcome = finish_discovery_test(state, &adapter);
+    size_t calls = allocation_probe_calls();
+    allocation_probe_fail_at(0);
+    require(outcome == FOLIO_STATE_READY || outcome == FOLIO_STATE_OUT_OF_MEMORY,
+            "discovery allocations return only success or explicit allocation failure");
+    require(adapter.note_writes == 0 && adapter.creates == 0 && adapter.archives == 0,
+            "allocation failure never publishes document changes");
+    enum folio_state_outcome retry = folio_state_open_discovery(state);
+    if (retry == FOLIO_STATE_READY)
+        retry = finish_discovery_test(state, &adapter);
+    if (retry != FOLIO_STATE_READY || folio_state_discovery_summary(state).shown != 1)
+        printf("discovery retry: allocation=%zu initial=%u retry=%u shown=%zu\n", nth,
+               (unsigned)outcome, (unsigned)retry, folio_state_discovery_summary(state).shown);
+    require(retry == FOLIO_STATE_READY && folio_state_discovery_summary(state).shown == 1,
+            "same owner retries after each discovery allocation failure");
+    note_tags_destroy(red);
+    folio_state_destroy(state);
+    return calls < nth;
+}
+
+void run_discovery_state_tests(void)
+{
+    finder = test_regex_port();
+    verify_discovery_lazy_preview();
+    verify_discovery_conditions();
+    verify_discovery_partial_tags();
+    verify_discovery_limits();
+    verify_discovery_identity();
+    verify_discovery_corpus_replacement();
+    verify_discovery_saved_revision();
+    verify_discovery_failed_read_retry();
+    size_t nth = 1;
+    while (nth < 512 && !discovery_allocation(nth))
+        ++nth;
+    require(nth < 512, "discovery allocation sweep reaches success");
+    printf("discovery session: %zu allocation boundaries\n", nth - 1);
 }

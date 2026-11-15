@@ -1,0 +1,9 @@
+#ifndef NENEFOLIO_NOTE_EXCERPT_EXTENT_H
+#define NENEFOLIO_NOTE_EXCERPT_EXTENT_H
+enum note_excerpt_extent : unsigned char
+{
+    NOTE_EXCERPT_FULL,
+    NOTE_EXCERPT_LINE_LIMIT,
+    NOTE_EXCERPT_BYTE_LIMIT,
+};
+#endif

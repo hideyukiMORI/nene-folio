@@ -1,0 +1,8 @@
+#ifndef NENEFOLIO_NOTE_EXCERPT_OUTCOME_H
+#define NENEFOLIO_NOTE_EXCERPT_OUTCOME_H
+enum note_excerpt_outcome : unsigned char
+{
+    NOTE_EXCERPT_READY,
+    NOTE_EXCERPT_OUT_OF_MEMORY,
+};
+#endif

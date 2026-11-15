@@ -10,6 +10,7 @@
 
 #include "index_filter_finish_outcome.h"
 #include "index_filter_outcome.h"
+#include "index_ranked_note.h"
 #include "note_ref.h"
 
 #include <stddef.h>
@@ -37,6 +38,11 @@ index_filter_finish(struct index_filter_build *_Nullable *_Nonnull build,
                                          size_t category);
 /* 見えるノートの総数。 */
 [[nodiscard]] size_t index_filter_count(const struct index_filter *_Nonnull filter);
+/* NAMES only: up to 200 completed results, independent of the full membership count.
+ * NAME_BODY returns zero. ranked requires index < ranked_count. */
+[[nodiscard]] size_t index_filter_ranked_count(const struct index_filter *_Nonnull filter);
+[[nodiscard]] struct index_ranked_note
+index_filter_ranked(const struct index_filter *_Nonnull filter, size_t index);
 void index_filter_destroy(struct index_filter *_Nullable filter);
 
 #endif

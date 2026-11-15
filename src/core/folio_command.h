@@ -53,6 +53,7 @@ enum folio_command : unsigned char
     FOLIO_COMMAND_EDIT_TAGS,
     FOLIO_COMMAND_FILTER_TAGS,
     FOLIO_COMMAND_MANAGE_TAGS,
+    FOLIO_COMMAND_DISCOVER_NOTES,
 
 };
 

@@ -37,6 +37,7 @@ folio_state_tag_management_phase(const struct folio_state *_Nonnull state);
     const struct folio_state *_Nonnull state);
 
 #include "category_rename_target.h"
+#include "discovery_summary.h"
 #include "drawer_cursor.h"
 #include "drawer_metrics.h"
 #include "folio_command.h"
@@ -54,6 +55,7 @@ folio_state_tag_management_phase(const struct folio_state *_Nonnull state);
 #include "folio_untitled_policy.h"
 #include "history_row_view.h"
 #include "image_port.h"
+#include "index_ranked_note.h"
 #include "note_destination.h"
 #include "note_export_request.h"
 #include "note_import_request.h"
@@ -83,6 +85,47 @@ struct drawer_layout;
 struct folio_state;
 struct note_name;
 struct note_text;
+struct note_identity;
+struct note_excerpt;
+/* Identity copy is independent of row numbers and survives a save prompt. */
+[[nodiscard]] enum folio_state_outcome
+folio_state_capture_note(const struct folio_state *_Nonnull state, struct note_ref ref,
+                         struct note_identity *_Nullable *_Nonnull out);
+[[nodiscard]] enum folio_state_outcome
+folio_state_resolve_note(const struct folio_state *_Nonnull state,
+                         const struct note_identity *_Nonnull identity,
+                         struct note_ref *_Nonnull out);
+/* UI performs the existing named-EDIT save before opening. No document mutation here. */
+[[nodiscard]] enum folio_state_outcome
+folio_state_open_discovery(struct folio_state *_Nonnull state);
+void folio_state_close_discovery(struct folio_state *_Nonnull state);
+[[nodiscard]] enum folio_state_outcome
+folio_state_query_discovery(struct folio_state *_Nonnull state, const char16_t *_Nonnull units,
+                            size_t count);
+[[nodiscard]] enum folio_state_outcome
+folio_state_continue_discovery(struct folio_state *_Nonnull state);
+[[nodiscard]] bool folio_state_discovery_work_pending(const struct folio_state *_Nonnull state);
+[[nodiscard]] struct discovery_summary
+folio_state_discovery_summary(const struct folio_state *_Nonnull state);
+/* READY and index < summary.shown required. Row names remain ledger-owned. */
+[[nodiscard]] struct index_ranked_note
+folio_state_discovery_row(const struct folio_state *_Nonnull state, size_t index);
+[[nodiscard]] enum folio_state_outcome
+folio_state_select_discovery(struct folio_state *_Nonnull state, size_t index);
+/* Optional excerpt is available only in PREVIEW_READY, until the next session mutation. */
+[[nodiscard]] const struct note_excerpt *_Nullable folio_state_discovery_excerpt(
+    const struct folio_state *_Nonnull state);
+[[nodiscard]] const struct note_tags *_Nullable folio_state_discovery_tags(
+    const struct folio_state *_Nonnull state);
+[[nodiscard]] enum note_scope folio_state_discovery_scope(const struct folio_state *_Nonnull state);
+[[nodiscard]] enum note_order folio_state_discovery_order(const struct folio_state *_Nonnull state);
+[[nodiscard]] enum tag_match_mode
+folio_state_discovery_tag_mode(const struct folio_state *_Nonnull state);
+/* Clear only this session's restrictions; preserve its initial priority preference. */
+void folio_state_clear_discovery_conditions(struct folio_state *_Nonnull state);
+void folio_state_clear_discovery_scope(struct folio_state *_Nonnull state);
+[[nodiscard]] enum folio_state_outcome
+folio_state_remove_discovery_tag(struct folio_state *_Nonnull state, size_t index);
 struct note_tags;
 struct tag_catalog;
 struct note_tag;

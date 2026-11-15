@@ -55,6 +55,8 @@ enum folio_state_outcome : unsigned char
     FOLIO_STATE_RENAME_HALTED,
     /* 検索の語が壊れている。語も絞り込みも前のまま（ADR 0023 の決定 3・ADR 0024 の決定 2） */
     FOLIO_STATE_SEARCH_MALFORMED,
+    FOLIO_STATE_DISCOVERY_QUERY_LIMIT,
+    FOLIO_STATE_DISCOVERY_QUERY_INVALID,
     /* 絞り込み中に断る操作（並び替え・開閉など）が来た。台帳もファイルも表示も変えていない
      * （ADR 0024 の決定 4・ADR 0039 の決定 6） */
     FOLIO_STATE_FILTERED,

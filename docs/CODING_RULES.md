@@ -127,6 +127,9 @@ UI と application の状態遷移は単一の UI スレッドで行う。背景
 新語と初回本文準備後の一致計算は、同じidle継続で一回65536比較workまで進め、完成後だけ採用する（ADR0073）。
 確定した集合の保存/改名後の修復は、同じcore engineとentry解決helperを同期で完了する。別matcherを持たない。
 比較workは実時間上限ではなく、語変換・初期集計・確保・lookup・同期UI等の費用は残る（ADR0024/0068/0073・FR-032）。
+名前検索も同じ65536 work/idleを使い、部分列scalar比較と順位projectionを計上する。
+tag条件が無い名前検索は全本文を先読みせず、preview対象だけを同じcorpus readerで読む。
+corpusのput/remove前には依存buildを破棄し、完成済みfilter/catalogも条件を保持して再構築する（ADR0094）。
 入れ子のmessage pumpは作らない。
 画像のI/O・WIC復号/縮小に限り、adapterが単一workerを所有する（#520・ADR0085）。
 合成8192×8192 PNGの同期縮小125msを根拠とし、UI/application/core状態・HWND/TOMは渡さない。
