@@ -86,17 +86,38 @@ static bool mapping_candidate(struct markdown_line line)
     return false;
 }
 
+static bool quoted_mapping_candidate(struct markdown_line line)
+{
+    char first = line.bytes[line.content];
+    if (first != '"' && first != '\'')
+        return false;
+    for (size_t at = line.content + 1; at < line.length; ++at)
+        if (line.bytes[at] == ':')
+            return true;
+    return false;
+}
+
+static bool explicit_mapping(char first)
+{
+    return first == '%' || first == '{' || first == '!' || first == '&';
+}
+
+static bool ordinary_marker(struct markdown_line line)
+{
+    char first = line.bytes[line.content];
+    return (first == '-' || first == '*' || first == '>') && line.content + 1 < line.length &&
+           space(line.bytes[line.content + 1]);
+}
+
 static bool candidate(struct markdown_line line)
 {
     if (line.content >= line.length || line.indent >= 4)
         return false;
-    char first = line.bytes[line.content];
-    if (strchr("%{!&", first) != nullptr)
+    if (explicit_mapping(line.bytes[line.content]))
         return true;
-    if ((first == '"' || first == '\'') && memchr(line.bytes, ':', line.length) != nullptr)
+    if (quoted_mapping_candidate(line))
         return true;
-    if (strchr("-*>", first) != nullptr && line.content + 1 < line.length &&
-        space(line.bytes[line.content + 1]))
+    if (ordinary_marker(line))
         return false;
     return mapping_candidate(line);
 }

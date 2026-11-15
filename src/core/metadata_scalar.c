@@ -212,21 +212,29 @@ static enum metadata_scalar_outcome quoted(struct metadata_scalar *_Nonnull scal
     return METADATA_SCALAR_MALFORMED;
 }
 
+static bool indicator(char byte, const char *_Nonnull choices)
+{
+    size_t length = strlen(choices);
+    for (size_t at = 0; at < length; ++at)
+        if (choices[at] == byte)
+            return true;
+    return false;
+}
+
 static bool reserved_start(const char *_Nonnull bytes, size_t length)
 {
-    if (strchr("!&*{}[],#|>@`%", bytes[0]) != nullptr)
+    if (indicator(bytes[0], "!&*{}[],#|>@`%"))
         return true;
-    return strchr("-?:", bytes[0]) != nullptr && (length == 1 || space(bytes[1]));
+    return indicator(bytes[0], "-?:") && (length == 1 || space(bytes[1]));
 }
 
 static bool plain_invalid(const char *_Nonnull bytes, size_t length, size_t at, bool flow)
 {
-    if (flow && strchr("{}[", bytes[at]) != nullptr)
+    if (flow && indicator(bytes[at], "{}["))
         return true;
     if (bytes[at] != ':')
         return false;
-    return at + 1 == length || space(bytes[at + 1]) ||
-           (flow && strchr(",[]{}", bytes[at + 1]) != nullptr);
+    return at + 1 == length || space(bytes[at + 1]) || (flow && indicator(bytes[at + 1], ",[]{}"));
 }
 
 static bool plain_stop(const char *_Nonnull bytes, size_t at, bool flow)
@@ -239,8 +247,7 @@ static bool plain_stop(const char *_Nonnull bytes, size_t at, bool flow)
 static enum metadata_scalar_outcome scan_plain(const char *_Nonnull bytes, size_t length, bool flow,
                                                size_t *_Nonnull consumed)
 {
-    if (flow && strchr("-?", bytes[0]) != nullptr && length > 1 &&
-        strchr(",[]{}", bytes[1]) != nullptr)
+    if (flow && indicator(bytes[0], "-?") && length > 1 && indicator(bytes[1], ",[]{}"))
         return METADATA_SCALAR_MALFORMED;
     size_t end = 0;
     while (end < length)
