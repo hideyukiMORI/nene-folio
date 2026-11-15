@@ -77,3 +77,11 @@ matcher/位置計数の変更は既存有限workと共通UTF-8/UTF-16投影を�
 最終CI/統合・恒久保全/整理は未完了。最終head CIと統合はIssue/PR、確定原本は
 D:/NeNeFolio/agents/discovery-release-20261115/completion.json。未作成を完了とは扱わない。
 製品入力が不変なので通常exeの再buildを予定しない。物理IME/読み上げ、他OS/DPI、cold OS cache、Unicode主体の大量本文は未確認。
+
+## 統合後の確定結果
+
+#831 / PR832は最終head `e46ef18a134295fca8d05cca6301b3070b12e7a5`の必須CI43718941842成功後、
+main `28093b7602bb40b74aafd74e82cde9f31a129b49`へ統合した。56 CTest、分岐10066/11090（90.766456%）。
+製品入力/通常exe不変を確認し、既存反映を再利用した。全4,445ファイルを保全・照合し、今回追加2領域を整理済み。
+確定原本はD:/NeNeFolio/agents/discovery-release-20261115/completion.json。branch/commitは保持。
+GitHub connectorのPR作成は403で外部変更なし。認証済みghで作成し、正典merge-pr.ps1で統合した。

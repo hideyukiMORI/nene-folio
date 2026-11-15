@@ -5,6 +5,7 @@
 #include "accessible_view.h"
 #include "appearance_adapter.h"
 #include "discovery_scale_command.h"
+#include "discovery_trace_phase.h"
 #include "file_bytes.h"
 #include "file_times.h"
 #include "folio_menu_action.h"
@@ -80,6 +81,9 @@ static bool motion_visual_case;
 static bool motion_live_case;
 static size_t scale_note_count;
 static size_t scale_source_bytes;
+static bool scale_trace_case;
+static size_t scale_trace_idle;
+static enum discovery_trace_phase scale_trace_phase;
 static enum appearance_motion motion_observation = APPEARANCE_MOTION_ALLOWED;
 static enum appearance_outcome motion_read_outcome = APPEARANCE_READY;
 static bool motion_check_modal;
@@ -406,6 +410,37 @@ static enum image_outcome image_asset(struct image_adapter *_Nonnull adapter,
     (void)out;
     return IMAGE_FAILED;
 }
+static void scale_trace_emit(const char *_Nonnull phase)
+{
+    printf("{\"event\":\"cost\",\"phase\":\"%s\",\"command\":%u,\"idle\":%zu}\n", phase,
+           (unsigned)DISCOVERY_SCALE_FRESH, scale_trace_idle);
+    require(fflush(stdout) == 0, "publish the private read/idle observation without a C clock");
+}
+
+static enum persistence_outcome scale_observed_read(struct persistence_adapter *_Nonnull adapter,
+                                                    const char *_Nonnull category,
+                                                    const char *_Nonnull note,
+                                                    struct note_text *_Nullable *_Nonnull out)
+{
+    bool observed = scale_trace_phase != DISCOVERY_TRACE_OFF;
+    if (observed)
+    {
+        require(scale_trace_phase == DISCOVERY_TRACE_IDLE, "at most one read inside each idle");
+        scale_trace_phase = DISCOVERY_TRACE_READ;
+        scale_trace_emit("read_begin");
+    }
+    struct persistence_port original = persistence_adapter_port(adapter);
+    enum persistence_outcome outcome = original.read_note(adapter, category, note, out);
+    if (observed)
+    {
+        require(scale_trace_phase == DISCOVERY_TRACE_READ,
+                "the real read does not reenter tracing");
+        scale_trace_emit("read_end");
+        scale_trace_phase = DISCOVERY_TRACE_READ_DONE;
+    }
+    return outcome;
+}
+
 static void create_fixture(struct native_fixture *_Nonnull fixture)
 {
     require(storage_adapter_create(&fixture->storage) == STORAGE_READY, "storage adapter");
@@ -421,6 +456,8 @@ static void create_fixture(struct native_fixture *_Nonnull fixture)
             "dedicated test data");
     struct persistence_port disk = persistence_adapter_port(fixture->files);
     seed_notes(disk);
+    if (scale_trace_case)
+        disk.read_note = scale_observed_read;
     struct appearance_port appearance = appearance_adapter_port(fixture->appearance);
     if (favorites_case || tags_case)
         appearance.read = read_favorite_appearance;
@@ -10714,6 +10751,7 @@ static void scale_start(struct folio_window *_Nonnull window,
     scale_job = command;
     scale_read_reported = false;
     scale_match_reported = false;
+    scale_trace_idle = 0;
     scale_emit(fixture, "begin");
     if (command == DISCOVERY_SCALE_FRESH || command == DISCOVERY_SCALE_NAMES)
         scale_open(window, fixture, command);
@@ -10844,6 +10882,27 @@ static void motion_live_dispatch(struct folio_window *_Nonnull window, const MSG
     }
 }
 
+static void scale_continue_idle(struct folio_window *_Nonnull window)
+{
+    bool observed = scale_trace_case && scale_job == DISCOVERY_SCALE_FRESH && !scale_read_reported;
+    if (observed)
+    {
+        require(scale_trace_phase == DISCOVERY_TRACE_OFF, "observed idle steps never overlap");
+        ++scale_trace_idle;
+        scale_trace_phase = DISCOVERY_TRACE_IDLE;
+        scale_trace_emit("idle_begin");
+    }
+    folio_window_continue_idle_work(window);
+    if (observed)
+    {
+        require(scale_trace_phase == DISCOVERY_TRACE_IDLE ||
+                    scale_trace_phase == DISCOVERY_TRACE_READ_DONE,
+                "the idle step finishes with no outstanding read");
+        scale_trace_emit("idle_end");
+        scale_trace_phase = DISCOVERY_TRACE_OFF;
+    }
+}
+
 static bool motion_live_step(struct folio_window *_Nonnull window,
                              struct native_fixture *_Nonnull fixture)
 {
@@ -10858,7 +10917,7 @@ static bool motion_live_step(struct folio_window *_Nonnull window,
     if (folio_window_idle_work_ready(window))
     {
         ++motion_live_idle;
-        folio_window_continue_idle_work(window);
+        scale_continue_idle(window);
         scale_observe(fixture);
         return true;
     }
@@ -10896,8 +10955,10 @@ static void run_scale_case(struct native_fixture *_Nonnull fixture)
             "fixed wide scale window");
     pump(window);
     action(window, ACCESSIBLE_EDIT);
-    printf("{\"event\":\"ready\",\"thread\":%lu,\"notes\":%zu,\"sourceBytes\":%zu}\n",
-           GetCurrentThreadId(), scale_note_count, scale_source_bytes);
+    printf("{\"event\":\"ready\",\"thread\":%lu,\"notes\":%zu,\"sourceBytes\":%zu,"
+           "\"traceReads\":%s}\n",
+           GetCurrentThreadId(), scale_note_count, scale_source_bytes,
+           scale_trace_case ? "true" : "false");
     require(fflush(stdout) == 0, "publish scale setup separately from search measurements");
     while (motion_live_step(window, fixture))
     {
@@ -10977,6 +11038,13 @@ static void select_favorites_fixture(const char *_Nonnull selector)
 
 static void select_scale_fixture(const char *_Nonnull selector)
 {
+    scale_trace_case = strcmp(selector, "--discovery-cost") == 0;
+    if (scale_trace_case)
+    {
+        scale_note_count = 1000;
+        scale_source_bytes = 4096;
+        return;
+    }
     scale_note_count = strcmp(selector, "--discovery-scale-small") == 0  ? 100
                        : strcmp(selector, "--discovery-scale-many") == 0 ? 1000
                        : strcmp(selector, "--discovery-scale-long") == 0 ? 32
