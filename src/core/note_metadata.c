@@ -2,6 +2,7 @@
 #include "markdown_line.h"
 #include "metadata_scalar.h"
 #include "note_byte_span.h"
+#include "note_source.h"
 #include "note_tag.h"
 #include "note_tags.h"
 #include "note_text.h"
@@ -708,30 +709,12 @@ static enum note_tag_edit_outcome rewrite(const struct note_metadata *_Nonnull m
     return outcome;
 }
 
-/* Source is already UTF-8. Native RichEdit counts each CRLF as one paragraph unit. */
-static uint32_t native_point(const char *_Nonnull bytes, size_t length, size_t *_Nonnull at)
-{
-    uint32_t point = 0;
-    *at += utf8_text_decode(bytes + *at, length - *at, &point);
-    if (point == '\r' && *at < length && bytes[*at] == '\n')
-        ++*at;
-    return point == '\n' ? '\r' : point;
-}
-
-static size_t native_length(const char *_Nonnull bytes, size_t length)
-{
-    size_t count = 0;
-    for (size_t at = 0; at < length;)
-        count += native_point(bytes, length, &at) > 0xffff ? 2 : 1;
-    return count;
-}
-
 static void native_append(struct replace_edit *_Nonnull edit, const char *_Nonnull bytes,
                           size_t length)
 {
     for (size_t at = 0; at < length;)
     {
-        uint32_t point = native_point(bytes, length, &at);
+        uint32_t point = note_source_next(bytes, length, &at);
         char16_t units[2] = {(char16_t)point, 0};
         size_t count = 1;
         if (point > 0xffff)
@@ -749,12 +732,14 @@ static enum note_tag_edit_outcome native_edit(const struct note_metadata *_Nonnu
                                               const struct text_buffer *_Nonnull patch,
                                               struct replace_edit *_Nullable *_Nonnull out)
 {
-    struct note_search_span span = {native_length(metadata->source, range.start),
-                                    native_length(metadata->source, range.end)};
+    struct note_search_span span = {
+        note_source_units(metadata->source, range.start, NOTE_SOURCE_PARAGRAPH),
+        note_source_units(metadata->source, range.end, NOTE_SOURCE_PARAGRAPH)};
     const char *_Nonnull bytes = text_buffer_bytes(patch);
     size_t length = text_buffer_length(patch);
     struct replace_edit *_Nullable edit = nullptr;
-    if (replace_edit_create(span, native_length(bytes, length), &edit) != REPLACE_EDIT_READY)
+    if (replace_edit_create(span, note_source_units(bytes, length, NOTE_SOURCE_PARAGRAPH), &edit) !=
+        REPLACE_EDIT_READY)
         return NOTE_TAG_EDIT_OUT_OF_MEMORY;
     native_append(edit, bytes, length);
     *out = edit;

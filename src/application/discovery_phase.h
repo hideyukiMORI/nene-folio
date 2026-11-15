@@ -3,6 +3,7 @@
 enum discovery_phase : unsigned char
 {
     DISCOVERY_CLOSED,
+    DISCOVERY_INPUT,
     DISCOVERY_PREPARING,
     DISCOVERY_MATCHING,
     DISCOVERY_READY,

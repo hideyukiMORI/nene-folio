@@ -72,6 +72,12 @@ and [1.1.0 notes](docs/release/1.1.0.md).
   View-mode HTTP/HTTPS links open in the default browser
   with a left click or Ctrl+Enter (#482); dragging to select text and editing do not launch links.
   See [Markdown syntax and limits](docs/MARKDOWN.md) (Japanese).
+- **Discover notes (development build)**: Actions / the command palette opens a finder with
+  fuzzy name search and literal search of saved Markdown bodies, combined with favorites and tags.
+  A bounded source preview shows each note's first body match and its line number. Moving between
+  candidates keeps the editor untouched; **Open match** opens the selected note in Edit mode.
+  If its saved source changed since the search, the note opens with an explanation and the old
+  match position is not applied. These additions are not in the published 1.3.2 packages.
 - **Images and diagrams**: local and HTTPS PNG/JPEG images load after the note body.
   Lowercase `mermaid` fences render native flowcharts and sequence diagrams in the current theme.
   Diagram sources stay as Markdown; no JavaScript runs and diagrams fetch no external resources.

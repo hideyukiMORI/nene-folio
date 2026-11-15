@@ -87,8 +87,9 @@
 | 状態 | 意味 | 所有者 | 変更経路 |
 | --- | --- | --- | --- |
 | ノートを探すsession | 語、独立した星/tag条件、順位設定、結果/preview世代と選択 | application（`folio_state`） | 入口でcopyし一覧へ書き戻さない。既存matcher/corpusから派生し、確定だけを共通文書選択へ渡す（ADR0094） |
+| 本文検索の確定要求 | 宛先identity、原文snapshot、一致位置の短命な不変値 | applicationが生成するcoreの`discovery_target` | 同じ完成集合/corpusからcopyし、保存prompt後の採用本文と一致する時だけ位置を適用する（ADR0095） |
 | 保存promptを越えるノート宛先 | 検証済みカテゴリ名と台帳stemの所有copy | coreの不変`note_identity` | 拡張子を再解釈せず、applicationの同一resolveで現在台帳へ戻す。番号を保存prompt越しに再利用しない（ADR0094） |
-| 名前検索の順位と原文preview | 台帳順一致からの順位projection、有限範囲の原文と行位置 | coreの完成`index_filter`と不変`note_excerpt`をapplicationが所有 | 同じbuild内の18 bucketから上位200を完成公開。本文から先頭80行/16KiBを導き、保存対象にしない（ADR0094） |
+| 検索の順位と原文preview | 台帳順一致からの順位projection、最初の本文一致、有限範囲の原文と行位置 | coreの完成`index_filter`と不変`note_excerpt`をapplicationが所有 | 同じbuildから上位200を完成公開。名前は先頭、本文は一致周辺の80行/16KiBを導き、保存対象にしない（ADR0094/0095） |
 | ノートのタグ | Markdown front matterの名前集合。解析状態と元のbyte位置を伴う | coreの不変`note_metadata`を`note_text`が所有 | 同じparser/byte patchからGUIの`replace_edit`と全体管理の完成本文を導き、共通保存へ渡す（ADR0092/0093） |
 | タグ付与の編集中session | 宛先・元本文snapshot・staged集合 | application | 面の開始/トグル/取消/適用。同一性と現本文の照合後だけ編集を返す（ADR0092） |
 | タグ全体管理 | 意図、準備済みの不変な一件変更、phase/位置/件別の適用結果 | application（`folio_state`） | 共通corpusの新しい読込から準備し、明示適用後に一件ずつ期待本文付きの共通保存へ渡す。公開済みと後処理失敗を分ける（ADR0093） |

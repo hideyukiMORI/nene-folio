@@ -115,7 +115,7 @@ ui-conformance-01は0違反、ui-unit-01 `--discovery` とcommands-unit-01 `--co
 UIAの同集合世代保持/新query失効、本文/selection/Undo不変、合成IME、無題取消と保存後の宛先再解決、
 最小560×360・3言語/3paletteのnative fixtureを追加し、実行前の段階である。
 
-この区間の補助失敗: history/notes backend、仮名command.jsonとglob検索、存在しないui_text_numberの候補確認、
+この区間の補助失敗: 仮名command.jsonとglob検索、存在しないui_text_numberの候補確認、
 整形後の関数宣言の文脈不一致によるatomic edit停止、Python既定cp932でのUTF-8読取失敗。
 後二者は書込前に停止し、明示UTF-8と実文脈へ訂正した。製品の成功検証へ数えていない。
 
@@ -170,7 +170,7 @@ native-copy-01は41 checksで成功。新しい非対話window stationでclipboa
 別描画の行番号がコピーへ混ざらないこと、scroll後もreadonly/非modifiedを確認した。ユーザーclipboardは未使用。
 両runは子/記録exit0、記録エラーなし。成功後に診断用stderr出力を除き、queryのnative focusも固定する。
 
-同区間の補助失敗: notes/history backend継続不通、存在しないdocs/SPEC.md（正本はrootのSPECIFICATION.md）、
+同区間の補助失敗: 存在しないdocs/SPEC.md（正本はrootのSPECIFICATION.md）、
 終了済みclang-tidy PIDの読取と不要なeng/verify glob。これらを製品試験成功とは数えない。
 FR-047、操作表、段階3a/3bの境界と#821統合済みのロードマップを更新した。保存schema/版は変更しない。
 
@@ -237,3 +237,20 @@ ARC-003でapplicationの追加memchrが許可シンボルに無いとして停�
 ci-fix-build-01/02、ci-fix-symbols-01（core/application 2 library・0違反）、ci-fix-unit-01 `--discovery`は
 すべて子/記録0・エラーなし。通常buildの確保注入0を、測定buildの78点の再実行とは扱わない。
 語の検証だけの修正でnative投影・操作は不変。新headを確定し、必須CIを再度要求する。
+
+### 最終CI・反映・整理（18:25確定）
+
+最終head `a987aa3a3d40b8c26272856c46fa29c6809aa41d`のCI43697860397は成功。53 CTest、分岐9834/10828（90.820096%）。
+正典merge-02は子/記録0・エラーなし。PR824はmain `c6c70e045438647815da01d3ba4de0f04a3d0008`へ統合し、C本体をff/cleanで確認した。
+同headの先行Draft check赤はDraft表示で、最終Readyの成功と混同しない。
+
+通常exeの正典反映reflection-01は子/記録0・エラーなし。反映前補助コマンドの一回目は34件snapshot後、
+外部processを呼ばないPowerShell scriptにLASTEXITCODEを確認して誤停止した。反映子は未起動。snapshotを検査し補助判定を修正して反映した。
+18:20:37の通常exeは1.3.2 / 1.3.2.0、SHA256 `485263b9495e9a27ea266353f2f9a890324b79d15361b2e420d09b406a45f606`。
+前後の実data34件のpath/bytes/hash/作成・更新日時は一致し、起動していない。稼働中のStore版は触れていない。
+
+全11,616ファイル・1,209,091,446 bytesを保全し、ZIP全entryを元fileへ再照合した。
+preserved-task.zipのSHA256は `0ec7978d341b33e403b7e0cb347d9c8c4dd2103de3887efcd9a757ec274fabe8`。
+絶対path、最終head/squash tree一致、未保存/未追跡なし、ignoredを含む全file保全、リンク/稼働参照なしを確認し、
+18:24:39に823の追加worktree/outputsを整理した。branch/commitは保持。旧保持領域とPR810は未変更。
+確定原本はD:/NeNeFolio/agents/discovery-design-20261115/completion.json、詳細はpost-integration.mdとcleanup-audit.json。

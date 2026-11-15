@@ -12,7 +12,7 @@ struct index_filter_query
     const struct note_tags *_Nullable tags; /* Omitted means no tag restriction. */
     enum tag_match_mode mode;
     enum index_match_scope scope;
-    bool favorites_only;  /* NAMES only. NAME_BODY preserves its existing empty-query contract. */
-    bool favorites_first; /* NAMES only. */
+    bool favorites_only;  /* NAMES/BODY. NAME_BODY preserves its existing query contract. */
+    bool favorites_first; /* NAMES/BODY. */
 };
 #endif

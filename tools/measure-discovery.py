@@ -14,14 +14,19 @@ import time
 
 
 def main() -> int:
-    if len(sys.argv) != 2:
-        raise SystemExit("usage: measure-discovery.py <tags_native_tests.exe>")
+    if len(sys.argv) not in (2, 3) or (len(sys.argv) == 3 and sys.argv[2] != "--body"):
+        raise SystemExit("usage: measure-discovery.py <tags_native_tests.exe> [--body]")
     executable = Path(sys.argv[1]).resolve(strict=True)
+    body = len(sys.argv) == 3
     phases = ("ready", "matched", "preview", "warm", "selected", "cached")
     fields = ("openAndNameMatchMs", "initialSourceAndPreviewMs", "twoWarmQueriesMs",
               "newSourceAndPreviewMs", "cachedSourceAndPreviewMs")
+    if body:
+        phases = ("ready", "read", "matched", "preview", "warm", "selected")
+        fields = ("openAndFreshBodyPassMs", "bodyMatchAndPositionsMs", "matchedPreviewMs",
+                  "twoWarmBodyQueriesMs", "selectedMatchPreviewMs")
     with subprocess.Popen(
-        [str(executable), "--discovery-measure"], stdin=subprocess.PIPE,
+        [str(executable), "--body-discovery-measure" if body else "--discovery-measure"], stdin=subprocess.PIPE,
         stdout=subprocess.PIPE, text=True, encoding="utf-8", bufsize=1,
         creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
     ) as child:

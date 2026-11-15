@@ -39,7 +39,9 @@ index_filter_build_readiness(const struct index_filter_build *_Nonnull build);
 [[nodiscard]] struct note_ref
 index_filter_build_ref(const struct index_filter_build *_Nonnull sealed, size_t index);
 /* READY is required. NAME_BODY has no ranked projection. NAMES retains all matches in ledger
- * order and separately exposes at most index_ranked_limit notes in stable rank order. */
+ * order and separately exposes at most index_ranked_limit notes in stable rank order.
+ * BODY uses the same projection, ordered only by the optional favorite group and ledger order;
+ * BODY_FIRST coordinates are complete before READY and survive removal/renumbering. */
 [[nodiscard]] size_t
 index_filter_build_ranked_count(const struct index_filter_build *_Nonnull sealed);
 [[nodiscard]] struct index_ranked_note

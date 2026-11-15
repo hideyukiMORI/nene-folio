@@ -1,5 +1,6 @@
 #ifndef NENEFOLIO_DISCOVERY_SUMMARY_H
 #define NENEFOLIO_DISCOVERY_SUMMARY_H
+#include "discovery_mode.h"
 #include "discovery_phase.h"
 #include "discovery_preview.h"
 #include "folio_state_outcome.h"
@@ -8,6 +9,7 @@
 struct discovery_summary
 {
     enum discovery_phase phase;
+    enum discovery_mode mode;
     enum discovery_preview preview;
     enum folio_state_outcome notice;
     size_t total;

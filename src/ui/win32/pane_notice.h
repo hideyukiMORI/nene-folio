@@ -5,6 +5,7 @@
 enum pane_notice : unsigned char
 {
     PANE_NOTICE_NONE,
+    PANE_NOTICE_DISCOVERY_CHANGED,
     /* ノートをごみ箱へ送り終えた（ADR 0039 の補正 4） */
     PANE_NOTICE_COMMAND_RESULT,
     /* 編集のまま編集で保てないノートへ切り替え、閲覧で開いた（#242・#258） */

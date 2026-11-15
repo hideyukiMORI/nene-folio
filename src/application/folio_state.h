@@ -38,6 +38,7 @@ folio_state_tag_management_phase(const struct folio_state *_Nonnull state);
 
 #include "category_rename_target.h"
 #include "discovery_summary.h"
+#include "discovery_target_check.h"
 #include "drawer_cursor.h"
 #include "drawer_metrics.h"
 #include "folio_command.h"
@@ -63,6 +64,7 @@ folio_state_tag_management_phase(const struct folio_state *_Nonnull state);
 #include "note_order.h"
 #include "note_ref.h"
 #include "note_scope.h"
+#include "note_snippet_clip.h"
 #include "note_times_view.h"
 #include "pane_mode.h"
 
@@ -87,6 +89,7 @@ struct note_name;
 struct note_text;
 struct note_identity;
 struct note_excerpt;
+struct discovery_target;
 /* Identity copy is independent of row numbers and survives a save prompt. */
 [[nodiscard]] enum folio_state_outcome
 folio_state_capture_note(const struct folio_state *_Nonnull state, struct note_ref ref,
@@ -103,6 +106,8 @@ void folio_state_close_discovery(struct folio_state *_Nonnull state);
 folio_state_query_discovery(struct folio_state *_Nonnull state, const char16_t *_Nonnull units,
                             size_t count);
 [[nodiscard]] enum folio_state_outcome
+folio_state_set_discovery_mode(struct folio_state *_Nonnull state, enum discovery_mode mode);
+[[nodiscard]] enum folio_state_outcome
 folio_state_continue_discovery(struct folio_state *_Nonnull state);
 [[nodiscard]] bool folio_state_discovery_work_pending(const struct folio_state *_Nonnull state);
 [[nodiscard]] struct discovery_summary
@@ -112,6 +117,19 @@ folio_state_discovery_summary(const struct folio_state *_Nonnull state);
 folio_state_discovery_row(const struct folio_state *_Nonnull state, size_t index);
 [[nodiscard]] enum folio_state_outcome
 folio_state_select_discovery(struct folio_state *_Nonnull state, size_t index);
+/* BODY/READY only. out has note_excerpt_snippet_capacity bytes. No IO or mutation. */
+[[nodiscard]] enum folio_state_outcome
+folio_state_discovery_snippet(const struct folio_state *_Nonnull state, size_t index,
+                              char *_Nonnull out, struct note_snippet_clip *_Nonnull clip);
+/* Own the current result's identity, source and position before any departure prompt. */
+[[nodiscard]] enum folio_state_outcome
+folio_state_prepare_discovery_target(const struct folio_state *_Nonnull state,
+                                     struct discovery_target *_Nullable *_Nonnull out);
+/* Only CURRENT writes the EDIT paragraph position. UI must also require a ready native pane. */
+[[nodiscard]] enum discovery_target_check
+folio_state_check_discovery_target(const struct folio_state *_Nonnull state,
+                                   const struct discovery_target *_Nonnull target,
+                                   struct note_search_span *_Nonnull selection);
 /* Optional excerpt is available only in PREVIEW_READY, until the next session mutation. */
 [[nodiscard]] const struct note_excerpt *_Nullable folio_state_discovery_excerpt(
     const struct folio_state *_Nonnull state);
