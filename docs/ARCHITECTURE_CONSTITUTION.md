@@ -90,6 +90,8 @@
 | 本文検索の確定要求 | 宛先identity、原文snapshot、一致位置の短命な不変値 | applicationが生成するcoreの`discovery_target` | 同じ完成集合/corpusからcopyし、保存prompt後の採用本文と一致する時だけ位置を適用する（ADR0095） |
 | 保存promptを越えるノート宛先 | 検証済みカテゴリ名と台帳stemの所有copy | coreの不変`note_identity` | 拡張子を再解釈せず、applicationの同一resolveで現在台帳へ戻す。番号を保存prompt越しに再利用しない（ADR0094） |
 | 検索の順位と原文preview | 台帳順一致からの順位projection、最初の本文一致、有限範囲の原文と行位置 | coreの完成`index_filter`と不変`note_excerpt`をapplicationが所有 | 同じbuildから上位200を完成公開。名前は先頭、本文は一致周辺の80行/16KiBを導き、保存対象にしない（ADR0094/0095） |
+| 検索の装飾演出 | 開く/選択の有限frame、処理中の線、単一timerと再arm待ち | ui/win32（`folio_window`） | 時計・本文・検索状態を持ち直さず、同じ線の描画だけを変える。検索work中のtickはtimerを破棄し、既存idleの一単位後だけ再arm。抑止/失敗/終了で静止する（ADR0096） |
+| 動作の保存選択と実効値 | 設定版7のmotionとOS UNKNOWN/DISABLED/ALLOWED | coreの`folio_settings`と`appearance_snapshot`をapplicationが所有 | OS観測はappearance_adapterだけ。保存ON/外観READY/OS許可/標準コントラストの時だけ有効。OS失敗は保存値を変えない（ADR0096） |
 | ノートのタグ | Markdown front matterの名前集合。解析状態と元のbyte位置を伴う | coreの不変`note_metadata`を`note_text`が所有 | 同じparser/byte patchからGUIの`replace_edit`と全体管理の完成本文を導き、共通保存へ渡す（ADR0092/0093） |
 | タグ付与の編集中session | 宛先・元本文snapshot・staged集合 | application | 面の開始/トグル/取消/適用。同一性と現本文の照合後だけ編集を返す（ADR0092） |
 | タグ全体管理 | 意図、準備済みの不変な一件変更、phase/位置/件別の適用結果 | application（`folio_state`） | 共通corpusの新しい読込から準備し、明示適用後に一件ずつ期待本文付きの共通保存へ渡す。公開済みと後処理失敗を分ける（ADR0093） |
@@ -97,7 +99,7 @@
 | 文書の一覧（索引） | `data/<カテゴリ>/*.md` の存在と順序 | application（`folio_state`） | 起動時の走査と保存後の再読込だけ |
 | カテゴリの色・順序・展開状態 | `data/categories.json` | application | 右クリック・ドラッグ・トグルの意図を受けた reducer |
 | 文書の手動順と星 | `data/<カテゴリ>/index.json`版2 | core（`note_ledger`）をapplicationが所有 | ドラッグ・星の意図から新台帳を作り、保存成功後に採用する。派生する優先順は同じ台帳から作る（ADR0090） |
-| 文書の表示順設定 | MANUAL / FAVORITES_FIRST。設定版6のnote_order | core（`folio_settings`）をapplicationが所有 | 共通設定保存の成功後に採用し、手動順は保持する（ADR0090） |
+| 文書の表示順設定 | MANUAL / FAVORITES_FIRST。設定版6からのnote_order | core（`folio_settings`）をapplicationが所有 | 共通設定保存の成功後に採用し、手動順は保持する（ADR0090） |
 | 星だけの絞り込み | ALL / FAVORITES。起動時ALLの実行中状態 | application（`folio_state`） | 同じdrawer_sourceで検索語とのAND・展開・可視行を判定する。本文は再投入しない（ADR0090） |
 | ノートの保存先 | 現在root・次回設定・初回/復旧/稼働phase | application（`storage_state`） | `storage_port`の検証/保存成功後に採用する。稼働中は次回設定だけ更新し、現在のpersistenceと本文を変えない（ADR0077） |
 | 配布形式と保存先のOS配置 | package identity・Known Folder・起動設定のnative path | adapters/win32（`storage_adapter`） | 起動時に一度解決し、純粋な`storage_path`をapplicationへ渡す（ADR0077） |

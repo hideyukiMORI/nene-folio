@@ -2,6 +2,7 @@
  * 版 1・版 2 からの移行・版 3 の往復・既定値・拒む形・未知の版と、folio_theme_choice_resolve の
  * 6 通り・folio_language_count の一致・ui_font_face と ui_font_fallback_face の 3 値・
  * ui_font_pick の 3 段を確かめる。 */
+#include "allocation_probe.h"
 #include "folio_language.h"
 #include "folio_settings.h"
 #include "folio_theme.h"
@@ -177,9 +178,9 @@ static void expect_migration(const char *_Nonnull text, const char *_Nonnull des
     folio_settings_write(settings, writer);
     folio_settings_destroy(settings);
     require(json_writer_finish(writer) == JSON_WRITER_ACCEPTED, "the document is complete");
-    require(strstr(json_writer_text(writer), "\"version\": 6") != nullptr &&
+    require(strstr(json_writer_text(writer), "\"version\": 7") != nullptr &&
                 strstr(json_writer_text(writer), "\"language\": \"ja\"") != nullptr,
-            "writing always produces version 6");
+            "writing always produces version 7");
     json_writer_destroy(writer);
 }
 
@@ -247,7 +248,7 @@ static void verify_parse(void)
 /* 黙って既定値へ落とさない形（決定 1）。無い・壊れているは呼び出し側が区別する。 */
 static void verify_refusals(void)
 {
-    expect_refusal("{\"version\": 7, \"number\": true, \"theme\": \"dark\", "
+    expect_refusal("{\"version\": 8, \"number\": true, \"theme\": \"dark\", "
                    "\"language\": \"ja\"}",
                    FOLIO_SETTINGS_UNSUPPORTED_VERSION,
                    "a newer version is refused, not downgraded");
@@ -340,9 +341,9 @@ static void verify_catalog_schema(void)
     folio_settings_write(settings, writer);
     folio_settings_destroy(settings);
     require(json_writer_finish(writer) == JSON_WRITER_ACCEPTED &&
-                strstr(json_writer_text(writer), "\"version\": 6") != nullptr &&
+                strstr(json_writer_text(writer), "\"version\": 7") != nullptr &&
                 strstr(json_writer_text(writer), "\"language\": \"en\"") != nullptr,
-            "writing migrated version 3 preserves its language in version 6");
+            "writing migrated version 3 preserves its language in version 7");
     json_writer_destroy(writer);
 }
 
@@ -466,8 +467,126 @@ static void verify_note_order_settings(void)
                    FOLIO_SETTINGS_MALFORMED, "order vocabulary is closed");
 }
 
+static void verify_motion_legacy(void)
+{
+    const char *legacy[] = {
+        version_one,
+        version_two,
+        version_three,
+        "{\"version\":4,\"number\":true,\"theme\":\"dark\",\"language\":\"en\"}",
+        "{\"version\":5,\"number\":true,\"theme\":\"dark\",\"language\":\"en\",\"minimap\":false}",
+        "{\"version\":6,\"number\":true,\"theme\":\"dark\",\"language\":\"en\",\"minimap\":false,"
+        "\"note_order\":\"manual\"}"};
+    for (size_t at = 0; at < sizeof legacy / sizeof legacy[0]; ++at)
+    {
+        struct folio_settings *settings = nullptr;
+        require(folio_settings_parse(legacy[at], strlen(legacy[at]), &settings) ==
+                        FOLIO_SETTINGS_READY &&
+                    folio_settings_motion(settings),
+                "all six legacy schemas gain motion without changing their data");
+        folio_settings_destroy(settings);
+    }
+}
+
+static void verify_motion_refusals(void)
+{
+    const char *suffixes[] = {"",
+                              ",\"motion\":1",
+                              ",\"motion\":null",
+                              ",\"motion\":\"true\"",
+                              ",\"Motion\":true",
+                              ",\"motion\":true,\"motion\":false",
+                              ",\"motion\":true,\"extra\":false"};
+    const char *prefix = "{\"version\":7,\"number\":false,\"theme\":\"system\",\"language\":\"ja\","
+                         "\"minimap\":true,\"note_order\":\"manual\"";
+    for (size_t at = 0; at < sizeof suffixes / sizeof suffixes[0]; ++at)
+    {
+        char text[256];
+        size_t count = strlen(prefix);
+        memcpy(text, prefix, count);
+        memcpy(text + count, suffixes[at], strlen(suffixes[at]));
+        count += strlen(suffixes[at]);
+        text[count++] = '}';
+        text[count] = '\0';
+        expect_refusal(text, FOLIO_SETTINGS_MALFORMED, "version seven motion has one exact shape");
+    }
+    expect_refusal("{\"version\":7,\"number\":false,\"theme\":\"system\",\"language\":\"ja\","
+                   "\"minimap\":true,\"motion\":true,\"note_order\":\"manual\"}",
+                   FOLIO_SETTINGS_MALFORMED, "motion cannot precede note order");
+    expect_refusal("{\"version\":8,\"number\":false}", FOLIO_SETTINGS_UNSUPPORTED_VERSION,
+                   "a later schema is not interpreted as version seven");
+}
+
+static void verify_motion_roundtrip(void)
+{
+    const char *raw = "{\"version\":7,\"number\":true,\"theme\":\"dark\",\"language\":\"en\","
+                      "\"minimap\":false,\"note_order\":\"manual\",\"motion\":false}";
+    struct folio_settings *settings = nullptr;
+    require(folio_settings_parse(raw, strlen(raw), &settings) == FOLIO_SETTINGS_READY &&
+                !folio_settings_motion(settings),
+            "persisted motion OFF is restored");
+    struct folio_settings *copies[5] = {nullptr};
+    require(folio_settings_with_number(settings, false, &copies[0]) == FOLIO_SETTINGS_READY &&
+                folio_settings_with_minimap(settings, true, &copies[1]) == FOLIO_SETTINGS_READY &&
+                folio_settings_with_theme(settings, FOLIO_THEME_CHOICE_LIGHT, &copies[2]) ==
+                    FOLIO_SETTINGS_READY &&
+                folio_settings_with_language(settings, FOLIO_LANGUAGE_JA, &copies[3]) ==
+                    FOLIO_SETTINGS_READY &&
+                folio_settings_with_note_order(settings, NOTE_ORDER_FAVORITES_FIRST, &copies[4]) ==
+                    FOLIO_SETTINGS_READY,
+            "existing setting changes can derive from motion OFF");
+    for (size_t at = 0; at < sizeof copies / sizeof copies[0]; ++at)
+    {
+        require(!folio_settings_motion(copies[at]), "every existing setting copy keeps motion OFF");
+        folio_settings_destroy(copies[at]);
+    }
+    struct json_writer *writer = nullptr;
+    require(json_writer_create(&writer) == JSON_WRITER_ACCEPTED, "motion writer");
+    folio_settings_write(settings, writer);
+    require(json_writer_finish(writer) == JSON_WRITER_ACCEPTED, "motion document is complete");
+    struct folio_settings *reread = nullptr;
+    require(folio_settings_parse(json_writer_text(writer), json_writer_length(writer), &reread) ==
+                    FOLIO_SETTINGS_READY &&
+                !folio_settings_motion(reread) && folio_settings_number(reread) &&
+                !folio_settings_minimap(reread) &&
+                folio_settings_theme(reread) == FOLIO_THEME_CHOICE_DARK &&
+                folio_settings_language(reread) == FOLIO_LANGUAGE_EN &&
+                folio_settings_note_order(reread) == NOTE_ORDER_MANUAL,
+            "version seven roundtrip keeps every preference");
+    folio_settings_destroy(reread);
+    json_writer_destroy(writer);
+    verify_token_insertions(raw);
+    folio_settings_destroy(settings);
+}
+
+static void verify_motion_allocation(void)
+{
+    struct folio_settings *original = nullptr;
+    require(folio_settings_default(&original) == FOLIO_SETTINGS_READY, "motion source");
+    struct folio_settings *changed = original;
+    allocation_probe_fail_at(1);
+    enum folio_settings_outcome result = folio_settings_with_motion(original, false, &changed);
+    size_t calls = allocation_probe_calls();
+    allocation_probe_fail_at(0);
+    if (calls != 0)
+        require(result == FOLIO_SETTINGS_OUT_OF_MEMORY && changed == original,
+                "motion allocation refusal preserves the caller's old owner");
+    if (calls == 0)
+    {
+        require(result == FOLIO_SETTINGS_READY && !folio_settings_motion(changed),
+                "motion copy commits the new preference");
+        folio_settings_destroy(changed);
+    }
+    require(folio_settings_motion(original), "motion factory never mutates its source");
+    folio_settings_destroy(original);
+}
+
 void run_settings_tests(void)
 {
+    verify_motion_legacy();
+    verify_motion_refusals();
+    verify_motion_roundtrip();
+    verify_motion_allocation();
     verify_note_order_settings();
     verify_fixed_tokens();
     verify_minimap_schema();

@@ -244,6 +244,12 @@ folio_state_select_notice(const struct folio_state *_Nonnull state);
  * 値の所有者はここ 1 つで、UI は第 2 の真偽を持たない（ARC-004）。 */
 /* ミニマップ表示設定。書込成功後だけ採用する（ADR0084）。 */
 [[nodiscard]] bool folio_state_minimap(const struct folio_state *_Nonnull state);
+/* 保存選択、OS観測の適用可否、その積。装飾以外の操作可否に使わない（ADR0096）。 */
+[[nodiscard]] bool folio_state_motion(const struct folio_state *_Nonnull state);
+[[nodiscard]] bool folio_state_motion_available(const struct folio_state *_Nonnull state);
+[[nodiscard]] bool folio_state_motion_enabled(const struct folio_state *_Nonnull state);
+[[nodiscard]] enum folio_state_outcome folio_state_set_motion(struct folio_state *_Nonnull state,
+                                                              bool motion);
 [[nodiscard]] enum folio_state_outcome folio_state_set_minimap(struct folio_state *_Nonnull state,
                                                                bool minimap);
 [[nodiscard]] bool folio_state_number(const struct folio_state *_Nonnull state);

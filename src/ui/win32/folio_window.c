@@ -178,6 +178,16 @@ struct folio_window
     bool discovery_preview_reveal;
     uint64_t discovery_revision;
     uint64_t discovery_results_revision;
+    UINT_PTR discovery_timer;
+    unsigned char discovery_open_frames;
+    unsigned char discovery_selection_frames;
+    unsigned char discovery_busy_tick;
+    unsigned char discovery_busy_delay;
+    bool discovery_busy;
+    bool discovery_motion_wait;
+    bool discovery_motion_failed;
+    uint64_t discovery_motion_revision;
+    RECT discovery_motion_row;
     /* 置換の欄の 2 つの EDIT（0 = パターン・1 = 置換文字列）。入力面の「自分の欄」は
      * この 2 つと command_input の集合になる（ADR 0016 の 2026-09-22 の補正）。 */
     HWND _Nullable replace_inputs[replace_input_count];
@@ -267,6 +277,7 @@ struct folio_window
 
 constexpr UINT_PTR minimap_timer = 84;
 constexpr UINT_PTR image_timer = 85;
+constexpr UINT_PTR discovery_motion_timer = 86;
 constexpr UINT minimap_delay = 120;
 constexpr int base_minimap_width = 64;
 constexpr int base_minimap_gap = 8;
@@ -305,7 +316,8 @@ static const struct
     {UI_TEXT_SETTINGS_MINIMAP, SETTINGS_ROW_MINIMAP, 1, 3, 0, ACCESSIBLE_SURFACE_CLOSE},
     {UI_TEXT_SETTINGS_FAVORITES_FIRST, SETTINGS_ROW_FAVORITES_FIRST, 1, 4, 0,
      ACCESSIBLE_SURFACE_CLOSE},
-    {UI_TEXT_STORAGE_ENTRY, SETTINGS_ROW_STORAGE, 0, 5, 0, ACCESSIBLE_SURFACE_STORAGE},
+    {UI_TEXT_SETTINGS_MOTION, SETTINGS_ROW_MOTION, 1, 5, 0, ACCESSIBLE_SURFACE_CLOSE},
+    {UI_TEXT_STORAGE_ENTRY, SETTINGS_ROW_STORAGE, 0, 6, 0, ACCESSIBLE_SURFACE_STORAGE},
 };
 static const struct
 {
@@ -1015,6 +1027,13 @@ static bool discovery_navigate(struct folio_window *_Nonnull self, WPARAM key);
 static bool discovery_tab(struct folio_window *_Nonnull self);
 static bool discovery_return(struct folio_window *_Nonnull self);
 static void discovery_select(struct folio_window *_Nonnull self, size_t index);
+static void discovery_motion_settle(struct folio_window *_Nonnull self);
+static void discovery_motion_reset(struct folio_window *_Nonnull self);
+static void discovery_motion_sync(struct folio_window *_Nonnull self);
+static void discovery_motion_tick(struct folio_window *_Nonnull self);
+static void discovery_motion_select(struct folio_window *_Nonnull self);
+static bool discovery_motion_allowed(const struct folio_window *_Nonnull self);
+static void discovery_motion_invalidate(const struct folio_window *_Nonnull self);
 static void discovery_action(struct folio_window *_Nonnull self, size_t slot);
 static bool discovery_button_enabled(const struct folio_window *_Nonnull self, size_t slot);
 static bool discovery_button_visible(const struct folio_window *_Nonnull self, size_t slot);
@@ -1512,6 +1531,8 @@ static RECT settings_item_rect(const struct folio_window *_Nonnull self, size_t 
     bounds.top += (group > 0 ? theme + (group - 1) * stride : 0) - (int)self->command_first;
     if (group > 2)
         bounds.top -= (group - 2) * (stride - height - gap);
+    if (group > 5)
+        bounds.top += self->settings_metrics.motion_help;
     if (settings_rows[index].kind == SETTINGS_ROW_HEADING)
     {
         bounds.bottom = bounds.top + label;
@@ -1526,10 +1547,13 @@ static RECT settings_item_rect(const struct folio_window *_Nonnull self, size_t 
     if (settings_rows[index].kind == SETTINGS_ROW_NUMBER ||
         settings_rows[index].kind == SETTINGS_ROW_MINIMAP ||
         settings_rows[index].kind == SETTINGS_ROW_FAVORITES_FIRST ||
+        settings_rows[index].kind == SETTINGS_ROW_MOTION ||
         settings_rows[index].kind == SETTINGS_ROW_STORAGE)
     {
         bounds.top += settings_rows[index].position * (height + gap);
         bounds.bottom = bounds.top + height;
+        if (settings_rows[index].kind == SETTINGS_ROW_MOTION)
+            bounds.bottom += self->settings_metrics.motion_help;
         return bounds;
     }
     int value = settings_rows[index].position;
@@ -2093,6 +2117,7 @@ static void arrange_command_contents(struct folio_window *_Nonnull self)
 /* 深さはDialogBoxの前後の再入も塞ぐ。準備失敗でもendまでは深さを保持する。 */
 static bool begin_native_modal(struct folio_window *_Nonnull self)
 {
+    discovery_motion_settle(self);
     self->native_modal_depth += 1;
     refresh_modal_availability(self);
     return self->settings_backdrop != nullptr && arrange_settings_backdrop(self);
@@ -2107,6 +2132,7 @@ static bool end_native_modal(struct folio_window *_Nonnull self)
         ShowWindow(self->settings_backdrop, SW_HIDE);
     arrange_command_contents(self);
     refresh_modal_availability(self);
+    discovery_motion_sync(self);
     if (self->native_modal_depth > 0)
     {
         self->modal_arrange_failed = self->modal_arrange_failed || !restored;
@@ -2123,11 +2149,13 @@ static void native_modal_resource_failure(struct folio_window *_Nonnull self)
     if (self->close_phase == CLOSE_PHASE_REQUESTED)
         return;
     self->native_modal_depth += 1;
+    discovery_motion_settle(self);
     refresh_modal_availability(self);
     failure_box_show(modal_owner_current(self->modal_owner), FOLIO_STATE_OUT_OF_MEMORY, self->state,
                      nullptr);
     self->native_modal_depth -= 1;
     refresh_modal_availability(self);
+    discovery_motion_sync(self);
 }
 
 static struct name_prompt_result
@@ -4361,6 +4389,8 @@ static void draw_command_guidance(const struct folio_window *_Nonnull self, HDC 
     RECT first = command_tab_rect(self, 0);
     RECT group = first;
     group.right = command_tab_rect(self, 1).right;
+    if (discovery_surface(self) && !RectVisible(device, &group))
+        return;
     ui_part_frame_group(device, &self->palette, group);
     for (size_t index = 0; index < 2; ++index)
     {
@@ -4483,6 +4513,8 @@ static bool settings_row_current(const struct folio_window *_Nonnull self, size_
         return folio_state_note_order(self->state) == NOTE_ORDER_FAVORITES_FIRST;
     case SETTINGS_ROW_MINIMAP:
         return folio_state_minimap(self->state);
+    case SETTINGS_ROW_MOTION:
+        return folio_state_motion(self->state);
     case SETTINGS_ROW_NUMBER:
         return (unsigned char)folio_state_number(self->state) == settings_rows[index].value;
     }
@@ -4505,7 +4537,57 @@ static bool settings_row_toggle(size_t index)
 {
     return settings_rows[index].kind == SETTINGS_ROW_NUMBER ||
            settings_rows[index].kind == SETTINGS_ROW_MINIMAP ||
+           settings_rows[index].kind == SETTINGS_ROW_MOTION ||
            settings_rows[index].kind == SETTINGS_ROW_FAVORITES_FIRST;
+}
+
+static enum ui_text settings_motion_help(const struct folio_window *_Nonnull self)
+{
+    return folio_state_motion_available(self->state) ? UI_TEXT_MOTION_HELP : UI_TEXT_MOTION_STATIC;
+}
+
+static void draw_settings_motion_help(const struct folio_window *_Nonnull self, HDC device,
+                                      RECT row)
+{
+    UINT dpi = GetDpiForWindow(self->handle);
+    row.top += scale(base_settings_item_height, dpi);
+    row.left += scale(32, dpi);
+    row.right -= scale(4, dpi);
+    SetTextColor(device, self->palette.dialog_secondary);
+    (void)wrapped_text(device,
+                       ui_text_line(settings_motion_help(self), folio_state_language(self->state)),
+                       row, true);
+}
+
+static RECT draw_settings_choice(const struct folio_window *_Nonnull self, HDC device, RECT row,
+                                 size_t index)
+{
+    UINT dpi = GetDpiForWindow(self->handle);
+    struct ui_part_paint part = {.bounds = row,
+                                 .dpi = dpi,
+                                 .style = UI_PART_STYLE_COMMAND,
+                                 .focus_inside = true,
+                                 .selected = settings_row_current(self, index),
+                                 .focused = (self->focus_cues || self->focus_cues_always) &&
+                                            GetFocus() == self->command_layer &&
+                                            index == self->command_selection};
+    ui_part_draw(device, &self->palette, &part);
+    if (settings_rows[index].kind == SETTINGS_ROW_MOTION)
+    {
+        draw_settings_motion_help(self, device, row);
+        row.bottom = row.top + scale(base_settings_item_height, dpi);
+    }
+    if (settings_row_toggle(index))
+    {
+        draw_settings_mark(self, device, row, settings_row_current(self, index));
+    }
+    if (!settings_row_toggle(index) && settings_row_current(self, index))
+    {
+        RECT mark = settings_mark_rect(self, row);
+        icon_paint_fill(device, mark, ICON_PAINT_SELECTION, self->palette.current_text);
+    }
+
+    return row;
 }
 
 static void draw_settings_row(const struct folio_window *_Nonnull self, HDC device, RECT row,
@@ -4514,26 +4596,7 @@ static void draw_settings_row(const struct folio_window *_Nonnull self, HDC devi
     UINT dpi = GetDpiForWindow(self->handle);
     bool choice = settings_row_choice(index);
     if (choice)
-    {
-        struct ui_part_paint part = {.bounds = row,
-                                     .dpi = dpi,
-                                     .style = UI_PART_STYLE_COMMAND,
-                                     .focus_inside = true,
-                                     .selected = settings_row_current(self, index),
-                                     .focused = (self->focus_cues || self->focus_cues_always) &&
-                                                GetFocus() == self->command_layer &&
-                                                index == self->command_selection};
-        ui_part_draw(device, &self->palette, &part);
-        if (settings_row_toggle(index))
-        {
-            draw_settings_mark(self, device, row, settings_row_current(self, index));
-        }
-        if (!settings_row_toggle(index) && settings_row_current(self, index))
-        {
-            RECT mark = settings_mark_rect(self, row);
-            icon_paint_fill(device, mark, ICON_PAINT_SELECTION, self->palette.current_text);
-        }
-    }
+        row = draw_settings_choice(self, device, row, index);
     if (settings_rows[index].kind == SETTINGS_ROW_THEME)
     {
         draw_settings_theme(self, device, row);
@@ -5254,8 +5317,9 @@ static void draw_floating_header(const struct folio_window *_Nonnull self, HDC d
 {
     SetTextColor(device, self->palette.current_text);
     RECT title = surface_frame_rect(self, UI_PART_SURFACE_TITLE_TEXT);
-    draw_units(device, ui_text_line(label, folio_state_language(self->state)), title,
-               DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
+    if (RectVisible(device, &title))
+        draw_units(device, ui_text_line(label, folio_state_language(self->state)), title,
+                   DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
     draw_surface_button(self, device, ACCESSIBLE_SURFACE_CLOSE);
 }
 
@@ -6642,6 +6706,19 @@ static bool prepare_tag_metrics(struct folio_window *_Nonnull self)
     return true;
 }
 
+static int settings_motion_help_height(const struct folio_window *_Nonnull self, HDC device,
+                                       RECT bounds)
+{
+    UINT dpi = GetDpiForWindow(self->handle);
+    bounds.left += scale(32, dpi);
+    bounds.right -= scale(4, dpi);
+    enum folio_language language = folio_state_language(self->state);
+    int normal = wrapped_text(device, ui_text_line(UI_TEXT_MOTION_HELP, language), bounds, false);
+    int unavailable =
+        wrapped_text(device, ui_text_line(UI_TEXT_MOTION_STATIC, language), bounds, false);
+    return (normal > unavailable ? normal : unavailable) + scale(4, dpi);
+}
+
 static bool prepare_surface_metrics(struct folio_window *_Nonnull self)
 {
     if (command_keys(self))
@@ -6665,6 +6742,7 @@ static bool prepare_surface_metrics(struct folio_window *_Nonnull self)
     HGDIOBJ previous = SelectObject(device, self->mono_font);
     SetTextCharacterExtra(device, scale(base_tracking, metrics.dpi));
     bool ready = band_outcomes_height(device, metrics.language, bounds, &metrics.notice);
+    metrics.motion_help = settings_motion_help_height(self, device, bounds);
     metrics.settings_footer =
         metrics.notice + surface_footer_text_height(self, device, bounds, false);
     metrics.themes_footer = metrics.notice +
@@ -7508,6 +7586,7 @@ static void change_surface_mode(struct folio_window *_Nonnull self, enum command
 [[nodiscard]] static bool set_command_surface(struct folio_window *_Nonnull self,
                                               enum command_surface_mode mode)
 {
+    discovery_motion_settle(self);
     if (self->command_surface == COMMAND_SURFACE_THEMES && mode != COMMAND_SURFACE_THEMES &&
         !preview_theme(self, folio_state_theme_choice(self->state)))
         return false;
@@ -8398,6 +8477,21 @@ static void apply_number(struct folio_window *_Nonnull self, bool number)
     redraw_command_layer(self);
 }
 
+static void apply_motion(struct folio_window *_Nonnull self)
+{
+    enum folio_state_outcome outcome =
+        folio_state_set_motion(self->state, !folio_state_motion(self->state));
+    if (outcome != FOLIO_STATE_READY)
+    {
+        report_outcome(self, outcome);
+        return;
+    }
+    clear_command_status(self);
+    discovery_motion_reset(self);
+    redraw_command_layer(self);
+    accessibility_host_schedule(self->accessibility);
+}
+
 static void apply_minimap(struct folio_window *_Nonnull self)
 {
     enum folio_state_outcome outcome =
@@ -8567,6 +8661,7 @@ static void recolor_window(struct folio_window *_Nonnull self)
  * 設定画面は採用しても閉じず、印を移したまま残る（決定 7）。 */
 static void apply_theme(struct folio_window *_Nonnull self, enum folio_theme_choice choice)
 {
+    discovery_motion_reset(self);
     if (pane_streaming(self))
     {
         return;
@@ -8618,6 +8713,7 @@ static void relanguage_window(struct folio_window *_Nonnull self)
  * 設定画面は採用しても閉じず、印を移したまま残る（apply_theme と同じ流儀）。 */
 static void apply_language(struct folio_window *_Nonnull self, enum folio_language language)
 {
+    discovery_motion_reset(self);
     if (pane_streaming(self))
     {
         return;
@@ -10403,6 +10499,9 @@ static void adopt_settings_row(struct folio_window *_Nonnull self)
     case SETTINGS_ROW_MINIMAP:
         apply_minimap(self);
         return;
+    case SETTINGS_ROW_MOTION:
+        apply_motion(self);
+        return;
     case SETTINGS_ROW_NUMBER:
         apply_number(self, !folio_state_number(self->state));
         return;
@@ -12034,10 +12133,12 @@ static void update_command_composition(struct folio_window *_Nonnull self, UINT 
     if (message == WM_IME_STARTCOMPOSITION)
     {
         self->command_composing = true;
+        discovery_motion_settle(self);
     }
     if (message == WM_IME_ENDCOMPOSITION)
     {
         self->command_composing = false;
+        discovery_motion_sync(self);
     }
 }
 
@@ -12148,6 +12249,7 @@ static size_t settings_vertical_choice(const struct folio_window *_Nonnull self,
             settings_rows[index].kind == SETTINGS_ROW_NUMBER ||
             settings_rows[index].kind == SETTINGS_ROW_MINIMAP ||
             settings_rows[index].kind == SETTINGS_ROW_FAVORITES_FIRST ||
+            settings_rows[index].kind == SETTINGS_ROW_MOTION ||
             settings_rows[index].kind == SETTINGS_ROW_THEME ||
             settings_rows[index].kind == SETTINGS_ROW_STORAGE)
         {
@@ -13342,6 +13444,7 @@ static bool refresh_window_icons(struct folio_window *_Nonnull self, UINT dpi)
 /* OS が勧める矩形へ移し、字の大きさを取り直す（FR-013）。 */
 static void apply_dpi(struct folio_window *_Nonnull self, LPARAM lparam)
 {
+    discovery_motion_reset(self);
     cancel_part_press(self);
     close_geometry_menu(self);
     const RECT *_Nonnull suggested = (const RECT *)lparam;
@@ -13407,8 +13510,33 @@ static LRESULT color_command_input(HWND window, UINT message, WPARAM wparam, LPA
     return (LRESULT)self->command_brush;
 }
 
+static HRGN _Nullable command_update_region(const struct folio_window *_Nonnull self)
+{
+    if (!discovery_surface(self))
+        return nullptr;
+    HRGN changed = CreateRectRgn(0, 0, 0, 0);
+    if (changed != nullptr && GetUpdateRgn(self->command_layer, changed, FALSE) == ERROR)
+    {
+        DeleteObject(changed);
+        return nullptr;
+    }
+    return changed;
+}
+
+static void apply_command_clip(const struct folio_window *_Nonnull self, HDC device,
+                               HRGN _Nullable changed, RECT area)
+{
+    if (!discovery_surface(self))
+        return;
+    if (changed != nullptr)
+        SelectClipRgn(device, changed);
+    if (changed == nullptr)
+        IntersectClipRect(device, area.left, area.top, area.right, area.bottom);
+}
+
 static void paint_command_layer(struct folio_window *_Nonnull self)
 {
+    HRGN changed = command_update_region(self);
     PAINTSTRUCT painting;
     HDC target = BeginPaint(self->command_layer, &painting);
     RECT bounds;
@@ -13419,6 +13547,7 @@ static void paint_command_layer(struct folio_window *_Nonnull self)
     if (surface != nullptr)
     {
         HGDIOBJ previous = SelectObject(memory, surface);
+        apply_command_clip(self, memory, changed, painting.rcPaint);
         SetBkMode(memory, TRANSPARENT);
         SelectObject(memory, self->mono_font);
         SetTextCharacterExtra(memory, scale(base_tracking, GetDpiForWindow(self->handle)));
@@ -13432,6 +13561,8 @@ static void paint_command_layer(struct folio_window *_Nonnull self)
         DeleteDC(memory);
     }
     EndPaint(self->command_layer, &painting);
+    if (changed != nullptr)
+        DeleteObject(changed);
 }
 
 static bool layer_input_handled(struct folio_window *_Nonnull self, UINT message, WPARAM wparam,
@@ -13690,6 +13821,7 @@ static LRESULT CALLBACK settings_backdrop_procedure(HWND window, UINT message, W
 
 static void window_destroyed(struct folio_window *_Nonnull self)
 {
+    discovery_motion_settle(self);
     clear_part_press(self);
     if (self->accessibility != nullptr)
     {
@@ -13952,6 +14084,7 @@ static LRESULT on_window_command(struct folio_window *_Nonnull self, WPARAM wpar
 /* 通常のresizeは本文矩形の変化を保持する。表示切替中の同期WM_SIZEは外側の退避に含める。 */
 static void resize(struct folio_window *_Nonnull self)
 {
+    discovery_motion_reset(self);
     cancel_part_press(self);
     close_geometry_menu(self);
     if (self->layout_changing)
@@ -13965,6 +14098,7 @@ static void resize(struct folio_window *_Nonnull self)
 /* OS通知とモーダルの再取得要求はここへ合流する。enumのテーマ名で色変更を判定しない。 */
 static void system_colors_changed(struct folio_window *_Nonnull self)
 {
+    discovery_motion_reset(self);
     read_focus_cues(self);
     if (pane_streaming(self) || session_busy(self))
     {
@@ -14303,6 +14437,11 @@ static void continue_images(struct folio_window *_Nonnull self)
 }
 static LRESULT on_minimap_timer(struct folio_window *_Nonnull self, WPARAM timer, LPARAM lparam)
 {
+    if (timer == discovery_motion_timer)
+    {
+        discovery_motion_tick(self);
+        return 0;
+    }
     if (timer == image_timer)
     {
         continue_images(self);
@@ -14357,6 +14496,7 @@ static LRESULT on_message(struct folio_window *_Nonnull self, UINT message, WPAR
     {
     case WM_IME_STARTCOMPOSITION:
         self->root_composing = true;
+        discovery_motion_settle(self);
         return DefWindowProcW(self->handle, message, wparam, lparam);
     case WM_IME_ENDCOMPOSITION:
         self->root_composing = false;
@@ -14451,6 +14591,7 @@ static LRESULT CALLBACK window_message(HWND window, UINT message, WPARAM wparam,
     accessibility_host_changed(self->accessibility, message);
     LRESULT result = on_message(self, message, wparam, lparam);
     resume_appearance(self);
+    discovery_motion_sync(self);
     return result;
 }
 
@@ -14867,6 +15008,7 @@ void folio_window_destroy(struct folio_window *_Nullable window)
     }
     if (window->handle != nullptr)
     {
+        discovery_motion_settle(window);
         clear_session_reason(window);
         DestroyWindow(window->handle);
     }
@@ -15027,6 +15169,7 @@ static enum accessible_kind surface_row_kind(const struct folio_window *_Nonnull
         return ACCESSIBLE_SURFACE_LANGUAGE;
     case SETTINGS_ROW_FAVORITES_FIRST:
     case SETTINGS_ROW_MINIMAP:
+    case SETTINGS_ROW_MOTION:
     case SETTINGS_ROW_NUMBER:
         return ACCESSIBLE_SURFACE_TOGGLE;
     }
@@ -15604,6 +15747,10 @@ static HRESULT surface_name(const struct folio_window *_Nonnull self, struct acc
     }
     enum folio_language language = folio_state_language(self->state);
     (void)wide_units(ui_text_line(surface_control_label(self, item), language), out->name);
+    if (self->command_surface == COMMAND_SURFACE_SETTINGS &&
+        item.kind == ACCESSIBLE_SURFACE_TOGGLE &&
+        settings_rows[item.slot].kind == SETTINGS_ROW_MOTION)
+        (void)wide_units(ui_text_line(settings_motion_help(self), language), out->help);
     if (item.kind == ACCESSIBLE_SURFACE_BUTTON && item.slot == ACCESSIBLE_SURFACE_THEME)
         (void)wide_units(folio_theme_choice_label(folio_state_theme_choice(self->state), language),
                          out->help);
@@ -17959,6 +18106,7 @@ static void continue_discovery(struct folio_window *_Nonnull self)
 {
     folio_window_begin_dispatch(self);
     enum folio_state_outcome outcome = folio_state_continue_discovery(self->state);
+    self->discovery_motion_wait = false;
     if (outcome != FOLIO_STATE_READY)
         self->command_failure = outcome;
     discovery_refresh(self);
@@ -19017,6 +19165,7 @@ static void discovery_refresh(struct folio_window *_Nonnull self)
     if (self->discovery_tag >= count)
         self->discovery_tag = count == 0 ? 0 : count - 1;
     arrange_command_input(self);
+    discovery_motion_sync(self);
     redraw_command_layer(self);
     accessibility_host_schedule(self->accessibility);
 }
@@ -19143,6 +19292,11 @@ static void execute_discovery(struct folio_window *_Nonnull self, const char *_N
     self->discovery_results_revision = UINT64_MAX;
     open_command_surface(self, COMMAND_SURFACE_DISCOVERY);
     discovery_refresh(self);
+    discovery_motion_reset(self);
+    if (discovery_motion_allowed(self))
+        self->discovery_open_frames = 8;
+    discovery_motion_invalidate(self);
+    discovery_motion_sync(self);
 }
 
 static bool discovery_holds_target(const struct folio_window *_Nonnull self,
@@ -19320,11 +19474,14 @@ static void discovery_select(struct folio_window *_Nonnull self, size_t index)
 {
     if (self->command_composing)
         return;
+    size_t before = self->command_selection;
     self->command_failure = folio_state_select_discovery(self->state, index);
     self->discovery_focus = DISCOVERY_FOCUS_ROWS;
     discovery_refresh(self);
     reveal_command_selection(self);
     SetFocus(self->command_layer);
+    if (self->command_failure == FOLIO_STATE_READY && before != self->command_selection)
+        discovery_motion_select(self);
 }
 
 static bool discovery_mode_arrow(struct folio_window *_Nonnull self, WPARAM key)
@@ -19470,10 +19627,257 @@ static bool discovery_tab(struct folio_window *_Nonnull self)
     return true;
 }
 
+static RECT discovery_busy_band(const struct folio_window *_Nonnull self)
+{
+    RECT band = discovery_geometry(self).input;
+    UINT dpi = GetDpiForWindow(self->handle);
+    band.top = band.bottom + scale(1, dpi);
+    band.bottom = band.top + scale(2, dpi);
+    return band;
+}
+
+static RECT discovery_selection_band(const struct folio_window *_Nonnull self)
+{
+    RECT band = discovery_row_rect(self, self->command_selection);
+    if (!IsRectEmpty(&band))
+        band.top = band.bottom - ui_part_focus_width(GetDpiForWindow(self->handle));
+    return band;
+}
+
+static void discovery_motion_edges(const struct folio_window *_Nonnull self)
+{
+    RECT area;
+    GetClientRect(self->command_layer, &area);
+    int edge = scale(2, GetDpiForWindow(self->handle));
+    const RECT sides[] = {{area.left, area.top, area.right, area.top + edge},
+                          {area.left, area.bottom - edge, area.right, area.bottom},
+                          {area.left, area.top, area.left + edge, area.bottom},
+                          {area.right - edge, area.top, area.right, area.bottom}};
+    for (size_t at = 0; at < sizeof sides / sizeof sides[0]; ++at)
+        InvalidateRect(self->command_layer, &sides[at], FALSE);
+}
+
+static void discovery_motion_invalidate(const struct folio_window *_Nonnull self)
+{
+    if (self->command_layer == nullptr)
+        return;
+    if (self->discovery_open_frames != 0)
+        discovery_motion_edges(self);
+    if (self->discovery_selection_frames != 0)
+        InvalidateRect(self->command_layer, &self->discovery_motion_row, FALSE);
+    if (self->discovery_busy)
+    {
+        RECT band = discovery_busy_band(self);
+        InvalidateRect(self->command_layer, &band, FALSE);
+    }
+}
+
+static void discovery_motion_disarm(struct folio_window *_Nonnull self)
+{
+    if (self->discovery_timer != 0)
+        KillTimer(self->handle, self->discovery_timer);
+    self->discovery_timer = 0;
+}
+
+static void discovery_motion_settle(struct folio_window *_Nonnull self)
+{
+    discovery_motion_invalidate(self);
+    discovery_motion_disarm(self);
+    self->discovery_open_frames = 0;
+    self->discovery_selection_frames = 0;
+    self->discovery_busy = false;
+    self->discovery_busy_tick = 0;
+    self->discovery_busy_delay = 0;
+    self->discovery_motion_wait = false;
+}
+
+static void discovery_motion_reset(struct folio_window *_Nonnull self)
+{
+    discovery_motion_settle(self);
+    self->discovery_motion_failed = false;
+}
+
+static bool discovery_motion_allowed(const struct folio_window *_Nonnull self)
+{
+    return self->handle != nullptr && self->command_layer != nullptr && discovery_surface(self) &&
+           IsWindowVisible(self->handle) && IsWindowVisible(self->command_layer) &&
+           !IsIconic(self->handle) && !self->command_composing && !self->root_composing &&
+           self->command_failure == FOLIO_STATE_READY &&
+           folio_state_discovery_summary(self->state).phase != DISCOVERY_FAILED &&
+           !self->appearance_pending && !self->discovery_motion_failed &&
+           folio_window_accessible_ready(self) && folio_state_motion_enabled(self->state);
+}
+
+static bool discovery_motion_pending(const struct folio_window *_Nonnull self)
+{
+    switch (folio_state_discovery_summary(self->state).phase)
+    {
+    case DISCOVERY_PREPARING:
+    case DISCOVERY_MATCHING:
+        return folio_window_idle_work_ready(self);
+    case DISCOVERY_CLOSED:
+    case DISCOVERY_INPUT:
+    case DISCOVERY_READY:
+    case DISCOVERY_FAILED:
+        return false;
+    }
+    return false;
+}
+
+static void discovery_motion_busy(struct folio_window *_Nonnull self)
+{
+    bool busy = discovery_motion_pending(self);
+    if (busy == self->discovery_busy)
+        return;
+    RECT band = discovery_busy_band(self);
+    InvalidateRect(self->command_layer, &band, FALSE);
+    self->discovery_busy = busy;
+    self->discovery_busy_tick = 0;
+    self->discovery_busy_delay = busy ? 2 : 0;
+}
+
+static void discovery_motion_validate_row(struct folio_window *_Nonnull self)
+{
+    if (self->discovery_selection_frames == 0)
+        return;
+    RECT band = discovery_selection_band(self);
+    uint64_t revision = folio_state_discovery_summary(self->state).results_revision;
+    if (revision == self->discovery_motion_revision &&
+        EqualRect(&band, &self->discovery_motion_row))
+        return;
+    InvalidateRect(self->command_layer, &self->discovery_motion_row, FALSE);
+    self->discovery_selection_frames = 0;
+}
+
+static void discovery_motion_sync(struct folio_window *_Nonnull self)
+{
+    if (!discovery_motion_allowed(self))
+    {
+        discovery_motion_settle(self);
+        return;
+    }
+    discovery_motion_busy(self);
+    discovery_motion_validate_row(self);
+    if (!folio_state_discovery_work_pending(self->state))
+        self->discovery_motion_wait = false;
+    if (self->discovery_open_frames == 0 && self->discovery_selection_frames == 0 &&
+        !self->discovery_busy)
+    {
+        discovery_motion_disarm(self);
+        return;
+    }
+    if (self->discovery_timer != 0 || self->discovery_motion_wait)
+        return;
+    self->discovery_timer = SetTimer(self->handle, discovery_motion_timer, 16, nullptr);
+    if (self->discovery_timer == 0)
+    {
+        discovery_motion_settle(self);
+        self->discovery_motion_failed = true;
+    }
+}
+
+static void discovery_motion_tick(struct folio_window *_Nonnull self)
+{
+    if (self->discovery_timer == 0)
+        return; /* An already queued tick must not resurrect a discarded animation. */
+    if (!discovery_motion_allowed(self))
+    {
+        discovery_motion_settle(self);
+        return;
+    }
+    if (folio_state_discovery_work_pending(self->state))
+    {
+        discovery_motion_disarm(self);
+        self->discovery_motion_wait = true;
+    }
+    discovery_motion_invalidate(self);
+    if (self->discovery_open_frames != 0)
+        --self->discovery_open_frames;
+    if (self->discovery_selection_frames != 0)
+        --self->discovery_selection_frames;
+    if (self->discovery_busy_delay != 0)
+        --self->discovery_busy_delay;
+    else if (self->discovery_busy)
+        self->discovery_busy_tick = (unsigned char)((self->discovery_busy_tick + 1U) % 64U);
+    discovery_motion_sync(self);
+}
+
+static void discovery_motion_select(struct folio_window *_Nonnull self)
+{
+    discovery_motion_validate_row(self);
+    if (self->discovery_selection_frames != 0)
+        InvalidateRect(self->command_layer, &self->discovery_motion_row, FALSE);
+    self->discovery_selection_frames = 0;
+    RECT band = discovery_selection_band(self);
+    if (discovery_motion_allowed(self) && !IsRectEmpty(&band))
+    {
+        self->discovery_motion_row = band;
+        self->discovery_motion_revision =
+            folio_state_discovery_summary(self->state).results_revision;
+        self->discovery_selection_frames = 6;
+        InvalidateRect(self->command_layer, &band, FALSE);
+    }
+    discovery_motion_sync(self);
+}
+
+static int discovery_motion_clamp(int value, int extent)
+{
+    if (value < 0)
+        return 0;
+    return value > extent ? extent : value;
+}
+
+static void draw_discovery_motion_frame(const struct folio_window *_Nonnull self, HDC device,
+                                        RECT bounds)
+{
+    if (self->discovery_open_frames == 0)
+        return;
+    const int fractions[] = {24, 80, 132, 176, 212, 236, 250, 256};
+    int width = bounds.right - bounds.left;
+    int height = bounds.bottom - bounds.top;
+    int distance = (width + height) * fractions[8 - self->discovery_open_frames] / 256;
+    int edge = scale(2, GetDpiForWindow(self->handle));
+    const RECT sides[] = {
+        {bounds.left, bounds.top, bounds.left + discovery_motion_clamp(distance, width),
+         bounds.top + edge},
+        {bounds.left, bounds.top, bounds.left + edge,
+         bounds.top + discovery_motion_clamp(distance, height)},
+        {bounds.right - edge, bounds.top, bounds.right,
+         bounds.top + discovery_motion_clamp(distance - width, height)},
+        {bounds.left, bounds.bottom - edge,
+         bounds.left + discovery_motion_clamp(distance - height, width), bounds.bottom}};
+    for (size_t at = 0; at < sizeof sides / sizeof sides[0]; ++at)
+        fill_settings_rect(device, sides[at], self->palette.current_text);
+}
+
+static void draw_discovery_motion(const struct folio_window *_Nonnull self, HDC device, RECT bounds)
+{
+    draw_discovery_motion_frame(self, device, bounds);
+    if (self->discovery_selection_frames != 0)
+    {
+        RECT head = self->discovery_motion_row;
+        int width = head.right - head.left;
+        int length = scale(24, GetDpiForWindow(self->handle));
+        length = length > width ? width : length;
+        head.left += (width - length) * (6 - self->discovery_selection_frames) / 5;
+        head.right = head.left + length;
+        fill_settings_rect(device, head, self->palette.current_text);
+    }
+    if (self->discovery_busy && self->discovery_busy_delay == 0)
+    {
+        RECT band = discovery_busy_band(self);
+        int width = band.right - band.left;
+        int length = width / 5;
+        band.left += (width - length) * self->discovery_busy_tick / 63;
+        band.right = band.left + length;
+        fill_settings_rect(device, band, self->palette.current_text);
+    }
+}
+
 static void draw_discovery_row(const struct folio_window *_Nonnull self, HDC device, size_t at)
 {
     RECT row = discovery_row_rect(self, at);
-    if (IsRectEmpty(&row))
+    if (IsRectEmpty(&row) || !RectVisible(device, &row))
         return;
     struct ui_part_paint part = {.bounds = row,
                                  .style = UI_PART_STYLE_CHOICE,
@@ -19535,13 +19939,46 @@ static void draw_discovery_preview(const struct folio_window *_Nonnull self, HDC
         return;
     char text[draw_unit_limit];
     SetTextColor(device, self->palette.current_text);
-    discovery_text_title(self->state, text, sizeof text);
-    draw_utf8(device, text, layout->preview_title);
-    discovery_text_preview(self->state, text, sizeof text);
-    SetTextColor(device, self->palette.dialog_secondary);
-    draw_utf8(device, text, layout->preview_status);
-    draw_input_field(self, device, self->discovery_preview, layout->preview);
-    draw_discovery_gutter(self, device, layout->preview);
+    if (RectVisible(device, &layout->preview_title))
+    {
+        discovery_text_title(self->state, text, sizeof text);
+        draw_utf8(device, text, layout->preview_title);
+    }
+    if (RectVisible(device, &layout->preview_status))
+    {
+        discovery_text_preview(self->state, text, sizeof text);
+        SetTextColor(device, self->palette.dialog_secondary);
+        draw_utf8(device, text, layout->preview_status);
+    }
+    if (RectVisible(device, &layout->preview))
+    {
+        draw_input_field(self, device, self->discovery_preview, layout->preview);
+        draw_discovery_gutter(self, device, layout->preview);
+    }
+}
+
+static void draw_discovery_status(const struct folio_window *_Nonnull self, HDC device,
+                                  const struct discovery_layout *_Nonnull layout)
+{
+    char text[draw_unit_limit];
+    if (RectVisible(device, &layout->conditions))
+    {
+        SetTextColor(device, self->palette.dialog_secondary);
+        discovery_text_conditions(self->state, text, sizeof text);
+        draw_utf8(device, text, layout->conditions);
+    }
+    if (!RectVisible(device, &layout->status))
+        return;
+    discovery_text_status(self->state, text, sizeof text);
+    if (self->command_failure != FOLIO_STATE_READY)
+        (void)strcpy_s(
+            text, sizeof text,
+            folio_state_failure_line(self->command_failure, folio_state_language(self->state)));
+    SetTextColor(device, self->palette.current_text);
+    if (layout->compact)
+        draw_utf8(device, text, layout->status);
+    if (!layout->compact)
+        (void)wrapped_text(device, text, layout->status, true);
 }
 
 static void draw_discovery(const struct folio_window *_Nonnull self, HDC device, RECT bounds)
@@ -19550,21 +19987,9 @@ static void draw_discovery(const struct folio_window *_Nonnull self, HDC device,
     draw_command_guidance(self, device);
     draw_floating_header(self, device, UI_TEXT_COMMAND_DISCOVER_NOTES);
     struct discovery_layout layout = discovery_geometry(self);
-    draw_input_field(self, device, self->command_input, layout.input);
-    char text[draw_unit_limit];
-    SetTextColor(device, self->palette.dialog_secondary);
-    discovery_text_conditions(self->state, text, sizeof text);
-    draw_utf8(device, text, layout.conditions);
-    discovery_text_status(self->state, text, sizeof text);
-    if (self->command_failure != FOLIO_STATE_READY)
-        (void)strcpy_s(
-            text, sizeof text,
-            folio_state_failure_line(self->command_failure, folio_state_language(self->state)));
-    SetTextColor(device, self->palette.current_text);
-    if (layout.compact)
-        draw_utf8(device, text, layout.status);
-    if (!layout.compact)
-        (void)wrapped_text(device, text, layout.status, true);
+    if (RectVisible(device, &layout.input))
+        draw_input_field(self, device, self->command_input, layout.input);
+    draw_discovery_status(self, device, &layout);
     size_t count = folio_state_discovery_summary(self->state).shown;
     for (size_t at = self->command_first; at < count; ++at)
         draw_discovery_row(self, device, at);
@@ -19572,6 +19997,7 @@ static void draw_discovery(const struct folio_window *_Nonnull self, HDC device,
     for (size_t slot = ACCESSIBLE_SURFACE_DISCOVERY_OPEN; slot < surface_button_count; ++slot)
         if (surface_button_visible(self, slot))
             draw_surface_button(self, device, slot);
+    draw_discovery_motion(self, device, bounds);
 }
 
 static void click_discovery(struct folio_window *_Nonnull self, POINT point)

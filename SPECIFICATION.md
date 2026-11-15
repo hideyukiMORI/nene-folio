@@ -78,6 +78,7 @@
 | FR-046 | 全カテゴリの保存済みノートから一つのタグを全体改名・解除できる | メニュー/パレットの管理面で意図を選び、新しい本文走査によるプレビューの後だけ実行する。無題と未登録外部ファイルは対象外。検索・星・タグ条件で対象を狭めない。既存名は集合へ統合し、対象外を保存しない。名前付きEDITの入口は期待本文付きの共通保存を通し、外部変更/読取/保存失敗では本文/Undoを保って断る。準備/適用はidle一回最大一本文。保存前に期待本文を照合し、同じ読取から履歴と原子的本文公開を行う。変更済み/見送り/失敗/未処理を区別し、中止は残りだけを止める。再試行は新たなプレビュー。現在本文は公開成功直後に採用しUndo基準を更新、native投入失敗でも公開済み件数を保持し保存を止める。元の条件を維持して再集計する。全体Undoや照合・公開間のCASは提供しない。#821 / [ADR0093](docs/adr/0093-global-tag-management.md) |
 | FR-047 | 名前をあいまいに探し、保存済み原文を確かめてからノートを開ける | 共通メニュー/パレットの「ノートを探す」は全カテゴリの保存済みノートを対象にし、空語から始める。星/タグとALL/ANY・お気に入り優先を写し、面内の解除は一覧条件を変えない。ASCIIだけ大小無視、ノート名の完全/前方/部分/Unicode scalar部分列、次にカテゴリ名の同順。優先ONでは星群を先、同順位は台帳順。完成後だけ最大200件を表示し全一致数も示す。検索語は256 scalar/1024 bytes、超過は拒否。名前付きEDITは共通保存が成功してから開き、無題は対象外で強制保存しない。候補移動・取消は元本文/Undoを変更しない。原文previewは先頭80論理行/16KiBまで、readonly/copy/scrollと別行番号、範囲・読取不能を示し、Markdown描画や外部取得はしない。Enter/開くだけで共通文書選択へ進み、保存prompt後は所有した宛先名を再解決する。IME中は確定/取消/候補移動を奪わず、最新の完成結果だけを出す。狭幅は結果/原文切替、広幅は左右配置。常設一覧の名前+本文部分一致と語を共有しない。#823 / [ADR0094](docs/adr/0094-name-discovery-and-source-preview.md) |
 | FR-048 | 保存済み本文の最初の一致を確認し、編集表示でその位置を開ける | 「ノートを探す」の名前/本文切替は語・星・tag条件を保ち、旧結果を先に失効する。本文はfront matterを含む原文のASCII大小無視のリテラル部分一致。空語は入力案内、改行/NULと256 scalar/1024 bytes超は貼り付けの切断前に拒否する。sessionの最初の本文要求またはtag準備で共通corpusを新しく一巡し、語/モード変更で再利用する。最初の一致位置も有限workで計算し、最大200ノートと全一致ノート数を示す。原文previewは一致行の最大20行前から80論理行/16KiBまで、一致全体を残して長い行を省略し、実際の行番号と省略範囲を示す。候補移動は本文/Undoを変えない。「一致行を開く」は所有した宛先/snapshotを保存確認後の採用本文と照合し、同一の場合だけEDITで一致を選択する。同じEDITは再投入しない。不一致は開いたノートに非移動理由を残す。編集不可、消失/読取失敗、取消、native投入拒否は採用境界に応じて保護する。未保存の無題、全出現列挙、regex、非ASCII正規化は対象外。#825 / [ADR0095](docs/adr/0095-body-discovery-and-source-position.md) |
+| FR-049 | 「ノートを探す」の細い装飾線だけを短く動かし、設定で静止にできる | 開く外枠は8frame、利用者が移した選択行の下線は6frame、進行可能な準備/検索中は2tick後から細帯を描く。16ms指定の論理tickで実時間の保証はしない。入力・geometry・結果・確定は即時、閉鎖も即時。Windowsの動作無効/取得不能・高コントラスト、アプリの保存OFFでは静止し、OS通知で保存選択は変えない。IME/modal/非表示/最小化/resize/DPI/配色/言語/設定変更で静止へ戻し、必要な演出がなければtimerを破棄する。最終frameはOFFと同じ表示。#827 / [ADR0096](docs/adr/0096-discovery-motion-and-static-fallback.md) |
 
 OS終了通知（WM_QUERYENDSESSION / WM_ENDSESSION）は[ADR0053](docs/adr/0053-session-end-and-exit-contract.md)に従う。
 名前付き文書は既存保存の完了後に同意し、承認待ちの追加入力を止める。無題・改名保留・未確定IME・
@@ -107,22 +108,23 @@ OS終了通知（WM_QUERYENDSESSION / WM_ENDSESSION）は[ADR0053](docs/adr/0053
 
 ```json
 {
-  "version": 6,
+  "version": 7,
   "number": false,
   "theme": "system",
   "language": "ja",
   "minimap": true,
-  "note_order": "favorites_first"
+  "note_order": "favorites_first",
+  "motion": true
 }
 ```
 
 - `number`（FR-021 / 版 1 から）・`theme`（FR-016 / 版 2 で追加。`"system"` / `"light"` / `"dark"`と、版4からの125テーマID。出典は[theme-sources.json](docs/theme-sources.json)）・
   `language`（FR-024 / 版 3 で追加。`"ja"` / `"en"` / `"zh-Hans"`。綴りは BCP 47 のまま）・
-  `minimap`（FR-042 / 版5で追加、bool、既定true）・`note_order`（FR-044 / 版6で追加、`"manual"` / `"favorites_first"`、既定は後者）。
+  `minimap`（FR-042 / 版5で追加、bool、既定true）・`note_order`（FR-044 / 版6で追加、`"manual"` / `"favorites_first"`、既定は後者）・`motion`（FR-049 / 版7で追加、bool、既定true）。
 - **版 1 の形 `{"version": 1, "number": <bool>}` と版 2 の形
   `{"version": 2, "number": <bool>, "theme": "…"}` も読めて**、足りないキーに既定値
   （`theme` は `"system"`・`language` は `"ja"`）を埋める（移行）。
-  版3も旧3語のthemeと言語をそのまま読み、版4の全themeも保持する。版1〜4にはminimap=true、版1〜5にはnote_order=favorites_firstを補う。書くのは常に版6なので、旧版は次の明示的な設定変更で版6になる。起動だけでは書き換えない。未知のテーマ名・順序は不正として上書きしない。
+  版3も旧3語のthemeと言語をそのまま読み、版4の全themeも保持する。版1〜4にはminimap=true、版1〜5にはnote_order=favorites_first、版1〜6にはmotion=trueを補う。書くのは常に版7なので、旧版は次の明示的な設定変更で版7になる。起動だけでは書き換えない。未知のテーマ名・順序は不正として上書きしない。
 - ファイルが無ければ既定値で始め、**起動時には作らない**。未知の版・壊れた値は既定値で起動して理由を 1 回見せ、
   そのセッションは設定を変えず**上書きもしない**（ADR 0025 の決定 6）。
 - 変更は**先に書いてから採用する**ので、表示と保存が食い違わない。

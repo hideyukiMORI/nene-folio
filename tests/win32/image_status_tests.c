@@ -7,6 +7,7 @@
 #include "file_bytes.h"
 #include "file_times.h"
 #include "folio_menu_action.h"
+#include "folio_message.h"
 #include "folio_settings.h"
 #include "folio_state.h"
 #include "folio_window.h"
@@ -73,6 +74,13 @@ static bool format_case;
 static bool favorites_case;
 static bool tags_case;
 static bool discovery_case;
+static bool motion_case;
+static bool motion_visual_case;
+static bool motion_live_case;
+static enum appearance_motion motion_observation = APPEARANCE_MOTION_ALLOWED;
+static enum appearance_outcome motion_read_outcome = APPEARANCE_READY;
+static bool motion_check_modal;
+static bool motion_saw_modal;
 static bool body_discovery_case;
 static bool body_discovery_copy_case;
 static bool body_discovery_visual_case;
@@ -98,8 +106,11 @@ static enum appearance_outcome read_favorite_appearance(struct appearance_adapte
                                                         struct appearance_snapshot *_Nonnull out)
 {
     (void)adapter;
+    if (motion_case && motion_read_outcome != APPEARANCE_READY)
+        return motion_read_outcome;
     *out = (struct appearance_snapshot){
         .theme = FOLIO_THEME_LIGHT,
+        .motion = motion_case ? motion_observation : APPEARANCE_MOTION_UNKNOWN,
         .contrast = favorite_high_contrast ? FOLIO_CONTRAST_HIGH : FOLIO_CONTRAST_STANDARD,
         .window = {0, 0, 0},
         .window_text = {255, 255, 255},
@@ -5481,6 +5492,12 @@ static BOOL CALLBACK close_history_failure(HWND dialog, LPARAM parameter)
                 wcsstr(message, failure.expected) != nullptr,
             "the fixture's themed failure dialog reports the expected refusal");
     require(KillTimer(nullptr, failure.timer), "stop the owned failure observer timer");
+    if (motion_check_modal)
+    {
+        require(!KillTimer(failure.root, 86), "native modal already destroyed the motion timer");
+        SendMessageW(failure.root, WM_TIMER, 86, 0);
+        motion_saw_modal = true;
+    }
     failure.timer = 0;
     ++failure.closed;
     SendMessageW(accept, BM_CLICK, 0, 0);
@@ -10153,10 +10170,523 @@ static void run_discovery_case(struct native_fixture *_Nonnull fixture)
     folio_window_destroy(window);
 }
 
+static HWND motion_layer(struct folio_window *_Nonnull window)
+{
+    return GetParent(folio_window_accessible_window(window, ACCESSIBLE_COMMAND_INPUT));
+}
+
+static void motion_tick(struct folio_window *_Nonnull window, unsigned count)
+{
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    for (unsigned at = 0; at < count; ++at)
+    {
+        SendMessageW(root, WM_TIMER, 86, 0);
+        UpdateWindow(motion_layer(window));
+    }
+}
+
+static WNDPROC motion_preview_original;
+static unsigned motion_preview_reads;
+static unsigned motion_preview_writes;
+
+static LRESULT CALLBACK motion_preview_observe(HWND window, UINT message, WPARAM wparam,
+                                               LPARAM lparam)
+{
+    if (message == EM_GETRECT || message == EM_GETFIRSTVISIBLELINE || message == WM_GETTEXT ||
+        message == WM_GETTEXTLENGTH)
+        ++motion_preview_reads;
+    if (message == WM_SETTEXT || message == EM_SETSEL)
+        ++motion_preview_writes;
+    return CallWindowProcW(motion_preview_original, window, message, wparam, lparam);
+}
+
+static void motion_frames(struct folio_window *_Nonnull window,
+                          struct native_fixture *_Nonnull fixture)
+{
+    invoke_operation(window, FOLIO_COMMAND_DISCOVER_NOTES);
+    discovery_settle(window, fixture->state);
+    struct discovery_summary before = folio_state_discovery_summary(fixture->state);
+    uint64_t revision = folio_window_accessible_surface_revision(window);
+    HWND layer = motion_layer(window);
+    tags_capture(layer, "motion-open-start.bmp");
+    motion_tick(window, 4);
+    tags_capture(layer, "motion-open-middle.bmp");
+    motion_tick(window, 4);
+    tags_capture(layer, "motion-open-final.bmp");
+    require(folio_state_set_motion(fixture->state, false) == FOLIO_STATE_READY, "motion OFF");
+    SendMessageW(folio_window_accessible_window(window, ACCESSIBLE_WINDOW), WM_SETTINGCHANGE, 0, 0);
+    tags_capture(layer, "motion-open-off.bmp");
+    require(before.revision == folio_state_discovery_summary(fixture->state).revision &&
+                revision == folio_window_accessible_surface_revision(window),
+            "opening frames and static fallback do not publish result or UIA revisions");
+    require(folio_state_set_motion(fixture->state, true) == FOLIO_STATE_READY, "motion ON");
+    discovery_choose(window, 1);
+    discovery_settle(window, fixture->state);
+    tags_capture(layer, "motion-selection-start.bmp");
+    motion_tick(window, 3);
+    tags_capture(layer, "motion-selection-middle.bmp");
+    motion_tick(window, 3);
+    tags_capture(layer, "motion-selection-final.bmp");
+    require(folio_state_set_motion(fixture->state, false) == FOLIO_STATE_READY, "selection OFF");
+    SendMessageW(folio_window_accessible_window(window, ACCESSIBLE_WINDOW), WM_SETTINGCHANGE, 0, 0);
+    tags_capture(layer, "motion-selection-off.bmp");
+    require(folio_state_discovery_summary(fixture->state).selected == 1 &&
+                revision == folio_window_accessible_surface_revision(window),
+            "selection frames do not alter the chosen row or its UIA identity");
+    surface_button(window, ACCESSIBLE_SURFACE_CLOSE);
+}
+
+static void motion_clip_boundary(struct folio_window *_Nonnull window,
+                                 struct native_fixture *_Nonnull fixture)
+{
+    require(folio_state_set_motion(fixture->state, true) == FOLIO_STATE_READY, "clip motion ON");
+    invoke_operation(window, FOLIO_COMMAND_DISCOVER_NOTES);
+    discovery_settle(window, fixture->state);
+    UpdateWindow(motion_layer(window));
+    HWND preview = folio_window_accessible_window(window, ACCESSIBLE_DISCOVERY_PREVIEW);
+    motion_preview_original =
+        (WNDPROC)SetWindowLongPtrW(preview, GWLP_WNDPROC, (LONG_PTR)motion_preview_observe);
+    require(motion_preview_original != nullptr, "observe only the private preview messages");
+    motion_preview_reads = 0;
+    motion_preview_writes = 0;
+    uint64_t revision = folio_window_accessible_surface_revision(window);
+    motion_tick(window, 8);
+    require(motion_preview_reads == 0 && motion_preview_writes == 0 &&
+                folio_window_accessible_surface_revision(window) == revision,
+            "frame-only repaints do not read or rewrite native preview or update UIA");
+    require(SetWindowLongPtrW(preview, GWLP_WNDPROC, (LONG_PTR)motion_preview_original) != 0,
+            "restore the private preview procedure");
+    surface_button(window, ACCESSIBLE_SURFACE_CLOSE);
+}
+
+static void motion_generation_boundary(struct folio_window *_Nonnull window,
+                                       struct native_fixture *_Nonnull fixture)
+{
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    invoke_operation(window, FOLIO_COMMAND_DISCOVER_NOTES);
+    discovery_settle(window, fixture->state);
+    motion_tick(window, 8);
+    discovery_choose(window, 1);
+    motion_tick(window, 2);
+    discovery_choose(window, 2);
+    discovery_choose(window, 0);
+    discovery_settle(window, fixture->state);
+    uint64_t revision = folio_window_accessible_surface_revision(window);
+    motion_tick(window, 6);
+    require(folio_state_discovery_summary(fixture->state).selected == 0 &&
+                folio_window_accessible_surface_revision(window) == revision &&
+                !KillTimer(root, 86),
+            "rapid selections replace the old effect and finish without a queued replay");
+    discovery_choose(window, 1);
+    discovery_query(window, fixture->state, L"no-such-motion-note");
+    require(folio_state_discovery_summary(fixture->state).shown == 0 && !KillTimer(root, 86),
+            "a new empty result generation discards the former row effect");
+    discovery_query(window, fixture->state, L"");
+    require(folio_state_discovery_summary(fixture->state).shown == 3 && !KillTimer(root, 86),
+            "automatic first-row selection never starts an arrival effect");
+    discovery_choose(window, 1);
+    RECT bounds;
+    require(GetWindowRect(root, &bounds), "current DPI transition bounds");
+    UINT dpi = GetDpiForWindow(root);
+    SendMessageW(root, WM_DPICHANGED, MAKEWPARAM(dpi, dpi), (LPARAM)&bounds);
+    require(!KillTimer(root, 86), "DPI notification settles the old row effect");
+    body_discovery_mode(window, 1);
+    require(folio_state_discovery_summary(fixture->state).phase == DISCOVERY_INPUT &&
+                !KillTimer(root, 86),
+            "empty body input leaves no motion timer");
+    surface_button(window, ACCESSIBLE_SURFACE_CLOSE);
+}
+
+static struct accessible_item motion_setting(struct folio_window *_Nonnull window,
+                                             enum folio_language language)
+{
+    struct accessible_item list = {.kind = ACCESSIBLE_SURFACE_LIST,
+                                   .revision = folio_window_accessible_surface_revision(window)};
+    struct accessible_item item = {0};
+    HRESULT status =
+        folio_window_accessible_navigate(window, &list, ACCESSIBLE_NAVIGATION_FIRST, &item);
+    char16_t name[ui_text_unit_limit];
+    size_t written = 0;
+    require(utf16_text_fill(ui_text_line(UI_TEXT_SETTINGS_MOTION, language), name,
+                            ui_text_unit_limit, &written) == UTF16_TEXT_FILL_READY,
+            "motion setting label");
+    for (size_t count = 0; status == S_OK && count < 20; ++count)
+    {
+        struct accessible_view view = {0};
+        require(folio_window_accessible_read(window, &item, &view) == S_OK, "read setting row");
+        if (wcscmp(view.name, name) == 0)
+            return item;
+        status = folio_window_accessible_navigate(window, &item, ACCESSIBLE_NAVIGATION_NEXT, &item);
+    }
+    require(false, "motion setting is discoverable");
+    return item;
+}
+
+static void motion_setting_boundary(struct folio_window *_Nonnull window,
+                                    struct native_fixture *_Nonnull fixture)
+{
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    motion_observation = APPEARANCE_MOTION_DISABLED;
+    SendMessageW(root, WM_SETTINGCHANGE, 0, 0);
+    struct accessible_request open = {.item = {.kind = ACCESSIBLE_SETTINGS},
+                                      .action = ACCESSIBLE_ACTION_INVOKE};
+    require(folio_window_accessible_action(window, &open) == S_OK, "open motion settings");
+    struct accessible_item item = motion_setting(window, folio_state_language(fixture->state));
+    struct accessible_request request = {.item = item, .action = ACCESSIBLE_ACTION_FOCUS};
+    require(folio_window_accessible_action(window, &request) == S_OK, "focus motion choice");
+    struct accessible_view view = {0};
+    require(folio_window_accessible_read(window, &item, &view) == S_OK && view.enabled &&
+                view.focused && view.help[0] != 0 && !folio_state_motion_available(fixture->state),
+            "OS-disabled motion remains operable and explains static rendering");
+    bool before = folio_state_motion(fixture->state);
+    request.action = ACCESSIBLE_ACTION_SELECT;
+    require(folio_window_accessible_action(window, &request) == S_OK &&
+                folio_state_motion(fixture->state) != before &&
+                !folio_state_motion_enabled(fixture->state),
+            "public toggle changes only the saved preference while OS motion is disabled");
+    require(folio_window_accessible_action(window, &request) == S_OK &&
+                folio_state_motion(fixture->state) == before,
+            "same public toggle restores choice");
+    surface_button(window, ACCESSIBLE_SURFACE_CLOSE);
+    motion_observation = APPEARANCE_MOTION_ALLOWED;
+    SendMessageW(root, WM_SETTINGCHANGE, 0, 0);
+}
+
+static void motion_pause_boundary(struct folio_window *_Nonnull window,
+                                  struct native_fixture *_Nonnull fixture)
+{
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    invoke_operation(window, FOLIO_COMMAND_DISCOVER_NOTES);
+    discovery_settle(window, fixture->state);
+    HWND input = folio_window_accessible_window(window, ACCESSIBLE_COMMAND_INPUT);
+    SendMessageW(input, WM_IME_STARTCOMPOSITION, 0, 0);
+    require(!KillTimer(root, 86), "IME start destroys the decorative timer immediately");
+    SendMessageW(input, WM_IME_ENDCOMPOSITION, 0, 0);
+    discovery_settle(window, fixture->state);
+    require(!KillTimer(root, 86), "IME end does not replay the opening animation");
+    discovery_choose(window, 1);
+    ShowWindow(root, SW_HIDE);
+    require(!KillTimer(root, 86), "hiding destroys the selection timer");
+    ShowWindow(root, SW_SHOWNOACTIVATE);
+    require(!KillTimer(root, 86), "showing a ready result does not replay an animation");
+    discovery_choose(window, 0);
+    ShowWindow(root, SW_MINIMIZE);
+    require(IsIconic(root) && !KillTimer(root, 86), "minimizing destroys decorative timers");
+    ShowWindow(root, SW_RESTORE);
+    require(!KillTimer(root, 86), "restore does not replay the opening animation");
+    discovery_choose(window, 1);
+    SetWindowPos(root, nullptr, 20, 20, 900, 660, SWP_NOZORDER | SWP_NOACTIVATE);
+    require(!KillTimer(root, 86), "resizing settles the old selection geometry");
+    discovery_choose(window, 0);
+    SendMessageW(root, folio_message_report_outcome, FOLIO_STATE_OUT_OF_MEMORY, 0);
+    require(!KillTimer(root, 86), "inline finder failure also destroys its decorative timer");
+    surface_button(window, ACCESSIBLE_SURFACE_CLOSE);
+    require(!KillTimer(root, 86), "closing leaves no discovery timer");
+    SendMessageW(root, WM_TIMER, 86, 0);
+    require(folio_state_discovery_summary(fixture->state).phase == DISCOVERY_CLOSED,
+            "a queued stale timer cannot reopen discovery");
+}
+
+static void motion_modal_boundary(struct folio_window *_Nonnull window,
+                                  struct native_fixture *_Nonnull fixture)
+{
+    action(window, ACCESSIBLE_VIEW);
+    body_discovery_open(window, fixture, L"red");
+    require(folio_state_discovery_summary(fixture->state).shown != 0,
+            "modal fixture finds the saved first note source");
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    management_rejected_streams = 0;
+    management_body_procedure =
+        (WNDPROC)SetWindowLongPtrW(body, GWLP_WNDPROC, (LONG_PTR)management_reject_stream);
+    require(management_body_procedure != nullptr, "observe the private native adoption boundary");
+    motion_check_modal = true;
+    motion_saw_modal = false;
+    begin_expected_failure(window, L"本文読込失敗。同じモードで再試行。");
+    surface_button(window, ACCESSIBLE_SURFACE_DISCOVERY_OPEN);
+    end_history_failure();
+    require(motion_saw_modal && failure.closed == 1 && management_rejected_streams == 1,
+            "real native adoption failure modal observes already stopped motion");
+    motion_check_modal = false;
+    require(SetWindowLongPtrW(body, GWLP_WNDPROC, (LONG_PTR)management_body_procedure) != 0,
+            "restore the private body procedure after the refusal");
+    require(!KillTimer(folio_window_accessible_window(window, ACCESSIBLE_WINDOW), 86),
+            "modal return does not replay a closed finder animation");
+}
+
+static void motion_os_boundary(struct folio_window *_Nonnull window,
+                               struct native_fixture *_Nonnull fixture)
+{
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    const enum appearance_motion observations[] = {APPEARANCE_MOTION_DISABLED,
+                                                   APPEARANCE_MOTION_UNKNOWN};
+    for (size_t at = 0; at < sizeof observations / sizeof observations[0]; ++at)
+    {
+        invoke_operation(window, FOLIO_COMMAND_DISCOVER_NOTES);
+        discovery_settle(window, fixture->state);
+        motion_observation = observations[at];
+        SendMessageW(root, WM_SETTINGCHANGE, 0, 0);
+        require(!folio_state_motion_enabled(fixture->state) && !KillTimer(root, 86),
+                "both OS-disabled and unavailable observations settle the native timer");
+        surface_button(window, ACCESSIBLE_SURFACE_CLOSE);
+        motion_observation = APPEARANCE_MOTION_ALLOWED;
+        SendMessageW(root, WM_SETTINGCHANGE, 0, 0);
+    }
+    invoke_operation(window, FOLIO_COMMAND_DISCOVER_NOTES);
+    discovery_settle(window, fixture->state);
+    favorite_high_contrast = true;
+    SendMessageW(root, WM_SETTINGCHANGE, 0, 0);
+    require(!folio_state_motion_enabled(fixture->state) && !KillTimer(root, 86),
+            "high contrast settles the native timer without changing saved ON");
+    favorite_high_contrast = false;
+    motion_read_outcome = APPEARANCE_UNAVAILABLE;
+    SendMessageW(root, WM_SETTINGCHANGE, 0, 0);
+    require(!folio_state_motion_enabled(fixture->state) && folio_state_motion(fixture->state) &&
+                !KillTimer(root, 86),
+            "whole appearance failure stays static with saved ON");
+    motion_read_outcome = APPEARANCE_READY;
+    SendMessageW(root, WM_SETTINGCHANGE, 0, 0);
+    require(folio_state_motion_enabled(fixture->state) && !KillTimer(root, 86),
+            "OS recovery enables future effects without replaying an old one");
+    surface_button(window, ACCESSIBLE_SURFACE_CLOSE);
+}
+
+static void motion_visual_settings(struct folio_window *_Nonnull window,
+                                   struct native_fixture *_Nonnull fixture, size_t sample)
+{
+    struct accessible_request request = {.item = {.kind = ACCESSIBLE_SETTINGS},
+                                         .action = ACCESSIBLE_ACTION_INVOKE};
+    require(folio_window_accessible_action(window, &request) == S_OK, "open visual settings");
+    request.item = motion_setting(window, folio_state_language(fixture->state));
+    request.action = ACCESSIBLE_ACTION_FOCUS;
+    require(folio_window_accessible_action(window, &request) == S_OK, "reveal motion help");
+    struct accessible_view view = {0};
+    require(folio_window_accessible_read(window, &request.item, &view) == S_OK && !view.offscreen &&
+                view.help[0] != 0 && view.bounds.bottom > view.bounds.top,
+            "motion help is visible and accessible in every size and language");
+    char path[80];
+    require(snprintf(path, sizeof path, "motion-settings-%zu.bmp", sample) > 0,
+            "motion settings capture path");
+    tags_capture(folio_window_accessible_window(window, ACCESSIBLE_WINDOW), path);
+    surface_button(window, ACCESSIBLE_SURFACE_CLOSE);
+}
+
+static void motion_visual_search(struct folio_window *_Nonnull window,
+                                 struct native_fixture *_Nonnull fixture, size_t sample)
+{
+    invoke_operation(window, FOLIO_COMMAND_DISCOVER_NOTES);
+    discovery_settle(window, fixture->state);
+    motion_tick(window, 3);
+    discovery_choose(window, 1);
+    discovery_settle(window, fixture->state);
+    motion_tick(window, 2);
+    char path[80];
+    require(snprintf(path, sizeof path, "motion-search-%zu.bmp", sample) > 0,
+            "motion search capture path");
+    tags_capture(folio_window_accessible_window(window, ACCESSIBLE_WINDOW), path);
+    surface_button(window, ACCESSIBLE_SURFACE_CLOSE);
+}
+
+static void motion_visual(struct native_fixture *_Nonnull fixture)
+{
+    const enum folio_language languages[] = {FOLIO_LANGUAGE_JA, FOLIO_LANGUAGE_EN,
+                                             FOLIO_LANGUAGE_ZH_HANS};
+    for (size_t sample = 0; sample < 18; ++sample)
+    {
+        size_t combination = sample / 2;
+        favorite_high_contrast = combination / 3 == 2;
+        require(folio_state_set_language(fixture->state, languages[combination % 3]) ==
+                        FOLIO_STATE_READY &&
+                    folio_state_refresh_theme(fixture->state) == FOLIO_STATE_READY &&
+                    folio_state_set_theme(fixture->state, combination / 3 == 1
+                                                              ? FOLIO_THEME_CHOICE_DARK
+                                                              : FOLIO_THEME_CHOICE_LIGHT) ==
+                        FOLIO_STATE_READY,
+                "motion visual palette and language");
+        struct folio_window *window = nullptr;
+        require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY,
+                                    &window) == FOLIO_WINDOW_CREATED,
+                "private motion visual window");
+        HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+        require(SetWindowPos(root, nullptr, 20, 20, sample % 2 == 0 ? 560 : 1250,
+                             sample % 2 == 0 ? 360 : 850, SWP_NOZORDER | SWP_NOACTIVATE),
+                "motion visual minimum or wide size");
+        motion_visual_settings(window, fixture, sample);
+        motion_visual_search(window, fixture, sample);
+        folio_window_destroy(window);
+    }
+    favorite_high_contrast = false;
+}
+
+constexpr UINT motion_live_message = WM_APP + 197;
+static unsigned motion_live_job;
+static unsigned motion_live_ticks;
+static unsigned motion_live_idle;
+static bool motion_live_slow;
+static void motion_live_result(struct folio_window *_Nonnull window,
+                               struct native_fixture *_Nonnull fixture, unsigned command)
+{
+    struct discovery_summary summary = folio_state_discovery_summary(fixture->state);
+    printf("{\"event\":\"result\",\"command\":%u,\"ticks\":%u,\"idle\":%u,"
+           "\"shown\":%zu,\"selected\":%zu,\"revision\":%llu,\"motion\":%s}\n",
+           command, motion_live_ticks, motion_live_idle, summary.shown, summary.selected,
+           (unsigned long long)folio_window_accessible_surface_revision(window),
+           folio_state_motion_enabled(fixture->state) ? "true" : "false");
+    require(fflush(stdout) == 0, "publish live measurement event");
+}
+
+static void motion_live_source(struct native_fixture *_Nonnull fixture)
+{
+    char *source = malloc(256 * 1024 + 32);
+    require(source != nullptr, "bounded slow-search fixture source");
+    memset(source, 'a', 256 * 1024);
+    memcpy(source + 256 * 1024, " zz_motion", 11);
+    body_discovery_write(fixture, L"\\schedule\\one.md", source);
+    free(source);
+}
+
+static void motion_live_query(struct folio_window *_Nonnull window,
+                              struct native_fixture *_Nonnull fixture, WPARAM command)
+{
+    if (command == 7)
+    {
+        surface_button(window, ACCESSIBLE_SURFACE_CLOSE);
+        motion_live_source(fixture);
+        invoke_operation(window, FOLIO_COMMAND_DISCOVER_NOTES);
+        body_discovery_mode(window, 1);
+        motion_live_slow = true;
+    }
+    HWND input = folio_window_accessible_window(window, ACCESSIBLE_COMMAND_INPUT);
+    const wchar_t *query = command == 7 ? L"zz_motion" : command == 1 ? L"one" : L"";
+    require(SetWindowTextW(input, query), "live native query input");
+    motion_live_job = (unsigned)command;
+}
+
+static bool motion_live_request(struct folio_window *_Nonnull window,
+                                struct native_fixture *_Nonnull fixture, WPARAM command)
+{
+    if (command == 6)
+        return false;
+    if (command == 3 || command == 4)
+    {
+        require(folio_state_set_motion(fixture->state, command == 4) == FOLIO_STATE_READY,
+                "live measured motion preference");
+        SendMessageW(folio_window_accessible_window(window, ACCESSIBLE_WINDOW), WM_SETTINGCHANGE, 0,
+                     0);
+    }
+    if (command == 1 || command == 2 || command == 7)
+        motion_live_query(window, fixture, command);
+    else
+        motion_live_result(window, fixture, (unsigned)command);
+    return true;
+}
+
+static void motion_live_dispatch(struct folio_window *_Nonnull window, const MSG *_Nonnull message)
+{
+    if (message->message == WM_TIMER && message->wParam == 86)
+    {
+        ++motion_live_ticks;
+        if (motion_live_slow)
+        {
+            puts("{\"event\":\"delay\"}");
+            require(fflush(stdout) == 0 && getchar() == '\n',
+                    "external driver delays delivery without a test clock");
+        }
+    }
+    if (!folio_window_translate(window, message))
+    {
+        TranslateMessage(message);
+        DispatchMessageW(message);
+    }
+}
+
+static bool motion_live_step(struct folio_window *_Nonnull window,
+                             struct native_fixture *_Nonnull fixture)
+{
+    MSG message;
+    if (PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE))
+    {
+        if (message.message == motion_live_message)
+            return motion_live_request(window, fixture, message.wParam);
+        motion_live_dispatch(window, &message);
+        return true;
+    }
+    if (folio_window_idle_work_ready(window))
+    {
+        ++motion_live_idle;
+        folio_window_continue_idle_work(window);
+        return true;
+    }
+    if (motion_live_job != 0 && !folio_state_discovery_work_pending(fixture->state))
+    {
+        motion_live_result(window, fixture, motion_live_job);
+        motion_live_job = 0;
+        motion_live_slow = false;
+    }
+    require(WaitMessage(), "live loop waits only when the production idle path has no work");
+    return true;
+}
+
+static void motion_live(struct folio_window *_Nonnull window,
+                        struct native_fixture *_Nonnull fixture)
+{
+    invoke_operation(window, FOLIO_COMMAND_DISCOVER_NOTES);
+    discovery_settle(window, fixture->state);
+    printf("{\"event\":\"ready\",\"thread\":%lu}\n", GetCurrentThreadId());
+    require(fflush(stdout) == 0, "publish the private live-loop thread");
+    while (motion_live_step(window, fixture))
+    {
+    }
+    surface_button(window, ACCESSIBLE_SURFACE_CLOSE);
+}
+
+static void run_motion_case(struct native_fixture *_Nonnull fixture)
+{
+    require(folio_state_set_motion(fixture->state, true) == FOLIO_STATE_READY &&
+                folio_state_set_theme(fixture->state, FOLIO_THEME_CHOICE_DARK) ==
+                    FOLIO_STATE_READY &&
+                folio_state_select_note(fixture->state, 0, 0, FOLIO_UNTITLED_PROTECT) ==
+                    FOLIO_STATE_READY &&
+                folio_state_motion_enabled(fixture->state),
+            "private motion fixture has explicit saved and OS permission");
+    if (motion_visual_case)
+    {
+        motion_visual(fixture);
+        return;
+    }
+    struct folio_window *window = nullptr;
+    require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
+                FOLIO_WINDOW_CREATED,
+            "motion native window");
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    require(SetWindowPos(root, nullptr, 20, 20, 1050, 720, SWP_NOZORDER | SWP_NOACTIVATE),
+            "wide motion fixture");
+    pump(window);
+    action(window, ACCESSIBLE_EDIT);
+    if (motion_live_case)
+    {
+        motion_live(window, fixture);
+        folio_window_destroy(window);
+        return;
+    }
+    struct native_body_snapshot before;
+    capture_native_body(window, &before);
+    motion_frames(window, fixture);
+    motion_clip_boundary(window, fixture);
+    motion_generation_boundary(window, fixture);
+    motion_setting_boundary(window, fixture);
+    motion_pause_boundary(window, fixture);
+    motion_os_boundary(window, fixture);
+    discovery_body_unchanged(window, &before);
+    motion_modal_boundary(window, fixture);
+    folio_window_destroy(window);
+}
+
 static void run_fixture(struct native_fixture *_Nonnull fixture, int argc,
                         char *_Nonnull *_Nonnull argv)
 {
-    if (body_discovery_case)
+    if (motion_case)
+        run_motion_case(fixture);
+    else if (body_discovery_case)
         run_body_discovery_case(fixture);
     else if (discovery_case)
         run_discovery_case(fixture);
@@ -10178,6 +10708,9 @@ static void select_favorites_fixture(const char *_Nonnull selector)
 
 static void select_tags_fixture(const char *_Nonnull selector)
 {
+    motion_visual_case = strcmp(selector, "--motion-visual") == 0;
+    motion_live_case = strcmp(selector, "--motion-live") == 0;
+    motion_case = strcmp(selector, "--motion") == 0 || motion_visual_case || motion_live_case;
     body_discovery_visual_case = strcmp(selector, "--body-discovery-visual") == 0;
     body_discovery_copy_case = strcmp(selector, "--body-discovery-copy") == 0;
     body_discovery_measure_case = strcmp(selector, "--body-discovery-measure") == 0;
@@ -10196,7 +10729,8 @@ static void select_tags_fixture(const char *_Nonnull selector)
     tags_reload_case = strcmp(selector, "--tags-reload") == 0;
     tags_metrics_case = strcmp(selector, "--tags-metrics") == 0;
     tags_case = strcmp(selector, "--tags") == 0 || tags_visual_case || tags_reload_case ||
-                tags_metrics_case || tag_management_case || discovery_case || body_discovery_case;
+                tags_metrics_case || tag_management_case || discovery_case || body_discovery_case ||
+                motion_case;
 }
 
 static HWINSTA fixture_clipboard_station(void)

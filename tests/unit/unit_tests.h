@@ -174,6 +174,7 @@ struct folio_ports;
     const struct appearance_port *_Nonnull appearance, const struct regex_port *_Nonnull regex);
 
 void run_accessibility_state_tests(void);
+void run_motion_state_tests(void);
 
 void run_menu_availability_tests(void);
 struct transfer_port;

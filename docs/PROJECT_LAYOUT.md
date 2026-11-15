@@ -89,6 +89,8 @@ tests/win32（専用desktopと専用portable dataの検証合成ルート）
 step自体を純関数とは呼ばず、同じ構築状態・入力・work列から同じ結果になる決定性を守る。
 `note_ledger`は手動順・星とその安定した優先順を所有し、`drawer_source`は検索/星の可視条件と展開を共有する。
 `folio_settings`の優先表示設定と`folio_state`の実行中の星scopeを入力し、台帳の順序自体は変えない（ADR0090）。
+設定版7の`motion`も同じ不変設定のparser/writerで保持する。OSの動作可否は`appearance_motion`の三値を
+既存snapshotで渡し、applicationが保存選択・観測結果・コントラストから実効値を一度だけ判定する（ADR0096）。
 テーマの固定ID/名前/UI・RTF配色は `folio_theme` の一表、systemを含む名前の解析・解決は `folio_theme_choice` が持つ（ADR0049）。
 `note_file_times`はadapterが得たローカルの作成・更新日時を検証した不変の表示値で、時計やファイルを読まない（ADR0087）。
 Markdown生成物は`markdown_rtf`、leafと段落spanは`markdown_blocks`、順序付きquote/list pathとitem連番・未表示の印は
@@ -152,6 +154,9 @@ PNG/JPEGのWIC復号/縮小は`image_decode`へ閉じる。WinHTTP callbackは�
 名前検索も既存command surface/menu/paletteへ接続し、`discovery_text`はapplicationの表示値を
 3言語catalogへ投影する。readonly native previewは`note_excerpt`だけを表示し、元のnote_paneとは別の
 表示先にする。原文の再読込/検索/保存をUIで実装せず、Openは共通の文書切替へ渡す。
+検索の演出は`folio_window`所有のframeと単一timerで、既存command layerの装飾線だけを描く。
+時計を読まず、実update clipを同じbuffered paintへ渡す。検索pending中のtickはtimerを一度止め、
+既存idleが一単位進んだ後だけ再armして、第二の検索driverを作らない（ADR0096）。
 本文modeも同じ面・RadioButton/SelectionItemとpreviewを使い、採用本文との照合後だけ既存EDITのnative選択へ渡す（ADR0094/0095）。
 
 `note_minimap`はRichEdit表示行の最大256sample・画像最大256矩形と構築進捗を持つ。主窓の120ms timerと

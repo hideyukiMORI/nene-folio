@@ -281,7 +281,7 @@ nenefolio_target(tag_catalog_tests win32_tests EXECUTABLE tests/win32/tag_catalo
 nenefolio_link(tag_catalog_tests nenefolio_core)
 nenefolio_link(tag_catalog_tests nenefolio_window)
 
-foreach(native_host tags_native_tests favorites_native_tests image_status_tests save_as_native_tests rename_native_tests move_edit_native_tests first_save_native_tests first_save_modal_native_tests)
+foreach(native_host motion_native_tests tags_native_tests favorites_native_tests image_status_tests save_as_native_tests rename_native_tests move_edit_native_tests first_save_native_tests first_save_modal_native_tests)
     nenefolio_target(${native_host} win32_tests EXECUTABLE
         tests/win32/image_status_tests.c tests/win32/image_status_tests.rc)
     nenefolio_link(${native_host} nenefolio_core)
@@ -311,6 +311,9 @@ set_target_properties(move_edit_native_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY
 set_target_properties(first_save_native_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/verification-first-save")
 set_target_properties(favorites_native_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/verification-favorites")
 set_target_properties(tags_native_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/verification-tags")
+set_target_properties(motion_native_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/verification-motion")
+add_test(NAME motion_native COMMAND motion_native_tests --motion)
+set_tests_properties(motion_native PROPERTIES TIMEOUT 30 RESOURCE_LOCK image_status_data)
 add_test(NAME tags_native COMMAND tags_native_tests --tags)
 add_test(NAME tags_metrics_native COMMAND tags_native_tests --tags-metrics)
 add_test(NAME tag_management_native COMMAND tags_native_tests --tag-management)
@@ -394,7 +397,7 @@ set_tests_properties(image_status note_status_ja note_status_en note_status_zh
     note_status_find note_status_replace PROPERTIES RESOURCE_LOCK image_status_data)
 
 # The same icon resource is used by the product and real-window verification hosts (ADR0088).
-foreach(icon_target nenefolio image_status_tests save_as_native_tests rename_native_tests move_edit_native_tests first_save_native_tests first_save_modal_native_tests favorites_native_tests tags_native_tests minimap_scheduling_tests settings_accessibility_tests)
+foreach(icon_target nenefolio motion_native_tests image_status_tests save_as_native_tests rename_native_tests move_edit_native_tests first_save_native_tests first_save_modal_native_tests favorites_native_tests tags_native_tests minimap_scheduling_tests settings_accessibility_tests)
     target_include_directories(${icon_target} PRIVATE
         "$<$<COMPILE_LANGUAGE:RC>:${CMAKE_CURRENT_SOURCE_DIR}/packaging/windows>")
 endforeach()

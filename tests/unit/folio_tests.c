@@ -88,6 +88,14 @@ static bool run_document_settings_target_tests(const char *_Nonnull argument)
 
 static bool run_minimap_target_tests(const char *_Nonnull argument)
 {
+    if (strcmp(argument, "--motion") == 0)
+    {
+        run_settings_tests();
+        run_motion_state_tests();
+        run_ui_text_tests();
+        printf("motion settings, OS observation and failure boundary tests passed\n");
+        return true;
+    }
     if (strcmp(argument, "--settings-codecs") == 0)
     {
         run_json_tests();
@@ -698,6 +706,7 @@ static void run_full_suite(void)
     run_filter_tests();
     run_settings_tests();
     run_theme_tests();
+    run_motion_state_tests();
     run_line_index_tests();
     run_replace_tests();
     run_state_tests();

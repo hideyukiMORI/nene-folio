@@ -855,6 +855,19 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
                                         "切换缩略图"},
     [UI_TEXT_KEY_MINIMAP] = {"Ctrl+Shift+M", "Ctrl+Shift+M", "Ctrl+Shift+M"},
     [UI_TEXT_SETTINGS_MINIMAP] = {"ミニマップを表示", "Show minimap", "显示缩略图"},
+    [UI_TEXT_SETTINGS_MOTION] = {"動きの演出", "Motion effects", "动态效果"},
+    [UI_TEXT_MOTION_HELP] =
+        {"「ノートを探す」の枠・選択・検索中に光を動かします。操作や結果は変わりません。",
+         "Moving light in Find a note when opening, selecting and searching. Actions and results "
+         "stay the same.",
+         "在“查找笔记”打开、选择和搜索时显示动态光线。操作和结果保持不变。"},
+    [UI_TEXT_MOTION_STATIC] =
+        {"「ノートを探す」の演出は現在静止中です。Windowsの設定がオフ、コントラスト "
+         "テーマ、または設定を確認できないためです。選択は保持されます。",
+         "Find a note is currently static: Windows animations are off, a contrast theme is active, "
+         "or settings are unavailable. Your choice is kept.",
+         "“查找笔记”当前为静态：Windows动画已关闭、对比度主题已启用或无法读取设置。此处的选择会保留"
+         "。"},
     [UI_TEXT_MINIMAP] = {"ミニマップ", "Minimap", "缩略图"},
     [UI_TEXT_MINIMAP_HELP] =
         {"クリック・ドラッグ・ホイールで移動。↑↓、PageUp/Down、Home/"

@@ -2,6 +2,7 @@
 #ifndef NENEFOLIO_APPEARANCE_SNAPSHOT_H
 #define NENEFOLIO_APPEARANCE_SNAPSHOT_H
 
+#include "appearance_motion.h"
 #include "folio_contrast.h"
 #include "folio_theme_choice.h"
 #include "theme_palette.h"
@@ -10,6 +11,7 @@ struct appearance_snapshot
 {
     enum folio_theme theme; /* adapterはLIGHT/DARKに限定する。 */
     enum folio_contrast contrast;
+    enum appearance_motion motion;
     struct rgb_color window;
     struct rgb_color window_text;
     struct rgb_color button;

@@ -125,6 +125,7 @@ struct persistence_adapter
     enum persistence_outcome settings_write_outcome;
     size_t settings_writes; /* write_settings が呼ばれた回数 */
     bool written_minimap;
+    bool written_motion;
     bool written_number;                   /* 最後に書かれた設定の number */
     enum folio_theme_choice written_theme; /* 最後に書かれた設定の theme */
     enum folio_language written_language;  /* 最後に書かれた設定の language */
@@ -657,6 +658,7 @@ static enum persistence_outcome fake_write_settings(struct persistence_adapter *
         return adapter->settings_write_outcome;
     }
     adapter->written_minimap = folio_settings_minimap(settings);
+    adapter->written_motion = folio_settings_motion(settings);
     adapter->written_number = folio_settings_number(settings);
     adapter->written_theme = folio_settings_theme(settings);
     adapter->written_language = folio_settings_language(settings);
@@ -4277,6 +4279,146 @@ static void verify_theme_preview_contrast(void)
                 folio_state_theme(state) == FOLIO_THEME_LIGHT,
             "equal palettes still adopt semantic choice for later OS refresh");
     folio_state_destroy(state);
+}
+
+static void verify_motion_observation(void)
+{
+    struct persistence_adapter files = healthy_adapter();
+    struct appearance_adapter looks = {.theme = FOLIO_THEME_DARK};
+    struct folio_state *state = appearance_state(&files, &looks);
+    require(folio_state_motion(state) && !folio_state_motion_available(state) &&
+                !folio_state_motion_enabled(state) && files.settings_writes == 0,
+            "unknown OS animation keeps the saved default but is static");
+    uint64_t revision = folio_state_palette_revision(state);
+    const char *pane = folio_state_pane_rtf(state);
+    const enum appearance_motion observations[] = {
+        APPEARANCE_MOTION_ALLOWED, APPEARANCE_MOTION_DISABLED, APPEARANCE_MOTION_UNKNOWN};
+    const bool available[] = {true, false, false};
+    for (size_t at = 0; at < sizeof observations / sizeof observations[0]; ++at)
+    {
+        looks.snapshot.motion = observations[at];
+        require(folio_state_refresh_theme(state) == FOLIO_STATE_READY &&
+                    folio_state_motion_enabled(state) == available[at] &&
+                    folio_state_motion_available(state) == available[at] &&
+                    folio_state_palette_revision(state) == revision &&
+                    folio_state_pane_rtf(state) == pane && folio_state_motion(state),
+                "motion-only OS updates change neither body nor palette nor saved choice");
+    }
+    looks.snapshot = contrast_sample(false);
+    looks.snapshot.motion = APPEARANCE_MOTION_ALLOWED;
+    require(folio_state_refresh_theme(state) == FOLIO_STATE_READY &&
+                !folio_state_motion_available(state),
+            "high contrast overrides OS animation ON");
+    looks.snapshot.contrast = FOLIO_CONTRAST_STANDARD;
+    require(folio_state_refresh_theme(state) == FOLIO_STATE_READY &&
+                folio_state_motion_enabled(state),
+            "leaving high contrast restores the saved ON");
+    looks.outcome = APPEARANCE_UNAVAILABLE;
+    require(folio_state_refresh_theme(state) == FOLIO_STATE_APPEARANCE_UNAVAILABLE &&
+                !folio_state_motion_available(state) && folio_state_motion(state),
+            "failed observation cannot retain an earlier motion permission");
+    looks.outcome = APPEARANCE_READY;
+    require(folio_state_refresh_theme(state) == FOLIO_STATE_READY &&
+                folio_state_motion_enabled(state) && files.settings_writes == 0,
+            "observation recovery restores eligibility without saving");
+    folio_state_destroy(state);
+}
+
+static void verify_motion_setting(void)
+{
+    struct persistence_adapter files = healthy_adapter();
+    struct appearance_adapter looks = {.theme = FOLIO_THEME_DARK,
+                                       .snapshot.motion = APPEARANCE_MOTION_ALLOWED};
+    struct folio_state *state = appearance_state(&files, &looks);
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
+                folio_state_begin_edit(state) == FOLIO_STATE_READY,
+            "motion setting EDIT fixture");
+    const char *pane = folio_state_pane_rtf(state);
+    require(folio_state_set_motion(state, true) == FOLIO_STATE_READY && files.settings_writes == 0,
+            "the same motion choice is not saved");
+    files.settings_write_outcome = PERSISTENCE_UNWRITABLE;
+    require(folio_state_set_motion(state, false) == FOLIO_STATE_SETTINGS_STORE_FAILED &&
+                folio_state_motion_enabled(state),
+            "failed save preserves effective motion ON");
+    files.settings_write_outcome = PERSISTENCE_STORED;
+    require(folio_state_set_motion(state, false) == FOLIO_STATE_READY &&
+                !folio_state_motion(state) && !files.written_motion &&
+                folio_state_motion_available(state) && !folio_state_motion_enabled(state),
+            "saved motion OFF is independent of OS eligibility");
+    require(folio_state_set_minimap(state, false) == FOLIO_STATE_READY && !files.written_motion &&
+                !folio_state_motion(state),
+            "another saved option keeps motion OFF");
+    require(folio_state_set_motion(state, true) == FOLIO_STATE_READY && files.written_motion &&
+                folio_state_motion_enabled(state) && folio_state_pane_rtf(state) == pane &&
+                files.note_writes == 0 && files.archives == 0,
+            "motion changes preserve the EDIT document and history");
+    folio_state_destroy(state);
+}
+
+static void verify_motion_restart(void)
+{
+    struct persistence_adapter files = healthy_adapter();
+    files.settings_outcome = PERSISTENCE_LOADED;
+    files.settings_text = "{\"version\":7,\"number\":true,\"theme\":\"dark\",\"language\":\"en\","
+                          "\"minimap\":true,\"note_order\":\"manual\",\"motion\":false}";
+    struct appearance_adapter looks = {.theme = FOLIO_THEME_DARK,
+                                       .snapshot.motion = APPEARANCE_MOTION_ALLOWED};
+    struct folio_state *state = appearance_state(&files, &looks);
+    require(!folio_state_motion(state) && folio_state_motion_available(state) &&
+                !folio_state_motion_enabled(state) && files.settings_writes == 0,
+            "restart reads motion OFF without rewriting the file");
+    folio_state_destroy(state);
+    files.settings_outcome = PERSISTENCE_MALFORMED;
+    state = appearance_state(&files, &looks);
+    require(folio_state_set_motion(state, false) == FOLIO_STATE_SETTINGS_UNREADABLE &&
+                files.settings_writes == 0,
+            "unreadable settings cannot be replaced by motion");
+    folio_state_destroy(state);
+}
+
+static void verify_motion_allocation_state(void)
+{
+    struct persistence_adapter files = healthy_adapter();
+    struct appearance_adapter looks = {.theme = FOLIO_THEME_DARK,
+                                       .snapshot.motion = APPEARANCE_MOTION_ALLOWED};
+    struct folio_state *state = appearance_state(&files, &looks);
+    allocation_probe_fail_at(1);
+    enum folio_state_outcome result = folio_state_set_motion(state, false);
+    size_t calls = allocation_probe_calls();
+    allocation_probe_fail_at(0);
+    if (calls != 0)
+        require(result == FOLIO_STATE_OUT_OF_MEMORY && folio_state_motion_enabled(state) &&
+                    files.settings_writes == 0,
+                "motion OOM stops before any save or adoption");
+    if (calls == 0)
+        require(result == FOLIO_STATE_READY && !folio_state_motion_enabled(state),
+                "normal motion save succeeds without failure injection");
+    require(folio_state_set_motion(state, true) == FOLIO_STATE_READY, "restore saved motion ON");
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "palette OOM has a real rendered document");
+    const char *pane = folio_state_pane_rtf(state);
+    looks.snapshot = contrast_sample(false);
+    looks.snapshot.motion = APPEARANCE_MOTION_ALLOWED;
+    allocation_probe_fail_at(1);
+    result = folio_state_refresh_theme(state);
+    calls = allocation_probe_calls();
+    allocation_probe_fail_at(0);
+    require(!folio_state_motion_enabled(state) && folio_state_motion(state),
+            "palette adoption failure or high contrast both settle motion without saving OFF");
+    if (calls != 0)
+        require(result == FOLIO_STATE_OUT_OF_MEMORY && folio_state_pane_rtf(state) == pane,
+                "palette OOM keeps the previous document while motion becomes static");
+    if (calls == 0)
+        require(result == FOLIO_STATE_READY, "normal palette adoption succeeds");
+    folio_state_destroy(state);
+}
+
+void run_motion_state_tests(void)
+{
+    verify_motion_observation();
+    verify_motion_setting();
+    verify_motion_restart();
+    verify_motion_allocation_state();
 }
 
 static void verify_set_minimap(void)
