@@ -17,6 +17,8 @@ struct index_filter_entry
     const char *_Nullable body;             /* 本文の写し。無ければ判定せず見えない */
     size_t length;                          /* body のバイト数 */
     const struct note_tags *_Nullable tags; /* Available parsed metadata, omitted if unavailable. */
+    const char *_Nullable category_name;    /* Optional in NAME_BODY; independent name in NAMES. */
+    bool favorite;
 };
 
 #endif

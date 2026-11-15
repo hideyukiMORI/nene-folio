@@ -6,9 +6,10 @@
 #include "index_filter_query.h"
 #include "index_filter_readiness.h"
 #include "index_filter_step.h"
+#include "index_ranked_note.h"
 struct index_filter_build;
-/* Borrow immutable term bytes and optional tag set until READY or destroy. Empty conditions
- * (no term and no tags) precede UTF-8 rejection,
+/* Borrow immutable term bytes and optional tag set until READY or destroy. NAME_BODY empty
+ * conditions (no term and no tags) precede UTF-8 rejection; NAMES accepts empty conditions.
  * then count >= SIZE_MAX / sizeof(size_t) is refused before allocation. Failure preserves out.
  * General terms with entries own length size_t prefix elements until READY; their product is
  * checked before allocation. Count zero creates READY without that scratch or a term borrow.
@@ -24,6 +25,10 @@ index_filter_build_create(const struct index_filter_query *_Nonnull query, size_
  * General source length N uses at most 3N comparison work; preparation/cleanup time is outside it.
  * Positive work with MORE
  * consumes work; zero work does not advance. READY returns ALL_DONE without reading entry/term. */
+/* NAMES additionally counts each source scalar subsequence comparison (at most 4 bytes decoded
+ * per scalar), category length byte/NUL, and each projected row or bucket transition as one work.
+ * Entry names/category names must be valid UTF-8. The final entry remains borrowed for resubmission
+ * until projection finishes; projection does not read its strings. */
 [[nodiscard]] enum index_filter_step
 index_filter_build_step(struct index_filter_build *_Nonnull build,
                         const struct index_filter_entry *_Nonnull entry, size_t *_Nonnull work);
@@ -33,6 +38,12 @@ index_filter_build_readiness(const struct index_filter_build *_Nonnull build);
 [[nodiscard]] size_t index_filter_build_count(const struct index_filter_build *_Nonnull sealed);
 [[nodiscard]] struct note_ref
 index_filter_build_ref(const struct index_filter_build *_Nonnull sealed, size_t index);
+/* READY is required. NAME_BODY has no ranked projection. NAMES retains all matches in ledger
+ * order and separately exposes at most index_ranked_limit notes in stable rank order. */
+[[nodiscard]] size_t
+index_filter_build_ranked_count(const struct index_filter_build *_Nonnull sealed);
+[[nodiscard]] struct index_ranked_note
+index_filter_build_ranked(const struct index_filter_build *_Nonnull sealed, size_t index);
 /* Requires READY. Success returns a new READY owner; OOM preserves input and out. */
 [[nodiscard]] enum index_filter_outcome
 index_filter_build_removed(const struct index_filter_build *_Nonnull sealed, struct note_ref target,

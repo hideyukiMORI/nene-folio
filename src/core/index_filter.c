@@ -97,6 +97,17 @@ size_t index_filter_count(const struct index_filter *_Nonnull filter)
     return filter->count;
 }
 
+size_t index_filter_ranked_count(const struct index_filter *_Nonnull filter)
+{
+    return index_filter_build_ranked_count(filter->sealed);
+}
+
+struct index_ranked_note index_filter_ranked(const struct index_filter *_Nonnull filter,
+                                             size_t index)
+{
+    return index_filter_build_ranked(filter->sealed, index);
+}
+
 void index_filter_destroy(struct index_filter *_Nullable filter)
 {
     if (filter == nullptr)

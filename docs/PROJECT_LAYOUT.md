@@ -80,6 +80,9 @@ tests/win32（専用desktopと専用portable dataの検証合成ルート）
 意味の正本を持つ。値型・閉じた選択肢・拒否理由と結果型。ドロワーのレイアウト（どの行が何ピクセルに見えるか・ヒットテスト・
 ドロップ先・スクロール上限）、カテゴリと索引の json 読み書き、md → RTF のサブセット変換を**純関数**として持つ。
 全文検索は`index_filter_build`だけに非公開の継続状態を認め、有限workの同一matcherから不変の`index_filter`を作る（ADR0073）。
+名前検索も同じbuildのscopeと18順位bucketを使う。全一致番号は台帳順のまま、上位200の順位projectionだけを別順にする。
+`note_excerpt`は同じnote_textから原文先頭80行/16KiB以内と行位置を所有する不変値で、本文cacheや保存経路を増やさない（ADR0094）。
+`note_identity`は検証済みのカテゴリ名と台帳stemの不変な所有copyで、保存prompt後の宛先再解決と検索候補の保持に共有する（ADR0094）。
 step自体を純関数とは呼ばず、同じ構築状態・入力・work列から同じ結果になる決定性を守る。
 `note_ledger`は手動順・星とその安定した優先順を所有し、`drawer_source`は検索/星の可視条件と展開を共有する。
 `folio_settings`の優先表示設定と`folio_state`の実行中の星scopeを入力し、台帳の順序自体は変えない（ADR0090）。
@@ -142,6 +145,10 @@ PNG/JPEGのWIC復号/縮小は`image_decode`へ閉じる。WinHTTP callbackは�
 図に別worker・ブラウザー・JavaScript実行時依存を持たせない（ADR0089）。
 
 ### `src/ui/win32`
+
+名前検索も既存command surface/menu/paletteへ接続し、`discovery_text`はapplicationの表示値を
+3言語catalogへ投影する。readonly native previewは`note_excerpt`だけを表示し、元のnote_paneとは別の
+表示先にする。原文の再読込/検索/保存をUIで実装せず、Openは共通の文書切替へ渡す（ADR0094）。
 
 `note_minimap`はRichEdit表示行の最大256sample・画像最大256矩形と構築進捗を持つ。主窓の120ms timerと
 入力優先のidleで16件ずつ更新し、完成像だけ描く。`note_pane_geometry`は同じnative範囲から文書pixel座標を導く。

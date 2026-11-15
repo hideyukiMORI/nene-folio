@@ -391,6 +391,7 @@ static const CONTROLTYPEID control_types[] = {
     [ACCESSIBLE_COMMAND_INPUT] = UIA_EditControlTypeId,
     [ACCESSIBLE_REPLACE_PATTERN] = UIA_EditControlTypeId,
     [ACCESSIBLE_REPLACE_TEXT] = UIA_EditControlTypeId,
+    [ACCESSIBLE_DISCOVERY_PREVIEW] = UIA_EditControlTypeId,
 };
 
 static void boolean_value(VARIANT *_Nonnull out, bool value)

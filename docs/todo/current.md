@@ -1,6 +1,21 @@
 # いまの状態 — NeNe Folio
 
-## 2026-11-15 — タグ全体管理の対象確認
+## 2026-11-15 — 名前検索と原文previewの対象確認
+
+#821 / PR822はmain `0851f66de66313586d68fc80bf480b8ce88a2091`へ統合済み。
+最終head `c3b36f7d1230e2511c9e8195698294549e304339`、必須CI43686022314成功（51 CTest、分岐90.8667%）。
+通常exe反映・実data34件不変・全7,599ファイル保全を確認し、821の追加worktree/outputsは整理した。
+D:/NeNeFolio/agents/tag-management-20261115/completion.jsonが確定原本。
+
+継続指示に基づき#823で名前のあいまい検索と保存済み原文previewを共通面へ実装した。
+[ADR0094](../adr/0094-name-discovery-and-source-preview.md)、仕様FR-047、[操作表](../KEY_BINDINGS.md#名前検索と原文プレビュー)。
+既存engineのscope/有限work、条件の独立copy、最大200件と全一致数、候補移動と明示Openを使う。
+原文は先頭80行/16KiBまで、native本文/Undoは候補移動で変えない。保存prompt後は宛先名を再解決する。
+対象unit/確保注入、native拒否/復旧とコピー、3言語・3配色・最小/広幅、7回の外側計測を確認した。
+全成功/失敗と限界は[品質記録](../quality/2026-11-15-note-discovery.md)。最終CI・統合は#823のIssue/PR、
+通常exe反映・実data照合・保全/整理はD:/NeNeFolio/agents/discovery-design-20261115/completion.jsonを確定原本とする。
+原本未作成を完了と解釈しない。作業中のD:/NeNeFolio/worktrees/823-note-discoveryと対応outputsは保持する。
+本文live grep/一致行は次の焦点単位3b、演出は段階4。About・版上げ・公開は未着手。
 
 hideの停止まで継続する実装指示に基づき、#821でロードマップ段階2bを実装した。
 全カテゴリの保存済みノートを新しく確認して、タグを全体改名/解除する。既存名は集合へ統合し、
@@ -24,7 +39,7 @@ D:/NeNeFolio/worktrees/819-note-tagsを0ファイルで保持し、盲目的な�
 [ADR0091](../adr/0091-favorites-scope-and-quiet-stars.md)、[品質記録](../quality/2026-11-15-favorites-ui.md)、
 D:/NeNeFolio/agents/favorites-ui-20261115/completion.jsonが確定原本。追加worktree/outputsは整理済み。
 
-次は[ロードマップ](../ROADMAP.md)段階3の名前のあいまい検索・本文live grep・一致行プレビュー。
+次は[ロードマップ](../ROADMAP.md)段階3bの本文live grep・一致行プレビュー。
 最新入力の世代、未保存本文、候補移動と確定、星/タグとの組合せ、段階4の演出/低動作を先行ADRで決める。
 About・次版は未着手。
 版上げ・配布/Store操作はしていない。到達点と判断は[日報](../reports/2026-11-15.md)、
@@ -35,10 +50,10 @@ About・次版は未着手。
 ## 通常版と公開版
 
 通常exeはC:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe、版1.3.2 / Windows1.3.2.0。
-#819を11月15日13:29にsource `11080b0c75cf75f85ccb6de4006af8926fb4d730`から正典経路で反映した。
-SHA256 `baca50a8a3669b31565bce8fab90d1357b38d04e47901ad8130f5287865229c7`。
+#821を11月15日15:44にsource `0851f66de66313586d68fc80bf480b8ce88a2091`から正典経路で反映した。
+SHA256 `316e208282bd485a853cbb6ad71f45ea82ee045f488ffde8c5615c2b51b9af33`。
 反映前後の実data34ファイルのbytes/hash/作成・更新日時は一致。反映時にアプリは起動していない。
-確定原本はD:/NeNeFolio/agents/tags-20261115/completion.json。#821の後続反映は上記原本へ記録する。
+確定原本はD:/NeNeFolio/agents/tag-management-20261115/completion.json。
 
 台帳版2・設定版6は旧アプリでは読めない。旧台帳1/設定1〜5は読め、起動だけでは書き換えない。
 星はMarkdown/ZIPに含めない。通常版の書体修正・お気に入り・タグは公開済み1.3.2には未収載。

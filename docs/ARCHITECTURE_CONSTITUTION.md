@@ -86,6 +86,9 @@
 
 | 状態 | 意味 | 所有者 | 変更経路 |
 | --- | --- | --- | --- |
+| ノートを探すsession | 語、独立した星/tag条件、順位設定、結果/preview世代と選択 | application（`folio_state`） | 入口でcopyし一覧へ書き戻さない。既存matcher/corpusから派生し、確定だけを共通文書選択へ渡す（ADR0094） |
+| 保存promptを越えるノート宛先 | 検証済みカテゴリ名と台帳stemの所有copy | coreの不変`note_identity` | 拡張子を再解釈せず、applicationの同一resolveで現在台帳へ戻す。番号を保存prompt越しに再利用しない（ADR0094） |
+| 名前検索の順位と原文preview | 台帳順一致からの順位projection、有限範囲の原文と行位置 | coreの完成`index_filter`と不変`note_excerpt`をapplicationが所有 | 同じbuild内の18 bucketから上位200を完成公開。本文から先頭80行/16KiBを導き、保存対象にしない（ADR0094） |
 | ノートのタグ | Markdown front matterの名前集合。解析状態と元のbyte位置を伴う | coreの不変`note_metadata`を`note_text`が所有 | 同じparser/byte patchからGUIの`replace_edit`と全体管理の完成本文を導き、共通保存へ渡す（ADR0092/0093） |
 | タグ付与の編集中session | 宛先・元本文snapshot・staged集合 | application | 面の開始/トグル/取消/適用。同一性と現本文の照合後だけ編集を返す（ADR0092） |
 | タグ全体管理 | 意図、準備済みの不変な一件変更、phase/位置/件別の適用結果 | application（`folio_state`） | 共通corpusの新しい読込から準備し、明示適用後に一件ずつ期待本文付きの共通保存へ渡す。公開済みと後処理失敗を分ける（ADR0093） |
@@ -117,7 +120,7 @@
 | 入力待機中の実行順 | 次に優先する検索/ミニマップの閉じた種別 | ui/win32（`folio_window`） | 同じidle入口で両方が実行可能なら交互に一単位ずつ進める。各進捗は既存ownerに残す（ADR0084 #512） |
 | 編集中の本文 | 保存前の文字列 | ui/win32（RichEdit が所有） | 保存の意図で application へ渡す |
 | 全ノート検索の準備 | 未完了要求の最新語・読込/一致計算の位置・不完全な本文写し・構築ownerのhandle | application（`folio_state`） | 同じUIスレッドで本文を一件ずつ準備し、一致計算は有限workで継続する。完成後だけ最新語の集合を採用する。更新時は進捗を破棄し、未完成本文走査だけを先頭へ戻す。UIは実行可否と通常message待機を担当する（ADR0068/0073） |
-| 一致集合の構築進捗 | 比較phase/数値位置・番号列・scratch。完成後は不変 | core（`index_filter_build`） | 単一matcherのstepで進め、SEALED時にterm借用を解除する。完成filterが所有を引き取り、配列/内部recordを公開しない。入力/初回末尾のidleと確定集合修復の同期driverが同じengineを使う（ADR0073） |
+| 一致集合の構築進捗 | 比較phase/数値位置・番号列・scratch・名前順位bucket/projection。完成後は不変 | core（`index_filter_build`） | 単一matcherのstepで進め、SEALED時にterm借用を解除する。完成filterが所有を引き取り、配列/内部recordを公開しない。入力/初回末尾のidleと確定集合修復の同期driverが同じengineを使う（ADR0073/0094） |
 | 本文の表示倍率 | 閲覧/編集/ノートで共有する実行中だけの百分率 | ui/win32（`note_pane`） | Ctrlキー/ホイールの同じEM_SETZOOM経路で変更し、RTF投入後も再適用する。native倍率と主窓の行番号font/幅はこの値の投影（ADR0067） |
 | 本文ホイールの余韻 | 1画面以内の未消化画素・端数・残り期間とタイマ資源 | ui/win32（`note_pane`） | 同じ通常wheel境界から240msで減速し、実位置を所有するRichEditへ反映する。逆転/別操作/無効化/破棄で取消。nativeのwheel慣性とは併用しない（ADR0026の#473補正） |
 | 無題を置き換える許可 | 無題保護／明示破棄の閉じた値 | 同期呼出し元のローカル | 退出用の名前入力面から受け、既存の選択・新規の意図へ一回だけ渡す。次文書の準備後に採用し、永続状態や継続キューを作らない（ADR0050） |
@@ -145,7 +148,7 @@
 | --- | --- | --- |
 | `src/ui/win32` | ウィンドウの HWND・描画資源・RichEdit の本文・ドラッグ中の一時状態 | Win32 はメッセージ駆動で可変が前提 |
 | `src/adapters/win32` | ファイルハンドル・読み書きバッファ | OS の入出力は可変 |
-| `src/core/index_filter_build` ownerのみ | 構築中の比較phase/数値位置・番号列・scratch。SEALED後は不変 | 同じmatcherを有限workで中断/再開するため。applicationへは限定操作のopaque handleだけを渡す（ADR0073） |
+| `src/core/index_filter_build` ownerのみ | 構築中の比較phase/数値位置・番号列・scratch・名前順位bucket/projection。SEALED後は不変 | 同じmatcherを有限workで中断/再開するため。applicationへは限定操作のopaque handleだけを渡す（ADR0073/0094） |
 
 隔離区画は、可変なコレクション・配列・ビルダを外へ返さず、検証済みの値型だけを受け取り、同じ入力に対して同じ結果を返す。
 ADR0073の`index_filter_build`に限り、applicationがcreate/step/finish/destroyのopaque handleを保持できる。

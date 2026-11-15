@@ -10,6 +10,11 @@
 #include <stdlib.h>
 #include <string.h>
 
+static const enum accessible_kind command_inputs[] = {
+    ACCESSIBLE_COMMAND_INPUT, ACCESSIBLE_REPLACE_PATTERN, ACCESSIBLE_REPLACE_TEXT,
+    ACCESSIBLE_DISCOVERY_PREVIEW};
+constexpr size_t command_input_count = sizeof command_inputs / sizeof command_inputs[0];
+
 /* COM参照は窓より長く生きてよい。ownerを外した後はUI状態へ到達しない。 */
 struct accessibility_host
 {
@@ -35,7 +40,7 @@ struct accessibility_host
     struct accessible_request request;
     char16_t filter_name[1024];
     char16_t body_name[1024];
-    char16_t command_names[3][1024];
+    char16_t command_names[command_input_count][1024];
 };
 
 static void refresh_snapshot(struct accessibility_host *_Nonnull host);
@@ -580,10 +585,8 @@ static void refresh_snapshot(struct accessibility_host *_Nonnull host)
     refresh_surface(host);
     annotate(host, ACCESSIBLE_FILTER, host->filter_name);
     annotate(host, ACCESSIBLE_BODY, host->body_name);
-    const enum accessible_kind inputs[] = {ACCESSIBLE_COMMAND_INPUT, ACCESSIBLE_REPLACE_PATTERN,
-                                           ACCESSIBLE_REPLACE_TEXT};
-    for (size_t at = 0; at < sizeof inputs / sizeof inputs[0]; ++at)
-        annotate(host, inputs[at], host->command_names[at]);
+    for (size_t at = 0; at < command_input_count; ++at)
+        annotate(host, command_inputs[at], host->command_names[at]);
     observe_focus(host);
     for (size_t index = 0; index < sizeof host->selections / sizeof host->selections[0]; ++index)
     {
