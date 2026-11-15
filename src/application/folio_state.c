@@ -4330,6 +4330,8 @@ static void catalog_notes_destroy(const struct note_tags *_Nullable *_Nullable n
 
 static enum folio_state_outcome build_tag_catalog(struct folio_state *_Nonnull state)
 {
+    /* Every failed allocation, including the input array, ends this explicit request. */
+    state->catalog_status = TAG_CATALOG_FAILED;
     size_t count = 0;
     if (!index_note_count(state, &count) || count >= SIZE_MAX / sizeof(const struct note_tags *))
         return FOLIO_STATE_OUT_OF_MEMORY;

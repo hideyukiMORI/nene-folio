@@ -65,6 +65,8 @@
 | native-history-regression-02 / native-locked-regression-01 / native-filter-save-regression-01 / native-save-as-regression-01 | 全て成功。共通保存の変更に直接関係する履歴採用と保存、lock失敗、絞り込み前の保存、別名保存を確認 |
 | table-proof-01 | 成功。登録したTAG_APPLY表の現物をDの専用fixtureへ複写し、正例→LIMIT行削除をCNF-009が拒否→bytes完全復元の正例を確認。製品ソースやゲートを緩めていない |
 | final-conformance-01 / final-format-01 / final-diff-01 | 全て成功。`python -B eng/conformance.py --root .`は0違反、変更C/headerの`clang-format --dry-run --Werror`と`git diff --check`が成功。全architecture/カバレッジを含む最終CIの代替ではない |
+| CI43685362831 / merge-01 | 最初のhead `9bdfea46729524452a36ab74aea7964147f7cc99`は51 CTest成功。その後の確保注入測定で既存タグ候補の「失敗後に自動再試行しない」assertが失敗し、必須CIと正典mergeは失敗、未統合。catalog入力配列の確保失敗がPREPARINGのまま残る実装欠陥であり、全体管理対応の準備処理整理で失敗状態の設定を落としていた。全ての早期失敗もFAILEDとなるようcatalog生成入口で終了状態を設定し、成功時だけAVAILABLEへ採用する。期待値/ゲートは変更しない |
+| catalog-fix-build-01 / measurement-build-03 / measurement-tags-03 / measurement-management-03 | 全て成功。修正したapplicationの通常build/静的解析と、正典sanitizer/確保interceptionによる`--tags`、`--tag-management`を実行。CIで失敗した候補確保失敗と自動再試行の禁止が成功し、全体管理の52/154/43確保境界も成功。core/UI/native実装が同じ検証は再利用し、フルゲートは修正後headの必須CIで行う |
 
 ## 表示と費用
 
