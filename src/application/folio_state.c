@@ -1443,6 +1443,35 @@ bool folio_state_minimap(const struct folio_state *_Nonnull state)
     return folio_settings_minimap(state->settings);
 }
 
+bool folio_state_motion(const struct folio_state *_Nonnull state)
+{
+    return folio_settings_motion(state->settings);
+}
+
+bool folio_state_motion_available(const struct folio_state *_Nonnull state)
+{
+    return state->appearance_notice == FOLIO_STATE_READY &&
+           state->appearance_snapshot.contrast == FOLIO_CONTRAST_STANDARD &&
+           state->appearance_snapshot.motion == APPEARANCE_MOTION_ALLOWED;
+}
+
+bool folio_state_motion_enabled(const struct folio_state *_Nonnull state)
+{
+    return folio_state_motion(state) && folio_state_motion_available(state);
+}
+
+enum folio_state_outcome folio_state_set_motion(struct folio_state *_Nonnull state, bool motion)
+{
+    if (state->settings_notice != FOLIO_STATE_READY)
+        return state->settings_notice;
+    if (folio_settings_motion(state->settings) == motion)
+        return FOLIO_STATE_READY;
+    struct folio_settings *_Nullable changed = nullptr;
+    if (folio_settings_with_motion(state->settings, motion, &changed) != FOLIO_SETTINGS_READY)
+        return FOLIO_STATE_OUT_OF_MEMORY;
+    return store_settings_change(state, changed);
+}
+
 enum folio_state_outcome folio_state_set_minimap(struct folio_state *_Nonnull state, bool minimap)
 {
     if (state->settings_notice != FOLIO_STATE_READY)

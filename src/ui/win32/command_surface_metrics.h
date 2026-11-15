@@ -13,6 +13,7 @@ struct command_surface_metrics
     enum folio_language language;
     int notice;
     int settings_footer;
+    int motion_help;
     int themes_footer;
     int tags_footer;
     int tag_button_height;

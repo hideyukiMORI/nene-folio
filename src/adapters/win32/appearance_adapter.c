@@ -54,6 +54,14 @@ static struct rgb_color system_color(int index)
     return (struct rgb_color){GetRValue(color), GetGValue(color), GetBValue(color)};
 }
 
+static enum appearance_motion read_motion(void)
+{
+    BOOL enabled = FALSE;
+    if (!SystemParametersInfoW(SPI_GETCLIENTAREAANIMATION, 0, &enabled, 0))
+        return APPEARANCE_MOTION_UNKNOWN;
+    return enabled ? APPEARANCE_MOTION_ALLOWED : APPEARANCE_MOTION_DISABLED;
+}
+
 static enum appearance_outcome read_appearance(struct appearance_adapter *_Nonnull adapter,
                                                struct appearance_snapshot *_Nonnull out)
 {
@@ -64,6 +72,7 @@ static enum appearance_outcome read_appearance(struct appearance_adapter *_Nonnu
     }
     *out = (struct appearance_snapshot){
         .theme = read_theme(adapter),
+        .motion = read_motion(),
         .contrast = (contrast.dwFlags & HCF_HIGHCONTRASTON) != 0 ? FOLIO_CONTRAST_HIGH
                                                                  : FOLIO_CONTRAST_STANDARD,
         .window = system_color(COLOR_WINDOW),

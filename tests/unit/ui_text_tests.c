@@ -685,6 +685,12 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_COMMAND_TOGGLE_MINIMAP] = "ミニマップの表示を切り替える",
     [UI_TEXT_KEY_MINIMAP] = "Ctrl+Shift+M",
     [UI_TEXT_SETTINGS_MINIMAP] = "ミニマップを表示",
+    [UI_TEXT_SETTINGS_MOTION] = "動きの演出",
+    [UI_TEXT_MOTION_HELP] =
+        "「ノートを探す」の枠・選択・検索中に光を動かします。操作や結果は変わりません。",
+    [UI_TEXT_MOTION_STATIC] =
+        "「ノートを探す」の演出は現在静止中です。Windowsの設定がオフ、コントラスト "
+        "テーマ、または設定を確認できないためです。選択は保持されます。",
     [UI_TEXT_MINIMAP] = "ミニマップ",
     [UI_TEXT_MINIMAP_HELP] = "クリック・ドラッグ・ホイールで移動。↑↓、PageUp/Down、Home/"
                              "Endでも移動できます。狭い窓では自動で隠れます。",

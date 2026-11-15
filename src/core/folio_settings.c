@@ -10,12 +10,14 @@ struct folio_settings
 {
     bool number;
     bool minimap;
+    bool motion;
     enum note_order order;
     enum folio_theme_choice theme;
     enum folio_language language;
 };
 
-constexpr uint32_t settings_version = 6;
+constexpr uint32_t settings_version = 7;
+constexpr uint32_t settings_version_6 = 6;
 constexpr uint32_t settings_version_5 = 5;
 constexpr uint32_t settings_version_4 = 4;
 constexpr uint32_t settings_version_1 = 1;
@@ -55,6 +57,7 @@ static struct folio_settings defaults(void)
 {
     struct folio_settings values = {.number = false,
                                     .minimap = true,
+                                    .motion = true,
                                     .order = NOTE_ORDER_FAVORITES_FIRST,
                                     .theme = FOLIO_THEME_CHOICE_SYSTEM,
                                     .language = FOLIO_LANGUAGE_JA};
@@ -83,6 +86,15 @@ folio_settings_with_minimap(const struct folio_settings *_Nonnull settings, bool
 {
     struct folio_settings values = *settings;
     values.minimap = minimap;
+    return create(&values, out);
+}
+
+enum folio_settings_outcome
+folio_settings_with_motion(const struct folio_settings *_Nonnull settings, bool motion,
+                           struct folio_settings *_Nullable *_Nonnull out)
+{
+    struct folio_settings values = *settings;
+    values.motion = motion;
     return create(&values, out);
 }
 
@@ -182,8 +194,11 @@ static bool read_options(struct json_reader *_Nonnull reader,
     if (version >= settings_version_5 &&
         (!expect_key(reader, "minimap") || !read_boolean(reader, &values->minimap)))
         return false;
+    if (version >= settings_version_6 &&
+        (!expect_key(reader, "note_order") || !read_order(reader, &values->order)))
+        return false;
     return version < settings_version ||
-           (expect_key(reader, "note_order") && read_order(reader, &values->order));
+           (expect_key(reader, "motion") && read_boolean(reader, &values->motion));
 }
 
 static bool document_end(struct json_reader *_Nonnull reader)
@@ -251,7 +266,8 @@ static enum folio_settings_outcome parse_document(struct json_reader *_Nonnull r
         return parse_version_2(reader, values);
     }
     if (version == settings_version_3 || version == settings_version_4 ||
-        version == settings_version_5 || version == settings_version)
+        version == settings_version_5 || version == settings_version_6 ||
+        version == settings_version)
     {
         return parse_localized(reader, values, version);
     }
@@ -292,6 +308,8 @@ void folio_settings_write(const struct folio_settings *_Nonnull settings,
     json_writer_boolean(writer, settings->minimap);
     json_writer_key(writer, "note_order");
     json_writer_string(writer, order_names[settings->order]);
+    json_writer_key(writer, "motion");
+    json_writer_boolean(writer, settings->motion);
     json_writer_object_end(writer);
 }
 
@@ -303,6 +321,11 @@ bool folio_settings_number(const struct folio_settings *_Nonnull settings)
 bool folio_settings_minimap(const struct folio_settings *_Nonnull settings)
 {
     return settings->minimap;
+}
+
+bool folio_settings_motion(const struct folio_settings *_Nonnull settings)
+{
+    return settings->motion;
 }
 
 enum folio_theme_choice folio_settings_theme(const struct folio_settings *_Nonnull settings)

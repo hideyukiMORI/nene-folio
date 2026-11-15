@@ -12,6 +12,7 @@ enum settings_row_kind : unsigned char
     SETTINGS_ROW_NUMBER,
     SETTINGS_ROW_MINIMAP,
     SETTINGS_ROW_FAVORITES_FIRST,
+    SETTINGS_ROW_MOTION,
     SETTINGS_ROW_STORAGE
 };
 
