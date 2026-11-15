@@ -5859,7 +5859,7 @@ enum folio_state_outcome folio_state_query_discovery(struct folio_state *_Nonnul
         return fail_discovery(state, converted == UTF8_TEXT_OUT_OF_MEMORY
                                          ? FOLIO_STATE_OUT_OF_MEMORY
                                          : FOLIO_STATE_DISCOVERY_QUERY_INVALID);
-    if (memchr(utf8_text_bytes(query), 0, utf8_text_length(query)) != nullptr)
+    if (strlen(utf8_text_bytes(query)) != utf8_text_length(query))
     {
         utf8_text_destroy(query);
         return fail_discovery(state, FOLIO_STATE_DISCOVERY_QUERY_INVALID);

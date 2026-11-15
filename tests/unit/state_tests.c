@@ -9290,6 +9290,13 @@ static void verify_discovery_limits(void)
     folio_state_clear_discovery_conditions(state);
     require(!folio_state_discovery_work_pending(state),
             "condition change cannot revive rejected query");
+    const char16_t nul_queries[][3] = {{0, u'a', u'b'}, {u'a', 0, u'b'}, {u'a', u'b', 0}};
+    for (size_t index = 0; index < 3; ++index)
+        require(folio_state_query_discovery(state, nul_queries[index], 3) ==
+                        FOLIO_STATE_DISCOVERY_QUERY_INVALID &&
+                    folio_state_discovery_summary(state).phase == DISCOVERY_FAILED &&
+                    folio_state_discovery_summary(state).shown == 0,
+                "embedded NUL at each input position is rejected without stale results");
     const char16_t malformed[] = {0xd800};
     require(folio_state_query_discovery(state, malformed, 1) ==
                     FOLIO_STATE_DISCOVERY_QUERY_INVALID &&

@@ -225,3 +225,15 @@ final-format-01は変更したC/headerだけを正典clang-formatのdry-run/Werr
 最終headの必須CI（eng/check.ps1）はローカル対象結果とは別に、PRをReadyへ進めてから要求する。
 
 commit前のhook確認ではpre-commit/pre-pushが存在せず、commit-msgだけが正典の件名検査を実行することを確認した。存在しない2pathの読取は失敗として記録し、hookを迂回していない。
+
+### PR824の最初の必須CI
+
+head b3d67b76d2747c3138a7edb253878d26dfe3820dのCI43697238758は、全targetのbuildと構成検査まで成功し、
+ARC-003でapplicationの追加memchrが許可シンボルに無いとして停止した。CTest/coverage成功とは扱わない。
+正典merge-01も子/記録1で停止し、統合していない。全CI log/jsonを恒久領域へ保存した。
+
+許可表やゲートは変更せず、utf8_text_bytesの終端付き所有文字列契約を使い、strlenと所有lengthの不一致で
+途中NULを拒否するよう修正した。先頭/途中/末尾の明示NUL入力3件を対象unitへ追加した。
+ci-fix-build-01/02、ci-fix-symbols-01（core/application 2 library・0違反）、ci-fix-unit-01 `--discovery`は
+すべて子/記録0・エラーなし。通常buildの確保注入0を、測定buildの78点の再実行とは扱わない。
+語の検証だけの修正でnative投影・操作は不変。新headを確定し、必須CIを再度要求する。
