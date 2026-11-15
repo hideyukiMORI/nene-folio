@@ -45,7 +45,7 @@ nenefolio_target(nenefolio_core core STATIC
     src/core/category_ledger.c src/core/category_name.c src/core/note_ledger.c src/core/drawer_source.c src/core/drawer_layout.c
     src/core/text_buffer.c src/core/note_text.c src/core/note_file_times.c src/core/markdown_rtf.c src/core/rtf_palette.c
     src/core/note_tag.c src/core/note_tags.c src/core/metadata_scalar.c src/core/note_metadata.c
-    src/core/tag_catalog.c src/core/tag_edit_snapshot.c src/core/tag_update.c src/core/note_excerpt.c src/core/note_identity.c
+    src/core/tag_catalog.c src/core/tag_edit_snapshot.c src/core/tag_update.c src/core/note_excerpt.c src/core/note_identity.c src/core/note_source.c src/core/discovery_target.c
     src/core/rtf_text.c src/core/markdown_blocks.c src/core/markdown_inline_tokens.c
     src/core/code_language.c src/core/code_syntax.c
     src/core/diagram_flow_layout.c
@@ -86,7 +86,7 @@ nenefolio_target(folio_tests unit_tests EXECUTABLE
     tests/unit/storage_tests.c tests/unit/storage_state_tests.c
     tests/unit/web_link_tests.c tests/unit/transfer_tests.c tests/unit/image_tests.c
     tests/unit/folio_tests.c tests/unit/text_tests.c tests/unit/json_tests.c
-    tests/unit/tag_tests.c tests/unit/tag_management_tests.c tests/unit/discovery_tests.c
+    tests/unit/tag_tests.c tests/unit/tag_management_tests.c tests/unit/discovery_tests.c tests/unit/body_discovery_tests.c
     tests/unit/ledger_tests.c tests/unit/layout_tests.c tests/unit/state_tests.c
     tests/unit/allocation_probe.c tests/unit/allocation_tests.c tests/unit/markdown_tests.c
     tests/unit/code_syntax_tests.c
@@ -316,7 +316,9 @@ add_test(NAME tags_metrics_native COMMAND tags_native_tests --tags-metrics)
 add_test(NAME tag_management_native COMMAND tags_native_tests --tag-management)
 add_test(NAME discovery_native COMMAND tags_native_tests --discovery)
 add_test(NAME discovery_copy_native COMMAND tags_native_tests --discovery-copy)
-set_tests_properties(tags_native tags_metrics_native tag_management_native discovery_native discovery_copy_native PROPERTIES TIMEOUT 30 RESOURCE_LOCK image_status_data)
+add_test(NAME body_discovery_native COMMAND tags_native_tests --body-discovery)
+add_test(NAME body_discovery_copy_native COMMAND tags_native_tests --body-discovery-copy)
+set_tests_properties(tags_native tags_metrics_native tag_management_native discovery_native discovery_copy_native body_discovery_native body_discovery_copy_native PROPERTIES TIMEOUT 30 RESOURCE_LOCK image_status_data)
 add_test(NAME favorites_native COMMAND favorites_native_tests --favorites)
 set_tests_properties(favorites_native PROPERTIES TIMEOUT 30 RESOURCE_LOCK image_status_data)
 add_test(NAME favorites_ui_native COMMAND favorites_native_tests --favorites-ui)

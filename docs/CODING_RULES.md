@@ -130,6 +130,8 @@ UI と application の状態遷移は単一の UI スレッドで行う。背景
 名前検索も同じ65536 work/idleを使い、部分列scalar比較と順位projectionを計上する。
 tag条件が無い名前検索は全本文を先読みせず、preview対象だけを同じcorpus readerで読む。
 corpusのput/remove前には依存buildを破棄し、完成済みfilter/catalogも条件を保持して再構築する（ADR0094）。
+本文modeは同じmatcherのPOSITION phaseで、最初の一致までの原文位置を一scalar/改行一組ずつworkへ計上する。
+sessionの最初の非空本文要求かtag準備で一巡を始め、語/mode変更では再読しない。更新失効は一巡の開始権も破棄する（ADR0095）。
 入れ子のmessage pumpは作らない。
 画像のI/O・WIC復号/縮小に限り、adapterが単一workerを所有する（#520・ADR0085）。
 合成8192×8192 PNGの同期縮小125msを根拠とし、UI/application/core状態・HWND/TOMは渡さない。

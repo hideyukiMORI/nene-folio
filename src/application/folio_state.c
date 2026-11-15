@@ -6,6 +6,7 @@
 #include "category_ledger.h"
 #include "category_name.h"
 #include "discovery_source.h"
+#include "discovery_target.h"
 #include "drawer_layout.h"
 #include "folio_settings.h"
 #include "image_export.h"
@@ -146,6 +147,7 @@ struct folio_state
     enum note_scope discovery_scope;
     enum note_order discovery_order;
     enum discovery_phase discovery_phase;
+    enum discovery_mode discovery_mode;
     enum discovery_preview discovery_preview;
     enum folio_state_outcome discovery_notice;
     struct index_filter_build *_Nullable discovery_build;
@@ -162,6 +164,7 @@ struct folio_state
     uint64_t discovery_revision;
     uint64_t discovery_results_revision;
     bool discovery_refresh;
+    bool discovery_corpus_started; /* This session has requested the current fresh shared pass. */
     size_t corpus_category;
     size_t corpus_note;
     struct note_corpus *_Nullable corpus; /* 本文の写し。最初の絞り込みで 1 回だけ読む */
@@ -199,6 +202,9 @@ static enum folio_state_outcome prepare_tag_management_note(struct folio_state *
 static void invalidate_discovery(struct folio_state *_Nonnull state);
 static void refresh_discovery(struct folio_state *_Nonnull state);
 static void observe_discovery_source(struct folio_state *_Nonnull state, struct note_ref ref);
+static bool discovery_uses_body(const struct folio_state *_Nonnull state);
+static void discovery_fresh_pass(struct folio_state *_Nonnull state);
+static bool discovery_source_reused(const struct folio_state *_Nonnull state, struct note_ref ref);
 static void invalidate_corpus_dependents(struct folio_state *_Nonnull state);
 static bool holds_category(const struct folio_state *_Nonnull state, size_t category);
 static struct drawer_cursor first_stop_in(const struct folio_state *_Nonnull state,
@@ -4412,8 +4418,9 @@ static void stop_index_preparation(struct folio_state *_Nonnull state,
 
 static enum folio_state_outcome prepare_corpus_entry(struct folio_state *_Nonnull state)
 {
+    struct note_ref ref = located(state->corpus_category, state->corpus_note);
     enum folio_state_outcome loaded =
-        load_corpus_note(state, located(state->corpus_category, state->corpus_note));
+        discovery_source_reused(state, ref) ? FOLIO_STATE_READY : load_corpus_note(state, ref);
     if (loaded == FOLIO_STATE_READY && state->tag_phase == TAG_MANAGEMENT_PREPARING)
         loaded = prepare_tag_management_note(state);
     if (loaded == FOLIO_STATE_READY)
@@ -5325,7 +5332,7 @@ static void invalidate_corpus_dependents(struct folio_state *_Nonnull state)
     index_filter_destroy(state->filter);
     state->filter = nullptr;
     folio_state_close_tag_catalog(state);
-    if (state->discovery_tags != nullptr && note_tags_count(state->discovery_tags) != 0)
+    if (discovery_uses_body(state))
         invalidate_discovery(state);
     layout_changed(state);
 }
@@ -5336,6 +5343,7 @@ static void fresh_tag_corpus(struct folio_state *_Nonnull state)
     state->corpus_category = 0;
     state->corpus_note = 0;
     state->copy_pending = false;
+    discovery_fresh_pass(state);
     invalidate_corpus_dependents(state);
 }
 
@@ -5722,6 +5730,19 @@ static bool discovery_uses_tags(const struct folio_state *_Nonnull state)
     return state->discovery_tags != nullptr && note_tags_count(state->discovery_tags) != 0;
 }
 
+static bool discovery_uses_body(const struct folio_state *_Nonnull state)
+{
+    if (discovery_uses_tags(state))
+        return true;
+    switch (state->discovery_mode)
+    {
+    case DISCOVERY_MODE_NAMES:
+        return false;
+    case DISCOVERY_MODE_BODY:
+        return true;
+    }
+}
+
 static void discovery_changed(struct folio_state *_Nonnull state)
 {
     if (state->discovery_revision != UINT64_MAX)
@@ -5760,9 +5781,16 @@ static void invalidate_discovery(struct folio_state *_Nonnull state)
         return;
     }
     state->discovery_notice = FOLIO_STATE_READY;
-    state->discovery_phase = discovery_uses_tags(state) && !state->corpus_loaded
-                                 ? DISCOVERY_PREPARING
-                                 : DISCOVERY_MATCHING;
+    if (state->discovery_mode == DISCOVERY_MODE_BODY &&
+        utf8_text_length(state->discovery_query) == 0)
+    {
+        state->discovery_phase = DISCOVERY_INPUT;
+        return;
+    }
+    state->discovery_phase =
+        discovery_uses_body(state) && (!state->discovery_corpus_started || !state->corpus_loaded)
+            ? DISCOVERY_PREPARING
+            : DISCOVERY_MATCHING;
 }
 
 static void discard_discovery_sources(struct folio_state *_Nonnull state)
@@ -5773,14 +5801,15 @@ static void discard_discovery_sources(struct folio_state *_Nonnull state)
     state->discovery_source_checked = 0;
     state->discovery_unreadable = 0;
     state->discovery_unsupported = 0;
+    state->discovery_corpus_started = false;
 }
 
 static void refresh_discovery(struct folio_state *_Nonnull state)
 {
     if (state->discovery_phase == DISCOVERY_CLOSED)
         return;
-    invalidate_discovery(state);
     discard_discovery_sources(state);
+    invalidate_discovery(state);
     state->discovery_refresh = true;
 }
 
@@ -5795,6 +5824,7 @@ void folio_state_close_discovery(struct folio_state *_Nonnull state)
     state->discovery_tags = nullptr;
     state->discovery_identity = nullptr;
     state->discovery_phase = DISCOVERY_CLOSED;
+    state->discovery_mode = DISCOVERY_MODE_NAMES;
     state->discovery_notice = FOLIO_STATE_READY;
     state->discovery_refresh = false;
 }
@@ -5830,7 +5860,7 @@ static enum folio_state_outcome fail_discovery(struct folio_state *_Nonnull stat
     return reason;
 }
 
-static bool discovery_query_fits(const struct utf8_text *_Nonnull query)
+static enum folio_state_outcome discovery_query_status(const struct utf8_text *_Nonnull query)
 {
     const char *_Nonnull bytes = utf8_text_bytes(query);
     size_t length = utf8_text_length(query);
@@ -5839,8 +5869,10 @@ static bool discovery_query_fits(const struct utf8_text *_Nonnull query)
     {
         uint32_t point = 0;
         at += utf8_text_decode(bytes + at, length - at, &point);
+        if (point == 0 || point == '\r' || point == '\n')
+            return FOLIO_STATE_DISCOVERY_QUERY_INVALID;
     }
-    return scalars <= 256 && length <= 1024;
+    return scalars <= 256 && length <= 1024 ? FOLIO_STATE_READY : FOLIO_STATE_DISCOVERY_QUERY_LIMIT;
 }
 
 enum folio_state_outcome folio_state_query_discovery(struct folio_state *_Nonnull state,
@@ -5859,18 +5891,27 @@ enum folio_state_outcome folio_state_query_discovery(struct folio_state *_Nonnul
         return fail_discovery(state, converted == UTF8_TEXT_OUT_OF_MEMORY
                                          ? FOLIO_STATE_OUT_OF_MEMORY
                                          : FOLIO_STATE_DISCOVERY_QUERY_INVALID);
-    if (strlen(utf8_text_bytes(query)) != utf8_text_length(query))
+    enum folio_state_outcome valid = discovery_query_status(query);
+    if (valid != FOLIO_STATE_READY)
     {
         utf8_text_destroy(query);
-        return fail_discovery(state, FOLIO_STATE_DISCOVERY_QUERY_INVALID);
-    }
-    if (!discovery_query_fits(query))
-    {
-        utf8_text_destroy(query);
-        return fail_discovery(state, FOLIO_STATE_DISCOVERY_QUERY_LIMIT);
+        return fail_discovery(state, valid);
     }
     state->discovery_query = query;
     invalidate_discovery(state);
+    return FOLIO_STATE_READY;
+}
+
+enum folio_state_outcome folio_state_set_discovery_mode(struct folio_state *_Nonnull state,
+                                                        enum discovery_mode mode)
+{
+    if (state->discovery_phase == DISCOVERY_CLOSED)
+        return FOLIO_STATE_CANCELLED;
+    if (state->discovery_mode != mode)
+    {
+        state->discovery_mode = mode;
+        invalidate_discovery(state);
+    }
     return FOLIO_STATE_READY;
 }
 
@@ -5880,6 +5921,23 @@ static size_t discovery_source_index(const struct folio_state *_Nonnull state, s
     for (size_t category = 0; category < ref.category; ++category)
         at += note_ledger_count(state->notes[category]);
     return at;
+}
+
+static bool discovery_source_reused(const struct folio_state *_Nonnull state, struct note_ref ref)
+{
+    return state->discovery_corpus_started && state->discovery_sources != nullptr &&
+           state->discovery_sources[discovery_source_index(state, ref)] != DISCOVERY_SOURCE_UNREAD;
+}
+
+static void discovery_fresh_pass(struct folio_state *_Nonnull state)
+{
+    if (state->discovery_sources == nullptr)
+        return;
+    for (size_t at = 0; at < state->discovery_source_count; ++at)
+        state->discovery_sources[at] = DISCOVERY_SOURCE_UNREAD;
+    state->discovery_source_checked = state->discovery_unreadable = state->discovery_unsupported =
+        0;
+    state->discovery_corpus_started = true;
 }
 
 static void discovery_source_changed(struct folio_state *_Nonnull state, size_t at,
@@ -5919,9 +5977,18 @@ static enum folio_state_outcome prepare_discovery_sources(struct folio_state *_N
         return FOLIO_STATE_OUT_OF_MEMORY;
     state->discovery_source_count = count;
     state->discovery_refresh = false;
-    if (discovery_uses_tags(state))
-        fresh_tag_corpus(state);
     return FOLIO_STATE_READY;
+}
+
+static enum index_match_scope discovery_match_scope(enum discovery_mode mode)
+{
+    switch (mode)
+    {
+    case DISCOVERY_MODE_NAMES:
+        return INDEX_MATCH_NAMES;
+    case DISCOVERY_MODE_BODY:
+        return INDEX_MATCH_BODY;
+    }
 }
 
 static struct index_filter_query discovery_query(const struct folio_state *_Nonnull state)
@@ -5931,7 +5998,7 @@ static struct index_filter_query discovery_query(const struct folio_state *_Nonn
         .length = utf8_text_length(state->discovery_query),
         .tags = state->discovery_tags,
         .mode = state->discovery_tag_mode,
-        .scope = INDEX_MATCH_NAMES,
+        .scope = discovery_match_scope(state->discovery_mode),
         .favorites_only = state->discovery_scope == NOTE_SCOPE_FAVORITES,
         .favorites_first = state->discovery_order == NOTE_ORDER_FAVORITES_FIRST};
 }
@@ -6005,16 +6072,24 @@ static enum folio_state_outcome match_discovery(struct folio_state *_Nonnull sta
     }
     struct index_filter_progress progress = {.cursor = state->discovery_cursor,
                                              .work = index_matching_work_budget,
-                                             .uses_body = discovery_uses_tags(state)};
+                                             .uses_body = discovery_uses_body(state)};
     step_filter(state, state->discovery_build, &progress);
     state->discovery_cursor = progress.cursor;
     return finish_discovery(state);
 }
 
+static const struct note_text *_Nullable discovery_source_text(
+    const struct folio_state *_Nonnull state, struct note_ref ref)
+{
+    return note_corpus_body(state->corpus, category_ledger_name(state->categories, ref.category),
+                            note_ledger_name(state->notes[ref.category], ref.note));
+}
+
 static enum folio_state_outcome preview_discovery(struct folio_state *_Nonnull state)
 {
-    struct note_ref ref =
-        index_filter_ranked(state->discovery_results, state->discovery_selected).ref;
+    struct index_ranked_note row =
+        index_filter_ranked(state->discovery_results, state->discovery_selected);
+    struct note_ref ref = row.ref;
     size_t at = discovery_source_index(state, ref);
     enum folio_state_outcome read = FOLIO_STATE_READY;
     if (state->discovery_sources[at] == DISCOVERY_SOURCE_UNREAD)
@@ -6027,33 +6102,51 @@ static enum folio_state_outcome preview_discovery(struct folio_state *_Nonnull s
     discovery_changed(state);
     if (read != FOLIO_STATE_READY)
         return read;
-    const struct note_text *_Nullable body =
-        note_corpus_body(state->corpus, category_ledger_name(state->categories, ref.category),
-                         note_ledger_name(state->notes[ref.category], ref.note));
+    const struct note_text *_Nullable body = discovery_source_text(state, ref);
     if (body == nullptr)
     {
         state->discovery_preview = DISCOVERY_PREVIEW_UNREADABLE;
         return FOLIO_STATE_READY;
     }
-    if (note_excerpt_create(body, &state->discovery_excerpt) != NOTE_EXCERPT_READY)
+    enum note_excerpt_outcome excerpt = NOTE_EXCERPT_INVALID_RANGE;
+    switch (state->discovery_mode)
     {
-        state->discovery_notice = FOLIO_STATE_OUT_OF_MEMORY;
-        return FOLIO_STATE_OUT_OF_MEMORY;
+    case DISCOVERY_MODE_NAMES:
+        excerpt = note_excerpt_create(body, &state->discovery_excerpt);
+        break;
+    case DISCOVERY_MODE_BODY:
+        excerpt = note_excerpt_create_match(body, &row.match, &state->discovery_excerpt);
+        break;
+    }
+    if (excerpt != NOTE_EXCERPT_READY)
+    {
+        state->discovery_notice = excerpt == NOTE_EXCERPT_OUT_OF_MEMORY ? FOLIO_STATE_OUT_OF_MEMORY
+                                                                        : FOLIO_STATE_NO_SUCH_NOTE;
+        return state->discovery_notice;
     }
     state->discovery_preview = DISCOVERY_PREVIEW_READY;
     return FOLIO_STATE_READY;
+}
+
+static enum folio_state_outcome prepare_discovery_pass(struct folio_state *_Nonnull state)
+{
+    enum folio_state_outcome prepared = prepare_discovery_sources(state);
+    if (prepared == FOLIO_STATE_READY && discovery_uses_body(state) &&
+        !state->discovery_corpus_started)
+        fresh_tag_corpus(state);
+    return prepared;
 }
 
 enum folio_state_outcome folio_state_continue_discovery(struct folio_state *_Nonnull state)
 {
     if (!folio_state_discovery_work_pending(state))
         return FOLIO_STATE_READY;
-    enum folio_state_outcome prepared = prepare_discovery_sources(state);
+    enum folio_state_outcome prepared = prepare_discovery_pass(state);
     if (prepared != FOLIO_STATE_READY)
         return fail_discovery(state, prepared);
     if (state->discovery_preview == DISCOVERY_PREVIEW_WAITING)
         return preview_discovery(state);
-    if (discovery_uses_tags(state) && !state->corpus_loaded)
+    if (discovery_uses_body(state) && !state->corpus_loaded)
     {
         prepared = prepare_corpus_next(state);
         if (prepared != FOLIO_STATE_READY)
@@ -6074,16 +6167,18 @@ bool folio_state_discovery_work_pending(const struct folio_state *_Nonnull state
 
 struct discovery_summary folio_state_discovery_summary(const struct folio_state *_Nonnull state)
 {
-    struct discovery_summary summary = {.phase = state->discovery_phase,
-                                        .preview = state->discovery_preview,
-                                        .notice = state->discovery_notice,
-                                        .selected = state->discovery_selected,
-                                        .revision = state->discovery_revision,
-                                        .results_revision = state->discovery_results_revision,
-                                        .unreadable = state->discovery_unreadable,
-                                        .unsupported = state->discovery_unsupported,
-                                        .source_total = state->discovery_source_count,
-                                        .source_checked = state->discovery_source_checked};
+    struct discovery_summary summary = {
+        .phase = state->discovery_phase,
+        .mode = state->discovery_mode,
+        .preview = state->discovery_preview,
+        .notice = state->discovery_notice,
+        .selected = state->discovery_selected,
+        .revision = state->discovery_revision,
+        .results_revision = state->discovery_results_revision,
+        .unreadable = state->discovery_unreadable,
+        .unsupported = discovery_uses_tags(state) ? state->discovery_unsupported : 0,
+        .source_total = state->discovery_source_count,
+        .source_checked = state->discovery_source_checked};
     if (state->discovery_results != nullptr)
     {
         summary.total = index_filter_count(state->discovery_results);
@@ -6096,6 +6191,70 @@ struct index_ranked_note folio_state_discovery_row(const struct folio_state *_No
                                                    size_t index)
 {
     return index_filter_ranked(state->discovery_results, index);
+}
+
+static bool discovery_body_row_ready(const struct folio_state *_Nonnull state, size_t index)
+{
+    return state->discovery_phase == DISCOVERY_READY &&
+           state->discovery_mode == DISCOVERY_MODE_BODY && state->discovery_results != nullptr &&
+           index < index_filter_ranked_count(state->discovery_results);
+}
+
+enum folio_state_outcome folio_state_discovery_snippet(const struct folio_state *_Nonnull state,
+                                                       size_t index, char *_Nonnull out,
+                                                       struct note_snippet_clip *_Nonnull clip)
+{
+    if (!discovery_body_row_ready(state, index))
+        return FOLIO_STATE_CANCELLED;
+    struct index_ranked_note row = index_filter_ranked(state->discovery_results, index);
+    const struct note_text *_Nullable body = discovery_source_text(state, row.ref);
+    if (body == nullptr)
+        return FOLIO_STATE_NO_SUCH_NOTE;
+    *clip = note_excerpt_snippet(body, &row.match, out);
+    return FOLIO_STATE_READY;
+}
+
+enum folio_state_outcome
+folio_state_prepare_discovery_target(const struct folio_state *_Nonnull state,
+                                     struct discovery_target *_Nullable *_Nonnull out)
+{
+    if (!discovery_body_row_ready(state, state->discovery_selected) ||
+        state->discovery_identity == nullptr)
+        return FOLIO_STATE_CANCELLED;
+    struct index_ranked_note row =
+        index_filter_ranked(state->discovery_results, state->discovery_selected);
+    const struct note_text *_Nullable body = discovery_source_text(state, row.ref);
+    if (body == nullptr)
+        return FOLIO_STATE_NO_SUCH_NOTE;
+    switch (discovery_target_create(state->discovery_identity, body, &row.match, out))
+    {
+    case DISCOVERY_TARGET_READY:
+        return FOLIO_STATE_READY;
+    case DISCOVERY_TARGET_OUT_OF_MEMORY:
+        return FOLIO_STATE_OUT_OF_MEMORY;
+    case DISCOVERY_TARGET_UNEDITABLE:
+        return FOLIO_STATE_NOTE_UNEDITABLE;
+    case DISCOVERY_TARGET_INVALID_RANGE:
+        return FOLIO_STATE_CANCELLED;
+    }
+}
+
+enum discovery_target_check
+folio_state_check_discovery_target(const struct folio_state *_Nonnull state,
+                                   const struct discovery_target *_Nonnull target,
+                                   struct note_search_span *_Nonnull selection)
+{
+    if (state->document != FOLIO_DOCUMENT_NAMED || state->mode != PANE_MODE_EDIT)
+        return DISCOVERY_TARGET_UNAVAILABLE;
+    struct note_ref ref = {0};
+    if (folio_state_resolve_note(state, discovery_target_identity(target), &ref) !=
+            FOLIO_STATE_READY ||
+        ref.category != state->selected_category || ref.note != state->selected_note)
+        return DISCOVERY_TARGET_UNAVAILABLE;
+    if (!note_text_equals(state->body, discovery_target_body(target)))
+        return DISCOVERY_TARGET_CHANGED;
+    *selection = discovery_target_selection(target);
+    return DISCOVERY_TARGET_CURRENT;
 }
 
 const struct note_excerpt *_Nullable folio_state_discovery_excerpt(

@@ -3,6 +3,7 @@
 enum discovery_focus : unsigned char
 {
     DISCOVERY_FOCUS_INPUT,
+    DISCOVERY_FOCUS_MODE,
     DISCOVERY_FOCUS_PREVIEW,
     DISCOVERY_FOCUS_ROWS,
     DISCOVERY_FOCUS_STAR,

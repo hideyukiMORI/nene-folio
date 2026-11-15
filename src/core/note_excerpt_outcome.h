@@ -4,5 +4,6 @@ enum note_excerpt_outcome : unsigned char
 {
     NOTE_EXCERPT_READY,
     NOTE_EXCERPT_OUT_OF_MEMORY,
+    NOTE_EXCERPT_INVALID_RANGE,
 };
 #endif

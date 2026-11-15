@@ -1,6 +1,6 @@
 # いまの状態 — NeNe Folio
 
-## 2026-11-15 — 名前検索と原文previewの対象確認
+## 2026-11-15 — 名前検索の統合と本文検索の対象確認
 
 #821 / PR822はmain `0851f66de66313586d68fc80bf480b8ce88a2091`へ統合済み。
 最終head `c3b36f7d1230e2511c9e8195698294549e304339`、必須CI43686022314成功（51 CTest、分岐90.8667%）。
@@ -12,10 +12,18 @@ D:/NeNeFolio/agents/tag-management-20261115/completion.jsonが確定原本。
 既存engineのscope/有限work、条件の独立copy、最大200件と全一致数、候補移動と明示Openを使う。
 原文は先頭80行/16KiBまで、native本文/Undoは候補移動で変えない。保存prompt後は宛先名を再解決する。
 対象unit/確保注入、native拒否/復旧とコピー、3言語・3配色・最小/広幅、7回の外側計測を確認した。
-全成功/失敗と限界は[品質記録](../quality/2026-11-15-note-discovery.md)。最終CI・統合は#823のIssue/PR、
-通常exe反映・実data照合・保全/整理はD:/NeNeFolio/agents/discovery-design-20261115/completion.jsonを確定原本とする。
-原本未作成を完了と解釈しない。作業中のD:/NeNeFolio/worktrees/823-note-discoveryと対応outputsは保持する。
-本文live grep/一致行は次の焦点単位3b、演出は段階4。About・版上げ・公開は未着手。
+全成功/失敗と限界は[品質記録](../quality/2026-11-15-note-discovery.md)。#823 / PR824はmain
+`c6c70e045438647815da01d3ba4de0f04a3d0008`へ統合済み。最終head `a987aa3a3d40b8c26272856c46fa29c6809aa41d`、
+必須CI43697860397成功（53 CTest、分岐90.820096%）。通常exe反映と実data34件不変、全11,616ファイル保全・照合を確認し、823の追加worktree/outputsを整理した。
+確定原本はD:/NeNeFolio/agents/discovery-design-20261115/completion.json。
+
+段階3bの本文検索は#825で対象確認中。[ADR0095](../adr/0095-body-discovery-and-source-position.md)、FR-048と
+[品質記録](../quality/2026-11-15-body-discovery.md)。同じengine/corpusへ本文mode、有限workの最初の一致位置、
+一致周辺の有限preview、確定時snapshotと採用本文の照合を接続した。中核/applicationの対象試験と確保注入、
+native採用/失敗/復旧、貼り付け、3言語/3配色の27画像と表示位置、7回の外側計測を確認した。
+最終CI/統合は未完了。追加領域D:/NeNeFolio/worktrees/825-body-discoveryと対応outputsは保持する。
+反映・保全/整理はD:/NeNeFolio/agents/live-grep-design-20261115/completion.jsonを確定原本とし、未作成は未完了と扱う。
+演出は段階4。About・版上げ・公開は未着手。
 
 hideの停止まで継続する実装指示に基づき、#821でロードマップ段階2bを実装した。
 全カテゴリの保存済みノートを新しく確認して、タグを全体改名/解除する。既存名は集合へ統合し、
@@ -39,8 +47,8 @@ D:/NeNeFolio/worktrees/819-note-tagsを0ファイルで保持し、盲目的な�
 [ADR0091](../adr/0091-favorites-scope-and-quiet-stars.md)、[品質記録](../quality/2026-11-15-favorites-ui.md)、
 D:/NeNeFolio/agents/favorites-ui-20261115/completion.jsonが確定原本。追加worktree/outputsは整理済み。
 
-次は[ロードマップ](../ROADMAP.md)段階3bの本文live grep・一致行プレビュー。
-最新入力の世代、未保存本文、候補移動と確定、星/タグとの組合せ、段階4の演出/低動作を先行ADRで決める。
+現在は[ロードマップ](../ROADMAP.md)段階3bの本文live grep・一致行プレビューの対象確認。
+段階4の演出/低動作は次の焦点単位で先行ADRを設ける。
 About・次版は未着手。
 版上げ・配布/Store操作はしていない。到達点と判断は[日報](../reports/2026-11-15.md)、
 保持領域と次の条件は[引き継ぎ](../handoffs/2026-11-15.md)。
@@ -50,10 +58,10 @@ About・次版は未着手。
 ## 通常版と公開版
 
 通常exeはC:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe、版1.3.2 / Windows1.3.2.0。
-#821を11月15日15:44にsource `0851f66de66313586d68fc80bf480b8ce88a2091`から正典経路で反映した。
-SHA256 `316e208282bd485a853cbb6ad71f45ea82ee045f488ffde8c5615c2b51b9af33`。
+#823を11月15日18:20にsource `c6c70e045438647815da01d3ba4de0f04a3d0008`から正典経路で反映した。
+SHA256 `485263b9495e9a27ea266353f2f9a890324b79d15361b2e420d09b406a45f606`。
 反映前後の実data34ファイルのbytes/hash/作成・更新日時は一致。反映時にアプリは起動していない。
-確定原本はD:/NeNeFolio/agents/tag-management-20261115/completion.json。
+確定原本はD:/NeNeFolio/agents/discovery-design-20261115/completion.json。
 
 台帳版2・設定版6は旧アプリでは読めない。旧台帳1/設定1〜5は読め、起動だけでは書き換えない。
 星はMarkdown/ZIPに含めない。通常版の書体修正・お気に入り・タグは公開済み1.3.2には未収載。

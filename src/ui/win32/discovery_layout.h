@@ -5,6 +5,8 @@
 struct discovery_layout
 {
     RECT input;
+    RECT names;
+    RECT body;
     RECT conditions;
     RECT status;
     RECT rows;

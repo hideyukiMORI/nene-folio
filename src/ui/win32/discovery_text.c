@@ -13,6 +13,8 @@ static enum ui_text rank_label(enum index_match_kind kind)
     {
     case INDEX_MATCH_ALL:
         return UI_TEXT_DISCOVERY_MATCH_ALL;
+    case INDEX_MATCH_BODY_FIRST:
+        return UI_TEXT_DISCOVERY_BODY_FIRST;
     case INDEX_MATCH_NAME_EXACT:
         return UI_TEXT_DISCOVERY_NAME_EXACT;
     case INDEX_MATCH_NAME_PREFIX:
@@ -38,12 +40,14 @@ void discovery_text_row(const struct folio_state *_Nonnull state, size_t index, 
 {
     struct index_ranked_note row = folio_state_discovery_row(state, index);
     enum folio_language language = folio_state_language(state);
+    char match[1024];
+    discovery_text_match(state, index, match, sizeof match);
     const struct ui_text_request request = {.id = UI_TEXT_DISCOVERY_ROW,
                                             .language = language,
                                             .from =
                                                 folio_state_category_name(state, row.ref.category),
                                             .name = folio_state_note_name(state, row.ref),
-                                            .to = ui_text_line(rank_label(row.kind), language)};
+                                            .to = match};
     if (ui_text_format(&request, out, capacity) != UI_TEXT_FORMAT_READY)
         out[0] = '\0';
 }
@@ -52,6 +56,26 @@ void discovery_text_match(const struct folio_state *_Nonnull state, size_t index
                           char *_Nonnull out, size_t capacity)
 {
     struct index_ranked_note row = folio_state_discovery_row(state, index);
+    if (row.kind == INDEX_MATCH_BODY_FIRST)
+    {
+        char snippet[note_excerpt_snippet_capacity];
+        struct note_snippet_clip clip = {0};
+        out[0] = '\0';
+        if (folio_state_discovery_snippet(state, index, snippet, &clip) != FOLIO_STATE_READY)
+            return;
+        enum folio_language language = folio_state_language(state);
+        const struct ui_text_request request = {
+            .id = UI_TEXT_DISCOVERY_BODY_SNIPPET,
+            .language = language,
+            .k = row.match.line,
+            .name = snippet,
+            .from =
+                ui_text_line(clip.leading ? UI_TEXT_DISCOVERY_ELLIPSIS : UI_TEXT_EMPTY, language),
+            .to =
+                ui_text_line(clip.trailing ? UI_TEXT_DISCOVERY_ELLIPSIS : UI_TEXT_EMPTY, language)};
+        (void)ui_text_format(&request, out, capacity);
+        return;
+    }
     (void)strcpy_s(out, capacity, ui_text_line(rank_label(row.kind), folio_state_language(state)));
 }
 
@@ -73,6 +97,8 @@ static enum ui_text phase_label(enum discovery_phase phase)
     {
     case DISCOVERY_CLOSED:
         return UI_TEXT_EMPTY;
+    case DISCOVERY_INPUT:
+        return UI_TEXT_DISCOVERY_BODY_EMPTY;
     case DISCOVERY_PREPARING:
         return UI_TEXT_DISCOVERY_PREPARING;
     case DISCOVERY_MATCHING:
@@ -102,8 +128,11 @@ void discovery_text_status(const struct folio_state *_Nonnull state, char *_Nonn
                                             .n = summary.unsupported};
     if (summary.unreadable != 0 || summary.unsupported != 0)
         (void)ui_text_format(&unknown, missing, sizeof missing);
+    enum ui_text phase = summary.phase == DISCOVERY_MATCHING && summary.mode == DISCOVERY_MODE_BODY
+                             ? UI_TEXT_DISCOVERY_BODY_MATCHING
+                             : phase_label(summary.phase);
     const struct ui_text_request request = {
-        .id = phase_label(summary.phase),
+        .id = phase,
         .language = language,
         .k = summary.phase == DISCOVERY_PREPARING ? summary.source_checked : summary.shown,
         .n = summary.phase == DISCOVERY_PREPARING ? summary.source_total : summary.total,
@@ -181,6 +210,35 @@ static enum ui_text preview_label(enum discovery_preview preview)
     return UI_TEXT_EMPTY;
 }
 
+static enum ui_text body_extent_label(enum note_excerpt_extent extent)
+{
+    switch (extent)
+    {
+    case NOTE_EXCERPT_FULL:
+        return UI_TEXT_EMPTY;
+    case NOTE_EXCERPT_LINE_LIMIT:
+        return UI_TEXT_DISCOVERY_BODY_LINE_LIMIT;
+    case NOTE_EXCERPT_BYTE_LIMIT:
+        return UI_TEXT_DISCOVERY_BODY_BYTE_LIMIT;
+    }
+}
+
+static void preview_range(const struct note_excerpt *_Nonnull excerpt,
+                          struct ui_text_request *_Nonnull request)
+{
+    request->id = UI_TEXT_DISCOVERY_BODY_RANGE;
+    request->k = note_excerpt_first_line(excerpt);
+    request->n = request->k + note_excerpt_line_count(excerpt) - 1;
+    request->from = ui_text_line(
+        note_excerpt_leading_partial(excerpt) ? UI_TEXT_DISCOVERY_BODY_LEADING : UI_TEXT_EMPTY,
+        request->language);
+    request->to = ui_text_line(
+        note_excerpt_trailing_partial(excerpt) ? UI_TEXT_DISCOVERY_BODY_TRAILING : UI_TEXT_EMPTY,
+        request->language);
+    request->name =
+        ui_text_line(body_extent_label(note_excerpt_extent(excerpt)), request->language);
+}
+
 void discovery_text_preview(const struct folio_state *_Nonnull state, char *_Nonnull out,
                             size_t capacity)
 {
@@ -197,6 +255,8 @@ void discovery_text_preview(const struct folio_state *_Nonnull state, char *_Non
     {
         request.id = extent_label(note_excerpt_extent(excerpt));
         request.n = note_excerpt_line_count(excerpt);
+        if (summary.mode == DISCOVERY_MODE_BODY)
+            preview_range(excerpt, &request);
     }
     if (ui_text_format(&request, out, capacity) != UI_TEXT_FORMAT_READY)
         out[0] = '\0';

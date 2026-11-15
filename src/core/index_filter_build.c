@@ -1,6 +1,7 @@
 #include "index_filter_build.h"
 #include "ascii_fold.h"
 #include "index_filter_rank.h"
+#include "note_source.h"
 #include "note_tag.h"
 #include "note_tags.h"
 #include "utf8_text.h"
@@ -21,6 +22,7 @@ struct index_filter_build
         BUILD_TAIL,
         BUILD_SCAN,
         BUILD_SUBSEQUENCE,
+        BUILD_POSITION,
         BUILD_BODY,
         BUILD_CATEGORY,
         BUILD_DONE,
@@ -58,6 +60,11 @@ struct index_filter_build
     size_t source_length;
     size_t at;
     size_t compared;
+    struct note_source_match match;
+    size_t source_lines[note_source_context_lines + 1];
+    size_t position_at;
+    size_t position_units;
+    size_t position_line;
     enum
     {
         SOURCE_NAME,
@@ -75,6 +82,18 @@ static void prefix_destroy(size_t *_Nullable prefix)
 static void ranks_destroy(struct index_filter_rank *_Nullable ranks)
 {
     free(ranks);
+}
+
+static bool ranked_scope(enum index_match_scope scope)
+{
+    switch (scope)
+    {
+    case INDEX_MATCH_NAME_BODY:
+        return false;
+    case INDEX_MATCH_NAMES:
+    case INDEX_MATCH_BODY:
+        return true;
+    }
 }
 
 static void parts_destroy(struct index_filter_build *_Nullable build, size_t *_Nullable categories,
@@ -106,9 +125,9 @@ static enum index_filter_outcome allocate_build(size_t count, size_t prefix_leng
     size_t *_Nullable prefix =
         prefix_length == 0 ? nullptr : malloc(prefix_length * sizeof *prefix);
     struct index_filter_rank *_Nullable ranks =
-        scope == INDEX_MATCH_NAMES ? malloc((count + 1) * sizeof *ranks) : nullptr;
+        ranked_scope(scope) ? malloc((count + 1) * sizeof *ranks) : nullptr;
     if (categories == nullptr || notes == nullptr || (prefix_length != 0 && prefix == nullptr) ||
-        (scope == INDEX_MATCH_NAMES && ranks == nullptr))
+        (ranked_scope(scope) && ranks == nullptr))
     {
         ranks_destroy(ranks);
         parts_destroy(build, categories, notes, prefix);
@@ -195,10 +214,20 @@ static void prepare_query(struct index_filter_build *_Nonnull build,
         prepare(build, query->term, query->length);
     build->tags = tag_conditions(query) ? query->tags : nullptr;
     build->tag_mode = query->mode;
-    build->favorites_only = query->scope == INDEX_MATCH_NAMES && query->favorites_only;
-    build->favorites_first = query->scope == INDEX_MATCH_NAMES && query->favorites_first;
+    build->favorites_only = ranked_scope(query->scope) && query->favorites_only;
+    build->favorites_first = ranked_scope(query->scope) && query->favorites_first;
     if (prefix_length != 0)
         prepare_prefix(build, query->term);
+}
+
+static bool body_term_valid(const struct index_filter_query *_Nonnull query)
+{
+    if (query->scope != INDEX_MATCH_BODY)
+        return true;
+    for (size_t at = 0; at < query->length; ++at)
+        if (query->term[at] == '\r' || query->term[at] == '\n' || query->term[at] == '\0')
+            return false;
+    return true;
 }
 
 enum index_filter_outcome
@@ -208,7 +237,9 @@ index_filter_build_create(const struct index_filter_query *_Nonnull query, size_
     size_t length = query->length;
     if (length == 0 && !tag_conditions(query) && query->scope == INDEX_MATCH_NAME_BODY)
         return INDEX_FILTER_NO_TERM;
-    if (!well_formed(query->term, length))
+    if (length == 0 && query->scope == INDEX_MATCH_BODY)
+        return INDEX_FILTER_NO_TERM;
+    if (!well_formed(query->term, length) || !body_term_valid(query))
         return INDEX_FILTER_MALFORMED;
     struct index_filter_build *_Nullable build = nullptr;
     size_t prefix_length = count > 0 && length >= 2 ? length : 0;
@@ -228,6 +259,7 @@ static size_t rank_of(enum index_match_kind kind)
     switch (kind)
     {
     case INDEX_MATCH_ALL:
+    case INDEX_MATCH_BODY_FIRST:
         return 0;
     case INDEX_MATCH_NAME_EXACT:
         return 1;
@@ -255,8 +287,8 @@ static void append_rank(struct index_filter_build *_Nonnull build, enum index_ma
     size_t bucket = rank_of(kind);
     if (build->favorites_first && !favorite)
         bucket += rank_kinds;
-    ranks[build->count] =
-        (struct index_filter_rank){.kind = kind, .favorite = favorite, .next = SIZE_MAX};
+    ranks[build->count] = (struct index_filter_rank){
+        .kind = kind, .favorite = favorite, .next = SIZE_MAX, .match = build->match};
     if (build->heads[bucket] == SIZE_MAX)
         build->heads[bucket] = build->count;
     else
@@ -269,7 +301,7 @@ static void admit(struct index_filter_build *_Nonnull build, struct note_ref ref
 {
     build->categories[build->count] = ref.category;
     build->notes[build->count] = ref.note;
-    if (build->scope == INDEX_MATCH_NAMES)
+    if (ranked_scope(build->scope))
         append_rank(build, kind, favorite);
     build->count += 1;
 }
@@ -365,6 +397,8 @@ static void move_candidate(struct index_filter_build *_Nonnull build, size_t amo
 static enum index_match_kind source_kind(const struct index_filter_build *_Nonnull build,
                                          size_t start)
 {
+    if (build->source == SOURCE_BODY)
+        return INDEX_MATCH_BODY_FIRST;
     if (build->source == SOURCE_CATEGORY)
     {
         if (build->source_length == build->term_length)
@@ -381,6 +415,41 @@ static void matched_source(struct index_filter_build *_Nonnull build, size_t sta
     build->matched = true;
     build->kind = source_kind(build, start);
     build->phase = BUILD_DONE;
+    if (build->scope == INDEX_MATCH_BODY)
+    {
+        build->match.bytes = (struct note_byte_span){start, start + build->term_length};
+        build->position_at = build->position_units = 0;
+        build->position_line = 1;
+        build->source_lines[1] = 0;
+        build->phase = BUILD_POSITION;
+    }
+}
+
+static void position_point(struct index_filter_build *_Nonnull build, const char *_Nonnull bytes)
+{
+    if (build->position_at == build->match.bytes.start)
+    {
+        size_t line = build->position_line;
+        size_t context = line > note_source_context_lines ? line - note_source_context_lines : 1;
+        build->match.native.start = build->position_units;
+        build->match.line = line;
+        build->match.line_start = build->source_lines[line % (note_source_context_lines + 1)];
+        build->match.context_line = context;
+        build->match.context_start = build->source_lines[context % (note_source_context_lines + 1)];
+    }
+    uint32_t point = note_source_next(bytes, build->source_length, &build->position_at);
+    build->position_units += note_source_point_units(point, NOTE_SOURCE_PARAGRAPH);
+    if (point == '\r')
+    {
+        build->position_line += 1;
+        build->source_lines[build->position_line % (note_source_context_lines + 1)] =
+            build->position_at;
+    }
+    if (build->position_at == build->match.bytes.end)
+    {
+        build->match.native.end = build->position_units;
+        build->phase = BUILD_DONE;
+    }
 }
 
 static void single_byte(struct index_filter_build *_Nonnull build, const char *_Nonnull bytes)
@@ -483,6 +552,9 @@ static void compare_byte(struct index_filter_build *_Nonnull build, const char *
     case BUILD_SUBSEQUENCE:
         subsequence_point(build, bytes);
         break;
+    case BUILD_POSITION:
+        position_point(build, bytes);
+        break;
     case BUILD_ENTRY:
     case BUILD_TAGS:
     case BUILD_NAME_LENGTH:
@@ -499,6 +571,8 @@ static void begin_text(struct index_filter_build *_Nonnull build)
 {
     build->matched = build->term_length == 0;
     build->phase = build->matched ? BUILD_DONE : BUILD_NAME_LENGTH;
+    if (!build->matched && build->scope == INDEX_MATCH_BODY)
+        build->phase = BUILD_BODY;
 }
 
 static void tag_decided(struct index_filter_build *_Nonnull build, bool matched)
@@ -568,7 +642,8 @@ static void begin_entry(struct index_filter_build *_Nonnull build,
     build->kind = INDEX_MATCH_ALL;
     build->source = SOURCE_NAME;
     build->name_length = 0;
-    if ((build->scope == INDEX_MATCH_NAME_BODY && entry->body == nullptr) ||
+    build->match = (struct note_source_match){0};
+    if ((build->scope != INDEX_MATCH_NAMES && entry->body == nullptr) ||
         (build->tags != nullptr && entry->tags == nullptr) ||
         (build->favorites_only && !entry->favorite))
     {
@@ -699,7 +774,8 @@ struct index_ranked_note index_filter_build_ranked(const struct index_filter_bui
     const struct index_filter_rank *_Nonnull ranks = sealed->ranks;
     return (struct index_ranked_note){.ref = index_filter_build_ref(sealed, at),
                                       .kind = ranks[at].kind,
-                                      .favorite = ranks[at].favorite};
+                                      .favorite = ranks[at].favorite,
+                                      .match = ranks[at].match};
 }
 
 static void copy_match(struct index_filter_build *_Nonnull removed,
@@ -708,11 +784,12 @@ static void copy_match(struct index_filter_build *_Nonnull removed,
 {
     enum index_match_kind kind = INDEX_MATCH_ALL;
     bool favorite = false;
-    if (sealed->scope == INDEX_MATCH_NAMES)
+    if (ranked_scope(sealed->scope))
     {
         const struct index_filter_rank *_Nonnull ranks = sealed->ranks;
         kind = ranks[index].kind;
         favorite = ranks[index].favorite;
+        removed->match = ranks[index].match;
     }
     admit(removed, ref, kind, favorite);
 }
