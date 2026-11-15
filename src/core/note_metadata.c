@@ -4,6 +4,7 @@
 #include "note_byte_span.h"
 #include "note_tag.h"
 #include "note_tags.h"
+#include "note_text.h"
 #include "persisted_size_limit.h"
 #include "replace_edit.h"
 #include "text_buffer.h"
@@ -668,11 +669,12 @@ static struct note_byte_span edit_range(const struct note_metadata *_Nonnull met
     return (struct note_byte_span){0, 0};
 }
 
-static enum note_tag_edit_outcome validate_edit(const struct note_metadata *_Nonnull metadata,
-                                                struct note_byte_span range,
-                                                const struct text_buffer *_Nonnull patch,
-                                                const struct note_tags *_Nonnull desired)
+static enum note_tag_edit_outcome rewrite(const struct note_metadata *_Nonnull metadata,
+                                          const struct text_buffer *_Nonnull patch,
+                                          const struct note_tags *_Nonnull desired,
+                                          struct note_text *_Nullable *_Nonnull out)
 {
+    struct note_byte_span range = edit_range(metadata);
     size_t kept = metadata->length - (range.end - range.start);
     size_t added = text_buffer_length(patch);
     if (kept > persisted_size_limit || added > persisted_size_limit - kept)
@@ -683,19 +685,26 @@ static enum note_tag_edit_outcome validate_edit(const struct note_metadata *_Non
     text_buffer_append(candidate_text, metadata->source, range.start);
     text_buffer_append(candidate_text, text_buffer_bytes(patch), added);
     text_buffer_append(candidate_text, metadata->source + range.end, metadata->length - range.end);
-    struct note_metadata *_Nullable parsed = nullptr;
+    struct note_text *_Nullable body = nullptr;
     enum note_tag_edit_outcome outcome = NOTE_TAG_EDIT_OUT_OF_MEMORY;
     if (text_buffer_finish(candidate_text) == TEXT_BUFFER_ACCEPTED &&
-        note_metadata_create(text_buffer_bytes(candidate_text), text_buffer_length(candidate_text),
-                             &parsed) == NOTE_METADATA_READY)
+        note_text_create(text_buffer_bytes(candidate_text), text_buffer_length(candidate_text),
+                         &body) == NOTE_TEXT_ACCEPTED)
     {
+        /* Every changed candidate starts with the metadata opener, not a body FEFF. */
+        const struct note_metadata *_Nonnull parsed = note_text_metadata(body);
         outcome =
             parsed->status == NOTE_METADATA_SUPPORTED && note_tags_equal(parsed->tags, desired)
                 ? NOTE_TAG_EDIT_READY
                 : NOTE_TAG_EDIT_LIMIT;
     }
-    note_metadata_destroy(parsed);
     text_buffer_destroy(candidate_text);
+    if (outcome != NOTE_TAG_EDIT_READY)
+    {
+        note_text_destroy(body);
+        return outcome;
+    }
+    *out = body;
     return outcome;
 }
 
@@ -752,9 +761,9 @@ static enum note_tag_edit_outcome native_edit(const struct note_metadata *_Nonnu
     return NOTE_TAG_EDIT_READY;
 }
 
-enum note_tag_edit_outcome note_metadata_edit(const struct note_metadata *_Nonnull metadata,
-                                              const struct note_tags *_Nonnull desired,
-                                              struct replace_edit *_Nullable *_Nonnull out)
+static enum note_tag_edit_outcome prepare_patch(const struct note_metadata *_Nonnull metadata,
+                                                const struct note_tags *_Nonnull desired,
+                                                struct text_buffer *_Nullable *_Nonnull out)
 {
     if (metadata->status != NOTE_METADATA_NONE && metadata->status != NOTE_METADATA_SUPPORTED)
         return NOTE_TAG_EDIT_UNAVAILABLE;
@@ -775,12 +784,41 @@ enum note_tag_edit_outcome note_metadata_edit(const struct note_metadata *_Nonnu
         flow_changed(metadata, desired, patch);
         break;
     }
-    struct note_byte_span range = edit_range(metadata);
-    enum note_tag_edit_outcome outcome = NOTE_TAG_EDIT_OUT_OF_MEMORY;
-    if (text_buffer_finish(patch) == TEXT_BUFFER_ACCEPTED)
-        outcome = validate_edit(metadata, range, patch, desired);
+    if (text_buffer_finish(patch) != TEXT_BUFFER_ACCEPTED)
+    {
+        text_buffer_destroy(patch);
+        return NOTE_TAG_EDIT_OUT_OF_MEMORY;
+    }
+    *out = patch;
+    return NOTE_TAG_EDIT_READY;
+}
+
+enum note_tag_edit_outcome note_metadata_edit(const struct note_metadata *_Nonnull metadata,
+                                              const struct note_tags *_Nonnull desired,
+                                              struct replace_edit *_Nullable *_Nonnull out)
+{
+    struct text_buffer *_Nullable patch = nullptr;
+    enum note_tag_edit_outcome outcome = prepare_patch(metadata, desired, &patch);
+    if (outcome != NOTE_TAG_EDIT_READY)
+        return outcome;
+    struct note_text *_Nullable body = nullptr;
+    outcome = rewrite(metadata, patch, desired, &body);
     if (outcome == NOTE_TAG_EDIT_READY)
-        outcome = native_edit(metadata, range, patch, out);
+        outcome = native_edit(metadata, edit_range(metadata), patch, out);
+    note_text_destroy(body);
+    text_buffer_destroy(patch);
+    return outcome;
+}
+
+enum note_tag_edit_outcome note_metadata_rewrite(const struct note_metadata *_Nonnull metadata,
+                                                 const struct note_tags *_Nonnull desired,
+                                                 struct note_text *_Nullable *_Nonnull out)
+{
+    struct text_buffer *_Nullable patch = nullptr;
+    enum note_tag_edit_outcome outcome = prepare_patch(metadata, desired, &patch);
+    if (outcome != NOTE_TAG_EDIT_READY)
+        return outcome;
+    outcome = rewrite(metadata, patch, desired, out);
     text_buffer_destroy(patch);
     return outcome;
 }

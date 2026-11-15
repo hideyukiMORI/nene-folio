@@ -7,6 +7,7 @@
 #include "font_bundle.h"
 #include "image_adapter.h"
 #include "note_ledger.h"
+#include "note_store_request.h"
 #include "note_text.h"
 #include "persistence_adapter.h"
 #include "regex_adapter.h"
@@ -62,8 +63,8 @@ static void seed_notes(struct persistence_port disk)
         struct note_text *_Nullable body = nullptr;
         require(note_text_create(source, lines[index] * 3, &body) == NOTE_TEXT_ACCEPTED,
                 "fixture text");
-        require(disk.write_note(disk.adapter, "schedule", names[index], body) == PERSISTENCE_STORED,
-                "fixture note");
+        const struct note_store_request request = {"schedule", names[index], body, nullptr};
+        require(disk.store_note(disk.adapter, &request) == NOTE_STORE_STORED, "fixture note");
         note_text_destroy(body);
     }
     /* Native directory enumeration is unordered; select slots from an explicit fixture ledger. */

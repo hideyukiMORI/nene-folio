@@ -1,0 +1,11 @@
+#ifndef NENEFOLIO_TAG_UPDATE_KIND_H
+#define NENEFOLIO_TAG_UPDATE_KIND_H
+enum tag_update_kind : unsigned char
+{
+    TAG_UPDATE_CHANGE,
+    TAG_UPDATE_NO_MATCH,
+    TAG_UPDATE_UNREADABLE,
+    TAG_UPDATE_UNAVAILABLE,
+    TAG_UPDATE_LIMIT
+};
+#endif

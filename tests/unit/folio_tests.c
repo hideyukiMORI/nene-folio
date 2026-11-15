@@ -554,6 +554,14 @@ static bool run_favorites_target_tests(const char *_Nonnull argument)
 
 static bool run_tag_target_tests(const char *_Nonnull argument)
 {
+    if (strcmp(argument, "--tag-management") == 0)
+    {
+        run_tag_management_tests();
+        run_tag_management_state_tests();
+        run_ui_text_tests();
+        printf("tag management patches and checked-save boundaries passed\n");
+        return true;
+    }
     if (strcmp(argument, "--tags-oom") == 0)
     {
         run_tag_allocation_tests();
@@ -636,6 +644,8 @@ static bool run_selected_tests(const char *_Nonnull argument)
 static void run_full_suite(void)
 {
     run_tag_tests();
+    run_tag_management_tests();
+    run_tag_management_state_tests();
     run_tag_filter_state_tests();
     run_image_tests();
     run_transfer_tests();

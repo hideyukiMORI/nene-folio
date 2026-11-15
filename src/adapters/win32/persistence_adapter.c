@@ -10,6 +10,8 @@
 #include "name_list.h"
 #include "note_history.h"
 #include "note_ledger.h"
+#include "note_store_request.h"
+#include "note_store_validation.h"
 #include "note_text.h"
 #include "recycle_item.h"
 #include "recycle_readiness.h"
@@ -581,47 +583,90 @@ static enum persistence_outcome read_history(struct persistence_adapter *_Nonnul
     return read_text(path, out);
 }
 
-/* いま md にある本文を履歴へ写す（FR-017 / ADR 0012）。バイト列はそのまま写すので、
- * 改行も BOM を含む全bytesも元のままになる。md が無ければ写すものが無い（ABSENT）。 */
-static enum persistence_outcome archive_note(struct persistence_adapter *_Nonnull adapter,
-                                             const char *_Nonnull category,
-                                             const char *_Nonnull note)
+static enum note_store_validation
+check_store_source(const struct note_store_request *_Nonnull request,
+                   const struct file_bytes *_Nonnull bytes)
 {
-    wchar_t leaf[MAX_PATH];
-    wchar_t source[path_capacity];
-    if (!note_leaf(note, leaf, MAX_PATH) || !compose(adapter, category, leaf, source) ||
-        !writable_data(adapter))
-    {
-        return PERSISTENCE_UNWRITABLE;
-    }
-    struct file_bytes *_Nullable bytes = nullptr;
-    enum persistence_outcome read = file_bytes_read(source, &bytes);
-    if (read == PERSISTENCE_ABSENT || read == PERSISTENCE_OUT_OF_MEMORY)
-    {
-        return read;
-    }
-    if (read != PERSISTENCE_LOADED)
-    {
-        return PERSISTENCE_UNWRITABLE;
-    }
-    enum persistence_outcome outcome = store_history(adapter, category, note, bytes);
-    file_bytes_destroy(bytes);
-    return outcome;
+    if (request->expected == nullptr)
+        return NOTE_STORE_MATCHED;
+    struct note_text *_Nullable current = nullptr;
+    enum note_text_outcome parsed =
+        note_text_create(file_bytes_data(bytes), file_bytes_length(bytes), &current);
+    if (parsed != NOTE_TEXT_ACCEPTED)
+        return parsed == NOTE_TEXT_OUT_OF_MEMORY ? NOTE_STORE_VALIDATION_OUT_OF_MEMORY
+                                                 : NOTE_STORE_INVALID_SOURCE;
+    bool same = note_text_equals(current, request->expected);
+    note_text_destroy(current);
+    return same ? NOTE_STORE_MATCHED : NOTE_STORE_DIFFERENT;
 }
 
-/* 本文を同じ md へ原子的に書き戻す（FR-006）。改行の形は core が既に揃えている。 */
-static enum persistence_outcome write_note(struct persistence_adapter *_Nonnull adapter,
-                                           const char *_Nonnull category, const char *_Nonnull note,
-                                           const struct note_text *_Nonnull body)
+/* The compared raw read is the history source; no second independent source read. */
+static enum note_store_outcome publish_note_store(struct persistence_adapter *_Nonnull adapter,
+                                                  const struct note_store_request *_Nonnull request,
+                                                  const wchar_t *_Nonnull path,
+                                                  const struct file_bytes *_Nullable bytes)
+{
+    if (request->expected != nullptr && note_text_equals(request->expected, request->body))
+        return NOTE_STORE_UNCHANGED;
+    if (bytes != nullptr)
+    {
+        enum persistence_outcome archived =
+            store_history(adapter, request->category, request->note, bytes);
+        if (archived != PERSISTENCE_STORED)
+            return archived == PERSISTENCE_OUT_OF_MEMORY ? NOTE_STORE_OUT_OF_MEMORY
+                                                         : NOTE_STORE_HISTORY_FAILED;
+    }
+    enum persistence_outcome written = file_bytes_store(path, note_text_file_bytes(request->body),
+                                                        note_text_file_length(request->body));
+    if (written == PERSISTENCE_STORED)
+        return NOTE_STORE_STORED;
+    return written == PERSISTENCE_OUT_OF_MEMORY ? NOTE_STORE_OUT_OF_MEMORY
+                                                : NOTE_STORE_WRITE_FAILED;
+}
+
+static enum note_store_outcome checked_note_store(struct persistence_adapter *_Nonnull adapter,
+                                                  const struct note_store_request *_Nonnull request,
+                                                  const wchar_t *_Nonnull path,
+                                                  const struct file_bytes *_Nonnull bytes)
+{
+    switch (check_store_source(request, bytes))
+    {
+    case NOTE_STORE_MATCHED:
+        return publish_note_store(adapter, request, path, bytes);
+    case NOTE_STORE_DIFFERENT:
+        return NOTE_STORE_SOURCE_CHANGED;
+    case NOTE_STORE_INVALID_SOURCE:
+        return NOTE_STORE_SOURCE_UNREADABLE;
+    case NOTE_STORE_VALIDATION_OUT_OF_MEMORY:
+        return NOTE_STORE_OUT_OF_MEMORY;
+    }
+    return NOTE_STORE_SOURCE_UNREADABLE;
+}
+
+/* ADR0093: one save entry, using existing raw history and atomic file publication.
+ * No handle spans comparison through publication; concurrent external replacement can still race.
+ */
+static enum note_store_outcome store_note(struct persistence_adapter *_Nonnull adapter,
+                                          const struct note_store_request *_Nonnull request)
 {
     wchar_t leaf[MAX_PATH];
     wchar_t path[path_capacity];
-    if (!note_leaf(note, leaf, MAX_PATH) || !compose(adapter, category, leaf, path) ||
-        !writable_data(adapter))
-    {
-        return PERSISTENCE_UNWRITABLE;
-    }
-    return file_bytes_store(path, note_text_file_bytes(body), note_text_file_length(body));
+    if (!note_leaf(request->note, leaf, MAX_PATH) ||
+        !compose(adapter, request->category, leaf, path) || !writable_data(adapter))
+        return NOTE_STORE_WRITE_FAILED;
+    struct file_bytes *_Nullable bytes = nullptr;
+    enum persistence_outcome read = file_bytes_read(path, &bytes);
+    if (read == PERSISTENCE_ABSENT)
+        return request->expected == nullptr ? publish_note_store(adapter, request, path, nullptr)
+                                            : NOTE_STORE_SOURCE_CHANGED;
+    if (read == PERSISTENCE_OUT_OF_MEMORY)
+        return NOTE_STORE_OUT_OF_MEMORY;
+    if (read != PERSISTENCE_LOADED)
+        return request->expected == nullptr ? NOTE_STORE_HISTORY_FAILED
+                                            : NOTE_STORE_SOURCE_UNREADABLE;
+    enum note_store_outcome outcome = checked_note_store(adapter, request, path, bytes);
+    file_bytes_destroy(bytes);
+    return outcome;
 }
 
 /* 初回保存は同じパス生成と原子的書込を使い、既存mdの置換を許さない（ADR 0020）。 */
@@ -1767,9 +1812,8 @@ struct persistence_port persistence_adapter_port(struct persistence_adapter *_No
         .write_settings = write_settings,
         .read_note = read_note,
         .read_note_times = read_note_times,
-        .archive_note = archive_note,
+        .store_note = store_note,
         .read_history = read_history,
-        .write_note = write_note,
         .create_note = create_note,
         .create_category = create_category,
         .remove_category = remove_category,

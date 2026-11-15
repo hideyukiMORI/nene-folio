@@ -17,6 +17,7 @@
 #include "note_file_times.h"
 #include "note_history.h"
 #include "note_ledger.h"
+#include "note_store_request.h"
 #include "note_tag.h"
 #include "note_tags.h"
 #include "note_text.h"
@@ -68,6 +69,11 @@ static bool paste_case;
 static bool format_case;
 static bool favorites_case;
 static bool tags_case;
+static bool tag_management_case;
+static bool tag_management_visual_case;
+static bool tag_management_measure_case;
+static WNDPROC management_body_procedure;
+static unsigned management_rejected_streams;
 static bool tags_visual_case;
 static bool tags_reload_case;
 static bool tags_metrics_case;
@@ -153,6 +159,15 @@ static void require(bool condition, const char *_Nonnull message)
     }
 }
 
+static enum note_store_outcome fixture_store(struct persistence_port disk,
+                                             const char *_Nonnull category,
+                                             const char *_Nonnull note,
+                                             const struct note_text *_Nonnull body)
+{
+    const struct note_store_request request = {category, note, body, nullptr};
+    return disk.store_note(disk.adapter, &request);
+}
+
 static void seed_history(struct persistence_port disk)
 {
     const char *versions[] = {history_oldest, history_previous};
@@ -162,9 +177,8 @@ static void seed_history(struct persistence_port disk)
         require(note_text_create(versions[index], strlen(versions[index]), &body) ==
                     NOTE_TEXT_ACCEPTED,
                 "valid history fixture");
-        require(disk.write_note(disk.adapter, "schedule", "one", body) == PERSISTENCE_STORED &&
-                    disk.archive_note(disk.adapter, "schedule", "one") == PERSISTENCE_STORED,
-                "fixture history uses the canonical archive port");
+        require(fixture_store(disk, "schedule", "one", body) == NOTE_STORE_STORED,
+                "fixture history uses the canonical existing-note save port");
         note_text_destroy(body);
     }
 }
@@ -192,8 +206,7 @@ static void seed_tags(struct persistence_port disk)
         struct note_text *body = nullptr;
         require(note_text_create(sources[at], strlen(sources[at]), &body) == NOTE_TEXT_ACCEPTED,
                 "tag native source");
-        require(disk.write_note(disk.adapter, categories[at], names[at], body) ==
-                    PERSISTENCE_STORED,
+        require(fixture_store(disk, categories[at], names[at], body) == NOTE_STORE_STORED,
                 "dedicated tag source saved");
         note_text_destroy(body);
     }
@@ -241,15 +254,14 @@ static void seed_notes(struct persistence_port disk)
     source = text_fixture_source(source);
     struct note_text *_Nullable body = nullptr;
     require(note_text_create(source, strlen(source), &body) == NOTE_TEXT_ACCEPTED, "media note");
-    require(disk.write_note(disk.adapter, "schedule", "one", body) == PERSISTENCE_STORED,
-            "image note stored");
+    require(fixture_store(disk, "schedule", "one", body) == NOTE_STORE_STORED, "image note stored");
     note_text_destroy(body);
     if (note_switch_case || favorites_case)
     {
         body = nullptr;
         require(note_text_create(switch_other, strlen(switch_other), &body) == NOTE_TEXT_ACCEPTED,
                 "valid second note");
-        require(disk.write_note(disk.adapter, "schedule", "two", body) == PERSISTENCE_STORED,
+        require(fixture_store(disk, "schedule", "two", body) == NOTE_STORE_STORED,
                 "second dedicated note stored");
         note_text_destroy(body);
     }
@@ -5428,6 +5440,7 @@ struct failure_probe
     UINT_PTR timer;
     unsigned ticks;
     unsigned closed;
+    const wchar_t *expected;
 };
 
 static struct failure_probe failure;
@@ -5443,9 +5456,8 @@ static BOOL CALLBACK close_history_failure(HWND dialog, LPARAM parameter)
     wchar_t message[512];
     require(text != nullptr && accept != nullptr && IsWindowEnabled(accept) &&
                 GetWindowTextW(text, message, 512) > 0 &&
-                wcsstr(message, L"履歴を書けなかったので保存していません。"
-                                L"編集中の本文は残っています。") != nullptr,
-            "the fixture's themed failure dialog reports the specific history refusal");
+                wcsstr(message, failure.expected) != nullptr,
+            "the fixture's themed failure dialog reports the expected refusal");
     require(KillTimer(nullptr, failure.timer), "stop the owned failure observer timer");
     failure.timer = 0;
     ++failure.closed;
@@ -5476,12 +5488,19 @@ static HANDLE lock_native_note(struct native_fixture *_Nonnull fixture)
     return locked;
 }
 
-static void begin_history_failure(struct folio_window *_Nonnull window)
+static void begin_expected_failure(struct folio_window *_Nonnull window,
+                                   const wchar_t *_Nonnull expected)
 {
-    failure =
-        (struct failure_probe){.root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW)};
+    failure = (struct failure_probe){
+        .root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW), .expected = expected};
     failure.timer = SetTimer(nullptr, 0, 50, observe_history_failure);
     require(failure.timer != 0, "start the owned failure observer timer");
+}
+
+static void begin_history_failure(struct folio_window *_Nonnull window)
+{
+    begin_expected_failure(window, L"履歴を書けなかったので保存していません。"
+                                   L"編集中の本文は残っています。");
 }
 
 static void end_history_failure(void)
@@ -8353,6 +8372,606 @@ static void run_tags_case(struct native_fixture *_Nonnull fixture)
     folio_window_destroy(window);
 }
 
+static void management_set_input(struct folio_window *_Nonnull window, const wchar_t *_Nonnull text)
+{
+    HWND input = folio_window_accessible_window(window, ACCESSIBLE_COMMAND_INPUT);
+    require(input != nullptr && SetWindowTextW(input, text), "enter a management name");
+    pump(window);
+}
+
+static void management_open(struct folio_window *_Nonnull window,
+                            struct native_fixture *_Nonnull fixture, const wchar_t *_Nonnull source)
+{
+    invoke_operation(window, FOLIO_COMMAND_MANAGE_TAGS);
+    pump(window);
+    tags_settle(window, fixture->state);
+    management_set_input(window, source);
+    uint64_t revision = folio_window_accessible_surface_revision(window);
+    struct accessible_item list = {.kind = ACCESSIBLE_SURFACE_LIST, .revision = revision};
+    struct accessible_item selected = {0};
+    require(folio_window_accessible_selected(window, &list, &selected) == S_OK &&
+                selected.kind == ACCESSIBLE_SURFACE_CHOICE && selected.slot == 0,
+            "management exposes the selected choice through SelectionPattern");
+    struct accessible_view view = {0};
+    require(folio_window_accessible_read(window, &selected, &view) == S_OK && view.selected &&
+                wcsncmp(view.name, source, wcslen(source)) == 0,
+            "the selection provider and selected row agree");
+}
+
+static void management_preview(struct folio_window *_Nonnull window,
+                               struct native_fixture *_Nonnull fixture)
+{
+    for (size_t step = 0;
+         step < 100 && folio_state_tag_management_phase(fixture->state) == TAG_MANAGEMENT_PREPARING;
+         ++step)
+    {
+        require(folio_window_idle_work_ready(window), "management preparation is scheduled");
+        folio_window_continue_idle_work(window);
+        pump(window);
+    }
+    struct tag_management_summary summary = folio_state_tag_management_summary(fixture->state);
+    require(summary.phase == TAG_MANAGEMENT_PREVIEW && summary.pending == 2 &&
+                summary.skipped == 1 && summary.changed == 0,
+            "fresh preview distinguishes two changes and one unsupported note");
+    struct accessible_request row = {
+        .item = {.kind = ACCESSIBLE_SURFACE_TEXT,
+                 .slot = 0,
+                 .revision = folio_window_accessible_surface_revision(window)},
+        .action = ACCESSIBLE_ACTION_FOCUS};
+    require(folio_window_accessible_action(window, &row) == S_OK,
+            "preview rows are focusable read-only text");
+    favorite_key(window, VK_RETURN);
+    require(folio_state_tag_management_phase(fixture->state) == TAG_MANAGEMENT_PREVIEW,
+            "Enter on a preview row cannot publish changes");
+}
+
+static void management_finish(struct folio_window *_Nonnull window,
+                              struct native_fixture *_Nonnull fixture)
+{
+    for (size_t step = 0;
+         step < 100 && folio_state_tag_management_phase(fixture->state) == TAG_MANAGEMENT_APPLYING;
+         ++step)
+    {
+        folio_window_continue_idle_work(window);
+        pump(window);
+    }
+    require(folio_state_tag_management_phase(fixture->state) == TAG_MANAGEMENT_RESULT,
+            "one-file idle writes finish at the result surface");
+}
+
+static void management_external_source(struct native_fixture *_Nonnull fixture,
+                                       const char *_Nonnull text)
+{
+    wchar_t path[storage_native_capacity];
+    native_file_path(fixture, L"\\schedule\\one.md", path);
+    require(file_bytes_store(path, text, strlen(text)) == PERSISTENCE_STORED,
+            "external fixture changes only its own Markdown file");
+}
+
+static void management_history_snapshot(struct native_fixture *_Nonnull fixture,
+                                        struct history_snapshot *_Nonnull snapshot)
+{
+    struct persistence_port disk = persistence_adapter_port(fixture->files);
+    snapshot->store_revision = folio_state_store_revision(fixture->state);
+    for (size_t version = 0; version <= note_history_depth; ++version)
+    {
+        enum persistence_outcome result = history_file(disk, version, &snapshot->files[version]);
+        require(result == PERSISTENCE_LOADED || result == PERSISTENCE_ABSENT,
+                "management captures present and absent history slots");
+    }
+}
+
+static HANDLE management_lock(struct native_fixture *_Nonnull fixture, const wchar_t *_Nonnull leaf,
+                              DWORD sharing)
+{
+    wchar_t path[storage_native_capacity];
+    native_file_path(fixture, leaf, path);
+    HANDLE handle = CreateFileW(path, GENERIC_READ, sharing, nullptr, OPEN_EXISTING,
+                                FILE_ATTRIBUTE_NORMAL, nullptr);
+    require(handle != INVALID_HANDLE_VALUE, "lock only the dedicated management fixture");
+    return handle;
+}
+
+static void management_port_refusals(struct native_fixture *_Nonnull fixture,
+                                     const struct note_store_request *_Nonnull request)
+{
+    struct persistence_port disk = persistence_adapter_port(fixture->files);
+    HANDLE locked = management_lock(fixture, L"\\schedule\\one.md", 0);
+    require(disk.store_note(disk.adapter, request) == NOTE_STORE_SOURCE_UNREADABLE,
+            "locked expected source is refused before history");
+    require(CloseHandle(locked), "release source read lock");
+    management_external_source(fixture, "\xFF");
+    require(disk.store_note(disk.adapter, request) == NOTE_STORE_SOURCE_UNREADABLE,
+            "invalid UTF-8 expected source is never overwritten");
+    wchar_t path[storage_native_capacity];
+    native_file_path(fixture, L"\\schedule\\one.md", path);
+    require(DeleteFileW(path),
+            "remove only the dedicated fixture to simulate an external deletion");
+    require(disk.store_note(disk.adapter, request) == NOTE_STORE_SOURCE_CHANGED,
+            "missing expected source is not recreated");
+    management_external_source(fixture, tags_current);
+}
+
+static void management_port_publication(struct native_fixture *_Nonnull fixture,
+                                        const struct note_store_request *_Nonnull request)
+{
+    struct persistence_port disk = persistence_adapter_port(fixture->files);
+    require(fixture_store(disk, "schedule", "one", request->expected) == NOTE_STORE_STORED,
+            "seed a history slot through the sole save entry");
+    HANDLE history = management_lock(fixture, L"\\.history\\schedule\\one\\1.md", FILE_SHARE_READ);
+    require(disk.store_note(disk.adapter, request) == NOTE_STORE_HISTORY_FAILED,
+            "history rotation failure prevents note publication");
+    require(CloseHandle(history), "release fixture history lock");
+    tags_expect_saved(fixture, tags_current);
+    HANDLE note = management_lock(fixture, L"\\schedule\\one.md", FILE_SHARE_READ);
+    require(disk.store_note(disk.adapter, request) == NOTE_STORE_WRITE_FAILED,
+            "publication lock is distinguished from history failure");
+    require(CloseHandle(note), "release fixture publication lock");
+    tags_expect_saved(fixture, tags_current);
+    require(disk.store_note(disk.adapter, request) == NOTE_STORE_STORED,
+            "the same checked request can retry the actual write");
+    tags_expect_saved(fixture, "---\ntags: [managed]\n---\nPublished");
+    expect_history_file(disk, 1, request->expected);
+    management_external_source(fixture, tags_current);
+}
+
+static void management_port_boundaries(struct native_fixture *_Nonnull fixture)
+{
+    struct note_text *expected = nullptr;
+    struct note_text *replacement = nullptr;
+    const char target[] = "---\ntags: [managed]\n---\nPublished";
+    require(note_text_create(tags_current, sizeof tags_current - 1, &expected) ==
+                    NOTE_TEXT_ACCEPTED &&
+                note_text_create(target, sizeof target - 1, &replacement) == NOTE_TEXT_ACCEPTED,
+            "actual persistence uses immutable expected and replacement sources");
+    struct persistence_port disk = persistence_adapter_port(fixture->files);
+    struct note_store_request request = {"schedule", "one", expected, expected};
+    struct history_snapshot history = {0};
+    management_history_snapshot(fixture, &history);
+    require(disk.store_note(disk.adapter, &request) == NOTE_STORE_UNCHANGED,
+            "checked equal bytes do not archive or publish");
+    verify_history_unchanged(fixture, &history);
+    for (size_t version = 0; version <= note_history_depth; ++version)
+        note_text_destroy(history.files[version]);
+    request.body = replacement;
+    management_port_refusals(fixture, &request);
+    management_port_publication(fixture, &request);
+    note_text_destroy(expected);
+    note_text_destroy(replacement);
+}
+
+/* Reject the real native boundary without a production-only test seam. */
+static LRESULT CALLBACK management_reject_stream(HWND window, UINT message, WPARAM wparam,
+                                                 LPARAM lparam)
+{
+    if (message == EM_STREAMIN)
+    {
+        EDITSTREAM *stream = (EDITSTREAM *)lparam;
+        stream->dwError = ERROR_READ_FAULT;
+        management_rejected_streams += 1;
+        return 0;
+    }
+    return CallWindowProcW(management_body_procedure, window, message, wparam, lparam);
+}
+
+static void management_save_refused(struct folio_window *_Nonnull window,
+                                    struct native_fixture *_Nonnull fixture)
+{
+    struct history_snapshot history = {0};
+    management_history_snapshot(fixture, &history);
+    begin_expected_failure(window, L"本文読込失敗。同じモードで再試行。");
+    struct accessible_request save = {.item = {.kind = ACCESSIBLE_SAVE},
+                                      .action = ACCESSIBLE_ACTION_INVOKE};
+    require(folio_window_accessible_action(window, &save) == S_OK,
+            "invoke ordinary Save against an unavailable native body");
+    end_history_failure();
+    require(failure.closed == 1, "Save rejects the unavailable body with the existing failure");
+    verify_history_unchanged(fixture, &history);
+    for (size_t version = 0; version <= note_history_depth; ++version)
+        note_text_destroy(history.files[version]);
+}
+
+static void management_failed_pane(struct folio_window *_Nonnull window,
+                                   struct native_fixture *_Nonnull fixture)
+{
+    management_open(window, fixture, L"blue");
+    surface_button(window, ACCESSIBLE_SURFACE_TAG_SECONDARY);
+    management_preview(window, fixture);
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    management_body_procedure =
+        (WNDPROC)SetWindowLongPtrW(body, GWLP_WNDPROC, (LONG_PTR)management_reject_stream);
+    require(management_body_procedure != nullptr, "observe the actual native publication boundary");
+    uint64_t revision = folio_state_store_revision(fixture->state);
+    surface_button(window, ACCESSIBLE_SURFACE_TAG_PRIMARY);
+    folio_window_continue_idle_work(window);
+    SetWindowLongPtrW(body, GWLP_WNDPROC, (LONG_PTR)management_body_procedure);
+    pump(window);
+    struct tag_management_summary summary = folio_state_tag_management_summary(fixture->state);
+    require(management_rejected_streams == 1 && summary.phase == TAG_MANAGEMENT_RESULT &&
+                summary.changed == 1 && summary.pending == 1 && summary.failed == 0 &&
+                folio_state_store_revision(fixture->state) == revision + 1,
+            "failed native adoption retains the publication and stops remaining writes");
+    tags_expect_saved(fixture,
+                      "---\ntitle: 'Keep' # unknown\ntags: [red] # keep\n---\n# Note 日本語 😀");
+    surface_button(window, ACCESSIBLE_SURFACE_TAG_SECONDARY);
+    management_save_refused(window, fixture);
+    tags_settle(window, fixture->state);
+    require(folio_state_store_revision(fixture->state) == revision + 1,
+            "ordinary idle cannot restart the stopped publication");
+    struct accessible_request recover = {.item = {.kind = ACCESSIBLE_EDIT},
+                                         .action = ACCESSIBLE_ACTION_INVOKE};
+    require(folio_window_accessible_action(window, &recover) == S_OK,
+            "invoke the existing native recovery action");
+    pump(window);
+    tags_expect_text(window,
+                     L"---\rtitle: 'Keep' # unknown\rtags: [red] # keep\r---\r# Note 日本語 😀");
+    require(SendMessageW(body, EM_CANUNDO, 0, 0) == 0 &&
+                SendMessageW(body, EM_GETMODIFY, 0, 0) == 0,
+            "retrying native adoption uses the already published saved baseline");
+}
+
+static void management_native_failure(struct native_fixture *_Nonnull fixture)
+{
+    struct folio_window *window = nullptr;
+    require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
+                FOLIO_WINDOW_CREATED,
+            "separate window for native failure and recovery");
+    pump(window);
+    action(window, ACCESSIBLE_EDIT);
+    management_failed_pane(window, fixture);
+    action(window, ACCESSIBLE_VIEW);
+    folio_window_destroy(window);
+    management_external_source(fixture, tags_current);
+    require(folio_state_select_note(fixture->state, 0, 0, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
+            "restore and reload the dedicated source after failure verification");
+}
+
+static void management_entry_refusal(struct folio_window *_Nonnull window,
+                                     struct native_fixture *_Nonnull fixture,
+                                     const struct history_snapshot *_Nonnull history)
+{
+    struct native_body_snapshot before = {0};
+    capture_native_body(window, &before);
+    invoke_operation(window, FOLIO_COMMAND_MANAGE_TAGS);
+    pump(window);
+    struct accessible_view notice = tags_view(window, ACCESSIBLE_NOTICE, 0);
+    require(folio_state_tag_management_phase(fixture->state) == TAG_MANAGEMENT_CLOSED &&
+                wcsstr(notice.name, L"ファイルの内容が変わったため保存していません。") != nullptr,
+            "external conflict refuses entry and exposes its inline reason");
+    expect_native_body(window, &before);
+    verify_history_unchanged(fixture, history);
+}
+
+static void management_checked_entry(struct folio_window *_Nonnull window,
+                                     struct native_fixture *_Nonnull fixture)
+{
+    management_external_source(fixture, "---\ntags: [external]\n---\nChanged outside");
+    struct history_snapshot history = {0};
+    management_history_snapshot(fixture, &history);
+    management_entry_refusal(window, fixture, &history);
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    SendMessageW(body, EM_SETSEL, (WPARAM)-1, -1);
+    SendMessageW(body, EM_REPLACESEL, TRUE, (LPARAM)L" local");
+    pump(window);
+    management_entry_refusal(window, fixture, &history);
+    require(SendMessageW(body, EM_UNDO, 0, 0), "entry conflict retains the real undo record");
+    pump(window);
+    tags_expect_text(window, tags_original);
+    management_external_source(fixture, tags_current);
+    for (size_t version = 0; version <= note_history_depth; ++version)
+        note_text_destroy(history.files[version]);
+}
+
+static void management_rename_current(struct folio_window *_Nonnull window,
+                                      struct native_fixture *_Nonnull fixture)
+{
+    management_open(window, fixture, L"blue");
+    surface_button(window, ACCESSIBLE_SURFACE_TAG_PRIMARY);
+    management_set_input(window, L"green");
+    HWND input = folio_window_accessible_window(window, ACCESSIBLE_COMMAND_INPUT);
+    SetFocus(input);
+    SendMessageW(input, WM_IME_STARTCOMPOSITION, 0, 0);
+    favorite_key(window, VK_RETURN);
+    favorite_key(window, VK_ESCAPE);
+    require(IsWindowVisible(input) && GetFocus() == input &&
+                folio_state_tag_management_phase(fixture->state) == TAG_MANAGEMENT_CLOSED,
+            "synthetic management IME owns Enter and Escape before preparation");
+    SendMessageW(input, WM_IME_ENDCOMPOSITION, 0, 0);
+    struct accessible_view notice = tags_view(window, ACCESSIBLE_SURFACE_STATUS, 0);
+    require(wcsstr(notice.name, L"統合") != nullptr, "existing destination makes merging explicit");
+    surface_button(window, ACCESSIBLE_SURFACE_TAG_PRIMARY);
+    management_preview(window, fixture);
+    tags_expect_saved(fixture, tags_current);
+    surface_button(window, ACCESSIBLE_SURFACE_TAG_PRIMARY);
+    require(folio_state_tag_management_phase(fixture->state) == TAG_MANAGEMENT_APPLYING,
+            "only explicit apply starts publication");
+    folio_window_continue_idle_work(window);
+    pump(window);
+    struct tag_management_summary summary = folio_state_tag_management_summary(fixture->state);
+    require(summary.changed == 1 && summary.pending == 1, "one idle publishes at most one target");
+    tags_expect_text(
+        window,
+        L"---\rtitle: 'Keep' # unknown\rtags: [red, \"green\"] # keep\r---\r# Note 日本語 😀");
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    require(SendMessageW(body, EM_CANUNDO, 0, 0) == 0 &&
+                SendMessageW(body, EM_GETMODIFY, 0, 0) == 0,
+            "selected published source becomes the native saved baseline immediately");
+    management_finish(window, fixture);
+    summary = folio_state_tag_management_summary(fixture->state);
+    require(summary.changed == 2 && summary.skipped == 1 && summary.failed == 0,
+            "merge reports two publications and the unsupported source");
+    surface_button(window, ACCESSIBLE_SURFACE_TAG_SECONDARY);
+    tags_expect_saved(
+        fixture,
+        "---\ntitle: 'Keep' # unknown\ntags: [red, \"green\"] # keep\n---\n# Note 日本語 😀");
+}
+
+static void management_preview_conflict(struct folio_window *_Nonnull window,
+                                        struct native_fixture *_Nonnull fixture)
+{
+    management_open(window, fixture, L"blue");
+    surface_button(window, ACCESSIBLE_SURFACE_TAG_PRIMARY);
+    management_set_input(window, L"green");
+    surface_button(window, ACCESSIBLE_SURFACE_TAG_PRIMARY);
+    management_preview(window, fixture);
+    const char external[] = "---\ntags: [external]\n---\nChanged after review";
+    management_external_source(fixture, external);
+    struct history_snapshot history = {0};
+    management_history_snapshot(fixture, &history);
+    surface_button(window, ACCESSIBLE_SURFACE_TAG_PRIMARY);
+    folio_window_continue_idle_work(window);
+    pump(window);
+    require(folio_state_tag_management_status(fixture->state, 0) == TAG_APPLY_CONFLICT,
+            "real persistence rechecks the prepared source before history or publication");
+    verify_history_unchanged(fixture, &history);
+    management_finish(window, fixture);
+    struct tag_management_summary summary = folio_state_tag_management_summary(fixture->state);
+    require(summary.changed == 1 && summary.skipped == 2 && summary.failed == 0,
+            "one external conflict does not block the independent valid note");
+    tags_expect_text(window, tags_original);
+    tags_expect_saved(fixture, external);
+    surface_button(window, ACCESSIBLE_SURFACE_TAG_SECONDARY);
+    management_external_source(fixture, tags_current);
+    wchar_t path[storage_native_capacity];
+    native_file_path(fixture, L"\\schedule\\two.md", path);
+    const char other[] = "---\ntags: [blue, green]\n---\nOther";
+    require(file_bytes_store(path, other, sizeof other - 1) == PERSISTENCE_STORED,
+            "restore the independent fixture after conflict verification");
+    for (size_t version = 0; version <= note_history_depth; ++version)
+        note_text_destroy(history.files[version]);
+}
+
+static void management_stop_retry(struct folio_window *_Nonnull window,
+                                  struct native_fixture *_Nonnull fixture)
+{
+    management_open(window, fixture, L"green");
+    surface_button(window, ACCESSIBLE_SURFACE_TAG_SECONDARY);
+    management_preview(window, fixture);
+    surface_button(window, ACCESSIBLE_SURFACE_TAG_PRIMARY);
+    folio_window_continue_idle_work(window);
+    pump(window);
+    favorite_key(window, VK_ESCAPE);
+    struct tag_management_summary summary = folio_state_tag_management_summary(fixture->state);
+    require(summary.phase == TAG_MANAGEMENT_RESULT && summary.changed == 1 && summary.pending == 1,
+            "Escape stops remaining writes without undoing the published note");
+    surface_button(window, ACCESSIBLE_SURFACE_TAG_PRIMARY);
+    tags_settle(window, fixture->state);
+    summary = folio_state_tag_management_summary(fixture->state);
+    require(summary.phase == TAG_MANAGEMENT_PREVIEW && summary.pending == 1 && summary.changed == 0,
+            "retry scans again and excludes the already changed note");
+    surface_button(window, ACCESSIBLE_SURFACE_TAG_PRIMARY);
+    management_finish(window, fixture);
+    require(folio_state_tag_management_summary(fixture->state).changed == 1,
+            "fresh retry publishes only the remaining note");
+    surface_button(window, ACCESSIBLE_SURFACE_TAG_SECONDARY);
+    tags_expect_saved(fixture,
+                      "---\ntitle: 'Keep' # unknown\ntags: [red] # keep\n---\n# Note 日本語 😀");
+}
+
+static void management_close_cancel(struct folio_window *_Nonnull window,
+                                    struct native_fixture *_Nonnull fixture)
+{
+    struct accessible_request create = {.item = {.kind = ACCESSIBLE_NEW_NOTE},
+                                        .action = ACCESSIBLE_ACTION_INVOKE};
+    require(folio_window_accessible_action(window, &create) == S_OK,
+            "invoke a new untitled note before close cancellation");
+    pump(window);
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    SendMessageW(body, EM_REPLACESEL, TRUE, (LPARAM)L"unsaved management note");
+    pump(window);
+    management_open(window, fixture, L"red");
+    surface_button(window, ACCESSIBLE_SURFACE_TAG_SECONDARY);
+    tags_settle(window, fixture->state);
+    require(folio_state_tag_management_summary(fixture->state).pending == 1,
+            "untitled body is excluded from the all-note preview");
+    surface_button(window, ACCESSIBLE_SURFACE_TAG_PRIMARY);
+    start_name_dialog(window, (struct name_dialog_request){.title = L"無題のノート",
+                                                           .name = cancelled_name,
+                                                           .discard = true,
+                                                           .action = NAME_DIALOG_CANCEL});
+    SendMessageW(folio_window_accessible_window(window, ACCESSIBLE_WINDOW), WM_CLOSE, 0, 0);
+    pump_refused_close(window, folio_window_accessible_window(window, ACCESSIBLE_WINDOW));
+    require(name_dialog.timer == 0 && name_dialog.closed == 1 && !IsWindow(name_dialog.dialog) &&
+                IsWindow(name_dialog.root) && IsWindowEnabled(name_dialog.root) &&
+                !IsWindowEnabled(name_dialog.body),
+            "cancelled close restores the management surface and keeps its background blocked");
+    pump(window);
+    struct tag_management_summary summary = folio_state_tag_management_summary(fixture->state);
+    require(summary.phase == TAG_MANAGEMENT_RESULT && summary.changed == 0 && summary.pending == 1,
+            "cancelled root close cannot resume queued tag publications");
+    tags_settle(window, fixture->state);
+    require(folio_state_tag_management_summary(fixture->state).changed == 0,
+            "later idle work does not restart the stopped batch");
+    tags_expect_text(window, L"unsaved management note");
+    surface_button(window, ACCESSIBLE_SURFACE_TAG_SECONDARY);
+}
+
+static void management_capture(struct folio_window *_Nonnull window, size_t index, size_t phase)
+{
+    struct accessible_view list = tags_view(window, ACCESSIBLE_SURFACE_LIST, 0);
+    struct accessible_view footer = tags_view(window, ACCESSIBLE_SURFACE_STATUS, 0);
+    struct accessible_view primary =
+        tags_view(window, ACCESSIBLE_SURFACE_BUTTON, ACCESSIBLE_SURFACE_TAG_PRIMARY);
+    struct accessible_view secondary =
+        tags_view(window, ACCESSIBLE_SURFACE_BUTTON, ACCESSIBLE_SURFACE_TAG_SECONDARY);
+    require(list.bounds.bottom > list.bounds.top && list.bounds.bottom <= footer.bounds.top &&
+                footer.bounds.bottom <= primary.bounds.top &&
+                primary.bounds.right <= secondary.bounds.left &&
+                primary.bounds.bottom == secondary.bounds.bottom,
+            "minimum management geometry keeps list, status and both actions separate");
+    char path[96];
+    require(sprintf_s(path, sizeof path, "tag-management-%zu-%zu.bmp", index, phase) > 0,
+            "management screenshot name");
+    tags_capture(folio_window_accessible_window(window, ACCESSIBLE_WINDOW), path);
+    if (phase == 3 && index < 2)
+    {
+        HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+        require(
+            RedrawWindow(root, nullptr, nullptr, RDW_INVALIDATE | RDW_ALLCHILDREN | RDW_UPDATENOW),
+            "complete pending redraw before the diagnostic second capture");
+        require(sprintf_s(path, sizeof path, "tag-management-repaint-%zu.bmp", index) > 0,
+                "management repaint screenshot name");
+        tags_capture(root, path);
+    }
+}
+
+static void management_visual_flow(struct folio_window *_Nonnull window,
+                                   struct native_fixture *_Nonnull fixture, size_t index)
+{
+    management_open(window, fixture, L"blue");
+    management_capture(window, index, 0);
+    surface_button(window, ACCESSIBLE_SURFACE_TAG_PRIMARY);
+    management_set_input(window, L"green");
+    management_capture(window, index, 1);
+    surface_button(window, ACCESSIBLE_SURFACE_TAG_PRIMARY);
+    management_preview(window, fixture);
+    management_capture(window, index, 2);
+    surface_button(window, ACCESSIBLE_SURFACE_TAG_PRIMARY);
+    favorite_key(window, VK_ESCAPE);
+    require(folio_state_tag_management_summary(fixture->state).changed == 0,
+            "visual result comes from stopping before the first write");
+    management_capture(window, index, 3);
+    surface_button(window, ACCESSIBLE_SURFACE_TAG_SECONDARY);
+}
+
+static void run_management_visual(struct native_fixture *_Nonnull fixture)
+{
+    const enum folio_language languages[] = {FOLIO_LANGUAGE_JA, FOLIO_LANGUAGE_EN,
+                                             FOLIO_LANGUAGE_ZH_HANS};
+    for (size_t at = 0; at < 9; ++at)
+    {
+        favorite_high_contrast = at / 3 == 2;
+        require(folio_state_set_language(fixture->state, languages[at % 3]) == FOLIO_STATE_READY &&
+                    folio_state_refresh_theme(fixture->state) == FOLIO_STATE_READY &&
+                    folio_state_set_theme(fixture->state, at / 3 == 1 ? FOLIO_THEME_CHOICE_DARK
+                                                                      : FOLIO_THEME_CHOICE_LIGHT) ==
+                        FOLIO_STATE_READY,
+                "management matrix language and palette");
+        struct folio_window *window = nullptr;
+        require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY,
+                                    &window) == FOLIO_WINDOW_CREATED,
+                "management matrix window");
+        HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+        require(SetWindowPos(root, nullptr, 20, 20, 420, 360, SWP_NOZORDER | SWP_NOACTIVATE),
+                "minimum management window size");
+        pump(window);
+        management_visual_flow(window, fixture, at);
+        folio_window_destroy(window);
+    }
+    favorite_high_contrast = false;
+}
+
+static void management_measure_phase(const char *_Nonnull phase, size_t sample)
+{
+    printf("{\"phase\":\"%s\",\"sample\":%zu}\n", phase, sample);
+    require(fflush(stdout) == 0 && getchar() == '\n',
+            "external stopwatch acknowledges the deterministic management phase");
+}
+
+static void management_measure_sample(struct folio_window *_Nonnull window,
+                                      struct native_fixture *_Nonnull fixture, size_t sample)
+{
+    management_open(window, fixture, L"blue");
+    surface_button(window, ACCESSIBLE_SURFACE_TAG_PRIMARY);
+    management_set_input(window, L"green");
+    management_measure_phase("ready", sample);
+    surface_button(window, ACCESSIBLE_SURFACE_TAG_PRIMARY);
+    for (size_t step = 0;
+         step < 100 && folio_state_tag_management_phase(fixture->state) == TAG_MANAGEMENT_PREPARING;
+         ++step)
+    {
+        folio_window_continue_idle_work(window);
+        pump(window);
+    }
+    require(folio_state_tag_management_phase(fixture->state) == TAG_MANAGEMENT_PREVIEW,
+            "measured preparation finishes the complete preview");
+    management_measure_phase("prepared", sample);
+    surface_button(window, ACCESSIBLE_SURFACE_TAG_PRIMARY);
+    folio_window_continue_idle_work(window);
+    pump(window);
+    require(folio_state_tag_management_summary(fixture->state).changed == 1,
+            "measured first step publishes and adopts the current note");
+    management_measure_phase("current", sample);
+    management_finish(window, fixture);
+    require(folio_state_tag_management_summary(fixture->state).changed == 2,
+            "measured completion publishes the independent target");
+    management_measure_phase("finished", sample);
+    surface_button(window, ACCESSIBLE_SURFACE_TAG_SECONDARY);
+}
+
+static void run_management_measure(struct native_fixture *_Nonnull fixture)
+{
+    struct folio_window *window = nullptr;
+    require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
+                FOLIO_WINDOW_CREATED,
+            "measured management window");
+    pump(window);
+    for (size_t sample = 0; sample < 7; ++sample)
+    {
+        management_measure_sample(window, fixture, sample);
+        management_external_source(fixture, tags_current);
+        wchar_t path[storage_native_capacity];
+        native_file_path(fixture, L"\\schedule\\two.md", path);
+        const char other[] = "---\ntags: [blue, green]\n---\nOther";
+        require(file_bytes_store(path, other, sizeof other - 1) == PERSISTENCE_STORED,
+                "restore measurement fixtures outside timed intervals");
+    }
+    folio_window_destroy(window);
+}
+
+static void run_tag_management_case(struct native_fixture *_Nonnull fixture)
+{
+    require(folio_state_select_note(fixture->state, 0, 0, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
+            "select the managed note");
+    if (tag_management_measure_case)
+    {
+        run_management_measure(fixture);
+        return;
+    }
+    if (tag_management_visual_case)
+    {
+        run_management_visual(fixture);
+        return;
+    }
+    management_port_boundaries(fixture);
+    management_native_failure(fixture);
+    struct folio_window *window = nullptr;
+    require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
+                FOLIO_WINDOW_CREATED,
+            "management window on isolated desktop");
+    pump(window);
+    action(window, ACCESSIBLE_EDIT);
+    management_checked_entry(window, fixture);
+    management_preview_conflict(window, fixture);
+    management_rename_current(window, fixture);
+    management_stop_retry(window, fixture);
+    management_close_cancel(window, fixture);
+    require(controlled.requests == 0, "management starts no unrelated media work");
+    folio_window_destroy(window);
+}
+
 static void run_existing_fixture(struct native_fixture *_Nonnull fixture, int argc,
                                  char *_Nonnull *_Nonnull argv)
 {
@@ -8379,7 +8998,9 @@ static void run_existing_fixture(struct native_fixture *_Nonnull fixture, int ar
 static void run_fixture(struct native_fixture *_Nonnull fixture, int argc,
                         char *_Nonnull *_Nonnull argv)
 {
-    if (tags_case)
+    if (tag_management_case)
+        run_tag_management_case(fixture);
+    else if (tags_case)
         run_tags_case(fixture);
     else
         run_existing_fixture(fixture, argc, argv);
@@ -8395,11 +9016,15 @@ static void select_favorites_fixture(const char *_Nonnull selector)
 
 static void select_tags_fixture(const char *_Nonnull selector)
 {
+    tag_management_visual_case = strcmp(selector, "--tag-management-visual") == 0;
+    tag_management_measure_case = strcmp(selector, "--tag-management-measure") == 0;
+    tag_management_case = strcmp(selector, "--tag-management") == 0 || tag_management_visual_case ||
+                          tag_management_measure_case;
     tags_visual_case = strcmp(selector, "--tags-visual") == 0;
     tags_reload_case = strcmp(selector, "--tags-reload") == 0;
     tags_metrics_case = strcmp(selector, "--tags-metrics") == 0;
     tags_case = strcmp(selector, "--tags") == 0 || tags_visual_case || tags_reload_case ||
-                tags_metrics_case;
+                tags_metrics_case || tag_management_case;
 }
 
 int main(int argc, char *_Nonnull *_Nonnull argv)
