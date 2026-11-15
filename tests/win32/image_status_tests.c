@@ -10,6 +10,7 @@
 #include "folio_state.h"
 #include "folio_window.h"
 #include "font_bundle.h"
+#include "icon_paint.h"
 #include "image_bitmap.h"
 #include "image_port.h"
 #include "name_list.h"
@@ -24,6 +25,9 @@
 #include "storage_native_path.h"
 #include "storage_state.h"
 #include "transfer_adapter.h"
+#include "ui_face.h"
+#include "ui_text.h"
+#include "utf16_text.h"
 #include "web_link_adapter.h"
 #include <commctrl.h>
 #include <richedit.h>
@@ -60,6 +64,25 @@ static bool palette_case;
 static bool paste_case;
 static bool format_case;
 static bool favorites_case;
+static bool favorites_visual_case;
+static bool favorites_ui_case;
+static bool favorite_high_contrast;
+
+static enum appearance_outcome read_favorite_appearance(struct appearance_adapter *_Nonnull adapter,
+                                                        struct appearance_snapshot *_Nonnull out)
+{
+    (void)adapter;
+    *out = (struct appearance_snapshot){
+        .theme = FOLIO_THEME_LIGHT,
+        .contrast = favorite_high_contrast ? FOLIO_CONTRAST_HIGH : FOLIO_CONTRAST_STANDARD,
+        .window = {0, 0, 0},
+        .window_text = {255, 255, 255},
+        .button = {0, 0, 0},
+        .button_text = {255, 255, 255},
+        .highlight = {255, 255, 0},
+        .highlight_text = {0, 0, 0}};
+    return APPEARANCE_READY;
+}
 static bool layout_case;
 static bool save_as_case;
 static bool rename_case;
@@ -175,7 +198,7 @@ static void seed_notes(struct persistence_port disk)
     require(disk.write_note(disk.adapter, "schedule", "one", body) == PERSISTENCE_STORED,
             "image note stored");
     note_text_destroy(body);
-    if (note_switch_case)
+    if (note_switch_case || favorites_case)
     {
         body = nullptr;
         require(note_text_create(switch_other, strlen(switch_other), &body) == NOTE_TEXT_ACCEPTED,
@@ -263,6 +286,8 @@ static void create_fixture(struct native_fixture *_Nonnull fixture)
     struct persistence_port disk = persistence_adapter_port(fixture->files);
     seed_notes(disk);
     struct appearance_port appearance = appearance_adapter_port(fixture->appearance);
+    if (favorites_case)
+        appearance.read = read_favorite_appearance;
     struct regex_port regex = regex_adapter_port(fixture->regex);
     struct web_link_port web = web_link_adapter_port();
     struct transfer_port transfer = transfer_adapter_port();
@@ -305,8 +330,8 @@ static void destroy_fixture(struct native_fixture *_Nonnull fixture)
 static void pump(struct folio_window *_Nonnull window)
 {
     MSG message;
-    for (unsigned count = 0; count < 1000 && PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE);
-         ++count)
+    unsigned count = 0;
+    for (; count < 1000 && PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE); ++count)
     {
         if (message.message == WM_TIMER)
             continue;
@@ -315,6 +340,11 @@ static void pump(struct folio_window *_Nonnull window)
             TranslateMessage(&message);
             DispatchMessageW(&message);
         }
+    }
+    if (favorites_case && count == 1000)
+    {
+        printf("favorites: pump limit reached; final message=%u\n", message.message);
+        fflush(stdout);
     }
 }
 static void action(struct folio_window *_Nonnull window, enum accessible_kind kind)
@@ -7081,10 +7111,12 @@ static void favorite_click(struct folio_window *_Nonnull window, bool cancel)
     require(folio_window_accessible_read(window, &item, &view) == S_OK && !view.offscreen,
             "favorite row is on screen");
     HWND drawer = folio_window_accessible_window(window, ACCESSIBLE_DRAWER);
-    POINT point = {view.bounds.right - MulDiv(43, (int)GetDpiForWindow(drawer), 96),
+    POINT point = {view.bounds.right - MulDiv(28, (int)GetDpiForWindow(drawer), 96),
                    (view.bounds.top + view.bounds.bottom) / 2};
     ScreenToClient(drawer, &point);
     LPARAM position = MAKELPARAM(point.x, point.y);
+    SendMessageW(drawer, WM_MOUSEMOVE, 0, MAKELPARAM(point.x - 1, point.y));
+    SendMessageW(drawer, WM_MOUSEMOVE, 0, position);
     SendMessageW(drawer, WM_LBUTTONDOWN, MK_LBUTTON, position);
     if (cancel)
         ReleaseCapture();
@@ -7094,15 +7126,423 @@ static void favorite_click(struct folio_window *_Nonnull window, bool cancel)
 
 static void expect_favorite_scope_name(struct folio_window *_Nonnull window, bool favorites)
 {
-    const enum accessible_kind kinds[] = {ACCESSIBLE_DRAWER, ACCESSIBLE_TREE};
-    const char16_t *name = favorites ? u"お気に入り" : u"カテゴリ";
+    const enum accessible_kind kinds[] = {ACCESSIBLE_SCOPE_ALL, ACCESSIBLE_SCOPE_FAVORITES};
+    const char16_t *names[] = {u"すべて", u"お気に入り"};
     for (size_t index = 0; index < sizeof kinds / sizeof kinds[0]; ++index)
     {
         struct accessible_item item = {.kind = kinds[index]};
         struct accessible_view view = {0};
         require(folio_window_accessible_read(window, &item, &view) == S_OK &&
-                    wcscmp((const wchar_t *)view.name, (const wchar_t *)name) == 0,
-                "drawer and tree expose the active favorite scope even when no row matches");
+                    wcscmp((const wchar_t *)view.name, (const wchar_t *)names[index]) == 0 &&
+                    view.selected == (favorites == (index == 1)) && !view.offscreen,
+                "textual scope choices expose the selected value even when no row matches");
+    }
+    struct accessible_item group = {.kind = ACCESSIBLE_SCOPE_GROUP}, selected = {0};
+    require(folio_window_accessible_selected(window, &group, &selected) == S_OK &&
+                selected.kind == (favorites ? ACCESSIBLE_SCOPE_FAVORITES : ACCESSIBLE_SCOPE_ALL),
+            "scope selection is owned by the same application value");
+}
+
+static LPARAM favorite_position(struct folio_window *_Nonnull window)
+{
+    struct accessible_item item = favorite_item(window);
+    struct accessible_view view = {0};
+    require(folio_window_accessible_read(window, &item, &view) == S_OK, "visible favorite fixture");
+    HWND drawer = folio_window_accessible_window(window, ACCESSIBLE_DRAWER);
+    POINT point = {view.bounds.right - MulDiv(28, (int)GetDpiForWindow(drawer), 96),
+                   (view.bounds.top + view.bounds.bottom) / 2};
+    ScreenToClient(drawer, &point);
+    return MAKELPARAM(point.x, point.y);
+}
+
+static uint64_t favorite_pixel_hash(HDC dc, RECT bounds)
+{
+    uint64_t value = 14695981039346656037u;
+    for (int y = bounds.top; y < bounds.bottom; ++y)
+        for (int x = bounds.left; x < bounds.right; ++x)
+            value = (value ^ GetPixel(dc, x, y)) * 1099511628211u;
+    return value;
+}
+
+/* Capture the real drawer; hashes compare the title and star without exposing product internals. */
+static uint64_t favorite_pixels(struct folio_window *_Nonnull window, const char *_Nonnull path,
+                                uint64_t *_Nonnull star)
+{
+    HWND drawer = folio_window_accessible_window(window, ACCESSIBLE_DRAWER);
+    RECT client;
+    GetClientRect(drawer, &client);
+    HDC source = GetDC(drawer), dc = CreateCompatibleDC(source);
+    HBITMAP bitmap = CreateCompatibleBitmap(source, client.right, client.bottom);
+    HGDIOBJ old = SelectObject(dc, bitmap);
+    require(PrintWindow(drawer, dc, PW_CLIENTONLY), "render real favorite drawer pixels");
+    struct accessible_item item = favorite_item(window);
+    struct accessible_view view = {0};
+    require(folio_window_accessible_read(window, &item, &view) == S_OK, "measure favorite row");
+    MapWindowPoints(nullptr, drawer, (POINT *)&view.bounds, 2);
+    int dpi = (int)GetDpiForWindow(drawer);
+    RECT title = view.bounds;
+    title.left = MulDiv(40, dpi, 96);
+    title.right -= MulDiv(58, dpi, 96);
+    uint64_t title_hash = favorite_pixel_hash(dc, title);
+    RECT glyph = view.bounds;
+    glyph.left = client.right - MulDiv(42, dpi, 96);
+    glyph.right = client.right - MulDiv(14, dpi, 96);
+    *star = favorite_pixel_hash(dc, glyph);
+    printf("drawer=%ld dpi=%d row=%ld scope=28 glyph=16 target=28 title=%llu star=%llu file=%s\n",
+           client.right, dpi, view.bounds.bottom - view.bounds.top, (unsigned long long)title_hash,
+           (unsigned long long)*star, path);
+    SelectObject(dc, old);
+    save_bitmap(dc, bitmap, client, path);
+    DeleteObject(bitmap);
+    DeleteDC(dc);
+    ReleaseDC(drawer, source);
+    return title_hash;
+}
+
+static void favorite_visibility_pixels(struct folio_window *_Nonnull window)
+{
+    HWND drawer = folio_window_accessible_window(window, ACCESSIBLE_DRAWER);
+    SetFocus(folio_window_accessible_window(window, ACCESSIBLE_BODY));
+    SendMessageW(drawer, WM_MOUSELEAVE, 0, 0);
+    uint64_t hidden = 0, hovered = 0, focused = 0;
+    uint64_t title = favorite_pixels(window, "favorites-hidden.bmp", &hidden);
+    SendMessageW(drawer, WM_MOUSEMOVE, 0, favorite_position(window));
+    require(favorite_pixels(window, "favorites-hover.bmp", &hovered) == title && hovered != hidden,
+            "hover reveals only the star while title pixels stay fixed");
+    SendMessageW(drawer, WM_MOUSELEAVE, 0, 0);
+    struct accessible_request request = {.item = favorite_item(window),
+                                         .action = ACCESSIBLE_ACTION_FOCUS};
+    require(folio_window_accessible_action(window, &request) == S_OK, "focus the real note cursor");
+    (void)favorite_pixels(window, "favorites-focused.bmp", &focused);
+    require(focused != hidden, "real index focus reveals the outline");
+    SetFocus(folio_window_accessible_window(window, ACCESSIBLE_BODY));
+}
+
+static void favorite_label_measure(HDC dc, enum folio_language language, UINT dpi)
+{
+    wchar_t face[LF_FACESIZE];
+    ui_face_for(language, face);
+    HFONT font = CreateFontW(-MulDiv(12, (int)dpi, 96), 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
+                             DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+                             CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, face);
+    HGDIOBJ old = SelectObject(dc, font);
+    const enum ui_text labels[] = {UI_TEXT_SCOPE_ALL, UI_TEXT_TITLE_FAVORITES};
+    for (size_t at = 0; at < sizeof labels / sizeof labels[0]; ++at)
+    {
+        char16_t text[64];
+        size_t count = 0;
+        require(utf16_text_fill(ui_text_line(labels[at], language), text, 64, &count) ==
+                    UTF16_TEXT_FILL_READY,
+                "scope label conversion");
+        SIZE size;
+        require(GetTextExtentPoint32W(dc, text, (int)count, &size) &&
+                    size.cx + MulDiv(16, (int)dpi, 96) <= MulDiv(84, (int)dpi, 96),
+                "full scope labels fit the 200 DIP drawer with 8 DIP side room");
+        printf("scope-text language=%u dpi=%u label=%u width=%ld available=%d face=%ls\n",
+               (unsigned)language, dpi, (unsigned)labels[at], size.cx, MulDiv(84, (int)dpi, 96),
+               face);
+    }
+    SelectObject(dc, old);
+    DeleteObject(font);
+}
+
+static void favorite_scaled_glyphs(HWND drawer)
+{
+    RECT client = {.right = 320, .bottom = 160};
+    HDC source = GetDC(drawer), dc = CreateCompatibleDC(source);
+    HBITMAP bitmap = CreateCompatibleBitmap(source, client.right, client.bottom);
+    HGDIOBJ old = SelectObject(dc, bitmap);
+    FillRect(dc, &client, (HBRUSH)GetStockObject(WHITE_BRUSH));
+    const UINT scales[] = {96, 144, 192};
+    for (size_t at = 0; at < sizeof scales / sizeof scales[0]; ++at)
+    {
+        int size = MulDiv(16, (int)scales[at], 96), x = 24 + (int)at * 100;
+        RECT outline = {x, 24, x + size, 24 + size};
+        RECT filled = {x, 80, x + size, 80 + size};
+        icon_paint_fill(dc, outline, ICON_PAINT_STAR_OUTLINE, RGB(0, 0, 0));
+        icon_paint_fill(dc, filled, ICON_PAINT_STAR, RGB(0, 0, 0));
+        const enum folio_language languages[] = {FOLIO_LANGUAGE_JA, FOLIO_LANGUAGE_EN,
+                                                 FOLIO_LANGUAGE_ZH_HANS};
+        for (size_t lang = 0; lang < sizeof languages / sizeof languages[0]; ++lang)
+            favorite_label_measure(dc, languages[lang], scales[at]);
+    }
+    SelectObject(dc, old);
+    save_bitmap(dc, bitmap, client, "favorites-glyphs-96-144-192.bmp");
+    DeleteObject(bitmap);
+    DeleteDC(dc);
+    ReleaseDC(drawer, source);
+}
+
+static void favorite_visual_matrix(struct native_fixture *_Nonnull fixture)
+{
+    const enum folio_language languages[] = {FOLIO_LANGUAGE_JA, FOLIO_LANGUAGE_EN,
+                                             FOLIO_LANGUAGE_ZH_HANS};
+    for (size_t index = 0; index < 9; ++index)
+    {
+        favorite_high_contrast = index / 3 == 2;
+        require(
+            folio_state_set_language(fixture->state, languages[index % 3]) == FOLIO_STATE_READY &&
+                folio_state_refresh_theme(fixture->state) == FOLIO_STATE_READY &&
+                folio_state_set_theme(fixture->state, index / 3 == 1 ? FOLIO_THEME_CHOICE_DARK
+                                                                     : FOLIO_THEME_CHOICE_LIGHT) ==
+                    FOLIO_STATE_READY,
+            "matrix uses application language/theme and an injected OS appearance snapshot");
+        struct folio_window *window = nullptr;
+        require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY,
+                                    &window) == FOLIO_WINDOW_CREATED,
+                "visual matrix window");
+        pump(window);
+        struct accessible_request width = {.item = {.kind = ACCESSIBLE_SPLITTER},
+                                           .action = ACCESSIBLE_ACTION_SET_RANGE,
+                                           .range_value = 200};
+        require(folio_window_accessible_action(window, &width) == S_OK, "minimum drawer width");
+        SetFocus(folio_window_accessible_window(window, ACCESSIBLE_BODY));
+        char path[64];
+        int written = snprintf(path, sizeof path, "favorites-width200-%zu.bmp", index);
+        require(written > 0 && (size_t)written < sizeof path, "matrix evidence path");
+        uint64_t star = 0;
+        (void)favorite_pixels(window, path, &star);
+        if (index == 0)
+            favorite_scaled_glyphs(folio_window_accessible_window(window, ACCESSIBLE_DRAWER));
+        folio_window_destroy(window);
+    }
+    favorite_high_contrast = false;
+    require(folio_state_set_language(fixture->state, FOLIO_LANGUAGE_JA) == FOLIO_STATE_READY &&
+                folio_state_refresh_theme(fixture->state) == FOLIO_STATE_READY,
+            "restore native fixture language and appearance");
+}
+
+static void favorite_hidden_input(struct folio_window *_Nonnull window,
+                                  struct native_fixture *_Nonnull fixture)
+{
+    HWND drawer = folio_window_accessible_window(window, ACCESSIBLE_DRAWER);
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    LPARAM point = favorite_position(window);
+    SetFocus(body);
+    SendMessageW(drawer, WM_MOUSELEAVE, 0, 0);
+    LPARAM original = SetMessageExtraInfo((LPARAM)0xFF515780u);
+    SendMessageW(drawer, WM_MOUSEMOVE, 0, point);
+    SendMessageW(drawer, WM_LBUTTONDOWN, MK_LBUTTON, point);
+    SendMessageW(drawer, WM_LBUTTONUP, 0, point);
+    SetMessageExtraInfo(original);
+    pump(window);
+    require(!folio_state_note_favorite(fixture->state, (struct note_ref){0, 0}),
+            "a touch-derived move and tap on a hidden star do not favorite the note");
+    SetFocus(body);
+    favorite_click(window, false);
+    expect_favorite_saved(window, fixture, true);
+    SendMessageW(drawer, WM_LBUTTONDOWN, MK_LBUTTON, point);
+    SendMessageW(drawer, WM_LBUTTONUP, 0, point);
+    expect_favorite_saved(window, fixture, true);
+    favorite_click(window, false);
+    expect_favorite_saved(window, fixture, false);
+}
+
+static void favorite_reordered_input(struct folio_window *_Nonnull window,
+                                     struct native_fixture *_Nonnull fixture)
+{
+    HWND drawer = folio_window_accessible_window(window, ACCESSIBLE_DRAWER);
+    struct accessible_item first = favorite_item(window), second = {0};
+    require(folio_window_accessible_navigate(window, &first, ACCESSIBLE_NAVIGATION_NEXT, &second) ==
+                    S_OK &&
+                second.kind == ACCESSIBLE_NOTE && second.ref.note == 1,
+            "second unstarred row");
+    SendMessageW(drawer, WM_MOUSEMOVE, 0, favorite_position(window));
+    SendMessageW(drawer, WM_MOUSEMOVE, 0, MAKELPARAM(20, HIWORD(favorite_position(window))));
+    SendMessageW(drawer, WM_MOUSELEAVE, 0, 0);
+    struct accessible_request request = {.item = second, .action = ACCESSIBLE_ACTION_FOCUS};
+    require(folio_window_accessible_action(window, &request) == S_OK,
+            "focus second row without rebuilding the cached layout");
+    struct accessible_view view = {0};
+    require(folio_window_accessible_read(window, &second, &view) == S_OK, "second row geometry");
+    POINT point = {view.bounds.right - MulDiv(28, (int)GetDpiForWindow(drawer), 96),
+                   (view.bounds.top + view.bounds.bottom) / 2};
+    ScreenToClient(drawer, &point);
+    LPARAM position = MAKELPARAM(point.x, point.y);
+    SendMessageW(drawer, WM_LBUTTONDOWN, MK_LBUTTON, position);
+    SendMessageW(drawer, WM_LBUTTONUP, 0, position);
+    require(folio_state_note_favorite(fixture->state, second.ref),
+            "actual keyboard cursor makes its outline actionable");
+    SendMessageW(drawer, WM_LBUTTONDOWN, MK_LBUTTON, position);
+    SendMessageW(drawer, WM_LBUTTONUP, 0, position);
+    require(!folio_state_note_favorite(fixture->state, first.ref) &&
+                folio_state_note_favorite(fixture->state, second.ref),
+            "repeated click cannot favorite the different row now under the same coordinate");
+    first = favorite_item(window);
+    require(folio_window_accessible_navigate(window, &first, ACCESSIBLE_NAVIGATION_PREVIOUS,
+                                             &second) == S_OK &&
+                second.kind == ACCESSIBLE_NOTE && second.ref.note == 1,
+            "starred row moved before the selected note");
+    request.item = second;
+    request.action = ACCESSIBLE_ACTION_TOGGLE_FAVORITE;
+    require(folio_window_accessible_action(window, &request) == S_OK,
+            "restore second row through UIA");
+    request.item = favorite_item(window);
+    request.action = ACCESSIBLE_ACTION_FOCUS;
+    require(folio_window_accessible_action(window, &request) == S_OK, "restore the first cursor");
+    SetFocus(folio_window_accessible_window(window, ACCESSIBLE_BODY));
+}
+
+static void favorite_cancel_input(struct folio_window *_Nonnull window,
+                                  struct native_fixture *_Nonnull fixture)
+{
+    HWND drawer = folio_window_accessible_window(window, ACCESSIBLE_DRAWER);
+    LPARAM point = favorite_position(window);
+    SendMessageW(drawer, WM_MOUSEMOVE, 0, MAKELPARAM(20, HIWORD(point)));
+    SendMessageW(drawer, WM_MOUSEMOVE, 0, point);
+    SendMessageW(drawer, WM_LBUTTONDOWN, MK_LBUTTON, point);
+    SendMessageW(drawer, WM_LBUTTONUP, 0, MAKELPARAM(1, 1));
+    expect_favorite_saved(window, fixture, false);
+    SendMessageW(drawer, WM_LBUTTONDOWN, MK_LBUTTON, point);
+    SendMessageW(drawer, WM_MOUSEWHEEL, MAKEWPARAM(0, WHEEL_DELTA), 0);
+    SendMessageW(drawer, WM_LBUTTONUP, 0, point);
+    expect_favorite_saved(window, fixture, false);
+    SendMessageW(drawer, WM_MOUSEMOVE, 0, point);
+    SendMessageW(drawer, WM_LBUTTONDOWN, MK_LBUTTON, point);
+    SendMessageW(drawer, WM_SIZE, 0, 0);
+    SendMessageW(drawer, WM_LBUTTONUP, 0, point);
+    expect_favorite_saved(window, fixture, false);
+}
+
+static void select_favorite_scope(struct folio_window *_Nonnull window, enum accessible_kind kind)
+{
+    struct accessible_request request = {.item = {.kind = kind},
+                                         .action = ACCESSIBLE_ACTION_SELECT};
+    require(folio_window_accessible_action(window, &request) == S_OK, "UIA scope selection");
+    pump(window);
+}
+
+/* The body-only shortcut helper deliberately targets RichEdit. Scope traversal uses real focus
+ * and both key transitions, as the main message loop does. */
+static void favorite_key(struct folio_window *_Nonnull window, UINT key)
+{
+    BYTE original[256], keyboard[256] = {0};
+    require(GetKeyboardState(original), "save scope keyboard state");
+    keyboard[key] = 0x80;
+    require(SetKeyboardState(keyboard), "scope key pressed");
+    MSG message = {.hwnd = GetFocus(), .message = WM_KEYDOWN, .wParam = key, .lParam = 1};
+    if (!folio_window_translate(window, &message))
+    {
+        TranslateMessage(&message);
+        DispatchMessageW(&message);
+    }
+    pump(window);
+    keyboard[key] = 0;
+    require(SetKeyboardState(keyboard), "scope key released");
+    message = (MSG){
+        .hwnd = GetFocus(), .message = WM_KEYUP, .wParam = key, .lParam = (LPARAM)0xC0000001u};
+    if (!folio_window_translate(window, &message))
+        DispatchMessageW(&message);
+    pump(window);
+    require(SetKeyboardState(original), "restore scope keyboard state");
+}
+
+static void favorite_empty_pixels(struct folio_window *_Nonnull window, const char *_Nonnull path)
+{
+    HWND drawer = folio_window_accessible_window(window, ACCESSIBLE_DRAWER);
+    RECT client;
+    GetClientRect(drawer, &client);
+    HDC source = GetDC(drawer), dc = CreateCompatibleDC(source);
+    HBITMAP bitmap = CreateCompatibleBitmap(source, client.right, client.bottom);
+    HGDIOBJ old = SelectObject(dc, bitmap);
+    require(PrintWindow(drawer, dc, PW_CLIENTONLY), "render the empty favorite explanation");
+    SelectObject(dc, old);
+    save_bitmap(dc, bitmap, client, path);
+    DeleteObject(bitmap);
+    DeleteDC(dc);
+    ReleaseDC(drawer, source);
+}
+
+static void favorite_empty_scope(struct folio_window *_Nonnull window,
+                                 struct native_fixture *_Nonnull fixture)
+{
+    favorite_click(window, false);
+    HWND filter = folio_window_accessible_window(window, ACCESSIBLE_FILTER);
+    SetWindowTextW(filter, L"no-favorite-match");
+    for (unsigned at = 0; at < 100 && folio_state_index_filter_pending(fixture->state); ++at)
+        folio_window_continue_idle_work(window);
+    select_favorite_scope(window, ACCESSIBLE_SCOPE_FAVORITES);
+    struct accessible_item tree = {.kind = ACCESSIBLE_TREE};
+    struct accessible_view view = {0};
+    require(folio_window_accessible_read(window, &tree, &view) == S_OK &&
+                wcsstr(view.help, L"一致する") != nullptr &&
+                folio_state_index_filter_count(fixture->state) == 0,
+            "existing favorites with no search match have a distinct empty explanation");
+    favorite_empty_pixels(window, "favorites-no-match.bmp");
+    wchar_t term[64];
+    GetWindowTextW(filter, term, 64);
+    require(wcscmp(term, L"no-favorite-match") == 0, "scope change preserves the search term");
+    SetWindowTextW(filter, L"");
+    pump(window);
+    struct accessible_request request = {.item = favorite_item(window),
+                                         .action = ACCESSIBLE_ACTION_FOCUS};
+    require(folio_window_accessible_action(window, &request) == S_OK,
+            "focus the only favorite row");
+    request.action = ACCESSIBLE_ACTION_TOGGLE_FAVORITE;
+    require(folio_window_accessible_action(window, &request) == S_OK,
+            "remove the last focused favorite");
+    struct accessible_item focus = {0};
+    require(folio_window_accessible_focus(window, ACCESSIBLE_DRAWER, &focus) == S_OK &&
+                focus.kind == ACCESSIBLE_SCOPE_FAVORITES,
+            "empty tree focus lands on the selected scope");
+    select_favorite_scope(window, ACCESSIBLE_SCOPE_ALL);
+}
+
+static void favorite_scope_input(struct folio_window *_Nonnull window,
+                                 struct native_fixture *_Nonnull fixture)
+{
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    HWND filter = folio_window_accessible_window(window, ACCESSIBLE_FILTER);
+    SetFocus(filter);
+    favorite_key(window, VK_TAB);
+    struct accessible_item focus = {0};
+    require(folio_window_accessible_focus(window, ACCESSIBLE_DRAWER, &focus) == S_OK &&
+                focus.kind == ACCESSIBLE_SCOPE_ALL,
+            "Tab enters the selected scope after search");
+    favorite_key(window, VK_RIGHT);
+    require(folio_state_note_scope(fixture->state) == NOTE_SCOPE_ALL,
+            "arrow moves only focus within scope group");
+    favorite_key(window, VK_SPACE);
+    expect_favorite_scope_name(window, true);
+    struct accessible_item tree = {.kind = ACCESSIBLE_TREE};
+    struct accessible_view view = {0};
+    require(folio_window_accessible_read(window, &tree, &view) == S_OK && view.help[0] != 0,
+            "empty favorites have an accessible explanation");
+    favorite_empty_pixels(window, "favorites-empty.bmp");
+    favorite_key(window, VK_TAB);
+    favorite_key(window, VK_TAB);
+    require(folio_window_accessible_focus(window, ACCESSIBLE_WINDOW, &focus) != S_OK ||
+                focus.kind != ACCESSIBLE_TREE,
+            "Tab skips an empty tree");
+    select_favorite_scope(window, ACCESSIBLE_SCOPE_ALL);
+    favorite_empty_scope(window, fixture);
+    require(IsWindow(root), "scope keeps the same window");
+}
+
+static void favorite_tooltips(struct folio_window *_Nonnull window)
+{
+    HWND drawer = folio_window_accessible_window(window, ACCESSIBLE_DRAWER);
+    HWND tooltip = status_tooltip(folio_window_accessible_window(window, ACCESSIBLE_WINDOW));
+    const enum accessible_kind kinds[] = {ACCESSIBLE_SCOPE_ALL, ACCESSIBLE_SCOPE_FAVORITES};
+    for (size_t at = 0; at < sizeof kinds / sizeof kinds[0]; ++at)
+    {
+        wchar_t text[1024] = {0};
+        TOOLINFOW tool = {.cbSize = offsetof(TOOLINFOW, lParam) + sizeof(LPARAM),
+                          .hwnd = drawer,
+                          .uId = kinds[at],
+                          .lpszText = text};
+        require(tooltip != nullptr && SendMessageW(tooltip, TTM_GETTOOLINFOW, 0, (LPARAM)&tool),
+                "scope has a registered native tooltip");
+        tool.lpszText = text;
+        SendMessageW(tooltip, TTM_GETTEXTW, 1024, (LPARAM)&tool);
+        struct accessible_item item = {.kind = kinds[at]};
+        struct accessible_view view = {0};
+        require(folio_window_accessible_read(window, &item, &view) == S_OK &&
+                    wcscmp(text, view.name) == 0,
+                "tooltip and UIA use the same full scope name");
+        MapWindowPoints(drawer, nullptr, (POINT *)&tool.rect, 2);
+        require(EqualRect(&tool.rect, &view.bounds),
+                "tooltip and UIA share the visible scope rectangle");
     }
 }
 
@@ -7112,6 +7552,8 @@ static void favorite_edit_roundtrip(struct folio_window *_Nonnull window,
 {
     struct native_body_snapshot snapshot = {0};
     capture_native_body(window, &snapshot);
+    puts("favorites body: cancel and click");
+    fflush(stdout);
     favorite_click(window, true);
     expect_native_body(window, &snapshot);
     require(!folio_state_note_favorite(fixture->state, (struct note_ref){0, 0}),
@@ -7126,6 +7568,8 @@ static void favorite_edit_roundtrip(struct folio_window *_Nonnull window,
     expect_favorite_saved(window, fixture, false);
     expect_native_body(window, &snapshot);
     favorite_click(window, false);
+    puts("favorites body: scope via menu");
+    fflush(stdout);
     invoke_operation(window, FOLIO_COMMAND_TOGGLE_FAVORITES_ONLY);
     pump(window);
     snapshot.focus =
@@ -7134,6 +7578,8 @@ static void favorite_edit_roundtrip(struct folio_window *_Nonnull window,
     require(folio_state_note_scope(fixture->state) == NOTE_SCOPE_FAVORITES,
             "favorites-only command is applied without saving the editor");
     expect_favorite_scope_name(window, true);
+    puts("favorites body: remove last favorite");
+    fflush(stdout);
     toggle.item = favorite_item(window);
     require(folio_window_accessible_action(window, &toggle) == S_OK,
             "unstar the only filtered note");
@@ -7144,6 +7590,8 @@ static void favorite_edit_roundtrip(struct folio_window *_Nonnull window,
                 folio_state_document_kind(fixture->state) == FOLIO_DOCUMENT_NAMED,
             "filtered row disappears while its edited document remains open");
     expect_favorite_scope_name(window, true);
+    puts("favorites body: restore scope and order");
+    fflush(stdout);
     invoke_operation(window, FOLIO_COMMAND_TOGGLE_FAVORITES_ONLY);
     pump(window);
     expect_favorite_scope_name(window, false);
@@ -7154,15 +7602,64 @@ static void favorite_edit_roundtrip(struct folio_window *_Nonnull window,
     verify_history_unchanged(fixture, history);
 }
 
-static void run_favorites_case(struct native_fixture *_Nonnull fixture)
+static void prepare_favorites(struct native_fixture *_Nonnull fixture)
 {
+    require(folio_state_set_note_order(fixture->state, NOTE_ORDER_FAVORITES_FIRST) ==
+                FOLIO_STATE_READY,
+            "each favorite fixture starts with stable favorite priority");
     require(folio_state_select_note(fixture->state, 0, 0, FOLIO_UNTITLED_PROTECT) ==
                 FOLIO_STATE_READY,
             "select dedicated favorite note");
-    if (folio_state_note_favorite(fixture->state, (struct note_ref){0, 0}))
-        require(folio_state_toggle_favorite(fixture->state, (struct note_ref){0, 0}) ==
-                    FOLIO_STATE_READY,
-                "prepare an unstarred fixture");
+    for (size_t at = 0; at < 2; ++at)
+        if (folio_state_note_favorite(fixture->state, (struct note_ref){0, at}))
+            require(folio_state_toggle_favorite(fixture->state, (struct note_ref){0, at}) ==
+                        FOLIO_STATE_READY,
+                    "prepare both unstarred rows");
+}
+
+static void run_favorites_visual(struct native_fixture *_Nonnull fixture)
+{
+    prepare_favorites(fixture);
+    struct folio_window *window = nullptr;
+    require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
+                FOLIO_WINDOW_CREATED,
+            "favorite visual fixture");
+    pump(window);
+    favorite_visibility_pixels(window);
+    folio_window_destroy(window);
+    require(folio_state_toggle_favorite(fixture->state, (struct note_ref){0, 0}) ==
+                FOLIO_STATE_READY,
+            "filled star for the language and palette matrix");
+    favorite_visual_matrix(fixture);
+}
+
+static void run_favorites_ui(struct native_fixture *_Nonnull fixture)
+{
+    prepare_favorites(fixture);
+    struct folio_window *window = nullptr;
+    require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
+                FOLIO_WINDOW_CREATED,
+            "favorite interaction fixture");
+    pump(window);
+    favorite_tooltips(window);
+    puts("favorites UI: hidden star and touch");
+    fflush(stdout);
+    favorite_hidden_input(window, fixture);
+    puts("favorites UI: reordered rows");
+    fflush(stdout);
+    favorite_reordered_input(window, fixture);
+    puts("favorites UI: cancellation");
+    fflush(stdout);
+    favorite_cancel_input(window, fixture);
+    puts("favorites UI: scope, keyboard and empty results");
+    fflush(stdout);
+    favorite_scope_input(window, fixture);
+    folio_window_destroy(window);
+}
+
+static void run_favorites_case(struct native_fixture *_Nonnull fixture)
+{
+    prepare_favorites(fixture);
     struct history_snapshot history = {0};
     capture_history(fixture, &history);
     struct folio_window *window = nullptr;
@@ -7265,6 +7762,16 @@ static void run_extended_fixture(struct native_fixture *_Nonnull fixture, int ar
 static void run_remaining_fixture(struct native_fixture *_Nonnull fixture, int argc,
                                   char *_Nonnull *_Nonnull argv)
 {
+    if (favorites_visual_case)
+    {
+        run_favorites_visual(fixture);
+        return;
+    }
+    if (favorites_ui_case)
+    {
+        run_favorites_ui(fixture);
+        return;
+    }
     if (favorites_case)
         run_favorites_case(fixture);
     else if (export_case)
@@ -7306,12 +7813,20 @@ static void run_fixture(struct native_fixture *_Nonnull fixture, int argc,
         run_remaining_fixture(fixture, argc, argv);
 }
 
+static void select_favorites_fixture(const char *_Nonnull selector)
+{
+    favorites_visual_case = strcmp(selector, "--favorites-visual") == 0;
+    favorites_ui_case = strcmp(selector, "--favorites-ui") == 0;
+    favorites_case =
+        strcmp(selector, "--favorites") == 0 || favorites_visual_case || favorites_ui_case;
+}
+
 int main(int argc, char *_Nonnull *_Nonnull argv)
 {
     const char *selector = argc == 2 ? argv[1] : "";
     paste_case = strcmp(selector, "--paste") == 0;
     format_case = strcmp(selector, "--format-keys") == 0;
-    favorites_case = strcmp(selector, "--favorites") == 0;
+    select_favorites_fixture(selector);
     layout_case = strcmp(selector, "--layout") == 0;
     save_as_case = strcmp(selector, "--save-as") == 0;
     rename_case = strcmp(selector, "--rename") == 0;

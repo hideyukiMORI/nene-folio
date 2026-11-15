@@ -304,6 +304,8 @@ set_target_properties(first_save_native_tests PROPERTIES RUNTIME_OUTPUT_DIRECTOR
 set_target_properties(favorites_native_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/verification-favorites")
 add_test(NAME favorites_native COMMAND favorites_native_tests --favorites)
 set_tests_properties(favorites_native PROPERTIES TIMEOUT 30 RESOURCE_LOCK image_status_data)
+add_test(NAME favorites_ui_native COMMAND favorites_native_tests --favorites-ui)
+set_tests_properties(favorites_ui_native PROPERTIES TIMEOUT 30 RESOURCE_LOCK image_status_data)
 add_test(NAME first_save_native COMMAND first_save_native_tests --first-save)
 set_tests_properties(first_save_native PROPERTIES TIMEOUT 30 RESOURCE_LOCK image_status_data)
 set_target_properties(first_save_modal_native_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/verification-first-save-modal")

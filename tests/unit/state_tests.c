@@ -7873,6 +7873,7 @@ static void verify_favorite_state(void)
 {
     struct persistence_adapter adapter = healthy_adapter();
     struct folio_state *state = transfer_state(&adapter);
+    require(folio_state_favorite_count(state) == 0, "new ledger has no favorites");
     require(folio_state_toggle_favorite(state, at(0, 2)) == FOLIO_STATE_READY,
             "star can be set without opening any note");
     require(adapter.note_reads == 0 && adapter.note_writes == 0 && adapter.archives == 0 &&
@@ -7898,14 +7899,15 @@ static void verify_favorite_state(void)
     require(folio_state_index_filter_count(state) == 1 && adapter.note_reads == reads,
             "star filtering never prepares corpus");
     require(test_index_filter_complete(state, u"one", 3) == FOLIO_STATE_READY &&
-                folio_state_index_filter_count(state) == 0,
+                folio_state_index_filter_count(state) == 0 &&
+                folio_state_favorite_count(state) == 1,
             "star and term filters intersect");
     require(test_index_filter_complete(state, u"three", 5) == FOLIO_STATE_READY &&
                 folio_state_index_filter_count(state) == 1,
             "term finds the starred note");
     require(folio_state_toggle_favorite(state, at(0, 2)) == FOLIO_STATE_READY &&
                 folio_state_index_filter_count(state) == 0 &&
-                folio_state_pane_text(state) == body &&
+                folio_state_favorite_count(state) == 0 && folio_state_pane_text(state) == body &&
                 folio_state_pane_mode(state) == PANE_MODE_EDIT && adapter.note_writes == 0 &&
                 adapter.archives == 0,
             "removing the filtered row retains open body, mode and saved history");

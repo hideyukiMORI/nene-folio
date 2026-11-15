@@ -25,8 +25,8 @@ struct accessibility_host
     bool pending;
     bool had_focus;
     struct accessible_item focused;
-    struct accessible_item selections[5];
-    bool had_selection[5];
+    struct accessible_item selections[6];
+    bool had_selection[6];
     uint64_t surface_revision;
     uint64_t revision;
     unsigned visibility;
@@ -512,8 +512,8 @@ static void refresh_header(struct accessibility_host *_Nonnull host)
 static void observe_selection(struct accessibility_host *_Nonnull host, size_t index)
 {
     const enum accessible_kind groups[] = {ACCESSIBLE_LAYOUT_GROUP, ACCESSIBLE_MODE_GROUP,
-                                           ACCESSIBLE_TREE, ACCESSIBLE_SURFACE_LIST,
-                                           ACCESSIBLE_SURFACE_TABS};
+                                           ACCESSIBLE_TREE,         ACCESSIBLE_SURFACE_LIST,
+                                           ACCESSIBLE_SURFACE_TABS, ACCESSIBLE_SCOPE_GROUP};
     struct accessible_item group = {.kind = groups[index],
                                     .revision = groups[index] == ACCESSIBLE_SURFACE_LIST ||
                                                         groups[index] == ACCESSIBLE_SURFACE_TABS
@@ -585,7 +585,7 @@ static void refresh_snapshot(struct accessibility_host *_Nonnull host)
     for (size_t at = 0; at < sizeof inputs / sizeof inputs[0]; ++at)
         annotate(host, inputs[at], host->command_names[at]);
     observe_focus(host);
-    for (size_t index = 0; index < 5; ++index)
+    for (size_t index = 0; index < sizeof host->selections / sizeof host->selections[0]; ++index)
     {
         observe_selection(host, index);
     }

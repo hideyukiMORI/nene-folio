@@ -43,10 +43,17 @@ struct drawer_window
     bool favorite_pressed;
     struct note_ref favorite_target;
     uint64_t favorite_revision;
+    RECT favorite_bounds;
+    bool favorite_blocked;
+    POINT favorite_block_point;
+    bool note_hover;
+    struct note_ref hover_target;
+    uint64_t hover_revision;
+    RECT hover_bounds;
     bool pressed; /* 左ボタンを押した行を覚えているか */
     enum drawer_header_button header_pressed;
-    bool header_inside;   /* 押したボタンの矩形の内にポインタがある（外なら押していない見た目） */
-    bool header_hover;    /* ポインタがカテゴリ＋の上にある */
+    bool header_inside; /* 押したボタンの矩形の内にポインタがある（外なら押していない見た目） */
+    enum drawer_header_button header_hover;
     bool header_tracking; /* TrackMouseEvent の WM_MOUSELEAVE を待っている */
     size_t pressed_row;
     int pressed_y; /* 押したときの y。しきい値の判定に使う */
@@ -72,6 +79,7 @@ constexpr int base_header_indent = 16;
 /* 常設の「すべてのノートを検索」の欄が占める帯（ADR 0024 の決定 6）。欄そのものは主窓の子で、
  * ここは行を置かない余白として数える。 */
 constexpr int base_filter_height = 36;
+constexpr int base_scope_height = 32;
 constexpr int base_category_band_height = 36;
 constexpr int base_filter_inset = 16; /* 欄の左右の余白（窓の縁 16・#349） */
 constexpr int base_filter_margin = 4; /* 欄の上下に空ける間 */
@@ -88,6 +96,8 @@ constexpr int base_bottom_padding = 16; /* 最後の行の下に空ける余白�
 constexpr int base_fade_height = 24;    /* あふれを示すフェードの高さ（ADR 0009 の決定 7） */
 constexpr int base_mark_size = 6;
 constexpr int base_mark_gap = 6; /* カテゴリ行で折畳の印とカーソルの角の間に空ける幅 */
+constexpr int base_favorite_glyph = 16;
+constexpr int base_favorite_target = 28;
 /* 折畳の印の箱（24 の viewBox と 1 対 1）。板は 2 単位なので、箱が 20px 未満だと
  * 塗りが 50〜75% の灰色になる（ADR 0033 の決定 6・実測）。 */
 constexpr int base_toggle_box = 24;
@@ -142,7 +152,35 @@ static void refresh_fonts(struct drawer_window *_Nonnull self, UINT dpi)
 /* 固定の検索欄・カテゴリ帯。行配置/clip/hit/scrollはこの高さを共用する。 */
 static int band_height(const struct drawer_window *_Nonnull self)
 {
-    return scale(base_filter_height + base_category_band_height, GetDpiForWindow(self->handle));
+    return scale(base_filter_height + base_scope_height + base_category_band_height,
+                 GetDpiForWindow(self->handle));
+}
+
+static RECT scope_group_rect(const struct drawer_window *_Nonnull self)
+{
+    UINT dpi = GetDpiForWindow(self->handle);
+    RECT client;
+    GetClientRect(self->handle, &client);
+    int inset = scale(base_filter_inset, dpi);
+    int right = client.right > inset ? client.right - inset : inset;
+    int top = scale(base_filter_height, dpi);
+    return (RECT){inset, top, right, top + scale(ui_part_height, dpi)};
+}
+
+static RECT scope_item_rect(const struct drawer_window *_Nonnull self, enum note_scope scope)
+{
+    RECT bounds = scope_group_rect(self);
+    int middle = bounds.left + (bounds.right - bounds.left) / 2;
+    switch (scope)
+    {
+    case NOTE_SCOPE_ALL:
+        bounds.right = middle;
+        break;
+    case NOTE_SCOPE_FAVORITES:
+        bounds.left = middle;
+        break;
+    }
+    return bounds;
 }
 
 static RECT new_category_rect(const struct drawer_window *_Nonnull self)
@@ -319,12 +357,43 @@ static void draw_filter_frame(const struct drawer_window *_Nonnull self, HDC dev
     ui_part_draw_field(device, &self->palette, filter_rect(self), focus);
 }
 
-static bool header_focused(const struct drawer_window *_Nonnull self)
+static bool control_focused(const struct drawer_window *_Nonnull self, enum accessible_kind kind)
 {
     struct accessible_item focus = {.kind = ACCESSIBLE_WINDOW};
     return accessibility_host_focus(self->accessibility, ACCESSIBLE_DRAWER, &focus) == S_OK &&
-           focus.kind == ACCESSIBLE_NEW_CATEGORY &&
+           focus.kind == kind &&
            SendMessageW(GetParent(self->handle), folio_message_focus_cues, 0, 0) != 0;
+}
+
+static void draw_scope_item(const struct drawer_window *_Nonnull self, HDC device,
+                            enum note_scope scope)
+{
+    bool all = scope == NOTE_SCOPE_ALL;
+    enum accessible_kind kind = all ? ACCESSIBLE_SCOPE_ALL : ACCESSIBLE_SCOPE_FAVORITES;
+    enum drawer_header_button button =
+        all ? DRAWER_HEADER_SCOPE_ALL : DRAWER_HEADER_SCOPE_FAVORITES;
+    bool pressed = self->header_pressed == button;
+    struct ui_part_paint part = {
+        .bounds = scope_item_rect(self, scope),
+        .style = UI_PART_STYLE_CHOICE,
+        .dpi = GetDpiForWindow(self->handle),
+        .grouped = true,
+        .leading_rule = !all,
+        .labeled = true,
+        .hovered = self->header_hover == button && !pressed,
+        .pressed = (pressed && self->header_inside) ||
+                   SendMessageW(GetParent(self->handle), folio_message_part_pressed, kind, 0) != 0,
+        .selected = folio_state_note_scope(self->state) == scope,
+        .focused = control_focused(self, kind),
+        .disabled =
+            SendMessageW(GetParent(self->handle), folio_message_pointer_blocked, 0, 0) != 0};
+    struct ui_part_ink ink = ui_part_draw(device, &self->palette, &part);
+    SelectObject(device, self->category_font);
+    SetTextColor(device, ink.text);
+    draw_utf8(device,
+              ui_text_line(all ? UI_TEXT_SCOPE_ALL : UI_TEXT_TITLE_FAVORITES,
+                           folio_state_language(self->state)),
+              ink.label, DT_CENTER | DT_END_ELLIPSIS);
 }
 
 /* カテゴリ＋は C 様式。状態の表現は主窓の部品と同じ ui_part の 1 本を通る。 */
@@ -337,11 +406,7 @@ static void draw_category_band(const struct drawer_window *_Nonnull self, HDC de
                   button.left - scale(80, dpi), band_height(self)};
     SelectObject(device, self->category_font);
     SetTextColor(device, self->palette.category_text);
-    draw_utf8(device,
-              ui_text_line(folio_state_note_scope(self->state) == NOTE_SCOPE_FAVORITES
-                               ? UI_TEXT_TITLE_FAVORITES
-                               : UI_TEXT_TITLE_CATEGORIES,
-                           folio_state_language(self->state)),
+    draw_utf8(device, ui_text_line(UI_TEXT_TITLE_CATEGORIES, folio_state_language(self->state)),
               label, 0);
     RECT count = {label.right + scale(8, dpi), label.top, button.left - scale(8, dpi),
                   label.bottom};
@@ -355,9 +420,9 @@ static void draw_category_band(const struct drawer_window *_Nonnull self, HDC de
         .dpi = dpi,
         .has_icon = true,
         .icon = ICON_PAINT_ADD,
-        .hovered = self->header_hover && !pressed,
+        .hovered = self->header_hover == DRAWER_HEADER_NEW_CATEGORY && !pressed,
         .pressed = pressed && self->header_inside,
-        .focused = header_focused(self),
+        .focused = control_focused(self, ACCESSIBLE_NEW_CATEGORY),
     };
     ui_part_draw(device, &self->palette, &part);
 }
@@ -367,6 +432,9 @@ static void draw_header(const struct drawer_window *_Nonnull self, HDC device)
 {
     SetTextCharacterExtra(device, 0);
     draw_filter_frame(self, device);
+    ui_part_frame_group(device, &self->palette, scope_group_rect(self));
+    draw_scope_item(self, device, NOTE_SCOPE_ALL);
+    draw_scope_item(self, device, NOTE_SCOPE_FAVORITES);
     draw_category_band(self, device);
 }
 
@@ -430,15 +498,53 @@ static void draw_category(const struct drawer_window *_Nonnull self, HDC device,
 
 /* ノート行: 選択中なら面を敷き、カーソルの行なら右端にカテゴリ色の角を置く
  * （面は選択・角はカーソル・ADR 0015 の決定 8）。 */
-/* 星の描画と押下/解放は同じ矩形を使う。 */
-static RECT favorite_rect(const struct drawer_window *_Nonnull self, struct drawer_row row,
-                          int width)
+/* 字形と当たりを分け、カテゴリの折畳印と同じ中心へ置く（ADR0091）。 */
+static RECT favorite_rect(const struct drawer_window *_Nonnull self, struct drawer_row row)
 {
     UINT dpi = GetDpiForWindow(self->handle);
-    int size = scale(22, dpi);
-    int right = width - scale(base_right_inset * 2, dpi);
+    RECT client;
+    GetClientRect(self->handle, &client);
+    int center = client.right - scale(base_right_inset + base_toggle_box / 2, dpi);
+    int left = center - scale(base_favorite_target, dpi) / 2;
+    return (RECT){left, row.top, left + scale(base_favorite_target, dpi), row.top + row.height};
+}
+
+static bool same_note(struct drawer_row row, struct note_ref ref)
+{
+    return row.category == ref.category && row.note == ref.note;
+}
+
+static bool hovered_note(const struct drawer_window *_Nonnull self, struct drawer_row row)
+{
+    RECT bounds = favorite_rect(self, row);
+    return self->note_hover && self->hover_revision == folio_state_index_revision(self->state) &&
+           same_note(row, self->hover_target) && EqualRect(&bounds, &self->hover_bounds);
+}
+
+static bool favorite_shown(const struct drawer_window *_Nonnull self, struct drawer_row row)
+{
+    uint64_t revision = folio_state_index_revision(self->state);
+    struct note_ref ref = {row.category, row.note};
+    return folio_state_note_favorite(self->state, ref) || (row.cursor && index_focused(self)) ||
+           hovered_note(self, row) ||
+           (self->favorite_pressed && self->favorite_revision == revision &&
+            same_note(row, self->favorite_target));
+}
+
+static void draw_favorite(const struct drawer_window *_Nonnull self, HDC device,
+                          struct drawer_row row)
+{
+    if (!favorite_shown(self, row))
+        return;
+    RECT target = favorite_rect(self, row);
+    int size = scale(base_favorite_glyph, GetDpiForWindow(self->handle));
+    int left = target.left + (target.right - target.left - size) / 2;
     int top = row.top + (row.height - size) / 2;
-    return (RECT){right - size, top, right, top + size};
+    RECT star = {left, top, left + size, top + size};
+    bool favorite =
+        folio_state_note_favorite(self->state, (struct note_ref){row.category, row.note});
+    icon_paint_fill(device, star, favorite ? ICON_PAINT_STAR : ICON_PAINT_STAR_OUTLINE,
+                    row.selected ? self->palette.selected_text : self->palette.note_text);
 }
 
 static void draw_note(const struct drawer_window *_Nonnull self, HDC device, struct drawer_row row,
@@ -453,14 +559,10 @@ static void draw_note(const struct drawer_window *_Nonnull self, HDC device, str
     }
     if (row.cursor)
     {
-        draw_cursor_mark(self, device, row, width - inset);
+        draw_cursor_mark(self, device, row, width - inset - toggle_room(dpi));
     }
-    RECT star = favorite_rect(self, row, width);
-    struct note_ref ref = {.category = row.category, .note = row.note};
-    bool favorite = folio_state_note_favorite(self->state, ref);
-    icon_paint_fill(device, star, favorite ? ICON_PAINT_STAR : ICON_PAINT_STAR_OUTLINE,
-                    row.selected ? self->palette.selected_text : self->palette.note_text);
-    RECT bounds = {row.indent, row.top, star.left - scale(6, dpi), row.top + row.height};
+    draw_favorite(self, device, row);
+    RECT bounds = {row.indent, row.top, width - scale(58, dpi), row.top + row.height};
     SelectObject(device, self->note_font);
     SetTextColor(device, row.selected ? self->palette.selected_text : self->palette.note_text);
     draw_utf8(device, row.text, bounds, DT_END_ELLIPSIS);
@@ -505,6 +607,29 @@ static void draw_rows(const struct drawer_window *_Nonnull self, HDC device,
         }
     }
     draw_drop_line(self, device, layout, clip.right);
+}
+
+static enum ui_text empty_message(const struct drawer_window *_Nonnull self)
+{
+    if (folio_state_note_scope(self->state) != NOTE_SCOPE_FAVORITES ||
+        folio_state_index_filter_pending(self->state))
+        return UI_TEXT_EMPTY;
+    return folio_state_favorite_count(self->state) == 0 ? UI_TEXT_EMPTY_FAVORITES
+                                                        : UI_TEXT_EMPTY_FAVORITES_FILTER;
+}
+
+static void draw_empty(const struct drawer_window *_Nonnull self, HDC device, RECT bounds)
+{
+    char16_t units[draw_unit_limit];
+    int count =
+        wide_units(ui_text_line(empty_message(self), folio_state_language(self->state)), units);
+    int inset = scale(base_filter_inset, GetDpiForWindow(self->handle));
+    bounds.left += inset;
+    bounds.right -= inset;
+    bounds.top += inset;
+    SelectObject(device, self->note_font);
+    SetTextColor(device, self->palette.note_text);
+    DrawTextW(device, units, count, &bounds, DT_WORDBREAK | DT_NOPREFIX);
 }
 
 /* いまの配置を作る。作れなければ false（描き直しの機会に回復する）。 */
@@ -594,6 +719,8 @@ static void paint_surface(const struct drawer_window *_Nonnull self, HDC device,
     int header = band_height(self);
     IntersectClipRect(device, 0, header, client.right, client.bottom);
     draw_rows(self, device, layout, (RECT){0, header, client.right, client.bottom});
+    if (drawer_layout_row_count(layout) == 0)
+        draw_empty(self, device, (RECT){0, header, client.right, client.bottom});
     SelectClipRgn(device, nullptr);
     draw_header(self, device);
     /* 画素へ触る前に GDI の溜めを吐き出す。 */
@@ -850,52 +977,110 @@ static RECT header_button_rect(const struct drawer_window *_Nonnull self,
         return (RECT){0, 0, 0, 0};
     case DRAWER_HEADER_NEW_CATEGORY:
         return new_category_rect(self);
+    case DRAWER_HEADER_SCOPE_ALL:
+        return scope_item_rect(self, NOTE_SCOPE_ALL);
+    case DRAWER_HEADER_SCOPE_FAVORITES:
+        return scope_item_rect(self, NOTE_SCOPE_FAVORITES);
     }
     return (RECT){0, 0, 0, 0};
 }
 
+static enum accessible_kind header_kind(enum drawer_header_button button)
+{
+    switch (button)
+    {
+    case DRAWER_HEADER_NONE:
+        return ACCESSIBLE_DRAWER;
+    case DRAWER_HEADER_SCOPE_ALL:
+        return ACCESSIBLE_SCOPE_ALL;
+    case DRAWER_HEADER_SCOPE_FAVORITES:
+        return ACCESSIBLE_SCOPE_FAVORITES;
+    case DRAWER_HEADER_NEW_CATEGORY:
+        return ACCESSIBLE_NEW_CATEGORY;
+    }
+    return ACCESSIBLE_DRAWER;
+}
+
+static enum drawer_header_button header_at(const struct drawer_window *_Nonnull self, POINT point)
+{
+    const enum drawer_header_button buttons[] = {
+        DRAWER_HEADER_SCOPE_ALL, DRAWER_HEADER_SCOPE_FAVORITES, DRAWER_HEADER_NEW_CATEGORY};
+    for (size_t at = 0; at < sizeof buttons / sizeof buttons[0]; ++at)
+    {
+        RECT bounds = header_button_rect(self, buttons[at]);
+        if (PtInRect(&bounds, point))
+            return buttons[at];
+    }
+    return DRAWER_HEADER_NONE;
+}
+
 static bool press_header(struct drawer_window *_Nonnull self, POINT point)
 {
-    RECT button = new_category_rect(self);
-    if (!PtInRect(&button, point))
+    enum drawer_header_button pressed = header_at(self, point);
+    if (pressed == DRAWER_HEADER_NONE)
     {
         return false;
     }
-    self->header_pressed = DRAWER_HEADER_NEW_CATEGORY;
+    RECT button = header_button_rect(self, pressed);
+    self->header_pressed = pressed;
     self->header_inside = true;
-    SendMessageW(GetParent(self->handle), folio_message_index_focus,
-                 (WPARAM)ACCESSIBLE_NEW_CATEGORY, 0);
+    SendMessageW(GetParent(self->handle), folio_message_index_focus, (WPARAM)header_kind(pressed),
+                 0);
     SetCapture(self->handle);
     InvalidateRect(self->handle, &button, FALSE);
     return true;
 }
 
-static bool favorite_hit(const struct drawer_window *_Nonnull self, POINT point,
-                         struct note_ref *_Nonnull out)
+static HRESULT accessible_layout(struct drawer_window *_Nonnull self);
+
+static bool note_at(struct drawer_window *_Nonnull self, POINT point,
+                    struct drawer_row *_Nonnull out)
 {
-    struct drawer_layout *_Nullable layout = nullptr;
-    if (point.y < band_height(self) || !current_layout(self, &layout))
-        return false;
-    size_t index = 0;
-    bool found = drawer_layout_hit(layout, point.y, &index);
-    struct drawer_row row = found ? drawer_layout_row(layout, index) : (struct drawer_row){0};
-    drawer_layout_destroy(layout);
     RECT client;
     GetClientRect(self->handle, &client);
-    RECT star = favorite_rect(self, row, client.right);
-    if (!found || row.kind != DRAWER_ROW_NOTE || !PtInRect(&star, point))
+    if (!PtInRect(&client, point) || point.y < band_height(self) || FAILED(accessible_layout(self)))
         return false;
-    *out = (struct note_ref){.category = row.category, .note = row.note};
+    size_t index = 0;
+    bool found = drawer_layout_hit(self->accessible_layout, point.y, &index);
+    struct drawer_row row =
+        found ? drawer_layout_row(self->accessible_layout, index) : (struct drawer_row){0};
+    if (!found || row.kind != DRAWER_ROW_NOTE)
+        return false;
+    enum folio_cursor_kind kind = FOLIO_CURSOR_CATEGORY;
+    struct note_ref cursor = {0};
+    row.cursor = folio_state_cursor(self->state, &kind, &cursor) && kind == FOLIO_CURSOR_NOTE &&
+                 same_note(row, cursor);
+    *out = row;
     return true;
+}
+
+static bool favorite_hit(struct drawer_window *_Nonnull self, POINT point,
+                         struct drawer_row *_Nonnull out)
+{
+    if (!note_at(self, point, out) || !favorite_shown(self, *out))
+        return false;
+    RECT bounds = favorite_rect(self, *out);
+    return PtInRect(&bounds, point) != 0;
 }
 
 static bool press_favorite(struct drawer_window *_Nonnull self, POINT point)
 {
-    if (!favorite_hit(self, point, &self->favorite_target))
+    struct drawer_row row = {0};
+    if (!note_at(self, point, &row))
+        return false;
+    RECT bounds = favorite_rect(self, row);
+    if (!PtInRect(&bounds, point))
+        return false;
+    if (self->favorite_blocked)
+        return true;
+    if (!favorite_shown(self, row))
         return false;
     self->favorite_pressed = true;
+    self->favorite_target = (struct note_ref){row.category, row.note};
     self->favorite_revision = folio_state_index_revision(self->state);
+    self->favorite_bounds = bounds;
     SetCapture(self->handle);
+    InvalidateRect(self->handle, &bounds, FALSE);
     return true;
 }
 
@@ -903,15 +1088,20 @@ static void release_favorite(struct drawer_window *_Nonnull self, POINT point)
 {
     struct note_ref pressed = self->favorite_target;
     uint64_t revision = self->favorite_revision;
+    struct drawer_row row = {0};
+    bool hit = favorite_hit(self, point, &row);
+    RECT bounds = favorite_rect(self, row);
+    bool activate = hit && revision == folio_state_index_revision(self->state) &&
+                    same_note(row, pressed) && EqualRect(&bounds, &self->favorite_bounds);
     self->favorite_pressed = false;
     ReleaseCapture();
-    struct note_ref target = {0};
-    if (revision != folio_state_index_revision(self->state) ||
-        !favorite_hit(self, point, &target) || target.category != pressed.category ||
-        target.note != pressed.note)
+    if (!activate)
         return;
+    self->favorite_blocked = true;
+    self->favorite_block_point = point;
+    self->note_hover = false;
     SendMessageW(GetParent(self->handle), folio_message_drawer_menu, DRAWER_MENU_TOGGLE_FAVORITE,
-                 (LPARAM)&target);
+                 (LPARAM)&pressed);
 }
 
 static void press(struct drawer_window *_Nonnull self, POINT point)
@@ -940,13 +1130,14 @@ static void press(struct drawer_window *_Nonnull self, POINT point)
 /* 帯のボタンの hover と、押したまま外へ出たときの見た目（ADR0060 の決定 3・4）。 */
 static void track_header(struct drawer_window *_Nonnull self, POINT point)
 {
-    RECT button = new_category_rect(self);
-    bool over = PtInRect(&button, point) != 0;
+    enum drawer_header_button over = header_at(self, point);
     if (self->header_pressed != DRAWER_HEADER_NONE)
     {
-        if (over != self->header_inside)
+        bool inside = over == self->header_pressed;
+        if (inside != self->header_inside)
         {
-            self->header_inside = over;
+            self->header_inside = inside;
+            RECT button = header_button_rect(self, self->header_pressed);
             InvalidateRect(self->handle, &button, FALSE);
         }
         return;
@@ -959,20 +1150,53 @@ static void track_header(struct drawer_window *_Nonnull self, POINT point)
     }
     if (over != self->header_hover)
     {
+        RECT previous = header_button_rect(self, self->header_hover);
+        RECT current = header_button_rect(self, over);
         self->header_hover = over;
-        InvalidateRect(self->handle, &button, FALSE);
+        InvalidateRect(self->handle, &previous, FALSE);
+        InvalidateRect(self->handle, &current, FALSE);
     }
+}
+
+static void clear_note_hover(struct drawer_window *_Nonnull self)
+{
+    if (self->note_hover)
+        InvalidateRect(self->handle, &self->hover_bounds, FALSE);
+    self->note_hover = false;
 }
 
 static void leave_header(struct drawer_window *_Nonnull self)
 {
     self->header_tracking = false;
-    if (self->header_hover)
+    clear_note_hover(self);
+    if (self->header_hover != DRAWER_HEADER_NONE)
     {
-        self->header_hover = false;
-        RECT button = new_category_rect(self);
-        InvalidateRect(self->handle, &button, FALSE);
+        RECT bounds = header_button_rect(self, self->header_hover);
+        self->header_hover = DRAWER_HEADER_NONE;
+        InvalidateRect(self->handle, &bounds, FALSE);
     }
+}
+
+/* Tablet PC署名のpen/touch合成moveはhoverにしない。実座標の変化だけで連続押下の抑止を解く。 */
+static void track_note(struct drawer_window *_Nonnull self, POINT point)
+{
+    if (point.x != self->favorite_block_point.x || point.y != self->favorite_block_point.y)
+        self->favorite_blocked = false;
+    struct drawer_row row = {0};
+    bool pen = ((ULONG_PTR)GetMessageExtraInfo() & 0xFFFFFF00u) == 0xFF515700u;
+    if (pen || self->favorite_blocked || self->pressed || !note_at(self, point, &row))
+    {
+        clear_note_hover(self);
+        return;
+    }
+    if (hovered_note(self, row))
+        return;
+    clear_note_hover(self);
+    self->note_hover = true;
+    self->hover_target = (struct note_ref){row.category, row.note};
+    self->hover_revision = folio_state_index_revision(self->state);
+    self->hover_bounds = favorite_rect(self, row);
+    InvalidateRect(self->handle, &self->hover_bounds, FALSE);
 }
 
 /* 捕捉中の移動。しきい値を超えたらドラッグに入り、落とし先を core に決めさせる。 */
@@ -1058,6 +1282,14 @@ static void run_header(struct drawer_window *_Nonnull self, enum drawer_header_b
         SendMessageW(GetParent(self->handle), folio_message_drawer_menu, DRAWER_MENU_NEW_CATEGORY,
                      (LPARAM)&target);
         return;
+    case DRAWER_HEADER_SCOPE_ALL:
+    case DRAWER_HEADER_SCOPE_FAVORITES:
+    {
+        struct accessible_request request = {.item = {.kind = header_kind(button)},
+                                             .action = ACCESSIBLE_ACTION_SELECT};
+        (void)accessibility_host_action(self->accessibility, &request);
+        return;
+    }
     }
 }
 
@@ -1080,8 +1312,18 @@ static void release(struct drawer_window *_Nonnull self, POINT point)
     InvalidateRect(self->handle, &button, FALSE);
     if (PtInRect(&button, point))
     {
-        self->header_hover = false; /* ダイアログの後に hover の枠を残さない */
+        self->header_hover = DRAWER_HEADER_NONE;
         run_header(self, pressed);
+    }
+}
+
+static void cancel_favorite_press(struct drawer_window *_Nonnull self)
+{
+    clear_note_hover(self);
+    if (self->favorite_pressed)
+    {
+        self->favorite_pressed = false;
+        ReleaseCapture();
     }
 }
 
@@ -1089,6 +1331,7 @@ static void release(struct drawer_window *_Nonnull self, POINT point)
  * ドラッグ中は行が動いたので、同じポインタ位置で落とし先を引き直す（決定 6）。 */
 static void scroll_by(struct drawer_window *_Nonnull self, int delta)
 {
+    cancel_favorite_press(self);
     enum folio_state_outcome outcome =
         folio_state_scroll_drawer(self->state, metrics_for(self), delta);
     if (outcome != FOLIO_STATE_READY)
@@ -1135,6 +1378,7 @@ static int key_step(const struct drawer_window *_Nonnull self, WPARAM key)
 static void cancel(struct drawer_window *_Nonnull self)
 {
     self->favorite_pressed = false;
+    self->note_hover = false;
     self->header_pressed = DRAWER_HEADER_NONE;
     self->pressed = false;
     self->moved = false;
@@ -1148,6 +1392,41 @@ static struct drawer_window *_Nullable self_of(HWND window)
 }
 
 static enum ui_pointer_kind drawer_cursor(struct drawer_window *_Nonnull self, POINT point);
+
+static LRESULT drawer_pointer_message(struct drawer_window *_Nonnull self, UINT message,
+                                      WPARAM wparam, LPARAM lparam)
+{
+    switch (message)
+    {
+    case WM_LBUTTONDOWN:
+        press(self, (POINT){GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)});
+        return 0;
+    case WM_MOUSEMOVE:
+        track_note(self, (POINT){GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)});
+        track_header(self, (POINT){GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)});
+        drag(self, GET_Y_LPARAM(lparam));
+        ui_pointer_show(drawer_cursor(self, (POINT){GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)}));
+        return 0;
+    case WM_MOUSELEAVE:
+        leave_header(self);
+        return 0;
+    case WM_LBUTTONUP:
+        release(self, (POINT){GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)});
+        return 0;
+    case WM_RBUTTONUP:
+        show_menu(self, lparam);
+        return 0;
+    case WM_MOUSEWHEEL:
+        wheel(self, wparam);
+        return 0;
+    case WM_CAPTURECHANGED:
+        cancel(self);
+        return 0;
+    default:
+        /* Win32のメッセージは開いた集合。 */
+        return DefWindowProcW(self->handle, message, wparam, lparam);
+    }
+}
 
 static LRESULT drawer_message(struct drawer_window *_Nonnull self, UINT message, WPARAM wparam,
                               LPARAM lparam)
@@ -1170,34 +1449,16 @@ static LRESULT drawer_message(struct drawer_window *_Nonnull self, UINT message,
         return 0;
     case WM_SIZE:
         /* 幅依存の検索枠・右寄せ操作・fadeを古い位置に残さない（#475）。 */
-        InvalidateRect(self->handle, nullptr, FALSE);
+        cancel(self);
+        if (GetCapture() == self->handle)
+            ReleaseCapture();
         return 0;
     case WM_ERASEBKGND:
         return 1;
-    case WM_LBUTTONDOWN:
-        press(self, (POINT){GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)});
-        return 0;
-    case WM_MOUSEMOVE:
-        track_header(self, (POINT){GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)});
-        drag(self, GET_Y_LPARAM(lparam));
-        ui_pointer_show(drawer_cursor(self, (POINT){GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)}));
-        return 0;
-    case WM_MOUSELEAVE:
-        leave_header(self);
-        return 0;
-    case WM_LBUTTONUP:
-        release(self, (POINT){GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)});
-        return 0;
-    case WM_RBUTTONUP:
-        show_menu(self, lparam);
-        return 0;
-    case WM_MOUSEWHEEL:
-        wheel(self, wparam);
-        return 0;
-    case WM_CAPTURECHANGED:
-        cancel(self);
-        return 0;
     case WM_DPICHANGED_AFTERPARENT:
+        cancel(self);
+        if (GetCapture() == self->handle)
+            ReleaseCapture();
         refresh_fonts(self, GetDpiForWindow(self->handle));
         InvalidateRect(self->handle, nullptr, FALSE);
         return 0;
@@ -1207,7 +1468,7 @@ static LRESULT drawer_message(struct drawer_window *_Nonnull self, UINT message,
         return 0;
     default:
         /* Win32 のメッセージは開いた集合（C-017）。 */
-        return DefWindowProcW(self->handle, message, wparam, lparam);
+        return drawer_pointer_message(self, message, wparam, lparam);
     }
 }
 
@@ -1333,6 +1594,7 @@ void drawer_window_reveal_cursor(struct drawer_window *_Nonnull drawer)
     {
         return;
     }
+    cancel_favorite_press(drawer);
     enum folio_state_outcome outcome =
         folio_state_reveal_cursor(drawer->state, metrics_for(drawer));
     if (outcome != FOLIO_STATE_READY)
@@ -1416,8 +1678,7 @@ static enum ui_pointer_kind drawer_cursor(struct drawer_window *_Nonnull self, P
         !PtInRect(&client, point) || (self->pressed && self->moved) ||
         SendMessageW(GetParent(self->handle), folio_message_pointer_blocked, 0, 0) != 0)
         return UI_POINTER_ARROW;
-    RECT button = new_category_rect(self);
-    if (PtInRect(&button, point))
+    if (header_at(self, point) != DRAWER_HEADER_NONE)
         return UI_POINTER_ACTION;
     if (self->header_pressed != DRAWER_HEADER_NONE || point.y < band_height(self) ||
         FAILED(accessible_layout(self)))
@@ -1490,6 +1751,11 @@ static void accessible_row_view(struct drawer_window *_Nonnull self, struct draw
 static RECT accessible_fixed_rect(const struct drawer_window *_Nonnull self,
                                   enum accessible_kind kind)
 {
+    if (kind == ACCESSIBLE_SCOPE_GROUP)
+        return scope_group_rect(self);
+    if (kind == ACCESSIBLE_SCOPE_ALL || kind == ACCESSIBLE_SCOPE_FAVORITES)
+        return scope_item_rect(self, kind == ACCESSIBLE_SCOPE_ALL ? NOTE_SCOPE_ALL
+                                                                  : NOTE_SCOPE_FAVORITES);
     if (kind == ACCESSIBLE_NEW_CATEGORY)
     {
         return new_category_rect(self);
@@ -1511,6 +1777,9 @@ static void accessible_scroll_view(struct drawer_window *_Nonnull self,
     out->scroll = scroll < limit ? scroll : limit;
     out->scroll_limit = limit;
     out->viewport = out->bounds.bottom > out->bounds.top ? out->bounds.bottom - out->bounds.top : 0;
+    if (drawer_layout_row_count(self->accessible_layout) == 0)
+        (void)wide_units(ui_text_line(empty_message(self), folio_state_language(self->state)),
+                         out->help);
 }
 
 HRESULT drawer_window_accessible_read(struct drawer_window *_Nonnull self,
@@ -1689,14 +1958,14 @@ HRESULT drawer_window_accessible_at(struct drawer_window *_Nonnull self, POINT p
         return result;
     }
     ScreenToClient(self->handle, &point);
-    RECT bounds = new_category_rect(self);
+    enum drawer_header_button button = header_at(self, point);
     *out = (struct accessible_item){.kind = ACCESSIBLE_DRAWER};
-    if (PtInRect(&bounds, point))
+    if (button != DRAWER_HEADER_NONE)
     {
-        out->kind = ACCESSIBLE_NEW_CATEGORY;
+        out->kind = header_kind(button);
         return S_OK;
     }
-    bounds = filter_rect(self);
+    RECT bounds = filter_rect(self);
     if (PtInRect(&bounds, point))
     {
         return S_FALSE; /* native EDITのhostへ委ねる。 */
@@ -1719,6 +1988,7 @@ enum folio_state_outcome
 drawer_window_accessible_scroll(struct drawer_window *_Nonnull self,
                                 const struct accessible_request *_Nonnull request)
 {
+    cancel_favorite_press(self);
     enum folio_state_outcome result = FOLIO_STATE_READY;
     if (request->action == ACCESSIBLE_ACTION_REVEAL)
     {

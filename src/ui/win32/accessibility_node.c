@@ -50,7 +50,7 @@ static bool has_selection(enum accessible_kind kind)
 {
     return kind == ACCESSIBLE_TREE || kind == ACCESSIBLE_LAYOUT_GROUP ||
            kind == ACCESSIBLE_MODE_GROUP || kind == ACCESSIBLE_SURFACE_LIST ||
-           kind == ACCESSIBLE_SURFACE_TABS;
+           kind == ACCESSIBLE_SURFACE_TABS || kind == ACCESSIBLE_SCOPE_GROUP;
 }
 
 static bool has_selection_item(enum accessible_kind kind)
@@ -59,7 +59,8 @@ static bool has_selection_item(enum accessible_kind kind)
            kind == ACCESSIBLE_LAYOUT_BOTH || kind == ACCESSIBLE_LAYOUT_NOTE ||
            kind == ACCESSIBLE_VIEW || kind == ACCESSIBLE_EDIT ||
            kind == ACCESSIBLE_SURFACE_CHOICE || kind == ACCESSIBLE_SURFACE_LANGUAGE ||
-           kind == ACCESSIBLE_SURFACE_TAB;
+           kind == ACCESSIBLE_SURFACE_TAB || kind == ACCESSIBLE_SCOPE_ALL ||
+           kind == ACCESSIBLE_SCOPE_FAVORITES;
 }
 
 static bool has_scroll(enum accessible_kind kind)
@@ -353,6 +354,9 @@ static const CONTROLTYPEID control_types[] = {
     [ACCESSIBLE_FIND] = UIA_ButtonControlTypeId,
     [ACCESSIBLE_NEW_NOTE] = UIA_ButtonControlTypeId,
     [ACCESSIBLE_NEW_CATEGORY] = UIA_ButtonControlTypeId,
+    [ACCESSIBLE_SCOPE_GROUP] = UIA_GroupControlTypeId,
+    [ACCESSIBLE_SCOPE_ALL] = UIA_RadioButtonControlTypeId,
+    [ACCESSIBLE_SCOPE_FAVORITES] = UIA_RadioButtonControlTypeId,
     [ACCESSIBLE_TREE] = UIA_TreeControlTypeId,
     [ACCESSIBLE_CATEGORY] = UIA_TreeItemControlTypeId,
     [ACCESSIBLE_NOTE] = UIA_TreeItemControlTypeId,
@@ -807,6 +811,8 @@ static struct accessible_item selection_container(struct accessible_item item)
                                                     : ACCESSIBLE_SURFACE_LIST,
                                         .revision = item.revision};
     enum accessible_kind kind = item.kind;
+    if (kind == ACCESSIBLE_SCOPE_ALL || kind == ACCESSIBLE_SCOPE_FAVORITES)
+        return (struct accessible_item){.kind = ACCESSIBLE_SCOPE_GROUP};
     if (kind == ACCESSIBLE_VIEW || kind == ACCESSIBLE_EDIT)
     {
         return (struct accessible_item){.kind = ACCESSIBLE_MODE_GROUP};

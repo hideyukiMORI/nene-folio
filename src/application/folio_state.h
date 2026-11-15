@@ -492,6 +492,7 @@ folio_state_recolor_availability(const struct folio_state *_Nonnull state, size_
                                                          struct note_ref target);
 [[nodiscard]] bool folio_state_note_favorite(const struct folio_state *_Nonnull state,
                                              struct note_ref ref);
+[[nodiscard]] size_t folio_state_favorite_count(const struct folio_state *_Nonnull state);
 [[nodiscard]] enum folio_state_outcome
 folio_state_toggle_favorite(struct folio_state *_Nonnull state, struct note_ref ref);
 [[nodiscard]] enum note_scope folio_state_note_scope(const struct folio_state *_Nonnull state);
