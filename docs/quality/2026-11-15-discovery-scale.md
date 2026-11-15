@@ -94,3 +94,12 @@ setupを利用者のアプリ起動時間や検索準備時間とは解釈しな
 
 全rawはscale-01とruntime-01、集計は恒久measurement-summary.json、環境はenvironment.jsonに保持する。
 最終CI・統合・全証跡保全/整理は未完了。物理IME・実読み上げ・他OS/DPI・冷たいOS cache・Unicode主体の大量本文は本計測の対象外。
+
+## 統合後の確定結果
+
+#829 / PR830は最終head `99f46fd9305d7a48e9256cd009f4ea9cc6681219`の必須CI43716315383が成功し、
+main `1ec50d893a0242e4963b64e330cd39e9bab0fa71`へ統合した。56 CTest、分岐90.766456%。
+製品入力は#827のmainから不変のため通常exeの反映を再利用し、再build・通常アプリ起動・実data再検査は行っていない。
+全12,967ファイルを恒久保全・照合し、829の追加worktree/outputsを整理した。branch/commitは保持。
+確定原本はD:/NeNeFolio/agents/discovery-scale-20261115/completion.json。
+後続#831で同じfixture/driverのRelease測定を行い、Debugで見えた区間を再評価する。
