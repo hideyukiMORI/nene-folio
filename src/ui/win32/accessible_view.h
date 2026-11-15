@@ -27,6 +27,7 @@ struct accessible_view
     bool favorite;
     bool expanded;
     bool selection_required;
+    bool checklist; /* The list exposes independent Toggle children, not SelectionItem children. */
     int scroll;
     int scroll_limit;
     int viewport;

@@ -1,0 +1,8 @@
+#ifndef NENEFOLIO_TAG_CATALOG_OUTCOME_H
+#define NENEFOLIO_TAG_CATALOG_OUTCOME_H
+enum tag_catalog_outcome
+{
+    TAG_CATALOG_READY,
+    TAG_CATALOG_OUT_OF_MEMORY
+};
+#endif

@@ -86,6 +86,9 @@
 
 | 状態 | 意味 | 所有者 | 変更経路 |
 | --- | --- | --- | --- |
+| ノートのタグ | Markdown front matterの名前集合。解析状態と元のbyte位置を伴う | coreの不変`note_metadata`を`note_text`が所有 | 同じparserで生成し、GUI変更は現在の原文に対する`replace_edit`一回から通常保存へ渡す（ADR0092） |
+| タグ付与の編集中session | 宛先・元本文snapshot・staged集合 | application | 面の開始/トグル/取消/適用。同一性と現本文の照合後だけ編集を返す（ADR0092） |
+| タグの絞り込み条件 | 所有した名前集合とALL/ANY。catalog寿命から独立 | application（`folio_state`） | 共通queryと既存`index_filter_build`へ渡し、保存済みcorpusから完成集合を生成する（ADR0092） |
 | 文書の一覧（索引） | `data/<カテゴリ>/*.md` の存在と順序 | application（`folio_state`） | 起動時の走査と保存後の再読込だけ |
 | カテゴリの色・順序・展開状態 | `data/categories.json` | application | 右クリック・ドラッグ・トグルの意図を受けた reducer |
 | 文書の手動順と星 | `data/<カテゴリ>/index.json`版2 | core（`note_ledger`）をapplicationが所有 | ドラッグ・星の意図から新台帳を作り、保存成功後に採用する。派生する優先順は同じ台帳から作る（ADR0090） |

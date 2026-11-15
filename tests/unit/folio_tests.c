@@ -552,6 +552,26 @@ static bool run_favorites_target_tests(const char *_Nonnull argument)
     return false;
 }
 
+static bool run_tag_target_tests(const char *_Nonnull argument)
+{
+    if (strcmp(argument, "--tags-oom") == 0)
+    {
+        run_tag_allocation_tests();
+        run_tag_filter_allocation_tests();
+        printf("tag metadata and edit allocation failures passed\n");
+        return true;
+    }
+    if (strcmp(argument, "--tags") != 0)
+        return false;
+    run_tag_tests();
+    run_tag_filter_state_tests();
+    run_tag_transfer_tests();
+    run_command_tests();
+    run_ui_text_tests();
+    printf("tag names, source parsing, editing and rendering tests passed\n");
+    return true;
+}
+
 static bool run_selected_tests(const char *_Nonnull argument)
 {
     if (strcmp(argument, "--storage-location") == 0)
@@ -603,18 +623,20 @@ static bool run_selected_tests(const char *_Nonnull argument)
         printf("nullable allocation, preview ownership, BOM and template tests passed\n");
         return true;
     }
-    return (run_favorites_target_tests(argument) || run_minimap_target_tests(argument) ||
-            run_transfer_target_tests(argument) || run_web_link_target_tests(argument) ||
-            run_text_validation_target_tests(argument) || run_note_search_target_tests(argument) ||
-            run_surface_target_tests(argument) || run_menu_target_tests(argument) ||
-            run_size_overflow_target_tests(argument) || run_pane_load_target_tests(argument) ||
-            run_document_settings_target_tests(argument) || run_target_tests(argument) ||
-            run_filter_target_tests(argument) || run_status_target_tests(argument) ||
-            run_save_target_tests(argument));
+    return (run_tag_target_tests(argument) || run_favorites_target_tests(argument) ||
+            run_minimap_target_tests(argument) || run_transfer_target_tests(argument) ||
+            run_web_link_target_tests(argument) || run_text_validation_target_tests(argument) ||
+            run_note_search_target_tests(argument) || run_surface_target_tests(argument) ||
+            run_menu_target_tests(argument) || run_size_overflow_target_tests(argument) ||
+            run_pane_load_target_tests(argument) || run_document_settings_target_tests(argument) ||
+            run_target_tests(argument) || run_filter_target_tests(argument) ||
+            run_status_target_tests(argument) || run_save_target_tests(argument));
 }
 
 static void run_full_suite(void)
 {
+    run_tag_tests();
+    run_tag_filter_state_tests();
     run_image_tests();
     run_transfer_tests();
     run_web_link_tests();

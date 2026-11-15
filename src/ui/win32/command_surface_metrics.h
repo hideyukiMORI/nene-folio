@@ -14,6 +14,9 @@ struct command_surface_metrics
     int notice;
     int settings_footer;
     int themes_footer;
+    int tags_footer;
+    int tag_button_height;
+    bool tag_hint_visible;
 };
 
 #endif

@@ -17,6 +17,8 @@
 #include "note_file_times.h"
 #include "note_history.h"
 #include "note_ledger.h"
+#include "note_tag.h"
+#include "note_tags.h"
 #include "note_text.h"
 #include "persistence_adapter.h"
 #include "regex_adapter.h"
@@ -24,6 +26,7 @@
 #include "storage_adapter.h"
 #include "storage_native_path.h"
 #include "storage_state.h"
+#include "tag_catalog.h"
 #include "transfer_adapter.h"
 #include "ui_face.h"
 #include "ui_text.h"
@@ -64,6 +67,10 @@ static bool palette_case;
 static bool paste_case;
 static bool format_case;
 static bool favorites_case;
+static bool tags_case;
+static bool tags_visual_case;
+static bool tags_reload_case;
+static bool tags_metrics_case;
 static bool favorites_visual_case;
 static bool favorites_ui_case;
 static bool favorite_high_contrast;
@@ -101,6 +108,14 @@ static bool close_modal_case;
 static bool export_case;
 
 static const char history_current[] = "# Current 日本語 😀 **saved**";
+static const char tags_current[] =
+    "---\ntitle: 'Keep' # unknown\ntags: [red, 'blue'] # keep\n---\n# Note 日本語 😀";
+static const wchar_t tags_original[] =
+    L"---\rtitle: 'Keep' # unknown\rtags: [red, 'blue'] # keep\r---\r# Note 日本語 😀";
+static const wchar_t tags_added[] =
+    L"---\rtitle: 'Keep' # unknown\rtags: [red, 'blue', \"新規 😀\"] # keep\r---\r# Note 日本語 😀";
+static const char tags_saved[] =
+    "---\ntitle: 'Keep' # unknown\ntags: [red, 'blue', \"新規 😀\"] # keep\n---\n# Note 日本語 😀";
 static const char history_previous[] = "> Previous 猫 🐾 `old`";
 static const char history_oldest[] = "- Oldest 履歴 🌸";
 static const char switch_other[] = "> Other 別ノート 🐾";
@@ -163,12 +178,43 @@ static const char *_Nonnull text_fixture_source(const char *_Nonnull fallback)
     return fallback;
 }
 
-static void seed_notes(struct persistence_port disk)
+static void seed_tags(struct persistence_port disk)
+{
+    if (tags_reload_case)
+        return;
+    const char *categories[] = {"schedule", "schedule", "target"};
+    const char *names[] = {"one", "two", "three"};
+    const char *sources[] = {tags_current, "---\ntags: [blue, green]\n---\nOther",
+                             tags_metrics_case ? "Plain"
+                                               : "---\nitem:\n  child: value\n---\nUnsupported"};
+    for (size_t at = 0; at < 3; ++at)
+    {
+        struct note_text *body = nullptr;
+        require(note_text_create(sources[at], strlen(sources[at]), &body) == NOTE_TEXT_ACCEPTED,
+                "tag native source");
+        require(disk.write_note(disk.adapter, categories[at], names[at], body) ==
+                    PERSISTENCE_STORED,
+                "dedicated tag source saved");
+        note_text_destroy(body);
+    }
+}
+
+static void seed_categories(struct persistence_port disk)
 {
     enum persistence_outcome created = disk.create_category(disk.adapter, "schedule");
     require(created == PERSISTENCE_STORED || created == PERSISTENCE_NAME_TAKEN, "test category");
     created = disk.create_category(disk.adapter, "target");
     require(created == PERSISTENCE_STORED || created == PERSISTENCE_NAME_TAKEN, "move category");
+}
+
+static void seed_notes(struct persistence_port disk)
+{
+    seed_categories(disk);
+    if (tags_case)
+    {
+        seed_tags(disk);
+        return;
+    }
     const char *source =
         diagram_case ? "Body before diagrams\n\n```mermaid\nflowchart LR\nA --> B\n```\n\nAfter\n"
                      : "Body before images\n\n![alt](images/one.png)\n\nBody after images\n";
@@ -286,7 +332,7 @@ static void create_fixture(struct native_fixture *_Nonnull fixture)
     struct persistence_port disk = persistence_adapter_port(fixture->files);
     seed_notes(disk);
     struct appearance_port appearance = appearance_adapter_port(fixture->appearance);
-    if (favorites_case)
+    if (favorites_case || tags_case)
         appearance.read = read_favorite_appearance;
     struct regex_port regex = regex_adapter_port(fixture->regex);
     struct web_link_port web = web_link_adapter_port();
@@ -609,31 +655,119 @@ static void invoke_operation(struct folio_window *_Nonnull window, enum folio_co
     require(false, "requested operation exists");
 }
 
-static void short_window_band(struct native_fixture *_Nonnull fixture, enum folio_command command)
+static void tags_capture(HWND root, const char *_Nonnull path);
+
+static struct accessible_view band_view(struct folio_window *_Nonnull window,
+                                        enum accessible_kind kind)
 {
-    require(folio_state_begin_edit(fixture->state) == FOLIO_STATE_READY, "geometry edit state");
+    struct accessible_item item = {.kind = kind,
+                                   .revision = folio_window_accessible_surface_revision(window)};
+    struct accessible_view view;
+    require(folio_window_accessible_read(window, &item, &view) == S_OK, "band boundary view");
+    return view;
+}
+
+static void band_tag_visibility(struct folio_window *_Nonnull window, bool visible)
+{
+    struct accessible_view tag = band_view(window, ACCESSIBLE_TAG_EDIT);
+    require(tag.offscreen != visible, "tag strip follows the active inline band");
+    struct accessible_item parent = {.kind = ACCESSIBLE_PANE_TOOLS}, child;
+    HRESULT result =
+        folio_window_accessible_navigate(window, &parent, ACCESSIBLE_NAVIGATION_FIRST, &child);
+    bool found = false;
+    size_t visited = 0;
+    while (result == S_OK && visited < 20)
+    {
+        found |= child.kind == ACCESSIBLE_TAG_EDIT;
+        ++visited;
+        result =
+            folio_window_accessible_navigate(window, &child, ACCESSIBLE_NAVIGATION_NEXT, &child);
+    }
+    require(result == S_FALSE && found == visible,
+            "UIA child enumeration agrees with tag visibility");
+    if (visible)
+    {
+        struct accessible_view group = band_view(window, ACCESSIBLE_PANE_TOOLS);
+        require(group.bounds.top <= tag.bounds.top && group.bounds.bottom >= tag.bounds.bottom,
+                "pane tools bounds contain the visible tag entry");
+    }
+}
+
+static void band_fixed_controls(struct folio_window *_Nonnull window, RECT *_Nonnull bounds,
+                                bool capture)
+{
+    const enum accessible_kind kinds[] = {ACCESSIBLE_BREADCRUMB, ACCESSIBLE_MODE_GROUP,
+                                          ACCESSIBLE_SAVE, ACCESSIBLE_NOTICE};
+    for (size_t at = 0; at < sizeof kinds / sizeof kinds[0]; ++at)
+    {
+        struct accessible_view view = band_view(window, kinds[at]);
+        require(!view.offscreen, "note identity, mode, save and status remain visible");
+        if (capture)
+            bounds[at] = view.bounds;
+        if (!capture)
+            require(EqualRect(&bounds[at], &view.bounds), "permanent control bounds are unchanged");
+    }
+}
+
+static void band_body_geometry(struct folio_window *_Nonnull window, enum folio_command command)
+{
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    struct accessible_view status = band_view(window, ACCESSIBLE_NOTICE);
+    RECT bounds;
+    require(GetWindowRect(body, &bounds), "minimum window body geometry");
+    UINT dpi = GetDpiForWindow(root);
+    int minimum = MulDiv(command == FOLIO_COMMAND_REPLACE ? 32 : 52, (int)dpi, 96);
+    printf("short band %d: body=(%ld,%ld,%ld,%ld) statusTop=%ld dpi=%u\n", command, bounds.left,
+           bounds.top, bounds.right, bounds.bottom, status.bounds.top, dpi);
+    require(bounds.bottom - bounds.top >= minimum && bounds.bottom <= status.bounds.top,
+            "minimum-height search and replace keep a usable body above the status bar");
+    struct accessible_view surface = band_view(window, ACCESSIBLE_SURFACE);
+    require(surface.bounds.bottom <= bounds.top, "inline controls do not cover the body");
+}
+
+static void short_band_case(struct native_fixture *_Nonnull fixture, enum folio_command command,
+                            enum folio_language language)
+{
+    require(folio_state_set_language(fixture->state, language) == FOLIO_STATE_READY,
+            "short band language");
     struct folio_window *window = nullptr;
     require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
                 FOLIO_WINDOW_CREATED,
             "geometry window");
     HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
-    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
     SetWindowPos(root, nullptr, 20, 20, 420, 360, SWP_NOZORDER | SWP_NOACTIVATE);
+    pump(window);
+    RECT fixed[4];
+    band_fixed_controls(window, fixed, true);
+    band_tag_visibility(window, true);
     invoke_operation(window, command);
     pump(window);
-    struct accessible_item item = {.kind = ACCESSIBLE_NOTICE};
-    struct accessible_view status;
-    RECT body_rect;
-    require(folio_window_accessible_read(window, &item, &status) == S_OK &&
-                GetWindowRect(body, &body_rect) && body_rect.bottom <= status.bounds.top,
-            "minimum-height search and replace keep the body above the status bar");
+    band_body_geometry(window, command);
+    band_tag_visibility(window, false);
+    band_fixed_controls(window, fixed, false);
+    char path[64];
+    require(snprintf(path, sizeof path, "short-band-%d-%d.bmp", command, language) > 0,
+            "short band capture path");
+    tags_capture(root, path);
     SendMessageW(root, WM_KEYDOWN, VK_ESCAPE, 0);
     pump(window);
     struct accessible_item surface = {.kind = ACCESSIBLE_SURFACE};
     struct accessible_view closed;
     require(FAILED(folio_window_accessible_read(window, &surface, &closed)) || closed.offscreen,
             "Escape closes the command band through the normal key handler");
+    band_tag_visibility(window, true);
+    band_fixed_controls(window, fixed, false);
     folio_window_destroy(window);
+}
+
+static void short_window_band(struct native_fixture *_Nonnull fixture, enum folio_command command)
+{
+    require(folio_state_begin_edit(fixture->state) == FOLIO_STATE_READY, "geometry edit state");
+    const enum folio_language languages[] = {FOLIO_LANGUAGE_JA, FOLIO_LANGUAGE_EN,
+                                             FOLIO_LANGUAGE_ZH_HANS};
+    for (size_t at = 0; at < sizeof languages / sizeof languages[0]; ++at)
+        short_band_case(fixture, command, languages[at]);
 }
 
 static void normal_status(struct native_fixture *_Nonnull fixture, enum folio_language language,
@@ -7790,8 +7924,437 @@ static void run_remaining_fixture(struct native_fixture *_Nonnull fixture, int a
         run_extended_fixture(fixture, argc, argv);
 }
 
-static void run_fixture(struct native_fixture *_Nonnull fixture, int argc,
-                        char *_Nonnull *_Nonnull argv)
+static void tags_open(struct folio_window *_Nonnull window, enum accessible_kind kind)
+{
+    struct accessible_request request = {.item = {.kind = kind},
+                                         .action = ACCESSIBLE_ACTION_INVOKE};
+    require(folio_window_accessible_action(window, &request) == S_OK,
+            "open tag surface from its visible entry");
+    pump(window);
+}
+
+static void tags_settle(struct folio_window *_Nonnull window,
+                        const struct folio_state *_Nonnull state)
+{
+    for (size_t step = 0; step < 1000 && folio_window_idle_work_ready(window); ++step)
+    {
+        folio_window_continue_idle_work(window);
+        pump(window);
+    }
+    require(!folio_state_index_work_pending(state),
+            "shared idle completes tag catalog and matching");
+}
+
+static struct accessible_item tags_row(struct folio_window *_Nonnull window,
+                                       const wchar_t *_Nonnull name)
+{
+    uint64_t revision = folio_window_accessible_surface_revision(window);
+    for (size_t slot = 0; slot < 32; ++slot)
+    {
+        struct accessible_item item = {
+            .kind = ACCESSIBLE_SURFACE_TOGGLE, .slot = slot, .revision = revision};
+        struct accessible_view view = {0};
+        if (folio_window_accessible_read(window, &item, &view) != S_OK)
+            break;
+        if (wcsncmp(view.name, name, wcslen(name)) == 0)
+            return item;
+    }
+    require(false, "tag name exists in the public checklist");
+    return (struct accessible_item){0};
+}
+
+static void tags_toggle(struct folio_window *_Nonnull window, const wchar_t *_Nonnull name)
+{
+    struct accessible_request request = {.item = tags_row(window, name),
+                                         .action = ACCESSIBLE_ACTION_SELECT};
+    require(folio_window_accessible_action(window, &request) == S_OK, "toggle the public tag row");
+    pump(window);
+}
+
+static void tags_add(struct folio_window *_Nonnull window)
+{
+    HWND input = folio_window_accessible_window(window, ACCESSIBLE_COMMAND_INPUT);
+    require(input != nullptr && SetWindowTextW(input, L"新規 😀"),
+            "enter an exact Unicode tag name");
+    pump(window);
+    surface_button(window, ACCESSIBLE_SURFACE_TAG_ADD);
+}
+
+static void tags_expect_text(struct folio_window *_Nonnull window, const wchar_t *_Nonnull expected)
+{
+    struct native_body_snapshot snapshot = {0};
+    capture_native_body(window, &snapshot);
+    if (wcscmp(snapshot.text, expected) != 0)
+        fwprintf(stderr, L"tag actual=[%ls] expected=[%ls]\n", snapshot.text, expected);
+    require(wcscmp(snapshot.text, expected) == 0,
+            "tag edit preserves complete original metadata and body");
+}
+
+static void tags_expect_saved(struct native_fixture *_Nonnull fixture,
+                              const char *_Nonnull expected)
+{
+    struct persistence_port disk = persistence_adapter_port(fixture->files);
+    struct note_text *body = nullptr;
+    require(disk.read_note(disk.adapter, "schedule", "one", &body) == PERSISTENCE_LOADED &&
+                note_text_length(body) == strlen(expected) &&
+                memcmp(note_text_bytes(body), expected, strlen(expected)) == 0,
+            "saved source exactly retains unrelated metadata, comments and body");
+    note_text_destroy(body);
+}
+
+static void tags_edit_roundtrip(struct folio_window *_Nonnull window,
+                                struct native_fixture *_Nonnull fixture)
+{
+    action(window, ACCESSIBLE_EDIT);
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    SetFocus(body);
+    SendMessageW(body, EM_SETSEL, 3, 8);
+    struct native_body_snapshot before = {0};
+    capture_native_body(window, &before);
+    tags_open(window, ACCESSIBLE_TAG_EDIT);
+    tags_settle(window, fixture->state);
+    const struct tag_catalog *catalog = folio_state_tag_catalog(fixture->state);
+    require(tag_catalog_count(catalog) == 3 && tag_catalog_unavailable(catalog) == 1,
+            "catalog distinguishes unsupported metadata from known empty tags");
+    struct accessible_item stale = tags_row(window, L"red");
+    tags_add(window);
+    tags_add(window);
+    require(note_tags_count(folio_state_edit_tags(fixture->state)) == 3,
+            "adding an existing name is idempotent");
+    struct accessible_view view = {0};
+    require(FAILED(folio_window_accessible_read(window, &stale, &view)),
+            "changed candidates invalidate old UIA row generations");
+    surface_button(window, ACCESSIBLE_SURFACE_TAG_CANCEL);
+    expect_native_body(window, &before);
+    tags_expect_saved(fixture, tags_current);
+    tags_open(window, ACCESSIBLE_TAG_EDIT);
+    tags_add(window);
+    surface_button(window, ACCESSIBLE_SURFACE_TAG_APPLY);
+    tags_expect_text(window, tags_added);
+    require(folio_state_pane_mode(fixture->state) == PANE_MODE_EDIT &&
+                SendMessageW(body, EM_GETMODIFY, 0, 0),
+            "EDIT tag application stays unsaved");
+    tags_expect_saved(fixture, tags_current);
+    require(SendMessageW(body, EM_UNDO, 0, 0), "one native Undo removes the entire tag change");
+    pump(window);
+    tags_expect_text(window, tags_original);
+    capture_native_body(window, &before);
+    tags_open(window, ACCESSIBLE_TAG_EDIT);
+    surface_button(window, ACCESSIBLE_SURFACE_TAG_APPLY);
+    expect_native_body(window, &before);
+    require(SendMessageW(body, EM_REDO, 0, 0), "unchanged tag apply preserves native Redo");
+    pump(window);
+    tags_expect_text(window, tags_added);
+    require(SendMessageW(body, EM_UNDO, 0, 0), "restore original source before VIEW save");
+    pump(window);
+}
+
+static void tags_view_refusal(struct folio_window *_Nonnull window,
+                              struct native_fixture *_Nonnull fixture)
+{
+    tags_open(window, ACCESSIBLE_TAG_EDIT);
+    tags_add(window);
+    HANDLE locked = lock_native_note(fixture);
+    begin_history_failure(window);
+    surface_button(window, ACCESSIBLE_SURFACE_TAG_APPLY);
+    end_history_failure();
+    require(CloseHandle(locked), "release dedicated tag save lock");
+    require(failure.closed == 1 && folio_state_pane_mode(fixture->state) == PANE_MODE_EDIT,
+            "VIEW tag save refusal reports once and retains the changed editor");
+    tags_expect_text(window, tags_added);
+    tags_expect_saved(fixture, tags_current);
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    require(SendMessageW(body, EM_UNDO, 0, 0), "failed VIEW save retains one native Undo");
+    pump(window);
+    tags_expect_text(window, tags_original);
+    action(window, ACCESSIBLE_VIEW);
+}
+
+static void tags_view_save(struct folio_window *_Nonnull window,
+                           struct native_fixture *_Nonnull fixture)
+{
+    action(window, ACCESSIBLE_VIEW);
+    struct native_body_snapshot rendered = {0};
+    capture_native_body(window, &rendered);
+    require(wcsstr(rendered.text, L"title:") == nullptr &&
+                wcsstr(rendered.text, L"Note 日本語") != nullptr,
+            "VIEW hides supported front matter while showing the body");
+    tags_view_refusal(window, fixture);
+    tags_open(window, ACCESSIBLE_TAG_EDIT);
+    tags_add(window);
+    surface_button(window, ACCESSIBLE_SURFACE_TAG_APPLY);
+    require(folio_state_pane_mode(fixture->state) == PANE_MODE_VIEW,
+            "VIEW tag application returns after common save");
+    tags_expect_saved(fixture, tags_saved);
+}
+
+static struct accessible_view tags_view(struct folio_window *_Nonnull window,
+                                        enum accessible_kind kind, size_t slot)
+{
+    struct accessible_item item = {
+        .kind = kind, .slot = slot, .revision = folio_window_accessible_surface_revision(window)};
+    struct accessible_view view = {0};
+    require(folio_window_accessible_read(window, &item, &view) == S_OK && !view.offscreen,
+            "tag control has visible public bounds");
+    return view;
+}
+
+static void tags_keyboard(struct folio_window *_Nonnull window,
+                          struct native_fixture *_Nonnull fixture)
+{
+    tags_open(window, ACCESSIBLE_TAG_EDIT);
+    tags_settle(window, fixture->state);
+    HWND input = folio_window_accessible_window(window, ACCESSIBLE_COMMAND_INPUT);
+    SetFocus(input);
+    SendMessageW(input, WM_IME_STARTCOMPOSITION, 0, 0);
+    favorite_key(window, VK_RETURN);
+    favorite_key(window, VK_ESCAPE);
+    require(IsWindowVisible(input) && GetFocus() == input, "synthetic IME owns Enter and Escape");
+    SendMessageW(input, WM_IME_ENDCOMPOSITION, 0, 0);
+    favorite_key(window, VK_TAB);
+    struct accessible_item focus = {0};
+    require(folio_window_accessible_focus(window, ACCESSIBLE_WINDOW, &focus) == S_OK &&
+                focus.kind == ACCESSIBLE_SURFACE_TOGGLE,
+            "Tab reaches a tag checkbox");
+    struct accessible_view before = tags_view(window, focus.kind, focus.slot);
+    favorite_key(window, VK_SPACE);
+    struct accessible_view after = tags_view(window, focus.kind, focus.slot);
+    require(after.selected != before.selected, "Space toggles only the focused tag checkbox");
+    favorite_key(window, VK_ESCAPE);
+    require(!IsWindowVisible(input) && folio_state_edit_tags(fixture->state) == nullptr,
+            "Escape outside IME cancels the staged session");
+    tags_expect_saved(fixture, tags_saved);
+}
+
+static void tags_capture(HWND root, const char *_Nonnull path)
+{
+    RECT client;
+    require(GetClientRect(root, &client), "tag screenshot bounds");
+    HDC source = GetDC(root), dc = CreateCompatibleDC(source);
+    HBITMAP bitmap = CreateCompatibleBitmap(source, client.right, client.bottom);
+    HGDIOBJ old = SelectObject(dc, bitmap);
+    require(PrintWindow(root, dc, PW_CLIENTONLY), "render the real tag window and native input");
+    SelectObject(dc, old);
+    save_bitmap(dc, bitmap, client, path);
+    DeleteObject(bitmap);
+    DeleteDC(dc);
+    ReleaseDC(root, source);
+}
+
+static struct accessible_view tags_footer_before(struct folio_window *_Nonnull window)
+{
+    if (!tags_metrics_case)
+        return tags_view(window, ACCESSIBLE_SURFACE_STATUS, 0);
+    struct accessible_item item = {.kind = ACCESSIBLE_SURFACE_STATUS,
+                                   .revision = folio_window_accessible_surface_revision(window)};
+    struct accessible_view view = {0};
+    require(folio_window_accessible_read(window, &item, &view) == S_OK && view.offscreen &&
+                view.name[0] == 0,
+            "a clean catalog has no accessible failure announcement before rejection");
+    return view;
+}
+
+static void tags_regions(struct folio_window *_Nonnull window,
+                         const struct accessible_view *_Nonnull footer)
+{
+    struct accessible_view input = tags_view(window, ACCESSIBLE_COMMAND_INPUT, 0);
+    struct accessible_view list = tags_view(window, ACCESSIBLE_SURFACE_LIST, 0);
+    struct accessible_view button =
+        tags_view(window, ACCESSIBLE_SURFACE_BUTTON, ACCESSIBLE_SURFACE_TAG_APPLY);
+    require(input.bounds.bottom <= list.bounds.top && list.bounds.bottom <= button.bounds.top &&
+                list.bounds.bottom > list.bounds.top,
+            "input, a usable tag row and action buttons do not overlap");
+    if (!footer->offscreen)
+        require(list.bounds.bottom <= footer->bounds.top &&
+                    footer->bounds.bottom <= button.bounds.top,
+                "a visible footer fits between tag rows and action buttons");
+    require(list.checklist && !list.selection_required, "tag list exposes independent toggles");
+}
+
+static void tags_geometry(struct folio_window *_Nonnull window, size_t index)
+{
+    struct accessible_view footer = tags_footer_before(window);
+    tags_regions(window, &footer);
+    surface_button(window, ACCESSIBLE_SURFACE_TAG_ADD);
+    struct accessible_view failure_text = tags_view(window, ACCESSIBLE_SURFACE_STATUS, 0);
+    require(failure_text.name[0] != 0, "empty tag input has an accessible failure reason");
+    tags_regions(window, &failure_text);
+    if (tags_metrics_case)
+        require(failure_text.bounds.bottom - failure_text.bounds.top >
+                    footer.bounds.bottom - footer.bounds.top,
+                "an input error allocates new footer height when no catalog notice existed");
+    struct accessible_view list = tags_view(window, ACCESSIBLE_SURFACE_LIST, 0);
+    struct accessible_view button =
+        tags_view(window, ACCESSIBLE_SURFACE_BUTTON, ACCESSIBLE_SURFACE_TAG_APPLY);
+    printf("tag geometry %zu: list=%ld footer=%ld failure=%ld button=%ld\n", index,
+           list.bounds.bottom - list.bounds.top, footer.bounds.bottom - footer.bounds.top,
+           failure_text.bounds.bottom - failure_text.bounds.top,
+           button.bounds.bottom - button.bounds.top);
+    char path[64];
+    require(snprintf(path, sizeof path, "tags-error-%zu.bmp", index) > 0, "tag screenshot name");
+    tags_capture(folio_window_accessible_window(window, ACCESSIBLE_WINDOW), path);
+}
+
+static void tags_filter_geometry(struct folio_window *_Nonnull window,
+                                 struct native_fixture *_Nonnull fixture, size_t at)
+{
+    surface_button(window, ACCESSIBLE_SURFACE_TAG_CANCEL);
+    action(window, ACCESSIBLE_LAYOUT_DRAWER);
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    require(SetWindowPos(root, nullptr, 20, 20, 320, 360, SWP_NOZORDER | SWP_NOACTIVATE),
+            "minimum drawer-only tag filter window");
+    tags_open(window, ACCESSIBLE_TAG_FILTER);
+    tags_settle(window, fixture->state);
+    struct accessible_view input = tags_view(window, ACCESSIBLE_COMMAND_INPUT, 0);
+    struct accessible_view list = tags_view(window, ACCESSIBLE_SURFACE_LIST, 0);
+    struct accessible_view footer = tags_view(window, ACCESSIBLE_SURFACE_STATUS, 0);
+    struct accessible_view button =
+        tags_view(window, ACCESSIBLE_SURFACE_BUTTON, ACCESSIBLE_SURFACE_TAG_CLEAR);
+    require(input.bounds.bottom <= list.bounds.top && list.bounds.bottom <= footer.bounds.top &&
+                footer.bounds.bottom <= button.bounds.top && list.bounds.bottom > list.bounds.top,
+            "minimum drawer filter retains separated input, one row and all actions");
+    char path[64];
+    require(snprintf(path, sizeof path, "tags-filter-%zu.bmp", at) > 0, "filter screenshot path");
+    tags_capture(root, path);
+}
+
+static void tags_visual_matrix(struct native_fixture *_Nonnull fixture)
+{
+    const enum folio_language languages[] = {FOLIO_LANGUAGE_JA, FOLIO_LANGUAGE_EN,
+                                             FOLIO_LANGUAGE_ZH_HANS};
+    for (size_t at = 0; at < 9; ++at)
+    {
+        favorite_high_contrast = at / 3 == 2;
+        require(folio_state_set_language(fixture->state, languages[at % 3]) == FOLIO_STATE_READY &&
+                    folio_state_refresh_theme(fixture->state) == FOLIO_STATE_READY &&
+                    folio_state_set_theme(fixture->state, at / 3 == 1 ? FOLIO_THEME_CHOICE_DARK
+                                                                      : FOLIO_THEME_CHOICE_LIGHT) ==
+                        FOLIO_STATE_READY,
+                "tag matrix language and palette");
+        struct folio_window *window = nullptr;
+        require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY,
+                                    &window) == FOLIO_WINDOW_CREATED,
+                "tag matrix window");
+        HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+        require(SetWindowPos(root, nullptr, 20, 20, 420, 360, SWP_NOZORDER | SWP_NOACTIVATE),
+                "minimum tag window size");
+        pump(window);
+        tags_open(window, ACCESSIBLE_TAG_EDIT);
+        tags_settle(window, fixture->state);
+        tags_geometry(window, at);
+        tags_filter_geometry(window, fixture, at);
+        folio_window_destroy(window);
+        folio_state_set_layout_mode(fixture->state, FOLIO_LAYOUT_BOTH);
+    }
+    favorite_high_contrast = false;
+}
+
+static void tags_filter_roundtrip(struct folio_window *_Nonnull window,
+                                  struct native_fixture *_Nonnull fixture)
+{
+    tags_open(window, ACCESSIBLE_TAG_FILTER);
+    tags_settle(window, fixture->state);
+    surface_button(window, ACCESSIBLE_SURFACE_TAG_ANY);
+    require(folio_state_tag_match_mode(fixture->state) == TAG_MATCH_ANY,
+            "OR can be chosen before selecting any tag");
+    surface_button(window, ACCESSIBLE_SURFACE_TAG_ALL);
+    tags_toggle(window, L"red");
+    tags_settle(window, fixture->state);
+    require(folio_state_index_filter_count(fixture->state) == 1,
+            "one tag matches its saved source");
+    tags_toggle(window, L"green");
+    tags_settle(window, fixture->state);
+    require(folio_state_index_filter_count(fixture->state) == 0,
+            "ALL tags produce an explicit empty result");
+    surface_button(window, ACCESSIBLE_SURFACE_TAG_ANY);
+    tags_settle(window, fixture->state);
+    require(folio_state_index_filter_count(fixture->state) == 2,
+            "ANY tags match either saved source");
+    surface_button(window, ACCESSIBLE_SURFACE_CLOSE);
+    HWND input = folio_window_accessible_window(window, ACCESSIBLE_FILTER);
+    require(SetWindowTextW(input, L"Other"), "set ordinary global text filter");
+    tags_settle(window, fixture->state);
+    require(folio_state_index_filter_count(fixture->state) == 1,
+            "global text is ANDed with the tag query");
+    require(folio_state_toggle_favorite(fixture->state, (struct note_ref){0, 0}) ==
+                FOLIO_STATE_READY,
+            "mark only the different saved source as favorite");
+    select_favorite_scope(window, ACCESSIBLE_SCOPE_FAVORITES);
+    require(folio_state_index_filter_count(fixture->state) == 0,
+            "favorite scope is ANDed with text and tag conditions");
+    tags_open(window, ACCESSIBLE_TAG_FILTER);
+    tags_settle(window, fixture->state);
+    surface_button(window, ACCESSIBLE_SURFACE_TAG_CLEAR);
+    tags_settle(window, fixture->state);
+    require(folio_state_index_filter_count(fixture->state) == 3 &&
+                folio_state_note_scope(fixture->state) == NOTE_SCOPE_ALL &&
+                strlen(folio_state_index_filter_term(fixture->state)) == 0,
+            "clear all conditions restores even the unsupported source");
+    surface_button(window, ACCESSIBLE_SURFACE_CLOSE);
+    tags_expect_saved(fixture, tags_saved);
+}
+
+static void tags_metrics_regression(struct native_fixture *_Nonnull fixture)
+{
+    struct folio_window *window = nullptr;
+    require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
+                FOLIO_WINDOW_CREATED,
+            "tag notice metrics fixture");
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    require(SetWindowPos(root, nullptr, 20, 20, 420, 360, SWP_NOZORDER | SWP_NOACTIVATE),
+            "minimum notice regression window");
+    pump(window);
+    tags_open(window, ACCESSIBLE_TAG_EDIT);
+    tags_settle(window, fixture->state);
+    require(tag_catalog_unavailable(folio_state_tag_catalog(fixture->state)) == 0,
+            "no existing notice reserves error height");
+    tags_geometry(window, 9);
+    folio_window_destroy(window);
+}
+
+static void run_tags_case(struct native_fixture *_Nonnull fixture)
+{
+    require(folio_state_select_note(fixture->state, 0, 0, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
+            "select dedicated tagged note");
+    if (tags_reload_case)
+    {
+        tags_expect_saved(fixture, tags_current);
+        size_t count = 0;
+        require(folio_state_note_tag_count(fixture->state, u"", 0, &count) == FOLIO_STATE_READY &&
+                    count == 2,
+                "fresh process reads retained Markdown tags without reseeding");
+        return;
+    }
+    if (tags_visual_case)
+    {
+        tags_visual_matrix(fixture);
+        return;
+    }
+    if (tags_metrics_case)
+    {
+        tags_metrics_regression(fixture);
+        return;
+    }
+    if (folio_state_note_favorite(fixture->state, (struct note_ref){0, 0}))
+        require(folio_state_toggle_favorite(fixture->state, (struct note_ref){0, 0}) ==
+                    FOLIO_STATE_READY,
+                "restore unstarred initial tag fixture");
+    struct folio_window *window = nullptr;
+    require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
+                FOLIO_WINDOW_CREATED,
+            "tag native window on dedicated desktop");
+    pump(window);
+    tags_edit_roundtrip(window, fixture);
+    tags_view_save(window, fixture);
+    tags_keyboard(window, fixture);
+    tags_filter_roundtrip(window, fixture);
+    require(controlled.requests == 0, "tag fixtures start no unrelated media work");
+    folio_window_destroy(window);
+}
+
+static void run_existing_fixture(struct native_fixture *_Nonnull fixture, int argc,
+                                 char *_Nonnull *_Nonnull argv)
 {
     if (diagram_case)
         run_diagram_case(fixture);
@@ -7813,6 +8376,15 @@ static void run_fixture(struct native_fixture *_Nonnull fixture, int argc,
         run_remaining_fixture(fixture, argc, argv);
 }
 
+static void run_fixture(struct native_fixture *_Nonnull fixture, int argc,
+                        char *_Nonnull *_Nonnull argv)
+{
+    if (tags_case)
+        run_tags_case(fixture);
+    else
+        run_existing_fixture(fixture, argc, argv);
+}
+
 static void select_favorites_fixture(const char *_Nonnull selector)
 {
     favorites_visual_case = strcmp(selector, "--favorites-visual") == 0;
@@ -7821,9 +8393,19 @@ static void select_favorites_fixture(const char *_Nonnull selector)
         strcmp(selector, "--favorites") == 0 || favorites_visual_case || favorites_ui_case;
 }
 
+static void select_tags_fixture(const char *_Nonnull selector)
+{
+    tags_visual_case = strcmp(selector, "--tags-visual") == 0;
+    tags_reload_case = strcmp(selector, "--tags-reload") == 0;
+    tags_metrics_case = strcmp(selector, "--tags-metrics") == 0;
+    tags_case = strcmp(selector, "--tags") == 0 || tags_visual_case || tags_reload_case ||
+                tags_metrics_case;
+}
+
 int main(int argc, char *_Nonnull *_Nonnull argv)
 {
     const char *selector = argc == 2 ? argv[1] : "";
+    select_tags_fixture(selector);
     paste_case = strcmp(selector, "--paste") == 0;
     format_case = strcmp(selector, "--format-keys") == 0;
     select_favorites_fixture(selector);

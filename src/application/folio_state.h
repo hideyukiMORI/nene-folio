@@ -38,6 +38,8 @@
 #include "replace_request.h"
 #include "rgb_color.h"
 #include "search_direction.h"
+#include "tag_catalog_status.h"
+#include "tag_match_mode.h"
 #include "theme_palette.h"
 
 #include <stddef.h>
@@ -49,6 +51,9 @@ struct drawer_layout;
 struct folio_state;
 struct note_name;
 struct note_text;
+struct note_tags;
+struct tag_catalog;
+struct note_tag;
 struct replace_edit;
 struct markdown_images;
 struct markdown_media;
@@ -372,6 +377,57 @@ folio_state_discard_edits(const struct folio_state *_Nonnull state);
 [[nodiscard]] enum folio_state_outcome
 folio_state_set_index_filter(struct folio_state *_Nonnull state, const char16_t *_Nonnull units,
                              size_t count);
+/* Copy immutable tag conditions, retaining the latest text term. No note is edited or saved.
+ * UI must use the same named-editor save barrier as text filtering before entering the surface.
+ * Pre-acceptance failure preserves query/results. An asynchronous build failure stops and clears
+ * the entire latest query, reports its error and never leaves tag conditions falsely effective.
+ * Empty tags remove only the tag restriction; empty text removes only the text restriction. */
+[[nodiscard]] enum folio_state_outcome
+folio_state_set_tag_filter(struct folio_state *_Nonnull state,
+                           const struct note_tags *_Nonnull tags, enum tag_match_mode mode);
+/* A fresh saved snapshot for one open tag surface. These intents never scan files.
+ * The same continue_index_filter driver prepares at most one corpus note per idle call.
+ * Closing discards the snapshot/request; it leaves filtering conditions and corpus intact. */
+void folio_state_request_tag_catalog(struct folio_state *_Nonnull state);
+void folio_state_close_tag_catalog(struct folio_state *_Nonnull state);
+/* Copy the native snapshot immediately in EDIT; VIEW uses the saved original.
+ * Failure preserves an existing session. No save, dirty mark or native edit occurs here. */
+[[nodiscard]] enum folio_state_outcome
+folio_state_begin_tag_edit(struct folio_state *_Nonnull state, const char16_t *_Nonnull units,
+                           size_t count);
+void folio_state_close_tag_edit(struct folio_state *_Nonnull state);
+/* Current source summary without starting an edit session. VIEW uses its owned metadata;
+ * EDIT uses the canonical native conversion/parser. Failure preserves out. */
+[[nodiscard]] enum folio_state_outcome
+folio_state_note_tag_count(const struct folio_state *_Nonnull state, const char16_t *_Nonnull units,
+                           size_t count, size_t *_Nonnull out);
+/* Omitted only when no edit session is active. Borrow until the next tag intention. */
+[[nodiscard]] const struct note_tags *_Nullable folio_state_edit_tags(
+    const struct folio_state *_Nonnull state);
+[[nodiscard]] enum folio_state_outcome
+folio_state_toggle_edit_tag(struct folio_state *_Nonnull state,
+                            const struct note_tag *_Nonnull tag);
+/* Add an entered name; existing membership is unchanged. Row toggles perform removal. */
+[[nodiscard]] enum folio_state_outcome
+folio_state_enter_edit_tag(struct folio_state *_Nonnull state, const char16_t *_Nonnull units,
+                           size_t count);
+/* Verify current destination and source before producing one native replace_edit.
+ * READY with omitted edit means unchanged. Failure leaves out/session unchanged.
+ * UI applies once through note_pane_replace, then closes the session. */
+[[nodiscard]] enum folio_state_outcome
+folio_state_apply_tag_edit(struct folio_state *_Nonnull state, const char16_t *_Nonnull units,
+                           size_t count, struct replace_edit *_Nullable *_Nonnull out);
+[[nodiscard]] enum tag_catalog_status
+folio_state_tag_catalog_status(const struct folio_state *_Nonnull state);
+/* AVAILABLE is required; snapshot is valid until request/close/destroy. */
+[[nodiscard]] const struct tag_catalog *_Nonnull folio_state_tag_catalog(
+    const struct folio_state *_Nonnull state);
+[[nodiscard]] bool folio_state_index_work_pending(const struct folio_state *_Nonnull state);
+/* Borrowed until the next intent; nullptr means the optional tag restriction is absent. */
+[[nodiscard]] const struct note_tags *_Nullable folio_state_tag_filter(
+    const struct folio_state *_Nonnull state);
+[[nodiscard]] enum tag_match_mode
+folio_state_tag_match_mode(const struct folio_state *_Nonnull state);
 /* 一回最大一ノートread後、本文が完成済みなら65536比較workまでmatchingを継続する。
  * 最初のmatching継続はcount/build作成とworkを同じcallで行い、count0は即finish。
  * 未読/不正本文は旧copyも除く。OOM/先行同期失敗は要求を止め、完成時だけ最新語の結果を採用。

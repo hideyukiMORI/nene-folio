@@ -592,6 +592,37 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_MINIMAP] = "ミニマップ",
     [UI_TEXT_MINIMAP_HELP] = "クリック・ドラッグ・ホイールで移動。↑↓、PageUp/Down、Home/"
                              "Endでも移動できます。狭い窓では自動で隠れます。",
+    [UI_TEXT_COMMAND_EDIT_TAGS] = "タグを編集",
+    [UI_TEXT_COMMAND_FILTER_TAGS] = "タグで絞り込み",
+    [UI_TEXT_TAG_EDIT_TITLE] = "このノートのタグ",
+    [UI_TEXT_TAG_FILTER_TITLE] = "タグで絞り込み",
+    [UI_TEXT_TAG_EDIT_INPUT] = "タグを探す・新しい名前を入力",
+    [UI_TEXT_TAG_FILTER_INPUT] = "タグを探す",
+    [UI_TEXT_TAG_ADD] = "追加",
+    [UI_TEXT_TAG_APPLY] = "適用",
+    [UI_TEXT_TAG_CANCEL] = "取消",
+    [UI_TEXT_TAG_CLEAR] = "すべての条件を解除",
+    [UI_TEXT_TAG_ALL] = "すべて含む",
+    [UI_TEXT_TAG_ANY] = "いずれか含む",
+    [UI_TEXT_TAG_SELECTED] = "選択中 {n} 個",
+    [UI_TEXT_TAG_USAGE] = "{name} — 保存済み {n} 件",
+    [UI_TEXT_TAG_PREPARING] = "保存済みノートのタグを準備中…",
+    [UI_TEXT_TAG_UNAVAILABLE] = "{n} 件のタグを取得できません。使用数は不完全です。",
+    [UI_TEXT_TAG_EMPTY] = "保存済みのタグはまだありません。",
+    [UI_TEXT_TAG_NO_MATCH] = "一致するタグがありません。",
+    [UI_TEXT_TAG_EDIT_HINT] = "チェックで付け外し。適用すると本文へ反映します。",
+    [UI_TEXT_TAG_FILTER_HINT] = "選択するとすぐ絞り込みます。検索・お気に入りも使えます。",
+    [UI_TEXT_TAG_STRIP_EMPTY] = "タグを追加…",
+    [UI_TEXT_TAG_STRIP_COUNT] = "タグ {n} 個を編集…",
+    [UI_TEXT_TAG_FILTER_EMPTY] = "タグで絞り込み…",
+    [UI_TEXT_TAG_FILTER_COUNT] = "タグ {n} 個 · {name}",
+    [UI_TEXT_TAG_STRIP_UNAVAILABLE] = "タグを取得できません",
+    [UI_TEXT_FAILURE_TAG_INVALID] = "タグ名が空か、使えない文字を含んでいます。",
+    [UI_TEXT_FAILURE_TAG_LIMIT] = "タグの長さ・個数、またはメタデータの上限を超えます。",
+    [UI_TEXT_FAILURE_TAGS_UNAVAILABLE] =
+        "このメタデータのタグは編集できません。原文を確認してください。",
+    [UI_TEXT_FAILURE_TAGS_STALE] = "本文か保存先が変わりました。タグの編集を開き直してください。",
+
 };
 
 constexpr size_t expected_count = sizeof expected / sizeof expected[0];

@@ -1267,7 +1267,10 @@ static bool removed_filter_scenario(void)
         .ref = {.category = 0, .note = 2}, .name = "needle", .body = "", .length = 0};
     struct index_filter_build *build = nullptr;
     struct index_filter *filter = nullptr;
-    if (index_filter_build_create("needle", 6, 1, &build) != INDEX_FILTER_ACCEPTED)
+    if (index_filter_build_create(
+            &(const struct index_filter_query){
+                .term = "needle", .length = 6, .tags = nullptr, .mode = TAG_MATCH_ALL},
+            1, &build) != INDEX_FILTER_ACCEPTED)
     {
         return false;
     }
@@ -1327,12 +1330,18 @@ static bool verify_filter_factory_allocation(size_t nth)
         .ref = {.category = 3, .note = 7}, .name = "_", .body = "aaaaaa", .length = 6};
     struct index_filter_build *build = nullptr;
     struct index_filter *held = nullptr;
-    require(index_filter_build_create("aaaaaa", 6, 1, &build) == INDEX_FILTER_ACCEPTED &&
+    require(index_filter_build_create(
+                &(const struct index_filter_query){
+                    .term = "aaaaaa", .length = 6, .tags = nullptr, .mode = TAG_MATCH_ALL},
+                1, &build) == INDEX_FILTER_ACCEPTED &&
                 test_index_filter_finish(&build, &entry, 1, &held) == INDEX_FILTER_FINISH_ACCEPTED,
             "hold a nonempty filter before injected factory allocation failure");
     struct index_filter *out = held;
     allocation_probe_fail_at(nth);
-    enum index_filter_outcome outcome = index_filter_build_create("aaaaab", 6, 1, &build);
+    enum index_filter_outcome outcome = index_filter_build_create(
+        &(const struct index_filter_query){
+            .term = "aaaaab", .length = 6, .tags = nullptr, .mode = TAG_MATCH_ALL},
+        1, &build);
     enum index_filter_finish_outcome finished = INDEX_FILTER_FINISH_NOT_READY;
     if (outcome == INDEX_FILTER_ACCEPTED)
         finished = test_index_filter_finish(&build, &entry, 1, &out);
@@ -1341,7 +1350,10 @@ static bool verify_filter_factory_allocation(size_t nth)
     if (outcome == INDEX_FILTER_OUT_OF_MEMORY)
     {
         require(out == held && build == nullptr, "create OOM preserves the empty build output");
-        require(index_filter_build_create("aaaaab", 6, 1, &build) == INDEX_FILTER_ACCEPTED &&
+        require(index_filter_build_create(
+                    &(const struct index_filter_query){
+                        .term = "aaaaab", .length = 6, .tags = nullptr, .mode = TAG_MATCH_ALL},
+                    1, &build) == INDEX_FILTER_ACCEPTED &&
                     test_index_filter_finish(&build, &entry, 1, &out) ==
                         INDEX_FILTER_FINISH_ACCEPTED,
                 "constructor OOM can retry the same input");
@@ -1367,7 +1379,10 @@ static struct index_filter_build *_Nonnull sealed_filter_build(void)
         .ref = {.category = 3, .note = 7}, .name = "_", .body = "a", .length = 1};
     struct index_filter_build *build = nullptr;
     size_t work = 65536;
-    require(index_filter_build_create("a", 1, 1, &build) == INDEX_FILTER_ACCEPTED &&
+    require(index_filter_build_create(
+                &(const struct index_filter_query){
+                    .term = "a", .length = 1, .tags = nullptr, .mode = TAG_MATCH_ALL},
+                1, &build) == INDEX_FILTER_ACCEPTED &&
                 index_filter_build_step(build, &entry, &work) == INDEX_FILTER_STEP_ALL_DONE,
             "actual SEALED constructor/removed output sentinel");
     return build;
@@ -1380,13 +1395,20 @@ static void verify_build_owner_oom(void)
     {
         struct index_filter_build *out = held;
         allocation_probe_fail_at(nth);
-        enum index_filter_outcome created = index_filter_build_create("z", 1, 1, &out);
+        enum index_filter_outcome created = index_filter_build_create(
+            &(const struct index_filter_query){
+                .term = "z", .length = 1, .tags = nullptr, .mode = TAG_MATCH_ALL},
+            1, &out);
         allocation_probe_fail_at(0);
         require(created == INDEX_FILTER_OUT_OF_MEMORY && out == held &&
                     index_filter_build_count(held) == 1 &&
                     index_filter_build_ref(held, 0).note == 7,
                 "every build allocation preserves an actual SEALED output sentinel");
-        require(index_filter_build_create("z", 1, 1, &out) == INDEX_FILTER_ACCEPTED && out != held,
+        require(index_filter_build_create(
+                    &(const struct index_filter_query){
+                        .term = "z", .length = 1, .tags = nullptr, .mode = TAG_MATCH_ALL},
+                    1, &out) == INDEX_FILTER_ACCEPTED &&
+                    out != held,
                 "same constructor inputs retry after every partial allocation cleanup");
         index_filter_build_destroy(out);
         out = held;
@@ -1415,7 +1437,10 @@ static void verify_finish_released_term_oom(void)
     struct index_filter_build *build = nullptr;
     const struct index_filter_entry entry = {
         .ref = {.category = 3, .note = 7}, .name = "_", .body = "aaab", .length = 4};
-    require(index_filter_build_create(term, 4, 1, &build) == INDEX_FILTER_ACCEPTED,
+    require(index_filter_build_create(
+                &(const struct index_filter_query){
+                    .term = term, .length = 4, .tags = nullptr, .mode = TAG_MATCH_ALL},
+                1, &build) == INDEX_FILTER_ACCEPTED,
             "borrowed term");
     size_t work = 65536;
     require(index_filter_build_step(build, &entry, &work) == INDEX_FILTER_STEP_ALL_DONE,
@@ -1455,7 +1480,10 @@ static void verify_prefix_owner_oom(void)
     {
         struct index_filter_build *out = held;
         allocation_probe_fail_at(nth);
-        enum index_filter_outcome created = index_filter_build_create("aaab", 4, 1, &out);
+        enum index_filter_outcome created = index_filter_build_create(
+            &(const struct index_filter_query){
+                .term = "aaab", .length = 4, .tags = nullptr, .mode = TAG_MATCH_ALL},
+            1, &out);
         size_t calls = allocation_probe_calls(), bytes = allocation_probe_malloc_size();
         allocation_probe_fail_at(0);
         require(created == INDEX_FILTER_OUT_OF_MEMORY && out == held &&
@@ -1465,7 +1493,10 @@ static void verify_prefix_owner_oom(void)
         if (nth == 4)
             require(calls == 4 && bytes == 4 * sizeof(size_t),
                     "the fourth refused resource is the prefix allocation itself");
-        require(index_filter_build_create("aaab", 4, 1, &out) == INDEX_FILTER_ACCEPTED &&
+        require(index_filter_build_create(
+                    &(const struct index_filter_query){
+                        .term = "aaab", .length = 4, .tags = nullptr, .mode = TAG_MATCH_ALL},
+                    1, &out) == INDEX_FILTER_ACCEPTED &&
                     out != held,
                 "all general constructor failures retry the same input");
         size_t work = 9;
@@ -1482,7 +1513,10 @@ static void verify_without_prefix_allocation(void)
 {
     struct index_filter_build *held = sealed_filter_build(), *out = nullptr;
     allocation_probe_fail_at(4);
-    enum index_filter_outcome created = index_filter_build_create("aaab", 4, 0, &out);
+    enum index_filter_outcome created = index_filter_build_create(
+        &(const struct index_filter_query){
+            .term = "aaab", .length = 4, .tags = nullptr, .mode = TAG_MATCH_ALL},
+        0, &out);
     size_t calls = allocation_probe_calls();
     allocation_probe_fail_at(0);
     require(created == INDEX_FILTER_ACCEPTED && calls == 3 &&
@@ -1492,7 +1526,10 @@ static void verify_without_prefix_allocation(void)
     index_filter_build_destroy(out);
     out = nullptr;
     allocation_probe_fail_at(4);
-    created = index_filter_build_create("z", 1, 1, &out);
+    created = index_filter_build_create(
+        &(const struct index_filter_query){
+            .term = "z", .length = 1, .tags = nullptr, .mode = TAG_MATCH_ALL},
+        1, &out);
     calls = allocation_probe_calls();
     allocation_probe_fail_at(0);
     require(created == INDEX_FILTER_ACCEPTED && calls == 3,
@@ -1889,6 +1926,7 @@ void run_allocation_tests(void)
         return;
     }
     exhaust(text_scenario, "text scenario never completed");
+    run_tag_filter_allocation_tests();
     run_nullable_allocation_tests();
     exhaust(names_scenario, "names scenario never completed");
     require(run_name_list_allocation_tests() != 0,

@@ -260,7 +260,10 @@ static struct index_filter_build *_Nonnull filter_sentinel(void)
         .ref = {.category = 3, .note = 7}, .name = "_", .body = "a", .length = 1};
     struct index_filter_build *filter = nullptr;
     size_t work = 65536;
-    require(index_filter_build_create("a", 1, 1, &filter) == INDEX_FILTER_ACCEPTED &&
+    require(index_filter_build_create(
+                &(const struct index_filter_query){
+                    .term = "a", .length = 1, .tags = nullptr, .mode = TAG_MATCH_ALL},
+                1, &filter) == INDEX_FILTER_ACCEPTED &&
                 index_filter_build_step(filter, &entry, &work) == INDEX_FILTER_STEP_ALL_DONE,
             "filter sentinel is a real owned nonempty set");
     return filter;
@@ -274,7 +277,10 @@ static void verify_filter_capacity_bounds(bool measured)
     {
         struct index_filter_build *out = kept;
         allocation_probe_fail_at(1);
-        enum index_filter_outcome outcome = index_filter_build_create("a", 1, refused[index], &out);
+        enum index_filter_outcome outcome = index_filter_build_create(
+            &(const struct index_filter_query){
+                .term = "a", .length = 1, .tags = nullptr, .mode = TAG_MATCH_ALL},
+            refused[index], &out);
         size_t calls = allocation_probe_calls();
         size_t array_bytes = allocation_probe_malloc_size();
         allocation_probe_fail_at(0);
@@ -290,7 +296,10 @@ static void verify_filter_capacity_bounds(bool measured)
         size_t count = SIZE_MAX / sizeof(size_t) - 1;
         struct index_filter_build *out = kept;
         allocation_probe_fail_at(1);
-        enum index_filter_outcome outcome = index_filter_build_create("a", 1, count, &out);
+        enum index_filter_outcome outcome = index_filter_build_create(
+            &(const struct index_filter_query){
+                .term = "a", .length = 1, .tags = nullptr, .mode = TAG_MATCH_ALL},
+            count, &out);
         size_t calls = allocation_probe_calls();
         size_t array_bytes = allocation_probe_malloc_size();
         allocation_probe_fail_at(0);
@@ -312,13 +321,19 @@ static void verify_filter_result_priority(void)
     struct index_filter_build *kept = filter_sentinel();
     struct index_filter_build *out = kept;
     allocation_probe_fail_at(1);
-    enum index_filter_outcome empty = index_filter_build_create("", 0, SIZE_MAX, &out);
+    enum index_filter_outcome empty = index_filter_build_create(
+        &(const struct index_filter_query){
+            .term = "", .length = 0, .tags = nullptr, .mode = TAG_MATCH_ALL},
+        SIZE_MAX, &out);
     size_t empty_calls = allocation_probe_calls();
     allocation_probe_fail_at(0);
     require(empty == INDEX_FILTER_NO_TERM && out == kept && empty_calls == 0,
             "NO_TERM still precedes impossible count without allocation");
     allocation_probe_fail_at(1);
-    enum index_filter_outcome malformed = index_filter_build_create("\xC0\xAF", 2, SIZE_MAX, &out);
+    enum index_filter_outcome malformed = index_filter_build_create(
+        &(const struct index_filter_query){
+            .term = "\xC0\xAF", .length = 2, .tags = nullptr, .mode = TAG_MATCH_ALL},
+        SIZE_MAX, &out);
     size_t malformed_calls = allocation_probe_calls();
     allocation_probe_fail_at(0);
     require(malformed == INDEX_FILTER_MALFORMED && out == kept && malformed_calls == 0 &&

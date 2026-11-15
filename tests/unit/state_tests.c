@@ -10,6 +10,8 @@
 #include "note_file_times.h"
 #include "note_ledger.h"
 #include "note_name.h"
+#include "note_tag.h"
+#include "note_tags.h"
 #include "note_text.h"
 #include "persisted_size_limit.h"
 #include "persistence_port.h"
@@ -17,6 +19,7 @@
 #include "rename_plan.h"
 #include "replace_edit.h"
 #include "rtf_palette.h"
+#include "tag_catalog.h"
 #include "ui_font.h"
 #include "unit_tests.h"
 #include "web_link_port.h"
@@ -2281,6 +2284,11 @@ static const char *_Nonnull const expected_failure_lines[] = {
     [FOLIO_STATE_REPLACE_TOO_LARGE] = "置き換えた本文が大きすぎます。本文は変えていません。",
     [FOLIO_STATE_REPLACE_STALE] = "下見が古くなりました。もう一度入力してください。",
     [FOLIO_STATE_REPLACE_BAD_SPAN] = "選択範囲が正しくありません。本文は変えていません。",
+    [FOLIO_STATE_TAG_INVALID] = "タグ名が空か、使えない文字を含んでいます。",
+    [FOLIO_STATE_TAG_LIMIT] = "タグの長さ・個数、またはメタデータの上限を超えます。",
+    [FOLIO_STATE_TAGS_UNAVAILABLE] =
+        "このメタデータのタグは編集できません。原文を確認してください。",
+    [FOLIO_STATE_TAGS_STALE] = "本文か保存先が変わりました。タグの編集を開き直してください。",
     [FOLIO_STATE_OUT_OF_MEMORY] = "記憶域が足りません。",
     [FOLIO_STATE_NAME_REQUIRED] =
         "無題のノートに名前をつけて保存してください。本文は残っています。",
@@ -8018,4 +8026,638 @@ void run_favorite_state_allocation_tests(void)
         }
     }
     test_failure("favorite state allocation sweep did not finish");
+}
+
+static struct note_tags *_Nonnull selected_tags(size_t count)
+{
+    struct note_tag *red = nullptr;
+    struct note_tag *blue = nullptr;
+    require(note_tag_create("red", 3, &red) == NOTE_TAG_READY &&
+                note_tag_create("blue", 4, &blue) == NOTE_TAG_READY,
+            "selected tag fixture");
+    const struct note_tag *names[] = {red, blue};
+    struct note_tags *tags = nullptr;
+    require(note_tags_create(names, count, &tags) == NOTE_TAGS_READY, "selected immutable set");
+    note_tag_destroy(red);
+    note_tag_destroy(blue);
+    return tags;
+}
+
+static struct persistence_adapter tagged_adapter(void)
+{
+    struct persistence_adapter adapter = preparation_adapter();
+    adapter.note_body = "---\ntags: [red, blue]\n---\nneedle";
+    adapter.rare_note = "two";
+    adapter.rare_body = "---\ntags: [blue]\n---\nother";
+    return adapter;
+}
+
+static void verify_empty_tag_mode(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    struct note_tags *empty = nullptr;
+    require(note_tags_empty(&empty) == NOTE_TAGS_READY, "empty condition set");
+    require(folio_state_set_tag_filter(state, empty, TAG_MATCH_ANY) == FOLIO_STATE_READY &&
+                folio_state_tag_match_mode(state) == TAG_MATCH_ANY && !folio_state_filtering(state),
+            "OR can be selected before selecting any tag");
+    require(folio_state_set_index_filter(state, u"", 0) == FOLIO_STATE_READY &&
+                folio_state_tag_match_mode(state) == TAG_MATCH_ANY,
+            "clearing an empty text query retains the explicit tag mode");
+    require(folio_state_set_tag_filter(state, empty, TAG_MATCH_ALL) == FOLIO_STATE_READY &&
+                folio_state_tag_match_mode(state) == TAG_MATCH_ALL,
+            "explicit clear-all mode restores AND");
+    note_tags_destroy(empty);
+    folio_state_destroy(state);
+}
+
+static void verify_tag_filter_queries(void)
+{
+    struct persistence_adapter adapter = tagged_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
+                folio_state_begin_edit(state) == FOLIO_STATE_READY,
+            "keep an open editor");
+    const char *body = folio_state_pane_text(state);
+    struct note_tags *selected = selected_tags(2);
+    size_t reads = adapter.note_reads;
+    require(folio_state_set_tag_filter(state, selected, TAG_MATCH_ALL) == FOLIO_STATE_READY &&
+                folio_state_index_filter_pending(state) && adapter.note_reads == reads &&
+                folio_state_tag_filter(state) != selected,
+            "tag intent copies query without reads");
+    require(finish_test_index_filter(state) == FOLIO_STATE_READY &&
+                folio_state_index_filter_count(state) == 1,
+            "tag-only ALL selects one saved note");
+    reads = adapter.note_reads;
+    require(folio_state_set_tag_filter(state, selected, TAG_MATCH_ANY) == FOLIO_STATE_READY &&
+                finish_test_index_filter(state) == FOLIO_STATE_READY &&
+                folio_state_index_filter_count(state) == 2 && adapter.note_reads == reads,
+            "warm ANY uses the same corpus without rereads");
+    require(test_index_filter_complete(state, u"needle", 6) == FOLIO_STATE_READY &&
+                folio_state_index_filter_count(state) == 1,
+            "text intersects tag conditions");
+    require(test_index_filter_complete(state, u"", 0) == FOLIO_STATE_READY &&
+                folio_state_index_filter_count(state) == 2 &&
+                folio_state_tag_match_mode(state) == TAG_MATCH_ANY,
+            "clearing text preserves tags and selected mode");
+    require(folio_state_toggle_favorite(state, at(0, 1)) == FOLIO_STATE_READY,
+            "favorite another matching note");
+    folio_state_set_note_scope(state, NOTE_SCOPE_FAVORITES);
+    require(folio_state_index_filter_count(state) == 1 &&
+                test_index_filter_complete(state, u"needle", 6) == FOLIO_STATE_READY &&
+                folio_state_index_filter_count(state) == 0,
+            "favorites AND tags AND text compose");
+    require(folio_state_pane_text(state) == body &&
+                folio_state_pane_mode(state) == PANE_MODE_EDIT && adapter.note_writes == 0 &&
+                adapter.archives == 0,
+            "filtering retains the open editor and never saves its body");
+    note_tags_destroy(selected);
+    folio_state_destroy(state);
+}
+
+static void verify_tag_filter_clearing(void)
+{
+    struct persistence_adapter adapter = tagged_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    struct note_tags *red = selected_tags(1);
+    struct note_tags *empty = selected_tags(0);
+    require(folio_state_set_tag_filter(state, red, TAG_MATCH_ALL) == FOLIO_STATE_READY &&
+                folio_state_continue_index_filter(state) == FOLIO_STATE_READY &&
+                adapter.note_reads == 1,
+            "partially loaded tag request");
+    require(folio_state_set_tag_filter(state, empty, TAG_MATCH_ALL) == FOLIO_STATE_READY &&
+                !folio_state_filtering(state) && !folio_state_index_filter_pending(state),
+            "clearing all conditions stops an unfinished request");
+    require(test_index_filter_complete(state, u"other", 5) == FOLIO_STATE_READY &&
+                folio_state_set_tag_filter(state, red, TAG_MATCH_ALL) == FOLIO_STATE_READY &&
+                finish_test_index_filter(state) == FOLIO_STATE_READY &&
+                folio_state_index_filter_count(state) == 0,
+            "tag replacement retains the text term");
+    require(folio_state_set_tag_filter(state, empty, TAG_MATCH_ALL) == FOLIO_STATE_READY &&
+                finish_test_index_filter(state) == FOLIO_STATE_READY &&
+                folio_state_index_filter_count(state) == 1 &&
+                same_text(folio_state_index_filter_term(state), "other"),
+            "clearing tags preserves text matching");
+    note_tags_destroy(red);
+    note_tags_destroy(empty);
+    folio_state_destroy(state);
+}
+
+static void verify_tag_filter_save(void)
+{
+    struct persistence_adapter adapter = tagged_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    struct note_tags *red = selected_tags(1);
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
+                folio_state_begin_edit(state) == FOLIO_STATE_READY &&
+                folio_state_set_tag_filter(state, red, TAG_MATCH_ALL) == FOLIO_STATE_READY &&
+                finish_test_index_filter(state) == FOLIO_STATE_READY,
+            "saved query established before changing tags");
+    const char16_t replacement[] = u"---\rtags: [blue]\r---\rneedle";
+    size_t length = sizeof replacement / sizeof replacement[0] - 1;
+    adapter.note_write_outcome = PERSISTENCE_UNWRITABLE;
+    require(folio_state_store_note(state, replacement, length) == FOLIO_STATE_NOTE_STORE_FAILED,
+            "failed note publication reports its existing typed result");
+    require(folio_state_index_filter_count(state) == 1, "failed save retains saved tag membership");
+    adapter.note_write_outcome = PERSISTENCE_STORED;
+    require(folio_state_store_note(state, replacement, length) == FOLIO_STATE_READY &&
+                folio_state_index_filter_count(state) == 0 &&
+                same_text(folio_state_pane_text(state), "---\ntags: [blue]\n---\nneedle"),
+            "successful save repairs tag-only filter through the sole matcher");
+    require(folio_state_pane_mode(state) == PANE_MODE_EDIT,
+            "disappearing filtered row retains its open editor");
+    note_tags_destroy(red);
+    folio_state_destroy(state);
+}
+
+static bool tag_filter_allocation(size_t nth, const struct note_tags *_Nonnull red)
+{
+    struct persistence_adapter adapter = tagged_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    require(test_index_filter_complete(state, u"two", 3) == FOLIO_STATE_READY,
+            "prior text query before tag allocation failure");
+    allocation_probe_fail_at(nth);
+    enum folio_state_outcome accepted = folio_state_set_tag_filter(state, red, TAG_MATCH_ALL);
+    enum folio_state_outcome outcome = accepted;
+    if (accepted == FOLIO_STATE_READY)
+        outcome = finish_test_index_filter(state);
+    allocation_probe_fail_at(0);
+    require(outcome == FOLIO_STATE_READY || outcome == FOLIO_STATE_OUT_OF_MEMORY,
+            "tag query allocations have typed failures");
+    require(!folio_state_index_filter_pending(state), "failure stops without an idle retry loop");
+    if (accepted == FOLIO_STATE_OUT_OF_MEMORY)
+        require(same_text(folio_state_index_filter_term(state), "two") &&
+                    folio_state_index_filter_count(state) == 1,
+                "pre-acceptance failure retains the complete old query");
+    if (accepted == FOLIO_STATE_READY && outcome == FOLIO_STATE_OUT_OF_MEMORY)
+        require(folio_state_tag_filter(state) == nullptr && !folio_state_filtering(state) &&
+                    same_text(folio_state_index_filter_term(state), ""),
+                "asynchronous failure clears the whole latest query, including tag conditions");
+    require(folio_state_set_tag_filter(state, red, TAG_MATCH_ALL) == FOLIO_STATE_READY &&
+                test_index_filter_complete(state, u"two", 3) == FOLIO_STATE_READY &&
+                folio_state_index_filter_count(state) == 0,
+            "same state retries after every query failure");
+    folio_state_destroy(state);
+    return outcome == FOLIO_STATE_READY;
+}
+
+static enum folio_state_outcome finish_tag_catalog(struct folio_state *_Nonnull state)
+{
+    enum folio_state_outcome result = FOLIO_STATE_READY;
+    size_t remaining = folio_state_note_count(state) + 65536;
+    while (result == FOLIO_STATE_READY && folio_state_index_work_pending(state) && remaining > 0)
+    {
+        result = folio_state_continue_index_filter(state);
+        --remaining;
+    }
+    require(!folio_state_index_work_pending(state) || result != FOLIO_STATE_READY,
+            "catalog and matching finish through the single idle driver");
+    return result;
+}
+
+static void verify_tag_catalog_lifecycle(void)
+{
+    struct persistence_adapter adapter = tagged_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    struct note_tags *red = selected_tags(1);
+    folio_state_request_tag_catalog(state);
+    require(folio_state_tag_catalog_status(state) == TAG_CATALOG_PREPARING &&
+                !folio_state_filtering(state) && adapter.note_reads == 0,
+            "request is pending without reads or false filtering");
+    require(folio_state_set_tag_filter(state, red, TAG_MATCH_ALL) == FOLIO_STATE_READY &&
+                folio_state_continue_index_filter(state) == FOLIO_STATE_READY &&
+                adapter.note_reads == 1,
+            "catalog and filter share one read per idle call");
+    require(finish_tag_catalog(state) == FOLIO_STATE_READY && adapter.note_reads == 2 &&
+                folio_state_tag_catalog_status(state) == TAG_CATALOG_AVAILABLE,
+            "catalog is published only after all saved notes are known");
+    const struct tag_catalog *catalog = folio_state_tag_catalog(state);
+    require(tag_catalog_count(catalog) == 2 && tag_catalog_unavailable(catalog) == 0 &&
+                same_text(note_tag_bytes(tag_catalog_tag(catalog, 0)), "blue") &&
+                tag_catalog_usage(catalog, 0) == 2 && tag_catalog_usage(catalog, 1) == 1,
+            "usage counts the saved corpus independently of active red filter");
+    folio_state_close_tag_catalog(state);
+    require(folio_state_tag_catalog_status(state) == TAG_CATALOG_UNREQUESTED &&
+                folio_state_filtering(state) && folio_state_index_filter_count(state) == 1,
+            "closing catalog retains the independent condition set and matches");
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
+                folio_state_begin_edit(state) == FOLIO_STATE_READY,
+            "edit after closing tag surface");
+    const char16_t body[] = u"---\rtags: [blue]\r---\rneedle";
+    require(folio_state_store_note(state, body, sizeof body / sizeof body[0] - 1) ==
+                FOLIO_STATE_READY,
+            "publish changed tags through common save");
+    folio_state_request_tag_catalog(state);
+    require(finish_tag_catalog(state) == FOLIO_STATE_READY &&
+                tag_catalog_count(folio_state_tag_catalog(state)) == 1 &&
+                tag_catalog_usage(folio_state_tag_catalog(state), 0) == 2,
+            "next catalog reflects latest saved tags without a second file reader");
+    note_tags_destroy(red);
+    folio_state_destroy(state);
+}
+
+static void verify_tag_catalog_unavailable(void)
+{
+    struct persistence_adapter adapter = tagged_adapter();
+    adapter.rare_body = "---\ntags: *alias\n---\nother";
+    struct folio_state *state = ready_state(&adapter);
+    folio_state_request_tag_catalog(state);
+    require(folio_state_continue_index_filter(state) == FOLIO_STATE_READY &&
+                adapter.note_reads == 1,
+            "partial catalog before cancellation");
+    folio_state_close_tag_catalog(state);
+    require(!folio_state_index_work_pending(state) &&
+                folio_state_continue_index_filter(state) == FOLIO_STATE_READY &&
+                adapter.note_reads == 1,
+            "closing alone stops unused catalog preparation");
+    folio_state_request_tag_catalog(state);
+    require(finish_tag_catalog(state) == FOLIO_STATE_READY && adapter.note_reads == 2 &&
+                tag_catalog_unavailable(folio_state_tag_catalog(state)) == 1,
+            "resume reads remaining note; unsupported metadata is unavailable, not untagged");
+    folio_state_destroy(state);
+}
+
+static bool tag_catalog_allocation(size_t nth)
+{
+    struct persistence_adapter adapter = tagged_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    require(test_index_filter_complete(state, u"one", 3) == FOLIO_STATE_READY,
+            "warm corpus fixture");
+    folio_state_request_tag_catalog(state);
+    allocation_probe_fail_at(nth);
+    enum folio_state_outcome result = finish_tag_catalog(state);
+    allocation_probe_fail_at(0);
+    require(result == FOLIO_STATE_READY || result == FOLIO_STATE_OUT_OF_MEMORY,
+            "catalog state allocation has typed result");
+    if (result == FOLIO_STATE_OUT_OF_MEMORY)
+        require(folio_state_tag_catalog_status(state) == TAG_CATALOG_FAILED &&
+                    !folio_state_index_work_pending(state) &&
+                    folio_state_continue_index_filter(state) == FOLIO_STATE_READY,
+                "failed catalog does not retry without another request");
+    require(folio_state_index_filter_count(state) == 1 &&
+                same_text(folio_state_index_filter_term(state), "one"),
+            "catalog allocation failure leaves independent completed filter intact");
+    folio_state_request_tag_catalog(state);
+    require(finish_tag_catalog(state) == FOLIO_STATE_READY &&
+                tag_catalog_count(folio_state_tag_catalog(state)) == 2,
+            "same state retries catalog safely");
+    folio_state_destroy(state);
+    return result == FOLIO_STATE_READY;
+}
+
+static void verify_tag_edit_source(void)
+{
+    struct persistence_adapter adapter = tagged_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_begin_tag_edit(state, u"", 0) == FOLIO_STATE_NOTHING_SELECTED,
+            "tag edit needs a document");
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
+                folio_state_begin_edit(state) == FOLIO_STATE_READY &&
+                folio_state_begin_tag_edit(state, u"draft", 5) == FOLIO_STATE_READY &&
+                note_tags_count(folio_state_edit_tags(state)) == 0,
+            "session copies unsaved editor source, not the saved red/blue body");
+    require(folio_state_enter_edit_tag(state, u" work ", 6) == FOLIO_STATE_READY &&
+                note_tags_count(folio_state_edit_tags(state)) == 1,
+            "new name uses the same trimming and identity as source tags");
+    struct replace_edit *edit = nullptr;
+    require(folio_state_apply_tag_edit(state, u"draft", 5, &edit) == FOLIO_STATE_READY &&
+                edit != nullptr && replace_edit_span(edit).start == 0 &&
+                replace_edit_span(edit).end == 0,
+            "unsaved plain text receives one prefix insertion");
+    const char16_t expected[] = u"---\rtags:\r  - \"work\"\r---\r";
+    require(replace_edit_length(edit) == sizeof expected / sizeof expected[0] - 1 &&
+                memcmp(replace_edit_units(edit), expected, sizeof expected) == 0 &&
+                adapter.note_writes == 0 && adapter.archives == 0,
+            "fixed native replacement without early save or history");
+    replace_edit_destroy(edit);
+    require(folio_state_enter_edit_tag(state, u"work", 4) == FOLIO_STATE_READY &&
+                note_tags_count(folio_state_edit_tags(state)) == 1,
+            "entering an existing name does not unexpectedly remove it");
+    require(folio_state_toggle_edit_tag(state, note_tags_at(folio_state_edit_tags(state), 0)) ==
+                    FOLIO_STATE_READY &&
+                folio_state_apply_tag_edit(state, u"draft", 5, &edit) == FOLIO_STATE_READY &&
+                edit == nullptr,
+            "toggling back returns no edit and no dirty change");
+    folio_state_close_tag_edit(state);
+    require(folio_state_enter_edit_tag(state, u"work", 4) == FOLIO_STATE_TAGS_STALE &&
+                folio_state_apply_tag_edit(state, u"draft", 5, &edit) == FOLIO_STATE_TAGS_STALE,
+            "cancelled session cannot apply or mutate");
+    folio_state_destroy(state);
+}
+
+static void verify_tag_edit_stale(void)
+{
+    struct persistence_adapter adapter = tagged_adapter();
+    adapter.rare_body = adapter.note_body;
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
+                folio_state_begin_edit(state) == FOLIO_STATE_READY &&
+                folio_state_begin_tag_edit(state, u"draft", 5) == FOLIO_STATE_READY,
+            "staged edit source");
+    struct replace_edit *edit = nullptr;
+    require(folio_state_apply_tag_edit(state, u"changed", 7, &edit) == FOLIO_STATE_TAGS_STALE &&
+                edit == nullptr && folio_state_edit_tags(state) != nullptr,
+            "changed body refuses stale apply without clearing staged choices");
+    require(folio_state_select_note(state, 0, 1, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
+                folio_state_apply_tag_edit(state, u"draft", 5, &edit) == FOLIO_STATE_TAGS_STALE &&
+                folio_state_edit_tags(state) == nullptr,
+            "different named note with identical content closes the session");
+    require(folio_state_new_note(state, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
+                folio_state_begin_tag_edit(state, u"", 0) == FOLIO_STATE_READY &&
+                folio_state_new_note(state, 0, FOLIO_UNTITLED_DISCARD) == FOLIO_STATE_READY &&
+                folio_state_apply_tag_edit(state, u"", 0, &edit) == FOLIO_STATE_TAGS_STALE,
+            "another empty untitled note cannot reuse identical prior snapshot");
+    folio_state_destroy(state);
+}
+
+static void verify_tag_edit_view(void)
+{
+    struct persistence_adapter adapter = tagged_adapter();
+    adapter.note_body = "---\ntags: [red]\r\n---\nbody";
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
+                folio_state_begin_tag_edit(state, u"ignored viewer text", 19) == FOLIO_STATE_READY,
+            "view session uses normalized original, never rendered text");
+    struct replace_edit *edit = nullptr;
+    require(folio_state_apply_tag_edit(state, u"", 0, &edit) == FOLIO_STATE_READY &&
+                edit == nullptr,
+            "unchanged view assignment avoids edit mode and a native operation");
+    require(folio_state_enter_edit_tag(state, u"blue", 4) == FOLIO_STATE_READY &&
+                folio_state_apply_tag_edit(state, u"", 0, &edit) == FOLIO_STATE_READY &&
+                edit != nullptr && folio_state_pane_mode(state) == PANE_MODE_VIEW &&
+                adapter.note_writes == 0,
+            "view preparation produces a replacement for the existing UI save path");
+    replace_edit_destroy(edit);
+    struct note_name *name = accepted_note_name("renamed");
+    require(folio_state_rename_note(state, name, u"", 0) == FOLIO_STATE_READY &&
+                folio_state_apply_tag_edit(state, u"", 0, &edit) == FOLIO_STATE_TAGS_STALE,
+            "same text with a renamed destination rejects the old snapshot");
+    note_name_destroy(name);
+    folio_state_destroy(state);
+}
+
+static void verify_tag_carry(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    adapter.note_body = "---\r\ntitle: 'Keep' # comment\r\ntags: [red, '日本語']\r\n---\r\nBody";
+    struct folio_state *state = ready_state(&adapter);
+    size_t count = 999;
+    require(folio_state_note_tag_count(state, u"", 0, &count) == FOLIO_STATE_NOTHING_SELECTED &&
+                count == 999,
+            "no-document tag summary preserves output");
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "select portable tagged source");
+    struct note_name *name = accepted_note_name("tag-renamed");
+    require(folio_state_rename_note(state, name, u"rendered", 8) == FOLIO_STATE_READY &&
+                same_text(folio_state_pane_text(state), adapter.note_body) &&
+                folio_state_note_tag_count(state, u"rendered", 8, &count) == FOLIO_STATE_READY &&
+                count == 2,
+            "rename keeps exact source and derives tags from source rather than rendered text");
+    note_name_destroy(name);
+    require(folio_state_move_note(state, at(0, 0), at(1, 1)) == FOLIO_STATE_READY &&
+                same_text(folio_state_pane_text(state), adapter.note_body),
+            "category move keeps the same tagged source");
+    name = accepted_note_name("tag-copy");
+    struct note_destination destination = {.category = 0, .name = name};
+    require(folio_state_store_new(state, &destination, u"rendered", 8) == FOLIO_STATE_READY &&
+                same_text(adapter.written_body, adapter.note_body) &&
+                folio_state_begin_tag_edit(state, u"", 0) == FOLIO_STATE_READY &&
+                note_tags_count(folio_state_edit_tags(state)) == 2,
+            "VIEW SaveAs copies full front matter and its tags");
+    note_name_destroy(name);
+    folio_state_destroy(state);
+}
+
+static void verify_tag_summary(void)
+{
+    struct persistence_adapter adapter = tagged_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_new_note(state, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "untitled source for current summary");
+    size_t count = 999;
+    const char16_t source[] = u"---\rtags: [new]\r---\rbody";
+    require(folio_state_note_tag_count(state, source, sizeof source / sizeof source[0] - 1,
+                                       &count) == FOLIO_STATE_READY &&
+                count == 1,
+            "current summary uses unsaved front matter");
+    const char16_t unsupported[] = u"---\rtags: *alias\r---\rbody";
+    require(folio_state_note_tag_count(state, unsupported,
+                                       sizeof unsupported / sizeof unsupported[0] - 1,
+                                       &count) == FOLIO_STATE_TAGS_UNAVAILABLE &&
+                count == 1,
+            "unsupported summary preserves output and is not known untagged");
+    const char16_t invalid[] = {0xd800};
+    require(folio_state_note_tag_count(state, invalid, 1, &count) == FOLIO_STATE_NOTE_MALFORMED &&
+                count == 1,
+            "invalid native source preserves summary output");
+    folio_state_destroy(state);
+}
+
+static void verify_tag_edit_rejections(void)
+{
+    struct persistence_adapter adapter = tagged_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_new_note(state, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
+                folio_state_begin_tag_edit(state, u"draft", 5) == FOLIO_STATE_READY,
+            "valid session before invalid replacement");
+    const struct note_tags *prior = folio_state_edit_tags(state);
+    const char16_t unsupported[] = u"---\rtags: *alias\r---\rbody";
+    require(folio_state_begin_tag_edit(state, unsupported,
+                                       sizeof unsupported / sizeof unsupported[0] - 1) ==
+                    FOLIO_STATE_TAGS_UNAVAILABLE &&
+                folio_state_edit_tags(state) == prior,
+            "unsupported header preserves existing session instead of prepending another header");
+    require(folio_state_enter_edit_tag(state, u" ", 1) == FOLIO_STATE_TAG_INVALID &&
+                folio_state_enter_edit_tag(state, u"bad\nname", 8) == FOLIO_STATE_TAG_INVALID,
+            "empty and control character names rejected before staging");
+    char16_t long_name[65];
+    for (size_t index = 0; index < 65; ++index)
+        long_name[index] = u'a';
+    require(folio_state_enter_edit_tag(state, long_name, 65) == FOLIO_STATE_TAG_LIMIT &&
+                folio_state_edit_tags(state) == prior,
+            "overlong tag refuses without mutation");
+    const char16_t invalid[] = {0xd800};
+    require(folio_state_enter_edit_tag(state, invalid, 1) == FOLIO_STATE_TAG_INVALID &&
+                folio_state_begin_tag_edit(state, invalid, 1) == FOLIO_STATE_NOTE_MALFORMED,
+            "invalid UTF16 is typed at the source boundary");
+    folio_state_destroy(state);
+}
+
+static bool tag_session_allocation(size_t nth)
+{
+    struct persistence_adapter adapter = tagged_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_new_note(state, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
+                folio_state_begin_tag_edit(state, u"old", 3) == FOLIO_STATE_READY,
+            "session before replacement allocation");
+    const struct note_tags *prior = folio_state_edit_tags(state);
+    allocation_probe_fail_at(nth);
+    enum folio_state_outcome result = folio_state_begin_tag_edit(state, u"new", 3);
+    allocation_probe_fail_at(0);
+    require(result == FOLIO_STATE_READY || result == FOLIO_STATE_OUT_OF_MEMORY,
+            "snapshot creation has a typed failure");
+    if (result == FOLIO_STATE_OUT_OF_MEMORY)
+        require(folio_state_edit_tags(state) == prior, "failed replacement keeps original session");
+    require(folio_state_begin_tag_edit(state, u"new", 3) == FOLIO_STATE_READY,
+            "same state retries after every snapshot allocation failure");
+    folio_state_destroy(state);
+    return result == FOLIO_STATE_READY;
+}
+
+static bool tag_apply_allocation(size_t nth)
+{
+    struct persistence_adapter adapter = tagged_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_new_note(state, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
+                folio_state_begin_tag_edit(state, u"draft", 5) == FOLIO_STATE_READY &&
+                folio_state_enter_edit_tag(state, u"work", 4) == FOLIO_STATE_READY,
+            "changed staged selection before apply failure");
+    struct replace_edit *edit = nullptr;
+    allocation_probe_fail_at(nth);
+    enum folio_state_outcome result = folio_state_apply_tag_edit(state, u"draft", 5, &edit);
+    allocation_probe_fail_at(0);
+    require(result == FOLIO_STATE_READY || result == FOLIO_STATE_OUT_OF_MEMORY,
+            "apply has typed allocation failure");
+    if (result == FOLIO_STATE_OUT_OF_MEMORY)
+        require(edit == nullptr && note_tags_count(folio_state_edit_tags(state)) == 1,
+                "failed apply preserves out and staged choice");
+    replace_edit_destroy(edit);
+    edit = nullptr;
+    require(folio_state_apply_tag_edit(state, u"draft", 5, &edit) == FOLIO_STATE_READY &&
+                edit != nullptr && adapter.note_writes == 0,
+            "apply retries on same state without saving early");
+    replace_edit_destroy(edit);
+    folio_state_destroy(state);
+    return result == FOLIO_STATE_READY;
+}
+
+static void verify_catalog_copy_failure(void)
+{
+    struct persistence_adapter adapter = tagged_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    struct note_tags *red = selected_tags(1);
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
+                folio_state_begin_edit(state) == FOLIO_STATE_READY &&
+                folio_state_set_tag_filter(state, red, TAG_MATCH_ALL) == FOLIO_STATE_READY &&
+                finish_test_index_filter(state) == FOLIO_STATE_READY,
+            "completed tag-only query before a saved-copy failure");
+    const char16_t changed[] = u"---\rtags: [blue]\r---\rneedle";
+    size_t length = sizeof changed / sizeof changed[0] - 1;
+    adapter.copy_fail_at = 1;
+    enum folio_state_outcome saved = folio_state_store_note(state, changed, length);
+    allocation_probe_fail_at(0);
+    adapter.copy_fail_at = 0;
+    require(saved == FOLIO_STATE_OUT_OF_MEMORY && adapter.note_writes == 1,
+            "publication succeeded but corpus repair remains pending");
+    folio_state_request_tag_catalog(state);
+    allocation_probe_fail_at(1);
+    enum folio_state_outcome prepared = folio_state_continue_index_filter(state);
+    allocation_probe_fail_at(0);
+    require(prepared == FOLIO_STATE_OUT_OF_MEMORY &&
+                folio_state_tag_catalog_status(state) == TAG_CATALOG_FAILED &&
+                !folio_state_index_work_pending(state) &&
+                note_tags_equal(folio_state_tag_filter(state), red) &&
+                folio_state_index_filter_count(state) == 1,
+            "catalog-only synchronization failure preserves the entire completed query");
+    folio_state_request_tag_catalog(state);
+    require(finish_tag_catalog(state) == FOLIO_STATE_READY &&
+                folio_state_index_filter_count(state) == 0 &&
+                tag_catalog_count(folio_state_tag_catalog(state)) == 1 &&
+                adapter.note_writes == 1 && adapter.archives == 1,
+            "retry repairs saved copy and tag query without republishing or archiving");
+    note_tags_destroy(red);
+    folio_state_destroy(state);
+}
+
+static void tag_edit_allocation_sweep(void)
+{
+    size_t nth = 1;
+    while (nth < 128 && !tag_session_allocation(nth))
+        ++nth;
+    require(nth > 1 && nth < 128, "session sweep finishes after real injection");
+    printf("tag session: %zu allocation failures and retries\n", nth - 1);
+    nth = 1;
+    while (nth < 128 && !tag_apply_allocation(nth))
+        ++nth;
+    require(nth > 1 && nth < 128, "apply sweep finishes after real injection");
+    printf("tag apply: %zu allocation failures and retries\n", nth - 1);
+}
+
+static void tag_catalog_allocation_sweep(void)
+{
+    for (size_t nth = 1; nth < 128; ++nth)
+        if (tag_catalog_allocation(nth))
+        {
+            require(nth > 1, "catalog state sweep requires actual injection");
+            printf("tag catalog state: %zu allocation failures and retries\n", nth - 1);
+            return;
+        }
+    test_failure("tag catalog state allocation sweep did not finish");
+}
+
+void run_tag_filter_allocation_tests(void)
+{
+    finder = test_regex_port();
+    tag_catalog_allocation_sweep();
+    verify_catalog_copy_failure();
+    tag_edit_allocation_sweep();
+    struct note_tags *red = selected_tags(1);
+    for (size_t nth = 1; nth < 128; ++nth)
+        if (tag_filter_allocation(nth, red))
+        {
+            require(nth > 1, "tag filter sweep requires actual allocation failure injection");
+            printf("tag filter: %zu allocation failures and successful retries\n", nth - 1);
+            note_tags_destroy(red);
+            return;
+        }
+    note_tags_destroy(red);
+    test_failure("tag filter allocation sweep did not finish");
+}
+
+static void verify_note_tag_summary(void)
+{
+    struct persistence_adapter adapter = tagged_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    size_t count = 999;
+    require(folio_state_note_tag_count(state, u"", 0, &count) == FOLIO_STATE_NOTHING_SELECTED &&
+                count == 999,
+            "summary requires a document and failure preserves out");
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
+                folio_state_note_tag_count(state, u"ignored", 7, &count) == FOLIO_STATE_READY &&
+                count == 2,
+            "view summary uses saved original metadata");
+    require(folio_state_begin_edit(state) == FOLIO_STATE_READY &&
+                folio_state_begin_tag_edit(state, u"draft", 5) == FOLIO_STATE_READY,
+            "summary must not replace an active tag session");
+    const struct note_tags *session = folio_state_edit_tags(state);
+    const char16_t one[] = u"---\rtags: [new]\r---\rbody";
+    require(folio_state_note_tag_count(state, one, sizeof one / sizeof one[0] - 1, &count) ==
+                    FOLIO_STATE_READY &&
+                count == 1 && folio_state_edit_tags(state) == session,
+            "editor summary sees unsaved tags without changing staged assignment");
+    const char16_t unsupported[] = u"---\rtags: *alias\r---\rbody";
+    require(folio_state_note_tag_count(state, unsupported,
+                                       sizeof unsupported / sizeof unsupported[0] - 1,
+                                       &count) == FOLIO_STATE_TAGS_UNAVAILABLE &&
+                count == 1,
+            "unavailable metadata is not shown as no tags");
+    folio_state_destroy(state);
+}
+
+void run_tag_filter_state_tests(void)
+{
+    finder = test_regex_port();
+    verify_tag_filter_queries();
+    verify_empty_tag_mode();
+    verify_tag_filter_clearing();
+    verify_tag_filter_save();
+    verify_tag_catalog_lifecycle();
+    verify_tag_catalog_unavailable();
+    verify_tag_edit_source();
+    verify_tag_edit_stale();
+    verify_tag_edit_view();
+    verify_tag_carry();
+    verify_tag_summary();
+    verify_tag_edit_rejections();
+    verify_note_tag_summary();
 }

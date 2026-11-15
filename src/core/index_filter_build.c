@@ -1,5 +1,7 @@
 #include "index_filter_build.h"
 #include "ascii_fold.h"
+#include "note_tag.h"
+#include "note_tags.h"
 #include "utf8_text.h"
 #include <stdint.h>
 #include <stdlib.h>
@@ -9,6 +11,7 @@ struct index_filter_build
     enum
     {
         BUILD_ENTRY,
+        BUILD_TAGS,
         BUILD_NAME_LENGTH,
         BUILD_SINGLE,
         BUILD_TAIL,
@@ -21,6 +24,11 @@ struct index_filter_build
     size_t *_Nonnull notes;
     size_t *_Nullable prefix;
     const char *_Nullable term;
+    const struct note_tags *_Nullable tags;
+    enum tag_match_mode tag_mode;
+    size_t tag_query;
+    size_t tag_entry;
+    size_t tag_byte;
     size_t term_length;
     size_t steps[256];
     char first;
@@ -117,6 +125,7 @@ static void seal(struct index_filter_build *_Nonnull build)
     prefix_destroy(build->prefix);
     build->prefix = nullptr;
     build->term = nullptr;
+    build->tags = nullptr;
     build->phase = BUILD_SEALED;
 }
 
@@ -135,22 +144,37 @@ static void prepare_prefix(struct index_filter_build *_Nonnull build, const char
     }
 }
 
+static bool tag_conditions(const struct index_filter_query *_Nonnull query)
+{
+    return query->tags != nullptr && note_tags_count(query->tags) != 0;
+}
+
+static void prepare_query(struct index_filter_build *_Nonnull build,
+                          const struct index_filter_query *_Nonnull query, size_t prefix_length)
+{
+    if (query->length != 0)
+        prepare(build, query->term, query->length);
+    build->tags = tag_conditions(query) ? query->tags : nullptr;
+    build->tag_mode = query->mode;
+    if (prefix_length != 0)
+        prepare_prefix(build, query->term);
+}
+
 enum index_filter_outcome
-index_filter_build_create(const char *_Nonnull term, size_t length, size_t count,
+index_filter_build_create(const struct index_filter_query *_Nonnull query, size_t count,
                           struct index_filter_build *_Nullable *_Nonnull out)
 {
-    if (length == 0)
+    size_t length = query->length;
+    if (length == 0 && !tag_conditions(query))
         return INDEX_FILTER_NO_TERM;
-    if (!well_formed(term, length))
+    if (!well_formed(query->term, length))
         return INDEX_FILTER_MALFORMED;
     struct index_filter_build *_Nullable build = nullptr;
     size_t prefix_length = count > 0 && length >= 2 ? length : 0;
     enum index_filter_outcome allocated = allocate_build(count, prefix_length, &build);
     if (allocated != INDEX_FILTER_ACCEPTED)
         return allocated;
-    prepare(build, term, length);
-    if (prefix_length != 0)
-        prepare_prefix(build, term);
+    prepare_query(build, query, prefix_length);
     if (count == 0)
         seal(build);
     *out = build;
@@ -280,6 +304,7 @@ static void compare_byte(struct index_filter_build *_Nonnull build, const char *
         scan_byte(build, bytes);
         break;
     case BUILD_ENTRY:
+    case BUILD_TAGS:
     case BUILD_NAME_LENGTH:
     case BUILD_BODY:
     case BUILD_DONE:
@@ -288,15 +313,103 @@ static void compare_byte(struct index_filter_build *_Nonnull build, const char *
     }
 }
 
+static void begin_text(struct index_filter_build *_Nonnull build)
+{
+    build->matched = build->term_length == 0;
+    build->phase = build->matched ? BUILD_DONE : BUILD_NAME_LENGTH;
+}
+
+static void tag_decided(struct index_filter_build *_Nonnull build, bool matched)
+{
+    switch (build->tag_mode)
+    {
+    case TAG_MATCH_ALL:
+        if (!matched)
+        {
+            build->phase = BUILD_DONE;
+            return;
+        }
+        break;
+    case TAG_MATCH_ANY:
+        if (matched)
+        {
+            begin_text(build);
+            return;
+        }
+        break;
+    }
+    build->tag_query += 1;
+    build->tag_entry = build->tag_byte = 0;
+    const struct note_tags *_Nonnull selected = build->tags;
+    if (build->tag_query != note_tags_count(selected))
+        return;
+    switch (build->tag_mode)
+    {
+    case TAG_MATCH_ALL:
+        begin_text(build);
+        break;
+    case TAG_MATCH_ANY:
+        build->phase = BUILD_DONE;
+        break;
+    }
+}
+
+static void tag_byte(struct index_filter_build *_Nonnull build,
+                     const struct note_tags *_Nonnull available)
+{
+    if (build->tag_entry == note_tags_count(available))
+    {
+        tag_decided(build, false);
+        return;
+    }
+    const struct note_tags *_Nonnull selected = build->tags;
+    const char *_Nonnull wanted = note_tag_bytes(note_tags_at(selected, build->tag_query));
+    const char *_Nonnull candidate = note_tag_bytes(note_tags_at(available, build->tag_entry));
+    char left = wanted[build->tag_byte];
+    char right = candidate[build->tag_byte];
+    if (left != right)
+    {
+        build->tag_entry += 1;
+        build->tag_byte = 0;
+        return;
+    }
+    if (left == '\0')
+        tag_decided(build, true);
+    else
+        build->tag_byte += 1;
+}
+
+static void begin_entry(struct index_filter_build *_Nonnull build,
+                        const struct index_filter_entry *_Nonnull entry)
+{
+    build->matched = false;
+    build->source = SOURCE_NAME;
+    build->name_length = 0;
+    if (entry->body == nullptr || (build->tags != nullptr && entry->tags == nullptr))
+    {
+        build->phase = BUILD_DONE;
+        return;
+    }
+    if (build->tags == nullptr)
+    {
+        begin_text(build);
+        return;
+    }
+    build->tag_query = build->tag_entry = build->tag_byte = 0;
+    build->phase = BUILD_TAGS;
+}
+
 static void tick(struct index_filter_build *_Nonnull build,
                  const struct index_filter_entry *_Nonnull entry)
 {
     if (build->phase == BUILD_ENTRY)
     {
-        build->matched = false;
-        build->source = SOURCE_NAME;
-        build->name_length = 0;
-        build->phase = entry->body == nullptr ? BUILD_DONE : BUILD_NAME_LENGTH;
+        begin_entry(build, entry);
+        return;
+    }
+    if (build->phase == BUILD_TAGS)
+    {
+        tag_byte(build, entry->tags);
         return;
     }
     if (build->phase == BUILD_NAME_LENGTH)

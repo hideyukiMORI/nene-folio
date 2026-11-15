@@ -1,39 +1,35 @@
 # いまの状態 — NeNe Folio
 
-## 2026-11-15 — お気に入りのUI改善を実装・対象確認
+## 2026-11-15 — タグ付与と絞り込みの対象確認
 
-hideの11月15日の継続指示に基づき、#817で未実装だったUI案を実装した。
-星を右端へそろえ、字形16 DIPと当たり28×30 DIPを分離。未登録星はhover/実focus/押下時だけ表示し、
-検索下に「すべて／お気に入り」を設けた。検索AND、UIA/鍵、0件からの復帰と本文保持を確認した。
-設計は[ADR0091](../adr/0091-favorites-scope-and-quiet-stars.md)、全試行と計測は[品質記録](../quality/2026-11-15-favorites-ui.md)。
-最終CI・統合状態は#817のIssue/PR、通常exe反映・整理の確定結果は
-D:/NeNeFolio/agents/favorites-ui-20261115/completion.jsonを正本とする。保存版・製品版は変更しない。
+hideの停止まで継続する実装指示に基づき、#819でロードマップ段階2aを実装した。
+限定したMarkdown front matterのtagsを正本とし、付与/解除、保存済み候補と使用数、AND/OR、
+星・検索とのAND、全条件解除を提供する。原文保持、Undo/Redo、保存失敗、再読込、改名/移動/別名保存、
+単票/ZIP、3言語/最小幅/IME/UIAを対象確認した。設計は[ADR0092](../adr/0092-markdown-tags-and-filter.md)、
+全試行と未確認範囲は[品質記録](../quality/2026-11-15-note-tags.md)。
+最終CI・統合状態は#819のIssue/PR、通常exe反映と整理の確定結果は
+D:/NeNeFolio/agents/tags-20261115/completion.jsonを正本とする。未作成を成功とは解釈しない。
 
-#811/PR812の[ロードマップ](../ROADMAP.md)・[仕様案](../plans/2026-11-14-note-discovery.md)を基に、
-#813/PR814でお気に入りを実装した。最終head `e7785fc` の必須CI43600639389成功、main `1b31ec2`へ統合済み。
-星の付け外し、カテゴリ内の安定した優先表示、星だけと全文検索のAND、改名・移動・再起動の保持を提供する。
-操作は[キー案内](../KEY_BINDINGS.md#お気に入り)、保存契約は[ADR0090](../adr/0090-note-favorites-and-display-order.md)、
-検証は[品質記録](../quality/2026-11-14-note-favorites.md)。
+#817 / PR818のお気に入りUIはmain `5593835b6ee1169dfc49ddba7fd04348d3a0cf5a`へ統合済み。
+最終head `02645f198d15fc8c1a5816f174e0a7e339423b5d`、必須CI43656795092成功。
+右端へ星を整列し、字形と当たり判定を分け、未登録星の条件表示と文字付きの範囲切替を設けた。
+[ADR0091](../adr/0091-favorites-scope-and-quiet-stars.md)、[品質記録](../quality/2026-11-15-favorites-ui.md)、
+D:/NeNeFolio/agents/favorites-ui-20261115/completion.jsonが確定原本。追加worktree/outputsは整理済み。
 
-hideの実機所感は星の位置・大きさ・未登録の枠線星の多さへの懸念。専門家ペルソナとClaude designへ相談し、
-右端の整列、小さい字形と大きい当たり判定、未登録星の条件表示、文字付き「すべて／お気に入り」切替を推奨案にまとめた。
-前日の設計原本はD:/NeNeFolio/agents/favorites-design-20261114/interface-direction.md。
-#817では背景Claudeのdesign:design-critiqueへ残る操作を相談し、上記ADRへ確定した。
-タグ・front matter・検索プレビュー・演出・About・次版は未着手。版上げ・配布/Store操作はしていない。
-
-到達点・検証・担当と相談結果は[11月15日日報](../reports/2026-11-15.md)、次の判断条件・保持領域は
-[11月15日引き継ぎ](../handoffs/2026-11-15.md)。この3文書の#815の最終CI・統合状態はそのIssue/PRを正本とする。
-11月12日分は[PR810](https://github.com/hideyukiMORI/nene-folio/pull/810)が11月15日の確認でもDraft/openで未統合。
-今回編集・統合していない。過去の停止・継続・起動・相談の許可を、新しい作業へ持ち越さない。
+次は[ロードマップ](../ROADMAP.md)段階2bのタグ全体改名/削除。複数ファイルの更新単位・部分失敗と
+再試行・未保存本文/外部改変を先行ADRで決める。検索プレビュー・演出・About・次版は未着手。
+版上げ・配布/Store操作はしていない。到達点と判断は[日報](../reports/2026-11-15.md)、
+保持領域と次の条件は[引き継ぎ](../handoffs/2026-11-15.md)。
+11月12日の[PR810](https://github.com/hideyukiMORI/nene-folio/pull/810)は11月15日12:35でもDraft/open、今回変更していない。
+過去の停止・継続・起動・相談の許可を、新しい作業へ持ち越さない。
 
 ## 通常版と公開版
 
 通常exeはC:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe、版1.3.2 / Windows1.3.2.0。
-以下は#817より前の反映記録。11月14日22:46にsource `1b31ec269cf6f9fd49e809651a2318beef41e20b` を正典経路で反映した。
-SHA256 `c20e742458028081283d654b93df8b8703f45f6939d6ae2249e2d4e14016adb7`。
-反映前後の実data34ファイルのbytes/hash/作成・更新日時は一致。23:23にhideの依頼で起動し、UI相談時は終了していた。
-11月15日00:20の再照合でhash不変、その時点で稼働中に見つかったのはWindowsApps配下のStore版1.3.2。
-確定原本はD:/NeNeFolio/agents/favorites-20261114/completion.json、後続の起動/UI相談は日報を参照。
+#817を11月15日09:24にsource `5593835b6ee1169dfc49ddba7fd04348d3a0cf5a`から正典経路で反映した。
+SHA256 `0558e7983b658f0c7f0920a4ae8656913279adebecdc736be34705d6ca8ae94e`。
+反映前後の実data34ファイルのbytes/hash/作成・更新日時は一致。反映時にアプリは起動していない。
+確定原本はD:/NeNeFolio/agents/favorites-ui-20261115/completion.json。#819の後続反映は上記原本へ記録する。
 
 台帳版2・設定版6は旧アプリでは読めない。旧台帳1/設定1〜5は読め、起動だけでは書き換えない。
 星はMarkdown/ZIPに含めない。通常版の#783書体修正と#813お気に入りは公開済み1.3.2には未収載。

@@ -8,13 +8,15 @@
 #include "note_ref.h"
 
 #include <stddef.h>
+struct note_tags;
 
 struct index_filter_entry
 {
-    struct note_ref ref;        /* 台帳のカテゴリ番号とノート番号 */
-    const char *_Nonnull name;  /* ノート名（終端付き UTF-8） */
-    const char *_Nullable body; /* 本文の写し。無ければ判定せず見えない */
-    size_t length;              /* body のバイト数 */
+    struct note_ref ref;                    /* 台帳のカテゴリ番号とノート番号 */
+    const char *_Nonnull name;              /* ノート名（終端付き UTF-8） */
+    const char *_Nullable body;             /* 本文の写し。無ければ判定せず見えない */
+    size_t length;                          /* body のバイト数 */
+    const struct note_tags *_Nullable tags; /* Available parsed metadata, omitted if unavailable. */
 };
 
 #endif

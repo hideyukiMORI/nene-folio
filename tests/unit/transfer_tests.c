@@ -706,8 +706,62 @@ static void verify_export_allocation(void)
     }
 }
 
+static void verify_tag_zip(const char *_Nonnull source)
+{
+    struct note_text *body = nullptr;
+    require(note_text_create(source, strlen(source), &body) == NOTE_TEXT_ACCEPTED,
+            "tag archive source");
+    struct archive_note note = {.category = "A", .name = "one", .body = body};
+    struct note_archive *archive = nullptr;
+    require(note_archive_create(&note, 1, nullptr, &archive) == NOTE_ARCHIVE_READY,
+            "tag archive constructed");
+    const char *bytes = note_archive_bytes(archive);
+    require(number(bytes) == UINT32_C(0x04034b50) && number(bytes + 18) == strlen(source) &&
+                number(bytes + 14) == reference_crc(source, strlen(source)) &&
+                memcmp(bytes + 30, "A/one.md", 8) == 0 &&
+                memcmp(bytes + 38, source, strlen(source)) == 0,
+            "stored ZIP payload contains exact independent front matter bytes and CRC");
+    note_archive_destroy(archive);
+    note_text_destroy(body);
+}
+
+void run_tag_transfer_tests(void)
+{
+    const char source[] = "---\ntitle: Keep\ntags: [red, '日本語']\n---\nBody";
+    verify_tag_zip(source);
+    struct persistence_adapter *adapter = adapter_for();
+    struct folio_state *state = state_for(adapter);
+    retain_imports = true;
+    retained_import_count = 1;
+    memcpy(retained_names[0], "one", 4);
+    memcpy(retained_bodies[0], source, sizeof source);
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "select saved tagged transfer source");
+    struct storage_path *path = accepted_path("D:/exports/tag.md");
+    struct note_export_request request = {
+        .scope = NOTE_EXPORT_CURRENT, .destination = path, .units = u"rendered", .count = 8};
+    write_result = PERSISTENCE_STORED;
+    require(folio_state_export_notes(state, &request) == FOLIO_STATE_READY &&
+                output_length == sizeof source - 1 && memcmp(output, source, sizeof source) == 0,
+            "single Markdown export uses full saved source including tags");
+    require(folio_state_begin_edit(state) == FOLIO_STATE_READY, "unsaved tag transfer source");
+    const char16_t native[] = u"---\rtags: [new]\r---\rDraft";
+    request.units = native;
+    request.count = sizeof native / sizeof native[0] - 1;
+    require(folio_state_export_notes(state, &request) == FOLIO_STATE_READY &&
+                same_text(output, "---\ntags: [new]\n---\nDraft") &&
+                test_adapter_body_publications(adapter) == 0,
+            "unsaved export contains current tags without saving the notebook");
+    storage_path_destroy(path);
+    folio_state_destroy(state);
+    test_adapter_destroy(adapter);
+    retain_imports = false;
+    retained_import_count = 0;
+}
+
 void run_transfer_tests(void)
 {
+    run_tag_transfer_tests();
     verify_archive();
     verify_binary_checksums();
     verify_archive_byte_limit();
