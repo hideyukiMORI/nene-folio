@@ -1,6 +1,11 @@
 # いまの状態 — NeNe Folio
 
-## 2026-11-15 — 初回本文準備の費用を切り分ける
+## 2026-11-16 — #833完了で区切り、停止する
+
+hideの停止・日報/引き継ぎ作成指示に従い、#833の完了地点で開発を区切る。
+文書整理#835はcommit/push/Draft保存までで停止し、最終CI/main統合を次回へ残す。
+新しい製品変更は未着手。[日報](../reports/2026-11-16.md)と[引き継ぎ](../handoffs/2026-11-16.md)。
+再開はhideの最新指示と実Issue/PRを確認して判断する。
 
 #833は1000件×4KiBの初回本文検索を既存private desktopで観測した。
 無計装/計装の各3process・計30操作と原文不変、対象build/8境界試験/実graph規約検査/共有motion実pumpは成功。
@@ -8,9 +13,10 @@
 配送の偏りがあるため純粋IO/paintや実時間の割合とは解釈せず、read以外を次の調査候補とする。主因は未特定。
 製品コード・保存schema・版・有限work政策は変えない。負荷で中止した2試行は保全し、成功集計へ含めない。
 全試行と限界は[品質記録](../quality/2026-11-15-discovery-cost.md)。
-D:/NeNeFolio/worktrees/833-discovery-costと対応outputsには未統合sourceと実行記録があり保持する。
-最終head CI・統合はIssue/PR、恒久保全・整理の確定原本は
-D:/NeNeFolio/agents/discovery-cost-20261115/completion.json。未作成を完了とは扱わない。
+PR834はmain `e329e0a0511c59c1aac9557a590608ede9f17515`へ統合済み。
+最終head `5fcae6719ab6eebfeb0d62b452d4ed8140a30a2d`、CI43727364909成功（56 CTest、分岐90.766456%）。
+製品入力/通常exe不変で既存反映を再利用し、全8,266ファイル保全・照合後に833の追加worktree/outputsを整理した。
+確定原本はD:/NeNeFolio/agents/discovery-cost-20261115/completion.json。
 
 直前の#831 / PR832はmain `28093b7602bb40b74aafd74e82cde9f31a129b49`へ統合済み。
 最終head `e46ef18a134295fca8d05cca6301b3070b12e7a5`、必須CI43718941842成功（56 CTest、分岐90.766456%）。
@@ -35,6 +41,9 @@ About・版上げ・配布/Store操作は未着手。11月12日のPR810は11月1
 SHA256 `682c65dc3553988de10fa5dc1eef7780d43a616af194feda4fa494858e00ab2e`。
 反映前後の実data34ファイルのbytes/hash/作成・更新日時は一致。反映時にアプリは起動していない。
 確定原本はD:/NeNeFolio/agents/discovery-motion-design-20261115/completion.json。
+
+11月16日00:16にhideの明示依頼で通常exeを起動し、実windowと応答を確認した。
+起動記録はD:/NeNeFolio/agents/discovery-cost-20261115/user-launch-window.json。起動後の実data不変は再検査していない。
 
 台帳版2・設定版7は旧アプリでは読めない。旧台帳1/設定1〜6は読め、起動だけでは書き換えない。
 星はMarkdown/ZIPに含めない。通常版の書体修正・お気に入り・タグ・検索は公開済み1.3.2には未収載。

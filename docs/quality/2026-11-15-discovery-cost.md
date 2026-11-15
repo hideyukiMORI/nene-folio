@@ -127,5 +127,14 @@ python -B tools/measure-discovery-motion.py <copied-motion_native_tests.exe>
 ```
 
 文書の空白・相対参照・製品入力不変の最終確認はdocuments-01の記録を正本とする。
-最終headの必須CI/統合、全試行の保全/整理は未完了。
-通常exeは製品入力不変を確認して反映を再利用する予定。確定原本は恒久completion.json、未作成を完了とは扱わない。
+## 2026-11-16の確定結果
+
+documents-01は空白・64相対参照・製品入力不変が成功（child/wrapper0、recordingErrors=[]）。
+PR834の最終head `5fcae6719ab6eebfeb0d62b452d4ed8140a30a2d`に対するCI43727364909の
+`eng/check.ps1`が成功（56 CTest、10066/11090=90.766456%）。正典統合手順でmain
+`e329e0a0511c59c1aac9557a590608ede9f17515`へ統合し、#833を閉じた。
+製品入力/通常exeの不変を確認し、既存反映を再利用した。全8,266ファイル/514,656,365 bytesを保全・照合し、
+取込/未保存/ignored/唯一の成果物/稼働参照/リンク監査後に833の追加worktree/outputsを削除した。branch/commitは保持。
+archiveは386,369,583 bytes、SHA256 `c25c32e7dfbec611e9121aeb5e7a640c424a6badadec9b907d9f4e24d07f55d3`。
+確定原本は恒久completion.json。全入力/raw/中止記録は同じ恒久directoryのarchive/manifestで復元できる。
+00:16の通常exe起動は検証完了後のhideの明示依頼による。今回の計測や実data不変の再検査とは区別する。
