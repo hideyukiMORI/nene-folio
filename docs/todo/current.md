@@ -1,6 +1,18 @@
 # いまの状態 — NeNe Folio
 
-## 2026-11-15 — 検索演出の統合と規模別計測
+## 2026-11-15 — Releaseで検索費用を確認
+
+#829 / PR830はmain `1ec50d893a0242e4963b64e330cd39e9bab0fa71`へ統合済み。
+最終head `99f46fd9305d7a48e9256cd009f4ea9cc6681219`、必須CI43716315383成功（56 CTest、分岐90.766456%）。
+製品入力不変のため通常exe反映を再利用した。全12,967ファイルを保全・照合し、829の追加worktree/outputsを整理済み。
+確定原本はD:/NeNeFolio/agents/discovery-scale-20261115/completion.json。
+
+#831は同じfixture/driver・合成3構成を正典Releaseで測り、最適化の対象を判断する。
+3構成×3processの45操作と原文不変を確認した。中央値は1000件の初回4.824秒、32件×1MiBの全件一致再検索3.275秒。
+初回の本文準備/UI反映までと、長い本文の全一致位置完成を別々に切り分ける。最終CI/統合は未完了。
+製品コード・保存schema・版・公開APIの変更はない。D:/NeNeFolio/worktrees/831-discovery-releaseと対応outputsは進行中のため保持。
+全試行と最終状態は[品質記録](../quality/2026-11-15-discovery-release.md)とIssue/PR、
+保全・整理の確定原本はD:/NeNeFolio/agents/discovery-release-20261115/completion.json。未作成を完了とは扱わない。
 
 #821 / PR822はmain `0851f66de66313586d68fc80bf480b8ce88a2091`へ統合済み。
 最終head `c3b36f7d1230e2511c9e8195698294549e304339`、必須CI43686022314成功（51 CTest、分岐90.8667%）。
@@ -34,12 +46,12 @@ PR828はmain `8e1ef719247db68acca5e82bf95f3a9c66ec507b`へ統合済み。最終h
 確定原本はD:/NeNeFolio/agents/discovery-motion-design-20261115/completion.json。
 全試行と限界は[品質記録](../quality/2026-11-15-discovery-motion.md)へ。
 
-継続の#829では、100件×4KiB・1000件×4KiB・32件×1MiBの合成データで、初回の本文準備と再検索を分けて計測する。
+完了した#829では、100件×4KiB・1000件×4KiB・32件×1MiBの合成データで、初回の本文準備と再検索を分けて計測した。
 製品コードは変更せず、既存のprivate desktop fixtureと公開検索経路、外側Pythonの時計を使う。
 対象build、3構成×3processの45操作・原文不変、共用motion loopと実graph規約検査を確認した。
 Debugでの初回本文検索の中央値は1000件で5.182秒、32件×1MiBの全件一致再検索は6.488秒。
-pipe/UI/検証費用を含み、OS coldや物理入力遅延の保証ではない。最終CI/統合は未完了。[品質記録](../quality/2026-11-15-discovery-scale.md)。
-D:/NeNeFolio/worktrees/829-discovery-scaleと対応outputsは進行中のため保持。About・版上げ・公開は未着手。
+pipe/UI/検証費用を含み、OS coldや物理入力遅延の保証ではない。[品質記録](../quality/2026-11-15-discovery-scale.md)。
+About・版上げ・公開は未着手。
 
 hideの停止まで継続する実装指示に基づき、#821でロードマップ段階2bを実装した。
 全カテゴリの保存済みノートを新しく確認して、タグを全体改名/解除する。既存名は集合へ統合し、
@@ -63,7 +75,7 @@ D:/NeNeFolio/worktrees/819-note-tagsを0ファイルで保持し、盲目的な�
 [ADR0091](../adr/0091-favorites-scope-and-quiet-stars.md)、[品質記録](../quality/2026-11-15-favorites-ui.md)、
 D:/NeNeFolio/agents/favorites-ui-20261115/completion.jsonが確定原本。追加worktree/outputsは整理済み。
 
-現在は[ロードマップ](../ROADMAP.md)の規模別計測。段階4までの実装・統合・必要反映・整理は完了した。
+現在は[ロードマップ](../ROADMAP.md)のRelease規模別計測。段階4までの実装・統合・必要反映・整理は完了した。
 About・次版は未着手。
 版上げ・配布/Store操作はしていない。到達点と判断は[日報](../reports/2026-11-15.md)、
 保持領域と次の条件は[引き継ぎ](../handoffs/2026-11-15.md)。
