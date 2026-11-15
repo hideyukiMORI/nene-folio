@@ -655,31 +655,119 @@ static void invoke_operation(struct folio_window *_Nonnull window, enum folio_co
     require(false, "requested operation exists");
 }
 
-static void short_window_band(struct native_fixture *_Nonnull fixture, enum folio_command command)
+static void tags_capture(HWND root, const char *_Nonnull path);
+
+static struct accessible_view band_view(struct folio_window *_Nonnull window,
+                                        enum accessible_kind kind)
 {
-    require(folio_state_begin_edit(fixture->state) == FOLIO_STATE_READY, "geometry edit state");
+    struct accessible_item item = {.kind = kind,
+                                   .revision = folio_window_accessible_surface_revision(window)};
+    struct accessible_view view;
+    require(folio_window_accessible_read(window, &item, &view) == S_OK, "band boundary view");
+    return view;
+}
+
+static void band_tag_visibility(struct folio_window *_Nonnull window, bool visible)
+{
+    struct accessible_view tag = band_view(window, ACCESSIBLE_TAG_EDIT);
+    require(tag.offscreen != visible, "tag strip follows the active inline band");
+    struct accessible_item parent = {.kind = ACCESSIBLE_PANE_TOOLS}, child;
+    HRESULT result =
+        folio_window_accessible_navigate(window, &parent, ACCESSIBLE_NAVIGATION_FIRST, &child);
+    bool found = false;
+    size_t visited = 0;
+    while (result == S_OK && visited < 20)
+    {
+        found |= child.kind == ACCESSIBLE_TAG_EDIT;
+        ++visited;
+        result =
+            folio_window_accessible_navigate(window, &child, ACCESSIBLE_NAVIGATION_NEXT, &child);
+    }
+    require(result == S_FALSE && found == visible,
+            "UIA child enumeration agrees with tag visibility");
+    if (visible)
+    {
+        struct accessible_view group = band_view(window, ACCESSIBLE_PANE_TOOLS);
+        require(group.bounds.top <= tag.bounds.top && group.bounds.bottom >= tag.bounds.bottom,
+                "pane tools bounds contain the visible tag entry");
+    }
+}
+
+static void band_fixed_controls(struct folio_window *_Nonnull window, RECT *_Nonnull bounds,
+                                bool capture)
+{
+    const enum accessible_kind kinds[] = {ACCESSIBLE_BREADCRUMB, ACCESSIBLE_MODE_GROUP,
+                                          ACCESSIBLE_SAVE, ACCESSIBLE_NOTICE};
+    for (size_t at = 0; at < sizeof kinds / sizeof kinds[0]; ++at)
+    {
+        struct accessible_view view = band_view(window, kinds[at]);
+        require(!view.offscreen, "note identity, mode, save and status remain visible");
+        if (capture)
+            bounds[at] = view.bounds;
+        if (!capture)
+            require(EqualRect(&bounds[at], &view.bounds), "permanent control bounds are unchanged");
+    }
+}
+
+static void band_body_geometry(struct folio_window *_Nonnull window, enum folio_command command)
+{
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    struct accessible_view status = band_view(window, ACCESSIBLE_NOTICE);
+    RECT bounds;
+    require(GetWindowRect(body, &bounds), "minimum window body geometry");
+    UINT dpi = GetDpiForWindow(root);
+    int minimum = MulDiv(command == FOLIO_COMMAND_REPLACE ? 32 : 52, (int)dpi, 96);
+    printf("short band %d: body=(%ld,%ld,%ld,%ld) statusTop=%ld dpi=%u\n", command, bounds.left,
+           bounds.top, bounds.right, bounds.bottom, status.bounds.top, dpi);
+    require(bounds.bottom - bounds.top >= minimum && bounds.bottom <= status.bounds.top,
+            "minimum-height search and replace keep a usable body above the status bar");
+    struct accessible_view surface = band_view(window, ACCESSIBLE_SURFACE);
+    require(surface.bounds.bottom <= bounds.top, "inline controls do not cover the body");
+}
+
+static void short_band_case(struct native_fixture *_Nonnull fixture, enum folio_command command,
+                            enum folio_language language)
+{
+    require(folio_state_set_language(fixture->state, language) == FOLIO_STATE_READY,
+            "short band language");
     struct folio_window *window = nullptr;
     require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
                 FOLIO_WINDOW_CREATED,
             "geometry window");
     HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
-    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
     SetWindowPos(root, nullptr, 20, 20, 420, 360, SWP_NOZORDER | SWP_NOACTIVATE);
+    pump(window);
+    RECT fixed[4];
+    band_fixed_controls(window, fixed, true);
+    band_tag_visibility(window, true);
     invoke_operation(window, command);
     pump(window);
-    struct accessible_item item = {.kind = ACCESSIBLE_NOTICE};
-    struct accessible_view status;
-    RECT body_rect;
-    require(folio_window_accessible_read(window, &item, &status) == S_OK &&
-                GetWindowRect(body, &body_rect) && body_rect.bottom <= status.bounds.top,
-            "minimum-height search and replace keep the body above the status bar");
+    band_body_geometry(window, command);
+    band_tag_visibility(window, false);
+    band_fixed_controls(window, fixed, false);
+    char path[64];
+    require(snprintf(path, sizeof path, "short-band-%d-%d.bmp", command, language) > 0,
+            "short band capture path");
+    tags_capture(root, path);
     SendMessageW(root, WM_KEYDOWN, VK_ESCAPE, 0);
     pump(window);
     struct accessible_item surface = {.kind = ACCESSIBLE_SURFACE};
     struct accessible_view closed;
     require(FAILED(folio_window_accessible_read(window, &surface, &closed)) || closed.offscreen,
             "Escape closes the command band through the normal key handler");
+    band_tag_visibility(window, true);
+    band_fixed_controls(window, fixed, false);
     folio_window_destroy(window);
+}
+
+static void short_window_band(struct native_fixture *_Nonnull fixture, enum folio_command command)
+{
+    require(folio_state_begin_edit(fixture->state) == FOLIO_STATE_READY, "geometry edit state");
+    const enum folio_language languages[] = {FOLIO_LANGUAGE_JA, FOLIO_LANGUAGE_EN,
+                                             FOLIO_LANGUAGE_ZH_HANS};
+    for (size_t at = 0; at < sizeof languages / sizeof languages[0]; ++at)
+        short_band_case(fixture, command, languages[at]);
 }
 
 static void normal_status(struct native_fixture *_Nonnull fixture, enum folio_language language,

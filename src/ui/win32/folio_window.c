@@ -536,7 +536,6 @@ constexpr int base_guide_gap = 8;
 constexpr int base_caption_height = 44; /* 右ペインの頭。窓を掴んで動かせる帯 */
 constexpr int base_action_height = 36;
 constexpr int base_tag_height = 28;
-constexpr int base_note_tools_height = base_caption_height + base_action_height + base_tag_height;
 constexpr int base_pane_left = 36;
 constexpr int base_pane_right = 56;
 constexpr int base_pane_top = 16;
@@ -1284,10 +1283,21 @@ static bool command_band(const struct folio_window *_Nonnull self)
            self->command_surface == COMMAND_SURFACE_REPLACE;
 }
 
+static bool tag_strip_visible(const struct folio_window *_Nonnull self)
+{
+    return !command_band(self);
+}
+
+static int note_tools_height(const struct folio_window *_Nonnull self)
+{
+    return base_caption_height + base_action_height +
+           (tag_strip_visible(self) ? base_tag_height : 0);
+}
+
 static RECT command_band_rect(const struct folio_window *_Nonnull self)
 {
     RECT pane = regions_for(self).pane;
-    int top = pane.top + scale(base_note_tools_height, GetDpiForWindow(self->handle));
+    int top = pane.top + scale(note_tools_height(self), GetDpiForWindow(self->handle));
     return (RECT){pane.left, top, pane.right, top + self->band.height};
 }
 
@@ -2228,7 +2238,7 @@ static RECT body_available_rect(const struct folio_window *_Nonnull self, RECT p
 {
     int top = command_band(self) ? self->band.pane_top : scale(base_pane_top, dpi);
     int bottom = command_band(self) ? self->band.pane_bottom : scale(base_pane_bottom, dpi);
-    top += pane.top + scale(base_note_tools_height, dpi);
+    top += pane.top + scale(note_tools_height(self), dpi);
     top += command_band(self) ? self->band.height : 0;
     int left = scale(base_pane_left, dpi);
     left = self->body_left_inset > left ? self->body_left_inset : left;
@@ -5035,6 +5045,8 @@ static RECT action_band_rect(const struct folio_window *_Nonnull self)
 
 static RECT tag_strip_rect(const struct folio_window *_Nonnull self)
 {
+    if (!tag_strip_visible(self))
+        return (RECT){0};
     RECT band = action_band_rect(self);
     UINT dpi = GetDpiForWindow(self->handle);
     band.top = band.bottom;
@@ -5429,7 +5441,7 @@ static RECT guide_rect(const struct folio_window *_Nonnull self)
     GetClientRect(self->handle, &client);
     UINT dpi = GetDpiForWindow(self->handle);
     RECT pane = regions_for(self).pane;
-    int top = pane.top + scale(base_note_tools_height + base_pane_top, dpi);
+    int top = pane.top + scale(note_tools_height(self) + base_pane_top, dpi);
     return (RECT){pane.left + scale(base_pane_left, dpi), top,
                   client.right - scale(base_pane_right, dpi),
                   client.bottom - scale(base_pane_bottom, dpi)};
@@ -6253,11 +6265,18 @@ static void band_narrow_layout(struct command_band_layout *_Nonnull layout, RECT
     bool replacing = layout->mode == COMMAND_SURFACE_REPLACE;
     int gap = scale(8, dpi);
     int control = scale(ui_part_height, dpi);
-    int second_top = content.top + control + scale(16, dpi);
-    band_action_layout(layout, content.right, replacing ? second_top : content.top);
-    layout->field[0] =
-        (RECT){content.left, content.top, replacing ? content.right : layout->action[0].left - gap,
-               content.top + control};
+    int first_top = replacing ? scale(24, dpi) : content.top;
+    int second_top = first_top + control + scale(16, dpi);
+    band_action_layout(layout, content.right, replacing ? second_top : first_top);
+    if (replacing)
+    {
+        layout->label[0] = (RECT){content.left, scale(8, dpi), content.right, first_top};
+        layout->close =
+            (RECT){content.right - control, first_top, content.right, first_top + control};
+    }
+    layout->field[0] = (RECT){content.left, first_top,
+                              (replacing ? layout->close.left : layout->action[0].left) - gap,
+                              first_top + control};
     layout->field[1] =
         (RECT){content.left, second_top, layout->action[0].left - gap, second_top + control};
     layout->label[1] =
@@ -6349,7 +6368,7 @@ static void fit_band_height(struct command_band_layout *_Nonnull layout)
     /* The permanent status bar owns the entire bottom inset (ADR0087). */
     reduce_band_spacing(&layout->pane_top, scale(8, dpi), &shortage);
     reduce_band_spacing(&trailing, scale(8, dpi), &shortage);
-    if (layout->narrow)
+    if (layout->narrow && layout->mode == COMMAND_SURFACE_SEARCH)
         reduce_band_spacing(&title_gap, scale(4, dpi), &shortage);
     shift_band_content(layout, scale(16, dpi) - title_gap);
     layout->height = layout->result.bottom + trailing;
@@ -6362,7 +6381,7 @@ static bool refresh_band_layout(struct folio_window *_Nonnull self)
     RECT pane = regions_for(self).pane;
     int width = pane.right - pane.left;
     UINT dpi = GetDpiForWindow(self->handle);
-    int available = pane.bottom - pane.top - scale(base_note_tools_height, dpi);
+    int available = pane.bottom - pane.top - scale(note_tools_height(self), dpi);
     if (self->band.valid && self->band.width == width && self->band.available_height == available &&
         self->band.dpi == dpi && self->band.font == self->mono_font &&
         self->band.mode == self->command_surface)
@@ -15203,6 +15222,8 @@ static bool pane_control_visible(const struct folio_window *_Nonnull self,
 {
     if (kind == ACCESSIBLE_MINIMAP)
         return minimap_visible(self);
+    if (kind == ACCESSIBLE_TAG_EDIT && !tag_strip_visible(self))
+        return false;
     if (kind == ACCESSIBLE_BREADCRUMB && !folio_state_pane_title(self->state).any)
     {
         return false;
@@ -15254,7 +15275,8 @@ static RECT accessible_main_group_rect(const struct folio_window *_Nonnull self,
     if (kind == ACCESSIBLE_PANE_TOOLS)
     {
         RECT bounds = caption_rect(self);
-        bounds.bottom = action_button_rect(self, 0).bottom;
+        bounds.bottom = regions_for(self).pane.top +
+                        scale(note_tools_height(self), GetDpiForWindow(self->handle));
         return bounds;
     }
     if (kind == ACCESSIBLE_MODE_GROUP)
@@ -16579,8 +16601,11 @@ static void settle_tag_strip(struct folio_window *_Nonnull self, uint64_t revisi
         return;
     self->tag_strip_outcome = outcome;
     self->tag_strip_count = tags;
-    RECT bounds = tag_strip_rect(self);
-    InvalidateRect(self->handle, &bounds, FALSE);
+    if (tag_strip_visible(self))
+    {
+        RECT bounds = tag_strip_rect(self);
+        InvalidateRect(self->handle, &bounds, FALSE);
+    }
 }
 
 /* 保存の状態を取り直す唯一の経路（ADR0060 の決定 8）。入力・保存・Esc・ノート切替・新規の後に
