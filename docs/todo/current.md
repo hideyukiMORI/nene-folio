@@ -1,6 +1,6 @@
 # いまの状態 — NeNe Folio
 
-## 2026-11-15 — 本文検索の統合と演出の対象確認
+## 2026-11-15 — 検索演出の統合と規模別計測
 
 #821 / PR822はmain `0851f66de66313586d68fc80bf480b8ce88a2091`へ統合済み。
 最終head `c3b36f7d1230e2511c9e8195698294549e304339`、必須CI43686022314成功（51 CTest、分岐90.8667%）。
@@ -28,9 +28,18 @@ main `dbfba3be21680af52962f1868d32192734bd07a3`。通常exe反映と実data34件
 段階4の演出は#827で[ADR0096](../adr/0096-discovery-motion-and-static-fallback.md)に沿って実装した。
 設定版7のmotion、OS三値の実効判定、有限の外枠/選択/処理中の線を接続した。対象unit/確保注入、native179項目、
 設定UIA、三言語/三配色/二寸法36画像、実pumpの静止20秒とON/OFF検索・35ms配送遅延を確認した。
-最終CIと統合は未完了。全試行と限界は[品質記録](../quality/2026-11-15-discovery-motion.md)へ。
-確定原本はD:/NeNeFolio/agents/discovery-motion-design-20261115/completion.json。未作成は未完了と扱う。
-D:/NeNeFolio/worktrees/827-discovery-motionと対応outputsは進行中のため保持。About・版上げ・公開は未着手。
+PR828はmain `8e1ef719247db68acca5e82bf95f3a9c66ec507b`へ統合済み。最終head
+`1c8bef693b18d7aba0a773c429676e0e37813c91`、必須CI43712501339成功（56 CTest、分岐90.766456%）。
+通常exe反映と実data34件不変、全24,746ファイル保全・照合を確認し、827の追加worktree/outputsを整理した。
+確定原本はD:/NeNeFolio/agents/discovery-motion-design-20261115/completion.json。
+全試行と限界は[品質記録](../quality/2026-11-15-discovery-motion.md)へ。
+
+継続の#829では、100件×4KiB・1000件×4KiB・32件×1MiBの合成データで、初回の本文準備と再検索を分けて計測する。
+製品コードは変更せず、既存のprivate desktop fixtureと公開検索経路、外側Pythonの時計を使う。
+対象build、3構成×3processの45操作・原文不変、共用motion loopと実graph規約検査を確認した。
+Debugでの初回本文検索の中央値は1000件で5.182秒、32件×1MiBの全件一致再検索は6.488秒。
+pipe/UI/検証費用を含み、OS coldや物理入力遅延の保証ではない。最終CI/統合は未完了。[品質記録](../quality/2026-11-15-discovery-scale.md)。
+D:/NeNeFolio/worktrees/829-discovery-scaleと対応outputsは進行中のため保持。About・版上げ・公開は未着手。
 
 hideの停止まで継続する実装指示に基づき、#821でロードマップ段階2bを実装した。
 全カテゴリの保存済みノートを新しく確認して、タグを全体改名/解除する。既存名は集合へ統合し、
@@ -54,8 +63,7 @@ D:/NeNeFolio/worktrees/819-note-tagsを0ファイルで保持し、盲目的な�
 [ADR0091](../adr/0091-favorites-scope-and-quiet-stars.md)、[品質記録](../quality/2026-11-15-favorites-ui.md)、
 D:/NeNeFolio/agents/favorites-ui-20261115/completion.jsonが確定原本。追加worktree/outputsは整理済み。
 
-現在は[ロードマップ](../ROADMAP.md)段階4の演出と静止fallbackの対象確認。
-段階3bまでの実装・統合・必要反映・整理は完了した。
+現在は[ロードマップ](../ROADMAP.md)の規模別計測。段階4までの実装・統合・必要反映・整理は完了した。
 About・次版は未着手。
 版上げ・配布/Store操作はしていない。到達点と判断は[日報](../reports/2026-11-15.md)、
 保持領域と次の条件は[引き継ぎ](../handoffs/2026-11-15.md)。
@@ -65,13 +73,13 @@ About・次版は未着手。
 ## 通常版と公開版
 
 通常exeはC:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe、版1.3.2 / Windows1.3.2.0。
-#825を11月15日20:05にsource `dbfba3be21680af52962f1868d32192734bd07a3`から正典経路で反映した。
-SHA256 `e8c54080ab8e12b63ad1c63925bad1489176debe75050b5158681f51def44168`。
+#827を11月15日21:23にsource `8e1ef719247db68acca5e82bf95f3a9c66ec507b`から正典経路で反映した。
+SHA256 `682c65dc3553988de10fa5dc1eef7780d43a616af194feda4fa494858e00ab2e`。
 反映前後の実data34ファイルのbytes/hash/作成・更新日時は一致。反映時にアプリは起動していない。
-確定原本はD:/NeNeFolio/agents/live-grep-design-20261115/completion.json。
+確定原本はD:/NeNeFolio/agents/discovery-motion-design-20261115/completion.json。
 
-台帳版2・設定版6は旧アプリでは読めない。旧台帳1/設定1〜5は読め、起動だけでは書き換えない。
-星はMarkdown/ZIPに含めない。通常版の書体修正・お気に入り・タグは公開済み1.3.2には未収載。
+台帳版2・設定版7は旧アプリでは読めない。旧台帳1/設定1〜6は読め、起動だけでは書き換えない。
+星はMarkdown/ZIPに含めない。通常版の書体修正・お気に入り・タグ・検索は公開済み1.3.2には未収載。
 
 [GitHub1.3.2 Beta](https://github.com/hideyukiMORI/nene-folio/releases/tag/v1.3.2)は11月6日公開済み。
 tag/配布sourceは `ba1e697deccb71e2f248f4759349d51ddec99e29`、恒久配布はD:/NeNeFolio/releases/1.3.2/。

@@ -1,0 +1,15 @@
+#ifndef NENEFOLIO_DISCOVERY_SCALE_COMMAND_H
+#define NENEFOLIO_DISCOVERY_SCALE_COMMAND_H
+/* Private native measurement protocol; never a product command. */
+enum discovery_scale_command : unsigned char
+{
+    DISCOVERY_SCALE_IDLE,
+    DISCOVERY_SCALE_FRESH,
+    DISCOVERY_SCALE_ABSENT,
+    DISCOVERY_SCALE_COMMON,
+    DISCOVERY_SCALE_UNIQUE,
+    DISCOVERY_SCALE_NAMES,
+    DISCOVERY_SCALE_STOP,
+    DISCOVERY_SCALE_PING
+};
+#endif

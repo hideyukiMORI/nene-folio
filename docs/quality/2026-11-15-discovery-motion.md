@@ -99,3 +99,22 @@ symbols-01: `python eng/symbols.py --build-dir build --require core application`
 format-01: 変更したC/headerへのclang-format --dry-run --Werrorとgit diff --check成功。いずれもchild/wrapper0、recordingErrors=[]。
 ローカルの全件gateは繰り返さず、最終headの必須CIで`pwsh -NoProfile -File ./eng/check.ps1`を実行する。
 最終CI・統合・通常exe反映・全証跡保全/整理の確定結果は恒久completion.jsonに記録し、未作成は未完了とする。
+
+## 統合・反映・整理の確定
+
+PR828、最終head 1c8bef693b18d7aba0a773c429676e0e37813c91、必須CI43712501339が成功。
+`eng/check.ps1`は56 CTest成功、中核分岐10066/11090（90.76645626690713%）。
+正典merge-pr.ps1のmerge-01はchild/wrapper0、recordingErrors=[]でmain 8e1ef719247db68acca5e82bf95f3a9c66ec507bへ統合した。
+reflection-01は同じく0/0/[]。21:23:26に通常exeへ反映し、SHA256は
+682c65dc3553988de10fa5dc1eef7780d43a616af194feda4fa494858e00ab2e、版1.3.2 / Windows1.3.2.0。
+実data34ファイルのpath/bytes/hash/作成更新日時を照合し、変更なし。通常アプリは起動していない。
+
+反映前の補助commandは、有効な34件snapshotを作った後、PowerShell scriptへ不適切なLASTEXITCODE確認を行って停止した。
+native反映子の起動前であり、snapshot内容を確認して保持したまま正式reflection-01を実行した。
+tools/record-run.ps1を誤読した試行も失敗として残し、実在する.pyへ訂正した。
+
+全24,746ファイル、967,295,212 bytesを恒久preserved-task.zipへ保全し、全entryと元bytesを照合した。
+ZIP SHA256 1b2618a0fa254987798473a071c9c9ab01ef98616eee79271a0e355a169001ba。
+取込tree・未保存/未追跡なし・ignored全収載・リンクなし・稼働参照なしを確認し、827の追加worktree/outputsを整理した。
+branch/commitを保持。completion.json、CI原本、反映照合とcleanup-audit/resultは冒頭の恒久原本にある。
+上の未完了記述は各試行時点の記録。新waiverなし、既存WVR-0001継続。残る確認外の範囲は変わらない。
