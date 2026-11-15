@@ -55,6 +55,9 @@ pingとphase出力自体が観測対象へ小さな負荷を加える。少数�
 - configure-02: 同じCMake設定をquery付きで生成し成功。製品・テストのsourceやcompile条件は変わらないため、対象build/計測は再利用した。
 - conformance-02: `python -B eng/conformance.py --build-dir build`で実graphを含め違反0。child/wrapper0、recordingErrors=[]。
 - format-01: 変更C/headerの`clang-format --dry-run --Werror`と`git diff --check`が成功。child/wrapper0、recordingErrors=[]。
+- merge-01: PR本文の必須見出しを「振る舞い・スキーマ:」と省略し、正典ツールがReady前に拒否。
+  child/wrapper1、recordingErrors=[]。指定どおり「振る舞い・スキーマの変更:」へ訂正し、headを確定し直す。
+  実装・検証入力は不変であり、成功済みの対象検証を再利用する。
 
 独立読取レビューは重大な誤計測・隔離・契約問題なし。独立期待値と共用loopを確認し、上記のresult/CPU/pipeの時間境界を明記するよう指摘した。
 指摘を本書へ反映した。レビューは編集・build・起動なしで実施し、恒久原本のcontract-review.mdに結果を保持する。
