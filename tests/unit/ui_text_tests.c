@@ -24,6 +24,44 @@
 
 /* 変更前の文言（機械的に写した）。ui_text.c の表と 1 字も違ってはいけない。 */
 static const char *_Nonnull const expected[] = {
+    [UI_TEXT_TAG_MANAGE_SOURCE] = "対象のタグ: {name}",
+    [UI_TEXT_TAG_MANAGE_CHANGE] = "変更内容",
+    [UI_TEXT_COMMAND_MANAGE_TAGS] = "タグを管理",
+    [UI_TEXT_TAG_MANAGE_TITLE] = "タグの全体管理",
+    [UI_TEXT_TAG_MANAGE_RENAME] = "名前を変える",
+    [UI_TEXT_TAG_MANAGE_REMOVE] = "すべてから解除",
+    [UI_TEXT_TAG_MANAGE_PREPARE] = "対象を確認",
+    [UI_TEXT_TAG_MANAGE_APPLY] = "変更を実行",
+    [UI_TEXT_TAG_MANAGE_STOP] = "中止",
+    [UI_TEXT_TAG_MANAGE_RETRY] = "残りを確認し直す",
+    [UI_TEXT_TAG_MANAGE_BACK] = "戻る",
+    [UI_TEXT_TAG_MANAGE_CLOSE] = "閉じる",
+    [UI_TEXT_TAG_MANAGE_NAME] = "新しいタグ名",
+    [UI_TEXT_TAG_MANAGE_SCOPE] =
+        "全カテゴリの保存済みノートが対象です。検索・星・タグの絞り込みに関係なく変更します。",
+    [UI_TEXT_TAG_MANAGE_INTENT_RENAME] = "「{from}」→「{to}」",
+    [UI_TEXT_TAG_MANAGE_INTENT_REMOVE] = "「{name}」を解除（ノートは残ります）",
+    [UI_TEXT_TAG_MANAGE_MERGE] =
+        "既存のタグへ統合します。元の二つのタグへの一括取り消しはできません。",
+    [UI_TEXT_TAG_MANAGE_PREPARING] = "対象を確認中 {k} / {n}",
+    [UI_TEXT_TAG_MANAGE_PREVIEW] = "変更対象 {k}件 ・ 見送り {n}件",
+    [UI_TEXT_TAG_MANAGE_APPLYING] = "変更済み {k}件 ・ 未処理 {n}件",
+    [UI_TEXT_TAG_MANAGE_RESULT] = "変更済み {k}件 ・ 見送り {n}件 ・ 失敗 {offset}件",
+    [UI_TEXT_TAG_MANAGE_PENDING] = "未処理 {n}件。変更済みのノートは元に戻りません。",
+    [UI_TEXT_TAG_MANAGE_STOPPED] = "中止しました。変更済みのノートは元に戻りません。",
+    [UI_TEXT_TAG_MANAGE_ROW] = "{from} / {name} — {to}",
+    [UI_TEXT_TAG_MANAGE_READY] = "変更予定",
+    [UI_TEXT_TAG_MANAGE_CHANGED] = "変更済み",
+    [UI_TEXT_TAG_MANAGE_UNCHANGED] = "変更なし",
+    [UI_TEXT_TAG_MANAGE_UNREADABLE] = "読み取れません",
+    [UI_TEXT_TAG_MANAGE_UNAVAILABLE] = "タグを解釈できません",
+    [UI_TEXT_TAG_MANAGE_LIMIT] = "更新後に上限を超えます",
+    [UI_TEXT_TAG_MANAGE_CONFLICT] = "確認後に変更・削除されています",
+    [UI_TEXT_TAG_MANAGE_HISTORY_FAILED] = "履歴を保存できません",
+    [UI_TEXT_TAG_MANAGE_WRITE_FAILED] = "本文を保存できません",
+    [UI_TEXT_TAG_MANAGE_MEMORY_FAILED] = "メモリ不足",
+    [UI_TEXT_TAG_MANAGE_UNPROCESSED] = "未処理",
+
     [UI_TEXT_STATUS_NOTE_TIMES] = "更新 {from}  ·  作成 {to}",
     [UI_TEXT_STATUS_NOTE_UPDATED] = "更新 {from}",
     [UI_TEXT_STATUS_TIMES_UNAVAILABLE] = "日時を取得できません",
@@ -622,6 +660,8 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_FAILURE_TAGS_UNAVAILABLE] =
         "このメタデータのタグは編集できません。原文を確認してください。",
     [UI_TEXT_FAILURE_TAGS_STALE] = "本文か保存先が変わりました。タグの編集を開き直してください。",
+    [UI_TEXT_FAILURE_NOTE_SOURCE_CHANGED] =
+        "ファイルの内容が変わったため保存していません。編集中の本文は残っています。",
 
 };
 
@@ -642,7 +682,7 @@ static size_t utf16_units_of(const char *_Nonnull utf8)
 /* 表の全 ID が、変更前と 1 字も違わないこと（同一性）。 */
 static void verify_identity(void)
 {
-    require(expected_count == UI_TEXT_FAILURE_WEB_LINK_UNAVAILABLE + 1,
+    require(expected_count == UI_TEXT_TAG_MANAGE_CHANGE + 1,
             "the expected table covers every id in the enumeration");
     for (size_t index = 0; index < expected_count; ++index)
     {

@@ -47,6 +47,7 @@
 #include "note_name.h"
 #include "note_pane.h"
 #include "note_ref.h"
+#include "note_save_mode.h"
 #include "note_search.h"
 #include "note_tag.h"
 #include "note_tags.h"
@@ -62,7 +63,9 @@
 #include "tag_candidates_source.h"
 #include "tag_catalog.h"
 #include "tag_filter_text.h"
+#include "tag_management_view.h"
 #include "tag_surface_focus.h"
+#include "tag_update.h"
 #include "text_draw_request.h"
 #include "text_wrap.h"
 #include "theme_candidates.h"
@@ -87,7 +90,7 @@
 #include <windows.h>
 #include <windowsx.h>
 
-constexpr size_t surface_button_count = 15;
+constexpr size_t surface_button_count = 17;
 constexpr size_t surface_pointer_count = surface_button_count + 2;
 constexpr UINT_PTR surface_tooltip_base = 256;
 /* 1 回の描画・測定で UTF-16 へ写せる単位数（ADR 0030 の決定 5）。表の 1 行（ui_text_unit_limit）・
@@ -199,6 +202,9 @@ struct folio_window
     struct theme_candidates *_Nullable theme_candidates;
     struct tag_candidates *_Nullable tag_candidates;
     enum tag_surface_focus tag_focus;
+    enum tag_management_view tag_management_view;
+    struct note_tag *_Nullable management_source;
+    bool management_merging;
     enum pane_mode tag_origin_mode;
     size_t command_selection;
     size_t command_first;
@@ -931,7 +937,25 @@ static bool settings_surface(const struct folio_window *_Nonnull self)
 static bool tag_surface(const struct folio_window *_Nonnull self)
 {
     return self->command_surface == COMMAND_SURFACE_TAG_EDIT ||
-           self->command_surface == COMMAND_SURFACE_TAG_FILTER;
+           self->command_surface == COMMAND_SURFACE_TAG_FILTER ||
+           self->command_surface == COMMAND_SURFACE_TAG_MANAGE;
+}
+
+static bool management_surface(const struct folio_window *_Nonnull self)
+{
+    return self->command_surface == COMMAND_SURFACE_TAG_MANAGE;
+}
+
+static bool management_running(const struct folio_window *_Nonnull self)
+{
+    enum tag_management_phase phase = folio_state_tag_management_phase(self->state);
+    return management_surface(self) &&
+           (phase == TAG_MANAGEMENT_PREPARING || phase == TAG_MANAGEMENT_APPLYING);
+}
+
+static bool management_input(const struct folio_window *_Nonnull self)
+{
+    return management_surface(self) && self->tag_management_view != TAG_MANAGEMENT_PLAN;
 }
 
 static bool framed_surface(const struct folio_window *_Nonnull self)
@@ -950,11 +974,30 @@ static void tag_add_input(struct folio_window *_Nonnull self);
 static void tag_apply(struct folio_window *_Nonnull self);
 static void tag_filter_mode(struct folio_window *_Nonnull self, enum tag_match_mode mode);
 static void tag_clear_filters(struct folio_window *_Nonnull self);
+static void management_primary(struct folio_window *_Nonnull self);
+static void management_secondary(struct folio_window *_Nonnull self);
+static void management_refresh(struct folio_window *_Nonnull self);
+static size_t management_row_count(const struct folio_window *_Nonnull self);
+static void management_row_text(const struct folio_window *_Nonnull self, size_t index,
+                                char *_Nonnull out, size_t capacity);
+static void management_status(const struct folio_window *_Nonnull self, char *_Nonnull out,
+                              size_t capacity);
+static enum ui_text management_button_label(const struct folio_window *_Nonnull self, size_t slot);
+static bool management_button_enabled(const struct folio_window *_Nonnull self, size_t slot);
+static bool management_tab(struct folio_window *_Nonnull self);
+static bool management_return(struct folio_window *_Nonnull self);
+static bool management_retryable(const struct folio_window *_Nonnull self);
+static void management_intent_text(const struct folio_window *_Nonnull self, char *_Nonnull out,
+                                   size_t capacity);
+static void management_notice(const struct folio_window *_Nonnull self, char *_Nonnull out,
+                              size_t capacity);
 static bool tag_navigate(struct folio_window *_Nonnull self, WPARAM key);
 static bool tag_tab(struct folio_window *_Nonnull self);
 static bool tag_return(struct folio_window *_Nonnull self);
 static void click_tag_surface(struct folio_window *_Nonnull self, POINT point);
 static enum folio_state_outcome save_before_filter(struct folio_window *_Nonnull self);
+static enum folio_state_outcome save_before_catalog(struct folio_window *_Nonnull self,
+                                                    enum note_save_mode mode);
 
 static bool pane_visible(const struct folio_window *_Nonnull self)
 {
@@ -992,6 +1035,7 @@ static int command_surface_rows(const struct folio_window *_Nonnull self)
         return (int)folio_theme_choice_count();
     case COMMAND_SURFACE_TAG_EDIT:
     case COMMAND_SURFACE_TAG_FILTER:
+    case COMMAND_SURFACE_TAG_MANAGE:
         return (int)tag_matches_count(self);
     case COMMAND_SURFACE_MENU:
     case COMMAND_SURFACE_HISTORY:
@@ -1019,6 +1063,7 @@ static int command_help_rows(const struct folio_window *_Nonnull self)
     case COMMAND_SURFACE_THEMES:
     case COMMAND_SURFACE_TAG_EDIT:
     case COMMAND_SURFACE_TAG_FILTER:
+    case COMMAND_SURFACE_TAG_MANAGE:
     case COMMAND_SURFACE_MENU:
     case COMMAND_SURFACE_HISTORY:
         return 0;
@@ -1082,7 +1127,8 @@ static HWND _Nullable command_focus_target(const struct folio_window *_Nonnull s
     {
         return self->replace_inputs[0];
     }
-    if (command_surface_listing(self->command_surface) || command_keys(self))
+    if (command_surface_listing(self->command_surface) || command_keys(self) ||
+        (management_surface(self) && !management_input(self)))
     {
         return self->command_layer;
     }
@@ -1478,6 +1524,7 @@ static RECT command_surface_rect(const struct folio_window *_Nonnull self)
     case COMMAND_SURFACE_THEMES:
     case COMMAND_SURFACE_TAG_EDIT:
     case COMMAND_SURFACE_TAG_FILTER:
+    case COMMAND_SURFACE_TAG_MANAGE:
         return settings_dialog_rect(self);
     case COMMAND_SURFACE_CLOSED:
     case COMMAND_SURFACE_PALETTE:
@@ -1559,13 +1606,26 @@ static RECT tag_rows_rect(const struct folio_window *_Nonnull self)
     return bounds;
 }
 
+static size_t tag_button_first(const struct folio_window *_Nonnull self)
+{
+    if (management_surface(self))
+        return ACCESSIBLE_SURFACE_TAG_PRIMARY;
+    return self->command_surface == COMMAND_SURFACE_TAG_EDIT ? ACCESSIBLE_SURFACE_TAG_ADD
+                                                             : ACCESSIBLE_SURFACE_TAG_ALL;
+}
+
+static size_t tag_button_count(const struct folio_window *_Nonnull self)
+{
+    return management_surface(self) ? 2 : 3;
+}
+
 static RECT tag_button_rect(const struct folio_window *_Nonnull self, size_t slot)
 {
     RECT bounds = tag_buttons_rect(self);
-    size_t first = self->command_surface == COMMAND_SURFACE_TAG_EDIT ? ACCESSIBLE_SURFACE_TAG_ADD
-                                                                     : ACCESSIBLE_SURFACE_TAG_ALL;
+    size_t first = tag_button_first(self);
+    int count = (int)tag_button_count(self);
     int gap = scale(6, GetDpiForWindow(self->handle));
-    int width = (bounds.right - bounds.left - 2 * gap) / 3;
+    int width = (bounds.right - bounds.left - (count - 1) * gap) / count;
     bounds.left += (int)(slot - first) * (width + gap);
     bounds.right = bounds.left + width;
     return bounds;
@@ -1939,7 +1999,8 @@ static void arrange_command_contents(struct folio_window *_Nonnull self)
     arrange_replace_inputs(self);
     /* 置換は 2 つの欄を使い、設定と履歴は欄を持たないのでどれも隠す。 */
     bool hidden = self->command_surface == COMMAND_SURFACE_REPLACE || command_keys(self) ||
-                  command_surface_listing(self->command_surface);
+                  command_surface_listing(self->command_surface) ||
+                  (management_surface(self) && !management_input(self));
     ShowWindow(self->command_input, hidden ? SW_HIDE : SW_SHOW);
     ShowWindow(self->command_layer, SW_SHOW);
     if (self->native_modal_depth == 0)
@@ -3910,7 +3971,8 @@ static void draw_surface_button(const struct folio_window *_Nonnull self, HDC de
         .icon = ICON_PAINT_CLOSE,
         .hovered = self->surface_hover == slot,
         .pressed = self->surface_pressed == slot && self->surface_pressed_inside,
-        .disabled = !folio_window_accessible_ready(self),
+        .disabled = !folio_window_accessible_ready(self) ||
+                    (management_surface(self) && !management_button_enabled(self, slot)),
         .focused = tag_button_focused(self, slot),
         .selected = tag_mode_selected(self, slot)};
     struct ui_part_ink ink = ui_part_draw(device, &self->palette, &part);
@@ -4381,17 +4443,24 @@ static void draw_settings_rows(const struct folio_window *_Nonnull self, HDC dev
 
 static const struct note_tags *_Nullable surface_tags(const struct folio_window *_Nonnull self)
 {
+    if (management_surface(self))
+        return nullptr;
     return self->command_surface == COMMAND_SURFACE_TAG_EDIT ? folio_state_edit_tags(self->state)
                                                              : folio_state_tag_filter(self->state);
 }
 
 static size_t tag_matches_count(const struct folio_window *_Nonnull self)
 {
+    if (management_surface(self))
+        return management_row_count(self);
     return self->tag_candidates == nullptr ? 0 : tag_candidates_count(self->tag_candidates);
 }
 
 static bool tag_row_selected(const struct folio_window *_Nonnull self, size_t index)
 {
+    if (management_surface(self))
+        return self->tag_management_view == TAG_MANAGEMENT_CHOOSE &&
+               index == self->command_selection;
     const struct note_tags *_Nullable tags = surface_tags(self);
     return tags != nullptr && index < tag_matches_count(self) &&
            note_tags_contains(tags, tag_candidates_tag(self->tag_candidates, index));
@@ -4421,6 +4490,11 @@ static HRESULT prepare_tag_candidates(const struct folio_window *_Nonnull self)
 static void tag_row_text(const struct folio_window *_Nonnull self, size_t index, char *_Nonnull out,
                          size_t capacity)
 {
+    if (management_surface(self) && self->tag_management_view == TAG_MANAGEMENT_PLAN)
+    {
+        management_row_text(self, index, out, capacity);
+        return;
+    }
     struct ui_text_request request = {
         .id = UI_TEXT_TAG_USAGE,
         .language = folio_state_language(self->state),
@@ -4465,8 +4539,11 @@ static void draw_tag_row(const struct folio_window *_Nonnull self, HDC device, R
                                      focused && (self->focus_cues || self->focus_cues_always),
                                  .selected = tag_row_selected(self, index)};
     struct ui_part_ink ink = ui_part_draw(device, &self->palette, &part);
-    draw_settings_mark(self, device, row, part.selected);
-    ink.label.left += scale(28, part.dpi);
+    if (!management_surface(self))
+    {
+        draw_settings_mark(self, device, row, part.selected);
+        ink.label.left += scale(28, part.dpi);
+    }
     char text[draw_unit_limit];
     tag_row_text(self, index, text, sizeof text);
     SetTextColor(device, ink.text);
@@ -4507,46 +4584,336 @@ static void tag_notice_text(const struct folio_window *_Nonnull self, char *_Non
     tag_catalog_line(self, out, capacity);
 }
 
+static size_t management_row_count(const struct folio_window *_Nonnull self)
+{
+    switch (self->tag_management_view)
+    {
+    case TAG_MANAGEMENT_CHOOSE:
+        return self->tag_candidates == nullptr ? 0 : tag_candidates_count(self->tag_candidates);
+    case TAG_MANAGEMENT_NAME:
+        return 0;
+    case TAG_MANAGEMENT_PLAN:
+    {
+        struct tag_management_summary summary = folio_state_tag_management_summary(self->state);
+        size_t count = 0;
+        for (size_t at = 0; at < summary.prepared; ++at)
+            count +=
+                folio_state_tag_management_status(self->state, at) != TAG_APPLY_NOT_TARGET ? 1 : 0;
+        return count;
+    }
+    }
+    return 0;
+}
+
+static size_t management_plan_index(const struct folio_window *_Nonnull self, size_t row)
+{
+    struct tag_management_summary summary = folio_state_tag_management_summary(self->state);
+    size_t count = 0;
+    for (size_t at = 0; at < summary.prepared; ++at)
+    {
+        if (folio_state_tag_management_status(self->state, at) == TAG_APPLY_NOT_TARGET)
+            continue;
+        if (count++ == row)
+            return at;
+    }
+    return summary.prepared;
+}
+
+static void management_row_text(const struct folio_window *_Nonnull self, size_t index,
+                                char *_Nonnull out, size_t capacity)
+{
+    const enum ui_text reasons[] = {[TAG_APPLY_NOT_TARGET] = UI_TEXT_TAG_MANAGE_UNCHANGED,
+                                    [TAG_APPLY_PENDING] = UI_TEXT_TAG_MANAGE_READY,
+                                    [TAG_APPLY_CHANGED] = UI_TEXT_TAG_MANAGE_CHANGED,
+                                    [TAG_APPLY_UNCHANGED] = UI_TEXT_TAG_MANAGE_UNCHANGED,
+                                    [TAG_APPLY_UNREADABLE] = UI_TEXT_TAG_MANAGE_UNREADABLE,
+                                    [TAG_APPLY_UNAVAILABLE] = UI_TEXT_TAG_MANAGE_UNAVAILABLE,
+                                    [TAG_APPLY_LIMIT] = UI_TEXT_TAG_MANAGE_LIMIT,
+                                    [TAG_APPLY_CONFLICT] = UI_TEXT_TAG_MANAGE_CONFLICT,
+                                    [TAG_APPLY_HISTORY_FAILED] = UI_TEXT_TAG_MANAGE_HISTORY_FAILED,
+                                    [TAG_APPLY_WRITE_FAILED] = UI_TEXT_TAG_MANAGE_WRITE_FAILED,
+                                    [TAG_APPLY_OUT_OF_MEMORY] = UI_TEXT_TAG_MANAGE_MEMORY_FAILED};
+    size_t at = management_plan_index(self, index);
+    const struct tag_update *update = folio_state_tag_management_at(self->state, at);
+    enum folio_language language = folio_state_language(self->state);
+    enum tag_apply_status status = folio_state_tag_management_status(self->state, at);
+    enum ui_text reason = reasons[status];
+    if (status == TAG_APPLY_PENDING &&
+        folio_state_tag_management_phase(self->state) == TAG_MANAGEMENT_RESULT)
+        reason = UI_TEXT_TAG_MANAGE_UNPROCESSED;
+    struct ui_text_request request = {.id = UI_TEXT_TAG_MANAGE_ROW,
+                                      .language = language,
+                                      .from = tag_update_category(update),
+                                      .name = tag_update_note(update),
+                                      .to = ui_text_line(reason, language)};
+    (void)ui_text_format(&request, out, capacity);
+}
+
+static void management_status(const struct folio_window *_Nonnull self, char *_Nonnull out,
+                              size_t capacity)
+{
+    out[0] = '\0';
+    if (self->tag_management_view != TAG_MANAGEMENT_PLAN)
+    {
+        tag_notice_text(self, out, capacity);
+        return;
+    }
+    struct tag_management_summary summary = folio_state_tag_management_summary(self->state);
+    struct ui_text_request request = {.language = folio_state_language(self->state)};
+    switch (summary.phase)
+    {
+    case TAG_MANAGEMENT_CLOSED:
+        request.id = UI_TEXT_EMPTY;
+        break;
+    case TAG_MANAGEMENT_PREPARING:
+        request.id = UI_TEXT_TAG_MANAGE_PREPARING;
+        request.k = summary.prepared;
+        request.n = summary.total;
+        break;
+    case TAG_MANAGEMENT_PREVIEW:
+        request.id = UI_TEXT_TAG_MANAGE_PREVIEW;
+        request.k = summary.pending;
+        request.n = summary.skipped;
+        break;
+    case TAG_MANAGEMENT_APPLYING:
+        request.id = UI_TEXT_TAG_MANAGE_APPLYING;
+        request.k = summary.changed;
+        request.n = summary.pending;
+        break;
+    case TAG_MANAGEMENT_RESULT:
+        request.id = UI_TEXT_TAG_MANAGE_RESULT;
+        request.k = summary.changed;
+        request.n = summary.skipped;
+        request.offset = summary.failed;
+        break;
+    }
+    (void)ui_text_format(&request, out, capacity);
+}
+
+static bool management_retryable(const struct folio_window *_Nonnull self)
+{
+    struct tag_management_summary summary = folio_state_tag_management_summary(self->state);
+    return summary.phase == TAG_MANAGEMENT_RESULT &&
+           (summary.pending != 0 || summary.failed != 0 || summary.skipped != 0 ||
+            summary.prepared < summary.total || summary.notice != FOLIO_STATE_READY);
+}
+
+static enum ui_text management_plan_button(const struct folio_window *_Nonnull self, size_t slot)
+{
+    bool primary = slot == ACCESSIBLE_SURFACE_TAG_PRIMARY;
+    switch (folio_state_tag_management_phase(self->state))
+    {
+    case TAG_MANAGEMENT_CLOSED:
+        return UI_TEXT_TAG_MANAGE_CLOSE;
+    case TAG_MANAGEMENT_PREPARING:
+    case TAG_MANAGEMENT_APPLYING:
+        return UI_TEXT_TAG_MANAGE_STOP;
+    case TAG_MANAGEMENT_PREVIEW:
+        return primary ? UI_TEXT_TAG_MANAGE_APPLY : UI_TEXT_TAG_MANAGE_BACK;
+    case TAG_MANAGEMENT_RESULT:
+        return primary && management_retryable(self) ? UI_TEXT_TAG_MANAGE_RETRY
+                                                     : UI_TEXT_TAG_MANAGE_CLOSE;
+    }
+    return UI_TEXT_EMPTY;
+}
+
+static enum ui_text management_button_label(const struct folio_window *_Nonnull self, size_t slot)
+{
+    bool primary = slot == ACCESSIBLE_SURFACE_TAG_PRIMARY;
+    switch (self->tag_management_view)
+    {
+    case TAG_MANAGEMENT_CHOOSE:
+        return primary ? UI_TEXT_TAG_MANAGE_RENAME : UI_TEXT_TAG_MANAGE_REMOVE;
+    case TAG_MANAGEMENT_NAME:
+        return primary ? UI_TEXT_TAG_MANAGE_PREPARE : UI_TEXT_TAG_MANAGE_BACK;
+    case TAG_MANAGEMENT_PLAN:
+        return management_plan_button(self, slot);
+    }
+    return UI_TEXT_EMPTY;
+}
+
+static bool management_button_enabled(const struct folio_window *_Nonnull self, size_t slot)
+{
+    if (self->command_composing)
+        return false;
+    if (slot == ACCESSIBLE_SURFACE_CLOSE || (slot == ACCESSIBLE_SURFACE_TAG_SECONDARY &&
+                                             self->tag_management_view != TAG_MANAGEMENT_CHOOSE))
+        return true;
+    switch (self->tag_management_view)
+    {
+    case TAG_MANAGEMENT_CHOOSE:
+        return self->command_selection < management_row_count(self);
+    case TAG_MANAGEMENT_NAME:
+        return GetWindowTextLengthW(self->command_input) != 0;
+    case TAG_MANAGEMENT_PLAN:
+        break;
+    }
+    if (folio_state_tag_management_phase(self->state) == TAG_MANAGEMENT_PREVIEW)
+        return folio_state_tag_management_summary(self->state).pending != 0;
+    return true;
+}
+
+static void management_intent_text(const struct folio_window *_Nonnull self, char *_Nonnull out,
+                                   size_t capacity)
+{
+    const struct note_tag *from = folio_state_tag_management_source(self->state);
+    const struct note_tag *_Nullable to = folio_state_tag_management_target(self->state);
+    struct ui_text_request request = {.id = to == nullptr ? UI_TEXT_TAG_MANAGE_INTENT_REMOVE
+                                                          : UI_TEXT_TAG_MANAGE_INTENT_RENAME,
+                                      .language = folio_state_language(self->state),
+                                      .name = note_tag_bytes(from),
+                                      .from = note_tag_bytes(from),
+                                      .to = to == nullptr ? nullptr : note_tag_bytes(to)};
+    (void)ui_text_format(&request, out, capacity);
+}
+
+static void management_notice(const struct folio_window *_Nonnull self, char *_Nonnull out,
+                              size_t capacity)
+{
+    out[0] = '\0';
+    if (self->command_failure != FOLIO_STATE_READY)
+    {
+        (void)strcpy_s(
+            out, capacity,
+            folio_state_failure_line(self->command_failure, folio_state_language(self->state)));
+        return;
+    }
+    if (self->tag_management_view != TAG_MANAGEMENT_PLAN)
+        return;
+    struct tag_management_summary summary = folio_state_tag_management_summary(self->state);
+    if (summary.notice != FOLIO_STATE_READY && summary.notice != FOLIO_STATE_CANCELLED)
+    {
+        (void)strcpy_s(out, capacity,
+                       folio_state_failure_line(summary.notice, folio_state_language(self->state)));
+        return;
+    }
+    if (summary.phase != TAG_MANAGEMENT_RESULT)
+        return;
+    size_t pending = summary.pending + summary.total - summary.prepared;
+    struct ui_text_request request = {.language = folio_state_language(self->state), .n = pending};
+    if (pending != 0)
+        request.id = UI_TEXT_TAG_MANAGE_PENDING;
+    if (pending == 0)
+        request.id =
+            summary.notice == FOLIO_STATE_CANCELLED ? UI_TEXT_TAG_MANAGE_STOPPED : UI_TEXT_EMPTY;
+    (void)ui_text_format(&request, out, capacity);
+}
+
+static void tag_footer_summary(const struct folio_window *_Nonnull self, char *_Nonnull out,
+                               size_t capacity)
+{
+    if (management_surface(self))
+    {
+        management_status(self, out, capacity);
+        return;
+    }
+    const struct note_tags *_Nullable selected = surface_tags(self);
+    struct ui_text_request request = {.id = UI_TEXT_TAG_SELECTED,
+                                      .language = folio_state_language(self->state),
+                                      .n = selected == nullptr ? 0 : note_tags_count(selected)};
+    (void)ui_text_format(&request, out, capacity);
+}
+
+static enum ui_text tag_footer_hint(const struct folio_window *_Nonnull self)
+{
+    if (management_surface(self))
+        return self->management_merging ? UI_TEXT_TAG_MANAGE_MERGE : UI_TEXT_TAG_MANAGE_SCOPE;
+    return self->command_surface == COMMAND_SURFACE_TAG_EDIT ? UI_TEXT_TAG_EDIT_HINT
+                                                             : UI_TEXT_TAG_FILTER_HINT;
+}
+
+static void tag_footer_notice(const struct folio_window *_Nonnull self, char *_Nonnull out,
+                              size_t capacity)
+{
+    if (management_surface(self))
+        management_notice(self, out, capacity);
+    if (!management_surface(self))
+        tag_notice_text(self, out, capacity);
+}
+
 static void draw_tag_footer(const struct folio_window *_Nonnull self, HDC device)
 {
     RECT line = tag_footer_rect(self);
     enum folio_language language = folio_state_language(self->state);
-    const struct note_tags *_Nullable selected = surface_tags(self);
     char text[ui_text_unit_limit];
-    struct ui_text_request request = {.id = UI_TEXT_TAG_SELECTED,
-                                      .language = language,
-                                      .n = selected == nullptr ? 0 : note_tags_count(selected)};
-    (void)ui_text_format(&request, text, sizeof text);
+    tag_footer_summary(self, text, sizeof text);
     SetTextColor(device, self->palette.current_text);
     line.top += wrapped_text(device, text, line, true);
-    enum ui_text hint = self->command_surface == COMMAND_SURFACE_TAG_EDIT ? UI_TEXT_TAG_EDIT_HINT
-                                                                          : UI_TEXT_TAG_FILTER_HINT;
+    enum ui_text hint = tag_footer_hint(self);
     SetTextColor(device, self->palette.dialog_secondary);
     if (self->settings_metrics.tag_hint_visible)
         line.top += wrapped_text(device, ui_text_line(hint, language), line, true);
-    tag_notice_text(self, text, sizeof text);
+    tag_footer_notice(self, text, sizeof text);
     (void)wrapped_text(device, text, line, true);
-    size_t first = self->command_surface == COMMAND_SURFACE_TAG_EDIT ? ACCESSIBLE_SURFACE_TAG_ADD
-                                                                     : ACCESSIBLE_SURFACE_TAG_ALL;
-    for (size_t slot = first; slot < first + 3; ++slot)
-        draw_surface_button(self, device, slot);
+    size_t first = tag_button_first(self);
+    size_t count = tag_button_count(self);
+    for (size_t slot = first; slot < first + count; ++slot)
+        if (surface_button_visible(self, slot))
+            draw_surface_button(self, device, slot);
+}
+
+static enum ui_text tag_input_label(const struct folio_window *_Nonnull self)
+{
+    if (!management_surface(self))
+        return self->command_surface == COMMAND_SURFACE_TAG_EDIT ? UI_TEXT_TAG_EDIT_INPUT
+                                                                 : UI_TEXT_TAG_FILTER_INPUT;
+    switch (self->tag_management_view)
+    {
+    case TAG_MANAGEMENT_CHOOSE:
+        return UI_TEXT_TAG_FILTER_INPUT;
+    case TAG_MANAGEMENT_NAME:
+        return UI_TEXT_TAG_MANAGE_NAME;
+    case TAG_MANAGEMENT_PLAN:
+        return UI_TEXT_TAG_MANAGE_CHANGE;
+    }
+    return UI_TEXT_EMPTY;
+}
+
+static void management_source_text(const struct folio_window *_Nonnull self, char *_Nonnull out,
+                                   size_t capacity)
+{
+    struct ui_text_request request = {.id = UI_TEXT_TAG_MANAGE_SOURCE,
+                                      .language = folio_state_language(self->state),
+                                      .name = note_tag_bytes(self->management_source)};
+    (void)ui_text_format(&request, out, capacity);
+}
+
+static void draw_management_detail(const struct folio_window *_Nonnull self, HDC device, RECT input)
+{
+    if (!management_surface(self))
+        return;
+    if (!management_input(self))
+    {
+        char intent[draw_unit_limit];
+        management_intent_text(self, intent, sizeof intent);
+        draw_utf8(device, intent, input);
+    }
+    if (self->tag_management_view == TAG_MANAGEMENT_NAME)
+    {
+        char source[draw_unit_limit];
+        management_source_text(self, source, sizeof source);
+        (void)wrapped_text(device, source, tag_rows_rect(self), true);
+    }
 }
 
 static void draw_tag_dialog(const struct folio_window *_Nonnull self, HDC device, RECT bounds)
 {
     bool edit = self->command_surface == COMMAND_SURFACE_TAG_EDIT;
     ui_part_draw_surface(device, &self->palette, bounds);
-    draw_floating_header(self, device, edit ? UI_TEXT_TAG_EDIT_TITLE : UI_TEXT_TAG_FILTER_TITLE);
+    draw_floating_header(self, device,
+                         management_surface(self)
+                             ? UI_TEXT_TAG_MANAGE_TITLE
+                             : (edit ? UI_TEXT_TAG_EDIT_TITLE : UI_TEXT_TAG_FILTER_TITLE));
     RECT input = theme_input_rect(self);
     RECT label = {input.left, input.top - scale(20, GetDpiForWindow(self->handle)), input.right,
                   input.top};
     SetTextColor(device, self->palette.current_text);
-    draw_utf8(device,
-              ui_text_line(edit ? UI_TEXT_TAG_EDIT_INPUT : UI_TEXT_TAG_FILTER_INPUT,
-                           folio_state_language(self->state)),
+    draw_utf8(device, ui_text_line(tag_input_label(self), folio_state_language(self->state)),
               label);
     draw_input_field(self, device, self->command_input, input);
-    draw_tag_rows(self, device);
+    if (!management_surface(self) || self->tag_management_view != TAG_MANAGEMENT_NAME)
+        draw_tag_rows(self, device);
+    draw_management_detail(self, device, input);
     draw_tag_footer(self, device);
 }
 
@@ -4966,6 +5333,7 @@ static void draw_command_surface(const struct folio_window *_Nonnull self, HDC d
         return;
     case COMMAND_SURFACE_TAG_EDIT:
     case COMMAND_SURFACE_TAG_FILTER:
+    case COMMAND_SURFACE_TAG_MANAGE:
         draw_tag_dialog(self, device, bounds);
         return;
     case COMMAND_SURFACE_THEMES:
@@ -5830,7 +6198,8 @@ static enum folio_state_outcome flush_edit(struct folio_window *_Nonnull self)
 }
 
 /* 編集中の本文を取り出して保存する。取り出せない理由も保存の失敗も 1 つの結果に写す。 */
-static enum folio_state_outcome store_body(struct folio_window *_Nonnull self)
+static enum folio_state_outcome store_body_mode(struct folio_window *_Nonnull self,
+                                                enum note_save_mode mode)
 {
     if (self->pane != nullptr && note_pane_readiness(self->pane) != NOTE_PANE_READINESS_READY)
     {
@@ -5856,8 +6225,21 @@ static enum folio_state_outcome store_body(struct folio_window *_Nonnull self)
     const char16_t *units = u"";
     size_t count = 0;
     enum folio_state_outcome outcome = take_text(self, &units, &count);
-    return outcome == FOLIO_STATE_READY ? folio_state_store_note(self->state, units, count)
-                                        : outcome;
+    if (outcome != FOLIO_STATE_READY)
+        return outcome;
+    switch (mode)
+    {
+    case NOTE_SAVE_UNCONDITIONAL:
+        return folio_state_store_note(self->state, units, count);
+    case NOTE_SAVE_CHECK_CURRENT:
+        return folio_state_store_note_checked(self->state, units, count);
+    }
+    return FOLIO_STATE_NOTE_STORE_FAILED;
+}
+
+static enum folio_state_outcome store_body(struct folio_window *_Nonnull self)
+{
+    return store_body_mode(self, NOTE_SAVE_UNCONDITIONAL);
 }
 
 /* Leaving an untitled document reuses the first-save dialog without a second confirmation. */
@@ -5962,6 +6344,7 @@ static const bool inline_outcomes[] = {
     [FOLIO_STATE_TAG_LIMIT] = true,
     [FOLIO_STATE_TAGS_UNAVAILABLE] = true,
     [FOLIO_STATE_TAGS_STALE] = true,
+    [FOLIO_STATE_NOTE_SOURCE_CHANGED] = true,
     /* 設定の失敗は欄の中の 1 行（ADR 0031 の決定 7）。設定画面は閉じずに理由を出す。
      * `:set number` の失敗も同じ値なので、他の Ex の失敗と同じく欄の 1 行になる。 */
     [FOLIO_STATE_SETTINGS_UNREADABLE] = true,
@@ -6087,12 +6470,12 @@ static int surface_footer_text_height(const struct folio_window *_Nonnull self, 
 static int tag_buttons_height(const struct folio_window *_Nonnull self, HDC device, RECT bounds)
 {
     UINT dpi = GetDpiForWindow(self->handle);
-    int width = (bounds.right - bounds.left - scale(12, dpi)) / 3 - scale(16, dpi);
+    int count = (int)tag_button_count(self);
+    int width = (bounds.right - bounds.left - scale(6 * (count - 1), dpi)) / count - scale(16, dpi);
     RECT label = {0, 0, width, 0};
-    size_t first = self->command_surface == COMMAND_SURFACE_TAG_EDIT ? ACCESSIBLE_SURFACE_TAG_ADD
-                                                                     : ACCESSIBLE_SURFACE_TAG_ALL;
+    size_t first = tag_button_first(self);
     int height = scale(ui_part_height, dpi);
-    for (size_t slot = first; slot < first + 3; ++slot)
+    for (size_t slot = first; slot < first + tag_button_count(self); ++slot)
     {
         int measured = wrapped_text(device,
                                     ui_text_line(surface_button_label(self, slot),
@@ -6116,13 +6499,14 @@ static bool prepare_tag_metrics(struct folio_window *_Nonnull self)
     RECT bounds = surface_frame_rect(self, UI_PART_SURFACE_CONTENT);
     self->settings_metrics.tag_button_height = tag_buttons_height(self, device, bounds);
     char text[draw_unit_limit];
-    tag_notice_text(self, text, sizeof text);
+    tag_footer_notice(self, text, sizeof text);
     int notice = text[0] == '\0' ? 0 : wrapped_text(device, text, bounds, false);
-    enum ui_text hint = self->command_surface == COMMAND_SURFACE_TAG_EDIT ? UI_TEXT_TAG_EDIT_HINT
-                                                                          : UI_TEXT_TAG_FILTER_HINT;
+    enum ui_text hint = tag_footer_hint(self);
     int guidance =
         wrapped_text(device, ui_text_line(hint, folio_state_language(self->state)), bounds, false);
-    int fixed = self->settings_metrics.tag_button_height + notice + scale(28, dpi);
+    tag_footer_summary(self, text, sizeof text);
+    int summary = text[0] == '\0' ? 0 : wrapped_text(device, text, bounds, false);
+    int fixed = self->settings_metrics.tag_button_height + notice + summary + scale(8, dpi);
     int available =
         bounds.bottom - theme_input_rect(self).bottom - scale(base_command_row_height + 16, dpi);
     self->settings_metrics.tag_hint_visible = available >= fixed + guidance;
@@ -6978,6 +7362,11 @@ static void release_tag_surface(struct folio_window *_Nonnull self, enum command
     tag_candidates_invalidate(self->tag_candidates);
     folio_state_close_tag_edit(self->state);
     folio_state_close_tag_catalog(self->state);
+    folio_state_stop_tag_management(self->state);
+    folio_state_close_tag_management(self->state);
+    note_tag_destroy(self->management_source);
+    self->management_source = nullptr;
+    self->tag_management_view = TAG_MANAGEMENT_CHOOSE;
 }
 
 [[nodiscard]] static bool set_command_surface(struct folio_window *_Nonnull self,
@@ -7112,6 +7501,12 @@ static void close_geometry_menu(struct folio_window *_Nonnull self)
 
 static void close_command_surface(struct folio_window *_Nonnull self)
 {
+    if (management_running(self))
+    {
+        folio_state_stop_tag_management(self->state);
+        management_refresh(self);
+        return;
+    }
     HWND _Nullable focus = self->command_return_focus;
     if (!hide_command_surface(self))
         return;
@@ -7612,6 +8007,14 @@ static void cancel_session(struct folio_window *_Nonnull self)
     clear_session_reason(self);
 }
 
+static void stop_management_for_close(struct folio_window *_Nonnull self)
+{
+    if (!management_running(self))
+        return;
+    folio_state_stop_tag_management(self->state);
+    management_refresh(self);
+}
+
 static LRESULT query_session_end(struct folio_window *_Nonnull self)
 {
     switch (self->session_phase)
@@ -7624,6 +8027,7 @@ static LRESULT query_session_end(struct folio_window *_Nonnull self)
     case SESSION_PHASE_IDLE:
         break;
     }
+    stop_management_for_close(self);
     enum ui_text reason = session_unready_reason(self);
     if (reason != UI_TEXT_EMPTY)
     {
@@ -7680,6 +8084,7 @@ static LRESULT end_session(struct folio_window *_Nonnull self, WPARAM ending)
 
 static void run_normal_close(struct folio_window *_Nonnull self)
 {
+    stop_management_for_close(self);
     self->close_phase = CLOSE_PHASE_RUNNING;
     finish_quit(self, depart_document(self).outcome);
     self->close_phase = CLOSE_PHASE_IDLE;
@@ -7729,6 +8134,7 @@ static void resume_normal_close(struct folio_window *_Nonnull self)
 static void execute_quit_command(struct folio_window *_Nonnull self, const char *_Nonnull argument)
 {
     (void)argument;
+    stop_management_for_close(self);
     finish_quit(self, command_quit(self));
 }
 
@@ -7736,6 +8142,7 @@ static void execute_save_quit_command(struct folio_window *_Nonnull self,
                                       const char *_Nonnull argument)
 {
     (void)argument;
+    stop_management_for_close(self);
     finish_quit(self, store_body(self));
 }
 
@@ -9016,8 +9423,225 @@ static void execute_layout_note(struct folio_window *_Nonnull self, const char *
     apply_layout_mode(self, FOLIO_LAYOUT_NOTE);
 }
 
+static void management_refresh(struct folio_window *_Nonnull self)
+{
+    if (self->tag_management_view == TAG_MANAGEMENT_PLAN)
+        self->management_merging = folio_state_tag_management_summary(self->state).merging;
+    invalidate_surface_items(self);
+    self->command_selection = 0;
+    self->command_first = 0;
+    self->tag_focus = management_running(self) ? TAG_SURFACE_PRIMARY : TAG_SURFACE_ROWS;
+    arrange_command_input(self);
+    if (management_input(self))
+        SetFocus(self->command_input);
+    if (!management_input(self))
+        SetFocus(self->command_layer);
+    redraw_command_layer(self);
+    accessibility_host_schedule(self->accessibility);
+    enum tag_management_phase phase = folio_state_tag_management_phase(self->state);
+    if (self->tag_management_view == TAG_MANAGEMENT_PLAN &&
+        (phase == TAG_MANAGEMENT_PREVIEW || phase == TAG_MANAGEMENT_RESULT))
+    {
+        char text[draw_unit_limit];
+        char16_t spoken[draw_unit_limit];
+        management_status(self, text, sizeof text);
+        (void)wide_units(text, spoken);
+        accessibility_host_notify(self->accessibility,
+                                  (struct accessible_item){.kind = ACCESSIBLE_WINDOW}, spoken);
+    }
+}
+
+static enum folio_state_outcome management_input_tag(const struct folio_window *_Nonnull self,
+                                                     struct note_tag *_Nullable *_Nonnull out)
+{
+    struct utf8_text *_Nullable query = nullptr;
+    if (command_query(self, &query) != UTF8_TEXT_CONVERTED)
+        return FOLIO_STATE_OUT_OF_MEMORY;
+    enum note_tag_outcome result =
+        note_tag_create(utf8_text_bytes(query), utf8_text_length(query), out);
+    utf8_text_destroy(query);
+    switch (result)
+    {
+    case NOTE_TAG_READY:
+        return FOLIO_STATE_READY;
+    case NOTE_TAG_EMPTY:
+    case NOTE_TAG_INVALID:
+        return FOLIO_STATE_TAG_INVALID;
+    case NOTE_TAG_TOO_LONG:
+        return FOLIO_STATE_TAG_LIMIT;
+    case NOTE_TAG_OUT_OF_MEMORY:
+        return FOLIO_STATE_OUT_OF_MEMORY;
+    }
+    return FOLIO_STATE_TAG_INVALID;
+}
+
+static void management_name_changed(struct folio_window *_Nonnull self)
+{
+    struct note_tag *_Nullable target = nullptr;
+    enum folio_state_outcome result = management_input_tag(self, &target);
+    self->management_merging =
+        result == FOLIO_STATE_READY && !note_tag_equal(self->management_source, target) &&
+        folio_state_tag_catalog_status(self->state) == TAG_CATALOG_AVAILABLE &&
+        tag_catalog_contains(folio_state_tag_catalog(self->state), target);
+    note_tag_destroy(target);
+    clear_command_status(self);
+    invalidate_surface_items(self);
+    arrange_command_input(self);
+    redraw_command_layer(self);
+}
+
+static void management_prepare(struct folio_window *_Nonnull self,
+                               const struct note_tag *_Nonnull from,
+                               const struct note_tag *_Nullable to)
+{
+    if (to != nullptr && folio_state_tag_catalog_status(self->state) == TAG_CATALOG_AVAILABLE)
+        self->management_merging = !note_tag_equal(from, to) &&
+                                   tag_catalog_contains(folio_state_tag_catalog(self->state), to);
+    if (to == nullptr)
+        self->management_merging = false;
+    enum folio_state_outcome result = folio_state_prepare_tag_management(self->state, from, to);
+    self->command_failure = result;
+    if (result == FOLIO_STATE_READY)
+    {
+        self->tag_management_view = TAG_MANAGEMENT_PLAN;
+        note_tag_destroy(self->management_source);
+        self->management_source = nullptr;
+    }
+    management_refresh(self);
+}
+
+static void management_rename(struct folio_window *_Nonnull self)
+{
+    if (self->command_selection >= management_row_count(self))
+        return;
+    const struct note_tag *selected =
+        tag_candidates_tag(self->tag_candidates, self->command_selection);
+    struct note_tag *_Nullable source = nullptr;
+    if (note_tag_create(note_tag_bytes(selected), note_tag_length(selected), &source) !=
+        NOTE_TAG_READY)
+    {
+        self->command_failure = FOLIO_STATE_OUT_OF_MEMORY;
+        management_refresh(self);
+        return;
+    }
+    note_tag_destroy(self->management_source);
+    self->management_source = source;
+    self->tag_management_view = TAG_MANAGEMENT_NAME;
+    self->management_merging = false;
+    char16_t input[draw_unit_limit];
+    (void)wide_units(note_tag_bytes(source), input);
+    initialize_command_input(self, (const wchar_t *)input);
+    management_refresh(self);
+    SendMessageW(self->command_input, EM_SETSEL, 0, -1);
+}
+
+static void management_choose(struct folio_window *_Nonnull self)
+{
+    folio_state_close_tag_management(self->state);
+    note_tag_destroy(self->management_source);
+    self->management_source = nullptr;
+    self->tag_management_view = TAG_MANAGEMENT_CHOOSE;
+    self->management_merging = false;
+    folio_state_request_tag_catalog(self->state);
+    initialize_command_input(self, L"");
+    tag_query_changed(self);
+    management_refresh(self);
+}
+
+static void management_apply_action(struct folio_window *_Nonnull self)
+{
+    switch (folio_state_tag_management_phase(self->state))
+    {
+    case TAG_MANAGEMENT_CLOSED:
+        close_command_surface(self);
+        return;
+    case TAG_MANAGEMENT_PREPARING:
+    case TAG_MANAGEMENT_APPLYING:
+        folio_state_stop_tag_management(self->state);
+        break;
+    case TAG_MANAGEMENT_PREVIEW:
+        self->command_failure = folio_state_apply_tag_management(self->state);
+        break;
+    case TAG_MANAGEMENT_RESULT:
+        if (management_retryable(self))
+        {
+            management_prepare(self, folio_state_tag_management_source(self->state),
+                               folio_state_tag_management_target(self->state));
+            return;
+        }
+        close_command_surface(self);
+        return;
+    }
+    management_refresh(self);
+}
+
+static void management_named_prepare(struct folio_window *_Nonnull self)
+{
+    struct note_tag *_Nullable target = nullptr;
+    enum folio_state_outcome result = management_input_tag(self, &target);
+    if (result == FOLIO_STATE_READY)
+        management_prepare(self, self->management_source, target);
+    if (result != FOLIO_STATE_READY)
+    {
+        self->command_failure = result;
+        management_refresh(self);
+    }
+    note_tag_destroy(target);
+}
+
+static void management_primary(struct folio_window *_Nonnull self)
+{
+    if (!management_button_enabled(self, ACCESSIBLE_SURFACE_TAG_PRIMARY))
+        return;
+    switch (self->tag_management_view)
+    {
+    case TAG_MANAGEMENT_CHOOSE:
+        management_rename(self);
+        return;
+    case TAG_MANAGEMENT_NAME:
+        management_named_prepare(self);
+        return;
+    case TAG_MANAGEMENT_PLAN:
+        management_apply_action(self);
+        return;
+    }
+}
+
+static void management_secondary(struct folio_window *_Nonnull self)
+{
+    if (!management_button_enabled(self, ACCESSIBLE_SURFACE_TAG_SECONDARY))
+        return;
+    switch (self->tag_management_view)
+    {
+    case TAG_MANAGEMENT_CHOOSE:
+        if (self->command_selection < management_row_count(self))
+            management_prepare(
+                self, tag_candidates_tag(self->tag_candidates, self->command_selection), nullptr);
+        return;
+    case TAG_MANAGEMENT_NAME:
+        management_choose(self);
+        return;
+    case TAG_MANAGEMENT_PLAN:
+        break;
+    }
+    enum tag_management_phase phase = folio_state_tag_management_phase(self->state);
+    if (phase == TAG_MANAGEMENT_PREVIEW)
+        management_choose(self);
+    if (phase == TAG_MANAGEMENT_RESULT || phase == TAG_MANAGEMENT_CLOSED)
+        close_command_surface(self);
+}
+
 static void tag_query_changed(struct folio_window *_Nonnull self)
 {
+    if (self->command_composing)
+        return;
+    if (management_surface(self) && self->tag_management_view == TAG_MANAGEMENT_NAME)
+    {
+        management_name_changed(self);
+        return;
+    }
+    if (management_surface(self) && self->tag_management_view == TAG_MANAGEMENT_PLAN)
+        return;
     invalidate_surface_items(self);
     self->command_selection = 0;
     self->command_first = 0;
@@ -9038,15 +9662,14 @@ static enum folio_state_outcome tag_editor_source(const struct folio_window *_No
                                                                 : FOLIO_STATE_READY;
 }
 
-static void open_tag_surface(struct folio_window *_Nonnull self, enum command_surface_mode mode)
+static enum folio_state_outcome prepare_tag_surface(struct folio_window *_Nonnull self,
+                                                    enum command_surface_mode mode)
 {
-    if (self->pane != nullptr && note_pane_composing(self->pane))
-        return;
-    if (!hide_command_surface(self))
-        return;
     enum folio_state_outcome outcome = FOLIO_STATE_READY;
     if (mode == COMMAND_SURFACE_TAG_FILTER)
         outcome = save_before_filter(self);
+    if (mode == COMMAND_SURFACE_TAG_MANAGE)
+        outcome = save_before_catalog(self, NOTE_SAVE_CHECK_CURRENT);
     if (mode == COMMAND_SURFACE_TAG_EDIT)
     {
         const char16_t *_Nonnull units = u"";
@@ -9055,6 +9678,16 @@ static void open_tag_surface(struct folio_window *_Nonnull self, enum command_su
         if (outcome == FOLIO_STATE_READY)
             outcome = folio_state_begin_tag_edit(self->state, units, count);
     }
+    return outcome;
+}
+
+static void open_tag_surface(struct folio_window *_Nonnull self, enum command_surface_mode mode)
+{
+    if (self->pane != nullptr && note_pane_composing(self->pane))
+        return;
+    if (!hide_command_surface(self))
+        return;
+    enum folio_state_outcome outcome = prepare_tag_surface(self, mode);
     if (outcome != FOLIO_STATE_READY)
     {
         if (outcome != FOLIO_STATE_CANCELLED)
@@ -9078,6 +9711,14 @@ static void execute_filter_tags(struct folio_window *_Nonnull self, const char *
 {
     (void)argument;
     open_tag_surface(self, COMMAND_SURFACE_TAG_FILTER);
+}
+
+static void execute_manage_tags(struct folio_window *_Nonnull self, const char *_Nonnull argument)
+{
+    (void)argument;
+    self->tag_management_view = TAG_MANAGEMENT_CHOOSE;
+    self->management_merging = false;
+    open_tag_surface(self, COMMAND_SURFACE_TAG_MANAGE);
 }
 
 static void tag_action_finished(struct folio_window *_Nonnull self,
@@ -9140,6 +9781,12 @@ static enum folio_state_outcome toggle_filter_tag(struct folio_window *_Nonnull 
 
 static void tag_toggle_row(struct folio_window *_Nonnull self)
 {
+    if (management_surface(self))
+    {
+        redraw_command_layer(self);
+        accessibility_host_schedule(self->accessibility);
+        return;
+    }
     if (self->command_composing || self->command_selection >= tag_matches_count(self))
         return;
     const struct note_tag *_Nonnull tag =
@@ -9283,6 +9930,7 @@ static void (*_Nonnull const command_runs[])(struct folio_window *_Nonnull self,
     [FOLIO_COMMAND_RENAME_CATEGORY] = execute_rename_category_command,
     [FOLIO_COMMAND_EDIT_TAGS] = execute_edit_tags,
     [FOLIO_COMMAND_FILTER_TAGS] = execute_filter_tags,
+    [FOLIO_COMMAND_MANAGE_TAGS] = execute_manage_tags,
 };
 
 /* GUI・キー・Exで同じ操作と引数を実行する（ADR0020）。 */
@@ -9968,6 +10616,10 @@ static size_t tag_focus_slot(enum tag_surface_focus focus)
         return ACCESSIBLE_SURFACE_TAG_CLEAR;
     case TAG_SURFACE_CLOSE:
         return ACCESSIBLE_SURFACE_CLOSE;
+    case TAG_SURFACE_PRIMARY:
+        return ACCESSIBLE_SURFACE_TAG_PRIMARY;
+    case TAG_SURFACE_SECONDARY:
+        return ACCESSIBLE_SURFACE_TAG_SECONDARY;
     }
     return SIZE_MAX;
 }
@@ -9983,8 +10635,56 @@ static size_t tag_focus_ordinal(const struct folio_window *_Nonnull self,
     return 0;
 }
 
+static bool management_focus_visible(const struct folio_window *_Nonnull self,
+                                     enum tag_surface_focus focus)
+{
+    if (focus == TAG_SURFACE_ROWS)
+        return management_row_count(self) != 0;
+    size_t slot = tag_focus_slot(focus);
+    return surface_button_visible(self, slot) && management_button_enabled(self, slot);
+}
+
+static size_t management_focus_ordinal(const struct folio_window *_Nonnull self,
+                                       const enum tag_surface_focus *_Nonnull path)
+{
+    if (GetFocus() != self->command_layer)
+        return 0;
+    for (size_t at = 0; at < 4; ++at)
+        if (self->tag_focus == path[at])
+            return at + 1;
+    return 0;
+}
+
+static bool management_tab(struct folio_window *_Nonnull self)
+{
+    const enum tag_surface_focus path[] = {TAG_SURFACE_ROWS, TAG_SURFACE_PRIMARY,
+                                           TAG_SURFACE_SECONDARY, TAG_SURFACE_CLOSE};
+    size_t current = management_focus_ordinal(self, path);
+    size_t direction = (pressed_shortcut_modifiers() & FSHIFT) != 0 ? 4 : 1;
+    for (size_t step = 0; step < 5; ++step)
+    {
+        current = (current + direction) % 5;
+        if (current == 0 && management_input(self))
+        {
+            SetFocus(self->command_input);
+            break;
+        }
+        if (current != 0 && management_focus_visible(self, path[current - 1]))
+        {
+            self->tag_focus = path[current - 1];
+            SetFocus(self->command_layer);
+            break;
+        }
+    }
+    redraw_command_layer(self);
+    accessibility_host_schedule(self->accessibility);
+    return true;
+}
+
 static bool tag_tab(struct folio_window *_Nonnull self)
 {
+    if (management_surface(self))
+        return management_tab(self);
     const enum tag_surface_focus edit[] = {TAG_SURFACE_ROWS, TAG_SURFACE_ADD, TAG_SURFACE_APPLY,
                                            TAG_SURFACE_CANCEL, TAG_SURFACE_CLOSE};
     const enum tag_surface_focus filter[] = {TAG_SURFACE_ROWS, TAG_SURFACE_ALL, TAG_SURFACE_ANY,
@@ -10008,8 +10708,31 @@ static bool tag_tab(struct folio_window *_Nonnull self)
     return true;
 }
 
+static bool management_return(struct folio_window *_Nonnull self)
+{
+    if (GetFocus() == self->command_input)
+    {
+        if (self->tag_management_view == TAG_MANAGEMENT_NAME)
+            management_primary(self);
+        if (self->tag_management_view == TAG_MANAGEMENT_CHOOSE && management_row_count(self) != 0)
+        {
+            self->tag_focus = TAG_SURFACE_ROWS;
+            SetFocus(self->command_layer);
+            redraw_command_layer(self);
+        }
+        return true;
+    }
+    if (self->tag_focus == TAG_SURFACE_ROWS && self->tag_management_view == TAG_MANAGEMENT_CHOOSE)
+        management_rename(self);
+    if (self->tag_focus != TAG_SURFACE_ROWS)
+        (void)surface_button_action(self, tag_focus_slot(self->tag_focus));
+    return true;
+}
+
 static bool tag_return(struct folio_window *_Nonnull self)
 {
+    if (management_surface(self))
+        return management_return(self);
     if (GetFocus() == self->command_input)
     {
         if (self->command_surface == COMMAND_SURFACE_TAG_EDIT)
@@ -11091,6 +11814,7 @@ static void execute_command_input(struct folio_window *_Nonnull self)
     case COMMAND_SURFACE_THEMES:
     case COMMAND_SURFACE_TAG_EDIT:
     case COMMAND_SURFACE_TAG_FILTER:
+    case COMMAND_SURFACE_TAG_MANAGE:
     case COMMAND_SURFACE_MENU:
     case COMMAND_SURFACE_HISTORY:
         utf8_text_destroy(query);
@@ -11817,7 +12541,8 @@ static bool filter_pointer_message(const struct folio_window *_Nonnull self, UIN
 }
 
 /* 検索は保存済み本文だけを見る。名前付きEDITのfocus入口で共通保存を先に通す。 */
-static enum folio_state_outcome save_before_filter(struct folio_window *_Nonnull self)
+static enum folio_state_outcome save_before_catalog(struct folio_window *_Nonnull self,
+                                                    enum note_save_mode mode)
 {
     if (self->filter_saving || session_busy(self) || pane_streaming(self) || self->removal_running)
         return FOLIO_STATE_CANCELLED;
@@ -11830,13 +12555,18 @@ static enum folio_state_outcome save_before_filter(struct folio_window *_Nonnull
         return FOLIO_STATE_CANCELLED;
     }
     self->filter_saving = true;
-    enum folio_state_outcome outcome = store_body(self);
+    enum folio_state_outcome outcome = store_body_mode(self, mode);
     self->filter_saving = false;
     if (outcome != FOLIO_STATE_READY)
         focus_pane(self);
     redraw_drawer(self);
     InvalidateRect(self->handle, nullptr, FALSE);
     return outcome;
+}
+
+static enum folio_state_outcome save_before_filter(struct folio_window *_Nonnull self)
+{
+    return save_before_catalog(self, NOTE_SAVE_UNCONDITIONAL);
 }
 
 static void save_on_filter_focus(struct folio_window *_Nonnull self)
@@ -13946,6 +14676,7 @@ void folio_window_destroy(struct folio_window *_Nullable window)
     command_candidates_destroy(window->command_candidates);
     theme_candidates_destroy(window->theme_candidates);
     tag_candidates_destroy(window->tag_candidates);
+    note_tag_destroy(window->management_source);
     if (window->mono_font != nullptr)
     {
         DeleteObject(window->mono_font);
@@ -13996,7 +14727,9 @@ static enum ui_text surface_title(const struct folio_window *_Nonnull self)
     case COMMAND_SURFACE_TAG_EDIT:
         return UI_TEXT_TAG_EDIT_TITLE;
     case COMMAND_SURFACE_TAG_FILTER:
-        return UI_TEXT_TAG_FILTER_TITLE;
+    case COMMAND_SURFACE_TAG_MANAGE:
+        return self->command_surface == COMMAND_SURFACE_TAG_MANAGE ? UI_TEXT_TAG_MANAGE_TITLE
+                                                                   : UI_TEXT_TAG_FILTER_TITLE;
     case COMMAND_SURFACE_MENU:
     case COMMAND_SURFACE_HISTORY:
         return UI_TEXT_COMMAND_HISTORY;
@@ -14025,6 +14758,7 @@ static HRESULT surface_row_count(const struct folio_window *_Nonnull self, size_
         return S_OK;
     case COMMAND_SURFACE_TAG_EDIT:
     case COMMAND_SURFACE_TAG_FILTER:
+    case COMMAND_SURFACE_TAG_MANAGE:
         *out = tag_matches_count(self);
         return S_OK;
     case COMMAND_SURFACE_THEMES:
@@ -14056,6 +14790,9 @@ static bool surface_has_list(const struct folio_window *_Nonnull self)
 
 static enum accessible_kind surface_row_kind(const struct folio_window *_Nonnull self, size_t at)
 {
+    if (management_surface(self))
+        return self->tag_management_view == TAG_MANAGEMENT_CHOOSE ? ACCESSIBLE_SURFACE_CHOICE
+                                                                  : ACCESSIBLE_SURFACE_TEXT;
     if (tag_surface(self))
         return ACCESSIBLE_SURFACE_TOGGLE;
     if (self->command_surface != COMMAND_SURFACE_SETTINGS)
@@ -14107,6 +14844,12 @@ static bool surface_button_visible(const struct folio_window *_Nonnull self, siz
     case ACCESSIBLE_SURFACE_TAG_ANY:
     case ACCESSIBLE_SURFACE_TAG_CLEAR:
         return self->command_surface == COMMAND_SURFACE_TAG_FILTER;
+    case ACCESSIBLE_SURFACE_TAG_PRIMARY:
+        return management_surface(self);
+    case ACCESSIBLE_SURFACE_TAG_SECONDARY:
+        return management_surface(self) && !management_running(self) &&
+               (folio_state_tag_management_phase(self->state) != TAG_MANAGEMENT_RESULT ||
+                management_retryable(self));
     }
     return false;
 }
@@ -14456,6 +15199,10 @@ static enum ui_text standard_surface_button_label(const struct folio_window *_No
 
 static enum ui_text surface_button_label(const struct folio_window *_Nonnull self, size_t slot)
 {
+    if (slot == ACCESSIBLE_SURFACE_CLOSE && management_running(self))
+        return UI_TEXT_TAG_MANAGE_STOP;
+    if (slot >= ACCESSIBLE_SURFACE_TAG_PRIMARY)
+        return management_button_label(self, slot);
     if (slot >= ACCESSIBLE_SURFACE_TAG_ADD)
     {
         const enum ui_text tags[] = {UI_TEXT_TAG_ADD, UI_TEXT_TAG_APPLY, UI_TEXT_TAG_CANCEL,
@@ -14476,9 +15223,37 @@ static void surface_empty_status(const struct folio_window *_Nonnull self, char 
             ui_text_line(UI_TEXT_ACCESSIBLE_NO_RESULTS, folio_state_language(self->state)));
 }
 
+static void management_surface_status(const struct folio_window *_Nonnull self, char *_Nonnull out)
+{
+    char line[draw_unit_limit];
+    if (self->tag_management_view == TAG_MANAGEMENT_PLAN)
+        management_intent_text(self, out, replace_status_capacity);
+    if (self->tag_management_view == TAG_MANAGEMENT_NAME)
+        management_source_text(self, out, replace_status_capacity);
+    if (out[0] != '\0')
+        (void)strcat_s(out, replace_status_capacity, "\n");
+    (void)strcat_s(out, replace_status_capacity,
+                   ui_text_line(tag_footer_hint(self), folio_state_language(self->state)));
+    management_status(self, line, sizeof line);
+    if (out[0] != '\0')
+        (void)strcat_s(out, replace_status_capacity, "\n");
+    (void)strcat_s(out, replace_status_capacity, line);
+    management_notice(self, line, sizeof line);
+    if (line[0] != '\0')
+    {
+        (void)strcat_s(out, replace_status_capacity, "\n");
+        (void)strcat_s(out, replace_status_capacity, line);
+    }
+}
+
 static void surface_status_text(const struct folio_window *_Nonnull self, char *_Nonnull out)
 {
     out[0] = '\0';
+    if (management_surface(self))
+    {
+        management_surface_status(self, out);
+        return;
+    }
     if (self->command_failure != FOLIO_STATE_READY)
     {
         failure_status(self, self->command_failure, out);
@@ -14540,7 +15315,10 @@ static enum ui_text surface_control_label(const struct folio_window *_Nonnull se
 static HRESULT surface_name(const struct folio_window *_Nonnull self, struct accessible_item item,
                             struct accessible_view *_Nonnull out)
 {
-    if (tag_surface(self) && item.kind == ACCESSIBLE_SURFACE_TOGGLE)
+    if (tag_surface(self) &&
+        (item.kind == ACCESSIBLE_SURFACE_TOGGLE ||
+         (management_surface(self) &&
+          (item.kind == ACCESSIBLE_SURFACE_CHOICE || item.kind == ACCESSIBLE_SURFACE_TEXT))))
     {
         char text[draw_unit_limit];
         tag_row_text(self, item.slot, text, sizeof text);
@@ -14588,6 +15366,8 @@ static RECT accessible_surface_button_rect(const struct folio_window *_Nonnull s
     case ACCESSIBLE_SURFACE_TAG_ALL:
     case ACCESSIBLE_SURFACE_TAG_ANY:
     case ACCESSIBLE_SURFACE_TAG_CLEAR:
+    case ACCESSIBLE_SURFACE_TAG_PRIMARY:
+    case ACCESSIBLE_SURFACE_TAG_SECONDARY:
         return tag_button_rect(self, slot);
     case ACCESSIBLE_SURFACE_BACK:
         return theme_back_rect(self);
@@ -14707,6 +15487,8 @@ static RECT surface_list_bounds(const struct folio_window *_Nonnull self)
 
 static bool surface_row_actionable(const struct folio_window *_Nonnull self, size_t at)
 {
+    if (management_surface(self) && self->tag_management_view == TAG_MANAGEMENT_PLAN)
+        return false;
     if (self->command_surface == COMMAND_SURFACE_SETTINGS)
         return settings_row_choice(at);
     if (self->command_surface == COMMAND_SURFACE_MENU)
@@ -14782,7 +15564,8 @@ static HRESULT surface_list_view(const struct folio_window *_Nonnull self,
 {
     size_t count = 0;
     HRESULT result = surface_row_count(self, &count);
-    out->checklist = tag_surface(self);
+    out->checklist = tag_surface(self) && !(management_surface(self) &&
+                                            self->tag_management_view == TAG_MANAGEMENT_CHOOSE);
     out->selection_required = count != 0 && !out->checklist;
     out->scroll = (int)self->command_first;
     if (self->command_surface == COMMAND_SURFACE_SETTINGS)
@@ -14818,16 +15601,16 @@ static void surface_selection_view(const struct folio_window *_Nonnull self,
                                           : settings_row_current(self, item.slot);
 }
 
-static void tag_control_view(const struct folio_window *_Nonnull self, struct accessible_item item,
-                             struct accessible_view *_Nonnull out)
+static bool tag_surface_row(const struct folio_window *_Nonnull self, enum accessible_kind kind)
 {
-    out->focusable =
-        item.kind == ACCESSIBLE_SURFACE_TOGGLE || item.kind == ACCESSIBLE_SURFACE_BUTTON;
-    bool row = item.kind == ACCESSIBLE_SURFACE_TOGGLE;
-    bool target = row ? self->tag_focus == TAG_SURFACE_ROWS && self->command_selection == item.slot
-                      : tag_focus_slot(self->tag_focus) == item.slot;
-    out->focused = out->focusable && GetFocus() == self->command_layer && target;
-    out->enabled = out->enabled && !self->command_composing;
+    return kind == ACCESSIBLE_SURFACE_TOGGLE ||
+           (management_surface(self) &&
+            (kind == ACCESSIBLE_SURFACE_CHOICE || kind == ACCESSIBLE_SURFACE_TEXT));
+}
+
+static void tag_mode_status(const struct folio_window *_Nonnull self, struct accessible_item item,
+                            struct accessible_view *_Nonnull out)
+{
     bool mode =
         item.kind == ACCESSIBLE_SURFACE_BUTTON &&
         (item.slot == ACCESSIBLE_SURFACE_TAG_ALL || item.slot == ACCESSIBLE_SURFACE_TAG_ANY);
@@ -14841,13 +15624,27 @@ static void tag_control_view(const struct folio_window *_Nonnull self, struct ac
     }
 }
 
+static void tag_control_view(const struct folio_window *_Nonnull self, struct accessible_item item,
+                             struct accessible_view *_Nonnull out)
+{
+    bool row = tag_surface_row(self, item.kind);
+    out->focusable = row || item.kind == ACCESSIBLE_SURFACE_BUTTON;
+    bool target = row ? self->tag_focus == TAG_SURFACE_ROWS && self->command_selection == item.slot
+                      : tag_focus_slot(self->tag_focus) == item.slot;
+    out->focused = out->focusable && GetFocus() == self->command_layer && target;
+    out->enabled = out->enabled && !self->command_composing;
+    if (management_surface(self) && item.kind == ACCESSIBLE_SURFACE_BUTTON)
+        out->enabled = out->enabled && management_button_enabled(self, item.slot);
+    tag_mode_status(self, item, out);
+}
+
 static void surface_control_view(const struct folio_window *_Nonnull self,
                                  struct accessible_item item, struct accessible_view *_Nonnull out)
 {
     out->enabled =
         folio_window_accessible_ready(self) && self->command_surface != COMMAND_SURFACE_CLOSED;
     out->dialog = item.kind == ACCESSIBLE_SURFACE && framed_surface(self);
-    out->live = item.kind == ACCESSIBLE_SURFACE_STATUS;
+    out->live = item.kind == ACCESSIBLE_SURFACE_STATUS && !management_running(self);
     if (item.kind == ACCESSIBLE_SURFACE && command_keys(self))
     {
         out->focusable = true;
@@ -14913,7 +15710,8 @@ static size_t settings_selected_language(const struct folio_window *_Nonnull sel
 static HRESULT surface_selected_row(const struct folio_window *_Nonnull self,
                                     struct accessible_item *_Nonnull out)
 {
-    if (tag_surface(self))
+    if (tag_surface(self) &&
+        !(management_surface(self) && self->tag_management_view == TAG_MANAGEMENT_CHOOSE))
         return S_FALSE;
     size_t at = self->command_selection;
     if (self->command_surface == COMMAND_SURFACE_PALETTE)
@@ -15027,12 +15825,20 @@ static void surface_step(struct folio_window *_Nonnull self, bool previous)
 
 static HRESULT surface_button_action(struct folio_window *_Nonnull self, size_t slot)
 {
+    if (management_surface(self) && !management_button_enabled(self, slot))
+        return accessibility_node_disabled;
     if (tag_surface(self) && self->command_composing)
         return accessibility_node_disabled;
     switch ((enum accessible_surface_button)slot)
     {
     case ACCESSIBLE_SURFACE_TAG_ADD:
         tag_add_input(self);
+        break;
+    case ACCESSIBLE_SURFACE_TAG_PRIMARY:
+        management_primary(self);
+        break;
+    case ACCESSIBLE_SURFACE_TAG_SECONDARY:
+        management_secondary(self);
         break;
     case ACCESSIBLE_SURFACE_TAG_APPLY:
         tag_apply(self);
@@ -15110,6 +15916,15 @@ static HRESULT tag_row_action(struct folio_window *_Nonnull self,
     reveal_command_selection(self);
     if (request->action == ACCESSIBLE_ACTION_FOCUS)
         return focus_surface_row(self);
+    if (management_surface(self))
+    {
+        if (self->tag_management_view != TAG_MANAGEMENT_CHOOSE)
+            return accessibility_node_invalid;
+        if (request->action == ACCESSIBLE_ACTION_INVOKE)
+            management_rename(self);
+        redraw_command_layer(self);
+        return S_OK;
+    }
     tag_toggle_row(self);
     return S_OK;
 }
@@ -15160,9 +15975,10 @@ static HRESULT surface_root_action(struct folio_window *_Nonnull self,
 
 static HRESULT tag_button_focus(struct folio_window *_Nonnull self, size_t slot)
 {
-    const enum tag_surface_focus values[] = {TAG_SURFACE_CLOSE,  TAG_SURFACE_ADD, TAG_SURFACE_APPLY,
-                                             TAG_SURFACE_CANCEL, TAG_SURFACE_ALL, TAG_SURFACE_ANY,
-                                             TAG_SURFACE_CLEAR};
+    const enum tag_surface_focus values[] = {
+        TAG_SURFACE_CLOSE,  TAG_SURFACE_ADD,     TAG_SURFACE_APPLY,
+        TAG_SURFACE_CANCEL, TAG_SURFACE_ALL,     TAG_SURFACE_ANY,
+        TAG_SURFACE_CLEAR,  TAG_SURFACE_PRIMARY, TAG_SURFACE_SECONDARY};
     for (size_t at = 0; at < sizeof values / sizeof values[0]; ++at)
         if (tag_focus_slot(values[at]) == slot)
         {
@@ -15179,18 +15995,17 @@ static bool tag_button_focus_requested(const struct folio_window *_Nonnull self,
            request->action == ACCESSIBLE_ACTION_FOCUS;
 }
 
-static HRESULT surface_action(struct folio_window *_Nonnull self,
-                              const struct accessible_request *_Nonnull request)
+static bool management_row_focus_requested(const struct folio_window *_Nonnull self,
+                                           const struct accessible_request *_Nonnull request)
+{
+    return management_surface(self) && request->item.kind == ACCESSIBLE_SURFACE_TEXT &&
+           request->action == ACCESSIBLE_ACTION_FOCUS;
+}
+
+static HRESULT surface_list_action(struct folio_window *_Nonnull self,
+                                   const struct accessible_request *_Nonnull request)
 {
     struct accessible_item item = request->item;
-    if (tag_button_focus_requested(self, request))
-        return tag_button_focus(self, item.slot);
-    if (item.kind == ACCESSIBLE_SURFACE)
-        return surface_root_action(self, request);
-    if (item.kind == ACCESSIBLE_SURFACE_TAB)
-        return surface_tab_action(self, request);
-    if (item.kind == ACCESSIBLE_SURFACE_BUTTON && request->action == ACCESSIBLE_ACTION_INVOKE)
-        return surface_button_action(self, item.slot);
     if (request->action == ACCESSIBLE_ACTION_SCROLL && item.kind == ACCESSIBLE_SURFACE_LIST)
     {
         self->command_first = (size_t)request->scroll_target;
@@ -15206,6 +16021,23 @@ static HRESULT surface_action(struct folio_window *_Nonnull self,
     if (!row)
         return accessibility_node_invalid;
     return surface_row_action(self, request);
+}
+
+static HRESULT surface_action(struct folio_window *_Nonnull self,
+                              const struct accessible_request *_Nonnull request)
+{
+    struct accessible_item item = request->item;
+    if (management_row_focus_requested(self, request))
+        return tag_row_action(self, request);
+    if (tag_button_focus_requested(self, request))
+        return tag_button_focus(self, item.slot);
+    if (item.kind == ACCESSIBLE_SURFACE)
+        return surface_root_action(self, request);
+    if (item.kind == ACCESSIBLE_SURFACE_TAB)
+        return surface_tab_action(self, request);
+    if (item.kind == ACCESSIBLE_SURFACE_BUTTON && request->action == ACCESSIBLE_ACTION_INVOKE)
+        return surface_button_action(self, item.slot);
+    return surface_list_action(self, request);
 }
 
 static bool accessible_pane_control(enum accessible_kind kind)
@@ -16683,7 +17515,8 @@ static bool minimap_idle_ready(const struct folio_window *_Nonnull self)
 
 bool folio_window_idle_work_ready(const struct folio_window *_Nonnull self)
 {
-    return (folio_state_index_work_pending(self->state) || minimap_idle_ready(self)) &&
+    return (management_running(self) || folio_state_index_work_pending(self->state) ||
+            minimap_idle_ready(self)) &&
            !self->filter_saving &&
            (self->command_surface == COMMAND_SURFACE_CLOSED || tag_surface(self)) &&
            folio_window_accessible_ready(self);
@@ -16719,10 +17552,46 @@ static void continue_index_filter(struct folio_window *_Nonnull self)
     folio_window_end_dispatch(self);
 }
 
+static void continue_tag_management(struct folio_window *_Nonnull self)
+{
+    folio_window_begin_dispatch(self);
+    enum tag_management_phase before = folio_state_tag_management_phase(self->state);
+    enum tag_management_step step = folio_state_continue_tag_management(self->state);
+    if (step == TAG_MANAGEMENT_CURRENT_CHANGED)
+    {
+        enum folio_state_outcome reflected = reflect_note(self);
+        if (reflected != FOLIO_STATE_READY)
+        {
+            folio_state_stop_tag_management(self->state);
+            self->command_failure = reflected;
+        }
+    }
+    /* Consume publication revisions without a per-file "saved" announcement. */
+    (void)settle_save_state(self);
+    if (before != folio_state_tag_management_phase(self->state))
+    {
+        management_refresh(self);
+        redraw_drawer(self);
+    }
+    if (before == folio_state_tag_management_phase(self->state))
+    {
+        arrange_command_input(self);
+        redraw_command_layer(self);
+        accessibility_host_schedule(self->accessibility);
+    }
+    present_pending_surface(self->command_layer);
+    folio_window_end_dispatch(self);
+}
+
 void folio_window_continue_idle_work(struct folio_window *_Nonnull self)
 {
     if (!folio_window_idle_work_ready(self))
         return;
+    if (management_running(self))
+    {
+        continue_tag_management(self);
+        return;
+    }
     switch (ready_idle_work(self))
     {
     case FOLIO_IDLE_WORK_MINIMAP:

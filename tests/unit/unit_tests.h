@@ -20,6 +20,8 @@ void run_web_link_tests(void);
 void run_storage_state_tests(void);
 void run_text_tests(void);
 void run_tag_tests(void);
+void run_tag_management_tests(void);
+void run_tag_management_state_tests(void);
 void run_tag_allocation_tests(void);
 void run_tag_filter_state_tests(void);
 void run_tag_filter_allocation_tests(void);

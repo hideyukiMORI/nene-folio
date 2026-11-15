@@ -102,6 +102,7 @@ static constexpr bool io_sounds[] = {
     [FOLIO_STATE_TAG_LIMIT] = false,
     [FOLIO_STATE_TAGS_UNAVAILABLE] = false,
     [FOLIO_STATE_TAGS_STALE] = false,
+    [FOLIO_STATE_NOTE_SOURCE_CHANGED] = false,
     [FOLIO_STATE_OUT_OF_MEMORY] = false,
     [FOLIO_STATE_NAME_REQUIRED] = false,
     [FOLIO_STATE_INVALID_NAME] = false,

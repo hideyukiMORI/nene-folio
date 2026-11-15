@@ -8,6 +8,7 @@
 #include <stddef.h>
 struct note_metadata;
 struct note_tags;
+struct note_text;
 struct replace_edit;
 constexpr size_t note_metadata_max_bytes = 65536;
 constexpr size_t note_metadata_max_keys = 128;
@@ -31,5 +32,11 @@ note_metadata_status(const struct note_metadata *_Nonnull metadata);
 note_metadata_edit(const struct note_metadata *_Nonnull metadata,
                    const struct note_tags *_Nonnull desired,
                    struct replace_edit *_Nullable *_Nonnull out);
+/* The same validated byte patch as edit, preserving outside bytes and mixed line endings.
+ * The owned result is a complete note. UNCHANGED and every refusal preserve out. */
+[[nodiscard]] enum note_tag_edit_outcome
+note_metadata_rewrite(const struct note_metadata *_Nonnull metadata,
+                      const struct note_tags *_Nonnull desired,
+                      struct note_text *_Nullable *_Nonnull out);
 void note_metadata_destroy(struct note_metadata *_Nullable metadata);
 #endif

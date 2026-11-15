@@ -10,6 +10,7 @@
 #include "note_file_times.h"
 #include "note_ledger.h"
 #include "note_name.h"
+#include "note_store_request.h"
 #include "note_tag.h"
 #include "note_tags.h"
 #include "note_text.h"
@@ -20,6 +21,7 @@
 #include "replace_edit.h"
 #include "rtf_palette.h"
 #include "tag_catalog.h"
+#include "tag_update.h"
 #include "ui_font.h"
 #include "unit_tests.h"
 #include "web_link_port.h"
@@ -79,8 +81,13 @@ struct persistence_adapter
     size_t trashes;
     char trashed_category[64];
     char trashed_note[256];
-    char created_category[64];          /* 最後に作るよう求められたカテゴリ名（複製） */
-    char written_body[256];             /* 最後に書かれた本文（終端付き） */
+    char created_category[64]; /* 最後に作るよう求められたカテゴリ名（複製） */
+    char written_body[256];    /* 最後に書かれた本文（終端付き） */
+    bool remember_note_writes; /* Batch retry reads actual successful publications. */
+    size_t saved_count;
+    char saved_categories[16][64];
+    char saved_notes[16][64];
+    char saved_bodies[16][256];
     const char *_Nullable written_note; /* 最後に書かれたノート名 */
     const char *_Nullable written_category;
     char written_names[64]; /* 最後に書かれたカテゴリ台帳の名前（'/' 区切り） */
@@ -272,6 +279,18 @@ fake_write_category_ledger(struct persistence_adapter *_Nonnull adapter,
     return PERSISTENCE_STORED;
 }
 
+static const char *_Nonnull fake_note_body(const struct persistence_adapter *_Nonnull adapter,
+                                           const char *_Nonnull category, const char *_Nonnull note)
+{
+    for (size_t at = 0; at < adapter->saved_count; ++at)
+        if (strcmp(adapter->saved_categories[at], category) == 0 &&
+            strcmp(adapter->saved_notes[at], note) == 0)
+            return adapter->saved_bodies[at];
+    bool rare = adapter->rare_note != nullptr && adapter->rare_body != nullptr &&
+                strcmp(adapter->rare_note, note) == 0;
+    return rare ? adapter->rare_body : adapter->note_body;
+}
+
 static enum persistence_outcome fake_read_note(struct persistence_adapter *_Nonnull adapter,
                                                const char *_Nonnull category,
                                                const char *_Nonnull note,
@@ -290,9 +309,7 @@ static enum persistence_outcome fake_read_note(struct persistence_adapter *_Nonn
     {
         return adapter->note_outcome;
     }
-    bool rare = adapter->rare_note != nullptr && adapter->rare_body != nullptr &&
-                strcmp(adapter->rare_note, note) == 0;
-    const char *_Nonnull body = rare ? adapter->rare_body : adapter->note_body;
+    const char *_Nonnull body = fake_note_body(adapter, category, note);
     enum note_text_outcome accepted = note_text_create(body, strlen(body), out);
     if (accepted == NOTE_TEXT_ACCEPTED)
     {
@@ -340,6 +357,25 @@ static enum persistence_outcome fake_read_history(struct persistence_adapter *_N
     return accepted == NOTE_TEXT_OUT_OF_MEMORY ? PERSISTENCE_OUT_OF_MEMORY : PERSISTENCE_MALFORMED;
 }
 
+static void remember_published_note(struct persistence_adapter *_Nonnull adapter,
+                                    const char *_Nonnull category, const char *_Nonnull note,
+                                    const struct note_text *_Nonnull body)
+{
+    if (!adapter->remember_note_writes)
+        return;
+    size_t at = 0;
+    while (at < adapter->saved_count && (strcmp(adapter->saved_categories[at], category) != 0 ||
+                                         strcmp(adapter->saved_notes[at], note) != 0))
+        ++at;
+    require(at < 16 && strlen(category) < 64 && strlen(note) < 64 && note_text_length(body) < 256,
+            "published fake row fits");
+    memcpy(adapter->saved_categories[at], category, strlen(category) + 1);
+    memcpy(adapter->saved_notes[at], note, strlen(note) + 1);
+    memcpy(adapter->saved_bodies[at], note_text_bytes(body), note_text_length(body) + 1);
+    if (at == adapter->saved_count)
+        adapter->saved_count += 1;
+}
+
 static enum persistence_outcome fake_write_note(struct persistence_adapter *_Nonnull adapter,
                                                 const char *_Nonnull category,
                                                 const char *_Nonnull note,
@@ -356,11 +392,50 @@ static enum persistence_outcome fake_write_note(struct persistence_adapter *_Non
     size_t length = note_text_length(body);
     require(length + 1 < sizeof adapter->written_body, "written body fits the fake");
     memcpy(adapter->written_body, note_text_bytes(body), length + 1);
+    remember_published_note(adapter, category, note, body);
     if (adapter->copy_fail_at > 0)
     {
         allocation_probe_fail_at(adapter->copy_fail_at);
     }
     return PERSISTENCE_STORED;
+}
+
+static enum note_store_outcome fake_publish_note(struct persistence_adapter *_Nonnull adapter,
+                                                 const struct note_store_request *_Nonnull request)
+{
+    enum persistence_outcome archived =
+        fake_archive_note(adapter, request->category, request->note);
+    if (archived != PERSISTENCE_STORED && archived != PERSISTENCE_ABSENT)
+        return archived == PERSISTENCE_OUT_OF_MEMORY ? NOTE_STORE_OUT_OF_MEMORY
+                                                     : NOTE_STORE_HISTORY_FAILED;
+    enum persistence_outcome written =
+        fake_write_note(adapter, request->category, request->note, request->body);
+    if (written == PERSISTENCE_STORED)
+        return NOTE_STORE_STORED;
+    return written == PERSISTENCE_OUT_OF_MEMORY ? NOTE_STORE_OUT_OF_MEMORY
+                                                : NOTE_STORE_WRITE_FAILED;
+}
+
+static enum note_store_outcome fake_store_note(struct persistence_adapter *_Nonnull adapter,
+                                               const struct note_store_request *_Nonnull request)
+{
+    if (request->expected == nullptr)
+        return fake_publish_note(adapter, request);
+    struct note_text *_Nullable current = nullptr;
+    enum persistence_outcome read =
+        fake_read_note(adapter, request->category, request->note, &current);
+    if (read == PERSISTENCE_ABSENT)
+        return NOTE_STORE_SOURCE_CHANGED;
+    if (read != PERSISTENCE_LOADED)
+        return read == PERSISTENCE_OUT_OF_MEMORY ? NOTE_STORE_OUT_OF_MEMORY
+                                                 : NOTE_STORE_SOURCE_UNREADABLE;
+    bool same = note_text_equals(current, request->expected);
+    note_text_destroy(current);
+    if (!same)
+        return NOTE_STORE_SOURCE_CHANGED;
+    if (note_text_equals(request->expected, request->body))
+        return NOTE_STORE_UNCHANGED;
+    return fake_publish_note(adapter, request);
 }
 
 static enum trash_outcome fake_trash_note(struct persistence_adapter *_Nonnull adapter,
@@ -687,9 +762,8 @@ static struct persistence_port port_for(struct persistence_adapter *_Nonnull ada
         .write_category_ledger = fake_write_category_ledger,
         .read_note = fake_read_note,
         .read_note_times = fake_read_note_times,
-        .archive_note = fake_archive_note,
+        .store_note = fake_store_note,
         .read_history = fake_read_history,
-        .write_note = fake_write_note,
         .create_note = fake_create_note,
         .create_category = fake_create_category,
         .remove_category = fake_remove_category,
@@ -2289,6 +2363,8 @@ static const char *_Nonnull const expected_failure_lines[] = {
     [FOLIO_STATE_TAGS_UNAVAILABLE] =
         "このメタデータのタグは編集できません。原文を確認してください。",
     [FOLIO_STATE_TAGS_STALE] = "本文か保存先が変わりました。タグの編集を開き直してください。",
+    [FOLIO_STATE_NOTE_SOURCE_CHANGED] =
+        "ファイルの内容が変わったため保存していません。編集中の本文は残っています。",
     [FOLIO_STATE_OUT_OF_MEMORY] = "記憶域が足りません。",
     [FOLIO_STATE_NAME_REQUIRED] =
         "無題のノートに名前をつけて保存してください。本文は残っています。",
@@ -8660,4 +8736,401 @@ void run_tag_filter_state_tests(void)
     verify_tag_summary();
     verify_tag_edit_rejections();
     verify_note_tag_summary();
+}
+
+static void checked_save_refusals(struct folio_state *_Nonnull state,
+                                  struct persistence_adapter *_Nonnull adapter)
+{
+    const char *pane = folio_state_pane_text(state);
+    require(folio_state_store_note_checked(state, u"saved", 5) == FOLIO_STATE_READY &&
+                adapter->archives == 0 && adapter->note_writes == 0,
+            "unchanged checked entry verifies without history or write");
+    adapter->note_body = "externally changed";
+    require(
+        folio_state_store_note_checked(state, u"edited", 6) == FOLIO_STATE_NOTE_SOURCE_CHANGED &&
+            folio_state_store_note_checked(state, u"saved", 5) == FOLIO_STATE_NOTE_SOURCE_CHANGED,
+        "changed and unchanged editor snapshots both reject an external source change");
+    adapter->note_outcome = PERSISTENCE_ABSENT;
+    require(folio_state_store_note_checked(state, u"edited", 6) == FOLIO_STATE_NOTE_SOURCE_CHANGED,
+            "checked save does not recreate a source deleted after opening");
+    adapter->note_outcome = PERSISTENCE_UNREADABLE;
+    require(folio_state_store_note_checked(state, u"edited", 6) == FOLIO_STATE_NOTE_UNREADABLE,
+            "unreadable expected source is refused before history");
+    require(adapter->archives == 0 && adapter->note_writes == 0 &&
+                folio_state_pane_text(state) == pane &&
+                folio_state_pane_mode(state) == PANE_MODE_EDIT,
+            "every precondition refusal preserves the current document and mode");
+    adapter->note_outcome = PERSISTENCE_LOADED;
+    adapter->note_body = "saved";
+}
+
+static void checked_save_failures(struct folio_state *_Nonnull state,
+                                  struct persistence_adapter *_Nonnull adapter)
+{
+    adapter->archive_outcome = PERSISTENCE_UNWRITABLE;
+    require(folio_state_store_note_checked(state, u"edited", 6) == FOLIO_STATE_HISTORY_FAILED &&
+                adapter->archives == 1 && adapter->note_writes == 0,
+            "checked save refuses publication after history failure");
+    adapter->archive_outcome = PERSISTENCE_STORED;
+    adapter->note_write_outcome = PERSISTENCE_UNWRITABLE;
+    require(folio_state_store_note_checked(state, u"edited", 6) == FOLIO_STATE_NOTE_STORE_FAILED &&
+                adapter->archives == 2 && adapter->note_writes == 1 &&
+                folio_state_store_revision(state) == 0,
+            "publication failure can rotate history but does not claim a saved body");
+    adapter->note_write_outcome = PERSISTENCE_STORED;
+    require(folio_state_store_note_checked(state, u"edited", 6) == FOLIO_STATE_READY &&
+                adapter->archives == 3 && adapter->note_writes == 2 &&
+                folio_state_store_revision(state) == 1 &&
+                same_text(adapter->written_body, "edited") &&
+                folio_state_unsaved(state, u"edited", 6) == FOLIO_NOTE_SAME,
+            "same state retries the common checked save and adopts the actual publication");
+}
+
+static struct persistence_adapter management_adapter(void)
+{
+    struct persistence_adapter adapter = preparation_adapter();
+    adapter.note_body = "---\ntags: [red, blue]\n---\nneedle";
+    adapter.remember_note_writes = true;
+    return adapter;
+}
+
+static void prepare_management(struct folio_state *_Nonnull state,
+                               struct persistence_adapter *_Nonnull adapter,
+                               const char *_Nonnull from, const char *_Nullable to)
+{
+    struct note_tag *source = nullptr;
+    struct note_tag *target = nullptr;
+    require(note_tag_create(from, strlen(from), &source) == NOTE_TAG_READY, "source tag fixture");
+    if (to != nullptr)
+        require(note_tag_create(to, strlen(to), &target) == NOTE_TAG_READY,
+                "replacement tag fixture");
+    size_t writes = adapter->note_writes, archives = adapter->archives;
+    require(folio_state_prepare_tag_management(state, source, target) == FOLIO_STATE_READY,
+            "request a fresh all-note preview");
+    note_tag_destroy(source);
+    note_tag_destroy(target);
+    for (size_t step = 0; step < 32; ++step)
+    {
+        size_t reads = adapter->note_reads;
+        enum tag_management_step outcome = folio_state_continue_tag_management(state);
+        require(adapter->note_reads <= reads + 1 && adapter->note_writes == writes &&
+                    adapter->archives == archives,
+                "preview reads at most one body and never saves");
+        if (outcome == TAG_MANAGEMENT_FINISHED)
+            break;
+    }
+    require(folio_state_tag_management_summary(state).phase == TAG_MANAGEMENT_PREVIEW,
+            "only a complete fresh scan publishes the preview");
+}
+
+static void verify_management_success(void)
+{
+    struct persistence_adapter adapter = management_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
+                folio_state_begin_edit(state) == FOLIO_STATE_READY,
+            "selected note stays in edit mode");
+    struct note_tags *red = selected_tags(1);
+    require(folio_state_set_index_filter(state, u"needle", 6) == FOLIO_STATE_READY &&
+                folio_state_set_tag_filter(state, red, TAG_MATCH_ANY) == FOLIO_STATE_READY &&
+                finish_test_index_filter(state) == FOLIO_STATE_READY,
+            "existing combined query");
+    folio_state_set_note_scope(state, NOTE_SCOPE_FAVORITES);
+    const char *pane = folio_state_pane_text(state);
+    prepare_management(state, &adapter, "red", "blue");
+    require(folio_state_tag_management_summary(state).pending == 2 &&
+                folio_state_pane_text(state) == pane &&
+                same_text(tag_update_note(folio_state_tag_management_at(state, 0)), "one"),
+            "all saved notes are previewed despite a filter hiding every row");
+    require(folio_state_apply_tag_management(state) == FOLIO_STATE_READY,
+            "complete preview can start publication");
+    require(folio_state_continue_tag_management(state) == TAG_MANAGEMENT_CURRENT_CHANGED,
+            "first publication reports immediate current adoption");
+    require(folio_state_store_revision(state) == 1 && adapter.note_writes == 1,
+            "current publication is counted exactly once");
+    require(same_text(folio_state_pane_text(state), "---\ntags: [blue]\n---\nneedle"),
+            "adopted current body equals the merge golden");
+    require(folio_state_pane_mode(state) == PANE_MODE_EDIT,
+            "adopting editable source preserves edit mode");
+    require(folio_state_continue_tag_management(state) == TAG_MANAGEMENT_PROGRESSED &&
+                folio_state_continue_tag_management(state) == TAG_MANAGEMENT_FINISHED &&
+                folio_state_tag_management_summary(state).changed == 2 &&
+                folio_state_store_revision(state) == 2 && adapter.archives == 2,
+            "each publication counts once independently");
+    require(same_text(folio_state_index_filter_term(state), "needle") &&
+                note_tags_equal(folio_state_tag_filter(state), red) &&
+                folio_state_tag_match_mode(state) == TAG_MATCH_ANY &&
+                folio_state_note_scope(state) == NOTE_SCOPE_FAVORITES &&
+                finish_test_index_filter(state) == FOLIO_STATE_READY &&
+                folio_state_index_filter_count(state) == 0,
+            "query meanings survive the batch");
+    prepare_management(state, &adapter, "red", "blue");
+    require(folio_state_tag_management_summary(state).pending == 0 &&
+                folio_state_apply_tag_management(state) == FOLIO_STATE_NAME_UNCHANGED &&
+                adapter.note_writes == 2,
+            "fresh retry never repeats already published changes");
+    note_tags_destroy(red);
+    folio_state_destroy(state);
+}
+
+static void verify_management_stop(void)
+{
+    struct persistence_adapter adapter = management_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    struct note_tag *red = nullptr;
+    require(note_tag_create("red", 3, &red) == NOTE_TAG_READY &&
+                folio_state_prepare_tag_management(state, red, nullptr) == FOLIO_STATE_READY &&
+                folio_state_continue_tag_management(state) == TAG_MANAGEMENT_PROGRESSED,
+            "partially prepare one note");
+    folio_state_stop_tag_management(state);
+    require(folio_state_tag_management_summary(state).phase == TAG_MANAGEMENT_RESULT &&
+                folio_state_tag_management_summary(state).notice == FOLIO_STATE_CANCELLED &&
+                folio_state_apply_tag_management(state) == FOLIO_STATE_TAGS_STALE &&
+                adapter.note_writes == 0,
+            "cancelled partial preview cannot be applied");
+    prepare_management(state, &adapter, "red", nullptr);
+    require(folio_state_apply_tag_management(state) == FOLIO_STATE_READY &&
+                folio_state_continue_tag_management(state) == TAG_MANAGEMENT_PROGRESSED,
+            "remove the tag from only the first note");
+    folio_state_stop_tag_management(state);
+    require(folio_state_tag_management_summary(state).changed == 1 &&
+                folio_state_tag_management_summary(state).pending == 1 &&
+                folio_state_continue_tag_management(state) == TAG_MANAGEMENT_IDLE &&
+                adapter.note_writes == 1,
+            "stop preserves success and leaves the rest unprocessed");
+    prepare_management(state, &adapter, "red", nullptr);
+    require(folio_state_tag_management_summary(state).pending == 1 &&
+                folio_state_tag_management_status(state, 0) == TAG_APPLY_NOT_TARGET &&
+                folio_state_apply_tag_management(state) == FOLIO_STATE_READY &&
+                folio_state_continue_tag_management(state) == TAG_MANAGEMENT_PROGRESSED &&
+                folio_state_continue_tag_management(state) == TAG_MANAGEMENT_FINISHED &&
+                adapter.note_writes == 2 && adapter.archives == 2,
+            "retry rescans and applies only the remaining source tag");
+    folio_state_close_tag_management(state);
+    require(folio_state_tag_management_summary(state).phase == TAG_MANAGEMENT_CLOSED &&
+                folio_state_continue_tag_management(state) == TAG_MANAGEMENT_IDLE,
+            "closed management has no continuation side effect");
+    note_tag_destroy(red);
+    folio_state_destroy(state);
+}
+
+static void verify_management_partial_failure(void)
+{
+    struct persistence_adapter adapter = management_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    prepare_management(state, &adapter, "red", "green");
+    adapter.rare_note = "one";
+    adapter.rare_body = "external change";
+    require(folio_state_apply_tag_management(state) == FOLIO_STATE_READY &&
+                folio_state_continue_tag_management(state) == TAG_MANAGEMENT_PROGRESSED &&
+                folio_state_tag_management_status(state, 0) == TAG_APPLY_CONFLICT &&
+                adapter.archives == 0 && adapter.note_writes == 0,
+            "preview source conflict is skipped before history and publication");
+    adapter.note_write_outcome = PERSISTENCE_UNWRITABLE;
+    require(folio_state_continue_tag_management(state) == TAG_MANAGEMENT_PROGRESSED &&
+                folio_state_continue_tag_management(state) == TAG_MANAGEMENT_FINISHED &&
+                folio_state_tag_management_status(state, 1) == TAG_APPLY_WRITE_FAILED &&
+                folio_state_tag_management_summary(state).skipped == 1 &&
+                folio_state_tag_management_summary(state).failed == 1 &&
+                folio_state_tag_management_summary(state).changed == 0 &&
+                folio_state_store_revision(state) == 0 && adapter.archives == 1,
+            "history rotation is not falsely counted as a published body");
+    adapter.note_write_outcome = PERSISTENCE_STORED;
+    prepare_management(state, &adapter, "red", "green");
+    require(folio_state_tag_management_summary(state).pending == 1 &&
+                folio_state_apply_tag_management(state) == FOLIO_STATE_READY &&
+                folio_state_continue_tag_management(state) == TAG_MANAGEMENT_PROGRESSED &&
+                folio_state_continue_tag_management(state) == TAG_MANAGEMENT_FINISHED &&
+                folio_state_tag_management_summary(state).changed == 1 &&
+                folio_state_store_revision(state) == 1 && adapter.saved_count == 1,
+            "retry respects the external document and repairs only the failed note");
+    folio_state_destroy(state);
+}
+
+static void verify_management_unknown(void)
+{
+    struct persistence_adapter adapter = management_adapter();
+    adapter.missing_note = "one";
+    adapter.rare_note = "two";
+    adapter.rare_body = "---\ntags: *alias\n---\nbody";
+    struct folio_state *state = ready_state(&adapter);
+    prepare_management(state, &adapter, "red", nullptr);
+    require(folio_state_tag_management_summary(state).skipped == 2 &&
+                folio_state_tag_management_summary(state).pending == 0 &&
+                folio_state_tag_management_status(state, 0) == TAG_APPLY_UNREADABLE &&
+                folio_state_tag_management_status(state, 1) == TAG_APPLY_UNAVAILABLE &&
+                folio_state_apply_tag_management(state) == FOLIO_STATE_NAME_UNCHANGED,
+            "unknown membership is visible and is never considered successful completion");
+    adapter.missing_note = nullptr;
+    adapter.rare_note = nullptr;
+    prepare_management(state, &adapter, "red", "red");
+    require(folio_state_tag_management_summary(state).pending == 0 &&
+                folio_state_tag_management_summary(state).skipped == 0,
+            "same-name request changes no source representation");
+    prepare_management(state, &adapter, "red", nullptr);
+    require(folio_state_apply_tag_management(state) == FOLIO_STATE_READY, "apply fresh plan");
+    adapter.archive_outcome = PERSISTENCE_UNWRITABLE;
+    require(folio_state_continue_tag_management(state) == TAG_MANAGEMENT_PROGRESSED &&
+                folio_state_tag_management_status(state, 0) == TAG_APPLY_HISTORY_FAILED &&
+                adapter.note_writes == 0,
+            "archive failure blocks only that publication");
+    adapter.archive_outcome = PERSISTENCE_STORED;
+    adapter.missing_note = "two";
+    require(folio_state_continue_tag_management(state) == TAG_MANAGEMENT_PROGRESSED &&
+                folio_state_tag_management_status(state, 1) == TAG_APPLY_CONFLICT &&
+                folio_state_continue_tag_management(state) == TAG_MANAGEMENT_FINISHED,
+            "source deleted after preview is not silently recreated");
+    folio_state_destroy(state);
+}
+
+static void verify_management_fresh_merge(void)
+{
+    struct persistence_adapter adapter = management_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    folio_state_request_tag_catalog(state);
+    require(finish_test_index_filter(state) == FOLIO_STATE_READY,
+            "initial catalog precedes an external change");
+    adapter.rare_note = "two";
+    adapter.rare_body = "---\ntags: [green]\n---\nexternal";
+    prepare_management(state, &adapter, "red", "green");
+    require(folio_state_tag_management_summary(state).merging &&
+                folio_state_tag_management_summary(state).pending == 1,
+            "fresh scan notices an existing target even in a non-target note");
+    adapter.rare_note = nullptr;
+    prepare_management(state, &adapter, "red", "green");
+    require(!folio_state_tag_management_summary(state).merging,
+            "new scan clears an obsolete merge warning");
+    prepare_management(state, &adapter, "red", "red");
+    require(!folio_state_tag_management_summary(state).merging,
+            "same-name no-op does not claim a merge");
+    folio_state_destroy(state);
+}
+
+static void verify_management_untitled_and_identity(void)
+{
+    struct persistence_adapter adapter = management_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_new_note(state, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "untitled document remains outside the saved-note plan");
+    const char *pane = folio_state_pane_text(state);
+    prepare_management(state, &adapter, "red", nullptr);
+    require(folio_state_apply_tag_management(state) == FOLIO_STATE_READY &&
+                folio_state_continue_tag_management(state) == TAG_MANAGEMENT_PROGRESSED &&
+                folio_state_continue_tag_management(state) == TAG_MANAGEMENT_PROGRESSED &&
+                folio_state_continue_tag_management(state) == TAG_MANAGEMENT_FINISHED &&
+                folio_state_document_kind(state) == FOLIO_DOCUMENT_UNTITLED &&
+                folio_state_pane_text(state) == pane && adapter.creates == 0,
+            "batch publication never adopts or saves the untitled native document");
+    prepare_management(state, &adapter, "blue", "green");
+    require(folio_state_move_note(state, (struct note_ref){0, 0}, (struct note_ref){0, 1}) ==
+                FOLIO_STATE_READY,
+            "change row identity after preparation");
+    require(folio_state_apply_tag_management(state) == FOLIO_STATE_TAGS_STALE &&
+                folio_state_tag_management_summary(state).phase == TAG_MANAGEMENT_RESULT &&
+                adapter.note_writes == 2,
+            "stale row mapping cannot start publication");
+    folio_state_destroy(state);
+}
+
+static bool management_prepare_allocation(size_t nth)
+{
+    struct persistence_adapter adapter = management_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    struct note_tag *red = nullptr;
+    require(note_tag_create("red", 3, &red) == NOTE_TAG_READY, "allocation source tag");
+    allocation_probe_fail_at(nth);
+    enum folio_state_outcome result = folio_state_prepare_tag_management(state, red, nullptr);
+    for (size_t step = 0;
+         result == FOLIO_STATE_READY && step < 4 &&
+         folio_state_tag_management_summary(state).phase == TAG_MANAGEMENT_PREPARING;
+         ++step)
+        (void)folio_state_continue_tag_management(state);
+    struct tag_management_summary summary = folio_state_tag_management_summary(state);
+    size_t calls = allocation_probe_calls();
+    allocation_probe_fail_at(0);
+    require(adapter.note_writes == 0 && adapter.archives == 0,
+            "even a failed preparation never changes stored notes");
+    if (result != FOLIO_STATE_READY || summary.phase != TAG_MANAGEMENT_PREVIEW)
+    {
+        require(result == FOLIO_STATE_OUT_OF_MEMORY || summary.notice == FOLIO_STATE_OUT_OF_MEMORY,
+                "preparation allocation failure remains typed");
+        require(folio_state_apply_tag_management(state) == FOLIO_STATE_TAGS_STALE,
+                "failed preparation cannot apply a partial list");
+        prepare_management(state, &adapter, "red", nullptr);
+        require(folio_state_tag_management_summary(state).pending == 2,
+                "same state can rescan after every preparation allocation failure");
+    }
+    note_tag_destroy(red);
+    folio_state_destroy(state);
+    return nth > calls;
+}
+
+static bool management_apply_allocation(size_t nth)
+{
+    struct persistence_adapter adapter = management_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
+                folio_state_begin_edit(state) == FOLIO_STATE_READY,
+            "selected edit allocation fixture");
+    prepare_management(state, &adapter, "red", nullptr);
+    const char *before = folio_state_pane_text(state);
+    require(folio_state_apply_tag_management(state) == FOLIO_STATE_READY, "start allocation apply");
+    allocation_probe_fail_at(nth);
+    enum tag_management_step step = folio_state_continue_tag_management(state);
+    size_t calls = allocation_probe_calls();
+    allocation_probe_fail_at(0);
+    struct tag_management_summary summary = folio_state_tag_management_summary(state);
+    require(summary.changed == adapter.saved_count &&
+                folio_state_store_revision(state) == adapter.saved_count,
+            "publications always determine changed count even under allocation failure");
+    if (adapter.saved_count == 0)
+        require(step == TAG_MANAGEMENT_PROGRESSED && summary.failed == 1 &&
+                    folio_state_tag_management_status(state, 0) == TAG_APPLY_OUT_OF_MEMORY &&
+                    folio_state_pane_text(state) == before && adapter.archives == 0,
+                "current adoption resources and expected read are prepared before history");
+    if (adapter.saved_count == 1)
+        require(step == TAG_MANAGEMENT_CURRENT_CHANGED && summary.failed == 0 &&
+                    same_text(folio_state_pane_text(state), "---\ntags: [blue]\n---\nneedle"),
+                "successful publication has an immediately adopted current body");
+    folio_state_stop_tag_management(state);
+    prepare_management(state, &adapter, "red", nullptr);
+    require(folio_state_tag_management_summary(state).pending == 2 - adapter.saved_count,
+            "allocation retry sees exactly the remaining persisted sources");
+    folio_state_destroy(state);
+    return nth > calls;
+}
+
+static void management_allocation_sweeps(void)
+{
+    size_t nth = 1;
+    while (nth < 1024 && !management_prepare_allocation(nth))
+        ++nth;
+    require(nth < 1024, "preparation allocation sweep reaches uninjected success");
+    printf("tag preparation: %zu allocation boundaries\n", nth - 1);
+    nth = 1;
+    while (nth < 1024 && !management_apply_allocation(nth))
+        ++nth;
+    require(nth < 1024, "application allocation sweep reaches uninjected success");
+    printf("tag application: %zu allocation boundaries\n", nth - 1);
+}
+
+void run_tag_management_state_tests(void)
+{
+    finder = test_regex_port();
+    struct persistence_adapter adapter = healthy_adapter();
+    adapter.note_body = "saved";
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
+                folio_state_begin_edit(state) == FOLIO_STATE_READY,
+            "checked management entry starts from a named editor");
+    checked_save_refusals(state, &adapter);
+    checked_save_failures(state, &adapter);
+    folio_state_destroy(state);
+    verify_management_success();
+    verify_management_stop();
+    verify_management_partial_failure();
+    verify_management_unknown();
+    verify_management_fresh_merge();
+    verify_management_untitled_and_identity();
+    management_allocation_sweeps();
 }

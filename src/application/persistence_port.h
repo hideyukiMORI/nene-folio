@@ -10,6 +10,7 @@ struct note_file_times;
 
 #include "category_remove_outcome.h"
 #include "history_version.h"
+#include "note_store_outcome.h"
 #include "persistence_outcome.h"
 #include "rename_attempt.h"
 #include "rename_outcome.h"
@@ -22,6 +23,7 @@ struct note_ledger;
 struct rename_plan;
 struct note_text;
 struct persistence_adapter;
+struct note_store_request;
 
 struct persistence_port
 {
@@ -50,23 +52,18 @@ struct persistence_port
     enum persistence_outcome (*_Nonnull read_note_times)(
         struct persistence_adapter *_Nonnull adapter, const char *_Nonnull category,
         const char *_Nonnull note, struct note_file_times *_Nullable *_Nonnull out);
-    /* いま data/<category>/<note>.md にある本文を data/.history/<category>/<note>/1.md へ写し、
-     * 前の版を 1 つずつ後ろへずらす（FR-017 / ADR 0012 の決定 3）。写せたら STORED、
-     * 元の md が無ければ ABSENT（写すものが無い）、履歴を書けなければ UNWRITABLE。 */
-    enum persistence_outcome (*_Nonnull archive_note)(struct persistence_adapter *_Nonnull adapter,
-                                                      const char *_Nonnull category,
-                                                      const char *_Nonnull note);
+    /* One existing-note save: optional expected-body check, raw history, atomic publication.
+     * The final comparison is not a filesystem CAS (ADR0093). History may rotate on write failure.
+     * Expected-source refusals and UNCHANGED do not rotate history or publish a body. */
+    enum note_store_outcome (*_Nonnull store_note)(
+        struct persistence_adapter *_Nonnull adapter,
+        const struct note_store_request *_Nonnull request);
     /* data/.history/<category>/<note>/<version>.md の本文（ADR 0038 の決定 2）。which->version は
      * 1（最新）〜note_history_depth で、範囲の外は MALFORMED。無ければ ABSENT、UTF-8 でなければ
      * MALFORMED、読めなければ UNREADABLE（read_note と同じ意味論）。書く側と同じパス組みで読む。 */
     enum persistence_outcome (*_Nonnull read_history)(struct persistence_adapter *_Nonnull adapter,
                                                       const struct history_version *_Nonnull which,
                                                       struct note_text *_Nullable *_Nonnull out);
-    /* data/<category>/<note>.md を置き換える。途中で落ちても壊れた本文を残さない（FR-006）。 */
-    enum persistence_outcome (*_Nonnull write_note)(struct persistence_adapter *_Nonnull adapter,
-                                                    const char *_Nonnull category,
-                                                    const char *_Nonnull note,
-                                                    const struct note_text *_Nonnull body);
     /* 新規mdを完書き後に公開。同名はNAME_TAKEN、上書きしない（ADR0020）。 */
     enum persistence_outcome (*_Nonnull create_note)(struct persistence_adapter *_Nonnull adapter,
                                                      const char *_Nonnull category,

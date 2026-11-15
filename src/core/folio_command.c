@@ -15,6 +15,10 @@ static const struct
     size_t aliases;
     const char *_Nonnull names[alias_limit];
 } catalog[] = {
+    [FOLIO_COMMAND_MANAGE_TAGS] = {FOLIO_COMMAND_MANAGE_TAGS,
+                                   UI_TEXT_COMMAND_MANAGE_TAGS,
+                                   0,
+                                   {"", ""}},
     [FOLIO_COMMAND_EDIT_TAGS] = {FOLIO_COMMAND_EDIT_TAGS, UI_TEXT_COMMAND_EDIT_TAGS, 0, {"", ""}},
     [FOLIO_COMMAND_FILTER_TAGS] = {FOLIO_COMMAND_FILTER_TAGS,
                                    UI_TEXT_COMMAND_FILTER_TAGS,
@@ -162,6 +166,7 @@ static enum folio_argument_kind argument_kind(enum folio_command command)
     case FOLIO_COMMAND_IMPORT:
     case FOLIO_COMMAND_EDIT_TAGS:
     case FOLIO_COMMAND_FILTER_TAGS:
+    case FOLIO_COMMAND_MANAGE_TAGS:
     case FOLIO_COMMAND_EXPORT_NOTE:
     case FOLIO_COMMAND_EXPORT_CATEGORY:
     case FOLIO_COMMAND_EXPORT_ALL:
@@ -202,6 +207,7 @@ bool folio_command_listed(enum folio_command command)
     case FOLIO_COMMAND_SAVE:
     case FOLIO_COMMAND_EDIT_TAGS:
     case FOLIO_COMMAND_FILTER_TAGS:
+    case FOLIO_COMMAND_MANAGE_TAGS:
     case FOLIO_COMMAND_IMPORT:
     case FOLIO_COMMAND_EXPORT_NOTE:
     case FOLIO_COMMAND_EXPORT_CATEGORY:
@@ -569,6 +575,7 @@ enum folio_command_scope folio_command_scope(enum folio_command command)
     case FOLIO_COMMAND_SET:
     case FOLIO_COMMAND_SETTINGS:
     case FOLIO_COMMAND_FILTER_TAGS:
+    case FOLIO_COMMAND_MANAGE_TAGS:
     case FOLIO_COMMAND_TOGGLE_FAVORITES_ONLY:
     case FOLIO_COMMAND_TOGGLE_FAVORITES_FIRST:
     case FOLIO_COMMAND_TOGGLE_MINIMAP:
@@ -617,7 +624,8 @@ bool folio_command_needs_input(enum folio_command command)
            command == FOLIO_COMMAND_SAVE_AS || command == FOLIO_COMMAND_RENAME ||
            command == FOLIO_COMMAND_REPLACE || command == FOLIO_COMMAND_HISTORY ||
            command == FOLIO_COMMAND_EDIT_TAGS || command == FOLIO_COMMAND_FILTER_TAGS ||
-           command == FOLIO_COMMAND_NEW_CATEGORY || command == FOLIO_COMMAND_RENAME_CATEGORY;
+           command == FOLIO_COMMAND_MANAGE_TAGS || command == FOLIO_COMMAND_NEW_CATEGORY ||
+           command == FOLIO_COMMAND_RENAME_CATEGORY;
 }
 
 enum ui_text_format_outcome folio_command_caption(enum folio_command command,

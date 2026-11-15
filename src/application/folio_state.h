@@ -3,6 +3,38 @@
  * 操作は意図（folio_state_toggle_category 等）として渡すだけ（ARC-011）。 */
 #ifndef NENEFOLIO_FOLIO_STATE_H
 #define NENEFOLIO_FOLIO_STATE_H
+#include "tag_apply_status.h"
+#include "tag_management_step.h"
+#include "tag_management_summary.h"
+struct tag_update;
+struct note_tag;
+struct folio_state;
+/* A fresh read-only preview through the shared corpus loader. Null replacement removes from.
+ * All saved ledger notes are examined, independently of the active display filters. */
+[[nodiscard]] enum folio_state_outcome
+folio_state_prepare_tag_management(struct folio_state *_Nonnull state,
+                                   const struct note_tag *_Nonnull from,
+                                   const struct note_tag *_Nullable to);
+[[nodiscard]] enum folio_state_outcome
+folio_state_apply_tag_management(struct folio_state *_Nonnull state);
+[[nodiscard]] enum tag_management_step
+folio_state_continue_tag_management(struct folio_state *_Nonnull state);
+void folio_state_stop_tag_management(struct folio_state *_Nonnull state);
+void folio_state_close_tag_management(struct folio_state *_Nonnull state);
+[[nodiscard]] struct tag_management_summary
+folio_state_tag_management_summary(const struct folio_state *_Nonnull state);
+/* index < summary.prepared; values stay valid until close or a new prepare request. */
+[[nodiscard]] const struct tag_update *_Nonnull folio_state_tag_management_at(
+    const struct folio_state *_Nonnull state, size_t index);
+[[nodiscard]] enum tag_apply_status
+folio_state_tag_management_status(const struct folio_state *_Nonnull state, size_t index);
+[[nodiscard]] enum tag_management_phase
+folio_state_tag_management_phase(const struct folio_state *_Nonnull state);
+/* Requires a non-CLOSED request. Values live until close or the next accepted preparation. */
+[[nodiscard]] const struct note_tag *_Nonnull folio_state_tag_management_source(
+    const struct folio_state *_Nonnull state);
+[[nodiscard]] const struct note_tag *_Nullable folio_state_tag_management_target(
+    const struct folio_state *_Nonnull state);
 
 #include "category_rename_target.h"
 #include "drawer_cursor.h"
@@ -339,6 +371,11 @@ folio_state_rename_category(struct folio_state *_Nonnull state,
 [[nodiscard]] enum folio_state_outcome folio_state_store_note(struct folio_state *_Nonnull state,
                                                               const char16_t *_Nonnull units,
                                                               size_t count);
+/* Same save implementation, additionally requiring the file to match the last saved body.
+ * Used before global tag management. A same-body edit still checks, without writing. */
+[[nodiscard]] enum folio_state_outcome
+folio_state_store_note_checked(struct folio_state *_Nonnull state, const char16_t *_Nonnull units,
+                               size_t count);
 /* 編集中の本文を保存時と同じ形へ正規化し、保存済み本文との差を答える。
  * VIEWでは台帳・保存済み本文の写し・改名が同期済みならSAME。未同期なら保存系と同じ修復を先に試み、
  * index修復の失敗はLEDGER_UNSYNCED、写しの記憶不足はOUT_OF_MEMORY。この修復のほかは
