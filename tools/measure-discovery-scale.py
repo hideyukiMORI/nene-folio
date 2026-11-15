@@ -141,7 +141,7 @@ def measure_command(api: NativeApi, events: queue.Queue, thread_id: int,
 
 
 def run_sample(api: NativeApi, executable: Path, profile: str, sample: int,
-               trace_reads: bool = False) -> list[dict]:
+               trace_reads: bool = False, setup_timeout: float = 120) -> list[dict]:
     started = time.perf_counter()
     events: queue.Queue = queue.Queue()
     measurements = []
@@ -158,7 +158,7 @@ def run_sample(api: NativeApi, executable: Path, profile: str, sample: int,
             original = api.user.GetThreadDesktop(api.kernel.GetCurrentThreadId())
             desktop = handle = None
             try:
-                ready, arrived = events.get(timeout=120)
+                ready, arrived = events.get(timeout=setup_timeout)
                 notes, source_bytes = PROFILES[profile]
                 if (ready.get("event"), ready.get("notes"), ready.get("sourceBytes")) != (
                         "ready", notes, source_bytes):
@@ -245,7 +245,11 @@ def main() -> int:
     parser.add_argument("--samples", type=int, choices=range(1, 8), default=3)
     parser.add_argument("--trace-reads", action="store_true",
                         help="observe the initial read/idle boundaries; requires --profiles many")
+    parser.add_argument("--setup-timeout", type=float, default=120, metavar="SECONDS",
+                        help="wait for fixture seeding; raise only when storage is contended (#837)")
     args = parser.parse_args()
+    if not 120 <= args.setup_timeout <= 3600:
+        parser.error("--setup-timeout accepts 120 to 3600 seconds")
     if args.trace_reads and list(dict.fromkeys(args.profiles)) != ["many"]:
         parser.error("--trace-reads requires exactly --profiles many")
     executable = args.executable.resolve(strict=True)
@@ -265,7 +269,8 @@ def main() -> int:
         shutil.copytree(executable.parent / "fonts", runtime / "fonts")
         before = None
         for sample in range(args.samples):
-            measurements.extend(run_sample(api, copied, profile, sample, args.trace_reads))
+            measurements.extend(run_sample(api, copied, profile, sample, args.trace_reads,
+                                           args.setup_timeout))
             after = source_snapshot(runtime, profile)
             if before is not None and before != after:
                 raise RuntimeError(f"retained synthetic sources changed during {profile}/{sample}")
