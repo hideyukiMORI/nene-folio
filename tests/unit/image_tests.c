@@ -118,9 +118,10 @@ static struct note_text *_Nonnull text(const char *_Nonnull source)
 static struct markdown_rtf *_Nonnull render(const struct note_text *_Nonnull body)
 {
     struct markdown_rtf *_Nullable rendered = nullptr;
-    require(markdown_rtf_create(body, folio_theme_palette(FOLIO_THEME_LIGHT)->rtf,
-                                ui_font_face(FOLIO_LANGUAGE_JA),
-                                &rendered) == MARKDOWN_RTF_CONVERTED,
+    require(markdown_rtf_create(
+                body, folio_theme_palette(FOLIO_THEME_LIGHT)->rtf,
+                (struct markdown_rtf_locale){ui_font_face(FOLIO_LANGUAGE_JA), FOLIO_LANGUAGE_JA},
+                &rendered) == MARKDOWN_RTF_CONVERTED,
             "image render");
     return rendered;
 }

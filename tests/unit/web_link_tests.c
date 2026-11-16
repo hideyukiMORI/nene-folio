@@ -93,8 +93,9 @@ static void expect_field(const char *_Nonnull source, const char *_Nonnull expec
     struct note_text *text = nullptr;
     struct markdown_rtf *rtf = nullptr;
     require(note_text_create(source, strlen(source), &text) == NOTE_TEXT_ACCEPTED, "source ready");
-    require(markdown_rtf_create(text, rtf_palette_for(FOLIO_THEME_LIGHT), "Arial", &rtf) ==
-                MARKDOWN_RTF_CONVERTED,
+    require(markdown_rtf_create(text, rtf_palette_for(FOLIO_THEME_LIGHT),
+                                (struct markdown_rtf_locale){"Arial", FOLIO_LANGUAGE_JA},
+                                &rtf) == MARKDOWN_RTF_CONVERTED,
             "field converted");
     require(strstr(markdown_rtf_text(rtf), expected) != nullptr &&
                 strstr(markdown_rtf_text(rtf), absent) == nullptr,
@@ -169,6 +170,7 @@ static struct folio_state *_Nonnull create_state(struct persistence_adapter *_No
                                 .appearance = &appearance,
                                 .regex = &regex,
                                 .web_link = &links,
+                                .clipboard = test_clipboard_port(),
                                 .transfer = test_transfer_port(),
                                 .images = test_image_port()};
     struct folio_state *state = nullptr;
@@ -239,7 +241,8 @@ static void verify_render_allocation(void)
         struct markdown_rtf *rtf = nullptr;
         allocation_probe_fail_at(nth);
         enum markdown_rtf_outcome outcome =
-            markdown_rtf_create(text, rtf_palette_for(FOLIO_THEME_LIGHT), "Arial", &rtf);
+            markdown_rtf_create(text, rtf_palette_for(FOLIO_THEME_LIGHT),
+                                (struct markdown_rtf_locale){"Arial", FOLIO_LANGUAGE_JA}, &rtf);
         if (nth == 0)
             allocations = allocation_probe_calls();
         allocation_probe_fail_at(0);

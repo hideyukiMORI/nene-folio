@@ -12,6 +12,7 @@
 #include "breadcrumb_layout.h"
 #include "category_name.h"
 #include "close_phase.h"
+#include "code_copy_target.h"
 #include "command_band_layout.h"
 #include "command_candidates.h"
 #include "command_help_fonts.h"
@@ -6569,6 +6570,9 @@ static const bool inline_outcomes[] = {
     [FOLIO_STATE_PANE_RECOLOR_FAILED] = false,
     [FOLIO_STATE_WEB_LINK_REJECTED] = true,
     [FOLIO_STATE_WEB_LINK_UNAVAILABLE] = true,
+    [FOLIO_STATE_CODE_COPY_REJECTED] = true,
+    [FOLIO_STATE_CLIPBOARD_BUSY] = true,
+    [FOLIO_STATE_CLIPBOARD_UNAVAILABLE] = true,
     [FOLIO_STATE_EXPORT_TOO_LARGE] = true,
     [FOLIO_STATE_EXPORT_EXISTS] = true,
     [FOLIO_STATE_EXPORT_FAILED] = true,
@@ -7035,6 +7039,18 @@ static void clear_report_outcome(struct folio_window *_Nonnull self)
     redraw_command_layer(self);
 }
 
+/* result_line を本文下の1行へ出し、同じ文言を読み上げへ通知する。 */
+static void show_result_line(struct folio_window *_Nonnull self)
+{
+    set_pane_notice(self, PANE_NOTICE_COMMAND_RESULT);
+    arrange(self);
+    InvalidateRect(self->handle, nullptr, FALSE);
+    char16_t units[draw_unit_limit];
+    if (wide_units(self->result_line, units) > 0)
+        accessibility_host_notify(self->accessibility,
+                                  (struct accessible_item){.kind = ACCESSIBLE_NOTICE}, units);
+}
+
 static void report_outcome(struct folio_window *_Nonnull self, enum folio_state_outcome outcome)
 {
     if (outcome == FOLIO_STATE_READY)
@@ -7064,13 +7080,19 @@ static void report_outcome(struct folio_window *_Nonnull self, enum folio_state_
         return;
     }
     outcome_line(self, outcome, self->result_line);
-    set_pane_notice(self, PANE_NOTICE_COMMAND_RESULT);
-    arrange(self);
-    InvalidateRect(self->handle, nullptr, FALSE);
-    char16_t units[draw_unit_limit];
-    if (wide_units(self->result_line, units) > 0)
-        accessibility_host_notify(self->accessibility,
-                                  (struct accessible_item){.kind = ACCESSIBLE_NOTICE}, units);
+    show_result_line(self);
+}
+
+/* コードブロックのコピーの結果（ADR0098）。成功も失敗も本文下の同じ1行と読み上げ通知で知らせ、
+ * 記憶域の不足でも箱を出さない。受け口はコマンド面が閉じているときだけ開く（web_link_ready）。 */
+static void report_code_copy(struct folio_window *_Nonnull self, enum folio_state_outcome outcome)
+{
+    if (outcome == FOLIO_STATE_READY)
+        (void)strcpy_s(self->result_line, sizeof self->result_line,
+                       ui_text_line(UI_TEXT_CODE_COPIED, folio_state_language(self->state)));
+    else
+        outcome_line(self, outcome, self->result_line);
+    show_result_line(self);
 }
 
 static enum search_direction reversed_direction(enum search_direction direction)
@@ -11480,14 +11502,30 @@ static bool web_link_ready(const struct folio_window *_Nonnull self)
            note_pane_link_available(self->pane);
 }
 
+/* リンクの宛先を意図へ分ける唯一の場所（ADR0098）。クリックと Ctrl+Enter の両方がここを通る。
+ * 内部の宛先（コードブロックのコピー）は検証済みの slot 番号へ変え、それ以外は従来のリンク。 */
+static void activate_link_target(struct folio_window *_Nonnull self, const char *_Nonnull bytes,
+                                 size_t length)
+{
+    size_t slot = 0;
+    switch (code_copy_target_parse(bytes, length, &slot))
+    {
+    case CODE_COPY_TARGET_SLOT:
+        report_code_copy(self, folio_state_copy_code(self->state, slot));
+        return;
+    case CODE_COPY_TARGET_OTHER:
+        report_outcome(self, folio_state_open_web_link(self->state, bytes, length));
+        return;
+    }
+}
+
 static void open_web_target(struct folio_window *_Nonnull self, enum note_pane_link_outcome outcome,
                             struct utf8_text *_Nullable target)
 {
     switch (outcome)
     {
     case NOTE_PANE_LINK_READY:
-        report_outcome(self, folio_state_open_web_link(self->state, utf8_text_bytes(target),
-                                                       utf8_text_length(target)));
+        activate_link_target(self, utf8_text_bytes(target), utf8_text_length(target));
         utf8_text_destroy(target);
         return;
     case NOTE_PANE_LINK_ABSENT:

@@ -118,7 +118,8 @@
 | 両表示の一覧幅 | 実行中に選んだlogical幅と、capture中だけの取消先/offset | ui/win32（`folio_window`） | pointer・鍵・UIAの幅適用から同じregions/arrangeへ渡す。窓縮小では実幅だけを制限し、選択幅を保持する（ADR0076） |
 | 上部の操作説明 | 標準tooltipのHWND・矩形登録・固定UTF-16表示buffer | ui/win32（`folio_window`） | 同じボタン矩形とui_textを参照し、resize/DPI/言語/テーマ・modal境界に追従する。表示状態や文書の別所有者にはしない（ADR0048） |
 | 表示キーのIME抑止 | 主窓・入力欄・本文の変換中状態 | ui/win32（各入力窓の所有者） | WM_IME_STARTCOMPOSITION/ENDCOMPOSITIONから追跡し、表示キーの実行前に確認する。通常のIME処理は維持する（ADR0048） |
-| 閲覧リンクの位置対応 | native書式から導くhidden区間と押下/解放の状態 | ui/win32（`note_pane_links`） | 同じpaneのRTF投入後に生成、差替えで破棄、READY閲覧だけ操作可。検索/選択を表示位置へ対応する（ADR0079） |
+| 閲覧リンクの位置対応 | native書式から導くhidden区間と押下/解放の状態 | ui/win32（`note_pane_links`） | 同じpaneのRTF投入後に生成、差替えで破棄、READY閲覧だけ操作可。検索/選択を表示位置へ対応する（ADR0079）。コードブロックの「コピー」の見える区間も同じ索引へ入れて検索から除く（ADR0098） |
+| コードブロックのコピー用原文 | 現在の閲覧描画に属するブロックごとのコード文字列（最大256個・1個256KiB・Mermaid原文と合計4MiB） | core（`markdown_media`。寿命はapplicationの`folio_state`が持つ閲覧`markdown_rtf`） | 描画と同じ走査で生成し、閲覧RTFの差替えで破棄する。UIはリンク宛先のslot番号だけを受け、文字列を複製しない。`folio_state_copy_code`が現在の描画のslotだけを`clipboard_port`へ渡し、OSのクリップボードは`clipboard_adapter`だけが書く（ADR0098） |
 | 簡易ミニマップ | 最大256の文字sample・最大256の画像矩形・構築cursor、主窓timerとdrag offset、配置済み左余白 | ui/win32（`note_minimap`・`folio_window`） | RichEditの実矩形から入力待機時16件ずつ派生させ、本文投入/非表示で破棄する。本文・scroll位置は複製せず同じnative ownerへ文書pixelで操作を渡す（ADR0084） |
 | 入力待機中の実行順 | 次に優先する検索/ミニマップの閉じた種別 | ui/win32（`folio_window`） | 同じidle入口で両方が実行可能なら交互に一単位ずつ進める。各進捗は既存ownerに残す（ADR0084 #512） |
 | 編集中の本文 | 保存前の文字列 | ui/win32（RichEdit が所有） | 保存の意図で application へ渡す |

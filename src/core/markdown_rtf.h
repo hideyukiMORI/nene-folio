@@ -3,6 +3,7 @@
 #ifndef NENEFOLIO_MARKDOWN_RTF_H
 #define NENEFOLIO_MARKDOWN_RTF_H
 
+#include "markdown_rtf_locale.h"
 #include "markdown_rtf_outcome.h"
 #include "rtf_palette.h"
 
@@ -19,9 +20,11 @@ struct note_text;
 
 /* face は本文のフォント名（ui_font_face が答える ASCII。`{` `}` `\` `;` を含まない）で、
  * fonttbl の 0 に入る（ADR 0032 の決定 5）。コードの 1 は Consolas のまま。 */
+/* 閲覧の文書は face に加えて、コードブロックのコピー操作の文言の言語を受ける（ADR0098）。 */
 [[nodiscard]] enum markdown_rtf_outcome
 markdown_rtf_create(const struct note_text *_Nonnull text, struct rtf_palette palette,
-                    const char *_Nonnull face, struct markdown_rtf *_Nullable *_Nonnull out);
+                    struct markdown_rtf_locale locale,
+                    struct markdown_rtf *_Nullable *_Nonnull out);
 /* 何も選んでいないときの空の文書（頭と末尾だけ）。 */
 [[nodiscard]] enum markdown_rtf_outcome
 markdown_rtf_empty(struct rtf_palette palette, const char *_Nonnull face,

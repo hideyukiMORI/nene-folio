@@ -104,6 +104,7 @@ fenceの言語・aliases・字句規則は`code_language`、ブロック内の�
 同じparserの`markdown_images`が画像参照と原文destination範囲を収集する。`markdown_destination`の展開をリンクと共有し、
 `markdown_image_copy`は出力コピーの該当範囲だけを変更する。`archive_assets`の画像bytesも同じZIP writerへ渡す（ADR0085）。
 `markdown_media`は同じ走査で画像参照とMermaid原文の表示slotを所有し、画像の書き出しcollectionを分離して保つ。
+通常のコードブロックのコピー用原文も同じownerが別の番号で持ち、`code_copy_target`が見出し行のリンク宛先の書式と解釈を一つにする。閲覧RTFは書体名と文言の言語を`markdown_rtf_locale`で受ける（ADR0098）。
 `mermaid_diagram`が種類を判定し、`mermaid_flow` / `mermaid_sequence`が一時的なcollectorから不変`diagram_model`を作る。
 実文字計測の`diagram_metrics`を受け、`diagram_layout`からflow/sequenceの有界な配置を一回生成し、
 不変`diagram_scene`を返す。`diagram_ranks`の循環除去・順位付け、`diagram_geometry`の向き変換を共有する（ADR0089）。
@@ -118,6 +119,7 @@ UI 状態・ファイル・現在時刻を持たない。実行時依存の許�
 振る舞いの調整を持つ。ポートの宣言・状態の所有者（`folio_state`）・意図を受ける reducer・表示値の生成・結果型。
 Win32・永続化・ファイル・ネットワークを知らない。
 Webリンク起動は`folio_state`の意図から`web_link_port`へ渡し、合成rootが必須portを明示する（ADR0079）。
+コードブロックのコピーは`folio_state_copy_code`が現在の描画のslotを検証し、UTF-8の原文を`clipboard_port`へ1回渡す（ADR0098）。
 取り込み/書き出しも`folio_state`が所有し、`transfer_port`で外部ファイルを扱う。取り込みは既存create_note/台帳同期、
 単票書き出しは既存copied_text、ZIPは保存済み本文の読込とcore archiveへ渡す（ADR0082）。
 画像の要求/取消/結果は必須`image_port`へ渡し、`image_export`が同じ解析情報とportでZIP素材を揃える。
@@ -142,6 +144,7 @@ coreの`storage_path`と`startup_settings`がpath検証と版1のcodecを持ち�
 `storage_adapter`は配布形式/Known Folder/起動設定を扱い、`persistence_adapter`は確定rootを明示的に受ける。
 両者の`.nenefolio.lock`取得は`data_lock`、native path変換は`storage_native_path`へ集約する（ADR0077）。
 `web_link_adapter`だけが検証済みURIをShellExecuteExWへ渡し、COM初期化/解放とOS失敗を扱う（ADR0079）。
+`clipboard_adapter`だけがOSのクリップボードを書く。UTF-16・CRLFへ変換し、所有者の表示しない窓と確保した領域の所有を閉じる（ADR0098）。
 `transfer_adapter`は外部Markdownの読込と検証済み本文/ZIPの新規公開だけを扱い、`file_bytes`の原子的な公開へ合流する（ADR0082）。
 `image_adapter`だけが画像workerと有界cacheを所有する。通常ファイルのreadは`image_file`、HTTPSは`image_download`、
 PNG/JPEGのWIC復号/縮小は`image_decode`へ閉じる。WinHTTP callbackは通知だけを渡す（ADR0085）。

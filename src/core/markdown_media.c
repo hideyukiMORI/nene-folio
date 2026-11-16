@@ -10,6 +10,9 @@ struct markdown_media
     enum image_outcome statuses[markdown_media_display_limit];
     size_t image_indices[markdown_media_display_limit];
     struct note_text *_Nullable diagrams[markdown_media_display_limit];
+    struct text_buffer *_Nullable codes[markdown_media_display_limit];
+    size_t code_count;
+    size_t code_lines;
     struct text_buffer *_Nullable collecting;
     size_t collecting_slot;
     size_t source_bytes;
@@ -116,6 +119,49 @@ enum image_outcome markdown_media_end_diagram(struct markdown_media *_Nonnull me
     media->collecting_slot = diagram_none;
     return media->statuses[slot] == IMAGE_OUT_OF_MEMORY ? IMAGE_OUT_OF_MEMORY : IMAGE_READY;
 }
+enum image_outcome markdown_media_begin_code(struct markdown_media *_Nonnull media, size_t bytes,
+                                             size_t *_Nonnull slot)
+{
+    if (media->code_count == markdown_media_display_limit || bytes > diagram_source_limit ||
+        bytes > source_byte_limit - media->source_bytes)
+        return IMAGE_TOO_LARGE;
+    struct text_buffer *_Nullable code = nullptr;
+    if (text_buffer_create(&code) != TEXT_BUFFER_ACCEPTED)
+        return IMAGE_OUT_OF_MEMORY;
+    media->source_bytes += bytes;
+    media->code_lines = 0;
+    *slot = media->code_count;
+    media->codes[media->code_count++] = code;
+    return IMAGE_READY;
+}
+void markdown_media_code_line(struct markdown_media *_Nonnull media, size_t slot,
+                              struct markdown_line line)
+{
+    struct text_buffer *code = media->codes[slot];
+    if (media->code_lines++ != 0)
+        text_buffer_append_text(code, "\n");
+    for (size_t index = 0; index < line.padding; ++index)
+        text_buffer_append_text(code, " ");
+    text_buffer_append(code, line.bytes + line.prefix, line.length - line.prefix);
+}
+enum image_outcome markdown_media_end_code(struct markdown_media *_Nonnull media, size_t slot)
+{
+    return text_buffer_finish(media->codes[slot]) == TEXT_BUFFER_ACCEPTED ? IMAGE_READY
+                                                                          : IMAGE_OUT_OF_MEMORY;
+}
+size_t markdown_media_code_count(const struct markdown_media *_Nonnull media)
+{
+    return media->code_count;
+}
+const char *_Nonnull markdown_media_code_bytes(const struct markdown_media *_Nonnull media,
+                                               size_t slot)
+{
+    return text_buffer_bytes(media->codes[slot]);
+}
+size_t markdown_media_code_length(const struct markdown_media *_Nonnull media, size_t slot)
+{
+    return text_buffer_length(media->codes[slot]);
+}
 size_t markdown_media_count(const struct markdown_media *_Nonnull media)
 {
     return media->count;
@@ -153,6 +199,8 @@ void markdown_media_destroy(struct markdown_media *_Nullable media)
         return;
     for (size_t index = 0; index < media->count; ++index)
         note_text_destroy(media->diagrams[index]);
+    for (size_t index = 0; index < media->code_count; ++index)
+        text_buffer_destroy(media->codes[index]);
     text_buffer_destroy(media->collecting);
     markdown_images_destroy(media->images);
     free(media);

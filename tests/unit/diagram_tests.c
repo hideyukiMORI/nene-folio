@@ -857,8 +857,10 @@ static void markdown_contract(void)
                           "```mermaid\nsequenceDiagram\nA->>B: hi\n```\n";
     struct note_text *text = body(source);
     struct markdown_rtf *_Nullable rtf = nullptr;
-    require(markdown_rtf_create(text, folio_theme_palette(FOLIO_THEME_LIGHT)->rtf,
-                                ui_font_face(FOLIO_LANGUAGE_JA), &rtf) == MARKDOWN_RTF_CONVERTED,
+    require(markdown_rtf_create(
+                text, folio_theme_palette(FOLIO_THEME_LIGHT)->rtf,
+                (struct markdown_rtf_locale){ui_font_face(FOLIO_LANGUAGE_JA), FOLIO_LANGUAGE_JA},
+                &rtf) == MARKDOWN_RTF_CONVERTED,
             "mixed Markdown renders first");
     const struct markdown_media *media = markdown_rtf_media(rtf);
     require(media != nullptr && markdown_media_count(media) == 4,
@@ -918,7 +920,8 @@ static void markdown_allocation_contract(const char *_Nonnull source)
         allocation_probe_fail_at(nth);
         struct markdown_rtf *_Nullable rtf = nullptr;
         enum markdown_rtf_outcome result = markdown_rtf_create(
-            text, folio_theme_palette(FOLIO_THEME_LIGHT)->rtf, "Noto Sans JP", &rtf);
+            text, folio_theme_palette(FOLIO_THEME_LIGHT)->rtf,
+            (struct markdown_rtf_locale){"Noto Sans JP", FOLIO_LANGUAGE_JA}, &rtf);
         if (nth == 0)
             allocations = allocation_probe_calls();
         allocation_probe_fail_at(0);

@@ -500,6 +500,14 @@ static bool run_surface_target_tests(const char *_Nonnull argument)
 
 static bool run_web_link_target_tests(const char *_Nonnull argument)
 {
+    if (strcmp(argument, "--code-copy") == 0)
+    {
+        run_code_copy_tests();
+        run_web_link_tests();
+        run_markdown_suite();
+        run_ui_text_tests();
+        return true;
+    }
     if (strcmp(argument, "--web-links") != 0)
         return false;
     run_web_link_tests();
@@ -678,6 +686,7 @@ static void run_full_suite(void)
     run_image_tests();
     run_transfer_tests();
     run_web_link_tests();
+    run_code_copy_tests();
     run_storage_tests();
     run_storage_state_tests();
     run_text_tests();

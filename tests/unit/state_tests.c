@@ -2276,6 +2276,10 @@ static const char *_Nonnull const expected_failure_lines[] = {
         "画像を同梱できませんでした。画像の参照先と読み取り権限を確認してください。",
     [FOLIO_STATE_WEB_LINK_REJECTED] = "このリンクは開けません。",
     [FOLIO_STATE_WEB_LINK_UNAVAILABLE] = "既定のブラウザーでリンクを開けませんでした。",
+    [FOLIO_STATE_CODE_COPY_REJECTED] = "このコードブロックはコピーできません。",
+    [FOLIO_STATE_CLIPBOARD_BUSY] =
+        "ほかのアプリがクリップボードを使用中です。もう一度お試しください。",
+    [FOLIO_STATE_CLIPBOARD_UNAVAILABLE] = "クリップボードへコピーできませんでした。",
     [FOLIO_STATE_EXPORT_TOO_LARGE] =
         "ZIPの上限は128MiB・65,534ファイル・画像参照4,096件です。画像1枚は16MiBまでです。",
     [FOLIO_STATE_EXPORT_EXISTS] = "その名前のファイルがあります。別の名前を指定してください。",
@@ -2541,6 +2545,7 @@ const struct folio_ports *_Nonnull test_ports(const struct persistence_port *_No
     ports.regex = regex;
     static const struct web_link_port links = {.open = test_open_link};
     ports.web_link = &links;
+    ports.clipboard = test_clipboard_port();
     ports.transfer = test_transfer_port();
     ports.images = test_image_port();
     return &ports;
