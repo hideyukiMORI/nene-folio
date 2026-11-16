@@ -206,7 +206,8 @@ static const char code_copy_gallery[] =
     "1}\n  ```\n";
 /* #850: bare URLs next to Japanese text, in emphasis, a list, a table and beside <URL> forms. */
 static const char bare_url_gallery[] =
-    "# 囲まないURL\n\n詳細はhttps://example.com/docs/startを参照。\n\n"
+    "# 囲まないURL\n\n## 見出しの `code` と **太字**（#853）\n\n"
+    "詳細はhttps://example.com/docs/startを参照。\n\n"
     "ミラー: www.example.org/a/b?x=1 と (https://example.net/path)。\n\n"
     "**https://example.com/bold** と <https://example.com/angle> と "
     "[表示名](https://example.com/n)\n\n"

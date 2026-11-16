@@ -645,6 +645,64 @@ static void bare_links(struct note_pane *_Nonnull pane)
             "editing has no bare link");
 }
 
+static LONG height_at(HWND _Nonnull handle, LONG position)
+{
+    CHARRANGE one = {position, position + 1};
+    SendMessageW(handle, EM_EXSETSEL, 0, (LPARAM)&one);
+    CHARFORMAT2W format = {.cbSize = sizeof format};
+    SendMessageW(handle, EM_GETCHARFORMAT, SCF_SELECTION, (LPARAM)&format);
+    return format.yHeight;
+}
+
+static const char *const heading_decorations[] = {"**太字**",
+                                                  "*斜体*",
+                                                  "~~取消~~",
+                                                  "***両方***",
+                                                  "`code`",
+                                                  "[リンク](https://example.com/)",
+                                                  "<https://example.com/>",
+                                                  "https://example.com/",
+                                                  "&amp;"};
+
+/* One heading level (6 is setext h1) with one decoration between plain text. */
+static void heading_inline_size(struct note_pane *_Nonnull pane, size_t level, size_t at)
+{
+    static const char *const prefixes[] = {"# ", "## ", "### ", "#### ", "##### ", "###### "};
+    static const wchar_t *const words[] = {L"太字",
+                                           L"斜体",
+                                           L"取消",
+                                           L"両方",
+                                           L"code",
+                                           L"リンク",
+                                           L"https://example.com/",
+                                           L"https://example.com/",
+                                           L"&"};
+    char content[160];
+    int written = level < 6
+                      ? snprintf(content, sizeof content, "%s前%s後", prefixes[level],
+                                 heading_decorations[at])
+                      : snprintf(content, sizeof content, "前%s後\n===", heading_decorations[at]);
+    require(written > 0, "heading sample");
+    load(pane, PANE_MODE_VIEW, content);
+    HWND handle = note_pane_handle(pane);
+    LONG plain = height_at(handle, native_find(handle, L"前"));
+    LONG decorated = height_at(handle, native_find(handle, words[at]));
+    /* yHeight is in twips (10 per half-point); code keeps the body's 20:22 ratio. */
+    LONG expected = at == 4 ? (plain / 10 * 10 + 5) / 11 * 10 : plain;
+    if (decorated != expected)
+        printf("heading-size h%zu %s plain=%ld decorated=%ld expected=%ld\n", level + 1,
+               heading_decorations[at], plain, decorated, expected);
+    require(decorated == expected, "an inline decoration keeps the heading's size");
+}
+
+/* #853: an inline decoration inside a heading keeps the heading's size. */
+static void heading_inline_sizes(struct note_pane *_Nonnull pane)
+{
+    for (size_t level = 0; level < 7; ++level)
+        for (size_t at = 0; at < sizeof heading_decorations / sizeof heading_decorations[0]; ++at)
+            heading_inline_size(pane, level, at);
+}
+
 static void code_label_wrap(struct note_pane *_Nonnull pane)
 {
     const char content[] = "~~~VeryLongUnknownLanguageNameThatMustWrapWithoutLosingAnyCharacters"
@@ -700,6 +758,7 @@ int main(void)
     code_label_wrap(pane);
     code_copy_action(pane);
     bare_links(pane);
+    heading_inline_sizes(pane);
     load(pane, PANE_MODE_EDIT, source);
     boundaries(pane);
     preservation(pane);

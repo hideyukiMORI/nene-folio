@@ -774,7 +774,7 @@ static void verify_table_query_rejections(void)
     struct markdown_media *images = nullptr;
     require(markdown_media_create(header_line.bytes, &images) == IMAGE_READY,
             "direct image collector");
-    struct markdown_render render = {.text = out, .media = images};
+    struct markdown_render render = {.text = out, .media = images, .half_points = 22};
     struct markdown_line delimiter = markdown_line_read("-- | --", 7, 0);
     struct markdown_line invalid = {.bytes = "x", .length = 1, .content = 2};
     require(markdown_table_columns(invalid) == 0 && !markdown_table_delimiter(invalid) &&
@@ -1327,7 +1327,7 @@ static void verify_borrowed_input(void)
     require(text_buffer_create(&out) == TEXT_BUFFER_ACCEPTED, "invalid input output");
     struct markdown_media *images = nullptr;
     require(markdown_media_create(span.bytes, &images) == IMAGE_READY, "direct image collector");
-    struct markdown_render render = {.text = out, .media = images};
+    struct markdown_render render = {.text = out, .media = images, .half_points = 22};
     require(markdown_inline_tokens_render(render, view) == MARKDOWN_RTF_INVALID_INPUT &&
                 text_buffer_length(out) == 0,
             "inconsistent borrowed offsets are typed invalid input");
@@ -1395,7 +1395,7 @@ static void verify_table_format_limits(void)
     struct markdown_line delimiter = markdown_line_read("-- | --", 7, 0);
     struct markdown_media *images = nullptr;
     require(markdown_media_create(line.bytes, &images) == IMAGE_READY, "table image collector");
-    struct markdown_render render = {.text = out, .media = images};
+    struct markdown_render render = {.text = out, .media = images, .half_points = 22};
     struct markdown_table_format format = {.kind = MARKDOWN_ROW_KIND_HEADER, .indent_twips = 32768};
     require(markdown_table_row(render, line, delimiter, format) == MARKDOWN_RTF_INVALID_INPUT &&
                 text_buffer_length(out) == 0,
@@ -1546,7 +1546,7 @@ static void expect_inline_view(struct markdown_view view, const char *_Nonnull e
     struct markdown_media *images = nullptr;
     require(markdown_media_create(view.spans[0].bytes, &images) == IMAGE_READY,
             "direct image collector");
-    struct markdown_render render = {.text = out, .media = images};
+    struct markdown_render render = {.text = out, .media = images, .half_points = 22};
     require(markdown_inline_tokens_render(render, view) == MARKDOWN_RTF_CONVERTED &&
                 text_buffer_finish(out) == TEXT_BUFFER_ACCEPTED,
             "direct inline render");
@@ -1885,7 +1885,7 @@ static void verify_inline_storage_guards(void)
     struct markdown_view view = {.spans = &span, .count = 0, .length = 0};
     struct markdown_media *images = nullptr;
     require(markdown_media_create(span.bytes, &images) == IMAGE_READY, "direct image collector");
-    struct markdown_render render = {.text = out, .media = images};
+    struct markdown_render render = {.text = out, .media = images, .half_points = 22};
     allocation_probe_fail_at(0);
     require(markdown_inline_tokens_render(render, view) == MARKDOWN_RTF_CONVERTED,
             "empty view does not require token storage");
@@ -1926,7 +1926,7 @@ static bool verify_inline_literal_storage(size_t length, const char *_Nonnull la
     struct markdown_view view = {.spans = &span, .count = 1, .length = length};
     struct markdown_media *images = nullptr;
     require(markdown_media_create(span.bytes, &images) == IMAGE_READY, "direct image collector");
-    struct markdown_render render = {.text = out, .media = images};
+    struct markdown_render render = {.text = out, .media = images, .half_points = 22};
     allocation_probe_fail_at(0);
     enum markdown_rtf_outcome rendered = markdown_inline_tokens_render(render, view);
     size_t calls = allocation_probe_calls();
@@ -2003,7 +2003,7 @@ static size_t verify_inline_metadata_allocation(void)
         text_buffer_append_text(out, "kept");
         struct markdown_media *images = nullptr;
         require(markdown_media_create(source, &images) == IMAGE_READY, "direct image collector");
-        struct markdown_render render = {.text = out, .media = images};
+        struct markdown_render render = {.text = out, .media = images, .half_points = 22};
         allocation_probe_fail_at(fail);
         enum markdown_rtf_outcome result = markdown_inline_tokens_render(render, view);
         size_t calls = allocation_probe_calls();
@@ -2081,6 +2081,18 @@ static void verify_autolink_rendering(void)
     /* ADR0099 replaced ADR0079's "bare URLs stay plain": the same field as <URL>. */
     expect_fragment("https://example.com", "{\\cf4\\ul https://example.com\\ul0}}}}{\\v  }",
                     "<https");
+}
+
+/* #853: inline code keeps the body's 20:22 ratio to the text around it. */
+static void verify_heading_code_size(void)
+{
+    expect_fragment("# a `b`", "{\\f1\\fs40\\cf4 b}", "\\fs20\\cf4 b");
+    expect_fragment("## a `b`", "{\\f1\\fs31\\cf4 b}", "\\fs20\\cf4 b");
+    expect_fragment("### a `b`", "{\\f1\\fs25\\cf4 b}", "\\fs20\\cf4 b");
+    expect_fragment("#### a `b`", "{\\f1\\fs20\\cf4 b}", "\\fs40");
+    expect_fragment("a `b`\n===", "{\\f1\\fs40\\cf4 b}", "\\fs20\\cf4 b");
+    expect_fragment("a `b`\n\n| `c` |\n| -- |", "{\\f1\\fs20\\cf4 c}", "\\fs40");
+    expect_fragment("a `b`", "{\\f1\\fs20\\cf4 b}", "\\fs40");
 }
 
 static void verify_character_references(void)
@@ -2166,6 +2178,7 @@ void run_markdown_tests(void)
     verify_numeric_emission();
     verify_emission_boundaries();
     verify_autolink_rendering();
+    verify_heading_code_size();
     verify_character_references();
     verify_light_inline_bounds();
     verify_rule_spacing();

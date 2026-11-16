@@ -7,5 +7,8 @@ struct markdown_render
 {
     struct text_buffer *_Nonnull text;
     struct markdown_media *_Nonnull media;
+    /* The size of the surrounding text in RTF half-points (a heading's, or the body's 22).
+     * Inline code is drawn relative to it (#853). */
+    size_t half_points;
 };
 #endif
