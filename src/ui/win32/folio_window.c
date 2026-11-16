@@ -18581,14 +18581,40 @@ static void continue_tag_management(struct folio_window *_Nonnull self)
     folio_window_end_dispatch(self);
 }
 
+/* 読込件数以外が同じなら、配置・結果・preview・通知は前回のrefreshのまま使える（#837）。 */
+static bool discovery_progress_only(const struct discovery_summary *_Nonnull before,
+                                    const struct discovery_summary *_Nonnull after)
+{
+    return before->phase == after->phase && before->mode == after->mode &&
+           before->preview == after->preview && before->notice == after->notice &&
+           before->total == after->total && before->shown == after->shown &&
+           before->selected == after->selected && before->unreadable == after->unreadable &&
+           before->unsupported == after->unsupported && before->revision == after->revision &&
+           before->results_revision == after->results_revision;
+}
+
+/* 状態行の件数だけを描き直す。演出のidle再開とUIA更新予約は全refreshと同じ順で保つ。 */
+static void discovery_progress_refresh(struct folio_window *_Nonnull self)
+{
+    RECT status = discovery_geometry(self).status;
+    InvalidateRect(self->command_layer, &status, FALSE);
+    discovery_motion_sync(self);
+    accessibility_host_schedule(self->accessibility);
+}
+
 static void continue_discovery(struct folio_window *_Nonnull self)
 {
     folio_window_begin_dispatch(self);
+    struct discovery_summary before = folio_state_discovery_summary(self->state);
     enum folio_state_outcome outcome = folio_state_continue_discovery(self->state);
+    struct discovery_summary after = folio_state_discovery_summary(self->state);
     self->discovery_motion_wait = false;
     if (outcome != FOLIO_STATE_READY)
         self->command_failure = outcome;
-    discovery_refresh(self);
+    if (outcome == FOLIO_STATE_READY && discovery_progress_only(&before, &after))
+        discovery_progress_refresh(self);
+    else
+        discovery_refresh(self);
     present_pending_surface(self->command_layer);
     folio_window_end_dispatch(self);
 }

@@ -101,6 +101,8 @@ static bool discovery_copy_case;
 static bool discovery_measure_case;
 static WNDPROC discovery_preview_procedure;
 static unsigned discovery_rejected_text;
+static WNDPROC progress_layer_procedure;
+static unsigned progress_layer_moves;
 static bool tag_management_case;
 static bool tag_management_visual_case;
 static bool tag_management_measure_case;
@@ -9789,6 +9791,62 @@ static void body_discovery_mode_keys(struct folio_window *_Nonnull window,
     surface_button(window, ACCESSIBLE_SURFACE_CLOSE);
 }
 
+static LRESULT CALLBACK progress_layer_observer(HWND window, UINT message, WPARAM wparam,
+                                                LPARAM lparam)
+{
+    if (message == WM_WINDOWPOSCHANGING)
+        progress_layer_moves += 1;
+    return CallWindowProcW(progress_layer_procedure, window, message, wparam, lparam);
+}
+
+/* Independent of the product predicate: only the checked-source count may differ. */
+static bool progress_only_step(const struct discovery_summary *_Nonnull before,
+                               const struct discovery_summary *_Nonnull after)
+{
+    return before->source_checked != after->source_checked && before->phase == after->phase &&
+           before->mode == after->mode && before->preview == after->preview &&
+           before->notice == after->notice && before->total == after->total &&
+           before->shown == after->shown && before->selected == after->selected &&
+           before->unreadable == after->unreadable && before->unsupported == after->unsupported &&
+           before->source_total == after->source_total && before->revision == after->revision &&
+           before->results_revision == after->results_revision;
+}
+
+/* #837: an idle that only reads one more source keeps the arranged surface and still paints. */
+static void body_discovery_progress_idle(struct folio_window *_Nonnull window,
+                                         struct native_fixture *_Nonnull fixture)
+{
+    invoke_operation(window, FOLIO_COMMAND_DISCOVER_NOTES);
+    body_discovery_mode(window, 1);
+    HWND input = folio_window_accessible_window(window, ACCESSIBLE_COMMAND_INPUT);
+    HWND layer = GetParent(input);
+    require(SetWindowTextW(input, L"needle"), "native body query starts a new source pass");
+    pump(window);
+    progress_layer_procedure =
+        (WNDPROC)SetWindowLongPtrW(layer, GWLP_WNDPROC, (LONG_PTR)progress_layer_observer);
+    require(progress_layer_procedure != nullptr, "observe the real discovery surface window");
+    size_t quiet = 0;
+    for (size_t step = 0; step < 1000 && folio_window_idle_work_ready(window); ++step)
+    {
+        struct discovery_summary before = folio_state_discovery_summary(fixture->state);
+        progress_layer_moves = 0;
+        folio_window_continue_idle_work(window);
+        struct discovery_summary after = folio_state_discovery_summary(fixture->state);
+        if (progress_only_step(&before, &after))
+        {
+            require(progress_layer_moves == 0 && !GetUpdateRect(layer, nullptr, FALSE),
+                    "a progress-only idle paints its count without arranging the surface again");
+            quiet += 1;
+        }
+        pump(window);
+    }
+    SetWindowLongPtrW(layer, GWLP_WNDPROC, (LONG_PTR)progress_layer_procedure);
+    require(quiet != 0 && !folio_state_discovery_work_pending(fixture->state),
+            "the private fixture reaches its result through at least one progress-only idle");
+    body_discovery_preview_selection(window, L"needle");
+    surface_button(window, ACCESSIBLE_SURFACE_CLOSE);
+}
+
 static void body_discovery_same_editor(struct folio_window *_Nonnull window,
                                        struct native_fixture *_Nonnull fixture)
 {
@@ -10222,6 +10280,7 @@ static void run_body_discovery_case(struct native_fixture *_Nonnull fixture)
         body_discovery_measure(window, fixture);
     else
     {
+        body_discovery_progress_idle(window, fixture);
         body_discovery_mode_keys(window, fixture);
         body_discovery_same_editor(window, fixture);
         body_discovery_changed_source(window, fixture);

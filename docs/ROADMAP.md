@@ -1,14 +1,15 @@
 # ロードマップ — NeNe Folio
 
-更新: 2026-11-15 / 計画[#811](https://github.com/hideyukiMORI/nene-folio/issues/811)・お気に入り[#813](https://github.com/hideyukiMORI/nene-folio/issues/813)・UI調整[#817](https://github.com/hideyukiMORI/nene-folio/issues/817)
+更新: 2026-11-16 / 計画[#811](https://github.com/hideyukiMORI/nene-folio/issues/811)・お気に入り[#813](https://github.com/hideyukiMORI/nene-folio/issues/813)・UI調整[#817](https://github.com/hideyukiMORI/nene-folio/issues/817)
 
 将来の機能計画の入口。現在の動作の正本は[仕様](../SPECIFICATION.md)、
 [Markdownの書き方](MARKDOWN.md)、[操作とキー](KEY_BINDINGS.md)。
 段階1/2のお気に入り・タグと段階3aの#823は統合・通常exe反映済み。段階3bの#825も統合・通常exe反映済み。
 段階4も#827 / PR828で統合・通常exe反映・整理済み。#829のDebug規模別計測は統合・整理済み。
 #831のRelease計測も統合・保全・整理済み。#833で初回本文準備のreadポートとidleを分けて観測した。
-read以外の区間を次の調査候補とするが、配送の偏りが残り個別の処理費用は未特定。#833は統合・保全・整理済み。
-11月16日のhide指示でこの地点を区切りに停止し、後続の製品変更は未着手。公開版と日程は未確定。
+#833は統合・保全・整理済み。11月16日朝のhide指示で再開し、#837でread以外の区間の主因
+（読込件数だけのidleでも行っていた検索面の全配置と全体再描画）を除いた。1000件の初回本文検索の主スレッドCPU中央値は
+5843.750ms→1468.750ms（共有端末での条件付き観測）。残りの内訳は未測定。公開版と日程は未確定。
 
 ## 今回の指定
 
