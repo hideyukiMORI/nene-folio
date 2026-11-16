@@ -508,6 +508,76 @@ static void code_copy_action(struct note_pane *_Nonnull pane)
             "editing has no copy action");
 }
 
+static LONG native_find(HWND _Nonnull handle, const wchar_t *_Nonnull word)
+{
+    FINDTEXTEXW find = {{0, -1}, word, {0, 0}};
+    require(SendMessageW(handle, EM_FINDTEXTEXW, FR_DOWN | FR_MATCHCASE, (LPARAM)&find) >= 0,
+            "the word exists in the native document");
+    return find.chrgText.cpMin;
+}
+
+static void expect_link(struct note_pane *_Nonnull pane, LONG position,
+                        const char *_Nullable expected)
+{
+    SendMessageW(note_pane_handle(pane), EM_SETSEL, (WPARAM)position, position);
+    struct utf8_text *_Nullable target = nullptr;
+    enum note_pane_link_outcome outcome = note_pane_link_selection(pane, &target);
+    if (outcome == NOTE_PANE_LINK_READY)
+        printf("bare link at %ld: %s\n", position, utf8_text_bytes(target));
+    if (expected == nullptr)
+        require(outcome == NOTE_PANE_LINK_ABSENT && target == nullptr,
+                "text next to a bare link is not a link");
+    else
+        require(outcome == NOTE_PANE_LINK_READY && target != nullptr &&
+                    strcmp(utf8_text_bytes(target), expected) == 0,
+                "the caret on a bare link resolves to its validated URI");
+    utf8_text_destroy(target);
+}
+
+/* #850 / ADR0099: bare URLs are native links whose shown text is exactly the source text. */
+static void bare_links(struct note_pane *_Nonnull pane)
+{
+    const char content[] = "詳細はhttps://example.com/a。と www.example.org/b. 終わり\n\n"
+                           "`https://example.com/code` x";
+    static const char16_t shown[] = u"詳細はhttps://example.com/a。と www.example.org/b. 終わり\r"
+                                    u"https://example.com/code x";
+    load(pane, PANE_MODE_VIEW, content);
+    HWND handle = note_pane_handle(pane);
+    const char16_t *visible = nullptr;
+    size_t length = 0;
+    require(note_pane_text(pane, &visible, &length) == NOTE_PANE_TEXT_TAKEN, "search projection");
+    if (length != sizeof shown / sizeof shown[0] - 1 ||
+        memcmp(visible, shown, length * sizeof shown[0]) != 0)
+    {
+        printf("projection:");
+        for (size_t index = 0; index < length; ++index)
+            printf(" %04x", (unsigned)visible[index]);
+        printf("\n");
+    }
+    require(length == sizeof shown / sizeof shown[0] - 1 &&
+                memcmp(visible, shown, length * sizeof shown[0]) == 0,
+            "search sees the shown text without hidden URLs or boundaries");
+    LONG first = native_find(handle, L"https://example.com/a");
+    expect_link(pane, first + 1, "https://example.com/a");
+    expect_link(pane, first + 20, "https://example.com/a");
+    expect_link(pane, native_find(handle, L"。と"), nullptr);
+    LONG second = native_find(handle, L"www.example.org/b");
+    expect_link(pane, second + 1, "http://www.example.org/b");
+    expect_link(pane, second + 16, "http://www.example.org/b");
+    expect_link(pane, native_find(handle, L"終わり"), nullptr);
+    expect_link(pane, native_find(handle, L"example.com/code") + 1, nullptr);
+    load(pane, PANE_MODE_EDIT, content);
+    wchar_t actual[512];
+    GetWindowTextW(handle, actual, 512);
+    require(wcscmp(actual, L"詳細はhttps://example.com/a。と www.example.org/b. 終わり\r\n\r\n"
+                           L"`https://example.com/code` x") == 0,
+            "editing shows the Markdown source with nothing added");
+    struct utf8_text *_Nullable target = nullptr;
+    SendMessageW(handle, EM_SETSEL, 5, 5);
+    require(note_pane_link_selection(pane, &target) == NOTE_PANE_LINK_ABSENT,
+            "editing has no bare link");
+}
+
 static void code_label_wrap(struct note_pane *_Nonnull pane)
 {
     const char content[] = "~~~VeryLongUnknownLanguageNameThatMustWrapWithoutLosingAnyCharacters"
@@ -562,6 +632,7 @@ int main(void)
     code_label_boundaries(pane);
     code_label_wrap(pane);
     code_copy_action(pane);
+    bare_links(pane);
     load(pane, PANE_MODE_EDIT, source);
     boundaries(pane);
     preservation(pane);

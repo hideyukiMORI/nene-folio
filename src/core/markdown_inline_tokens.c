@@ -928,8 +928,7 @@ static void emit_autolink(struct markdown_inline_tokens *_Nonnull parser,
 
 /* #850 / ADR0099: a bare URL keeps the same field, colour and hidden boundary as <URL>. Text the
  * URI factory refuses stays plain, so nothing that cannot open looks like a link. */
-static void emit_bare_link(struct markdown_inline_tokens *_Nonnull parser, size_t start,
-                           size_t end)
+static void emit_bare_link(struct markdown_inline_tokens *_Nonnull parser, size_t start, size_t end)
 {
     struct web_uri *_Nullable uri = nullptr;
     enum web_uri_outcome outcome = markdown_web_link_bare(parser->view, start, end, &uri);

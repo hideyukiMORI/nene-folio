@@ -99,6 +99,9 @@ static void expect_field(const char *_Nonnull source, const char *_Nonnull expec
                                 (struct markdown_rtf_locale){"Arial", FOLIO_LANGUAGE_JA},
                                 &rtf) == MARKDOWN_RTF_CONVERTED,
             "field converted");
+    if (strstr(markdown_rtf_text(rtf), expected) == nullptr ||
+        strstr(markdown_rtf_text(rtf), absent) != nullptr)
+        fprintf(stderr, "source=%s\nRTF=%s\n", source, markdown_rtf_text(rtf));
     require(strstr(markdown_rtf_text(rtf), expected) != nullptr &&
                 strstr(markdown_rtf_text(rtf), absent) == nullptr,
             "field destination and structure");
@@ -239,11 +242,38 @@ static void verify_bare_limits(void)
     require(markdown_bare_link_length(view, 0, 14) == 0 &&
                 markdown_bare_link_length(view, 13, 13) == 0,
             "out of range limits");
+    struct web_uri *uri = nullptr;
+    require(markdown_web_link_bare(view, 4, 4, &uri) == WEB_URI_REJECTED &&
+                markdown_web_link_bare(view, 0, 14, &uri) == WEB_URI_REJECTED && uri == nullptr,
+            "an empty or out of range bare link has no URI");
+}
+
+/* A bare link the URI factory refuses (past web_uri_byte_limit) stays plain text. */
+static void verify_bare_refused(void)
+{
+    static char source[web_uri_byte_limit + 16];
+    memset(source, 'a', sizeof source - 1);
+    memcpy(source, "https://a.b/", 12);
+    source[sizeof source - 1] = '\0';
+    struct note_text *text = nullptr;
+    struct markdown_rtf *rtf = nullptr;
+    require(note_text_create(source, strlen(source), &text) == NOTE_TEXT_ACCEPTED, "long source");
+    require(markdown_rtf_create(text, folio_theme_palette(FOLIO_THEME_LIGHT),
+                                (struct markdown_rtf_locale){"Arial", FOLIO_LANGUAGE_JA},
+                                &rtf) == MARKDOWN_RTF_CONVERTED,
+            "long bare link converted");
+    require(strstr(markdown_rtf_text(rtf), "\\field") == nullptr &&
+                strstr(markdown_rtf_text(rtf), "\\ul ") == nullptr &&
+                strstr(markdown_rtf_text(rtf), "https://a.b/aaaa") != nullptr,
+            "a refused bare link is plain text");
+    markdown_rtf_destroy(rtf);
+    note_text_destroy(text);
 }
 
 static void expect_text(const char *_Nonnull source)
 {
-    expect_field(source, "", "\\field");
+    /* Code blocks carry their own copy action field (#839); no field may open the web. */
+    expect_field(source, "", "HYPERLINK \"http");
 }
 
 static void verify_bare_fields(void)
@@ -251,7 +281,8 @@ static void verify_bare_fields(void)
     expect_field("see https://example.com/ now", "HYPERLINK \"https://example.com/\"", "<https");
     expect_field("go www.example.com/a.", "HYPERLINK \"http://www.example.com/a\"",
                  "HYPERLINK \"www");
-    expect_field("go www.example.com/a.", "{\\cf4\\ul www.example.com/a\\ul0}}}}{\\v  }.", "a.\\ul");
+    expect_field("go www.example.com/a.", "{\\cf4\\ul www.example.com/a\\ul0}}}}{\\v  }.",
+                 "a.\\ul");
     expect_field("詳細はhttps://example.com/xを参照", "HYPERLINK \"https://example.com/x\"",
                  "<https");
     expect_field("a https://a.example/x_y_z b", "HYPERLINK \"https://a.example/x_y_z\"", "\\i ");
@@ -460,7 +491,8 @@ static void verify_uri_allocation(void)
 
 static void verify_render_allocation(void)
 {
-    const char source[] = "[**label**](https://example.com/?a=1&amp;b=2) <https://example.org/>";
+    const char source[] =
+        "[**label**](https://example.com/?a=1&amp;b=2) <https://example.org/> www.example.net/x";
     struct note_text *text = nullptr;
     require(note_text_create(source, sizeof source - 1, &text) == NOTE_TEXT_ACCEPTED, "OOM source");
     size_t allocations = 0;
@@ -490,6 +522,7 @@ void run_web_link_tests(void)
     verify_bare_extent();
     verify_bare_limits();
     verify_bare_fields();
+    verify_bare_refused();
     verify_state();
     verify_product_table();
     verify_product_state();
