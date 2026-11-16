@@ -271,11 +271,10 @@ static void layout_changed(struct folio_state *_Nonnull state)
     }
 }
 
-enum folio_state_outcome folio_state_open_web_link(struct folio_state *_Nonnull state,
-                                                   const char *_Nonnull bytes, size_t length)
+/* 検証とportへの受け渡しはここだけ。ノート内リンクと製品リンクが共有する（ADR0079/0097）。 */
+static enum folio_state_outcome launch_web_link(struct folio_state *_Nonnull state,
+                                                const char *_Nonnull bytes, size_t length)
 {
-    if (state->mode != PANE_MODE_VIEW || state->document == FOLIO_DOCUMENT_NONE)
-        return FOLIO_STATE_WEB_LINK_REJECTED;
     struct web_uri *_Nullable uri = nullptr;
     switch (web_uri_create(bytes, length, &uri))
     {
@@ -298,6 +297,20 @@ enum folio_state_outcome folio_state_open_web_link(struct folio_state *_Nonnull 
         return FOLIO_STATE_OUT_OF_MEMORY;
     }
     return FOLIO_STATE_WEB_LINK_UNAVAILABLE;
+}
+
+enum folio_state_outcome folio_state_open_web_link(struct folio_state *_Nonnull state,
+                                                   const char *_Nonnull bytes, size_t length)
+{
+    if (state->mode != PANE_MODE_VIEW || state->document == FOLIO_DOCUMENT_NONE)
+        return FOLIO_STATE_WEB_LINK_REJECTED;
+    return launch_web_link(state, bytes, length);
+}
+
+enum folio_state_outcome folio_state_open_product_link(struct folio_state *_Nonnull state,
+                                                       enum product_link link)
+{
+    return launch_web_link(state, product_link_uri(link), product_link_uri_length(link));
 }
 
 enum folio_state_outcome folio_state_copy_code(struct folio_state *_Nonnull state, size_t slot)

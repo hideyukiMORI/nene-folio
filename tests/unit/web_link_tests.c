@@ -5,6 +5,7 @@
 #include "markdown_web_link.h"
 #include "note_text.h"
 #include "persistence_port.h"
+#include "product_link.h"
 #include "regex_port.h"
 #include "unit_tests.h"
 #include "web_link_port.h"
@@ -152,9 +153,11 @@ static void verify_fields(void)
 
 static size_t opened;
 static enum web_link_outcome port_result;
+static const char *_Nonnull expected_uri = "https://example.com/";
 static enum web_link_outcome open_uri(const struct web_uri *_Nonnull uri)
 {
-    require(same_text(web_uri_bytes(uri), "https://example.com/"),
+    require(same_text(web_uri_bytes(uri), expected_uri) &&
+                web_uri_length(uri) == strlen(expected_uri),
             "only validated exact URI at port");
     opened += 1;
     return port_result;
@@ -214,6 +217,105 @@ static void verify_state(void)
     test_adapter_destroy(adapter);
 }
 
+/* ADR0097: 閉じた集合の全値が、検証を通る絶対httpsの固定URLを一つずつ持つ。 */
+static const char *_Nonnull const product_uris[] = {
+    [PRODUCT_LINK_REPOSITORY] = "https://github.com/hideyukiMORI/nene-folio",
+    [PRODUCT_LINK_RELEASES] = "https://github.com/hideyukiMORI/nene-folio/releases",
+    [PRODUCT_LINK_STORE] = "https://apps.microsoft.com/detail/9PCHS225SWBX",
+    [PRODUCT_LINK_ISSUES] = "https://github.com/hideyukiMORI/nene-folio/issues"};
+
+static void verify_product_table(void)
+{
+    require(sizeof product_uris / sizeof product_uris[0] == product_link_count,
+            "expected table covers every product link");
+    for (size_t link = 0; link < product_link_count; ++link)
+    {
+        const char *bytes = product_link_uri((enum product_link)link);
+        size_t length = product_link_uri_length((enum product_link)link);
+        require(same_text(bytes, product_uris[link]) && length == strlen(product_uris[link]),
+                "product link has its exact official destination");
+        require(strncmp(bytes, "https://", 8) == 0, "product link is absolute https");
+        struct web_uri *uri = nullptr;
+        require(web_uri_create(bytes, length, &uri) == WEB_URI_ACCEPTED,
+                "product link passes the shared URI validation");
+        web_uri_destroy(uri);
+    }
+    require(product_link_uri((enum product_link)product_link_count)[0] == '\0' &&
+                product_link_uri_length((enum product_link)product_link_count) == 0,
+            "a value outside the set has no destination");
+}
+
+static void expect_product_opened(struct folio_state *_Nonnull state, const char *_Nonnull message)
+{
+    for (size_t link = 0; link < product_link_count; ++link)
+    {
+        expected_uri = product_uris[link];
+        opened = 0;
+        require(folio_state_open_product_link(state, (enum product_link)link) ==
+                        FOLIO_STATE_READY &&
+                    opened == 1,
+                message);
+    }
+}
+
+static void verify_product_failures(struct folio_state *_Nonnull state)
+{
+    expected_uri = product_uris[PRODUCT_LINK_ISSUES];
+    opened = 0;
+    port_result = WEB_LINK_UNAVAILABLE;
+    require(folio_state_open_product_link(state, PRODUCT_LINK_ISSUES) ==
+                    FOLIO_STATE_WEB_LINK_UNAVAILABLE &&
+                opened == 1,
+            "product link preserves the OS failure");
+    port_result = WEB_LINK_OUT_OF_MEMORY;
+    require(folio_state_open_product_link(state, PRODUCT_LINK_ISSUES) ==
+                    FOLIO_STATE_OUT_OF_MEMORY &&
+                opened == 2,
+            "product link preserves port OOM");
+    require(folio_state_open_product_link(state, (enum product_link)product_link_count) ==
+                    FOLIO_STATE_WEB_LINK_REJECTED &&
+                opened == 2,
+            "a value outside the set never reaches the port");
+    port_result = WEB_LINK_OPENED;
+    for (size_t nth = 1; nth <= 2; ++nth)
+    {
+        opened = 0;
+        allocation_probe_fail_at(nth);
+        enum folio_state_outcome outcome =
+            folio_state_open_product_link(state, PRODUCT_LINK_ISSUES);
+        size_t calls = allocation_probe_calls();
+        allocation_probe_fail_at(0);
+        if (calls != 0)
+            require(outcome == FOLIO_STATE_OUT_OF_MEMORY && opened == 0,
+                    "URI allocation failure never reaches the port");
+    }
+}
+
+static void verify_product_state(void)
+{
+    struct persistence_adapter *adapter = test_adapter_create(
+        "{\"version\":1,\"categories\":[{\"name\":\"A\",\"color\":\"#112233\",\"expanded\":true}]}",
+        "{\"version\":1,\"notes\":[\"one\",\"two\",\"three\"]}");
+    struct folio_state *state = create_state(adapter);
+    port_result = WEB_LINK_OPENED;
+    expect_product_opened(state, "product link opens once without a document");
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "viewing a note for product links");
+    expect_product_opened(state, "product link opens once while viewing");
+    require(folio_state_begin_edit(state) == FOLIO_STATE_READY, "editing for product links");
+    expect_product_opened(state, "product link opens once while editing");
+    verify_product_failures(state);
+    expected_uri = "https://example.com/";
+    opened = 0;
+    require(folio_state_open_web_link(state, expected_uri, strlen(expected_uri)) ==
+                    FOLIO_STATE_WEB_LINK_REJECTED &&
+                opened == 0,
+            "product links leave the note-link guard unchanged");
+    require(test_adapter_body_publications(adapter) == 0, "product link never saves a note");
+    folio_state_destroy(state);
+    test_adapter_destroy(adapter);
+}
+
 static void verify_uri_allocation(void)
 {
     for (size_t nth = 1; nth <= 2; ++nth)
@@ -260,7 +362,9 @@ void run_web_link_tests(void)
     verify_uri_boundary();
     verify_fields();
     verify_state();
+    verify_product_table();
+    verify_product_state();
     verify_uri_allocation();
     verify_render_allocation();
-    printf("web URI, Markdown field, intent and allocation tests passed\n");
+    printf("web URI, Markdown field, intent, product link and allocation tests passed\n");
 }

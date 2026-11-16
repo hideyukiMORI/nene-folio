@@ -69,6 +69,7 @@ folio_state_tag_management_phase(const struct folio_state *_Nonnull state);
 #include "pane_mode.h"
 
 #include "pane_title_view.h"
+#include "product_link.h"
 #include "rename_view.h"
 #include "replace_apply.h"
 #include "replace_request.h"
@@ -184,6 +185,10 @@ folio_state_export_notes(struct folio_state *_Nonnull state,
  * 文書・選択・Undo・未保存の状態は変えない。 */
 [[nodiscard]] enum folio_state_outcome folio_state_copy_code(struct folio_state *_Nonnull state,
                                                              size_t slot);
+
+/* 製品の公式リンク（ADR0097）。文書・モードに依存せず、同じ検証とportへ一度だけ渡す。 */
+[[nodiscard]] enum folio_state_outcome
+folio_state_open_product_link(struct folio_state *_Nonnull state, enum product_link link);
 
 /* 実行中だけの表示状態。設定/本文/IOに触れず、値だけを採用する（ADR0047）。 */
 [[nodiscard]] enum folio_layout_mode
