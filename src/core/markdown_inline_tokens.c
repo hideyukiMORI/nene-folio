@@ -1,5 +1,6 @@
 #include "markdown_inline_tokens.h"
 #include "markdown_autolink.h"
+#include "markdown_bare_link.h"
 #include "markdown_character_reference.h"
 #include "markdown_delimiter_kind.h"
 #include "markdown_inline_kind.h"
@@ -31,6 +32,10 @@ struct markdown_inline_tokens
     struct text_buffer *_Nonnull out;
     struct markdown_media *_Nonnull media;
     size_t count;
+    /* The plain run that holds the token being emitted: tokens before `plain_index`, bytes
+     * before `plain_end`. Computed once per run so bare links stay linear (#850). */
+    size_t plain_index;
+    size_t plain_end;
     enum markdown_rtf_outcome outcome;
     bool in_link;
 };
@@ -921,6 +926,117 @@ static void emit_autolink(struct markdown_inline_tokens *_Nonnull parser,
         text_buffer_append_text(parser->out, "}}}{\\v  }");
 }
 
+/* #850 / ADR0099: a bare URL keeps the same field, colour and hidden boundary as <URL>. Text the
+ * URI factory refuses stays plain, so nothing that cannot open looks like a link. */
+static void emit_bare_link(struct markdown_inline_tokens *_Nonnull parser, size_t start, size_t end)
+{
+    struct web_uri *_Nullable uri = nullptr;
+    enum web_uri_outcome outcome = markdown_web_link_bare(parser->view, start, end, &uri);
+    switch (outcome)
+    {
+    case WEB_URI_ACCEPTED:
+        break;
+    case WEB_URI_REJECTED:
+        append_range(parser, start, end, true);
+        return;
+    case WEB_URI_OUT_OF_MEMORY:
+        parser->outcome = MARKDOWN_RTF_OUT_OF_MEMORY;
+        return;
+    }
+    (void)emit_field(parser, outcome, uri);
+    text_buffer_append_text(parser->out, "{\\cf4\\ul ");
+    append_range(parser, start, end, false);
+    text_buffer_append_text(parser->out, "\\ul0}}}}{\\v  }");
+}
+
+/* The bytes a literal token shows: the `!` of a following image belongs to the image. */
+static size_t shown_end(const struct markdown_inline_tokens *_Nonnull parser, size_t index)
+{
+    const struct markdown_inline_token *token = &parser->tokens[index];
+    bool image =
+        index + 1 < parser->count && parser->tokens[index + 1].kind == MARKDOWN_INLINE_IMAGE;
+    return token->start + token->length - (image ? 1 : 0);
+}
+
+/* Tokens shown as their own bytes, the only text a bare link may run across. */
+static bool plain_token(struct markdown_inline_tokens *_Nonnull parser, size_t index)
+{
+    const struct markdown_inline_token *token = &parser->tokens[index];
+    if (at(parser, token->start) == '\n' || trailing_marker(parser, index))
+        return false;
+    switch (token->kind)
+    {
+    case MARKDOWN_INLINE_LITERAL:
+        return true;
+    case MARKDOWN_INLINE_BOLD:
+    case MARKDOWN_INLINE_ITALIC:
+    case MARKDOWN_INLINE_STRIKE:
+    case MARKDOWN_INLINE_LINK:
+        return token->mate == SIZE_MAX;
+    case MARKDOWN_INLINE_ESCAPE:
+    case MARKDOWN_INLINE_CODE:
+    case MARKDOWN_INLINE_IMAGE_LITERAL:
+    case MARKDOWN_INLINE_IMAGE:
+    case MARKDOWN_INLINE_AUTOLINK:
+        return false;
+    }
+    return false;
+}
+
+static size_t plain_limit(struct markdown_inline_tokens *_Nonnull parser, size_t index)
+{
+    if (index < parser->plain_index)
+        return parser->plain_end;
+    size_t last = index;
+    size_t end = shown_end(parser, index);
+    while (last + 1 < parser->count && parser->tokens[last + 1].start == end &&
+           plain_token(parser, last + 1))
+        end = shown_end(parser, ++last);
+    parser->plain_index = last + 1;
+    parser->plain_end = end;
+    return end;
+}
+
+/* The first bare link that starts at or after `from` in a plain token, or zero length at the
+ * token's shown end. */
+static size_t next_bare_link(struct markdown_inline_tokens *_Nonnull parser, size_t index,
+                             size_t from, size_t *_Nonnull length)
+{
+    size_t end = shown_end(parser, index);
+    for (size_t start = from; start < end; ++start)
+    {
+        char character = at(parser, start);
+        if (character != 'h' && character != 'H' && character != 'w')
+            continue;
+        *length = markdown_bare_link_length(parser->view, start, plain_limit(parser, index));
+        if (*length != 0)
+            return start;
+    }
+    *length = 0;
+    return end;
+}
+
+/* A plain token, with any bare links that start in it; a link may end inside a later token,
+ * whose rest is shown and searched the same way. Returns the next token to emit. */
+static size_t emit_plain(struct markdown_inline_tokens *_Nonnull parser, size_t index)
+{
+    size_t cursor = parser->tokens[index].start;
+    for (;;)
+    {
+        size_t length = 0;
+        size_t link = next_bare_link(parser, index, cursor, &length);
+        append_range(parser, cursor, link, true);
+        if (length == 0)
+            return index + 1;
+        emit_bare_link(parser, link, link + length);
+        cursor = link + length;
+        while (index < parser->count && shown_end(parser, index) <= cursor)
+            ++index;
+        if (index == parser->count || parser->tokens[index].start >= cursor)
+            return index;
+    }
+}
+
 static size_t emit_range_token(struct markdown_inline_tokens *_Nonnull parser, size_t index)
 {
     const struct markdown_inline_token *token = (&parser->tokens[index]);
@@ -981,6 +1097,8 @@ static size_t emit_token(struct markdown_inline_tokens *_Nonnull parser, size_t 
         emit_style(parser, index);
         return token->after == SIZE_MAX ? index + 1 : token->after;
     }
+    if (!parser->in_link && plain_token(parser, index))
+        return emit_plain(parser, index);
     emit_literal(parser, index);
     return index + 1;
 }

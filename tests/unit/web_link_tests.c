@@ -1,6 +1,7 @@
 #include "allocation_probe.h"
 #include "appearance_port.h"
 #include "folio_state.h"
+#include "markdown_bare_link.h"
 #include "markdown_rtf.h"
 #include "markdown_web_link.h"
 #include "note_text.h"
@@ -98,6 +99,9 @@ static void expect_field(const char *_Nonnull source, const char *_Nonnull expec
                                 (struct markdown_rtf_locale){"Arial", FOLIO_LANGUAGE_JA},
                                 &rtf) == MARKDOWN_RTF_CONVERTED,
             "field converted");
+    if (strstr(markdown_rtf_text(rtf), expected) == nullptr ||
+        strstr(markdown_rtf_text(rtf), absent) != nullptr)
+        fprintf(stderr, "source=%s\nRTF=%s\n", source, markdown_rtf_text(rtf));
     require(strstr(markdown_rtf_text(rtf), expected) != nullptr &&
                 strstr(markdown_rtf_text(rtf), absent) == nullptr,
             "field destination and structure");
@@ -149,6 +153,159 @@ static void verify_fields(void)
                  "https://example.com", "\\field");
     expect_field("| [日😀](https://example.com/日本) | [B](http://b/) |\n| -- | -- |",
                  "HYPERLINK \"https://example.com/日本\"", "mailto:");
+}
+
+/* #850 / ADR0099: the bare link at `start` of `source` as one span, or "" when there is none. */
+static void expect_bare(const char *_Nonnull source, size_t start, const char *_Nonnull link)
+{
+    struct markdown_span span = {.bytes = source, .length = strlen(source), .offset = 0};
+    struct markdown_view view = {.spans = &span, .count = 1, .length = span.length};
+    size_t length = markdown_bare_link_length(view, start, view.length);
+    if (length != strlen(link) || strncmp(source + start, link, length) != 0)
+        fprintf(stderr, "bare link in \"%s\" at %zu: %zu bytes, wanted \"%s\"\n", source, start,
+                length, link);
+    require(length == strlen(link) && strncmp(source + start, link, length) == 0,
+            "bare link extent");
+}
+
+static void verify_bare_extent(void)
+{
+    /* GFM 0.29 extended autolink examples and cmark-gfm autolink_delim/check_domain. */
+    expect_bare("www.commonmark.org", 0, "www.commonmark.org");
+    expect_bare("www.commonmark.org/help", 0, "www.commonmark.org/help");
+    expect_bare("www.commonmark.org.", 0, "www.commonmark.org");
+    expect_bare("www.commonmark.org/a.b.", 0, "www.commonmark.org/a.b");
+    expect_bare("www.google.com/search?q=Markup+(business)", 0,
+                "www.google.com/search?q=Markup+(business)");
+    expect_bare("www.google.com/search?q=Markup+(business)))", 0,
+                "www.google.com/search?q=Markup+(business)");
+    expect_bare("www.google.com/search?q=(business))+ok", 0,
+                "www.google.com/search?q=(business))+ok");
+    expect_bare("www.google.com/search?q=commonmark&hl=en", 0,
+                "www.google.com/search?q=commonmark&hl=en");
+    expect_bare("www.google.com/search?q=commonmark&hl;", 0, "www.google.com/search?q=commonmark");
+    expect_bare("www.commonmark.org/he<lp", 0, "www.commonmark.org/he");
+    expect_bare("http://commonmark.org", 0, "http://commonmark.org");
+    expect_bare("https://encrypted.google.com/search?q=Markup+(business)", 0,
+                "https://encrypted.google.com/search?q=Markup+(business)");
+    expect_bare("HTTPS://Example.com/x", 0, "HTTPS://Example.com/x");
+    expect_bare("http://localhost:8080/a", 0, "http://localhost:8080/a");
+    expect_bare("https://a.b/x;", 0, "https://a.b/x");
+    expect_bare("https://a.b/x?!.,:*_~'\"", 0, "https://a.b/x");
+    expect_bare("https://a.b/x&amp;", 0, "https://a.b/x");
+    expect_bare("https://a.b/x&a1;", 0, "https://a.b/x&a1");
+    expect_bare("www.a_b.example.com/x", 0, "www.a_b.example.com/x");
+    expect_bare("www.example.a_b.com", 0, "");
+    expect_bare("www.example.com.a_b", 0, "");
+    expect_bare("http://a_b.com", 0, "");
+    expect_bare("www.", 0, "");
+    expect_bare("www.x", 0, "www.x");
+    expect_bare("WWW.example.com", 0, "");
+    expect_bare("https://", 0, "");
+    expect_bare("https://.", 0, "");
+    expect_bare("ftp://example.com", 0, "");
+    expect_bare("mailto:a@example.com", 0, "");
+    /* Where a link may start: GFM, and after a non-ASCII character (ADR0099). */
+    expect_bare("xhttps://a.b", 1, "");
+    expect_bare("1https://a.b", 1, "https://a.b");
+    expect_bare("see:https://a.b", 4, "https://a.b");
+    expect_bare("(www.a.b)", 1, "www.a.b");
+    expect_bare("*www.a.b*", 1, "www.a.b");
+    expect_bare("xwww.a.b", 1, "");
+    expect_bare("\x1fwww.a.b", 1, "");
+    expect_bare("\twww.a.b", 1, "www.a.b");
+    expect_bare("参照www.example.com", 6, "www.example.com");
+    expect_bare("参照https://example.com", 6, "https://example.com");
+    /* It ends at a non-ASCII character (ADR0099): */
+    expect_bare("https://example.com/日本", 0, "https://example.com/");
+    expect_bare("https://example.comを参照", 0, "https://example.com");
+    expect_bare("https://example.com/a。", 0, "https://example.com/a");
+    expect_bare("https://example.com/a）", 0, "https://example.com/a");
+}
+
+static void verify_bare_limits(void)
+{
+    char source[markdown_bare_link_domain_limit + 32];
+    memset(source, 'a', sizeof source);
+    memcpy(source, "https://", 8);
+    source[8 + markdown_bare_link_domain_limit - 4] = '.';
+    source[8 + markdown_bare_link_domain_limit] = '\0';
+    expect_bare(source, 0, source);
+    source[8 + markdown_bare_link_domain_limit] = 'a';
+    source[8 + markdown_bare_link_domain_limit + 1] = '\0';
+    expect_bare(source, 0, "");
+    struct markdown_span span = {.bytes = "https://a.b/c", .length = 13, .offset = 0};
+    struct markdown_view view = {.spans = &span, .count = 1, .length = 13};
+    require(markdown_bare_link_length(view, 0, 12) == 12, "a link stops at the plain limit");
+    require(markdown_bare_link_length(view, 0, 9) == 9, "the limit may end the domain");
+    require(markdown_bare_link_length(view, 0, 8) == 0, "no domain before the limit");
+    require(markdown_bare_link_length(view, 0, 14) == 0 &&
+                markdown_bare_link_length(view, 13, 13) == 0,
+            "out of range limits");
+    struct web_uri *uri = nullptr;
+    require(markdown_web_link_bare(view, 4, 4, &uri) == WEB_URI_REJECTED &&
+                markdown_web_link_bare(view, 0, 14, &uri) == WEB_URI_REJECTED && uri == nullptr,
+            "an empty or out of range bare link has no URI");
+}
+
+/* A bare link the URI factory refuses (past web_uri_byte_limit) stays plain text. */
+static void verify_bare_refused(void)
+{
+    static char source[web_uri_byte_limit + 16];
+    memset(source, 'a', sizeof source - 1);
+    memcpy(source, "https://a.b/", 12);
+    source[sizeof source - 1] = '\0';
+    struct note_text *text = nullptr;
+    struct markdown_rtf *rtf = nullptr;
+    require(note_text_create(source, strlen(source), &text) == NOTE_TEXT_ACCEPTED, "long source");
+    require(markdown_rtf_create(text, folio_theme_palette(FOLIO_THEME_LIGHT),
+                                (struct markdown_rtf_locale){"Arial", FOLIO_LANGUAGE_JA},
+                                &rtf) == MARKDOWN_RTF_CONVERTED,
+            "long bare link converted");
+    require(strstr(markdown_rtf_text(rtf), "\\field") == nullptr &&
+                strstr(markdown_rtf_text(rtf), "\\ul ") == nullptr &&
+                strstr(markdown_rtf_text(rtf), "https://a.b/aaaa") != nullptr,
+            "a refused bare link is plain text");
+    markdown_rtf_destroy(rtf);
+    note_text_destroy(text);
+}
+
+static void expect_text(const char *_Nonnull source)
+{
+    /* Code blocks carry their own copy action field (#839); no field may open the web. */
+    expect_field(source, "", "HYPERLINK \"http");
+}
+
+static void verify_bare_fields(void)
+{
+    expect_field("see https://example.com/ now", "HYPERLINK \"https://example.com/\"", "<https");
+    expect_field("go www.example.com/a.", "HYPERLINK \"http://www.example.com/a\"",
+                 "HYPERLINK \"www");
+    expect_field("go www.example.com/a.", "{\\cf4\\ul www.example.com/a\\ul0}}}}{\\v  }.",
+                 "a.\\ul");
+    expect_field("詳細はhttps://example.com/xを参照", "HYPERLINK \"https://example.com/x\"",
+                 "<https");
+    expect_field("a https://a.example/x_y_z b", "HYPERLINK \"https://a.example/x_y_z\"", "\\i ");
+    expect_field("(https://a.example/x)", "HYPERLINK \"https://a.example/x\"", "x)\"");
+    expect_field("*https://a.example/x*", "{\\i {\\field", "x*");
+    expect_field("**https://a.example/x**.", "HYPERLINK \"https://a.example/x\"", "x*");
+    expect_field("https://a.example/x https://b.example/y", "HYPERLINK \"https://b.example/y\"",
+                 "x https");
+    expect_field("1. https://a.example/x\n2. www.b.example", "HYPERLINK \"http://www.b.example\"",
+                 "<https");
+    expect_field("| https://a.example/x | b |\n| -- | -- |", "HYPERLINK \"https://a.example/x\"",
+                 "x |");
+    expect_field("https://a.example/&amp;x", "HYPERLINK \"https://a.example/&amp;x\"", "\\b ");
+    expect_field("https://a.example/x![i](y.png)", "HYPERLINK \"https://a.example/x\"", "x!");
+    expect_field("[https://a.example/x](https://b.example/)", "HYPERLINK \"https://b.example/\"",
+                 "HYPERLINK \"https://a.example");
+    /* Text that is not plain keeps its own meaning (ADR0099). */
+    expect_text("`https://a.example/x`");
+    expect_text("```\nhttps://a.example/x\n```");
+    expect_text("https\\://a.example/x");
+    expect_text("xhttps://a.example/x wwwa.b");
+    expect_text("name@example.com");
+    expect_text("![https://a.example/x](https://b.example/y.png)");
 }
 
 static size_t opened;
@@ -334,7 +491,8 @@ static void verify_uri_allocation(void)
 
 static void verify_render_allocation(void)
 {
-    const char source[] = "[**label**](https://example.com/?a=1&amp;b=2) <https://example.org/>";
+    const char source[] =
+        "[**label**](https://example.com/?a=1&amp;b=2) <https://example.org/> www.example.net/x";
     struct note_text *text = nullptr;
     require(note_text_create(source, sizeof source - 1, &text) == NOTE_TEXT_ACCEPTED, "OOM source");
     size_t allocations = 0;
@@ -361,6 +519,10 @@ void run_web_link_tests(void)
     verify_uri_cases();
     verify_uri_boundary();
     verify_fields();
+    verify_bare_extent();
+    verify_bare_limits();
+    verify_bare_fields();
+    verify_bare_refused();
     verify_state();
     verify_product_table();
     verify_product_state();

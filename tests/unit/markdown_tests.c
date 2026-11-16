@@ -2074,9 +2074,13 @@ static void verify_autolink_rendering(void)
                                     "<x@host->",
                                     "<x@host.>",
                                     "<x@y_>",
-                                    "https://example.com"};
+                                    "xhttps://example.com",
+                                    "name@example.com"};
     for (size_t index = 0; index < sizeof rejected / sizeof rejected[0]; ++index)
         expect_fragment(rejected[index], "\\cf1 ", "\\ul ");
+    /* ADR0099 replaced ADR0079's "bare URLs stay plain": the same field as <URL>. */
+    expect_fragment("https://example.com", "{\\cf4\\ul https://example.com\\ul0}}}}{\\v  }",
+                    "<https");
 }
 
 static void verify_character_references(void)

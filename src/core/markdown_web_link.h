@@ -9,4 +9,8 @@ markdown_web_link_destination(struct markdown_view view, size_t start, size_t en
 [[nodiscard]] enum web_uri_outcome
 markdown_web_link_autolink(struct markdown_view view, size_t start, size_t end,
                            struct web_uri *_Nullable *_Nonnull out);
+/* #850: a bare link's own bytes; `www.` opens as http:// (GFM). */
+[[nodiscard]] enum web_uri_outcome markdown_web_link_bare(struct markdown_view view, size_t start,
+                                                          size_t end,
+                                                          struct web_uri *_Nullable *_Nonnull out);
 #endif

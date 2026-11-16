@@ -122,6 +122,7 @@ static bool favorites_ui_case;
 static bool favorite_high_contrast;
 static bool code_copy_case;
 static bool code_copy_visual_case;
+static bool bare_url_visual_case;
 static bool code_copy_keys_case_selected;
 static bool code_copy_scroll_case;
 static bool code_copy_scroll_96;
@@ -203,6 +204,14 @@ static const char code_copy_gallery[] =
     "abcdefghijklmnopqrstuvwxyz\n"
     "payload\n```\n\n> 引用の中:\n>\n> ```sh\n> ls -la\n> ```\n\n- リスト\n\n  ```json\n  {\"a\": "
     "1}\n  ```\n";
+/* #850: bare URLs next to Japanese text, in emphasis, a list, a table and beside <URL> forms. */
+static const char bare_url_gallery[] =
+    "# 囲まないURL\n\n詳細はhttps://example.com/docs/startを参照。\n\n"
+    "ミラー: www.example.org/a/b?x=1 と (https://example.net/path)。\n\n"
+    "**https://example.com/bold** と <https://example.com/angle> と "
+    "[表示名](https://example.com/n)\n\n"
+    "- 一覧の https://example.com/list.\n- `https://example.com/code` はコード\n\n"
+    "| 名前 | URL |\n| -- | -- |\n| 例 | https://example.com/cell |\n";
 static const wchar_t search_original[] = L"猫 😀 aaaa 日本語";
 static const wchar_t search_edited[] = L"猫 😀 aaaa 日本語 🐾";
 static const char replace_current[] = "猫1 😀\n猫2 **saved**\n猫1 `old`";
@@ -270,6 +279,8 @@ static const char *_Nonnull text_fixture_source(const char *_Nonnull fallback)
 {
     if (search_case)
         return search_current;
+    if (bare_url_visual_case)
+        return bare_url_gallery;
     if (code_copy_case)
         return code_copy_visual_case || code_copy_scroll_case ? code_copy_gallery
                                                               : code_copy_current;
@@ -9868,6 +9879,39 @@ static void code_copy_visual(struct native_fixture *_Nonnull fixture)
     code_copy_narrow_visual(fixture);
 }
 
+/* #850: the bare URL gallery in light, dark and high contrast, for the record's screenshots.
+ * Links that show their own URL are native autoURLs and take the Windows link colour (ADR0079). */
+static void bare_url_visual(struct native_fixture *_Nonnull fixture)
+{
+    const char *const looks[] = {"light", "dark", "contrast"};
+    for (size_t at = 0; at < 3; ++at)
+    {
+        favorite_high_contrast = at == 2;
+        require(folio_state_set_language(fixture->state, FOLIO_LANGUAGE_JA) == FOLIO_STATE_READY &&
+                    folio_state_refresh_theme(fixture->state) == FOLIO_STATE_READY &&
+                    folio_state_set_theme(fixture->state, at == 1 ? FOLIO_THEME_CHOICE_DARK
+                                                                  : FOLIO_THEME_CHOICE_LIGHT) ==
+                        FOLIO_STATE_READY,
+                "bare URL gallery palette");
+        folio_state_set_layout_mode(fixture->state, FOLIO_LAYOUT_NOTE);
+        struct folio_window *window = nullptr;
+        require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY,
+                                    &window) == FOLIO_WINDOW_CREATED,
+                "bare URL gallery window");
+        HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+        require(SetWindowPos(root, nullptr, 20, 20, 760, 720, SWP_NOZORDER | SWP_NOACTIVATE),
+                "bare URL gallery size");
+        pump(window);
+        char path[64];
+        require(snprintf(path, sizeof path, "bare-url-%s.bmp", looks[at]) > 0,
+                "bare URL screenshot path");
+        tags_capture(root, path);
+        folio_window_destroy(window);
+        folio_state_set_layout_mode(fixture->state, FOLIO_LAYOUT_BOTH);
+    }
+    favorite_high_contrast = false;
+}
+
 /* What a failed icon check needs to be diagnosed from a remote log: geometry, DPI, zoom, the
  * place that was read and how many pixels of each role it holds. */
 static void code_copy_scroll_report(HWND _Nonnull body, const struct rtf_palette *_Nonnull colors,
@@ -10026,6 +10070,11 @@ static void run_code_copy_case(struct native_fixture *_Nonnull fixture)
     require(folio_state_select_note(fixture->state, 0, 0, FOLIO_UNTITLED_PROTECT) ==
                 FOLIO_STATE_READY,
             "select the dedicated code note");
+    if (bare_url_visual_case)
+    {
+        bare_url_visual(fixture);
+        return;
+    }
     if (code_copy_visual_case)
     {
         code_copy_visual(fixture);
@@ -12565,7 +12614,8 @@ static void select_tags_fixture(const char *_Nonnull selector)
 static void select_clipboard_fixture(const char *_Nonnull selector)
 {
     paste_case = strcmp(selector, "--paste") == 0;
-    code_copy_visual_case = strcmp(selector, "--code-copy-visual") == 0;
+    bare_url_visual_case = strcmp(selector, "--bare-url-visual") == 0;
+    code_copy_visual_case = strcmp(selector, "--code-copy-visual") == 0 || bare_url_visual_case;
     code_copy_keys_case_selected = strcmp(selector, "--code-copy-keys") == 0;
     code_copy_scroll_96 = strcmp(selector, "--code-copy-scroll-96") == 0;
     code_copy_scroll_case = strcmp(selector, "--code-copy-scroll") == 0 || code_copy_scroll_96;

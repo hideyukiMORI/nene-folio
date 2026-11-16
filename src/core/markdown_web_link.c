@@ -1,4 +1,5 @@
 #include "markdown_web_link.h"
+#include "markdown_bare_link.h"
 #include "markdown_destination.h"
 #include "text_buffer.h"
 #include "utf8_text.h"
@@ -38,6 +39,24 @@ enum web_uri_outcome markdown_web_link_autolink(struct markdown_view view, size_
     struct text_buffer *_Nullable buffer = nullptr;
     if (text_buffer_create(&buffer) != TEXT_BUFFER_ACCEPTED)
         return WEB_URI_OUT_OF_MEMORY;
+    for (size_t index = start; index < end; ++index)
+    {
+        char character = markdown_view_at(view, index);
+        text_buffer_append(buffer, &character, 1);
+    }
+    return finish(buffer, out);
+}
+
+enum web_uri_outcome markdown_web_link_bare(struct markdown_view view, size_t start, size_t end,
+                                            struct web_uri *_Nullable *_Nonnull out)
+{
+    if (start >= end || end > view.length)
+        return WEB_URI_REJECTED;
+    struct text_buffer *_Nullable buffer = nullptr;
+    if (text_buffer_create(&buffer) != TEXT_BUFFER_ACCEPTED)
+        return WEB_URI_OUT_OF_MEMORY;
+    if (markdown_bare_link_www(view, start))
+        text_buffer_append_text(buffer, "http://");
     for (size_t index = start; index < end; ++index)
     {
         char character = markdown_view_at(view, index);
