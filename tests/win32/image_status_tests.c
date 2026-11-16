@@ -124,6 +124,7 @@ static bool code_copy_case;
 static bool code_copy_visual_case;
 static bool code_copy_keys_case_selected;
 static bool code_copy_scroll_case;
+static bool code_copy_scroll_96;
 static char code_copy_recorded[128];
 static unsigned code_copy_records;
 static enum clipboard_outcome code_copy_result = CLIPBOARD_WRITTEN;
@@ -9867,14 +9868,38 @@ static void code_copy_visual(struct native_fixture *_Nonnull fixture)
     code_copy_narrow_visual(fixture);
 }
 
+/* What a failed icon check needs to be diagnosed from a remote log: geometry, DPI, zoom, the
+ * place that was read and how many pixels of each role it holds. */
+static void code_copy_scroll_report(HWND _Nonnull body, const struct rtf_palette *_Nonnull colors,
+                                    const char *_Nonnull path, RECT place)
+{
+    RECT window;
+    RECT client;
+    GetWindowRect(GetAncestor(body, GA_ROOT), &window);
+    GetClientRect(body, &client);
+    int numerator = 0, denominator = 0;
+    SendMessageW(body, EM_GETZOOM, (WPARAM)&numerator, (LPARAM)&denominator);
+    fprintf(stderr,
+            "scroll path %s: window %ldx%ld pane %ldx%ld dpi %u zoom %d/%d place %ld,%ld,%ld,%ld "
+            "surface %zu comment %zu text %zu\n",
+            path, window.right - window.left, window.bottom - window.top, client.right,
+            client.bottom, GetDpiForWindow(body), numerator, denominator, place.left, place.top,
+            place.right, place.bottom, code_copy_pixels(body, place, colors->code_background),
+            code_copy_pixels(body, place, colors->code_comment),
+            code_copy_pixels(body, place, colors->code_text));
+}
+
 /* #839 round 8: every header row that is fully inside the pane shows its icon after any scroll
- * path. The expected place comes from the row's own first and last character only. */
+ * path. The expected place comes from the row's own first and last character only: the square
+ * at the row's right end, which the document leaves blank (non-breaking spaces), so anything
+ * there that is not the code surface is the painted icon. The icon is antialiased, so its exact
+ * colour is not counted: at 96 DPI the 14 px strokes hold only a few pixels of it (round 9). */
 static unsigned code_copy_scroll_rows(struct folio_window *_Nonnull window,
                                       struct native_fixture *_Nonnull fixture,
                                       const char *_Nonnull path)
 {
     HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
-    struct rgb_color muted = folio_state_palette(fixture->state)->rtf.code_comment;
+    const struct rtf_palette *colors = &folio_state_palette(fixture->state)->rtf;
     RECT client;
     GetClientRect(body, &client);
     int numerator = 0, denominator = 0;
@@ -9893,10 +9918,11 @@ static unsigned code_copy_scroll_rows(struct folio_window *_Nonnull window,
             continue;
         ++visible;
         RECT place = {end.x - icon, start.y, end.x, start.y + row};
-        if (code_copy_pixels(body, place, muted) < 20)
+        size_t area = (size_t)(place.right - place.left) * (size_t)(place.bottom - place.top);
+        size_t surface = code_copy_pixels(body, place, colors->code_background);
+        if (surface + 20 > area || surface < area / 2)
         {
-            fprintf(stderr, "scroll path %s: block %zu row at y=%ld has no icon\n", path, block,
-                    start.y);
+            code_copy_scroll_report(body, colors, path, place);
             require(false, "a fully visible header row shows its copy icon");
         }
     }
@@ -9953,6 +9979,11 @@ static void code_copy_scroll_positions(struct folio_window *_Nonnull window,
 
 static void run_code_copy_scroll(struct native_fixture *_Nonnull fixture)
 {
+    /* The hosted CI desktop is 96 DPI and a developer desktop often is not: the -96 selector makes
+     * this thread's windows 96 DPI wherever it runs, so both geometries are checked locally. */
+    if (code_copy_scroll_96)
+        require(SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_UNAWARE) != nullptr,
+                "96 DPI windows for the scroll case");
     struct folio_window *window = nullptr;
     require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
                 FOLIO_WINDOW_CREATED,
@@ -12536,7 +12567,8 @@ static void select_clipboard_fixture(const char *_Nonnull selector)
     paste_case = strcmp(selector, "--paste") == 0;
     code_copy_visual_case = strcmp(selector, "--code-copy-visual") == 0;
     code_copy_keys_case_selected = strcmp(selector, "--code-copy-keys") == 0;
-    code_copy_scroll_case = strcmp(selector, "--code-copy-scroll") == 0;
+    code_copy_scroll_96 = strcmp(selector, "--code-copy-scroll-96") == 0;
+    code_copy_scroll_case = strcmp(selector, "--code-copy-scroll") == 0 || code_copy_scroll_96;
     code_copy_case = strcmp(selector, "--code-copy") == 0 || code_copy_visual_case ||
                      code_copy_keys_case_selected || code_copy_scroll_case;
 }
