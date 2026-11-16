@@ -230,8 +230,8 @@ static LONG paint_active(struct note_pane_code_button *_Nonnull button, HDC _Non
 }
 
 /* 静止は絵だけ。乗る・キャレット・押す・済みは枠と文言を足す（設計の案C）。 */
-static void paint_action(struct note_pane_code_button *_Nonnull button, HDC _Nonnull device,
-                         size_t index, RECT bounds)
+static void paint_face(struct note_pane_code_button *_Nonnull button, HDC _Nonnull device,
+                       size_t index, RECT bounds)
 {
     bool done = index == button->done;
     bool pressed = !done && index == button->pressed;
@@ -248,6 +248,35 @@ static void paint_action(struct note_pane_code_button *_Nonnull button, HDC _Non
         icon_paint_fill(device, icon, done ? ICON_PAINT_CHECK : ICON_PAINT_COPY,
                         action_ink(button, index));
     RestoreDC(device, saved);
+}
+
+/* 札 1 枚を画面外のビットマップへ描いてから、まとめて写す。絵（GDI+）を窓の DC へ直接
+ * 描くと、窓の写しを取る描画（PrintWindow の全内容描画）の間は、表示倍率 125% で窓の高さの
+ * 8 割より下の絵だけが落ちた（面の塗りと字は GDI なので届く・実機で 200 回中 159 回・
+ * #839 第8回）。写しは GDI の BitBlt なので届き、枠と文言と絵が 1 度に替わる。
+ * ビットマップを作れないときは、直接描く。 */
+static void paint_action(struct note_pane_code_button *_Nonnull button, HDC _Nonnull device,
+                         size_t index, RECT bounds)
+{
+    int width = bounds.right - bounds.left;
+    int height = bounds.bottom - bounds.top;
+    HDC _Nullable memory = CreateCompatibleDC(device);
+    HBITMAP _Nullable bitmap = CreateCompatibleBitmap(device, width, height);
+    if (memory == nullptr || bitmap == nullptr)
+    {
+        paint_face(button, device, index, bounds);
+    }
+    else
+    {
+        HGDIOBJ previous = SelectObject(memory, bitmap);
+        paint_face(button, memory, index, (RECT){0, 0, width, height});
+        BitBlt(device, bounds.left, bounds.top, width, height, memory, 0, 0, SRCCOPY);
+        SelectObject(memory, previous);
+    }
+    if (bitmap != nullptr)
+        DeleteObject(bitmap);
+    if (memory != nullptr)
+        DeleteDC(memory);
 }
 
 void note_pane_code_button_paint(struct note_pane_code_button *_Nonnull button,

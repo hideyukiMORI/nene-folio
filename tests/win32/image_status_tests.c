@@ -123,6 +123,7 @@ static bool favorite_high_contrast;
 static bool code_copy_case;
 static bool code_copy_visual_case;
 static bool code_copy_keys_case_selected;
+static bool code_copy_scroll_case;
 static char code_copy_recorded[128];
 static unsigned code_copy_records;
 static enum clipboard_outcome code_copy_result = CLIPBOARD_WRITTEN;
@@ -269,7 +270,8 @@ static const char *_Nonnull text_fixture_source(const char *_Nonnull fallback)
     if (search_case)
         return search_current;
     if (code_copy_case)
-        return code_copy_visual_case ? code_copy_gallery : code_copy_current;
+        return code_copy_visual_case || code_copy_scroll_case ? code_copy_gallery
+                                                              : code_copy_current;
     if (unicode_save_case)
         return unicode_current;
     return fallback;
@@ -518,7 +520,7 @@ static void create_fixture(struct native_fixture *_Nonnull fixture)
             "clipboard adapter");
     struct clipboard_port clipboard = clipboard_adapter_port(fixture->clipboard_adapter);
     /* Off the isolated station the copy cases only record: the real clipboard is never written. */
-    if (code_copy_visual_case || code_copy_keys_case_selected)
+    if (code_copy_visual_case || code_copy_keys_case_selected || code_copy_scroll_case)
         clipboard.write = code_copy_record;
     struct transfer_port transfer = transfer_adapter_port();
     fixture->images = &controlled;
@@ -9846,6 +9848,129 @@ static void code_copy_visual(struct native_fixture *_Nonnull fixture)
     code_copy_narrow_visual(fixture);
 }
 
+/* #839 round 8: every header row that is fully inside the pane shows its icon after any scroll
+ * path. The expected place comes from the row's own first and last character only. */
+static unsigned code_copy_scroll_rows(struct folio_window *_Nonnull window,
+                                      struct native_fixture *_Nonnull fixture,
+                                      const char *_Nonnull path)
+{
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    struct rgb_color muted = folio_state_palette(fixture->state)->rtf.code_comment;
+    RECT client;
+    GetClientRect(body, &client);
+    int numerator = 0, denominator = 0;
+    SendMessageW(body, EM_GETZOOM, (WPARAM)&numerator, (LPARAM)&denominator);
+    int zoom = denominator != 0 ? MulDiv(100, numerator, denominator) : 100;
+    LONG row = MulDiv(MulDiv(360, (int)GetDpiForWindow(body), 1440), zoom, 100);
+    LONG icon = MulDiv(MulDiv(20, (int)GetDpiForWindow(body), 96), zoom, 100);
+    unsigned visible = 0;
+    for (size_t block = 0; block < 5; ++block)
+    {
+        LONG word = code_copy_word(body, block);
+        POINTL start = {0}, end = {0};
+        SendMessageW(body, EM_POSFROMCHAR, (WPARAM)&start, word - 12);
+        SendMessageW(body, EM_POSFROMCHAR, (WPARAM)&end, word + 7);
+        if (start.y < 0 || start.y + row > client.bottom || end.y != start.y)
+            continue;
+        ++visible;
+        RECT place = {end.x - icon, start.y, end.x, start.y + row};
+        if (code_copy_pixels(body, place, muted) < 20)
+        {
+            fprintf(stderr, "scroll path %s: block %zu row at y=%ld has no icon\n", path, block,
+                    start.y);
+            require(false, "a fully visible header row shows its copy icon");
+        }
+    }
+    return visible;
+}
+
+static void code_copy_scroll_bar(struct folio_window *_Nonnull window,
+                                 struct native_fixture *_Nonnull fixture, WPARAM request,
+                                 const char *_Nonnull path)
+{
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    unsigned seen = 0;
+    for (unsigned step = 0; step < 25; ++step)
+    {
+        SendMessageW(body, WM_VSCROLL, request, 0);
+        pump(window);
+        seen += code_copy_scroll_rows(window, fixture, path);
+    }
+    require(seen > 0, "the scroll path showed header rows to check");
+}
+
+static void code_copy_scroll_keys(struct folio_window *_Nonnull window,
+                                  struct native_fixture *_Nonnull fixture)
+{
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    SetFocus(body);
+    const UINT keys[] = {VK_NEXT, VK_NEXT, VK_PRIOR, VK_DOWN, VK_DOWN,
+                         VK_DOWN, VK_UP,   VK_END,   VK_HOME};
+    const BYTE modifiers[] = {0, 0, 0, 0, 0, 0, 0, FCONTROL, FCONTROL};
+    for (size_t at = 0; at < sizeof keys / sizeof keys[0]; ++at)
+    {
+        native_key_input(window, keys[at], modifiers[at]);
+        (void)code_copy_scroll_rows(window, fixture, "keys");
+    }
+}
+
+static void code_copy_scroll_positions(struct folio_window *_Nonnull window,
+                                       struct native_fixture *_Nonnull fixture)
+{
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    unsigned seen = 0;
+    for (LONG y = 0; y < 900; y += 31)
+    {
+        POINT origin = {0, y};
+        SendMessageW(body, EM_SETSCROLLPOS, 0, (LPARAM)&origin);
+        pump(window);
+        seen += code_copy_scroll_rows(window, fixture, "EM_SETSCROLLPOS");
+    }
+    require(seen > 0, "pixel scrolling showed header rows to check");
+    POINT top = {0, 0};
+    SendMessageW(body, EM_SETSCROLLPOS, 0, (LPARAM)&top);
+    pump(window);
+}
+
+static void run_code_copy_scroll(struct native_fixture *_Nonnull fixture)
+{
+    struct folio_window *window = nullptr;
+    require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
+                FOLIO_WINDOW_CREATED,
+            "code copy scroll window");
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    require(SetWindowPos(root, nullptr, 20, 20, 900, 560, SWP_NOZORDER | SWP_NOACTIVATE),
+            "short code copy window");
+    pump(window);
+    require(code_copy_scroll_rows(window, fixture, "load") > 0, "the first rows are decorated");
+    code_copy_scroll_bar(window, fixture, SB_LINEDOWN, "SB_LINEDOWN");
+    code_copy_scroll_bar(window, fixture, SB_LINEUP, "SB_LINEUP");
+    code_copy_scroll_bar(window, fixture, SB_PAGEDOWN, "SB_PAGEDOWN");
+    code_copy_scroll_bar(window, fixture, SB_PAGEUP, "SB_PAGEUP");
+    SendMessageW(body, WM_VSCROLL, SB_BOTTOM, 0);
+    pump(window);
+    (void)code_copy_scroll_rows(window, fixture, "SB_BOTTOM");
+    SendMessageW(body, WM_VSCROLL, SB_TOP, 0);
+    pump(window);
+    (void)code_copy_scroll_rows(window, fixture, "SB_TOP");
+    code_copy_scroll_positions(window, fixture);
+    code_copy_scroll_keys(window, fixture);
+    zoom_wheel(window, 5 * WHEEL_DELTA, 150);
+    code_copy_scroll_positions(window, fixture);
+    code_copy_scroll_bar(window, fixture, SB_LINEDOWN, "SB_LINEDOWN at 150%");
+    zoom_wheel(window, -5 * WHEEL_DELTA, 100);
+    require(SetWindowPos(root, nullptr, 20, 20, 1100, 420, SWP_NOZORDER | SWP_NOACTIVATE),
+            "resized code copy window");
+    pump(window);
+    code_copy_scroll_positions(window, fixture);
+    action(window, ACCESSIBLE_LAYOUT_NOTE);
+    code_copy_scroll_positions(window, fixture);
+    action(window, ACCESSIBLE_LAYOUT_BOTH);
+    code_copy_scroll_bar(window, fixture, SB_LINEDOWN, "SB_LINEDOWN after layout switch");
+    folio_window_destroy(window);
+}
+
 static void run_code_copy_case(struct native_fixture *_Nonnull fixture)
 {
     require(folio_state_select_note(fixture->state, 0, 0, FOLIO_UNTITLED_PROTECT) ==
@@ -9854,6 +9979,11 @@ static void run_code_copy_case(struct native_fixture *_Nonnull fixture)
     if (code_copy_visual_case)
     {
         code_copy_visual(fixture);
+        return;
+    }
+    if (code_copy_scroll_case)
+    {
+        run_code_copy_scroll(fixture);
         return;
     }
     struct folio_window *window = nullptr;
@@ -12387,8 +12517,9 @@ static void select_clipboard_fixture(const char *_Nonnull selector)
     paste_case = strcmp(selector, "--paste") == 0;
     code_copy_visual_case = strcmp(selector, "--code-copy-visual") == 0;
     code_copy_keys_case_selected = strcmp(selector, "--code-copy-keys") == 0;
+    code_copy_scroll_case = strcmp(selector, "--code-copy-scroll") == 0;
     code_copy_case = strcmp(selector, "--code-copy") == 0 || code_copy_visual_case ||
-                     code_copy_keys_case_selected;
+                     code_copy_keys_case_selected || code_copy_scroll_case;
 }
 
 static void select_about_fixture(const char *_Nonnull selector)
@@ -12400,7 +12531,8 @@ static void select_about_fixture(const char *_Nonnull selector)
 static HWINSTA fixture_clipboard_station(void)
 {
     bool copies = paste_case || discovery_copy_case || body_discovery_copy_case ||
-                  (code_copy_case && !code_copy_visual_case && !code_copy_keys_case_selected);
+                  (code_copy_case && !code_copy_visual_case && !code_copy_keys_case_selected &&
+                   !code_copy_scroll_case);
     return copies ? isolate_paste_clipboard() : nullptr;
 }
 
