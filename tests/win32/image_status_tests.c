@@ -6,6 +6,7 @@
 #include "appearance_adapter.h"
 #include "clipboard_adapter.h"
 #include "discovery_scale_command.h"
+#include "discovery_text.h"
 #include "discovery_trace_phase.h"
 #include "file_bytes.h"
 #include "file_times.h"
@@ -106,6 +107,7 @@ static WNDPROC discovery_preview_procedure;
 static unsigned discovery_rejected_text;
 static WNDPROC progress_layer_procedure;
 static unsigned progress_layer_moves;
+static unsigned progress_layer_paints;
 static bool tag_management_case;
 static bool tag_management_visual_case;
 static bool tag_management_measure_case;
@@ -10377,6 +10379,16 @@ static LRESULT CALLBACK progress_layer_observer(HWND window, UINT message, WPARA
 {
     if (message == WM_WINDOWPOSCHANGING)
         progress_layer_moves += 1;
+    RECT update = {0};
+    if (message == WM_PAINT && GetUpdateRect(window, &update, FALSE))
+    {
+        /* Motion may repaint a line a few pixels thick; the status row is taller and wider. */
+        LONG narrow = update.right - update.left < update.bottom - update.top
+                          ? update.right - update.left
+                          : update.bottom - update.top;
+        if (narrow > 8)
+            progress_layer_paints += 1;
+    }
     return CallWindowProcW(progress_layer_procedure, window, message, wparam, lparam);
 }
 
@@ -10393,7 +10405,8 @@ static bool progress_only_step(const struct discovery_summary *_Nonnull before,
            before->results_revision == after->results_revision;
 }
 
-/* #837: an idle that only reads one more source keeps the arranged surface and still paints. */
+/* #837/#844: an idle that only reads one more source keeps the arranged surface, and repaints the
+ * count only at the shared cadence or at the last source. */
 static void body_discovery_progress_idle(struct folio_window *_Nonnull window,
                                          struct native_fixture *_Nonnull fixture)
 {
@@ -10411,17 +10424,26 @@ static void body_discovery_progress_idle(struct folio_window *_Nonnull window,
     {
         struct discovery_summary before = folio_state_discovery_summary(fixture->state);
         progress_layer_moves = 0;
+        progress_layer_paints = 0;
         folio_window_continue_idle_work(window);
         struct discovery_summary after = folio_state_discovery_summary(fixture->state);
         if (progress_only_step(&before, &after))
         {
-            require(progress_layer_moves == 0 && !GetUpdateRect(layer, nullptr, FALSE),
-                    "a progress-only idle paints its count without arranging the surface again");
+            unsigned expected =
+                discovery_text_progress_shown(after.source_checked, after.source_total) ? 1 : 0;
+            require(progress_layer_moves == 0 && !GetUpdateRect(layer, nullptr, FALSE) &&
+                        progress_layer_paints == expected,
+                    "a progress-only idle never arranges, and paints only a shown count");
             quiet += 1;
         }
         pump(window);
     }
     SetWindowLongPtrW(layer, GWLP_WNDPROC, (LONG_PTR)progress_layer_procedure);
+    require(discovery_text_progress_shown(0, 0) && discovery_text_progress_shown(8, 100) &&
+                discovery_text_progress_shown(100, 100) && !discovery_text_progress_shown(1, 100) &&
+                !discovery_text_progress_shown(7, 100) && !discovery_text_progress_shown(99, 100) &&
+                discovery_text_progress_shown(3, 3),
+            "the count is shown every eighth source and at the last one, without a clock");
     require(quiet != 0 && !folio_state_discovery_work_pending(fixture->state),
             "the private fixture reaches its result through at least one progress-only idle");
     body_discovery_preview_selection(window, L"needle");

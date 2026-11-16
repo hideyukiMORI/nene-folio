@@ -11,6 +11,8 @@ void discovery_text_name(const struct folio_state *_Nonnull state, size_t index,
                          size_t capacity);
 void discovery_text_status(const struct folio_state *_Nonnull state, char *_Nonnull out,
                            size_t capacity);
+/* 読込件数の表示を描き直す件数か。時計を読まず、件数だけで決める（#844）。 */
+[[nodiscard]] bool discovery_text_progress_shown(size_t checked, size_t total);
 void discovery_text_conditions(const struct folio_state *_Nonnull state, char *_Nonnull out,
                                size_t capacity);
 void discovery_text_tag(const struct folio_state *_Nonnull state, size_t index, char *_Nonnull out,

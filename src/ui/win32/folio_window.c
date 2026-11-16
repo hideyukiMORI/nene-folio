@@ -4306,7 +4306,10 @@ static void draw_surface_button_in(const struct folio_window *_Nonnull self, HDC
 
 static void draw_surface_button(const struct folio_window *_Nonnull self, HDC device, size_t slot)
 {
-    draw_surface_button_in(self, device, slot, accessible_surface_button_rect(self, slot));
+    RECT bounds = accessible_surface_button_rect(self, slot);
+    /* 検索面は更新領域で切り抜いて描く。領域の外の釦は描かない（#844）。 */
+    if (!discovery_surface(self) || RectVisible(device, &bounds))
+        draw_surface_button_in(self, device, slot, bounds);
 }
 
 static void draw_search_surface(const struct folio_window *_Nonnull self, HDC device)
@@ -18631,13 +18634,23 @@ static bool discovery_progress_only(const struct discovery_summary *_Nonnull bef
            before->results_revision == after->results_revision;
 }
 
-/* 状態行の件数だけを描き直す。演出のidle再開とUIA更新予約は全refreshと同じ順で保つ。 */
-static void discovery_progress_refresh(struct folio_window *_Nonnull self)
+/* 表示する件数が変わるidleだけ、状態行を描き直してUIA更新を予約する（#844）。
+ * 一致計算中のようにsummaryが同じidleと、表示の間隔に当たらない件数では描画を起こさない。
+ * 演出のidle再開は全refreshと同じく毎回同期する。 */
+static void discovery_progress_refresh(struct folio_window *_Nonnull self,
+                                       const struct discovery_summary *_Nonnull before,
+                                       const struct discovery_summary *_Nonnull after)
 {
-    RECT status = discovery_geometry(self).status;
-    InvalidateRect(self->command_layer, &status, FALSE);
+    bool advanced = before->source_checked != after->source_checked;
+    bool resized = before->source_total != after->source_total;
+    bool shown = discovery_text_progress_shown(after->source_checked, after->source_total);
+    if (resized || (advanced && shown))
+    {
+        RECT status = discovery_geometry(self).status;
+        InvalidateRect(self->command_layer, &status, FALSE);
+        accessibility_host_schedule(self->accessibility);
+    }
     discovery_motion_sync(self);
-    accessibility_host_schedule(self->accessibility);
 }
 
 static void continue_discovery(struct folio_window *_Nonnull self)
@@ -18650,7 +18663,7 @@ static void continue_discovery(struct folio_window *_Nonnull self)
     if (outcome != FOLIO_STATE_READY)
         self->command_failure = outcome;
     if (outcome == FOLIO_STATE_READY && discovery_progress_only(&before, &after))
-        discovery_progress_refresh(self);
+        discovery_progress_refresh(self, &before, &after);
     else
         discovery_refresh(self);
     present_pending_surface(self->command_layer);

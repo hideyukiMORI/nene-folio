@@ -141,6 +141,14 @@ void discovery_text_status(const struct folio_state *_Nonnull state, char *_Nonn
         out[0] = '\0';
 }
 
+/* 1件ごとの描き直しは読込より高い。一定件数ごとと最後の1件だけ表示を進める。 */
+constexpr size_t progress_step = 8;
+
+bool discovery_text_progress_shown(size_t checked, size_t total)
+{
+    return checked >= total || checked % progress_step == 0;
+}
+
 void discovery_text_conditions(const struct folio_state *_Nonnull state, char *_Nonnull out,
                                size_t capacity)
 {
