@@ -841,15 +841,30 @@ static bool trailing_marker(struct markdown_inline_tokens *_Nonnull parser, size
     return at(parser, token->start + token->length) == '\n';
 }
 
+/* ADR0100: the instruction's scheme is upper case, so it never equals a label that shows the URL
+ * and RichEdit keeps the field in the theme's link colour instead of a native autoURL's. */
+static void append_instruction(struct markdown_inline_tokens *_Nonnull parser,
+                               const struct web_uri *_Nonnull uri)
+{
+    size_t scheme = web_uri_scheme_length(uri);
+    text_buffer_append_text(parser->out, "{\\field{\\*\\fldinst{HYPERLINK \"");
+    for (size_t index = 0; index < scheme; ++index)
+    {
+        /* The held scheme is lower-case ASCII letters only. */
+        char upper = (char)(web_uri_bytes(uri)[index] - ('a' - 'A'));
+        rtf_text_append(parser->out, &upper, 1);
+    }
+    rtf_text_append(parser->out, web_uri_bytes(uri) + scheme, web_uri_length(uri) - scheme);
+    text_buffer_append_text(parser->out, "\"}}{\\fldrslt{");
+}
+
 static bool emit_field(struct markdown_inline_tokens *_Nonnull parser, enum web_uri_outcome outcome,
                        struct web_uri *_Nullable uri)
 {
     switch (outcome)
     {
     case WEB_URI_ACCEPTED:
-        text_buffer_append_text(parser->out, "{\\field{\\*\\fldinst{HYPERLINK \"");
-        rtf_text_append(parser->out, web_uri_bytes(uri), web_uri_length(uri));
-        text_buffer_append_text(parser->out, "\"}}{\\fldrslt{");
+        append_instruction(parser, uri);
         web_uri_destroy(uri);
         return true;
     case WEB_URI_REJECTED:

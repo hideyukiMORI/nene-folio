@@ -126,7 +126,7 @@ static void resizing(struct note_pane *_Nonnull pane)
     SendMessageW(window, EM_SETSEL, (WPARAM)link, link + 1);
     struct utf8_text *_Nullable target = nullptr;
     require(note_pane_link_selection(pane, &target) == NOTE_PANE_LINK_READY &&
-                strcmp(utf8_text_bytes(target), "https://example.com/two") == 0,
+                strcmp(utf8_text_bytes(target), "HTTPS://example.com/two") == 0,
             "link target retained");
     utf8_text_destroy(target);
     MoveWindow(window, 0, 0, 300, 600, FALSE);

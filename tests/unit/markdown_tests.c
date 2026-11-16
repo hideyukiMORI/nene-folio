@@ -184,7 +184,7 @@ static void verify_lists_quotes_links(void)
                 "\\pard\\li480\\sa80\\sl240\\slmult1\\cf3 quoted bare\\cf1\\par\n");
     expect_body("see [docs](https://x.example/) now",
                 "\\pard\\sa80\\sl240\\slmult1\\cf1 see "
-                "{\\field{\\*\\fldinst{HYPERLINK \"https://x.example/\"}}"
+                "{\\field{\\*\\fldinst{HYPERLINK \"HTTPS://x.example/\"}}"
                 "{\\fldrslt{{\\cf4\\ul docs\\ul0}}}}{\\v  } now\\par\n");
     expect_body("[no url]", "\\pard\\sa80\\sl240\\slmult1\\cf1 [no url]\\par\n");
     expect_body("[open](", "\\pard\\sa80\\sl240\\slmult1\\cf1 [open](\\par\n");
