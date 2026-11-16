@@ -177,8 +177,9 @@ static void markdown_case(const char *_Nonnull source, const char *_Nonnull pres
     struct note_text *text = nullptr;
     struct markdown_rtf *rtf = nullptr;
     require(note_text_create(source, strlen(source), &text) == NOTE_TEXT_ACCEPTED, "fence source");
-    require(markdown_rtf_create(text, rtf_palette_for(FOLIO_THEME_LIGHT), "Consolas", &rtf) ==
-                MARKDOWN_RTF_CONVERTED,
+    require(markdown_rtf_create(text, folio_theme_palette(FOLIO_THEME_LIGHT),
+                                (struct markdown_rtf_locale){"Consolas", FOLIO_LANGUAGE_JA},
+                                &rtf) == MARKDOWN_RTF_CONVERTED,
             "fence syntax conversion");
     if (strstr(markdown_rtf_text(rtf), present) == nullptr)
         fprintf(stderr, "source: %s\nexpected fragment: %s\nactual: %s\n", source, present,
@@ -238,8 +239,11 @@ static void language_labels(void)
                   "extra");
     markdown_case("```text\n```", "{\\f0\\fs18\\cf9 text}\\sa120\\par\n}", "\\sb0");
     markdown_case("```unknown", "{\\f0\\fs18\\cf9 unknown}\\sa120\\par\n}", "\\sb0");
-    markdown_case("``` \t\nraw\n```", "\\sb120\\sa0", "\\fs18");
-    markdown_case("- > ```py\n  > return 1\n  > ```\n\ntail", "\\li1100\\ri180\\sb120\\sa80",
+    /* 言語の無いブロックの見出し行はコピーの操作だけで、ラベルの区間を持たない（ADR0098）。 */
+    markdown_case("``` \t\nraw\n```", "\\ri0\\sb40\\sa60\\sl-260\\slmult0 {\\field",
+                  "{\\f0\\fs18\\cf9 ");
+    markdown_case("``` \t\n```", "{\\f1\\fs20\\cf5\\highlight6}", "\\fs18");
+    markdown_case("- > ```py\n  > return 1\n  > ```\n\ntail", "\\qr\\li1100\\ri0\\sb40\\sa60",
                   "\\cf9 tail");
     markdown_case("```c\nint\n```\n```json\ntrue\n```", "{\\f0\\fs18\\cf9 json}", "{\\cf7 json}");
     char source[4096];

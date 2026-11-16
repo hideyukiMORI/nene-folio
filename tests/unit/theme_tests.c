@@ -238,6 +238,8 @@ static void verify_readable_roles(void)
         readable(palette->rtf.code_text, palette->rtf.code_background);
         readable(palette->rtf.code_keyword, palette->rtf.code_background);
         readable(palette->rtf.code_string, palette->rtf.code_background);
+        /* この対はコピーの札（地がcode_comment・文字がcode_background）の見え方も守る（ADR0098）。
+         */
         readable(palette->rtf.code_comment, palette->rtf.code_background);
         readable(palette->rtf.code_number, palette->rtf.code_background);
     }

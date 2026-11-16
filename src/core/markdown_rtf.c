@@ -5,6 +5,7 @@
 #include "note_text.h"
 #include "rtf_text.h"
 #include "text_buffer.h"
+#include "theme_palette.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -122,10 +123,11 @@ static enum markdown_rtf_outcome finish(struct markdown_rtf *_Nonnull rtf,
 }
 
 enum markdown_rtf_outcome markdown_rtf_create(const struct note_text *_Nonnull text,
-                                              struct rtf_palette palette, const char *_Nonnull face,
+                                              const struct theme_palette *_Nonnull theme,
+                                              struct markdown_rtf_locale locale,
                                               struct markdown_rtf *_Nullable *_Nonnull out)
 {
-    struct markdown_rtf *_Nullable rtf = begin(palette, face);
+    struct markdown_rtf *_Nullable rtf = begin(theme->rtf, locale.face);
     if (rtf == nullptr)
     {
         return MARKDOWN_RTF_OUT_OF_MEMORY;
@@ -135,8 +137,8 @@ enum markdown_rtf_outcome markdown_rtf_create(const struct note_text *_Nonnull t
         markdown_rtf_destroy(rtf);
         return MARKDOWN_RTF_OUT_OF_MEMORY;
     }
-    enum markdown_rtf_outcome rendered =
-        markdown_blocks_render((struct markdown_render){rtf->buffer, rtf->media}, text);
+    enum markdown_rtf_outcome rendered = markdown_blocks_render(
+        (struct markdown_render){rtf->buffer, rtf->media}, text, locale.language, theme->contrast);
     if (rendered != MARKDOWN_RTF_CONVERTED)
     {
         markdown_rtf_destroy(rtf);

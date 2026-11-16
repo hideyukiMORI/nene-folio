@@ -4,6 +4,7 @@
 #include "accessible_surface_button.h"
 #include "accessible_view.h"
 #include "appearance_adapter.h"
+#include "clipboard_adapter.h"
 #include "discovery_scale_command.h"
 #include "discovery_text.h"
 #include "discovery_trace_phase.h"
@@ -23,6 +24,7 @@
 #include "note_history.h"
 #include "note_identity.h"
 #include "note_ledger.h"
+#include "note_pane_code_button.h"
 #include "note_store_request.h"
 #include "note_tag.h"
 #include "note_tags.h"
@@ -44,6 +46,7 @@
 #include "web_link_adapter.h"
 #include "web_uri.h"
 #include <commctrl.h>
+#include <commdlg.h>
 #include <richedit.h>
 
 #include <stdio.h>
@@ -58,6 +61,7 @@ struct native_fixture
     struct persistence_adapter *_Nullable files;
     struct appearance_adapter *_Nullable appearance;
     struct regex_adapter *_Nullable regex;
+    struct clipboard_adapter *_Nullable clipboard_adapter;
     struct image_adapter *_Nullable images;
     struct font_bundle *_Nullable fonts;
     struct folio_state *_Nullable state;
@@ -116,6 +120,16 @@ static bool tags_metrics_case;
 static bool favorites_visual_case;
 static bool favorites_ui_case;
 static bool favorite_high_contrast;
+static bool code_copy_case;
+static bool code_copy_visual_case;
+static bool code_copy_keys_case_selected;
+static bool code_copy_scroll_case;
+static bool code_copy_scroll_96;
+static char code_copy_recorded[128];
+static unsigned code_copy_records;
+static enum clipboard_outcome code_copy_result = CLIPBOARD_WRITTEN;
+static enum clipboard_outcome code_copy_record(struct clipboard_adapter *_Nonnull adapter,
+                                               const char *_Nonnull bytes, size_t length);
 
 static enum appearance_outcome read_favorite_appearance(struct appearance_adapter *_Nonnull adapter,
                                                         struct appearance_snapshot *_Nonnull out)
@@ -177,6 +191,18 @@ static const char switch_saved[] = "# Current 日本語 😀 **saved** 追記 �
 static const wchar_t switch_original[] = L"# Current 日本語 😀 **saved**";
 static const wchar_t switch_edited[] = L"# Current 日本語 😀 **saved** 追記 🙂";
 static const char search_current[] = "猫 😀 aaaa 日本語";
+static const char code_copy_current[] =
+    "コピー 前文\n\n```c\nint a;\n\tb;\n```\n\n> ```\n> 引用 😀\n>   二行\n> ```\n\n終わり コピー";
+static const wchar_t code_copy_source[] =
+    L"コピー 前文\r\r```c\rint a;\r\tb;\r```\r\r> ```\r> 引用 😀\r>   二行\r> ```\r\r終わり コピー";
+static const char code_copy_gallery[] =
+    "# コードブロック\n\n本文の段落です。Body paragraph.\n\n"
+    "```python\ndef hello(name):\n    return f\"こんにちは {name}\"\n```\n\n"
+    "言語の指定が無いブロック:\n\n```\nplain text block\nsecond line\n```\n\n"
+    "```VeryLongUnknownLanguageName-ABCDEFGHIJKLMNOPQRSTUVWXYZ-0123456789-"
+    "abcdefghijklmnopqrstuvwxyz\n"
+    "payload\n```\n\n> 引用の中:\n>\n> ```sh\n> ls -la\n> ```\n\n- リスト\n\n  ```json\n  {\"a\": "
+    "1}\n  ```\n";
 static const wchar_t search_original[] = L"猫 😀 aaaa 日本語";
 static const wchar_t search_edited[] = L"猫 😀 aaaa 日本語 🐾";
 static const char replace_current[] = "猫1 😀\n猫2 **saved**\n猫1 `old`";
@@ -244,6 +270,9 @@ static const char *_Nonnull text_fixture_source(const char *_Nonnull fallback)
 {
     if (search_case)
         return search_current;
+    if (code_copy_case)
+        return code_copy_visual_case || code_copy_scroll_case ? code_copy_gallery
+                                                              : code_copy_current;
     if (unicode_save_case)
         return unicode_current;
     return fallback;
@@ -482,12 +511,18 @@ static void create_fixture(struct native_fixture *_Nonnull fixture)
     if (scale_trace_case)
         disk.read_note = scale_observed_read;
     struct appearance_port appearance = appearance_adapter_port(fixture->appearance);
-    if (favorites_case || tags_case || about_visual_case)
+    if (favorites_case || tags_case || code_copy_case || about_visual_case)
         appearance.read = read_favorite_appearance;
     struct regex_port regex = regex_adapter_port(fixture->regex);
     struct web_link_port web = web_link_adapter_port();
     if (about_case)
         web.open = about_open_link;
+    require(clipboard_adapter_create(&fixture->clipboard_adapter) == CLIPBOARD_ADAPTER_CREATED,
+            "clipboard adapter");
+    struct clipboard_port clipboard = clipboard_adapter_port(fixture->clipboard_adapter);
+    /* Off the isolated station the copy cases only record: the real clipboard is never written. */
+    if (code_copy_visual_case || code_copy_keys_case_selected || code_copy_scroll_case)
+        clipboard.write = code_copy_record;
     struct transfer_port transfer = transfer_adapter_port();
     fixture->images = &controlled;
     struct image_port images = {.adapter = &controlled,
@@ -501,6 +536,7 @@ static void create_fixture(struct native_fixture *_Nonnull fixture)
                                 .appearance = &appearance,
                                 .regex = &regex,
                                 .web_link = &web,
+                                .clipboard = &clipboard,
                                 .transfer = &transfer,
                                 .images = &images};
     require(folio_state_create(&ports, &fixture->state) == FOLIO_STATE_READY, "application state");
@@ -519,6 +555,7 @@ static void destroy_fixture(struct native_fixture *_Nonnull fixture)
     cancel_image(fixture->images);
     font_bundle_destroy(fixture->fonts);
     regex_adapter_destroy(fixture->regex);
+    clipboard_adapter_destroy(fixture->clipboard_adapter);
     appearance_adapter_destroy(fixture->appearance);
     persistence_adapter_destroy(fixture->files);
     storage_state_destroy(fixture->location);
@@ -1785,7 +1822,7 @@ static void run_note_switch_case(struct native_fixture *_Nonnull fixture)
 
 struct native_body_snapshot
 {
-    wchar_t text[128];
+    wchar_t text[192];
     CHARRANGE selection;
     LRESULT modified;
     LRESULT undo;
@@ -9143,6 +9180,890 @@ static void run_tag_management_case(struct native_fixture *_Nonnull fixture)
     folio_window_destroy(window);
 }
 
+/* #839 / ADR0098: the copy action of a fenced code block in the real window.
+ * --code-copy runs on the isolated clipboard station with the real adapter (clicks only: that
+ * station never shows a window, and the product accepts keys only on a visible body).
+ * --code-copy-keys and --code-copy-visual run on the private desktop with a recording port, so
+ * no case can reach the interactive clipboard. */
+static enum clipboard_outcome code_copy_record(struct clipboard_adapter *_Nonnull adapter,
+                                               const char *_Nonnull bytes, size_t length)
+{
+    (void)adapter;
+    require(length < sizeof code_copy_recorded, "recorded block fits the fixture buffer");
+    memcpy(code_copy_recorded, bytes, length);
+    code_copy_recorded[length] = '\0';
+    ++code_copy_records;
+    return code_copy_result;
+}
+
+static bool code_copy_text(HWND _Nonnull owner, wchar_t *_Nonnull out, size_t capacity)
+{
+    require(OpenClipboard(owner), "inspect the isolated clipboard");
+    HANDLE data = GetClipboardData(CF_UNICODETEXT);
+    if (data != nullptr)
+    {
+        const wchar_t *text = GlobalLock(data);
+        require(text != nullptr && wcscpy_s(out, capacity, text) == 0,
+                "isolated clipboard text fits the fixture buffer");
+        GlobalUnlock(data);
+    }
+    require(CloseClipboard(), "release the isolated clipboard");
+    return data != nullptr;
+}
+
+static void code_copy_clear(HWND _Nonnull owner)
+{
+    require(OpenClipboard(owner) && EmptyClipboard() && CloseClipboard(),
+            "empty the isolated clipboard");
+}
+
+static void code_copy_expect(HWND _Nonnull owner, const wchar_t *_Nullable expected)
+{
+    wchar_t text[128] = L"";
+    bool present = code_copy_text(owner, text, 128);
+    if (expected == nullptr)
+    {
+        require(!present, "nothing reached the isolated clipboard");
+        return;
+    }
+    require(present && wcscmp(text, expected) == 0,
+            "the isolated clipboard holds exactly the block: CRLF lines, no trailing newline");
+}
+
+/* The isolated station never makes a window visible, so the line is read as the live notice. */
+static void code_copy_notice(struct folio_window *_Nonnull window, const wchar_t *_Nonnull expected)
+{
+    struct accessible_item item = {.kind = ACCESSIBLE_NOTICE};
+    struct accessible_view view;
+    require(folio_window_accessible_read(window, &item, &view) == S_OK && view.live &&
+                !IsRectEmpty(&view.bounds) && wcscmp(view.name, expected) == 0,
+            "the result is the live notice line below the body");
+}
+
+static LONG code_copy_word(HWND _Nonnull body, size_t nth)
+{
+    FINDTEXTEXW find = {{0, -1}, L"コピー", {0, 0}};
+    for (size_t at = 0; at <= nth; ++at)
+    {
+        require(SendMessageW(body, EM_FINDTEXTEXW, FR_DOWN | FR_MATCHCASE, (LPARAM)&find) >= 0,
+                "the copy word occurrence exists in the native document");
+        find.chrg.cpMin = find.chrgText.cpMax;
+    }
+    return find.chrgText.cpMin;
+}
+
+struct code_copy_state
+{
+    struct native_body_snapshot body;
+    POINT scroll;
+    uint64_t revision;
+};
+
+static void code_copy_capture(struct folio_window *_Nonnull window,
+                              struct native_fixture *_Nonnull fixture,
+                              struct code_copy_state *_Nonnull out)
+{
+    capture_native_body(window, &out->body);
+    SendMessageW(folio_window_accessible_window(window, ACCESSIBLE_BODY), EM_GETSCROLLPOS, 0,
+                 (LPARAM)&out->scroll);
+    out->revision = folio_state_store_revision(fixture->state);
+}
+
+/* Text, dirty, Undo/Redo, scroll, mode and storage. The caller compares the selection. */
+static void code_copy_unchanged(struct folio_window *_Nonnull window,
+                                struct native_fixture *_Nonnull fixture,
+                                const struct code_copy_state *_Nonnull before)
+{
+    struct code_copy_state after = {0};
+    code_copy_capture(window, fixture, &after);
+    require(wcscmp(after.body.text, before->body.text) == 0 &&
+                after.body.modified == before->body.modified &&
+                after.body.undo == before->body.undo && after.body.redo == before->body.redo,
+            "copying preserves all native text units, dirty, Undo and Redo");
+    require(after.scroll.x == before->scroll.x && after.scroll.y == before->scroll.y &&
+                after.revision == before->revision &&
+                folio_state_pane_mode(fixture->state) == PANE_MODE_VIEW,
+            "copying preserves scroll, storage revision and the view mode");
+    struct persistence_port disk = persistence_adapter_port(fixture->files);
+    struct note_text *stored = nullptr;
+    require(
+        disk.read_note(disk.adapter, "schedule", "one", &stored) == PERSISTENCE_LOADED &&
+            stored != nullptr && note_text_file_length(stored) == strlen(code_copy_current) &&
+            memcmp(note_text_file_bytes(stored), code_copy_current, strlen(code_copy_current)) == 0,
+        "copying never rewrites the stored Markdown");
+    note_text_destroy(stored);
+}
+
+static void code_copy_click(struct folio_window *_Nonnull window, LONG position)
+{
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    POINTL point = {0};
+    SendMessageW(body, EM_POSFROMCHAR, (WPARAM)&point, position + 1);
+    LPARAM where = MAKELPARAM(point.x + 2, point.y + 6);
+    SendMessageW(body, WM_MOUSEMOVE, 0, where);
+    SendMessageW(body, WM_LBUTTONDOWN, MK_LBUTTON, where);
+    SendMessageW(body, WM_LBUTTONUP, 0, where);
+    pump(window);
+}
+
+static void code_copy_key(struct folio_window *_Nonnull window, LONG caret)
+{
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    SetFocus(body);
+    SendMessageW(body, EM_SETSEL, (WPARAM)caret, caret);
+    native_key_input(window, VK_RETURN, FCONTROL);
+}
+
+static void code_copy_pointer_case(struct folio_window *_Nonnull window)
+{
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    LONG label = code_copy_word(body, 1);
+    CHARRANGE range = {label, label + 3};
+    SendMessageW(body, EM_EXSETSEL, 0, (LPARAM)&range);
+    CHARFORMAT2W format = {.cbSize = sizeof format};
+    SendMessageW(body, EM_GETCHARFORMAT, SCF_SELECTION, (LPARAM)&format);
+    require((format.dwEffects & CFE_LINK) != 0,
+            "the action is a native link, so RichEdit raises EN_LINK for the pointer");
+    ENLINK hover = {
+        .nmhdr = {.hwndFrom = body, .idFrom = (UINT_PTR)GetDlgCtrlID(body), .code = EN_LINK},
+        .msg = WM_SETCURSOR,
+        .chrg = range};
+    require(SendMessageW(GetParent(body), WM_NOTIFY, hover.nmhdr.idFrom, (LPARAM)&hover) == 1 &&
+                GetCursor() == LoadCursorW(nullptr, IDC_HAND),
+            "the native link pointer notification shows the action pointer");
+}
+
+/* A click on the button copies without leaving the caret in it: the selection is as before. */
+static void code_copy_selection(HWND _Nonnull body, CHARRANGE expected)
+{
+    CHARRANGE selected = {0};
+    SendMessageW(body, EM_EXGETSEL, 0, (LPARAM)&selected);
+    require(selected.cpMin == expected.cpMin && selected.cpMax == expected.cpMax,
+            "a click-activated copy restores the selection held before the press");
+}
+
+static void code_copy_click_case(struct folio_window *_Nonnull window,
+                                 struct native_fixture *_Nonnull fixture)
+{
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    LONG label = code_copy_word(body, 1);
+    SendMessageW(body, EM_SETSEL, 2, 2);
+    struct code_copy_state before = {0};
+    code_copy_capture(window, fixture, &before);
+    code_copy_clear(root);
+    code_copy_click(window, label);
+    code_copy_expect(root, L"int a;\r\n\tb;");
+    code_copy_notice(window, L"コードをコピーしました。");
+    code_copy_unchanged(window, fixture, &before);
+    code_copy_selection(body, before.body.selection);
+    /* A range selected before the click survives it too, and the view does not scroll. */
+    CHARRANGE range = {2, 5};
+    SendMessageW(body, EM_EXSETSEL, 0, (LPARAM)&range);
+    code_copy_capture(window, fixture, &before);
+    code_copy_click(window, label);
+    code_copy_expect(root, L"int a;\r\n\tb;");
+    code_copy_unchanged(window, fixture, &before);
+    code_copy_selection(body, before.body.selection);
+    SendMessageW(body, EM_SETSEL, 2, 2);
+    code_copy_capture(window, fixture, &before);
+    code_copy_click(window, code_copy_word(body, 2));
+    code_copy_expect(root, L"引用 😀\r\n  二行");
+    code_copy_unchanged(window, fixture, &before);
+    /* The same word in prose is body text, not an action. */
+    code_copy_clear(root);
+    code_copy_click(window, code_copy_word(body, 0));
+    code_copy_click(window, code_copy_word(body, 3));
+    code_copy_expect(root, nullptr);
+    /* A drag that starts on the action is a selection, not an activation. */
+    POINTL point = {0};
+    SendMessageW(body, EM_POSFROMCHAR, (WPARAM)&point, label + 1);
+    SendMessageW(body, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(point.x + 2, point.y + 6));
+    SendMessageW(body, WM_MOUSEMOVE, MK_LBUTTON, MAKELPARAM(point.x + 60, point.y + 40));
+    SendMessageW(body, WM_LBUTTONUP, 0, MAKELPARAM(point.x + 60, point.y + 40));
+    pump(window);
+    code_copy_expect(root, nullptr);
+    code_copy_unchanged(window, fixture, &before);
+    /* A native range copy keeps the visible words, as for the label: no field instruction. */
+    SendMessageW(body, EM_SETSEL, 0, -1);
+    SendMessageW(body, WM_COPY, 0, 0);
+    code_copy_expect(
+        root,
+        L"コピー "
+        L"前文\r\nc\x2003\xA0\xA0\xA0\xA0\xA0\xA0\xA0\xA0\xA0\xA0\xA0\xA0コピー\xA0\xA0\xA0\xA0\r\n"
+        L"int "
+        L"a;\r\n\tb;"
+        L"\r\n\xA0\xA0\xA0\xA0\xA0\xA0\xA0\xA0\xA0\xA0\xA0\xA0コピー\xA0\xA0\xA0\xA0\r\n引用 😀\r\n"
+        L"  二行"
+        L"\r\n終わり コピー");
+    code_copy_clear(root);
+    SendMessageW(body, EM_SETSEL, 2, 2);
+}
+
+/* Another window keeps the clipboard open: the reason is shown inline and nothing changes. */
+static void code_copy_busy_case(struct folio_window *_Nonnull window,
+                                struct native_fixture *_Nonnull fixture)
+{
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    HWND holder = CreateWindowExW(0, L"STATIC", nullptr, 0, 0, 0, 0, 0, HWND_MESSAGE, nullptr,
+                                  GetModuleHandleW(nullptr), nullptr);
+    require(holder != nullptr, "a second clipboard user on the isolated station");
+    code_copy_clear(root);
+    LONG label = code_copy_word(body, 1);
+    struct code_copy_state before = {0};
+    code_copy_capture(window, fixture, &before);
+    require(OpenClipboard(holder), "the second user holds the isolated clipboard open");
+    code_copy_click(window, label);
+    require(CloseClipboard(), "the second user releases the isolated clipboard");
+    DestroyWindow(holder);
+    code_copy_notice(window, L"ほかのアプリがクリップボードを使用中です。もう一度お試しください。");
+    code_copy_expect(root, nullptr);
+    code_copy_unchanged(window, fixture, &before);
+    code_copy_click(window, label);
+    code_copy_expect(root, L"int a;\r\n\tb;");
+    code_copy_notice(window, L"コードをコピーしました。");
+}
+
+static void code_copy_recorded_expect(const char *_Nullable expected, unsigned records)
+{
+    if (code_copy_records != records)
+        fprintf(stderr, "code copy port calls=%u expected=%u\n", code_copy_records, records);
+    require(code_copy_records == records, "the port was reached the expected number of times");
+    if (expected != nullptr)
+        require(strcmp(code_copy_recorded, expected) == 0,
+                "the port received exactly the block: LF lines, no trailing newline");
+}
+
+/* In-note search sees the two prose words only, and an open surface accepts no activation. */
+static void code_copy_search_case(struct folio_window *_Nonnull window)
+{
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    LONG first = code_copy_word(body, 0);
+    LONG label = code_copy_word(body, 1);
+    LONG last = code_copy_word(body, 3);
+    SetFocus(body);
+    CHARRANGE initial = {0};
+    SendMessageW(body, EM_EXSETSEL, 0, (LPARAM)&initial);
+    invoke_operation(window, FOLIO_COMMAND_FIND);
+    pump(window);
+    search_term(window, L"コピー");
+    expect_search_result(window, first, first + 3, L"1 / 2 件");
+    surface_button(window, ACCESSIBLE_SURFACE_NEXT);
+    expect_search_result(window, last, last + 3, L"2 / 2 件");
+    surface_button(window, ACCESSIBLE_SURFACE_NEXT);
+    expect_search_result(window, first, first + 3, L"1 / 2 件");
+    search_term(window, L"int a");
+    LONG code = label + 8; /* the word, four no-break spaces and the paragraph mark */
+    expect_search_result(window, code, code + 5, L"1 / 1 件");
+    /* The native link notifications arrive while the surface is open and are not accepted. */
+    unsigned records = code_copy_records;
+    ENLINK notice = {
+        .nmhdr = {.hwndFrom = body, .idFrom = (UINT_PTR)GetDlgCtrlID(body), .code = EN_LINK},
+        .msg = WM_SETCURSOR,
+        .chrg = {label, label + 3}};
+    require(SendMessageW(GetParent(body), WM_NOTIFY, notice.nmhdr.idFrom, (LPARAM)&notice) == 1 &&
+                GetCursor() == LoadCursorW(nullptr, IDC_IBEAM),
+            "an open surface shows the text pointer over the action");
+    notice.msg = WM_LBUTTONDOWN;
+    SendMessageW(GetParent(body), WM_NOTIFY, notice.nmhdr.idFrom, (LPARAM)&notice);
+    notice.msg = WM_LBUTTONUP;
+    SendMessageW(GetParent(body), WM_NOTIFY, notice.nmhdr.idFrom, (LPARAM)&notice);
+    pump(window);
+    code_copy_recorded_expect(nullptr, records);
+    surface_button(window, ACCESSIBLE_SURFACE_CLOSE);
+}
+
+static void code_copy_edit_case(struct folio_window *_Nonnull window,
+                                struct native_fixture *_Nonnull fixture)
+{
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    action(window, ACCESSIBLE_EDIT);
+    expect_editor(window, fixture->state, code_copy_source, FOLIO_NOTE_SAME);
+    code_copy_clear(root);
+    code_copy_click(window, 12);
+    code_copy_click(window, 0);
+    code_copy_expect(root, nullptr);
+    expect_editor(window, fixture->state, code_copy_source, FOLIO_NOTE_SAME);
+    action(window, ACCESSIBLE_VIEW);
+    require(folio_state_pane_mode(fixture->state) == PANE_MODE_VIEW,
+            "an unchanged note returns to the view");
+    code_copy_click(window, code_copy_word(body, 1));
+    code_copy_expect(root, L"int a;\r\n\tb;");
+}
+
+/* Ctrl+Enter with the caret on the action, on a visible body with the recording port. */
+static void code_copy_keys_case(struct folio_window *_Nonnull window,
+                                struct native_fixture *_Nonnull fixture)
+{
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    LONG label = code_copy_word(body, 2);
+    SetFocus(body);
+    SendMessageW(body, EM_SETSEL, (WPARAM)(label + 1), label + 1);
+    struct code_copy_state before = {0};
+    code_copy_capture(window, fixture, &before);
+    require(native_key_input(window, VK_RETURN, FCONTROL),
+            "Ctrl+Enter is handled by the product link accelerator");
+    code_copy_recorded_expect("引用 😀\n  二行", 1);
+    expect_notice(window, L"コードをコピーしました。");
+    code_copy_unchanged(window, fixture, &before);
+    expect_native_body(window, &before.body);
+    code_copy_key(window, code_copy_word(body, 0) + 1);
+    code_copy_key(window, code_copy_word(body, 3) + 1);
+    code_copy_recorded_expect(nullptr, 1);
+    code_copy_result = CLIPBOARD_UNAVAILABLE;
+    code_copy_key(window, code_copy_word(body, 1));
+    code_copy_recorded_expect("int a;\n\tb;", 2);
+    expect_notice(window, L"クリップボードへコピーできませんでした。");
+    code_copy_result = CLIPBOARD_OUT_OF_MEMORY;
+    code_copy_key(window, code_copy_word(body, 1) + 2);
+    code_copy_recorded_expect("int a;\n\tb;", 3);
+    expect_notice(window, L"記憶域が足りません。");
+    code_copy_result = CLIPBOARD_WRITTEN;
+    action(window, ACCESSIBLE_EDIT);
+    expect_editor(window, fixture->state, code_copy_source, FOLIO_NOTE_SAME);
+    /* While editing, Ctrl+Enter is the editor's own key and never a copy. */
+    code_copy_key(window, 12);
+    code_copy_recorded_expect(nullptr, 3);
+    invoke_operation(window, FOLIO_COMMAND_DISCARD_EDITS);
+    pump(window);
+    expect_editor(window, fixture->state, code_copy_source, FOLIO_NOTE_SAME);
+    action(window, ACCESSIBLE_VIEW);
+}
+
+static size_t code_copy_count(const DWORD *_Nonnull pixels, RECT client, RECT area, DWORD wanted)
+{
+    RECT shared;
+    if (!IntersectRect(&shared, &client, &area))
+        return 0;
+    size_t count = 0;
+    for (LONG y = shared.top; y < shared.bottom; ++y)
+        for (LONG x = shared.left; x < shared.right; ++x)
+            count += (pixels[(size_t)y * (size_t)client.right + (size_t)x] & 0xFFFFFF) == wanted;
+    return count;
+}
+
+/* Pixels of one colour inside a client rectangle of the body, as the window prints itself. */
+static size_t code_copy_pixels(HWND _Nonnull body, RECT area, struct rgb_color color)
+{
+    /* The top-level window prints its children; the area is moved into its client coordinates. */
+    HWND root = GetAncestor(body, GA_ROOT);
+    RECT client;
+    GetClientRect(root, &client);
+    MapWindowPoints(body, root, (POINT *)&area, 2);
+    BITMAPINFO info = {.bmiHeader = {.biSize = sizeof(BITMAPINFOHEADER),
+                                     .biWidth = client.right,
+                                     .biHeight = -client.bottom,
+                                     .biPlanes = 1,
+                                     .biBitCount = 32,
+                                     .biCompression = BI_RGB}};
+    void *bits = nullptr;
+    HDC screen = GetDC(root);
+    HDC memory = CreateCompatibleDC(screen);
+    HBITMAP bitmap = CreateDIBSection(screen, &info, DIB_RGB_COLORS, &bits, nullptr, 0);
+    require(memory != nullptr && bitmap != nullptr && bits != nullptr, "body capture surface");
+    HGDIOBJ old = SelectObject(memory, bitmap);
+    require(PrintWindow(root, memory, PW_CLIENTONLY), "print the window with its decoration");
+    DWORD wanted = ((DWORD)color.red << 16) | ((DWORD)color.green << 8) | color.blue;
+    size_t count = code_copy_count(bits, client, area, wanted);
+    SelectObject(memory, old);
+    DeleteObject(bitmap);
+    DeleteDC(memory);
+    ReleaseDC(root, screen);
+    return count;
+}
+
+static RECT code_copy_button_rect(HWND _Nonnull body, LONG word)
+{
+    POINTL left = {0}, right = {0}, below = {0};
+    SendMessageW(body, EM_POSFROMCHAR, (WPARAM)&left, word - 12);
+    SendMessageW(body, EM_POSFROMCHAR, (WPARAM)&right, word + 7);
+    SendMessageW(body, EM_POSFROMCHAR, (WPARAM)&below, word + 8);
+    return (RECT){left.x, left.y, right.x, below.y};
+}
+
+/* #839 round 6: the painted button over the in-document tab. Rest shows the icon on the code
+ * surface, the pointer adds the border and the label, a successful copy shows the done colour
+ * until the pane's timer, and repeated loads keep the GDI object count. */
+static void code_copy_decoration_case(struct folio_window *_Nonnull window,
+                                      struct native_fixture *_Nonnull fixture)
+{
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    struct rtf_palette colors = folio_state_palette(fixture->state)->rtf;
+    RECT button = code_copy_button_rect(body, code_copy_word(body, 1));
+    size_t area = (size_t)(button.right - button.left) * (size_t)(button.bottom - button.top);
+    RECT top = {button.left, button.top, button.right, button.top + 1};
+    require(area > 0 && code_copy_pixels(body, button, colors.code_background) > area / 2 &&
+                code_copy_pixels(body, button, colors.code_comment) < area / 4 &&
+                code_copy_pixels(body, top, colors.code_comment) == 0,
+            "at rest the button covers the fallback tab with the code surface and no border");
+    LPARAM inside = MAKELPARAM(button.left + 3, button.top + 3);
+    SendMessageW(body, WM_MOUSEMOVE, 0, inside);
+    require(code_copy_pixels(body, top, colors.code_comment) ==
+                    (size_t)(button.right - button.left) &&
+                code_copy_pixels(body, button, colors.code_text) > 0,
+            "the pointer adds the border and the label");
+    SendMessageW(body, WM_MOUSELEAVE, 0, 0);
+    require(code_copy_pixels(body, top, colors.code_comment) == 0 &&
+                code_copy_pixels(body, button, colors.code_text) == 0,
+            "leaving returns the quiet icon");
+    unsigned records = code_copy_records;
+    code_copy_click(window, code_copy_word(body, 1));
+    require(code_copy_records == records + 1 &&
+                code_copy_pixels(body, button, colors.code_string) > 0,
+            "a successful copy shows the done look");
+    SendMessageW(body, WM_TIMER, note_pane_code_button_timer_id, 0);
+    require(code_copy_pixels(body, button, colors.code_string) == 0,
+            "the done look ends with the pane's timer");
+    code_copy_result = CLIPBOARD_BUSY;
+    code_copy_click(window, code_copy_word(body, 1));
+    code_copy_result = CLIPBOARD_WRITTEN;
+    require(code_copy_pixels(body, button, colors.code_string) == 0,
+            "a failed copy keeps the normal look");
+    SendMessageW(body, WM_MOUSELEAVE, 0, 0);
+    DWORD before = GetGuiResources(GetCurrentProcess(), GR_GDIOBJECTS);
+    for (unsigned round = 0; round < 5; ++round)
+    {
+        action(window, ACCESSIBLE_EDIT);
+        action(window, ACCESSIBLE_VIEW);
+        SendMessageW(body, WM_MOUSEMOVE, 0, inside);
+        SendMessageW(body, WM_MOUSELEAVE, 0, 0);
+        require(code_copy_pixels(body, button, colors.code_background) > area / 2,
+                "the decoration returns after every reload");
+    }
+    require(GetGuiResources(GetCurrentProcess(), GR_GDIOBJECTS) <= before,
+            "repeated loads and paints keep the GDI object count");
+}
+
+/* One synthetic click at a client point of the body; true when the recording port was reached. */
+static bool code_copy_hit(struct folio_window *_Nonnull window, LONG x, LONG y)
+{
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    unsigned before = code_copy_records;
+    LPARAM where = MAKELPARAM(x, y);
+    SendMessageW(body, WM_MOUSEMOVE, 0, where);
+    SendMessageW(body, WM_LBUTTONDOWN, MK_LBUTTON, where);
+    SendMessageW(body, WM_LBUTTONUP, 0, where);
+    pump(window);
+    return code_copy_records == before + 1;
+}
+
+/* The chip of the first block: its extent in the document, and the pixels that activate it. */
+static void code_copy_target_case(struct folio_window *_Nonnull window, int zoom)
+{
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    LONG word = code_copy_word(body, 1);
+    POINTL left = {0}, right = {0}, text = {0};
+    /* Bring the whole row into view: an earlier case may have scrolled the narrow window. */
+    POINT origin = {0};
+    SendMessageW(body, EM_SETSCROLLPOS, 0, (LPARAM)&origin);
+    pump(window);
+    SendMessageW(body, EM_POSFROMCHAR, (WPARAM)&left, word - 12);
+    SendMessageW(body, EM_POSFROMCHAR, (WPARAM)&right, word + 7);
+    SendMessageW(body, EM_POSFROMCHAR, (WPARAM)&text, word);
+    RECT client;
+    GetClientRect(body, &client);
+    require(SendMessageW(body, EM_EXLINEFROMCHAR, 0, word - 12) ==
+                    SendMessageW(body, EM_EXLINEFROMCHAR, 0, word + 6) &&
+                right.x > left.x && right.x > client.right / 2,
+            "the chip stays on one row at the right side of the block");
+    LONG middle = (left.x + right.x) / 2;
+    LONG top = left.y;
+    while (top > left.y - 40 && code_copy_hit(window, middle, top - 1))
+        --top;
+    LONG bottom = left.y;
+    while (bottom < left.y + 80 && code_copy_hit(window, middle, bottom + 1))
+        ++bottom;
+    printf("code copy chip target: zoom=%d dpi=%u width=%ld height=%ld text_inset=%ld "
+           "right_gap=%ld\n",
+           zoom, GetDpiForWindow(body), right.x - left.x, bottom - top + 1, text.x - left.x,
+           client.right - right.x);
+    fflush(stdout);
+    require(code_copy_hit(window, left.x + 1, left.y + 2) &&
+                code_copy_hit(window, right.x - 2, left.y + 2),
+            "the padding on both sides of the word activates the copy");
+    require(code_copy_hit(window, middle, top) && code_copy_hit(window, middle, bottom) &&
+                bottom - top + 1 >= 12,
+            "the row activates the copy from its top edge to its bottom edge");
+    require(!code_copy_hit(window, left.x - 6, left.y + 2),
+            "the gap between the label and the chip is not part of the action");
+}
+
+/* The same chip pressed repeatedly reports every time, also after a different result line. */
+static void code_copy_repeat_case(struct folio_window *_Nonnull window)
+{
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    LONG word = code_copy_word(body, 1);
+    unsigned records = code_copy_records;
+    code_copy_click(window, word);
+    expect_notice(window, L"コードをコピーしました。");
+    code_copy_click(window, word);
+    code_copy_recorded_expect("int a;\n\tb;", records + 2);
+    expect_notice(window, L"コードをコピーしました。");
+    code_copy_result = CLIPBOARD_BUSY;
+    code_copy_click(window, word);
+    expect_notice(window, L"ほかのアプリがクリップボードを使用中です。もう一度お試しください。");
+    code_copy_result = CLIPBOARD_WRITTEN;
+    code_copy_click(window, word);
+    code_copy_recorded_expect("int a;\n\tb;", records + 4);
+    expect_notice(window, L"コードをコピーしました。");
+    /* The document order read by assistive technology stays label, action, code. */
+    FINDTEXTEXW label = {{0, -1}, L"c\x2003", {0, 0}};
+    FINDTEXTEXW code = {{0, -1}, L"int a;", {0, 0}};
+    require(SendMessageW(body, EM_FINDTEXTEXW, FR_DOWN | FR_MATCHCASE, (LPARAM)&label) >= 0 &&
+                SendMessageW(body, EM_FINDTEXTEXW, FR_DOWN, (LPARAM)&code) >= 0 &&
+                label.chrgText.cpMin < word && word < code.chrgText.cpMin,
+            "the document order is language label, copy action, code");
+}
+
+static void code_copy_zoom_case(struct folio_window *_Nonnull window,
+                                struct native_fixture *_Nonnull fixture)
+{
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    wchar_t before[192], after[192];
+    GetWindowTextW(body, before, 192);
+    require(SetWindowPos(root, nullptr, 20, 20, 420, 360, SWP_NOZORDER | SWP_NOACTIVATE),
+            "minimum window size");
+    pump(window);
+    zoom_wheel(window, 5 * WHEEL_DELTA, 150);
+    GetWindowTextW(body, after, 192);
+    LONG label = code_copy_word(body, 1);
+    FINDTEXTEXW find = {{0, -1}, L"int a;", {0, 0}};
+    require(wcscmp(before, after) == 0 &&
+                SendMessageW(body, EM_FINDTEXTEXW, FR_DOWN, (LPARAM)&find) >= 0 &&
+                SendMessageW(body, EM_EXLINEFROMCHAR, 0, label) <
+                    SendMessageW(body, EM_EXLINEFROMCHAR, 0, find.chrgText.cpMin),
+            "narrow enlarged layout keeps the header row above its code without losing text");
+    unsigned records = code_copy_records;
+    code_copy_click(window, label);
+    code_copy_recorded_expect("int a;\n\tb;", records + 1);
+    code_copy_key(window, code_copy_word(body, 2) + 2);
+    code_copy_recorded_expect("引用 😀\n  二行", records + 2);
+    code_copy_target_case(window, 150);
+    /* Scrolling keeps the button on its block: the fallback tab never shows at the new place. */
+    struct rtf_palette colors = folio_state_palette(fixture->state)->rtf;
+    RECT still = code_copy_button_rect(body, label);
+    POINT scrolled = {0, 24};
+    SendMessageW(body, EM_SETSCROLLPOS, 0, (LPARAM)&scrolled);
+    pump(window);
+    RECT moved = code_copy_button_rect(body, label);
+    size_t area = (size_t)(moved.right - moved.left) * (size_t)(moved.bottom - moved.top);
+    require(moved.top == still.top - 24 &&
+                code_copy_pixels(body, moved, colors.code_background) > area / 2 &&
+                code_copy_pixels(body, moved, colors.code_comment) < area / 4,
+            "after a scroll the button is painted at the block's new position");
+    LONG quoted = code_copy_word(body, 2);
+    POINTL edge = {0};
+    SendMessageW(body, EM_POSFROMCHAR, (WPARAM)&edge, quoted + 7);
+    RECT client;
+    GetClientRect(body, &client);
+    require(SendMessageW(body, EM_EXLINEFROMCHAR, 0, quoted - 12) ==
+                    SendMessageW(body, EM_EXLINEFROMCHAR, 0, quoted + 6) &&
+                edge.x > client.right / 2,
+            "the chip of a quoted block is not split and stays at the right at 420px and 150%");
+    zoom_wheel(window, -5 * WHEEL_DELTA, 100);
+}
+
+/* Quote and list blocks at the minimum width, at 100% and enlarged. */
+static void code_copy_narrow_visual(struct native_fixture *_Nonnull fixture)
+{
+    require(folio_state_set_language(fixture->state, FOLIO_LANGUAGE_JA) == FOLIO_STATE_READY &&
+                folio_state_refresh_theme(fixture->state) == FOLIO_STATE_READY &&
+                folio_state_set_theme(fixture->state, FOLIO_THEME_CHOICE_LIGHT) ==
+                    FOLIO_STATE_READY,
+            "narrow copy action language and palette");
+    /* The window minimum is wider than 420px, so the drawer stays open to narrow the body. */
+    folio_state_set_layout_mode(fixture->state, FOLIO_LAYOUT_BOTH);
+    struct folio_window *window = nullptr;
+    require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
+                FOLIO_WINDOW_CREATED,
+            "narrow copy action window");
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    require(SetWindowPos(root, nullptr, 20, 20, 420, 1000, SWP_NOZORDER | SWP_NOACTIVATE),
+            "narrow copy action size");
+    pump(window);
+    tags_capture(root, "code-copy-narrow-ja-light.bmp");
+    zoom_wheel(window, 5 * WHEEL_DELTA, 150);
+    tags_capture(root, "code-copy-narrow-150-ja-light.bmp");
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    FINDTEXTEXW find = {{0, -1}, L"コピー", {0, 0}};
+    require(SendMessageW(body, EM_FINDTEXTEXW, FR_DOWN | FR_MATCHCASE, (LPARAM)&find) >= 0,
+            "the first copy action at narrow width");
+    POINTL point = {0};
+    SendMessageW(body, EM_POSFROMCHAR, (WPARAM)&point, find.chrgText.cpMin);
+    SendMessageW(body, WM_MOUSEMOVE, 0, MAKELPARAM(point.x + 2, point.y + 6));
+    tags_capture(root, "code-copy-hover-narrow-150-ja-light.bmp");
+    code_copy_click(window, find.chrgText.cpMin);
+    tags_capture(root, "code-copy-done-narrow-150-ja-light.bmp");
+    SendMessageW(body, WM_TIMER, note_pane_code_button_timer_id, 0);
+    zoom_wheel(window, -5 * WHEEL_DELTA, 100);
+    folio_window_destroy(window);
+    folio_state_set_layout_mode(fixture->state, FOLIO_LAYOUT_BOTH);
+}
+
+static void code_copy_capture_state(HWND root, const char *_Nonnull state,
+                                    const char *_Nonnull language, const char *_Nonnull look)
+{
+    char path[64];
+    require(snprintf(path, sizeof path, "code-copy-%s-%s-%s.bmp", state, language, look) > 0,
+            "copy action screenshot path");
+    tags_capture(root, path);
+}
+
+/* Rest, pointer over the first button, and the done look after a recorded copy. High contrast
+ * is not decorated, so only its rest look is captured. */
+static void code_copy_state_captures(struct folio_window *_Nonnull window,
+                                     const char *_Nonnull language, const char *_Nonnull look,
+                                     size_t at)
+{
+    static const wchar_t *const words[] = {L"コピー", L"Copy", L"复制"};
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    code_copy_capture_state(root, "rest", language, look);
+    if (at / 3 == 2)
+        return;
+    FINDTEXTEXW find = {{0, -1}, words[at % 3], {0, 0}};
+    require(SendMessageW(body, EM_FINDTEXTEXW, FR_DOWN | FR_MATCHCASE, (LPARAM)&find) >= 0,
+            "the first copy action of the gallery");
+    POINTL point = {0};
+    SendMessageW(body, EM_POSFROMCHAR, (WPARAM)&point, find.chrgText.cpMin);
+    /* No pump here: the real pointer is elsewhere, so the queued WM_MOUSELEAVE would clear it. */
+    SendMessageW(body, WM_MOUSEMOVE, 0, MAKELPARAM(point.x + 2, point.y + 6));
+    code_copy_capture_state(root, "hover", language, look);
+    code_copy_click(window, find.chrgText.cpMin);
+    code_copy_capture_state(root, "done", language, look);
+}
+
+static void code_copy_visual(struct native_fixture *_Nonnull fixture)
+{
+    const enum folio_language languages[] = {FOLIO_LANGUAGE_JA, FOLIO_LANGUAGE_EN,
+                                             FOLIO_LANGUAGE_ZH_HANS};
+    const char *const names[] = {"ja", "en", "zh"};
+    const char *const looks[] = {"light", "dark", "contrast"};
+    for (size_t at = 0; at < 9; ++at)
+    {
+        favorite_high_contrast = at / 3 == 2;
+        require(folio_state_set_language(fixture->state, languages[at % 3]) == FOLIO_STATE_READY &&
+                    folio_state_refresh_theme(fixture->state) == FOLIO_STATE_READY &&
+                    folio_state_set_theme(fixture->state, at / 3 == 1 ? FOLIO_THEME_CHOICE_DARK
+                                                                      : FOLIO_THEME_CHOICE_LIGHT) ==
+                        FOLIO_STATE_READY,
+                "copy action matrix language and palette");
+        folio_state_set_layout_mode(fixture->state, FOLIO_LAYOUT_NOTE);
+        struct folio_window *window = nullptr;
+        require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY,
+                                    &window) == FOLIO_WINDOW_CREATED,
+                "copy action matrix window");
+        HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+        require(SetWindowPos(root, nullptr, 20, 20, 640, 1000, SWP_NOZORDER | SWP_NOACTIVATE),
+                "copy action matrix size");
+        pump(window);
+        code_copy_state_captures(window, names[at % 3], looks[at / 3], at);
+        folio_window_destroy(window);
+        folio_state_set_layout_mode(fixture->state, FOLIO_LAYOUT_BOTH);
+    }
+    favorite_high_contrast = false;
+    code_copy_narrow_visual(fixture);
+}
+
+/* What a failed icon check needs to be diagnosed from a remote log: geometry, DPI, zoom, the
+ * place that was read and how many pixels of each role it holds. */
+static void code_copy_scroll_report(HWND _Nonnull body, const struct rtf_palette *_Nonnull colors,
+                                    const char *_Nonnull path, RECT place)
+{
+    RECT window;
+    RECT client;
+    GetWindowRect(GetAncestor(body, GA_ROOT), &window);
+    GetClientRect(body, &client);
+    int numerator = 0, denominator = 0;
+    SendMessageW(body, EM_GETZOOM, (WPARAM)&numerator, (LPARAM)&denominator);
+    fprintf(stderr,
+            "scroll path %s: window %ldx%ld pane %ldx%ld dpi %u zoom %d/%d place %ld,%ld,%ld,%ld "
+            "surface %zu comment %zu text %zu\n",
+            path, window.right - window.left, window.bottom - window.top, client.right,
+            client.bottom, GetDpiForWindow(body), numerator, denominator, place.left, place.top,
+            place.right, place.bottom, code_copy_pixels(body, place, colors->code_background),
+            code_copy_pixels(body, place, colors->code_comment),
+            code_copy_pixels(body, place, colors->code_text));
+}
+
+/* #839 round 8: every header row that is fully inside the pane shows its icon after any scroll
+ * path. The expected place comes from the row's own first and last character only: the square
+ * at the row's right end, which the document leaves blank (non-breaking spaces), so anything
+ * there that is not the code surface is the painted icon. The icon is antialiased, so its exact
+ * colour is not counted: at 96 DPI the 14 px strokes hold only a few pixels of it (round 9). */
+static unsigned code_copy_scroll_rows(struct folio_window *_Nonnull window,
+                                      struct native_fixture *_Nonnull fixture,
+                                      const char *_Nonnull path)
+{
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    const struct rtf_palette *colors = &folio_state_palette(fixture->state)->rtf;
+    RECT client;
+    GetClientRect(body, &client);
+    int numerator = 0, denominator = 0;
+    SendMessageW(body, EM_GETZOOM, (WPARAM)&numerator, (LPARAM)&denominator);
+    int zoom = denominator != 0 ? MulDiv(100, numerator, denominator) : 100;
+    LONG row = MulDiv(MulDiv(360, (int)GetDpiForWindow(body), 1440), zoom, 100);
+    LONG icon = MulDiv(MulDiv(20, (int)GetDpiForWindow(body), 96), zoom, 100);
+    unsigned visible = 0;
+    for (size_t block = 0; block < 5; ++block)
+    {
+        LONG word = code_copy_word(body, block);
+        POINTL start = {0}, end = {0};
+        SendMessageW(body, EM_POSFROMCHAR, (WPARAM)&start, word - 12);
+        SendMessageW(body, EM_POSFROMCHAR, (WPARAM)&end, word + 7);
+        if (start.y < 0 || start.y + row > client.bottom || end.y != start.y)
+            continue;
+        ++visible;
+        RECT place = {end.x - icon, start.y, end.x, start.y + row};
+        size_t area = (size_t)(place.right - place.left) * (size_t)(place.bottom - place.top);
+        size_t surface = code_copy_pixels(body, place, colors->code_background);
+        if (surface + 20 > area || surface < area / 2)
+        {
+            code_copy_scroll_report(body, colors, path, place);
+            require(false, "a fully visible header row shows its copy icon");
+        }
+    }
+    return visible;
+}
+
+static void code_copy_scroll_bar(struct folio_window *_Nonnull window,
+                                 struct native_fixture *_Nonnull fixture, WPARAM request,
+                                 const char *_Nonnull path)
+{
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    unsigned seen = 0;
+    for (unsigned step = 0; step < 25; ++step)
+    {
+        SendMessageW(body, WM_VSCROLL, request, 0);
+        pump(window);
+        seen += code_copy_scroll_rows(window, fixture, path);
+    }
+    require(seen > 0, "the scroll path showed header rows to check");
+}
+
+static void code_copy_scroll_keys(struct folio_window *_Nonnull window,
+                                  struct native_fixture *_Nonnull fixture)
+{
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    SetFocus(body);
+    const UINT keys[] = {VK_NEXT, VK_NEXT, VK_PRIOR, VK_DOWN, VK_DOWN,
+                         VK_DOWN, VK_UP,   VK_END,   VK_HOME};
+    const BYTE modifiers[] = {0, 0, 0, 0, 0, 0, 0, FCONTROL, FCONTROL};
+    for (size_t at = 0; at < sizeof keys / sizeof keys[0]; ++at)
+    {
+        native_key_input(window, keys[at], modifiers[at]);
+        (void)code_copy_scroll_rows(window, fixture, "keys");
+    }
+}
+
+static void code_copy_scroll_positions(struct folio_window *_Nonnull window,
+                                       struct native_fixture *_Nonnull fixture)
+{
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    unsigned seen = 0;
+    for (LONG y = 0; y < 900; y += 31)
+    {
+        POINT origin = {0, y};
+        SendMessageW(body, EM_SETSCROLLPOS, 0, (LPARAM)&origin);
+        pump(window);
+        seen += code_copy_scroll_rows(window, fixture, "EM_SETSCROLLPOS");
+    }
+    require(seen > 0, "pixel scrolling showed header rows to check");
+    POINT top = {0, 0};
+    SendMessageW(body, EM_SETSCROLLPOS, 0, (LPARAM)&top);
+    pump(window);
+}
+
+static void run_code_copy_scroll(struct native_fixture *_Nonnull fixture)
+{
+    /* The hosted CI desktop is 96 DPI and a developer desktop often is not: the -96 selector makes
+     * this thread's windows 96 DPI wherever it runs, so both geometries are checked locally. */
+    if (code_copy_scroll_96)
+        require(SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_UNAWARE) != nullptr,
+                "96 DPI windows for the scroll case");
+    struct folio_window *window = nullptr;
+    require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
+                FOLIO_WINDOW_CREATED,
+            "code copy scroll window");
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    require(SetWindowPos(root, nullptr, 20, 20, 900, 560, SWP_NOZORDER | SWP_NOACTIVATE),
+            "short code copy window");
+    pump(window);
+    require(code_copy_scroll_rows(window, fixture, "load") > 0, "the first rows are decorated");
+    code_copy_scroll_bar(window, fixture, SB_LINEDOWN, "SB_LINEDOWN");
+    code_copy_scroll_bar(window, fixture, SB_LINEUP, "SB_LINEUP");
+    code_copy_scroll_bar(window, fixture, SB_PAGEDOWN, "SB_PAGEDOWN");
+    code_copy_scroll_bar(window, fixture, SB_PAGEUP, "SB_PAGEUP");
+    SendMessageW(body, WM_VSCROLL, SB_BOTTOM, 0);
+    pump(window);
+    (void)code_copy_scroll_rows(window, fixture, "SB_BOTTOM");
+    SendMessageW(body, WM_VSCROLL, SB_TOP, 0);
+    pump(window);
+    (void)code_copy_scroll_rows(window, fixture, "SB_TOP");
+    code_copy_scroll_positions(window, fixture);
+    code_copy_scroll_keys(window, fixture);
+    zoom_wheel(window, 5 * WHEEL_DELTA, 150);
+    code_copy_scroll_positions(window, fixture);
+    code_copy_scroll_bar(window, fixture, SB_LINEDOWN, "SB_LINEDOWN at 150%");
+    zoom_wheel(window, -5 * WHEEL_DELTA, 100);
+    require(SetWindowPos(root, nullptr, 20, 20, 1100, 420, SWP_NOZORDER | SWP_NOACTIVATE),
+            "resized code copy window");
+    pump(window);
+    code_copy_scroll_positions(window, fixture);
+    action(window, ACCESSIBLE_LAYOUT_NOTE);
+    code_copy_scroll_positions(window, fixture);
+    action(window, ACCESSIBLE_LAYOUT_BOTH);
+    code_copy_scroll_bar(window, fixture, SB_LINEDOWN, "SB_LINEDOWN after layout switch");
+    folio_window_destroy(window);
+}
+
+static void run_code_copy_case(struct native_fixture *_Nonnull fixture)
+{
+    require(folio_state_select_note(fixture->state, 0, 0, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
+            "select the dedicated code note");
+    if (code_copy_visual_case)
+    {
+        code_copy_visual(fixture);
+        return;
+    }
+    if (code_copy_scroll_case)
+    {
+        run_code_copy_scroll(fixture);
+        return;
+    }
+    struct folio_window *window = nullptr;
+    require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
+                FOLIO_WINDOW_CREATED,
+            "real code copy window");
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    require(SetWindowPos(root, nullptr, 20, 20, 1000, 750, SWP_NOZORDER | SWP_NOACTIVATE),
+            "fixed code copy window");
+    pump(window);
+    code_copy_pointer_case(window);
+    if (code_copy_keys_case_selected)
+    {
+        code_copy_keys_case(window, fixture);
+        code_copy_search_case(window);
+        code_copy_decoration_case(window, fixture);
+        code_copy_target_case(window, 100);
+        code_copy_repeat_case(window);
+        code_copy_zoom_case(window, fixture);
+    }
+    else
+    {
+        code_copy_click_case(window, fixture);
+        code_copy_busy_case(window, fixture);
+        code_copy_edit_case(window, fixture);
+    }
+    require(controlled.requests == 0, "copying code does not request image work");
+    folio_window_destroy(window);
+}
+
 static void run_existing_fixture(struct native_fixture *_Nonnull fixture, int argc,
                                  char *_Nonnull *_Nonnull argv)
 {
@@ -11583,6 +12504,8 @@ static void run_fixture(struct native_fixture *_Nonnull fixture, int argc,
         run_tag_management_case(fixture);
     else if (tags_case)
         run_tags_case(fixture);
+    else if (code_copy_case)
+        run_code_copy_case(fixture);
     else
         run_existing_fixture(fixture, argc, argv);
 }
@@ -11639,6 +12562,17 @@ static void select_tags_fixture(const char *_Nonnull selector)
                 motion_case || scale_note_count != 0;
 }
 
+static void select_clipboard_fixture(const char *_Nonnull selector)
+{
+    paste_case = strcmp(selector, "--paste") == 0;
+    code_copy_visual_case = strcmp(selector, "--code-copy-visual") == 0;
+    code_copy_keys_case_selected = strcmp(selector, "--code-copy-keys") == 0;
+    code_copy_scroll_96 = strcmp(selector, "--code-copy-scroll-96") == 0;
+    code_copy_scroll_case = strcmp(selector, "--code-copy-scroll") == 0 || code_copy_scroll_96;
+    code_copy_case = strcmp(selector, "--code-copy") == 0 || code_copy_visual_case ||
+                     code_copy_keys_case_selected || code_copy_scroll_case;
+}
+
 static void select_about_fixture(const char *_Nonnull selector)
 {
     about_visual_case = strcmp(selector, "--about-visual") == 0;
@@ -11647,15 +12581,17 @@ static void select_about_fixture(const char *_Nonnull selector)
 
 static HWINSTA fixture_clipboard_station(void)
 {
-    return paste_case || discovery_copy_case || body_discovery_copy_case ? isolate_paste_clipboard()
-                                                                         : nullptr;
+    bool copies = paste_case || discovery_copy_case || body_discovery_copy_case ||
+                  (code_copy_case && !code_copy_visual_case && !code_copy_keys_case_selected &&
+                   !code_copy_scroll_case);
+    return copies ? isolate_paste_clipboard() : nullptr;
 }
 
 int main(int argc, char *_Nonnull *_Nonnull argv)
 {
     const char *selector = argc == 2 ? argv[1] : "";
     select_tags_fixture(selector);
-    paste_case = strcmp(selector, "--paste") == 0;
+    select_clipboard_fixture(selector);
     format_case = strcmp(selector, "--format-keys") == 0;
     select_favorites_fixture(selector);
     layout_case = strcmp(selector, "--layout") == 0;

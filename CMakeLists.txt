@@ -67,7 +67,7 @@ nenefolio_target(nenefolio_core core STATIC
     src/core/image_source.c src/core/image_bitmap.c src/core/markdown_images.c src/core/markdown_destination.c
     src/core/image_asset.c src/core/archive_assets.c src/core/markdown_image_copy.c
     src/core/markdown_autolink.c src/core/markdown_character_reference.c
-    src/core/web_uri.c src/core/markdown_web_link.c src/core/note_archive.c
+    src/core/web_uri.c src/core/markdown_web_link.c src/core/note_archive.c src/core/code_copy_target.c
     src/core/markdown_line.c src/core/markdown_view.c src/core/markdown_table.c src/core/markdown_containers.c
     src/core/folio_command.c src/core/folio_menu_action.c src/core/folio_shortcut.c src/core/key_guide.c src/core/note_name.c src/core/rename_plan.c src/core/rename_journal.c
     src/core/note_search.c src/core/note_corpus.c src/core/index_filter.c src/core/index_filter_build.c
@@ -84,7 +84,7 @@ nenefolio_link(nenefolio_application nenefolio_core)
 
 nenefolio_target(folio_tests unit_tests EXECUTABLE
     tests/unit/storage_tests.c tests/unit/storage_state_tests.c
-    tests/unit/web_link_tests.c tests/unit/transfer_tests.c tests/unit/image_tests.c
+    tests/unit/web_link_tests.c tests/unit/code_copy_tests.c tests/unit/transfer_tests.c tests/unit/image_tests.c
     tests/unit/folio_tests.c tests/unit/text_tests.c tests/unit/json_tests.c
     tests/unit/tag_tests.c tests/unit/tag_management_tests.c tests/unit/discovery_tests.c tests/unit/body_discovery_tests.c
     tests/unit/ledger_tests.c tests/unit/layout_tests.c tests/unit/state_tests.c
@@ -105,7 +105,7 @@ nenefolio_target(nenefolio_adapters adapters_win32 STATIC
     src/adapters/win32/storage_adapter.c src/adapters/win32/storage_native_path.c src/adapters/win32/data_lock.c
     src/adapters/win32/file_bytes.c src/adapters/win32/file_times.c src/adapters/win32/persistence_adapter.c
     src/adapters/win32/appearance_adapter.c src/adapters/win32/regex_adapter.c
-    src/adapters/win32/web_link_adapter.c src/adapters/win32/transfer_adapter.c
+    src/adapters/win32/web_link_adapter.c src/adapters/win32/clipboard_adapter.c src/adapters/win32/transfer_adapter.c
     src/adapters/win32/diagram_canvas.c
     src/adapters/win32/diagram_native_shape.c
     src/adapters/win32/diagram_render.c
@@ -130,7 +130,7 @@ nenefolio_system_link(nenefolio_adapters gdi32)
 
 nenefolio_target(nenefolio_window ui_win32 STATIC
     src/ui/win32/storage_prompt.c src/ui/win32/folder_picker.c src/ui/win32/file_picker.c
-    src/ui/win32/note_pane_links.c src/ui/win32/note_pane_images.c src/ui/win32/note_minimap.c src/ui/win32/note_pane_sample.c
+    src/ui/win32/note_pane_links.c src/ui/win32/note_pane_code_button.c src/ui/win32/note_pane_images.c src/ui/win32/note_minimap.c src/ui/win32/note_pane_sample.c
     src/ui/win32/note_pane_geometry.c
     src/ui/win32/accessible_item.c src/ui/win32/accessibility_host.c src/ui/win32/accessibility_node.c
     src/ui/win32/accessibility_native.c
@@ -350,11 +350,17 @@ add_test(NAME note_mode_native COMMAND image_status_tests --mode-save)
 add_test(NAME discard_native COMMAND image_status_tests --discard)
 add_test(NAME palette_native COMMAND image_status_tests --palette)
 add_test(NAME paste_native COMMAND image_status_tests --paste)
+add_test(NAME code_copy_native COMMAND image_status_tests --code-copy)
+add_test(NAME code_copy_keys_native COMMAND image_status_tests --code-copy-keys)
+add_test(NAME code_copy_scroll_native COMMAND image_status_tests --code-copy-scroll)
+add_test(NAME code_copy_scroll_96_native COMMAND image_status_tests --code-copy-scroll-96)
 add_test(NAME editor_format_native COMMAND image_status_tests --format-keys)
 add_test(NAME layout_edit_native COMMAND image_status_tests --layout)
 set_tests_properties(layout_edit_native PROPERTIES TIMEOUT 30 RESOURCE_LOCK image_status_data)
 set_tests_properties(editor_format_native PROPERTIES TIMEOUT 30 RESOURCE_LOCK image_status_data)
 set_tests_properties(paste_native PROPERTIES TIMEOUT 30 RESOURCE_LOCK image_status_data)
+set_tests_properties(code_copy_native code_copy_keys_native code_copy_scroll_native
+    code_copy_scroll_96_native PROPERTIES TIMEOUT 30 RESOURCE_LOCK image_status_data)
 set_tests_properties(palette_native PROPERTIES TIMEOUT 30 RESOURCE_LOCK image_status_data)
 set_tests_properties(discard_native PROPERTIES TIMEOUT 30 RESOURCE_LOCK image_status_data)
 set_tests_properties(note_mode_native PROPERTIES TIMEOUT 30 RESOURCE_LOCK image_status_data)

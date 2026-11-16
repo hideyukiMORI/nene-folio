@@ -89,3 +89,4 @@ ADR は「なぜそう決めたか」「何を却下したか」を書く。
 | [0074](0074-linear-index-matching.md) | 部分一致を保持して総比較workを線形に抑える | 受理 |
 | [0075](0075-window-shell-controls-and-layout-chooser.md) | 窓操作を常設し、狭幅の表示選択を同じMENUへまとめる | 受理 |
 | [0085](0085-lazy-markdown-images.md) | 原文を保ち、画像だけを遅延表示してZIPへ持ち出す | 受理 |
+| [0098](0098-code-block-copy.md) | コードブロックのコピーは見出し行のリンクから、描画時に集めた原文を渡す | 受理 |

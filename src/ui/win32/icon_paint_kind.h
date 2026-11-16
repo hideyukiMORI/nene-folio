@@ -24,7 +24,9 @@ enum icon_paint_kind : unsigned char
     ICON_PAINT_SAVE,          /* 右上を45°で面取りした円盤（保存・ADR0060 の決定 6） */
     ICON_PAINT_SEARCH,        /* 虫眼鏡（このノート内を検索） */
     ICON_PAINT_MENU,
-    ICON_PAINT_HELP /* 輪の中の「?」の面（ヘルプ・C様式の20pxで使う） */
+    ICON_PAINT_HELP, /* 輪の中の「?」の面（ヘルプ・C様式の20pxで使う） */
+    ICON_PAINT_COPY, /* 重ねた2枚の紙の輪郭（コードブロックのコピー・ADR0098） */
+    ICON_PAINT_CHECK /* コピー済みを示すチェック */
 };
 
 #endif

@@ -14,11 +14,15 @@ enum folio_state_outcome : unsigned char
 
     FOLIO_STATE_WEB_LINK_REJECTED,
     FOLIO_STATE_WEB_LINK_UNAVAILABLE,
-    FOLIO_STATE_DATA_UNREADABLE,  /* data/ の走査や台帳の読み込みが失敗した */
-    FOLIO_STATE_LEDGER_MALFORMED, /* 台帳が版 1 の形ではない。既定値へは落とさない（FR-015） */
-    FOLIO_STATE_STORE_FAILED,     /* 台帳を書き戻せなかった。表示上の状態は変えていない */
-    FOLIO_STATE_NO_SUCH_CATEGORY, /* 索引に無いカテゴリへの意図 */
-    FOLIO_STATE_NO_SUCH_NOTE,     /* 索引に無いノートへの意図 */
+    /* 現在の閲覧表示に無いコードブロックへのコピー。クリップボードには触れていない（ADR0098） */
+    FOLIO_STATE_CODE_COPY_REJECTED,
+    FOLIO_STATE_CLIPBOARD_BUSY,        /* ほかのプログラムがクリップボードを開いている */
+    FOLIO_STATE_CLIPBOARD_UNAVAILABLE, /* クリップボードへ書けなかった。本文も選択も変えていない */
+    FOLIO_STATE_DATA_UNREADABLE,       /* data/ の走査や台帳の読み込みが失敗した */
+    FOLIO_STATE_LEDGER_MALFORMED,      /* 台帳が版 1 の形ではない。既定値へは落とさない（FR-015） */
+    FOLIO_STATE_STORE_FAILED,          /* 台帳を書き戻せなかった。表示上の状態は変えていない */
+    FOLIO_STATE_NO_SUCH_CATEGORY,      /* 索引に無いカテゴリへの意図 */
+    FOLIO_STATE_NO_SUCH_NOTE,          /* 索引に無いノートへの意図 */
     FOLIO_STATE_NOTE_UNREADABLE,  /* ノートが無い・読めない・UTF-8 ではない。表示は変えていない */
     FOLIO_STATE_NOTHING_SELECTED, /* ノートを選ばずに編集へ入ろうとした */
     FOLIO_STATE_NOT_EDITING,      /* 閲覧中に保存の意図が来た */

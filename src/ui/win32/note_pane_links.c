@@ -1,4 +1,5 @@
 #include "note_pane_links.h"
+#include "code_copy_target.h"
 #include "note_pane_link_gesture.h"
 #include "utf8_text.h"
 #include "web_uri.h"
@@ -17,6 +18,14 @@ struct note_pane_links
     } *_Nullable hidden;
     size_t count;
     size_t capacity;
+    struct action_run
+    {
+        LONG start;
+        LONG end;
+        size_t slot;
+    } *_Nullable actions;
+    size_t action_count;
+    size_t action_capacity;
     enum note_pane_link_gesture gesture;
     POINT down;
     CHARRANGE target;
@@ -42,6 +51,44 @@ static bool append_hidden(struct note_pane_links *_Nonnull links, LONG start, LO
     return true;
 }
 
+static bool append_action(struct note_pane_links *_Nonnull links, LONG start, LONG end, size_t slot)
+{
+    if (links->action_count == links->action_capacity)
+    {
+        size_t capacity = links->action_capacity == 0 ? 8 : links->action_capacity * 2;
+        struct action_run *_Nullable prepared =
+            realloc(links->actions, capacity * sizeof *prepared);
+        if (prepared == nullptr)
+            return false;
+        links->actions = prepared;
+        links->action_capacity = capacity;
+    }
+    links->actions[links->action_count++] = (struct action_run){start, end, slot};
+    return true;
+}
+
+/* コードブロックのコピー操作の文言は操作であって本文ではない（ADR0098）。内部の宛先を持つ
+ * リンクの見える区間を、非表示区間と同じ索引へ入れて検索の位置と文字列から除く。
+ * 宛先の非表示区間の直後にだけ現れるので、そこだけ調べる。読めない区間は本文として残す。 */
+static enum note_pane_link_outcome collect_action(struct note_pane_links *_Nonnull links,
+                                                  ITextDocument *_Nonnull document, LONG start,
+                                                  LONG end)
+{
+    struct utf8_text *_Nullable target = nullptr;
+    enum note_pane_link_outcome read =
+        note_pane_links_target(document, (CHARRANGE){start, start}, &target);
+    if (read != NOTE_PANE_LINK_READY)
+        return read == NOTE_PANE_LINK_OUT_OF_MEMORY ? read : NOTE_PANE_LINK_READY;
+    size_t slot = 0;
+    enum code_copy_target_outcome parsed =
+        code_copy_target_parse(utf8_text_bytes(target), utf8_text_length(target), &slot);
+    utf8_text_destroy(target);
+    if (parsed == CODE_COPY_TARGET_SLOT &&
+        (!append_hidden(links, start, end) || !append_action(links, start, end, slot)))
+        return NOTE_PANE_LINK_OUT_OF_MEMORY;
+    return NOTE_PANE_LINK_READY;
+}
+
 static enum note_pane_link_outcome collect_format(struct note_pane_links *_Nonnull links,
                                                   ITextRange *_Nonnull range, LONG start, LONG end)
 {
@@ -55,28 +102,49 @@ static enum note_pane_link_outcome collect_format(struct note_pane_links *_Nonnu
         return NOTE_PANE_LINK_UNAVAILABLE;
     if (hidden == tomTrue && !append_hidden(links, start, end))
         return NOTE_PANE_LINK_OUT_OF_MEMORY;
-    return NOTE_PANE_LINK_READY;
+    return hidden == tomTrue ? NOTE_PANE_LINK_READY : NOTE_PANE_LINK_ABSENT;
+}
+
+/* 1 つの書式区間を索引へ写す。after_hidden は直前の区間が非表示だったか。 */
+static enum note_pane_link_outcome collect_run(struct note_pane_links *_Nonnull links,
+                                               ITextDocument *_Nonnull document,
+                                               ITextRange *_Nonnull range,
+                                               bool *_Nonnull after_hidden)
+{
+    LONG start = 0;
+    LONG end = 0;
+    if (FAILED(range->lpVtbl->GetStart(range, &start)) ||
+        FAILED(range->lpVtbl->GetEnd(range, &end)) || end <= start)
+        return NOTE_PANE_LINK_UNAVAILABLE;
+    enum note_pane_link_outcome format = collect_format(links, range, start, end);
+    bool visible = format == NOTE_PANE_LINK_ABSENT;
+    bool action = visible && *after_hidden;
+    *after_hidden = format == NOTE_PANE_LINK_READY;
+    if (action)
+        return collect_action(links, document, start, end);
+    return visible ? NOTE_PANE_LINK_READY : format;
 }
 
 static enum note_pane_link_outcome collect_runs(struct note_pane_links *_Nonnull links,
+                                                ITextDocument *_Nonnull document,
                                                 ITextRange *_Nonnull range)
 {
     LONG length = 0;
     if (FAILED(range->lpVtbl->GetStoryLength(range, &length)))
         return NOTE_PANE_LINK_UNAVAILABLE;
     LONG start = 0;
+    bool after_hidden = false;
     while (start < length)
     {
         LONG moved = 0;
-        LONG end = 0;
         if (FAILED(range->lpVtbl->SetRange(range, start, start)) ||
-            FAILED(range->lpVtbl->MoveEnd(range, tomCharFormat, 1, &moved)) ||
-            FAILED(range->lpVtbl->GetEnd(range, &end)) || end <= start)
+            FAILED(range->lpVtbl->MoveEnd(range, tomCharFormat, 1, &moved)))
             return NOTE_PANE_LINK_UNAVAILABLE;
-        enum note_pane_link_outcome outcome = collect_format(links, range, start, end);
+        enum note_pane_link_outcome outcome = collect_run(links, document, range, &after_hidden);
         if (outcome != NOTE_PANE_LINK_READY)
             return outcome;
-        start = end;
+        if (FAILED(range->lpVtbl->GetEnd(range, &start)))
+            return NOTE_PANE_LINK_UNAVAILABLE;
     }
     return NOTE_PANE_LINK_READY;
 }
@@ -91,7 +159,7 @@ enum note_pane_link_outcome note_pane_links_create(ITextDocument *_Nonnull docum
     enum note_pane_link_outcome outcome = NOTE_PANE_LINK_UNAVAILABLE;
     if (SUCCEEDED(document->lpVtbl->Range(document, 0, 0, &range)) && range != nullptr)
     {
-        outcome = collect_runs(links, range);
+        outcome = collect_runs(links, document, range);
         range->lpVtbl->Release(range);
     }
     if (outcome != NOTE_PANE_LINK_READY)
@@ -106,8 +174,26 @@ enum note_pane_link_outcome note_pane_links_create(ITextDocument *_Nonnull docum
 void note_pane_links_destroy(struct note_pane_links *_Nullable links)
 {
     if (links != nullptr)
+    {
         free(links->hidden);
+        free(links->actions);
+    }
     free(links);
+}
+
+size_t note_pane_links_action_count(const struct note_pane_links *_Nullable links)
+{
+    return links == nullptr ? 0 : links->action_count;
+}
+
+CHARRANGE note_pane_links_action(const struct note_pane_links *_Nonnull links, size_t index)
+{
+    return (CHARRANGE){links->actions[index].start, links->actions[index].end};
+}
+
+size_t note_pane_links_action_slot(const struct note_pane_links *_Nonnull links, size_t index)
+{
+    return links->actions[index].slot;
 }
 
 size_t note_pane_links_visible(const struct note_pane_links *_Nullable links, size_t native)

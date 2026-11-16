@@ -47,6 +47,13 @@ note_pane_link_selection(struct note_pane *_Nonnull pane,
 [[nodiscard]] enum note_pane_link_outcome
 note_pane_link_click(struct note_pane *_Nonnull pane, const ENLINK *_Nonnull notice,
                      struct utf8_text *_Nullable *_Nonnull out);
+/* コードブロックのコピー操作へ重ねるボタンの配色（既存の役割だけ。高コントラストでは飾らない）と、
+ * コピーに成功した札を短い間だけ済みの表示にする知らせ（ADR0098 第3版）。text は終端付き。 */
+struct theme_palette;
+void note_pane_code_palette(struct note_pane *_Nonnull pane,
+                            const struct theme_palette *_Nonnull theme);
+void note_pane_code_copied(struct note_pane *_Nonnull pane, size_t slot,
+                           const char16_t *_Nonnull text);
 
 /* 本文の RichEdit の control id。主窓は WM_COMMAND を送り手の HWND と id で振り分ける
  * （#40 の絞り込みの欄の EN_CHANGE と同じ窓に届く・ADR 0026 の決定 4）。 */
