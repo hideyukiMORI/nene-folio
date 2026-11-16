@@ -124,8 +124,8 @@ static void verify_emphasis(void)
 /* コードブロックの見出し行に置くコピーの操作（ADR0098）。slot はノート内の通し番号。 */
 #define CODE_OPEN "{\\f1\\fs20\\cf5\\highlight6"
 #define CODE_HEAD "\\pard\\li180\\ri180\\sb120\\sa80\\sl240\\slmult1 "
-#define CODE_HEAD_RIGHT "\\pard\\qr\\li180\\ri0\\sb40\\sa40\\sl240\\slmult1 "
-#define CODE_FIRST "\\pard\\li180\\ri180\\sb80\\sa0\\sl240\\slmult1 "
+#define CODE_HEAD_RIGHT "\\pard\\qr\\li180\\ri0\\sb40\\sa60\\sl-260\\slmult0 "
+#define CODE_FIRST "\\pard\\li180\\ri180\\sb100\\sa0\\sl240\\slmult1 "
 #define CODE_LINE "\\pard\\li180\\ri180\\sb0\\sa0\\sl240\\slmult1 "
 #define CODE_COPY_OPEN "{\\field{\\*\\fldinst{HYPERLINK \"nenefolio-code:"
 #define CODE_COPY_CLOSE                                                                            \
@@ -1001,9 +1001,9 @@ static void verify_table_start_blocks(void)
     expect_body("# title|\n|---|", "\\pard\\sb200\\sa80\\b\\cf2\\fs44 title|\\b0\\cf1\\fs22\\par\n"
                                    "\\pard\\sa80\\sl240\\slmult1\\cf1 |---|\\par\n");
     expect_body("~~~lang|\n|---|\n~~~\ntail",
-                "{\\f1\\fs20\\cf5\\highlight6\\pard\\qr\\li180\\ri0\\sb40\\sa40\\sl240\\slmult1 "
+                "{\\f1\\fs20\\cf5\\highlight6\\pard\\qr\\li180\\ri0\\sb40\\sa60\\sl-260\\slmult0 "
                 "{\\f0\\fs18\\cf9 lang|}{\\f0\\fs18\\cf9 \\u8195?}" CODE_COPY_OPEN
-                "0" CODE_COPY_CLOSE "\\par\n\\pard\\li180\\ri180\\sb80\\sa0\\sl240\\slmult1 "
+                "0" CODE_COPY_CLOSE "\\par\n\\pard\\li180\\ri180\\sb100\\sa0\\sl240\\slmult1 "
                 "|---|\\sa120\\par\n}\\pard\\sa80\\sl240\\slmult1\\cf1 tail\\par\n");
     expect_body("***\n|---|", "{\\pard\\sb0\\sa0\\sl-240\\slmult0\\fs2\\highlight0\\par}\n{"
                               "\\pard\\sb0\\sa0\\sl-20\\slmult0\\fs2\\highlight3\\par}\n{"

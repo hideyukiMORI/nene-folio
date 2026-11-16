@@ -440,7 +440,8 @@ static void code_copy_chip(struct note_pane *_Nonnull pane, LONG first)
     SendMessageW(handle, EM_GETPARAFORMAT, 0, (LPARAM)&paragraph);
     require((paragraph.dwMask & PFM_ALIGNMENT) != 0 && paragraph.wAlignment == PFA_RIGHT &&
                 paragraph.dxRightIndent == 0 && paragraph.dySpaceBefore == 40 &&
-                paragraph.dySpaceAfter == 40,
+                paragraph.dySpaceAfter == 60 && paragraph.bLineSpacingRule == 4 &&
+                paragraph.dyLineSpacing == 260,
             "the header row is right aligned, flush with the block's right edge and compact");
 }
 

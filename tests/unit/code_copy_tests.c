@@ -51,8 +51,8 @@ const struct clipboard_port *_Nonnull test_clipboard_port(void)
 
 #define OPEN "{\\f1\\fs20\\cf5\\highlight6"
 #define HEADER "\\ri180\\sb120\\sa80\\sl240\\slmult1 "
-#define HEADER_TAB "\\ri0\\sb40\\sa40\\sl240\\slmult1 "
-#define FIRST "\\ri180\\sb80\\sa0\\sl240\\slmult1 "
+#define HEADER_TAB "\\ri0\\sb40\\sa60\\sl-260\\slmult0 "
+#define FIRST "\\ri180\\sb100\\sa0\\sl240\\slmult1 "
 #define ACTION_OPEN "{\\field{\\*\\fldinst{HYPERLINK \"nenefolio-code:"
 #define ACTION_LABEL "\"}}{\\fldrslt{\\f0\\fs18\\cf6\\highlight9\\ul0 \\~\\~"
 #define ACTION_CLOSE "\\~\\~}}}"

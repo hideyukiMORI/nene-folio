@@ -322,7 +322,7 @@ static bool code_line(struct markdown_blocks *_Nonnull parser, struct markdown_l
     text_buffer_append_text(parser->out, "\\pard\\li");
     rtf_text_number(parser->out, parser->code_indent + 180);
     text_buffer_append_text(parser->out, "\\ri180\\sb");
-    text_buffer_append_text(parser->out, parser->tabbed ? "80" : code_spacing(parser->code_state));
+    text_buffer_append_text(parser->out, parser->tabbed ? "100" : code_spacing(parser->code_state));
     parser->tabbed = false;
     text_buffer_append_text(parser->out, "\\sa0\\sl240\\slmult1 ");
     for (size_t index = 0; index < line.padding; ++index)
@@ -366,9 +366,10 @@ static void code_copy_action(struct markdown_blocks *_Nonnull parser)
 
 /* 見出し行: 言語ラベル（あれば）とコピーの操作（原文を集めるブロックだけ）。どちらも無ければ
  * 何も書かない（未指定の空fenceは従来どおり）。操作のある行は段落を右寄せにし、右の余白を
- * 0、前後の間隔を2ptずつにして、札をブロックの右上の角へ小さく付ける。RichEdit は文字の地を
- * 段落の前後の間隔まで塗るので、札は行の高さいっぱいになる。コードとの間の残り（4pt）は
- * 最初のコード行が持つ。幅や倍率は追わない（ADR0098 第2版）。 */
+ * 0、前の間隔を2pt、後を3pt、行送りを固定の13ptにして、札をブロックの右上の角へ小さく付ける。
+ * RichEdit は文字の地を段落の前後の間隔まで塗るので、札の高さは 2+13+3 の18ptで、長い
+ * ラベルが折り返しても行ごとの高さが変わらない。札の下からコードまでの5ptは最初のコード行が
+ * 持つ。幅や倍率は追わない（ADR0098 第2版）。 */
 static void code_header(struct markdown_blocks *_Nonnull parser, struct markdown_span word)
 {
     if (word.length == 0 && !parser->copyable)
@@ -376,7 +377,7 @@ static void code_header(struct markdown_blocks *_Nonnull parser, struct markdown
     text_buffer_append_text(parser->out, parser->copyable ? "\\pard\\qr\\li" : "\\pard\\li");
     rtf_text_number(parser->out, parser->code_indent + 180);
     text_buffer_append_text(parser->out, parser->copyable
-                                             ? "\\ri0\\sb40\\sa40\\sl240\\slmult1 "
+                                             ? "\\ri0\\sb40\\sa60\\sl-260\\slmult0 "
                                              : "\\ri180\\sb120\\sa80\\sl240\\slmult1 ");
     parser->tabbed = parser->copyable;
     if (word.length != 0)
