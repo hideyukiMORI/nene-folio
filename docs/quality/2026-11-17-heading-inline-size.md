@@ -37,3 +37,16 @@
 | native-02 | 成功（716 checks）。63通りすべてで装飾が見出しの大きさ（codeは比どおり） |
 | unit-03 | 成功。見出し・setext・表のセル・本文のcode spanのRTFの大きさを追加 |
 | 実画面 | `--bare-url-visual`の見本へ「## 見出しの `code` と **太字**」を足して採取（visual/after-*.png）。見出しの中のcodeが見出しの大きさになった。等幅の書体がConsolasのままであることも`szFaceName`で確かめた（一時的な出力、確認後に外した） |
+
+## 最終の対象検証
+
+原本は`v1-*.log`（`E:/NeNeFolio/temp/853/verify.ps1 -Tag v1`、#852統合後のmainを取り込んだ後）。
+
+| コマンド | 結果 |
+| --- | --- |
+| `cmake --build <E:build> --parallel 4`（全target・clang-tidy込み） | 成功 |
+| `python -B eng/coverage.py` | 成功。分岐90.88%（下限90・除外不変） |
+| `python -B eng/symbols.py --build-dir <E:build> --require core application` | 成功（違反0） |
+| `python -B eng/conformance.py` / `--build-dir <E:build>` | 成功（違反0） |
+| `ctest --test-dir <E:build> --output-on-failure --no-tests=error` | 61件すべて成功（88.6秒） |
+| `git diff --check origin/main` | 成功 |
