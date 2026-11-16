@@ -562,10 +562,13 @@ static bool paint_background(const struct note_pane *_Nonnull pane, UINT message
 
 /* コピー操作のボタンの装飾（ADR0098 第3版）。nativeが描く前に札の矩形を更新領域から外し、
  * 描いた後に重ねる。済みの表示を戻すタイマーは RichEdit へ渡さない。 */
-static bool decorate_before(struct note_pane *_Nonnull pane, UINT message, WPARAM wparam)
+static bool decorate_before(struct note_pane *_Nonnull pane, UINT message, WPARAM wparam,
+                            LPARAM lparam)
 {
     if (pane->code_button == nullptr)
         return false;
+    if (message == WM_LBUTTONDOWN)
+        note_pane_code_button_press(pane->code_button, lparam);
     if (message == WM_PAINT)
         note_pane_code_button_exclude(pane->code_button);
     return message == WM_TIMER && note_pane_code_button_timer(pane->code_button, wparam);
@@ -601,7 +604,7 @@ static LRESULT CALLBACK pane_procedure(HWND window, UINT message, WPARAM wparam,
     }
     if (paint_background(pane, message, wparam, lparam))
         return 1;
-    if (decorate_before(pane, message, wparam))
+    if (decorate_before(pane, message, wparam, lparam))
         return 0;
     if (pane_input(pane, message, wparam, lparam))
     {

@@ -39,6 +39,10 @@ void note_pane_code_button_exclude(const struct note_pane_code_button *_Nonnull 
 /* 見えている札へボタンを描く。device が nullptr なら窓の DC へ直接描く。 */
 void note_pane_code_button_paint(struct note_pane_code_button *_Nonnull button,
                                  HDC _Nullable device);
+/* 左ボタンの押下を RichEdit へ渡す前に呼ぶ。札の上なら、そのときの選択とスクロール位置を
+ * 預かる。同じ札の上で離したとき（クリックでのコピー）と取消で元へ戻し、ボタンの中に
+ * キャレットを残さない。札から外へ引いた選択と、Ctrl+Enter のキャレットには触らない。 */
+void note_pane_code_button_press(struct note_pane_code_button *_Nonnull button, LPARAM position);
 /* RichEdit が処理した後の入力。乗る・押す・キャレットの状態を採り直して描き直す。 */
 void note_pane_code_button_input(struct note_pane_code_button *_Nonnull button, UINT message,
                                  WPARAM wparam, LPARAM lparam);

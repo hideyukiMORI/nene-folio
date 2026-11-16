@@ -26,6 +26,10 @@ struct note_pane_code_button
     COLORREF success;                              /* rtf.code_string: 済みの絵と字と枠 */
     bool enabled;                                  /* 高コントラストでは飾らない */
     bool tracking;
+    bool held;                /* 札の上で押した。離すか取り消すまでの間だけ。 */
+    size_t held_action;       /* 押した札 */
+    CHARRANGE held_selection; /* 押す前の選択 */
+    POINT held_scroll;        /* 押す前のスクロール位置 */
     int zoom_percent;
     wchar_t face[LF_FACESIZE];
     int twips; /* 札の字の大きさ */
@@ -288,6 +292,38 @@ static size_t action_at(const struct note_pane_code_button *_Nonnull button, LPA
     return no_action;
 }
 
+void note_pane_code_button_press(struct note_pane_code_button *_Nonnull button, LPARAM position)
+{
+    button->held = false;
+    if (action_count(button) == 0)
+        return;
+    button->held_action = action_at(button, position);
+    if (button->held_action == no_action)
+        return;
+    button->held = true;
+    SendMessageW(button->window, EM_EXGETSEL, 0, (LPARAM)&button->held_selection);
+    SendMessageW(button->window, EM_GETSCROLLPOS, 0, (LPARAM)&button->held_scroll);
+}
+
+/* 預かった選択とスクロール位置を戻す。選択の復元がキャレットまでスクロールしても元へ戻る。 */
+static void restore_held(struct note_pane_code_button *_Nonnull button)
+{
+    button->held = false;
+    SendMessageW(button->window, EM_EXSETSEL, 0, (LPARAM)&button->held_selection);
+    SendMessageW(button->window, EM_SETSCROLLPOS, 0, (LPARAM)&button->held_scroll);
+}
+
+/* 離した後。押した札の上で離したクリックだけ、選択を戻す。外へ引いた選択はそのまま。 */
+static void released(struct note_pane_code_button *_Nonnull button, LPARAM position)
+{
+    button->pressed = no_action;
+    if (!button->held)
+        return;
+    if (action_at(button, position) == button->held_action)
+        restore_held(button);
+    button->held = false;
+}
+
 static void pointer_moved(struct note_pane_code_button *_Nonnull button, WPARAM keys,
                           LPARAM position)
 {
@@ -323,8 +359,15 @@ void note_pane_code_button_input(struct note_pane_code_button *_Nonnull button, 
         button->pressed = action_at(button, lparam);
         break;
     case WM_LBUTTONUP:
+        released(button, lparam);
+        break;
     case WM_CAPTURECHANGED:
         button->pressed = no_action;
+        break;
+    case WM_CANCELMODE:
+        button->pressed = no_action;
+        if (button->held)
+            restore_held(button);
         break;
     /* 選択・キャレット・スクロールが動く入力。RichEdit が WM_PAINT を経ずに描いても戻す。 */
     case WM_KEYDOWN:

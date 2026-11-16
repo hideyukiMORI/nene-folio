@@ -129,7 +129,7 @@ static void verify_emphasis(void)
 #define CODE_LINE "\\pard\\li180\\ri180\\sb0\\sa0\\sl240\\slmult1 "
 #define CODE_COPY_OPEN "{\\field{\\*\\fldinst{HYPERLINK \"nenefolio-code:"
 #define CODE_COPY_CLOSE                                                                            \
-    "\"}}{\\fldrslt{\\f0\\fs18\\cf6\\highlight9\\ul0 "                                             \
+    "\"}}{\\fldrslt{\\f0\\fs18\\cf9\\ul0 "                                                         \
     "\\~\\~\\~\\~\\~\\~\\~\\~\\~\\~\\~\\~\xE3\x82\xB3\xE3\x83\x94\xE3\x83\xBC\\~\\~\\~\\~}}}"
 
 static void verify_code(void)

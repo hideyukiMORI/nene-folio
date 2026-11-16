@@ -9311,6 +9311,15 @@ static void code_copy_pointer_case(struct folio_window *_Nonnull window)
             "the native link pointer notification shows the action pointer");
 }
 
+/* A click on the button copies without leaving the caret in it: the selection is as before. */
+static void code_copy_selection(HWND _Nonnull body, CHARRANGE expected)
+{
+    CHARRANGE selected = {0};
+    SendMessageW(body, EM_EXGETSEL, 0, (LPARAM)&selected);
+    require(selected.cpMin == expected.cpMin && selected.cpMax == expected.cpMax,
+            "a click-activated copy restores the selection held before the press");
+}
+
 static void code_copy_click_case(struct folio_window *_Nonnull window,
                                  struct native_fixture *_Nonnull fixture)
 {
@@ -9325,10 +9334,17 @@ static void code_copy_click_case(struct folio_window *_Nonnull window,
     code_copy_expect(root, L"int a;\r\n\tb;");
     code_copy_notice(window, L"コードをコピーしました。");
     code_copy_unchanged(window, fixture, &before);
-    CHARRANGE caret = {0};
-    SendMessageW(body, EM_EXGETSEL, 0, (LPARAM)&caret);
-    require(caret.cpMin == caret.cpMax && caret.cpMin >= label && caret.cpMax <= label + 3,
-            "a click leaves only the native caret on the action and selects nothing");
+    code_copy_selection(body, before.body.selection);
+    /* A range selected before the click survives it too, and the view does not scroll. */
+    CHARRANGE range = {2, 5};
+    SendMessageW(body, EM_EXSETSEL, 0, (LPARAM)&range);
+    code_copy_capture(window, fixture, &before);
+    code_copy_click(window, label);
+    code_copy_expect(root, L"int a;\r\n\tb;");
+    code_copy_unchanged(window, fixture, &before);
+    code_copy_selection(body, before.body.selection);
+    SendMessageW(body, EM_SETSEL, 2, 2);
+    code_copy_capture(window, fixture, &before);
     code_copy_click(window, code_copy_word(body, 2));
     code_copy_expect(root, L"引用 😀\r\n  二行");
     code_copy_unchanged(window, fixture, &before);
@@ -9749,6 +9765,17 @@ static void code_copy_narrow_visual(struct native_fixture *_Nonnull fixture)
     tags_capture(root, "code-copy-narrow-ja-light.bmp");
     zoom_wheel(window, 5 * WHEEL_DELTA, 150);
     tags_capture(root, "code-copy-narrow-150-ja-light.bmp");
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    FINDTEXTEXW find = {{0, -1}, L"コピー", {0, 0}};
+    require(SendMessageW(body, EM_FINDTEXTEXW, FR_DOWN | FR_MATCHCASE, (LPARAM)&find) >= 0,
+            "the first copy action at narrow width");
+    POINTL point = {0};
+    SendMessageW(body, EM_POSFROMCHAR, (WPARAM)&point, find.chrgText.cpMin);
+    SendMessageW(body, WM_MOUSEMOVE, 0, MAKELPARAM(point.x + 2, point.y + 6));
+    tags_capture(root, "code-copy-hover-narrow-150-ja-light.bmp");
+    code_copy_click(window, find.chrgText.cpMin);
+    tags_capture(root, "code-copy-done-narrow-150-ja-light.bmp");
+    SendMessageW(body, WM_TIMER, note_pane_code_button_timer_id, 0);
     zoom_wheel(window, -5 * WHEEL_DELTA, 100);
     folio_window_destroy(window);
     folio_state_set_layout_mode(fixture->state, FOLIO_LAYOUT_BOTH);

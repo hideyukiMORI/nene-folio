@@ -334,17 +334,18 @@ static bool code_line(struct markdown_blocks *_Nonnull parser, struct markdown_l
     return true;
 }
 
-/* 札は言語ラベルの対の反転: 地がラベルの文字色（code_comment・色表の 9）、文字がコード面の
- * 地（code_background・色表の 6）。ラベルと同じ系統の控えめな色で、全配色で地とコード面・文字と
- * 地の比が4.5:1以上ある。高コントラストでは二つの役割が OS の windowText と window なので、
- * 塗らずに本文の文字色（色表の 1）と下線にする。通常の配色では下線の書式を付けない（RichEdit は
- * friendly name のリンクへ自前の下線を文字色で引くので、表示には下線が残る）。 */
+/* 文書の中の札は、言語ラベルと同じ控えめな文字（code_comment・色表の 9）で、地を塗らない。
+ * 通常の配色では UI がこの上へボタンを描くので（ADR0098 第3版）、これは下に透けて見えた
+ * ときと装飾が出ないときの見え方で、塗った札より目立たず、読めるリンクのままになる。
+ * コード面との比は全配色で4.5:1以上。高コントラストは本文の文字色（色表の 1）と下線。
+ * 通常の配色では下線の書式を付けない（RichEdit は friendly name のリンクへ自前の下線を
+ * 文字色で引くので、表示には下線が残る）。 */
 static const char *_Nonnull action_format(enum folio_contrast contrast)
 {
     switch (contrast)
     {
     case FOLIO_CONTRAST_STANDARD:
-        return "\"}}{\\fldrslt{\\f0\\fs18\\cf6\\highlight9\\ul0 ";
+        return "\"}}{\\fldrslt{\\f0\\fs18\\cf9\\ul0 ";
     case FOLIO_CONTRAST_HIGH:
         return "\"}}{\\fldrslt{\\f0\\fs18\\cf1\\ul ";
     }
