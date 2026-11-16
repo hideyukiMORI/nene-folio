@@ -105,7 +105,7 @@ fenceの言語・aliases・字句規則は`code_language`、ブロック内の�
 同じparserの`markdown_images`が画像参照と原文destination範囲を収集する。`markdown_destination`の展開をリンクと共有し、
 `markdown_image_copy`は出力コピーの該当範囲だけを変更する。`archive_assets`の画像bytesも同じZIP writerへ渡す（ADR0085）。
 `markdown_media`は同じ走査で画像参照とMermaid原文の表示slotを所有し、画像の書き出しcollectionを分離して保つ。
-通常のコードブロックのコピー用原文も同じownerが別の番号で持ち、`code_copy_target`が見出し行のリンク宛先の書式と解釈を一つにする。閲覧RTFは書体名と文言の言語を`markdown_rtf_locale`で、配色を実効の`theme_palette`で受け、操作の札の地（ノートの地の色）を色表の末尾へ足す（ADR0098）。
+通常のコードブロックのコピー用原文も同じownerが別の番号で持ち、`code_copy_target`が見出し行のリンク宛先の書式と解釈を一つにする。閲覧RTFは書体名と文言の言語を`markdown_rtf_locale`で、配色と高コントラストかどうかを実効の`theme_palette`で受ける。操作の札は既存の色表の対を使い、色を足さない（ADR0098）。
 `mermaid_diagram`が種類を判定し、`mermaid_flow` / `mermaid_sequence`が一時的なcollectorから不変`diagram_model`を作る。
 実文字計測の`diagram_metrics`を受け、`diagram_layout`からflow/sequenceの有界な配置を一回生成し、
 不変`diagram_scene`を返す。`diagram_ranks`の循環除去・順位付け、`diagram_geometry`の向き変換を共有する（ADR0089）。

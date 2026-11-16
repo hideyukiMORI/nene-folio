@@ -35,15 +35,6 @@ static const char header[] =
     "\\red198\\green152\\blue236;\\red164\\green217\\blue163;"
     "\\red154\\green165\\blue181;\\red240\\green198\\blue125;}"
     "\\f0\\fs22\\cf1";
-/* 閲覧の文書は、同じ色表の後ろへコピー操作の札の地（ノートの地の色）を足す（ADR0098）。 */
-static const char view_header[] =
-    "{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0\\fnil Noto Sans JP;}{\\f1\\fmodern Consolas;}}"
-    "{\\colortbl;\\red36\\green19\\blue24;\\red44\\green0\\blue30;\\red106\\green96\\blue92;"
-    "\\red178\\green60\\blue18;\\red237\\green225\\blue232;\\red44\\green0\\blue30;"
-    "\\red198\\green152\\blue236;\\red164\\green217\\blue163;"
-    "\\red154\\green165\\blue181;\\red240\\green198\\blue125;"
-    "\\red255\\green255\\blue254;}"
-    "\\f0\\fs22\\cf1";
 
 /* markdown を変換し、文書の頭と末尾を除いた本体が expected と同じか。 */
 static void expect_body(const char *_Nonnull markdown, const char *_Nonnull expected)
@@ -58,8 +49,8 @@ static void expect_body(const char *_Nonnull markdown, const char *_Nonnull expe
             "convert");
     const char *whole = markdown_rtf_text(rtf);
     size_t length = markdown_rtf_length(rtf);
-    size_t head = strlen(view_header);
-    require(length >= head + 1 && memcmp(whole, view_header, head) == 0 && whole[length - 1] == '}',
+    size_t head = strlen(header);
+    require(length >= head + 1 && memcmp(whole, header, head) == 0 && whole[length - 1] == '}',
             "document frame");
     char body[2048];
     size_t body_length = length - head - 1;
@@ -138,7 +129,7 @@ static void verify_emphasis(void)
 #define CODE_LINE "\\pard\\li180\\ri180\\sb0\\sa0\\sl240\\slmult1 "
 #define CODE_COPY_OPEN "{\\field{\\*\\fldinst{HYPERLINK \"nenefolio-code:"
 #define CODE_COPY_CLOSE                                                                            \
-    "\"}}{\\fldrslt{\\f0\\fs18\\cf1\\highlight11\\ul0 "                                            \
+    "\"}}{\\fldrslt{\\f0\\fs18\\cf6\\highlight9\\ul0 "                                             \
     "\\~\\~\xE3\x82\xB3\xE3\x83\x94\xE3\x83\xBC\\~\\~}}}"
 
 static void verify_code(void)
@@ -493,7 +484,7 @@ static void expect_fragment(const char *_Nonnull source, const char *_Nonnull in
                             const char *_Nonnull excluded)
 {
     struct markdown_rtf *rtf = convert_syntax(source);
-    const char *body = markdown_rtf_text(rtf) + strlen(view_header);
+    const char *body = markdown_rtf_text(rtf) + strlen(header);
     if (strstr(body, included) == nullptr ||
         (excluded[0] != '\0' && strstr(body, excluded) != nullptr))
     {

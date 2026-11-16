@@ -334,20 +334,21 @@ static bool code_line(struct markdown_blocks *_Nonnull parser, struct markdown_l
     return true;
 }
 
-/* 札の文字は本文の文字色（色表の 1）、地はノートの地の色（色表の 11）。コード面へ紙の色の
- * 切り欠きとして見え、コードより目立たない。地の色がコード面と同じ高コントラストでは塗りが
- * 消えるので、操作であることを下線で残す。通常の配色では下線の書式を付けない（RichEdit は
+/* 札は言語ラベルの対の反転: 地がラベルの文字色（code_comment・色表の 9）、文字がコード面の
+ * 地（code_background・色表の 6）。ラベルと同じ系統の控えめな色で、全配色で地とコード面・文字と
+ * 地の比が4.5:1以上ある。高コントラストでは二つの役割が OS の windowText と window なので、
+ * 塗らずに本文の文字色（色表の 1）と下線にする。通常の配色では下線の書式を付けない（RichEdit は
  * friendly name のリンクへ自前の下線を文字色で引くので、表示には下線が残る）。 */
 static const char *_Nonnull action_format(enum folio_contrast contrast)
 {
     switch (contrast)
     {
     case FOLIO_CONTRAST_STANDARD:
-        return "\"}}{\\fldrslt{\\f0\\fs18\\cf1\\highlight11\\ul0 ";
+        return "\"}}{\\fldrslt{\\f0\\fs18\\cf6\\highlight9\\ul0 ";
     case FOLIO_CONTRAST_HIGH:
-        return "\"}}{\\fldrslt{\\f0\\fs18\\cf1\\highlight11\\ul ";
+        return "\"}}{\\fldrslt{\\f0\\fs18\\cf1\\ul ";
     }
-    return "\"}}{\\fldrslt{\\f0\\fs18\\cf1\\highlight11\\ul ";
+    return "\"}}{\\fldrslt{\\f0\\fs18\\cf1\\ul ";
 }
 
 /* コピーの操作（ADR0098 第2版）。宛先は内部の識別子。リンクの区間は札全体で、文言の前後の

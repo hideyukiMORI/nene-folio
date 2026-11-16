@@ -54,7 +54,7 @@ const struct clipboard_port *_Nonnull test_clipboard_port(void)
 #define HEADER_TAB "\\ri0\\sb40\\sa40\\sl240\\slmult1 "
 #define FIRST "\\ri180\\sb80\\sa0\\sl240\\slmult1 "
 #define ACTION_OPEN "{\\field{\\*\\fldinst{HYPERLINK \"nenefolio-code:"
-#define ACTION_LABEL "\"}}{\\fldrslt{\\f0\\fs18\\cf1\\highlight11\\ul0 \\~\\~"
+#define ACTION_LABEL "\"}}{\\fldrslt{\\f0\\fs18\\cf6\\highlight9\\ul0 \\~\\~"
 #define ACTION_CLOSE "\\~\\~}}}"
 #define COPY_JA "\xE3\x82\xB3\xE3\x83\x94\xE3\x83\xBC"
 #define COPY_ZH "\xE5\xA4\x8D\xE5\x88\xB6"
@@ -154,14 +154,13 @@ static void verify_container_blocks(void)
                   (const char *const[]){"x", nullptr});
 }
 
-/* 札の文字は本文の文字色（色表の 1）、地はノートの地の色（色表の 11）。高コントラストでは
- * 地がコード面と同じ window になり、下線で示す。 */
+/* 札は言語ラベルの対の反転（地が色表の 9、文字が 6）で、色表は10色のまま。高コントラストでは
+ * 塗らず、本文の文字色（色表の 1）と下線で示す。 */
 static void verify_action_colors(void)
 {
     struct markdown_rtf *rtf = render("```\nx\n```", FOLIO_LANGUAGE_JA);
-    require(strstr(markdown_rtf_text(rtf),
-                   "\\red240\\green198\\blue125;\\red255\\green255\\blue254;}") != nullptr,
-            "the tab fill, the note background one blue step off, follows the ten body colours");
+    require(strstr(markdown_rtf_text(rtf), "\\red240\\green198\\blue125;}") != nullptr,
+            "the view document keeps the ten body colours and adds none for the tab");
     markdown_rtf_destroy(rtf);
     struct appearance_snapshot snapshot = {.theme = FOLIO_THEME_LIGHT,
                                            .contrast = FOLIO_CONTRAST_HIGH,
@@ -178,11 +177,10 @@ static void verify_action_colors(void)
     require(markdown_rtf_create(text, &high, locale, &rtf) == MARKDOWN_RTF_CONVERTED,
             "contrast converts");
     const char *body = markdown_rtf_text(rtf);
-    require(strstr(body, "\\red255\\green255\\blue255;\\red0\\green0\\blue0;}") != nullptr &&
+    require(strstr(body, "\\red255\\green255\\blue255;}") != nullptr &&
                 strstr(body, "\\red1\\green2\\blue3;") == nullptr,
             "high contrast keeps the window pair and never the button fill");
-    require(strstr(body, "{\\fldrslt{\\f0\\fs18\\cf1\\highlight11\\ul \\~\\~Copy\\~\\~}}}") !=
-                    nullptr &&
+    require(strstr(body, "{\\fldrslt{\\f0\\fs18\\cf1\\ul \\~\\~Copy\\~\\~}}}") != nullptr &&
                 strstr(body, "\\pard\\qr\\li180") != nullptr,
             "high contrast marks the right-aligned action with an underline");
     markdown_rtf_destroy(rtf);

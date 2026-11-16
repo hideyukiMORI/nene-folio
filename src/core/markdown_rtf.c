@@ -17,8 +17,7 @@ struct markdown_rtf
 };
 
 /* フォント 0 が本文、1 がコード。色は 1 本文・2 見出し・3 薄字・4 リンク（インラインコードも）・
- * 5 コード文字・6 コード地・7 keyword・8 string・9 comment・10 number。単位は半ポイント。
- * 閲覧の文書だけ、コピー操作の札の地の 11（ノートの地の色）が続く（ADR0098 第2版）。 */
+ * 5 コード文字・6 コード地・7 keyword・8 string・9 comment・10 number。単位は半ポイント。 */
 static const char document_header_open[] = "{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0\\fnil ";
 static const char document_header_close[] = ";}{\\f1\\fmodern Consolas;}}";
 static const char document_body_start[] = "\\f0\\fs22\\cf1";
@@ -47,13 +46,6 @@ static void append_color(struct text_buffer *_Nonnull out, struct rgb_color colo
     text_buffer_append_text(out, ";");
 }
 
-/* 色表の閉じと本文の既定書式。閲覧の文書は閉じる前に操作の色を足す。 */
-static void close_header(struct text_buffer *_Nonnull out)
-{
-    text_buffer_append_text(out, "}");
-    text_buffer_append_text(out, document_body_start);
-}
-
 static void append_header(struct text_buffer *_Nonnull out, struct rtf_palette palette,
                           const char *_Nonnull face)
 {
@@ -70,27 +62,8 @@ static void append_header(struct text_buffer *_Nonnull out, struct rtf_palette p
     {
         append_color(out, colors[index]);
     }
-}
-
-/* コピー操作の札の地（色表の 11）。ノートの地の色（RichEdit の背景と同じ pane の役割）で、
- * 文字は本文の文字色（色表の 1）を使う。RichEdit は文字の地が control の背景色と完全に同じだと
- * 塗らず、行のコード面がそのまま出る（実画面で確認）。そこで青を 1/255 だけずらして塗らせる。
- * 見分けの付かない差で、新しい色の役割ではない。高コントラストでは塗らないので、コード面の
- * 地（OS の window）をそのまま使う。 */
-static void append_action_colors(struct text_buffer *_Nonnull out,
-                                 const struct theme_palette *_Nonnull theme)
-{
-    struct rgb_color fill = theme->pane;
-    switch (theme->contrast)
-    {
-    case FOLIO_CONTRAST_STANDARD:
-        fill.blue = (unsigned char)(fill.blue == 255 ? 254 : fill.blue + 1);
-        append_color(out, fill);
-        return;
-    case FOLIO_CONTRAST_HIGH:
-        append_color(out, theme->rtf.code_background);
-        return;
-    }
+    text_buffer_append_text(out, "}");
+    text_buffer_append_text(out, document_body_start);
 }
 
 /* 編集用の本文（#250）。Markdown を解釈せず、UTF-8 の生バイトを構文記号だけ escape して書く。
@@ -136,16 +109,6 @@ static struct markdown_rtf *_Nullable begin(struct rtf_palette palette, const ch
     return rtf;
 }
 
-/* 編集用と空の文書は色表をここで閉じる。 */
-static struct markdown_rtf *_Nullable begin_plain(struct rtf_palette palette,
-                                                  const char *_Nonnull face)
-{
-    struct markdown_rtf *_Nullable rtf = begin(palette, face);
-    if (rtf != nullptr)
-        close_header(rtf->buffer);
-    return rtf;
-}
-
 /* 書き終えた入れ物を確定して out へ渡す。失敗すれば入れ物を捨て、out は触らない。 */
 static enum markdown_rtf_outcome finish(struct markdown_rtf *_Nonnull rtf,
                                         struct markdown_rtf *_Nullable *_Nonnull out)
@@ -169,8 +132,6 @@ enum markdown_rtf_outcome markdown_rtf_create(const struct note_text *_Nonnull t
     {
         return MARKDOWN_RTF_OUT_OF_MEMORY;
     }
-    append_action_colors(rtf->buffer, theme);
-    close_header(rtf->buffer);
     if (markdown_media_create(note_text_bytes(text), &rtf->media) != IMAGE_READY)
     {
         markdown_rtf_destroy(rtf);
@@ -190,7 +151,7 @@ enum markdown_rtf_outcome markdown_rtf_create(const struct note_text *_Nonnull t
 enum markdown_rtf_outcome markdown_rtf_empty(struct rtf_palette palette, const char *_Nonnull face,
                                              struct markdown_rtf *_Nullable *_Nonnull out)
 {
-    struct markdown_rtf *_Nullable rtf = begin_plain(palette, face);
+    struct markdown_rtf *_Nullable rtf = begin(palette, face);
     if (rtf == nullptr)
     {
         return MARKDOWN_RTF_OUT_OF_MEMORY;
@@ -203,7 +164,7 @@ enum markdown_rtf_outcome markdown_rtf_plain(const struct note_text *_Nonnull te
                                              struct rtf_palette palette, const char *_Nonnull face,
                                              struct markdown_rtf *_Nullable *_Nonnull out)
 {
-    struct markdown_rtf *_Nullable rtf = begin_plain(palette, face);
+    struct markdown_rtf *_Nullable rtf = begin(palette, face);
     if (rtf == nullptr)
     {
         return MARKDOWN_RTF_OUT_OF_MEMORY;
