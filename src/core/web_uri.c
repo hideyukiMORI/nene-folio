@@ -8,6 +8,7 @@ struct web_uri
 {
     char *_Nonnull bytes;
     size_t length;
+    size_t scheme;
 };
 
 static size_t authority_start(const char *_Nonnull bytes, size_t length)
@@ -84,7 +85,11 @@ enum web_uri_outcome web_uri_create(const char *_Nonnull bytes, size_t length,
     }
     memcpy(owned, bytes, length);
     owned[length] = '\0';
-    *uri = (struct web_uri){.bytes = owned, .length = length};
+    /* RFC 3986 6.2.2.1: the scheme is held in its canonical lower case (ADR0100). */
+    size_t scheme = start - 3;
+    for (size_t index = 0; index < scheme; ++index)
+        owned[index] = ascii_fold_byte(bytes[index]);
+    *uri = (struct web_uri){.bytes = owned, .length = length, .scheme = scheme};
     *out = uri;
     return WEB_URI_ACCEPTED;
 }
@@ -97,6 +102,11 @@ const char *_Nonnull web_uri_bytes(const struct web_uri *_Nonnull uri)
 size_t web_uri_length(const struct web_uri *_Nonnull uri)
 {
     return uri->length;
+}
+
+size_t web_uri_scheme_length(const struct web_uri *_Nonnull uri)
+{
+    return uri->scheme;
 }
 
 void web_uri_destroy(struct web_uri *_Nullable uri)

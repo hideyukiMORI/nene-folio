@@ -9880,7 +9880,7 @@ static void code_copy_visual(struct native_fixture *_Nonnull fixture)
 }
 
 /* #850: the bare URL gallery in light, dark and high contrast, for the record's screenshots.
- * Links that show their own URL are native autoURLs and take the Windows link colour (ADR0079). */
+ * Every link, including one that shows its own URL, takes the theme's link colour (ADR0100). */
 static void bare_url_visual(struct native_fixture *_Nonnull fixture)
 {
     const char *const looks[] = {"light", "dark", "contrast"};

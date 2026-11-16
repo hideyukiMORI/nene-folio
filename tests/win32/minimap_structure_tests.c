@@ -534,6 +534,70 @@ static void expect_link(struct note_pane *_Nonnull pane, LONG position,
     utf8_text_destroy(target);
 }
 
+static bool near_colour(const unsigned char *_Nonnull pixel, struct rgb_color colour)
+{
+    return abs(pixel[2] - colour.red) + abs(pixel[1] - colour.green) + abs(pixel[0] - colour.blue) <
+           60;
+}
+
+/* Pixels of the text between two characters on one line: theme link colour and strongly blue
+ * (a native autoURL). ClearType fringes on other glyphs are outside the rectangle. */
+static size_t link_counts[2];
+
+static void count_link_row(const unsigned char *_Nonnull row, LONG from, LONG to)
+{
+    struct rgb_color link = rtf_palette_for(FOLIO_THEME_LIGHT).link;
+    for (LONG x = from; x < to; ++x)
+    {
+        const unsigned char *pixel = row + (size_t)x * 4;
+        link_counts[0] += near_colour(pixel, link) ? 1 : 0;
+        link_counts[1] += pixel[0] > pixel[2] + 100 && pixel[0] > pixel[1] + 40 ? 1 : 0;
+    }
+}
+
+static void count_link_area(HWND _Nonnull handle, const unsigned char *_Nonnull pixels, LONG width,
+                            CHARRANGE text)
+{
+    POINTL start = {0};
+    POINTL end = {0};
+    SendMessageW(handle, EM_POSFROMCHAR, (WPARAM)&start, text.cpMin);
+    SendMessageW(handle, EM_POSFROMCHAR, (WPARAM)&end, text.cpMax);
+    require(end.y == start.y && end.x > start.x, "the link text is on one line");
+    link_counts[0] = link_counts[1] = 0;
+    for (LONG y = start.y; y < start.y + 28; ++y)
+        count_link_row(pixels + (size_t)y * (size_t)width * 4, start.x, end.x);
+}
+
+/* #852 / ADR0100: a link that shows its own URL paints in the theme's link colour, not as a
+ * native autoURL in the system's blue. The pane is printed, not read back from the screen. */
+static void link_colour(HWND _Nonnull handle, CHARRANGE text)
+{
+    RECT client;
+    GetClientRect(handle, &client);
+    HDC screen = GetDC(handle);
+    HDC dc = CreateCompatibleDC(screen);
+    BITMAPINFO info = {.bmiHeader = {.biSize = sizeof info.bmiHeader,
+                                     .biWidth = client.right,
+                                     .biHeight = -client.bottom,
+                                     .biPlanes = 1,
+                                     .biBitCount = 32,
+                                     .biCompression = BI_RGB}};
+    void *_Nullable bits = nullptr;
+    HBITMAP bitmap = CreateDIBSection(dc, &info, DIB_RGB_COLORS, &bits, nullptr, 0);
+    require(bitmap != nullptr && bits != nullptr, "link colour bitmap");
+    HGDIOBJ old = SelectObject(dc, bitmap);
+    SendMessageW(handle, WM_PRINT, (WPARAM)dc, PRF_CLIENT | PRF_ERASEBKGND);
+    count_link_area(handle, bits, client.right, text);
+    size_t *counts = link_counts;
+    printf("link colour pixels: theme %zu, blue %zu\n", counts[0], counts[1]);
+    SelectObject(dc, old);
+    DeleteObject(bitmap);
+    DeleteDC(dc);
+    ReleaseDC(handle, screen);
+    require(counts[0] > 100 && counts[1] * 10 < counts[0],
+            "a link that shows its URL paints in the theme's link colour");
+}
+
 /* #850 / ADR0099: bare URLs are native links whose shown text is exactly the source text. */
 static void bare_links(struct note_pane *_Nonnull pane)
 {
@@ -557,13 +621,16 @@ static void bare_links(struct note_pane *_Nonnull pane)
     require(length == sizeof shown / sizeof shown[0] - 1 &&
                 memcmp(visible, shown, length * sizeof shown[0]) == 0,
             "search sees the shown text without hidden URLs or boundaries");
+    /* ADR0100: the hidden instruction carries an upper-case scheme; the application lowers it
+     * again when it builds the web URI. */
     LONG first = native_find(handle, L"https://example.com/a");
-    expect_link(pane, first + 1, "https://example.com/a");
-    expect_link(pane, first + 20, "https://example.com/a");
+    link_colour(handle, (CHARRANGE){first, first + 21});
+    expect_link(pane, first + 1, "HTTPS://example.com/a");
+    expect_link(pane, first + 20, "HTTPS://example.com/a");
     expect_link(pane, native_find(handle, L"。と"), nullptr);
     LONG second = native_find(handle, L"www.example.org/b");
-    expect_link(pane, second + 1, "http://www.example.org/b");
-    expect_link(pane, second + 16, "http://www.example.org/b");
+    expect_link(pane, second + 1, "HTTP://www.example.org/b");
+    expect_link(pane, second + 16, "HTTP://www.example.org/b");
     expect_link(pane, native_find(handle, L"終わり"), nullptr);
     expect_link(pane, native_find(handle, L"example.com/code") + 1, nullptr);
     load(pane, PANE_MODE_EDIT, content);

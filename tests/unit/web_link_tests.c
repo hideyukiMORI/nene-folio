@@ -14,7 +14,7 @@
 #include <stdio.h>
 #include <string.h>
 
-static void verify_uri_cases(void)
+static void verify_uri_accepted(void)
 {
     const char *const accepted[] = {"http://a",
                                     "HTTPS://example.com/",
@@ -22,6 +22,30 @@ static void verify_uri_cases(void)
                                     "http://[::1]:80/a%20b",
                                     "https://example.com/a(b){c}",
                                     "https://example.com/?x=@&y='"};
+    /* ADR0100: the scheme is held lower case; every other byte stays as given. */
+    const char *const held[] = {"http://a",
+                                "https://example.com/",
+                                "https://例え.jp/日本😀?a=1&b=2#x",
+                                "http://[::1]:80/a%20b",
+                                "https://example.com/a(b){c}",
+                                "https://example.com/?x=@&y='"};
+    const size_t schemes[] = {4, 5, 5, 4, 5, 5};
+    for (size_t index = 0; index < sizeof accepted / sizeof accepted[0]; ++index)
+    {
+        struct web_uri *uri = nullptr;
+        require(web_uri_create(accepted[index], strlen(accepted[index]), &uri) == WEB_URI_ACCEPTED,
+                "accepted web URI");
+        require(same_text(web_uri_bytes(uri), held[index]) &&
+                    web_uri_length(uri) == strlen(accepted[index]) &&
+                    web_uri_scheme_length(uri) == schemes[index],
+                "destination retained with a canonical scheme");
+        web_uri_destroy(uri);
+    }
+}
+
+static void verify_uri_cases(void)
+{
+    verify_uri_accepted();
     const char *const rejected[] = {"",
                                     "http:",
                                     "http://",
@@ -49,16 +73,6 @@ static void verify_uri_cases(void)
                                     "https://a/\x7F",
                                     "https://a/\xC2\xA0",
                                     "https://a/\xE3\x80\x80"};
-    for (size_t index = 0; index < sizeof accepted / sizeof accepted[0]; ++index)
-    {
-        struct web_uri *uri = nullptr;
-        require(web_uri_create(accepted[index], strlen(accepted[index]), &uri) == WEB_URI_ACCEPTED,
-                "accepted web URI");
-        require(same_text(web_uri_bytes(uri), accepted[index]) &&
-                    web_uri_length(uri) == strlen(accepted[index]),
-                "exact destination retained");
-        web_uri_destroy(uri);
-    }
     for (size_t index = 0; index < sizeof rejected / sizeof rejected[0]; ++index)
     {
         struct web_uri *uri = nullptr;
@@ -113,38 +127,38 @@ static void expect_field(const char *_Nonnull source, const char *_Nonnull expec
 static void verify_fields(void)
 {
     expect_field("[![a](b[c)](https://example.com/outer)",
-                 "HYPERLINK \"https://example.com/outer\"", "](https");
+                 "HYPERLINK \"HTTPS://example.com/outer\"", "](https");
     expect_field("[![a](b (title]x))](https://example.com/outer)",
-                 "HYPERLINK \"https://example.com/outer\"", "title]x");
-    expect_field("[label](https://example.com/a`b) `code`", "HYPERLINK \"https://example.com/a`b\"",
+                 "HYPERLINK \"HTTPS://example.com/outer\"", "title]x");
+    expect_field("[label](https://example.com/a`b) `code`", "HYPERLINK \"HTTPS://example.com/a`b\"",
                  "a`b){");
     expect_field("[label](<https://example.com/a`b>) `code`",
-                 "HYPERLINK \"https://example.com/a`b\"", "<https");
+                 "HYPERLINK \"HTTPS://example.com/a`b\"", "<https");
     expect_field("[label](https://example.com/plain \"a`b\") `code`", "{\\f1\\fs20\\cf4 code}",
                  "a`b");
     expect_field("[label](https://example.com/plain (a`b)) `code`",
-                 "HYPERLINK \"https://example.com/plain\"", "a`b");
+                 "HYPERLINK \"HTTPS://example.com/plain\"", "a`b");
 
     expect_field("[label](https://example.com/plain \"caption(\")",
-                 "HYPERLINK \"https://example.com/plain\"", "caption");
+                 "HYPERLINK \"HTTPS://example.com/plain\"", "caption");
     expect_field("[label](https://example.com/plain \"caption)\")",
-                 "HYPERLINK \"https://example.com/plain\"", "caption");
+                 "HYPERLINK \"HTTPS://example.com/plain\"", "caption");
     expect_field("[label](https://example.com/plain 'caption(')",
-                 "HYPERLINK \"https://example.com/plain\"", "caption");
+                 "HYPERLINK \"HTTPS://example.com/plain\"", "caption");
     expect_field("[label](https://example.com/plain 'caption)')",
-                 "HYPERLINK \"https://example.com/plain\"", "caption");
-    expect_field("[label](<https://example.com/open(>)", "HYPERLINK \"https://example.com/open(\"",
+                 "HYPERLINK \"HTTPS://example.com/plain\"", "caption");
+    expect_field("[label](<https://example.com/open(>)", "HYPERLINK \"HTTPS://example.com/open(\"",
                  "<https");
     expect_field("[label](<https://example.com/close)>)",
-                 "HYPERLINK \"https://example.com/close)\"", "<https");
+                 "HYPERLINK \"HTTPS://example.com/close)\"", "<https");
 
     expect_field("[**visible**](https://example.com/a\\(b\\)?x=1&amp;y=&#50;)",
-                 "HYPERLINK \"https://example.com/a(b)?x=1&y=2\"", "&amp;");
-    expect_field("[label](<https://example.com/{x}>)", "https://example.com/\\{x\\}", "<https");
-    expect_field("<https://example.com/?x=&amp;>", "HYPERLINK \"https://example.com/?x=&amp;\"",
+                 "HYPERLINK \"HTTPS://example.com/a(b)?x=1&y=2\"", "&amp;");
+    expect_field("[label](<https://example.com/{x}>)", "HTTPS://example.com/\\{x\\}", "<https");
+    expect_field("<https://example.com/?x=&amp;>", "HYPERLINK \"HTTPS://example.com/?x=&amp;\"",
                  "\\b ");
-    expect_field("[<https://inner/>](https://outer/)", "HYPERLINK \"https://outer/\"",
-                 "HYPERLINK \"https://inner/");
+    expect_field("[<https://inner/>](https://outer/)", "HYPERLINK \"HTTPS://outer/\"",
+                 "HYPERLINK \"HTTPS://inner/");
     expect_field("[bad](https://example.com/&#10;)", "{\\cf4\\ul bad\\ul0}", "\\field");
     expect_field("[bad](https://example.com/&quot;)", "{\\cf4\\ul bad\\ul0}", "\\field");
     expect_field("[mail](mailto:a@b) [file](file:///C:/x) [relative](a.md)", "\\ul mail",
@@ -152,7 +166,7 @@ static void verify_fields(void)
     expect_field("`[code](https://example.com)` ![image](https://example.com)",
                  "https://example.com", "\\field");
     expect_field("| [日😀](https://example.com/日本) | [B](http://b/) |\n| -- | -- |",
-                 "HYPERLINK \"https://example.com/日本\"", "mailto:");
+                 "HYPERLINK \"HTTPS://example.com/日本\"", "mailto:");
 }
 
 /* #850 / ADR0099: the bare link at `start` of `source` as one span, or "" when there is none. */
@@ -273,32 +287,32 @@ static void verify_bare_refused(void)
 static void expect_text(const char *_Nonnull source)
 {
     /* Code blocks carry their own copy action field (#839); no field may open the web. */
-    expect_field(source, "", "HYPERLINK \"http");
+    expect_field(source, "", "HYPERLINK \"HTTP");
 }
 
 static void verify_bare_fields(void)
 {
-    expect_field("see https://example.com/ now", "HYPERLINK \"https://example.com/\"", "<https");
-    expect_field("go www.example.com/a.", "HYPERLINK \"http://www.example.com/a\"",
+    expect_field("see https://example.com/ now", "HYPERLINK \"HTTPS://example.com/\"", "<https");
+    expect_field("go www.example.com/a.", "HYPERLINK \"HTTP://www.example.com/a\"",
                  "HYPERLINK \"www");
     expect_field("go www.example.com/a.", "{\\cf4\\ul www.example.com/a\\ul0}}}}{\\v  }.",
                  "a.\\ul");
-    expect_field("詳細はhttps://example.com/xを参照", "HYPERLINK \"https://example.com/x\"",
+    expect_field("詳細はhttps://example.com/xを参照", "HYPERLINK \"HTTPS://example.com/x\"",
                  "<https");
-    expect_field("a https://a.example/x_y_z b", "HYPERLINK \"https://a.example/x_y_z\"", "\\i ");
-    expect_field("(https://a.example/x)", "HYPERLINK \"https://a.example/x\"", "x)\"");
+    expect_field("a https://a.example/x_y_z b", "HYPERLINK \"HTTPS://a.example/x_y_z\"", "\\i ");
+    expect_field("(https://a.example/x)", "HYPERLINK \"HTTPS://a.example/x\"", "x)\"");
     expect_field("*https://a.example/x*", "{\\i {\\field", "x*");
-    expect_field("**https://a.example/x**.", "HYPERLINK \"https://a.example/x\"", "x*");
-    expect_field("https://a.example/x https://b.example/y", "HYPERLINK \"https://b.example/y\"",
+    expect_field("**https://a.example/x**.", "HYPERLINK \"HTTPS://a.example/x\"", "x*");
+    expect_field("https://a.example/x https://b.example/y", "HYPERLINK \"HTTPS://b.example/y\"",
                  "x https");
-    expect_field("1. https://a.example/x\n2. www.b.example", "HYPERLINK \"http://www.b.example\"",
+    expect_field("1. https://a.example/x\n2. www.b.example", "HYPERLINK \"HTTP://www.b.example\"",
                  "<https");
-    expect_field("| https://a.example/x | b |\n| -- | -- |", "HYPERLINK \"https://a.example/x\"",
+    expect_field("| https://a.example/x | b |\n| -- | -- |", "HYPERLINK \"HTTPS://a.example/x\"",
                  "x |");
-    expect_field("https://a.example/&amp;x", "HYPERLINK \"https://a.example/&amp;x\"", "\\b ");
-    expect_field("https://a.example/x![i](y.png)", "HYPERLINK \"https://a.example/x\"", "x!");
-    expect_field("[https://a.example/x](https://b.example/)", "HYPERLINK \"https://b.example/\"",
-                 "HYPERLINK \"https://a.example");
+    expect_field("https://a.example/&amp;x", "HYPERLINK \"HTTPS://a.example/&amp;x\"", "\\b ");
+    expect_field("https://a.example/x![i](y.png)", "HYPERLINK \"HTTPS://a.example/x\"", "x!");
+    expect_field("[https://a.example/x](https://b.example/)", "HYPERLINK \"HTTPS://b.example/\"",
+                 "HYPERLINK \"HTTPS://a.example");
     /* Text that is not plain keeps its own meaning (ADR0099). */
     expect_text("`https://a.example/x`");
     expect_text("```\nhttps://a.example/x\n```");
@@ -357,6 +371,11 @@ static void verify_state(void)
     require(folio_state_open_web_link(state, url, sizeof url - 1) == FOLIO_STATE_READY &&
                 opened == 1,
             "explicit view intent reaches port once");
+    /* ADR0100: the pane reads the instruction's upper-case scheme; the port gets lower case. */
+    require(folio_state_open_web_link(state, "HTTPS://example.com/", 20) == FOLIO_STATE_READY &&
+                opened == 2,
+            "an upper-case instruction scheme reaches the port in canonical lower case");
+    opened = 1;
     port_result = WEB_LINK_UNAVAILABLE;
     require(folio_state_open_web_link(state, url, sizeof url - 1) ==
                 FOLIO_STATE_WEB_LINK_UNAVAILABLE,

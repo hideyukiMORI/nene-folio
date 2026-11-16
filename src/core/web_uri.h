@@ -5,10 +5,13 @@
 struct web_uri;
 constexpr size_t web_uri_byte_limit = 8192;
 /* Absolute HTTP(S), no userinfo, controls, whitespace, quotes, backslash or angle brackets.
- * Owns the exact UTF-8 destination. Failure leaves out unchanged. */
+ * Owns the UTF-8 destination as given, except that the scheme is lower case (ADR0100).
+ * Failure leaves out unchanged. */
 [[nodiscard]] enum web_uri_outcome web_uri_create(const char *_Nonnull bytes, size_t length,
                                                   struct web_uri *_Nullable *_Nonnull out);
 [[nodiscard]] const char *_Nonnull web_uri_bytes(const struct web_uri *_Nonnull uri);
 [[nodiscard]] size_t web_uri_length(const struct web_uri *_Nonnull uri);
+/* The bytes before "://": 4 for http, 5 for https. */
+[[nodiscard]] size_t web_uri_scheme_length(const struct web_uri *_Nonnull uri);
 void web_uri_destroy(struct web_uri *_Nullable uri);
 #endif
