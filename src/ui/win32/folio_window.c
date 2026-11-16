@@ -1616,8 +1616,8 @@ static const struct
     bool heading;
     bool secondary;
 } about_texts[] = {
-    {UI_TEXT_APP_LOGO, 0, false, false},
-    {UI_TEXT_SETTINGS_VERSION, 0, false, true},
+    {UI_TEXT_APP_LOGO, base_settings_item_gap, false, false},
+    {UI_TEXT_SETTINGS_VERSION, base_settings_item_gap, false, true},
     {UI_TEXT_ABOUT_DESCRIPTION, base_settings_group_gap, false, false},
     {UI_TEXT_ABOUT_LICENSE_HEADING, 0, true, false},
     {UI_TEXT_ABOUT_LICENSE, base_settings_item_gap, false, false},
@@ -1644,6 +1644,8 @@ static const struct
 };
 constexpr size_t about_link_count = sizeof about_links / sizeof about_links[0];
 
+static HFONT help_heading_font(const struct folio_window *_Nonnull self);
+
 static bool about_surface(const struct folio_window *_Nonnull self)
 {
     return self->command_surface == COMMAND_SURFACE_ABOUT;
@@ -1663,6 +1665,12 @@ static size_t about_focus_slot(const struct folio_window *_Nonnull self)
 {
     return self->command_selection < about_link_count ? about_links[self->command_selection].button
                                                       : ACCESSIBLE_SURFACE_BACK;
+}
+
+/* 製品名だけ、主窓が既に持つ見出しの書体で題として示す。計測と描画が同じ書体を選ぶ。 */
+static HFONT about_text_font(const struct folio_window *_Nonnull self, size_t index)
+{
+    return about_texts[index].label == UI_TEXT_APP_LOGO ? help_heading_font(self) : self->mono_font;
 }
 
 /* outはdraw_unit_limit bytes。描画・計測・UIAが同じ1行を使う。 */
@@ -5500,10 +5508,12 @@ static void draw_about_text(const struct folio_window *_Nonnull self, HDC device
     about_text_line(self, index, text);
     SetTextColor(device, about_texts[index].secondary ? self->palette.dialog_secondary
                                                       : self->palette.current_text);
+    HGDIOBJ previous = SelectObject(device, about_text_font(self, index));
     if (about_texts[index].heading)
         draw_units(device, text, row, DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
     else
         (void)wrapped_text(device, text, row, true);
+    SelectObject(device, previous);
 }
 
 /* 設定と同じく、固定footerと題はスクロールする内容に参加しない（ADR0097）。 */
@@ -6968,7 +6978,9 @@ static void about_surface_metrics(const struct folio_window *_Nonnull self, HDC 
     {
         char text[draw_unit_limit];
         about_text_line(self, at, text);
+        HGDIOBJ previous = SelectObject(device, about_text_font(self, at));
         metrics->about_text[at] = wrapped_text(device, text, bounds, false);
+        SelectObject(device, previous);
     }
     int width = bounds.right - bounds.left;
     int gaps = scale(base_settings_item_gap, metrics->dpi) * ((int)about_link_count - 1);
@@ -6978,7 +6990,18 @@ static void about_surface_metrics(const struct folio_window *_Nonnull self, HDC 
         fits = fits &&
                measure_utf8(device, ui_text_line(about_links[at].label, metrics->language)) <= room;
     metrics->about_single_row = fits;
+    metrics->about_ready = true;
     metrics->about_footer = metrics->notice + scale(ui_part_height + 8, metrics->dpi);
+}
+
+/* 同じ幅・DPI・書体・言語なら測り直さない。アプリの情報の行は、その面で未計測なら測る。 */
+static bool surface_metrics_current(const struct folio_window *_Nonnull self,
+                                    const struct command_surface_metrics *_Nonnull wanted)
+{
+    const struct command_surface_metrics *held = &self->settings_metrics;
+    bool same = held->width == wanted->width && held->dpi == wanted->dpi &&
+                held->font == wanted->font && held->language == wanted->language;
+    return same && (held->about_ready || !about_surface(self));
 }
 
 static bool prepare_surface_metrics(struct folio_window *_Nonnull self)
@@ -6994,9 +7017,7 @@ static bool prepare_surface_metrics(struct folio_window *_Nonnull self)
                                               .dpi = GetDpiForWindow(self->handle),
                                               .font = self->mono_font,
                                               .language = folio_state_language(self->state)};
-    if (self->settings_metrics.width == metrics.width &&
-        self->settings_metrics.dpi == metrics.dpi && self->settings_metrics.font == metrics.font &&
-        self->settings_metrics.language == metrics.language)
+    if (surface_metrics_current(self, &metrics))
         return true;
     HDC device = GetDC(self->command_layer);
     if (device == nullptr)
@@ -7010,7 +7031,8 @@ static bool prepare_surface_metrics(struct folio_window *_Nonnull self)
     metrics.themes_footer = metrics.notice +
                             surface_footer_text_height(self, device, bounds, true) +
                             scale(ui_part_height + 8, metrics.dpi);
-    about_surface_metrics(self, device, bounds, &metrics);
+    if (about_surface(self))
+        about_surface_metrics(self, device, bounds, &metrics);
     SelectObject(device, previous);
     ReleaseDC(self->command_layer, device);
     if (ready)

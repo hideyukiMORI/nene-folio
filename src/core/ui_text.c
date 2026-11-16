@@ -1247,7 +1247,7 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
     [UI_TEXT_ABOUT_TITLE] = {"このアプリについて", "About this app", "关于本应用"},
     [UI_TEXT_ABOUT_DESCRIPTION] = {"手元のフォルダーに置く Markdown ノート。",
                                    "Markdown notes that stay in your own folder.",
-                                   "保存在自己文件夹里的 Markdown 笔记。"},
+                                   "保存在自己目录中的 Markdown 笔记。"},
     [UI_TEXT_ABOUT_LICENSE_HEADING] = {"ライセンス", "License", "许可"},
     [UI_TEXT_ABOUT_LICENSE] = {"MIT License © 2026 HideyukiMORI", "MIT License © 2026 HideyukiMORI",
                                "MIT License © 2026 HideyukiMORI"},
@@ -1260,7 +1260,7 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
          "フォルダーにあります。",
          "Theme color sources and full license texts are in the bundled "
          "THIRD_PARTY_NOTICES.txt and the fonts folder.",
-         "配色来源与各许可全文见随附的 THIRD_PARTY_NOTICES.txt 和 fonts 文件夹。"},
+         "配色来源与各许可全文见随附的 THIRD_PARTY_NOTICES.txt 和 fonts 目录。"},
     [UI_TEXT_ABOUT_LINKS_HEADING] = {"リンク", "Links", "链接"},
     [UI_TEXT_ABOUT_LINK_REPOSITORY] = {"GitHub", "GitHub", "GitHub"},
     [UI_TEXT_ABOUT_LINK_RELEASES] = {"リリース", "Releases", "发布"},

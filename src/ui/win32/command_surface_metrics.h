@@ -22,6 +22,7 @@ struct command_surface_metrics
     int tags_footer;
     int tag_button_height;
     bool tag_hint_visible;
+    bool about_ready; /* アプリの情報を開いたときだけ測る */
     int about_footer;
     int about_text[command_surface_about_lines];
     bool about_single_row; /* リンク4つが等幅1行に収まる */
