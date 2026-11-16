@@ -3,12 +3,14 @@
 #ifndef NENEFOLIO_MARKDOWN_RTF_H
 #define NENEFOLIO_MARKDOWN_RTF_H
 
+#include "markdown_rtf_locale.h"
 #include "markdown_rtf_outcome.h"
 #include "rtf_palette.h"
 
 #include <stddef.h>
 
 struct markdown_rtf;
+struct theme_palette;
 struct markdown_images;
 struct markdown_media;
 [[nodiscard]] const struct markdown_media *_Nullable markdown_rtf_media(
@@ -19,9 +21,14 @@ struct note_text;
 
 /* face は本文のフォント名（ui_font_face が答える ASCII。`{` `}` `\` `;` を含まない）で、
  * fonttbl の 0 に入る（ADR 0032 の決定 5）。コードの 1 は Consolas のまま。 */
+/* 閲覧の文書は face に加えて、コードブロックのコピー操作の文言の言語を受ける（ADR0098）。
+ * 配色は実効の theme_palette から受ける。色表は rtf の役割の10色だけで、コピー操作の札は
+ * 言語ラベルの対を反転して使う（地が code_comment の 9、文字が code_background の 6）。
+ * contrast が高コントラストのときは塗らず、本文の文字色と下線にする。 */
 [[nodiscard]] enum markdown_rtf_outcome
-markdown_rtf_create(const struct note_text *_Nonnull text, struct rtf_palette palette,
-                    const char *_Nonnull face, struct markdown_rtf *_Nullable *_Nonnull out);
+markdown_rtf_create(const struct note_text *_Nonnull text,
+                    const struct theme_palette *_Nonnull theme, struct markdown_rtf_locale locale,
+                    struct markdown_rtf *_Nullable *_Nonnull out);
 /* 何も選んでいないときの空の文書（頭と末尾だけ）。 */
 [[nodiscard]] enum markdown_rtf_outcome
 markdown_rtf_empty(struct rtf_palette palette, const char *_Nonnull face,

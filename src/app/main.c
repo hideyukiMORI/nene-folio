@@ -2,6 +2,7 @@
  * 出してよいのは「起動できなかった理由」と「起動は続けるが設定を読めなかった知らせ」の 1 行だけ
  * （FR-015 / ADR 0025 の決定 6）。どちらも文言は application が作る。 */
 #include "appearance_adapter.h"
+#include "clipboard_adapter.h"
 #include "folio_palette.h"
 #include "folio_state.h"
 #include "folio_window.h"
@@ -167,13 +168,24 @@ static int run_from_storage(struct storage_state *_Nonnull storage,
         return 1;
     }
     struct image_port pictures = image_adapter_port(images);
+    struct clipboard_adapter *_Nullable clipboard = nullptr;
+    if (clipboard_adapter_create(&clipboard) != CLIPBOARD_ADAPTER_CREATED)
+    {
+        image_adapter_destroy(images);
+        persistence_adapter_destroy(persistence);
+        report(ui_text_line(UI_TEXT_APP_OUT_OF_MEMORY, FOLIO_LANGUAGE_JA));
+        return 1;
+    }
+    struct clipboard_port copies = clipboard_adapter_port(clipboard);
     struct folio_ports ports = {.persistence = &files,
                                 .appearance = &looks,
                                 .regex = &finder,
                                 .web_link = &links,
+                                .clipboard = &copies,
                                 .transfer = &transfer,
                                 .images = &pictures};
     int code = run(&ports, storage, fonts);
+    clipboard_adapter_destroy(clipboard);
     image_adapter_destroy(images);
     persistence_adapter_destroy(persistence);
     return code;

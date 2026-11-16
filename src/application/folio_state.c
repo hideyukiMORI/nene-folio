@@ -5,6 +5,7 @@
 #include "appearance_port.h"
 #include "category_ledger.h"
 #include "category_name.h"
+#include "clipboard_port.h"
 #include "discovery_source.h"
 #include "discovery_target.h"
 #include "drawer_layout.h"
@@ -67,6 +68,7 @@ struct folio_state
     enum note_times_state times_state;
     struct persistence_port port;
     struct web_link_port web_link;
+    struct clipboard_port clipboard;
     struct transfer_port transfer;
     struct image_port images;
     uint64_t image_origin_revision;
@@ -309,6 +311,27 @@ enum folio_state_outcome folio_state_open_product_link(struct folio_state *_Nonn
                                                        enum product_link link)
 {
     return launch_web_link(state, product_link_uri(link), product_link_uri_length(link));
+}
+
+enum folio_state_outcome folio_state_copy_code(struct folio_state *_Nonnull state, size_t slot)
+{
+    const struct markdown_media *media = folio_state_media(state);
+    if (state->mode != PANE_MODE_VIEW || media == nullptr ||
+        slot >= markdown_media_code_count(media))
+        return FOLIO_STATE_CODE_COPY_REJECTED;
+    switch (state->clipboard.write(state->clipboard.adapter, markdown_media_code_bytes(media, slot),
+                                   markdown_media_code_length(media, slot)))
+    {
+    case CLIPBOARD_WRITTEN:
+        return FOLIO_STATE_READY;
+    case CLIPBOARD_BUSY:
+        return FOLIO_STATE_CLIPBOARD_BUSY;
+    case CLIPBOARD_UNAVAILABLE:
+        return FOLIO_STATE_CLIPBOARD_UNAVAILABLE;
+    case CLIPBOARD_OUT_OF_MEMORY:
+        return FOLIO_STATE_OUT_OF_MEMORY;
+    }
+    return FOLIO_STATE_CLIPBOARD_UNAVAILABLE;
 }
 
 static void stored_note(struct folio_state *_Nonnull state)
@@ -719,20 +742,28 @@ static enum folio_state_outcome load_settings(struct folio_state *_Nonnull state
     return adopt_settings(state, read, loaded);
 }
 
+/* 閲覧の RTF へ渡す、言語から決まる値（本文の face とコピー操作の文言の言語・ADR0098）。 */
+static struct markdown_rtf_locale view_locale(enum folio_language language)
+{
+    return (struct markdown_rtf_locale){.face = ui_font_face(language), .language = language};
+}
+
 /* いまの文書と同じ作り方で閲覧の RTF を 1 つ作る（差し替えはしない・ADR 0031 の決定 3）。
  * 名前のある文書だけが本文を持ち、無題と何も選んでいない状態は空の文書である。
  * **言語は引数で受ける**（ADR 0032 の決定 5）。採用前の新しい言語でも作れるようにするため、
  * state からは引かない。 */
 static bool render_pane_document(const struct folio_state *_Nonnull state,
-                                 struct rtf_palette palette, enum folio_language language,
+                                 const struct theme_palette *_Nonnull palette,
+                                 enum folio_language language,
                                  struct markdown_rtf *_Nullable *_Nonnull out)
 {
     const char *_Nonnull face = ui_font_face(language);
     if (state->document == FOLIO_DOCUMENT_NAMED)
     {
-        return markdown_rtf_create(state->body, palette, face, out) == MARKDOWN_RTF_CONVERTED;
+        return markdown_rtf_create(state->body, palette, view_locale(language), out) ==
+               MARKDOWN_RTF_CONVERTED;
     }
-    return markdown_rtf_empty(palette, face, out) == MARKDOWN_RTF_CONVERTED;
+    return markdown_rtf_empty(palette->rtf, face, out) == MARKDOWN_RTF_CONVERTED;
 }
 
 /* 設定を読んだ後に選択を採り、palette と閲覧文書を解決したテーマの色で作り直す（決定 3）。
@@ -742,7 +773,7 @@ static enum folio_state_outcome adopt_theme_choice(struct folio_state *_Nonnull 
     enum folio_theme_choice choice = folio_settings_theme(state->settings);
     struct theme_palette palette = appearance_snapshot_palette(&state->appearance_snapshot, choice);
     struct markdown_rtf *_Nullable pane = nullptr;
-    if (!render_pane_document(state, palette.rtf, folio_state_language(state), &pane))
+    if (!render_pane_document(state, &palette, folio_state_language(state), &pane))
     {
         return FOLIO_STATE_OUT_OF_MEMORY;
     }
@@ -751,6 +782,19 @@ static enum folio_state_outcome adopt_theme_choice(struct folio_state *_Nonnull 
     state->palette = palette;
     state->display_theme_choice = choice;
     return FOLIO_STATE_READY;
+}
+
+/* ポートは値で写して持つ（ADR 0029・ADR 0031 の決定 3）。adapter の寿命は合成ルートが保証する。 */
+static void adopt_ports(struct folio_state *_Nonnull state,
+                        const struct folio_ports *_Nonnull ports)
+{
+    state->port = *ports->persistence;
+    state->regex = *ports->regex;
+    state->web_link = *ports->web_link;
+    state->clipboard = *ports->clipboard;
+    state->transfer = *ports->transfer;
+    state->images = *ports->images;
+    state->appearance = *ports->appearance;
 }
 
 enum folio_state_outcome folio_state_create(const struct folio_ports *_Nonnull ports,
@@ -763,13 +807,7 @@ enum folio_state_outcome folio_state_create(const struct folio_ports *_Nonnull p
     {
         return FOLIO_STATE_OUT_OF_MEMORY;
     }
-    state->port = *persistence;
-    state->regex = *ports->regex;
-    state->web_link = *ports->web_link;
-    state->transfer = *ports->transfer;
-    state->images = *ports->images;
-    /* 外観ポートも値で写して持つ（ADR 0031 の決定 3）。adapter の寿命は合成ルートが保証する。 */
-    state->appearance = *appearance;
+    adopt_ports(state, ports);
     state->appearance_snapshot.theme = FOLIO_THEME_LIGHT;
     state->appearance_notice =
         appearance->read(appearance->adapter, &state->appearance_snapshot) == APPEARANCE_READY
@@ -1506,7 +1544,7 @@ static enum folio_state_outcome adopt_settings_change(struct folio_state *_Nonnu
                                                       enum folio_language language)
 {
     struct markdown_rtf *_Nullable pane = nullptr;
-    if (!render_pane_document(state, palette.rtf, language, &pane))
+    if (!render_pane_document(state, &palette, language, &pane))
     {
         folio_settings_destroy(changed);
         return FOLIO_STATE_OUT_OF_MEMORY;
@@ -1536,7 +1574,7 @@ static enum folio_state_outcome adopt_display_palette(struct folio_state *_Nonnu
         return FOLIO_STATE_READY;
     }
     struct markdown_rtf *_Nullable pane = nullptr;
-    if (!render_pane_document(state, palette.rtf, folio_state_language(state), &pane))
+    if (!render_pane_document(state, &palette, folio_state_language(state), &pane))
     {
         return FOLIO_STATE_OUT_OF_MEMORY;
     }
@@ -2154,7 +2192,7 @@ static enum folio_state_outcome render_note(struct folio_state *_Nonnull state,
     }
     struct markdown_rtf *_Nullable rendered = nullptr;
     enum markdown_rtf_outcome converted = markdown_rtf_create(
-        body, state->palette.rtf, ui_font_face(folio_state_language(state)), &rendered);
+        body, &state->palette, view_locale(folio_state_language(state)), &rendered);
     if (converted != MARKDOWN_RTF_CONVERTED)
     {
         note_text_destroy(body);
@@ -2729,7 +2767,7 @@ static enum folio_state_outcome store_edited(struct folio_state *_Nonnull state,
     }
     struct markdown_rtf *_Nullable rendered = nullptr;
     if (!same &&
-        markdown_rtf_create(edited, state->palette.rtf, ui_font_face(folio_state_language(state)),
+        markdown_rtf_create(edited, &state->palette, view_locale(folio_state_language(state)),
                             &rendered) != MARKDOWN_RTF_CONVERTED)
     {
         note_text_destroy(edited);
@@ -2880,7 +2918,7 @@ static enum folio_state_outcome create_edited(struct folio_state *_Nonnull state
         note_ledger_inserted(state->notes[category], index,
                              (struct note_entry){.name = name, .favorite = false}, &ledger));
     if (prepared == FOLIO_STATE_READY &&
-        markdown_rtf_create(edited, state->palette.rtf, ui_font_face(folio_state_language(state)),
+        markdown_rtf_create(edited, &state->palette, view_locale(folio_state_language(state)),
                             &rendered) != MARKDOWN_RTF_CONVERTED)
     {
         prepared = FOLIO_STATE_OUT_OF_MEMORY;
@@ -4824,6 +4862,9 @@ static const enum ui_text failure_lines[] = {
 
     [FOLIO_STATE_WEB_LINK_REJECTED] = UI_TEXT_FAILURE_WEB_LINK_REJECTED,
     [FOLIO_STATE_WEB_LINK_UNAVAILABLE] = UI_TEXT_FAILURE_WEB_LINK_UNAVAILABLE,
+    [FOLIO_STATE_CODE_COPY_REJECTED] = UI_TEXT_FAILURE_CODE_COPY_REJECTED,
+    [FOLIO_STATE_CLIPBOARD_BUSY] = UI_TEXT_FAILURE_CLIPBOARD_BUSY,
+    [FOLIO_STATE_CLIPBOARD_UNAVAILABLE] = UI_TEXT_FAILURE_CLIPBOARD_UNAVAILABLE,
     [FOLIO_STATE_READY] = UI_TEXT_EMPTY,
     [FOLIO_STATE_DATA_UNREADABLE] = UI_TEXT_FAILURE_DATA_UNREADABLE,
     [FOLIO_STATE_LEDGER_MALFORMED] = UI_TEXT_FAILURE_LEDGER_MALFORMED,
@@ -5570,7 +5611,7 @@ static enum folio_state_outcome stage_tag_current(struct folio_state *_Nonnull s
 {
     tag_current_destroy(state);
     if (note_text_copy(body, &state->tag_current_body) != NOTE_TEXT_ACCEPTED ||
-        markdown_rtf_create(body, state->palette.rtf, ui_font_face(folio_state_language(state)),
+        markdown_rtf_create(body, &state->palette, view_locale(folio_state_language(state)),
                             &state->tag_current_view) != MARKDOWN_RTF_CONVERTED)
     {
         tag_current_destroy(state);

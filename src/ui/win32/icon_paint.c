@@ -288,6 +288,31 @@ static int add_polygon(struct GpPath *_Nonnull path, const float *_Nonnull point
     return first_failure(status, GdipClosePathFigure(path));
 }
 
+/* コピー（ADR0098）。設計の16単位の線画（前の紙の輪郭と、後ろの紙のL字）を1.5倍して、線幅2.1の
+ * 面へ畳んだ。前の紙は外周と内周で、内周は Alternate で抜ける。後ろの紙のL字は重ならない。 */
+static const float copy_front_outer[] = {7.2f, 7.2f, 21.3f, 7.2f, 21.3f, 21.3f, 7.2f, 21.3f};
+static const float copy_front_inner[] = {9.3f, 9.3f, 19.2f, 9.3f, 19.2f, 19.2f, 9.3f, 19.2f};
+static const float copy_back[] = {2.7f,  2.7f,  16.8f, 2.7f,  16.8f, 5.25f, 14.7f,
+                                  5.25f, 14.7f, 4.8f,  4.8f,  4.8f,  4.8f,  14.7f,
+                                  5.25f, 14.7f, 5.25f, 16.8f, 2.7f,  16.8f};
+
+static int add_copy_path(struct GpPath *_Nonnull path)
+{
+    int status = add_polygon(path, copy_front_outer, sizeof copy_front_outer / sizeof(float));
+    status = first_failure(
+        status, add_polygon(path, copy_front_inner, sizeof copy_front_inner / sizeof(float)));
+    return first_failure(status, add_polygon(path, copy_back, sizeof copy_back / sizeof(float)));
+}
+
+/* チェック。設計の折れ線 (3,8.5)-(6.2,11.5)-(13,4.5) を1.5倍し、線幅2.7の面へ畳んだ。 */
+static const float check_points[] = {3.6f,  13.7f, 9.3f, 19.1f, 20.5f, 7.7f,
+                                     18.5f, 5.8f,  9.3f, 15.4f, 5.4f,  11.8f};
+
+static int add_check_path(struct GpPath *_Nonnull path)
+{
+    return add_polygon(path, check_points, sizeof check_points / sizeof(float));
+}
+
 /* 保存は外形と 2 つの穴。穴は Alternate で抜ける。 */
 static int add_save_path(struct GpPath *_Nonnull path)
 {
@@ -427,6 +452,10 @@ static int build_path(struct GpPath *_Nonnull path, enum icon_paint_kind kind)
         return add_menu_path(path);
     case ICON_PAINT_HELP:
         return add_help_path(path);
+    case ICON_PAINT_COPY:
+        return add_copy_path(path);
+    case ICON_PAINT_CHECK:
+        return add_check_path(path);
     }
     return gdiplus_ok;
 }
@@ -457,6 +486,8 @@ static int fill_mode_for(enum icon_paint_kind kind)
     case ICON_PAINT_SAVE:
     case ICON_PAINT_SEARCH:
     case ICON_PAINT_HELP:
+    case ICON_PAINT_COPY:
+    case ICON_PAINT_CHECK:
         return gdiplus_fill_alternate;
     }
     return gdiplus_fill_winding;

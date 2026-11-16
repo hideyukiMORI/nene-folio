@@ -48,6 +48,7 @@ ClaudeCodeのdesign-critique相談はOAuth期限切れで実行できなかっ�
 5. スクロール・倍率・本文投入・本文取得・保存は既存の経路を維持する。
    面幅はnativeへ任せ、resizeやzoomのたびにRTFを再生成しない。コピー用の余分な空白やtab、table markerを挿入しない。
    丸角、影、言語ラベル、コピーボタン、syntax highlightingはこの表示調整へ追加しない。
+   （「コピーボタンを追加しない」は[ADR0098](0098-code-block-copy.md)が置き換えた。overlayを作らない方針は維持する。）
 
 ## 成立性の根拠と採らない案
 

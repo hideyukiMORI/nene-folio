@@ -81,6 +81,13 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_DISCOVERY_ELLIPSIS] = "…",
     [UI_TEXT_TAG_MANAGE_SOURCE] = "対象のタグ: {name}",
     [UI_TEXT_TAG_MANAGE_CHANGE] = "変更内容",
+    [UI_TEXT_CODE_COPY] = "コピー",
+    [UI_TEXT_CODE_COPIED] = "コードをコピーしました。",
+    [UI_TEXT_FAILURE_CODE_COPY_REJECTED] = "このコードブロックはコピーできません。",
+    [UI_TEXT_FAILURE_CLIPBOARD_BUSY] =
+        "ほかのアプリがクリップボードを使用中です。もう一度お試しください。",
+    [UI_TEXT_FAILURE_CLIPBOARD_UNAVAILABLE] = "クリップボードへコピーできませんでした。",
+    [UI_TEXT_CODE_COPY_DONE] = "完了",
     [UI_TEXT_COMMAND_MANAGE_TAGS] = "タグを管理",
     [UI_TEXT_TAG_MANAGE_TITLE] = "タグの全体管理",
     [UI_TEXT_TAG_MANAGE_RENAME] = "名前を変える",
@@ -760,7 +767,7 @@ static size_t utf16_units_of(const char *_Nonnull utf8)
 /* 表の全 ID が、変更前と 1 字も違わないこと（同一性）。 */
 static void verify_identity(void)
 {
-    require(expected_count == UI_TEXT_TAG_MANAGE_CHANGE + 1,
+    require(expected_count == UI_TEXT_CODE_COPY_DONE + 1,
             "the expected table covers every id in the enumeration");
     for (size_t index = 0; index < expected_count; ++index)
     {

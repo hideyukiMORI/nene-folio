@@ -1,4 +1,5 @@
 #include "markdown_blocks.h"
+#include "code_copy_target.h"
 #include "code_syntax.h"
 #include "diagram_limits.h"
 #include "markdown_code_state.h"
@@ -12,6 +13,7 @@
 #include "note_text.h"
 #include "rtf_text.h"
 #include "text_buffer.h"
+#include "ui_text.h"
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -22,6 +24,9 @@ struct markdown_blocks
     struct markdown_media *_Nonnull media;
     const char *_Nonnull source;
     size_t length;
+    size_t next; /* 処理中の行の次の行の開始byte。fenceの先読みが使う。 */
+    enum folio_language language;
+    enum folio_contrast contrast;
     enum markdown_rtf_outcome outcome;
     struct markdown_span *_Nullable spans;
     size_t span_count;
@@ -41,6 +46,9 @@ struct markdown_blocks
     struct code_syntax *_Nullable syntax;
     bool diagram;
     size_t diagram_slot;
+    bool copyable; /* このfenceの原文をcode_slotへ集めている（ADR0098）。 */
+    bool tabbed;   /* 直前が操作の札のある見出し行。最初のコード行が上の間隔を受け持つ。 */
+    size_t code_slot;
     enum markdown_table_state table_state;
     struct markdown_line delimiter;
 };
@@ -230,10 +238,14 @@ static bool close_code(struct markdown_blocks *_Nonnull parser)
     parser->code_state = MARKDOWN_CODE_STATE_OUTSIDE;
     code_syntax_destroy(parser->syntax);
     parser->syntax = nullptr;
-    return true;
+    if (parser->copyable &&
+        markdown_media_end_code(parser->media, parser->code_slot) != IMAGE_READY)
+        parser->outcome = MARKDOWN_RTF_OUT_OF_MEMORY;
+    parser->copyable = false;
+    return parser->outcome == MARKDOWN_RTF_CONVERTED;
 }
 
-static bool fence_closes(struct markdown_blocks *_Nonnull parser, struct markdown_line line)
+static bool fence_closes(const struct markdown_blocks *_Nonnull parser, struct markdown_line line)
 {
     if (line.indent > 3 || line.content == line.length || line.bytes[line.content] != parser->fence)
         return false;
@@ -260,10 +272,40 @@ static const char *_Nonnull code_spacing(enum markdown_code_state state)
     return "120";
 }
 
+/* fenceの字下げぶんを除いた、描画するコード行。描画・図の収集・コピー原文の先読みが共有する。 */
+static bool code_content(const struct markdown_blocks *_Nonnull parser,
+                         struct markdown_line *_Nonnull line)
+{
+    size_t removed = line->indent < parser->fence_indent ? line->indent : parser->fence_indent;
+    return markdown_line_skip(line, removed);
+}
+
+/* 開いたfenceが描くコード行を結合した長さ（行間のLFを含み、末尾の改行は含まない）。
+ * 終わりの判定は render_next と同じ述語（container の一致と閉じfence）だけを使い、何も書かない。
+ * 上限の判定と見出し行の要否を、コード行を書く前に決めるための先読み（ADR0098）。 */
+static size_t code_bytes(const struct markdown_blocks *_Nonnull parser)
+{
+    size_t bytes = 0;
+    size_t lines = 0;
+    size_t cursor = parser->next;
+    while (cursor < parser->length)
+    {
+        struct markdown_line line = markdown_line_read(parser->source, parser->length, cursor);
+        cursor = line.next;
+        if (markdown_containers_match(parser->containers, &line) !=
+                MARKDOWN_CONTAINER_MATCH_MATCHED ||
+            fence_closes(parser, line))
+            break;
+        if (!code_content(parser, &line))
+            return 0; /* 描画がINVALID_INPUTで止まる行。操作は出さない。 */
+        bytes += line.padding + (line.length - line.prefix) + (lines++ == 0 ? 0 : 1);
+    }
+    return bytes;
+}
+
 static bool code_line(struct markdown_blocks *_Nonnull parser, struct markdown_line line)
 {
-    size_t removed = line.indent < parser->fence_indent ? line.indent : parser->fence_indent;
-    if (!markdown_line_skip(&line, removed))
+    if (!code_content(parser, &line))
     {
         parser->outcome = MARKDOWN_RTF_INVALID_INPUT;
         return false;
@@ -273,12 +315,15 @@ static bool code_line(struct markdown_blocks *_Nonnull parser, struct markdown_l
         markdown_media_diagram_line(parser->media, parser->diagram_slot, line);
         return true;
     }
+    if (parser->copyable)
+        markdown_media_code_line(parser->media, parser->code_slot, line);
     if (parser->code_state == MARKDOWN_CODE_STATE_PARAGRAPH)
         text_buffer_append_text(parser->out, "\\par\n");
     text_buffer_append_text(parser->out, "\\pard\\li");
     rtf_text_number(parser->out, parser->code_indent + 180);
     text_buffer_append_text(parser->out, "\\ri180\\sb");
-    text_buffer_append_text(parser->out, code_spacing(parser->code_state));
+    text_buffer_append_text(parser->out, parser->tabbed ? "100" : code_spacing(parser->code_state));
+    parser->tabbed = false;
     text_buffer_append_text(parser->out, "\\sa0\\sl240\\slmult1 ");
     for (size_t index = 0; index < line.padding; ++index)
         text_buffer_append_text(parser->out, " ");
@@ -289,16 +334,95 @@ static bool code_line(struct markdown_blocks *_Nonnull parser, struct markdown_l
     return true;
 }
 
-static void code_label(struct markdown_blocks *_Nonnull parser, struct markdown_span word)
+/* 文書の中の札は、言語ラベルと同じ控えめな文字（code_comment・色表の 9）で、地を塗らない。
+ * 通常の配色では UI がこの上へボタンを描くので（ADR0098 第3版）、これは下に透けて見えた
+ * ときと装飾が出ないときの見え方で、塗った札より目立たず、読めるリンクのままになる。
+ * コード面との比は全配色で4.5:1以上。高コントラストは本文の文字色（色表の 1）と下線。
+ * 通常の配色では下線の書式を付けない（RichEdit は friendly name のリンクへ自前の下線を
+ * 文字色で引くので、表示には下線が残る）。 */
+static const char *_Nonnull action_format(enum folio_contrast contrast)
 {
-    if (word.length == 0)
+    switch (contrast)
+    {
+    case FOLIO_CONTRAST_STANDARD:
+        return "\"}}{\\fldrslt{\\f0\\fs18\\cf9\\ul0 ";
+    case FOLIO_CONTRAST_HIGH:
+        return "\"}}{\\fldrslt{\\f0\\fs18\\cf1\\ul ";
+    }
+    return "\"}}{\\fldrslt{\\f0\\fs18\\cf1\\ul ";
+}
+
+/* 札の文言の前の、改行しない空白の数。通常の配色では UI が札の上へ絵と文言のボタンを描くので
+ * （ADR0098 第3版）、その幅（絵・間・左右の余白で約27pt）を文書の側で確保する。飾らない
+ * 高コントラストでは短い札のまま。後ろは 4 と 2。 */
+static size_t action_lead(enum folio_contrast contrast)
+{
+    switch (contrast)
+    {
+    case FOLIO_CONTRAST_STANDARD:
+        return 12;
+    case FOLIO_CONTRAST_HIGH:
+        return 2;
+    }
+    return 2;
+}
+
+/* コピーの操作（ADR0098 第2版）。宛先は内部の識別子。リンクの区間は札全体で、文言の前後の
+ * 改行しない空白も含める（塗りと押せる範囲を同じにし、折返しで割れないようにする）。 */
+static void code_copy_action(struct markdown_blocks *_Nonnull parser)
+{
+    const char *label = ui_text_line(UI_TEXT_CODE_COPY, parser->language);
+    size_t lead = action_lead(parser->contrast);
+    text_buffer_append_text(parser->out, "{\\field{\\*\\fldinst{HYPERLINK \"");
+    code_copy_target_append(parser->out, parser->code_slot);
+    text_buffer_append_text(parser->out, action_format(parser->contrast));
+    for (size_t index = 0; index < lead; ++index)
+        text_buffer_append_text(parser->out, "\\~");
+    rtf_text_append(parser->out, label, strlen(label));
+    text_buffer_append_text(parser->out, lead == 2 ? "\\~\\~}}}" : "\\~\\~\\~\\~}}}");
+}
+
+/* 見出し行: 言語ラベル（あれば）とコピーの操作（原文を集めるブロックだけ）。どちらも無ければ
+ * 何も書かない（未指定の空fenceは従来どおり）。操作のある行は段落を右寄せにし、右の余白を
+ * 0、前の間隔を2pt、後を3pt、行送りを固定の13ptにして、札をブロックの右上の角へ小さく付ける。
+ * RichEdit は文字の地を段落の前後の間隔まで塗るので、札の高さは 2+13+3 の18ptで、長い
+ * ラベルが折り返しても行ごとの高さが変わらない。札の下からコードまでの5ptは最初のコード行が
+ * 持つ。幅や倍率は追わない（ADR0098 第2版）。 */
+static void code_header(struct markdown_blocks *_Nonnull parser, struct markdown_span word)
+{
+    if (word.length == 0 && !parser->copyable)
         return;
-    text_buffer_append_text(parser->out, "\\pard\\li");
+    text_buffer_append_text(parser->out, parser->copyable ? "\\pard\\qr\\li" : "\\pard\\li");
     rtf_text_number(parser->out, parser->code_indent + 180);
-    text_buffer_append_text(parser->out, "\\ri180\\sb120\\sa80\\sl240\\slmult1 {\\f0\\fs18\\cf9 ");
-    rtf_text_append(parser->out, word.bytes, word.length);
-    text_buffer_append_text(parser->out, "}");
+    text_buffer_append_text(parser->out, parser->copyable
+                                             ? "\\ri0\\sb40\\sa60\\sl-260\\slmult0 "
+                                             : "\\ri180\\sb120\\sa80\\sl240\\slmult1 ");
+    parser->tabbed = parser->copyable;
+    if (word.length != 0)
+    {
+        text_buffer_append_text(parser->out, "{\\f0\\fs18\\cf9 ");
+        rtf_text_append(parser->out, word.bytes, word.length);
+        text_buffer_append_text(parser->out, "}");
+    }
+    /* ラベルと操作の間は全角幅の空白1つ（約9pt）で離す。塗らないよう、リンクの外に置く。 */
+    if (word.length != 0 && parser->copyable)
+        text_buffer_append_text(parser->out, "{\\f0\\fs18\\cf9 \\u8195?}");
+    if (parser->copyable)
+        code_copy_action(parser);
     parser->code_state = MARKDOWN_CODE_STATE_PARAGRAPH;
+}
+
+/* 集める原文が空でなく上限内のブロックだけ、コピー用のslotを取る。 */
+static bool begin_copy(struct markdown_blocks *_Nonnull parser)
+{
+    size_t bytes = code_bytes(parser);
+    if (bytes == 0)
+        return true;
+    enum image_outcome begun = markdown_media_begin_code(parser->media, bytes, &parser->code_slot);
+    parser->copyable = begun == IMAGE_READY;
+    if (begun == IMAGE_OUT_OF_MEMORY)
+        parser->outcome = MARKDOWN_RTF_OUT_OF_MEMORY;
+    return begun != IMAGE_OUT_OF_MEMORY;
 }
 
 static bool start_fence(struct markdown_blocks *_Nonnull parser, struct markdown_line line,
@@ -337,8 +461,10 @@ static bool start_fence(struct markdown_blocks *_Nonnull parser, struct markdown
     parser->outcome = code_syntax_create(language, parser->out, &parser->syntax);
     if (parser->outcome != MARKDOWN_RTF_CONVERTED)
         return false;
+    if (!begin_copy(parser))
+        return false;
     text_buffer_append_text(parser->out, "{\\f1\\fs20\\cf5\\highlight6");
-    code_label(parser, code_language_word(line.bytes + info, line.length - info));
+    code_header(parser, word);
     return true;
 }
 
@@ -541,6 +667,7 @@ static bool render_next(struct markdown_blocks *_Nonnull parser, size_t *_Nonnul
     struct markdown_line raw = markdown_line_read(parser->source, parser->length, *cursor);
     struct markdown_line line = raw;
     *cursor = raw.next;
+    parser->next = raw.next;
     if (parser->code_state != MARKDOWN_CODE_STATE_OUTSIDE)
     {
         if (markdown_containers_match(parser->containers, &line) ==
@@ -569,13 +696,17 @@ static void markdown_blocks_destroy(struct markdown_blocks *_Nonnull parser)
 }
 
 enum markdown_rtf_outcome markdown_blocks_render(struct markdown_render render,
-                                                 const struct note_text *_Nonnull text)
+                                                 const struct note_text *_Nonnull text,
+                                                 enum folio_language language,
+                                                 enum folio_contrast contrast)
 {
     size_t length = note_text_length(text);
     struct markdown_blocks parser = {.out = render.text,
                                      .media = render.media,
                                      .source = note_text_bytes(text),
                                      .length = length,
+                                     .language = language,
+                                     .contrast = contrast,
                                      .outcome = MARKDOWN_RTF_CONVERTED};
     parser.outcome = markdown_containers_create(&parser.containers);
     if (parser.outcome != MARKDOWN_RTF_CONVERTED)

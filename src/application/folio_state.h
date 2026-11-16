@@ -180,6 +180,11 @@ folio_state_export_notes(struct folio_state *_Nonnull state,
 [[nodiscard]] enum folio_state_outcome folio_state_open_web_link(struct folio_state *_Nonnull state,
                                                                  const char *_Nonnull bytes,
                                                                  size_t length);
+/* 閲覧中の現在の描画が持つコードブロック slot の原文を、クリップボードのポートへ 1 回渡す
+ * （ADR0098）。現在の描画に無い slot・閲覧以外は REJECTED で、ポートを呼ばない。
+ * 文書・選択・Undo・未保存の状態は変えない。 */
+[[nodiscard]] enum folio_state_outcome folio_state_copy_code(struct folio_state *_Nonnull state,
+                                                             size_t slot);
 
 /* 製品の公式リンク（ADR0097）。文書・モードに依存せず、同じ検証とportへ一度だけ渡す。 */
 [[nodiscard]] enum folio_state_outcome

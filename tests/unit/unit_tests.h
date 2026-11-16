@@ -181,6 +181,10 @@ struct transfer_port;
 [[nodiscard]] const struct transfer_port *_Nonnull test_transfer_port(void);
 void run_transfer_tests(void);
 void run_tag_transfer_tests(void);
+struct clipboard_port;
+/* 書き込みを数えて覚えるだけの偽のクリップボード（code_copy_tests が持つ）。 */
+[[nodiscard]] const struct clipboard_port *_Nonnull test_clipboard_port(void);
+void run_code_copy_tests(void);
 struct image_port;
 [[nodiscard]] const struct image_port *_Nonnull test_image_port(void);
 void run_image_tests(void);

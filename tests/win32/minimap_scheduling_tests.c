@@ -2,6 +2,7 @@
 #include "accessible_request.h"
 #include "accessible_view.h"
 #include "appearance_adapter.h"
+#include "clipboard_adapter.h"
 #include "folio_state.h"
 #include "folio_window.h"
 #include "font_bundle.h"
@@ -28,6 +29,7 @@ struct native_fixture
     struct persistence_adapter *_Nullable files;
     struct appearance_adapter *_Nullable appearance;
     struct regex_adapter *_Nullable regex;
+    struct clipboard_adapter *_Nullable clipboard_adapter;
     struct image_adapter *_Nullable images;
     struct font_bundle *_Nullable fonts;
     struct folio_state *_Nullable state;
@@ -95,6 +97,9 @@ static void create_fixture(struct native_fixture *_Nonnull fixture)
     struct appearance_port appearance = appearance_adapter_port(fixture->appearance);
     struct regex_port regex = regex_adapter_port(fixture->regex);
     struct web_link_port web = web_link_adapter_port();
+    require(clipboard_adapter_create(&fixture->clipboard_adapter) == CLIPBOARD_ADAPTER_CREATED,
+            "clipboard adapter");
+    struct clipboard_port clipboard = clipboard_adapter_port(fixture->clipboard_adapter);
     struct transfer_port transfer = transfer_adapter_port();
     require(image_adapter_create(storage_state_directory(fixture->location), &fixture->images) ==
                 IMAGE_READY,
@@ -104,6 +109,7 @@ static void create_fixture(struct native_fixture *_Nonnull fixture)
                                 .appearance = &appearance,
                                 .regex = &regex,
                                 .web_link = &web,
+                                .clipboard = &clipboard,
                                 .transfer = &transfer,
                                 .images = &images};
     require(folio_state_create(&ports, &fixture->state) == FOLIO_STATE_READY, "application state");
@@ -121,6 +127,7 @@ static void destroy_fixture(struct native_fixture *_Nonnull fixture)
     image_adapter_destroy(fixture->images);
     font_bundle_destroy(fixture->fonts);
     regex_adapter_destroy(fixture->regex);
+    clipboard_adapter_destroy(fixture->clipboard_adapter);
     appearance_adapter_destroy(fixture->appearance);
     persistence_adapter_destroy(fixture->files);
     storage_state_destroy(fixture->location);

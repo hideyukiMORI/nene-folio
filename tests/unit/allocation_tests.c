@@ -343,7 +343,8 @@ static bool markdown_scenario(void)
     require(accepted == NOTE_TEXT_ACCEPTED, "note under probe");
     struct markdown_rtf *rtf = nullptr;
     enum markdown_rtf_outcome converted = markdown_rtf_create(
-        text, rtf_palette_for(FOLIO_THEME_DARK), ui_font_face(FOLIO_LANGUAGE_JA), &rtf);
+        text, folio_theme_palette(FOLIO_THEME_DARK),
+        (struct markdown_rtf_locale){ui_font_face(FOLIO_LANGUAGE_JA), FOLIO_LANGUAGE_JA}, &rtf);
     note_text_destroy(text);
     if (converted == MARKDOWN_RTF_OUT_OF_MEMORY)
     {
