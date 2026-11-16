@@ -648,6 +648,7 @@ enum ui_text : unsigned short
     UI_TEXT_FAILURE_CODE_COPY_REJECTED,
     UI_TEXT_FAILURE_CLIPBOARD_BUSY,
     UI_TEXT_FAILURE_CLIPBOARD_UNAVAILABLE,
+    UI_TEXT_CODE_COPY_DONE, /* コピー済みのボタンの短い文言 */
 
 };
 

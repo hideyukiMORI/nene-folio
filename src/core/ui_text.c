@@ -128,6 +128,7 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
     [UI_TEXT_FAILURE_CLIPBOARD_UNAVAILABLE] = {"クリップボードへコピーできませんでした。",
                                                "Could not copy to the clipboard.",
                                                "无法复制到剪贴板。"},
+    [UI_TEXT_CODE_COPY_DONE] = {"完了", "Done", "完成"},
     [UI_TEXT_TAG_MANAGE_TITLE] = {"タグの全体管理", "Manage tags across notes",
                                   "管理全部笔记的标签"},
     [UI_TEXT_TAG_MANAGE_RENAME] = {"名前を変える", "Rename", "重命名"},

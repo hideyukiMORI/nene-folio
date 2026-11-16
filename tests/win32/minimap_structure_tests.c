@@ -272,10 +272,14 @@ static void syntax_palette(struct note_pane *_Nonnull pane, const char *_Nonnull
     HWND handle = note_pane_handle(pane);
     wchar_t text[512];
     GetWindowTextW(handle, text, 512);
-    require(wcscmp(text, L"c\x2003HYPERLINK \"nenefolio-code:0\"\xA0\xA0コピー\xA0\xA0\r\nint "
-                         L"value = 42; // comment\r\n\r\n"
-                         L"const char *s = \"{日本語}\\path\";") == 0,
-            "syntax preserves braces, slash, Unicode, spaces and empty line");
+    require(
+        wcscmp(text,
+               L"c\x2003HYPERLINK "
+               L"\"nenefolio-code:"
+               L"0\"\xA0\xA0\xA0\xA0\xA0\xA0\xA0\xA0\xA0\xA0\xA0\xA0コピー\xA0\xA0\xA0\xA0\r\nint "
+               L"value = 42; // comment\r\n\r\n"
+               L"const char *s = \"{日本語}\\path\";") == 0,
+        "syntax preserves braces, slash, Unicode, spaces and empty line");
     token_color(handle, L"int", palette.code_keyword);
     token_color(handle, L"c", palette.code_comment);
     CHARFORMAT2W format = {.cbSize = sizeof format};
@@ -328,9 +332,13 @@ static void code_label_boundaries(struct note_pane *_Nonnull pane)
     wchar_t actual[512];
     GetWindowTextW(handle, actual, 512);
     require(wcscmp(actual, L"Before\r\nPyThOn\x2003HYPERLINK "
-                           L"\"nenefolio-code:0\"\xA0\xA0コピー\xA0\xA0\r\nreturn 42"
+                           L"\"nenefolio-code:"
+                           L"0\"\xA0\xA0\xA0\xA0\xA0\xA0\xA0\xA0\xA0\xA0\xA0\xA0コピー\xA0\xA0\xA0"
+                           L"\xA0\r\nreturn 42"
                            L"\r\nmystery\r\nHYPERLINK "
-                           L"\"nenefolio-code:1\"\xA0\xA0コピー\xA0\xA0\r\nplain\r\nTail") == 0,
+                           L"\"nenefolio-code:"
+                           L"1\"\xA0\xA0\xA0\xA0\xA0\xA0\xA0\xA0\xA0\xA0\xA0\xA0コピー\xA0\xA0\xA0"
+                           L"\xA0\r\nplain\r\nTail") == 0,
             "labels include unknown and empty fences, omit absent info and extra attributes; "
             "blocks with code carry the copy action and the empty fence does not");
     FINDTEXTEXW find = {{0, -1}, L"return 42", {0, 0}};
@@ -427,15 +435,16 @@ static void code_copy_chip(struct note_pane *_Nonnull pane, LONG first)
                                           theme->rtf.code_comment.green,
                                           theme->rtf.code_comment.blue),
             "the action is a native link in the label's size with the label's pair inverted");
-    /* The link run is the whole chip: two no-break spaces on each side of the word. */
-    CHARRANGE chip = {first - 2, first + 5};
+    /* The link run is the whole chip: it reserves the painted button with no-break spaces. */
+    CHARRANGE chip = {first - 12, first + 7};
     SendMessageW(handle, EM_EXSETSEL, 0, (LPARAM)&chip);
-    wchar_t padded[16];
+    wchar_t padded[32];
     SendMessageW(handle, EM_GETSELTEXT, 0, (LPARAM)padded);
-    require(wcscmp(padded, L"\xA0\xA0コピー\xA0\xA0") == 0,
+    require(wcscmp(padded,
+                   L"\xA0\xA0\xA0\xA0\xA0\xA0\xA0\xA0\xA0\xA0\xA0\xA0コピー\xA0\xA0\xA0\xA0") == 0,
             "the chip pads the word inside the link");
-    expect_copy_target(pane, first - 2, "nenefolio-code:0");
-    expect_copy_target(pane, first + 4, "nenefolio-code:0");
+    expect_copy_target(pane, first - 12, "nenefolio-code:0");
+    expect_copy_target(pane, first + 6, "nenefolio-code:0");
     PARAFORMAT2 paragraph = {.cbSize = sizeof paragraph};
     SendMessageW(handle, EM_GETPARAFORMAT, 0, (LPARAM)&paragraph);
     require((paragraph.dwMask & PFM_ALIGNMENT) != 0 && paragraph.wAlignment == PFA_RIGHT &&
@@ -456,10 +465,14 @@ static void code_copy_action(struct note_pane *_Nonnull pane)
     GetWindowTextW(handle, actual, 512);
     require(
         wcscmp(actual,
-               L"コピー 前文\r\nc\x2003HYPERLINK \"nenefolio-code:0\"\xA0\xA0コピー\xA0\xA0\r\nint "
+               L"コピー 前文\r\nc\x2003HYPERLINK "
+               L"\"nenefolio-code:"
+               L"0\"\xA0\xA0\xA0\xA0\xA0\xA0\xA0\xA0\xA0\xA0\xA0\xA0コピー\xA0\xA0\xA0\xA0\r\nint "
                L"a;\r\n"
-               L"HYPERLINK \"nenefolio-code:1\"\xA0\xA0コピー\xA0\xA0\r\n引用\r\n終わり コピー") ==
-            0,
+               L"HYPERLINK "
+               L"\"nenefolio-code:"
+               L"1\"\xA0\xA0\xA0\xA0\xA0\xA0\xA0\xA0\xA0\xA0\xA0\xA0コピー\xA0\xA0\xA0\xA0\r\n引用"
+               L"\r\n終わり コピー") == 0,
         "every block with code shows one copy action after its optional label");
     LONG first = nth_copy_label(handle, 1);
     LONG second = nth_copy_label(handle, 2);

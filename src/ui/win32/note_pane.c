@@ -3,6 +3,7 @@
 #include "caret_command.h"
 #include "folio_message.h"
 #include "line_index.h"
+#include "note_pane_code_button.h"
 #include "note_pane_images.h"
 #include "note_pane_links.h"
 #include "note_pane_table.h"
@@ -29,6 +30,8 @@ struct note_pane
     HACCEL _Nullable zoom_keys;
     HACCEL _Nullable link_keys;
     struct note_pane_links *_Nullable links; /* Derived native positions, absent while editing. */
+    /* コピー操作の札へ描画時に重ねるボタン（ADR0098 第3版）。links を借りる。 */
+    struct note_pane_code_button *_Nullable code_button;
     struct note_pane_images *_Nullable images;
     int zoom_percent; /* 表示倍率の唯一の所有値。RTF投入がnative倍率を戻すので再適用する。 */
     int zoom_wheel_delta;
@@ -188,6 +191,8 @@ static bool apply_zoom(struct note_pane *_Nonnull pane, int percent)
     if (SendMessageW(pane->handle, EM_SETZOOM, (WPARAM)percent, zoom_normal) == 0)
         return false;
     pane->zoom_percent = percent;
+    if (pane->code_button != nullptr)
+        note_pane_code_button_zoom(pane->code_button, percent);
     return true;
 }
 
@@ -555,6 +560,30 @@ static bool paint_background(const struct note_pane *_Nonnull pane, UINT message
     return message == WM_ERASEBKGND;
 }
 
+/* コピー操作のボタンの装飾（ADR0098 第3版）。nativeが描く前に札の矩形を更新領域から外し、
+ * 描いた後に重ねる。済みの表示を戻すタイマーは RichEdit へ渡さない。 */
+static bool decorate_before(struct note_pane *_Nonnull pane, UINT message, WPARAM wparam)
+{
+    if (pane->code_button == nullptr)
+        return false;
+    if (message == WM_PAINT)
+        note_pane_code_button_exclude(pane->code_button);
+    return message == WM_TIMER && note_pane_code_button_timer(pane->code_button, wparam);
+}
+
+static void decorate_after(struct note_pane *_Nonnull pane, UINT message, WPARAM wparam,
+                           LPARAM lparam)
+{
+    if (pane->code_button == nullptr)
+        return;
+    if (message == WM_PAINT)
+        note_pane_code_button_paint(pane->code_button, nullptr);
+    else if (message == WM_PRINTCLIENT)
+        note_pane_code_button_paint(pane->code_button, (HDC)wparam);
+    else
+        note_pane_code_button_input(pane->code_button, message, wparam, lparam);
+}
+
 static LRESULT CALLBACK pane_procedure(HWND window, UINT message, WPARAM wparam, LPARAM lparam)
 {
     struct note_pane *_Nullable pane = (struct note_pane *)GetWindowLongPtrW(window, GWLP_USERDATA);
@@ -572,6 +601,8 @@ static LRESULT CALLBACK pane_procedure(HWND window, UINT message, WPARAM wparam,
     }
     if (paint_background(pane, message, wparam, lparam))
         return 1;
+    if (decorate_before(pane, message, wparam))
+        return 0;
     if (pane_input(pane, message, wparam, lparam))
     {
         return 0;
@@ -587,6 +618,7 @@ static LRESULT CALLBACK pane_procedure(HWND window, UINT message, WPARAM wparam,
     }
     LRESULT result = CallWindowProcW(pane->original, pane->handle, message, wparam, lparam);
     note_pane_links_finish_input(pane->links, message);
+    decorate_after(pane, message, wparam, lparam);
     ui_pointer_after(window, message);
     return result;
 }
@@ -746,6 +778,11 @@ enum note_pane_outcome note_pane_create(HWND _Nonnull parent, COLORREF backgroun
         note_pane_destroy(pane);
         return NOTE_PANE_NOT_CREATED;
     }
+    if (note_pane_code_button_create(pane->handle, &pane->code_button) != NOTE_PANE_CREATED)
+    {
+        note_pane_destroy(pane);
+        return NOTE_PANE_OUT_OF_MEMORY;
+    }
     SendMessageW(pane->handle, EM_SHOWSCROLLBAR, SB_VERT, FALSE);
     set_background(pane, background);
     /* 既定書式。閲覧も編集も RTF が face・大きさ・色を持ち込む（ADR 0006 の #245 補正）ので、
@@ -819,6 +856,8 @@ static bool prepare_links(struct note_pane *_Nonnull pane, enum pane_mode mode)
     if (document == nullptr)
         return false;
     enum note_pane_link_outcome outcome = note_pane_links_create(document, &pane->links);
+    if (outcome == NOTE_PANE_LINK_READY && pane->code_button != nullptr)
+        note_pane_code_button_attach(pane->code_button, pane->links, document);
     document->lpVtbl->Release(document);
     return outcome == NOTE_PANE_LINK_READY;
 }
@@ -833,6 +872,17 @@ static enum note_pane_load_outcome failed_load(struct note_pane *_Nonnull pane, 
     SendMessageW(pane->handle, EM_SETMODIFY, (WPARAM)(modified != 0), 0);
     pane->readiness = NOTE_PANE_READINESS_UNAVAILABLE;
     return NOTE_PANE_LOAD_FAILED;
+}
+
+/* 前の文書から派生させた画像・リンクの位置と、それを借りる装飾を、投入の前に手放す。 */
+static void discard_derived(struct note_pane *_Nonnull pane)
+{
+    note_pane_images_destroy(pane->images);
+    pane->images = nullptr;
+    if (pane->code_button != nullptr)
+        note_pane_code_button_attach(pane->code_button, nullptr, nullptr);
+    note_pane_links_destroy(pane->links);
+    pane->links = nullptr;
 }
 
 enum note_pane_load_outcome note_pane_load(struct note_pane *_Nonnull pane,
@@ -854,10 +904,7 @@ enum note_pane_load_outcome note_pane_load(struct note_pane *_Nonnull pane,
     }
     cancel_scroll(pane);
     pane->readiness = NOTE_PANE_READINESS_STREAMING;
-    note_pane_images_destroy(pane->images);
-    pane->images = nullptr;
-    note_pane_links_destroy(pane->links);
-    pane->links = nullptr;
+    discard_derived(pane);
     pane->table_width = 0;
     LRESULT modified = SendMessageW(pane->handle, EM_GETMODIFY, 0, 0);
     SendMessageW(pane->handle, EM_EXLIMITTEXT, 0, editor_limit);
@@ -1515,6 +1562,20 @@ enum note_pane_link_outcome note_pane_link_click(struct note_pane *_Nonnull pane
     return link_target(pane, notice->chrg, out);
 }
 
+void note_pane_code_palette(struct note_pane *_Nonnull pane,
+                            const struct theme_palette *_Nonnull theme)
+{
+    if (pane->code_button != nullptr)
+        note_pane_code_button_palette(pane->code_button, theme);
+}
+
+void note_pane_code_copied(struct note_pane *_Nonnull pane, size_t slot,
+                           const char16_t *_Nonnull text)
+{
+    if (pane->code_button != nullptr)
+        note_pane_code_button_done(pane->code_button, slot, text);
+}
+
 enum image_outcome note_pane_prepare_images(struct note_pane *_Nonnull pane, size_t count)
 {
     note_pane_images_destroy(pane->images);
@@ -1610,6 +1671,8 @@ void note_pane_destroy(struct note_pane *_Nullable pane)
         return;
     }
     cancel_scroll(pane);
+    note_pane_code_button_destroy(pane->code_button);
+    pane->code_button = nullptr;
     if (pane->scroll_timer != nullptr)
     {
         SetWindowLongPtrW(pane->scroll_timer, GWLP_USERDATA, 0);

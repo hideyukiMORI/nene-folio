@@ -2846,6 +2846,7 @@ static enum folio_state_outcome render_pane(struct folio_window *_Nonnull self)
     bool was_unavailable = pane_unavailable(self);
     clear_images(self);
     request_minimap(self, MINIMAP_UPDATE_CLEAR);
+    note_pane_code_palette(self->pane, folio_state_palette(self->state));
     enum note_pane_load_outcome outcome =
         note_pane_load(self->pane, folio_state_pane_rtf(self->state),
                        folio_state_pane_rtf_length(self->state), PANE_MODE_VIEW);
@@ -7374,13 +7375,20 @@ static void report_outcome(struct folio_window *_Nonnull self, enum folio_state_
 
 /* コードブロックのコピーの結果（ADR0098）。成功も失敗も本文下の同じ1行と読み上げ通知で知らせ、
  * 記憶域の不足でも箱を出さない。受け口はコマンド面が閉じているときだけ開く（web_link_ready）。 */
-static void report_code_copy(struct folio_window *_Nonnull self, enum folio_state_outcome outcome)
+static void report_code_copy(struct folio_window *_Nonnull self, size_t slot,
+                             enum folio_state_outcome outcome)
 {
+    enum folio_language language = folio_state_language(self->state);
+    char16_t done[draw_unit_limit];
     if (outcome == FOLIO_STATE_READY)
         (void)strcpy_s(self->result_line, sizeof self->result_line,
-                       ui_text_line(UI_TEXT_CODE_COPIED, folio_state_language(self->state)));
+                       ui_text_line(UI_TEXT_CODE_COPIED, language));
     else
         outcome_line(self, outcome, self->result_line);
+    /* 成功したときだけ、押したボタンを短い間だけ済みの表示にする。 */
+    if (outcome == FOLIO_STATE_READY && self->pane != nullptr &&
+        wide_units(ui_text_line(UI_TEXT_CODE_COPY_DONE, language), done) > 0)
+        note_pane_code_copied(self->pane, slot, done);
     show_result_line(self);
 }
 
@@ -11863,7 +11871,7 @@ static void activate_link_target(struct folio_window *_Nonnull self, const char 
     switch (code_copy_target_parse(bytes, length, &slot))
     {
     case CODE_COPY_TARGET_SLOT:
-        report_code_copy(self, folio_state_copy_code(self->state, slot));
+        report_code_copy(self, slot, folio_state_copy_code(self->state, slot));
         return;
     case CODE_COPY_TARGET_OTHER:
         report_outcome(self, folio_state_open_web_link(self->state, bytes, length));

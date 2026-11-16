@@ -170,6 +170,7 @@ PNG/JPEGのWIC復号/縮小は`image_decode`へ閉じる。WinHTTP callbackは�
 
 application が作った値を描き、操作を意図として渡す（ARC-011）。可変性の隔離区画（ARC-005）。
 `note_pane_links`はnative書式由来のhidden/visible位置対応とクリック状態をpane寿命内で所有する。
+`note_pane_code_button`はコードブロックのコピーの札へ、描画のたびに絵と文言のボタンを重ねる。位置は持たず`note_pane_links`から引く（ADR0098 第3版）。
 `note_pane_images`は同じRichEditのhidden markerと画像blobを対応させ、画面近傍の要求順と幅変更時の再配置を扱う。
 画像差替えは既存の選択/scroll/Undo/dirty保持境界で行い、表幅は`note_pane_table`のnative row queryを使う（ADR0085）。
 TOMのリンク先をapplicationへ渡し、検索/選択とnative表配置の座標を混同しない（ADR0079）。

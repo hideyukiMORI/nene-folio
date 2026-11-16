@@ -351,17 +351,34 @@ static const char *_Nonnull action_format(enum folio_contrast contrast)
     return "\"}}{\\fldrslt{\\f0\\fs18\\cf1\\ul ";
 }
 
+/* 札の文言の前の、改行しない空白の数。通常の配色では UI が札の上へ絵と文言のボタンを描くので
+ * （ADR0098 第3版）、その幅（絵・間・左右の余白で約27pt）を文書の側で確保する。飾らない
+ * 高コントラストでは短い札のまま。後ろは 4 と 2。 */
+static size_t action_lead(enum folio_contrast contrast)
+{
+    switch (contrast)
+    {
+    case FOLIO_CONTRAST_STANDARD:
+        return 12;
+    case FOLIO_CONTRAST_HIGH:
+        return 2;
+    }
+    return 2;
+}
+
 /* コピーの操作（ADR0098 第2版）。宛先は内部の識別子。リンクの区間は札全体で、文言の前後の
- * 改行しない空白2つずつも含める（塗りと押せる範囲を同じにし、折返しで割れないようにする）。 */
+ * 改行しない空白も含める（塗りと押せる範囲を同じにし、折返しで割れないようにする）。 */
 static void code_copy_action(struct markdown_blocks *_Nonnull parser)
 {
     const char *label = ui_text_line(UI_TEXT_CODE_COPY, parser->language);
+    size_t lead = action_lead(parser->contrast);
     text_buffer_append_text(parser->out, "{\\field{\\*\\fldinst{HYPERLINK \"");
     code_copy_target_append(parser->out, parser->code_slot);
     text_buffer_append_text(parser->out, action_format(parser->contrast));
-    text_buffer_append_text(parser->out, "\\~\\~");
+    for (size_t index = 0; index < lead; ++index)
+        text_buffer_append_text(parser->out, "\\~");
     rtf_text_append(parser->out, label, strlen(label));
-    text_buffer_append_text(parser->out, "\\~\\~}}}");
+    text_buffer_append_text(parser->out, lead == 2 ? "\\~\\~}}}" : "\\~\\~\\~\\~}}}");
 }
 
 /* 見出し行: 言語ラベル（あれば）とコピーの操作（原文を集めるブロックだけ）。どちらも無ければ

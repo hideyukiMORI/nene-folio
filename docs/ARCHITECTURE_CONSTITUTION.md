@@ -120,6 +120,7 @@
 | 表示キーのIME抑止 | 主窓・入力欄・本文の変換中状態 | ui/win32（各入力窓の所有者） | WM_IME_STARTCOMPOSITION/ENDCOMPOSITIONから追跡し、表示キーの実行前に確認する。通常のIME処理は維持する（ADR0048） |
 | 閲覧リンクの位置対応 | native書式から導くhidden区間と押下/解放の状態 | ui/win32（`note_pane_links`） | 同じpaneのRTF投入後に生成、差替えで破棄、READY閲覧だけ操作可。検索/選択を表示位置へ対応する（ADR0079）。コードブロックの「コピー」の見える区間も同じ索引へ入れて検索から除く（ADR0098） |
 | コードブロックのコピー用原文 | 現在の閲覧描画に属するブロックごとのコード文字列（最大256個・1個256KiB・Mermaid原文と合計4MiB） | core（`markdown_media`。寿命はapplicationの`folio_state`が持つ閲覧`markdown_rtf`） | 描画と同じ走査で生成し、閲覧RTFの差替えで破棄する。UIはリンク宛先のslot番号だけを受け、文字列を複製しない。`folio_state_copy_code`が現在の描画のslotだけを`clipboard_port`へ渡し、OSのクリップボードは`clipboard_adapter`だけが書く（ADR0098） |
+| コピー操作のボタンの見た目 | ポインタの乗っている札・押している札・済みを示している札の番号と、その戻しのタイマー、字のfont | ui/win32（`note_pane_code_button`。`note_pane`が所有） | 位置は持たず、描くたびに`note_pane_links`の文字位置からRichEditへ矩形を尋ねる。文書の投入で破棄し、編集・高コントラストでは働かない。子窓は作らない。下の札が鍵・読み上げ・検索・クリックを担う（ADR0098 第3版） |
 | 簡易ミニマップ | 最大256の文字sample・最大256の画像矩形・構築cursor、主窓timerとdrag offset、配置済み左余白 | ui/win32（`note_minimap`・`folio_window`） | RichEditの実矩形から入力待機時16件ずつ派生させ、本文投入/非表示で破棄する。本文・scroll位置は複製せず同じnative ownerへ文書pixelで操作を渡す（ADR0084） |
 | 入力待機中の実行順 | 次に優先する検索/ミニマップの閉じた種別 | ui/win32（`folio_window`） | 同じidle入口で両方が実行可能なら交互に一単位ずつ進める。各進捗は既存ownerに残す（ADR0084 #512） |
 | 編集中の本文 | 保存前の文字列 | ui/win32（RichEdit が所有） | 保存の意図で application へ渡す |
