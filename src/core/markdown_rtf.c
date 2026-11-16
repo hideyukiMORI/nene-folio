@@ -18,7 +18,7 @@ struct markdown_rtf
 
 /* フォント 0 が本文、1 がコード。色は 1 本文・2 見出し・3 薄字・4 リンク（インラインコードも）・
  * 5 コード文字・6 コード地・7 keyword・8 string・9 comment・10 number。単位は半ポイント。
- * 閲覧の文書だけ、コピー操作のチップの 11 文字・12 地が続く（ADR0098 第2版）。 */
+ * 閲覧の文書だけ、コピー操作の札の地の 11（ノートの地の色）が続く（ADR0098 第2版）。 */
 static const char document_header_open[] = "{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0\\fnil ";
 static const char document_header_close[] = ";}{\\f1\\fmodern Consolas;}}";
 static const char document_body_start[] = "\\f0\\fs22\\cf1";
@@ -72,19 +72,22 @@ static void append_header(struct text_buffer *_Nonnull out, struct rtf_palette p
     }
 }
 
-/* コピー操作のチップの文字と地（色表の 11 と 12）。主操作と同じ対を使い、高コントラストでは
- * OS の対を崩さないよう本文の文字色とコード面の地（塗りなしと同じ）にする。 */
+/* コピー操作の札の地（色表の 11）。ノートの地の色（RichEdit の背景と同じ pane の役割）で、
+ * 文字は本文の文字色（色表の 1）を使う。RichEdit は文字の地が control の背景色と完全に同じだと
+ * 塗らず、行のコード面がそのまま出る（実画面で確認）。そこで青を 1/255 だけずらして塗らせる。
+ * 見分けの付かない差で、新しい色の役割ではない。高コントラストでは塗らないので、コード面の
+ * 地（OS の window）をそのまま使う。 */
 static void append_action_colors(struct text_buffer *_Nonnull out,
                                  const struct theme_palette *_Nonnull theme)
 {
+    struct rgb_color fill = theme->pane;
     switch (theme->contrast)
     {
     case FOLIO_CONTRAST_STANDARD:
-        append_color(out, theme->chip_text);
-        append_color(out, theme->chip_background);
+        fill.blue = (unsigned char)(fill.blue == 255 ? 254 : fill.blue + 1);
+        append_color(out, fill);
         return;
     case FOLIO_CONTRAST_HIGH:
-        append_color(out, theme->rtf.text);
         append_color(out, theme->rtf.code_background);
         return;
     }

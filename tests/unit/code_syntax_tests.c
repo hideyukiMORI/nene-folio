@@ -240,10 +240,10 @@ static void language_labels(void)
     markdown_case("```text\n```", "{\\f0\\fs18\\cf9 text}\\sa120\\par\n}", "\\sb0");
     markdown_case("```unknown", "{\\f0\\fs18\\cf9 unknown}\\sa120\\par\n}", "\\sb0");
     /* 言語の無いブロックの見出し行はコピーの操作だけで、ラベルの区間を持たない（ADR0098）。 */
-    markdown_case("``` \t\nraw\n```", "\\sb120\\sa80\\sl240\\slmult1 {\\field",
+    markdown_case("``` \t\nraw\n```", "\\ri0\\sb40\\sa40\\sl240\\slmult1 {\\field",
                   "{\\f0\\fs18\\cf9 ");
     markdown_case("``` \t\n```", "{\\f1\\fs20\\cf5\\highlight6}", "\\fs18");
-    markdown_case("- > ```py\n  > return 1\n  > ```\n\ntail", "\\li1100\\ri180\\sb120\\sa80",
+    markdown_case("- > ```py\n  > return 1\n  > ```\n\ntail", "\\qr\\li1100\\ri0\\sb40\\sa40",
                   "\\cf9 tail");
     markdown_case("```c\nint\n```\n```json\ntrue\n```", "{\\f0\\fs18\\cf9 json}", "{\\cf7 json}");
     char source[4096];

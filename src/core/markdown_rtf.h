@@ -22,9 +22,9 @@ struct note_text;
 /* face は本文のフォント名（ui_font_face が答える ASCII。`{` `}` `\` `;` を含まない）で、
  * fonttbl の 0 に入る（ADR 0032 の決定 5）。コードの 1 は Consolas のまま。 */
 /* 閲覧の文書は face に加えて、コードブロックのコピー操作の文言の言語を受ける（ADR0098）。
- * 配色は実効の theme_palette から受ける: 本文の色は rtf の役割、コピー操作のチップは
- * 主操作と同じ chip_background / chip_text の対（色表の 12 と 11）。高コントラストでは塗らず、
- * 本文の文字色と下線にする。新しい色の役割は足さない。 */
+ * 配色は実効の theme_palette から受ける: 本文の色は rtf の役割、コピー操作の札は本文の
+ * 文字色（色表の 1）とノートの地の色 pane（色表の 11）。高コントラストでは地がコード面と
+ * 同じになり、下線で示す。新しい色の役割は足さない。 */
 [[nodiscard]] enum markdown_rtf_outcome
 markdown_rtf_create(const struct note_text *_Nonnull text,
                     const struct theme_palette *_Nonnull theme, struct markdown_rtf_locale locale,

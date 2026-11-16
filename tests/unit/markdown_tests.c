@@ -35,14 +35,14 @@ static const char header[] =
     "\\red198\\green152\\blue236;\\red164\\green217\\blue163;"
     "\\red154\\green165\\blue181;\\red240\\green198\\blue125;}"
     "\\f0\\fs22\\cf1";
-/* 閲覧の文書は、同じ色表の後ろへコピー操作のチップの文字と地（主操作の対）を足す（ADR0098）。 */
+/* 閲覧の文書は、同じ色表の後ろへコピー操作の札の地（ノートの地の色）を足す（ADR0098）。 */
 static const char view_header[] =
     "{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0\\fnil Noto Sans JP;}{\\f1\\fmodern Consolas;}}"
     "{\\colortbl;\\red36\\green19\\blue24;\\red44\\green0\\blue30;\\red106\\green96\\blue92;"
     "\\red178\\green60\\blue18;\\red237\\green225\\blue232;\\red44\\green0\\blue30;"
     "\\red198\\green152\\blue236;\\red164\\green217\\blue163;"
     "\\red154\\green165\\blue181;\\red240\\green198\\blue125;"
-    "\\red255\\green255\\blue255;\\red119\\green41\\blue83;}"
+    "\\red255\\green255\\blue254;}"
     "\\f0\\fs22\\cf1";
 
 /* markdown を変換し、文書の頭と末尾を除いた本体が expected と同じか。 */
@@ -133,11 +133,12 @@ static void verify_emphasis(void)
 /* コードブロックの見出し行に置くコピーの操作（ADR0098）。slot はノート内の通し番号。 */
 #define CODE_OPEN "{\\f1\\fs20\\cf5\\highlight6"
 #define CODE_HEAD "\\pard\\li180\\ri180\\sb120\\sa80\\sl240\\slmult1 "
-#define CODE_HEAD_RIGHT "\\pard\\qr\\li180\\ri180\\sb120\\sa80\\sl240\\slmult1 "
+#define CODE_HEAD_RIGHT "\\pard\\qr\\li180\\ri0\\sb40\\sa40\\sl240\\slmult1 "
+#define CODE_FIRST "\\pard\\li180\\ri180\\sb80\\sa0\\sl240\\slmult1 "
 #define CODE_LINE "\\pard\\li180\\ri180\\sb0\\sa0\\sl240\\slmult1 "
 #define CODE_COPY_OPEN "{\\field{\\*\\fldinst{HYPERLINK \"nenefolio-code:"
 #define CODE_COPY_CLOSE                                                                            \
-    "\"}}{\\fldrslt{\\f0\\fs18\\cf11\\highlight12\\ul0 "                                           \
+    "\"}}{\\fldrslt{\\f0\\fs18\\cf1\\highlight11\\ul0 "                                            \
     "\\~\\~\xE3\x82\xB3\xE3\x83\x94\xE3\x83\xBC\\~\\~}}}"
 
 static void verify_code(void)
@@ -147,16 +148,16 @@ static void verify_code(void)
     expect_body("`unclosed", "\\pard\\sa80\\sl240\\slmult1\\cf1 `unclosed\\par\n");
     /* 言語の無いブロックも見出し行を持ち、最初のコード行は見出し行に続く段落になる。 */
     expect_body("```\nint a;\n\n  b\n```\nafter", CODE_OPEN CODE_HEAD_RIGHT CODE_COPY_OPEN
-                "0" CODE_COPY_CLOSE "\\par\n" CODE_LINE "int a;\\par\n" CODE_LINE
+                "0" CODE_COPY_CLOSE "\\par\n" CODE_FIRST "int a;\\par\n" CODE_LINE
                 "\\par\n" CODE_LINE "  b\\sa120\\par\n}"
                 "\\pard\\sa80\\sl240\\slmult1\\cf1 after\\par\n");
     expect_body("```c\n*raw*\n", CODE_OPEN CODE_HEAD_RIGHT
                 "{\\f0\\fs18\\cf9 c}{\\f0\\fs18\\cf9 \\u8195?}" CODE_COPY_OPEN "0" CODE_COPY_CLOSE
-                "\\par\n" CODE_LINE "*raw*\\sa120\\par\n}");
+                "\\par\n" CODE_FIRST "*raw*\\sa120\\par\n}");
     expect_body(
         "text\n```\ncode\n```",
         "\\pard\\sa80\\sl240\\slmult1\\cf1 text\\par\n" CODE_OPEN CODE_HEAD_RIGHT CODE_COPY_OPEN
-        "0" CODE_COPY_CLOSE "\\par\n" CODE_LINE "code\\sa120\\par\n}");
+        "0" CODE_COPY_CLOSE "\\par\n" CODE_FIRST "code\\sa120\\par\n}");
     /* コピーする文字の無いブロックは従来のまま（操作も見出し行も足さない）。 */
     expect_body("```\n```", "{\\f1\\fs20\\cf5\\highlight6}");
     expect_body("```", "{\\f1\\fs20\\cf5\\highlight6}");
@@ -164,9 +165,9 @@ static void verify_code(void)
                               "\\slmult1 \\sa120\\par\n}");
     expect_body("```c\n```", CODE_OPEN CODE_HEAD "{\\f0\\fs18\\cf9 c}\\sa120\\par\n}");
     expect_body("```\na\n```\n```\nb\n```", CODE_OPEN CODE_HEAD_RIGHT CODE_COPY_OPEN
-                "0" CODE_COPY_CLOSE "\\par\n" CODE_LINE
+                "0" CODE_COPY_CLOSE "\\par\n" CODE_FIRST
                 "a\\sa120\\par\n}" CODE_OPEN CODE_HEAD_RIGHT CODE_COPY_OPEN "1" CODE_COPY_CLOSE
-                "\\par\n" CODE_LINE "b\\sa120\\par\n}");
+                "\\par\n" CODE_FIRST "b\\sa120\\par\n}");
 }
 
 static void verify_lists_quotes_links(void)
@@ -1009,9 +1010,9 @@ static void verify_table_start_blocks(void)
     expect_body("# title|\n|---|", "\\pard\\sb200\\sa80\\b\\cf2\\fs44 title|\\b0\\cf1\\fs22\\par\n"
                                    "\\pard\\sa80\\sl240\\slmult1\\cf1 |---|\\par\n");
     expect_body("~~~lang|\n|---|\n~~~\ntail",
-                "{\\f1\\fs20\\cf5\\highlight6\\pard\\qr\\li180\\ri180\\sb120\\sa80\\sl240\\slmult1 "
+                "{\\f1\\fs20\\cf5\\highlight6\\pard\\qr\\li180\\ri0\\sb40\\sa40\\sl240\\slmult1 "
                 "{\\f0\\fs18\\cf9 lang|}{\\f0\\fs18\\cf9 \\u8195?}" CODE_COPY_OPEN
-                "0" CODE_COPY_CLOSE "\\par\n\\pard\\li180\\ri180\\sb0\\sa0\\sl240\\slmult1 "
+                "0" CODE_COPY_CLOSE "\\par\n\\pard\\li180\\ri180\\sb80\\sa0\\sl240\\slmult1 "
                 "|---|\\sa120\\par\n}\\pard\\sa80\\sl240\\slmult1\\cf1 tail\\par\n");
     expect_body("***\n|---|", "{\\pard\\sb0\\sa0\\sl-240\\slmult0\\fs2\\highlight0\\par}\n{"
                               "\\pard\\sb0\\sa0\\sl-20\\slmult0\\fs2\\highlight3\\par}\n{"

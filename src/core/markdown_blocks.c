@@ -47,6 +47,7 @@ struct markdown_blocks
     bool diagram;
     size_t diagram_slot;
     bool copyable; /* このfenceの原文をcode_slotへ集めている（ADR0098）。 */
+    bool tabbed;   /* 直前が操作の札のある見出し行。最初のコード行が上の間隔を受け持つ。 */
     size_t code_slot;
     enum markdown_table_state table_state;
     struct markdown_line delimiter;
@@ -321,7 +322,8 @@ static bool code_line(struct markdown_blocks *_Nonnull parser, struct markdown_l
     text_buffer_append_text(parser->out, "\\pard\\li");
     rtf_text_number(parser->out, parser->code_indent + 180);
     text_buffer_append_text(parser->out, "\\ri180\\sb");
-    text_buffer_append_text(parser->out, code_spacing(parser->code_state));
+    text_buffer_append_text(parser->out, parser->tabbed ? "80" : code_spacing(parser->code_state));
+    parser->tabbed = false;
     text_buffer_append_text(parser->out, "\\sa0\\sl240\\slmult1 ");
     for (size_t index = 0; index < line.padding; ++index)
         text_buffer_append_text(parser->out, " ");
@@ -332,23 +334,24 @@ static bool code_line(struct markdown_blocks *_Nonnull parser, struct markdown_l
     return true;
 }
 
-/* 塗りが消える高コントラストでは、操作であることを下線で残す。通常の配色では下線の書式を
- * 付けない（RichEdit は friendly name のリンクへ自前の下線を引くので、表示には下線が残る）。 */
+/* 札の文字は本文の文字色（色表の 1）、地はノートの地の色（色表の 11）。コード面へ紙の色の
+ * 切り欠きとして見え、コードより目立たない。地の色がコード面と同じ高コントラストでは塗りが
+ * 消えるので、操作であることを下線で残す。通常の配色では下線の書式を付けない（RichEdit は
+ * friendly name のリンクへ自前の下線を文字色で引くので、表示には下線が残る）。 */
 static const char *_Nonnull action_format(enum folio_contrast contrast)
 {
     switch (contrast)
     {
     case FOLIO_CONTRAST_STANDARD:
-        return "\"}}{\\fldrslt{\\f0\\fs18\\cf11\\highlight12\\ul0 ";
+        return "\"}}{\\fldrslt{\\f0\\fs18\\cf1\\highlight11\\ul0 ";
     case FOLIO_CONTRAST_HIGH:
-        return "\"}}{\\fldrslt{\\f0\\fs18\\cf11\\highlight12\\ul ";
+        return "\"}}{\\fldrslt{\\f0\\fs18\\cf1\\highlight11\\ul ";
     }
-    return "\"}}{\\fldrslt{\\f0\\fs18\\cf11\\highlight12\\ul ";
+    return "\"}}{\\fldrslt{\\f0\\fs18\\cf1\\highlight11\\ul ";
 }
 
-/* コピーの操作（ADR0098 第2版）。宛先は内部の識別子。リンクの区間はチップ全体で、文言の前後の
- * 改行しない空白2つずつも含める（塗りと押せる範囲を同じにし、折返しで割れないようにする）。
- * 色は色表の 11（文字）と 12（地）。 */
+/* コピーの操作（ADR0098 第2版）。宛先は内部の識別子。リンクの区間は札全体で、文言の前後の
+ * 改行しない空白2つずつも含める（塗りと押せる範囲を同じにし、折返しで割れないようにする）。 */
 static void code_copy_action(struct markdown_blocks *_Nonnull parser)
 {
     const char *label = ui_text_line(UI_TEXT_CODE_COPY, parser->language);
@@ -361,15 +364,20 @@ static void code_copy_action(struct markdown_blocks *_Nonnull parser)
 }
 
 /* 見出し行: 言語ラベル（あれば）とコピーの操作（原文を集めるブロックだけ）。どちらも無ければ
- * 何も書かない（未指定の空fenceは従来どおり）。操作のある行は段落を右寄せにして、操作を
- * ブロックの右上へ置く。幅や倍率を追わず、右の余白はコード行と同じ（ADR0098 第2版）。 */
+ * 何も書かない（未指定の空fenceは従来どおり）。操作のある行は段落を右寄せにし、右の余白を
+ * 0、前後の間隔を2ptずつにして、札をブロックの右上の角へ小さく付ける。RichEdit は文字の地を
+ * 段落の前後の間隔まで塗るので、札は行の高さいっぱいになる。コードとの間の残り（4pt）は
+ * 最初のコード行が持つ。幅や倍率は追わない（ADR0098 第2版）。 */
 static void code_header(struct markdown_blocks *_Nonnull parser, struct markdown_span word)
 {
     if (word.length == 0 && !parser->copyable)
         return;
     text_buffer_append_text(parser->out, parser->copyable ? "\\pard\\qr\\li" : "\\pard\\li");
     rtf_text_number(parser->out, parser->code_indent + 180);
-    text_buffer_append_text(parser->out, "\\ri180\\sb120\\sa80\\sl240\\slmult1 ");
+    text_buffer_append_text(parser->out, parser->copyable
+                                             ? "\\ri0\\sb40\\sa40\\sl240\\slmult1 "
+                                             : "\\ri180\\sb120\\sa80\\sl240\\slmult1 ");
+    parser->tabbed = parser->copyable;
     if (word.length != 0)
     {
         text_buffer_append_text(parser->out, "{\\f0\\fs18\\cf9 ");

@@ -51,9 +51,10 @@ const struct clipboard_port *_Nonnull test_clipboard_port(void)
 
 #define OPEN "{\\f1\\fs20\\cf5\\highlight6"
 #define HEADER "\\ri180\\sb120\\sa80\\sl240\\slmult1 "
-#define FIRST "\\ri180\\sb0\\sa0\\sl240\\slmult1 "
+#define HEADER_TAB "\\ri0\\sb40\\sa40\\sl240\\slmult1 "
+#define FIRST "\\ri180\\sb80\\sa0\\sl240\\slmult1 "
 #define ACTION_OPEN "{\\field{\\*\\fldinst{HYPERLINK \"nenefolio-code:"
-#define ACTION_LABEL "\"}}{\\fldrslt{\\f0\\fs18\\cf11\\highlight12\\ul0 \\~\\~"
+#define ACTION_LABEL "\"}}{\\fldrslt{\\f0\\fs18\\cf1\\highlight11\\ul0 \\~\\~"
 #define ACTION_CLOSE "\\~\\~}}}"
 #define COPY_JA "\xE3\x82\xB3\xE3\x83\x94\xE3\x83\xBC"
 #define COPY_ZH "\xE5\xA4\x8D\xE5\x88\xB6"
@@ -103,14 +104,15 @@ static void expect_blocks(const char *_Nonnull markdown, const char *_Nonnull ex
 static void verify_header_rows(void)
 {
     expect_blocks("```c\nint a;\n```",
-                  OPEN "\\pard\\qr\\li180" HEADER
+                  OPEN "\\pard\\qr\\li180" HEADER_TAB
                        "{\\f0\\fs18\\cf9 c}{\\f0\\fs18\\cf9 \\u8195?}" ACTION_OPEN
                        "0" ACTION_LABEL COPY_JA ACTION_CLOSE "\\par\n"
                        "\\pard\\li180" FIRST,
                   (const char *const[]){"int a;", nullptr});
     expect_blocks("```\nplain\n```",
-                  OPEN "\\pard\\qr\\li180" HEADER ACTION_OPEN "0" ACTION_LABEL COPY_JA ACTION_CLOSE
-                       "\\par\n\\pard\\li180" FIRST "plain\\sa120\\par\n}",
+                  OPEN "\\pard\\qr\\li180" HEADER_TAB ACTION_OPEN
+                       "0" ACTION_LABEL COPY_JA ACTION_CLOSE "\\par\n\\pard\\li180" FIRST
+                       "plain\\sa120\\par\n}",
                   (const char *const[]){"plain", nullptr});
     /* 空のfence: 未指定は何も足さず、指定ありはラベルだけ。どちらも操作と原文を持たない。 */
     expect_blocks("```\n```", OPEN "}", (const char *const[]){nullptr});
@@ -133,7 +135,7 @@ static void verify_header_rows(void)
 static void verify_container_blocks(void)
 {
     /* 引用とリストの接頭辞、fenceの字下げは原文に入らない。containerを出たら閉じる。 */
-    expect_blocks("> ```c\n> int a;\n>   b\n> ```\n", "\\pard\\qr\\li660" HEADER,
+    expect_blocks("> ```c\n> int a;\n>   b\n> ```\n", "\\pard\\qr\\li660" HEADER_TAB,
                   (const char *const[]){"int a;\n  b", nullptr});
     expect_blocks("- item\n\n  ```\n  x\n    y\n  ```\n",
                   ACTION_OPEN "0" ACTION_LABEL COPY_JA ACTION_CLOSE,
@@ -152,14 +154,14 @@ static void verify_container_blocks(void)
                   (const char *const[]){"x", nullptr});
 }
 
-/* チップの色は主操作の対（色表の 11 と 12）。高コントラストは塗らず、本文の文字色と下線。 */
+/* 札の文字は本文の文字色（色表の 1）、地はノートの地の色（色表の 11）。高コントラストでは
+ * 地がコード面と同じ window になり、下線で示す。 */
 static void verify_action_colors(void)
 {
     struct markdown_rtf *rtf = render("```\nx\n```", FOLIO_LANGUAGE_JA);
     require(strstr(markdown_rtf_text(rtf),
-                   "\\red240\\green198\\blue125;\\red255\\green255\\blue255;"
-                   "\\red119\\green41\\blue83;}") != nullptr,
-            "the chip text and background follow the ten body colours");
+                   "\\red240\\green198\\blue125;\\red255\\green255\\blue254;}") != nullptr,
+            "the tab fill, the note background one blue step off, follows the ten body colours");
     markdown_rtf_destroy(rtf);
     struct appearance_snapshot snapshot = {.theme = FOLIO_THEME_LIGHT,
                                            .contrast = FOLIO_CONTRAST_HIGH,
@@ -176,11 +178,10 @@ static void verify_action_colors(void)
     require(markdown_rtf_create(text, &high, locale, &rtf) == MARKDOWN_RTF_CONVERTED,
             "contrast converts");
     const char *body = markdown_rtf_text(rtf);
-    require(strstr(body, "\\red255\\green255\\blue255;\\red255\\green255\\blue255;"
-                         "\\red0\\green0\\blue0;}") != nullptr &&
+    require(strstr(body, "\\red255\\green255\\blue255;\\red0\\green0\\blue0;}") != nullptr &&
                 strstr(body, "\\red1\\green2\\blue3;") == nullptr,
             "high contrast keeps the window pair and never the button fill");
-    require(strstr(body, "{\\fldrslt{\\f0\\fs18\\cf11\\highlight12\\ul \\~\\~Copy\\~\\~}}}") !=
+    require(strstr(body, "{\\fldrslt{\\f0\\fs18\\cf1\\highlight11\\ul \\~\\~Copy\\~\\~}}}") !=
                     nullptr &&
                 strstr(body, "\\pard\\qr\\li180") != nullptr,
             "high contrast marks the right-aligned action with an underline");

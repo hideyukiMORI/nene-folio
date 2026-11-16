@@ -420,11 +420,10 @@ static void code_copy_chip(struct note_pane *_Nonnull pane, LONG first)
            format.dwMask, format.yHeight, format.crTextColor);
     require((format.dwEffects & CFE_LINK) != 0 && format.yHeight == 180 &&
                 format.crTextColor ==
-                    RGB(theme->chip_text.red, theme->chip_text.green, theme->chip_text.blue) &&
+                    RGB(theme->rtf.text.red, theme->rtf.text.green, theme->rtf.text.blue) &&
                 (format.dwEffects & CFE_AUTOBACKCOLOR) == 0 &&
-                format.crBackColor == RGB(theme->chip_background.red, theme->chip_background.green,
-                                          theme->chip_background.blue),
-            "the action is a native link in the label's size with the primary chip colour pair");
+                format.crBackColor == RGB(theme->pane.red, theme->pane.green, theme->pane.blue - 1),
+            "the action is a native link in the label's size with the page text and background");
     /* The link run is the whole chip: two no-break spaces on each side of the word. */
     CHARRANGE chip = {first - 2, first + 5};
     SendMessageW(handle, EM_EXSETSEL, 0, (LPARAM)&chip);
@@ -437,8 +436,9 @@ static void code_copy_chip(struct note_pane *_Nonnull pane, LONG first)
     PARAFORMAT2 paragraph = {.cbSize = sizeof paragraph};
     SendMessageW(handle, EM_GETPARAFORMAT, 0, (LPARAM)&paragraph);
     require((paragraph.dwMask & PFM_ALIGNMENT) != 0 && paragraph.wAlignment == PFA_RIGHT &&
-                paragraph.dxRightIndent == 180,
-            "the header row is right aligned with the code's right padding");
+                paragraph.dxRightIndent == 0 && paragraph.dySpaceBefore == 40 &&
+                paragraph.dySpaceAfter == 40,
+            "the header row is right aligned, flush with the block's right edge and compact");
 }
 
 /* #839: the copy action is a native link, absent from the search projection and from EDIT. */
