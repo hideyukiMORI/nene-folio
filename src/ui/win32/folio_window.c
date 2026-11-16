@@ -97,7 +97,7 @@
 #include <windows.h>
 #include <windowsx.h>
 
-constexpr size_t surface_button_count = 24;
+constexpr size_t surface_button_count = 29;
 constexpr size_t surface_pointer_count = surface_button_count + 2;
 constexpr UINT_PTR surface_tooltip_base = 256;
 /* 1 回の描画・測定で UTF-16 へ写せる単位数（ADR 0030 の決定 5）。表の 1 行（ui_text_unit_limit）・
@@ -318,6 +318,7 @@ static const struct
      ACCESSIBLE_SURFACE_CLOSE},
     {UI_TEXT_SETTINGS_MOTION, SETTINGS_ROW_MOTION, 1, 5, 0, ACCESSIBLE_SURFACE_CLOSE},
     {UI_TEXT_STORAGE_ENTRY, SETTINGS_ROW_STORAGE, 0, 6, 0, ACCESSIBLE_SURFACE_STORAGE},
+    {UI_TEXT_ABOUT_ENTRY, SETTINGS_ROW_ABOUT, 0, 7, 0, ACCESSIBLE_SURFACE_ABOUT},
 };
 static const struct
 {
@@ -510,8 +511,9 @@ static size_t settings_button_index(size_t slot)
     for (size_t index = 0; index < settings_row_count(); ++index)
     {
         enum settings_row_kind kind = settings_rows[index].kind;
-        if ((kind == SETTINGS_ROW_THEME || kind == SETTINGS_ROW_STORAGE) &&
-            settings_rows[index].button == slot)
+        bool entry = kind == SETTINGS_ROW_THEME || kind == SETTINGS_ROW_STORAGE ||
+                     kind == SETTINGS_ROW_ABOUT;
+        if (entry && settings_rows[index].button == slot)
             return index;
     }
     return settings_row_count();
@@ -964,7 +966,8 @@ static bool command_keys(const struct folio_window *_Nonnull self)
 static bool settings_surface(const struct folio_window *_Nonnull self)
 {
     return self->command_surface == COMMAND_SURFACE_SETTINGS ||
-           self->command_surface == COMMAND_SURFACE_THEMES;
+           self->command_surface == COMMAND_SURFACE_THEMES ||
+           self->command_surface == COMMAND_SURFACE_ABOUT;
 }
 
 static bool tag_surface(const struct folio_window *_Nonnull self)
@@ -1125,6 +1128,7 @@ static int command_surface_rows(const struct folio_window *_Nonnull self)
     case COMMAND_SURFACE_EX:
     case COMMAND_SURFACE_SEARCH:
     case COMMAND_SURFACE_REPLACE:
+    case COMMAND_SURFACE_ABOUT:
         return 0;
     }
     return 0;
@@ -1143,6 +1147,7 @@ static int command_help_rows(const struct folio_window *_Nonnull self)
     case COMMAND_SURFACE_REPLACE:
     case COMMAND_SURFACE_SETTINGS:
     case COMMAND_SURFACE_THEMES:
+    case COMMAND_SURFACE_ABOUT:
     case COMMAND_SURFACE_TAG_EDIT:
     case COMMAND_SURFACE_TAG_FILTER:
     case COMMAND_SURFACE_TAG_MANAGE:
@@ -1163,12 +1168,12 @@ static int command_box_height(int rows, int help_rows)
            base_command_help_row_height * (help_rows + 2) + base_command_status_height;
 }
 
-/* EDIT を持たず、レイヤー自身がフォーカスと鍵を受ける一覧の面（設定・履歴。
- * ADR 0031 の決定 7・ADR 0038 の決定 12）。 */
+/* EDIT を持たず、レイヤー自身がフォーカスと鍵を受ける一覧の面（設定・履歴・アプリの情報。
+ * ADR 0031 の決定 7・ADR 0038 の決定 12・ADR0097）。 */
 static bool command_surface_listing(enum command_surface_mode surface)
 {
     return surface == COMMAND_SURFACE_SETTINGS || surface == COMMAND_SURFACE_HISTORY ||
-           surface == COMMAND_SURFACE_MENU;
+           surface == COMMAND_SURFACE_MENU || surface == COMMAND_SURFACE_ABOUT;
 }
 
 static struct folio_window *_Nullable self_of(HWND window)
@@ -1498,6 +1503,8 @@ static bool settings_has_notice(const struct folio_window *_Nonnull self)
 
 static int settings_footer_height(const struct folio_window *_Nonnull self)
 {
+    if (self->command_surface == COMMAND_SURFACE_ABOUT)
+        return self->settings_metrics.about_footer;
     return self->command_surface == COMMAND_SURFACE_THEMES ? self->settings_metrics.themes_footer
                                                            : self->settings_metrics.settings_footer;
 }
@@ -1548,7 +1555,8 @@ static RECT settings_item_rect(const struct folio_window *_Nonnull self, size_t 
         settings_rows[index].kind == SETTINGS_ROW_MINIMAP ||
         settings_rows[index].kind == SETTINGS_ROW_FAVORITES_FIRST ||
         settings_rows[index].kind == SETTINGS_ROW_MOTION ||
-        settings_rows[index].kind == SETTINGS_ROW_STORAGE)
+        settings_rows[index].kind == SETTINGS_ROW_STORAGE ||
+        settings_rows[index].kind == SETTINGS_ROW_ABOUT)
     {
         bounds.top += settings_rows[index].position * (height + gap);
         bounds.bottom = bounds.top + height;
@@ -1573,10 +1581,10 @@ static size_t settings_scroll_limit(const struct folio_window *_Nonnull self)
     return excess > 0 ? (size_t)excess : 0;
 }
 
-static void reveal_settings_selection(struct folio_window *_Nonnull self)
+/* 設定とその副面が共有する画素スクロール。itemは現在のスクロール位置での矩形。 */
+static void reveal_content_rect(struct folio_window *_Nonnull self, RECT item, size_t limit)
 {
     RECT content = settings_content_rect(self);
-    RECT item = settings_item_rect(self, self->command_selection);
     int offset = (int)self->command_first;
     if (item.top < content.top)
     {
@@ -1587,11 +1595,188 @@ static void reveal_settings_selection(struct folio_window *_Nonnull self)
         offset += item.bottom - content.bottom;
     }
     self->command_first = offset > 0 ? (size_t)offset : 0;
-    size_t limit = settings_scroll_limit(self);
     if (self->command_first > limit)
     {
         self->command_first = limit;
     }
+}
+
+static void reveal_settings_selection(struct folio_window *_Nonnull self)
+{
+    reveal_content_rect(self, settings_item_rect(self, self->command_selection),
+                        settings_scroll_limit(self));
+}
+
+/* 「このアプリについて」の文字行（ADR0097）。表の順が表示順とUIAの行順で、gapは次の行までの間。
+ * 版の行だけ {name} を製品の版で埋める。 */
+static const struct
+{
+    enum ui_text label;
+    unsigned char gap;
+    bool heading;
+    bool secondary;
+} about_texts[] = {
+    {UI_TEXT_APP_LOGO, base_settings_item_gap, false, false},
+    {UI_TEXT_SETTINGS_VERSION, base_settings_item_gap, false, true},
+    {UI_TEXT_ABOUT_DESCRIPTION, base_settings_group_gap, false, false},
+    {UI_TEXT_ABOUT_LICENSE_HEADING, 0, true, false},
+    {UI_TEXT_ABOUT_LICENSE, base_settings_item_gap, false, false},
+    {UI_TEXT_ABOUT_FONTS, base_settings_item_gap, false, false},
+    {UI_TEXT_ABOUT_NOTICES, base_settings_group_gap, false, false},
+    {UI_TEXT_ABOUT_LINKS_HEADING, base_settings_item_gap, true, false},
+    {UI_TEXT_ABOUT_LINKS_HINT, 0, false, true},
+};
+constexpr size_t about_text_count = sizeof about_texts / sizeof about_texts[0];
+static_assert(about_text_count == command_surface_about_lines,
+              "metrics hold one height per About line");
+
+/* 公式リンクの釦。行き先はcoreの表だけが持ち、ここは意図と表示名を結ぶ。 */
+static const struct
+{
+    enum ui_text label;
+    enum product_link link;
+    enum accessible_surface_button button;
+} about_links[] = {
+    {UI_TEXT_ABOUT_LINK_REPOSITORY, PRODUCT_LINK_REPOSITORY, ACCESSIBLE_SURFACE_ABOUT_REPOSITORY},
+    {UI_TEXT_ABOUT_LINK_RELEASES, PRODUCT_LINK_RELEASES, ACCESSIBLE_SURFACE_ABOUT_RELEASES},
+    {UI_TEXT_ABOUT_LINK_STORE, PRODUCT_LINK_STORE, ACCESSIBLE_SURFACE_ABOUT_STORE},
+    {UI_TEXT_ABOUT_LINK_ISSUES, PRODUCT_LINK_ISSUES, ACCESSIBLE_SURFACE_ABOUT_ISSUES},
+};
+constexpr size_t about_link_count = sizeof about_links / sizeof about_links[0];
+
+static HFONT help_heading_font(const struct folio_window *_Nonnull self);
+
+static bool about_surface(const struct folio_window *_Nonnull self)
+{
+    return self->command_surface == COMMAND_SURFACE_ABOUT;
+}
+
+/* 釦のslotからリンクの添字。リンクでなければ about_link_count。 */
+static size_t about_link_index(size_t slot)
+{
+    size_t at = 0;
+    while (at < about_link_count && about_links[at].button != slot)
+        ++at;
+    return at;
+}
+
+/* focusの順はリンク4つ→戻る。command_selectionがその序数を持つ。 */
+static size_t about_focus_slot(const struct folio_window *_Nonnull self)
+{
+    return self->command_selection < about_link_count ? about_links[self->command_selection].button
+                                                      : ACCESSIBLE_SURFACE_BACK;
+}
+
+/* 製品名だけ、主窓が既に持つ見出しの書体で題として示す。計測と描画が同じ書体を選ぶ。 */
+static HFONT about_text_font(const struct folio_window *_Nonnull self, size_t index)
+{
+    return about_texts[index].label == UI_TEXT_APP_LOGO ? help_heading_font(self) : self->mono_font;
+}
+
+/* outはdraw_unit_limit bytes。描画・計測・UIAが同じ1行を使う。 */
+static void about_text_line(const struct folio_window *_Nonnull self, size_t index,
+                            char *_Nonnull out)
+{
+    struct ui_text_request request = {.id = about_texts[index].label,
+                                      .language = folio_state_language(self->state),
+                                      .name = product_version_text()};
+    if (ui_text_format(&request, out, draw_unit_limit) != UI_TEXT_FORMAT_READY)
+        out[0] = '\0';
+}
+
+static int about_text_height(const struct folio_window *_Nonnull self, size_t index)
+{
+    return about_texts[index].heading ? scale(base_settings_label, GetDpiForWindow(self->handle))
+                                      : self->settings_metrics.about_text[index];
+}
+
+static int about_link_columns(const struct folio_window *_Nonnull self)
+{
+    return self->settings_metrics.about_single_row ? (int)about_link_count : 2;
+}
+
+static int about_links_height(const struct folio_window *_Nonnull self)
+{
+    UINT dpi = GetDpiForWindow(self->handle);
+    int rows = (int)about_link_count / about_link_columns(self);
+    return rows * scale(ui_part_height, dpi) + (rows - 1) * scale(base_settings_item_gap, dpi);
+}
+
+static bool about_links_follow(size_t index)
+{
+    return about_texts[index].label == UI_TEXT_ABOUT_LINKS_HEADING;
+}
+
+/* 内容矩形の上端からの位置（スクロール前）。indexが行数なら内容全体の高さ。 */
+static int about_text_top(const struct folio_window *_Nonnull self, size_t index)
+{
+    UINT dpi = GetDpiForWindow(self->handle);
+    int top = 0;
+    for (size_t at = 0; at < index; ++at)
+    {
+        top += about_text_height(self, at) + scale(about_texts[at].gap, dpi);
+        if (about_links_follow(at))
+            top += about_links_height(self);
+    }
+    return top;
+}
+
+static size_t about_scroll_limit(const struct folio_window *_Nonnull self)
+{
+    RECT content = settings_content_rect(self);
+    int excess = about_text_top(self, about_text_count) - (content.bottom - content.top);
+    return excess > 0 ? (size_t)excess : 0;
+}
+
+static RECT about_text_rect(const struct folio_window *_Nonnull self, size_t index)
+{
+    RECT row = settings_content_rect(self);
+    row.top += about_text_top(self, index) - (int)self->command_first;
+    row.bottom = row.top + about_text_height(self, index);
+    return row;
+}
+
+/* 釦はリンクの見出しの直下。描画は内容矩形で切り、hitとUIAは交差を使う。 */
+static RECT about_link_rect(const struct folio_window *_Nonnull self, size_t index)
+{
+    UINT dpi = GetDpiForWindow(self->handle);
+    size_t heading = 0;
+    while (heading + 1 < about_text_count && !about_links_follow(heading))
+        ++heading;
+    RECT bounds = about_text_rect(self, heading);
+    int columns = about_link_columns(self);
+    int gap = scale(base_settings_item_gap, dpi);
+    int height = scale(ui_part_height, dpi);
+    int width = (bounds.right - bounds.left - gap * (columns - 1)) / columns;
+    bounds.left += (int)index % columns * (width + gap);
+    bounds.right = bounds.left + width;
+    bounds.top = bounds.bottom + (int)index / columns * (height + gap);
+    bounds.bottom = bounds.top + height;
+    return bounds;
+}
+
+static RECT about_notice_rect(const struct folio_window *_Nonnull self)
+{
+    RECT line = surface_frame_rect(self, UI_PART_SURFACE_CONTENT);
+    line.bottom -= scale(ui_part_height + 8, GetDpiForWindow(self->handle));
+    line.top = line.bottom - self->settings_metrics.notice;
+    return line;
+}
+
+/* 戻るは固定footerにあり常に見える。リンクだけ内容のスクロールで見える位置へ出す。 */
+static void reveal_about_focus(struct folio_window *_Nonnull self)
+{
+    size_t limit = about_scroll_limit(self);
+    if (self->command_selection < about_link_count)
+        reveal_content_rect(self, about_link_rect(self, self->command_selection), limit);
+    if (self->command_first > limit)
+        self->command_first = limit;
+    refresh_surface_tooltip_rects(self);
+}
+
+static size_t settings_content_limit(const struct folio_window *_Nonnull self)
+{
+    return about_surface(self) ? about_scroll_limit(self) : settings_scroll_limit(self);
 }
 
 static RECT settings_close_rect(const struct folio_window *_Nonnull self)
@@ -1614,6 +1799,7 @@ static RECT command_surface_rect(const struct folio_window *_Nonnull self)
         return command_band_rect(self);
     case COMMAND_SURFACE_SETTINGS:
     case COMMAND_SURFACE_THEMES:
+    case COMMAND_SURFACE_ABOUT:
     case COMMAND_SURFACE_TAG_EDIT:
     case COMMAND_SURFACE_TAG_FILTER:
     case COMMAND_SURFACE_TAG_MANAGE:
@@ -1898,6 +2084,11 @@ static void reveal_command_selection(struct folio_window *_Nonnull self)
     if (self->command_surface == COMMAND_SURFACE_SETTINGS)
     {
         reveal_settings_selection(self);
+        return;
+    }
+    if (about_surface(self))
+    {
+        reveal_about_focus(self);
         return;
     }
     size_t rows = command_visible_rows(self);
@@ -4050,6 +4241,9 @@ static bool tag_button_focused(const struct folio_window *_Nonnull self, size_t 
         return GetFocus() == self->command_layer &&
                discovery_focus_slot(self->discovery_focus) == slot &&
                (self->focus_cues || self->focus_cues_always);
+    if (about_surface(self))
+        return GetFocus() == self->command_layer && about_focus_slot(self) == slot &&
+               (self->focus_cues || self->focus_cues_always);
     return tag_surface(self) && GetFocus() == self->command_layer &&
            tag_focus_slot(self->tag_focus) == slot && (self->focus_cues || self->focus_cues_always);
 }
@@ -4079,11 +4273,13 @@ static void surface_button_text(const struct folio_window *_Nonnull self, HDC de
     draw_utf8(device, text, label);
 }
 
-static void draw_surface_button(const struct folio_window *_Nonnull self, HDC device, size_t slot)
+/* boundsは切り取り前の矩形。スクロールする内容の釦は呼び出し側のclipで切る。 */
+static void draw_surface_button_in(const struct folio_window *_Nonnull self, HDC device,
+                                   size_t slot, RECT bounds)
 {
     bool close = slot == ACCESSIBLE_SURFACE_CLOSE;
     struct ui_part_paint part = {
-        .bounds = accessible_surface_button_rect(self, slot),
+        .bounds = bounds,
         .style = close ? UI_PART_STYLE_ICON
                        : (slot == ACCESSIBLE_SURFACE_TAG_ALL || slot == ACCESSIBLE_SURFACE_TAG_ANY
                               ? UI_PART_STYLE_CHOICE
@@ -4105,6 +4301,11 @@ static void draw_surface_button(const struct folio_window *_Nonnull self, HDC de
         SetTextColor(device, ink.text);
         surface_button_text(self, device, slot, ink.label);
     }
+}
+
+static void draw_surface_button(const struct folio_window *_Nonnull self, HDC device, size_t slot)
+{
+    draw_surface_button_in(self, device, slot, accessible_surface_button_rect(self, slot));
 }
 
 static void draw_search_surface(const struct folio_window *_Nonnull self, HDC device)
@@ -4504,6 +4705,7 @@ static bool settings_row_current(const struct folio_window *_Nonnull self, size_
     {
     case SETTINGS_ROW_HEADING:
     case SETTINGS_ROW_STORAGE:
+    case SETTINGS_ROW_ABOUT:
         return false;
     case SETTINGS_ROW_THEME:
         return false;
@@ -5299,6 +5501,54 @@ static void draw_theme_dialog(const struct folio_window *_Nonnull self, HDC devi
     draw_theme_footer(self, device, theme_matches_count(self));
 }
 
+static void draw_about_text(const struct folio_window *_Nonnull self, HDC device, size_t index)
+{
+    RECT row = about_text_rect(self, index);
+    char text[draw_unit_limit];
+    about_text_line(self, index, text);
+    SetTextColor(device, about_texts[index].secondary ? self->palette.dialog_secondary
+                                                      : self->palette.current_text);
+    HGDIOBJ previous = SelectObject(device, about_text_font(self, index));
+    if (about_texts[index].heading)
+        draw_units(device, text, row, DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
+    else
+        (void)wrapped_text(device, text, row, true);
+    SelectObject(device, previous);
+}
+
+/* 設定と同じく、固定footerと題はスクロールする内容に参加しない（ADR0097）。 */
+static void draw_about_dialog(const struct folio_window *_Nonnull self, HDC device, RECT bounds)
+{
+    ui_part_draw_surface(device, &self->palette, bounds);
+    draw_floating_header(self, device, UI_TEXT_ABOUT_TITLE);
+    RECT content = settings_content_rect(self);
+    int saved = SaveDC(device);
+    IntersectClipRect(device, content.left, content.top, content.right, content.bottom);
+    for (size_t at = 0; at < about_text_count; ++at)
+        draw_about_text(self, device, at);
+    for (size_t at = 0; at < about_link_count; ++at)
+        draw_surface_button_in(self, device, about_links[at].button, about_link_rect(self, at));
+    RestoreDC(device, saved);
+    if (settings_has_notice(self))
+    {
+        SetTextColor(device, self->palette.current_text);
+        (void)wrapped_text(
+            device,
+            folio_state_failure_line(settings_notice(self), folio_state_language(self->state)),
+            about_notice_rect(self), true);
+    }
+    draw_surface_button(self, device, ACCESSIBLE_SURFACE_BACK);
+}
+
+/* 設定の枠を共有する二つの副面。 */
+static void draw_settings_branch(const struct folio_window *_Nonnull self, HDC device, RECT bounds)
+{
+    if (about_surface(self))
+        draw_about_dialog(self, device, bounds);
+    else
+        draw_theme_dialog(self, device, bounds);
+}
+
 static void draw_settings_dialog(const struct folio_window *_Nonnull self, HDC device, RECT bounds)
 {
     ui_part_draw_surface(device, &self->palette, bounds);
@@ -5522,7 +5772,8 @@ static void draw_command_surface(const struct folio_window *_Nonnull self, HDC d
         draw_discovery(self, device, bounds);
         return;
     case COMMAND_SURFACE_THEMES:
-        draw_theme_dialog(self, device, bounds);
+    case COMMAND_SURFACE_ABOUT:
+        draw_settings_branch(self, device, bounds);
         return;
     case COMMAND_SURFACE_SETTINGS:
         draw_settings_dialog(self, device, bounds);
@@ -6719,6 +6970,40 @@ static int settings_motion_help_height(const struct folio_window *_Nonnull self,
     return (normal > unavailable ? normal : unavailable) + scale(4, dpi);
 }
 
+/* 行の高さと釦の列数は幅・DPI・書体・言語だけで決まるので、設定と同じ失効に乗せる。 */
+static void about_surface_metrics(const struct folio_window *_Nonnull self, HDC device, RECT bounds,
+                                  struct command_surface_metrics *_Nonnull metrics)
+{
+    for (size_t at = 0; at < about_text_count; ++at)
+    {
+        char text[draw_unit_limit];
+        about_text_line(self, at, text);
+        HGDIOBJ previous = SelectObject(device, about_text_font(self, at));
+        metrics->about_text[at] = wrapped_text(device, text, bounds, false);
+        SelectObject(device, previous);
+    }
+    int width = bounds.right - bounds.left;
+    int gaps = scale(base_settings_item_gap, metrics->dpi) * ((int)about_link_count - 1);
+    int room = (width - gaps) / (int)about_link_count - scale(ui_part_padding * 2, metrics->dpi);
+    bool fits = width >= scale(360, metrics->dpi);
+    for (size_t at = 0; at < about_link_count; ++at)
+        fits = fits &&
+               measure_utf8(device, ui_text_line(about_links[at].label, metrics->language)) <= room;
+    metrics->about_single_row = fits;
+    metrics->about_ready = true;
+    metrics->about_footer = metrics->notice + scale(ui_part_height + 8, metrics->dpi);
+}
+
+/* 同じ幅・DPI・書体・言語なら測り直さない。アプリの情報の行は、その面で未計測なら測る。 */
+static bool surface_metrics_current(const struct folio_window *_Nonnull self,
+                                    const struct command_surface_metrics *_Nonnull wanted)
+{
+    const struct command_surface_metrics *held = &self->settings_metrics;
+    bool same = held->width == wanted->width && held->dpi == wanted->dpi &&
+                held->font == wanted->font && held->language == wanted->language;
+    return same && (held->about_ready || !about_surface(self));
+}
+
 static bool prepare_surface_metrics(struct folio_window *_Nonnull self)
 {
     if (command_keys(self))
@@ -6732,9 +7017,7 @@ static bool prepare_surface_metrics(struct folio_window *_Nonnull self)
                                               .dpi = GetDpiForWindow(self->handle),
                                               .font = self->mono_font,
                                               .language = folio_state_language(self->state)};
-    if (self->settings_metrics.width == metrics.width &&
-        self->settings_metrics.dpi == metrics.dpi && self->settings_metrics.font == metrics.font &&
-        self->settings_metrics.language == metrics.language)
+    if (surface_metrics_current(self, &metrics))
         return true;
     HDC device = GetDC(self->command_layer);
     if (device == nullptr)
@@ -6748,6 +7031,8 @@ static bool prepare_surface_metrics(struct folio_window *_Nonnull self)
     metrics.themes_footer = metrics.notice +
                             surface_footer_text_height(self, device, bounds, true) +
                             scale(ui_part_height + 8, metrics.dpi);
+    if (about_surface(self))
+        about_surface_metrics(self, device, bounds, &metrics);
     SelectObject(device, previous);
     ReleaseDC(self->command_layer, device);
     if (ready)
@@ -7009,7 +7294,8 @@ static bool result_surface(const struct folio_window *_Nonnull self)
            self->command_surface == COMMAND_SURFACE_PALETTE ||
            self->command_surface == COMMAND_SURFACE_SEARCH ||
            self->command_surface == COMMAND_SURFACE_REPLACE ||
-           self->command_surface == COMMAND_SURFACE_THEMES || tag_surface(self);
+           self->command_surface == COMMAND_SURFACE_THEMES || about_surface(self) ||
+           tag_surface(self);
 }
 
 static void outcome_line(const struct folio_window *_Nonnull self, enum folio_state_outcome outcome,
@@ -7891,6 +8177,66 @@ static void show_theme_surface(struct folio_window *_Nonnull self)
     rearrange_keeping_line(self);
     focus_command_input(self);
     redraw_command_layer(self);
+}
+
+/* アプリの情報は設定の枠を共有し、EDITを持たない（ADR0097）。開いた直後のfocusは戻るに置き、
+ * Enterの打ち過ぎで外部のブラウザーを開かない。 */
+static void show_about_surface(struct folio_window *_Nonnull self)
+{
+    if (!set_command_surface(self, COMMAND_SURFACE_ABOUT))
+        return;
+    clear_command_status(self);
+    self->command_selection = about_link_count;
+    self->command_first = 0;
+    rearrange_keeping_line(self);
+    focus_command_input(self);
+    redraw_command_layer(self);
+}
+
+/* 副面の戻る/Esc。アプリの情報からは、入ってきた設定の行を選んだ状態へ戻す。 */
+static void return_to_settings(struct folio_window *_Nonnull self)
+{
+    bool about = about_surface(self);
+    show_settings_surface(self, "");
+    if (!about || self->command_surface != COMMAND_SURFACE_SETTINGS)
+        return;
+    self->command_selection = settings_button_index(ACCESSIBLE_SURFACE_ABOUT);
+    reveal_command_selection(self);
+    redraw_command_layer(self);
+    accessibility_host_schedule(self->accessibility);
+}
+
+/* UIは意図だけを渡す。失敗は面内の通知行へ、成功しても面は閉じない（ADR0097）。 */
+static void open_about_link(struct folio_window *_Nonnull self, size_t index)
+{
+    self->command_selection = index;
+    report_outcome(self, folio_state_open_product_link(self->state, about_links[index].link));
+    reveal_command_selection(self);
+    redraw_command_layer(self);
+    accessibility_host_schedule(self->accessibility);
+}
+
+static bool about_navigate(struct folio_window *_Nonnull self, WPARAM key)
+{
+    bool tab = key == VK_TAB;
+    bool backwards =
+        key == VK_LEFT || key == VK_UP || (tab && (pressed_shortcut_modifiers() & FSHIFT) != 0);
+    if (!backwards && !tab && key != VK_RIGHT && key != VK_DOWN)
+        return false;
+    size_t count = about_link_count + 1;
+    self->command_selection = (self->command_selection + (backwards ? count - 1 : 1)) % count;
+    reveal_command_selection(self);
+    redraw_command_layer(self);
+    accessibility_host_schedule(self->accessibility);
+    return true;
+}
+
+static void about_activate(struct folio_window *_Nonnull self)
+{
+    if (self->command_selection < about_link_count)
+        open_about_link(self, self->command_selection);
+    else
+        return_to_settings(self);
 }
 
 /* 履歴の面（ADR 0038 の決定 12・14）。設定画面と同じく EDIT を持たず、レイヤーがフォーカスを取る。
@@ -10487,6 +10833,9 @@ static void adopt_settings_row(struct folio_window *_Nonnull self)
     case SETTINGS_ROW_STORAGE:
         show_storage_prompt(self);
         return;
+    case SETTINGS_ROW_ABOUT:
+        show_about_surface(self);
+        return;
     case SETTINGS_ROW_THEME:
         show_theme_surface(self);
         return;
@@ -12059,6 +12408,7 @@ static void execute_command_input(struct folio_window *_Nonnull self)
      */
     case COMMAND_SURFACE_SETTINGS:
     case COMMAND_SURFACE_THEMES:
+    case COMMAND_SURFACE_ABOUT:
     case COMMAND_SURFACE_TAG_EDIT:
     case COMMAND_SURFACE_TAG_FILTER:
     case COMMAND_SURFACE_TAG_MANAGE:
@@ -12158,6 +12508,8 @@ static bool command_tab(struct folio_window *_Nonnull self)
     {
         return settings_navigate(self, VK_TAB);
     }
+    if (about_surface(self))
+        return about_navigate(self, VK_TAB);
     if (command_surface_listing(self->command_surface))
     {
         return true; /* 欄が 1 つも無いので行き先が無い。鍵は飲む（パレットと同じく効く） */
@@ -12203,6 +12555,11 @@ static bool command_return(struct folio_window *_Nonnull self)
     if (self->command_surface == COMMAND_SURFACE_SETTINGS)
     {
         adopt_settings_row(self);
+        return true;
+    }
+    if (about_surface(self))
+    {
+        about_activate(self);
         return true;
     }
     if (self->command_surface == COMMAND_SURFACE_HISTORY)
@@ -12251,7 +12608,8 @@ static size_t settings_vertical_choice(const struct folio_window *_Nonnull self,
             settings_rows[index].kind == SETTINGS_ROW_FAVORITES_FIRST ||
             settings_rows[index].kind == SETTINGS_ROW_MOTION ||
             settings_rows[index].kind == SETTINGS_ROW_THEME ||
-            settings_rows[index].kind == SETTINGS_ROW_STORAGE)
+            settings_rows[index].kind == SETTINGS_ROW_STORAGE ||
+            settings_rows[index].kind == SETTINGS_ROW_ABOUT)
         {
             return index;
         }
@@ -12343,11 +12701,19 @@ static bool command_navigate(struct folio_window *_Nonnull self, WPARAM key)
     {
         return settings_navigate(self, key);
     }
+    if (about_surface(self))
+        return about_navigate(self, key);
     if (self->command_surface == COMMAND_SURFACE_HISTORY)
     {
         return history_navigate(self, key);
     }
     return navigate_palette_keys(self, key);
+}
+
+/* EDITを持たない設定とアプリの情報では、Spaceも採用の鍵になる。 */
+static bool surface_space_activates(const struct folio_window *_Nonnull self)
+{
+    return self->command_surface == COMMAND_SURFACE_SETTINGS || about_surface(self);
 }
 
 static bool command_activation_key(const struct folio_window *_Nonnull self, WPARAM key)
@@ -12356,7 +12722,7 @@ static bool command_activation_key(const struct folio_window *_Nonnull self, WPA
         return true;
     if (key != VK_SPACE)
         return false;
-    if (self->command_surface == COMMAND_SURFACE_SETTINGS)
+    if (surface_space_activates(self))
         return true;
     if (GetFocus() != self->command_layer)
         return false;
@@ -12382,9 +12748,9 @@ static bool command_key_down(struct folio_window *_Nonnull self, WPARAM key)
     }
     if (key == VK_ESCAPE)
     {
-        if (self->command_surface == COMMAND_SURFACE_THEMES)
+        if (self->command_surface == COMMAND_SURFACE_THEMES || about_surface(self))
         {
-            show_settings_surface(self, "");
+            return_to_settings(self);
             return true;
         }
         close_command_surface(self);
@@ -12443,7 +12809,7 @@ static bool command_character(struct folio_window *_Nonnull self, WPARAM charact
         return true;
     }
     return character == '\r' || character == '\t' ||
-           (character == ' ' && self->command_surface == COMMAND_SURFACE_SETTINGS);
+           (character == ' ' && surface_space_activates(self));
 }
 
 static void scroll_settings_content(struct folio_window *_Nonnull self, int delta)
@@ -12451,12 +12817,13 @@ static void scroll_settings_content(struct folio_window *_Nonnull self, int delt
     int offset =
         (int)self->command_first +
         scale(base_settings_item_height, GetDpiForWindow(self->handle)) * (delta > 0 ? -1 : 1);
-    size_t limit = settings_scroll_limit(self);
+    size_t limit = settings_content_limit(self);
     self->command_first = offset > 0 ? (size_t)offset : 0;
     if (self->command_first > limit)
     {
         self->command_first = limit;
     }
+    refresh_surface_tooltip_rects(self);
     redraw_command_layer(self);
 }
 
@@ -12521,7 +12888,7 @@ static bool command_wheel(struct folio_window *_Nonnull self, WPARAM wparam)
         wheel_theme_selection(self, delta);
         return true;
     }
-    if (self->command_surface == COMMAND_SURFACE_SETTINGS)
+    if (settings_surface(self))
     {
         scroll_settings_content(self, delta);
         return true;
@@ -15078,6 +15445,8 @@ static enum ui_text surface_title(const struct folio_window *_Nonnull self)
         return UI_TEXT_COMMAND_SETTINGS;
     case COMMAND_SURFACE_THEMES:
         return UI_TEXT_THEME_TITLE;
+    case COMMAND_SURFACE_ABOUT:
+        return UI_TEXT_ABOUT_TITLE;
     case COMMAND_SURFACE_DISCOVERY:
         return UI_TEXT_COMMAND_DISCOVER_NOTES;
     case COMMAND_SURFACE_TAG_EDIT:
@@ -15111,6 +15480,9 @@ static HRESULT surface_row_count(const struct folio_window *_Nonnull self, size_
         return S_OK;
     case COMMAND_SURFACE_HISTORY:
         *out = folio_state_history_count(self->state);
+        return S_OK;
+    case COMMAND_SURFACE_ABOUT:
+        *out = about_text_count;
         return S_OK;
     case COMMAND_SURFACE_TAG_EDIT:
     case COMMAND_SURFACE_TAG_FILTER:
@@ -15154,6 +15526,8 @@ static enum accessible_kind surface_row_kind(const struct folio_window *_Nonnull
                                                                   : ACCESSIBLE_SURFACE_TEXT;
     if (tag_surface(self))
         return ACCESSIBLE_SURFACE_TOGGLE;
+    if (about_surface(self))
+        return ACCESSIBLE_SURFACE_TEXT;
     if (self->command_surface != COMMAND_SURFACE_SETTINGS)
     {
         return ACCESSIBLE_SURFACE_CHOICE;
@@ -15164,6 +15538,7 @@ static enum accessible_kind surface_row_kind(const struct folio_window *_Nonnull
         return ACCESSIBLE_SURFACE_TEXT;
     case SETTINGS_ROW_THEME:
     case SETTINGS_ROW_STORAGE:
+    case SETTINGS_ROW_ABOUT:
         return ACCESSIBLE_SURFACE_BUTTON;
     case SETTINGS_ROW_LANGUAGE:
         return ACCESSIBLE_SURFACE_LANGUAGE;
@@ -15195,13 +15570,19 @@ static bool surface_button_visible(const struct folio_window *_Nonnull self, siz
                self->command_surface == COMMAND_SURFACE_HISTORY ||
                self->command_surface == COMMAND_SURFACE_PALETTE;
     case ACCESSIBLE_SURFACE_BACK:
-        return self->command_surface == COMMAND_SURFACE_THEMES;
+        return self->command_surface == COMMAND_SURFACE_THEMES || about_surface(self);
+    case ACCESSIBLE_SURFACE_ABOUT_REPOSITORY:
+    case ACCESSIBLE_SURFACE_ABOUT_RELEASES:
+    case ACCESSIBLE_SURFACE_ABOUT_STORE:
+    case ACCESSIBLE_SURFACE_ABOUT_ISSUES:
+        return about_surface(self);
     case ACCESSIBLE_SURFACE_PREVIOUS:
     case ACCESSIBLE_SURFACE_NEXT:
         return self->command_surface == COMMAND_SURFACE_SEARCH || command_keys(self);
     case ACCESSIBLE_SURFACE_SHOW_HELP:
     case ACCESSIBLE_SURFACE_THEME:
     case ACCESSIBLE_SURFACE_STORAGE:
+    case ACCESSIBLE_SURFACE_ABOUT:
         return false;
     case ACCESSIBLE_SURFACE_REPLACE_ONE:
     case ACCESSIBLE_SURFACE_REPLACE_ALL:
@@ -15592,6 +15973,8 @@ static enum ui_text surface_button_label(const struct folio_window *_Nonnull sel
                                      UI_TEXT_TAG_ALL, UI_TEXT_TAG_ANY,   UI_TEXT_TAG_CLEAR};
         return tags[slot - ACCESSIBLE_SURFACE_TAG_ADD];
     }
+    if (about_link_index(slot) < about_link_count)
+        return about_links[about_link_index(slot)].label;
     return standard_surface_button_label(self, slot);
 }
 
@@ -15726,10 +16109,32 @@ static bool surface_tag_name(const struct folio_window *_Nonnull self, struct ac
     return false;
 }
 
+/* 文字行は描画と同じ1行、リンクは表示名に加えて開く先のURLをHelpTextへ出す（ADR0097）。 */
+static bool surface_about_name(const struct folio_window *_Nonnull self,
+                               struct accessible_item item, struct accessible_view *_Nonnull out)
+{
+    if (!about_surface(self))
+        return false;
+    if (item.kind == ACCESSIBLE_SURFACE_TEXT)
+    {
+        char text[draw_unit_limit];
+        about_text_line(self, item.slot, text);
+        (void)wide_units(text, out->name);
+        return true;
+    }
+    size_t link = about_link_index(item.slot);
+    if (item.kind != ACCESSIBLE_SURFACE_BUTTON || link >= about_link_count)
+        return false;
+    (void)wide_units(ui_text_line(about_links[link].label, folio_state_language(self->state)),
+                     out->name);
+    (void)wide_units(product_link_uri(about_links[link].link), out->help);
+    return true;
+}
+
 static HRESULT surface_name(const struct folio_window *_Nonnull self, struct accessible_item item,
                             struct accessible_view *_Nonnull out)
 {
-    if (surface_tag_name(self, item, out))
+    if (surface_tag_name(self, item, out) || surface_about_name(self, item, out))
         return S_OK;
     if (item.kind == ACCESSIBLE_SURFACE_CHOICE)
         return surface_choice_name(self, item.slot, out);
@@ -15764,6 +16169,15 @@ static RECT surface_step_rect(const struct folio_window *_Nonnull self, bool pre
     return previous ? command_previous_rect(self) : command_next_rect(self);
 }
 
+/* スクロールする内容のうち、内容矩形に見えている部分。hitとUIAが使う。 */
+static RECT settings_visible_rect(const struct folio_window *_Nonnull self, RECT row)
+{
+    RECT content = settings_content_rect(self);
+    RECT visible = {0};
+    IntersectRect(&visible, &row, &content);
+    return visible;
+}
+
 static RECT accessible_surface_button_rect(const struct folio_window *_Nonnull self, size_t slot)
 {
     switch ((enum accessible_surface_button)slot)
@@ -15792,13 +16206,13 @@ static RECT accessible_surface_button_rect(const struct folio_window *_Nonnull s
         return theme_back_rect(self);
     case ACCESSIBLE_SURFACE_THEME:
     case ACCESSIBLE_SURFACE_STORAGE:
-    {
-        RECT row = settings_item_rect(self, settings_button_index(slot));
-        RECT content = settings_content_rect(self);
-        RECT visible = {0};
-        IntersectRect(&visible, &row, &content);
-        return visible;
-    }
+    case ACCESSIBLE_SURFACE_ABOUT:
+        return settings_visible_rect(self, settings_item_rect(self, settings_button_index(slot)));
+    case ACCESSIBLE_SURFACE_ABOUT_REPOSITORY:
+    case ACCESSIBLE_SURFACE_ABOUT_RELEASES:
+    case ACCESSIBLE_SURFACE_ABOUT_STORE:
+    case ACCESSIBLE_SURFACE_ABOUT_ISSUES:
+        return settings_visible_rect(self, about_link_rect(self, about_link_index(slot)));
     case ACCESSIBLE_SURFACE_PREVIOUS:
         return surface_step_rect(self, true);
     case ACCESSIBLE_SURFACE_NEXT:
@@ -15858,13 +16272,9 @@ static RECT surface_row_rect(const struct folio_window *_Nonnull self, size_t sl
         return menu_row_rect(self, slot);
 
     if (self->command_surface == COMMAND_SURFACE_SETTINGS)
-    {
-        RECT row = settings_item_rect(self, slot);
-        RECT content = settings_content_rect(self);
-        RECT visible = {0};
-        IntersectRect(&visible, &row, &content);
-        return visible;
-    }
+        return settings_visible_rect(self, settings_item_rect(self, slot));
+    if (about_surface(self))
+        return settings_visible_rect(self, about_text_rect(self, slot));
     if (slot < self->command_first || slot - self->command_first >= command_visible_rows(self))
         return (RECT){0};
     RECT bounds = command_rows_rect(self);
@@ -15895,6 +16305,8 @@ static RECT surface_status_rect(const struct folio_window *_Nonnull self)
         return theme_footer_rect(self);
     if (self->command_surface == COMMAND_SURFACE_SETTINGS)
         return settings_footer_rect(self);
+    if (about_surface(self))
+        return about_notice_rect(self);
     RECT bounds = {0};
     GetClientRect(self->command_layer, &bounds);
     int height = scale(base_command_status_height, GetDpiForWindow(self->handle));
@@ -15904,13 +16316,15 @@ static RECT surface_status_rect(const struct folio_window *_Nonnull self)
 
 static RECT surface_list_bounds(const struct folio_window *_Nonnull self)
 {
-    return self->command_surface == COMMAND_SURFACE_SETTINGS ? settings_content_rect(self)
-                                                             : command_rows_rect(self);
+    return self->command_surface == COMMAND_SURFACE_SETTINGS || about_surface(self)
+               ? settings_content_rect(self)
+               : command_rows_rect(self);
 }
 
 static bool surface_row_actionable(const struct folio_window *_Nonnull self, size_t at)
 {
-    if (management_surface(self) && self->tag_management_view == TAG_MANAGEMENT_PLAN)
+    if (about_surface(self) ||
+        (management_surface(self) && self->tag_management_view == TAG_MANAGEMENT_PLAN))
         return false;
     if (self->command_surface == COMMAND_SURFACE_SETTINGS)
         return settings_row_choice(at);
@@ -15989,13 +16403,13 @@ static HRESULT surface_list_view(const struct folio_window *_Nonnull self,
     HRESULT result = surface_row_count(self, &count);
     out->checklist = tag_surface(self) && !(management_surface(self) &&
                                             self->tag_management_view == TAG_MANAGEMENT_CHOOSE);
-    out->selection_required = count != 0 && !out->checklist;
+    out->selection_required = count != 0 && !out->checklist && !about_surface(self);
     out->scroll = (int)self->command_first;
-    if (self->command_surface == COMMAND_SURFACE_SETTINGS)
+    if (self->command_surface == COMMAND_SURFACE_SETTINGS || about_surface(self))
     {
         RECT content = settings_content_rect(self);
         out->viewport = content.bottom - content.top;
-        out->scroll_limit = (int)settings_scroll_limit(self);
+        out->scroll_limit = (int)settings_content_limit(self);
         return result;
     }
     if (self->command_surface == COMMAND_SURFACE_MENU)
@@ -16069,6 +16483,17 @@ static bool surface_status_live(const struct folio_window *_Nonnull self)
     return phase == DISCOVERY_READY || phase == DISCOVERY_FAILED;
 }
 
+/* focusを受けるのはリンク4つと戻るだけ。文字行と×は鍵の巡回に入らない。 */
+static void about_control_view(const struct folio_window *_Nonnull self,
+                               struct accessible_item item, struct accessible_view *_Nonnull out)
+{
+    out->focusable =
+        item.kind == ACCESSIBLE_SURFACE_BUTTON &&
+        (item.slot == ACCESSIBLE_SURFACE_BACK || about_link_index(item.slot) < about_link_count);
+    out->focused =
+        out->focusable && GetFocus() == self->command_layer && about_focus_slot(self) == item.slot;
+}
+
 static void surface_control_view(const struct folio_window *_Nonnull self,
                                  struct accessible_item item, struct accessible_view *_Nonnull out)
 {
@@ -16091,6 +16516,11 @@ static void surface_control_view(const struct folio_window *_Nonnull self,
     if (tag_surface(self))
     {
         tag_control_view(self, item, out);
+        return;
+    }
+    if (about_surface(self))
+    {
+        about_control_view(self, item, out);
         return;
     }
     out->focusable = surface_row_focusable(item.kind) || settings_button_item(item);
@@ -16146,8 +16576,9 @@ static size_t settings_selected_language(const struct folio_window *_Nonnull sel
 static HRESULT surface_selected_row(const struct folio_window *_Nonnull self,
                                     struct accessible_item *_Nonnull out)
 {
-    if (tag_surface(self) &&
-        !(management_surface(self) && self->tag_management_view == TAG_MANAGEMENT_CHOOSE))
+    if (about_surface(self) ||
+        (tag_surface(self) &&
+         !(management_surface(self) && self->tag_management_view == TAG_MANAGEMENT_CHOOSE)))
         return S_FALSE;
     size_t at = self->command_selection;
     if (self->command_surface == COMMAND_SURFACE_PALETTE)
@@ -16183,6 +16614,8 @@ static size_t surface_focused_button(const struct folio_window *_Nonnull self)
         return discovery_focus_slot(self->discovery_focus);
     if (tag_surface(self))
         return tag_focus_slot(self->tag_focus);
+    if (about_surface(self))
+        return about_focus_slot(self);
     return SIZE_MAX;
 }
 
@@ -16299,6 +16732,24 @@ static void surface_tag_button_action(struct folio_window *_Nonnull self, size_t
         tag_clear_filters(self);
 }
 
+/* 設定の入口行と、その副面の戻る・公式リンク。 */
+static void surface_settings_button_action(struct folio_window *_Nonnull self, size_t slot)
+{
+    size_t link = about_link_index(slot);
+    if (slot == ACCESSIBLE_SURFACE_BACK)
+    {
+        return_to_settings(self);
+        return;
+    }
+    if (link < about_link_count)
+    {
+        open_about_link(self, link);
+        return;
+    }
+    self->command_selection = settings_button_index(slot);
+    adopt_settings_row(self);
+}
+
 static HRESULT surface_button_action(struct folio_window *_Nonnull self, size_t slot)
 {
     if (discovery_surface(self) && !discovery_button_enabled(self, slot))
@@ -16333,12 +16784,14 @@ static HRESULT surface_button_action(struct folio_window *_Nonnull self, size_t 
         close_command_surface(self);
         break;
     case ACCESSIBLE_SURFACE_BACK:
-        show_settings_surface(self, "");
-        break;
     case ACCESSIBLE_SURFACE_THEME:
     case ACCESSIBLE_SURFACE_STORAGE:
-        self->command_selection = settings_button_index(slot);
-        adopt_settings_row(self);
+    case ACCESSIBLE_SURFACE_ABOUT:
+    case ACCESSIBLE_SURFACE_ABOUT_REPOSITORY:
+    case ACCESSIBLE_SURFACE_ABOUT_RELEASES:
+    case ACCESSIBLE_SURFACE_ABOUT_STORE:
+    case ACCESSIBLE_SURFACE_ABOUT_ISSUES:
+        surface_settings_button_action(self, slot);
         break;
     case ACCESSIBLE_SURFACE_SHOW_HELP:
         toggle_command_keys(self);
@@ -16367,6 +16820,13 @@ static void surface_reveal(struct folio_window *_Nonnull self, struct accessible
         RECT area = command_body_rect(self);
         self->command_help_scroll = (size_t)(row.top - area.top);
         self->command_help_scroll = command_help_offset(self);
+        redraw_command_layer(self);
+        return;
+    }
+    if (about_surface(self))
+    {
+        if (item.kind == ACCESSIBLE_SURFACE_TEXT)
+            reveal_content_rect(self, about_text_rect(self, item.slot), about_scroll_limit(self));
         redraw_command_layer(self);
         return;
     }
@@ -16499,6 +16959,23 @@ static bool management_row_focus_requested(const struct folio_window *_Nonnull s
            request->action == ACCESSIBLE_ACTION_FOCUS;
 }
 
+static bool about_button_focus_requested(const struct folio_window *_Nonnull self,
+                                         const struct accessible_request *_Nonnull request)
+{
+    return about_surface(self) && request->item.kind == ACCESSIBLE_SURFACE_BUTTON &&
+           request->action == ACCESSIBLE_ACTION_FOCUS;
+}
+
+static HRESULT about_button_focus(struct folio_window *_Nonnull self, size_t slot)
+{
+    size_t link = about_link_index(slot);
+    if (link >= about_link_count && slot != ACCESSIBLE_SURFACE_BACK)
+        return accessibility_node_invalid;
+    self->command_selection = link;
+    reveal_command_selection(self);
+    return focus_surface_row(self);
+}
+
 static HRESULT surface_list_action(struct folio_window *_Nonnull self,
                                    const struct accessible_request *_Nonnull request)
 {
@@ -16531,6 +17008,8 @@ static HRESULT surface_action(struct folio_window *_Nonnull self,
         return discovery_button_focus(self, item.slot);
     if (tag_button_focus_requested(self, request))
         return tag_button_focus(self, item.slot);
+    if (about_button_focus_requested(self, request))
+        return about_button_focus(self, item.slot);
     if (item.kind == ACCESSIBLE_SURFACE)
         return surface_root_action(self, request);
     if (item.kind == ACCESSIBLE_SURFACE_TAB)

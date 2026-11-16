@@ -27,6 +27,8 @@
 #include "note_tags.h"
 #include "note_text.h"
 #include "persistence_adapter.h"
+#include "product_link.h"
+#include "product_version.h"
 #include "regex_adapter.h"
 #include "rename_view.h"
 #include "storage_adapter.h"
@@ -36,8 +38,10 @@
 #include "transfer_adapter.h"
 #include "ui_face.h"
 #include "ui_text.h"
+#include "ui_text_request.h"
 #include "utf16_text.h"
 #include "web_link_adapter.h"
+#include "web_uri.h"
 #include <commctrl.h>
 #include <richedit.h>
 
@@ -129,6 +133,12 @@ static enum appearance_outcome read_favorite_appearance(struct appearance_adapte
         .highlight_text = {0, 0, 0}};
     return APPEARANCE_READY;
 }
+static bool about_case;
+static bool about_visual_case;
+static unsigned about_opened;
+static char about_uri[128];
+static enum web_link_outcome about_port_result = WEB_LINK_OPENED;
+static const struct folio_state *_Nullable about_state;
 static bool layout_case;
 static bool save_as_case;
 static bool rename_case;
@@ -193,6 +203,15 @@ static void require(bool condition, const char *_Nonnull message)
         fprintf(stderr, "FAIL: %s\n", message);
         exit(EXIT_FAILURE);
     }
+}
+
+/* 製品リンクの外部起動を捕捉する。実adapterへ渡さない（ADR0097）。 */
+static enum web_link_outcome about_open_link(const struct web_uri *_Nonnull uri)
+{
+    about_opened += 1;
+    require(strcpy_s(about_uri, sizeof about_uri, web_uri_bytes(uri)) == 0,
+            "the product URI fits the observation buffer");
+    return about_port_result;
 }
 
 static enum note_store_outcome fixture_store(struct persistence_port disk,
@@ -321,7 +340,7 @@ static void seed_notes(struct persistence_port disk)
         save_as_case || rename_case || replace_save_case || move_edit_case || first_save_case ||
         first_save_modal_case || empty_save_case || locked_save_case || unicode_save_case ||
         filter_save_case || session_save_case || session_untitled_case || session_ime_case ||
-        session_modal_case || close_modal_case || export_case)
+        session_modal_case || close_modal_case || export_case || about_case)
     {
         seed_history(disk);
         source = history_case || note_switch_case || zoom_case || theme_preview_case ||
@@ -331,7 +350,7 @@ static void seed_notes(struct persistence_port disk)
                          first_save_case || first_save_modal_case || empty_save_case ||
                          locked_save_case || filter_save_case || session_save_case ||
                          session_untitled_case || session_ime_case || session_modal_case ||
-                         close_modal_case || export_case
+                         close_modal_case || export_case || about_case
                      ? history_current
                      : replace_current;
     }
@@ -461,10 +480,12 @@ static void create_fixture(struct native_fixture *_Nonnull fixture)
     if (scale_trace_case)
         disk.read_note = scale_observed_read;
     struct appearance_port appearance = appearance_adapter_port(fixture->appearance);
-    if (favorites_case || tags_case)
+    if (favorites_case || tags_case || about_visual_case)
         appearance.read = read_favorite_appearance;
     struct regex_port regex = regex_adapter_port(fixture->regex);
     struct web_link_port web = web_link_adapter_port();
+    if (about_case)
+        web.open = about_open_link;
     struct transfer_port transfer = transfer_adapter_port();
     fixture->images = &controlled;
     struct image_port images = {.adapter = &controlled,
@@ -11068,11 +11089,449 @@ static void run_motion_case(struct native_fixture *_Nonnull fixture)
     folio_window_destroy(window);
 }
 
+/* #838 / ADR0097: アプリの情報の面。外部起動は観測用portが受け、実ブラウザーを開かない。 */
+static void about_open(struct folio_window *_Nonnull window)
+{
+    struct accessible_request settings = {.item = {.kind = ACCESSIBLE_SETTINGS},
+                                          .action = ACCESSIBLE_ACTION_INVOKE};
+    require(folio_window_accessible_action(window, &settings) == S_OK,
+            "open settings before the About surface");
+    pump(window);
+    surface_button(window, ACCESSIBLE_SURFACE_ABOUT);
+}
+
+static void about_expect_name(const struct accessible_view *_Nonnull view,
+                              const char *_Nonnull expected, const char *_Nonnull message)
+{
+    char16_t units[ui_text_unit_limit];
+    size_t written = 0;
+    require(utf16_text_fill(expected, units, ui_text_unit_limit, &written) ==
+                    UTF16_TEXT_FILL_READY &&
+                wcscmp(view->name, units) == 0,
+            message);
+}
+
+static void about_expect_title(struct folio_window *_Nonnull window, enum ui_text title)
+{
+    struct accessible_item root = {.kind = ACCESSIBLE_SURFACE};
+    struct accessible_view view = {0};
+    require(folio_window_accessible_read(window, &root, &view) == S_OK && !view.offscreen &&
+                view.dialog,
+            "the settings frame stays open as a dialog");
+    about_expect_name(&view, ui_text_line(title, folio_state_language(about_state)),
+                      "the surface name is the title of the current face");
+}
+
+static void about_expect_focus(struct folio_window *_Nonnull window,
+                               enum accessible_surface_button slot)
+{
+    struct accessible_item focused = {0};
+    require(folio_window_accessible_focus(window, ACCESSIBLE_SURFACE, &focused) == S_OK &&
+                focused.kind == ACCESSIBLE_SURFACE_BUTTON && focused.slot == slot,
+            "keyboard focus is on the expected About control");
+    struct accessible_view view = tags_view(window, ACCESSIBLE_SURFACE_BUTTON, slot);
+    require(view.focusable && view.focused && view.enabled,
+            "the focused control is visible and reports focus");
+}
+
+static void about_key(struct folio_window *_Nonnull window, WPARAM key, bool shift)
+{
+    BYTE original[256], keyboard[256] = {0};
+    require(GetKeyboardState(original), "save About keyboard state");
+    keyboard[VK_SHIFT] = shift ? 0x80 : 0;
+    require(SetKeyboardState(keyboard), "About key modifiers");
+    HWND layer = folio_window_accessible_window(window, ACCESSIBLE_SURFACE);
+    require(GetFocus() == layer, "the surface layer owns focus without an input field");
+    SendMessageW(layer, WM_KEYDOWN, key, 0);
+    pump(window);
+    require(SetKeyboardState(original), "restore About keyboard state");
+}
+
+static void about_focus_button(struct folio_window *_Nonnull window,
+                               enum accessible_surface_button slot)
+{
+    struct accessible_request request = {
+        .item = {.kind = ACCESSIBLE_SURFACE_BUTTON,
+                 .slot = slot,
+                 .revision = folio_window_accessible_surface_revision(window)},
+        .action = ACCESSIBLE_ACTION_FOCUS};
+    require(folio_window_accessible_action(window, &request) == S_OK,
+            "focus a public About control");
+    about_expect_focus(window, slot);
+}
+
+/* 開いた直後は戻る。Tabと矢印はリンク4つ→戻るを循環し、移動だけでは外部を開かない。 */
+static void about_cycle(struct folio_window *_Nonnull window)
+{
+    const enum accessible_surface_button order[] = {
+        ACCESSIBLE_SURFACE_ABOUT_REPOSITORY, ACCESSIBLE_SURFACE_ABOUT_RELEASES,
+        ACCESSIBLE_SURFACE_ABOUT_STORE, ACCESSIBLE_SURFACE_ABOUT_ISSUES, ACCESSIBLE_SURFACE_BACK};
+    const WPARAM forward[] = {VK_TAB, VK_RIGHT, VK_DOWN, VK_TAB, VK_RIGHT};
+    about_expect_focus(window, ACCESSIBLE_SURFACE_BACK);
+    for (size_t at = 0; at < sizeof order / sizeof order[0]; ++at)
+    {
+        about_key(window, forward[at], false);
+        about_expect_focus(window, order[at]);
+    }
+    about_key(window, VK_LEFT, false);
+    about_expect_focus(window, ACCESSIBLE_SURFACE_ABOUT_ISSUES);
+    about_key(window, VK_UP, false);
+    about_expect_focus(window, ACCESSIBLE_SURFACE_ABOUT_STORE);
+    about_key(window, VK_TAB, true);
+    about_expect_focus(window, ACCESSIBLE_SURFACE_ABOUT_RELEASES);
+    require(about_opened == 0, "moving focus never reaches the web link port");
+}
+
+/* 文字行は表示順にTextとして読める。版は製品の版の唯一の入力から作る。 */
+static void about_texts(struct folio_window *_Nonnull window, enum folio_language language)
+{
+    const enum ui_text labels[] = {UI_TEXT_APP_LOGO,          UI_TEXT_SETTINGS_VERSION,
+                                   UI_TEXT_ABOUT_DESCRIPTION, UI_TEXT_ABOUT_LICENSE_HEADING,
+                                   UI_TEXT_ABOUT_LICENSE,     UI_TEXT_ABOUT_FONTS,
+                                   UI_TEXT_ABOUT_NOTICES,     UI_TEXT_ABOUT_LINKS_HEADING,
+                                   UI_TEXT_ABOUT_LINKS_HINT};
+    struct accessible_item row = {.kind = ACCESSIBLE_SURFACE_LIST,
+                                  .revision = folio_window_accessible_surface_revision(window)};
+    HRESULT result =
+        folio_window_accessible_navigate(window, &row, ACCESSIBLE_NAVIGATION_FIRST, &row);
+    LONG bottom = 0;
+    size_t count = 0;
+    for (; result == S_OK && count < sizeof labels / sizeof labels[0]; ++count)
+    {
+        char expected[ui_text_unit_limit];
+        struct ui_text_request request = {
+            .id = labels[count], .language = language, .name = product_version_text()};
+        struct accessible_view view = {0};
+        require(ui_text_format(&request, expected, sizeof expected) == UI_TEXT_FORMAT_READY &&
+                    row.kind == ACCESSIBLE_SURFACE_TEXT &&
+                    folio_window_accessible_read(window, &row, &view) == S_OK && !view.focusable,
+                "About line is readable, non-interactive Text");
+        about_expect_name(&view, expected, "About line matches the catalog in visual order");
+        require(!view.offscreen && view.bounds.top >= bottom,
+                "About lines are all visible in the wide window and do not overlap");
+        bottom = view.bounds.bottom;
+        result = folio_window_accessible_navigate(window, &row, ACCESSIBLE_NAVIGATION_NEXT, &row);
+    }
+    require(result == S_FALSE && count == sizeof labels / sizeof labels[0],
+            "the About list has exactly its text lines");
+    struct accessible_view list = tags_view(window, ACCESSIBLE_SURFACE_LIST, 0);
+    struct accessible_view link =
+        tags_view(window, ACCESSIBLE_SURFACE_BUTTON, ACCESSIBLE_SURFACE_ABOUT_ISSUES);
+    require(list.scroll_limit == 0 && link.bounds.bottom <= bottom,
+            "the wide window shows the whole About content without scrolling");
+    about_expect_title(window, UI_TEXT_ABOUT_TITLE);
+}
+
+/* リンクはNameが表示名、HelpTextが行き先。EnterとUIA Invokeが同じ意図を一度だけ渡す。 */
+static void about_links(struct folio_window *_Nonnull window, enum folio_language language)
+{
+    const enum ui_text labels[] = {UI_TEXT_ABOUT_LINK_REPOSITORY, UI_TEXT_ABOUT_LINK_RELEASES,
+                                   UI_TEXT_ABOUT_LINK_STORE, UI_TEXT_ABOUT_LINK_ISSUES};
+    for (size_t link = 0; link < product_link_count; ++link)
+    {
+        enum accessible_surface_button slot =
+            (enum accessible_surface_button)(ACCESSIBLE_SURFACE_ABOUT_REPOSITORY + link);
+        about_focus_button(window, slot);
+        struct accessible_view view = tags_view(window, ACCESSIBLE_SURFACE_BUTTON, slot);
+        char16_t uri[ui_text_unit_limit];
+        size_t written = 0;
+        about_expect_name(&view, ui_text_line(labels[link], language),
+                          "link Name is its visible label");
+        require(utf16_text_fill(product_link_uri((enum product_link)link), uri, ui_text_unit_limit,
+                                &written) == UTF16_TEXT_FILL_READY &&
+                    wcscmp(view.help, uri) == 0,
+                "link HelpText is the destination before activation");
+        about_opened = 0;
+        about_key(window, link % 2 == 0 ? VK_RETURN : VK_SPACE, false);
+        require(about_opened == 1 &&
+                    strcmp(about_uri, product_link_uri((enum product_link)link)) == 0,
+                "Enter or Space passes exactly the official URI once");
+        surface_button(window, slot);
+        require(about_opened == 2 &&
+                    strcmp(about_uri, product_link_uri((enum product_link)link)) == 0,
+                "UIA Invoke reaches the same intent once");
+        about_expect_title(window, UI_TEXT_ABOUT_TITLE);
+        about_expect_focus(window, slot);
+    }
+}
+
+static bool about_status(struct folio_window *_Nonnull window,
+                         struct accessible_view *_Nonnull view)
+{
+    struct accessible_item item = {.kind = ACCESSIBLE_SURFACE_STATUS,
+                                   .revision = folio_window_accessible_surface_revision(window)};
+    require(folio_window_accessible_read(window, &item, view) == S_OK, "About status is readable");
+    return !view->offscreen;
+}
+
+/* 失敗は面内の1行。面は開いたままで、次の成功が行を消す。 */
+static void about_failure(struct folio_window *_Nonnull window, enum folio_language language)
+{
+    struct accessible_view status = {0};
+    require(!about_status(window, &status), "a successful link leaves no notice");
+    about_port_result = WEB_LINK_UNAVAILABLE;
+    about_opened = 0;
+    surface_button(window, ACCESSIBLE_SURFACE_ABOUT_ISSUES);
+    require(about_opened == 1 && about_status(window, &status),
+            "a refused launch shows one notice inside the surface");
+    about_expect_name(&status, folio_state_failure_line(FOLIO_STATE_WEB_LINK_UNAVAILABLE, language),
+                      "the notice is the existing link failure line");
+    struct accessible_view back =
+        tags_view(window, ACCESSIBLE_SURFACE_BUTTON, ACCESSIBLE_SURFACE_BACK);
+    struct accessible_view list = tags_view(window, ACCESSIBLE_SURFACE_LIST, 0);
+    require(list.bounds.bottom <= status.bounds.top && status.bounds.bottom <= back.bounds.top,
+            "content, notice and Back do not overlap");
+    about_expect_title(window, UI_TEXT_ABOUT_TITLE);
+    about_expect_focus(window, ACCESSIBLE_SURFACE_ABOUT_ISSUES);
+    about_port_result = WEB_LINK_OPENED;
+    about_key(window, VK_RETURN, false);
+    require(about_opened == 2 && !about_status(window, &status),
+            "the next successful launch clears the notice");
+}
+
+static void about_expect_settings(struct folio_window *_Nonnull window)
+{
+    about_expect_title(window, UI_TEXT_COMMAND_SETTINGS);
+    struct accessible_item focused = {0};
+    require(folio_window_accessible_focus(window, ACCESSIBLE_SURFACE, &focused) == S_OK &&
+                focused.kind == ACCESSIBLE_SURFACE_BUTTON &&
+                focused.slot == ACCESSIBLE_SURFACE_ABOUT,
+            "returning selects the About row of Settings");
+    struct accessible_view view = {0};
+    require(folio_window_accessible_read(window, &focused, &view) == S_OK && !view.offscreen &&
+                view.focused,
+            "the selected About row is revealed");
+}
+
+/* 開いた直後のEnter・Esc・戻るは設定のAbout行へ戻り、どれも外部を開かない。 */
+static void about_return(struct folio_window *_Nonnull window)
+{
+    about_opened = 0;
+    about_key(window, VK_RETURN, false);
+    about_expect_settings(window);
+    about_key(window, VK_RETURN, false);
+    about_expect_title(window, UI_TEXT_ABOUT_TITLE);
+    about_expect_focus(window, ACCESSIBLE_SURFACE_BACK);
+    about_key(window, VK_ESCAPE, false);
+    about_expect_settings(window);
+    about_key(window, VK_SPACE, false);
+    about_expect_focus(window, ACCESSIBLE_SURFACE_BACK);
+    surface_button(window, ACCESSIBLE_SURFACE_BACK);
+    about_expect_settings(window);
+    require(about_opened == 0, "opening and leaving About never launches a browser");
+    surface_button(window, ACCESSIBLE_SURFACE_ABOUT);
+}
+
+static void about_click(struct folio_window *_Nonnull window, POINT down, POINT up)
+{
+    HWND layer = folio_window_accessible_window(window, ACCESSIBLE_SURFACE);
+    require(ScreenToClient(layer, &down) && ScreenToClient(layer, &up), "About pointer position");
+    SendMessageW(layer, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(down.x, down.y));
+    SendMessageW(layer, WM_LBUTTONUP, 0, MAKELPARAM(up.x, up.y));
+    pump(window);
+}
+
+/* 押下と解放が同じ釦のときだけ開く。 */
+static void about_pointer(struct folio_window *_Nonnull window)
+{
+    struct accessible_view store =
+        tags_view(window, ACCESSIBLE_SURFACE_BUTTON, ACCESSIBLE_SURFACE_ABOUT_STORE);
+    struct accessible_view back =
+        tags_view(window, ACCESSIBLE_SURFACE_BUTTON, ACCESSIBLE_SURFACE_BACK);
+    POINT link = {(store.bounds.left + store.bounds.right) / 2,
+                  (store.bounds.top + store.bounds.bottom) / 2};
+    POINT other = {(back.bounds.left + back.bounds.right) / 2,
+                   (back.bounds.top + back.bounds.bottom) / 2};
+    about_opened = 0;
+    about_click(window, link, other);
+    require(about_opened == 0, "releasing on another control cancels the link");
+    about_expect_title(window, UI_TEXT_ABOUT_TITLE);
+    about_click(window, link, link);
+    require(about_opened == 1 && strcmp(about_uri, product_link_uri(PRODUCT_LINK_STORE)) == 0,
+            "press and release on the same link opens it once");
+    about_expect_title(window, UI_TEXT_ABOUT_TITLE);
+}
+
+/* 最小の窓では内容だけがスクロールし、focusした釦と戻るは見える。 */
+static void about_minimum(struct folio_window *_Nonnull window)
+{
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    about_focus_button(window, ACCESSIBLE_SURFACE_BACK);
+    require(SetWindowPos(root, nullptr, 20, 20, 560, 360, SWP_NOZORDER | SWP_NOACTIVATE),
+            "minimum About window");
+    pump(window);
+    struct accessible_view list = tags_view(window, ACCESSIBLE_SURFACE_LIST, 0);
+    printf("about geometry: viewport=%d limit=%d scroll=%d\n", list.viewport, list.scroll_limit,
+           list.scroll);
+    require(list.scroll_limit > 0 && list.scroll == 0 && !list.selection_required,
+            "the minimum window scrolls the About content");
+    about_focus_button(window, ACCESSIBLE_SURFACE_ABOUT_ISSUES);
+    struct accessible_view link =
+        tags_view(window, ACCESSIBLE_SURFACE_BUTTON, ACCESSIBLE_SURFACE_ABOUT_ISSUES);
+    struct accessible_view back =
+        tags_view(window, ACCESSIBLE_SURFACE_BUTTON, ACCESSIBLE_SURFACE_BACK);
+    list = tags_view(window, ACCESSIBLE_SURFACE_LIST, 0);
+    require(list.scroll > 0 && link.bounds.top >= list.bounds.top &&
+                link.bounds.bottom <= list.bounds.bottom && link.bounds.bottom <= back.bounds.top,
+            "the focused link is revealed above the fixed Back button");
+    about_focus_button(window, ACCESSIBLE_SURFACE_BACK);
+    require(SetWindowPos(root, nullptr, 20, 20, 1250, 850, SWP_NOZORDER | SWP_NOACTIVATE),
+            "restore the wide About window");
+    pump(window);
+}
+
+static void about_language(struct native_fixture *_Nonnull fixture, enum folio_language language)
+{
+    require(folio_state_set_language(fixture->state, language) == FOLIO_STATE_READY,
+            "About language");
+    struct folio_window *window = nullptr;
+    require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
+                FOLIO_WINDOW_CREATED,
+            "private About language window");
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    require(SetWindowPos(root, nullptr, 20, 20, 1250, 850, SWP_NOZORDER | SWP_NOACTIVATE),
+            "wide About language window");
+    pump(window);
+    about_open(window);
+    about_texts(window, language);
+    about_links(window, language);
+    about_failure(window, language);
+    surface_button(window, ACCESSIBLE_SURFACE_CLOSE);
+    folio_window_destroy(window);
+}
+
+static void about_surface_checks(struct folio_window *_Nonnull window)
+{
+    about_open(window);
+    about_cycle(window);
+    about_texts(window, FOLIO_LANGUAGE_JA);
+    about_links(window, FOLIO_LANGUAGE_JA);
+    about_failure(window, FOLIO_LANGUAGE_JA);
+    about_pointer(window);
+    about_minimum(window);
+    about_return(window);
+    uint64_t revision = folio_window_accessible_surface_revision(window);
+    surface_button(window, ACCESSIBLE_SURFACE_CLOSE);
+    struct accessible_item root = {.kind = ACCESSIBLE_SURFACE};
+    struct accessible_view view = {0};
+    require(folio_window_accessible_read(window, &root, &view) == S_OK && view.offscreen &&
+                folio_window_accessible_surface_revision(window) != revision,
+            "Close hides the whole surface and retires its controls");
+}
+
+static void run_about_case(struct native_fixture *_Nonnull fixture)
+{
+    require(folio_state_select_note(fixture->state, 0, 0, FOLIO_UNTITLED_PROTECT) ==
+                FOLIO_STATE_READY,
+            "select the dedicated About note");
+    about_state = fixture->state;
+    struct history_snapshot history = {0};
+    capture_history(fixture, &history);
+    struct folio_window *window = nullptr;
+    require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
+                FOLIO_WINDOW_CREATED,
+            "real About window");
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    require(SetWindowPos(root, nullptr, 20, 20, 1250, 850, SWP_NOZORDER | SWP_NOACTIVATE),
+            "wide About window");
+    pump(window);
+    action(window, ACCESSIBLE_EDIT);
+    append_switch_text(window);
+    expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_CHANGED);
+    struct native_body_snapshot closed = {0};
+    capture_native_body(window, &closed);
+    about_surface_checks(window);
+    expect_native_body(window, &closed);
+    expect_editor(window, fixture->state, switch_edited, FOLIO_NOTE_CHANGED);
+    history_undo(window);
+    expect_editor(window, fixture->state, switch_original, FOLIO_NOTE_SAME);
+    verify_history_unchanged(fixture, &history);
+    folio_window_destroy(window);
+    about_language(fixture, FOLIO_LANGUAGE_EN);
+    about_language(fixture, FOLIO_LANGUAGE_ZH_HANS);
+    for (size_t version = 0; version <= note_history_depth; ++version)
+        note_text_destroy(history.files[version]);
+}
+
+static void about_capture(struct folio_window *_Nonnull window, size_t sample,
+                          const char *_Nonnull suffix)
+{
+    static const char *const languages[] = {"ja", "en", "zh"};
+    static const char *const themes[] = {"light", "dark", "contrast"};
+    size_t combination = sample / 2;
+    char path[80];
+    require(snprintf(path, sizeof path, "about-%s-%s-%s%s.bmp", languages[combination % 3],
+                     themes[combination / 3], sample % 2 == 0 ? "560x360" : "1250x850", suffix) > 0,
+            "About capture path");
+    tags_capture(folio_window_accessible_window(window, ACCESSIBLE_WINDOW), path);
+}
+
+/* 設定の入口行、開いた直後、失敗の通知行（先頭のリンクへfocus）を同じ窓で採る。 */
+static void about_visual_capture(struct folio_window *_Nonnull window, size_t sample)
+{
+    struct accessible_request request = {.item = {.kind = ACCESSIBLE_SETTINGS},
+                                         .action = ACCESSIBLE_ACTION_INVOKE};
+    require(folio_window_accessible_action(window, &request) == S_OK, "open visual settings");
+    pump(window);
+    request.item =
+        (struct accessible_item){.kind = ACCESSIBLE_SURFACE_BUTTON,
+                                 .slot = ACCESSIBLE_SURFACE_ABOUT,
+                                 .revision = folio_window_accessible_surface_revision(window)};
+    request.action = ACCESSIBLE_ACTION_FOCUS;
+    require(folio_window_accessible_action(window, &request) == S_OK, "reveal the About row");
+    about_capture(window, sample, "-entry");
+    surface_button(window, ACCESSIBLE_SURFACE_ABOUT);
+    about_capture(window, sample, "");
+    about_port_result = WEB_LINK_UNAVAILABLE;
+    about_key(window, VK_TAB, false);
+    about_key(window, VK_RETURN, false);
+    about_port_result = WEB_LINK_OPENED;
+    about_capture(window, sample, "-notice");
+    surface_button(window, ACCESSIBLE_SURFACE_CLOSE);
+}
+
+/* 三言語×明/暗/高コントラスト×最小と広い窓。色と重なりは採取した画像で確認する。 */
+static void about_visual(struct native_fixture *_Nonnull fixture)
+{
+    const enum folio_language languages[] = {FOLIO_LANGUAGE_JA, FOLIO_LANGUAGE_EN,
+                                             FOLIO_LANGUAGE_ZH_HANS};
+    about_state = fixture->state;
+    for (size_t sample = 0; sample < 18; ++sample)
+    {
+        size_t combination = sample / 2;
+        favorite_high_contrast = combination / 3 == 2;
+        require(folio_state_set_language(fixture->state, languages[combination % 3]) ==
+                        FOLIO_STATE_READY &&
+                    folio_state_refresh_theme(fixture->state) == FOLIO_STATE_READY &&
+                    folio_state_set_theme(fixture->state, combination / 3 == 1
+                                                              ? FOLIO_THEME_CHOICE_DARK
+                                                              : FOLIO_THEME_CHOICE_LIGHT) ==
+                        FOLIO_STATE_READY,
+                "About visual palette and language");
+        struct folio_window *window = nullptr;
+        require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY,
+                                    &window) == FOLIO_WINDOW_CREATED,
+                "private About visual window");
+        HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+        require(SetWindowPos(root, nullptr, 20, 20, sample % 2 == 0 ? 560 : 1250,
+                             sample % 2 == 0 ? 360 : 850, SWP_NOZORDER | SWP_NOACTIVATE),
+                "About visual minimum or wide size");
+        pump(window);
+        about_visual_capture(window, sample);
+        folio_window_destroy(window);
+    }
+    favorite_high_contrast = false;
+}
+
 static void run_fixture(struct native_fixture *_Nonnull fixture, int argc,
                         char *_Nonnull *_Nonnull argv)
 {
     if (scale_note_count != 0)
         run_scale_case(fixture);
+    else if (about_visual_case)
+        about_visual(fixture);
+    else if (about_case)
+        run_about_case(fixture);
     else if (motion_case)
         run_motion_case(fixture);
     else if (body_discovery_case)
@@ -11139,6 +11598,12 @@ static void select_tags_fixture(const char *_Nonnull selector)
                 motion_case || scale_note_count != 0;
 }
 
+static void select_about_fixture(const char *_Nonnull selector)
+{
+    about_visual_case = strcmp(selector, "--about-visual") == 0;
+    about_case = strcmp(selector, "--about") == 0 || about_visual_case;
+}
+
 static HWINSTA fixture_clipboard_station(void)
 {
     return paste_case || discovery_copy_case || body_discovery_copy_case ? isolate_paste_clipboard()
@@ -11168,6 +11633,7 @@ int main(int argc, char *_Nonnull *_Nonnull argv)
     session_modal_case = strcmp(selector, "--session-modal") == 0;
     close_modal_case = strcmp(selector, "--close-modal") == 0;
     export_case = strcmp(selector, "--export") == 0;
+    select_about_fixture(selector);
     HWINSTA original_station = GetProcessWindowStation();
     HDESK original_desktop = GetThreadDesktop(GetCurrentThreadId());
     HWINSTA paste_station = fixture_clipboard_station();
