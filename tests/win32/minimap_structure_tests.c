@@ -3,6 +3,7 @@
 #include "note_minimap.h"
 #include "note_pane.h"
 #include "note_text.h"
+#include "theme_palette.h"
 #include "utf8_text.h"
 #include <commdlg.h>
 #include <limits.h>
@@ -34,11 +35,13 @@ static void load_palette(struct note_pane *_Nonnull pane, enum pane_mode mode,
     struct markdown_rtf *_Nullable rtf = nullptr;
     require(note_text_create(content, strlen(content), &text) == NOTE_TEXT_ACCEPTED, "source");
     enum markdown_rtf_outcome made = MARKDOWN_RTF_OUT_OF_MEMORY;
+    struct theme_palette theme = *folio_theme_palette(FOLIO_THEME_LIGHT);
+    theme.rtf = palette;
     switch (mode)
     {
     case PANE_MODE_VIEW:
         made = markdown_rtf_create(
-            text, palette, (struct markdown_rtf_locale){"Yu Gothic UI", FOLIO_LANGUAGE_JA}, &rtf);
+            text, &theme, (struct markdown_rtf_locale){"Yu Gothic UI", FOLIO_LANGUAGE_JA}, &rtf);
         break;
     case PANE_MODE_EDIT:
         made = markdown_rtf_plain(text, palette, "Yu Gothic UI", &rtf);
@@ -269,11 +272,10 @@ static void syntax_palette(struct note_pane *_Nonnull pane, const char *_Nonnull
     HWND handle = note_pane_handle(pane);
     wchar_t text[512];
     GetWindowTextW(handle, text, 512);
-    require(
-        wcscmp(text,
-               L"c\x2003HYPERLINK \"nenefolio-code:0\"コピー\r\nint value = 42; // comment\r\n\r\n"
-               L"const char *s = \"{日本語}\\path\";") == 0,
-        "syntax preserves braces, slash, Unicode, spaces and empty line");
+    require(wcscmp(text, L"c\x2003HYPERLINK \"nenefolio-code:0\"\xA0\xA0コピー\xA0\xA0\r\nint "
+                         L"value = 42; // comment\r\n\r\n"
+                         L"const char *s = \"{日本語}\\path\";") == 0,
+            "syntax preserves braces, slash, Unicode, spaces and empty line");
     token_color(handle, L"int", palette.code_keyword);
     token_color(handle, L"c", palette.code_comment);
     CHARFORMAT2W format = {.cbSize = sizeof format};
@@ -325,9 +327,10 @@ static void code_label_boundaries(struct note_pane *_Nonnull pane)
     HWND handle = note_pane_handle(pane);
     wchar_t actual[512];
     GetWindowTextW(handle, actual, 512);
-    require(wcscmp(actual,
-                   L"Before\r\nPyThOn\x2003HYPERLINK \"nenefolio-code:0\"コピー\r\nreturn 42"
-                   L"\r\nmystery\r\nHYPERLINK \"nenefolio-code:1\"コピー\r\nplain\r\nTail") == 0,
+    require(wcscmp(actual, L"Before\r\nPyThOn\x2003HYPERLINK "
+                           L"\"nenefolio-code:0\"\xA0\xA0コピー\xA0\xA0\r\nreturn 42"
+                           L"\r\nmystery\r\nHYPERLINK "
+                           L"\"nenefolio-code:1\"\xA0\xA0コピー\xA0\xA0\r\nplain\r\nTail") == 0,
             "labels include unknown and empty fences, omit absent info and extra attributes; "
             "blocks with code carry the copy action and the empty fence does not");
     FINDTEXTEXW find = {{0, -1}, L"return 42", {0, 0}};
@@ -404,6 +407,40 @@ static size_t count_copy_words(const char16_t *_Nonnull text, size_t length, siz
     return count;
 }
 
+/* #839 round 2: the action is a filled chip at the right edge of the header row. */
+static void code_copy_chip(struct note_pane *_Nonnull pane, LONG first)
+{
+    HWND handle = note_pane_handle(pane);
+    CHARRANGE label = {first, first + 3};
+    SendMessageW(handle, EM_EXSETSEL, 0, (LPARAM)&label);
+    CHARFORMAT2W format = {.cbSize = sizeof format};
+    SendMessageW(handle, EM_GETCHARFORMAT, SCF_SELECTION, (LPARAM)&format);
+    const struct theme_palette *theme = folio_theme_palette(FOLIO_THEME_LIGHT);
+    printf("copy label effects=%lx mask=%lx height=%ld color=%06lx\n", format.dwEffects,
+           format.dwMask, format.yHeight, format.crTextColor);
+    require((format.dwEffects & CFE_LINK) != 0 && format.yHeight == 180 &&
+                format.crTextColor ==
+                    RGB(theme->chip_text.red, theme->chip_text.green, theme->chip_text.blue) &&
+                (format.dwEffects & CFE_AUTOBACKCOLOR) == 0 &&
+                format.crBackColor == RGB(theme->chip_background.red, theme->chip_background.green,
+                                          theme->chip_background.blue),
+            "the action is a native link in the label's size with the primary chip colour pair");
+    /* The link run is the whole chip: two no-break spaces on each side of the word. */
+    CHARRANGE chip = {first - 2, first + 5};
+    SendMessageW(handle, EM_EXSETSEL, 0, (LPARAM)&chip);
+    wchar_t padded[16];
+    SendMessageW(handle, EM_GETSELTEXT, 0, (LPARAM)padded);
+    require(wcscmp(padded, L"\xA0\xA0コピー\xA0\xA0") == 0,
+            "the chip pads the word inside the link");
+    expect_copy_target(pane, first - 2, "nenefolio-code:0");
+    expect_copy_target(pane, first + 4, "nenefolio-code:0");
+    PARAFORMAT2 paragraph = {.cbSize = sizeof paragraph};
+    SendMessageW(handle, EM_GETPARAFORMAT, 0, (LPARAM)&paragraph);
+    require((paragraph.dwMask & PFM_ALIGNMENT) != 0 && paragraph.wAlignment == PFA_RIGHT &&
+                paragraph.dxRightIndent == 180,
+            "the header row is right aligned with the code's right padding");
+}
+
 /* #839: the copy action is a native link, absent from the search projection and from EDIT. */
 static void code_copy_action(struct note_pane *_Nonnull pane)
 {
@@ -413,10 +450,13 @@ static void code_copy_action(struct note_pane *_Nonnull pane)
     HWND handle = note_pane_handle(pane);
     wchar_t actual[512];
     GetWindowTextW(handle, actual, 512);
-    require(wcscmp(actual,
-                   L"コピー 前文\r\nc\x2003HYPERLINK \"nenefolio-code:0\"コピー\r\nint a;\r\n"
-                   L"HYPERLINK \"nenefolio-code:1\"コピー\r\n引用\r\n終わり コピー") == 0,
-            "every block with code shows one copy action after its optional label");
+    require(
+        wcscmp(actual,
+               L"コピー 前文\r\nc\x2003HYPERLINK \"nenefolio-code:0\"\xA0\xA0コピー\xA0\xA0\r\nint "
+               L"a;\r\n"
+               L"HYPERLINK \"nenefolio-code:1\"\xA0\xA0コピー\xA0\xA0\r\n引用\r\n終わり コピー") ==
+            0,
+        "every block with code shows one copy action after its optional label");
     LONG first = nth_copy_label(handle, 1);
     LONG second = nth_copy_label(handle, 2);
     expect_copy_target(pane, first, "nenefolio-code:0");
@@ -424,17 +464,7 @@ static void code_copy_action(struct note_pane *_Nonnull pane)
     expect_copy_target(pane, second + 1, "nenefolio-code:1");
     expect_copy_target(pane, nth_copy_label(handle, 0), nullptr);
     expect_copy_target(pane, nth_copy_label(handle, 3) + 1, nullptr);
-    CHARRANGE label = {first, first + 3};
-    SendMessageW(handle, EM_EXSETSEL, 0, (LPARAM)&label);
-    CHARFORMAT2W format = {.cbSize = sizeof format};
-    SendMessageW(handle, EM_GETCHARFORMAT, SCF_SELECTION, (LPARAM)&format);
-    struct rgb_color muted = rtf_palette_for(FOLIO_THEME_LIGHT).code_comment;
-    printf("copy label effects=%lx mask=%lx height=%ld color=%06lx\n", format.dwEffects,
-           format.dwMask, format.yHeight, format.crTextColor);
-    require((format.dwEffects & CFE_LINK) != 0 && (format.dwEffects & CFE_UNDERLINE) != 0 &&
-                format.yHeight == 180 &&
-                format.crTextColor == RGB(muted.red, muted.green, muted.blue),
-            "the action is a native underlined link in the label's size and colour");
+    code_copy_chip(pane, first);
     const char16_t *visible = nullptr;
     size_t length = 0;
     size_t last = 0;

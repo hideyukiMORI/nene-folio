@@ -30,7 +30,7 @@ static void load(struct note_pane *_Nonnull pane, const char *_Nonnull source, e
     require(note_text_create(source, strlen(source), &text) == NOTE_TEXT_ACCEPTED, "source");
     enum markdown_rtf_outcome result =
         mode == PANE_MODE_VIEW
-            ? markdown_rtf_create(text, rtf_palette_for(FOLIO_THEME_LIGHT),
+            ? markdown_rtf_create(text, folio_theme_palette(FOLIO_THEME_LIGHT),
                                   (struct markdown_rtf_locale){"Yu Gothic UI", FOLIO_LANGUAGE_JA},
                                   &rtf)
             : markdown_rtf_plain(text, rtf_palette_for(FOLIO_THEME_LIGHT), "Yu Gothic UI", &rtf);

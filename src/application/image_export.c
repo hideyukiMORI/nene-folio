@@ -302,7 +302,7 @@ enum folio_state_outcome image_export_append(struct image_export *_Nonnull expor
         return FOLIO_STATE_EXPORT_TOO_LARGE;
     struct markdown_rtf *_Nullable rendered = nullptr;
     enum markdown_rtf_outcome parsed = markdown_rtf_create(
-        entry->body, folio_theme_palette(FOLIO_THEME_LIGHT)->rtf,
+        entry->body, folio_theme_palette(FOLIO_THEME_LIGHT),
         (struct markdown_rtf_locale){ui_font_face(FOLIO_LANGUAGE_JA), FOLIO_LANGUAGE_JA},
         &rendered);
     if (parsed != MARKDOWN_RTF_CONVERTED)

@@ -392,7 +392,7 @@ static void rendering(void)
         "---\ntitle: hidden-title\ntags: [hidden-tag]\n---\n# Visible\n![image](images/a.png)\n";
     struct note_text *body = text(source);
     struct markdown_rtf *rtf = nullptr;
-    require(markdown_rtf_create(body, rtf_palette_for(FOLIO_THEME_LIGHT),
+    require(markdown_rtf_create(body, folio_theme_palette(FOLIO_THEME_LIGHT),
                                 (struct markdown_rtf_locale){"Consolas", FOLIO_LANGUAGE_JA},
                                 &rtf) == MARKDOWN_RTF_CONVERTED,
             "supported metadata renders through the canonical Markdown path");

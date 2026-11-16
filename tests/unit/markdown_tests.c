@@ -35,6 +35,15 @@ static const char header[] =
     "\\red198\\green152\\blue236;\\red164\\green217\\blue163;"
     "\\red154\\green165\\blue181;\\red240\\green198\\blue125;}"
     "\\f0\\fs22\\cf1";
+/* 閲覧の文書は、同じ色表の後ろへコピー操作のチップの文字と地（主操作の対）を足す（ADR0098）。 */
+static const char view_header[] =
+    "{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0\\fnil Noto Sans JP;}{\\f1\\fmodern Consolas;}}"
+    "{\\colortbl;\\red36\\green19\\blue24;\\red44\\green0\\blue30;\\red106\\green96\\blue92;"
+    "\\red178\\green60\\blue18;\\red237\\green225\\blue232;\\red44\\green0\\blue30;"
+    "\\red198\\green152\\blue236;\\red164\\green217\\blue163;"
+    "\\red154\\green165\\blue181;\\red240\\green198\\blue125;"
+    "\\red255\\green255\\blue255;\\red119\\green41\\blue83;}"
+    "\\f0\\fs22\\cf1";
 
 /* markdown を変換し、文書の頭と末尾を除いた本体が expected と同じか。 */
 static void expect_body(const char *_Nonnull markdown, const char *_Nonnull expected)
@@ -43,14 +52,14 @@ static void expect_body(const char *_Nonnull markdown, const char *_Nonnull expe
     require(note_text_create(markdown, strlen(markdown), &text) == NOTE_TEXT_ACCEPTED, markdown);
     struct markdown_rtf *rtf = nullptr;
     require(markdown_rtf_create(
-                text, rtf_palette_for(FOLIO_THEME_LIGHT),
+                text, folio_theme_palette(FOLIO_THEME_LIGHT),
                 (struct markdown_rtf_locale){ui_font_face(FOLIO_LANGUAGE_JA), FOLIO_LANGUAGE_JA},
                 &rtf) == MARKDOWN_RTF_CONVERTED,
             "convert");
     const char *whole = markdown_rtf_text(rtf);
     size_t length = markdown_rtf_length(rtf);
-    size_t head = strlen(header);
-    require(length >= head + 1 && memcmp(whole, header, head) == 0 && whole[length - 1] == '}',
+    size_t head = strlen(view_header);
+    require(length >= head + 1 && memcmp(whole, view_header, head) == 0 && whole[length - 1] == '}',
             "document frame");
     char body[2048];
     size_t body_length = length - head - 1;
@@ -124,9 +133,12 @@ static void verify_emphasis(void)
 /* コードブロックの見出し行に置くコピーの操作（ADR0098）。slot はノート内の通し番号。 */
 #define CODE_OPEN "{\\f1\\fs20\\cf5\\highlight6"
 #define CODE_HEAD "\\pard\\li180\\ri180\\sb120\\sa80\\sl240\\slmult1 "
+#define CODE_HEAD_RIGHT "\\pard\\qr\\li180\\ri180\\sb120\\sa80\\sl240\\slmult1 "
 #define CODE_LINE "\\pard\\li180\\ri180\\sb0\\sa0\\sl240\\slmult1 "
 #define CODE_COPY_OPEN "{\\field{\\*\\fldinst{HYPERLINK \"nenefolio-code:"
-#define CODE_COPY_CLOSE "\"}}{\\fldrslt{\\f0\\fs18\\cf9\\ul \xE3\x82\xB3\xE3\x83\x94\xE3\x83\xBC}}}"
+#define CODE_COPY_CLOSE                                                                            \
+    "\"}}{\\fldrslt{\\f0\\fs18\\cf11\\highlight12\\ul0 "                                           \
+    "\\~\\~\xE3\x82\xB3\xE3\x83\x94\xE3\x83\xBC\\~\\~}}}"
 
 static void verify_code(void)
 {
@@ -134,25 +146,26 @@ static void verify_code(void)
                                   "{\\f1\\fs20\\cf4 x_y} here\\par\n");
     expect_body("`unclosed", "\\pard\\sa80\\sl240\\slmult1\\cf1 `unclosed\\par\n");
     /* 言語の無いブロックも見出し行を持ち、最初のコード行は見出し行に続く段落になる。 */
-    expect_body("```\nint a;\n\n  b\n```\nafter", CODE_OPEN CODE_HEAD CODE_COPY_OPEN
+    expect_body("```\nint a;\n\n  b\n```\nafter", CODE_OPEN CODE_HEAD_RIGHT CODE_COPY_OPEN
                 "0" CODE_COPY_CLOSE "\\par\n" CODE_LINE "int a;\\par\n" CODE_LINE
                 "\\par\n" CODE_LINE "  b\\sa120\\par\n}"
                 "\\pard\\sa80\\sl240\\slmult1\\cf1 after\\par\n");
-    expect_body("```c\n*raw*\n",
-                CODE_OPEN CODE_HEAD "{\\f0\\fs18\\cf9 c}{\\f0\\fs18\\cf9 \\u8195?}" CODE_COPY_OPEN
-                                    "0" CODE_COPY_CLOSE "\\par\n" CODE_LINE "*raw*\\sa120\\par\n}");
-    expect_body("text\n```\ncode\n```",
-                "\\pard\\sa80\\sl240\\slmult1\\cf1 text\\par\n" CODE_OPEN CODE_HEAD CODE_COPY_OPEN
-                "0" CODE_COPY_CLOSE "\\par\n" CODE_LINE "code\\sa120\\par\n}");
+    expect_body("```c\n*raw*\n", CODE_OPEN CODE_HEAD_RIGHT
+                "{\\f0\\fs18\\cf9 c}{\\f0\\fs18\\cf9 \\u8195?}" CODE_COPY_OPEN "0" CODE_COPY_CLOSE
+                "\\par\n" CODE_LINE "*raw*\\sa120\\par\n}");
+    expect_body(
+        "text\n```\ncode\n```",
+        "\\pard\\sa80\\sl240\\slmult1\\cf1 text\\par\n" CODE_OPEN CODE_HEAD_RIGHT CODE_COPY_OPEN
+        "0" CODE_COPY_CLOSE "\\par\n" CODE_LINE "code\\sa120\\par\n}");
     /* コピーする文字の無いブロックは従来のまま（操作も見出し行も足さない）。 */
     expect_body("```\n```", "{\\f1\\fs20\\cf5\\highlight6}");
     expect_body("```", "{\\f1\\fs20\\cf5\\highlight6}");
     expect_body("```\n\n```", "{\\f1\\fs20\\cf5\\highlight6\\pard\\li180\\ri180\\sb120\\sa0\\sl240"
                               "\\slmult1 \\sa120\\par\n}");
     expect_body("```c\n```", CODE_OPEN CODE_HEAD "{\\f0\\fs18\\cf9 c}\\sa120\\par\n}");
-    expect_body("```\na\n```\n```\nb\n```", CODE_OPEN CODE_HEAD CODE_COPY_OPEN
+    expect_body("```\na\n```\n```\nb\n```", CODE_OPEN CODE_HEAD_RIGHT CODE_COPY_OPEN
                 "0" CODE_COPY_CLOSE "\\par\n" CODE_LINE
-                "a\\sa120\\par\n}" CODE_OPEN CODE_HEAD CODE_COPY_OPEN "1" CODE_COPY_CLOSE
+                "a\\sa120\\par\n}" CODE_OPEN CODE_HEAD_RIGHT CODE_COPY_OPEN "1" CODE_COPY_CLOSE
                 "\\par\n" CODE_LINE "b\\sa120\\par\n}");
 }
 
@@ -265,7 +278,7 @@ static void verify_fonttbl(void)
     struct note_text *text = nullptr;
     require(note_text_create("abc", 3, &text) == NOTE_TEXT_ACCEPTED, "note");
     struct markdown_rtf *rtf = nullptr;
-    require(markdown_rtf_create(text, rtf_palette_for(FOLIO_THEME_DARK),
+    require(markdown_rtf_create(text, folio_theme_palette(FOLIO_THEME_DARK),
                                 (struct markdown_rtf_locale){ui_font_face(FOLIO_LANGUAGE_ZH_HANS),
                                                              FOLIO_LANGUAGE_ZH_HANS},
                                 &rtf) == MARKDOWN_RTF_CONVERTED,
@@ -357,7 +370,7 @@ static struct markdown_rtf *_Nonnull convert_syntax(const char *_Nonnull source)
     struct note_text *text = nullptr;
     require(note_text_create(source, strlen(source), &text) == NOTE_TEXT_ACCEPTED, "syntax source");
     struct markdown_rtf *rtf = nullptr;
-    require(markdown_rtf_create(text, rtf_palette_for(FOLIO_THEME_LIGHT),
+    require(markdown_rtf_create(text, folio_theme_palette(FOLIO_THEME_LIGHT),
                                 (struct markdown_rtf_locale){"Noto Sans JP", FOLIO_LANGUAGE_JA},
                                 &rtf) == MARKDOWN_RTF_CONVERTED,
             "syntax conversion");
@@ -479,7 +492,7 @@ static void expect_fragment(const char *_Nonnull source, const char *_Nonnull in
                             const char *_Nonnull excluded)
 {
     struct markdown_rtf *rtf = convert_syntax(source);
-    const char *body = markdown_rtf_text(rtf) + strlen(header);
+    const char *body = markdown_rtf_text(rtf) + strlen(view_header);
     if (strstr(body, included) == nullptr ||
         (excluded[0] != '\0' && strstr(body, excluded) != nullptr))
     {
@@ -996,7 +1009,7 @@ static void verify_table_start_blocks(void)
     expect_body("# title|\n|---|", "\\pard\\sb200\\sa80\\b\\cf2\\fs44 title|\\b0\\cf1\\fs22\\par\n"
                                    "\\pard\\sa80\\sl240\\slmult1\\cf1 |---|\\par\n");
     expect_body("~~~lang|\n|---|\n~~~\ntail",
-                "{\\f1\\fs20\\cf5\\highlight6\\pard\\li180\\ri180\\sb120\\sa80\\sl240\\slmult1 "
+                "{\\f1\\fs20\\cf5\\highlight6\\pard\\qr\\li180\\ri180\\sb120\\sa80\\sl240\\slmult1 "
                 "{\\f0\\fs18\\cf9 lang|}{\\f0\\fs18\\cf9 \\u8195?}" CODE_COPY_OPEN
                 "0" CODE_COPY_CLOSE "\\par\n\\pard\\li180\\ri180\\sb0\\sa0\\sl240\\slmult1 "
                 "|---|\\sa120\\par\n}\\pard\\sa80\\sl240\\slmult1\\cf1 tail\\par\n");
@@ -1152,7 +1165,7 @@ static size_t verify_render_allocation(const char *_Nonnull source)
         allocation_probe_fail_at(fail);
         struct markdown_rtf *out = sentinel;
         enum markdown_rtf_outcome result = markdown_rtf_create(
-            text, rtf_palette_for(FOLIO_THEME_LIGHT),
+            text, folio_theme_palette(FOLIO_THEME_LIGHT),
             (struct markdown_rtf_locale){"Noto Sans JP", FOLIO_LANGUAGE_JA}, &out);
         size_t calls = allocation_probe_calls();
         allocation_probe_fail_at(0);

@@ -753,7 +753,8 @@ static struct markdown_rtf_locale view_locale(enum folio_language language)
  * **言語は引数で受ける**（ADR 0032 の決定 5）。採用前の新しい言語でも作れるようにするため、
  * state からは引かない。 */
 static bool render_pane_document(const struct folio_state *_Nonnull state,
-                                 struct rtf_palette palette, enum folio_language language,
+                                 const struct theme_palette *_Nonnull palette,
+                                 enum folio_language language,
                                  struct markdown_rtf *_Nullable *_Nonnull out)
 {
     const char *_Nonnull face = ui_font_face(language);
@@ -762,7 +763,7 @@ static bool render_pane_document(const struct folio_state *_Nonnull state,
         return markdown_rtf_create(state->body, palette, view_locale(language), out) ==
                MARKDOWN_RTF_CONVERTED;
     }
-    return markdown_rtf_empty(palette, face, out) == MARKDOWN_RTF_CONVERTED;
+    return markdown_rtf_empty(palette->rtf, face, out) == MARKDOWN_RTF_CONVERTED;
 }
 
 /* 設定を読んだ後に選択を採り、palette と閲覧文書を解決したテーマの色で作り直す（決定 3）。
@@ -772,7 +773,7 @@ static enum folio_state_outcome adopt_theme_choice(struct folio_state *_Nonnull 
     enum folio_theme_choice choice = folio_settings_theme(state->settings);
     struct theme_palette palette = appearance_snapshot_palette(&state->appearance_snapshot, choice);
     struct markdown_rtf *_Nullable pane = nullptr;
-    if (!render_pane_document(state, palette.rtf, folio_state_language(state), &pane))
+    if (!render_pane_document(state, &palette, folio_state_language(state), &pane))
     {
         return FOLIO_STATE_OUT_OF_MEMORY;
     }
@@ -1543,7 +1544,7 @@ static enum folio_state_outcome adopt_settings_change(struct folio_state *_Nonnu
                                                       enum folio_language language)
 {
     struct markdown_rtf *_Nullable pane = nullptr;
-    if (!render_pane_document(state, palette.rtf, language, &pane))
+    if (!render_pane_document(state, &palette, language, &pane))
     {
         folio_settings_destroy(changed);
         return FOLIO_STATE_OUT_OF_MEMORY;
@@ -1573,7 +1574,7 @@ static enum folio_state_outcome adopt_display_palette(struct folio_state *_Nonnu
         return FOLIO_STATE_READY;
     }
     struct markdown_rtf *_Nullable pane = nullptr;
-    if (!render_pane_document(state, palette.rtf, folio_state_language(state), &pane))
+    if (!render_pane_document(state, &palette, folio_state_language(state), &pane))
     {
         return FOLIO_STATE_OUT_OF_MEMORY;
     }
@@ -2191,7 +2192,7 @@ static enum folio_state_outcome render_note(struct folio_state *_Nonnull state,
     }
     struct markdown_rtf *_Nullable rendered = nullptr;
     enum markdown_rtf_outcome converted = markdown_rtf_create(
-        body, state->palette.rtf, view_locale(folio_state_language(state)), &rendered);
+        body, &state->palette, view_locale(folio_state_language(state)), &rendered);
     if (converted != MARKDOWN_RTF_CONVERTED)
     {
         note_text_destroy(body);
@@ -2766,7 +2767,7 @@ static enum folio_state_outcome store_edited(struct folio_state *_Nonnull state,
     }
     struct markdown_rtf *_Nullable rendered = nullptr;
     if (!same &&
-        markdown_rtf_create(edited, state->palette.rtf, view_locale(folio_state_language(state)),
+        markdown_rtf_create(edited, &state->palette, view_locale(folio_state_language(state)),
                             &rendered) != MARKDOWN_RTF_CONVERTED)
     {
         note_text_destroy(edited);
@@ -2917,7 +2918,7 @@ static enum folio_state_outcome create_edited(struct folio_state *_Nonnull state
         note_ledger_inserted(state->notes[category], index,
                              (struct note_entry){.name = name, .favorite = false}, &ledger));
     if (prepared == FOLIO_STATE_READY &&
-        markdown_rtf_create(edited, state->palette.rtf, view_locale(folio_state_language(state)),
+        markdown_rtf_create(edited, &state->palette, view_locale(folio_state_language(state)),
                             &rendered) != MARKDOWN_RTF_CONVERTED)
     {
         prepared = FOLIO_STATE_OUT_OF_MEMORY;
@@ -5610,7 +5611,7 @@ static enum folio_state_outcome stage_tag_current(struct folio_state *_Nonnull s
 {
     tag_current_destroy(state);
     if (note_text_copy(body, &state->tag_current_body) != NOTE_TEXT_ACCEPTED ||
-        markdown_rtf_create(body, state->palette.rtf, view_locale(folio_state_language(state)),
+        markdown_rtf_create(body, &state->palette, view_locale(folio_state_language(state)),
                             &state->tag_current_view) != MARKDOWN_RTF_CONVERTED)
     {
         tag_current_destroy(state);

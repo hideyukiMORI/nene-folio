@@ -5,6 +5,7 @@
 #include "note_text.h"
 #include "rtf_text.h"
 #include "text_buffer.h"
+#include "theme_palette.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -16,7 +17,8 @@ struct markdown_rtf
 };
 
 /* フォント 0 が本文、1 がコード。色は 1 本文・2 見出し・3 薄字・4 リンク（インラインコードも）・
- * 5 コード文字・6 コード地・7 keyword・8 string・9 comment・10 number。単位は半ポイント。 */
+ * 5 コード文字・6 コード地・7 keyword・8 string・9 comment・10 number。単位は半ポイント。
+ * 閲覧の文書だけ、コピー操作のチップの 11 文字・12 地が続く（ADR0098 第2版）。 */
 static const char document_header_open[] = "{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0\\fnil ";
 static const char document_header_close[] = ";}{\\f1\\fmodern Consolas;}}";
 static const char document_body_start[] = "\\f0\\fs22\\cf1";
@@ -45,6 +47,13 @@ static void append_color(struct text_buffer *_Nonnull out, struct rgb_color colo
     text_buffer_append_text(out, ";");
 }
 
+/* 色表の閉じと本文の既定書式。閲覧の文書は閉じる前に操作の色を足す。 */
+static void close_header(struct text_buffer *_Nonnull out)
+{
+    text_buffer_append_text(out, "}");
+    text_buffer_append_text(out, document_body_start);
+}
+
 static void append_header(struct text_buffer *_Nonnull out, struct rtf_palette palette,
                           const char *_Nonnull face)
 {
@@ -61,8 +70,24 @@ static void append_header(struct text_buffer *_Nonnull out, struct rtf_palette p
     {
         append_color(out, colors[index]);
     }
-    text_buffer_append_text(out, "}");
-    text_buffer_append_text(out, document_body_start);
+}
+
+/* コピー操作のチップの文字と地（色表の 11 と 12）。主操作と同じ対を使い、高コントラストでは
+ * OS の対を崩さないよう本文の文字色とコード面の地（塗りなしと同じ）にする。 */
+static void append_action_colors(struct text_buffer *_Nonnull out,
+                                 const struct theme_palette *_Nonnull theme)
+{
+    switch (theme->contrast)
+    {
+    case FOLIO_CONTRAST_STANDARD:
+        append_color(out, theme->chip_text);
+        append_color(out, theme->chip_background);
+        return;
+    case FOLIO_CONTRAST_HIGH:
+        append_color(out, theme->rtf.text);
+        append_color(out, theme->rtf.code_background);
+        return;
+    }
 }
 
 /* 編集用の本文（#250）。Markdown を解釈せず、UTF-8 の生バイトを構文記号だけ escape して書く。
@@ -108,6 +133,16 @@ static struct markdown_rtf *_Nullable begin(struct rtf_palette palette, const ch
     return rtf;
 }
 
+/* 編集用と空の文書は色表をここで閉じる。 */
+static struct markdown_rtf *_Nullable begin_plain(struct rtf_palette palette,
+                                                  const char *_Nonnull face)
+{
+    struct markdown_rtf *_Nullable rtf = begin(palette, face);
+    if (rtf != nullptr)
+        close_header(rtf->buffer);
+    return rtf;
+}
+
 /* 書き終えた入れ物を確定して out へ渡す。失敗すれば入れ物を捨て、out は触らない。 */
 static enum markdown_rtf_outcome finish(struct markdown_rtf *_Nonnull rtf,
                                         struct markdown_rtf *_Nullable *_Nonnull out)
@@ -122,22 +157,24 @@ static enum markdown_rtf_outcome finish(struct markdown_rtf *_Nonnull rtf,
 }
 
 enum markdown_rtf_outcome markdown_rtf_create(const struct note_text *_Nonnull text,
-                                              struct rtf_palette palette,
+                                              const struct theme_palette *_Nonnull theme,
                                               struct markdown_rtf_locale locale,
                                               struct markdown_rtf *_Nullable *_Nonnull out)
 {
-    struct markdown_rtf *_Nullable rtf = begin(palette, locale.face);
+    struct markdown_rtf *_Nullable rtf = begin(theme->rtf, locale.face);
     if (rtf == nullptr)
     {
         return MARKDOWN_RTF_OUT_OF_MEMORY;
     }
+    append_action_colors(rtf->buffer, theme);
+    close_header(rtf->buffer);
     if (markdown_media_create(note_text_bytes(text), &rtf->media) != IMAGE_READY)
     {
         markdown_rtf_destroy(rtf);
         return MARKDOWN_RTF_OUT_OF_MEMORY;
     }
     enum markdown_rtf_outcome rendered = markdown_blocks_render(
-        (struct markdown_render){rtf->buffer, rtf->media}, text, locale.language);
+        (struct markdown_render){rtf->buffer, rtf->media}, text, locale.language, theme->contrast);
     if (rendered != MARKDOWN_RTF_CONVERTED)
     {
         markdown_rtf_destroy(rtf);
@@ -150,7 +187,7 @@ enum markdown_rtf_outcome markdown_rtf_create(const struct note_text *_Nonnull t
 enum markdown_rtf_outcome markdown_rtf_empty(struct rtf_palette palette, const char *_Nonnull face,
                                              struct markdown_rtf *_Nullable *_Nonnull out)
 {
-    struct markdown_rtf *_Nullable rtf = begin(palette, face);
+    struct markdown_rtf *_Nullable rtf = begin_plain(palette, face);
     if (rtf == nullptr)
     {
         return MARKDOWN_RTF_OUT_OF_MEMORY;
@@ -163,7 +200,7 @@ enum markdown_rtf_outcome markdown_rtf_plain(const struct note_text *_Nonnull te
                                              struct rtf_palette palette, const char *_Nonnull face,
                                              struct markdown_rtf *_Nullable *_Nonnull out)
 {
-    struct markdown_rtf *_Nullable rtf = begin(palette, face);
+    struct markdown_rtf *_Nullable rtf = begin_plain(palette, face);
     if (rtf == nullptr)
     {
         return MARKDOWN_RTF_OUT_OF_MEMORY;

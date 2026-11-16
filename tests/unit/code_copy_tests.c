@@ -2,6 +2,8 @@
  * 内部宛先の偽造不可、application の意図と偽のクリップボード。 */
 #include "allocation_probe.h"
 #include "appearance_port.h"
+#include "appearance_snapshot.h"
+
 #include "clipboard_port.h"
 #include "code_copy_target.h"
 #include "folio_state.h"
@@ -12,6 +14,8 @@
 #include "regex_port.h"
 #include "rtf_palette.h"
 #include "text_buffer.h"
+#include "theme_palette.h"
+
 #include "ui_font.h"
 #include "unit_tests.h"
 #include <stdio.h>
@@ -49,8 +53,8 @@ const struct clipboard_port *_Nonnull test_clipboard_port(void)
 #define HEADER "\\ri180\\sb120\\sa80\\sl240\\slmult1 "
 #define FIRST "\\ri180\\sb0\\sa0\\sl240\\slmult1 "
 #define ACTION_OPEN "{\\field{\\*\\fldinst{HYPERLINK \"nenefolio-code:"
-#define ACTION_LABEL "\"}}{\\fldrslt{\\f0\\fs18\\cf9\\ul "
-#define ACTION_CLOSE "}}}"
+#define ACTION_LABEL "\"}}{\\fldrslt{\\f0\\fs18\\cf11\\highlight12\\ul0 \\~\\~"
+#define ACTION_CLOSE "\\~\\~}}}"
 #define COPY_JA "\xE3\x82\xB3\xE3\x83\x94\xE3\x83\xBC"
 #define COPY_ZH "\xE5\xA4\x8D\xE5\x88\xB6"
 
@@ -61,7 +65,7 @@ static struct markdown_rtf *_Nonnull render(const char *_Nonnull markdown,
     require(note_text_create(markdown, strlen(markdown), &text) == NOTE_TEXT_ACCEPTED, markdown);
     struct markdown_rtf *rtf = nullptr;
     struct markdown_rtf_locale locale = {.face = ui_font_face(language), .language = language};
-    require(markdown_rtf_create(text, rtf_palette_for(FOLIO_THEME_LIGHT), locale, &rtf) ==
+    require(markdown_rtf_create(text, folio_theme_palette(FOLIO_THEME_LIGHT), locale, &rtf) ==
                 MARKDOWN_RTF_CONVERTED,
             "code block converts");
     note_text_destroy(text);
@@ -99,13 +103,13 @@ static void expect_blocks(const char *_Nonnull markdown, const char *_Nonnull ex
 static void verify_header_rows(void)
 {
     expect_blocks("```c\nint a;\n```",
-                  OPEN "\\pard\\li180" HEADER
+                  OPEN "\\pard\\qr\\li180" HEADER
                        "{\\f0\\fs18\\cf9 c}{\\f0\\fs18\\cf9 \\u8195?}" ACTION_OPEN
                        "0" ACTION_LABEL COPY_JA ACTION_CLOSE "\\par\n"
                        "\\pard\\li180" FIRST,
                   (const char *const[]){"int a;", nullptr});
     expect_blocks("```\nplain\n```",
-                  OPEN "\\pard\\li180" HEADER ACTION_OPEN "0" ACTION_LABEL COPY_JA ACTION_CLOSE
+                  OPEN "\\pard\\qr\\li180" HEADER ACTION_OPEN "0" ACTION_LABEL COPY_JA ACTION_CLOSE
                        "\\par\n\\pard\\li180" FIRST "plain\\sa120\\par\n}",
                   (const char *const[]){"plain", nullptr});
     /* 空のfence: 未指定は何も足さず、指定ありはラベルだけ。どちらも操作と原文を持たない。 */
@@ -129,7 +133,7 @@ static void verify_header_rows(void)
 static void verify_container_blocks(void)
 {
     /* 引用とリストの接頭辞、fenceの字下げは原文に入らない。containerを出たら閉じる。 */
-    expect_blocks("> ```c\n> int a;\n>   b\n> ```\n", "\\pard\\li660" HEADER,
+    expect_blocks("> ```c\n> int a;\n>   b\n> ```\n", "\\pard\\qr\\li660" HEADER,
                   (const char *const[]){"int a;\n  b", nullptr});
     expect_blocks("- item\n\n  ```\n  x\n    y\n  ```\n",
                   ACTION_OPEN "0" ACTION_LABEL COPY_JA ACTION_CLOSE,
@@ -146,6 +150,42 @@ static void verify_container_blocks(void)
     expect_blocks("```mermaid\ngraph LR\nA-->B\n```\n```\nx\n```",
                   ACTION_OPEN "0" ACTION_LABEL COPY_JA ACTION_CLOSE,
                   (const char *const[]){"x", nullptr});
+}
+
+/* チップの色は主操作の対（色表の 11 と 12）。高コントラストは塗らず、本文の文字色と下線。 */
+static void verify_action_colors(void)
+{
+    struct markdown_rtf *rtf = render("```\nx\n```", FOLIO_LANGUAGE_JA);
+    require(strstr(markdown_rtf_text(rtf),
+                   "\\red240\\green198\\blue125;\\red255\\green255\\blue255;"
+                   "\\red119\\green41\\blue83;}") != nullptr,
+            "the chip text and background follow the ten body colours");
+    markdown_rtf_destroy(rtf);
+    struct appearance_snapshot snapshot = {.theme = FOLIO_THEME_LIGHT,
+                                           .contrast = FOLIO_CONTRAST_HIGH,
+                                           .window = {0, 0, 0},
+                                           .window_text = {255, 255, 255},
+                                           .button = {1, 2, 3},
+                                           .button_text = {4, 5, 6},
+                                           .highlight = {255, 255, 0},
+                                           .highlight_text = {0, 0, 0}};
+    struct theme_palette high = appearance_snapshot_palette(&snapshot, FOLIO_THEME_CHOICE_SYSTEM);
+    struct note_text *text = nullptr;
+    require(note_text_create("```c\nx\n```", 10, &text) == NOTE_TEXT_ACCEPTED, "contrast source");
+    struct markdown_rtf_locale locale = {.face = "Arial", .language = FOLIO_LANGUAGE_EN};
+    require(markdown_rtf_create(text, &high, locale, &rtf) == MARKDOWN_RTF_CONVERTED,
+            "contrast converts");
+    const char *body = markdown_rtf_text(rtf);
+    require(strstr(body, "\\red255\\green255\\blue255;\\red255\\green255\\blue255;"
+                         "\\red0\\green0\\blue0;}") != nullptr &&
+                strstr(body, "\\red1\\green2\\blue3;") == nullptr,
+            "high contrast keeps the window pair and never the button fill");
+    require(strstr(body, "{\\fldrslt{\\f0\\fs18\\cf11\\highlight12\\ul \\~\\~Copy\\~\\~}}}") !=
+                    nullptr &&
+                strstr(body, "\\pard\\qr\\li180") != nullptr,
+            "high contrast marks the right-aligned action with an underline");
+    markdown_rtf_destroy(rtf);
+    note_text_destroy(text);
 }
 
 static void verify_languages(void)
@@ -302,7 +342,7 @@ static void verify_render_allocation(void)
         struct markdown_rtf *rtf = nullptr;
         allocation_probe_fail_at(nth);
         enum markdown_rtf_outcome outcome =
-            markdown_rtf_create(text, rtf_palette_for(FOLIO_THEME_LIGHT), locale, &rtf);
+            markdown_rtf_create(text, folio_theme_palette(FOLIO_THEME_LIGHT), locale, &rtf);
         if (nth == 0)
             allocations = allocation_probe_calls();
         allocation_probe_fail_at(0);
@@ -391,6 +431,7 @@ void run_code_copy_tests(void)
     verify_header_rows();
     verify_container_blocks();
     verify_languages();
+    verify_action_colors();
     verify_forgery();
     verify_target();
     verify_limits();

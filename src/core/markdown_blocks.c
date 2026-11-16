@@ -26,6 +26,7 @@ struct markdown_blocks
     size_t length;
     size_t next; /* 処理中の行の次の行の開始byte。fenceの先読みが使う。 */
     enum folio_language language;
+    enum folio_contrast contrast;
     enum markdown_rtf_outcome outcome;
     struct markdown_span *_Nullable spans;
     size_t span_count;
@@ -331,24 +332,42 @@ static bool code_line(struct markdown_blocks *_Nonnull parser, struct markdown_l
     return true;
 }
 
-/* コピーの操作（ADR0098）。宛先は内部の識別子で、文言はラベルと同じ書体・大きさ・色。 */
+/* 塗りが消える高コントラストでは、操作であることを下線で残す。通常の配色では下線の書式を
+ * 付けない（RichEdit は friendly name のリンクへ自前の下線を引くので、表示には下線が残る）。 */
+static const char *_Nonnull action_format(enum folio_contrast contrast)
+{
+    switch (contrast)
+    {
+    case FOLIO_CONTRAST_STANDARD:
+        return "\"}}{\\fldrslt{\\f0\\fs18\\cf11\\highlight12\\ul0 ";
+    case FOLIO_CONTRAST_HIGH:
+        return "\"}}{\\fldrslt{\\f0\\fs18\\cf11\\highlight12\\ul ";
+    }
+    return "\"}}{\\fldrslt{\\f0\\fs18\\cf11\\highlight12\\ul ";
+}
+
+/* コピーの操作（ADR0098 第2版）。宛先は内部の識別子。リンクの区間はチップ全体で、文言の前後の
+ * 改行しない空白2つずつも含める（塗りと押せる範囲を同じにし、折返しで割れないようにする）。
+ * 色は色表の 11（文字）と 12（地）。 */
 static void code_copy_action(struct markdown_blocks *_Nonnull parser)
 {
     const char *label = ui_text_line(UI_TEXT_CODE_COPY, parser->language);
     text_buffer_append_text(parser->out, "{\\field{\\*\\fldinst{HYPERLINK \"");
     code_copy_target_append(parser->out, parser->code_slot);
-    text_buffer_append_text(parser->out, "\"}}{\\fldrslt{\\f0\\fs18\\cf9\\ul ");
+    text_buffer_append_text(parser->out, action_format(parser->contrast));
+    text_buffer_append_text(parser->out, "\\~\\~");
     rtf_text_append(parser->out, label, strlen(label));
-    text_buffer_append_text(parser->out, "}}}");
+    text_buffer_append_text(parser->out, "\\~\\~}}}");
 }
 
 /* 見出し行: 言語ラベル（あれば）とコピーの操作（原文を集めるブロックだけ）。どちらも無ければ
- * 何も書かない（未指定の空fenceは従来どおり）。 */
+ * 何も書かない（未指定の空fenceは従来どおり）。操作のある行は段落を右寄せにして、操作を
+ * ブロックの右上へ置く。幅や倍率を追わず、右の余白はコード行と同じ（ADR0098 第2版）。 */
 static void code_header(struct markdown_blocks *_Nonnull parser, struct markdown_span word)
 {
     if (word.length == 0 && !parser->copyable)
         return;
-    text_buffer_append_text(parser->out, "\\pard\\li");
+    text_buffer_append_text(parser->out, parser->copyable ? "\\pard\\qr\\li" : "\\pard\\li");
     rtf_text_number(parser->out, parser->code_indent + 180);
     text_buffer_append_text(parser->out, "\\ri180\\sb120\\sa80\\sl240\\slmult1 ");
     if (word.length != 0)
@@ -357,7 +376,7 @@ static void code_header(struct markdown_blocks *_Nonnull parser, struct markdown
         rtf_text_append(parser->out, word.bytes, word.length);
         text_buffer_append_text(parser->out, "}");
     }
-    /* ラベルと操作の間は全角幅の空白1つで離す。下線を引かないよう、リンクの外に置く。 */
+    /* ラベルと操作の間は全角幅の空白1つ（約9pt）で離す。塗らないよう、リンクの外に置く。 */
     if (word.length != 0 && parser->copyable)
         text_buffer_append_text(parser->out, "{\\f0\\fs18\\cf9 \\u8195?}");
     if (parser->copyable)
@@ -650,7 +669,8 @@ static void markdown_blocks_destroy(struct markdown_blocks *_Nonnull parser)
 
 enum markdown_rtf_outcome markdown_blocks_render(struct markdown_render render,
                                                  const struct note_text *_Nonnull text,
-                                                 enum folio_language language)
+                                                 enum folio_language language,
+                                                 enum folio_contrast contrast)
 {
     size_t length = note_text_length(text);
     struct markdown_blocks parser = {.out = render.text,
@@ -658,6 +678,7 @@ enum markdown_rtf_outcome markdown_blocks_render(struct markdown_render render,
                                      .source = note_text_bytes(text),
                                      .length = length,
                                      .language = language,
+                                     .contrast = contrast,
                                      .outcome = MARKDOWN_RTF_CONVERTED};
     parser.outcome = markdown_containers_create(&parser.containers);
     if (parser.outcome != MARKDOWN_RTF_CONVERTED)

@@ -119,7 +119,7 @@ static struct markdown_rtf *_Nonnull render(const struct note_text *_Nonnull bod
 {
     struct markdown_rtf *_Nullable rendered = nullptr;
     require(markdown_rtf_create(
-                body, folio_theme_palette(FOLIO_THEME_LIGHT)->rtf,
+                body, folio_theme_palette(FOLIO_THEME_LIGHT),
                 (struct markdown_rtf_locale){ui_font_face(FOLIO_LANGUAGE_JA), FOLIO_LANGUAGE_JA},
                 &rendered) == MARKDOWN_RTF_CONVERTED,
             "image render");

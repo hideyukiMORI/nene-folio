@@ -177,7 +177,7 @@ static void markdown_case(const char *_Nonnull source, const char *_Nonnull pres
     struct note_text *text = nullptr;
     struct markdown_rtf *rtf = nullptr;
     require(note_text_create(source, strlen(source), &text) == NOTE_TEXT_ACCEPTED, "fence source");
-    require(markdown_rtf_create(text, rtf_palette_for(FOLIO_THEME_LIGHT),
+    require(markdown_rtf_create(text, folio_theme_palette(FOLIO_THEME_LIGHT),
                                 (struct markdown_rtf_locale){"Consolas", FOLIO_LANGUAGE_JA},
                                 &rtf) == MARKDOWN_RTF_CONVERTED,
             "fence syntax conversion");
