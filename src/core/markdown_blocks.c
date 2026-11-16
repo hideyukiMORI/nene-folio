@@ -161,14 +161,20 @@ static void outer_markers(struct markdown_blocks *_Nonnull parser, size_t remain
         marker_paragraph(parser);
 }
 
+/* Body text is 22 half-points (11 pt); headings h1-h3 are larger and h4-h6 keep the body size. */
+static size_t text_half_points(size_t heading)
+{
+    static const size_t sizes[] = {22, 44, 34, 28, 22, 22, 22};
+    return sizes[heading];
+}
+
 static void heading_header(struct markdown_blocks *_Nonnull parser)
 {
-    static const size_t sizes[] = {44, 34, 28, 22, 22, 22};
     text_buffer_append_text(parser->out, "\\pard\\sb");
     rtf_text_number(parser->out, parser->paragraph_item ? 0 : (parser->heading <= 3 ? 200 : 160));
     text_buffer_append_text(parser->out,
                             parser->heading <= 3 ? "\\sa80\\b\\cf2\\fs" : "\\sa60\\b0\\cf2\\fs");
-    rtf_text_number(parser->out, sizes[parser->heading - 1]);
+    rtf_text_number(parser->out, text_half_points(parser->heading));
     indent(parser->out, parser->paragraph_indent);
     if (markdown_containers_pending(parser->containers) != 0)
     {
@@ -208,8 +214,9 @@ static bool flush(struct markdown_blocks *_Nonnull parser)
     paragraph_header(parser);
     struct markdown_view view = {
         .spans = parser->spans, .count = parser->span_count, .length = parser->inline_length};
-    parser->outcome =
-        markdown_inline_tokens_render((struct markdown_render){parser->out, parser->media}, view);
+    parser->outcome = markdown_inline_tokens_render(
+        (struct markdown_render){parser->out, parser->media, text_half_points(parser->heading)},
+        view);
     if (parser->outcome != MARKDOWN_RTF_CONVERTED)
         return false;
     if (parser->heading != 0)
@@ -548,8 +555,8 @@ static bool start_table(struct markdown_blocks *_Nonnull parser, struct markdown
     outer_markers(parser, 0);
     struct markdown_table_format format = {.kind = MARKDOWN_ROW_KIND_HEADER,
                                            .indent_twips = indent_twips};
-    parser->outcome = markdown_table_row((struct markdown_render){parser->out, parser->media}, line,
-                                         delimiter, format);
+    parser->outcome = markdown_table_row((struct markdown_render){parser->out, parser->media, 22},
+                                         line, delimiter, format);
     return parser->outcome == MARKDOWN_RTF_CONVERTED;
 }
 
@@ -560,8 +567,8 @@ static bool table_body(struct markdown_blocks *_Nonnull parser, struct markdown_
     struct markdown_table_format format = {.kind = MARKDOWN_ROW_KIND_BODY,
                                            .indent_twips =
                                                markdown_containers_indent(parser->containers)};
-    parser->outcome = markdown_table_row((struct markdown_render){parser->out, parser->media}, line,
-                                         parser->delimiter, format);
+    parser->outcome = markdown_table_row((struct markdown_render){parser->out, parser->media, 22},
+                                         line, parser->delimiter, format);
     return parser->outcome == MARKDOWN_RTF_CONVERTED;
 }
 

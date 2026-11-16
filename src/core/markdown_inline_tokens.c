@@ -31,6 +31,7 @@ struct markdown_inline_tokens
     } *_Nonnull tokens;
     struct text_buffer *_Nonnull out;
     struct markdown_media *_Nonnull media;
+    size_t half_points;
     size_t count;
     /* The plain run that holds the token being emitted: tokens before `plain_index`, bytes
      * before `plain_end`. Computed once per run so bare links stay linear (#850). */
@@ -818,7 +819,11 @@ static void emit_code(struct markdown_inline_tokens *_Nonnull parser, size_t ind
         ++start;
         --end;
     }
-    text_buffer_append_text(parser->out, "{\\f1\\fs20\\cf4 ");
+    /* #853: code keeps the body's 20:22 ratio to the text around it, so a heading's
+     * code stays heading-sized (the body's code is still 20). */
+    text_buffer_append_text(parser->out, "{\\f1\\fs");
+    rtf_text_number(parser->out, (parser->half_points * 10 + 5) / 11);
+    text_buffer_append_text(parser->out, "\\cf4 ");
     append_range(parser, start, end, false);
     text_buffer_append_text(parser->out, "}");
 }
@@ -1154,6 +1159,7 @@ enum markdown_rtf_outcome markdown_inline_tokens_render(struct markdown_render r
                                             .tokens = tokens,
                                             .out = render.text,
                                             .media = render.media,
+                                            .half_points = render.half_points,
                                             .outcome = MARKDOWN_RTF_CONVERTED};
     tokenize(&parser);
     pair_inline_ranges(&parser, next);
