@@ -1633,6 +1633,8 @@ static void choose_note(struct folio_window *_Nonnull window, size_t index,
     pump(window);
 }
 
+static struct note_text *_Nullable switch_other_history[note_history_depth];
+
 static void expect_other_unchanged(struct native_fixture *_Nonnull fixture)
 {
     struct persistence_port disk = persistence_adapter_port(fixture->files);
@@ -1644,14 +1646,29 @@ static void expect_other_unchanged(struct native_fixture *_Nonnull fixture)
                 memcmp(note_text_file_bytes(body), switch_other, strlen(switch_other)) == 0,
             "second note retains all stored bytes");
     note_text_destroy(body);
+    /* Reseeding a reused data directory already left history; compare with the start (#847). */
+    for (size_t version = 1; version <= note_history_depth; ++version)
+        expect_named_history_file(disk, "two", version, switch_other_history[version - 1]);
+}
+
+static void capture_other_history(struct native_fixture *_Nonnull fixture)
+{
+    struct persistence_port disk = persistence_adapter_port(fixture->files);
     for (size_t version = 1; version <= note_history_depth; ++version)
     {
-        body = nullptr;
-        struct history_version which = {.category = "schedule", .note = "two", .version = version};
-        require(disk.read_history(disk.adapter, &which, &body) == PERSISTENCE_ABSENT &&
-                    body == nullptr,
-                "unchanged second note has no saved history");
-        note_text_destroy(body);
+        enum persistence_outcome outcome =
+            named_history_file(disk, "two", version, &switch_other_history[version - 1]);
+        require(outcome == PERSISTENCE_LOADED || outcome == PERSISTENCE_ABSENT,
+                "baseline of the second note's history is readable or absent");
+    }
+}
+
+static void release_other_history(void)
+{
+    for (size_t version = 0; version < note_history_depth; ++version)
+    {
+        note_text_destroy(switch_other_history[version]);
+        switch_other_history[version] = nullptr;
     }
 }
 
@@ -1747,6 +1764,7 @@ static void run_note_switch_case(struct native_fixture *_Nonnull fixture)
             "select the dedicated first note");
     struct history_snapshot snapshot = {0};
     capture_history(fixture, &snapshot);
+    capture_other_history(fixture);
     struct folio_window *window = nullptr;
     require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
                 FOLIO_WINDOW_CREATED,
@@ -1762,6 +1780,7 @@ static void run_note_switch_case(struct native_fixture *_Nonnull fixture)
     folio_window_destroy(window);
     for (size_t version = 0; version <= note_history_depth; ++version)
         note_text_destroy(snapshot.files[version]);
+    release_other_history();
 }
 
 struct native_body_snapshot
