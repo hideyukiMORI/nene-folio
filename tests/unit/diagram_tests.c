@@ -266,6 +266,94 @@ static void state_dots(void)
     diagram_model_destroy(model);
 }
 
+/* #882 / ADR0105: an ER diagram reads into the flowchart model: entities are boxes listing
+ * their attributes, relationships are lines without arrowheads whose label adds the
+ * cardinalities. */
+static const char *_Nonnull label_of(const struct diagram_model *_Nonnull model,
+                                     const char *_Nonnull id)
+{
+    return diagram_model_text_at(model, diagram_model_node_at(model, node_named(model, id)).label);
+}
+
+static void er_contract(void)
+{
+    struct diagram_model *model = parsed("erDiagram\n"
+                                         "CUSTOMER ||--o{ ORDER : places\n"
+                                         "ORDER ||--|{ LINE-ITEM : \"contains\"\n"
+                                         "CUSTOMER }|..|| DELIVERY-ADDRESS : uses\n"
+                                         "PRODUCT |o--o| CATALOG : \"\"\n"
+                                         "CUSTOMER {\n"
+                                         "    string name PK \"the shown name\"\n"
+                                         "    int age\n"
+                                         "}\n"
+                                         "LONELY\n");
+    require(diagram_model_kind(model) == DIAGRAM_FLOWCHART &&
+                diagram_model_flow(model) == DIAGRAM_TOP_BOTTOM,
+            "an ER diagram is a top-down flowchart model");
+    require(diagram_model_node_count(model) == 7 && diagram_model_link_count(model) == 4,
+            "every entity once, every relationship");
+    struct diagram_node customer = diagram_model_node_at(model, node_named(model, "CUSTOMER"));
+    require(customer.shape == DIAGRAM_RECTANGLE && customer.group == diagram_none,
+            "an entity is a box");
+    require(strcmp(label_of(model, "CUSTOMER"), "CUSTOMER\nstring name PK\nint age") == 0,
+            "attributes are lines under the name, without their comment");
+    require(strcmp(label_of(model, "LINE-ITEM"), "LINE-ITEM") == 0, "hyphenated names");
+    struct diagram_link places = diagram_model_link_at(model, 0);
+    require(places.stroke == DIAGRAM_SOLID && places.start == DIAGRAM_ARROW_NONE &&
+                places.end == DIAGRAM_ARROW_NONE,
+            "an identifying relationship is a solid line without arrowheads");
+    require(strcmp(diagram_model_text_at(model, places.label), "places\n1 : 0..*") == 0,
+            "the cardinalities follow the words");
+    require(strcmp(diagram_model_text_at(model, diagram_model_link_at(model, 1).label),
+                   "contains\n1 : 1..*") == 0,
+            "quoted words are unquoted");
+    struct diagram_link uses = diagram_model_link_at(model, 2);
+    require(uses.stroke == DIAGRAM_DASHED &&
+                strcmp(diagram_model_text_at(model, uses.label), "uses\n1..* : 1") == 0,
+            "a non-identifying relationship is dashed");
+    require(strcmp(diagram_model_text_at(model, diagram_model_link_at(model, 3).label),
+                   "0..1 : 0..1") == 0,
+            "no words leave only the cardinalities");
+    diagram_model_destroy(model);
+    model = parsed("erDiagram\ndirection LR\nA ||--|| B : is\nA {\n  int x\n}\nA {\n  int y\n}\n");
+    require(diagram_model_flow(model) == DIAGRAM_LEFT_RIGHT, "direction is kept");
+    require(strcmp(label_of(model, "A"), "A\nint x\nint y") == 0,
+            "a second block adds to the same entity");
+    diagram_model_destroy(model);
+    model = parsed("erDiagram\nA ||--o{ B : has\n");
+    diagram_scene_destroy(laid_out(model));
+    diagram_model_destroy(model);
+}
+
+static void er_rejections(void)
+{
+    reject_source("erDiagram\n", DIAGRAM_INVALID);
+    reject_source("erDiagram extra\nA", DIAGRAM_INVALID);
+    reject_source("erDiagram\nA ||--o{ B", DIAGRAM_INVALID);
+    reject_source("erDiagram\nA ||-o{ B : x", DIAGRAM_INVALID);
+    reject_source("erDiagram\nA <<--o{ B : x", DIAGRAM_INVALID);
+    reject_source("erDiagram\nA ||--<< B : x", DIAGRAM_INVALID);
+    reject_source("erDiagram\nA ||==o{ B : x", DIAGRAM_INVALID);
+    reject_source("erDiagram\nA ||--o{ : x", DIAGRAM_INVALID);
+    reject_source("erDiagram\nA ||--o{ B x", DIAGRAM_INVALID);
+    reject_source("erDiagram\nA {\n  int\n}", DIAGRAM_INVALID);
+    reject_source("erDiagram\nA {\n  int x\n", DIAGRAM_INVALID);
+    reject_source("erDiagram\ndirection SIDEWAYS\nA", DIAGRAM_INVALID);
+    reject_source("erDiagram\n\"Quoted name\" ||--o{ B : x", DIAGRAM_UNSUPPORTED);
+    reject_source("erDiagram\nA ||--o{ \"Quoted name\" : x", DIAGRAM_UNSUPPORTED);
+    reject_source("erDiagram\nA[\"Shown\"]", DIAGRAM_UNSUPPORTED);
+    reject_source("erDiagram\nA one or more--many B : x", DIAGRAM_INVALID);
+    reject_source("erDiagram\nstyle A fill:#f00\nA", DIAGRAM_UNSUPPORTED);
+    reject_source("erDiagram\nclassDef x fill:#f00\nA", DIAGRAM_UNSUPPORTED);
+    reject_source("erDiagram\naccTitle: t\nA", DIAGRAM_UNSUPPORTED);
+    static char wide[diagram_label_limit * 2] = "erDiagram\nA {\n";
+    size_t used = strlen(wide);
+    while (used + 16 < sizeof wide - 8)
+        used += (size_t)sprintf(wide + used, "  int column%zu\n", used);
+    (void)sprintf(wide + used, "}\n");
+    reject_source(wide, DIAGRAM_TOO_LARGE);
+}
+
 /* Reuse: one start per scope however often it is used, states met again, plain declarations. */
 static void state_reuse(void)
 {
@@ -1564,6 +1652,8 @@ void run_diagram_tests(void)
     state_rejections();
     state_reuse();
     state_dots();
+    er_contract();
+    er_rejections();
     groups_and_cycles();
     edge_labels_remain_visible();
     horizontal_group_heading();

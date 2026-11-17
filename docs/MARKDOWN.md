@@ -336,6 +336,7 @@ sequenceDiagram
 | 注釈・処理区間 | `Note over` / `left of` / `right of`、`activate` / `deactivate`、メッセージの`+` / `-`、`autonumber`（開始値・増分・`off`）、`title` |
 | 分岐・反復の枠 | `loop` / `alt` / `opt` / `par` / `critical` / `break`〜`end`。対応する`else` / `and` / `option` |
 | 状態遷移図 | `stateDiagram` / `stateDiagram-v2`、`A --> B`と`: ラベル`、`[*]`（遷移の元は開始の小さな点、先は終了の小さな輪と点・#876）、`state "表示名" as A`、`A : 説明`（説明を表示）、`state A { ... }`の複合状態、`state A <<choice>>`（ひし形）、`direction`。`note`・並行領域`--`・`<<fork>>` / `<<join>>`・`classDef` / `class` / `:::`・複合状態そのものへの遷移は未対応 |
+| ER図 | `erDiagram`、実体（四角）、`A ||--o{ B : ラベル`の関係（左右の多重度`|o` `||` `}o` `}|` / `o|` `||` `o{` `|{`、`--`は実線・`..`は破線、矢印なし。多重度は線のラベルの2行目に`1 : 0..*`の文字で表示・#882）、`A { 型 名前 PK }`の属性（名前の下に1行ずつ、説明は省く）、`direction`。引用符の実体名・別名`A["..."]`・多重度の別名（`one or more`等）・`style` / `classDef`は未対応 |
 
 日本語ラベル、引用符付きラベル、`<br>` / `<br/>` / `<br />` / `\n`での改行、基本の文字参照を使えます。
 `%%`のコメントは図へ表示しません。未対応の種類・構文、壊れた構文、大きすぎる図は通知行へ案内を出します。

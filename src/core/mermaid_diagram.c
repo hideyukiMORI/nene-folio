@@ -1,5 +1,6 @@
 #include "mermaid_diagram.h"
 #include "diagram_statement.h"
+#include "mermaid_er.h"
 #include "mermaid_flow.h"
 #include "mermaid_sequence.h"
 #include "mermaid_state.h"
@@ -22,5 +23,7 @@ enum diagram_outcome mermaid_diagram_create(const struct note_text *_Nonnull sou
         return mermaid_sequence_create(text, out);
     if (diagram_text_equal(header, "stateDiagram") || diagram_text_equal(header, "stateDiagram-v2"))
         return mermaid_state_create(text, out);
+    if (diagram_text_equal(header, "erDiagram"))
+        return mermaid_er_create(text, out);
     return DIAGRAM_UNSUPPORTED;
 }
