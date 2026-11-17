@@ -16,3 +16,8 @@
 | --- | --- |
 | build-01 / unit-01 | 成功（最初の構築・試験で失敗なし） |
 | 赤の確認 | `continues`の字下げと空行の条件を常に「続かない」に変えると、新しい試験が「field destination and structure」で落ち、脚注は`1. first`だけになった（unit-red.log）。戻して成功（unit-02）。戻す手順のPowerShellの書き込みが道具の中で失敗したため、該当行をPythonで元の文に戻し、差分の行数で確かめた |
+
+## 最終の対象検証
+
+原本は`v1-*.log`（`E:/NeNeFolio/temp/878/verify.ps1 -Tag v1`）。build（clang-tidy込み）・`eng/coverage.py`（分岐90.87%、閾値・除外不変。`markdown_references.c` 90.96%）・
+`eng/symbols.py`・`eng/conformance.py`（source/`--build-dir`）・`git diff --check`が成功し、`ctest`は61件すべて成功（90.3秒）。
