@@ -1836,8 +1836,109 @@ static void collection_capacity_contract(void)
             "overflow preserves the complete accepted scene without appending a partial item");
     diagram_scene_destroy(scene);
 }
+/* #912: broken input never breaks the readers. Each seed document is damaged by a fixed
+ * sequence of small edits (delete, replace, insert from the syntax's own characters) and read;
+ * whatever the reader answers, it is one of the closed outcomes, a model exists exactly when the
+ * answer is ACCEPTED, and an accepted model lays out (or is refused) and is destroyed cleanly.
+ * The sequence comes from a fixed-seed generator, so every run reads the same inputs. */
+static uint32_t mutation_state;
+static unsigned mutation_accepted;
+
+static uint32_t mutation_next(void)
+{
+    mutation_state = mutation_state * 1664525U + 1013904223U;
+    return mutation_state >> 8;
+}
+
+static size_t mutation_edit(char *_Nonnull source, size_t length, size_t capacity)
+{
+    static const char alphabet[] = "{}[]()<>|*o.-:\"\n ~=xA1%;,#";
+    size_t at = mutation_next() % (length + 1);
+    char letter = alphabet[mutation_next() % (sizeof alphabet - 1)];
+    uint32_t kind = mutation_next() % 3;
+    if (kind == 0 && at < length)
+    {
+        memmove(source + at, source + at + 1, length - at);
+        return length - 1;
+    }
+    if (kind == 1 && at < length)
+    {
+        source[at] = letter;
+        return length;
+    }
+    if (length + 1 >= capacity)
+        return length;
+    memmove(source + at + 1, source + at, length - at + 1);
+    source[at] = letter;
+    return length + 1;
+}
+
+static void mutation_read(const char *_Nonnull source, size_t length)
+{
+    struct note_text *_Nullable text = nullptr;
+    require(note_text_create(source, length, &text) == NOTE_TEXT_ACCEPTED, "mutated source");
+    struct diagram_model *_Nullable model = nullptr;
+    enum diagram_outcome outcome = mermaid_diagram_create(text, &model);
+    require((outcome == DIAGRAM_ACCEPTED) == (model != nullptr) &&
+                (outcome == DIAGRAM_ACCEPTED || outcome == DIAGRAM_INVALID ||
+                 outcome == DIAGRAM_UNSUPPORTED || outcome == DIAGRAM_TOO_LARGE),
+            "a damaged diagram gets one closed answer and no partial model");
+    if (model != nullptr)
+    {
+        ++mutation_accepted;
+        struct diagram_metrics *_Nullable metrics = nullptr;
+        struct diagram_scene *_Nullable scene = nullptr;
+        require(metrics_for(model, &metrics) == DIAGRAM_ACCEPTED, "metrics for a mutated model");
+        enum diagram_outcome laid = diagram_layout_create(model, metrics, &scene);
+        require((laid == DIAGRAM_ACCEPTED) == (scene != nullptr),
+                "the layout of a mutated model is complete or refused");
+        diagram_scene_destroy(scene);
+        diagram_metrics_destroy(metrics);
+        diagram_model_destroy(model);
+    }
+    note_text_destroy(text);
+}
+
+static void mutation_rounds(const char *_Nonnull seed, unsigned rounds)
+{
+    char source[1024];
+    for (unsigned round = 0; round < rounds; ++round)
+    {
+        size_t length = strlen(seed);
+        memcpy(source, seed, length + 1);
+        unsigned edits = 1 + mutation_next() % 4;
+        for (unsigned edit = 0; edit < edits; ++edit)
+            length = mutation_edit(source, length, sizeof source);
+        mutation_read(source, length);
+    }
+}
+
+static void diagram_mutations(void)
+{
+    static const char *const seeds[] = {
+        "flowchart TD\nA[Start] --> B{Check}\nB -->|yes| C((Done))\nsubgraph S\nC --> D\nend\n",
+        "sequenceDiagram\nparticipant A\nA->>B: hello\nNote over A,B: text\nloop each\nB-->>A: ok\n"
+        "end\n",
+        "stateDiagram-v2\n[*] --> A\nA --> B : go\nstate B <<choice>>\nstate \"T\" as C {\n"
+        "[*] --> D\nD --> [*]\n}\nB --> [*]\n",
+        "erDiagram\nA ||--o{ B : has\nB }|..|| C : \"uses\"\nA {\n  int id PK \"note\"\n"
+        "  string name\n}\n",
+        "classDiagram\nclass A {\n  <<interface>>\n  +int x\n  +run() void\n}\nA <|-- B : is\n"
+        "B *-- C\nC o-- D\nD ..> A\nB : +go()\n"};
+    mutation_state = 20261117U;
+    mutation_accepted = 0;
+    for (size_t index = 0; index < sizeof seeds / sizeof seeds[0]; ++index)
+        mutation_rounds(seeds[index], 3000);
+    printf("diagram mutations: 15000 damaged inputs, %u still accepted and laid out\n",
+           mutation_accepted);
+    /* Both sides must be exercised: damage that is refused and damage that still reads. */
+    require(mutation_accepted > 1000 && mutation_accepted < 14000,
+            "the mutations reach both the refusals and the layout");
+}
+
 void run_diagram_tests(void)
 {
+    diagram_mutations();
     connected_shape_delimiters();
     quoted_shape_delimiters();
     quoted_pipe_labels();
