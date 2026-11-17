@@ -518,6 +518,36 @@ static void image_limits(void)
     note_text_destroy(body);
     free(source);
 }
+/* #865: a note with image references exports whole. The definition's destination and the
+ * inline image are rewritten once each; the shared image is included once. */
+static void export_references(void)
+{
+    const char source[] = "[p]: ../one/a.png \"t\"\r\n\r\n![x][p] ![y](../two/a.png) ![z][p]\r\n";
+    struct note_text *body = text(source);
+    struct archive_note entry = {.category = "A", .name = "one", .body = body};
+    struct image_export *_Nullable images = nullptr;
+    require(image_export_create(test_image_port(), IMAGE_EXPORT_ALL_LOCAL, 1, &images) ==
+                FOLIO_STATE_READY,
+            "explicit local inclusion for references");
+    require(image_export_append(images, &entry) == FOLIO_STATE_READY,
+            "a note with shared and out-of-order reference images exports");
+    require(archive_assets_count(image_export_assets(images)) == 2,
+            "the shared reference image is included once, the inline image once");
+    const char *copied = note_text_bytes(entry.body);
+    require(entry.body != body && strstr(copied, "../one/a.png") == nullptr &&
+                strstr(copied, "../two/a.png") == nullptr && strstr(copied, "\"t\"") != nullptr &&
+                strstr(copied, "![x][p] ![y](") != nullptr && strstr(copied, "![z][p]") != nullptr,
+            "the definition and the inline image point into the archive; the rest is unchanged");
+    require(strcmp(note_text_bytes(body), source) == 0, "original source survives inclusion");
+    struct note_archive *_Nullable archive = nullptr;
+    require(note_archive_create(&entry, 1, image_export_assets(images), &archive) ==
+                NOTE_ARCHIVE_READY,
+            "the archive is written");
+    note_archive_destroy(archive);
+    image_export_destroy(images);
+    note_text_destroy(body);
+}
+
 static void export_contract(void)
 {
     const char source[] = "![inside](images/a.png)\r\n![same](images/a.png)\r\n"
@@ -940,6 +970,7 @@ void run_image_tests(void)
     destination_backtick_neighbors();
     image_limits();
     export_contract();
+    export_references();
     export_number_groups();
     export_identity_change();
     export_failures();
