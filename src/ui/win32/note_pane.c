@@ -12,6 +12,7 @@
 #include "pane_zoom_command.h"
 #include "rtf_stream.h"
 #include "ui_pointer.h"
+#include "utf8_text.h"
 
 #include <limits.h>
 #include <richedit.h>
@@ -628,6 +629,11 @@ static void open_text_menu(struct note_pane *_Nonnull pane, LPARAM position)
     struct menu_request request = {.context = viewing ? FOLIO_MENU_TEXT_VIEW : FOLIO_MENU_TEXT_EDIT,
                                    .anchor = anchor,
                                    .keyboard = keyboard};
+    /* #900: on a link (the caret is there after a right click) the link's actions come first. */
+    struct utf8_text *_Nullable target = nullptr;
+    if (viewing && note_pane_link_selection(pane, &target) == NOTE_PANE_LINK_READY)
+        request.context = FOLIO_MENU_TEXT_LINK;
+    utf8_text_destroy(target);
     SendMessageW(parent, folio_message_open_menu, 0, (LPARAM)&request);
 }
 
@@ -690,6 +696,9 @@ bool note_pane_text_edit_available(const struct note_pane *_Nonnull pane, enum f
         return pane_writable(pane) && IsClipboardFormatAvailable(CF_UNICODETEXT);
     case FOLIO_TEXT_EDIT_SELECT_ALL:
         return GetWindowTextLengthW(pane->handle) > 0;
+    case FOLIO_TEXT_EDIT_OPEN_LINK:
+    case FOLIO_TEXT_EDIT_COPY_LINK:
+        return note_pane_link_available(pane);
     }
     return false;
 }
@@ -720,6 +729,9 @@ void note_pane_text_edit(struct note_pane *_Nonnull pane, enum folio_text_edit e
     case FOLIO_TEXT_EDIT_SELECT_ALL:
         SendMessageW(pane->handle, EM_SETSEL, 0, -1);
         return;
+    case FOLIO_TEXT_EDIT_OPEN_LINK:
+    case FOLIO_TEXT_EDIT_COPY_LINK:
+        return; /* the window runs these through the link and clipboard paths */
     }
 }
 

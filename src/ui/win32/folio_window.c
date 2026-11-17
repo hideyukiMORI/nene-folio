@@ -19271,6 +19271,33 @@ static void menu_run_target(struct folio_window *_Nonnull self, enum folio_comma
     self->reporting_command = previous_command;
 }
 
+/* #900: the link's own actions go through the link path and the clipboard port; the rest are
+ * the body's edits. */
+static void copy_web_selection(struct folio_window *_Nonnull self)
+{
+    struct utf8_text *_Nullable target = nullptr;
+    if (self->pane == nullptr ||
+        note_pane_link_selection(self->pane, &target) != NOTE_PANE_LINK_READY)
+        return;
+    enum folio_state_outcome outcome =
+        folio_state_copy_web_link(self->state, utf8_text_bytes(target), utf8_text_length(target));
+    utf8_text_destroy(target);
+    if (outcome != FOLIO_STATE_READY)
+        report_outcome(self, outcome);
+}
+
+static void menu_run_text(struct folio_window *_Nonnull self, enum folio_text_edit edit)
+{
+    if (self->pane == nullptr)
+        return;
+    if (edit == FOLIO_TEXT_EDIT_OPEN_LINK)
+        open_web_selection(self);
+    else if (edit == FOLIO_TEXT_EDIT_COPY_LINK)
+        copy_web_selection(self);
+    else
+        note_pane_text_edit(self->pane, edit);
+}
+
 static void menu_execute(struct folio_window *_Nonnull self, size_t index)
 {
     if (self->command_surface != COMMAND_SURFACE_MENU ||
@@ -19289,8 +19316,7 @@ static void menu_execute(struct folio_window *_Nonnull self, size_t index)
             drawer_window_choose_color(self->drawer, request.target.category);
         return;
     case FOLIO_MENU_ACTION_TEXT:
-        if (self->pane != nullptr)
-            note_pane_text_edit(self->pane, folio_menu_action_text_edit(action));
+        menu_run_text(self, folio_menu_action_text_edit(action));
         return;
     }
 }

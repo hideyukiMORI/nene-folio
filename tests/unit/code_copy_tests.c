@@ -376,6 +376,33 @@ static void expect_copy(struct folio_state *_Nonnull state, enum clipboard_outco
     clipboard.result = CLIPBOARD_WRITTEN;
 }
 
+/* #900: a viewed link's URI goes to the port once, spelled as the validation normalizes it; a
+ * target that is not a web URI never reaches the port. */
+static void verify_link_copy(struct folio_state *_Nonnull state)
+{
+    const char link[] = "HTTPS://Example.com/Path?q=1";
+    size_t before = clipboard.writes;
+    require(folio_state_copy_web_link(state, link, sizeof link - 1) == FOLIO_STATE_READY &&
+                clipboard.writes == before + 1 &&
+                same_text(clipboard.text, "https://Example.com/Path?q=1"),
+            "the validated URI reaches the port once");
+    require(folio_state_copy_web_link(state, "file:///C:/x", 12) == FOLIO_STATE_WEB_LINK_REJECTED &&
+                folio_state_copy_web_link(state, "", 0) == FOLIO_STATE_WEB_LINK_REJECTED &&
+                clipboard.writes == before + 1,
+            "a target that is not a web URI is not copied");
+    clipboard.result = CLIPBOARD_BUSY;
+    require(folio_state_copy_web_link(state, link, sizeof link - 1) == FOLIO_STATE_CLIPBOARD_BUSY,
+            "a busy clipboard is reported");
+    clipboard.result = CLIPBOARD_UNAVAILABLE;
+    require(folio_state_copy_web_link(state, link, sizeof link - 1) ==
+                FOLIO_STATE_CLIPBOARD_UNAVAILABLE,
+            "an unavailable clipboard is reported");
+    clipboard.result = CLIPBOARD_OUT_OF_MEMORY;
+    require(folio_state_copy_web_link(state, link, sizeof link - 1) == FOLIO_STATE_OUT_OF_MEMORY,
+            "an allocation failure in the port is reported");
+    clipboard.result = CLIPBOARD_WRITTEN;
+}
+
 static void verify_state(void)
 {
     struct persistence_adapter *adapter = test_adapter_create(
@@ -392,6 +419,9 @@ static void verify_state(void)
     size_t count = sizeof body / sizeof body[0] - 1;
     require(folio_state_copy_code(state, 0) == FOLIO_STATE_CODE_COPY_REJECTED,
             "editing never copies a block");
+    require(folio_state_copy_web_link(state, "https://example.com/", 20) ==
+                FOLIO_STATE_WEB_LINK_REJECTED,
+            "editing never copies a link");
     require(folio_state_end_edit(state, body, count) == FOLIO_STATE_READY &&
                 folio_state_pane_mode(state) == PANE_MODE_VIEW,
             "the saved body is viewed");
@@ -405,6 +435,7 @@ static void verify_state(void)
     expect_copy(state, CLIPBOARD_BUSY, FOLIO_STATE_CLIPBOARD_BUSY);
     expect_copy(state, CLIPBOARD_UNAVAILABLE, FOLIO_STATE_CLIPBOARD_UNAVAILABLE);
     expect_copy(state, CLIPBOARD_OUT_OF_MEMORY, FOLIO_STATE_OUT_OF_MEMORY);
+    verify_link_copy(state);
     size_t writes = clipboard.writes;
     require(folio_state_copy_code(state, 2) == FOLIO_STATE_CODE_COPY_REJECTED &&
                 folio_state_copy_code(state, (size_t)-1) == FOLIO_STATE_CODE_COPY_REJECTED &&

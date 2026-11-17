@@ -180,6 +180,12 @@ folio_state_export_notes(struct folio_state *_Nonnull state,
 [[nodiscard]] enum folio_state_outcome folio_state_open_web_link(struct folio_state *_Nonnull state,
                                                                  const char *_Nonnull bytes,
                                                                  size_t length);
+/* #900: 閲覧中のリンク先を、開くときと同じ検証（web_uri）を通した綴りでクリップボードの
+ * ポートへ 1 回渡す。閲覧以外・文書なし・検証を通らないリンク先は WEB_LINK_REJECTED で、
+ * ポートを呼ばない。文書・選択・Undo・未保存の状態は変えない。 */
+[[nodiscard]] enum folio_state_outcome folio_state_copy_web_link(struct folio_state *_Nonnull state,
+                                                                 const char *_Nonnull bytes,
+                                                                 size_t length);
 /* 閲覧中の現在の描画が持つコードブロック slot の原文を、クリップボードのポートへ 1 回渡す
  * （ADR0098）。現在の描画に無い slot・閲覧以外は REJECTED で、ポートを呼ばない。
  * 文書・選択・Undo・未保存の状態は変えない。 */

@@ -632,6 +632,24 @@ static void verify_text_menu(void)
     require(folio_menu_action_text_edit(folio_menu_action_at(FOLIO_MENU_NOTE, 0)) ==
                 FOLIO_TEXT_EDIT_NONE,
             "other menus carry no text operation");
+    /* #900: on a link the link's own actions come first; they have no key of their own. */
+    const enum folio_text_edit linked[] = {FOLIO_TEXT_EDIT_OPEN_LINK, FOLIO_TEXT_EDIT_COPY_LINK,
+                                           FOLIO_TEXT_EDIT_COPY, FOLIO_TEXT_EDIT_SELECT_ALL};
+    const char *const names[] = {"Open link", "Copy link", "Copy", "Select all"};
+    for (size_t at = 0; at < 4; ++at)
+    {
+        const struct folio_menu_action *action = folio_menu_action_at(FOLIO_MENU_TEXT_LINK, at);
+        char text[256];
+        require(folio_menu_action_text_edit(action) == linked[at] &&
+                    folio_menu_action_caption(action, FOLIO_LANGUAGE_EN, text, sizeof text) ==
+                        UI_TEXT_FORMAT_READY &&
+                    same_text(text, names[at]),
+                "the link menu's actions in order");
+        require(folio_menu_action_hint(action, FOLIO_LANGUAGE_EN, text, sizeof text) ==
+                        UI_TEXT_FORMAT_READY &&
+                    (at < 2) == (strstr(text, "Ctrl+") == nullptr),
+                "the link actions show the menu's access key, the others their real key");
+    }
 }
 
 static void verify_menu_catalog(void)
@@ -656,9 +674,9 @@ static void verify_menu_catalog(void)
                                            FOLIO_COMMAND_DISCARD_EDITS,
                                            FOLIO_COMMAND_TRASH_NOTE};
     const size_t counts[] = {
-        [FOLIO_MENU_OPERATIONS] = 19, [FOLIO_MENU_LAYOUT] = 3, [FOLIO_MENU_CATEGORY] = 7,
-        [FOLIO_MENU_NOTE] = 3,        [FOLIO_MENU_EMPTY] = 1,  [FOLIO_MENU_TEXT_EDIT] = 5,
-        [FOLIO_MENU_TEXT_VIEW] = 2};
+        [FOLIO_MENU_OPERATIONS] = 19, [FOLIO_MENU_LAYOUT] = 3,   [FOLIO_MENU_CATEGORY] = 7,
+        [FOLIO_MENU_NOTE] = 3,        [FOLIO_MENU_EMPTY] = 1,    [FOLIO_MENU_TEXT_EDIT] = 5,
+        [FOLIO_MENU_TEXT_VIEW] = 2,   [FOLIO_MENU_TEXT_LINK] = 4};
     require(folio_command_count() == 37, "stable command IDs and count");
     for (size_t context = 0; context < sizeof counts / sizeof counts[0]; ++context)
     {

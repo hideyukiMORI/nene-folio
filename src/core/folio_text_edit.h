@@ -9,6 +9,8 @@ enum folio_text_edit : unsigned char
     FOLIO_TEXT_EDIT_CUT,
     FOLIO_TEXT_EDIT_COPY,
     FOLIO_TEXT_EDIT_PASTE,
-    FOLIO_TEXT_EDIT_SELECT_ALL
+    FOLIO_TEXT_EDIT_SELECT_ALL,
+    FOLIO_TEXT_EDIT_OPEN_LINK, /* #900: the link under the caret, through the link path */
+    FOLIO_TEXT_EDIT_COPY_LINK  /* #900: its validated URI to the clipboard port */
 };
 #endif
