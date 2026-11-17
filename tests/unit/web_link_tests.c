@@ -419,6 +419,28 @@ static void verify_footnotes(void)
     expect_field("a[^x]\n\n[^x]:", "fs18 1. \\fs22", "[^x]");
 }
 
+/* #878: lines indented four columns right after a footnote continue its text; they are not
+ * shown in place. A blank line, a shallower line or the limit ends the footnote. */
+static void verify_footnote_continuation(void)
+{
+    expect_field("a[^x]\n\n[^x]: first\n    second\n\tthird *em*\nafter",
+                 "fs18 1. first second third {\\i em}\\fs22", "    second");
+    expect_field("plain\n\n[^x]: first\n    hidden\n        deeper", "plain", "hidden");
+    expect_field("a[^x]\n\n[^x]: first\n  shallow", "fs18 1. first\\fs22", "first shallow");
+    expect_field("a[^x]\n\n[^x]: first\n\n    later", "fs18 1. first\\fs22", "first later");
+    expect_field("a[^x]\n\n[^x]: first\n    second\n[^y]: next\n\nb[^y]", "fs18 2. next\\fs22",
+                 "]: next");
+    expect_field("a[^x] b[l]\n\n[^x]: first\n    more\n[l]: https://example.com/c",
+                 "HYPERLINK \"HTTPS://example.com/c\"", "]: https");
+    expect_field("plain\n\n[l]: https://example.com/c\n    not more", "not more", "\\fs18");
+    static char many[(markdown_references_continuation_limit + 8) * 16];
+    size_t used = (size_t)sprintf(many, "a[^x]\n\n[^x]: head");
+    for (size_t index = 0; index < markdown_references_continuation_limit; ++index)
+        used += (size_t)sprintf(many + used, "\n    w%zu", index);
+    (void)sprintf(many + used, "\n    beyond");
+    expect_field(many, "w63\\fs22", "w63 beyond");
+}
+
 static size_t opened;
 static enum web_link_outcome port_result;
 static const char *_Nonnull expected_uri = "https://example.com/";
@@ -644,6 +666,7 @@ void run_web_link_tests(void)
     verify_reference_links();
     verify_reference_edges();
     verify_footnotes();
+    verify_footnote_continuation();
     verify_state();
     verify_product_table();
     verify_product_state();

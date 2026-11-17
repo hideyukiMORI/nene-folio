@@ -15,7 +15,10 @@ constexpr size_t markdown_references_limit = 1024;
 [[nodiscard]] enum markdown_rtf_outcome
 markdown_references_create(const struct note_text *_Nonnull text,
                            struct markdown_references *_Nullable *_Nonnull out);
-/* True when the line starting at `offset` of the source is a definition the table holds. */
+/* #878: a footnote continues on at most this many following lines indented four columns. */
+constexpr size_t markdown_references_continuation_limit = 64;
+/* True when the line starting at `offset` of the source is a definition the table holds, or a
+ * line a footnote continues on (#878). */
 [[nodiscard]] bool markdown_references_defines(const struct markdown_references *_Nullable table,
                                                size_t offset);
 /* The definition whose label matches the view's [start, end), or SIZE_MAX. */
@@ -38,6 +41,12 @@ markdown_references_destination_span(const struct markdown_references *_Nonnull 
 [[nodiscard]] size_t markdown_references_footnote(const struct markdown_references *_Nullable table,
                                                   struct markdown_view view, size_t start,
                                                   size_t end);
+/* #878: the footnote's text as spans of a view: its first line's text, then each continuation
+ * line's content. `parts` holds markdown_references_continuation_limit + 1 spans; returns how
+ * many were written (at least one). */
+[[nodiscard]] size_t
+markdown_references_footnote_text(const struct markdown_references *_Nonnull table, size_t index,
+                                  struct markdown_span *_Nonnull parts);
 /* The footnote's number, given in the order the note first refers to its footnotes. */
 [[nodiscard]] size_t markdown_references_number(struct markdown_references *_Nonnull table,
                                                 size_t index);

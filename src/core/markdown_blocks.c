@@ -720,16 +720,17 @@ static bool footnote_line(struct markdown_blocks *_Nonnull parser, size_t rank)
 {
     struct markdown_references *_Nonnull references = parser->references;
     size_t index = markdown_references_numbered_at(references, rank);
-    struct markdown_span line = markdown_references_line(references, index);
-    struct note_search_span range = markdown_references_destination_span(references, index);
-    struct markdown_span body = {
-        .bytes = line.bytes + range.start, .length = range.end - range.start, .offset = 0};
+    /* #878: the first line's text and the lines it continues on, joined like a paragraph. */
+    struct markdown_span parts[markdown_references_continuation_limit + 1];
+    size_t count = markdown_references_footnote_text(references, index, parts);
+    const struct markdown_span *last = &parts[count - 1];
     text_buffer_append_text(parser->out, "\\pard\\sa40\\sl240\\slmult1\\cf3\\fs18 ");
     rtf_text_number(parser->out, rank + 1);
     text_buffer_append_text(parser->out, ". ");
     parser->outcome = markdown_inline_tokens_render(
         (struct markdown_render){parser->out, parser->media, 18, references},
-        (struct markdown_view){.spans = &body, .count = 1, .length = body.length});
+        (struct markdown_view){
+            .spans = parts, .count = count, .length = last->offset + last->length});
     text_buffer_append_text(parser->out, "\\fs22\\cf1\\par\n");
     return parser->outcome == MARKDOWN_RTF_CONVERTED;
 }
