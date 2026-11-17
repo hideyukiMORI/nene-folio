@@ -21,3 +21,8 @@
 途中の手順の誤り: 件数の表示を足すとき、シェルの埋め込み文書が`\n`を本物の改行にしてCの文字列が壊れた（既知の落とし穴）。編集の道具で直した。
 
 見つかった欠陥: なし。範囲と限界: 種はASCIIの短い文書で、編集は1回に4個まで。長い入力・多バイト文字・深い入れ子は、既存の上限の試験が別に確かめている。
+
+## 最終の対象検証
+
+原本は`v1-*.log`（`E:/NeNeFolio/temp/912/verify.ps1 -Tag v1`）。build（clang-tidy込み）・`eng/coverage.py`・`eng/symbols.py`・`eng/conformance.py`（source/`--build-dir`）・`git diff --check`が成功し、`ctest`は63件すべて成功（123.5秒）。
+分岐の網羅率は全体90.74%→91.19%（閾値・除外不変）。`mermaid_class.c` 89.87%、`mermaid_er.c` 91.38%、`mermaid_state.c` 92.03%（変異が、書いた例では通らなかった拒否の分岐を通る）。
