@@ -26,3 +26,8 @@
 試験はクリップボードへ書かない（切り取り・コピーの実行は自動では確かめていない。利用者のクリップボードを壊さないため）。実機での切り取り・コピー・貼り付けの確認はhideの操作に残る。
 
 | v1（全体） | 成功（62/62）。ただし分岐90.57%で、新しい表の名前とキー表示（`folio_menu_action.c` 51.25%）に単体試験が無かった。`command_tests`に本文のメニューの並び・名前・キー・閲覧の2項目を足した |
+
+## 最終の対象検証
+
+原本は`v2-*.log`（`E:/NeNeFolio/temp/883/verify.ps1 -Tag v2`、#882統合後のmainを取り込んだ後）。build（clang-tidy込み）・`eng/coverage.py`（分岐90.80%、閾値・除外不変。`folio_menu_action.c` 86.25%）・
+`eng/symbols.py`・`eng/conformance.py`（source/`--build-dir`）・`git diff --check`が成功し、`ctest`は62件すべて成功（88.6秒、`text_menu_native`を含む）。
