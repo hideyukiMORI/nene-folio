@@ -20,3 +20,16 @@
 | unit-02 | 1件失敗: #861の試験「画像の参照形式は原文のまま」。今回の意図した変更なので、画像の枠になることを確かめる期待へ直した |
 | unit-03 | 成功。`image_tests`の新しい`reference_contract`（3つの形・記録された範囲が定義の行先の原文を指す・展開は1回・見つからないラベル・同じ定義へのリンク） |
 | native-01 | 一度目は試験の関数の追加が編集道具の事前読込の不足で入らず、呼び出しだけが入って構築が落ちた。足し直して成功（`image_display_tests` 200 checks。画像の枠として入り、定義も参照の文字も表示されない） |
+
+## 最終の対象検証
+
+原本は`v1-*.log`（`E:/NeNeFolio/temp/863/verify.ps1 -Tag v1`）。
+
+| コマンド | 結果 |
+| --- | --- |
+| `cmake --build <E:build> --parallel 4`（全target・clang-tidy込み） | 成功 |
+| `python -B eng/coverage.py` | 成功。分岐90.97%（下限90・除外不変）。`markdown_references.c` 93.33%、`markdown_inline_tokens.c` 90.44% |
+| `python -B eng/symbols.py --build-dir <E:build> --require core application` | 成功（違反0） |
+| `python -B eng/conformance.py` / `--build-dir <E:build>` | 成功（違反0） |
+| `ctest --test-dir <E:build> --output-on-failure --no-tests=error` | 61件すべて成功（92.6秒） |
+| `git diff --check origin/main` | 成功 |
