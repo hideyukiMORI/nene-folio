@@ -24,6 +24,8 @@ struct diagram_flow_layout
     size_t tracks[rank_limit + 1];
     size_t edge_level[diagram_link_limit];
     struct diagram_point labels[diagram_link_limit];
+    struct diagram_point starts[diagram_link_limit]; /* #916: centres of the texts at the ends */
+    struct diagram_point ends[diagram_link_limit];
     int direct_width[diagram_group_limit + 1];
     int band_width[diagram_group_limit + 1];
     int band_x[diagram_group_limit + 1];
@@ -128,6 +130,17 @@ static void measure_nodes(struct diagram_flow_layout *_Nonnull layout)
         layout->order[index] = layout->position[index] = index;
     }
 }
+/* #916: a text beside a line's end hangs past the node's middle, and two of them (one at each
+ * end) share the space between two rows. */
+static void measure_end_text(struct diagram_flow_layout *_Nonnull layout, size_t text)
+{
+    struct diagram_size size =
+        axis_size(layout, diagram_metrics_at(layout->metrics, text, DIAGRAM_TEXT_CAPTION));
+    if (size.width == 0)
+        return;
+    if (layout->margin < size.width + diagram_end_text_gap + diagram_outer_margin)
+        layout->margin = size.width + diagram_end_text_gap + diagram_outer_margin;
+}
 static void measure_edge_labels(struct diagram_flow_layout *_Nonnull layout)
 {
     layout->gap = diagram_flow_gap;
@@ -147,6 +160,8 @@ static void measure_edge_labels(struct diagram_flow_layout *_Nonnull layout)
             layout->label_unit = size.height + 16;
         if (layout->channel_width < size.width + 24)
             layout->channel_width = size.width + 24;
+        measure_end_text(layout, link.start_text);
+        measure_end_text(layout, link.end_text);
     }
 }
 static void measure_labels(struct diagram_flow_layout *_Nonnull layout)
@@ -539,18 +554,46 @@ static bool uml_marker(enum diagram_arrow arrow)
     }
     return false;
 }
+/* #916: an end with a text beside it needs its own place on the edge just like a UML marker. */
+static bool spread_end(const struct diagram_flow_layout *_Nonnull layout, struct diagram_link link,
+                       bool start)
+{
+    size_t text = start ? link.start_text : link.end_text;
+    return uml_marker(start ? link.start : link.end) ||
+           diagram_metrics_at(layout->metrics, text, DIAGRAM_TEXT_CAPTION).width != 0;
+}
 static bool marks_node(const struct diagram_flow_layout *_Nonnull layout, size_t edge, size_t node,
                        bool start)
 {
     struct diagram_link link = diagram_model_link_at(layout->model, edge);
-    return (start ? link.from : link.to) == node && uml_marker(start ? link.start : link.end) &&
+    return (start ? link.from : link.to) == node && spread_end(layout, link, start) &&
            !channel_needed(layout, link, edge);
+}
+/* The widest text beside the ends that share this node's edge: they sit that much further
+ * apart, so one line's text does not run into the next line. */
+static int end_text_width(const struct diagram_flow_layout *_Nonnull layout, size_t node,
+                          bool start)
+{
+    int widest = 0;
+    for (size_t other = 0; other < diagram_model_link_count(layout->model); ++other)
+    {
+        struct diagram_link link = diagram_model_link_at(layout->model, other);
+        if (!marks_node(layout, other, node, start))
+            continue;
+        int width = axis_size(layout, diagram_metrics_at(layout->metrics,
+                                                         start ? link.start_text : link.end_text,
+                                                         DIAGRAM_TEXT_CAPTION))
+                        .width;
+        if (widest < width)
+            widest = width;
+    }
+    return widest;
 }
 static int marker_shift(const struct diagram_flow_layout *_Nonnull layout, size_t edge, bool start)
 {
     struct diagram_link link = diagram_model_link_at(layout->model, edge);
     size_t node = start ? link.from : link.to;
-    if (!uml_marker(start ? link.start : link.end))
+    if (!spread_end(layout, link, start))
         return 0;
     int before = 0;
     int count = 0;
@@ -561,7 +604,7 @@ static int marker_shift(const struct diagram_flow_layout *_Nonnull layout, size_
         before += other < edge ? 1 : 0;
         ++count;
     }
-    int step = diagram_arrow_size * 2 + 4;
+    int step = diagram_arrow_size * 2 + 4 + end_text_width(layout, node, start);
     int room = layout->nodes[node].width - diagram_node_padding_x * 2;
     if (count > 1 && step * (count - 1) > room)
         step = room / (count - 1);
@@ -590,6 +633,24 @@ static struct diagram_point attach(const struct diagram_flow_layout *_Nonnull la
     return diagram_geometry_attachment(physical(layout, layout->nodes[node]),
                                        diagram_model_node_at(layout->model, node).shape, point);
 }
+/* #916: where the text beside an end goes: next to the line's first stretch, clear of the
+ * marker, on the side the layout's cross axis grows towards. */
+static struct diagram_point end_text_centre(const struct diagram_flow_layout *_Nonnull layout,
+                                            size_t text, struct diagram_point end,
+                                            struct diagram_point next)
+{
+    struct diagram_size size =
+        axis_size(layout, diagram_metrics_at(layout->metrics, text, DIAGRAM_TEXT_CAPTION));
+    int along_x = (next.x > end.x) - (next.x < end.x);
+    int along_y = (next.y > end.y) - (next.y < end.y);
+    struct diagram_point centre = {end.x + along_x * (diagram_end_text_gap + size.width / 2),
+                                   end.y + along_y * (diagram_end_text_gap / 2 + size.height / 2)};
+    if (along_x == 0)
+        centre.x += diagram_end_text_gap + size.width / 2;
+    else
+        centre.y += diagram_end_text_gap + size.height / 2;
+    return diagram_geometry_point(centre, layout->direction, layout->extent);
+}
 static void emit_link(struct diagram_flow_layout *_Nonnull layout, size_t index)
 {
     struct diagram_link link = diagram_model_link_at(layout->model, index);
@@ -609,6 +670,10 @@ static void emit_link(struct diagram_flow_layout *_Nonnull layout, size_t index)
     struct diagram_point label = {(path.points[segment].x + path.points[segment + 1].x) / 2,
                                   (path.points[segment].y + path.points[segment + 1].y) / 2};
     layout->labels[index] = diagram_geometry_point(label, layout->direction, layout->extent);
+    layout->starts[index] =
+        end_text_centre(layout, link.start_text, path.points[0], path.points[1]);
+    layout->ends[index] = end_text_centre(layout, link.end_text, path.points[path.count - 1],
+                                          path.points[path.count - 2]);
     if (link.stroke == DIAGRAM_INVISIBLE)
         return;
     for (size_t point = 0; point < path.count; ++point)
@@ -637,6 +702,28 @@ static void emit_link_label(struct diagram_flow_layout *_Nonnull layout, size_t 
                                                size.width + diagram_edge_padding_x * 2,
                                                size.height + diagram_edge_padding_y * 2}});
 }
+static void emit_end_text(struct diagram_flow_layout *_Nonnull layout, size_t text,
+                          struct diagram_point centre)
+{
+    struct diagram_size size = diagram_metrics_at(layout->metrics, text, DIAGRAM_TEXT_CAPTION);
+    if (size.width == 0)
+        return;
+    emit(layout, (struct diagram_primitive){.kind = DIAGRAM_PRIMITIVE_TEXT,
+                                            .ink = DIAGRAM_INK_TEXT,
+                                            .role = DIAGRAM_TEXT_CAPTION,
+                                            .text = text,
+                                            .bounds = {centre.x - size.width / 2,
+                                                       centre.y - size.height / 2, size.width,
+                                                       size.height}});
+}
+static void emit_end_texts(struct diagram_flow_layout *_Nonnull layout, size_t index)
+{
+    struct diagram_link link = diagram_model_link_at(layout->model, index);
+    if (link.stroke == DIAGRAM_INVISIBLE)
+        return;
+    emit_end_text(layout, link.start_text, layout->starts[index]);
+    emit_end_text(layout, link.end_text, layout->ends[index]);
+}
 static void reserve_channels(struct diagram_flow_layout *_Nonnull layout)
 {
     size_t count = 0;
@@ -663,6 +750,8 @@ static void emit_scene(struct diagram_flow_layout *_Nonnull layout)
         emit_link(layout, link);
     for (size_t link = 0; link < diagram_model_link_count(layout->model); ++link)
         emit_link_label(layout, link);
+    for (size_t link = 0; link < diagram_model_link_count(layout->model); ++link)
+        emit_end_texts(layout, link);
     for (size_t group = 0; group < diagram_model_group_count(layout->model); ++group)
         emit_group_heading(layout, group);
     for (size_t node = 0; node < diagram_model_node_count(layout->model); ++node)

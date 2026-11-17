@@ -253,6 +253,8 @@ static bool read_link(struct mermaid_flow *_Nonnull parser, struct diagram_text 
                       struct diagram_link *_Nonnull link)
 {
     *link = (struct diagram_link){.label = parser->empty,
+                                  .start_text = parser->empty,
+                                  .end_text = parser->empty,
                                   .length = 1,
                                   .stroke = DIAGRAM_SOLID,
                                   .start = DIAGRAM_ARROW_NONE,

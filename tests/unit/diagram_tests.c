@@ -489,6 +489,105 @@ static void class_marker_spread(void)
     diagram_model_destroy(model);
 }
 
+/* #916: a multiplicity is the text beside its end of the line. */
+static const struct diagram_primitive *_Nonnull scene_text(
+    const struct diagram_scene *_Nonnull scene, size_t text)
+{
+    for (size_t index = 0; index < diagram_scene_count(scene); ++index)
+    {
+        const struct diagram_primitive *item = diagram_scene_at(scene, index);
+        if (item->kind == DIAGRAM_PRIMITIVE_TEXT && item->text == text)
+            return item;
+    }
+    test_failure("the text is drawn");
+}
+
+static const struct diagram_primitive *_Nonnull first_path(
+    const struct diagram_scene *_Nonnull scene)
+{
+    for (size_t index = 0; index < diagram_scene_count(scene); ++index)
+        if (diagram_scene_at(scene, index)->kind == DIAGRAM_PRIMITIVE_PATH)
+            return diagram_scene_at(scene, index);
+    test_failure("the relation is drawn");
+}
+
+static void class_multiplicity_places(struct diagram_model *_Nonnull model)
+{
+    struct diagram_link link = diagram_model_link_at(model, 0);
+    struct diagram_scene *scene = laid_out(model);
+    const struct diagram_primitive *start = scene_text(scene, link.start_text);
+    const struct diagram_primitive *end = scene_text(scene, link.end_text);
+    const struct diagram_primitive *path = first_path(scene);
+    struct diagram_point from = path->points[0];
+    struct diagram_point to = path->points[path->count - 1];
+    require(start->role == DIAGRAM_TEXT_CAPTION && start->bounds.y >= from.y &&
+                start->bounds.x > from.x && start->bounds.x - from.x < 32,
+            "the first multiplicity sits just beside the line where it leaves the class");
+    require(end->bounds.y + end->bounds.height <= to.y && end->bounds.x > to.x &&
+                end->bounds.x - to.x < 32,
+            "the second multiplicity sits just beside the line where it reaches the class");
+    require(start->bounds.y + start->bounds.height <= end->bounds.y,
+            "the two multiplicities do not overlap between the rows");
+    struct diagram_size size = diagram_scene_size(scene);
+    require(end->bounds.x + end->bounds.width <= size.width &&
+                start->bounds.x + start->bounds.width <= size.width,
+            "the multiplicities stay inside the drawing");
+    diagram_scene_destroy(scene);
+}
+
+/* Left to right, and on a relation that runs back up: the texts stay inside the drawing. */
+static void class_multiplicity_sideways(void)
+{
+    struct diagram_model *model = parsed("classDiagram\ndirection LR\nA \"1\" --> \"0..*\" B\n"
+                                         "B \"many\" --> \"one\" A\n");
+    struct diagram_scene *scene = laid_out(model);
+    struct diagram_size size = diagram_scene_size(scene);
+    for (size_t index = 0; index < 2; ++index)
+    {
+        struct diagram_link link = diagram_model_link_at(model, index);
+        const struct diagram_primitive *ends[] = {scene_text(scene, link.start_text),
+                                                  scene_text(scene, link.end_text)};
+        for (size_t end = 0; end < 2; ++end)
+            require(ends[end]->bounds.x >= 0 && ends[end]->bounds.y >= 0 &&
+                        ends[end]->bounds.x + ends[end]->bounds.width <= size.width &&
+                        ends[end]->bounds.y + ends[end]->bounds.height <= size.height,
+                    "a multiplicity stays inside a sideways drawing");
+    }
+    diagram_scene_destroy(scene);
+    diagram_model_destroy(model);
+}
+
+static void class_multiplicity(void)
+{
+    struct diagram_model *model = parsed("classDiagram\nA \"1\" *-- \" 0..* \" B : has\n");
+    struct diagram_link link = diagram_model_link_at(model, 0);
+    require(strcmp(diagram_model_text_at(model, link.start_text), "1") == 0 &&
+                strcmp(diagram_model_text_at(model, link.end_text), "0..*") == 0 &&
+                strcmp(diagram_model_text_at(model, link.label), "has") == 0 &&
+                link.start == DIAGRAM_ARROW_DIAMOND_FILLED && link.end == DIAGRAM_ARROW_NONE,
+            "both multiplicities, the label and the markers of one relation");
+    class_multiplicity_places(model);
+    diagram_model_destroy(model);
+    model = parsed("classDiagram\nA --> \"*\" B\nC \"1\"..>D\n");
+    link = diagram_model_link_at(model, 0);
+    require(diagram_model_text_at(model, link.start_text)[0] == '\0' &&
+                strcmp(diagram_model_text_at(model, link.end_text), "*") == 0,
+            "one end alone may carry a multiplicity");
+    link = diagram_model_link_at(model, 1);
+    require(strcmp(diagram_model_text_at(model, link.start_text), "1") == 0 &&
+                link.stroke == DIAGRAM_DASHED && link.end == DIAGRAM_ARROW_OPEN,
+            "a multiplicity written tight against the line");
+    diagram_model_destroy(model);
+    class_multiplicity_sideways();
+    /* Plain arrows share one point; with a multiplicity each end gets its own place. */
+    model = parsed("classDiagram\nA --> \"1\" B\nC --> \"many\" B\n");
+    struct diagram_scene *scene = laid_out(model);
+    require(path_end_x(scene, 0, false) != path_end_x(scene, 1, false),
+            "two ends with multiplicities reach the class side by side");
+    diagram_scene_destroy(scene);
+    diagram_model_destroy(model);
+}
+
 static void class_contract(void)
 {
     struct diagram_model *model = parsed("classDiagram\n"
@@ -530,6 +629,7 @@ static void class_contract(void)
     diagram_model_destroy(model);
     class_relations();
     class_marker_spread();
+    class_multiplicity();
 }
 
 static void class_rejections(void)
@@ -543,8 +643,11 @@ static void class_rejections(void)
     reject_source("classDiagram\nA :", DIAGRAM_INVALID);
     reject_source("classDiagram\nclass A {\n  +x\n", DIAGRAM_INVALID);
     reject_source("classDiagram\ndirection SIDEWAYS\nA", DIAGRAM_INVALID);
-    reject_source("classDiagram\nA \"1\" --> \"*\" B", DIAGRAM_UNSUPPORTED);
-    reject_source("classDiagram\nA --> \"*\" B", DIAGRAM_UNSUPPORTED);
+    reject_source("classDiagram\nA \"1 --> B", DIAGRAM_INVALID);
+    reject_source("classDiagram\nA \"\" --> B", DIAGRAM_INVALID);
+    reject_source("classDiagram\nA \"1\" \"2\" --> B", DIAGRAM_INVALID);
+    reject_source("classDiagram\nA --> \"*\" \"2\" B", DIAGRAM_UNSUPPORTED);
+    reject_source("classDiagram\nA --> \"*\"", DIAGRAM_INVALID);
     reject_source("classDiagram\nA --> B extra", DIAGRAM_UNSUPPORTED);
     reject_source("classDiagram\nclass List~T~", DIAGRAM_UNSUPPORTED);
     reject_source("classDiagram\nclass A[\"Shown\"]", DIAGRAM_UNSUPPORTED);

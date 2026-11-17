@@ -1,7 +1,7 @@
 /* #890 / ADR0107: Mermaid `classDiagram` read into the flowchart model, so the existing layout
  * and drawing serve it. A class is a box (its name over its members once it has any); a relation
- * is a line whose ends carry the UML markers. Cardinalities, generics, notes, namespaces and
- * styles are unsupported and never produce a partial graph. */
+ * is a line whose ends carry the UML markers and, when written, a multiplicity (#916).
+ * Generics, notes, namespaces and styles are unsupported and never produce a partial graph. */
 #include "mermaid_class.h"
 #include "diagram_label.h"
 #include "diagram_statement.h"
@@ -135,23 +135,47 @@ static enum diagram_arrow right_marker(struct diagram_text *_Nonnull text)
     }
     return DIAGRAM_ARROW_NONE;
 }
-/* `A <|-- B : label`: markers around `--` (solid) or `..` (dashed). */
+/* #916: an optional `"1"` beside an end of the line. Without a quote nothing is read. */
+static bool multiplicity(struct mermaid_class *_Nonnull parser, struct diagram_text *_Nonnull rest,
+                         size_t *_Nonnull text)
+{
+    *rest = diagram_text_trim(*rest);
+    if (rest->length == 0 || rest->bytes[0] != '"')
+        return true;
+    size_t close = 1;
+    while (close < rest->length && rest->bytes[close] != '"')
+        ++close;
+    struct diagram_text inside =
+        diagram_text_trim((struct diagram_text){rest->bytes + 1, close - 1});
+    if (close == rest->length || inside.length == 0)
+        return reject(parser, DIAGRAM_INVALID);
+    parser->outcome = diagram_label_store(parser->model, inside, text);
+    *rest = diagram_text_trim(diagram_text_skip(*rest, close + 1));
+    return parser->outcome == DIAGRAM_ACCEPTED;
+}
+/* `A "1" <|-- "*" B : label`: markers around `--` (solid) or `..` (dashed), each end with an
+ * optional multiplicity. */
 static bool line_between(struct mermaid_class *_Nonnull parser, struct diagram_text *_Nonnull rest,
                          struct diagram_link *_Nonnull link)
 {
+    if (!multiplicity(parser, rest, &link->start_text))
+        return false;
     link->start = left_marker(rest);
     bool solid = diagram_text_starts(*rest, "--");
     if (!solid && !diagram_text_starts(*rest, ".."))
-        return reject(parser, rest->bytes[0] == '"' ? DIAGRAM_UNSUPPORTED : DIAGRAM_INVALID);
+        return reject(parser, DIAGRAM_INVALID);
     link->stroke = solid ? DIAGRAM_SOLID : DIAGRAM_DASHED;
     *rest = diagram_text_skip(*rest, 2);
     link->end = right_marker(rest);
-    return true;
+    return multiplicity(parser, rest, &link->end_text);
 }
 static bool relation(struct mermaid_class *_Nonnull parser, struct diagram_text name,
                      struct diagram_text rest)
 {
-    struct diagram_link link = {.label = parser->empty, .length = 1};
+    struct diagram_link link = {.label = parser->empty,
+                                .start_text = parser->empty,
+                                .end_text = parser->empty,
+                                .length = 1};
     if (!class_node(parser, name, &link.from) || !line_between(parser, &rest, &link))
         return false;
     struct diagram_text other = diagram_text_identifier(&rest);
