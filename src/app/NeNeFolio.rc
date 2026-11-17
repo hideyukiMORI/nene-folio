@@ -21,6 +21,7 @@ BEGIN
             VALUE "FileDescription", "NeNe Folio"
             VALUE "FileVersion", NENEFOLIO_WINDOWS_VERSION
             VALUE "InternalName", "NeNeFolio"
+            VALUE "LegalCopyright", L"\x00A9 2026 HideyukiMORI"
             VALUE "OriginalFilename", "NeNeFolio.exe"
             VALUE "ProductName", "NeNe Folio"
             VALUE "ProductVersion", NENEFOLIO_PRODUCT_VERSION
