@@ -1,6 +1,7 @@
 #include "diagram_native_shape.h"
 #include "diagram_geometry.h"
 #include "diagram_style.h"
+#include <stdlib.h>
 static void line(HDC _Nonnull dc, int x, int y, POINT end)
 {
     MoveToEx(dc, x, y, nullptr);
@@ -170,6 +171,84 @@ static bool arrow_hollow(HDC _Nonnull dc, enum diagram_arrow arrow, const POINT 
     SetDCBrushColor(dc, ink);
     return true;
 }
+/* #898: the ER cardinalities, drawn from the entity's edge (the tip) back along the line.
+ * `points` is the arrowhead's triangle: its base corners and the tip between them. */
+static POINT er_along(const POINT *_Nonnull points, int percent)
+{
+    POINT tip = points[1];
+    POINT base = {(points[0].x + points[2].x) / 2, (points[0].y + points[2].y) / 2};
+    return (POINT){tip.x + (base.x - tip.x) * percent / 100,
+                   tip.y + (base.y - tip.y) * percent / 100};
+}
+static POINT er_half(const POINT *_Nonnull points)
+{
+    return (POINT){(points[0].x - points[2].x) / 2, (points[0].y - points[2].y) / 2};
+}
+static void er_bar(HDC _Nonnull dc, const POINT *_Nonnull points, int percent)
+{
+    POINT centre = er_along(points, percent);
+    POINT half = er_half(points);
+    line(dc, centre.x + half.x, centre.y + half.y, (POINT){centre.x - half.x, centre.y - half.y});
+}
+static void er_foot(HDC _Nonnull dc, const POINT *_Nonnull points)
+{
+    POINT apex = er_along(points, 100);
+    POINT tip = points[1];
+    POINT half = er_half(points);
+    line(dc, apex.x, apex.y, (POINT){tip.x + half.x, tip.y + half.y});
+    line(dc, apex.x, apex.y, tip);
+    line(dc, apex.x, apex.y, (POINT){tip.x - half.x, tip.y - half.y});
+}
+static void er_circle(HDC _Nonnull dc, const POINT *_Nonnull points, int percent, COLORREF hollow)
+{
+    POINT centre = er_along(points, percent);
+    POINT half = er_half(points);
+    int radius = (abs(half.x) + abs(half.y)) * 7 / 10;
+    COLORREF ink = SetDCBrushColor(dc, hollow);
+    HGDIOBJ previous = SelectObject(dc, GetStockObject(DC_BRUSH));
+    Ellipse(dc, centre.x - radius, centre.y - radius, centre.x + radius + 1, centre.y + radius + 1);
+    SelectObject(dc, previous);
+    SetDCBrushColor(dc, ink);
+}
+static bool er_marker(enum diagram_arrow arrow)
+{
+    return arrow == DIAGRAM_ARROW_ER_ONE || arrow == DIAGRAM_ARROW_ER_ZERO_ONE ||
+           arrow == DIAGRAM_ARROW_ER_MANY || arrow == DIAGRAM_ARROW_ER_ZERO_MANY;
+}
+/* False when the marker is not an ER cardinality. */
+static bool arrow_er(HDC _Nonnull dc, enum diagram_arrow arrow, const POINT *_Nonnull points,
+                     COLORREF hollow)
+{
+    switch (arrow)
+    {
+    case DIAGRAM_ARROW_NONE:
+    case DIAGRAM_ARROW_CLOSED:
+    case DIAGRAM_ARROW_OPEN:
+    case DIAGRAM_ARROW_CIRCLE:
+    case DIAGRAM_ARROW_CROSS:
+    case DIAGRAM_ARROW_HOLLOW:
+    case DIAGRAM_ARROW_DIAMOND:
+    case DIAGRAM_ARROW_DIAMOND_FILLED:
+        return false;
+    case DIAGRAM_ARROW_ER_ONE:
+        er_bar(dc, points, 60);
+        er_bar(dc, points, 110);
+        return true;
+    case DIAGRAM_ARROW_ER_ZERO_ONE:
+        er_bar(dc, points, 60);
+        er_circle(dc, points, 150, hollow);
+        return true;
+    case DIAGRAM_ARROW_ER_MANY:
+        er_foot(dc, points);
+        er_bar(dc, points, 130);
+        return true;
+    case DIAGRAM_ARROW_ER_ZERO_MANY:
+        er_foot(dc, points);
+        er_circle(dc, points, 160, hollow);
+        return true;
+    }
+    return false;
+}
 static void arrow_head(HDC _Nonnull dc, enum diagram_arrow arrow, const POINT *_Nonnull points,
                        int mark)
 {
@@ -197,6 +276,11 @@ static void arrow_head(HDC _Nonnull dc, enum diagram_arrow arrow, const POINT *_
     case DIAGRAM_ARROW_HOLLOW:
     case DIAGRAM_ARROW_DIAMOND:
         break; /* drawn by arrow_hollow with the ground colour */
+    case DIAGRAM_ARROW_ER_ONE:
+    case DIAGRAM_ARROW_ER_ZERO_ONE:
+    case DIAGRAM_ARROW_ER_MANY:
+    case DIAGRAM_ARROW_ER_ZERO_MANY:
+        break; /* drawn by arrow_er */
     }
 }
 static size_t previous_point(const struct diagram_primitive *_Nonnull primitive, size_t side)
@@ -216,6 +300,9 @@ static bool marker_points(const struct diagram_primitive *_Nonnull primitive, si
     int size =
         (primitive->stroke == DIAGRAM_THICK ? diagram_thick_arrow_size : diagram_arrow_size) *
         scale;
+    /* #898: bars, circles and the crow's foot need more room than an arrowhead to be read. */
+    if (er_marker(side == 0 ? primitive->start : primitive->end))
+        size = size * 8 / 5;
     struct diagram_point tip = primitive->points[side == 0 ? 0 : primitive->count - 1];
     struct diagram_point previous = primitive->points[previous_point(primitive, side)];
     if (tip.x == previous.x && tip.y == previous.y)
@@ -236,7 +323,7 @@ void diagram_native_shape_arrows(HDC _Nonnull dc,
         if (!marker_points(primitive, side, scale, triangle))
             continue;
         enum diagram_arrow arrow = side == 0 ? primitive->start : primitive->end;
-        if (!arrow_hollow(dc, arrow, triangle, hollow))
+        if (!arrow_hollow(dc, arrow, triangle, hollow) && !arrow_er(dc, arrow, triangle, hollow))
             arrow_head(dc, arrow, triangle, diagram_endpoint_size * scale / 2);
     }
 }

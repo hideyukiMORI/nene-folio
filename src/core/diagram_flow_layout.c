@@ -520,8 +520,24 @@ static void channel_path(struct diagram_flow_layout *_Nonnull layout, struct dia
  * so the ones that share a node's edge sit side by side instead of on top of each other. */
 static bool uml_marker(enum diagram_arrow arrow)
 {
-    return arrow == DIAGRAM_ARROW_HOLLOW || arrow == DIAGRAM_ARROW_DIAMOND ||
-           arrow == DIAGRAM_ARROW_DIAMOND_FILLED;
+    switch (arrow)
+    {
+    case DIAGRAM_ARROW_NONE:
+    case DIAGRAM_ARROW_CLOSED:
+    case DIAGRAM_ARROW_OPEN:
+    case DIAGRAM_ARROW_CIRCLE:
+    case DIAGRAM_ARROW_CROSS:
+        return false;
+    case DIAGRAM_ARROW_HOLLOW:
+    case DIAGRAM_ARROW_DIAMOND:
+    case DIAGRAM_ARROW_DIAMOND_FILLED:
+    case DIAGRAM_ARROW_ER_ONE:
+    case DIAGRAM_ARROW_ER_ZERO_ONE:
+    case DIAGRAM_ARROW_ER_MANY:
+    case DIAGRAM_ARROW_ER_ZERO_MANY:
+        return true; /* #898: the ER cardinalities are read at the entity's edge too */
+    }
+    return false;
 }
 static bool marks_node(const struct diagram_flow_layout *_Nonnull layout, size_t edge, size_t node,
                        bool start)
