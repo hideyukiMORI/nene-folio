@@ -118,6 +118,136 @@ static struct diagram_rect label_bounds(const struct diagram_scene *_Nonnull sce
     }
     test_failure("expected diagram label is drawn");
 }
+/* #872 / ADR0104: a state diagram reads into the flowchart model and lays out like one. */
+static size_t node_named(const struct diagram_model *_Nonnull model, const char *_Nonnull id)
+{
+    size_t index = diagram_model_find_node(model, id, strlen(id));
+    require(index != diagram_none, "the state is in the model");
+    return index;
+}
+
+static void state_contract(void)
+{
+    struct diagram_model *model = parsed("stateDiagram-v2\n"
+                                         "    [*] --> Idle\n"
+                                         "    Idle --> Running : start\n"
+                                         "    state \"実行中\" as Running\n"
+                                         "    Running --> Idle\n"
+                                         "    Idle : 待機\n"
+                                         "    state Check <<choice>>\n"
+                                         "    Running --> Check\n"
+                                         "    Check --> [*]\n");
+    require(diagram_model_kind(model) == DIAGRAM_FLOWCHART &&
+                diagram_model_flow(model) == DIAGRAM_TOP_BOTTOM,
+            "a state diagram is a top-to-bottom flowchart model");
+    struct diagram_node idle = diagram_model_node_at(model, node_named(model, "Idle"));
+    struct diagram_node running = diagram_model_node_at(model, node_named(model, "Running"));
+    struct diagram_node check = diagram_model_node_at(model, node_named(model, "Check"));
+    require(idle.shape == DIAGRAM_ROUNDED &&
+                strcmp(diagram_model_text_at(model, idle.label), "待機") == 0,
+            "a state is a rounded box shown by its description");
+    require(strcmp(diagram_model_text_at(model, running.label), "実行中") == 0,
+            "state \"...\" as names the shown text");
+    require(check.shape == DIAGRAM_DIAMOND, "a choice is a diamond");
+    struct diagram_node start = diagram_model_node_at(model, node_named(model, "[*]<0"));
+    struct diagram_node end = diagram_model_node_at(model, node_named(model, "[*]>0"));
+    require(start.shape == DIAGRAM_CIRCLE && end.shape == DIAGRAM_DOUBLE_CIRCLE,
+            "[*] starts as a circle and ends as a double circle");
+    require(diagram_model_link_count(model) == 5, "every transition is a link");
+    struct diagram_link labelled = diagram_model_link_at(model, 1);
+    require(strcmp(diagram_model_text_at(model, labelled.label), "start") == 0 &&
+                labelled.end == DIAGRAM_ARROW_CLOSED,
+            "a transition's label and arrow");
+    struct diagram_scene *scene = laid_out(model);
+    diagram_scene_destroy(scene);
+    diagram_model_destroy(model);
+}
+
+static void state_composite(void)
+{
+    struct diagram_model *model = parsed("stateDiagram\n"
+                                         "direction LR\n"
+                                         "state Outer {\n"
+                                         "    [*] --> Inner\n"
+                                         "    Inner --> [*]\n"
+                                         "}\n"
+                                         "state \"Second box\" as Other {\n"
+                                         "    direction LR\n"
+                                         "    Deep\n"
+                                         "}\n");
+    require(diagram_model_flow(model) == DIAGRAM_LEFT_RIGHT, "direction applies to the diagram");
+    require(diagram_model_group_count(model) == 2, "each composite state is a group");
+    struct diagram_group other = diagram_model_group_at(model, 1);
+    require(strcmp(diagram_model_text_at(model, other.label), "Second box") == 0 &&
+                other.direction == DIAGRAM_LEFT_RIGHT,
+            "a labelled composite records its direction (the layout, like flowchart subgraphs, "
+            "does not support one different from the diagram's)");
+    struct diagram_node inner = diagram_model_node_at(model, node_named(model, "Inner"));
+    require(inner.group == 0, "a state inside a composite belongs to its group");
+    require(diagram_model_find_node(model, "[*]<1", 5) != diagram_none &&
+                diagram_model_find_node(model, "[*]>1", 5) != diagram_none &&
+                diagram_model_find_node(model, "[*]<0", 5) == diagram_none,
+            "each composite has its own start and end");
+    struct diagram_scene *scene = laid_out(model);
+    diagram_scene_destroy(scene);
+    diagram_model_destroy(model);
+}
+
+static void state_rejections(void)
+{
+    reject_source("stateDiagram-v2\nA --> B\nnote right of A : n", DIAGRAM_UNSUPPORTED);
+    reject_source("stateDiagram-v2\nstate F <<fork>>", DIAGRAM_UNSUPPORTED);
+    reject_source("stateDiagram-v2\nA --> B\n--\nC --> D", DIAGRAM_UNSUPPORTED);
+    reject_source("stateDiagram-v2\nclassDef hot fill:#f00\nA --> B", DIAGRAM_UNSUPPORTED);
+    reject_source("stateDiagram-v2\nA:::hot --> B", DIAGRAM_UNSUPPORTED);
+    reject_source("stateDiagram-v2\nstate S {\nA\n}\nB --> S", DIAGRAM_UNSUPPORTED);
+    reject_source("stateDiagram-v2\n[*] --> S\nstate S {\nA\n}", DIAGRAM_UNSUPPORTED);
+    reject_source("stateDiagram-v2\nA -> B", DIAGRAM_INVALID);
+    reject_source("stateDiagram-v2\nA --> B extra", DIAGRAM_INVALID);
+    reject_source("stateDiagram-v2\nstate S {\nA", DIAGRAM_INVALID);
+    reject_source("stateDiagram-v2\n}", DIAGRAM_INVALID);
+    reject_source("stateDiagram-v2\nstate \"open as A", DIAGRAM_INVALID);
+    reject_source("stateDiagram-v2\nstate \"x\" is A", DIAGRAM_INVALID);
+    reject_source("stateDiagram-v2\nstate A B", DIAGRAM_INVALID);
+    reject_source("stateDiagram-v2\ndirection XY\nA", DIAGRAM_INVALID);
+    reject_source("stateDiagram-v2 extra\nA", DIAGRAM_INVALID);
+    reject_source("stateDiagram-v2\n", DIAGRAM_INVALID);
+    reject_source("stateDiagram-v2\nA B", DIAGRAM_INVALID);
+    reject_source("stateDiagram-v2\n --> B", DIAGRAM_INVALID);
+    reject_source("stateDiagram-v2\nstate S {\n}\nstate S {\n}", DIAGRAM_INVALID);
+    reject_source("stateDiagram-v2\nstate {\n}", DIAGRAM_INVALID);
+    reject_source("stateDiagram-v2\nstyle A fill:#f00\nA", DIAGRAM_UNSUPPORTED);
+    reject_source("stateDiagram-v2\nclick A call x()\nA", DIAGRAM_UNSUPPORTED);
+    reject_source("stateDiagram-v2\naccTitle: t\nA", DIAGRAM_UNSUPPORTED);
+    reject_source("stateDiagram-v2\nstate J <<join>>", DIAGRAM_UNSUPPORTED);
+    char deep[1024] = "stateDiagram-v2\n";
+    for (size_t level = 0; level <= diagram_depth_limit; ++level)
+        (void)sprintf_s(deep + strlen(deep), sizeof deep - strlen(deep), "state S%zu {\n", level);
+    reject_source(deep, DIAGRAM_TOO_LARGE);
+}
+
+/* Reuse: one start per scope however often it is used, states met again, plain declarations. */
+static void state_reuse(void)
+{
+    struct diagram_model *model = parsed("stateDiagram-v2\n"
+                                         "[*] --> A\n[*] --> B\nA --> B\nB --> A : back\n"
+                                         "state C\nstate \"Shown\" as D\nstate A <<choice>>\n"
+                                         "E : described\nA --> [*]\nB --> [*]\n");
+    require(diagram_model_find_node(model, "[*]<0", 5) != diagram_none &&
+                diagram_model_find_node(model, "[*]>0", 5) != diagram_none,
+            "one start and one end in the diagram's scope");
+    require(diagram_model_node_count(model) == 7, "A B C D E and the two markers");
+    require(diagram_model_link_count(model) == 6, "every transition");
+    struct diagram_node d = diagram_model_node_at(model, node_named(model, "D"));
+    struct diagram_node e = diagram_model_node_at(model, node_named(model, "E"));
+    struct diagram_node a = diagram_model_node_at(model, node_named(model, "A"));
+    require(strcmp(diagram_model_text_at(model, d.label), "Shown") == 0 &&
+                strcmp(diagram_model_text_at(model, e.label), "described") == 0 &&
+                a.shape == DIAGRAM_DIAMOND,
+            "declarations after use relabel or reshape the same state");
+    diagram_model_destroy(model);
+}
+
 static void flow_directions(void)
 {
     static const char *const sources[] = {"flowchart TB\nA-->B", "graph TD\nA-->B",
@@ -1389,6 +1519,10 @@ void run_diagram_tests(void)
     autonumber_boundary();
     flow_directions();
     flow_shapes();
+    state_contract();
+    state_composite();
+    state_rejections();
+    state_reuse();
     groups_and_cycles();
     edge_labels_remain_visible();
     horizontal_group_heading();

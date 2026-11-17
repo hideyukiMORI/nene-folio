@@ -39,6 +39,12 @@ static const char parts[] =
     "E --> F((二行のラベル<br>二行目も読み取る))\n"
     "F --> G{利用者が入力した内容を確認してから保存する}\n"
     "G ==>|実行する| H[[Process data]]\nH -.-> I([完了])\n";
+/* #872 / ADR0104: a state diagram through the same parse, layout and drawing phases. */
+static const char state[] =
+    "stateDiagram-v2\n[*] --> 待機\n待機 --> 実行中 : 開始\n実行中 --> 確認\n"
+    "state 確認 <<choice>>\n確認 --> 待機 : やり直す\n確認 --> [*] : 成功\n"
+    "state \"後処理\" as After {\n[*] --> 保存\n保存 --> [*]\n}\n";
+
 static void require(bool value, const char *_Nonnull label)
 {
     ++checks;
@@ -101,11 +107,11 @@ static struct image_bitmap *_Nonnull render(const struct diagram_request *_Nonnu
 }
 static void render_cases(const struct image_work *_Nonnull work, const char *_Nullable output)
 {
-    const char *sources[] = {flow, sequence, parts};
-    const char *names[] = {"flow-light",    "flow-dark",   "sequence-light",
-                           "sequence-dark", "parts-light", "parts-dark"};
+    const char *sources[] = {flow, sequence, parts, state};
+    const char *names[] = {"flow-light",  "flow-dark",  "sequence-light", "sequence-dark",
+                           "parts-light", "parts-dark", "state-light",    "state-dark"};
     const enum folio_theme themes[] = {FOLIO_THEME_LIGHT, FOLIO_THEME_DARK};
-    for (size_t index = 0; index < 3; ++index)
+    for (size_t index = 0; index < sizeof sources / sizeof sources[0]; ++index)
     {
         struct note_text *source = text_for(sources[index]);
         for (size_t theme = 0; theme < 2; ++theme)

@@ -63,6 +63,7 @@ nenefolio_target(nenefolio_core core STATIC
     src/core/markdown_media.c
     src/core/mermaid_diagram.c
     src/core/mermaid_flow.c
+    src/core/mermaid_state.c
     src/core/mermaid_sequence.c
     src/core/image_source.c src/core/image_bitmap.c src/core/markdown_images.c src/core/markdown_destination.c
     src/core/image_asset.c src/core/archive_assets.c src/core/markdown_image_copy.c

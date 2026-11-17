@@ -22,7 +22,7 @@ static size_t current_group(const struct mermaid_flow *_Nonnull parser)
 {
     return parser->depth == 0 ? diagram_none : parser->groups[parser->depth - 1];
 }
-static bool direction(struct diagram_text text, enum diagram_direction *_Nonnull out)
+bool mermaid_flow_direction(struct diagram_text text, enum diagram_direction *_Nonnull out)
 {
     if (diagram_text_equal(text, "TD") || diagram_text_equal(text, "TB"))
         *out = DIAGRAM_TOP_BOTTOM;
@@ -320,7 +320,7 @@ static bool open_group(struct mermaid_flow *_Nonnull parser, struct diagram_text
 static bool set_direction(struct mermaid_flow *_Nonnull parser, struct diagram_text text)
 {
     enum diagram_direction value;
-    if (!direction(text, &value))
+    if (!mermaid_flow_direction(text, &value))
         return reject(parser, DIAGRAM_INVALID);
     size_t group = current_group(parser);
     if (group == diagram_none)

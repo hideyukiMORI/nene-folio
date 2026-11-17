@@ -324,7 +324,7 @@ sequenceDiagram
 ```
 ````
 
-今回の対応範囲はフローチャートとシーケンス図です。Mermaid.jsと同じ位置や曲線になる保証はありません。
+今回の対応範囲はフローチャート・シーケンス図・状態遷移図（#872、開発版）です。Mermaid.jsと同じ位置や曲線になる保証はありません。
 
 | 種類 | 対応する記法 |
 | --- | --- |
@@ -335,6 +335,7 @@ sequenceDiagram
 | シーケンス図 | `sequenceDiagram`、`participant` / `actor`と`as`、暗黙の参加者、メッセージ・自己メッセージ・双方向矢印 |
 | 注釈・処理区間 | `Note over` / `left of` / `right of`、`activate` / `deactivate`、メッセージの`+` / `-`、`autonumber`（開始値・増分・`off`）、`title` |
 | 分岐・反復の枠 | `loop` / `alt` / `opt` / `par` / `critical` / `break`〜`end`。対応する`else` / `and` / `option` |
+| 状態遷移図 | `stateDiagram` / `stateDiagram-v2`、`A --> B`と`: ラベル`、`[*]`（遷移の元は開始の円、先は終了の二重円）、`state "表示名" as A`、`A : 説明`（説明を表示）、`state A { ... }`の複合状態、`state A <<choice>>`（ひし形）、`direction`。`note`・並行領域`--`・`<<fork>>` / `<<join>>`・`classDef` / `class` / `:::`・複合状態そのものへの遷移は未対応 |
 
 日本語ラベル、引用符付きラベル、`<br>` / `<br/>` / `<br />` / `\n`での改行、基本の文字参照を使えます。
 `%%`のコメントは図へ表示しません。未対応の種類・構文、壊れた構文、大きすぎる図は通知行へ案内を出します。
