@@ -178,6 +178,9 @@ struct folio_window
     bool discovery_show_preview;
     bool discovery_preview_ready;
     bool discovery_preview_reveal;
+    /* 折り返し表示の行番号用。原文の各論理行がpreviewの何文字目から始まるか（#933）。 */
+    size_t discovery_line_starts[note_excerpt_line_limit];
+    size_t discovery_line_count;
     uint64_t discovery_revision;
     uint64_t discovery_results_revision;
     UINT_PTR discovery_timer;
@@ -19794,11 +19797,24 @@ static void arrange_discovery_preview(struct folio_window *_Nonnull self)
     }
 }
 
+static void discovery_index_lines(struct folio_window *_Nonnull self,
+                                  const struct utf16_text *_Nonnull text)
+{
+    const char16_t *units = utf16_text_units(text);
+    size_t length = utf16_text_length(text);
+    self->discovery_line_starts[0] = 0;
+    self->discovery_line_count = 1;
+    for (size_t at = 0; at < length && self->discovery_line_count < note_excerpt_line_limit; ++at)
+        if (units[at] == u'\n')
+            self->discovery_line_starts[self->discovery_line_count++] = at + 1;
+}
+
 /* Native EDIT receives display line endings; the immutable excerpt keeps exact source bytes. */
 static enum folio_state_outcome load_discovery_preview(struct folio_window *_Nonnull self)
 {
     self->discovery_preview_ready = false;
     self->discovery_preview_reveal = false;
+    self->discovery_line_count = 0;
     SetWindowTextW(self->discovery_preview, L"");
     const struct note_excerpt *_Nullable excerpt = folio_state_discovery_excerpt(self->state);
     if (excerpt == nullptr)
@@ -19827,6 +19843,7 @@ static enum folio_state_outcome load_discovery_preview(struct folio_window *_Non
     bool set = SendMessageW(self->discovery_preview, WM_SETTEXT, 0,
                             (LPARAM)utf16_text_units(converted)) != FALSE;
     self->discovery_preview_ready = set;
+    discovery_index_lines(self, converted);
     utf16_text_destroy(converted);
     struct note_search_span selection = note_excerpt_selection(excerpt);
     SendMessageW(self->discovery_preview, EM_SETSEL, (WPARAM)selection.start,
@@ -19839,9 +19856,8 @@ static bool create_discovery_preview(struct folio_window *_Nonnull self)
 {
     self->discovery_preview = CreateWindowExW(
         0, edit_class, L"",
-        WS_CHILD | ES_MULTILINE | ES_READONLY | ES_NOHIDESEL | ES_AUTOVSCROLL | ES_AUTOHSCROLL |
-            WS_VSCROLL | WS_HSCROLL,
-        0, 0, 0, 0, self->command_layer, (HMENU)(INT_PTR)discovery_preview_control_id,
+        WS_CHILD | ES_MULTILINE | ES_READONLY | ES_NOHIDESEL | ES_AUTOVSCROLL | WS_VSCROLL, 0, 0, 0,
+        0, self->command_layer, (HMENU)(INT_PTR)discovery_preview_control_id,
         GetModuleHandleW(nullptr), nullptr);
     if (self->discovery_preview == nullptr)
         return false;
@@ -20209,18 +20225,37 @@ static enum ui_text discovery_button_label(const struct folio_window *_Nonnull s
     return labels[slot - ACCESSIBLE_SURFACE_DISCOVERY_OPEN];
 }
 
-static void discovery_select(struct folio_window *_Nonnull self, size_t index)
+/* 入力欄から↑↓で選んだときはフォーカスを入力欄に残し、続けて打てるようにする（#933）。 */
+static void discovery_pick(struct folio_window *_Nonnull self, size_t index, bool typing)
 {
     if (self->command_composing)
         return;
     size_t before = self->command_selection;
     self->command_failure = folio_state_select_discovery(self->state, index);
-    self->discovery_focus = DISCOVERY_FOCUS_ROWS;
+    self->discovery_focus = typing ? DISCOVERY_FOCUS_INPUT : DISCOVERY_FOCUS_ROWS;
     discovery_refresh(self);
     reveal_command_selection(self);
-    SetFocus(self->command_layer);
+    SetFocus(typing ? self->command_input : self->command_layer);
     if (self->command_failure == FOLIO_STATE_READY && before != self->command_selection)
         discovery_motion_select(self);
+}
+
+static void discovery_select(struct folio_window *_Nonnull self, size_t index)
+{
+    discovery_pick(self, index, false);
+}
+
+/* 入力欄のPageUp/PageDownは原文previewを縦に送る。previewが出ていなければ候補のページ送り（#933）。
+ */
+static bool discovery_scroll_preview(struct folio_window *_Nonnull self, WPARAM key)
+{
+    if (key != VK_PRIOR && key != VK_NEXT)
+        return false;
+    if (self->discovery_preview == nullptr || !IsWindowVisible(self->discovery_preview))
+        return false;
+    SendMessageW(self->discovery_preview, EM_SCROLL, key == VK_PRIOR ? SB_PAGEUP : SB_PAGEDOWN, 0);
+    redraw_command_layer(self);
+    return true;
 }
 
 static bool discovery_mode_arrow(struct folio_window *_Nonnull self, WPARAM key)
@@ -20239,11 +20274,14 @@ static bool discovery_navigate(struct folio_window *_Nonnull self, WPARAM key)
 {
     if (GetFocus() == self->command_layer && self->discovery_focus == DISCOVERY_FOCUS_MODE)
         return discovery_mode_arrow(self, key);
+    bool typing = GetFocus() == self->command_input;
+    if (typing && discovery_scroll_preview(self, key))
+        return true;
     if (key != VK_UP && key != VK_DOWN && key != VK_PRIOR && key != VK_NEXT)
         return false;
     struct discovery_summary summary = folio_state_discovery_summary(self->state);
     if (summary.phase == DISCOVERY_READY && summary.shown != 0)
-        discovery_select(self, tag_next_row(self, key, summary.shown));
+        discovery_pick(self, tag_next_row(self, key, summary.shown), typing);
     return true;
 }
 
@@ -20657,10 +20695,15 @@ static void draw_discovery_gutter(const struct folio_window *_Nonnull self, HDC 
     size_t first = (size_t)SendMessageW(self->discovery_preview, EM_GETFIRSTVISIBLELINE, 0, 0);
     TEXTMETRICW metrics = {0};
     GetTextMetricsW(device, &metrics);
-    for (size_t at = first; at < note_excerpt_line_count(excerpt); ++at)
+    /* 折り返した行には番号を付けず、論理行の1行目の高さにだけ置く（#933）。 */
+    for (size_t at = 0; at < self->discovery_line_count; ++at)
     {
+        size_t visual = (size_t)SendMessageW(self->discovery_preview, EM_LINEFROMCHAR,
+                                             (WPARAM)self->discovery_line_starts[at], 0);
+        if (visual < first)
+            continue;
         RECT line = area;
-        line.top += (int)(at - first) * metrics.tmHeight;
+        line.top += (int)(visual - first) * metrics.tmHeight;
         if (line.top >= area.bottom)
             break;
         line.bottom = line.top + metrics.tmHeight;

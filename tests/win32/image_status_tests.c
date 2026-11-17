@@ -11065,6 +11065,89 @@ static void body_discovery_mode_keys(struct folio_window *_Nonnull window,
     surface_button(window, ACCESSIBLE_SURFACE_CLOSE);
 }
 
+/* #933: from the query, Down selects without leaving the input. */
+static void body_discovery_typing_rows(struct folio_window *_Nonnull window,
+                                       struct native_fixture *_Nonnull fixture)
+{
+    body_discovery_open(window, fixture, L"needle");
+    HWND input = folio_window_accessible_window(window, ACCESSIBLE_COMMAND_INPUT);
+    SetFocus(input);
+    size_t before = folio_state_discovery_summary(fixture->state).selected;
+    SendMessageW(input, WM_KEYDOWN, VK_DOWN, 0);
+    pump(window);
+    discovery_settle(window, fixture->state);
+    size_t after = folio_state_discovery_summary(fixture->state).selected;
+    printf("typing rows: selected %zu -> %zu focus input %d\n", before, after, GetFocus() == input);
+    fflush(stdout);
+    require(after == before + 1 && GetFocus() == input,
+            "Down in the query selects the next candidate and keeps typing focus");
+    SendMessageW(input, EM_SETSEL, 6, 6);
+    SendMessageW(input, WM_CHAR, L'x', 0);
+    pump(window);
+    discovery_settle(window, fixture->state);
+    wchar_t query[32];
+    require(GetWindowTextW(input, query, 32) > 0 && wcscmp(query, L"needlex") == 0,
+            "typing continues in the query after Down");
+    surface_button(window, ACCESSIBLE_SURFACE_CLOSE);
+}
+
+static size_t body_discovery_first_line(HWND preview)
+{
+    return (size_t)SendMessageW(preview, EM_GETFIRSTVISIBLELINE, 0, 0);
+}
+
+/* #933: PageUp/PageDown in the query page the wrapped source preview, not the candidates. */
+static void body_discovery_typing_preview(struct folio_window *_Nonnull window,
+                                          struct native_fixture *_Nonnull fixture)
+{
+    char source[8192] = "";
+    for (int line = 1; line <= 60; ++line)
+    {
+        char text[32];
+        (void)snprintf(text, sizeof text, "line %d\n", line);
+        (void)strcat_s(source, sizeof source, text);
+    }
+    for (int word = 0; word < 120; ++word)
+        (void)strcat_s(source, sizeof source, "wrapword ");
+    (void)strcat_s(source, sizeof source, "farneedle tail\nlast\n");
+    body_discovery_write(fixture, L"\\target\\three.md", source);
+    body_discovery_open(window, fixture, L"farneedle");
+    HWND input = folio_window_accessible_window(window, ACCESSIBLE_COMMAND_INPUT);
+    HWND preview = folio_window_accessible_window(window, ACCESSIBLE_DISCOVERY_PREVIEW);
+    LONG_PTR style = GetWindowLongPtrW(preview, GWL_STYLE);
+    LRESULT visual = SendMessageW(preview, EM_GETLINECOUNT, 0, 0);
+    wchar_t shown[4096];
+    int length = GetWindowTextW(preview, shown, 4096);
+    LRESULT logical = 1;
+    for (int at = 0; at < length; ++at)
+        logical += shown[at] == L'\n';
+    printf("typing preview: shown %zu hscroll %d autohscroll %d lines visual %lld logical %lld\n",
+           folio_state_discovery_summary(fixture->state).shown, (style & WS_HSCROLL) != 0,
+           (style & ES_AUTOHSCROLL) != 0, (long long)visual, (long long)logical);
+    fflush(stdout);
+    require(folio_state_discovery_summary(fixture->state).shown == 1 &&
+                (style & (WS_HSCROLL | ES_AUTOHSCROLL)) == 0 && visual > logical + 2,
+            "the source preview wraps long lines instead of scrolling sideways");
+    body_discovery_preview_visible(preview);
+    SetFocus(input);
+    size_t selected = folio_state_discovery_summary(fixture->state).selected;
+    size_t revealed = body_discovery_first_line(preview);
+    SendMessageW(input, WM_KEYDOWN, VK_PRIOR, 0);
+    pump(window);
+    size_t up = body_discovery_first_line(preview);
+    SendMessageW(input, WM_KEYDOWN, VK_NEXT, 0);
+    pump(window);
+    size_t down = body_discovery_first_line(preview);
+    printf("typing preview: first line revealed %zu up %zu down %zu\n", revealed, up, down);
+    fflush(stdout);
+    require(revealed > 0 && up < revealed && down > up && GetFocus() == input &&
+                folio_state_discovery_summary(fixture->state).selected == selected,
+            "PageUp/PageDown in the query scroll the preview and keep the candidate and focus");
+    surface_button(window, ACCESSIBLE_SURFACE_CLOSE);
+    body_discovery_write(fixture, L"\\target\\three.md",
+                         "---\nitem:\n  child: value\n---\nneedle unknown");
+}
+
 static LRESULT CALLBACK progress_layer_observer(HWND window, UINT message, WPARAM wparam,
                                                 LPARAM lparam)
 {
@@ -11416,7 +11499,11 @@ static void body_discovery_visual_seed(struct native_fixture *_Nonnull fixture)
 {
     char source[2048] = "---\r\ntags: [red, blue]\r\n---\r\n";
     for (size_t line = 0; line < 39; ++line)
-        require(strcat_s(source, sizeof source, "前の行😀\r\n") == 0, "bounded visual context");
+        require(strcat_s(source, sizeof source,
+                         line == 33 ? "長い行は折り返して表示し、行番号は論理行の1行目にだけ付ける "
+                                      "wrapped source line keeps one number per logical line😀\r\n"
+                                    : "前の行😀\r\n") == 0,
+                "bounded visual context with one wrapped line (#933)");
     require(strcat_s(source, sizeof source, "needle 日本😀\r\n末尾\r\n") == 0,
             "visual matching source line");
     body_discovery_write(fixture, L"\\schedule\\one.md", source);
@@ -11576,6 +11663,8 @@ static void run_body_discovery_case(struct native_fixture *_Nonnull fixture)
     {
         body_discovery_progress_idle(window, fixture);
         body_discovery_mode_keys(window, fixture);
+        body_discovery_typing_rows(window, fixture);
+        body_discovery_typing_preview(window, fixture);
         body_discovery_same_editor(window, fixture);
         body_discovery_changed_source(window, fixture);
         body_discovery_read_failure(window, fixture);
