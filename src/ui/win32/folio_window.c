@@ -14393,7 +14393,11 @@ static void run_shortcut(struct folio_window *_Nonnull self,
         operations_shortcut(self);
         return;
     case FOLIO_SHORTCUT_ACTION_CONTEXT_MENU:
-        if (self->drawer != nullptr)
+        /* #883: in the note body the keys open its own menu at the caret. */
+        if (self->pane != nullptr && GetFocus() == note_pane_handle(self->pane))
+            SendMessageW(note_pane_handle(self->pane), WM_CONTEXTMENU,
+                         (WPARAM)note_pane_handle(self->pane), -1);
+        else if (self->drawer != nullptr)
             drawer_window_context_menu(self->drawer);
         return;
     case FOLIO_SHORTCUT_ACTION_FILTER:
@@ -18801,6 +18805,11 @@ static enum folio_state_outcome menu_availability(const struct folio_window *_No
     const struct folio_menu_action *action = menu_action(self, index);
     if (folio_menu_action_kind(action) == FOLIO_MENU_ACTION_RECOLOR_CATEGORY)
         return folio_state_recolor_availability(self->state, self->menu.target.category);
+    if (folio_menu_action_kind(action) == FOLIO_MENU_ACTION_TEXT)
+        return self->pane != nullptr && note_pane_text_edit_available(
+                                            self->pane, folio_menu_action_text_edit(action))
+                   ? FOLIO_STATE_READY
+                   : FOLIO_STATE_CANCELLED;
     enum folio_command_target kind = FOLIO_COMMAND_TARGET_CURRENT;
     if (self->menu.context == FOLIO_MENU_CATEGORY)
         kind = FOLIO_COMMAND_TARGET_CATEGORY;
@@ -19106,7 +19115,9 @@ static void draw_menu_surface(const struct folio_window *_Nonnull self, HDC devi
     GetClientRect(self->command_layer, &bounds);
     SetDCBrushColor(device, self->palette.dialog_surface);
     FillRect(device, &bounds, (HBRUSH)GetStockObject(DC_BRUSH));
-    SetDCBrushColor(device, self->palette.dialog_border);
+    /* #883: a menu can open over the note's text, where the card outline alone is too faint to
+     * show where the surface ends; its edge uses the readable secondary ink. */
+    SetDCBrushColor(device, self->palette.dialog_secondary);
     FrameRect(device, &bounds, (HBRUSH)GetStockObject(DC_BRUSH));
     for (size_t at = self->command_first; at < folio_menu_action_count(self->menu.context); ++at)
     {
@@ -19233,6 +19244,10 @@ static void menu_execute(struct folio_window *_Nonnull self, size_t index)
     case FOLIO_MENU_ACTION_RECOLOR_CATEGORY:
         if (self->drawer != nullptr)
             drawer_window_choose_color(self->drawer, request.target.category);
+        return;
+    case FOLIO_MENU_ACTION_TEXT:
+        if (self->pane != nullptr)
+            note_pane_text_edit(self->pane, folio_menu_action_text_edit(action));
         return;
     }
 }
@@ -19410,6 +19425,11 @@ static void menu_accessible(const struct folio_window *_Nonnull self, size_t ind
     out->position = (int)index + 1;
     out->set_size = (int)folio_menu_action_count(self->menu.context);
     const struct folio_menu_action *action = menu_action(self, index);
+    if (folio_menu_action_kind(action) == FOLIO_MENU_ACTION_TEXT)
+    {
+        menu_hint(self, index, caption);
+        (void)wide_units(caption, out->accelerator);
+    }
     if (folio_menu_action_kind(action) != FOLIO_MENU_ACTION_COMMAND)
         return;
     enum folio_command command = folio_menu_action_command(action);

@@ -124,6 +124,7 @@ static bool code_copy_case;
 static bool code_copy_visual_case;
 static bool bare_url_visual_case;
 static bool search_key_visual_case;
+static bool text_menu_case;
 static bool code_copy_keys_case_selected;
 static bool code_copy_scroll_case;
 static bool code_copy_scroll_96;
@@ -9923,6 +9924,93 @@ static void bare_url_visual(struct native_fixture *_Nonnull fixture)
     favorite_high_contrast = false;
 }
 
+/* #883: the body's context menu through the real window: its rows, which are enabled, the
+ * edit a row runs, and the screenshots for the record. Nothing writes the clipboard. */
+static struct accessible_view text_menu_row(struct folio_window *_Nonnull window, size_t slot)
+{
+    struct accessible_item item = {.kind = ACCESSIBLE_SURFACE_CHOICE,
+                                   .slot = slot,
+                                   .revision = folio_window_accessible_surface_revision(window)};
+    struct accessible_view view = {0};
+    require(folio_window_accessible_read(window, &item, &view) == S_OK, "context menu row");
+    return view;
+}
+
+static void text_menu_open(struct folio_window *_Nonnull window, HWND _Nonnull body)
+{
+    SetFocus(body);
+    SendMessageW(body, EM_SETSEL, 2, 9);
+    SendMessageW(body, WM_CONTEXTMENU, (WPARAM)body, -1);
+    pump(window);
+}
+
+static void text_menu_edit_rows(struct folio_window *_Nonnull window, HWND _Nonnull body)
+{
+    text_menu_open(window, body);
+    struct accessible_view cut = text_menu_row(window, 1);
+    struct accessible_view copy = text_menu_row(window, 2);
+    struct accessible_view all = text_menu_row(window, 4);
+    require(cut.set_size == 5 && cut.enabled && copy.enabled && all.enabled &&
+                wcscmp((const wchar_t *)cut.name, L"切り取り") == 0 &&
+                wcscmp((const wchar_t *)copy.accelerator, L"Ctrl+C") == 0 &&
+                wcscmp((const wchar_t *)all.access_key, L"A") == 0,
+            "editing offers Undo, Cut, Copy, Paste and Select all with their keys");
+    require(!text_menu_row(window, 0).enabled, "nothing to undo in an unchanged note");
+}
+
+static void text_menu_visual(struct native_fixture *_Nonnull fixture)
+{
+    const char *const looks[] = {"light", "dark"};
+    for (size_t at = 0; at < 2; ++at)
+    {
+        require(folio_state_set_language(fixture->state, FOLIO_LANGUAGE_JA) == FOLIO_STATE_READY &&
+                    folio_state_set_theme(fixture->state, at == 1 ? FOLIO_THEME_CHOICE_DARK
+                                                                  : FOLIO_THEME_CHOICE_LIGHT) ==
+                        FOLIO_STATE_READY,
+                "context menu palette");
+        folio_state_set_layout_mode(fixture->state, FOLIO_LAYOUT_NOTE);
+        struct folio_window *window = nullptr;
+        require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY,
+                                    &window) == FOLIO_WINDOW_CREATED,
+                "context menu window");
+        HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+        require(SetWindowPos(root, nullptr, 20, 20, 760, 520, SWP_NOZORDER | SWP_NOACTIVATE),
+                "context menu window size");
+        pump(window);
+        HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+        text_menu_open(window, body);
+        struct accessible_view copy = text_menu_row(window, 0);
+        require(copy.set_size == 2 && copy.enabled &&
+                    wcscmp((const wchar_t *)copy.name, L"コピー") == 0,
+                "viewing offers Copy and Select all");
+        char path[64];
+        require(snprintf(path, sizeof path, "text-menu-view-%s.bmp", looks[at]) > 0, "path");
+        tags_capture(root, path);
+        struct accessible_request request = {
+            .item = {.kind = ACCESSIBLE_SURFACE_CHOICE,
+                     .slot = 1,
+                     .revision = folio_window_accessible_surface_revision(window)},
+            .action = ACCESSIBLE_ACTION_INVOKE};
+        require(folio_window_accessible_action(window, &request) == S_OK, "invoke Select all");
+        pump(window);
+        CHARRANGE all = {0, 0};
+        SendMessageW(body, EM_EXGETSEL, 0, (LPARAM)&all);
+        require(all.cpMin == 0 && all.cpMax > 9 && GetFocus() == body,
+                "Select all runs in the body and the focus returns to it");
+        action(window, ACCESSIBLE_EDIT);
+        body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+        text_menu_edit_rows(window, body);
+        require(snprintf(path, sizeof path, "text-menu-edit-%s.bmp", looks[at]) > 0, "path");
+        tags_capture(root, path);
+        SendMessageW(root, WM_KEYDOWN, VK_ESCAPE, 0);
+        pump(window);
+        /* Leave the session viewing, so the next window starts from the same state. */
+        action(window, ACCESSIBLE_VIEW);
+        folio_window_destroy(window);
+        folio_state_set_layout_mode(fixture->state, FOLIO_LAYOUT_BOTH);
+    }
+}
+
 /* #855: the list's search field with its key at the right of the placeholder, in each language
  * and both themes, for the record's screenshots. */
 static void search_key_visual(struct native_fixture *_Nonnull fixture)
@@ -10113,6 +10201,11 @@ static void run_code_copy_case(struct native_fixture *_Nonnull fixture)
     require(folio_state_select_note(fixture->state, 0, 0, FOLIO_UNTITLED_PROTECT) ==
                 FOLIO_STATE_READY,
             "select the dedicated code note");
+    if (text_menu_case)
+    {
+        text_menu_visual(fixture);
+        return;
+    }
     if (search_key_visual_case)
     {
         search_key_visual(fixture);
@@ -12682,7 +12775,9 @@ static void select_clipboard_fixture(const char *_Nonnull selector)
 {
     paste_case = strcmp(selector, "--paste") == 0;
     search_key_visual_case = strcmp(selector, "--search-key-visual") == 0;
-    bare_url_visual_case = strcmp(selector, "--bare-url-visual") == 0 || search_key_visual_case;
+    text_menu_case = strcmp(selector, "--text-menu") == 0;
+    bare_url_visual_case =
+        strcmp(selector, "--bare-url-visual") == 0 || search_key_visual_case || text_menu_case;
     code_copy_visual_case = strcmp(selector, "--code-copy-visual") == 0 || bare_url_visual_case;
     code_copy_keys_case_selected = strcmp(selector, "--code-copy-keys") == 0;
     code_copy_scroll_96 = strcmp(selector, "--code-copy-scroll-96") == 0;

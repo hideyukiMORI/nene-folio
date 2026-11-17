@@ -598,6 +598,42 @@ static void verify_layout_menu(void)
     }
 }
 
+/* #883: the note body's menu: its operations in order, captions and the keys the body answers. */
+static void verify_text_menu(void)
+{
+    const enum folio_text_edit edits[] = {FOLIO_TEXT_EDIT_UNDO, FOLIO_TEXT_EDIT_CUT,
+                                          FOLIO_TEXT_EDIT_COPY, FOLIO_TEXT_EDIT_PASTE,
+                                          FOLIO_TEXT_EDIT_SELECT_ALL};
+    const char *const keys[] = {"Ctrl+Z", "Ctrl+X", "Ctrl+C", "Ctrl+V", "Ctrl+A"};
+    const char *const english[] = {"Undo", "Cut", "Copy", "Paste", "Select all"};
+    for (size_t at = 0; at < 5; ++at)
+    {
+        const struct folio_menu_action *action = folio_menu_action_at(FOLIO_MENU_TEXT_EDIT, at);
+        char text[256];
+        require(folio_menu_action_kind(action) == FOLIO_MENU_ACTION_TEXT &&
+                    folio_menu_action_text_edit(action) == edits[at],
+                "editing offers the body's operations in order");
+        require(folio_menu_action_caption(action, FOLIO_LANGUAGE_EN, text, sizeof text) ==
+                        UI_TEXT_FORMAT_READY &&
+                    same_text(text, english[at]),
+                "each operation has its own caption");
+        for (size_t language = 0; language < folio_language_count; ++language)
+            require(folio_menu_action_hint(action, (enum folio_language)language, text,
+                                           sizeof text) == UI_TEXT_FORMAT_READY &&
+                        same_text(text, keys[at]),
+                    "the hint is the key the body already answers to");
+    }
+    const struct folio_menu_action *copy = folio_menu_action_at(FOLIO_MENU_TEXT_VIEW, 0);
+    const struct folio_menu_action *all = folio_menu_action_at(FOLIO_MENU_TEXT_VIEW, 1);
+    require(folio_menu_action_text_edit(copy) == FOLIO_TEXT_EDIT_COPY &&
+                folio_menu_action_text_edit(all) == FOLIO_TEXT_EDIT_SELECT_ALL &&
+                folio_menu_action_group(copy) != folio_menu_action_group(all),
+            "viewing offers only Copy and Select all");
+    require(folio_menu_action_text_edit(folio_menu_action_at(FOLIO_MENU_NOTE, 0)) ==
+                FOLIO_TEXT_EDIT_NONE,
+            "other menus carry no text operation");
+}
+
 static void verify_menu_catalog(void)
 {
     const enum folio_command commands[] = {FOLIO_COMMAND_SAVE_AS,
@@ -619,11 +655,10 @@ static void verify_menu_catalog(void)
                                            FOLIO_COMMAND_EXPORT_ALL,
                                            FOLIO_COMMAND_DISCARD_EDITS,
                                            FOLIO_COMMAND_TRASH_NOTE};
-    const size_t counts[] = {[FOLIO_MENU_OPERATIONS] = 19,
-                             [FOLIO_MENU_LAYOUT] = 3,
-                             [FOLIO_MENU_CATEGORY] = 7,
-                             [FOLIO_MENU_NOTE] = 3,
-                             [FOLIO_MENU_EMPTY] = 1};
+    const size_t counts[] = {
+        [FOLIO_MENU_OPERATIONS] = 19, [FOLIO_MENU_LAYOUT] = 3, [FOLIO_MENU_CATEGORY] = 7,
+        [FOLIO_MENU_NOTE] = 3,        [FOLIO_MENU_EMPTY] = 1,  [FOLIO_MENU_TEXT_EDIT] = 5,
+        [FOLIO_MENU_TEXT_VIEW] = 2};
     require(folio_command_count() == 37, "stable command IDs and count");
     for (size_t context = 0; context < sizeof counts / sizeof counts[0]; ++context)
     {
@@ -652,6 +687,7 @@ static void verify_menu_catalog(void)
     require(folio_command_destructive(FOLIO_COMMAND_TRASH_NOTE),
             "trash is destructive independently of additional input");
     verify_layout_menu();
+    verify_text_menu();
     verify_menu_shortcuts();
     verify_menu_captions();
 }

@@ -3,6 +3,7 @@
 #include "caret_command.h"
 #include "folio_message.h"
 #include "line_index.h"
+#include "menu_request.h"
 #include "note_pane_code_button.h"
 #include "note_pane_images.h"
 #include "note_pane_links.h"
@@ -573,8 +574,72 @@ static void paste_text(struct note_pane *_Nonnull pane)
     SendMessageW(pane->handle, EM_PASTESPECIAL, CF_UNICODETEXT, 0);
 }
 
+/* #883: a right click outside the selection first moves the caret there (inside it, the selection
+ * stays), as Windows text fields do. */
+static void place_for_menu(struct note_pane *_Nonnull pane, LPARAM position)
+{
+    POINTL point = {GET_X_LPARAM(position), GET_Y_LPARAM(position)};
+    LONG at = (LONG)SendMessageW(pane->handle, EM_CHARFROMPOS, 0, (LPARAM)&point);
+    CHARRANGE range = {0};
+    SendMessageW(pane->handle, EM_EXGETSEL, 0, (LPARAM)&range);
+    if (range.cpMin == range.cpMax || at < range.cpMin || at > range.cpMax)
+        SendMessageW(pane->handle, EM_SETSEL, (WPARAM)at, (LPARAM)at);
+    SetFocus(pane->handle);
+}
+
+/* The menu key and Shift+F10 open the menu under the selection's end (or the caret), kept inside
+ * the pane when that is scrolled out of view. */
+static RECT caret_anchor(const struct note_pane *_Nonnull pane)
+{
+    CHARRANGE range = {0};
+    SendMessageW(pane->handle, EM_EXGETSEL, 0, (LPARAM)&range);
+    POINTL top = {0};
+    SendMessageW(pane->handle, EM_POSFROMCHAR, (WPARAM)&top, range.cpMax);
+    LONG line = (LONG)SendMessageW(pane->handle, EM_EXLINEFROMCHAR, 0, range.cpMax);
+    LONG next = (LONG)SendMessageW(pane->handle, EM_LINEINDEX, (WPARAM)(line + 1), 0);
+    POINTL below = {top.x, top.y + MulDiv(20, (int)GetDpiForWindow(pane->handle), 96)};
+    if (next > range.cpMax)
+        SendMessageW(pane->handle, EM_POSFROMCHAR, (WPARAM)&below, next);
+    RECT client = {0};
+    GetClientRect(pane->handle, &client);
+    POINT corner = {top.x, top.y};
+    if (!PtInRect(&client, corner))
+        return (RECT){client.left + 8, client.top + 8, client.left + 8, client.top + 8};
+    return (RECT){top.x, top.y, top.x, below.y > top.y ? below.y : top.y};
+}
+
+static void open_text_menu(struct note_pane *_Nonnull pane, LPARAM position)
+{
+    if (pane->readiness != NOTE_PANE_READINESS_READY || pane->composing)
+        return;
+    bool keyboard = position == -1;
+    RECT anchor = {0};
+    if (keyboard)
+        anchor = caret_anchor(pane);
+    else
+    {
+        POINT point = {GET_X_LPARAM(position), GET_Y_LPARAM(position)};
+        ScreenToClient(pane->handle, &point);
+        anchor = (RECT){point.x, point.y, point.x, point.y};
+    }
+    HWND parent = GetParent(pane->handle);
+    MapWindowPoints(pane->handle, parent, (POINT *)&anchor, 2);
+    bool viewing = (GetWindowLongPtrW(pane->handle, GWL_STYLE) & ES_READONLY) != 0;
+    struct menu_request request = {.context = viewing ? FOLIO_MENU_TEXT_VIEW : FOLIO_MENU_TEXT_EDIT,
+                                   .anchor = anchor,
+                                   .keyboard = keyboard};
+    SendMessageW(parent, folio_message_open_menu, 0, (LPARAM)&request);
+}
+
 static bool pane_input(struct note_pane *_Nonnull pane, UINT message, WPARAM keys, LPARAM parameter)
 {
+    if (message == WM_RBUTTONDOWN)
+        place_for_menu(pane, parameter);
+    if (message == WM_CONTEXTMENU)
+    {
+        open_text_menu(pane, parameter);
+        return true;
+    }
     if (message == WM_PASTE)
     {
         paste_text(pane);
@@ -591,6 +656,71 @@ static bool pane_input(struct note_pane *_Nonnull pane, UINT message, WPARAM key
     if (edge_key(pane, message, keys))
         return true;
     return pane_wheel(pane, message, keys, parameter);
+}
+
+static bool pane_writable(const struct note_pane *_Nonnull pane)
+{
+    return !pane->recolor_undo_pending && !pane->recolor_input_locked &&
+           IsWindowEnabled(pane->handle) &&
+           (GetWindowLongPtrW(pane->handle, GWL_STYLE) & ES_READONLY) == 0;
+}
+
+static bool pane_selected(const struct note_pane *_Nonnull pane)
+{
+    CHARRANGE range = {0};
+    SendMessageW(pane->handle, EM_EXGETSEL, 0, (LPARAM)&range);
+    return range.cpMax > range.cpMin;
+}
+
+bool note_pane_text_edit_available(const struct note_pane *_Nonnull pane, enum folio_text_edit edit)
+{
+    if (pane->readiness != NOTE_PANE_READINESS_READY || pane->composing)
+        return false;
+    switch (edit)
+    {
+    case FOLIO_TEXT_EDIT_NONE:
+        return false;
+    case FOLIO_TEXT_EDIT_UNDO:
+        return pane_writable(pane) && SendMessageW(pane->handle, EM_CANUNDO, 0, 0) != 0;
+    case FOLIO_TEXT_EDIT_CUT:
+        return pane_writable(pane) && pane_selected(pane);
+    case FOLIO_TEXT_EDIT_COPY:
+        return pane_selected(pane);
+    case FOLIO_TEXT_EDIT_PASTE:
+        return pane_writable(pane) && IsClipboardFormatAvailable(CF_UNICODETEXT);
+    case FOLIO_TEXT_EDIT_SELECT_ALL:
+        return GetWindowTextLengthW(pane->handle) > 0;
+    }
+    return false;
+}
+
+/* The same messages the keys reach: paste goes through paste_text (WM_PASTE), never the
+ * clipboard's formatting. */
+void note_pane_text_edit(struct note_pane *_Nonnull pane, enum folio_text_edit edit)
+{
+    if (!note_pane_text_edit_available(pane, edit))
+        return;
+    SetFocus(pane->handle);
+    switch (edit)
+    {
+    case FOLIO_TEXT_EDIT_NONE:
+        return;
+    case FOLIO_TEXT_EDIT_UNDO:
+        SendMessageW(pane->handle, EM_UNDO, 0, 0);
+        return;
+    case FOLIO_TEXT_EDIT_CUT:
+        SendMessageW(pane->handle, WM_CUT, 0, 0);
+        return;
+    case FOLIO_TEXT_EDIT_COPY:
+        SendMessageW(pane->handle, WM_COPY, 0, 0);
+        return;
+    case FOLIO_TEXT_EDIT_PASTE:
+        SendMessageW(pane->handle, WM_PASTE, 0, 0);
+        return;
+    case FOLIO_TEXT_EDIT_SELECT_ALL:
+        SendMessageW(pane->handle, EM_SETSEL, 0, -1);
+        return;
+    }
 }
 
 static LRESULT enable_pane(struct note_pane *_Nonnull pane, WPARAM enabled, LPARAM parameter)
