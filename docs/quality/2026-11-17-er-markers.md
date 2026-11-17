@@ -18,3 +18,8 @@
 | 描画1 | 563 checks成功。目で見て、記号は正しいが矢印と同じ大きさ（10px）では小さく読みにくい |
 | 大きさ | ER図の記号だけ1.6倍にした |
 | 描画2 | 成功。`visual-02/er-{light,dark}.png`で、縦棒2本・丸と鳥の足・縦棒と鳥の足・破線を明暗で目で確かめた |
+
+## 最終の対象検証
+
+原本は`v1-*.log`（`E:/NeNeFolio/temp/898/verify.ps1 -Tag v1`）。build（clang-tidy込み）・`eng/coverage.py`（分岐90.73%、閾値・除外不変）・
+`eng/symbols.py`・`eng/conformance.py`（source/`--build-dir`）・`git diff --check`が成功し、`ctest`は63件すべて成功（130.3秒）。
