@@ -21,7 +21,7 @@ The unsigned MSIX is a Store submission artifact, not a portable installer.
 The Store listing is live; the maintainer reported a successful Store update to 1.3.1 on November 6.
 The maintainer [reported that Store version 1.3.2 is live](https://github.com/hideyukiMORI/nene-folio/issues/789) on November 7.
 The maintainer [reported a successful Store-app update to 1.3.2](https://github.com/hideyukiMORI/nene-folio/issues/793) on November 10.
-Store submission and certification of 1.4.0 have not been reported yet; the Store listing may still offer 1.3.2.
+The maintainer [submitted the 1.4.0 update to the Store](https://github.com/hideyukiMORI/nene-folio/issues/931) on November 18; certification and publication have not been reported yet, so the Store may still offer 1.3.2.
 
 [Microsoft Store](https://apps.microsoft.com/detail/9PCHS225SWBX)
 · [Portable download and checksums](https://github.com/hideyukiMORI/nene-folio/releases)
