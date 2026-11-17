@@ -10116,6 +10116,11 @@ static void text_menu_visual(struct native_fixture *_Nonnull fixture)
         text_menu_edit_rows(window, body);
         require(snprintf(path, sizeof path, "text-menu-edit-%s.bmp", looks[at]) > 0, "path");
         tags_capture(root, path);
+        /* #908: with the body's menu open, the menu key closes it and the focus returns to the
+         * body; it must not swap in the list's menu. */
+        PostMessageW(GetFocus(), WM_KEYDOWN, VK_APPS, 0);
+        pump(window);
+        require(GetFocus() == body, "the menu key closes the body's menu");
         SendMessageW(root, WM_KEYDOWN, VK_ESCAPE, 0);
         pump(window);
         /* Leave the session viewing, so the next window starts from the same state. */

@@ -938,10 +938,51 @@ static void text_menu_view(struct note_pane *_Nonnull pane)
     SendMessageW(handle, WM_CONTEXTMENU, (WPARAM)handle, -1);
     require(menu_seen.context == FOLIO_MENU_TEXT_VIEW,
             "next to the link the menu is the plain one");
+    /* #908: a code block's Copy action is a link field, but not a link to open or copy. */
+    load(pane, PANE_MODE_VIEW, "```c\nint x;\n```\n");
+    LONG word = nth_copy_label(handle, 0);
+    struct utf8_text *_Nullable action = nullptr;
+    SendMessageW(handle, EM_SETSEL, (WPARAM)(word + 1), (LPARAM)(word + 1));
+    require(note_pane_link_selection(pane, &action) == NOTE_PANE_LINK_READY,
+            "the caret is on the block's Copy action");
+    utf8_text_destroy(action);
+    SendMessageW(handle, WM_CONTEXTMENU, (WPARAM)handle, -1);
+    require(menu_seen.context == FOLIO_MENU_TEXT_VIEW,
+            "on the block's Copy action the menu is the plain viewing one");
     load(pane, PANE_MODE_EDIT, "before [site](https://example.com/page) after");
     SendMessageW(handle, EM_SETSEL, 10, 10);
     SendMessageW(handle, WM_CONTEXTMENU, (WPARAM)handle, -1);
     require(menu_seen.context == FOLIO_MENU_TEXT_EDIT, "editing never asks for the link menu");
+}
+
+/* #908: the real mouse path. Pressing and releasing the right button on the body must itself
+ * ask for the menu (the control turns the release into the context-menu message); the other
+ * tests send that message directly. Also records where a press lands relative to a glyph. */
+static void text_menu_mouse(struct note_pane *_Nonnull pane)
+{
+    load(pane, PANE_MODE_EDIT, "alpha beta gamma");
+    HWND handle = note_pane_handle(pane);
+    POINTL at = {0};
+    SendMessageW(handle, EM_POSFROMCHAR, (WPARAM)&at, 8);
+    LPARAM point = MAKELPARAM(at.x + 1, at.y + 4);
+    menu_requests = 0;
+    SendMessageW(handle, WM_RBUTTONDOWN, MK_RBUTTON, point);
+    SendMessageW(handle, WM_RBUTTONUP, 0, point);
+    MSG message;
+    while (PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE))
+        DispatchMessageW(&message);
+    printf("right press and release: %u menu request(s), context %u, keyboard %d\n", menu_requests,
+           (unsigned)menu_seen.context, (int)menu_seen.keyboard);
+    require(menu_requests == 1 && menu_seen.context == FOLIO_MENU_TEXT_EDIT && !menu_seen.keyboard,
+            "pressing and releasing the right button asks for the menu once");
+    /* Where a press lands: just left and just right of the middle of the glyph at index 8. */
+    POINTL next = {0};
+    SendMessageW(handle, EM_POSFROMCHAR, (WPARAM)&next, 9);
+    POINTL left = {at.x + 1, at.y + 4};
+    POINTL right = {next.x - 1, at.y + 4};
+    printf("EM_CHARFROMPOS at glyph 8: left edge %ld, right edge %ld\n",
+           (long)SendMessageW(handle, EM_CHARFROMPOS, 0, (LPARAM)&left),
+           (long)SendMessageW(handle, EM_CHARFROMPOS, 0, (LPARAM)&right));
 }
 
 static void text_menu(struct note_pane *_Nonnull pane)
@@ -951,6 +992,7 @@ static void text_menu(struct note_pane *_Nonnull pane)
     require(menu_parent_original != nullptr, "the parent listens for the menu request");
     text_menu_edit(pane);
     text_menu_view(pane);
+    text_menu_mouse(pane);
     SetWindowLongPtrW(parent, GWLP_WNDPROC, (LONG_PTR)menu_parent_original);
 }
 
