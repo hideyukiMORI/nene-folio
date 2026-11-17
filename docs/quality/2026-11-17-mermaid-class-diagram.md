@@ -17,3 +17,8 @@
 | 印の並び | 同じクラスの同じ辺にUMLの印（三角・ひし形）が複数付くとき、配置が印を横に並べるようにした（`marker_shift`）。フローチャートの既存の矢印は1点のまま。単体で、並ぶこと・ふつうの矢印は並ばないことを確かめた |
 | 描画3 | 563 checks成功。`visual-03/class-{light,dark}.png`で、塗りのひし形・白抜きのひし形・2つの白抜きの三角・開いた矢印・破線を明暗で目で確かめた |
 | 見た目で残る点 | 関係のラベルが、短い折れ線の角に重なることがある（フローチャートのラベルの置き方の既存の性質）。属性と操作の間の区切り線は無い（ADR0107の却下した案） |
+
+## 最終の対象検証
+
+原本は`v1-*.log`（`E:/NeNeFolio/temp/890/verify.ps1 -Tag v1`）。build（clang-tidy込み）・`eng/coverage.py`（分岐90.72%、閾値・除外不変。`mermaid_class.c` 84.18%、下限は全体）・
+`eng/symbols.py`・`eng/conformance.py`（source/`--build-dir`）・`git diff --check`が成功し、`ctest`は62件すべて成功（135.0秒）。
