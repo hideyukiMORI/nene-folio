@@ -28,3 +28,8 @@
 確かめていないこと: 倍率の違う複数の画面・タスクバーが上や左にある配置での実機の動き（単体の判定と、1画面の隔離desktopの実窓だけ）。hideの実機での確認に残る。
 
 | v2（全体） | 失敗: `settings_accessibility`（設定の行を名前と順番で数える既存の試験）が、行が1つ増えたことで落ちた。試験の行の表に新しい行を足し、ボタンの行の位置（保存先・このアプリについて）を1つずらした。ほかは成功（分岐90.71%） |
+
+## 最終の対象検証
+
+原本は`v3-*.log`（`E:/NeNeFolio/temp/891/verify.ps1 -Tag v3`）。build（clang-tidy込み）・`eng/coverage.py`（分岐90.71%、閾値・除外不変）・
+`eng/symbols.py`・`eng/conformance.py`（source/`--build-dir`）・`git diff --check`が成功し、`ctest`は63件すべて成功（114.4秒、`window_place_native`を含む）。
