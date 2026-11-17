@@ -82,6 +82,7 @@ void diagram_native_shape_draw(HDC _Nonnull dc, const struct diagram_primitive *
     switch (shape)
     {
     case DIAGRAM_RECTANGLE:
+    case DIAGRAM_ENTITY:
         Rectangle(dc, r.left, r.top, r.right, r.bottom);
         break;
     case DIAGRAM_ROUNDED:

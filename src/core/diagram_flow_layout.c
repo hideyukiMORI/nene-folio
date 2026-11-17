@@ -103,15 +103,24 @@ static void emit(struct diagram_flow_layout *_Nonnull layout, struct diagram_pri
     if (layout->outcome == DIAGRAM_ACCEPTED)
         layout->outcome = diagram_scene_append(layout->scene, &primitive);
 }
+/* #888: an entity's box holds its name (the id) over its attributes (the label). */
+static struct diagram_size node_text(const struct diagram_flow_layout *_Nonnull layout,
+                                     struct diagram_node node)
+{
+    struct diagram_size text = diagram_metrics_at(layout->metrics, node.label, DIAGRAM_TEXT_BODY);
+    if (node.shape != DIAGRAM_ENTITY)
+        return text;
+    struct diagram_size name = diagram_metrics_at(layout->metrics, node.id, DIAGRAM_TEXT_BODY);
+    return (struct diagram_size){name.width > text.width ? name.width : text.width,
+                                 name.height + text.height};
+}
 static void measure_nodes(struct diagram_flow_layout *_Nonnull layout)
 {
     for (size_t index = 0; index < diagram_model_node_count(layout->model); ++index)
     {
         struct diagram_node node = diagram_model_node_at(layout->model, index);
         struct diagram_size size =
-            axis_size(layout, diagram_geometry_node(diagram_metrics_at(layout->metrics, node.label,
-                                                                       DIAGRAM_TEXT_BODY),
-                                                    node.shape));
+            axis_size(layout, diagram_geometry_node(node_text(layout, node), node.shape));
         layout->nodes[index] = (struct diagram_rect){.width = size.width, .height = size.height};
         size_t rank = diagram_ranks_at(layout->ranks, index);
         if (layout->row_height[rank] < size.height)
@@ -388,6 +397,33 @@ static void emit_state_dot(struct diagram_flow_layout *_Nonnull layout, struct d
                                             .text = diagram_none});
 }
 
+/* #888: the name centred in its own band, a line under it, the attributes left-aligned below. */
+static void emit_entity(struct diagram_flow_layout *_Nonnull layout, struct diagram_node node,
+                        struct diagram_rect bounds)
+{
+    struct diagram_size name = diagram_metrics_at(layout->metrics, node.id, DIAGRAM_TEXT_BODY);
+    int band = name.height + diagram_node_padding_y * 2;
+    emit(layout, (struct diagram_primitive){.kind = DIAGRAM_PRIMITIVE_TEXT,
+                                            .ink = DIAGRAM_INK_TEXT,
+                                            .bounds = {bounds.x + (bounds.width - name.width) / 2,
+                                                       bounds.y + diagram_node_padding_y,
+                                                       name.width, name.height},
+                                            .text = node.id});
+    emit(layout, (struct diagram_primitive){.kind = DIAGRAM_PRIMITIVE_PATH,
+                                            .stroke = DIAGRAM_SOLID,
+                                            .ink = DIAGRAM_INK_ACCENT,
+                                            .points = {{bounds.x, bounds.y + band},
+                                                       {bounds.x + bounds.width, bounds.y + band}},
+                                            .count = 2,
+                                            .text = diagram_none});
+    emit(layout, (struct diagram_primitive){
+                     .kind = DIAGRAM_PRIMITIVE_TEXT,
+                     .ink = DIAGRAM_INK_TEXT,
+                     .alignment = DIAGRAM_TEXT_LEFT,
+                     .text_inset = diagram_node_padding_x,
+                     .bounds = {bounds.x, bounds.y + band, bounds.width, bounds.height - band},
+                     .text = node.label});
+}
 static void emit_node(struct diagram_flow_layout *_Nonnull layout, size_t index)
 {
     struct diagram_node node = diagram_model_node_at(layout->model, index);
@@ -403,6 +439,11 @@ static void emit_node(struct diagram_flow_layout *_Nonnull layout, size_t index)
                                             .text = diagram_none});
     if (node.shape == DIAGRAM_STATE_END)
         emit_state_dot(layout, bounds);
+    if (node.shape == DIAGRAM_ENTITY)
+    {
+        emit_entity(layout, node, bounds);
+        return;
+    }
     struct diagram_size size = diagram_metrics_at(layout->metrics, node.label, DIAGRAM_TEXT_BODY);
     bounds = diagram_geometry_label(bounds, size, node.shape);
     emit(layout, (struct diagram_primitive){.kind = DIAGRAM_PRIMITIVE_TEXT,

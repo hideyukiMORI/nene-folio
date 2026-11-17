@@ -275,6 +275,50 @@ static const char *_Nonnull label_of(const struct diagram_model *_Nonnull model,
     return diagram_model_text_at(model, diagram_model_node_at(model, node_named(model, id)).label);
 }
 
+/* #888: an entity box is drawn as its name centred in a band, a line, and the attributes
+ * left-aligned below; the box holds both. */
+static struct diagram_rect text_bounds(const struct diagram_scene *_Nonnull scene, size_t text)
+{
+    for (size_t index = 0; index < diagram_scene_count(scene); ++index)
+    {
+        const struct diagram_primitive *item = diagram_scene_at(scene, index);
+        if (item->kind == DIAGRAM_PRIMITIVE_TEXT && item->text == text)
+            return item->bounds;
+    }
+    test_failure("the text is drawn");
+}
+
+static const struct diagram_primitive *_Nonnull first_of(const struct diagram_scene *_Nonnull scene,
+                                                         enum diagram_primitive_kind kind)
+{
+    for (size_t index = 0; index < diagram_scene_count(scene); ++index)
+        if (diagram_scene_at(scene, index)->kind == kind)
+            return diagram_scene_at(scene, index);
+    test_failure("the primitive is drawn");
+}
+
+static void er_entity_scene(void)
+{
+    struct diagram_model *model = parsed("erDiagram\nORDER {\n  int id PK\n  string note\n}\n");
+    struct diagram_scene *scene = laid_out(model);
+    struct diagram_node order = diagram_model_node_at(model, node_named(model, "ORDER"));
+    const struct diagram_primitive *shape = first_of(scene, DIAGRAM_PRIMITIVE_SHAPE);
+    const struct diagram_primitive *line = first_of(scene, DIAGRAM_PRIMITIVE_PATH);
+    struct diagram_rect box = shape->bounds;
+    struct diagram_rect name = text_bounds(scene, order.id);
+    struct diagram_rect listed = text_bounds(scene, order.label);
+    int rule = line->points[0].y;
+    require(shape->shape == DIAGRAM_ENTITY && line->count == 2 &&
+                line->points[1].x - line->points[0].x == box.width,
+            "an entity box with a rule across it");
+    require(name.y >= box.y && name.y + name.height <= rule && rule <= listed.y &&
+                listed.y + listed.height == box.y + box.height &&
+                name.x + name.width / 2 == box.x + box.width / 2,
+            "the name is centred above the rule and the attributes fill the rest of the box");
+    diagram_scene_destroy(scene);
+    diagram_model_destroy(model);
+}
+
 static void er_contract(void)
 {
     struct diagram_model *model = parsed("erDiagram\n"
@@ -293,10 +337,13 @@ static void er_contract(void)
     require(diagram_model_node_count(model) == 7 && diagram_model_link_count(model) == 4,
             "every entity once, every relationship");
     struct diagram_node customer = diagram_model_node_at(model, node_named(model, "CUSTOMER"));
-    require(customer.shape == DIAGRAM_RECTANGLE && customer.group == diagram_none,
-            "an entity is a box");
-    require(strcmp(label_of(model, "CUSTOMER"), "CUSTOMER\nstring name PK\nint age") == 0,
-            "attributes are lines under the name, without their comment");
+    struct diagram_node lonely = diagram_model_node_at(model, node_named(model, "LONELY"));
+    require(customer.shape == DIAGRAM_ENTITY && customer.group == diagram_none &&
+                lonely.shape == DIAGRAM_RECTANGLE,
+            "an entity with attributes is an entity box, one without a plain box");
+    require(strcmp(label_of(model, "CUSTOMER"), "string name PK\nint age") == 0 &&
+                strcmp(diagram_model_text_at(model, customer.id), "CUSTOMER") == 0,
+            "the label lists the attributes without their comment; the name is the id");
     require(strcmp(label_of(model, "LINE-ITEM"), "LINE-ITEM") == 0, "hyphenated names");
     struct diagram_link places = diagram_model_link_at(model, 0);
     require(places.stroke == DIAGRAM_SOLID && places.start == DIAGRAM_ARROW_NONE &&
@@ -317,12 +364,15 @@ static void er_contract(void)
     diagram_model_destroy(model);
     model = parsed("erDiagram\ndirection LR\nA ||--|| B : is\nA {\n  int x\n}\nA {\n  int y\n}\n");
     require(diagram_model_flow(model) == DIAGRAM_LEFT_RIGHT, "direction is kept");
-    require(strcmp(label_of(model, "A"), "A\nint x\nint y") == 0,
+    require(strcmp(label_of(model, "A"), "int x\nint y") == 0,
             "a second block adds to the same entity");
     diagram_model_destroy(model);
-    model = parsed("erDiagram\nA ||--o{ B : has\n");
+    model = parsed("erDiagram\nA ||--o{ B : has\nB {\n}\n");
+    require(diagram_model_node_at(model, node_named(model, "B")).shape == DIAGRAM_RECTANGLE,
+            "an empty block leaves a plain box");
     diagram_scene_destroy(laid_out(model));
     diagram_model_destroy(model);
+    er_entity_scene();
 }
 
 static void er_rejections(void)

@@ -18,6 +18,7 @@ enum diagram_shape : unsigned char
     DIAGRAM_ASYMMETRIC,
     DIAGRAM_ACTOR,
     DIAGRAM_STATE_START, /* #876: a small dot filled with the line ink */
-    DIAGRAM_STATE_END    /* #876: a small ring around the same dot */
+    DIAGRAM_STATE_END,   /* #876: a small ring around the same dot */
+    DIAGRAM_ENTITY       /* #888: a box with its name (the id) over its attributes (the label) */
 };
 #endif
