@@ -5,6 +5,7 @@
 #include "startup_settings.h"
 #include "storage_native_path.h"
 #include "storage_path.h"
+#include "window_placement.h"
 #include <windows.h>
 
 #include <appmodel.h>
@@ -19,6 +20,7 @@ struct storage_adapter
     struct storage_path *_Nonnull default_directory;
     wchar_t config_directory[storage_native_capacity];
     wchar_t config_file[storage_native_capacity];
+    wchar_t window_file[storage_native_capacity]; /* #891: beside the startup settings */
 };
 
 static bool append_leaf(wchar_t *_Nonnull path, const wchar_t *_Nonnull leaf)
@@ -135,7 +137,10 @@ enum storage_outcome storage_adapter_create(struct storage_adapter *_Nullable *_
     }
     memcpy(adapter->config_file, adapter->config_directory,
            (wcslen(adapter->config_directory) + 1) * sizeof *config);
-    if (!append_leaf(adapter->config_file, L"nenefolio-startup.json"))
+    memcpy(adapter->window_file, adapter->config_directory,
+           (wcslen(adapter->config_directory) + 1) * sizeof *config);
+    if (!append_leaf(adapter->config_file, L"nenefolio-startup.json") ||
+        !append_leaf(adapter->window_file, L"nenefolio-window.json"))
     {
         storage_adapter_destroy(adapter);
         return STORAGE_LOCATION_UNAVAILABLE;
@@ -331,6 +336,40 @@ static enum storage_outcome store_settings(struct storage_adapter *_Nonnull adap
     return result;
 }
 
+/* #891 / ADR0108: any failure reads as the default; the window file is never required. */
+static void read_window(struct storage_adapter *_Nonnull adapter,
+                        struct window_placement *_Nonnull out)
+{
+    *out = window_placement_default();
+    struct file_bytes *_Nullable bytes = nullptr;
+    if (file_bytes_read(adapter->window_file, &bytes) != PERSISTENCE_LOADED)
+        return;
+    struct window_placement read = *out;
+    if (window_placement_parse(file_bytes_data(bytes), file_bytes_length(bytes), &read) ==
+        WINDOW_PLACEMENT_READY)
+        *out = read;
+    file_bytes_destroy(bytes);
+}
+
+static enum storage_outcome store_window(struct storage_adapter *_Nonnull adapter,
+                                         const struct window_placement *_Nonnull window)
+{
+    if (prepare_directory(adapter->config_directory, STORAGE_CHECK_CHOICE) != STORAGE_READY)
+        return STORAGE_SETTINGS_STORE_FAILED;
+    struct json_writer *_Nullable writer = nullptr;
+    if (json_writer_create(&writer) != JSON_WRITER_ACCEPTED)
+        return STORAGE_OUT_OF_MEMORY;
+    window_placement_write(window, writer);
+    enum storage_outcome result = STORAGE_OUT_OF_MEMORY;
+    if (json_writer_finish(writer) == JSON_WRITER_ACCEPTED)
+        result = file_bytes_store(adapter->window_file, json_writer_text(writer),
+                                  json_writer_length(writer)) == PERSISTENCE_STORED
+                     ? STORAGE_READY
+                     : STORAGE_SETTINGS_STORE_FAILED;
+    json_writer_destroy(writer);
+    return result;
+}
+
 struct storage_port storage_adapter_port(struct storage_adapter *_Nonnull adapter)
 {
     return (struct storage_port){.adapter = adapter,
@@ -338,7 +377,9 @@ struct storage_port storage_adapter_port(struct storage_adapter *_Nonnull adapte
                                  .default_directory = adapter->default_directory,
                                  .read = read_settings,
                                  .check = check_directory,
-                                 .store = store_settings};
+                                 .store = store_settings,
+                                 .read_window = read_window,
+                                 .store_window = store_window};
 }
 
 void storage_adapter_destroy(struct storage_adapter *_Nullable adapter)

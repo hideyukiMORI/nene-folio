@@ -12,6 +12,7 @@ struct storage_state
     struct startup_settings *_Nullable next;
     enum storage_phase phase;
     enum storage_outcome notice;
+    struct window_placement window; /* #891 */
 };
 
 static const struct storage_path *_Nonnull effective(
@@ -80,7 +81,9 @@ enum storage_outcome storage_state_create(const struct storage_port *_Nonnull po
         .current = path,
         .next = settings,
         .phase = loaded == STORAGE_ABSENT ? absent_phase(port->distribution) : STORAGE_ACTIVE,
-        .notice = STORAGE_READY};
+        .notice = STORAGE_READY,
+        .window = window_placement_default()};
+    port->read_window(port->adapter, &state->window);
     enum storage_outcome checked = initial_check(state);
     if (checked != STORAGE_READY)
     {
@@ -201,6 +204,39 @@ const char *_Nonnull storage_state_failure_line(enum storage_outcome outcome,
                                                 enum folio_language language)
 {
     return ui_text_line(failure_lines[outcome], language);
+}
+
+struct window_placement storage_state_window(const struct storage_state *_Nonnull state)
+{
+    return state->window;
+}
+
+static enum storage_outcome store_window(struct storage_state *_Nonnull state,
+                                         struct window_placement next)
+{
+    enum storage_outcome stored = state->port.store_window(state->port.adapter, &next);
+    if (stored == STORAGE_READY)
+        state->window = next;
+    return stored;
+}
+
+enum storage_outcome storage_state_set_window_restore(struct storage_state *_Nonnull state,
+                                                      bool restore)
+{
+    struct window_placement next = state->window;
+    next.restore = restore;
+    return store_window(state, next);
+}
+
+enum storage_outcome storage_state_record_window(struct storage_state *_Nonnull state,
+                                                 const struct window_placement *_Nonnull recorded)
+{
+    if (!state->window.restore)
+        return STORAGE_READY;
+    struct window_placement next = *recorded;
+    next.restore = true;
+    next.placed = true;
+    return store_window(state, next);
 }
 
 void storage_state_destroy(struct storage_state *_Nullable state)

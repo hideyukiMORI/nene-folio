@@ -713,6 +713,7 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_KEY_MINIMAP] = "Ctrl+Shift+M",
     [UI_TEXT_SETTINGS_MINIMAP] = "ミニマップを表示",
     [UI_TEXT_SETTINGS_MOTION] = "動きの演出",
+    [UI_TEXT_SETTINGS_WINDOW] = "前回の窓の位置と大きさで開く",
     [UI_TEXT_MOTION_HELP] =
         "「ノートを探す」の枠・選択・検索中に光を動かします。操作や結果は変わりません。",
     [UI_TEXT_MOTION_STATIC] =

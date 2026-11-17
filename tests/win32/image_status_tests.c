@@ -125,6 +125,7 @@ static bool code_copy_visual_case;
 static bool bare_url_visual_case;
 static bool search_key_visual_case;
 static bool text_menu_case;
+static bool window_place_case;
 static bool code_copy_keys_case_selected;
 static bool code_copy_scroll_case;
 static bool code_copy_scroll_96;
@@ -519,6 +520,9 @@ static void create_fixture(struct native_fixture *_Nonnull fixture)
     struct storage_port storage = storage_adapter_port(fixture->storage);
     require(storage_state_create(&storage, &fixture->location) == STORAGE_READY,
             "portable storage");
+    /* #891: every test window opens at the initial place and records nothing. */
+    require(storage_state_set_window_restore(fixture->location, false) == STORAGE_READY,
+            "tests open at the initial place");
     require(persistence_adapter_create(storage_state_directory(fixture->location),
                                        &fixture->files) == PERSISTENCE_ADAPTER_CREATED,
             "dedicated test data");
@@ -9924,6 +9928,87 @@ static void bare_url_visual(struct native_fixture *_Nonnull fixture)
     favorite_high_contrast = false;
 }
 
+/* #891 / ADR0108: the main window opens at the recorded place when that can be used, at the
+ * initial place otherwise, and records its place when it closes. */
+static RECT window_place_open(struct native_fixture *_Nonnull fixture,
+                              struct window_placement recorded, bool *_Nonnull maximized)
+{
+    require(storage_state_set_window_restore(fixture->location, true) == STORAGE_READY &&
+                storage_state_record_window(fixture->location, &recorded) == STORAGE_READY,
+            "a recorded place");
+    if (!recorded.restore)
+        require(storage_state_set_window_restore(fixture->location, false) == STORAGE_READY,
+                "the choice is off");
+    struct folio_window *window = nullptr;
+    require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
+                FOLIO_WINDOW_CREATED,
+            "window for the recorded place");
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    pump(window);
+    RECT bounds;
+    GetWindowRect(root, &bounds);
+    *maximized = IsZoomed(root) != 0;
+    folio_window_destroy(window);
+    return bounds;
+}
+
+static void window_place_closes(struct native_fixture *_Nonnull fixture)
+{
+    require(storage_state_set_window_restore(fixture->location, true) == STORAGE_READY,
+            "carry the place over");
+    struct folio_window *window = nullptr;
+    require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
+                FOLIO_WINDOW_CREATED,
+            "window to close");
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    require(SetWindowPos(root, nullptr, 90, 70, 700, 480, SWP_NOZORDER | SWP_NOACTIVATE),
+            "the place before closing");
+    pump(window);
+    SendMessageW(root, WM_CLOSE, 0, 0);
+    pump(window);
+    require(!IsWindow(root), "the window closed");
+    struct window_placement recorded = storage_state_window(fixture->location);
+    require(recorded.restore && recorded.placed && recorded.x == 90 && recorded.y == 70 &&
+                recorded.width == 700 && recorded.height == 480 && !recorded.maximized,
+            "closing records the place the window had");
+    folio_window_destroy(window);
+}
+
+static void window_place(struct native_fixture *_Nonnull fixture)
+{
+    UINT dpi = GetDpiForSystem();
+    bool maximized = false;
+    struct window_placement recorded = {
+        .restore = true, .placed = true, .x = 60, .y = 50, .width = 720, .height = 500, .dpi = dpi};
+    RECT bounds = window_place_open(fixture, recorded, &maximized);
+    require(bounds.left == 60 && bounds.top == 50 && bounds.right - bounds.left == 720 &&
+                bounds.bottom - bounds.top == 500 && !maximized,
+            "the window opens at the recorded place and size");
+    recorded.maximized = true;
+    (void)window_place_open(fixture, recorded, &maximized);
+    require(maximized, "a maximized window opens maximized");
+    recorded.maximized = false;
+    recorded.x = 30000;
+    bounds = window_place_open(fixture, recorded, &maximized);
+    require(bounds.left != 30000 && bounds.right - bounds.left == MulDiv(960, (int)dpi, 96) &&
+                bounds.bottom - bounds.top == MulDiv(640, (int)dpi, 96),
+            "a place off every screen opens at the initial place and size");
+    recorded.x = 60;
+    recorded.y = -30;
+    bounds = window_place_open(fixture, recorded, &maximized);
+    require(bounds.top != -30 && bounds.right - bounds.left == MulDiv(960, (int)dpi, 96),
+            "a header above the screen opens at the initial place");
+    recorded.y = 50;
+    recorded.restore = false;
+    bounds = window_place_open(fixture, recorded, &maximized);
+    require(bounds.right - bounds.left == MulDiv(960, (int)dpi, 96) &&
+                !(bounds.left == 60 && bounds.top == 50),
+            "with the choice off the recorded place is not used");
+    window_place_closes(fixture);
+    require(storage_state_set_window_restore(fixture->location, false) == STORAGE_READY,
+            "leave the fixture at the initial place");
+}
+
 /* #883: the body's context menu through the real window: its rows, which are enabled, the
  * edit a row runs, and the screenshots for the record. Nothing writes the clipboard. */
 static struct accessible_view text_menu_row(struct folio_window *_Nonnull window, size_t slot)
@@ -10204,6 +10289,11 @@ static void run_code_copy_case(struct native_fixture *_Nonnull fixture)
     if (text_menu_case)
     {
         text_menu_visual(fixture);
+        return;
+    }
+    if (window_place_case)
+    {
+        window_place(fixture);
         return;
     }
     if (search_key_visual_case)
@@ -12776,8 +12866,9 @@ static void select_clipboard_fixture(const char *_Nonnull selector)
     paste_case = strcmp(selector, "--paste") == 0;
     search_key_visual_case = strcmp(selector, "--search-key-visual") == 0;
     text_menu_case = strcmp(selector, "--text-menu") == 0;
-    bare_url_visual_case =
-        strcmp(selector, "--bare-url-visual") == 0 || search_key_visual_case || text_menu_case;
+    window_place_case = strcmp(selector, "--window-place") == 0;
+    bare_url_visual_case = strcmp(selector, "--bare-url-visual") == 0 || search_key_visual_case ||
+                           text_menu_case || window_place_case;
     code_copy_visual_case = strcmp(selector, "--code-copy-visual") == 0 || bare_url_visual_case;
     code_copy_keys_case_selected = strcmp(selector, "--code-copy-keys") == 0;
     code_copy_scroll_96 = strcmp(selector, "--code-copy-scroll-96") == 0;

@@ -4,6 +4,7 @@
 #include "storage_port.h"
 #include "storage_state.h"
 #include "unit_tests.h"
+#include "window_placement.h"
 #include <string.h>
 
 struct storage_adapter
@@ -16,6 +17,10 @@ struct storage_adapter
     size_t stores;
     enum storage_check checked_kind;
     bool stored_default;
+    /* #891: the window file the fake holds, and what was last written to it. */
+    struct window_placement window;
+    enum storage_outcome window_result;
+    size_t window_stores;
 };
 
 static enum storage_outcome read_settings(struct storage_adapter *_Nonnull fake,
@@ -48,6 +53,21 @@ static enum storage_outcome store_settings(struct storage_adapter *_Nonnull fake
     return fake->store_result;
 }
 
+static void read_window(struct storage_adapter *_Nonnull fake,
+                        struct window_placement *_Nonnull out)
+{
+    *out = fake->window;
+}
+
+static enum storage_outcome store_window(struct storage_adapter *_Nonnull fake,
+                                         const struct window_placement *_Nonnull window)
+{
+    fake->window_stores += 1;
+    if (fake->window_result == STORAGE_READY)
+        fake->window = *window;
+    return fake->window_result;
+}
+
 static struct storage_port make_port(struct storage_adapter *_Nonnull fake,
                                      const struct storage_path *_Nonnull path,
                                      enum storage_distribution distribution)
@@ -57,7 +77,9 @@ static struct storage_port make_port(struct storage_adapter *_Nonnull fake,
                                  .distribution = distribution,
                                  .read = read_settings,
                                  .check = check_directory,
-                                 .store = store_settings};
+                                 .store = store_settings,
+                                 .read_window = read_window,
+                                 .store_window = store_window};
 }
 
 static struct storage_path *_Nonnull path_for(const char *_Nonnull text)
@@ -230,8 +252,55 @@ static void verify_create_allocation(void)
     storage_path_destroy(root);
 }
 
+/* #891 / ADR0108: the state holds this machine's window place: what the file had, the user's
+ * choice written at once, and the place recorded at close only while the choice is on. */
+static void verify_window(void)
+{
+    struct storage_path *path = nullptr;
+    require(storage_path_create("C:/notes", 8, &path) == STORAGE_PATH_READY, "path");
+    struct storage_adapter fake = {.read_result = STORAGE_ABSENT,
+                                   .check_result = STORAGE_READY,
+                                   .store_result = STORAGE_READY,
+                                   .window = window_placement_default(),
+                                   .window_result = STORAGE_READY};
+    fake.window.placed = true;
+    fake.window.width = 900;
+    struct storage_port port = make_port(&fake, path, STORAGE_PORTABLE);
+    struct storage_state *state = nullptr;
+    require(storage_state_create(&port, &state) == STORAGE_READY, "state");
+    struct window_placement held = storage_state_window(state);
+    require(held.restore && held.placed && held.width == 900, "the file's place is held");
+    struct window_placement closed = {
+        .x = -40, .y = 30, .width = 1000, .height = 700, .dpi = 120, .maximized = true};
+    require(storage_state_record_window(state, &closed) == STORAGE_READY &&
+                fake.window_stores == 1 && fake.window.restore && fake.window.placed &&
+                fake.window.x == -40 && fake.window.maximized,
+            "the place at close is written, as recorded and to be restored");
+    fake.window_result = STORAGE_SETTINGS_STORE_FAILED;
+    require(storage_state_set_window_restore(state, false) == STORAGE_SETTINGS_STORE_FAILED &&
+                storage_state_window(state).restore,
+            "a failed write leaves the choice as it was");
+    fake.window_result = STORAGE_READY;
+    require(storage_state_set_window_restore(state, false) == STORAGE_READY &&
+                !storage_state_window(state).restore && !fake.window.restore &&
+                fake.window.placed && fake.window.x == -40,
+            "turning the choice off is written at once and keeps the recorded place");
+    size_t stores = fake.window_stores;
+    closed.x = 500;
+    require(storage_state_record_window(state, &closed) == STORAGE_READY &&
+                fake.window_stores == stores && fake.window.x == -40,
+            "nothing is recorded while the choice is off");
+    require(storage_state_set_window_restore(state, true) == STORAGE_READY &&
+                storage_state_window(state).restore,
+            "the choice turns back on");
+    storage_state_destroy(state);
+    storage_path_destroy(path);
+}
+
 void run_storage_state_tests(void)
 {
+    run_window_placement_tests(); /* #891: the per-machine window file */
+    verify_window();
     verify_initial();
     verify_runtime();
     verify_first_choice();

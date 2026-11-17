@@ -76,6 +76,7 @@ nenefolio_target(nenefolio_core core STATIC
     src/core/folio_command.c src/core/folio_menu_action.c src/core/folio_shortcut.c src/core/key_guide.c src/core/note_name.c src/core/rename_plan.c src/core/rename_journal.c
     src/core/note_search.c src/core/note_corpus.c src/core/index_filter.c src/core/index_filter_build.c
     src/core/storage_path.c src/core/startup_settings.c
+    src/core/window_placement.c src/core/window_fit.c
     src/core/folio_settings.c src/core/folio_theme.c src/core/folio_theme_choice.c src/core/line_index.c
     src/core/replace_template.c src/core/replace_edit.c src/core/note_replace.c
     src/core/replace_preview.c
@@ -88,6 +89,7 @@ nenefolio_link(nenefolio_application nenefolio_core)
 
 nenefolio_target(folio_tests unit_tests EXECUTABLE
     tests/unit/storage_tests.c tests/unit/storage_state_tests.c
+    tests/unit/window_placement_tests.c
     tests/unit/web_link_tests.c tests/unit/code_copy_tests.c tests/unit/transfer_tests.c tests/unit/image_tests.c
     tests/unit/folio_tests.c tests/unit/text_tests.c tests/unit/json_tests.c
     tests/unit/tag_tests.c tests/unit/tag_management_tests.c tests/unit/discovery_tests.c tests/unit/body_discovery_tests.c
@@ -138,7 +140,7 @@ nenefolio_target(nenefolio_window ui_win32 STATIC
     src/ui/win32/note_pane_geometry.c
     src/ui/win32/accessible_item.c src/ui/win32/accessibility_host.c src/ui/win32/accessibility_node.c
     src/ui/win32/accessibility_native.c
-    src/ui/win32/drawer_window.c src/ui/win32/folio_window.c src/ui/win32/command_help_fonts.c src/ui/win32/note_pane.c src/ui/win32/note_pane_table.c
+    src/ui/win32/drawer_window.c src/ui/win32/folio_window.c src/ui/win32/command_help_fonts.c src/ui/win32/note_pane.c src/ui/win32/note_pane_table.c src/ui/win32/window_restore.c
     src/ui/win32/folio_palette.c src/ui/win32/failure_box.c src/ui/win32/name_prompt.c
     src/ui/win32/ui_face.c src/ui/win32/icon_paint.c src/ui/win32/dialog_theme.c
     src/ui/win32/ui_part.c src/ui/win32/ui_pointer.c src/ui/win32/modal_owner.c src/ui/win32/name_prompt_metrics.c
@@ -359,6 +361,8 @@ add_test(NAME code_copy_keys_native COMMAND image_status_tests --code-copy-keys)
 add_test(NAME code_copy_scroll_native COMMAND image_status_tests --code-copy-scroll)
 add_test(NAME code_copy_scroll_96_native COMMAND image_status_tests --code-copy-scroll-96)
 add_test(NAME text_menu_native COMMAND image_status_tests --text-menu)
+add_test(NAME window_place_native COMMAND image_status_tests --window-place)
+set_tests_properties(window_place_native PROPERTIES TIMEOUT 30 RESOURCE_LOCK image_status_data)
 set_tests_properties(text_menu_native PROPERTIES TIMEOUT 30 RESOURCE_LOCK image_status_data)
 add_test(NAME editor_format_native COMMAND image_status_tests --format-keys)
 add_test(NAME layout_edit_native COMMAND image_status_tests --layout)

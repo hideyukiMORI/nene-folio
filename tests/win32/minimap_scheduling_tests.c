@@ -89,6 +89,9 @@ static void create_fixture(struct native_fixture *_Nonnull fixture)
     struct storage_port storage = storage_adapter_port(fixture->storage);
     require(storage_state_create(&storage, &fixture->location) == STORAGE_READY,
             "portable storage");
+    /* #891: every test window opens at the initial place and records nothing. */
+    require(storage_state_set_window_restore(fixture->location, false) == STORAGE_READY,
+            "tests open at the initial place");
     require(persistence_adapter_create(storage_state_directory(fixture->location),
                                        &fixture->files) == PERSISTENCE_ADAPTER_CREATED,
             "dedicated test data");

@@ -6,6 +6,7 @@
 struct storage_adapter;
 struct storage_path;
 struct startup_settings;
+struct window_placement;
 /* OS由来の不変な配置とtyped I/O。adapterとdefaultはstateより長く生きる。 */
 struct storage_port
 {
@@ -21,5 +22,12 @@ struct storage_port
     enum storage_outcome (*_Nonnull store)(struct storage_adapter *_Nonnull adapter,
                                            const struct startup_settings *_Nullable expected,
                                            const struct startup_settings *_Nonnull replacement);
+    /* #891 / ADR0108: the per-machine window file beside the startup settings. A missing,
+     * unreadable or malformed file reads as the default (carry over, nothing recorded); it never
+     * stops a start. */
+    void (*_Nonnull read_window)(struct storage_adapter *_Nonnull adapter,
+                                 struct window_placement *_Nonnull out);
+    enum storage_outcome (*_Nonnull store_window)(struct storage_adapter *_Nonnull adapter,
+                                                  const struct window_placement *_Nonnull window);
 };
 #endif
