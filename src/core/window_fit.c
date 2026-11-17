@@ -52,12 +52,10 @@ enum window_fit_outcome window_fit_resolve(const struct window_fit_request *_Non
                                      .width = scaled(saved->width, area.dpi, saved->dpi),
                                      .height = scaled(saved->height, area.dpi, saved->dpi),
                                      .dpi = area.dpi};
-        if (!grabbable(request, area, window.width))
+        /* #904: a screen the header reaches but the size does not fit is skipped; another
+         * screen may hold both (a large window whose header overhangs a small screen). */
+        if (!grabbable(request, area, window.width) || !sized(request, area, window))
             continue;
-        /* The first screen that holds the header decides: a size that does not fit it is not
-         * tried against another screen. */
-        if (!sized(request, area, window))
-            return WINDOW_FIT_DEFAULT;
         *out = window;
         return WINDOW_FIT_RESTORE;
     }

@@ -55,29 +55,47 @@ void window_restore_settle(HWND _Nonnull window, const struct window_placement *
                  SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
 }
 
+struct window_placement window_restore_from(const WINDOWPLACEMENT *_Nonnull native, UINT dpi)
+{
+    struct window_placement recorded = window_placement_default();
+    if (dpi == 0)
+        return recorded;
+    /* rcNormalPosition is in workspace coordinates: offset by the work area's origin on that
+     * screen to get screen coordinates (they differ when a taskbar is at the top or the left). */
+    MONITORINFO info = {.cbSize = sizeof info};
+    POINT offset = {0, 0};
+    if (GetMonitorInfoW(MonitorFromRect(&native->rcNormalPosition, MONITOR_DEFAULTTONEAREST),
+                        &info))
+        offset =
+            (POINT){info.rcWork.left - info.rcMonitor.left, info.rcWork.top - info.rcMonitor.top};
+    recorded.placed = true;
+    recorded.x = native->rcNormalPosition.left + offset.x;
+    recorded.y = native->rcNormalPosition.top + offset.y;
+    recorded.width = native->rcNormalPosition.right - native->rcNormalPosition.left;
+    recorded.height = native->rcNormalPosition.bottom - native->rcNormalPosition.top;
+    recorded.dpi = dpi;
+    recorded.maximized =
+        native->showCmd == SW_SHOWMAXIMIZED ||
+        (native->showCmd == SW_SHOWMINIMIZED && (native->flags & WPF_RESTORETOMAXIMIZED) != 0);
+    return recorded;
+}
+
 struct window_placement window_restore_capture(HWND _Nonnull window)
 {
-    struct window_placement captured = window_placement_default();
     WINDOWPLACEMENT native = {.length = sizeof native};
     UINT dpi = GetDpiForWindow(window);
     if (!GetWindowPlacement(window, &native) || dpi == 0)
-        return captured;
-    /* rcNormalPosition is in workspace coordinates: offset by the work area's origin on the
-     * window's screen to get screen coordinates (they differ when a taskbar is at the top or
-     * the left). */
-    MONITORINFO info = {.cbSize = sizeof info};
-    POINT offset = {0, 0};
-    if (GetMonitorInfoW(MonitorFromRect(&native.rcNormalPosition, MONITOR_DEFAULTTONEAREST), &info))
-        offset =
-            (POINT){info.rcWork.left - info.rcMonitor.left, info.rcWork.top - info.rcMonitor.top};
-    captured.placed = true;
-    captured.x = native.rcNormalPosition.left + offset.x;
-    captured.y = native.rcNormalPosition.top + offset.y;
-    captured.width = native.rcNormalPosition.right - native.rcNormalPosition.left;
-    captured.height = native.rcNormalPosition.bottom - native.rcNormalPosition.top;
-    captured.dpi = dpi;
-    captured.maximized =
-        native.showCmd == SW_SHOWMAXIMIZED ||
-        (native.showCmd == SW_SHOWMINIMIZED && (native.flags & WPF_RESTORETOMAXIMIZED) != 0);
+        return window_placement_default();
+    struct window_placement captured = window_restore_from(&native, dpi);
+    /* #904: a window that is neither minimized nor maximized is recorded where it is on the
+     * screen. That needs no conversion, and a snapped window is recorded as it is shown. */
+    RECT bounds;
+    if (!IsIconic(window) && !IsZoomed(window) && GetWindowRect(window, &bounds))
+    {
+        captured.x = bounds.left;
+        captured.y = bounds.top;
+        captured.width = bounds.right - bounds.left;
+        captured.height = bounds.bottom - bounds.top;
+    }
     return captured;
 }

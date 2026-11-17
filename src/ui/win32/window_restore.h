@@ -12,6 +12,9 @@
 /* After the window exists at `place`: if the screen it landed on has another DPI than the place
  * was recorded with, the size follows the DPI (never larger than that screen's work area). */
 void window_restore_settle(HWND _Nonnull window, const struct window_placement *_Nonnull saved);
+/* #904: a native placement (its normal rectangle and show state) as a record, for `dpi`. */
+[[nodiscard]] struct window_placement window_restore_from(const WINDOWPLACEMENT *_Nonnull native,
+                                                          UINT dpi);
 /* The window's normal (not maximized, not minimized) rectangle, its DPI and whether it is
  * maximized now. */
 [[nodiscard]] struct window_placement window_restore_capture(HWND _Nonnull window);

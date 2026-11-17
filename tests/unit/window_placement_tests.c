@@ -155,6 +155,20 @@ static void verify_fit(void)
     require(fit(placed(-2000, 100, 960, 640), &out) == WINDOW_FIT_RESTORE && out.x == -2000 &&
                 out.width == 1440 && out.height == 960 && out.dpi == 144,
             "on a screen with another DPI the size follows the DPI");
+    /* #904: the header overhangs a small screen the window does not fit; the large screen next
+     * to it holds both the header and the size. */
+    static const struct window_area pair[] = {{-800, 0, 800, 500, 96}, {0, 0, 1920, 1040, 96}};
+    struct window_placement wide = placed(-200, 0, 1800, 900);
+    struct window_fit_request spanning = {.saved = &wide,
+                                          .areas = pair,
+                                          .count = 2,
+                                          .minimum_width = 560,
+                                          .minimum_height = 360,
+                                          .header_height = 48,
+                                          .grip_width = 160};
+    require(window_fit_resolve(&spanning, &out) == WINDOW_FIT_RESTORE && out.x == -200 &&
+                out.width == 1800,
+            "a screen the size does not fit is skipped when another screen holds the window");
     struct window_placement off = placed(100, 80, 960, 640);
     off.restore = false;
     expect_default(off, "the user chose the initial place");

@@ -8660,6 +8660,25 @@ static LRESULT query_session_end(struct folio_window *_Nonnull self)
     return self->session_phase == SESSION_PHASE_APPROVED ? TRUE : FALSE;
 }
 
+/* #904: the list-only layout narrows the window, and the layout is not kept across starts. So
+ * closing in it records the geometry the window returns to: the width it had before (or, when
+ * it was maximized before, that placement), not the narrow one the next start could not use. */
+static struct window_placement closing_placement(const struct folio_window *_Nonnull self)
+{
+    struct window_placement closing = window_restore_capture(self->handle);
+    if (!closing.placed || folio_state_layout_mode(self->state) != FOLIO_LAYOUT_DRAWER ||
+        self->wide_width <= 0)
+        return closing;
+    if (self->restore_maximized)
+    {
+        struct window_placement wide = window_restore_from(&self->wide_placement, closing.dpi);
+        wide.maximized = true;
+        return wide;
+    }
+    closing.width = MulDiv(self->wide_width, (int)closing.dpi, base_dpi);
+    return closing;
+}
+
 static void finish_quit(struct folio_window *_Nonnull self, enum folio_state_outcome outcome)
 {
     if (outcome != FOLIO_STATE_READY)
@@ -8670,7 +8689,7 @@ static void finish_quit(struct folio_window *_Nonnull self, enum folio_state_out
     clear_session_reason(self);
     /* #891: the place this window had, for the next start. Failing to write it never keeps the
      * window open; the next start then uses the earlier record or the initial place. */
-    struct window_placement closing = window_restore_capture(self->handle);
+    struct window_placement closing = closing_placement(self);
     if (closing.placed)
         (void)storage_state_record_window(self->storage, &closing);
     DestroyWindow(self->handle);
