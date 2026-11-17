@@ -3,6 +3,7 @@
 enum folio_menu_action_kind : unsigned char
 {
     FOLIO_MENU_ACTION_COMMAND,
-    FOLIO_MENU_ACTION_RECOLOR_CATEGORY
+    FOLIO_MENU_ACTION_RECOLOR_CATEGORY,
+    FOLIO_MENU_ACTION_TEXT /* #883 */
 };
 #endif

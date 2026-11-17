@@ -619,11 +619,10 @@ static void verify_menu_catalog(void)
                                            FOLIO_COMMAND_EXPORT_ALL,
                                            FOLIO_COMMAND_DISCARD_EDITS,
                                            FOLIO_COMMAND_TRASH_NOTE};
-    const size_t counts[] = {[FOLIO_MENU_OPERATIONS] = 19,
-                             [FOLIO_MENU_LAYOUT] = 3,
-                             [FOLIO_MENU_CATEGORY] = 7,
-                             [FOLIO_MENU_NOTE] = 3,
-                             [FOLIO_MENU_EMPTY] = 1};
+    const size_t counts[] = {
+        [FOLIO_MENU_OPERATIONS] = 19, [FOLIO_MENU_LAYOUT] = 3, [FOLIO_MENU_CATEGORY] = 7,
+        [FOLIO_MENU_NOTE] = 3,        [FOLIO_MENU_EMPTY] = 1,  [FOLIO_MENU_TEXT_EDIT] = 5,
+        [FOLIO_MENU_TEXT_VIEW] = 2};
     require(folio_command_count() == 37, "stable command IDs and count");
     for (size_t context = 0; context < sizeof counts / sizeof counts[0]; ++context)
     {

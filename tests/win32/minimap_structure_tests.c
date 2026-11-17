@@ -1,6 +1,8 @@
 /* #506: Native formatting is sampled without editing or moving the real document. */
 #include "caret_command.h"
+#include "folio_message.h"
 #include "markdown_rtf.h"
+#include "menu_request.h"
 #include "note_minimap.h"
 #include "note_pane.h"
 #include "note_text.h"
@@ -816,6 +818,118 @@ static void edge_arrows(struct note_pane *_Nonnull pane)
     expect_edge(pane, 3, VK_DOWN, (CHARRANGE){6, 6});
 }
 
+/* #883: the body's context menu. The parent receives one request; the operations follow the
+ * mode, the selection and the undo state. Nothing here writes the clipboard. */
+static struct menu_request menu_seen;
+static unsigned menu_requests;
+static WNDPROC _Nullable menu_parent_original;
+static LRESULT CALLBACK menu_parent(HWND window, UINT message, WPARAM wparam, LPARAM lparam)
+{
+    if (message == folio_message_open_menu)
+    {
+        menu_seen = *(const struct menu_request *)lparam;
+        ++menu_requests;
+        return 0;
+    }
+    return CallWindowProcW(menu_parent_original, window, message, wparam, lparam);
+}
+
+static CHARRANGE selection_of(HWND _Nonnull handle)
+{
+    CHARRANGE range = {0, 0};
+    SendMessageW(handle, EM_EXGETSEL, 0, (LPARAM)&range);
+    return range;
+}
+
+static void right_press(HWND _Nonnull handle, LONG character)
+{
+    POINTL point = {0};
+    SendMessageW(handle, EM_POSFROMCHAR, (WPARAM)&point, character);
+    SendMessageW(handle, WM_RBUTTONDOWN, MK_RBUTTON, MAKELPARAM(point.x + 1, point.y + 4));
+}
+
+static void text_menu_edit(struct note_pane *_Nonnull pane)
+{
+    load(pane, PANE_MODE_EDIT, "alpha beta gamma");
+    HWND handle = note_pane_handle(pane);
+    SendMessageW(handle, EM_SETSEL, 3, 3);
+    require(!note_pane_text_edit_available(pane, FOLIO_TEXT_EDIT_COPY) &&
+                !note_pane_text_edit_available(pane, FOLIO_TEXT_EDIT_CUT) &&
+                !note_pane_text_edit_available(pane, FOLIO_TEXT_EDIT_NONE) &&
+                note_pane_text_edit_available(pane, FOLIO_TEXT_EDIT_SELECT_ALL),
+            "without a selection only Select all is offered");
+    SendMessageW(handle, EM_SETSEL, 0, 5);
+    require(note_pane_text_edit_available(pane, FOLIO_TEXT_EDIT_COPY) &&
+                note_pane_text_edit_available(pane, FOLIO_TEXT_EDIT_CUT),
+            "a selection can be cut and copied while editing");
+    right_press(handle, 2);
+    CHARRANGE kept = selection_of(handle);
+    require(kept.cpMin == 0 && kept.cpMax == 5, "a right press inside the selection keeps it");
+    right_press(handle, 12);
+    CHARRANGE moved = selection_of(handle);
+    require(moved.cpMin == moved.cpMax && moved.cpMin >= 11 && moved.cpMin <= 13,
+            "a right press outside the selection moves the caret there");
+    SendMessageW(handle, EM_SETSEL, 0, 5);
+    SendMessageW(handle, EM_REPLACESEL, TRUE, (LPARAM)L"ALPHA");
+    require(note_pane_text_edit_available(pane, FOLIO_TEXT_EDIT_UNDO), "an edit can be undone");
+    note_pane_text_edit(pane, FOLIO_TEXT_EDIT_UNDO);
+    wchar_t actual[64];
+    GetWindowTextW(handle, actual, 64);
+    require(wcscmp(actual, L"alpha beta gamma") == 0, "Undo takes the edit back");
+    note_pane_text_edit(pane, FOLIO_TEXT_EDIT_NONE);
+    note_pane_text_edit(pane, FOLIO_TEXT_EDIT_SELECT_ALL);
+    CHARRANGE all = selection_of(handle);
+    require(all.cpMin == 0 && all.cpMax >= character_count(handle), "Select all takes the text");
+    menu_requests = 0;
+    RECT bounds;
+    GetWindowRect(handle, &bounds);
+    SendMessageW(handle, WM_CONTEXTMENU, (WPARAM)handle,
+                 MAKELPARAM(bounds.left + 40, bounds.top + 30));
+    require(menu_requests == 1 && menu_seen.context == FOLIO_MENU_TEXT_EDIT &&
+                !menu_seen.keyboard && menu_seen.anchor.left == 40 && menu_seen.anchor.top == 30,
+            "a right click asks for the editing menu at the pointer");
+    SendMessageW(handle, EM_SETSEL, 6, 10);
+    SendMessageW(handle, WM_CONTEXTMENU, (WPARAM)handle, -1);
+    POINTL end = {0};
+    SendMessageW(handle, EM_POSFROMCHAR, (WPARAM)&end, 10);
+    require(menu_requests == 2 && menu_seen.keyboard && menu_seen.anchor.left == end.x &&
+                menu_seen.anchor.top == end.y && menu_seen.anchor.bottom > menu_seen.anchor.top,
+            "the menu key asks for it under the selection's end");
+}
+
+static void text_menu_view(struct note_pane *_Nonnull pane)
+{
+    load(pane, PANE_MODE_VIEW, "alpha beta gamma");
+    HWND handle = note_pane_handle(pane);
+    SendMessageW(handle, EM_SETSEL, 0, 5);
+    require(note_pane_text_edit_available(pane, FOLIO_TEXT_EDIT_COPY) &&
+                note_pane_text_edit_available(pane, FOLIO_TEXT_EDIT_SELECT_ALL) &&
+                !note_pane_text_edit_available(pane, FOLIO_TEXT_EDIT_CUT) &&
+                !note_pane_text_edit_available(pane, FOLIO_TEXT_EDIT_PASTE) &&
+                !note_pane_text_edit_available(pane, FOLIO_TEXT_EDIT_UNDO),
+            "viewing is read-only: only Copy and Select all");
+    wchar_t before[64], after[64];
+    GetWindowTextW(handle, before, 64);
+    note_pane_text_edit(pane, FOLIO_TEXT_EDIT_CUT);
+    note_pane_text_edit(pane, FOLIO_TEXT_EDIT_PASTE);
+    GetWindowTextW(handle, after, 64);
+    require(wcscmp(before, after) == 0, "a refused edit changes nothing");
+    menu_requests = 0;
+    SendMessageW(handle, WM_CONTEXTMENU, (WPARAM)handle, -1);
+    require(menu_requests == 1 && menu_seen.context == FOLIO_MENU_TEXT_VIEW && menu_seen.keyboard,
+            "viewing asks for the read-only menu");
+}
+
+static void text_menu(struct note_pane *_Nonnull pane)
+{
+    HWND parent = GetParent(note_pane_handle(pane));
+    menu_parent_original = (WNDPROC)SetWindowLongPtrW(parent, GWLP_WNDPROC, (LONG_PTR)menu_parent);
+    require(menu_parent_original != nullptr, "the parent listens for the menu request");
+    text_menu_edit(pane);
+    text_menu_view(pane);
+    SetWindowLongPtrW(parent, GWLP_WNDPROC, (LONG_PTR)menu_parent_original);
+}
+
 /* #869 / ADR0103: references read as raised numbers; the footnotes follow the note, smaller. */
 static void footnotes(struct note_pane *_Nonnull pane)
 {
@@ -939,6 +1053,7 @@ int main(void)
     bare_links(pane);
     heading_inline_sizes(pane);
     edge_arrows(pane);
+    text_menu(pane);
     reference_links(pane);
     footnotes(pane);
     load(pane, PANE_MODE_EDIT, source);

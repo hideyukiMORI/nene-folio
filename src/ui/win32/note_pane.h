@@ -4,6 +4,7 @@
 #ifndef NENEFOLIO_NOTE_PANE_H
 #define NENEFOLIO_NOTE_PANE_H
 
+#include "folio_text_edit.h"
 #include "gutter_row.h"
 #include "image_bitmap.h"
 #include "note_pane_geometry.h"
@@ -149,6 +150,11 @@ void note_pane_scroll_pixels(struct note_pane *_Nonnull pane, int position);
 void note_pane_scroll_wheel(struct note_pane *_Nonnull pane, int delta);
 /* A wheel routed to another region must not retain body motion or a zoom remainder. */
 void note_pane_cancel_wheel(struct note_pane *_Nonnull pane);
+/* #883: the body's context menu offers the edits the keys already do. Available follows the
+ * mode (viewing is read-only), the selection, the clipboard and the pane's input locks. */
+[[nodiscard]] bool note_pane_text_edit_available(const struct note_pane *_Nonnull pane,
+                                                 enum folio_text_edit edit);
+void note_pane_text_edit(struct note_pane *_Nonnull pane, enum folio_text_edit edit);
 void note_pane_destroy(struct note_pane *_Nullable pane);
 
 #endif

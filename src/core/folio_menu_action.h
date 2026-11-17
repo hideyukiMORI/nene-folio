@@ -4,6 +4,7 @@
 #include "folio_menu_action_kind.h"
 #include "folio_menu_context.h"
 #include "folio_menu_group.h"
+#include "folio_text_edit.h"
 struct folio_menu_action;
 [[nodiscard]] size_t folio_menu_action_count(enum folio_menu_context context);
 [[nodiscard]] const struct folio_menu_action *_Nonnull folio_menu_action_at(
@@ -15,6 +16,9 @@ folio_menu_action_kind(const struct folio_menu_action *_Nonnull action);
 folio_menu_action_command(const struct folio_menu_action *_Nonnull action);
 [[nodiscard]] enum folio_menu_group
 folio_menu_action_group(const struct folio_menu_action *_Nonnull action);
+/* #883: the note body's operation; FOLIO_TEXT_EDIT_NONE for every other kind. */
+[[nodiscard]] enum folio_text_edit
+folio_menu_action_text_edit(const struct folio_menu_action *_Nonnull action);
 [[nodiscard]] char folio_menu_action_access_key(const struct folio_menu_action *_Nonnull action);
 [[nodiscard]] enum ui_text_format_outcome
 folio_menu_action_caption(const struct folio_menu_action *_Nonnull action,
