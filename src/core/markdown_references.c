@@ -15,7 +15,10 @@ struct markdown_references
         char *_Nonnull destination;
         size_t destination_length;
         size_t offset;
+        size_t line_length;
+        struct note_search_span target; /* the destination inside the line (#863) */
     } *_Nullable entries;
+    const char *_Nullable source; /* the note's bytes, borrowed for one render */
     size_t count;
     size_t capacity;
     /* The scan's state between lines: an open fence, and whether a definition may start
@@ -140,7 +143,11 @@ static enum markdown_rtf_outcome definition(struct markdown_references *_Nonnull
     struct markdown_view view = {.spans = &span, .count = 1, .length = line.length};
     size_t close = label_close(view, line.content + 1, line.length);
     char label[markdown_references_label_limit];
-    struct markdown_reference entry = {.label = label, .destination = label, .offset = offset};
+    struct markdown_reference entry = {.label = label,
+                                       .destination = label,
+                                       .offset = offset,
+                                       .line_length = line.length,
+                                       .target = {close + 2, line.length}};
     if (close == SIZE_MAX || close + 1 >= line.length || line.bytes[close + 1] != ':' ||
         !normalize(view, (struct note_search_span){line.content + 1, close}, label,
                    &entry.label_length))
@@ -207,6 +214,7 @@ markdown_references_create(const struct note_text *_Nonnull text,
     struct markdown_references *_Nullable table = calloc(1, sizeof *table);
     if (table == nullptr)
         return MARKDOWN_RTF_OUT_OF_MEMORY;
+    table->source = note_text_bytes(text);
     enum markdown_rtf_outcome scanned = scan(table, note_text_bytes(text), note_text_length(text),
                                              note_metadata_body(note_text_metadata(text)));
     if (scanned != MARKDOWN_RTF_CONVERTED)
@@ -262,6 +270,22 @@ size_t markdown_references_destination_length(const struct markdown_references *
                                               size_t index)
 {
     return table->entries[index].destination_length;
+}
+
+struct markdown_span markdown_references_line(const struct markdown_references *_Nonnull table,
+                                              size_t index)
+{
+    const struct markdown_reference *entry = &table->entries[index];
+    /* The table is only made from a note's text, so the source is set whenever it has entries. */
+    const char *_Nonnull source = table->source != nullptr ? table->source : "";
+    return (struct markdown_span){
+        .bytes = source + entry->offset, .length = entry->line_length, .offset = 0};
+}
+
+struct note_search_span
+markdown_references_destination_span(const struct markdown_references *_Nonnull table, size_t index)
+{
+    return table->entries[index].target;
 }
 
 void markdown_references_destroy(struct markdown_references *_Nullable table)

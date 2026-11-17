@@ -238,6 +238,39 @@ static void copy_rejections(void)
     note_text_destroy(copy);
     note_text_destroy(body);
 }
+
+/* #863: image references read their definition's destination through the same image path; the
+ * recorded span addresses the definition's bytes, so relocation rewrites the definition. */
+static void reference_contract(void)
+{
+    const char source[] = "![full][pic] ![pic][] ![PIC] ![miss][none] [link][pic]\r\n\r\n"
+                          "[pic]: <images/a\\(1\\).png> \"title\"\r\n";
+    struct note_text *body = text(source);
+    struct markdown_rtf *rendered = render(body);
+    const struct markdown_images *images = markdown_rtf_images(rendered);
+    require(markdown_images_count(images) == 3,
+            "the three image reference forms each add an image");
+    const char raw[] = "images/a\\(1\\).png";
+    for (size_t index = 0; index < 3; ++index)
+    {
+        const struct image_source *image = markdown_images_at(images, index);
+        struct note_search_span span = image_source_span(image);
+        require(span.end - span.start == strlen(raw) &&
+                    memcmp(source + span.start, raw, strlen(raw)) == 0,
+                "a reference image's span is its definition's destination in the source");
+        require(strcmp(image_source_target(image), "images/a(1).png") == 0,
+                "the definition's destination is decoded once");
+    }
+    const char *rtf = markdown_rtf_text(rendered);
+    require(strstr(rtf, "<nenefolio:image:2>") != nullptr && strstr(rtf, "full") != nullptr &&
+                strstr(rtf, "![miss][none]") != nullptr && strstr(rtf, "[pic]:") == nullptr,
+            "alt text shown, unknown labels stay text, the definition is not shown");
+    require(strstr(rtf, "{\\cf4\\ul link\\ul0}") != nullptr,
+            "a link reference to the same definition is still a link");
+    markdown_rtf_destroy(rendered);
+    note_text_destroy(body);
+}
+
 static void parser_contract(void)
 {
     const char source[] =
@@ -861,6 +894,7 @@ void run_image_tests(void)
     source_rejections();
     copy_rejections();
     parser_contract();
+    reference_contract();
     destination_literals();
     destination_boundaries();
     destination_backtick_neighbors();

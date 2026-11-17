@@ -354,7 +354,8 @@ static void verify_reference_links(void)
                  "\\ul a\\ul0");
     expect_field("    [x]: https://example.com/x\n\n[a][x]", "[a][x]", "\\ul a\\ul0");
     expect_field("[x]: https://example.com/x trailing\n\n[a][x]", "[a][x]", "\\ul a\\ul0");
-    expect_field("![alt][x]\n\n[x]: https://example.com/i.png", "[x]", "HYPERLINK");
+    /* #863: an image reference is an image, never a link. */
+    expect_field("![alt][x]\n\n[x]: https://example.com/i.png", "<nenefolio:image:0>", "HYPERLINK");
     expect_field("`[a][x]`\n\n[x]: https://example.com/x", "[a][x]", "HYPERLINK");
     expect_field("[a](https://example.com/inline)[x]\n\n[x]: https://example.com/x",
                  "HYPERLINK \"HTTPS://example.com/inline\"", "]: https");

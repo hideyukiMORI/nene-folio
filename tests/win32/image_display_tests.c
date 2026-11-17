@@ -436,6 +436,20 @@ static void image_anchor(struct note_pane *_Nonnull pane, const struct image_bit
             "pixel scroll and image arrival preserve text dirty and Undo");
 }
 
+/* #863: an image reference is a native image like `![alt](...)`; its definition is not shown. */
+static void reference_image(struct note_pane *_Nonnull pane,
+                            const struct image_bitmap *_Nonnull image)
+{
+    HWND window = note_pane_handle(pane);
+    load(pane, "before ![shot][pic] after\n\n[pic]: images/a.png \"title\"\n", PANE_MODE_VIEW);
+    require(note_pane_insert_image(pane, 0, image) == IMAGE_READY,
+            "a reference image takes the native image slot");
+    wchar_t text[512];
+    GetWindowTextW(window, text, 512);
+    require(wcsstr(text, L"[pic]") == nullptr && wcsstr(text, L"images/a.png") == nullptr,
+            "neither the reference nor its definition is shown as text");
+}
+
 static void image_only(struct note_pane *_Nonnull pane, const struct image_bitmap *_Nonnull image)
 {
     HWND window = note_pane_handle(pane);
@@ -560,6 +574,7 @@ int main(void)
     image_map_geometry(pane);
     image_anchor(pane, image);
     image_only(pane, image);
+    reference_image(pane, image);
     geometry_boundaries(pane, image);
     image_bitmap_destroy(image);
     note_pane_destroy(pane);
