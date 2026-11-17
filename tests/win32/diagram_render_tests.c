@@ -44,6 +44,11 @@ static const char state[] =
     "stateDiagram-v2\n[*] --> 待機\n待機 --> 実行中 : 開始\n実行中 --> 確認\n"
     "state 確認 <<choice>>\n確認 --> 待機 : やり直す\n確認 --> [*] : 成功\n"
     "state \"後処理\" as After {\n[*] --> 保存\n保存 --> [*]\n}\n";
+/* #890 / ADR0107: a class diagram through the same phases, with every UML marker. */
+static const char classes[] =
+    "classDiagram\nclass 動物 {\n  <<abstract>>\n  +String 名前\n  +食べる() void\n}\n"
+    "動物 <|-- 犬 : 継承\n動物 <|.. 猫\n犬 : +吠える()\n"
+    "犬 *-- 足\n犬 o-- 首輪\n猫 --> 飼い主\n猫 ..> 餌\n";
 /* #882 / ADR0105: an ER diagram through the same phases. */
 static const char er[] =
     "erDiagram\n顧客 ||--o{ 注文 : 出す\n注文 ||--|{ 明細 : 含む\n顧客 }|..|| 住所 : 使う\n"
@@ -111,10 +116,10 @@ static struct image_bitmap *_Nonnull render(const struct diagram_request *_Nonnu
 }
 static void render_cases(const struct image_work *_Nonnull work, const char *_Nullable output)
 {
-    const char *sources[] = {flow, sequence, parts, state, er};
+    const char *sources[] = {flow, sequence, parts, state, er, classes};
     const char *names[] = {"flow-light",  "flow-dark",  "sequence-light", "sequence-dark",
                            "parts-light", "parts-dark", "state-light",    "state-dark",
-                           "er-light",    "er-dark"};
+                           "er-light",    "er-dark",    "class-light",    "class-dark"};
     const enum folio_theme themes[] = {FOLIO_THEME_LIGHT, FOLIO_THEME_DARK};
     for (size_t index = 0; index < sizeof sources / sizeof sources[0]; ++index)
     {

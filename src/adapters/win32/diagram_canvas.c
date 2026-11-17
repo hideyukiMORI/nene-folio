@@ -206,14 +206,15 @@ static enum image_outcome draw_markers(struct diagram_canvas *_Nonnull canvas,
         return IMAGE_READY;
     if (primitive->stroke != DIAGRAM_DASHED)
     {
-        diagram_native_shape_arrows(canvas->dc, primitive, scale);
+        diagram_native_shape_arrows(canvas->dc, primitive, scale,
+                                    ink(canvas, DIAGRAM_INK_BACKGROUND));
         return IMAGE_READY;
     }
     HPEN _Nullable pen = create_pen(canvas, primitive->ink, DIAGRAM_SOLID);
     if (pen == nullptr)
         return IMAGE_OUT_OF_MEMORY;
     HGDIOBJ previous = SelectObject(canvas->dc, pen);
-    diagram_native_shape_arrows(canvas->dc, primitive, scale);
+    diagram_native_shape_arrows(canvas->dc, primitive, scale, ink(canvas, DIAGRAM_INK_BACKGROUND));
     SelectObject(canvas->dc, previous);
     DeleteObject(pen);
     return IMAGE_READY;

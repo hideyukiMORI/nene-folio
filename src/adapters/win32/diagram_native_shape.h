@@ -6,5 +6,6 @@
 void diagram_native_shape_draw(HDC _Nonnull dc, const struct diagram_primitive *_Nonnull primitive,
                                RECT bounds, int scale);
 void diagram_native_shape_arrows(HDC _Nonnull dc,
-                                 const struct diagram_primitive *_Nonnull primitive, int scale);
+                                 const struct diagram_primitive *_Nonnull primitive, int scale,
+                                 COLORREF hollow);
 #endif

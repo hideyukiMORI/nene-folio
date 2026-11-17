@@ -516,6 +516,41 @@ static void channel_path(struct diagram_flow_layout *_Nonnull layout, struct dia
     path->points[5] = (struct diagram_point){path->points[4].x, end_y};
     path->count = 6;
 }
+/* #890: the UML markers (triangle, diamonds) are as wide as an arrowhead and differ in meaning,
+ * so the ones that share a node's edge sit side by side instead of on top of each other. */
+static bool uml_marker(enum diagram_arrow arrow)
+{
+    return arrow == DIAGRAM_ARROW_HOLLOW || arrow == DIAGRAM_ARROW_DIAMOND ||
+           arrow == DIAGRAM_ARROW_DIAMOND_FILLED;
+}
+static bool marks_node(const struct diagram_flow_layout *_Nonnull layout, size_t edge, size_t node,
+                       bool start)
+{
+    struct diagram_link link = diagram_model_link_at(layout->model, edge);
+    return (start ? link.from : link.to) == node && uml_marker(start ? link.start : link.end) &&
+           !channel_needed(layout, link, edge);
+}
+static int marker_shift(const struct diagram_flow_layout *_Nonnull layout, size_t edge, bool start)
+{
+    struct diagram_link link = diagram_model_link_at(layout->model, edge);
+    size_t node = start ? link.from : link.to;
+    if (!uml_marker(start ? link.start : link.end))
+        return 0;
+    int before = 0;
+    int count = 0;
+    for (size_t other = 0; other < diagram_model_link_count(layout->model); ++other)
+    {
+        if (!marks_node(layout, other, node, start))
+            continue;
+        before += other < edge ? 1 : 0;
+        ++count;
+    }
+    int step = diagram_arrow_size * 2 + 4;
+    int room = layout->nodes[node].width - diagram_node_padding_x * 2;
+    if (count > 1 && step * (count - 1) > room)
+        step = room / (count - 1);
+    return (2 * before - (count - 1)) * step / 2;
+}
 static void forward_path(const struct diagram_flow_layout *_Nonnull layout, size_t edge,
                          struct diagram_primitive *_Nonnull path)
 {
@@ -525,9 +560,11 @@ static void forward_path(const struct diagram_flow_layout *_Nonnull layout, size
     size_t rank = diagram_ranks_at(layout->ranks, link.from);
     int middle = layout->row_y[rank] + layout->row_height[rank] + 16 +
                  (int)layout->edge_level[edge] * layout->label_unit + layout->label_unit / 2;
-    path->points[0] = (struct diagram_point){from.x + from.width / 2, from.y + from.height};
+    path->points[0] = (struct diagram_point){
+        from.x + from.width / 2 + marker_shift(layout, edge, true), from.y + from.height};
     path->points[1] = (struct diagram_point){path->points[0].x, middle};
-    path->points[2] = (struct diagram_point){to.x + to.width / 2, middle};
+    path->points[2] =
+        (struct diagram_point){to.x + to.width / 2 + marker_shift(layout, edge, false), middle};
     path->points[3] = (struct diagram_point){path->points[2].x, to.y};
     path->count = 4;
 }
