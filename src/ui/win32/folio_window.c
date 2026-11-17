@@ -19777,6 +19777,13 @@ static int discovery_gutter_width(const struct folio_window *_Nonnull self)
     return width;
 }
 
+static bool discovery_preview_has_match(const struct folio_window *_Nonnull self)
+{
+    DWORD first = 0, last = 0;
+    SendMessageW(self->discovery_preview, EM_GETSEL, (WPARAM)&first, (LPARAM)&last);
+    return first < last;
+}
+
 static void arrange_discovery_preview(struct folio_window *_Nonnull self)
 {
     if (self->discovery_preview == nullptr)
@@ -19786,8 +19793,13 @@ static void arrange_discovery_preview(struct folio_window *_Nonnull self)
     if (shown)
     {
         area.left += discovery_gutter_width(self);
+        RECT before = {0};
+        GetWindowRect(self->discovery_preview, &before);
         MoveWindow(self->discovery_preview, area.left, area.top, area.right - area.left,
                    area.bottom - area.top, TRUE);
+        /* 幅が変わると折り返しが変わるので、一致を見える位置へ寄せ直す（#933）。 */
+        if (before.right - before.left != area.right - area.left)
+            self->discovery_preview_reveal |= discovery_preview_has_match(self);
     }
     ShowWindow(self->discovery_preview, shown ? SW_SHOW : SW_HIDE);
     if (shown && self->discovery_preview_reveal)
@@ -19804,7 +19816,10 @@ static void discovery_index_lines(struct folio_window *_Nonnull self,
     size_t length = utf16_text_length(text);
     self->discovery_line_starts[0] = 0;
     self->discovery_line_count = 1;
-    for (size_t at = 0; at < length && self->discovery_line_count < note_excerpt_line_limit; ++at)
+    /* WM_SETTEXTは最初のNULで止まるので、番号もそこまでの行にだけ付ける。 */
+    for (size_t at = 0;
+         at < length && units[at] != u'\0' && self->discovery_line_count < note_excerpt_line_limit;
+         ++at)
         if (units[at] == u'\n')
             self->discovery_line_starts[self->discovery_line_count++] = at + 1;
 }

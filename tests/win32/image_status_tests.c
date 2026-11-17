@@ -11096,6 +11096,36 @@ static size_t body_discovery_first_line(HWND preview)
     return (size_t)SendMessageW(preview, EM_GETFIRSTVISIBLELINE, 0, 0);
 }
 
+static LONG body_discovery_width(HWND window)
+{
+    RECT bounds = {0};
+    GetWindowRect(window, &bounds);
+    return bounds.right - bounds.left;
+}
+
+/* #933: a width change re-wraps the preview, so the match is revealed again. */
+static void body_discovery_resize_reveal(struct folio_window *_Nonnull window, HWND input,
+                                         HWND preview)
+{
+    SendMessageW(input, WM_KEYDOWN, VK_PRIOR, 0);
+    SendMessageW(input, WM_KEYDOWN, VK_PRIOR, 0);
+    pump(window);
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    LONG before = body_discovery_width(preview);
+    size_t hidden = body_discovery_first_line(preview);
+    require(SetWindowPos(root, nullptr, 20, 20, 1250, 850, SWP_NOZORDER | SWP_NOACTIVATE),
+            "widen the window while the match is scrolled away");
+    pump(window);
+    printf("typing preview: resize width %ld -> %ld first line %zu -> %zu\n", before,
+           body_discovery_width(preview), hidden, body_discovery_first_line(preview));
+    fflush(stdout);
+    require(body_discovery_width(preview) != before, "the wider window widens the preview");
+    body_discovery_preview_visible(preview);
+    require(SetWindowPos(root, nullptr, 20, 20, 1050, 720, SWP_NOZORDER | SWP_NOACTIVATE),
+            "restore the wide body fixture");
+    pump(window);
+}
+
 /* #933: PageUp/PageDown in the query page the wrapped source preview, not the candidates. */
 static void body_discovery_typing_preview(struct folio_window *_Nonnull window,
                                           struct native_fixture *_Nonnull fixture)
@@ -11143,6 +11173,7 @@ static void body_discovery_typing_preview(struct folio_window *_Nonnull window,
     require(revealed > 0 && up < revealed && down > up && GetFocus() == input &&
                 folio_state_discovery_summary(fixture->state).selected == selected,
             "PageUp/PageDown in the query scroll the preview and keep the candidate and focus");
+    body_discovery_resize_reveal(window, input, preview);
     surface_button(window, ACCESSIBLE_SURFACE_CLOSE);
     body_discovery_write(fixture, L"\\target\\three.md",
                          "---\nitem:\n  child: value\n---\nneedle unknown");
