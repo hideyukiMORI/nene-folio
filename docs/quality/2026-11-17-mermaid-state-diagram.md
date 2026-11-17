@@ -17,3 +17,16 @@
 | 見た目 | 状態・ラベル付きの遷移・choice・複合状態の枠と中の開始と終了を確かめた。気づいた点（今回は直さない）: 開始・終了の円がふつうの円と同じ大きさ（Mermaidは小さな点）。戻りの遷移の線が複合状態の枠の中を通る（フローチャートの配置の既存の性質） |
 | v1（全体） | 失敗: `eng/symbols.py`がARC-003「core: undeclared external symbol memchr」。coreで使ってよいCの標準関数の一覧に`memchr`は無い（リンカの記号で検査）。引用符の終わりを探す所を素の繰り返しに直した。ほかは成功（61/61、分岐90.82%）。新しい`mermaid_state.c`は81.34% |
 | 補強 | `[*]`の再利用・後からの宣言（表示名・choice）・素の`state C`・空の端点・同じ複合状態の重複・名前の無い複合状態・`style`/`click`/`accTitle:`/`<<join>>`・入れ子の上限（17段）の試験を足した |
+
+## 最終の対象検証
+
+原本は`v2-*.log`（`E:/NeNeFolio/temp/872/verify.ps1 -Tag v2`）。
+
+| コマンド | 結果 |
+| --- | --- |
+| `cmake --build <E:build> --parallel 4`（全target・clang-tidy込み） | 成功 |
+| `python -B eng/coverage.py` | 成功。分岐90.88%（下限90・除外不変）。`mermaid_state.c` 86.96%（下限は全体） |
+| `python -B eng/symbols.py --build-dir <E:build> --require core application` | 成功（違反0） |
+| `python -B eng/conformance.py` / `--build-dir <E:build>` | 成功（違反0） |
+| `ctest --test-dir <E:build> --output-on-failure --no-tests=error` | 61件すべて成功（157.3秒） |
+| `git diff --check origin/main` | 成功 |
