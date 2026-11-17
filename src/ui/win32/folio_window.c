@@ -1017,7 +1017,7 @@ static void discovery_choose_mode(struct folio_window *_Nonnull self, size_t slo
 static void discovery_set_focus(struct folio_window *_Nonnull self, enum discovery_focus focus);
 static void discovery_paste(struct folio_window *_Nonnull self);
 static void paint_input_placeholder(const struct folio_window *_Nonnull self, HWND window,
-                                    enum ui_text label);
+                                    enum ui_text label, const char *_Nonnull hint);
 static void click_discovery(struct folio_window *_Nonnull self, POINT point);
 static void discovery_control_view(const struct folio_window *_Nonnull self,
                                    struct accessible_item item,
@@ -13017,7 +13017,7 @@ static void discovery_input_placeholder(struct folio_window *_Nonnull self, HWND
     enum ui_text label = folio_state_discovery_summary(self->state).mode == DISCOVERY_MODE_BODY
                              ? UI_TEXT_DISCOVERY_BODY_INPUT
                              : UI_TEXT_DISCOVERY_INPUT;
-    paint_input_placeholder(self, window, label);
+    paint_input_placeholder(self, window, label, "");
 }
 
 static LRESULT CALLBACK command_input_message(HWND window, UINT message, WPARAM wparam,
@@ -13148,9 +13148,33 @@ static bool filter_input_handled(struct folio_window *_Nonnull self, UINT messag
     return message == WM_CHAR && (wparam == '\r' || wparam == '\x1b');
 }
 
+/* #855: the field's key at the right end of the placeholder, only when it fits after the label
+ * (`label` is the label's measured extent) with a gap of half a line. An empty field shows no
+ * clear button, so the key may use its margin; the right padding mirrors the left one. */
+static void paint_placeholder_hint(HDC _Nonnull device, HWND window, RECT label,
+                                   const char *_Nonnull hint)
+{
+    char16_t key[draw_unit_limit];
+    int keys = wide_units(hint, key);
+    if (keys == 0)
+        return;
+    RECT bounds;
+    RECT client;
+    SendMessageW(window, EM_GETRECT, 0, (LPARAM)&bounds);
+    GetClientRect(window, &client);
+    bounds.right = client.right - (bounds.left - client.left);
+    RECT measured = bounds;
+    DrawTextW(device, key, keys, &measured, DT_SINGLELINE | DT_NOPREFIX | DT_CALCRECT);
+    LONG gap = (label.bottom - label.top) / 2;
+    if ((label.right - label.left) + gap + (measured.right - measured.left) >
+        bounds.right - bounds.left)
+        return;
+    DrawTextW(device, key, keys, &bounds, DT_SINGLELINE | DT_VCENTER | DT_RIGHT | DT_NOPREFIX);
+}
+
 /* 空のあいだは用途を薄い文字で重ねる（EM_SETCUEBANNER は comctl32 を要るので使わない）。 */
 static void paint_input_placeholder(const struct folio_window *_Nonnull self, HWND window,
-                                    enum ui_text label)
+                                    enum ui_text label, const char *_Nonnull hint)
 {
     if (GetWindowTextLengthW(window) != 0)
     {
@@ -13169,6 +13193,9 @@ static void paint_input_placeholder(const struct folio_window *_Nonnull self, HW
     char16_t units[draw_unit_limit];
     int count = wide_units(ui_text_line(label, folio_state_language(self->state)), units);
     DrawTextW(device, units, count, &bounds, DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
+    RECT extent = bounds;
+    DrawTextW(device, units, count, &extent, DT_SINGLELINE | DT_NOPREFIX | DT_CALCRECT);
+    paint_placeholder_hint(device, window, extent, hint);
     SelectObject(device, previous);
     ReleaseDC(window, device);
 }
@@ -13336,7 +13363,9 @@ static LRESULT CALLBACK filter_input_message(HWND window, UINT message, WPARAM w
     }
     if (message == WM_PAINT)
     {
-        paint_input_placeholder(self, window, UI_TEXT_PLACEHOLDER_FILTER);
+        paint_input_placeholder(self, window, UI_TEXT_PLACEHOLDER_FILTER,
+                                folio_shortcut_action_hint(FOLIO_SHORTCUT_ACTION_FILTER,
+                                                           folio_state_language(self->state)));
         paint_filter_clear(self, window);
     }
     return result;
@@ -15067,6 +15096,8 @@ static WORD shortcut_virtual_key(enum folio_shortcut_key key)
         return 'S';
     case FOLIO_SHORTCUT_KEY_N:
         return 'N';
+    case FOLIO_SHORTCUT_KEY_O:
+        return 'O';
     case FOLIO_SHORTCUT_KEY_P:
         return 'P';
     case FOLIO_SHORTCUT_KEY_F:
@@ -17474,6 +17505,8 @@ static const char *_Nonnull part_shortcut(enum accessible_kind kind, enum folio_
         return folio_shortcut_action_hint(FOLIO_SHORTCUT_ACTION_TOGGLE_MODE, language);
     if (kind == ACCESSIBLE_MENU)
         return folio_shortcut_action_hint(FOLIO_SHORTCUT_ACTION_OPERATIONS, language);
+    if (kind == ACCESSIBLE_FILTER)
+        return folio_shortcut_action_hint(FOLIO_SHORTCUT_ACTION_FILTER, language);
     enum folio_command command = FOLIO_COMMAND_HELP;
     if (kind == ACCESSIBLE_CLOSE)
         command = FOLIO_COMMAND_QUIT;

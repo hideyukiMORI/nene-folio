@@ -612,6 +612,7 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_KEY_TOGGLE_MODE] = "Ctrl+E",
     [UI_TEXT_KEY_OPERATIONS] = "Ctrl+M",
     [UI_TEXT_KEY_FILTER] = "Ctrl+Shift+F",
+    [UI_TEXT_KEY_DISCOVER] = "Ctrl+O",
     [UI_TEXT_KEY_SEARCH_FORWARD] = "F3",
     [UI_TEXT_KEY_SEARCH_BACKWARD] = "Shift+F3",
     [UI_TEXT_KEY_SEARCH_NEXT] = "Enter",
