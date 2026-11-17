@@ -17,3 +17,8 @@
 | build-01 / 02 | clang-tidyの認知的複雑度（`diagram_geometry_node`・試験の`state_dots`が11）。入口と文字に合わせる寸法を分け、試験は1要素を数える関数へ分けた |
 | unit-01 / 02 | 成功。#872の試験の期待（円・二重円）を新しい形へ直し、配置の描画要素（点2つ・輪1つ・大きさ・塗り）と寸法が文字に依らないことを足した |
 | 描画 | `diagram_render_tests` 533 checks成功。`visual/state-{light,dark}.png`で、開始が塗りの点、終了が輪と点になり、図が縦に詰まったことを目で確かめた |
+
+## 最終の対象検証
+
+原本は`v1-*.log`（`E:/NeNeFolio/temp/876/verify.ps1 -Tag v1`、#874統合後のmainを取り込んだ後）。build（clang-tidy込み）・`eng/coverage.py`（分岐90.87%、閾値・除外不変）・
+`eng/symbols.py`・`eng/conformance.py`（source/`--build-dir`）・`git diff --check`が成功し、`ctest`は61件すべて成功（153.6秒）。
