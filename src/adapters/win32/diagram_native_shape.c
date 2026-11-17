@@ -144,6 +144,32 @@ static void arrow_triangle(POINT tip, POINT previous, int size, POINT *_Nonnull 
     points[1] = tip;
     points[2] = (POINT){base.x - x, base.y - y};
 }
+/* #890: a diamond from the tip back along the line, as wide as the arrowhead and twice as
+ * long. */
+static void arrow_diamond(HDC _Nonnull dc, const POINT *_Nonnull points)
+{
+    POINT tip = points[1];
+    POINT middle = {(points[0].x + points[2].x) / 2, (points[0].y + points[2].y) / 2};
+    POINT diamond[4] = {tip, points[0], {2 * middle.x - tip.x, 2 * middle.y - tip.y}, points[2]};
+    Polygon(dc, diamond, 4);
+}
+/* The hollow markers are filled with the diagram's ground, so the line does not show through.
+ * False when the marker is not a hollow one. */
+static bool arrow_hollow(HDC _Nonnull dc, enum diagram_arrow arrow, const POINT *_Nonnull points,
+                         COLORREF hollow)
+{
+    if (arrow != DIAGRAM_ARROW_HOLLOW && arrow != DIAGRAM_ARROW_DIAMOND)
+        return false;
+    COLORREF ink = SetDCBrushColor(dc, hollow);
+    HGDIOBJ previous = SelectObject(dc, GetStockObject(DC_BRUSH));
+    if (arrow == DIAGRAM_ARROW_HOLLOW)
+        Polygon(dc, points, 3);
+    else
+        arrow_diamond(dc, points);
+    SelectObject(dc, previous);
+    SetDCBrushColor(dc, ink);
+    return true;
+}
 static void arrow_head(HDC _Nonnull dc, enum diagram_arrow arrow, const POINT *_Nonnull points,
                        int mark)
 {
@@ -165,6 +191,12 @@ static void arrow_head(HDC _Nonnull dc, enum diagram_arrow arrow, const POINT *_
         line(dc, tip.x - mark, tip.y - mark, (POINT){tip.x + mark, tip.y + mark});
         line(dc, tip.x - mark, tip.y + mark, (POINT){tip.x + mark, tip.y - mark});
         break;
+    case DIAGRAM_ARROW_DIAMOND_FILLED:
+        arrow_diamond(dc, points);
+        break;
+    case DIAGRAM_ARROW_HOLLOW:
+    case DIAGRAM_ARROW_DIAMOND:
+        break; /* drawn by arrow_hollow with the ground colour */
     }
 }
 static size_t previous_point(const struct diagram_primitive *_Nonnull primitive, size_t side)
@@ -177,24 +209,34 @@ static size_t previous_point(const struct diagram_primitive *_Nonnull primitive,
         previous = side == 0 ? previous + 1 : previous - 1;
     return previous;
 }
-void diagram_native_shape_arrows(HDC _Nonnull dc,
-                                 const struct diagram_primitive *_Nonnull primitive, int scale)
+/* The marker's triangle at one end of the path; false when the path has no direction there. */
+static bool marker_points(const struct diagram_primitive *_Nonnull primitive, size_t side,
+                          int scale, POINT *_Nonnull triangle)
 {
-    if (primitive->count < 2)
-        return;
     int size =
         (primitive->stroke == DIAGRAM_THICK ? diagram_thick_arrow_size : diagram_arrow_size) *
         scale;
+    struct diagram_point tip = primitive->points[side == 0 ? 0 : primitive->count - 1];
+    struct diagram_point previous = primitive->points[previous_point(primitive, side)];
+    if (tip.x == previous.x && tip.y == previous.y)
+        return false;
+    arrow_triangle((POINT){tip.x * scale, tip.y * scale},
+                   (POINT){previous.x * scale, previous.y * scale}, size, triangle);
+    return true;
+}
+void diagram_native_shape_arrows(HDC _Nonnull dc,
+                                 const struct diagram_primitive *_Nonnull primitive, int scale,
+                                 COLORREF hollow)
+{
+    if (primitive->count < 2)
+        return;
     for (size_t side = 0; side < 2; ++side)
     {
-        struct diagram_point tip = primitive->points[side == 0 ? 0 : primitive->count - 1];
-        struct diagram_point previous = primitive->points[previous_point(primitive, side)];
-        if (tip.x == previous.x && tip.y == previous.y)
-            continue;
         POINT triangle[3];
-        arrow_triangle((POINT){tip.x * scale, tip.y * scale},
-                       (POINT){previous.x * scale, previous.y * scale}, size, triangle);
-        arrow_head(dc, side == 0 ? primitive->start : primitive->end, triangle,
-                   diagram_endpoint_size * scale / 2);
+        if (!marker_points(primitive, side, scale, triangle))
+            continue;
+        enum diagram_arrow arrow = side == 0 ? primitive->start : primitive->end;
+        if (!arrow_hollow(dc, arrow, triangle, hollow))
+            arrow_head(dc, arrow, triangle, diagram_endpoint_size * scale / 2);
     }
 }

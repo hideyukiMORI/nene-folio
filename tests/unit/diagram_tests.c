@@ -404,6 +404,161 @@ static void er_rejections(void)
     reject_source(wide, DIAGRAM_TOO_LARGE);
 }
 
+/* #890 / ADR0107: a class diagram reads into the flowchart model: a class is a box (its name
+ * over its members once it has any), a relation is a line whose ends carry the UML markers. */
+static struct diagram_link class_link(const char *_Nonnull relation)
+{
+    char source[128];
+    (void)snprintf(source, sizeof source, "classDiagram\n%s\n", relation);
+    struct diagram_model *model = parsed(source);
+    require(diagram_model_link_count(model) == 1 && diagram_model_node_count(model) == 2,
+            "one relation between two classes");
+    struct diagram_link link = diagram_model_link_at(model, 0);
+    require(strcmp(diagram_model_text_at(model, diagram_model_node_at(model, link.from).id), "A") ==
+                0,
+            "the relation starts at the class written first");
+    diagram_model_destroy(model);
+    return link;
+}
+
+static void expect_relation(const char *_Nonnull relation, enum diagram_arrow start,
+                            enum diagram_arrow end, enum diagram_stroke stroke)
+{
+    struct diagram_link link = class_link(relation);
+    if (link.start != start || link.end != end || link.stroke != stroke)
+        fprintf(stderr, "relation %s: %u %u %u\n", relation, (unsigned)link.start,
+                (unsigned)link.end, (unsigned)link.stroke);
+    require(link.start == start && link.end == end && link.stroke == stroke,
+            "the relation's markers and line");
+}
+
+static void class_relations(void)
+{
+    expect_relation("A <|-- B", DIAGRAM_ARROW_HOLLOW, DIAGRAM_ARROW_NONE, DIAGRAM_SOLID);
+    expect_relation("A --|> B", DIAGRAM_ARROW_NONE, DIAGRAM_ARROW_HOLLOW, DIAGRAM_SOLID);
+    expect_relation("A *-- B", DIAGRAM_ARROW_DIAMOND_FILLED, DIAGRAM_ARROW_NONE, DIAGRAM_SOLID);
+    expect_relation("A --* B", DIAGRAM_ARROW_NONE, DIAGRAM_ARROW_DIAMOND_FILLED, DIAGRAM_SOLID);
+    expect_relation("A o-- B", DIAGRAM_ARROW_DIAMOND, DIAGRAM_ARROW_NONE, DIAGRAM_SOLID);
+    expect_relation("A --o B", DIAGRAM_ARROW_NONE, DIAGRAM_ARROW_DIAMOND, DIAGRAM_SOLID);
+    expect_relation("A --> B", DIAGRAM_ARROW_NONE, DIAGRAM_ARROW_OPEN, DIAGRAM_SOLID);
+    expect_relation("A <-- B", DIAGRAM_ARROW_OPEN, DIAGRAM_ARROW_NONE, DIAGRAM_SOLID);
+    expect_relation("A -- B", DIAGRAM_ARROW_NONE, DIAGRAM_ARROW_NONE, DIAGRAM_SOLID);
+    expect_relation("A ..> B", DIAGRAM_ARROW_NONE, DIAGRAM_ARROW_OPEN, DIAGRAM_DASHED);
+    expect_relation("A ..|> B", DIAGRAM_ARROW_NONE, DIAGRAM_ARROW_HOLLOW, DIAGRAM_DASHED);
+    expect_relation("A <|.. B", DIAGRAM_ARROW_HOLLOW, DIAGRAM_ARROW_NONE, DIAGRAM_DASHED);
+    expect_relation("A .. B", DIAGRAM_ARROW_NONE, DIAGRAM_ARROW_NONE, DIAGRAM_DASHED);
+    /* A class named like a marker right after the line is a class, not a marker. */
+    struct diagram_model *model = parsed("classDiagram\nA --order\n");
+    require(diagram_model_find_node(model, "order", 5) != diagram_none &&
+                diagram_model_link_at(model, 0).end == DIAGRAM_ARROW_NONE,
+            "`--order` links to the class `order`");
+    diagram_model_destroy(model);
+}
+
+/* UML markers that share a class's edge sit side by side; plain arrows keep one shared point. */
+static int path_end_x(const struct diagram_scene *_Nonnull scene, size_t which, bool start)
+{
+    size_t seen = 0;
+    for (size_t index = 0; index < diagram_scene_count(scene); ++index)
+    {
+        const struct diagram_primitive *item = diagram_scene_at(scene, index);
+        if (item->kind == DIAGRAM_PRIMITIVE_PATH && seen++ == which)
+            return item->points[start ? 0 : item->count - 1].x;
+    }
+    test_failure("the relation is drawn");
+}
+
+static void class_marker_spread(void)
+{
+    struct diagram_model *model = parsed("classDiagram\nA *-- B\nA o-- C\nD --|> A\nE --|> A\n");
+    struct diagram_scene *scene = laid_out(model);
+    require(path_end_x(scene, 0, true) != path_end_x(scene, 1, true),
+            "a composition and an aggregation leave the class side by side");
+    require(path_end_x(scene, 2, false) != path_end_x(scene, 3, false),
+            "two inheritances reach the class side by side");
+    diagram_scene_destroy(scene);
+    diagram_model_destroy(model);
+    model = parsed("classDiagram\nA --> B\nA --> C\n");
+    scene = laid_out(model);
+    require(path_end_x(scene, 0, true) == path_end_x(scene, 1, true),
+            "plain arrows still leave from one point");
+    diagram_scene_destroy(scene);
+    diagram_model_destroy(model);
+}
+
+static void class_contract(void)
+{
+    struct diagram_model *model = parsed("classDiagram\n"
+                                         "class Animal {\n"
+                                         "    <<abstract>>\n"
+                                         "    +String name\n"
+                                         "    +eat() void\n"
+                                         "}\n"
+                                         "class Dog\n"
+                                         "Dog : +bark()\n"
+                                         "Dog : +fetch()\n"
+                                         "Animal <|-- Dog : is a\n"
+                                         "Cat\n"
+                                         "class Empty {\n"
+                                         "}\n");
+    require(diagram_model_kind(model) == DIAGRAM_FLOWCHART &&
+                diagram_model_flow(model) == DIAGRAM_TOP_BOTTOM,
+            "a class diagram is a top-down flowchart model");
+    require(diagram_model_node_count(model) == 4 && diagram_model_link_count(model) == 1,
+            "every class once");
+    struct diagram_node animal = diagram_model_node_at(model, node_named(model, "Animal"));
+    require(animal.shape == DIAGRAM_ENTITY &&
+                strcmp(label_of(model, "Animal"),
+                       "\xC2\xAB"
+                       "abstract\xC2\xBB\n+String name\n+eat() void") == 0,
+            "a block lists the members under the name; an annotation reads in guillemets");
+    require(strcmp(label_of(model, "Dog"), "+bark()\n+fetch()") == 0,
+            "`Name : member` lines add to the same class");
+    require(diagram_model_node_at(model, node_named(model, "Cat")).shape == DIAGRAM_RECTANGLE &&
+                diagram_model_node_at(model, node_named(model, "Empty")).shape == DIAGRAM_RECTANGLE,
+            "a class without members is a plain box");
+    require(strcmp(diagram_model_text_at(model, diagram_model_link_at(model, 0).label), "is a") ==
+                0,
+            "a relation keeps its label");
+    diagram_scene_destroy(laid_out(model));
+    diagram_model_destroy(model);
+    model = parsed("classDiagram-v2\ndirection LR\nA --> B\n");
+    require(diagram_model_flow(model) == DIAGRAM_LEFT_RIGHT, "direction is kept");
+    diagram_model_destroy(model);
+    class_relations();
+    class_marker_spread();
+}
+
+static void class_rejections(void)
+{
+    reject_source("classDiagram\n", DIAGRAM_INVALID);
+    reject_source("classDiagram extra\nA", DIAGRAM_INVALID);
+    reject_source("classDiagram\nclass\n", DIAGRAM_INVALID);
+    reject_source("classDiagram\nA B", DIAGRAM_INVALID);
+    reject_source("classDiagram\nA ==> B", DIAGRAM_INVALID);
+    reject_source("classDiagram\nA --> ", DIAGRAM_INVALID);
+    reject_source("classDiagram\nA :", DIAGRAM_INVALID);
+    reject_source("classDiagram\nclass A {\n  +x\n", DIAGRAM_INVALID);
+    reject_source("classDiagram\ndirection SIDEWAYS\nA", DIAGRAM_INVALID);
+    reject_source("classDiagram\nA \"1\" --> \"*\" B", DIAGRAM_UNSUPPORTED);
+    reject_source("classDiagram\nA --> \"*\" B", DIAGRAM_UNSUPPORTED);
+    reject_source("classDiagram\nA --> B extra", DIAGRAM_UNSUPPORTED);
+    reject_source("classDiagram\nclass List~T~", DIAGRAM_UNSUPPORTED);
+    reject_source("classDiagram\nclass A[\"Shown\"]", DIAGRAM_UNSUPPORTED);
+    reject_source("classDiagram\n<<interface>> A", DIAGRAM_UNSUPPORTED);
+    reject_source("classDiagram\nnote for A \"text\"\nA", DIAGRAM_UNSUPPORTED);
+    reject_source("classDiagram\nnamespace N {\nclass A\n}", DIAGRAM_UNSUPPORTED);
+    reject_source("classDiagram\nstyle A fill:#f00\nA", DIAGRAM_UNSUPPORTED);
+    reject_source("classDiagram\ncssClass \"A\" x\nA", DIAGRAM_UNSUPPORTED);
+    reject_source("classDiagram\naccDescr: d\nA", DIAGRAM_UNSUPPORTED);
+    static char wide[diagram_label_limit * 2] = "classDiagram\nclass A {\n";
+    size_t used = strlen(wide);
+    while (used + 16 < sizeof wide - 8)
+        used += (size_t)sprintf(wide + used, "  +field%zu\n", used);
+    (void)sprintf(wide + used, "}\n");
+    reject_source(wide, DIAGRAM_TOO_LARGE);
+}
+
 /* Reuse: one start per scope however often it is used, states met again, plain declarations. */
 static void state_reuse(void)
 {
@@ -1704,6 +1859,8 @@ void run_diagram_tests(void)
     state_dots();
     er_contract();
     er_rejections();
+    class_contract();
+    class_rejections();
     groups_and_cycles();
     edge_labels_remain_visible();
     horizontal_group_heading();
