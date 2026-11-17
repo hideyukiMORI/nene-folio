@@ -1,0 +1,8 @@
+日本語
+ノートにお気に入りの星とタグを付けて絞り込めるようになり、名前と本文からノートを探す面（Ctrl+O）を追加しました。本文の右クリックメニュー（切り取り・コピー・貼り付け、リンクを開く・コピー）、コードブロックのコピー、前回の窓の位置と大きさの引き継ぎ、「このアプリについて」を追加しました。Markdownは囲まないURL、参照形式のリンクと画像、脚注に対応し、Mermaidは状態遷移図・ER図・クラス図に対応しました。見出しの中のコードの大きさと、日本語入力中の書体を修正しました。ノート本文の保存形式は変更しません。星を保存したカテゴリの台帳は以前の版では読めないため、古い版へ戻す場合はバックアップを使ってください。
+
+English
+You can now star notes as favorites, tag them, and filter by both, and a new finder (Ctrl+O) searches notes by name and body. Added a right-click menu in the note body (cut, copy, paste, open or copy a link), a Copy action for code blocks, restoring the previous window position and size, and an About page. Markdown now supports bare URLs, reference-style links and images, and footnotes; Mermaid now supports state, ER, and class diagrams. Fixed the size of code inside headings and the font used during Japanese input. The note file format is unchanged. A category index that stores favorites cannot be read by earlier versions, so use a backup if you go back to an older version.
+
+简体中文
+现在可以为笔记添加收藏星标和标签并据此筛选，并新增了按名称和正文查找笔记的界面（Ctrl+O）。新增正文右键菜单（剪切、复制、粘贴、打开或复制链接）、代码块复制、恢复上次的窗口位置和大小，以及“关于此应用”。Markdown 新增支持裸 URL、引用式链接和图片以及脚注；Mermaid 新增支持状态图、ER 图和类图。修复了标题内代码的字号以及日文输入时的字体问题。笔记正文的存储格式保持不变。保存了收藏的分类索引无法被旧版本读取，如需退回旧版本，请使用备份。

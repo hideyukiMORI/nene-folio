@@ -10,17 +10,18 @@ A frameless Markdown notebook for Windows with a category drawer. Plain C (C23),
 > Windows 10 version 2004 or later is required. Notes and settings use `data/` beside the executable
 > by default; Settings can select another location.
 
-The latest GitHub release is **1.3.2 Beta**, [published on GitHub](https://github.com/hideyukiMORI/nene-folio/releases/tag/v1.3.2), with plain-text paste, protection from
-unintended paragraph formatting, corrected accessible note selection, and in-note search improvements.
-See the [1.3.2 changes and update instructions](docs/release/1.3.2.md) and
-[release verification record](docs/quality/2026-11-06-release-1.3.2.md).
+The current source is the **1.4.0 release candidate**, adding favorites, tags, a note finder, a right-click
+menu in the note body, window placement restore, and state, ER, and class diagrams.
+See the [1.4.0 changes and update instructions](docs/release/1.4.0.md) and
+[candidate verification record](docs/quality/2026-11-17-release-1.4.0.md).
+The latest published GitHub release is [1.3.2 Beta](https://github.com/hideyukiMORI/nene-folio/releases/tag/v1.3.2)
+([changes](docs/release/1.3.2.md), [verification record](docs/quality/2026-11-06-release-1.3.2.md)).
 Package creation, GitHub publication, and Microsoft Store certification are tracked separately.
 The unsigned MSIX is a Store submission artifact, not a portable installer.
 The Store listing is live; the maintainer reported a successful Store update to 1.3.1 on November 6.
 The maintainer [reported that Store version 1.3.2 is live](https://github.com/hideyukiMORI/nene-folio/issues/789) on November 7.
 The maintainer [reported a successful Store-app update to 1.3.2](https://github.com/hideyukiMORI/nene-folio/issues/793) on November 10.
-The `main` branch also includes a [CJK input font correction](docs/quality/2026-11-06-editor-font-binding.md)
-made after the published 1.3.2 packages.
+The 1.4.0 candidate has not been tagged, published on GitHub, or submitted to the Store.
 
 [Microsoft Store](https://apps.microsoft.com/detail/9PCHS225SWBX)
 · [Portable download and checksums](https://github.com/hideyukiMORI/nene-folio/releases)
@@ -33,8 +34,8 @@ v1.3.2 with the English UI, Light theme, and sample notes. [Screenshot provenanc
 
 ## What it does
 
-The [1.3.2 release notes](docs/release/1.3.2.md) describe the current changes, update steps,
-and limitations. Images, Mermaid diagrams, and image-aware export are covered in the
+The [1.4.0 release notes](docs/release/1.4.0.md) describe the current changes, update steps,
+and limitations; the previous changes are in the [1.3.2 notes](docs/release/1.3.2.md). Images, Mermaid diagrams, and image-aware export are covered in the
 [1.3.0 notes](docs/release/1.3.0.md); earlier changes remain in the [1.2.0 Store notes](docs/release/1.2.0.md)
 and [1.1.0 notes](docs/release/1.1.0.md).
 
@@ -52,11 +53,11 @@ and [1.1.0 notes](docs/release/1.1.0.md).
   the drawer scrolls by wheel and keys. A search box at the top filters every note by name and body.
   The first search prepares saved note bodies one at a time while continuing to process input and paint.
   Results appear after preparation finishes; large collections can still take time to prepare.
-- **Favorites (development build)**: click a note's star or use Actions / the command palette.
+- **Favorites** (1.4.0): click a note's star or use Actions / the command palette.
   Favorites appear first within each category, retaining manual order within both groups.
   Turn off Favorites first in Settings to restore manual order. Favorites only combines with the
   existing name/body search. Stars survive restart, rename and category moves without changing
-  Markdown, editor Undo or body history. This addition is not in the published 1.3.2 packages.
+  Markdown, editor Undo or body history.
 - **View and edit.** Clicking a note renders its Markdown. Edit mode shows the plain text in the same
   pane; Ctrl+S writes the file back atomically, keeps the original line endings, and writes nothing when
   the text is unchanged. The body just before each save is kept as `data/.history/<category>/<note>/1.md`
@@ -72,16 +73,23 @@ and [1.1.0 notes](docs/release/1.1.0.md).
   View-mode HTTP/HTTPS links open in the default browser
   with a left click or Ctrl+Enter (#482); dragging to select text and editing do not launch links.
   See [Markdown syntax and limits](docs/MARKDOWN.md) (Japanese).
-- **Discover notes (development build)**: Actions / the command palette opens a finder with
+- **Discover notes** (1.4.0, Ctrl+O): Actions / the command palette opens a finder with
   fuzzy name search and literal search of saved Markdown bodies, combined with favorites and tags.
   A bounded source preview shows each note's first body match and its line number. Moving between
   candidates keeps the editor untouched; **Open match** opens the selected note in Edit mode.
   If its saved source changed since the search, the note opens with an explanation and the old
-  match position is not applied. These additions are not in the published 1.3.2 packages.
+  match position is not applied.
 - **Images and diagrams**: local and HTTPS PNG/JPEG images load after the note body.
-  Lowercase `mermaid` fences render native flowcharts and sequence diagrams in the current theme.
+  Lowercase `mermaid` fences render native flowcharts, sequence diagrams and, from 1.4.0, state, ER and
+  class diagrams in the current theme.
   Diagram sources stay as Markdown; no JavaScript runs and diagrams fetch no external resources.
   Supported syntax and size limits are documented in [Markdown](docs/MARKDOWN.md).
+- **Body context menu** (1.4.0): right-click in the note body, or press Shift+F10 / the menu key, for
+  Undo, Cut, Copy, Paste and Select all in Edit mode and Copy and Select all in Read mode. On a link in
+  Read mode the menu adds Open link and Copy link. Code blocks in Read mode have a Copy action.
+- **Window placement** (1.4.0): the window reopens at its previous position, size and maximized state.
+  Settings can turn this off. A recorded placement whose header would not be usable on any current
+  screen, or whose size cannot be used, falls back to the default placement.
 - **Simple minimap**: a bounded overview of native display lines beside
   Read/Edit shows a current-position frame with click/drag and wheel navigation.
   Headings, lists, tables, rules and code blocks have simplified shapes.
@@ -126,10 +134,10 @@ and [1.1.0 notes](docs/release/1.1.0.md).
   Windows high contrast temporarily uses the system colors across the window and note body.
   Your theme and category colors stay saved; turning high contrast off restores the chosen theme.
   The settings surface also shows the build version.
-  In the development source, **About this app…** at the end of Settings shows the product name, version,
+  From 1.4.0, **About this app…** at the end of Settings shows the product name, version,
   license, bundled-font and third-party notice pointers, and four official links (GitHub, Releases,
   Microsoft Store, Report an issue) that open in the default browser. It never checks for updates
-  ([ADR0097](docs/adr/0097-about-surface-and-product-links.md); not in the published 1.3.2 packages).
+  ([ADR0097](docs/adr/0097-about-surface-and-product-links.md)).
   Noto Sans JP and Noto Sans SC are bundled under `fonts/`.
 - **Limits**: a note body is at most 16 MiB and may not contain NUL; both are refused rather than truncated.
 - Failures (unreadable ledgers, unwritable files, a second instance on the same `data/`) are reported in
