@@ -59,3 +59,5 @@
 
 試行: build-01（clang-tidy込み、警告なし）、unit-01成功（小さい画面を飛ばして復元する判定を追加）、winplace-01成功（一覧だけの表示で閉じた後の記録が通常の幅760になる実窓の試験を追加）。
 直す前のコードで新しい実窓の試験が落ちること（赤の確認）は取っていない。
+
+最終の対象検証（#904、`E:/NeNeFolio/temp/904/verify.ps1 -Tag v1`）: build（clang-tidy込み）・`eng/coverage.py`（分岐90.74%、閾値・除外不変）・`eng/symbols.py`・`eng/conformance.py`・`git diff --check`が成功し、`ctest`は63件すべて成功（100.8秒）。試験の後のbuildフォルダーに`nenefolio-window.json`は0件。
