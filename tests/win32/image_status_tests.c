@@ -9973,6 +9973,35 @@ static void window_place_closes(struct native_fixture *_Nonnull fixture)
     folio_window_destroy(window);
 }
 
+/* #904: the list-only layout narrows the window; closing in it records the width the window
+ * returns to, so the next start can use the record. */
+static void window_place_closes_narrow(struct native_fixture *_Nonnull fixture)
+{
+    require(storage_state_set_window_restore(fixture->location, true) == STORAGE_READY,
+            "carry the place over");
+    folio_state_set_layout_mode(fixture->state, FOLIO_LAYOUT_BOTH);
+    struct folio_window *window = nullptr;
+    require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
+                FOLIO_WINDOW_CREATED,
+            "window to narrow and close");
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    require(SetWindowPos(root, nullptr, 90, 70, 760, 480, SWP_NOZORDER | SWP_NOACTIVATE),
+            "the wide place");
+    pump(window);
+    action(window, ACCESSIBLE_LAYOUT_DRAWER);
+    RECT narrow;
+    GetWindowRect(root, &narrow);
+    require(narrow.right - narrow.left < 760, "the list-only layout narrows the window");
+    SendMessageW(root, WM_CLOSE, 0, 0);
+    pump(window);
+    require(!IsWindow(root), "the narrow window closed");
+    struct window_placement recorded = storage_state_window(fixture->location);
+    require(recorded.placed && recorded.width == 760 && recorded.height == 480,
+            "closing in the list-only layout records the wide width");
+    folio_window_destroy(window);
+    folio_state_set_layout_mode(fixture->state, FOLIO_LAYOUT_BOTH);
+}
+
 static void window_place(struct native_fixture *_Nonnull fixture)
 {
     UINT dpi = GetDpiForSystem();
@@ -10004,6 +10033,7 @@ static void window_place(struct native_fixture *_Nonnull fixture)
                 !(bounds.left == 60 && bounds.top == 50),
             "with the choice off the recorded place is not used");
     window_place_closes(fixture);
+    window_place_closes_narrow(fixture);
     require(storage_state_set_window_restore(fixture->location, false) == STORAGE_READY,
             "leave the fixture at the initial place");
 }
