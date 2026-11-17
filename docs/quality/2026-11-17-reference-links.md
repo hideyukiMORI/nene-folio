@@ -31,3 +31,18 @@ hideの指示（ロードマップに沿って進める）で、#850（囲まな
 | native-01 | 失敗（試験）: `ref。`をnativeの本文で探したが、リンクの直後にhiddenの区切りの空白があり連続しない。`ref`だけでは隠れた命令の中に先に当たる。`。`の位置から数える形にした |
 | native-02 | 成功（775 checks）。表示名からの起動先、定義が出ないこと（検索用の本文）、編集表示の原文 |
 | 規約 | CNF-006がADRの中のリンクの書き方の例を相対リンクと判定した。言い換えた |
+| v1（全体） | 成功（61/61、分岐90.86%）。ただし新しい`markdown_references.c`は83.9% |
+| 補強 | 定義の読み取りの端（escape・入れ子・空のラベル・`:`なし・行先なし・`~~~`のフェンスと閉じないフェンス・見出しの直後・長すぎるラベル・1024個の上限）と、確保失敗の注入元への参照形式を足した。上限を超えた定義の行は原文のまま出て、その行のURLは#850の囲まないURLとしてリンクになる（期待を直した）。途中、Bashのheredocでbackslashが崩れ、Editで直した |
+
+## 最終の対象検証
+
+原本は`v2-*.log`（`E:/NeNeFolio/temp/861/verify.ps1 -Tag v2`、#849統合後のmainを取り込んだ後）。
+
+| コマンド | 結果 |
+| --- | --- |
+| `cmake --build <E:build> --parallel 4`（全target・clang-tidy込み） | 成功 |
+| `python -B eng/coverage.py` | 成功。分岐90.98%（下限90・除外不変）。`markdown_references.c` 94.07%、`markdown_inline_tokens.c` 90.62%、`markdown_blocks.c` 90.66% |
+| `python -B eng/symbols.py --build-dir <E:build> --require core application` | 成功（違反0） |
+| `python -B eng/conformance.py` / `--build-dir <E:build>` | 成功（違反0） |
+| `ctest --test-dir <E:build> --output-on-failure --no-tests=error` | 61件すべて成功（106.5秒） |
+| `git diff --check origin/main` | 成功 |
