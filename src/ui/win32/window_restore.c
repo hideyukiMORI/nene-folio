@@ -6,7 +6,7 @@ constexpr size_t screen_limit = 16;
 /* The work areas found so far. A screen's own DPI needs a library the UI does not link, so each
  * area carries the DPI the place was recorded with: the size is checked as recorded, and
  * window_restore_settle corrects it once the window reports its real DPI. */
-struct window_restore_screens
+struct window_restore
 {
     struct window_area areas[screen_limit];
     size_t count;
@@ -17,7 +17,7 @@ static BOOL CALLBACK add_screen(HMONITOR monitor, HDC device, LPRECT bounds, LPA
 {
     (void)device;
     (void)bounds;
-    struct window_restore_screens *screens = (struct window_restore_screens *)parameter;
+    struct window_restore *screens = (struct window_restore *)parameter;
     MONITORINFO info = {.cbSize = sizeof info};
     if (screens->count == screen_limit || !GetMonitorInfoW(monitor, &info))
         return TRUE;
@@ -32,7 +32,7 @@ static BOOL CALLBACK add_screen(HMONITOR monitor, HDC device, LPRECT bounds, LPA
 
 bool window_restore_place(struct window_fit_request request, struct window_area *_Nonnull out)
 {
-    struct window_restore_screens screens = {.dpi = request.saved->dpi};
+    struct window_restore screens = {.dpi = request.saved->dpi};
     EnumDisplayMonitors(nullptr, nullptr, add_screen, (LPARAM)&screens);
     request.areas = screens.areas;
     request.count = screens.count;
