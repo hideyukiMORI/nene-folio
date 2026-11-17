@@ -239,6 +239,45 @@ static void copy_rejections(void)
     note_text_destroy(body);
 }
 
+/* #863: export rewrites image destinations in source order. Reference images share their
+ * definition's span and come after inline images that follow them, so the relocations arrive
+ * out of order and repeated; the copy still rewrites each destination exactly once. */
+static void reference_relocation(void)
+{
+    const char source[] = "[p]: a.png\n\n![one][p] ![two](b.png) ![three][p]\n";
+    struct note_text *body = text(source);
+    struct markdown_rtf *rendered = render(body);
+    const struct markdown_images *images = markdown_rtf_images(rendered);
+    require(markdown_images_count(images) == 3, "two reference images and one inline image");
+    /* Inline images are collected before reference images, so the late inline image comes
+     * first: the spans arrive out of order, and the two references repeat one span. */
+    struct image_relocation relocations[3];
+    for (size_t index = 0; index < 3; ++index)
+    {
+        const struct image_source *image = markdown_images_at(images, index);
+        bool first = strcmp(image_source_target(image), "a.png") == 0;
+        relocations[index] = (struct image_relocation){
+            .source = image_source_span(image), .destination = first ? "x/a.png" : "x/b.png"};
+    }
+    require(relocations[0].source.start > relocations[1].source.start &&
+                relocations[1].source.start == relocations[2].source.start,
+            "the collector's order is out of source order with a repeated span");
+    struct note_text *_Nullable copy = nullptr;
+    require(markdown_image_copy_create(body, relocations, 3, &copy) == NOTE_TEXT_ACCEPTED,
+            "shared and out-of-order reference spans relocate");
+    require(strcmp(note_text_bytes(copy),
+                   "[p]: x/a.png\n\n![one][p] ![two](x/b.png) ![three][p]\n") == 0,
+            "each destination is rewritten once, the definition for both references");
+    note_text_destroy(copy);
+    relocations[2].destination = "x/other.png";
+    copy = nullptr;
+    require(markdown_image_copy_create(body, relocations, 3, &copy) != NOTE_TEXT_ACCEPTED &&
+                copy == nullptr,
+            "one span relocated to two places is refused");
+    markdown_rtf_destroy(rendered);
+    note_text_destroy(body);
+}
+
 /* #863: image references read their definition's destination through the same image path; the
  * recorded span addresses the definition's bytes, so relocation rewrites the definition. */
 static void reference_contract(void)
@@ -269,6 +308,7 @@ static void reference_contract(void)
             "a link reference to the same definition is still a link");
     markdown_rtf_destroy(rendered);
     note_text_destroy(body);
+    reference_relocation();
 }
 
 static void parser_contract(void)
