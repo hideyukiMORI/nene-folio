@@ -41,7 +41,7 @@ clang-tidyは構築の中で走る（CMAKE_C_CLANG_TIDY）ので、構築の成�
 | t8・t9 | 窓を900・820へ狭める | 試験として無効。窓を狭めてもpreviewの幅が変わらなかった（527のまま）。広げる（1250×850、既存の採取と同じ）に替えた |
 | t10 | 広げる | previewの幅527→641、最初の可視行0→13、一致が可視範囲 |
 | m1 | 変異（寄せ直しを無効にする） | 期待どおり失敗（最初の可視行0→0、「一致が見える」で落ちる）。元へ戻した |
-| t11 | `ctest -R "discovery|search_native|palette_native"`（6件） | 6件成功 |
+| t11 | `ctest -R`でdiscovery・search_native・palette_nativeの6件 | 6件成功 |
 | t12 | `--body-discovery-visual`（9通り） | 478 checks成功 |
 | c2 | `eng/conformance.py`（ソース・構築）、`git diff --cached --check` | すべて0 |
 
@@ -51,4 +51,4 @@ NULの直しは試験を足していない（実際の原文にNULが入る経�
 
 - 実機の物理キーボードと日本語入力（変換中の↑↓・PageUp/Downは既存の`command_composing`の経路で変換へ渡す。隔離desktopの試験だけ）。
 - 読み上げ（UIA）で、入力欄のまま候補が動いたことが伝わるか。選択の変更は従来どおりUIAの更新を予約するが、フォーカスが入力欄にあるので候補のフォーカスの通知は出ない。
-- 変異の試験はしていない。↓の試験は、フォーカスが候補へ移る元の実装では`GetFocus() == input`が偽になる作りで、PageUp/Downの試験は元の実装では選択が動く作り。
+- 変異は幅の寄せ直し（m1）だけ。↓とPageUp/Downは変異していない。↓の試験は、フォーカスが候補へ移る元の実装では`GetFocus() == input`が偽になる作りで、PageUp/Downの試験は元の実装では選択が動く作り。
