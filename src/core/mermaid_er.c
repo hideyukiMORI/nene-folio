@@ -112,17 +112,20 @@ static bool relationship(struct mermaid_er *_Nonnull parser, struct diagram_text
     parser->outcome = diagram_model_link(parser->model, link);
     return parser->outcome == DIAGRAM_ACCEPTED;
 }
-/* `A {` starts the entity's attributes below whatever label it already has. */
+/* `A {` starts the entity's attributes, after those an earlier block gave it (#888: the label
+ * holds only the attributes; the name is the id). */
 static bool open_block(struct mermaid_er *_Nonnull parser, struct diagram_text name)
 {
     size_t index = 0;
     if (!entity(parser, name, &index))
         return false;
-    const char *_Nonnull shown =
-        diagram_model_text_at(parser->model, diagram_model_node_at(parser->model, index).label);
+    struct diagram_node node = diagram_model_node_at(parser->model, index);
     parser->used = 0;
     parser->open = index;
-    return append(parser, shown, strlen(shown));
+    if (node.shape != DIAGRAM_ENTITY)
+        return true;
+    const char *_Nonnull listed = diagram_model_text_at(parser->model, node.label);
+    return append(parser, listed, strlen(listed));
 }
 /* `type name [PK, FK] ["comment"]`: one line under the name; the comment is left out. */
 static bool attribute(struct mermaid_er *_Nonnull parser, struct diagram_text text)
@@ -135,11 +138,19 @@ static bool attribute(struct mermaid_er *_Nonnull parser, struct diagram_text te
     (void)diagram_text_word(&words);
     if (diagram_text_word(&words).length == 0)
         return reject(parser, DIAGRAM_INVALID);
-    return append(parser, "\n", 1) && append(parser, shown.bytes, shown.length);
+    if (parser->used != 0 && !append(parser, "\n", 1))
+        return false;
+    return append(parser, shown.bytes, shown.length);
 }
 static bool close_block(struct mermaid_er *_Nonnull parser)
 {
     struct diagram_node node = diagram_model_node_at(parser->model, parser->open);
+    if (parser->used == 0)
+    {
+        parser->open = diagram_none; /* an empty block leaves a plain box */
+        return true;
+    }
+    node.shape = DIAGRAM_ENTITY;
     parser->outcome = diagram_model_text(parser->model, parser->label, parser->used, &node.label);
     if (parser->outcome == DIAGRAM_ACCEPTED)
         parser->outcome = diagram_model_node(parser->model, parser->open, node);
