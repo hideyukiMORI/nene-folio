@@ -374,18 +374,35 @@ static void emit_group_heading(struct diagram_flow_layout *_Nonnull layout, size
                                             .bounds = bounds,
                                             .text = group.label});
 }
+/* #876: the end ring holds the same dot as the start, centred. */
+static void emit_state_dot(struct diagram_flow_layout *_Nonnull layout, struct diagram_rect ring)
+{
+    int inset = (ring.width - diagram_state_dot) / 2;
+    emit(layout, (struct diagram_primitive){.kind = DIAGRAM_PRIMITIVE_SHAPE,
+                                            .shape = DIAGRAM_STATE_START,
+                                            .stroke = DIAGRAM_SOLID,
+                                            .ink = DIAGRAM_INK_ACCENT,
+                                            .fill = DIAGRAM_INK_ACCENT,
+                                            .bounds = {ring.x + inset, ring.y + inset,
+                                                       diagram_state_dot, diagram_state_dot},
+                                            .text = diagram_none});
+}
+
 static void emit_node(struct diagram_flow_layout *_Nonnull layout, size_t index)
 {
     struct diagram_node node = diagram_model_node_at(layout->model, index);
     struct diagram_rect bounds = physical(layout, layout->nodes[index]);
+    bool dot = node.shape == DIAGRAM_STATE_START;
     emit(layout, (struct diagram_primitive){.kind = DIAGRAM_PRIMITIVE_SHAPE,
                                             .shape = node.shape,
                                             .stroke = DIAGRAM_SOLID,
                                             .ink = DIAGRAM_INK_ACCENT,
-                                            .fill = DIAGRAM_INK_NODE,
+                                            .fill = dot ? DIAGRAM_INK_ACCENT : DIAGRAM_INK_NODE,
                                             .radius = diagram_node_radius,
                                             .bounds = bounds,
                                             .text = diagram_none});
+    if (node.shape == DIAGRAM_STATE_END)
+        emit_state_dot(layout, bounds);
     struct diagram_size size = diagram_metrics_at(layout->metrics, node.label, DIAGRAM_TEXT_BODY);
     bounds = diagram_geometry_label(bounds, size, node.shape);
     emit(layout, (struct diagram_primitive){.kind = DIAGRAM_PRIMITIVE_TEXT,

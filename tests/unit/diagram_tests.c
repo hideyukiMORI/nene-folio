@@ -151,8 +151,8 @@ static void state_contract(void)
     require(check.shape == DIAGRAM_DIAMOND, "a choice is a diamond");
     struct diagram_node start = diagram_model_node_at(model, node_named(model, "[*]<0"));
     struct diagram_node end = diagram_model_node_at(model, node_named(model, "[*]>0"));
-    require(start.shape == DIAGRAM_CIRCLE && end.shape == DIAGRAM_DOUBLE_CIRCLE,
-            "[*] starts as a circle and ends as a double circle");
+    require(start.shape == DIAGRAM_STATE_START && end.shape == DIAGRAM_STATE_END,
+            "[*] starts as a dot and ends as a ringed dot (#876)");
     require(diagram_model_link_count(model) == 5, "every transition is a link");
     struct diagram_link labelled = diagram_model_link_at(model, 1);
     require(strcmp(diagram_model_text_at(model, labelled.label), "start") == 0 &&
@@ -224,6 +224,46 @@ static void state_rejections(void)
     for (size_t level = 0; level <= diagram_depth_limit; ++level)
         (void)sprintf_s(deep + strlen(deep), sizeof deep - strlen(deep), "state S%zu {\n", level);
     reject_source(deep, DIAGRAM_TOO_LARGE);
+}
+
+/* #876: the start is one small dot filled with the line ink; the end is a small ring around the
+ * same dot, whatever the font measures. */
+/* Counts one primitive as a dot or a ring, checking its size and fill. */
+static void count_marker(const struct diagram_primitive *_Nonnull item, size_t *_Nonnull dots,
+                         size_t *_Nonnull rings)
+{
+    if (item->kind != DIAGRAM_PRIMITIVE_SHAPE)
+        return;
+    if (item->shape == DIAGRAM_STATE_START)
+    {
+        require(item->fill == DIAGRAM_INK_ACCENT && item->bounds.width == diagram_state_dot &&
+                    item->bounds.height == diagram_state_dot,
+                "a dot is small and filled with the line ink");
+        ++*dots;
+    }
+    if (item->shape == DIAGRAM_STATE_END)
+    {
+        require(item->fill == DIAGRAM_INK_NODE && item->bounds.width == diagram_state_ring,
+                "the end ring is small and hollow");
+        ++*rings;
+    }
+}
+
+static void state_dots(void)
+{
+    struct diagram_model *model = parsed("stateDiagram-v2\n[*] --> A\nA --> [*]\n");
+    struct diagram_scene *scene = laid_out(model);
+    size_t dots = 0;
+    size_t rings = 0;
+    for (size_t index = 0; index < diagram_scene_count(scene); ++index)
+        count_marker(diagram_scene_at(scene, index), &dots, &rings);
+    require(dots == 2 && rings == 1, "the start dot, and the end ring with its own dot");
+    struct diagram_size text = {400, 200};
+    struct diagram_size size = diagram_geometry_node(text, DIAGRAM_STATE_END);
+    require(size.width == diagram_state_ring && size.height == diagram_state_ring,
+            "the marker size does not follow the text size");
+    diagram_scene_destroy(scene);
+    diagram_model_destroy(model);
 }
 
 /* Reuse: one start per scope however often it is used, states met again, plain declarations. */
@@ -1523,6 +1563,7 @@ void run_diagram_tests(void)
     state_composite();
     state_rejections();
     state_reuse();
+    state_dots();
     groups_and_cycles();
     edge_labels_remain_visible();
     horizontal_group_heading();
