@@ -20,6 +20,8 @@ hideの11月17日朝の指示（外回りの間、ロードマップに沿って
 | #872 | Mermaidの状態遷移図（ADR0104） | `9d789d6` |
 | #876 | 状態遷移図の開始・終了を小さな点で描く | `3c62c34` |
 | #878 | 字下げで続く複数行の脚注（ADR0103補足） | `9159c79` |
+| #882 | MermaidのER図（ADR0105） | `400795a` |
+| #883 | 本文の右クリックメニュー（ADR0106、FR-052） | `98ca48f` |
 
 いずれも最終headの必須CI成功・通常exe反映済み。経緯・失敗・判断は[日報](../reports/2026-11-17.md)、再開に要ることは[引き継ぎ](../handoffs/2026-11-17.md)、
 各Issueの全試行は品質記録、確定原本はD:/NeNeFolio/agents/の各completion.json。
@@ -37,10 +39,10 @@ D:/NeNeFolio/worktrees/819-note-tagsを0ファイルで保持し、盲目的な�
 ## 通常版と公開版
 
 通常exeはC:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe、版1.3.2 / Windows1.3.2.0。
-#878を11月17日12:25にsource `9159c79aeb179f9330d19c6f7e916f0487c8ea26`から正典経路で反映した。
-SHA256 `603f7c317fdd7c366cd21598b50010f453e7741a92a182cd4f1e47bddcd24345`。
-11月17日の反映（#839・#850・#852・#853・#854・#855・#861・#863・#869・#872・#876・#878）は毎回、反映前後の実data36ファイルのbytes/hash/作成・更新日時が一致し、アプリは起動していない。
-確定原本はD:/NeNeFolio/agents/footnote-continuation-20261117/completion.json（各回は各Issueのcompletion.json）。
+#883を11月17日13:26にsource `98ca48fcfd9b57b61a8116ba8df96bedbaa463e3`から正典経路で反映した。
+SHA256 `a65ad5eb7f6386ea8a989c3a634cd9091273fa56968127a8f754f8a23a03eb18`。
+11月17日の反映（#839・#850・#852・#853・#854・#855・#861・#863・#869・#872・#876・#878・#882・#883）は毎回、反映前後の実data36ファイルのbytes/hash/作成・更新日時が一致し、アプリは起動していない。
+確定原本はD:/NeNeFolio/agents/context-menu-883/completion.json（各回は各Issueのcompletion.json）。
 
 台帳版2・設定版7は旧アプリでは読めない。旧台帳1/設定1〜6は読め、起動だけでは書き換えない。
 星はMarkdown/ZIPに含めない。通常版の書体修正・お気に入り・タグ・検索・About・コードのコピー・囲まないURL等は公開済み1.3.2には未収載。
