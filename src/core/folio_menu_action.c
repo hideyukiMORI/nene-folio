@@ -86,6 +86,16 @@ static const struct folio_menu_action text_view[] = {
     {FOLIO_MENU_ACTION_TEXT, FOLIO_COMMAND_HELP, FOLIO_MENU_GROUP_FIRST, 'C', FOLIO_TEXT_EDIT_COPY},
     {FOLIO_MENU_ACTION_TEXT, FOLIO_COMMAND_HELP, FOLIO_MENU_GROUP_SECOND, 'A',
      FOLIO_TEXT_EDIT_SELECT_ALL}};
+/* #900: viewing, on a link: the link's own actions first. */
+static const struct folio_menu_action text_link[] = {
+    {FOLIO_MENU_ACTION_TEXT, FOLIO_COMMAND_HELP, FOLIO_MENU_GROUP_FIRST, 'O',
+     FOLIO_TEXT_EDIT_OPEN_LINK},
+    {FOLIO_MENU_ACTION_TEXT, FOLIO_COMMAND_HELP, FOLIO_MENU_GROUP_FIRST, 'L',
+     FOLIO_TEXT_EDIT_COPY_LINK},
+    {FOLIO_MENU_ACTION_TEXT, FOLIO_COMMAND_HELP, FOLIO_MENU_GROUP_SECOND, 'C',
+     FOLIO_TEXT_EDIT_COPY},
+    {FOLIO_MENU_ACTION_TEXT, FOLIO_COMMAND_HELP, FOLIO_MENU_GROUP_THIRD, 'A',
+     FOLIO_TEXT_EDIT_SELECT_ALL}};
 static const struct folio_menu_action layout[] = {
     {FOLIO_MENU_ACTION_COMMAND, FOLIO_COMMAND_LAYOUT_DRAWER, FOLIO_MENU_GROUP_FIRST, '1',
      FOLIO_TEXT_EDIT_NONE},
@@ -112,6 +122,8 @@ size_t folio_menu_action_count(enum folio_menu_context context)
         return sizeof text_edit / sizeof text_edit[0];
     case FOLIO_MENU_TEXT_VIEW:
         return sizeof text_view / sizeof text_view[0];
+    case FOLIO_MENU_TEXT_LINK:
+        return sizeof text_link / sizeof text_link[0];
     }
     return 0;
 }
@@ -134,6 +146,8 @@ const struct folio_menu_action *_Nonnull folio_menu_action_at(enum folio_menu_co
         return &text_edit[index];
     case FOLIO_MENU_TEXT_VIEW:
         return &text_view[index];
+    case FOLIO_MENU_TEXT_LINK:
+        return &text_link[index];
     }
     return &operations[0];
 }
@@ -168,6 +182,10 @@ static enum ui_text text_caption(enum folio_text_edit edit)
         return UI_TEXT_MENU_PASTE;
     case FOLIO_TEXT_EDIT_SELECT_ALL:
         return UI_TEXT_MENU_SELECT_ALL;
+    case FOLIO_TEXT_EDIT_OPEN_LINK:
+        return UI_TEXT_MENU_OPEN_LINK;
+    case FOLIO_TEXT_EDIT_COPY_LINK:
+        return UI_TEXT_MENU_COPY_LINK;
     }
     return UI_TEXT_MENU_UNDO;
 }
@@ -177,7 +195,9 @@ static const char *_Nonnull text_key(enum folio_text_edit edit)
     switch (edit)
     {
     case FOLIO_TEXT_EDIT_NONE:
-        return "";
+    case FOLIO_TEXT_EDIT_OPEN_LINK:
+    case FOLIO_TEXT_EDIT_COPY_LINK:
+        return ""; /* no key of their own: the menu shows its access key */
     case FOLIO_TEXT_EDIT_UNDO:
         return "Ctrl+Z";
     case FOLIO_TEXT_EDIT_CUT:
@@ -240,7 +260,8 @@ enum ui_text_format_outcome folio_menu_action_hint(const struct folio_menu_actio
     if (action->kind == FOLIO_MENU_ACTION_TEXT)
     {
         hint = text_key(action->edit);
-        format = UI_TEXT_COMMAND_CAPTION;
+        if (hint[0] != '\0')
+            format = UI_TEXT_COMMAND_CAPTION;
     }
     char key[2] = {action->key, '\0'};
     struct ui_text_request request = {

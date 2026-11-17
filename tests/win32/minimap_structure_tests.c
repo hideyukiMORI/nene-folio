@@ -918,6 +918,30 @@ static void text_menu_view(struct note_pane *_Nonnull pane)
     SendMessageW(handle, WM_CONTEXTMENU, (WPARAM)handle, -1);
     require(menu_requests == 1 && menu_seen.context == FOLIO_MENU_TEXT_VIEW && menu_seen.keyboard,
             "viewing asks for the read-only menu");
+    /* #900: on a link the menu is the link's; next to it, the plain one. */
+    load(pane, PANE_MODE_VIEW, "before [site](https://example.com/page) after");
+    LONG link = native_find(handle, L"site") + 1;
+    right_press(handle, link);
+    SendMessageW(handle, WM_CONTEXTMENU, (WPARAM)handle, -1);
+    require(menu_seen.context == FOLIO_MENU_TEXT_LINK &&
+                note_pane_text_edit_available(pane, FOLIO_TEXT_EDIT_OPEN_LINK) &&
+                note_pane_text_edit_available(pane, FOLIO_TEXT_EDIT_COPY_LINK),
+            "a right press on a link asks for the link menu");
+    wchar_t before_link[64], after_link[64];
+    GetWindowTextW(handle, before_link, 64);
+    note_pane_text_edit(pane, FOLIO_TEXT_EDIT_OPEN_LINK);
+    note_pane_text_edit(pane, FOLIO_TEXT_EDIT_COPY_LINK);
+    GetWindowTextW(handle, after_link, 64);
+    require(wcscmp(before_link, after_link) == 0,
+            "the pane itself does nothing for the link actions (the window runs them)");
+    right_press(handle, native_find(handle, L"before") + 2);
+    SendMessageW(handle, WM_CONTEXTMENU, (WPARAM)handle, -1);
+    require(menu_seen.context == FOLIO_MENU_TEXT_VIEW,
+            "next to the link the menu is the plain one");
+    load(pane, PANE_MODE_EDIT, "before [site](https://example.com/page) after");
+    SendMessageW(handle, EM_SETSEL, 10, 10);
+    SendMessageW(handle, WM_CONTEXTMENU, (WPARAM)handle, -1);
+    require(menu_seen.context == FOLIO_MENU_TEXT_EDIT, "editing never asks for the link menu");
 }
 
 static void text_menu(struct note_pane *_Nonnull pane)

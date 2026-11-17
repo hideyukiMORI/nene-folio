@@ -313,14 +313,10 @@ enum folio_state_outcome folio_state_open_product_link(struct folio_state *_Nonn
     return launch_web_link(state, product_link_uri(link), product_link_uri_length(link));
 }
 
-enum folio_state_outcome folio_state_copy_code(struct folio_state *_Nonnull state, size_t slot)
+/* The clipboard port's answer as a state outcome; the one place both copies share. */
+static enum folio_state_outcome copied(enum clipboard_outcome outcome)
 {
-    const struct markdown_media *media = folio_state_media(state);
-    if (state->mode != PANE_MODE_VIEW || media == nullptr ||
-        slot >= markdown_media_code_count(media))
-        return FOLIO_STATE_CODE_COPY_REJECTED;
-    switch (state->clipboard.write(state->clipboard.adapter, markdown_media_code_bytes(media, slot),
-                                   markdown_media_code_length(media, slot)))
+    switch (outcome)
     {
     case CLIPBOARD_WRITTEN:
         return FOLIO_STATE_READY;
@@ -332,6 +328,38 @@ enum folio_state_outcome folio_state_copy_code(struct folio_state *_Nonnull stat
         return FOLIO_STATE_OUT_OF_MEMORY;
     }
     return FOLIO_STATE_CLIPBOARD_UNAVAILABLE;
+}
+
+enum folio_state_outcome folio_state_copy_web_link(struct folio_state *_Nonnull state,
+                                                   const char *_Nonnull bytes, size_t length)
+{
+    if (state->mode != PANE_MODE_VIEW || state->document == FOLIO_DOCUMENT_NONE)
+        return FOLIO_STATE_WEB_LINK_REJECTED;
+    struct web_uri *_Nullable uri = nullptr;
+    switch (web_uri_create(bytes, length, &uri))
+    {
+    case WEB_URI_ACCEPTED:
+        break;
+    case WEB_URI_REJECTED:
+        return FOLIO_STATE_WEB_LINK_REJECTED;
+    case WEB_URI_OUT_OF_MEMORY:
+        return FOLIO_STATE_OUT_OF_MEMORY;
+    }
+    enum folio_state_outcome outcome = copied(
+        state->clipboard.write(state->clipboard.adapter, web_uri_bytes(uri), web_uri_length(uri)));
+    web_uri_destroy(uri);
+    return outcome;
+}
+
+enum folio_state_outcome folio_state_copy_code(struct folio_state *_Nonnull state, size_t slot)
+{
+    const struct markdown_media *media = folio_state_media(state);
+    if (state->mode != PANE_MODE_VIEW || media == nullptr ||
+        slot >= markdown_media_code_count(media))
+        return FOLIO_STATE_CODE_COPY_REJECTED;
+    return copied(state->clipboard.write(state->clipboard.adapter,
+                                         markdown_media_code_bytes(media, slot),
+                                         markdown_media_code_length(media, slot)));
 }
 
 static void stored_note(struct folio_state *_Nonnull state)

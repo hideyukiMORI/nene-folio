@@ -8,6 +8,7 @@ enum folio_menu_context : unsigned char
     FOLIO_MENU_NOTE,
     FOLIO_MENU_EMPTY,
     FOLIO_MENU_TEXT_EDIT, /* #883: the note body while editing */
-    FOLIO_MENU_TEXT_VIEW  /* #883: the note body while viewing (read-only) */
+    FOLIO_MENU_TEXT_VIEW, /* #883: the note body while viewing (read-only) */
+    FOLIO_MENU_TEXT_LINK  /* #900: viewing, on a link */
 };
 #endif
