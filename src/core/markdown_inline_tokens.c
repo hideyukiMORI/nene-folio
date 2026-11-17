@@ -5,6 +5,7 @@
 #include "markdown_delimiter_kind.h"
 #include "markdown_inline_kind.h"
 #include "markdown_media.h"
+#include "markdown_references.h"
 #include "markdown_web_link.h"
 #include "rtf_text.h"
 #include "text_buffer.h"
@@ -24,6 +25,7 @@ struct markdown_inline_tokens
         size_t after;
         size_t scope;
         size_t image;
+        size_t reference; /* #861: the definition a reference link opens, or SIZE_MAX. */
         enum markdown_inline_kind kind;
         bool opens;
         bool closes;
@@ -31,6 +33,7 @@ struct markdown_inline_tokens
     } *_Nonnull tokens;
     struct text_buffer *_Nonnull out;
     struct markdown_media *_Nonnull media;
+    const struct markdown_references *_Nullable references;
     size_t half_points;
     size_t count;
     /* The plain run that holds the token being emitted: tokens before `plain_index`, bytes
@@ -133,7 +136,8 @@ static void add_token(struct markdown_inline_tokens *_Nonnull parser, size_t sta
                                             .mate = SIZE_MAX,
                                             .previous = SIZE_MAX,
                                             .after = SIZE_MAX,
-                                            .scope = SIZE_MAX};
+                                            .scope = SIZE_MAX,
+                                            .reference = SIZE_MAX};
 }
 
 static bool left_flanking(char before, char after)
@@ -603,6 +607,89 @@ static void pair_links(struct markdown_inline_tokens *_Nonnull parser)
     }
 }
 
+/* The bracket pair right after `close` (`[text][label]` or `[label][]`), or SIZE_MAX. */
+static size_t second_label(struct markdown_inline_tokens *_Nonnull parser, size_t close)
+{
+    size_t next = close + 1;
+    if (next >= parser->count || at(parser, parser->tokens[next].start) != '[' ||
+        parser->tokens[next].start != parser->tokens[close].start + 1)
+        return SIZE_MAX;
+    size_t end = parser->tokens[next].mate;
+    return end != SIZE_MAX && end > next ? end : SIZE_MAX;
+}
+
+/* Delimiters inside a reference's label are its name, never emphasis. */
+static void quiet_label(struct markdown_inline_tokens *_Nonnull parser, size_t from, size_t to)
+{
+    for (size_t index = from; index <= to; ++index)
+    {
+        parser->tokens[index].opens = false;
+        parser->tokens[index].closes = false;
+    }
+}
+
+/* #861 / ADR0101: a bracket pair left after inline links is a full (`[text][label]`), collapsed
+ * (`[label][]`) or shortcut (`[label]`) reference when the note defines the label. An image
+ * reference (`![alt][label]`) is not resolved and stays text whole, its label included.
+ * Returns the last token the construct consumes, or `index` when it is none. */
+static size_t pair_reference_at(struct markdown_inline_tokens *_Nonnull parser, size_t index)
+{
+    struct markdown_inline_token *token = &parser->tokens[index];
+    size_t close = token->mate;
+    if (at(parser, token->start) != '[' || token->kind != MARKDOWN_INLINE_LITERAL ||
+        close == SIZE_MAX || close <= index)
+        return index;
+    size_t end = second_label(parser, close);
+    if (image_marker(parser, index))
+        return end == SIZE_MAX ? close : end;
+    size_t label = end != SIZE_MAX && end > close + 2 ? close + 1 : index;
+    size_t label_close = parser->tokens[label].mate;
+    size_t reference =
+        markdown_references_find(parser->references, parser->view, parser->tokens[label].start + 1,
+                                 parser->tokens[label_close].start);
+    if (reference == SIZE_MAX)
+        return index;
+    end = end == SIZE_MAX ? close : end;
+    token->kind = MARKDOWN_INLINE_LINK;
+    token->opens = true;
+    token->reference = reference;
+    parser->tokens[close].kind = MARKDOWN_INLINE_LINK;
+    parser->tokens[close].opens = false;
+    parser->tokens[close].after = end + 1;
+    quiet_label(parser, close + 1, end);
+    return end;
+}
+
+/* Links and images already formed keep their whole extent; *index moves to its last token. */
+static bool skip_formed(struct markdown_inline_tokens *_Nonnull parser,
+                        const struct markdown_inline_token *_Nonnull token, size_t *_Nonnull index)
+{
+    if (token->kind == MARKDOWN_INLINE_LINK && token->opens)
+    {
+        *index = parser->tokens[token->mate].after - 1;
+        return true;
+    }
+    bool image =
+        token->kind == MARKDOWN_INLINE_IMAGE || token->kind == MARKDOWN_INLINE_IMAGE_LITERAL;
+    if (!image || token->after == SIZE_MAX)
+        return false;
+    *index = token->after - 1;
+    return true;
+}
+
+static void pair_references(struct markdown_inline_tokens *_Nonnull parser)
+{
+    if (parser->references == nullptr)
+        return;
+    for (size_t index = 0; index < parser->count; ++index)
+    {
+        struct markdown_inline_token *token = &parser->tokens[index];
+        if (skip_literal_range(token, &index) || skip_formed(parser, token, &index))
+            continue;
+        index = pair_reference_at(parser, index);
+    }
+}
+
 static enum markdown_delimiter_kind delimiter_slot(struct markdown_inline_tokens *_Nonnull parser,
                                                    size_t index)
 {
@@ -881,16 +968,28 @@ static bool emit_field(struct markdown_inline_tokens *_Nonnull parser, enum web_
     return false;
 }
 
+/* The destination of an inline link `[text](...)`, or of a reference link's definition. */
+static enum web_uri_outcome link_destination(struct markdown_inline_tokens *_Nonnull parser,
+                                             const struct markdown_inline_token *_Nonnull token,
+                                             struct web_uri *_Nullable *_Nonnull uri)
+{
+    if (token->reference != SIZE_MAX && parser->references != nullptr)
+        return web_uri_create(
+            markdown_references_destination(parser->references, token->reference),
+            markdown_references_destination_length(parser->references, token->reference), uri);
+    size_t destination = token->mate + 1;
+    size_t end = parser->tokens[destination].mate;
+    return markdown_web_link_destination(parser->view, parser->tokens[destination].start + 1,
+                                         parser->tokens[end].start, uri);
+}
+
 static void emit_link(struct markdown_inline_tokens *_Nonnull parser, size_t index)
 {
     struct markdown_inline_token *token = &parser->tokens[index];
     if (token->opens)
     {
-        size_t destination = token->mate + 1;
-        size_t end = parser->tokens[destination].mate;
         struct web_uri *_Nullable uri = nullptr;
-        enum web_uri_outcome outcome = markdown_web_link_destination(
-            parser->view, parser->tokens[destination].start + 1, parser->tokens[end].start, &uri);
+        enum web_uri_outcome outcome = link_destination(parser, token, &uri);
         token->field = emit_field(parser, outcome, uri);
         parser->in_link = true;
         text_buffer_append_text(parser->out, "{\\cf4\\ul ");
@@ -1160,10 +1259,12 @@ enum markdown_rtf_outcome markdown_inline_tokens_render(struct markdown_render r
                                             .out = render.text,
                                             .media = render.media,
                                             .half_points = render.half_points,
+                                            .references = render.references,
                                             .outcome = MARKDOWN_RTF_CONVERTED};
     tokenize(&parser);
     pair_inline_ranges(&parser, next);
     pair_links(&parser);
+    pair_references(&parser);
     pair_delimiters(&parser);
     coherent_pairs(&parser, next);
     for (size_t index = 0; index < parser.count && parser.outcome == MARKDOWN_RTF_CONVERTED;)

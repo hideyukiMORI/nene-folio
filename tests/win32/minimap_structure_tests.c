@@ -816,6 +816,40 @@ static void edge_arrows(struct note_pane *_Nonnull pane)
     expect_edge(pane, 3, VK_DOWN, (CHARRANGE){6, 6});
 }
 
+/* #861 / ADR0101: a reference link opens its definition's URI; the definition is not shown. */
+static void reference_links(struct note_pane *_Nonnull pane)
+{
+    const char content[] = "前[資料][doc]と[ref][]。\n\n[doc]: https://example.com/doc\n"
+                           "[REF]: <https://example.com/ref> \"title\"\n\n後";
+    static const char16_t shown[] = u"前資料とref。\r後";
+    load(pane, PANE_MODE_VIEW, content);
+    HWND handle = note_pane_handle(pane);
+    const char16_t *visible = nullptr;
+    size_t length = 0;
+    require(note_pane_text(pane, &visible, &length) == NOTE_PANE_TEXT_TAKEN, "search projection");
+    if (length != sizeof shown / sizeof shown[0] - 1 ||
+        memcmp(visible, shown, length * sizeof shown[0]) != 0)
+    {
+        printf("reference projection:");
+        for (size_t index = 0; index < length; ++index)
+            printf(" %04x", (unsigned)visible[index]);
+        printf("\n");
+    }
+    require(length == sizeof shown / sizeof shown[0] - 1 &&
+                memcmp(visible, shown, length * sizeof shown[0]) == 0,
+            "definitions are not shown and the labels read as text");
+    expect_link(pane, native_find(handle, L"資料") + 1, "HTTPS://example.com/doc");
+    /* "ref" also occurs in the hidden instruction; the label's last letter sits before the
+     * hidden boundary blank that precedes "。". */
+    expect_link(pane, native_find(handle, L"。") - 2, "HTTPS://example.com/ref");
+    expect_link(pane, native_find(handle, L"前"), nullptr);
+    load(pane, PANE_MODE_EDIT, content);
+    wchar_t actual[512];
+    GetWindowTextW(handle, actual, 512);
+    require(wcsstr(actual, L"[doc]: https://example.com/doc") != nullptr,
+            "editing shows the definitions in the Markdown source");
+}
+
 static void code_label_wrap(struct note_pane *_Nonnull pane)
 {
     const char content[] = "~~~VeryLongUnknownLanguageNameThatMustWrapWithoutLosingAnyCharacters"
@@ -873,6 +907,7 @@ int main(void)
     bare_links(pane);
     heading_inline_sizes(pane);
     edge_arrows(pane);
+    reference_links(pane);
     load(pane, PANE_MODE_EDIT, source);
     boundaries(pane);
     preservation(pane);

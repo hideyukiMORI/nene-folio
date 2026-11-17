@@ -6,6 +6,7 @@
 #include "markdown_containers.h"
 #include "markdown_inline_tokens.h"
 #include "markdown_media.h"
+#include "markdown_references.h"
 #include "markdown_table.h"
 #include "markdown_table_state.h"
 #include "markdown_task_kind.h"
@@ -22,6 +23,7 @@ struct markdown_blocks
 {
     struct text_buffer *_Nonnull out;
     struct markdown_media *_Nonnull media;
+    struct markdown_references *_Nullable references;
     const char *_Nonnull source;
     size_t length;
     size_t next; /* 処理中の行の次の行の開始byte。fenceの先読みが使う。 */
@@ -215,7 +217,8 @@ static bool flush(struct markdown_blocks *_Nonnull parser)
     struct markdown_view view = {
         .spans = parser->spans, .count = parser->span_count, .length = parser->inline_length};
     parser->outcome = markdown_inline_tokens_render(
-        (struct markdown_render){parser->out, parser->media, text_half_points(parser->heading)},
+        (struct markdown_render){parser->out, parser->media, text_half_points(parser->heading),
+                                 parser->references},
         view);
     if (parser->outcome != MARKDOWN_RTF_CONVERTED)
         return false;
@@ -555,8 +558,9 @@ static bool start_table(struct markdown_blocks *_Nonnull parser, struct markdown
     outer_markers(parser, 0);
     struct markdown_table_format format = {.kind = MARKDOWN_ROW_KIND_HEADER,
                                            .indent_twips = indent_twips};
-    parser->outcome = markdown_table_row((struct markdown_render){parser->out, parser->media, 22},
-                                         line, delimiter, format);
+    parser->outcome = markdown_table_row(
+        (struct markdown_render){parser->out, parser->media, 22, parser->references}, line,
+        delimiter, format);
     return parser->outcome == MARKDOWN_RTF_CONVERTED;
 }
 
@@ -567,8 +571,9 @@ static bool table_body(struct markdown_blocks *_Nonnull parser, struct markdown_
     struct markdown_table_format format = {.kind = MARKDOWN_ROW_KIND_BODY,
                                            .indent_twips =
                                                markdown_containers_indent(parser->containers)};
-    parser->outcome = markdown_table_row((struct markdown_render){parser->out, parser->media, 22},
-                                         line, parser->delimiter, format);
+    parser->outcome = markdown_table_row(
+        (struct markdown_render){parser->out, parser->media, 22, parser->references}, line,
+        parser->delimiter, format);
     return parser->outcome == MARKDOWN_RTF_CONVERTED;
 }
 
@@ -631,6 +636,24 @@ static bool accept_line(struct markdown_blocks *_Nonnull parser, struct markdown
     return parser->outcome == MARKDOWN_RTF_CONVERTED;
 }
 
+/* A blank line closes the paragraph, and a recorded link reference definition is not shown
+ * (#861; it never interrupts a paragraph). True when the line is handled; *accepted is its result.
+ */
+static bool skipped_line(struct markdown_blocks *_Nonnull parser, struct markdown_line raw,
+                         struct markdown_line line, bool *_Nonnull accepted)
+{
+    *accepted = true;
+    if (markdown_line_blank(line))
+    {
+        *accepted = flush(parser);
+        if (*accepted)
+            outer_markers(parser, 0);
+        return true;
+    }
+    return parser->span_count == 0 &&
+           markdown_references_defines(parser->references, (size_t)(raw.bytes - parser->source));
+}
+
 static bool render_line(struct markdown_blocks *_Nonnull parser, struct markdown_line raw,
                         size_t *_Nonnull cursor)
 {
@@ -638,13 +661,9 @@ static bool render_line(struct markdown_blocks *_Nonnull parser, struct markdown
     if (!accept_line(parser, raw, next))
         return false;
     struct markdown_line line = markdown_containers_line(parser->containers);
-    if (markdown_line_blank(line))
-    {
-        if (!flush(parser))
-            return false;
-        outer_markers(parser, 0);
-        return true;
-    }
+    bool accepted = true;
+    if (skipped_line(parser, raw, line, &accepted))
+        return accepted;
     size_t setext = markdown_line_setext(line);
     if (parser->span_count != 0 && setext != 0)
     {
@@ -698,6 +717,7 @@ static bool render_next(struct markdown_blocks *_Nonnull parser, size_t *_Nonnul
 static void markdown_blocks_destroy(struct markdown_blocks *_Nonnull parser)
 {
     code_syntax_destroy(parser->syntax);
+    markdown_references_destroy(parser->references);
     free(parser->spans);
     markdown_containers_destroy(parser->containers);
 }
@@ -716,8 +736,13 @@ enum markdown_rtf_outcome markdown_blocks_render(struct markdown_render render,
                                      .contrast = contrast,
                                      .outcome = MARKDOWN_RTF_CONVERTED};
     parser.outcome = markdown_containers_create(&parser.containers);
+    if (parser.outcome == MARKDOWN_RTF_CONVERTED)
+        parser.outcome = markdown_references_create(text, &parser.references);
     if (parser.outcome != MARKDOWN_RTF_CONVERTED)
+    {
+        markdown_blocks_destroy(&parser);
         return parser.outcome;
+    }
     size_t cursor = note_metadata_body(note_text_metadata(text));
     bool accepted = true;
     while (cursor < length && accepted)

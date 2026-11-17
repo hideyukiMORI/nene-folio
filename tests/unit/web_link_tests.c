@@ -322,6 +322,47 @@ static void verify_bare_fields(void)
     expect_text("![https://a.example/x](https://b.example/y.png)");
 }
 
+/* #861 / ADR0101: reference links resolve through the note's definitions. */
+static void verify_reference_links(void)
+{
+    expect_field("[text][ref]\n\n[ref]: https://example.com/r",
+                 "HYPERLINK \"HTTPS://example.com/r\"", "[ref]");
+    expect_field("[ref][]\n\n[ref]: https://example.com/r", "{\\cf4\\ul ref\\ul0}", "[]");
+    expect_field("see [ref].\n\n[ref]: https://example.com/r", "{\\cf4\\ul ref\\ul0}", "[ref]");
+    expect_field("[ref]: https://example.com/r\n\n[text][ref]",
+                 "HYPERLINK \"HTTPS://example.com/r\"", "]: https");
+    expect_field("[Foo  Bar][]\n\n[foo bar]: https://example.com/case",
+                 "HYPERLINK \"HTTPS://example.com/case\"", "[Foo");
+    expect_field("[a][x]\n\n[x]: <https://example.com/a%20b> \"title\"",
+                 "HYPERLINK \"HTTPS://example.com/a%20b\"", "title");
+    expect_field("[a][x]\n\n[x]: https://example.com/first\n[x]: https://example.com/second",
+                 "HYPERLINK \"HTTPS://example.com/first\"", "second");
+    expect_field("[a][x]\n\n  [x]: https://example.com/indented",
+                 "HYPERLINK \"HTTPS://example.com/indented\"", "]: https");
+    expect_field("[a][x] [b][y]\n\n[x]: https://example.com/x\n[y]: https://example.com/y",
+                 "HYPERLINK \"HTTPS://example.com/y\"", "]: https");
+    expect_field("| [a][x] |\n| -- |\n\n[x]: https://example.com/cell",
+                 "HYPERLINK \"HTTPS://example.com/cell\"", "]: https");
+    expect_field("# [title][x]\n\n[x]: https://example.com/h",
+                 "HYPERLINK \"HTTPS://example.com/h\"", "]: https");
+    /* Not definitions, or not resolved: the text stays as written. */
+    expect_field("[a][missing]\n\n[x]: https://example.com/x", "[a][missing]", "HYPERLINK");
+    /* (The URL in a line that is not a definition is still a bare link, #850.) */
+    expect_field("para\n[x]: https://example.com/x\n\n[a][x]", "para [x]: ", "\\ul a\\ul0");
+    expect_field("```\n[x]: https://example.com/x\n```\n\n[a][x]", "]: https://example.com/x",
+                 "\\ul a\\ul0");
+    expect_field("    [x]: https://example.com/x\n\n[a][x]", "[a][x]", "\\ul a\\ul0");
+    expect_field("[x]: https://example.com/x trailing\n\n[a][x]", "[a][x]", "\\ul a\\ul0");
+    expect_field("![alt][x]\n\n[x]: https://example.com/i.png", "[x]", "HYPERLINK");
+    expect_field("`[a][x]`\n\n[x]: https://example.com/x", "[a][x]", "HYPERLINK");
+    expect_field("[a](https://example.com/inline)[x]\n\n[x]: https://example.com/x",
+                 "HYPERLINK \"HTTPS://example.com/inline\"", "]: https");
+    /* A definition is a link reference even when its destination is not a web URI. */
+    expect_field("[a][x]\n\n[x]: mailto:a@b", "{\\cf4\\ul a\\ul0}", "HYPERLINK");
+    expect_field("[a][*x*]\n\n[*x*]: https://example.com/star",
+                 "HYPERLINK \"HTTPS://example.com/star\"", "\\i ");
+}
+
 static size_t opened;
 static enum web_link_outcome port_result;
 static const char *_Nonnull expected_uri = "https://example.com/";
@@ -542,6 +583,7 @@ void run_web_link_tests(void)
     verify_bare_limits();
     verify_bare_fields();
     verify_bare_refused();
+    verify_reference_links();
     verify_state();
     verify_product_table();
     verify_product_state();

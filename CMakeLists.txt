@@ -66,7 +66,7 @@ nenefolio_target(nenefolio_core core STATIC
     src/core/mermaid_sequence.c
     src/core/image_source.c src/core/image_bitmap.c src/core/markdown_images.c src/core/markdown_destination.c
     src/core/image_asset.c src/core/archive_assets.c src/core/markdown_image_copy.c
-    src/core/markdown_autolink.c src/core/markdown_bare_link.c
+    src/core/markdown_autolink.c src/core/markdown_bare_link.c src/core/markdown_references.c
     src/core/markdown_character_reference.c
     src/core/web_uri.c src/core/markdown_web_link.c src/core/note_archive.c src/core/code_copy_target.c
     src/core/markdown_line.c src/core/markdown_view.c src/core/markdown_table.c src/core/markdown_containers.c

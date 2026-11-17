@@ -138,7 +138,7 @@ enum markdown_rtf_outcome markdown_rtf_create(const struct note_text *_Nonnull t
         return MARKDOWN_RTF_OUT_OF_MEMORY;
     }
     enum markdown_rtf_outcome rendered =
-        markdown_blocks_render((struct markdown_render){rtf->buffer, rtf->media, 22}, text,
+        markdown_blocks_render((struct markdown_render){rtf->buffer, rtf->media, 22, nullptr}, text,
                                locale.language, theme->contrast);
     if (rendered != MARKDOWN_RTF_CONVERTED)
     {
