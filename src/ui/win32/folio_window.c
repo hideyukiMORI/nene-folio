@@ -673,6 +673,7 @@ static void show_menu_surface(struct folio_window *_Nonnull self,
 static bool menu_message(struct folio_window *_Nonnull self, UINT message, WPARAM wparam,
                          LPARAM lparam);
 static void menu_execute(struct folio_window *_Nonnull self, size_t index);
+static bool text_menu_context(enum folio_menu_context context);
 static bool menu_navigate(struct folio_window *_Nonnull self, WPARAM key);
 static enum folio_state_outcome menu_availability(const struct folio_window *_Nonnull self,
                                                   size_t index);
@@ -14420,6 +14421,24 @@ static void operations_shortcut(struct folio_window *_Nonnull self)
     show_part_menu(self, ACCESSIBLE_MENU);
 }
 
+/* Shift+F10 and the menu key. */
+static void context_menu_shortcut(struct folio_window *_Nonnull self)
+{
+    /* #908: with the body's menu open the focus is on the menu, not the body. The key then
+     * closes that menu; it must not swap it for the list's menu (rename, trash). */
+    if (self->command_surface == COMMAND_SURFACE_MENU && text_menu_context(self->menu.context))
+    {
+        close_command_surface(self);
+        return;
+    }
+    /* #883: in the note body the keys open its own menu at the caret. */
+    if (self->pane != nullptr && GetFocus() == note_pane_handle(self->pane))
+        SendMessageW(note_pane_handle(self->pane), WM_CONTEXTMENU,
+                     (WPARAM)note_pane_handle(self->pane), -1);
+    else if (self->drawer != nullptr)
+        drawer_window_context_menu(self->drawer);
+}
+
 static void run_shortcut(struct folio_window *_Nonnull self,
                          const struct folio_shortcut *_Nonnull binding)
 {
@@ -14441,12 +14460,7 @@ static void run_shortcut(struct folio_window *_Nonnull self,
         operations_shortcut(self);
         return;
     case FOLIO_SHORTCUT_ACTION_CONTEXT_MENU:
-        /* #883: in the note body the keys open its own menu at the caret. */
-        if (self->pane != nullptr && GetFocus() == note_pane_handle(self->pane))
-            SendMessageW(note_pane_handle(self->pane), WM_CONTEXTMENU,
-                         (WPARAM)note_pane_handle(self->pane), -1);
-        else if (self->drawer != nullptr)
-            drawer_window_context_menu(self->drawer);
+        context_menu_shortcut(self);
         return;
     case FOLIO_SHORTCUT_ACTION_FILTER:
         focus_filter_input(self);
@@ -15388,6 +15402,25 @@ static BYTE pressed_shortcut_modifiers(void)
 }
 
 /* mode/menuは最初のkeydownだけ。繰返しbitはmessageから借り、押下状態を複製しない。 */
+/* #908: the note body's own menus (editing, viewing, on a link). */
+static bool text_menu_context(enum folio_menu_context context)
+{
+    switch (context)
+    {
+    case FOLIO_MENU_OPERATIONS:
+    case FOLIO_MENU_LAYOUT:
+    case FOLIO_MENU_CATEGORY:
+    case FOLIO_MENU_NOTE:
+    case FOLIO_MENU_EMPTY:
+        return false;
+    case FOLIO_MENU_TEXT_EDIT:
+    case FOLIO_MENU_TEXT_VIEW:
+    case FOLIO_MENU_TEXT_LINK:
+        return true;
+    }
+    return false;
+}
+
 static bool repeated_note_shortcut(const MSG *_Nonnull message)
 {
     if (message->message != WM_KEYDOWN || (message->lParam & ((LPARAM)1 << 30)) == 0)
@@ -15399,6 +15432,7 @@ static bool repeated_note_shortcut(const MSG *_Nonnull message)
         enum folio_shortcut_action action = folio_shortcut_action(binding);
         if ((action == FOLIO_SHORTCUT_ACTION_TOGGLE_MODE ||
              action == FOLIO_SHORTCUT_ACTION_OPERATIONS ||
+             action == FOLIO_SHORTCUT_ACTION_CONTEXT_MENU ||
              folio_shortcut_command(binding) == FOLIO_COMMAND_TOGGLE_MINIMAP) &&
             message->wParam == shortcut_virtual_key(folio_shortcut_key(binding)) &&
             modifiers == shortcut_virtual_modifiers(folio_shortcut_modifiers(binding)))

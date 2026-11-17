@@ -1,6 +1,7 @@
 #include "note_pane.h"
 
 #include "caret_command.h"
+#include "code_copy_target.h"
 #include "folio_message.h"
 #include "line_index.h"
 #include "menu_request.h"
@@ -579,6 +580,10 @@ static void paste_text(struct note_pane *_Nonnull pane)
  * stays), as Windows text fields do. */
 static void place_for_menu(struct note_pane *_Nonnull pane, LPARAM position)
 {
+    /* #908: while composing or not ready the press is left to the control and the IME, like
+     * the menu itself (open_text_menu refuses in the same states). */
+    if (pane->readiness != NOTE_PANE_READINESS_READY || pane->composing)
+        return;
     POINTL point = {GET_X_LPARAM(position), GET_Y_LPARAM(position)};
     LONG at = (LONG)SendMessageW(pane->handle, EM_CHARFROMPOS, 0, (LPARAM)&point);
     CHARRANGE range = {0};
@@ -609,6 +614,15 @@ static RECT caret_anchor(const struct note_pane *_Nonnull pane)
     return (RECT){top.x, top.y, top.x, below.y > top.y ? below.y : top.y};
 }
 
+/* #908: a code block's Copy action is a link field too (`nenefolio-code:N`, ADR0098). It is not
+ * a link to open or copy, so the menu on it is the plain viewing one. */
+static bool web_target(const struct utf8_text *_Nonnull target)
+{
+    size_t slot = 0;
+    return code_copy_target_parse(utf8_text_bytes(target), utf8_text_length(target), &slot) ==
+           CODE_COPY_TARGET_OTHER;
+}
+
 static void open_text_menu(struct note_pane *_Nonnull pane, LPARAM position)
 {
     if (pane->readiness != NOTE_PANE_READINESS_READY || pane->composing)
@@ -631,7 +645,8 @@ static void open_text_menu(struct note_pane *_Nonnull pane, LPARAM position)
                                    .keyboard = keyboard};
     /* #900: on a link (the caret is there after a right click) the link's actions come first. */
     struct utf8_text *_Nullable target = nullptr;
-    if (viewing && note_pane_link_selection(pane, &target) == NOTE_PANE_LINK_READY)
+    if (viewing && note_pane_link_selection(pane, &target) == NOTE_PANE_LINK_READY &&
+        web_target(target))
         request.context = FOLIO_MENU_TEXT_LINK;
     utf8_text_destroy(target);
     SendMessageW(parent, folio_message_open_menu, 0, (LPARAM)&request);
