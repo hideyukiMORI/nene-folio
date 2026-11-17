@@ -91,5 +91,6 @@ ADR は「なぜそう決めたか」「何を却下したか」を書く。
 | [0085](0085-lazy-markdown-images.md) | 原文を保ち、画像だけを遅延表示してZIPへ持ち出す | 受理 |
 | [0098](0098-code-block-copy.md) | コードブロックのコピーは見出し行のリンクから、描画時に集めた原文を渡す | 受理 |
 | [0099](0099-bare-url-links.md) | 囲まないURLを、決まった後のただの文字からGFMの規則でリンクにする（ADR0079の裸URLの一文を置換） | 受理 |
+| [0102](0102-reference-images.md) | 画像の参照形式は定義の行を既存の画像の経路へ渡す（ADR0101の画像の一文を置換） | 受理 |
 | [0101](0101-reference-links.md) | 参照形式のリンクは描画の前に定義の表を作り、ただの括弧の対から引く | 受理 |
 | [0100](0100-web-link-instruction-scheme-case.md) | Webリンクのfield命令はschemeを大文字で書き、URIは小文字のschemeで持つ（ADR0079のautoURLの色の一文を置換） | 受理 |

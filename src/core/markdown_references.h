@@ -1,7 +1,9 @@
 #ifndef NENEFOLIO_MARKDOWN_REFERENCES_H
 #define NENEFOLIO_MARKDOWN_REFERENCES_H
 #include "markdown_rtf_outcome.h"
+#include "markdown_span.h"
 #include "markdown_view.h"
+#include "note_search_span.h"
 #include "note_text.h"
 /* #861 / ADR0101: the link reference definitions of one note, found once before rendering.
  * Owns normalized labels and decoded destinations; borrows nothing after creation. */
@@ -24,5 +26,12 @@ markdown_references_create(const struct note_text *_Nonnull text,
 [[nodiscard]] size_t
 markdown_references_destination_length(const struct markdown_references *_Nonnull table,
                                        size_t index);
+/* #863: the definition's line as a span of the note's source (borrowed for the render), and
+ * where its destination is inside that line, for the image path to read and record. */
+[[nodiscard]] struct markdown_span
+markdown_references_line(const struct markdown_references *_Nonnull table, size_t index);
+[[nodiscard]] struct note_search_span
+markdown_references_destination_span(const struct markdown_references *_Nonnull table,
+                                     size_t index);
 void markdown_references_destroy(struct markdown_references *_Nullable table);
 #endif

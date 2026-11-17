@@ -628,9 +628,43 @@ static void quiet_label(struct markdown_inline_tokens *_Nonnull parser, size_t f
     }
 }
 
+/* #863: an image reference reads its definition's destination through the same image path as
+ * `![alt](...)`, from a view of the definition's line in the note's source. The alt text is the
+ * first bracket's content; an unknown or unreadable image stays as its source text. */
+static void mark_image_reference(struct markdown_inline_tokens *_Nonnull parser, size_t index,
+                                 size_t end, size_t reference)
+{
+    struct markdown_inline_token *open = &parser->tokens[index];
+    struct markdown_span line = markdown_references_line(parser->references, reference);
+    struct markdown_view view = {.spans = &line, .count = 1, .length = line.length};
+    open->kind = MARKDOWN_INLINE_IMAGE_LITERAL;
+    open->opens = true;
+    open->after = end + 1;
+    enum image_outcome result = markdown_media_image(
+        parser->media, view, markdown_references_destination_span(parser->references, reference),
+        &open->image);
+    if (result == IMAGE_READY)
+        open->kind = MARKDOWN_INLINE_IMAGE;
+    if (result == IMAGE_OUT_OF_MEMORY)
+        parser->outcome = MARKDOWN_RTF_OUT_OF_MEMORY;
+}
+
+/* The definition a reference opened at `index` (closed at `close`) names, or SIZE_MAX; *end is
+ * the last token of the construct (the second label's `]`, or `close` for a shortcut). */
+static size_t reference_of(struct markdown_inline_tokens *_Nonnull parser, size_t index,
+                           size_t close, size_t *_Nonnull end)
+{
+    size_t second = second_label(parser, close);
+    size_t label = second != SIZE_MAX && second > close + 2 ? close + 1 : index;
+    *end = second == SIZE_MAX ? close : second;
+    return markdown_references_find(parser->references, parser->view,
+                                    parser->tokens[label].start + 1,
+                                    parser->tokens[parser->tokens[label].mate].start);
+}
+
 /* #861 / ADR0101: a bracket pair left after inline links is a full (`[text][label]`), collapsed
  * (`[label][]`) or shortcut (`[label]`) reference when the note defines the label. An image
- * reference (`![alt][label]`) is not resolved and stays text whole, its label included.
+ * reference (`![alt][label]`, #863) becomes an image; when it cannot, it stays text whole.
  * Returns the last token the construct consumes, or `index` when it is none. */
 static size_t pair_reference_at(struct markdown_inline_tokens *_Nonnull parser, size_t index)
 {
@@ -639,17 +673,13 @@ static size_t pair_reference_at(struct markdown_inline_tokens *_Nonnull parser, 
     if (at(parser, token->start) != '[' || token->kind != MARKDOWN_INLINE_LITERAL ||
         close == SIZE_MAX || close <= index)
         return index;
-    size_t end = second_label(parser, close);
-    if (image_marker(parser, index))
-        return end == SIZE_MAX ? close : end;
-    size_t label = end != SIZE_MAX && end > close + 2 ? close + 1 : index;
-    size_t label_close = parser->tokens[label].mate;
-    size_t reference =
-        markdown_references_find(parser->references, parser->view, parser->tokens[label].start + 1,
-                                 parser->tokens[label_close].start);
-    if (reference == SIZE_MAX)
-        return index;
-    end = end == SIZE_MAX ? close : end;
+    size_t end = close;
+    size_t reference = reference_of(parser, index, close, &end);
+    bool image = image_marker(parser, index);
+    if (image && reference != SIZE_MAX)
+        mark_image_reference(parser, index, end, reference);
+    if (image || reference == SIZE_MAX)
+        return image ? end : index;
     token->kind = MARKDOWN_INLINE_LINK;
     token->opens = true;
     token->reference = reference;
