@@ -1,50 +1,42 @@
 # いまの状態 — NeNe Folio
 
-## 2026-11-16 — 再開後: #837統合、About と コードブロックのコピーを実装中
+## 2026-11-17 — 依頼3件とMarkdownのリンクを統合、進行中の製品作業なし
 
-hideの11月16日朝の指示（外回りの間、ロードマップに沿って進め、試したことを全部記録する）で再開した。
-文書#835 / PR836はCI43768142385成功でmain `f35d051fe7dd5da8e20c6a71416c382d1189885a`へ統合・整理済み。
+hideの11月17日朝の指示（外回りの間、ロードマップに沿って進め、試したことを全部記録する）で再開した。
+前日13:05ごろに途中で落ちた#839（コードブロックのコピー）は、未commitで残っていた第9回の試験の直しを照合してから統合した。
 
-#837 / PR840はmain `07c3783030704ce0064789107dda038f627c8af2`へ統合済み。最終head
-`3462300bdf0a38baed12435f9440653601b09ae8`、必須CI43777269038成功。
-本文準備で読込件数だけが進んだidleは、検索面の全配置と全体再描画をやめて状態行だけを描き直す。
-Release・1000件×4KiBの初回本文検索は主スレッドCPU中央値5843.750ms→1468.750ms、
-32件×1MiBの全件一致再検索は4312.500ms→1250.000ms。共有端末で他席の負荷がある条件付き観測で、全端末の保証ではない。
-修正前red/修正後greenの回帰試験を追加。全試行と限界は[品質記録](../quality/2026-11-16-discovery-progress.md)、
-確定原本はD:/NeNeFolio/agents/837-discovery-progress/completion.json。
-
-進行中（未統合。完了と扱わない）:
-
-| Issue | 内容 | 所在と状態 |
+| Issue | 内容 | main |
 | --- | --- | --- |
-| #838 | 設定から開く「このアプリについて」。ADR0097案 | D:/NeNeFolio/worktrees/838-about、枝feat/838-about。実装とlocal commitまで、見た目の仕上げ中。未push |
-| #839 | 閲覧表示のコードブロックのコピー（hideの11月16日の依頼）。ADR0098案 | D:/NeNeFolio/worktrees/839-code-copy、枝feat/839-code-copy。実装中。未push |
+| #839 | 閲覧のコードブロックのコピー | `dd7c36a` |
+| #850 | 囲まないURLもリンクにする（ADR0099） | `f690d9e` |
+| #852 | 表示名がURLのリンクもテーマのリンク色（ADR0100） | `628c6cb` |
+| #853 | 見出しの中の`code`を見出しの大きさに合わせる（hideの報告） | `db54bd6` |
+| #854 | 最初の行の↑で文書の先頭、最後の行の↓で本文の末尾（hideの依頼、メモ帳と同じ） | `f7d2996` |
+| #855 | 「ノートを探す」を`Ctrl+O`、一覧の検索欄に`Ctrl+Shift+F`を表示（hideの依頼） | `460ef16` |
 
-設計の原本はD:/NeNeFolio/design/about-20261116/handoff.md、D:/NeNeFolio/agents/about-20261116、D:/NeNeFolio/agents/code-copy-20261116。
-状態の正本は各Issue/PRと作業木。詳細は[日報](../reports/2026-11-16.md)と[引き継ぎ](../handoffs/2026-11-16.md)。
+いずれも最終headの必須CI成功・通常exe反映済み。経緯・失敗・判断は[日報](../reports/2026-11-17.md)、再開に要ることは[引き継ぎ](../handoffs/2026-11-17.md)、
+各Issueの全試行は品質記録、確定原本はD:/NeNeFolio/agents/の各completion.json。
+hideの確認待ち: #855の「左上の全体検索」の読み方、#853のcodeの大きさの比、#854の実機（物理キー・IME）。
 
-環境: 他製品の席が同じ端末で作業しており、D:（HDD）は空き時間0%の時間帯が続く。
-基準exeでもnative試験が4.8〜54.6秒と変動し、30秒のCTest timeoutを超えることがある。timeout・閾値は変えず、
-直接実行と最終headの必須CIで判断する。壁時計の計測は主スレッドCPU時間を併記して扱う。
+環境: 作業木と構築はE:（SSD、11月16日のhideの許可）、恒久の証跡はD:。他製品の席と端末を共有するので、構築は`--parallel 4`、重い検証は1つずつ流した。
 
-[ロードマップ](../ROADMAP.md)の段階1〜4（お気に入りUI、タグ付与/全体管理、名前/本文検索、検索演出）は
-main統合・通常exe反映・必要検証まで完了。仕様と操作は[操作表](../KEY_BINDINGS.md)、
-到達点と確定原本は[日報](../reports/2026-11-15.md)と[引き継ぎ](../handoffs/2026-11-15.md)を参照する。
+[ロードマップ](../ROADMAP.md)の段階1〜4（お気に入りUI、タグ付与/全体管理、名前/本文検索、検索演出）とAboutは完了。
+「MarkdownとMermaidの整理」の候補から、囲まないURL（#850）を実装した。残りの候補と順序は引き継ぎへ。
 #819の作業木は全ファイルとGit登録を整理済みだが、OSが最後の空directory削除を拒否したため
 D:/NeNeFolio/worktrees/819-note-tagsを0ファイルで保持し、盲目的な再試行はしない。
-Aboutは#838で開発版へ追加（統合と反映はIssue/PRが正本）。版上げ・配布/Store操作は未着手。11月12日のPR810は11月15日12:35時点でDraft/open、今回変更していない。
+版上げ・配布/Store操作は未着手。11月12日のPR810はDraft/open、今回変更していない。
 古い停止/継続/起動/相談の許可を新しい作業へ持ち越さず、現在のhide指示を優先する。
 
 ## 通常版と公開版
 
 通常exeはC:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe、版1.3.2 / Windows1.3.2.0。
-#837を11月16日09:03にsource `07c3783030704ce0064789107dda038f627c8af2`から正典経路で反映した。
-SHA256 `6a48faeb133b743330ec751e1e50897d7e8da54d3243b94b6b5dbcc9d1c490fe`。
-反映前後の実data36ファイルのbytes/hash/作成・更新日時は一致。反映時にアプリは起動していない。
-確定原本はD:/NeNeFolio/agents/837-discovery-progress/completion.json。
+#855を11月17日09:29にsource `460ef16459d04bb6c64d8987051087f87a1e9995`から正典経路で反映した。
+SHA256 `882074f59ada43c1ab6af9ade132c96153ca16f535bfc9e32d71b38b750aa642`。
+11月17日の反映（#839・#850・#852・#853・#854・#855）は毎回、反映前後の実data36ファイルのbytes/hash/作成・更新日時が一致し、アプリは起動していない。
+確定原本はD:/NeNeFolio/agents/search-key-20261117/completion.json（各回は各Issueのcompletion.json）。
 
 台帳版2・設定版7は旧アプリでは読めない。旧台帳1/設定1〜6は読め、起動だけでは書き換えない。
-星はMarkdown/ZIPに含めない。通常版の書体修正・お気に入り・タグ・検索は公開済み1.3.2には未収載。
+星はMarkdown/ZIPに含めない。通常版の書体修正・お気に入り・タグ・検索・About・コードのコピー・囲まないURL等は公開済み1.3.2には未収載。
 
 [GitHub1.3.2 Beta](https://github.com/hideyukiMORI/nene-folio/releases/tag/v1.3.2)は11月6日公開済み。
 tag/配布sourceは `ba1e697deccb71e2f248f4759349d51ddec99e29`、恒久配布はD:/NeNeFolio/releases/1.3.2/。

@@ -1,6 +1,6 @@
 # ロードマップ — NeNe Folio
 
-更新: 2026-11-16 / 計画[#811](https://github.com/hideyukiMORI/nene-folio/issues/811)・お気に入り[#813](https://github.com/hideyukiMORI/nene-folio/issues/813)・UI調整[#817](https://github.com/hideyukiMORI/nene-folio/issues/817)
+更新: 2026-11-17（囲まないURL #850、リンクの色 #852、見出しのcode #853） / 計画[#811](https://github.com/hideyukiMORI/nene-folio/issues/811)・お気に入り[#813](https://github.com/hideyukiMORI/nene-folio/issues/813)・UI調整[#817](https://github.com/hideyukiMORI/nene-folio/issues/817)
 
 将来の機能計画の入口。現在の動作の正本は[仕様](../SPECIFICATION.md)、
 [Markdownの書き方](MARKDOWN.md)、[操作とキー](KEY_BINDINGS.md)。
