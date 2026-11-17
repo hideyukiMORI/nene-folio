@@ -10,18 +10,18 @@ A frameless Markdown notebook for Windows with a category drawer. Plain C (C23),
 > Windows 10 version 2004 or later is required. Notes and settings use `data/` beside the executable
 > by default; Settings can select another location.
 
-The current source is the **1.4.0 release candidate**, adding favorites, tags, a note finder, a right-click
+The latest GitHub release is **1.4.0 Beta**, [published on GitHub](https://github.com/hideyukiMORI/nene-folio/releases/tag/v1.4.0), adding favorites, tags, a note finder, a right-click
 menu in the note body, window placement restore, and state, ER, and class diagrams.
 See the [1.4.0 changes and update instructions](docs/release/1.4.0.md) and
-[candidate verification record](docs/quality/2026-11-17-release-1.4.0.md).
-The latest published GitHub release is [1.3.2 Beta](https://github.com/hideyukiMORI/nene-folio/releases/tag/v1.3.2)
+[release verification record](docs/quality/2026-11-17-release-1.4.0.md).
+The previous release is [1.3.2 Beta](https://github.com/hideyukiMORI/nene-folio/releases/tag/v1.3.2)
 ([changes](docs/release/1.3.2.md), [verification record](docs/quality/2026-11-06-release-1.3.2.md)).
 Package creation, GitHub publication, and Microsoft Store certification are tracked separately.
 The unsigned MSIX is a Store submission artifact, not a portable installer.
 The Store listing is live; the maintainer reported a successful Store update to 1.3.1 on November 6.
 The maintainer [reported that Store version 1.3.2 is live](https://github.com/hideyukiMORI/nene-folio/issues/789) on November 7.
 The maintainer [reported a successful Store-app update to 1.3.2](https://github.com/hideyukiMORI/nene-folio/issues/793) on November 10.
-The 1.4.0 candidate has not been tagged, published on GitHub, or submitted to the Store.
+Store submission and certification of 1.4.0 have not been reported yet; the Store listing may still offer 1.3.2.
 
 [Microsoft Store](https://apps.microsoft.com/detail/9PCHS225SWBX)
 · [Portable download and checksums](https://github.com/hideyukiMORI/nene-folio/releases)
