@@ -162,6 +162,78 @@ static HRESULT move_caret(ITextSelection *_Nonnull selection, enum caret_command
     return E_INVALIDARG;
 }
 
+/* The position a line move starts from: the moving (active) end when extending, otherwise
+ * the end the collapsed caret goes to (the start for up, the end for down). The other end is
+ * the anchor that an extension keeps. */
+static LONG edge_origin(ITextSelection *_Nonnull selection, bool down, bool extend,
+                        LONG *_Nonnull anchor)
+{
+    LONG start = 0;
+    LONG end = 0;
+    long flags = 0;
+    if (FAILED(selection->lpVtbl->GetStart(selection, &start)) ||
+        FAILED(selection->lpVtbl->GetEnd(selection, &end)) ||
+        FAILED(selection->lpVtbl->GetFlags(selection, &flags)))
+        return -1;
+    bool start_active = (flags & tomSelStartActive) != 0;
+    *anchor = start_active ? end : start;
+    if (extend)
+        return start_active ? start : end;
+    return down ? end : start;
+}
+
+/* #854: like Notepad, a line move up from the first display line lands at the start of the
+ * document and a line move down from the last one at the end of its text; with Shift the
+ * selection extends to the same place (the native control would also take the hidden final
+ * paragraph mark). Anywhere else the native move is kept. Display lines, so wrapping is the
+ * same rule. */
+static bool edge_move(struct note_pane *_Nonnull pane, bool down, bool extend)
+{
+    if (pane->selection == nullptr || pane->composing ||
+        pane->readiness == NOTE_PANE_READINESS_STREAMING)
+        return false;
+    LONG anchor = 0;
+    LONG origin = edge_origin(pane->selection, down, extend, &anchor);
+    if (origin < 0)
+        return false;
+    LRESULT line = SendMessageW(pane->handle, EM_EXLINEFROMCHAR, 0, origin);
+    LRESULT edge = down ? SendMessageW(pane->handle, EM_GETLINECOUNT, 0, 0) - 1 : 0;
+    if (line != edge)
+        return false;
+    cancel_scroll(pane);
+    GETTEXTLENGTHEX query = {.flags = GTL_NUMCHARS | GTL_PRECISE, .codepage = unicode_codepage};
+    LONG target =
+        down ? (LONG)SendMessageW(pane->handle, EM_GETTEXTLENGTHEX, (WPARAM)&query, 0) : 0;
+    /* EM_SETSEL keeps the first position as the anchor and makes the second one active. */
+    SendMessageW(pane->handle, EM_SETSEL, (WPARAM)(extend ? anchor : target), target);
+    SendMessageW(pane->handle, EM_SCROLLCARET, 0, 0);
+    return true;
+}
+
+static bool edge_key(struct note_pane *_Nonnull pane, UINT message, WPARAM key)
+{
+    if (message != WM_KEYDOWN || (key != VK_UP && key != VK_DOWN))
+        return false;
+    if (GetKeyState(VK_CONTROL) < 0 || GetKeyState(VK_MENU) < 0)
+        return false;
+    return edge_move(pane, key == VK_DOWN, GetKeyState(VK_SHIFT) < 0);
+}
+
+static bool edge_command(struct note_pane *_Nonnull pane, enum caret_command command)
+{
+    switch (command)
+    {
+    case CARET_COMMAND_DOWN:
+        return edge_move(pane, true, false);
+    case CARET_COMMAND_UP:
+        return edge_move(pane, false, false);
+    case CARET_COMMAND_LEFT:
+    case CARET_COMMAND_RIGHT:
+        return false;
+    }
+    return false;
+}
+
 static bool navigation_command(struct note_pane *_Nonnull pane, WPARAM command)
 {
     if (HIWORD(command) != 1 || pane->selection == nullptr)
@@ -175,6 +247,8 @@ static bool navigation_command(struct note_pane *_Nonnull pane, WPARAM command)
         {
             continue;
         }
+        if (edge_command(pane, navigation_bindings[index].command))
+            return true;
         cancel_scroll(pane);
         if (FAILED(move_caret(pane->selection, navigation_bindings[index].command)))
         {
@@ -514,6 +588,8 @@ static bool pane_input(struct note_pane *_Nonnull pane, UINT message, WPARAM key
     }
     if (message == WM_COMMAND && parameter == 0)
         return zoom_command(pane, keys) || navigation_command(pane, keys);
+    if (edge_key(pane, message, keys))
+        return true;
     return pane_wheel(pane, message, keys, parameter);
 }
 

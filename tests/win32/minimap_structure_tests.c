@@ -1,4 +1,5 @@
 /* #506: Native formatting is sampled without editing or moving the real document. */
+#include "caret_command.h"
 #include "markdown_rtf.h"
 #include "note_minimap.h"
 #include "note_pane.h"
@@ -703,6 +704,118 @@ static void heading_inline_sizes(struct note_pane *_Nonnull pane)
             heading_inline_size(pane, level, at);
 }
 
+static void press_line_key(HWND _Nonnull handle, WPARAM key, bool shift)
+{
+    BYTE state[256];
+    GetKeyboardState(state);
+    state[VK_SHIFT] = shift ? 0x80 : 0;
+    SetKeyboardState(state);
+    SendMessageW(handle, WM_KEYDOWN, key, 1);
+    SendMessageW(handle, WM_KEYUP, key, (LPARAM)0xC0000001);
+    state[VK_SHIFT] = 0;
+    SetKeyboardState(state);
+}
+
+/* Characters as caret positions count them: one per paragraph break, unlike WM_GETTEXTLENGTH. */
+static LONG character_count(HWND _Nonnull handle)
+{
+    GETTEXTLENGTHEX query = {.flags = GTL_NUMCHARS | GTL_PRECISE, .codepage = 1200};
+    return (LONG)SendMessageW(handle, EM_GETTEXTLENGTHEX, (WPARAM)&query, 0);
+}
+
+constexpr WPARAM with_shift = 0x10000;
+
+/* One line move from a collapsed caret. 'K' and 'J' are the Ctrl+K / Ctrl+J commands; a key
+ * with `with_shift` is pressed with Shift held. */
+static void expect_edge(struct note_pane *_Nonnull pane, LONG caret, WPARAM pressed,
+                        CHARRANGE expected)
+{
+    HWND handle = note_pane_handle(pane);
+    WPARAM key = pressed & ~with_shift;
+    bool shift = (pressed & with_shift) != 0;
+    SendMessageW(handle, EM_SETSEL, (WPARAM)caret, caret);
+    if (key == 'K' || key == 'J')
+        SendMessageW(handle, WM_COMMAND,
+                     MAKEWPARAM(key == 'K' ? CARET_COMMAND_UP : CARET_COMMAND_DOWN, 1), 0);
+    else
+        press_line_key(handle, key, shift);
+    CHARRANGE actual = {0, 0};
+    SendMessageW(handle, EM_EXGETSEL, 0, (LPARAM)&actual);
+    if (actual.cpMin != expected.cpMin || actual.cpMax != expected.cpMax)
+        printf("edge key %u shift %d from %ld: %ld..%ld, wanted %ld..%ld\n", (unsigned)key, shift,
+               caret, actual.cpMin, actual.cpMax, expected.cpMin, expected.cpMax);
+    require(actual.cpMin == expected.cpMin && actual.cpMax == expected.cpMax,
+            "a line move at the document's edge lands like Notepad");
+}
+
+static void edge_active_end(HWND _Nonnull handle, LONG last, LONG end);
+
+/* Two paragraphs: the edges, Ctrl+K/J, Shift and a move between them. */
+static void edge_arrows_mode(struct note_pane *_Nonnull pane, enum pane_mode mode)
+{
+    load(pane, mode, "first line\n\nsecond line");
+    HWND handle = note_pane_handle(pane);
+    LONG end = character_count(handle);
+    LONG lines = (LONG)SendMessageW(handle, EM_GETLINECOUNT, 0, 0);
+    LONG last = (LONG)SendMessageW(handle, EM_LINEINDEX, (WPARAM)(lines - 1), 0);
+    expect_edge(pane, 4, VK_UP, (CHARRANGE){0, 0});
+    expect_edge(pane, last + 3, VK_DOWN, (CHARRANGE){end, end});
+    expect_edge(pane, 0, VK_UP, (CHARRANGE){0, 0});
+    expect_edge(pane, end, VK_DOWN, (CHARRANGE){end, end});
+    expect_edge(pane, 4, 'K', (CHARRANGE){0, 0});
+    expect_edge(pane, last + 3, 'J', (CHARRANGE){end, end});
+    expect_edge(pane, 4, VK_UP | with_shift, (CHARRANGE){0, 4});
+    expect_edge(pane, last + 3, VK_DOWN | with_shift, (CHARRANGE){last + 3, end});
+    SendMessageW(handle, EM_SETSEL, 4, 4);
+    press_line_key(handle, VK_DOWN, false);
+    CHARRANGE moved = {0, 0};
+    SendMessageW(handle, EM_EXGETSEL, 0, (LPARAM)&moved);
+    require(moved.cpMin == moved.cpMax && moved.cpMin > 4 && moved.cpMin < end,
+            "a line move away from the edges stays native");
+    edge_active_end(handle, last, end);
+}
+
+/* Shift moves the active end: a selection whose active end is not on the edge row is native,
+ * even when its other end is (anchor at the text's end, active on the first row, and the
+ * reverse). The anchors are the text's ends so a native move can never land on them. */
+static void edge_active_end(HWND _Nonnull handle, LONG last, LONG end)
+{
+    SendMessageW(handle, EM_SETSEL, (WPARAM)end, 4);
+    press_line_key(handle, VK_DOWN, true);
+    CHARRANGE moved = {0, 0};
+    SendMessageW(handle, EM_EXGETSEL, 0, (LPARAM)&moved);
+    /* RichEdit itself may grow an anchor at the text's end over the final paragraph mark. */
+    require(moved.cpMax >= end && moved.cpMin > 4 && moved.cpMin <= last + 3,
+            "Shift+Down moves an active end on the first row by one native line");
+    SendMessageW(handle, EM_SETSEL, 0, (LPARAM)(last + 3));
+    press_line_key(handle, VK_UP, true);
+    SendMessageW(handle, EM_EXGETSEL, 0, (LPARAM)&moved);
+    require(moved.cpMin == 0 && moved.cpMax > 0 && moved.cpMax < last,
+            "Shift+Up moves an active end on the last row by one native line");
+}
+
+/* #854: Up on the first display line goes to the start, Down on the last one to the end. */
+static void edge_arrows(struct note_pane *_Nonnull pane)
+{
+    edge_arrows_mode(pane, PANE_MODE_EDIT);
+    edge_arrows_mode(pane, PANE_MODE_VIEW);
+    /* A long wrapped paragraph: the edge is the first and last display row. */
+    load(pane, PANE_MODE_EDIT,
+         "word word word word word word word word word word word word word word word word word "
+         "word word word word word word word word word word word word word word word word word");
+    HWND handle = note_pane_handle(pane);
+    require(SendMessageW(handle, EM_GETLINECOUNT, 0, 0) > 1, "the paragraph wraps");
+    LONG end = character_count(handle);
+    expect_edge(pane, 3, VK_UP, (CHARRANGE){0, 0});
+    expect_edge(pane, end - 2, VK_DOWN, (CHARRANGE){end, end});
+    load(pane, PANE_MODE_EDIT, "");
+    expect_edge(pane, 0, VK_UP, (CHARRANGE){0, 0});
+    expect_edge(pane, 0, VK_DOWN, (CHARRANGE){0, 0});
+    load(pane, PANE_MODE_EDIT, "single");
+    expect_edge(pane, 3, VK_UP, (CHARRANGE){0, 0});
+    expect_edge(pane, 3, VK_DOWN, (CHARRANGE){6, 6});
+}
+
 static void code_label_wrap(struct note_pane *_Nonnull pane)
 {
     const char content[] = "~~~VeryLongUnknownLanguageNameThatMustWrapWithoutLosingAnyCharacters"
@@ -759,6 +872,7 @@ int main(void)
     code_copy_action(pane);
     bare_links(pane);
     heading_inline_sizes(pane);
+    edge_arrows(pane);
     load(pane, PANE_MODE_EDIT, source);
     boundaries(pane);
     preservation(pane);
