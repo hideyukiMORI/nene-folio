@@ -13,6 +13,7 @@
 #include "regex_adapter.h"
 #include "storage_adapter.h"
 #include "storage_state.h"
+#include "test_window_file.h"
 #include "transfer_adapter.h"
 #include "ui_text.h"
 #include "utf16_text.h"
@@ -55,11 +56,9 @@ static void create_fixture(struct native_fixture *_Nonnull fixture)
     require(regex_adapter_create(&fixture->regex) == REGEX_ADAPTER_CREATED, "regex adapter");
     require(font_bundle_register(&fixture->fonts) == FONT_BUNDLE_READY, "bundled fonts");
     struct storage_port storage = storage_adapter_port(fixture->storage);
+    test_window_file_attach(&storage); /* #894: in memory, never on disk */
     require(storage_state_create(&storage, &fixture->location) == STORAGE_READY,
             "portable storage");
-    /* #891: every test window opens at the initial place and records nothing. */
-    require(storage_state_set_window_restore(fixture->location, false) == STORAGE_READY,
-            "tests open at the initial place");
     require(persistence_adapter_create(storage_state_directory(fixture->location),
                                        &fixture->files) == PERSISTENCE_ADAPTER_CREATED,
             "dedicated test data");

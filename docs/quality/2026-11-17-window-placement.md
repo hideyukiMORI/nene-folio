@@ -33,3 +33,11 @@
 
 原本は`v3-*.log`（`E:/NeNeFolio/temp/891/verify.ps1 -Tag v3`）。build（clang-tidy込み）・`eng/coverage.py`（分岐90.71%、閾値・除外不変）・
 `eng/symbols.py`・`eng/conformance.py`（source/`--build-dir`）・`git diff --check`が成功し、`ctest`は63件すべて成功（114.4秒、`window_place_native`を含む）。
+
+## 統合後に見つけた試験の副作用と直し（#894）
+
+#891の統合・通常exeへの反映の直後に気づいた点。既存の実窓の試験のfixtureは、試験の窓を初期の位置で開くために選択をオフにしていたが、本物の`storage_adapter`を通るので、
+試験のexeの隣へ`nenefolio-window.json`を`restore:false`で書いていた。試験を通常の`build/`（利用者の`NeNeFolio.exe`と同じ場所）で走らせると、利用者の選択を黙ってオフにしてしまう。
+反映の時点で`C:/Users/info/WORKS/NeNeFolio/build/nenefolio-window.json`が無いこと（試験がそこで走っていないこと）を確かめた。
+直し: 実窓の試験は`storage_port`の窓の読み書きを試験用のメモリ内の関数へ差し替える（`tests/win32/test_window_file.c`）。製品コードは不変。
+検証（`E:/NeNeFolio/temp/894/verify.ps1 -Tag v1`）: build・網羅率・記号・規約・`ctest` 63/63が成功し、試験の後のbuildフォルダーに`nenefolio-window.json`は0件。

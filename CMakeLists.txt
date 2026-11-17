@@ -194,7 +194,7 @@ add_custom_command(TARGET nenefolio POST_BUILD
 
 # #504: 設定のUIA巡回が有限で一意なことを実windowの公開境界で固定する。
 nenefolio_target(settings_accessibility_tests win32_tests EXECUTABLE
-    tests/win32/settings_accessibility_tests.c tests/win32/settings_accessibility_tests.rc)
+    tests/win32/settings_accessibility_tests.c tests/win32/settings_accessibility_tests.rc tests/win32/test_window_file.c)
 nenefolio_link(settings_accessibility_tests nenefolio_core)
 nenefolio_link(settings_accessibility_tests nenefolio_application)
 nenefolio_link(settings_accessibility_tests nenefolio_adapters)
@@ -224,7 +224,7 @@ set_tests_properties(minimap_structure PROPERTIES TIMEOUT 30)
 
 # #510: document readiness and bounded idle work without timer delivery.
 nenefolio_target(minimap_scheduling_tests win32_tests EXECUTABLE
-    tests/win32/minimap_scheduling_tests.c tests/win32/minimap_scheduling_tests.rc)
+    tests/win32/minimap_scheduling_tests.c tests/win32/minimap_scheduling_tests.rc tests/win32/test_window_file.c)
 nenefolio_link(minimap_scheduling_tests nenefolio_core)
 nenefolio_link(minimap_scheduling_tests nenefolio_application)
 nenefolio_link(minimap_scheduling_tests nenefolio_adapters)
@@ -289,7 +289,7 @@ nenefolio_link(tag_catalog_tests nenefolio_window)
 
 foreach(native_host motion_native_tests tags_native_tests favorites_native_tests image_status_tests save_as_native_tests rename_native_tests move_edit_native_tests first_save_native_tests first_save_modal_native_tests)
     nenefolio_target(${native_host} win32_tests EXECUTABLE
-        tests/win32/image_status_tests.c tests/win32/image_status_tests.rc)
+        tests/win32/image_status_tests.c tests/win32/image_status_tests.rc tests/win32/test_window_file.c)
     nenefolio_link(${native_host} nenefolio_core)
     nenefolio_link(${native_host} nenefolio_application)
     nenefolio_link(${native_host} nenefolio_adapters)
