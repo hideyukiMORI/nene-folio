@@ -557,6 +557,121 @@ static void class_multiplicity_sideways(void)
     diagram_model_destroy(model);
 }
 
+/* #918: the texts beside the ends are the caption texts without a ground. None of them may
+ * overlap another, be crossed by a line, or leave the drawing. */
+static bool end_text(const struct diagram_primitive *_Nonnull item)
+{
+    return item->kind == DIAGRAM_PRIMITIVE_TEXT && item->role == DIAGRAM_TEXT_CAPTION &&
+           item->fill == DIAGRAM_INK_NONE;
+}
+
+static bool rects_meet(struct diagram_rect a, struct diagram_rect b)
+{
+    return a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height &&
+           b.y < a.y + a.height;
+}
+
+static struct diagram_rect segment_rect(struct diagram_point a, struct diagram_point b)
+{
+    int left = a.x < b.x ? a.x : b.x;
+    int top = a.y < b.y ? a.y : b.y;
+    return (struct diagram_rect){left, top, a.x + b.x - left * 2 + 1, a.y + b.y - top * 2 + 1};
+}
+
+static bool path_meets(const struct diagram_primitive *_Nonnull path, struct diagram_rect text)
+{
+    for (size_t point = 0; point + 1 < path->count; ++point)
+        if (rects_meet(segment_rect(path->points[point], path->points[point + 1]), text))
+            return true;
+    return false;
+}
+
+static bool end_text_clear(const struct diagram_scene *_Nonnull scene, size_t at)
+{
+    struct diagram_rect text = diagram_scene_at(scene, at)->bounds;
+    struct diagram_size size = diagram_scene_size(scene);
+    if (text.x < 0 || text.y < 0 || text.x + text.width > size.width ||
+        text.y + text.height > size.height)
+        return false;
+    for (size_t index = 0; index < diagram_scene_count(scene); ++index)
+    {
+        const struct diagram_primitive *other = diagram_scene_at(scene, index);
+        if (index != at && end_text(other) && rects_meet(other->bounds, text))
+            return false;
+        if (other->kind == DIAGRAM_PRIMITIVE_PATH && path_meets(other, text))
+            return false;
+    }
+    return true;
+}
+
+static void expect_clear_ends(const char *_Nonnull source, size_t texts)
+{
+    struct diagram_model *model = parsed(source);
+    struct diagram_scene *scene = laid_out(model);
+    size_t seen = 0;
+    for (size_t index = 0; index < diagram_scene_count(scene); ++index)
+    {
+        if (!end_text(diagram_scene_at(scene, index)))
+            continue;
+        ++seen;
+        if (!end_text_clear(scene, index))
+            fprintf(stderr, "end text %zu of:\n%s\n", seen, source);
+        require(end_text_clear(scene, index),
+                "a multiplicity is inside the drawing, off every line and off the others");
+    }
+    require(seen == texts, "every multiplicity is drawn");
+    diagram_scene_destroy(scene);
+    diagram_model_destroy(model);
+}
+
+/* The inputs the independent review of #916 found (#918), in all four directions. */
+static void class_multiplicity_clear(void)
+{
+    static const char *const directions[] = {"TB", "BT", "LR", "RL"};
+    static const char *const bodies[] = {
+        "A \"1\" --> \"2\" B\nA \"3\" --> \"4\" B\n",         /* a second line goes round */
+        "A \"1\" --> \"0..*\" B\nB \"many\" --> \"one\" A\n", /* a line back up */
+        "A --> \"1\" B\nC --> B\nD --> \"2\" B\n",            /* a plain arrow between */
+        "A \"0..*\" --> \"1..*\" B\n",                        /* long texts along the flow */
+        "A \"1\" --> \"0..many\" A\n",                        /* a class related to itself */
+        "A \"1\" --> \"2\" B\nB \"3\" --> \"4\" C\nA \"5\" --> \"6\" C\n", /* a rank skipped */
+        "A \"1\" *-- \"2\" B\nA o-- C\nA \"3\" <|-- \"4\" D\nB \"5\" --> \"6\" A\n"};
+    static const size_t texts[] = {4, 4, 2, 2, 2, 6, 6};
+    for (size_t direction = 0; direction < 4; ++direction)
+        for (size_t body = 0; body < sizeof bodies / sizeof bodies[0]; ++body)
+        {
+            char source[256];
+            (void)snprintf(source, sizeof source, "classDiagram\ndirection %s\n%s",
+                           directions[direction], bodies[body]);
+            expect_clear_ends(source, texts[body]);
+        }
+}
+
+/* #918: a line without multiplicities reserves nothing for them. An empty text still measures
+ * one line high, which a sideways flow once took for a width: the margin grew (#916) and plain
+ * arrows were pulled apart. */
+static void flow_without_end_texts(void)
+{
+    struct diagram_model *model = parsed("flowchart LR\nA --> B\nA --> C\n");
+    struct diagram_scene *scene = laid_out(model);
+    require(path_end_x(scene, 0, true) == path_end_x(scene, 1, true),
+            "plain arrows of a sideways flowchart still leave from one point");
+    int top = diagram_coordinate_limit;
+    for (size_t index = 0; index < diagram_scene_count(scene); ++index)
+    {
+        const struct diagram_primitive *item = diagram_scene_at(scene, index);
+        if (item->kind == DIAGRAM_PRIMITIVE_SHAPE && item->bounds.y < top)
+            top = item->bounds.y;
+    }
+    /* The margin has long held half an empty caption's line (16 here); nothing more. */
+    if (top != diagram_outer_margin + 8)
+        fprintf(stderr, "sideways margin %d\n", top);
+    require(top == diagram_outer_margin + 8,
+            "a sideways flowchart keeps its old margin beside its nodes");
+    diagram_scene_destroy(scene);
+    diagram_model_destroy(model);
+}
+
 static void class_multiplicity(void)
 {
     struct diagram_model *model = parsed("classDiagram\nA \"1\" *-- \" 0..* \" B : has\n");
@@ -579,6 +694,8 @@ static void class_multiplicity(void)
             "a multiplicity written tight against the line");
     diagram_model_destroy(model);
     class_multiplicity_sideways();
+    class_multiplicity_clear();
+    flow_without_end_texts();
     /* Plain arrows share one point; with a multiplicity each end gets its own place. */
     model = parsed("classDiagram\nA --> \"1\" B\nC --> \"many\" B\n");
     struct diagram_scene *scene = laid_out(model);
