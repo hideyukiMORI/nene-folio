@@ -45,6 +45,16 @@ clang-tidyは構築の中で走る（CMAKE_C_CLANG_TIDY）ので、構築の成�
 | t12 | `--body-discovery-visual`（9通り） | 478 checks成功 |
 | c2 | `eng/conformance.py`（ソース・構築）、`git diff --cached --check` | すべて0 |
 
+### 最初の必須CIの失敗と第3回
+
+統合の手順（`tools/merge-pr.ps1 -Number 934`）の必須CIで、`body_discovery_native`の新しい試験「the wider window widens the preview」だけが失敗した（run 44191418340、63件中62件成功）。
+原因は試験の前提: 検索の面の幅は「960（論理）と、窓の内側−32の小さい方」。手元は120 DPIで、1050 pixelの窓では面が窓に押されて狭く、1250へ広げると面も広がった。
+CIは96 DPIで、1050 pixelの窓で面はすでに960いっぱいなので、広げても変わらない。前日の#839（code_copy_scroll_native）と同じ型の誤り。
+
+- 直し: 窓を論理900（窓の倍率で換算）にする。どちらの倍率でも広い配置のまま、previewの幅が変わる（96 DPIでは狭く、120 DPIでは広く）。
+- 再発の防止: #839の`--code-copy-scroll-96`と同じく、`--body-discovery-96`（スレッドを96 DPIにする）とCTest `body_discovery_96_native`を足し、両方の幾何を手元でも流すようにした。
+- 結果: 120 DPI 窓1125・previewの幅527→572・最初の可視行0→19。96 DPI 窓900・幅513→458・0→12。どちらも一致が可視範囲。`ctest -R`の7件成功、規約0。
+
 NULの直しは試験を足していない（実際の原文にNULが入る経路を確かめていない。防御のための1行）。
 
 ## 確かめていないこと

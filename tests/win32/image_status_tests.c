@@ -99,6 +99,7 @@ static enum appearance_outcome motion_read_outcome = APPEARANCE_READY;
 static bool motion_check_modal;
 static bool motion_saw_modal;
 static bool body_discovery_case;
+static bool body_discovery_96;
 static bool body_discovery_copy_case;
 static bool body_discovery_visual_case;
 static bool body_discovery_measure_case;
@@ -11113,13 +11114,17 @@ static void body_discovery_resize_reveal(struct folio_window *_Nonnull window, H
     HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
     LONG before = body_discovery_width(preview);
     size_t hidden = body_discovery_first_line(preview);
-    require(SetWindowPos(root, nullptr, 20, 20, 1250, 850, SWP_NOZORDER | SWP_NOACTIVATE),
-            "widen the window while the match is scrolled away");
+    /* The surface is min(960 logical, client - 32): 900 logical stays wide and changes the
+     * preview width from the 1050-pixel fixture at 96 DPI (narrower) and 120 DPI (wider). */
+    int width = MulDiv(900, (int)GetDpiForWindow(root), 96);
+    require(SetWindowPos(root, nullptr, 20, 20, width, 720, SWP_NOZORDER | SWP_NOACTIVATE),
+            "resize the window while the match is scrolled away");
     pump(window);
-    printf("typing preview: resize width %ld -> %ld first line %zu -> %zu\n", before,
-           body_discovery_width(preview), hidden, body_discovery_first_line(preview));
+    printf("typing preview: window %d dpi %u, preview width %ld -> %ld first line %zu -> %zu\n",
+           width, GetDpiForWindow(root), before, body_discovery_width(preview), hidden,
+           body_discovery_first_line(preview));
     fflush(stdout);
-    require(body_discovery_width(preview) != before, "the wider window widens the preview");
+    require(body_discovery_width(preview) != before, "the resized window resizes the preview");
     body_discovery_preview_visible(preview);
     require(SetWindowPos(root, nullptr, 20, 20, 1050, 720, SWP_NOZORDER | SWP_NOACTIVATE),
             "restore the wide body fixture");
@@ -11677,6 +11682,10 @@ static void run_body_discovery_case(struct native_fixture *_Nonnull fixture)
         body_discovery_visual(fixture);
         return;
     }
+    /* #933: CI is 96 DPI and a developer desktop often is not; -96 checks that geometry too. */
+    if (body_discovery_96)
+        require(SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_UNAWARE) != nullptr,
+                "96 DPI windows for the body-discovery case");
     struct folio_window *window = nullptr;
     require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
                 FOLIO_WINDOW_CREATED,
@@ -12996,8 +13005,10 @@ static void select_tags_fixture(const char *_Nonnull selector)
     body_discovery_visual_case = strcmp(selector, "--body-discovery-visual") == 0;
     body_discovery_copy_case = strcmp(selector, "--body-discovery-copy") == 0;
     body_discovery_measure_case = strcmp(selector, "--body-discovery-measure") == 0;
+    body_discovery_96 = strcmp(selector, "--body-discovery-96") == 0;
     body_discovery_case = strcmp(selector, "--body-discovery") == 0 || body_discovery_visual_case ||
-                          body_discovery_copy_case || body_discovery_measure_case;
+                          body_discovery_copy_case || body_discovery_measure_case ||
+                          body_discovery_96;
     discovery_visual_case = strcmp(selector, "--discovery-visual") == 0;
     discovery_copy_case = strcmp(selector, "--discovery-copy") == 0;
     discovery_measure_case = strcmp(selector, "--discovery-measure") == 0;
