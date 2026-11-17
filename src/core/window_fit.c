@@ -35,8 +35,8 @@ static bool usable(struct window_area area)
     return area.dpi != 0 && area.width > 0 && area.height > 0;
 }
 
-enum window_fit_outcome window_fit(const struct window_fit_request *_Nonnull request,
-                                   struct window_area *_Nonnull out)
+enum window_fit_outcome window_fit_resolve(const struct window_fit_request *_Nonnull request,
+                                           struct window_area *_Nonnull out)
 {
     const struct window_placement *saved = request->saved;
     if (!saved->restore || !saved->placed || saved->width <= 0 || saved->height <= 0 ||

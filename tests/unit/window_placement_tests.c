@@ -122,7 +122,7 @@ static enum window_fit_outcome fit(struct window_placement saved, struct window_
                                          .minimum_height = 360,
                                          .header_height = 48,
                                          .grip_width = 160};
-    return window_fit(&request, out);
+    return window_fit_resolve(&request, out);
 }
 
 static struct window_placement placed(int x, int y, int width, int height)
@@ -184,7 +184,8 @@ static void verify_fit(void)
                                          .minimum_height = 360,
                                          .header_height = 48,
                                          .grip_width = 160};
-    require(window_fit(&request, &out) == WINDOW_FIT_DEFAULT, "unusable screens are skipped");
+    require(window_fit_resolve(&request, &out) == WINDOW_FIT_DEFAULT,
+            "unusable screens are skipped");
 }
 
 void run_window_placement_tests(void)
