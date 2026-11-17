@@ -232,6 +232,7 @@ static void verify_create_allocation(void)
 
 void run_storage_state_tests(void)
 {
+    run_window_placement_tests(); /* #891: the per-machine window file */
     verify_initial();
     verify_runtime();
     verify_first_choice();

@@ -76,6 +76,7 @@ nenefolio_target(nenefolio_core core STATIC
     src/core/folio_command.c src/core/folio_menu_action.c src/core/folio_shortcut.c src/core/key_guide.c src/core/note_name.c src/core/rename_plan.c src/core/rename_journal.c
     src/core/note_search.c src/core/note_corpus.c src/core/index_filter.c src/core/index_filter_build.c
     src/core/storage_path.c src/core/startup_settings.c
+    src/core/window_placement.c src/core/window_fit.c
     src/core/folio_settings.c src/core/folio_theme.c src/core/folio_theme_choice.c src/core/line_index.c
     src/core/replace_template.c src/core/replace_edit.c src/core/note_replace.c
     src/core/replace_preview.c
@@ -88,6 +89,7 @@ nenefolio_link(nenefolio_application nenefolio_core)
 
 nenefolio_target(folio_tests unit_tests EXECUTABLE
     tests/unit/storage_tests.c tests/unit/storage_state_tests.c
+    tests/unit/window_placement_tests.c
     tests/unit/web_link_tests.c tests/unit/code_copy_tests.c tests/unit/transfer_tests.c tests/unit/image_tests.c
     tests/unit/folio_tests.c tests/unit/text_tests.c tests/unit/json_tests.c
     tests/unit/tag_tests.c tests/unit/tag_management_tests.c tests/unit/discovery_tests.c tests/unit/body_discovery_tests.c
