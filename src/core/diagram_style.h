@@ -29,6 +29,9 @@ constexpr int diagram_subroutine_inset = 8;
 constexpr int diagram_polygon_slope_divisor = 7;
 constexpr int diagram_double_circle_inset = 4;
 constexpr int diagram_circle_padding = 24;
+/* #876: a state diagram's start dot and end ring, whatever the text size. */
+constexpr int diagram_state_dot = 18;
+constexpr int diagram_state_ring = 26;
 constexpr int diagram_cylinder_extra = 24;
 constexpr int diagram_cylinder_curve_max = 11;
 constexpr int diagram_actor_width = 28;

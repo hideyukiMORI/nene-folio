@@ -28,7 +28,7 @@ static int sloped_width(int padded)
     int compact = padded + 24;
     return width > compact ? width : compact;
 }
-struct diagram_size diagram_geometry_node(struct diagram_size text, enum diagram_shape shape)
+static struct diagram_size labelled_size(struct diagram_size text, enum diagram_shape shape)
 {
     struct diagram_size size = {text.width + diagram_node_padding_x * 2,
                                 text.height + diagram_node_padding_y * 2};
@@ -71,12 +71,24 @@ struct diagram_size diagram_geometry_node(struct diagram_size text, enum diagram
         size.width = (text.width > diagram_actor_width ? text.width : diagram_actor_width) + 16;
         size.height = diagram_actor_height + diagram_actor_name_gap + text.height;
         break;
+    case DIAGRAM_STATE_START:
+    case DIAGRAM_STATE_END:
+        break;
     }
     if (size.width < diagram_node_min_width)
         size.width = diagram_node_min_width;
     if (size.height < diagram_node_min_height)
         size.height = diagram_node_min_height;
     return size;
+}
+struct diagram_size diagram_geometry_node(struct diagram_size text, enum diagram_shape shape)
+{
+    /* #876: a state diagram's markers keep one small size, whatever the label measures. */
+    if (shape == DIAGRAM_STATE_START)
+        return (struct diagram_size){diagram_state_dot, diagram_state_dot};
+    if (shape == DIAGRAM_STATE_END)
+        return (struct diagram_size){diagram_state_ring, diagram_state_ring};
+    return labelled_size(text, shape);
 }
 int diagram_geometry_cylinder_curve(int height)
 {
@@ -97,6 +109,8 @@ static int attachment_progress(enum diagram_shape shape, int y, int height, bool
     case DIAGRAM_DIAMOND:
     case DIAGRAM_HEXAGON:
     case DIAGRAM_ACTOR:
+    case DIAGRAM_STATE_START:
+    case DIAGRAM_STATE_END:
         return 0;
     case DIAGRAM_PARALLELOGRAM:
         return left ? height - y : y;

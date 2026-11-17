@@ -59,7 +59,7 @@ static bool pseudo(struct mermaid_state *_Nonnull parser, bool start, size_t *_N
     *index = diagram_model_node_count(parser->model);
     struct diagram_node node = {.label = parser->empty,
                                 .group = current_group(parser),
-                                .shape = start ? DIAGRAM_CIRCLE : DIAGRAM_DOUBLE_CIRCLE};
+                                .shape = start ? DIAGRAM_STATE_START : DIAGRAM_STATE_END};
     parser->outcome = diagram_model_text(parser->model, id, length, &node.id);
     if (parser->outcome == DIAGRAM_ACCEPTED)
         parser->outcome = diagram_model_node(parser->model, *index, node);
