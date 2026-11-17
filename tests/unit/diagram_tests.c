@@ -346,21 +346,24 @@ static void er_contract(void)
             "the label lists the attributes without their comment; the name is the id");
     require(strcmp(label_of(model, "LINE-ITEM"), "LINE-ITEM") == 0, "hyphenated names");
     struct diagram_link places = diagram_model_link_at(model, 0);
-    require(places.stroke == DIAGRAM_SOLID && places.start == DIAGRAM_ARROW_NONE &&
-                places.end == DIAGRAM_ARROW_NONE,
-            "an identifying relationship is a solid line without arrowheads");
-    require(strcmp(diagram_model_text_at(model, places.label), "places\n1 : 0..*") == 0,
-            "the cardinalities follow the words");
-    require(strcmp(diagram_model_text_at(model, diagram_model_link_at(model, 1).label),
-                   "contains\n1 : 1..*") == 0,
-            "quoted words are unquoted");
+    require(places.stroke == DIAGRAM_SOLID && places.start == DIAGRAM_ARROW_ER_ONE &&
+                places.end == DIAGRAM_ARROW_ER_ZERO_MANY,
+            "an identifying relationship is a solid line; its ends carry the cardinalities (#898)");
+    require(strcmp(diagram_model_text_at(model, places.label), "places") == 0,
+            "the label is the words alone");
+    struct diagram_link contains = diagram_model_link_at(model, 1);
+    require(strcmp(diagram_model_text_at(model, contains.label), "contains") == 0 &&
+                contains.end == DIAGRAM_ARROW_ER_MANY,
+            "quoted words are unquoted; `|{` is one or more");
     struct diagram_link uses = diagram_model_link_at(model, 2);
-    require(uses.stroke == DIAGRAM_DASHED &&
-                strcmp(diagram_model_text_at(model, uses.label), "uses\n1..* : 1") == 0,
+    require(uses.stroke == DIAGRAM_DASHED && uses.start == DIAGRAM_ARROW_ER_MANY &&
+                uses.end == DIAGRAM_ARROW_ER_ONE,
             "a non-identifying relationship is dashed");
-    require(strcmp(diagram_model_text_at(model, diagram_model_link_at(model, 3).label),
-                   "0..1 : 0..1") == 0,
-            "no words leave only the cardinalities");
+    struct diagram_link listed = diagram_model_link_at(model, 3);
+    require(diagram_model_text_at(model, listed.label)[0] == '\0' &&
+                listed.start == DIAGRAM_ARROW_ER_ZERO_ONE &&
+                listed.end == DIAGRAM_ARROW_ER_ZERO_ONE,
+            "no words leave the line without a label");
     diagram_model_destroy(model);
     model = parsed("erDiagram\ndirection LR\nA ||--|| B : is\nA {\n  int x\n}\nA {\n  int y\n}\n");
     require(diagram_model_flow(model) == DIAGRAM_LEFT_RIGHT, "direction is kept");
