@@ -33,5 +33,18 @@ markdown_references_line(const struct markdown_references *_Nonnull table, size_
 [[nodiscard]] struct note_search_span
 markdown_references_destination_span(const struct markdown_references *_Nonnull table,
                                      size_t index);
+/* #869 / ADR0103: footnotes are one-line definitions whose label starts with `^`; a link
+ * reference never names them. markdown_references_line / _destination_span give the text. */
+[[nodiscard]] size_t markdown_references_footnote(const struct markdown_references *_Nullable table,
+                                                  struct markdown_view view, size_t start,
+                                                  size_t end);
+/* The footnote's number, given in the order the note first refers to its footnotes. */
+[[nodiscard]] size_t markdown_references_number(struct markdown_references *_Nonnull table,
+                                                size_t index);
+[[nodiscard]] size_t
+markdown_references_numbered(const struct markdown_references *_Nullable table);
+/* The definition that has number `rank + 1`. */
+[[nodiscard]] size_t
+markdown_references_numbered_at(const struct markdown_references *_Nonnull table, size_t rank);
 void markdown_references_destroy(struct markdown_references *_Nullable table);
 #endif

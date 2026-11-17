@@ -395,6 +395,30 @@ static void verify_reference_edges(void)
     expect_field(many, "[a][z]", "\\ul a\\ul0");
 }
 
+/* #869 / ADR0103: footnote references are raised numbers in first-reference order; the
+ * referred footnotes follow the note, a size smaller; definitions are not shown in place. */
+static void verify_footnotes(void)
+{
+    expect_field("a[^n] b[^m] c[^n]\n\n[^m]: second\n[^n]: first",
+                 "a{\\super\\cf4 1} b{\\super\\cf4 2} c{\\super\\cf4 1}", "[^n]");
+    expect_field("a[^n] b[^m]\n\n[^m]: second\n[^n]: first", "fs18 1. first\\fs22", "]: first");
+    expect_field("a[^n] b[^m]\n\n[^m]: second\n[^n]: first", "fs18 2. second\\fs22", "]: second");
+    expect_field("a[^x]\n\n[^x]: has **bold** and [l](https://example.com/f)", "{\\b bold}",
+                 "HYPERLINK \"HTTPS://example.com/f\"\"");
+    expect_field("a[^x]\n\n[^x]: has **bold** and [l](https://example.com/f)",
+                 "HYPERLINK \"HTTPS://example.com/f\"", "]: has");
+    expect_field("a[^missing]\n\n[^x]: never", "a[^missing]", "never");
+    expect_field("no reference\n\n[^x]: unused", "no reference", "unused");
+    expect_field("a[^X]\n\n[^x]: case", "{\\super\\cf4 1}", "[^X]");
+    /* A footnote label is never a link reference; the reference after `[a]` stands alone. */
+    expect_field("[a][^x]\n\n[^x]: note", "[a]{\\super\\cf4 1}", "HYPERLINK");
+    expect_field("![a][^x]\n\n[^x]: note", "[^x]", "\\super");
+    expect_field("`[^x]`\n\n[^x]: note", "[^x]", "\\super");
+    expect_field("# t[^x]\n\n| c[^y] |\n| -- |\n\n[^x]: one\n[^y]: two", "fs18 2. two", "]: two");
+    expect_field("a[^x]\n\n[^x]: see[^y]\n[^y]: nested", "fs18 2. nested", "]: nested");
+    expect_field("a[^x]\n\n[^x]:", "fs18 1. \\fs22", "[^x]");
+}
+
 static size_t opened;
 static enum web_link_outcome port_result;
 static const char *_Nonnull expected_uri = "https://example.com/";
@@ -618,6 +642,7 @@ void run_web_link_tests(void)
     verify_bare_refused();
     verify_reference_links();
     verify_reference_edges();
+    verify_footnotes();
     verify_state();
     verify_product_table();
     verify_product_state();

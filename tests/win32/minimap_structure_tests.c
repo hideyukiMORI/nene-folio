@@ -816,6 +816,38 @@ static void edge_arrows(struct note_pane *_Nonnull pane)
     expect_edge(pane, 3, VK_DOWN, (CHARRANGE){6, 6});
 }
 
+/* #869 / ADR0103: references read as raised numbers; the footnotes follow the note, smaller. */
+static void footnotes(struct note_pane *_Nonnull pane)
+{
+    const char content[] = "本文[^b]と[^a]。\n\n[^a]: **二つ目**\n[^b]: 一つ目\n";
+    /* The thin rule before the footnotes is three empty native paragraphs, like `---`. */
+    static const char16_t shown[] = u"本文1と2。\r\r\r\r1. 一つ目\r2. 二つ目";
+    load(pane, PANE_MODE_VIEW, content);
+    HWND handle = note_pane_handle(pane);
+    const char16_t *visible = nullptr;
+    size_t length = 0;
+    require(note_pane_text(pane, &visible, &length) == NOTE_PANE_TEXT_TAKEN, "search projection");
+    if (length != sizeof shown / sizeof shown[0] - 1 ||
+        memcmp(visible, shown, length * sizeof shown[0]) != 0)
+    {
+        printf("footnote projection:");
+        for (size_t index = 0; index < length; ++index)
+            printf(" %04x", (unsigned)visible[index]);
+        printf("\n");
+    }
+    require(length == sizeof shown / sizeof shown[0] - 1 &&
+                memcmp(visible, shown, length * sizeof shown[0]) == 0,
+            "numbers in first-reference order, footnotes listed after the note");
+    CHARRANGE number = {2, 3};
+    SendMessageW(handle, EM_EXSETSEL, 0, (LPARAM)&number);
+    CHARFORMAT2W format = {.cbSize = sizeof format};
+    SendMessageW(handle, EM_GETCHARFORMAT, SCF_SELECTION, (LPARAM)&format);
+    require((format.dwEffects & CFE_SUPERSCRIPT) != 0, "the reference number is raised");
+    require(height_at(handle, native_find(handle, L"一つ目")) <
+                height_at(handle, native_find(handle, L"本文")),
+            "the footnotes are a size smaller than the body");
+}
+
 /* #861 / ADR0101: a reference link opens its definition's URI; the definition is not shown. */
 static void reference_links(struct note_pane *_Nonnull pane)
 {
@@ -908,6 +940,7 @@ int main(void)
     heading_inline_sizes(pane);
     edge_arrows(pane);
     reference_links(pane);
+    footnotes(pane);
     load(pane, PANE_MODE_EDIT, source);
     boundaries(pane);
     preservation(pane);

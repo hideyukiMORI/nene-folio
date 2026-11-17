@@ -213,7 +213,9 @@ static const char bare_url_gallery[] =
     "**https://example.com/bold** と <https://example.com/angle> と "
     "[表示名](https://example.com/n)\n\n"
     "- 一覧の https://example.com/list.\n- `https://example.com/code` はコード\n\n"
-    "| 名前 | URL |\n| -- | -- |\n| 例 | https://example.com/cell |\n";
+    "| 名前 | URL |\n| -- | -- |\n| 例 | https://example.com/cell |\n\n"
+    "脚注の例[^n]と[^m]（#869）。\n\n[^m]: **二つ目**の脚注と[参照][r]。\n[^n]: 一つ目の脚注。\n"
+    "[r]: https://example.com/ref\n";
 static const wchar_t search_original[] = L"猫 😀 aaaa 日本語";
 static const wchar_t search_edited[] = L"猫 😀 aaaa 日本語 🐾";
 static const char replace_current[] = "猫1 😀\n猫2 **saved**\n猫1 `old`";
@@ -9907,6 +9909,13 @@ static void bare_url_visual(struct native_fixture *_Nonnull fixture)
         char path[64];
         require(snprintf(path, sizeof path, "bare-url-%s.bmp", looks[at]) > 0,
                 "bare URL screenshot path");
+        tags_capture(root, path);
+        /* #869: the footnotes are at the end of the note. */
+        SendMessageW(folio_window_accessible_window(window, ACCESSIBLE_BODY), WM_VSCROLL, SB_BOTTOM,
+                     0);
+        pump(window);
+        require(snprintf(path, sizeof path, "bare-url-%s-end.bmp", looks[at]) > 0,
+                "bare URL end screenshot path");
         tags_capture(root, path);
         folio_window_destroy(window);
         folio_state_set_layout_mode(fixture->state, FOLIO_LAYOUT_BOTH);

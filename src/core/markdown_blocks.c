@@ -714,6 +714,43 @@ static bool render_next(struct markdown_blocks *_Nonnull parser, size_t *_Nonnul
     return render_line(parser, raw, cursor);
 }
 
+/* #869 / ADR0103: one footnote line, `n. text`, a size smaller than the body; its text goes
+ * through the same inline rendering (which may number further footnotes it refers to). */
+static bool footnote_line(struct markdown_blocks *_Nonnull parser, size_t rank)
+{
+    struct markdown_references *_Nonnull references = parser->references;
+    size_t index = markdown_references_numbered_at(references, rank);
+    struct markdown_span line = markdown_references_line(references, index);
+    struct note_search_span range = markdown_references_destination_span(references, index);
+    struct markdown_span body = {
+        .bytes = line.bytes + range.start, .length = range.end - range.start, .offset = 0};
+    text_buffer_append_text(parser->out, "\\pard\\sa40\\sl240\\slmult1\\cf3\\fs18 ");
+    rtf_text_number(parser->out, rank + 1);
+    text_buffer_append_text(parser->out, ". ");
+    parser->outcome = markdown_inline_tokens_render(
+        (struct markdown_render){parser->out, parser->media, 18, references},
+        (struct markdown_view){.spans = &body, .count = 1, .length = body.length});
+    text_buffer_append_text(parser->out, "\\fs22\\cf1\\par\n");
+    return parser->outcome == MARKDOWN_RTF_CONVERTED;
+}
+
+/* The note's referred footnotes, after a thin rule, in the order they were first referred to. */
+static bool footnotes(struct markdown_blocks *_Nonnull parser)
+{
+    if (markdown_references_numbered(parser->references) == 0)
+        return true;
+    static const char gap[] = "{\\pard\\sb0\\sa0\\sl-240\\slmult0\\fs2\\highlight0\\par}\n";
+    text_buffer_append_text(parser->out, gap);
+    text_buffer_append_text(parser->out,
+                            "{\\pard\\sb0\\sa0\\sl-20\\slmult0\\fs2\\highlight3\\par}\n");
+    text_buffer_append_text(parser->out, gap);
+    bool accepted = true;
+    for (size_t rank = 0; accepted && rank < markdown_references_numbered(parser->references);
+         ++rank)
+        accepted = footnote_line(parser, rank);
+    return accepted;
+}
+
 static void markdown_blocks_destroy(struct markdown_blocks *_Nonnull parser)
 {
     code_syntax_destroy(parser->syntax);
@@ -751,6 +788,8 @@ enum markdown_rtf_outcome markdown_blocks_render(struct markdown_render render,
         accepted = close_code(&parser) && accepted;
     if (accepted)
         accepted = flush(&parser);
+    if (accepted)
+        accepted = footnotes(&parser);
     markdown_blocks_destroy(&parser);
     if (!accepted && parser.outcome == MARKDOWN_RTF_CONVERTED)
         return MARKDOWN_RTF_OUT_OF_MEMORY;
