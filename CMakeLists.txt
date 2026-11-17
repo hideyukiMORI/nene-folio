@@ -140,7 +140,7 @@ nenefolio_target(nenefolio_window ui_win32 STATIC
     src/ui/win32/note_pane_geometry.c
     src/ui/win32/accessible_item.c src/ui/win32/accessibility_host.c src/ui/win32/accessibility_node.c
     src/ui/win32/accessibility_native.c
-    src/ui/win32/drawer_window.c src/ui/win32/folio_window.c src/ui/win32/command_help_fonts.c src/ui/win32/note_pane.c src/ui/win32/note_pane_table.c
+    src/ui/win32/drawer_window.c src/ui/win32/folio_window.c src/ui/win32/command_help_fonts.c src/ui/win32/note_pane.c src/ui/win32/note_pane_table.c src/ui/win32/window_restore.c
     src/ui/win32/folio_palette.c src/ui/win32/failure_box.c src/ui/win32/name_prompt.c
     src/ui/win32/ui_face.c src/ui/win32/icon_paint.c src/ui/win32/dialog_theme.c
     src/ui/win32/ui_part.c src/ui/win32/ui_pointer.c src/ui/win32/modal_owner.c src/ui/win32/name_prompt_metrics.c
@@ -361,6 +361,8 @@ add_test(NAME code_copy_keys_native COMMAND image_status_tests --code-copy-keys)
 add_test(NAME code_copy_scroll_native COMMAND image_status_tests --code-copy-scroll)
 add_test(NAME code_copy_scroll_96_native COMMAND image_status_tests --code-copy-scroll-96)
 add_test(NAME text_menu_native COMMAND image_status_tests --text-menu)
+add_test(NAME window_place_native COMMAND image_status_tests --window-place)
+set_tests_properties(window_place_native PROPERTIES TIMEOUT 30 RESOURCE_LOCK image_status_data)
 set_tests_properties(text_menu_native PROPERTIES TIMEOUT 30 RESOURCE_LOCK image_status_data)
 add_test(NAME editor_format_native COMMAND image_status_tests --format-keys)
 add_test(NAME layout_edit_native COMMAND image_status_tests --layout)

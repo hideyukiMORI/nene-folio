@@ -86,6 +86,7 @@
 #include "ui_text_request.h"
 #include "utf16_text.h"
 #include "utf8_text.h"
+#include "window_restore.h"
 
 #include <commctrl.h>
 #include <commdlg.h>
@@ -318,8 +319,9 @@ static const struct
     {UI_TEXT_SETTINGS_FAVORITES_FIRST, SETTINGS_ROW_FAVORITES_FIRST, 1, 4, 0,
      ACCESSIBLE_SURFACE_CLOSE},
     {UI_TEXT_SETTINGS_MOTION, SETTINGS_ROW_MOTION, 1, 5, 0, ACCESSIBLE_SURFACE_CLOSE},
-    {UI_TEXT_STORAGE_ENTRY, SETTINGS_ROW_STORAGE, 0, 6, 0, ACCESSIBLE_SURFACE_STORAGE},
-    {UI_TEXT_ABOUT_ENTRY, SETTINGS_ROW_ABOUT, 0, 7, 0, ACCESSIBLE_SURFACE_ABOUT},
+    {UI_TEXT_SETTINGS_WINDOW, SETTINGS_ROW_WINDOW, 1, 6, 0, ACCESSIBLE_SURFACE_CLOSE},
+    {UI_TEXT_STORAGE_ENTRY, SETTINGS_ROW_STORAGE, 0, 7, 0, ACCESSIBLE_SURFACE_STORAGE},
+    {UI_TEXT_ABOUT_ENTRY, SETTINGS_ROW_ABOUT, 0, 8, 0, ACCESSIBLE_SURFACE_ABOUT},
 };
 static const struct
 {
@@ -555,6 +557,8 @@ constexpr int base_width = 960;
 constexpr int base_height = 640;
 /* 最小の大きさ。ドロワー・番号・パンくず・札 2 つが収まる（ADR 0011 の決定 3）。 */
 constexpr int base_min_width = 560;
+/* #891: how much of the header's width must be on a screen to grab a restored window. */
+constexpr int base_window_grip_width = 160;
 constexpr int base_min_height = 360;
 constexpr int base_drawer_width = 240;
 constexpr int base_drawer_min_width = 200;
@@ -1556,6 +1560,7 @@ static RECT settings_item_rect(const struct folio_window *_Nonnull self, size_t 
         settings_rows[index].kind == SETTINGS_ROW_MINIMAP ||
         settings_rows[index].kind == SETTINGS_ROW_FAVORITES_FIRST ||
         settings_rows[index].kind == SETTINGS_ROW_MOTION ||
+        settings_rows[index].kind == SETTINGS_ROW_WINDOW ||
         settings_rows[index].kind == SETTINGS_ROW_STORAGE ||
         settings_rows[index].kind == SETTINGS_ROW_ABOUT)
     {
@@ -4722,6 +4727,8 @@ static bool settings_row_current(const struct folio_window *_Nonnull self, size_
         return folio_state_minimap(self->state);
     case SETTINGS_ROW_MOTION:
         return folio_state_motion(self->state);
+    case SETTINGS_ROW_WINDOW:
+        return storage_state_window(self->storage).restore;
     case SETTINGS_ROW_NUMBER:
         return (unsigned char)folio_state_number(self->state) == settings_rows[index].value;
     }
@@ -4745,6 +4752,7 @@ static bool settings_row_toggle(size_t index)
     return settings_rows[index].kind == SETTINGS_ROW_NUMBER ||
            settings_rows[index].kind == SETTINGS_ROW_MINIMAP ||
            settings_rows[index].kind == SETTINGS_ROW_MOTION ||
+           settings_rows[index].kind == SETTINGS_ROW_WINDOW ||
            settings_rows[index].kind == SETTINGS_ROW_FAVORITES_FIRST;
 }
 
@@ -8660,6 +8668,11 @@ static void finish_quit(struct folio_window *_Nonnull self, enum folio_state_out
         return;
     }
     clear_session_reason(self);
+    /* #891: the place this window had, for the next start. Failing to write it never keeps the
+     * window open; the next start then uses the earlier record or the initial place. */
+    struct window_placement closing = window_restore_capture(self->handle);
+    if (closing.placed)
+        (void)storage_state_record_window(self->storage, &closing);
     DestroyWindow(self->handle);
 }
 
@@ -8854,6 +8867,18 @@ static void apply_number(struct folio_window *_Nonnull self, bool number)
     }
     rearrange_keeping_line(self);
     redraw_command_layer(self);
+}
+
+/* #891 / ADR0108: the choice is this machine's, written at once to the window file. A failed
+ * write leaves the choice as it was and says so with the warning sound. */
+static void apply_window_restore(struct folio_window *_Nonnull self)
+{
+    bool restore = !storage_state_window(self->storage).restore;
+    if (storage_state_set_window_restore(self->storage, restore) != STORAGE_READY)
+        MessageBeep(MB_ICONWARNING);
+    clear_command_status(self);
+    redraw_command_layer(self);
+    accessibility_host_schedule(self->accessibility);
 }
 
 static void apply_motion(struct folio_window *_Nonnull self)
@@ -10884,6 +10909,9 @@ static void adopt_settings_row(struct folio_window *_Nonnull self)
     case SETTINGS_ROW_MOTION:
         apply_motion(self);
         return;
+    case SETTINGS_ROW_WINDOW:
+        apply_window_restore(self);
+        return;
     case SETTINGS_ROW_NUMBER:
         apply_number(self, !folio_state_number(self->state));
         return;
@@ -12656,6 +12684,7 @@ static size_t settings_vertical_choice(const struct folio_window *_Nonnull self,
             settings_rows[index].kind == SETTINGS_ROW_MINIMAP ||
             settings_rows[index].kind == SETTINGS_ROW_FAVORITES_FIRST ||
             settings_rows[index].kind == SETTINGS_ROW_MOTION ||
+            settings_rows[index].kind == SETTINGS_ROW_WINDOW ||
             settings_rows[index].kind == SETTINGS_ROW_THEME ||
             settings_rows[index].kind == SETTINGS_ROW_STORAGE ||
             settings_rows[index].kind == SETTINGS_ROW_ABOUT)
@@ -15211,13 +15240,26 @@ static bool create_main_window(struct folio_window *_Nonnull self, HINSTANCE ins
     UINT dpi = GetDpiForSystem();
     DWORD style =
         WS_POPUP | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU | WS_CLIPCHILDREN;
-    HWND handle = CreateWindowExW(0, class_name, L"NeNe Folio", style, CW_USEDEFAULT, CW_USEDEFAULT,
-                                  scale(base_width, dpi), scale(base_height, dpi), nullptr, nullptr,
-                                  instance, self);
+    /* #891 / ADR0108: the recorded place when the user carries it over and it can still be
+     * used; otherwise the initial place and size. */
+    struct window_placement saved = storage_state_window(self->storage);
+    struct window_area place = {CW_USEDEFAULT, CW_USEDEFAULT, scale(base_width, dpi),
+                                scale(base_height, dpi), dpi};
+    struct window_fit_request request = {.saved = &saved,
+                                         .minimum_width = base_min_width,
+                                         .minimum_height = base_min_height,
+                                         .header_height = base_common_header_height,
+                                         .grip_width = base_window_grip_width};
+    bool restored = window_restore_place(request, &place);
+    HWND handle = CreateWindowExW(0, class_name, L"NeNe Folio", style, place.x, place.y,
+                                  place.width, place.height, nullptr, nullptr, instance, self);
     if (handle == nullptr || !refresh_window_icons(self, GetDpiForWindow(handle)))
         return false;
+    if (restored)
+        window_restore_settle(handle, &saved);
     decorate(handle, self->palette);
-    ShowWindow(handle, SW_SHOW);
+    ShowWindow(handle,
+               saved.restore && saved.placed && saved.maximized ? SW_SHOWMAXIMIZED : SW_SHOW);
     return true;
 }
 
@@ -15629,6 +15671,7 @@ static enum accessible_kind surface_row_kind(const struct folio_window *_Nonnull
     case SETTINGS_ROW_FAVORITES_FIRST:
     case SETTINGS_ROW_MINIMAP:
     case SETTINGS_ROW_MOTION:
+    case SETTINGS_ROW_WINDOW:
     case SETTINGS_ROW_NUMBER:
         return ACCESSIBLE_SURFACE_TOGGLE;
     }
