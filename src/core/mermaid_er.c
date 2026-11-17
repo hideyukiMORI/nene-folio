@@ -94,7 +94,10 @@ static bool relation_label(struct mermaid_er *_Nonnull parser, struct diagram_te
 static bool relationship(struct mermaid_er *_Nonnull parser, struct diagram_text name,
                          struct diagram_text rest)
 {
-    struct diagram_link link = {.label = parser->empty, .length = 1};
+    struct diagram_link link = {.label = parser->empty,
+                                .start_text = parser->empty,
+                                .end_text = parser->empty,
+                                .length = 1};
     if (!entity(parser, name, &link.from) || !relation(parser, &rest, &link))
         return false;
     struct diagram_text other = diagram_text_identifier(&rest);

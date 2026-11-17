@@ -99,6 +99,8 @@ static bool endpoint(struct mermaid_state *_Nonnull parser, struct diagram_text 
 static bool transition(struct mermaid_state *_Nonnull parser, struct diagram_text text)
 {
     struct diagram_link link = {.label = parser->empty,
+                                .start_text = parser->empty,
+                                .end_text = parser->empty,
                                 .length = 1,
                                 .stroke = DIAGRAM_SOLID,
                                 .start = DIAGRAM_ARROW_NONE,

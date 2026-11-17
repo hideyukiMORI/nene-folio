@@ -23,6 +23,7 @@ constexpr int diagram_thick_width = 3;
 constexpr int diagram_dash_length = 6;
 constexpr int diagram_dash_gap = 4;
 constexpr int diagram_arrow_size = 10;
+constexpr int diagram_end_text_gap = 12; /* #916: between a line's end and the text beside it */
 constexpr int diagram_thick_arrow_size = 12;
 constexpr int diagram_endpoint_size = 8;
 constexpr int diagram_subroutine_inset = 8;

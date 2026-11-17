@@ -8,6 +8,8 @@ struct diagram_link
     size_t from;
     size_t to;
     size_t label;
+    size_t start_text; /* #916: the text beside each end (a class relation's multiplicity) */
+    size_t end_text;
     size_t length;
     enum diagram_stroke stroke;
     enum diagram_arrow start;

@@ -91,8 +91,9 @@ enum diagram_outcome diagram_model_link(struct diagram_model *_Nonnull model,
                                         struct diagram_link value)
 {
     if (model->state != DIAGRAM_BUILD_OPEN || value.from >= model->node_count ||
-        value.to >= model->node_count || value.label >= model->text_count || value.length == 0 ||
-        value.length > 16)
+        value.to >= model->node_count || value.label >= model->text_count ||
+        value.start_text >= model->text_count || value.end_text >= model->text_count ||
+        value.length == 0 || value.length > 16)
         return DIAGRAM_INVALID;
     if (model->link_count == diagram_link_limit)
         return DIAGRAM_TOO_LARGE;
