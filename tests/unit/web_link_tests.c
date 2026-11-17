@@ -609,7 +609,8 @@ static void verify_render_allocation(void)
 {
     const char source[] =
         "[**label**](https://example.com/?a=1&amp;b=2) <https://example.org/> www.example.net/x "
-        "[r][d]\n\n[d]: https://example.com/d\n[e]: https://example.com/e";
+        "[r][d] note[^f]\n\n[d]: https://example.com/d\n[e]: https://example.com/e\n"
+        "[^f]: a **footnote** with [a link](https://example.com/f)";
     struct note_text *text = nullptr;
     require(note_text_create(source, sizeof source - 1, &text) == NOTE_TEXT_ACCEPTED, "OOM source");
     size_t allocations = 0;
