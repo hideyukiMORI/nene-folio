@@ -12,6 +12,6 @@ struct markdown_render
      * Inline code is drawn relative to it (#853). */
     size_t half_points;
     /* The note's link reference definitions (#861), or none outside a full render. */
-    const struct markdown_references *_Nullable references;
+    struct markdown_references *_Nullable references; /* footnotes are numbered as met */
 };
 #endif

@@ -33,7 +33,7 @@ struct markdown_inline_tokens
     } *_Nonnull tokens;
     struct text_buffer *_Nonnull out;
     struct markdown_media *_Nonnull media;
-    const struct markdown_references *_Nullable references;
+    struct markdown_references *_Nullable references;
     size_t half_points;
     size_t count;
     /* The plain run that holds the token being emitted: tokens before `plain_index`, bytes
@@ -662,6 +662,26 @@ static size_t reference_of(struct markdown_inline_tokens *_Nonnull parser, size_
                                     parser->tokens[parser->tokens[label].mate].start);
 }
 
+/* #869 / ADR0103: `[^label]` (alone, not before another bracket) refers to a footnote. */
+static bool pair_footnote_at(struct markdown_inline_tokens *_Nonnull parser, size_t index,
+                             size_t close)
+{
+    struct markdown_inline_token *token = &parser->tokens[index];
+    if (at(parser, token->start + 1) != '^' || second_label(parser, close) != SIZE_MAX ||
+        image_marker(parser, index))
+        return false;
+    size_t footnote = markdown_references_footnote(parser->references, parser->view,
+                                                   token->start + 1, parser->tokens[close].start);
+    if (footnote == SIZE_MAX)
+        return false;
+    token->kind = MARKDOWN_INLINE_FOOTNOTE;
+    token->opens = true;
+    token->reference = footnote;
+    token->after = close + 1;
+    quiet_label(parser, index + 1, close);
+    return true;
+}
+
 /* #861 / ADR0101: a bracket pair left after inline links is a full (`[text][label]`), collapsed
  * (`[label][]`) or shortcut (`[label]`) reference when the note defines the label. An image
  * reference (`![alt][label]`, #863) becomes an image; when it cannot, it stays text whole.
@@ -673,6 +693,8 @@ static size_t pair_reference_at(struct markdown_inline_tokens *_Nonnull parser, 
     if (at(parser, token->start) != '[' || token->kind != MARKDOWN_INLINE_LITERAL ||
         close == SIZE_MAX || close <= index)
         return index;
+    if (pair_footnote_at(parser, index, close))
+        return close;
     size_t end = close;
     size_t reference = reference_of(parser, index, close, &end);
     bool image = image_marker(parser, index);
@@ -699,8 +721,9 @@ static bool skip_formed(struct markdown_inline_tokens *_Nonnull parser,
         *index = parser->tokens[token->mate].after - 1;
         return true;
     }
-    bool image =
-        token->kind == MARKDOWN_INLINE_IMAGE || token->kind == MARKDOWN_INLINE_IMAGE_LITERAL;
+    bool image = token->kind == MARKDOWN_INLINE_IMAGE ||
+                 token->kind == MARKDOWN_INLINE_IMAGE_LITERAL ||
+                 token->kind == MARKDOWN_INLINE_FOOTNOTE;
     if (!image || token->after == SIZE_MAX)
         return false;
     *index = token->after - 1;
@@ -741,6 +764,7 @@ static enum markdown_delimiter_kind delimiter_slot(struct markdown_inline_tokens
     case MARKDOWN_INLINE_IMAGE:
     case MARKDOWN_INLINE_IMAGE_LITERAL:
     case MARKDOWN_INLINE_AUTOLINK:
+    case MARKDOWN_INLINE_FOOTNOTE:
         return MARKDOWN_DELIMITER_COUNT;
     }
     return MARKDOWN_DELIMITER_COUNT;
@@ -1055,6 +1079,7 @@ static void emit_style(struct markdown_inline_tokens *_Nonnull parser, size_t in
     case MARKDOWN_INLINE_IMAGE:
     case MARKDOWN_INLINE_IMAGE_LITERAL:
     case MARKDOWN_INLINE_AUTOLINK:
+    case MARKDOWN_INLINE_FOOTNOTE:
         return;
     }
 }
@@ -1127,6 +1152,7 @@ static bool plain_token(struct markdown_inline_tokens *_Nonnull parser, size_t i
     case MARKDOWN_INLINE_IMAGE_LITERAL:
     case MARKDOWN_INLINE_IMAGE:
     case MARKDOWN_INLINE_AUTOLINK:
+    case MARKDOWN_INLINE_FOOTNOTE:
         return false;
     }
     return false;
@@ -1186,12 +1212,26 @@ static size_t emit_plain(struct markdown_inline_tokens *_Nonnull parser, size_t 
     }
 }
 
+/* #869 / ADR0103: a footnote reference is its number, raised, in the link colour. */
+static void emit_footnote(struct markdown_inline_tokens *_Nonnull parser,
+                          const struct markdown_inline_token *_Nonnull token)
+{
+    text_buffer_append_text(parser->out, "{\\super\\cf4 ");
+    rtf_text_number(parser->out, markdown_references_number(parser->references, token->reference));
+    text_buffer_append_text(parser->out, "}");
+}
+
 static size_t emit_range_token(struct markdown_inline_tokens *_Nonnull parser, size_t index)
 {
     const struct markdown_inline_token *token = (&parser->tokens[index]);
     if (token->kind == MARKDOWN_INLINE_AUTOLINK)
     {
         emit_autolink(parser, token);
+        return token->after;
+    }
+    if (token->kind == MARKDOWN_INLINE_FOOTNOTE && parser->references != nullptr)
+    {
+        emit_footnote(parser, token);
         return token->after;
     }
     if (token->kind == MARKDOWN_INLINE_IMAGE_LITERAL || token->kind == MARKDOWN_INLINE_IMAGE)

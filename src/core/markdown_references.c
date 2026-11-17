@@ -16,8 +16,12 @@ struct markdown_references
         size_t destination_length;
         size_t offset;
         size_t line_length;
-        struct note_search_span target; /* the destination inside the line (#863) */
+        struct note_search_span target; /* the destination, or a footnote's text (#863, #869) */
+        bool footnote;
+        size_t number; /* a footnote's number once referred to, or 0 */
     } *_Nullable entries;
+    size_t *_Nullable order; /* the numbered footnotes in number order (#869) */
+    size_t numbered;
     const char *_Nullable source; /* the note's bytes, borrowed for one render */
     size_t count;
     size_t capacity;
@@ -129,6 +133,34 @@ static enum markdown_rtf_outcome record(struct markdown_references *_Nonnull tab
     return MARKDOWN_RTF_CONVERTED;
 }
 
+/* #869: a footnote keeps its text's place in the line; it has no destination. */
+static enum markdown_rtf_outcome footnote(struct markdown_references *_Nonnull table,
+                                          struct markdown_reference entry,
+                                          struct markdown_line line, bool *_Nonnull defined)
+{
+    size_t start = entry.target.start;
+    size_t end = line.length;
+    while (start < end && space(line.bytes[start]))
+        ++start;
+    while (end > start && space(line.bytes[end - 1]))
+        --end;
+    char *_Nullable label = copy_bytes(entry.label, entry.label_length);
+    char *_Nullable empty = copy_bytes("", 0);
+    if (label == nullptr || empty == nullptr || !reserve(table))
+    {
+        free(label);
+        free(empty);
+        return MARKDOWN_RTF_OUT_OF_MEMORY;
+    }
+    entry.label = label;
+    entry.destination = empty;
+    entry.target = (struct note_search_span){start, end};
+    entry.footnote = true;
+    table->entries[table->count++] = entry;
+    *defined = true;
+    return MARKDOWN_RTF_CONVERTED;
+}
+
 /* A one-line definition `[label]: destination "title"`, indented by at most three columns.
  * MARKDOWN_RTF_CONVERTED with *defined when the line was recorded. */
 static enum markdown_rtf_outcome definition(struct markdown_references *_Nonnull table,
@@ -152,6 +184,8 @@ static enum markdown_rtf_outcome definition(struct markdown_references *_Nonnull
         !normalize(view, (struct note_search_span){line.content + 1, close}, label,
                    &entry.label_length))
         return MARKDOWN_RTF_CONVERTED;
+    if (label[0] == '^')
+        return footnote(table, entry, line, defined);
     struct markdown_destination *_Nullable destination = nullptr;
     enum image_outcome read = markdown_destination_create(
         view, (struct note_search_span){close + 2, line.length}, &destination);
@@ -217,6 +251,11 @@ markdown_references_create(const struct note_text *_Nonnull text,
     table->source = note_text_bytes(text);
     enum markdown_rtf_outcome scanned = scan(table, note_text_bytes(text), note_text_length(text),
                                              note_metadata_body(note_text_metadata(text)));
+    if (scanned == MARKDOWN_RTF_CONVERTED && table->count != 0)
+    {
+        table->order = calloc(table->count, sizeof *table->order);
+        scanned = table->order == nullptr ? MARKDOWN_RTF_OUT_OF_MEMORY : scanned;
+    }
     if (scanned != MARKDOWN_RTF_CONVERTED)
     {
         markdown_references_destroy(table);
@@ -244,20 +283,55 @@ bool markdown_references_defines(const struct markdown_references *_Nullable tab
     return low < table->count && table->entries[low].offset == offset;
 }
 
-size_t markdown_references_find(const struct markdown_references *_Nullable table,
-                                struct markdown_view view, size_t start, size_t end)
+static size_t find_kind(const struct markdown_references *_Nullable table,
+                        struct markdown_view view, struct note_search_span range, bool footnotes)
 {
     char label[markdown_references_label_limit];
     size_t length = 0;
-    if (table == nullptr || !normalize(view, (struct note_search_span){start, end}, label, &length))
+    if (table == nullptr || !normalize(view, range, label, &length))
         return SIZE_MAX;
     for (size_t index = 0; index < table->count; ++index)
     {
         const struct markdown_reference *entry = &table->entries[index];
-        if (entry->label_length == length && memcmp(entry->label, label, length) == 0)
+        if (entry->footnote == footnotes && entry->label_length == length &&
+            memcmp(entry->label, label, length) == 0)
             return index;
     }
     return SIZE_MAX;
+}
+
+size_t markdown_references_find(const struct markdown_references *_Nullable table,
+                                struct markdown_view view, size_t start, size_t end)
+{
+    return find_kind(table, view, (struct note_search_span){start, end}, false);
+}
+
+size_t markdown_references_footnote(const struct markdown_references *_Nullable table,
+                                    struct markdown_view view, size_t start, size_t end)
+{
+    return find_kind(table, view, (struct note_search_span){start, end}, true);
+}
+
+size_t markdown_references_number(struct markdown_references *_Nonnull table, size_t index)
+{
+    struct markdown_reference *entry = &table->entries[index];
+    if (entry->number == 0 && table->order != nullptr)
+    {
+        table->order[table->numbered++] = index;
+        entry->number = table->numbered;
+    }
+    return entry->number;
+}
+
+size_t markdown_references_numbered(const struct markdown_references *_Nullable table)
+{
+    return table == nullptr ? 0 : table->numbered;
+}
+
+size_t markdown_references_numbered_at(const struct markdown_references *_Nonnull table,
+                                       size_t rank)
+{
+    return table->order != nullptr ? table->order[rank] : 0;
 }
 
 const char *_Nonnull markdown_references_destination(
@@ -298,5 +372,6 @@ void markdown_references_destroy(struct markdown_references *_Nullable table)
         free(table->entries[index].destination);
     }
     free(table->entries);
+    free(table->order);
     free(table);
 }
