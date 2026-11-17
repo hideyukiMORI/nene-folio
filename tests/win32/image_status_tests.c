@@ -123,6 +123,7 @@ static bool favorite_high_contrast;
 static bool code_copy_case;
 static bool code_copy_visual_case;
 static bool bare_url_visual_case;
+static bool search_key_visual_case;
 static bool code_copy_keys_case_selected;
 static bool code_copy_scroll_case;
 static bool code_copy_scroll_96;
@@ -9913,6 +9914,38 @@ static void bare_url_visual(struct native_fixture *_Nonnull fixture)
     favorite_high_contrast = false;
 }
 
+/* #855: the list's search field with its key at the right of the placeholder, in each language
+ * and both themes, for the record's screenshots. */
+static void search_key_visual(struct native_fixture *_Nonnull fixture)
+{
+    const enum folio_language languages[] = {FOLIO_LANGUAGE_JA, FOLIO_LANGUAGE_EN,
+                                             FOLIO_LANGUAGE_ZH_HANS};
+    const char *const names[] = {"ja", "en", "zh"};
+    for (size_t at = 0; at < 6; ++at)
+    {
+        require(folio_state_set_language(fixture->state, languages[at % 3]) == FOLIO_STATE_READY &&
+                    folio_state_set_theme(fixture->state, at < 3 ? FOLIO_THEME_CHOICE_LIGHT
+                                                                 : FOLIO_THEME_CHOICE_DARK) ==
+                        FOLIO_STATE_READY,
+                "search key palette and language");
+        folio_state_set_layout_mode(fixture->state, FOLIO_LAYOUT_BOTH);
+        struct folio_window *window = nullptr;
+        require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY,
+                                    &window) == FOLIO_WINDOW_CREATED,
+                "search key window");
+        HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+        require(SetWindowPos(root, nullptr, 20, 20, 980, 420, SWP_NOZORDER | SWP_NOACTIVATE),
+                "search key window size");
+        pump(window);
+        char path[64];
+        require(snprintf(path, sizeof path, "search-key-%s-%s.bmp", names[at % 3],
+                         at < 3 ? "light" : "dark") > 0,
+                "search key screenshot path");
+        tags_capture(root, path);
+        folio_window_destroy(window);
+    }
+}
+
 /* What a failed icon check needs to be diagnosed from a remote log: geometry, DPI, zoom, the
  * place that was read and how many pixels of each role it holds. */
 static void code_copy_scroll_report(HWND _Nonnull body, const struct rtf_palette *_Nonnull colors,
@@ -10071,6 +10104,11 @@ static void run_code_copy_case(struct native_fixture *_Nonnull fixture)
     require(folio_state_select_note(fixture->state, 0, 0, FOLIO_UNTITLED_PROTECT) ==
                 FOLIO_STATE_READY,
             "select the dedicated code note");
+    if (search_key_visual_case)
+    {
+        search_key_visual(fixture);
+        return;
+    }
     if (bare_url_visual_case)
     {
         bare_url_visual(fixture);
@@ -10195,6 +10233,24 @@ static void discovery_preview_text(struct folio_window *_Nonnull window,
     SendMessageW(preview, WM_CHAR, L'X', 0);
     require(GetWindowTextW(preview, text, 512) >= 0 && wcscmp(text, expected) == 0,
             "native character input does not mutate the source preview");
+}
+
+/* #855: Ctrl+O opens the whole-library search from the body, the same command as the menu's. */
+static void discovery_shortcut(struct folio_window *_Nonnull window,
+                               struct native_fixture *_Nonnull fixture)
+{
+    HWND surface = folio_window_accessible_window(window, ACCESSIBLE_SURFACE);
+    bool before = IsWindowVisible(surface);
+    require(native_key_input(window, 'O', FCONTROL), "Ctrl+O is a window accelerator");
+    pump(window);
+    discovery_settle(window, fixture->state);
+    printf("discovery shortcut: visible before %d after %d shown %zu\n", before,
+           IsWindowVisible(surface), folio_state_discovery_summary(fixture->state).shown);
+    require(!before && IsWindowVisible(surface) &&
+                folio_state_discovery_summary(fixture->state).shown == 3,
+            "Ctrl+O opens the whole-library search");
+    surface_button(window, ACCESSIBLE_SURFACE_CLOSE);
+    require(!IsWindowVisible(surface), "the search closes as before");
 }
 
 static void discovery_selection_boundary(struct folio_window *_Nonnull window,
@@ -11339,6 +11395,7 @@ static void run_discovery_case(struct native_fixture *_Nonnull fixture)
         folio_window_destroy(window);
         return;
     }
+    discovery_shortcut(window, fixture);
     discovery_selection_boundary(window, fixture);
     discovery_ime_boundary(window, fixture);
     discovery_untitled_boundary(window, fixture);
@@ -12615,7 +12672,8 @@ static void select_tags_fixture(const char *_Nonnull selector)
 static void select_clipboard_fixture(const char *_Nonnull selector)
 {
     paste_case = strcmp(selector, "--paste") == 0;
-    bare_url_visual_case = strcmp(selector, "--bare-url-visual") == 0;
+    search_key_visual_case = strcmp(selector, "--search-key-visual") == 0;
+    bare_url_visual_case = strcmp(selector, "--bare-url-visual") == 0 || search_key_visual_case;
     code_copy_visual_case = strcmp(selector, "--code-copy-visual") == 0 || bare_url_visual_case;
     code_copy_keys_case_selected = strcmp(selector, "--code-copy-keys") == 0;
     code_copy_scroll_96 = strcmp(selector, "--code-copy-scroll-96") == 0;

@@ -17,6 +17,7 @@ enum folio_shortcut_key : unsigned char
     FOLIO_SHORTCUT_KEY_F4,
     FOLIO_SHORTCUT_KEY_F10,
     FOLIO_SHORTCUT_KEY_APPS,
-    FOLIO_SHORTCUT_KEY_ENTER
+    FOLIO_SHORTCUT_KEY_ENTER,
+    FOLIO_SHORTCUT_KEY_O
 };
 #endif
