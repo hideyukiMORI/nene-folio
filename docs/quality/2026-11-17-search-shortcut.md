@@ -32,3 +32,16 @@
 | native-discovery-01 | 成功（226 checks）。本文から`Ctrl+O`で検索面が開き（開く前は非表示、開いた後は3件）、閉じるボタンで閉じる |
 | 実画面1（visual-run-01） | 既定の一覧の幅では、案内文とキーが1行に入らず、キーが出なかった（日本語・英語とも）。「入らなければ出さない」の規則どおりだが、既定の幅で見えないなら依頼に応えない |
 | 実画面2（visual-run-02） | 空の欄では右端の「×」（消去）が出ないので、その余白もキーに使い（右の余白は左と同じ幅）、案内文との間を行の高さの半分にした。三言語×明暗の6枚で、既定の幅に収まって見えることを確かめた（`visual/search-key-*.png`） |
+
+## 最終の対象検証
+
+原本は`v1-*.log`（`E:/NeNeFolio/temp/855/verify.ps1 -Tag v1`、#854統合後のmainを取り込んだ後）。
+
+| コマンド | 結果 |
+| --- | --- |
+| `cmake --build <E:build> --parallel 4`（全target・clang-tidy込み） | 成功 |
+| `python -B eng/coverage.py` | 成功。分岐90.88%（下限90・除外不変） |
+| `python -B eng/symbols.py --build-dir <E:build> --require core application` | 成功（違反0） |
+| `python -B eng/conformance.py` / `--build-dir <E:build>` | 成功（違反0） |
+| `ctest --test-dir <E:build> --output-on-failure --no-tests=error` | 61件すべて成功（89.3秒） |
+| `git diff --check origin/main` | 成功 |
