@@ -44,3 +44,18 @@
 | native-08 / 09 | 成功（760 checks） |
 | 変異1 | 鍵の経路の呼び出しを消す変異は「未使用の関数」でコンパイルが落ち、古いexeが走って成功に見えた（無効な結果）。記録だけ残す |
 | 変異2 | 鍵の経路が常に断る変異で、最初の行の↑が「4..4（既定の動かない）」となり失敗することを確認（mutant-run-02）。戻して再構築し成功 |
+
+## 最終の対象検証
+
+原本は`v1-*.log`（`E:/NeNeFolio/temp/854/verify.ps1 -Tag v1`、#853統合後のmainを取り込んだ後。取り込みの衝突2件は、#853の品質記録をmainの版に、試験はこの枝の追加分だけにして解いた）。
+
+| コマンド | 結果 |
+| --- | --- |
+| `cmake --build <E:build> --parallel 4`（全target・clang-tidy込み） | 成功 |
+| `python -B eng/coverage.py` | 成功。分岐90.88%（下限90・除外不変） |
+| `python -B eng/symbols.py --build-dir <E:build> --require core application` | 成功（違反0） |
+| `python -B eng/conformance.py` / `--build-dir <E:build>` | 成功（違反0） |
+| `ctest --test-dir <E:build> --output-on-failure --no-tests=error` | 61件すべて成功（157.0秒） |
+| `git diff --check origin/main` | 成功 |
+
+最初のv1の実行は、作業手順の誤り（取り込みの衝突でコマンドの連鎖が止まり、検証用scriptが作られていなかった）で起動に失敗した（終了値64）。scriptを作って取り直した。
