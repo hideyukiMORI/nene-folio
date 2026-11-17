@@ -190,11 +190,13 @@ static bool declaration(struct mermaid_state *_Nonnull parser, struct diagram_te
         return declared(parser, id, id, rest);
     }
     struct diagram_text body = diagram_text_skip(rest, 1);
-    const char *_Nullable close = memchr(body.bytes, '"', body.length);
-    if (close == nullptr)
+    size_t close = 0;
+    while (close < body.length && body.bytes[close] != '"')
+        ++close;
+    if (close == body.length)
         return reject(parser, DIAGRAM_INVALID);
-    struct diagram_text title = {body.bytes, (size_t)(close - body.bytes)};
-    struct diagram_text after = diagram_text_skip(body, title.length + 1);
+    struct diagram_text title = {body.bytes, close};
+    struct diagram_text after = diagram_text_skip(body, close + 1);
     if (!diagram_text_equal(diagram_text_word(&after), "as"))
         return reject(parser, DIAGRAM_INVALID);
     struct diagram_text id = diagram_text_identifier(&after);

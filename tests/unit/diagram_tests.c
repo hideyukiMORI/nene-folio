@@ -213,6 +213,39 @@ static void state_rejections(void)
     reject_source("stateDiagram-v2 extra\nA", DIAGRAM_INVALID);
     reject_source("stateDiagram-v2\n", DIAGRAM_INVALID);
     reject_source("stateDiagram-v2\nA B", DIAGRAM_INVALID);
+    reject_source("stateDiagram-v2\n --> B", DIAGRAM_INVALID);
+    reject_source("stateDiagram-v2\nstate S {\n}\nstate S {\n}", DIAGRAM_INVALID);
+    reject_source("stateDiagram-v2\nstate {\n}", DIAGRAM_INVALID);
+    reject_source("stateDiagram-v2\nstyle A fill:#f00\nA", DIAGRAM_UNSUPPORTED);
+    reject_source("stateDiagram-v2\nclick A call x()\nA", DIAGRAM_UNSUPPORTED);
+    reject_source("stateDiagram-v2\naccTitle: t\nA", DIAGRAM_UNSUPPORTED);
+    reject_source("stateDiagram-v2\nstate J <<join>>", DIAGRAM_UNSUPPORTED);
+    char deep[1024] = "stateDiagram-v2\n";
+    for (size_t level = 0; level <= diagram_depth_limit; ++level)
+        (void)sprintf_s(deep + strlen(deep), sizeof deep - strlen(deep), "state S%zu {\n", level);
+    reject_source(deep, DIAGRAM_TOO_LARGE);
+}
+
+/* Reuse: one start per scope however often it is used, states met again, plain declarations. */
+static void state_reuse(void)
+{
+    struct diagram_model *model = parsed("stateDiagram-v2\n"
+                                         "[*] --> A\n[*] --> B\nA --> B\nB --> A : back\n"
+                                         "state C\nstate \"Shown\" as D\nstate A <<choice>>\n"
+                                         "E : described\nA --> [*]\nB --> [*]\n");
+    require(diagram_model_find_node(model, "[*]<0", 5) != diagram_none &&
+                diagram_model_find_node(model, "[*]>0", 5) != diagram_none,
+            "one start and one end in the diagram's scope");
+    require(diagram_model_node_count(model) == 7, "A B C D E and the two markers");
+    require(diagram_model_link_count(model) == 6, "every transition");
+    struct diagram_node d = diagram_model_node_at(model, node_named(model, "D"));
+    struct diagram_node e = diagram_model_node_at(model, node_named(model, "E"));
+    struct diagram_node a = diagram_model_node_at(model, node_named(model, "A"));
+    require(strcmp(diagram_model_text_at(model, d.label), "Shown") == 0 &&
+                strcmp(diagram_model_text_at(model, e.label), "described") == 0 &&
+                a.shape == DIAGRAM_DIAMOND,
+            "declarations after use relabel or reshape the same state");
+    diagram_model_destroy(model);
 }
 
 static void flow_directions(void)
@@ -1489,6 +1522,7 @@ void run_diagram_tests(void)
     state_contract();
     state_composite();
     state_rejections();
+    state_reuse();
     groups_and_cycles();
     edge_labels_remain_visible();
     horizontal_group_heading();
