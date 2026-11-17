@@ -38,13 +38,13 @@
 
 ## 最終の対象検証
 
-原本は`v1-*.log`（`E:/NeNeFolio/temp/863/verify.ps1 -Tag v1`）。
+原本は`v2-*.log`（`E:/NeNeFolio/temp/863/verify.ps1 -Tag v2`、書出しの直しの後）。v1（直す前）も全て成功していたが、欠陥は試験の外にあった。
 
 | コマンド | 結果 |
 | --- | --- |
 | `cmake --build <E:build> --parallel 4`（全target・clang-tidy込み） | 成功 |
-| `python -B eng/coverage.py` | 成功。分岐90.97%（下限90・除外不変）。`markdown_references.c` 93.33%、`markdown_inline_tokens.c` 90.44% |
+| `python -B eng/coverage.py` | 成功。分岐90.96%（下限90・除外不変）。`markdown_image_copy.c` 91.94%、`markdown_references.c` 93.33% |
 | `python -B eng/symbols.py --build-dir <E:build> --require core application` | 成功（違反0） |
 | `python -B eng/conformance.py` / `--build-dir <E:build>` | 成功（違反0） |
-| `ctest --test-dir <E:build> --output-on-failure --no-tests=error` | 61件すべて成功（92.6秒） |
-| `git diff --check origin/main` | 成功 |
+| `ctest --test-dir <E:build> --output-on-failure --no-tests=error` | 61件すべて成功（90.9秒） |
+| `git diff --check origin/main`・`clang-format --dry-run --Werror` | 成功 |
