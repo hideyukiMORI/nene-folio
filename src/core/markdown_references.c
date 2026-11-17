@@ -16,6 +16,7 @@ struct markdown_references
         size_t destination_length;
         size_t offset;
         size_t line_length;
+        size_t extent;                  /* from the offset to the end of its last line (#878) */
         struct note_search_span target; /* the destination, or a footnote's text (#863, #869) */
         bool footnote;
         size_t number; /* a footnote's number once referred to, or 0 */
@@ -30,6 +31,9 @@ struct markdown_references
     size_t fence;
     char marker;
     bool allowed;
+    /* #878: the footnote the next indented lines continue, or SIZE_MAX, and its line count. */
+    size_t open;
+    size_t continued;
 };
 
 static bool space(char value)
@@ -156,6 +160,8 @@ static enum markdown_rtf_outcome footnote(struct markdown_references *_Nonnull t
     entry.destination = empty;
     entry.target = (struct note_search_span){start, end};
     entry.footnote = true;
+    table->open = table->count;
+    table->continued = 0;
     table->entries[table->count++] = entry;
     *defined = true;
     return MARKDOWN_RTF_CONVERTED;
@@ -179,6 +185,7 @@ static enum markdown_rtf_outcome definition(struct markdown_references *_Nonnull
                                        .destination = label,
                                        .offset = offset,
                                        .line_length = line.length,
+                                       .extent = line.length,
                                        .target = {close + 2, line.length}};
     if (close == SIZE_MAX || close + 1 >= line.length || line.bytes[close + 1] != ':' ||
         !normalize(view, (struct note_search_span){line.content + 1, close}, label,
@@ -221,15 +228,32 @@ static void after_line(struct markdown_references *_Nonnull table, struct markdo
                      markdown_line_thematic(line);
 }
 
+/* #878: a non-blank line indented four columns or more right after a footnote (or after its
+ * last continuation) is more of its text. */
+static bool continues(struct markdown_references *_Nonnull table, struct markdown_line line,
+                      size_t cursor)
+{
+    if (table->open == SIZE_MAX || table->continued == markdown_references_continuation_limit ||
+        line.indent < 4 || markdown_line_blank(line))
+        return false;
+    struct markdown_reference *entry = &table->entries[table->open];
+    entry->extent = cursor + line.length - entry->offset;
+    ++table->continued;
+    return true;
+}
+
 static enum markdown_rtf_outcome scan(struct markdown_references *_Nonnull table,
                                       const char *_Nonnull source, size_t length, size_t cursor)
 {
     table->allowed = true;
+    table->open = SIZE_MAX;
     while (cursor < length)
     {
         struct markdown_line line = markdown_line_read(source, length, cursor);
-        bool defined = false;
-        if (table->fence == 0 && table->allowed)
+        bool defined = continues(table, line, cursor);
+        if (!defined)
+            table->open = SIZE_MAX;
+        if (!defined && table->fence == 0 && table->allowed)
         {
             enum markdown_rtf_outcome read = definition(table, line, cursor, &defined);
             if (read != MARKDOWN_RTF_CONVERTED)
@@ -269,18 +293,22 @@ bool markdown_references_defines(const struct markdown_references *_Nullable tab
 {
     if (table == nullptr)
         return false;
-    /* Definitions are recorded in source order, so the offsets are increasing. */
+    /* Definitions are recorded in source order and never overlap, so the offsets are
+     * increasing: find the last one starting at or before the line. */
     size_t low = 0;
     size_t high = table->count;
     while (low < high)
     {
         size_t middle = low + (high - low) / 2;
-        if (table->entries[middle].offset < offset)
+        if (table->entries[middle].offset <= offset)
             low = middle + 1;
         else
             high = middle;
     }
-    return low < table->count && table->entries[low].offset == offset;
+    if (low == 0)
+        return false;
+    const struct markdown_reference *entry = &table->entries[low - 1];
+    return offset - entry->offset < entry->extent;
 }
 
 static size_t find_kind(const struct markdown_references *_Nullable table,
@@ -354,6 +382,29 @@ struct markdown_span markdown_references_line(const struct markdown_references *
     const char *_Nonnull source = table->source != nullptr ? table->source : "";
     return (struct markdown_span){
         .bytes = source + entry->offset, .length = entry->line_length, .offset = 0};
+}
+
+size_t markdown_references_footnote_text(const struct markdown_references *_Nonnull table,
+                                         size_t index, struct markdown_span *_Nonnull parts)
+{
+    const struct markdown_reference *entry = &table->entries[index];
+    struct markdown_span first = markdown_references_line(table, index);
+    parts[0] = (struct markdown_span){.bytes = first.bytes + entry->target.start,
+                                      .length = entry->target.end - entry->target.start,
+                                      .offset = 0};
+    size_t count = 1;
+    size_t end = entry->offset + entry->extent;
+    size_t cursor = markdown_line_read(table->source, end, entry->offset).next;
+    while (cursor < end && count <= markdown_references_continuation_limit)
+    {
+        struct markdown_line line = markdown_line_read(table->source, end, cursor);
+        const struct markdown_span *previous = &parts[count - 1];
+        parts[count++] = (struct markdown_span){.bytes = line.bytes + line.content,
+                                                .length = line.length - line.content,
+                                                .offset = previous->offset + previous->length + 1};
+        cursor = line.next;
+    }
+    return count;
 }
 
 struct note_search_span
