@@ -260,7 +260,8 @@ struct folio_window
     int drawer_width;         /* 実行中に選んだlogical幅。窓縮小時の制限で上書きしない。 */
     int split_origin_width;   /* pressed_part == SPLITTERの間だけ有効な取消先。 */
     int split_pointer_offset; /* drag開始時のroot座標と境界との差（device px）。 */
-    int wide_width;           /* DRAWER直前の通常幅（logical px）。 */
+    int wide_width;           /* DRAWER直前の通常幅（物理px、wide_dpiのとき。#936）。 */
+    UINT wide_dpi;            /* wide_widthを測ったときの窓のDPI。 */
     WINDOWPLACEMENT wide_placement;
     bool restore_maximized;
     /* `:%s` が 1 件も一致しなかった。欄は閉じず、置換の欄と同じ 1 行を出す（ADR 0028 の補正） */
@@ -7709,13 +7710,22 @@ static bool remember_wide_window(struct folio_window *_Nonnull self)
     }
     self->restore_maximized = IsZoomed(self->handle);
     RECT normal = self->restore_maximized ? self->wide_placement.rcNormalPosition : bounds;
-    self->wide_width =
-        MulDiv(normal.right - normal.left, base_dpi, (int)GetDpiForWindow(self->handle));
+    /* 物理pxのまま持つ。96 DPIの単位へ直して戻すと丸めで1px変わる（#936）。 */
+    self->wide_width = normal.right - normal.left;
+    self->wide_dpi = GetDpiForWindow(self->handle);
     return true;
 }
 
+/* 一覧だけの直前の幅を、いまのDPIの物理pxで返す。DPIが同じなら測った値そのまま。 */
+static int wide_width_at(const struct folio_window *_Nonnull self, UINT dpi)
+{
+    if (self->wide_dpi == 0 || dpi == self->wide_dpi)
+        return self->wide_width;
+    return MulDiv(self->wide_width, (int)dpi, (int)self->wide_dpi);
+}
+
 /* 現位置/高さを保つ。画面外の場合だけ幅と共通頭の位置をwork areaへ収める。 */
-static bool set_layout_width(const struct folio_window *_Nonnull self, int logical_width)
+static bool set_layout_width(const struct folio_window *_Nonnull self, int pixel_width)
 {
     RECT bounds;
     MONITORINFO monitor = {.cbSize = sizeof monitor};
@@ -7724,7 +7734,7 @@ static bool set_layout_width(const struct folio_window *_Nonnull self, int logic
     {
         return false;
     }
-    int width = scale(logical_width, GetDpiForWindow(self->handle));
+    int width = pixel_width;
     int available = monitor.rcWork.right - monitor.rcWork.left;
     width = width > available ? available : width;
     int left = bounds.left;
@@ -7759,7 +7769,8 @@ static bool resize_layout_window(struct folio_window *_Nonnull self,
         {
             ShowWindow(self->handle, SW_SHOWNOACTIVATE);
         }
-        return set_layout_width(self, base_drawer_window_width);
+        return set_layout_width(self,
+                                scale(base_drawer_window_width, GetDpiForWindow(self->handle)));
     }
     if (previous != FOLIO_LAYOUT_DRAWER)
     {
@@ -7775,7 +7786,7 @@ static bool resize_layout_window(struct folio_window *_Nonnull self,
         if (IsZoomed(self->handle) || IsIconic(self->handle))
             return false;
     }
-    return set_layout_width(self, self->wide_width);
+    return set_layout_width(self, wide_width_at(self, GetDpiForWindow(self->handle)));
 }
 
 /* 一連の同期WM_SIZEも同じapplication値を使い、失敗なら元の配置へ戻す。 */
@@ -8679,7 +8690,7 @@ static struct window_placement closing_placement(const struct folio_window *_Non
         wide.maximized = true;
         return wide;
     }
-    closing.width = MulDiv(self->wide_width, (int)closing.dpi, base_dpi);
+    closing.width = wide_width_at(self, closing.dpi);
     return closing;
 }
 
