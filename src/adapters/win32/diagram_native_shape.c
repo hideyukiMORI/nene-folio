@@ -103,6 +103,8 @@ void diagram_native_shape_draw(HDC _Nonnull dc, const struct diagram_primitive *
         break;
     case DIAGRAM_CIRCLE:
     case DIAGRAM_DOUBLE_CIRCLE:
+    case DIAGRAM_STATE_START:
+    case DIAGRAM_STATE_END:
         Ellipse(dc, r.left, r.top, r.right, r.bottom);
         if (shape == DIAGRAM_DOUBLE_CIRCLE)
             Ellipse(dc, r.left + diagram_double_circle_inset * scale,
