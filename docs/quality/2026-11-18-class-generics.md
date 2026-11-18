@@ -23,6 +23,13 @@ Mermaidの公式の例（`class Square~Shape~{ List~int~ position }`）が、こ
 | t4 | `folio_unit`・`diagram_render`・`diagram_status` | 3件成功 |
 | cov | `eng/coverage.py`（作業木の`build`を構築の木へのjunctionにして実行。1回目はjunction無しで`compile_commands.json`が見つからず失敗） | 分岐カバレッジ91.26%（11458/12556、下限90%）。`mermaid_class.c`は91.6% |
 
+### 最初の必須CIの失敗
+
+統合の手順の必須CI（run 44207748313）が`eng/symbols.py`で落ちた: 「ARC-003: core: undeclared external symbol memchr」。
+coreが使ってよい外部シンボルの一覧に`memchr`は無い。手元の確認に`eng/symbols.py`を入れていなかった（自分の手順の漏れ）。
+許可の一覧は変えず、コードを直した（表示の文字列が`>`で終わるかで判定する）。手元の確認の手順に`eng/symbols.py`を足した。
+直した後: 構築成功、`ctest -R`の3件成功、規約0、`Symbols: 2 libraries checked, 0 violation(s)`。
+
 画像で気づいたこと（今回の変更とは無関係）: 見本の図で「使う」のラベルが猫からの線と重なる。配置の既存の振る舞い。
 
 ## 確かめていないこと

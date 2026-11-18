@@ -106,7 +106,8 @@ static bool show_generic(struct mermaid_class *_Nonnull parser, struct diagram_t
     parser->used = 0;
     if (!append_generic(parser, whole))
         return false;
-    if (memchr(parser->label, '<', parser->used) == nullptr)
+    /* The run ends in `~`; unless that closed a generic (`Box~~`), nothing was one. */
+    if (parser->label[parser->used - 1] != '>')
         return reject(parser, DIAGRAM_UNSUPPORTED);
     struct diagram_node node = diagram_model_node_at(parser->model, index);
     parser->outcome = diagram_model_text(parser->model, parser->label, parser->used, &node.id);
