@@ -91,6 +91,9 @@ constexpr int note_pane_control_id = 3;
                                                          size_t *_Nonnull count);
 /* 一致 1 つを選択して見える位置へ寄せる。フォーカスも本文も Undo も触らない。 */
 void note_pane_select(struct note_pane *_Nonnull pane, size_t start, size_t end);
+/* #945: 脚注の番号の先頭へキャレットを置いて見える位置へ寄せる。back
+ * が真なら脚注の側の番号、偽なら本文の側の 最初の参照。その番号が表示に無ければ何もせず false。 */
+bool note_pane_show_footnote(struct note_pane *_Nonnull pane, bool back, size_t number);
 /* テーマの切り替えで地と本文の色を当て直す（ADR 0031 の決定 6）。閲覧・編集の両方で呼ぶ
  * （地の色は RTF に入らない）。本文・選択・Undo の段数・変更印は変わらない。
  * ITextDocument / Undo停止の失敗時は色を変えない。本文のreadinessは変えず再試行できる。

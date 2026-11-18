@@ -123,6 +123,7 @@ static bool favorites_visual_case;
 static bool favorites_ui_case;
 static bool favorite_high_contrast;
 static bool code_copy_case;
+static bool footnote_jump_case;
 static bool code_copy_visual_case;
 static bool bare_url_visual_case;
 static bool search_key_visual_case;
@@ -10158,6 +10159,117 @@ static void text_menu_visual(struct native_fixture *_Nonnull fixture)
     }
 }
 
+/* #945: the native position of `text` at or after `from` in the viewed note. */
+static LONG footnote_find(HWND _Nonnull body, const wchar_t *_Nonnull text, LONG from)
+{
+    FINDTEXTEXW find = {.chrg = {from, -1}, .lpstrText = text};
+    LONG found = (LONG)SendMessageW(body, EM_FINDTEXTEXW, FR_DOWN | FR_MATCHCASE, (LPARAM)&find);
+    require(found >= 0, "the fixture text is in the viewed note");
+    return found;
+}
+
+/* Ctrl+Enter from wherever the caret is now; returns the caret the activation left. */
+static LONG footnote_key(struct folio_window *_Nonnull window, HWND _Nonnull body)
+{
+    SetFocus(body);
+    native_key_input(window, VK_RETURN, FCONTROL);
+    CHARRANGE range = {0, 0};
+    SendMessageW(body, EM_EXGETSEL, 0, (LPARAM)&range);
+    require(range.cpMin == range.cpMax, "a jump leaves a caret, not a selection");
+    return range.cpMin;
+}
+
+/* A real pointer click on the character at `position`; returns the caret it left. */
+static LONG footnote_click(struct folio_window *_Nonnull window, HWND _Nonnull body, LONG position)
+{
+    POINTL from = {0}, to = {0};
+    SendMessageW(body, EM_POSFROMCHAR, (WPARAM)&from, position);
+    SendMessageW(body, EM_POSFROMCHAR, (WPARAM)&to, position + 1);
+    LPARAM where = MAKELPARAM((from.x + to.x) / 2, from.y + 6);
+    SendMessageW(body, WM_MOUSEMOVE, 0, where);
+    SendMessageW(body, WM_LBUTTONDOWN, MK_LBUTTON, where);
+    SendMessageW(body, WM_LBUTTONUP, 0, where);
+    pump(window);
+    CHARRANGE range = {0, 0};
+    SendMessageW(body, EM_EXGETSEL, 0, (LPARAM)&range);
+    return range.cpMin;
+}
+
+static bool footnote_in_view(HWND _Nonnull body, LONG position)
+{
+    POINTL point = {0};
+    SendMessageW(body, EM_POSFROMCHAR, (WPARAM)&point, position);
+    RECT client = {0};
+    GetClientRect(body, &client);
+    return point.y >= 0 && point.y < client.bottom;
+}
+
+static bool footnote_text_at(HWND _Nonnull body, LONG position, const wchar_t *_Nonnull expected)
+{
+    wchar_t text[8] = L"";
+    TEXTRANGEW range = {.chrg = {position, position + (LONG)wcslen(expected)}, .lpstrText = text};
+    SendMessageW(body, EM_GETTEXTRANGE, 0, (LPARAM)&range);
+    return wcscmp(text, expected) == 0;
+}
+
+/* #945: a footnote's raised number goes to its footnote and the footnote's number comes back to
+ * the first reference, by Ctrl+Enter and by a click, each from where the last jump landed. The
+ * links are internal, so the body's menu stays the plain viewing one. */
+static void footnote_jump(struct native_fixture *_Nonnull fixture)
+{
+    require(folio_state_set_language(fixture->state, FOLIO_LANGUAGE_JA) == FOLIO_STATE_READY,
+            "footnote fixture language");
+    folio_state_set_layout_mode(fixture->state, FOLIO_LAYOUT_NOTE);
+    struct folio_window *window = nullptr;
+    require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
+                FOLIO_WINDOW_CREATED,
+            "footnote window");
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    int width = MulDiv(620, (int)GetDpiForWindow(root), 96);
+    int height = MulDiv(380, (int)GetDpiForWindow(root), 96);
+    require(SetWindowPos(root, nullptr, 20, 20, width, height, SWP_NOZORDER | SWP_NOACTIVATE),
+            "a short footnote window");
+    pump(window);
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    LONG sentence = footnote_find(body, L"脚注の例", 0);
+    LONG first = footnote_find(body, L"と", sentence) - 1;
+    LONG second = footnote_find(body, L"（#869）", sentence) - 1;
+    LONG notes = footnote_find(body, L"一つ目の脚注", second);
+    require(!footnote_in_view(body, notes), "the footnotes start below the short window");
+    SendMessageW(body, EM_SETSEL, (WPARAM)first, first);
+    LONG at = footnote_key(window, body);
+    printf("footnote jump: ref %ld -> note %ld (text at %ld) in view %d\n", first, at, notes,
+           footnote_in_view(body, at));
+    fflush(stdout);
+    require(footnote_text_at(body, at, L"1.") && at > second && at < notes &&
+                footnote_in_view(body, at),
+            "Ctrl+Enter on the first raised number goes to footnote 1 and scrolls it into view");
+    LONG back = footnote_key(window, body);
+    printf("footnote jump: back %ld in view %d\n", back, footnote_in_view(body, back));
+    fflush(stdout);
+    require(back == first && footnote_in_view(body, back),
+            "Ctrl+Enter where the jump landed comes back to the first reference");
+    at = footnote_click(window, body, second);
+    printf("footnote click: ref %ld -> note %ld\n", second, at);
+    fflush(stdout);
+    require(footnote_text_at(body, at, L"2.") && at > notes,
+            "a click on the second raised number goes to footnote 2, after footnote 1");
+    back = footnote_click(window, body, at);
+    require(back == second, "a click on footnote 2's number comes back to its reference");
+    SendMessageW(body, EM_SETSEL, (WPARAM)first, first);
+    SendMessageW(body, WM_CONTEXTMENU, (WPARAM)body, -1);
+    pump(window);
+    struct accessible_view copy = text_menu_row(window, 0);
+    require(copy.set_size == 2 && wcscmp((const wchar_t *)copy.name, L"コピー") == 0,
+            "a footnote number is not a web link: the menu offers no open or copy-link");
+    SendMessageW(root, WM_KEYDOWN, VK_ESCAPE, 0);
+    pump(window);
+    require(folio_state_pane_mode(fixture->state) == PANE_MODE_VIEW && controlled.requests == 0,
+            "moving between footnotes keeps the reading view and requests nothing");
+    folio_window_destroy(window);
+    folio_state_set_layout_mode(fixture->state, FOLIO_LAYOUT_BOTH);
+}
+
 /* #855: the list's search field with its key at the right of the placeholder, in each language
  * and both themes, for the record's screenshots. */
 static void search_key_visual(struct native_fixture *_Nonnull fixture)
@@ -10343,6 +10455,14 @@ static void run_code_copy_scroll(struct native_fixture *_Nonnull fixture)
     folio_window_destroy(window);
 }
 
+static void run_window_or_footnote(struct native_fixture *_Nonnull fixture)
+{
+    if (window_place_case)
+        window_place(fixture);
+    else
+        footnote_jump(fixture);
+}
+
 static void run_code_copy_case(struct native_fixture *_Nonnull fixture)
 {
     require(folio_state_select_note(fixture->state, 0, 0, FOLIO_UNTITLED_PROTECT) ==
@@ -10353,9 +10473,9 @@ static void run_code_copy_case(struct native_fixture *_Nonnull fixture)
         text_menu_visual(fixture);
         return;
     }
-    if (window_place_case)
+    if (window_place_case || footnote_jump_case)
     {
-        window_place(fixture);
+        run_window_or_footnote(fixture);
         return;
     }
     if (search_key_visual_case)
@@ -13243,8 +13363,9 @@ static void select_clipboard_fixture(const char *_Nonnull selector)
     search_key_visual_case = strcmp(selector, "--search-key-visual") == 0;
     text_menu_case = strcmp(selector, "--text-menu") == 0;
     window_place_case = strcmp(selector, "--window-place") == 0;
+    footnote_jump_case = strcmp(selector, "--footnote-jump") == 0;
     bare_url_visual_case = strcmp(selector, "--bare-url-visual") == 0 || search_key_visual_case ||
-                           text_menu_case || window_place_case;
+                           text_menu_case || window_place_case || footnote_jump_case;
     code_copy_visual_case = strcmp(selector, "--code-copy-visual") == 0 || bare_url_visual_case;
     code_copy_keys_case_selected = strcmp(selector, "--code-copy-keys") == 0;
     code_copy_scroll_96 = strcmp(selector, "--code-copy-scroll-96") == 0;

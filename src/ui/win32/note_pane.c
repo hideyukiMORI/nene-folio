@@ -3,6 +3,7 @@
 #include "caret_command.h"
 #include "code_copy_target.h"
 #include "folio_message.h"
+#include "footnote_target.h"
 #include "line_index.h"
 #include "menu_request.h"
 #include "note_pane_code_button.h"
@@ -619,8 +620,11 @@ static RECT caret_anchor(const struct note_pane *_Nonnull pane)
 static bool web_target(const struct utf8_text *_Nonnull target)
 {
     size_t slot = 0;
+    /* #945: a footnote number's link is internal too. */
     return code_copy_target_parse(utf8_text_bytes(target), utf8_text_length(target), &slot) ==
-           CODE_COPY_TARGET_OTHER;
+               CODE_COPY_TARGET_OTHER &&
+           footnote_target_parse(utf8_text_bytes(target), utf8_text_length(target), &slot) ==
+               FOOTNOTE_TARGET_OTHER;
 }
 
 static void open_text_menu(struct note_pane *_Nonnull pane, LPARAM position)
@@ -1583,6 +1587,19 @@ void note_pane_select(struct note_pane *_Nonnull pane, size_t start, size_t end)
     CHARRANGE range = note_pane_links_native(pane->links, (struct note_search_span){start, end});
     SendMessageW(pane->handle, EM_EXSETSEL, 0, (LPARAM)&range);
     SendMessageW(pane->handle, EM_SCROLLCARET, 0, 0);
+}
+
+bool note_pane_show_footnote(struct note_pane *_Nonnull pane, bool back, size_t number)
+{
+    CHARRANGE range = {0};
+    if (pane->handle == nullptr || !note_pane_links_footnote(pane->links, back, number, &range))
+        return false;
+    /* A caret, not a selection: a link is activated from a caret (Ctrl+Enter) or a click with
+     * nothing selected, so the way back works from where the jump lands. */
+    range.cpMax = range.cpMin;
+    SendMessageW(pane->handle, EM_EXSETSEL, 0, (LPARAM)&range);
+    SendMessageW(pane->handle, EM_SCROLLCARET, 0, 0);
+    return true;
 }
 
 void note_pane_restore_selection(struct note_pane *_Nonnull pane, struct note_search_span span)

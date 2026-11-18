@@ -38,6 +38,7 @@
 #include "folio_state.h"
 #include "folio_step.h"
 #include "folio_theme_choice.h"
+#include "footnote_target.h"
 #include "history_row_view.h"
 #include "icon_paint.h"
 #include "key_guide.h"
@@ -11930,9 +11931,34 @@ static bool web_link_ready(const struct folio_window *_Nonnull self)
 
 /* リンクの宛先を意図へ分ける唯一の場所（ADR0098）。クリックと Ctrl+Enter の両方がここを通る。
  * 内部の宛先（コードブロックのコピー）は検証済みの slot 番号へ変え、それ以外は従来のリンク。 */
+/* #945: a footnote number's link moves inside the note. The body's number goes to the footnote
+ * (its number, the `back` end); the footnote's number goes back to the first reference. */
+static bool activate_footnote(struct folio_window *_Nonnull self, const char *_Nonnull bytes,
+                              size_t length)
+{
+    size_t number = 0;
+    struct note_pane *_Nullable pane = self->pane;
+    if (pane == nullptr)
+        return false;
+    switch (footnote_target_parse(bytes, length, &number))
+    {
+    case FOOTNOTE_TARGET_NOTE:
+        (void)note_pane_show_footnote(pane, true, number);
+        return true;
+    case FOOTNOTE_TARGET_REFERENCE:
+        (void)note_pane_show_footnote(pane, false, number);
+        return true;
+    case FOOTNOTE_TARGET_OTHER:
+        return false;
+    }
+    return false;
+}
+
 static void activate_link_target(struct folio_window *_Nonnull self, const char *_Nonnull bytes,
                                  size_t length)
 {
+    if (activate_footnote(self, bytes, length))
+        return;
     size_t slot = 0;
     switch (code_copy_target_parse(bytes, length, &slot))
     {
