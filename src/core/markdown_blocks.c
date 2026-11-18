@@ -715,6 +715,51 @@ static bool render_next(struct markdown_blocks *_Nonnull parser, size_t *_Nonnul
     return render_line(parser, raw, cursor);
 }
 
+/* One paragraph of a footnote: its spans, as a view of their own, after a line break when it
+ * is not the first. */
+static bool footnote_paragraph(struct markdown_blocks *_Nonnull parser,
+                               struct markdown_span *_Nonnull parts, size_t count, bool later)
+{
+    if (later)
+        text_buffer_append_text(parser->out, "\\line ");
+    size_t base = parts[0].offset;
+    for (size_t index = 0; index < count; ++index)
+        parts[index].offset -= base;
+    parser->outcome = markdown_inline_tokens_render(
+        (struct markdown_render){parser->out, parser->media, 18, parser->references},
+        (struct markdown_view){.spans = parts,
+                               .count = count,
+                               .length = parts[count - 1].offset + parts[count - 1].length});
+    return parser->outcome == MARKDOWN_RTF_CONVERTED;
+}
+
+/* Where the paragraph starting at `start` ends: at an empty span or at the end. */
+static size_t footnote_paragraph_end(const struct markdown_span *_Nonnull parts, size_t start,
+                                     size_t count)
+{
+    while (start < count && parts[start].length != 0)
+        ++start;
+    return start;
+}
+
+/* #963: the footnote's paragraphs, parted by a line break. An empty span is the blank line
+ * between two paragraphs (or a definition with no text). */
+static bool footnote_paragraphs(struct markdown_blocks *_Nonnull parser,
+                                struct markdown_span *_Nonnull parts, size_t count)
+{
+    bool later = false;
+    for (size_t start = 0, end = 0; start < count; start = end + 1)
+    {
+        end = footnote_paragraph_end(parts, start, count);
+        if (end == start)
+            continue;
+        if (!footnote_paragraph(parser, parts + start, end - start, later))
+            return false;
+        later = true;
+    }
+    return true;
+}
+
 /* #869 / ADR0103: one footnote line, `n. text`, a size smaller than the body; its text goes
  * through the same inline rendering (which may number further footnotes it refers to). */
 static bool footnote_line(struct markdown_blocks *_Nonnull parser, size_t rank)
@@ -724,7 +769,6 @@ static bool footnote_line(struct markdown_blocks *_Nonnull parser, size_t rank)
     /* #878: the first line's text and the lines it continues on, joined like a paragraph. */
     struct markdown_span parts[markdown_references_continuation_limit + 1];
     size_t count = markdown_references_footnote_text(references, index, parts);
-    const struct markdown_span *last = &parts[count - 1];
     /* #945: the footnote's number is a link back to the first place that referred to it. */
     text_buffer_append_text(
         parser->out, "\\pard\\sa40\\sl240\\slmult1\\cf3\\fs18 {\\field{\\*\\fldinst{HYPERLINK \"");
@@ -732,12 +776,9 @@ static bool footnote_line(struct markdown_blocks *_Nonnull parser, size_t rank)
     text_buffer_append_text(parser->out, "\"}}{\\fldrslt{\\cf4\\ul0 ");
     rtf_text_number(parser->out, rank + 1);
     text_buffer_append_text(parser->out, ".}}} ");
-    parser->outcome = markdown_inline_tokens_render(
-        (struct markdown_render){parser->out, parser->media, 18, references},
-        (struct markdown_view){
-            .spans = parts, .count = count, .length = last->offset + last->length});
+    bool rendered = footnote_paragraphs(parser, parts, count);
     text_buffer_append_text(parser->out, "\\fs22\\cf1\\par\n");
-    return parser->outcome == MARKDOWN_RTF_CONVERTED;
+    return rendered;
 }
 
 /* The note's referred footnotes, after a thin rule, in the order they were first referred to. */
