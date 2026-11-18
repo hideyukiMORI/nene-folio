@@ -9620,33 +9620,69 @@ static size_t code_copy_count(const DWORD *_Nonnull pixels, RECT client, RECT ar
     return count;
 }
 
-/* Pixels of one colour inside a client rectangle of the body, as the window prints itself. */
-static size_t code_copy_pixels(HWND _Nonnull body, RECT area, struct rgb_color color)
+/* One print of the top-level window (it prints its children). Several areas can be counted in
+ * the same frame while nothing repaints in between (#948). */
+struct code_copy_frame
 {
-    /* The top-level window prints its children; the area is moved into its client coordinates. */
-    HWND root = GetAncestor(body, GA_ROOT);
+    HWND _Nullable root;
     RECT client;
-    GetClientRect(root, &client);
-    MapWindowPoints(body, root, (POINT *)&area, 2);
+    HDC _Nullable screen;
+    HDC _Nullable memory;
+    HBITMAP _Nullable bitmap;
+    HGDIOBJ _Nullable old;
+    const DWORD *_Nullable bits;
+};
+
+static struct code_copy_frame code_copy_frame_begin(HWND _Nonnull body)
+{
+    struct code_copy_frame frame = {.root = GetAncestor(body, GA_ROOT)};
+    GetClientRect(frame.root, &frame.client);
     BITMAPINFO info = {.bmiHeader = {.biSize = sizeof(BITMAPINFOHEADER),
-                                     .biWidth = client.right,
-                                     .biHeight = -client.bottom,
+                                     .biWidth = frame.client.right,
+                                     .biHeight = -frame.client.bottom,
                                      .biPlanes = 1,
                                      .biBitCount = 32,
                                      .biCompression = BI_RGB}};
     void *bits = nullptr;
-    HDC screen = GetDC(root);
-    HDC memory = CreateCompatibleDC(screen);
-    HBITMAP bitmap = CreateDIBSection(screen, &info, DIB_RGB_COLORS, &bits, nullptr, 0);
-    require(memory != nullptr && bitmap != nullptr && bits != nullptr, "body capture surface");
-    HGDIOBJ old = SelectObject(memory, bitmap);
-    require(PrintWindow(root, memory, PW_CLIENTONLY), "print the window with its decoration");
+    frame.screen = GetDC(frame.root);
+    frame.memory = CreateCompatibleDC(frame.screen);
+    frame.bitmap = CreateDIBSection(frame.screen, &info, DIB_RGB_COLORS, &bits, nullptr, 0);
+    require(frame.memory != nullptr && frame.bitmap != nullptr && bits != nullptr,
+            "body capture surface");
+    frame.bits = bits;
+    frame.old = SelectObject(frame.memory, frame.bitmap);
+    require(PrintWindow(frame.root, frame.memory, PW_CLIENTONLY),
+            "print the window with its decoration");
+    return frame;
+}
+
+/* Pixels of one colour inside a client rectangle of the body; the area is moved into the
+ * top-level window's client coordinates. */
+static size_t code_copy_frame_count(const struct code_copy_frame *_Nonnull frame,
+                                    HWND _Nonnull body, RECT area, struct rgb_color color)
+{
+    MapWindowPoints(body, frame->root, (POINT *)&area, 2);
     DWORD wanted = ((DWORD)color.red << 16) | ((DWORD)color.green << 8) | color.blue;
-    size_t count = code_copy_count(bits, client, area, wanted);
-    SelectObject(memory, old);
-    DeleteObject(bitmap);
-    DeleteDC(memory);
-    ReleaseDC(root, screen);
+    return frame->bits == nullptr ? 0 : code_copy_count(frame->bits, frame->client, area, wanted);
+}
+
+static void code_copy_frame_end(struct code_copy_frame *_Nonnull frame)
+{
+    if (frame->root == nullptr)
+        return;
+    SelectObject(frame->memory, frame->old);
+    DeleteObject(frame->bitmap);
+    DeleteDC(frame->memory);
+    ReleaseDC(frame->root, frame->screen);
+    *frame = (struct code_copy_frame){0};
+}
+
+/* Pixels of one colour inside a client rectangle of the body, as the window prints itself. */
+static size_t code_copy_pixels(HWND _Nonnull body, RECT area, struct rgb_color color)
+{
+    struct code_copy_frame frame = code_copy_frame_begin(body);
+    size_t count = code_copy_frame_count(&frame, body, area, color);
+    code_copy_frame_end(&frame);
     return count;
 }
 
@@ -10397,6 +10433,9 @@ static unsigned code_copy_scroll_rows(struct folio_window *_Nonnull window,
     LONG row = MulDiv(MulDiv(360, (int)GetDpiForWindow(body), 1440), zoom, 100);
     LONG icon = MulDiv(MulDiv(20, (int)GetDpiForWindow(body), 96), zoom, 100);
     unsigned visible = 0;
+    /* #948: the window is printed once for this scroll position and every visible header row is
+     * counted in that frame; nothing repaints between the rows. */
+    struct code_copy_frame frame = {0};
     for (size_t block = 0; block < 5; ++block)
     {
         LONG word = code_copy_word(body, block);
@@ -10405,16 +10444,18 @@ static unsigned code_copy_scroll_rows(struct folio_window *_Nonnull window,
         SendMessageW(body, EM_POSFROMCHAR, (WPARAM)&end, word + 7);
         if (start.y < 0 || start.y + row > client.bottom || end.y != start.y)
             continue;
-        ++visible;
+        if (visible++ == 0)
+            frame = code_copy_frame_begin(body);
         RECT place = {end.x - icon, start.y, end.x, start.y + row};
         size_t area = (size_t)(place.right - place.left) * (size_t)(place.bottom - place.top);
-        size_t surface = code_copy_pixels(body, place, colors->code_background);
+        size_t surface = code_copy_frame_count(&frame, body, place, colors->code_background);
         if (surface + 20 > area || surface < area / 2)
         {
             code_copy_scroll_report(body, colors, path, place);
             require(false, "a fully visible header row shows its copy icon");
         }
     }
+    code_copy_frame_end(&frame);
     return visible;
 }
 
