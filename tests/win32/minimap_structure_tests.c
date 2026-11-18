@@ -1,9 +1,11 @@
 /* #506: Native formatting is sampled without editing or moving the real document. */
 #include "caret_command.h"
 #include "folio_message.h"
+#include "folio_palette.h"
 #include "markdown_rtf.h"
 #include "menu_request.h"
 #include "note_minimap.h"
+#include "note_outline.h"
 #include "note_pane.h"
 #include "note_text.h"
 #include "theme_palette.h"
@@ -1271,6 +1273,152 @@ static void heading_texts(struct note_pane *_Nonnull pane)
             "the editing view has no rows and nothing being read");
 }
 
+/* The colour the column drew at a point of its off-screen picture. */
+static COLORREF outline_pixel(HDC _Nonnull device, int x, int y)
+{
+    return GetPixel(device, x, y);
+}
+
+static void outline_save(HDC _Nonnull device, HBITMAP _Nonnull bitmap, SIZE size,
+                         const char *_Nonnull path)
+{
+    BITMAPINFOHEADER info = {sizeof info, size.cx, -size.cy, 1, 24, BI_RGB, 0, 0, 0, 0, 0};
+    size_t stride = ((size_t)size.cx * 3 + 3) & ~(size_t)3;
+    unsigned char *pixels = malloc(stride * (size_t)size.cy);
+    require(pixels != nullptr && GetDIBits(device, bitmap, 0, (UINT)size.cy, pixels,
+                                           (BITMAPINFO *)&info, DIB_RGB_COLORS) == size.cy,
+            "the column's picture can be read");
+    BITMAPFILEHEADER file = {0x4D42, (DWORD)(sizeof file + sizeof info + stride * (size_t)size.cy),
+                             0, 0, sizeof file + sizeof info};
+    FILE *out = nullptr;
+    require(fopen_s(&out, path, "wb") == 0 && out != nullptr, "the column's picture file");
+    fwrite(&file, sizeof file, 1, out);
+    fwrite(&info, sizeof info, 1, out);
+    fwrite(pixels, stride, (size_t)size.cy, out);
+    fclose(out);
+    free(pixels);
+}
+
+/* Thirty headings of mixed levels, each followed by a paragraph. */
+static const char *_Nonnull outline_content(void)
+{
+    static char content[4096];
+    size_t used = 0;
+    for (unsigned at = 0; at < 30; ++at)
+        used += (size_t)sprintf(content + used, "%s 見出し %u\n\n段落 %u\n\n",
+                                at % 3 == 0 ? "#" : (at % 3 == 1 ? "##" : "###"), at, at);
+    return content;
+}
+
+/* Rows, hit-testing and the column's own scrolling agree on one geometry. */
+static void outline_geometry(struct note_outline *_Nonnull outline,
+                             const struct note_outline_paint *_Nonnull paint)
+{
+    require(note_outline_rows(paint) == 11, "the rows that fit under the column's name");
+    RECT third = note_outline_row_rect(outline, paint, 3);
+    POINT inside = {(third.left + third.right) / 2, (third.top + third.bottom) / 2};
+    require(!IsRectEmpty(&third) && third.left > paint->bounds.left &&
+                third.right == paint->bounds.right &&
+                note_outline_row_at(outline, paint, inside, 30) == 3,
+            "a row's rectangle and the row at a point inside it are the same row");
+    require(note_outline_row_at(outline, paint,
+                                (POINT){paint->bounds.left + 20, paint->bounds.top + 5},
+                                30) == note_outline_none &&
+                note_outline_row_at(outline, paint, (POINT){paint->bounds.left - 2, inside.y},
+                                    30) == note_outline_none &&
+                note_outline_row_at(outline, paint, inside, 2) == note_outline_none,
+            "the column's name, a point outside it and a row past the last heading are no row");
+    require(note_outline_scroll(outline, paint, 5, 30) &&
+                IsRectEmpty(&(RECT){note_outline_row_rect(outline, paint, 4).left,
+                                    note_outline_row_rect(outline, paint, 4).top,
+                                    note_outline_row_rect(outline, paint, 4).right,
+                                    note_outline_row_rect(outline, paint, 4).bottom}) &&
+                note_outline_row_at(outline, paint, inside, 30) == 8,
+            "scrolling the column moves which heading each row is");
+    require(note_outline_scroll(outline, paint, 100, 30) &&
+                !IsRectEmpty(&(RECT){note_outline_row_rect(outline, paint, 29).left,
+                                     note_outline_row_rect(outline, paint, 29).top,
+                                     note_outline_row_rect(outline, paint, 29).right,
+                                     note_outline_row_rect(outline, paint, 29).bottom}) &&
+                !note_outline_scroll(outline, paint, 1, 30),
+            "the column stops with the last heading in its last row");
+    require(note_outline_scroll(outline, paint, -100, 30) &&
+                !note_outline_scroll(outline, paint, -1, 30) &&
+                !note_outline_scroll(outline, paint, 3, 5),
+            "and with the first heading in its first row; a short list does not scroll");
+}
+
+/* The heading being read follows the body, and the column scrolls to keep its row in view. */
+static void outline_follow(struct note_outline *_Nonnull outline, struct note_pane *_Nonnull pane,
+                           const struct note_outline_paint *_Nonnull paint)
+{
+    require(note_outline_track(outline, pane, paint) && note_outline_current(outline) == 0 &&
+                !note_outline_track(outline, pane, paint),
+            "at the top the first heading is being read; asking again changes nothing");
+    require(note_pane_show_heading(pane, 25) && note_outline_track(outline, pane, paint) &&
+                note_outline_current(outline) == 25,
+            "after going to a heading, it is the one being read");
+    RECT row = note_outline_row_rect(outline, paint, 25);
+    require(!IsRectEmpty(&row), "the column scrolled so that row is in view");
+    note_outline_set_cursor(outline, paint, 99, 30);
+    require(note_outline_cursor(outline) == 29, "the keyboard's row stays inside the list");
+    note_outline_set_cursor(outline, paint, 2, 30);
+    row = note_outline_row_rect(outline, paint, 2);
+    require(note_outline_cursor(outline) == 2 && !IsRectEmpty(&row),
+            "moving the keyboard's row brings it into view");
+    require(note_outline_set_hover(outline, 4) && !note_outline_set_hover(outline, 4) &&
+                note_outline_set_pressed(outline, 5) && note_outline_pressed(outline) == 5 &&
+                note_outline_set_pressed(outline, note_outline_none),
+            "the pointer's row and the pressed row report only changes");
+}
+
+/* #975 / ADR0114: the headings column as a part of its own: what it shows and where. */
+static void outline_module(struct note_pane *_Nonnull pane)
+{
+    struct note_outline *_Nullable outline = nullptr;
+    require(note_outline_create(&outline) == NOTE_OUTLINE_READY, "outline");
+    load(pane, PANE_MODE_VIEW, outline_content());
+    struct folio_palette palette = folio_palette_from(folio_theme_palette(FOLIO_THEME_LIGHT));
+    struct note_outline_paint paint = {.bounds = {400, 0, 584, 300},
+                                       .dpi = 96,
+                                       .palette = &palette,
+                                       .title = u"見出し",
+                                       .empty = u"見出しはありません"};
+    outline_geometry(outline, &paint);
+    outline_follow(outline, pane, &paint);
+    require(note_pane_show_heading(pane, 4) && note_outline_track(outline, pane, &paint),
+            "the fifth heading is being read");
+    HDC screen = GetDC(nullptr);
+    HDC device = CreateCompatibleDC(screen);
+    HBITMAP bitmap = CreateCompatibleBitmap(screen, 600, 300);
+    ReleaseDC(nullptr, screen);
+    HGDIOBJ old = SelectObject(device, bitmap);
+    note_outline_draw(outline, pane, device, &paint);
+    RECT row = note_outline_row_rect(outline, &paint, 4);
+    require(outline_pixel(device, row.right - 3, row.top + 2) == palette.selected_background &&
+                outline_pixel(device, row.left + 1, row.top + 2) == palette.current_text &&
+                outline_pixel(device, paint.bounds.left, 150) == palette.border &&
+                outline_pixel(device, paint.bounds.right - 3, row.bottom + 3) == palette.pane,
+            "the heading being read has the selected surface and a bar; other rows the ground");
+    outline_save(device, bitmap, (SIZE){600, 300}, "outline-light.bmp");
+    uint64_t before = note_outline_revision(outline);
+    note_outline_reset(outline);
+    require(note_outline_revision(outline) == before + 1 &&
+                note_outline_current(outline) == note_outline_none &&
+                note_outline_cursor(outline) == 0,
+            "a reload starts the column over and changes its revision");
+    load(pane, PANE_MODE_VIEW, "見出しの無いノート\n");
+    note_outline_draw(outline, pane, device, &paint);
+    require(outline_pixel(device, paint.bounds.right - 3, 200) == palette.pane &&
+                !note_outline_track(outline, pane, &paint),
+            "a note without headings shows an empty column and nothing being read");
+    outline_save(device, bitmap, (SIZE){600, 300}, "outline-empty.bmp");
+    SelectObject(device, old);
+    DeleteObject(bitmap);
+    DeleteDC(device);
+    note_outline_destroy(outline);
+}
+
 int main(void)
 {
     HDESK desktop = CreateDesktopW(L"NeNeFolioMinimap506", nullptr, nullptr, 0,
@@ -1302,6 +1450,7 @@ int main(void)
     footnotes(pane);
     headings(pane);
     heading_texts(pane);
+    outline_module(pane);
     load(pane, PANE_MODE_EDIT, source);
     boundaries(pane);
     preservation(pane);
