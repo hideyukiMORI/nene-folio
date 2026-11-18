@@ -45,11 +45,12 @@ static const char state[] =
     "state 確認 <<choice>>\n確認 --> 待機 : やり直す\n確認 --> [*] : 成功\n"
     "state \"後処理\" as After {\n[*] --> 保存\n保存 --> [*]\n}\n";
 /* #890 / ADR0107: a class diagram through the same phases, with every UML marker and (#916)
- * multiplicities beside the ends. */
+ * multiplicities beside the ends, and (#938) generics. */
 static const char classes[] =
     "classDiagram\nclass 動物 {\n  <<abstract>>\n  +String 名前\n  +食べる() void\n}\n"
     "動物 <|-- 犬 : 継承\n動物 <|.. 猫\n犬 : +吠える()\n"
-    "犬 \"1\" *-- \"4\" 足\n犬 \"1\" o-- \"0..1\" 首輪\n猫 \"0..*\" --> \"1\" 飼い主\n猫 ..> 餌\n";
+    "犬 \"1\" *-- \"4\" 足\n犬 \"1\" o-- \"0..1\" 首輪\n猫 \"0..*\" --> \"1\" 飼い主\n猫 ..> 餌\n"
+    "class 箱~T~ {\n  -List~T~ 中身\n  +取り出す() T\n}\n犬 --> 箱 : 使う\n";
 /* #882 / ADR0105: an ER diagram through the same phases. */
 static const char er[] =
     "erDiagram\n顧客 ||--o{ 注文 : 出す\n注文 ||--|{ 明細 : 含む\n顧客 }|..|| 住所 : 使う\n"
