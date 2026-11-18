@@ -46,8 +46,11 @@ static void append_color(struct text_buffer *_Nonnull out, struct rgb_color colo
     text_buffer_append_text(out, ";");
 }
 
+/* #971 / ADR0113: the colour table ends with the pane's own colour (\\cf11). A description's
+ * row draws the three borders it does not want in it, because RichEdit shows a grey line on a
+ * cell edge that has no border. */
 static void append_header(struct text_buffer *_Nonnull out, struct rtf_palette palette,
-                          const char *_Nonnull face)
+                          struct rgb_color pane, const char *_Nonnull face)
 {
     const struct rgb_color colors[] = {
         palette.text,         palette.heading,         palette.muted,        palette.link,
@@ -62,6 +65,7 @@ static void append_header(struct text_buffer *_Nonnull out, struct rtf_palette p
     {
         append_color(out, colors[index]);
     }
+    append_color(out, pane);
     text_buffer_append_text(out, "}");
     text_buffer_append_text(out, document_body_start);
 }
@@ -93,7 +97,8 @@ static void render_plain(struct text_buffer *_Nonnull out, const char *_Nonnull 
 }
 
 /* 頭まで書いた入れ物を作る。確保に失敗すれば nullptr。 */
-static struct markdown_rtf *_Nullable begin(struct rtf_palette palette, const char *_Nonnull face)
+static struct markdown_rtf *_Nullable begin(struct rtf_palette palette, struct rgb_color pane,
+                                            const char *_Nonnull face)
 {
     struct markdown_rtf *_Nullable rtf = calloc(1, sizeof *rtf);
     if (rtf == nullptr)
@@ -105,7 +110,7 @@ static struct markdown_rtf *_Nullable begin(struct rtf_palette palette, const ch
         free(rtf);
         return nullptr;
     }
-    append_header(rtf->buffer, palette, face);
+    append_header(rtf->buffer, palette, pane, face);
     return rtf;
 }
 
@@ -127,7 +132,7 @@ enum markdown_rtf_outcome markdown_rtf_create(const struct note_text *_Nonnull t
                                               struct markdown_rtf_locale locale,
                                               struct markdown_rtf *_Nullable *_Nonnull out)
 {
-    struct markdown_rtf *_Nullable rtf = begin(theme->rtf, locale.face);
+    struct markdown_rtf *_Nullable rtf = begin(theme->rtf, theme->pane, locale.face);
     if (rtf == nullptr)
     {
         return MARKDOWN_RTF_OUT_OF_MEMORY;
@@ -149,10 +154,11 @@ enum markdown_rtf_outcome markdown_rtf_create(const struct note_text *_Nonnull t
     return finish(rtf, out);
 }
 
-enum markdown_rtf_outcome markdown_rtf_empty(struct rtf_palette palette, const char *_Nonnull face,
+enum markdown_rtf_outcome markdown_rtf_empty(const struct theme_palette *_Nonnull theme,
+                                             const char *_Nonnull face,
                                              struct markdown_rtf *_Nullable *_Nonnull out)
 {
-    struct markdown_rtf *_Nullable rtf = begin(palette, face);
+    struct markdown_rtf *_Nullable rtf = begin(theme->rtf, theme->pane, face);
     if (rtf == nullptr)
     {
         return MARKDOWN_RTF_OUT_OF_MEMORY;
@@ -162,10 +168,11 @@ enum markdown_rtf_outcome markdown_rtf_empty(struct rtf_palette palette, const c
 }
 
 enum markdown_rtf_outcome markdown_rtf_plain(const struct note_text *_Nonnull text,
-                                             struct rtf_palette palette, const char *_Nonnull face,
+                                             const struct theme_palette *_Nonnull theme,
+                                             const char *_Nonnull face,
                                              struct markdown_rtf *_Nullable *_Nonnull out)
 {
-    struct markdown_rtf *_Nullable rtf = begin(palette, face);
+    struct markdown_rtf *_Nullable rtf = begin(theme->rtf, theme->pane, face);
     if (rtf == nullptr)
     {
         return MARKDOWN_RTF_OUT_OF_MEMORY;

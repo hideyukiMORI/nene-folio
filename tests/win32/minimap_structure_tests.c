@@ -47,7 +47,7 @@ static void load_palette(struct note_pane *_Nonnull pane, enum pane_mode mode,
             text, &theme, (struct markdown_rtf_locale){"Yu Gothic UI", FOLIO_LANGUAGE_JA}, &rtf);
         break;
     case PANE_MODE_EDIT:
-        made = markdown_rtf_plain(text, palette, "Yu Gothic UI", &rtf);
+        made = markdown_rtf_plain(text, &theme, "Yu Gothic UI", &rtf);
         break;
     }
     require(made == MARKDOWN_RTF_CONVERTED, "canonical RTF");

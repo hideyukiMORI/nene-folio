@@ -409,7 +409,7 @@ static void rendering(void)
     require(destination.start == start && destination.end == start + 12,
             "metadata hiding does not shift the original image source range");
     markdown_rtf_destroy(rtf);
-    require(markdown_rtf_plain(body, rtf_palette_for(FOLIO_THEME_LIGHT), "Consolas", &rtf) ==
+    require(markdown_rtf_plain(body, folio_theme_palette(FOLIO_THEME_LIGHT), "Consolas", &rtf) ==
                     MARKDOWN_RTF_CONVERTED &&
                 strstr(markdown_rtf_text(rtf), "hidden-tag") != nullptr,
             "editing retains all source metadata");

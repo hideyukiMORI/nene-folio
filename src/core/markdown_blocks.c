@@ -5,6 +5,7 @@
 #include "footnote_target.h"
 #include "markdown_code_state.h"
 #include "markdown_containers.h"
+#include "markdown_definition_part.h"
 #include "markdown_inline_tokens.h"
 #include "markdown_media.h"
 #include "markdown_references.h"
@@ -40,6 +41,11 @@ struct markdown_blocks
     size_t heading;
     bool paragraph_quote;
     bool paragraph_item;
+    /* #971 / ADR0113: what the open paragraph is in a definition list, if anything. */
+    enum markdown_definition_part definition;
+    /* The last thing written was a description's row: a table that follows needs a paragraph
+     * between, or RichEdit joins the two into one table. */
+    bool after_description;
     enum markdown_task_kind task;
     char fence;
     size_t fence_length;
@@ -209,10 +215,67 @@ static void paragraph_header(struct markdown_blocks *_Nonnull parser)
         marker_label(parser, parser->task);
 }
 
+/* #971 / ADR0113: a term is a line in the link colour; a description is a one-cell table row
+ * whose only border is its left one (RichEdit draws no paragraph borders, ADR0005), so the
+ * thin rule runs beside every line of it. The pane fits the cell to its width like any table. */
+static void definition_header(struct markdown_blocks *_Nonnull parser)
+{
+    switch (parser->definition)
+    {
+    case MARKDOWN_DEFINITION_NONE:
+        return;
+    case MARKDOWN_DEFINITION_TERM:
+        text_buffer_append_text(parser->out, "\\pard\\sa20\\sl240\\slmult1\\cf4 ");
+        return;
+    case MARKDOWN_DEFINITION_DESCRIPTION:
+        text_buffer_append_text(
+            parser->out, "\\trowd\\trgaph120\\trleft80"
+                         "\\clbrdrt\\brdrs\\brdrw1\\brdrcf11\\clbrdrb\\brdrs\\brdrw1\\brdrcf11"
+                         "\\clbrdrl\\brdrs\\brdrw15\\brdrcf4\\clbrdrr\\brdrs\\brdrw1\\brdrcf11"
+                         "\\cellx9000\\pard\\intbl\\sa0\\sl240\\slmult1\\cf1\\fs22 ");
+        return;
+    }
+}
+
+static void definition_end(struct markdown_blocks *_Nonnull parser)
+{
+    switch (parser->definition)
+    {
+    case MARKDOWN_DEFINITION_NONE:
+        return;
+    case MARKDOWN_DEFINITION_TERM:
+        text_buffer_append_text(parser->out, "\\cf1\\par\n");
+        return;
+    case MARKDOWN_DEFINITION_DESCRIPTION:
+        text_buffer_append_text(parser->out, "\\cell\\row\n");
+        return;
+    }
+}
+
+static bool flush_definition(struct markdown_blocks *_Nonnull parser)
+{
+    definition_header(parser);
+    parser->outcome = markdown_inline_tokens_render(
+        (struct markdown_render){parser->out, parser->media, 22, parser->references},
+        (struct markdown_view){
+            .spans = parser->spans, .count = parser->span_count, .length = parser->inline_length});
+    if (parser->outcome != MARKDOWN_RTF_CONVERTED)
+        return false;
+    definition_end(parser);
+    parser->after_description = parser->definition == MARKDOWN_DEFINITION_DESCRIPTION;
+    parser->span_count = parser->inline_length = 0;
+    parser->task = MARKDOWN_TASK_KIND_NONE;
+    parser->definition = MARKDOWN_DEFINITION_NONE;
+    return true;
+}
+
 static bool flush(struct markdown_blocks *_Nonnull parser)
 {
     if (parser->span_count == 0)
         return true;
+    if (parser->definition != MARKDOWN_DEFINITION_NONE)
+        return flush_definition(parser);
+    parser->after_description = false;
     outer_markers(parser, 1);
     paragraph_header(parser);
     struct markdown_view view = {
@@ -439,6 +502,7 @@ static bool begin_copy(struct markdown_blocks *_Nonnull parser)
 static bool start_fence(struct markdown_blocks *_Nonnull parser, struct markdown_line line,
                         size_t length)
 {
+    parser->after_description = false;
     outer_markers(parser, 0);
     parser->fence = line.bytes[line.content];
     parser->code_state = MARKDOWN_CODE_STATE_EMPTY;
@@ -522,6 +586,7 @@ static bool heading_line(struct markdown_blocks *_Nonnull parser, struct markdow
 
 static void rule(struct markdown_blocks *_Nonnull parser)
 {
+    parser->after_description = false;
     outer_markers(parser, 0);
     /* RichEdit extends the highlight into paragraph spacing. Keep the gaps uncolored. */
     static const char gap[] = "{\\pard\\sb0\\sa0\\sl-240\\slmult0\\fs2\\highlight0\\par}\n";
@@ -545,6 +610,9 @@ static bool start_table(struct markdown_blocks *_Nonnull parser, struct markdown
 {
     if (!flush(parser))
         return false;
+    if (parser->after_description)
+        text_buffer_append_text(parser->out, "{\\pard\\sb0\\sa0\\sl-80\\slmult0\\fs2\\par}\n");
+    parser->after_description = false;
     parser->delimiter = delimiter;
     size_t indent_twips = markdown_containers_indent(parser->containers);
     parser->table_state = markdown_table_native(markdown_table_columns(line), indent_twips)
@@ -599,6 +667,44 @@ static bool special_line(struct markdown_blocks *_Nonnull parser, struct markdow
     }
     task_marker(parser, &line);
     return add_span(parser, line);
+}
+
+/* #971: `: text` right under a one-line paragraph at the top level (the term), or under a
+ * description, starts a description. Anywhere else the line is ordinary text. */
+static bool definition_starts(const struct markdown_blocks *_Nonnull parser,
+                              struct markdown_line line)
+{
+    if (line.indent >= 4 || line.length - line.content < 2 || line.bytes[line.content] != ':' ||
+        (line.bytes[line.content + 1] != ' ' && line.bytes[line.content + 1] != '\t'))
+        return false;
+    if (parser->definition == MARKDOWN_DEFINITION_DESCRIPTION)
+        return true;
+    /* A colon line that has no term is ordinary text, and is not the term of the next one. */
+    if (parser->span_count == 1 && parser->spans[0].length >= 2 &&
+        parser->spans[0].bytes[0] == ':' &&
+        (parser->spans[0].bytes[1] == ' ' || parser->spans[0].bytes[1] == '\t'))
+        return false;
+    return parser->span_count == 1 && parser->heading == 0 &&
+           parser->task == MARKDOWN_TASK_KIND_NONE && !parser->paragraph_quote &&
+           !parser->paragraph_item && parser->paragraph_indent == 0;
+}
+
+/* The pending paragraph is the term (or the previous description); the line's text after the
+ * colon opens a description. */
+static bool definition_line(struct markdown_blocks *_Nonnull parser, struct markdown_line line)
+{
+    if (parser->definition == MARKDOWN_DEFINITION_NONE)
+        parser->definition = MARKDOWN_DEFINITION_TERM;
+    if (!flush(parser))
+        return false;
+    line.content += 1;
+    while (line.content < line.length &&
+           (line.bytes[line.content] == ' ' || line.bytes[line.content] == '\t'))
+        ++line.content;
+    if (!add_span(parser, line))
+        return false;
+    parser->definition = MARKDOWN_DEFINITION_DESCRIPTION;
+    return true;
 }
 
 static bool table_candidate(struct markdown_blocks *_Nonnull parser, struct markdown_line line,
@@ -665,8 +771,11 @@ static bool render_line(struct markdown_blocks *_Nonnull parser, struct markdown
     bool accepted = true;
     if (skipped_line(parser, raw, line, &accepted))
         return accepted;
+    if (definition_starts(parser, line))
+        return definition_line(parser, line);
     size_t setext = markdown_line_setext(line);
-    if (parser->span_count != 0 && setext != 0)
+    /* A description is never a setext heading: `---` under it is a rule. */
+    if (parser->span_count != 0 && setext != 0 && parser->definition == MARKDOWN_DEFINITION_NONE)
     {
         parser->heading = setext;
         return flush(parser);
