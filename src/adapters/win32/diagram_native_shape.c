@@ -1,6 +1,7 @@
 #include "diagram_native_shape.h"
 #include "diagram_geometry.h"
 #include "diagram_style.h"
+#include <math.h>
 #include <stdlib.h>
 static void line(HDC _Nonnull dc, int x, int y, POINT end)
 {
@@ -76,6 +77,31 @@ static void angular(HDC _Nonnull dc, enum diagram_shape shape, RECT r)
     }
     Polygon(dc, points, 6);
 }
+/* #955: a point far out on the radial at `angle` (hundredths of a degree, clockwise from the
+ * top). GDI only needs the direction, and a long radial keeps small sweeps apart. */
+static POINT radial(RECT r, int angle)
+{
+    double radians = (double)angle * 3.14159265358979323846 / 18000.0;
+    double reach = (double)(r.right - r.left) * 8.0;
+    return (POINT){(r.left + r.right) / 2 + (LONG)lround(sin(radians) * reach),
+                   (r.top + r.bottom) / 2 - (LONG)lround(cos(radians) * reach)};
+}
+/* The sector from `start` over `sweep`, clockwise. GDI draws counter-clockwise from its first
+ * radial to its second, so the end comes first. A whole circle is an ellipse; a sweep too small
+ * to tell its radials apart is not drawn (GDI would draw the whole circle for equal radials). */
+static void sector(HDC _Nonnull dc, RECT r, int start, int sweep)
+{
+    if (sweep >= 36000)
+    {
+        Ellipse(dc, r.left, r.top, r.right, r.bottom);
+        return;
+    }
+    POINT from = radial(r, start + sweep);
+    POINT to = radial(r, start);
+    if (sweep <= 0 || (from.x == to.x && from.y == to.y))
+        return;
+    Pie(dc, r.left, r.top, r.right, r.bottom, from.x, from.y, to.x, to.y);
+}
 void diagram_native_shape_draw(HDC _Nonnull dc, const struct diagram_primitive *_Nonnull primitive,
                                RECT r, int scale)
 {
@@ -127,6 +153,9 @@ void diagram_native_shape_draw(HDC _Nonnull dc, const struct diagram_primitive *
         break;
     case DIAGRAM_ACTOR:
         actor(dc, r, scale);
+        break;
+    case DIAGRAM_SECTOR:
+        sector(dc, r, primitive->points[0].x, primitive->points[0].y);
         break;
     }
 }

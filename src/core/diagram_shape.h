@@ -19,6 +19,9 @@ enum diagram_shape : unsigned char
     DIAGRAM_ACTOR,
     DIAGRAM_STATE_START, /* #876: a small dot filled with the line ink */
     DIAGRAM_STATE_END,   /* #876: a small ring around the same dot */
-    DIAGRAM_ENTITY       /* #888: a box with its name (the id) over its attributes (the label) */
+    DIAGRAM_ENTITY,      /* #888: a box with its name (the id) over its attributes (the label) */
+    /* #955: a pie's sector. The bounds are the whole circle; points[0] holds the start and the
+     * sweep, clockwise from the top, in hundredths of a degree. */
+    DIAGRAM_SECTOR
 };
 #endif

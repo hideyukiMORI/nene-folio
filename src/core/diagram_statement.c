@@ -96,6 +96,7 @@ static enum diagram_outcome scan_character(struct diagram_statement_scan *_Nonnu
         outcome = flow_character(scan, input.text);
         break;
     case DIAGRAM_SEQUENCE:
+    case DIAGRAM_PIE:
         break;
     }
     if (outcome == DIAGRAM_ACCEPTED)

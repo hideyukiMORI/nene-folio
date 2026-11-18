@@ -17,6 +17,10 @@ struct diagram_palette
 diagram_palette_for(const struct theme_palette *_Nonnull theme);
 [[nodiscard]] struct rgb_color diagram_palette_ink(const struct diagram_palette *_Nonnull palette,
                                                    enum diagram_ink ink);
+/* #955: the ink stepped toward the background. shade 0 is the ink itself; each further step is
+ * lighter in a light theme and darker in a dark one. Steps past the last are the last. */
+[[nodiscard]] struct rgb_color diagram_palette_shade(const struct diagram_palette *_Nonnull palette,
+                                                     enum diagram_ink ink, unsigned char shade);
 [[nodiscard]] bool diagram_palette_equal(const struct diagram_palette *_Nonnull first,
                                          const struct diagram_palette *_Nonnull second);
 #endif

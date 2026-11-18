@@ -62,6 +62,15 @@ struct rgb_color diagram_palette_ink(const struct diagram_palette *_Nonnull pale
     }
     return palette->text;
 }
+struct rgb_color diagram_palette_shade(const struct diagram_palette *_Nonnull palette,
+                                       enum diagram_ink ink, unsigned char shade)
+{
+    /* Sixteenths of the ink over the background: 100%, 75%, 56%, 38%, 25%. */
+    static const unsigned char parts[] = {16, 12, 9, 6, 4};
+    size_t last = sizeof parts / sizeof parts[0] - 1;
+    return tinted(palette->background, diagram_palette_ink(palette, ink),
+                  parts[shade < last ? shade : last]);
+}
 bool diagram_palette_equal(const struct diagram_palette *_Nonnull first,
                            const struct diagram_palette *_Nonnull second)
 {

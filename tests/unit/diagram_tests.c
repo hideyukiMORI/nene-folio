@@ -2,11 +2,13 @@
 #include "diagram_geometry.h"
 #include "diagram_layout.h"
 #include "diagram_palette.h"
+#include "diagram_pie_layout.h"
 #include "diagram_style.h"
 #include "folio_theme.h"
 #include "markdown_media.h"
 #include "markdown_rtf.h"
 #include "mermaid_diagram.h"
+#include "mermaid_pie.h"
 #include "text_buffer.h"
 #include "theme_contrast.h"
 #include "ui_font.h"
@@ -788,6 +790,188 @@ static void class_contract(void)
     class_generics();
 }
 
+/* #955 / ADR0112: a pie is slices as nodes; the shares are sweeps that close the circle. */
+static size_t pie_shares(const struct diagram_model *_Nonnull model)
+{
+    size_t total = 0;
+    for (size_t at = 0; at < diagram_model_node_count(model); ++at)
+        total += diagram_model_node_at(model, at).share;
+    return total;
+}
+
+static void pie_contract(void)
+{
+    struct diagram_model *model = parsed("pie title 内訳\n"
+                                         "    \"設計\" : 40\n"
+                                         "    \"実装\" : 25.5\n"
+                                         "%% a comment\n"
+                                         "    \"その他\" : 14.5\n");
+    require(diagram_model_kind(model) == DIAGRAM_PIE && diagram_model_node_count(model) == 3 &&
+                diagram_model_link_count(model) == 0,
+            "a pie is a model of slices");
+    require(strcmp(diagram_model_text_at(model, diagram_model_title_text(model)), "内訳") == 0,
+            "the header's title is the chart's title");
+    struct diagram_node first = diagram_model_node_at(model, 0);
+    struct diagram_node last = diagram_model_node_at(model, 2);
+    require(first.shape == DIAGRAM_SECTOR && first.share == 18000 &&
+                diagram_model_node_at(model, 1).share == 11475 && last.share == 6525,
+            "each share is the slice's part of the circle in hundredths of a degree");
+    require(pie_shares(model) == mermaid_pie_circle, "the shares close the circle");
+    require(strcmp(diagram_model_text_at(model, first.id), "設計") == 0 &&
+                strcmp(diagram_model_text_at(model, first.label), "設計 50%") == 0 &&
+                strcmp(diagram_model_text_at(model, last.label), "その他 18%") == 0,
+            "the legend line is the name and the rounded percentage");
+    diagram_model_destroy(model);
+    model = parsed("pie showData\ntitle 値つき\n\"a\" : 1\n\"b\" : 2\n\"c\" : 0.001\n");
+    require(strcmp(diagram_model_text_at(model, diagram_model_node_at(model, 1).label),
+                   "b [2] 67%") == 0 &&
+                strcmp(diagram_model_text_at(model, diagram_model_node_at(model, 2).label),
+                       "c [0.001] 0%") == 0,
+            "showData adds the value as written");
+    require(diagram_model_node_at(model, 0).share == 11996 &&
+                diagram_model_node_at(model, 2).share == 12 && pie_shares(model) == 36000,
+            "the last slice takes what rounding left");
+    diagram_model_destroy(model);
+    model = parsed("pie\n\"only\" : 3\n");
+    require(diagram_model_title_text(model) == diagram_none &&
+                diagram_model_node_at(model, 0).share == mermaid_pie_circle,
+            "one slice is the whole circle; a title is optional");
+    diagram_model_destroy(model);
+}
+
+/* The scene: the title, then a sector per slice clockwise from the top, then a swatch and a
+ * line per slice. The shades cycle. */
+static void pie_layout(void)
+{
+    struct diagram_model *model = parsed("pie title t\n\"a\" : 1\n\"b\" : 1\n\"c\" : 1\n\"d\" : 1\n"
+                                         "\"e\" : 1\n\"f\" : 3\n");
+    struct diagram_scene *scene = laid_out(model);
+    require(diagram_scene_count(scene) == 1 + 6 + 6 * 2, "title, sectors, swatches and lines");
+    int start = 0;
+    for (size_t at = 0; at < 6; ++at)
+    {
+        const struct diagram_primitive *sector = diagram_scene_at(scene, 1 + at);
+        require(sector->kind == DIAGRAM_PRIMITIVE_SHAPE && sector->shape == DIAGRAM_SECTOR &&
+                    sector->points[0].x == start &&
+                    sector->points[0].y == (int)diagram_model_node_at(model, at).share &&
+                    sector->bounds.width == sector->bounds.height &&
+                    sector->shade == at % diagram_shade_count &&
+                    sector->fill == DIAGRAM_INK_ACCENT && sector->ink == DIAGRAM_INK_BACKGROUND,
+                "sectors follow each other clockwise in the stepped accent");
+        start += sector->points[0].y;
+        const struct diagram_primitive *swatch = diagram_scene_at(scene, 7 + at * 2);
+        const struct diagram_primitive *line = diagram_scene_at(scene, 8 + at * 2);
+        require(swatch->shape == DIAGRAM_RECTANGLE && swatch->shade == sector->shade &&
+                    line->kind == DIAGRAM_PRIMITIVE_TEXT &&
+                    line->text == diagram_model_node_at(model, at).label &&
+                    swatch->bounds.x > sector->bounds.x + sector->bounds.width &&
+                    line->bounds.x > swatch->bounds.x + swatch->bounds.width,
+                "each legend row has the slice's shade and its line, right of the circle");
+    }
+    require(start == 36000, "the sectors end where they began");
+    struct diagram_size size = diagram_scene_size(scene);
+    const struct diagram_primitive *bottom = diagram_scene_at(scene, 18);
+    require(bottom->bounds.y + bottom->bounds.height < size.height &&
+                bottom->bounds.x + bottom->bounds.width < size.width,
+            "the legend is inside the scene");
+    diagram_scene_destroy(scene);
+    diagram_model_destroy(model);
+}
+
+/* No title, and a legend taller than the circle: the circle starts at the margin and the legend
+ * starts level with it. A model that is not a pie is refused. */
+static void pie_layout_edges(void)
+{
+    static char source[32 * 16] = "pie\n";
+    size_t used = strlen(source);
+    for (size_t at = 0; at < 24; ++at)
+        used += (size_t)sprintf(source + used, "\"s%zu\" : 1\n", at);
+    struct diagram_model *model = parsed(source);
+    struct diagram_scene *scene = laid_out(model);
+    require(diagram_scene_count(scene) == 24 * 3, "no title: sectors, swatches and lines only");
+    const struct diagram_primitive *sector = diagram_scene_at(scene, 0);
+    const struct diagram_primitive *line = diagram_scene_at(scene, 25);
+    const struct diagram_primitive *last = diagram_scene_at(scene, 24 * 3 - 1);
+    struct diagram_size size = diagram_scene_size(scene);
+    require(sector->bounds.y == line->bounds.y &&
+                last->bounds.y + last->bounds.height > sector->bounds.y + sector->bounds.height &&
+                last->bounds.y + last->bounds.height < size.height,
+            "a long legend starts level with the circle and the scene grows to hold it");
+    diagram_scene_destroy(scene);
+    diagram_model_destroy(model);
+    model = parsed("graph TB\nA --> B");
+    struct diagram_metrics *_Nullable metrics = nullptr;
+    require(metrics_for(model, &metrics) == DIAGRAM_ACCEPTED, "measured labels");
+    struct diagram_scene *_Nullable none = nullptr;
+    require(diagram_pie_layout_create(model, metrics, &none) == DIAGRAM_INVALID && none == nullptr,
+            "only a pie has a pie layout");
+    diagram_metrics_destroy(metrics);
+    diagram_model_destroy(model);
+}
+
+static void pie_shades(void)
+{
+    struct diagram_palette palette = diagram_palette_for(folio_theme_palette(FOLIO_THEME_LIGHT));
+    struct rgb_color accent = diagram_palette_ink(&palette, DIAGRAM_INK_ACCENT);
+    struct rgb_color full = diagram_palette_shade(&palette, DIAGRAM_INK_ACCENT, 0);
+    require(full.red == accent.red && full.green == accent.green && full.blue == accent.blue,
+            "the first shade is the ink itself");
+    int distance = 0;
+    for (unsigned char shade = 1; shade < diagram_shade_count; ++shade)
+    {
+        struct rgb_color step = diagram_palette_shade(&palette, DIAGRAM_INK_ACCENT, shade);
+        int next = abs(step.red - accent.red) + abs(step.green - accent.green) +
+                   abs(step.blue - accent.blue);
+        require(next > distance, "each shade steps further toward the background");
+        distance = next;
+    }
+    struct rgb_color last =
+        diagram_palette_shade(&palette, DIAGRAM_INK_ACCENT, diagram_shade_count - 1);
+    struct rgb_color beyond = diagram_palette_shade(&palette, DIAGRAM_INK_ACCENT, 200);
+    require(last.red == beyond.red && last.green == beyond.green && last.blue == beyond.blue,
+            "a step past the last is the last");
+}
+
+static void pie_rejections(void)
+{
+    reject_source("pie\n", DIAGRAM_INVALID);
+    reject_source("pie title only a title\n", DIAGRAM_INVALID);
+    reject_source("pie\n\"a\" : 0\n", DIAGRAM_INVALID);
+    reject_source("pie\n\"a\" : -1\n", DIAGRAM_INVALID);
+    reject_source("pie\n\"a\" : many\n", DIAGRAM_INVALID);
+    reject_source("pie\n\"a\" : 1.\n", DIAGRAM_INVALID);
+    reject_source("pie\n\"a\" : 1.5x\n", DIAGRAM_INVALID);
+    reject_source("pie\n\"a\" : 1234567890\n", DIAGRAM_INVALID);
+    reject_source("pie\n\"a\" 1\n", DIAGRAM_INVALID);
+    reject_source("pie\n\"a\" :\n", DIAGRAM_INVALID);
+    reject_source("pie\n\"\" : 1\n", DIAGRAM_INVALID);
+    reject_source("pie\na : 1\n", DIAGRAM_INVALID);
+    reject_source("pie title one\ntitle two\n\"a\" : 1\n", DIAGRAM_INVALID);
+    reject_source("pie\ntitle\n\"a\" : 1\n", DIAGRAM_INVALID);
+    reject_source("pie\naccTitle: t\n\"a\" : 1\n", DIAGRAM_UNSUPPORTED);
+    static char many[(mermaid_pie_slice_limit + 2) * 16] = "pie\n";
+    size_t used = strlen(many);
+    for (size_t at = 0; at <= mermaid_pie_slice_limit; ++at)
+        used += (size_t)sprintf(many + used, "\"s%zu\" : 1\n", at);
+    reject_source(many, DIAGRAM_TOO_LARGE);
+    /* A name that fits a label but leaves no room for the legend line's value and percentage. */
+    static char wide[diagram_label_limit + 64] = "pie showData\n\"";
+    size_t length = strlen(wide);
+    memset(wide + length, 'n', diagram_label_limit - 4);
+    static const char rest[] = "\" : 12345\n";
+    memcpy(wide + length + diagram_label_limit - 4, rest, sizeof rest);
+    reject_source(wide, DIAGRAM_TOO_LARGE);
+}
+
+static void pie_tests(void)
+{
+    pie_contract();
+    pie_layout();
+    pie_layout_edges();
+    pie_shades();
+    pie_rejections();
+}
+
 static void class_rejections(void)
 {
     reject_source("classDiagram\n", DIAGRAM_INVALID);
@@ -1471,7 +1655,7 @@ static void rejected_grammar(void)
                                           "sequenceDiagram\nend"};
     for (size_t index = 0; index < sizeof invalid / sizeof invalid[0]; ++index)
         reject_source(invalid[index], DIAGRAM_INVALID);
-    static const char *const unsupported[] = {"pie\ntitle x",
+    static const char *const unsupported[] = {"gantt\ntitle x",
                                               "%%{init: {}}%%\ngraph TB\nA-->B",
                                               "graph TB\nA-->B\nclick A callback",
                                               "graph TB\nA[<b>bold</b>]",
@@ -1744,9 +1928,9 @@ static void model_reference_contract(void)
             "reference fixture identifier");
     struct diagram_node node = {.id = 0, .label = 0, .group = diagram_none};
     require(diagram_model_node(model, 0, node) == DIAGRAM_ACCEPTED, "known participant");
-    const struct diagram_node bad_nodes[] = {{1, 0, diagram_none, DIAGRAM_RECTANGLE},
-                                             {0, 1, diagram_none, DIAGRAM_RECTANGLE},
-                                             {0, 0, 0, DIAGRAM_RECTANGLE}};
+    const struct diagram_node bad_nodes[] = {{1, 0, diagram_none, DIAGRAM_RECTANGLE, 0},
+                                             {0, 1, diagram_none, DIAGRAM_RECTANGLE, 0},
+                                             {0, 0, 0, DIAGRAM_RECTANGLE, 0}};
     for (size_t index = 0; index < sizeof bad_nodes / sizeof bad_nodes[0]; ++index)
         require(diagram_model_node(model, 0, bad_nodes[index]) == DIAGRAM_INVALID,
                 "unresolved node text and group references are rejected");
@@ -2228,6 +2412,7 @@ void run_diagram_tests(void)
     er_rejections();
     class_contract();
     class_rejections();
+    pie_tests();
     groups_and_cycles();
     edge_labels_remain_visible();
     horizontal_group_heading();
@@ -2251,6 +2436,7 @@ void run_diagram_tests(void)
     markdown_contract();
     allocation_contract(flow_source);
     allocation_contract(sequence_source);
+    allocation_contract("pie showData title t\n\"a\" : 1\n\"b\" : 2.5\n");
     markdown_allocation_contract("```mermaid\ngraph TB\nA --> B\n```\ntail");
     markdown_allocation_contract("> ```mermaid\n> graph TB\n> A --> B\ntail");
     markdown_allocation_contract("```mermaid\ngraph TB\nA --> B");

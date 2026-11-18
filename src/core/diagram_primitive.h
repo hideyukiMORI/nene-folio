@@ -10,6 +10,8 @@
 #include "diagram_text_alignment.h"
 #include "diagram_text_role.h"
 #include <stddef.h>
+/* #955: the steps a fill can take from its ink toward the background (pie slices). */
+constexpr unsigned char diagram_shade_count = 5;
 /* Read-only drawing values; text is an index into the immutable diagram model. */
 struct diagram_primitive
 {
@@ -20,6 +22,8 @@ struct diagram_primitive
     enum diagram_arrow end;
     enum diagram_ink ink;
     enum diagram_ink fill;
+    /* #955: how far the fill is stepped from its ink toward the background; 0 is the ink. */
+    unsigned char shade;
     enum diagram_text_role role;
     enum diagram_text_alignment alignment;
     int radius;

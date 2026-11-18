@@ -307,7 +307,8 @@ static enum image_outcome draw_primitive(struct diagram_canvas *_Nonnull canvas,
     HGDIOBJ previous_pen = SelectObject(canvas->dc, pen);
     HGDIOBJ previous_brush = SelectObject(
         canvas->dc, GetStockObject(primitive->fill == DIAGRAM_INK_NONE ? HOLLOW_BRUSH : DC_BRUSH));
-    SetDCBrushColor(canvas->dc, ink(canvas, primitive->fill));
+    SetDCBrushColor(canvas->dc, color(diagram_palette_shade(&canvas->palette, primitive->fill,
+                                                            primitive->shade)));
     enum image_outcome result = IMAGE_READY;
     switch (primitive->kind)
     {
