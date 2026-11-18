@@ -148,6 +148,114 @@ static void render_cases(const struct image_work *_Nonnull work, const char *_Nu
         note_text_destroy(source);
     }
 }
+/* #961: what a pie looks like, read from the bitmap. The circle is the layout's: no title, so it
+ * sits at the outer margin with its 200 logical pixels; the samples are well inside a sector or
+ * well outside the circle, away from outlines. */
+constexpr int pie_test_circle = 200;
+static uint32_t little(const unsigned char *_Nonnull bytes, size_t width)
+{
+    uint32_t value = 0;
+    for (size_t index = width; index != 0; --index)
+        value = value << 8 | bytes[index - 1];
+    return value;
+}
+/* The colour at a logical point of the scene, whatever the bitmap's scale and row order. The
+ * scene of these pies is as tall as the circle and its two margins. */
+static struct rgb_color pixel_at(const struct image_bitmap *_Nonnull bitmap, int x, int y)
+{
+    const unsigned char *bytes = image_bitmap_bytes(bitmap);
+    require(image_bitmap_length(bitmap) > 54 && bytes[0] == 'B' && bytes[1] == 'M',
+            "the bitmap is a BMP file");
+    int32_t width = (int32_t)little(bytes + 18, 4);
+    int32_t height = (int32_t)little(bytes + 22, 4);
+    uint32_t bits = little(bytes + 28, 2);
+    bool bottom_up = height > 0;
+    int32_t rows = bottom_up ? height : -height;
+    require(width > 0 && rows > 0 && (bits == 24 || bits == 32), "an uncompressed colour bitmap");
+    int tall = pie_test_circle + diagram_outer_margin * 2;
+    require(rows % tall == 0, "the bitmap is a whole multiple of the scene");
+    int column = x * (rows / tall);
+    int row = y * (rows / tall);
+    require(column >= 0 && column < width && row >= 0 && row < rows, "the sample is in the bitmap");
+    size_t stride = ((size_t)width * bits / 8 + 3) & ~(size_t)3;
+    size_t line = bottom_up ? (size_t)(rows - 1 - row) : (size_t)row;
+    size_t at = little(bytes + 10, 4) + line * stride + (size_t)column * (bits / 8);
+    require(at + 3 <= image_bitmap_length(bitmap), "the sample is in the file");
+    return (struct rgb_color){bytes[at + 2], bytes[at + 1], bytes[at]};
+}
+static bool near_color(struct rgb_color left, struct rgb_color right)
+{
+    return abs(left.red - right.red) <= 2 && abs(left.green - right.green) <= 2 &&
+           abs(left.blue - right.blue) <= 2;
+}
+struct pie_sample
+{
+    int x;     /* hundredths of the circle's side, from its left */
+    int y;     /* hundredths of the circle's side, from its top */
+    int shade; /* the expected step of the accent, or -1 for the background */
+};
+static void pie_pixels(const struct image_work *_Nonnull work, const char *_Nonnull text,
+                       const struct pie_sample *_Nonnull samples, size_t count)
+{
+    const enum folio_theme themes[] = {FOLIO_THEME_LIGHT, FOLIO_THEME_DARK};
+    struct note_text *source = text_for(text);
+    for (size_t theme = 0; theme < 2; ++theme)
+    {
+        struct diagram_request request = request_for(source, themes[theme]);
+        struct image_bitmap *bitmap = render(&request, work);
+        for (size_t index = 0; index < count; ++index)
+        {
+            const struct pie_sample *sample = &samples[index];
+            struct rgb_color expected =
+                sample->shade < 0 ? diagram_palette_ink(&request.palette, DIAGRAM_INK_BACKGROUND)
+                                  : diagram_palette_shade(&request.palette, DIAGRAM_INK_ACCENT,
+                                                          (unsigned char)sample->shade);
+            struct rgb_color seen =
+                pixel_at(bitmap, diagram_outer_margin + sample->x * pie_test_circle / 100,
+                         diagram_outer_margin + sample->y * pie_test_circle / 100);
+            if (!near_color(seen, expected))
+                fprintf(stderr, "pie pixel %zu of '%s' theme %zu: saw %u,%u,%u expected %u,%u,%u\n",
+                        index, text, theme, seen.red, seen.green, seen.blue, expected.red,
+                        expected.green, expected.blue);
+            require(near_color(seen, expected), "a pie's pixel has its sector's shade");
+        }
+        image_bitmap_destroy(bitmap);
+    }
+    note_text_destroy(source);
+}
+static void pie_drawing(const struct image_work *_Nonnull work)
+{
+    /* Quarter, quarter, half: clockwise from the top, in the order written. */
+    const struct pie_sample order[] = {{75, 25, 0}, {75, 75, 1}, {25, 75, 2}, {25, 25, 2},
+                                       {2, 2, -1},  {98, 2, -1}, {2, 98, -1}, {98, 98, -1}};
+    pie_pixels(work, "pie\n\"a\" : 1\n\"b\" : 1\n\"c\" : 2\n", order,
+               sizeof order / sizeof order[0]);
+    /* One slice is the whole circle. */
+    const struct pie_sample whole[] = {
+        {75, 25, 0}, {75, 75, 0}, {25, 75, 0}, {25, 25, 0}, {2, 2, -1}};
+    pie_pixels(work, "pie\n\"a\" : 5\n", whole, sizeof whole / sizeof whole[0]);
+    /* A slice too thin to draw neither floods the circle nor takes it away from the other. */
+    pie_pixels(work, "pie\n\"a\" : 100\n\"b\" : 0.001\n", whole, sizeof whole / sizeof whole[0]);
+    const struct pie_sample second[] = {
+        {75, 25, 1}, {75, 75, 1}, {25, 75, 1}, {25, 25, 1}, {2, 2, -1}};
+    pie_pixels(work, "pie\n\"a\" : 0.001\n\"b\" : 100\n", second, sizeof second / sizeof second[0]);
+    /* A hundredth of a degree between two wide slices, at several angles: where its two radials
+     * round to the same point it is not drawn, and never as the whole circle (which would paint
+     * the first slice over). */
+    const struct pie_sample around[] = {{60, 20, 0}, {30, 60, 2}, {2, 2, -1}};
+    const char *const thin[] = {"pie\n\"a\" : 4500\n\"b\" : 1\n\"c\" : 31499\n",
+                                "pie\n\"a\" : 4400\n\"b\" : 1\n\"c\" : 31599\n",
+                                "pie\n\"a\" : 4600\n\"b\" : 1\n\"c\" : 31399\n",
+                                "pie\n\"a\" : 3000\n\"b\" : 1\n\"c\" : 32999\n",
+                                "pie\n\"a\" : 6000\n\"b\" : 1\n\"c\" : 29999\n"};
+    for (size_t index = 0; index < sizeof thin / sizeof thin[0]; ++index)
+        pie_pixels(work, thin[index], around, sizeof around / sizeof around[0]);
+    /* Six slices: the last does not repeat the first's shade (a sixth each, 30 degrees in). */
+    const struct pie_sample six[] = {{62, 29, 0}, {74, 50, 1}, {62, 71, 2},
+                                     {38, 71, 3}, {26, 50, 4}, {38, 29, 2}};
+    pie_pixels(work, "pie\n\"a\" : 1\n\"b\" : 1\n\"c\" : 1\n\"d\" : 1\n\"e\" : 1\n\"f\" : 1\n", six,
+               sizeof six / sizeof six[0]);
+}
 static void measured_roles(const struct image_work *_Nonnull work)
 {
     struct note_text *source =
@@ -1709,6 +1817,7 @@ int main(int argc, char *_Nonnull *_Nonnull argv)
     {
         measured_roles(&work);
         render_cases(&work, argc == 2 ? argv[1] : nullptr);
+        pie_drawing(&work);
         cancellation(&work);
         worker_contract(&port);
         cache_contract(&work);
