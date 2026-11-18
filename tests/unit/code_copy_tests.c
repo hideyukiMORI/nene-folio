@@ -154,13 +154,16 @@ static void verify_container_blocks(void)
                   (const char *const[]){"x", nullptr});
 }
 
-/* 札は言語ラベルの対の反転（地が色表の 9、文字が 6）で、色表は10色のまま。高コントラストでは
- * 塗らず、本文の文字色（色表の 1）と下線で示す。 */
+/* 札は言語ラベルの対の反転（地が色表の 9、文字が
+ * 6）で、札のための色は足さない。色表は本文の10色と、 末尾の地の色（#971 /
+ * ADR0113）。高コントラストでは塗らず、本文の文字色（色表の 1）と下線で示す。 */
 static void verify_action_colors(void)
 {
     struct markdown_rtf *rtf = render("```\nx\n```", FOLIO_LANGUAGE_JA);
-    require(strstr(markdown_rtf_text(rtf), "\\red240\\green198\\blue125;}") != nullptr,
-            "the view document keeps the ten body colours and adds none for the tab");
+    require(
+        strstr(markdown_rtf_text(rtf),
+               "\\red240\\green198\\blue125;\\red255\\green255\\blue255;}") != nullptr,
+        "the view document keeps the ten body colours and the pane's, and adds none for the tab");
     markdown_rtf_destroy(rtf);
     struct appearance_snapshot snapshot = {.theme = FOLIO_THEME_LIGHT,
                                            .contrast = FOLIO_CONTRAST_HIGH,
@@ -177,9 +180,9 @@ static void verify_action_colors(void)
     require(markdown_rtf_create(text, &high, locale, &rtf) == MARKDOWN_RTF_CONVERTED,
             "contrast converts");
     const char *body = markdown_rtf_text(rtf);
-    require(strstr(body, "\\red255\\green255\\blue255;}") != nullptr &&
+    require(strstr(body, "\\red255\\green255\\blue255;\\red0\\green0\\blue0;}") != nullptr &&
                 strstr(body, "\\red1\\green2\\blue3;") == nullptr,
-            "high contrast keeps the window pair and never the button fill");
+            "high contrast keeps the window pair (the pane last, #971) and never the button fill");
     require(strstr(body, "{\\fldrslt{\\f0\\fs18\\cf1\\ul \\~\\~Copy\\~\\~}}}") != nullptr &&
                 strstr(body, "\\pard\\qr\\li180") != nullptr,
             "high contrast marks the right-aligned action with an underline");

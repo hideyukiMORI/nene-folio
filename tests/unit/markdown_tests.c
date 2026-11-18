@@ -33,7 +33,7 @@ static const char header[] =
     "{\\colortbl;\\red36\\green19\\blue24;\\red44\\green0\\blue30;\\red106\\green96\\blue92;"
     "\\red178\\green60\\blue18;\\red237\\green225\\blue232;\\red44\\green0\\blue30;"
     "\\red198\\green152\\blue236;\\red164\\green217\\blue163;"
-    "\\red154\\green165\\blue181;\\red240\\green198\\blue125;}"
+    "\\red154\\green165\\blue181;\\red240\\green198\\blue125;\\red255\\green255\\blue255;}"
     "\\f0\\fs22\\cf1";
 
 /* markdown を変換し、文書の頭と末尾を除いた本体が expected と同じか。 */
@@ -207,14 +207,14 @@ static void verify_note_text(void)
     note_text_destroy(text);
     note_text_destroy(nullptr);
     struct markdown_rtf *rtf = nullptr;
-    require(markdown_rtf_empty(rtf_palette_for(FOLIO_THEME_LIGHT), ui_font_face(FOLIO_LANGUAGE_JA),
-                               &rtf) == MARKDOWN_RTF_CONVERTED &&
+    require(markdown_rtf_empty(folio_theme_palette(FOLIO_THEME_LIGHT),
+                               ui_font_face(FOLIO_LANGUAGE_JA), &rtf) == MARKDOWN_RTF_CONVERTED &&
                 markdown_rtf_length(rtf) == strlen(header) + 1 &&
                 same_text(markdown_rtf_text(rtf) + strlen(header), "}"),
             "empty document");
     markdown_rtf_destroy(rtf);
-    require(markdown_rtf_empty(rtf_palette_for(FOLIO_THEME_DARK), ui_font_face(FOLIO_LANGUAGE_JA),
-                               &rtf) == MARKDOWN_RTF_CONVERTED &&
+    require(markdown_rtf_empty(folio_theme_palette(FOLIO_THEME_DARK),
+                               ui_font_face(FOLIO_LANGUAGE_JA), &rtf) == MARKDOWN_RTF_CONVERTED &&
                 strstr(markdown_rtf_text(rtf), "\\red239\\green228\\blue234;") != nullptr,
             "dark palette in the color table");
     markdown_rtf_destroy(rtf);
@@ -252,7 +252,7 @@ static void expect_face(enum folio_language language)
     int written = snprintf(wanted, sizeof wanted, "{\\f0\\fnil %s;}", face);
     require(written > 0 && (size_t)written < sizeof wanted, "the fonttbl entry fits");
     struct markdown_rtf *rtf = nullptr;
-    require(markdown_rtf_empty(rtf_palette_for(FOLIO_THEME_LIGHT), face, &rtf) ==
+    require(markdown_rtf_empty(folio_theme_palette(FOLIO_THEME_LIGHT), face, &rtf) ==
                 MARKDOWN_RTF_CONVERTED,
             "the empty document is built with the face");
     require(strstr(markdown_rtf_text(rtf), wanted) != nullptr, "the face is in the fonttbl");
@@ -290,7 +290,7 @@ static void expect_plain(const char *_Nonnull input, size_t input_length,
     struct note_text *text = nullptr;
     require(note_text_create(input, input_length, &text) == NOTE_TEXT_ACCEPTED, "plain note");
     struct markdown_rtf *rtf = nullptr;
-    require(markdown_rtf_plain(text, rtf_palette_for(FOLIO_THEME_LIGHT),
+    require(markdown_rtf_plain(text, folio_theme_palette(FOLIO_THEME_LIGHT),
                                ui_font_face(FOLIO_LANGUAGE_JA), &rtf) == MARKDOWN_RTF_CONVERTED,
             "plain convert");
     const char *whole = markdown_rtf_text(rtf);
@@ -340,13 +340,13 @@ static void verify_plain(void)
     /* 空の本文は頭 + \par + }。頭は閲覧の空の文書と同じバイト列で始まる。 */
     expect_plain("", 0, "\\par }");
     struct markdown_rtf *view = nullptr;
-    require(markdown_rtf_empty(rtf_palette_for(FOLIO_THEME_LIGHT), ui_font_face(FOLIO_LANGUAGE_JA),
-                               &view) == MARKDOWN_RTF_CONVERTED,
+    require(markdown_rtf_empty(folio_theme_palette(FOLIO_THEME_LIGHT),
+                               ui_font_face(FOLIO_LANGUAGE_JA), &view) == MARKDOWN_RTF_CONVERTED,
             "empty view");
     struct note_text *text = nullptr;
     require(note_text_create("", 0, &text) == NOTE_TEXT_ACCEPTED, "empty plain note");
     struct markdown_rtf *plain = nullptr;
-    require(markdown_rtf_plain(text, rtf_palette_for(FOLIO_THEME_LIGHT),
+    require(markdown_rtf_plain(text, folio_theme_palette(FOLIO_THEME_LIGHT),
                                ui_font_face(FOLIO_LANGUAGE_JA), &plain) == MARKDOWN_RTF_CONVERTED,
             "empty plain");
     size_t shared = markdown_rtf_length(view) - 1;
@@ -1147,7 +1147,7 @@ static size_t verify_render_allocation(const char *_Nonnull source)
     struct note_text *text = nullptr;
     require(note_text_create(source, strlen(source), &text) == NOTE_TEXT_ACCEPTED, "OOM source");
     struct markdown_rtf *sentinel = nullptr;
-    require(markdown_rtf_empty(rtf_palette_for(FOLIO_THEME_LIGHT), "Noto Sans JP", &sentinel) ==
+    require(markdown_rtf_empty(folio_theme_palette(FOLIO_THEME_LIGHT), "Noto Sans JP", &sentinel) ==
                 MARKDOWN_RTF_CONVERTED,
             "OOM sentinel");
     bool finished = false;
@@ -1576,7 +1576,7 @@ static void verify_plain_emission_allocation(const char *_Nonnull source)
 {
     struct note_text *text = nullptr;
     struct markdown_rtf *kept = nullptr;
-    struct rtf_palette palette = rtf_palette_for(FOLIO_THEME_LIGHT);
+    const struct theme_palette *palette = folio_theme_palette(FOLIO_THEME_LIGHT);
     require(note_text_create(source, strlen(source), &text) == NOTE_TEXT_ACCEPTED &&
                 markdown_rtf_empty(palette, ui_font_face(FOLIO_LANGUAGE_JA), &kept) ==
                     MARKDOWN_RTF_CONVERTED,

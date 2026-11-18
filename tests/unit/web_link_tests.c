@@ -546,6 +546,48 @@ static void verify_footnote_paragraphs(void)
     expect_field(many, "w62\\fs22", "\\line");
 }
 
+/* #971 / ADR0113: `: text` right under a one-line paragraph is a description of that term. The
+ * term is in the link colour; a description is a one-cell row whose only visible border is the
+ * left one (the other three are in the pane's colour, \cf11). */
+#define DESCRIPTION_ROW                                                                            \
+    "\\trowd\\trgaph120\\trleft80"                                                                 \
+    "\\clbrdrt\\brdrs\\brdrw1\\brdrcf11\\clbrdrb\\brdrs\\brdrw1\\brdrcf11"                         \
+    "\\clbrdrl\\brdrs\\brdrw15\\brdrcf4\\clbrdrr\\brdrs\\brdrw1\\brdrcf11"                         \
+    "\\cellx9000\\pard\\intbl\\sa0\\sl240\\slmult1\\cf1\\fs22 "
+static void verify_definition_list(void)
+{
+    expect_field("Term\n: the text", "\\cf4 Term\\cf1\\par\n" DESCRIPTION_ROW "the text\\cell\\row",
+                 ": the");
+    /* Several descriptions; a line under one continues it; inline formatting in both. */
+    expect_field("T *x*\n: one\nmore\n:\t**two**",
+                 "\\cf4 T {\\i x}\\cf1\\par\n" DESCRIPTION_ROW
+                 "one more\\cell\\row\n" DESCRIPTION_ROW "{\\b two}\\cell\\row",
+                 ": one");
+    /* A blank line ends the list; the next term starts another. */
+    expect_field("T\n: d\n\nU\n: e",
+                 DESCRIPTION_ROW "d\\cell\\row\n\\pard\\sa20\\sl240\\slmult1\\cf4 U", ": e");
+    expect_field("T\n: d\n\nplain", "plain", "\\cf4 plain");
+    /* What ends a description without a blank line: a heading, a rule, a fence, a list. */
+    expect_field("T\n: d\n# H", DESCRIPTION_ROW "d\\cell\\row\n\\pard\\sb200", "d # H");
+    expect_field("T\n: d\n---\nafter", DESCRIPTION_ROW "d\\cell\\row", "\\fs34");
+    expect_field("T\n: d\n```\ncode\n```", DESCRIPTION_ROW "d\\cell\\row", "d ```");
+    expect_field("T\n: d\n- item", DESCRIPTION_ROW "d\\cell\\row", "d - item");
+    expect_field("T\n: ", DESCRIPTION_ROW "\\cell\\row", ": ");
+    /* Not a description: no term, a term of two lines, a colon with no space, a deep indent,
+     * a blank line between, and anything that is not a plain top-level paragraph. */
+    expect_field(": alone", ": alone", "\\cell");
+    expect_field("a\nb\n: c", "a b : c", "\\cell");
+    expect_field("T\n:c", "T :c", "\\cell");
+    expect_field("T\n    : c", "T : c", "\\cell");
+    expect_field("T\n\n: c", ": c", "\\cell");
+    expect_field("# H\n: c", ": c", "\\cell");
+    expect_field("- item\n: c", ": c", "\\cell");
+    expect_field("> quoted\n: c", ": c", "\\cell");
+    expect_field("- [ ] task\n: c", ": c", "\\cell");
+    /* The task marker of a continued line does not leak into the next paragraph. */
+    expect_field("T\n: d\n\n[^x]: unused\nafter", "after", "unused");
+}
+
 static size_t opened;
 static enum web_link_outcome port_result;
 static const char *_Nonnull expected_uri = "https://example.com/";
@@ -774,6 +816,7 @@ void run_web_link_tests(void)
     verify_footnotes();
     verify_footnote_continuation();
     verify_footnote_paragraphs();
+    verify_definition_list();
     verify_state();
     verify_product_table();
     verify_product_state();

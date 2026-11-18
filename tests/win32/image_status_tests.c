@@ -26,6 +26,7 @@
 #include "note_identity.h"
 #include "note_ledger.h"
 #include "note_pane_code_button.h"
+#include "note_pane_table.h"
 #include "note_store_request.h"
 #include "note_tag.h"
 #include "note_tags.h"
@@ -128,6 +129,7 @@ static bool favorites_ui_case;
 static bool favorite_high_contrast;
 static bool code_copy_case;
 static bool footnote_jump_case;
+static bool definition_list_case;
 static bool code_copy_visual_case;
 static bool bare_url_visual_case;
 static bool search_key_visual_case;
@@ -225,6 +227,14 @@ static const char bare_url_gallery[] =
     "| 名前 | URL |\n| -- | -- |\n| 例 | https://example.com/cell |\n\n"
     "脚注の例[^n]と[^m]（#869）。\n\n[^m]: **二つ目**の脚注と[参照][r]。\n[^n]: 一つ目の脚注。\n"
     "[r]: https://example.com/ref\n";
+/* #971: definition lists: several descriptions, a wrapped one, a continued line, inline
+ * formatting, and `: ` lines that are not descriptions (no term; inside a list). */
+static const char definition_gallery[] =
+    "# 定義リスト\n\n閲覧表示\n: Markdownを整えて見せる表示。本文は**変えない**。\n\n編集表示\n"
+    ": 原文をそのまま直す表示。長い説明は窓の幅で折り返し、左の線は説明のすべての行の横に続く。"
+    "これは折り返しを確かめるための長い文で、三行目まで届く長さにしてある。\n"
+    ": 保存は`自動`。\n続きの行は同じ説明。\n\n次の段落。\n\n"
+    ": 用語の無い行は段落のまま。\n\n- リスト\n: リストの中は従来どおり\n";
 static const wchar_t search_original[] = L"猫 😀 aaaa 日本語";
 static const wchar_t search_edited[] = L"猫 😀 aaaa 日本語 🐾";
 static const char replace_current[] = "猫1 😀\n猫2 **saved**\n猫1 `old`";
@@ -292,6 +302,8 @@ static const char *_Nonnull text_fixture_source(const char *_Nonnull fallback)
 {
     if (search_case)
         return search_current;
+    if (definition_list_case)
+        return definition_gallery;
     if (bare_url_visual_case)
         return bare_url_gallery;
     if (code_copy_case)
@@ -10551,10 +10563,80 @@ static void run_code_copy_scroll(struct native_fixture *_Nonnull fixture)
     folio_window_destroy(window);
 }
 
+/* Where the text is in the viewed note, or -1. */
+static LONG definition_find(HWND _Nonnull body, const wchar_t *_Nonnull text)
+{
+    FINDTEXTEXW find = {.chrg = {0, -1}, .lpstrText = text};
+    return (LONG)SendMessageW(body, EM_FINDTEXTEXW, FR_DOWN | FR_MATCHCASE, (LPARAM)&find);
+}
+
+/* What the reading view holds for the gallery, whatever the look. */
+static void definition_checks(HWND _Nonnull body, const char *_Nonnull look)
+{
+    LONG term = definition_find(body, L"閲覧表示");
+    LONG first = definition_find(body, L"Markdownを整えて");
+    LONG second = definition_find(body, L"保存は自動。");
+    require(term >= 0 && first > term && second > first,
+            "the term, then its descriptions, in the order written");
+    require(definition_find(body, L": Markdown") < 0 && definition_find(body, L": 保存") < 0 &&
+                definition_find(body, L": 原文") < 0,
+            "a description's colon is not shown");
+    require(definition_find(body, L"続きの行は同じ説明。") > second,
+            "a line under a description continues it");
+    require(definition_find(body, L": 用語の無い行は段落のまま。") >= 0 &&
+                definition_find(body, L": リストの中は従来どおり") >= 0,
+            "a colon line without a term, or inside a list, stays ordinary text");
+    int columns = 0;
+    LONG row = first;
+    while (row > term && note_pane_table_columns(body, row, &columns) != NOTE_PANE_TABLE_PRESENT)
+        --row;
+    printf("definition list (%s): term %ld, first description %ld in a row at %ld of %d "
+           "column(s)\n",
+           look, term, first, row, columns);
+    fflush(stdout);
+    require(row > term && columns == 1, "a description is a native row of one cell");
+}
+
+/* #971 / ADR0113: a term and its descriptions in the reading view, in each look. A description
+ * is a one-cell native row the pane fits to its width; its colon is not shown. */
+static void definition_list(struct native_fixture *_Nonnull fixture)
+{
+    const char *const looks[] = {"light", "dark", "contrast"};
+    for (size_t at = 0; at < 3; ++at)
+    {
+        favorite_high_contrast = at == 2;
+        require(folio_state_set_language(fixture->state, FOLIO_LANGUAGE_JA) == FOLIO_STATE_READY &&
+                    folio_state_refresh_theme(fixture->state) == FOLIO_STATE_READY &&
+                    folio_state_set_theme(fixture->state, at == 1 ? FOLIO_THEME_CHOICE_DARK
+                                                                  : FOLIO_THEME_CHOICE_LIGHT) ==
+                        FOLIO_STATE_READY,
+                "definition list palette");
+        folio_state_set_layout_mode(fixture->state, FOLIO_LAYOUT_NOTE);
+        struct folio_window *window = nullptr;
+        require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY,
+                                    &window) == FOLIO_WINDOW_CREATED,
+                "definition list window");
+        HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+        require(SetWindowPos(root, nullptr, 20, 20, 620, 520, SWP_NOZORDER | SWP_NOACTIVATE),
+                "definition list size");
+        pump(window);
+        definition_checks(folio_window_accessible_window(window, ACCESSIBLE_BODY), looks[at]);
+        char path[64];
+        require(snprintf(path, sizeof path, "definition-%s.bmp", looks[at]) > 0,
+                "definition list screenshot path");
+        tags_capture(root, path);
+        folio_window_destroy(window);
+        folio_state_set_layout_mode(fixture->state, FOLIO_LAYOUT_BOTH);
+    }
+    favorite_high_contrast = false;
+}
+
 static void run_window_or_footnote(struct native_fixture *_Nonnull fixture)
 {
     if (window_place_case)
         window_place(fixture);
+    else if (definition_list_case)
+        definition_list(fixture);
     else
         footnote_jump(fixture);
 }
@@ -10569,7 +10651,7 @@ static void run_code_copy_case(struct native_fixture *_Nonnull fixture)
         text_menu_visual(fixture);
         return;
     }
-    if (window_place_case || footnote_jump_case)
+    if (window_place_case || footnote_jump_case || definition_list_case)
     {
         run_window_or_footnote(fixture);
         return;
@@ -13665,8 +13747,10 @@ static void select_clipboard_fixture(const char *_Nonnull selector)
     text_menu_case = strcmp(selector, "--text-menu") == 0;
     window_place_case = strcmp(selector, "--window-place") == 0;
     footnote_jump_case = strcmp(selector, "--footnote-jump") == 0;
+    definition_list_case = strcmp(selector, "--definition-list") == 0;
     bare_url_visual_case = strcmp(selector, "--bare-url-visual") == 0 || search_key_visual_case ||
-                           text_menu_case || window_place_case || footnote_jump_case;
+                           text_menu_case || window_place_case || footnote_jump_case ||
+                           definition_list_case;
     code_copy_visual_case = strcmp(selector, "--code-copy-visual") == 0 || bare_url_visual_case;
     code_copy_keys_case_selected = strcmp(selector, "--code-copy-keys") == 0;
     code_copy_scroll_96 = strcmp(selector, "--code-copy-scroll-96") == 0;

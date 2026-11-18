@@ -188,7 +188,7 @@ static void markdown_case(const char *_Nonnull source, const char *_Nonnull pres
     require(strstr(markdown_rtf_text(rtf), absent) == nullptr, "fence does not leak syntax");
     require(same_text(note_text_bytes(text), source), "render preserves original Markdown");
     markdown_rtf_destroy(rtf);
-    require(markdown_rtf_plain(text, rtf_palette_for(FOLIO_THEME_LIGHT), "Consolas", &rtf) ==
+    require(markdown_rtf_plain(text, folio_theme_palette(FOLIO_THEME_LIGHT), "Consolas", &rtf) ==
                 MARKDOWN_RTF_CONVERTED,
             "plain conversion after syntax");
     require(strstr(markdown_rtf_text(rtf), "{\\cf7 ") == nullptr, "editing stays plain");

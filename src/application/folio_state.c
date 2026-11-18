@@ -791,7 +791,7 @@ static bool render_pane_document(const struct folio_state *_Nonnull state,
         return markdown_rtf_create(state->body, palette, view_locale(language), out) ==
                MARKDOWN_RTF_CONVERTED;
     }
-    return markdown_rtf_empty(palette->rtf, face, out) == MARKDOWN_RTF_CONVERTED;
+    return markdown_rtf_empty(palette, face, out) == MARKDOWN_RTF_CONVERTED;
 }
 
 /* 設定を読んだ後に選択を採り、palette と閲覧文書を解決したテーマの色で作り直す（決定 3）。
@@ -846,7 +846,7 @@ enum folio_state_outcome folio_state_create(const struct folio_ports *_Nonnull p
     state->select_notice = FOLIO_STATE_READY;
     state->palette =
         appearance_snapshot_palette(&state->appearance_snapshot, state->display_theme_choice);
-    if (markdown_rtf_empty(state->palette.rtf, ui_font_face(FOLIO_LANGUAGE_JA), &state->pane) !=
+    if (markdown_rtf_empty(&state->palette, ui_font_face(FOLIO_LANGUAGE_JA), &state->pane) !=
             MARKDOWN_RTF_CONVERTED ||
         note_text_create("", 0, &state->body) != NOTE_TEXT_ACCEPTED ||
         note_corpus_create(&state->corpus) != NOTE_CORPUS_ACCEPTED ||
@@ -2225,7 +2225,7 @@ static enum folio_state_outcome prepare_note_edit(const struct folio_state *_Non
     {
         return FOLIO_STATE_READY;
     }
-    return markdown_rtf_plain(body, state->palette.rtf, ui_font_face(folio_state_language(state)),
+    return markdown_rtf_plain(body, &state->palette, ui_font_face(folio_state_language(state)),
                               edit) == MARKDOWN_RTF_CONVERTED
                ? FOLIO_STATE_READY
                : FOLIO_STATE_OUT_OF_MEMORY;
@@ -2737,9 +2737,9 @@ enum folio_state_outcome folio_state_new_note(struct folio_state *_Nonnull state
     struct markdown_rtf *_Nullable pane = nullptr;
     struct markdown_rtf *_Nullable edit = nullptr;
     if (note_text_create("", 0, &body) != NOTE_TEXT_ACCEPTED ||
-        markdown_rtf_empty(state->palette.rtf, ui_font_face(folio_state_language(state)), &pane) !=
+        markdown_rtf_empty(&state->palette, ui_font_face(folio_state_language(state)), &pane) !=
             MARKDOWN_RTF_CONVERTED ||
-        markdown_rtf_plain(body, state->palette.rtf, ui_font_face(folio_state_language(state)),
+        markdown_rtf_plain(body, &state->palette, ui_font_face(folio_state_language(state)),
                            &edit) != MARKDOWN_RTF_CONVERTED)
     {
         note_text_destroy(body);
@@ -3588,10 +3588,9 @@ static enum folio_state_outcome finish_trash(struct folio_state *_Nonnull state,
     bool current = trashing_current(state, target);
     struct note_text *_Nullable body = nullptr;
     struct markdown_rtf *_Nullable pane = nullptr;
-    if (current &&
-        (note_text_create("", 0, &body) != NOTE_TEXT_ACCEPTED ||
-         markdown_rtf_empty(state->palette.rtf, ui_font_face(folio_state_language(state)), &pane) !=
-             MARKDOWN_RTF_CONVERTED))
+    if (current && (note_text_create("", 0, &body) != NOTE_TEXT_ACCEPTED ||
+                    markdown_rtf_empty(&state->palette, ui_font_face(folio_state_language(state)),
+                                       &pane) != MARKDOWN_RTF_CONVERTED))
     {
         note_text_destroy(body);
         markdown_rtf_destroy(pane);
@@ -4750,7 +4749,7 @@ static enum folio_state_outcome place_edit_rtf(struct folio_state *_Nonnull stat
                                                const struct note_text *_Nonnull body)
 {
     struct markdown_rtf *_Nullable rendered = nullptr;
-    if (markdown_rtf_plain(body, state->palette.rtf, ui_font_face(folio_state_language(state)),
+    if (markdown_rtf_plain(body, &state->palette, ui_font_face(folio_state_language(state)),
                            &rendered) != MARKDOWN_RTF_CONVERTED)
     {
         return FOLIO_STATE_OUT_OF_MEMORY;

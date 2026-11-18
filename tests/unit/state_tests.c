@@ -5608,7 +5608,7 @@ static void expect_edit_rtf_matches_pane_text(const struct folio_state *_Nonnull
                              &text) == NOTE_TEXT_ACCEPTED,
             "pane text");
     struct markdown_rtf *plain = nullptr;
-    require(markdown_rtf_plain(text, rtf_palette_for(FOLIO_THEME_LIGHT),
+    require(markdown_rtf_plain(text, folio_theme_palette(FOLIO_THEME_LIGHT),
                                ui_font_face(FOLIO_LANGUAGE_JA), &plain) == MARKDOWN_RTF_CONVERTED,
             "core plain");
     require(same_text(edit_rtf_tail(folio_state_edit_rtf(state)),
