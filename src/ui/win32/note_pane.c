@@ -7,6 +7,7 @@
 #include "line_index.h"
 #include "menu_request.h"
 #include "note_pane_code_button.h"
+#include "note_pane_headings.h"
 #include "note_pane_images.h"
 #include "note_pane_links.h"
 #include "note_pane_table.h"
@@ -34,6 +35,9 @@ struct note_pane
     HACCEL _Nullable zoom_keys;
     HACCEL _Nullable link_keys;
     struct note_pane_links *_Nullable links; /* Derived native positions, absent while editing. */
+    /* #975 / ADR0114: the viewed note's headings, made on first use after each load. */
+    struct note_pane_headings *_Nullable headings;
+    bool headings_tried;
     /* コピー操作の札へ描画時に重ねるボタン（ADR0098 第3版）。links を借りる。 */
     struct note_pane_code_button *_Nullable code_button;
     struct note_pane_images *_Nullable images;
@@ -1123,6 +1127,9 @@ static void discard_derived(struct note_pane *_Nonnull pane)
         note_pane_code_button_attach(pane->code_button, nullptr, nullptr);
     note_pane_links_destroy(pane->links);
     pane->links = nullptr;
+    note_pane_headings_destroy(pane->headings);
+    pane->headings = nullptr;
+    pane->headings_tried = false;
 }
 
 enum note_pane_load_outcome note_pane_load(struct note_pane *_Nonnull pane,
@@ -1602,6 +1609,67 @@ bool note_pane_show_footnote(struct note_pane *_Nonnull pane, bool back, size_t 
     return true;
 }
 
+/* The index is made the first time it is asked for after a load; the editing view (no links)
+ * has none. A failure leaves the note without headings until the next load. */
+static const struct note_pane_headings *_Nullable headings_of(struct note_pane *_Nonnull pane)
+{
+    if (pane->handle == nullptr || pane->links == nullptr || pane->headings_tried)
+        return pane->headings;
+    pane->headings_tried = true;
+    ITextDocument *_Nullable document = text_document(pane);
+    if (document == nullptr)
+        return nullptr;
+    if (note_pane_headings_create(document, &pane->headings) != NOTE_PANE_LINK_READY)
+        pane->headings = nullptr;
+    document->lpVtbl->Release(document);
+    return pane->headings;
+}
+
+size_t note_pane_heading_count(struct note_pane *_Nonnull pane)
+{
+    return note_pane_headings_count(headings_of(pane));
+}
+
+bool note_pane_heading(struct note_pane *_Nonnull pane, size_t index,
+                       struct note_pane_heading *_Nonnull out)
+{
+    if (index >= note_pane_heading_count(pane))
+        return false;
+    *out = note_pane_headings_at(pane->headings, index);
+    return true;
+}
+
+/* After a pixel scroll the first visible line can be cut off at the top; counting lines then
+ * leaves the heading's line cut off too. Bring its top edge to the top of the view. */
+static void align_heading_line(struct note_pane *_Nonnull pane, LONG position)
+{
+    POINTL place = {0};
+    SendMessageW(pane->handle, EM_POSFROMCHAR, (WPARAM)&place, position);
+    if (place.y >= 0)
+        return;
+    POINT current = {0};
+    SendMessageW(pane->handle, EM_GETSCROLLPOS, 0, (LPARAM)&current);
+    note_pane_scroll_pixels(pane, (int)(current.y + place.y));
+}
+
+bool note_pane_show_heading(struct note_pane *_Nonnull pane, size_t index)
+{
+    struct note_pane_heading heading = {0};
+    if (pane->readiness != NOTE_PANE_READINESS_READY || pane->composing ||
+        !note_pane_heading(pane, index, &heading))
+        return false;
+    /* A caret at the heading, and the heading's line at the top of the view (or as near as the
+     * end of the note allows). A scroll still running would carry the line away again. */
+    cancel_scroll(pane);
+    CHARRANGE range = {heading.position, heading.position};
+    SendMessageW(pane->handle, EM_EXSETSEL, 0, (LPARAM)&range);
+    LRESULT line = SendMessageW(pane->handle, EM_EXLINEFROMCHAR, 0, range.cpMin);
+    LRESULT first = SendMessageW(pane->handle, EM_GETFIRSTVISIBLELINE, 0, 0);
+    SendMessageW(pane->handle, EM_LINESCROLL, 0, line - first);
+    align_heading_line(pane, heading.position);
+    return true;
+}
+
 void note_pane_restore_selection(struct note_pane *_Nonnull pane, struct note_search_span span)
 {
     if (pane->handle == nullptr)
@@ -1954,6 +2022,7 @@ void note_pane_destroy(struct note_pane *_Nullable pane)
     }
     line_index_destroy(pane->lines);
     note_pane_links_destroy(pane->links);
+    note_pane_headings_destroy(pane->headings);
     note_pane_images_destroy(pane->images);
     free(pane->numbered);
     free(pane->taken);

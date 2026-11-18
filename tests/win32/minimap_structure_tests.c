@@ -1093,6 +1093,126 @@ static void code_label_wrap(struct note_pane *_Nonnull pane)
     ShowWindow(GetParent(handle), SW_HIDE);
 }
 
+/* #975 / ADR0114: the pane knows where the viewed note's headings are, from the paragraph
+ * styles the rendering writes. No text is added for them; the editing view has no headings. */
+/* Seven headings of every kind, with enough text after the last one to scroll it to the top. */
+static const char *_Nonnull heading_content(void)
+{
+    static char content[4096];
+    size_t used =
+        (size_t)sprintf(content, "# 一番\n\n本文\n\n## 二番 [l](https://example.com/a)\n\n"
+                                 "- ### 三番\n\n> #### 四番\n\n五番\n===\n\n六番\n---\n\n");
+    for (unsigned line = 0; line < 30; ++line)
+        used += (size_t)sprintf(content + used, "途中の段落 %u\n\n", line);
+    used += (size_t)sprintf(content + used, "###### 最後\n\n");
+    for (unsigned line = 0; line < 60; ++line)
+        used += (size_t)sprintf(content + used, "後の段落 %u\n\n", line);
+    return content;
+}
+
+/* The style stays on the heading: what follows it (a table, a definition, a rule, code, a list
+ * and a paragraph inside the item) is not a heading, and a heading after each is found. */
+static void heading_neighbours(struct note_pane *_Nonnull pane)
+{
+    load(pane, PANE_MODE_VIEW,
+         "# 表の前\n| a |\n| - |\n| 1 |\n\n## 表の後\n用語\n: 説明\n\n### 説明の後\n\n---\n\n"
+         "#### 線の後\n```\ncode\n```\n\n- ##### 項目の中\n\n  項目の段落\n\n> ###### 引用の中\n>\n"
+         "> 引用の段落\n\n最後の段落\n");
+    require(note_pane_heading_count(pane) == 6, "only the six headings are headings");
+    HWND handle = note_pane_handle(pane);
+    const wchar_t *const names[] = {L"表の前", L"表の後",   L"説明の後",
+                                    L"線の後", L"項目の中", L"引用の中"};
+    for (size_t index = 0; index < 6; ++index)
+    {
+        struct note_pane_heading heading = {0};
+        require(note_pane_heading(pane, index, &heading) && heading.level == index + 1 &&
+                    native_find(handle, names[index]) - heading.position <= 2,
+                "each heading among other blocks, at its level and place");
+    }
+}
+
+/* Going to a heading, an index out of range, and the index following what is loaded. */
+static void heading_moves(struct note_pane *_Nonnull pane, const char *_Nonnull content)
+{
+    HWND handle = note_pane_handle(pane);
+    struct note_pane_heading last = {0};
+    require(note_pane_show_heading(pane, 6) && note_pane_heading(pane, 6, &last),
+            "the last heading can be shown");
+    CHARRANGE caret = {0};
+    SendMessageW(handle, EM_EXGETSEL, 0, (LPARAM)&caret);
+    require(caret.cpMin == last.position && caret.cpMax == last.position &&
+                SendMessageW(handle, EM_GETFIRSTVISIBLELINE, 0, 0) ==
+                    SendMessageW(handle, EM_EXLINEFROMCHAR, 0, last.position),
+            "showing a heading puts a caret on it and its line at the top of the view");
+    /* From a view scrolled part of a line down, the heading's line still comes to the top whole. */
+    POINT scrolled = {0};
+    SendMessageW(handle, EM_GETSCROLLPOS, 0, (LPARAM)&scrolled);
+    scrolled.y += 7;
+    SendMessageW(handle, EM_SETSCROLLPOS, 0, (LPARAM)&scrolled);
+    POINTL place = {0};
+    SendMessageW(handle, EM_POSFROMCHAR, (WPARAM)&place, last.position);
+    require(place.y < 0, "the fixture scrolls the heading's line partly out of view");
+    require(note_pane_show_heading(pane, 6), "the same heading again");
+    SendMessageW(handle, EM_POSFROMCHAR, (WPARAM)&place, last.position);
+    printf("heading line after a part-line scroll: y=%ld\n", place.y);
+    require(place.y >= 0 && place.y <= 2, "a heading whose line was cut off is shown whole");
+    require(note_pane_show_heading(pane, 0) &&
+                SendMessageW(handle, EM_GETFIRSTVISIBLELINE, 0, 0) == 0,
+            "the first heading is the top of the note again");
+    struct note_pane_heading kept = last;
+    require(!note_pane_show_heading(pane, 7) && !note_pane_heading(pane, 7, &kept) &&
+                kept.position == last.position,
+            "an index past the last heading does nothing");
+    load(pane, PANE_MODE_VIEW, "plain\n\n- item\n\n| a |\n| - |\n| 1 |\n");
+    require(note_pane_heading_count(pane) == 0, "a note without headings has none");
+    load(pane, PANE_MODE_VIEW, "# again\n");
+    require(
+        note_pane_heading_count(pane) == 1,
+        "the index follows the note that is loaded; the document's own last mark is no heading");
+    load(pane, PANE_MODE_VIEW, "body\n\n## last");
+    struct note_pane_heading ending = {0};
+    require(note_pane_heading_count(pane) == 1 && note_pane_heading(pane, 0, &ending) &&
+                ending.level == 2 && ending.position == 5,
+            "a heading that ends the note, with no line break after it, is counted once");
+    heading_neighbours(pane);
+    load(pane, PANE_MODE_EDIT, content);
+    require(note_pane_heading_count(pane) == 0 && !note_pane_show_heading(pane, 0),
+            "the editing view has no headings");
+}
+
+static void headings(struct note_pane *_Nonnull pane)
+{
+    const char *content = heading_content();
+    load(pane, PANE_MODE_VIEW, content);
+    HWND handle = note_pane_handle(pane);
+    /* The level travels in the paragraph's style, so the document holds no text for it. */
+    wchar_t raw[64];
+    GETTEXTEX taking = {.cb = sizeof raw, .flags = GT_RAWTEXT, .codepage = 1200};
+    require(SendMessageW(handle, EM_GETTEXTEX, (WPARAM)&taking, (LPARAM)raw) > 0 &&
+                wcsncmp(raw, L"一番\r本文", 5) == 0,
+            "the native text of a heading is its text and nothing else");
+    const size_t levels[] = {1, 2, 3, 4, 1, 2, 6};
+    const wchar_t *const names[] = {L"一番", L"二番", L"三番", L"四番", L"五番", L"六番", L"最後"};
+    require(note_pane_heading_count(pane) == 7,
+            "every heading, ATX and setext, in a list or quote");
+    LONG previous = -1;
+    for (size_t index = 0; index < 7; ++index)
+    {
+        struct note_pane_heading heading = {0};
+        require(note_pane_heading(pane, index, &heading), "a heading inside the count");
+        LONG text = native_find(handle, names[index]);
+        if (heading.level != levels[index] || text < heading.position ||
+            text > heading.position + 2)
+            printf("heading %zu: level %zu at %ld, text at %ld\n", index, heading.level,
+                   heading.position, text);
+        require(heading.level == levels[index] && heading.position > previous &&
+                    text >= heading.position && text <= heading.position + 2,
+                "each heading's level and the start of its paragraph, in document order");
+        previous = heading.position;
+    }
+    heading_moves(pane, content);
+}
+
 int main(void)
 {
     HDESK desktop = CreateDesktopW(L"NeNeFolioMinimap506", nullptr, nullptr, 0,
@@ -1122,6 +1242,7 @@ int main(void)
     text_menu(pane);
     reference_links(pane);
     footnotes(pane);
+    headings(pane);
     load(pane, PANE_MODE_EDIT, source);
     boundaries(pane);
     preservation(pane);

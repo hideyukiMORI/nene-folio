@@ -34,6 +34,8 @@ static const char header[] =
     "\\red178\\green60\\blue18;\\red237\\green225\\blue232;\\red44\\green0\\blue30;"
     "\\red198\\green152\\blue236;\\red164\\green217\\blue163;"
     "\\red154\\green165\\blue181;\\red240\\green198\\blue125;\\red255\\green255\\blue255;}"
+    "{\\stylesheet{\\s0 Normal;}{\\s1 heading 1;}{\\s2 heading 2;}{\\s3 heading 3;}"
+    "{\\s4 heading 4;}{\\s5 heading 5;}{\\s6 heading 6;}}"
     "\\f0\\fs22\\cf1";
 
 /* markdown を変換し、文書の頭と末尾を除いた本体が expected と同じか。 */
@@ -93,16 +95,17 @@ static void verify_unicode(void)
 
 static void verify_headings(void)
 {
-    expect_body("# Title", "\\pard\\sb200\\sa80\\b\\cf2\\fs44 Title\\b0\\cf1\\fs22\\par\n");
-    expect_body("## Sub", "\\pard\\sb200\\sa80\\b\\cf2\\fs34 Sub\\b0\\cf1\\fs22\\par\n");
-    expect_body("### Third", "\\pard\\sb200\\sa80\\b\\cf2\\fs28 Third\\b0\\cf1\\fs22\\par\n");
-    expect_body("#### Four", "\\pard\\sb160\\sa60\\b0\\cf2\\fs22 Four\\b0\\cf1\\fs22\\par\n");
-    expect_body("##### Five", "\\pard\\sb160\\sa60\\b0\\cf2\\fs22 Five\\b0\\cf1\\fs22\\par\n");
-    expect_body("###### Six", "\\pard\\sb160\\sa60\\b0\\cf2\\fs22 Six\\b0\\cf1\\fs22\\par\n");
+    expect_body("# Title", "\\pard\\s1\\sb200\\sa80\\b\\cf2\\fs44 Title\\b0\\cf1\\fs22\\par\n");
+    expect_body("## Sub", "\\pard\\s2\\sb200\\sa80\\b\\cf2\\fs34 Sub\\b0\\cf1\\fs22\\par\n");
+    expect_body("### Third", "\\pard\\s3\\sb200\\sa80\\b\\cf2\\fs28 Third\\b0\\cf1\\fs22\\par\n");
+    expect_body("#### Four", "\\pard\\s4\\sb160\\sa60\\b0\\cf2\\fs22 Four\\b0\\cf1\\fs22\\par\n");
+    expect_body("##### Five", "\\pard\\s5\\sb160\\sa60\\b0\\cf2\\fs22 Five\\b0\\cf1\\fs22\\par\n");
+    expect_body("###### Six", "\\pard\\s6\\sb160\\sa60\\b0\\cf2\\fs22 Six\\b0\\cf1\\fs22\\par\n");
     expect_body("####### Seven", "\\pard\\sa80\\sl240\\slmult1\\cf1 ####### Seven\\par\n");
     expect_body("#NoSpace", "\\pard\\sa80\\sl240\\slmult1\\cf1 #NoSpace\\par\n");
     expect_body("##", "\\pard\\sa80\\sl240\\slmult1\\cf1 ##\\par\n");
-    expect_body("# *Em*", "\\pard\\sb200\\sa80\\b\\cf2\\fs44 {\\i Em}\\b0\\cf1\\fs22\\par\n");
+    expect_body("# *Em*", "\\pard\\s1\\sb200\\sa80\\b\\cf2\\fs44 {\\i "
+                          "Em}\\b0\\cf1\\fs22\\par\n");
 }
 
 static void verify_emphasis(void)
@@ -542,7 +545,8 @@ static void verify_container_paths(void)
 static void verify_container_markers(void)
 {
     expect_fragment("7. > quote\n\n   continued\n1. next", "\\li920\\fi-700\\tx920", "");
-    expect_fragment("7. # heading\n1. next", "\\pard\\sb0\\sa80\\b\\cf2\\fs44\\li440", "\\sb200");
+    expect_fragment("7. # heading\n1. next", "\\pard\\s1\\sb0\\sa80\\b\\cf2\\fs44\\li440",
+                    "\\sb200");
     expect_fragment("7. ~~~\n   code\n   ~~~\n1. next", "7.\\tab }\\par\n{\\f1", "1.\\tab }next");
     expect_fragment("7. ~~~\n   ~~~\n1. next", "{\\f1\\fs20\\cf5\\highlight6}", "\\li620");
     expect_fragment("7. >\n1. next", "7.\\tab }\\par\n", "1.\\tab }next");
@@ -952,7 +956,7 @@ static void verify_new_inline(void)
 
 void run_markdown_table_setext_tests(void)
 {
-    expect_body("a\\|b\n---", "\\pard\\sb200\\sa80\\b\\cf2\\fs34 a|b\\b0\\cf1\\fs22\\par\n");
+    expect_body("a\\|b\n---", "\\pard\\s2\\sb200\\sa80\\b\\cf2\\fs34 a|b\\b0\\cf1\\fs22\\par\n");
 }
 
 void run_markdown_table_bare_tests(void)
@@ -981,25 +985,27 @@ static void verify_table_start_queries(void)
 static void verify_table_start_headings(void)
 {
     run_markdown_table_setext_tests();
-    expect_body("|head|\n---", "\\pard\\sb200\\sa80\\b\\cf2\\fs34 |head|\\b0\\cf1\\fs22\\par\n");
-    expect_body("head\n--", "\\pard\\sb200\\sa80\\b\\cf2\\fs34 head\\b0\\cf1\\fs22\\par\n");
-    expect_body("head\n-", "\\pard\\sb200\\sa80\\b\\cf2\\fs34 head\\b0\\cf1\\fs22\\par\n");
-    expect_body("head\n===", "\\pard\\sb200\\sa80\\b\\cf2\\fs44 head\\b0\\cf1\\fs22\\par\n");
-    expect_body("before\n|head|\n---",
-                "\\pard\\sb200\\sa80\\b\\cf2\\fs34 before |head|\\b0\\cf1\\fs22\\par\n");
+    expect_body("|head|\n---", "\\pard\\s2\\sb200\\sa80\\b\\cf2\\fs34 "
+                               "|head|\\b0\\cf1\\fs22\\par\n");
+    expect_body("head\n--", "\\pard\\s2\\sb200\\sa80\\b\\cf2\\fs34 head\\b0\\cf1\\fs22\\par\n");
+    expect_body("head\n-", "\\pard\\s2\\sb200\\sa80\\b\\cf2\\fs34 head\\b0\\cf1\\fs22\\par\n");
+    expect_body("head\n===", "\\pard\\s1\\sb200\\sa80\\b\\cf2\\fs44 head\\b0\\cf1\\fs22\\par\n");
+    expect_body("before\n|head|\n---", "\\pard\\s2\\sb200\\sa80\\b\\cf2\\fs34 before "
+                                       "|head|\\b0\\cf1\\fs22\\par\n");
     expect_body("before\n---\n|---|",
-                "\\pard\\sb200\\sa80\\b\\cf2\\fs34 before\\b0\\cf1\\fs22\\par\n"
+                "\\pard\\s2\\sb200\\sa80\\b\\cf2\\fs34 before\\b0\\cf1\\fs22\\par\n"
                 "\\pard\\sa80\\sl240\\slmult1\\cf1 |---|\\par\n");
     expect_body("before\n===\n|---|",
-                "\\pard\\sb200\\sa80\\b\\cf2\\fs44 before\\b0\\cf1\\fs22\\par\n"
+                "\\pard\\s1\\sb200\\sa80\\b\\cf2\\fs44 before\\b0\\cf1\\fs22\\par\n"
                 "\\pard\\sa80\\sl240\\slmult1\\cf1 |---|\\par\n");
     expect_fragment("===\n|---|", "{\\b ===}\\cell", "\\fs44");
 }
 
 static void verify_table_start_blocks(void)
 {
-    expect_body("# title|\n|---|", "\\pard\\sb200\\sa80\\b\\cf2\\fs44 title|\\b0\\cf1\\fs22\\par\n"
-                                   "\\pard\\sa80\\sl240\\slmult1\\cf1 |---|\\par\n");
+    expect_body("# title|\n|---|",
+                "\\pard\\s1\\sb200\\sa80\\b\\cf2\\fs44 title|\\b0\\cf1\\fs22\\par\n"
+                "\\pard\\sa80\\sl240\\slmult1\\cf1 |---|\\par\n");
     expect_body("~~~lang|\n|---|\n~~~\ntail",
                 "{\\f1\\fs20\\cf5\\highlight6\\pard\\qr\\li180\\ri0\\sb40\\sa60\\sl-260\\slmult0 "
                 "{\\f0\\fs18\\cf9 lang|}{\\f0\\fs18\\cf9 \\u8195?}" CODE_COPY_OPEN
@@ -1014,11 +1020,11 @@ static void verify_table_start_blocks(void)
 
 static void verify_table_start_containers(void)
 {
-    expect_body("> a\\|b\n> ---",
-                "\\pard\\sb200\\sa80\\b\\cf2\\fs34\\li480 a|b\\b0\\cf1\\fs22\\par\n");
-    expect_body("- a\\|b\n  ---",
-                "\\pard\\sb0\\sa80\\b\\cf2\\fs34\\li440\\fi-220\\tx440 "
-                "{\\f0\\fs22\\cf1\\b0\\highlight0 \\bullet\\tab }a|b\\b0\\cf1\\fs22\\par\n");
+    expect_body("> a\\|b\n> ---", "\\pard\\s2\\sb200\\sa80\\b\\cf2\\fs34\\li480 "
+                                  "a|b\\b0\\cf1\\fs22\\par\n");
+    expect_body("- a\\|b\n  ---", "\\pard\\s2\\sb0\\sa80\\b\\cf2\\fs34\\li440\\fi-220\\tx440 "
+                                  "{\\f0\\fs22\\cf1\\b0\\highlight0 \\bullet\\tab }"
+                                  "a|b\\b0\\cf1\\fs22\\par\n");
     expect_body("> quote\nlazy\\|text\n---",
                 "\\pard\\li480\\sa80\\sl240\\slmult1\\cf3 quote lazy|text\\cf1\\par\n"
                 "{\\pard\\sb0\\sa0\\sl-240\\slmult0\\fs2\\highlight0\\par}\n{\\pard\\sb0\\sa0\\sl-"

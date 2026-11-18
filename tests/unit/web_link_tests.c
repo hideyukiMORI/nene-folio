@@ -568,7 +568,7 @@ static void verify_definition_list(void)
                  DESCRIPTION_ROW "d\\cell\\row\n\\pard\\sa20\\sl240\\slmult1\\cf4 U", ": e");
     expect_field("T\n: d\n\nplain", "plain", "\\cf4 plain");
     /* What ends a description without a blank line: a heading, a rule, a fence, a list. */
-    expect_field("T\n: d\n# H", DESCRIPTION_ROW "d\\cell\\row\n\\pard\\sb200", "d # H");
+    expect_field("T\n: d\n# H", DESCRIPTION_ROW "d\\cell\\row\n\\pard\\s1\\sb200", "d # H");
     expect_field("T\n: d\n---\nafter", DESCRIPTION_ROW "d\\cell\\row", "\\fs34");
     expect_field("T\n: d\n```\ncode\n```", DESCRIPTION_ROW "d\\cell\\row", "d ```");
     expect_field("T\n: d\n- item", DESCRIPTION_ROW "d\\cell\\row", "d - item");
@@ -611,6 +611,28 @@ static void verify_definition_list(void)
     expect_field("T\n: d\n\nplain\n\n| a |\n| - |\n| 1 |", "\\par\n\\trowd\\trgaph80", "sl-80");
     expect_field("T\n: d\n\n---\n\n| a |\n| - |\n| 1 |", "\\trowd\\trgaph80", "sl-80");
     expect_field("T\n: d\n```\nx\n```\n| a |\n| - |\n| 1 |", "\\trowd\\trgaph80", "sl-80");
+}
+
+/* #975 / ADR0114: a heading paragraph carries its level as its style, named in the document's
+ * stylesheet; no text is added for it, and an ordinary paragraph resets to no style. */
+static void verify_heading_style(void)
+{
+    expect_field("# one",
+                 "{\\stylesheet{\\s0 Normal;}{\\s1 heading 1;}{\\s2 heading 2;}"
+                 "{\\s3 heading 3;}{\\s4 heading 4;}{\\s5 heading 5;}{\\s6 heading 6;}}",
+                 "\\v ");
+    expect_field("# one\n\n###### six\n\nbody", "\\pard\\s1\\sb200\\sa80\\b\\cf2\\fs44 one",
+                 "\\pard\\s0");
+    expect_field("# one\n\n###### six\n\nbody",
+                 "\\pard\\s6\\sb160\\sa60\\b0\\cf2\\fs22 six\\b0\\cf1\\fs22\\par\n\\pard\\sa80",
+                 "\\s7");
+    expect_field("two\n---", "\\pard\\s2\\sb200", "\\s1\\sb");
+    expect_field("- ## in a list", "\\pard\\s2\\sb0\\sa80\\b\\cf2\\fs34", "\\s1\\sb");
+    expect_field("> ### quoted", "\\pard\\s3\\sb200", "\\s2\\sb");
+    /* What follows a heading starts from a plain paragraph again. */
+    expect_field("# h\n| a |\n| - |\n| 1 |", "\\par\n\\trowd", "\\pard\\s1\\intbl");
+    expect_field("# h\nT\n: d", "\\par\n\\pard\\sa20\\sl240\\slmult1\\cf4 T", "\\s1\\sa20");
+    expect_field("# h\n- item", "\\par\n\\pard\\li", "\\pard\\s1\\li");
 }
 
 static size_t opened;
@@ -842,6 +864,7 @@ void run_web_link_tests(void)
     verify_footnote_continuation();
     verify_footnote_paragraphs();
     verify_definition_list();
+    verify_heading_style();
     verify_state();
     verify_product_table();
     verify_product_state();
