@@ -12204,7 +12204,8 @@ static void motion_modal_boundary(struct folio_window *_Nonnull window,
     motion_check_modal = true;
     motion_saw_modal = false;
     begin_expected_failure(window, L"本文読込失敗。同じモードで再試行。");
-    surface_button(window, ACCESSIBLE_SURFACE_DISCOVERY_OPEN);
+    /* #940: the editing open is the one that pours the note again. */
+    surface_button(window, ACCESSIBLE_SURFACE_DISCOVERY_EDIT);
     end_history_failure();
     require(motion_saw_modal && failure.closed == 1 && management_rejected_streams == 1,
             "real native adoption failure modal observes already stopped motion");
