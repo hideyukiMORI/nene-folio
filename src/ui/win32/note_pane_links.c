@@ -1,7 +1,6 @@
 #include "note_pane_links.h"
 #include "code_copy_target.h"
 #include "footnote_target.h"
-#include "heading_target.h"
 #include "note_pane_link_gesture.h"
 #include "utf8_text.h"
 #include "web_uri.h"
@@ -38,14 +37,6 @@ struct note_pane_links
     } *_Nullable footnotes;
     size_t footnote_count;
     size_t footnote_capacity;
-    /* #975: where each heading's paragraph starts (its hidden mark), in document order. */
-    struct heading_run
-    {
-        LONG start;
-        size_t level;
-    } *_Nullable headings;
-    size_t heading_count;
-    size_t heading_capacity;
     enum note_pane_link_gesture gesture;
     POINT down;
     CHARRANGE target;
@@ -148,48 +139,6 @@ static enum note_pane_link_outcome collect_action(struct note_pane_links *_Nonnu
     return NOTE_PANE_LINK_READY;
 }
 
-static bool append_heading(struct note_pane_links *_Nonnull links, LONG start, size_t level)
-{
-    if (links->heading_count == links->heading_capacity)
-    {
-        size_t capacity = links->heading_capacity == 0 ? 8 : links->heading_capacity * 2;
-        if (capacity < links->heading_capacity || capacity > SIZE_MAX / sizeof *links->headings)
-            return false;
-        struct heading_run *_Nullable prepared =
-            realloc(links->headings, capacity * sizeof *prepared);
-        if (prepared == nullptr)
-            return false;
-        links->headings = prepared;
-        links->heading_capacity = capacity;
-    }
-    links->headings[links->heading_count++] = (struct heading_run){start, level};
-    return true;
-}
-
-/* #975 / ADR0114: a hidden run that begins with a heading's mark is where that heading starts.
- * The run is hidden, so the same characters typed into a note are never a mark. A run that
- * cannot be read is left as plain hidden text. */
-static bool collect_heading(struct note_pane_links *_Nonnull links, ITextRange *_Nonnull range,
-                            LONG start, LONG end)
-{
-    if ((size_t)(end - start) < heading_target_length)
-        return true;
-    BSTR text = nullptr;
-    if (FAILED(range->lpVtbl->GetText(range, &text)) || text == nullptr)
-        return true;
-    char mark[heading_target_length];
-    size_t length = SysStringLen(text);
-    size_t read = 0;
-    while (read < heading_target_length && read < length && text[read] < 0x80)
-    {
-        mark[read] = (char)text[read];
-        ++read;
-    }
-    SysFreeString(text);
-    size_t level = read == heading_target_length ? heading_target_parse(mark, read) : 0;
-    return level == 0 || append_heading(links, start, level);
-}
-
 static enum note_pane_link_outcome collect_format(struct note_pane_links *_Nonnull links,
                                                   ITextRange *_Nonnull range, LONG start, LONG end)
 {
@@ -201,8 +150,7 @@ static enum note_pane_link_outcome collect_format(struct note_pane_links *_Nonnu
     font->lpVtbl->Release(font);
     if (FAILED(read) || hidden == tomUndefined)
         return NOTE_PANE_LINK_UNAVAILABLE;
-    if (hidden == tomTrue &&
-        (!append_hidden(links, start, end) || !collect_heading(links, range, start, end)))
+    if (hidden == tomTrue && !append_hidden(links, start, end))
         return NOTE_PANE_LINK_OUT_OF_MEMORY;
     return hidden == tomTrue ? NOTE_PANE_LINK_READY : NOTE_PANE_LINK_ABSENT;
 }
@@ -280,7 +228,6 @@ void note_pane_links_destroy(struct note_pane_links *_Nullable links)
         free(links->hidden);
         free(links->actions);
         free(links->footnotes);
-        free(links->headings);
     }
     free(links);
 }
@@ -298,18 +245,6 @@ bool note_pane_links_footnote(const struct note_pane_links *_Nullable links, boo
         }
     }
     return false;
-}
-
-size_t note_pane_links_heading_count(const struct note_pane_links *_Nullable links)
-{
-    return links == nullptr ? 0 : links->heading_count;
-}
-
-LONG note_pane_links_heading(const struct note_pane_links *_Nonnull links, size_t index,
-                             size_t *_Nonnull level)
-{
-    *level = links->headings[index].level;
-    return links->headings[index].start;
 }
 
 size_t note_pane_links_action_count(const struct note_pane_links *_Nullable links)

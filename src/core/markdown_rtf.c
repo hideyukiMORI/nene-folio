@@ -20,6 +20,11 @@ struct markdown_rtf
  * 5 コード文字・6 コード地・7 keyword・8 string・9 comment・10 number。単位は半ポイント。 */
 static const char document_header_open[] = "{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0\\fnil ";
 static const char document_header_close[] = ";}{\\f1\\fmodern Consolas;}}";
+/* #975 / ADR0114: RichEdit keeps a paragraph whose style is named "heading N" as its built-in
+ * heading style, which the pane reads back per paragraph. No text is added for it. */
+static const char document_styles[] =
+    "{\\stylesheet{\\s0 Normal;}{\\s1 heading 1;}{\\s2 heading 2;}{\\s3 heading 3;}"
+    "{\\s4 heading 4;}{\\s5 heading 5;}{\\s6 heading 6;}}";
 static const char document_body_start[] = "\\f0\\fs22\\cf1";
 static const char document_footer[] = "}";
 /* 色表の 1 色を \\redN\\greenN\\blueN; で書く。 */
@@ -67,6 +72,7 @@ static void append_header(struct text_buffer *_Nonnull out, struct rtf_palette p
     }
     append_color(out, pane);
     text_buffer_append_text(out, "}");
+    text_buffer_append_text(out, document_styles);
     text_buffer_append_text(out, document_body_start);
 }
 

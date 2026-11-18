@@ -37,9 +37,4 @@ void note_pane_links_finish_input(struct note_pane_links *_Nullable links, UINT 
  * 文書順に最初のもの。その番号の区間が無ければ false。 */
 [[nodiscard]] bool note_pane_links_footnote(const struct note_pane_links *_Nullable links,
                                             bool back, size_t number, CHARRANGE *_Nonnull out);
-/* #975 / ADR0114: 見出しの段落の先頭（native位置）と階層（1〜6）。文書順。index は heading_count
- * 未満。閲覧表示の非表示の印から作る派生値で、編集表示では 0 件。 */
-[[nodiscard]] size_t note_pane_links_heading_count(const struct note_pane_links *_Nullable links);
-[[nodiscard]] LONG note_pane_links_heading(const struct note_pane_links *_Nonnull links,
-                                           size_t index, size_t *_Nonnull level);
 #endif

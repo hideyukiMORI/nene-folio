@@ -95,11 +95,12 @@ void note_pane_select(struct note_pane *_Nonnull pane, size_t start, size_t end)
 /* #945: 脚注の番号の先頭へキャレットを置いて見える位置へ寄せる。back
  * が真なら脚注の側の番号、偽なら本文の側の 最初の参照。その番号が表示に無ければ何もせず false。 */
 bool note_pane_show_footnote(struct note_pane *_Nonnull pane, bool back, size_t number);
-/* #975 / ADR0114: 閲覧表示の見出し（文書順）。position は見出しの段落の先頭の native 位置。
- * 編集表示・未読込では 0 件。index は heading_count 未満。 */
-[[nodiscard]] size_t note_pane_heading_count(const struct note_pane *_Nonnull pane);
-[[nodiscard]] struct note_pane_heading note_pane_heading(const struct note_pane *_Nonnull pane,
-                                                         size_t index);
+/* #975 / ADR0114: 閲覧表示の見出し（文書順）。position は見出しの段落の先頭の native 位置、level は
+ * 1〜6。索引は読み込みのあと最初に尋ねられたときに作る。編集表示・未読込・索引を作れなかったときは
+ * 0 件。index が件数以上なら false で out を変えない。 */
+[[nodiscard]] size_t note_pane_heading_count(struct note_pane *_Nonnull pane);
+[[nodiscard]] bool note_pane_heading(struct note_pane *_Nonnull pane, size_t index,
+                                     struct note_pane_heading *_Nonnull out);
 /* その見出しへキャレットを置き、見出しの行を表示の先頭へ寄せる。index が範囲外なら何もせず false。
  */
 bool note_pane_show_heading(struct note_pane *_Nonnull pane, size_t index);

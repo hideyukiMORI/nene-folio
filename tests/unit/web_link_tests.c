@@ -2,7 +2,6 @@
 #include "appearance_port.h"
 #include "folio_state.h"
 #include "footnote_target.h"
-#include "heading_target.h"
 #include "markdown_bare_link.h"
 #include "markdown_references.h"
 #include "markdown_rtf.h"
@@ -569,7 +568,7 @@ static void verify_definition_list(void)
                  DESCRIPTION_ROW "d\\cell\\row\n\\pard\\sa20\\sl240\\slmult1\\cf4 U", ": e");
     expect_field("T\n: d\n\nplain", "plain", "\\cf4 plain");
     /* What ends a description without a blank line: a heading, a rule, a fence, a list. */
-    expect_field("T\n: d\n# H", DESCRIPTION_ROW "d\\cell\\row\n\\pard\\sb200", "d # H");
+    expect_field("T\n: d\n# H", DESCRIPTION_ROW "d\\cell\\row\n\\pard\\s1\\sb200", "d # H");
     expect_field("T\n: d\n---\nafter", DESCRIPTION_ROW "d\\cell\\row", "\\fs34");
     expect_field("T\n: d\n```\ncode\n```", DESCRIPTION_ROW "d\\cell\\row", "d ```");
     expect_field("T\n: d\n- item", DESCRIPTION_ROW "d\\cell\\row", "d - item");
@@ -614,37 +613,23 @@ static void verify_definition_list(void)
     expect_field("T\n: d\n```\nx\n```\n| a |\n| - |\n| 1 |", "\\trowd\\trgaph80", "sl-80");
 }
 
-/* #975 / ADR0114: the hidden mark a heading starts with: one exact form per level. */
-static void verify_heading_target(void)
+/* #975 / ADR0114: a heading paragraph carries its level as its style, named in the document's
+ * stylesheet; no text is added for it, and an ordinary paragraph resets to no style. */
+static void verify_heading_style(void)
 {
-    struct text_buffer *_Nullable out = nullptr;
-    require(text_buffer_create(&out) == TEXT_BUFFER_ACCEPTED, "mark buffer");
-    for (size_t level = 1; level <= heading_target_levels; ++level)
-        heading_target_append(out, level);
-    require(same_text(text_buffer_bytes(out),
-                      "{\\v <nenefolio:heading:1>}{\\v <nenefolio:heading:2>}"
-                      "{\\v <nenefolio:heading:3>}{\\v <nenefolio:heading:4>}"
-                      "{\\v <nenefolio:heading:5>}{\\v <nenefolio:heading:6>}"),
-            "one hidden mark per level");
-    text_buffer_destroy(out);
-    const char mark[] = "<nenefolio:heading:3>";
-    require(sizeof mark - 1 == heading_target_length &&
-                heading_target_parse(mark, sizeof mark - 1) == 3,
-            "a mark gives its level");
-    const char *const others[] = {"<nenefolio:heading:0>", "<nenefolio:heading:7>",
-                                  "<nenefolio:heading:a>", "<nenefolio:heading:3 ",
-                                  "<nenefolio:heaDing:3>", "<nenefolio:image:33>>"};
-    for (size_t index = 0; index < sizeof others / sizeof others[0]; ++index)
-        require(strlen(others[index]) == heading_target_length &&
-                    heading_target_parse(others[index], heading_target_length) == 0,
-                others[index]);
-    require(heading_target_parse(mark, sizeof mark - 2) == 0 &&
-                heading_target_parse("<nenefolio:heading:3>x", sizeof mark) == 0,
-            "only the whole mark, nothing shorter or longer");
-    /* The mark follows a list item's marker and precedes the heading's text and its links. */
-    expect_field("- ## [l](https://example.com/h)",
-                 "\\bullet\\tab }{\\v <nenefolio:heading:2>}{\\field", "heading:1");
-    expect_field("plain `<nenefolio:heading:1>` text", "<nenefolio:heading:1>", "{\\v <nenefolio");
+    expect_field("# one",
+                 "{\\stylesheet{\\s0 Normal;}{\\s1 heading 1;}{\\s2 heading 2;}"
+                 "{\\s3 heading 3;}{\\s4 heading 4;}{\\s5 heading 5;}{\\s6 heading 6;}}",
+                 "\\v ");
+    expect_field("# one\n\n###### six\n\nbody", "\\pard\\s1\\sb200\\sa80\\b\\cf2\\fs44 one",
+                 "\\pard\\s0");
+    expect_field("# one\n\n###### six\n\nbody",
+                 "\\pard\\s6\\sb160\\sa60\\b0\\cf2\\fs22 six\\b0\\cf1\\fs22\\par\n\\pard\\sa80",
+                 "\\s7");
+    expect_field("two\n---", "\\pard\\s2\\sb200", "\\s1\\sb");
+    expect_field("- ## in a list", "\\pard\\s2\\sb0\\sa80\\b\\cf2\\fs34", "\\s1\\sb");
+    expect_field("> ### quoted", "\\pard\\s3\\sb200", "\\s2\\sb");
+    expect_field("plain\n\n| a |\n| - |\n| 1 |", "plain\\par", "\\pard\\s1");
 }
 
 static size_t opened;
@@ -876,7 +861,7 @@ void run_web_link_tests(void)
     verify_footnote_continuation();
     verify_footnote_paragraphs();
     verify_definition_list();
-    verify_heading_target();
+    verify_heading_style();
     verify_state();
     verify_product_table();
     verify_product_state();

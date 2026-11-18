@@ -3,7 +3,6 @@
 #include "code_syntax.h"
 #include "diagram_limits.h"
 #include "footnote_target.h"
-#include "heading_target.h"
 #include "markdown_code_state.h"
 #include "markdown_containers.h"
 #include "markdown_definition_part.h"
@@ -180,7 +179,11 @@ static size_t text_half_points(size_t heading)
 
 static void heading_header(struct markdown_blocks *_Nonnull parser)
 {
-    text_buffer_append_text(parser->out, "\\pard\\sb");
+    /* #975 / ADR0114: the paragraph's style is its heading level (the document's stylesheet
+     * names \\s1-\\s6 "heading 1"-"heading 6"); the pane reads it back to find the headings. */
+    text_buffer_append_text(parser->out, "\\pard\\s");
+    rtf_text_number(parser->out, parser->heading);
+    text_buffer_append_text(parser->out, "\\sb");
     rtf_text_number(parser->out, parser->paragraph_item ? 0 : (parser->heading <= 3 ? 200 : 160));
     text_buffer_append_text(parser->out,
                             parser->heading <= 3 ? "\\sa80\\b\\cf2\\fs" : "\\sa60\\b0\\cf2\\fs");
@@ -194,9 +197,6 @@ static void heading_header(struct markdown_blocks *_Nonnull parser)
     }
     else
         text_buffer_append_text(parser->out, " ");
-    /* #975 / ADR0114: where the heading is, for the pane. Hidden, and inside the heading's own
-     * format: the minimap reads a line's size from its first character. */
-    heading_target_append(parser->out, parser->heading);
 }
 
 static void paragraph_header(struct markdown_blocks *_Nonnull parser)
