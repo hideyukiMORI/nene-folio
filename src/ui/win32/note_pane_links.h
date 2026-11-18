@@ -19,6 +19,11 @@ void note_pane_links_destroy(struct note_pane_links *_Nullable links);
                                                struct note_search_span span);
 [[nodiscard]] size_t note_pane_links_compact(const struct note_pane_links *_Nonnull links,
                                              char16_t *_Nonnull units, size_t length);
+/* #975: 同じ詰め方を、native 位置 base から読んだ length 単位の断片に行う（units は length+1
+ * 単位以上）。非表示の区間を除いて終端を置き、残った長さを返す。 */
+[[nodiscard]] size_t note_pane_links_compact_from(const struct note_pane_links *_Nonnull links,
+                                                  size_t base, char16_t *_Nonnull units,
+                                                  size_t length);
 [[nodiscard]] enum note_pane_link_outcome
 note_pane_links_target(ITextDocument *_Nonnull document, CHARRANGE selection,
                        struct utf8_text *_Nullable *_Nonnull out);

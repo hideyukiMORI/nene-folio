@@ -324,6 +324,28 @@ size_t note_pane_links_compact(const struct note_pane_links *_Nonnull links,
     return written;
 }
 
+size_t note_pane_links_compact_from(const struct note_pane_links *_Nonnull links, size_t base,
+                                    char16_t *_Nonnull units, size_t length)
+{
+    size_t source = 0;
+    size_t written = 0;
+    for (size_t index = 0; index < links->count && source < length; ++index)
+    {
+        const struct hidden_run *run = &links->hidden[index];
+        if (run->end <= base + source)
+            continue;
+        size_t start = run->start > base ? run->start - base : 0;
+        size_t end = start < length ? start : length;
+        memmove(units + written, units + source, (end - source) * sizeof *units);
+        written += end - source;
+        source = run->end - base < length ? run->end - base : length;
+    }
+    memmove(units + written, units + source, (length - source) * sizeof *units);
+    written += length - source;
+    units[written] = u'\0';
+    return written;
+}
+
 static enum note_pane_link_outcome convert_url(BSTR _Nonnull url,
                                                struct utf8_text *_Nullable *_Nonnull out)
 {

@@ -1213,6 +1213,64 @@ static void headings(struct note_pane *_Nonnull pane)
     heading_moves(pane, content);
 }
 
+static bool label_is(struct note_pane *_Nonnull pane, size_t index, const char16_t *_Nonnull text)
+{
+    struct note_pane_heading_label label;
+    size_t length = note_pane_heading_text(pane, index, &label);
+    size_t expected = 0;
+    while (text[expected] != u'\0')
+        ++expected;
+    if (length != expected || memcmp(label.units, text, (expected + 1) * sizeof text[0]) != 0)
+    {
+        printf("heading %zu label (%zu units):", index, length);
+        for (size_t at = 0; at < length; ++at)
+            printf(" %04x", (unsigned)label.units[at]);
+        printf("\n");
+    }
+    return length == expected && memcmp(label.units, text, (expected + 1) * sizeof text[0]) == 0;
+}
+
+/* A row's text is what the heading shows: no link destination, no markup, one line, cut at the
+ * label's size. The heading being read is the last one at or above the top of the view. */
+static void heading_texts(struct note_pane *_Nonnull pane)
+{
+    static char content[2048];
+    size_t used = (size_t)sprintf(
+        content, "前書き\n\n# **太字**と`code`と[リンク](https://example.com/a/very/long/path)\n\n"
+                 "本文\n\n- ## 項目の中の見出し\n\n### ");
+    for (unsigned at = 0; at < 150; ++at)
+        used += (size_t)sprintf(content + used, "x");
+    used += (size_t)sprintf(content + used, "\n\n");
+    for (unsigned line = 0; line < 60; ++line)
+        used += (size_t)sprintf(content + used, "後の段落 %u\n\n", line);
+    load(pane, PANE_MODE_VIEW, content);
+    require(note_pane_heading_count(pane) == 3, "three headings after an opening paragraph");
+    require(label_is(pane, 0, u"太字とcodeとリンク"),
+            "a row shows the heading's visible text, not its markup or a link's destination");
+    require(label_is(pane, 1, u"• 項目の中の見出し"),
+            "a heading in a list item is shown as its paragraph is: with the item's marker");
+    struct note_pane_heading_label label;
+    require(note_pane_heading_text(pane, 2, &label) == 127 && label.units[126] == u'x' &&
+                label.units[127] == u'\0',
+            "a long heading is cut at the label's size");
+    struct note_pane_heading_label kept = label;
+    require(note_pane_heading_text(pane, 3, &kept) == 0 && kept.units[0] == u'\0',
+            "an index past the last heading gives an empty label");
+    size_t current = 99;
+    require(!note_pane_heading_current(pane, &current) && current == 99,
+            "above the first heading nothing is being read");
+    require(note_pane_show_heading(pane, 1) && note_pane_heading_current(pane, &current) &&
+                current == 1,
+            "the heading at the top of the view is the one being read");
+    SendMessageW(note_pane_handle(pane), EM_LINESCROLL, 0, 6);
+    require(note_pane_heading_current(pane, &current) && current == 2,
+            "below the last heading, the last heading is still the one being read");
+    load(pane, PANE_MODE_EDIT, content);
+    require(note_pane_heading_text(pane, 0, &label) == 0 &&
+                !note_pane_heading_current(pane, &current),
+            "the editing view has no rows and nothing being read");
+}
+
 int main(void)
 {
     HDESK desktop = CreateDesktopW(L"NeNeFolioMinimap506", nullptr, nullptr, 0,
@@ -1243,6 +1301,7 @@ int main(void)
     reference_links(pane);
     footnotes(pane);
     headings(pane);
+    heading_texts(pane);
     load(pane, PANE_MODE_EDIT, source);
     boundaries(pane);
     preservation(pane);

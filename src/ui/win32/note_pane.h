@@ -9,6 +9,7 @@
 #include "image_bitmap.h"
 #include "note_pane_geometry.h"
 #include "note_pane_heading.h"
+#include "note_pane_heading_label.h"
 #include "note_pane_link_outcome.h"
 #include "note_pane_load_outcome.h"
 #include "note_pane_outcome.h"
@@ -101,6 +102,13 @@ bool note_pane_show_footnote(struct note_pane *_Nonnull pane, bool back, size_t 
 [[nodiscard]] size_t note_pane_heading_count(struct note_pane *_Nonnull pane);
 [[nodiscard]] bool note_pane_heading(struct note_pane *_Nonnull pane, size_t index,
                                      struct note_pane_heading *_Nonnull out);
+/* その見出しの、表示されている文字（1行・最大127単位・終端付き）。リンクの宛先などの非表示の文字、
+ * 画像や表の構造を表す文字は入らない。長さを返す。index が範囲外・読み込み中・変換中は 0 で空。 */
+[[nodiscard]] size_t note_pane_heading_text(struct note_pane *_Nonnull pane, size_t index,
+                                            struct note_pane_heading_label *_Nonnull out);
+/* いま読んでいる見出し: 表示の先頭の行か、それより上にある最後の見出し。最初の見出しより上を
+ * 見ているとき・見出しが無いときは false で out を変えない。 */
+[[nodiscard]] bool note_pane_heading_current(struct note_pane *_Nonnull pane, size_t *_Nonnull out);
 /* その見出しへキャレットを置き、見出しの行を表示の先頭へ寄せる。index が範囲外なら何もせず false。
  */
 bool note_pane_show_heading(struct note_pane *_Nonnull pane, size_t index);
