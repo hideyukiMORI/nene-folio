@@ -11062,7 +11062,7 @@ static void body_discovery_mode_keys(struct folio_window *_Nonnull window,
     struct accessible_view open =
         tags_view(window, ACCESSIBLE_SURFACE_BUTTON, ACCESSIBLE_SURFACE_DISCOVERY_OPEN);
     require(wcsstr(status.name, L"検索語を入力") != nullptr && !open.enabled &&
-                wcscmp(open.name, L"一致行を開く") == 0 &&
+                wcscmp(open.name, L"一致行を開く Enter") == 0 &&
                 wcsstr(open.help, L"編集表示") != nullptr,
             "empty-body guidance and explicit editing action have matching accessible labels");
     discovery_query(window, fixture->state, L"needle");
@@ -11211,6 +11211,185 @@ static void body_discovery_typing_preview(struct folio_window *_Nonnull window,
                          "---\nitem:\n  child: value\n---\nneedle unknown");
 }
 
+/* #940: Ctrl held while Enter goes to the query, as the real key press delivers it. */
+static void discovery_ctrl_enter(struct folio_window *_Nonnull window, HWND input)
+{
+    BYTE original[256], keyboard[256] = {0};
+    require(GetKeyboardState(original), "save fixture keyboard state");
+    keyboard[VK_CONTROL] = 0x80;
+    require(SetKeyboardState(keyboard), "hold Ctrl");
+    SendMessageW(input, WM_KEYDOWN, VK_RETURN, 0);
+    SendMessageW(input, WM_CHAR, L'\n', 0);
+    require(SetKeyboardState(original), "release Ctrl");
+    pump(window);
+}
+
+static bool discovery_mode_is(struct native_fixture *_Nonnull fixture, enum discovery_mode mode,
+                              HWND input)
+{
+    return folio_state_discovery_summary(fixture->state).mode == mode && GetFocus() == input;
+}
+
+/* #940: in an empty query Left/Right choose names/body; with text they move the caret and
+ * Alt+Left / Alt+Right choose. The focus stays in the query. */
+static void discovery_mode_arrows(struct folio_window *_Nonnull window,
+                                  struct native_fixture *_Nonnull fixture)
+{
+    invoke_operation(window, FOLIO_COMMAND_DISCOVER_NOTES);
+    pump(window);
+    discovery_settle(window, fixture->state);
+    HWND input = folio_window_accessible_window(window, ACCESSIBLE_COMMAND_INPUT);
+    SetFocus(input);
+    SendMessageW(input, WM_KEYDOWN, VK_RIGHT, 0);
+    require(discovery_mode_is(fixture, DISCOVERY_MODE_BODY, input),
+            "Right in an empty query chooses body and keeps typing focus");
+    SendMessageW(input, WM_KEYDOWN, VK_LEFT, 0);
+    require(discovery_mode_is(fixture, DISCOVERY_MODE_NAMES, input),
+            "Left in an empty query chooses names");
+    discovery_query(window, fixture->state, L"one");
+    SendMessageW(input, EM_SETSEL, 0, 0);
+    SendMessageW(input, WM_KEYDOWN, VK_RIGHT, 0);
+    DWORD caret = 0;
+    SendMessageW(input, EM_GETSEL, (WPARAM)&caret, 0);
+    printf("mode arrows: caret after Right in text %lu\n", caret);
+    fflush(stdout);
+    require(discovery_mode_is(fixture, DISCOVERY_MODE_NAMES, input) && caret == 1,
+            "Right in a query with text moves the caret, not the mode");
+    SendMessageW(input, WM_SYSKEYDOWN, VK_RIGHT, 0);
+    discovery_settle(window, fixture->state);
+    wchar_t query[16];
+    require(discovery_mode_is(fixture, DISCOVERY_MODE_BODY, input) &&
+                GetWindowTextW(input, query, 16) == 3 && wcscmp(query, L"one") == 0,
+            "Alt+Right chooses body and keeps the query and the focus");
+    SendMessageW(input, WM_SYSKEYDOWN, VK_LEFT, 0);
+    discovery_settle(window, fixture->state);
+    require(discovery_mode_is(fixture, DISCOVERY_MODE_NAMES, input),
+            "Alt+Left chooses names again");
+    SendMessageW(input, WM_IME_STARTCOMPOSITION, 0, 0);
+    SendMessageW(input, WM_SYSKEYDOWN, VK_RIGHT, 0);
+    require(folio_state_discovery_summary(fixture->state).mode == DISCOVERY_MODE_NAMES,
+            "composition keeps Alt+Right away from the mode");
+    SendMessageW(input, WM_IME_ENDCOMPOSITION, 0, 0);
+    discovery_settle(window, fixture->state);
+    surface_button(window, ACCESSIBLE_SURFACE_CLOSE);
+}
+
+/* #940: Ctrl+Enter (and the editing button) open a named candidate in the editing view. */
+static void discovery_edit_open(struct folio_window *_Nonnull window,
+                                struct native_fixture *_Nonnull fixture)
+{
+    action(window, ACCESSIBLE_VIEW);
+    invoke_operation(window, FOLIO_COMMAND_DISCOVER_NOTES);
+    discovery_query(window, fixture->state, L"two");
+    struct accessible_view edit =
+        tags_view(window, ACCESSIBLE_SURFACE_BUTTON, ACCESSIBLE_SURFACE_DISCOVERY_EDIT);
+    struct accessible_view open =
+        tags_view(window, ACCESSIBLE_SURFACE_BUTTON, ACCESSIBLE_SURFACE_DISCOVERY_OPEN);
+    printf("edit open: buttons %ls | %ls\n", edit.name, open.name);
+    fflush(stdout);
+    require(edit.enabled && wcscmp(edit.name, L"編集で開く Ctrl+Enter") == 0 &&
+                wcscmp(open.name, L"開く Enter") == 0 && edit.bounds.right <= open.bounds.left,
+            "both open actions show their keys side by side");
+    HWND input = folio_window_accessible_window(window, ACCESSIBLE_COMMAND_INPUT);
+    SetFocus(input);
+    discovery_ctrl_enter(window, input);
+    wchar_t typed[16];
+    require(strcmp(folio_state_document_name(fixture->state), "two") == 0 &&
+                folio_state_pane_mode(fixture->state) == PANE_MODE_EDIT &&
+                folio_state_discovery_summary(fixture->state).phase == DISCOVERY_CLOSED &&
+                GetWindowTextW(input, typed, 16) >= 0 && wcschr(typed, L'\n') == nullptr,
+            "Ctrl+Enter opens the named candidate in the editing view and types nothing");
+    action(window, ACCESSIBLE_VIEW);
+    invoke_operation(window, FOLIO_COMMAND_DISCOVER_NOTES);
+    discovery_query(window, fixture->state, L"one");
+    surface_button(window, ACCESSIBLE_SURFACE_DISCOVERY_EDIT);
+    require(strcmp(folio_state_document_name(fixture->state), "one") == 0 &&
+                folio_state_pane_mode(fixture->state) == PANE_MODE_EDIT,
+            "the editing button opens the first fixture note in the editing view");
+}
+
+/* #940: Enter on a body match opens the reading view and selects the first match shown there;
+ * the term becomes the in-note search term. Ctrl+Enter keeps the editing path. */
+static void body_discovery_view_open(struct folio_window *_Nonnull window,
+                                     struct native_fixture *_Nonnull fixture)
+{
+    body_discovery_open(window, fixture, L"needle");
+    discovery_choose(window, 0);
+    discovery_settle(window, fixture->state);
+    HWND input = folio_window_accessible_window(window, ACCESSIBLE_COMMAND_INPUT);
+    SetFocus(input);
+    SendMessageW(input, WM_KEYDOWN, VK_RETURN, 0);
+    pump(window);
+    struct native_body_snapshot shown = {0};
+    capture_native_body(window, &shown);
+    const wchar_t *first = wcsstr(shown.text, L"needle");
+    printf("view open: mode view %d selection %ld..%ld first %td term %s\n",
+           folio_state_pane_mode(fixture->state) == PANE_MODE_VIEW, shown.selection.cpMin,
+           shown.selection.cpMax, first == nullptr ? -1 : first - shown.text,
+           folio_state_search_term(fixture->state));
+    fflush(stdout);
+    require(folio_state_pane_mode(fixture->state) == PANE_MODE_VIEW &&
+                folio_state_discovery_summary(fixture->state).phase == DISCOVERY_CLOSED,
+            "Enter on a body match opens the reading view");
+    require(first != nullptr && shown.selection.cpMin == first - shown.text &&
+                shown.selection.cpMax == shown.selection.cpMin + 6 &&
+                strcmp(folio_state_search_term(fixture->state), "needle") == 0,
+            "the first match in the displayed text is selected and becomes the search term");
+    body_discovery_open(window, fixture, L"needle");
+    discovery_choose(window, 0);
+    discovery_settle(window, fixture->state);
+    SetFocus(input);
+    discovery_ctrl_enter(window, input);
+    require(folio_state_pane_mode(fixture->state) == PANE_MODE_EDIT,
+            "Ctrl+Enter on a body match opens the editing view");
+    body_discovery_expected_selection(window, L"needle", 0);
+}
+
+/* #940 (review): in the narrow layout the source replaces the results. Alt+Left from the source
+ * starts a mode without a source, so the focus returns to the query instead of staying on the
+ * hidden source; the three bottom actions never overlap. */
+static void body_discovery_narrow_switch(struct folio_window *_Nonnull window,
+                                         struct native_fixture *_Nonnull fixture)
+{
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    int width = MulDiv(560, (int)GetDpiForWindow(root), 96);
+    require(SetWindowPos(root, nullptr, 20, 20, width, 720, SWP_NOZORDER | SWP_NOACTIVATE),
+            "narrow finder window");
+    pump(window);
+    body_discovery_open(window, fixture, L"needle");
+    surface_button(window, ACCESSIBLE_SURFACE_DISCOVERY_TOGGLE);
+    HWND input = folio_window_accessible_window(window, ACCESSIBLE_COMMAND_INPUT);
+    HWND preview = folio_window_accessible_window(window, ACCESSIBLE_DISCOVERY_PREVIEW);
+    require(IsWindowVisible(preview), "the narrow layout shows the source on request");
+    struct accessible_view toggle =
+        tags_view(window, ACCESSIBLE_SURFACE_BUTTON, ACCESSIBLE_SURFACE_DISCOVERY_TOGGLE);
+    struct accessible_view edit =
+        tags_view(window, ACCESSIBLE_SURFACE_BUTTON, ACCESSIBLE_SURFACE_DISCOVERY_EDIT);
+    struct accessible_view open =
+        tags_view(window, ACCESSIBLE_SURFACE_BUTTON, ACCESSIBLE_SURFACE_DISCOVERY_OPEN);
+    printf("narrow actions: toggle %ld..%ld edit %ld..%ld open %ld..%ld\n", toggle.bounds.left,
+           toggle.bounds.right, edit.bounds.left, edit.bounds.right, open.bounds.left,
+           open.bounds.right);
+    fflush(stdout);
+    require(toggle.bounds.right <= edit.bounds.left && edit.bounds.right <= open.bounds.left,
+            "the three bottom actions do not overlap at the minimum width");
+    SetFocus(preview);
+    SendMessageW(preview, WM_SYSKEYDOWN, VK_LEFT, 0);
+    pump(window);
+    discovery_settle(window, fixture->state);
+    printf("narrow switch: mode names %d preview visible %d focus input %d\n",
+           folio_state_discovery_summary(fixture->state).mode == DISCOVERY_MODE_NAMES,
+           IsWindowVisible(preview), GetFocus() == input);
+    fflush(stdout);
+    require(folio_state_discovery_summary(fixture->state).mode == DISCOVERY_MODE_NAMES &&
+                GetFocus() == input,
+            "Alt+Left from the source switches the mode and returns the focus to the query");
+    surface_button(window, ACCESSIBLE_SURFACE_CLOSE);
+    require(SetWindowPos(root, nullptr, 20, 20, 1050, 720, SWP_NOZORDER | SWP_NOACTIVATE),
+            "restore the wide body fixture");
+    pump(window);
+}
+
 static LRESULT CALLBACK progress_layer_observer(HWND window, UINT message, WPARAM wparam,
                                                 LPARAM lparam)
 {
@@ -11307,7 +11486,7 @@ static void body_discovery_same_editor(struct folio_window *_Nonnull window,
     discovery_body_unchanged(window, &before);
     discovery_choose(window, 0);
     discovery_settle(window, fixture->state);
-    surface_button(window, ACCESSIBLE_SURFACE_DISCOVERY_OPEN);
+    surface_button(window, ACCESSIBLE_SURFACE_DISCOVERY_EDIT);
     body_discovery_expected_selection(window, L"needle", before.modified);
     require(folio_state_discovery_summary(fixture->state).phase == DISCOVERY_CLOSED &&
                 SendMessageW(body, EM_CANUNDO, 0, 0) == before.undo &&
@@ -11318,7 +11497,7 @@ static void body_discovery_same_editor(struct folio_window *_Nonnull window,
     pump(window);
     action(window, ACCESSIBLE_VIEW);
     body_discovery_open(window, fixture, L"needle first");
-    surface_button(window, ACCESSIBLE_SURFACE_DISCOVERY_OPEN);
+    surface_button(window, ACCESSIBLE_SURFACE_DISCOVERY_EDIT);
     require(folio_state_pane_mode(fixture->state) == PANE_MODE_EDIT,
             "same VIEW target enters the canonical editing path");
     body_discovery_expected_selection(window, L"needle first", 0);
@@ -11329,7 +11508,7 @@ static void body_discovery_changed_source(struct folio_window *_Nonnull window,
 {
     body_discovery_open(window, fixture, L"Other needle");
     body_discovery_write(fixture, L"\\schedule\\two.md", "changed prefix\nOther needle\nnew end");
-    surface_button(window, ACCESSIBLE_SURFACE_DISCOVERY_OPEN);
+    surface_button(window, ACCESSIBLE_SURFACE_DISCOVERY_EDIT);
     require(strcmp(folio_state_document_name(fixture->state), "two") == 0 &&
                 folio_state_pane_mode(fixture->state) == PANE_MODE_EDIT &&
                 folio_state_discovery_summary(fixture->state).phase == DISCOVERY_CLOSED,
@@ -11345,7 +11524,7 @@ static void body_discovery_changed_source(struct folio_window *_Nonnull window,
     body_discovery_write(fixture, L"\\schedule\\two.md", body_discovery_other);
     body_discovery_return_one(window, fixture);
     body_discovery_open(window, fixture, L"Other needle");
-    surface_button(window, ACCESSIBLE_SURFACE_DISCOVERY_OPEN);
+    surface_button(window, ACCESSIBLE_SURFACE_DISCOVERY_EDIT);
     body_discovery_expected_selection(window, L"Other needle", 0);
     body_discovery_return_one(window, fixture);
 }
@@ -11355,7 +11534,7 @@ static void body_discovery_read_failure(struct folio_window *_Nonnull window,
 {
     body_discovery_open(window, fixture, L"Other needle");
     HANDLE locked = management_lock(fixture, L"\\schedule\\two.md", 0);
-    surface_button(window, ACCESSIBLE_SURFACE_DISCOVERY_OPEN);
+    surface_button(window, ACCESSIBLE_SURFACE_DISCOVERY_EDIT);
     require(folio_state_discovery_summary(fixture->state).phase == DISCOVERY_READY &&
                 strcmp(folio_state_document_name(fixture->state), "one") == 0,
             "post-search read failure keeps the original document and finder");
@@ -11363,7 +11542,7 @@ static void body_discovery_read_failure(struct folio_window *_Nonnull window,
     wchar_t path[storage_native_capacity];
     native_file_path(fixture, L"\\schedule\\two.md", path);
     require(DeleteFileW(path), "remove only the private target to test disappearance");
-    surface_button(window, ACCESSIBLE_SURFACE_DISCOVERY_OPEN);
+    surface_button(window, ACCESSIBLE_SURFACE_DISCOVERY_EDIT);
     require(folio_state_discovery_summary(fixture->state).phase == DISCOVERY_READY &&
                 strcmp(folio_state_document_name(fixture->state), "one") == 0,
             "post-search missing source never recreates or adopts the missing target");
@@ -11376,7 +11555,7 @@ static void body_discovery_uneditable_native(struct folio_window *_Nonnull windo
 {
     body_discovery_write(fixture, L"\\schedule\\two.md", "Other needle\a");
     body_discovery_open(window, fixture, L"Other needle");
-    surface_button(window, ACCESSIBLE_SURFACE_DISCOVERY_OPEN);
+    surface_button(window, ACCESSIBLE_SURFACE_DISCOVERY_EDIT);
     require(folio_state_discovery_summary(fixture->state).phase == DISCOVERY_READY &&
                 strcmp(folio_state_document_name(fixture->state), "one") == 0,
             "known uneditable snapshot is rejected before departure and remains searchable");
@@ -11384,7 +11563,7 @@ static void body_discovery_uneditable_native(struct folio_window *_Nonnull windo
     body_discovery_write(fixture, L"\\schedule\\two.md", body_discovery_other);
     body_discovery_open(window, fixture, L"Other needle");
     body_discovery_write(fixture, L"\\schedule\\two.md", "Other needle\a");
-    surface_button(window, ACCESSIBLE_SURFACE_DISCOVERY_OPEN);
+    surface_button(window, ACCESSIBLE_SURFACE_DISCOVERY_EDIT);
     require(folio_state_discovery_summary(fixture->state).phase == DISCOVERY_CLOSED &&
                 strcmp(folio_state_document_name(fixture->state), "two") == 0 &&
                 folio_state_pane_mode(fixture->state) == PANE_MODE_VIEW,
@@ -11409,7 +11588,7 @@ static void body_discovery_native_refusal(struct folio_window *_Nonnull window,
         (WNDPROC)SetWindowLongPtrW(body, GWLP_WNDPROC, (LONG_PTR)management_reject_stream);
     require(management_body_procedure != nullptr, "intercept the private native stream boundary");
     begin_expected_failure(window, L"本文読込失敗。同じモードで再試行。");
-    surface_button(window, ACCESSIBLE_SURFACE_DISCOVERY_OPEN);
+    surface_button(window, ACCESSIBLE_SURFACE_DISCOVERY_EDIT);
     end_history_failure();
     require(failure.closed == 1, "native refusal reports its existing pane failure once");
     require(SetWindowLongPtrW(body, GWLP_WNDPROC, (LONG_PTR)management_body_procedure) != 0,
@@ -11467,7 +11646,7 @@ static void body_discovery_untitled(struct folio_window *_Nonnull window,
                                                            .name = cancelled_name,
                                                            .discard = true,
                                                            .action = NAME_DIALOG_CANCEL});
-    surface_button(window, ACCESSIBLE_SURFACE_DISCOVERY_OPEN);
+    surface_button(window, ACCESSIBLE_SURFACE_DISCOVERY_EDIT);
     require(name_dialog.timer == 0 && name_dialog.closed == 1 &&
                 folio_state_document_kind(fixture->state) == FOLIO_DOCUMENT_UNTITLED &&
                 folio_state_discovery_summary(fixture->state).phase == DISCOVERY_READY,
@@ -11476,7 +11655,7 @@ static void body_discovery_untitled(struct folio_window *_Nonnull window,
                                                            .name = L"body-discovery-saved",
                                                            .discard = true,
                                                            .action = NAME_DIALOG_SAVE});
-    surface_button(window, ACCESSIBLE_SURFACE_DISCOVERY_OPEN);
+    surface_button(window, ACCESSIBLE_SURFACE_DISCOVERY_EDIT);
     finish_name_dialog();
     require(strcmp(folio_state_document_name(fixture->state), "two") == 0 &&
                 folio_state_discovery_summary(fixture->state).phase == DISCOVERY_CLOSED,
@@ -11732,6 +11911,8 @@ static void run_body_discovery_case(struct native_fixture *_Nonnull fixture)
         body_discovery_mode_keys(window, fixture);
         body_discovery_typing_rows(window, fixture);
         body_discovery_typing_preview(window, fixture);
+        body_discovery_view_open(window, fixture);
+        body_discovery_narrow_switch(window, fixture);
         body_discovery_same_editor(window, fixture);
         body_discovery_changed_source(window, fixture);
         body_discovery_read_failure(window, fixture);
@@ -11778,6 +11959,8 @@ static void run_discovery_case(struct native_fixture *_Nonnull fixture)
         return;
     }
     discovery_shortcut(window, fixture);
+    discovery_mode_arrows(window, fixture);
+    discovery_edit_open(window, fixture);
     discovery_selection_boundary(window, fixture);
     discovery_ime_boundary(window, fixture);
     discovery_untitled_boundary(window, fixture);
@@ -12021,7 +12204,8 @@ static void motion_modal_boundary(struct folio_window *_Nonnull window,
     motion_check_modal = true;
     motion_saw_modal = false;
     begin_expected_failure(window, L"本文読込失敗。同じモードで再試行。");
-    surface_button(window, ACCESSIBLE_SURFACE_DISCOVERY_OPEN);
+    /* #940: the editing open is the one that pours the note again. */
+    surface_button(window, ACCESSIBLE_SURFACE_DISCOVERY_EDIT);
     end_history_failure();
     require(motion_saw_modal && failure.closed == 1 && management_rejected_streams == 1,
             "real native adoption failure modal observes already stopped motion");
