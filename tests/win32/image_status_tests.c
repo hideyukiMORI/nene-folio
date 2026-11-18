@@ -9976,6 +9976,23 @@ static void window_place_closes(struct native_fixture *_Nonnull fixture)
 
 /* #904: the list-only layout narrows the window; closing in it records the width the window
  * returns to, so the next start can use the record. */
+/* #936: a width that a round trip through 96-DPI units would change at this DPI (any width at 96
+ * DPI, where nothing rounds). */
+static int window_place_odd_width(UINT dpi)
+{
+    for (int width = 760; width < 800; ++width)
+        if (MulDiv(MulDiv(width, 96, (int)dpi), (int)dpi, 96) != width)
+            return width;
+    return 760;
+}
+
+static int window_place_width(HWND root)
+{
+    RECT bounds;
+    GetWindowRect(root, &bounds);
+    return bounds.right - bounds.left;
+}
+
 static void window_place_closes_narrow(struct native_fixture *_Nonnull fixture)
 {
     require(storage_state_set_window_restore(fixture->location, true) == STORAGE_READY,
@@ -9986,19 +10003,29 @@ static void window_place_closes_narrow(struct native_fixture *_Nonnull fixture)
                 FOLIO_WINDOW_CREATED,
             "window to narrow and close");
     HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
-    require(SetWindowPos(root, nullptr, 90, 70, 760, 480, SWP_NOZORDER | SWP_NOACTIVATE),
+    int wide = window_place_odd_width(GetDpiForWindow(root));
+    require(SetWindowPos(root, nullptr, 90, 70, wide, 480, SWP_NOZORDER | SWP_NOACTIVATE),
             "the wide place");
     pump(window);
     action(window, ACCESSIBLE_LAYOUT_DRAWER);
-    RECT narrow;
-    GetWindowRect(root, &narrow);
-    require(narrow.right - narrow.left < 760, "the list-only layout narrows the window");
+    require(window_place_width(root) < wide, "the list-only layout narrows the window");
+    const struct layout_step both = {FOLIO_LAYOUT_BOTH, ACCESSIBLE_LAYOUT_BOTH,
+                                     FOLIO_COMMAND_LAYOUT_BOTH, ACCESSIBLE_LAYOUT_BOTH,
+                                     ACCESSIBLE_LAYOUT_BOTH};
+    (void)select_layout(window, &both);
+    pump(window);
+    int back = window_place_width(root);
+    action(window, ACCESSIBLE_LAYOUT_DRAWER);
     SendMessageW(root, WM_CLOSE, 0, 0);
     pump(window);
     require(!IsWindow(root), "the narrow window closed");
     struct window_placement recorded = storage_state_window(fixture->location);
-    require(recorded.placed && recorded.width == 760 && recorded.height == 480,
-            "closing in the list-only layout records the wide width");
+    printf("list-only width: dpi %u wide %d back %d recorded %d\n", GetDpiForSystem(), wide, back,
+           recorded.width);
+    fflush(stdout);
+    require(back == wide, "returning from the list-only layout restores the exact width (#936)");
+    require(recorded.placed && recorded.width == wide && recorded.height == 480,
+            "closing in the list-only layout records the exact wide width");
     folio_window_destroy(window);
     folio_state_set_layout_mode(fixture->state, FOLIO_LAYOUT_BOTH);
 }
