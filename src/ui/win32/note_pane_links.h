@@ -33,4 +33,8 @@ void note_pane_links_finish_input(struct note_pane_links *_Nullable links, UINT 
                                                size_t index);
 [[nodiscard]] size_t note_pane_links_action_slot(const struct note_pane_links *_Nonnull links,
                                                  size_t index);
+/* #945: 脚注の番号の見える区間（native位置）。back が真なら脚注の側の番号、偽なら本文の側で
+ * 文書順に最初のもの。その番号の区間が無ければ false。 */
+[[nodiscard]] bool note_pane_links_footnote(const struct note_pane_links *_Nullable links,
+                                            bool back, size_t number, CHARRANGE *_Nonnull out);
 #endif

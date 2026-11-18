@@ -2,6 +2,7 @@
 #include "code_copy_target.h"
 #include "code_syntax.h"
 #include "diagram_limits.h"
+#include "footnote_target.h"
 #include "markdown_code_state.h"
 #include "markdown_containers.h"
 #include "markdown_inline_tokens.h"
@@ -724,9 +725,13 @@ static bool footnote_line(struct markdown_blocks *_Nonnull parser, size_t rank)
     struct markdown_span parts[markdown_references_continuation_limit + 1];
     size_t count = markdown_references_footnote_text(references, index, parts);
     const struct markdown_span *last = &parts[count - 1];
-    text_buffer_append_text(parser->out, "\\pard\\sa40\\sl240\\slmult1\\cf3\\fs18 ");
+    /* #945: the footnote's number is a link back to the first place that referred to it. */
+    text_buffer_append_text(
+        parser->out, "\\pard\\sa40\\sl240\\slmult1\\cf3\\fs18 {\\field{\\*\\fldinst{HYPERLINK \"");
+    footnote_target_append(parser->out, true, rank + 1);
+    text_buffer_append_text(parser->out, "\"}}{\\fldrslt{\\cf4\\ul0 ");
     rtf_text_number(parser->out, rank + 1);
-    text_buffer_append_text(parser->out, ". ");
+    text_buffer_append_text(parser->out, ".}}} ");
     parser->outcome = markdown_inline_tokens_render(
         (struct markdown_render){parser->out, parser->media, 18, references},
         (struct markdown_view){

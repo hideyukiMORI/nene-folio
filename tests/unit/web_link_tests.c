@@ -1,6 +1,7 @@
 #include "allocation_probe.h"
 #include "appearance_port.h"
 #include "folio_state.h"
+#include "footnote_target.h"
 #include "markdown_bare_link.h"
 #include "markdown_references.h"
 #include "markdown_rtf.h"
@@ -9,6 +10,7 @@
 #include "persistence_port.h"
 #include "product_link.h"
 #include "regex_port.h"
+#include "text_buffer.h"
 #include "unit_tests.h"
 #include "web_link_port.h"
 #include "web_uri.h"
@@ -397,26 +399,79 @@ static void verify_reference_edges(void)
 
 /* #869 / ADR0103: footnote references are raised numbers in first-reference order; the
  * referred footnotes follow the note, a size smaller; definitions are not shown in place. */
+/* #945: a footnote's raised number links to the footnote, and the footnote's number links back. */
+#define FOOT_REF_1                                                                                 \
+    "{\\field{\\*\\fldinst{HYPERLINK \"nenefolio-note:1\"}}{\\fldrslt{\\super\\cf4\\ul0 1}}}"
+#define FOOT_REF_2                                                                                 \
+    "{\\field{\\*\\fldinst{HYPERLINK \"nenefolio-note:2\"}}{\\fldrslt{\\super\\cf4\\ul0 2}}}"
+#define FOOT_BACK_1                                                                                \
+    "{\\field{\\*\\fldinst{HYPERLINK \"nenefolio-noteref:1\"}}{\\fldrslt{\\cf4\\ul0 1.}}}"
+#define FOOT_BACK_2                                                                                \
+    "{\\field{\\*\\fldinst{HYPERLINK \"nenefolio-noteref:2\"}}{\\fldrslt{\\cf4\\ul0 2.}}}"
+
+static void verify_footnote_target(void)
+{
+    struct text_buffer *buffer = nullptr;
+    require(text_buffer_create(&buffer) == TEXT_BUFFER_ACCEPTED, "footnote target buffer");
+    footnote_target_append(buffer, false, 1024);
+    require(same_text(text_buffer_bytes(buffer), "nenefolio-note:1024"), "the note target");
+    size_t number = 0;
+    require(footnote_target_parse(text_buffer_bytes(buffer), text_buffer_length(buffer), &number) ==
+                    FOOTNOTE_TARGET_NOTE &&
+                number == 1024,
+            "the last footnote number round-trips");
+    text_buffer_destroy(buffer);
+    require(footnote_target_parse("nenefolio-noteref:7", 19, &number) ==
+                    FOOTNOTE_TARGET_REFERENCE &&
+                number == 7,
+            "the way back names the same number");
+    const char *const others[] = {"",
+                                  "nenefolio-note:",
+                                  "nenefolio-note:0",
+                                  "nenefolio-note:01",
+                                  "nenefolio-note:1025",
+                                  "nenefolio-note:12345",
+                                  "nenefolio-note:1a",
+                                  "nenefolio-note: 1",
+                                  "NENEFOLIO-NOTE:1",
+                                  "nenefolio-noteref:",
+                                  "nenefolio-noteref:0",
+                                  "nenefolio-code:1",
+                                  "https://example.com/nenefolio-note:1"};
+    for (size_t index = 0; index < sizeof others / sizeof others[0]; ++index)
+    {
+        number = 9;
+        require(footnote_target_parse(others[index], strlen(others[index]), &number) ==
+                        FOOTNOTE_TARGET_OTHER &&
+                    number == 9,
+                others[index]);
+    }
+}
+
 static void verify_footnotes(void)
 {
     expect_field("a[^n] b[^m] c[^n]\n\n[^m]: second\n[^n]: first",
-                 "a{\\super\\cf4 1} b{\\super\\cf4 2} c{\\super\\cf4 1}", "[^n]");
-    expect_field("a[^n] b[^m]\n\n[^m]: second\n[^n]: first", "fs18 1. first\\fs22", "]: first");
-    expect_field("a[^n] b[^m]\n\n[^m]: second\n[^n]: first", "fs18 2. second\\fs22", "]: second");
+                 "a" FOOT_REF_1 " b" FOOT_REF_2 " c" FOOT_REF_1 "", "[^n]");
+    expect_field("a[^n] b[^m]\n\n[^m]: second\n[^n]: first", "fs18 " FOOT_BACK_1 " first\\fs22",
+                 "]: first");
+    expect_field("a[^n] b[^m]\n\n[^m]: second\n[^n]: first", "fs18 " FOOT_BACK_2 " second\\fs22",
+                 "]: second");
     expect_field("a[^x]\n\n[^x]: has **bold** and [l](https://example.com/f)", "{\\b bold}",
                  "HYPERLINK \"HTTPS://example.com/f\"\"");
     expect_field("a[^x]\n\n[^x]: has **bold** and [l](https://example.com/f)",
                  "HYPERLINK \"HTTPS://example.com/f\"", "]: has");
     expect_field("a[^missing]\n\n[^x]: never", "a[^missing]", "never");
     expect_field("no reference\n\n[^x]: unused", "no reference", "unused");
-    expect_field("a[^X]\n\n[^x]: case", "{\\super\\cf4 1}", "[^X]");
+    expect_field("a[^X]\n\n[^x]: case", "" FOOT_REF_1 "", "[^X]");
     /* A footnote label is never a link reference; the reference after `[a]` stands alone. */
-    expect_field("[a][^x]\n\n[^x]: note", "[a]{\\super\\cf4 1}", "HYPERLINK");
+    expect_field("[a][^x]\n\n[^x]: note", "[a]" FOOT_REF_1 "", "HYPERLINK \"HTTP");
     expect_field("![a][^x]\n\n[^x]: note", "[^x]", "\\super");
     expect_field("`[^x]`\n\n[^x]: note", "[^x]", "\\super");
-    expect_field("# t[^x]\n\n| c[^y] |\n| -- |\n\n[^x]: one\n[^y]: two", "fs18 2. two", "]: two");
-    expect_field("a[^x]\n\n[^x]: see[^y]\n[^y]: nested", "fs18 2. nested", "]: nested");
-    expect_field("a[^x]\n\n[^x]:", "fs18 1. \\fs22", "[^x]");
+    expect_field("# t[^x]\n\n| c[^y] |\n| -- |\n\n[^x]: one\n[^y]: two", "fs18 " FOOT_BACK_2 " two",
+                 "]: two");
+    expect_field("a[^x]\n\n[^x]: see[^y]\n[^y]: nested", "fs18 " FOOT_BACK_2 " nested",
+                 "]: nested");
+    expect_field("a[^x]\n\n[^x]:", "fs18 " FOOT_BACK_1 " \\fs22", "[^x]");
 }
 
 /* #878: lines indented four columns right after a footnote continue its text; they are not
@@ -424,12 +479,14 @@ static void verify_footnotes(void)
 static void verify_footnote_continuation(void)
 {
     expect_field("a[^x]\n\n[^x]: first\n    second\n\tthird *em*\nafter",
-                 "fs18 1. first second third {\\i em}\\fs22", "    second");
+                 "fs18 " FOOT_BACK_1 " first second third {\\i em}\\fs22", "    second");
     expect_field("plain\n\n[^x]: first\n    hidden\n        deeper", "plain", "hidden");
-    expect_field("a[^x]\n\n[^x]: first\n  shallow", "fs18 1. first\\fs22", "first shallow");
-    expect_field("a[^x]\n\n[^x]: first\n\n    later", "fs18 1. first\\fs22", "first later");
-    expect_field("a[^x]\n\n[^x]: first\n    second\n[^y]: next\n\nb[^y]", "fs18 2. next\\fs22",
-                 "]: next");
+    expect_field("a[^x]\n\n[^x]: first\n  shallow", "fs18 " FOOT_BACK_1 " first\\fs22",
+                 "first shallow");
+    expect_field("a[^x]\n\n[^x]: first\n\n    later", "fs18 " FOOT_BACK_1 " first\\fs22",
+                 "first later");
+    expect_field("a[^x]\n\n[^x]: first\n    second\n[^y]: next\n\nb[^y]",
+                 "fs18 " FOOT_BACK_2 " next\\fs22", "]: next");
     expect_field("a[^x] b[l]\n\n[^x]: first\n    more\n[l]: https://example.com/c",
                  "HYPERLINK \"HTTPS://example.com/c\"", "]: https");
     expect_field("plain\n\n[l]: https://example.com/c\n    not more", "not more", "\\fs18");
@@ -665,6 +722,7 @@ void run_web_link_tests(void)
     verify_bare_refused();
     verify_reference_links();
     verify_reference_edges();
+    verify_footnote_target();
     verify_footnotes();
     verify_footnote_continuation();
     verify_state();

@@ -1,4 +1,5 @@
 #include "markdown_inline_tokens.h"
+#include "footnote_target.h"
 #include "markdown_autolink.h"
 #include "markdown_bare_link.h"
 #include "markdown_character_reference.h"
@@ -1216,9 +1217,13 @@ static size_t emit_plain(struct markdown_inline_tokens *_Nonnull parser, size_t 
 static void emit_footnote(struct markdown_inline_tokens *_Nonnull parser,
                           const struct markdown_inline_token *_Nonnull token)
 {
-    text_buffer_append_text(parser->out, "{\\super\\cf4 ");
-    rtf_text_number(parser->out, markdown_references_number(parser->references, token->reference));
-    text_buffer_append_text(parser->out, "}");
+    /* #945: the raised number is a link to its footnote (an internal target, never a web one). */
+    size_t number = markdown_references_number(parser->references, token->reference);
+    text_buffer_append_text(parser->out, "{\\field{\\*\\fldinst{HYPERLINK \"");
+    footnote_target_append(parser->out, false, number);
+    text_buffer_append_text(parser->out, "\"}}{\\fldrslt{\\super\\cf4\\ul0 ");
+    rtf_text_number(parser->out, number);
+    text_buffer_append_text(parser->out, "}}}");
 }
 
 static size_t emit_range_token(struct markdown_inline_tokens *_Nonnull parser, size_t index)
