@@ -979,6 +979,47 @@ static void pie_shades(void)
             "a step past the last is the last");
 }
 
+/* The least contrast between two shades that can meet: each and the next, the last and the
+ * first. */
+static double least_neighbour(const struct diagram_palette *_Nonnull palette)
+{
+    double least = 100.0;
+    for (unsigned char shade = 0; shade < diagram_shade_count; ++shade)
+    {
+        double ratio = theme_contrast_ratio(
+            diagram_palette_shade(palette, DIAGRAM_INK_ACCENT, shade),
+            diagram_palette_shade(palette, DIAGRAM_INK_ACCENT,
+                                  (unsigned char)((shade + 1) % diagram_shade_count)));
+        least = ratio < least ? ratio : least;
+    }
+    return least;
+}
+
+/* #967: for every theme, how far the lightest shade is from the background and how far
+ * neighbouring shades (the last and the first included) are from each other, as contrast
+ * ratios. The floors are what the themes measured on 2026-11-18 (1.32 and 1.18): a theme or a
+ * palette change that makes a pie harder to read than today's weakest fails here. */
+static void pie_theme_shades(void)
+{
+    double least_edge = 100.0;
+    double least_step = 100.0;
+    for (size_t index = 0; index < folio_theme_count(); ++index)
+    {
+        struct diagram_palette palette =
+            diagram_palette_for(folio_theme_palette(folio_theme_at(index)));
+        double edge = theme_contrast_ratio(
+            diagram_palette_shade(&palette, DIAGRAM_INK_ACCENT, diagram_shade_count - 1),
+            palette.background);
+        double step = least_neighbour(&palette);
+        least_edge = edge < least_edge ? edge : least_edge;
+        least_step = step < least_step ? step : least_step;
+    }
+    printf("pie shades over %zu themes: least last/background %.2f, least neighbour %.2f\n",
+           folio_theme_count(), least_edge, least_step);
+    require(least_edge >= 1.3 && least_step >= 1.15,
+            "no theme's pie is harder to read than the measured floor");
+}
+
 static void pie_rejections(void)
 {
     reject_source("pie\n", DIAGRAM_INVALID);
@@ -1018,6 +1059,7 @@ static void pie_tests(void)
     pie_neighbours();
     pie_names();
     pie_shades();
+    pie_theme_shades();
     pie_rejections();
 }
 
