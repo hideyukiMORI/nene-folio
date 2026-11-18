@@ -506,7 +506,19 @@ static void verify_footnote_paragraphs(void)
         "a[^x]\n\n[^x]: first\n    more\n\n    second *em*\n    still\n \n\n\tthird\nafter",
         "fs18 " FOOT_BACK_1 " first more\\line second {\\i em} still\\line third\\fs22",
         "    second");
-    expect_field("a[^x]\n\n[^x]: first\n\n    second\nafter", "after", "third");
+    expect_field("a[^x]\n\n[^x]: first\n\n    second\nafter",
+                 "fs18 " FOOT_BACK_1 " first\\line second\\fs22", "second after");
+    expect_field("a[^x]\r\n\r\n[^x]: first\r\n\r\n    second\r\nafter",
+                 "fs18 " FOOT_BACK_1 " first\\line second\\fs22", "second after");
+    /* A later paragraph numbers the footnote it refers to; emphasis does not cross paragraphs;
+     * a definition with no text of its own starts with its first paragraph. */
+    expect_field("a[^x]\n\n[^x]: one\n\n    see[^y]\n\n[^y]: other",
+                 "fs18 " FOOT_BACK_2 " other\\fs22", "]: other");
+    expect_field("a[^x]\n\n[^x]: *one\n\n    two*", "*one\\line two*", "{\\i ");
+    expect_field("a[^x]\n\n[^x]:\n    only", "fs18 " FOOT_BACK_1 " only\\fs22", "\\line");
+    /* A fence ends the footnote; an indented line after the block is the body's. */
+    expect_field("a[^x]\n\n[^x]: first\n```\ncode\n```\n\n    later",
+                 "fs18 " FOOT_BACK_1 " first\\fs22", "first\\line");
     expect_field("plain\n\n[^x]: first\n\n    hidden", "plain", "hidden");
     expect_field("a[^x]\n\n[^x]: first\n\n  shallow", "fs18 " FOOT_BACK_1 " first\\fs22", "\\line");
     expect_field("a[^x]\n\n[^x]: first\n\n  shallow", "shallow", "first shallow");
@@ -517,8 +529,8 @@ static void verify_footnote_paragraphs(void)
     expect_field("a[^x] b[l]\n\n[^x]: one\n\n    two\n\n[l]: https://example.com/c",
                  "HYPERLINK \"HTTPS://example.com/c\"", "]: https");
     expect_field("plain\n\n[l]: https://example.com/c\n\n    not more", "not more", "\\fs18");
-    /* Blank lines count toward the limit: 31 pairs of a blank and a line fit, the next pair's
-     * line would be the 65th, so it and its blank stay in the body. */
+    /* Blank lines count toward the limit: 32 pairs of a blank and a line fit (64 lines), the
+     * next pair's line would be the 66th, so it and its blank stay in the body. */
     static char many[(markdown_references_continuation_limit + 8) * 16];
     size_t used = (size_t)sprintf(many, "a[^x]\n\n[^x]: head");
     for (size_t index = 0; index < markdown_references_continuation_limit / 2; ++index)
@@ -526,6 +538,12 @@ static void verify_footnote_paragraphs(void)
     (void)sprintf(many + used, "\n\n    beyond");
     expect_field(many, "\\line p31\\fs22", "p31\\line beyond");
     expect_field(many, "beyond", "\\line beyond");
+    /* One line short of the limit, a blank and a line are two more: neither joins. */
+    used = (size_t)sprintf(many, "a[^x]\n\n[^x]: head");
+    for (size_t index = 0; index + 1 < markdown_references_continuation_limit; ++index)
+        used += (size_t)sprintf(many + used, "\n    w%zu", index);
+    (void)sprintf(many + used, "\n\n    beyond");
+    expect_field(many, "w62\\fs22", "\\line");
 }
 
 static size_t opened;
