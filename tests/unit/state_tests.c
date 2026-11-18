@@ -7034,6 +7034,17 @@ void run_layout_mode_state_tests(void)
         require(memcmp(&before, &adapter, sizeof before) == 0,
                 "display adoption does not invoke persistence or mutate adapter observations");
     }
+    /* #975 / ADR0114: the headings column is a display state of this run, closed at first. */
+    require(!folio_state_outline(state), "the headings column starts closed");
+    for (int round = 0; round < 2; ++round)
+    {
+        folio_state_set_outline(state, round == 0);
+        require(folio_state_outline(state) == (round == 0) &&
+                    folio_state_pane_mode(state) == PANE_MODE_EDIT &&
+                    folio_state_pane_text(state) == body && folio_state_pane_rtf(state) == rtf &&
+                    memcmp(&before, &adapter, sizeof before) == 0,
+                "opening and closing the headings column touch neither the note nor the ports");
+    }
     folio_state_destroy(state);
 }
 

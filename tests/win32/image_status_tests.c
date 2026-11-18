@@ -130,6 +130,8 @@ static bool favorite_high_contrast;
 static bool code_copy_case;
 static bool footnote_jump_case;
 static bool definition_list_case;
+static bool outline_case;
+static bool outline_96; /* #975: the same case in 96 DPI windows, as on CI */
 static bool code_copy_visual_case;
 static bool bare_url_visual_case;
 static bool search_key_visual_case;
@@ -236,6 +238,15 @@ static const char definition_gallery[] =
     ": 保存は`自動`。\n続きの行は同じ説明。\n\n次の段落。\n\n"
     ": 用語の無い行は段落のまま。\n\n- リスト\n: リストの中は従来どおり\n\n表の前\n"
     ": 説明のすぐ後の表は、説明の行とつながらない。\n| 名前 | 値 |\n| -- | -- |\n| a | 1 |\n";
+/* #975: headings of every level with text between them, long enough to scroll. */
+static const char outline_gallery[] =
+    "# 設計メモ\n\n最初の段落。\n\n## 背景\n\n背景の段落。\n\n## "
+    "決めたこと\n\n決めたことの段落。\n\n"
+    "### 色\n\n色の段落。\n\n### 配置\n\n配置の段落。\n\n#### 余白\n\n余白の段落。\n\n"
+    "## とても長い見出しは欄の幅で切れて省略の印が付くことを確かめるための文\n\n段落。\n\n"
+    "## 残り\n\n残りの段落。\n\n一\n\n二\n\n三\n\n四\n\n五\n\n六\n\n七\n\n八\n\n九\n\n十\n\n"
+    "十一\n\n十二\n\n十三\n\n十四\n\n十五\n\n十六\n\n十七\n\n十八\n\n十九\n\n二十\n\n# "
+    "付録\n\n付録の段落。\n";
 static const wchar_t search_original[] = L"猫 😀 aaaa 日本語";
 static const wchar_t search_edited[] = L"猫 😀 aaaa 日本語 🐾";
 static const char replace_current[] = "猫1 😀\n猫2 **saved**\n猫1 `old`";
@@ -305,6 +316,8 @@ static const char *_Nonnull text_fixture_source(const char *_Nonnull fallback)
         return search_current;
     if (definition_list_case)
         return definition_gallery;
+    if (outline_case)
+        return outline_gallery;
     if (bare_url_visual_case)
         return bare_url_gallery;
     if (code_copy_case)
@@ -10632,12 +10645,381 @@ static void definition_list(struct native_fixture *_Nonnull fixture)
     favorite_high_contrast = false;
 }
 
+/* A part of the main window as UIA reads it. */
+static struct accessible_view outline_read(struct folio_window *_Nonnull window,
+                                           enum accessible_kind kind)
+{
+    struct accessible_item item = {.kind = kind};
+    struct accessible_view view = {0};
+    require(folio_window_accessible_read(window, &item, &view) == S_OK, "outline part reads");
+    return view;
+}
+
+static struct accessible_view outline_row(struct folio_window *_Nonnull window,
+                                          struct accessible_item item)
+{
+    struct accessible_view view = {0};
+    require(folio_window_accessible_read(window, &item, &view) == S_OK, "outline row reads");
+    return view;
+}
+
+/* The column's row for a heading, as UIA reaches it from the list. */
+static struct accessible_item outline_item_at(struct folio_window *_Nonnull window, size_t slot)
+{
+    struct accessible_item list = {.kind = ACCESSIBLE_OUTLINE};
+    struct accessible_item item = {0};
+    require(folio_window_accessible_navigate(window, &list, ACCESSIBLE_NAVIGATION_FIRST, &item) ==
+                    S_OK &&
+                item.kind == ACCESSIBLE_OUTLINE_ITEM && item.slot == 0,
+            "the column's first child is the first heading");
+    item.slot = slot;
+    return item;
+}
+
+/* The heading UIA reports as being read, or SIZE_MAX before the first. */
+static size_t outline_current(struct folio_window *_Nonnull window)
+{
+    struct accessible_item list = {.kind = ACCESSIBLE_OUTLINE};
+    struct accessible_item selected = {.kind = ACCESSIBLE_WINDOW};
+    HRESULT result = folio_window_accessible_selected(window, &list, &selected);
+    require(result == S_OK || result == S_FALSE, "the column's selection reads");
+    return result == S_OK ? selected.slot : SIZE_MAX;
+}
+
+static LRESULT outline_first_line(struct folio_window *_Nonnull window)
+{
+    return SendMessageW(folio_window_accessible_window(window, ACCESSIBLE_BODY),
+                        EM_GETFIRSTVISIBLELINE, 0, 0);
+}
+
+/* Every row names its heading, with its level and place, inside the column; the list walks
+ * from the first row to the last and no further. */
+static void outline_rows(struct folio_window *_Nonnull window)
+{
+    struct accessible_view column = outline_read(window, ACCESSIBLE_OUTLINE);
+    require(!column.offscreen && !IsRectEmpty(&column.bounds) &&
+                wcscmp((const wchar_t *)column.name, L"見出し") == 0,
+            "the column is on screen and named");
+    const wchar_t *const names[] = {L"設計メモ", L"背景", L"決めたこと", L"色", L"配置", L"余白"};
+    const int levels[] = {1, 2, 2, 3, 3, 4};
+    struct accessible_item item = outline_item_at(window, 0);
+    for (size_t at = 0; at < 9; ++at)
+    {
+        struct accessible_view row = outline_row(window, item);
+        require(
+            row.position == (int)at + 1 && row.set_size == 9 && !row.offscreen &&
+                row.bounds.left >= column.bounds.left && row.bounds.right <= column.bounds.right &&
+                row.bounds.top >= column.bounds.top && row.bounds.bottom <= column.bounds.bottom,
+            "each row is a place in the set inside the column");
+        require(at >= 6 ||
+                    (wcscmp((const wchar_t *)row.name, names[at]) == 0 && row.level == levels[at]),
+                "each row names its heading and level");
+        struct accessible_item next = {0};
+        HRESULT step =
+            folio_window_accessible_navigate(window, &item, ACCESSIBLE_NAVIGATION_NEXT, &next);
+        require(at < 8 ? step == S_OK && next.slot == at + 1 : step == S_FALSE,
+                "the rows follow one another and end at the last heading");
+        item = next;
+    }
+    struct accessible_item last = outline_item_at(window, 8);
+    struct accessible_item parent = {0};
+    require(folio_window_accessible_navigate(window, &last, ACCESSIBLE_NAVIGATION_PARENT,
+                                             &parent) == S_OK &&
+                parent.kind == ACCESSIBLE_OUTLINE,
+            "a row's parent is the column");
+}
+
+/* Pressing and releasing a row brings its heading to the top of the body; releasing off the row
+ * does nothing. UIA's Invoke takes the same path. */
+static void outline_jump(struct folio_window *_Nonnull window)
+{
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    require(outline_current(window) == 0 && outline_first_line(window) == 0,
+            "at the top the first heading is being read");
+    struct accessible_view row = outline_row(window, outline_item_at(window, 3));
+    POINT inside = {(row.bounds.left + row.bounds.right) / 2,
+                    (row.bounds.top + row.bounds.bottom) / 2};
+    require(ScreenToClient(root, &inside), "row point");
+    POINT away = {inside.x, inside.y + (row.bounds.bottom - row.bounds.top) * 2};
+    SendMessageW(root, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(inside.x, inside.y));
+    SendMessageW(root, WM_MOUSEMOVE, MK_LBUTTON, MAKELPARAM(away.x, away.y));
+    SendMessageW(root, WM_LBUTTONUP, 0, MAKELPARAM(away.x, away.y));
+    pump(window);
+    require(outline_current(window) == 0 && outline_first_line(window) == 0,
+            "releasing off the row does not jump");
+    SendMessageW(root, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(inside.x, inside.y));
+    SendMessageW(root, WM_LBUTTONUP, 0, MAKELPARAM(inside.x, inside.y));
+    pump(window);
+    LRESULT clicked = outline_first_line(window);
+    printf("outline: click row 3 -> first line %lld, current %zu\n", (long long)clicked,
+           outline_current(window));
+    fflush(stdout);
+    require(clicked > 0 && outline_current(window) == 3, "clicking a row jumps to its heading");
+    struct accessible_request request = {.item = outline_item_at(window, 1),
+                                         .action = ACCESSIBLE_ACTION_INVOKE};
+    require(folio_window_accessible_action(window, &request) == S_OK, "UIA invokes a row");
+    pump(window);
+    require(outline_current(window) == 1 && outline_first_line(window) < clicked,
+            "UIA's Invoke jumps back up to its heading");
+}
+
+/* The item UIA reads as having the keyboard focus, or the window when none. */
+static struct accessible_item outline_focused(struct folio_window *_Nonnull window)
+{
+    struct accessible_item focused = {.kind = ACCESSIBLE_WINDOW};
+    if (folio_window_accessible_focus(window, ACCESSIBLE_WINDOW, &focused) != S_OK)
+        focused = (struct accessible_item){.kind = ACCESSIBLE_WINDOW};
+    return focused;
+}
+
+static bool outline_focused_row(struct folio_window *_Nonnull window, size_t slot)
+{
+    struct accessible_item focused = outline_focused(window);
+    return focused.kind == ACCESSIBLE_OUTLINE_ITEM && focused.slot == slot;
+}
+
+/* Tab from the pane's tools reaches the column on the heading being read. The arrows, Home and
+ * End move the focused row; Enter jumps to it; Shift+Tab leaves; Tab back starts again at the
+ * heading being read. */
+static void outline_keyboard(struct folio_window *_Nonnull window)
+{
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    struct accessible_request menu = {.item = {.kind = ACCESSIBLE_MENU},
+                                      .action = ACCESSIBLE_ACTION_FOCUS};
+    require(folio_window_accessible_action(window, &menu) == S_OK,
+            "the pane's menu takes the focus");
+    pump(window);
+    for (int step = 0; step < 4 && outline_focused(window).kind != ACCESSIBLE_OUTLINE_ITEM; ++step)
+        favorite_key(window, VK_TAB);
+    size_t reading = outline_current(window);
+    printf("outline: Tab reached kind %d slot %zu, reading %zu\n",
+           (int)outline_focused(window).kind, outline_focused(window).slot, reading);
+    fflush(stdout);
+    require(reading != SIZE_MAX && outline_focused_row(window, reading),
+            "Tab reaches the column on the heading being read");
+    favorite_key(window, VK_DOWN);
+    require(outline_focused_row(window, reading + 1), "Down moves to the next row");
+    favorite_key(window, VK_END);
+    require(outline_focused_row(window, 8), "End moves to the last row");
+    favorite_key(window, VK_HOME);
+    require(outline_focused_row(window, 0) && outline_current(window) == reading,
+            "Home moves to the first row without jumping");
+    for (int step = 0; step < 3; ++step)
+        favorite_key(window, VK_DOWN);
+    LRESULT before = outline_first_line(window);
+    favorite_key(window, VK_RETURN);
+    require(outline_current(window) == 3 && outline_first_line(window) != before &&
+                outline_focused_row(window, 3),
+            "Enter jumps to the focused row's heading and keeps the focus there");
+    struct accessible_view focused_row = outline_row(window, outline_item_at(window, 3));
+    require(focused_row.focused && focused_row.focusable &&
+                !outline_row(window, outline_item_at(window, 2)).focused,
+            "UIA reads the cursor row, and only it, as focused");
+    favorite_key(window, VK_UP);
+    native_key_input_to(window, root, VK_TAB, FSHIFT);
+    struct accessible_item left = outline_focused(window);
+    require(left.kind != ACCESSIBLE_OUTLINE_ITEM && left.kind != ACCESSIBLE_OUTLINE,
+            "Shift+Tab leaves the column");
+    favorite_key(window, VK_TAB);
+    require(outline_focused_row(window, 3), "Tab back starts at the heading being read");
+}
+
+static void outline_send_wheel(struct folio_window *_Nonnull window, POINT screen, int delta)
+{
+    MSG message = {.hwnd = folio_window_accessible_window(window, ACCESSIBLE_BODY),
+                   .message = WM_MOUSEWHEEL,
+                   .wParam = MAKEWPARAM(0, (WORD)(short)delta),
+                   .lParam = MAKELPARAM(screen.x, screen.y)};
+    require(folio_window_translate(window, &message),
+            "the wheel over the column is taken while the body has the focus");
+    pump(window);
+}
+
+/* In a short window the column holds fewer rows than headings. The wheel over it scrolls the
+ * column and leaves the body; the other way brings the first row back. */
+static void outline_wheel(struct folio_window *_Nonnull window)
+{
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    UINT dpi = GetDpiForWindow(root);
+    require(SetWindowPos(root, nullptr, 20, 20, MulDiv(900, (int)dpi, 96),
+                         MulDiv(300, (int)dpi, 96), SWP_NOZORDER | SWP_NOACTIVATE),
+            "short outline window");
+    pump(window);
+    SetFocus(folio_window_accessible_window(window, ACCESSIBLE_BODY));
+    struct accessible_view column = outline_read(window, ACCESSIBLE_OUTLINE);
+    require(!column.offscreen, "the short window keeps the column");
+    require(outline_row(window, outline_item_at(window, 8)).offscreen,
+            "the short column cannot show every row");
+    POINT over = {(column.bounds.left + column.bounds.right) / 2,
+                  (column.bounds.top + column.bounds.bottom) / 2};
+    LRESULT line = outline_first_line(window);
+    outline_send_wheel(window, over, -WHEEL_DELTA * 3);
+    require(outline_row(window, outline_item_at(window, 0)).offscreen &&
+                !outline_row(window, outline_item_at(window, 8)).offscreen &&
+                outline_first_line(window) == line,
+            "the wheel scrolls the column to its end and not the body");
+    outline_send_wheel(window, over, WHEEL_DELTA * 3);
+    require(!outline_row(window, outline_item_at(window, 0)).offscreen &&
+                outline_first_line(window) == line,
+            "the wheel the other way brings the first row back");
+}
+
+/* A window too narrow for the body beside the column hides the column and gives the body its
+ * width; the column stays open and comes back when the window widens. */
+static void outline_narrow(struct folio_window *_Nonnull window,
+                           struct native_fixture *_Nonnull fixture)
+{
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    UINT dpi = GetDpiForWindow(root);
+    struct accessible_item stale = outline_item_at(window, 0);
+    struct accessible_request focus = {.item = outline_item_at(window, 2),
+                                       .action = ACCESSIBLE_ACTION_FOCUS};
+    require(folio_window_accessible_action(window, &focus) == S_OK &&
+                outline_focused_row(window, 2),
+            "UIA focuses a row of the column");
+    require(SetWindowPos(root, nullptr, 20, 20, MulDiv(560, (int)dpi, 96),
+                         MulDiv(620, (int)dpi, 96), SWP_NOZORDER | SWP_NOACTIVATE),
+            "narrow outline window");
+    pump(window);
+    struct accessible_view column = outline_read(window, ACCESSIBLE_OUTLINE);
+    struct accessible_view map = outline_read(window, ACCESSIBLE_MINIMAP);
+    printf("outline: narrow window, column %s, minimap %s\n", column.offscreen ? "hidden" : "shown",
+           map.offscreen ? "hidden" : "shown");
+    fflush(stdout);
+    struct accessible_view view = {0};
+    require(
+        column.offscreen && IsRectEmpty(&column.bounds) && folio_state_outline(fixture->state) &&
+            folio_window_accessible_read(window, &stale, &view) == accessibility_node_unavailable,
+        "a narrow window hides the open column and its rows");
+    require(!map.offscreen, "the narrow window still has the minimap");
+    struct accessible_item moved = outline_focused(window);
+    require(moved.kind != ACCESSIBLE_OUTLINE_ITEM && moved.kind != ACCESSIBLE_OUTLINE,
+            "the keyboard leaves a column that is no longer shown");
+    require(SetWindowPos(root, nullptr, 20, 20, MulDiv(900, (int)dpi, 96),
+                         MulDiv(620, (int)dpi, 96), SWP_NOZORDER | SWP_NOACTIVATE),
+            "wide outline window");
+    pump(window);
+    require(!outline_read(window, ACCESSIBLE_OUTLINE).offscreen &&
+                folio_window_accessible_read(window, &stale, &view) == S_OK,
+            "the column and the same rows come back in a wide window");
+    native_key_input(window, 'E', FCONTROL);
+    pump(window);
+    native_key_input(window, 'E', FCONTROL);
+    pump(window);
+    require(folio_window_accessible_read(window, &stale, &view) == accessibility_node_unavailable,
+            "a row of an earlier load does not answer");
+}
+
+/* The body control's rectangle in the main window's client coordinates. */
+static RECT outline_body_rect(struct folio_window *_Nonnull window)
+{
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    RECT bounds = {0};
+    GetWindowRect(body, &bounds);
+    MapWindowPoints(nullptr, root, (POINT *)&bounds, 2);
+    return bounds;
+}
+
+/* Opening the column takes its width and gap from the body's right; closing gives it back. */
+static void outline_toggle(struct folio_window *_Nonnull window,
+                           struct native_fixture *_Nonnull fixture)
+{
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    int carve = MulDiv(184 + 12, (int)GetDpiForWindow(root), 96);
+    RECT closed = outline_body_rect(window);
+    struct accessible_view map_closed = outline_read(window, ACCESSIBLE_MINIMAP);
+    require(!folio_state_outline(fixture->state), "the column starts closed");
+    native_key_input(window, 'O', FCONTROL | FSHIFT);
+    pump(window);
+    RECT open = outline_body_rect(window);
+    struct accessible_view map_open = outline_read(window, ACCESSIBLE_MINIMAP);
+    printf("outline: minimap %s, left %ld -> %ld\n", map_closed.offscreen ? "hidden" : "shown",
+           map_closed.bounds.left, map_open.bounds.left);
+    require(EqualRect(&map_closed.bounds, &map_open.bounds) &&
+                map_closed.offscreen == map_open.offscreen,
+            "opening the column leaves the minimap where it was");
+    printf("outline: body right %ld -> %ld (carve %d)\n", closed.right, open.right, carve);
+    fflush(stdout);
+    require(folio_state_outline(fixture->state) && open.left == closed.left &&
+                open.right == closed.right - carve,
+            "Ctrl+Shift+O opens the column beside the body");
+    native_key_input(window, 'E', FCONTROL);
+    pump(window);
+    RECT editing = outline_body_rect(window);
+    require(folio_state_pane_mode(fixture->state) == PANE_MODE_EDIT &&
+                editing.right == closed.right && folio_state_outline(fixture->state),
+            "the editing view has the body's full width; the column stays open for later");
+    native_key_input(window, 'E', FCONTROL);
+    pump(window);
+    RECT viewing = outline_body_rect(window);
+    require(folio_state_pane_mode(fixture->state) == PANE_MODE_VIEW && viewing.right == open.right,
+            "back in the reading view the column is there again");
+    native_key_input(window, 'O', FCONTROL | FSHIFT);
+    pump(window);
+    require(!folio_state_outline(fixture->state) &&
+                outline_body_rect(window).right == closed.right &&
+                outline_read(window, ACCESSIBLE_OUTLINE).offscreen,
+            "Ctrl+Shift+O again closes the column and gives the body its width back");
+    native_key_input(window, 'O', FCONTROL | FSHIFT);
+    pump(window);
+    require(folio_state_outline(fixture->state) && outline_body_rect(window).right == open.right,
+            "and opens it again");
+}
+
+/* #975 / ADR0114: the headings column in the main window, in each look. */
+static void outline_column(struct native_fixture *_Nonnull fixture)
+{
+    const char *const looks[] = {"light", "dark", "contrast"};
+    if (outline_96)
+        require(SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_UNAWARE) != nullptr,
+                "96 DPI windows for the outline case");
+    for (size_t at = 0; at < 3; ++at)
+    {
+        favorite_high_contrast = at == 2;
+        require(folio_state_set_language(fixture->state, FOLIO_LANGUAGE_JA) == FOLIO_STATE_READY &&
+                    folio_state_refresh_theme(fixture->state) == FOLIO_STATE_READY &&
+                    folio_state_set_theme(fixture->state, at == 1 ? FOLIO_THEME_CHOICE_DARK
+                                                                  : FOLIO_THEME_CHOICE_LIGHT) ==
+                        FOLIO_STATE_READY,
+                "outline palette");
+        folio_state_set_layout_mode(fixture->state, FOLIO_LAYOUT_NOTE);
+        folio_state_set_outline(fixture->state, false);
+        struct folio_window *window = nullptr;
+        require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY,
+                                    &window) == FOLIO_WINDOW_CREATED,
+                "outline window");
+        HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+        UINT dpi = GetDpiForWindow(root);
+        require(SetWindowPos(root, nullptr, 20, 20, MulDiv(900, (int)dpi, 96),
+                             MulDiv(620, (int)dpi, 96), SWP_NOZORDER | SWP_NOACTIVATE),
+                "outline size");
+        pump(window);
+        outline_toggle(window, fixture);
+        outline_rows(window);
+        outline_jump(window);
+        outline_keyboard(window);
+        char path[64];
+        require(snprintf(path, sizeof path, "outline-%s.bmp", looks[at]) > 0,
+                "outline screenshot path");
+        tags_capture(root, path);
+        outline_wheel(window);
+        outline_narrow(window, fixture);
+        folio_window_destroy(window);
+        folio_state_set_outline(fixture->state, false);
+        folio_state_set_layout_mode(fixture->state, FOLIO_LAYOUT_BOTH);
+    }
+    favorite_high_contrast = false;
+}
+
 static void run_window_or_footnote(struct native_fixture *_Nonnull fixture)
 {
     if (window_place_case)
         window_place(fixture);
     else if (definition_list_case)
         definition_list(fixture);
+    else if (outline_case)
+        outline_column(fixture);
     else
         footnote_jump(fixture);
 }
@@ -10652,7 +11034,7 @@ static void run_code_copy_case(struct native_fixture *_Nonnull fixture)
         text_menu_visual(fixture);
         return;
     }
-    if (window_place_case || footnote_jump_case || definition_list_case)
+    if (window_place_case || footnote_jump_case || definition_list_case || outline_case)
     {
         run_window_or_footnote(fixture);
         return;
@@ -13749,9 +14131,11 @@ static void select_clipboard_fixture(const char *_Nonnull selector)
     window_place_case = strcmp(selector, "--window-place") == 0;
     footnote_jump_case = strcmp(selector, "--footnote-jump") == 0;
     definition_list_case = strcmp(selector, "--definition-list") == 0;
+    outline_96 = strcmp(selector, "--outline-96") == 0;
+    outline_case = strcmp(selector, "--outline") == 0 || outline_96;
     bare_url_visual_case = strcmp(selector, "--bare-url-visual") == 0 || search_key_visual_case ||
                            text_menu_case || window_place_case || footnote_jump_case ||
-                           definition_list_case;
+                           definition_list_case || outline_case;
     code_copy_visual_case = strcmp(selector, "--code-copy-visual") == 0 || bare_url_visual_case;
     code_copy_keys_case_selected = strcmp(selector, "--code-copy-keys") == 0;
     code_copy_scroll_96 = strcmp(selector, "--code-copy-scroll-96") == 0;

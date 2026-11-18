@@ -890,6 +890,16 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
     [UI_TEXT_COMMAND_TOGGLE_MINIMAP] = {"ミニマップの表示を切り替える", "Toggle minimap",
                                         "切换缩略图"},
     [UI_TEXT_KEY_MINIMAP] = {"Ctrl+Shift+M", "Ctrl+Shift+M", "Ctrl+Shift+M"},
+    [UI_TEXT_COMMAND_TOGGLE_OUTLINE] = {"見出しの欄の表示を切り替える", "Toggle headings",
+                                        "切换标题栏"},
+    [UI_TEXT_KEY_OUTLINE] = {"Ctrl+Shift+O", "Ctrl+Shift+O", "Ctrl+Shift+O"},
+    [UI_TEXT_OUTLINE] = {"見出し", "Headings", "标题"},
+    [UI_TEXT_OUTLINE_HELP] =
+        {"行を押すとその見出しへ移ります。ホイールで欄を送れます。狭い窓と編集表示では隠れます。",
+         "Click a row to go to that heading. Use the wheel to scroll the column. Hidden in "
+         "narrow windows and while editing.",
+         "点击一行可跳到该标题。可用滚轮滚动此栏。窗口较窄或编辑时会隐藏。"},
+    [UI_TEXT_OUTLINE_EMPTY] = {"見出しはありません", "No headings", "没有标题"},
     [UI_TEXT_SETTINGS_MINIMAP] = {"ミニマップを表示", "Show minimap", "显示缩略图"},
     [UI_TEXT_SETTINGS_MOTION] = {"動きの演出", "Motion effects", "动态效果"},
     [UI_TEXT_SETTINGS_WINDOW] = {"前回の窓の位置と大きさで開く",

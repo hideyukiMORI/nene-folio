@@ -100,7 +100,8 @@ struct folio_state
     struct note_text *_Nullable body;    /* 最後に読んだ本文。何も選んでいなければ空 */
     enum pane_mode mode;
     enum folio_layout_mode layout_mode;
-    int scroll; /* ドロワーのスクロール量（要求量・画素・0 以上）。上限は core が決める */
+    bool outline; /* #975 / ADR0114: the headings column is open, while the app runs. */
+    int scroll;   /* ドロワーのスクロール量（要求量・画素・0 以上）。上限は core が決める */
     enum folio_document_kind document;
     size_t selected_category;
     size_t selected_note;
@@ -4085,6 +4086,16 @@ enum folio_layout_mode folio_state_layout_mode(const struct folio_state *_Nonnul
 void folio_state_set_layout_mode(struct folio_state *_Nonnull state, enum folio_layout_mode mode)
 {
     state->layout_mode = mode;
+}
+
+bool folio_state_outline(const struct folio_state *_Nonnull state)
+{
+    return state->outline;
+}
+
+void folio_state_set_outline(struct folio_state *_Nonnull state, bool open)
+{
+    state->outline = open;
 }
 
 /* 走査の結果を閉じた値へ写す（ADR 0028 の決定 6。写像はここ 1 か所）。 */

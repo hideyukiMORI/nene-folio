@@ -93,11 +93,12 @@ bool note_outline_track(struct note_outline *_Nonnull outline, struct note_pane 
     size_t current = note_outline_none;
     if (!note_pane_heading_current(pane, &current))
         current = note_outline_none;
-    bool changed = current != outline->current;
+    if (current == outline->current)
+        return false;
     outline->current = current;
-    if (current != note_outline_none && reveal(outline, paint, current))
-        changed = true;
-    return changed;
+    if (current != note_outline_none)
+        (void)reveal(outline, paint, current);
+    return true;
 }
 
 RECT note_outline_row_rect(const struct note_outline *_Nonnull outline,

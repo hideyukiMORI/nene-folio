@@ -200,6 +200,10 @@ folio_state_open_product_link(struct folio_state *_Nonnull state, enum product_l
 [[nodiscard]] enum folio_layout_mode
 folio_state_layout_mode(const struct folio_state *_Nonnull state);
 void folio_state_set_layout_mode(struct folio_state *_Nonnull state, enum folio_layout_mode mode);
+/* #975 / ADR0114: 閲覧表示の横の「見出し」の欄を開いているか。実行中だけの表示状態で、初めは閉じて
+ * いる。設定/本文/IOに触れない。 */
+[[nodiscard]] bool folio_state_outline(const struct folio_state *_Nonnull state);
+void folio_state_set_outline(struct folio_state *_Nonnull state, bool open);
 
 /* ポートは複製して持つ。各ポートの adapter は state より長く生きていなければならない。
  * 束（struct folio_ports）は呼び出しの間だけ借り、返ったあとは参照しない（ADR 0029 の決定 3）。 */

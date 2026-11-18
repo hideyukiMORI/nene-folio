@@ -16,6 +16,7 @@ struct accessible_view
     bool layout_chooser; /* HEADERの一回のgeometry表示値。offscreenとは独立。 */
     int position;
     int set_size;
+    int level; /* UIA Level: a heading's level in the headings column (#975), else 0 */
     bool dialog;
     bool live;
     RECT bounds; /* screen座標。描画/hit testと同じ矩形から写す。 */
