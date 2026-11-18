@@ -234,7 +234,8 @@ static const char definition_gallery[] =
     ": 原文をそのまま直す表示。長い説明は窓の幅で折り返し、左の線は説明のすべての行の横に続く。"
     "これは折り返しを確かめるための長い文で、三行目まで届く長さにしてある。\n"
     ": 保存は`自動`。\n続きの行は同じ説明。\n\n次の段落。\n\n"
-    ": 用語の無い行は段落のまま。\n\n- リスト\n: リストの中は従来どおり\n";
+    ": 用語の無い行は段落のまま。\n\n- リスト\n: リストの中は従来どおり\n\n表の前\n"
+    ": 説明のすぐ後の表は、説明の行とつながらない。\n| 名前 | 値 |\n| -- | -- |\n| a | 1 |\n";
 static const wchar_t search_original[] = L"猫 😀 aaaa 日本語";
 static const wchar_t search_edited[] = L"猫 😀 aaaa 日本語 🐾";
 static const char replace_current[] = "猫1 😀\n猫2 **saved**\n猫1 `old`";
@@ -10617,7 +10618,7 @@ static void definition_list(struct native_fixture *_Nonnull fixture)
                                     &window) == FOLIO_WINDOW_CREATED,
                 "definition list window");
         HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
-        require(SetWindowPos(root, nullptr, 20, 20, 620, 520, SWP_NOZORDER | SWP_NOACTIVATE),
+        require(SetWindowPos(root, nullptr, 20, 20, 620, 900, SWP_NOZORDER | SWP_NOACTIVATE),
                 "definition list size");
         pump(window);
         definition_checks(folio_window_accessible_window(window, ACCESSIBLE_BODY), looks[at]);

@@ -43,6 +43,9 @@ struct markdown_blocks
     bool paragraph_item;
     /* #971 / ADR0113: what the open paragraph is in a definition list, if anything. */
     enum markdown_definition_part definition;
+    /* The last thing written was a description's row: a table that follows needs a paragraph
+     * between, or RichEdit joins the two into one table. */
+    bool after_description;
     enum markdown_task_kind task;
     char fence;
     size_t fence_length;
@@ -259,6 +262,7 @@ static bool flush_definition(struct markdown_blocks *_Nonnull parser)
     if (parser->outcome != MARKDOWN_RTF_CONVERTED)
         return false;
     definition_end(parser);
+    parser->after_description = parser->definition == MARKDOWN_DEFINITION_DESCRIPTION;
     parser->span_count = parser->inline_length = 0;
     parser->task = MARKDOWN_TASK_KIND_NONE;
     parser->definition = MARKDOWN_DEFINITION_NONE;
@@ -271,6 +275,7 @@ static bool flush(struct markdown_blocks *_Nonnull parser)
         return true;
     if (parser->definition != MARKDOWN_DEFINITION_NONE)
         return flush_definition(parser);
+    parser->after_description = false;
     outer_markers(parser, 1);
     paragraph_header(parser);
     struct markdown_view view = {
@@ -497,6 +502,7 @@ static bool begin_copy(struct markdown_blocks *_Nonnull parser)
 static bool start_fence(struct markdown_blocks *_Nonnull parser, struct markdown_line line,
                         size_t length)
 {
+    parser->after_description = false;
     outer_markers(parser, 0);
     parser->fence = line.bytes[line.content];
     parser->code_state = MARKDOWN_CODE_STATE_EMPTY;
@@ -580,6 +586,7 @@ static bool heading_line(struct markdown_blocks *_Nonnull parser, struct markdow
 
 static void rule(struct markdown_blocks *_Nonnull parser)
 {
+    parser->after_description = false;
     outer_markers(parser, 0);
     /* RichEdit extends the highlight into paragraph spacing. Keep the gaps uncolored. */
     static const char gap[] = "{\\pard\\sb0\\sa0\\sl-240\\slmult0\\fs2\\highlight0\\par}\n";
@@ -603,6 +610,9 @@ static bool start_table(struct markdown_blocks *_Nonnull parser, struct markdown
 {
     if (!flush(parser))
         return false;
+    if (parser->after_description)
+        text_buffer_append_text(parser->out, "{\\pard\\sb0\\sa0\\sl-80\\slmult0\\fs2\\par}\n");
+    parser->after_description = false;
     parser->delimiter = delimiter;
     size_t indent_twips = markdown_containers_indent(parser->containers);
     parser->table_state = markdown_table_native(markdown_table_columns(line), indent_twips)
@@ -669,6 +679,11 @@ static bool definition_starts(const struct markdown_blocks *_Nonnull parser,
         return false;
     if (parser->definition == MARKDOWN_DEFINITION_DESCRIPTION)
         return true;
+    /* A colon line that has no term is ordinary text, and is not the term of the next one. */
+    if (parser->span_count == 1 && parser->spans[0].length >= 2 &&
+        parser->spans[0].bytes[0] == ':' &&
+        (parser->spans[0].bytes[1] == ' ' || parser->spans[0].bytes[1] == '\t'))
+        return false;
     return parser->span_count == 1 && parser->heading == 0 &&
            parser->task == MARKDOWN_TASK_KIND_NONE && !parser->paragraph_quote &&
            !parser->paragraph_item && parser->paragraph_indent == 0;

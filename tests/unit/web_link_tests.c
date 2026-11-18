@@ -584,8 +584,33 @@ static void verify_definition_list(void)
     expect_field("- item\n: c", ": c", "\\cell");
     expect_field("> quoted\n: c", ": c", "\\cell");
     expect_field("- [ ] task\n: c", ": c", "\\cell");
-    /* The task marker of a continued line does not leak into the next paragraph. */
+    /* A hidden footnote definition after the list stays hidden; a reference definition written
+     * inside a description is the description's text. */
     expect_field("T\n: d\n\n[^x]: unused\nafter", "after", "unused");
+    expect_field("T\n: d\n[r]: https://example.com/x",
+                 DESCRIPTION_ROW "d [r]: ", "\\par\n\\pard\\sa80");
+    /* Colon lines with no term stay text, however many follow each other. */
+    expect_field(": a\n: b", ": a : b", "\\cell");
+    expect_field("T\n: d1\n\n: d2\n: d3", ": d2 : d3", "\\cf4 :");
+    expect_field("T\n : c", DESCRIPTION_ROW "c\\cell\\row", ": c");
+    /* `===` under a description is its text; CRLF reads the same; a link in a term keeps the
+     * term's colour after it. */
+    expect_field("T\n: d\n===", DESCRIPTION_ROW "d ===\\cell\\row", "\\fs44");
+    expect_field("T\r\n: one\r\nmore\r\n: two\r\n",
+                 "\\cf4 T\\cf1\\par\n" DESCRIPTION_ROW "one more\\cell\\row\n" DESCRIPTION_ROW
+                 "two\\cell\\row",
+                 ": one");
+    expect_field("a `code` z\n: d", "\\cf4 a ", ": d");
+    /* A table after a description, with or without a blank line, is parted from its row. */
+    expect_field("T\n: d\n| a |\n| - |\n| 1 |",
+                 "d\\cell\\row\n{\\pard\\sb0\\sa0\\sl-80\\slmult0\\fs2\\par}\n\\trowd\\trgaph80",
+                 ": d");
+    expect_field("T\n: d\n\n| a |\n| - |\n| 1 |",
+                 "d\\cell\\row\n{\\pard\\sb0\\sa0\\sl-80\\slmult0\\fs2\\par}\n\\trowd\\trgaph80",
+                 ": d");
+    expect_field("T\n: d\n\nplain\n\n| a |\n| - |\n| 1 |", "\\par\n\\trowd\\trgaph80", "sl-80");
+    expect_field("T\n: d\n\n---\n\n| a |\n| - |\n| 1 |", "\\trowd\\trgaph80", "sl-80");
+    expect_field("T\n: d\n```\nx\n```\n| a |\n| - |\n| 1 |", "\\trowd\\trgaph80", "sl-80");
 }
 
 static size_t opened;
