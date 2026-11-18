@@ -483,7 +483,7 @@ static void verify_footnote_continuation(void)
     expect_field("plain\n\n[^x]: first\n    hidden\n        deeper", "plain", "hidden");
     expect_field("a[^x]\n\n[^x]: first\n  shallow", "fs18 " FOOT_BACK_1 " first\\fs22",
                  "first shallow");
-    expect_field("a[^x]\n\n[^x]: first\n\n    later", "fs18 " FOOT_BACK_1 " first\\fs22",
+    expect_field("a[^x]\n\n[^x]: first\n\nlater", "fs18 " FOOT_BACK_1 " first\\fs22",
                  "first later");
     expect_field("a[^x]\n\n[^x]: first\n    second\n[^y]: next\n\nb[^y]",
                  "fs18 " FOOT_BACK_2 " next\\fs22", "]: next");
@@ -496,6 +496,54 @@ static void verify_footnote_continuation(void)
         used += (size_t)sprintf(many + used, "\n    w%zu", index);
     (void)sprintf(many + used, "\n    beyond");
     expect_field(many, "w63\\fs22", "w63 beyond");
+}
+
+/* #963: after blank lines, an indented line is the footnote's next paragraph; a shallower line
+ * ends the footnote as before, and the blank lines stay where they were. */
+static void verify_footnote_paragraphs(void)
+{
+    expect_field(
+        "a[^x]\n\n[^x]: first\n    more\n\n    second *em*\n    still\n \n\n\tthird\nafter",
+        "fs18 " FOOT_BACK_1 " first more\\line second {\\i em} still\\line third\\fs22",
+        "    second");
+    expect_field("a[^x]\n\n[^x]: first\n\n    second\nafter",
+                 "fs18 " FOOT_BACK_1 " first\\line second\\fs22", "second after");
+    expect_field("a[^x]\r\n\r\n[^x]: first\r\n\r\n    second\r\nafter",
+                 "fs18 " FOOT_BACK_1 " first\\line second\\fs22", "second after");
+    /* A later paragraph numbers the footnote it refers to; emphasis does not cross paragraphs;
+     * a definition with no text of its own starts with its first paragraph. */
+    expect_field("a[^x]\n\n[^x]: one\n\n    see[^y]\n\n[^y]: other",
+                 "fs18 " FOOT_BACK_2 " other\\fs22", "]: other");
+    expect_field("a[^x]\n\n[^x]: *one\n\n    two*", "*one\\line two*", "{\\i ");
+    expect_field("a[^x]\n\n[^x]:\n    only", "fs18 " FOOT_BACK_1 " only\\fs22", "\\line");
+    /* A fence ends the footnote; an indented line after the block is the body's. */
+    expect_field("a[^x]\n\n[^x]: first\n```\ncode\n```\n\n    later",
+                 "fs18 " FOOT_BACK_1 " first\\fs22", "first\\line");
+    expect_field("plain\n\n[^x]: first\n\n    hidden", "plain", "hidden");
+    expect_field("a[^x]\n\n[^x]: first\n\n  shallow", "fs18 " FOOT_BACK_1 " first\\fs22", "\\line");
+    expect_field("a[^x]\n\n[^x]: first\n\n  shallow", "shallow", "first shallow");
+    expect_field("a[^x]\n\n[^x]: first\n\n\n", "fs18 " FOOT_BACK_1 " first\\fs22", "\\line");
+    expect_field("a[^x]\n\n[^x]:\n\n    only", "fs18 " FOOT_BACK_1 " only\\fs22", "\\line");
+    expect_field("a[^x] b[^y]\n\n[^x]: one\n\n    two\n\n[^y]: next",
+                 "fs18 " FOOT_BACK_2 " next\\fs22", "]: next");
+    expect_field("a[^x] b[l]\n\n[^x]: one\n\n    two\n\n[l]: https://example.com/c",
+                 "HYPERLINK \"HTTPS://example.com/c\"", "]: https");
+    expect_field("plain\n\n[l]: https://example.com/c\n\n    not more", "not more", "\\fs18");
+    /* Blank lines count toward the limit: 32 pairs of a blank and a line fit (64 lines), the
+     * next pair's line would be the 66th, so it and its blank stay in the body. */
+    static char many[(markdown_references_continuation_limit + 8) * 16];
+    size_t used = (size_t)sprintf(many, "a[^x]\n\n[^x]: head");
+    for (size_t index = 0; index < markdown_references_continuation_limit / 2; ++index)
+        used += (size_t)sprintf(many + used, "\n\n    p%zu", index);
+    (void)sprintf(many + used, "\n\n    beyond");
+    expect_field(many, "\\line p31\\fs22", "p31\\line beyond");
+    expect_field(many, "beyond", "\\line beyond");
+    /* One line short of the limit, a blank and a line are two more: neither joins. */
+    used = (size_t)sprintf(many, "a[^x]\n\n[^x]: head");
+    for (size_t index = 0; index + 1 < markdown_references_continuation_limit; ++index)
+        used += (size_t)sprintf(many + used, "\n    w%zu", index);
+    (void)sprintf(many + used, "\n\n    beyond");
+    expect_field(many, "w62\\fs22", "\\line");
 }
 
 static size_t opened;
@@ -725,6 +773,7 @@ void run_web_link_tests(void)
     verify_footnote_target();
     verify_footnotes();
     verify_footnote_continuation();
+    verify_footnote_paragraphs();
     verify_state();
     verify_product_table();
     verify_product_state();

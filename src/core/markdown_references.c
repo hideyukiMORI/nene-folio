@@ -34,6 +34,9 @@ struct markdown_references
     /* #878: the footnote the next indented lines continue, or SIZE_MAX, and its line count. */
     size_t open;
     size_t continued;
+    /* #963: the blank lines seen since the open footnote's last line. They become part of it
+     * only if an indented line follows (its next paragraph). */
+    size_t gap;
 };
 
 static bool space(char value)
@@ -228,18 +231,44 @@ static void after_line(struct markdown_references *_Nonnull table, struct markdo
                      markdown_line_thematic(line);
 }
 
+/* #963: a blank line after an open footnote decides nothing yet: the footnote stays open and
+ * the line is counted, in case an indented line makes it a break between two paragraphs. */
+static bool pauses(struct markdown_references *_Nonnull table, struct markdown_line line)
+{
+    if (table->open == SIZE_MAX || !markdown_line_blank(line))
+        return false;
+    ++table->gap;
+    return true;
+}
+
 /* #878: a non-blank line indented four columns or more right after a footnote (or after its
- * last continuation) is more of its text. */
+ * last continuation) is more of its text. #963: so is one after blank lines, as the footnote's
+ * next paragraph; the blank lines count toward the limit. */
 static bool continues(struct markdown_references *_Nonnull table, struct markdown_line line,
                       size_t cursor)
 {
-    if (table->open == SIZE_MAX || table->continued == markdown_references_continuation_limit ||
-        line.indent < 4 || markdown_line_blank(line))
+    if (table->open == SIZE_MAX || line.indent < 4 ||
+        table->continued + table->gap >= markdown_references_continuation_limit)
         return false;
     struct markdown_reference *entry = &table->entries[table->open];
     entry->extent = cursor + line.length - entry->offset;
-    ++table->continued;
+    table->continued += table->gap + 1;
+    table->gap = 0;
     return true;
+}
+
+/* What a line is to the open footnote: more of it (true), a blank line that leaves it open, or
+ * its end. */
+static bool follows(struct markdown_references *_Nonnull table, struct markdown_line line,
+                    size_t cursor)
+{
+    if (pauses(table, line))
+        return false;
+    if (continues(table, line, cursor))
+        return true;
+    table->open = SIZE_MAX;
+    table->gap = 0;
+    return false;
 }
 
 static enum markdown_rtf_outcome scan(struct markdown_references *_Nonnull table,
@@ -250,9 +279,7 @@ static enum markdown_rtf_outcome scan(struct markdown_references *_Nonnull table
     while (cursor < length)
     {
         struct markdown_line line = markdown_line_read(source, length, cursor);
-        bool defined = continues(table, line, cursor);
-        if (!defined)
-            table->open = SIZE_MAX;
+        bool defined = follows(table, line, cursor);
         if (!defined && table->fence == 0 && table->allowed)
         {
             enum markdown_rtf_outcome read = definition(table, line, cursor, &defined);
