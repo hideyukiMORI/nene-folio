@@ -20,6 +20,7 @@ struct discovery_layout
     RECT clear;
     RECT toggle;
     RECT open;
+    RECT edit;
     bool wide;
     bool compact;
 };
