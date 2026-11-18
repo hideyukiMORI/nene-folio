@@ -1,5 +1,6 @@
 #include "note_pane_links.h"
 #include "code_copy_target.h"
+#include "footnote_target.h"
 #include "note_pane_link_gesture.h"
 #include "utf8_text.h"
 #include "web_uri.h"
@@ -26,6 +27,16 @@ struct note_pane_links
     } *_Nullable actions;
     size_t action_count;
     size_t action_capacity;
+    /* #945: the visible numbers of footnote links, in document order. */
+    struct footnote_run
+    {
+        LONG start;
+        LONG end;
+        size_t number;
+        bool back;
+    } *_Nullable footnotes;
+    size_t footnote_count;
+    size_t footnote_capacity;
     enum note_pane_link_gesture gesture;
     POINT down;
     CHARRANGE target;
@@ -67,6 +78,40 @@ static bool append_action(struct note_pane_links *_Nonnull links, LONG start, LO
     return true;
 }
 
+static bool append_footnote(struct note_pane_links *_Nonnull links, struct footnote_run run)
+{
+    if (links->footnote_count == links->footnote_capacity)
+    {
+        size_t capacity = links->footnote_capacity == 0 ? 8 : links->footnote_capacity * 2;
+        struct footnote_run *_Nullable prepared =
+            realloc(links->footnotes, capacity * sizeof *prepared);
+        if (prepared == nullptr)
+            return false;
+        links->footnotes = prepared;
+        links->footnote_capacity = capacity;
+    }
+    links->footnotes[links->footnote_count++] = run;
+    return true;
+}
+
+/* #945: a footnote's number is body text (it stays visible and searchable); only its place is
+ * kept, so the other end of the pair can be found. */
+static bool collect_footnote(struct note_pane_links *_Nonnull links,
+                             const struct utf8_text *_Nonnull target, LONG start, LONG end)
+{
+    size_t number = 0;
+    switch (footnote_target_parse(utf8_text_bytes(target), utf8_text_length(target), &number))
+    {
+    case FOOTNOTE_TARGET_NOTE:
+        return append_footnote(links, (struct footnote_run){start, end, number, false});
+    case FOOTNOTE_TARGET_REFERENCE:
+        return append_footnote(links, (struct footnote_run){start, end, number, true});
+    case FOOTNOTE_TARGET_OTHER:
+        return true;
+    }
+    return true;
+}
+
 /* コードブロックのコピー操作の文言は操作であって本文ではない（ADR0098）。内部の宛先を持つ
  * リンクの見える区間を、非表示区間と同じ索引へ入れて検索の位置と文字列から除く。
  * 宛先の非表示区間の直後にだけ現れるので、そこだけ調べる。読めない区間は本文として残す。 */
@@ -82,7 +127,10 @@ static enum note_pane_link_outcome collect_action(struct note_pane_links *_Nonnu
     size_t slot = 0;
     enum code_copy_target_outcome parsed =
         code_copy_target_parse(utf8_text_bytes(target), utf8_text_length(target), &slot);
+    bool kept = collect_footnote(links, target, start, end);
     utf8_text_destroy(target);
+    if (!kept)
+        return NOTE_PANE_LINK_OUT_OF_MEMORY;
     if (parsed == CODE_COPY_TARGET_SLOT &&
         (!append_hidden(links, start, end) || !append_action(links, start, end, slot)))
         return NOTE_PANE_LINK_OUT_OF_MEMORY;
@@ -177,8 +225,24 @@ void note_pane_links_destroy(struct note_pane_links *_Nullable links)
     {
         free(links->hidden);
         free(links->actions);
+        free(links->footnotes);
     }
     free(links);
+}
+
+bool note_pane_links_footnote(const struct note_pane_links *_Nullable links, bool back,
+                              size_t number, CHARRANGE *_Nonnull out)
+{
+    for (size_t index = 0; links != nullptr && index < links->footnote_count; ++index)
+    {
+        const struct footnote_run *run = &links->footnotes[index];
+        if (run->back == back && run->number == number)
+        {
+            *out = (CHARRANGE){run->start, run->end};
+            return true;
+        }
+    }
+    return false;
 }
 
 size_t note_pane_links_action_count(const struct note_pane_links *_Nullable links)
