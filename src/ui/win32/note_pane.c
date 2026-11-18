@@ -1639,6 +1639,81 @@ bool note_pane_heading(struct note_pane *_Nonnull pane, size_t index,
     return true;
 }
 
+/* Characters that stand for an object or for table structure are not a heading's text. */
+static bool label_structure(char16_t unit)
+{
+    return unit == 0xFFFC || (unit >= 0xFFF9 && unit <= 0xFFFB);
+}
+
+static bool label_blank(char16_t unit)
+{
+    return unit == u'\t' || unit == u'\v' || unit == u' ';
+}
+
+/* What a row shows of the paragraph's text: up to its end, without the structure characters,
+ * with breaks inside it as spaces, trimmed. */
+static size_t heading_label(const char16_t *_Nonnull text, size_t length,
+                            struct note_pane_heading_label *_Nonnull out)
+{
+    size_t limit = (size_t)note_pane_heading_label_capacity - 1;
+    size_t written = 0;
+    for (size_t at = 0; at < length && text[at] != u'\r' && written < limit; ++at)
+    {
+        bool blank = label_blank(text[at]);
+        if (label_structure(text[at]) || (blank && written == 0))
+            continue;
+        out->units[written++] = blank ? u' ' : text[at];
+    }
+    while (written != 0 && out->units[written - 1] == u' ')
+        --written;
+    out->units[written] = u'\0';
+    return written;
+}
+
+size_t note_pane_heading_text(struct note_pane *_Nonnull pane, size_t index,
+                              struct note_pane_heading_label *_Nonnull out)
+{
+    constexpr LONG window = 1024;
+    struct note_pane_heading heading = {0};
+    out->units[0] = u'\0';
+    if (pane->readiness != NOTE_PANE_READINESS_READY || pane->composing ||
+        !note_pane_heading(pane, index, &heading))
+        return 0;
+    char16_t text[window + 1];
+    TEXTRANGEW range = {.chrg = {heading.position, heading.position + window},
+                        .lpstrText = (wchar_t *)text};
+    LRESULT taken = SendMessageW(pane->handle, EM_GETTEXTRANGE, 0, (LPARAM)&range);
+    if (taken <= 0 || taken > window)
+        return 0;
+    size_t length =
+        note_pane_links_compact_from(pane->links, (size_t)heading.position, text, (size_t)taken);
+    return heading_label(text, length, out);
+}
+
+/* The heading being read is the last one at or above the first visible line. */
+bool note_pane_heading_current(struct note_pane *_Nonnull pane, size_t *_Nonnull out)
+{
+    size_t count = note_pane_heading_count(pane);
+    if (count == 0 || pane->readiness != NOTE_PANE_READINESS_READY)
+        return false;
+    LRESULT line = SendMessageW(pane->handle, EM_GETFIRSTVISIBLELINE, 0, 0);
+    LRESULT anchor = SendMessageW(pane->handle, EM_LINEINDEX, (WPARAM)line, 0);
+    size_t low = 0;
+    size_t high = count;
+    while (low < high)
+    {
+        size_t middle = low + (high - low) / 2;
+        if (note_pane_headings_at(pane->headings, middle).position <= anchor)
+            low = middle + 1;
+        else
+            high = middle;
+    }
+    if (low == 0)
+        return false;
+    *out = low - 1;
+    return true;
+}
+
 /* After a pixel scroll the first visible line can be cut off at the top; counting lines then
  * leaves the heading's line cut off too. Bring its top edge to the top of the view. */
 static void align_heading_line(struct note_pane *_Nonnull pane, LONG position)
