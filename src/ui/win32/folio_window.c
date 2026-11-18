@@ -1038,6 +1038,9 @@ static bool discovery_accessible_name(const struct folio_window *_Nonnull self,
 static void execute_discovery(struct folio_window *_Nonnull self, const char *_Nonnull argument);
 static bool discovery_navigate(struct folio_window *_Nonnull self, WPARAM key);
 static bool discovery_switch_mode(struct folio_window *_Nonnull self, WPARAM key);
+static enum discovery_focus discovery_current_focus(const struct folio_window *_Nonnull self);
+static bool discovery_focus_visible(const struct folio_window *_Nonnull self,
+                                    enum discovery_focus focus);
 static bool discovery_tab(struct folio_window *_Nonnull self);
 static bool discovery_return(struct folio_window *_Nonnull self);
 static void discovery_select(struct folio_window *_Nonnull self, size_t index);
@@ -13026,9 +13029,11 @@ static bool command_input_handled(struct folio_window *_Nonnull self, UINT messa
     {
         return command_wheel(self, wparam);
     }
-    /* #940: Alt+Left / Alt+Right switch names/body from anywhere on the discovery surface. */
-    if (message == WM_SYSKEYDOWN)
-        return discovery_surface(self) && discovery_switch_mode(self, wparam);
+    /* #940: Alt+Left / Alt+Right switch names/body from anywhere on the discovery surface. The
+     * key is not consumed: the default handling must see that a key followed Alt, or releasing
+     * Alt alone would start the window menu. */
+    if (message == WM_SYSKEYDOWN && discovery_surface(self))
+        (void)discovery_switch_mode(self, wparam);
     return false;
 }
 
@@ -19723,6 +19728,27 @@ static void discovery_body_geometry(const struct folio_window *_Nonnull self,
         layout->preview.bottom = layout->preview.top;
 }
 
+/* #940: the bottom row holds "show source" (left), "open in the editing view" and the default
+ * "open" (right). When the surface is narrower than the three at full width (the list-only
+ * window), each keeps its share of the row, so none covers another. */
+static void discovery_action_geometry(struct discovery_layout *_Nonnull layout, RECT area, UINT dpi)
+{
+    int gap = scale(8, dpi);
+    int room = area.right - area.left - gap * 2;
+    int full = scale(120 + 176 + 160, dpi);
+    int fit = room < full ? room : full;
+    if (fit < 0)
+        fit = 0;
+    int top = area.bottom - scale(28, dpi);
+    int open = MulDiv(fit, 160, 456);
+    int edit = MulDiv(fit, 176, 456);
+    int toggle = MulDiv(fit, 120, 456);
+    layout->open = (RECT){area.right - open, top, area.right, area.bottom};
+    layout->edit =
+        (RECT){layout->open.left - gap - edit, top, layout->open.left - gap, area.bottom};
+    layout->toggle = (RECT){area.left, top, area.left + toggle, area.bottom};
+}
+
 static struct discovery_layout discovery_geometry(const struct folio_window *_Nonnull self)
 {
     UINT dpi = GetDpiForWindow(self->handle);
@@ -19747,13 +19773,7 @@ static struct discovery_layout discovery_geometry(const struct folio_window *_No
     }
     layout.status =
         (RECT){area.left, next, area.right, next + scale(layout.compact ? 20 : 32, dpi)};
-    layout.open =
-        (RECT){area.right - scale(160, dpi), area.bottom - scale(28, dpi), area.right, area.bottom};
-    /* #940: "open in the editing view" sits left of the default action. */
-    layout.edit = layout.open;
-    layout.edit.right = layout.open.left - scale(8, dpi);
-    layout.edit.left = layout.edit.right - scale(176, dpi);
-    layout.toggle = (RECT){area.left, layout.open.top, area.left + scale(120, dpi), area.bottom};
+    discovery_action_geometry(&layout, area, dpi);
     RECT body = {area.left, layout.status.bottom + scale(4, dpi), area.right,
                  layout.open.top - scale(4, dpi)};
     if (body.bottom < body.top)
@@ -19912,7 +19932,10 @@ static bool discovery_preview_key(struct folio_window *_Nonnull self, UINT messa
     if (self->command_composing)
         return false;
     if (message == WM_SYSKEYDOWN)
-        return discovery_switch_mode(self, key);
+    {
+        (void)discovery_switch_mode(self, key);
+        return false; /* seen by the default handling too, as in the query */
+    }
     if (message == WM_KEYDOWN)
     {
         if (key == VK_TAB || key == VK_ESCAPE || key == VK_RETURN)
@@ -20190,9 +20213,11 @@ static void discovery_reveal(struct folio_window *_Nonnull self, const wchar_t *
                              size_t count)
 {
     if (self->pane == nullptr || folio_state_pane_mode(self->state) != PANE_MODE_VIEW ||
+        note_pane_readiness(self->pane) != NOTE_PANE_READINESS_READY ||
         folio_state_set_search_term(self->state, (const char16_t *)query, count) !=
             FOLIO_STATE_READY)
         return;
+    folio_state_set_search_direction(self->state, SEARCH_DIRECTION_FORWARD);
     note_pane_select(self->pane, 0, 0);
     update_search(self, SEARCH_DIRECTION_FORWARD, false);
 }
@@ -20370,6 +20395,10 @@ static bool discovery_switch_mode(struct folio_window *_Nonnull self, WPARAM key
     discovery_choose_mode(self, key == VK_RIGHT ? 1 : 0);
     self->discovery_focus = kept;
     SetFocus(focus);
+    /* The new mode starts without results or source: a focus that it hid or disabled (the
+     * source, a row, an open action) goes back to the query. */
+    if (!discovery_focus_visible(self, discovery_current_focus(self)))
+        discovery_set_focus(self, DISCOVERY_FOCUS_INPUT);
     redraw_command_layer(self);
     return true;
 }
@@ -20443,10 +20472,13 @@ static bool discovery_return(struct folio_window *_Nonnull self)
         discovery_choose_mode(self, self->discovery_mode_focus == DISCOVERY_MODE_BODY ? 1 : 0);
         return true;
     }
-    /* #940: Ctrl+Enter opens in the editing view. */
-    if (GetFocus() != self->command_layer || self->discovery_focus == DISCOVERY_FOCUS_ROWS)
-        discovery_open_selected(self, (pressed_shortcut_modifiers() & FCONTROL) != 0);
-    if (GetFocus() == self->command_layer && self->discovery_focus != DISCOVERY_FOCUS_ROWS)
+    /* #940: Ctrl+Enter opens in the editing view, also on the focused default action. */
+    bool edit = (pressed_shortcut_modifiers() & FCONTROL) != 0;
+    bool layer = GetFocus() == self->command_layer;
+    if (!layer || self->discovery_focus == DISCOVERY_FOCUS_ROWS ||
+        (edit && self->discovery_focus == DISCOVERY_FOCUS_OPEN))
+        discovery_open_selected(self, edit);
+    else
         discovery_action(self, discovery_focus_slot(self->discovery_focus));
     return true;
 }

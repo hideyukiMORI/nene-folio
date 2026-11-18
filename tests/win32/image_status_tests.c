@@ -11345,6 +11345,51 @@ static void body_discovery_view_open(struct folio_window *_Nonnull window,
     body_discovery_expected_selection(window, L"needle", 0);
 }
 
+/* #940 (review): in the narrow layout the source replaces the results. Alt+Left from the source
+ * starts a mode without a source, so the focus returns to the query instead of staying on the
+ * hidden source; the three bottom actions never overlap. */
+static void body_discovery_narrow_switch(struct folio_window *_Nonnull window,
+                                         struct native_fixture *_Nonnull fixture)
+{
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    int width = MulDiv(560, (int)GetDpiForWindow(root), 96);
+    require(SetWindowPos(root, nullptr, 20, 20, width, 720, SWP_NOZORDER | SWP_NOACTIVATE),
+            "narrow finder window");
+    pump(window);
+    body_discovery_open(window, fixture, L"needle");
+    surface_button(window, ACCESSIBLE_SURFACE_DISCOVERY_TOGGLE);
+    HWND input = folio_window_accessible_window(window, ACCESSIBLE_COMMAND_INPUT);
+    HWND preview = folio_window_accessible_window(window, ACCESSIBLE_DISCOVERY_PREVIEW);
+    require(IsWindowVisible(preview), "the narrow layout shows the source on request");
+    struct accessible_view toggle =
+        tags_view(window, ACCESSIBLE_SURFACE_BUTTON, ACCESSIBLE_SURFACE_DISCOVERY_TOGGLE);
+    struct accessible_view edit =
+        tags_view(window, ACCESSIBLE_SURFACE_BUTTON, ACCESSIBLE_SURFACE_DISCOVERY_EDIT);
+    struct accessible_view open =
+        tags_view(window, ACCESSIBLE_SURFACE_BUTTON, ACCESSIBLE_SURFACE_DISCOVERY_OPEN);
+    printf("narrow actions: toggle %ld..%ld edit %ld..%ld open %ld..%ld\n", toggle.bounds.left,
+           toggle.bounds.right, edit.bounds.left, edit.bounds.right, open.bounds.left,
+           open.bounds.right);
+    fflush(stdout);
+    require(toggle.bounds.right <= edit.bounds.left && edit.bounds.right <= open.bounds.left,
+            "the three bottom actions do not overlap at the minimum width");
+    SetFocus(preview);
+    SendMessageW(preview, WM_SYSKEYDOWN, VK_LEFT, 0);
+    pump(window);
+    discovery_settle(window, fixture->state);
+    printf("narrow switch: mode names %d preview visible %d focus input %d\n",
+           folio_state_discovery_summary(fixture->state).mode == DISCOVERY_MODE_NAMES,
+           IsWindowVisible(preview), GetFocus() == input);
+    fflush(stdout);
+    require(folio_state_discovery_summary(fixture->state).mode == DISCOVERY_MODE_NAMES &&
+                GetFocus() == input,
+            "Alt+Left from the source switches the mode and returns the focus to the query");
+    surface_button(window, ACCESSIBLE_SURFACE_CLOSE);
+    require(SetWindowPos(root, nullptr, 20, 20, 1050, 720, SWP_NOZORDER | SWP_NOACTIVATE),
+            "restore the wide body fixture");
+    pump(window);
+}
+
 static LRESULT CALLBACK progress_layer_observer(HWND window, UINT message, WPARAM wparam,
                                                 LPARAM lparam)
 {
@@ -11867,6 +11912,7 @@ static void run_body_discovery_case(struct native_fixture *_Nonnull fixture)
         body_discovery_typing_rows(window, fixture);
         body_discovery_typing_preview(window, fixture);
         body_discovery_view_open(window, fixture);
+        body_discovery_narrow_switch(window, fixture);
         body_discovery_same_editor(window, fixture);
         body_discovery_changed_source(window, fixture);
         body_discovery_read_failure(window, fixture);
