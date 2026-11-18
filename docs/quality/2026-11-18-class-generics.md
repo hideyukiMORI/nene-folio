@@ -21,7 +21,6 @@ Mermaidの公式の例（`class Square~Shape~{ List~int~ position }`）が、こ
 | t2 | `diagram_render_tests`の画像（見本のクラス図に`class 箱~T~ { -List~T~ 中身 }`と`犬 --> 箱`を足した） | 563 checks成功。名前の帯が「箱<T>」、メンバーが「-List<T> 中身」（class-light.png・class-dark.png） |
 | t3 | 単体に数字・`_`に挟まれる形（`Vec2~f~`・`Pair_~K2~`）を足す途中 | Bashのheredocで日本語が化けて置き換えが失敗（ファイルは不変）。Editで足し直した。`diagram_status`は構築の対象に入れておらず「Not Run」 |
 | t4 | `folio_unit`・`diagram_render`・`diagram_status` | 3件成功 |
-
 | cov | `eng/coverage.py`（作業木の`build`を構築の木へのjunctionにして実行。1回目はjunction無しで`compile_commands.json`が見つからず失敗） | 分岐カバレッジ91.26%（11458/12556、下限90%）。`mermaid_class.c`は91.6% |
 
 画像で気づいたこと（今回の変更とは無関係）: 見本の図で「使う」のラベルが猫からの線と重なる。配置の既存の振る舞い。
