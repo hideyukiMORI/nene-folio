@@ -9,6 +9,7 @@
 #include "storage_path.h"
 #include <stdio.h>
 
+#include "ascii_fold.h"
 #include "breadcrumb_layout.h"
 #include "category_name.h"
 #include "close_phase.h"
@@ -179,6 +180,12 @@ struct folio_window
     bool discovery_show_preview;
     bool discovery_preview_ready;
     bool discovery_preview_reveal;
+    /* #941: the destination picker. The note to move, and the categories whose name contains
+     * the query (indexes into the category list, in its order). */
+    struct note_ref move_source;
+    size_t *_Nullable move_rows;
+    size_t move_count;
+    size_t move_capacity;
     /* 折り返し表示の行番号用。原文の各論理行がpreviewの何文字目から始まるか（#933）。 */
     size_t discovery_line_starts[note_excerpt_line_limit];
     size_t discovery_line_count;
@@ -977,11 +984,24 @@ static bool command_keys(const struct folio_window *_Nonnull self)
     return self->command_surface == COMMAND_SURFACE_PALETTE && self->command_keys_visible;
 }
 
+/* #941: the destination picker shares the settings frame and its metrics, like the theme
+ * picker, but it is opened on its own and closes on Esc. */
+static bool move_surface(const struct folio_window *_Nonnull self)
+{
+    return self->command_surface == COMMAND_SURFACE_MOVE;
+}
+
 static bool settings_surface(const struct folio_window *_Nonnull self)
 {
     return self->command_surface == COMMAND_SURFACE_SETTINGS ||
            self->command_surface == COMMAND_SURFACE_THEMES ||
-           self->command_surface == COMMAND_SURFACE_ABOUT;
+           self->command_surface == COMMAND_SURFACE_ABOUT || move_surface(self);
+}
+
+/* The two pickers that are a query field over filtered rows (themes, destinations). */
+static bool choice_surface(const struct folio_window *_Nonnull self)
+{
+    return self->command_surface == COMMAND_SURFACE_THEMES || move_surface(self);
 }
 
 static bool tag_surface(const struct folio_window *_Nonnull self)
@@ -1040,8 +1060,17 @@ static void discovery_status_text(const struct folio_window *_Nonnull self, char
 static bool discovery_accessible_name(const struct folio_window *_Nonnull self,
                                       enum accessible_kind kind, char16_t *_Nonnull out);
 static void execute_discovery(struct folio_window *_Nonnull self, const char *_Nonnull argument);
+static void execute_move_note(struct folio_window *_Nonnull self, const char *_Nonnull argument);
+static void show_move_surface(struct folio_window *_Nonnull self, struct note_ref source);
 static bool discovery_navigate(struct folio_window *_Nonnull self, WPARAM key);
 static bool discovery_switch_mode(struct folio_window *_Nonnull self, WPARAM key);
+static void move_query_changed(struct folio_window *_Nonnull self);
+static void adopt_move_at(struct folio_window *_Nonnull self, size_t index);
+static bool move_navigate(struct folio_window *_Nonnull self, WPARAM key);
+static void click_move_surface(struct folio_window *_Nonnull self, POINT point);
+static bool move_row_text(const struct folio_window *_Nonnull self, size_t index,
+                          char *_Nonnull out, size_t capacity);
+static void draw_move_dialog(const struct folio_window *_Nonnull self, HDC device, RECT bounds);
 static enum discovery_focus discovery_current_focus(const struct folio_window *_Nonnull self);
 static bool discovery_focus_visible(const struct folio_window *_Nonnull self,
                                     enum discovery_focus focus);
@@ -1134,6 +1163,8 @@ static int command_surface_rows(const struct folio_window *_Nonnull self)
         return (int)settings_row_count();
     case COMMAND_SURFACE_THEMES:
         return (int)folio_theme_choice_count();
+    case COMMAND_SURFACE_MOVE:
+        return (int)folio_state_category_count(self->state);
     case COMMAND_SURFACE_TAG_EDIT:
     case COMMAND_SURFACE_TAG_FILTER:
     case COMMAND_SURFACE_TAG_MANAGE:
@@ -1165,6 +1196,7 @@ static int command_help_rows(const struct folio_window *_Nonnull self)
     case COMMAND_SURFACE_REPLACE:
     case COMMAND_SURFACE_SETTINGS:
     case COMMAND_SURFACE_THEMES:
+    case COMMAND_SURFACE_MOVE:
     case COMMAND_SURFACE_ABOUT:
     case COMMAND_SURFACE_TAG_EDIT:
     case COMMAND_SURFACE_TAG_FILTER:
@@ -1523,8 +1555,8 @@ static int settings_footer_height(const struct folio_window *_Nonnull self)
 {
     if (self->command_surface == COMMAND_SURFACE_ABOUT)
         return self->settings_metrics.about_footer;
-    return self->command_surface == COMMAND_SURFACE_THEMES ? self->settings_metrics.themes_footer
-                                                           : self->settings_metrics.settings_footer;
+    return choice_surface(self) ? self->settings_metrics.themes_footer
+                                : self->settings_metrics.settings_footer;
 }
 
 static RECT settings_content_rect(const struct folio_window *_Nonnull self)
@@ -1818,6 +1850,7 @@ static RECT command_surface_rect(const struct folio_window *_Nonnull self)
         return command_band_rect(self);
     case COMMAND_SURFACE_SETTINGS:
     case COMMAND_SURFACE_THEMES:
+    case COMMAND_SURFACE_MOVE:
     case COMMAND_SURFACE_ABOUT:
     case COMMAND_SURFACE_TAG_EDIT:
     case COMMAND_SURFACE_TAG_FILTER:
@@ -1949,7 +1982,7 @@ static RECT command_input_rect(const struct folio_window *_Nonnull self)
 {
     if (discovery_surface(self))
         return discovery_geometry(self).input;
-    if (self->command_surface == COMMAND_SURFACE_THEMES || tag_surface(self))
+    if (choice_surface(self) || tag_surface(self))
     {
         return theme_input_rect(self);
     }
@@ -2040,7 +2073,7 @@ static RECT command_rows_rect(const struct folio_window *_Nonnull self)
         return r;
     }
 
-    if (self->command_surface == COMMAND_SURFACE_THEMES)
+    if (choice_surface(self))
     {
         return theme_rows_rect(self);
     }
@@ -2075,8 +2108,7 @@ static size_t command_visible_rows(const struct folio_window *_Nonnull self)
         return palette_visible_count(self);
 
     RECT rows = command_rows_rect(self);
-    int height = self->command_surface == COMMAND_SURFACE_THEMES ? base_theme_row_height
-                                                                 : base_command_row_height;
+    int height = choice_surface(self) ? base_theme_row_height : base_command_row_height;
     if (discovery_surface(self))
         height = 44;
     return (size_t)((rows.bottom - rows.top) / scale(height, GetDpiForWindow(self->handle)));
@@ -2084,7 +2116,7 @@ static size_t command_visible_rows(const struct folio_window *_Nonnull self)
 
 static void reveal_command_selection(struct folio_window *_Nonnull self)
 {
-    if (self->command_surface == COMMAND_SURFACE_THEMES)
+    if (choice_surface(self))
     {
         reveal_theme_selection(self);
         return;
@@ -2274,7 +2306,7 @@ static void arrange_surface_selection(struct folio_window *_Nonnull self)
 {
     if (self->command_surface == COMMAND_SURFACE_MENU || command_keys(self))
         return;
-    if (self->command_surface != COMMAND_SURFACE_THEMES &&
+    if (!choice_surface(self) &&
         (settings_surface(self) || command_surface_listing(self->command_surface)))
         self->command_first = 0;
     if (self->command_surface == COMMAND_SURFACE_PALETTE || framed_surface(self) ||
@@ -5357,6 +5389,9 @@ static bool theme_candidate_at(const struct folio_window *_Nonnull self, size_t 
 
 static size_t theme_matches_count(const struct folio_window *_Nonnull self)
 {
+    /* #941: the destination picker scrolls and reveals its rows with the same helpers. */
+    if (move_surface(self))
+        return self->move_count;
     return prepare_theme_candidates(self) == S_OK ? theme_candidates_count(self->theme_candidates)
                                                   : 0;
 }
@@ -5571,6 +5606,8 @@ static void draw_settings_branch(const struct folio_window *_Nonnull self, HDC d
 {
     if (about_surface(self))
         draw_about_dialog(self, device, bounds);
+    else if (move_surface(self))
+        draw_move_dialog(self, device, bounds);
     else
         draw_theme_dialog(self, device, bounds);
 }
@@ -5799,6 +5836,7 @@ static void draw_command_surface(const struct folio_window *_Nonnull self, HDC d
         return;
     case COMMAND_SURFACE_THEMES:
     case COMMAND_SURFACE_ABOUT:
+    case COMMAND_SURFACE_MOVE:
         draw_settings_branch(self, device, bounds);
         return;
     case COMMAND_SURFACE_SETTINGS:
@@ -7322,9 +7360,8 @@ static bool result_surface(const struct folio_window *_Nonnull self)
     return discovery_surface(self) || self->command_surface == COMMAND_SURFACE_EX ||
            self->command_surface == COMMAND_SURFACE_PALETTE ||
            self->command_surface == COMMAND_SURFACE_SEARCH ||
-           self->command_surface == COMMAND_SURFACE_REPLACE ||
-           self->command_surface == COMMAND_SURFACE_THEMES || about_surface(self) ||
-           tag_surface(self);
+           self->command_surface == COMMAND_SURFACE_REPLACE || choice_surface(self) ||
+           about_surface(self) || tag_surface(self);
 }
 
 static void outcome_line(const struct folio_window *_Nonnull self, enum folio_state_outcome outcome,
@@ -10610,6 +10647,7 @@ static void (*_Nonnull const command_runs[])(struct folio_window *_Nonnull self,
     [FOLIO_COMMAND_FILTER_TAGS] = execute_filter_tags,
     [FOLIO_COMMAND_MANAGE_TAGS] = execute_manage_tags,
     [FOLIO_COMMAND_DISCOVER_NOTES] = execute_discovery,
+    [FOLIO_COMMAND_MOVE_NOTE] = execute_move_note,
 };
 
 /* GUI・キー・Exで同じ操作と引数を実行する（ADR0020）。 */
@@ -11457,6 +11495,11 @@ static void click_command_surface(struct folio_window *_Nonnull self, POINT poin
     if (self->command_surface == COMMAND_SURFACE_THEMES)
     {
         click_theme_surface(self, point);
+        return;
+    }
+    if (move_surface(self))
+    {
+        click_move_surface(self, point);
         return;
     }
     if (self->command_surface == COMMAND_SURFACE_SETTINGS)
@@ -12518,19 +12561,27 @@ static void execute_palette_selection(struct folio_window *_Nonnull self)
     execute_command(self, command, "");
 }
 
-static void execute_command_input(struct folio_window *_Nonnull self)
+/* 欄の文字を読まずに済む Enter。パレットは選択中の候補、検索欄は次の一致。 */
+static bool execute_selection_input(struct folio_window *_Nonnull self)
 {
     if (self->command_surface == COMMAND_SURFACE_PALETTE)
     {
         execute_palette_selection(self);
-        return;
+        return true;
     }
     /* 検索欄の Enter は欄を閉じず、覚えている向きで次の一致へ進む（ADR 0023 の決定 4）。 */
     if (self->command_surface == COMMAND_SURFACE_SEARCH)
     {
         repeat_search(self, false);
-        return;
+        return true;
     }
+    return false;
+}
+
+static void execute_command_input(struct folio_window *_Nonnull self)
+{
+    if (execute_selection_input(self))
+        return;
     struct utf8_text *_Nullable query = nullptr;
     if (command_query(self, &query) != UTF8_TEXT_CONVERTED)
     {
@@ -12552,6 +12603,7 @@ static void execute_command_input(struct folio_window *_Nonnull self)
      */
     case COMMAND_SURFACE_SETTINGS:
     case COMMAND_SURFACE_THEMES:
+    case COMMAND_SURFACE_MOVE:
     case COMMAND_SURFACE_ABOUT:
     case COMMAND_SURFACE_TAG_EDIT:
     case COMMAND_SURFACE_TAG_FILTER:
@@ -12690,6 +12742,11 @@ static bool command_return(struct folio_window *_Nonnull self)
     if (self->command_surface == COMMAND_SURFACE_THEMES)
     {
         adopt_theme_at(self, self->command_selection);
+        return true;
+    }
+    if (move_surface(self))
+    {
+        adopt_move_at(self, self->command_selection);
         return true;
     }
     if (self->command_surface == COMMAND_SURFACE_REPLACE)
@@ -12842,6 +12899,8 @@ static bool command_navigate(struct folio_window *_Nonnull self, WPARAM key)
     {
         return theme_navigate(self, key);
     }
+    if (move_surface(self))
+        return move_navigate(self, key);
     if (self->command_surface == COMMAND_SURFACE_SETTINGS)
     {
         return settings_navigate(self, key);
@@ -13034,6 +13093,8 @@ static bool command_wheel(struct folio_window *_Nonnull self, WPARAM wparam)
         wheel_theme_selection(self, delta);
         return true;
     }
+    if (move_surface(self))
+        return move_navigate(self, key);
     if (settings_surface(self))
     {
         scroll_settings_content(self, delta);
@@ -13077,6 +13138,11 @@ static void command_composition_settled(struct folio_window *_Nonnull self)
     {
         invalidate_surface_items(self);
         theme_query_changed(self);
+    }
+    if (move_surface(self))
+    {
+        invalidate_surface_items(self);
+        move_query_changed(self);
     }
     if (self->command_surface == COMMAND_SURFACE_SEARCH)
     {
@@ -13528,9 +13594,9 @@ static void focus_filter_input(struct folio_window *_Nonnull self)
 
 static bool command_query_deferred(const struct folio_window *_Nonnull self)
 {
-    return self->command_initializing || ((self->command_surface == COMMAND_SURFACE_THEMES ||
-                                           tag_surface(self) || discovery_surface(self)) &&
-                                          self->command_composing);
+    return self->command_initializing ||
+           ((choice_surface(self) || tag_surface(self) || discovery_surface(self)) &&
+            self->command_composing);
 }
 
 static LRESULT command_query_changed(struct folio_window *_Nonnull self)
@@ -13540,10 +13606,14 @@ static LRESULT command_query_changed(struct folio_window *_Nonnull self)
         discovery_query_changed(self);
         return 0;
     }
-    if (self->command_surface == COMMAND_SURFACE_PALETTE ||
-        self->command_surface == COMMAND_SURFACE_THEMES)
+    if (self->command_surface == COMMAND_SURFACE_PALETTE || choice_surface(self))
     {
         invalidate_surface_items(self);
+    }
+    if (move_surface(self))
+    {
+        move_query_changed(self);
+        return 0;
     }
     if (self->command_surface == COMMAND_SURFACE_THEMES)
     {
@@ -15628,6 +15698,7 @@ void folio_window_destroy(struct folio_window *_Nullable window)
     }
     command_candidates_destroy(window->command_candidates);
     theme_candidates_destroy(window->theme_candidates);
+    free(window->move_rows);
     tag_candidates_destroy(window->tag_candidates);
     note_tag_destroy(window->management_source);
     if (window->mono_font != nullptr)
@@ -15677,6 +15748,8 @@ static enum ui_text surface_title(const struct folio_window *_Nonnull self)
         return UI_TEXT_COMMAND_SETTINGS;
     case COMMAND_SURFACE_THEMES:
         return UI_TEXT_THEME_TITLE;
+    case COMMAND_SURFACE_MOVE:
+        return UI_TEXT_MOVE_TITLE;
     case COMMAND_SURFACE_ABOUT:
         return UI_TEXT_ABOUT_TITLE;
     case COMMAND_SURFACE_DISCOVERY:
@@ -15731,6 +15804,9 @@ static HRESULT surface_row_count(const struct folio_window *_Nonnull self, size_
             *out = theme_matches_count(self);
         return result;
     }
+    case COMMAND_SURFACE_MOVE:
+        *out = self->move_count;
+        return S_OK;
     case COMMAND_SURFACE_PALETTE:
     {
         if (command_keys(self))
@@ -16124,6 +16200,14 @@ static bool surface_query_name(const struct folio_window *_Nonnull self, size_t 
                                struct accessible_view *_Nonnull out)
 {
     enum folio_language language = folio_state_language(self->state);
+    if (move_surface(self))
+    {
+        char text[draw_unit_limit];
+        if (!move_row_text(self, slot, text, sizeof text))
+            return false;
+        (void)wide_units(text, out->name);
+        return true;
+    }
     if (self->command_surface == COMMAND_SURFACE_THEMES)
     {
         enum folio_theme_choice choice = FOLIO_THEME_CHOICE_SYSTEM;
@@ -16161,9 +16245,11 @@ static HRESULT surface_choice_name(const struct folio_window *_Nonnull self, siz
 
     if (self->command_surface == COMMAND_SURFACE_HISTORY)
         return surface_history_name(self, slot, out->name);
-    HRESULT result = self->command_surface == COMMAND_SURFACE_THEMES
-                         ? prepare_theme_candidates(self)
-                         : prepare_palette_candidates(self);
+    HRESULT result = S_OK;
+    if (self->command_surface == COMMAND_SURFACE_THEMES)
+        result = prepare_theme_candidates(self);
+    else if (!move_surface(self))
+        result = prepare_palette_candidates(self);
     if (FAILED(result))
         return result;
     return surface_query_name(self, slot, out) ? S_OK : accessibility_node_unavailable;
@@ -16513,8 +16599,7 @@ static RECT surface_row_rect(const struct folio_window *_Nonnull self, size_t sl
     if (slot < self->command_first || slot - self->command_first >= command_visible_rows(self))
         return (RECT){0};
     RECT bounds = command_rows_rect(self);
-    int height = scale(self->command_surface == COMMAND_SURFACE_THEMES ? base_theme_row_height
-                                                                       : base_command_row_height,
+    int height = scale(choice_surface(self) ? base_theme_row_height : base_command_row_height,
                        GetDpiForWindow(self->handle));
     bounds.top += (int)(slot - self->command_first) * height;
     bounds.bottom = bounds.top + height;
@@ -16536,7 +16621,7 @@ static RECT surface_status_rect(const struct folio_window *_Nonnull self)
         return tag_footer_rect(self);
     if (command_band(self))
         return self->band.result;
-    if (self->command_surface == COMMAND_SURFACE_THEMES)
+    if (choice_surface(self))
         return theme_footer_rect(self);
     if (self->command_surface == COMMAND_SURFACE_SETTINGS)
         return settings_footer_rect(self);
@@ -17501,6 +17586,8 @@ static enum ui_text surface_input_label(const struct folio_window *_Nonnull self
                    : UI_TEXT_DISCOVERY_INPUT;
     if (self->command_surface == COMMAND_SURFACE_THEMES)
         return UI_TEXT_THEME_FILTER;
+    if (move_surface(self))
+        return UI_TEXT_MOVE_FILTER;
     if (tag_surface(self))
         return tag_input_label(self);
     return surface_title(self);
@@ -19320,6 +19407,265 @@ static bool menu_navigate(struct folio_window *_Nonnull self, WPARAM key)
     return true;
 }
 
+/* #941: the destination picker. The rows are the categories whose name contains the query,
+ * in the list's order; the note's own category is shown but cannot be chosen. */
+static bool move_rows_prepare(struct folio_window *_Nonnull self)
+{
+    self->move_count = 0;
+    size_t count = folio_state_category_count(self->state);
+    if (count > self->move_capacity)
+    {
+        if (count > SIZE_MAX / sizeof *self->move_rows)
+            return false;
+        size_t *_Nullable grown = realloc(self->move_rows, count * sizeof *grown);
+        if (grown == nullptr)
+            return false;
+        self->move_rows = grown;
+        self->move_capacity = count;
+    }
+    struct utf8_text *_Nullable query = nullptr;
+    if (command_query(self, &query) != UTF8_TEXT_CONVERTED)
+        return false;
+    for (size_t at = 0; at < count; ++at)
+        if (ascii_fold_contains(folio_state_category_name(self->state, at), utf8_text_bytes(query),
+                                utf8_text_length(query)))
+            self->move_rows[self->move_count++] = at;
+    utf8_text_destroy(query);
+    return true;
+}
+
+static bool move_row_current(const struct folio_window *_Nonnull self, size_t index)
+{
+    return index < self->move_count && self->move_rows != nullptr &&
+           self->move_rows[index] == self->move_source.category;
+}
+
+/* The first row that can be chosen, so Enter right after opening or typing moves the note. */
+static void move_select_first(struct folio_window *_Nonnull self)
+{
+    self->command_selection = 0;
+    self->command_first = 0;
+    while (self->command_selection + 1 < self->move_count &&
+           move_row_current(self, self->command_selection))
+        ++self->command_selection;
+}
+
+static bool move_row_text(const struct folio_window *_Nonnull self, size_t index,
+                          char *_Nonnull out, size_t capacity)
+{
+    if (index >= self->move_count || self->move_rows == nullptr)
+        return false;
+    const char *name = folio_state_category_name(self->state, self->move_rows[index]);
+    const struct ui_text_request request = {
+        .id = UI_TEXT_MOVE_CURRENT, .language = folio_state_language(self->state), .name = name};
+    if (move_row_current(self, index))
+        return ui_text_format(&request, out, capacity) == UI_TEXT_FORMAT_READY;
+    return strcpy_s(out, capacity, name) == 0;
+}
+
+static void move_refresh(struct folio_window *_Nonnull self)
+{
+    if (!move_rows_prepare(self))
+        self->command_failure = FOLIO_STATE_OUT_OF_MEMORY;
+    move_select_first(self);
+}
+
+static void move_query_changed(struct folio_window *_Nonnull self)
+{
+    if (self->command_composing)
+        return;
+    clear_command_status(self);
+    move_refresh(self);
+    arrange_command_input(self);
+    redraw_command_layer(self);
+    accessibility_host_schedule(self->accessibility);
+}
+
+static bool move_navigate(struct folio_window *_Nonnull self, WPARAM key)
+{
+    if (key != VK_UP && key != VK_DOWN && key != VK_PRIOR && key != VK_NEXT)
+        return false;
+    if (self->move_count == 0)
+        return true;
+    size_t page = command_visible_rows(self);
+    size_t step = key == VK_PRIOR || key == VK_NEXT ? page : 1;
+    move_theme_selection(self, key, self->move_count, step > 0 ? step : 1);
+    reveal_command_selection(self);
+    redraw_command_layer(self);
+    accessibility_host_schedule(self->accessibility);
+    return true;
+}
+
+/* The move itself is the application's one path (the drag uses it too); a refusal stays on
+ * the surface as its one line. */
+static void adopt_move_at(struct folio_window *_Nonnull self, size_t index)
+{
+    if (self->command_composing || index >= self->move_count || self->move_rows == nullptr ||
+        move_row_current(self, index))
+        return;
+    enum folio_state_outcome moved =
+        folio_state_move_note_to_category(self->state, self->move_source, self->move_rows[index]);
+    if (moved != FOLIO_STATE_READY)
+    {
+        self->command_failure = moved;
+        redraw_command_layer(self);
+        accessibility_host_schedule(self->accessibility);
+        return;
+    }
+    close_command_surface(self);
+    redraw_drawer(self);
+    /* The pane's header shows the category of the open note. */
+    InvalidateRect(self->handle, nullptr, FALSE);
+}
+
+static void click_move_surface(struct folio_window *_Nonnull self, POINT point)
+{
+    RECT close = settings_close_rect(self);
+    if (PtInRect(&close, point))
+    {
+        close_command_surface(self);
+        return;
+    }
+    RECT rows = theme_rows_rect(self);
+    if (PtInRect(&rows, point) && !self->command_composing)
+    {
+        int height = scale(base_theme_row_height, GetDpiForWindow(self->handle));
+        size_t index = self->command_first + (size_t)((point.y - rows.top) / height);
+        if (index < self->move_count)
+            self->command_selection = index;
+        adopt_move_at(self, index);
+    }
+    if (move_surface(self))
+    {
+        focus_command_input(self);
+        redraw_command_layer(self);
+    }
+}
+
+static void draw_move_row(const struct folio_window *_Nonnull self, HDC device, RECT box,
+                          size_t index)
+{
+    char text[draw_unit_limit];
+    if (!move_row_text(self, index, text, sizeof text))
+        return;
+    UINT dpi = GetDpiForWindow(self->handle);
+    bool current = move_row_current(self, index);
+    struct ui_part_paint part = {.bounds = box,
+                                 .dpi = dpi,
+                                 .style = UI_PART_STYLE_COMMAND,
+                                 .focus_inside = true,
+                                 .selected = current,
+                                 .focused = index == self->command_selection};
+    ui_part_draw(device, &self->palette, &part);
+    if (current)
+        icon_paint_fill(device, settings_mark_rect(self, box), ICON_PAINT_SELECTION,
+                        self->palette.current_text);
+    RECT label = {box.left + scale(32, dpi), box.top + scale(2, dpi), box.right - scale(6, dpi),
+                  box.bottom};
+    SetTextColor(device, current ? self->palette.dialog_secondary : self->palette.current_text);
+    draw_units(device, text, label, DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX | DT_END_ELLIPSIS);
+}
+
+static void draw_move_rows(const struct folio_window *_Nonnull self, HDC device)
+{
+    RECT bounds = theme_rows_rect(self);
+    int height = scale(base_theme_row_height, GetDpiForWindow(self->handle));
+    size_t visible = command_visible_rows(self);
+    for (size_t offset = 0; offset < visible && self->command_first + offset < self->move_count;
+         ++offset)
+    {
+        RECT row = {bounds.left, bounds.top + (int)offset * height, bounds.right,
+                    bounds.top + ((int)offset + 1) * height};
+        draw_move_row(self, device, row, self->command_first + offset);
+    }
+    if (self->move_count == 0)
+    {
+        SetTextColor(device, self->palette.current_text);
+        draw_units(device, ui_text_line(UI_TEXT_MOVE_EMPTY, folio_state_language(self->state)),
+                   bounds, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+    }
+}
+
+static void draw_move_footer(const struct folio_window *_Nonnull self, HDC device)
+{
+    RECT line = theme_footer_rect(self);
+    enum folio_language language = folio_state_language(self->state);
+    char text[ui_text_unit_limit];
+    struct ui_text_request request = {.id = UI_TEXT_MOVE_COUNT,
+                                      .language = language,
+                                      .k = self->move_count,
+                                      .n = folio_state_category_count(self->state)};
+    /* The note is moved without being opened, so the surface names it. */
+    struct ui_text_request source = {
+        .id = UI_TEXT_MOVE_SOURCE,
+        .language = language,
+        .from = folio_state_category_name(self->state, self->move_source.category),
+        .name = folio_state_note_name(self->state, self->move_source)};
+    SetTextColor(device, self->palette.current_text);
+    if (ui_text_format(&source, text, sizeof text) == UI_TEXT_FORMAT_READY)
+        line.top += wrapped_text(device, text, line, true);
+    if (ui_text_format(&request, text, sizeof text) == UI_TEXT_FORMAT_READY)
+        line.top += wrapped_text(device, text, line, true);
+    SetTextColor(device, self->palette.dialog_secondary);
+    line.top += wrapped_text(device, ui_text_line(UI_TEXT_MOVE_GUIDANCE, language), line, true);
+    if (settings_has_notice(self))
+    {
+        SetTextColor(device, self->palette.current_text);
+        (void)wrapped_text(device, folio_state_failure_line(settings_notice(self), language), line,
+                           true);
+    }
+}
+
+static void draw_move_dialog(const struct folio_window *_Nonnull self, HDC device, RECT bounds)
+{
+    enum folio_language language = folio_state_language(self->state);
+    UINT dpi = GetDpiForWindow(self->handle);
+    ui_part_draw_surface(device, &self->palette, bounds);
+    RECT title = surface_frame_rect(self, UI_PART_SURFACE_TITLE_TEXT);
+    SetTextColor(device, self->palette.current_text);
+    draw_units(device, ui_text_line(UI_TEXT_MOVE_TITLE, language), title,
+               DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
+    draw_surface_button(self, device, ACCESSIBLE_SURFACE_CLOSE);
+    RECT input = theme_input_rect(self);
+    RECT label = {input.left, input.top - scale(20, dpi), input.right, input.top};
+    draw_units(device, ui_text_line(UI_TEXT_MOVE_FILTER, language), label,
+               DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
+    draw_input_field(self, device, self->command_input, command_input_rect(self));
+    draw_move_rows(self, device);
+    draw_move_footer(self, device);
+}
+
+static void show_move_surface(struct folio_window *_Nonnull self, struct note_ref source)
+{
+    if (self->removal_running || session_busy(self) || pane_streaming(self))
+        return;
+    if (self->command_surface != COMMAND_SURFACE_CLOSED && !hide_command_surface(self))
+        return;
+    self->move_source = source;
+    open_command_surface(self, COMMAND_SURFACE_MOVE);
+    initialize_command_input(self, L"");
+    move_refresh(self);
+    rearrange_keeping_line(self);
+    focus_command_input(self);
+    redraw_command_layer(self);
+    accessibility_host_schedule(self->accessibility);
+}
+
+/* The command from the palette: the open, named note. */
+static void execute_move_note(struct folio_window *_Nonnull self, const char *_Nonnull argument)
+{
+    (void)argument;
+    struct note_ref held = {.category = 0, .note = 0};
+    enum folio_document_kind kind = folio_state_document_kind(self->state);
+    if (kind != FOLIO_DOCUMENT_NAMED || !folio_state_selection(self->state, &held))
+    {
+        report_outcome(self, kind == FOLIO_DOCUMENT_UNTITLED ? FOLIO_STATE_NAME_REQUIRED
+                                                             : FOLIO_STATE_NOTHING_SELECTED);
+        return;
+    }
+    show_move_surface(self, held);
+}
+
 static void show_menu_surface(struct folio_window *_Nonnull self,
                               const struct menu_request *_Nonnull request)
 {
@@ -19348,6 +19694,9 @@ static void menu_run_note(struct folio_window *_Nonnull self, enum folio_command
         favorite_at(self, target);
     if (command == FOLIO_COMMAND_TRASH_NOTE)
         trash_note_at(self, target);
+    /* #941: the row's note moves without being opened, as a drag moves it. */
+    if (command == FOLIO_COMMAND_MOVE_NOTE)
+        show_move_surface(self, target);
 }
 
 static void menu_run_target(struct folio_window *_Nonnull self, enum folio_command command,

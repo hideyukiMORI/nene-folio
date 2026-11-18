@@ -6,9 +6,14 @@
 #ifndef NENEFOLIO_ASCII_FOLD_H
 #define NENEFOLIO_ASCII_FOLD_H
 
+#include <stddef.h>
 #include <uchar.h>
 
 [[nodiscard]] char ascii_fold_byte(char value);
 [[nodiscard]] char16_t ascii_fold_unit(char16_t unit);
+/* candidate（終端付き）が text の length バイトを、ASCII の大小を無視して含むか。空の text は含む。
+ * テーマの選択と移動先のカテゴリの選択（#941）の絞り込みが引く。 */
+[[nodiscard]] bool ascii_fold_contains(const char *_Nonnull candidate, const char *_Nonnull text,
+                                       size_t length);
 
 #endif

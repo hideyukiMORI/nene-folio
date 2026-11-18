@@ -70,6 +70,9 @@ static const struct folio_menu_action note[] = {
      FOLIO_TEXT_EDIT_NONE},
     {FOLIO_MENU_ACTION_COMMAND, FOLIO_COMMAND_RENAME, FOLIO_MENU_GROUP_FIRST, 'R',
      FOLIO_TEXT_EDIT_NONE},
+    /* #941: to another category; the destination is chosen on its own surface. */
+    {FOLIO_MENU_ACTION_COMMAND, FOLIO_COMMAND_MOVE_NOTE, FOLIO_MENU_GROUP_FIRST, 'M',
+     FOLIO_TEXT_EDIT_NONE},
     {FOLIO_MENU_ACTION_COMMAND, FOLIO_COMMAND_TRASH_NOTE, FOLIO_MENU_GROUP_DESTRUCTIVE, 'T',
      FOLIO_TEXT_EDIT_NONE}};
 /* #883: the note body's menu. Viewing is read-only, so it has no Undo, Cut or Paste. */

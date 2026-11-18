@@ -449,6 +449,11 @@ static void verify_catalog_matches(void)
 static void verify_ascii_fold(void)
 {
     require(ascii_fold_byte('A') == 'a' && ascii_fold_byte('Z') == 'z', "upper folds to lower");
+    require(ascii_fold_contains("Schedule 予定", "SCHED", 5) &&
+                ascii_fold_contains("Schedule 予定", "予定", strlen("予定")) &&
+                ascii_fold_contains("Schedule", "", 0) && !ascii_fold_contains("Sch", "Sched", 5) &&
+                !ascii_fold_contains("Schedule", "x", 1),
+            "contains ignores ASCII case only; an empty query matches; a longer query does not");
     require(ascii_fold_byte('a') == 'a' && ascii_fold_byte('0') == '0' &&
                 ascii_fold_byte('@') == '@' && ascii_fold_byte('[') == '[',
             "the neighbours of the letters are untouched");

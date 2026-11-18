@@ -23,7 +23,9 @@ enum command_surface_mode : unsigned char
     COMMAND_SURFACE_TAG_EDIT,
     COMMAND_SURFACE_TAG_FILTER,
     COMMAND_SURFACE_TAG_MANAGE,
-    COMMAND_SURFACE_DISCOVERY
+    COMMAND_SURFACE_DISCOVERY,
+    /* #941: ノートの移動先のカテゴリを選ぶ。テーマの選択と同じ枠（検索 EDIT と絞り込んだ行） */
+    COMMAND_SURFACE_MOVE
 };
 
 #endif

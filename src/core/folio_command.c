@@ -19,6 +19,7 @@ static const struct
                                       UI_TEXT_COMMAND_DISCOVER_NOTES,
                                       0,
                                       {"", ""}},
+    [FOLIO_COMMAND_MOVE_NOTE] = {FOLIO_COMMAND_MOVE_NOTE, UI_TEXT_COMMAND_MOVE_NOTE, 0, {"", ""}},
     [FOLIO_COMMAND_MANAGE_TAGS] = {FOLIO_COMMAND_MANAGE_TAGS,
                                    UI_TEXT_COMMAND_MANAGE_TAGS,
                                    0,
@@ -172,6 +173,7 @@ static enum folio_argument_kind argument_kind(enum folio_command command)
     case FOLIO_COMMAND_FILTER_TAGS:
     case FOLIO_COMMAND_MANAGE_TAGS:
     case FOLIO_COMMAND_DISCOVER_NOTES:
+    case FOLIO_COMMAND_MOVE_NOTE:
     case FOLIO_COMMAND_EXPORT_NOTE:
     case FOLIO_COMMAND_EXPORT_CATEGORY:
     case FOLIO_COMMAND_EXPORT_ALL:
@@ -214,6 +216,7 @@ bool folio_command_listed(enum folio_command command)
     case FOLIO_COMMAND_FILTER_TAGS:
     case FOLIO_COMMAND_MANAGE_TAGS:
     case FOLIO_COMMAND_DISCOVER_NOTES:
+    case FOLIO_COMMAND_MOVE_NOTE:
     case FOLIO_COMMAND_IMPORT:
     case FOLIO_COMMAND_EXPORT_NOTE:
     case FOLIO_COMMAND_EXPORT_CATEGORY:
@@ -613,6 +616,7 @@ enum folio_command_scope folio_command_scope(enum folio_command command)
     case FOLIO_COMMAND_DISCARD_EDITS:
     case FOLIO_COMMAND_HISTORY:
     case FOLIO_COMMAND_TRASH_NOTE:
+    case FOLIO_COMMAND_MOVE_NOTE:
         return FOLIO_COMMAND_SCOPE_NOTE;
     }
     return FOLIO_COMMAND_SCOPE_NOTE;
@@ -632,7 +636,8 @@ bool folio_command_needs_input(enum folio_command command)
            command == FOLIO_COMMAND_REPLACE || command == FOLIO_COMMAND_HISTORY ||
            command == FOLIO_COMMAND_EDIT_TAGS || command == FOLIO_COMMAND_FILTER_TAGS ||
            command == FOLIO_COMMAND_MANAGE_TAGS || command == FOLIO_COMMAND_DISCOVER_NOTES ||
-           command == FOLIO_COMMAND_NEW_CATEGORY || command == FOLIO_COMMAND_RENAME_CATEGORY;
+           command == FOLIO_COMMAND_MOVE_NOTE || command == FOLIO_COMMAND_NEW_CATEGORY ||
+           command == FOLIO_COMMAND_RENAME_CATEGORY;
 }
 
 enum ui_text_format_outcome folio_command_caption(enum folio_command command,
