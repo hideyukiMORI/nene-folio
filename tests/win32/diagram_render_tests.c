@@ -51,6 +51,11 @@ static const char classes[] =
     "動物 <|-- 犬 : 継承\n動物 <|.. 猫\n犬 : +吠える()\n"
     "犬 \"1\" *-- \"4\" 足\n犬 \"1\" o-- \"0..1\" 首輪\n猫 \"0..*\" --> \"1\" 飼い主\n猫 ..> 餌\n"
     "class 箱~T~ {\n  -List~T~ 中身\n  +取り出す() T\n}\n犬 --> 箱 : 使う\n";
+/* #955 / ADR0112: a pie chart through the same phases: a title, the values shown, more slices
+ * than there are shades, and one slice too thin to see. */
+static const char pie[] =
+    "pie showData title 作業の内訳\n\"設計\" : 40\n\"実装\" : 25\n\"試験\" : 15\n"
+    "\"文書\" : 12.5\n\"レビュー\" : 6\n\"その他\" : 1.5\n\"端数\" : 0.001\n";
 /* #882 / ADR0105: an ER diagram through the same phases. */
 static const char er[] =
     "erDiagram\n顧客 ||--o{ 注文 : 出す\n注文 ||--|{ 明細 : 含む\n顧客 }|..|| 住所 : 使う\n"
@@ -118,10 +123,11 @@ static struct image_bitmap *_Nonnull render(const struct diagram_request *_Nonnu
 }
 static void render_cases(const struct image_work *_Nonnull work, const char *_Nullable output)
 {
-    const char *sources[] = {flow, sequence, parts, state, er, classes};
+    const char *sources[] = {flow, sequence, parts, state, er, classes, pie};
     const char *names[] = {"flow-light",  "flow-dark",  "sequence-light", "sequence-dark",
                            "parts-light", "parts-dark", "state-light",    "state-dark",
-                           "er-light",    "er-dark",    "class-light",    "class-dark"};
+                           "er-light",    "er-dark",    "class-light",    "class-dark",
+                           "pie-light",   "pie-dark"};
     const enum folio_theme themes[] = {FOLIO_THEME_LIGHT, FOLIO_THEME_DARK};
     for (size_t index = 0; index < sizeof sources / sizeof sources[0]; ++index)
     {

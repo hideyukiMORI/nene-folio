@@ -73,6 +73,7 @@ static struct diagram_size labelled_size(struct diagram_size text, enum diagram_
         break;
     case DIAGRAM_STATE_START:
     case DIAGRAM_STATE_END:
+    case DIAGRAM_SECTOR:
         break;
     case DIAGRAM_ENTITY:
         /* The name and the attributes each keep the vertical padding around them. */
@@ -116,6 +117,7 @@ static int attachment_progress(enum diagram_shape shape, int y, int height, bool
     case DIAGRAM_STATE_START:
     case DIAGRAM_STATE_END:
     case DIAGRAM_ENTITY:
+    case DIAGRAM_SECTOR:
         return 0;
     case DIAGRAM_PARALLELOGRAM:
         return left ? height - y : y;

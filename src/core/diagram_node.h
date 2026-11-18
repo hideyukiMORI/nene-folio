@@ -9,5 +9,7 @@ struct diagram_node
     size_t label;
     size_t group;
     enum diagram_shape shape;
+    /* #955: a pie slice's sweep in hundredths of a degree; 0 for every other node. */
+    size_t share;
 };
 #endif
