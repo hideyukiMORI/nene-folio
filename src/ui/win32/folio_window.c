@@ -100,7 +100,7 @@
 #include <windows.h>
 #include <windowsx.h>
 
-constexpr size_t surface_button_count = 29;
+constexpr size_t surface_button_count = 30;
 constexpr size_t surface_pointer_count = surface_button_count + 2;
 constexpr UINT_PTR surface_tooltip_base = 256;
 /* 1 回の描画・測定で UTF-16 へ写せる単位数（ADR 0030 の決定 5）。表の 1 行（ui_text_unit_limit）・
@@ -1022,7 +1022,7 @@ static void draw_discovery(const struct folio_window *_Nonnull self, HDC device,
 static void arrange_discovery_preview(struct folio_window *_Nonnull self);
 static void discovery_refresh(struct folio_window *_Nonnull self);
 static void discovery_query_changed(struct folio_window *_Nonnull self);
-static void discovery_open_selected(struct folio_window *_Nonnull self);
+static void discovery_open_selected(struct folio_window *_Nonnull self, bool edit);
 static void discovery_choose_mode(struct folio_window *_Nonnull self, size_t slot);
 static void discovery_set_focus(struct folio_window *_Nonnull self, enum discovery_focus focus);
 static void discovery_paste(struct folio_window *_Nonnull self);
@@ -1038,6 +1038,10 @@ static bool discovery_accessible_name(const struct folio_window *_Nonnull self,
                                       enum accessible_kind kind, char16_t *_Nonnull out);
 static void execute_discovery(struct folio_window *_Nonnull self, const char *_Nonnull argument);
 static bool discovery_navigate(struct folio_window *_Nonnull self, WPARAM key);
+static bool discovery_switch_mode(struct folio_window *_Nonnull self, WPARAM key);
+static enum discovery_focus discovery_current_focus(const struct folio_window *_Nonnull self);
+static bool discovery_focus_visible(const struct folio_window *_Nonnull self,
+                                    enum discovery_focus focus);
 static bool discovery_tab(struct folio_window *_Nonnull self);
 static bool discovery_return(struct folio_window *_Nonnull self);
 static void discovery_select(struct folio_window *_Nonnull self, size_t index);
@@ -12946,7 +12950,8 @@ static bool command_character(struct folio_window *_Nonnull self, WPARAM charact
         show_command_palette(self);
         return true;
     }
-    return character == '\r' || character == '\t' ||
+    /* '\n' is Ctrl+Enter (#940): handled at the key, never typed into a one-line field. */
+    return character == '\r' || character == '\n' || character == '\t' ||
            (character == ' ' && surface_space_activates(self));
 }
 
@@ -13050,6 +13055,11 @@ static bool command_input_handled(struct folio_window *_Nonnull self, UINT messa
     {
         return command_wheel(self, wparam);
     }
+    /* #940: Alt+Left / Alt+Right switch names/body from anywhere on the discovery surface. The
+     * key is not consumed: the default handling must see that a key followed Alt, or releasing
+     * Alt alone would start the window menu. */
+    if (message == WM_SYSKEYDOWN && discovery_surface(self))
+        (void)discovery_switch_mode(self, wparam);
     return false;
 }
 
@@ -14111,7 +14121,7 @@ static bool layer_input_handled(struct folio_window *_Nonnull self, UINT message
         return true;
     accessibility_host_changed(self->accessibility, message);
     update_command_composition(self, message);
-    if ((message == WM_KEYDOWN || message == WM_CHAR) &&
+    if ((message == WM_KEYDOWN || message == WM_CHAR || message == WM_SYSKEYDOWN) &&
         command_input_handled(self, message, wparam))
     {
         return true;
@@ -15783,6 +15793,7 @@ static bool surface_button_visible(const struct folio_window *_Nonnull self, siz
     case ACCESSIBLE_SURFACE_DISCOVERY_TAG:
     case ACCESSIBLE_SURFACE_DISCOVERY_PREVIOUS_TAG:
     case ACCESSIBLE_SURFACE_DISCOVERY_NEXT_TAG:
+    case ACCESSIBLE_SURFACE_DISCOVERY_EDIT:
         return discovery_button_visible(self, slot);
 
     case ACCESSIBLE_SURFACE_CLOSE:
@@ -16409,6 +16420,7 @@ static RECT accessible_surface_button_rect(const struct folio_window *_Nonnull s
     case ACCESSIBLE_SURFACE_DISCOVERY_TAG:
     case ACCESSIBLE_SURFACE_DISCOVERY_PREVIOUS_TAG:
     case ACCESSIBLE_SURFACE_DISCOVERY_NEXT_TAG:
+    case ACCESSIBLE_SURFACE_DISCOVERY_EDIT:
         return discovery_button_rect(self, slot);
 
     case ACCESSIBLE_SURFACE_CLOSE:
@@ -16987,6 +16999,7 @@ static HRESULT surface_button_action(struct folio_window *_Nonnull self, size_t 
     case ACCESSIBLE_SURFACE_DISCOVERY_TAG:
     case ACCESSIBLE_SURFACE_DISCOVERY_PREVIOUS_TAG:
     case ACCESSIBLE_SURFACE_DISCOVERY_NEXT_TAG:
+    case ACCESSIBLE_SURFACE_DISCOVERY_EDIT:
         discovery_action(self, slot);
         break;
 
@@ -19741,6 +19754,27 @@ static void discovery_body_geometry(const struct folio_window *_Nonnull self,
         layout->preview.bottom = layout->preview.top;
 }
 
+/* #940: the bottom row holds "show source" (left), "open in the editing view" and the default
+ * "open" (right). When the surface is narrower than the three at full width (the list-only
+ * window), each keeps its share of the row, so none covers another. */
+static void discovery_action_geometry(struct discovery_layout *_Nonnull layout, RECT area, UINT dpi)
+{
+    int gap = scale(8, dpi);
+    int room = area.right - area.left - gap * 2;
+    int full = scale(120 + 176 + 160, dpi);
+    int fit = room < full ? room : full;
+    if (fit < 0)
+        fit = 0;
+    int top = area.bottom - scale(28, dpi);
+    int open = MulDiv(fit, 160, 456);
+    int edit = MulDiv(fit, 176, 456);
+    int toggle = MulDiv(fit, 120, 456);
+    layout->open = (RECT){area.right - open, top, area.right, area.bottom};
+    layout->edit =
+        (RECT){layout->open.left - gap - edit, top, layout->open.left - gap, area.bottom};
+    layout->toggle = (RECT){area.left, top, area.left + toggle, area.bottom};
+}
+
 static struct discovery_layout discovery_geometry(const struct folio_window *_Nonnull self)
 {
     UINT dpi = GetDpiForWindow(self->handle);
@@ -19748,9 +19782,10 @@ static struct discovery_layout discovery_geometry(const struct folio_window *_No
     struct discovery_layout layout = {.wide = area.right - area.left >= scale(720, dpi),
                                       .compact = area.bottom - area.top < scale(260, dpi)};
     layout.input = (RECT){area.left, area.top, area.right, area.top + scale(28, dpi)};
-    layout.body = (RECT){area.right - scale(72, dpi), area.top, area.right, layout.input.bottom};
+    /* #940: the two choices show their keys (Alt+Left / Alt+Right). */
+    layout.body = (RECT){area.right - scale(104, dpi), area.top, area.right, layout.input.bottom};
     layout.names = layout.body;
-    OffsetRect(&layout.names, -scale(72, dpi), 0);
+    OffsetRect(&layout.names, -scale(104, dpi), 0);
     layout.input.right = layout.names.left - scale(8, dpi);
     layout.conditions = (RECT){area.left, layout.input.bottom + scale(4, dpi), area.right,
                                layout.input.bottom + scale(24, dpi)};
@@ -19764,9 +19799,7 @@ static struct discovery_layout discovery_geometry(const struct folio_window *_No
     }
     layout.status =
         (RECT){area.left, next, area.right, next + scale(layout.compact ? 20 : 32, dpi)};
-    layout.open =
-        (RECT){area.right - scale(144, dpi), area.bottom - scale(28, dpi), area.right, area.bottom};
-    layout.toggle = (RECT){area.left, layout.open.top, area.left + scale(144, dpi), area.bottom};
+    discovery_action_geometry(&layout, area, dpi);
     RECT body = {area.left, layout.status.bottom + scale(4, dpi), area.right,
                  layout.open.top - scale(4, dpi)};
     if (body.bottom < body.top)
@@ -19924,6 +19957,11 @@ static bool discovery_preview_key(struct folio_window *_Nonnull self, UINT messa
 {
     if (self->command_composing)
         return false;
+    if (message == WM_SYSKEYDOWN)
+    {
+        (void)discovery_switch_mode(self, key);
+        return false; /* seen by the default handling too, as in the query */
+    }
     if (message == WM_KEYDOWN)
     {
         if (key == VK_TAB || key == VK_ESCAPE || key == VK_RETURN)
@@ -20181,27 +20219,72 @@ static void discovery_open_body(struct folio_window *_Nonnull self, struct note_
     focus_pane(self);
 }
 
-static void discovery_open_selected(struct folio_window *_Nonnull self)
+/* #940: the display mode the confirmed note opens in. Ctrl+Enter asks for the editing view (a
+ * protected note stays in the reading view); Enter on a body match asks for the reading view;
+ * Enter on a name keeps the current mode. */
+static enum folio_state_outcome discovery_open_mode(struct folio_window *_Nonnull self, bool edit,
+                                                    bool body)
+{
+    if (edit && folio_state_select_notice(self->state) != FOLIO_STATE_NOTE_UNEDITABLE)
+        return enter_edit(self);
+    if (!edit && body && folio_state_pane_mode(self->state) == PANE_MODE_EDIT)
+        return flush_edit(self);
+    return FOLIO_STATE_READY;
+}
+
+/* #940: the reading view shows rendered text, so the match is found there by the note's own
+ * search: the term becomes the in-note search term (n / N go on from it) and the first match
+ * from the top is selected. A term that only matches markup leaves the note at its top. */
+static void discovery_reveal(struct folio_window *_Nonnull self, const wchar_t *_Nonnull query,
+                             size_t count)
+{
+    if (self->pane == nullptr || folio_state_pane_mode(self->state) != PANE_MODE_VIEW ||
+        note_pane_readiness(self->pane) != NOTE_PANE_READINESS_READY ||
+        folio_state_set_search_term(self->state, (const char16_t *)query, count) !=
+            FOLIO_STATE_READY)
+        return;
+    folio_state_set_search_direction(self->state, SEARCH_DIRECTION_FORWARD);
+    note_pane_select(self->pane, 0, 0);
+    update_search(self, SEARCH_DIRECTION_FORWARD, false);
+}
+
+/* The note opens through the shared switch; `body` then finds the match in the reading view. */
+static void discovery_open_note(struct folio_window *_Nonnull self, struct note_ref ref, bool edit,
+                                bool body)
+{
+    wchar_t query[discovery_input_capacity];
+    int count = GetWindowTextW(self->command_input, query, (int)discovery_input_capacity);
+    bool same = holds_document(self, ref);
+    enum folio_state_outcome outcome =
+        same ? FOLIO_STATE_READY : switch_note(self, ref.category, ref.note);
+    bool adopted = !same && outcome == FOLIO_STATE_READY;
+    if (outcome == FOLIO_STATE_READY)
+        outcome = discovery_open_mode(self, edit, body);
+    if (outcome != FOLIO_STATE_READY)
+    {
+        discovery_open_failure(self, outcome, adopted);
+        return;
+    }
+    enum pane_notice notice = self->notice;
+    close_command_surface(self);
+    set_pane_notice(self, notice);
+    if (body)
+        discovery_reveal(self, query, count > 0 ? (size_t)count : 0);
+    focus_pane(self);
+}
+
+/* Enter, or Ctrl+Enter / the editing button when `edit`. */
+static void discovery_open_selected(struct folio_window *_Nonnull self, bool edit)
 {
     struct discovery_summary summary = folio_state_discovery_summary(self->state);
     if (self->command_composing || summary.phase != DISCOVERY_READY || summary.shown == 0)
         return;
     struct note_ref ref = folio_state_discovery_row(self->state, summary.selected).ref;
-    if (summary.mode == DISCOVERY_MODE_BODY)
-    {
+    bool body = summary.mode == DISCOVERY_MODE_BODY;
+    if (body && edit)
         discovery_open_body(self, ref);
-        return;
-    }
-    enum folio_state_outcome outcome =
-        holds_document(self, ref) ? FOLIO_STATE_READY : switch_note(self, ref.category, ref.note);
-    if (outcome == FOLIO_STATE_READY)
-    {
-        close_command_surface(self);
-        focus_pane(self);
-        return;
-    }
-    self->command_failure = outcome;
-    discovery_refresh(self);
+    else
+        discovery_open_note(self, ref, edit, body);
 }
 
 static size_t discovery_focus_slot(enum discovery_focus focus)
@@ -20225,6 +20308,8 @@ static size_t discovery_focus_slot(enum discovery_focus focus)
         return ACCESSIBLE_SURFACE_DISCOVERY_CLEAR;
     case DISCOVERY_FOCUS_TOGGLE:
         return ACCESSIBLE_SURFACE_DISCOVERY_TOGGLE;
+    case DISCOVERY_FOCUS_EDIT:
+        return ACCESSIBLE_SURFACE_DISCOVERY_EDIT;
     case DISCOVERY_FOCUS_OPEN:
         return ACCESSIBLE_SURFACE_DISCOVERY_OPEN;
     case DISCOVERY_FOCUS_CLOSE:
@@ -20236,8 +20321,8 @@ static size_t discovery_focus_slot(enum discovery_focus focus)
 static RECT discovery_button_rect(const struct folio_window *_Nonnull self, size_t slot)
 {
     struct discovery_layout layout = discovery_geometry(self);
-    const RECT boxes[] = {layout.open, layout.toggle,       layout.clear,   layout.star,
-                          layout.tag,  layout.previous_tag, layout.next_tag};
+    const RECT boxes[] = {layout.open, layout.toggle,       layout.clear,    layout.star,
+                          layout.tag,  layout.previous_tag, layout.next_tag, layout.edit};
     return boxes[slot - ACCESSIBLE_SURFACE_DISCOVERY_OPEN];
 }
 
@@ -20255,7 +20340,7 @@ static bool discovery_button_enabled(const struct folio_window *_Nonnull self, s
 {
     if (self->command_composing)
         return false;
-    if (slot != ACCESSIBLE_SURFACE_DISCOVERY_OPEN)
+    if (slot != ACCESSIBLE_SURFACE_DISCOVERY_OPEN && slot != ACCESSIBLE_SURFACE_DISCOVERY_EDIT)
         return true;
     struct discovery_summary summary = folio_state_discovery_summary(self->state);
     return summary.phase == DISCOVERY_READY && summary.shown != 0;
@@ -20273,7 +20358,8 @@ static enum ui_text discovery_button_label(const struct folio_window *_Nonnull s
                                    UI_TEXT_DISCOVERY_STAR_CLEAR,
                                    UI_TEXT_DISCOVERY_TAG_REMOVE,
                                    UI_TEXT_DISCOVERY_PREVIOUS_TAG,
-                                   UI_TEXT_DISCOVERY_NEXT_TAG};
+                                   UI_TEXT_DISCOVERY_NEXT_TAG,
+                                   UI_TEXT_DISCOVERY_EDIT_OPEN};
     return labels[slot - ACCESSIBLE_SURFACE_DISCOVERY_OPEN];
 }
 
@@ -20322,12 +20408,42 @@ static bool discovery_mode_arrow(struct folio_window *_Nonnull self, WPARAM key)
     return true;
 }
 
+/* #940: Left chooses names and Right chooses body, keeping the focus where it is. */
+static bool discovery_switch_mode(struct folio_window *_Nonnull self, WPARAM key)
+{
+    if ((key != VK_LEFT && key != VK_RIGHT) || self->command_composing)
+        return false;
+    enum discovery_mode wanted = key == VK_RIGHT ? DISCOVERY_MODE_BODY : DISCOVERY_MODE_NAMES;
+    if (folio_state_discovery_summary(self->state).mode == wanted)
+        return true;
+    HWND focus = GetFocus();
+    enum discovery_focus kept = self->discovery_focus;
+    discovery_choose_mode(self, key == VK_RIGHT ? 1 : 0);
+    self->discovery_focus = kept;
+    SetFocus(focus);
+    /* The new mode starts without results or source: a focus that it hid or disabled (the
+     * source, a row, an open action) goes back to the query. */
+    if (!discovery_focus_visible(self, discovery_current_focus(self)))
+        discovery_set_focus(self, DISCOVERY_FOCUS_INPUT);
+    redraw_command_layer(self);
+    return true;
+}
+
+/* #940: in an empty query the plain arrows have no caret to move, so they switch the mode. With
+ * text they stay caret movement; Alt+Left / Alt+Right switch at any time. */
+static bool discovery_empty_arrow(struct folio_window *_Nonnull self, WPARAM key)
+{
+    return GetWindowTextLengthW(self->command_input) == 0 && discovery_switch_mode(self, key);
+}
+
 static bool discovery_navigate(struct folio_window *_Nonnull self, WPARAM key)
 {
     if (GetFocus() == self->command_layer && self->discovery_focus == DISCOVERY_FOCUS_MODE)
         return discovery_mode_arrow(self, key);
     bool typing = GetFocus() == self->command_input;
     if (typing && discovery_scroll_preview(self, key))
+        return true;
+    if (typing && discovery_empty_arrow(self, key))
         return true;
     if (key != VK_UP && key != VK_DOWN && key != VK_PRIOR && key != VK_NEXT)
         return false;
@@ -20351,9 +20467,9 @@ static void discovery_action(struct folio_window *_Nonnull self, size_t slot)
     if (!discovery_button_enabled(self, slot))
         return;
     self->command_failure = FOLIO_STATE_READY;
-    if (slot == ACCESSIBLE_SURFACE_DISCOVERY_OPEN)
+    if (slot == ACCESSIBLE_SURFACE_DISCOVERY_OPEN || slot == ACCESSIBLE_SURFACE_DISCOVERY_EDIT)
     {
-        discovery_open_selected(self);
+        discovery_open_selected(self, slot == ACCESSIBLE_SURFACE_DISCOVERY_EDIT);
         return;
     }
     if (slot == ACCESSIBLE_SURFACE_CLOSE)
@@ -20382,9 +20498,13 @@ static bool discovery_return(struct folio_window *_Nonnull self)
         discovery_choose_mode(self, self->discovery_mode_focus == DISCOVERY_MODE_BODY ? 1 : 0);
         return true;
     }
-    if (GetFocus() != self->command_layer || self->discovery_focus == DISCOVERY_FOCUS_ROWS)
-        discovery_open_selected(self);
-    if (GetFocus() == self->command_layer && self->discovery_focus != DISCOVERY_FOCUS_ROWS)
+    /* #940: Ctrl+Enter opens in the editing view, also on the focused default action. */
+    bool edit = (pressed_shortcut_modifiers() & FCONTROL) != 0;
+    bool layer = GetFocus() == self->command_layer;
+    if (!layer || self->discovery_focus == DISCOVERY_FOCUS_ROWS ||
+        (edit && self->discovery_focus == DISCOVERY_FOCUS_OPEN))
+        discovery_open_selected(self, edit);
+    else
         discovery_action(self, discovery_focus_slot(self->discovery_focus));
     return true;
 }
@@ -20434,7 +20554,8 @@ static bool discovery_tab(struct folio_window *_Nonnull self)
         DISCOVERY_FOCUS_INPUT,        DISCOVERY_FOCUS_MODE, DISCOVERY_FOCUS_STAR,
         DISCOVERY_FOCUS_PREVIOUS_TAG, DISCOVERY_FOCUS_TAG,  DISCOVERY_FOCUS_NEXT_TAG,
         DISCOVERY_FOCUS_CLEAR,        DISCOVERY_FOCUS_ROWS, DISCOVERY_FOCUS_PREVIEW,
-        DISCOVERY_FOCUS_TOGGLE,       DISCOVERY_FOCUS_OPEN, DISCOVERY_FOCUS_CLOSE};
+        DISCOVERY_FOCUS_TOGGLE,       DISCOVERY_FOCUS_EDIT, DISCOVERY_FOCUS_OPEN,
+        DISCOVERY_FOCUS_CLOSE};
     size_t count = sizeof path / sizeof path[0];
     size_t current = 0;
     enum discovery_focus focus = discovery_current_focus(self);
@@ -20863,6 +20984,16 @@ static bool discovery_control_focused(const struct folio_window *_Nonnull self,
     return discovery_focus_slot(self->discovery_focus) == item.slot;
 }
 
+/* The rows and the two open actions carry the hint that names their keys. */
+static bool discovery_hinted(struct accessible_item item)
+{
+    if (item.kind == ACCESSIBLE_SURFACE_CHOICE)
+        return true;
+    return item.kind == ACCESSIBLE_SURFACE_BUTTON &&
+           (item.slot == ACCESSIBLE_SURFACE_DISCOVERY_OPEN ||
+            item.slot == ACCESSIBLE_SURFACE_DISCOVERY_EDIT);
+}
+
 static void discovery_control_view(const struct folio_window *_Nonnull self,
                                    struct accessible_item item,
                                    struct accessible_view *_Nonnull out)
@@ -20874,8 +21005,7 @@ static void discovery_control_view(const struct folio_window *_Nonnull self,
     out->enabled = out->enabled && !self->command_composing;
     if (item.kind == ACCESSIBLE_SURFACE_BUTTON)
         out->enabled = out->enabled && discovery_button_enabled(self, item.slot);
-    if (row ||
-        (item.kind == ACCESSIBLE_SURFACE_BUTTON && item.slot == ACCESSIBLE_SURFACE_DISCOVERY_OPEN))
+    if (discovery_hinted(item))
         (void)wide_units(
             ui_text_line(folio_state_discovery_summary(self->state).mode == DISCOVERY_MODE_BODY
                              ? UI_TEXT_DISCOVERY_BODY_HINT
@@ -20886,10 +21016,10 @@ static void discovery_control_view(const struct folio_window *_Nonnull self,
 
 static HRESULT discovery_button_focus(struct folio_window *_Nonnull self, size_t slot)
 {
-    const enum discovery_focus values[] = {DISCOVERY_FOCUS_STAR,  DISCOVERY_FOCUS_PREVIOUS_TAG,
-                                           DISCOVERY_FOCUS_TAG,   DISCOVERY_FOCUS_NEXT_TAG,
-                                           DISCOVERY_FOCUS_CLEAR, DISCOVERY_FOCUS_TOGGLE,
-                                           DISCOVERY_FOCUS_OPEN,  DISCOVERY_FOCUS_CLOSE};
+    const enum discovery_focus values[] = {
+        DISCOVERY_FOCUS_STAR,     DISCOVERY_FOCUS_PREVIOUS_TAG, DISCOVERY_FOCUS_TAG,
+        DISCOVERY_FOCUS_NEXT_TAG, DISCOVERY_FOCUS_CLEAR,        DISCOVERY_FOCUS_TOGGLE,
+        DISCOVERY_FOCUS_OPEN,     DISCOVERY_FOCUS_CLOSE,        DISCOVERY_FOCUS_EDIT};
     for (size_t at = 0; at < sizeof values / sizeof values[0]; ++at)
         if (discovery_focus_slot(values[at]) == slot)
         {
