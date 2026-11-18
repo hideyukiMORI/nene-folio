@@ -10168,18 +10168,31 @@ static LONG footnote_find(HWND _Nonnull body, const wchar_t *_Nonnull text, LONG
     return found;
 }
 
-/* The caret goes onto a link's visible text and Ctrl+Enter activates it; returns the selection
- * the activation left and copies the selected text. */
-static CHARRANGE footnote_activate(struct folio_window *_Nonnull window, HWND _Nonnull body,
-                                   LONG caret, wchar_t *_Nonnull selected)
+/* Ctrl+Enter from wherever the caret is now; returns the caret the activation left. */
+static LONG footnote_key(struct folio_window *_Nonnull window, HWND _Nonnull body)
 {
-    code_copy_key(window, caret);
+    SetFocus(body);
+    native_key_input(window, VK_RETURN, FCONTROL);
     CHARRANGE range = {0, 0};
     SendMessageW(body, EM_EXGETSEL, 0, (LPARAM)&range);
-    selected[0] = L'\0';
-    if (range.cpMax - range.cpMin < 8)
-        SendMessageW(body, EM_GETSELTEXT, 0, (LPARAM)selected);
-    return range;
+    require(range.cpMin == range.cpMax, "a jump leaves a caret, not a selection");
+    return range.cpMin;
+}
+
+/* A real pointer click on the character at `position`; returns the caret it left. */
+static LONG footnote_click(struct folio_window *_Nonnull window, HWND _Nonnull body, LONG position)
+{
+    POINTL from = {0}, to = {0};
+    SendMessageW(body, EM_POSFROMCHAR, (WPARAM)&from, position);
+    SendMessageW(body, EM_POSFROMCHAR, (WPARAM)&to, position + 1);
+    LPARAM where = MAKELPARAM((from.x + to.x) / 2, from.y + 6);
+    SendMessageW(body, WM_MOUSEMOVE, 0, where);
+    SendMessageW(body, WM_LBUTTONDOWN, MK_LBUTTON, where);
+    SendMessageW(body, WM_LBUTTONUP, 0, where);
+    pump(window);
+    CHARRANGE range = {0, 0};
+    SendMessageW(body, EM_EXGETSEL, 0, (LPARAM)&range);
+    return range.cpMin;
 }
 
 static bool footnote_in_view(HWND _Nonnull body, LONG position)
@@ -10191,8 +10204,17 @@ static bool footnote_in_view(HWND _Nonnull body, LONG position)
     return point.y >= 0 && point.y < client.bottom;
 }
 
+static bool footnote_text_at(HWND _Nonnull body, LONG position, const wchar_t *_Nonnull expected)
+{
+    wchar_t text[8] = L"";
+    TEXTRANGEW range = {.chrg = {position, position + (LONG)wcslen(expected)}, .lpstrText = text};
+    SendMessageW(body, EM_GETTEXTRANGE, 0, (LPARAM)&range);
+    return wcscmp(text, expected) == 0;
+}
+
 /* #945: a footnote's raised number goes to its footnote and the footnote's number comes back to
- * the first reference; the links are internal, so the body's menu stays the plain viewing one. */
+ * the first reference, by Ctrl+Enter and by a click, each from where the last jump landed. The
+ * links are internal, so the body's menu stays the plain viewing one. */
 static void footnote_jump(struct native_fixture *_Nonnull fixture)
 {
     require(folio_state_set_language(fixture->state, FOLIO_LANGUAGE_JA) == FOLIO_STATE_READY,
@@ -10206,33 +10228,34 @@ static void footnote_jump(struct native_fixture *_Nonnull fixture)
     int width = MulDiv(620, (int)GetDpiForWindow(root), 96);
     int height = MulDiv(380, (int)GetDpiForWindow(root), 96);
     require(SetWindowPos(root, nullptr, 20, 20, width, height, SWP_NOZORDER | SWP_NOACTIVATE),
-            "a window too short to show the footnotes with their references");
+            "a short footnote window");
     pump(window);
     HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
     LONG sentence = footnote_find(body, L"脚注の例", 0);
     LONG first = footnote_find(body, L"と", sentence) - 1;
     LONG second = footnote_find(body, L"（#869）", sentence) - 1;
     LONG notes = footnote_find(body, L"一つ目の脚注", second);
-    wchar_t text[16];
-    CHARRANGE at = footnote_activate(window, body, first, text);
-    printf("footnote jump: ref %ld -> %ld..%ld '%ls' notes text at %ld in view %d\n", first,
-           at.cpMin, at.cpMax, text, notes, footnote_in_view(body, at.cpMin));
+    require(!footnote_in_view(body, notes), "the footnotes start below the short window");
+    SendMessageW(body, EM_SETSEL, (WPARAM)first, first);
+    LONG at = footnote_key(window, body);
+    printf("footnote jump: ref %ld -> note %ld (text at %ld) in view %d\n", first, at, notes,
+           footnote_in_view(body, at));
     fflush(stdout);
-    require(wcscmp(text, L"1.") == 0 && at.cpMax <= notes && at.cpMin > second &&
-                footnote_in_view(body, at.cpMin),
-            "the first raised number goes to footnote 1, selected and in view");
-    CHARRANGE back = footnote_activate(window, body, at.cpMin, text);
-    printf("footnote jump: back %ld..%ld '%ls' in view %d\n", back.cpMin, back.cpMax, text,
-           footnote_in_view(body, back.cpMin));
+    require(footnote_text_at(body, at, L"1.") && at > second && at < notes &&
+                footnote_in_view(body, at),
+            "Ctrl+Enter on the first raised number goes to footnote 1 and scrolls it into view");
+    LONG back = footnote_key(window, body);
+    printf("footnote jump: back %ld in view %d\n", back, footnote_in_view(body, back));
     fflush(stdout);
-    require(wcscmp(text, L"1") == 0 && back.cpMin == first && footnote_in_view(body, back.cpMin),
-            "footnote 1's number comes back to its first reference");
-    at = footnote_activate(window, body, second, text);
-    require(wcscmp(text, L"2.") == 0 && at.cpMin > notes,
-            "the second raised number goes to footnote 2, after footnote 1");
-    back = footnote_activate(window, body, at.cpMin, text);
-    require(wcscmp(text, L"2") == 0 && back.cpMin == second,
-            "footnote 2's number comes back to its reference");
+    require(back == first && footnote_in_view(body, back),
+            "Ctrl+Enter where the jump landed comes back to the first reference");
+    at = footnote_click(window, body, second);
+    printf("footnote click: ref %ld -> note %ld\n", second, at);
+    fflush(stdout);
+    require(footnote_text_at(body, at, L"2.") && at > notes,
+            "a click on the second raised number goes to footnote 2, after footnote 1");
+    back = footnote_click(window, body, at);
+    require(back == second, "a click on footnote 2's number comes back to its reference");
     SendMessageW(body, EM_SETSEL, (WPARAM)first, first);
     SendMessageW(body, WM_CONTEXTMENU, (WPARAM)body, -1);
     pump(window);

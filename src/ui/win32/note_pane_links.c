@@ -83,6 +83,8 @@ static bool append_footnote(struct note_pane_links *_Nonnull links, struct footn
     if (links->footnote_count == links->footnote_capacity)
     {
         size_t capacity = links->footnote_capacity == 0 ? 8 : links->footnote_capacity * 2;
+        if (capacity < links->footnote_capacity || capacity > SIZE_MAX / sizeof *links->footnotes)
+            return false;
         struct footnote_run *_Nullable prepared =
             realloc(links->footnotes, capacity * sizeof *prepared);
         if (prepared == nullptr)

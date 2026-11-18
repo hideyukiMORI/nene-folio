@@ -1594,6 +1594,9 @@ bool note_pane_show_footnote(struct note_pane *_Nonnull pane, bool back, size_t 
     CHARRANGE range = {0};
     if (pane->handle == nullptr || !note_pane_links_footnote(pane->links, back, number, &range))
         return false;
+    /* A caret, not a selection: a link is activated from a caret (Ctrl+Enter) or a click with
+     * nothing selected, so the way back works from where the jump lands. */
+    range.cpMax = range.cpMin;
     SendMessageW(pane->handle, EM_EXSETSEL, 0, (LPARAM)&range);
     SendMessageW(pane->handle, EM_SCROLLCARET, 0, 0);
     return true;
