@@ -25,7 +25,7 @@
 /* 変更前の文言（機械的に写した）。ui_text.c の表と 1 字も違ってはいけない。 */
 static const char *_Nonnull const expected[] = {
     [UI_TEXT_COMMAND_DISCOVER_NOTES] = "ノートを探す",
-    [UI_TEXT_DISCOVERY_INPUT] = "名前・カテゴリを検索",
+    [UI_TEXT_DISCOVERY_INPUT] = "名前・カテゴリ（文字を飛ばしても当たる）",
     [UI_TEXT_DISCOVERY_CONDITIONS] = "この検索だけ: {from} / タグ{n}件 ({name}) / {to}",
     [UI_TEXT_DISCOVERY_ALL] = "すべてのノート",
     [UI_TEXT_DISCOVERY_FAVORITES] = "お気に入りのみ",
@@ -42,6 +42,9 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_DISCOVERY_PREPARING] = "保存済み本文を確認中 {k}/{n}",
     [UI_TEXT_DISCOVERY_MATCHING] = "名前を検索中…",
     [UI_TEXT_DISCOVERY_READY] = "{n}件の一致、{k}件を表示{from}",
+    [UI_TEXT_DISCOVERY_RANKED] =
+        "{n}件の一致、上位{k}件を表示（完全→前方→部分→あいまいの順）{from}",
+    [UI_TEXT_DISCOVERY_FIRST] = "{n}件の一致、先頭の{k}件を表示{from}",
     [UI_TEXT_DISCOVERY_INCOMPLETE] = " / 読取不能{k}件・タグ解析不可{n}件",
     [UI_TEXT_DISCOVERY_PREVIEW_NONE] = "候補を選ぶと保存済み原文を表示します。",
     [UI_TEXT_DISCOVERY_PREVIEW_WAIT] = "原文を読み込み中…",
@@ -65,7 +68,7 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_DISCOVERY_MODE_LABEL] = "検索対象",
     [UI_TEXT_DISCOVERY_MODE_NAMES] = "名前 Alt+←",
     [UI_TEXT_DISCOVERY_MODE_BODY] = "本文 Alt+→",
-    [UI_TEXT_DISCOVERY_BODY_INPUT] = "保存済み本文を検索",
+    [UI_TEXT_DISCOVERY_BODY_INPUT] = "保存済み本文（書いたとおりに探す）",
     [UI_TEXT_DISCOVERY_BODY_EMPTY] = "本文の検索語を入力してください。",
     [UI_TEXT_DISCOVERY_BODY_MATCHING] = "本文を検索中…",
     [UI_TEXT_DISCOVERY_BODY_OPEN] = "一致行を開く Enter",

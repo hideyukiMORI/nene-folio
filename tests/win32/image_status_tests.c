@@ -86,6 +86,7 @@ static bool format_case;
 static bool favorites_case;
 static bool tags_case;
 static bool discovery_case;
+static bool discovery_cut_case;
 static bool motion_case;
 static bool motion_visual_case;
 static bool motion_live_case;
@@ -297,8 +298,29 @@ static const char *_Nonnull text_fixture_source(const char *_Nonnull fallback)
     return fallback;
 }
 
+/* #928: more notes than the finder shows (200), all with "cut" in the name and in the source.
+ * They live in their own category, which the case removes again: the fixture folder is shared
+ * with the other finder and tag cases, which count their notes. */
+static void seed_cut(struct persistence_port disk)
+{
+    enum persistence_outcome created = disk.create_category(disk.adapter, "cut");
+    require(created == PERSISTENCE_STORED || created == PERSISTENCE_NAME_TAKEN, "cut category");
+    for (size_t at = 0; at < 210; ++at)
+    {
+        char name[16];
+        require(snprintf(name, sizeof name, "cut-%03zu", at) > 0, "cut note name");
+        struct note_text *body = nullptr;
+        require(note_text_create("cutbody line", 12, &body) == NOTE_TEXT_ACCEPTED, "cut source");
+        enum persistence_outcome made = disk.create_note(disk.adapter, "cut", name, body);
+        require(made == PERSISTENCE_STORED || made == PERSISTENCE_NAME_TAKEN, "cut note saved");
+        note_text_destroy(body);
+    }
+}
+
 static void seed_tags(struct persistence_port disk)
 {
+    if (discovery_cut_case)
+        seed_cut(disk);
     if (tags_reload_case)
         return;
     const char *categories[] = {"schedule", "schedule", "target"};
@@ -512,6 +534,33 @@ static enum persistence_outcome scale_observed_read(struct persistence_adapter *
     return outcome;
 }
 
+/* #928: delete the private "cut" category of the fixture folder, file by file. Only names the
+ * cut case itself creates there (its notes and the category's index) exist in it. */
+static void remove_cut_category(const struct storage_state *_Nonnull location)
+{
+    wchar_t folder[storage_native_capacity];
+    size_t length = 0;
+    require(storage_native_path_fill(storage_state_directory(location), folder, &length) &&
+                length + 24 <= storage_native_capacity,
+            "cut category path fits");
+    memcpy(folder + length, L"\\cut", 5 * sizeof(wchar_t));
+    wchar_t pattern[storage_native_capacity];
+    require(swprintf_s(pattern, storage_native_capacity, L"%ls\\*", folder) > 0, "cut pattern");
+    WIN32_FIND_DATAW entry;
+    HANDLE search = FindFirstFileW(pattern, &entry);
+    if (search == INVALID_HANDLE_VALUE)
+        return;
+    do
+    {
+        wchar_t path[storage_native_capacity];
+        if ((entry.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) == 0 &&
+            swprintf_s(path, storage_native_capacity, L"%ls\\%ls", folder, entry.cFileName) > 0)
+            DeleteFileW(path);
+    } while (FindNextFileW(search, &entry));
+    FindClose(search);
+    RemoveDirectoryW(folder);
+}
+
 static void create_fixture(struct native_fixture *_Nonnull fixture)
 {
     require(storage_adapter_create(&fixture->storage) == STORAGE_READY, "storage adapter");
@@ -526,6 +575,9 @@ static void create_fixture(struct native_fixture *_Nonnull fixture)
     require(persistence_adapter_create(storage_state_directory(fixture->location),
                                        &fixture->files) == PERSISTENCE_ADAPTER_CREATED,
             "dedicated test data");
+    /* A cut case that stopped early must not leave its notes for the cases that count them. */
+    if (tags_case && !discovery_cut_case)
+        remove_cut_category(fixture->location);
     struct persistence_port disk = persistence_adapter_port(fixture->files);
     seed_notes(disk);
     if (scale_trace_case)
@@ -11926,6 +11978,42 @@ static void run_body_discovery_case(struct native_fixture *_Nonnull fixture)
     folio_window_destroy(window);
 }
 
+static void discovery_cut_status(struct folio_window *_Nonnull window, const wchar_t *_Nonnull part,
+                                 bool present, const char *_Nonnull label)
+{
+    struct accessible_view status = tags_view(window, ACCESSIBLE_SURFACE_STATUS, 0);
+    printf("cut status: %ls\n", status.name);
+    fflush(stdout);
+    require((wcsstr(status.name, part) != nullptr) == present, label);
+}
+
+/* #928: when the list is cut at 200, the count line says which part is shown: the best-ranked
+ * ones for a name query, the first ones without a query and for body matches. */
+static void discovery_cut(struct folio_window *_Nonnull window,
+                          struct native_fixture *_Nonnull fixture)
+{
+    invoke_operation(window, FOLIO_COMMAND_DISCOVER_NOTES);
+    pump(window);
+    discovery_settle(window, fixture->state);
+    struct discovery_summary all = folio_state_discovery_summary(fixture->state);
+    require(all.total == 213 && all.shown == 200, "213 notes, 200 shown");
+    discovery_cut_status(window, L"先頭の200件", true, "without a query the first ones are shown");
+    discovery_cut_status(window, L"完全→前方", false, "no ranking is named without a query");
+    discovery_query(window, fixture->state, L"cut");
+    require(folio_state_discovery_summary(fixture->state).total == 210, "210 names match");
+    discovery_cut_status(window, L"上位200件を表示（完全→前方→部分→あいまいの順）", true,
+                         "a cut name query names the ranking");
+    discovery_query(window, fixture->state, L"cut-209");
+    require(folio_state_discovery_summary(fixture->state).total == 1, "one name matches");
+    discovery_cut_status(window, L"上位", false, "a complete list says nothing about a cut");
+    body_discovery_mode(window, 1);
+    discovery_query(window, fixture->state, L"cutbody");
+    require(folio_state_discovery_summary(fixture->state).total == 210, "210 sources match");
+    discovery_cut_status(window, L"先頭の200件", true, "cut body matches are the first ones");
+    surface_button(window, ACCESSIBLE_SURFACE_CLOSE);
+    remove_cut_category(fixture->location);
+}
+
 static void run_discovery_case(struct native_fixture *_Nonnull fixture)
 {
     require(folio_state_select_note(fixture->state, 0, 0, FOLIO_UNTITLED_PROTECT) ==
@@ -11955,6 +12043,12 @@ static void run_discovery_case(struct native_fixture *_Nonnull fixture)
             discovery_copy(window, fixture);
         if (discovery_measure_case)
             discovery_measure(window, fixture);
+        folio_window_destroy(window);
+        return;
+    }
+    if (discovery_cut_case)
+    {
+        discovery_cut(window, fixture);
         folio_window_destroy(window);
         return;
     }
@@ -12011,9 +12105,9 @@ static void motion_frames(struct folio_window *_Nonnull window,
     uint64_t revision = folio_window_accessible_surface_revision(window);
     HWND layer = motion_layer(window);
     tags_capture(layer, "motion-open-start.bmp");
-    motion_tick(window, 4);
+    motion_tick(window, 8);
     tags_capture(layer, "motion-open-middle.bmp");
-    motion_tick(window, 4);
+    motion_tick(window, 8);
     tags_capture(layer, "motion-open-final.bmp");
     require(folio_state_set_motion(fixture->state, false) == FOLIO_STATE_READY, "motion OFF");
     SendMessageW(folio_window_accessible_window(window, ACCESSIBLE_WINDOW), WM_SETTINGCHANGE, 0, 0);
@@ -12025,9 +12119,9 @@ static void motion_frames(struct folio_window *_Nonnull window,
     discovery_choose(window, 1);
     discovery_settle(window, fixture->state);
     tags_capture(layer, "motion-selection-start.bmp");
-    motion_tick(window, 3);
+    motion_tick(window, 6);
     tags_capture(layer, "motion-selection-middle.bmp");
-    motion_tick(window, 3);
+    motion_tick(window, 6);
     tags_capture(layer, "motion-selection-final.bmp");
     require(folio_state_set_motion(fixture->state, false) == FOLIO_STATE_READY, "selection OFF");
     SendMessageW(folio_window_accessible_window(window, ACCESSIBLE_WINDOW), WM_SETTINGCHANGE, 0, 0);
@@ -12052,7 +12146,7 @@ static void motion_clip_boundary(struct folio_window *_Nonnull window,
     motion_preview_reads = 0;
     motion_preview_writes = 0;
     uint64_t revision = folio_window_accessible_surface_revision(window);
-    motion_tick(window, 8);
+    motion_tick(window, 16);
     require(motion_preview_reads == 0 && motion_preview_writes == 0 &&
                 folio_window_accessible_surface_revision(window) == revision,
             "frame-only repaints do not read or rewrite native preview or update UIA");
@@ -12067,14 +12161,14 @@ static void motion_generation_boundary(struct folio_window *_Nonnull window,
     HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
     invoke_operation(window, FOLIO_COMMAND_DISCOVER_NOTES);
     discovery_settle(window, fixture->state);
-    motion_tick(window, 8);
+    motion_tick(window, 16);
     discovery_choose(window, 1);
     motion_tick(window, 2);
     discovery_choose(window, 2);
     discovery_choose(window, 0);
     discovery_settle(window, fixture->state);
     uint64_t revision = folio_window_accessible_surface_revision(window);
-    motion_tick(window, 6);
+    motion_tick(window, 12);
     require(folio_state_discovery_summary(fixture->state).selected == 0 &&
                 folio_window_accessible_surface_revision(window) == revision &&
                 !KillTimer(root, 86),
@@ -12278,10 +12372,10 @@ static void motion_visual_search(struct folio_window *_Nonnull window,
 {
     invoke_operation(window, FOLIO_COMMAND_DISCOVER_NOTES);
     discovery_settle(window, fixture->state);
-    motion_tick(window, 3);
+    motion_tick(window, 6);
     discovery_choose(window, 1);
     discovery_settle(window, fixture->state);
-    motion_tick(window, 2);
+    motion_tick(window, 4);
     char path[80];
     require(snprintf(path, sizeof path, "motion-search-%zu.bmp", sample) > 0,
             "motion search capture path");
@@ -13223,8 +13317,9 @@ static void select_tags_fixture(const char *_Nonnull selector)
     discovery_visual_case = strcmp(selector, "--discovery-visual") == 0;
     discovery_copy_case = strcmp(selector, "--discovery-copy") == 0;
     discovery_measure_case = strcmp(selector, "--discovery-measure") == 0;
+    discovery_cut_case = strcmp(selector, "--discovery-cut") == 0;
     discovery_case = strcmp(selector, "--discovery") == 0 || discovery_visual_case ||
-                     discovery_copy_case || discovery_measure_case;
+                     discovery_copy_case || discovery_measure_case || discovery_cut_case;
     tag_management_visual_case = strcmp(selector, "--tag-management-visual") == 0;
     tag_management_measure_case = strcmp(selector, "--tag-management-measure") == 0;
     tag_management_case = strcmp(selector, "--tag-management") == 0 || tag_management_visual_case ||
