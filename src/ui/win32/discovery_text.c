@@ -111,6 +111,18 @@ static enum ui_text phase_label(enum discovery_phase phase)
     return UI_TEXT_EMPTY;
 }
 
+/* #928: when the list is cut at the display limit, say which part is shown. A name query is
+ * ranked (exact, prefix, contains, fuzzy), so the missing ones are the weaker matches; without a
+ * query, and for body matches, the list is the first ones in the notes' own order. */
+static enum ui_text cut_label(const struct folio_state *_Nonnull state,
+                              const struct discovery_summary *_Nonnull summary)
+{
+    if (summary->mode == DISCOVERY_MODE_BODY || summary->shown == 0)
+        return UI_TEXT_DISCOVERY_FIRST;
+    return folio_state_discovery_row(state, 0).kind == INDEX_MATCH_ALL ? UI_TEXT_DISCOVERY_FIRST
+                                                                       : UI_TEXT_DISCOVERY_RANKED;
+}
+
 void discovery_text_status(const struct folio_state *_Nonnull state, char *_Nonnull out,
                            size_t capacity)
 {
@@ -131,6 +143,8 @@ void discovery_text_status(const struct folio_state *_Nonnull state, char *_Nonn
     enum ui_text phase = summary.phase == DISCOVERY_MATCHING && summary.mode == DISCOVERY_MODE_BODY
                              ? UI_TEXT_DISCOVERY_BODY_MATCHING
                              : phase_label(summary.phase);
+    if (summary.phase == DISCOVERY_READY && summary.shown < summary.total)
+        phase = cut_label(state, &summary);
     const struct ui_text_request request = {
         .id = phase,
         .language = language,

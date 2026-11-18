@@ -285,6 +285,9 @@ struct folio_window
 constexpr UINT_PTR minimap_timer = 84;
 constexpr UINT_PTR image_timer = 85;
 constexpr UINT_PTR discovery_motion_timer = 86;
+/* #928: twice the first lengths (8 and 6 frames), which were too quick to be seen. */
+constexpr unsigned char discovery_open_frame_count = 16;
+constexpr unsigned char discovery_selection_frame_count = 12;
 constexpr UINT minimap_delay = 120;
 constexpr int base_minimap_width = 64;
 constexpr int base_minimap_gap = 8;
@@ -20139,7 +20142,7 @@ static void execute_discovery(struct folio_window *_Nonnull self, const char *_N
     discovery_refresh(self);
     discovery_motion_reset(self);
     if (discovery_motion_allowed(self))
-        self->discovery_open_frames = 8;
+        self->discovery_open_frames = discovery_open_frame_count;
     discovery_motion_invalidate(self);
     discovery_motion_sync(self);
 }
@@ -20764,7 +20767,7 @@ static void discovery_motion_select(struct folio_window *_Nonnull self)
         self->discovery_motion_row = band;
         self->discovery_motion_revision =
             folio_state_discovery_summary(self->state).results_revision;
-        self->discovery_selection_frames = 6;
+        self->discovery_selection_frames = discovery_selection_frame_count;
         InvalidateRect(self->command_layer, &band, FALSE);
     }
     discovery_motion_sync(self);
@@ -20782,10 +20785,13 @@ static void draw_discovery_motion_frame(const struct folio_window *_Nonnull self
 {
     if (self->discovery_open_frames == 0)
         return;
-    const int fractions[] = {24, 80, 132, 176, 212, 236, 250, 256};
+    /* The eased steps of the first design, each followed by the point halfway to the next. */
+    const int fractions[] = {24,  52,  80,  106, 132, 154, 176, 194,
+                             212, 224, 236, 243, 250, 253, 256, 256};
     int width = bounds.right - bounds.left;
     int height = bounds.bottom - bounds.top;
-    int distance = (width + height) * fractions[8 - self->discovery_open_frames] / 256;
+    int step = discovery_open_frame_count - self->discovery_open_frames;
+    int distance = (width + height) * fractions[step] / 256;
     int edge = scale(2, GetDpiForWindow(self->handle));
     const RECT sides[] = {
         {bounds.left, bounds.top, bounds.left + discovery_motion_clamp(distance, width),
@@ -20809,7 +20815,9 @@ static void draw_discovery_motion(const struct folio_window *_Nonnull self, HDC 
         int width = head.right - head.left;
         int length = scale(24, GetDpiForWindow(self->handle));
         length = length > width ? width : length;
-        head.left += (width - length) * (6 - self->discovery_selection_frames) / 5;
+        head.left += (width - length) *
+                     (discovery_selection_frame_count - self->discovery_selection_frames) /
+                     (discovery_selection_frame_count - 1);
         head.right = head.left + length;
         fill_settings_rect(device, head, self->palette.current_text);
     }
