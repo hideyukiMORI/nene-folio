@@ -130,6 +130,7 @@ static bool favorite_high_contrast;
 static bool code_copy_case;
 static bool footnote_jump_case;
 static bool definition_list_case;
+static bool outline_case;
 static bool code_copy_visual_case;
 static bool bare_url_visual_case;
 static bool search_key_visual_case;
@@ -236,6 +237,15 @@ static const char definition_gallery[] =
     ": 保存は`自動`。\n続きの行は同じ説明。\n\n次の段落。\n\n"
     ": 用語の無い行は段落のまま。\n\n- リスト\n: リストの中は従来どおり\n\n表の前\n"
     ": 説明のすぐ後の表は、説明の行とつながらない。\n| 名前 | 値 |\n| -- | -- |\n| a | 1 |\n";
+/* #975: headings of every level with text between them, long enough to scroll. */
+static const char outline_gallery[] =
+    "# 設計メモ\n\n最初の段落。\n\n## 背景\n\n背景の段落。\n\n## "
+    "決めたこと\n\n決めたことの段落。\n\n"
+    "### 色\n\n色の段落。\n\n### 配置\n\n配置の段落。\n\n#### 余白\n\n余白の段落。\n\n"
+    "## とても長い見出しは欄の幅で切れて省略の印が付くことを確かめるための文\n\n段落。\n\n"
+    "## 残り\n\n残りの段落。\n\n一\n\n二\n\n三\n\n四\n\n五\n\n六\n\n七\n\n八\n\n九\n\n十\n\n"
+    "十一\n\n十二\n\n十三\n\n十四\n\n十五\n\n十六\n\n十七\n\n十八\n\n十九\n\n二十\n\n# "
+    "付録\n\n付録の段落。\n";
 static const wchar_t search_original[] = L"猫 😀 aaaa 日本語";
 static const wchar_t search_edited[] = L"猫 😀 aaaa 日本語 🐾";
 static const char replace_current[] = "猫1 😀\n猫2 **saved**\n猫1 `old`";
@@ -305,6 +315,8 @@ static const char *_Nonnull text_fixture_source(const char *_Nonnull fallback)
         return search_current;
     if (definition_list_case)
         return definition_gallery;
+    if (outline_case)
+        return outline_gallery;
     if (bare_url_visual_case)
         return bare_url_gallery;
     if (code_copy_case)
@@ -10632,12 +10644,89 @@ static void definition_list(struct native_fixture *_Nonnull fixture)
     favorite_high_contrast = false;
 }
 
+/* The body control's rectangle in the main window's client coordinates. */
+static RECT outline_body_rect(struct folio_window *_Nonnull window)
+{
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    RECT bounds = {0};
+    GetWindowRect(body, &bounds);
+    MapWindowPoints(nullptr, root, (POINT *)&bounds, 2);
+    return bounds;
+}
+
+/* Opening the column takes its width and gap from the body's right; closing gives it back. */
+static void outline_toggle(struct folio_window *_Nonnull window,
+                           struct native_fixture *_Nonnull fixture)
+{
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    int carve = MulDiv(184 + 12, (int)GetDpiForWindow(root), 96);
+    RECT closed = outline_body_rect(window);
+    require(!folio_state_outline(fixture->state), "the column starts closed");
+    native_key_input(window, 'O', FCONTROL | FSHIFT);
+    pump(window);
+    RECT open = outline_body_rect(window);
+    printf("outline: body right %ld -> %ld (carve %d)\n", closed.right, open.right, carve);
+    fflush(stdout);
+    require(folio_state_outline(fixture->state) && open.left == closed.left &&
+                open.right == closed.right - carve,
+            "Ctrl+Shift+O opens the column beside the body");
+    native_key_input(window, 'E', FCONTROL);
+    pump(window);
+    RECT editing = outline_body_rect(window);
+    require(folio_state_pane_mode(fixture->state) == PANE_MODE_EDIT &&
+                editing.right == closed.right && folio_state_outline(fixture->state),
+            "the editing view has the body's full width; the column stays open for later");
+    native_key_input(window, 'E', FCONTROL);
+    pump(window);
+    RECT viewing = outline_body_rect(window);
+    require(folio_state_pane_mode(fixture->state) == PANE_MODE_VIEW && viewing.right == open.right,
+            "back in the reading view the column is there again");
+}
+
+/* #975 / ADR0114: the headings column in the main window, in each look. */
+static void outline_column(struct native_fixture *_Nonnull fixture)
+{
+    const char *const looks[] = {"light", "dark", "contrast"};
+    for (size_t at = 0; at < 3; ++at)
+    {
+        favorite_high_contrast = at == 2;
+        require(folio_state_set_language(fixture->state, FOLIO_LANGUAGE_JA) == FOLIO_STATE_READY &&
+                    folio_state_refresh_theme(fixture->state) == FOLIO_STATE_READY &&
+                    folio_state_set_theme(fixture->state, at == 1 ? FOLIO_THEME_CHOICE_DARK
+                                                                  : FOLIO_THEME_CHOICE_LIGHT) ==
+                        FOLIO_STATE_READY,
+                "outline palette");
+        folio_state_set_layout_mode(fixture->state, FOLIO_LAYOUT_NOTE);
+        folio_state_set_outline(fixture->state, false);
+        struct folio_window *window = nullptr;
+        require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY,
+                                    &window) == FOLIO_WINDOW_CREATED,
+                "outline window");
+        HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+        require(SetWindowPos(root, nullptr, 20, 20, 900, 620, SWP_NOZORDER | SWP_NOACTIVATE),
+                "outline size");
+        pump(window);
+        outline_toggle(window, fixture);
+        char path[64];
+        require(snprintf(path, sizeof path, "outline-%s.bmp", looks[at]) > 0,
+                "outline screenshot path");
+        tags_capture(root, path);
+        folio_window_destroy(window);
+        folio_state_set_outline(fixture->state, false);
+        folio_state_set_layout_mode(fixture->state, FOLIO_LAYOUT_BOTH);
+    }
+    favorite_high_contrast = false;
+}
+
 static void run_window_or_footnote(struct native_fixture *_Nonnull fixture)
 {
     if (window_place_case)
         window_place(fixture);
     else if (definition_list_case)
         definition_list(fixture);
+    else if (outline_case)
+        outline_column(fixture);
     else
         footnote_jump(fixture);
 }
@@ -10652,7 +10741,7 @@ static void run_code_copy_case(struct native_fixture *_Nonnull fixture)
         text_menu_visual(fixture);
         return;
     }
-    if (window_place_case || footnote_jump_case || definition_list_case)
+    if (window_place_case || footnote_jump_case || definition_list_case || outline_case)
     {
         run_window_or_footnote(fixture);
         return;
@@ -13749,9 +13838,10 @@ static void select_clipboard_fixture(const char *_Nonnull selector)
     window_place_case = strcmp(selector, "--window-place") == 0;
     footnote_jump_case = strcmp(selector, "--footnote-jump") == 0;
     definition_list_case = strcmp(selector, "--definition-list") == 0;
+    outline_case = strcmp(selector, "--outline") == 0;
     bare_url_visual_case = strcmp(selector, "--bare-url-visual") == 0 || search_key_visual_case ||
                            text_menu_case || window_place_case || footnote_jump_case ||
-                           definition_list_case;
+                           definition_list_case || outline_case;
     code_copy_visual_case = strcmp(selector, "--code-copy-visual") == 0 || bare_url_visual_case;
     code_copy_keys_case_selected = strcmp(selector, "--code-copy-keys") == 0;
     code_copy_scroll_96 = strcmp(selector, "--code-copy-scroll-96") == 0;

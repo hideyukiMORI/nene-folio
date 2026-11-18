@@ -55,6 +55,7 @@
 #include "note_metadata.h"
 #include "note_minimap.h"
 #include "note_name.h"
+#include "note_outline.h"
 #include "note_pane.h"
 #include "note_ref.h"
 #include "note_save_mode.h"
@@ -135,6 +136,8 @@ struct folio_window
     struct drawer_window *_Nullable drawer;
     struct note_pane *_Nullable pane;
     struct note_minimap *_Nullable minimap;
+    struct note_outline *_Nullable outline; /* #975: the headings column's own state. */
+    bool outline_carved; /* the body was last placed with room left for the column */
     enum folio_idle_work next_idle_work;
     uint64_t image_ticket;
     uint64_t image_origin_revision;
@@ -300,6 +303,9 @@ constexpr int base_minimap_width = 64;
 constexpr int base_minimap_gap = 8;
 constexpr int base_minimap_right = 12;
 constexpr int base_minimap_minimum_body = 320;
+/* #975 / ADR0114: the headings column, between the body and the minimap. */
+constexpr int base_outline_width = 184;
+constexpr int base_outline_gap = 12;
 
 static const wchar_t class_name[] = L"NeNeFolioWindow";
 static const wchar_t command_layer_class[] = L"NeNeFolioCommandLayer";
@@ -724,6 +730,11 @@ static HWND surface_return_target(const struct folio_window *_Nonnull self, HWND
 static void redraw_drawer(const struct folio_window *_Nonnull self);
 static void redraw_command_layer(const struct folio_window *_Nonnull self);
 static void rearrange_keeping_line(struct folio_window *_Nonnull self);
+/* The commands that show or hide a part beside the body (the minimap, the headings column). */
+static bool view_toggle_command(enum folio_command command)
+{
+    return command == FOLIO_COMMAND_TOGGLE_MINIMAP || command == FOLIO_COMMAND_TOGGLE_OUTLINE;
+}
 static void apply_drawer_width(struct folio_window *_Nonnull self, int width);
 static bool keyboard_accelerator(struct folio_window *_Nonnull self, WORD id);
 static bool create_keyboard_accelerators(struct folio_window *_Nonnull self);
@@ -741,6 +752,7 @@ static bool pane_streaming(const struct folio_window *_Nonnull self);
 static BYTE pressed_shortcut_modifiers(void);
 static enum accessible_kind mode_kind(enum pane_mode mode);
 static bool minimap_visible(const struct folio_window *_Nonnull self);
+static void track_outline(const struct folio_window *_Nonnull self);
 static bool minimap_available(const struct folio_window *_Nonnull self);
 static RECT minimap_rect(const struct folio_window *_Nonnull self);
 static void request_minimap(struct folio_window *_Nonnull self, enum minimap_update update);
@@ -2612,6 +2624,7 @@ static void refresh_gutter(const struct folio_window *_Nonnull self, bool immedi
         InvalidateRect(self->handle, &map, FALSE);
         accessibility_host_schedule(self->accessibility);
     }
+    track_outline(self);
     if (immediate)
     {
         UpdateWindow(self->handle);
@@ -2670,6 +2683,42 @@ static bool minimap_visible(const struct folio_window *_Nonnull self)
            area.bottom - area.top >= scale(32, dpi);
 }
 
+/* #975 / ADR0114: what is left of the pane's width for the body and the headings column: the
+ * available area less the minimap, when that is shown. */
+static RECT outline_area(const struct folio_window *_Nonnull self)
+{
+    UINT dpi = GetDpiForWindow(self->handle);
+    bool minimap = minimap_visible(self);
+    RECT area = body_available_rect(self, regions_for(self).pane, dpi,
+                                    minimap ? base_minimap_right : base_pane_right);
+    if (minimap)
+        area.right -= scale(base_minimap_width + base_minimap_gap, dpi);
+    return area;
+}
+
+/* The column is shown while it is open, a note is being read (not edited), and the body keeps
+ * its minimum width beside it. A window too narrow hides the column before the minimap. */
+static bool outline_visible(const struct folio_window *_Nonnull self)
+{
+    if (!body_shown(self) || self->pane == nullptr || !folio_state_outline(self->state) ||
+        folio_state_pane_mode(self->state) != PANE_MODE_VIEW)
+        return false;
+    UINT dpi = GetDpiForWindow(self->handle);
+    RECT area = outline_area(self);
+    return area.right - area.left >=
+               scale(base_minimap_minimum_body + base_outline_width + base_outline_gap, dpi) &&
+           area.bottom - area.top >= scale(64, dpi);
+}
+
+static RECT outline_rect(const struct folio_window *_Nonnull self)
+{
+    if (!outline_visible(self))
+        return (RECT){0};
+    RECT bounds = outline_area(self);
+    bounds.left = bounds.right - scale(base_outline_width, GetDpiForWindow(self->handle));
+    return bounds;
+}
+
 static RECT body_content_rect(struct folio_window *_Nonnull self, RECT pane, UINT dpi)
 {
     self->body_left_inset = pane_inset(self, dpi);
@@ -2678,7 +2727,41 @@ static RECT body_content_rect(struct folio_window *_Nonnull self, RECT pane, UIN
         body_available_rect(self, pane, dpi, minimap ? base_minimap_right : base_pane_right);
     if (minimap)
         bounds.right -= scale(base_minimap_width + base_minimap_gap, dpi);
+    self->outline_carved = outline_visible(self);
+    if (self->outline_carved)
+        bounds.right -= scale(base_outline_width + base_outline_gap, dpi);
     return bounds;
+}
+
+/* The column's place and look for drawing, hit-testing and accessibility. The labels are
+ * filled by the caller that draws; the others pass empty ones. */
+static struct note_outline_paint outline_paint_for(const struct folio_window *_Nonnull self,
+                                                   const char16_t *_Nonnull title,
+                                                   const char16_t *_Nonnull empty)
+{
+    return (struct note_outline_paint){.bounds = outline_rect(self),
+                                       .dpi = GetDpiForWindow(self->handle),
+                                       .font = self->mono_font,
+                                       .palette = &self->palette,
+                                       .title = title,
+                                       .empty = empty};
+}
+
+static struct note_outline_paint outline_place(const struct folio_window *_Nonnull self)
+{
+    return outline_paint_for(self, u"", u"");
+}
+
+/* After the body scrolled or was loaded: the heading being read may have changed. */
+static void track_outline(const struct folio_window *_Nonnull self)
+{
+    if (!outline_visible(self) || note_pane_readiness(self->pane) != NOTE_PANE_READINESS_READY)
+        return;
+    struct note_outline_paint paint = outline_place(self);
+    if (!note_outline_track(self->outline, self->pane, &paint))
+        return;
+    InvalidateRect(self->handle, &paint.bounds, FALSE);
+    accessibility_host_schedule(self->accessibility);
 }
 
 static RECT minimap_rect(const struct folio_window *_Nonnull self)
@@ -2796,6 +2879,8 @@ static void arrange(struct folio_window *_Nonnull self)
         return;
     }
     arrange_minimap(self, previous_body, was_visible);
+    RECT pane_region = regions.pane;
+    InvalidateRect(self->handle, &pane_region, FALSE);
     refresh_gutter(self, false);
     refresh_tooltip_rects(self);
 }
@@ -2841,10 +2926,12 @@ static enum folio_state_outcome loaded_pane(struct folio_window *_Nonnull self,
      * 矩形をここで同期して配り直す。フォーカスを本文へ渡す前に済ませる。 */
     HWND body = note_pane_handle(self->pane);
     bool shown = body != nullptr && (GetWindowLongW(body, GWL_STYLE) & WS_VISIBLE) != 0;
-    if (body != nullptr && (shown != body_shown(self) || pane_inset_changed(self)))
+    if (body != nullptr && (shown != body_shown(self) || pane_inset_changed(self) ||
+                            self->outline_carved != outline_visible(self)))
     {
         arrange(self);
     }
+    note_outline_reset(self->outline);
     InvalidateRect(self->handle, nullptr, FALSE);
     if (outcome == NOTE_PANE_LOAD_READY && self->appearance_recolor_pending)
     {
@@ -6460,6 +6547,25 @@ static void draw_minimap(const struct folio_window *_Nonnull self, HDC device, R
         note_minimap_draw(self->minimap, device, &self->palette, &paint);
 }
 
+/* #975 / ADR0114: the headings column, painted beside the body like the minimap. */
+static void draw_outline(const struct folio_window *_Nonnull self, HDC device, RECT damage)
+{
+    RECT bounds = outline_rect(self);
+    if (IsRectEmpty(&bounds) || !paint_intersects(bounds, damage))
+        return;
+    enum folio_language language = folio_state_language(self->state);
+    char16_t title[ui_text_unit_limit];
+    char16_t empty[ui_text_unit_limit];
+    size_t written = 0;
+    if (utf16_text_fill(ui_text_line(UI_TEXT_OUTLINE, language), title, ui_text_unit_limit,
+                        &written) != UTF16_TEXT_FILL_READY ||
+        utf16_text_fill(ui_text_line(UI_TEXT_OUTLINE_EMPTY, language), empty, ui_text_unit_limit,
+                        &written) != UTF16_TEXT_FILL_READY)
+        return;
+    struct note_outline_paint paint = outline_paint_for(self, title, empty);
+    note_outline_draw(self->outline, self->pane, device, &paint);
+}
+
 /* 右ペインの地と頭。本文は note_pane が持つ。 */
 static void draw_pane(const struct folio_window *_Nonnull self, HDC device, RECT damage)
 {
@@ -6490,6 +6596,7 @@ static void draw_pane(const struct folio_window *_Nonnull self, HDC device, RECT
         draw_guide(self, device);
     }
     draw_minimap(self, device, damage);
+    draw_outline(self, device, damage);
     draw_gutter(self, device, damage);
     draw_splitter(self, device);
 }
@@ -10108,6 +10215,26 @@ static void execute_toggle_minimap_command(struct folio_window *_Nonnull self,
     apply_minimap(self);
 }
 
+/* #975 / ADR0114: open or close the headings column. The state is the application's, for this
+ * run only; the column itself appears where a note is being read and there is room. */
+static void apply_outline(struct folio_window *_Nonnull self)
+{
+    folio_state_set_outline(self->state, !folio_state_outline(self->state));
+    if (!hide_command_surface(self))
+        return;
+    cancel_part_press(self);
+    rearrange_keeping_line(self);
+    InvalidateRect(self->handle, nullptr, FALSE);
+    accessibility_host_schedule(self->accessibility);
+}
+
+static void execute_toggle_outline_command(struct folio_window *_Nonnull self,
+                                           const char *_Nonnull argument)
+{
+    (void)argument;
+    apply_outline(self);
+}
+
 static void execute_toggle_number_command(struct folio_window *_Nonnull self,
                                           const char *_Nonnull argument)
 {
@@ -10629,6 +10756,7 @@ static void (*_Nonnull const command_runs[])(struct folio_window *_Nonnull self,
     [FOLIO_COMMAND_FIND] = execute_find_command,
     [FOLIO_COMMAND_SET] = execute_set_command,
     [FOLIO_COMMAND_TOGGLE_MINIMAP] = execute_toggle_minimap_command,
+    [FOLIO_COMMAND_TOGGLE_OUTLINE] = execute_toggle_outline_command,
     [FOLIO_COMMAND_TOGGLE_FAVORITE] = execute_toggle_favorite,
     [FOLIO_COMMAND_TOGGLE_FAVORITES_ONLY] = execute_toggle_favorites_only,
     [FOLIO_COMMAND_TOGGLE_FAVORITES_FIRST] = execute_toggle_favorites_first,
@@ -14583,7 +14711,7 @@ static void run_shortcut(struct folio_window *_Nonnull self,
     {
         enum folio_command command = folio_shortcut_command(binding);
         if ((folio_command_scope(command) != FOLIO_COMMAND_SCOPE_LAYOUT &&
-             command != FOLIO_COMMAND_TOGGLE_MINIMAP) ||
+             !view_toggle_command(command)) ||
             content_shortcut_allowed(self))
             execute_command(self, command, "");
         return;
@@ -15449,7 +15577,8 @@ enum folio_window_outcome folio_window_create(struct folio_state *_Nonnull state
     self->surface_hover = surface_pointer_count;
     self->surface_pressed = surface_pointer_count;
     self->next_idle_work = FOLIO_IDLE_WORK_MINIMAP;
-    if (note_minimap_create(&self->minimap) != NOTE_MINIMAP_READY || !create_accelerators(self) ||
+    if (note_minimap_create(&self->minimap) != NOTE_MINIMAP_READY ||
+        note_outline_create(&self->outline) != NOTE_OUTLINE_READY || !create_accelerators(self) ||
         !create_keyboard_accelerators(self))
     {
         folio_window_destroy(self);
@@ -15568,7 +15697,7 @@ static bool repeated_note_shortcut(const MSG *_Nonnull message)
         if ((action == FOLIO_SHORTCUT_ACTION_TOGGLE_MODE ||
              action == FOLIO_SHORTCUT_ACTION_OPERATIONS ||
              action == FOLIO_SHORTCUT_ACTION_CONTEXT_MENU ||
-             folio_shortcut_command(binding) == FOLIO_COMMAND_TOGGLE_MINIMAP) &&
+             view_toggle_command(folio_shortcut_command(binding))) &&
             message->wParam == shortcut_virtual_key(folio_shortcut_key(binding)) &&
             modifiers == shortcut_virtual_modifiers(folio_shortcut_modifiers(binding)))
             return true;
@@ -15702,6 +15831,7 @@ void folio_window_destroy(struct folio_window *_Nullable window)
     name_prompt_metrics_destroy(window->native_metrics);
     note_pane_destroy(window->pane);
     note_minimap_destroy(window->minimap);
+    note_outline_destroy(window->outline);
     drawer_window_destroy(window->drawer);
     if (window->accessibility != nullptr)
     {
