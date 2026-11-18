@@ -348,7 +348,8 @@ folio_state_delete_category(struct folio_state *_Nonnull state, size_t category)
 [[nodiscard]] enum folio_state_outcome
 folio_state_move_note(struct folio_state *_Nonnull state, struct note_ref from, struct note_ref to);
 /* ノートを別のカテゴリの末尾へ動かす（#941）。移動先の位置を UI に数えさせないための入口で、
- * 規則と失敗は folio_state_move_note と同じ。いまと同じカテゴリなら何もせず READY。 */
+ * 絞り込み中・同名の拒否と失敗は folio_state_move_note と同じ。末尾は表示順に依らないので、
+ * お気に入り優先の表示中でも断らない（ADR0111）。いまと同じカテゴリなら何もせず READY。 */
 [[nodiscard]] enum folio_state_outcome
 folio_state_move_note_to_category(struct folio_state *_Nonnull state, struct note_ref from,
                                   size_t category);

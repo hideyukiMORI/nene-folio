@@ -2199,7 +2199,8 @@ enum folio_state_outcome folio_state_move_note_to_category(struct folio_state *_
     {
         return synced;
     }
-    if (category >= category_ledger_count(state->categories))
+    size_t count = category_ledger_count(state->categories);
+    if (from.category >= count || category >= count)
     {
         return FOLIO_STATE_NO_SUCH_CATEGORY;
     }
@@ -2207,8 +2208,11 @@ enum folio_state_outcome folio_state_move_note_to_category(struct folio_state *_
     {
         return FOLIO_STATE_READY;
     }
+    /* The drag is refused while favorites come first, because a drop position in that view is
+     * not a position in the manual order. The end of another category is the same place in
+     * both, so this move is not (ADR0111). The stars follow as in any transfer. */
     struct note_ref end = {.category = category, .note = note_ledger_count(state->notes[category])};
-    return folio_state_move_note(state, from, end);
+    return transfer_note(state, from, end);
 }
 
 /* Prepare both projections before adopting a replacement (ADR0050). */

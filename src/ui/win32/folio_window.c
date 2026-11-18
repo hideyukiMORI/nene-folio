@@ -1070,6 +1070,7 @@ static bool move_navigate(struct folio_window *_Nonnull self, WPARAM key);
 static void click_move_surface(struct folio_window *_Nonnull self, POINT point);
 static bool move_row_text(const struct folio_window *_Nonnull self, size_t index,
                           char *_Nonnull out, size_t capacity);
+static bool move_row_current(const struct folio_window *_Nonnull self, size_t index);
 static void draw_move_dialog(const struct folio_window *_Nonnull self, HDC device, RECT bounds);
 static enum discovery_focus discovery_current_focus(const struct folio_window *_Nonnull self);
 static bool discovery_focus_visible(const struct folio_window *_Nonnull self,
@@ -1538,7 +1539,8 @@ static RECT settings_dialog_rect(const struct folio_window *_Nonnull self)
 
 static enum folio_state_outcome settings_notice(const struct folio_window *_Nonnull self)
 {
-    if (self->command_failure != FOLIO_STATE_READY)
+    /* #941: the destination picker shows only its own refusal, not a pending settings notice. */
+    if (self->command_failure != FOLIO_STATE_READY || move_surface(self))
     {
         return self->command_failure;
     }
@@ -13056,6 +13058,13 @@ static void wheel_theme_selection(struct folio_window *_Nonnull self, int delta)
                              (size_t)(steps < 0 ? -steps : steps));
 }
 
+/* #941: by accumulated notches, as the theme picker, so a precision touchpad does not race. */
+static void wheel_move_selection(struct folio_window *_Nonnull self, int delta)
+{
+    for (int steps = theme_wheel_steps(self, delta); steps != 0; steps += steps < 0 ? 1 : -1)
+        (void)move_navigate(self, steps < 0 ? VK_UP : VK_DOWN);
+}
+
 static bool wheel_candidate_navigation(struct folio_window *_Nonnull self, WPARAM key)
 {
     if (discovery_surface(self))
@@ -13094,7 +13103,10 @@ static bool command_wheel(struct folio_window *_Nonnull self, WPARAM wparam)
         return true;
     }
     if (move_surface(self))
-        return move_navigate(self, key);
+    {
+        wheel_move_selection(self, delta);
+        return true;
+    }
     if (settings_surface(self))
     {
         scroll_settings_content(self, delta);
@@ -16300,6 +16312,18 @@ static enum ui_text surface_button_label(const struct folio_window *_Nonnull sel
 
 static void surface_empty_status(const struct folio_window *_Nonnull self, char *_Nonnull out)
 {
+    /* #941: the picker names the note it moves; it is moved without being opened. */
+    if (move_surface(self))
+    {
+        const struct ui_text_request source = {
+            .id = UI_TEXT_MOVE_SOURCE,
+            .language = folio_state_language(self->state),
+            .from = folio_state_category_name(self->state, self->move_source.category),
+            .name = folio_state_note_name(self->state, self->move_source)};
+        if (ui_text_format(&source, out, replace_status_capacity) != UI_TEXT_FORMAT_READY)
+            out[0] = '\0';
+        return;
+    }
     if (!surface_has_list(self))
         return;
     size_t count = 0;
@@ -16650,6 +16674,8 @@ static bool surface_row_actionable(const struct folio_window *_Nonnull self, siz
         return settings_row_choice(at);
     if (self->command_surface == COMMAND_SURFACE_MENU)
         return menu_availability(self, at) == FOLIO_STATE_READY;
+    if (move_surface(self))
+        return !move_row_current(self, at);
     return true;
 }
 
@@ -19489,6 +19515,7 @@ static bool move_navigate(struct folio_window *_Nonnull self, WPARAM key)
         return true;
     size_t page = command_visible_rows(self);
     size_t step = key == VK_PRIOR || key == VK_NEXT ? page : 1;
+    self->command_failure = FOLIO_STATE_READY;
     move_theme_selection(self, key, self->move_count, step > 0 ? step : 1);
     reveal_command_selection(self);
     redraw_command_layer(self);
@@ -19496,8 +19523,18 @@ static bool move_navigate(struct folio_window *_Nonnull self, WPARAM key)
     return true;
 }
 
-/* The move itself is the application's one path (the drag uses it too); a refusal stays on
- * the surface as its one line. */
+/* The outcomes that refuse before anything changed: the note is where it was, so the picker
+ * can stay open with the reason and the same source. Any other failure may come after the note
+ * has moved (a ledger that could not be written back), and the source would be stale. */
+static bool move_refused(enum folio_state_outcome outcome)
+{
+    return outcome == FOLIO_STATE_FILTERED || outcome == FOLIO_STATE_ORDERED ||
+           outcome == FOLIO_STATE_NAME_TAKEN || outcome == FOLIO_STATE_NO_SUCH_CATEGORY ||
+           outcome == FOLIO_STATE_NO_SUCH_NOTE;
+}
+
+/* The move itself is the application's one path (the drag uses it too). A refusal stays on the
+ * surface as its one line; any other failure closes the picker and is reported as usual. */
 static void adopt_move_at(struct folio_window *_Nonnull self, size_t index)
 {
     if (self->command_composing || index >= self->move_count || self->move_rows == nullptr ||
@@ -19505,7 +19542,7 @@ static void adopt_move_at(struct folio_window *_Nonnull self, size_t index)
         return;
     enum folio_state_outcome moved =
         folio_state_move_note_to_category(self->state, self->move_source, self->move_rows[index]);
-    if (moved != FOLIO_STATE_READY)
+    if (move_refused(moved))
     {
         self->command_failure = moved;
         redraw_command_layer(self);
@@ -19516,6 +19553,8 @@ static void adopt_move_at(struct folio_window *_Nonnull self, size_t index)
     redraw_drawer(self);
     /* The pane's header shows the category of the open note. */
     InvalidateRect(self->handle, nullptr, FALSE);
+    if (moved != FOLIO_STATE_READY)
+        report_outcome(self, moved);
 }
 
 static void click_move_surface(struct folio_window *_Nonnull self, POINT point)
@@ -19602,18 +19641,24 @@ static void draw_move_footer(const struct folio_window *_Nonnull self, HDC devic
         .from = folio_state_category_name(self->state, self->move_source.category),
         .name = folio_state_note_name(self->state, self->move_source)};
     SetTextColor(device, self->palette.current_text);
+    /* One line, cut with an ellipsis: long names must not push the reason out of the footer. */
+    RECT named = line;
+    named.bottom = named.top + scale(20, GetDpiForWindow(self->handle));
     if (ui_text_format(&source, text, sizeof text) == UI_TEXT_FORMAT_READY)
-        line.top += wrapped_text(device, text, line, true);
+        draw_units(device, text, named, DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX | DT_END_ELLIPSIS);
+    line.top = named.bottom;
     if (ui_text_format(&request, text, sizeof text) == UI_TEXT_FORMAT_READY)
         line.top += wrapped_text(device, text, line, true);
-    SetTextColor(device, self->palette.dialog_secondary);
-    line.top += wrapped_text(device, ui_text_line(UI_TEXT_MOVE_GUIDANCE, language), line, true);
-    if (settings_has_notice(self))
+    /* A refusal takes the place of the key guidance. Only this surface's own failure: a pending
+     * settings notice is not about the move. */
+    if (self->command_failure != FOLIO_STATE_READY)
     {
-        SetTextColor(device, self->palette.current_text);
-        (void)wrapped_text(device, folio_state_failure_line(settings_notice(self), language), line,
+        (void)wrapped_text(device, folio_state_failure_line(self->command_failure, language), line,
                            true);
+        return;
     }
+    SetTextColor(device, self->palette.dialog_secondary);
+    (void)wrapped_text(device, ui_text_line(UI_TEXT_MOVE_GUIDANCE, language), line, true);
 }
 
 static void draw_move_dialog(const struct folio_window *_Nonnull self, HDC device, RECT bounds)

@@ -1224,6 +1224,15 @@ static void verify_move_to_category(void)
     row_order(state, order, sizeof order);
     require(same_text(order, "B/one/three/A/four/five/two/C/one/two/three"),
             "the note lands at the end of the destination");
+    /* 優先表示中に星があると、位置を指す移動は断るが、末尾への移動は断らない。 */
+    require(folio_state_toggle_favorite(state, at(0, 0)) == FOLIO_STATE_READY &&
+                folio_state_set_note_order(state, NOTE_ORDER_FAVORITES_FIRST) == FOLIO_STATE_READY,
+            "a star in B while favorites come first");
+    require(folio_state_move_note(state, at(0, 1), at(1, 0)) == FOLIO_STATE_ORDERED,
+            "a positioned move is refused in the favorites-first order");
+    require(folio_state_move_note_to_category(state, at(0, 1), 1) == FOLIO_STATE_READY &&
+                same_text(adapter.moved_note, "three") && same_text(adapter.move_to, "A"),
+            "the end of another category is not a position in that order, so it is allowed");
     folio_state_destroy(state);
 }
 
