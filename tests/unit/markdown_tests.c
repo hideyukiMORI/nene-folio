@@ -547,8 +547,6 @@ static void verify_container_markers(void)
     expect_fragment("7. > quote\n\n   continued\n1. next", "\\li920\\fi-700\\tx920", "");
     expect_fragment("7. # heading\n1. next", "\\pard\\s1\\sb0\\sa80\\b\\cf2\\fs44\\li440",
                     "\\sb200");
-    /* #975: the heading's mark comes after the item's marker, inside the heading's format. */
-    expect_fragment("7. # heading\n1. next", "7.\\tab }heading", "");
     expect_fragment("7. ~~~\n   code\n   ~~~\n1. next", "7.\\tab }\\par\n{\\f1", "1.\\tab }next");
     expect_fragment("7. ~~~\n   ~~~\n1. next", "{\\f1\\fs20\\cf5\\highlight6}", "\\li620");
     expect_fragment("7. >\n1. next", "7.\\tab }\\par\n", "1.\\tab }next");

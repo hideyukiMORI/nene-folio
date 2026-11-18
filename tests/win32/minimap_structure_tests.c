@@ -1093,9 +1093,8 @@ static void code_label_wrap(struct note_pane *_Nonnull pane)
     ShowWindow(GetParent(handle), SW_HIDE);
 }
 
-/* #975 / ADR0114: the pane knows where the viewed note's headings are, from hidden marks the
- * rendering writes. The marks are not in the searchable text; the same characters typed into the
- * note are text, not a mark; the editing view has no headings. */
+/* #975 / ADR0114: the pane knows where the viewed note's headings are, from the paragraph
+ * styles the rendering writes. No text is added for them; the editing view has no headings. */
 /* Seven headings of every kind, with enough text after the last one to scroll it to the top. */
 static const char *_Nonnull heading_content(void)
 {
@@ -1111,6 +1110,27 @@ static const char *_Nonnull heading_content(void)
     return content;
 }
 
+/* The style stays on the heading: what follows it (a table, a definition, a rule, code, a list
+ * and a paragraph inside the item) is not a heading, and a heading after each is found. */
+static void heading_neighbours(struct note_pane *_Nonnull pane)
+{
+    load(pane, PANE_MODE_VIEW,
+         "# 表の前\n| a |\n| - |\n| 1 |\n\n## 表の後\n用語\n: 説明\n\n### 説明の後\n\n---\n\n"
+         "#### 線の後\n```\ncode\n```\n\n- ##### 項目の中\n\n  項目の段落\n\n> ###### 引用の中\n>\n"
+         "> 引用の段落\n\n最後の段落\n");
+    require(note_pane_heading_count(pane) == 6, "only the six headings are headings");
+    HWND handle = note_pane_handle(pane);
+    const wchar_t *const names[] = {L"表の前", L"表の後",   L"説明の後",
+                                    L"線の後", L"項目の中", L"引用の中"};
+    for (size_t index = 0; index < 6; ++index)
+    {
+        struct note_pane_heading heading = {0};
+        require(note_pane_heading(pane, index, &heading) && heading.level == index + 1 &&
+                    native_find(handle, names[index]) - heading.position <= 2,
+                "each heading among other blocks, at its level and place");
+    }
+}
+
 /* Going to a heading, an index out of range, and the index following what is loaded. */
 static void heading_moves(struct note_pane *_Nonnull pane, const char *_Nonnull content)
 {
@@ -1124,6 +1144,18 @@ static void heading_moves(struct note_pane *_Nonnull pane, const char *_Nonnull 
                 SendMessageW(handle, EM_GETFIRSTVISIBLELINE, 0, 0) ==
                     SendMessageW(handle, EM_EXLINEFROMCHAR, 0, last.position),
             "showing a heading puts a caret on it and its line at the top of the view");
+    /* From a view scrolled part of a line down, the heading's line still comes to the top whole. */
+    POINT scrolled = {0};
+    SendMessageW(handle, EM_GETSCROLLPOS, 0, (LPARAM)&scrolled);
+    scrolled.y += 7;
+    SendMessageW(handle, EM_SETSCROLLPOS, 0, (LPARAM)&scrolled);
+    POINTL place = {0};
+    SendMessageW(handle, EM_POSFROMCHAR, (WPARAM)&place, last.position);
+    require(place.y < 0, "the fixture scrolls the heading's line partly out of view");
+    require(note_pane_show_heading(pane, 6), "the same heading again");
+    SendMessageW(handle, EM_POSFROMCHAR, (WPARAM)&place, last.position);
+    printf("heading line after a part-line scroll: y=%ld\n", place.y);
+    require(place.y >= 0 && place.y <= 2, "a heading whose line was cut off is shown whole");
     require(note_pane_show_heading(pane, 0) &&
                 SendMessageW(handle, EM_GETFIRSTVISIBLELINE, 0, 0) == 0,
             "the first heading is the top of the note again");
@@ -1142,6 +1174,7 @@ static void heading_moves(struct note_pane *_Nonnull pane, const char *_Nonnull 
     require(note_pane_heading_count(pane) == 1 && note_pane_heading(pane, 0, &ending) &&
                 ending.level == 2 && ending.position == 5,
             "a heading that ends the note, with no line break after it, is counted once");
+    heading_neighbours(pane);
     load(pane, PANE_MODE_EDIT, content);
     require(note_pane_heading_count(pane) == 0 && !note_pane_show_heading(pane, 0),
             "the editing view has no headings");
@@ -1169,11 +1202,11 @@ static void headings(struct note_pane *_Nonnull pane)
         require(note_pane_heading(pane, index, &heading), "a heading inside the count");
         LONG text = native_find(handle, names[index]);
         if (heading.level != levels[index] || text < heading.position ||
-            text > heading.position + 4)
+            text > heading.position + 2)
             printf("heading %zu: level %zu at %ld, text at %ld\n", index, heading.level,
                    heading.position, text);
         require(heading.level == levels[index] && heading.position > previous &&
-                    text >= heading.position && text <= heading.position + 4,
+                    text >= heading.position && text <= heading.position + 2,
                 "each heading's level and the start of its paragraph, in document order");
         previous = heading.position;
     }

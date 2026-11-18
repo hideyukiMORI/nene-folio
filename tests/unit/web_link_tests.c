@@ -629,7 +629,10 @@ static void verify_heading_style(void)
     expect_field("two\n---", "\\pard\\s2\\sb200", "\\s1\\sb");
     expect_field("- ## in a list", "\\pard\\s2\\sb0\\sa80\\b\\cf2\\fs34", "\\s1\\sb");
     expect_field("> ### quoted", "\\pard\\s3\\sb200", "\\s2\\sb");
-    expect_field("plain\n\n| a |\n| - |\n| 1 |", "plain\\par", "\\pard\\s1");
+    /* What follows a heading starts from a plain paragraph again. */
+    expect_field("# h\n| a |\n| - |\n| 1 |", "\\par\n\\trowd", "\\pard\\s1\\intbl");
+    expect_field("# h\nT\n: d", "\\par\n\\pard\\sa20\\sl240\\slmult1\\cf4 T", "\\s1\\sa20");
+    expect_field("# h\n- item", "\\par\n\\pard\\li", "\\pard\\s1\\li");
 }
 
 static size_t opened;

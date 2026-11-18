@@ -1639,10 +1639,24 @@ bool note_pane_heading(struct note_pane *_Nonnull pane, size_t index,
     return true;
 }
 
+/* After a pixel scroll the first visible line can be cut off at the top; counting lines then
+ * leaves the heading's line cut off too. Bring its top edge to the top of the view. */
+static void align_heading_line(struct note_pane *_Nonnull pane, LONG position)
+{
+    POINTL place = {0};
+    SendMessageW(pane->handle, EM_POSFROMCHAR, (WPARAM)&place, position);
+    if (place.y >= 0)
+        return;
+    POINT current = {0};
+    SendMessageW(pane->handle, EM_GETSCROLLPOS, 0, (LPARAM)&current);
+    note_pane_scroll_pixels(pane, (int)(current.y + place.y));
+}
+
 bool note_pane_show_heading(struct note_pane *_Nonnull pane, size_t index)
 {
     struct note_pane_heading heading = {0};
-    if (!note_pane_heading(pane, index, &heading))
+    if (pane->readiness != NOTE_PANE_READINESS_READY || pane->composing ||
+        !note_pane_heading(pane, index, &heading))
         return false;
     /* A caret at the heading, and the heading's line at the top of the view (or as near as the
      * end of the note allows). A scroll still running would carry the line away again. */
@@ -1652,6 +1666,7 @@ bool note_pane_show_heading(struct note_pane *_Nonnull pane, size_t index)
     LRESULT line = SendMessageW(pane->handle, EM_EXLINEFROMCHAR, 0, range.cpMin);
     LRESULT first = SendMessageW(pane->handle, EM_GETFIRSTVISIBLELINE, 0, 0);
     SendMessageW(pane->handle, EM_LINESCROLL, 0, line - first);
+    align_heading_line(pane, heading.position);
     return true;
 }
 
@@ -2007,6 +2022,7 @@ void note_pane_destroy(struct note_pane *_Nullable pane)
     }
     line_index_destroy(pane->lines);
     note_pane_links_destroy(pane->links);
+    note_pane_headings_destroy(pane->headings);
     note_pane_images_destroy(pane->images);
     free(pane->numbered);
     free(pane->taken);

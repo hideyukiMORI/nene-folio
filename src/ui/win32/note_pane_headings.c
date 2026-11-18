@@ -57,9 +57,9 @@ static bool collect(struct note_pane_headings *_Nonnull headings, ITextRange *_N
                                              .position = start});
 }
 
-/* The document always ends with one paragraph mark of its own, which takes the format of the
- * paragraph before it: after a heading that ends the note it would read as a second, empty
- * heading. It is not a paragraph of the note. */
+/* The walk's last stop is the very end of the document, on its closing paragraph mark, which
+ * has the format of the paragraph before it: after a heading that ends the note it would read
+ * as a second, empty heading. It is not a paragraph of the note. */
 static bool final_mark(ITextRange *_Nonnull range, LONG length)
 {
     LONG start = 0;
