@@ -69,39 +69,9 @@ enum folio_theme_lookup_outcome folio_theme_choice_parse(const char *_Nonnull te
     return FOLIO_THEME_LOOKUP_UNKNOWN;
 }
 
-static bool same_folded_span(const char *_Nonnull candidate, const char *_Nonnull text,
-                             size_t length)
-{
-    for (size_t index = 0; index < length; ++index)
-    {
-        if (ascii_fold_byte(candidate[index]) != ascii_fold_byte(text[index]))
-        {
-            return false;
-        }
-    }
-    return true;
-}
-
-static bool contains_query(const char *_Nonnull candidate, const char *_Nonnull text, size_t length)
-{
-    size_t available = strlen(candidate);
-    if (length > available)
-    {
-        return false;
-    }
-    for (size_t at = 0; at <= available - length; ++at)
-    {
-        if (same_folded_span(candidate + at, text, length))
-        {
-            return true;
-        }
-    }
-    return false;
-}
-
 bool folio_theme_choice_matches(enum folio_theme_choice choice, const char *_Nonnull text,
                                 size_t length, enum folio_language language)
 {
-    return contains_query(folio_theme_choice_name(choice), text, length) ||
-           contains_query(folio_theme_choice_label(choice, language), text, length);
+    return ascii_fold_contains(folio_theme_choice_name(choice), text, length) ||
+           ascii_fold_contains(folio_theme_choice_label(choice, language), text, length);
 }

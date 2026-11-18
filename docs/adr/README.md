@@ -95,6 +95,7 @@ ADR は「なぜそう決めたか」「何を却下したか」を書く。
 | [0105](0105-mermaid-er-diagram.md) | ER図はフローチャートの模型へ読み、多重度は線のラベルの文字で示す | 受理 |
 | [0106](0106-note-body-context-menu.md) | 本文の右クリックメニューはアプリのメニュー面で出し、編集は本文のキーと同じ経路で行う | 受理 |
 | [0107](0107-mermaid-class-diagram.md) | クラス図はフローチャートの模型へ読み、UMLの印を矢印の種類として足す | 受理 |
+| [0111](0111-move-note-to-category-picker.md) | ノートのカテゴリ移動は、移動先を選ぶ面を開き、既存の移動へ合流する | 受理 |
 | [0110](0110-finder-mode-keys-and-two-opens.md) | 「ノートを探す」の名前/本文は←→とAlt+←→で切り替え、Enterは読む・Ctrl+Enterは直す | 受理 |
 | [0109](0109-finder-typing-keys-and-wrapped-preview.md) | 「ノートを探す」は入力欄のまま候補を選び、原文previewは折り返す | 受理 |
 | [0108](0108-window-placement.md) | 起動時の窓の位置と大きさは、PCごとの別ファイルに持ち、使えない値は初期値へ戻す | 受理 |

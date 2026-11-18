@@ -347,6 +347,12 @@ folio_state_delete_category(struct folio_state *_Nonnull state, size_t category)
  * ノート数と等しければ末尾。移動先に同じ名前があれば NAME_TAKEN で何もしない。 */
 [[nodiscard]] enum folio_state_outcome
 folio_state_move_note(struct folio_state *_Nonnull state, struct note_ref from, struct note_ref to);
+/* ノートを別のカテゴリの末尾へ動かす（#941）。移動先の位置を UI に数えさせないための入口で、
+ * 絞り込み中・同名の拒否と失敗は folio_state_move_note と同じ。末尾は表示順に依らないので、
+ * お気に入り優先の表示中でも断らない（ADR0111）。いまと同じカテゴリなら何もせず READY。 */
+[[nodiscard]] enum folio_state_outcome
+folio_state_move_note_to_category(struct folio_state *_Nonnull state, struct note_ref from,
+                                  size_t category);
 /* 指定ノートと履歴をごみ箱へ移す（ADR 0040）。現在の編集中の文書だけ先に保存する。
  * 成功なら現在文書は NONE / VIEW、別ノートなら本文とモードを保つ。 */
 [[nodiscard]] enum folio_state_outcome folio_state_trash_note(struct folio_state *_Nonnull state,

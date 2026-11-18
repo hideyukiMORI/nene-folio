@@ -25,6 +25,14 @@
 /* 変更前の文言（機械的に写した）。ui_text.c の表と 1 字も違ってはいけない。 */
 static const char *_Nonnull const expected[] = {
     [UI_TEXT_COMMAND_DISCOVER_NOTES] = "ノートを探す",
+    [UI_TEXT_COMMAND_MOVE_NOTE] = "カテゴリを移動",
+    [UI_TEXT_MOVE_TITLE] = "移動先のカテゴリを選ぶ",
+    [UI_TEXT_MOVE_FILTER] = "カテゴリ名で検索",
+    [UI_TEXT_MOVE_GUIDANCE] = "↑↓で選ぶ・Enterで移動・Escでやめる",
+    [UI_TEXT_MOVE_COUNT] = "{k} / {n} 件",
+    [UI_TEXT_MOVE_EMPTY] = "一致するカテゴリがありません",
+    [UI_TEXT_MOVE_SOURCE] = "移すノート: {from} / {name}",
+    [UI_TEXT_MOVE_CURRENT] = "{name}（いまのカテゴリ）",
     [UI_TEXT_DISCOVERY_INPUT] = "名前・カテゴリ（文字を飛ばしても当たる）",
     [UI_TEXT_DISCOVERY_CONDITIONS] = "この検索だけ: {from} / タグ{n}件 ({name}) / {to}",
     [UI_TEXT_DISCOVERY_ALL] = "すべてのノート",

@@ -19,6 +19,7 @@
 #include "icon_paint.h"
 #include "image_bitmap.h"
 #include "image_port.h"
+#include "menu_request.h"
 #include "name_list.h"
 #include "note_file_times.h"
 #include "note_history.h"
@@ -87,6 +88,8 @@ static bool favorites_case;
 static bool tags_case;
 static bool discovery_case;
 static bool discovery_cut_case;
+static bool move_category_case;
+static bool move_category_visual;
 static bool motion_case;
 static bool motion_visual_case;
 static bool motion_live_case;
@@ -12098,6 +12101,156 @@ static void run_body_discovery_case(struct native_fixture *_Nonnull fixture)
     folio_window_destroy(window);
 }
 
+/* #941: the note row's menu entry opens the destination picker for that row's note. */
+static void move_category_open(struct folio_window *_Nonnull window, struct note_ref target)
+{
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    struct menu_request request = {.context = FOLIO_MENU_NOTE, .target = target, .keyboard = true};
+    SendMessageW(root, folio_message_open_menu, 0, (LPARAM)&request);
+    pump(window);
+    size_t row = SIZE_MAX;
+    for (size_t at = 0; at < folio_menu_action_count(FOLIO_MENU_NOTE); ++at)
+        if (folio_menu_action_command(folio_menu_action_at(FOLIO_MENU_NOTE, at)) ==
+            FOLIO_COMMAND_MOVE_NOTE)
+            row = at;
+    require(row != SIZE_MAX, "the note menu lists the move");
+    struct accessible_view entry = tags_view(window, ACCESSIBLE_SURFACE_CHOICE, row);
+    require(entry.enabled && wcsstr(entry.name, L"カテゴリを移動") != nullptr,
+            "the menu row names the move");
+    struct accessible_request invoke = {
+        .item = {.kind = ACCESSIBLE_SURFACE_CHOICE,
+                 .slot = row,
+                 .revision = folio_window_accessible_surface_revision(window)},
+        .action = ACCESSIBLE_ACTION_INVOKE};
+    require(folio_window_accessible_action(window, &invoke) == S_OK, "invoke the move");
+    pump(window);
+    require(IsWindowVisible(folio_window_accessible_window(window, ACCESSIBLE_SURFACE)),
+            "the destination picker opens");
+}
+
+static bool move_category_stored(struct native_fixture *_Nonnull fixture,
+                                 const char *_Nonnull category, const char *_Nonnull name)
+{
+    struct persistence_port disk = persistence_adapter_port(fixture->files);
+    struct note_text *stored = nullptr;
+    bool found = disk.read_note(disk.adapter, category, name, &stored) == PERSISTENCE_LOADED;
+    note_text_destroy(stored);
+    return found;
+}
+
+/* #941: schedule/two goes to target by Enter on the first choosable row, and back by typing a
+ * filter; the note's own category cannot be chosen; Esc moves nothing; the open note stays. */
+static bool move_category_closed(struct folio_window *_Nonnull window)
+{
+    pump(window);
+    return !IsWindowVisible(folio_window_accessible_window(window, ACCESSIBLE_SURFACE));
+}
+
+static HRESULT move_category_invoke(struct folio_window *_Nonnull window, size_t slot)
+{
+    struct accessible_request row = {
+        .item = {.kind = ACCESSIBLE_SURFACE_CHOICE,
+                 .slot = slot,
+                 .revision = folio_window_accessible_surface_revision(window)},
+        .action = ACCESSIBLE_ACTION_INVOKE};
+    return folio_window_accessible_action(window, &row);
+}
+
+/* What the picker shows and refuses before anything moves. */
+static void move_category_picker(struct folio_window *_Nonnull window,
+                                 struct native_fixture *_Nonnull fixture)
+{
+    HWND input = folio_window_accessible_window(window, ACCESSIBLE_COMMAND_INPUT);
+    move_category_open(window, (struct note_ref){0, 1});
+    struct accessible_view own = tags_view(window, ACCESSIBLE_SURFACE_CHOICE, 0);
+    struct accessible_view other = tags_view(window, ACCESSIBLE_SURFACE_CHOICE, 1);
+    struct accessible_view status = tags_view(window, ACCESSIBLE_SURFACE_STATUS, 0);
+    require(wcscmp(own.name, L"schedule（いまのカテゴリ）") == 0 &&
+                wcscmp(other.name, L"target") == 0 && GetFocus() == input,
+            "the picker lists every category, marks the note's own, and takes typing");
+    require(wcscmp(status.name, L"移すノート: schedule / two") == 0,
+            "the picker's status names the note, which is not opened");
+    if (move_category_visual)
+        tags_capture(folio_window_accessible_window(window, ACCESSIBLE_WINDOW),
+                     "move-category.bmp");
+    require(move_category_invoke(window, 0) == accessibility_node_disabled &&
+                move_category_stored(fixture, "schedule", "two"),
+            "the note's own category is not an action");
+    SendMessageW(input, WM_KEYDOWN, VK_ESCAPE, 0);
+    require(move_category_closed(window) && move_category_stored(fixture, "schedule", "two"),
+            "Esc closes the picker and moves nothing");
+}
+
+/* By the keyboard: Enter on the first choosable row, then back through a typed filter. */
+static void move_category_keys(struct folio_window *_Nonnull window,
+                               struct native_fixture *_Nonnull fixture)
+{
+    HWND input = folio_window_accessible_window(window, ACCESSIBLE_COMMAND_INPUT);
+    move_category_open(window, (struct note_ref){0, 1});
+    SendMessageW(input, WM_KEYDOWN, VK_RETURN, 0);
+    require(move_category_closed(window) && move_category_stored(fixture, "target", "two") &&
+                !move_category_stored(fixture, "schedule", "two") &&
+                strcmp(folio_state_note_name(fixture->state, (struct note_ref){1, 1}), "two") == 0,
+            "Enter moves the note to the end of the first other category");
+    require(strcmp(folio_state_document_name(fixture->state), "one") == 0,
+            "the open note stays open");
+    move_category_open(window, (struct note_ref){1, 1});
+    require(SetWindowTextW(input, L"TARG"), "filter to the note's own category");
+    pump(window);
+    struct accessible_view own = tags_view(window, ACCESSIBLE_SURFACE_CHOICE, 0);
+    require(wcscmp(own.name, L"target（いまのカテゴリ）") == 0, "the filter ignores ASCII case");
+    SendMessageW(input, WM_KEYDOWN, VK_RETURN, 0);
+    require(!move_category_closed(window) && move_category_stored(fixture, "target", "two"),
+            "the note's own category cannot be chosen");
+    require(SetWindowTextW(input, L"sched"), "filter to the other category");
+    pump(window);
+    SendMessageW(input, WM_KEYDOWN, VK_RETURN, 0);
+    require(move_category_closed(window) && move_category_stored(fixture, "schedule", "two") &&
+                !move_category_stored(fixture, "target", "two") &&
+                strcmp(folio_state_note_name(fixture->state, (struct note_ref){0, 1}), "two") == 0,
+            "typing a filter and Enter moves the note back to where the fixture had it");
+}
+
+/* The same round trip by invoking the rows, as a pointer or assistive technology does. */
+static void move_category_rows(struct folio_window *_Nonnull window,
+                               struct native_fixture *_Nonnull fixture)
+{
+    move_category_open(window, (struct note_ref){0, 1});
+    require(move_category_invoke(window, 1) == S_OK && move_category_closed(window) &&
+                move_category_stored(fixture, "target", "two"),
+            "invoking a row moves the note");
+    move_category_open(window, (struct note_ref){1, 1});
+    require(move_category_invoke(window, 0) == S_OK && move_category_closed(window) &&
+                move_category_stored(fixture, "schedule", "two") &&
+                !move_category_stored(fixture, "target", "two"),
+            "and back");
+}
+
+static void move_category(struct folio_window *_Nonnull window,
+                          struct native_fixture *_Nonnull fixture)
+{
+    /* The everyday state the drag refuses: favorites first, with a star in the source category.
+     * The fixture folder is shared, so the state is set here and put back at the end. */
+    enum note_order order = folio_state_note_order(fixture->state);
+    bool starred = folio_state_note_favorite(fixture->state, (struct note_ref){0, 0});
+    if (!starred)
+        require(folio_state_toggle_favorite(fixture->state, (struct note_ref){0, 0}) ==
+                    FOLIO_STATE_READY,
+                "a star beside the note to move");
+    require(folio_state_set_note_order(fixture->state, NOTE_ORDER_FAVORITES_FIRST) ==
+                FOLIO_STATE_READY,
+            "favorites first");
+    move_category_picker(window, fixture);
+    move_category_keys(window, fixture);
+    move_category_rows(window, fixture);
+    require(folio_state_set_note_order(fixture->state, order) == FOLIO_STATE_READY,
+            "the shared fixture gets its order back");
+    if (!starred)
+        require(folio_state_toggle_favorite(fixture->state, (struct note_ref){0, 0}) ==
+                    FOLIO_STATE_READY,
+                "and its stars");
+}
+
 static void discovery_cut_status(struct folio_window *_Nonnull window, const wchar_t *_Nonnull part,
                                  bool present, const char *_Nonnull label)
 {
@@ -12134,6 +12287,16 @@ static void discovery_cut(struct folio_window *_Nonnull window,
     remove_cut_category(fixture->location);
 }
 
+static void run_discovery_extra(struct folio_window *_Nonnull window,
+                                struct native_fixture *_Nonnull fixture)
+{
+    if (discovery_cut_case)
+        discovery_cut(window, fixture);
+    else
+        move_category(window, fixture);
+    folio_window_destroy(window);
+}
+
 static void run_discovery_case(struct native_fixture *_Nonnull fixture)
 {
     require(folio_state_select_note(fixture->state, 0, 0, FOLIO_UNTITLED_PROTECT) ==
@@ -12166,10 +12329,9 @@ static void run_discovery_case(struct native_fixture *_Nonnull fixture)
         folio_window_destroy(window);
         return;
     }
-    if (discovery_cut_case)
+    if (discovery_cut_case || move_category_case)
     {
-        discovery_cut(window, fixture);
-        folio_window_destroy(window);
+        run_discovery_extra(window, fixture);
         return;
     }
     discovery_shortcut(window, fixture);
@@ -13438,8 +13600,11 @@ static void select_tags_fixture(const char *_Nonnull selector)
     discovery_copy_case = strcmp(selector, "--discovery-copy") == 0;
     discovery_measure_case = strcmp(selector, "--discovery-measure") == 0;
     discovery_cut_case = strcmp(selector, "--discovery-cut") == 0;
+    move_category_visual = strcmp(selector, "--move-category-visual") == 0;
+    move_category_case = strcmp(selector, "--move-category") == 0 || move_category_visual;
     discovery_case = strcmp(selector, "--discovery") == 0 || discovery_visual_case ||
-                     discovery_copy_case || discovery_measure_case || discovery_cut_case;
+                     discovery_copy_case || discovery_measure_case || discovery_cut_case ||
+                     move_category_case;
     tag_management_visual_case = strcmp(selector, "--tag-management-visual") == 0;
     tag_management_measure_case = strcmp(selector, "--tag-management-measure") == 0;
     tag_management_case = strcmp(selector, "--tag-management") == 0 || tag_management_visual_case ||

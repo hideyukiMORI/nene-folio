@@ -2186,6 +2186,35 @@ enum folio_state_outcome folio_state_move_note(struct folio_state *_Nonnull stat
     return transfer_note(state, from, to);
 }
 
+enum folio_state_outcome folio_state_move_note_to_category(struct folio_state *_Nonnull state,
+                                                           struct note_ref from, size_t category)
+{
+    if (folio_state_filtering(state))
+    {
+        return FOLIO_STATE_FILTERED;
+    }
+    /* The end is counted after the lists are current, as folio_state_move_note sees them. */
+    enum folio_state_outcome synced = synchronize(state);
+    if (synced != FOLIO_STATE_READY)
+    {
+        return synced;
+    }
+    size_t count = category_ledger_count(state->categories);
+    if (from.category >= count || category >= count)
+    {
+        return FOLIO_STATE_NO_SUCH_CATEGORY;
+    }
+    if (from.category == category)
+    {
+        return FOLIO_STATE_READY;
+    }
+    /* The drag is refused while favorites come first, because a drop position in that view is
+     * not a position in the manual order. The end of another category is the same place in
+     * both, so this move is not (ADR0111). The stars follow as in any transfer. */
+    struct note_ref end = {.category = category, .note = note_ledger_count(state->notes[category])};
+    return transfer_note(state, from, end);
+}
+
 /* Prepare both projections before adopting a replacement (ADR0050). */
 static enum folio_state_outcome prepare_note_edit(const struct folio_state *_Nonnull state,
                                                   const struct note_text *_Nonnull body,
@@ -5117,7 +5146,8 @@ static enum folio_state_outcome query_held_note(const struct folio_state *_Nonnu
     if (state->document == FOLIO_DOCUMENT_NONE)
         return FOLIO_STATE_NOTHING_SELECTED;
     bool named = command == FOLIO_COMMAND_RENAME || command == FOLIO_COMMAND_TRASH_NOTE ||
-                 command == FOLIO_COMMAND_HISTORY || command == FOLIO_COMMAND_TOGGLE_FAVORITE;
+                 command == FOLIO_COMMAND_HISTORY || command == FOLIO_COMMAND_TOGGLE_FAVORITE ||
+                 command == FOLIO_COMMAND_MOVE_NOTE;
     bool editing = command == FOLIO_COMMAND_REPLACE || command == FOLIO_COMMAND_SUBSTITUTE ||
                    command == FOLIO_COMMAND_DISCARD_EDITS;
     if (named && state->document == FOLIO_DOCUMENT_UNTITLED)
