@@ -44,14 +44,15 @@ static bool has_invoke(enum accessible_kind kind)
            kind == ACCESSIBLE_NEW_CATEGORY || kind == ACCESSIBLE_NOTE || kind == ACCESSIBLE_SAVE ||
            kind == ACCESSIBLE_HELP || kind == ACCESSIBLE_FIND || kind == ACCESSIBLE_TAG_EDIT ||
            kind == ACCESSIBLE_TAG_FILTER || kind == ACCESSIBLE_SURFACE_CHOICE ||
-           kind == ACCESSIBLE_SURFACE_BUTTON;
+           kind == ACCESSIBLE_SURFACE_BUTTON || kind == ACCESSIBLE_OUTLINE_ITEM;
 }
 
 static bool has_selection(enum accessible_kind kind)
 {
     return kind == ACCESSIBLE_TREE || kind == ACCESSIBLE_LAYOUT_GROUP ||
            kind == ACCESSIBLE_MODE_GROUP || kind == ACCESSIBLE_SURFACE_LIST ||
-           kind == ACCESSIBLE_SURFACE_TABS || kind == ACCESSIBLE_SCOPE_GROUP;
+           kind == ACCESSIBLE_SURFACE_TABS || kind == ACCESSIBLE_SCOPE_GROUP ||
+           kind == ACCESSIBLE_OUTLINE;
 }
 
 static bool has_selection_item(enum accessible_kind kind)
@@ -61,7 +62,7 @@ static bool has_selection_item(enum accessible_kind kind)
            kind == ACCESSIBLE_VIEW || kind == ACCESSIBLE_EDIT ||
            kind == ACCESSIBLE_SURFACE_CHOICE || kind == ACCESSIBLE_SURFACE_LANGUAGE ||
            kind == ACCESSIBLE_SURFACE_TAB || kind == ACCESSIBLE_SCOPE_ALL ||
-           kind == ACCESSIBLE_SCOPE_FAVORITES;
+           kind == ACCESSIBLE_SCOPE_FAVORITES || kind == ACCESSIBLE_OUTLINE_ITEM;
 }
 
 static bool has_scroll(enum accessible_kind kind)
@@ -343,6 +344,8 @@ static const CONTROLTYPEID control_types[] = {
     [ACCESSIBLE_DRAWER] = UIA_GroupControlTypeId,
     [ACCESSIBLE_SPLITTER] = UIA_SliderControlTypeId,
     [ACCESSIBLE_MINIMAP] = UIA_SliderControlTypeId,
+    [ACCESSIBLE_OUTLINE] = UIA_ListControlTypeId,
+    [ACCESSIBLE_OUTLINE_ITEM] = UIA_ListItemControlTypeId,
     [ACCESSIBLE_HEADER] = UIA_ToolBarControlTypeId,
     [ACCESSIBLE_LAYOUT_GROUP] = UIA_GroupControlTypeId,
     [ACCESSIBLE_LAYOUT_DRAWER] = UIA_RadioButtonControlTypeId,
@@ -453,6 +456,12 @@ static bool property_position(const struct accessible_view *_Nonnull view, PROPE
     {
         out->vt = VT_I4;
         out->lVal = id == UIA_PositionInSetPropertyId ? view->position : view->set_size;
+        return true;
+    }
+    if (id == UIA_LevelPropertyId && view->level > 0)
+    {
+        out->vt = VT_I4;
+        out->lVal = view->level;
         return true;
     }
     return false;
@@ -825,6 +834,8 @@ static struct accessible_item selection_container(struct accessible_item item)
                                                     : ACCESSIBLE_SURFACE_LIST,
                                         .revision = item.revision};
     enum accessible_kind kind = item.kind;
+    if (kind == ACCESSIBLE_OUTLINE_ITEM)
+        return (struct accessible_item){.kind = ACCESSIBLE_OUTLINE};
     if (kind == ACCESSIBLE_SCOPE_ALL || kind == ACCESSIBLE_SCOPE_FAVORITES)
         return (struct accessible_item){.kind = ACCESSIBLE_SCOPE_GROUP};
     if (kind == ACCESSIBLE_VIEW || kind == ACCESSIBLE_EDIT)

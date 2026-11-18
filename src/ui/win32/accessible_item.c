@@ -63,6 +63,8 @@ static const enum accessible_kind accessible_hosts[] = {
     [ACCESSIBLE_FIND] = ACCESSIBLE_WINDOW,
     [ACCESSIBLE_FILTER] = ACCESSIBLE_WINDOW,
     [ACCESSIBLE_BODY] = ACCESSIBLE_WINDOW,
+    [ACCESSIBLE_OUTLINE] = ACCESSIBLE_WINDOW,
+    [ACCESSIBLE_OUTLINE_ITEM] = ACCESSIBLE_WINDOW,
     [ACCESSIBLE_MINIMAP] = ACCESSIBLE_WINDOW,
     [ACCESSIBLE_NOTICE] = ACCESSIBLE_WINDOW,
     [ACCESSIBLE_GUIDE] = ACCESSIBLE_WINDOW,
@@ -94,7 +96,8 @@ bool accessible_item_equal(struct accessible_item left, struct accessible_item r
     {
         return false;
     }
-    if (accessible_item_surface(left) && !accessible_item_root(left))
+    if ((accessible_item_surface(left) && !accessible_item_root(left)) ||
+        left.kind == ACCESSIBLE_OUTLINE_ITEM)
     {
         return left.revision == right.revision && left.slot == right.slot;
     }

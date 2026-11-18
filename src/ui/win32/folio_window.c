@@ -137,7 +137,10 @@ struct folio_window
     struct note_pane *_Nullable pane;
     struct note_minimap *_Nullable minimap;
     struct note_outline *_Nullable outline; /* #975: the headings column's own state. */
-    bool outline_carved; /* the body was last placed with room left for the column */
+    bool outline_carved;             /* the body was last placed with room left for the column */
+    size_t outline_press;            /* the column's row the pointer went down on */
+    uint64_t outline_press_revision; /* ...in this load of the note */
+    int outline_wheel;               /* wheel movement over the column not yet worth a row */
     enum folio_idle_work next_idle_work;
     uint64_t image_ticket;
     uint64_t image_origin_revision;
@@ -437,6 +440,10 @@ static const struct
                            ACCESSIBLE_MAIN_NONE},
     [ACCESSIBLE_BODY] = {ACCESSIBLE_WINDOW, UI_TEXT_ACCESSIBLE_BODY, true, UI_TEXT_EMPTY,
                          ACCESSIBLE_MAIN_NONE},
+    [ACCESSIBLE_OUTLINE] = {ACCESSIBLE_WINDOW, UI_TEXT_OUTLINE, true, UI_TEXT_OUTLINE_HELP,
+                            ACCESSIBLE_MAIN_PANE},
+    [ACCESSIBLE_OUTLINE_ITEM] = {ACCESSIBLE_OUTLINE, UI_TEXT_EMPTY, true, UI_TEXT_EMPTY,
+                                 ACCESSIBLE_MAIN_NONE},
     [ACCESSIBLE_MINIMAP] = {ACCESSIBLE_WINDOW, UI_TEXT_MINIMAP, true, UI_TEXT_MINIMAP_HELP,
                             ACCESSIBLE_MAIN_RANGE},
     [ACCESSIBLE_NOTICE] = {ACCESSIBLE_WINDOW, UI_TEXT_EMPTY, false, UI_TEXT_EMPTY,
@@ -483,6 +490,7 @@ static const enum accessible_kind main_parts[] = {
     ACCESSIBLE_CLOSE,       ACCESSIBLE_VIEW,           ACCESSIBLE_EDIT,
     ACCESSIBLE_SAVE,        ACCESSIBLE_FIND,           ACCESSIBLE_MENU,
     ACCESSIBLE_SPLITTER,    ACCESSIBLE_MINIMAP,        ACCESSIBLE_TAG_EDIT,
+    ACCESSIBLE_OUTLINE,
 };
 
 static size_t main_part_count(void)
@@ -754,6 +762,9 @@ static enum accessible_kind mode_kind(enum pane_mode mode);
 static bool minimap_visible(const struct folio_window *_Nonnull self);
 static void track_outline(const struct folio_window *_Nonnull self);
 static bool minimap_available(const struct folio_window *_Nonnull self);
+static bool outline_available(const struct folio_window *_Nonnull self);
+static bool outline_visible(const struct folio_window *_Nonnull self);
+static RECT outline_rect(const struct folio_window *_Nonnull self);
 static RECT minimap_rect(const struct folio_window *_Nonnull self);
 static void request_minimap(struct folio_window *_Nonnull self, enum minimap_update update);
 static bool part_focus_shown(const struct folio_window *_Nonnull self, enum accessible_kind kind);
@@ -822,6 +833,8 @@ static bool part_enabled(const struct folio_window *_Nonnull self, enum accessib
 {
     if (kind == ACCESSIBLE_MINIMAP)
         return minimap_available(self);
+    if (kind == ACCESSIBLE_OUTLINE)
+        return outline_available(self);
     if (accessible_item_shell(kind) || kind == ACCESSIBLE_WINDOW || kind == ACCESSIBLE_HEADER)
         return shell_ready(self);
     return folio_window_accessible_ready(self) && self->command_surface == COMMAND_SURFACE_CLOSED;
@@ -2740,6 +2753,7 @@ static struct note_outline_paint outline_paint_for(const struct folio_window *_N
                                                    const char16_t *_Nonnull empty)
 {
     return (struct note_outline_paint){.bounds = outline_rect(self),
+                                       .focused = part_focus_shown(self, ACCESSIBLE_OUTLINE),
                                        .dpi = GetDpiForWindow(self->handle),
                                        .font = self->mono_font,
                                        .palette = &self->palette,
@@ -2785,6 +2799,15 @@ static bool pane_inset_changed(const struct folio_window *_Nonnull self)
 static bool minimap_available(const struct folio_window *_Nonnull self)
 {
     return minimap_visible(self) && folio_window_accessible_ready(self) &&
+           self->command_surface == COMMAND_SURFACE_CLOSED &&
+           note_pane_readiness(self->pane) == NOTE_PANE_READINESS_READY;
+}
+
+/* #975: the column takes the pointer and UIA actions only while a ready note is read and no
+ * surface covers the window. */
+static bool outline_available(const struct folio_window *_Nonnull self)
+{
+    return outline_visible(self) && folio_window_accessible_ready(self) &&
            self->command_surface == COMMAND_SURFACE_CLOSED &&
            note_pane_readiness(self->pane) == NOTE_PANE_READINESS_READY;
 }
@@ -2835,7 +2858,8 @@ static void arrange_minimap(struct folio_window *_Nonnull self, RECT before, boo
     RECT after = pane_bounds(self);
     if (!minimap_visible(self) || !was_visible || !EqualRect(&before, &after))
         request_minimap(self, MINIMAP_UPDATE_SETTLE);
-    if (self->keyboard_target == ACCESSIBLE_MINIMAP && !minimap_visible(self))
+    if ((self->keyboard_target == ACCESSIBLE_MINIMAP && !minimap_visible(self)) ||
+        (self->keyboard_target == ACCESSIBLE_OUTLINE && !outline_visible(self)))
         self->keyboard_target = mode_kind(folio_state_pane_mode(self->state));
 }
 
@@ -2932,6 +2956,8 @@ static enum folio_state_outcome loaded_pane(struct folio_window *_Nonnull self,
         arrange(self);
     }
     note_outline_reset(self->outline);
+    self->outline_wheel = 0;
+    track_outline(self);
     InvalidateRect(self->handle, nullptr, FALSE);
     if (outcome == NOTE_PANE_LOAD_READY && self->appearance_recolor_pending)
     {
@@ -10219,10 +10245,12 @@ static void execute_toggle_minimap_command(struct folio_window *_Nonnull self,
  * run only; the column itself appears where a note is being read and there is room. */
 static void apply_outline(struct folio_window *_Nonnull self)
 {
-    folio_state_set_outline(self->state, !folio_state_outline(self->state));
     if (!hide_command_surface(self))
         return;
+    folio_state_set_outline(self->state, !folio_state_outline(self->state));
     cancel_part_press(self);
+    (void)note_outline_set_hover(self->outline, note_outline_none);
+    self->outline_wheel = 0;
     rearrange_keeping_line(self);
     InvalidateRect(self->handle, nullptr, FALSE);
     accessibility_host_schedule(self->accessibility);
@@ -11751,6 +11779,8 @@ static void clear_part_press(struct folio_window *_Nonnull self)
         return;
     }
     bool mouse = !self->pressed_by_key;
+    if (kind == ACCESSIBLE_OUTLINE)
+        (void)note_outline_set_pressed(self->outline, note_outline_none);
     self->pressed_part = ACCESSIBLE_WINDOW;
     self->pressed_inside = false;
     self->pressed_by_key = false;
@@ -11859,11 +11889,72 @@ static void drag_minimap(struct folio_window *_Nonnull self, int y)
     scroll_minimap(self, note_minimap_drag(&paint, y, self->minimap_pointer_offset));
 }
 
+/* #975: the column's row under a point in client coordinates, or none. */
+static size_t outline_row_under(const struct folio_window *_Nonnull self, POINT point)
+{
+    if (!outline_available(self))
+        return note_outline_none;
+    struct note_outline_paint paint = outline_place(self);
+    return note_outline_row_at(self->outline, &paint, point, note_pane_heading_count(self->pane));
+}
+
+/* Pressing a row of the headings column. The jump happens on release over the same row, like
+ * a button (ADR0060 decision 4). */
+static void press_outline(struct folio_window *_Nonnull self, POINT point)
+{
+    size_t row = outline_row_under(self, point);
+    if (row == note_outline_none)
+        return;
+    begin_part_press(self, ACCESSIBLE_OUTLINE, false);
+    self->outline_press = row;
+    self->outline_press_revision = note_outline_revision(self->outline);
+    (void)note_outline_set_pressed(self->outline, row);
+    SetCapture(self->handle);
+    if (GetCapture() != self->handle)
+        clear_part_press(self);
+}
+
+/* While pressed, the row looks pressed only with the pointer over it. */
+static void track_outline_press(struct folio_window *_Nonnull self, POINT point)
+{
+    bool inside = outline_row_under(self, point) == self->outline_press;
+    self->pressed_inside = inside;
+    if (note_outline_set_pressed(self->outline, inside ? self->outline_press : note_outline_none))
+        invalidate_part(self, ACCESSIBLE_OUTLINE);
+}
+
+/* Released over the row it went down on: the same request UIA's Invoke sends. */
+static void release_outline(struct folio_window *_Nonnull self, POINT point)
+{
+    size_t row = self->outline_press;
+    bool same = outline_row_under(self, point) == row;
+    cancel_part_press(self);
+    if (!same)
+        return;
+    struct accessible_request request = {.item = {.kind = ACCESSIBLE_OUTLINE_ITEM,
+                                                  .slot = row,
+                                                  .revision = self->outline_press_revision},
+                                         .action = ACCESSIBLE_ACTION_INVOKE};
+    (void)folio_window_accessible_action(self, &request);
+    accessibility_host_schedule(self->accessibility);
+}
+
+static void hover_outline(struct folio_window *_Nonnull self, size_t row)
+{
+    if (note_outline_set_hover(self->outline, row))
+        invalidate_part(self, ACCESSIBLE_OUTLINE);
+}
+
 static bool press_range(struct folio_window *_Nonnull self, enum accessible_kind kind, POINT point)
 {
     if (kind == ACCESSIBLE_MINIMAP)
     {
         begin_minimap_drag(self, point);
+        return true;
+    }
+    if (kind == ACCESSIBLE_OUTLINE)
+    {
+        press_outline(self, point);
         return true;
     }
     if (kind == ACCESSIBLE_SPLITTER && part_enabled(self, kind))
@@ -11923,6 +12014,11 @@ static void release_part(struct folio_window *_Nonnull self, LPARAM lparam)
         clear_part_press(self);
         return;
     }
+    if (kind == ACCESSIBLE_OUTLINE)
+    {
+        release_outline(self, point);
+        return;
+    }
     RECT bounds = accessible_main_rect(self, kind);
     bool inside = PtInRect(&bounds, point) && accessible_visible(self, kind);
     cancel_part_press(self);
@@ -11949,6 +12045,8 @@ static void set_hover(struct folio_window *_Nonnull self, enum accessible_kind k
 static void refresh_pointer_cursor(const struct folio_window *_Nonnull self, POINT point)
 {
     enum accessible_kind kind = part_at(self, point);
+    if (kind == ACCESSIBLE_OUTLINE && outline_row_under(self, point) == note_outline_none)
+        kind = ACCESSIBLE_WINDOW; /* the column's title and empty space are not actions */
     if (self->pressed_part == ACCESSIBLE_SPLITTER || self->pressed_part == ACCESSIBLE_MINIMAP)
         kind = self->pressed_part;
     if (self->pressed_part != ACCESSIBLE_WINDOW && !self->pressed_by_key &&
@@ -11961,21 +12059,27 @@ static void refresh_pointer_cursor(const struct folio_window *_Nonnull self, POI
 }
 
 /* capture 中は押下の内外だけを写す（外へ出たら押していない見た目に戻す）。それ以外は hover。 */
+/* The parts that follow the pointer while held: the minimap's thumb, the splitter and a row of
+ * the headings column. True when one of them took the move. */
+static bool track_held_part(struct folio_window *_Nonnull self, POINT point)
+{
+    if (self->pressed_part == ACCESSIBLE_MINIMAP)
+        drag_minimap(self, point.y);
+    else if (self->pressed_part == ACCESSIBLE_SPLITTER)
+        drag_drawer_width(self, point.x);
+    else if (self->pressed_part == ACCESSIBLE_OUTLINE)
+        track_outline_press(self, point);
+    else
+        return false;
+    refresh_pointer_cursor(self, point);
+    return true;
+}
+
 static void track_pointer(struct folio_window *_Nonnull self, LPARAM lparam)
 {
     POINT point = {GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
-    if (self->pressed_part == ACCESSIBLE_MINIMAP)
-    {
-        drag_minimap(self, point.y);
-        refresh_pointer_cursor(self, point);
+    if (track_held_part(self, point))
         return;
-    }
-    if (self->pressed_part == ACCESSIBLE_SPLITTER)
-    {
-        drag_drawer_width(self, point.x);
-        refresh_pointer_cursor(self, point);
-        return;
-    }
     if (self->pressed_part != ACCESSIBLE_WINDOW && !self->pressed_by_key)
     {
         RECT bounds = accessible_main_rect(self, self->pressed_part);
@@ -11997,6 +12101,7 @@ static void track_pointer(struct folio_window *_Nonnull self, LPARAM lparam)
     bool open =
         folio_window_accessible_ready(self) && self->command_surface == COMMAND_SURFACE_CLOSED;
     set_hover(self, open ? part_at(self, point) : ACCESSIBLE_WINDOW);
+    hover_outline(self, open ? outline_row_under(self, point) : note_outline_none);
     refresh_pointer_cursor(self, point);
 }
 
@@ -12004,6 +12109,7 @@ static void leave_pointer(struct folio_window *_Nonnull self)
 {
     self->hover_tracking = false;
     set_hover(self, ACCESSIBLE_WINDOW);
+    hover_outline(self, note_outline_none);
 }
 
 /* Space は押下の見た目にして離した時に実行する。自動繰り返しは呼び出し側で捨てる。 */
@@ -12439,11 +12545,55 @@ static bool forward_minimap_wheel(const struct folio_window *_Nonnull self, WPAR
     return true;
 }
 
+static bool outline_wheel_target(const struct folio_window *_Nonnull self, LPARAM position)
+{
+    RECT bounds = outline_rect(self);
+    POINT point = {GET_X_LPARAM(position), GET_Y_LPARAM(position)};
+    return !IsRectEmpty(&bounds) && ScreenToClient(self->handle, &point) &&
+           PtInRect(&bounds, point);
+}
+
+/* After the column moved under a still pointer, the hover is the row now there. */
+static void rehover_outline(struct folio_window *_Nonnull self, LPARAM position)
+{
+    POINT point = {GET_X_LPARAM(position), GET_Y_LPARAM(position)};
+    if (ScreenToClient(self->handle, &point))
+        (void)note_outline_set_hover(self->outline, outline_row_under(self, point));
+}
+
+/* #975: the wheel over the headings column moves the column by three rows a notch, keeping
+ * what a fine wheel sends below a notch for the next message. The body stays where it is. */
+static bool forward_outline_wheel(struct folio_window *_Nonnull self, WPARAM keys, LPARAM position)
+{
+    if (!outline_wheel_target(self, position))
+        return false;
+    if (self->pane != nullptr)
+        note_pane_cancel_wheel(self->pane);
+    if (!outline_available(self))
+        return true;
+    int delta = GET_WHEEL_DELTA_WPARAM(keys);
+    if ((self->outline_wheel > 0 && delta < 0) || (self->outline_wheel < 0 && delta > 0))
+        self->outline_wheel = 0;
+    self->outline_wheel += delta * 3;
+    int rows = -(self->outline_wheel / WHEEL_DELTA);
+    self->outline_wheel %= WHEEL_DELTA;
+    struct note_outline_paint paint = outline_place(self);
+    if (rows != 0 &&
+        note_outline_scroll(self->outline, &paint, rows, note_pane_heading_count(self->pane)))
+    {
+        rehover_outline(self, position);
+        InvalidateRect(self->handle, &paint.bounds, FALSE);
+        accessibility_host_schedule(self->accessibility);
+    }
+    return true;
+}
+
 /* 本文とminimapのwheelは同じ本文位置へ、ドロワー上は従来の索引へ渡す。
  * lparam はスクリーン座標なので、位置を読むために OS へ問い合わせない（ARC-007）。 */
-static void forward_wheel(const struct folio_window *_Nonnull self, WPARAM wparam, LPARAM lparam)
+static void forward_wheel(struct folio_window *_Nonnull self, WPARAM wparam, LPARAM lparam)
 {
-    if (forward_minimap_wheel(self, wparam, lparam) || forward_body_wheel(self, wparam, lparam))
+    if (forward_outline_wheel(self, wparam, lparam) ||
+        forward_minimap_wheel(self, wparam, lparam) || forward_body_wheel(self, wparam, lparam))
         return;
     if (self->pane != nullptr)
         note_pane_cancel_wheel(self->pane);
@@ -12571,9 +12721,74 @@ static bool splitter_key(struct folio_window *_Nonnull self, WPARAM key)
     return true;
 }
 
+/* #975: the row a key moves the column's cursor to, or none for a key the column does not use.
+ * A page is the rows the column shows. */
+static size_t outline_key_target(WPARAM key, size_t cursor, size_t count, size_t page)
+{
+    size_t last = count == 0 ? 0 : count - 1;
+    size_t step = page == 0 ? 1 : page;
+    size_t up = 0;   /* rows toward the first */
+    size_t down = 0; /* rows toward the last */
+    switch (key)
+    {
+    case VK_UP:
+        up = 1;
+        break;
+    case VK_DOWN:
+        down = 1;
+        break;
+    case VK_PRIOR:
+        up = step;
+        break;
+    case VK_NEXT:
+        down = step;
+        break;
+    case VK_HOME:
+        up = SIZE_MAX;
+        break;
+    case VK_END:
+        down = SIZE_MAX;
+        break;
+    default:
+        return note_outline_none; /* Win32の鍵は開いた集合。 */
+    }
+    if (cursor > last)
+        cursor = last;
+    if (up > 0)
+        return cursor > up ? cursor - up : 0;
+    return last - cursor > down ? cursor + down : last;
+}
+
+/* Puts the column's keyboard cursor on a row and shows it. */
+static void outline_set_cursor(struct folio_window *_Nonnull self, size_t row)
+{
+    struct note_outline_paint paint = outline_place(self);
+    note_outline_set_cursor(self->outline, &paint, row, note_pane_heading_count(self->pane));
+    InvalidateRect(self->handle, &paint.bounds, FALSE);
+    accessibility_host_schedule(self->accessibility);
+}
+
+/* ↑↓・PageUp/Down・Home/End move the cursor between rows; Enter and Space take the shared
+ * activation path (press_activation -> keyboard_activate). */
+static bool outline_key(struct folio_window *_Nonnull self, WPARAM key)
+{
+    if (self->keyboard_target != ACCESSIBLE_OUTLINE || !outline_available(self))
+        return false;
+    struct note_outline_paint paint = outline_place(self);
+    size_t count = note_pane_heading_count(self->pane);
+    size_t target = outline_key_target(key, note_outline_cursor(self->outline), count,
+                                       note_outline_rows(&paint));
+    if (target == note_outline_none)
+        return false;
+    if (count > 0)
+        outline_set_cursor(self, target);
+    show_focus_cues(self, true);
+    return true;
+}
+
 static bool range_key(struct folio_window *_Nonnull self, WPARAM key)
 {
-    return minimap_key(self, key) || splitter_key(self, key);
+    return outline_key(self, key) || minimap_key(self, key) || splitter_key(self, key);
 }
 
 static void press_key(struct folio_window *_Nonnull self, WPARAM key, LPARAM lparam)
@@ -13888,7 +14103,8 @@ static bool create_command_inputs(struct folio_window *_Nonnull self)
 /* 見えていない部品の tool は空の矩形にして出さない。矩形は描画と同じ 1 本。 */
 static RECT tooltip_rect(const struct folio_window *_Nonnull self, enum accessible_kind kind)
 {
-    bool visible = part_enabled(self, kind) && accessible_visible(self, kind);
+    bool visible =
+        part_enabled(self, kind) && accessible_visible(self, kind) && kind != ACCESSIBLE_OUTLINE;
     return visible ? accessible_main_rect(self, kind) : (RECT){0};
 }
 
@@ -15739,8 +15955,9 @@ static bool cancel_drawer_input(const struct folio_window *_Nonnull window,
 static bool translate_minimap_wheel(const struct folio_window *_Nonnull window,
                                     const MSG *_Nonnull message)
 {
-    if (message->message != WM_MOUSEWHEEL || !minimap_available(window) ||
-        !minimap_wheel_target(window, message->lParam))
+    if (message->message != WM_MOUSEWHEEL ||
+        !((minimap_available(window) && minimap_wheel_target(window, message->lParam)) ||
+          (outline_available(window) && outline_wheel_target(window, message->lParam))))
         return false;
     if (message->hwnd != window->handle && !IsChild(window->handle, message->hwnd))
         return false;
@@ -17501,7 +17718,7 @@ static bool accessible_pane_control(enum accessible_kind kind)
     enum accessible_kind parent = accessible_controls[kind].parent;
     return kind == ACCESSIBLE_PANE_TOOLS || parent == ACCESSIBLE_PANE_TOOLS ||
            parent == ACCESSIBLE_MODE_GROUP || parent == ACCESSIBLE_ACTION_GROUP ||
-           kind == ACCESSIBLE_BODY || kind == ACCESSIBLE_MINIMAP;
+           kind == ACCESSIBLE_BODY || kind == ACCESSIBLE_MINIMAP || kind == ACCESSIBLE_OUTLINE;
 }
 
 /* 空状態では操作帯・閲覧/編集・本文を描かず、hit と UIA にも出さない（ADR0060 の決定 13）。 */
@@ -17510,6 +17727,8 @@ static bool pane_control_visible(const struct folio_window *_Nonnull self,
 {
     if (kind == ACCESSIBLE_MINIMAP)
         return minimap_visible(self);
+    if (kind == ACCESSIBLE_OUTLINE)
+        return outline_visible(self);
     if (kind == ACCESSIBLE_TAG_EDIT && !tag_strip_visible(self))
         return false;
     if (kind == ACCESSIBLE_BREADCRUMB && !folio_state_pane_title(self->state).any)
@@ -17584,15 +17803,18 @@ static RECT accessible_main_group_rect(const struct folio_window *_Nonnull self,
 static RECT accessible_pane_rect(const struct folio_window *_Nonnull self,
                                  enum accessible_kind kind)
 {
-    if (kind == ACCESSIBLE_TAG_EDIT)
-        return tag_strip_rect(self);
-    if (kind == ACCESSIBLE_BREADCRUMB)
+    const struct
     {
-        return breadcrumb_rect(self);
-    }
-    if (kind == ACCESSIBLE_GUIDE)
+        enum accessible_kind kind;
+        RECT (*_Nonnull bounds)(const struct folio_window *_Nonnull);
+    } parts[] = {{ACCESSIBLE_TAG_EDIT, tag_strip_rect},
+                 {ACCESSIBLE_OUTLINE, outline_rect},
+                 {ACCESSIBLE_BREADCRUMB, breadcrumb_rect},
+                 {ACCESSIBLE_GUIDE, guide_rect}};
+    for (size_t at = 0; at < sizeof parts / sizeof parts[0]; ++at)
     {
-        return guide_rect(self);
+        if (parts[at].kind == kind)
+            return parts[at].bounds(self);
     }
     if (kind == ACCESSIBLE_VIEW || kind == ACCESSIBLE_EDIT)
     {
@@ -17944,7 +18166,8 @@ static void accessible_native_bounds(struct folio_window *_Nonnull self, enum ac
 static void accessible_main_bounds(struct folio_window *_Nonnull self, enum accessible_kind kind,
                                    struct accessible_view *_Nonnull out)
 {
-    if ((layout_control(kind) || kind == ACCESSIBLE_SPLITTER || kind == ACCESSIBLE_MINIMAP) &&
+    if ((layout_control(kind) || kind == ACCESSIBLE_SPLITTER || kind == ACCESSIBLE_MINIMAP ||
+         kind == ACCESSIBLE_OUTLINE) &&
         !accessible_visible(self, kind))
     {
         out->bounds = (RECT){0};
@@ -18015,6 +18238,67 @@ static void accessible_availability(const struct folio_window *_Nonnull self,
     out->focusable = part_focusable(self, kind);
 }
 
+/* #975: one row of the headings column: the heading's text, level and place in the column.
+ * A row of an earlier load, or of a column no longer shown, does not answer. */
+static HRESULT outline_item_read(struct folio_window *_Nonnull self, struct accessible_item item,
+                                 struct accessible_view *_Nonnull out)
+{
+    struct note_pane_heading heading = {0};
+    if (!outline_visible(self) || note_pane_readiness(self->pane) != NOTE_PANE_READINESS_READY ||
+        item.revision != note_outline_revision(self->outline) ||
+        !note_pane_heading(self->pane, item.slot, &heading))
+        return accessibility_node_unavailable;
+    struct note_pane_heading_label label = {0};
+    if (note_pane_heading_text(self->pane, item.slot, &label) > 0)
+        memcpy(out->name, label.units, sizeof label.units);
+    out->level = (int)heading.level;
+    out->position = (int)item.slot + 1;
+    out->set_size = (int)note_pane_heading_count(self->pane);
+    out->selected = note_outline_current(self->outline) == item.slot;
+    out->enabled = part_enabled(self, ACCESSIBLE_OUTLINE);
+    out->focusable = part_focusable(self, ACCESSIBLE_OUTLINE);
+    struct accessible_item focus = {.kind = ACCESSIBLE_WINDOW};
+    out->focused = folio_window_accessible_focus(self, ACCESSIBLE_WINDOW, &focus) == S_OK &&
+                   accessible_item_equal(focus, item);
+    struct note_outline_paint paint = outline_place(self);
+    out->bounds = note_outline_row_rect(self->outline, &paint, item.slot);
+    out->offscreen =
+        IsRectEmpty(&out->bounds) || !IsWindowVisible(self->handle) || IsIconic(self->handle);
+    if (!IsRectEmpty(&out->bounds))
+        MapWindowPoints(self->handle, nullptr, (POINT *)&out->bounds, 2);
+    return S_OK;
+}
+
+static struct accessible_item outline_item(const struct folio_window *_Nonnull self, size_t row)
+{
+    return (struct accessible_item){.kind = ACCESSIBLE_OUTLINE_ITEM,
+                                    .slot = row,
+                                    .revision = note_outline_revision(self->outline)};
+}
+
+uint64_t folio_window_accessible_outline_revision(const struct folio_window *_Nonnull self)
+{
+    if (self->outline == nullptr || self->handle == nullptr)
+        return 0;
+    return note_outline_revision(self->outline) * 2 + (outline_visible(self) ? 1 : 0);
+}
+
+/* The items whose views come from elsewhere than the static table: the surface's and the
+ * headings column's rows. */
+static bool accessible_read_elsewhere(struct folio_window *_Nonnull self,
+                                      struct accessible_item item,
+                                      struct accessible_view *_Nonnull out,
+                                      HRESULT *_Nonnull result)
+{
+    if (accessible_item_surface(item))
+        *result = surface_read(self, item, out);
+    else if (item.kind == ACCESSIBLE_OUTLINE_ITEM)
+        *result = outline_item_read(self, item, out);
+    else
+        return false;
+    return true;
+}
+
 HRESULT folio_window_accessible_read(struct folio_window *_Nonnull self,
                                      const struct accessible_item *_Nonnull item,
                                      struct accessible_view *_Nonnull out)
@@ -18024,8 +18308,9 @@ HRESULT folio_window_accessible_read(struct folio_window *_Nonnull self,
         return accessibility_node_unavailable;
     }
     *out = (struct accessible_view){0};
-    if (accessible_item_surface(*item))
-        return surface_read(self, *item, out);
+    HRESULT elsewhere = S_OK;
+    if (accessible_read_elsewhere(self, *item, out, &elsewhere))
+        return elsewhere;
     accessible_name(self, item->kind, out->name);
     accessible_accelerator(self, item->kind, out->accelerator);
     accessible_details(self, item->kind, out);
@@ -18055,12 +18340,38 @@ HRESULT folio_window_accessible_read(struct folio_window *_Nonnull self,
     return S_OK;
 }
 
+/* The heading being read is the column's selection; before the first heading there is none. */
+static HRESULT outline_selected(const struct folio_window *_Nonnull self,
+                                struct accessible_item *_Nonnull out)
+{
+    size_t current = note_outline_current(self->outline);
+    if (!outline_visible(self) || current == note_outline_none)
+        return S_FALSE;
+    *out = outline_item(self, current);
+    return S_OK;
+}
+
+static bool accessible_selected_elsewhere(struct folio_window *_Nonnull self,
+                                          const struct accessible_item *_Nonnull item,
+                                          struct accessible_item *_Nonnull out,
+                                          HRESULT *_Nonnull result)
+{
+    if (accessible_item_surface(*item))
+        *result = surface_selected(self, item, out);
+    else if (item->kind == ACCESSIBLE_OUTLINE)
+        *result = outline_selected(self, out);
+    else
+        return false;
+    return true;
+}
+
 HRESULT folio_window_accessible_selected(struct folio_window *_Nonnull self,
                                          const struct accessible_item *_Nonnull item,
                                          struct accessible_item *_Nonnull out)
 {
-    if (accessible_item_surface(*item))
-        return surface_selected(self, item, out);
+    HRESULT elsewhere = S_OK;
+    if (accessible_selected_elsewhere(self, item, out, &elsewhere))
+        return elsewhere;
     if (item->kind == ACCESSIBLE_LAYOUT_GROUP)
     {
         const enum accessible_kind layouts[] = {[FOLIO_LAYOUT_DRAWER] = ACCESSIBLE_LAYOUT_DRAWER,
@@ -18111,6 +18422,18 @@ static struct accessible_item accessible_cursor(const struct folio_window *_Nonn
     return item;
 }
 
+/* The item the keyboard is on: the index's cursor row, the headings column's cursor row, or the
+ * part itself. */
+static struct accessible_item keyboard_item(const struct folio_window *_Nonnull self)
+{
+    if (self->keyboard_target == ACCESSIBLE_TREE)
+        return accessible_cursor(self);
+    if (self->keyboard_target == ACCESSIBLE_OUTLINE && outline_visible(self) &&
+        note_pane_heading_count(self->pane) > 0)
+        return outline_item(self, note_outline_cursor(self->outline));
+    return (struct accessible_item){.kind = self->keyboard_target};
+}
+
 HRESULT folio_window_accessible_focus(struct folio_window *_Nonnull self, enum accessible_kind root,
                                       struct accessible_item *_Nonnull out)
 {
@@ -18122,9 +18445,7 @@ HRESULT folio_window_accessible_focus(struct folio_window *_Nonnull self, enum a
     {
         return S_FALSE; /* native入力欄・modalには既定providerが答える。 */
     }
-    *out = self->keyboard_target == ACCESSIBLE_TREE
-               ? accessible_cursor(self)
-               : (struct accessible_item){.kind = self->keyboard_target};
+    *out = keyboard_item(self);
     if (!accessible_visible(self, out->kind) ||
         (root == ACCESSIBLE_DRAWER && accessible_item_host(*out) != ACCESSIBLE_DRAWER))
     {
@@ -18139,7 +18460,8 @@ static bool accessible_virtual(enum accessible_kind kind)
     return !accessible_item_surface(item) && kind != ACCESSIBLE_COMMAND_INPUT &&
            kind != ACCESSIBLE_REPLACE_PATTERN && kind != ACCESSIBLE_REPLACE_TEXT &&
            kind != ACCESSIBLE_DISCOVERY_PREVIEW && !accessible_item_row(item) &&
-           kind != ACCESSIBLE_FILTER && kind != ACCESSIBLE_BODY && !accessible_item_root(item);
+           kind != ACCESSIBLE_FILTER && kind != ACCESSIBLE_BODY && !accessible_item_root(item) &&
+           kind != ACCESSIBLE_OUTLINE_ITEM;
 }
 
 static bool accessible_edge_direction(enum accessible_navigation direction)
@@ -18187,6 +18509,48 @@ static HRESULT accessible_static_next(const struct folio_window *_Nonnull self,
     return S_FALSE;
 }
 
+/* The column's rows: the list's first and last children, and each row's neighbours. */
+static bool outline_navigation(const struct accessible_item *_Nonnull item,
+                               enum accessible_navigation direction)
+{
+    return item->kind == ACCESSIBLE_OUTLINE_ITEM ||
+           (item->kind == ACCESSIBLE_OUTLINE && accessible_edge_direction(direction));
+}
+
+/* The row a step reaches: the list's first or last row, or a row's previous or next. None at
+ * either end and for a row's own children (it has none). */
+static size_t outline_neighbour(const struct accessible_item *_Nonnull item,
+                                enum accessible_navigation direction, size_t count)
+{
+    bool forward = accessible_forward_direction(direction);
+    bool edge = accessible_edge_direction(direction);
+    if (count == 0 || (item->kind == ACCESSIBLE_OUTLINE_ITEM && edge))
+        return note_outline_none;
+    if (item->kind == ACCESSIBLE_OUTLINE)
+        return forward ? 0 : count - 1;
+    if (forward ? item->slot + 1 >= count : item->slot == 0)
+        return note_outline_none;
+    return forward ? item->slot + 1 : item->slot - 1;
+}
+
+static HRESULT outline_navigate(const struct folio_window *_Nonnull self,
+                                const struct accessible_item *_Nonnull item,
+                                enum accessible_navigation direction,
+                                struct accessible_item *_Nonnull out)
+{
+    size_t count = outline_visible(self) ? note_pane_heading_count(self->pane) : 0;
+    if (direction == ACCESSIBLE_NAVIGATION_PARENT)
+    {
+        *out = (struct accessible_item){.kind = ACCESSIBLE_OUTLINE};
+        return S_OK;
+    }
+    size_t row = outline_neighbour(item, direction, count);
+    if (row == note_outline_none)
+        return S_FALSE;
+    *out = outline_item(self, row);
+    return S_OK;
+}
+
 HRESULT folio_window_accessible_navigate(struct folio_window *_Nonnull self,
                                          const struct accessible_item *_Nonnull item,
                                          enum accessible_navigation direction,
@@ -18200,6 +18564,8 @@ HRESULT folio_window_accessible_navigate(struct folio_window *_Nonnull self,
     {
         return result;
     }
+    if (outline_navigation(item, direction))
+        return outline_navigate(self, item, direction, out);
     bool tree_child = item->kind == ACCESSIBLE_TREE && accessible_edge_direction(direction);
     if (accessible_item_row(*item) || tree_child)
     {
@@ -18246,9 +18612,27 @@ static bool accessible_drawer_contains(struct folio_window *_Nonnull self, POINT
            PtInRect(&bounds, point);
 }
 
+/* The column, or its row, under a point in screen coordinates. */
+static bool outline_item_at(struct folio_window *_Nonnull self, POINT screen,
+                            struct accessible_item *_Nonnull out)
+{
+    POINT point = screen;
+    RECT bounds = outline_rect(self);
+    if (IsRectEmpty(&bounds) || !ScreenToClient(self->handle, &point) || !PtInRect(&bounds, point))
+        return false;
+    struct note_outline_paint paint = outline_place(self);
+    size_t row =
+        note_outline_row_at(self->outline, &paint, point, note_pane_heading_count(self->pane));
+    *out = row == note_outline_none ? (struct accessible_item){.kind = ACCESSIBLE_OUTLINE}
+                                    : outline_item(self, row);
+    return true;
+}
+
 static HRESULT accessible_control_at(struct folio_window *_Nonnull self, POINT point,
                                      struct accessible_item *_Nonnull out)
 {
+    if (outline_item_at(self, point, out))
+        return S_OK;
     size_t count = sizeof accessible_controls / sizeof accessible_controls[0];
     for (size_t index = count; index > 0; --index)
     {
@@ -18321,6 +18705,22 @@ static HRESULT accessible_row_focus(struct folio_window *_Nonnull self, struct a
     return S_OK;
 }
 
+/* #975: the headings column is one keyboard stop. Entering it puts the cursor on the heading
+ * being read (the first row before any); a row UIA focuses puts the cursor on that row. */
+static enum accessible_kind focus_target(struct folio_window *_Nonnull self,
+                                         struct accessible_item item)
+{
+    if (item.kind == ACCESSIBLE_OUTLINE_ITEM)
+    {
+        outline_set_cursor(self, item.slot);
+        return ACCESSIBLE_OUTLINE;
+    }
+    size_t current = note_outline_current(self->outline);
+    if (item.kind == ACCESSIBLE_OUTLINE && self->keyboard_target != ACCESSIBLE_OUTLINE)
+        outline_set_cursor(self, current == note_outline_none ? 0 : current);
+    return item.kind;
+}
+
 static HRESULT accessible_set_focus(struct folio_window *_Nonnull self, struct accessible_item item)
 {
     if (!accessible_controls[item.kind].focusable)
@@ -18341,7 +18741,7 @@ static HRESULT accessible_set_focus(struct folio_window *_Nonnull self, struct a
     }
     else
     {
-        self->keyboard_target = item.kind;
+        self->keyboard_target = focus_target(self, item);
     }
     self->pending_g = false;
     SetFocus(self->handle);
@@ -18452,9 +18852,22 @@ static HRESULT accessible_command_action(struct folio_window *_Nonnull self,
     return S_OK;
 }
 
+/* #975: a row of the headings column brings its heading to the top of the body. The pointer,
+ * UIA's Invoke and Select (and later the keyboard) all end here. */
+static HRESULT outline_activate(struct folio_window *_Nonnull self, struct accessible_item item)
+{
+    if (!outline_available(self) || item.revision != note_outline_revision(self->outline) ||
+        !note_pane_show_heading(self->pane, item.slot))
+        return accessibility_node_invalid;
+    refresh_gutter(self, true);
+    return S_OK;
+}
+
 static HRESULT accessible_activate(struct folio_window *_Nonnull self,
                                    const struct accessible_request *_Nonnull request)
 {
+    if (request->item.kind == ACCESSIBLE_OUTLINE_ITEM)
+        return outline_activate(self, request->item);
     if (accessible_controls[request->item.kind].parent == ACCESSIBLE_SCOPE_GROUP)
     {
         set_note_scope(self, request->item.kind == ACCESSIBLE_SCOPE_ALL ? NOTE_SCOPE_ALL
@@ -18752,7 +19165,7 @@ static void keyboard_tab_step(struct folio_window *_Nonnull self, bool forward)
         ACCESSIBLE_TAG_FILTER, ACCESSIBLE_NEW_CATEGORY,  ACCESSIBLE_TREE,
         ACCESSIBLE_SPLITTER,   ACCESSIBLE_VIEW,          ACCESSIBLE_SAVE,
         ACCESSIBLE_FIND,       ACCESSIBLE_MENU,          ACCESSIBLE_TAG_EDIT,
-        ACCESSIBLE_MINIMAP};
+        ACCESSIBLE_OUTLINE,    ACCESSIBLE_MINIMAP};
     size_t count = sizeof order / sizeof order[0];
     enum accessible_kind current = keyboard_slot(keyboard_kind(self));
     if (current == ACCESSIBLE_LAYOUT_CHOOSER)
@@ -18833,13 +19246,14 @@ static bool translate_keyboard(const struct folio_window *_Nonnull self,
 
 static void keyboard_activate(struct folio_window *_Nonnull self)
 {
-    if (self->keyboard_target != ACCESSIBLE_TREE)
+    if (self->keyboard_target != ACCESSIBLE_TREE && self->keyboard_target != ACCESSIBLE_OUTLINE)
     {
         activate_part(self, self->keyboard_target);
         return;
     }
-    struct accessible_item item = accessible_cursor(self);
-    if (item.kind == ACCESSIBLE_CATEGORY || item.kind == ACCESSIBLE_TREE)
+    struct accessible_item item = keyboard_item(self);
+    if (item.kind == ACCESSIBLE_CATEGORY || item.kind == ACCESSIBLE_TREE ||
+        item.kind == ACCESSIBLE_OUTLINE)
     {
         return;
     }

@@ -62,5 +62,8 @@ folio_window_accessible_action(struct folio_window *_Nonnull self,
 [[nodiscard]] uint64_t
 folio_window_accessible_surface_revision(const struct folio_window *_Nonnull self);
 [[nodiscard]] uint64_t folio_window_accessible_revision(const struct folio_window *_Nonnull self);
+/* #975: changes whenever the headings column's rows stop meaning what they meant. */
+[[nodiscard]] uint64_t
+folio_window_accessible_outline_revision(const struct folio_window *_Nonnull self);
 
 #endif
