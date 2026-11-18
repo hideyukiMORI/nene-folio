@@ -1602,6 +1602,33 @@ bool note_pane_show_footnote(struct note_pane *_Nonnull pane, bool back, size_t 
     return true;
 }
 
+size_t note_pane_heading_count(const struct note_pane *_Nonnull pane)
+{
+    return pane->handle == nullptr ? 0 : note_pane_links_heading_count(pane->links);
+}
+
+struct note_pane_heading note_pane_heading(const struct note_pane *_Nonnull pane, size_t index)
+{
+    size_t level = 0;
+    LONG start = note_pane_links_heading(pane->links, index, &level);
+    return (struct note_pane_heading){.level = level, .position = start};
+}
+
+bool note_pane_show_heading(struct note_pane *_Nonnull pane, size_t index)
+{
+    if (index >= note_pane_heading_count(pane))
+        return false;
+    /* A caret at the heading, and the heading's line at the top of the view (or as near as the
+     * end of the note allows). */
+    CHARRANGE range = {note_pane_heading(pane, index).position,
+                       note_pane_heading(pane, index).position};
+    SendMessageW(pane->handle, EM_EXSETSEL, 0, (LPARAM)&range);
+    LRESULT line = SendMessageW(pane->handle, EM_EXLINEFROMCHAR, 0, range.cpMin);
+    LRESULT first = SendMessageW(pane->handle, EM_GETFIRSTVISIBLELINE, 0, 0);
+    SendMessageW(pane->handle, EM_LINESCROLL, 0, line - first);
+    return true;
+}
+
 void note_pane_restore_selection(struct note_pane *_Nonnull pane, struct note_search_span span)
 {
     if (pane->handle == nullptr)

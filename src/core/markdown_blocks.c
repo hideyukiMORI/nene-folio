@@ -3,6 +3,7 @@
 #include "code_syntax.h"
 #include "diagram_limits.h"
 #include "footnote_target.h"
+#include "heading_target.h"
 #include "markdown_code_state.h"
 #include "markdown_containers.h"
 #include "markdown_definition_part.h"
@@ -193,6 +194,9 @@ static void heading_header(struct markdown_blocks *_Nonnull parser)
     }
     else
         text_buffer_append_text(parser->out, " ");
+    /* #975 / ADR0114: where the heading is, for the pane. Hidden, and inside the heading's own
+     * format: the minimap reads a line's size from its first character. */
+    heading_target_append(parser->out, parser->heading);
 }
 
 static void paragraph_header(struct markdown_blocks *_Nonnull parser)

@@ -1405,7 +1405,8 @@ static void verify_select(void)
             "select B / two");
     require(same_text(adapter.last_note, "two"), "asked the port for the note");
     const char *rtf = folio_state_pane_rtf(state);
-    require(strstr(rtf, "\\b\\cf2\\fs44 Hello") != nullptr && strstr(rtf, "body\\par") != nullptr &&
+    require(strstr(rtf, "\\b\\cf2\\fs44 {\\v <nenefolio:heading:1>}Hello") != nullptr &&
+                strstr(rtf, "body\\par") != nullptr &&
                 folio_state_pane_rtf_length(state) == strlen(rtf),
             "pane shows the rendered note");
     struct pane_title_view title = folio_state_pane_title(state);

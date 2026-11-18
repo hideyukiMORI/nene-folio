@@ -2714,7 +2714,8 @@ static void expect_saved_view(struct folio_window *_Nonnull window,
     struct native_body_snapshot snapshot = {0};
     capture_native_body(window, &snapshot);
     HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
-    require(wcscmp(snapshot.text, L"Current 日本語 😀 saved 追記 🙂") == 0 &&
+    /* The native text holds the heading's hidden mark (#975 / ADR0114); it is not shown. */
+    require(wcscmp(snapshot.text, L"<nenefolio:heading:1>Current 日本語 😀 saved 追記 🙂") == 0 &&
                 folio_state_pane_mode(fixture->state) == PANE_MODE_VIEW &&
                 (GetWindowLongPtrW(body, GWL_STYLE) & ES_READONLY) != 0,
             "saved view renders the expected plain text and remains readonly");

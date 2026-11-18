@@ -2,6 +2,7 @@
 #include "appearance_port.h"
 #include "folio_state.h"
 #include "footnote_target.h"
+#include "heading_target.h"
 #include "markdown_bare_link.h"
 #include "markdown_references.h"
 #include "markdown_rtf.h"
@@ -613,6 +614,39 @@ static void verify_definition_list(void)
     expect_field("T\n: d\n```\nx\n```\n| a |\n| - |\n| 1 |", "\\trowd\\trgaph80", "sl-80");
 }
 
+/* #975 / ADR0114: the hidden mark a heading starts with: one exact form per level. */
+static void verify_heading_target(void)
+{
+    struct text_buffer *_Nullable out = nullptr;
+    require(text_buffer_create(&out) == TEXT_BUFFER_ACCEPTED, "mark buffer");
+    for (size_t level = 1; level <= heading_target_levels; ++level)
+        heading_target_append(out, level);
+    require(same_text(text_buffer_bytes(out),
+                      "{\\v <nenefolio:heading:1>}{\\v <nenefolio:heading:2>}"
+                      "{\\v <nenefolio:heading:3>}{\\v <nenefolio:heading:4>}"
+                      "{\\v <nenefolio:heading:5>}{\\v <nenefolio:heading:6>}"),
+            "one hidden mark per level");
+    text_buffer_destroy(out);
+    const char mark[] = "<nenefolio:heading:3>";
+    require(sizeof mark - 1 == heading_target_length &&
+                heading_target_parse(mark, sizeof mark - 1) == 3,
+            "a mark gives its level");
+    const char *const others[] = {"<nenefolio:heading:0>", "<nenefolio:heading:7>",
+                                  "<nenefolio:heading:a>", "<nenefolio:heading:3 ",
+                                  "<nenefolio:heaDing:3>", "<nenefolio:image:33>>"};
+    for (size_t index = 0; index < sizeof others / sizeof others[0]; ++index)
+        require(strlen(others[index]) == heading_target_length &&
+                    heading_target_parse(others[index], heading_target_length) == 0,
+                others[index]);
+    require(heading_target_parse(mark, sizeof mark - 2) == 0 &&
+                heading_target_parse("<nenefolio:heading:3>x", sizeof mark) == 0,
+            "only the whole mark, nothing shorter or longer");
+    /* The mark follows a list item's marker and precedes the heading's text and its links. */
+    expect_field("- ## [l](https://example.com/h)",
+                 "\\bullet\\tab }{\\v <nenefolio:heading:2>}{\\field", "heading:1");
+    expect_field("plain `<nenefolio:heading:1>` text", "<nenefolio:heading:1>", "{\\v <nenefolio");
+}
+
 static size_t opened;
 static enum web_link_outcome port_result;
 static const char *_Nonnull expected_uri = "https://example.com/";
@@ -842,6 +876,7 @@ void run_web_link_tests(void)
     verify_footnote_continuation();
     verify_footnote_paragraphs();
     verify_definition_list();
+    verify_heading_target();
     verify_state();
     verify_product_table();
     verify_product_state();

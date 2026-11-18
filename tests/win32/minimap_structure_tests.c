@@ -1093,6 +1093,80 @@ static void code_label_wrap(struct note_pane *_Nonnull pane)
     ShowWindow(GetParent(handle), SW_HIDE);
 }
 
+/* #975 / ADR0114: the pane knows where the viewed note's headings are, from hidden marks the
+ * rendering writes. The marks are not in the searchable text; the same characters typed into the
+ * note are text, not a mark; the editing view has no headings. */
+/* Seven headings of every kind, with enough text after the last one to scroll it to the top. */
+static const char *_Nonnull heading_content(void)
+{
+    static char content[4096];
+    size_t used = (size_t)sprintf(
+        content, "# 一番\n\n本文`<nenefolio:heading:2>`\n\n## 二番 [l](https://example.com/a)\n\n"
+                 "- ### 三番\n\n> #### 四番\n\n五番\n===\n\n六番\n---\n\n");
+    for (unsigned line = 0; line < 30; ++line)
+        used += (size_t)sprintf(content + used, "途中の段落 %u\n\n", line);
+    used += (size_t)sprintf(content + used, "###### 最後\n\n");
+    for (unsigned line = 0; line < 60; ++line)
+        used += (size_t)sprintf(content + used, "後の段落 %u\n\n", line);
+    return content;
+}
+
+/* How many times the searchable text spells the start of a heading's mark. */
+static size_t heading_marks(struct note_pane *_Nonnull pane)
+{
+    const char16_t *visible = nullptr;
+    size_t length = 0;
+    require(note_pane_text(pane, &visible, &length) == NOTE_PANE_TEXT_TAKEN, "search projection");
+    static const char16_t mark[] = u"<nenefolio:heading:";
+    size_t marks = 0;
+    for (size_t at = 0; at + 19 <= length; ++at)
+        marks += memcmp(visible + at, mark, 19 * sizeof mark[0]) == 0;
+    printf("heading marks in the searchable text: %zu of %zu units\n", marks, length);
+    return marks;
+}
+
+static void headings(struct note_pane *_Nonnull pane)
+{
+    const char *content = heading_content();
+    load(pane, PANE_MODE_VIEW, content);
+    HWND handle = note_pane_handle(pane);
+    require(heading_marks(pane) == 1,
+            "only the mark the note itself spells is in the searchable text");
+    const size_t levels[] = {1, 2, 3, 4, 1, 2, 6};
+    const wchar_t *const names[] = {L"一番", L"二番", L"三番", L"四番", L"五番", L"六番", L"最後"};
+    require(note_pane_heading_count(pane) == 7,
+            "every heading, ATX and setext, in a list or quote");
+    LONG previous = -1;
+    for (size_t index = 0; index < 7; ++index)
+    {
+        struct note_pane_heading heading = note_pane_heading(pane, index);
+        LONG text = native_find(handle, names[index]);
+        if (heading.level != levels[index] || text < heading.position ||
+            text > heading.position + 40)
+            printf("heading %zu: level %zu at %ld, text at %ld\n", index, heading.level,
+                   heading.position, text);
+        require(heading.level == levels[index] && heading.position > previous &&
+                    text >= heading.position && text <= heading.position + 40,
+                "each heading's level and place, in document order");
+        previous = heading.position;
+    }
+    require(note_pane_show_heading(pane, 6), "the last heading can be shown");
+    LONG position = note_pane_heading(pane, 6).position;
+    CHARRANGE caret = {0};
+    SendMessageW(handle, EM_EXGETSEL, 0, (LPARAM)&caret);
+    require(caret.cpMin == position && caret.cpMax == position &&
+                SendMessageW(handle, EM_GETFIRSTVISIBLELINE, 0, 0) ==
+                    SendMessageW(handle, EM_EXLINEFROMCHAR, 0, position),
+            "showing a heading puts a caret on it and its line at the top of the view");
+    require(note_pane_show_heading(pane, 0) &&
+                SendMessageW(handle, EM_GETFIRSTVISIBLELINE, 0, 0) == 0,
+            "the first heading is the top of the note again");
+    require(!note_pane_show_heading(pane, 7), "an index past the last heading does nothing");
+    load(pane, PANE_MODE_EDIT, content);
+    require(note_pane_heading_count(pane) == 0 && !note_pane_show_heading(pane, 0),
+            "the editing view has no headings");
+}
+
 int main(void)
 {
     HDESK desktop = CreateDesktopW(L"NeNeFolioMinimap506", nullptr, nullptr, 0,
@@ -1122,6 +1196,7 @@ int main(void)
     text_menu(pane);
     reference_links(pane);
     footnotes(pane);
+    headings(pane);
     load(pane, PANE_MODE_EDIT, source);
     boundaries(pane);
     preservation(pane);

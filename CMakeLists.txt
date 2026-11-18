@@ -71,7 +71,7 @@ nenefolio_target(nenefolio_core core STATIC
     src/core/image_asset.c src/core/archive_assets.c src/core/markdown_image_copy.c
     src/core/markdown_autolink.c src/core/markdown_bare_link.c src/core/markdown_references.c
     src/core/markdown_character_reference.c
-    src/core/web_uri.c src/core/markdown_web_link.c src/core/note_archive.c src/core/code_copy_target.c src/core/footnote_target.c
+    src/core/web_uri.c src/core/markdown_web_link.c src/core/note_archive.c src/core/code_copy_target.c src/core/footnote_target.c src/core/heading_target.c
     src/core/markdown_line.c src/core/markdown_view.c src/core/markdown_table.c src/core/markdown_containers.c
     src/core/folio_command.c src/core/folio_menu_action.c src/core/folio_shortcut.c src/core/key_guide.c src/core/note_name.c src/core/rename_plan.c src/core/rename_journal.c
     src/core/note_search.c src/core/note_corpus.c src/core/index_filter.c src/core/index_filter_build.c

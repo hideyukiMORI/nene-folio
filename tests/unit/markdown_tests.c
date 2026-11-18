@@ -93,16 +93,29 @@ static void verify_unicode(void)
 
 static void verify_headings(void)
 {
-    expect_body("# Title", "\\pard\\sb200\\sa80\\b\\cf2\\fs44 Title\\b0\\cf1\\fs22\\par\n");
-    expect_body("## Sub", "\\pard\\sb200\\sa80\\b\\cf2\\fs34 Sub\\b0\\cf1\\fs22\\par\n");
-    expect_body("### Third", "\\pard\\sb200\\sa80\\b\\cf2\\fs28 Third\\b0\\cf1\\fs22\\par\n");
-    expect_body("#### Four", "\\pard\\sb160\\sa60\\b0\\cf2\\fs22 Four\\b0\\cf1\\fs22\\par\n");
-    expect_body("##### Five", "\\pard\\sb160\\sa60\\b0\\cf2\\fs22 Five\\b0\\cf1\\fs22\\par\n");
-    expect_body("###### Six", "\\pard\\sb160\\sa60\\b0\\cf2\\fs22 Six\\b0\\cf1\\fs22\\par\n");
+    expect_body(
+        "# Title",
+        "\\pard\\sb200\\sa80\\b\\cf2\\fs44 {\\v <nenefolio:heading:1>}Title\\b0\\cf1\\fs22\\par\n");
+    expect_body(
+        "## Sub",
+        "\\pard\\sb200\\sa80\\b\\cf2\\fs34 {\\v <nenefolio:heading:2>}Sub\\b0\\cf1\\fs22\\par\n");
+    expect_body(
+        "### Third",
+        "\\pard\\sb200\\sa80\\b\\cf2\\fs28 {\\v <nenefolio:heading:3>}Third\\b0\\cf1\\fs22\\par\n");
+    expect_body(
+        "#### Four",
+        "\\pard\\sb160\\sa60\\b0\\cf2\\fs22 {\\v <nenefolio:heading:4>}Four\\b0\\cf1\\fs22\\par\n");
+    expect_body(
+        "##### Five",
+        "\\pard\\sb160\\sa60\\b0\\cf2\\fs22 {\\v <nenefolio:heading:5>}Five\\b0\\cf1\\fs22\\par\n");
+    expect_body(
+        "###### Six",
+        "\\pard\\sb160\\sa60\\b0\\cf2\\fs22 {\\v <nenefolio:heading:6>}Six\\b0\\cf1\\fs22\\par\n");
     expect_body("####### Seven", "\\pard\\sa80\\sl240\\slmult1\\cf1 ####### Seven\\par\n");
     expect_body("#NoSpace", "\\pard\\sa80\\sl240\\slmult1\\cf1 #NoSpace\\par\n");
     expect_body("##", "\\pard\\sa80\\sl240\\slmult1\\cf1 ##\\par\n");
-    expect_body("# *Em*", "\\pard\\sb200\\sa80\\b\\cf2\\fs44 {\\i Em}\\b0\\cf1\\fs22\\par\n");
+    expect_body("# *Em*", "\\pard\\sb200\\sa80\\b\\cf2\\fs44 {\\v <nenefolio:heading:1>}{\\i "
+                          "Em}\\b0\\cf1\\fs22\\par\n");
 }
 
 static void verify_emphasis(void)
@@ -521,7 +534,8 @@ static void verify_container_paths(void)
     expect_fragment("7. parent\n> outside\n\n1. next", "1.\\tab }next", "8.\\tab }next");
     expect_fragment("> quote\nplain", "quote plain\\cf1", "\\cf1 plain");
     expect_fragment("> quote\n\nplain", "\\cf1 plain", "quote plain");
-    expect_fragment("> quote\n# heading", "\\fs44 heading", "quote heading");
+    expect_fragment("> quote\n# heading", "\\fs44 {\\v <nenefolio:heading:1>}heading",
+                    "quote heading");
     expect_fragment("> quote\n---", "\\sl-20", "\\fs34");
     expect_fragment("> quote\nA | B\n-- | --", "\\trowd", "quote A | B");
     expect_fragment("paragraph\n+\nnext", "paragraph + next", "\\bullet");
@@ -543,6 +557,8 @@ static void verify_container_markers(void)
 {
     expect_fragment("7. > quote\n\n   continued\n1. next", "\\li920\\fi-700\\tx920", "");
     expect_fragment("7. # heading\n1. next", "\\pard\\sb0\\sa80\\b\\cf2\\fs44\\li440", "\\sb200");
+    /* #975: the heading's mark comes after the item's marker, inside the heading's format. */
+    expect_fragment("7. # heading\n1. next", "7.\\tab }{\\v <nenefolio:heading:1>}heading", "");
     expect_fragment("7. ~~~\n   code\n   ~~~\n1. next", "7.\\tab }\\par\n{\\f1", "1.\\tab }next");
     expect_fragment("7. ~~~\n   ~~~\n1. next", "{\\f1\\fs20\\cf5\\highlight6}", "\\li620");
     expect_fragment("7. >\n1. next", "7.\\tab }\\par\n", "1.\\tab }next");
@@ -830,8 +846,8 @@ static void verify_new_blocks(void)
     expect_fragment("- - -", "\\sl-20", "\\bullet");
     expect_fragment("* * *", "\\sl-20", "\\bullet");
     expect_fragment("_ _ _", "\\sl-20", "\\i ");
-    expect_fragment("title\n----", "\\fs34 title", "\\sl-20");
-    expect_fragment("title\n===", "\\fs44 title", "===");
+    expect_fragment("title\n----", "\\fs34 {\\v <nenefolio:heading:2>}title", "\\sl-20");
+    expect_fragment("title\n===", "\\fs44 {\\v <nenefolio:heading:1>}title", "===");
     expect_fragment("a  \nb\\\nc\nd", "a\\line b\\line c d", "  ");
     expect_fragment("1) one\n9) two", "2)\\tab }two", "9)");
     expect_fragment("0. zero\n4. next", "1.\\tab }next", "4.");
@@ -840,7 +856,7 @@ static void verify_new_blocks(void)
     expect_fragment("- parent\n  - child\n- next", "\\li880\\fi-220", "child next");
     expect_fragment("1. one\n\n   continued\n\n2. two", "2.\\tab }two", "1.\\tab }two");
     expect_fragment("> - item\n>   continued", "\\li920\\fi-220", "\\cf3 continued");
-    expect_fragment("> > ## nested", "\\fs34\\li960 nested", "> ##");
+    expect_fragment("> > ## nested", "\\fs34\\li960 {\\v <nenefolio:heading:2>}nested", "> ##");
 }
 
 static void verify_image_alt_literal(void)
@@ -952,7 +968,9 @@ static void verify_new_inline(void)
 
 void run_markdown_table_setext_tests(void)
 {
-    expect_body("a\\|b\n---", "\\pard\\sb200\\sa80\\b\\cf2\\fs34 a|b\\b0\\cf1\\fs22\\par\n");
+    expect_body(
+        "a\\|b\n---",
+        "\\pard\\sb200\\sa80\\b\\cf2\\fs34 {\\v <nenefolio:heading:2>}a|b\\b0\\cf1\\fs22\\par\n");
 }
 
 void run_markdown_table_bare_tests(void)
@@ -981,25 +999,37 @@ static void verify_table_start_queries(void)
 static void verify_table_start_headings(void)
 {
     run_markdown_table_setext_tests();
-    expect_body("|head|\n---", "\\pard\\sb200\\sa80\\b\\cf2\\fs34 |head|\\b0\\cf1\\fs22\\par\n");
-    expect_body("head\n--", "\\pard\\sb200\\sa80\\b\\cf2\\fs34 head\\b0\\cf1\\fs22\\par\n");
-    expect_body("head\n-", "\\pard\\sb200\\sa80\\b\\cf2\\fs34 head\\b0\\cf1\\fs22\\par\n");
-    expect_body("head\n===", "\\pard\\sb200\\sa80\\b\\cf2\\fs44 head\\b0\\cf1\\fs22\\par\n");
+    expect_body("|head|\n---", "\\pard\\sb200\\sa80\\b\\cf2\\fs34 {\\v <nenefolio:heading:2>}"
+                               "|head|\\b0\\cf1\\fs22\\par\n");
+    expect_body(
+        "head\n--",
+        "\\pard\\sb200\\sa80\\b\\cf2\\fs34 {\\v <nenefolio:heading:2>}head\\b0\\cf1\\fs22\\par\n");
+    expect_body(
+        "head\n-",
+        "\\pard\\sb200\\sa80\\b\\cf2\\fs34 {\\v <nenefolio:heading:2>}head\\b0\\cf1\\fs22\\par\n");
+    expect_body(
+        "head\n===",
+        "\\pard\\sb200\\sa80\\b\\cf2\\fs44 {\\v <nenefolio:heading:1>}head\\b0\\cf1\\fs22\\par\n");
     expect_body("before\n|head|\n---",
-                "\\pard\\sb200\\sa80\\b\\cf2\\fs34 before |head|\\b0\\cf1\\fs22\\par\n");
-    expect_body("before\n---\n|---|",
-                "\\pard\\sb200\\sa80\\b\\cf2\\fs34 before\\b0\\cf1\\fs22\\par\n"
-                "\\pard\\sa80\\sl240\\slmult1\\cf1 |---|\\par\n");
-    expect_body("before\n===\n|---|",
-                "\\pard\\sb200\\sa80\\b\\cf2\\fs44 before\\b0\\cf1\\fs22\\par\n"
-                "\\pard\\sa80\\sl240\\slmult1\\cf1 |---|\\par\n");
+                "\\pard\\sb200\\sa80\\b\\cf2\\fs34 {\\v <nenefolio:heading:2>}before "
+                "|head|\\b0\\cf1\\fs22\\par\n");
+    expect_body(
+        "before\n---\n|---|",
+        "\\pard\\sb200\\sa80\\b\\cf2\\fs34 {\\v <nenefolio:heading:2>}before\\b0\\cf1\\fs22\\par\n"
+        "\\pard\\sa80\\sl240\\slmult1\\cf1 |---|\\par\n");
+    expect_body(
+        "before\n===\n|---|",
+        "\\pard\\sb200\\sa80\\b\\cf2\\fs44 {\\v <nenefolio:heading:1>}before\\b0\\cf1\\fs22\\par\n"
+        "\\pard\\sa80\\sl240\\slmult1\\cf1 |---|\\par\n");
     expect_fragment("===\n|---|", "{\\b ===}\\cell", "\\fs44");
 }
 
 static void verify_table_start_blocks(void)
 {
-    expect_body("# title|\n|---|", "\\pard\\sb200\\sa80\\b\\cf2\\fs44 title|\\b0\\cf1\\fs22\\par\n"
-                                   "\\pard\\sa80\\sl240\\slmult1\\cf1 |---|\\par\n");
+    expect_body(
+        "# title|\n|---|",
+        "\\pard\\sb200\\sa80\\b\\cf2\\fs44 {\\v <nenefolio:heading:1>}title|\\b0\\cf1\\fs22\\par\n"
+        "\\pard\\sa80\\sl240\\slmult1\\cf1 |---|\\par\n");
     expect_body("~~~lang|\n|---|\n~~~\ntail",
                 "{\\f1\\fs20\\cf5\\highlight6\\pard\\qr\\li180\\ri0\\sb40\\sa60\\sl-260\\slmult0 "
                 "{\\f0\\fs18\\cf9 lang|}{\\f0\\fs18\\cf9 \\u8195?}" CODE_COPY_OPEN
@@ -1015,10 +1045,12 @@ static void verify_table_start_blocks(void)
 static void verify_table_start_containers(void)
 {
     expect_body("> a\\|b\n> ---",
-                "\\pard\\sb200\\sa80\\b\\cf2\\fs34\\li480 a|b\\b0\\cf1\\fs22\\par\n");
+                "\\pard\\sb200\\sa80\\b\\cf2\\fs34\\li480 {\\v <nenefolio:heading:2>}"
+                "a|b\\b0\\cf1\\fs22\\par\n");
     expect_body("- a\\|b\n  ---",
                 "\\pard\\sb0\\sa80\\b\\cf2\\fs34\\li440\\fi-220\\tx440 "
-                "{\\f0\\fs22\\cf1\\b0\\highlight0 \\bullet\\tab }a|b\\b0\\cf1\\fs22\\par\n");
+                "{\\f0\\fs22\\cf1\\b0\\highlight0 \\bullet\\tab }{\\v <nenefolio:heading:2>}"
+                "a|b\\b0\\cf1\\fs22\\par\n");
     expect_body("> quote\nlazy\\|text\n---",
                 "\\pard\\li480\\sa80\\sl240\\slmult1\\cf3 quote lazy|text\\cf1\\par\n"
                 "{\\pard\\sb0\\sa0\\sl-240\\slmult0\\fs2\\highlight0\\par}\n{\\pard\\sb0\\sa0\\sl-"
@@ -1058,7 +1090,8 @@ static void verify_tables(void)
     expect_fragment("A | B\n--- | ---\nx", "{x}\\cell ", "\\cf1 x");
     expect_fragment("A | B\n--- | ---\nx | y | ignored", "{y}\\cell ", "ignored");
     expect_fragment("A | B\n--- | ---\n`a\\|b` | ~~x~~", "\\cf4 a|b}", "a\\\\|b");
-    expect_fragment("A | B\n--- | ---\n# heading | x", "\\fs44 heading | x", "{# heading");
+    expect_fragment("A | B\n--- | ---\n# heading | x",
+                    "\\fs44 {\\v <nenefolio:heading:1>}heading | x", "{# heading");
     expect_fragment("A | B\n--- | ---\n~~~ lang | x\ncode\n~~~", "\\highlight6", "{~~~ lang");
     expect_fragment("A | B\n---", "A | B", "\\trowd");
 }
