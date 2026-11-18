@@ -705,6 +705,44 @@ static void class_multiplicity(void)
     diagram_model_destroy(model);
 }
 
+/* #938: `~T~` reads as `<T>` in class names and members; the class keeps its bare name. */
+static void class_generics(void)
+{
+    struct diagram_model *model = parsed("classDiagram\n"
+                                         "Shape <|-- Square\n"
+                                         "class Square~Shape~ {\n"
+                                         "    -List~int~ position\n"
+                                         "    +getPoints() List~List~int~~\n"
+                                         "    ~reset()\n"
+                                         "}\n"
+                                         "Square : +id int\n"
+                                         "Box~T~ --> Square : holds\n"
+                                         "Box ..> Item~日本~\n"
+                                         "Vec2~f~ --> Pair_~K2~\n");
+    require(diagram_model_node_count(model) == 6 && diagram_model_link_count(model) == 4,
+            "a generic class is the same class as its bare name");
+    require(node_named(model, "Square<Shape>") != diagram_none &&
+                node_named(model, "Box<T>") != diagram_none &&
+                node_named(model, "Item<日本>") != diagram_none &&
+                node_named(model, "Vec2<f>") != diagram_none &&
+                node_named(model, "Pair_<K2>") != diagram_none,
+            "class names show their generic in angle brackets, nested and non-ASCII too");
+    require(strcmp(label_of(model, "Square<Shape>"), "-List<int> position\n"
+                                                     "+getPoints() List<List<int>>\n"
+                                                     "~reset()\n"
+                                                     "+id int") == 0,
+            "members show generics; a leading ~ stays the package visibility");
+    require(strcmp(label_of(model, "Box<T>"), "Box<T>") == 0,
+            "a plain generic box shows its generic name");
+    struct diagram_link holds = diagram_model_link_at(model, 1);
+    require(holds.from == node_named(model, "Box<T>") &&
+                holds.to == node_named(model, "Square<Shape>") &&
+                diagram_model_link_at(model, 2).from == node_named(model, "Box<T>"),
+            "relations reach the generic class by either name");
+    diagram_scene_destroy(laid_out(model));
+    diagram_model_destroy(model);
+}
+
 static void class_contract(void)
 {
     struct diagram_model *model = parsed("classDiagram\n"
@@ -747,6 +785,7 @@ static void class_contract(void)
     class_relations();
     class_marker_spread();
     class_multiplicity();
+    class_generics();
 }
 
 static void class_rejections(void)
@@ -766,7 +805,11 @@ static void class_rejections(void)
     reject_source("classDiagram\nA --> \"*\" \"2\" B", DIAGRAM_UNSUPPORTED);
     reject_source("classDiagram\nA --> \"*\"", DIAGRAM_INVALID);
     reject_source("classDiagram\nA --> B extra", DIAGRAM_UNSUPPORTED);
-    reject_source("classDiagram\nclass List~T~", DIAGRAM_UNSUPPORTED);
+    reject_source("classDiagram\nclass List~T", DIAGRAM_UNSUPPORTED);
+    reject_source("classDiagram\nclass Map~K,V~", DIAGRAM_UNSUPPORTED);
+    reject_source("classDiagram\nclass Box~~", DIAGRAM_UNSUPPORTED);
+    reject_source("classDiagram\nA : +List~int items", DIAGRAM_UNSUPPORTED);
+    reject_source("classDiagram\nA --> B~T", DIAGRAM_UNSUPPORTED);
     reject_source("classDiagram\nclass A[\"Shown\"]", DIAGRAM_UNSUPPORTED);
     reject_source("classDiagram\n<<interface>> A", DIAGRAM_UNSUPPORTED);
     reject_source("classDiagram\nnote for A \"text\"\nA", DIAGRAM_UNSUPPORTED);

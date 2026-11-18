@@ -1,7 +1,8 @@
 /* #890 / ADR0107: Mermaid `classDiagram` read into the flowchart model, so the existing layout
  * and drawing serve it. A class is a box (its name over its members once it has any); a relation
  * is a line whose ends carry the UML markers and, when written, a multiplicity (#916).
- * Generics, notes, namespaces and styles are unsupported and never produce a partial graph. */
+ * Generics written with tildes show in angle brackets (#938). Notes, namespaces and styles are
+ * unsupported and never produce a partial graph. */
 #include "mermaid_class.h"
 #include "diagram_label.h"
 #include "diagram_statement.h"
@@ -29,14 +30,65 @@ static bool append(struct mermaid_class *_Nonnull parser, const char *_Nonnull b
     parser->used += length;
     return true;
 }
-/* A class is found by name or created as a box labelled by its name. Generic names (`List~T~`),
- * quoted names and `Name["shown"]` are not read. */
+/* #938: a byte that can sit on either side of a generic's opening `~`: ASCII letters and digits,
+ * `_`, and every byte of a non-ASCII character. Decided without the locale (ARC-003). */
+static bool name_byte(char value)
+{
+    unsigned char byte = (unsigned char)value;
+    return byte >= 0x80 || (byte >= 'a' && byte <= 'z') || (byte >= 'A' && byte <= 'Z') ||
+           (byte >= '0' && byte <= '9') || byte == '_';
+}
+/* #938: Mermaid writes generics with tildes, `List~int~` and nested `List~List~int~~`. A `~`
+ * between two name bytes opens `<`; while one is open, any other `~` closes `>`. Any other `~`
+ * stays, such as the package visibility of `~method()`. */
+static char generic_byte(struct diagram_text text, size_t at, size_t *_Nonnull depth)
+{
+    char value = text.bytes[at];
+    if (value != '~')
+        return value;
+    if (at > 0 && at + 1 < text.length && name_byte(text.bytes[at - 1]) &&
+        name_byte(text.bytes[at + 1]))
+    {
+        ++*depth;
+        return '<';
+    }
+    if (*depth == 0)
+        return value;
+    --*depth;
+    return '>';
+}
+/* An opening left unclosed is unsupported, never shown half converted. */
+static bool append_generic(struct mermaid_class *_Nonnull parser, struct diagram_text text)
+{
+    size_t depth = 0;
+    for (size_t at = 0; at < text.length; ++at)
+    {
+        char value = generic_byte(text, at, &depth);
+        if (!append(parser, &value, 1))
+            return false;
+    }
+    return depth == 0 || reject(parser, DIAGRAM_UNSUPPORTED);
+}
+/* `Box` also finds the class shown as `Box<T>`: Mermaid names the class without its generic. */
+static size_t find_class(const struct diagram_model *_Nonnull model, struct diagram_text name)
+{
+    size_t index = diagram_model_find_node(model, name.bytes, name.length);
+    for (size_t at = 0; index == diagram_none && at < diagram_model_node_count(model); ++at)
+    {
+        const char *_Nonnull id = diagram_model_text_at(model, diagram_model_node_at(model, at).id);
+        if (strncmp(id, name.bytes, name.length) == 0 && id[name.length] == '<')
+            index = at;
+    }
+    return index;
+}
+/* A class is found by name or created as a box labelled by its name. Quoted names and
+ * `Name["shown"]` are not read. */
 static bool class_node(struct mermaid_class *_Nonnull parser, struct diagram_text name,
                        size_t *_Nonnull index)
 {
     if (name.length == 0)
         return reject(parser, DIAGRAM_INVALID);
-    *index = diagram_model_find_node(parser->model, name.bytes, name.length);
+    *index = find_class(parser->model, name);
     if (*index != diagram_none)
         return true;
     *index = diagram_model_node_count(parser->model);
@@ -46,6 +98,46 @@ static bool class_node(struct mermaid_class *_Nonnull parser, struct diagram_tex
     if (parser->outcome == DIAGRAM_ACCEPTED)
         parser->outcome = diagram_model_node(parser->model, *index, node);
     return parser->outcome == DIAGRAM_ACCEPTED;
+}
+/* #938: the class is named `Box<T>` from here on; a plain box shows its name. */
+static bool show_generic(struct mermaid_class *_Nonnull parser, struct diagram_text whole,
+                         size_t index)
+{
+    parser->used = 0;
+    if (!append_generic(parser, whole))
+        return false;
+    /* The run ends in `~`; unless that closed a generic (`Box~~`), nothing was one. */
+    if (parser->label[parser->used - 1] != '>')
+        return reject(parser, DIAGRAM_UNSUPPORTED);
+    struct diagram_node node = diagram_model_node_at(parser->model, index);
+    parser->outcome = diagram_model_text(parser->model, parser->label, parser->used, &node.id);
+    parser->used = 0;
+    if (node.shape == DIAGRAM_RECTANGLE)
+        node.label = node.id;
+    if (parser->outcome == DIAGRAM_ACCEPTED)
+        parser->outcome = diagram_model_node(parser->model, index, node);
+    return parser->outcome == DIAGRAM_ACCEPTED;
+}
+/* A class name, with its generic when one follows without a space: `Box~T~` is the class `Box`
+ * shown as `Box<T>` (#938). A tilde run that does not end in `~` is unsupported. */
+static bool read_class(struct mermaid_class *_Nonnull parser, struct diagram_text *_Nonnull rest,
+                       size_t *_Nonnull index)
+{
+    struct diagram_text start = diagram_text_trim(*rest);
+    struct diagram_text name = diagram_text_identifier(rest);
+    size_t end = name.length;
+    if (end != 0 && end < start.length && start.bytes[end] == '~')
+    {
+        while (end < start.length && (start.bytes[end] == '~' || name_byte(start.bytes[end])))
+            ++end;
+        *rest = diagram_text_trim(diagram_text_skip(start, end));
+        if (start.bytes[end - 1] != '~')
+            return reject(parser, DIAGRAM_UNSUPPORTED);
+    }
+    if (!class_node(parser, name, index))
+        return false;
+    return end == name.length ||
+           show_generic(parser, (struct diagram_text){start.bytes, end}, *index);
 }
 /* The members a class already has go back into the buffer, so more can follow them. */
 static bool begin_members(struct mermaid_class *_Nonnull parser, size_t index)
@@ -69,7 +161,7 @@ static bool member(struct mermaid_class *_Nonnull parser, struct diagram_text te
     bool annotation = text.length > 4 && diagram_text_starts(text, "<<") &&
                       text.bytes[text.length - 1] == '>' && text.bytes[text.length - 2] == '>';
     if (!annotation)
-        return append(parser, text.bytes, text.length);
+        return append_generic(parser, text);
     return append(parser, "\xC2\xAB", 2) && append(parser, text.bytes + 2, text.length - 4) &&
            append(parser, "\xC2\xBB", 2);
 }
@@ -89,12 +181,11 @@ static bool end_members(struct mermaid_class *_Nonnull parser)
 /* `class Name` or `class Name {`. */
 static bool declaration(struct mermaid_class *_Nonnull parser, struct diagram_text rest)
 {
-    struct diagram_text name = diagram_text_identifier(&rest);
     size_t index = 0;
-    if (rest.length != 0 && !diagram_text_equal(rest, "{"))
-        return reject(parser, name.length == 0 ? DIAGRAM_INVALID : DIAGRAM_UNSUPPORTED);
-    if (!class_node(parser, name, &index))
+    if (!read_class(parser, &rest, &index))
         return false;
+    if (rest.length != 0 && !diagram_text_equal(rest, "{"))
+        return reject(parser, DIAGRAM_UNSUPPORTED);
     return rest.length == 0 || begin_members(parser, index);
 }
 /* The marker before the line: `<|` inheritance, `*` composition, `o` aggregation, `<` arrow. */
@@ -169,19 +260,19 @@ static bool line_between(struct mermaid_class *_Nonnull parser, struct diagram_t
     link->end = right_marker(rest);
     return multiplicity(parser, rest, &link->end_text);
 }
-static bool relation(struct mermaid_class *_Nonnull parser, struct diagram_text name,
-                     struct diagram_text rest)
+static bool relation(struct mermaid_class *_Nonnull parser, size_t from, struct diagram_text rest)
 {
-    struct diagram_link link = {.label = parser->empty,
+    struct diagram_link link = {.from = from,
+                                .label = parser->empty,
                                 .start_text = parser->empty,
                                 .end_text = parser->empty,
                                 .length = 1};
-    if (!class_node(parser, name, &link.from) || !line_between(parser, &rest, &link))
+    if (!line_between(parser, &rest, &link))
         return false;
-    struct diagram_text other = diagram_text_identifier(&rest);
-    if (other.length == 0 && rest.length != 0)
+    struct diagram_text peek = rest;
+    if (diagram_text_identifier(&peek).length == 0 && rest.length != 0)
         return reject(parser, DIAGRAM_UNSUPPORTED);
-    if (!class_node(parser, other, &link.to))
+    if (!read_class(parser, &rest, &link.to))
         return false;
     if (rest.length != 0 && rest.bytes[0] != ':')
         return reject(parser, DIAGRAM_UNSUPPORTED);
@@ -214,14 +305,15 @@ static bool set_direction(struct mermaid_class *_Nonnull parser, struct diagram_
 static bool named(struct mermaid_class *_Nonnull parser, struct diagram_text text)
 {
     struct diagram_text rest = text;
-    struct diagram_text name = diagram_text_identifier(&rest);
     size_t index = 0;
+    if (!read_class(parser, &rest, &index))
+        return false;
     if (rest.length == 0)
-        return class_node(parser, name, &index);
+        return true;
     if (rest.bytes[0] != ':')
-        return relation(parser, name, rest);
-    return class_node(parser, name, &index) && begin_members(parser, index) &&
-           member(parser, diagram_text_skip(rest, 1)) && end_members(parser);
+        return relation(parser, index, rest);
+    return begin_members(parser, index) && member(parser, diagram_text_skip(rest, 1)) &&
+           end_members(parser);
 }
 static bool statement(struct mermaid_class *_Nonnull parser, struct diagram_text text)
 {
