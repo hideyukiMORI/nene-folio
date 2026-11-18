@@ -87,8 +87,9 @@ static POINT radial(RECT r, int angle)
                    (r.top + r.bottom) / 2 - (LONG)lround(cos(radians) * reach)};
 }
 /* The sector from `start` over `sweep`, clockwise. GDI draws counter-clockwise from its first
- * radial to its second, so the end comes first. A whole circle is an ellipse; a sweep too small
- * to tell its radials apart is not drawn (GDI would draw the whole circle for equal radials). */
+ * radial to its second, so the end comes first. A whole circle is an ellipse. When the radials
+ * cannot be told apart (GDI would draw the whole circle), a sweep under half is not drawn and a
+ * sweep over half is the circle. */
 static void sector(HDC _Nonnull dc, RECT r, int start, int sweep)
 {
     if (sweep >= 36000)
@@ -98,7 +99,10 @@ static void sector(HDC _Nonnull dc, RECT r, int start, int sweep)
     }
     POINT from = radial(r, start + sweep);
     POINT to = radial(r, start);
-    if (sweep <= 0 || (from.x == to.x && from.y == to.y))
+    bool same = from.x == to.x && from.y == to.y;
+    if (same && sweep > 18000)
+        Ellipse(dc, r.left, r.top, r.right, r.bottom);
+    if (sweep <= 0 || same)
         return;
     Pie(dc, r.left, r.top, r.right, r.bottom, from.x, from.y, to.x, to.y);
 }

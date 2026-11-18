@@ -65,11 +65,12 @@ static bool read_value(struct diagram_text text, uint64_t *_Nonnull value)
 static bool slice(struct mermaid_pie *_Nonnull parser, struct diagram_text text)
 {
     size_t close = 1;
-    while (close < text.length && text.bytes[close] != '"')
+    while (close < text.length && !diagram_text_character_in(text.bytes[close], "\"\r\n"))
         ++close;
     struct diagram_text name = diagram_text_trim((struct diagram_text){text.bytes + 1, close - 1});
     struct diagram_text rest = diagram_text_trim(diagram_text_skip(text, close + 1));
-    if (close >= text.length || name.length == 0 || rest.length == 0 || rest.bytes[0] != ':')
+    if (close >= text.length || text.bytes[close] != '"' || name.length == 0 || rest.length == 0 ||
+        rest.bytes[0] != ':')
         return reject(parser, DIAGRAM_INVALID);
     struct diagram_text number = diagram_text_trim(diagram_text_skip(rest, 1));
     uint64_t value = 0;
@@ -139,10 +140,12 @@ static bool append_number(struct mermaid_pie *_Nonnull parser, uint64_t value)
 /* The legend line: `name 40%`, or `name [12.5] 40%` with showData. Percentages are rounded to
  * whole numbers, as Mermaid shows them. */
 static bool legend(struct mermaid_pie *_Nonnull parser,
-                   const struct mermaid_pie_slice *_Nonnull part, size_t *_Nonnull index)
+                   const struct mermaid_pie_slice *_Nonnull part, size_t name,
+                   size_t *_Nonnull index)
 {
+    const char *stored = diagram_model_text_at(parser->model, name);
     parser->used = 0;
-    bool written = append(parser, part->name.bytes, part->name.length);
+    bool written = append(parser, stored, strlen(stored));
     if (written && parser->show_data)
         written = append(parser, " [", 2) &&
                   append(parser, part->number.bytes, part->number.length) && append(parser, "]", 1);
@@ -166,7 +169,7 @@ static bool build(struct mermaid_pie *_Nonnull parser)
                          : (size_t)(part->value * mermaid_pie_circle / parser->total);
         spent += node.share;
         parser->outcome = diagram_label_store(parser->model, part->name, &node.id);
-        if (parser->outcome != DIAGRAM_ACCEPTED || !legend(parser, part, &node.label))
+        if (parser->outcome != DIAGRAM_ACCEPTED || !legend(parser, part, node.id, &node.label))
             return false;
         parser->outcome = diagram_model_node(parser->model, at, node);
         if (parser->outcome != DIAGRAM_ACCEPTED)
@@ -176,7 +179,7 @@ static bool build(struct mermaid_pie *_Nonnull parser)
 }
 static bool parse_document(struct mermaid_pie *_Nonnull parser, struct diagram_text source)
 {
-    struct diagram_input input = {.text = source, .kind = DIAGRAM_SEQUENCE};
+    struct diagram_input input = {.text = source, .kind = DIAGRAM_PIE};
     struct diagram_statement first;
     parser->outcome = diagram_statement_read(input, 0, &first);
     if (parser->outcome != DIAGRAM_ACCEPTED)

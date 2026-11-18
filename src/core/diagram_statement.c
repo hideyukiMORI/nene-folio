@@ -79,6 +79,16 @@ static enum diagram_outcome flow_character(struct diagram_statement_scan *_Nonnu
         --scan->brackets;
     return scan->brackets > 64 ? DIAGRAM_TOO_LARGE : DIAGRAM_ACCEPTED;
 }
+/* #955: a pie slice begins with its quoted name; `;` and `%%` inside it are the name's. Only a
+ * quote that opens the statement counts, so a title may hold any quotes. */
+static void pie_character(struct diagram_statement_scan *_Nonnull scan, struct diagram_text text)
+{
+    char value = text.bytes[scan->cursor];
+    if (scan->quote != 0)
+        scan->quote = value == scan->quote ? 0 : scan->quote;
+    else if (value == '"' && scan->cursor == scan->start)
+        scan->quote = value;
+}
 static bool boundary(const struct diagram_statement_scan *_Nonnull scan, struct diagram_text text)
 {
     if (scan->quote != 0 || scan->pipe || scan->brackets != 0)
@@ -96,7 +106,9 @@ static enum diagram_outcome scan_character(struct diagram_statement_scan *_Nonnu
         outcome = flow_character(scan, input.text);
         break;
     case DIAGRAM_SEQUENCE:
+        break;
     case DIAGRAM_PIE:
+        pie_character(scan, input.text);
         break;
     }
     if (outcome == DIAGRAM_ACCEPTED)
@@ -126,7 +138,7 @@ enum diagram_outcome diagram_statement_read(struct diagram_input input, size_t s
     enum diagram_outcome outcome = start_at(input.text, &start);
     if (outcome != DIAGRAM_ACCEPTED)
         return outcome;
-    struct diagram_statement_scan scan = {.cursor = start};
+    struct diagram_statement_scan scan = {.start = start, .cursor = start};
     outcome = scan_statement(&scan, input);
     if (outcome != DIAGRAM_ACCEPTED)
         return outcome;

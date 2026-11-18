@@ -24,6 +24,16 @@ static void emit(struct diagram_pie_layout *_Nonnull layout, struct diagram_prim
     if (layout->outcome == DIAGRAM_ACCEPTED)
         layout->outcome = diagram_scene_append(layout->scene, &primitive);
 }
+/* The shades cycle in the order written. The last slice meets the first at the top, so when
+ * the cycle would give it the first shade again it takes a middle one: its other neighbour has
+ * the last shade. */
+static unsigned char shade_of(const struct diagram_pie_layout *_Nonnull layout, size_t at)
+{
+    size_t shade = at % diagram_shade_count;
+    if (shade == 0 && at != 0 && at + 1 == diagram_model_node_count(layout->model))
+        shade = diagram_shade_count / 2;
+    return (unsigned char)shade;
+}
 static void measure(struct diagram_pie_layout *_Nonnull layout)
 {
     size_t title = diagram_model_title_text(layout->model);
@@ -81,7 +91,7 @@ static void emit_sectors(struct diagram_pie_layout *_Nonnull layout)
                          .stroke = DIAGRAM_SOLID,
                          .ink = DIAGRAM_INK_BACKGROUND,
                          .fill = DIAGRAM_INK_ACCENT,
-                         .shade = (unsigned char)(at % diagram_shade_count),
+                         .shade = shade_of(layout, at),
                          .text = diagram_none,
                          .bounds = {diagram_outer_margin, layout->top, pie_diameter, pie_diameter},
                          .points = {{start, (int)node.share}},
@@ -103,7 +113,7 @@ static void emit_legend(struct diagram_pie_layout *_Nonnull layout)
                                                 .stroke = DIAGRAM_SOLID,
                                                 .ink = DIAGRAM_INK_ACCENT,
                                                 .fill = DIAGRAM_INK_ACCENT,
-                                                .shade = (unsigned char)(at % diagram_shade_count),
+                                                .shade = shade_of(layout, at),
                                                 .text = diagram_none,
                                                 .bounds = {left, y + (layout->row - pie_swatch) / 2,
                                                            pie_swatch, pie_swatch}});

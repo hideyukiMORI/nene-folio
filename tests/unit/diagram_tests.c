@@ -855,9 +855,9 @@ static void pie_layout(void)
                     sector->points[0].x == start &&
                     sector->points[0].y == (int)diagram_model_node_at(model, at).share &&
                     sector->bounds.width == sector->bounds.height &&
-                    sector->shade == at % diagram_shade_count &&
-                    sector->fill == DIAGRAM_INK_ACCENT && sector->ink == DIAGRAM_INK_BACKGROUND,
-                "sectors follow each other clockwise in the stepped accent");
+                    sector->shade == (at == 5 ? 2 : at) && sector->fill == DIAGRAM_INK_ACCENT &&
+                    sector->ink == DIAGRAM_INK_BACKGROUND,
+                "sectors follow each other clockwise; the last does not repeat the first's shade");
         start += sector->points[0].y;
         const struct diagram_primitive *swatch = diagram_scene_at(scene, 7 + at * 2);
         const struct diagram_primitive *line = diagram_scene_at(scene, 8 + at * 2);
@@ -909,6 +909,53 @@ static void pie_layout_edges(void)
     diagram_model_destroy(model);
 }
 
+/* Neighbours never share a shade, the last and the first included, for every count. */
+static void pie_neighbours(void)
+{
+    for (size_t count = 2; count <= 17; ++count)
+    {
+        char source[32 * 16] = "pie\n";
+        size_t used = strlen(source);
+        for (size_t at = 0; at < count; ++at)
+            used += (size_t)sprintf(source + used, "\"s%zu\" : 1\n", at);
+        struct diagram_model *model = parsed(source);
+        struct diagram_scene *scene = laid_out(model);
+        for (size_t at = 0; at < count; ++at)
+            require(diagram_scene_at(scene, at)->shade !=
+                        diagram_scene_at(scene, (at + 1) % count)->shade,
+                    "neighbouring sectors differ in shade");
+        diagram_scene_destroy(scene);
+        diagram_model_destroy(model);
+    }
+}
+/* The legend shows the name the way every label is shown; `;` and `%%` in a name are the
+ * name's; a title may hold quotes; CRLF sources read the same. */
+static void pie_names(void)
+{
+    struct diagram_model *model = parsed("pie title 5\" disks; \"a;b\" : 1\r\n"
+                                         "\"R&amp;D\" : 1\r\n\"100%% sure\" : 2 %% note\r\n");
+    require(strcmp(diagram_model_text_at(model, diagram_model_title_text(model)), "5\" disks") ==
+                    0 &&
+                diagram_model_node_count(model) == 3,
+            "a title keeps its quotes; a statement still ends at a semicolon");
+    require(strcmp(diagram_model_text_at(model, diagram_model_node_at(model, 0).label),
+                   "a;b 25%") == 0 &&
+                strcmp(diagram_model_text_at(model, diagram_model_node_at(model, 1).label),
+                       "R&D 25%") == 0 &&
+                strcmp(diagram_model_text_at(model, diagram_model_node_at(model, 2).label),
+                       "100%% sure 50%") == 0,
+            "names keep their punctuation and show their entities decoded");
+    diagram_model_destroy(model);
+    model = parsed("pie title x showData\n\"a\" : 1\n");
+    require(
+        strcmp(diagram_model_text_at(model, diagram_model_title_text(model)), "x showData") == 0 &&
+            strcmp(diagram_model_text_at(model, diagram_model_node_at(model, 0).label), "a 100%") ==
+                0,
+        "showData after the title is part of the title");
+    diagram_model_destroy(model);
+    reject_source("pie\n\"a\n\" : 1\n", DIAGRAM_INVALID);
+    reject_source("pie\n\"a : 1\n", DIAGRAM_INVALID);
+}
 static void pie_shades(void)
 {
     struct diagram_palette palette = diagram_palette_for(folio_theme_palette(FOLIO_THEME_LIGHT));
@@ -968,6 +1015,8 @@ static void pie_tests(void)
     pie_contract();
     pie_layout();
     pie_layout_edges();
+    pie_neighbours();
+    pie_names();
     pie_shades();
     pie_rejections();
 }
