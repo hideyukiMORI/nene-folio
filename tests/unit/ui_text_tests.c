@@ -99,6 +99,9 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_CODE_COPIED] = "コードをコピーしました。",
     [UI_TEXT_FAILURE_CODE_COPY_REJECTED] = "このコードブロックはコピーできません。",
     [UI_TEXT_FAILURE_SOURCE_UNMAPPED] = "この場所の原文を特定できません。",
+    [UI_TEXT_FAILURE_LEDGER_CHANGED_OUTSIDE] =
+        "一覧がアプリの外で変わっていたので読み直しました。操作は行っていません。",
+    [UI_TEXT_FAILURE_LEDGER_REFRESHED] = "アプリの外で変わった一覧を読み直しました。",
     [UI_TEXT_FAILURE_CLIPBOARD_BUSY] =
         "ほかのアプリがクリップボードを使用中です。もう一度お試しください。",
     [UI_TEXT_FAILURE_CLIPBOARD_UNAVAILABLE] = "クリップボードへコピーできませんでした。",

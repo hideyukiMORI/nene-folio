@@ -19,6 +19,13 @@ enum folio_state_outcome : unsigned char
     /* #1012 / ADR0116: the reading view and its source map disagree, or the place has no source
      * line (or the note cannot be edited). Nothing was changed or copied. */
     FOLIO_STATE_SOURCE_UNMAPPED,
+    /* #1069 / ADR0117: the list was read again before a ledger write and the note or category
+     * this operation is about is no longer there. The list is the fresh one; nothing was
+     * written. */
+    FOLIO_STATE_LEDGER_CHANGED_OUTSIDE,
+    /* Not a failure: the list was read again, differed, and the operation went through on the
+     * fresh one. Only ever a notice (folio_state_take_ledger_notice), never an intent's result. */
+    FOLIO_STATE_LEDGER_REFRESHED,
     FOLIO_STATE_CLIPBOARD_BUSY,        /* ほかのプログラムがクリップボードを開いている */
     FOLIO_STATE_CLIPBOARD_UNAVAILABLE, /* クリップボードへ書けなかった。本文も選択も変えていない */
     FOLIO_STATE_DATA_UNREADABLE,       /* data/ の走査や台帳の読み込みが失敗した */

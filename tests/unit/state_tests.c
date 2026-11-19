@@ -35,8 +35,17 @@
 #include <string.h>
 
 /* テスト用のポート実装。application が不完全型として知る persistence_adapter をここで定義する。 */
+/* One category's index.json as the fake holds it once it was written (#1069). */
+struct stored_index
+{
+    char category[64];
+    char text[512];
+};
+
 struct persistence_adapter
 {
+    struct stored_index stored[8];
+    size_t stored_count;
     bool times_ready;
     const char *_Nullable updated_time;
     size_t times_reads;
@@ -243,6 +252,70 @@ fake_read_category_ledger(struct persistence_adapter *_Nonnull adapter,
                                                    : PERSISTENCE_MALFORMED;
 }
 
+/* #1069 / ADR0117: the fake keeps what was written. A ledger is read again before every write,
+ * so a write must be what the next read returns, as with real files. The text is put together
+ * by hand: no allocation of the fake's own, so the allocation sweeps count the product's only. */
+static struct stored_index *_Nullable stored_slot(struct persistence_adapter *_Nonnull adapter,
+                                                  const char *_Nonnull category)
+{
+    for (size_t at = 0; at < adapter->stored_count; ++at)
+        if (strcmp(adapter->stored[at].category, category) == 0)
+            return &adapter->stored[at];
+    return nullptr;
+}
+
+/* What index.json of `category` holds from now on: a write of the product's, or an edit from
+ * outside the app that a test makes. */
+static void store_index(struct persistence_adapter *_Nonnull adapter, const char *_Nonnull category,
+                        const char *_Nonnull text)
+{
+    struct stored_index *slot = stored_slot(adapter, category);
+    if (slot == nullptr)
+    {
+        require(adapter->stored_count < sizeof adapter->stored / sizeof adapter->stored[0] &&
+                    strlen(category) < sizeof slot->category,
+                "the fake holds this category's index");
+        slot = &adapter->stored[adapter->stored_count++];
+        memcpy(slot->category, category, strlen(category) + 1);
+    }
+    require(strlen(text) < sizeof slot->text, "the index text fits the fake");
+    memcpy(slot->text, text, strlen(text) + 1);
+}
+
+static void append_text(char *_Nonnull out, size_t capacity, const char *_Nonnull text)
+{
+    size_t used = strlen(out);
+    require(used + strlen(text) < capacity, "the index text fits the fake");
+    memcpy(out + used, text, strlen(text) + 1);
+}
+
+/* `"a", "b"`: every name, or only the starred ones. */
+static void append_names(char *_Nonnull out, size_t capacity,
+                         const struct note_ledger *_Nonnull ledger, bool starred)
+{
+    bool first = true;
+    for (size_t index = 0; index < note_ledger_count(ledger); ++index)
+    {
+        if (starred && !note_ledger_favorite(ledger, index))
+            continue;
+        append_text(out, capacity, first ? "\"" : ", \"");
+        append_text(out, capacity, note_ledger_name(ledger, index));
+        append_text(out, capacity, "\"");
+        first = false;
+    }
+}
+
+static void store_ledger(struct persistence_adapter *_Nonnull adapter,
+                         const char *_Nonnull category, const struct note_ledger *_Nonnull ledger)
+{
+    char text[sizeof adapter->stored[0].text] = "{\"version\": 2, \"notes\": [";
+    append_names(text, sizeof text, ledger, false);
+    append_text(text, sizeof text, "], \"favorites\": [");
+    append_names(text, sizeof text, ledger, true);
+    append_text(text, sizeof text, "]}");
+    store_index(adapter, category, text);
+}
+
 static enum persistence_outcome fake_read_note_ledger(struct persistence_adapter *_Nonnull adapter,
                                                       const char *_Nonnull category,
                                                       struct note_ledger *_Nullable *_Nonnull out)
@@ -251,8 +324,10 @@ static enum persistence_outcome fake_read_note_ledger(struct persistence_adapter
     {
         return adapter->notes_outcome;
     }
-    const char *_Nonnull text =
+    const struct stored_index *slot = stored_slot(adapter, category);
+    const char *_Nonnull fixed =
         is_alt(adapter, category) ? adapter->alt_notes_text : adapter->notes_text;
+    const char *_Nonnull text = slot != nullptr ? slot->text : fixed;
     enum note_ledger_outcome parsed = note_ledger_parse(text, strlen(text), out);
     if (parsed == NOTE_LEDGER_ACCEPTED)
     {
@@ -526,6 +601,7 @@ static enum persistence_outcome fake_write_note_ledger(struct persistence_adapte
                     note_ledger_name(ledger, index));
         record_call(adapter, note_ledger_name(ledger, index));
     }
+    store_ledger(adapter, category, ledger);
     return PERSISTENCE_STORED;
 }
 
@@ -1128,6 +1204,150 @@ static void verify_move_category(void)
             "the failed write leaves the order alone");
     adapter.write_outcome = PERSISTENCE_OUT_OF_MEMORY;
     require(folio_state_move_category(state, 0, 1) == FOLIO_STATE_OUT_OF_MEMORY, "move oom");
+    folio_state_destroy(state);
+}
+
+/* #1069 / ADR0117: a note ledger is read again (index.json and the folder) before it is
+ * written, and the one operation is applied to what was read. The fake keeps what the product
+ * wrote; a test edits the folder (`scanned_notes`) or the index (`store_index`) between intents
+ * to stand for an editor, a script or an LLM working while the app is open. */
+static const char *const with_four[] = {"two", "one", "three", "four"};
+static const char *const without_two[] = {"one", "three"};
+
+static void verify_refresh_adds(void)
+{
+    char order[128] = {0};
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_toggle_favorite(state, at(0, 0)) == FOLIO_STATE_READY &&
+                !folio_state_take_ledger_notice(state),
+            "nothing changed outside: no notice");
+    adapter.scanned_notes = with_four;
+    adapter.scanned_note_count = 4;
+    require(folio_state_toggle_favorite(state, at(0, 1)) == FOLIO_STATE_READY &&
+                adapter.ledger_writes == 2 &&
+                same_text(adapter.ledger_order, "one/two/three/four") &&
+                adapter.written_favorite_count == 2,
+            "a note added outside is in the ledger this write stores, with the stars kept");
+    require(folio_state_take_ledger_notice(state) && !folio_state_take_ledger_notice(state),
+            "the list read again is told once");
+    row_order(state, order, sizeof order);
+    require(same_text(order, "B/one/two/three/four/A/C/one/two/three"),
+            "only the category that was written was read again");
+    require(folio_state_move_note(state, at(2, 2), at(2, 0)) == FOLIO_STATE_READY &&
+                same_text(adapter.ledger_order, "three/one/two/four") &&
+                folio_state_take_ledger_notice(state),
+            "a reorder is applied to the fresh ledger of its own category");
+    folio_state_destroy(state);
+}
+
+/* An index.json rewritten outside: the operation finds its note again by name. */
+static void verify_refresh_follows_names(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_set_note_order(state, NOTE_ORDER_MANUAL) == FOLIO_STATE_READY,
+            "manual order, so that a category with stars can be reordered");
+    store_index(
+        &adapter, "B",
+        "{\"version\": 2, \"notes\": [\"three\", \"one\", \"two\"], \"favorites\": [\"two\"]}");
+    require(
+        folio_state_toggle_favorite(state, at(0, 0)) == FOLIO_STATE_READY &&
+            same_text(adapter.ledger_order, "three/one/two") &&
+            adapter.written_favorite_count == 2 && folio_state_note_favorite(state, at(0, 1)) &&
+            folio_state_note_favorite(state, at(0, 2)) &&
+            !folio_state_note_favorite(state, at(0, 0)),
+        "the star goes to the note that was first, now second; the outside order and star stay");
+    store_index(&adapter, "B",
+                "{\"version\": 2, \"notes\": [\"two\", \"three\", \"one\"], \"favorites\": []}");
+    require(
+        folio_state_move_note(state, at(0, 0), at(0, 2)) == FOLIO_STATE_READY &&
+            same_text(adapter.ledger_order, "three/two/one"),
+        "three (first in memory) goes to two's place (last in memory), now first: both by name");
+    store_index(&adapter, "B",
+                "{\"version\": 2, \"notes\": [\"one\", \"two\", \"three\"], \"favorites\": []}");
+    size_t writes = adapter.ledger_writes;
+    require(folio_state_move_note(state, at(0, 0), at(0, 2)) == FOLIO_STATE_READY,
+            "three onto one's place");
+    require(adapter.ledger_writes == writes + 1 && same_text(adapter.ledger_order, "three/one/two"),
+            "the move is the one the user made, on the fresh order");
+    folio_state_destroy(state);
+}
+
+/* The note the operation is about was deleted outside: refused, the list is the fresh one. */
+static void verify_refresh_refuses(void)
+{
+    char order[128] = {0};
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    adapter.scanned_notes = without_two;
+    adapter.scanned_note_count = 2;
+    require(folio_state_toggle_favorite(state, at(0, 1)) == FOLIO_STATE_LEDGER_CHANGED_OUTSIDE &&
+                adapter.ledger_writes == 0 && folio_state_take_ledger_notice(state),
+            "a star for a note that is gone writes nothing");
+    row_order(state, order, sizeof order);
+    require(same_text(order, "B/one/three/A/C/one/two/three"), "the list shows what is there");
+    adapter.scanned_notes = scanned_notes;
+    adapter.scanned_note_count = 3;
+    require(folio_state_move_note(state, at(0, 0), at(0, 1)) == FOLIO_STATE_READY,
+            "two is back where the index lists it; one moves onto three's place");
+    require(same_text(adapter.ledger_order, "two/three/one"), "on the fresh order");
+    adapter.scanned_notes = without_two;
+    adapter.scanned_note_count = 2;
+    size_t writes = adapter.ledger_writes;
+    require(folio_state_move_note(state, at(0, 0), at(0, 2)) ==
+                    FOLIO_STATE_LEDGER_CHANGED_OUTSIDE &&
+                adapter.ledger_writes == writes,
+            "a move of a note that is gone writes nothing");
+    require(folio_state_move_note(state, at(2, 0), at(2, 1)) ==
+                    FOLIO_STATE_LEDGER_CHANGED_OUTSIDE &&
+                adapter.ledger_writes == writes,
+            "nor a move onto the place of a note that is gone");
+    folio_state_destroy(state);
+}
+
+/* The list cannot be read again: refused with the reading's own outcome, nothing written. */
+static void verify_refresh_unreadable(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    adapter.notes_outcome = PERSISTENCE_UNREADABLE;
+    require(folio_state_toggle_favorite(state, at(0, 0)) == FOLIO_STATE_DATA_UNREADABLE &&
+                adapter.ledger_writes == 0,
+            "an index that cannot be read is not overwritten");
+    adapter.notes_outcome = PERSISTENCE_LOADED;
+    adapter.notes_scan_outcome = PERSISTENCE_UNREADABLE;
+    require(folio_state_move_note(state, at(0, 0), at(0, 1)) == FOLIO_STATE_DATA_UNREADABLE &&
+                adapter.ledger_writes == 0,
+            "nor when the folder cannot be read");
+    adapter.notes_scan_outcome = PERSISTENCE_LOADED;
+    store_index(&adapter, "B",
+                "{\"version\": 2, \"notes\": [\"one\", \"one\"], \"favorites\": []}");
+    require(folio_state_toggle_favorite(state, at(0, 0)) == FOLIO_STATE_LEDGER_MALFORMED &&
+                adapter.ledger_writes == 0 && !folio_state_take_ledger_notice(state),
+            "a malformed index is reported, not replaced by the one in memory");
+    folio_state_destroy(state);
+}
+
+/* The open note was deleted outside: it stays in the list, and stays the open note. */
+static void verify_refresh_keeps_open(void)
+{
+    char order[128] = {0};
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_select_note(state, 0, 1, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "two is open");
+    adapter.scanned_notes = without_two;
+    adapter.scanned_note_count = 2;
+    require(folio_state_toggle_favorite(state, at(0, 2)) == FOLIO_STATE_READY,
+            "a star for three goes through");
+    row_order(state, order, sizeof order);
+    require(same_text(order, "B/three/one/two/A/C/one/two/three") &&
+                same_text(folio_state_document_name(state), "two") &&
+                same_text(adapter.ledger_order, "one/two/three") &&
+                folio_state_note_favorite(state, at(0, 2)),
+            "the open note is kept where the index lists it, still open, and three has the star "
+            "(shown first: stars lead)");
     folio_state_destroy(state);
 }
 
@@ -2310,6 +2530,9 @@ static const char *_Nonnull const expected_failure_lines[] = {
     [FOLIO_STATE_WEB_LINK_UNAVAILABLE] = "既定のブラウザーでリンクを開けませんでした。",
     [FOLIO_STATE_CODE_COPY_REJECTED] = "このコードブロックはコピーできません。",
     [FOLIO_STATE_SOURCE_UNMAPPED] = "この場所の原文を特定できません。",
+    [FOLIO_STATE_LEDGER_CHANGED_OUTSIDE] =
+        "一覧がアプリの外で変わっていたので読み直しました。操作は行っていません。",
+    [FOLIO_STATE_LEDGER_REFRESHED] = "アプリの外で変わった一覧を読み直しました。",
     [FOLIO_STATE_CLIPBOARD_BUSY] =
         "ほかのアプリがクリップボードを使用中です。もう一度お試しください。",
     [FOLIO_STATE_CLIPBOARD_UNAVAILABLE] = "クリップボードへコピーできませんでした。",
@@ -5804,6 +6027,11 @@ void run_state_tests(void)
     run_drawer_scroll_delta_tests();
     verify_move_category();
     verify_move_note();
+    verify_refresh_adds();
+    verify_refresh_follows_names();
+    verify_refresh_refuses();
+    verify_refresh_unreadable();
+    verify_refresh_keeps_open();
     verify_move_selection();
     verify_move_to_category();
     verify_transfer_note();

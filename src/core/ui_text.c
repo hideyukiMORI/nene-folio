@@ -149,6 +149,13 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
     [UI_TEXT_FAILURE_SOURCE_UNMAPPED] = {"この場所の原文を特定できません。",
                                          "The Markdown source of this place cannot be found.",
                                          "无法确定此处的 Markdown 原文。"},
+    [UI_TEXT_FAILURE_LEDGER_CHANGED_OUTSIDE] =
+        {"一覧がアプリの外で変わっていたので読み直しました。操作は行っていません。",
+         "The list was changed outside the app and has been reloaded. Nothing was done.",
+         "列表已在应用外被更改，已重新加载。未执行操作。"},
+    [UI_TEXT_FAILURE_LEDGER_REFRESHED] = {"アプリの外で変わった一覧を読み直しました。",
+                                          "Reloaded the list that was changed outside the app.",
+                                          "已重新加载在应用外更改的列表。"},
     [UI_TEXT_FAILURE_CLIPBOARD_BUSY] =
         {"ほかのアプリがクリップボードを使用中です。もう一度お試しください。",
          "Another app is using the clipboard. Try again.", "其他应用正在使用剪贴板。请重试。"},

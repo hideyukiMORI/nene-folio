@@ -452,6 +452,31 @@ size_t note_ledger_count(const struct note_ledger *_Nonnull ledger)
     return name_list_count(ledger->names);
 }
 
+bool note_ledger_find(const struct note_ledger *_Nonnull ledger, const char *_Nonnull name,
+                      size_t *_Nonnull out)
+{
+    for (size_t index = 0; index < name_list_count(ledger->names); ++index)
+        if (strcmp(name_list_at(ledger->names, index), name) == 0)
+        {
+            *out = index;
+            return true;
+        }
+    return false;
+}
+
+bool note_ledger_equals(const struct note_ledger *_Nonnull left,
+                        const struct note_ledger *_Nonnull right)
+{
+    size_t count = name_list_count(left->names);
+    if (count != name_list_count(right->names))
+        return false;
+    for (size_t index = 0; index < count; ++index)
+        if (left->favorites[index] != right->favorites[index] ||
+            strcmp(name_list_at(left->names, index), name_list_at(right->names, index)) != 0)
+            return false;
+    return true;
+}
+
 const char *_Nonnull note_ledger_name(const struct note_ledger *_Nonnull ledger, size_t index)
 {
     return name_list_at(ledger->names, index);

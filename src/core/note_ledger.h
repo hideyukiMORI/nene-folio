@@ -67,6 +67,13 @@ note_ledger_toggled(const struct note_ledger *_Nonnull ledger, size_t index,
 [[nodiscard]] size_t note_ledger_position(const struct note_ledger *_Nonnull ledger,
                                           enum note_order order, size_t note);
 [[nodiscard]] size_t note_ledger_count(const struct note_ledger *_Nonnull ledger);
+/* #1069 / ADR0117: 名前の位置を out へ入れる。その名前が無ければ false で、out は変えない。
+ * 読み直した台帳の上で、操作の相手を名前から引き直すために使う。 */
+[[nodiscard]] bool note_ledger_find(const struct note_ledger *_Nonnull ledger,
+                                    const char *_Nonnull name, size_t *_Nonnull out);
+/* 同じ名前が同じ順に並び、星も同じなら true。読み直しでメモリと違うかを見る。 */
+[[nodiscard]] bool note_ledger_equals(const struct note_ledger *_Nonnull left,
+                                      const struct note_ledger *_Nonnull right);
 /* 終端付き。ledger が生きている間だけ有効。index は count 未満であること。 */
 [[nodiscard]] const char *_Nonnull note_ledger_name(const struct note_ledger *_Nonnull ledger,
                                                     size_t index);

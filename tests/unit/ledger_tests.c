@@ -564,8 +564,74 @@ static void verify_favorite_preservation(void)
     note_ledger_destroy(ledger);
 }
 
+/* #1069 / ADR0117: a name's place, and whether two ledgers say the same. */
+static void verify_note_find_equals(void)
+{
+    struct note_ledger *ledger =
+        parse_notes("{\"version\": 2, \"notes\": [\"a\", \"b\", \"c\"], \"favorites\": [\"b\"]}");
+    size_t at = 7;
+    require(note_ledger_find(ledger, "c", &at) && at == 2, "the last name's place");
+    require(note_ledger_find(ledger, "a", &at) && at == 0, "the first name's place");
+    at = 7;
+    require(!note_ledger_find(ledger, "d", &at) && !note_ledger_find(ledger, "", &at) && at == 7,
+            "a name that is not there leaves the place alone");
+    const char *const others[] = {
+        "{\"version\": 2, \"notes\": [\"a\", \"b\"], \"favorites\": [\"b\"]}",
+        "{\"version\": 2, \"notes\": [\"a\", \"c\", \"b\"], \"favorites\": [\"b\"]}",
+        "{\"version\": 2, \"notes\": [\"a\", \"b\", \"c\"], \"favorites\": []}",
+        "{\"version\": 2, \"notes\": [\"a\", \"b\", \"c\"], \"favorites\": [\"c\"]}",
+        "{\"version\": 2, \"notes\": [\"a\", \"b\", \"d\"], \"favorites\": [\"b\"]}"};
+    for (size_t index = 0; index < sizeof others / sizeof others[0]; ++index)
+    {
+        struct note_ledger *other = parse_notes(others[index]);
+        require(!note_ledger_equals(ledger, other) && !note_ledger_equals(other, ledger),
+                "a different count, order, star or name is not equal");
+        note_ledger_destroy(other);
+    }
+    struct note_ledger *same =
+        parse_notes("{\"version\": 2, \"notes\": [\"a\", \"b\", \"c\"], \"favorites\": [\"b\"]}");
+    require(note_ledger_equals(ledger, same) && note_ledger_equals(ledger, ledger),
+            "the same names, order and stars are equal");
+    note_ledger_destroy(same);
+    note_ledger_destroy(ledger);
+}
+
+static void verify_category_find_equals(void)
+{
+    struct category_ledger *ledger = parse_categories(category_text);
+    size_t at = 7;
+    require(category_ledger_find(ledger, "memo", &at) && at == 1, "a category's place");
+    at = 7;
+    require(!category_ledger_find(ledger, "new", &at) && at == 7,
+            "a category that is not there leaves the place alone");
+    struct category_ledger *same = parse_categories(category_text);
+    require(category_ledger_equals(ledger, same), "the same text is equal");
+    struct category_ledger *changed = nullptr;
+    require(category_ledger_toggled(ledger, 1, &changed) == CATEGORY_LEDGER_ACCEPTED &&
+                !category_ledger_equals(ledger, changed),
+            "another expansion is not equal");
+    category_ledger_destroy(changed);
+    require(category_ledger_recolored(ledger, 0, (struct rgb_color){1, 2, 3}, &changed) ==
+                    CATEGORY_LEDGER_ACCEPTED &&
+                !category_ledger_equals(changed, ledger),
+            "another colour is not equal");
+    category_ledger_destroy(changed);
+    require(category_ledger_moved(ledger, 0, 1, &changed) == CATEGORY_LEDGER_ACCEPTED &&
+                !category_ledger_equals(ledger, changed),
+            "another order is not equal");
+    category_ledger_destroy(changed);
+    require(category_ledger_removed(ledger, 0, &changed) == CATEGORY_LEDGER_ACCEPTED &&
+                !category_ledger_equals(ledger, changed),
+            "another count is not equal");
+    category_ledger_destroy(changed);
+    category_ledger_destroy(same);
+    category_ledger_destroy(ledger);
+}
+
 void run_ledger_tests(void)
 {
+    verify_note_find_equals();
+    verify_category_find_equals();
     verify_category_parse();
     verify_category_rejections();
     verify_category_write();

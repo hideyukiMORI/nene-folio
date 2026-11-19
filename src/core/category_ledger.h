@@ -65,6 +65,12 @@ category_ledger_renamed(const struct category_ledger *_Nonnull ledger, size_t in
 category_ledger_moved(const struct category_ledger *_Nonnull ledger, size_t from, size_t to,
                       struct category_ledger *_Nullable *_Nonnull out);
 [[nodiscard]] size_t category_ledger_count(const struct category_ledger *_Nonnull ledger);
+/* #1069 / ADR0117: 名前の位置を out へ入れる。その名前が無ければ false で、out は変えない。 */
+[[nodiscard]] bool category_ledger_find(const struct category_ledger *_Nonnull ledger,
+                                        const char *_Nonnull name, size_t *_Nonnull out);
+/* 同じ名前が同じ順に並び、色と開閉も同じなら true。 */
+[[nodiscard]] bool category_ledger_equals(const struct category_ledger *_Nonnull left,
+                                          const struct category_ledger *_Nonnull right);
 /* 終端付き。ledger が生きている間だけ有効。index は count 未満であること。 */
 [[nodiscard]] const char *_Nonnull category_ledger_name(
     const struct category_ledger *_Nonnull ledger, size_t index);
