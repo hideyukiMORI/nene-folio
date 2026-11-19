@@ -3,6 +3,7 @@
 #include "folio_message.h"
 #include "folio_palette.h"
 #include "markdown_rtf.h"
+#include "markdown_source_map.h"
 #include "menu_request.h"
 #include "note_minimap.h"
 #include "note_outline.h"
@@ -1419,6 +1420,119 @@ static void outline_module(struct note_pane *_Nonnull pane)
     note_outline_destroy(outline);
 }
 
+/* #1008 / ADR0116: the source map's total is the number of paragraph marks (CR and U+0007) the
+ * pane really keeps, and a code line's ordinal is the paragraph that shows that line. */
+static size_t raw_text(struct note_pane *_Nonnull pane, wchar_t *_Nonnull out, size_t capacity)
+{
+    GETTEXTEX request = {(DWORD)(capacity * sizeof *out), GT_RAWTEXT, 1200, nullptr, nullptr};
+    return (size_t)SendMessageW(note_pane_handle(pane), EM_GETTEXTEX, (WPARAM)&request,
+                                (LPARAM)out);
+}
+
+/* Where the paragraph after `ordinal` marks begins in the raw text. */
+static size_t paragraph_start(const wchar_t *_Nonnull text, size_t length, size_t ordinal)
+{
+    size_t at = 0;
+    for (size_t seen = 0; at < length && seen < ordinal; ++at)
+        if (text[at] == 0x0D || text[at] == 0x07)
+            ++seen;
+    return at;
+}
+
+/* How many bytes of an entry's first line can be compared with what the view shows: a code
+ * line, a heading, or a paragraph with no marker before it, in ASCII with no inline markup.
+ * 0 when the entry cannot be compared. */
+static size_t comparable_text(const char *_Nonnull markdown, struct markdown_source_entry entry)
+{
+    bool kind = entry.kind == MARKDOWN_SOURCE_CODE_LINE || entry.kind == MARKDOWN_SOURCE_HEADING ||
+                (entry.kind == MARKDOWN_SOURCE_PARAGRAPH && entry.begin == entry.caret);
+    size_t end = entry.caret;
+    while (kind && end < entry.end && markdown[end] != '\n' && markdown[end] != '\r')
+    {
+        unsigned char value = (unsigned char)markdown[end++];
+        bool markup = value == '*' || value == '_' || value == '`' || value == '[' ||
+                      value == '<' || value == '&' || value == '\\';
+        if (value >= 0x80 || (entry.kind != MARKDOWN_SOURCE_CODE_LINE && markup))
+            return 0;
+    }
+    return kind ? end - entry.caret : 0;
+}
+
+/* How many of the line's `count` bytes the shown text (with `room` characters) starts with. */
+static size_t shown_prefix(const wchar_t *_Nonnull shown, size_t room, const char *_Nonnull line,
+                           size_t count)
+{
+    size_t same = 0;
+    while (same < room && same < count && shown[same] == (wchar_t)(unsigned char)line[same])
+        ++same;
+    return same;
+}
+
+static void expect_code_lines(const struct markdown_source_map *_Nonnull map,
+                              const char *_Nonnull markdown, const wchar_t *_Nonnull text,
+                              size_t length)
+{
+    for (size_t index = 0; index < markdown_source_map_count(map); ++index)
+    {
+        struct markdown_source_entry entry = markdown_source_map_at(map, index);
+        size_t count = comparable_text(markdown, entry);
+        if (count == 0)
+            continue;
+        size_t at = paragraph_start(text, length, entry.first);
+        size_t same = shown_prefix(text + at, length - at, markdown + entry.caret, count);
+        if (same != count)
+            fprintf(stderr, "block %zu (kind %u) at ordinal %zu: %zu of %zu characters match\n",
+                    index, (unsigned)entry.kind, entry.first, same, count);
+        require(same == count, "a block's ordinal is the paragraph that shows it");
+    }
+}
+
+static void source_map_marks(struct note_pane *_Nonnull pane)
+{
+    const char *const sources[] = {
+        source,
+        "---\ntags: [map]\n---\n# 見出し\n\n段落の1行目\n2行目\n\n- 項目\n  - 入れ子\n\n> 引用\n> "
+        "> 二重\n\n"
+        "```c\nint a;\nint b;\n```\n\n```mermaid\ngraph TB\nA --> B\n```\n\n---\n\n"
+        "| a | b |\n| - | - |\n| 1 | 2 |\n\n用語\n: 説明\n: 二つ目\n\n本文[^n][^m]\n\n"
+        "[r]: https://example.com\n\n[^m]: 二番\n[^n]: 脚注\n\n    続き\n",
+        "表で終わる\n\n| x |\n| - |\n| 1 |\n",
+        "コードで終わる\n\n```\nlast\n```",
+        "見出しで終わる\n\n## 最後",
+        "- [ ] 作業\n- [x] 済み\n\n1. 一\n2. 二\n\n用語\n: 説明\n\n| 表 |\n| -- |\n| a |\n",
+        "Title\n=====\n\nalpha\n\n-\n\nbeta\n\n> ```\n> quoted code\n> ```\n\n- item\n\n  | t |\n  "
+        "| - |\n  | 1 |\n\n"
+        "gamma\n\nterm\n: last description",
+        "one\rtwo\r\r# Head\r\rthree\r\r```\rcr code\r```\r"};
+    static wchar_t text[16384];
+    for (size_t at = 0; at < sizeof sources / sizeof sources[0]; ++at)
+    {
+        struct note_text *_Nullable note = nullptr;
+        struct markdown_rtf *_Nullable rtf = nullptr;
+        require(
+            note_text_create(sources[at], strlen(sources[at]), &note) == NOTE_TEXT_ACCEPTED &&
+                markdown_rtf_create(note, folio_theme_palette(FOLIO_THEME_LIGHT),
+                                    (struct markdown_rtf_locale){"Yu Gothic UI", FOLIO_LANGUAGE_JA},
+                                    &rtf) == MARKDOWN_RTF_CONVERTED,
+            "source map document");
+        require(note_pane_load(pane, markdown_rtf_text(rtf), markdown_rtf_length(rtf),
+                               PANE_MODE_VIEW) == NOTE_PANE_LOAD_READY,
+                "source map native document");
+        size_t length = raw_text(pane, text, sizeof text / sizeof text[0]);
+        size_t marks = 0;
+        for (size_t index = 0; index < length; ++index)
+            marks += text[index] == 0x0D || text[index] == 0x07;
+        const struct markdown_source_map *map = markdown_rtf_source_map(rtf);
+        printf("source map %zu: pane %zu marks, map %zu\n", at, marks,
+               markdown_source_map_total(map));
+        require(marks == markdown_source_map_total(map), "the map's total is the pane's marks");
+        expect_code_lines(map, sources[at], text, length);
+        markdown_rtf_destroy(rtf);
+        note_text_destroy(note);
+    }
+    load(pane, PANE_MODE_VIEW, source);
+}
+
 int main(void)
 {
     HDESK desktop = CreateDesktopW(L"NeNeFolioMinimap506", nullptr, nullptr, 0,
@@ -1451,6 +1565,7 @@ int main(void)
     headings(pane);
     heading_texts(pane);
     outline_module(pane);
+    source_map_marks(pane);
     load(pane, PANE_MODE_EDIT, source);
     boundaries(pane);
     preservation(pane);

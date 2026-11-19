@@ -9,6 +9,7 @@
 #include "markdown_inline_tokens.h"
 #include "markdown_media.h"
 #include "markdown_references.h"
+#include "markdown_source_map.h"
 #include "markdown_table.h"
 #include "markdown_table_state.h"
 #include "markdown_task_kind.h"
@@ -60,7 +61,83 @@ struct markdown_blocks
     size_t code_slot;
     enum markdown_table_state table_state;
     struct markdown_line delimiter;
+    /* #1008 / ADR0116: where each block came from, or none when not asked for. */
+    struct markdown_source_map *_Nullable map;
+    size_t group;                     /* the fence or table being written; groups count from 1 */
+    bool map_failed;                  /* an entry could not be kept; the render fails at its end */
+    const char *_Nullable setext_end; /* the end of the underline of the heading being closed */
 };
+
+/* #1008: the start of the source line that holds `at`, and the end of the one that holds
+ * `end` (its newline not included). */
+static size_t line_begin(const struct markdown_blocks *_Nonnull parser, size_t at)
+{
+    while (at > 0 && parser->source[at - 1] != '\n' && parser->source[at - 1] != '\r')
+        --at;
+    return at;
+}
+
+static size_t line_end(const struct markdown_blocks *_Nonnull parser, size_t at)
+{
+    while (at < parser->length && parser->source[at] != '\n' && parser->source[at] != '\r')
+        ++at;
+    return at;
+}
+
+/* #1008: the kinds that belong to a fence (code or diagram) or a table. */
+static bool grouped(enum markdown_source_kind kind)
+{
+    switch (kind)
+    {
+    case MARKDOWN_SOURCE_CODE_HEADER:
+    case MARKDOWN_SOURCE_CODE_LINE:
+    case MARKDOWN_SOURCE_CODE_END:
+    case MARKDOWN_SOURCE_DIAGRAM:
+    case MARKDOWN_SOURCE_TABLE_ROW:
+    case MARKDOWN_SOURCE_LITERAL_ROW:
+        return true;
+    case MARKDOWN_SOURCE_PARAGRAPH:
+    case MARKDOWN_SOURCE_HEADING:
+    case MARKDOWN_SOURCE_RULE:
+    case MARKDOWN_SOURCE_DEFINITION:
+    case MARKDOWN_SOURCE_SEPARATOR:
+    case MARKDOWN_SOURCE_FOOTNOTE:
+        return false;
+    }
+    return false;
+}
+
+/* #1008: records a block that starts in the RTF here: the source lines from the line of
+ * `first` to the line of `last`, its content at `caret` (all byte pointers into the source). */
+static void record(struct markdown_blocks *_Nonnull parser, enum markdown_source_kind kind,
+                   struct markdown_span lines, const char *_Nonnull caret)
+{
+    if (parser->map == nullptr || parser->map_failed)
+        return;
+    size_t first = (size_t)(lines.bytes - parser->source);
+    struct markdown_source_entry entry = {.rtf = text_buffer_length(parser->out),
+                                          .begin = line_begin(parser, first),
+                                          .end = line_end(parser, first + lines.length),
+                                          .caret = (size_t)(caret - parser->source),
+                                          .kind = kind,
+                                          .group = grouped(kind) ? parser->group : 0};
+    /* Not the outcome: the next step of the traversal would write over it. */
+    parser->map_failed = !markdown_source_map_add(parser->map, entry);
+}
+
+/* The source of the open paragraph's spans, from the first to the end of the last. */
+static struct markdown_span spans_source(const struct markdown_blocks *_Nonnull parser)
+{
+    const struct markdown_span *first = &parser->spans[0];
+    const struct markdown_span *last = &parser->spans[parser->span_count - 1];
+    return (struct markdown_span){.bytes = first->bytes,
+                                  .length = (size_t)(last->bytes + last->length - first->bytes)};
+}
+
+static struct markdown_span line_source(struct markdown_line line)
+{
+    return (struct markdown_span){.bytes = line.bytes, .length = line.length};
+}
 
 static bool reserve_spans(struct markdown_blocks *_Nonnull parser)
 {
@@ -258,6 +335,7 @@ static void definition_end(struct markdown_blocks *_Nonnull parser)
 
 static bool flush_definition(struct markdown_blocks *_Nonnull parser)
 {
+    record(parser, MARKDOWN_SOURCE_DEFINITION, spans_source(parser), parser->spans[0].bytes);
     definition_header(parser);
     parser->outcome = markdown_inline_tokens_render(
         (struct markdown_render){parser->out, parser->media, 22, parser->references},
@@ -280,6 +358,12 @@ static bool flush(struct markdown_blocks *_Nonnull parser)
     if (parser->definition != MARKDOWN_DEFINITION_NONE)
         return flush_definition(parser);
     parser->after_description = false;
+    struct markdown_span lines = spans_source(parser);
+    if (parser->setext_end != nullptr)
+        lines.length = (size_t)(parser->setext_end - lines.bytes);
+    parser->setext_end = nullptr;
+    record(parser, parser->heading != 0 ? MARKDOWN_SOURCE_HEADING : MARKDOWN_SOURCE_PARAGRAPH,
+           lines, parser->spans[0].bytes);
     outer_markers(parser, 1);
     paragraph_header(parser);
     struct markdown_view view = {
@@ -397,6 +481,7 @@ static bool code_line(struct markdown_blocks *_Nonnull parser, struct markdown_l
         markdown_media_code_line(parser->media, parser->code_slot, line);
     if (parser->code_state == MARKDOWN_CODE_STATE_PARAGRAPH)
         text_buffer_append_text(parser->out, "\\par\n");
+    record(parser, MARKDOWN_SOURCE_CODE_LINE, line_source(line), line.bytes + line.prefix);
     text_buffer_append_text(parser->out, "\\pard\\li");
     rtf_text_number(parser->out, parser->code_indent + 180);
     text_buffer_append_text(parser->out, "\\ri180\\sb");
@@ -503,10 +588,23 @@ static bool begin_copy(struct markdown_blocks *_Nonnull parser)
     return begun != IMAGE_OUT_OF_MEMORY;
 }
 
+/* #1008: a fence opens a group; a mermaid fence is one diagram, any other a code block. */
+static void record_fence(struct markdown_blocks *_Nonnull parser, struct markdown_line line,
+                         bool mermaid)
+{
+    ++parser->group;
+    record(parser, mermaid ? MARKDOWN_SOURCE_DIAGRAM : MARKDOWN_SOURCE_CODE_HEADER,
+           line_source(line), line.bytes + line.content);
+}
+
 static bool start_fence(struct markdown_blocks *_Nonnull parser, struct markdown_line line,
                         size_t length)
 {
     parser->after_description = false;
+    size_t info = line.content + length;
+    struct markdown_span word = code_language_word(line.bytes + info, line.length - info);
+    bool mermaid = word.length == 7 && memcmp(word.bytes, "mermaid", 7) == 0;
+    record_fence(parser, line, mermaid);
     outer_markers(parser, 0);
     parser->fence = line.bytes[line.content];
     parser->code_state = MARKDOWN_CODE_STATE_EMPTY;
@@ -518,9 +616,7 @@ static bool start_fence(struct markdown_blocks *_Nonnull parser, struct markdown
         parser->outcome = MARKDOWN_RTF_INVALID_INPUT;
         return false;
     }
-    size_t info = line.content + length;
-    struct markdown_span word = code_language_word(line.bytes + info, line.length - info);
-    if (word.length == 7 && memcmp(word.bytes, "mermaid", 7) == 0)
+    if (mermaid)
     {
         parser->diagram = true;
         parser->diagram_slot = diagram_none;
@@ -588,9 +684,10 @@ static bool heading_line(struct markdown_blocks *_Nonnull parser, struct markdow
     return add_span(parser, heading_content(line, level)) && flush(parser);
 }
 
-static void rule(struct markdown_blocks *_Nonnull parser)
+static void rule(struct markdown_blocks *_Nonnull parser, struct markdown_line line)
 {
     parser->after_description = false;
+    record(parser, MARKDOWN_SOURCE_RULE, line_source(line), line.bytes + line.content);
     outer_markers(parser, 0);
     /* RichEdit extends the highlight into paragraph spacing. Keep the gaps uncolored. */
     static const char gap[] = "{\\pard\\sb0\\sa0\\sl-240\\slmult0\\fs2\\highlight0\\par}\n";
@@ -601,12 +698,37 @@ static void rule(struct markdown_blocks *_Nonnull parser)
     text_buffer_append_text(parser->out, gap);
 }
 
-static bool literal_row(struct markdown_blocks *_Nonnull parser, struct markdown_line line)
+static void literal_text(struct markdown_blocks *_Nonnull parser, struct markdown_line line)
 {
     text_buffer_append_text(parser->out, "\\pard\\sa80\\sl240\\slmult1\\cf1 ");
     rtf_text_append(parser->out, line.bytes, line.length);
     text_buffer_append_text(parser->out, "\\par\n");
+}
+
+static bool literal_row(struct markdown_blocks *_Nonnull parser, struct markdown_line line)
+{
+    record(parser, MARKDOWN_SOURCE_LITERAL_ROW, line_source(line), line.bytes + line.content);
+    literal_text(parser, line);
     return true;
+}
+
+/* #1008: the table's first row, recorded before the spacer a description needs, so the spacer's
+ * paragraph is the table's. */
+static void record_table(struct markdown_blocks *_Nonnull parser, struct markdown_line line,
+                         struct markdown_line delimiter)
+{
+    bool native = parser->table_state == MARKDOWN_TABLE_STATE_NATIVE;
+    struct markdown_span lines =
+        native
+            ? (struct markdown_span){.bytes = line.bytes,
+                                     .length =
+                                         (size_t)(delimiter.bytes + delimiter.length - line.bytes)}
+            : line_source(line);
+    record(parser, native ? MARKDOWN_SOURCE_TABLE_ROW : MARKDOWN_SOURCE_LITERAL_ROW, lines,
+           line.bytes + line.content);
+    if (parser->after_description)
+        text_buffer_append_text(parser->out, "{\\pard\\sb0\\sa0\\sl-80\\slmult0\\fs2\\par}\n");
+    parser->after_description = false;
 }
 
 static bool start_table(struct markdown_blocks *_Nonnull parser, struct markdown_line line,
@@ -614,19 +736,19 @@ static bool start_table(struct markdown_blocks *_Nonnull parser, struct markdown
 {
     if (!flush(parser))
         return false;
-    if (parser->after_description)
-        text_buffer_append_text(parser->out, "{\\pard\\sb0\\sa0\\sl-80\\slmult0\\fs2\\par}\n");
-    parser->after_description = false;
     parser->delimiter = delimiter;
+    ++parser->group;
     size_t indent_twips = markdown_containers_indent(parser->containers);
     parser->table_state = markdown_table_native(markdown_table_columns(line), indent_twips)
                               ? MARKDOWN_TABLE_STATE_NATIVE
                               : MARKDOWN_TABLE_STATE_LITERAL;
+    record_table(parser, line, delimiter);
     if (parser->table_state == MARKDOWN_TABLE_STATE_LITERAL)
     {
         while (markdown_containers_pending(parser->containers) != 0)
             markdown_containers_consume_marker(parser->containers);
-        return literal_row(parser, line) && literal_row(parser, delimiter);
+        literal_text(parser, line);
+        return literal_row(parser, delimiter);
     }
     outer_markers(parser, 0);
     struct markdown_table_format format = {.kind = MARKDOWN_ROW_KIND_HEADER,
@@ -641,6 +763,7 @@ static bool table_body(struct markdown_blocks *_Nonnull parser, struct markdown_
 {
     if (parser->table_state == MARKDOWN_TABLE_STATE_LITERAL)
         return literal_row(parser, line);
+    record(parser, MARKDOWN_SOURCE_TABLE_ROW, line_source(line), line.bytes + line.content);
     struct markdown_table_format format = {.kind = MARKDOWN_ROW_KIND_BODY,
                                            .indent_twips =
                                                markdown_containers_indent(parser->containers)};
@@ -659,7 +782,7 @@ static bool special_line(struct markdown_blocks *_Nonnull parser, struct markdow
     {
         if (!flush(parser))
             return false;
-        rule(parser);
+        rule(parser, line);
         return true;
     }
     size_t fence = markdown_line_fence(line);
@@ -757,6 +880,8 @@ static bool skipped_line(struct markdown_blocks *_Nonnull parser, struct markdow
     if (markdown_line_blank(line))
     {
         *accepted = flush(parser);
+        if (*accepted && markdown_containers_pending(parser->containers) != 0)
+            record(parser, MARKDOWN_SOURCE_PARAGRAPH, line_source(raw), raw.bytes + raw.length);
         if (*accepted)
             outer_markers(parser, 0);
         return true;
@@ -782,6 +907,7 @@ static bool render_line(struct markdown_blocks *_Nonnull parser, struct markdown
     if (parser->span_count != 0 && setext != 0 && parser->definition == MARKDOWN_DEFINITION_NONE)
     {
         parser->heading = setext;
+        parser->setext_end = line.bytes + line.length;
         return flush(parser);
     }
     if (table_candidate(parser, line, next))
@@ -798,7 +924,11 @@ static bool render_line(struct markdown_blocks *_Nonnull parser, struct markdown
 static bool render_fenced_line(struct markdown_blocks *_Nonnull parser, struct markdown_line line)
 {
     if (fence_closes(parser, line))
-        return close_code(parser);
+    {
+        bool closed = close_code(parser);
+        record(parser, MARKDOWN_SOURCE_CODE_END, line_source(line), line.bytes + line.content);
+        return closed;
+    }
     return code_line(parser, line);
 }
 
@@ -873,6 +1003,15 @@ static bool footnote_paragraphs(struct markdown_blocks *_Nonnull parser,
     return true;
 }
 
+/* #1008: a footnote's definition, from its first text to the end of its last line. */
+static struct markdown_span footnote_source(const struct markdown_span *_Nonnull parts,
+                                            size_t count)
+{
+    return (struct markdown_span){
+        .bytes = parts[0].bytes,
+        .length = (size_t)(parts[count - 1].bytes + parts[count - 1].length - parts[0].bytes)};
+}
+
 /* #869 / ADR0103: one footnote line, `n. text`, a size smaller than the body; its text goes
  * through the same inline rendering (which may number further footnotes it refers to). */
 static bool footnote_line(struct markdown_blocks *_Nonnull parser, size_t rank)
@@ -882,6 +1021,7 @@ static bool footnote_line(struct markdown_blocks *_Nonnull parser, size_t rank)
     /* #878: the first line's text and the lines it continues on, joined like a paragraph. */
     struct markdown_span parts[markdown_references_continuation_limit + 1];
     size_t count = markdown_references_footnote_text(references, index, parts);
+    record(parser, MARKDOWN_SOURCE_FOOTNOTE, footnote_source(parts, count), parts[0].bytes);
     /* #945: the footnote's number is a link back to the first place that referred to it. */
     text_buffer_append_text(
         parser->out, "\\pard\\sa40\\sl240\\slmult1\\cf3\\fs18 {\\field{\\*\\fldinst{HYPERLINK \"");
@@ -900,6 +1040,10 @@ static bool footnotes(struct markdown_blocks *_Nonnull parser)
     if (markdown_references_numbered(parser->references) == 0)
         return true;
     static const char gap[] = "{\\pard\\sb0\\sa0\\sl-240\\slmult0\\fs2\\highlight0\\par}\n";
+    struct markdown_span parts[markdown_references_continuation_limit + 1];
+    size_t count = markdown_references_footnote_text(
+        parser->references, markdown_references_numbered_at(parser->references, 0), parts);
+    record(parser, MARKDOWN_SOURCE_SEPARATOR, footnote_source(parts, count), parts[0].bytes);
     text_buffer_append_text(parser->out, gap);
     text_buffer_append_text(parser->out,
                             "{\\pard\\sb0\\sa0\\sl-20\\slmult0\\fs2\\highlight3\\par}\n");
@@ -919,19 +1063,27 @@ static void markdown_blocks_destroy(struct markdown_blocks *_Nonnull parser)
     markdown_containers_destroy(parser->containers);
 }
 
+/* What is still open at the end: a fence, a paragraph, then the footnotes. */
+static bool finish_document(struct markdown_blocks *_Nonnull parser, bool accepted)
+{
+    if (parser->code_state != MARKDOWN_CODE_STATE_OUTSIDE)
+        accepted = close_code(parser) && accepted;
+    return accepted && flush(parser) && footnotes(parser);
+}
+
 enum markdown_rtf_outcome markdown_blocks_render(struct markdown_render render,
                                                  const struct note_text *_Nonnull text,
-                                                 enum folio_language language,
-                                                 enum folio_contrast contrast)
+                                                 struct markdown_blocks_options options)
 {
     size_t length = note_text_length(text);
     struct markdown_blocks parser = {.out = render.text,
                                      .media = render.media,
                                      .source = note_text_bytes(text),
                                      .length = length,
-                                     .language = language,
-                                     .contrast = contrast,
-                                     .outcome = MARKDOWN_RTF_CONVERTED};
+                                     .language = options.language,
+                                     .contrast = options.contrast,
+                                     .outcome = MARKDOWN_RTF_CONVERTED,
+                                     .map = options.map};
     parser.outcome = markdown_containers_create(&parser.containers);
     if (parser.outcome == MARKDOWN_RTF_CONVERTED)
         parser.outcome = markdown_references_create(text, &parser.references);
@@ -944,14 +1096,9 @@ enum markdown_rtf_outcome markdown_blocks_render(struct markdown_render render,
     bool accepted = true;
     while (cursor < length && accepted)
         accepted = render_next(&parser, &cursor);
-    if (parser.code_state != MARKDOWN_CODE_STATE_OUTSIDE)
-        accepted = close_code(&parser) && accepted;
-    if (accepted)
-        accepted = flush(&parser);
-    if (accepted)
-        accepted = footnotes(&parser);
+    accepted = finish_document(&parser, accepted);
     markdown_blocks_destroy(&parser);
-    if (!accepted && parser.outcome == MARKDOWN_RTF_CONVERTED)
-        return MARKDOWN_RTF_OUT_OF_MEMORY;
-    return parser.outcome;
+    bool failed = !accepted || parser.map_failed;
+    return failed && parser.outcome == MARKDOWN_RTF_CONVERTED ? MARKDOWN_RTF_OUT_OF_MEMORY
+                                                              : parser.outcome;
 }

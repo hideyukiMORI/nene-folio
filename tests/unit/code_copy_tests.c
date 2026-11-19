@@ -472,4 +472,5 @@ void run_code_copy_tests(void)
     verify_render_allocation();
     verify_state();
     printf("code block copy header, source, target, limit and intent tests passed\n");
+    run_source_map_tests(); /* #1008: the same view RTF's other side table */
 }
