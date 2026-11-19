@@ -7,6 +7,7 @@
 #include "diagram_link.h"
 #include "diagram_node.h"
 #include "diagram_outcome.h"
+#include "diagram_tick.h"
 struct diagram_model;
 /* The parse factories alone own this transient construction protocol. */
 [[nodiscard]] enum diagram_outcome
@@ -22,6 +23,9 @@ diagram_model_create(enum diagram_kind kind, struct diagram_model *_Nullable *_N
                                                        size_t index, struct diagram_group value);
 [[nodiscard]] enum diagram_outcome diagram_model_event(struct diagram_model *_Nonnull model,
                                                        struct diagram_event value);
+/* #992: a mark on a gantt's time axis, in the order of the days. */
+[[nodiscard]] enum diagram_outcome diagram_model_tick(struct diagram_model *_Nonnull model,
+                                                      struct diagram_tick value);
 void diagram_model_direction(struct diagram_model *_Nonnull model,
                              enum diagram_direction direction);
 void diagram_model_title(struct diagram_model *_Nonnull model, size_t title);
@@ -49,5 +53,8 @@ diagram_model_group_at(const struct diagram_model *_Nonnull model, size_t index)
 [[nodiscard]] size_t diagram_model_event_count(const struct diagram_model *_Nonnull model);
 [[nodiscard]] struct diagram_event
 diagram_model_event_at(const struct diagram_model *_Nonnull model, size_t index);
+[[nodiscard]] size_t diagram_model_tick_count(const struct diagram_model *_Nonnull model);
+[[nodiscard]] struct diagram_tick diagram_model_tick_at(const struct diagram_model *_Nonnull model,
+                                                        size_t index);
 void diagram_model_destroy(struct diagram_model *_Nullable model);
 #endif

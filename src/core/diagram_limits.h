@@ -7,6 +7,7 @@ constexpr size_t diagram_node_limit = 256;
 constexpr size_t diagram_link_limit = 1024;
 constexpr size_t diagram_event_limit = 2048;
 constexpr size_t diagram_group_limit = 64;
+constexpr size_t diagram_tick_limit = 64; /* #992: marks on a gantt's time axis */
 constexpr size_t diagram_text_limit = 4096;
 constexpr size_t diagram_primitive_limit = 8192;
 constexpr size_t diagram_depth_limit = 16;

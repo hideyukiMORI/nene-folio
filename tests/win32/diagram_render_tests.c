@@ -56,6 +56,13 @@ static const char classes[] =
 static const char pie[] =
     "pie showData title 作業の内訳\n\"設計\" : 40\n\"実装\" : 25\n\"試験\" : 15\n"
     "\"文書\" : 12.5\n\"レビュー\" : 6\n\"その他\" : 1.5\n\"端数\" : 0.001\n";
+/* #992 / ADR0115: a gantt through the same phases: three sections, a done, an active, a crit
+ * task and a milestone, a weekend skipped. */
+static const char gantt[] =
+    "gantt\ntitle 次の版の計画\nexcludes weekends\nsection 設計\n"
+    "要件を決める :done, a1, 2026-11-02, 4d\n画面の案 :active, a2, after a1, 5d\n"
+    "section 実装\n中核 :crit, b1, after a2, 6d\n描画 :b2, after a1, 8d\n"
+    "section 確認\n試験 :c1, after b1, 3d\n公開 :milestone, after c1, 0d\n";
 /* #882 / ADR0105: an ER diagram through the same phases. */
 static const char er[] =
     "erDiagram\n顧客 ||--o{ 注文 : 出す\n注文 ||--|{ 明細 : 含む\n顧客 }|..|| 住所 : 使う\n"
@@ -123,11 +130,11 @@ static struct image_bitmap *_Nonnull render(const struct diagram_request *_Nonnu
 }
 static void render_cases(const struct image_work *_Nonnull work, const char *_Nullable output)
 {
-    const char *sources[] = {flow, sequence, parts, state, er, classes, pie};
+    const char *sources[] = {flow, sequence, parts, state, er, classes, pie, gantt};
     const char *names[] = {"flow-light",  "flow-dark",  "sequence-light", "sequence-dark",
                            "parts-light", "parts-dark", "state-light",    "state-dark",
                            "er-light",    "er-dark",    "class-light",    "class-dark",
-                           "pie-light",   "pie-dark"};
+                           "pie-light",   "pie-dark",   "gantt-light",    "gantt-dark"};
     const enum folio_theme themes[] = {FOLIO_THEME_LIGHT, FOLIO_THEME_DARK};
     for (size_t index = 0; index < sizeof sources / sizeof sources[0]; ++index)
     {
@@ -161,7 +168,14 @@ static uint32_t little(const unsigned char *_Nonnull bytes, size_t width)
 }
 /* The colour at a logical point of the scene, whatever the bitmap's scale and row order. The
  * scene of these pies is as tall as the circle and its two margins. */
+static struct rgb_color pixel_of(const struct image_bitmap *_Nonnull bitmap, int x, int y,
+                                 int tall);
 static struct rgb_color pixel_at(const struct image_bitmap *_Nonnull bitmap, int x, int y)
+{
+    return pixel_of(bitmap, x, y, pie_test_circle + diagram_outer_margin * 2);
+}
+/* The colour at a logical point of a scene `tall` logical pixels high. */
+static struct rgb_color pixel_of(const struct image_bitmap *_Nonnull bitmap, int x, int y, int tall)
 {
     const unsigned char *bytes = image_bitmap_bytes(bitmap);
     require(image_bitmap_length(bitmap) > 54 && bytes[0] == 'B' && bytes[1] == 'M',
@@ -172,7 +186,6 @@ static struct rgb_color pixel_at(const struct image_bitmap *_Nonnull bitmap, int
     bool bottom_up = height > 0;
     int32_t rows = bottom_up ? height : -height;
     require(width > 0 && rows > 0 && (bits == 24 || bits == 32), "an uncompressed colour bitmap");
-    int tall = pie_test_circle + diagram_outer_margin * 2;
     require(rows % tall == 0, "the bitmap is a whole multiple of the scene");
     int column = x * (rows / tall);
     int row = y * (rows / tall);
@@ -255,6 +268,74 @@ static void pie_drawing(const struct image_work *_Nonnull work)
                                      {38, 71, 3}, {26, 50, 4}, {38, 29, 2}};
     pie_pixels(work, "pie\n\"a\" : 1\n\"b\" : 1\n\"c\" : 1\n\"d\" : 1\n\"e\" : 1\n\"f\" : 1\n", six,
                sizeof six / sizeof six[0]);
+}
+/* #992: the colour a gantt's shape should have inside: a done task's pale fill, otherwise its
+ * fill's step of the accent. */
+static struct rgb_color gantt_fill(const struct diagram_palette *_Nonnull palette,
+                                   const struct diagram_primitive *_Nonnull shape)
+{
+    return diagram_palette_shade(palette, shape->fill, shape->shade);
+}
+static size_t gantt_shapes(const struct image_bitmap *_Nonnull bitmap,
+                           const struct diagram_scene *_Nonnull scene,
+                           const struct diagram_palette *_Nonnull palette)
+{
+    size_t checked = 0;
+    int tall = diagram_scene_size(scene).height;
+    for (size_t at = 0; at < diagram_scene_count(scene); ++at)
+    {
+        const struct diagram_primitive *shape = diagram_scene_at(scene, at);
+        if (shape->kind != DIAGRAM_PRIMITIVE_SHAPE)
+            continue;
+        struct rgb_color seen = pixel_of(bitmap, shape->bounds.x + shape->bounds.width / 2,
+                                         shape->bounds.y + shape->bounds.height / 2, tall);
+        struct rgb_color expected = gantt_fill(palette, shape);
+        if (!near_color(seen, expected))
+            fprintf(stderr, "gantt shape %zu: saw %u,%u,%u expected %u,%u,%u\n", at, seen.red,
+                    seen.green, seen.blue, expected.red, expected.green, expected.blue);
+        require(near_color(seen, expected), "a gantt bar has its section's step or a done fill");
+        if (shape->stroke == DIAGRAM_THICK)
+        {
+            /* The thick pen is centred on the edge, so the edge's own column is solid. */
+            struct rgb_color edge =
+                pixel_of(bitmap, shape->bounds.x, shape->bounds.y + shape->bounds.height / 2, tall);
+            struct rgb_color accent = diagram_palette_ink(palette, DIAGRAM_INK_ACCENT);
+            if (!near_color(edge, accent))
+                fprintf(stderr, "crit edge at %d: saw %u,%u,%u expected %u,%u,%u\n",
+                        shape->bounds.x, edge.red, edge.green, edge.blue, accent.red, accent.green,
+                        accent.blue);
+            require(near_color(edge, accent), "a crit bar has an accent edge");
+        }
+        ++checked;
+    }
+    return checked;
+}
+/* #992: the drawn gantt, read where the layout put each bar and diamond. */
+static void gantt_drawing(const struct image_work *_Nonnull work)
+{
+    const enum folio_theme themes[] = {FOLIO_THEME_LIGHT, FOLIO_THEME_DARK};
+    struct note_text *source = text_for(gantt);
+    for (size_t theme = 0; theme < 2; ++theme)
+    {
+        struct diagram_request request = request_for(source, themes[theme]);
+        struct image_bitmap *bitmap = render(&request, work);
+        struct diagram_model *_Nullable model = nullptr;
+        require(mermaid_diagram_create(request.source, &model) == DIAGRAM_ACCEPTED, "gantt model");
+        struct diagram_canvas *_Nullable canvas = nullptr;
+        require(diagram_canvas_create(&request, &canvas) == IMAGE_READY, "gantt native font");
+        struct diagram_metrics *_Nullable metrics = nullptr;
+        require(diagram_canvas_measure(canvas, model, work, &metrics) == IMAGE_READY,
+                "gantt metrics");
+        struct diagram_scene *_Nullable scene = nullptr;
+        require(diagram_layout_create(model, metrics, &scene) == DIAGRAM_ACCEPTED, "gantt scene");
+        require(gantt_shapes(bitmap, scene, &request.palette) == 6, "every task was read");
+        diagram_scene_destroy(scene);
+        diagram_metrics_destroy(metrics);
+        diagram_canvas_destroy(canvas);
+        diagram_model_destroy(model);
+        image_bitmap_destroy(bitmap);
+    }
+    note_text_destroy(source);
 }
 static void measured_roles(const struct image_work *_Nonnull work)
 {
@@ -1818,6 +1899,7 @@ int main(int argc, char *_Nonnull *_Nonnull argv)
         measured_roles(&work);
         render_cases(&work, argc == 2 ? argv[1] : nullptr);
         pie_drawing(&work);
+        gantt_drawing(&work);
         cancellation(&work);
         worker_contract(&port);
         cache_contract(&work);

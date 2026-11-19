@@ -1,4 +1,5 @@
 #include "allocation_probe.h"
+#include "diagram_calendar.h"
 #include "diagram_geometry.h"
 #include "diagram_layout.h"
 #include "diagram_palette.h"
@@ -8,6 +9,7 @@
 #include "markdown_media.h"
 #include "markdown_rtf.h"
 #include "mermaid_diagram.h"
+#include "mermaid_gantt.h"
 #include "mermaid_pie.h"
 #include "text_buffer.h"
 #include "theme_contrast.h"
@@ -1063,6 +1065,399 @@ static void pie_tests(void)
     pie_rejections();
 }
 
+/* #992: day numbers and dates agree both ways, leap years follow the Gregorian rule, and the
+ * weekday of a known day is right. */
+static void calendar_round_trip(void)
+{
+    int32_t first = 0;
+    int32_t last = 0;
+    require(diagram_calendar_day((struct diagram_date){1, 1, 1}, &first) &&
+                diagram_calendar_day((struct diagram_date){9999, 12, 31}, &last) && first >= 0,
+            "the calendar's first and last days are non-negative day numbers");
+    for (int32_t day = first; day <= last; day += 37)
+    {
+        struct diagram_date date = diagram_calendar_date(day);
+        int32_t again = -1;
+        require(diagram_calendar_day(date, &again) && again == day,
+                "a day number survives a trip through its date");
+    }
+    struct diagram_date end = diagram_calendar_date(last);
+    require(end.year == 9999 && end.month == 12 && end.day == 31, "the last day's date");
+    const struct diagram_date valid[] = {{2000, 2, 29}, {2024, 2, 29}, {2026, 12, 31}};
+    const struct diagram_date wrong[] = {{1900, 2, 29}, {2026, 2, 29}, {2026, 2, 30},
+                                         {2026, 13, 1}, {2026, 0, 10}, {2026, 4, 31},
+                                         {0, 1, 1},     {10000, 1, 1}};
+    int32_t day = 0;
+    for (size_t at = 0; at < sizeof valid / sizeof valid[0]; ++at)
+        require(diagram_calendar_day(valid[at], &day), "existing dates are days");
+    for (size_t at = 0; at < sizeof wrong / sizeof wrong[0]; ++at)
+        require(!diagram_calendar_day(wrong[at], &day), "dates that do not exist are refused");
+    int32_t thursday = 0;
+    int32_t epoch = 0;
+    int32_t tuesday = 0;
+    require(diagram_calendar_day((struct diagram_date){2026, 11, 19}, &thursday) &&
+                diagram_calendar_day((struct diagram_date){1970, 1, 1}, &epoch) &&
+                diagram_calendar_day((struct diagram_date){2000, 2, 29}, &tuesday) &&
+                diagram_calendar_weekday(thursday) == 3 && diagram_calendar_weekday(epoch) == 3 &&
+                diagram_calendar_weekday(tuesday) == 1 && thursday - epoch == 20776,
+            "weekdays count from Monday");
+}
+
+static const char gantt_source[] = "gantt\n"
+                                   "    title 計画\n"
+                                   "    dateFormat YYYY-MM-DD\n"
+                                   "    %% a comment\n"
+                                   "    section 設計\n"
+                                   "    要件 :done, a1, 2026-11-02, 3d\n"
+                                   "    画面 :active, a2, after a1, 1w\n"
+                                   "    section 実装\n"
+                                   "    中核 :crit, b1, after a2, 2026-11-20\n"
+                                   "    確認 :milestone, m1, after b1, 0d\n";
+
+/* A task's expected days and state. */
+struct gantt_expected
+{
+    size_t start;
+    size_t length;
+    enum diagram_task_state state;
+};
+
+static void expect_task(const struct diagram_model *_Nonnull model, size_t at,
+                        struct gantt_expected expected)
+{
+    size_t start = expected.start;
+    size_t length = expected.length;
+    enum diagram_task_state state = expected.state;
+    struct diagram_node node = diagram_model_node_at(model, at);
+    if (node.start != start || node.length != length || node.state != state)
+        fprintf(stderr, "task %zu: start %zu length %zu state %u\n", at, node.start, node.length,
+                (unsigned)node.state);
+    require(node.start == start && node.length == length && node.state == state,
+            "a task's days and state");
+}
+
+static void expect_ticks(const struct diagram_model *_Nonnull model,
+                         const char *_Nonnull const *_Nonnull labels, size_t count)
+{
+    if (diagram_model_tick_count(model) != count)
+        fprintf(stderr, "ticks: %zu\n", diagram_model_tick_count(model));
+    require(diagram_model_tick_count(model) == count, "the axis has its marks");
+    for (size_t at = 0; at < count; ++at)
+    {
+        const char *label = diagram_model_text_at(model, diagram_model_tick_at(model, at).label);
+        if (strcmp(label, labels[at]) != 0)
+            fprintf(stderr, "tick %zu: %s, expected %s\n", at, label, labels[at]);
+        require(strcmp(label, labels[at]) == 0, "each mark has its label");
+    }
+}
+
+static void gantt_contract(void)
+{
+    struct diagram_model *model = parsed(gantt_source);
+    require(diagram_model_kind(model) == DIAGRAM_GANTT && diagram_model_node_count(model) == 4 &&
+                diagram_model_group_count(model) == 2 && diagram_model_link_count(model) == 0,
+            "a gantt is a model of tasks in sections");
+    require(strcmp(diagram_model_text_at(model, diagram_model_title_text(model)), "計画") == 0,
+            "the title");
+    expect_task(model, 0, (struct gantt_expected){0, 3, DIAGRAM_TASK_DONE});
+    expect_task(model, 1, (struct gantt_expected){3, 7, DIAGRAM_TASK_ACTIVE});
+    expect_task(model, 2, (struct gantt_expected){10, 8, DIAGRAM_TASK_PLANNED});
+    expect_task(model, 3, (struct gantt_expected){18, 0, DIAGRAM_TASK_PLANNED});
+    struct diagram_node core = diagram_model_node_at(model, 2);
+    struct diagram_node check = diagram_model_node_at(model, 3);
+    require(core.critical && !diagram_model_node_at(model, 0).critical &&
+                core.shape == DIAGRAM_RECTANGLE && check.shape == DIAGRAM_DIAMOND,
+            "crit and milestone");
+    require(diagram_model_node_at(model, 0).group == 0 && core.group == 1 &&
+                strcmp(diagram_model_text_at(model, core.label), "中核") == 0 &&
+                strcmp(diagram_model_text_at(model, core.id), "b1") == 0 &&
+                strcmp(diagram_model_text_at(model, diagram_model_group_at(model, 1).label),
+                       "実装") == 0,
+            "names, ids and sections");
+    static const char *const weeks[] = {"2026/11/2", "11/9", "11/16"};
+    expect_ticks(model, weeks, 3);
+    require(diagram_model_tick_at(model, 1).day == 7, "a week's mark is seven days on");
+    diagram_model_destroy(model);
+}
+
+/* Durations skip excluded days, a written end date does not move, a task without a start
+ * follows the one above, and `after` may name a task further down. */
+static void gantt_schedule(void)
+{
+    struct diagram_model *model = parsed("gantt\nexcludes weekends\n"
+                                         "a :x, 2026-11-06, 2d\n"
+                                         "b :3d\n"
+                                         "c :after d, 1d\n"
+                                         "d :d, 2026-11-20, 2026-11-23\n");
+    expect_task(model, 0, (struct gantt_expected){0, 4, DIAGRAM_TASK_PLANNED});
+    expect_task(model, 1, (struct gantt_expected){4, 3, DIAGRAM_TASK_PLANNED});
+    expect_task(model, 2, (struct gantt_expected){17, 1, DIAGRAM_TASK_PLANNED});
+    expect_task(model, 3, (struct gantt_expected){14, 3, DIAGRAM_TASK_PLANNED});
+    require(diagram_model_node_at(model, 1).group == diagram_none, "no section before the first");
+    diagram_model_destroy(model);
+    model = parsed("gantt\nexcludes 2026-11-03, 2026-11-04\nx :2026-11-02, 3d\n");
+    expect_task(model, 0, (struct gantt_expected){0, 5, DIAGRAM_TASK_PLANNED});
+    diagram_model_destroy(model);
+    model = parsed("gantt\nx :a, 2026-11-02, 2d\ny :b, 2026-11-03, 4d\nz :after a b, 1d\n");
+    expect_task(model, 2, (struct gantt_expected){5, 1, DIAGRAM_TASK_PLANNED});
+    diagram_model_destroy(model);
+}
+
+static void gantt_axis(void)
+{
+    struct diagram_model *model = parsed("gantt\na :2026-12-21, 3w\n");
+    static const char *const new_year[] = {"2026/12/21", "12/28", "2027/1/4", "1/11"};
+    expect_ticks(model, new_year, 4);
+    diagram_model_destroy(model);
+    model = parsed("gantt\na :2026-01-15, 2026-12-01\n");
+    static const char *const quarters[] = {"2026/4/1", "7/1", "10/1"};
+    expect_ticks(model, quarters, 3);
+    diagram_model_destroy(model);
+    model = parsed("gantt\naxisFormat %-m月%-d日\ntickInterval 2day\na :2026-11-02, 4d\n");
+    static const char *const written[] = {"11月2日", "11月4日", "11月6日"};
+    expect_ticks(model, written, 3);
+    diagram_model_destroy(model);
+    /* `%%` starts a Mermaid comment anywhere on a line, so it never reaches axisFormat. */
+    model = parsed("gantt\naxisFormat %Y-%m-%d %y %e%% a comment\ntickInterval 1month\n"
+                   "a :2026-11-02, 2027-01-10\n");
+    static const char *const months[] = {"2026-12-01 26 1", "2027-01-01 27 1"};
+    expect_ticks(model, months, 2);
+    diagram_model_destroy(model);
+    model = parsed("gantt\ntodayMarker off\na :milestone, 2026-11-04, 0d\n");
+    static const char *const one[] = {"2026/11/4", "11/5"};
+    expect_ticks(model, one, 2);
+    diagram_model_destroy(model);
+}
+
+static void gantt_rejections(void)
+{
+    static const struct
+    {
+        const char *_Nonnull source;
+        enum diagram_outcome outcome;
+    } cases[] = {
+        {"gantt\n", DIAGRAM_INVALID},
+        {"gantt extra\na :2026-11-01, 1d\n", DIAGRAM_INVALID},
+        {"gantt\na :3d\n", DIAGRAM_UNSUPPORTED},
+        {"gantt\na :after x, 1d\n", DIAGRAM_UNSUPPORTED},
+        {"gantt\na :a, after b, 1d\nb :b, after a, 1d\n", DIAGRAM_INVALID},
+        {"gantt\na :2026-02-30, 1d\n", DIAGRAM_INVALID},
+        {"gantt\na :2026-11-01, 2026-02-30\n", DIAGRAM_INVALID},
+        {"gantt\na :2026-11-05, 2026-11-01\n", DIAGRAM_INVALID},
+        {"gantt\na :x, 2026-11-01, 1d\nb :x, 2026-11-02, 1d\n", DIAGRAM_INVALID},
+        {"gantt\n : 2026-11-01, 1d\n", DIAGRAM_INVALID},
+        {"gantt\na 2026-11-01\n", DIAGRAM_INVALID},
+        {"gantt\na :\n", DIAGRAM_INVALID},
+        {"gantt\na :x, y, 2026-11-01, 1d\n", DIAGRAM_INVALID},
+        {"gantt\na :2026-11-01, 3\n", DIAGRAM_INVALID},
+        {"gantt\na :2026-11-01, soon\n", DIAGRAM_INVALID},
+        {"gantt\na :, 2026-11-01, 1d\n", DIAGRAM_INVALID},
+        {"gantt\ntitle a\ntitle b\nx :2026-11-01, 1d\n", DIAGRAM_INVALID},
+        {"gantt\nsection\nx :2026-11-01, 1d\n", DIAGRAM_INVALID},
+        {"gantt\naxisFormat\nx :2026-11-01, 1d\n", DIAGRAM_INVALID},
+        {"gantt\ntickInterval 0day\nx :2026-11-01, 1d\n", DIAGRAM_INVALID},
+        {"gantt\ndateFormat DD/MM/YYYY\nx :01/11/2026, 1d\n", DIAGRAM_UNSUPPORTED},
+        {"gantt\nx :2026-11-01, 1h\n", DIAGRAM_UNSUPPORTED},
+        {"gantt\nx :2026-11-01, 1.5d\n", DIAGRAM_UNSUPPORTED},
+        {"gantt\nx :2026-11-01, 2ms\n", DIAGRAM_UNSUPPORTED},
+        {"gantt\nx :2026-11-01 10:00, 1d\n", DIAGRAM_UNSUPPORTED},
+        {"gantt\nx :2026-11-01, until y\n", DIAGRAM_UNSUPPORTED},
+        {"gantt\naxisFormat %b %d\nx :2026-11-01, 1d\n", DIAGRAM_UNSUPPORTED},
+        {"gantt\naxisFormat %-Y\nx :2026-11-01, 1d\n", DIAGRAM_UNSUPPORTED},
+        {"gantt\naxisFormat 50%\nx :2026-11-01, 1d\n", DIAGRAM_UNSUPPORTED},
+        {"gantt\nexcludes sunday\nx :2026-11-01, 1d\n", DIAGRAM_UNSUPPORTED},
+        {"gantt\nexcludes 2026-02-30\nx :2026-11-01, 1d\n", DIAGRAM_INVALID},
+        {"gantt\ntickInterval 1hour\nx :2026-11-01, 1d\n", DIAGRAM_UNSUPPORTED},
+        {"gantt\ninclusiveEndDates\nx :2026-11-01, 1d\n", DIAGRAM_UNSUPPORTED},
+        {"gantt\nweekend friday\nx :2026-11-01, 1d\n", DIAGRAM_UNSUPPORTED},
+        {"gantt\nx :a, 2026-11-01, 1d\nclick a href \"https://example.com\"\n",
+         DIAGRAM_UNSUPPORTED},
+        {"gantt\naccTitle: t\nx :2026-11-01, 1d\n", DIAGRAM_UNSUPPORTED},
+        {"gantt\nx :2020-01-01, 2031-01-01\n", DIAGRAM_TOO_LARGE},
+        {"gantt\nx :2026-11-01, 99999d\n", DIAGRAM_TOO_LARGE},
+        {"gantt\nx :2026-11-01, 100000d\n", DIAGRAM_TOO_LARGE},
+        {"gantt\nx :9999-12-20, 30d\n", DIAGRAM_TOO_LARGE},
+        {"gantt\ntickInterval 1day\nx :2026-11-01, 100d\n", DIAGRAM_TOO_LARGE},
+    };
+    for (size_t at = 0; at < sizeof cases / sizeof cases[0]; ++at)
+        reject_source(cases[at].source, cases[at].outcome);
+    static char many[(mermaid_gantt_task_limit + 2) * 32] = "gantt\nt0 :2026-11-02, 1d\n";
+    size_t used = strlen(many);
+    for (size_t at = 1; at <= mermaid_gantt_task_limit; ++at)
+        used += (size_t)sprintf(many + used, "t%zu :1d\n", at);
+    reject_source(many, DIAGRAM_TOO_LARGE);
+}
+
+/* The scene, in order: each mark's grid line and label, each section's name, each task's bar and
+ * name, the title. */
+static void gantt_layout(void)
+{
+    struct diagram_model *model = parsed(gantt_source);
+    struct diagram_scene *scene = laid_out(model);
+    require(diagram_scene_count(scene) == 3 * 2 + 2 + 4 * 2 + 1,
+            "marks, sections, tasks and the title");
+    const struct diagram_primitive *done = diagram_scene_at(scene, 8);
+    const struct diagram_primitive *active = diagram_scene_at(scene, 10);
+    const struct diagram_primitive *critical = diagram_scene_at(scene, 12);
+    const struct diagram_primitive *milestone = diagram_scene_at(scene, 14);
+    require(done->shape == DIAGRAM_RECTANGLE && done->fill == DIAGRAM_INK_NODE &&
+                done->ink == DIAGRAM_INK_MUTED && done->stroke == DIAGRAM_SOLID,
+            "a done task is pale with a muted edge");
+    require(active->fill == DIAGRAM_INK_ACCENT && active->shade == 1 &&
+                active->stroke == DIAGRAM_SOLID && active->ink == DIAGRAM_INK_ACCENT,
+            "an active task has its section's step and a thin accent edge");
+    require(critical->shade == 2 && critical->stroke == DIAGRAM_THICK &&
+                critical->ink == DIAGRAM_INK_ACCENT,
+            "the next section takes the next step; crit has a thick accent edge");
+    require(milestone->shape == DIAGRAM_DIAMOND && milestone->shade == 0 &&
+                milestone->stroke == DIAGRAM_INVISIBLE &&
+                milestone->bounds.x + milestone->bounds.width / 2 ==
+                    critical->bounds.x + critical->bounds.width,
+            "a milestone is a diamond at its day");
+    require(active->bounds.x == done->bounds.x + done->bounds.width &&
+                critical->bounds.x == active->bounds.x + active->bounds.width &&
+                active->bounds.y > done->bounds.y && critical->bounds.y > active->bounds.y,
+            "bars follow their days and their rows");
+    const struct diagram_primitive *label = diagram_scene_at(scene, 9);
+    const struct diagram_primitive *grid = diagram_scene_at(scene, 2);
+    require(label->kind == DIAGRAM_PRIMITIVE_TEXT &&
+                label->bounds.x > done->bounds.x + done->bounds.width &&
+                grid->kind == DIAGRAM_PRIMITIVE_PATH && grid->ink == DIAGRAM_INK_NODE &&
+                grid->points[0].x > active->bounds.x && grid->points[0].x < critical->bounds.x &&
+                grid->points[1].y >= milestone->bounds.y + milestone->bounds.height,
+            "names stand right of their bars; grid lines run through every row");
+    diagram_scene_destroy(scene);
+    diagram_model_destroy(model);
+}
+
+/* #992: in every theme, how far the palest section step is from the background, how far
+ * neighbouring section steps are from each other, how far a done task's edge is from its fill,
+ * and how far a crit edge is from the first step. Printed; the floors are what the themes
+ * measured on 2026-11-19. */
+/* The four ratios of one theme: palest step on the background, the weakest pair of neighbouring
+ * steps, a done task's edge on its fill, a crit edge on the first step. */
+struct gantt_contrast
+{
+    double edge;
+    double step;
+    double done;
+    double crit;
+};
+
+static struct gantt_contrast gantt_theme(const struct diagram_palette *_Nonnull palette)
+{
+    struct rgb_color steps[3];
+    for (unsigned char at = 0; at < 3; ++at)
+        steps[at] = diagram_palette_shade(palette, DIAGRAM_INK_ACCENT, (unsigned char)(at + 1));
+    struct gantt_contrast measured = {.edge = theme_contrast_ratio(steps[2], palette->background),
+                                      .step = 100.0,
+                                      .done = theme_contrast_ratio(palette->muted, palette->node),
+                                      .crit = theme_contrast_ratio(palette->accent, steps[0])};
+    for (size_t at = 0; at < 3; ++at)
+    {
+        double step = theme_contrast_ratio(steps[at], steps[(at + 1) % 3]);
+        measured.step = step < measured.step ? step : measured.step;
+    }
+    return measured;
+}
+
+static double least(double first, double second)
+{
+    return first < second ? first : second;
+}
+
+static void gantt_theme_contrast(void)
+{
+    struct gantt_contrast floor = {100.0, 100.0, 100.0, 100.0};
+    for (size_t index = 0; index < folio_theme_count(); ++index)
+    {
+        struct diagram_palette palette =
+            diagram_palette_for(folio_theme_palette(folio_theme_at(index)));
+        struct gantt_contrast measured = gantt_theme(&palette);
+        floor = (struct gantt_contrast){
+            least(floor.edge, measured.edge), least(floor.step, measured.step),
+            least(floor.done, measured.done), least(floor.crit, measured.crit)};
+    }
+    printf("gantt over %zu themes: least step 3/background %.3f, neighbour %.3f, done edge %.3f, "
+           "crit edge %.3f\n",
+           folio_theme_count(), floor.edge, floor.step, floor.done, floor.crit);
+    /* Measured 2026-11-19 over 127 themes: 1.595, 1.316, 3.302, 1.377. */
+    require(floor.edge >= 1.59 && floor.step >= 1.31 && floor.done >= 3.30 && floor.crit >= 1.37,
+            "no theme's gantt is harder to read than the measured floor");
+}
+
+/* The calendar's last months: month marks stop at 9999 instead of wrapping (a chart there once
+ * never finished), and a task may end on 9999-12-31. */
+static void gantt_year_end(void)
+{
+    const char *const sources[] = {
+        "gantt\na :9999-11-15, 10d\n", "gantt\na :milestone, 9999-12-31, 0d\n",
+        "gantt\nx :9999-12-31, 1d\n", "gantt\ntickInterval 1month\nx :9999-10-20, 9999-12-30\n",
+        "gantt\ntickInterval 12month\nx :9999-06-20, 9999-12-30\n"};
+    for (size_t at = 0; at < sizeof sources / sizeof sources[0]; ++at)
+    {
+        struct diagram_model *model = parsed(sources[at]);
+        require(diagram_model_tick_count(model) >= 1, "a chart at the calendar's end has marks");
+        struct diagram_scene *scene = laid_out(model);
+        diagram_scene_destroy(scene);
+        diagram_model_destroy(model);
+    }
+}
+
+/* A duration that ends before excluded days draws to its last working day; the task after it
+ * starts after them (Mermaid's renderEndTime and endTime). */
+static void gantt_excluded_end(void)
+{
+    struct diagram_model *model = parsed("gantt\nexcludes weekends\na :2026-11-06, 1d\nb :1d\n");
+    expect_task(model, 0, (struct gantt_expected){0, 1, DIAGRAM_TASK_PLANNED});
+    expect_task(model, 1, (struct gantt_expected){3, 1, DIAGRAM_TASK_PLANNED});
+    diagram_model_destroy(model);
+    model = parsed("gantt\nexcludes 2026-11-03,2026-11-04\nx :2026-11-02, 3d\n");
+    expect_task(model, 0, (struct gantt_expected){0, 5, DIAGRAM_TASK_PLANNED});
+    diagram_model_destroy(model);
+}
+
+/* The upper limits are accepted and laid out: 128 tasks, a chart of 3660 days; a chart shorter
+ * than a month's interval still has its one mark. */
+static void gantt_limits(void)
+{
+    static char many[mermaid_gantt_task_limit * 24] = "gantt\nt0 :2026-11-02, 1d\n";
+    size_t used = strlen(many);
+    for (size_t at = 1; at < mermaid_gantt_task_limit; ++at)
+        used += (size_t)sprintf(many + used, "t%zu :1d\n", at);
+    const char *const sources[] = {many, "gantt\nx :2020-01-01, 2030-01-08\n"};
+    for (size_t at = 0; at < 2; ++at)
+    {
+        struct diagram_model *model = parsed(sources[at]);
+        struct diagram_scene *scene = laid_out(model);
+        diagram_scene_destroy(scene);
+        diagram_model_destroy(model);
+    }
+    struct diagram_model *model = parsed("gantt\ntickInterval 1month\na :2026-11-10, 5d\n");
+    static const char *const one[] = {"2026/11/10"};
+    expect_ticks(model, one, 1);
+    diagram_model_destroy(model);
+    reject_source("gantt\ntickInterval 99999999999day\nx :2026-11-01, 1d\n", DIAGRAM_INVALID);
+    reject_source("gantt\ntickInterval 01day\nx :2026-11-01, 1d\n", DIAGRAM_INVALID);
+    reject_source("gantt\nx :vert, v1, 2026-11-01, 0d\n", DIAGRAM_UNSUPPORTED);
+    reject_source("gantt\naxisFormat %Y%Y%Y%Y%Y%Y%Y%Y%Y%Y%Y%Y%Y%Y%Y%Y%Y\nx :2026-11-01, 1d\n",
+                  DIAGRAM_TOO_LARGE);
+}
+
+static void gantt_tests(void)
+{
+    calendar_round_trip();
+    gantt_contract();
+    gantt_schedule();
+    gantt_axis();
+    gantt_rejections();
+    gantt_layout();
+    gantt_theme_contrast();
+    gantt_year_end();
+    gantt_excluded_end();
+    gantt_limits();
+}
+
 static void class_rejections(void)
 {
     reject_source("classDiagram\n", DIAGRAM_INVALID);
@@ -1746,7 +2141,7 @@ static void rejected_grammar(void)
                                           "sequenceDiagram\nend"};
     for (size_t index = 0; index < sizeof invalid / sizeof invalid[0]; ++index)
         reject_source(invalid[index], DIAGRAM_INVALID);
-    static const char *const unsupported[] = {"gantt\ntitle x",
+    static const char *const unsupported[] = {"journey\ntitle x",
                                               "%%{init: {}}%%\ngraph TB\nA-->B",
                                               "graph TB\nA-->B\nclick A callback",
                                               "graph TB\nA[<b>bold</b>]",
@@ -2019,9 +2414,9 @@ static void model_reference_contract(void)
             "reference fixture identifier");
     struct diagram_node node = {.id = 0, .label = 0, .group = diagram_none};
     require(diagram_model_node(model, 0, node) == DIAGRAM_ACCEPTED, "known participant");
-    const struct diagram_node bad_nodes[] = {{1, 0, diagram_none, DIAGRAM_RECTANGLE, 0},
-                                             {0, 1, diagram_none, DIAGRAM_RECTANGLE, 0},
-                                             {0, 0, 0, DIAGRAM_RECTANGLE, 0}};
+    const struct diagram_node bad_nodes[] = {{.id = 1, .label = 0, .group = diagram_none},
+                                             {.id = 0, .label = 1, .group = diagram_none},
+                                             {.id = 0, .label = 0, .group = 0}};
     for (size_t index = 0; index < sizeof bad_nodes / sizeof bad_nodes[0]; ++index)
         require(diagram_model_node(model, 0, bad_nodes[index]) == DIAGRAM_INVALID,
                 "unresolved node text and group references are rejected");
@@ -2504,6 +2899,7 @@ void run_diagram_tests(void)
     class_contract();
     class_rejections();
     pie_tests();
+    gantt_tests();
     groups_and_cycles();
     edge_labels_remain_visible();
     horizontal_group_heading();
@@ -2528,6 +2924,7 @@ void run_diagram_tests(void)
     allocation_contract(flow_source);
     allocation_contract(sequence_source);
     allocation_contract("pie showData title t\n\"a\" : 1\n\"b\" : 2.5\n");
+    allocation_contract(gantt_source);
     markdown_allocation_contract("```mermaid\ngraph TB\nA --> B\n```\ntail");
     markdown_allocation_contract("> ```mermaid\n> graph TB\n> A --> B\ntail");
     markdown_allocation_contract("```mermaid\ngraph TB\nA --> B");
