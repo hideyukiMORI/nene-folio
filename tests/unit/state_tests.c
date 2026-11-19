@@ -1624,6 +1624,82 @@ static struct folio_state *_Nonnull transfer_state(struct persistence_adapter *_
     return ready_state(adapter);
 }
 
+static struct note_name *_Nonnull accepted_note_name(const char *_Nonnull text);
+
+/* #1069 / ADR0117 (stage 4): the paths that change the folder first and write the ledger after
+ * (a note made, sent to the bin, moved to another category) read the index and the folder again
+ * before that write. A note put into a folder from outside (`folder_add`) and an index edited
+ * outside (`store_index`) are in what gets written. B: one/two/three, A: four/five, C as B. */
+static void verify_refresh_created_and_binned(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = transfer_state(&adapter);
+    folder_add(&adapter, "B", "six");
+    struct note_name *name = accepted_note_name("new");
+    struct note_destination destination = {.category = 0, .name = name};
+    require(folio_state_new_note(state, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
+                folio_state_store_new(state, &destination, u"x", 1) == FOLIO_STATE_READY,
+            "a new note is saved into B");
+    require(same_text(adapter.ledger_category, "B") &&
+                same_text(adapter.ledger_order, "one/two/three/six/new") &&
+                same_text(folio_state_document_name(state), "new"),
+            "the index written after the save holds the note added outside, and the new note is "
+            "still the open one");
+    folder_add(&adapter, "C", "seven");
+    store_index(
+        &adapter, "C",
+        "{\"version\": 2, \"notes\": [\"three\", \"two\", \"one\"], \"favorites\": [\"two\"]}");
+    require(folio_state_trash_note(state, at(2, 0), u"x", 1) == FOLIO_STATE_READY &&
+                same_text(adapter.trashed_note, "one") && same_text(adapter.ledger_category, "C") &&
+                same_text(adapter.ledger_order, "three/two/seven") &&
+                adapter.written_favorite_count == 1,
+            "the index written after the bin keeps the outside order, star and note");
+    adapter.notes_outcome = PERSISTENCE_UNREADABLE;
+    size_t writes = adapter.ledger_writes;
+    require(folio_state_trash_note(state, at(2, 0), u"x", 1) == FOLIO_STATE_LEDGER_STALE &&
+                adapter.ledger_writes == writes,
+            "an index that cannot be read again is not overwritten: the write waits");
+    adapter.notes_outcome = PERSISTENCE_LOADED;
+    require(folio_state_toggle_favorite(state, at(0, 0)) == FOLIO_STATE_READY &&
+                adapter.ledger_writes == writes + 2,
+            "the next intent writes the waiting index first, then its own");
+    note_name_destroy(name);
+    folio_state_destroy(state);
+}
+
+static void verify_refresh_transfer(void)
+{
+    char order[160] = {0};
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = transfer_state(&adapter);
+    folder_add(&adapter, "A", "eight");
+    store_index(&adapter, "A",
+                "{\"version\": 2, \"notes\": [\"five\", \"four\"], \"favorites\": []}");
+    folder_add(&adapter, "B", "six");
+    require(folio_state_move_note(state, at(0, 0), at(1, 0)) == FOLIO_STATE_READY &&
+                adapter.moves == 1 && same_text(adapter.moved_note, "one") && ledger_noticed(state),
+            "one is dropped before four, with both categories changed outside");
+    require(folio_state_toggle_category(state, 1) == FOLIO_STATE_READY, "expand A");
+    row_order(state, order, sizeof order);
+    require(same_text(order, "B/two/three/six/A/five/one/four/eight/C/one/two/three"),
+            "it lands before four in the outside order; the notes added outside are in both lists");
+    folder_add(&adapter, "A", "two");
+    size_t writes = adapter.ledger_writes;
+    require(
+        folio_state_move_note(state, at(0, 0), at(1, 0)) == FOLIO_STATE_NAME_TAKEN &&
+            adapter.ledger_writes == writes && adapter.moves == 1,
+        "a name that came to the destination from outside is refused before anything is written");
+    folder_remove(&adapter, "B", "six");
+    require(folio_state_move_note_to_category(state, at(0, 2), 2) ==
+                    FOLIO_STATE_LEDGER_CHANGED_OUTSIDE &&
+                adapter.moves == 1,
+            "a note that is gone is not moved");
+    row_order(state, order, sizeof order);
+    require(same_text(order, "B/two/three/A/five/one/four/eight/two/C/one/two/three"),
+            "and the lists show what is there");
+    folio_state_destroy(state);
+}
+
 /* #941: 別のカテゴリの末尾へ。位置は状態が数える。同じカテゴリ・無いカテゴリ・絞り込み中。 */
 static void verify_move_to_category(void)
 {
@@ -6234,6 +6310,8 @@ void run_state_tests(void)
     verify_refresh_keeps_open();
     verify_refresh_search_and_cursor();
     verify_refresh_allocation();
+    verify_refresh_created_and_binned();
+    verify_refresh_transfer();
     verify_move_selection();
     verify_move_to_category();
     verify_transfer_note();
