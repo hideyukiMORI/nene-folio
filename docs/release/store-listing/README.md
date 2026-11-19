@@ -1,8 +1,9 @@
 # Microsoft Storeの掲載原稿
 
 商品: [NeNe Folio](https://apps.microsoft.com/detail/9PCHS225SWBX)（9PCHS225SWBX）。
-**現在の正本は1.5.0の機能に合わせた案（2026-11-19、[Issue #1000](https://github.com/hideyukiMORI/nene-folio/issues/1000)）で、まだ申請していない。**
-1.5.0（2026-11-19にGitHubで公開。Storeへは同日21時ごろにhideが更新を申請＝[Issue #1065](https://github.com/hideyukiMORI/nene-folio/issues/1065)。入力した文の内容と認定の結果は未確認、[品質記録](../../quality/2026-11-19-release-1.5.0.md)）を提出するときに、hideが「このバージョンの新機能」（[1.5.0更新文](../1.5.0-store-notes.txt)）と一緒に入力する。
+**現在の正本は1.5.0の機能に合わせた案（2026-11-19、[Issue #1000](https://github.com/hideyukiMORI/nene-folio/issues/1000)）で、Storeで公開されている。**
+1.5.0（2026-11-19にGitHubで公開）の更新と一緒に、hideが同日21時ごろに申請し（[Issue #1065](https://github.com/hideyukiMORI/nene-folio/issues/1065)）、同日23時台に公開を報告した（[Issue #1083](https://github.com/hideyukiMORI/nene-folio/issues/1083)）。
+2026-11-20に公開カタログ（ja-JP・en-US・zh-CN）を取得し、説明・短い説明・機能と「このバージョンの新機能」（[1.5.0更新文](../1.5.0-store-notes.txt)）の1.5.0の段落が、この原稿と空白を除いて一致することを確かめた（掲載の最終更新は2026-11-19T13:34:54Z。[品質記録](../../quality/2026-11-19-release-1.5.0.md)）。
 1.4.0と1.5.0の機能（お気に入り・タグ・ノートを探す面・見出しの欄・本文の右クリック・窓の位置・定義リストと脚注・状態遷移図/ER図/クラス図/円グラフ/ガント）を足し、
 「クラス図やガントチャートなど他の種類の図には対応していません」を、対応する種類の主な記法に対応し、それ以外と図のスタイル指定には対応しない、という書き方へ改めた。
 ガントは今日の日付を使わない（開始日を書いた作業から描く）ことも書いた。検索キーワード7語は変えていない。字数は日本語1391・英語2768・中国語1037文字（説明）、短い説明117・251・87文字。

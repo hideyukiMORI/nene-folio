@@ -27,7 +27,7 @@ The Store listing is live; the maintainer reported a successful Store update to 
 The maintainer [reported that Store version 1.3.2 is live](https://github.com/hideyukiMORI/nene-folio/issues/789) on November 7.
 The maintainer [reported a successful Store-app update to 1.3.2](https://github.com/hideyukiMORI/nene-folio/issues/793) on November 10.
 The maintainer [submitted the 1.4.0 update to the Store](https://github.com/hideyukiMORI/nene-folio/issues/931) on November 18 and [reported that it passed certification](https://github.com/hideyukiMORI/nene-folio/issues/956) the same day; it was set to publish once certified. The live Store listing and a Store-app update to 1.4.0 have not been confirmed here yet.
-The maintainer [submitted the 1.5.0 update to the Store](https://github.com/hideyukiMORI/nene-folio/issues/1065) on November 19; it is in certification and set to publish once certified. Until then the Store version is 1.4.0.
+The maintainer [submitted the 1.5.0 update to the Store](https://github.com/hideyukiMORI/nene-folio/issues/1065) on November 19 and [reported that it is live](https://github.com/hideyukiMORI/nene-folio/issues/1083) the same evening; the public Store catalog shows a listing update on November 19 (13:34 UTC) whose description and "What's new" text match the 1.5.0 drafts in all three languages. A Store-app update to 1.5.0 has not been confirmed here yet.
 
 [Microsoft Store](https://apps.microsoft.com/detail/9PCHS225SWBX)
 · [Portable download and checksums](https://github.com/hideyukiMORI/nene-folio/releases)
