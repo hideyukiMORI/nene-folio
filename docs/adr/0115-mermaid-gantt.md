@@ -19,9 +19,13 @@ Status: accepted / 2026-11-19 / Issue #992
   配置は文字を足せない（測った文字の数と模型の文字の数が一致することを確かめている）ので、目盛りのラベルは読み取りの最後に模型の文字として作る。
 - 暦: `diagram_calendar`が年月日と通日を整数だけで相互に変える（0000-03-01を0日とする、H. Hinnantのcivil-from-days）。曜日は月曜を0とする。1〜9999年。OSの暦・時刻・ロケールを読まない。
 - 構文（受ける）: `gantt`、`title`（1つ）、`dateFormat YYYY-MM-DD`（無いときもこれ）、`axisFormat`（`%Y %y %m %d %e %-m %-d`と文字）、`tickInterval N(day|week|month)`（Nは1〜999、先頭に0を書かない）、
-  `excludes weekends`と`excludes YYYY-MM-DD`（空白かカンマで区切る）、`todayMarker`（読み飛ばす。何も描かない）、`section 名前`、`%%`のコメント。
+  `excludes weekends`と`excludes YYYY-MM-DD`（空白かカンマで区切る）、`excludes monday`などの英語の曜日名（大文字小文字を区別しない。#1022）、`todayMarker`（読み飛ばす。何も描かない）、`section 名前`、`%%`のコメント。
   作業の行は`名前 : [done|active|crit|milestone,]… [id,] [開始,] 終わり`。項目は1つなら終わり、2つなら開始と終わり、3つならidと開始と終わり（Mermaidと同じ）。
-  開始は`YYYY-MM-DD`か`after id id…`（そのうち最も遅い終わり）。書かなければ1つ上の作業の終わり。終わりは`YYYY-MM-DD`（その日を含まない。Mermaidと同じ）か`Nd`・`Nw`。
+  開始は`YYYY-MM-DD`か`after id id…`（そのうち最も遅い終わり）。書かなければ1つ上の作業の終わり。終わりは`YYYY-MM-DD`（その日を含まない。Mermaidと同じ）か`Nd`・`Nw`、または`until id id…`（#1022）。
+  `until`は名前を挙げた作業のうち最も早い始まりで終わる。下に書いた作業を挙げてもよい（始まりは終わりより先に決まるので、互いの始まりを待つ2つの作業も解ける）。
+  除外日があるときは、Mermaidが期間と同じ手順で終わりを延ばすのに合わせ、始まりからの日数として期間と同じに数える。挙げた作業が自分より前に始まるなら不正。1つでも知らないidがあれば未対応（Mermaidは知っているidだけを使い、どれも知らなければ今日を使う）。循環は不正。
+  Mermaidとの違い: idに使える文字を絞らない（Mermaidは英数字・`_`・`-`の後で切る。`after`と同じ扱い）。挙げた作業の始まりがすべて決まるまで待つ（Mermaidは、その回で決まっていたものだけで終わりを決めることがある）。
+  #1022のレビューで、#992の期間の数え方の違いを2つ直した: 作業が始まる日は除外日でも1日に数える（Mermaidは始まりの翌日から歩く）。0日の作業は除外日の上でも始まった所で終わる。
   `done`と`active`が両方あれば`done`（Mermaidの描き方と同じ）。`after`は下に書いた作業も指せる（解けるまで繰り返す。作業の数を超えたら循環として不正）。
 - 除外: 日数で書いた作業は、除外した日を数えずに延ばす。書いた終わりの日は動かさない（Mermaidの`checkTaskDates`と同じ）。除外した日の塗りは描かない。
   作業が除外した日の直前で終わるとき、棒は最後の数えた日までで、次の作業は除外した日の後から始まる（Mermaidの`fixTaskDates`の`renderEndTime`と`endTime`。独立レビューの指摘で合わせた）。
@@ -37,10 +41,10 @@ Status: accepted / 2026-11-19 / Issue #992
 ## 未対応（図全体を案内にし、部分的な図を作らない）
 
 `dateFormat`の`YYYY-MM-DD`以外、時刻を含む開始、`h`・`m`・`s`・`ms`・`M`・`y`や小数の長さ、`axisFormat`の`%b` `%a` `%B`など（月や曜日の名前はロケールのもの）、
-1日より短い`tickInterval`、`excludes`の曜日名、`includes`・`weekend`・`inclusiveEndDates`・`topAxis`・`displayMode`・`weekday`・`click`・`call`・`vert`・`until`・`accTitle`・`accDescr`、`%%{init}%%`。
-**開始日の無い最初の作業と、知らないidを指す`after`**（Mermaidは今日を使う）。
+1日より短い`tickInterval`、`includes`・`weekend`・`inclusiveEndDates`・`topAxis`・`displayMode`・`weekday`・`click`・`call`・`vert`・`accTitle`・`accDescr`、`%%{init}%%`。
+**開始日の無い最初の作業と、知らないidを指す`after`・`until`**（Mermaidは今日を使う）。
 
-不正: 存在しない日付、開始より前の終わり、`after`の循環、同じid、名前の無い作業、`:`の無い行、題が2つ。
+不正: 存在しない日付、開始より前の終わり、`after`・`until`の循環、自分より前に始まる作業を指す`until`、同じid、名前の無い作業、`:`の無い行、題が2つ。
 大きすぎる: 作業129以上、区分65以上、図の長さが3660日（約10年）を超える、9999年12月31日より後まで続く、目盛り65以上（`tickInterval`を細かくしすぎたとき）、目盛りのラベルが64バイトを超える。
 
 Mermaidとの違い（受けるが描き方が違う、または断る）: 週の目盛りは月曜（Mermaidの既定は日曜）。

@@ -8,7 +8,8 @@
 
 static bool excluded(const struct mermaid_gantt_chart *_Nonnull chart, int32_t day)
 {
-    if (chart->weekends && diagram_calendar_weekday(day) >= 5)
+    int weekday = diagram_calendar_weekday(day);
+    if ((chart->weekends && weekday >= 5) || ((chart->weekdays >> weekday) & 1U) != 0)
         return true;
     for (size_t at = 0; at < chart->excluded_count; ++at)
         if (chart->excluded[at] == day)
@@ -16,7 +17,8 @@ static bool excluded(const struct mermaid_gantt_chart *_Nonnull chart, int32_t d
     return false;
 }
 
-/* The first day after `days` working days from `begin`. */
+/* The first day after `days` working days from `begin`. The day a task begins on is counted
+ * even when it is excluded: Mermaid walks from the day after the start (#1022 review). */
 static enum diagram_outcome advance(const struct mermaid_gantt_chart *_Nonnull chart, int32_t begin,
                                     int32_t days, int32_t *_Nonnull out)
 {
@@ -25,7 +27,7 @@ static enum diagram_outcome advance(const struct mermaid_gantt_chart *_Nonnull c
     {
         if (end - begin > mermaid_gantt_span_limit)
             return DIAGRAM_TOO_LARGE;
-        if (!excluded(chart, end))
+        if (end == begin || !excluded(chart, end))
             ++counted;
     }
     *out = end;
@@ -67,6 +69,46 @@ static enum diagram_outcome after(const struct mermaid_gantt_chart *_Nonnull cha
     return DIAGRAM_ACCEPTED;
 }
 
+/* #1022: `until a b` ends where the first of the named tasks begins. It is kept as that many
+ * days from the start, so excluded days move the end as they move a duration's (Mermaid
+ * fixes both the same way). Not ready while a named task's start is unknown. */
+static enum diagram_outcome earliest(const struct mermaid_gantt_chart *_Nonnull chart,
+                                     struct diagram_text ids, bool *_Nonnull ready,
+                                     int32_t *_Nonnull out)
+{
+    *out = INT32_MAX;
+    struct diagram_text rest = ids;
+    while (rest.length != 0)
+    {
+        struct diagram_text id = diagram_text_word(&rest);
+        size_t at = find(chart, id);
+        if (at == diagram_none)
+            return DIAGRAM_UNSUPPORTED;
+        if (!chart->tasks[at].begun)
+            *ready = false;
+        else if (chart->tasks[at].begin < *out)
+            *out = chart->tasks[at].begin;
+        rest = diagram_text_trim(rest);
+    }
+    return DIAGRAM_ACCEPTED;
+}
+
+static enum diagram_outcome until(const struct mermaid_gantt_chart *_Nonnull chart,
+                                  struct mermaid_gantt_task *_Nonnull task, bool *_Nonnull ready)
+{
+    *ready = true;
+    if (task->end != MERMAID_GANTT_END_UNTIL)
+        return DIAGRAM_ACCEPTED;
+    int32_t first = 0;
+    enum diagram_outcome outcome = earliest(chart, task->until, ready, &first);
+    if (outcome != DIAGRAM_ACCEPTED || !*ready)
+        return outcome;
+    if (first < task->begin)
+        return DIAGRAM_INVALID;
+    task->days = first - task->begin;
+    return task->days > mermaid_gantt_span_limit ? DIAGRAM_TOO_LARGE : DIAGRAM_ACCEPTED;
+}
+
 static enum diagram_outcome begin_of(const struct mermaid_gantt_chart *_Nonnull chart, size_t at,
                                      bool *_Nonnull ready, int32_t *_Nonnull out)
 {
@@ -99,6 +141,7 @@ static enum diagram_outcome finish_of(const struct mermaid_gantt_chart *_Nonnull
         *out = task->end_day;
         return task->end_day < begin ? DIAGRAM_INVALID : DIAGRAM_ACCEPTED;
     case MERMAID_GANTT_END_DAYS:
+    case MERMAID_GANTT_END_UNTIL:
         return advance(chart, begin, task->days, out);
     }
     return DIAGRAM_INVALID;
@@ -110,8 +153,8 @@ static enum diagram_outcome settle(const struct mermaid_gantt_chart *_Nonnull ch
                                    struct mermaid_gantt_task *_Nonnull task, int32_t begin)
 {
     task->drawn = task->finish;
-    if (task->end != MERMAID_GANTT_END_DAYS)
-        return DIAGRAM_ACCEPTED;
+    if (task->end == MERMAID_GANTT_END_DATE || task->days == 0)
+        return DIAGRAM_ACCEPTED; /* nothing to walk: a task of no days ends where it begins */
     while (excluded(chart, task->finish))
         if (++task->finish - begin > mermaid_gantt_span_limit)
             return DIAGRAM_TOO_LARGE;
@@ -127,9 +170,28 @@ static enum diagram_outcome resolve(const struct mermaid_gantt_chart *_Nonnull c
         outcome = settle(chart, task, begin);
     if (outcome != DIAGRAM_ACCEPTED)
         return outcome;
-    task->begin = begin;
     task->resolved = true;
     return DIAGRAM_ACCEPTED;
+}
+
+/* One task not yet resolved: its start as soon as that is known, then its end. */
+static enum diagram_outcome attempt(struct mermaid_gantt_chart *_Nonnull chart, size_t at,
+                                    bool *_Nonnull progress)
+{
+    struct mermaid_gantt_task *task = &chart->tasks[at];
+    bool ready = false;
+    int32_t begin = 0;
+    enum diagram_outcome outcome = begin_of(chart, at, &ready, &begin);
+    if (outcome != DIAGRAM_ACCEPTED || !ready)
+        return outcome;
+    *progress = *progress || !task->begun;
+    task->begin = begin;
+    task->begun = true;
+    outcome = until(chart, task, &ready);
+    if (outcome != DIAGRAM_ACCEPTED || !ready)
+        return outcome;
+    *progress = true;
+    return resolve(chart, task, begin);
 }
 
 /* One pass over the tasks not yet resolved. `progress` tells whether any was. */
@@ -139,19 +201,10 @@ static enum diagram_outcome pass(struct mermaid_gantt_chart *_Nonnull chart,
     *progress = false;
     for (size_t at = 0; at < chart->count; ++at)
     {
-        struct mermaid_gantt_task *task = &chart->tasks[at];
-        bool ready = false;
-        int32_t begin = 0;
         enum diagram_outcome outcome =
-            task->resolved ? DIAGRAM_ACCEPTED : begin_of(chart, at, &ready, &begin);
+            chart->tasks[at].resolved ? DIAGRAM_ACCEPTED : attempt(chart, at, progress);
         if (outcome != DIAGRAM_ACCEPTED)
             return outcome;
-        if (task->resolved || !ready)
-            continue;
-        outcome = resolve(chart, task, begin);
-        if (outcome != DIAGRAM_ACCEPTED)
-            return outcome;
-        *progress = true;
     }
     return DIAGRAM_ACCEPTED;
 }
@@ -182,7 +235,7 @@ enum diagram_outcome mermaid_gantt_schedule_resolve(struct mermaid_gantt_chart *
 {
     if (chart->count == 0)
         return DIAGRAM_INVALID;
-    for (size_t round = 0; round <= chart->count; ++round)
+    for (size_t round = 0; round <= 2 * chart->count; ++round) /* a start, then an end */
     {
         bool progress = false;
         enum diagram_outcome outcome = pass(chart, &progress);
@@ -193,6 +246,6 @@ enum diagram_outcome mermaid_gantt_schedule_resolve(struct mermaid_gantt_chart *
     }
     for (size_t at = 0; at < chart->count; ++at)
         if (!chart->tasks[at].resolved)
-            return DIAGRAM_INVALID; /* `after` in a cycle */
+            return DIAGRAM_INVALID; /* `after` or `until` in a cycle */
     return extent(chart);
 }

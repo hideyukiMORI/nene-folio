@@ -1265,7 +1265,6 @@ static void gantt_rejections(void)
         {"gantt\naxisFormat %b %d\nx :2026-11-01, 1d\n", DIAGRAM_UNSUPPORTED},
         {"gantt\naxisFormat %-Y\nx :2026-11-01, 1d\n", DIAGRAM_UNSUPPORTED},
         {"gantt\naxisFormat 50%\nx :2026-11-01, 1d\n", DIAGRAM_UNSUPPORTED},
-        {"gantt\nexcludes sunday\nx :2026-11-01, 1d\n", DIAGRAM_UNSUPPORTED},
         {"gantt\nexcludes 2026-02-30\nx :2026-11-01, 1d\n", DIAGRAM_INVALID},
         {"gantt\ntickInterval 1hour\nx :2026-11-01, 1d\n", DIAGRAM_UNSUPPORTED},
         {"gantt\ninclusiveEndDates\nx :2026-11-01, 1d\n", DIAGRAM_UNSUPPORTED},
@@ -1501,6 +1500,75 @@ static void gantt_keyword_case(void)
     diagram_model_destroy(model);
 }
 
+/* #1022 review: the day a task begins on is counted even when excluded, a task of no days
+ * ends where it begins, and an excluded target day ends the bar there while the next task
+ * begins after the excluded days (Mermaid's checkTaskDates). 2026-11-07 is a Saturday. */
+static void gantt_until_excluded(void)
+{
+    struct diagram_model *model =
+        parsed("gantt\nexcludes weekends\na :2026-11-07, until b\nb :b, 2026-11-10, 1d\n");
+    expect_task(model, 0, (struct gantt_expected){0, 4, DIAGRAM_TASK_PLANNED});
+    diagram_model_destroy(model);
+    model = parsed("gantt\nexcludes weekends\nx :2026-11-07, 1d\ny :1d\n");
+    expect_task(model, 0, (struct gantt_expected){0, 1, DIAGRAM_TASK_PLANNED});
+    expect_task(model, 1, (struct gantt_expected){2, 1, DIAGRAM_TASK_PLANNED});
+    diagram_model_destroy(model);
+    model = parsed("gantt\nexcludes weekends\nq :q, 2026-11-07, 1d\n"
+                   "p :p, 2026-11-07, until q\nr :1d\n");
+    expect_task(model, 1, (struct gantt_expected){0, 0, DIAGRAM_TASK_PLANNED});
+    expect_task(model, 2, (struct gantt_expected){0, 1, DIAGRAM_TASK_PLANNED});
+    diagram_model_destroy(model);
+    model = parsed("gantt\nexcludes weekends\na :a, 2026-11-02, until b\n"
+                   "b :b, 2026-11-07, 1d\nc :after a, 1d\n");
+    expect_task(model, 0, (struct gantt_expected){0, 5, DIAGRAM_TASK_PLANNED});
+    expect_task(model, 2, (struct gantt_expected){7, 1, DIAGRAM_TASK_PLANNED});
+    diagram_model_destroy(model);
+    model = parsed("gantt\nd :d, 2026-11-02, 1d\na :until c\nc :c, 2026-11-06, 1d\n"
+                   "s :s, 2026-11-02, until s\n");
+    expect_task(model, 1, (struct gantt_expected){1, 3, DIAGRAM_TASK_PLANNED});
+    expect_task(model, 3, (struct gantt_expected){0, 0, DIAGRAM_TASK_PLANNED});
+    diagram_model_destroy(model);
+}
+
+/* #1022: `until` ends a task where the first of the named tasks begins (a task written further
+ * down too), and excluded days move that end as they move a duration's. Weekday names in
+ * `excludes` are read without regard to case. 2026-11-02 is a Monday. */
+static void gantt_until(void)
+{
+    struct diagram_model *model = parsed("gantt\na :2026-11-02, until c\nb :b, 2026-11-04, 2d\n"
+                                         "c :c, 2026-11-09, 1d\nd :2026-11-02, until c b\n");
+    expect_task(model, 0, (struct gantt_expected){0, 7, DIAGRAM_TASK_PLANNED});
+    expect_task(model, 3, (struct gantt_expected){0, 2, DIAGRAM_TASK_PLANNED});
+    diagram_model_destroy(model);
+    model = parsed("gantt\nexcludes weekends\na :2026-11-05, until b\nb :b, 2026-11-10, 1d\n");
+    expect_task(model, 0, (struct gantt_expected){0, 7, DIAGRAM_TASK_PLANNED});
+    expect_task(model, 1, (struct gantt_expected){5, 1, DIAGRAM_TASK_PLANNED});
+    diagram_model_destroy(model);
+    /* Each waits for the other's start, which is known before either end. */
+    model = parsed("gantt\np :p, 2026-11-02, until q\nq :q, 2026-11-02, until p\nr :2d\n");
+    expect_task(model, 0, (struct gantt_expected){0, 0, DIAGRAM_TASK_PLANNED});
+    expect_task(model, 1, (struct gantt_expected){0, 0, DIAGRAM_TASK_PLANNED});
+    expect_task(model, 2, (struct gantt_expected){0, 2, DIAGRAM_TASK_PLANNED});
+    diagram_model_destroy(model);
+    model = parsed("gantt\nexcludes sunday\nx :2026-11-06, 3d\n");
+    expect_task(model, 0, (struct gantt_expected){0, 4, DIAGRAM_TASK_PLANNED});
+    diagram_model_destroy(model);
+    model = parsed("gantt\nexcludes Monday, TUESDAY\nx :2026-11-06, 3d\ny :1d\n");
+    expect_task(model, 0, (struct gantt_expected){0, 3, DIAGRAM_TASK_PLANNED});
+    expect_task(model, 1, (struct gantt_expected){5, 1, DIAGRAM_TASK_PLANNED});
+    diagram_model_destroy(model);
+    gantt_until_excluded();
+    reject_source("gantt\nx :2026-11-01, until\n", DIAGRAM_INVALID);
+    reject_source("gantt\nx :2026-11-02, Until c\nc :c, 2026-11-05, 1d\n", DIAGRAM_INVALID);
+    reject_source("gantt\nx :x, 2026-11-02, until y\ny :y, 1d\n", DIAGRAM_INVALID);
+    reject_source("gantt\nexcludes monday tuesday wednesday thursday friday saturday sunday\n"
+                  "x :2026-11-02, 2d\n",
+                  DIAGRAM_TOO_LARGE);
+    reject_source("gantt\nx :2026-11-05, until y\ny :y, 2026-11-02, 1d\n", DIAGRAM_INVALID);
+    reject_source("gantt\na :a, after b, until b\nb :b, after a, 1d\n", DIAGRAM_INVALID);
+    reject_source("gantt\nexcludes someday\nx :2026-11-01, 1d\n", DIAGRAM_UNSUPPORTED);
+}
+
 static void gantt_tests(void)
 {
     calendar_round_trip();
@@ -1512,6 +1580,7 @@ static void gantt_tests(void)
     gantt_theme_contrast();
     gantt_year_end();
     gantt_excluded_end();
+    gantt_until();
     gantt_limits();
     gantt_keyword_case();
     gantt_section_height();
