@@ -2769,13 +2769,15 @@ static struct note_outline_paint outline_place(const struct folio_window *_Nonnu
     return outline_paint_for(self, u"", u"");
 }
 
-/* After the body scrolled or was loaded: the heading being read may have changed. */
+/* After the body scrolled, was loaded or was laid out again: the heading being read may have
+ * changed, and the column may show another number of rows (#1018). */
 static void track_outline(const struct folio_window *_Nonnull self)
 {
     if (!outline_visible(self) || note_pane_readiness(self->pane) != NOTE_PANE_READINESS_READY)
         return;
     struct note_outline_paint paint = outline_place(self);
-    if (!note_outline_track(self->outline, self->pane, &paint))
+    bool fitted = note_outline_fit(self->outline, &paint, note_pane_heading_count(self->pane));
+    if (!note_outline_track(self->outline, self->pane, &paint) && !fitted)
         return;
     InvalidateRect(self->handle, &paint.bounds, FALSE);
     accessibility_host_schedule(self->accessibility);
