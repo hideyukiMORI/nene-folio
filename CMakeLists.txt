@@ -289,6 +289,16 @@ nenefolio_target(tag_catalog_tests win32_tests EXECUTABLE tests/win32/tag_catalo
 nenefolio_link(tag_catalog_tests nenefolio_core)
 nenefolio_link(tag_catalog_tests nenefolio_window)
 
+# #1069 / ADR0117: ledgers on real files are read again before each write. No window.
+nenefolio_target(ledger_refresh_tests win32_tests EXECUTABLE
+    tests/win32/ledger_refresh_tests.c tests/win32/test_window_file.c)
+nenefolio_link(ledger_refresh_tests nenefolio_core)
+nenefolio_link(ledger_refresh_tests nenefolio_application)
+nenefolio_link(ledger_refresh_tests nenefolio_adapters)
+set_target_properties(ledger_refresh_tests PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/verification-ledger-refresh")
+add_test(NAME ledger_refresh_native COMMAND ledger_refresh_tests)
+set_tests_properties(ledger_refresh_native PROPERTIES TIMEOUT 30)
+
 foreach(native_host motion_native_tests tags_native_tests favorites_native_tests image_status_tests save_as_native_tests rename_native_tests move_edit_native_tests first_save_native_tests first_save_modal_native_tests)
     nenefolio_target(${native_host} win32_tests EXECUTABLE
         tests/win32/image_status_tests.c tests/win32/image_status_tests.rc tests/win32/test_window_file.c)

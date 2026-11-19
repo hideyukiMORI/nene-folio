@@ -1702,6 +1702,32 @@ static void verify_refresh_created_and_binned(void)
     folio_state_destroy(state);
 }
 
+/* #1069 stage 7: a first save whose name was taken outside is refused, and the note that holds
+ * the name is then in the list (the real-file test found it missing until the next write). */
+static void verify_refresh_taken_shown(void)
+{
+    char order[160] = {0};
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = transfer_state(&adapter);
+    folder_add(&adapter, "B", "taken");
+    struct note_name *name = accepted_note_name("taken");
+    struct note_destination destination = {.category = 0, .name = name};
+    size_t writes = adapter.ledger_writes;
+    require(folio_state_new_note(state, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
+                folio_state_ledger_outcome(state,
+                                           folio_state_store_new(state, &destination, u"x", 1)) ==
+                    FOLIO_STATE_NAME_TAKEN &&
+                adapter.ledger_writes == writes,
+            "a name taken outside is refused, and nothing is written");
+    row_order(state, order, sizeof order);
+    require(strstr(order, "B/one/two/three/taken/") == order,
+            "the note made outside that holds the name is listed after the refusal");
+    require(folio_state_document_kind(state) == FOLIO_DOCUMENT_UNTITLED,
+            "the draft is still the open document");
+    note_name_destroy(name);
+    folio_state_destroy(state);
+}
+
 static void verify_refresh_transfer(void)
 {
     char order[160] = {0};
@@ -6407,6 +6433,7 @@ void run_state_tests(void)
     verify_refresh_search_and_cursor();
     verify_refresh_allocation();
     verify_refresh_created_and_binned();
+    verify_refresh_taken_shown();
     verify_refresh_transfer();
     verify_refresh_retry_places();
     verify_refresh_bins_open();
