@@ -10987,6 +10987,22 @@ static void outline_shorten(struct folio_window *_Nonnull window)
                                          .action = ACCESSIBLE_ACTION_INVOKE};
     require(folio_window_accessible_action(window, &request) == S_OK, "UIA invokes the last row");
     pump(window);
+    /* #1040: the last heading cannot rise to the top of the body, yet it is the one being read
+     * until the body moves; then the body's place decides again. */
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    LRESULT low = outline_first_line(window);
+    require(outline_current(window) == count - 1 &&
+                outline_row(window, outline_item_at(window, count - 1)).selected,
+            "the row that was invoked is the heading being read, though it is not at the top");
+    SendMessageW(body, EM_LINESCROLL, 0, -100000);
+    pump(window);
+    printf("outline: last row chosen at line %lld, after scrolling up line %lld current %zu\n",
+           (long long)low, (long long)outline_first_line(window), outline_current(window));
+    fflush(stdout);
+    require(low > 0 && outline_first_line(window) == 0 && outline_current(window) == 0,
+            "scrolling the body gives the mark back to the body's place");
+    require(folio_window_accessible_action(window, &request) == S_OK, "the last row again");
+    pump(window);
     size_t current = outline_current(window);
     require(SetWindowPos(root, nullptr, 20, 20, MulDiv(900, (int)dpi, 96),
                          MulDiv(260, (int)dpi, 96), SWP_NOZORDER | SWP_NOACTIVATE),

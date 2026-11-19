@@ -36,6 +36,11 @@ void note_outline_reset(struct note_outline *_Nonnull outline);
 [[nodiscard]] size_t note_outline_row_at(const struct note_outline *_Nonnull outline,
                                          const struct note_outline_paint *_Nonnull paint,
                                          POINT point, size_t count);
+/* #1040: 欄の行が見出しを本文の先頭へ寄せた直後に呼ぶ。本文が上がりきれず別の見出しを返すときは、
+ * 本文の答えが変わるまで index を「いま読んでいる見出し」として扱う（次の note_outline_track
+ * から）。 */
+void note_outline_choose(struct note_outline *_Nonnull outline, struct note_pane *_Nonnull pane,
+                         size_t index);
 /* #1026: 同じノートを流し直す前に hold、本文が元の行へ戻った後に release すると、欄の送り位置と
  * キーボードの位置が元のままになる（行の版は新しい）。release は位置が変わったら true。 */
 void note_outline_hold(struct note_outline *_Nonnull outline);
