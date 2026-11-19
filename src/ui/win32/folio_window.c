@@ -9146,12 +9146,11 @@ static void restore_outline(struct folio_window *_Nonnull self)
     if (self->pane == nullptr)
         return;
     struct note_outline_paint paint = outline_place(self);
-    if (note_outline_release(self->outline, &paint, note_pane_heading_count(self->pane)))
-    {
-        InvalidateRect(self->handle, &paint.bounds, FALSE);
-        accessibility_host_schedule(self->accessibility);
-    }
-    track_outline(self); /* #1040: the chosen heading is the one being read again */
+    /* The rows are new ones whether or not the column moved: always redrawn and announced. */
+    (void)note_outline_release(self->outline, &paint, note_pane_heading_count(self->pane));
+    InvalidateRect(self->handle, &paint.bounds, FALSE);
+    accessibility_host_schedule(self->accessibility);
+    track_outline(self); /* the body's place decides again if it is not where it was */
 }
 
 static enum folio_state_outcome restream_pane(struct folio_window *_Nonnull self)

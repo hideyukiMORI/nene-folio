@@ -16,6 +16,7 @@ struct note_outline
     size_t chosen_seen; /* what the body reported as read right after (#1040) */
     size_t held_chosen;
     size_t held_seen;
+    size_t held_current; /* so the track after a release sees nothing new (#1056) */
     uint64_t revision;
 };
 
@@ -116,10 +117,13 @@ bool note_outline_track(struct note_outline *_Nonnull outline, struct note_pane 
     size_t current = read_heading(pane);
     /* #1040: a heading near the end cannot rise to the top, so the body reports an earlier one;
      * the heading a row brought up stays the one being read until the body's answer changes. */
+    /* #1056: only while that heading's line is in the body's view. Once it has left, it is
+     * forgotten; while it is there and the body's answer is another one for a moment (a
+     * reflow, a small scroll), the body's answer shows and the choice comes back with it. */
+    if (outline->chosen != note_outline_none && !note_pane_heading_in_view(pane, outline->chosen))
+        outline->chosen = note_outline_none;
     if (outline->chosen != note_outline_none && current == outline->chosen_seen)
         current = outline->chosen;
-    else
-        outline->chosen = note_outline_none;
     if (current == outline->current)
         return false;
     outline->current = current;
@@ -196,6 +200,7 @@ void note_outline_hold(struct note_outline *_Nonnull outline)
     outline->held_cursor = outline->cursor;
     outline->held_chosen = outline->chosen;
     outline->held_seen = outline->chosen_seen;
+    outline->held_current = outline->current;
 }
 
 bool note_outline_release(struct note_outline *_Nonnull outline,
@@ -205,9 +210,13 @@ bool note_outline_release(struct note_outline *_Nonnull outline,
     size_t first = outline->held_first > limit ? limit : outline->held_first;
     bool changed = first != outline->first;
     outline->first = first;
-    outline->cursor = count == 0 || outline->held_cursor < count ? outline->held_cursor : count - 1;
+    size_t last = count == 0 ? 0 : count - 1;
+    outline->cursor = outline->held_cursor < count ? outline->held_cursor : last;
     outline->chosen = outline->held_chosen < count ? outline->held_chosen : note_outline_none;
     outline->chosen_seen = outline->held_seen;
+    /* The heading being read is put back too: the track that follows then finds the same
+     * one and does not pull a wheel-moved column to it (review of #1026). */
+    outline->current = outline->held_current < count ? outline->held_current : note_outline_none;
     return changed;
 }
 

@@ -110,6 +110,8 @@ bool note_pane_show_footnote(struct note_pane *_Nonnull pane, bool back, size_t 
 /* いま読んでいる見出し: 表示の先頭の行か、それより上にある最後の見出し。最初の見出しより上を
  * 見ているとき・見出しが無いときは false で out を変えない。 */
 [[nodiscard]] bool note_pane_heading_current(struct note_pane *_Nonnull pane, size_t *_Nonnull out);
+/* #1056: その見出しの行の始まりが、いま本文の表示の中にあるか。範囲外や準備中は false。 */
+[[nodiscard]] bool note_pane_heading_in_view(struct note_pane *_Nonnull pane, size_t index);
 /* その見出しへキャレットを置き、見出しの行を表示の先頭へ寄せる。index が範囲外なら何もせず false。
  */
 bool note_pane_show_heading(struct note_pane *_Nonnull pane, size_t index);
