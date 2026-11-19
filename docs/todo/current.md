@@ -33,6 +33,9 @@ hideの判断（11月19日、[判断のページ](https://claude.ai/artifact/Kre
 hideの返事待ち: コードブロックのコピーがWSLで貼れない件の症状、#935の作業木の扱い、#948と`body_discovery_96_native`の実行時間（上限30秒に近い）。
 hideの実機確認（11月19日20時台、1.5.0の候補）: 見出しの欄・ガント・ナレーターはOK。円グラフは表示を確認し、輪郭のがさつきの指摘あり（1.5.0では問題にしない）。定義リスト・脚注・「ノートを探す」・カテゴリ移動は未確認。表は[引き継ぎ](../handoffs/2026-11-19.md)。
 hideの判断（11月19日夜）: 1.5.0はこのまま出す。次の版以降の要望: 画像のドラッグ＆ドロップ（[#1062](https://github.com/hideyukiMORI/nene-folio/issues/1062)）。
+hideの判断（同じ夜）: 「やらないこと」を書き換えて、外からの変更への対応（[#1069](https://github.com/hideyukiMORI/nene-folio/issues/1069)・[#1070](https://github.com/hideyukiMORI/nene-folio/issues/1070)）、開いて選ぶ入口（[#1071](https://github.com/hideyukiMORI/nene-folio/issues/1071)）、#1062をすべて取り入れる。
+**#1069は第4段まで統合した**（[ADR0117](../adr/0117-refresh-ledgers-before-write.md)、main `98effb7`）。ノートの一覧（`index.json`）を書く道は、改名を除いて、書く前にファイルとフォルダを読み直す。第5段（カテゴリの台帳）・第6段（改名）・第7段（実ファイルの試験）は未着手で、進めるかはhideの指示待ち。段ごとの状態と再開に要ることは[引き継ぎ](../handoffs/2026-11-19.md)の「外からの変更への対応」。
+外からの指摘「気になる点」は[#1072](https://github.com/hideyukiMORI/nene-folio/issues/1072)に事実と照らして記録した（対応は未定）。
 個別の報告が無いままのもの: #855の「左上の全体検索」の読み方、#853のcodeの大きさの比、#854の実機（物理キー・IME）。
 
 Store: 1.4.0の更新は認定を通った（11月18日のhideの報告、[記録](https://github.com/hideyukiMORI/nene-folio/issues/956)）。掲載の反映とStore経由の実機の更新は未確認。
