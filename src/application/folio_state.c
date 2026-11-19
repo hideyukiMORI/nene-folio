@@ -371,7 +371,8 @@ bool folio_state_source_mapped(const struct folio_state *_Nonnull state, size_t 
     const struct markdown_source_map *map =
         state->pane == nullptr ? nullptr : markdown_rtf_source_map(state->pane);
     return state->mode == PANE_MODE_VIEW && state->document != FOLIO_DOCUMENT_NONE &&
-           map != nullptr && markdown_source_map_total(map) == view_total;
+           map != nullptr && markdown_source_map_count(map) > 0 &&
+           markdown_source_map_total(map) == view_total;
 }
 
 enum folio_state_outcome folio_state_source_caret(struct folio_state *_Nonnull state,

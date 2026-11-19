@@ -327,11 +327,31 @@ static void lookup_caret(void)
     lookup = lookup_for("x | y\n- | -\n1 | 2\n");
     expect_caret(lookup, first_of(lookup, 1) + 2, "2");
     lookup_done(lookup);
+    /* #1012 review: a body row shorter than the delimiter is padded, not led by a spacer. */
+    lookup = lookup_for("| a | b | c |\n|-|-|-|\n| x | y |\n");
+    expect_caret(lookup, first_of(lookup, 0) + 3, "c |");
+    expect_caret(lookup, first_of(lookup, 1) + 1, "x |");
+    expect_caret(lookup, first_of(lookup, 1) + 2, "y |");
+    expect_caret(lookup, first_of(lookup, 1) + 3, "y |");
+    lookup_done(lookup);
+    /* A table in a list item, right after a description: both lead the header row. */
+    lookup = lookup_for("用語\n: 説明\n\n- | p | q |\n  | - | - |\n");
+    size_t rows = markdown_source_map_count(lookup.map);
+    struct markdown_source_entry row = markdown_source_map_at(lookup.map, rows - 1);
+    require(row.kind == MARKDOWN_SOURCE_TABLE_ROW, "the list item's table is native");
+    expect_caret(lookup, row.first + row.marks - 2, "q |");
+    expect_caret(lookup, row.first + row.marks - 3, "p |");
+    lookup_done(lookup);
 }
 
 static void lookup_copy(void)
 {
-    struct lookup_case lookup = lookup_for(every_block);
+    struct lookup_case lookup = lookup_for("a[^n]\n\n[^n]: x\n\nb\n");
+    size_t count = markdown_source_map_count(lookup.map);
+    expect_copy(lookup, 0, markdown_source_map_at(lookup.map, count - 1).first,
+                "a[^n]\n\n[^n]: x\n\nb"); /* #1012 review: a definition among the body once */
+    lookup_done(lookup);
+    lookup = lookup_for(every_block);
     expect_copy(lookup, first_of(lookup, 6), first_of(lookup, 6), "```c\nint a;\nint b;\n```");
     expect_copy(lookup, first_of(lookup, 1), first_of(lookup, 2), "段落の1行目\n2行目\n\n- 項目");
     expect_copy(lookup, first_of(lookup, 12) + 1, first_of(lookup, 12) + 1,

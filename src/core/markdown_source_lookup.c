@@ -41,15 +41,20 @@ static size_t row_cells(const char *_Nonnull bytes, size_t at, size_t end)
     return count == 0 ? 1 : count;
 }
 
-/* In a native table row the marks are [spacer] start, one per cell, end; the cell under the
- * ordinal is the one whose text follows its mark. */
+/* In a native table row the marks are [leading] start, one per shown cell, end; the cell under
+ * the ordinal is the one whose text follows its mark. Only the header row (its entry also holds
+ * the delimiter line) can be led by other paragraphs: a description's spacer, a list item's
+ * marker. Its shown cells are its own (the delimiter must match it), so what is left over leads.
+ * A body row is padded to the delimiter's columns and is never led, so a short row's padding is
+ * not mistaken for a spacer (#1012 review). */
 static size_t cell_caret(const char *_Nonnull bytes, struct markdown_source_entry entry,
                          size_t ordinal)
 {
     size_t end = first_line_end(bytes, entry.caret, entry.end);
     size_t cells = row_cells(bytes, entry.caret, end);
-    size_t spacer = entry.marks > cells + 2 ? 1 : 0;
-    size_t lead = entry.first + 1 + spacer;
+    bool header = end < entry.end;
+    size_t leading = header && entry.marks > cells + 2 ? entry.marks - cells - 2 : 0;
+    size_t lead = entry.first + 1 + leading;
     size_t cell = ordinal > lead ? ordinal - lead : 0;
     if (cell >= cells)
         cell = cells - 1;
@@ -135,21 +140,30 @@ static bool body_span(const struct markdown_source_map *_Nonnull map,
     return found;
 }
 
-/* Each footnote definition in [first, last] once (the separator names the first footnote). */
+/* Each footnote definition in [first, last] once (the separator names the first footnote). A
+ * definition written among the body's lines is already in the body's span, so it is not written
+ * again (#1012 review). */
 static bool append_footnotes(const struct markdown_source_map *_Nonnull map,
-                             const char *_Nonnull bytes, struct markdown_source_selection entries,
+                             const struct note_text *_Nonnull text,
+                             struct markdown_source_selection entries,
                              struct text_buffer *_Nonnull out)
 {
+    size_t begin = 0;
+    size_t end = 0;
+    bool body = body_span(map, entries, &begin, &end);
     bool written = text_buffer_length(out) != 0;
     size_t previous = markdown_source_none;
     for (size_t index = entries.first; index <= entries.last; ++index)
     {
         struct markdown_source_entry entry = markdown_source_map_at(map, index);
-        if (!footnote(entry) || entry.begin == previous)
+        bool covered = body && entry.begin >= begin && entry.end <= end;
+        if (!footnote(entry) || entry.begin == previous || covered)
             continue;
+        if (entry.end > note_text_length(text))
+            return false;
         if (written)
             text_buffer_append_text(out, "\n\n");
-        append_lines(out, bytes, entry.begin, entry.end);
+        append_lines(out, note_text_bytes(text), entry.begin, entry.end);
         previous = entry.begin;
         written = true;
     }
@@ -175,5 +189,5 @@ bool markdown_source_lookup_copy(const struct markdown_source_map *_Nonnull map,
             return false;
         append_lines(out, bytes, begin, end);
     }
-    return append_footnotes(map, bytes, entries, out);
+    return append_footnotes(map, text, entries, out);
 }

@@ -1534,7 +1534,8 @@ static void expect_place(struct note_pane *_Nonnull pane,
 static void source_places(struct note_pane *_Nonnull pane)
 {
     static const char markdown[] =
-        "# Places\n\nalpha beta\n\n| one | two |\n| --- | --- |\n"
+        "# Places\n\nsee [x](https://example.com/hidden-target) and ![pic](none.png)\n\n"
+        "alpha beta\n\n| one | two |\n| --- | --- |\n"
         "| three | four |\n\n```\ncode line\n```\n\nbody[^n]\n\n[^n]: note text\n";
     struct note_text *_Nullable note = nullptr;
     struct markdown_rtf *_Nullable rtf = nullptr;

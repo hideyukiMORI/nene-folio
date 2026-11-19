@@ -123,6 +123,9 @@ struct folio_window
     enum accessible_kind keyboard_target;
     bool menu_active;
     struct menu_request menu;
+    /* #1012: whether the body menu's source items can run, measured once when it opens. */
+    bool menu_source_copy;
+    bool menu_source_edit;
     size_t menu_pressed;
     WPARAM menu_key;
     char result_line[1024];
@@ -19608,18 +19611,27 @@ static const struct folio_menu_action *_Nonnull menu_action(
 }
 
 /* #1012: the source items also need the reading view to agree with the source map, and 「ここを
- * 編集」 a note that can be edited; the state answers both without changing anything. */
-static bool source_available(const struct folio_window *_Nonnull self, enum folio_text_edit edit)
+ * 編集」 a note that can be edited. Reading the pane's text costs a copy of the whole note, so it
+ * is done once when the menu opens, not on every paint and hover (review); running the item
+ * checks again with the live text. */
+static void measure_source_items(struct folio_window *_Nonnull self)
 {
     struct markdown_source_selection selection = {0};
     size_t total = 0;
     size_t native = 0;
-    if (!note_pane_paragraph_selection(self->pane, &selection, &total))
-        return false;
-    if (edit == FOLIO_TEXT_EDIT_COPY_MARKDOWN)
-        return folio_state_source_mapped(self->state, total);
-    return folio_state_source_caret(self->state, selection.first, total, &native) ==
-           FOLIO_STATE_READY;
+    bool body_menu =
+        self->menu.context == FOLIO_MENU_TEXT_VIEW || self->menu.context == FOLIO_MENU_TEXT_LINK;
+    bool read = body_menu && self->pane != nullptr &&
+                note_pane_paragraph_selection(self->pane, &selection, &total);
+    self->menu_source_copy = read && folio_state_source_mapped(self->state, total);
+    self->menu_source_edit =
+        self->menu_source_copy &&
+        folio_state_source_caret(self->state, selection.first, total, &native) == FOLIO_STATE_READY;
+}
+
+static bool source_available(const struct folio_window *_Nonnull self, enum folio_text_edit edit)
+{
+    return edit == FOLIO_TEXT_EDIT_COPY_MARKDOWN ? self->menu_source_copy : self->menu_source_edit;
 }
 
 static enum folio_state_outcome text_availability(const struct folio_window *_Nonnull self,
@@ -20285,6 +20297,7 @@ static void show_menu_surface(struct folio_window *_Nonnull self,
     if (self->command_surface != COMMAND_SURFACE_CLOSED && !hide_command_surface(self))
         return;
     self->menu = *request;
+    measure_source_items(self);
     self->menu_pressed = SIZE_MAX;
     self->menu_key = 0;
     open_command_surface(self, COMMAND_SURFACE_MENU);
