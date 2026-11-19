@@ -7026,6 +7026,8 @@ static const bool inline_outcomes[] = {
     [FOLIO_STATE_WEB_LINK_UNAVAILABLE] = true,
     [FOLIO_STATE_CODE_COPY_REJECTED] = true,
     [FOLIO_STATE_SOURCE_UNMAPPED] = true,
+    [FOLIO_STATE_LEDGER_CHANGED_OUTSIDE] = true,
+    [FOLIO_STATE_LEDGER_REFRESHED] = true,
     [FOLIO_STATE_CLIPBOARD_BUSY] = true,
     [FOLIO_STATE_CLIPBOARD_UNAVAILABLE] = true,
     [FOLIO_STATE_EXPORT_TOO_LARGE] = true,
@@ -10186,7 +10188,9 @@ static void set_note_scope(struct folio_window *_Nonnull self, enum note_scope s
 
 static void favorite_at(struct folio_window *_Nonnull self, struct note_ref target)
 {
-    enum folio_state_outcome outcome = folio_state_toggle_favorite(self->state, target);
+    /* #1069 / ADR0117: a list read again before the write is told in one line. */
+    enum folio_state_outcome outcome =
+        folio_state_ledger_outcome(self->state, folio_state_toggle_favorite(self->state, target));
     if (outcome != FOLIO_STATE_READY)
         report_outcome(self, outcome);
     settle_empty_drawer_focus(self);
@@ -18968,8 +18972,14 @@ static HRESULT accessible_favorite(struct folio_window *_Nonnull self,
 {
     if (request->item.kind != ACCESSIBLE_NOTE)
         return accessibility_node_invalid;
-    HRESULT result =
-        accessible_outcome(self, folio_state_toggle_favorite(self->state, request->item.ref));
+    /* The star went through when the list was only read again: UIA is told S_OK, the line
+     * is shown as for the pointer (#1069). */
+    enum folio_state_outcome outcome = folio_state_ledger_outcome(
+        self->state, folio_state_toggle_favorite(self->state, request->item.ref));
+    bool reread = outcome == FOLIO_STATE_LEDGER_REFRESHED;
+    if (reread)
+        report_outcome(self, outcome);
+    HRESULT result = reread ? S_OK : accessible_outcome(self, outcome);
     settle_empty_drawer_focus(self);
     redraw_drawer(self);
     accessibility_host_schedule(self->accessibility);

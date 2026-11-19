@@ -548,6 +548,40 @@ bool category_ledger_expanded(const struct category_ledger *_Nonnull ledger, siz
     return ledger->expanded[index];
 }
 
+bool category_ledger_find(const struct category_ledger *_Nonnull ledger, const char *_Nonnull name,
+                          size_t *_Nonnull out)
+{
+    for (size_t index = 0; index < name_list_count(ledger->names); ++index)
+        if (strcmp(name_list_at(ledger->names, index), name) == 0)
+        {
+            *out = index;
+            return true;
+        }
+    return false;
+}
+
+static bool same_setting(const struct category_ledger *_Nonnull left,
+                         const struct category_ledger *_Nonnull right, size_t index)
+{
+    struct rgb_color mine = category_ledger_color(left, index);
+    struct rgb_color theirs = category_ledger_color(right, index);
+    return mine.red == theirs.red && mine.green == theirs.green && mine.blue == theirs.blue &&
+           category_ledger_expanded(left, index) == category_ledger_expanded(right, index);
+}
+
+bool category_ledger_equals(const struct category_ledger *_Nonnull left,
+                            const struct category_ledger *_Nonnull right)
+{
+    size_t count = name_list_count(left->names);
+    if (count != name_list_count(right->names))
+        return false;
+    for (size_t index = 0; index < count; ++index)
+        if (!same_setting(left, right, index) ||
+            strcmp(name_list_at(left->names, index), name_list_at(right->names, index)) != 0)
+            return false;
+    return true;
+}
+
 void category_ledger_destroy(struct category_ledger *_Nullable ledger)
 {
     if (ledger == nullptr)
