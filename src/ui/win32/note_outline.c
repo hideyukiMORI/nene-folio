@@ -4,12 +4,14 @@
 
 struct note_outline
 {
-    size_t first;   /* the first row shown in the column */
-    size_t cursor;  /* the keyboard's row */
-    size_t hover;   /* the row under the pointer, or none */
-    size_t pressed; /* the row being pressed, or none */
-    size_t current; /* the heading being read, as last observed, or none */
-    size_t rows;    /* how many rows the column showed when last fitted (#1018) */
+    size_t first;       /* the first row shown in the column */
+    size_t cursor;      /* the keyboard's row */
+    size_t hover;       /* the row under the pointer, or none */
+    size_t pressed;     /* the row being pressed, or none */
+    size_t current;     /* the heading being read, as last observed, or none */
+    size_t rows;        /* how many rows the column showed when last fitted (#1018) */
+    size_t held_first;  /* the column's place before the same note is poured again (#1026) */
+    size_t held_cursor; /* and the keyboard's row */
     uint64_t revision;
 };
 
@@ -159,6 +161,26 @@ bool note_outline_fit(struct note_outline *_Nonnull outline,
     if (outline->current != note_outline_none && outline->current < count)
         (void)reveal(outline, paint, outline->current);
     return outline->first != before;
+}
+
+/* #1026: pouring the same note again (new colours, a new face, a moved image folder) resets
+ * the column like any load; hold before it and release after the body is back at its line,
+ * and the column and the keyboard's row are where they were. The rows are still new ones. */
+void note_outline_hold(struct note_outline *_Nonnull outline)
+{
+    outline->held_first = outline->first;
+    outline->held_cursor = outline->cursor;
+}
+
+bool note_outline_release(struct note_outline *_Nonnull outline,
+                          const struct note_outline_paint *_Nonnull paint, size_t count)
+{
+    size_t limit = last_first(paint, count);
+    size_t first = outline->held_first > limit ? limit : outline->held_first;
+    bool changed = first != outline->first;
+    outline->first = first;
+    outline->cursor = count == 0 || outline->held_cursor < count ? outline->held_cursor : count - 1;
+    return changed;
 }
 
 size_t note_outline_cursor(const struct note_outline *_Nonnull outline)
