@@ -17,9 +17,16 @@ ADR0106が次の段階とした閲覧の右クリックの「ここを編集」�
 | 単体試験の登録 | 試験の一覧の関数が長さの上限に掛かった。同じ閲覧のRTFの副産物を確かめる`run_code_copy_tests`の最後から呼ぶ形にした |
 | native試験 | 6つの文書で、閲覧欄の生の文字の記号の数（25・32・7・2・1・15）が表の総数と一致。ASCIIのコードの行は、その番号の段落がその行を表示していた。試験の関数の上限（複雑度・引数）と、大域の見本の名前との重なり（`-Wshadow`）を直した |
 | 変異 | `\trowd`を数えない変異で、native試験が「the map's total is the pane's marks」（25対22）で落ちた。戻して更新日時を今にし、通ることを確かめた |
+| 測定用の構築で見つかった欠陥 | 1回目のカバレッジ（確保を1回ずつ失敗させる構築）で、既存の「画像とZIPの確保の失敗で途中の結果を見せない」試験が落ちた。対応表の記録に失敗したとき結果を「メモリ不足」にしていたが、直後の処理（行内の描画）が結果を上書きして成功に戻し、確保の失敗が成功として返っていた。記録の失敗を別の印（`map_failed`）で持ち、描画の最後に結果へ反映する形に直した。ふだんの構築では確保が失敗しないので、全CTestでは見えなかった |
+| その後の構築 | 直しで`markdown_blocks_render`の複雑度が上限を超え、構築が落ちたまま全CTestが古い実行ファイルで流れた（1回、結果は使っていない）。終わりの処理を`finish_document`へ出し、構築が通ってから流し直した |
+| 記録の手順の誤り | 品質記録の置換をBashのheredocで流してbackslashが崩れ、置換が当たらないまま commit と push まで進んだ（後ろのコマンドが前の失敗で止まらない並べ方だった）。Editで直し、追加のcommitにした |
 
 ## 検証
 
-（全体の検証の結果を下に書く。）
+他の重い処理と重ねずに順に実行した（記録 D:/NeNeFolio/temp/992/verify-map3.txt、D:/NeNeFolio/temp/1008/coverage3.txt）。
+
+- clang-format 0、`git diff --check` 0、全構築（clang-tidy込み）成功、`eng/conformance.py` 0、`eng/symbols.py --require core application` 0。
+- 全CTest 70件成功（110秒）。
+- `eng/coverage.py` 分岐91.01%（ゲート90%）。`markdown_source_map.c` 89.8%、`markdown_blocks.c` 90.7%（直す前の測定の値）。
 
 Waivers: none。
