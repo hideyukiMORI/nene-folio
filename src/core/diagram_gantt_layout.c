@@ -136,17 +136,31 @@ static int row_height(const struct diagram_gantt_layout *_Nonnull layout, struct
     return (label > gantt_bar ? label : gantt_bar) + gantt_row_padding;
 }
 
-/* The top of a task's row. Each new section after the first leaves a gap. */
+/* #1006: the space after task `at`. Where the next task starts a new section, a gap, widened
+ * when this section's name (wrapped) is taller than its rows so the next name never meets it. */
+static int gap_after(const struct diagram_gantt_layout *_Nonnull layout, size_t at)
+{
+    struct diagram_node node = diagram_model_node_at(layout->model, at);
+    if (at + 1 >= diagram_model_node_count(layout->model) ||
+        diagram_model_node_at(layout->model, at + 1).group == node.group)
+        return 0;
+    if (node.group == diagram_none)
+        return gantt_section_gap;
+    int rows = 0;
+    for (size_t back = at + 1;
+         back > 0 && diagram_model_node_at(layout->model, back - 1).group == node.group; --back)
+        rows += row_height(layout, diagram_model_node_at(layout->model, back - 1));
+    size_t label = diagram_model_group_at(layout->model, node.group).label;
+    int name = size_of(layout, label, DIAGRAM_TEXT_BODY).height;
+    return gantt_section_gap + (name > rows ? name - rows : 0);
+}
+
+/* The top of a task's row. */
 static int row_top(const struct diagram_gantt_layout *_Nonnull layout, size_t index)
 {
     int top = layout->chart_top;
     for (size_t at = 0; at < index; ++at)
-    {
-        struct diagram_node node = diagram_model_node_at(layout->model, at);
-        top += row_height(layout, node);
-        if (diagram_model_node_at(layout->model, at + 1).group != node.group)
-            top += gantt_section_gap;
-    }
+        top += row_height(layout, diagram_model_node_at(layout->model, at)) + gap_after(layout, at);
     return top;
 }
 
@@ -287,10 +301,7 @@ static void emit_tasks(struct diagram_gantt_layout *_Nonnull layout)
                          .bounds = {x, top + (height - size.height) / 2, size.width, size.height}});
         if (x + size.width > layout->right)
             layout->right = x + size.width;
-        top += height;
-        if (at + 1 < diagram_model_node_count(layout->model) &&
-            diagram_model_node_at(layout->model, at + 1).group != node.group)
-            top += gantt_section_gap;
+        top += height + gap_after(layout, at);
     }
     layout->bottom = top;
 }

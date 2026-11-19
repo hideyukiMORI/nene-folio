@@ -1444,6 +1444,41 @@ static void gantt_limits(void)
                   DIAGRAM_TOO_LARGE);
 }
 
+/* The bounds of the text primitive that draws a model text. */
+static struct diagram_rect text_at(const struct diagram_scene *_Nonnull scene, size_t text)
+{
+    for (size_t at = 0; at < diagram_scene_count(scene); ++at)
+    {
+        const struct diagram_primitive *item = diagram_scene_at(scene, at);
+        if (item->kind == DIAGRAM_PRIMITIVE_TEXT && item->text == text)
+            return item->bounds;
+    }
+    require(false, "the text is drawn");
+    return (struct diagram_rect){0};
+}
+
+/* #1006: a section name taller than its rows pushes the next section down, so the names never
+ * overlap; the next section's bar starts below the long name too. */
+static void gantt_section_height(void)
+{
+    struct diagram_model *model = parsed("gantt\nsection "
+                                         "長い<br>区分の<br>名前は<br>行より高い\n"
+                                         "a :2026-11-02, 2d\nsection 次\nb :2d\n");
+    struct diagram_scene *scene = laid_out(model);
+    struct diagram_rect first = text_at(scene, diagram_model_group_at(model, 0).label);
+    struct diagram_rect second = text_at(scene, diagram_model_group_at(model, 1).label);
+    struct diagram_rect bar = {0};
+    for (size_t at = 0; at < diagram_scene_count(scene); ++at)
+        if (diagram_scene_at(scene, at)->kind == DIAGRAM_PRIMITIVE_SHAPE)
+            bar = diagram_scene_at(scene, at)->bounds; /* the last shape is b's bar */
+    printf("gantt long section: first %d..%d, second at %d, bar at %d\n", first.y,
+           first.y + first.height, second.y, bar.y);
+    require(first.height > 40 && second.y >= first.y + first.height && bar.y >= second.y,
+            "a tall section name pushes the next section below it");
+    diagram_scene_destroy(scene);
+    diagram_model_destroy(model);
+}
+
 /* #1002: directive words in any case, as Mermaid's gantt lexer reads them. */
 static void gantt_keyword_case(void)
 {
@@ -1479,6 +1514,7 @@ static void gantt_tests(void)
     gantt_excluded_end();
     gantt_limits();
     gantt_keyword_case();
+    gantt_section_height();
 }
 
 static void class_rejections(void)
