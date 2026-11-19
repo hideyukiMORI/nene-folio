@@ -2,6 +2,7 @@
 
 #include "markdown_blocks.h"
 #include "markdown_media.h"
+#include "markdown_source_map.h"
 #include "note_text.h"
 #include "rtf_text.h"
 #include "text_buffer.h"
@@ -14,6 +15,7 @@ struct markdown_rtf
 {
     struct text_buffer *_Nonnull buffer;
     struct markdown_media *_Nullable media;
+    struct markdown_source_map *_Nullable map; /* #1008: the reading view's only */
 };
 
 /* フォント 0 が本文、1 がコード。色は 1 本文・2 見出し・3 薄字・4 リンク（インラインコードも）・
@@ -143,21 +145,26 @@ enum markdown_rtf_outcome markdown_rtf_create(const struct note_text *_Nonnull t
     {
         return MARKDOWN_RTF_OUT_OF_MEMORY;
     }
-    if (markdown_media_create(note_text_bytes(text), &rtf->media) != IMAGE_READY)
+    if (markdown_media_create(note_text_bytes(text), &rtf->media) != IMAGE_READY ||
+        markdown_source_map_create(&rtf->map) != MARKDOWN_RTF_CONVERTED)
     {
         markdown_rtf_destroy(rtf);
         return MARKDOWN_RTF_OUT_OF_MEMORY;
     }
-    enum markdown_rtf_outcome rendered =
-        markdown_blocks_render((struct markdown_render){rtf->buffer, rtf->media, 22, nullptr}, text,
-                               locale.language, theme->contrast);
+    enum markdown_rtf_outcome rendered = markdown_blocks_render(
+        (struct markdown_render){rtf->buffer, rtf->media, 22, nullptr}, text,
+        (struct markdown_blocks_options){
+            .language = locale.language, .contrast = theme->contrast, .map = rtf->map});
     if (rendered != MARKDOWN_RTF_CONVERTED)
     {
         markdown_rtf_destroy(rtf);
         return rendered;
     }
     text_buffer_append_text(rtf->buffer, document_footer);
-    return finish(rtf, out);
+    enum markdown_rtf_outcome finished = finish(rtf, out);
+    if (finished == MARKDOWN_RTF_CONVERTED)
+        markdown_source_map_finish((*out)->map, markdown_rtf_text(*out), markdown_rtf_length(*out));
+    return finished;
 }
 
 enum markdown_rtf_outcome markdown_rtf_empty(const struct theme_palette *_Nonnull theme,
@@ -187,6 +194,12 @@ enum markdown_rtf_outcome markdown_rtf_plain(const struct note_text *_Nonnull te
     return finish(rtf, out);
 }
 
+const struct markdown_source_map *_Nullable markdown_rtf_source_map(
+    const struct markdown_rtf *_Nonnull rtf)
+{
+    return rtf->map;
+}
+
 const char *_Nonnull markdown_rtf_text(const struct markdown_rtf *_Nonnull rtf)
 {
     return text_buffer_bytes(rtf->buffer);
@@ -204,6 +217,7 @@ void markdown_rtf_destroy(struct markdown_rtf *_Nullable rtf)
         return;
     }
     markdown_media_destroy(rtf->media);
+    markdown_source_map_destroy(rtf->map);
     text_buffer_destroy(rtf->buffer);
     free(rtf);
 }

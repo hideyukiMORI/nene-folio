@@ -18,6 +18,10 @@ struct markdown_media;
 [[nodiscard]] const struct markdown_images *_Nullable markdown_rtf_images(
     const struct markdown_rtf *_Nonnull rtf);
 struct note_text;
+struct markdown_source_map;
+/* #1008 / ADR0116: the reading view's source map; none for the editing and empty documents. */
+[[nodiscard]] const struct markdown_source_map *_Nullable markdown_rtf_source_map(
+    const struct markdown_rtf *_Nonnull rtf);
 
 /* face は本文のフォント名（ui_font_face が答える ASCII。`{` `}` `\` `;` を含まない）で、
  * fonttbl の 0 に入る（ADR 0032 の決定 5）。コードの 1 は Consolas のまま。 */
