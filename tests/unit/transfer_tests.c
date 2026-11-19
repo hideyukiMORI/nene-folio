@@ -668,7 +668,12 @@ static void verify_import_allocation(bool warm)
         if (nth == 0)
             allocations = allocation_probe_calls();
         allocation_probe_fail_at(0);
-        require(nth == 0 ? result.added == 1 : result.outcome == FOLIO_STATE_OUT_OF_MEMORY,
+        /* #1069 / ADR0117 (stage 4): the index is read again after the note is written. A
+         * failure there is not "nothing was imported": the note is in the folder and in the
+         * list, and its index waits for the next intent (LEDGER_STALE). */
+        bool waiting = result.outcome == FOLIO_STATE_LEDGER_STALE && result.added == 1;
+        require(nth == 0 ? result.added == 1
+                         : result.outcome == FOLIO_STATE_OUT_OF_MEMORY || waiting,
                 "import allocation failure is typed");
         require(folio_state_note_count(state) == before + result.added,
                 "import index matches publication result");

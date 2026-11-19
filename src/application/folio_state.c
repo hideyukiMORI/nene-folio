@@ -95,6 +95,7 @@ struct folio_state
     /* READY か NOTE_UNEDITABLE。直前の select_note が編集から閲覧へ落としたかの事実（#258） */
     enum folio_state_outcome select_notice;
     bool ledger_notice; /* #1069: a list was read again and differed; taken by the window */
+    uint64_t adoptions; /* how many times a list read again took the place of the one in memory */
     struct theme_palette palette;
     struct category_ledger *_Nullable categories;
     struct note_ledger *_Nonnull *_Nullable notes; /* categories と同じ数・同じ順 */
@@ -214,6 +215,8 @@ static void discovery_fresh_pass(struct folio_state *_Nonnull state);
 static bool discovery_source_reused(const struct folio_state *_Nonnull state, struct note_ref ref);
 static void invalidate_corpus_dependents(struct folio_state *_Nonnull state);
 static void fresh_tag_corpus(struct folio_state *_Nonnull state);
+static enum folio_state_outcome refresh_notes(struct folio_state *_Nonnull state, size_t category,
+                                              size_t *_Nullable first, size_t *_Nullable second);
 static bool holds_category(const struct folio_state *_Nonnull state, size_t category);
 static struct drawer_cursor first_stop_in(const struct folio_state *_Nonnull state,
                                           size_t category);
@@ -480,14 +483,9 @@ static enum folio_state_outcome translate(enum persistence_outcome outcome)
     return FOLIO_STATE_DATA_UNREADABLE;
 }
 
-/* 前回書けなかった index.json を、次の意図より先に修復する。
- * 失敗は LEDGER_UNSYNCED。呼び出し側はまだ何も実行していないので、意図ごと拒む。 */
-static enum folio_state_outcome synchronize_index(struct folio_state *_Nonnull state)
+/* 保留の index.json を書く。失敗は LEDGER_UNSYNCED で、保留のまま残る。 */
+static enum folio_state_outcome write_pending(struct folio_state *_Nonnull state)
 {
-    if (!state->index_pending)
-    {
-        return FOLIO_STATE_READY;
-    }
     enum persistence_outcome stored = state->port.write_note_ledger(
         state->port.adapter, category_ledger_name(state->categories, state->pending_category),
         state->notes[state->pending_category]);
@@ -497,6 +495,42 @@ static enum folio_state_outcome synchronize_index(struct folio_state *_Nonnull s
     }
     state->index_pending = false;
     return FOLIO_STATE_READY;
+}
+
+/* このアプリがフォルダを変えた直後（ノートを作った・ごみ箱へ送った・移した）に、その index.json
+ * を書く。 #1069 / ADR0117 (stage 4): what this app did is already in the folder, so reading the
+ * index and the folder again gives the ledger to write: the outside order and stars, the outside
+ * notes, and this app's own change. A ledger that cannot be read again is not overwritten with the
+ * one in memory: LEDGER_UNSYNCED, and the write waits. */
+static enum folio_state_outcome synchronize_index(struct folio_state *_Nonnull state)
+{
+    if (!state->index_pending)
+    {
+        return FOLIO_STATE_READY;
+    }
+    if (refresh_notes(state, state->pending_category, nullptr, nullptr) != FOLIO_STATE_READY)
+    {
+        return FOLIO_STATE_LEDGER_UNSYNCED;
+    }
+    return write_pending(state);
+}
+
+/* 前回書けなかった index.json を、次の意図より先に修復する。書けなければ LEDGER_UNSYNCED で、
+ * 呼び出し側はまだ何も実行していないので、意図ごと拒む（従来どおり）。
+ * 読み直せないあいだは書かずに待ち、意図は止めない（review of #1069, stage 4）: 待っている台帳に
+ * 載っていないのは、このアプリが最後に作った・消したノートだけで、それは次に読むときにフォルダから
+ * わかる。壊れた index.json ひとつで、開いているノートの保存まで止めない。 */
+static enum folio_state_outcome retry_index(struct folio_state *_Nonnull state)
+{
+    if (!state->index_pending)
+    {
+        return FOLIO_STATE_READY;
+    }
+    if (refresh_notes(state, state->pending_category, nullptr, nullptr) != FOLIO_STATE_READY)
+    {
+        return FOLIO_STATE_READY;
+    }
+    return write_pending(state);
 }
 
 /* md を公開した直後の同期の結果。ここの失敗は「何もしていない」修復失敗ではなく LEDGER_STALE。 */
@@ -630,7 +664,7 @@ static enum folio_state_outcome resume_rename(struct folio_state *_Nonnull state
  * index.json→保存済み本文の写し→未完了の改名の順に片付けてから意図へ進む（#219）。 */
 static enum folio_state_outcome synchronize(struct folio_state *_Nonnull state)
 {
-    enum folio_state_outcome synced = synchronize_index(state);
+    enum folio_state_outcome synced = retry_index(state);
     if (synced == FOLIO_STATE_READY && state->copy_pending)
     {
         synced = refresh_copy(state);
@@ -641,6 +675,21 @@ static enum folio_state_outcome synchronize(struct folio_state *_Nonnull state)
 enum folio_state_outcome folio_state_retry_rename(struct folio_state *_Nonnull state)
 {
     return synchronize(state);
+}
+
+/* For an intent that is given a note by its place in the list. If the repairs above took a
+ * list read again, the places the caller counted are of the old list: the intent is refused
+ * with LEDGER_CHANGED_OUTSIDE, the list is the fresh one and the user points again (review of
+ * #1069, stage 4). A rename finished here keeps every place and does not count. */
+static enum folio_state_outcome synchronize_places(struct folio_state *_Nonnull state)
+{
+    uint64_t before = state->adoptions;
+    enum folio_state_outcome synced = synchronize(state);
+    if (synced == FOLIO_STATE_READY && state->adoptions != before)
+    {
+        return FOLIO_STATE_LEDGER_CHANGED_OUTSIDE;
+    }
+    return synced;
 }
 
 static bool category_rename_pending(const struct folio_state *_Nonnull state)
@@ -1540,11 +1589,14 @@ bool folio_state_note_favorite(const struct folio_state *_Nonnull state, struct 
 }
 
 /* #1069 / ADR0117: where the note at *at of the old ledger is in the fresh one. An operand that
- * is not given is always found. */
+ * is not given is always found. A place past the old ledger's end names no note: while a note
+ * is being sent to the bin, the open note's place can still be the one just removed. */
 static bool follow_note(const struct note_ledger *_Nonnull old,
                         const struct note_ledger *_Nonnull fresh, size_t *_Nullable at)
 {
-    return at == nullptr || note_ledger_find(fresh, note_ledger_name(old, *at), at);
+    if (at == nullptr)
+        return true;
+    return *at < note_ledger_count(old) && note_ledger_find(fresh, note_ledger_name(old, *at), at);
 }
 
 /* The fresh ledger takes the old one's place. What pointed at a note by its place (the open
@@ -1563,6 +1615,7 @@ static void adopt_notes(struct folio_state *_Nonnull state, size_t category,
     state->notes[category] = fresh;
     note_ledger_destroy(old);
     state->ledger_notice = true;
+    state->adoptions += 1;
     index_changed(state);
     /* The bodies read for searching belong to the old places, and a note added outside has
      * none yet: read them all again, and let the filter and the tag list be made again from
@@ -1580,7 +1633,8 @@ static enum folio_state_outcome refresh_notes(struct folio_state *_Nonnull state
                                               size_t *_Nullable first, size_t *_Nullable second)
 {
     const struct note_ledger *old = state->notes[category];
-    bool open = state->document == FOLIO_DOCUMENT_NAMED && state->selected_category == category;
+    bool open = state->document == FOLIO_DOCUMENT_NAMED && state->selected_category == category &&
+                state->selected_note < note_ledger_count(old);
     struct note_ledger *_Nullable fresh = nullptr;
     enum folio_state_outcome outcome =
         load_notes(&fresh, &state->port, category_ledger_name(state->categories, category),
@@ -1613,7 +1667,7 @@ enum folio_state_outcome folio_state_toggle_favorite(struct folio_state *_Nonnul
                                                      struct note_ref ref)
 {
     state->ledger_notice = false; /* a notice is this intent's own, never an earlier one's */
-    enum folio_state_outcome outcome = synchronize(state);
+    enum folio_state_outcome outcome = synchronize_places(state);
     if (outcome != FOLIO_STATE_READY)
         return outcome;
     if (ref.category >= state->notes_count)
@@ -2037,6 +2091,7 @@ static void move_notes(struct note_ledger *_Nonnull *_Nonnull items, size_t from
 enum folio_state_outcome folio_state_move_category(struct folio_state *_Nonnull state, size_t from,
                                                    size_t to)
 {
+    state->ledger_notice = false;
     if (folio_state_filtering(state))
     {
         return FOLIO_STATE_FILTERED;
@@ -2280,11 +2335,50 @@ static enum folio_state_outcome recopy_move(struct folio_state *_Nonnull state,
     return FOLIO_STATE_READY;
 }
 
+/* #1069 / ADR0117 (stage 4): both categories are read again before the destination ledger is
+ * written. The moved note, and the note it is dropped before, are found again by name; a drop
+ * at the end stays at the end. A name that came to the destination from outside is NAME_TAKEN
+ * here, before anything is written. */
+static enum folio_state_outcome refresh_transfer(struct folio_state *_Nonnull state,
+                                                 struct note_ref *_Nonnull from,
+                                                 struct note_ref *_Nonnull to)
+{
+    bool end = to->note >= note_ledger_count(state->notes[to->category]);
+    enum folio_state_outcome outcome = refresh_notes(state, from->category, &from->note, nullptr);
+    if (outcome == FOLIO_STATE_READY)
+    {
+        outcome = refresh_notes(state, to->category, end ? nullptr : &to->note, nullptr);
+    }
+    if (outcome != FOLIO_STATE_READY)
+    {
+        return outcome;
+    }
+    if (end)
+    {
+        to->note = note_ledger_count(state->notes[to->category]);
+    }
+    /* A drop before a note is a place of the manual order; stars that came from outside forbid
+     * it as stars in memory do. A move to the end is the same place in both orders (ADR0111). */
+    if (!end && (favorites_lead(state, from->category) || favorites_lead(state, to->category)))
+    {
+        return FOLIO_STATE_ORDERED;
+    }
+    return transfer_allowed(state, *from, *to);
+}
+
 /* 別カテゴリへ移す。移動先台帳→md→移動元台帳の順で星を守る（ADR0090）。 */
 static enum folio_state_outcome transfer_note(struct folio_state *_Nonnull state,
                                               struct note_ref from, struct note_ref to)
 {
-    enum folio_state_outcome outcome = transfer_allowed(state, from, to);
+    /* Only the places are asked of the lists in memory. Whether the name is free in the
+     * destination is asked after both lists were read again: a note of that name deleted
+     * outside must not keep refusing the move (review of #1069, stage 4). */
+    if (from.note >= note_ledger_count(state->notes[from.category]) ||
+        to.note > note_ledger_count(state->notes[to.category]))
+    {
+        return FOLIO_STATE_NO_SUCH_NOTE;
+    }
+    enum folio_state_outcome outcome = refresh_transfer(state, &from, &to);
     if (outcome != FOLIO_STATE_READY)
     {
         return outcome;
@@ -2327,7 +2421,7 @@ enum folio_state_outcome folio_state_move_note(struct folio_state *_Nonnull stat
     {
         return FOLIO_STATE_FILTERED;
     }
-    enum folio_state_outcome synced = synchronize(state);
+    enum folio_state_outcome synced = synchronize_places(state);
     if (synced != FOLIO_STATE_READY)
     {
         return synced;
@@ -2352,12 +2446,13 @@ enum folio_state_outcome folio_state_move_note(struct folio_state *_Nonnull stat
 enum folio_state_outcome folio_state_move_note_to_category(struct folio_state *_Nonnull state,
                                                            struct note_ref from, size_t category)
 {
+    state->ledger_notice = false;
     if (folio_state_filtering(state))
     {
         return FOLIO_STATE_FILTERED;
     }
     /* The end is counted after the lists are current, as folio_state_move_note sees them. */
-    enum folio_state_outcome synced = synchronize(state);
+    enum folio_state_outcome synced = synchronize_places(state);
     if (synced != FOLIO_STATE_READY)
     {
         return synced;
@@ -2472,7 +2567,7 @@ enum folio_state_outcome folio_state_select_note(struct folio_state *_Nonnull st
         return FOLIO_STATE_NAME_REQUIRED;
     }
 
-    enum folio_state_outcome synced = synchronize(state);
+    enum folio_state_outcome synced = synchronize_places(state);
     if (synced != FOLIO_STATE_READY)
     {
         return synced;
@@ -3168,9 +3263,12 @@ static enum folio_state_outcome create_edited(struct folio_state *_Nonnull state
     {
         cursor_to_selection(state);
     }
-    enum folio_state_outcome synced = published_index(synchronize_index(state));
-    /* 新しく公開したノートも写しと一致集合に入れる（ADR 0024 の決定 4）。 */
+    /* 新しく公開したノートも写しと一致集合に入れる（ADR 0024 の決定 4）。
+     * 台帳の同期より先に行う（#1069, stage 4）: 同期は台帳とフォルダを読み直すので確保がある。
+     * 写しの確保の失敗を、同期の中の失敗と取り違えない。同期が一覧を入れ替えたら、写しは
+     * そこで最初から読み直される。 */
     enum folio_state_outcome copied = refresh_copy(state);
+    enum folio_state_outcome synced = published_index(synchronize_index(state));
     return synced != FOLIO_STATE_READY ? synced : copied;
 }
 
@@ -3706,6 +3804,7 @@ static enum folio_state_outcome publish_trash(struct folio_state *_Nonnull state
 {
     const char *_Nonnull category = category_ledger_name(state->categories, target.category);
     const char *_Nonnull note = note_ledger_name(state->notes[target.category], target.note);
+    bool current = trashing_current(state, target);
     enum folio_state_outcome moved =
         from_trash(state->port.trash_note(state->port.adapter, category, note));
     if (moved != FOLIO_STATE_READY)
@@ -3736,6 +3835,13 @@ static enum folio_state_outcome publish_trash(struct folio_state *_Nonnull state
         {
             state->cursor_note -= 1;
         }
+    }
+    /* The open note is the one just binned: its place names no note of the new ledger (the
+     * caller empties the document next). Reading the index again must neither keep nor follow
+     * the note that now stands at that place (review of #1069, stage 4). */
+    if (current)
+    {
+        state->selected_note = note_ledger_count(ledger);
     }
     state->index_pending = true;
     state->pending_category = target.category;
@@ -3787,9 +3893,10 @@ static enum folio_state_outcome finish_trash(struct folio_state *_Nonnull state,
     return outcome;
 }
 
-enum folio_state_outcome folio_state_trash_note(struct folio_state *_Nonnull state,
-                                                struct note_ref target,
-                                                const char16_t *_Nonnull units, size_t count)
+/* The note to bin is there, and the repairs before the intent left the list as the caller saw
+ * it (synchronize_places). */
+static enum folio_state_outcome trash_target(struct folio_state *_Nonnull state,
+                                             struct note_ref target)
 {
     if (target.category >= state->notes_count)
     {
@@ -3799,7 +3906,14 @@ enum folio_state_outcome folio_state_trash_note(struct folio_state *_Nonnull sta
     {
         return FOLIO_STATE_NO_SUCH_NOTE;
     }
-    enum folio_state_outcome synced = synchronize(state);
+    return synchronize_places(state);
+}
+
+enum folio_state_outcome folio_state_trash_note(struct folio_state *_Nonnull state,
+                                                struct note_ref target,
+                                                const char16_t *_Nonnull units, size_t count)
+{
+    enum folio_state_outcome synced = trash_target(state, target);
     if (synced != FOLIO_STATE_READY)
     {
         return synced;
