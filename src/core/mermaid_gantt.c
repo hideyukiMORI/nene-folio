@@ -83,18 +83,27 @@ static bool interval(struct mermaid_gantt *_Nonnull parser, struct diagram_text 
     return reject(parser, DIAGRAM_UNSUPPORTED);
 }
 
-/* `excludes monday`: Mermaid compares the lowercased English name of each day (#1022). */
-static bool weekday(struct mermaid_gantt *_Nonnull parser, struct diagram_text item)
+constexpr size_t no_day = 7;
+
+/* The day an English weekday name means, 0 for Monday; no_day for anything else. */
+static size_t day_named(struct diagram_text item)
 {
     static const char *const names[] = {"monday", "tuesday",  "wednesday", "thursday",
                                         "friday", "saturday", "sunday"};
     for (size_t at = 0; at < sizeof names / sizeof names[0]; ++at)
         if (keyword(item, names[at]))
-        {
-            parser->chart.weekdays |= (unsigned char)(1U << at);
-            return true;
-        }
-    return false;
+            return at;
+    return no_day;
+}
+
+/* `excludes monday`: Mermaid compares the lowercased English name of each day (#1022). */
+static bool weekday(struct mermaid_gantt *_Nonnull parser, struct diagram_text item)
+{
+    size_t day = day_named(item);
+    if (day == no_day)
+        return false;
+    parser->chart.weekdays |= (unsigned char)(1U << day);
+    return true;
 }
 
 /* One item of `excludes`: `weekends`, a weekday's name or a date. */
@@ -183,13 +192,32 @@ static bool task(struct mermaid_gantt *_Nonnull parser, struct diagram_text text
 static bool unsupported(struct diagram_text word)
 {
     static const char *const words[] = {
-        "includes", "weekend", "inclusiveEndDates", "topAxis",  "displayMode", "weekday",
-        "click",    "call",    "accTitle",          "accDescr", "accTitle:",   "accDescr:",
-        "accDescr{"};
+        "includes", "inclusiveEndDates", "topAxis",   "displayMode", "click",    "call",
+        "accTitle", "accDescr",          "accTitle:", "accDescr:",   "accDescr{"};
     for (size_t at = 0; at < sizeof words / sizeof words[0]; ++at)
         if (keyword(word, words[at]))
             return true;
     return false;
+}
+
+/* #1030: `weekday sunday` names the day week marks fall on; `weekend friday` makes the
+ * weekends of `excludes weekends` Friday and Saturday (`weekend saturday` is the default). */
+static bool week_directive(struct mermaid_gantt *_Nonnull parser, struct diagram_text word,
+                           struct diagram_text rest, bool *_Nonnull handled)
+{
+    size_t day = day_named(rest);
+    if (keyword(word, "weekday"))
+    {
+        parser->chart.week_start = (unsigned char)(day == no_day ? 0 : day);
+        return day != no_day || reject(parser, DIAGRAM_INVALID);
+    }
+    if (keyword(word, "weekend"))
+    {
+        parser->chart.weekend_friday = day == 4;
+        return day == 4 || day == 5 || reject(parser, DIAGRAM_INVALID);
+    }
+    *handled = false;
+    return true;
 }
 
 static bool directive(struct mermaid_gantt *_Nonnull parser, struct diagram_text word,
@@ -214,8 +242,7 @@ static bool directive(struct mermaid_gantt *_Nonnull parser, struct diagram_text
         return section(parser, rest);
     if (keyword(word, "todayMarker"))
         return true; /* nothing is drawn for today */
-    *handled = false;
-    return true;
+    return week_directive(parser, word, rest, handled);
 }
 
 static bool statement(struct mermaid_gantt *_Nonnull parser, struct diagram_text text)

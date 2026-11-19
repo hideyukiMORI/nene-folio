@@ -1223,6 +1223,15 @@ static void gantt_axis(void)
     static const char *const months[] = {"2026-12-01 26 1", "2027-01-01 27 1"};
     expect_ticks(model, months, 2);
     diagram_model_destroy(model);
+    /* #1030: week marks on the written weekday (2026-12-21 is a Monday). */
+    model = parsed("gantt\nWeekday Sunday\na :2026-12-21, 3w\n");
+    static const char *const sundays[] = {"2026/12/27", "2027/1/3", "1/10"};
+    expect_ticks(model, sundays, 3);
+    diagram_model_destroy(model);
+    model = parsed("gantt\nweekday monday\ntickInterval 1week\na :2026-12-22, 2w\n");
+    static const char *const mondays[] = {"2026/12/28", "2027/1/4"};
+    expect_ticks(model, mondays, 2);
+    diagram_model_destroy(model);
     model = parsed("gantt\ntodayMarker off\na :milestone, 2026-11-04, 0d\n");
     static const char *const one[] = {"2026/11/4", "11/5"};
     expect_ticks(model, one, 2);
@@ -1268,7 +1277,9 @@ static void gantt_rejections(void)
         {"gantt\nexcludes 2026-02-30\nx :2026-11-01, 1d\n", DIAGRAM_INVALID},
         {"gantt\ntickInterval 1hour\nx :2026-11-01, 1d\n", DIAGRAM_UNSUPPORTED},
         {"gantt\ninclusiveEndDates\nx :2026-11-01, 1d\n", DIAGRAM_UNSUPPORTED},
-        {"gantt\nweekend friday\nx :2026-11-01, 1d\n", DIAGRAM_UNSUPPORTED},
+        {"gantt\nweekend sunday\nx :2026-11-01, 1d\n", DIAGRAM_INVALID},
+        {"gantt\nweekday\nx :2026-11-01, 1d\n", DIAGRAM_INVALID},
+        {"gantt\nweekday someday\nx :2026-11-01, 1d\n", DIAGRAM_INVALID},
         {"gantt\nx :a, 2026-11-01, 1d\nclick a href \"https://example.com\"\n",
          DIAGRAM_UNSUPPORTED},
         {"gantt\naccTitle: t\nx :2026-11-01, 1d\n", DIAGRAM_UNSUPPORTED},
@@ -1558,6 +1569,16 @@ static void gantt_until(void)
     expect_task(model, 1, (struct gantt_expected){5, 1, DIAGRAM_TASK_PLANNED});
     diagram_model_destroy(model);
     gantt_until_excluded();
+    /* #1030: with `weekend friday` the weekends are Friday and Saturday (2026-11-05 is a
+     * Thursday); `weekend saturday` writes the default. */
+    model = parsed("gantt\nexcludes weekends\nweekend friday\nx :2026-11-05, 2d\ny :1d\n");
+    expect_task(model, 0, (struct gantt_expected){0, 4, DIAGRAM_TASK_PLANNED});
+    expect_task(model, 1, (struct gantt_expected){4, 1, DIAGRAM_TASK_PLANNED});
+    diagram_model_destroy(model);
+    model = parsed("gantt\nexcludes weekends\nweekend Saturday\nx :2026-11-05, 2d\ny :1d\n");
+    expect_task(model, 0, (struct gantt_expected){0, 2, DIAGRAM_TASK_PLANNED});
+    expect_task(model, 1, (struct gantt_expected){4, 1, DIAGRAM_TASK_PLANNED});
+    diagram_model_destroy(model);
     reject_source("gantt\nx :2026-11-01, until\n", DIAGRAM_INVALID);
     reject_source("gantt\nx :2026-11-02, Until c\nc :c, 2026-11-05, 1d\n", DIAGRAM_INVALID);
     reject_source("gantt\nx :x, 2026-11-02, until y\ny :y, 1d\n", DIAGRAM_INVALID);
