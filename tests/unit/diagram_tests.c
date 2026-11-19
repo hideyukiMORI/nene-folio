@@ -1214,6 +1214,24 @@ static void expect_marks(const char *_Nonnull source, const char *_Nonnull const
     diagram_model_destroy(model);
 }
 
+/* #1044: marks every k days are never closer than k days, so a month's end does not widen
+ * the whole chart. */
+static void expect_spacing(const char *_Nonnull source, int32_t days)
+{
+    struct diagram_model *model = parsed(source);
+    size_t count = diagram_model_tick_count(model);
+    require(count > 10, "the chart has many marks");
+    for (size_t at = 1; at < count; ++at)
+    {
+        size_t gap =
+            diagram_model_tick_at(model, at).day - diagram_model_tick_at(model, at - 1).day;
+        if (gap < (size_t)days)
+            fprintf(stderr, "marks %zu and %zu are %zu days apart\n", at - 1, at, gap);
+        require(gap >= (size_t)days, "marks every k days are at least k days apart");
+    }
+    diagram_model_destroy(model);
+}
+
 static void gantt_every(void)
 {
     static const char *const even[] = {"2026/11/2", "11/16", "11/30"};
@@ -1226,8 +1244,14 @@ static void gantt_every(void)
     expect_marks("gantt\nweekday sunday\ntickInterval 2week\na :2026-11-01, 2w\n", sundays, 2);
     static const char *const before[] = {"1950/1/9"};
     expect_marks("gantt\ntickInterval 2week\na :1950-01-02, 2w\n", before, 1);
-    static const char *const dates[] = {"2026/10/29", "10/31", "11/1", "11/3"};
-    expect_marks("gantt\ntickInterval 2day\na :2026-10-29, 2026-11-04\n", dates, 4);
+    /* #1044: the 31st is left out, the 1st follows it the next day. */
+    static const char *const dates[] = {"2026/10/29", "11/1", "11/3"};
+    expect_marks("gantt\ntickInterval 2day\na :2026-10-29, 2026-11-04\n", dates, 3);
+    static const char *const leap[] = {"2028/2/27", "3/1"};
+    expect_marks("gantt\ntickInterval 2day\na :2028-02-26, 2028-03-02\n", leap, 2);
+    expect_spacing("gantt\ntickInterval 2day\na :2026-10-20, 2027-01-20\n", 2);
+    expect_spacing("gantt\ntickInterval 3day\na :2026-10-20, 2027-03-20\n", 3);
+    expect_spacing("gantt\ntickInterval 7day\na :2026-01-20, 2027-01-20\n", 7);
     static const char *const first[] = {"2026/11/1"};
     expect_marks("gantt\ntickInterval 40day\na :2026-10-29, 2026-11-04\n", first, 1);
 }
