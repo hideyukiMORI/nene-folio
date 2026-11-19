@@ -3,6 +3,7 @@
 #include "mermaid_class.h"
 #include "mermaid_er.h"
 #include "mermaid_flow.h"
+#include "mermaid_gantt.h"
 #include "mermaid_pie.h"
 #include "mermaid_sequence.h"
 #include "mermaid_state.h"
@@ -21,7 +22,8 @@ static const struct
              {"erDiagram", mermaid_er_create},
              {"classDiagram", mermaid_class_create},
              {"classDiagram-v2", mermaid_class_create},
-             {"pie", mermaid_pie_create}};
+             {"pie", mermaid_pie_create},
+             {"gantt", mermaid_gantt_create}};
 enum diagram_outcome mermaid_diagram_create(const struct note_text *_Nonnull source,
                                             struct diagram_model *_Nullable *_Nonnull out)
 {

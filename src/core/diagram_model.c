@@ -19,6 +19,8 @@ struct diagram_model
     size_t group_count;
     struct diagram_event events[diagram_event_limit];
     size_t event_count;
+    struct diagram_tick ticks[diagram_tick_limit];
+    size_t tick_count;
 };
 enum diagram_outcome diagram_model_create(enum diagram_kind kind,
                                           struct diagram_model *_Nullable *_Nonnull out)
@@ -112,6 +114,17 @@ enum diagram_outcome diagram_model_group(struct diagram_model *_Nonnull model, s
     model->groups[index] = value;
     if (index == model->group_count)
         ++model->group_count;
+    return DIAGRAM_ACCEPTED;
+}
+enum diagram_outcome diagram_model_tick(struct diagram_model *_Nonnull model,
+                                        struct diagram_tick value)
+{
+    if (model->state != DIAGRAM_BUILD_OPEN || value.label >= model->text_count ||
+        (model->tick_count != 0 && value.day <= model->ticks[model->tick_count - 1].day))
+        return DIAGRAM_INVALID;
+    if (model->tick_count == diagram_tick_limit)
+        return DIAGRAM_TOO_LARGE;
+    model->ticks[model->tick_count++] = value;
     return DIAGRAM_ACCEPTED;
 }
 enum diagram_outcome diagram_model_event(struct diagram_model *_Nonnull model,
@@ -227,6 +240,14 @@ struct diagram_event diagram_model_event_at(const struct diagram_model *_Nonnull
                                             size_t index)
 {
     return model->events[index];
+}
+size_t diagram_model_tick_count(const struct diagram_model *_Nonnull model)
+{
+    return model->tick_count;
+}
+struct diagram_tick diagram_model_tick_at(const struct diagram_model *_Nonnull model, size_t index)
+{
+    return model->ticks[index];
 }
 void diagram_model_destroy(struct diagram_model *_Nullable model)
 {
