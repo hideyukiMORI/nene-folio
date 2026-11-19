@@ -50,4 +50,11 @@
 
 手順の誤り: 検証のスクリプトを#988の記録のフォルダー（D:/NeNeFolio/temp/975/verify.ps1）で書き換えてから写した。#988の結果の記録（verify-stage4.txt）は変えていない。
 
+## その後（#1002）
+
+レビューが記録だけにした違いのうち、指示語の大文字小文字を直した（Mermaidのgantt.jisonは`case-insensitive`）。`Section`・`TITLE`・`EXCLUDES Weekends`等を受ける。作業の印はMermaidと同じく区別する（`DONE`はidになる）。比べ方はガントの読み取りの中だけで変え、共有の`diagram_text`は変えていない。
+1.5.0の候補（`99adbab`）には入っていない。hideの実機確認の対象を変えないため、通常exeへは反映していない。
+検証: 全構築・規約0・シンボル0・全CTest 70件成功（150秒、CPU 7%）・カバレッジ90.98%（記録 D:/NeNeFolio/temp/992/verify-case1.txt）。
+途中で、Bashのheredocを通したPythonの置換がbackslashを崩してCのソースにNULを2つ書いた。バイト列で直し、構築と試験で確かめた。
+
 Waivers: none。

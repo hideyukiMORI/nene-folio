@@ -1444,6 +1444,28 @@ static void gantt_limits(void)
                   DIAGRAM_TOO_LARGE);
 }
 
+/* #1002: directive words in any case, as Mermaid's gantt lexer reads them. */
+static void gantt_keyword_case(void)
+{
+    struct diagram_model *model =
+        parsed("gantt\nTITLE 題\nDateFormat YYYY-MM-DD\nEXCLUDES Weekends\nTodayMarker off\n"
+               "Section 区分\nx :2026-11-06, 1d\ny :1d\n");
+    require(diagram_model_group_count(model) == 1 &&
+                diagram_model_title_text(model) != diagram_none &&
+                diagram_model_node_at(model, 0).group == 0,
+            "Section and TITLE are directives in any case");
+    expect_task(model, 1, (struct gantt_expected){3, 1, DIAGRAM_TASK_PLANNED});
+    diagram_model_destroy(model);
+    reject_source("gantt\nClick x call f()\nx :2026-11-02, 1d\n", DIAGRAM_UNSUPPORTED);
+    /* Task tags stay as written, as in Mermaid: `DONE` is the task's id, not its state. */
+    model = parsed("gantt\nx :DONE, 2026-11-02, 1d\n");
+    require(diagram_model_node_at(model, 0).state == DIAGRAM_TASK_PLANNED &&
+                strcmp(diagram_model_text_at(model, diagram_model_node_at(model, 0).id), "DONE") ==
+                    0,
+            "a tag in capitals is an id");
+    diagram_model_destroy(model);
+}
+
 static void gantt_tests(void)
 {
     calendar_round_trip();
@@ -1456,6 +1478,7 @@ static void gantt_tests(void)
     gantt_year_end();
     gantt_excluded_end();
     gantt_limits();
+    gantt_keyword_case();
 }
 
 static void class_rejections(void)

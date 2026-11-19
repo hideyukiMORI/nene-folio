@@ -20,6 +20,20 @@ struct mermaid_gantt
     struct mermaid_gantt_chart chart;
 };
 
+static char lower(char value)
+{
+    return value >= 'A' && value <= 'Z' ? (char)(value - 'A' + 'a') : value;
+}
+
+/* A directive word, compared as Mermaid's gantt lexer does: ASCII letters in any case. */
+static bool keyword(struct diagram_text text, const char *_Nonnull word)
+{
+    size_t at = 0;
+    while (at < text.length && word[at] != '\0' && lower(text.bytes[at]) == lower(word[at]))
+        ++at;
+    return at == text.length && word[at] == '\0';
+}
+
 static bool reject(struct mermaid_gantt *_Nonnull parser, enum diagram_outcome outcome)
 {
     parser->outcome = outcome;
@@ -72,7 +86,7 @@ static bool interval(struct mermaid_gantt *_Nonnull parser, struct diagram_text 
 /* One item of `excludes`: `weekends` or a date. Weekday names are UNSUPPORTED. */
 static bool exclude(struct mermaid_gantt *_Nonnull parser, struct diagram_text item)
 {
-    if (diagram_text_equal(item, "weekends"))
+    if (keyword(item, "weekends"))
     {
         parser->chart.weekends = true;
         return true;
@@ -157,7 +171,7 @@ static bool unsupported(struct diagram_text word)
         "click",    "call",    "accTitle",          "accDescr", "accTitle:",   "accDescr:",
         "accDescr{"};
     for (size_t at = 0; at < sizeof words / sizeof words[0]; ++at)
-        if (diagram_text_equal(word, words[at]))
+        if (keyword(word, words[at]))
             return true;
     return false;
 }
@@ -167,22 +181,22 @@ static bool directive(struct mermaid_gantt *_Nonnull parser, struct diagram_text
 {
     *handled = true;
     rest = diagram_text_trim(rest);
-    if (diagram_text_equal(word, "title"))
+    if (keyword(word, "title"))
         return title(parser, rest);
-    if (diagram_text_equal(word, "dateFormat"))
+    if (keyword(word, "dateFormat"))
         return diagram_text_equal(rest, "YYYY-MM-DD") || reject(parser, DIAGRAM_UNSUPPORTED);
-    if (diagram_text_equal(word, "axisFormat"))
+    if (keyword(word, "axisFormat"))
     {
         parser->chart.axis_format = rest;
         return rest.length != 0 || reject(parser, DIAGRAM_INVALID);
     }
-    if (diagram_text_equal(word, "tickInterval"))
+    if (keyword(word, "tickInterval"))
         return interval(parser, rest);
-    if (diagram_text_equal(word, "excludes"))
+    if (keyword(word, "excludes"))
         return excludes(parser, rest);
-    if (diagram_text_equal(word, "section"))
+    if (keyword(word, "section"))
         return section(parser, rest);
-    if (diagram_text_equal(word, "todayMarker"))
+    if (keyword(word, "todayMarker"))
         return true; /* nothing is drawn for today */
     *handled = false;
     return true;
