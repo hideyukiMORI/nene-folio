@@ -9151,6 +9151,7 @@ static void restore_outline(struct folio_window *_Nonnull self)
         InvalidateRect(self->handle, &paint.bounds, FALSE);
         accessibility_host_schedule(self->accessibility);
     }
+    track_outline(self); /* #1040: the chosen heading is the one being read again */
 }
 
 static enum folio_state_outcome restream_pane(struct folio_window *_Nonnull self)
@@ -18884,6 +18885,7 @@ static HRESULT outline_activate(struct folio_window *_Nonnull self, struct acces
     if (!outline_available(self) || item.revision != note_outline_revision(self->outline) ||
         !note_pane_show_heading(self->pane, item.slot))
         return accessibility_node_invalid;
+    note_outline_choose(self->outline, self->pane, item.slot);
     refresh_gutter(self, true);
     return S_OK;
 }

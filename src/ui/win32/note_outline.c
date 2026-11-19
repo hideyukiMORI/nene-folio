@@ -12,6 +12,10 @@ struct note_outline
     size_t rows;        /* how many rows the column showed when last fitted (#1018) */
     size_t held_first;  /* the column's place before the same note is poured again (#1026) */
     size_t held_cursor; /* and the keyboard's row */
+    size_t chosen;      /* the heading a row brought up, while the body is where that left it */
+    size_t chosen_seen; /* what the body reported as read right after (#1040) */
+    size_t held_chosen;
+    size_t held_seen;
     uint64_t revision;
 };
 
@@ -34,6 +38,7 @@ enum note_outline_outcome note_outline_create(struct note_outline *_Nullable *_N
     if (outline == nullptr)
         return NOTE_OUTLINE_OUT_OF_MEMORY;
     outline->hover = outline->pressed = outline->current = note_outline_none;
+    outline->chosen = outline->held_chosen = note_outline_none;
     outline->revision = 1;
     *out = outline;
     return NOTE_OUTLINE_READY;
@@ -48,6 +53,7 @@ void note_outline_reset(struct note_outline *_Nonnull outline)
 {
     outline->first = outline->cursor = 0;
     outline->hover = outline->pressed = outline->current = note_outline_none;
+    outline->chosen = note_outline_none;
     ++outline->revision;
 }
 
@@ -90,12 +96,30 @@ static bool reveal(struct note_outline *_Nonnull outline,
     return changed;
 }
 
+static size_t read_heading(struct note_pane *_Nonnull pane)
+{
+    size_t current = note_outline_none;
+    return note_pane_heading_current(pane, &current) ? current : note_outline_none;
+}
+
+void note_outline_choose(struct note_outline *_Nonnull outline, struct note_pane *_Nonnull pane,
+                         size_t index)
+{
+    size_t seen = read_heading(pane);
+    outline->chosen = seen == index ? note_outline_none : index;
+    outline->chosen_seen = seen;
+}
+
 bool note_outline_track(struct note_outline *_Nonnull outline, struct note_pane *_Nonnull pane,
                         const struct note_outline_paint *_Nonnull paint)
 {
-    size_t current = note_outline_none;
-    if (!note_pane_heading_current(pane, &current))
-        current = note_outline_none;
+    size_t current = read_heading(pane);
+    /* #1040: a heading near the end cannot rise to the top, so the body reports an earlier one;
+     * the heading a row brought up stays the one being read until the body's answer changes. */
+    if (outline->chosen != note_outline_none && current == outline->chosen_seen)
+        current = outline->chosen;
+    else
+        outline->chosen = note_outline_none;
     if (current == outline->current)
         return false;
     outline->current = current;
@@ -170,6 +194,8 @@ void note_outline_hold(struct note_outline *_Nonnull outline)
 {
     outline->held_first = outline->first;
     outline->held_cursor = outline->cursor;
+    outline->held_chosen = outline->chosen;
+    outline->held_seen = outline->chosen_seen;
 }
 
 bool note_outline_release(struct note_outline *_Nonnull outline,
@@ -180,6 +206,8 @@ bool note_outline_release(struct note_outline *_Nonnull outline,
     bool changed = first != outline->first;
     outline->first = first;
     outline->cursor = count == 0 || outline->held_cursor < count ? outline->held_cursor : count - 1;
+    outline->chosen = outline->held_chosen < count ? outline->held_chosen : note_outline_none;
+    outline->chosen_seen = outline->held_seen;
     return changed;
 }
 
