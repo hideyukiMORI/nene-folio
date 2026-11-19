@@ -1725,9 +1725,15 @@ static void verify_rename_refresh_resumed(void)
     require(folio_state_store_note(state, u"", 0) == FOLIO_STATE_READY,
             "the next intent finishes the rename");
     row_order(state, order, sizeof order);
-    require(strstr(order, "B/uno/two/three/six/") == order &&
+    require(strstr(order, "B/uno/two/three/A/") == order &&
                 same_text(folio_state_document_name(state), "uno"),
-            "the note added outside while the rename waited is listed after it is adopted");
+            "a rename finished by another intent keeps every place: nothing is read again there");
+    require(folio_state_ledger_outcome(state, folio_state_toggle_favorite(state, at(0, 1))) ==
+                FOLIO_STATE_LEDGER_REFRESHED,
+            "the next intent that writes the ledger reads it again");
+    row_order(state, order, sizeof order);
+    require(strstr(order, "B/two/uno/three/six/") == order,
+            "and the note added outside while the rename waited is listed");
     note_name_destroy(name);
     folio_state_destroy(state);
 }
@@ -1752,6 +1758,10 @@ static void verify_rename_refresh_category(void)
     require(rename_category_to(state, 1, "Y") == FOLIO_STATE_LEDGER_CHANGED_OUTSIDE &&
                 adapter.renames == renames && folio_state_category_count(state) == 2,
             "a category removed outside is not renamed; the list is the fresh one");
+    size_t place = 9;
+    require(folio_state_find_category(state, "Z", &place) && place == 1 &&
+                !folio_state_find_category(state, "C", &place) && place == 1,
+            "a surface that stays open finds its category again by name, or learns it is gone");
     folio_state_destroy(state);
 }
 
@@ -1775,13 +1785,12 @@ static void verify_rename_holds_pending_index(void)
                 adapter.ledger_writes == writes && adapter.note_scans == scans,
             "the waiting ledger is not read under the old name while the rename is unfinished");
     adapter.rename_outcome = RENAME_COMPLETED;
-    enum folio_state_outcome next = folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT);
-    require((next == FOLIO_STATE_READY || next == FOLIO_STATE_LEDGER_CHANGED_OUTSIDE) &&
-                same_text(folio_state_category_name(state, 2), "Z"),
-            "the rename is adopted by the next intent");
-    next = folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT);
-    require(next == FOLIO_STATE_READY && adapter.ledger_writes == writes + 1 &&
-                same_text(adapter.ledger_category, "Z"),
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
+                same_text(folio_state_category_name(state, 2), "Z") &&
+                adapter.ledger_writes == writes,
+            "the rename is adopted by the next intent, which keeps every place");
+    require(folio_state_select_note(state, 0, 1, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
+                adapter.ledger_writes == writes + 1 && same_text(adapter.ledger_category, "Z"),
             "and the waiting ledger is then written under the new name");
     folio_state_destroy(state);
 }

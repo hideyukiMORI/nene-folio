@@ -641,43 +641,16 @@ static enum folio_state_outcome adopt_category_rename(struct folio_state *_Nonnu
     return FOLIO_STATE_READY;
 }
 
-/* #1069 / ADR0117 stage 6: the rename wrote the ledger its record held, made when the rename
- * began. Read the ledger and the folder again so that what was put there outside since then is
- * in the list. A read that fails leaves the list as the rename made it: the rename itself is
- * done, and the next intent that writes reads again. */
-static void reread_after_rename(struct folio_state *_Nonnull state, enum rename_kind kind,
-                                size_t category)
-{
-    enum folio_state_outcome reread = FOLIO_STATE_READY;
-    switch (kind)
-    {
-    case RENAME_KIND_NOTE:
-        reread = refresh_notes(state, category, nullptr, nullptr);
-        break;
-    case RENAME_KIND_CATEGORY:
-        reread = refresh_categories(state, nullptr, nullptr);
-        break;
-    }
-    if (reread != FOLIO_STATE_READY)
-        return; /* the list stays the rename's own */
-}
-
 static enum folio_state_outcome adopt_rename(struct folio_state *_Nonnull state)
 {
-    enum rename_kind kind = rename_plan_kind(state->rename);
-    size_t category = state->rename_category;
-    enum folio_state_outcome adopted = FOLIO_STATE_RENAME_HALTED;
-    switch (kind)
+    switch (rename_plan_kind(state->rename))
     {
     case RENAME_KIND_NOTE:
-        adopted = adopt_note_rename(state);
-        break;
+        return adopt_note_rename(state);
     case RENAME_KIND_CATEGORY:
-        adopted = adopt_category_rename(state);
-        break;
+        return adopt_category_rename(state);
     }
-    reread_after_rename(state, kind, category);
-    return adopted;
+    return FOLIO_STATE_RENAME_HALTED;
 }
 
 /* 未完了の改名を、次の意図より先に同じ意図で再開する（ADR 0022 の決定 7）。 */
@@ -5801,6 +5774,12 @@ enum folio_state_outcome folio_state_recolor_availability(const struct folio_sta
                                                           size_t category)
 {
     return holds_category(state, category) ? FOLIO_STATE_READY : FOLIO_STATE_NO_SUCH_CATEGORY;
+}
+
+bool folio_state_find_category(const struct folio_state *_Nonnull state, const char *_Nonnull name,
+                               size_t *_Nonnull out)
+{
+    return category_ledger_find(state->categories, name, out);
 }
 
 const char *_Nonnull folio_state_note_name(const struct folio_state *_Nonnull state,

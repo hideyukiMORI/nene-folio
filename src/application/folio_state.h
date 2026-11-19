@@ -427,6 +427,11 @@ folio_state_document_kind(const struct folio_state *_Nonnull state);
                                                           size_t category, bool expanded);
 [[nodiscard]] const char *_Nonnull folio_state_category_name(
     const struct folio_state *_Nonnull state, size_t category);
+/* その名前のカテゴリの、いまの一覧での番号。無ければ false で out は変えない（#1069 / ADR0117）。
+ * 意図は書く前に一覧を読み直すので、番号は意図をまたいで持たない。面が開いているあいだ相手を
+ * 覚えるときは名前で覚え、意図を呼ぶたびにここで番号へ引き直す。 */
+[[nodiscard]] bool folio_state_find_category(const struct folio_state *_Nonnull state,
+                                             const char *_Nonnull name, size_t *_Nonnull out);
 /* カーソル→現在文書→最初のカテゴリ。カテゴリ0件なら0で、new_noteが拒否する。 */
 [[nodiscard]] size_t folio_state_current_category(const struct folio_state *_Nonnull state);
 /* 現在文書の保存先。NONEのときは呼ばない。 */
