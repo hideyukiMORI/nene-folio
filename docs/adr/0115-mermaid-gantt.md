@@ -41,13 +41,15 @@ Status: accepted / 2026-11-19 / Issue #992
 ## 未対応（図全体を案内にし、部分的な図を作らない）
 
 `dateFormat`の`YYYY-MM-DD`以外、時刻を含む開始、`h`・`m`・`s`・`ms`・`M`・`y`や小数の長さ、`axisFormat`の`%b` `%a` `%B`など（月や曜日の名前はロケールのもの）、
-1日より短い`tickInterval`、`includes`・`weekend`・`inclusiveEndDates`・`topAxis`・`displayMode`・`weekday`・`click`・`call`・`vert`・`accTitle`・`accDescr`、`%%{init}%%`。
+1日より短い`tickInterval`、`includes`・`inclusiveEndDates`・`topAxis`・`displayMode`・`click`・`call`・`vert`・`accTitle`・`accDescr`、`%%{init}%%`。
 **開始日の無い最初の作業と、知らないidを指す`after`・`until`**（Mermaidは今日を使う）。
 
 不正: 存在しない日付、開始より前の終わり、`after`・`until`の循環、自分より前に始まる作業を指す`until`、同じid、名前の無い作業、`:`の無い行、題が2つ。
 大きすぎる: 作業129以上、区分65以上、図の長さが3660日（約10年）を超える、9999年12月31日より後まで続く、目盛り65以上（`tickInterval`を細かくしすぎたとき）、目盛りのラベルが64バイトを超える。
 
-Mermaidとの違い（受けるが描き方が違う、または断る）: 週の目盛りは月曜（Mermaidの既定は日曜）。
+#1030: `weekday monday`〜`sunday`で週の目盛りを置く曜日を選べる。`weekend friday`は`excludes weekends`の週末を金・土にする（`weekend saturday`は既定の土・日）。どちらも大文字小文字を区別せず、ほかの語は不正。
+
+Mermaidとの違い（受けるが描き方が違う、または断る）: 週の目盛りは、`weekday`を書かなければ月曜（Mermaidの既定は日曜）。
 指示語（`title`・`section`・`dateFormat`・`excludes`の`weekends`等）は、Mermaidの字句解析と同じく大文字小文字を区別しない（#1002。1.5.0の候補では区別していた）。作業の印（`done`等）はMermaidと同じく書いたとおりに読む。
 日ごとの`tickInterval`は図の最初の日から数える（d3は月の日に揃える）。`%e`は空白で詰めない。自動のid（`after task1`）は知らないidとして未対応。作業の`vert`の印は未対応。
 

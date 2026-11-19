@@ -13,7 +13,9 @@ struct mermaid_gantt_chart
     struct diagram_text sections[mermaid_gantt_section_limit];
     size_t section_count;
     bool weekends;
-    unsigned char weekdays; /* `excludes monday`: bit 0 is Monday, bit 6 Sunday (#1022) */
+    unsigned char weekdays;   /* `excludes monday`: bit 0 is Monday, bit 6 Sunday (#1022) */
+    bool weekend_friday;      /* `weekend friday`: weekends are Friday and Saturday (#1030) */
+    unsigned char week_start; /* `weekday sunday`: the day week marks fall on, 0 Monday (#1030) */
     int32_t excluded[mermaid_gantt_excluded_limit];
     size_t excluded_count;
     struct diagram_text axis_format; /* empty for the default `M/D` */

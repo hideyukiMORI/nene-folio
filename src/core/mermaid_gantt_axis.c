@@ -51,10 +51,12 @@ static struct mermaid_gantt_run month_run(int32_t origin, int32_t months)
     return (struct mermaid_gantt_run){.first = first, .months = months};
 }
 
-static struct mermaid_gantt_run week_run(int32_t origin, int32_t weeks)
+/* Week marks fall on the chart's `weekday` (Monday unless written, #1030). */
+static struct mermaid_gantt_run week_run(const struct mermaid_gantt_chart *_Nonnull chart,
+                                         int32_t weeks)
 {
-    int32_t monday = origin + (7 - diagram_calendar_weekday(origin)) % 7;
-    return (struct mermaid_gantt_run){.first = monday, .step = 7 * weeks};
+    int32_t ahead = (7 + chart->week_start - diagram_calendar_weekday(chart->origin)) % 7;
+    return (struct mermaid_gantt_run){.first = chart->origin + ahead, .step = 7 * weeks};
 }
 
 static size_t mark_count(const struct mermaid_gantt_chart *_Nonnull chart,
@@ -76,7 +78,7 @@ static struct mermaid_gantt_run written_run(const struct mermaid_gantt_chart *_N
     case MERMAID_GANTT_INTERVAL_AUTO:
         break;
     case MERMAID_GANTT_INTERVAL_WEEK:
-        return week_run(chart->origin, chart->interval_count);
+        return week_run(chart, chart->interval_count);
     case MERMAID_GANTT_INTERVAL_MONTH:
         return month_run(chart->origin, chart->interval_count);
     }
@@ -88,8 +90,8 @@ static struct mermaid_gantt_run chosen_run(const struct mermaid_gantt_chart *_No
     if (chart->interval != MERMAID_GANTT_INTERVAL_AUTO)
         return written_run(chart);
     const struct mermaid_gantt_run runs[] = {{.first = chart->origin, .step = 1},
-                                             week_run(chart->origin, 1),
-                                             week_run(chart->origin, 2),
+                                             week_run(chart, 1),
+                                             week_run(chart, 2),
                                              month_run(chart->origin, 1),
                                              month_run(chart->origin, 3)};
     for (size_t at = 0; at < sizeof runs / sizeof runs[0]; ++at)

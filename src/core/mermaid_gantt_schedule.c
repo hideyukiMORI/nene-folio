@@ -9,7 +9,9 @@
 static bool excluded(const struct mermaid_gantt_chart *_Nonnull chart, int32_t day)
 {
     int weekday = diagram_calendar_weekday(day);
-    if ((chart->weekends && weekday >= 5) || ((chart->weekdays >> weekday) & 1U) != 0)
+    int weekend = chart->weekend_friday ? 4 : 5;
+    bool rest_day = chart->weekends && (weekday == weekend || weekday == weekend + 1);
+    if (rest_day || ((chart->weekdays >> weekday) & 1U) != 0)
         return true;
     for (size_t at = 0; at < chart->excluded_count; ++at)
         if (chart->excluded[at] == day)
