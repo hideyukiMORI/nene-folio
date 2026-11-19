@@ -1203,6 +1203,35 @@ static void gantt_schedule(void)
     diagram_model_destroy(model);
 }
 
+/* #1036: marks every k days or weeks fall where d3's `every(k)` puts them, wherever the chart
+ * begins: the weeks counted from the one that holds 1970-01-01, the days by their date in the
+ * month. 2026-11-02 is a Monday in an even week, 2026-11-09 in an odd one. */
+static void expect_marks(const char *_Nonnull source, const char *_Nonnull const *_Nonnull labels,
+                         size_t count)
+{
+    struct diagram_model *model = parsed(source);
+    expect_ticks(model, labels, count);
+    diagram_model_destroy(model);
+}
+
+static void gantt_every(void)
+{
+    static const char *const even[] = {"2026/11/2", "11/16", "11/30"};
+    expect_marks("gantt\ntickInterval 2week\na :2026-11-02, 4w\n", even, 3);
+    static const char *const later[] = {"2026/11/16", "11/30"};
+    expect_marks("gantt\ntickInterval 2week\na :2026-11-09, 3w\n", later, 2);
+    static const char *const third[] = {"2026/11/9", "11/30"};
+    expect_marks("gantt\ntickInterval 3week\na :2026-11-02, 4w\n", third, 2);
+    static const char *const sundays[] = {"2026/11/1", "11/15"};
+    expect_marks("gantt\nweekday sunday\ntickInterval 2week\na :2026-11-01, 2w\n", sundays, 2);
+    static const char *const before[] = {"1950/1/9"};
+    expect_marks("gantt\ntickInterval 2week\na :1950-01-02, 2w\n", before, 1);
+    static const char *const dates[] = {"2026/10/29", "10/31", "11/1", "11/3"};
+    expect_marks("gantt\ntickInterval 2day\na :2026-10-29, 2026-11-04\n", dates, 4);
+    static const char *const first[] = {"2026/11/1"};
+    expect_marks("gantt\ntickInterval 40day\na :2026-10-29, 2026-11-04\n", first, 1);
+}
+
 static void gantt_axis(void)
 {
     struct diagram_model *model = parsed("gantt\na :2026-12-21, 3w\n");
@@ -1214,8 +1243,8 @@ static void gantt_axis(void)
     expect_ticks(model, quarters, 3);
     diagram_model_destroy(model);
     model = parsed("gantt\naxisFormat %-m月%-d日\ntickInterval 2day\na :2026-11-02, 4d\n");
-    static const char *const written[] = {"11月2日", "11月4日", "11月6日"};
-    expect_ticks(model, written, 3);
+    static const char *const written[] = {"11月3日", "11月5日"};
+    expect_ticks(model, written, 2); /* #1036: the odd dates, as d3's every(2) */
     diagram_model_destroy(model);
     /* `%%` starts a Mermaid comment anywhere on a line, so it never reaches axisFormat. */
     model = parsed("gantt\naxisFormat %Y-%m-%d %y %e%% a comment\ntickInterval 1month\n"
@@ -1642,6 +1671,7 @@ static void gantt_tests(void)
     gantt_contract();
     gantt_schedule();
     gantt_axis();
+    gantt_every();
     gantt_rejections();
     gantt_layout();
     gantt_theme_contrast();
