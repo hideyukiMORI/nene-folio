@@ -10,13 +10,16 @@ A frameless Markdown notebook for Windows with a category drawer. Plain C (C23),
 > Windows 10 version 2004 or later is required. Notes and settings use `data/` beside the executable
 > by default; Settings can select another location.
 
-The current source is the **1.5.0 release candidate**, adding a Headings column beside the note body,
-keyboard improvements in the note finder, moving a note to another category from the list, definition
-lists, multi-paragraph footnotes, and Mermaid pie and Gantt charts.
-See the [1.5.0 changes and update instructions](docs/release/1.5.0.md) and
-[candidate verification record](docs/quality/2026-11-19-release-1.5.0.md).
-The 1.5.0 candidate has not been tagged, published on GitHub, or submitted to the Store.
-The latest published GitHub release is [1.4.0 Beta](https://github.com/hideyukiMORI/nene-folio/releases/tag/v1.4.0)
+The latest published GitHub release is [1.5.0 Beta](https://github.com/hideyukiMORI/nene-folio/releases/tag/v1.5.0)
+(November 19), adding a Headings column beside the note body, keyboard improvements in the note finder,
+moving a note to another category from the list, definition lists, multi-paragraph footnotes, and
+Mermaid pie and Gantt charts.
+See the [1.5.0 changes and update instructions](docs/release/1.5.0.md) and the
+[verification and publication record](docs/quality/2026-11-19-release-1.5.0.md).
+The source on `main` is ahead of 1.5.0: it holds changes for the next version that are not in any
+published package, so this README and [docs/MARKDOWN.md](docs/MARKDOWN.md) on `main` may describe more than 1.5.0 does;
+the files at the [`v1.5.0` tag](https://github.com/hideyukiMORI/nene-folio/tree/v1.5.0) match the release.
+The previous release is [1.4.0 Beta](https://github.com/hideyukiMORI/nene-folio/releases/tag/v1.4.0)
 ([changes](docs/release/1.4.0.md), [verification record](docs/quality/2026-11-17-release-1.4.0.md)).
 Package creation, GitHub publication, and Microsoft Store certification are tracked separately.
 The unsigned MSIX is a Store submission artifact, not a portable installer.
@@ -24,6 +27,7 @@ The Store listing is live; the maintainer reported a successful Store update to 
 The maintainer [reported that Store version 1.3.2 is live](https://github.com/hideyukiMORI/nene-folio/issues/789) on November 7.
 The maintainer [reported a successful Store-app update to 1.3.2](https://github.com/hideyukiMORI/nene-folio/issues/793) on November 10.
 The maintainer [submitted the 1.4.0 update to the Store](https://github.com/hideyukiMORI/nene-folio/issues/931) on November 18 and [reported that it passed certification](https://github.com/hideyukiMORI/nene-folio/issues/956) the same day; it was set to publish once certified. The live Store listing and a Store-app update to 1.4.0 have not been confirmed here yet.
+The maintainer [submitted the 1.5.0 update to the Store](https://github.com/hideyukiMORI/nene-folio/issues/1065) on November 19; it is in certification and set to publish once certified. Until then the Store version is 1.4.0.
 
 [Microsoft Store](https://apps.microsoft.com/detail/9PCHS225SWBX)
 · [Portable download and checksums](https://github.com/hideyukiMORI/nene-folio/releases)
