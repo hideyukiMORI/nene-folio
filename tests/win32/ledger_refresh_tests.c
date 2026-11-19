@@ -3,6 +3,8 @@
  * 台帳を書く意図の後でディスクの index.json を読んで、外の変更が消えていないことを確かめる。
  * 窓は作らない。保存先は本物のアダプタで、data/ はこの試験の実行ファイルの隣に閉じる。 */
 #include "appearance_adapter.h"
+#include "category_ledger.h"
+#include "category_name.h"
 #include "clipboard_adapter.h"
 #include "drawer_layout.h"
 #include "drawer_metrics.h"
@@ -135,7 +137,7 @@ static bool file_exists(const struct fixture *_Nonnull fixture, const wchar_t *_
 
 /* ファイル全体を読む。無ければ nullptr。呼び出し側が free する。 */
 static char *_Nullable read_file(const struct fixture *_Nonnull fixture,
-                                 const wchar_t *_Nonnull category, const wchar_t *_Nonnull leaf,
+                                 const wchar_t *_Nullable category, const wchar_t *_Nonnull leaf,
                                  size_t *_Nonnull length)
 {
     wchar_t path[storage_native_capacity];
@@ -486,6 +488,95 @@ static void verify_refusal(struct fixture *_Nonnull fixture)
                 "the next write drops the note deleted outside");
 }
 
+/* categories.json on disk as "name+#RRGGBB/…" ("+" open, "-" closed). */
+static void expect_categories(const struct fixture *_Nonnull fixture, const char *_Nonnull expected,
+                              const char *_Nonnull message)
+{
+    size_t length = 0;
+    char *text = read_file(fixture, nullptr, L"categories.json", &length);
+    require(text != nullptr, "categories.json is on disk");
+    struct category_ledger *ledger = nullptr;
+    require(category_ledger_parse(text, length, &ledger) == CATEGORY_LEDGER_ACCEPTED,
+            "categories.json on disk is a valid ledger");
+    free(text);
+    char order[256] = {0};
+    size_t used = 0;
+    for (size_t index = 0; index < category_ledger_count(ledger); ++index)
+    {
+        char hex[rgb_color_hex_length + 1] = {0};
+        rgb_color_write_hex(category_ledger_color(ledger, index), hex);
+        int written = snprintf(order + used, sizeof order - used, "%s%s%c%s", index == 0 ? "" : "/",
+                               category_ledger_name(ledger, index),
+                               category_ledger_expanded(ledger, index) ? '+' : '-', hex);
+        require(written > 0 && (size_t)written < sizeof order - used, "category text fits");
+        used += (size_t)written;
+    }
+    category_ledger_destroy(ledger);
+    if (strcmp(order, expected) != 0)
+        fprintf(stderr, "categories.json: \"%s\" expected \"%s\"\n", order, expected);
+    require(strcmp(order, expected) == 0, message);
+}
+
+static void make_folder(const struct fixture *_Nonnull fixture, const wchar_t *_Nonnull category)
+{
+    wchar_t folder[storage_native_capacity];
+    compose(fixture, nullptr, category, folder);
+    require(CreateDirectoryW(folder, nullptr) != 0, "outside writer makes a category folder");
+}
+
+/* #1069 stage 5: a category folder made outside is in the categories.json the next toggle
+ * writes, and its notes are listed. */
+static void verify_category_added(struct fixture *_Nonnull fixture)
+{
+    make_folder(fixture, L"later");
+    write_file(fixture, L"later", L"note.md", "# note\n");
+    require(
+        told(fixture, folio_state_toggle_category(fixture->state, category_at(fixture, "other"))) ==
+            FOLIO_STATE_LEDGER_REFRESHED,
+        "other closes, and the fresh list is told once");
+    expect_categories(fixture, "inbox+#3A7BD5/other-#D5803A/later+#7F8FA6",
+                      "the category made outside is in the ledger the toggle writes");
+    struct note_ref listed = {0};
+    require(find_note(fixture, category_at(fixture, "later"), "note", &listed),
+            "the note of the category made outside is listed");
+}
+
+/* categories.json rewritten outside: the order and the other categories' state survive. */
+static void verify_category_rewrite(struct fixture *_Nonnull fixture)
+{
+    write_file(fixture, nullptr, L"categories.json",
+               "{\"version\": 1, \"categories\": ["
+               "{\"name\": \"later\", \"color\": \"#112233\", \"expanded\": true}, "
+               "{\"name\": \"inbox\", \"color\": \"#3A7BD5\", \"expanded\": true}, "
+               "{\"name\": \"other\", \"color\": \"#D5803A\", \"expanded\": true}]}");
+    require(
+        told(fixture, folio_state_recolor_category(fixture->state, category_at(fixture, "inbox"),
+                                                   (struct rgb_color){0x10, 0x20, 0x30})) ==
+            FOLIO_STATE_LEDGER_REFRESHED,
+        "inbox takes its new colour on the order written outside");
+    expect_categories(fixture, "later+#112233/inbox+#102030/other+#D5803A",
+                      "the outside order, colour and opening stay; only inbox's colour changed");
+}
+
+/* A category that gained a note outside is not removed. */
+static void verify_category_remove_refused(struct fixture *_Nonnull fixture)
+{
+    struct category_name *name = nullptr;
+    require(category_name_create("spare", 5, &name) == CATEGORY_NAME_ACCEPTED, "category name");
+    enum folio_state_outcome made =
+        told(fixture, folio_state_create_category(fixture->state, name));
+    category_name_destroy(name);
+    require(made == FOLIO_STATE_READY, "an empty category is made");
+    write_file(fixture, L"spare", L"sneaked.md", "# sneaked\n");
+    require(folio_state_delete_category(fixture->state, category_at(fixture, "spare")) ==
+                FOLIO_STATE_CATEGORY_NOT_EMPTY,
+            "the note put in outside is counted before removing");
+    require(file_exists(fixture, L"spare", L"sneaked.md"), "the note made outside is kept");
+    struct note_ref listed = {0};
+    require(find_note(fixture, category_at(fixture, "spare"), "sneaked", &listed),
+            "and it is listed");
+}
+
 int main(void)
 {
     struct fixture fixture = {0};
@@ -504,6 +595,12 @@ int main(void)
     verify_transfer(&fixture);
     puts("ledger refresh: refusal");
     verify_refusal(&fixture);
+    puts("ledger refresh: category added");
+    verify_category_added(&fixture);
+    puts("ledger refresh: category rewrite");
+    verify_category_rewrite(&fixture);
+    puts("ledger refresh: category remove refused");
+    verify_category_remove_refused(&fixture);
     close_state(&fixture);
     puts("ledger refresh: passed");
     return EXIT_SUCCESS;

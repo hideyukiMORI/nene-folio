@@ -9627,6 +9627,8 @@ static void finish_new_category(struct folio_window *_Nonnull self,
 {
     if (outcome != FOLIO_STATE_READY && outcome != FOLIO_STATE_CATEGORY_LEDGER_STALE)
     {
+        /* a refused intent may have left a list read again (#1069, stage 5): draw it */
+        redraw_drawer(self);
         report_outcome(self, outcome);
         return;
     }
@@ -9825,6 +9827,8 @@ static void delete_category_at(struct folio_window *_Nonnull self, size_t catego
     release_removal_input(self, enabled, focus);
     if (outcome != FOLIO_STATE_READY && outcome != FOLIO_STATE_CATEGORY_LEDGER_STALE)
     {
+        /* a refused intent may have left a list read again (#1069, stage 5): draw it */
+        redraw_drawer(self);
         report_outcome(self, outcome);
         restore_valid_focus(self, focus);
         return;
