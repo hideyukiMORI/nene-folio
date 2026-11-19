@@ -8,6 +8,7 @@
 #include "folio_state.h"
 #include "icon_paint.h"
 #include "modal_owner.h"
+#include "name_list.h"
 #include "name_prompt_metrics.h"
 #include "note_name.h"
 #include "ui_face.h"
@@ -24,6 +25,9 @@ struct name_prompt
     struct folio_state *_Nonnull state;
     enum name_prompt_kind kind;
     size_t target;
+    /* The category being renamed, by name: an intent that is refused may still leave a list read
+     * again, with the category at another place or gone (#1069 / ADR0117, stage 6). */
+    char origin[name_list_max_length + 1];
     enum rename_kind pending_kind;
     const char16_t *_Nonnull units;
     size_t count;
@@ -916,6 +920,11 @@ static enum folio_state_outcome rename_category(struct name_prompt *_Nonnull pro
     case CATEGORY_NAME_OUT_OF_MEMORY:
         return FOLIO_STATE_OUT_OF_MEMORY;
     }
+    if (!folio_state_find_category(prompt->state, prompt->origin, &prompt->target))
+    {
+        category_name_destroy(name);
+        return FOLIO_STATE_LEDGER_CHANGED_OUTSIDE; /* gone from the list read again */
+    }
     struct category_rename_target target = {.category = prompt->target, .name = name};
     enum folio_state_outcome result =
         folio_state_rename_category(prompt->state, &target, prompt->units, prompt->count);
@@ -1525,6 +1534,12 @@ struct name_prompt_result name_prompt_show(HWND _Nonnull owner,
                                  .metrics = metrics,
                                  .outcome = FOLIO_STATE_CANCELLED,
                                  .untitled = FOLIO_UNTITLED_PROTECT};
+    if (request->kind == NAME_PROMPT_RENAME_CATEGORY &&
+        request->target < folio_state_category_count(request->state))
+    {
+        const char *origin = folio_state_category_name(request->state, request->target);
+        memcpy(prompt.origin, origin, strlen(origin) + 1); /* a ledger name fits by its type */
+    }
     /* 面を作る前に palette を写す。子の WM_CTLCOLOR* は作る途中から来て、
      * OS色通知で主窓の実効paletteへ追随する（ADR0057）。 */
     switch (dialog_theme_create(palette, &prompt.theme))

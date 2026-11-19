@@ -1661,8 +1661,12 @@ static void verify_category_pending_follows(void)
     folio_state_destroy(state);
 }
 
+static void verify_rename_refresh(void);
+
+/* The category stage and the rename stage of #1069 (one call from run_state_tests). */
 static void verify_category_refresh(void)
 {
+    verify_rename_refresh();
     verify_category_refresh_adds();
     verify_category_refresh_follows_names();
     verify_category_refresh_refuses();
@@ -1670,6 +1674,133 @@ static void verify_category_refresh(void)
     verify_category_refresh_create_remove();
     verify_category_refresh_keeps_open();
     verify_category_pending_follows();
+}
+
+static struct note_name *_Nonnull accepted_note_name(const char *_Nonnull text);
+static enum folio_state_outcome rename_category_to(struct folio_state *_Nonnull state,
+                                                   size_t category, const char *_Nonnull text);
+
+/* #1069 / ADR0117 stage 6: a rename's record holds the finished ledger, so the ledger is read
+ * again before the plan is made, and once more when the rename is adopted. */
+static void verify_rename_refresh_note(void)
+{
+    char order[160] = {0};
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_set_note_order(state, NOTE_ORDER_MANUAL) == FOLIO_STATE_READY &&
+                folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "one in B is open; rows are shown in the ledger's own order");
+    store_index(
+        &adapter, "B",
+        "{\"version\": 2, \"notes\": [\"three\", \"one\", \"two\"], \"favorites\": [\"two\"]}");
+    folder_add(&adapter, "B", "six");
+    struct note_name *name = accepted_note_name("uno");
+    require(folio_state_rename_note(state, name, u"", 0) == FOLIO_STATE_READY &&
+                adapter.renames == 1 && same_text(adapter.renamed_from, "one"),
+            "the open note is renamed");
+    row_order(state, order, sizeof order);
+    require(strstr(order, "B/three/uno/two/six/") == order &&
+                folio_state_note_favorite(state, at(0, 2)) &&
+                same_text(folio_state_document_name(state), "uno"),
+            "the record's ledger was made from the index written outside: its order, star and "
+            "the note added outside are kept");
+    note_name_destroy(name);
+    folio_state_destroy(state);
+}
+
+/* A rename finished later, by the next intent: what was put in the folder meanwhile is listed. */
+static void verify_rename_refresh_resumed(void)
+{
+    char order[160] = {0};
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "one in B is open");
+    struct note_name *name = accepted_note_name("uno");
+    adapter.rename_outcome = RENAME_PENDING;
+    require(folio_state_rename_note(state, name, u"", 0) == FOLIO_STATE_RENAME_PENDING,
+            "the rename is left unfinished");
+    folder_add(&adapter, "B", "six");
+    adapter.rename_outcome = RENAME_COMPLETED;
+    require(folio_state_store_note(state, u"", 0) == FOLIO_STATE_READY,
+            "the next intent finishes the rename");
+    row_order(state, order, sizeof order);
+    require(strstr(order, "B/uno/two/three/A/") == order &&
+                same_text(folio_state_document_name(state), "uno"),
+            "a rename finished by another intent keeps every place: nothing is read again there");
+    require(folio_state_ledger_outcome(state, folio_state_toggle_favorite(state, at(0, 1))) ==
+                FOLIO_STATE_LEDGER_REFRESHED,
+            "the next intent that writes the ledger reads it again");
+    row_order(state, order, sizeof order);
+    require(strstr(order, "B/two/uno/three/six/") == order,
+            "and the note added outside while the rename waited is listed");
+    note_name_destroy(name);
+    folio_state_destroy(state);
+}
+
+/* A category rename finds its category again by name, and is refused when it is gone. */
+static void verify_rename_refresh_category(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    outside_categories(&adapter, "{\"version\": 1, \"categories\": ["
+                                 "{\"name\": \"A\", \"color\": \"#222222\", \"expanded\": false},"
+                                 "{\"name\": \"C\", \"color\": \"#333333\", \"expanded\": true},"
+                                 "{\"name\": \"B\", \"color\": \"#111111\", \"expanded\": true}]}");
+    require(rename_category_to(state, 0, "Z") == FOLIO_STATE_READY &&
+                same_text(adapter.renamed_from, "B") &&
+                same_text(folio_state_category_name(state, 0), "A") &&
+                same_text(folio_state_category_name(state, 1), "C") &&
+                same_text(folio_state_category_name(state, 2), "Z"),
+            "B (first in memory) is renamed at its place in the order written outside");
+    category_folder_remove(&adapter, "C");
+    size_t renames = adapter.renames;
+    require(rename_category_to(state, 1, "Y") == FOLIO_STATE_LEDGER_CHANGED_OUTSIDE &&
+                adapter.renames == renames && folio_state_category_count(state) == 2,
+            "a category removed outside is not renamed; the list is the fresh one");
+    size_t place = 9;
+    require(folio_state_find_category(state, "Z", &place) && place == 1 &&
+                !folio_state_find_category(state, "C", &place) && place == 1,
+            "a surface that stays open finds its category again by name, or learns it is gone");
+    folio_state_destroy(state);
+}
+
+/* While a rename is unfinished, a waiting note ledger is neither read again nor written: the
+ * names on disk may already be the new ones. */
+static void verify_rename_holds_pending_index(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    adapter.notes_outcome = PERSISTENCE_UNREADABLE;
+    require(folio_state_trash_note(state, at(2, 0), u"x", 1) == FOLIO_STATE_LEDGER_STALE,
+            "C's ledger waits: its index cannot be read again");
+    adapter.rename_outcome = RENAME_PENDING;
+    require(rename_category_to(state, 2, "Z") == FOLIO_STATE_RENAME_PENDING,
+            "C's rename is left unfinished");
+    adapter.notes_outcome = PERSISTENCE_LOADED;
+    size_t writes = adapter.ledger_writes;
+    size_t scans = adapter.note_scans;
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) ==
+                    FOLIO_STATE_RENAME_PENDING &&
+                adapter.ledger_writes == writes && adapter.note_scans == scans,
+            "the waiting ledger is not read under the old name while the rename is unfinished");
+    adapter.rename_outcome = RENAME_COMPLETED;
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
+                same_text(folio_state_category_name(state, 2), "Z") &&
+                adapter.ledger_writes == writes,
+            "the rename is adopted by the next intent, which keeps every place");
+    require(folio_state_select_note(state, 0, 1, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
+                adapter.ledger_writes == writes + 1 && same_text(adapter.ledger_category, "Z"),
+            "and the waiting ledger is then written under the new name");
+    folio_state_destroy(state);
+}
+
+static void verify_rename_refresh(void)
+{
+    verify_rename_refresh_note();
+    verify_rename_refresh_resumed();
+    verify_rename_refresh_category();
+    verify_rename_holds_pending_index();
 }
 
 /* #1069 / ADR0117: a note ledger is read again (index.json and the folder) before it is

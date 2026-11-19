@@ -5,6 +5,7 @@
 #include "appearance_adapter.h"
 #include "category_ledger.h"
 #include "category_name.h"
+#include "category_rename_target.h"
 #include "clipboard_adapter.h"
 #include "drawer_layout.h"
 #include "drawer_metrics.h"
@@ -577,6 +578,52 @@ static void verify_category_remove_refused(struct fixture *_Nonnull fixture)
             "and it is listed");
 }
 
+/* #1069 stage 6: a note rename keeps the order, star and note written outside (the rename's
+ * record holds the finished ledger, made after the ledger is read again). */
+static void verify_note_rename(struct fixture *_Nonnull fixture)
+{
+    struct note_ref alpha = note_at(fixture, "inbox", "alpha");
+    /* The draft left by the name-taken stage is dropped. */
+    require(folio_state_select_note(fixture->state, alpha.category, alpha.note,
+                                    FOLIO_UNTITLED_DISCARD) == FOLIO_STATE_READY,
+            "alpha is open");
+    write_file(fixture, L"inbox", L"index.json",
+               "{\"version\": 2, \"notes\": [\"outside5\", \"taken\", \"outside4\", \"outside3\", "
+               "\"fresh\", \"alpha\", \"outside1\"], \"favorites\": [\"alpha\"]}");
+    write_file(fixture, L"inbox", L"outside7.md", "# outside 7\n");
+    struct note_name *name = nullptr;
+    require(note_name_create("renamed", 7, &name) == NOTE_NAME_ACCEPTED, "new name");
+    enum folio_state_outcome outcome = folio_state_rename_note(fixture->state, name, u"", 0);
+    note_name_destroy(name);
+    require(outcome == FOLIO_STATE_READY, "alpha is renamed");
+    require(file_exists(fixture, L"inbox", L"renamed.md") &&
+                !file_exists(fixture, L"inbox", L"alpha.md"),
+            "the file carries the new name");
+    expect_disk(fixture, L"inbox",
+                "outside5/taken/outside4/outside3/fresh/renamed*/outside1/outside7",
+                "the rename keeps the order and star written outside and the note added outside");
+}
+
+/* A category rename keeps a category folder made outside. */
+static void verify_category_rename(struct fixture *_Nonnull fixture)
+{
+    make_folder(fixture, L"extra");
+    struct category_name *name = nullptr;
+    require(category_name_create("others", 6, &name) == CATEGORY_NAME_ACCEPTED, "category name");
+    struct category_rename_target target = {.category = category_at(fixture, "other"),
+                                            .name = name};
+    enum folio_state_outcome outcome = folio_state_rename_category(fixture->state, &target, u"", 0);
+    category_name_destroy(name);
+    require(outcome == FOLIO_STATE_READY, "other is renamed");
+    require(file_exists(fixture, L"others", L"delta.md") &&
+                !file_exists(fixture, L"other", L"delta.md"),
+            "the folder carries the new name");
+    expect_categories(fixture,
+                      "later+#112233/inbox+#102030/others+#D5803A/spare+#7F8FA6/extra+#7F8FA6",
+                      "the rename keeps the category made outside");
+    require(folio_state_category_count(fixture->state) == 5, "and it is listed");
+}
+
 int main(void)
 {
     struct fixture fixture = {0};
@@ -601,6 +648,10 @@ int main(void)
     verify_category_rewrite(&fixture);
     puts("ledger refresh: category remove refused");
     verify_category_remove_refused(&fixture);
+    puts("ledger refresh: note rename");
+    verify_note_rename(&fixture);
+    puts("ledger refresh: category rename");
+    verify_category_rename(&fixture);
     close_state(&fixture);
     puts("ledger refresh: passed");
     return EXIT_SUCCESS;
