@@ -10295,6 +10295,46 @@ static void text_menu_edit_here(struct folio_window *_Nonnull window,
     action(window, ACCESSIBLE_VIEW);
 }
 
+/* #1052: the reading view's menu is as wide as its longest row, up to a ceiling (360 at 96
+ * DPI) past which text would be cut. In every language its rows stay under that ceiling. */
+static void text_menu_languages(struct native_fixture *_Nonnull fixture)
+{
+    /* Japanese is the language of text_menu_visual above. */
+    const enum folio_language languages[] = {FOLIO_LANGUAGE_EN, FOLIO_LANGUAGE_ZH_HANS};
+    const char *const names[] = {"en", "zh"};
+    for (size_t at = 0; at < 2; ++at)
+    {
+        require(folio_state_set_language(fixture->state, languages[at]) == FOLIO_STATE_READY,
+                "menu language");
+        folio_state_set_layout_mode(fixture->state, FOLIO_LAYOUT_NOTE);
+        struct folio_window *window = nullptr;
+        require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY,
+                                    &window) == FOLIO_WINDOW_CREATED,
+                "menu language window");
+        HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+        require(SetWindowPos(root, nullptr, 20, 20, 760, 520, SWP_NOZORDER | SWP_NOACTIVATE),
+                "menu language window size");
+        pump(window);
+        text_menu_open(window, folio_window_accessible_window(window, ACCESSIBLE_BODY));
+        struct accessible_view row = text_menu_row(window, 1);
+        int width = row.bounds.right - row.bounds.left;
+        int ceiling = MulDiv(360, (int)GetDpiForWindow(root), 96);
+        printf("text menu %s: rows %d wide, ceiling %d\n", names[at], width, ceiling);
+        fflush(stdout);
+        require(row.set_size == 4 && width > 0 && width < ceiling - 4,
+                "the reading view's menu is under its ceiling in this language");
+        char path[64];
+        require(snprintf(path, sizeof path, "text-menu-view-%s.bmp", names[at]) > 0, "path");
+        tags_capture(root, path);
+        SendMessageW(root, WM_KEYDOWN, VK_ESCAPE, 0);
+        pump(window);
+        folio_window_destroy(window);
+        folio_state_set_layout_mode(fixture->state, FOLIO_LAYOUT_BOTH);
+    }
+    require(folio_state_set_language(fixture->state, FOLIO_LANGUAGE_JA) == FOLIO_STATE_READY,
+            "back to Japanese");
+}
+
 static void text_menu_visual(struct native_fixture *_Nonnull fixture)
 {
     const char *const looks[] = {"light", "dark"};
@@ -11177,6 +11217,12 @@ static void outline_column(struct native_fixture *_Nonnull fixture)
     favorite_high_contrast = false;
 }
 
+static void text_menu_cases(struct native_fixture *_Nonnull fixture)
+{
+    text_menu_visual(fixture);
+    text_menu_languages(fixture);
+}
+
 static void run_window_or_footnote(struct native_fixture *_Nonnull fixture)
 {
     if (window_place_case)
@@ -11196,7 +11242,7 @@ static void run_code_copy_case(struct native_fixture *_Nonnull fixture)
             "select the dedicated code note");
     if (text_menu_case)
     {
-        text_menu_visual(fixture);
+        text_menu_cases(fixture);
         return;
     }
     if (window_place_case || footnote_jump_case || definition_list_case || outline_case)
