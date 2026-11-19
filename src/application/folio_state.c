@@ -213,6 +213,7 @@ static bool discovery_uses_body(const struct folio_state *_Nonnull state);
 static void discovery_fresh_pass(struct folio_state *_Nonnull state);
 static bool discovery_source_reused(const struct folio_state *_Nonnull state, struct note_ref ref);
 static void invalidate_corpus_dependents(struct folio_state *_Nonnull state);
+static void fresh_tag_corpus(struct folio_state *_Nonnull state);
 static bool holds_category(const struct folio_state *_Nonnull state, size_t category);
 static struct drawer_cursor first_stop_in(const struct folio_state *_Nonnull state,
                                           size_t category);
@@ -1549,8 +1550,8 @@ static bool follow_note(const struct note_ledger *_Nonnull old,
 /* The fresh ledger takes the old one's place. What pointed at a note by its place (the open
  * note, the cursor) follows the note by its name; a cursor whose note is gone settles on its
  * category. */
-static enum folio_state_outcome adopt_notes(struct folio_state *_Nonnull state, size_t category,
-                                            struct note_ledger *_Nonnull fresh)
+static void adopt_notes(struct folio_state *_Nonnull state, size_t category,
+                        struct note_ledger *_Nonnull fresh)
 {
     struct note_ledger *old = state->notes[category];
     if (state->document == FOLIO_DOCUMENT_NAMED && state->selected_category == category)
@@ -1563,8 +1564,11 @@ static enum folio_state_outcome adopt_notes(struct folio_state *_Nonnull state, 
     note_ledger_destroy(old);
     state->ledger_notice = true;
     index_changed(state);
+    /* The bodies read for searching belong to the old places, and a note added outside has
+     * none yet: read them all again, and let the filter and the tag list be made again from
+     * that pass (review of #1069). Nothing is allocated here, so adopting cannot fail. */
+    fresh_tag_corpus(state);
     settle_cursor(state);
-    return refresh_filter(state);
 }
 
 /* Before a note ledger is written: read the category's index.json and folder again, as at
@@ -1590,22 +1594,25 @@ static enum folio_state_outcome refresh_notes(struct folio_state *_Nonnull state
     }
     bool found = follow_note(old, fresh, first);
     found = follow_note(old, fresh, second) && found;
-    outcome = adopt_notes(state, category, fresh);
-    if (outcome != FOLIO_STATE_READY)
-        return outcome;
+    adopt_notes(state, category, fresh);
     return found ? FOLIO_STATE_READY : FOLIO_STATE_LEDGER_CHANGED_OUTSIDE;
 }
 
-bool folio_state_take_ledger_notice(struct folio_state *_Nonnull state)
+/* The one place that turns "the list was read again" into what the user is told: an intent
+ * that went through becomes LEDGER_REFRESHED, any other outcome stays. Reading takes the
+ * notice, so it is told once. */
+enum folio_state_outcome folio_state_ledger_outcome(struct folio_state *_Nonnull state,
+                                                    enum folio_state_outcome outcome)
 {
     bool noticed = state->ledger_notice;
     state->ledger_notice = false;
-    return noticed;
+    return noticed && outcome == FOLIO_STATE_READY ? FOLIO_STATE_LEDGER_REFRESHED : outcome;
 }
 
 enum folio_state_outcome folio_state_toggle_favorite(struct folio_state *_Nonnull state,
                                                      struct note_ref ref)
 {
+    state->ledger_notice = false; /* a notice is this intent's own, never an earlier one's */
     enum folio_state_outcome outcome = synchronize(state);
     if (outcome != FOLIO_STATE_READY)
         return outcome;
@@ -2126,10 +2133,14 @@ static enum folio_state_outcome reorder_note(struct folio_state *_Nonnull state,
     size_t count = note_ledger_count(state->notes[category]);
     if (from >= count || to >= count)
     {
-        return favorites_lead(state, category) ? FOLIO_STATE_ORDERED : FOLIO_STATE_NO_SUCH_NOTE;
+        return FOLIO_STATE_NO_SUCH_NOTE;
     }
-    /* #1069: both the moved note and the note it is dropped on are found again by name, and
-     * whether stars forbid the move is asked of the fresh ledger, not of the one in memory. */
+    if (from == to)
+    {
+        return FOLIO_STATE_READY; /* nothing to write, so nothing is read again */
+    }
+    /* #1069: both the moved note and the note it is dropped on are found again by name. Stars
+     * that came from outside forbid the move as stars in memory do (the caller asked those). */
     enum folio_state_outcome refreshed = refresh_notes(state, category, &from, &to);
     if (refreshed != FOLIO_STATE_READY)
     {
@@ -2311,6 +2322,7 @@ static enum folio_state_outcome transfer_note(struct folio_state *_Nonnull state
 enum folio_state_outcome folio_state_move_note(struct folio_state *_Nonnull state,
                                                struct note_ref from, struct note_ref to)
 {
+    state->ledger_notice = false;
     if (folio_state_filtering(state))
     {
         return FOLIO_STATE_FILTERED;
@@ -2326,12 +2338,14 @@ enum folio_state_outcome folio_state_move_note(struct folio_state *_Nonnull stat
     {
         return FOLIO_STATE_NO_SUCH_CATEGORY;
     }
+    /* Asked of the ledgers in memory, as before, and before anything is read: under stars the
+     * drop's place is a place of the shown order, not of the ledger. */
+    if (favorites_lead(state, from.category) || favorites_lead(state, to.category))
+        return FOLIO_STATE_ORDERED;
     if (from.category == to.category)
     {
         return reorder_note(state, from.category, from.note, to.note);
     }
-    if (favorites_lead(state, from.category) || favorites_lead(state, to.category))
-        return FOLIO_STATE_ORDERED;
     return transfer_note(state, from, to);
 }
 

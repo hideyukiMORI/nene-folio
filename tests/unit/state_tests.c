@@ -1214,13 +1214,19 @@ static void verify_move_category(void)
 static const char *const with_four[] = {"two", "one", "three", "four"};
 static const char *const without_two[] = {"one", "three"};
 
+/* Whether the intent just made read the list again and took it; asking takes the notice. */
+static bool ledger_noticed(struct folio_state *_Nonnull state)
+{
+    return folio_state_ledger_outcome(state, FOLIO_STATE_READY) == FOLIO_STATE_LEDGER_REFRESHED;
+}
+
 static void verify_refresh_adds(void)
 {
     char order[128] = {0};
     struct persistence_adapter adapter = healthy_adapter();
     struct folio_state *state = ready_state(&adapter);
     require(folio_state_toggle_favorite(state, at(0, 0)) == FOLIO_STATE_READY &&
-                !folio_state_take_ledger_notice(state),
+                !ledger_noticed(state),
             "nothing changed outside: no notice");
     adapter.scanned_notes = with_four;
     adapter.scanned_note_count = 4;
@@ -1229,14 +1235,12 @@ static void verify_refresh_adds(void)
                 same_text(adapter.ledger_order, "one/two/three/four") &&
                 adapter.written_favorite_count == 2,
             "a note added outside is in the ledger this write stores, with the stars kept");
-    require(folio_state_take_ledger_notice(state) && !folio_state_take_ledger_notice(state),
-            "the list read again is told once");
+    require(ledger_noticed(state) && !ledger_noticed(state), "the list read again is told once");
     row_order(state, order, sizeof order);
     require(same_text(order, "B/one/two/three/four/A/C/one/two/three"),
             "only the category that was written was read again");
     require(folio_state_move_note(state, at(2, 2), at(2, 0)) == FOLIO_STATE_READY &&
-                same_text(adapter.ledger_order, "three/one/two/four") &&
-                folio_state_take_ledger_notice(state),
+                same_text(adapter.ledger_order, "three/one/two/four") && ledger_noticed(state),
             "a reorder is applied to the fresh ledger of its own category");
     folio_state_destroy(state);
 }
@@ -1283,7 +1287,7 @@ static void verify_refresh_refuses(void)
     adapter.scanned_notes = without_two;
     adapter.scanned_note_count = 2;
     require(folio_state_toggle_favorite(state, at(0, 1)) == FOLIO_STATE_LEDGER_CHANGED_OUTSIDE &&
-                adapter.ledger_writes == 0 && folio_state_take_ledger_notice(state),
+                adapter.ledger_writes == 0 && ledger_noticed(state),
             "a star for a note that is gone writes nothing");
     row_order(state, order, sizeof order);
     require(same_text(order, "B/one/three/A/C/one/two/three"), "the list shows what is there");
@@ -1324,7 +1328,7 @@ static void verify_refresh_unreadable(void)
     store_index(&adapter, "B",
                 "{\"version\": 2, \"notes\": [\"one\", \"one\"], \"favorites\": []}");
     require(folio_state_toggle_favorite(state, at(0, 0)) == FOLIO_STATE_LEDGER_MALFORMED &&
-                adapter.ledger_writes == 0 && !folio_state_take_ledger_notice(state),
+                adapter.ledger_writes == 0 && !ledger_noticed(state),
             "a malformed index is reported, not replaced by the one in memory");
     folio_state_destroy(state);
 }
@@ -1349,6 +1353,71 @@ static void verify_refresh_keeps_open(void)
             "the open note is kept where the index lists it, still open, and three has the star "
             "(shown first: stars lead)");
     folio_state_destroy(state);
+}
+
+static enum folio_state_outcome finish_test_index_filter(struct folio_state *_Nonnull state);
+
+/* Review of #1069: a note added outside is searched by its body too (the bodies are read again
+ * after the list was taken), and the cursor follows its note by name. */
+static void verify_refresh_search_and_cursor(void)
+{
+    char order[160] = {0};
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_focus_cursor(state, FOLIO_CURSOR_NOTE, at(0, 2)) == FOLIO_STATE_READY,
+            "the cursor is on three");
+    store_index(&adapter, "B",
+                "{\"version\": 2, \"notes\": [\"three\", \"one\", \"two\"], \"favorites\": []}");
+    require(folio_state_toggle_favorite(state, at(0, 1)) == FOLIO_STATE_READY, "a star for two");
+    enum folio_cursor_kind kind = FOLIO_CURSOR_CATEGORY;
+    struct note_ref cursor = at(9, 9);
+    require(folio_state_cursor(state, &kind, &cursor) && kind == FOLIO_CURSOR_NOTE &&
+                cursor.category == 0 && cursor.note == 0,
+            "the cursor is still on three, now first in the ledger");
+    require(test_index_filter_complete(state, u"body", 4) == FOLIO_STATE_READY,
+            "every note's body holds the word");
+    adapter.scanned_notes = with_four;
+    adapter.scanned_note_count = 4;
+    require(folio_state_toggle_favorite(state, at(0, 0)) == FOLIO_STATE_READY &&
+                ledger_noticed(state),
+            "a star with the filter on takes the list with four");
+    require(finish_test_index_filter(state) == FOLIO_STATE_READY, "the bodies are read again");
+    row_order(state, order, sizeof order);
+    require(strstr(order, "four") != nullptr,
+            "the note added outside matches by its body, not only by its name");
+    folio_state_destroy(state);
+}
+
+/* The allocations of reading a list again, with the open note kept and a changed list taken:
+ * a failure anywhere leaves a state that works, and nothing was written before the list was
+ * read. Under the plain build no allocation fails and the first round goes through. */
+static void verify_refresh_allocation(void)
+{
+    for (size_t nth = 1; nth < 64; ++nth)
+    {
+        struct persistence_adapter adapter = healthy_adapter();
+        struct folio_state *state = ready_state(&adapter);
+        require(folio_state_select_note(state, 0, 1, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+                "two is open");
+        adapter.scanned_notes = with_four;
+        adapter.scanned_note_count = 4;
+        store_index(&adapter, "B", "{\"version\": 2, \"notes\": [\"one\"], \"favorites\": []}");
+        allocation_probe_fail_at(nth);
+        enum folio_state_outcome outcome = folio_state_toggle_favorite(state, at(0, 0));
+        allocation_probe_fail_at(0);
+        require(outcome == FOLIO_STATE_READY || outcome == FOLIO_STATE_OUT_OF_MEMORY,
+                "a refresh under the probe goes through or reports memory");
+        require(outcome == FOLIO_STATE_READY || adapter.ledger_writes == 0,
+                "a refresh that failed wrote nothing");
+        (void)ledger_noticed(state);
+        require(folio_state_toggle_favorite(state, at(0, 0)) == FOLIO_STATE_READY &&
+                    same_text(folio_state_document_name(state), "two"),
+                "the state works afterwards and the open note is the same");
+        folio_state_destroy(state);
+        if (outcome == FOLIO_STATE_READY)
+            return;
+    }
+    require(false, "the refresh went through within the probed allocations");
 }
 
 static void verify_move_note(void)
@@ -6032,6 +6101,8 @@ void run_state_tests(void)
     verify_refresh_refuses();
     verify_refresh_unreadable();
     verify_refresh_keeps_open();
+    verify_refresh_search_and_cursor();
+    verify_refresh_allocation();
     verify_move_selection();
     verify_move_to_category();
     verify_transfer_note();

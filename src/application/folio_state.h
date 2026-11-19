@@ -697,9 +697,11 @@ folio_state_recolor_availability(const struct folio_state *_Nonnull state, size_
 [[nodiscard]] size_t folio_state_favorite_count(const struct folio_state *_Nonnull state);
 [[nodiscard]] enum folio_state_outcome
 folio_state_toggle_favorite(struct folio_state *_Nonnull state, struct note_ref ref);
-/* #1069 / ADR0117: 台帳を書く意図が、書く前に読み直した一覧をメモリへ採用したか。
- * 読むと消える（1回だけ知らせる）。意図が断られたときも、採用していれば true。 */
-[[nodiscard]] bool folio_state_take_ledger_notice(struct folio_state *_Nonnull state);
+/* #1069 / ADR0117: 台帳を書く意図の結果を、利用者へ伝える結果に直す唯一の場所。意図が、書く前に
+ * 読み直した一覧をメモリへ採用していて、結果が READY なら LEDGER_REFRESHED。ほかの結果はそのまま。
+ * 読むと知らせは消える（1回だけ伝える）。台帳を書く意図を呼んだ直後に、必ず1回通す。 */
+[[nodiscard]] enum folio_state_outcome
+folio_state_ledger_outcome(struct folio_state *_Nonnull state, enum folio_state_outcome outcome);
 [[nodiscard]] enum note_scope folio_state_note_scope(const struct folio_state *_Nonnull state);
 void folio_state_set_note_scope(struct folio_state *_Nonnull state, enum note_scope scope);
 [[nodiscard]] enum note_order folio_state_note_order(const struct folio_state *_Nonnull state);

@@ -24,7 +24,7 @@ enum folio_state_outcome : unsigned char
      * written. */
     FOLIO_STATE_LEDGER_CHANGED_OUTSIDE,
     /* Not a failure: the list was read again, differed, and the operation went through on the
-     * fresh one. Only ever a notice (folio_state_take_ledger_notice), never an intent's result. */
+     * fresh one. Only ever a notice (folio_state_ledger_outcome), never an intent's result. */
     FOLIO_STATE_LEDGER_REFRESHED,
     FOLIO_STATE_CLIPBOARD_BUSY,        /* ほかのプログラムがクリップボードを開いている */
     FOLIO_STATE_CLIPBOARD_UNAVAILABLE, /* クリップボードへ書けなかった。本文も選択も変えていない */

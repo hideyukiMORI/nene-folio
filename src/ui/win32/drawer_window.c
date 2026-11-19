@@ -863,11 +863,12 @@ static void apply_drop(struct drawer_window *_Nonnull self, struct drawer_row so
             (struct note_ref){.category = target.category, .note = target.index});
         break;
     }
+    /* #1069 / ADR0117: the list may have been read again before the write. A drop that went
+     * through then says so in a line, and the list is drawn again whatever the outcome: a
+     * refused drop may have left a fresh list too. */
+    outcome = folio_state_ledger_outcome(self->state, outcome);
     if (outcome != FOLIO_STATE_READY)
-    {
         SendMessageW(GetParent(self->handle), folio_message_report_outcome, (WPARAM)outcome, 0);
-        return;
-    }
     InvalidateRect(self->handle, nullptr, FALSE);
     /* 右ペインの頭のカテゴリ番号が変わりうる。本文は編集中でも触らない（ADR 0007 の決定 7）。 */
     InvalidateRect(GetParent(self->handle), nullptr, FALSE);
