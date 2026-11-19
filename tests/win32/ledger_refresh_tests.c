@@ -69,10 +69,17 @@ static void remove_entry(const wchar_t *_Nonnull folder, const WIN32_FIND_DATAW 
     wchar_t path[storage_native_capacity];
     require(swprintf_s(path, storage_native_capacity, L"%ls\\%ls", folder, entry->cFileName) > 0,
             "tree entry path");
-    if ((entry->dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0)
+    /* A junction or link is removed as itself, never followed (independent review of #1085). */
+    if ((entry->dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0 &&
+        (entry->dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) == 0)
     {
         remove_tree(path);
         require(RemoveDirectoryW(path) != 0, "remove a folder left by the previous run");
+        return;
+    }
+    if ((entry->dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0)
+    {
+        require(RemoveDirectoryW(path) != 0, "remove a folder link left by the previous run");
         return;
     }
     (void)SetFileAttributesW(path, FILE_ATTRIBUTE_NORMAL);

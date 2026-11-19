@@ -3200,8 +3200,11 @@ static enum folio_state_outcome unpublished(enum folio_state_outcome prepared,
 static void show_taken(struct folio_state *_Nonnull state, size_t category,
                        enum persistence_outcome stored)
 {
-    if (stored == PERSISTENCE_NAME_TAKEN)
-        (void)refresh_notes(state, category, nullptr, nullptr);
+    if (stored != PERSISTENCE_NAME_TAKEN)
+        return;
+    enum folio_state_outcome shown = refresh_notes(state, category, nullptr, nullptr);
+    if (shown != FOLIO_STATE_READY)
+        return; /* the refusal is what the user is told; the list stays the one in memory */
 }
 
 /* First save and import share publication and ledger ownership. Caller prepared the ledger. */
