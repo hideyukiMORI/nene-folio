@@ -14,6 +14,7 @@ struct mermaid_gantt_chart
     size_t section_count;
     bool weekends;
     unsigned char weekdays;   /* `excludes monday`: bit 0 is Monday, bit 6 Sunday (#1022) */
+    bool inclusive_ends;      /* `inclusiveEndDates`: a written end date is the last day (#1032) */
     bool weekend_friday;      /* `weekend friday`: weekends are Friday and Saturday (#1030) */
     unsigned char week_start; /* `weekday sunday`: the day week marks fall on, 0 Monday (#1030) */
     int32_t excluded[mermaid_gantt_excluded_limit];
