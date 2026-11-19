@@ -59,6 +59,13 @@ struct persistence_adapter
     size_t stored_count;
     struct stored_folder folders[8];
     size_t folder_count;
+    /* #1069 stage 5: categories.json as last written (read back from then on) and the data
+     * folder's category folders once the product changed them, as on a real disk. */
+    char categories_store[1024];
+    bool categories_stored;
+    char category_folders[8][64];
+    size_t category_folder_count;
+    bool category_folders_owned;
     bool times_ready;
     const char *_Nullable updated_time;
     size_t times_reads;
@@ -215,7 +222,56 @@ static enum persistence_outcome fake_scan_categories(struct persistence_adapter 
     {
         return adapter->scan_outcome;
     }
-    return list_names(adapter->scanned_categories, adapter->scanned_category_count, out);
+    if (!adapter->category_folders_owned)
+        return list_names(adapter->scanned_categories, adapter->scanned_category_count, out);
+    const char *names[8] = {nullptr};
+    for (size_t at = 0; at < adapter->category_folder_count; ++at)
+        names[at] = adapter->category_folders[at];
+    return list_names(names, adapter->category_folder_count, out);
+}
+
+static void copy_name(char *_Nonnull out, size_t capacity, const char *_Nonnull name);
+
+/* From the product's first change to the category folders, the fake holds them (#1069). */
+static void own_category_folders(struct persistence_adapter *_Nonnull adapter)
+{
+    if (adapter->category_folders_owned)
+        return;
+    require(adapter->scanned_category_count <= 8, "category folders fit the fake");
+    for (size_t at = 0; at < adapter->scanned_category_count; ++at)
+        copy_name(adapter->category_folders[at], sizeof adapter->category_folders[at],
+                  adapter->scanned_categories[at]);
+    adapter->category_folder_count = adapter->scanned_category_count;
+    adapter->category_folders_owned = true;
+}
+
+static void category_folder_add(struct persistence_adapter *_Nonnull adapter,
+                                const char *_Nonnull category)
+{
+    own_category_folders(adapter);
+    for (size_t at = 0; at < adapter->category_folder_count; ++at)
+        if (strcmp(adapter->category_folders[at], category) == 0)
+            return;
+    require(adapter->category_folder_count < 8, "a new category folder fits the fake");
+    copy_name(adapter->category_folders[adapter->category_folder_count],
+              sizeof adapter->category_folders[0], category);
+    adapter->category_folder_count += 1;
+}
+
+static void category_folder_remove(struct persistence_adapter *_Nonnull adapter,
+                                   const char *_Nonnull category)
+{
+    own_category_folders(adapter);
+    for (size_t at = 0; at < adapter->category_folder_count; ++at)
+    {
+        if (strcmp(adapter->category_folders[at], category) != 0)
+            continue;
+        for (size_t next = at + 1; next < adapter->category_folder_count; ++next)
+            memcpy(adapter->category_folders[next - 1], adapter->category_folders[next],
+                   sizeof adapter->category_folders[0]);
+        adapter->category_folder_count -= 1;
+        return;
+    }
 }
 
 /* 別の索引を持たせたカテゴリか（別カテゴリへの移動を試すために要る）。 */
@@ -354,8 +410,9 @@ fake_read_category_ledger(struct persistence_adapter *_Nonnull adapter,
     {
         return adapter->categories_outcome;
     }
-    enum category_ledger_outcome parsed =
-        category_ledger_parse(adapter->categories_text, strlen(adapter->categories_text), out);
+    const char *_Nonnull text =
+        adapter->categories_stored ? adapter->categories_store : adapter->categories_text;
+    enum category_ledger_outcome parsed = category_ledger_parse(text, strlen(text), out);
     if (parsed == CATEGORY_LEDGER_ACCEPTED)
     {
         return PERSISTENCE_LOADED;
@@ -452,6 +509,28 @@ static enum persistence_outcome fake_read_note_ledger(struct persistence_adapter
     return parsed == NOTE_LEDGER_OUT_OF_MEMORY ? PERSISTENCE_OUT_OF_MEMORY : PERSISTENCE_MALFORMED;
 }
 
+/* categories.json as the real adapter writes it: what the next read returns (#1069 stage 5). */
+static void store_categories(struct persistence_adapter *_Nonnull adapter,
+                             const struct category_ledger *_Nonnull ledger)
+{
+    char text[sizeof adapter->categories_store] = "{\"version\": 1, \"categories\": [";
+    for (size_t index = 0; index < category_ledger_count(ledger); ++index)
+    {
+        char hex[rgb_color_hex_length + 1] = {0};
+        rgb_color_write_hex(category_ledger_color(ledger, index), hex);
+        append_text(text, sizeof text, index == 0 ? "{\"name\": \"" : ", {\"name\": \"");
+        append_text(text, sizeof text, category_ledger_name(ledger, index));
+        append_text(text, sizeof text, "\", \"color\": \"");
+        append_text(text, sizeof text, hex);
+        append_text(text, sizeof text,
+                    category_ledger_expanded(ledger, index) ? "\", \"expanded\": true}"
+                                                            : "\", \"expanded\": false}");
+    }
+    append_text(text, sizeof text, "]}");
+    memcpy(adapter->categories_store, text, strlen(text) + 1);
+    adapter->categories_stored = true;
+}
+
 static enum persistence_outcome
 fake_write_category_ledger(struct persistence_adapter *_Nonnull adapter,
                            const struct category_ledger *_Nonnull ledger)
@@ -461,6 +540,7 @@ fake_write_category_ledger(struct persistence_adapter *_Nonnull adapter,
     {
         return adapter->write_outcome;
     }
+    store_categories(adapter, ledger);
     adapter->written_count = category_ledger_count(ledger);
     size_t position = 0;
     adapter->written_names[0] = '\0';
@@ -654,6 +734,9 @@ fake_remove_category(struct persistence_adapter *_Nonnull adapter, const char *_
     record_call(adapter, "remove_category");
     require(strlen(category) < sizeof adapter->removed_category, "removed category fits");
     memcpy(adapter->removed_category, category, strlen(category) + 1);
+    if (adapter->category_remove_outcome == CATEGORY_REMOVE_REMOVED ||
+        adapter->category_remove_outcome == CATEGORY_REMOVE_ABSENT)
+        category_folder_remove(adapter, category);
     return adapter->category_remove_outcome;
 }
 
@@ -699,6 +782,7 @@ static enum persistence_outcome fake_create_category(struct persistence_adapter 
     if (adapter->category_create_outcome == PERSISTENCE_STORED)
     {
         /* A folder just made is empty and has no index, whatever the fixed lists say (#1069). */
+        category_folder_add(adapter, category);
         struct stored_folder *made = folder_of(adapter, category);
         made->count = 0;
         made->seed = nullptr;
@@ -792,6 +876,10 @@ static void complete_rename(struct persistence_adapter *_Nonnull adapter,
         rekey(adapter->folders[at].category, sizeof adapter->folders[at].category, plan);
     for (size_t at = 0; at < adapter->stored_count; ++at)
         rekey(adapter->stored[at].category, sizeof adapter->stored[at].category, plan);
+    own_category_folders(adapter);
+    for (size_t at = 0; at < adapter->category_folder_count; ++at)
+        rekey(adapter->category_folders[at], sizeof adapter->category_folders[at], plan);
+    store_categories(adapter, rename_plan_category_ledger(plan));
 }
 
 /* 偽の改名。どの段階で止めるかは rename_outcome が決める（ADR 0022）。
@@ -1371,6 +1459,162 @@ static void verify_move_category(void)
     adapter.write_outcome = PERSISTENCE_OUT_OF_MEMORY;
     require(folio_state_move_category(state, 0, 1) == FOLIO_STATE_OUT_OF_MEMORY, "move oom");
     folio_state_destroy(state);
+}
+
+/* #1069 / ADR0117 stage 5: categories.json is read again with the data folder before it is
+ * written. A test edits categories.json (`outside_categories`) or the folders
+ * (`category_folder_add` / `_remove`) between intents, as a tool outside the app would. */
+static struct category_name *_Nonnull accepted_category_name(const char *_Nonnull text);
+
+static bool ledger_noticed(struct folio_state *_Nonnull state);
+
+static void outside_categories(struct persistence_adapter *_Nonnull adapter,
+                               const char *_Nonnull text)
+{
+    require(strlen(text) < sizeof adapter->categories_store, "outside categories fit the fake");
+    memcpy(adapter->categories_store, text, strlen(text) + 1);
+    adapter->categories_stored = true;
+}
+
+static void verify_category_refresh_adds(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_toggle_category(state, 0) == FOLIO_STATE_READY && !ledger_noticed(state),
+            "nothing changed outside: no notice");
+    category_folder_add(&adapter, "D");
+    require(folio_state_ledger_outcome(state, folio_state_toggle_category(state, 1)) ==
+                    FOLIO_STATE_LEDGER_REFRESHED &&
+                adapter.writes == 2 && same_text(adapter.written_names, "B/A/C/D") &&
+                adapter.written_expanded[1],
+            "A opens, and the category made outside is in the ledger written");
+    require(folio_state_category_count(state) == 4 &&
+                same_text(folio_state_category_name(state, 3), "D"),
+            "the category made outside is listed");
+    folio_state_destroy(state);
+}
+
+/* categories.json rewritten outside: the operation finds its category again by name. */
+static void verify_category_refresh_follows_names(void)
+{
+    char order[160] = {0};
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    outside_categories(&adapter, "{\"version\": 1, \"categories\": ["
+                                 "{\"name\": \"A\", \"color\": \"#222222\", \"expanded\": false},"
+                                 "{\"name\": \"C\", \"color\": \"#333333\", \"expanded\": true},"
+                                 "{\"name\": \"B\", \"color\": \"#111111\", \"expanded\": true}]}");
+    require(folio_state_toggle_category(state, 0) == FOLIO_STATE_READY &&
+                same_text(adapter.written_names, "A/C/B") && !adapter.written_expanded[2] &&
+                adapter.written_expanded[1],
+            "B (first in memory) is closed at its new place, the outside order stays");
+    row_order(state, order, sizeof order);
+    require(same_text(order, "A/C/one/two/three/B"), "the notes travel with their category");
+    require(folio_state_move_category(state, 2, 0) == FOLIO_STATE_READY &&
+                same_text(adapter.written_names, "B/A/C"),
+            "a move on the fresh order");
+    outside_categories(&adapter,
+                       "{\"version\": 1, \"categories\": ["
+                       "{\"name\": \"C\", \"color\": \"#333333\", \"expanded\": true},"
+                       "{\"name\": \"B\", \"color\": \"#111111\", \"expanded\": false},"
+                       "{\"name\": \"A\", \"color\": \"#222222\", \"expanded\": false}]}");
+    require(folio_state_move_category(state, 0, 2) == FOLIO_STATE_READY &&
+                same_text(adapter.written_names, "B/C/A"),
+            "B (first in memory) goes to C's place (last in memory), now first: both by name");
+    folio_state_destroy(state);
+}
+
+/* The category the operation is about was removed outside: refused, the list is the fresh one. */
+static void verify_category_refresh_refuses(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    category_folder_remove(&adapter, "C");
+    require(folio_state_recolor_category(state, 2, (struct rgb_color){1, 2, 3}) ==
+                    FOLIO_STATE_LEDGER_CHANGED_OUTSIDE &&
+                adapter.writes == 0 && folio_state_category_count(state) == 2,
+            "a colour for a category removed outside is refused, nothing is written");
+    require(folio_state_recolor_category(state, 1, (struct rgb_color){1, 2, 3}) ==
+                    FOLIO_STATE_READY &&
+                adapter.writes == 1 && same_text(adapter.written_names, "B/A"),
+            "the next colour works on the fresh list");
+    adapter.categories_outcome = PERSISTENCE_UNREADABLE;
+    require(folio_state_toggle_category(state, 0) == FOLIO_STATE_DATA_UNREADABLE &&
+                adapter.writes == 1,
+            "categories.json that cannot be read again is not overwritten from memory");
+    folio_state_destroy(state);
+}
+
+/* Opening checks the fresh ledger: a category already opened outside is not closed again. */
+static void verify_category_refresh_expansion(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    outside_categories(&adapter, "{\"version\": 1, \"categories\": ["
+                                 "{\"name\": \"B\", \"color\": \"#111111\", \"expanded\": true},"
+                                 "{\"name\": \"A\", \"color\": \"#222222\", \"expanded\": true},"
+                                 "{\"name\": \"C\", \"color\": \"#333333\", \"expanded\": true}]}");
+    require(folio_state_set_category_expanded(state, 1, true, FOLIO_UNTITLED_PROTECT) ==
+                    FOLIO_STATE_READY &&
+                adapter.writes == 0 && row_count(state) == 12,
+            "A was opened outside: nothing is written and it stays open");
+    folio_state_destroy(state);
+}
+
+/* Making and removing categories against the folders as they are now. */
+static void verify_category_refresh_create_remove(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    category_folder_add(&adapter, "D");
+    struct category_name *taken = accepted_category_name("D");
+    require(folio_state_create_category(state, taken) == FOLIO_STATE_CATEGORY_NAME_TAKEN &&
+                adapter.category_creates == 0 && folio_state_category_count(state) == 4,
+            "a category made outside is listed and its name is refused before any folder is made");
+    category_name_destroy(taken);
+    struct category_name *empty = accepted_category_name("E");
+    require(folio_state_create_category(state, empty) == FOLIO_STATE_READY &&
+                folio_state_category_count(state) == 5,
+            "an empty category is made");
+    category_name_destroy(empty);
+    folder_add(&adapter, "E", "late");
+    require(folio_state_delete_category(state, 4) == FOLIO_STATE_CATEGORY_NOT_EMPTY &&
+                adapter.category_removes == 0 &&
+                same_text(folio_state_note_name(state, at(4, 0)), "late"),
+            "a note put into the category outside is counted: the category is not removed");
+    folio_state_destroy(state);
+}
+
+/* The open note's category stays in the list though its folder is gone outside. */
+static void verify_category_refresh_keeps_open(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_select_note(state, 2, 1, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "a note in C is open");
+    require(folio_state_toggle_category(state, 1) == FOLIO_STATE_READY &&
+                same_text(adapter.written_names, "B/A/C"),
+            "categories.json now holds C (the fixture's C came from the folder only)");
+    category_folder_remove(&adapter, "C");
+    category_folder_add(&adapter, "D");
+    require(folio_state_toggle_category(state, 0) == FOLIO_STATE_READY &&
+                same_text(adapter.written_names, "B/A/C/D"),
+            "C stays while its note is open; D made outside is added");
+    struct note_ref selected = {0};
+    require(folio_state_selection(state, &selected) && selected.category == 2 &&
+                selected.note == 1 && same_text(folio_state_document_name(state), "two"),
+            "the open note keeps its place");
+    folio_state_destroy(state);
+}
+
+static void verify_category_refresh(void)
+{
+    verify_category_refresh_adds();
+    verify_category_refresh_follows_names();
+    verify_category_refresh_refuses();
+    verify_category_refresh_expansion();
+    verify_category_refresh_create_remove();
+    verify_category_refresh_keeps_open();
 }
 
 /* #1069 / ADR0117: a note ledger is read again (index.json and the folder) before it is
@@ -6425,6 +6669,7 @@ void run_state_tests(void)
     run_drawer_scroll_delta_tests();
     verify_move_category();
     verify_move_note();
+    verify_category_refresh();
     verify_refresh_adds();
     verify_refresh_follows_names();
     verify_refresh_refuses();

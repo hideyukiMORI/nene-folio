@@ -832,7 +832,14 @@ static void act_on_row(struct drawer_window *_Nonnull self, struct drawer_row ro
     switch (row.kind)
     {
     case DRAWER_ROW_CATEGORY:
-        outcome = folio_state_toggle_category(self->state, row.category);
+        /* #1069 / ADR0117 stage 5: the categories may have been read again before the write.
+         * A toggle that went through then says so in a line; the list is drawn again whatever
+         * the outcome, since a refused toggle may have left a fresh list too. */
+        outcome = folio_state_ledger_outcome(
+            self->state, folio_state_toggle_category(self->state, row.category));
+        InvalidateRect(self->handle, nullptr, FALSE);
+        /* the pane's head shows the category's number and colour, which a fresh list can move */
+        InvalidateRect(GetParent(self->handle), nullptr, FALSE);
         break;
     case DRAWER_ROW_NOTE:
         outcome = select_note(self, row);
@@ -898,14 +905,16 @@ static void choose_color(struct drawer_window *_Nonnull self, struct drawer_row 
         /* キャンセルは何もしない（決定 4）。 */
         return;
     }
-    enum folio_state_outcome outcome =
-        folio_state_recolor_category(self->state, row.category, to_rgb_color(choice.rgbResult));
+    enum folio_state_outcome outcome = folio_state_ledger_outcome(
+        self->state,
+        folio_state_recolor_category(self->state, row.category, to_rgb_color(choice.rgbResult)));
+    InvalidateRect(self->handle, nullptr, FALSE); /* a fresh list may have been read (#1069) */
     if (outcome != FOLIO_STATE_READY)
     {
         SendMessageW(GetParent(self->handle), folio_message_report_outcome, (WPARAM)outcome, 0);
+        InvalidateRect(GetParent(self->handle), nullptr, FALSE);
         return;
     }
-    InvalidateRect(self->handle, nullptr, FALSE);
     /* 右ペインの頭の色も台帳から引く。本文は触らない（決定 6）。 */
     InvalidateRect(GetParent(self->handle), nullptr, FALSE);
 }
