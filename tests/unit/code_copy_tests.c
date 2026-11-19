@@ -459,9 +459,69 @@ static void verify_state(void)
     test_adapter_destroy(adapter);
 }
 
+/* #1012 / ADR0116: the reading view's caret and Markdown copy through the state. The view's
+ * total is found by asking: exactly one total is the map's. */
+static size_t mapped_total(const struct folio_state *_Nonnull state)
+{
+    size_t found = SIZE_MAX;
+    for (size_t total = 0; total < 64; ++total)
+        if (folio_state_source_mapped(state, total))
+        {
+            require(found == SIZE_MAX, "one total is the map's");
+            found = total;
+        }
+    return found;
+}
+
+static void verify_source_state(void)
+{
+    struct persistence_adapter *adapter = test_adapter_create(
+        "{\"version\":1,\"categories\":[{\"name\":\"A\",\"color\":\"#112233\",\"expanded\":true}]}",
+        "{\"version\":1,\"notes\":[\"one\"]}");
+    struct folio_state *state = create_state(adapter);
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
+                folio_state_begin_edit(state) == FOLIO_STATE_READY,
+            "editing a note");
+    require(mapped_total(state) == SIZE_MAX, "the editing view has no source map");
+    const char16_t body[] = u"# 題\n\n本文\n\n| a | b |\n| - | - |\n| 1 | 2 |\n";
+    require(folio_state_end_edit(state, body, sizeof body / sizeof body[0] - 1) ==
+                FOLIO_STATE_READY,
+            "the saved body is viewed");
+    size_t total = mapped_total(state);
+    require(total != SIZE_MAX, "the reading view has a source map");
+    size_t native = SIZE_MAX;
+    require(folio_state_source_caret(state, 0, total, &native) == FOLIO_STATE_READY && native == 2,
+            "the heading's caret is after `# `");
+    require(folio_state_source_caret(state, 1, total, &native) == FOLIO_STATE_READY && native == 5,
+            "the paragraph's caret is its first character");
+    require(folio_state_source_caret(state, 0, total + 1, &native) == FOLIO_STATE_SOURCE_UNMAPPED,
+            "a view that disagrees with the map is not used");
+    clipboard.writes = 0;
+    require(folio_state_copy_markdown(state, (struct markdown_source_selection){1, 1}, total) ==
+                    FOLIO_STATE_READY &&
+                clipboard.writes == 1 && same_text(clipboard.text, "本文"),
+            "a paragraph copies its line");
+    require(folio_state_copy_markdown(state, (struct markdown_source_selection){4, 4}, total) ==
+                    FOLIO_STATE_READY &&
+                same_text(clipboard.text, "| a | b |\n| - | - |\n| 1 | 2 |"),
+            "a cell copies its whole table");
+    require(folio_state_copy_markdown(state, (struct markdown_source_selection){1, 1}, total + 1) ==
+                    FOLIO_STATE_SOURCE_UNMAPPED &&
+                clipboard.writes == 2,
+            "a disagreeing view never reaches the port");
+    clipboard.result = CLIPBOARD_BUSY;
+    require(folio_state_copy_markdown(state, (struct markdown_source_selection){1, 1}, total) ==
+                FOLIO_STATE_CLIPBOARD_BUSY,
+            "a busy clipboard is reported");
+    clipboard.result = CLIPBOARD_WRITTEN;
+    folio_state_destroy(state);
+    test_adapter_destroy(adapter);
+}
+
 void run_code_copy_tests(void)
 {
     verify_header_rows();
+    verify_source_state();
     verify_container_blocks();
     verify_languages();
     verify_action_colors();

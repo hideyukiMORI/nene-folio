@@ -17,6 +17,7 @@
 #include "markdown_images.h"
 #include "markdown_media.h"
 #include "markdown_rtf.h"
+#include "markdown_source_lookup.h"
 #include "name_list.h"
 #include "note_archive.h"
 #include "note_corpus.h"
@@ -29,6 +30,7 @@
 #include "note_name.h"
 #include "note_replace.h"
 #include "note_save_mode.h"
+#include "note_source.h"
 #include "note_store_request.h"
 #include "note_tag.h"
 #include "note_tags.h"
@@ -46,6 +48,7 @@
 #include "tag_edit_snapshot.h"
 #include "tag_update.h"
 #include "tag_update_request.h"
+#include "text_buffer.h"
 #include "transfer_port.h"
 #include "ui_font.h"
 #include "utf8_text.h"
@@ -361,6 +364,50 @@ enum folio_state_outcome folio_state_copy_code(struct folio_state *_Nonnull stat
     return copied(state->clipboard.write(state->clipboard.adapter,
                                          markdown_media_code_bytes(media, slot),
                                          markdown_media_code_length(media, slot)));
+}
+
+bool folio_state_source_mapped(const struct folio_state *_Nonnull state, size_t view_total)
+{
+    const struct markdown_source_map *map =
+        state->pane == nullptr ? nullptr : markdown_rtf_source_map(state->pane);
+    return state->mode == PANE_MODE_VIEW && state->document != FOLIO_DOCUMENT_NONE &&
+           map != nullptr && markdown_source_map_total(map) == view_total;
+}
+
+enum folio_state_outcome folio_state_source_caret(struct folio_state *_Nonnull state,
+                                                  size_t ordinal, size_t view_total,
+                                                  size_t *_Nonnull native)
+{
+    if (!folio_state_source_mapped(state, view_total) ||
+        note_text_editability(state->body) == NOTE_TEXT_EDITOR_ALTERS)
+        return FOLIO_STATE_SOURCE_UNMAPPED;
+    size_t caret =
+        markdown_source_lookup_caret(markdown_rtf_source_map(state->pane), state->body, ordinal);
+    if (caret == markdown_source_none)
+        return FOLIO_STATE_SOURCE_UNMAPPED;
+    *native = note_source_units(note_text_bytes(state->body), caret, NOTE_SOURCE_PARAGRAPH);
+    return FOLIO_STATE_READY;
+}
+
+enum folio_state_outcome folio_state_copy_markdown(struct folio_state *_Nonnull state,
+                                                   struct markdown_source_selection selection,
+                                                   size_t view_total)
+{
+    if (!folio_state_source_mapped(state, view_total))
+        return FOLIO_STATE_SOURCE_UNMAPPED;
+    struct text_buffer *_Nullable buffer = nullptr;
+    if (text_buffer_create(&buffer) != TEXT_BUFFER_ACCEPTED)
+        return FOLIO_STATE_OUT_OF_MEMORY;
+    enum folio_state_outcome outcome = FOLIO_STATE_SOURCE_UNMAPPED;
+    if (markdown_source_lookup_copy(markdown_rtf_source_map(state->pane), state->body, selection,
+                                    buffer))
+        outcome =
+            text_buffer_finish(buffer) != TEXT_BUFFER_ACCEPTED
+                ? FOLIO_STATE_OUT_OF_MEMORY
+                : copied(state->clipboard.write(state->clipboard.adapter, text_buffer_bytes(buffer),
+                                                text_buffer_length(buffer)));
+    text_buffer_destroy(buffer);
+    return outcome;
 }
 
 static void stored_note(struct folio_state *_Nonnull state)
@@ -4930,6 +4977,7 @@ static const enum ui_text failure_lines[] = {
     [FOLIO_STATE_WEB_LINK_REJECTED] = UI_TEXT_FAILURE_WEB_LINK_REJECTED,
     [FOLIO_STATE_WEB_LINK_UNAVAILABLE] = UI_TEXT_FAILURE_WEB_LINK_UNAVAILABLE,
     [FOLIO_STATE_CODE_COPY_REJECTED] = UI_TEXT_FAILURE_CODE_COPY_REJECTED,
+    [FOLIO_STATE_SOURCE_UNMAPPED] = UI_TEXT_FAILURE_SOURCE_UNMAPPED,
     [FOLIO_STATE_CLIPBOARD_BUSY] = UI_TEXT_FAILURE_CLIPBOARD_BUSY,
     [FOLIO_STATE_CLIPBOARD_UNAVAILABLE] = UI_TEXT_FAILURE_CLIPBOARD_UNAVAILABLE,
     [FOLIO_STATE_READY] = UI_TEXT_EMPTY,

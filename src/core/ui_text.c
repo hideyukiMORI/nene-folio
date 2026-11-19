@@ -146,6 +146,9 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
     [UI_TEXT_FAILURE_CODE_COPY_REJECTED] = {"このコードブロックはコピーできません。",
                                             "This code block cannot be copied.",
                                             "无法复制此代码块。"},
+    [UI_TEXT_FAILURE_SOURCE_UNMAPPED] = {"この場所の原文を特定できません。",
+                                         "The Markdown source of this place cannot be found.",
+                                         "无法确定此处的 Markdown 原文。"},
     [UI_TEXT_FAILURE_CLIPBOARD_BUSY] =
         {"ほかのアプリがクリップボードを使用中です。もう一度お試しください。",
          "Another app is using the clipboard. Try again.", "其他应用正在使用剪贴板。请重试。"},
