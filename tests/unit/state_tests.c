@@ -1554,10 +1554,29 @@ static void verify_category_refresh_expansion(void)
                                  "{\"name\": \"B\", \"color\": \"#111111\", \"expanded\": true},"
                                  "{\"name\": \"A\", \"color\": \"#222222\", \"expanded\": true},"
                                  "{\"name\": \"C\", \"color\": \"#333333\", \"expanded\": true}]}");
+    require(folio_state_set_expansion(state, 1, true) == FOLIO_STATE_READY && adapter.writes == 0 &&
+                row_count(state) == 12,
+            "A was opened outside: nothing is written and it stays open");
+    outside_categories(&adapter, "{\"version\": 1, \"categories\": ["
+                                 "{\"name\": \"B\", \"color\": \"#111111\", \"expanded\": false},"
+                                 "{\"name\": \"A\", \"color\": \"#222222\", \"expanded\": true},"
+                                 "{\"name\": \"C\", \"color\": \"#333333\", \"expanded\": true}]}");
+    require(folio_state_toggle_category(state, 0) == FOLIO_STATE_READY && adapter.writes == 0 &&
+                row_count(state) == 9,
+            "a click to close B, already closed outside, writes nothing and leaves it closed");
+    outside_categories(&adapter, "{\"version\": 1, \"categories\": ["
+                                 "{\"name\": \"A\", \"color\": \"#222222\", \"expanded\": true},"
+                                 "{\"name\": \"B\", \"color\": \"#111111\", \"expanded\": false},"
+                                 "{\"name\": \"C\", \"color\": \"#333333\", \"expanded\": true}]}");
+    require(folio_state_set_category_expanded(state, 0, true, FOLIO_UNTITLED_PROTECT) ==
+                    FOLIO_STATE_LEDGER_CHANGED_OUTSIDE &&
+                adapter.writes == 0 && same_text(folio_state_category_name(state, 0), "A"),
+            "the keyboard's opening is refused when the list was read again: the caller's save "
+            "decision and places are of the old list");
     require(folio_state_set_category_expanded(state, 1, true, FOLIO_UNTITLED_PROTECT) ==
                     FOLIO_STATE_READY &&
-                adapter.writes == 0 && row_count(state) == 12,
-            "A was opened outside: nothing is written and it stays open");
+                adapter.writes == 1 && adapter.written_expanded[1],
+            "pressed again on the fresh list, B opens");
     folio_state_destroy(state);
 }
 
@@ -1604,6 +1623,41 @@ static void verify_category_refresh_keeps_open(void)
     require(folio_state_selection(state, &selected) && selected.category == 2 &&
                 selected.note == 1 && same_text(folio_state_document_name(state), "two"),
             "the open note keeps its place");
+    outside_categories(&adapter, "{\"version\": 1, \"categories\": ["
+                                 "{\"name\": \"C\", \"color\": \"#333333\", \"expanded\": true},"
+                                 "{\"name\": \"D\", \"color\": \"#444444\", \"expanded\": true},"
+                                 "{\"name\": \"B\", \"color\": \"#111111\", \"expanded\": false},"
+                                 "{\"name\": \"A\", \"color\": \"#222222\", \"expanded\": true}]}");
+    require(folio_state_recolor_category(state, 0, (struct rgb_color){9, 9, 9}) ==
+                    FOLIO_STATE_READY &&
+                same_text(adapter.written_names, "C/D/B/A") && adapter.written_colors[2].red == 9,
+            "B (first in memory) takes the colour at its new place");
+    require(folio_state_selection(state, &selected) && selected.category == 0 &&
+                selected.note == 1 && same_text(folio_state_document_name(state), "two") &&
+                same_text(folio_state_category_name(state, selected.category), "C"),
+            "the open note's category is followed to its new place by name");
+    folio_state_destroy(state);
+}
+
+/* A note ledger still waiting to be written follows its category through a category move. */
+static void verify_category_pending_follows(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    adapter.notes_outcome = PERSISTENCE_UNREADABLE;
+    require(folio_state_trash_note(state, at(2, 0), u"x", 1) == FOLIO_STATE_LEDGER_STALE,
+            "C's ledger waits: its index cannot be read again");
+    require(folio_state_move_category(state, 2, 0) == FOLIO_STATE_READY &&
+                same_text(adapter.written_names, "C/B/A"),
+            "C moves to the front while its ledger waits");
+    adapter.notes_outcome = PERSISTENCE_LOADED;
+    size_t writes = adapter.ledger_writes;
+    /* An intent that leaves categories.json alone: the fake borrows the category's name. */
+    enum folio_state_outcome selected =
+        folio_state_select_note(state, 1, 0, FOLIO_UNTITLED_PROTECT);
+    require((selected == FOLIO_STATE_READY || selected == FOLIO_STATE_LEDGER_CHANGED_OUTSIDE) &&
+                adapter.ledger_writes == writes + 1 && same_text(adapter.ledger_category, "C"),
+            "the waiting ledger is written for C, at its new place");
     folio_state_destroy(state);
 }
 
@@ -1615,6 +1669,7 @@ static void verify_category_refresh(void)
     verify_category_refresh_expansion();
     verify_category_refresh_create_remove();
     verify_category_refresh_keeps_open();
+    verify_category_pending_follows();
 }
 
 /* #1069 / ADR0117: a note ledger is read again (index.json and the folder) before it is

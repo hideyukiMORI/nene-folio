@@ -1731,8 +1731,8 @@ static enum folio_state_outcome gather_notes(const struct folio_state *_Nonnull 
 }
 
 /* The fresh categories take the old ones' place. A category gone outside takes its notes
- * with it; what pointed at a category by its place follows it by name. The open document's,
- * the pending ledger's and the pending rename's categories were kept, so they are found. */
+ * with it; what pointed at a category by its place follows it by name. The open document's
+ * and the pending ledger's categories were kept, so they are found. */
 static void adopt_categories(struct folio_state *_Nonnull state,
                              struct category_ledger *_Nonnull fresh,
                              struct note_ledger *_Nonnull *_Nonnull notes)
@@ -1748,8 +1748,6 @@ static void adopt_categories(struct folio_state *_Nonnull state,
         (void)follow_category(old, fresh, &state->selected_category);
     if (state->index_pending)
         (void)follow_category(old, fresh, &state->pending_category);
-    if (state->rename != nullptr)
-        (void)follow_category(old, fresh, &state->rename_category);
     if (state->cursor_any && !follow_category(old, fresh, &state->cursor_category))
         state->cursor_category = category_ledger_count(fresh); /* settled below */
     free(state->notes);
@@ -1766,10 +1764,11 @@ static void adopt_categories(struct folio_state *_Nonnull state,
 }
 
 /* The categories that stay in the list though their folder is gone outside: the open
- * document's, the pending ledger's and the pending rename's (ADR0117 decision 4). Borrowed from
- * the state's ledger. Returns how many it put into kept. */
+ * document's and the pending ledger's (ADR0117 decision 4). A rename is never pending here:
+ * every caller went through synchronize, which is READY only once the rename is adopted.
+ * Borrowed from the state's ledger. Returns how many it put into kept. */
 static size_t kept_categories(const struct folio_state *_Nonnull state,
-                              const char *_Nonnull kept[_Nonnull 3])
+                              const char *_Nonnull kept[_Nonnull 2])
 {
     const struct category_ledger *old = state->categories;
     size_t count = category_ledger_count(old);
@@ -1778,8 +1777,6 @@ static size_t kept_categories(const struct folio_state *_Nonnull state,
         kept[kept_count++] = category_ledger_name(old, state->selected_category);
     if (state->index_pending && state->pending_category < count)
         kept[kept_count++] = category_ledger_name(old, state->pending_category);
-    if (state->rename != nullptr && state->rename_category < count)
-        kept[kept_count++] = category_ledger_name(old, state->rename_category);
     return kept_count;
 }
 
@@ -1793,7 +1790,7 @@ static enum folio_state_outcome refresh_categories(struct folio_state *_Nonnull 
                                                    size_t *_Nullable second)
 {
     const struct category_ledger *old = state->categories;
-    const char *_Nonnull kept[3] = {"", "", ""};
+    const char *_Nonnull kept[2] = {"", ""};
     size_t kept_count = kept_categories(state, kept);
     struct category_ledger *_Nullable fresh = nullptr;
     enum folio_state_outcome outcome = load_category_ledger(&state->port, kept, kept_count, &fresh);
@@ -2108,8 +2105,17 @@ static enum folio_state_outcome toggle_fresh(struct folio_state *_Nonnull state,
 enum folio_state_outcome folio_state_toggle_category(struct folio_state *_Nonnull state,
                                                      size_t index)
 {
+    /* The click means "the opposite of what the list showed". If the category was already
+     * turned that way outside, nothing is written (independent review of #1087). */
+    bool wanted = index < category_ledger_count(state->categories) &&
+                  !category_ledger_expanded(state->categories, index);
     enum folio_state_outcome outcome = prepare_expansion(state, &index);
-    return outcome == FOLIO_STATE_READY ? toggle_fresh(state, index) : outcome;
+    if (outcome != FOLIO_STATE_READY ||
+        category_ledger_expanded(state->categories, index) == wanted)
+    {
+        return outcome;
+    }
+    return toggle_fresh(state, index);
 }
 
 /* 展開したあとのカーソル（ADR 0015 の決定 3）。選択がその中にあればそのノート、
@@ -2147,45 +2153,43 @@ static enum folio_state_outcome cursor_after_expanded(struct folio_state *_Nonnu
     return cursor_into(state, index, untitled);
 }
 
-/* 開閉を expanded にする。比べるのは読み直した後の台帳（外で開閉が変わっていても逆に倒さない）。 */
-static enum folio_state_outcome adopt_expansion(struct folio_state *_Nonnull state,
-                                                size_t *_Nonnull index, bool expanded,
-                                                bool *_Nonnull changed)
-{
-    *changed = false;
-    enum folio_state_outcome outcome = prepare_expansion(state, index);
-    if (outcome != FOLIO_STATE_READY)
-    {
-        return outcome;
-    }
-    if (category_ledger_expanded(state->categories, *index) == expanded)
-    {
-        /* 変わらないなら書く理由が無い（ADR 0013 の決定 5）。カーソルもそのまま。 */
-        return FOLIO_STATE_READY;
-    }
-    outcome = toggle_fresh(state, *index);
-    *changed = outcome == FOLIO_STATE_READY;
-    return outcome;
-}
-
+/* 開閉を expanded にする。比べるのは読み直した後の台帳（外で開閉が変わっていても逆に倒さない）。
+ * 変わらないなら書く理由が無い（ADR 0013 の決定 5）。 */
 enum folio_state_outcome folio_state_set_expansion(struct folio_state *_Nonnull state, size_t index,
                                                    bool expanded)
 {
-    bool changed = false;
-    return adopt_expansion(state, &index, expanded, &changed);
+    enum folio_state_outcome outcome = prepare_expansion(state, &index);
+    if (outcome != FOLIO_STATE_READY ||
+        category_ledger_expanded(state->categories, index) == expanded)
+    {
+        return outcome;
+    }
+    return toggle_fresh(state, index);
 }
 
 enum folio_state_outcome folio_state_set_category_expanded(struct folio_state *_Nonnull state,
                                                            size_t index, bool expanded,
                                                            enum folio_untitled_policy untitled)
 {
-    bool changed = false;
-    enum folio_state_outcome outcome = adopt_expansion(state, &index, expanded, &changed);
-    if (outcome != FOLIO_STATE_READY || !changed)
+    /* The caller decided whether to save first, and will compare the selection's place, from the
+     * list it had. If the list was read again here, those are of the old list: nothing is opened
+     * or closed, the list is the fresh one and the user presses again (independent review of
+     * #1087: an open edit must not be replaced on the strength of a stale list). */
+    uint64_t before = state->adoptions;
+    enum folio_state_outcome outcome = prepare_expansion(state, &index);
+    if (outcome == FOLIO_STATE_READY && state->adoptions != before)
     {
+        return FOLIO_STATE_LEDGER_CHANGED_OUTSIDE;
+    }
+    if (outcome != FOLIO_STATE_READY ||
+        category_ledger_expanded(state->categories, index) == expanded)
+    {
+        /* 変わらないならカーソルもそのまま。 */
         return outcome;
     }
-    return cursor_after_expanded(state, index, expanded, untitled);
+    outcome = toggle_fresh(state, index);
+    return outcome == FOLIO_STATE_READY ? cursor_after_expanded(state, index, expanded, untitled)
+                                        : outcome;
 }
 
 static bool same_color(struct rgb_color left, struct rgb_color right)
@@ -2267,6 +2271,26 @@ static void move_notes(struct note_ledger *_Nonnull *_Nonnull items, size_t from
     items[to] = moved;
 }
 
+/* カテゴリを動かした後、番号でカテゴリを指すものを同じカテゴリへ付け替える。 */
+static void move_places(struct folio_state *_Nonnull state, size_t from, size_t to)
+{
+    move_notes(state->notes, from, to);
+    if (state->document != FOLIO_DOCUMENT_NONE)
+    {
+        state->selected_category = moved_index(from, to, state->selected_category);
+    }
+    if (state->cursor_any)
+    {
+        /* ノート/カテゴリどちらのcursorも同じ行を指したまま移る。 */
+        state->cursor_category = moved_index(from, to, state->cursor_category);
+    }
+    if (state->index_pending)
+    {
+        /* A ledger can still wait here while its index cannot be read again (stage 4). */
+        state->pending_category = moved_index(from, to, state->pending_category);
+    }
+}
+
 enum folio_state_outcome folio_state_move_category(struct folio_state *_Nonnull state, size_t from,
                                                    size_t to)
 {
@@ -2312,16 +2336,7 @@ enum folio_state_outcome folio_state_move_category(struct folio_state *_Nonnull 
     category_ledger_destroy(state->categories);
     state->categories = moved;
     index_changed(state);
-    move_notes(state->notes, from, to);
-    if (state->document != FOLIO_DOCUMENT_NONE)
-    {
-        state->selected_category = moved_index(from, to, state->selected_category);
-    }
-    if (state->cursor_any)
-    {
-        /* ノート/カテゴリどちらのcursorも同じ行を指したまま移る。 */
-        state->cursor_category = moved_index(from, to, state->cursor_category);
-    }
+    move_places(state, from, to);
     return FOLIO_STATE_READY;
 }
 
@@ -4417,6 +4432,14 @@ static void adopt_category_removal(struct folio_state *_Nonnull state, size_t ta
     if (state->cursor_any && state->cursor_category > target)
     {
         state->cursor_category -= 1;
+    }
+    if (state->index_pending && state->pending_category == target)
+    {
+        state->index_pending = false; /* its folder is gone: nothing is left to write */
+    }
+    if (state->index_pending && state->pending_category > target)
+    {
+        state->pending_category -= 1;
     }
     settle_cursor(state);
 }
