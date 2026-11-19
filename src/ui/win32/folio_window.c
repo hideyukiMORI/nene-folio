@@ -9140,6 +9140,19 @@ static void apply_minimap(struct folio_window *_Nonnull self)
  * **実測の補正**: EM_EXSETSEL は EM_SCROLLCARET を送らなくても選択を見える位置へ寄せる。
  * 空の選択を戻すと先頭へ飛ぶので、選んでいる一致があるときだけ戻す（ADR 0023 の
  * ハイライトは保ち、選んでいないときは流し直しが保ったスクロール位置をそのまま残す）。 */
+/* #1026: after the same note was poured again and the body is back at its line. */
+static void restore_outline(struct folio_window *_Nonnull self)
+{
+    if (self->pane == nullptr)
+        return;
+    struct note_outline_paint paint = outline_place(self);
+    if (note_outline_release(self->outline, &paint, note_pane_heading_count(self->pane)))
+    {
+        InvalidateRect(self->handle, &paint.bounds, FALSE);
+        accessibility_host_schedule(self->accessibility);
+    }
+}
+
 static enum folio_state_outcome restream_pane(struct folio_window *_Nonnull self)
 {
     size_t start = 0;
@@ -9166,6 +9179,7 @@ static enum folio_state_outcome recolor_pane(struct folio_window *_Nonnull self)
     }
     enum pane_mode mode = folio_state_pane_mode(self->state);
     size_t line = note_pane_first_visible_line(self->pane);
+    note_outline_hold(self->outline);
     enum note_pane_recolor_outcome colored =
         note_pane_recolor(self->pane, self->palette.pane, self->palette.editor_text, mode);
     enum folio_state_outcome outcome = FOLIO_STATE_READY;
@@ -9181,6 +9195,7 @@ static enum folio_state_outcome recolor_pane(struct folio_window *_Nonnull self)
     {
         note_pane_scroll_to_line(self->pane, line);
     }
+    restore_outline(self);
     return outcome;
 }
 
@@ -9207,6 +9222,7 @@ static enum folio_state_outcome reface_pane(struct folio_window *_Nonnull self)
      * （平文の流し込みは既定書式で描かれる）。`note_pane_recolor` が閲覧でも `SCF_DEFAULT` を
      * 無条件に当てているのと同じ理屈である（ADR 0031 の補正 9・ADR 0032 の補正 4）。 */
     apply_pane_face(self);
+    note_outline_hold(self->outline);
     enum folio_state_outcome outcome = FOLIO_STATE_READY;
     if (folio_state_pane_mode(self->state) == PANE_MODE_VIEW)
     {
@@ -9216,6 +9232,7 @@ static enum folio_state_outcome reface_pane(struct folio_window *_Nonnull self)
     {
         note_pane_scroll_to_line(self->pane, line);
     }
+    restore_outline(self);
     return outcome;
 }
 
@@ -15395,6 +15412,7 @@ static bool refresh_image_origin(struct folio_window *_Nonnull self)
     size_t end = 0;
     bool selected = note_pane_selection(self->pane, &start, &end);
     size_t line = note_pane_first_visible_line(self->pane);
+    note_outline_hold(self->outline);
     enum folio_state_outcome outcome = render_pane(self);
     if (outcome == FOLIO_STATE_READY)
     {
@@ -15402,6 +15420,7 @@ static bool refresh_image_origin(struct folio_window *_Nonnull self)
             note_pane_restore_selection(self->pane, (struct note_search_span){start, end});
         note_pane_scroll_to_line(self->pane, line);
     }
+    restore_outline(self);
     report_outcome(self, outcome);
     return true;
 }

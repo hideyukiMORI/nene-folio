@@ -10939,6 +10939,43 @@ static void outline_wheel(struct folio_window *_Nonnull window)
             "the wheel the other way brings the first row back");
 }
 
+/* #1026: new colours pour the same note again; the column the wheel moved stays where it was,
+ * the body stays at its line, and a row read before the pour no longer answers. Runs in the
+ * short window outline_wheel leaves. */
+static void outline_recolor(struct folio_window *_Nonnull window)
+{
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    struct accessible_view column = outline_read(window, ACCESSIBLE_OUTLINE);
+    POINT over = {(column.bounds.left + column.bounds.right) / 2,
+                  (column.bounds.top + column.bounds.bottom) / 2};
+    outline_send_wheel(window, over, -WHEEL_DELTA * 3);
+    struct accessible_item stale = outline_item_at(window, 8);
+    LRESULT line = outline_first_line(window);
+    require(outline_row(window, outline_item_at(window, 0)).offscreen &&
+                !outline_row(window, stale).offscreen,
+            "the column is at its end before the colours change");
+    favorite_high_contrast = !favorite_high_contrast;
+    SendMessageW(root, WM_SETTINGCHANGE, 0, 0);
+    pump(window);
+    struct accessible_view view = {0};
+    bool renewed = folio_window_accessible_read(window, &stale, &view) != S_OK;
+    printf("outline: recolour, rows %s, first row %s, last row %s\n", renewed ? "new" : "same",
+           outline_row(window, outline_item_at(window, 0)).offscreen ? "hidden" : "shown",
+           outline_row(window, outline_item_at(window, 8)).offscreen ? "hidden" : "shown");
+    fflush(stdout);
+    require(renewed, "the colours poured the note again: an earlier row does not answer");
+    require(outline_row(window, outline_item_at(window, 0)).offscreen &&
+                !outline_row(window, outline_item_at(window, 8)).offscreen &&
+                outline_first_line(window) == line,
+            "the column and the body stay where they were through new colours");
+    favorite_high_contrast = !favorite_high_contrast;
+    SendMessageW(root, WM_SETTINGCHANGE, 0, 0);
+    pump(window);
+    outline_send_wheel(window, over, WHEEL_DELTA * 3);
+    require(!outline_row(window, outline_item_at(window, 0)).offscreen,
+            "the wheel brings the first row back");
+}
+
 /* #1018: reading a late heading and then making the window shorter keeps that heading's row in
  * the column; making it tall again leaves no empty rows below the last heading. */
 static void outline_shorten(struct folio_window *_Nonnull window)
@@ -11114,6 +11151,7 @@ static void outline_column(struct native_fixture *_Nonnull fixture)
                 "outline screenshot path");
         tags_capture(root, path);
         outline_wheel(window);
+        outline_recolor(window);
         outline_shorten(window);
         outline_narrow(window, fixture);
         folio_window_destroy(window);

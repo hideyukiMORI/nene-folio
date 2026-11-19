@@ -36,6 +36,12 @@ void note_outline_reset(struct note_outline *_Nonnull outline);
 [[nodiscard]] size_t note_outline_row_at(const struct note_outline *_Nonnull outline,
                                          const struct note_outline_paint *_Nonnull paint,
                                          POINT point, size_t count);
+/* #1026: 同じノートを流し直す前に hold、本文が元の行へ戻った後に release すると、欄の送り位置と
+ * キーボードの位置が元のままになる（行の版は新しい）。release は位置が変わったら true。 */
+void note_outline_hold(struct note_outline *_Nonnull outline);
+[[nodiscard]] bool note_outline_release(struct note_outline *_Nonnull outline,
+                                        const struct note_outline_paint *_Nonnull paint,
+                                        size_t count);
 /* #1018: 欄に見える行の数が変わったとき（窓の大きさが変わった）、最後の見出しの下に空きを残さず、
  * いま読んでいる見出しを欄の中に保つ。行の数が同じならホイールで送った位置を動かさない。位置が変わったら
  * true。 */
