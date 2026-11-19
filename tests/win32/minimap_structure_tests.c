@@ -1439,15 +1439,23 @@ static size_t paragraph_start(const wchar_t *_Nonnull text, size_t length, size_
     return at;
 }
 
-/* A non-empty code line of ASCII only: its bytes and the shown characters compare one to one. */
-static bool comparable_code_line(const char *_Nonnull markdown, struct markdown_source_entry entry)
+/* How many bytes of an entry's first line can be compared with what the view shows: a code
+ * line, a heading, or a paragraph with no marker before it, in ASCII with no inline markup.
+ * 0 when the entry cannot be compared. */
+static size_t comparable_text(const char *_Nonnull markdown, struct markdown_source_entry entry)
 {
-    if (entry.kind != MARKDOWN_SOURCE_CODE_LINE || entry.end == entry.caret)
-        return false;
-    for (size_t at = entry.caret; at < entry.end; ++at)
-        if ((unsigned char)markdown[at] >= 0x80)
-            return false;
-    return true;
+    bool kind = entry.kind == MARKDOWN_SOURCE_CODE_LINE || entry.kind == MARKDOWN_SOURCE_HEADING ||
+                (entry.kind == MARKDOWN_SOURCE_PARAGRAPH && entry.begin == entry.caret);
+    size_t end = entry.caret;
+    while (kind && end < entry.end && markdown[end] != '\n' && markdown[end] != '\r')
+    {
+        unsigned char value = (unsigned char)markdown[end++];
+        bool markup = value == '*' || value == '_' || value == '`' || value == '[' ||
+                      value == '<' || value == '&' || value == '\\';
+        if (value >= 0x80 || (entry.kind != MARKDOWN_SOURCE_CODE_LINE && markup))
+            return 0;
+    }
+    return kind ? end - entry.caret : 0;
 }
 
 /* How many of the line's `count` bytes the shown text (with `room` characters) starts with. */
@@ -1467,15 +1475,15 @@ static void expect_code_lines(const struct markdown_source_map *_Nonnull map,
     for (size_t index = 0; index < markdown_source_map_count(map); ++index)
     {
         struct markdown_source_entry entry = markdown_source_map_at(map, index);
-        if (!comparable_code_line(markdown, entry))
+        size_t count = comparable_text(markdown, entry);
+        if (count == 0)
             continue;
         size_t at = paragraph_start(text, length, entry.first);
-        size_t same =
-            shown_prefix(text + at, length - at, markdown + entry.caret, entry.end - entry.caret);
-        if (same != entry.end - entry.caret)
-            fprintf(stderr, "code line %zu at ordinal %zu: %zu of %zu characters match\n", index,
-                    entry.first, same, entry.end - entry.caret);
-        require(same == entry.end - entry.caret, "a code line's ordinal shows that line");
+        size_t same = shown_prefix(text + at, length - at, markdown + entry.caret, count);
+        if (same != count)
+            fprintf(stderr, "block %zu (kind %u) at ordinal %zu: %zu of %zu characters match\n",
+                    index, (unsigned)entry.kind, entry.first, same, count);
+        require(same == count, "a block's ordinal is the paragraph that shows it");
     }
 }
 
@@ -1491,7 +1499,11 @@ static void source_map_marks(struct note_pane *_Nonnull pane)
         "表で終わる\n\n| x |\n| - |\n| 1 |\n",
         "コードで終わる\n\n```\nlast\n```",
         "見出しで終わる\n\n## 最後",
-        "- [ ] 作業\n- [x] 済み\n\n1. 一\n2. 二\n\n用語\n: 説明\n\n| 表 |\n| -- |\n| a |\n"};
+        "- [ ] 作業\n- [x] 済み\n\n1. 一\n2. 二\n\n用語\n: 説明\n\n| 表 |\n| -- |\n| a |\n",
+        "Title\n=====\n\nalpha\n\n-\n\nbeta\n\n> ```\n> quoted code\n> ```\n\n- item\n\n  | t |\n  "
+        "| - |\n  | 1 |\n\n"
+        "gamma\n\nterm\n: last description",
+        "one\rtwo\r\r# Head\r\rthree\r\r```\rcr code\r```\r"};
     static wchar_t text[16384];
     for (size_t at = 0; at < sizeof sources / sizeof sources[0]; ++at)
     {

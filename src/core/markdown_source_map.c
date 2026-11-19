@@ -40,6 +40,8 @@ bool markdown_source_map_add(struct markdown_source_map *_Nonnull map,
 {
     if (map->count == map->capacity)
     {
+        if (map->capacity > SIZE_MAX / 2 / sizeof *map->entries)
+            return false;
         size_t capacity = map->capacity == 0 ? first_capacity : map->capacity * 2;
         struct markdown_source_entry *_Nullable grown =
             realloc(map->entries, capacity * sizeof *grown);
@@ -126,6 +128,8 @@ static size_t control(struct markdown_source_map *_Nonnull map,
     char next = scan->rtf[at + 1];
     if (letter(next))
         return control_word(map, scan, at + 1);
+    /* A backslash before CR or LF is \par in RTF; the renderer never writes it (text goes through
+     * rtf_text_append, which escapes the backslash), so it is not looked for here. */
     if (next != '*')
         scan->text_after = true;
     return at + (next == '\'' ? 4 : 2);

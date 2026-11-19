@@ -139,19 +139,26 @@ static void every_kind(void)
         {MARKDOWN_SOURCE_DEFINITION, "用語", "用語", 1},
         {MARKDOWN_SOURCE_DEFINITION, ": 説明", "説明", 3},
         {MARKDOWN_SOURCE_PARAGRAPH, "本文[^n]", "本文", 1},
-        {MARKDOWN_SOURCE_SEPARATOR, "---", "---", 3},
+        {MARKDOWN_SOURCE_SEPARATOR, "[^n]: 脚注", "脚注", 3},
         {MARKDOWN_SOURCE_FOOTNOTE, "[^n]: 脚注", "脚注", 1},
     };
     size_t count = markdown_source_map_count(map);
     if (count != sizeof blocks / sizeof blocks[0])
+    {
         fprintf(stderr, "source map: %zu entries\n", count);
+        for (size_t index = 0; index < count; ++index)
+        {
+            struct markdown_source_entry entry = markdown_source_map_at(map, index);
+            fprintf(stderr, "  %zu: kind %u [%.*s] marks %zu\n", index, (unsigned)entry.kind,
+                    (int)(entry.end - entry.begin), every_block + entry.begin, entry.marks);
+        }
+    }
     require(count == sizeof blocks / sizeof blocks[0], "one entry per block");
     size_t sum = 0;
     for (size_t index = 0; index < count; ++index)
     {
         struct markdown_source_entry entry = markdown_source_map_at(map, index);
-        if (blocks[index].kind != MARKDOWN_SOURCE_SEPARATOR)
-            expect_block(every_block, entry, blocks[index], index);
+        expect_block(every_block, entry, blocks[index], index);
         require(entry.first == sum, "ordinals follow each other");
         sum += entry.marks;
     }
@@ -161,9 +168,48 @@ static void every_kind(void)
     struct markdown_source_entry row = markdown_source_map_at(map, 12);
     require(fence.group != 0 && fence.group == closing.group &&
                 row.group == markdown_source_map_at(map, 11).group && row.group != fence.group &&
-                markdown_source_map_at(map, 1).group == 0,
-            "a fence and a table are groups; a paragraph is in none");
+                markdown_source_map_at(map, 1).group == 0 &&
+                markdown_source_map_at(map, 8).group != 0 &&
+                markdown_source_map_at(map, 8).group == markdown_source_map_at(map, 9).group &&
+                markdown_source_map_at(map, 8).group != fence.group,
+            "a fence, a diagram and a table are groups; a paragraph is in none");
+    require(markdown_source_map_find(map, markdown_source_map_at(map, 5).first) == 5 &&
+                markdown_source_map_find(map, markdown_source_map_at(map, 11).first + 3) == 11,
+            "a render's ordinals find their blocks");
     markdown_rtf_destroy(rtf);
+}
+
+/* One document per review finding (#1008): each block's kind, lines, caret and marks. */
+static void expect_blocks(const char *_Nonnull source, const struct expected_block *_Nonnull blocks,
+                          size_t count)
+{
+    struct markdown_rtf *rtf = rendered(source);
+    const struct markdown_source_map *map = markdown_rtf_source_map(rtf);
+    if (markdown_source_map_count(map) != count)
+        fprintf(stderr, "%zu entries for: %s\n", markdown_source_map_count(map), source);
+    require(markdown_source_map_count(map) == count, "one entry per block");
+    for (size_t index = 0; index < count; ++index)
+        expect_block(source, markdown_source_map_at(map, index), blocks[index], index);
+    markdown_rtf_destroy(rtf);
+}
+
+static void review_cases(void)
+{
+    const struct expected_block setext[] = {{MARKDOWN_SOURCE_HEADING, "Title\n=====", "Title", 1},
+                                            {MARKDOWN_SOURCE_PARAGRAPH, "x", "x", 1}};
+    expect_blocks("Title\n=====\n\nx\n", setext, 2);
+    const struct expected_block empty_item[] = {{MARKDOWN_SOURCE_PARAGRAPH, "a", "a", 1},
+                                                {MARKDOWN_SOURCE_PARAGRAPH, "-", "", 1},
+                                                {MARKDOWN_SOURCE_PARAGRAPH, "b", "b", 1}};
+    expect_blocks("a\n\n-\n\nb\n", empty_item, 3);
+    const struct expected_block table_after[] = {
+        {MARKDOWN_SOURCE_DEFINITION, "用語", "用語", 1},
+        {MARKDOWN_SOURCE_DEFINITION, ": 説明", "説明", 3},
+        {MARKDOWN_SOURCE_TABLE_ROW, "| x |\n| - |", "| x", 4}};
+    expect_blocks("用語\n: 説明\n| x |\n| - |\n", table_after, 3);
+    const struct expected_block lone_cr[] = {{MARKDOWN_SOURCE_PARAGRAPH, "a\rb", "a", 1},
+                                             {MARKDOWN_SOURCE_PARAGRAPH, "1. c", "c", 1}};
+    expect_blocks("a\rb\r\r1. c\r", lone_cr, 2);
 }
 
 /* CRLF lines end before their CR; a paragraph inside a list keeps the marker's line. */
@@ -210,6 +256,7 @@ void run_source_map_tests(void)
     counting();
     every_kind();
     line_endings();
+    review_cases();
     allocation();
     printf("source map tests passed\n");
 }
