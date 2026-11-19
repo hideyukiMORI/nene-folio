@@ -3193,6 +3193,20 @@ static enum folio_state_outcome unpublished(enum folio_state_outcome prepared,
     return stored == PERSISTENCE_UNWRITABLE ? FOLIO_STATE_NOTE_STORE_FAILED : translate(stored);
 }
 
+/* #1069 / ADR0117 stage 7: a note was not created because a file of that name is already in the
+ * folder, made outside while the app runs. Read the category again so the note that holds the
+ * name is in the list the refusal is shown over; the refusal stays the outcome. Called after the
+ * caller has let go of what it prepared. A failed read leaves the list as it was. */
+static void show_taken(struct folio_state *_Nonnull state, size_t category,
+                       enum persistence_outcome stored)
+{
+    if (stored != PERSISTENCE_NAME_TAKEN)
+        return;
+    enum folio_state_outcome shown = refresh_notes(state, category, nullptr, nullptr);
+    if (shown != FOLIO_STATE_READY)
+        return; /* the refusal is what the user is told; the list stays the one in memory */
+}
+
 /* First save and import share publication and ledger ownership. Caller prepared the ledger. */
 static enum persistence_outcome publish_created(struct folio_state *_Nonnull state,
                                                 const struct note_destination *_Nonnull destination,
@@ -3248,6 +3262,7 @@ static enum folio_state_outcome create_edited(struct folio_state *_Nonnull state
         note_ledger_destroy(ledger);
         markdown_rtf_destroy(rendered);
         note_text_destroy(edited);
+        show_taken(state, category, stored);
         return unpublished(prepared, stored);
     }
     discard_view(state);
@@ -3417,6 +3432,7 @@ static enum folio_state_outcome import_body(struct folio_state *_Nonnull state,
     {
         note_corpus_remove(state->corpus, folder, name);
         note_ledger_destroy(ledger);
+        show_taken(state, category, published);
         return unpublished(FOLIO_STATE_READY, published);
     }
     return published_index(synchronize_index(state));
