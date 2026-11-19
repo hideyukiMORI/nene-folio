@@ -37,9 +37,16 @@ static int32_t next_month(int32_t day, int32_t months)
 
 /* #1036: d3's `timeDay.every(k)`, which Mermaid uses for `tickInterval kday`, marks the days
  * whose date less one is a multiple of k: 1, 3, 5 … 31 and again 1, not every kth day. */
+/* #1044: d3 also marks a month's last such day when the next month's 1st follows sooner than
+ * k days (the 31st before the 1st with k = 2). Two marks that close would set the width of
+ * every day of the chart, so that one is left out: marks are never closer than k days. */
 static bool dated(int32_t day, int32_t dates)
 {
-    return (diagram_calendar_date(day).day - 1) % dates == 0;
+    int date = diagram_calendar_date(day).day;
+    if ((date - 1) % dates != 0)
+        return false;
+    int32_t next = next_month(day, 1);
+    return date == 1 || next == INT32_MAX || next - day >= dates;
 }
 
 static int32_t next_dated(int32_t day, int32_t dates)
