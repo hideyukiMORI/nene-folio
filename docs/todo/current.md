@@ -13,7 +13,8 @@ GitHubにマイルストーンは無いので、[前日の引き継ぎ](../hando
 どれも最終headの必須CI成功。通常exeへ反映済み（#980・#982も含む）。経緯・失敗・判断は[日報](../reports/2026-11-19.md)、再開に要ることは[引き継ぎ](../handoffs/2026-11-19.md)、全試行は[品質記録](../quality/2026-11-19-outline-wiring.md)。
 11月18日に統合した16件（#931〜#982）は[11月18日の日報](../reports/2026-11-18.md)、11月17日の28件と1.4.0の公開は[11月17日の日報](../reports/2026-11-17.md)。
 
-次: hideの判断（[判断のページ](https://claude.ai/artifact/KreKFrmmgx7xeqRQyFpmfW): 版の番号、ガントを入れるか、critの縁の色、試験の時間）を受けて、次の版の配布物を作る。
+hideの判断（11月19日、[判断のページ](https://claude.ai/artifact/KreKFrmmgx7xeqRQyFpmfW)は全部推し）で、1.5.0の候補を作って確かめた（#996、main `99adbab`、[品質記録](../quality/2026-11-19-release-1.5.0.md)）。
+次: hideの実機確認 → タグ・GitHubでの公開・Storeへの提出（hideの指示の後）。
 hideの返事待ち: コードブロックのコピーがWSLで貼れない件の症状、#935の作業木の扱い、#948と`body_discovery_96_native`の実行時間（上限30秒に近い）。
 hideに実機で見てほしいことは[引き継ぎ](../handoffs/2026-11-19.md)に並べた（見出しの欄、前日からの残り）。
 個別の報告が無いままのもの: #855の「左上の全体検索」の読み方、#853のcodeの大きさの比、#854の実機（物理キー・IME）。
@@ -25,12 +26,14 @@ Store: 1.4.0の更新は認定を通った（11月18日のhideの報告、[記�
 [ロードマップ](../ROADMAP.md)の段階1〜4とAboutは完了。
 #819の作業木は全ファイルとGit登録を整理済みだが、OSが最後の空directory削除を拒否したため
 D:/NeNeFolio/worktrees/819-note-tagsを0ファイルで保持し、盲目的な再試行はしない。
-版は1.4.0（#920）。GitHubで公開済み、Storeは認定通過（hideの報告）。その後の変更（#933以降）は未公開。11月12日のPR810はDraft/open、今回変更していない。
+公開済みの版は1.4.0（#920。GitHubで公開済み、Storeは認定通過＝hideの報告）。sourceの版は1.5.0（#996、未公開の候補）。11月12日のPR810はDraft/open、今回変更していない。
 古い停止/継続/起動/相談の許可を新しい作業へ持ち越さず、現在のhide指示を優先する。
 
 ## 通常版と公開版
 
-通常exeはC:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe、版1.4.0 / Windows1.4.0.0。
+通常exeはC:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe、版1.5.0 / Windows1.5.0.0（未公開の候補）。
+11月19日にsource `99adbab97fbd6d605abbfeacf6e6603f0476e70a`から正典経路で反映した（版1.5.0、#996）。SHA256 `91bfcd212714e2e87d9ecd4bcfba2c5bef9c2e710a42a9ae90dd38498d57f523`。実data42ファイル不変、アプリは起動していない。記録はD:/NeNeFolio/agents/work-20261118/deploy-996/。
+以下はそれ以前の記録。
 11月19日にsource `40d48fa3d10b863b032465d4e07c6ec97d9b7cdf`から正典経路で反映した（#992）。SHA256 `8a4f04f67a02ce68d2bfbde389aa090f4e3543a62446a794baf499c8e429831d`。実data42ファイル不変、アプリは起動していない。記録はD:/NeNeFolio/agents/work-20261118/deploy-992/。
 以下はそれ以前の記録。
 11月19日にsource `6f22e5bc912ddd8ffbc88abe4982823a9e3c9eb2`から正典経路で反映した（#980・#982・#988）。SHA256 `2971c912235dd0f719395e2dd17e79f849c1af55ebd60b420ea1d749a22c6079`。実data42ファイル不変、アプリは起動していない。記録はD:/NeNeFolio/agents/work-20261118/deploy-988/。
