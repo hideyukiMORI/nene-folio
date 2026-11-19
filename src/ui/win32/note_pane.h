@@ -7,6 +7,7 @@
 #include "folio_text_edit.h"
 #include "gutter_row.h"
 #include "image_bitmap.h"
+#include "markdown_source_selection.h"
 #include "note_pane_geometry.h"
 #include "note_pane_heading.h"
 #include "note_pane_heading_label.h"
@@ -173,6 +174,12 @@ void note_pane_scroll_wheel(struct note_pane *_Nonnull pane, int delta);
 void note_pane_cancel_wheel(struct note_pane *_Nonnull pane);
 /* #883: the body's context menu offers the edits the keys already do. Available follows the
  * mode (viewing is read-only), the selection, the clipboard and the pane's input locks. */
+/* #1012 / ADR0116: the reading view's paragraphs the selection touches, as ordinals (paragraph
+ * marks, CR and U+0007, before each end; a selection that ends where a paragraph begins leaves
+ * it out), and the marks in the whole text. False when the text is not ready or out of memory. */
+[[nodiscard]] bool note_pane_paragraph_selection(struct note_pane *_Nonnull pane,
+                                                 struct markdown_source_selection *_Nonnull out,
+                                                 size_t *_Nonnull total);
 [[nodiscard]] bool note_pane_text_edit_available(const struct note_pane *_Nonnull pane,
                                                  enum folio_text_edit edit);
 void note_pane_text_edit(struct note_pane *_Nonnull pane, enum folio_text_edit edit);

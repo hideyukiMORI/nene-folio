@@ -10218,6 +10218,61 @@ static void text_menu_edit_rows(struct folio_window *_Nonnull window, HWND _Nonn
     require(!text_menu_row(window, 0).enabled, "nothing to undo in an unchanged note");
 }
 
+/* The reading view's menu: Copy, Copy as Markdown | Edit here | Select all (#1012). */
+static void text_menu_view_rows(struct folio_window *_Nonnull window, HWND _Nonnull body)
+{
+    text_menu_open(window, body);
+    struct accessible_view copy = text_menu_row(window, 0);
+    struct accessible_view markdown = text_menu_row(window, 1);
+    struct accessible_view here = text_menu_row(window, 2);
+    require(copy.set_size == 4 && copy.enabled &&
+                wcscmp((const wchar_t *)copy.name, L"コピー") == 0 &&
+                wcscmp((const wchar_t *)markdown.name, L"Markdownとしてコピー") == 0 &&
+                wcscmp((const wchar_t *)here.name, L"ここを編集") == 0 && markdown.enabled &&
+                here.enabled,
+            "viewing offers Copy, Copy as Markdown, Edit here and Select all (#1012)");
+}
+
+/* #1012: 「ここを編集」 opens the editing view with the caret on the line that holds the text
+ * selected in the reading view. 「Markdownとしてコピー」 is only checked as offered: the tests do
+ * not write the user's clipboard (ADR0106). */
+static void text_menu_edit_here(struct folio_window *_Nonnull window,
+                                struct native_fixture *_Nonnull fixture)
+{
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    text_menu_open(window, body);
+    wchar_t chosen[64] = {0};
+    SendMessageW(body, EM_GETSELTEXT, 0, (LPARAM)chosen);
+    for (size_t at = 0; chosen[at] != L'\0'; ++at)
+        if (chosen[at] == L'\r' || chosen[at] == L'\v')
+            chosen[at] = L'\0'; /* the clicked paragraph's part of the selection */
+    struct accessible_request request = {
+        .item = {.kind = ACCESSIBLE_SURFACE_CHOICE,
+                 .slot = 2,
+                 .revision = folio_window_accessible_surface_revision(window)},
+        .action = ACCESSIBLE_ACTION_INVOKE};
+    require(folio_window_accessible_action(window, &request) == S_OK, "invoke Edit here");
+    pump(window);
+    body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    CHARRANGE caret = {0, 0};
+    SendMessageW(body, EM_EXGETSEL, 0, (LPARAM)&caret);
+    LRESULT line = SendMessageW(body, EM_EXLINEFROMCHAR, 0, caret.cpMin);
+    wchar_t text[512] = {0};
+    text[0] = (wchar_t)(sizeof text / sizeof text[0] - 1);
+    LRESULT copied = SendMessageW(body, EM_GETLINE, (WPARAM)line, (LPARAM)text);
+    text[copied >= 0 && copied < 511 ? copied : 0] = L'\0';
+    printf("edit here: mode %d, focus %d, chosen %zu units, caret %ld..%ld, line %lld (%zu units), "
+           "found %d\n",
+           (int)folio_state_pane_mode(fixture->state), GetFocus() == body, wcslen(chosen),
+           caret.cpMin, caret.cpMax, (long long)line, wcslen(text),
+           wcsstr(text, chosen) != nullptr);
+    fflush(stdout);
+    require(folio_state_pane_mode(fixture->state) == PANE_MODE_EDIT && GetFocus() == body &&
+                caret.cpMin == caret.cpMax && chosen[0] != L'\0' && wcsstr(text, chosen) != nullptr,
+            "Edit here opens the editing view on the chosen text's line");
+    action(window, ACCESSIBLE_VIEW);
+}
+
 static void text_menu_visual(struct native_fixture *_Nonnull fixture)
 {
     const char *const looks[] = {"light", "dark"};
@@ -10238,17 +10293,13 @@ static void text_menu_visual(struct native_fixture *_Nonnull fixture)
                 "context menu window size");
         pump(window);
         HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
-        text_menu_open(window, body);
-        struct accessible_view copy = text_menu_row(window, 0);
-        require(copy.set_size == 2 && copy.enabled &&
-                    wcscmp((const wchar_t *)copy.name, L"コピー") == 0,
-                "viewing offers Copy and Select all");
+        text_menu_view_rows(window, body);
         char path[64];
         require(snprintf(path, sizeof path, "text-menu-view-%s.bmp", looks[at]) > 0, "path");
         tags_capture(root, path);
         struct accessible_request request = {
             .item = {.kind = ACCESSIBLE_SURFACE_CHOICE,
-                     .slot = 1,
+                     .slot = 3,
                      .revision = folio_window_accessible_surface_revision(window)},
             .action = ACCESSIBLE_ACTION_INVOKE};
         require(folio_window_accessible_action(window, &request) == S_OK, "invoke Select all");
@@ -10257,6 +10308,7 @@ static void text_menu_visual(struct native_fixture *_Nonnull fixture)
         SendMessageW(body, EM_EXGETSEL, 0, (LPARAM)&all);
         require(all.cpMin == 0 && all.cpMax > 9 && GetFocus() == body,
                 "Select all runs in the body and the focus returns to it");
+        text_menu_edit_here(window, fixture);
         action(window, ACCESSIBLE_EDIT);
         body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
         text_menu_edit_rows(window, body);
@@ -10377,7 +10429,7 @@ static void footnote_jump(struct native_fixture *_Nonnull fixture)
     SendMessageW(body, WM_CONTEXTMENU, (WPARAM)body, -1);
     pump(window);
     struct accessible_view copy = text_menu_row(window, 0);
-    require(copy.set_size == 2 && wcscmp((const wchar_t *)copy.name, L"コピー") == 0,
+    require(copy.set_size == 4 && wcscmp((const wchar_t *)copy.name, L"コピー") == 0,
             "a footnote number is not a web link: the menu offers no open or copy-link");
     SendMessageW(root, WM_KEYDOWN, VK_ESCAPE, 0);
     pump(window);
