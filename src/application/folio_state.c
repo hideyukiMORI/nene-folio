@@ -214,6 +214,8 @@ static void discovery_fresh_pass(struct folio_state *_Nonnull state);
 static bool discovery_source_reused(const struct folio_state *_Nonnull state, struct note_ref ref);
 static void invalidate_corpus_dependents(struct folio_state *_Nonnull state);
 static void fresh_tag_corpus(struct folio_state *_Nonnull state);
+static enum folio_state_outcome refresh_notes(struct folio_state *_Nonnull state, size_t category,
+                                              size_t *_Nullable first, size_t *_Nullable second);
 static bool holds_category(const struct folio_state *_Nonnull state, size_t category);
 static struct drawer_cursor first_stop_in(const struct folio_state *_Nonnull state,
                                           size_t category);
@@ -487,6 +489,14 @@ static enum folio_state_outcome synchronize_index(struct folio_state *_Nonnull s
     if (!state->index_pending)
     {
         return FOLIO_STATE_READY;
+    }
+    /* #1069 / ADR0117 (stage 4): what this app did is already in the folder (a note made, sent
+     * to the bin or moved), so reading the index and the folder again gives the ledger to write:
+     * the outside order and stars, the outside notes, and this app's own change. A ledger that
+     * cannot be read again is not overwritten with the one in memory. */
+    if (refresh_notes(state, state->pending_category, nullptr, nullptr) != FOLIO_STATE_READY)
+    {
+        return FOLIO_STATE_LEDGER_UNSYNCED;
     }
     enum persistence_outcome stored = state->port.write_note_ledger(
         state->port.adapter, category_ledger_name(state->categories, state->pending_category),
@@ -1540,11 +1550,14 @@ bool folio_state_note_favorite(const struct folio_state *_Nonnull state, struct 
 }
 
 /* #1069 / ADR0117: where the note at *at of the old ledger is in the fresh one. An operand that
- * is not given is always found. */
+ * is not given is always found. A place past the old ledger's end names no note: while a note
+ * is being sent to the bin, the open note's place can still be the one just removed. */
 static bool follow_note(const struct note_ledger *_Nonnull old,
                         const struct note_ledger *_Nonnull fresh, size_t *_Nullable at)
 {
-    return at == nullptr || note_ledger_find(fresh, note_ledger_name(old, *at), at);
+    if (at == nullptr)
+        return true;
+    return *at < note_ledger_count(old) && note_ledger_find(fresh, note_ledger_name(old, *at), at);
 }
 
 /* The fresh ledger takes the old one's place. What pointed at a note by its place (the open
@@ -1580,7 +1593,8 @@ static enum folio_state_outcome refresh_notes(struct folio_state *_Nonnull state
                                               size_t *_Nullable first, size_t *_Nullable second)
 {
     const struct note_ledger *old = state->notes[category];
-    bool open = state->document == FOLIO_DOCUMENT_NAMED && state->selected_category == category;
+    bool open = state->document == FOLIO_DOCUMENT_NAMED && state->selected_category == category &&
+                state->selected_note < note_ledger_count(old);
     struct note_ledger *_Nullable fresh = nullptr;
     enum folio_state_outcome outcome =
         load_notes(&fresh, &state->port, category_ledger_name(state->categories, category),
@@ -2037,6 +2051,7 @@ static void move_notes(struct note_ledger *_Nonnull *_Nonnull items, size_t from
 enum folio_state_outcome folio_state_move_category(struct folio_state *_Nonnull state, size_t from,
                                                    size_t to)
 {
+    state->ledger_notice = false;
     if (folio_state_filtering(state))
     {
         return FOLIO_STATE_FILTERED;
@@ -2280,11 +2295,40 @@ static enum folio_state_outcome recopy_move(struct folio_state *_Nonnull state,
     return FOLIO_STATE_READY;
 }
 
+/* #1069 / ADR0117 (stage 4): both categories are read again before the destination ledger is
+ * written. The moved note, and the note it is dropped before, are found again by name; a drop
+ * at the end stays at the end. A name that came to the destination from outside is NAME_TAKEN
+ * here, before anything is written. */
+static enum folio_state_outcome refresh_transfer(struct folio_state *_Nonnull state,
+                                                 struct note_ref *_Nonnull from,
+                                                 struct note_ref *_Nonnull to)
+{
+    bool end = to->note >= note_ledger_count(state->notes[to->category]);
+    enum folio_state_outcome outcome = refresh_notes(state, from->category, &from->note, nullptr);
+    if (outcome == FOLIO_STATE_READY)
+    {
+        outcome = refresh_notes(state, to->category, end ? nullptr : &to->note, nullptr);
+    }
+    if (outcome != FOLIO_STATE_READY)
+    {
+        return outcome;
+    }
+    if (end)
+    {
+        to->note = note_ledger_count(state->notes[to->category]);
+    }
+    return transfer_allowed(state, *from, *to);
+}
+
 /* 別カテゴリへ移す。移動先台帳→md→移動元台帳の順で星を守る（ADR0090）。 */
 static enum folio_state_outcome transfer_note(struct folio_state *_Nonnull state,
                                               struct note_ref from, struct note_ref to)
 {
     enum folio_state_outcome outcome = transfer_allowed(state, from, to);
+    if (outcome == FOLIO_STATE_READY)
+    {
+        outcome = refresh_transfer(state, &from, &to);
+    }
     if (outcome != FOLIO_STATE_READY)
     {
         return outcome;
@@ -2352,6 +2396,7 @@ enum folio_state_outcome folio_state_move_note(struct folio_state *_Nonnull stat
 enum folio_state_outcome folio_state_move_note_to_category(struct folio_state *_Nonnull state,
                                                            struct note_ref from, size_t category)
 {
+    state->ledger_notice = false;
     if (folio_state_filtering(state))
     {
         return FOLIO_STATE_FILTERED;

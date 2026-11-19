@@ -42,10 +42,21 @@ struct stored_index
     char text[512];
 };
 
+/* One category's folder as the fake holds it once a note was made, binned, moved or renamed
+ * there: the names its scan returns from then on (#1069, stage 4). */
+struct stored_folder
+{
+    char category[64];
+    char names[16][48];
+    size_t count;
+};
+
 struct persistence_adapter
 {
     struct stored_index stored[8];
     size_t stored_count;
+    struct stored_folder folders[8];
+    size_t folder_count;
     bool times_ready;
     const char *_Nullable updated_time;
     size_t times_reads;
@@ -212,6 +223,81 @@ static bool is_alt(const struct persistence_adapter *_Nonnull adapter,
     return adapter->alt_category != nullptr && strcmp(adapter->alt_category, category) == 0;
 }
 
+/* #1069 / ADR0117 (stage 4): a ledger is read again with its folder before it is written, so
+ * the fake's folders must hold what the product did to them, as real folders do. A category's
+ * folder starts as the fixed scan list and is the fake's own from its first change. */
+static struct stored_folder *_Nullable folder_slot(struct persistence_adapter *_Nonnull adapter,
+                                                   const char *_Nonnull category)
+{
+    for (size_t at = 0; at < adapter->folder_count; ++at)
+        if (strcmp(adapter->folders[at].category, category) == 0)
+            return &adapter->folders[at];
+    return nullptr;
+}
+
+static void folder_put(struct stored_folder *_Nonnull folder, const char *_Nonnull name)
+{
+    for (size_t at = 0; at < folder->count; ++at)
+        if (strcmp(folder->names[at], name) == 0)
+            return;
+    require(folder->count < sizeof folder->names / sizeof folder->names[0] &&
+                strlen(name) < sizeof folder->names[0],
+            "the fake's folder holds the name");
+    memcpy(folder->names[folder->count++], name, strlen(name) + 1);
+}
+
+static struct stored_folder *_Nonnull folder_of(struct persistence_adapter *_Nonnull adapter,
+                                                const char *_Nonnull category)
+{
+    struct stored_folder *slot = folder_slot(adapter, category);
+    if (slot != nullptr)
+        return slot;
+    require(adapter->folder_count < sizeof adapter->folders / sizeof adapter->folders[0] &&
+                strlen(category) < sizeof slot->category,
+            "the fake holds this category's folder");
+    slot = &adapter->folders[adapter->folder_count++];
+    memcpy(slot->category, category, strlen(category) + 1);
+    slot->count = 0;
+    bool alt = is_alt(adapter, category);
+    const char *_Nonnull const *_Nullable names =
+        alt ? adapter->alt_scanned : adapter->scanned_notes;
+    for (size_t at = 0;
+         names != nullptr && (alt ? names[at] != nullptr : at < adapter->scanned_note_count); ++at)
+        folder_put(slot, names[at]);
+    return slot;
+}
+
+/* A note is in the folder from now on: made by the product, or put there from outside by a test. */
+static void folder_add(struct persistence_adapter *_Nonnull adapter, const char *_Nonnull category,
+                       const char *_Nonnull name)
+{
+    folder_put(folder_of(adapter, category), name);
+}
+
+static void folder_remove(struct persistence_adapter *_Nonnull adapter,
+                          const char *_Nonnull category, const char *_Nonnull name)
+{
+    struct stored_folder *folder = folder_of(adapter, category);
+    for (size_t at = 0; at < folder->count; ++at)
+    {
+        if (strcmp(folder->names[at], name) != 0)
+            continue;
+        for (size_t next = at + 1; next < folder->count; ++next)
+            memcpy(folder->names[next - 1], folder->names[next], sizeof folder->names[0]);
+        folder->count -= 1;
+        return;
+    }
+}
+
+static enum persistence_outcome list_folder(const struct stored_folder *_Nonnull folder,
+                                            struct name_list *_Nullable *_Nonnull out)
+{
+    const char *names[sizeof folder->names / sizeof folder->names[0]];
+    for (size_t at = 0; at < folder->count; ++at)
+        names[at] = folder->names[at];
+    return list_names(names, folder->count, out);
+}
+
 static enum persistence_outcome fake_scan_notes(struct persistence_adapter *_Nonnull adapter,
                                                 const char *_Nonnull category,
                                                 struct name_list *_Nullable *_Nonnull out)
@@ -220,6 +306,11 @@ static enum persistence_outcome fake_scan_notes(struct persistence_adapter *_Non
     if (adapter->notes_scan_outcome != PERSISTENCE_LOADED)
     {
         return adapter->notes_scan_outcome;
+    }
+    const struct stored_folder *folder = folder_slot(adapter, category);
+    if (folder != nullptr)
+    {
+        return list_folder(folder, out);
     }
     if (!is_alt(adapter, category))
     {
@@ -526,6 +617,8 @@ static enum trash_outcome fake_trash_note(struct persistence_adapter *_Nonnull a
     require(strlen(note) < sizeof adapter->trashed_note, "trashed note fits");
     memcpy(adapter->trashed_category, category, strlen(category) + 1);
     memcpy(adapter->trashed_note, note, strlen(note) + 1);
+    if (adapter->trash_outcome == TRASH_TRASHED || adapter->trash_outcome == TRASH_ABSENT)
+        folder_remove(adapter, category, note);
     return adapter->trash_outcome;
 }
 
@@ -559,6 +652,7 @@ static enum persistence_outcome fake_create_note(struct persistence_adapter *_No
     }
     require(note_text_length(body) < sizeof adapter->written_body, "created body fits");
     memcpy(adapter->written_body, note_text_bytes(body), note_text_length(body) + 1);
+    folder_add(adapter, category, note);
     if (adapter->copy_fail_at > 0)
     {
         allocation_probe_fail_at(adapter->copy_fail_at);
@@ -573,6 +667,12 @@ static enum persistence_outcome fake_create_category(struct persistence_adapter 
     record_call(adapter, "create_category");
     require(strlen(category) < sizeof adapter->created_category, "created category fits");
     memcpy(adapter->created_category, category, strlen(category) + 1);
+    if (adapter->category_create_outcome == PERSISTENCE_STORED)
+    {
+        /* A folder just made is empty and has no index, whatever the fixed lists say (#1069). */
+        folder_of(adapter, category)->count = 0;
+        store_index(adapter, category, "{\"version\": 2, \"notes\": [], \"favorites\": []}");
+    }
     return adapter->category_create_outcome;
 }
 
@@ -619,6 +719,11 @@ static enum persistence_outcome fake_move_note(struct persistence_adapter *_Nonn
     memcpy(adapter->moved_note, note, length + 1);
     adapter->move_to = to_category;
     record_call(adapter, "move");
+    if (adapter->move_outcome == PERSISTENCE_STORED)
+    {
+        folder_remove(adapter, from_category, note);
+        folder_add(adapter, to_category, note);
+    }
     return adapter->move_outcome;
 }
 
@@ -627,6 +732,31 @@ static void copy_name(char *_Nonnull out, size_t capacity, const char *_Nonnull 
     size_t length = strlen(name);
     require(length + 1 < capacity, "the renamed name fits the fake");
     memcpy(out, name, length + 1);
+}
+
+/* A completed rename is in the fake's folders and indexes as in real ones: a note's file has
+ * its new name and its category's index is the plan's; a category's folder and index answer
+ * to the new name (#1069, stage 4). */
+static void rekey(char *_Nonnull key, size_t capacity, const struct rename_plan *_Nonnull plan)
+{
+    if (strcmp(key, rename_plan_from(plan)) == 0)
+        copy_name(key, capacity, rename_plan_to(plan));
+}
+
+static void complete_rename(struct persistence_adapter *_Nonnull adapter,
+                            const struct rename_plan *_Nonnull plan)
+{
+    if (rename_plan_kind(plan) == RENAME_KIND_NOTE)
+    {
+        folder_remove(adapter, rename_plan_category(plan), rename_plan_from(plan));
+        folder_add(adapter, rename_plan_category(plan), rename_plan_to(plan));
+        store_ledger(adapter, rename_plan_category(plan), rename_plan_note_ledger(plan));
+        return;
+    }
+    for (size_t at = 0; at < adapter->folder_count; ++at)
+        rekey(adapter->folders[at].category, sizeof adapter->folders[at].category, plan);
+    for (size_t at = 0; at < adapter->stored_count; ++at)
+        rekey(adapter->stored[at].category, sizeof adapter->stored[at].category, plan);
 }
 
 /* 偽の改名。どの段階で止めるかは rename_outcome が決める（ADR 0022）。
@@ -658,6 +788,7 @@ static enum rename_outcome fake_apply_rename(struct persistence_adapter *_Nonnul
     if (adapter->rename_outcome == RENAME_COMPLETED)
     {
         adapter->journal_published = false;
+        complete_rename(adapter, plan);
     }
     return adapter->rename_outcome;
 }
