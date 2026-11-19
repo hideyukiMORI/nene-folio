@@ -17,6 +17,8 @@
 #include "note_tag.h"
 #include "note_tags.h"
 #include "note_text.h"
+#include "open_place_kind.h"
+#include "open_request.h"
 #include "persisted_size_limit.h"
 #include "persistence_port.h"
 #include "regex_port.h"
@@ -1661,12 +1663,88 @@ static void verify_category_pending_follows(void)
     folio_state_destroy(state);
 }
 
+/* #1071 / ADR0118: a request from outside names a note; the lists are read again first, since
+ * whoever wrote the request may have just made the note. */
+static struct open_request *_Nonnull open_link(const char *_Nonnull link)
+{
+    struct open_request *request = nullptr;
+    require(open_request_create(link, strlen(link), &request) == OPEN_REQUEST_ACCEPTED &&
+                request != nullptr,
+            link);
+    return request;
+}
+
+static enum folio_state_outcome locate_link(struct folio_state *_Nonnull state,
+                                            const char *_Nonnull link,
+                                            struct note_ref *_Nonnull out)
+{
+    struct open_request *request = open_link(link);
+    enum folio_state_outcome outcome = folio_state_locate_open_request(state, request, out);
+    open_request_destroy(request);
+    return outcome;
+}
+
+static void verify_open_request_located(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    struct note_ref ref = {9, 9};
+    size_t writes = adapter.writes + adapter.ledger_writes;
+    folder_add(&adapter, "C", "fresh");
+    require(locate_link(state, "nenefolio://open?category=c&note=FRESH", &ref) ==
+                    FOLIO_STATE_READY &&
+                same_text(folio_state_category_name(state, ref.category), "C") &&
+                same_text(folio_state_note_name(state, ref), "fresh"),
+            "a note made outside just before is found; names match in any ASCII case");
+    category_folder_add(&adapter, "D");
+    require(locate_link(state, "nenefolio://open?category=D&note=two", &ref) == FOLIO_STATE_READY &&
+                same_text(folio_state_category_name(state, ref.category), "D") &&
+                same_text(folio_state_note_name(state, ref), "two"),
+            "a category made outside just before is found with its notes");
+    struct note_ref kept = ref;
+    require(locate_link(state, "nenefolio://open?category=Z&note=one", &ref) ==
+                    FOLIO_STATE_NO_SUCH_CATEGORY &&
+                locate_link(state, "nenefolio://open?category=B&note=absent", &ref) ==
+                    FOLIO_STATE_NO_SUCH_NOTE &&
+                ref.category == kept.category && ref.note == kept.note,
+            "a category or a note that is not listed is refused, and nothing is made");
+    require(adapter.writes + adapter.ledger_writes == writes && adapter.creates == 0 &&
+                adapter.category_creates == 0,
+            "locating reads the lists again and writes nothing");
+    adapter.categories_outcome = PERSISTENCE_UNREADABLE;
+    require(locate_link(state, "nenefolio://open?category=B&note=one", &ref) ==
+                FOLIO_STATE_DATA_UNREADABLE,
+            "lists that cannot be read again refuse the request");
+    folio_state_destroy(state);
+}
+
+static void verify_open_request_place(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    adapter.note_body = "# Hello\n\nfirst body\nsecond body\n";
+    struct folio_state *state = ready_state(&adapter);
+    struct open_request *request =
+        open_link("nenefolio://open?category=B&note=one&lines=4&text=body");
+    struct note_byte_span span = {7, 7};
+    require(folio_state_open_place(state, request, &span) == OPEN_PLACE_NONE && span.start == 7,
+            "no document, no place");
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
+                folio_state_open_place(state, request, &span) == OPEN_PLACE_TEXT_NEAR &&
+                span.start == 15 && span.end == 19,
+            "the place is found on the open note's saved source, near the given line");
+    open_request_destroy(request);
+    folio_state_destroy(state);
+}
+
 static void verify_rename_refresh(void);
 
-/* The category stage and the rename stage of #1069 (one call from run_state_tests). */
+/* The category and rename stages of #1069 and the open request of #1071 (one call from
+ * run_state_tests). */
 static void verify_category_refresh(void)
 {
     verify_rename_refresh();
+    verify_open_request_located();
+    verify_open_request_place();
     verify_category_refresh_adds();
     verify_category_refresh_follows_names();
     verify_category_refresh_refuses();
