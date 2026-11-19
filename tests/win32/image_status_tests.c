@@ -11016,6 +11016,85 @@ static void outline_recolor(struct folio_window *_Nonnull window)
             "the wheel brings the first row back");
 }
 
+static void outline_resize(struct folio_window *_Nonnull window, int height)
+{
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    UINT dpi = GetDpiForWindow(root);
+    require(SetWindowPos(root, nullptr, 20, 20, MulDiv(900, (int)dpi, 96),
+                         MulDiv(height, (int)dpi, 96), SWP_NOZORDER | SWP_NOACTIVATE),
+            "outline window height");
+    pump(window);
+}
+
+/* #1056 (review of #1040): scrolling the body up a line at a time from the chosen last
+ * heading, that heading is never the one being read once its line has left the view. */
+static void outline_chosen_leaves(struct folio_window *_Nonnull window, size_t chosen)
+{
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    LONG mark = footnote_find(body, L"付録", 0);
+    RECT client = {0};
+    require(GetClientRect(body, &client), "body client");
+    size_t held = 0;
+    size_t gone = 0;
+    for (int step = 0; step < 120 && outline_first_line(window) > 0; ++step)
+    {
+        SendMessageW(body, EM_LINESCROLL, 0, -1);
+        pump(window);
+        POINTL place = {0};
+        SendMessageW(body, EM_POSFROMCHAR, (WPARAM)&place, mark);
+        bool visible = place.y >= 0 && place.y < client.bottom;
+        bool marked = outline_current(window) == chosen;
+        held += visible && marked ? 1 : 0;
+        gone += visible ? 0 : 1;
+        require(visible || !marked, "a heading that left the view is not the one being read");
+    }
+    printf("outline: chosen heading stayed marked for %zu lines in view, then %zu lines out\n",
+           held, gone);
+    fflush(stdout);
+    require(held > 0 && gone > 0,
+            "the chosen heading stayed marked while in view, and the walk took it out of the view");
+}
+
+/* #1056 (review of #1026): with a chosen heading and the column wheeled away from it, new
+ * colours leave the column where the wheel put it and the chosen heading still being read.
+ * Makes the window short for it, and leaves it tall with the body at the top. */
+static void outline_chosen_recolor(struct folio_window *_Nonnull window)
+{
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    outline_resize(window, 300);
+    size_t count = (size_t)outline_row(window, outline_item_at(window, 0)).set_size;
+    struct accessible_request request = {.item = outline_item_at(window, count - 1),
+                                         .action = ACCESSIBLE_ACTION_INVOKE};
+    require(folio_window_accessible_action(window, &request) == S_OK, "the last row");
+    pump(window);
+    struct accessible_view column = outline_read(window, ACCESSIBLE_OUTLINE);
+    POINT over = {(column.bounds.left + column.bounds.right) / 2,
+                  (column.bounds.top + column.bounds.bottom) / 2};
+    outline_send_wheel(window, over, WHEEL_DELTA * 3);
+    require(outline_current(window) == count - 1 &&
+                !outline_row(window, outline_item_at(window, 0)).offscreen &&
+                outline_row(window, outline_item_at(window, count - 1)).offscreen,
+            "the column is wheeled away from the chosen heading");
+    favorite_high_contrast = !favorite_high_contrast;
+    SendMessageW(root, WM_SETTINGCHANGE, 0, 0);
+    pump(window);
+    printf("outline: chosen and recoloured, current %zu of %zu, first row %s\n",
+           outline_current(window), count,
+           outline_row(window, outline_item_at(window, 0)).offscreen ? "hidden" : "shown");
+    fflush(stdout);
+    require(outline_current(window) == count - 1 &&
+                !outline_row(window, outline_item_at(window, 0)).offscreen &&
+                outline_row(window, outline_item_at(window, count - 1)).offscreen,
+            "new colours keep the chosen heading and do not pull the wheeled column back");
+    favorite_high_contrast = !favorite_high_contrast;
+    SendMessageW(root, WM_SETTINGCHANGE, 0, 0);
+    pump(window);
+    request.item = outline_item_at(window, 0);
+    require(folio_window_accessible_action(window, &request) == S_OK, "back to the first heading");
+    pump(window);
+    outline_resize(window, 620);
+}
+
 /* #1018: reading a late heading and then making the window shorter keeps that heading's row in
  * the column; making it tall again leaves no empty rows below the last heading. */
 static void outline_shorten(struct folio_window *_Nonnull window)
@@ -11034,6 +11113,7 @@ static void outline_shorten(struct folio_window *_Nonnull window)
     require(outline_current(window) == count - 1 &&
                 outline_row(window, outline_item_at(window, count - 1)).selected,
             "the row that was invoked is the heading being read, though it is not at the top");
+    outline_chosen_leaves(window, count - 1);
     SendMessageW(body, EM_LINESCROLL, 0, -100000);
     pump(window);
     printf("outline: last row chosen at line %lld, after scrolling up line %lld current %zu\n",
@@ -11209,6 +11289,7 @@ static void outline_column(struct native_fixture *_Nonnull fixture)
         outline_wheel(window);
         outline_recolor(window);
         outline_shorten(window);
+        outline_chosen_recolor(window);
         outline_narrow(window, fixture);
         folio_window_destroy(window);
         folio_state_set_outline(fixture->state, false);

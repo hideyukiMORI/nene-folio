@@ -1783,6 +1783,18 @@ static void align_heading_line(struct note_pane *_Nonnull pane, LONG position)
     note_pane_scroll_pixels(pane, (int)(current.y + place.y));
 }
 
+bool note_pane_heading_in_view(struct note_pane *_Nonnull pane, size_t index)
+{
+    struct note_pane_heading heading = {0};
+    RECT client = {0};
+    if (pane->readiness != NOTE_PANE_READINESS_READY || !note_pane_heading(pane, index, &heading) ||
+        !GetClientRect(pane->handle, &client))
+        return false;
+    POINTL place = {0};
+    SendMessageW(pane->handle, EM_POSFROMCHAR, (WPARAM)&place, heading.position);
+    return place.y >= 0 && place.y < client.bottom;
+}
+
 bool note_pane_show_heading(struct note_pane *_Nonnull pane, size_t index)
 {
     struct note_pane_heading heading = {0};
