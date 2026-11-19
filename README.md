@@ -10,12 +10,14 @@ A frameless Markdown notebook for Windows with a category drawer. Plain C (C23),
 > Windows 10 version 2004 or later is required. Notes and settings use `data/` beside the executable
 > by default; Settings can select another location.
 
-The latest GitHub release is **1.4.0 Beta**, [published on GitHub](https://github.com/hideyukiMORI/nene-folio/releases/tag/v1.4.0), adding favorites, tags, a note finder, a right-click
-menu in the note body, window placement restore, and state, ER, and class diagrams.
-See the [1.4.0 changes and update instructions](docs/release/1.4.0.md) and
-[release verification record](docs/quality/2026-11-17-release-1.4.0.md).
-The previous release is [1.3.2 Beta](https://github.com/hideyukiMORI/nene-folio/releases/tag/v1.3.2)
-([changes](docs/release/1.3.2.md), [verification record](docs/quality/2026-11-06-release-1.3.2.md)).
+The current source is the **1.5.0 release candidate**, adding a Headings column beside the note body,
+keyboard improvements in the note finder, moving a note to another category from the list, definition
+lists, multi-paragraph footnotes, and Mermaid pie and Gantt charts.
+See the [1.5.0 changes and update instructions](docs/release/1.5.0.md) and
+[candidate verification record](docs/quality/2026-11-19-release-1.5.0.md).
+The 1.5.0 candidate has not been tagged, published on GitHub, or submitted to the Store.
+The latest published GitHub release is [1.4.0 Beta](https://github.com/hideyukiMORI/nene-folio/releases/tag/v1.4.0)
+([changes](docs/release/1.4.0.md), [verification record](docs/quality/2026-11-17-release-1.4.0.md)).
 Package creation, GitHub publication, and Microsoft Store certification are tracked separately.
 The unsigned MSIX is a Store submission artifact, not a portable installer.
 The Store listing is live; the maintainer reported a successful Store update to 1.3.1 on November 6.
@@ -34,8 +36,8 @@ v1.3.2 with the English UI, Light theme, and sample notes. [Screenshot provenanc
 
 ## What it does
 
-The [1.4.0 release notes](docs/release/1.4.0.md) describe the current changes, update steps,
-and limitations; the previous changes are in the [1.3.2 notes](docs/release/1.3.2.md). Images, Mermaid diagrams, and image-aware export are covered in the
+The [1.5.0 release notes](docs/release/1.5.0.md) describe the current changes, update steps,
+and limitations; the previous changes are in the [1.4.0 notes](docs/release/1.4.0.md). Images, Mermaid diagrams, and image-aware export are covered in the
 [1.3.0 notes](docs/release/1.3.0.md); earlier changes remain in the [1.2.0 Store notes](docs/release/1.2.0.md)
 and [1.1.0 notes](docs/release/1.1.0.md).
 
@@ -81,12 +83,17 @@ and [1.1.0 notes](docs/release/1.1.0.md).
   match position is not applied.
 - **Images and diagrams**: local and HTTPS PNG/JPEG images load after the note body.
   Lowercase `mermaid` fences render native flowcharts, sequence diagrams and, from 1.4.0, state, ER and
-  class diagrams in the current theme.
+  class diagrams in the current theme; 1.5.0 adds pie charts and Gantt charts. A Gantt chart never
+  reads today's date, so a first task without a start date is reported as unsupported.
   Diagram sources stay as Markdown; no JavaScript runs and diagrams fetch no external resources.
   Supported syntax and size limits are documented in [Markdown](docs/MARKDOWN.md).
 - **Body context menu** (1.4.0): right-click in the note body, or press Shift+F10 / the menu key, for
   Undo, Cut, Copy, Paste and Select all in Edit mode and Copy and Select all in Read mode. On a link in
   Read mode the menu adds Open link and Copy link. Code blocks in Read mode have a Copy action.
+- **Headings column** (1.5.0, Ctrl+Shift+O): in Read mode a column beside the body lists the note's
+  headings, indented by level, and marks the one being read. Click a row, or Tab into the column from
+  the pane tools and press Enter on a row, to bring that heading to the top. The column is hidden in
+  Edit mode and in windows too narrow for it; whether it is open is remembered only while the app runs.
 - **Window placement** (1.4.0): the window reopens at its previous position, size and maximized state.
   Settings can turn this off. A recorded placement whose header would not be usable on any current
   screen, or whose size cannot be used, falls back to the default placement.
