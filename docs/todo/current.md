@@ -14,7 +14,7 @@ GitHubにマイルストーンは無いので、[前日の引き継ぎ](../hando
 11月18日に統合した16件（#931〜#982）は[11月18日の日報](../reports/2026-11-18.md)、11月17日の28件と1.4.0の公開は[11月17日の日報](../reports/2026-11-17.md)。
 
 hideの判断（11月19日、[判断のページ](https://claude.ai/artifact/KreKFrmmgx7xeqRQyFpmfW)は全部推し）で、1.5.0の候補を作って確かめた（#996、main `99adbab`、[品質記録](../quality/2026-11-19-release-1.5.0.md)）。
-次: hideの実機確認 → タグ・GitHubでの公開・Storeへの提出（hideの指示の後）。Storeの掲載文の案（#1000）と貼り付け用テキスト（D:/NeNeFolio/releases/1.5.0/store-listing-20261119/）も用意した。
+**1.5.0は11月19日にGitHubで公開した**（タグ`v1.5.0`＝`99adbab`、[Pre-release](https://github.com/hideyukiMORI/nene-folio/releases/tag/v1.5.0)、hideの指示「このまま出す」。[品質記録](../quality/2026-11-19-release-1.5.0.md)の「公開」）。Storeへの提出はhideが行う（未報告）。Storeの掲載文の案（#1000）と貼り付け用テキスト（D:/NeNeFolio/releases/1.5.0/store-listing-20261119/）も用意した。
 通常exeは1.5.0の候補（`99adbab`）のまま保つ。mainはその後#1000・#1002・#1006（ガント、次の版）・#1008（閲覧の段落と原文の対応表、画面の変化なし・ADR0116）で進んでいる。
 閲覧の右クリックの「ここを編集」「Markdownとしてコピー」は#1012で統合した（main `f8a1e02`、ADR0116、FR-056、[品質記録](../quality/2026-11-19-source-edit-copy.md)）。これも次の版で、通常exeへは入れていない。既定の振る舞いはhideが11月19日午後に確定した（推しのまま）。
 その後、#1016（上の試験の追加、`2c392d0`）と#1018（窓の高さが変わっても、いま読んでいる見出しを見出しの欄の中に保つ、`fbbe1c4`、[品質記録](../quality/2026-11-19-outline-fit.md)）を統合した。どちらも次の版。
@@ -32,7 +32,7 @@ hideの判断（11月19日、[判断のページ](https://claude.ai/artifact/Kre
 次の製品作業の候補: 引き継ぎの「記録だけにしたこと（#988）」の残り（自動の試験が無い点）と、ガントの残り（自動のid）。どれも要望が出てからでよい大きさ。
 hideの返事待ち: コードブロックのコピーがWSLで貼れない件の症状、#935の作業木の扱い、#948と`body_discovery_96_native`の実行時間（上限30秒に近い）。
 hideの実機確認（11月19日20時台、1.5.0の候補）: 見出しの欄・ガント・ナレーターはOK。円グラフは表示を確認し、輪郭のがさつきの指摘あり（1.5.0では問題にしない）。定義リスト・脚注・「ノートを探す」・カテゴリ移動は未確認。表は[引き継ぎ](../handoffs/2026-11-19.md)。
-**残る判断**: 1.5.0をこのまま出すか、mainの変更を入れて作り直すか（リナの推しは、このまま出して次の版で直す）。
+hideの判断（11月19日夜）: 1.5.0はこのまま出す。次の版以降の要望: 画像のドラッグ＆ドロップ（[#1062](https://github.com/hideyukiMORI/nene-folio/issues/1062)）。
 個別の報告が無いままのもの: #855の「左上の全体検索」の読み方、#853のcodeの大きさの比、#854の実機（物理キー・IME）。
 
 Store: 1.4.0の更新は認定を通った（11月18日のhideの報告、[記録](https://github.com/hideyukiMORI/nene-folio/issues/956)）。掲載の反映とStore経由の実機の更新は未確認。
@@ -42,12 +42,12 @@ Store: 1.4.0の更新は認定を通った（11月18日のhideの報告、[記�
 [ロードマップ](../ROADMAP.md)の段階1〜4とAboutは完了。
 #819の作業木は全ファイルとGit登録を整理済みだが、OSが最後の空directory削除を拒否したため
 D:/NeNeFolio/worktrees/819-note-tagsを0ファイルで保持し、盲目的な再試行はしない。
-公開済みの版は1.4.0（#920。GitHubで公開済み、Storeは認定通過＝hideの報告）。sourceの版は1.5.0（#996、未公開の候補）。11月12日のPR810はDraft/open、今回変更していない。
+公開済みの版は1.5.0（#996。GitHubで11月19日に公開。Storeは未提出＝hideが行う。Storeで公開中なのは1.4.0）。sourceの版も1.5.0で、mainには次の版の変更が入っている。11月12日のPR810はDraft/open、今回変更していない。
 古い停止/継続/起動/相談の許可を新しい作業へ持ち越さず、現在のhide指示を優先する。
 
 ## 通常版と公開版
 
-通常exeはC:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe、版1.5.0 / Windows1.5.0.0（未公開の候補）。
+通常exeはC:/Users/info/WORKS/NeNeFolio/build/NeNeFolio.exe、版1.5.0 / Windows1.5.0.0（11月19日にGitHubで公開した版と同じsource）。
 11月19日にsource `99adbab97fbd6d605abbfeacf6e6603f0476e70a`から正典経路で反映した（版1.5.0、#996）。SHA256 `91bfcd212714e2e87d9ecd4bcfba2c5bef9c2e710a42a9ae90dd38498d57f523`。実data42ファイル不変、アプリは起動していない。記録はD:/NeNeFolio/agents/work-20261118/deploy-996/。
 以下はそれ以前の記録。
 11月19日にsource `40d48fa3d10b863b032465d4e07c6ec97d9b7cdf`から正典経路で反映した（#992）。SHA256 `8a4f04f67a02ce68d2bfbde389aa090f4e3543a62446a794baf499c8e429831d`。実data42ファイル不変、アプリは起動していない。記録はD:/NeNeFolio/agents/work-20261118/deploy-992/。
