@@ -49,6 +49,8 @@ struct stored_folder
     char category[64];
     char names[16][48];
     size_t count;
+    const char *_Nonnull const *_Nullable seed; /* the fixed list it was first filled from */
+    size_t seed_count;
 };
 
 struct persistence_adapter
@@ -261,10 +263,20 @@ static struct stored_folder *_Nonnull folder_of(struct persistence_adapter *_Non
     bool alt = is_alt(adapter, category);
     const char *_Nonnull const *_Nullable names =
         alt ? adapter->alt_scanned : adapter->scanned_notes;
+    slot->seed = names;
+    slot->seed_count = adapter->scanned_note_count;
     for (size_t at = 0;
          names != nullptr && (alt ? names[at] != nullptr : at < adapter->scanned_note_count); ++at)
         folder_put(slot, names[at]);
     return slot;
+}
+
+static bool folder_holds(const struct stored_folder *_Nonnull folder, const char *_Nonnull name)
+{
+    for (size_t at = 0; at < folder->count; ++at)
+        if (strcmp(folder->names[at], name) == 0)
+            return true;
+    return false;
 }
 
 /* A note is in the folder from now on: made by the product, or put there from outside by a test. */
@@ -310,6 +322,15 @@ static enum persistence_outcome fake_scan_notes(struct persistence_adapter *_Non
     const struct stored_folder *folder = folder_slot(adapter, category);
     if (folder != nullptr)
     {
+        /* Once the fake holds a folder, the fixed lists no longer speak for it. A test that
+         * swaps them afterwards would be ignored without a word: it must use folder_add and
+         * folder_remove (review of #1069, stage 4). */
+        bool alt = is_alt(adapter, category);
+        require(folder->seed == nullptr ||
+                    (alt ? folder->seed == adapter->alt_scanned
+                         : folder->seed == adapter->scanned_notes &&
+                               folder->seed_count == adapter->scanned_note_count),
+                "a folder the fake holds is changed with folder_add / folder_remove");
         return list_folder(folder, out);
     }
     if (!is_alt(adapter, category))
@@ -416,6 +437,10 @@ static enum persistence_outcome fake_read_note_ledger(struct persistence_adapter
         return adapter->notes_outcome;
     }
     const struct stored_index *slot = stored_slot(adapter, category);
+    if (slot != nullptr && slot->text[0] == '\0')
+    {
+        return PERSISTENCE_ABSENT;
+    }
     const char *_Nonnull fixed =
         is_alt(adapter, category) ? adapter->alt_notes_text : adapter->notes_text;
     const char *_Nonnull text = slot != nullptr ? slot->text : fixed;
@@ -650,6 +675,10 @@ static enum persistence_outcome fake_create_note(struct persistence_adapter *_No
     {
         return adapter->create_outcome;
     }
+    if (folder_holds(folder_of(adapter, category), note))
+    {
+        return PERSISTENCE_NAME_TAKEN; /* as the real adapter: an existing file is not replaced */
+    }
     require(note_text_length(body) < sizeof adapter->written_body, "created body fits");
     memcpy(adapter->written_body, note_text_bytes(body), note_text_length(body) + 1);
     folder_add(adapter, category, note);
@@ -670,8 +699,10 @@ static enum persistence_outcome fake_create_category(struct persistence_adapter 
     if (adapter->category_create_outcome == PERSISTENCE_STORED)
     {
         /* A folder just made is empty and has no index, whatever the fixed lists say (#1069). */
-        folder_of(adapter, category)->count = 0;
-        store_index(adapter, category, "{\"version\": 2, \"notes\": [], \"favorites\": []}");
+        struct stored_folder *made = folder_of(adapter, category);
+        made->count = 0;
+        made->seed = nullptr;
+        store_index(adapter, category, ""); /* no index.json yet: reads as ABSENT */
     }
     return adapter->category_create_outcome;
 }
@@ -721,6 +752,10 @@ static enum persistence_outcome fake_move_note(struct persistence_adapter *_Nonn
     record_call(adapter, "move");
     if (adapter->move_outcome == PERSISTENCE_STORED)
     {
+        if (folder_holds(folder_of(adapter, to_category), note))
+        {
+            return PERSISTENCE_UNWRITABLE; /* the real move does not replace a file either */
+        }
         folder_remove(adapter, from_category, note);
         folder_add(adapter, to_category, note);
     }
@@ -1697,6 +1732,67 @@ static void verify_refresh_transfer(void)
     row_order(state, order, sizeof order);
     require(same_text(order, "B/two/three/A/five/one/four/eight/two/C/one/two/three"),
             "and the lists show what is there");
+    folio_state_destroy(state);
+}
+
+/* Review of #1069, stage 4. A waiting index is written before the next intent; if the list it
+ * is made from differs from the one in memory, the places the caller counted are of the old
+ * list, and an intent that names a note by its place is refused instead of acting on another
+ * note. B: one/two/three, A: four/five, C as B. */
+static void verify_refresh_retry_places(void)
+{
+    char order[160] = {0};
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = transfer_state(&adapter);
+    adapter.notes_outcome = PERSISTENCE_UNREADABLE;
+    require(folio_state_trash_note(state, at(2, 0), u"x", 1) == FOLIO_STATE_LEDGER_STALE &&
+                adapter.trashes == 1 && adapter.ledger_writes == 0,
+            "one is binned in C; its index cannot be read again and waits");
+    /* While it cannot be read: other work goes on, and nothing is written over it. */
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
+                same_text(folio_state_document_name(state), "one") && adapter.ledger_writes == 0,
+            "a note of another category is opened while C's index waits");
+    require(folio_state_toggle_favorite(state, at(2, 0)) == FOLIO_STATE_DATA_UNREADABLE &&
+                adapter.ledger_writes == 0,
+            "an intent that needs that index says it cannot be read");
+    adapter.notes_outcome = PERSISTENCE_LOADED;
+    folder_remove(&adapter, "C", "two");
+    require(folio_state_trash_note(state, at(2, 1), u"x", 1) ==
+                    FOLIO_STATE_LEDGER_CHANGED_OUTSIDE &&
+                adapter.trashes == 1,
+            "the second row was three; the list read again has one row: nothing is binned");
+    require(adapter.ledger_writes == 1 && same_text(adapter.ledger_category, "C") &&
+                same_text(adapter.ledger_order, "three"),
+            "the waiting index was written from what is there");
+    row_order(state, order, sizeof order);
+    require(same_text(order, "B/one/two/three/A/C/three"), "and the list shows it");
+    require(folio_state_trash_note(state, at(2, 0), u"x", 1) == FOLIO_STATE_READY &&
+                same_text(adapter.trashed_note, "three"),
+            "pointing again at the fresh list bins the note that is meant");
+    folio_state_destroy(state);
+}
+
+/* The open note is binned while another note of its category was deleted outside: the note
+ * that stands at the open note's old place is not kept as if it were the open one. */
+static void verify_refresh_bins_open(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = transfer_state(&adapter);
+    require(folio_state_select_note(state, 2, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "one of C is open");
+    folder_remove(&adapter, "C", "two");
+    require(folio_state_trash_note(state, at(2, 0), u"x", 1) == FOLIO_STATE_READY &&
+                same_text(adapter.trashed_note, "one") &&
+                same_text(adapter.ledger_order, "three") &&
+                folio_state_document_kind(state) == FOLIO_DOCUMENT_NONE,
+            "the index holds only what is in the folder, and no note is open");
+    /* Memory still lists three in C; it was deleted outside. Whether the name is free is asked
+     * of the list read again, so the move is not refused. */
+    folder_remove(&adapter, "C", "three");
+    require(folio_state_move_note_to_category(state, at(0, 2), 2) == FOLIO_STATE_READY &&
+                same_text(adapter.moved_note, "three") && same_text(adapter.move_to, "C") &&
+                adapter.moves == 1,
+            "three of B moves to C, where the three memory knew is gone");
     folio_state_destroy(state);
 }
 
@@ -6312,6 +6408,8 @@ void run_state_tests(void)
     verify_refresh_allocation();
     verify_refresh_created_and_binned();
     verify_refresh_transfer();
+    verify_refresh_retry_places();
+    verify_refresh_bins_open();
     verify_move_selection();
     verify_move_to_category();
     verify_transfer_note();
@@ -7101,7 +7199,12 @@ static void verify_copy_filter_reentry(void)
     folio_state_destroy(state);
 }
 
-static void verify_copy_new_document(bool untitled)
+/* One attempt with the nth allocation of the repairing save failing. True when it fell where
+ * the test means it: after the waiting index was written, in the repair of the saved copy.
+ * #1069 / ADR0117 (stage 4): the index is read again before it is written, so the first
+ * allocations of that save are the reading's; a failure there leaves the index waiting and
+ * is not this test's case. */
+static bool copy_new_document_at(bool untitled, size_t nth)
 {
     struct persistence_adapter adapter = healthy_adapter();
     struct folio_state *state = copy_test_state(&adapter);
@@ -7124,11 +7227,17 @@ static void verify_copy_new_document(bool untitled)
     require(folio_state_store_note(state, u"needle", 6) == FOLIO_STATE_LEDGER_UNSYNCED,
             "index repair precedes copy repair");
     adapter.ledger_write_outcome = PERSISTENCE_STORED;
-    allocation_probe_fail_at(1);
+    allocation_probe_fail_at(nth);
     enum folio_state_outcome saved = folio_state_store_note(state, u"needle", 6);
     allocation_probe_fail_at(0);
-    require(saved == FOLIO_STATE_OUT_OF_MEMORY && adapter.ledger_writes == 3,
-            "repaired index can be followed by another copy OOM");
+    if (saved != FOLIO_STATE_OUT_OF_MEMORY || adapter.ledger_writes != 3)
+    {
+        require(saved == FOLIO_STATE_READY || saved == FOLIO_STATE_OUT_OF_MEMORY,
+                "a failure while the index is read again is typed");
+        note_name_destroy(name);
+        folio_state_destroy(state);
+        return false;
+    }
     require(folio_state_end_edit(state, u"needle", 6) == FOLIO_STATE_READY &&
                 folio_state_index_filter_count(state) == 1 &&
                 folio_state_pane_mode(state) == PANE_MODE_VIEW && adapter.creates == 1 &&
@@ -7136,6 +7245,15 @@ static void verify_copy_new_document(bool untitled)
             "copy retry neither republishes new md nor saves the original");
     note_name_destroy(name);
     folio_state_destroy(state);
+    return true;
+}
+
+static void verify_copy_new_document(bool untitled)
+{
+    for (size_t nth = 1; nth < 64; ++nth)
+        if (copy_new_document_at(untitled, nth))
+            return;
+    require(false, "repaired index can be followed by another copy OOM");
 }
 
 static enum folio_state_outcome copy_target_change(struct folio_state *_Nonnull state,

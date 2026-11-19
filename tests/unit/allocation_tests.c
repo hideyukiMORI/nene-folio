@@ -411,7 +411,11 @@ static bool reorder_under_probe(struct folio_state *_Nonnull state)
 static bool transfer_under_probe(struct folio_state *_Nonnull state)
 {
     enum folio_state_outcome moved = folio_state_move_note(state, at(1, 0), at(0, 1));
-    require(moved == FOLIO_STATE_READY || moved == FOLIO_STATE_OUT_OF_MEMORY,
+    /* #1069 / ADR0117 (stage 4): both lists are read again before the move, and the source's
+     * after it. A failure in that last reading is LEDGER_STALE: the note is moved and the
+     * source index waits. */
+    require(moved == FOLIO_STATE_READY || moved == FOLIO_STATE_OUT_OF_MEMORY ||
+                moved == FOLIO_STATE_LEDGER_STALE,
             "transfer note under probe");
     return moved == FOLIO_STATE_READY;
 }
@@ -520,7 +524,10 @@ static bool new_note_under_probe(struct folio_state *_Nonnull state)
     {
         struct note_destination destination = {.category = 0, .name = name};
         created = folio_state_store_new(state, &destination, u"draft\r\n", 7);
-        require(created == FOLIO_STATE_READY || created == FOLIO_STATE_OUT_OF_MEMORY,
+        /* #1069 / ADR0117 (stage 4): the index is read again after the note is written. A
+         * failure there is LEDGER_STALE: the note is saved and its index waits. */
+        require(created == FOLIO_STATE_READY || created == FOLIO_STATE_OUT_OF_MEMORY ||
+                    created == FOLIO_STATE_LEDGER_STALE,
                 "first save under probe");
     }
     note_name_destroy(name);
@@ -1185,7 +1192,11 @@ static bool trash_under_probe(struct folio_state *_Nonnull state,
     size_t matches = folio_state_index_filter_count(state);
     struct note_ref target = {.category = 0, .note = 0};
     enum folio_state_outcome removed = folio_state_trash_note(state, target, u"", 0);
-    require(removed == FOLIO_STATE_READY || removed == FOLIO_STATE_OUT_OF_MEMORY,
+    /* #1069 / ADR0117 (stage 4): after the note went to the bin, its index is read again before
+     * it is written. A failure there is LEDGER_STALE: the deletion is adopted all the same and
+     * the index waits. */
+    require(removed == FOLIO_STATE_READY || removed == FOLIO_STATE_OUT_OF_MEMORY ||
+                removed == FOLIO_STATE_LEDGER_STALE,
             "trash allocation failure remains typed");
     if (removed == FOLIO_STATE_OUT_OF_MEMORY)
     {
@@ -1200,8 +1211,8 @@ static bool trash_under_probe(struct folio_state *_Nonnull state,
     }
     require(test_adapter_trashes(adapter) == 1 && folio_state_note_count(state) == notes - 1 &&
                 folio_state_document_kind(state) == FOLIO_DOCUMENT_NONE,
-            "the prepared deletion is adopted without further allocation");
-    return true;
+            "the prepared deletion is adopted whether or not its index could be read again");
+    return removed == FOLIO_STATE_READY;
 }
 
 static bool trash_scenario(void)

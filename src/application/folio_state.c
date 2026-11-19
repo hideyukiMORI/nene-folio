@@ -3263,9 +3263,12 @@ static enum folio_state_outcome create_edited(struct folio_state *_Nonnull state
     {
         cursor_to_selection(state);
     }
-    enum folio_state_outcome synced = published_index(synchronize_index(state));
-    /* 新しく公開したノートも写しと一致集合に入れる（ADR 0024 の決定 4）。 */
+    /* 新しく公開したノートも写しと一致集合に入れる（ADR 0024 の決定 4）。
+     * 台帳の同期より先に行う（#1069, stage 4）: 同期は台帳とフォルダを読み直すので確保がある。
+     * 写しの確保の失敗を、同期の中の失敗と取り違えない。同期が一覧を入れ替えたら、写しは
+     * そこで最初から読み直される。 */
     enum folio_state_outcome copied = refresh_copy(state);
+    enum folio_state_outcome synced = published_index(synchronize_index(state));
     return synced != FOLIO_STATE_READY ? synced : copied;
 }
 
