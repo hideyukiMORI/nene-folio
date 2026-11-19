@@ -16,6 +16,9 @@ enum folio_state_outcome : unsigned char
     FOLIO_STATE_WEB_LINK_UNAVAILABLE,
     /* 現在の閲覧表示に無いコードブロックへのコピー。クリップボードには触れていない（ADR0098） */
     FOLIO_STATE_CODE_COPY_REJECTED,
+    /* #1012 / ADR0116: the reading view and its source map disagree, or the place has no source
+     * line (or the note cannot be edited). Nothing was changed or copied. */
+    FOLIO_STATE_SOURCE_UNMAPPED,
     FOLIO_STATE_CLIPBOARD_BUSY,        /* ほかのプログラムがクリップボードを開いている */
     FOLIO_STATE_CLIPBOARD_UNAVAILABLE, /* クリップボードへ書けなかった。本文も選択も変えていない */
     FOLIO_STATE_DATA_UNREADABLE,       /* data/ の走査や台帳の読み込みが失敗した */

@@ -4,8 +4,10 @@
 #include "allocation_probe.h"
 #include "folio_theme.h"
 #include "markdown_rtf.h"
+#include "markdown_source_lookup.h"
 #include "markdown_source_map.h"
 #include "note_text.h"
+#include "text_buffer.h"
 #include "unit_tests.h"
 #include <stdio.h>
 #include <string.h>
@@ -251,12 +253,125 @@ static void allocation(void)
     note_text_destroy(text);
 }
 
+/* #1012: the edit caret for a paragraph ordinal, and the Markdown a selection copies. */
+struct lookup_case
+{
+    struct markdown_rtf *_Nonnull rtf;
+    struct note_text *_Nonnull text;
+    const struct markdown_source_map *_Nonnull map;
+};
+
+static struct lookup_case lookup_for(const char *_Nonnull source)
+{
+    struct note_text *text = nullptr;
+    require(note_text_create(source, strlen(source), &text) == NOTE_TEXT_ACCEPTED, "lookup source");
+    struct markdown_rtf *rtf = rendered(source);
+    return (struct lookup_case){rtf, text, markdown_rtf_source_map(rtf)};
+}
+
+static void lookup_done(struct lookup_case lookup)
+{
+    markdown_rtf_destroy(lookup.rtf);
+    note_text_destroy(lookup.text);
+}
+
+static void expect_caret(struct lookup_case lookup, size_t ordinal, const char *_Nonnull starts)
+{
+    size_t caret = markdown_source_lookup_caret(lookup.map, lookup.text, ordinal);
+    const char *bytes = note_text_bytes(lookup.text);
+    bool same =
+        caret != markdown_source_none && strncmp(bytes + caret, starts, strlen(starts)) == 0;
+    if (!same)
+        fprintf(stderr, "caret for ordinal %zu: [%.10s], expected [%s]\n", ordinal,
+                caret == markdown_source_none ? "(none)" : bytes + caret, starts);
+    require(same, "the edit caret is where the paragraph's text starts");
+}
+
+static void expect_copy(struct lookup_case lookup, size_t first, size_t last,
+                        const char *_Nonnull expected)
+{
+    struct text_buffer *buffer = nullptr;
+    require(text_buffer_create(&buffer) == TEXT_BUFFER_ACCEPTED, "copy buffer");
+    bool copied = markdown_source_lookup_copy(
+        lookup.map, lookup.text, (struct markdown_source_selection){first, last}, buffer);
+    require(text_buffer_finish(buffer) == TEXT_BUFFER_ACCEPTED, "copy finished");
+    bool same = copied && strcmp(text_buffer_bytes(buffer), expected) == 0;
+    if (!same)
+        fprintf(stderr, "copy %zu..%zu: [%s], expected [%s]\n", first, last,
+                text_buffer_bytes(buffer), expected);
+    require(same, "a selection copies its blocks' Markdown");
+    text_buffer_destroy(buffer);
+}
+
+static size_t first_of(struct lookup_case lookup, size_t index)
+{
+    return markdown_source_map_at(lookup.map, index).first;
+}
+
+static void lookup_caret(void)
+{
+    struct lookup_case lookup = lookup_for(every_block);
+    expect_caret(lookup, first_of(lookup, 1), "段落");
+    expect_caret(lookup, first_of(lookup, 5), "int a;");
+    expect_caret(lookup, first_of(lookup, 11) + 1, "a |");
+    expect_caret(lookup, first_of(lookup, 11) + 2, "b |");
+    expect_caret(lookup, first_of(lookup, 12) + 1, "1 |");
+    expect_caret(lookup, first_of(lookup, 12) + 2, "2 |");
+    expect_caret(lookup, first_of(lookup, 12) + 3, "2 |");
+    expect_caret(lookup, first_of(lookup, 17), "脚注");
+    lookup_done(lookup);
+    lookup = lookup_for("用語\n: 説明\n| x | y |\n| - | - |\n");
+    expect_caret(lookup, first_of(lookup, 2) + 2, "x |");
+    expect_caret(lookup, first_of(lookup, 2) + 3, "y |");
+    lookup_done(lookup);
+    lookup = lookup_for("x | y\n- | -\n1 | 2\n");
+    expect_caret(lookup, first_of(lookup, 1) + 2, "2");
+    lookup_done(lookup);
+    /* #1012 review: a body row shorter than the delimiter is padded, not led by a spacer. */
+    lookup = lookup_for("| a | b | c |\n|-|-|-|\n| x | y |\n");
+    expect_caret(lookup, first_of(lookup, 0) + 3, "c |");
+    expect_caret(lookup, first_of(lookup, 1) + 1, "x |");
+    expect_caret(lookup, first_of(lookup, 1) + 2, "y |");
+    expect_caret(lookup, first_of(lookup, 1) + 3, "y |");
+    lookup_done(lookup);
+    /* A table in a list item, right after a description: both lead the header row. */
+    lookup = lookup_for("用語\n: 説明\n\n- | p | q |\n  | - | - |\n");
+    size_t rows = markdown_source_map_count(lookup.map);
+    struct markdown_source_entry row = markdown_source_map_at(lookup.map, rows - 1);
+    require(row.kind == MARKDOWN_SOURCE_TABLE_ROW, "the list item's table is native");
+    expect_caret(lookup, row.first + row.marks - 2, "q |");
+    expect_caret(lookup, row.first + row.marks - 3, "p |");
+    lookup_done(lookup);
+}
+
+static void lookup_copy(void)
+{
+    struct lookup_case lookup = lookup_for("a[^n]\n\n[^n]: x\n\nb\n");
+    size_t count = markdown_source_map_count(lookup.map);
+    expect_copy(lookup, 0, markdown_source_map_at(lookup.map, count - 1).first,
+                "a[^n]\n\n[^n]: x\n\nb"); /* #1012 review: a definition among the body once */
+    lookup_done(lookup);
+    lookup = lookup_for(every_block);
+    expect_copy(lookup, first_of(lookup, 6), first_of(lookup, 6), "```c\nint a;\nint b;\n```");
+    expect_copy(lookup, first_of(lookup, 1), first_of(lookup, 2), "段落の1行目\n2行目\n\n- 項目");
+    expect_copy(lookup, first_of(lookup, 12) + 1, first_of(lookup, 12) + 1,
+                "| a | b |\n| - | - |\n| 1 | 2 |");
+    expect_copy(lookup, first_of(lookup, 15), first_of(lookup, 17), "本文[^n]\n\n[^n]: 脚注");
+    expect_copy(lookup, first_of(lookup, 17), first_of(lookup, 17), "[^n]: 脚注");
+    lookup_done(lookup);
+    lookup = lookup_for("a\r\nb\r\n\r\nc\r\n");
+    expect_copy(lookup, 0, 1, "a\nb\n\nc");
+    lookup_done(lookup);
+}
+
 void run_source_map_tests(void)
 {
     counting();
     every_kind();
     line_endings();
     review_cases();
+    lookup_caret();
+    lookup_copy();
     allocation();
     printf("source map tests passed\n");
 }

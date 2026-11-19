@@ -92,6 +92,7 @@ static constexpr bool io_sounds[] = {
     [FOLIO_STATE_WEB_LINK_REJECTED] = false,
     [FOLIO_STATE_WEB_LINK_UNAVAILABLE] = false,
     [FOLIO_STATE_CODE_COPY_REJECTED] = false,
+    [FOLIO_STATE_SOURCE_UNMAPPED] = false,
     [FOLIO_STATE_CLIPBOARD_BUSY] = false,
     [FOLIO_STATE_CLIPBOARD_UNAVAILABLE] = false,
     [FOLIO_STATE_REPLACE_NO_PATTERN] = false,

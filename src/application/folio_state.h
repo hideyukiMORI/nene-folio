@@ -57,6 +57,7 @@ folio_state_tag_management_phase(const struct folio_state *_Nonnull state);
 #include "history_row_view.h"
 #include "image_port.h"
 #include "index_ranked_note.h"
+#include "markdown_source_selection.h"
 #include "note_destination.h"
 #include "note_export_request.h"
 #include "note_import_request.h"
@@ -191,6 +192,21 @@ folio_state_export_notes(struct folio_state *_Nonnull state,
  * 文書・選択・Undo・未保存の状態は変えない。 */
 [[nodiscard]] enum folio_state_outcome folio_state_copy_code(struct folio_state *_Nonnull state,
                                                              size_t slot);
+/* #1012 / ADR0116: whether the reading view's paragraphs (`view_total` marks, CR and U+0007, in
+ * the pane's text) are the ones the current render's source map describes. */
+[[nodiscard]] bool folio_state_source_mapped(const struct folio_state *_Nonnull state,
+                                             size_t view_total);
+/* The editing view's caret (UTF-16 units, each newline one) for the reading view's paragraph
+ * `ordinal`: its content, or a table cell's text. SOURCE_UNMAPPED when the view and the map
+ * disagree, the place has no source, or the note cannot be edited. Changes nothing. */
+[[nodiscard]] enum folio_state_outcome folio_state_source_caret(struct folio_state *_Nonnull state,
+                                                                size_t ordinal, size_t view_total,
+                                                                size_t *_Nonnull native);
+/* The Markdown of the blocks a reading-view selection touches, to the clipboard port once.
+ * Document, selection and Undo do not change. */
+[[nodiscard]] enum folio_state_outcome
+folio_state_copy_markdown(struct folio_state *_Nonnull state,
+                          struct markdown_source_selection selection, size_t view_total);
 
 /* 製品の公式リンク（ADR0097）。文書・モードに依存せず、同じ検証とportへ一度だけ渡す。 */
 [[nodiscard]] enum folio_state_outcome

@@ -123,6 +123,9 @@ struct folio_window
     enum accessible_kind keyboard_target;
     bool menu_active;
     struct menu_request menu;
+    /* #1012: whether the body menu's source items can run, measured once when it opens. */
+    bool menu_source_copy;
+    bool menu_source_edit;
     size_t menu_pressed;
     WPARAM menu_key;
     char result_line[1024];
@@ -7020,6 +7023,7 @@ static const bool inline_outcomes[] = {
     [FOLIO_STATE_WEB_LINK_REJECTED] = true,
     [FOLIO_STATE_WEB_LINK_UNAVAILABLE] = true,
     [FOLIO_STATE_CODE_COPY_REJECTED] = true,
+    [FOLIO_STATE_SOURCE_UNMAPPED] = true,
     [FOLIO_STATE_CLIPBOARD_BUSY] = true,
     [FOLIO_STATE_CLIPBOARD_UNAVAILABLE] = true,
     [FOLIO_STATE_EXPORT_TOO_LARGE] = true,
@@ -19606,6 +19610,39 @@ static const struct folio_menu_action *_Nonnull menu_action(
     return folio_menu_action_at(self->menu.context, index);
 }
 
+/* #1012: the source items also need the reading view to agree with the source map, and 「ここを
+ * 編集」 a note that can be edited. Reading the pane's text costs a copy of the whole note, so it
+ * is done once when the menu opens, not on every paint and hover (review); running the item
+ * checks again with the live text. */
+static void measure_source_items(struct folio_window *_Nonnull self)
+{
+    struct markdown_source_selection selection = {0};
+    size_t total = 0;
+    size_t native = 0;
+    bool body_menu =
+        self->menu.context == FOLIO_MENU_TEXT_VIEW || self->menu.context == FOLIO_MENU_TEXT_LINK;
+    bool read = body_menu && self->pane != nullptr &&
+                note_pane_paragraph_selection(self->pane, &selection, &total);
+    self->menu_source_copy = read && folio_state_source_mapped(self->state, total);
+    self->menu_source_edit =
+        self->menu_source_copy &&
+        folio_state_source_caret(self->state, selection.first, total, &native) == FOLIO_STATE_READY;
+}
+
+static bool source_available(const struct folio_window *_Nonnull self, enum folio_text_edit edit)
+{
+    return edit == FOLIO_TEXT_EDIT_COPY_MARKDOWN ? self->menu_source_copy : self->menu_source_edit;
+}
+
+static enum folio_state_outcome text_availability(const struct folio_window *_Nonnull self,
+                                                  enum folio_text_edit edit)
+{
+    bool source = edit == FOLIO_TEXT_EDIT_EDIT_HERE || edit == FOLIO_TEXT_EDIT_COPY_MARKDOWN;
+    bool available = self->pane != nullptr && note_pane_text_edit_available(self->pane, edit) &&
+                     (!source || source_available(self, edit));
+    return available ? FOLIO_STATE_READY : FOLIO_STATE_CANCELLED;
+}
+
 static enum folio_state_outcome menu_availability(const struct folio_window *_Nonnull self,
                                                   size_t index)
 {
@@ -19615,10 +19652,7 @@ static enum folio_state_outcome menu_availability(const struct folio_window *_No
     if (folio_menu_action_kind(action) == FOLIO_MENU_ACTION_RECOLOR_CATEGORY)
         return folio_state_recolor_availability(self->state, self->menu.target.category);
     if (folio_menu_action_kind(action) == FOLIO_MENU_ACTION_TEXT)
-        return self->pane != nullptr && note_pane_text_edit_available(
-                                            self->pane, folio_menu_action_text_edit(action))
-                   ? FOLIO_STATE_READY
-                   : FOLIO_STATE_CANCELLED;
+        return text_availability(self, folio_menu_action_text_edit(action));
     enum folio_command_target kind = FOLIO_COMMAND_TARGET_CURRENT;
     if (self->menu.context == FOLIO_MENU_CATEGORY)
         kind = FOLIO_COMMAND_TARGET_CATEGORY;
@@ -20263,6 +20297,7 @@ static void show_menu_surface(struct folio_window *_Nonnull self,
     if (self->command_surface != COMMAND_SURFACE_CLOSED && !hide_command_surface(self))
         return;
     self->menu = *request;
+    measure_source_items(self);
     self->menu_pressed = SIZE_MAX;
     self->menu_key = 0;
     open_command_surface(self, COMMAND_SURFACE_MENU);
@@ -20333,6 +20368,39 @@ static void copy_web_selection(struct folio_window *_Nonnull self)
         report_outcome(self, outcome);
 }
 
+/* #1012 / ADR0116: 「ここを編集」 opens the editing view with the caret at the clicked paragraph's
+ * source, the same order as opening a body match (enter, then select). */
+static void edit_here(struct folio_window *_Nonnull self)
+{
+    struct markdown_source_selection at = {0};
+    size_t total = 0;
+    size_t native = 0;
+    if (!note_pane_paragraph_selection(self->pane, &at, &total))
+        return;
+    enum folio_state_outcome outcome =
+        folio_state_source_caret(self->state, at.first, total, &native);
+    if (outcome == FOLIO_STATE_READY)
+        outcome = enter_edit(self);
+    if (outcome == FOLIO_STATE_READY)
+    {
+        note_pane_select(self->pane, native, native);
+        focus_pane(self);
+    }
+    else if (outcome != FOLIO_STATE_CANCELLED)
+        report_outcome(self, outcome);
+}
+
+static void copy_markdown(struct folio_window *_Nonnull self)
+{
+    struct markdown_source_selection selection = {0};
+    size_t total = 0;
+    if (!note_pane_paragraph_selection(self->pane, &selection, &total))
+        return;
+    enum folio_state_outcome outcome = folio_state_copy_markdown(self->state, selection, total);
+    if (outcome != FOLIO_STATE_READY)
+        report_outcome(self, outcome);
+}
+
 static void menu_run_text(struct folio_window *_Nonnull self, enum folio_text_edit edit)
 {
     if (self->pane == nullptr)
@@ -20341,6 +20409,10 @@ static void menu_run_text(struct folio_window *_Nonnull self, enum folio_text_ed
         open_web_selection(self);
     else if (edit == FOLIO_TEXT_EDIT_COPY_LINK)
         copy_web_selection(self);
+    else if (edit == FOLIO_TEXT_EDIT_EDIT_HERE)
+        edit_here(self);
+    else if (edit == FOLIO_TEXT_EDIT_COPY_MARKDOWN)
+        copy_markdown(self);
     else
         note_pane_text_edit(self->pane, edit);
 }

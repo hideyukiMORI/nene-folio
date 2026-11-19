@@ -98,6 +98,7 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_CODE_COPY] = "コピー",
     [UI_TEXT_CODE_COPIED] = "コードをコピーしました。",
     [UI_TEXT_FAILURE_CODE_COPY_REJECTED] = "このコードブロックはコピーできません。",
+    [UI_TEXT_FAILURE_SOURCE_UNMAPPED] = "この場所の原文を特定できません。",
     [UI_TEXT_FAILURE_CLIPBOARD_BUSY] =
         "ほかのアプリがクリップボードを使用中です。もう一度お試しください。",
     [UI_TEXT_FAILURE_CLIPBOARD_UNAVAILABLE] = "クリップボードへコピーできませんでした。",
@@ -507,6 +508,8 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_MENU_SELECT_ALL] = "すべて選択",
     [UI_TEXT_MENU_OPEN_LINK] = "リンクを開く",
     [UI_TEXT_MENU_COPY_LINK] = "リンクをコピー",
+    [UI_TEXT_MENU_EDIT_HERE] = "ここを編集",
+    [UI_TEXT_MENU_COPY_MARKDOWN] = "Markdownとしてコピー",
     [UI_TEXT_MENU_RENAME_NOTE] = "名前を変更…",
     [UI_TEXT_MENU_NEW_CATEGORY] = "新しいカテゴリ…",
     [UI_TEXT_MENU_NEW_NOTE_IN_CATEGORY] = "このカテゴリに新しいノート",

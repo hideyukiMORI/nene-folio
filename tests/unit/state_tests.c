@@ -2309,6 +2309,7 @@ static const char *_Nonnull const expected_failure_lines[] = {
     [FOLIO_STATE_WEB_LINK_REJECTED] = "このリンクは開けません。",
     [FOLIO_STATE_WEB_LINK_UNAVAILABLE] = "既定のブラウザーでリンクを開けませんでした。",
     [FOLIO_STATE_CODE_COPY_REJECTED] = "このコードブロックはコピーできません。",
+    [FOLIO_STATE_SOURCE_UNMAPPED] = "この場所の原文を特定できません。",
     [FOLIO_STATE_CLIPBOARD_BUSY] =
         "ほかのアプリがクリップボードを使用中です。もう一度お試しください。",
     [FOLIO_STATE_CLIPBOARD_UNAVAILABLE] = "クリップボードへコピーできませんでした。",

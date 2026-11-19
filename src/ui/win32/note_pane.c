@@ -701,6 +701,57 @@ static bool pane_selected(const struct note_pane *_Nonnull pane)
     return range.cpMax > range.cpMin;
 }
 
+static bool paragraph_mark(wchar_t value)
+{
+    return value == 0x0D || value == 0x07;
+}
+
+/* The marks before `first`, before `last` and in all of the raw text. */
+static size_t count_marks(const wchar_t *_Nonnull text, size_t length,
+                          struct markdown_source_selection at,
+                          struct markdown_source_selection *_Nonnull out)
+{
+    size_t marks = 0;
+    for (size_t index = 0; index < length; ++index)
+    {
+        if (index == at.first)
+            out->first = marks;
+        if (index == at.last)
+            out->last = marks;
+        marks += paragraph_mark(text[index]) ? 1 : 0;
+    }
+    if (at.first >= length)
+        out->first = marks;
+    if (at.last >= length)
+        out->last = marks;
+    return marks;
+}
+
+bool note_pane_paragraph_selection(struct note_pane *_Nonnull pane,
+                                   struct markdown_source_selection *_Nonnull out,
+                                   size_t *_Nonnull total)
+{
+    if (pane->readiness != NOTE_PANE_READINESS_READY || pane->composing)
+        return false;
+    GETTEXTLENGTHEX measure = {GTL_NUMCHARS | GTL_PRECISE, 1200};
+    LRESULT length = SendMessageW(pane->handle, EM_GETTEXTLENGTHEX, (WPARAM)&measure, 0);
+    if (length < 0 || (size_t)length >= SIZE_MAX / sizeof(wchar_t) - 1)
+        return false;
+    wchar_t *_Nullable text = calloc((size_t)length + 1, sizeof *text);
+    if (text == nullptr)
+        return false;
+    GETTEXTEX request = {(DWORD)(((size_t)length + 1) * sizeof *text), GT_RAWTEXT, 1200, nullptr,
+                         nullptr};
+    size_t read = (size_t)SendMessageW(pane->handle, EM_GETTEXTEX, (WPARAM)&request, (LPARAM)text);
+    CHARRANGE range = {0};
+    SendMessageW(pane->handle, EM_EXGETSEL, 0, (LPARAM)&range);
+    size_t first = (size_t)(range.cpMin < 0 ? 0 : range.cpMin);
+    size_t last = range.cpMax > range.cpMin ? (size_t)range.cpMax - 1 : first;
+    *total = count_marks(text, read, (struct markdown_source_selection){first, last}, out);
+    free(text);
+    return true;
+}
+
 bool note_pane_text_edit_available(const struct note_pane *_Nonnull pane, enum folio_text_edit edit)
 {
     if (pane->readiness != NOTE_PANE_READINESS_READY || pane->composing)
@@ -722,6 +773,9 @@ bool note_pane_text_edit_available(const struct note_pane *_Nonnull pane, enum f
     case FOLIO_TEXT_EDIT_OPEN_LINK:
     case FOLIO_TEXT_EDIT_COPY_LINK:
         return note_pane_link_available(pane);
+    case FOLIO_TEXT_EDIT_EDIT_HERE:
+    case FOLIO_TEXT_EDIT_COPY_MARKDOWN:
+        return !pane_writable(pane); /* the reading view; the window asks the source map */
     }
     return false;
 }
@@ -754,7 +808,9 @@ void note_pane_text_edit(struct note_pane *_Nonnull pane, enum folio_text_edit e
         return;
     case FOLIO_TEXT_EDIT_OPEN_LINK:
     case FOLIO_TEXT_EDIT_COPY_LINK:
-        return; /* the window runs these through the link and clipboard paths */
+    case FOLIO_TEXT_EDIT_EDIT_HERE:
+    case FOLIO_TEXT_EDIT_COPY_MARKDOWN:
+        return; /* the window runs these through the link, source and clipboard paths */
     }
 }
 

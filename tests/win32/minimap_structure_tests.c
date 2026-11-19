@@ -3,6 +3,7 @@
 #include "folio_message.h"
 #include "folio_palette.h"
 #include "markdown_rtf.h"
+#include "markdown_source_lookup.h"
 #include "markdown_source_map.h"
 #include "menu_request.h"
 #include "note_minimap.h"
@@ -1487,6 +1488,80 @@ static void expect_code_lines(const struct markdown_source_map *_Nonnull map,
     }
 }
 
+static bool same_units(const wchar_t *_Nonnull left, const wchar_t *_Nonnull right, size_t count)
+{
+    for (size_t at = 0; at < count; ++at)
+        if (left[at] != right[at])
+            return false;
+    return true;
+}
+
+/* #1012: a selection placed on shown text gives the ordinal whose caret is that place's source:
+ * a table cell, a code line, a footnote; a selection across blocks gives both ends. */
+static void expect_place(struct note_pane *_Nonnull pane,
+                         const struct markdown_source_map *_Nonnull map,
+                         struct note_text *_Nonnull note, const wchar_t *_Nonnull shown)
+{
+    static wchar_t text[16384];
+    size_t length = raw_text(pane, text, sizeof text / sizeof text[0]);
+    size_t found = SIZE_MAX;
+    size_t size = wcslen(shown);
+    for (size_t at = 0; at + size <= length && found == SIZE_MAX; ++at)
+        if (same_units(text + at, shown, size))
+            found = at;
+    require(found != SIZE_MAX, "the shown text is in the pane");
+    /* A raw position, as a right-click leaves it (note_pane_select takes shown positions). */
+    CHARRANGE place = {(LONG)found, (LONG)found};
+    SendMessageW(note_pane_handle(pane), EM_EXSETSEL, 0, (LPARAM)&place);
+    struct markdown_source_selection selection = {0};
+    size_t total = 0;
+    require(note_pane_paragraph_selection(pane, &selection, &total) &&
+                total == markdown_source_map_total(map) && selection.first == selection.last,
+            "a caret is one paragraph of the mapped view");
+    size_t caret = markdown_source_lookup_caret(map, note, selection.first);
+    char expected[64];
+    require(
+        WideCharToMultiByte(CP_UTF8, 0, shown, -1, expected, sizeof expected, nullptr, nullptr) > 0,
+        "expected bytes");
+    bool same = caret != markdown_source_none &&
+                strncmp(note_text_bytes(note) + caret, expected, strlen(expected)) == 0;
+    if (!same)
+        fprintf(stderr, "place [%ls]: ordinal %zu caret [%.12s]\n", shown, selection.first,
+                caret == markdown_source_none ? "(none)" : note_text_bytes(note) + caret);
+    require(same, "the place's caret is its source");
+}
+
+static void source_places(struct note_pane *_Nonnull pane)
+{
+    static const char markdown[] =
+        "# Places\n\nsee [x](https://example.com/hidden-target) and ![pic](none.png)\n\n"
+        "alpha beta\n\n| one | two |\n| --- | --- |\n"
+        "| three | four |\n\n```\ncode line\n```\n\nbody[^n]\n\n[^n]: note text\n";
+    struct note_text *_Nullable note = nullptr;
+    struct markdown_rtf *_Nullable rtf = nullptr;
+    require(note_text_create(markdown, strlen(markdown), &note) == NOTE_TEXT_ACCEPTED &&
+                markdown_rtf_create(note, folio_theme_palette(FOLIO_THEME_LIGHT),
+                                    (struct markdown_rtf_locale){"Yu Gothic UI", FOLIO_LANGUAGE_JA},
+                                    &rtf) == MARKDOWN_RTF_CONVERTED &&
+                note_pane_load(pane, markdown_rtf_text(rtf), markdown_rtf_length(rtf),
+                               PANE_MODE_VIEW) == NOTE_PANE_LOAD_READY,
+            "places document");
+    const struct markdown_source_map *map = markdown_rtf_source_map(rtf);
+    const wchar_t *const places[] = {L"Places", L"alpha",     L"two",      L"three",
+                                     L"four",   L"code line", L"note text"};
+    for (size_t at = 0; at < sizeof places / sizeof places[0]; ++at)
+        expect_place(pane, map, note, places[at]);
+    note_pane_select(pane, 0, (size_t)GetWindowTextLengthW(note_pane_handle(pane)));
+    struct markdown_source_selection all = {0};
+    size_t total = 0;
+    require(note_pane_paragraph_selection(pane, &all, &total) && all.first == 0 &&
+                all.last >= total - 1,
+            "Select all spans the first to the last paragraph");
+    markdown_rtf_destroy(rtf);
+    note_text_destroy(note);
+    load(pane, PANE_MODE_VIEW, source);
+}
+
 static void source_map_marks(struct note_pane *_Nonnull pane)
 {
     const char *const sources[] = {
@@ -1566,6 +1641,7 @@ int main(void)
     heading_texts(pane);
     outline_module(pane);
     source_map_marks(pane);
+    source_places(pane);
     load(pane, PANE_MODE_EDIT, source);
     boundaries(pane);
     preservation(pane);

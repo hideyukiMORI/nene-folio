@@ -146,6 +146,9 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
     [UI_TEXT_FAILURE_CODE_COPY_REJECTED] = {"このコードブロックはコピーできません。",
                                             "This code block cannot be copied.",
                                             "无法复制此代码块。"},
+    [UI_TEXT_FAILURE_SOURCE_UNMAPPED] = {"この場所の原文を特定できません。",
+                                         "The Markdown source of this place cannot be found.",
+                                         "无法确定此处的 Markdown 原文。"},
     [UI_TEXT_FAILURE_CLIPBOARD_BUSY] =
         {"ほかのアプリがクリップボードを使用中です。もう一度お試しください。",
          "Another app is using the clipboard. Try again.", "其他应用正在使用剪贴板。请重试。"},
@@ -989,6 +992,8 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
     [UI_TEXT_MENU_SELECT_ALL] = {"すべて選択", "Select all", "全选"},
     [UI_TEXT_MENU_OPEN_LINK] = {"リンクを開く", "Open link", "打开链接"},
     [UI_TEXT_MENU_COPY_LINK] = {"リンクをコピー", "Copy link", "复制链接"},
+    [UI_TEXT_MENU_EDIT_HERE] = {"ここを編集", "Edit here", "在此编辑"},
+    [UI_TEXT_MENU_COPY_MARKDOWN] = {"Markdownとしてコピー", "Copy as Markdown", "复制为 Markdown"},
     [UI_TEXT_MENU_RENAME_NOTE] = {"名前を変更…", "Rename…", "重命名…"},
     [UI_TEXT_MENU_NEW_CATEGORY] = {"新しいカテゴリ…", "New category…", "新建分类…"},
     [UI_TEXT_MENU_NEW_NOTE_IN_CATEGORY] = {"このカテゴリに新しいノート",

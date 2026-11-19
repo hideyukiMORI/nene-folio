@@ -631,19 +631,28 @@ static void verify_text_menu(void)
                     "the hint is the key the body already answers to");
     }
     const struct folio_menu_action *copy = folio_menu_action_at(FOLIO_MENU_TEXT_VIEW, 0);
-    const struct folio_menu_action *all = folio_menu_action_at(FOLIO_MENU_TEXT_VIEW, 1);
+    const struct folio_menu_action *markdown = folio_menu_action_at(FOLIO_MENU_TEXT_VIEW, 1);
+    const struct folio_menu_action *here = folio_menu_action_at(FOLIO_MENU_TEXT_VIEW, 2);
+    const struct folio_menu_action *all = folio_menu_action_at(FOLIO_MENU_TEXT_VIEW, 3);
     require(folio_menu_action_text_edit(copy) == FOLIO_TEXT_EDIT_COPY &&
+                folio_menu_action_text_edit(markdown) == FOLIO_TEXT_EDIT_COPY_MARKDOWN &&
+                folio_menu_action_text_edit(here) == FOLIO_TEXT_EDIT_EDIT_HERE &&
                 folio_menu_action_text_edit(all) == FOLIO_TEXT_EDIT_SELECT_ALL &&
-                folio_menu_action_group(copy) != folio_menu_action_group(all),
-            "viewing offers only Copy and Select all");
+                folio_menu_action_group(copy) == folio_menu_action_group(markdown) &&
+                folio_menu_action_group(markdown) != folio_menu_action_group(here) &&
+                folio_menu_action_group(here) != folio_menu_action_group(all),
+            "viewing offers Copy, Copy as Markdown | Edit here | Select all (#1012)");
     require(folio_menu_action_text_edit(folio_menu_action_at(FOLIO_MENU_NOTE, 0)) ==
                 FOLIO_TEXT_EDIT_NONE,
             "other menus carry no text operation");
     /* #900: on a link the link's own actions come first; they have no key of their own. */
     const enum folio_text_edit linked[] = {FOLIO_TEXT_EDIT_OPEN_LINK, FOLIO_TEXT_EDIT_COPY_LINK,
-                                           FOLIO_TEXT_EDIT_COPY, FOLIO_TEXT_EDIT_SELECT_ALL};
-    const char *const names[] = {"Open link", "Copy link", "Copy", "Select all"};
-    for (size_t at = 0; at < 4; ++at)
+                                           FOLIO_TEXT_EDIT_COPY,      FOLIO_TEXT_EDIT_COPY_MARKDOWN,
+                                           FOLIO_TEXT_EDIT_EDIT_HERE, FOLIO_TEXT_EDIT_SELECT_ALL};
+    const char *const names[] = {"Open link",        "Copy link", "Copy",
+                                 "Copy as Markdown", "Edit here", "Select all"};
+    const bool keyed[] = {false, false, true, false, false, true};
+    for (size_t at = 0; at < 6; ++at)
     {
         const struct folio_menu_action *action = folio_menu_action_at(FOLIO_MENU_TEXT_LINK, at);
         char text[256];
@@ -654,7 +663,7 @@ static void verify_text_menu(void)
                 "the link menu's actions in order");
         require(folio_menu_action_hint(action, FOLIO_LANGUAGE_EN, text, sizeof text) ==
                         UI_TEXT_FORMAT_READY &&
-                    (at < 2) == (strstr(text, "Ctrl+") == nullptr),
+                    keyed[at] == (strstr(text, "Ctrl+") != nullptr),
                 "the link actions show the menu's access key, the others their real key");
     }
 }
@@ -684,7 +693,7 @@ static void verify_menu_catalog(void)
     const size_t counts[] = {
         [FOLIO_MENU_OPERATIONS] = 20, [FOLIO_MENU_LAYOUT] = 3,   [FOLIO_MENU_CATEGORY] = 7,
         [FOLIO_MENU_NOTE] = 4,        [FOLIO_MENU_EMPTY] = 1,    [FOLIO_MENU_TEXT_EDIT] = 5,
-        [FOLIO_MENU_TEXT_VIEW] = 2,   [FOLIO_MENU_TEXT_LINK] = 4};
+        [FOLIO_MENU_TEXT_VIEW] = 4,   [FOLIO_MENU_TEXT_LINK] = 6};
     require(folio_command_count() == 39, "stable command IDs and count");
     for (size_t context = 0; context < sizeof counts / sizeof counts[0]; ++context)
     {

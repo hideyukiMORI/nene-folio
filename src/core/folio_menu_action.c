@@ -87,9 +87,15 @@ static const struct folio_menu_action text_edit[] = {
      FOLIO_TEXT_EDIT_PASTE},
     {FOLIO_MENU_ACTION_TEXT, FOLIO_COMMAND_HELP, FOLIO_MENU_GROUP_THIRD, 'A',
      FOLIO_TEXT_EDIT_SELECT_ALL}};
+/* #1012 / ADR0116: viewing also copies the Markdown of the selected blocks and opens the editing
+ * view at the clicked paragraph's source. */
 static const struct folio_menu_action text_view[] = {
     {FOLIO_MENU_ACTION_TEXT, FOLIO_COMMAND_HELP, FOLIO_MENU_GROUP_FIRST, 'C', FOLIO_TEXT_EDIT_COPY},
-    {FOLIO_MENU_ACTION_TEXT, FOLIO_COMMAND_HELP, FOLIO_MENU_GROUP_SECOND, 'A',
+    {FOLIO_MENU_ACTION_TEXT, FOLIO_COMMAND_HELP, FOLIO_MENU_GROUP_FIRST, 'M',
+     FOLIO_TEXT_EDIT_COPY_MARKDOWN},
+    {FOLIO_MENU_ACTION_TEXT, FOLIO_COMMAND_HELP, FOLIO_MENU_GROUP_SECOND, 'E',
+     FOLIO_TEXT_EDIT_EDIT_HERE},
+    {FOLIO_MENU_ACTION_TEXT, FOLIO_COMMAND_HELP, FOLIO_MENU_GROUP_THIRD, 'A',
      FOLIO_TEXT_EDIT_SELECT_ALL}};
 /* #900: viewing, on a link: the link's own actions first. */
 static const struct folio_menu_action text_link[] = {
@@ -99,6 +105,10 @@ static const struct folio_menu_action text_link[] = {
      FOLIO_TEXT_EDIT_COPY_LINK},
     {FOLIO_MENU_ACTION_TEXT, FOLIO_COMMAND_HELP, FOLIO_MENU_GROUP_SECOND, 'C',
      FOLIO_TEXT_EDIT_COPY},
+    {FOLIO_MENU_ACTION_TEXT, FOLIO_COMMAND_HELP, FOLIO_MENU_GROUP_SECOND, 'M',
+     FOLIO_TEXT_EDIT_COPY_MARKDOWN},
+    {FOLIO_MENU_ACTION_TEXT, FOLIO_COMMAND_HELP, FOLIO_MENU_GROUP_SECOND, 'E',
+     FOLIO_TEXT_EDIT_EDIT_HERE},
     {FOLIO_MENU_ACTION_TEXT, FOLIO_COMMAND_HELP, FOLIO_MENU_GROUP_THIRD, 'A',
      FOLIO_TEXT_EDIT_SELECT_ALL}};
 static const struct folio_menu_action layout[] = {
@@ -191,6 +201,10 @@ static enum ui_text text_caption(enum folio_text_edit edit)
         return UI_TEXT_MENU_OPEN_LINK;
     case FOLIO_TEXT_EDIT_COPY_LINK:
         return UI_TEXT_MENU_COPY_LINK;
+    case FOLIO_TEXT_EDIT_EDIT_HERE:
+        return UI_TEXT_MENU_EDIT_HERE;
+    case FOLIO_TEXT_EDIT_COPY_MARKDOWN:
+        return UI_TEXT_MENU_COPY_MARKDOWN;
     }
     return UI_TEXT_MENU_UNDO;
 }
@@ -202,6 +216,8 @@ static const char *_Nonnull text_key(enum folio_text_edit edit)
     case FOLIO_TEXT_EDIT_NONE:
     case FOLIO_TEXT_EDIT_OPEN_LINK:
     case FOLIO_TEXT_EDIT_COPY_LINK:
+    case FOLIO_TEXT_EDIT_EDIT_HERE:
+    case FOLIO_TEXT_EDIT_COPY_MARKDOWN:
         return ""; /* no key of their own: the menu shows its access key */
     case FOLIO_TEXT_EDIT_UNDO:
         return "Ctrl+Z";
