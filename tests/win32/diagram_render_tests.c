@@ -63,6 +63,16 @@ static const char gantt[] =
     "要件を決める :done, a1, 2026-11-02, 4d\n画面の案 :active, a2, after a1, 5d\n"
     "section 実装\n中核 :crit, b1, after a2, 6d\n描画 :b2, after a1, 8d\n"
     "section 確認\n試験 :c1, after b1, 3d\n公開 :milestone, after c1, 0d\n";
+/* #1048: the notations added after the first gantt, in one chart: weekday names and a
+ * Friday weekend in what is excluded, week marks' day, marks every two days across a month's
+ * end, an inclusive end date, `until`, a task that begins on an excluded day and one of no
+ * days. */
+static const char gantt_more[] =
+    "gantt\ntitle 足した記法\nexcludes weekends\nweekend friday\nweekday sunday\n"
+    "tickInterval 2day\ninclusiveEndDates\nsection 準備\n"
+    "調査 :done, a, 2026-10-26, 2026-10-29\n設計 :active, b, after a, until d\n"
+    "section 実装\n区切り :milestone, m, after b, 0d\n実装 :crit, d, 2026-11-05, 4d\n"
+    "確認 :after d, 2d\n";
 /* #882 / ADR0105: an ER diagram through the same phases. */
 static const char er[] =
     "erDiagram\n顧客 ||--o{ 注文 : 出す\n注文 ||--|{ 明細 : 含む\n顧客 }|..|| 住所 : 使う\n"
@@ -130,11 +140,12 @@ static struct image_bitmap *_Nonnull render(const struct diagram_request *_Nonnu
 }
 static void render_cases(const struct image_work *_Nonnull work, const char *_Nullable output)
 {
-    const char *sources[] = {flow, sequence, parts, state, er, classes, pie, gantt};
-    const char *names[] = {"flow-light",  "flow-dark",  "sequence-light", "sequence-dark",
-                           "parts-light", "parts-dark", "state-light",    "state-dark",
-                           "er-light",    "er-dark",    "class-light",    "class-dark",
-                           "pie-light",   "pie-dark",   "gantt-light",    "gantt-dark"};
+    const char *sources[] = {flow, sequence, parts, state, er, classes, pie, gantt, gantt_more};
+    const char *names[] = {"flow-light",       "flow-dark",      "sequence-light", "sequence-dark",
+                           "parts-light",      "parts-dark",     "state-light",    "state-dark",
+                           "er-light",         "er-dark",        "class-light",    "class-dark",
+                           "pie-light",        "pie-dark",       "gantt-light",    "gantt-dark",
+                           "gantt-more-light", "gantt-more-dark"};
     const enum folio_theme themes[] = {FOLIO_THEME_LIGHT, FOLIO_THEME_DARK};
     for (size_t index = 0; index < sizeof sources / sizeof sources[0]; ++index)
     {
