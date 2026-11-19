@@ -1,0 +1,193 @@
+/* #1071 / ADR0118: 外から来た「開く」依頼の検証。 */
+#include "allocation_probe.h"
+#include "category_name.h"
+#include "note_name.h"
+#include "open_request.h"
+#include "unit_tests.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+static struct open_request *_Nonnull accepted(const char *_Nonnull link)
+{
+    struct open_request *request = nullptr;
+    require(open_request_create(link, strlen(link), &request) == OPEN_REQUEST_ACCEPTED &&
+                request != nullptr,
+            link);
+    return request;
+}
+
+static void expect(const char *_Nonnull link, enum open_request_outcome outcome)
+{
+    struct open_request *request = nullptr;
+    enum open_request_outcome actual = open_request_create(link, strlen(link), &request);
+    if (actual != outcome)
+        fprintf(stderr, "open request: %s -> %d\n", link, (int)actual);
+    require(actual == outcome && request == nullptr, link);
+}
+
+static void verify_full_link(void)
+{
+    struct open_request *request =
+        accepted("nenefolio://open?category=work&note=minutes&lines=12-18&text=next%20step");
+    struct open_request_lines lines = {0, 0};
+    require(same_text(category_name_text(open_request_category(request)), "work") &&
+                same_text(note_name_stem(open_request_note(request)), "minutes") &&
+                open_request_lines(request, &lines) && lines.first == 12 && lines.last == 18 &&
+                same_text(open_request_text(request), "next step") &&
+                open_request_text_length(request) == 9,
+            "every field of a full link is read");
+    open_request_destroy(request);
+}
+
+static void verify_loose_forms(void)
+{
+    struct open_request *request =
+        accepted("NeNeFolio:OPEN/?note=%E8%AD%B0%E4%BA%8B%E9%8C%B2.md&category=%E4%BB%95%E4%BA%8B");
+    struct open_request_lines lines = {7, 7};
+    require(same_text(category_name_text(open_request_category(request)), "仕事") &&
+                same_text(note_name_stem(open_request_note(request)), "議事録") &&
+                !open_request_lines(request, &lines) && lines.first == 7 &&
+                same_text(open_request_text(request), "") && open_request_text_length(request) == 0,
+            "scheme and action in any case, no slashes, any key order, UTF-8 names, .md dropped; "
+            "lines and text are optional");
+    open_request_destroy(request);
+
+    request = accepted("nenefolio://open?category=a&note=b&lines=3&text=&future=%zz&x=1");
+    require(open_request_lines(request, &lines) && lines.first == 3 && lines.last == 3 &&
+                open_request_text_length(request) == 0,
+            "one line is a range of one; an empty text is none; unknown keys are skipped unread");
+    open_request_destroy(request);
+
+    request = accepted("nenefolio://open?category=a&note=b&text=1+1%3D2%26more");
+    require(same_text(open_request_text(request), "1+1=2&more"),
+            "a plus stays a plus; = and & come through percent-encoding");
+    open_request_destroy(request);
+}
+
+static void verify_malformed_shape(void)
+{
+    static const char *const links[] = {
+        "",
+        "nenefolio",
+        "nenefolio://open",
+        "nenefolio://open?",
+        "nenefolio://close?category=a&note=b",
+        "nenefolio://openx?category=a&note=b",
+        "nenefolio:///open?category=a&note=b",
+        "https://open?category=a&note=b",
+        "nenefolio://open?category=a",
+        "nenefolio://open?note=b",
+        "nenefolio://open?category=a&note=b&",
+        "nenefolio://open?category=a&&note=b",
+        "nenefolio://open?category=a&note=b&=x",
+        "nenefolio://open?category=a&note=b&flag",
+        "nenefolio://open?category=a&note=b#top",
+        "nenefolio://open?category=a&note=b&category=c",
+        "nenefolio://open?category=a&note=b&note=c",
+        "nenefolio://open?category=a&note=b&lines=1&lines=2",
+        "nenefolio://open?category=a&note=b&text=x&text=y",
+        "nenefolio://open?category=a&note=b&text=&text=y",
+    };
+    for (size_t index = 0; index < sizeof links / sizeof links[0]; ++index)
+        expect(links[index], OPEN_REQUEST_MALFORMED);
+}
+
+static void verify_malformed_values(void)
+{
+    static const char *const links[] = {
+        "nenefolio://open?category=a&note=b&text=%",
+        "nenefolio://open?category=a&note=b&text=%4",
+        "nenefolio://open?category=a&note=b&text=%4g",
+        "nenefolio://open?category=a&note=b&text=%g4",
+        "nenefolio://open?category=a&note=b&text=a%00b",
+        "nenefolio://open?category=a&note=b&text=a%0Ab",
+        "nenefolio://open?category=a&note=b&text=a%7Fb",
+        "nenefolio://open?category=a&note=b&text=%FF",
+        "nenefolio://open?category=a&note=b&text=%E3%81",
+        "nenefolio://open?category=a&note=b&lines=",
+        "nenefolio://open?category=a&note=b&lines=0",
+        "nenefolio://open?category=a&note=b&lines=-3",
+        "nenefolio://open?category=a&note=b&lines=3-",
+        "nenefolio://open?category=a&note=b&lines=8-3",
+        "nenefolio://open?category=a&note=b&lines=3-8-9",
+        "nenefolio://open?category=a&note=b&lines=3,8",
+        "nenefolio://open?category=a&note=b&lines=1x",
+        "nenefolio://open?category=a&note=b&lines=10000000",
+        "nenefolio://open?category=a&note=b&lines=1-10000000",
+        "nenefolio://open?category=a&note=b&lines=99999999999999999999999999",
+    };
+    for (size_t index = 0; index < sizeof links / sizeof links[0]; ++index)
+        expect(links[index], OPEN_REQUEST_MALFORMED);
+}
+
+static void verify_names(void)
+{
+    static const char *const links[] = {
+        "nenefolio://open?category=..&note=b",    "nenefolio://open?category=a%2Fb&note=b",
+        "nenefolio://open?category=a%5Cb&note=b", "nenefolio://open?category=.hidden&note=b",
+        "nenefolio://open?category=&note=b",      "nenefolio://open?category=a&note=..%2Fsecret",
+        "nenefolio://open?category=a&note=C%3A",  "nenefolio://open?category=a&note=con",
+        "nenefolio://open?category=a&note=",      "nenefolio://open?category=a&note=b.",
+    };
+    for (size_t index = 0; index < sizeof links / sizeof links[0]; ++index)
+        expect(links[index], OPEN_REQUEST_NAME_INVALID);
+}
+
+static void verify_limits(void)
+{
+    char link[open_request_byte_limit + 64] = "nenefolio://open?category=a&note=b&text=";
+    size_t head = strlen(link);
+    memset(link + head, 'x', open_request_text_limit);
+    link[head + open_request_text_limit] = '\0';
+    struct open_request *request = accepted(link);
+    require(open_request_text_length(request) == open_request_text_limit,
+            "a text at the limit is accepted");
+    open_request_destroy(request);
+    link[head + open_request_text_limit] = 'x';
+    link[head + open_request_text_limit + 1] = '\0';
+    expect(link, OPEN_REQUEST_TOO_LONG);
+
+    char longest[open_request_byte_limit + 2] = "nenefolio://open?category=a&note=b&pad=";
+    head = strlen(longest);
+    memset(longest + head, 'p', open_request_byte_limit - head);
+    longest[open_request_byte_limit] = '\0';
+    request = accepted(longest);
+    open_request_destroy(request);
+    longest[open_request_byte_limit] = 'p';
+    longest[open_request_byte_limit + 1] = '\0';
+    expect(longest, OPEN_REQUEST_TOO_LONG);
+    request = accepted("nenefolio://open?category=a&note=b&lines=9999999");
+    open_request_destroy(request);
+}
+
+/* 確保の失敗をどこで起こしても、型のある結果で戻り、何も漏らさない。 */
+static void verify_allocation(void)
+{
+    static const char link[] = "nenefolio://open?category=work&note=minutes&lines=2-4&text=step";
+    allocation_probe_fail_at(0);
+    struct open_request *request = accepted(link);
+    size_t calls = allocation_probe_calls();
+    open_request_destroy(request);
+    for (size_t nth = 1; nth <= calls; ++nth)
+    {
+        request = nullptr;
+        allocation_probe_fail_at(nth);
+        enum open_request_outcome outcome = open_request_create(link, sizeof link - 1, &request);
+        allocation_probe_fail_at(0);
+        require(outcome == OPEN_REQUEST_OUT_OF_MEMORY && request == nullptr,
+                "an allocation failure while reading a link is typed");
+    }
+    printf("open request: %zu injected allocation failures\n", calls);
+}
+
+void run_open_request_tests(void)
+{
+    verify_full_link();
+    verify_loose_forms();
+    verify_malformed_shape();
+    verify_malformed_values();
+    verify_names();
+    verify_limits();
+    verify_allocation();
+}
