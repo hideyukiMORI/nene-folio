@@ -10233,6 +10233,28 @@ static void text_menu_view_rows(struct folio_window *_Nonnull window, HWND _Nonn
             "viewing offers Copy, Copy as Markdown, Edit here and Select all (#1012)");
 }
 
+/* #1012 review: when the reading view no longer agrees with the source map (here one more
+ * paragraph mark is put into it), both source items are greyed and nothing else is. */
+static void text_menu_mismatch(struct folio_window *_Nonnull window)
+{
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    SendMessageW(body, EM_SETSEL, 0, 0);
+    SETTEXTEX insert = {ST_SELECTION | ST_KEEPUNDO | ST_UNICODE, 1200};
+    SendMessageW(body, EM_SETTEXTEX, (WPARAM)&insert, (LPARAM)L"\r");
+    text_menu_open(window, body);
+    struct accessible_view copy = text_menu_row(window, 0);
+    struct accessible_view markdown = text_menu_row(window, 1);
+    struct accessible_view here = text_menu_row(window, 2);
+    struct accessible_view all = text_menu_row(window, 3);
+    require(copy.enabled && all.enabled && !markdown.enabled && !here.enabled,
+            "a view that disagrees with the source map greys both source items");
+    SendMessageW(folio_window_accessible_window(window, ACCESSIBLE_WINDOW), WM_KEYDOWN, VK_ESCAPE,
+                 0);
+    pump(window);
+    action(window, ACCESSIBLE_EDIT); /* render the note again */
+    action(window, ACCESSIBLE_VIEW);
+}
+
 /* #1012: 「ここを編集」 opens the editing view with the caret on the line that holds the text
  * selected in the reading view. 「Markdownとしてコピー」 is only checked as offered: the tests do
  * not write the user's clipboard (ADR0106). */
@@ -10309,6 +10331,7 @@ static void text_menu_visual(struct native_fixture *_Nonnull fixture)
         require(all.cpMin == 0 && all.cpMax > 9 && GetFocus() == body,
                 "Select all runs in the body and the focus returns to it");
         text_menu_edit_here(window, fixture);
+        text_menu_mismatch(window);
         action(window, ACCESSIBLE_EDIT);
         body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
         text_menu_edit_rows(window, body);
