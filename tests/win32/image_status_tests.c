@@ -10939,6 +10939,41 @@ static void outline_wheel(struct folio_window *_Nonnull window)
             "the wheel the other way brings the first row back");
 }
 
+/* #1018: reading a late heading and then making the window shorter keeps that heading's row in
+ * the column; making it tall again leaves no empty rows below the last heading. */
+static void outline_shorten(struct folio_window *_Nonnull window)
+{
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    UINT dpi = GetDpiForWindow(root);
+    size_t count = (size_t)outline_row(window, outline_item_at(window, 0)).set_size;
+    struct accessible_request request = {.item = outline_item_at(window, count - 1),
+                                         .action = ACCESSIBLE_ACTION_INVOKE};
+    require(folio_window_accessible_action(window, &request) == S_OK, "UIA invokes the last row");
+    pump(window);
+    size_t current = outline_current(window);
+    require(SetWindowPos(root, nullptr, 20, 20, MulDiv(900, (int)dpi, 96),
+                         MulDiv(260, (int)dpi, 96), SWP_NOZORDER | SWP_NOACTIVATE),
+            "short outline window");
+    pump(window);
+    struct accessible_view row = outline_row(window, outline_item_at(window, current));
+    struct accessible_view first = outline_row(window, outline_item_at(window, 0));
+    printf("outline: short window, current %zu of %zu, its row %s, first row %s\n", current, count,
+           row.offscreen ? "hidden" : "shown", first.offscreen ? "hidden" : "shown");
+    fflush(stdout);
+    require(current != SIZE_MAX && current >= 4 && !row.offscreen && first.offscreen,
+            "a shorter window keeps the heading being read in the column");
+    require(SetWindowPos(root, nullptr, 20, 20, MulDiv(900, (int)dpi, 96),
+                         MulDiv(620, (int)dpi, 96), SWP_NOZORDER | SWP_NOACTIVATE),
+            "tall outline window again");
+    pump(window);
+    require(!outline_row(window, outline_item_at(window, count - 1)).offscreen &&
+                !outline_row(window, outline_item_at(window, 0)).offscreen,
+            "a taller window shows every heading again, with no empty rows below the last");
+    request.item = outline_item_at(window, 0);
+    require(folio_window_accessible_action(window, &request) == S_OK, "back to the first heading");
+    pump(window);
+}
+
 /* A window too narrow for the body beside the column hides the column and gives the body its
  * width; the column stays open and comes back when the window widens. */
 static void outline_narrow(struct folio_window *_Nonnull window,
@@ -11079,6 +11114,7 @@ static void outline_column(struct native_fixture *_Nonnull fixture)
                 "outline screenshot path");
         tags_capture(root, path);
         outline_wheel(window);
+        outline_shorten(window);
         outline_narrow(window, fixture);
         folio_window_destroy(window);
         folio_state_set_outline(fixture->state, false);

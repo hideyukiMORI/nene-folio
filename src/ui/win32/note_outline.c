@@ -9,6 +9,7 @@ struct note_outline
     size_t hover;   /* the row under the pointer, or none */
     size_t pressed; /* the row being pressed, or none */
     size_t current; /* the heading being read, as last observed, or none */
+    size_t rows;    /* how many rows the column showed when last fitted (#1018) */
     uint64_t revision;
 };
 
@@ -139,6 +140,25 @@ bool note_outline_scroll(struct note_outline *_Nonnull outline,
     bool changed = first != outline->first;
     outline->first = first;
     return changed;
+}
+
+/* #1018: when the column shows a different number of rows (the window was resized), the column
+ * keeps no empty rows below its last heading and keeps the heading being read in view. With
+ * the same number of rows, a column the wheel moved stays where it is. */
+bool note_outline_fit(struct note_outline *_Nonnull outline,
+                      const struct note_outline_paint *_Nonnull paint, size_t count)
+{
+    size_t rows = note_outline_rows(paint);
+    if (rows == outline->rows)
+        return false;
+    outline->rows = rows;
+    size_t before = outline->first;
+    size_t limit = last_first(paint, count);
+    if (outline->first > limit)
+        outline->first = limit;
+    if (outline->current != note_outline_none && outline->current < count)
+        (void)reveal(outline, paint, outline->current);
+    return outline->first != before;
 }
 
 size_t note_outline_cursor(const struct note_outline *_Nonnull outline)

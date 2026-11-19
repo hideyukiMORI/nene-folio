@@ -36,6 +36,11 @@ void note_outline_reset(struct note_outline *_Nonnull outline);
 [[nodiscard]] size_t note_outline_row_at(const struct note_outline *_Nonnull outline,
                                          const struct note_outline_paint *_Nonnull paint,
                                          POINT point, size_t count);
+/* #1018: 欄に見える行の数が変わったとき（窓の大きさが変わった）、最後の見出しの下に空きを残さず、
+ * いま読んでいる見出しを欄の中に保つ。行の数が同じならホイールで送った位置を動かさない。位置が変わったら
+ * true。 */
+[[nodiscard]] bool note_outline_fit(struct note_outline *_Nonnull outline,
+                                    const struct note_outline_paint *_Nonnull paint, size_t count);
 /* 欄を rows 行だけ送る（負は上へ）。count は見出しの数。位置が変わったら true。 */
 [[nodiscard]] bool note_outline_scroll(struct note_outline *_Nonnull outline,
                                        const struct note_outline_paint *_Nonnull paint, int rows,
