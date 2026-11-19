@@ -473,6 +473,28 @@ static size_t mapped_total(const struct folio_state *_Nonnull state)
     return found;
 }
 
+/* #1012 review: a note the editor would alter (U+2028) is not opened at a place, but its
+ * source can still be copied. */
+static void verify_protected_source(struct folio_state *_Nonnull state)
+{
+    require(folio_state_begin_edit(state) == FOLIO_STATE_READY, "edit again");
+    const char16_t body[] = u"一行 続き\n\n次\n";
+    require(folio_state_end_edit(state, body, sizeof body / sizeof body[0] - 1) ==
+                FOLIO_STATE_READY,
+            "the protected body is viewed");
+    size_t total = mapped_total(state);
+    size_t native = SIZE_MAX;
+    require(total != SIZE_MAX &&
+                folio_state_source_caret(state, 0, total, &native) == FOLIO_STATE_SOURCE_UNMAPPED &&
+                native == SIZE_MAX,
+            "Edit here is refused for a note the editor would alter");
+    size_t writes = clipboard.writes;
+    require(folio_state_copy_markdown(state, (struct markdown_source_selection){0, 0}, total) ==
+                    FOLIO_STATE_READY &&
+                clipboard.writes == writes + 1,
+            "Copy as Markdown still copies a protected note");
+}
+
 static void verify_source_state(void)
 {
     struct persistence_adapter *adapter = test_adapter_create(
@@ -514,6 +536,9 @@ static void verify_source_state(void)
                 FOLIO_STATE_CLIPBOARD_BUSY,
             "a busy clipboard is reported");
     clipboard.result = CLIPBOARD_WRITTEN;
+    require(folio_state_source_caret(state, 4, total, &native) == FOLIO_STATE_READY && native == 15,
+            "a table cell's caret is that cell's text, in UTF-16 units");
+    verify_protected_source(state);
     folio_state_destroy(state);
     test_adapter_destroy(adapter);
 }
