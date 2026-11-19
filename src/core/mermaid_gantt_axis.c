@@ -35,9 +35,34 @@ static int32_t next_month(int32_t day, int32_t months)
     return month_start(index / 12, index % 12 + 1);
 }
 
+/* #1036: d3's `timeDay.every(k)`, which Mermaid uses for `tickInterval kday`, marks the days
+ * whose date less one is a multiple of k: 1, 3, 5 … 31 and again 1, not every kth day. */
+static bool dated(int32_t day, int32_t dates)
+{
+    return (diagram_calendar_date(day).day - 1) % dates == 0;
+}
+
+static int32_t next_dated(int32_t day, int32_t dates)
+{
+    do
+        ++day;
+    while (!dated(day, dates));
+    return day;
+}
+
 static int32_t next_mark(struct mermaid_gantt_run run, int32_t day)
 {
+    if (run.dates != 0)
+        return next_dated(day, run.dates);
     return run.months == 0 ? day + run.step : next_month(day, run.months);
+}
+
+static struct mermaid_gantt_run day_run(int32_t origin, int32_t days)
+{
+    if (days == 1)
+        return (struct mermaid_gantt_run){.first = origin, .step = 1};
+    int32_t first = dated(origin, days) ? origin : next_dated(origin, days);
+    return (struct mermaid_gantt_run){.first = first, .dates = days};
 }
 
 /* A run of whole months starts on the first first-of-month at or after the origin whose month
@@ -51,12 +76,23 @@ static struct mermaid_gantt_run month_run(int32_t origin, int32_t months)
     return (struct mermaid_gantt_run){.first = first, .months = months};
 }
 
-/* Week marks fall on the chart's `weekday` (Monday unless written, #1030). */
+/* Week marks fall on the chart's `weekday` (Monday unless written, #1030). Every kth week is
+ * counted as d3's `every(k)` counts it (#1036): from the week that holds 1970-01-01, so the
+ * marks of two charts agree and do not depend on where a chart begins. The date is the
+ * constant, not a clock: the viewer's time zone is not read. */
 static struct mermaid_gantt_run week_run(const struct mermaid_gantt_chart *_Nonnull chart,
                                          int32_t weeks)
 {
     int32_t ahead = (7 + chart->week_start - diagram_calendar_weekday(chart->origin)) % 7;
-    return (struct mermaid_gantt_run){.first = chart->origin + ahead, .step = 7 * weeks};
+    int32_t first = chart->origin + ahead;
+    int32_t epoch = 0;
+    if (weeks > 1 && diagram_calendar_day((struct diagram_date){1970, 1, 1}, &epoch))
+    {
+        int32_t back = (7 + diagram_calendar_weekday(epoch) - chart->week_start) % 7;
+        int32_t past = ((first - (epoch - back)) / 7) % weeks;
+        first += 7 * ((weeks - past) % weeks);
+    }
+    return (struct mermaid_gantt_run){.first = first, .step = 7 * weeks};
 }
 
 static size_t mark_count(const struct mermaid_gantt_chart *_Nonnull chart,
@@ -74,7 +110,7 @@ static struct mermaid_gantt_run written_run(const struct mermaid_gantt_chart *_N
     switch (chart->interval)
     {
     case MERMAID_GANTT_INTERVAL_DAY:
-        return (struct mermaid_gantt_run){.first = chart->origin, .step = chart->interval_count};
+        return day_run(chart->origin, chart->interval_count);
     case MERMAID_GANTT_INTERVAL_AUTO:
         break;
     case MERMAID_GANTT_INTERVAL_WEEK:
