@@ -190,4 +190,5 @@ void run_open_request_tests(void)
     verify_names();
     verify_limits();
     verify_allocation();
+    run_open_place_tests();
 }
