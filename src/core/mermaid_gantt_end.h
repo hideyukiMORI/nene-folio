@@ -4,6 +4,7 @@
 enum mermaid_gantt_end : unsigned char
 {
     MERMAID_GANTT_END_DATE, /* YYYY-MM-DD, the first day after the task (as Mermaid reads it) */
-    MERMAID_GANTT_END_DAYS  /* `3d`, `2w`: working days from the start */
+    MERMAID_GANTT_END_DAYS, /* `3d`, `2w`: working days from the start */
+    MERMAID_GANTT_END_UNTIL /* `until a b`: where the first of the named tasks begins (#1022) */
 };
 #endif

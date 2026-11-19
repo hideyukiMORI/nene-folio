@@ -11,6 +11,7 @@ struct mermaid_gantt_task
     struct diagram_text name;
     struct diagram_text id;    /* empty when the line names none */
     struct diagram_text after; /* the ids after `after` */
+    struct diagram_text until; /* the ids after `until` */
     enum mermaid_gantt_start start;
     enum mermaid_gantt_end end;
     int32_t start_day;
@@ -21,6 +22,7 @@ struct mermaid_gantt_task
     bool active;
     bool critical;
     bool milestone;
+    bool begun; /* `begin` is known; the end may still wait for an `until` task */
     bool resolved;
     int32_t begin;
     int32_t drawn;  /* where the bar ends */

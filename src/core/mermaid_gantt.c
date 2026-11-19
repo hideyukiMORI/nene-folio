@@ -83,9 +83,25 @@ static bool interval(struct mermaid_gantt *_Nonnull parser, struct diagram_text 
     return reject(parser, DIAGRAM_UNSUPPORTED);
 }
 
-/* One item of `excludes`: `weekends` or a date. Weekday names are UNSUPPORTED. */
+/* `excludes monday`: Mermaid compares the lowercased English name of each day (#1022). */
+static bool weekday(struct mermaid_gantt *_Nonnull parser, struct diagram_text item)
+{
+    static const char *const names[] = {"monday", "tuesday",  "wednesday", "thursday",
+                                        "friday", "saturday", "sunday"};
+    for (size_t at = 0; at < sizeof names / sizeof names[0]; ++at)
+        if (keyword(item, names[at]))
+        {
+            parser->chart.weekdays |= (unsigned char)(1U << at);
+            return true;
+        }
+    return false;
+}
+
+/* One item of `excludes`: `weekends`, a weekday's name or a date. */
 static bool exclude(struct mermaid_gantt *_Nonnull parser, struct diagram_text item)
 {
+    if (weekday(parser, item))
+        return true;
     if (keyword(item, "weekends"))
     {
         parser->chart.weekends = true;

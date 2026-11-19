@@ -123,8 +123,13 @@ static enum diagram_outcome duration(struct diagram_text item,
 
 static enum diagram_outcome end(struct diagram_text item, struct mermaid_gantt_task *_Nonnull task)
 {
-    if (diagram_text_starts(item, "until "))
-        return DIAGRAM_UNSUPPORTED;
+    struct diagram_text rest = item;
+    if (diagram_text_equal(diagram_text_word(&rest), "until"))
+    {
+        task->end = MERMAID_GANTT_END_UNTIL;
+        task->until = diagram_text_trim(rest);
+        return task->until.length == 0 ? DIAGRAM_INVALID : DIAGRAM_ACCEPTED;
+    }
     if (date_shape(item))
     {
         task->end = MERMAID_GANTT_END_DATE;
