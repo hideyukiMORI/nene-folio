@@ -529,6 +529,14 @@ static enum folio_state_outcome retry_index(struct folio_state *_Nonnull state)
     {
         return FOLIO_STATE_READY;
     }
+    if (state->rename != nullptr)
+    {
+        /* #1069 / ADR0117 stage 6: while a rename is unfinished the names on disk may already be
+         * the new ones, and memory still has the old. Reading the old name's folder would find
+         * nothing and empty the list. The rename's record holds the finished ledger; the waiting
+         * ledger is read again and written once the rename is adopted. */
+        return FOLIO_STATE_READY;
+    }
     if (refresh_notes(state, state->pending_category, nullptr, nullptr) != FOLIO_STATE_READY)
     {
         return FOLIO_STATE_READY;
@@ -633,16 +641,43 @@ static enum folio_state_outcome adopt_category_rename(struct folio_state *_Nonnu
     return FOLIO_STATE_READY;
 }
 
-static enum folio_state_outcome adopt_rename(struct folio_state *_Nonnull state)
+/* #1069 / ADR0117 stage 6: the rename wrote the ledger its record held, made when the rename
+ * began. Read the ledger and the folder again so that what was put there outside since then is
+ * in the list. A read that fails leaves the list as the rename made it: the rename itself is
+ * done, and the next intent that writes reads again. */
+static void reread_after_rename(struct folio_state *_Nonnull state, enum rename_kind kind,
+                                size_t category)
 {
-    switch (rename_plan_kind(state->rename))
+    enum folio_state_outcome reread = FOLIO_STATE_READY;
+    switch (kind)
     {
     case RENAME_KIND_NOTE:
-        return adopt_note_rename(state);
+        reread = refresh_notes(state, category, nullptr, nullptr);
+        break;
     case RENAME_KIND_CATEGORY:
-        return adopt_category_rename(state);
+        reread = refresh_categories(state, nullptr, nullptr);
+        break;
     }
-    return FOLIO_STATE_RENAME_HALTED;
+    if (reread != FOLIO_STATE_READY)
+        return; /* the list stays the rename's own */
+}
+
+static enum folio_state_outcome adopt_rename(struct folio_state *_Nonnull state)
+{
+    enum rename_kind kind = rename_plan_kind(state->rename);
+    size_t category = state->rename_category;
+    enum folio_state_outcome adopted = FOLIO_STATE_RENAME_HALTED;
+    switch (kind)
+    {
+    case RENAME_KIND_NOTE:
+        adopted = adopt_note_rename(state);
+        break;
+    case RENAME_KIND_CATEGORY:
+        adopted = adopt_category_rename(state);
+        break;
+    }
+    reread_after_rename(state, kind, category);
+    return adopted;
 }
 
 /* 未完了の改名を、次の意図より先に同じ意図で再開する（ADR 0022 の決定 7）。 */
@@ -3963,7 +3998,15 @@ enum folio_state_outcome folio_state_rename_note(struct folio_state *_Nonnull st
     {
         return FOLIO_STATE_NAME_REQUIRED;
     }
+    state->ledger_notice = false;
     enum folio_state_outcome synced = synchronize(state);
+    if (synced != FOLIO_STATE_READY)
+    {
+        return synced;
+    }
+    /* #1069 / ADR0117 stage 6: the plan freezes the finished ledger into the rename's record, so
+     * the ledger is read again first. The open note stays and is followed by its name. */
+    synced = refresh_notes(state, state->selected_category, nullptr, nullptr);
     if (synced != FOLIO_STATE_READY)
     {
         return synced;
@@ -4207,24 +4250,12 @@ prepare_category_rename(struct folio_state *_Nonnull state,
     return apply_prepared_rename(state, intent, target->category);
 }
 
-enum folio_state_outcome
-folio_state_rename_category(struct folio_state *_Nonnull state,
-                            const struct category_rename_target *_Nonnull target,
-                            const char16_t *_Nonnull units, size_t count)
+/* 読み直した台帳の上での改名: 名前の確かめ、編集中の保存、計画。 */
+static enum folio_state_outcome
+rename_fresh_category(struct folio_state *_Nonnull state,
+                      const struct category_rename_target *_Nonnull target,
+                      const char16_t *_Nonnull units, size_t count)
 {
-    if (folio_state_filtering(state))
-    {
-        return FOLIO_STATE_FILTERED;
-    }
-    if (target->category >= folio_state_category_count(state))
-    {
-        return FOLIO_STATE_NO_SUCH_CATEGORY;
-    }
-    enum folio_state_outcome synced = synchronize(state);
-    if (synced != FOLIO_STATE_READY)
-    {
-        return synced;
-    }
     const char *_Nonnull name = category_name_text(target->name);
     if (strcmp(category_ledger_name(state->categories, target->category), name) == 0)
     {
@@ -4244,6 +4275,35 @@ folio_state_rename_category(struct folio_state *_Nonnull state,
         }
     }
     return prepare_category_rename(state, target);
+}
+
+enum folio_state_outcome
+folio_state_rename_category(struct folio_state *_Nonnull state,
+                            const struct category_rename_target *_Nonnull target,
+                            const char16_t *_Nonnull units, size_t count)
+{
+    state->ledger_notice = false;
+    if (folio_state_filtering(state))
+    {
+        return FOLIO_STATE_FILTERED;
+    }
+    if (target->category >= folio_state_category_count(state))
+    {
+        return FOLIO_STATE_NO_SUCH_CATEGORY;
+    }
+    enum folio_state_outcome synced = synchronize(state);
+    if (synced != FOLIO_STATE_READY)
+    {
+        return synced;
+    }
+    /* #1069 / ADR0117 stage 6: the category is found again by name on the list read again. */
+    struct category_rename_target fresh = *target;
+    synced = refresh_categories(state, &fresh.category, nullptr);
+    if (synced != FOLIO_STATE_READY)
+    {
+        return synced;
+    }
+    return rename_fresh_category(state, &fresh, units, count);
 }
 
 /* 挿した台帳の結果。MALFORMED は完全一致の重複なので名前の衝突として返す。 */
