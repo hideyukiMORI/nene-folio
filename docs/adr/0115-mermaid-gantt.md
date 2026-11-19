@@ -38,18 +38,23 @@ Status: accepted / 2026-11-19 / Issue #992
   済んだ作業は淡い面（図の節点の色）と灰色の縁。進行中はアクセント色の細い縁。critはアクセント色の太い縁（見本の赤ではなく、案Aの色だけで示す）。マイルストーンはアクセント色の菱形を、その日の位置に置く。
   新しい色は足さない。高コントラストではアクセント色が文字色になり、段は灰色の段になる（既存の`diagram_palette_for`）。
 
+### 後から足した指示語（#1030・#1032）
+
+- `weekday monday`〜`sunday`で週の目盛りを置く曜日を選べる。`weekend friday`は`excludes weekends`の週末を金・土にする（`weekend saturday`は既定の土・日）。どちらも大文字小文字を区別せず、ほかの語は不正。
+  行が`weekday`・`weekend`で始まっても、後ろがこの形でなければ作業の行として読む（Mermaidの字句と同じ。例: `Weekend deploy :2026-11-07, 2d`）。同じ指示語を2回書けば後のものが効く。
+- `inclusiveEndDates`を書くと、日付で書いた終わりがその日を含む（終わりを1日後ろへ。図のどこに書いても全体に効く。期間と`until`の終わりは変わらない）。
+  書いた終わりは除外日があっても動かない（指定の有無によらない）。指示語の後ろに文字があれば未対応（Mermaidはそれを別の作業として読む。ここでは描かず、黙って捨てもしない）。
+
 ## 未対応（図全体を案内にし、部分的な図を作らない）
 
 `dateFormat`の`YYYY-MM-DD`以外、時刻を含む開始、`h`・`m`・`s`・`ms`・`M`・`y`や小数の長さ、`axisFormat`の`%b` `%a` `%B`など（月や曜日の名前はロケールのもの）、
-1日より短い`tickInterval`、`includes`・`inclusiveEndDates`・`topAxis`・`displayMode`・`click`・`call`・`vert`・`accTitle`・`accDescr`、`%%{init}%%`。
+1日より短い`tickInterval`、`includes`・`topAxis`・`displayMode`・`click`・`call`・`vert`・`accTitle`・`accDescr`、`%%{init}%%`。
 **開始日の無い最初の作業と、知らないidを指す`after`・`until`**（Mermaidは今日を使う）。
 
 不正: 存在しない日付、開始より前の終わり、`after`・`until`の循環、自分より前に始まる作業を指す`until`、同じid、名前の無い作業、`:`の無い行、題が2つ。
 大きすぎる: 作業129以上、区分65以上、図の長さが3660日（約10年）を超える、9999年12月31日より後まで続く、目盛り65以上（`tickInterval`を細かくしすぎたとき）、目盛りのラベルが64バイトを超える。
 
-#1030: `weekday monday`〜`sunday`で週の目盛りを置く曜日を選べる。`weekend friday`は`excludes weekends`の週末を金・土にする（`weekend saturday`は既定の土・日）。どちらも大文字小文字を区別せず、ほかの語は不正。
-
-Mermaidとの違い（受けるが描き方が違う、または断る）: 週の目盛りは、`weekday`を書かなければ月曜（Mermaidの既定は日曜）。
+Mermaidとの違い（受けるが描き方が違う、または断る）: `weekday`は、`tickInterval`を書かずに自動で週の目盛りが選ばれたときにも効く（Mermaidは`tickInterval`が週のときだけ）。2週以上の`tickInterval`は図の最初の目盛りから数える（d3は暦の週の通し番号にそろえるので、1週ずれることがある。記憶による記述で、原文では確かめていない）。週の目盛りは、`weekday`を書かなければ月曜（Mermaidの既定は日曜）。
 指示語（`title`・`section`・`dateFormat`・`excludes`の`weekends`等）は、Mermaidの字句解析と同じく大文字小文字を区別しない（#1002。1.5.0の候補では区別していた）。作業の印（`done`等）はMermaidと同じく書いたとおりに読む。
 日ごとの`tickInterval`は図の最初の日から数える（d3は月の日に揃える）。`%e`は空白で詰めない。自動のid（`after task1`）は知らないidとして未対応。作業の`vert`の印は未対応。
 

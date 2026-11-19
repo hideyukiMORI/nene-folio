@@ -1,7 +1,7 @@
 /* #992 / ADR0115: the marks of a gantt's time axis. The labels are made here, as model texts, so
  * that they are measured with every other text (the layout cannot add text). Without
  * `tickInterval`, the finest of a day, a week, two weeks, a month, a quarter and a year that gives
- * at most ten marks is used. Weeks start on Monday. */
+ * at most ten marks is used. Week marks fall on the chart's `weekday`, Monday unless written. */
 #include "mermaid_gantt_axis.h"
 #include "diagram_calendar.h"
 #include "diagram_limits.h"

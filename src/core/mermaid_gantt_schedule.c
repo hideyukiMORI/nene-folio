@@ -140,8 +140,9 @@ static enum diagram_outcome finish_of(const struct mermaid_gantt_chart *_Nonnull
     switch (task->end)
     {
     case MERMAID_GANTT_END_DATE:
-        *out = task->end_day;
-        return task->end_day < begin ? DIAGRAM_INVALID : DIAGRAM_ACCEPTED;
+        /* #1032: with `inclusiveEndDates` the written date is the task's last day. */
+        *out = task->end_day + (chart->inclusive_ends ? 1 : 0);
+        return *out < begin ? DIAGRAM_INVALID : DIAGRAM_ACCEPTED;
     case MERMAID_GANTT_END_DAYS:
     case MERMAID_GANTT_END_UNTIL:
         return advance(chart, begin, task->days, out);

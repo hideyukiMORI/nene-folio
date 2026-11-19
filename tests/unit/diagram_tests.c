@@ -1276,7 +1276,6 @@ static void gantt_rejections(void)
         {"gantt\naxisFormat 50%\nx :2026-11-01, 1d\n", DIAGRAM_UNSUPPORTED},
         {"gantt\nexcludes 2026-02-30\nx :2026-11-01, 1d\n", DIAGRAM_INVALID},
         {"gantt\ntickInterval 1hour\nx :2026-11-01, 1d\n", DIAGRAM_UNSUPPORTED},
-        {"gantt\ninclusiveEndDates\nx :2026-11-01, 1d\n", DIAGRAM_UNSUPPORTED},
         {"gantt\nweekend sunday\nx :2026-11-01, 1d\n", DIAGRAM_INVALID},
         {"gantt\nweekday\nx :2026-11-01, 1d\n", DIAGRAM_INVALID},
         {"gantt\nweekday someday\nx :2026-11-01, 1d\n", DIAGRAM_INVALID},
@@ -1541,6 +1540,40 @@ static void gantt_until_excluded(void)
     diagram_model_destroy(model);
 }
 
+/* #1030 / #1032 review: a line that only begins with `weekday` or `weekend` is a task, as
+ * Mermaid's lexer reads it; the last written directive wins; text after `inclusiveEndDates`
+ * is not dropped; a written end is not moved by excluded days, with or without the flag. */
+static void gantt_week_words(void)
+{
+    struct diagram_model *model = parsed("gantt\nWeekend deploy :2026-11-07, 2d\n"
+                                         "weekday shift :1d\nweekend sunday :1d\n");
+    expect_task(model, 0, (struct gantt_expected){0, 2, DIAGRAM_TASK_PLANNED});
+    expect_task(model, 2, (struct gantt_expected){3, 1, DIAGRAM_TASK_PLANNED});
+    diagram_model_destroy(model);
+    model = parsed("gantt\nexcludes weekends\nweekend friday\nweekend saturday\n"
+                   "x :2026-11-05, 2d\n");
+    expect_task(model, 0, (struct gantt_expected){0, 2, DIAGRAM_TASK_PLANNED});
+    diagram_model_destroy(model);
+    /* 2026-11-05 is a Thursday: marks on Wednesdays are six days ahead, then on the day. */
+    model = parsed("gantt\nweekday wednesday\ntickInterval 1week\na :2026-11-05, 2w\n");
+    static const char *const ahead[] = {"2026/11/11", "11/18"};
+    expect_ticks(model, ahead, 2);
+    diagram_model_destroy(model);
+    model = parsed("gantt\nweekday thursday\ntickInterval 1week\na :2026-11-05, 2w\n");
+    static const char *const same[] = {"2026/11/5", "11/12", "11/19"};
+    expect_ticks(model, same, 3);
+    diagram_model_destroy(model);
+    model = parsed("gantt\ninclusiveEndDates\nexcludes weekends\n"
+                   "x :2026-11-05, 2026-11-06\ny :1d\nz :z, 2026-11-12, 1d\n"
+                   "u :2026-11-10, until z\n");
+    expect_task(model, 0, (struct gantt_expected){0, 2, DIAGRAM_TASK_PLANNED});
+    expect_task(model, 1, (struct gantt_expected){2, 1, DIAGRAM_TASK_PLANNED});
+    expect_task(model, 3, (struct gantt_expected){5, 2, DIAGRAM_TASK_PLANNED});
+    diagram_model_destroy(model);
+    reject_source("gantt\ninclusiveEndDates rollout :2026-11-02, 1d\n", DIAGRAM_UNSUPPORTED);
+    reject_source("gantt\nweekday monday tuesday\nx :2026-11-02, 1d\n", DIAGRAM_INVALID);
+}
+
 /* #1022: `until` ends a task where the first of the named tasks begins (a task written further
  * down too), and excluded days move that end as they move a duration's. Weekday names in
  * `excludes` are read without regard to case. 2026-11-02 is a Monday. */
@@ -1569,6 +1602,19 @@ static void gantt_until(void)
     expect_task(model, 1, (struct gantt_expected){5, 1, DIAGRAM_TASK_PLANNED});
     diagram_model_destroy(model);
     gantt_until_excluded();
+    /* #1032: `inclusiveEndDates` (anywhere in the chart) makes a written end date the last
+     * day; a duration is as before, and the task after begins the day after. */
+    model =
+        parsed("gantt\nx :2026-11-02, 2026-11-04\ny :1d\nINCLUSIVEENDDATES\nz :2026-11-02, 2d\n");
+    expect_task(model, 0, (struct gantt_expected){0, 3, DIAGRAM_TASK_PLANNED});
+    expect_task(model, 1, (struct gantt_expected){3, 1, DIAGRAM_TASK_PLANNED});
+    expect_task(model, 2, (struct gantt_expected){0, 2, DIAGRAM_TASK_PLANNED});
+    diagram_model_destroy(model);
+    model = parsed("gantt\ninclusiveEndDates\nx :2026-11-02, 2026-11-01\n");
+    expect_task(model, 0, (struct gantt_expected){0, 0, DIAGRAM_TASK_PLANNED});
+    diagram_model_destroy(model);
+    reject_source("gantt\ninclusiveEndDates\nx :2026-11-03, 2026-11-01\n", DIAGRAM_INVALID);
+    gantt_week_words();
     /* #1030: with `weekend friday` the weekends are Friday and Saturday (2026-11-05 is a
      * Thursday); `weekend saturday` writes the default. */
     model = parsed("gantt\nexcludes weekends\nweekend friday\nx :2026-11-05, 2d\ny :1d\n");

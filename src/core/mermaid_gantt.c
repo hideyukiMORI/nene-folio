@@ -1,5 +1,6 @@
 /* #992 / ADR0115: Mermaid `gantt`. The lines are directives (`title`, `dateFormat`, `axisFormat`,
- * `tickInterval`, `excludes`, `todayMarker`, `section`) or tasks. What this reader does not draw
+ * `tickInterval`, `excludes`, `weekday`, `weekend`, `inclusiveEndDates`, `todayMarker`,
+ * `section`) or tasks. What this reader does not draw
  * is UNSUPPORTED as a whole; a chart is never drawn in part. */
 #include "mermaid_gantt.h"
 #include "diagram_label.h"
@@ -192,8 +193,8 @@ static bool task(struct mermaid_gantt *_Nonnull parser, struct diagram_text text
 static bool unsupported(struct diagram_text word)
 {
     static const char *const words[] = {
-        "includes", "inclusiveEndDates", "topAxis",   "displayMode", "click",    "call",
-        "accTitle", "accDescr",          "accTitle:", "accDescr:",   "accDescr{"};
+        "includes", "topAxis",  "displayMode", "click",     "call",
+        "accTitle", "accDescr", "accTitle:",   "accDescr:", "accDescr{"};
     for (size_t at = 0; at < sizeof words / sizeof words[0]; ++at)
         if (keyword(word, words[at]))
             return true;
@@ -205,16 +206,25 @@ static bool unsupported(struct diagram_text word)
 static bool week_directive(struct mermaid_gantt *_Nonnull parser, struct diagram_text word,
                            struct diagram_text rest, bool *_Nonnull handled)
 {
+    /* Mermaid's lexer knows only `weekday <a day>` and `weekend friday|saturday`; any other
+     * line that begins with these words is a task (`Weekend deploy :2026-11-07, 2d`). */
     size_t day = day_named(rest);
-    if (keyword(word, "weekday"))
+    if (keyword(word, "weekday") && day != no_day)
     {
-        parser->chart.week_start = (unsigned char)(day == no_day ? 0 : day);
-        return day != no_day || reject(parser, DIAGRAM_INVALID);
+        parser->chart.week_start = (unsigned char)day;
+        return true;
     }
-    if (keyword(word, "weekend"))
+    if (keyword(word, "weekend") && (day == 4 || day == 5))
     {
         parser->chart.weekend_friday = day == 4;
-        return day == 4 || day == 5 || reject(parser, DIAGRAM_INVALID);
+        return true;
+    }
+    if (keyword(word, "inclusiveEndDates"))
+    {
+        /* #1032. Mermaid reads text after the word as a task of its own; that is not drawn
+         * here, and nothing written is dropped silently. */
+        parser->chart.inclusive_ends = true;
+        return rest.length == 0 || reject(parser, DIAGRAM_UNSUPPORTED);
     }
     *handled = false;
     return true;
