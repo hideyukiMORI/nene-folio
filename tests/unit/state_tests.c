@@ -1718,6 +1718,65 @@ static void verify_open_request_located(void)
     folio_state_destroy(state);
 }
 
+/* #1070: every list is read again when the data folder is known to have changed. */
+static void verify_refresh_lists(void)
+{
+    char order[200] = {0};
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    bool changed = true;
+    size_t writes = adapter.writes + adapter.ledger_writes;
+    require(folio_state_refresh_lists(state, &changed) == FOLIO_STATE_READY && !changed,
+            "nothing changed outside: nothing is taken");
+    folder_add(&adapter, "B", "six");
+    folder_add(&adapter, "C", "seven");
+    category_folder_add(&adapter, "D");
+    require(folio_state_refresh_lists(state, &changed) == FOLIO_STATE_READY && changed &&
+                folio_state_category_count(state) == 4 && !ledger_noticed(state),
+            "notes and a category made outside are listed without any intent, and no notice is "
+            "left for a later intent");
+    row_order(state, order, sizeof order);
+    require(strstr(order, "B/one/two/three/six/A/C/one/two/three/seven/D/") == order,
+            "every category was read again, the closed one too");
+    require(folio_state_refresh_lists(state, &changed) == FOLIO_STATE_READY && !changed &&
+                adapter.writes + adapter.ledger_writes == writes,
+            "read again once more: the same, and nothing was ever written");
+    store_index(&adapter, "B", "{not json");
+    folder_add(&adapter, "C", "eight");
+    require(folio_state_refresh_lists(state, &changed) == FOLIO_STATE_LEDGER_MALFORMED && changed,
+            "a category that cannot be read is reported, and the others are still read again");
+    row_order(state, order, sizeof order);
+    require(strstr(order, "/C/one/two/three/seven/eight/") != nullptr &&
+                strstr(order, "B/one/two/three/six/") == order,
+            "the unreadable category keeps the list it had");
+    folio_state_destroy(state);
+}
+
+/* #1070: whether the open note's file differs from the text it was loaded with. */
+static void verify_document_stale(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    bool stale = true;
+    require(folio_state_document_stale(state, &stale) == FOLIO_STATE_READY && !stale,
+            "no document: nothing is stale");
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
+                folio_state_document_stale(state, &stale) == FOLIO_STATE_READY && !stale,
+            "the file is the text that was loaded");
+    adapter.note_body = "# Hello\n\nchanged outside";
+    require(folio_state_document_stale(state, &stale) == FOLIO_STATE_READY && stale,
+            "the file was written outside");
+    require(same_text(folio_state_document_name(state), "one"), "asking changes nothing");
+    adapter.note_outcome = PERSISTENCE_UNREADABLE;
+    require(folio_state_document_stale(state, &stale) == FOLIO_STATE_READY && !stale,
+            "a file that cannot be read is not a newer text");
+    adapter.note_outcome = PERSISTENCE_LOADED;
+    require(folio_state_new_note(state, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
+                folio_state_document_stale(state, &stale) == FOLIO_STATE_READY && !stale,
+            "an untitled draft has no file to compare");
+    folio_state_destroy(state);
+}
+
 static void verify_open_request_place(void)
 {
     struct persistence_adapter adapter = healthy_adapter();
@@ -1745,6 +1804,8 @@ static void verify_category_refresh(void)
     verify_rename_refresh();
     verify_open_request_located();
     verify_open_request_place();
+    verify_refresh_lists();
+    verify_document_stale();
     verify_category_refresh_adds();
     verify_category_refresh_follows_names();
     verify_category_refresh_refuses();

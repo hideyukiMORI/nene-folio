@@ -435,6 +435,20 @@ folio_state_document_kind(const struct folio_state *_Nonnull state);
  * 覚えるときは名前で覚え、意図を呼ぶたびにここで番号へ引き直す。 */
 [[nodiscard]] bool folio_state_find_category(const struct folio_state *_Nonnull state,
                                              const char *_Nonnull name, size_t *_Nonnull out);
+/* #1070: data の変更に気づいたときに、すべての一覧（カテゴリの台帳と、各カテゴリのノートの台帳）を
+ * ディスクから読み直す。ADR0117 の読み直しの部品をそのまま使い、同じなら何もしない。書かない。
+ * 一覧が入れ替わったら *changed を true にする（呼ぶ側は描き直す）。
+ * あるカテゴリが読めなくても、ほかのカテゴリは読み直す。結果は最初の失敗（無ければ READY）。
+ * 呼ぶ側の約束（#1069 の教訓）: 番号を持っている面・操作の途中では呼ばない。一覧は意図の外で
+ * 入れ替わるので、呼んだ後は窓が持つ番号をすべて引き直す。 */
+[[nodiscard]] enum folio_state_outcome folio_state_refresh_lists(struct folio_state *_Nonnull state,
+                                                                 bool *_Nonnull changed);
+/* 開いている名前のあるノートのファイルが、読み込んだときの本文と違うか。違えば *stale を true。
+ * 無題・未選択・改名の保留中・ファイルが無い／読めないときは
+ * false（新しい本文があるとは言えない）。 何も変えない:
+ * 読み直すか、知らせるだけにするかは、表示の側が表示モードで決める。 */
+[[nodiscard]] enum folio_state_outcome
+folio_state_document_stale(struct folio_state *_Nonnull state, bool *_Nonnull stale);
 /* #1071 / ADR0118: 外から来た「開く」依頼のノートが、いまの一覧のどこにあるか。
  * 引く前に、カテゴリの台帳と、そのカテゴリのノートの台帳を読み直す（依頼を書いた側が、直前に
  * ノートを外で作っていることがある。読み直しても書かない＝ADR0117 の決定 6）。名前は ASCII の
