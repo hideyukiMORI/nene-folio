@@ -23,6 +23,11 @@ file_bytes_export_archive(const wchar_t *_Nonnull path,
                                                         const char *_Nonnull data, size_t length);
 [[nodiscard]] enum persistence_outcome file_bytes_create(const wchar_t *_Nonnull path,
                                                          const char *_Nonnull data, size_t length);
+/* #1062: 新しいファイルを作る、同じ道（一時ファイルから名前を付け替える。既にあれば NAME_TAKEN で
+ * 上書きしない）。上限だけを呼び出し側が渡す（取り込む画像は json より大きい）。 */
+[[nodiscard]] enum persistence_outcome file_bytes_create_within(const wchar_t *_Nonnull path,
+                                                                const char *_Nonnull data,
+                                                                size_t length, size_t limit);
 [[nodiscard]] const char *_Nonnull file_bytes_data(const struct file_bytes *_Nonnull bytes);
 [[nodiscard]] size_t file_bytes_length(const struct file_bytes *_Nonnull bytes);
 void file_bytes_destroy(struct file_bytes *_Nullable bytes);

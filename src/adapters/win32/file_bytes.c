@@ -237,7 +237,14 @@ enum persistence_outcome file_bytes_store(const wchar_t *_Nonnull path, const ch
 enum persistence_outcome file_bytes_create(const wchar_t *_Nonnull path, const char *_Nonnull data,
                                            size_t length)
 {
-    if (length > persisted_size_limit)
+    return file_bytes_create_within(path, data, length, persisted_size_limit);
+}
+
+enum persistence_outcome file_bytes_create_within(const wchar_t *_Nonnull path,
+                                                  const char *_Nonnull data, size_t length,
+                                                  size_t limit)
+{
+    if (length > limit)
         return PERSISTENCE_UNWRITABLE;
     return store(path, data, length, FILE_WRITE_CREATE);
 }

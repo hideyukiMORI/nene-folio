@@ -288,6 +288,20 @@ static enum image_outcome asset(struct image_adapter *_Nonnull adapter,
     image_file_destroy(file);
     return result;
 }
+/* #1062 / ADR0120: runs on the caller's thread; it does not touch the decode worker or its
+ * cache (a copied file is a new name, and no cached image had it). */
+static enum image_adopt_outcome adopt(struct image_adapter *_Nonnull adapter,
+                                      const char *_Nonnull category,
+                                      const struct storage_path *_Nonnull source,
+                                      struct text_buffer *_Nonnull leaf)
+{
+    wchar_t path[storage_native_capacity];
+    size_t length = 0;
+    if (!storage_native_path_fill(source, path, &length))
+        return IMAGE_ADOPT_UNREADABLE;
+    return image_file_adopt(adapter->root, category, path, leaf);
+}
+
 struct image_port image_adapter_port(struct image_adapter *_Nonnull adapter)
 {
     return (struct image_port){.adapter = adapter,
@@ -296,7 +310,8 @@ struct image_port image_adapter_port(struct image_adapter *_Nonnull adapter)
                                .poll = poll,
                                .phase = phase,
                                .cancel = cancel,
-                               .asset = asset};
+                               .asset = asset,
+                               .adopt = adopt};
 }
 void image_adapter_destroy(struct image_adapter *_Nullable adapter)
 {
