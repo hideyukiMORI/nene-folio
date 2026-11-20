@@ -10346,6 +10346,42 @@ static void text_menu_languages(struct native_fixture *_Nonnull fixture)
             "back to Japanese");
 }
 
+/* #1101: a key sent bare is matched against the modifiers this thread's key state holds
+ * (`pressed_shortcut_modifiers` reads GetKeyState). A Ctrl, Shift or Alt that is down when the
+ * case runs makes the menu key another shortcut, and the menu stays open. The case states the
+ * modifiers it means, none, and says so when it found some held: that is the evidence the
+ * next time the full run fails here. */
+static void menu_key_closes(struct folio_window *_Nonnull window, HWND _Nonnull body)
+{
+    static const int modifiers[] = {VK_SHIFT,    VK_CONTROL,  VK_MENU,  VK_LSHIFT, VK_RSHIFT,
+                                    VK_LCONTROL, VK_RCONTROL, VK_LMENU, VK_RMENU};
+    BYTE original[256];
+    BYTE neutral[256];
+    require(GetKeyboardState(original), "save the keyboard state");
+    memcpy(neutral, original, sizeof neutral);
+    bool held = false;
+    for (size_t at = 0; at < sizeof modifiers / sizeof modifiers[0]; ++at)
+    {
+        held = held || (original[modifiers[at]] & 0x80) != 0;
+        neutral[modifiers[at]] = 0;
+    }
+    if (held)
+        printf("text menu: a modifier was held at the menu key (shift=%d ctrl=%d alt=%d)\n",
+               original[VK_SHIFT] >> 7, original[VK_CONTROL] >> 7, original[VK_MENU] >> 7);
+    fflush(stdout);
+    require(SetKeyboardState(neutral), "no modifier is held for the menu key");
+    /* The key goes to the open menu; a focus that is nowhere, or still in the body, would fail
+     * below for another reason, and is told apart here. */
+    HWND focus = GetFocus();
+    require(focus != nullptr && focus != body,
+            "the body's menu holds the focus before the menu key");
+    PostMessageW(focus, WM_KEYDOWN, VK_APPS, 0);
+    pump(window);
+    bool closed = GetFocus() == body;
+    require(SetKeyboardState(original), "restore the keyboard state");
+    require(closed, "the menu key closes the body's menu");
+}
+
 static void text_menu_visual(struct native_fixture *_Nonnull fixture)
 {
     const char *const looks[] = {"light", "dark"};
@@ -10390,9 +10426,7 @@ static void text_menu_visual(struct native_fixture *_Nonnull fixture)
         tags_capture(root, path);
         /* #908: with the body's menu open, the menu key closes it and the focus returns to the
          * body; it must not swap in the list's menu. */
-        PostMessageW(GetFocus(), WM_KEYDOWN, VK_APPS, 0);
-        pump(window);
-        require(GetFocus() == body, "the menu key closes the body's menu");
+        menu_key_closes(window, body);
         SendMessageW(root, WM_KEYDOWN, VK_ESCAPE, 0);
         pump(window);
         /* Leave the session viewing, so the next window starts from the same state. */
