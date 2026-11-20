@@ -168,9 +168,9 @@ WindowsのLocalAppData/NeNeFolioへ置く。Known Folderはpackage向け転送�
 
 - 外からの変更への対応。前は「ファイル監視（外部で変わった md は再起動で拾う）」としていた。
   台帳を書く直前に読み直して合わせる（[#1069](https://github.com/hideyukiMORI/nene-folio/issues/1069)、[ADR0117](docs/adr/0117-refresh-ledgers-before-write.md)）。**これは実装済み**（次の版。FR-008）。
-  dataフォルダの変更を見つけて読み直す（[#1070](https://github.com/hideyukiMORI/nene-folio/issues/1070)。背景スレッドを使わない形を先に考える）。
+  dataフォルダの変更を見つけて読み直す（[#1070](https://github.com/hideyukiMORI/nene-folio/issues/1070)、[ADR0119](docs/adr/0119-watch-data-folder-and-open-requests.md)。背景スレッドは増やさない。**設計は受理、実装は予定**）。
 - 指定したノートを開いて箇所を選ぶ入口（`nenefolio://`のリンクと依頼のファイル。[#1071](https://github.com/hideyukiMORI/nene-folio/issues/1071)）。読み取りだけで、書き込みの口やローカルのポートは開けない。**リンクを受けて開く側は実装済み**（次の版。FR-057 / [ADR0118](docs/adr/0118-open-note-by-link.md)）。リンクをクリックして開くためのStore版の登録と、依頼のファイルは予定。
-- 画像の取り込み。前は「画像の自動取り込み」をやらないとしていた。画像をドラッグ＆ドロップすると、画像フォルダへコピーして画像のMarkdownを書く（[#1062](https://github.com/hideyukiMORI/nene-folio/issues/1062)）。
+- 画像の取り込み。前は「画像の自動取り込み」をやらないとしていた。画像をドラッグ＆ドロップすると、画像フォルダへコピーして画像のMarkdownを書く（[#1062](https://github.com/hideyukiMORI/nene-folio/issues/1062)、[ADR0120](docs/adr/0120-image-drop.md)。**設計は受理、実装は予定**）。
 - Vim 全互換・プラグイン・シェルコマンド実行・全ファイルへの一括置換（2026-09-12 の追加要件の初版範囲）
 
 追加要件の実装順と確認条件は [2026-09-12 の計画](docs/plans/2026-09-12-command-workspace.md)。
