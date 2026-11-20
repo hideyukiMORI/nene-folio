@@ -727,22 +727,82 @@ static size_t count_marks(const wchar_t *_Nonnull text, size_t length,
     return marks;
 }
 
+/* The raw text of the view (the caller frees it), or nullptr when it is not ready or there is
+ * no memory. Raw positions are the positions EM_EXSETSEL takes. */
+static wchar_t *_Nullable raw_text(struct note_pane *_Nonnull pane, size_t *_Nonnull read)
+{
+    if (pane->readiness != NOTE_PANE_READINESS_READY || pane->composing)
+        return nullptr;
+    GETTEXTLENGTHEX measure = {GTL_NUMCHARS | GTL_PRECISE, 1200};
+    LRESULT length = SendMessageW(pane->handle, EM_GETTEXTLENGTHEX, (WPARAM)&measure, 0);
+    if (length < 0 || (size_t)length >= SIZE_MAX / sizeof(wchar_t) - 1)
+        return nullptr;
+    wchar_t *_Nullable text = calloc((size_t)length + 1, sizeof *text);
+    if (text == nullptr)
+        return nullptr;
+    GETTEXTEX request = {(DWORD)(((size_t)length + 1) * sizeof *text), GT_RAWTEXT, 1200, nullptr,
+                         nullptr};
+    *read = (size_t)SendMessageW(pane->handle, EM_GETTEXTEX, (WPARAM)&request, (LPARAM)text);
+    return text;
+}
+
+bool note_pane_paragraph_total(struct note_pane *_Nonnull pane, size_t *_Nonnull total)
+{
+    size_t read = 0;
+    wchar_t *_Nullable text = raw_text(pane, &read);
+    if (text == nullptr)
+        return false;
+    struct markdown_source_selection unused = {0, 0};
+    *total = count_marks(text, read, (struct markdown_source_selection){0, 0}, &unused);
+    free(text);
+    return true;
+}
+
+/* The position after the `ordinal`th mark (0 for the first paragraph), or `length` + 1 when the
+ * text has fewer marks. */
+static size_t paragraph_start(const wchar_t *_Nonnull text, size_t length, size_t ordinal)
+{
+    size_t marks = 0;
+    size_t index = 0;
+    while (marks < ordinal && index < length)
+    {
+        marks += paragraph_mark(text[index]) ? 1 : 0;
+        index += 1;
+    }
+    return marks == ordinal ? index : length + 1;
+}
+
+bool note_pane_select_paragraphs(struct note_pane *_Nonnull pane,
+                                 struct markdown_source_selection paragraphs)
+{
+    size_t read = 0;
+    wchar_t *_Nullable text = raw_text(pane, &read);
+    if (text == nullptr)
+        return false;
+    size_t start = paragraph_start(text, read, paragraphs.first);
+    size_t after = paragraph_start(text, read, paragraphs.last);
+    free(text);
+    if (start > read || paragraphs.last <= paragraphs.first)
+        return false;
+    /* `after` is past the last paragraph's mark; without that mark the selection ends on the
+     * paragraph's own text. A last paragraph without a mark ends with the text. */
+    size_t end = after > read ? read : after - 1;
+    CHARRANGE caret = {(LONG)start, (LONG)start};
+    SendMessageW(pane->handle, EM_EXSETSEL, 0, (LPARAM)&caret);
+    SendMessageW(pane->handle, EM_SCROLLCARET, 0, 0);
+    CHARRANGE range = {(LONG)start, (LONG)(end < start ? start : end)};
+    SendMessageW(pane->handle, EM_EXSETSEL, 0, (LPARAM)&range);
+    return true;
+}
+
 bool note_pane_paragraph_selection(struct note_pane *_Nonnull pane,
                                    struct markdown_source_selection *_Nonnull out,
                                    size_t *_Nonnull total)
 {
-    if (pane->readiness != NOTE_PANE_READINESS_READY || pane->composing)
-        return false;
-    GETTEXTLENGTHEX measure = {GTL_NUMCHARS | GTL_PRECISE, 1200};
-    LRESULT length = SendMessageW(pane->handle, EM_GETTEXTLENGTHEX, (WPARAM)&measure, 0);
-    if (length < 0 || (size_t)length >= SIZE_MAX / sizeof(wchar_t) - 1)
-        return false;
-    wchar_t *_Nullable text = calloc((size_t)length + 1, sizeof *text);
+    size_t read = 0;
+    wchar_t *_Nullable text = raw_text(pane, &read);
     if (text == nullptr)
         return false;
-    GETTEXTEX request = {(DWORD)(((size_t)length + 1) * sizeof *text), GT_RAWTEXT, 1200, nullptr,
-                         nullptr};
-    size_t read = (size_t)SendMessageW(pane->handle, EM_GETTEXTEX, (WPARAM)&request, (LPARAM)text);
     CHARRANGE range = {0};
     SendMessageW(pane->handle, EM_EXGETSEL, 0, (LPARAM)&range);
     size_t first = (size_t)(range.cpMin < 0 ? 0 : range.cpMin);

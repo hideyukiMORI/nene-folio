@@ -364,6 +364,63 @@ static void lookup_copy(void)
     lookup_done(lookup);
 }
 
+/* #1071: from source bytes to the view's paragraphs. */
+static void expect_paragraphs(struct lookup_case lookup, const char *_Nonnull from,
+                              const char *_Nonnull to, struct markdown_source_selection entries)
+{
+    const char *bytes = note_text_bytes(lookup.text);
+    const char *start = strstr(bytes, from);
+    const char *end = strstr(bytes, to);
+    require(start != nullptr && end != nullptr, "the test's source holds both ends");
+    struct note_byte_span span = {(size_t)(start - bytes), (size_t)(end - bytes) + strlen(to)};
+    struct markdown_source_selection found = {99, 99};
+    bool mapped = markdown_source_lookup_paragraphs(lookup.map, span, &found);
+    struct markdown_source_entry first = markdown_source_map_at(lookup.map, entries.first);
+    struct markdown_source_entry last = markdown_source_map_at(lookup.map, entries.last);
+    bool same = mapped && found.first == first.first && found.last == last.first + last.marks;
+    if (!same)
+        fprintf(stderr, "paragraphs for [%s..%s]: %zu..%zu, expected %zu..%zu\n", from, to,
+                found.first, found.last, first.first, last.first + last.marks);
+    require(same, "source bytes find the view's paragraphs");
+}
+
+static void lookup_paragraphs(void)
+{
+    struct lookup_case lookup =
+        lookup_for("# 題\n\n一つ目の段落\n\n二つ目の段落\n続きの行\n\n- 項目A\n- 項目B\n");
+    expect_paragraphs(lookup, "一つ目", "一つ目", (struct markdown_source_selection){1, 1});
+    expect_paragraphs(lookup, "続き", "続き", (struct markdown_source_selection){2, 2});
+    expect_paragraphs(lookup, "一つ目", "続きの行", (struct markdown_source_selection){1, 2});
+    expect_paragraphs(lookup, "# 題", "項目B", (struct markdown_source_selection){0, 4});
+    const char *bytes = note_text_bytes(lookup.text);
+    struct markdown_source_selection found = {99, 99};
+    struct note_byte_span blank = {(size_t)(strstr(bytes, "\n\n一つ目") - bytes) + 1,
+                                   (size_t)(strstr(bytes, "\n\n一つ目") - bytes) + 1};
+    require(markdown_source_lookup_paragraphs(lookup.map, blank, &found) &&
+                found.first == markdown_source_map_at(lookup.map, 1).first,
+            "a caret on a blank line takes the next block");
+    struct note_byte_span caret = {(size_t)(strstr(bytes, "項目B") - bytes) + 3,
+                                   (size_t)(strstr(bytes, "項目B") - bytes) + 3};
+    require(markdown_source_lookup_paragraphs(lookup.map, caret, &found) &&
+                found.first == markdown_source_map_at(lookup.map, 4).first &&
+                found.last == found.first + markdown_source_map_at(lookup.map, 4).marks,
+            "a caret inside a block takes that block");
+    struct note_byte_span past = {note_text_length(lookup.text) + 5,
+                                  note_text_length(lookup.text) + 9};
+    found = (struct markdown_source_selection){7, 7};
+    require(!markdown_source_lookup_paragraphs(lookup.map, past, &found) && found.first == 7,
+            "bytes past every block find nothing and leave out alone");
+    lookup_done(lookup);
+    lookup = lookup_for("前\n\n```c\nint a;\nint b;\n```\n\n後[^1]\n\n[^1]: 脚注の文\n");
+    expect_paragraphs(lookup, "int b;", "int b;", (struct markdown_source_selection){3, 3});
+    expect_paragraphs(lookup, "```c", "int a;", (struct markdown_source_selection){1, 2});
+    expect_paragraphs(
+        lookup, "脚注の文", "脚注の文",
+        (struct markdown_source_selection){markdown_source_map_count(lookup.map) - 1,
+                                           markdown_source_map_count(lookup.map) - 1});
+    lookup_done(lookup);
+}
+
 void run_source_map_tests(void)
 {
     counting();
@@ -372,6 +429,7 @@ void run_source_map_tests(void)
     review_cases();
     lookup_caret();
     lookup_copy();
+    lookup_paragraphs();
     allocation();
     printf("source map tests passed\n");
 }

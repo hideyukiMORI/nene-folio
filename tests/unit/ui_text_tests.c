@@ -93,6 +93,14 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_DISCOVERY_CHANGED] =
         "保存内容が検索時から変わったため、一致箇所へは移動していません。",
     [UI_TEXT_DISCOVERY_ELLIPSIS] = "…",
+    [UI_TEXT_OPEN_LINK_INVALID] = "リンクの形が正しくないため、開けませんでした。",
+    [UI_TEXT_OPEN_LINK_BUSY] = "ほかの操作の途中です。終えてから、もう一度リンクを開いてください。",
+    [UI_TEXT_OPEN_LINK_NO_CATEGORY] = "リンクのカテゴリが見つかりません。何も開いていません。",
+    [UI_TEXT_OPEN_LINK_NO_NOTE] = "リンクのノートが見つかりません。何も開いていません。",
+    [UI_TEXT_OPEN_LINK_LINES] = "指定の文は見つかりませんでした。指定の行を選んでいます。",
+    [UI_TEXT_OPEN_LINK_ELSEWHERE] =
+        "指定の行の近くには無く、ノート内の別の場所の文を選んでいます。",
+    [UI_TEXT_OPEN_LINK_NO_PLACE] = "指定の箇所は見つかりませんでした。ノートを開きました。",
     [UI_TEXT_TAG_MANAGE_SOURCE] = "対象のタグ: {name}",
     [UI_TEXT_TAG_MANAGE_CHANGE] = "変更内容",
     [UI_TEXT_CODE_COPY] = "コピー",

@@ -182,6 +182,15 @@ void note_pane_cancel_wheel(struct note_pane *_Nonnull pane);
 [[nodiscard]] bool note_pane_paragraph_selection(struct note_pane *_Nonnull pane,
                                                  struct markdown_source_selection *_Nonnull out,
                                                  size_t *_Nonnull total);
+/* #1071 / ADR0118: the marks in the reading view's text (what `total` above reports), or false
+ * when the text is not ready. */
+[[nodiscard]] bool note_pane_paragraph_total(struct note_pane *_Nonnull pane,
+                                             size_t *_Nonnull total);
+/* Selects the paragraphs from ordinal `first` up to, not including, `last` (their text without
+ * the last one's mark) and brings the start of the selection into view. Focus and Undo are left
+ * alone. False when the text is not ready or does not hold those paragraphs. */
+[[nodiscard]] bool note_pane_select_paragraphs(struct note_pane *_Nonnull pane,
+                                               struct markdown_source_selection paragraphs);
 [[nodiscard]] bool note_pane_text_edit_available(const struct note_pane *_Nonnull pane,
                                                  enum folio_text_edit edit);
 void note_pane_text_edit(struct note_pane *_Nonnull pane, enum folio_text_edit edit);

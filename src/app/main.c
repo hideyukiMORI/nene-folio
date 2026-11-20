@@ -3,19 +3,23 @@
  * （FR-015 / ADR 0025 の決定 6）。どちらも文言は application が作る。 */
 #include "appearance_adapter.h"
 #include "clipboard_adapter.h"
+#include "folio_launch_link.h"
 #include "folio_palette.h"
 #include "folio_state.h"
 #include "folio_window.h"
 #include "font_bundle.h"
 #include "image_adapter.h"
+#include "launch.h"
 #include "persistence_adapter.h"
 #include "regex_adapter.h"
 #include "storage_adapter.h"
+#include "storage_path.h"
 #include "storage_prompt.h"
 #include "storage_state.h"
 #include "transfer_adapter.h"
 #include "ui_text.h"
 #include "utf16_text.h"
+#include "utf8_text.h"
 #include "web_link_adapter.h"
 
 #include <string.h>
@@ -88,9 +92,23 @@ static void run_message_loop(struct folio_window *_Nonnull window)
     }
 }
 
+/* 同じ data で動いている窓があれば、リンクを渡す。渡せたら true（この起動は終わる）。 */
+static bool hand_over_link(const struct storage_port *_Nonnull port,
+                           const struct utf8_text *_Nullable link)
+{
+    if (link == nullptr)
+        return false;
+    struct storage_path *_Nullable place = nullptr;
+    if (storage_state_configured_directory(port, &place) != STORAGE_READY || place == nullptr)
+        return false;
+    bool taken = folio_launch_link_hand_over(place, utf8_text_bytes(link), utf8_text_length(link));
+    storage_path_destroy(place);
+    return taken;
+}
+
 /* 状態と窓を作って走らせる。アダプタは状態より長く生きる。 */
 static int run(const struct folio_ports *_Nonnull ports, struct storage_state *_Nonnull storage,
-               enum font_bundle_outcome fonts)
+               const struct launch *_Nonnull launch)
 {
     struct folio_state *_Nullable state = nullptr;
     enum folio_state_outcome loaded = folio_state_create(ports, &state);
@@ -105,12 +123,15 @@ static int run(const struct folio_ports *_Nonnull ports, struct storage_state *_
      * main は 1 回しか走らないので「見せたか」の真偽はどこにも持たない。 */
     report_initial_notices(state);
     struct folio_window *_Nullable window = nullptr;
-    if (folio_window_create(state, storage, fonts, &window) != FOLIO_WINDOW_CREATED)
+    if (folio_window_create(state, storage, launch->fonts, &window) != FOLIO_WINDOW_CREATED)
     {
         report(ui_text_line(UI_TEXT_APP_NO_WINDOW, folio_state_language(state)));
         folio_state_destroy(state);
         return 1;
     }
+    if (launch->link != nullptr)
+        folio_window_open_link(window, utf8_text_bytes(launch->link),
+                               utf8_text_length(launch->link));
     run_message_loop(window);
     folio_window_destroy(window);
     folio_state_destroy(state);
@@ -135,7 +156,8 @@ static enum storage_prompt_outcome confirm_storage(struct storage_state *_Nonnul
 
 static int run_from_storage(struct storage_state *_Nonnull storage,
                             struct appearance_adapter *_Nonnull appearance,
-                            struct regex_adapter *_Nonnull regex, enum font_bundle_outcome fonts)
+                            struct regex_adapter *_Nonnull regex,
+                            const struct launch *_Nonnull launch)
 {
     switch (confirm_storage(storage, appearance))
     {
@@ -184,7 +206,7 @@ static int run_from_storage(struct storage_state *_Nonnull storage,
                                 .clipboard = &copies,
                                 .transfer = &transfer,
                                 .images = &pictures};
-    int code = run(&ports, storage, fonts);
+    int code = run(&ports, storage, launch);
     clipboard_adapter_destroy(clipboard);
     image_adapter_destroy(images);
     persistence_adapter_destroy(persistence);
@@ -193,9 +215,12 @@ static int run_from_storage(struct storage_state *_Nonnull storage,
 
 static int run_with_storage(struct storage_adapter *_Nonnull adapter,
                             struct appearance_adapter *_Nonnull appearance,
-                            struct regex_adapter *_Nonnull regex, enum font_bundle_outcome fonts)
+                            struct regex_adapter *_Nonnull regex,
+                            const struct launch *_Nonnull launch)
 {
     struct storage_port port = storage_adapter_port(adapter);
+    if (hand_over_link(&port, launch->link))
+        return 0; /* the running window opens the link */
     struct storage_state *_Nullable storage = nullptr;
     enum storage_outcome loaded = storage_state_create(&port, &storage);
     if (loaded != STORAGE_READY)
@@ -203,7 +228,7 @@ static int run_with_storage(struct storage_adapter *_Nonnull adapter,
         report(storage_state_failure_line(loaded, FOLIO_LANGUAGE_JA));
         return 1;
     }
-    int code = run_from_storage(storage, appearance, regex, fonts);
+    int code = run_from_storage(storage, appearance, regex, launch);
     storage_state_destroy(storage);
     return code;
 }
@@ -214,7 +239,6 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE previous, PWSTR arguments, int
 {
     (void)instance;
     (void)previous;
-    (void)arguments;
     (void)show;
     struct storage_adapter *_Nullable adapter = nullptr;
     enum storage_outcome created = storage_adapter_create(&adapter);
@@ -243,7 +267,10 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE previous, PWSTR arguments, int
      * （決定 5）。 */
     struct font_bundle *_Nullable fonts = nullptr;
     enum font_bundle_outcome bundled = font_bundle_register(&fonts);
-    int code = run_with_storage(adapter, appearance, regex, bundled);
+    struct utf8_text *_Nullable link = folio_launch_link_read(arguments);
+    const struct launch launch = {.fonts = bundled, .link = link};
+    int code = run_with_storage(adapter, appearance, regex, &launch);
+    utf8_text_destroy(link);
     font_bundle_destroy(fonts);
     regex_adapter_destroy(regex);
     appearance_adapter_destroy(appearance);

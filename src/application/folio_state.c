@@ -5844,6 +5844,17 @@ enum open_place_kind folio_state_open_place(const struct folio_state *_Nonnull s
                            out);
 }
 
+enum folio_state_outcome folio_state_open_paragraphs(const struct folio_state *_Nonnull state,
+                                                     struct note_byte_span source,
+                                                     size_t view_total,
+                                                     struct markdown_source_selection *_Nonnull out)
+{
+    if (!folio_state_source_mapped(state, view_total) ||
+        !markdown_source_lookup_paragraphs(markdown_rtf_source_map(state->pane), source, out))
+        return FOLIO_STATE_SOURCE_UNMAPPED;
+    return FOLIO_STATE_READY;
+}
+
 bool folio_state_find_category(const struct folio_state *_Nonnull state, const char *_Nonnull name,
                                size_t *_Nonnull out)
 {

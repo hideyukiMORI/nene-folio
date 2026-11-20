@@ -191,3 +191,75 @@ bool markdown_source_lookup_copy(const struct markdown_source_map *_Nonnull map,
     }
     return append_footnotes(map, text, entries, out);
 }
+
+/* Whether the block's source lines and the span share a byte; an empty span is a caret, and a
+ * block holds it when the caret is on its lines (their ends included). */
+static bool overlaps(struct markdown_source_entry entry, struct note_byte_span source)
+{
+    if (entry.kind == MARKDOWN_SOURCE_SEPARATOR)
+        return false;
+    if (source.start == source.end)
+        return entry.begin <= source.start && source.start <= entry.end;
+    return entry.begin < source.end && entry.end > source.start;
+}
+
+/* The run of overlapping blocks, from the first in the view's order. A block that writes no
+ * paragraph (a closing fence) neither extends nor ends the run. */
+static bool overlapping_run(const struct markdown_source_map *_Nonnull map,
+                            struct note_byte_span source,
+                            struct markdown_source_selection *_Nonnull out)
+{
+    bool started = false;
+    size_t count = markdown_source_map_count(map);
+    for (size_t index = 0; index < count; ++index)
+    {
+        struct markdown_source_entry entry = markdown_source_map_at(map, index);
+        if (entry.marks == 0)
+            continue;
+        if (!overlaps(entry, source))
+        {
+            if (started)
+                break;
+            continue;
+        }
+        if (!started)
+            out->first = entry.first;
+        out->last = entry.first + entry.marks;
+        started = true;
+    }
+    return started;
+}
+
+/* The block whose lines begin soonest at or after the span's start. */
+static bool next_block(const struct markdown_source_map *_Nonnull map, struct note_byte_span source,
+                       struct markdown_source_selection *_Nonnull out)
+{
+    bool found = false;
+    size_t nearest = 0;
+    size_t count = markdown_source_map_count(map);
+    for (size_t index = 0; index < count; ++index)
+    {
+        struct markdown_source_entry entry = markdown_source_map_at(map, index);
+        bool candidate = entry.marks != 0 && entry.kind != MARKDOWN_SOURCE_SEPARATOR &&
+                         entry.begin >= source.start;
+        if (candidate && (!found || entry.begin < nearest))
+        {
+            nearest = entry.begin;
+            out->first = entry.first;
+            out->last = entry.first + entry.marks;
+            found = true;
+        }
+    }
+    return found;
+}
+
+bool markdown_source_lookup_paragraphs(const struct markdown_source_map *_Nonnull map,
+                                       struct note_byte_span source,
+                                       struct markdown_source_selection *_Nonnull out)
+{
+    struct markdown_source_selection found = {0, 0};
+    if (!overlapping_run(map, source, &found) && !next_block(map, source, &found))
+        return false;
+    *out = found;
+    return true;
+}
