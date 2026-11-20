@@ -275,7 +275,9 @@ struct folio_window
     enum session_phase session_phase;
     HWND _Nullable session_return_focus;
     enum ui_text session_reason;
-    enum ui_text open_line; /* PANE_NOTICE_OPEN_LINK の文（#1071） */
+    enum ui_text open_line;      /* PANE_NOTICE_OPEN_LINK の文（#1071） */
+    char *_Nullable queued_link; /* 預かった「開く」依頼。メッセージの待ちの先頭で開く */
+    size_t queued_length;
     bool session_reason_owned;
     bool layout_changing;     /* 同期WM_SIZEを含む一つの表示切替の間だけ立つ。 */
     int drawer_width;         /* 実行中に選んだlogical幅。窓縮小時の制限で上書きしない。 */
@@ -15302,9 +15304,14 @@ static bool open_link_blocked(const struct folio_window *_Nonnull self)
 {
     bool surface = self->command_surface != COMMAND_SURFACE_CLOSED &&
                    self->command_surface != COMMAND_SURFACE_SEARCH;
-    return surface || self->native_modal_depth > 0 || self->removal_running || session_busy(self) ||
-           self->close_phase != CLOSE_PHASE_IDLE || self->layout_changing || pane_streaming(self) ||
-           GetCapture() != nullptr || !IsWindowEnabled(self->handle);
+    bool held = surface || self->native_modal_depth > 0 || self->removal_running ||
+                self->layout_changing || pane_streaming(self) || GetCapture() != nullptr;
+    /* Inside another handler (a pump nested in it dispatched this), while the session or the
+     * window is ending, or while an IME composition is open: the same refusals as the other
+     * paths that save and reload on the user's behalf. */
+    bool between = self->dispatch_depth > 1 || session_busy(self) ||
+                   self->close_phase != CLOSE_PHASE_IDLE || session_composing(self);
+    return held || between || !IsWindowEnabled(self->handle);
 }
 
 /* Selects the place the request names in the reading view, and says so when it is not the
@@ -15339,8 +15346,13 @@ static void open_link_place(struct folio_window *_Nonnull self,
 static enum folio_state_outcome open_link_note(struct folio_window *_Nonnull self,
                                                struct note_ref ref)
 {
+    /* In the reading view the note is read again even when it is the open one: whoever wrote
+     * the link may have just changed the file. An open edit of the same note is not thrown
+     * away for the file: it is saved as usual and shown. */
+    bool editing =
+        holds_document(self, ref) && folio_state_pane_mode(self->state) == PANE_MODE_EDIT;
     enum folio_state_outcome outcome =
-        holds_document(self, ref) ? FOLIO_STATE_READY : switch_note(self, ref.category, ref.note);
+        editing ? FOLIO_STATE_READY : switch_note(self, ref.category, ref.note);
     if (outcome == FOLIO_STATE_READY && folio_state_pane_mode(self->state) == PANE_MODE_EDIT)
         outcome = flush_edit(self);
     return outcome;
@@ -15369,39 +15381,70 @@ static void open_link_request(struct folio_window *_Nonnull self,
             report_outcome(self, outcome);
         return;
     }
-    set_pane_notice(self, PANE_NOTICE_NONE);
-    open_link_place(self, request);
+    if (self->notice == PANE_NOTICE_OPEN_LINK)
+        set_pane_notice(self, PANE_NOTICE_NONE); /* an earlier link's line; others stay */
     redraw_drawer(self);
-    focus_pane(self);
+    focus_pane(self); /* the pane is laid out and shown before the place is brought into view */
+    open_link_place(self, request);
 }
 
-void folio_window_open_link(struct folio_window *_Nonnull self, const char *_Nonnull bytes,
-                            size_t length)
+/* Validates and opens the link the window holds. Runs from the message loop's own dispatch. */
+static void open_link_now(struct folio_window *_Nonnull self, const char *_Nonnull bytes,
+                          size_t length)
 {
-    if (IsIconic(self->handle))
-        ShowWindow(self->handle, SW_RESTORE);
-    SetForegroundWindow(self->handle);
-    if (open_link_blocked(self))
+    if (self->native_modal_depth == 0)
     {
-        open_link_notice(self, UI_TEXT_OPEN_LINK_BUSY);
-        return;
+        /* A dialog of this window keeps the activation; otherwise the window comes forward. */
+        if (IsIconic(self->handle))
+            ShowWindow(self->handle, SW_RESTORE);
+        SetForegroundWindow(self->handle);
     }
     struct open_request *_Nullable request = nullptr;
     enum open_request_outcome read = open_request_create(bytes, length, &request);
     if (read != OPEN_REQUEST_ACCEPTED || request == nullptr)
     {
-        if (read == OPEN_REQUEST_OUT_OF_MEMORY)
-            report_outcome(self, FOLIO_STATE_OUT_OF_MEMORY);
-        else
-            open_link_notice(self, UI_TEXT_OPEN_LINK_INVALID);
+        open_link_notice(self, UI_TEXT_OPEN_LINK_INVALID);
         return;
     }
-    open_link_request(self, request);
+    if (open_link_blocked(self))
+        open_link_notice(self, UI_TEXT_OPEN_LINK_BUSY);
+    else
+        open_link_request(self, request);
     open_request_destroy(request);
 }
 
+static void open_queued_link(struct folio_window *_Nonnull self)
+{
+    char *_Nullable link = self->queued_link;
+    size_t length = self->queued_length;
+    self->queued_link = nullptr;
+    self->queued_length = 0;
+    if (link == nullptr)
+        return;
+    open_link_now(self, link, length);
+    free(link);
+}
+
+void folio_window_open_link(struct folio_window *_Nonnull self, const char *_Nonnull bytes,
+                            size_t length)
+{
+    if (length > folio_open_link_limit)
+        return; /* no link is this long; nothing is kept */
+    char *_Nullable copy = malloc(length + 1);
+    if (copy == nullptr)
+        return;
+    memcpy(copy, bytes, length);
+    copy[length] = '\0';
+    free(self->queued_link);
+    self->queued_link = copy;
+    self->queued_length = length;
+    (void)PostMessageW(self->handle, folio_message_open_link, 0, 0);
+}
+
 /* A second start hands its link over (folio_open_link.h). The sender is not trusted: the data
- * folder must be this window's, and the link is validated like any other. */
+ * folder must be this window's, and the link is validated like any other. The link is only
+ * kept here and the sender answered at once; a prompt or a save that opening may need must not
+ * keep the sender waiting past its timeout (independent review of #1097). */
 static LRESULT on_copy_data(struct folio_window *_Nonnull self, LPARAM lparam)
 {
     const COPYDATASTRUCT *copy = (const COPYDATASTRUCT *)lparam;
@@ -15431,6 +15474,9 @@ static LRESULT on_child_request(struct folio_window *_Nonnull self, UINT message
         return 0;
     case WM_COPYDATA: /* a second start hands over its link (#1071) */
         return on_copy_data(self, lparam);
+    case folio_message_open_link:
+        open_queued_link(self);
+        return 0;
     case folio_message_resize_through:
         return resize_through(self, lparam);
     case folio_message_pane_zoomed:
@@ -16214,6 +16260,8 @@ void folio_window_destroy(struct folio_window *_Nullable window)
     {
         return;
     }
+    free(window->queued_link);
+    window->queued_link = nullptr;
     if (window->handle != nullptr)
     {
         discovery_motion_settle(window);

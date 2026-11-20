@@ -61,18 +61,32 @@ static void destroy_prepared(struct storage_path *_Nullable path,
     free(state);
 }
 
+/* 起動設定を読み、この起動が使う場所を写す。起動と、場所だけを引く窓口が共有する（ARC-001）。
+ * READY（設定あり）か ABSENT（設定なし）で settings と path を渡す。path が nullptr なら記憶不足。
+ * ほかの結果では何も渡さない。 */
+static enum storage_outcome read_configured(const struct storage_port *_Nonnull port,
+                                            struct startup_settings *_Nullable *_Nonnull settings,
+                                            struct storage_path *_Nullable *_Nonnull path)
+{
+    enum storage_outcome loaded = port->read(port->adapter, settings);
+    if (loaded != STORAGE_READY && loaded != STORAGE_ABSENT)
+        return loaded;
+    if (storage_path_copy(effective(port, *settings), path) != STORAGE_PATH_READY)
+        *path = nullptr;
+    return loaded;
+}
+
 enum storage_outcome
 storage_state_configured_directory(const struct storage_port *_Nonnull port,
                                    struct storage_path *_Nullable *_Nonnull out)
 {
     struct startup_settings *_Nullable settings = nullptr;
-    enum storage_outcome loaded = port->read(port->adapter, &settings);
+    struct storage_path *_Nullable path = nullptr;
+    enum storage_outcome loaded = read_configured(port, &settings, &path);
+    startup_settings_destroy(settings);
     if (loaded != STORAGE_READY && loaded != STORAGE_ABSENT)
         return loaded;
-    struct storage_path *_Nullable path = nullptr;
-    enum storage_path_outcome copied = storage_path_copy(effective(port, settings), &path);
-    startup_settings_destroy(settings);
-    if (copied != STORAGE_PATH_READY || path == nullptr)
+    if (path == nullptr)
         return STORAGE_OUT_OF_MEMORY;
     *out = path;
     return STORAGE_READY;
@@ -82,13 +96,12 @@ enum storage_outcome storage_state_create(const struct storage_port *_Nonnull po
                                           struct storage_state *_Nullable *_Nonnull out)
 {
     struct startup_settings *_Nullable settings = nullptr;
-    enum storage_outcome loaded = port->read(port->adapter, &settings);
+    struct storage_path *_Nullable path = nullptr;
+    enum storage_outcome loaded = read_configured(port, &settings, &path);
     if (loaded != STORAGE_READY && loaded != STORAGE_ABSENT)
         return loaded;
-    struct storage_path *_Nullable path = nullptr;
-    enum storage_path_outcome copied = storage_path_copy(effective(port, settings), &path);
     struct storage_state *_Nullable state = malloc(sizeof *state);
-    if (copied != STORAGE_PATH_READY || state == nullptr)
+    if (path == nullptr || state == nullptr)
     {
         destroy_prepared(path, settings, state);
         return STORAGE_OUT_OF_MEMORY;

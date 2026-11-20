@@ -472,7 +472,7 @@ static void seed_notes(struct persistence_port disk)
     require(note_text_create(source, strlen(source), &body) == NOTE_TEXT_ACCEPTED, "media note");
     require(fixture_store(disk, "schedule", "one", body) == NOTE_STORE_STORED, "image note stored");
     note_text_destroy(body);
-    if (note_switch_case || favorites_case)
+    if (note_switch_case || favorites_case || open_link_case)
     {
         body = nullptr;
         require(note_text_create(switch_other, strlen(switch_other), &body) == NOTE_TEXT_ACCEPTED,
@@ -10789,6 +10789,17 @@ static void expect_link_selection(HWND _Nonnull body, const wchar_t *_Nonnull ho
     require(same, message);
 }
 
+/* The selection is exactly the paragraph's own text: not its mark, not its neighbours. */
+static void expect_link_exact(HWND _Nonnull body, const wchar_t *_Nonnull expected)
+{
+    wchar_t text[256] = L"";
+    CHARRANGE range = {0};
+    SendMessageW(body, EM_EXGETSEL, 0, (LPARAM)&range);
+    require(range.cpMax - range.cpMin < 250, "the selection fits the test's buffer");
+    SendMessageW(body, EM_GETSELTEXT, 0, (LPARAM)text);
+    require(wcscmp(text, expected) == 0, "the selection is the paragraph's text and no more");
+}
+
 static void open_link_send(struct folio_window *_Nonnull window, const char *_Nonnull link)
 {
     folio_window_open_link(window, link, strlen(link));
@@ -10801,6 +10812,7 @@ static void open_link_places(struct folio_window *_Nonnull window, HWND _Nonnull
                    "nenefolio://open?category=schedule&note=one&lines=5&text=%E7%9B%AE%E5%8D%B0");
     expect_link_selection(body, L"二つ目の段落に目印の文がある。", L"最後",
                           "the paragraph near the given line that holds the text is selected");
+    expect_link_exact(body, L"二つ目の段落に目印の文がある。");
     open_link_send(window, "nenefolio://open?category=SCHEDULE&note=One.md&lines=10&text=absent");
     expect_link_selection(body, L"最後の段落にも目印がある。", L"項目",
                           "without the text, the given line's paragraph is selected");
@@ -10828,6 +10840,8 @@ static void open_link_refusals(struct folio_window *_Nonnull window, HWND _Nonnu
     expect_notice(window, L"リンクのノートが見つかりません。何も開いていません。");
     open_link_send(window, "nenefolio://open?category=schedule&note=..%2Fsecret");
     expect_notice(window, L"リンクの形が正しくないため、開けませんでした。");
+    open_link_send(window, "nenefolio://open?category=nowhere&note=one");
+    expect_notice(window, L"リンクのカテゴリが見つかりません。何も開いていません。");
     open_link_send(window, "nenefolio://delete?category=schedule&note=one");
     expect_notice(window, L"リンクの形が正しくないため、開けませんでした。");
     expect_link_selection(body, L"最初の段落。", L"二つ目",
@@ -10840,6 +10854,7 @@ static void open_link_refusals(struct folio_window *_Nonnull window, HWND _Nonnu
     open_link_send(window, "nenefolio://open?category=schedule&note=one&lines=10");
     expect_link_selection(body, L"最初の段落。", L"最後",
                           "a link does not open while a surface is open");
+    expect_notice(window, L"ほかの操作の途中です。終えてから、もう一度リンクを開いてください。");
     surface_button(window, ACCESSIBLE_SURFACE_CLOSE);
     pump(window);
 }
@@ -10874,6 +10889,12 @@ static void open_link_handed(struct native_fixture *_Nonnull fixture,
                            "nenefolio://open?category=schedule&note=one&lines=10") == TRUE,
             "a hand-over for this window's data folder is taken");
     expect_link_selection(body, L"最後の段落にも目印がある。", L"項目", "and it opens the place");
+    char unsplit[] = "no separator between the folder and the link";
+    COPYDATASTRUCT whole = {
+        .dwData = folio_open_link_data, .cbData = (DWORD)(sizeof unsplit - 1), .lpData = unsplit};
+    require(SendMessageW(folio_window_accessible_window(window, ACCESSIBLE_WINDOW), WM_COPYDATA, 0,
+                         (LPARAM)&whole) == FALSE,
+            "a hand-over without the separator is not taken");
     COPYDATASTRUCT other = {.dwData = 1, .cbData = 4, .lpData = "abc"};
     require(SendMessageW(folio_window_accessible_window(window, ACCESSIBLE_WINDOW), WM_COPYDATA, 0,
                          (LPARAM)&other) == FALSE,
@@ -10917,6 +10938,43 @@ static void open_link_launch(struct native_fixture *_Nonnull fixture,
     expect_link_selection(body, L"最初の段落。", L"二つ目", "and opens the place");
 }
 
+/* A link to another note while this one has unsaved edits: the edit is saved, as when a note
+ * is clicked in the drawer, and the other note opens in the reading view. */
+static void open_link_departs(struct native_fixture *_Nonnull fixture,
+                              struct folio_window *_Nonnull window)
+{
+    action(window, ACCESSIBLE_EDIT);
+    append_switch_text(window);
+    open_link_send(window, "nenefolio://open?category=schedule&note=two&text=Other");
+    require(strcmp(folio_state_document_name(fixture->state), "two") == 0 &&
+                folio_state_pane_mode(fixture->state) == PANE_MODE_VIEW,
+            "the other note is open in the reading view");
+    expect_link_selection(folio_window_accessible_window(window, ACCESSIBLE_BODY), L"Other",
+                          nullptr, "and its place is selected");
+    struct persistence_port disk = persistence_adapter_port(fixture->files);
+    struct note_text *saved = nullptr;
+    require(disk.read_note(disk.adapter, "schedule", "one", &saved) == PERSISTENCE_LOADED &&
+                saved != nullptr && strstr(note_text_bytes(saved), "追記") != nullptr,
+            "the edit that was open is saved before the link's note opens");
+    note_text_destroy(saved);
+}
+
+/* The link's note is read again even when it is the open one: the file may have just been
+ * written by whoever made the link. */
+static void open_link_rereads(struct native_fixture *_Nonnull fixture,
+                              struct folio_window *_Nonnull window)
+{
+    static const char changed[] = "> Other 別ノート 🐾\n\n外で足した段落。\n";
+    struct persistence_port disk = persistence_adapter_port(fixture->files);
+    struct note_text *body = nullptr;
+    require(note_text_create(changed, sizeof changed - 1, &body) == NOTE_TEXT_ACCEPTED &&
+                fixture_store(disk, "schedule", "two", body) == NOTE_STORE_STORED,
+            "the open note's file is written outside");
+    note_text_destroy(body);
+    open_link_send(window, "nenefolio://open?category=schedule&note=two&lines=3");
+    expect_link_exact(folio_window_accessible_window(window, ACCESSIBLE_BODY), L"外で足した段落。");
+}
+
 static void open_link(struct native_fixture *_Nonnull fixture)
 {
     require(folio_state_set_language(fixture->state, FOLIO_LANGUAGE_JA) == FOLIO_STATE_READY,
@@ -10949,6 +11007,12 @@ static void open_link(struct native_fixture *_Nonnull fixture)
     expect_link_selection(folio_window_accessible_window(window, ACCESSIBLE_BODY),
                           L"二つ目の段落に目印の文がある。", L"最後",
                           "and selects the place there");
+    puts("open link: another note, with unsaved edits here");
+    fflush(stdout);
+    open_link_departs(fixture, window);
+    puts("open link: the open note changed outside");
+    fflush(stdout);
+    open_link_rereads(fixture, window);
     folio_window_destroy(window);
 }
 
