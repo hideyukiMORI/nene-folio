@@ -61,6 +61,23 @@ static void destroy_prepared(struct storage_path *_Nullable path,
     free(state);
 }
 
+enum storage_outcome
+storage_state_configured_directory(const struct storage_port *_Nonnull port,
+                                   struct storage_path *_Nullable *_Nonnull out)
+{
+    struct startup_settings *_Nullable settings = nullptr;
+    enum storage_outcome loaded = port->read(port->adapter, &settings);
+    if (loaded != STORAGE_READY && loaded != STORAGE_ABSENT)
+        return loaded;
+    struct storage_path *_Nullable path = nullptr;
+    enum storage_path_outcome copied = storage_path_copy(effective(port, settings), &path);
+    startup_settings_destroy(settings);
+    if (copied != STORAGE_PATH_READY || path == nullptr)
+        return STORAGE_OUT_OF_MEMORY;
+    *out = path;
+    return STORAGE_READY;
+}
+
 enum storage_outcome storage_state_create(const struct storage_port *_Nonnull port,
                                           struct storage_state *_Nullable *_Nonnull out)
 {

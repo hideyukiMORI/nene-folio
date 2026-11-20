@@ -89,6 +89,35 @@ static struct storage_path *_Nonnull path_for(const char *_Nonnull text)
     return path;
 }
 
+/* #1071: where this start would keep its data, without checking or making anything. */
+static void verify_configured_directory(void)
+{
+    struct storage_path *root = path_for("D:/app/data");
+    struct storage_path *saved = path_for("D:/notes");
+    struct storage_adapter fake = {.read_result = STORAGE_ABSENT};
+    struct storage_port port = make_port(&fake, root, STORAGE_PORTABLE);
+    struct storage_path *place = nullptr;
+    require(storage_state_configured_directory(&port, &place) == STORAGE_READY &&
+                place != nullptr && storage_path_equal(place, root) && fake.checks == 0 &&
+                fake.stores == 0,
+            "without a startup setting the place is the default; nothing is checked or stored");
+    storage_path_destroy(place);
+    place = nullptr;
+    fake.read_result = STORAGE_READY;
+    fake.saved = saved;
+    require(storage_state_configured_directory(&port, &place) == STORAGE_READY &&
+                place != nullptr && storage_path_equal(place, saved) && fake.checks == 0,
+            "a saved place is the one this start would use");
+    storage_path_destroy(place);
+    place = nullptr;
+    fake.read_result = STORAGE_SETTINGS_MALFORMED;
+    require(storage_state_configured_directory(&port, &place) == STORAGE_SETTINGS_MALFORMED &&
+                place == nullptr,
+            "settings that cannot be read give no place");
+    storage_path_destroy(root);
+    storage_path_destroy(saved);
+}
+
 static void verify_initial(void)
 {
     struct storage_path *root = path_for("D:/app/data");
@@ -299,6 +328,7 @@ static void verify_window(void)
 
 void run_storage_state_tests(void)
 {
+    verify_configured_directory();
     run_window_placement_tests(); /* #891: the per-machine window file */
     verify_window();
     verify_initial();

@@ -11,6 +11,13 @@ struct storage_path;
 [[nodiscard]] enum storage_outcome
 storage_state_create(const struct storage_port *_Nonnull port,
                      struct storage_state *_Nullable *_Nonnull out);
+/* #1071 / ADR0118: この起動が使うはずの data の場所だけを引く（起動設定があればその場所、無ければ
+ * 既定。場所を確かめも作りもしない）。2つ目の起動が、同じ data で動いている窓を探すために使う。
+ * 起動設定が読めなければその結果で、out は変えない。成功したら呼び出し側が storage_path_destroy。
+ */
+[[nodiscard]] enum storage_outcome
+storage_state_configured_directory(const struct storage_port *_Nonnull port,
+                                   struct storage_path *_Nullable *_Nonnull out);
 /* runtimeでは次回設定だけを変える。初回/復旧では起動するrootも同じ確定で採用する。 */
 [[nodiscard]] enum storage_outcome storage_state_choose(struct storage_state *_Nonnull state,
                                                         const char *_Nonnull text, size_t length);

@@ -10,6 +10,7 @@
 #include "discovery_trace_phase.h"
 #include "file_bytes.h"
 #include "file_times.h"
+#include "folio_launch_link.h"
 #include "folio_menu_action.h"
 #include "folio_message.h"
 #include "folio_open_link.h"
@@ -48,6 +49,7 @@
 #include "ui_text.h"
 #include "ui_text_request.h"
 #include "utf16_text.h"
+#include "utf8_text.h"
 #include "web_link_adapter.h"
 #include "web_uri.h"
 #include <commctrl.h>
@@ -10878,6 +10880,43 @@ static void open_link_handed(struct native_fixture *_Nonnull fixture,
             "other WM_COPYDATA is not taken");
 }
 
+/* The entry's side: reading the argument, and handing it to the running window. */
+static void expect_launch_link(const wchar_t *_Nonnull arguments, const char *_Nullable expected)
+{
+    struct utf8_text *link = folio_launch_link_read(arguments);
+    bool same = expected == nullptr
+                    ? link == nullptr
+                    : link != nullptr && strcmp(utf8_text_bytes(link), expected) == 0;
+    utf8_text_destroy(link);
+    require(same, "the launch argument is read as a link, or not at all");
+}
+
+static void open_link_launch(struct native_fixture *_Nonnull fixture,
+                             struct folio_window *_Nonnull window, HWND _Nonnull body)
+{
+    expect_launch_link(L"", nullptr);
+    expect_launch_link(L"C:\\notes\\file.md", nullptr);
+    expect_launch_link(L"--help", nullptr);
+    expect_launch_link(L"nenefolio://open?category=a&note=b", "nenefolio://open?category=a&note=b");
+    expect_launch_link(L"  \"NeneFolio://open?category=a&note=b\"  ",
+                       "NeneFolio://open?category=a&note=b");
+    expect_launch_link(L"nenefolio://open?category=仕事&note=b",
+                       "nenefolio://open?category=仕事&note=b");
+    static const char link[] = "nenefolio://open?category=schedule&note=one&lines=3";
+    struct storage_path *elsewhere = nullptr;
+    require(storage_path_create("Z:/another/data", 15, &elsewhere) == STORAGE_PATH_READY,
+            "another data folder");
+    require(!folio_launch_link_hand_over(elsewhere, link, sizeof link - 1),
+            "no running window has that data folder: nothing takes the link");
+    storage_path_destroy(elsewhere);
+    expect_link_selection(body, L"最後の段落にも目印がある。", L"最初", "and nothing changed");
+    require(folio_launch_link_hand_over(storage_state_directory(fixture->location), link,
+                                        sizeof link - 1),
+            "the running window with this data folder takes the link");
+    pump(window);
+    expect_link_selection(body, L"最初の段落。", L"二つ目", "and opens the place");
+}
+
 static void open_link(struct native_fixture *_Nonnull fixture)
 {
     require(folio_state_set_language(fixture->state, FOLIO_LANGUAGE_JA) == FOLIO_STATE_READY,
@@ -10897,6 +10936,9 @@ static void open_link(struct native_fixture *_Nonnull fixture)
     puts("open link: hand-over");
     fflush(stdout);
     open_link_handed(fixture, window, body);
+    puts("open link: the launch argument");
+    fflush(stdout);
+    open_link_launch(fixture, window, body);
     puts("open link: from the editing view");
     fflush(stdout);
     action(window, ACCESSIBLE_EDIT);
