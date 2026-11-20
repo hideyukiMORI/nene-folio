@@ -10370,7 +10370,12 @@ static void menu_key_closes(struct folio_window *_Nonnull window, HWND _Nonnull 
                original[VK_SHIFT] >> 7, original[VK_CONTROL] >> 7, original[VK_MENU] >> 7);
     fflush(stdout);
     require(SetKeyboardState(neutral), "no modifier is held for the menu key");
-    PostMessageW(GetFocus(), WM_KEYDOWN, VK_APPS, 0);
+    /* The key goes to the open menu; a focus that is nowhere, or still in the body, would fail
+     * below for another reason, and is told apart here. */
+    HWND focus = GetFocus();
+    require(focus != nullptr && focus != body,
+            "the body's menu holds the focus before the menu key");
+    PostMessageW(focus, WM_KEYDOWN, VK_APPS, 0);
     pump(window);
     bool closed = GetFocus() == body;
     require(SetKeyboardState(original), "restore the keyboard state");
