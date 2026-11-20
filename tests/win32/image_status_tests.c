@@ -12,6 +12,7 @@
 #include "file_times.h"
 #include "folio_menu_action.h"
 #include "folio_message.h"
+#include "folio_open_link.h"
 #include "folio_settings.h"
 #include "folio_state.h"
 #include "folio_window.h"
@@ -38,6 +39,7 @@
 #include "rename_view.h"
 #include "storage_adapter.h"
 #include "storage_native_path.h"
+#include "storage_path.h"
 #include "storage_state.h"
 #include "tag_catalog.h"
 #include "test_window_file.h"
@@ -130,6 +132,7 @@ static bool favorite_high_contrast;
 static bool code_copy_case;
 static bool footnote_jump_case;
 static bool definition_list_case;
+static bool open_link_case; /* #1071: a link opens a note and selects a place */
 static bool outline_case;
 static bool outline_96; /* #975: the same case in 96 DPI windows, as on CI */
 static bool code_copy_visual_case;
@@ -231,6 +234,10 @@ static const char bare_url_gallery[] =
     "[r]: https://example.com/ref\n";
 /* #971: definition lists: several descriptions, a wrapped one, a continued line, inline
  * formatting, and `: ` lines that are not descriptions (no term; inside a list). */
+/* #1071: lines 1 heading, 3 and 5 paragraphs, 7-8 a list, 10 the last paragraph. */
+static const char open_link_gallery[] =
+    "# リンクで開く\n\n最初の段落。\n\n二つ目の段落に目印の文がある。\n\n- 項目A\n- 項目B\n\n"
+    "最後の段落にも目印がある。\n";
 static const char definition_gallery[] =
     "# 定義リスト\n\n閲覧表示\n: Markdownを整えて見せる表示。本文は**変えない**。\n\n編集表示\n"
     ": 原文をそのまま直す表示。長い説明は窓の幅で折り返し、左の線は説明のすべての行の横に続く。"
@@ -316,6 +323,8 @@ static const char *_Nonnull text_fixture_source(const char *_Nonnull fallback)
         return search_current;
     if (definition_list_case)
         return definition_gallery;
+    if (open_link_case)
+        return open_link_gallery;
     if (outline_case)
         return outline_gallery;
     if (bare_url_visual_case)
@@ -10760,6 +10769,147 @@ static void definition_list(struct native_fixture *_Nonnull fixture)
     favorite_high_contrast = false;
 }
 
+/* #1071 / ADR0118: what the reading view has selected. */
+static void expect_link_selection(HWND _Nonnull body, const wchar_t *_Nonnull holds,
+                                  const wchar_t *_Nullable lacks, const char *_Nonnull message)
+{
+    wchar_t text[256] = L"";
+    CHARRANGE range = {0};
+    SendMessageW(body, EM_EXGETSEL, 0, (LPARAM)&range);
+    require(range.cpMax - range.cpMin < 250, "the selection fits the test's buffer");
+    SendMessageW(body, EM_GETSELTEXT, 0, (LPARAM)text);
+    bool same =
+        wcsstr(text, holds) != nullptr && (lacks == nullptr || wcsstr(text, lacks) == nullptr);
+    if (!same)
+        printf("open link: selection %ld..%ld (%zu units)\n", range.cpMin, range.cpMax,
+               wcslen(text));
+    fflush(stdout);
+    require(same, message);
+}
+
+static void open_link_send(struct folio_window *_Nonnull window, const char *_Nonnull link)
+{
+    folio_window_open_link(window, link, strlen(link));
+    pump(window);
+}
+
+static void open_link_places(struct folio_window *_Nonnull window, HWND _Nonnull body)
+{
+    open_link_send(window,
+                   "nenefolio://open?category=schedule&note=one&lines=5&text=%E7%9B%AE%E5%8D%B0");
+    expect_link_selection(body, L"二つ目の段落に目印の文がある。", L"最後",
+                          "the paragraph near the given line that holds the text is selected");
+    open_link_send(window, "nenefolio://open?category=SCHEDULE&note=One.md&lines=10&text=absent");
+    expect_link_selection(body, L"最後の段落にも目印がある。", L"項目",
+                          "without the text, the given line's paragraph is selected");
+    expect_notice(window, L"指定の文は見つかりませんでした。指定の行を選んでいます。");
+    open_link_send(window,
+                   "nenefolio://open?category=schedule&note=one&lines=1&text=%E9%A0%85%E7%9B%AEB");
+    expect_link_selection(body, L"項目B", L"項目A",
+                          "a text found away from the given line is selected where it is");
+    expect_notice(window, L"指定の行の近くには無く、ノート内の別の場所の文を選んでいます。");
+    open_link_send(window, "nenefolio://open?category=schedule&note=one&lines=7-8");
+    expect_link_selection(body, L"項目A", nullptr,
+                          "a range of lines selects its paragraphs: the first");
+    expect_link_selection(body, L"項目B", L"最後", "and the last, and no more");
+    open_link_send(window, "nenefolio://open?category=schedule&note=one&lines=40&text=nowhere");
+    expect_notice(window, L"指定の箇所は見つかりませんでした。ノートを開きました。");
+}
+
+static void open_link_refusals(struct folio_window *_Nonnull window, HWND _Nonnull body)
+{
+    open_link_send(window, "nenefolio://open?category=schedule&note=one&lines=3");
+    expect_link_selection(body, L"最初の段落。", L"二つ目", "a known place before the refusals");
+    open_link_send(window, "nenefolio://open?category=nowhere&note=one&lines=5");
+    expect_notice(window, L"リンクのカテゴリが見つかりません。何も開いていません。");
+    open_link_send(window, "nenefolio://open?category=schedule&note=nothing&lines=5");
+    expect_notice(window, L"リンクのノートが見つかりません。何も開いていません。");
+    open_link_send(window, "nenefolio://open?category=schedule&note=..%2Fsecret");
+    expect_notice(window, L"リンクの形が正しくないため、開けませんでした。");
+    open_link_send(window, "nenefolio://delete?category=schedule&note=one");
+    expect_notice(window, L"リンクの形が正しくないため、開けませんでした。");
+    expect_link_selection(body, L"最初の段落。", L"二つ目",
+                          "a refused link leaves the selection alone");
+    struct accessible_request settings = {.item = {.kind = ACCESSIBLE_SETTINGS},
+                                          .action = ACCESSIBLE_ACTION_INVOKE};
+    require(folio_window_accessible_action(window, &settings) == S_OK,
+            "the settings surface opens");
+    pump(window);
+    open_link_send(window, "nenefolio://open?category=schedule&note=one&lines=10");
+    expect_link_selection(body, L"最初の段落。", L"最後",
+                          "a link does not open while a surface is open");
+    surface_button(window, ACCESSIBLE_SURFACE_CLOSE);
+    pump(window);
+}
+
+/* A second start hands the link to the running window with WM_COPYDATA. */
+static LRESULT open_link_hand(struct native_fixture *_Nonnull fixture,
+                              struct folio_window *_Nonnull window, bool own,
+                              const char *_Nonnull link)
+{
+    char data[1024];
+    const struct storage_path *place = storage_state_directory(fixture->location);
+    int written = snprintf(data, sizeof data, "%s%s", storage_path_text(place), own ? "" : "x");
+    require(written > 0 && (size_t)written + strlen(link) + 1 < sizeof data, "hand-over fits");
+    memcpy(data + written + 1, link, strlen(link));
+    COPYDATASTRUCT copy = {.dwData = folio_open_link_data,
+                           .cbData = (DWORD)((size_t)written + 1 + strlen(link)),
+                           .lpData = data};
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    LRESULT taken = SendMessageW(root, WM_COPYDATA, 0, (LPARAM)&copy);
+    pump(window);
+    return taken;
+}
+
+static void open_link_handed(struct native_fixture *_Nonnull fixture,
+                             struct folio_window *_Nonnull window, HWND _Nonnull body)
+{
+    require(open_link_hand(fixture, window, false,
+                           "nenefolio://open?category=schedule&note=one&lines=10") == FALSE,
+            "a hand-over for another data folder is not taken");
+    expect_link_selection(body, L"最初の段落。", L"最後", "and it changes nothing");
+    require(open_link_hand(fixture, window, true,
+                           "nenefolio://open?category=schedule&note=one&lines=10") == TRUE,
+            "a hand-over for this window's data folder is taken");
+    expect_link_selection(body, L"最後の段落にも目印がある。", L"項目", "and it opens the place");
+    COPYDATASTRUCT other = {.dwData = 1, .cbData = 4, .lpData = "abc"};
+    require(SendMessageW(folio_window_accessible_window(window, ACCESSIBLE_WINDOW), WM_COPYDATA, 0,
+                         (LPARAM)&other) == FALSE,
+            "other WM_COPYDATA is not taken");
+}
+
+static void open_link(struct native_fixture *_Nonnull fixture)
+{
+    require(folio_state_set_language(fixture->state, FOLIO_LANGUAGE_JA) == FOLIO_STATE_READY,
+            "open link language");
+    struct folio_window *window = nullptr;
+    require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
+                FOLIO_WINDOW_CREATED,
+            "open link window");
+    pump(window);
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    puts("open link: places");
+    fflush(stdout);
+    open_link_places(window, body);
+    puts("open link: refusals");
+    fflush(stdout);
+    open_link_refusals(window, body);
+    puts("open link: hand-over");
+    fflush(stdout);
+    open_link_handed(fixture, window, body);
+    puts("open link: from the editing view");
+    fflush(stdout);
+    action(window, ACCESSIBLE_EDIT);
+    require(folio_state_pane_mode(fixture->state) == PANE_MODE_EDIT, "the note is being edited");
+    open_link_send(window, "nenefolio://open?category=schedule&note=one&lines=5");
+    require(folio_state_pane_mode(fixture->state) == PANE_MODE_VIEW,
+            "a link shows the note in the reading view");
+    expect_link_selection(folio_window_accessible_window(window, ACCESSIBLE_BODY),
+                          L"二つ目の段落に目印の文がある。", L"最後",
+                          "and selects the place there");
+    folio_window_destroy(window);
+}
+
 /* A part of the main window as UIA reads it. */
 static struct accessible_view outline_read(struct folio_window *_Nonnull window,
                                            enum accessible_kind kind)
@@ -11304,6 +11454,12 @@ static void text_menu_cases(struct native_fixture *_Nonnull fixture)
     text_menu_languages(fixture);
 }
 
+static bool window_or_footnote_case(void)
+{
+    return window_place_case || footnote_jump_case || definition_list_case || outline_case ||
+           open_link_case;
+}
+
 static void run_window_or_footnote(struct native_fixture *_Nonnull fixture)
 {
     if (window_place_case)
@@ -11312,6 +11468,8 @@ static void run_window_or_footnote(struct native_fixture *_Nonnull fixture)
         definition_list(fixture);
     else if (outline_case)
         outline_column(fixture);
+    else if (open_link_case)
+        open_link(fixture);
     else
         footnote_jump(fixture);
 }
@@ -11326,7 +11484,7 @@ static void run_code_copy_case(struct native_fixture *_Nonnull fixture)
         text_menu_cases(fixture);
         return;
     }
-    if (window_place_case || footnote_jump_case || definition_list_case || outline_case)
+    if (window_or_footnote_case())
     {
         run_window_or_footnote(fixture);
         return;
@@ -14423,11 +14581,12 @@ static void select_clipboard_fixture(const char *_Nonnull selector)
     window_place_case = strcmp(selector, "--window-place") == 0;
     footnote_jump_case = strcmp(selector, "--footnote-jump") == 0;
     definition_list_case = strcmp(selector, "--definition-list") == 0;
+    open_link_case = strcmp(selector, "--open-link") == 0;
     outline_96 = strcmp(selector, "--outline-96") == 0;
     outline_case = strcmp(selector, "--outline") == 0 || outline_96;
     bare_url_visual_case = strcmp(selector, "--bare-url-visual") == 0 || search_key_visual_case ||
                            text_menu_case || window_place_case || footnote_jump_case ||
-                           definition_list_case || outline_case;
+                           definition_list_case || outline_case || open_link_case;
     code_copy_visual_case = strcmp(selector, "--code-copy-visual") == 0 || bare_url_visual_case;
     code_copy_keys_case_selected = strcmp(selector, "--code-copy-keys") == 0;
     code_copy_scroll_96 = strcmp(selector, "--code-copy-scroll-96") == 0;
