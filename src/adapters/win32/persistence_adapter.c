@@ -656,15 +656,16 @@ static enum note_store_outcome store_note(struct persistence_adapter *_Nonnull a
         return NOTE_STORE_WRITE_FAILED;
     struct file_bytes *_Nullable bytes = nullptr;
     enum persistence_outcome read = file_bytes_read(path, &bytes);
+    /* The ordinary save (no expectation, or one that may write a removed file again) keeps its
+     * outcomes for a file that is gone or cannot be read; only the strict save refuses both. */
+    bool ordinary = request->expected == nullptr || request->recreate;
     if (read == PERSISTENCE_ABSENT)
-        return request->expected == nullptr || request->recreate
-                   ? publish_note_store(adapter, request, path, nullptr)
-                   : NOTE_STORE_SOURCE_CHANGED;
+        return ordinary ? publish_note_store(adapter, request, path, nullptr)
+                        : NOTE_STORE_SOURCE_CHANGED;
     if (read == PERSISTENCE_OUT_OF_MEMORY)
         return NOTE_STORE_OUT_OF_MEMORY;
     if (read != PERSISTENCE_LOADED)
-        return request->expected == nullptr ? NOTE_STORE_HISTORY_FAILED
-                                            : NOTE_STORE_SOURCE_UNREADABLE;
+        return ordinary ? NOTE_STORE_HISTORY_FAILED : NOTE_STORE_SOURCE_UNREADABLE;
     enum note_store_outcome outcome = checked_note_store(adapter, request, path, bytes);
     file_bytes_destroy(bytes);
     return outcome;
