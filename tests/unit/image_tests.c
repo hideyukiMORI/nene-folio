@@ -7,6 +7,7 @@
 #include "image_bitmap.h"
 #include "image_export.h"
 #include "image_limits.h"
+#include "image_link.h"
 #include "image_port.h"
 #include "markdown_image_copy.h"
 #include "markdown_images.h"
@@ -15,9 +16,11 @@
 #include "note_text.h"
 #include "persistence_port.h"
 #include "regex_port.h"
+#include "text_buffer.h"
 #include "theme_palette.h"
 #include "ui_font.h"
 #include "unit_tests.h"
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 struct image_adapter
@@ -958,8 +961,69 @@ static void allocation_contract(void)
     }
     note_text_destroy(body);
 }
+/* #1062 / ADR0120: the Markdown written for a copied image. What is written goes through the
+ * real render, and the reference it collects must be images/<the file's name>. */
+static void expect_link(const char *_Nonnull leaf, const char *_Nonnull expected)
+{
+    struct text_buffer *buffer = nullptr;
+    require(text_buffer_create(&buffer) == TEXT_BUFFER_ACCEPTED, "link buffer");
+    image_link_append(buffer, leaf, strlen(leaf));
+    require(text_buffer_finish(buffer) == TEXT_BUFFER_ACCEPTED, "link finished");
+    if (strcmp(text_buffer_bytes(buffer), expected) != 0)
+        fprintf(stderr, "image link: [%s] expected [%s]\n", text_buffer_bytes(buffer), expected);
+    require(strcmp(text_buffer_bytes(buffer), expected) == 0, "the Markdown written for an image");
+    struct note_text *body = text(text_buffer_bytes(buffer));
+    struct markdown_rtf *rendered = render(body);
+    const struct markdown_images *images = markdown_rtf_images(rendered);
+    char target[512];
+    require(snprintf(target, sizeof target, "images/%s", leaf) > 0, "target fits");
+    bool one = markdown_images_count(images) == 1;
+    bool same = one && strcmp(image_source_target(markdown_images_at(images, 0)), target) == 0 &&
+                image_source_recommended(markdown_images_at(images, 0));
+    if (!same)
+        fprintf(stderr, "image link: [%s] read as %zu image(s), first [%s]\n",
+                text_buffer_bytes(buffer), markdown_images_count(images),
+                one ? image_source_target(markdown_images_at(images, 0)) : "");
+    require(same, "the image reader finds the copied file from the written Markdown");
+    markdown_rtf_destroy(rendered);
+    note_text_destroy(body);
+    text_buffer_destroy(buffer);
+}
+
+static void expect_numbered(const char *_Nonnull leaf, size_t number, const char *_Nonnull expected)
+{
+    struct text_buffer *buffer = nullptr;
+    require(text_buffer_create(&buffer) == TEXT_BUFFER_ACCEPTED, "name buffer");
+    image_link_numbered(buffer, leaf, strlen(leaf), number);
+    require(text_buffer_finish(buffer) == TEXT_BUFFER_ACCEPTED &&
+                strcmp(text_buffer_bytes(buffer), expected) == 0,
+            "a numbered name keeps the extension");
+    text_buffer_destroy(buffer);
+}
+
+static void image_links(void)
+{
+    expect_link("photo.png", "![photo](images/photo.png)");
+    expect_link("夕焼け.png", "![夕焼け](images/夕焼け.png)");
+    expect_link("archive.tar.jpg", "![archive.tar](images/archive.tar.jpg)");
+    expect_link("my photo.jpg", "![my photo](<images/my photo.jpg>)");
+    expect_link("shot (1).png", "![shot (1)](<images/shot (1).png>)");
+    expect_link("100%.png", "![100%](images/100%25.png)");
+    expect_link("a%20b.png", "![a%20b](images/a%2520b.png)");
+    expect_link("a[b]c.png", "![abc](images/a[b]c.png)");
+    expect_link("noext", "![noext](images/noext)");
+    expect_link(".png", "![.png](images/.png)");
+    expect_link("it's_#1.PNG", "![it's_#1](images/it's_#1.PNG)");
+    expect_numbered("photo.png", 2, "photo-2.png");
+    expect_numbered("a.b.png", 10, "a.b-10.png");
+    expect_numbered("noext", 3, "noext-3");
+    expect_numbered(".png", 2, ".png-2");
+    expect_numbered("x.jpg", 1234567, "x-1234567.jpg");
+}
+
 void run_image_tests(void)
 {
+    image_links(); /* #1062: the Markdown written for a copied image */
     source_contract();
     source_rejections();
     copy_rejections();
