@@ -458,6 +458,12 @@ folio_state_locate_open_request(struct folio_state *_Nonnull state,
 folio_state_open_place(const struct folio_state *_Nonnull state,
                        const struct open_request *_Nonnull request,
                        struct note_byte_span *_Nonnull out);
+/* 原文の範囲が、いまの閲覧表示のどの段落か（first から last の手前まで。ADR0116 の対応表を逆に
+ * 引く）。view_total は閲覧欄がいま持っている段落の記号の数で、対応表と合わなければ引かない。
+ * 引けなければ SOURCE_UNMAPPED で out は変えない。 */
+[[nodiscard]] enum folio_state_outcome
+folio_state_open_paragraphs(const struct folio_state *_Nonnull state, struct note_byte_span source,
+                            size_t view_total, struct markdown_source_selection *_Nonnull out);
 /* カーソル→現在文書→最初のカテゴリ。カテゴリ0件なら0で、new_noteが拒否する。 */
 [[nodiscard]] size_t folio_state_current_category(const struct folio_state *_Nonnull state);
 /* 現在文書の保存先。NONEのときは呼ばない。 */
