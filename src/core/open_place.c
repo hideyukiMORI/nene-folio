@@ -2,16 +2,25 @@
 #include "open_request.h"
 #include <string.h>
 
+/* [from, length) で最初に value がある位置。無ければ length。 */
+static size_t byte_index(const char *_Nonnull bytes, size_t from, size_t length, char value)
+{
+    size_t at = from;
+    while (at < length && bytes[at] != value)
+        at += 1;
+    return at;
+}
+
 /* 1 始まりの line 行目が始まるバイト位置。行がそこまで無ければ length を超える値（length + 1）。 */
 static size_t line_start(const char *_Nonnull source, size_t length, size_t line)
 {
     size_t at = 0;
     for (size_t current = 1; current < line; ++current)
     {
-        const char *newline = at < length ? memchr(source + at, '\n', length - at) : nullptr;
-        if (newline == nullptr)
+        size_t newline = byte_index(source, at, length, '\n');
+        if (newline >= length)
             return length + 1;
-        at = (size_t)(newline - source) + 1;
+        at = newline + 1;
     }
     return at;
 }
@@ -19,8 +28,7 @@ static size_t line_start(const char *_Nonnull source, size_t length, size_t line
 /* at から始まる行の終わり（改行と、その前の CR を含まない）。 */
 static size_t line_end(const char *_Nonnull source, size_t length, size_t at)
 {
-    const char *newline = memchr(source + at, '\n', length - at);
-    size_t end = newline != nullptr ? (size_t)(newline - source) : length;
+    size_t end = byte_index(source, at, length, '\n');
     return end > at && source[end - 1] == '\r' ? end - 1 : end;
 }
 

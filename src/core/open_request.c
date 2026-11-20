@@ -248,22 +248,30 @@ static enum open_request_outcome take_decoded(struct open_request *_Nonnull requ
     return take_text(request, decoded, length);
 }
 
+/* [from, length) で最初に value がある位置。無ければ length。 */
+static size_t byte_index(const char *_Nonnull bytes, size_t from, size_t length, char value)
+{
+    size_t at = from;
+    while (at < length && bytes[at] != value)
+        at += 1;
+    return at;
+}
+
 /* `key=value` を 1 つ読む。キーが空・`=` が無いものは MALFORMED。知らないキーは値を読まずに
  * 読み飛ばす。 */
 static enum open_request_outcome read_pair(struct open_request *_Nonnull request,
                                            const char *_Nonnull pair, size_t length)
 {
-    const char *equals = memchr(pair, '=', length);
-    if (equals == nullptr || equals == pair)
+    size_t key_length = byte_index(pair, 0, length, '=');
+    if (key_length == length || key_length == 0)
         return OPEN_REQUEST_MALFORMED;
-    size_t key_length = (size_t)(equals - pair);
     size_t which = known_key(pair, key_length);
     if (which == known_count)
         return OPEN_REQUEST_ACCEPTED;
     char *_Nullable decoded = nullptr;
     size_t decoded_length = 0;
     enum open_request_outcome outcome =
-        decode(equals + 1, length - key_length - 1, &decoded, &decoded_length);
+        decode(pair + key_length + 1, length - key_length - 1, &decoded, &decoded_length);
     if (outcome != OPEN_REQUEST_ACCEPTED || decoded == nullptr)
         return outcome;
     outcome = take_decoded(request, which, decoded, decoded_length);
@@ -275,14 +283,13 @@ static enum open_request_outcome read_pair(struct open_request *_Nonnull request
 static enum open_request_outcome read_query(struct open_request *_Nonnull request,
                                             const char *_Nonnull query, size_t length)
 {
-    if (memchr(query, '#', length) != nullptr)
+    if (byte_index(query, 0, length, '#') != length)
         return OPEN_REQUEST_MALFORMED;
     size_t at = 0;
     enum open_request_outcome outcome = OPEN_REQUEST_ACCEPTED;
     while (outcome == OPEN_REQUEST_ACCEPTED && at <= length)
     {
-        const char *next = at < length ? memchr(query + at, '&', length - at) : nullptr;
-        size_t end = next != nullptr ? (size_t)(next - query) : length;
+        size_t end = byte_index(query, at, length, '&');
         outcome = read_pair(request, query + at, end - at);
         at = end + 1;
     }
