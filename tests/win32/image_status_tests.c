@@ -301,7 +301,7 @@ static enum note_store_outcome fixture_store(struct persistence_port disk,
                                              const char *_Nonnull note,
                                              const struct note_text *_Nonnull body)
 {
-    const struct note_store_request request = {category, note, body, nullptr};
+    const struct note_store_request request = {category, note, body, nullptr, false};
     return disk.store_note(disk.adapter, &request);
 }
 
@@ -8847,7 +8847,7 @@ static void management_port_boundaries(struct native_fixture *_Nonnull fixture)
                 note_text_create(target, sizeof target - 1, &replacement) == NOTE_TEXT_ACCEPTED,
             "actual persistence uses immutable expected and replacement sources");
     struct persistence_port disk = persistence_adapter_port(fixture->files);
-    struct note_store_request request = {"schedule", "one", expected, expected};
+    struct note_store_request request = {"schedule", "one", expected, expected, false};
     struct history_snapshot history = {0};
     management_history_snapshot(fixture, &history);
     require(disk.store_note(disk.adapter, &request) == NOTE_STORE_UNCHANGED,

@@ -6888,7 +6888,7 @@ static enum folio_state_outcome store_body_mode(struct folio_window *_Nonnull se
         return outcome;
     switch (mode)
     {
-    case NOTE_SAVE_UNCONDITIONAL:
+    case NOTE_SAVE_EDITS:
         return folio_state_store_note(self->state, units, count);
     case NOTE_SAVE_CHECK_CURRENT:
         return folio_state_store_note_checked(self->state, units, count);
@@ -6898,7 +6898,7 @@ static enum folio_state_outcome store_body_mode(struct folio_window *_Nonnull se
 
 static enum folio_state_outcome store_body(struct folio_window *_Nonnull self)
 {
-    return store_body_mode(self, NOTE_SAVE_UNCONDITIONAL);
+    return store_body_mode(self, NOTE_SAVE_EDITS);
 }
 
 /* Leaving an untitled document reuses the first-save dialog without a second confirmation. */
@@ -13888,7 +13888,7 @@ static enum folio_state_outcome save_before_catalog(struct folio_window *_Nonnul
 
 static enum folio_state_outcome save_before_filter(struct folio_window *_Nonnull self)
 {
-    return save_before_catalog(self, NOTE_SAVE_UNCONDITIONAL);
+    return save_before_catalog(self, NOTE_SAVE_EDITS);
 }
 
 static void save_on_filter_focus(struct folio_window *_Nonnull self)
@@ -21465,7 +21465,7 @@ static void execute_discovery(struct folio_window *_Nonnull self, const char *_N
         return;
     if (!hide_command_surface(self))
         return;
-    enum folio_state_outcome opened = save_before_catalog(self, NOTE_SAVE_UNCONDITIONAL);
+    enum folio_state_outcome opened = save_before_catalog(self, NOTE_SAVE_EDITS);
     if (opened == FOLIO_STATE_READY)
         opened = folio_state_open_discovery(self->state);
     if (opened != FOLIO_STATE_READY)

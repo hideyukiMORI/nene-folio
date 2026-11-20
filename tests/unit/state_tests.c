@@ -638,8 +638,6 @@ static void remember_published_note(struct persistence_adapter *_Nonnull adapter
                                     const char *_Nonnull category, const char *_Nonnull note,
                                     const struct note_text *_Nonnull body)
 {
-    if (!adapter->remember_note_writes)
-        return;
     size_t at = 0;
     while (at < adapter->saved_count && (strcmp(adapter->saved_categories[at], category) != 0 ||
                                          strcmp(adapter->saved_notes[at], note) != 0))
@@ -699,10 +697,17 @@ static enum note_store_outcome fake_store_note(struct persistence_adapter *_Nonn
     if (request->expected == nullptr)
         return fake_publish_note(adapter, request);
     struct note_text *_Nullable current = nullptr;
+    /* The real adapter compares inside its one save entry: that is no read through the port. */
+    size_t reads = adapter->note_reads;
+    size_t old_reads = adapter->old_category_reads;
+    const char *_Nullable last = adapter->last_note;
     enum persistence_outcome read =
         fake_read_note(adapter, request->category, request->note, &current);
+    adapter->note_reads = reads;
+    adapter->old_category_reads = old_reads;
+    adapter->last_note = last;
     if (read == PERSISTENCE_ABSENT)
-        return NOTE_STORE_SOURCE_CHANGED;
+        return request->recreate ? fake_publish_note(adapter, request) : NOTE_STORE_SOURCE_CHANGED;
     if (read != PERSISTENCE_LOADED)
         return read == PERSISTENCE_OUT_OF_MEMORY ? NOTE_STORE_OUT_OF_MEMORY
                                                  : NOTE_STORE_SOURCE_UNREADABLE;
@@ -767,6 +772,7 @@ static enum persistence_outcome fake_create_note(struct persistence_adapter *_No
     require(note_text_length(body) < sizeof adapter->written_body, "created body fits");
     memcpy(adapter->written_body, note_text_bytes(body), note_text_length(body) + 1);
     folder_add(adapter, category, note);
+    remember_published_note(adapter, category, note, body); /* the file now holds this */
     if (adapter->copy_fail_at > 0)
     {
         allocation_probe_fail_at(adapter->copy_fail_at);
@@ -1811,6 +1817,42 @@ static void verify_refresh_lists_own_writes(void)
     folio_state_destroy(state);
 }
 
+/* ADR0119 decision 4: a save never replaces a file that changed outside since it was loaded. */
+static void verify_guarded_save(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    const char *loaded = adapter.note_body;
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
+                folio_state_begin_edit(state) == FOLIO_STATE_READY,
+            "a note is open for editing");
+    adapter.note_body = "written outside";
+    require(folio_state_store_note(state, u"mine", 4) == FOLIO_STATE_NOTE_SOURCE_CHANGED &&
+                adapter.note_writes == 0 && adapter.archives == 0,
+            "the save stops before history and before the file");
+    adapter.note_body = loaded;
+    adapter.missing_note = "one";
+    require(folio_state_store_note_checked(state, u"mine", 4) == FOLIO_STATE_NOTE_SOURCE_CHANGED &&
+                adapter.note_writes == 0,
+            "the checked save takes a removed file as a change");
+    require(folio_state_store_note(state, u"mine", 4) == FOLIO_STATE_READY &&
+                adapter.note_writes == 1 && same_text(adapter.written_body, "mine"),
+            "the ordinary save writes a removed file again");
+    adapter.missing_note = nullptr;
+    require(folio_state_store_note(state, u"mine too", 8) == FOLIO_STATE_READY &&
+                adapter.note_writes == 2,
+            "after its own save the next save goes through");
+    require(adapter.saved_count == 1, "the fake holds the one saved note");
+    memcpy(adapter.saved_bodies[0], "theirs", sizeof "theirs");
+    require(folio_state_store_note(state, u"mine too", 8) == FOLIO_STATE_READY &&
+                adapter.note_writes == 2,
+            "unedited text is neither saved nor compared");
+    require(folio_state_store_note(state, u"mine three", 10) == FOLIO_STATE_NOTE_SOURCE_CHANGED &&
+                adapter.note_writes == 2 && same_text(adapter.saved_bodies[0], "theirs"),
+            "an outside write after the app's own save stops the next save");
+    folio_state_destroy(state);
+}
+
 /* #1070: whether the open note's file differs from the text it was loaded with. */
 static void verify_document_stale(void)
 {
@@ -1926,6 +1968,7 @@ static void verify_category_refresh(void)
     verify_refresh_lists();
     verify_refresh_lists_reads_only();
     verify_refresh_lists_own_writes();
+    verify_guarded_save();
     verify_document_stale();
     verify_reload_document();
     verify_reload_document_editing();

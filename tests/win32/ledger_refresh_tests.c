@@ -338,6 +338,52 @@ static void close_state(struct fixture *_Nonnull fixture)
     storage_adapter_destroy(fixture->storage);
 }
 
+/* other\delta.md holds exactly this text. */
+static void expect_delta(const struct fixture *_Nonnull fixture, const char *_Nonnull expected,
+                         const char *_Nonnull message)
+{
+    size_t length = 0;
+    char *_Nullable text = read_file(fixture, L"other", L"delta.md", &length);
+    require(text != nullptr && strcmp(text, expected) == 0, message);
+    free(text);
+}
+
+/* ADR0119 決定4: 編集中のノートが外で書き換えられていたら、保存は止まり、外の版が残る。 */
+static void verify_guarded_save(struct fixture *_Nonnull fixture)
+{
+    struct note_ref delta = note_at(fixture, "other", "delta");
+    bool stale = true;
+    require(folio_state_select_note(fixture->state, delta.category, delta.note,
+                                    FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
+                folio_state_begin_edit(fixture->state) == FOLIO_STATE_READY &&
+                folio_state_document_stale(fixture->state, &stale) == FOLIO_STATE_READY && !stale,
+            "the note is open for editing and its file is what was loaded");
+    write_file(fixture, L"other", L"delta.md", "# theirs\n");
+    require(folio_state_document_stale(fixture->state, &stale) == FOLIO_STATE_READY && stale,
+            "the outside write is noticed");
+    require(folio_state_store_note(fixture->state, u"mine", 4) == FOLIO_STATE_NOTE_SOURCE_CHANGED,
+            "an ordinary save does not replace a file that changed outside");
+    expect_delta(fixture, "# theirs\n", "the outside version stays on disk");
+    delete_file(fixture, L"other", L"delta.md");
+    require(folio_state_store_note(fixture->state, u"mine", 4) == FOLIO_STATE_READY,
+            "a file removed outside is written again: nothing is overwritten");
+    expect_delta(fixture, "mine", "the edited text is the file");
+    require(folio_state_store_note(fixture->state, u"mine again", 10) == FOLIO_STATE_READY &&
+                folio_state_document_stale(fixture->state, &stale) == FOLIO_STATE_READY && !stale,
+            "the app's own save is not an outside change for the next save");
+    write_file(fixture, L"other", L"delta.md", "# theirs again\n");
+    require(folio_state_store_note(fixture->state, u"mine again", 10) == FOLIO_STATE_READY,
+            "unedited text is not saved and not compared");
+    expect_delta(fixture, "# theirs again\n", "nothing was written");
+    require(folio_state_store_note_checked(fixture->state, u"mine again", 10) ==
+                FOLIO_STATE_NOTE_SOURCE_CHANGED,
+            "the checked save compares even unedited text");
+    require(folio_state_select_note(fixture->state, delta.category, delta.note,
+                                    FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
+                folio_state_document_stale(fixture->state, &stale) == FOLIO_STATE_READY && !stale,
+            "opening the note again reads the outside version");
+}
+
 /* 星: 外で足したノートが、星を書いた index.json に残る。 */
 static void verify_star(struct fixture *_Nonnull fixture)
 {
@@ -628,6 +674,8 @@ int main(void)
 {
     struct fixture fixture = {0};
     open_state(&fixture);
+    puts("ledger refresh: guarded save");
+    verify_guarded_save(&fixture);
     puts("ledger refresh: star");
     verify_star(&fixture);
     puts("ledger refresh: reorder");
