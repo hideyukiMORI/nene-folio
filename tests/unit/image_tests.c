@@ -9,6 +9,7 @@
 #include "image_limits.h"
 #include "image_link.h"
 #include "image_port.h"
+#include "image_signature.h"
 #include "markdown_image_copy.h"
 #include "markdown_images.h"
 #include "markdown_rtf.h"
@@ -1014,6 +1015,18 @@ static void image_links(void)
     expect_link("noext", "![noext](images/noext)");
     expect_link(".png", "![.png](images/.png)");
     expect_link("it's_#1.PNG", "![it's_#1](images/it's_#1.PNG)");
+    expect_link("album/trip.2026.png", "![trip.2026](images/album/trip.2026.png)");
+    expect_link("a b/.hidden", "![.hidden](<images/a b/.hidden>)");
+    static const unsigned char png[] = {0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A, 0, 0};
+    static const unsigned char jpeg[] = {0xFF, 0xD8, 0xFF, 0xE0, 0};
+    static const unsigned char gif[] = {'G', 'I', 'F', '8', '9', 'a', 0, 0, 0};
+    require(image_signature_supported(png, sizeof png) &&
+                image_signature_supported(jpeg, sizeof jpeg) && image_signature_supported(png, 8) &&
+                image_signature_supported(jpeg, 3),
+            "PNG and JPEG are told by their first bytes");
+    require(!image_signature_supported(gif, sizeof gif) && !image_signature_supported(png, 7) &&
+                !image_signature_supported(jpeg, 2) && !image_signature_supported(png, 0),
+            "another format, or a file cut short, is not an image to take in");
     expect_numbered("photo.png", 2, "photo-2.png");
     expect_numbered("a.b.png", 10, "a.b-10.png");
     expect_numbered("noext", 3, "noext-3");
