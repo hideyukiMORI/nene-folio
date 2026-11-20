@@ -34,6 +34,11 @@ folio_window_create(struct folio_state *_Nonnull state, struct storage_state *_N
 /* 合成ルートが空queueで使う副作用のない可否判定。索引の一件を優先し、次に有限sampleを進める。 */
 [[nodiscard]] bool folio_window_idle_work_ready(const struct folio_window *_Nonnull self);
 void folio_window_continue_idle_work(struct folio_window *_Nonnull self);
+/* #1071 / ADR0118: 外から来た「開く」依頼のリンク（UTF-8、length バイト）を検証して開く。起動の
+ * 引数と、動いている窓へ渡された依頼の、共通の入口。結果は右の窓の 1 行と描き直しで伝える。
+ * 面を開いている・ほかの操作の途中なら、開かずに 1 行で知らせる。 */
+void folio_window_open_link(struct folio_window *_Nonnull self, const char *_Nonnull bytes,
+                            size_t length);
 void folio_window_destroy(struct folio_window *_Nullable window);
 
 /* UIAはこの表示境界だけを通る。状態の正本や保存経路をproviderへ複製しない。 */

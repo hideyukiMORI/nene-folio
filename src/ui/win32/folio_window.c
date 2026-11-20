@@ -6,6 +6,9 @@
 #include "accessible_surface_button.h"
 #include "accessible_view.h"
 #include "file_picker.h"
+#include "folio_open_link.h"
+#include "open_place_kind.h"
+#include "open_request.h"
 #include "storage_path.h"
 #include <stdio.h>
 
@@ -272,6 +275,7 @@ struct folio_window
     enum session_phase session_phase;
     HWND _Nullable session_return_focus;
     enum ui_text session_reason;
+    enum ui_text open_line; /* PANE_NOTICE_OPEN_LINK の文（#1071） */
     bool session_reason_owned;
     bool layout_changing;     /* 同期WM_SIZEを含む一つの表示切替の間だけ立つ。 */
     int drawer_width;         /* 実行中に選んだlogical幅。窓縮小時の制限で上書きしない。 */
@@ -313,7 +317,7 @@ constexpr int base_minimap_minimum_body = 320;
 constexpr int base_outline_width = 184;
 constexpr int base_outline_gap = 12;
 
-static const wchar_t class_name[] = L"NeNeFolioWindow";
+static const wchar_t *const class_name = folio_open_link_class;
 static const wchar_t command_layer_class[] = L"NeNeFolioCommandLayer";
 static const wchar_t settings_backdrop_class[] = L"NeNeFolioSettingsBackdrop";
 static const wchar_t mono_face[] = L"Consolas";
@@ -955,6 +959,7 @@ static LRESULT CALLBACK command_layer_procedure(HWND window, UINT message, WPARA
 static LRESULT CALLBACK settings_backdrop_procedure(HWND window, UINT message, WPARAM wparam,
                                                     LPARAM lparam);
 static LRESULT CALLBACK window_procedure(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
+static LRESULT on_copy_data(struct folio_window *_Nonnull self, LPARAM lparam);
 
 static int scale(int value, UINT dpi)
 {
@@ -6250,6 +6255,9 @@ static enum ui_text pane_notice_line(const struct folio_window *_Nonnull self)
             break;
         case PANE_NOTICE_SESSION_BLOCKED:
             line = self->session_reason;
+            break;
+        case PANE_NOTICE_OPEN_LINK:
+            line = self->open_line;
             break;
         }
     return line;
@@ -15275,6 +15283,144 @@ static LRESULT on_input_message(struct folio_window *_Nonnull self, UINT message
     }
 }
 
+/* #1071 / ADR0118: the line that says how a link was opened. */
+static void open_link_notice(struct folio_window *_Nonnull self, enum ui_text line)
+{
+    self->open_line = line;
+    if (self->notice == PANE_NOTICE_OPEN_LINK)
+        InvalidateRect(self->handle, nullptr, FALSE);
+    else
+        set_pane_notice(self, PANE_NOTICE_OPEN_LINK);
+    accessibility_host_schedule(self->accessibility);
+}
+
+/* A link does not open while something else holds the window: a surface with its own rows or
+ * input (anything but the in-note search), a native dialog, a removal, a session ending, a
+ * layout change, a load, or a pointer captured mid-drag (ADR0118 decision 3). Those may hold
+ * places in the lists, and locating a note reads the lists again. */
+static bool open_link_blocked(const struct folio_window *_Nonnull self)
+{
+    bool surface = self->command_surface != COMMAND_SURFACE_CLOSED &&
+                   self->command_surface != COMMAND_SURFACE_SEARCH;
+    return surface || self->native_modal_depth > 0 || self->removal_running || session_busy(self) ||
+           self->close_phase != CLOSE_PHASE_IDLE || self->layout_changing || pane_streaming(self) ||
+           GetCapture() != nullptr || !IsWindowEnabled(self->handle);
+}
+
+/* Selects the place the request names in the reading view, and says so when it is not the
+ * place asked for. */
+static void open_link_place(struct folio_window *_Nonnull self,
+                            const struct open_request *_Nonnull request)
+{
+    struct open_request_lines lines = {0, 0};
+    bool lined = open_request_lines(request, &lines);
+    bool worded = open_request_text_length(request) > 0;
+    if (!lined && !worded)
+        return;
+    struct note_byte_span span = {0, 0};
+    enum open_place_kind kind = folio_state_open_place(self->state, request, &span);
+    size_t total = 0;
+    struct markdown_source_selection paragraphs = {0, 0};
+    bool shown =
+        kind != OPEN_PLACE_NONE && self->pane != nullptr &&
+        note_pane_paragraph_total(self->pane, &total) &&
+        folio_state_open_paragraphs(self->state, span, total, &paragraphs) == FOLIO_STATE_READY &&
+        note_pane_select_paragraphs(self->pane, paragraphs);
+    if (!shown)
+        open_link_notice(self, UI_TEXT_OPEN_LINK_NO_PLACE);
+    else if (kind == OPEN_PLACE_LINES && worded)
+        open_link_notice(self, UI_TEXT_OPEN_LINK_LINES);
+    else if (kind == OPEN_PLACE_TEXT_ELSEWHERE && lined)
+        open_link_notice(self, UI_TEXT_OPEN_LINK_ELSEWHERE);
+}
+
+/* Opens the located note through the one switch (ADR0013 decision 4) and shows it in the
+ * reading view. A note that is already open is not selected again, so its Undo stays. */
+static enum folio_state_outcome open_link_note(struct folio_window *_Nonnull self,
+                                               struct note_ref ref)
+{
+    enum folio_state_outcome outcome =
+        holds_document(self, ref) ? FOLIO_STATE_READY : switch_note(self, ref.category, ref.note);
+    if (outcome == FOLIO_STATE_READY && folio_state_pane_mode(self->state) == PANE_MODE_EDIT)
+        outcome = flush_edit(self);
+    return outcome;
+}
+
+/* The request is held by name; the places are looked up here and used at once (the lists are
+ * read again by the lookup, so the drawer is drawn again whatever comes back). */
+static void open_link_request(struct folio_window *_Nonnull self,
+                              const struct open_request *_Nonnull request)
+{
+    struct note_ref ref = {0, 0};
+    enum folio_state_outcome located = folio_state_locate_open_request(self->state, request, &ref);
+    redraw_drawer(self);
+    InvalidateRect(self->handle, nullptr, FALSE);
+    if (located == FOLIO_STATE_NO_SUCH_CATEGORY || located == FOLIO_STATE_NO_SUCH_NOTE)
+    {
+        open_link_notice(self, located == FOLIO_STATE_NO_SUCH_NOTE ? UI_TEXT_OPEN_LINK_NO_NOTE
+                                                                   : UI_TEXT_OPEN_LINK_NO_CATEGORY);
+        return;
+    }
+    enum folio_state_outcome outcome =
+        located == FOLIO_STATE_READY ? open_link_note(self, ref) : located;
+    if (outcome != FOLIO_STATE_READY)
+    {
+        if (outcome != FOLIO_STATE_CANCELLED)
+            report_outcome(self, outcome);
+        return;
+    }
+    set_pane_notice(self, PANE_NOTICE_NONE);
+    open_link_place(self, request);
+    redraw_drawer(self);
+    focus_pane(self);
+}
+
+void folio_window_open_link(struct folio_window *_Nonnull self, const char *_Nonnull bytes,
+                            size_t length)
+{
+    if (IsIconic(self->handle))
+        ShowWindow(self->handle, SW_RESTORE);
+    SetForegroundWindow(self->handle);
+    if (open_link_blocked(self))
+    {
+        open_link_notice(self, UI_TEXT_OPEN_LINK_BUSY);
+        return;
+    }
+    struct open_request *_Nullable request = nullptr;
+    enum open_request_outcome read = open_request_create(bytes, length, &request);
+    if (read != OPEN_REQUEST_ACCEPTED || request == nullptr)
+    {
+        if (read == OPEN_REQUEST_OUT_OF_MEMORY)
+            report_outcome(self, FOLIO_STATE_OUT_OF_MEMORY);
+        else
+            open_link_notice(self, UI_TEXT_OPEN_LINK_INVALID);
+        return;
+    }
+    open_link_request(self, request);
+    open_request_destroy(request);
+}
+
+/* A second start hands its link over (folio_open_link.h). The sender is not trusted: the data
+ * folder must be this window's, and the link is validated like any other. */
+static LRESULT on_copy_data(struct folio_window *_Nonnull self, LPARAM lparam)
+{
+    const COPYDATASTRUCT *copy = (const COPYDATASTRUCT *)lparam;
+    if (copy == nullptr || copy->dwData != folio_open_link_data || copy->lpData == nullptr ||
+        copy->cbData == 0 || copy->cbData > folio_open_link_limit)
+        return FALSE;
+    const char *bytes = copy->lpData;
+    size_t total = copy->cbData;
+    size_t split = 0;
+    while (split < total && bytes[split] != '\0')
+        split += 1;
+    const struct storage_path *own = storage_state_directory(self->storage);
+    if (split == total || split != storage_path_length(own) ||
+        memcmp(bytes, storage_path_text(own), split) != 0)
+        return FALSE;
+    folio_window_open_link(self, bytes + split + 1, total - split - 1);
+    return TRUE;
+}
+
 static LRESULT on_child_request(struct folio_window *_Nonnull self, UINT message, WPARAM wparam,
                                 LPARAM lparam)
 {
@@ -15283,6 +15429,8 @@ static LRESULT on_child_request(struct folio_window *_Nonnull self, UINT message
     case folio_message_open_web_link:
         open_web_selection(self);
         return 0;
+    case WM_COPYDATA: /* a second start hands over its link (#1071) */
+        return on_copy_data(self, lparam);
     case folio_message_resize_through:
         return resize_through(self, lparam);
     case folio_message_pane_zoomed:

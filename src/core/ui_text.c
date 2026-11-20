@@ -130,6 +130,31 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
          "The saved source changed after searching. The note opened without moving to the match.",
          "保存内容在搜索后发生了变化。已打开笔记，但未跳转到匹配位置。"},
     [UI_TEXT_DISCOVERY_ELLIPSIS] = {"…", "…", "…"},
+    [UI_TEXT_OPEN_LINK_INVALID] = {"リンクの形が正しくないため、開けませんでした。",
+                                   "This link isn't in a form NeNe Folio can open.",
+                                   "链接格式不正确，无法打开。"},
+    [UI_TEXT_OPEN_LINK_BUSY] =
+        {"ほかの操作の途中です。終えてから、もう一度リンクを開いてください。",
+         "Another task is in progress. Finish it, then open the link again.",
+         "正在进行其他操作。完成后请再次打开链接。"},
+    [UI_TEXT_OPEN_LINK_NO_CATEGORY] =
+        {"リンクのカテゴリが見つかりません。何も開いていません。",
+         "The category in this link wasn't found. Nothing was opened.",
+         "找不到链接中的分类，未打开任何笔记。"},
+    [UI_TEXT_OPEN_LINK_NO_NOTE] = {"リンクのノートが見つかりません。何も開いていません。",
+                                   "The note in this link wasn't found. Nothing was opened.",
+                                   "找不到链接中的笔记，未打开任何笔记。"},
+    [UI_TEXT_OPEN_LINK_LINES] =
+        {"指定の文は見つかりませんでした。指定の行を選んでいます。",
+         "The quoted text wasn't found. The given lines are selected instead.",
+         "未找到指定的文字，已选中指定的行。"},
+    [UI_TEXT_OPEN_LINK_ELSEWHERE] =
+        {"指定の行の近くには無く、ノート内の別の場所の文を選んでいます。",
+         "The text wasn't near the given lines. A match elsewhere in the note is selected.",
+         "指定行附近没有该文字，已选中笔记中其他位置的匹配。"},
+    [UI_TEXT_OPEN_LINK_NO_PLACE] = {"指定の箇所は見つかりませんでした。ノートを開きました。",
+                                    "The place in this link wasn't found. The note is open.",
+                                    "未找到指定的位置，已打开笔记。"},
     [UI_TEXT_FAILURE_DISCOVERY_QUERY_INVALID] =
         {"検索できない文字があります。検索語を入力し直してください。",
          "The query contains invalid characters. Enter it again.",
