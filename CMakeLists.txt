@@ -73,6 +73,7 @@ nenefolio_target(nenefolio_core core STATIC
     src/core/image_asset.c src/core/archive_assets.c src/core/markdown_image_copy.c
     src/core/markdown_autolink.c src/core/markdown_bare_link.c src/core/markdown_references.c
     src/core/markdown_character_reference.c
+    src/core/open_request.c src/core/open_place.c
     src/core/web_uri.c src/core/markdown_web_link.c src/core/note_archive.c src/core/code_copy_target.c src/core/footnote_target.c
     src/core/markdown_line.c src/core/markdown_view.c src/core/markdown_table.c src/core/markdown_containers.c
     src/core/folio_command.c src/core/folio_menu_action.c src/core/folio_shortcut.c src/core/key_guide.c src/core/note_name.c src/core/rename_plan.c src/core/rename_journal.c
@@ -92,6 +93,7 @@ nenefolio_link(nenefolio_application nenefolio_core)
 nenefolio_target(folio_tests unit_tests EXECUTABLE
     tests/unit/storage_tests.c tests/unit/storage_state_tests.c
     tests/unit/window_placement_tests.c
+    tests/unit/open_request_tests.c tests/unit/open_place_tests.c
     tests/unit/web_link_tests.c tests/unit/code_copy_tests.c tests/unit/source_map_tests.c tests/unit/transfer_tests.c tests/unit/image_tests.c
     tests/unit/folio_tests.c tests/unit/text_tests.c tests/unit/json_tests.c
     tests/unit/tag_tests.c tests/unit/tag_management_tests.c tests/unit/discovery_tests.c tests/unit/body_discovery_tests.c

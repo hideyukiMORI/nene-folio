@@ -1,4 +1,6 @@
 #include "folio_state.h"
+#include "open_place.h"
+#include "open_request.h"
 
 #include "ui_text.h"
 
@@ -5774,6 +5776,72 @@ enum folio_state_outcome folio_state_recolor_availability(const struct folio_sta
                                                           size_t category)
 {
     return holds_category(state, category) ? FOLIO_STATE_READY : FOLIO_STATE_NO_SUCH_CATEGORY;
+}
+
+/* 名前（ASCII の大小は問わない）のカテゴリの番号。 */
+static bool locate_category(const struct folio_state *_Nonnull state, const char *_Nonnull name,
+                            size_t *_Nonnull out)
+{
+    size_t count = category_ledger_count(state->categories);
+    for (size_t index = 0; index < count; ++index)
+    {
+        if (same_folded(category_ledger_name(state->categories, index), name))
+        {
+            *out = index;
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool locate_note(const struct note_ledger *_Nonnull ledger, const char *_Nonnull name,
+                        size_t *_Nonnull out)
+{
+    size_t count = note_ledger_count(ledger);
+    for (size_t index = 0; index < count; ++index)
+    {
+        if (same_folded(note_ledger_name(ledger, index), name))
+        {
+            *out = index;
+            return true;
+        }
+    }
+    return false;
+}
+
+enum folio_state_outcome
+folio_state_locate_open_request(struct folio_state *_Nonnull state,
+                                const struct open_request *_Nonnull request,
+                                struct note_ref *_Nonnull out)
+{
+    state->ledger_notice = false;
+    enum folio_state_outcome outcome = synchronize(state);
+    if (outcome == FOLIO_STATE_READY)
+        outcome = refresh_categories(state, nullptr, nullptr);
+    if (outcome != FOLIO_STATE_READY)
+        return outcome;
+    struct note_ref found = {0, 0};
+    if (!locate_category(state, category_name_text(open_request_category(request)),
+                         &found.category))
+        return FOLIO_STATE_NO_SUCH_CATEGORY;
+    outcome = refresh_notes(state, found.category, nullptr, nullptr);
+    if (outcome != FOLIO_STATE_READY)
+        return outcome;
+    if (!locate_note(state->notes[found.category], note_name_stem(open_request_note(request)),
+                     &found.note))
+        return FOLIO_STATE_NO_SUCH_NOTE;
+    *out = found;
+    return FOLIO_STATE_READY;
+}
+
+enum open_place_kind folio_state_open_place(const struct folio_state *_Nonnull state,
+                                            const struct open_request *_Nonnull request,
+                                            struct note_byte_span *_Nonnull out)
+{
+    if (state->document == FOLIO_DOCUMENT_NONE || state->body == nullptr)
+        return OPEN_PLACE_NONE;
+    return open_place_find(note_text_bytes(state->body), note_text_length(state->body), request,
+                           out);
 }
 
 bool folio_state_find_category(const struct folio_state *_Nonnull state, const char *_Nonnull name,

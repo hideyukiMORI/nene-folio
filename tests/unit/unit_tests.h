@@ -17,6 +17,8 @@ void require(bool condition, const char *_Nonnull description);
 
 void run_storage_tests(void);
 void run_web_link_tests(void);
+void run_open_request_tests(void);
+void run_open_place_tests(void);
 void run_storage_state_tests(void);
 void run_window_placement_tests(void);
 void run_text_tests(void);

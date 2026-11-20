@@ -850,6 +850,7 @@ static void verify_render_allocation(void)
 
 void run_web_link_tests(void)
 {
+    run_open_request_tests(); /* #1071: the other link read from outside */
     verify_uri_cases();
     verify_uri_boundary();
     verify_fields();

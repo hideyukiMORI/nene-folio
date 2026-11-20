@@ -8,6 +8,7 @@
 #include "tag_management_summary.h"
 struct tag_update;
 struct note_tag;
+struct open_request;
 struct folio_state;
 /* A fresh read-only preview through the shared corpus loader. Null replacement removes from.
  * All saved ledger notes are examined, independently of the active display filters. */
@@ -58,6 +59,7 @@ folio_state_tag_management_phase(const struct folio_state *_Nonnull state);
 #include "image_port.h"
 #include "index_ranked_note.h"
 #include "markdown_source_selection.h"
+#include "note_byte_span.h"
 #include "note_destination.h"
 #include "note_export_request.h"
 #include "note_import_request.h"
@@ -67,6 +69,7 @@ folio_state_tag_management_phase(const struct folio_state *_Nonnull state);
 #include "note_scope.h"
 #include "note_snippet_clip.h"
 #include "note_times_view.h"
+#include "open_place_kind.h"
 #include "pane_mode.h"
 
 #include "pane_title_view.h"
@@ -432,6 +435,29 @@ folio_state_document_kind(const struct folio_state *_Nonnull state);
  * 覚えるときは名前で覚え、意図を呼ぶたびにここで番号へ引き直す。 */
 [[nodiscard]] bool folio_state_find_category(const struct folio_state *_Nonnull state,
                                              const char *_Nonnull name, size_t *_Nonnull out);
+/* #1071 / ADR0118: 外から来た「開く」依頼のノートが、いまの一覧のどこにあるか。
+ * 引く前に、カテゴリの台帳と、そのカテゴリのノートの台帳を読み直す（依頼を書いた側が、直前に
+ * ノートを外で作っていることがある。読み直しても書かない＝ADR0117 の決定 6）。名前は ASCII の
+ * 英字だけ大小を問わずに引く（ASCII 以外の大小や正規化の違いは別の名前として扱い、見つからない
+ * 側へ倒す）。
+ * READY なら out は、すぐ次に呼ぶ「ノートを選ぶ」意図へ渡せる番号。カテゴリが無ければ
+ * NO_SUCH_CATEGORY、ノートが無ければ NO_SUCH_NOTE で、out は変えない。読み直せなければその結果。
+ * 一覧に無いものは作らない。
+ * 呼ぶ側の約束（#1069 の教訓。番号は意図をまたいで持たない）:
+ * - どの結果でも一覧は読み直した新しいものになりうる。番号を持っている面（入力面・メニュー・
+ *   ドラッグ・取り込み・削除の途中）が開いているあいだは呼ばない。呼んだ後は結果によらず描き直す。
+ * - 編集中の保存や、無題の下書きに名前を付ける手順は、これを呼ぶ**前**に済ませる（それらは一覧に
+ *   ノートを足して番号をずらす）。依頼は名前で持ち、番号はここで引いてすぐ使う。 */
+[[nodiscard]] enum folio_state_outcome
+folio_state_locate_open_request(struct folio_state *_Nonnull state,
+                                const struct open_request *_Nonnull request,
+                                struct note_ref *_Nonnull out);
+/* 開いている文書の保存済みの原文の上で、依頼の箇所を決める（open_place_find）。文書が無ければ
+ * OPEN_PLACE_NONE。範囲は原文のバイト位置。 */
+[[nodiscard]] enum open_place_kind
+folio_state_open_place(const struct folio_state *_Nonnull state,
+                       const struct open_request *_Nonnull request,
+                       struct note_byte_span *_Nonnull out);
 /* カーソル→現在文書→最初のカテゴリ。カテゴリ0件なら0で、new_noteが拒否する。 */
 [[nodiscard]] size_t folio_state_current_category(const struct folio_state *_Nonnull state);
 /* 現在文書の保存先。NONEのときは呼ばない。 */
