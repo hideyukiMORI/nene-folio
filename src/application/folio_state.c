@@ -3285,7 +3285,7 @@ static enum folio_state_outcome store_edited(struct folio_state *_Nonnull state,
                                              enum note_save_mode mode)
 {
     bool same = note_text_equals(state->body, edited);
-    if (same && mode == NOTE_SAVE_UNCONDITIONAL)
+    if (same && mode == NOTE_SAVE_EDITS)
     {
         note_text_destroy(edited);
         return FOLIO_STATE_READY;
@@ -3302,7 +3302,8 @@ static enum folio_state_outcome store_edited(struct folio_state *_Nonnull state,
         .category = category_ledger_name(state->categories, state->selected_category),
         .note = note_ledger_name(state->notes[state->selected_category], state->selected_note),
         .body = edited,
-        .expected = mode == NOTE_SAVE_CHECK_CURRENT ? state->body : nullptr};
+        .expected = state->body,
+        .recreate = mode == NOTE_SAVE_EDITS};
     enum note_store_outcome stored = state->port.store_note(state->port.adapter, &request);
     if (stored != NOTE_STORE_STORED)
     {
@@ -3998,7 +3999,7 @@ enum folio_state_outcome folio_state_rename_note(struct folio_state *_Nonnull st
         return FOLIO_STATE_NAME_TAKEN;
     }
     /* 改名の前に既存の保存を成功させる。閲覧中は save_note が何もせずに戻る。 */
-    enum folio_state_outcome saved = save_note(state, units, count, NOTE_SAVE_UNCONDITIONAL);
+    enum folio_state_outcome saved = save_note(state, units, count, NOTE_SAVE_EDITS);
     if (saved != FOLIO_STATE_READY)
     {
         return saved;
@@ -4154,7 +4155,7 @@ enum folio_state_outcome folio_state_trash_note(struct folio_state *_Nonnull sta
     }
     if (trashing_current(state, target) && state->mode == PANE_MODE_EDIT)
     {
-        enum folio_state_outcome saved = save_note(state, units, count, NOTE_SAVE_UNCONDITIONAL);
+        enum folio_state_outcome saved = save_note(state, units, count, NOTE_SAVE_EDITS);
         if (saved != FOLIO_STATE_READY)
         {
             return saved;
@@ -4243,7 +4244,7 @@ rename_fresh_category(struct folio_state *_Nonnull state,
     if (state->document == FOLIO_DOCUMENT_NAMED && state->mode == PANE_MODE_EDIT &&
         state->selected_category == target->category)
     {
-        enum folio_state_outcome saved = save_note(state, units, count, NOTE_SAVE_UNCONDITIONAL);
+        enum folio_state_outcome saved = save_note(state, units, count, NOTE_SAVE_EDITS);
         if (saved != FOLIO_STATE_READY)
         {
             return saved;
@@ -4539,7 +4540,7 @@ enum folio_state_outcome folio_state_delete_category(struct folio_state *_Nonnul
 enum folio_state_outcome folio_state_store_note(struct folio_state *_Nonnull state,
                                                 const char16_t *_Nonnull units, size_t count)
 {
-    return save_note(state, units, count, NOTE_SAVE_UNCONDITIONAL);
+    return save_note(state, units, count, NOTE_SAVE_EDITS);
 }
 
 enum folio_state_outcome folio_state_store_note_checked(struct folio_state *_Nonnull state,
@@ -4608,7 +4609,7 @@ uint64_t folio_state_store_revision(const struct folio_state *_Nonnull state)
 enum folio_state_outcome folio_state_end_edit(struct folio_state *_Nonnull state,
                                               const char16_t *_Nonnull units, size_t count)
 {
-    enum folio_state_outcome outcome = save_note(state, units, count, NOTE_SAVE_UNCONDITIONAL);
+    enum folio_state_outcome outcome = save_note(state, units, count, NOTE_SAVE_EDITS);
     if (outcome == FOLIO_STATE_READY)
     {
         state->mode = PANE_MODE_VIEW;
@@ -6436,8 +6437,11 @@ static enum tag_management_step apply_tag_management_note(struct folio_state *_N
         state->tag_results[index] = TAG_APPLY_OUT_OF_MEMORY;
         return TAG_MANAGEMENT_PROGRESSED;
     }
-    const struct note_store_request request = {tag_update_category(update), tag_update_note(update),
-                                               after, before};
+    const struct note_store_request request = {.category = tag_update_category(update),
+                                               .note = tag_update_note(update),
+                                               .body = after,
+                                               .expected = before,
+                                               .recreate = false};
     enum note_store_outcome saved = state->port.store_note(state->port.adapter, &request);
     state->tag_results[index] = applied_tag_status(saved);
     if (saved != NOTE_STORE_STORED)
