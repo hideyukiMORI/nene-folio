@@ -1752,6 +1752,65 @@ static void verify_refresh_lists(void)
     folio_state_destroy(state);
 }
 
+static struct note_name *_Nonnull accepted_note_name(const char *_Nonnull text);
+
+/* #1070 (independent review): a change in the folder never writes and never resumes a rename. */
+static void verify_refresh_lists_reads_only(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    bool changed = true;
+    adapter.notes_outcome = PERSISTENCE_UNREADABLE;
+    require(folio_state_trash_note(state, at(2, 0), u"x", 1) == FOLIO_STATE_LEDGER_STALE,
+            "C's ledger waits: its index cannot be read again");
+    adapter.notes_outcome = PERSISTENCE_LOADED;
+    size_t writes = adapter.writes + adapter.ledger_writes;
+    folder_add(&adapter, "B", "six");
+    require(folio_state_refresh_lists(state, &changed) == FOLIO_STATE_READY && changed &&
+                adapter.writes + adapter.ledger_writes == writes,
+            "with a ledger waiting, the lists are read again and still nothing is written");
+    require(folio_state_toggle_favorite(state, at(0, 0)) != FOLIO_STATE_OUT_OF_MEMORY &&
+                adapter.ledger_writes > 0 && adapter.writes + adapter.ledger_writes > writes,
+            "the next intent of the user's writes the waiting ledger");
+    struct note_name *name = accepted_note_name("renamed");
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY,
+            "a note to rename");
+    adapter.rename_outcome = RENAME_PENDING;
+    require(folio_state_rename_note(state, name, u"", 0) == FOLIO_STATE_RENAME_PENDING,
+            "a rename is left unfinished");
+    size_t renames = adapter.renames;
+    size_t scans = adapter.note_scans;
+    folder_add(&adapter, "B", "seven");
+    adapter.rename_outcome = RENAME_COMPLETED;
+    require(folio_state_refresh_lists(state, &changed) == FOLIO_STATE_READY && !changed &&
+                adapter.renames == renames && adapter.note_scans == scans,
+            "while a rename waits, a change in the folder neither resumes it nor reads anything");
+    note_name_destroy(name);
+    folio_state_destroy(state);
+}
+
+/* #1070: what the app itself writes is not an outside change (a watcher sees its own saves). */
+static void verify_refresh_lists_own_writes(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    adapter.remember_note_writes = true;
+    struct folio_state *state = ready_state(&adapter);
+    bool changed = true;
+    bool stale = true;
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
+                folio_state_begin_edit(state) == FOLIO_STATE_READY &&
+                folio_state_store_note(state, u"own\r\nsave", 9) == FOLIO_STATE_READY,
+            "the app saves the open note");
+    require(folio_state_refresh_lists(state, &changed) == FOLIO_STATE_READY && !changed &&
+                folio_state_document_stale(state, &stale) == FOLIO_STATE_READY && !stale,
+            "its own save is neither a changed list nor a stale document");
+    require(folio_state_toggle_favorite(state, at(0, 1)) == FOLIO_STATE_READY &&
+                folio_state_move_category(state, 0, 1) == FOLIO_STATE_READY &&
+                folio_state_refresh_lists(state, &changed) == FOLIO_STATE_READY && !changed,
+            "its own star and its own category move are what the disk already says");
+    folio_state_destroy(state);
+}
+
 /* #1070: whether the open note's file differs from the text it was loaded with. */
 static void verify_document_stale(void)
 {
@@ -1805,6 +1864,8 @@ static void verify_category_refresh(void)
     verify_open_request_located();
     verify_open_request_place();
     verify_refresh_lists();
+    verify_refresh_lists_reads_only();
+    verify_refresh_lists_own_writes();
     verify_document_stale();
     verify_category_refresh_adds();
     verify_category_refresh_follows_names();

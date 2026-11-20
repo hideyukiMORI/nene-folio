@@ -5782,10 +5782,14 @@ enum folio_state_outcome folio_state_refresh_lists(struct folio_state *_Nonnull 
                                                    bool *_Nonnull changed)
 {
     *changed = false;
+    /* No synchronize here: this is not an intent of the user's. A waiting ledger is written and
+     * an unfinished rename resumed by the next intent, never by a change in the folder (which
+     * such a write would raise again). While a rename waits, the names on disk may already be
+     * the new ones, so nothing is read (independent review of #1070). */
+    if (state->rename != nullptr)
+        return FOLIO_STATE_READY;
     uint64_t before = state->adoptions;
-    enum folio_state_outcome outcome = synchronize(state);
-    if (outcome == FOLIO_STATE_READY)
-        outcome = refresh_categories(state, nullptr, nullptr);
+    enum folio_state_outcome outcome = refresh_categories(state, nullptr, nullptr);
     if (outcome == FOLIO_STATE_READY)
     {
         /* One category that cannot be read does not keep the others stale. */
