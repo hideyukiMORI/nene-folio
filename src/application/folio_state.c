@@ -5778,6 +5778,52 @@ enum folio_state_outcome folio_state_recolor_availability(const struct folio_sta
     return holds_category(state, category) ? FOLIO_STATE_READY : FOLIO_STATE_NO_SUCH_CATEGORY;
 }
 
+enum folio_state_outcome folio_state_refresh_lists(struct folio_state *_Nonnull state,
+                                                   bool *_Nonnull changed)
+{
+    *changed = false;
+    /* No synchronize here: this is not an intent of the user's. A waiting ledger is written and
+     * an unfinished rename resumed by the next intent, never by a change in the folder (which
+     * such a write would raise again). While a rename waits, the names on disk may already be
+     * the new ones, so nothing is read (independent review of #1070). */
+    if (state->rename != nullptr)
+        return FOLIO_STATE_READY;
+    uint64_t before = state->adoptions;
+    enum folio_state_outcome outcome = refresh_categories(state, nullptr, nullptr);
+    if (outcome == FOLIO_STATE_READY)
+    {
+        /* One category that cannot be read does not keep the others stale. */
+        for (size_t category = 0; category < state->notes_count; ++category)
+        {
+            enum folio_state_outcome read = refresh_notes(state, category, nullptr, nullptr);
+            if (outcome == FOLIO_STATE_READY)
+                outcome = read;
+        }
+    }
+    *changed = state->adoptions != before;
+    state->ledger_notice = false; /* this is no intent of the user's: its caller tells, or not */
+    return outcome;
+}
+
+enum folio_state_outcome folio_state_document_stale(struct folio_state *_Nonnull state,
+                                                    bool *_Nonnull stale)
+{
+    *stale = false;
+    if (state->document != FOLIO_DOCUMENT_NAMED || state->rename != nullptr ||
+        state->body == nullptr)
+        return FOLIO_STATE_READY;
+    struct note_text *_Nullable body = nullptr;
+    enum persistence_outcome read = state->port.read_note(
+        state->port.adapter, category_ledger_name(state->categories, state->selected_category),
+        note_ledger_name(state->notes[state->selected_category], state->selected_note), &body);
+    if (read == PERSISTENCE_OUT_OF_MEMORY)
+        return FOLIO_STATE_OUT_OF_MEMORY;
+    if (read == PERSISTENCE_LOADED && body != nullptr)
+        *stale = !note_text_equals(body, state->body);
+    note_text_destroy(body);
+    return FOLIO_STATE_READY;
+}
+
 /* 名前（ASCII の大小は問わない）のカテゴリの番号。 */
 static bool locate_category(const struct folio_state *_Nonnull state, const char *_Nonnull name,
                             size_t *_Nonnull out)
