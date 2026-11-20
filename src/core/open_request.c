@@ -78,22 +78,29 @@ static size_t decoded_byte(const char *_Nonnull value, size_t length, size_t at,
     return 3;
 }
 
-/* 全体が妥当な UTF-8 か。 */
-static bool valid_utf8(const char *_Nonnull bytes, size_t length)
+/* 値に置けない文字: C0・DEL・C1 の制御文字と、行と段落の区切り（U+2028 / U+2029）。 */
+static bool forbidden_point(uint32_t point)
+{
+    return point < 0x20 || (point >= 0x7F && point <= 0x9F) || point == 0x2028 || point == 0x2029;
+}
+
+/* 全体が妥当な UTF-8 で、置けない文字が無いか。 */
+static bool valid_value(const char *_Nonnull bytes, size_t length)
 {
     size_t at = 0;
     while (at < length)
     {
         uint32_t point = 0;
         size_t used = utf8_text_decode(bytes + at, length - at, &point);
-        if (used == 0)
+        if (used == 0 || forbidden_point(point))
             return false;
         at += used;
     }
     return true;
 }
 
-/* % を戻した値（終端付き）を作る。制御文字（NUL を含む）と不正な UTF-8 は MALFORMED。 */
+/* % を戻した値（終端付き）を作る。制御文字（NUL を含む）・行の区切りと不正な UTF-8 は MALFORMED。
+ */
 static enum open_request_outcome decode(const char *_Nonnull value, size_t length,
                                         char *_Nullable *_Nonnull out, size_t *_Nonnull out_length)
 {
@@ -106,7 +113,7 @@ static enum open_request_outcome decode(const char *_Nonnull value, size_t lengt
     {
         unsigned char byte = 0;
         size_t read = decoded_byte(value, length, at, &byte);
-        if (read == 0 || byte < 0x20 || byte == 0x7F)
+        if (read == 0 || byte == 0)
         {
             free(decoded);
             return OPEN_REQUEST_MALFORMED;
@@ -115,7 +122,7 @@ static enum open_request_outcome decode(const char *_Nonnull value, size_t lengt
         at += read;
     }
     decoded[used] = '\0';
-    if (!valid_utf8(decoded, used))
+    if (!valid_value(decoded, used))
     {
         free(decoded);
         return OPEN_REQUEST_MALFORMED;
@@ -221,9 +228,15 @@ static enum open_request_outcome take_text(struct open_request *_Nonnull request
     return OPEN_REQUEST_ACCEPTED;
 }
 
-/* 知っているキーの番号（下の known の順）。知らなければ known_count。 */
+/* 知っているキーと、その値の受け取り手。同じ番号どうしが組（キーを足すときは両方に足す。
+ * 数が合わなければコンパイルが落ちる）。 */
 constexpr size_t known_count = 4;
 static const char *const known[known_count] = {"category", "note", "lines", "text"};
+static enum open_request_outcome (*const _Nonnull takers[known_count])(
+    struct open_request *_Nonnull request, const char *_Nonnull text,
+    size_t length) = {take_category, take_note, take_lines, take_text};
+
+/* キーの番号。知らなければ known_count。 */
 
 static size_t known_key(const char *_Nonnull key, size_t length)
 {
@@ -233,19 +246,6 @@ static size_t known_key(const char *_Nonnull key, size_t length)
             return index;
     }
     return known_count;
-}
-
-/* % を戻した値を、キーの番号の受け取り手へ渡す。 */
-static enum open_request_outcome take_decoded(struct open_request *_Nonnull request, size_t which,
-                                              const char *_Nonnull decoded, size_t length)
-{
-    if (which == 0)
-        return take_category(request, decoded, length);
-    if (which == 1)
-        return take_note(request, decoded, length);
-    if (which == 2)
-        return take_lines(request, decoded, length);
-    return take_text(request, decoded, length);
 }
 
 /* [from, length) で最初に value がある位置。無ければ length。 */
@@ -274,7 +274,7 @@ static enum open_request_outcome read_pair(struct open_request *_Nonnull request
         decode(pair + key_length + 1, length - key_length - 1, &decoded, &decoded_length);
     if (outcome != OPEN_REQUEST_ACCEPTED || decoded == nullptr)
         return outcome;
-    outcome = take_decoded(request, which, decoded, decoded_length);
+    outcome = takers[which](request, decoded, decoded_length);
     free(decoded);
     return outcome;
 }

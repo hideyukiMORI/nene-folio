@@ -17,9 +17,11 @@ constexpr size_t open_request_text_limit = 1024;
 constexpr size_t open_request_line_limit = 9999999;
 /* `nenefolio://open?category=…&note=…[&lines=N|N-M][&text=…]` を読む。
  * スキームと `open` は ASCII の大小を問わない。`//` と `open` の後の `/` は省ける。
- * 値は % で符号化した UTF-8。`+` は空白にしない。値に制御文字は置けない。
+ * 値は % で符号化した UTF-8。`+` は空白にしない。値に制御文字（C0・DEL・C1）と行の区切り
+ * （U+2028 / U+2029）は置けない。キーは小文字で、大小を区別する。
  * category と note は必須で、既存の名前の規則（category_name / note_name）を通す。
- * 知らないキーは読み飛ばす。知っているキーの重複、`#`、空の区切りは不正。空の text は無いのと同じ。
+ * 知らないキーは値を読まずに読み飛ばす（重複していてもよい）。知っているキーの重複、`#`、空の区切りは
+ * 不正。空の text は無いのと同じ。
  * 失敗では out を変えない。 */
 [[nodiscard]] enum open_request_outcome
 open_request_create(const char *_Nonnull bytes, size_t length,

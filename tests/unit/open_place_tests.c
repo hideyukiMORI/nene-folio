@@ -96,6 +96,45 @@ static void verify_margin(void)
     require(open_place_margin == 5, "the margin the ADR names");
 }
 
+/* 「あたり」の端: 指定の行からちょうど 5 行は中、6 行は外。前にも後ろにも。 */
+static void verify_margin_edges(void)
+{
+    static const char twenty[] =
+        "l1\nl2\nl3\nl4 mark\nl5 mark\nl6\nl7\nl8\nl9\nl10\nl11\nl12\nl13\n"
+        "l14\nl15 mark\nl16 mark\nl17\nl18\nl19\nl20\n";
+    struct open_request *request = nullptr;
+    static const char link[] = "nenefolio://open?category=a&note=b&lines=10&text=mark";
+    require(open_request_create(link, sizeof link - 1, &request) == OPEN_REQUEST_ACCEPTED &&
+                request != nullptr,
+            "edge request");
+    struct note_byte_span span = {0, 0};
+    require(open_place_find(twenty, sizeof twenty - 1, request, &span) == OPEN_PLACE_TEXT_NEAR &&
+                span.start == (size_t)(strstr(twenty, "l5 mark") - twenty) + 3,
+            "five lines before is near; six lines before is not");
+    open_request_destroy(request);
+    static const char after[] = "nenefolio://open?category=a&note=b&lines=10&text=l15%20mark";
+    require(open_request_create(after, sizeof after - 1, &request) == OPEN_REQUEST_ACCEPTED &&
+                request != nullptr,
+            "after request");
+    require(open_place_find(twenty, sizeof twenty - 1, request, &span) == OPEN_PLACE_TEXT_NEAR,
+            "five lines after is near");
+    open_request_destroy(request);
+    static const char beyond[] = "nenefolio://open?category=a&note=b&lines=10&text=l16%20mark";
+    require(open_request_create(beyond, sizeof beyond - 1, &request) == OPEN_REQUEST_ACCEPTED &&
+                request != nullptr,
+            "beyond request");
+    require(open_place_find(twenty, sizeof twenty - 1, request, &span) == OPEN_PLACE_TEXT_ELSEWHERE,
+            "six lines after is elsewhere");
+    open_request_destroy(request);
+    static const char edge[] = "nenefolio://open?category=a&note=b&lines=10&text=l15%20mar";
+    require(open_request_create(edge, sizeof edge - 1, &request) == OPEN_REQUEST_ACCEPTED &&
+                request != nullptr,
+            "window end request");
+    require(open_place_find(twenty, sizeof twenty - 1, request, &span) == OPEN_PLACE_TEXT_NEAR,
+            "a match ending at the window's last line is near");
+    open_request_destroy(request);
+}
+
 static void verify_lines(void)
 {
     expect("nenefolio://open?category=a&note=b&lines=1", OPEN_PLACE_LINES, "# title");
@@ -119,6 +158,9 @@ static void verify_edges(void)
               OPEN_PLACE_LINES, "three");
     expect_in("one\r\ntwo\r\n", "nenefolio://open?category=a&note=b&lines=1-9", OPEN_PLACE_LINES,
               "one\r\ntwo");
+    expect_in("\nsecond", "nenefolio://open?category=a&note=b&lines=1", OPEN_PLACE_LINES, "");
+    expect_in("\nsecond", "nenefolio://open?category=a&note=b&lines=2", OPEN_PLACE_LINES, "second");
+    expect_in("a\rb\nc", "nenefolio://open?category=a&note=b&lines=1", OPEN_PLACE_LINES, "a\rb");
     expect_in("ab", "nenefolio://open?category=a&note=b&text=abc", OPEN_PLACE_NONE, "");
     expect_in("xxab", "nenefolio://open?category=a&note=b&text=ab", OPEN_PLACE_TEXT_ELSEWHERE,
               "ab");
@@ -131,6 +173,7 @@ void run_open_place_tests(void)
 {
     verify_text();
     verify_margin();
+    verify_margin_edges();
     verify_lines();
     verify_edges();
 }

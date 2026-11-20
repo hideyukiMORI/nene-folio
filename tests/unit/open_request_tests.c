@@ -121,6 +121,75 @@ static void verify_malformed_values(void)
         expect(links[index], OPEN_REQUEST_MALFORMED);
 }
 
+/* 入力は長さ付きのバイト列で、終端を当てにしない。ちょうどの大きさの確保で端を確かめる
+ * （AddressSanitizer が読み越しを止める）。 */
+static void expect_exact(const char *_Nonnull link, size_t length,
+                         enum open_request_outcome outcome)
+{
+    char *exact = malloc(length == 0 ? 1 : length);
+    require(exact != nullptr, "exact buffer");
+    memcpy(exact, link, length);
+    struct open_request *request = nullptr;
+    enum open_request_outcome actual = open_request_create(exact, length, &request);
+    open_request_destroy(request);
+    free(exact);
+    if (actual != outcome)
+        fprintf(stderr, "open request (exact): %.*s -> %d\n", (int)length, link, (int)actual);
+    require(actual == outcome, "a link read from a buffer of exactly its length");
+}
+
+static void verify_buffer_ends(void)
+{
+    static const char *const cut[] = {
+        "nenefolio://open?category=a&note=b&text=%",
+        "nenefolio://open?category=a&note=b&text=%4",
+        "nenefolio://open?category=a&note=b&text=x%",
+        "nenefolio:",
+        "nenefolio://",
+        "nenefolio://open",
+        "nenefolio://ope",
+        "n",
+    };
+    for (size_t index = 0; index < sizeof cut / sizeof cut[0]; ++index)
+        expect_exact(cut[index], strlen(cut[index]), OPEN_REQUEST_MALFORMED);
+    static const char full[] = "nenefolio://open?category=a&note=b&text=%41";
+    expect_exact(full, sizeof full - 1, OPEN_REQUEST_ACCEPTED);
+    static const char nul[] = "nenefolio://open?category=a&note=b&text=a\0b";
+    expect_exact(nul, sizeof nul - 1, OPEN_REQUEST_MALFORMED);
+    static const char control[] = "nenefolio://open?category=a&note=b&text=a\tb";
+    expect_exact(control, sizeof control - 1, OPEN_REQUEST_MALFORMED);
+}
+
+/* 形はリンクでも、動作・相手・キーの書き方が違うもの。 */
+static void verify_strict_forms(void)
+{
+    static const char *const links[] = {
+        "nenefolio://open:80?category=a&note=b",
+        "nenefolio://user@open?category=a&note=b",
+        "nenefolio://open//?category=a&note=b",
+        "nenefolio://open?Category=a&note=b",
+        "nenefolio://open?category=a&NOTE=b",
+        "nenefolio://open?category=a&note=b&text=%C0%AF",
+        "nenefolio://open?category=a&note=b&text=%ED%A0%80",
+        "nenefolio://open?category=a&note=b&text=a%C2%85b",
+        "nenefolio://open?category=a&note=b&text=a%E2%80%A8b",
+        "nenefolio://open?category=a&note=b&text=a%E2%80%A9b",
+    };
+    for (size_t index = 0; index < sizeof links / sizeof links[0]; ++index)
+        expect(links[index], OPEN_REQUEST_MALFORMED);
+    expect("nenefolio://open?category=a&note=.md", OPEN_REQUEST_NAME_INVALID);
+    struct open_request *request = accepted("nenefolio://open?category=a&note=x.md.md&lines=4-4");
+    struct open_request_lines lines = {0, 0};
+    require(same_text(note_name_stem(open_request_note(request)), "x.md") &&
+                open_request_lines(request, &lines) && lines.first == 4 && lines.last == 4,
+            "only one .md is dropped; a range of one line written N-N is accepted");
+    open_request_destroy(request);
+    request = accepted("nenefolio://open?category=a&note=b&text=%e3%81%82&pad=1&pad=2");
+    require(same_text(open_request_text(request), "あ"),
+            "hex digits in either case; an unknown key may repeat");
+    open_request_destroy(request);
+}
+
 static void verify_names(void)
 {
     static const char *const links[] = {
@@ -187,6 +256,8 @@ void run_open_request_tests(void)
     verify_loose_forms();
     verify_malformed_shape();
     verify_malformed_values();
+    verify_buffer_ends();
+    verify_strict_forms();
     verify_names();
     verify_limits();
     verify_allocation();
