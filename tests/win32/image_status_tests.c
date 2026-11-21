@@ -11064,6 +11064,19 @@ static void outside_write(struct native_fixture *_Nonnull fixture, const char *_
     note_text_destroy(body);
 }
 
+/* Another program deletes the note this case makes. The fixture's folder outlives a run, so the
+ * case also starts by doing this. */
+static void outside_remove(const struct native_fixture *_Nonnull fixture)
+{
+    wchar_t path[storage_native_capacity];
+    size_t length = 0;
+    require(storage_native_path_fill(storage_state_directory(fixture->location), path, &length) &&
+                length + 32 <= storage_native_capacity,
+            "outside note path fits");
+    memcpy(path + length, L"\\schedule\\made-outside.md", 26 * sizeof(wchar_t));
+    (void)DeleteFileW(path);
+}
+
 /* One turn of the message loop's idle work, as the loop gives it when the queue is empty. */
 static void outside_idle(struct folio_window *_Nonnull window)
 {
@@ -11123,6 +11136,8 @@ static void outside_reading(struct native_fixture *_Nonnull fixture,
 static void outside_lists(struct native_fixture *_Nonnull fixture,
                           struct folio_window *_Nonnull window)
 {
+    outside_remove(fixture);
+    outside_return(window);
     size_t notes = folio_state_note_count(fixture->state);
     outside_write(fixture, "made-outside", "外で作ったノート。\n");
     require(folio_state_note_count(fixture->state) == notes, "the list is as it was");
@@ -11142,6 +11157,10 @@ static void outside_lists(struct native_fixture *_Nonnull fixture,
     outside_idle(window);
     require(outside_shows(window, L"面が開いているあいだに外で書いた。"),
             "and the reading follows when the surface closes");
+    outside_remove(fixture);
+    outside_return(window);
+    require(folio_state_note_count(fixture->state) == notes,
+            "a note deleted outside leaves the list");
 }
 
 /* Entering the edit reads a changed file first; an edit that is open is only told. */
