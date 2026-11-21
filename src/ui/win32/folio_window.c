@@ -937,6 +937,7 @@ static enum folio_state_outcome prepare_name_operation(struct folio_window *_Non
 static void set_pane_notice(struct folio_window *_Nonnull self, enum pane_notice notice);
 static bool holds_document(const struct folio_window *_Nonnull self, struct note_ref target);
 static void show_outside_change(struct folio_window *_Nonnull self);
+static void open_link_notice(struct folio_window *_Nonnull self, enum ui_text line);
 static void decorate(HWND handle, struct folio_palette palette);
 static void refresh_tooltip_style(const struct folio_window *_Nonnull self);
 static void refresh_tooltip_rects(const struct folio_window *_Nonnull self);
@@ -9560,22 +9561,44 @@ static void execute_substitute_command(struct folio_window *_Nonnull self,
     apply_substitute(self, parts.global);
 }
 
-/* `:e!`（ADR 0016 の補正 4）。前提は application が判定し、戻す本文はノート切替と同じ
- * show_note の経路で流し込む。保存は試みず、ディスクも読み直さない。 */
+/* 破棄の前に、名前のあるノートをファイルから読み直す（ADR0119 の決定 4: 保存が外の変更で
+ * 止まったときの出口）。*outside は、ファイルが読んでいた本文と違っていて、それを読み込んだとき。
+ * ファイルが無い・読めないときと無題は、これまでどおり最後に読んだか保存した本文へ戻す。 */
+static enum folio_state_outcome reread_for_discard(struct folio_window *_Nonnull self,
+                                                   bool *_Nonnull outside)
+{
+    bool stale = false;
+    enum folio_state_outcome outcome = folio_state_document_stale(self->state, &stale);
+    if (outcome != FOLIO_STATE_READY)
+        return outcome;
+    outcome = folio_state_reload_document(self->state);
+    *outside = stale && outcome == FOLIO_STATE_READY;
+    bool kept = outcome == FOLIO_STATE_NOTE_UNREADABLE || outcome == FOLIO_STATE_NOTHING_SELECTED;
+    return kept ? FOLIO_STATE_READY : outcome;
+}
+
+/* `:e!`（ADR 0016 の補正 4、ADR0119 の決定 4）。前提は application が判定し、戻す本文はノート切替と
+ * 同じ show_note の経路で流し込む。保存は試みない。戻す本文は、ファイルから読み直したもの。 */
 static void execute_discard_command(struct folio_window *_Nonnull self,
                                     const char *_Nonnull argument)
 {
     (void)argument;
+    bool outside = false;
     enum folio_state_outcome outcome = folio_state_discard_edits(self->state);
     if (outcome == FOLIO_STATE_READY)
-    {
+        outcome = reread_for_discard(self, &outside);
+    if (outcome == FOLIO_STATE_READY)
         outcome = show_note(self);
-    }
     if (outcome != FOLIO_STATE_READY)
     {
         report_outcome(self, outcome);
         return;
     }
+    /* show_note が入口で印を下げるので、その後に立てる。 */
+    if (folio_state_select_notice(self->state) == FOLIO_STATE_NOTE_UNEDITABLE)
+        set_pane_notice(self, PANE_NOTICE_NOTE_UNEDITABLE);
+    else if (outside)
+        open_link_notice(self, UI_TEXT_OUTSIDE_RELOADED);
     if (!hide_command_surface(self))
         return;
     focus_pane(self);

@@ -8959,7 +8959,7 @@ static void management_entry_refusal(struct folio_window *_Nonnull window,
     pump(window);
     struct accessible_view notice = tags_view(window, ACCESSIBLE_NOTICE, 0);
     require(folio_state_tag_management_phase(fixture->state) == TAG_MANAGEMENT_CLOSED &&
-                wcsstr(notice.name, L"ファイルの内容が変わったため保存していません。") != nullptr,
+                wcsstr(notice.name, L"ファイルが外部で変更されたため、保存していません。") != nullptr,
             "external conflict refuses entry and exposes its inline reason");
     expect_native_body(window, &before);
     verify_history_unchanged(fixture, history);

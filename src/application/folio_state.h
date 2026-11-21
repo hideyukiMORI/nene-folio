@@ -574,10 +574,10 @@ folio_state_note_changed(struct folio_state *_Nonnull state, const char16_t *_No
 [[nodiscard]] enum folio_state_outcome folio_state_end_edit(struct folio_state *_Nonnull state,
                                                             const char16_t *_Nonnull units,
                                                             size_t count);
-/* 編集を破棄して保存済みの本文に戻す（`:e!`・ADR 0016 の補正 4）。前提の判定だけで状態は変えない:
+/* 編集を破棄する（`:e!`・ADR 0016 の補正 4）。前提の判定だけで状態は変えない:
  * 未選択は NOTHING_SELECTED、閲覧中は NOT_EDITING、編集中は READY。READY なら UI が
- * folio_state_pane_text（最後に読んだか保存に成功した本文・無題なら空）を本文へ流し込み直す。
- * ディスクは読み直さない。 */
+ * folio_state_reload_document でファイルから読み直し（ADR0119 の決定 4。読めなければ最後に
+ * 読んだか保存に成功した本文のまま・無題なら空）、folio_state_pane_text を本文へ流し込み直す。 */
 [[nodiscard]] enum folio_state_outcome
 folio_state_discard_edits(const struct folio_state *_Nonnull state);
 /* 索引の絞り込み要求（FR-032 / ADR0068/0073）。UTF-16入力はC-014の例外7。

@@ -117,7 +117,6 @@ struct persistence_adapter
     char trashed_note[256];
     char created_category[64]; /* 最後に作るよう求められたカテゴリ名（複製） */
     char written_body[256];    /* 最後に書かれた本文（終端付き） */
-    bool remember_note_writes; /* Batch retry reads actual successful publications. */
     size_t saved_count;
     char saved_categories[16][64];
     char saved_notes[16][64];
@@ -708,9 +707,11 @@ static enum note_store_outcome fake_store_note(struct persistence_adapter *_Nonn
     adapter->last_note = last;
     if (read == PERSISTENCE_ABSENT)
         return request->recreate ? fake_publish_note(adapter, request) : NOTE_STORE_SOURCE_CHANGED;
+    if (read == PERSISTENCE_OUT_OF_MEMORY)
+        return NOTE_STORE_OUT_OF_MEMORY;
+    /* As the real adapter: the ordinary save cannot keep the history of a file it cannot read. */
     if (read != PERSISTENCE_LOADED)
-        return read == PERSISTENCE_OUT_OF_MEMORY ? NOTE_STORE_OUT_OF_MEMORY
-                                                 : NOTE_STORE_SOURCE_UNREADABLE;
+        return request->recreate ? NOTE_STORE_HISTORY_FAILED : NOTE_STORE_SOURCE_UNREADABLE;
     bool same = note_text_equals(current, request->expected);
     note_text_destroy(current);
     if (!same)
@@ -1799,7 +1800,6 @@ static void verify_refresh_lists_reads_only(void)
 static void verify_refresh_lists_own_writes(void)
 {
     struct persistence_adapter adapter = healthy_adapter();
-    adapter.remember_note_writes = true;
     struct folio_state *state = ready_state(&adapter);
     bool changed = true;
     bool stale = true;
@@ -3765,7 +3765,8 @@ static const char *_Nonnull const expected_failure_lines[] = {
         "このメタデータのタグは編集できません。原文を確認してください。",
     [FOLIO_STATE_TAGS_STALE] = "本文か保存先が変わりました。タグの編集を開き直してください。",
     [FOLIO_STATE_NOTE_SOURCE_CHANGED] =
-        "ファイルの内容が変わったため保存していません。編集中の本文は残っています。",
+        "ファイルが外部で変更されたため、保存していません。編集中の本文はそのままです。"
+        "別名で保存するか、編集を破棄して読み直せます。",
     [FOLIO_STATE_OUT_OF_MEMORY] = "記憶域が足りません。",
     [FOLIO_STATE_NAME_REQUIRED] =
         "無題のノートに名前をつけて保存してください。本文は残っています。",
@@ -10377,7 +10378,6 @@ static struct persistence_adapter management_adapter(void)
 {
     struct persistence_adapter adapter = preparation_adapter();
     adapter.note_body = "---\ntags: [red, blue]\n---\nneedle";
-    adapter.remember_note_writes = true;
     return adapter;
 }
 

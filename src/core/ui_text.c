@@ -798,9 +798,11 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
          "Tags in this metadata cannot be edited. Check the source text.",
          "无法编辑此元数据的标签。请检查原文。"},
     [UI_TEXT_FAILURE_NOTE_SOURCE_CHANGED] =
-        {"ファイルの内容が変わったため保存していません。編集中の本文は残っています。",
-         "The file changed, so it was not saved. Your edited text is still available.",
-         "文件内容已更改，因此未保存。正在编辑的文本仍然保留。"},
+        {"ファイルが外部で変更されたため、保存していません。編集中の本文はそのままです。"
+         "別名で保存するか、編集を破棄して読み直せます。",
+         "The file was changed outside NeNe Folio, so it was not saved. The body being edited "
+         "is kept. Save it under another name, or discard the edits and reload.",
+         "文件已在外部被更改，因此未保存。编辑中的正文保持不变。可另存为其他名称，或放弃编辑并重新载入。"},
     [UI_TEXT_FAILURE_TAGS_STALE] = {"本文か保存先が変わりました。タグの編集を開き直してください。",
                                     "The text or destination changed. Reopen tag editing.",
                                     "正文或保存位置已改变。请重新打开标签编辑。"},

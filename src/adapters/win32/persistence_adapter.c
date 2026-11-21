@@ -636,7 +636,9 @@ static enum note_store_outcome checked_note_store(struct persistence_adapter *_N
     case NOTE_STORE_DIFFERENT:
         return NOTE_STORE_SOURCE_CHANGED;
     case NOTE_STORE_INVALID_SOURCE:
-        return NOTE_STORE_SOURCE_UNREADABLE;
+        /* The ordinary save was loaded from this file as text: bytes that are no text now were
+         * written outside, and the save says so (it is not the note that cannot be read). */
+        return request->recreate ? NOTE_STORE_SOURCE_CHANGED : NOTE_STORE_SOURCE_UNREADABLE;
     case NOTE_STORE_VALIDATION_OUT_OF_MEMORY:
         return NOTE_STORE_OUT_OF_MEMORY;
     }
