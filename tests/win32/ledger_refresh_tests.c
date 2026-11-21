@@ -354,12 +354,13 @@ static void verify_guarded_save_files(struct fixture *_Nonnull fixture)
 {
     struct note_ref delta = note_at(fixture, "other", "delta");
     write_file(fixture, L"other", L"delta.md", "\xEF\xBB\xBF# crlf\r\nbody\r\n");
-    require(folio_state_select_note(fixture->state, delta.category, delta.note,
-                                    FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
-                folio_state_begin_edit(fixture->state) == FOLIO_STATE_READY &&
-                folio_state_store_note(fixture->state, u"first", 5) == FOLIO_STATE_READY &&
-                folio_state_store_note(fixture->state, u"second", 6) == FOLIO_STATE_READY,
-            "a note read with a BOM and CRLF is saved twice: its own form is not an outside change");
+    require(
+        folio_state_select_note(fixture->state, delta.category, delta.note,
+                                FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
+            folio_state_begin_edit(fixture->state) == FOLIO_STATE_READY &&
+            folio_state_store_note(fixture->state, u"first", 5) == FOLIO_STATE_READY &&
+            folio_state_store_note(fixture->state, u"second", 6) == FOLIO_STATE_READY,
+        "a note read with a BOM and CRLF is saved twice: its own form is not an outside change");
     write_file(fixture, L"other", L"delta.md", "\xFF\xFE not text\n");
     require(folio_state_store_note(fixture->state, u"third", 5) == FOLIO_STATE_NOTE_SOURCE_CHANGED,
             "bytes written outside that are no text stop the save as an outside change");
@@ -367,8 +368,8 @@ static void verify_guarded_save_files(struct fixture *_Nonnull fixture)
     write_file(fixture, L"other", L"delta.md", "# theirs\n");
     wchar_t path[storage_native_capacity];
     compose(fixture, L"other", L"delta.md", path);
-    HANDLE held = CreateFileW(path, GENERIC_READ, 0, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL,
-                              nullptr);
+    HANDLE held =
+        CreateFileW(path, GENERIC_READ, 0, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
     require(held != INVALID_HANDLE_VALUE, "another program holds the file open");
     enum folio_state_outcome locked = folio_state_store_note(fixture->state, u"third", 5);
     CloseHandle(held);

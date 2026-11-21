@@ -8959,7 +8959,8 @@ static void management_entry_refusal(struct folio_window *_Nonnull window,
     pump(window);
     struct accessible_view notice = tags_view(window, ACCESSIBLE_NOTICE, 0);
     require(folio_state_tag_management_phase(fixture->state) == TAG_MANAGEMENT_CLOSED &&
-                wcsstr(notice.name, L"ファイルが外部で変更されたため、保存していません。") != nullptr,
+                wcsstr(notice.name, L"ファイルが外部で変更されたため、保存していません。") !=
+                    nullptr,
             "external conflict refuses entry and exposes its inline reason");
     expect_native_body(window, &before);
     verify_history_unchanged(fixture, history);
@@ -11238,8 +11239,9 @@ static void outside_editing(struct native_fixture *_Nonnull fixture,
 static void outside_stopped(struct native_fixture *_Nonnull fixture,
                             struct folio_window *_Nonnull window)
 {
-    static const wchar_t stopped[] = L"ファイルが外部で変更されたため、保存していません。編集中の本文は"
-                                     L"そのままです。別名で保存するか、編集を破棄して読み直せます。";
+    static const wchar_t stopped[] =
+        L"ファイルが外部で変更されたため、保存していません。編集中の本文は"
+        L"そのままです。別名で保存するか、編集を破棄して読み直せます。";
     HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
     HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
     (void)native_key_input(window, 'S', FCONTROL);
@@ -11283,7 +11285,8 @@ static void outside_discarded(struct native_fixture *_Nonnull fixture,
     struct persistence_port disk = persistence_adapter_port(fixture->files);
     struct note_text *file = nullptr;
     require(disk.read_note(disk.adapter, "schedule", "one", &file) == PERSISTENCE_LOADED &&
-                file != nullptr && strstr(note_text_bytes(file), "編集中に外で書いた。") != nullptr &&
+                file != nullptr &&
+                strstr(note_text_bytes(file), "編集中に外で書いた。") != nullptr &&
                 strstr(note_text_bytes(file), "追記") != nullptr,
             "the next save, made from the outside version, is written");
     note_text_destroy(file);

@@ -3279,7 +3279,8 @@ static enum folio_state_outcome refresh_copy(struct folio_state *_Nonnull state)
 }
 
 /* 正規化済みの本文を書き戻し、表示値も作り直す。書けなければ何も変えない（ADR 0006 の決定 6）。
- * 履歴を残せなければ書き戻しにも進まない（ADR 0012 の決定 2）。 */
+ * 履歴を残せなければ書き戻しにも進まない（ADR 0012 の決定 2）。どの保存も、ファイルが読んだ本文の
+ * ままであることを保存先に確かめさせる（ADR0119 の決定 4）。 */
 static enum folio_state_outcome store_edited(struct folio_state *_Nonnull state,
                                              struct note_text *_Nonnull edited,
                                              enum note_save_mode mode)

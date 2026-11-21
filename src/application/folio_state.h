@@ -541,8 +541,10 @@ folio_state_rename_category(struct folio_state *_Nonnull state,
  * READYは元の要求を実行した意味ではない。借用rename_viewは呼び出し後に取り直す。 */
 [[nodiscard]] enum folio_state_outcome folio_state_retry_rename(struct folio_state *_Nonnull state);
 /* 編集中の本文（UTF-16 の単位列）を保存し、編集モードのまま残る（Ctrl+S）。
- * VIEWでは台帳だけ同期し本文は書かない。読んだ本文と同じなら書かない。書き戻せなければ状態は変えない（ADR
- * 0006）。 */
+ * VIEWでは台帳だけ同期し本文は書かない。読んだ本文と同じなら書かず、ファイルとも照らさない。
+ * 編集があれば、ファイルが読んだ（か最後に保存した）本文のままのときだけ書く: 外で変わっていたら
+ * NOTE_SOURCE_CHANGED で何も変えない（ADR0119 の決定 4）。外で消えたファイルは作り直す。
+ * 書き戻せなければ状態は変えない（ADR 0006）。 */
 [[nodiscard]] enum folio_state_outcome folio_state_store_note(struct folio_state *_Nonnull state,
                                                               const char16_t *_Nonnull units,
                                                               size_t count);
