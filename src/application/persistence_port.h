@@ -114,13 +114,13 @@ struct persistence_port
     enum persistence_outcome (*_Nonnull write_note_ledger)(
         struct persistence_adapter *_Nonnull adapter, const char *_Nonnull category,
         const struct note_ledger *_Nonnull ledger);
-    /* data/settings.json。無ければ ABSENT で、そのときだけ既定値で始める（ADR 0025 の決定 4）。 */
     /* ADR0119 の決定 6: data/.requests/ の「開く」依頼のファイルを、古い順に 1 つ取り出して消す。
      * 中身（capacity バイトまで）を buffer へ写して TAKEN。大きすぎる・古すぎるものは読まずに
-     * 消して DISCARDED。中身は解釈しない（検証は core の open_request）。 */
+     * 消して、渡さない。中身は解釈しない（検証は core の open_request）。 */
     enum request_outcome (*_Nonnull take_open_request)(struct persistence_adapter *_Nonnull adapter,
                                                        char *_Nonnull buffer, size_t capacity,
                                                        size_t *_Nonnull length);
+    /* data/settings.json。無ければ ABSENT で、そのときだけ既定値で始める（ADR 0025 の決定 4）。 */
     enum persistence_outcome (*_Nonnull read_settings)(
         struct persistence_adapter *_Nonnull adapter,
         struct folio_settings *_Nullable *_Nonnull out);

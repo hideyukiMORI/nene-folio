@@ -11247,6 +11247,23 @@ static void outside_request(const struct native_fixture *_Nonnull fixture,
     require(stored && written == strlen(json), "the request file is written");
 }
 
+/* The fixture's folder outlives a run: request files an earlier, failed run left are removed. */
+static void outside_requests_cleared(const struct native_fixture *_Nonnull fixture)
+{
+    static const wchar_t *const leaves[] = {L"open-1.json", L"open-2.json", L"open-3.json",
+                                            L"open-4.json", L"open-5.json", L"open-6.json"};
+    wchar_t root[storage_native_capacity];
+    size_t length = 0;
+    require(storage_native_path_fill(storage_state_directory(fixture->location), root, &length),
+            "requests folder path fits");
+    for (size_t at = 0; at < sizeof leaves / sizeof leaves[0]; ++at)
+    {
+        wchar_t path[storage_native_capacity];
+        if (swprintf_s(path, storage_native_capacity, L"%ls\\.requests\\%ls", root, leaves[at]) > 0)
+            (void)DeleteFileW(path);
+    }
+}
+
 static bool outside_request_waits(const struct native_fixture *_Nonnull fixture,
                                   const wchar_t *_Nonnull leaf)
 {
@@ -11459,6 +11476,7 @@ static void outside_refresh(struct native_fixture *_Nonnull fixture)
     require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
                 FOLIO_WINDOW_CREATED,
             "outside refresh window");
+    outside_requests_cleared(fixture);
     pump(window);
     open_link_send(window, "nenefolio://open?category=schedule&note=one");
     puts("outside refresh: the reading view");

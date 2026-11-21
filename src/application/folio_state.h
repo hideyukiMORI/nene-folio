@@ -466,8 +466,9 @@ folio_state_document_stale(struct folio_state *_Nonnull state, bool *_Nonnull st
 folio_state_reload_document(struct folio_state *_Nonnull state);
 /* #1070 / ADR0119 の決定 6: data/.requests/ に置かれた「開く」依頼のファイルを、古い順に 1 つ
  * 取り出す。ファイルは取り出した時点で消える。
- * - *out: リンクと同じ検証（open_request）を通った依頼。呼ぶ側が open_request_destroy する。
- *   形が正しくない・知らない動作や版のものは、開かずに捨てて nullptr のまま（READY）。
+ * - *out: リンクと同じ検証（open_request）を通った、いちばん古い依頼。呼ぶ側が
+ *   open_request_destroy する。入るときは nullptr を渡す。形が正しくない・知らない動作や版の
+ *   ファイルは、開かずに捨てて次を見る（1 回の呼び出しで 32 個まで）。依頼が無ければ nullptr。
  * - *pending: まだ依頼のファイルが残っているかもしれない（もう一度呼ぶ）。無ければ false。
  * 一覧も選択も変えない。開くのは呼ぶ側で、リンクと同じ道（locate_open_request → 切り替え）。 */
 [[nodiscard]] enum folio_state_outcome

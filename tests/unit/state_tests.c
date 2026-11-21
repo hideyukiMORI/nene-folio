@@ -121,6 +121,7 @@ struct persistence_adapter
     size_t request_count;
     size_t requests_taken;
     enum request_outcome request_outcome; /* NONE 以外なら、取り出しがこの結果になる */
+    bool request_endless;                 /* 依頼でないファイルが、取り出しても尽きない */
     size_t saved_count;
     char saved_categories[16][64];
     char saved_notes[16][64];
@@ -1100,21 +1101,20 @@ fake_read_note_times(struct persistence_adapter *_Nonnull adapter, const char *_
                : PERSISTENCE_OUT_OF_MEMORY;
 }
 
-/* The request files waiting in the fake folder, oldest first. A nullptr body stands for a file
- * the adapter removes unread (too large, too old). */
+/* The request files waiting in the fake folder, oldest first. With request_endless, a file
+ * that is no request is always there. */
 static enum request_outcome fake_take_open_request(struct persistence_adapter *_Nonnull adapter,
                                                    char *_Nonnull buffer, size_t capacity,
                                                    size_t *_Nonnull length)
 {
     if (adapter->request_outcome != REQUEST_NONE)
         return adapter->request_outcome;
-    if (adapter->requests_taken == adapter->request_count)
+    if (!adapter->request_endless && adapter->requests_taken == adapter->request_count)
         return REQUEST_NONE;
-    const char *_Nullable body = adapter->request_bodies[adapter->requests_taken];
+    const char *body =
+        adapter->request_endless ? "{}" : adapter->request_bodies[adapter->requests_taken];
     adapter->requests_taken += 1;
-    if (body == nullptr)
-        return REQUEST_DISCARDED;
-    require(strlen(body) <= capacity, "the fake request fits");
+    require(body != nullptr && strlen(body) <= capacity, "the fake request fits");
     memcpy(buffer, body, strlen(body));
     *length = strlen(body);
     return REQUEST_TAKEN;
@@ -2012,28 +2012,30 @@ static void verify_take_open_request(void)
     require(folio_state_take_open_request(state, &request, &pending) == FOLIO_STATE_READY &&
                 request == nullptr && !pending,
             "no request file: nothing to open and nothing left");
-    adapter.request_bodies[0] =
+    adapter.request_bodies[0] = "{\"version\":1,\"action\":\"delete\",\"category\":\"B\"}";
+    adapter.request_bodies[1] =
         "{\"version\":1,\"action\":\"open\",\"category\":\"B\",\"note\":\"one\",\"lines\":\"3\"}";
-    adapter.request_bodies[1] = nullptr;
-    adapter.request_bodies[2] = "{\"version\":1,\"action\":\"delete\",\"category\":\"B\"}";
-    adapter.request_count = 3;
+    adapter.request_bodies[2] = "not json";
+    adapter.request_bodies[3] = "[]";
+    adapter.request_count = 4;
     struct open_request_lines lines = {0, 0};
     require(folio_state_take_open_request(state, &request, &pending) == FOLIO_STATE_READY &&
-                request != nullptr && pending &&
+                request != nullptr && pending && adapter.requests_taken == 2 &&
                 same_text(category_name_text(open_request_category(request)), "B") &&
                 open_request_lines(request, &lines) && lines.first == 3,
-            "the oldest file is the request, and there may be more");
+            "a file that is no valid request is dropped and the next one is the request; there "
+            "may be more");
     open_request_destroy(request);
     request = nullptr;
     require(folio_state_take_open_request(state, &request, &pending) == FOLIO_STATE_READY &&
-                request == nullptr && pending,
-            "a file removed unread opens nothing; the next is still to be looked at");
+                request == nullptr && !pending && adapter.requests_taken == 4,
+            "the files left are no requests: all are dropped in the one call, and nothing is left");
+    adapter.request_endless = true;
+    adapter.requests_taken = 0;
     require(folio_state_take_open_request(state, &request, &pending) == FOLIO_STATE_READY &&
-                request == nullptr && pending && adapter.requests_taken == 3,
-            "a file that is no valid request is dropped, not opened");
-    require(folio_state_take_open_request(state, &request, &pending) == FOLIO_STATE_READY &&
-                request == nullptr && !pending,
-            "then nothing is left");
+                request == nullptr && pending && adapter.requests_taken == 32,
+            "one call looks at a bounded number of files and says that more may wait");
+    adapter.request_endless = false;
     adapter.request_outcome = REQUEST_OUT_OF_MEMORY;
     require(folio_state_take_open_request(state, &request, &pending) == FOLIO_STATE_OUT_OF_MEMORY &&
                 request == nullptr && !pending && adapter.note_writes == 0 && adapter.writes == 0,

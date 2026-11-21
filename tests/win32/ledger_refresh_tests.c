@@ -479,14 +479,12 @@ static void verify_request_refused(struct fixture *_Nonnull fixture)
     static char large[70001];
     memset(large, ' ', sizeof large - 1);
     request_write(fixture, L"open-large.json", large, 0);
-    require(request_take(fixture, nullptr) == REQUEST_DISCARDED &&
-                !file_exists(fixture, L".requests", L"open-large.json"),
-            "a file over the limit is removed unread");
     request_write(fixture, L"open-stale.json", "too late", 10);
-    require(request_take(fixture, nullptr) == REQUEST_DISCARDED &&
-                !file_exists(fixture, L".requests", L"open-stale.json") &&
-                request_take(fixture, nullptr) == REQUEST_NONE,
-            "a request older than five minutes is removed unopened");
+    require(request_take(fixture, nullptr) == REQUEST_NONE &&
+                !file_exists(fixture, L".requests", L"open-large.json") &&
+                !file_exists(fixture, L".requests", L"open-stale.json"),
+            "a file over the limit and one older than five minutes are removed unread, and "
+            "nothing is handed over");
     request_write(fixture, L"open-held.json", "held", 2);
     request_write(fixture, L"open-next.json", "next", 1);
     wchar_t path[storage_native_capacity];
@@ -504,6 +502,18 @@ static void verify_request_refused(struct fixture *_Nonnull fixture)
     require(request_take(fixture, "held") == REQUEST_TAKEN &&
                 request_take(fixture, nullptr) == REQUEST_NONE,
             "once it can be removed, it is taken");
+    request_write(fixture, L"open-locked.json", "read-only", 1);
+    compose(fixture, L".requests", L"open-locked.json", path);
+    require(SetFileAttributesW(path, FILE_ATTRIBUTE_READONLY) != 0, "the file is read-only");
+    require(request_take(fixture, "read-only") == REQUEST_TAKEN &&
+                !file_exists(fixture, L".requests", L"open-locked.json"),
+            "a read-only request file is taken and removed all the same");
+    wchar_t folder[storage_native_capacity];
+    compose(fixture, L".requests", L"open-folder.json", folder);
+    require(CreateDirectoryW(folder, nullptr) != 0, "a folder with a request's name");
+    require(request_take(fixture, nullptr) == REQUEST_NONE &&
+                file_exists(fixture, L".requests", L"open-folder.json"),
+            "a folder is no request and is left alone");
 }
 
 /* ADR0119 決定4 の続き: テキストでなくなったファイル・開けないファイル・BOM と CRLF のファイル、
