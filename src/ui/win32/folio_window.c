@@ -9023,8 +9023,12 @@ static void execute_mode_command(struct folio_window *_Nonnull self, enum pane_m
         report_outcome(self, outcome);
         return;
     }
+    /* 途中で外の変更を読み込んだときの 1 行は、面を隠すと消えるので立て直す。 */
+    bool told = self->notice == PANE_NOTICE_OPEN_LINK;
     if (!hide_command_surface(self))
         return;
+    if (told)
+        set_pane_notice(self, PANE_NOTICE_OPEN_LINK);
     switch (mode)
     {
     case PANE_MODE_EDIT:
@@ -9594,14 +9598,14 @@ static void execute_discard_command(struct folio_window *_Nonnull self,
         report_outcome(self, outcome);
         return;
     }
-    /* show_note が入口で印を下げるので、その後に立てる。 */
+    if (!hide_command_surface(self))
+        return;
+    focus_pane(self);
+    /* show_note も、面を隠すことも印を下げるので、その後に立てる。 */
     if (folio_state_select_notice(self->state) == FOLIO_STATE_NOTE_UNEDITABLE)
         set_pane_notice(self, PANE_NOTICE_NOTE_UNEDITABLE);
     else if (outside)
         open_link_notice(self, UI_TEXT_OUTSIDE_RELOADED);
-    if (!hide_command_surface(self))
-        return;
-    focus_pane(self);
 }
 
 /* 以下は、ほかの呼び出し元を持つ関数をコマンドの表の形（窓と引数）で受ける口。

@@ -1817,6 +1817,45 @@ static void verify_refresh_lists_own_writes(void)
     folio_state_destroy(state);
 }
 
+static enum folio_state_outcome rename_category_to(struct folio_state *_Nonnull state,
+                                                   size_t category, const char *_Nonnull text);
+
+/* The operations that save the open edit first stop with that save, before they touch the
+ * record, a ledger or the trash; a file that cannot be read keeps the ordinary save's outcome. */
+static void verify_guarded_save_stops_operations(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
+                folio_state_begin_edit(state) == FOLIO_STATE_READY,
+            "a note is open for editing");
+    size_t ledgers = adapter.writes;
+    adapter.note_body = "written outside";
+    struct note_name *name = accepted_note_name("uno");
+    require(folio_state_rename_note(state, name, u"mine", 4) == FOLIO_STATE_NOTE_SOURCE_CHANGED &&
+                adapter.renames == 0 && !adapter.journal_published,
+            "a rename stops before its record");
+    note_name_destroy(name);
+    require(folio_state_trash_note(state, at(0, 0), u"mine", 4) ==
+                    FOLIO_STATE_NOTE_SOURCE_CHANGED &&
+                adapter.trashes == 0,
+            "the trash is not reached");
+    require(rename_category_to(state, 0, "Renamed") == FOLIO_STATE_NOTE_SOURCE_CHANGED &&
+                adapter.renames == 0 && !adapter.journal_published,
+            "a category rename stops before its record");
+    require(folio_state_pane_mode(state) == PANE_MODE_EDIT && adapter.note_writes == 0 &&
+                adapter.archives == 0 && adapter.writes == ledgers &&
+                same_text(folio_state_document_name(state), "one"),
+            "nothing was written and the edit is still open");
+    adapter.note_outcome = PERSISTENCE_UNREADABLE;
+    require(folio_state_store_note(state, u"mine", 4) == FOLIO_STATE_HISTORY_FAILED &&
+                folio_state_store_note_checked(state, u"mine", 4) == FOLIO_STATE_NOTE_UNREADABLE &&
+                adapter.note_writes == 0,
+            "a file that cannot be read: the ordinary save cannot keep its history, the checked "
+            "save cannot compare");
+    folio_state_destroy(state);
+}
+
 /* ADR0119 decision 4: a save never replaces a file that changed outside since it was loaded. */
 static void verify_guarded_save(void)
 {
@@ -1969,6 +2008,7 @@ static void verify_category_refresh(void)
     verify_refresh_lists_reads_only();
     verify_refresh_lists_own_writes();
     verify_guarded_save();
+    verify_guarded_save_stops_operations();
     verify_document_stale();
     verify_reload_document();
     verify_reload_document_editing();

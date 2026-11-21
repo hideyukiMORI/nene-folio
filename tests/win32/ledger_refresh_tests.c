@@ -348,6 +348,42 @@ static void expect_delta(const struct fixture *_Nonnull fixture, const char *_No
     free(text);
 }
 
+/* ADR0119 決定4 の続き: テキストでなくなったファイル・開けないファイル・BOM と CRLF のファイル、
+ * そして破棄の出口（ファイルから読み直してから保存し直す）。 */
+static void verify_guarded_save_files(struct fixture *_Nonnull fixture)
+{
+    struct note_ref delta = note_at(fixture, "other", "delta");
+    write_file(fixture, L"other", L"delta.md", "\xEF\xBB\xBF# crlf\r\nbody\r\n");
+    require(folio_state_select_note(fixture->state, delta.category, delta.note,
+                                    FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
+                folio_state_begin_edit(fixture->state) == FOLIO_STATE_READY &&
+                folio_state_store_note(fixture->state, u"first", 5) == FOLIO_STATE_READY &&
+                folio_state_store_note(fixture->state, u"second", 6) == FOLIO_STATE_READY,
+            "a note read with a BOM and CRLF is saved twice: its own form is not an outside change");
+    write_file(fixture, L"other", L"delta.md", "\xFF\xFE not text\n");
+    require(folio_state_store_note(fixture->state, u"third", 5) == FOLIO_STATE_NOTE_SOURCE_CHANGED,
+            "bytes written outside that are no text stop the save as an outside change");
+    expect_delta(fixture, "\xFF\xFE not text\n", "and they stay on disk");
+    write_file(fixture, L"other", L"delta.md", "# theirs\n");
+    wchar_t path[storage_native_capacity];
+    compose(fixture, L"other", L"delta.md", path);
+    HANDLE held = CreateFileW(path, GENERIC_READ, 0, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL,
+                              nullptr);
+    require(held != INVALID_HANDLE_VALUE, "another program holds the file open");
+    enum folio_state_outcome locked = folio_state_store_note(fixture->state, u"third", 5);
+    CloseHandle(held);
+    require(locked == FOLIO_STATE_HISTORY_FAILED,
+            "a file that cannot be opened keeps the ordinary save's outcome");
+    expect_delta(fixture, "# theirs\n", "nothing was written over it");
+    require(folio_state_reload_document(fixture->state) == FOLIO_STATE_READY &&
+                strcmp(folio_state_pane_text(fixture->state), "# theirs\n") == 0 &&
+                folio_state_pane_mode(fixture->state) == PANE_MODE_EDIT,
+            "discarding reads the outside version from the file");
+    require(folio_state_store_note(fixture->state, u"# theirs\r\nmine", 14) == FOLIO_STATE_READY,
+            "and the next save, made from it, goes through");
+    expect_delta(fixture, "# theirs\nmine", "the file is the outside version with the edit");
+}
+
 /* ADR0119 決定4: 編集中のノートが外で書き換えられていたら、保存は止まり、外の版が残る。 */
 static void verify_guarded_save(struct fixture *_Nonnull fixture)
 {
@@ -676,6 +712,7 @@ int main(void)
     open_state(&fixture);
     puts("ledger refresh: guarded save");
     verify_guarded_save(&fixture);
+    verify_guarded_save_files(&fixture);
     puts("ledger refresh: star");
     verify_star(&fixture);
     puts("ledger refresh: reorder");

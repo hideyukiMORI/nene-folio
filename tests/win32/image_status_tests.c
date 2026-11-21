@@ -11198,11 +11198,13 @@ static void outside_editing(struct native_fixture *_Nonnull fixture,
     require(folio_state_pane_mode(fixture->state) == PANE_MODE_EDIT &&
                 outside_shows(window, L"編集に入る前に外で書いた。"),
             "the edit starts from the file as it is now");
+    expect_notice(window, L"外部の変更を読み込みました。");
     outside_write(fixture, "one", "# 編集なし\n\n何も打たずに閲覧へ戻った。\n");
     action(window, ACCESSIBLE_VIEW);
     require(folio_state_pane_mode(fixture->state) == PANE_MODE_VIEW &&
                 outside_shows(window, L"何も打たずに閲覧へ戻った。"),
             "back in the reading view without edits, the changed file is read at once");
+    expect_notice(window, L"外部の変更を読み込みました。");
     action(window, ACCESSIBLE_EDIT);
     outside_write(fixture, "one", "# リンク\n\n外で書いてからリンクで開く。\n\n次の段落。\n");
     open_link_send(window, "nenefolio://open?category=schedule&note=one&lines=3");
@@ -11230,6 +11232,63 @@ static void outside_editing(struct native_fixture *_Nonnull fixture,
     expect_notice(window, L"このノートは外部で変更されました。編集中の本文はそのままです。");
 }
 
+/* ADR0119 decision 4 in the window: a save that an outside change stopped keeps the edit, the
+ * selection and the window, and says what to do next. Comes in with an unsaved edit of "one"
+ * whose file was written outside. */
+static void outside_stopped(struct native_fixture *_Nonnull fixture,
+                            struct folio_window *_Nonnull window)
+{
+    static const wchar_t stopped[] = L"ファイルが外部で変更されたため、保存していません。編集中の本文は"
+                                     L"そのままです。別名で保存するか、編集を破棄して読み直せます。";
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
+    (void)native_key_input(window, 'S', FCONTROL);
+    pump(window);
+    require(outside_told(window, stopped), "the save says why it stopped and what can be done");
+    open_link_send(window, "nenefolio://open?category=schedule&note=two");
+    require(strcmp(folio_state_document_name(fixture->state), "one") == 0 &&
+                outside_told(window, stopped),
+            "another note does not open over the edit that could not be saved");
+    SendMessageW(root, WM_CLOSE, 0, 0);
+    pump(window);
+    require(IsWindow(root) && outside_told(window, stopped), "closing stops too; the window stays");
+    require(SendMessageW(root, WM_QUERYENDSESSION, 0, (LPARAM)ENDSESSION_LOGOFF) == FALSE,
+            "the end of the Windows session is refused, not lost");
+    SendMessageW(root, WM_ENDSESSION, FALSE, (LPARAM)ENDSESSION_LOGOFF);
+    pump(window);
+    require(folio_state_pane_mode(fixture->state) == PANE_MODE_EDIT &&
+                outside_shows(window, L"追記") && SendMessageW(body, EM_CANUNDO, 0, 0) != 0,
+            "through all of it the edit keeps its text and its Undo");
+    struct persistence_port disk = persistence_adapter_port(fixture->files);
+    struct note_text *file = nullptr;
+    require(disk.read_note(disk.adapter, "schedule", "one", &file) == PERSISTENCE_LOADED &&
+                file != nullptr && strstr(note_text_bytes(file), "編集中に外で書いた。") != nullptr,
+            "and the file keeps the outside version");
+    note_text_destroy(file);
+}
+
+/* The way out the line names: discarding reads the file, and the next save goes through. */
+static void outside_discarded(struct native_fixture *_Nonnull fixture,
+                              struct folio_window *_Nonnull window)
+{
+    invoke_operation(window, FOLIO_COMMAND_DISCARD_EDITS);
+    pump(window);
+    require(folio_state_pane_mode(fixture->state) == PANE_MODE_EDIT &&
+                outside_shows(window, L"編集中に外で書いた。") && !outside_shows(window, L"追記"),
+            "discarding shows the outside version, still in the editing view");
+    expect_notice(window, L"外部の変更を読み込みました。");
+    append_switch_text(window);
+    (void)native_key_input(window, 'S', FCONTROL);
+    pump(window);
+    struct persistence_port disk = persistence_adapter_port(fixture->files);
+    struct note_text *file = nullptr;
+    require(disk.read_note(disk.adapter, "schedule", "one", &file) == PERSISTENCE_LOADED &&
+                file != nullptr && strstr(note_text_bytes(file), "編集中に外で書いた。") != nullptr &&
+                strstr(note_text_bytes(file), "追記") != nullptr,
+            "the next save, made from the outside version, is written");
+    note_text_destroy(file);
+}
+
 static void outside_refresh(struct native_fixture *_Nonnull fixture)
 {
     require(folio_state_set_language(fixture->state, FOLIO_LANGUAGE_JA) == FOLIO_STATE_READY,
@@ -11249,6 +11308,12 @@ static void outside_refresh(struct native_fixture *_Nonnull fixture)
     puts("outside refresh: editing");
     fflush(stdout);
     outside_editing(fixture, window);
+    puts("outside refresh: a save stopped by the outside change");
+    fflush(stdout);
+    outside_stopped(fixture, window);
+    puts("outside refresh: discard reads the file");
+    fflush(stdout);
+    outside_discarded(fixture, window);
     folio_window_destroy(window);
 }
 
