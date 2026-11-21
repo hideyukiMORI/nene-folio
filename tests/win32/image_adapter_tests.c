@@ -365,10 +365,11 @@ static void adopt(const struct image_port *_Nonnull port, const wchar_t *_Nonnul
     wchar_t wide[1024];
     char narrow[3072];
     path_for(leaf, wide);
-    int bytes = WideCharToMultiByte(CP_UTF8, 0, wide, -1, narrow, (int)sizeof narrow, nullptr,
-                                    nullptr);
+    int bytes =
+        WideCharToMultiByte(CP_UTF8, 0, wide, -1, narrow, (int)sizeof narrow, nullptr, nullptr);
     struct storage_path *source = nullptr;
-    require(bytes > 1 && storage_path_create(narrow, (size_t)bytes - 1, &source) == STORAGE_PATH_READY &&
+    require(bytes > 1 &&
+                storage_path_create(narrow, (size_t)bytes - 1, &source) == STORAGE_PATH_READY &&
                 source != nullptr,
             "adopt source path");
     struct text_buffer *name = nullptr;
@@ -401,6 +402,11 @@ static void adopt_contract(const struct image_port *_Nonnull port)
     adopt(port, L"drop\\other\\photo.png", IMAGE_ADOPT_COPIED, "photo-2.png");
     adopt(port, L"drop\\other\\photo.png", IMAGE_ADOPT_PRESENT, "photo-2.png");
     adopt(port, L"A\\images\\a.png", IMAGE_ADOPT_PRESENT, "a.png");
+    make_directory(L"A\\images\\sub");
+    write_image(L"A\\images\\sub\\deep.png", (struct image_size){14, 14}, false);
+    adopt(port, L"A\\images\\sub\\deep.png", IMAGE_ADOPT_PRESENT, "sub/deep.png");
+    require(!fixture_exists(L"A\\images\\deep.png"),
+            "a file already under images is pointed at where it is, not copied");
     adopt(port, L"drop\\my photo.jpg", IMAGE_ADOPT_COPIED, "my photo.jpg");
     adopt(port, L"drop\\notes.png", IMAGE_ADOPT_NOT_IMAGE, nullptr);
     adopt(port, L"drop\\empty.png", IMAGE_ADOPT_NOT_IMAGE, nullptr);
@@ -417,13 +423,13 @@ static void adopt_contract(const struct image_port *_Nonnull port)
             "an oversized source");
     CloseHandle(file);
     adopt(port, L"drop\\photo.png", IMAGE_ADOPT_TOO_LARGE, nullptr);
-    const wchar_t *files[] = {L"A\\images\\photo.png", L"A\\images\\photo-2.png",
-                              L"A\\images\\my photo.jpg", L"drop\\photo.png",
-                              L"drop\\other\\photo.png", L"drop\\my photo.jpg",
-                              L"drop\\notes.png",    L"drop\\empty.png"};
+    const wchar_t *files[] = {
+        L"A\\images\\sub\\deep.png", L"A\\images\\photo.png", L"A\\images\\photo-2.png",
+        L"A\\images\\my photo.jpg",  L"drop\\photo.png",      L"drop\\other\\photo.png",
+        L"drop\\my photo.jpg",       L"drop\\notes.png",      L"drop\\empty.png"};
     for (size_t index = 0; index < sizeof files / sizeof files[0]; ++index)
         remove_fixture(files[index]);
-    const wchar_t *folders[] = {L"drop\\folder.png", L"drop\\other", L"drop"};
+    const wchar_t *folders[] = {L"A\\images\\sub", L"drop\\folder.png", L"drop\\other", L"drop"};
     for (size_t index = 0; index < sizeof folders / sizeof folders[0]; ++index)
     {
         path_for(folders[index], path);

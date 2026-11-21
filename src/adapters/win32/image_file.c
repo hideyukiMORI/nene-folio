@@ -248,22 +248,6 @@ void image_file_destroy(struct image_file *_Nullable file)
 
 /* ---- #1062 / ADR0120: taking a dropped image into images\ ---- */
 
-/* head\tail into out (storage_native_capacity units). False when it does not fit: the names
- * come from outside (a dropped file's own name), and swprintf_s would end the process. */
-static bool joined(wchar_t *_Nonnull out, const wchar_t *_Nonnull head, const wchar_t *_Nonnull tail)
-{
-    size_t first = wcslen(head);
-    size_t second = wcslen(tail);
-    if (first + 1 + second + 1 > storage_native_capacity)
-        return false;
-    wchar_t built[storage_native_capacity];
-    memcpy(built, head, first * sizeof *built);
-    built[first] = L'\\';
-    memcpy(built + first + 1, tail, (second + 1) * sizeof *built);
-    memcpy(out, built, (first + 1 + second + 1) * sizeof *out); /* out may be head */
-    return true;
-}
-
 /* A symbolic link or a junction: its target is not followed (ADR0120 decision 4). */
 static bool link_source(const wchar_t *_Nonnull source)
 {
