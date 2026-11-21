@@ -7,6 +7,7 @@
 #include "category_name.h"
 #include "category_rename_target.h"
 #include "clipboard_adapter.h"
+#include "data_watch.h"
 #include "drawer_layout.h"
 #include "drawer_metrics.h"
 #include "drawer_row.h"
@@ -346,6 +347,39 @@ static void expect_delta(const struct fixture *_Nonnull fixture, const char *_No
     char *_Nullable text = read_file(fixture, L"other", L"delta.md", &length);
     require(text != nullptr && strcmp(text, expected) == 0, message);
     free(text);
+}
+
+/* ADR0119 決定1: 見張り。外の書き込みで待ちが「変わった」で戻り、張り直した後は静まる。 */
+static void verify_watch(struct fixture *_Nonnull fixture)
+{
+    struct data_watch *watch = nullptr;
+    require(data_watch_open(storage_state_directory(fixture->location), &watch) ==
+                    DATA_WATCH_OPENED &&
+                watch != nullptr,
+            "the data folder can be watched");
+    MSG message;
+    require(PostThreadMessageW(GetCurrentThreadId(), WM_NULL, 0, 0) != 0 &&
+                data_watch_wait(watch) == DATA_WATCH_MESSAGE &&
+                PeekMessageW(&message, nullptr, WM_NULL, WM_NULL, PM_REMOVE) != 0,
+            "with nothing changed, the wait ends for a message");
+    write_file(fixture, L"other", L"watched.md", "# written outside\n");
+    require(data_watch_wait(watch) == DATA_WATCH_CHANGED,
+            "a file written in a category ends the wait as a change");
+    /* One write may raise several notices. With a message waiting, the wait must come to say
+     * "message": a handle left signalled would say "changed" for ever. */
+    require(PostThreadMessageW(GetCurrentThreadId(), WM_NULL, 0, 0) != 0, "a message waits");
+    unsigned changes = 0;
+    while (changes < 64 && data_watch_wait(watch) == DATA_WATCH_CHANGED)
+        changes += 1;
+    require(changes < 64 && PeekMessageW(&message, nullptr, WM_NULL, WM_NULL, PM_REMOVE) != 0,
+            "the notices are asked for again and settle");
+    delete_file(fixture, L"other", L"watched.md");
+    require(data_watch_wait(watch) == DATA_WATCH_CHANGED, "a deleted file is a change too");
+    data_watch_destroy(watch);
+    require(PostThreadMessageW(GetCurrentThreadId(), WM_NULL, 0, 0) != 0 &&
+                data_watch_wait(nullptr) == DATA_WATCH_MESSAGE &&
+                PeekMessageW(&message, nullptr, WM_NULL, WM_NULL, PM_REMOVE) != 0,
+            "without a watch the wait is for messages alone");
 }
 
 /* ADR0119 決定4 の続き: テキストでなくなったファイル・開けないファイル・BOM と CRLF のファイル、
@@ -714,6 +748,8 @@ int main(void)
     puts("ledger refresh: guarded save");
     verify_guarded_save(&fixture);
     verify_guarded_save_files(&fixture);
+    puts("ledger refresh: watch");
+    verify_watch(&fixture);
     puts("ledger refresh: star");
     verify_star(&fixture);
     puts("ledger refresh: reorder");

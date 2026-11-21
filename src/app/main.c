@@ -3,6 +3,7 @@
  * （FR-015 / ADR 0025 の決定 6）。どちらも文言は application が作る。 */
 #include "appearance_adapter.h"
 #include "clipboard_adapter.h"
+#include "data_watch.h"
 #include "folio_launch_link.h"
 #include "folio_palette.h"
 #include "folio_state.h"
@@ -72,8 +73,26 @@ static void dispatch_message(const struct folio_window *_Nonnull window, MSG *_N
     }
 }
 
+/* 空の queue での待ち。メッセージで戻れば true。data フォルダの変化で戻ったときは、窓へ知らせて
+ * から true（読み直すのは窓が静かなとき。ADR0119 の決定 1・2）。待てなくなったら false。 */
+static bool wait_for_work(struct folio_window *_Nonnull window, struct data_watch *_Nullable watch)
+{
+    switch (data_watch_wait(watch))
+    {
+    case DATA_WATCH_MESSAGE:
+        return true;
+    case DATA_WATCH_CHANGED:
+        folio_window_data_changed(window);
+        return true;
+    case DATA_WATCH_STOPPED:
+        return false;
+    }
+    return false;
+}
+
 /* 全範囲queueを空にした直後だけ一件準備し、抑止中は新規messageを待つ（ADR0068）。 */
-static void run_message_loop(struct folio_window *_Nonnull window)
+static void run_message_loop(struct folio_window *_Nonnull window,
+                             struct data_watch *_Nullable watch)
 {
     MSG message;
     for (;;)
@@ -87,7 +106,7 @@ static void run_message_loop(struct folio_window *_Nonnull window)
         }
         if (folio_window_idle_work_ready(window))
             folio_window_continue_idle_work(window);
-        else if (!WaitMessage())
+        else if (!wait_for_work(window, watch))
             break;
     }
 }
@@ -132,7 +151,13 @@ static int run(const struct folio_ports *_Nonnull ports, struct storage_state *_
     if (launch->link != nullptr)
         folio_window_open_link(window, utf8_text_bytes(launch->link),
                                utf8_text_length(launch->link));
-    run_message_loop(window);
+    /* 見張りを張れない場所（知らせを出さないフォルダ）でも起動は続ける。そのときは、ほかの
+     * アプリから戻ったときの読み直しだけが残る（ADR0119 の決定 1）。 */
+    struct data_watch *_Nullable watch = nullptr;
+    if (data_watch_open(storage_state_directory(storage), &watch) != DATA_WATCH_OPENED)
+        watch = nullptr;
+    run_message_loop(window, watch);
+    data_watch_destroy(watch);
     folio_window_destroy(window);
     folio_state_destroy(state);
     return 0;

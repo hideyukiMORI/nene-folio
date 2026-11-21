@@ -309,6 +309,9 @@ struct folio_window
 constexpr UINT_PTR minimap_timer = 84;
 constexpr UINT_PTR image_timer = 85;
 constexpr UINT_PTR discovery_motion_timer = 86;
+/* data の変化の知らせをまとめる。最後の知らせからこの間を置いて 1 回だけ読み直す（ADR0119）。 */
+constexpr UINT_PTR outside_timer = 87;
+constexpr UINT outside_settle = 300;
 /* #928: twice the first lengths (8 and 6 frames), which were too quick to be seen. */
 constexpr unsigned char discovery_open_frame_count = 16;
 constexpr unsigned char discovery_selection_frame_count = 12;
@@ -15767,8 +15770,28 @@ static void continue_images(struct folio_window *_Nonnull self)
     }
     image_progress(self);
 }
+void folio_window_data_changed(struct folio_window *_Nonnull self)
+{
+    /* Set again by every notice, so it fires once after the last. Without a timer the reading
+     * is asked for at once. */
+    if (SetTimer(self->handle, outside_timer, outside_settle, nullptr) == 0)
+        self->outside_due = true;
+}
+
+/* The notices have settled: the data folder is read when the window is quiet. */
+static void outside_settled(struct folio_window *_Nonnull self)
+{
+    KillTimer(self->handle, outside_timer);
+    self->outside_due = true;
+}
+
 static LRESULT on_minimap_timer(struct folio_window *_Nonnull self, WPARAM timer, LPARAM lparam)
 {
+    if (timer == outside_timer)
+    {
+        outside_settled(self);
+        return 0;
+    }
     if (timer == discovery_motion_timer)
     {
         discovery_motion_tick(self);
