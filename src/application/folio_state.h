@@ -464,6 +464,16 @@ folio_state_document_stale(struct folio_state *_Nonnull state, bool *_Nonnull st
  * 編集中に呼ぶと、編集の元になる本文が入れ替わる: 表示の側が本文を流し込み直す。 */
 [[nodiscard]] enum folio_state_outcome
 folio_state_reload_document(struct folio_state *_Nonnull state);
+/* #1070 / ADR0119 の決定 6: data/.requests/ に置かれた「開く」依頼のファイルを、古い順に 1 つ
+ * 取り出す。ファイルは取り出した時点で消える。
+ * - *out: リンクと同じ検証（open_request）を通った依頼。呼ぶ側が open_request_destroy する。
+ *   形が正しくない・知らない動作や版のものは、開かずに捨てて nullptr のまま（READY）。
+ * - *pending: まだ依頼のファイルが残っているかもしれない（もう一度呼ぶ）。無ければ false。
+ * 一覧も選択も変えない。開くのは呼ぶ側で、リンクと同じ道（locate_open_request → 切り替え）。 */
+[[nodiscard]] enum folio_state_outcome
+folio_state_take_open_request(struct folio_state *_Nonnull state,
+                              struct open_request *_Nullable *_Nonnull out,
+                              bool *_Nonnull pending);
 /* #1071 / ADR0118: 外から来た「開く」依頼のノートが、いまの一覧のどこにあるか。
  * 引く前に、カテゴリの台帳と、そのカテゴリのノートの台帳を読み直す（依頼を書いた側が、直前に
  * ノートを外で作っていることがある。読み直しても書かない＝ADR0117 の決定 6）。名前は ASCII の

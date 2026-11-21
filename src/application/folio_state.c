@@ -5879,6 +5879,38 @@ static bool locate_note(const struct note_ledger *_Nonnull ledger, const char *_
     return false;
 }
 
+enum folio_state_outcome folio_state_take_open_request(struct folio_state *_Nonnull state,
+                                                       struct open_request *_Nullable *_Nonnull out,
+                                                       bool *_Nonnull pending)
+{
+    *pending = false;
+    char *_Nullable buffer = malloc(open_request_file_limit);
+    if (buffer == nullptr)
+        return FOLIO_STATE_OUT_OF_MEMORY;
+    size_t length = 0;
+    enum folio_state_outcome outcome = FOLIO_STATE_READY;
+    switch (state->port.take_open_request(state->port.adapter, buffer, open_request_file_limit,
+                                          &length))
+    {
+    case REQUEST_NONE:
+        break;
+    case REQUEST_DISCARDED:
+        *pending = true;
+        break;
+    case REQUEST_TAKEN:
+        *pending = true;
+        /* A file that is no valid request is dropped here: it was removed when it was taken. */
+        if (open_request_create_json(buffer, length, out) == OPEN_REQUEST_OUT_OF_MEMORY)
+            outcome = FOLIO_STATE_OUT_OF_MEMORY;
+        break;
+    case REQUEST_OUT_OF_MEMORY:
+        outcome = FOLIO_STATE_OUT_OF_MEMORY;
+        break;
+    }
+    free(buffer);
+    return outcome;
+}
+
 enum folio_state_outcome
 folio_state_locate_open_request(struct folio_state *_Nonnull state,
                                 const struct open_request *_Nonnull request,
