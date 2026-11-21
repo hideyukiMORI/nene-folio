@@ -248,7 +248,9 @@ void image_file_destroy(struct image_file *_Nullable file)
 
 /* ---- #1062 / ADR0120: taking a dropped image into images\ ---- */
 
-/* A symbolic link or a junction: its target is not followed (ADR0120 decision 4). */
+/* The dropped file itself is a symbolic link or a junction: its target is not taken in
+ * (ADR0120 decision 4). Folders above it may be links (a redirected Documents folder): the user
+ * chose the file through them. */
 static bool link_source(const wchar_t *_Nonnull source)
 {
     WIN32_FIND_DATAW found;
@@ -313,8 +315,14 @@ static enum image_adopt_outcome read_source(const wchar_t *_Nonnull source,
     HANDLE handle = CreateFileW(source, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_DELETE, nullptr,
                                 OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (handle == INVALID_HANDLE_VALUE)
-        return GetFileAttributesW(source) != INVALID_FILE_ATTRIBUTES ? IMAGE_ADOPT_NOT_IMAGE
-                                                                     : IMAGE_ADOPT_UNREADABLE;
+    {
+        /* A folder is no image. A file that is there but does not open (held by another
+         * program, access denied) is one that cannot be read. */
+        DWORD attributes = GetFileAttributesW(source);
+        bool folder =
+            attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+        return folder ? IMAGE_ADOPT_NOT_IMAGE : IMAGE_ADOPT_UNREADABLE;
+    }
     enum image_adopt_outcome outcome = read_opened_source(handle, file);
     if (outcome != IMAGE_ADOPT_COPIED)
     {
@@ -334,7 +342,10 @@ static bool same_content(const wchar_t *_Nonnull path, const struct image_file *
     if (handle == INVALID_HANDLE_VALUE)
         return false;
     struct image_file existing = {0};
-    bool same = read_bytes(handle, &existing) == IMAGE_READY && existing.length == wanted->length &&
+    LARGE_INTEGER size;
+    /* The length first: a file of another length is not read at all. */
+    bool same = GetFileSizeEx(handle, &size) != 0 && size.QuadPart == (LONGLONG)wanted->length &&
+                read_bytes(handle, &existing) == IMAGE_READY && existing.length == wanted->length &&
                 memcmp(existing.bytes, wanted->bytes, wanted->length) == 0;
     CloseHandle(handle);
     free(existing.bytes);

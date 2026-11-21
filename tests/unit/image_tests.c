@@ -101,6 +101,18 @@ static enum image_outcome asset(struct image_adapter *_Nonnull adapter,
                                        .relative = contained ? target : ""};
     return image_asset_create(&source, out);
 }
+/* Nothing is taken in by this fake: the cases that drop files supply their own. */
+static enum image_adopt_outcome adopt(struct image_adapter *_Nonnull adapter,
+                                      const char *_Nonnull category,
+                                      const struct storage_path *_Nonnull source,
+                                      struct text_buffer *_Nonnull leaf)
+{
+    (void)adapter;
+    (void)category;
+    (void)source;
+    (void)leaf;
+    return IMAGE_ADOPT_UNREADABLE;
+}
 const struct image_port *_Nonnull test_image_port(void)
 {
     static const struct image_port port = {.adapter = &fake,
@@ -109,7 +121,8 @@ const struct image_port *_Nonnull test_image_port(void)
                                            .poll = poll,
                                            .phase = phase,
                                            .cancel = cancel,
-                                           .asset = asset};
+                                           .asset = asset,
+                                           .adopt = adopt};
     return &port;
 }
 static struct note_text *_Nonnull text(const char *_Nonnull source)
@@ -991,6 +1004,31 @@ static void expect_link(const char *_Nonnull leaf, const char *_Nonnull expected
     text_buffer_destroy(buffer);
 }
 
+/* Two images written on one line are still two images, each pointing at its own file. */
+static void expect_two_links(const char *_Nonnull first, const char *_Nonnull second)
+{
+    struct text_buffer *buffer = nullptr;
+    require(text_buffer_create(&buffer) == TEXT_BUFFER_ACCEPTED, "two links buffer");
+    image_link_append(buffer, first, strlen(first));
+    text_buffer_append_text(buffer, " and ");
+    image_link_append(buffer, second, strlen(second));
+    require(text_buffer_finish(buffer) == TEXT_BUFFER_ACCEPTED, "two links finished");
+    struct note_text *body = text(text_buffer_bytes(buffer));
+    struct markdown_rtf *rendered = render(body);
+    const struct markdown_images *images = markdown_rtf_images(rendered);
+    char targets[2][512];
+    require(snprintf(targets[0], sizeof targets[0], "images/%s", first) > 0 &&
+                snprintf(targets[1], sizeof targets[1], "images/%s", second) > 0,
+            "targets fit");
+    require(markdown_images_count(images) == 2 &&
+                strcmp(image_source_target(markdown_images_at(images, 0)), targets[0]) == 0 &&
+                strcmp(image_source_target(markdown_images_at(images, 1)), targets[1]) == 0,
+            "two images on one line are read as two images");
+    markdown_rtf_destroy(rendered);
+    note_text_destroy(body);
+    text_buffer_destroy(buffer);
+}
+
 static void expect_numbered(const char *_Nonnull leaf, size_t number, const char *_Nonnull expected)
 {
     struct text_buffer *buffer = nullptr;
@@ -1017,6 +1055,12 @@ static void image_links(void)
     expect_link("it's_#1.PNG", "![it's_#1](images/it's_#1.PNG)");
     expect_link("album/trip.2026.png", "![trip.2026](images/album/trip.2026.png)");
     expect_link("a b/.hidden", "![.hidden](<images/a b/.hidden>)");
+    /* A name that carries a character reference, or a backtick: written as %XX, so the reader
+     * does not turn it into another name or into a code span. */
+    expect_link("Tom &amp; Jerry.png", "![Tom &amp; Jerry](<images/Tom %26amp; Jerry.png>)");
+    expect_link("R&#38;D.png", "![R&#38;D](images/R%26#38;D.png)");
+    expect_link("a`b.png", "![ab](images/a%60b.png)");
+    expect_two_links("a`b.png", "c`d.png");
     static const unsigned char png[] = {0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A, 0, 0};
     static const unsigned char jpeg[] = {0xFF, 0xD8, 0xFF, 0xE0, 0};
     static const unsigned char gif[] = {'G', 'I', 'F', '8', '9', 'a', 0, 0, 0};

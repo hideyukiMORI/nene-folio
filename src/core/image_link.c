@@ -25,13 +25,15 @@ static size_t extension_start(const char *_Nonnull leaf, size_t length)
     return length;
 }
 
-/* 代替の文: 記法を閉じてしまう文字を除いて写す。 */
+/* 代替の文: 記法を閉じてしまう文字（角括弧・逆斜線）と、同じ行のほかの逆引用符と組になって
+ * 画像の記法ごとコードにしてしまう逆引用符を除いて写す。 */
 static void append_alternative(struct text_buffer *_Nonnull out, const char *_Nonnull stem,
                                size_t length)
 {
     for (size_t at = 0; at < length; ++at)
     {
-        if (stem[at] != '[' && stem[at] != ']' && stem[at] != '\\')
+        bool dropped = stem[at] == '[' || stem[at] == ']' || stem[at] == '\\' || stem[at] == '`';
+        if (!dropped)
             text_buffer_append(out, stem + at, 1);
     }
 }
@@ -46,15 +48,32 @@ static bool needs_brackets(const char *_Nonnull leaf, size_t length)
     return false;
 }
 
-/* パス: `%` だけを `%25` に替えて写す。 */
+/* パスの中で、読み手が別の意味に取る文字を %XX で書く（画像の読みは %XX を戻す）:
+ * `%` そのもの、文字の参照（&amp; など）の始まりになる `&`、コードの区切りになる逆引用符。 */
+static const char *_Nullable escaped(char byte)
+{
+    switch (byte)
+    {
+    case '%':
+        return "%25";
+    case '&':
+        return "%26";
+    case '`':
+        return "%60";
+    default:
+        return nullptr;
+    }
+}
+
 static void append_path(struct text_buffer *_Nonnull out, const char *_Nonnull leaf, size_t length)
 {
     text_buffer_append_text(out, image_link_folder);
     text_buffer_append_text(out, "/");
     for (size_t at = 0; at < length; ++at)
     {
-        if (leaf[at] == '%')
-            text_buffer_append_text(out, "%25");
+        const char *_Nullable written = escaped(leaf[at]);
+        if (written != nullptr)
+            text_buffer_append_text(out, written);
         else
             text_buffer_append(out, leaf + at, 1);
     }

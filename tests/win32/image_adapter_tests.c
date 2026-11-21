@@ -412,6 +412,13 @@ static void adopt_contract(const struct image_port *_Nonnull port)
     adopt(port, L"drop\\empty.png", IMAGE_ADOPT_NOT_IMAGE, nullptr);
     adopt(port, L"drop\\folder.png", IMAGE_ADOPT_NOT_IMAGE, nullptr);
     adopt(port, L"drop\\missing.png", IMAGE_ADOPT_UNREADABLE, nullptr);
+    wchar_t held_path[1024];
+    path_for(L"drop\\my photo.jpg", held_path);
+    HANDLE held =
+        CreateFileW(held_path, GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, 0, nullptr);
+    require(held != INVALID_HANDLE_VALUE, "another program holds a source open");
+    adopt(port, L"drop\\my photo.jpg", IMAGE_ADOPT_UNREADABLE, nullptr);
+    CloseHandle(held);
     require(!fixture_exists(L"A\\images\\notes.png") && !fixture_exists(L"A\\images\\empty.png"),
             "what is no image is not copied");
     wchar_t path[1024];
