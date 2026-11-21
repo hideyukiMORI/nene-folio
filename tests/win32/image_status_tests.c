@@ -8959,8 +8959,7 @@ static void management_entry_refusal(struct folio_window *_Nonnull window,
     pump(window);
     struct accessible_view notice = tags_view(window, ACCESSIBLE_NOTICE, 0);
     require(folio_state_tag_management_phase(fixture->state) == TAG_MANAGEMENT_CLOSED &&
-                wcsstr(notice.name, L"ファイルが外部で変更されたため、保存していません。") !=
-                    nullptr,
+                wcsstr(notice.name, L"外部で変更されたため、保存していません。") != nullptr,
             "external conflict refuses entry and exposes its inline reason");
     expect_native_body(window, &before);
     verify_history_unchanged(fixture, history);
@@ -10353,11 +10352,12 @@ static void text_menu_languages(struct native_fixture *_Nonnull fixture)
  * case runs makes the menu key another shortcut, and the menu stays open. The case states the
  * modifiers it means, none, and says so when it found some held: that is the evidence the
  * next time the full run fails here. */
-static void menu_key_closes(struct folio_window *_Nonnull window, HWND _Nonnull body)
+/* Leaves no Ctrl, Shift or Alt held in this thread's key state, keeps what was there in
+ * `original` for the caller to restore, and says so when one was held (`where` names the case). */
+static void release_modifiers(BYTE original[256], const char *_Nonnull where)
 {
     static const int modifiers[] = {VK_SHIFT,    VK_CONTROL,  VK_MENU,  VK_LSHIFT, VK_RSHIFT,
                                     VK_LCONTROL, VK_RCONTROL, VK_LMENU, VK_RMENU};
-    BYTE original[256];
     BYTE neutral[256];
     require(GetKeyboardState(original), "save the keyboard state");
     memcpy(neutral, original, sizeof neutral);
@@ -10368,10 +10368,16 @@ static void menu_key_closes(struct folio_window *_Nonnull window, HWND _Nonnull 
         neutral[modifiers[at]] = 0;
     }
     if (held)
-        printf("text menu: a modifier was held at the menu key (shift=%d ctrl=%d alt=%d)\n",
+        printf("%s: a modifier was held (shift=%d ctrl=%d alt=%d)\n", where,
                original[VK_SHIFT] >> 7, original[VK_CONTROL] >> 7, original[VK_MENU] >> 7);
     fflush(stdout);
-    require(SetKeyboardState(neutral), "no modifier is held for the menu key");
+    require(SetKeyboardState(neutral), "no modifier is held for the plain key");
+}
+
+static void menu_key_closes(struct folio_window *_Nonnull window, HWND _Nonnull body)
+{
+    BYTE original[256];
+    release_modifiers(original, "text menu, the menu key");
     /* The key goes to the open menu; a focus that is nowhere, or still in the body, would fail
      * below for another reason, and is told apart here. */
     HWND focus = GetFocus();
@@ -11067,6 +11073,18 @@ static void outside_write(struct native_fixture *_Nonnull fixture, const char *_
 
 /* Another program deletes the note this case makes. The fixture's folder outlives a run, so the
  * case also starts by doing this. */
+static void outside_delete(const struct native_fixture *_Nonnull fixture,
+                           const wchar_t *_Nonnull leaf)
+{
+    wchar_t folder[storage_native_capacity];
+    wchar_t path[storage_native_capacity];
+    size_t length = 0;
+    require(storage_native_path_fill(storage_state_directory(fixture->location), folder, &length) &&
+                swprintf_s(path, storage_native_capacity, L"%ls\\schedule\\%ls", folder, leaf) > 0,
+            "outside note path fits");
+    (void)DeleteFileW(path);
+}
+
 static void outside_remove(const struct native_fixture *_Nonnull fixture)
 {
     wchar_t path[storage_native_capacity];
@@ -11240,8 +11258,7 @@ static void outside_stopped(struct native_fixture *_Nonnull fixture,
                             struct folio_window *_Nonnull window)
 {
     static const wchar_t stopped[] =
-        L"ファイルが外部で変更されたため、保存していません。編集中の本文は"
-        L"そのままです。別名で保存するか、編集を破棄して読み直せます。";
+        L"外部で変更されたため、保存していません。別名で保存するか、編集を破棄して読み直せます。";
     HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
     HWND body = folio_window_accessible_window(window, ACCESSIBLE_BODY);
     (void)native_key_input(window, 'S', FCONTROL);
@@ -11290,6 +11307,14 @@ static void outside_discarded(struct native_fixture *_Nonnull fixture,
                 strstr(note_text_bytes(file), "追記") != nullptr,
             "the next save, made from the outside version, is written");
     note_text_destroy(file);
+    append_switch_text(window);
+    outside_delete(fixture, L"one.md");
+    invoke_operation(window, FOLIO_COMMAND_DISCARD_EDITS);
+    pump(window);
+    require(folio_state_pane_mode(fixture->state) == PANE_MODE_EDIT &&
+                outside_shows(window, L"編集中に外で書いた。"),
+            "with the file gone, discarding goes back to the text last saved");
+    expect_notice(window, L"ファイルを読み直せなかったため、最後に読んだ本文に戻しました。");
 }
 
 static void outside_refresh(struct native_fixture *_Nonnull fixture)
@@ -12861,8 +12886,13 @@ static void body_discovery_view_open(struct folio_window *_Nonnull window,
     discovery_settle(window, fixture->state);
     HWND input = folio_window_accessible_window(window, ACCESSIBLE_COMMAND_INPUT);
     SetFocus(input);
+    /* The product reads Ctrl for this key: a Ctrl left in the thread's key state makes the plain
+     * Enter the editing path (seen in parallel full runs, 2026-11-21; the same kind as #1101). */
+    BYTE original[256];
+    release_modifiers(original, "body discovery, the plain Enter");
     SendMessageW(input, WM_KEYDOWN, VK_RETURN, 0);
     pump(window);
+    require(SetKeyboardState(original), "restore the keyboard state");
     struct native_body_snapshot shown = {0};
     capture_native_body(window, &shown);
     const wchar_t *first = wcsstr(shown.text, L"needle");

@@ -9024,7 +9024,8 @@ static void execute_mode_command(struct folio_window *_Nonnull self, enum pane_m
         return;
     }
     /* 途中で外の変更を読み込んだときの 1 行は、面を隠すと消えるので立て直す。 */
-    bool told = self->notice == PANE_NOTICE_OPEN_LINK;
+    bool told =
+        self->notice == PANE_NOTICE_OPEN_LINK && self->open_line == UI_TEXT_OUTSIDE_RELOADED;
     if (!hide_command_surface(self))
         return;
     if (told)
@@ -9566,17 +9567,21 @@ static void execute_substitute_command(struct folio_window *_Nonnull self,
 }
 
 /* 破棄の前に、名前のあるノートをファイルから読み直す（ADR0119 の決定 4: 保存が外の変更で
- * 止まったときの出口）。*outside は、ファイルが読んでいた本文と違っていて、それを読み込んだとき。
- * ファイルが無い・読めないときと無題は、これまでどおり最後に読んだか保存した本文へ戻す。 */
+ * 止まったときの出口）。*told は後で出す 1 行: 読んでいた本文と違うファイルを読み込んだとき
+ * と、ファイルが無い・読めないので、これまでどおり最後に読んだか保存した本文へ戻すとき。
+ * 無題は読むファイルが無く、何も言わない。 */
 static enum folio_state_outcome reread_for_discard(struct folio_window *_Nonnull self,
-                                                   bool *_Nonnull outside)
+                                                   enum ui_text *_Nonnull told)
 {
     bool stale = false;
     enum folio_state_outcome outcome = folio_state_document_stale(self->state, &stale);
     if (outcome != FOLIO_STATE_READY)
         return outcome;
     outcome = folio_state_reload_document(self->state);
-    *outside = stale && outcome == FOLIO_STATE_READY;
+    if (outcome == FOLIO_STATE_READY && stale)
+        *told = UI_TEXT_OUTSIDE_RELOADED;
+    if (outcome == FOLIO_STATE_NOTE_UNREADABLE)
+        *told = UI_TEXT_DISCARD_KEPT;
     bool kept = outcome == FOLIO_STATE_NOTE_UNREADABLE || outcome == FOLIO_STATE_NOTHING_SELECTED;
     return kept ? FOLIO_STATE_READY : outcome;
 }
@@ -9587,10 +9592,14 @@ static void execute_discard_command(struct folio_window *_Nonnull self,
                                     const char *_Nonnull argument)
 {
     (void)argument;
-    bool outside = false;
+    enum ui_text told = UI_TEXT_EMPTY;
     enum folio_state_outcome outcome = folio_state_discard_edits(self->state);
+    /* 本文の欄が無ければ、状態を入れ替える前に止まる（入れ替えた後で流し込めないと、編集中の
+     * 本文が残ったまま、次の保存が外の版と照らされなくなる）。 */
+    if (outcome == FOLIO_STATE_READY && self->pane == nullptr)
+        outcome = FOLIO_STATE_PANE_UNAVAILABLE;
     if (outcome == FOLIO_STATE_READY)
-        outcome = reread_for_discard(self, &outside);
+        outcome = reread_for_discard(self, &told);
     if (outcome == FOLIO_STATE_READY)
         outcome = show_note(self);
     if (outcome != FOLIO_STATE_READY)
@@ -9601,11 +9610,12 @@ static void execute_discard_command(struct folio_window *_Nonnull self,
     if (!hide_command_surface(self))
         return;
     focus_pane(self);
-    /* show_note も、面を隠すことも印を下げるので、その後に立てる。 */
-    if (folio_state_select_notice(self->state) == FOLIO_STATE_NOTE_UNEDITABLE)
+    /* show_note も、面を隠すことも印を下げるので、その後に立てる。編集から始めた破棄が閲覧に
+     * なっているのは、読み直した本文が編集で保てないとき。 */
+    if (folio_state_pane_mode(self->state) == PANE_MODE_VIEW)
         set_pane_notice(self, PANE_NOTICE_NOTE_UNEDITABLE);
-    else if (outside)
-        open_link_notice(self, UI_TEXT_OUTSIDE_RELOADED);
+    else if (told != UI_TEXT_EMPTY)
+        open_link_notice(self, told);
 }
 
 /* 以下は、ほかの呼び出し元を持つ関数をコマンドの表の形（窓と引数）で受ける口。

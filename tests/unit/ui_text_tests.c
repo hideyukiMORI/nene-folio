@@ -103,6 +103,7 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_OPEN_LINK_NO_PLACE] = "指定の箇所は見つかりませんでした。ノートを開きました。",
     [UI_TEXT_OUTSIDE_RELOADED] = "外部の変更を読み込みました。",
     [UI_TEXT_OUTSIDE_CHANGED] = "このノートは外部で変更されました。編集中の本文はそのままです。",
+    [UI_TEXT_DISCARD_KEPT] = "ファイルを読み直せなかったため、最後に読んだ本文に戻しました。",
     [UI_TEXT_TAG_MANAGE_SOURCE] = "対象のタグ: {name}",
     [UI_TEXT_TAG_MANAGE_CHANGE] = "変更内容",
     [UI_TEXT_CODE_COPY] = "コピー",
@@ -791,8 +792,7 @@ static const char *_Nonnull const expected[] = {
         "このメタデータのタグは編集できません。原文を確認してください。",
     [UI_TEXT_FAILURE_TAGS_STALE] = "本文か保存先が変わりました。タグの編集を開き直してください。",
     [UI_TEXT_FAILURE_NOTE_SOURCE_CHANGED] =
-        "ファイルが外部で変更されたため、保存していません。編集中の本文はそのままです。"
-        "別名で保存するか、編集を破棄して読み直せます。",
+        "外部で変更されたため、保存していません。別名で保存するか、編集を破棄して読み直せます。",
 
 };
 

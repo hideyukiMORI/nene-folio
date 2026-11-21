@@ -3805,8 +3805,7 @@ static const char *_Nonnull const expected_failure_lines[] = {
         "このメタデータのタグは編集できません。原文を確認してください。",
     [FOLIO_STATE_TAGS_STALE] = "本文か保存先が変わりました。タグの編集を開き直してください。",
     [FOLIO_STATE_NOTE_SOURCE_CHANGED] =
-        "ファイルが外部で変更されたため、保存していません。編集中の本文はそのままです。"
-        "別名で保存するか、編集を破棄して読み直せます。",
+        "外部で変更されたため、保存していません。別名で保存するか、編集を破棄して読み直せます。",
     [FOLIO_STATE_OUT_OF_MEMORY] = "記憶域が足りません。",
     [FOLIO_STATE_NAME_REQUIRED] =
         "無題のノートに名前をつけて保存してください。本文は残っています。",
