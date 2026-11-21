@@ -1,4 +1,5 @@
 #include "tag_filter_text.h"
+#include "bounded_text.h"
 #include "folio_state.h"
 #include "note_tags.h"
 #include "ui_text.h"
@@ -13,7 +14,7 @@ void tag_filter_text_format(const struct folio_state *_Nonnull state, char *_Non
     enum folio_language language = folio_state_language(state);
     if (count == 0)
     {
-        (void)strcpy_s(out, capacity, ui_text_line(UI_TEXT_TAG_FILTER_EMPTY, language));
+        (void)bounded_text_copy(out, capacity, ui_text_line(UI_TEXT_TAG_FILTER_EMPTY, language));
         return;
     }
     enum ui_text mode =

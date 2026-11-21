@@ -4524,11 +4524,12 @@ static void failure_status(const struct folio_window *_Nonnull self,
 {
     if (outcome == self->command_failure && self->result_line[0] != '\0')
     {
-        (void)strcpy_s(out, replace_status_capacity, self->result_line);
+        (void)bounded_text_copy(out, replace_status_capacity, self->result_line);
         return;
     }
     enum folio_language language = folio_state_language(self->state);
-    size_t at = append_text(out, 0, folio_state_failure_line(outcome, language));
+    size_t at = bounded_text_copy(out, replace_status_capacity,
+                                  folio_state_failure_line(outcome, language));
     out[at] = '\0';
     size_t offset = folio_state_replace_error_offset(self->state);
     if (outcome != FOLIO_STATE_REPLACE_BAD_PATTERN || offset == 0)
@@ -5089,8 +5090,8 @@ static void tag_catalog_line(const struct folio_window *_Nonnull self, char *_No
     enum tag_catalog_status status = folio_state_tag_catalog_status(self->state);
     if (status == TAG_CATALOG_PREPARING)
     {
-        (void)strcpy_s(out, capacity,
-                       ui_text_line(UI_TEXT_TAG_PREPARING, folio_state_language(self->state)));
+        (void)bounded_text_copy(
+            out, capacity, ui_text_line(UI_TEXT_TAG_PREPARING, folio_state_language(self->state)));
         return;
     }
     if (status != TAG_CATALOG_AVAILABLE)
@@ -5154,7 +5155,7 @@ static void tag_notice_text(const struct folio_window *_Nonnull self, char *_Non
 {
     if (self->command_failure != FOLIO_STATE_READY)
     {
-        (void)strcpy_s(
+        (void)bounded_text_copy(
             out, capacity,
             folio_state_failure_line(self->command_failure, folio_state_language(self->state)));
         return;
@@ -5351,7 +5352,7 @@ static void management_notice(const struct folio_window *_Nonnull self, char *_N
     out[0] = '\0';
     if (self->command_failure != FOLIO_STATE_READY)
     {
-        (void)strcpy_s(
+        (void)bounded_text_copy(
             out, capacity,
             folio_state_failure_line(self->command_failure, folio_state_language(self->state)));
         return;
@@ -5361,8 +5362,9 @@ static void management_notice(const struct folio_window *_Nonnull self, char *_N
     struct tag_management_summary summary = folio_state_tag_management_summary(self->state);
     if (summary.notice != FOLIO_STATE_READY && summary.notice != FOLIO_STATE_CANCELLED)
     {
-        (void)strcpy_s(out, capacity,
-                       folio_state_failure_line(summary.notice, folio_state_language(self->state)));
+        (void)bounded_text_copy(
+            out, capacity,
+            folio_state_failure_line(summary.notice, folio_state_language(self->state)));
         return;
     }
     if (summary.phase != TAG_MANAGEMENT_RESULT)
@@ -6334,9 +6336,10 @@ static void status_text(const struct folio_window *_Nonnull self, char *_Nonnull
     enum ui_text notice = pane_notice_line(self);
     if (notice != UI_TEXT_EMPTY)
     {
-        (void)strcpy_s(out, draw_unit_limit,
-                       self->notice == PANE_NOTICE_COMMAND_RESULT ? self->result_line
-                                                                  : ui_text_line(notice, language));
+        (void)bounded_text_copy(out, draw_unit_limit,
+                                self->notice == PANE_NOTICE_COMMAND_RESULT
+                                    ? self->result_line
+                                    : ui_text_line(notice, language));
         return;
     }
     char note[draw_unit_limit];
@@ -6345,7 +6348,7 @@ static void status_text(const struct folio_window *_Nonnull self, char *_Nonnull
     help_hint(language, UI_TEXT_STATUS_KEYS, keys);
     if (note[0] == '\0')
     {
-        (void)strcpy_s(out, draw_unit_limit, keys);
+        (void)bounded_text_copy(out, draw_unit_limit, keys);
         return;
     }
     struct ui_text_request request = {
@@ -7316,8 +7319,8 @@ static bool band_offset_height(HDC device, enum folio_language language, RECT bo
                                int *_Nonnull maximum)
 {
     char text[draw_unit_limit];
-    size_t at =
-        append_text(text, 0, folio_state_failure_line(FOLIO_STATE_REPLACE_BAD_PATTERN, language));
+    size_t at = bounded_text_copy(
+        text, sizeof text, folio_state_failure_line(FOLIO_STATE_REPLACE_BAD_PATTERN, language));
     struct ui_text_request request = {
         .id = UI_TEXT_STATUS_REPLACE_POSITION, .language = language, .offset = SIZE_MAX};
     if (ui_text_format(&request, text + at, sizeof text - at) != UI_TEXT_FORMAT_READY)
@@ -7606,8 +7609,8 @@ static void report_code_copy(struct folio_window *_Nonnull self, size_t slot,
     enum folio_language language = folio_state_language(self->state);
     char16_t done[draw_unit_limit];
     if (outcome == FOLIO_STATE_READY)
-        (void)strcpy_s(self->result_line, sizeof self->result_line,
-                       ui_text_line(UI_TEXT_CODE_COPIED, language));
+        (void)bounded_text_copy(self->result_line, sizeof self->result_line,
+                                ui_text_line(UI_TEXT_CODE_COPIED, language));
     else
         outcome_line(self, outcome, self->result_line);
     /* 成功したときだけ、押したボタンを短い間だけ済みの表示にする。 */
@@ -9826,7 +9829,8 @@ static void trash_note_at(struct folio_window *_Nonnull self, struct note_ref ta
         return;
     }
     char removed_name[draw_unit_limit];
-    (void)strcpy_s(removed_name, sizeof removed_name, folio_state_note_name(self->state, target));
+    (void)bounded_text_copy(removed_name, sizeof removed_name,
+                            folio_state_note_name(self->state, target));
     bool current = holds_document(self, target);
     HWND focus = GetFocus();
     enum folio_state_outcome outcome = run_trash_note(self, target);
@@ -17093,7 +17097,7 @@ static void surface_empty_status(const struct folio_window *_Nonnull self, char 
         return;
     size_t count = 0;
     if (SUCCEEDED(surface_row_count(self, &count)) && count == 0)
-        (void)strcpy_s(
+        (void)bounded_text_copy(
             out, replace_status_capacity,
             ui_text_line(UI_TEXT_ACCESSIBLE_NO_RESULTS, folio_state_language(self->state)));
 }
@@ -17157,7 +17161,7 @@ static void surface_status_text(const struct folio_window *_Nonnull self, char *
     }
     if (self->command_unknown)
     {
-        (void)strcpy_s(
+        (void)bounded_text_copy(
             out, replace_status_capacity,
             ui_text_line(UI_TEXT_STATUS_COMMAND_NOT_FOUND, folio_state_language(self->state)));
         return;
@@ -20490,7 +20494,7 @@ static bool move_row_text(const struct folio_window *_Nonnull self, size_t index
         .id = UI_TEXT_MOVE_CURRENT, .language = folio_state_language(self->state), .name = name};
     if (move_row_current(self, index))
         return ui_text_format(&request, out, capacity) == UI_TEXT_FORMAT_READY;
-    return strcpy_s(out, capacity, name) == 0;
+    return bounded_text_copy(out, capacity, name) == strlen(name);
 }
 
 static void move_refresh(struct folio_window *_Nonnull self)
@@ -21268,7 +21272,7 @@ static int discovery_gutter_width(const struct folio_window *_Nonnull self)
                       ? 1
                       : note_excerpt_first_line(excerpt) + note_excerpt_line_count(excerpt) - 1;
     wchar_t number[24];
-    int length = swprintf_s(number, sizeof number / sizeof number[0], L"%zu", last);
+    int length = _snwprintf_s(number, sizeof number / sizeof number[0], _TRUNCATE, L"%zu", last);
     int width = scale(32, GetDpiForWindow(self->handle));
     HDC device = GetDC(self->discovery_preview);
     if (device == nullptr)
@@ -22370,7 +22374,7 @@ static void draw_discovery_status(const struct folio_window *_Nonnull self, HDC 
         return;
     discovery_text_status(self->state, text, sizeof text);
     if (self->command_failure != FOLIO_STATE_READY)
-        (void)strcpy_s(
+        (void)bounded_text_copy(
             text, sizeof text,
             folio_state_failure_line(self->command_failure, folio_state_language(self->state)));
     SetTextColor(device, self->palette.current_text);

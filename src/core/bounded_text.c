@@ -26,3 +26,9 @@ size_t bounded_text_append(char *_Nonnull out, size_t capacity, const char *_Non
     out[at + length] = '\0';
     return at + length;
 }
+
+size_t bounded_text_copy(char *_Nonnull out, size_t capacity, const char *_Nonnull text)
+{
+    out[0] = '\0';
+    return bounded_text_append(out, capacity, text);
+}
