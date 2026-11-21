@@ -277,6 +277,7 @@ struct folio_window
     enum ui_text session_reason;
     enum ui_text open_line; /* PANE_NOTICE_OPEN_LINK の文（#1071。#1070 の外の変更の 1 行も） */
     bool outside_away;      /* ほかのアプリへ移っている（WM_ACTIVATEAPP の FALSE から TRUE まで） */
+    bool outside_settling;  /* data の変化の知らせをまとめている（outside_timer が鳴るまで） */
     bool outside_due; /* そこから戻った。静かになったら data を読み直す（ADR0119 の決定 1・2） */
     char *_Nullable queued_link; /* 預かった「開く」依頼。メッセージの待ちの先頭で開く */
     size_t queued_length;
@@ -309,6 +310,9 @@ struct folio_window
 constexpr UINT_PTR minimap_timer = 84;
 constexpr UINT_PTR image_timer = 85;
 constexpr UINT_PTR discovery_motion_timer = 86;
+/* data の変化の知らせをまとめる。最後の知らせからこの間を置いて 1 回だけ読み直す（ADR0119）。 */
+constexpr UINT_PTR outside_timer = 87;
+constexpr UINT outside_settle = 300;
 /* #928: twice the first lengths (8 and 6 frames), which were too quick to be seen. */
 constexpr unsigned char discovery_open_frame_count = 16;
 constexpr unsigned char discovery_selection_frame_count = 12;
@@ -15767,8 +15771,36 @@ static void continue_images(struct folio_window *_Nonnull self)
     }
     image_progress(self);
 }
+void folio_window_data_changed(struct folio_window *_Nonnull self)
+{
+    if (self->handle == nullptr || self->outside_settling)
+        return; /* no window to time it, or already gathering: this notice joins the others */
+    /* Without a timer the reading is asked for at once. */
+    self->outside_settling = SetTimer(self->handle, outside_timer, outside_settle, nullptr) != 0;
+    if (!self->outside_settling)
+        self->outside_due = true;
+}
+
+bool folio_window_data_settling(const struct folio_window *_Nonnull self)
+{
+    return self->outside_settling;
+}
+
+/* The notices have settled: the data folder is read when the window is quiet. */
+static void outside_settled(struct folio_window *_Nonnull self)
+{
+    KillTimer(self->handle, outside_timer);
+    self->outside_settling = false;
+    self->outside_due = true;
+}
+
 static LRESULT on_minimap_timer(struct folio_window *_Nonnull self, WPARAM timer, LPARAM lparam)
 {
+    if (timer == outside_timer)
+    {
+        outside_settled(self);
+        return 0;
+    }
     if (timer == discovery_motion_timer)
     {
         discovery_motion_tick(self);

@@ -11208,6 +11208,49 @@ static void outside_lists(struct native_fixture *_Nonnull fixture,
             "a note deleted outside leaves the list");
 }
 
+/* Lets the window's timers fire until the gathered notices have settled (the timer that ends
+ * the gathering has fired), then gives the loop's idle turn. False when it never settled. */
+static bool outside_gathered(struct folio_window *_Nonnull window)
+{
+    MSG message;
+    for (unsigned turn = 0; turn < 100 && folio_window_data_settling(window); ++turn)
+    {
+        MsgWaitForMultipleObjects(0, nullptr, FALSE, 100, QS_TIMER);
+        while (PeekMessageW(&message, nullptr, WM_TIMER, WM_TIMER, PM_REMOVE))
+            DispatchMessageW(&message);
+    }
+    bool settled = !folio_window_data_settling(window);
+    outside_idle(window);
+    return settled;
+}
+
+/* #1070 / ADR0119 stage 4: the data folder changed while the window stayed in front. The
+ * notices are gathered, and the reading follows once, when the window is quiet. */
+static void outside_watched(struct native_fixture *_Nonnull fixture,
+                            struct folio_window *_Nonnull window)
+{
+    outside_write(fixture, "one", "# 見張り\n\n前面のまま外で書いた。\n");
+    folio_window_data_changed(window);
+    folio_window_data_changed(window);
+    outside_idle(window);
+    require(folio_window_data_settling(window) && !outside_shows(window, L"前面のまま外で書いた。"),
+            "a notice alone reads nothing: the notices are gathered first");
+    require(outside_gathered(window) && outside_shows(window, L"前面のまま外で書いた。"),
+            "after the notices settle, the changed note is read without leaving the window");
+    expect_notice(window, L"外部の変更を読み込みました。");
+    action(window, ACCESSIBLE_EDIT);
+    append_switch_text(window);
+    (void)native_key_input(window, 'S', FCONTROL);
+    pump(window);
+    folio_window_data_changed(window);
+    require(outside_gathered(window) && folio_state_pane_mode(fixture->state) == PANE_MODE_EDIT &&
+                outside_shows(window, L"追記") &&
+                !outside_told(window,
+                              L"このノートは外部で変更されました。編集中の本文はそのままです。"),
+            "the notice raised by the app's own save is not an outside change");
+    action(window, ACCESSIBLE_VIEW);
+}
+
 /* Entering the edit reads a changed file first; an edit that is open is only told. */
 static void outside_editing(struct native_fixture *_Nonnull fixture,
                             struct folio_window *_Nonnull window)
@@ -11333,6 +11376,9 @@ static void outside_refresh(struct native_fixture *_Nonnull fixture)
     puts("outside refresh: the lists, and a surface in the way");
     fflush(stdout);
     outside_lists(fixture, window);
+    puts("outside refresh: a change while the window stays in front");
+    fflush(stdout);
+    outside_watched(fixture, window);
     puts("outside refresh: editing");
     fflush(stdout);
     outside_editing(fixture, window);

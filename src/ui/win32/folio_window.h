@@ -41,6 +41,13 @@ void folio_window_continue_idle_work(struct folio_window *_Nonnull self);
  * 次が来たら新しいほうに替わる。 */
 void folio_window_open_link(struct folio_window *_Nonnull self, const char *_Nonnull bytes,
                             size_t length);
+/* #1070 / ADR0119 の決定 2: data フォルダの下で何かが変わった（アプリ自身の保存でも来る）。
+ * ここでは読まない。知らせから少し置いて、窓が静かなときに一覧と開いているノートを読み直す
+ * （ほかのアプリから戻ったときと同じ読み直し）。置いているあいだの知らせは 1 回にまとまる。 */
+void folio_window_data_changed(struct folio_window *_Nonnull self);
+/* 知らせをまとめている最中か（最初の知らせから、読み直しを頼むまで）。合成ルートは、この
+ * あいだ次の知らせを頼まない。副作用は無い。 */
+[[nodiscard]] bool folio_window_data_settling(const struct folio_window *_Nonnull self);
 void folio_window_destroy(struct folio_window *_Nullable window);
 
 /* UIAはこの表示境界だけを通る。状態の正本や保存経路をproviderへ複製しない。 */
