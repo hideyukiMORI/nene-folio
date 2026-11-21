@@ -497,7 +497,7 @@ void note_pane_code_button_attach(struct note_pane_code_button *_Nonnull button,
     button->hover = button->pressed = button->done = button->caret = no_action;
     button->label[0] = L'\0';
     button->twips = 180;
-    wcscpy_s(button->face, LF_FACESIZE, L"Segoe UI");
+    (void)wcsncpy_s(button->face, LF_FACESIZE, L"Segoe UI", _TRUNCATE);
     if (document != nullptr && note_pane_links_action_count(links) != 0)
         read_style(button, document);
 }

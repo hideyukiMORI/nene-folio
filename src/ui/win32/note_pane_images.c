@@ -55,7 +55,8 @@ static bool locate(const wchar_t *_Nonnull text, ITextDocument *_Nonnull documen
                    LONG *_Nonnull position)
 {
     wchar_t marker[40];
-    if (swprintf_s(marker, 40, L"<nenefolio:image:%zu>", index) < 0)
+    /* _TRUNCATE: a marker that did not fit is reported (-1), the process goes on. */
+    if (_snwprintf_s(marker, 40, _TRUNCATE, L"<nenefolio:image:%zu>", index) < 0)
         return false;
     size_t length = wcslen(marker);
     const wchar_t *_Nullable found = wcsstr(text, marker);
