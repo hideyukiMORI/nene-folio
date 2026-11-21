@@ -77,6 +77,10 @@ static void dispatch_message(const struct folio_window *_Nonnull window, MSG *_N
  * から true（読み直すのは窓が静かなとき。ADR0119 の決定 1・2）。待てなくなったら false。 */
 static bool wait_for_work(struct folio_window *_Nonnull window, struct data_watch *_Nullable watch)
 {
+    /* 知らせをまとめているあいだは次の知らせを頼まない: 待ちはメッセージ（まとめのタイマー）で
+     * 戻る。知らせをすぐ出し直す場所や、書き込みが続くあいだも、空回りしない。 */
+    if (!folio_window_data_settling(window))
+        data_watch_listen(watch);
     switch (data_watch_wait(watch))
     {
     case DATA_WATCH_MESSAGE:
@@ -129,10 +133,17 @@ static bool hand_over_link(const struct storage_port *_Nonnull port,
 static int run(const struct folio_ports *_Nonnull ports, struct storage_state *_Nonnull storage,
                const struct launch *_Nonnull launch)
 {
+    /* 一覧を読む前から見張る（読んでから窓が待ちに入るまでの変化を取りこぼさない）。見張りを
+     * 張れない場所（知らせを出さないフォルダ）でも起動は続け、そのときは、ほかのアプリから
+     * 戻ったときの読み直しだけが残る（ADR0119 の決定 1）。 */
+    struct data_watch *_Nullable watch = nullptr;
+    if (data_watch_open(storage_state_directory(storage), &watch) != DATA_WATCH_OPENED)
+        watch = nullptr;
     struct folio_state *_Nullable state = nullptr;
     enum folio_state_outcome loaded = folio_state_create(ports, &state);
     if (loaded != FOLIO_STATE_READY)
     {
+        data_watch_destroy(watch);
         /* 状態を作れていないので、どの言語で見せるかを尋ねる相手がまだいない（ADR 0030 の補正 7）。
          */
         report(folio_state_failure_line(loaded, FOLIO_LANGUAGE_JA));
@@ -145,17 +156,13 @@ static int run(const struct folio_ports *_Nonnull ports, struct storage_state *_
     if (folio_window_create(state, storage, launch->fonts, &window) != FOLIO_WINDOW_CREATED)
     {
         report(ui_text_line(UI_TEXT_APP_NO_WINDOW, folio_state_language(state)));
+        data_watch_destroy(watch);
         folio_state_destroy(state);
         return 1;
     }
     if (launch->link != nullptr)
         folio_window_open_link(window, utf8_text_bytes(launch->link),
                                utf8_text_length(launch->link));
-    /* 見張りを張れない場所（知らせを出さないフォルダ）でも起動は続ける。そのときは、ほかの
-     * アプリから戻ったときの読み直しだけが残る（ADR0119 の決定 1）。 */
-    struct data_watch *_Nullable watch = nullptr;
-    if (data_watch_open(storage_state_directory(storage), &watch) != DATA_WATCH_OPENED)
-        watch = nullptr;
     run_message_loop(window, watch);
     data_watch_destroy(watch);
     folio_window_destroy(window);

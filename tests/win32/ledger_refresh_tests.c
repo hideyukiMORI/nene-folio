@@ -349,7 +349,26 @@ static void expect_delta(const struct fixture *_Nonnull fixture, const char *_No
     free(text);
 }
 
-/* ADR0119 決定1: 見張り。外の書き込みで待ちが「変わった」で戻り、張り直した後は静まる。 */
+static unsigned watch_settles(struct data_watch *_Nonnull watch)
+{
+    /* One write may raise several notices. With a message waiting, the wait must come to say
+     * "message": a notice that stayed raised would say "changed" for ever. */
+    MSG message;
+    require(PostThreadMessageW(GetCurrentThreadId(), WM_NULL, 0, 0) != 0, "a message waits");
+    unsigned changes = 0;
+    data_watch_listen(watch);
+    while (changes < 64 && data_watch_wait(watch) == DATA_WATCH_CHANGED)
+    {
+        changes += 1;
+        data_watch_listen(watch);
+    }
+    require(PeekMessageW(&message, nullptr, WM_NULL, WM_NULL, PM_REMOVE) != 0,
+            "the waiting message is taken");
+    return changes;
+}
+
+/* ADR0119 決定1: 見張り。外の書き込みで待ちが「変わった」で戻り、次の知らせを頼むまでは
+ * メッセージだけを待ち、頼み直した後は静まる。 */
 static void verify_watch(struct fixture *_Nonnull fixture)
 {
     struct data_watch *watch = nullptr;
@@ -357,25 +376,24 @@ static void verify_watch(struct fixture *_Nonnull fixture)
                     DATA_WATCH_OPENED &&
                 watch != nullptr,
             "the data folder can be watched");
-    MSG message;
-    require(PostThreadMessageW(GetCurrentThreadId(), WM_NULL, 0, 0) != 0 &&
-                data_watch_wait(watch) == DATA_WATCH_MESSAGE &&
-                PeekMessageW(&message, nullptr, WM_NULL, WM_NULL, PM_REMOVE) != 0,
-            "with nothing changed, the wait ends for a message");
+    require(watch_settles(watch) < 64, "what the earlier cases wrote settles");
     write_file(fixture, L"other", L"watched.md", "# written outside\n");
     require(data_watch_wait(watch) == DATA_WATCH_CHANGED,
             "a file written in a category ends the wait as a change");
-    /* One write may raise several notices. With a message waiting, the wait must come to say
-     * "message": a handle left signalled would say "changed" for ever. */
-    require(PostThreadMessageW(GetCurrentThreadId(), WM_NULL, 0, 0) != 0, "a message waits");
-    unsigned changes = 0;
-    while (changes < 64 && data_watch_wait(watch) == DATA_WATCH_CHANGED)
-        changes += 1;
-    require(changes < 64 && PeekMessageW(&message, nullptr, WM_NULL, WM_NULL, PM_REMOVE) != 0,
-            "the notices are asked for again and settle");
+    MSG message;
+    write_file(fixture, L"other", L"watched.md", "# written outside, again\n");
+    require(PostThreadMessageW(GetCurrentThreadId(), WM_NULL, 0, 0) != 0 &&
+                data_watch_wait(watch) == DATA_WATCH_MESSAGE &&
+                PeekMessageW(&message, nullptr, WM_NULL, WM_NULL, PM_REMOVE) != 0,
+            "until the next notice is asked for, the wait is for messages alone");
+    data_watch_listen(watch);
+    require(data_watch_wait(watch) == DATA_WATCH_CHANGED,
+            "the change made meanwhile is told as soon as the notice is asked for");
+    require(watch_settles(watch) < 64, "the notices settle");
     delete_file(fixture, L"other", L"watched.md");
     require(data_watch_wait(watch) == DATA_WATCH_CHANGED, "a deleted file is a change too");
     data_watch_destroy(watch);
+    data_watch_listen(nullptr);
     require(PostThreadMessageW(GetCurrentThreadId(), WM_NULL, 0, 0) != 0 &&
                 data_watch_wait(nullptr) == DATA_WATCH_MESSAGE &&
                 PeekMessageW(&message, nullptr, WM_NULL, WM_NULL, PM_REMOVE) != 0,

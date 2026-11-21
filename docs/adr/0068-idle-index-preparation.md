@@ -46,6 +46,7 @@ OS cacheは強制的にcoldへ戻していない。CreateFileW内部の待ちの
 6. 合成ルートの既存message loopを、全範囲`PeekMessage(PM_REMOVE)`で一件取得し通常dispatchする一つのloopへ揃える。
    取得したWM_QUITはtranslate/継続より先に終了する。queueが空のときだけ、副作用のないUIの実行可能getterを調べる。
    準備要求があり通常操作可能なら一ノート継続し、準備無し/抑止中なら`WaitMessage`で新規messageを待つ。
+   （2026-11-21の補正、ADR0119の段取り4 / #1117: 待ちは`data_watch_wait`になった。dataフォルダの見張りがあり、次の知らせを頼んであるときは、メッセージか変化の知らせで戻る（`MsgWaitForMultipleObjectsEx`）。それ以外は`WaitMessage`のまま。見張りつきの待ちが失敗したら、見張りを閉じて`WaitMessage`へ戻る。）
    WaitMessage失敗はloopを終了し、無制限retryしない。空queue確認とwaitの間でqueue確認/dispatch/pumpを行わない。
    PeekMessage内でsent messageが処理された後にも実行可否を再確認できるため、解除用のWM_NULLや別timerは追加しない。
    別のdispatch loopを作らず、既存TranslateAccelerator/TranslateMessage/DispatchMessageを共用する。

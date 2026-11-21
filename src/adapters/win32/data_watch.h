@@ -7,11 +7,18 @@
 #include "data_watch_wake.h"
 struct data_watch;
 struct storage_path;
-/* root の下（サブフォルダも）の、ファイル名・フォルダ名・最終更新の変化を見張る。 */
+/* root の下（サブフォルダも）の、ファイル名・フォルダ名・大きさ・最終更新の変化を見張る。
+ * 開いた時点で、最初の知らせを待っている。 */
 [[nodiscard]] enum data_watch_outcome data_watch_open(const struct storage_path *_Nonnull root,
                                                       struct data_watch *_Nullable *_Nonnull out);
-/* メッセージが来るか、見張りが変化を知らせるまで待つ。変化で戻るときは、次の知らせを張り直して
- * ある。watch が無い（張れなかった）ときと、張り直せなくなった後は、メッセージだけを待つ。 */
+/* メッセージが来るか、見張りが変化を知らせるまで待つ。変化で戻った後は、data_watch_listen を
+ * 呼ぶまで次の知らせを待たない（メッセージだけを待つ）: 知らせをすぐ出し直す場所や、書き込みが
+ * 続くあいだも、待ちが空回りしない。watch が無い（張れなかった）ときと、知らせを頼めなくなった
+ * 後も、メッセージだけを待つ。 */
 [[nodiscard]] enum data_watch_wake data_watch_wait(struct data_watch *_Nullable watch);
+/* 次の知らせを頼む。変化で戻った後に、呼ぶ側の都合のよい時（まとめの時間の後）に呼ぶ。そのあいだ
+ * に起きた変化は OS が覚えていて、頼んだ直後の待ちがそれで戻る。待っている最中・watch が無い
+ * ときは何もしない。 */
+void data_watch_listen(struct data_watch *_Nullable watch);
 void data_watch_destroy(struct data_watch *_Nullable watch);
 #endif
