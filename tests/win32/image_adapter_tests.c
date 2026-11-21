@@ -253,6 +253,18 @@ static void rejected_files(const struct image_port *_Nonnull port)
         require(request_image(port, paths[index], &bitmap) == outcomes[index] && bitmap == nullptr,
                 "missing or prohibited source rejected");
     }
+    /* #1129: a reference longer than a native path can be is an image that cannot be read; it
+     * must not end the process (relative, and with a drive letter). */
+    static char endless[1400];
+    memcpy(endless, "images/", 7);
+    memset(endless + 7, 'a', sizeof endless - 12);
+    memcpy(endless + sizeof endless - 5, ".png", 5);
+    struct image_bitmap *_Nullable none = nullptr;
+    require(request_image(port, endless, &none) == IMAGE_UNSUPPORTED && none == nullptr,
+            "a reference too long for a path is refused");
+    memcpy(endless, "C:/aaaa", 7);
+    require(request_image(port, endless, &none) != IMAGE_READY && none == nullptr,
+            "and so is an absolute one");
     wchar_t path[1024];
     path_for(L"A\\images\\bad.png", path);
     HANDLE file = CreateFileW(path, GENERIC_WRITE, 0, nullptr, CREATE_NEW, 0, nullptr);

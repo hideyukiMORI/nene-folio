@@ -46,6 +46,32 @@ static bool regular_components(const wchar_t *_Nonnull path)
     }
     return true;
 }
+/* The paths below are built from names a note or another program supplies. swprintf_s is not
+ * used for them: when the text does not fit it does not return an error, it ends the process
+ * (#1129). These two return false instead, and the image is one that cannot be read. */
+static bool copied(wchar_t *_Nonnull out, const wchar_t *_Nonnull text)
+{
+    size_t length = wcslen(text);
+    if (length + 1 > storage_native_capacity)
+        return false;
+    memmove(out, text, (length + 1) * sizeof *out);
+    return true;
+}
+
+/* head\tail into out (storage_native_capacity units); out may be head. */
+static bool joined(wchar_t *_Nonnull out, const wchar_t *_Nonnull head,
+                   const wchar_t *_Nonnull tail)
+{
+    size_t first = wcslen(head);
+    size_t second = wcslen(tail);
+    if (first + 1 + second + 1 > storage_native_capacity)
+        return false;
+    memmove(out, head, first * sizeof *out);
+    out[first] = L'\\';
+    memcpy(out + first + 1, tail, (second + 1) * sizeof *out);
+    return true;
+}
+
 static bool path_for(const wchar_t *_Nonnull root, const struct image_request *_Nonnull request,
                      wchar_t *_Nonnull path, wchar_t *_Nonnull directory)
 {
@@ -58,14 +84,12 @@ static bool path_for(const wchar_t *_Nonnull root, const struct image_request *_
         return false;
     if (wcsncmp(root, L"\\\\?\\", 4) == 0)
         root += 4;
-    if (swprintf_s(directory, storage_native_capacity, L"%ls\\%ls", root, category) < 0)
+    if (!joined(directory, root, category))
         return false;
     wchar_t combined[storage_native_capacity];
-    int copied =
-        destination[1] == L':'
-            ? swprintf_s(combined, storage_native_capacity, L"%ls", destination)
-            : swprintf_s(combined, storage_native_capacity, L"%ls\\%ls", directory, destination);
-    if (copied < 0 || !local_disk(combined))
+    bool fits = destination[1] == L':' ? copied(combined, destination)
+                                       : joined(combined, directory, destination);
+    if (!fits || !local_disk(combined))
         return false;
     DWORD resolved = GetFullPathNameW(combined, storage_native_capacity, path, nullptr);
     return resolved != 0 && resolved < storage_native_capacity;
@@ -86,8 +110,7 @@ static bool final_path(HANDLE _Nonnull file, wchar_t *_Nonnull target)
 static size_t inside_images(const wchar_t *_Nonnull directory, const wchar_t *_Nonnull target)
 {
     wchar_t images[storage_native_capacity];
-    if (swprintf_s(images, storage_native_capacity, L"%ls\\images", directory) < 0 ||
-        !regular_components(images))
+    if (!joined(images, directory, L"images") || !regular_components(images))
         return 0;
     HANDLE folder = CreateFileW(
         images, FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
