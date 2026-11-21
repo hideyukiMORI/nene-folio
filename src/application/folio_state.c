@@ -5828,9 +5828,9 @@ enum folio_state_outcome folio_state_reload_document(struct folio_state *_Nonnul
 {
     if (state->document != FOLIO_DOCUMENT_NAMED)
         return FOLIO_STATE_NOTHING_SELECTED;
-    enum folio_state_outcome outcome = render_note(
-        state, category_ledger_name(state->categories, state->selected_category),
-        note_ledger_name(state->notes[state->selected_category], state->selected_note));
+    enum folio_state_outcome outcome =
+        render_note(state, category_ledger_name(state->categories, state->selected_category),
+                    note_ledger_name(state->notes[state->selected_category], state->selected_note));
     if (outcome != FOLIO_STATE_READY)
         return outcome;
     /* The same note with another body: what was derived from the old one goes. */

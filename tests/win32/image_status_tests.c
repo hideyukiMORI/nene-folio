@@ -134,7 +134,7 @@ static bool favorite_high_contrast;
 static bool code_copy_case;
 static bool footnote_jump_case;
 static bool definition_list_case;
-static bool open_link_case; /* #1071: a link opens a note and selects a place */
+static bool open_link_case;       /* #1071: a link opens a note and selects a place */
 static bool outside_refresh_case; /* #1070: the data folder changed while the window was away */
 static bool outline_case;
 static bool outline_96; /* #975: the same case in 96 DPI windows, as on CI */
@@ -11215,7 +11215,8 @@ static void outside_editing(struct native_fixture *_Nonnull fixture,
     append_switch_text(window);
     action(window, ACCESSIBLE_VIEW);
     outside_idle(window);
-    require(outside_shows(window, L"追記") && !outside_told(window, L"外部の変更を読み込みました。"),
+    require(outside_shows(window, L"追記") &&
+                !outside_told(window, L"外部の変更を読み込みました。"),
             "the app's own save is not a change from outside");
     action(window, ACCESSIBLE_EDIT);
     append_switch_text(window);

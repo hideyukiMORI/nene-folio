@@ -276,8 +276,8 @@ struct folio_window
     HWND _Nullable session_return_focus;
     enum ui_text session_reason;
     enum ui_text open_line; /* PANE_NOTICE_OPEN_LINK の文（#1071。#1070 の外の変更の 1 行も） */
-    bool outside_away; /* ほかのアプリへ移っている（WM_ACTIVATEAPP の FALSE から TRUE まで） */
-    bool outside_due;  /* そこから戻った。静かになったら data を読み直す（ADR0119 の決定 1・2） */
+    bool outside_away;      /* ほかのアプリへ移っている（WM_ACTIVATEAPP の FALSE から TRUE まで） */
+    bool outside_due; /* そこから戻った。静かになったら data を読み直す（ADR0119 の決定 1・2） */
     char *_Nullable queued_link; /* 預かった「開く」依頼。メッセージの待ちの先頭で開く */
     size_t queued_length;
     bool session_reason_owned;
@@ -15369,8 +15369,7 @@ static void show_outside_change(struct folio_window *_Nonnull self)
 static bool outside_refresh_ready(const struct folio_window *_Nonnull self)
 {
     return self->outside_due && self->command_surface == COMMAND_SURFACE_CLOSED &&
-           !self->filter_saving && !open_link_blocked(self) &&
-           folio_window_accessible_ready(self);
+           !self->filter_saving && !open_link_blocked(self) && folio_window_accessible_ready(self);
 }
 
 /* Reads the lists and the open note again. Nothing is written, and a list that cannot be read

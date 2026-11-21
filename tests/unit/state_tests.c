@@ -1891,8 +1891,7 @@ static void verify_reload_document_editing(void)
             "a text the editor cannot keep is shown in the reading view, and said so");
     adapter.note_body = "clean";
     require(folio_state_reload_document(state) == FOLIO_STATE_READY &&
-                folio_state_select_notice(state) == FOLIO_STATE_READY &&
-                adapter.note_writes == 0,
+                folio_state_select_notice(state) == FOLIO_STATE_READY && adapter.note_writes == 0,
             "the next reading clears that notice; nothing was written");
     folio_state_destroy(state);
 }
