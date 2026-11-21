@@ -381,7 +381,16 @@ static void verify_watch(struct fixture *_Nonnull fixture)
     require(data_watch_wait(watch) == DATA_WATCH_CHANGED,
             "a file written in a category ends the wait as a change");
     MSG message;
+    /* A second watch tells when the system has raised the notice of the next write: only then
+     * does "the first watch did not report it" mean anything. */
+    struct data_watch *witness = nullptr;
+    require(data_watch_open(storage_state_directory(fixture->location), &witness) ==
+                    DATA_WATCH_OPENED &&
+                witness != nullptr,
+            "a second watch of the same folder");
     write_file(fixture, L"other", L"watched.md", "# written outside, again\n");
+    require(data_watch_wait(witness) == DATA_WATCH_CHANGED, "the system raised the notice");
+    data_watch_destroy(witness);
     require(PostThreadMessageW(GetCurrentThreadId(), WM_NULL, 0, 0) != 0 &&
                 data_watch_wait(watch) == DATA_WATCH_MESSAGE &&
                 PeekMessageW(&message, nullptr, WM_NULL, WM_NULL, PM_REMOVE) != 0,
