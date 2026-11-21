@@ -158,6 +158,9 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
     [UI_TEXT_OUTSIDE_RELOADED] = {"外部の変更を読み込みました。",
                                   "Changes made outside NeNe Folio were loaded.",
                                   "已载入外部的更改。"},
+    [UI_TEXT_DISCARD_KEPT] = {"ファイルを読み直せなかったため、最後に読んだ本文に戻しました。",
+                              "The file could not be reloaded, so the last text read was restored.",
+                              "无法重新载入文件，已恢复为上次读取的正文。"},
     [UI_TEXT_OUTSIDE_CHANGED] =
         {"このノートは外部で変更されました。編集中の本文はそのままです。",
          "This note was changed outside NeNe Folio. Your edits are untouched.",
@@ -798,9 +801,9 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
          "Tags in this metadata cannot be edited. Check the source text.",
          "无法编辑此元数据的标签。请检查原文。"},
     [UI_TEXT_FAILURE_NOTE_SOURCE_CHANGED] =
-        {"ファイルの内容が変わったため保存していません。編集中の本文は残っています。",
-         "The file changed, so it was not saved. Your edited text is still available.",
-         "文件内容已更改，因此未保存。正在编辑的文本仍然保留。"},
+        {"外部で変更されたため、保存していません。別名で保存するか、編集を破棄して読み直せます。",
+         "Changed outside, so not saved. Save under another name, or discard edits and reload.",
+         "已在外部被更改，未保存。可另存为其他名称，或放弃编辑并重新载入。"},
     [UI_TEXT_FAILURE_TAGS_STALE] = {"本文か保存先が変わりました。タグの編集を開き直してください。",
                                     "The text or destination changed. Reopen tag editing.",
                                     "正文或保存位置已改变。请重新打开标签编辑。"},

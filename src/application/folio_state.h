@@ -541,8 +541,10 @@ folio_state_rename_category(struct folio_state *_Nonnull state,
  * READYは元の要求を実行した意味ではない。借用rename_viewは呼び出し後に取り直す。 */
 [[nodiscard]] enum folio_state_outcome folio_state_retry_rename(struct folio_state *_Nonnull state);
 /* 編集中の本文（UTF-16 の単位列）を保存し、編集モードのまま残る（Ctrl+S）。
- * VIEWでは台帳だけ同期し本文は書かない。読んだ本文と同じなら書かない。書き戻せなければ状態は変えない（ADR
- * 0006）。 */
+ * VIEWでは台帳だけ同期し本文は書かない。読んだ本文と同じなら書かず、ファイルとも照らさない。
+ * 編集があれば、ファイルが読んだ（か最後に保存した）本文のままのときだけ書く: 外で変わっていたら
+ * NOTE_SOURCE_CHANGED で何も変えない（ADR0119 の決定 4）。外で消えたファイルは作り直す。
+ * 書き戻せなければ状態は変えない（ADR 0006）。 */
 [[nodiscard]] enum folio_state_outcome folio_state_store_note(struct folio_state *_Nonnull state,
                                                               const char16_t *_Nonnull units,
                                                               size_t count);
@@ -574,10 +576,10 @@ folio_state_note_changed(struct folio_state *_Nonnull state, const char16_t *_No
 [[nodiscard]] enum folio_state_outcome folio_state_end_edit(struct folio_state *_Nonnull state,
                                                             const char16_t *_Nonnull units,
                                                             size_t count);
-/* 編集を破棄して保存済みの本文に戻す（`:e!`・ADR 0016 の補正 4）。前提の判定だけで状態は変えない:
+/* 編集を破棄する（`:e!`・ADR 0016 の補正 4）。前提の判定だけで状態は変えない:
  * 未選択は NOTHING_SELECTED、閲覧中は NOT_EDITING、編集中は READY。READY なら UI が
- * folio_state_pane_text（最後に読んだか保存に成功した本文・無題なら空）を本文へ流し込み直す。
- * ディスクは読み直さない。 */
+ * folio_state_reload_document でファイルから読み直し（ADR0119 の決定 4。読めなければ最後に
+ * 読んだか保存に成功した本文のまま・無題なら空）、folio_state_pane_text を本文へ流し込み直す。 */
 [[nodiscard]] enum folio_state_outcome
 folio_state_discard_edits(const struct folio_state *_Nonnull state);
 /* 索引の絞り込み要求（FR-032 / ADR0068/0073）。UTF-16入力はC-014の例外7。

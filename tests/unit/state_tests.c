@@ -117,7 +117,6 @@ struct persistence_adapter
     char trashed_note[256];
     char created_category[64]; /* 最後に作るよう求められたカテゴリ名（複製） */
     char written_body[256];    /* 最後に書かれた本文（終端付き） */
-    bool remember_note_writes; /* Batch retry reads actual successful publications. */
     size_t saved_count;
     char saved_categories[16][64];
     char saved_notes[16][64];
@@ -638,8 +637,6 @@ static void remember_published_note(struct persistence_adapter *_Nonnull adapter
                                     const char *_Nonnull category, const char *_Nonnull note,
                                     const struct note_text *_Nonnull body)
 {
-    if (!adapter->remember_note_writes)
-        return;
     size_t at = 0;
     while (at < adapter->saved_count && (strcmp(adapter->saved_categories[at], category) != 0 ||
                                          strcmp(adapter->saved_notes[at], note) != 0))
@@ -699,13 +696,22 @@ static enum note_store_outcome fake_store_note(struct persistence_adapter *_Nonn
     if (request->expected == nullptr)
         return fake_publish_note(adapter, request);
     struct note_text *_Nullable current = nullptr;
+    /* The real adapter compares inside its one save entry: that is no read through the port. */
+    size_t reads = adapter->note_reads;
+    size_t old_reads = adapter->old_category_reads;
+    const char *_Nullable last = adapter->last_note;
     enum persistence_outcome read =
         fake_read_note(adapter, request->category, request->note, &current);
+    adapter->note_reads = reads;
+    adapter->old_category_reads = old_reads;
+    adapter->last_note = last;
     if (read == PERSISTENCE_ABSENT)
-        return NOTE_STORE_SOURCE_CHANGED;
+        return request->recreate ? fake_publish_note(adapter, request) : NOTE_STORE_SOURCE_CHANGED;
+    if (read == PERSISTENCE_OUT_OF_MEMORY)
+        return NOTE_STORE_OUT_OF_MEMORY;
+    /* As the real adapter: the ordinary save cannot keep the history of a file it cannot read. */
     if (read != PERSISTENCE_LOADED)
-        return read == PERSISTENCE_OUT_OF_MEMORY ? NOTE_STORE_OUT_OF_MEMORY
-                                                 : NOTE_STORE_SOURCE_UNREADABLE;
+        return request->recreate ? NOTE_STORE_HISTORY_FAILED : NOTE_STORE_SOURCE_UNREADABLE;
     bool same = note_text_equals(current, request->expected);
     note_text_destroy(current);
     if (!same)
@@ -767,6 +773,7 @@ static enum persistence_outcome fake_create_note(struct persistence_adapter *_No
     require(note_text_length(body) < sizeof adapter->written_body, "created body fits");
     memcpy(adapter->written_body, note_text_bytes(body), note_text_length(body) + 1);
     folder_add(adapter, category, note);
+    remember_published_note(adapter, category, note, body); /* the file now holds this */
     if (adapter->copy_fail_at > 0)
     {
         allocation_probe_fail_at(adapter->copy_fail_at);
@@ -1793,7 +1800,6 @@ static void verify_refresh_lists_reads_only(void)
 static void verify_refresh_lists_own_writes(void)
 {
     struct persistence_adapter adapter = healthy_adapter();
-    adapter.remember_note_writes = true;
     struct folio_state *state = ready_state(&adapter);
     bool changed = true;
     bool stale = true;
@@ -1808,6 +1814,81 @@ static void verify_refresh_lists_own_writes(void)
                 folio_state_move_category(state, 0, 1) == FOLIO_STATE_READY &&
                 folio_state_refresh_lists(state, &changed) == FOLIO_STATE_READY && !changed,
             "its own star and its own category move are what the disk already says");
+    folio_state_destroy(state);
+}
+
+static enum folio_state_outcome rename_category_to(struct folio_state *_Nonnull state,
+                                                   size_t category, const char *_Nonnull text);
+
+/* The operations that save the open edit first stop with that save, before they touch the
+ * record, a ledger or the trash; a file that cannot be read keeps the ordinary save's outcome. */
+static void verify_guarded_save_stops_operations(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
+                folio_state_begin_edit(state) == FOLIO_STATE_READY,
+            "a note is open for editing");
+    size_t ledgers = adapter.writes;
+    adapter.note_body = "written outside";
+    struct note_name *name = accepted_note_name("uno");
+    require(folio_state_rename_note(state, name, u"mine", 4) == FOLIO_STATE_NOTE_SOURCE_CHANGED &&
+                adapter.renames == 0 && !adapter.journal_published,
+            "a rename stops before its record");
+    note_name_destroy(name);
+    require(folio_state_trash_note(state, at(0, 0), u"mine", 4) ==
+                    FOLIO_STATE_NOTE_SOURCE_CHANGED &&
+                adapter.trashes == 0,
+            "the trash is not reached");
+    require(rename_category_to(state, 0, "Renamed") == FOLIO_STATE_NOTE_SOURCE_CHANGED &&
+                adapter.renames == 0 && !adapter.journal_published,
+            "a category rename stops before its record");
+    require(folio_state_pane_mode(state) == PANE_MODE_EDIT && adapter.note_writes == 0 &&
+                adapter.archives == 0 && adapter.writes == ledgers &&
+                same_text(folio_state_document_name(state), "one"),
+            "nothing was written and the edit is still open");
+    adapter.note_outcome = PERSISTENCE_UNREADABLE;
+    require(folio_state_store_note(state, u"mine", 4) == FOLIO_STATE_HISTORY_FAILED &&
+                folio_state_store_note_checked(state, u"mine", 4) == FOLIO_STATE_NOTE_UNREADABLE &&
+                adapter.note_writes == 0,
+            "a file that cannot be read: the ordinary save cannot keep its history, the checked "
+            "save cannot compare");
+    folio_state_destroy(state);
+}
+
+/* ADR0119 decision 4: a save never replaces a file that changed outside since it was loaded. */
+static void verify_guarded_save(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    const char *loaded = adapter.note_body;
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
+                folio_state_begin_edit(state) == FOLIO_STATE_READY,
+            "a note is open for editing");
+    adapter.note_body = "written outside";
+    require(folio_state_store_note(state, u"mine", 4) == FOLIO_STATE_NOTE_SOURCE_CHANGED &&
+                adapter.note_writes == 0 && adapter.archives == 0,
+            "the save stops before history and before the file");
+    adapter.note_body = loaded;
+    adapter.missing_note = "one";
+    require(folio_state_store_note_checked(state, u"mine", 4) == FOLIO_STATE_NOTE_SOURCE_CHANGED &&
+                adapter.note_writes == 0,
+            "the checked save takes a removed file as a change");
+    require(folio_state_store_note(state, u"mine", 4) == FOLIO_STATE_READY &&
+                adapter.note_writes == 1 && same_text(adapter.written_body, "mine"),
+            "the ordinary save writes a removed file again");
+    adapter.missing_note = nullptr;
+    require(folio_state_store_note(state, u"mine too", 8) == FOLIO_STATE_READY &&
+                adapter.note_writes == 2,
+            "after its own save the next save goes through");
+    require(adapter.saved_count == 1, "the fake holds the one saved note");
+    memcpy(adapter.saved_bodies[0], "theirs", sizeof "theirs");
+    require(folio_state_store_note(state, u"mine too", 8) == FOLIO_STATE_READY &&
+                adapter.note_writes == 2,
+            "unedited text is neither saved nor compared");
+    require(folio_state_store_note(state, u"mine three", 10) == FOLIO_STATE_NOTE_SOURCE_CHANGED &&
+                adapter.note_writes == 2 && same_text(adapter.saved_bodies[0], "theirs"),
+            "an outside write after the app's own save stops the next save");
     folio_state_destroy(state);
 }
 
@@ -1926,6 +2007,8 @@ static void verify_category_refresh(void)
     verify_refresh_lists();
     verify_refresh_lists_reads_only();
     verify_refresh_lists_own_writes();
+    verify_guarded_save();
+    verify_guarded_save_stops_operations();
     verify_document_stale();
     verify_reload_document();
     verify_reload_document_editing();
@@ -3722,7 +3805,7 @@ static const char *_Nonnull const expected_failure_lines[] = {
         "このメタデータのタグは編集できません。原文を確認してください。",
     [FOLIO_STATE_TAGS_STALE] = "本文か保存先が変わりました。タグの編集を開き直してください。",
     [FOLIO_STATE_NOTE_SOURCE_CHANGED] =
-        "ファイルの内容が変わったため保存していません。編集中の本文は残っています。",
+        "外部で変更されたため、保存していません。別名で保存するか、編集を破棄して読み直せます。",
     [FOLIO_STATE_OUT_OF_MEMORY] = "記憶域が足りません。",
     [FOLIO_STATE_NAME_REQUIRED] =
         "無題のノートに名前をつけて保存してください。本文は残っています。",
@@ -10334,7 +10417,6 @@ static struct persistence_adapter management_adapter(void)
 {
     struct persistence_adapter adapter = preparation_adapter();
     adapter.note_body = "---\ntags: [red, blue]\n---\nneedle";
-    adapter.remember_note_writes = true;
     return adapter;
 }
 
