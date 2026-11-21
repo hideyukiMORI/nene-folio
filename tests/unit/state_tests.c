@@ -1836,6 +1836,67 @@ static void verify_document_stale(void)
     folio_state_destroy(state);
 }
 
+/* #1070 / ADR0119 decision 3: the open note is read again from its file. */
+static void verify_reload_document(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    bool stale = true;
+    require(folio_state_reload_document(state) == FOLIO_STATE_NOTHING_SELECTED,
+            "no document: nothing to read again");
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
+                test_index_filter_complete(state, u"outside", 7) == FOLIO_STATE_READY &&
+                folio_state_index_filter_count(state) == 0,
+            "no note holds the word yet");
+    adapter.note_body = "# Hello\n\nchanged outside";
+    adapter.note_outcome = PERSISTENCE_UNREADABLE;
+    require(folio_state_reload_document(state) == FOLIO_STATE_NOTE_UNREADABLE &&
+                same_text(folio_state_pane_text(state), "# Hello\n\nbody"),
+            "a file that cannot be read leaves the text that was loaded");
+    adapter.note_outcome = PERSISTENCE_LOADED;
+    require(folio_state_reload_document(state) == FOLIO_STATE_READY &&
+                same_text(folio_state_pane_text(state), "# Hello\n\nchanged outside") &&
+                same_text(folio_state_document_name(state), "one") &&
+                folio_state_pane_mode(state) == PANE_MODE_VIEW,
+            "the same note, in the same view, with the file's text");
+    require(folio_state_document_stale(state, &stale) == FOLIO_STATE_READY && !stale &&
+                folio_state_index_filter_count(state) == 1 && adapter.note_writes == 0,
+            "it is no longer stale, its search copy is the new text, and nothing was written");
+    require(folio_state_new_note(state, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
+                folio_state_reload_document(state) == FOLIO_STATE_NOTHING_SELECTED,
+            "an untitled draft has no file to read again");
+    folio_state_destroy(state);
+}
+
+/* The same while the note is being edited: the mode stays, unless the file's text is one the
+ * editor cannot keep. */
+static void verify_reload_document_editing(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    require(folio_state_select_note(state, 0, 0, FOLIO_UNTITLED_PROTECT) == FOLIO_STATE_READY &&
+                folio_state_begin_edit(state) == FOLIO_STATE_READY,
+            "the note is being edited");
+    adapter.note_body = "# Hello\n\nagain";
+    require(folio_state_reload_document(state) == FOLIO_STATE_READY &&
+                folio_state_pane_mode(state) == PANE_MODE_EDIT &&
+                same_text(folio_state_pane_text(state), "# Hello\n\nagain") &&
+                folio_state_select_notice(state) == FOLIO_STATE_READY,
+            "the edit starts again from the file's text");
+    adapter.note_body = "x\xE2\x80\xA8"
+                        "y";
+    require(folio_state_reload_document(state) == FOLIO_STATE_READY &&
+                folio_state_pane_mode(state) == PANE_MODE_VIEW &&
+                folio_state_select_notice(state) == FOLIO_STATE_NOTE_UNEDITABLE,
+            "a text the editor cannot keep is shown in the reading view, and said so");
+    adapter.note_body = "clean";
+    require(folio_state_reload_document(state) == FOLIO_STATE_READY &&
+                folio_state_select_notice(state) == FOLIO_STATE_READY &&
+                adapter.note_writes == 0,
+            "the next reading clears that notice; nothing was written");
+    folio_state_destroy(state);
+}
+
 static void verify_open_request_place(void)
 {
     struct persistence_adapter adapter = healthy_adapter();
@@ -1867,6 +1928,8 @@ static void verify_category_refresh(void)
     verify_refresh_lists_reads_only();
     verify_refresh_lists_own_writes();
     verify_document_stale();
+    verify_reload_document();
+    verify_reload_document_editing();
     verify_category_refresh_adds();
     verify_category_refresh_follows_names();
     verify_category_refresh_refuses();

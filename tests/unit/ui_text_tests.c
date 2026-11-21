@@ -101,6 +101,8 @@ static const char *_Nonnull const expected[] = {
     [UI_TEXT_OPEN_LINK_ELSEWHERE] =
         "指定の行の近くには無く、ノート内の別の場所の文を選んでいます。",
     [UI_TEXT_OPEN_LINK_NO_PLACE] = "指定の箇所は見つかりませんでした。ノートを開きました。",
+    [UI_TEXT_OUTSIDE_RELOADED] = "外部の変更を読み込みました。",
+    [UI_TEXT_OUTSIDE_CHANGED] = "このノートは外部で変更されました。編集中の本文はそのままです。",
     [UI_TEXT_TAG_MANAGE_SOURCE] = "対象のタグ: {name}",
     [UI_TEXT_TAG_MANAGE_CHANGE] = "変更内容",
     [UI_TEXT_CODE_COPY] = "コピー",

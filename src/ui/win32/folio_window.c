@@ -275,7 +275,8 @@ struct folio_window
     enum session_phase session_phase;
     HWND _Nullable session_return_focus;
     enum ui_text session_reason;
-    enum ui_text open_line;      /* PANE_NOTICE_OPEN_LINK の文（#1071） */
+    enum ui_text open_line; /* PANE_NOTICE_OPEN_LINK の文（#1071。#1070 の外の変更の 1 行も） */
+    bool outside_due; /* 窓が前面に戻った。静かになったら data を読み直す（ADR0119 の決定 1・2） */
     char *_Nullable queued_link; /* 預かった「開く」依頼。メッセージの待ちの先頭で開く */
     size_t queued_length;
     bool session_reason_owned;
@@ -934,6 +935,7 @@ static enum folio_state_outcome prepare_name_operation(struct folio_window *_Non
 }
 static void set_pane_notice(struct folio_window *_Nonnull self, enum pane_notice notice);
 static bool holds_document(const struct folio_window *_Nonnull self, struct note_ref target);
+static void show_outside_change(struct folio_window *_Nonnull self);
 static void decorate(HWND handle, struct folio_palette palette);
 static void refresh_tooltip_style(const struct folio_window *_Nonnull self);
 static void refresh_tooltip_rects(const struct folio_window *_Nonnull self);
@@ -6805,6 +6807,10 @@ static enum folio_state_outcome enter_edit(struct folio_window *_Nonnull self)
     {
         return FOLIO_STATE_NOTHING_SELECTED;
     }
+    /* 外で変わったファイルは、編集の元にする前に読み直す（ADR0119 の決定 4: 古い本文から編集を
+     * 始めると、その保存は外の変更とぶつかる）。 */
+    if (folio_state_pane_mode(self->state) == PANE_MODE_VIEW)
+        show_outside_change(self);
     /* RTF は begin_edit より先に作る。確保に失敗したら application は何も変えていない。 */
     if (self->pane == nullptr || folio_state_pane_edit_rtf(self->state) != FOLIO_STATE_READY)
     {
@@ -6843,6 +6849,8 @@ static enum folio_state_outcome flush_edit(struct folio_window *_Nonnull self)
     if (outcome == FOLIO_STATE_READY)
     {
         outcome = render_pane(self);
+        /* 編集のあいだは知らせるだけだった外の変更を、閲覧へ戻ったので確かめ直す。 */
+        self->outside_due = true;
         /* NOTEでは可視pane、それ以外は従来の索引へ戻す（ADR0047）。 */
         SetFocus(surface_return_target(self, self->handle));
     }
@@ -15314,6 +15322,62 @@ static bool open_link_blocked(const struct folio_window *_Nonnull self)
     return held || between || !IsWindowEnabled(self->handle);
 }
 
+/* #1070 / ADR0119 decision 3: the open note's file is no longer what was read. The reading view
+ * reads it again and stays where it was being read; an edit is only told, and neither its text
+ * nor its Undo is touched (decision 4). A file that cannot be read says nothing here. */
+static void show_outside_change(struct folio_window *_Nonnull self)
+{
+    bool stale = false;
+    if (self->pane == nullptr || pane_unavailable(self) ||
+        folio_state_document_stale(self->state, &stale) != FOLIO_STATE_READY || !stale)
+        return;
+    if (folio_state_pane_mode(self->state) == PANE_MODE_EDIT)
+    {
+        open_link_notice(self, UI_TEXT_OUTSIDE_CHANGED);
+        return;
+    }
+    size_t line = note_pane_first_visible_line(self->pane);
+    if (folio_state_reload_document(self->state) != FOLIO_STATE_READY)
+        return; /* unreadable since the look a moment ago: nothing was changed */
+    note_outline_hold(self->outline);
+    bool shown = render_pane(self) == FOLIO_STATE_READY;
+    if (line > 0 && !pane_unavailable(self))
+        note_pane_scroll_to_line(self->pane, line);
+    restore_outline(self);
+    if (shown)
+        open_link_notice(self, UI_TEXT_OUTSIDE_RELOADED);
+}
+
+/* The data folder is read again only while the window holds nothing: the lists are replaced,
+ * and whatever holds a place in them would then point at another note or category (#1069).
+ * The same refusals as a link, and no surface at all: the in-note search holds places in the
+ * body that reading the note again would move. No side effects: the message loop asks this
+ * between an empty queue and its wait (ADR0068). */
+static bool outside_refresh_ready(const struct folio_window *_Nonnull self)
+{
+    return self->outside_due && self->command_surface == COMMAND_SURFACE_CLOSED &&
+           !self->filter_saving && !open_link_blocked(self);
+}
+
+/* Reads the lists and the open note again. Nothing is written, and a list that cannot be read
+ * is not told here: this runs on every return to the window, and the next intent that needs
+ * the list tells it. */
+static void refresh_outside(struct folio_window *_Nonnull self)
+{
+    self->outside_due = false;
+    folio_window_begin_dispatch(self);
+    bool changed = false;
+    enum folio_state_outcome lists = folio_state_refresh_lists(self->state, &changed);
+    if (changed)
+    {
+        redraw_drawer(self);
+        InvalidateRect(self->handle, nullptr, FALSE);
+    }
+    if (lists != FOLIO_STATE_OUT_OF_MEMORY)
+        show_outside_change(self);
+    folio_window_end_dispatch(self);
+}
+
 /* Selects the place the request names in the reading view, and says so when it is not the
  * place asked for. */
 static void open_link_place(struct folio_window *_Nonnull self,
@@ -15670,6 +15734,14 @@ static LRESULT on_minimap_timer(struct folio_window *_Nonnull self, WPARAM timer
     return 0;
 }
 
+/* Back from another application, which may have written the data folder. Nothing is read
+ * here: the message loop reads when the window is quiet (ADR0119 decisions 1 and 2). */
+static void application_activation(struct folio_window *_Nonnull self, WPARAM wparam)
+{
+    if (wparam != FALSE)
+        self->outside_due = true;
+}
+
 static LRESULT on_shell_message(struct folio_window *_Nonnull self, UINT message, WPARAM wparam,
                                 LPARAM lparam)
 {
@@ -15701,6 +15773,9 @@ static LRESULT on_shell_message(struct folio_window *_Nonnull self, UINT message
         return DefWindowProcW(self->handle, message, wparam, lparam);
     case WM_SYSCOMMAND:
         return shell_system_action(self, wparam, lparam);
+    case WM_ACTIVATEAPP:
+        application_activation(self, wparam);
+        return DefWindowProcW(self->handle, message, wparam, lparam);
     default:
         return on_child_request(self, message, wparam, lparam);
     }
@@ -19641,6 +19716,8 @@ static bool minimap_idle_ready(const struct folio_window *_Nonnull self)
 
 bool folio_window_idle_work_ready(const struct folio_window *_Nonnull self)
 {
+    if (outside_refresh_ready(self))
+        return true;
     if (discovery_surface(self))
         return folio_state_discovery_work_pending(self->state) && !self->command_composing &&
                folio_window_accessible_ready(self);
@@ -19762,6 +19839,11 @@ static void continue_discovery(struct folio_window *_Nonnull self)
 
 void folio_window_continue_idle_work(struct folio_window *_Nonnull self)
 {
+    if (outside_refresh_ready(self))
+    {
+        refresh_outside(self);
+        return;
+    }
     if (!folio_window_idle_work_ready(self))
         return;
     if (discovery_surface(self))

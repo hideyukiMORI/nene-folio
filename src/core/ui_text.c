@@ -155,6 +155,13 @@ static const char *_Nonnull const catalog[][folio_language_count] = {
     [UI_TEXT_OPEN_LINK_NO_PLACE] = {"指定の箇所は見つかりませんでした。ノートを開きました。",
                                     "The place in this link wasn't found. The note is open.",
                                     "未找到指定的位置，已打开笔记。"},
+    [UI_TEXT_OUTSIDE_RELOADED] = {"外部の変更を読み込みました。",
+                                  "Changes made outside NeNe Folio were loaded.",
+                                  "已载入外部的更改。"},
+    [UI_TEXT_OUTSIDE_CHANGED] =
+        {"このノートは外部で変更されました。編集中の本文はそのままです。",
+         "This note was changed outside NeNe Folio. Your edits are untouched.",
+         "此笔记已在外部被更改。正在编辑的内容保持不变。"},
     [UI_TEXT_FAILURE_DISCOVERY_QUERY_INVALID] =
         {"検索できない文字があります。検索語を入力し直してください。",
          "The query contains invalid characters. Enter it again.",

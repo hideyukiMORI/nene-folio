@@ -458,6 +458,12 @@ folio_state_document_kind(const struct folio_state *_Nonnull state);
  * 読み直すか、知らせるだけにするかは、表示の側が表示モードで決める。 */
 [[nodiscard]] enum folio_state_outcome
 folio_state_document_stale(struct folio_state *_Nonnull state, bool *_Nonnull stale);
+/* #1070 / ADR0119 の決定 3: 開いている名前のあるノートを、ファイルから読み直す。選択も表示モードも
+ * 変えない（編集で保てない本文になったときだけ、ノートの切り替えと同じく閲覧へ落とす）。
+ * 読めなければ何も変えない（NOTE_UNREADABLE）。無題・未選択は NOTHING_SELECTED。
+ * 編集中に呼ぶと、編集の元になる本文が入れ替わる: 表示の側が本文を流し込み直す。 */
+[[nodiscard]] enum folio_state_outcome
+folio_state_reload_document(struct folio_state *_Nonnull state);
 /* #1071 / ADR0118: 外から来た「開く」依頼のノートが、いまの一覧のどこにあるか。
  * 引く前に、カテゴリの台帳と、そのカテゴリのノートの台帳を読み直す（依頼を書いた側が、直前に
  * ノートを外で作っていることがある。読み直しても書かない＝ADR0117 の決定 6）。名前は ASCII の
