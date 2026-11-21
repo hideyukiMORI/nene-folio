@@ -1,7 +1,11 @@
 #include "image_file.h"
+#include "file_bytes.h"
 #include "image_limits.h"
+#include "image_link.h"
+#include "image_signature.h"
 #include "image_source.h"
 #include "storage_native_path.h"
+#include "text_buffer.h"
 #include "utf16_text.h"
 #include "utf8_text.h"
 #include <stdio.h>
@@ -240,4 +244,256 @@ void image_file_destroy(struct image_file *_Nullable file)
     if (file != nullptr)
         free(file->bytes);
     free(file);
+}
+
+/* ---- #1062 / ADR0120: taking a dropped image into images\ ---- */
+
+/* The dropped file itself is a symbolic link or a junction: its target is not taken in
+ * (ADR0120 decision 4). Folders above it may be links (a redirected Documents folder): the user
+ * chose the file through them. */
+static bool link_source(const wchar_t *_Nonnull source)
+{
+    WIN32_FIND_DATAW found;
+    HANDLE search = FindFirstFileW(source, &found);
+    if (search == INVALID_HANDLE_VALUE)
+        return false;
+    FindClose(search);
+    return (found.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0 &&
+           (found.dwReserved0 == IO_REPARSE_TAG_SYMLINK ||
+            found.dwReserved0 == IO_REPARSE_TAG_MOUNT_POINT);
+}
+
+/* The category's folder, without the long-path prefix (as path_for builds it). */
+static bool category_directory(const wchar_t *_Nonnull root, const char *_Nonnull category,
+                               wchar_t *_Nonnull directory)
+{
+    wchar_t name[256];
+    size_t length = 0;
+    if (utf16_text_fill(category, name, 256, &length) != UTF16_TEXT_FILL_READY)
+        return false;
+    if (wcsncmp(root, L"\\\\?\\", 4) == 0)
+        root += 4;
+    return joined(directory, root, name);
+}
+
+/* The opened source's bytes, within the size an image may have. An empty file is no image. */
+static enum image_adopt_outcome read_opened_source(HANDLE _Nonnull handle,
+                                                   struct image_file *_Nonnull file)
+{
+    LARGE_INTEGER size;
+    if (!GetFileSizeEx(handle, &size))
+        return IMAGE_ADOPT_UNREADABLE;
+    if (size.QuadPart == 0)
+        return IMAGE_ADOPT_NOT_IMAGE;
+    if (size.QuadPart > (LONGLONG)image_input_byte_limit)
+        return IMAGE_ADOPT_TOO_LARGE;
+    switch (read_bytes(handle, file))
+    {
+    case IMAGE_READY:
+        return IMAGE_ADOPT_COPIED;
+    case IMAGE_OUT_OF_MEMORY:
+        return IMAGE_ADOPT_OUT_OF_MEMORY;
+    case IMAGE_PENDING:
+    case IMAGE_FAILED:
+    case IMAGE_UNSUPPORTED:
+    case IMAGE_TOO_LARGE:
+    case IMAGE_SKIPPED:
+    case IMAGE_CANCELLED:
+        return IMAGE_ADOPT_UNREADABLE;
+    }
+    return IMAGE_ADOPT_UNREADABLE;
+}
+
+/* Reads the whole source. A directory (it exists but does not open as a file) is not an image.
+ * COPIED here means "read": the handle stays open for the caller. */
+static enum image_adopt_outcome read_source(const wchar_t *_Nonnull source,
+                                            struct image_file *_Nonnull file,
+                                            HANDLE _Nonnull *_Nonnull opened)
+{
+    if (link_source(source))
+        return IMAGE_ADOPT_NOT_IMAGE;
+    HANDLE handle = CreateFileW(source, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_DELETE, nullptr,
+                                OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (handle == INVALID_HANDLE_VALUE)
+    {
+        /* A folder is no image. A file that is there but does not open (held by another
+         * program, access denied) is one that cannot be read. */
+        DWORD attributes = GetFileAttributesW(source);
+        bool folder =
+            attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+        return folder ? IMAGE_ADOPT_NOT_IMAGE : IMAGE_ADOPT_UNREADABLE;
+    }
+    enum image_adopt_outcome outcome = read_opened_source(handle, file);
+    if (outcome != IMAGE_ADOPT_COPIED)
+    {
+        CloseHandle(handle);
+        return outcome;
+    }
+    *opened = handle;
+    return IMAGE_ADOPT_COPIED;
+}
+
+/* Whether the file at `path` holds exactly these bytes. A file that cannot be read, or is larger
+ * than an image may be, is another file. */
+static bool same_content(const wchar_t *_Nonnull path, const struct image_file *_Nonnull wanted)
+{
+    HANDLE handle = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING,
+                                FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (handle == INVALID_HANDLE_VALUE)
+        return false;
+    struct image_file existing = {0};
+    LARGE_INTEGER size;
+    /* The length first: a file of another length is not read at all. */
+    bool same = GetFileSizeEx(handle, &size) != 0 && size.QuadPart == (LONGLONG)wanted->length &&
+                read_bytes(handle, &existing) == IMAGE_READY && existing.length == wanted->length &&
+                memcmp(existing.bytes, wanted->bytes, wanted->length) == 0;
+    CloseHandle(handle);
+    free(existing.bytes);
+    return same;
+}
+
+/* One name in images\: taken with the same bytes (PRESENT), free and written (COPIED), or not
+ * writable. When the name is held by another file, *taken is set and the caller tries the
+ * next name; the outcome then says nothing. */
+static enum image_adopt_outcome place_as(const wchar_t *_Nonnull images, const char *_Nonnull name,
+                                         const struct image_file *_Nonnull file,
+                                         bool *_Nonnull taken)
+{
+    *taken = false;
+    wchar_t wide[512];
+    wchar_t path[storage_native_capacity];
+    size_t length = 0;
+    if (utf16_text_fill(name, wide, 512, &length) != UTF16_TEXT_FILL_READY ||
+        !joined(path, images, wide))
+        return IMAGE_ADOPT_NOT_STORED;
+    if (GetFileAttributesW(path) != INVALID_FILE_ATTRIBUTES)
+    {
+        *taken = !same_content(path, file);
+        return IMAGE_ADOPT_PRESENT;
+    }
+    switch (file_bytes_create_within(path, (const char *)file->bytes, file->length,
+                                     image_input_byte_limit))
+    {
+    case PERSISTENCE_STORED:
+        return IMAGE_ADOPT_COPIED;
+    case PERSISTENCE_NAME_TAKEN:
+        *taken = true; /* made by someone else just now: the next name */
+        return IMAGE_ADOPT_PRESENT;
+    case PERSISTENCE_OUT_OF_MEMORY:
+        return IMAGE_ADOPT_OUT_OF_MEMORY;
+    case PERSISTENCE_LOADED:
+    case PERSISTENCE_ABSENT:
+    case PERSISTENCE_UNREADABLE:
+    case PERSISTENCE_MALFORMED:
+    case PERSISTENCE_UNWRITABLE:
+        return IMAGE_ADOPT_NOT_STORED;
+    }
+    return IMAGE_ADOPT_NOT_STORED;
+}
+
+/* The `number`th name to try: the file's own for 1, then name-2, name-3 ... `file->identity`
+ * holds the file's own name. The caller destroys it; nullptr when there is no memory. */
+static struct text_buffer *_Nullable numbered_name(const struct image_file *_Nonnull file,
+                                                   size_t number)
+{
+    struct text_buffer *_Nullable candidate = nullptr;
+    if (text_buffer_create(&candidate) != TEXT_BUFFER_ACCEPTED)
+        return nullptr;
+    if (number == 1)
+        text_buffer_append_text(candidate, file->identity);
+    else
+        image_link_numbered(candidate, file->identity, strlen(file->identity), number);
+    if (text_buffer_finish(candidate) != TEXT_BUFFER_ACCEPTED)
+    {
+        text_buffer_destroy(candidate);
+        return nullptr;
+    }
+    return candidate;
+}
+
+/* The file is in images\ under some name: written now, or its bytes were there already. */
+static bool in_images(enum image_adopt_outcome outcome)
+{
+    return outcome == IMAGE_ADOPT_COPIED || outcome == IMAGE_ADOPT_PRESENT;
+}
+
+/* The first free name (ADR0120 decision 3). The name the file ends under is added to `leaf`. */
+static enum image_adopt_outcome place(const wchar_t *_Nonnull images,
+                                      const struct image_file *_Nonnull file,
+                                      struct text_buffer *_Nonnull leaf)
+{
+    constexpr size_t attempts = 1000;
+    for (size_t number = 1; number <= attempts; ++number)
+    {
+        struct text_buffer *_Nullable candidate = numbered_name(file, number);
+        if (candidate == nullptr)
+            return IMAGE_ADOPT_OUT_OF_MEMORY;
+        bool taken = false;
+        enum image_adopt_outcome placed =
+            place_as(images, text_buffer_bytes(candidate), file, &taken);
+        if (!taken && in_images(placed))
+            text_buffer_append_text(leaf, text_buffer_bytes(candidate));
+        text_buffer_destroy(candidate);
+        if (!taken)
+            return placed;
+    }
+    return IMAGE_ADOPT_NOT_STORED;
+}
+
+/* A source that already lies in images\ is pointed at as it is: its path from images\, with `/`. */
+static bool already_inside(HANDLE _Nonnull source, const wchar_t *_Nonnull directory,
+                           struct text_buffer *_Nonnull leaf)
+{
+    wchar_t resolved[storage_native_capacity];
+    if (!final_path(source, resolved))
+        return false;
+    size_t prefix = inside_images(directory, resolved);
+    char relative[storage_native_capacity * 3];
+    if (prefix == 0 || !copy_utf8(resolved + prefix + 1, relative, sizeof relative))
+        return false;
+    for (size_t index = 0; relative[index] != '\0'; ++index)
+        if (relative[index] == '\\')
+            relative[index] = '/';
+    text_buffer_append_text(leaf, relative);
+    return true;
+}
+
+/* images\ of the category, made if it is not there. It must be a plain folder on a local disk. */
+static bool images_folder(const wchar_t *_Nonnull directory, wchar_t *_Nonnull images)
+{
+    if (!joined(images, directory, L"images"))
+        return false;
+    if (!CreateDirectoryW(images, nullptr) && GetLastError() != ERROR_ALREADY_EXISTS)
+        return false;
+    return regular_components(images);
+}
+
+enum image_adopt_outcome image_file_adopt(const wchar_t *_Nonnull root,
+                                          const char *_Nonnull category,
+                                          const wchar_t *_Nonnull source,
+                                          struct text_buffer *_Nonnull leaf)
+{
+    struct image_file file = {0};
+    HANDLE opened = INVALID_HANDLE_VALUE;
+    enum image_adopt_outcome outcome = read_source(source, &file, &opened);
+    if (outcome != IMAGE_ADOPT_COPIED)
+    {
+        free(file.bytes);
+        return outcome;
+    }
+    wchar_t directory[storage_native_capacity];
+    wchar_t images[storage_native_capacity];
+    const wchar_t *last = wcsrchr(source, L'\\');
+    if (!image_signature_supported(file.bytes, file.length))
+        outcome = IMAGE_ADOPT_NOT_IMAGE;
+    else if (!category_directory(root, category, directory) || !images_folder(directory, images) ||
+             !copy_utf8(last != nullptr ? last + 1 : source, file.identity, sizeof file.identity))
+        outcome = IMAGE_ADOPT_NOT_STORED;
+    else if (already_inside(opened, directory, leaf))
+        outcome = IMAGE_ADOPT_PRESENT;
+    else
+        outcome = place(images, &file, leaf);
+    CloseHandle(opened);
+    free(file.bytes);
+    return outcome;
 }

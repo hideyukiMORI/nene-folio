@@ -7,7 +7,9 @@
 #include "image_bitmap.h"
 #include "image_export.h"
 #include "image_limits.h"
+#include "image_link.h"
 #include "image_port.h"
+#include "image_signature.h"
 #include "markdown_image_copy.h"
 #include "markdown_images.h"
 #include "markdown_rtf.h"
@@ -15,9 +17,11 @@
 #include "note_text.h"
 #include "persistence_port.h"
 #include "regex_port.h"
+#include "text_buffer.h"
 #include "theme_palette.h"
 #include "ui_font.h"
 #include "unit_tests.h"
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 struct image_adapter
@@ -97,6 +101,18 @@ static enum image_outcome asset(struct image_adapter *_Nonnull adapter,
                                        .relative = contained ? target : ""};
     return image_asset_create(&source, out);
 }
+/* Nothing is taken in by this fake: the cases that drop files supply their own. */
+static enum image_adopt_outcome adopt(struct image_adapter *_Nonnull adapter,
+                                      const char *_Nonnull category,
+                                      const struct storage_path *_Nonnull source,
+                                      struct text_buffer *_Nonnull leaf)
+{
+    (void)adapter;
+    (void)category;
+    (void)source;
+    (void)leaf;
+    return IMAGE_ADOPT_UNREADABLE;
+}
 const struct image_port *_Nonnull test_image_port(void)
 {
     static const struct image_port port = {.adapter = &fake,
@@ -105,7 +121,8 @@ const struct image_port *_Nonnull test_image_port(void)
                                            .poll = poll,
                                            .phase = phase,
                                            .cancel = cancel,
-                                           .asset = asset};
+                                           .asset = asset,
+                                           .adopt = adopt};
     return &port;
 }
 static struct note_text *_Nonnull text(const char *_Nonnull source)
@@ -958,8 +975,112 @@ static void allocation_contract(void)
     }
     note_text_destroy(body);
 }
+/* #1062 / ADR0120: the Markdown written for a copied image. What is written goes through the
+ * real render, and the reference it collects must be images/<the file's name>. */
+static void expect_link(const char *_Nonnull leaf, const char *_Nonnull expected)
+{
+    struct text_buffer *buffer = nullptr;
+    require(text_buffer_create(&buffer) == TEXT_BUFFER_ACCEPTED, "link buffer");
+    image_link_append(buffer, leaf, strlen(leaf));
+    require(text_buffer_finish(buffer) == TEXT_BUFFER_ACCEPTED, "link finished");
+    if (strcmp(text_buffer_bytes(buffer), expected) != 0)
+        fprintf(stderr, "image link: [%s] expected [%s]\n", text_buffer_bytes(buffer), expected);
+    require(strcmp(text_buffer_bytes(buffer), expected) == 0, "the Markdown written for an image");
+    struct note_text *body = text(text_buffer_bytes(buffer));
+    struct markdown_rtf *rendered = render(body);
+    const struct markdown_images *images = markdown_rtf_images(rendered);
+    char target[512];
+    require(snprintf(target, sizeof target, "images/%s", leaf) > 0, "target fits");
+    bool one = markdown_images_count(images) == 1;
+    bool same = one && strcmp(image_source_target(markdown_images_at(images, 0)), target) == 0 &&
+                image_source_recommended(markdown_images_at(images, 0));
+    if (!same)
+        fprintf(stderr, "image link: [%s] read as %zu image(s), first [%s]\n",
+                text_buffer_bytes(buffer), markdown_images_count(images),
+                one ? image_source_target(markdown_images_at(images, 0)) : "");
+    require(same, "the image reader finds the copied file from the written Markdown");
+    markdown_rtf_destroy(rendered);
+    note_text_destroy(body);
+    text_buffer_destroy(buffer);
+}
+
+/* Two images written on one line are still two images, each pointing at its own file. */
+static void expect_two_links(const char *_Nonnull first, const char *_Nonnull second)
+{
+    struct text_buffer *buffer = nullptr;
+    require(text_buffer_create(&buffer) == TEXT_BUFFER_ACCEPTED, "two links buffer");
+    image_link_append(buffer, first, strlen(first));
+    text_buffer_append_text(buffer, " and ");
+    image_link_append(buffer, second, strlen(second));
+    require(text_buffer_finish(buffer) == TEXT_BUFFER_ACCEPTED, "two links finished");
+    struct note_text *body = text(text_buffer_bytes(buffer));
+    struct markdown_rtf *rendered = render(body);
+    const struct markdown_images *images = markdown_rtf_images(rendered);
+    char targets[2][512];
+    require(snprintf(targets[0], sizeof targets[0], "images/%s", first) > 0 &&
+                snprintf(targets[1], sizeof targets[1], "images/%s", second) > 0,
+            "targets fit");
+    require(markdown_images_count(images) == 2 &&
+                strcmp(image_source_target(markdown_images_at(images, 0)), targets[0]) == 0 &&
+                strcmp(image_source_target(markdown_images_at(images, 1)), targets[1]) == 0,
+            "two images on one line are read as two images");
+    markdown_rtf_destroy(rendered);
+    note_text_destroy(body);
+    text_buffer_destroy(buffer);
+}
+
+static void expect_numbered(const char *_Nonnull leaf, size_t number, const char *_Nonnull expected)
+{
+    struct text_buffer *buffer = nullptr;
+    require(text_buffer_create(&buffer) == TEXT_BUFFER_ACCEPTED, "name buffer");
+    image_link_numbered(buffer, leaf, strlen(leaf), number);
+    require(text_buffer_finish(buffer) == TEXT_BUFFER_ACCEPTED &&
+                strcmp(text_buffer_bytes(buffer), expected) == 0,
+            "a numbered name keeps the extension");
+    text_buffer_destroy(buffer);
+}
+
+static void image_links(void)
+{
+    expect_link("photo.png", "![photo](images/photo.png)");
+    expect_link("夕焼け.png", "![夕焼け](images/夕焼け.png)");
+    expect_link("archive.tar.jpg", "![archive.tar](images/archive.tar.jpg)");
+    expect_link("my photo.jpg", "![my photo](<images/my photo.jpg>)");
+    expect_link("shot (1).png", "![shot (1)](<images/shot (1).png>)");
+    expect_link("100%.png", "![100%](images/100%25.png)");
+    expect_link("a%20b.png", "![a%20b](images/a%2520b.png)");
+    expect_link("a[b]c.png", "![abc](images/a[b]c.png)");
+    expect_link("noext", "![noext](images/noext)");
+    expect_link(".png", "![.png](images/.png)");
+    expect_link("it's_#1.PNG", "![it's_#1](images/it's_#1.PNG)");
+    expect_link("album/trip.2026.png", "![trip.2026](images/album/trip.2026.png)");
+    expect_link("a b/.hidden", "![.hidden](<images/a b/.hidden>)");
+    /* A name that carries a character reference, or a backtick: written as %XX, so the reader
+     * does not turn it into another name or into a code span. */
+    expect_link("Tom &amp; Jerry.png", "![Tom &amp; Jerry](<images/Tom %26amp; Jerry.png>)");
+    expect_link("R&#38;D.png", "![R&#38;D](images/R%26#38;D.png)");
+    expect_link("a`b.png", "![ab](images/a%60b.png)");
+    expect_two_links("a`b.png", "c`d.png");
+    static const unsigned char png[] = {0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A, 0, 0};
+    static const unsigned char jpeg[] = {0xFF, 0xD8, 0xFF, 0xE0, 0};
+    static const unsigned char gif[] = {'G', 'I', 'F', '8', '9', 'a', 0, 0, 0};
+    require(image_signature_supported(png, sizeof png) &&
+                image_signature_supported(jpeg, sizeof jpeg) && image_signature_supported(png, 8) &&
+                image_signature_supported(jpeg, 3),
+            "PNG and JPEG are told by their first bytes");
+    require(!image_signature_supported(gif, sizeof gif) && !image_signature_supported(png, 7) &&
+                !image_signature_supported(jpeg, 2) && !image_signature_supported(png, 0),
+            "another format, or a file cut short, is not an image to take in");
+    expect_numbered("photo.png", 2, "photo-2.png");
+    expect_numbered("a.b.png", 10, "a.b-10.png");
+    expect_numbered("noext", 3, "noext-3");
+    expect_numbered(".png", 2, ".png-2");
+    expect_numbered("x.jpg", 1234567, "x-1234567.jpg");
+}
+
 void run_image_tests(void)
 {
+    image_links(); /* #1062: the Markdown written for a copied image */
     source_contract();
     source_rejections();
     copy_rejections();

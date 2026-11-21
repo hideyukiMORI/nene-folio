@@ -1,6 +1,7 @@
 #ifndef NENEFOLIO_IMAGE_PORT_H
 #define NENEFOLIO_IMAGE_PORT_H
 #include "diagram_request.h"
+#include "image_adopt_outcome.h"
 #include "image_asset.h"
 #include "image_export_policy.h"
 #include "image_outcome.h"
@@ -9,6 +10,8 @@
 #include <stdint.h>
 struct image_adapter;
 struct image_bitmap;
+struct storage_path;
+struct text_buffer;
 struct image_port
 {
     struct image_adapter *_Nonnull adapter;
@@ -26,5 +29,15 @@ struct image_port
                                          const struct image_request *_Nonnull request,
                                          enum image_export_policy policy,
                                          struct image_asset *_Nullable *_Nonnull out);
+    /* #1062 / ADR0120: source（外のどこかのファイル）を、category の images/ へ取り込む。
+     * COPIED か PRESENT なら、images/ からの相対パス（UTF-8、区切りは `/`。ふつうはファイル名
+     * だけで、images/ の下のフォルダにあったファイルは `sub/name.png` の形）を leaf の末尾へ足す
+     * （呼ぶ側が text_buffer_finish で確かめる）。
+     * 既にあるファイルは上書きしない: 同じ名前で中身が同じならそれを指し、違えば番号を付けた名前で
+     * 写す。ほかの結果では何も写さず、leaf も変えない。 */
+    enum image_adopt_outcome (*_Nonnull adopt)(struct image_adapter *_Nonnull adapter,
+                                               const char *_Nonnull category,
+                                               const struct storage_path *_Nonnull source,
+                                               struct text_buffer *_Nonnull leaf);
 };
 #endif

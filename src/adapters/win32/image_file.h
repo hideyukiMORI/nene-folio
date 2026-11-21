@@ -1,5 +1,6 @@
 #ifndef NENEFOLIO_IMAGE_FILE_H
 #define NENEFOLIO_IMAGE_FILE_H
+#include "image_adopt_outcome.h"
 #include "image_export_policy.h"
 #include "image_outcome.h"
 #include "image_request.h"
@@ -17,4 +18,11 @@ struct image_file;
 [[nodiscard]] const char *_Nonnull image_file_identity(const struct image_file *_Nonnull file);
 [[nodiscard]] const char *_Nonnull image_file_relative(const struct image_file *_Nonnull file);
 void image_file_destroy(struct image_file *_Nullable file);
+struct text_buffer;
+/* #1062 / ADR0120: source を root\category\images へ取り込む（image_port.adopt の実体）。
+ * 中身が PNG / JPEG で上限以内のものだけ。images\ が無ければ作る。上書きしない。 */
+[[nodiscard]] enum image_adopt_outcome image_file_adopt(const wchar_t *_Nonnull root,
+                                                        const char *_Nonnull category,
+                                                        const wchar_t *_Nonnull source,
+                                                        struct text_buffer *_Nonnull leaf);
 #endif

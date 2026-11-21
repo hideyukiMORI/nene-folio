@@ -534,6 +534,18 @@ static void cancel_image(struct image_adapter *_Nonnull adapter)
     ++adapter->ticket;
     adapter->phase = IMAGE_PHASE_IDLE;
 }
+/* Nothing is taken in by this controlled port: the cases that drop files use the real one. */
+static enum image_adopt_outcome image_adopt(struct image_adapter *_Nonnull adapter,
+                                            const char *_Nonnull category,
+                                            const struct storage_path *_Nonnull source,
+                                            struct text_buffer *_Nonnull leaf)
+{
+    (void)adapter;
+    (void)category;
+    (void)source;
+    (void)leaf;
+    return IMAGE_ADOPT_UNREADABLE;
+}
 static enum image_outcome image_asset(struct image_adapter *_Nonnull adapter,
                                       const struct image_request *_Nonnull request,
                                       enum image_export_policy policy,
@@ -645,7 +657,8 @@ static void create_fixture(struct native_fixture *_Nonnull fixture)
                                 .poll = poll_image,
                                 .phase = image_phase,
                                 .cancel = cancel_image,
-                                .asset = image_asset};
+                                .asset = image_asset,
+                                .adopt = image_adopt};
     struct folio_ports ports = {.persistence = &disk,
                                 .appearance = &appearance,
                                 .regex = &regex,
