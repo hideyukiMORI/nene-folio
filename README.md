@@ -33,6 +33,7 @@ The maintainer [submitted the 1.5.0 update to the Store](https://github.com/hide
 · [Portable download and checksums](https://github.com/hideyukiMORI/nene-folio/releases)
 · [Supported Markdown and Mermaid syntax](docs/MARKDOWN.md)
 · [Import and export](docs/TRANSFER.md)
+· [Opening notes from other programs](docs/OPEN_REQUESTS.md) (Japanese; on `main`, not in 1.5.0)
 
 ![NeNe Folio 1.3.2 showing categories, a Markdown note and a Mermaid flowchart](docs/images/1.3.2-main-en.png)
 
