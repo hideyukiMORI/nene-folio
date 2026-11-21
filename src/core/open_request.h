@@ -26,6 +26,17 @@ constexpr size_t open_request_line_limit = 9999999;
 [[nodiscard]] enum open_request_outcome
 open_request_create(const char *_Nonnull bytes, size_t length,
                     struct open_request *_Nullable *_Nonnull out);
+/* 依頼のファイル（ADR0119 の決定 6）の上限（バイト数）。これより大きいものは読まない。 */
+constexpr size_t open_request_file_limit = 64 * 1024;
+/* 依頼のファイルの中身を読む。JSON のオブジェクト 1 つで、
+ * `{"version":1,"action":"open","category":"…","note":"…","lines":"N|N-M","text":"…"}`。
+ * version（1）・action（"open"）・category・note は必須、lines と text は任意。値の規則はリンクと
+ * 同じ（名前の規則、制御文字と行の区切りは置けない、行の範囲、探す文の上限）で、同じ受け取り手を
+ * 通る。値は JSON の文字列そのままで、% の符号化はしない。知らないキーは値ごと読み飛ばす。
+ * 知っているキーの重複、文字列でない値、別の version や action は不正。失敗では out を変えない。 */
+[[nodiscard]] enum open_request_outcome
+open_request_create_json(const char *_Nonnull bytes, size_t length,
+                         struct open_request *_Nullable *_Nonnull out);
 [[nodiscard]] const struct category_name *_Nonnull open_request_category(
     const struct open_request *_Nonnull request);
 [[nodiscard]] const struct note_name *_Nonnull open_request_note(

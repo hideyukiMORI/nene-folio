@@ -5879,6 +5879,56 @@ static bool locate_note(const struct note_ledger *_Nonnull ledger, const char *_
     return false;
 }
 
+/* 依頼のファイルを 1 つ取り出して検証する。*taken は、ファイルが 1 つ無くなったか。 */
+static enum folio_state_outcome take_request_file(struct folio_state *_Nonnull state,
+                                                  char *_Nonnull buffer,
+                                                  struct open_request *_Nullable *_Nonnull out,
+                                                  bool *_Nonnull taken)
+{
+    size_t length = 0;
+    *taken = false;
+    switch (state->port.take_open_request(state->port.adapter, buffer, open_request_file_limit,
+                                          &length))
+    {
+    case REQUEST_NONE:
+        return FOLIO_STATE_READY;
+    case REQUEST_TAKEN:
+        *taken = true;
+        /* A file that is no valid request is dropped here: it was removed when it was taken. */
+        return open_request_create_json(buffer, length, out) == OPEN_REQUEST_OUT_OF_MEMORY
+                   ? FOLIO_STATE_OUT_OF_MEMORY
+                   : FOLIO_STATE_READY;
+    case REQUEST_OUT_OF_MEMORY:
+        return FOLIO_STATE_OUT_OF_MEMORY;
+    }
+    return FOLIO_STATE_OUT_OF_MEMORY;
+}
+
+enum folio_state_outcome folio_state_take_open_request(struct folio_state *_Nonnull state,
+                                                       struct open_request *_Nullable *_Nonnull out,
+                                                       bool *_Nonnull pending)
+{
+    /* Files that are no valid request are passed over here, so that each of them does not cost
+     * the caller a turn of its own; the bound keeps one call short whatever the folder holds. */
+    constexpr size_t looked_limit = 32;
+    *pending = false;
+    char *_Nullable buffer = malloc(open_request_file_limit);
+    if (buffer == nullptr)
+        return FOLIO_STATE_OUT_OF_MEMORY;
+    enum folio_state_outcome outcome = FOLIO_STATE_READY;
+    bool taken = true;
+    size_t looked = 0;
+    while (outcome == FOLIO_STATE_READY && taken && *out == nullptr && looked < looked_limit)
+    {
+        outcome = take_request_file(state, buffer, out, &taken);
+        looked += 1;
+    }
+    /* More may wait behind a request that was found, or behind the bound. */
+    *pending = outcome == FOLIO_STATE_READY && taken;
+    free(buffer);
+    return outcome;
+}
+
 enum folio_state_outcome
 folio_state_locate_open_request(struct folio_state *_Nonnull state,
                                 const struct open_request *_Nonnull request,

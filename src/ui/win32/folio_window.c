@@ -941,6 +941,7 @@ static enum folio_state_outcome prepare_name_operation(struct folio_window *_Non
 static void set_pane_notice(struct folio_window *_Nonnull self, enum pane_notice notice);
 static bool holds_document(const struct folio_window *_Nonnull self, struct note_ref target);
 static void show_outside_change(struct folio_window *_Nonnull self);
+static void open_requested(struct folio_window *_Nonnull self);
 static void open_link_notice(struct folio_window *_Nonnull self, enum ui_text line);
 static void decorate(HWND handle, struct folio_palette palette);
 static void refresh_tooltip_style(const struct folio_window *_Nonnull self);
@@ -15430,6 +15431,7 @@ static void refresh_outside(struct folio_window *_Nonnull self)
     }
     if (lists != FOLIO_STATE_OUT_OF_MEMORY)
         show_outside_change(self);
+    open_requested(self);
     folio_window_end_dispatch(self);
 }
 
@@ -15507,17 +15509,39 @@ static void open_link_request(struct folio_window *_Nonnull self,
     open_link_place(self, request);
 }
 
+/* A dialog of this window keeps the activation; otherwise the window comes forward. */
+static void come_forward(const struct folio_window *_Nonnull self)
+{
+    if (self->native_modal_depth > 0)
+        return;
+    if (IsIconic(self->handle))
+        ShowWindow(self->handle, SW_RESTORE);
+    SetForegroundWindow(self->handle);
+}
+
+/* #1070 / ADR0119 decision 6: a request file put under data/.requests is taken (and removed) and
+ * opened by the same path as a link. Runs only in the quiet turn that reads the data folder
+ * again, so nothing holds the window; a file that is no valid request is dropped silently. One
+ * file a turn: the next is taken at the next quiet turn. */
+static void open_requested(struct folio_window *_Nonnull self)
+{
+    struct open_request *_Nullable request = nullptr;
+    bool pending = false;
+    if (folio_state_take_open_request(self->state, &request, &pending) != FOLIO_STATE_READY)
+        return; /* out of memory: whatever is still there is looked at with the next notice */
+    self->outside_due = pending;
+    if (request == nullptr)
+        return;
+    come_forward(self);
+    open_link_request(self, request);
+    open_request_destroy(request);
+}
+
 /* Validates and opens the link the window holds. Runs from the message loop's own dispatch. */
 static void open_link_now(struct folio_window *_Nonnull self, const char *_Nonnull bytes,
                           size_t length)
 {
-    if (self->native_modal_depth == 0)
-    {
-        /* A dialog of this window keeps the activation; otherwise the window comes forward. */
-        if (IsIconic(self->handle))
-            ShowWindow(self->handle, SW_RESTORE);
-        SetForegroundWindow(self->handle);
-    }
+    come_forward(self);
     struct open_request *_Nullable request = nullptr;
     enum open_request_outcome read = open_request_create(bytes, length, &request);
     if (read != OPEN_REQUEST_ACCEPTED || request == nullptr)

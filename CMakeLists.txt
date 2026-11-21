@@ -113,7 +113,7 @@ add_test(NAME folio_unit COMMAND folio_tests)
 
 nenefolio_target(nenefolio_adapters adapters_win32 STATIC
     src/adapters/win32/storage_adapter.c src/adapters/win32/storage_native_path.c src/adapters/win32/data_lock.c
-    src/adapters/win32/data_watch.c
+    src/adapters/win32/data_watch.c src/adapters/win32/request_file.c
     src/adapters/win32/file_bytes.c src/adapters/win32/file_times.c src/adapters/win32/persistence_adapter.c
     src/adapters/win32/appearance_adapter.c src/adapters/win32/regex_adapter.c
     src/adapters/win32/web_link_adapter.c src/adapters/win32/clipboard_adapter.c src/adapters/win32/transfer_adapter.c

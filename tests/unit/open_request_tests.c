@@ -250,8 +250,132 @@ static void verify_allocation(void)
     printf("open request: %zu injected allocation failures\n", calls);
 }
 
+/* ADR0119 の決定 6: 依頼のファイルの中身。リンクと同じ型になり、同じ規則を通る。 */
+static struct open_request *_Nonnull accepted_file(const char *_Nonnull json)
+{
+    struct open_request *request = nullptr;
+    require(open_request_create_json(json, strlen(json), &request) == OPEN_REQUEST_ACCEPTED &&
+                request != nullptr,
+            json);
+    return request;
+}
+
+static void expect_file(const char *_Nonnull json, enum open_request_outcome outcome)
+{
+    struct open_request *request = nullptr;
+    enum open_request_outcome actual = open_request_create_json(json, strlen(json), &request);
+    if (actual != outcome)
+        fprintf(stderr, "open request file: %s -> %d\n", json, (int)actual);
+    require(actual == outcome && request == nullptr, json);
+}
+
+static void verify_file_accepted(void)
+{
+    struct open_request *request = accepted_file(
+        "{\"version\":1,\"action\":\"open\",\"category\":\"work\",\"note\":\"minutes\","
+        "\"lines\":\"3-8\",\"text\":\"\xE6\xB1\xBA\xE5\xAE\x9A step\"}");
+    struct open_request_lines lines = {0, 0};
+    require(strcmp(category_name_text(open_request_category(request)), "work") == 0 &&
+                strcmp(note_name_stem(open_request_note(request)), "minutes") == 0 &&
+                open_request_lines(request, &lines) && lines.first == 3 && lines.last == 8 &&
+                strcmp(open_request_text(request), "\xE6\xB1\xBA\xE5\xAE\x9A step") == 0,
+            "a request file gives the same request as its link");
+    open_request_destroy(request);
+    request = accepted_file(
+        " { \"note\" : \"b.md\", \"by\" : {\"tool\": [1, {\"x\": null}], \"n\": 2.5},"
+        " \"category\" : \"a\", \"action\" : \"open\", \"seen\": true, \"version\" : 1 } ");
+    require(!open_request_lines(request, &lines) && open_request_text_length(request) == 0 &&
+                strcmp(note_name_stem(open_request_note(request)), "b") == 0,
+            "the order is free, unknown keys are skipped with their values, lines and text may "
+            "be absent");
+    open_request_destroy(request);
+    request = accepted_file("{\"version\":1,\"action\":\"open\",\"category\":\"a\",\"note\":\"b\","
+                            "\"text\":\"100% a+b \\u65e5\"}");
+    require(strcmp(open_request_text(request), "100% a+b \xE6\x97\xA5") == 0,
+            "values are JSON strings as they are: no percent decoding");
+    open_request_destroy(request);
+}
+
+static void verify_file_refused(void)
+{
+    static const char *const malformed[] = {
+        "",
+        "[]",
+        "\"open\"",
+        "{\"version\":1,\"action\":\"open\",\"category\":\"a\",\"note\":\"b\"",
+        "{\"version\":1,\"action\":\"open\",\"category\":\"a\",\"note\":\"b\"} x",
+        "{\"action\":\"open\",\"category\":\"a\",\"note\":\"b\"}",
+        "{\"version\":1,\"category\":\"a\",\"note\":\"b\"}",
+        "{\"version\":2,\"action\":\"open\",\"category\":\"a\",\"note\":\"b\"}",
+        "{\"version\":\"1\",\"action\":\"open\",\"category\":\"a\",\"note\":\"b\"}",
+        "{\"version\":1,\"version\":1,\"action\":\"open\",\"category\":\"a\",\"note\":\"b\"}",
+        "{\"version\":1,\"action\":\"delete\",\"category\":\"a\",\"note\":\"b\"}",
+        "{\"version\":1,\"action\":\"OPEN\",\"category\":\"a\",\"note\":\"b\"}",
+        "{\"version\":1,\"action\":\"open\",\"action\":\"open\",\"category\":\"a\",\"note\":\"b\"}",
+        "{\"version\":1,\"action\":\"open\",\"note\":\"b\"}",
+        "{\"version\":1,\"action\":\"open\",\"category\":\"a\"}",
+        "{\"version\":1,\"action\":\"open\",\"category\":\"a\",\"category\":\"a\",\"note\":\"b\"}",
+        "{\"version\":1,\"action\":\"open\",\"category\":\"a\",\"note\":7}",
+        "{\"version\":1,\"action\":\"open\",\"category\":\"a\",\"note\":\"b\",\"lines\":3}",
+        "{\"version\":1,\"action\":\"open\",\"category\":\"a\",\"note\":\"b\",\"lines\":\"8-3\"}",
+        "{\"version\":1,\"action\":\"open\",\"category\":\"a\",\"note\":\"b\",\"text\":\"a\\nb\"}",
+        "{\"version\":1,\"action\":\"open\",\"category\":\"a\",\"note\":\"b\",\"text\":[\"a\"]}",
+        "{\"version\":1,\"action\":\"open\",\"category\":\"a\",\"note\":\"b\",\"extra\":[1,}",
+    };
+    for (size_t at = 0; at < sizeof malformed / sizeof malformed[0]; ++at)
+        expect_file(malformed[at], OPEN_REQUEST_MALFORMED);
+    /* A NUL written as an escape is a control character like the others. */
+    expect_file("{\"version\":1,\"action\":\"open\",\"category\":\"a\",\"note\":\"b\","
+                "\"text\":\"\\u0000\"}",
+                OPEN_REQUEST_MALFORMED);
+    expect_file("{\"version\":1,\"action\":\"open\",\"category\":\"..\",\"note\":\"b\"}",
+                OPEN_REQUEST_NAME_INVALID);
+    expect_file("{\"version\":1,\"action\":\"open\",\"category\":\"a\",\"note\":\"a/b\"}",
+                OPEN_REQUEST_NAME_INVALID);
+}
+
+static void verify_file_limits(void)
+{
+    static char json[open_request_file_limit + 64];
+    static const char head[] =
+        "{\"version\":1,\"action\":\"open\",\"category\":\"a\",\"note\":\"b\",\"text\":\"";
+    size_t at = sizeof head - 1;
+    memcpy(json, head, at);
+    memset(json + at, 't', open_request_text_limit + 1);
+    memcpy(json + at + open_request_text_limit + 1, "\"}", 3);
+    expect_file(json, OPEN_REQUEST_TOO_LONG);
+    memset(json, ' ', open_request_file_limit + 1);
+    json[open_request_file_limit + 1] = '\0';
+    expect_file(json, OPEN_REQUEST_TOO_LONG);
+}
+
+static void verify_file_allocation(void)
+{
+    static const char json[] = "{\"version\":1,\"action\":\"open\",\"category\":\"work\","
+                               "\"note\":\"minutes\",\"lines\":\"2-4\",\"text\":\"step\"}";
+    allocation_probe_fail_at(0);
+    struct open_request *request = accepted_file(json);
+    size_t calls = allocation_probe_calls();
+    open_request_destroy(request);
+    for (size_t nth = 1; nth <= calls; ++nth)
+    {
+        request = nullptr;
+        allocation_probe_fail_at(nth);
+        enum open_request_outcome outcome =
+            open_request_create_json(json, sizeof json - 1, &request);
+        allocation_probe_fail_at(0);
+        require(outcome == OPEN_REQUEST_OUT_OF_MEMORY && request == nullptr,
+                "an allocation failure while reading a request file is typed");
+    }
+    printf("open request file: %zu injected allocation failures\n", calls);
+}
+
 void run_open_request_tests(void)
 {
+    verify_file_accepted();
+    verify_file_refused();
+    verify_file_limits();
+    verify_file_allocation();
     verify_full_link();
     verify_loose_forms();
     verify_malformed_shape();

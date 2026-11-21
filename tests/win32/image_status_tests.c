@@ -11224,6 +11224,114 @@ static bool outside_gathered(struct folio_window *_Nonnull window)
     return settled;
 }
 
+/* #1070 / ADR0119 decision 6: a request file as another program writes it. */
+static void outside_request(const struct native_fixture *_Nonnull fixture,
+                            const wchar_t *_Nonnull leaf, const char *_Nonnull json)
+{
+    wchar_t root[storage_native_capacity];
+    wchar_t path[storage_native_capacity];
+    size_t length = 0;
+    require(storage_native_path_fill(storage_state_directory(fixture->location), root, &length) &&
+                swprintf_s(path, storage_native_capacity, L"%ls\\.requests", root) > 0,
+            "requests folder path fits");
+    require(CreateDirectoryW(path, nullptr) != 0 || GetLastError() == ERROR_ALREADY_EXISTS,
+            "the requests folder");
+    require(swprintf_s(path, storage_native_capacity, L"%ls\\.requests\\%ls", root, leaf) > 0,
+            "request path fits");
+    HANDLE file =
+        CreateFileW(path, GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    require(file != INVALID_HANDLE_VALUE, "the request file is created");
+    DWORD written = 0;
+    bool stored = WriteFile(file, json, (DWORD)strlen(json), &written, nullptr) != 0;
+    CloseHandle(file);
+    require(stored && written == strlen(json), "the request file is written");
+}
+
+/* The fixture's folder outlives a run: request files an earlier, failed run left are removed. */
+static void outside_requests_cleared(const struct native_fixture *_Nonnull fixture)
+{
+    static const wchar_t *const leaves[] = {L"open-1.json", L"open-2.json", L"open-3.json",
+                                            L"open-4.json", L"open-5.json", L"open-6.json"};
+    wchar_t root[storage_native_capacity];
+    size_t length = 0;
+    require(storage_native_path_fill(storage_state_directory(fixture->location), root, &length),
+            "requests folder path fits");
+    for (size_t at = 0; at < sizeof leaves / sizeof leaves[0]; ++at)
+    {
+        wchar_t path[storage_native_capacity];
+        if (swprintf_s(path, storage_native_capacity, L"%ls\\.requests\\%ls", root, leaves[at]) > 0)
+            (void)DeleteFileW(path);
+    }
+}
+
+static bool outside_request_waits(const struct native_fixture *_Nonnull fixture,
+                                  const wchar_t *_Nonnull leaf)
+{
+    wchar_t root[storage_native_capacity];
+    wchar_t path[storage_native_capacity];
+    size_t length = 0;
+    require(storage_native_path_fill(storage_state_directory(fixture->location), root, &length) &&
+                swprintf_s(path, storage_native_capacity, L"%ls\\.requests\\%ls", root, leaf) > 0,
+            "request path fits");
+    return GetFileAttributesW(path) != INVALID_FILE_ATTRIBUTES;
+}
+
+/* A request file opens its note and selects its place, like a link; one that is no request is
+ * removed and opens nothing; while a surface is open the file waits. */
+static void outside_requested(struct native_fixture *_Nonnull fixture,
+                              struct folio_window *_Nonnull window)
+{
+    outside_request(fixture, L"open-1.json",
+                    "{\"version\":1,\"action\":\"open\",\"category\":\"schedule\","
+                    "\"note\":\"two\",\"text\":\"Other\"}");
+    folio_window_data_changed(window);
+    require(outside_gathered(window) &&
+                strcmp(folio_state_document_name(fixture->state), "two") == 0 &&
+                folio_state_pane_mode(fixture->state) == PANE_MODE_VIEW &&
+                !outside_request_waits(fixture, L"open-1.json"),
+            "the request's note opens in the reading view and the file is removed");
+    expect_link_selection(folio_window_accessible_window(window, ACCESSIBLE_BODY), L"Other",
+                          nullptr, "and its place is selected");
+    outside_request(fixture, L"open-2.json", "{\"version\":1,\"action\":\"erase\"}");
+    folio_window_data_changed(window);
+    require(outside_gathered(window) &&
+                strcmp(folio_state_document_name(fixture->state), "two") == 0 &&
+                !outside_request_waits(fixture, L"open-2.json"),
+            "a file that is no request is removed and opens nothing");
+    struct accessible_request settings = {.item = {.kind = ACCESSIBLE_SETTINGS},
+                                          .action = ACCESSIBLE_ACTION_INVOKE};
+    require(folio_window_accessible_action(window, &settings) == S_OK,
+            "the settings surface opens");
+    pump(window);
+    outside_request(fixture, L"open-3.json",
+                    "{\"version\":1,\"action\":\"open\",\"category\":\"schedule\","
+                    "\"note\":\"one\"}");
+    folio_window_data_changed(window);
+    require(outside_gathered(window) &&
+                strcmp(folio_state_document_name(fixture->state), "two") == 0 &&
+                outside_request_waits(fixture, L"open-3.json"),
+            "while a surface is open the request waits, file and all");
+    surface_button(window, ACCESSIBLE_SURFACE_CLOSE);
+    outside_idle(window);
+    outside_idle(window);
+    require(strcmp(folio_state_document_name(fixture->state), "one") == 0 &&
+                !outside_request_waits(fixture, L"open-3.json") &&
+                !folio_window_idle_work_ready(window),
+            "and is opened when the surface closes; then the window is at rest");
+    outside_request(fixture, L"open-4.json", "{}");
+    outside_request(fixture, L"open-5.json", "[]");
+    outside_request(fixture, L"open-6.json", "not json");
+    folio_window_data_changed(window);
+    bool gathered = outside_gathered(window);
+    for (unsigned turn = 0; turn < 8; ++turn)
+        outside_idle(window);
+    require(gathered && !outside_request_waits(fixture, L"open-4.json") &&
+                !outside_request_waits(fixture, L"open-5.json") &&
+                !outside_request_waits(fixture, L"open-6.json") &&
+                !folio_window_idle_work_ready(window),
+            "several files are taken one after another, a quiet turn each, until none is left");
+}
+
 /* #1070 / ADR0119 stage 4: the data folder changed while the window stayed in front. The
  * notices are gathered, and the reading follows once, when the window is quiet. */
 static void outside_watched(struct native_fixture *_Nonnull fixture,
@@ -11368,6 +11476,7 @@ static void outside_refresh(struct native_fixture *_Nonnull fixture)
     require(folio_window_create(fixture->state, fixture->location, FONT_BUNDLE_READY, &window) ==
                 FOLIO_WINDOW_CREATED,
             "outside refresh window");
+    outside_requests_cleared(fixture);
     pump(window);
     open_link_send(window, "nenefolio://open?category=schedule&note=one");
     puts("outside refresh: the reading view");
@@ -11376,6 +11485,9 @@ static void outside_refresh(struct native_fixture *_Nonnull fixture)
     puts("outside refresh: the lists, and a surface in the way");
     fflush(stdout);
     outside_lists(fixture, window);
+    puts("outside refresh: request files");
+    fflush(stdout);
+    outside_requested(fixture, window);
     puts("outside refresh: a change while the window stays in front");
     fflush(stdout);
     outside_watched(fixture, window);

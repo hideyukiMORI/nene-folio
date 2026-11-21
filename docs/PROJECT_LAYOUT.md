@@ -145,6 +145,7 @@ coreの`storage_path`と`startup_settings`がpath検証と版1のcodecを持ち�
 `storage_adapter`は配布形式/Known Folder/起動設定を扱い、`persistence_adapter`は確定rootを明示的に受ける。
 両者の`.nenefolio.lock`取得は`data_lock`、native path変換は`storage_native_path`へ集約する（ADR0077）。
 dataフォルダの変更の通知は`data_watch`が持ち、合成ルートの入口の待ちがそれを待つ（背景スレッドは無い。ADR0119）。
+`data/.requests/`の依頼のファイルの一覧・読み・削除は`request_file`が持ち、保存先のアダプタのポートから呼ぶ（ADR0119の決定6）。
 `web_link_adapter`だけが検証済みURIをShellExecuteExWへ渡し、COM初期化/解放とOS失敗を扱う（ADR0079）。
 `clipboard_adapter`だけがOSのクリップボードを書く。UTF-16・CRLFへ変換し、所有者の表示しない窓と確保した領域の所有を閉じる（ADR0098）。
 `transfer_adapter`は外部Markdownの読込と検証済み本文/ZIPの新規公開だけを扱い、`file_bytes`の原子的な公開へ合流する（ADR0082）。

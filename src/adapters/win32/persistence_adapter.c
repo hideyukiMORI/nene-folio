@@ -1,4 +1,5 @@
 #include "persistence_adapter.h"
+#include "request_file.h"
 
 #include "category_contents.h"
 #include "category_ledger.h"
@@ -1804,6 +1805,18 @@ static enum category_remove_outcome remove_category(struct persistence_adapter *
                : CATEGORY_REMOVE_HISTORY_NOT_RECYCLED;
 }
 
+/* ADR0119 の決定 6: 依頼のファイルの置き場は data/.requests（`.` 始まりなのでカテゴリの走査には
+ * 出ない）。 */
+static enum request_outcome take_open_request(struct persistence_adapter *_Nonnull adapter,
+                                              char *_Nonnull buffer, size_t capacity,
+                                              size_t *_Nonnull length)
+{
+    wchar_t folder[path_capacity];
+    if (!compose(adapter, nullptr, L".requests", folder))
+        return REQUEST_NONE;
+    return request_file_take(folder, buffer, capacity, length);
+}
+
 struct persistence_port persistence_adapter_port(struct persistence_adapter *_Nonnull adapter)
 {
     struct persistence_port port = {
@@ -1827,6 +1840,7 @@ struct persistence_port persistence_adapter_port(struct persistence_adapter *_No
         .recover_rename = recover_rename,
         .read_note_ledger = read_note_ledger,
         .write_note_ledger = write_note_ledger,
+        .take_open_request = take_open_request,
     };
     return port;
 }

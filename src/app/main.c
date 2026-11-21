@@ -163,6 +163,9 @@ static int run(const struct folio_ports *_Nonnull ports, struct storage_state *_
     if (launch->link != nullptr)
         folio_window_open_link(window, utf8_text_bytes(launch->link),
                                utf8_text_length(launch->link));
+    /* 動いていないあいだに置かれた依頼のファイルは、見張りの知らせにならない。起動のときに
+     * 1 回、知らせがあったものとして見る（ADR0119 の決定 6）。 */
+    folio_window_data_changed(window);
     run_message_loop(window, watch);
     data_watch_destroy(watch);
     folio_window_destroy(window);

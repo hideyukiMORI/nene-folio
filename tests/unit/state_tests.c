@@ -115,8 +115,13 @@ struct persistence_adapter
     size_t trashes;
     char trashed_category[64];
     char trashed_note[256];
-    char created_category[64]; /* 最後に作るよう求められたカテゴリ名（複製） */
-    char written_body[256];    /* 最後に書かれた本文（終端付き） */
+    char created_category[64];               /* 最後に作るよう求められたカテゴリ名（複製） */
+    char written_body[256];                  /* 最後に書かれた本文（終端付き） */
+    const char *_Nullable request_bodies[4]; /* data/.requests の依頼のファイル（古い順） */
+    size_t request_count;
+    size_t requests_taken;
+    enum request_outcome request_outcome; /* NONE 以外なら、取り出しがこの結果になる */
+    bool request_endless;                 /* 依頼でないファイルが、取り出しても尽きない */
     size_t saved_count;
     char saved_categories[16][64];
     char saved_notes[16][64];
@@ -1096,6 +1101,25 @@ fake_read_note_times(struct persistence_adapter *_Nonnull adapter, const char *_
                : PERSISTENCE_OUT_OF_MEMORY;
 }
 
+/* The request files waiting in the fake folder, oldest first. With request_endless, a file
+ * that is no request is always there. */
+static enum request_outcome fake_take_open_request(struct persistence_adapter *_Nonnull adapter,
+                                                   char *_Nonnull buffer, size_t capacity,
+                                                   size_t *_Nonnull length)
+{
+    if (adapter->request_outcome != REQUEST_NONE)
+        return adapter->request_outcome;
+    if (!adapter->request_endless && adapter->requests_taken == adapter->request_count)
+        return REQUEST_NONE;
+    const char *body =
+        adapter->request_endless ? "{}" : adapter->request_bodies[adapter->requests_taken];
+    adapter->requests_taken += 1;
+    require(body != nullptr && strlen(body) <= capacity, "the fake request fits");
+    memcpy(buffer, body, strlen(body));
+    *length = strlen(body);
+    return REQUEST_TAKEN;
+}
+
 static struct persistence_port port_for(struct persistence_adapter *_Nonnull adapter)
 {
     struct persistence_port port = {
@@ -1119,6 +1143,7 @@ static struct persistence_port port_for(struct persistence_adapter *_Nonnull ada
         .write_note_ledger = fake_write_note_ledger,
         .read_settings = fake_read_settings,
         .write_settings = fake_write_settings,
+        .take_open_request = fake_take_open_request,
     };
     return port;
 }
@@ -1977,6 +2002,77 @@ static void verify_reload_document_editing(void)
     folio_state_destroy(state);
 }
 
+/* #1070 / ADR0119 decision 6: a request file is taken, validated like a link, and handed over. */
+static void verify_take_open_request(void)
+{
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    struct open_request *request = nullptr;
+    bool pending = true;
+    require(folio_state_take_open_request(state, &request, &pending) == FOLIO_STATE_READY &&
+                request == nullptr && !pending,
+            "no request file: nothing to open and nothing left");
+    adapter.request_bodies[0] = "{\"version\":1,\"action\":\"delete\",\"category\":\"B\"}";
+    adapter.request_bodies[1] =
+        "{\"version\":1,\"action\":\"open\",\"category\":\"B\",\"note\":\"one\",\"lines\":\"3\"}";
+    adapter.request_bodies[2] = "not json";
+    adapter.request_bodies[3] = "[]";
+    adapter.request_count = 4;
+    struct open_request_lines lines = {0, 0};
+    require(folio_state_take_open_request(state, &request, &pending) == FOLIO_STATE_READY &&
+                request != nullptr && pending && adapter.requests_taken == 2 &&
+                same_text(category_name_text(open_request_category(request)), "B") &&
+                open_request_lines(request, &lines) && lines.first == 3,
+            "a file that is no valid request is dropped and the next one is the request; there "
+            "may be more");
+    open_request_destroy(request);
+    request = nullptr;
+    require(folio_state_take_open_request(state, &request, &pending) == FOLIO_STATE_READY &&
+                request == nullptr && !pending && adapter.requests_taken == 4,
+            "the files left are no requests: all are dropped in the one call, and nothing is left");
+    adapter.request_endless = true;
+    adapter.requests_taken = 0;
+    require(folio_state_take_open_request(state, &request, &pending) == FOLIO_STATE_READY &&
+                request == nullptr && pending && adapter.requests_taken == 32,
+            "one call looks at a bounded number of files and says that more may wait");
+    adapter.request_endless = false;
+    adapter.request_outcome = REQUEST_OUT_OF_MEMORY;
+    require(folio_state_take_open_request(state, &request, &pending) == FOLIO_STATE_OUT_OF_MEMORY &&
+                request == nullptr && !pending && adapter.note_writes == 0 && adapter.writes == 0,
+            "the adapter's failure is typed; taking a request writes nothing");
+    folio_state_destroy(state);
+}
+
+/* An allocation failure anywhere while a request is taken is typed and leaks nothing. */
+static void verify_take_open_request_allocation(void)
+{
+    static const char body[] = "{\"version\":1,\"action\":\"open\",\"category\":\"B\","
+                               "\"note\":\"one\",\"text\":\"body\"}";
+    struct persistence_adapter adapter = healthy_adapter();
+    struct folio_state *state = ready_state(&adapter);
+    adapter.request_bodies[0] = body;
+    adapter.request_count = 1;
+    struct open_request *request = nullptr;
+    bool pending = false;
+    allocation_probe_fail_at(0);
+    require(folio_state_take_open_request(state, &request, &pending) == FOLIO_STATE_READY &&
+                request != nullptr,
+            "the request is taken");
+    size_t calls = allocation_probe_calls();
+    open_request_destroy(request);
+    for (size_t nth = 1; nth <= calls; ++nth)
+    {
+        request = nullptr;
+        adapter.requests_taken = 0;
+        allocation_probe_fail_at(nth);
+        enum folio_state_outcome outcome = folio_state_take_open_request(state, &request, &pending);
+        allocation_probe_fail_at(0);
+        require(outcome == FOLIO_STATE_OUT_OF_MEMORY && request == nullptr,
+                "an allocation failure while taking a request is typed");
+    }
+    folio_state_destroy(state);
+}
+
 static void verify_open_request_place(void)
 {
     struct persistence_adapter adapter = healthy_adapter();
@@ -2011,6 +2107,8 @@ static void verify_category_refresh(void)
     verify_guarded_save_stops_operations();
     verify_document_stale();
     verify_reload_document();
+    verify_take_open_request();
+    verify_take_open_request_allocation();
     verify_reload_document_editing();
     verify_category_refresh_adds();
     verify_category_refresh_follows_names();

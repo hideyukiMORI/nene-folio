@@ -409,6 +409,113 @@ static void verify_watch(struct fixture *_Nonnull fixture)
             "without a watch the wait is for messages alone");
 }
 
+/* ADR0119 決定6: 依頼のファイル。外の書き手が data/.requests/ に置き、アダプタが古い順に
+ * 取り出して消す。minutes は、更新の日時を何分前にするか。 */
+static void request_write(const struct fixture *_Nonnull fixture, const wchar_t *_Nonnull leaf,
+                          const char *_Nonnull text, unsigned minutes)
+{
+    wchar_t folder[storage_native_capacity];
+    compose(fixture, nullptr, L".requests", folder);
+    require(CreateDirectoryW(folder, nullptr) != 0 || GetLastError() == ERROR_ALREADY_EXISTS,
+            "the requests folder");
+    write_file(fixture, L".requests", leaf, text);
+    wchar_t path[storage_native_capacity];
+    compose(fixture, L".requests", leaf, path);
+    HANDLE file = CreateFileW(path, FILE_WRITE_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_DELETE,
+                              nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    require(file != INVALID_HANDLE_VALUE, "the request file's times can be set");
+    FILETIME written;
+    require(GetFileTime(file, nullptr, nullptr, &written) != 0, "the request file's time");
+    ULARGE_INTEGER stamp = {.LowPart = written.dwLowDateTime, .HighPart = written.dwHighDateTime};
+    stamp.QuadPart -= (ULONGLONG)minutes * 60ULL * 10000000ULL;
+    written.dwLowDateTime = stamp.LowPart;
+    written.dwHighDateTime = stamp.HighPart;
+    bool set = SetFileTime(file, nullptr, nullptr, &written) != 0;
+    CloseHandle(file);
+    require(set, "the request file is dated");
+}
+
+/* 取り出した結果と、取り出した中身（TAKEN のとき）。 */
+static enum request_outcome request_take(const struct fixture *_Nonnull fixture,
+                                         const char *_Nullable expected)
+{
+    static char buffer[65536];
+    struct persistence_port disk = persistence_adapter_port(fixture->files);
+    size_t length = 0;
+    enum request_outcome outcome =
+        disk.take_open_request(disk.adapter, buffer, sizeof buffer, &length);
+    if (outcome == REQUEST_TAKEN)
+        require(expected != nullptr && length == strlen(expected) &&
+                    memcmp(buffer, expected, length) == 0,
+                "the bytes of the request file are handed over as they are");
+    return outcome;
+}
+
+static void verify_request_order(struct fixture *_Nonnull fixture)
+{
+    require(request_take(fixture, nullptr) == REQUEST_NONE, "no folder, no request");
+    request_write(fixture, L"open-a.json", "newer", 1);
+    request_write(fixture, L"open-b.json", "older", 2);
+    request_write(fixture, L"other.json", "not a request", 2);
+    request_write(fixture, L"open-c.txt", "not a request either", 2);
+    require(request_take(fixture, "older") == REQUEST_TAKEN &&
+                !file_exists(fixture, L".requests", L"open-b.json") &&
+                file_exists(fixture, L".requests", L"open-a.json"),
+            "the oldest request is taken first, and its file is removed");
+    require(request_take(fixture, "newer") == REQUEST_TAKEN &&
+                request_take(fixture, nullptr) == REQUEST_NONE &&
+                file_exists(fixture, L".requests", L"other.json") &&
+                file_exists(fixture, L".requests", L"open-c.txt"),
+            "then the next; files with other names are left alone");
+    size_t categories = folio_state_category_count(fixture->state);
+    bool changed = true;
+    require(folio_state_refresh_lists(fixture->state, &changed) == FOLIO_STATE_READY && !changed &&
+                folio_state_category_count(fixture->state) == categories,
+            "the requests folder is no category");
+}
+
+static void verify_request_refused(struct fixture *_Nonnull fixture)
+{
+    static char large[70001];
+    memset(large, ' ', sizeof large - 1);
+    request_write(fixture, L"open-large.json", large, 0);
+    request_write(fixture, L"open-stale.json", "too late", 10);
+    require(request_take(fixture, nullptr) == REQUEST_NONE &&
+                !file_exists(fixture, L".requests", L"open-large.json") &&
+                !file_exists(fixture, L".requests", L"open-stale.json"),
+            "a file over the limit and one older than five minutes are removed unread, and "
+            "nothing is handed over");
+    request_write(fixture, L"open-held.json", "held", 2);
+    request_write(fixture, L"open-next.json", "next", 1);
+    wchar_t path[storage_native_capacity];
+    compose(fixture, L".requests", L"open-held.json", path);
+    HANDLE held = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING,
+                              FILE_ATTRIBUTE_NORMAL, nullptr);
+    require(held != INVALID_HANDLE_VALUE, "another program holds a request file open");
+    enum request_outcome skipped = request_take(fixture, "next");
+    enum request_outcome again = request_take(fixture, nullptr);
+    CloseHandle(held);
+    require(skipped == REQUEST_TAKEN && again == REQUEST_NONE &&
+                file_exists(fixture, L".requests", L"open-held.json"),
+            "a file that cannot be removed is not handed over (it would be opened again and "
+            "again); the next one is");
+    require(request_take(fixture, "held") == REQUEST_TAKEN &&
+                request_take(fixture, nullptr) == REQUEST_NONE,
+            "once it can be removed, it is taken");
+    request_write(fixture, L"open-locked.json", "read-only", 1);
+    compose(fixture, L".requests", L"open-locked.json", path);
+    require(SetFileAttributesW(path, FILE_ATTRIBUTE_READONLY) != 0, "the file is read-only");
+    require(request_take(fixture, "read-only") == REQUEST_TAKEN &&
+                !file_exists(fixture, L".requests", L"open-locked.json"),
+            "a read-only request file is taken and removed all the same");
+    wchar_t folder[storage_native_capacity];
+    compose(fixture, L".requests", L"open-folder.json", folder);
+    require(CreateDirectoryW(folder, nullptr) != 0, "a folder with a request's name");
+    require(request_take(fixture, nullptr) == REQUEST_NONE &&
+                file_exists(fixture, L".requests", L"open-folder.json"),
+            "a folder is no request and is left alone");
+}
+
 /* ADR0119 決定4 の続き: テキストでなくなったファイル・開けないファイル・BOM と CRLF のファイル、
  * そして破棄の出口（ファイルから読み直してから保存し直す）。 */
 static void verify_guarded_save_files(struct fixture *_Nonnull fixture)
@@ -777,6 +884,9 @@ int main(void)
     verify_guarded_save_files(&fixture);
     puts("ledger refresh: watch");
     verify_watch(&fixture);
+    puts("ledger refresh: request files");
+    verify_request_order(&fixture);
+    verify_request_refused(&fixture);
     puts("ledger refresh: star");
     verify_star(&fixture);
     puts("ledger refresh: reorder");
