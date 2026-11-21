@@ -1,6 +1,7 @@
 #include "open_request.h"
 #include "ascii_fold.h"
 #include "category_name.h"
+#include "json_reader.h"
 #include "note_name.h"
 #include "utf8_text.h"
 #include <stdlib.h>
@@ -311,6 +312,137 @@ enum open_request_outcome open_request_create(const char *_Nonnull bytes, size_t
     if (outcome == OPEN_REQUEST_ACCEPTED &&
         (request->category == nullptr || request->note == nullptr))
         outcome = OPEN_REQUEST_MALFORMED;
+    if (outcome != OPEN_REQUEST_ACCEPTED)
+    {
+        open_request_destroy(request);
+        return outcome;
+    }
+    *out = request;
+    return OPEN_REQUEST_ACCEPTED;
+}
+
+/* 依頼のファイルが、どの必須の欄をもう見たか。 */
+struct file_marks
+{
+    bool versioned;
+    bool acted;
+};
+
+static enum open_request_outcome unexpected(enum json_token token)
+{
+    return token == JSON_TOKEN_OUT_OF_MEMORY ? OPEN_REQUEST_OUT_OF_MEMORY : OPEN_REQUEST_MALFORMED;
+}
+
+/* first で始まる値を、入れ子ごと読み飛ばす。 */
+static enum open_request_outcome skip_value(struct json_reader *_Nonnull reader,
+                                            enum json_token first)
+{
+    size_t depth = 0;
+    enum json_token token = first;
+    for (;;)
+    {
+        if (token == JSON_TOKEN_OBJECT_BEGIN || token == JSON_TOKEN_ARRAY_BEGIN)
+            depth += 1;
+        else if (token == JSON_TOKEN_OBJECT_END || token == JSON_TOKEN_ARRAY_END)
+            depth -= 1;
+        else if (token == JSON_TOKEN_END || token == JSON_TOKEN_MALFORMED ||
+                 token == JSON_TOKEN_OUT_OF_MEMORY)
+            return unexpected(token);
+        if (depth == 0)
+            return OPEN_REQUEST_ACCEPTED;
+        token = json_reader_next(reader);
+    }
+}
+
+static enum open_request_outcome take_version(const struct json_reader *_Nonnull reader,
+                                              enum json_token value,
+                                              struct file_marks *_Nonnull marks)
+{
+    if (marks->versioned || value != JSON_TOKEN_UNSIGNED || json_reader_unsigned(reader) != 1)
+        return unexpected(value);
+    marks->versioned = true;
+    return OPEN_REQUEST_ACCEPTED;
+}
+
+static enum open_request_outcome take_action(const struct json_reader *_Nonnull reader,
+                                             enum json_token value,
+                                             struct file_marks *_Nonnull marks)
+{
+    if (marks->acted || value != JSON_TOKEN_STRING || json_reader_text_length(reader) != 4 ||
+        memcmp(json_reader_text(reader), "open", 4) != 0)
+        return unexpected(value);
+    marks->acted = true;
+    return OPEN_REQUEST_ACCEPTED;
+}
+
+/* リンクと同じ欄は、同じ受け取り手へ渡す（ARC-008: 規則は 1 か所）。 */
+static enum open_request_outcome take_field(struct open_request *_Nonnull request,
+                                            struct json_reader *_Nonnull reader, size_t which,
+                                            enum json_token value)
+{
+    if (which == known_count)
+        return skip_value(reader, value);
+    if (value != JSON_TOKEN_STRING)
+        return unexpected(value);
+    const char *text = json_reader_text(reader);
+    size_t length = json_reader_text_length(reader);
+    if (!valid_value(text, length))
+        return OPEN_REQUEST_MALFORMED;
+    return takers[which](request, text, length);
+}
+
+/* キーの直後から、その値までを読む。 */
+static enum open_request_outcome take_member(struct open_request *_Nonnull request,
+                                             struct json_reader *_Nonnull reader,
+                                             struct file_marks *_Nonnull marks)
+{
+    /* キーの文字列は次の字句で無効になるので、どの欄かを先に決める。 */
+    const char *key = json_reader_text(reader);
+    size_t length = json_reader_text_length(reader);
+    bool version = length == 7 && memcmp(key, "version", 7) == 0;
+    bool action = length == 6 && memcmp(key, "action", 6) == 0;
+    size_t which = known_key(key, length);
+    enum json_token value = json_reader_next(reader);
+    if (version)
+        return take_version(reader, value, marks);
+    if (action)
+        return take_action(reader, value, marks);
+    return take_field(request, reader, which, value);
+}
+
+static enum open_request_outcome read_file(struct open_request *_Nonnull request,
+                                           struct json_reader *_Nonnull reader)
+{
+    struct file_marks marks = {false, false};
+    enum json_token token = json_reader_next(reader);
+    if (token != JSON_TOKEN_OBJECT_BEGIN)
+        return unexpected(token);
+    enum open_request_outcome outcome = OPEN_REQUEST_ACCEPTED;
+    for (token = json_reader_next(reader);
+         outcome == OPEN_REQUEST_ACCEPTED && token == JSON_TOKEN_KEY;
+         token = outcome == OPEN_REQUEST_ACCEPTED ? json_reader_next(reader) : token)
+        outcome = take_member(request, reader, &marks);
+    if (outcome != OPEN_REQUEST_ACCEPTED)
+        return outcome;
+    if (token != JSON_TOKEN_OBJECT_END || json_reader_next(reader) != JSON_TOKEN_END)
+        return unexpected(token);
+    bool complete = marks.versioned && marks.acted && request->category != nullptr &&
+                    request->note != nullptr;
+    return complete ? OPEN_REQUEST_ACCEPTED : OPEN_REQUEST_MALFORMED;
+}
+
+enum open_request_outcome open_request_create_json(const char *_Nonnull bytes, size_t length,
+                                                   struct open_request *_Nullable *_Nonnull out)
+{
+    if (length > open_request_file_limit)
+        return OPEN_REQUEST_TOO_LONG;
+    struct json_reader *_Nullable reader = nullptr;
+    if (json_reader_create(bytes, length, &reader) != JSON_READER_CREATED || reader == nullptr)
+        return OPEN_REQUEST_OUT_OF_MEMORY;
+    struct open_request *request = calloc(1, sizeof *request);
+    enum open_request_outcome outcome =
+        request == nullptr ? OPEN_REQUEST_OUT_OF_MEMORY : read_file(request, reader);
+    json_reader_destroy(reader);
     if (outcome != OPEN_REQUEST_ACCEPTED)
     {
         open_request_destroy(request);
