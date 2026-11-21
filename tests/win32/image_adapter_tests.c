@@ -9,6 +9,7 @@
 #include "note_archive.h"
 #include "note_text.h"
 #include "storage_path.h"
+#include "text_buffer.h"
 #include "utf8_text.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -253,6 +254,19 @@ static void rejected_files(const struct image_port *_Nonnull port)
         require(request_image(port, paths[index], &bitmap) == outcomes[index] && bitmap == nullptr,
                 "missing or prohibited source rejected");
     }
+    /* A path longer than a native path can be: refused, and the process goes on. */
+    static char endless[1400];
+    memcpy(endless, "images/", 7);
+    memset(endless + 7, 'a', sizeof endless - 12);
+    memcpy(endless + sizeof endless - 5, ".png", 5);
+    struct image_bitmap *_Nullable none = nullptr;
+    puts("long-path-start");
+    fflush(stdout);
+    enum image_outcome endless_outcome = request_image(port, endless, &none);
+    printf("long-path-outcome %d\n", (int)endless_outcome);
+    fflush(stdout);
+    require(endless_outcome != IMAGE_READY && none == nullptr,
+            "a path too long for the disk is refused");
     wchar_t path[1024];
     path_for(L"A\\images\\bad.png", path);
     HANDLE file = CreateFileW(path, GENERIC_WRITE, 0, nullptr, CREATE_NEW, 0, nullptr);
@@ -316,6 +330,107 @@ static void export_zip(const struct image_port *_Nonnull port, const char *_Nonn
     note_archive_destroy(archive);
     note_text_destroy(body);
 }
+
+/* #1062 / ADR0120: a dropped file is taken into the category's images\ without overwriting. */
+static void write_bytes(const wchar_t *_Nonnull leaf, const char *_Nonnull bytes, size_t length)
+{
+    wchar_t path[1024];
+    path_for(leaf, path);
+    HANDLE file = CreateFileW(path, GENERIC_WRITE, 0, nullptr, CREATE_NEW, 0, nullptr);
+    require(file != INVALID_HANDLE_VALUE, "adopt fixture file");
+    DWORD written = 0;
+    bool stored = length == 0 || (WriteFile(file, bytes, (DWORD)length, &written, nullptr) != 0 &&
+                                  written == length);
+    CloseHandle(file);
+    require(stored, "adopt fixture bytes");
+}
+
+static bool fixture_exists(const wchar_t *_Nonnull leaf)
+{
+    wchar_t path[1024];
+    path_for(leaf, path);
+    return GetFileAttributesW(path) != INVALID_FILE_ATTRIBUTES;
+}
+
+static void remove_fixture(const wchar_t *_Nonnull leaf)
+{
+    wchar_t path[1024];
+    path_for(leaf, path);
+    require(DeleteFileW(path) != 0, "remove an adopt fixture file");
+}
+
+/* Adopts directory\leaf into category A; `expected` is the name under images/ (nullptr: none). */
+static void adopt(const struct image_port *_Nonnull port, const wchar_t *_Nonnull leaf,
+                  enum image_adopt_outcome outcome, const char *_Nullable expected)
+{
+    wchar_t wide[1024];
+    char narrow[3072];
+    path_for(leaf, wide);
+    int bytes = WideCharToMultiByte(CP_UTF8, 0, wide, -1, narrow, (int)sizeof narrow, nullptr,
+                                    nullptr);
+    struct storage_path *source = nullptr;
+    require(bytes > 1 && storage_path_create(narrow, (size_t)bytes - 1, &source) == STORAGE_PATH_READY &&
+                source != nullptr,
+            "adopt source path");
+    struct text_buffer *name = nullptr;
+    require(text_buffer_create(&name) == TEXT_BUFFER_ACCEPTED && name != nullptr, "adopt name");
+    enum image_adopt_outcome actual = port->adopt(port->adapter, "A", source, name);
+    if (actual != outcome)
+        fprintf(stderr, "adopt %ls -> %d\n", leaf, (int)actual);
+    require(actual == outcome, "the adopt outcome");
+    require(text_buffer_finish(name) == TEXT_BUFFER_ACCEPTED &&
+                strcmp(text_buffer_bytes(name), expected == nullptr ? "" : expected) == 0,
+            "the name under images/ that the Markdown will point at");
+    text_buffer_destroy(name);
+    storage_path_destroy(source);
+}
+
+static void adopt_contract(const struct image_port *_Nonnull port)
+{
+    make_directory(L"drop");
+    make_directory(L"drop\\other");
+    make_directory(L"drop\\folder.png");
+    write_image(L"drop\\photo.png", (struct image_size){10, 10}, false);
+    write_image(L"drop\\other\\photo.png", (struct image_size){20, 10}, false);
+    write_image(L"drop\\my photo.jpg", (struct image_size){12, 12}, true);
+    write_bytes(L"drop\\notes.png", "only text", 9);
+    write_bytes(L"drop\\empty.png", "", 0);
+    adopt(port, L"drop\\photo.png", IMAGE_ADOPT_COPIED, "photo.png");
+    require(fixture_exists(L"A\\images\\photo.png"), "the image is copied into images");
+    adopt(port, L"drop\\photo.png", IMAGE_ADOPT_PRESENT, "photo.png");
+    require(!fixture_exists(L"A\\images\\photo-2.png"), "the same bytes are not copied twice");
+    adopt(port, L"drop\\other\\photo.png", IMAGE_ADOPT_COPIED, "photo-2.png");
+    adopt(port, L"drop\\other\\photo.png", IMAGE_ADOPT_PRESENT, "photo-2.png");
+    adopt(port, L"A\\images\\a.png", IMAGE_ADOPT_PRESENT, "a.png");
+    adopt(port, L"drop\\my photo.jpg", IMAGE_ADOPT_COPIED, "my photo.jpg");
+    adopt(port, L"drop\\notes.png", IMAGE_ADOPT_NOT_IMAGE, nullptr);
+    adopt(port, L"drop\\empty.png", IMAGE_ADOPT_NOT_IMAGE, nullptr);
+    adopt(port, L"drop\\folder.png", IMAGE_ADOPT_NOT_IMAGE, nullptr);
+    adopt(port, L"drop\\missing.png", IMAGE_ADOPT_UNREADABLE, nullptr);
+    require(!fixture_exists(L"A\\images\\notes.png") && !fixture_exists(L"A\\images\\empty.png"),
+            "what is no image is not copied");
+    wchar_t path[1024];
+    path_for(L"drop\\photo.png", path);
+    HANDLE file = CreateFileW(path, GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, 0, nullptr);
+    LARGE_INTEGER size = {.QuadPart = 16 * 1024 * 1024 + 1};
+    require(file != INVALID_HANDLE_VALUE && SetFilePointerEx(file, size, nullptr, FILE_BEGIN) &&
+                SetEndOfFile(file),
+            "an oversized source");
+    CloseHandle(file);
+    adopt(port, L"drop\\photo.png", IMAGE_ADOPT_TOO_LARGE, nullptr);
+    const wchar_t *files[] = {L"A\\images\\photo.png", L"A\\images\\photo-2.png",
+                              L"A\\images\\my photo.jpg", L"drop\\photo.png",
+                              L"drop\\other\\photo.png", L"drop\\my photo.jpg",
+                              L"drop\\notes.png",    L"drop\\empty.png"};
+    for (size_t index = 0; index < sizeof files / sizeof files[0]; ++index)
+        remove_fixture(files[index]);
+    const wchar_t *folders[] = {L"drop\\folder.png", L"drop\\other", L"drop"};
+    for (size_t index = 0; index < sizeof folders / sizeof folders[0]; ++index)
+    {
+        path_for(folders[index], path);
+        require(RemoveDirectoryW(path) != 0, "remove an adopt fixture folder");
+    }
+}
 static void cleanup(void)
 {
     const wchar_t *files[] = {L"A\\images\\a.png", L"A\\images\\bad.png", L"A\\outside.jpg"};
@@ -376,6 +491,7 @@ int main(int argc, char *_Nonnull *_Nonnull argv)
         write_image(L"A\\images\\a.png", (struct image_size){100, 50}, false);
         expect_size(&port, "images/a.png", (struct image_size){100, 50});
         expect_size(&port, "outside.jpg", (struct image_size){320, 160});
+        adopt_contract(&port);
         rejected_files(&port);
     }
     if (argc == 3 && strcmp(argv[1], "--export") == 0)

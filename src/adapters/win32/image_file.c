@@ -225,6 +225,35 @@ void image_file_destroy(struct image_file *_Nullable file)
 
 /* ---- #1062 / ADR0120: taking a dropped image into images\ ---- */
 
+/* head\tail into out (storage_native_capacity units). False when it does not fit: the names
+ * come from outside (a dropped file's own name), and swprintf_s would end the process. */
+static bool joined(wchar_t *_Nonnull out, const wchar_t *_Nonnull head, const wchar_t *_Nonnull tail)
+{
+    size_t first = wcslen(head);
+    size_t second = wcslen(tail);
+    if (first + 1 + second + 1 > storage_native_capacity)
+        return false;
+    wchar_t built[storage_native_capacity];
+    memcpy(built, head, first * sizeof *built);
+    built[first] = L'\\';
+    memcpy(built + first + 1, tail, (second + 1) * sizeof *built);
+    memcpy(out, built, (first + 1 + second + 1) * sizeof *out); /* out may be head */
+    return true;
+}
+
+/* A symbolic link or a junction: its target is not followed (ADR0120 decision 4). */
+static bool link_source(const wchar_t *_Nonnull source)
+{
+    WIN32_FIND_DATAW found;
+    HANDLE search = FindFirstFileW(source, &found);
+    if (search == INVALID_HANDLE_VALUE)
+        return false;
+    FindClose(search);
+    return (found.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0 &&
+           (found.dwReserved0 == IO_REPARSE_TAG_SYMLINK ||
+            found.dwReserved0 == IO_REPARSE_TAG_MOUNT_POINT);
+}
+
 /* The category's folder, without the long-path prefix (as path_for builds it). */
 static bool category_directory(const wchar_t *_Nonnull root, const char *_Nonnull category,
                                wchar_t *_Nonnull directory)
@@ -235,7 +264,7 @@ static bool category_directory(const wchar_t *_Nonnull root, const char *_Nonnul
         return false;
     if (wcsncmp(root, L"\\\\?\\", 4) == 0)
         root += 4;
-    return swprintf_s(directory, storage_native_capacity, L"%ls\\%ls", root, name) > 0;
+    return joined(directory, root, name);
 }
 
 /* The opened source's bytes, within the size an image may have. An empty file is no image. */
@@ -272,6 +301,8 @@ static enum image_adopt_outcome read_source(const wchar_t *_Nonnull source,
                                             struct image_file *_Nonnull file,
                                             HANDLE _Nonnull *_Nonnull opened)
 {
+    if (link_source(source))
+        return IMAGE_ADOPT_NOT_IMAGE;
     HANDLE handle = CreateFileW(source, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_DELETE, nullptr,
                                 OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (handle == INVALID_HANDLE_VALUE)
@@ -315,7 +346,7 @@ static enum image_adopt_outcome place_as(const wchar_t *_Nonnull images, const c
     wchar_t path[storage_native_capacity];
     size_t length = 0;
     if (utf16_text_fill(name, wide, 512, &length) != UTF16_TEXT_FILL_READY ||
-        swprintf_s(path, storage_native_capacity, L"%ls\\%ls", images, wide) < 0)
+        !joined(path, images, wide))
         return IMAGE_ADOPT_NOT_STORED;
     if (GetFileAttributesW(path) != INVALID_FILE_ATTRIBUTES)
     {
@@ -412,7 +443,7 @@ static bool already_inside(HANDLE _Nonnull source, const wchar_t *_Nonnull direc
 /* images\ of the category, made if it is not there. It must be a plain folder on a local disk. */
 static bool images_folder(const wchar_t *_Nonnull directory, wchar_t *_Nonnull images)
 {
-    if (swprintf_s(images, storage_native_capacity, L"%ls\\images", directory) < 0)
+    if (!joined(images, directory, L"images"))
         return false;
     if (!CreateDirectoryW(images, nullptr) && GetLastError() != ERROR_ALREADY_EXISTS)
         return false;
