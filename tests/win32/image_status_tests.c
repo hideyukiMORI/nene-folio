@@ -11086,10 +11086,12 @@ static void outside_idle(struct folio_window *_Nonnull window)
     pump(window);
 }
 
+/* The user goes to another application and comes back. */
 static void outside_return(struct folio_window *_Nonnull window)
 {
-    SendMessageW(folio_window_accessible_window(window, ACCESSIBLE_WINDOW), WM_ACTIVATEAPP, TRUE,
-                 0);
+    HWND root = folio_window_accessible_window(window, ACCESSIBLE_WINDOW);
+    SendMessageW(root, WM_ACTIVATEAPP, FALSE, 0);
+    SendMessageW(root, WM_ACTIVATEAPP, TRUE, 0);
     outside_idle(window);
 }
 
@@ -11115,6 +11117,11 @@ static void outside_reading(struct native_fixture *_Nonnull fixture,
             "nothing changed outside: the note is as it was");
     outside_write(fixture, "one", text);
     require(!outside_shows(window, L"段落 150"), "nothing is read while the window is away");
+    SendMessageW(folio_window_accessible_window(window, ACCESSIBLE_WINDOW), WM_ACTIVATEAPP, TRUE,
+                 0);
+    outside_idle(window);
+    require(!outside_shows(window, L"段落 150"),
+            "an activation that follows no leaving, as at the start, reads nothing");
     outside_return(window);
     require(outside_shows(window, L"段落 150"), "the changed file is read on the way back");
     expect_notice(window, L"外部の変更を読み込みました。");

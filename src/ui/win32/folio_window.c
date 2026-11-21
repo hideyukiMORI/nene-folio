@@ -276,7 +276,8 @@ struct folio_window
     HWND _Nullable session_return_focus;
     enum ui_text session_reason;
     enum ui_text open_line; /* PANE_NOTICE_OPEN_LINK の文（#1071。#1070 の外の変更の 1 行も） */
-    bool outside_due; /* 窓が前面に戻った。静かになったら data を読み直す（ADR0119 の決定 1・2） */
+    bool outside_away; /* ほかのアプリへ移っている（WM_ACTIVATEAPP の FALSE から TRUE まで） */
+    bool outside_due;  /* そこから戻った。静かになったら data を読み直す（ADR0119 の決定 1・2） */
     char *_Nullable queued_link; /* 預かった「開く」依頼。メッセージの待ちの先頭で開く */
     size_t queued_length;
     bool session_reason_owned;
@@ -6807,10 +6808,6 @@ static enum folio_state_outcome enter_edit(struct folio_window *_Nonnull self)
     {
         return FOLIO_STATE_NOTHING_SELECTED;
     }
-    /* 外で変わったファイルは、編集の元にする前に読み直す（ADR0119 の決定 4: 古い本文から編集を
-     * 始めると、その保存は外の変更とぶつかる）。 */
-    if (folio_state_pane_mode(self->state) == PANE_MODE_VIEW)
-        show_outside_change(self);
     /* RTF は begin_edit より先に作る。確保に失敗したら application は何も変えていない。 */
     if (self->pane == nullptr || folio_state_pane_edit_rtf(self->state) != FOLIO_STATE_READY)
     {
@@ -8993,6 +8990,17 @@ static void execute_save_quit_command(struct folio_window *_Nonnull self,
     finish_quit(self, store_body(self));
 }
 
+/* 「編集」の操作。外で変わったファイルは、編集の元にする前に読み直す（ADR0119 の決定 4:
+ * 古い本文から編集を始めると、その保存は外の変更とぶつかる）。enter_edit のほかの呼び手
+ * （タグの適用・「ここを編集」・検索の一致）は、いまの本文から作った位置を持って入るので、
+ * そこでは本文を入れ替えない。 */
+static enum folio_state_outcome edit_current_file(struct folio_window *_Nonnull self)
+{
+    if (folio_state_pane_mode(self->state) == PANE_MODE_VIEW)
+        show_outside_change(self);
+    return enter_edit(self);
+}
+
 static void execute_mode_command(struct folio_window *_Nonnull self, enum pane_mode mode)
 {
     show_pane_layout(self);
@@ -9000,7 +9008,7 @@ static void execute_mode_command(struct folio_window *_Nonnull self, enum pane_m
     switch (mode)
     {
     case PANE_MODE_EDIT:
-        outcome = enter_edit(self);
+        outcome = edit_current_file(self);
         break;
     case PANE_MODE_VIEW:
         outcome = flush_edit(self);
@@ -15735,11 +15743,17 @@ static LRESULT on_minimap_timer(struct folio_window *_Nonnull self, WPARAM timer
 }
 
 /* Back from another application, which may have written the data folder. Nothing is read
- * here: the message loop reads when the window is quiet (ADR0119 decisions 1 and 2). */
+ * here: the message loop reads when the window is quiet (ADR0119 decisions 1 and 2). The first
+ * activation of a start follows no leaving, and the lists were read a moment before it. */
 static void application_activation(struct folio_window *_Nonnull self, WPARAM wparam)
 {
-    if (wparam != FALSE)
+    if (wparam == FALSE)
+        self->outside_away = true;
+    else if (self->outside_away)
+    {
+        self->outside_away = false;
         self->outside_due = true;
+    }
 }
 
 static LRESULT on_shell_message(struct folio_window *_Nonnull self, UINT message, WPARAM wparam,
@@ -19840,10 +19854,7 @@ static void continue_discovery(struct folio_window *_Nonnull self)
 void folio_window_continue_idle_work(struct folio_window *_Nonnull self)
 {
     if (outside_refresh_ready(self))
-    {
-        refresh_outside(self);
-        return;
-    }
+        refresh_outside(self); /* once per return; the turn's own work follows as before */
     if (!folio_window_idle_work_ready(self))
         return;
     if (discovery_surface(self))
